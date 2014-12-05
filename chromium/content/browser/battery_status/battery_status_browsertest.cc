@@ -4,8 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/synchronization/waitable_event.h"
-#include "content/browser/battery_status/battery_status_manager.h"
-#include "content/browser/battery_status/battery_status_service.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/content_browser_test.h"
@@ -13,36 +12,38 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "device/battery/battery_status_manager.h"
+#include "device/battery/battery_status_service.h"
 
 namespace content {
 
 namespace {
 
-class FakeBatteryManager : public BatteryStatusManager {
+class FakeBatteryManager : public device::BatteryStatusManager {
  public:
   explicit FakeBatteryManager(
-      const BatteryStatusService::BatteryUpdateCallback& callback)
-      : battery_status_available_(true),
-        started_(false) {
-    callback_ = callback;
-  }
-  virtual ~FakeBatteryManager() { }
+      const device::BatteryStatusService::BatteryUpdateCallback& callback)
+      : callback_(callback), battery_status_available_(true), started_(false) {}
+  ~FakeBatteryManager() override {}
 
   // Methods from BatteryStatusManager.
-  virtual bool StartListeningBatteryChange() OVERRIDE {
+  bool StartListeningBatteryChange() override {
     started_ = true;
     if (battery_status_available_)
       InvokeUpdateCallback();
     return battery_status_available_;
   }
 
-  virtual void StopListeningBatteryChange() OVERRIDE { }
+  void StopListeningBatteryChange() override {}
 
   void InvokeUpdateCallback() {
-    callback_.Run(status_);
+    // Invoke asynchronously to mimic the OS-specific battery managers.
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE,
+        base::Bind(callback_, status_));
   }
 
-  void set_battery_status(const blink::WebBatteryStatus& status) {
+  void set_battery_status(const device::BatteryStatus& status) {
     status_ = status;
   }
 
@@ -55,9 +56,10 @@ class FakeBatteryManager : public BatteryStatusManager {
   }
 
  private:
+  device::BatteryStatusService::BatteryUpdateCallback callback_;
   bool battery_status_available_;
   bool started_;
-  blink::WebBatteryStatus status_;
+  device::BatteryStatus status_;
 
   DISALLOW_COPY_AND_ASSIGN(FakeBatteryManager);
 };
@@ -65,33 +67,32 @@ class FakeBatteryManager : public BatteryStatusManager {
 class BatteryStatusBrowserTest : public ContentBrowserTest  {
  public:
     BatteryStatusBrowserTest()
-      : battery_manager_(0),
-        battery_service_(0),
-        io_loop_finished_event_(false, false) {
+      : battery_manager_(NULL),
+        battery_service_(NULL) {
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+    void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitch(
         switches::kEnableExperimentalWebPlatformFeatures);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&BatteryStatusBrowserTest::SetUpOnIOThread, this));
-    io_loop_finished_event_.Wait();
+  void SetUpOnMainThread() override {
+    battery_service_ = device::BatteryStatusService::GetInstance();
+
+    // We keep a raw pointer to the FakeBatteryManager, which we expect to
+    // remain valid for the lifetime of the BatteryStatusService.
+    scoped_ptr<FakeBatteryManager> battery_manager(new FakeBatteryManager(
+        battery_service_->GetUpdateCallbackForTesting()));
+    battery_manager_ = battery_manager.get();
+
+    battery_service_->SetBatteryManagerForTesting(
+        battery_manager.Pass());
   }
 
-  void SetUpOnIOThread() {
-    battery_service_ = BatteryStatusService::GetInstance();
-    battery_manager_ = new FakeBatteryManager(
-        battery_service_->GetUpdateCallbackForTesting());
-    battery_service_->SetBatteryManagerForTesting(battery_manager_);
-    io_loop_finished_event_.Signal();
-  }
-
-  virtual void TearDown() OVERRIDE {
-    battery_service_->SetBatteryManagerForTesting(0);
+  void TearDown() override {
+    battery_service_->SetBatteryManagerForTesting(
+        scoped_ptr<device::BatteryStatusManager>());
+    battery_manager_ = NULL;
   }
 
   FakeBatteryManager* battery_manager() {
@@ -100,8 +101,7 @@ class BatteryStatusBrowserTest : public ContentBrowserTest  {
 
  private:
   FakeBatteryManager* battery_manager_;
-  BatteryStatusService* battery_service_;
-  base::WaitableEvent io_loop_finished_event_;
+  device::BatteryStatusService* battery_service_;
 
   DISALLOW_COPY_AND_ASSIGN(BatteryStatusBrowserTest);
 };
@@ -122,10 +122,10 @@ IN_PROC_BROWSER_TEST_F(BatteryStatusBrowserTest, BatteryManagerResolvePromise) {
   // Set the fake battery manager to return predefined battery status values.
   // From JavaScript request a promise for the battery status information and
   // once it resolves check the values and navigate to #pass.
-  blink::WebBatteryStatus status;
+  device::BatteryStatus status;
   status.charging = true;
-  status.chargingTime = 100;
-  status.dischargingTime = std::numeric_limits<double>::infinity();
+  status.charging_time = 100;
+  status.discharging_time = std::numeric_limits<double>::infinity();
   status.level = 0.5;
   battery_manager()->set_battery_status(status);
 
@@ -143,7 +143,7 @@ IN_PROC_BROWSER_TEST_F(BatteryStatusBrowserTest,
   // Once it resolves add an event listener for battery level change. Set
   // battery level to 0.6 and invoke update. Check that the event listener
   // is invoked with the correct value for level and navigate to #pass.
-  blink::WebBatteryStatus status;
+  device::BatteryStatus status;
   battery_manager()->set_battery_status(status);
 
   TestNavigationObserver same_tab_observer(shell()->web_contents(), 2);

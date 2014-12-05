@@ -43,8 +43,6 @@
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebDragData::initialize()
@@ -62,12 +60,12 @@ void WebDragData::assign(const WebDragData& other)
     m_private = other.m_private;
 }
 
-WebDragData::WebDragData(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+WebDragData::WebDragData(const PassRefPtrWillBeRawPtr<DataObject>& object)
 {
     m_private = object;
 }
 
-WebDragData& WebDragData::operator=(const PassRefPtrWillBeRawPtr<WebCore::DataObject>& object)
+WebDragData& WebDragData::operator=(const PassRefPtrWillBeRawPtr<DataObject>& object)
 {
     m_private = object;
     return *this;
@@ -98,10 +96,10 @@ WebVector<WebDragData::Item> WebDragData::items() const
                 item.storageType = Item::StorageTypeBinaryData;
                 item.binaryData = originalItem->sharedBuffer();
             } else if (originalItem->isFilename()) {
-                RefPtrWillBeRawPtr<WebCore::Blob> blob = originalItem->getAsFile();
+                Blob* blob = originalItem->getAsFile();
                 if (blob->isFile()) {
-                    File* file = toFile(blob.get());
-                    if (!file->path().isEmpty()) {
+                    File* file = toFile(blob);
+                    if (file->hasBackingFile()) {
                         item.storageType = Item::StorageTypeFilename;
                         item.filenameData = file->path();
                         item.displayNameData = file->name();
@@ -110,14 +108,20 @@ WebVector<WebDragData::Item> WebDragData::items() const
                         item.fileSystemURL = file->fileSystemURL();
                         item.fileSystemFileSize = file->size();
                     } else {
-                        ASSERT_NOT_REACHED();
+                        // FIXME: support dragging constructed Files across renderers, see http://crbug.com/394955
+                        item.storageType = Item::StorageTypeString;
+                        item.stringType = "text/plain";
+                        item.stringData = file->name();
                     }
-                } else
+                } else {
                     ASSERT_NOT_REACHED();
-            } else
+                }
+            } else {
                 ASSERT_NOT_REACHED();
-        } else
+            }
+        } else {
             ASSERT_NOT_REACHED();
+        }
         item.title = originalItem->title();
         item.baseURL = originalItem->baseURL();
         itemList.append(item);
@@ -153,9 +157,10 @@ void WebDragData::addItem(const Item& item)
         return;
     case Item::StorageTypeFileSystemFile:
         {
+            // FIXME: The file system URL may refer a user visible file, see http://crbug.com/429077
             FileMetadata fileMetadata;
             fileMetadata.length = item.fileSystemFileSize;
-            m_private->add(File::createForFileSystemFile(item.fileSystemURL, fileMetadata));
+            m_private->add(File::createForFileSystemFile(item.fileSystemURL, fileMetadata, File::IsNotUserVisible));
         }
         return;
     }

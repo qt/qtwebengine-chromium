@@ -54,6 +54,7 @@
 #define NET_QUIC_QUIC_PACKET_GENERATOR_H_
 
 #include "net/quic/quic_packet_creator.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_types.h"
 
 namespace net {
@@ -76,7 +77,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
     virtual QuicCongestionFeedbackFrame* CreateFeedbackFrame() = 0;
     virtual QuicStopWaitingFrame* CreateStopWaitingFrame() = 0;
     // Takes ownership of |packet.packet| and |packet.retransmittable_frames|.
-    virtual bool OnSerializedPacket(const SerializedPacket& packet) = 0;
+    virtual void OnSerializedPacket(const SerializedPacket& packet) = 0;
     virtual void CloseConnection(QuicErrorCode error, bool from_peer) = 0;
   };
 
@@ -98,6 +99,9 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
 
   virtual ~QuicPacketGenerator();
 
+  // Called by the connection in the event of the congestion window changing.
+  void OnCongestionWindowChange(QuicPacketCount max_packets_in_flight);
+
   // Indicates that an ACK frame should be sent.  If |also_send_feedback| is
   // true, then it also indicates a CONGESTION_FEEDBACK frame should be sent.
   // If |also_send_stop_waiting| is true, then it also indicates that a
@@ -118,7 +122,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // attaches a QuicAckNotifier to any created stream frames, which
   // will be called once the frame is ACKed by the peer. The
   // QuicAckNotifier is owned by the QuicConnection. |notifier| may
-  // be NULL.
+  // be nullptr.
   QuicConsumedData ConsumeData(QuicStreamId id,
                                const IOVector& data,
                                QuicStreamOffset offset,
@@ -161,7 +165,10 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // can be safely changed.
   void UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicByteCount congestion_window);
+      QuicPacketCount max_packets_in_flight);
+
+  // Set the minimum number of bytes for the connection id length;
+  void SetConnectionIdLength(uint32 length);
 
   // Sets the encryption level that will be applied to new packets.
   void set_encryption_level(EncryptionLevel level);
@@ -191,7 +198,7 @@ class NET_EXPORT_PRIVATE QuicPacketGenerator {
   // Serializes and calls the delegate on an FEC packet if one was under
   // construction in the creator. When |force| is false, it relies on the
   // creator being ready to send an FEC packet, otherwise FEC packet is sent
-  // as long as one is under construction in the creator.  Also tries to turns
+  // as long as one is under construction in the creator. Also tries to turn
   // off FEC protection in the creator if it's off in the generator.
   void MaybeSendFecPacketAndCloseGroup(bool force);
 

@@ -8,12 +8,11 @@
 #include "cc/layers/picture_layer_impl.h"
 #include "cc/quads/draw_quad.h"
 #include "cc/test/layer_tree_pixel_test.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 #if !defined(OS_ANDROID)
 
@@ -22,34 +21,31 @@ namespace {
 
 class LayerTreeHostOnDemandRasterPixelTest : public LayerTreePixelTest {
  public:
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+  void InitializeSettings(LayerTreeSettings* settings) override {
     settings->impl_side_painting = true;
   }
 
-  virtual void BeginCommitOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  void BeginCommitOnThread(LayerTreeHostImpl* impl) override {
     // Not enough memory available. Enforce on-demand rasterization.
     impl->SetMemoryPolicy(
         ManagedMemoryPolicy(1, gpu::MemoryAllocation::CUTOFF_ALLOW_EVERYTHING,
                             1000));
   }
 
-  virtual void SwapBuffersOnThread(LayerTreeHostImpl* host_impl,
-                                   bool result) OVERRIDE {
+  void SwapBuffersOnThread(LayerTreeHostImpl* host_impl, bool result) override {
     // Find the PictureLayerImpl ask it to append quads to check their material.
     // The PictureLayerImpl is assumed to be the first child of the root layer
     // in the active tree.
     PictureLayerImpl* picture_layer = static_cast<PictureLayerImpl*>(
         host_impl->active_tree()->root_layer()->child_at(0));
 
-    MockOcclusionTracker<LayerImpl> occlusion_tracker;
     scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-    MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
     AppendQuadsData data;
-    picture_layer->AppendQuads(&quad_culler, &data);
+    picture_layer->AppendQuads(render_pass.get(), Occlusion(), &data);
 
-    for (size_t i = 0; i < render_pass->quad_list.size(); ++i)
-      EXPECT_EQ(render_pass->quad_list[i]->material, DrawQuad::PICTURE_CONTENT);
+    for (const auto& quad : render_pass->quad_list)
+      EXPECT_EQ(quad->material, DrawQuad::PICTURE_CONTENT);
 
     // Triggers pixel readback and ends the test.
     LayerTreePixelTest::SwapBuffersOnThread(host_impl, result);
@@ -63,17 +59,14 @@ class BlueYellowLayerClient : public ContentLayerClient {
   explicit BlueYellowLayerClient(gfx::Rect layer_rect)
       : layer_rect_(layer_rect) {}
 
-  virtual void DidChangeLayerCanUseLCDText() OVERRIDE { }
+  void DidChangeLayerCanUseLCDText() override {}
 
-  virtual bool FillsBoundsCompletely() const OVERRIDE { return false; }
+  bool FillsBoundsCompletely() const override { return false; }
 
-  virtual void PaintContents(
+  void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      gfx::RectF* opaque,
-      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE {
-    *opaque = gfx::RectF(layer_rect_.width(), layer_rect_.height());
-
+      ContentLayerClient::GraphicsContextStatus gc_status) override {
     SkPaint paint;
     paint.setColor(SK_ColorBLUE);
     canvas->drawRect(SkRect::MakeWH(layer_rect_.width(),
@@ -104,7 +97,7 @@ void LayerTreeHostOnDemandRasterPixelTest::RunOnDemandRasterPixelTest() {
   layer->SetBounds(layer_rect.size());
   layer->SetPosition(layer_rect.origin());
 
-  RunPixelTest(GL_WITH_BITMAP,
+  RunPixelTest(PIXEL_TEST_GL,
                layer,
                base::FilePath(FILE_PATH_LITERAL("blue_yellow.png")));
 }
@@ -115,7 +108,7 @@ TEST_F(LayerTreeHostOnDemandRasterPixelTest, RasterPictureLayer) {
 
 class LayerTreeHostOnDemandRasterPixelTestWithGpuRasterizationForced
     : public LayerTreeHostOnDemandRasterPixelTest {
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+  void InitializeSettings(LayerTreeSettings* settings) override {
     LayerTreeHostOnDemandRasterPixelTest::InitializeSettings(settings);
     settings->gpu_rasterization_forced = true;
   }

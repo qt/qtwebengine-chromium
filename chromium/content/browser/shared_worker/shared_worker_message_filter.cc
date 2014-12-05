@@ -4,7 +4,6 @@
 
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
 
-#include "content/browser/devtools/worker_devtools_manager.h"
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
 #include "content/common/devtools_messages.h"
@@ -54,6 +53,8 @@ bool SharedWorkerMessageFilter::OnMessageReceived(const IPC::Message& message) {
                         OnWorkerContextClosed)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerContextDestroyed,
                         OnWorkerContextDestroyed)
+    IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerReadyForInspection,
+                        OnWorkerReadyForInspection)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerScriptLoaded,
                         OnWorkerScriptLoaded)
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerScriptLoadFailed,
@@ -61,8 +62,9 @@ bool SharedWorkerMessageFilter::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(WorkerHostMsg_WorkerConnected,
                         OnWorkerConnected)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowDatabase, OnAllowDatabase)
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_RequestFileSystemAccessSync,
-                        OnRequestFileSystemAccessSync)
+    IPC_MESSAGE_HANDLER_DELAY_REPLY(
+        WorkerProcessHostMsg_RequestFileSystemAccessSync,
+        OnRequestFileSystemAccess)
     IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_AllowIndexedDB, OnAllowIndexedDB)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -109,6 +111,12 @@ void SharedWorkerMessageFilter::OnWorkerContextDestroyed(int worker_route_id) {
       this);
 }
 
+void SharedWorkerMessageFilter::OnWorkerReadyForInspection(
+    int worker_route_id) {
+  SharedWorkerServiceImpl::GetInstance()->WorkerReadyForInspection(
+      worker_route_id, this);
+}
+
 void SharedWorkerMessageFilter::OnWorkerScriptLoaded(int worker_route_id) {
   SharedWorkerServiceImpl::GetInstance()->WorkerScriptLoaded(worker_route_id,
                                                              this);
@@ -144,14 +152,12 @@ void SharedWorkerMessageFilter::OnAllowDatabase(
                                                         this);
 }
 
-void SharedWorkerMessageFilter::OnRequestFileSystemAccessSync(
+void SharedWorkerMessageFilter::OnRequestFileSystemAccess(
     int worker_route_id,
     const GURL& url,
-    bool* result) {
-  SharedWorkerServiceImpl::GetInstance()->AllowFileSystem(worker_route_id,
-                                                          url,
-                                                          result,
-                                                          this);
+    IPC::Message* reply_msg) {
+  SharedWorkerServiceImpl::GetInstance()->AllowFileSystem(
+      worker_route_id, url, reply_msg, this);
 }
 
 void SharedWorkerMessageFilter::OnAllowIndexedDB(int worker_route_id,

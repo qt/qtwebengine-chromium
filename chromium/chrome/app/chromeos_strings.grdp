@@ -10,6 +10,9 @@
   <message name="IDS_CHROMEBOX" desc="The localized name for Chromebox">
     Chromebox
   </message>
+  <message name="IDS_CHROMEBASE" desc="The localized name for Chromebase">
+    Chromebase
+  </message>
   <!-- Idle logout dialog for retail mode -->
   <message name="IDS_IDLE_LOGOUT_TITLE" desc="Dialog title for the idle logout dialog. Used in retail mode only.">
     Are you still there?
@@ -29,50 +32,6 @@ Press any key to continue exploring.
   <!-- Application name notification upon idle -->
   <message name="IDS_IDLE_APP_NAME_UNKNOWN_APPLICATION_NOTIFICATION" desc="A notification which shows that the name of the running Kiosk application cannot be determined and is probably invalid.">
     The application appears to be invalid.
-  </message>
-
-  <!-- User Image default image accessible descriptions -->
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_19" desc="Description of the default user icon with a picture of a bicycle">
-    Bicycle
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_20" desc="Description of the default user icon with a picture of a Bokeh (an out-of focus effect in photography)">
-    Bokeh
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_21" desc="Description of the default user icon with a picture of a game of chess">
-    Chess
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_22" desc="Description of the default user icon with a picture of a cup of coffee">
-    Coffee
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_23" desc="Description of the default user icon with a picture of a dragonfly">
-    Dragonfly
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_24" desc="Description of the default user icon with a picture of a frog">
-    Frog
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_25" desc="Description of the default user icon with a picture of a Ganzania (a kind of flower - okay to translate as just flower or some similar flower name)">
-    Ganzania Flower
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_26" desc="Description of the default user icon with a picture of a Jack Russell Terrir (a kind of dog - okay to translate as just dog)">
-    Jack Russell Terrier
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_27" desc="Description of the default user icon with a picture of a jellyfish">
-    Jellyfish
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_28" desc="Description of the default user icon with a picture of a kiwi (fruit)">
-    Kiwi
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_29" desc="Description of the default user icon with a picture of a penguin">
-    Penguin
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_30" desc="Description of the default user icon with a picture of a rainbowfish (a kind of fish)">
-    Rainbowfish
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_31" desc="Description of the default user icon with a picture of a record player (phonograph)">
-    Record player
-  </message>
-  <message name="IDS_LOGIN_DEFAULT_USER_DESC_32" desc="Description of the default user icon with a picture of a butterfly upside-down on a flower; the name of the photo is Upside-Down.">
-    Upside Down
   </message>
 
   <!-- Wallpaper Manager -->
@@ -126,17 +85,26 @@ Press any key to continue exploring.
   <message name="IDS_FLAGS_ENABLE_FILE_MANAGER_MTP_DESCRIPTION" desc="Description of the about:flag option to the enable MTP support in file manager.">
     Show MTP devices as a file storage in the file manager.
   </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_NAME" desc="Name of the about:flag option to enable the new audio player app.">
-    Enable the new audio player
+  <message name="IDS_FLAGS_ENABLE_VIDEO_PLAYER_CHROMECAST_SUPPORT_NAME" desc="Name of the about:flag option to enable the chromecast support for video app.">
+    Experimental Chromecast support for Video Player
   </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_AUDIO_PLAYER_DESCRIPTION" desc="Description of the about:flag option to the enable new audio player app.">
-    Use the experimental new audio player instead of the stable one.
+  <message name="IDS_FLAGS_ENABLE_VIDEO_PLAYER_CHROMECAST_SUPPORT_DESCRIPTION" desc="Description of the about:flag option to the enable the chromecast support for video app.">
+    This option enables experimental Chromecast support for Video Player app on ChromeOS.
   </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_NAME" desc="Name of the about:flag option to enable the new gallery app.">
-    Enable the new gallery
+  <message name="IDS_FLAGS_DISABLE_NEW_ZIP_UNPACKER_NAME" desc="Name of about::flags option to enable the new ZIP unpacker based on the File System Provider API.">
+    Enable the new ZIP unpacker.
   </message>
-  <message name="IDS_FLAGS_FILE_MANAGER_ENABLE_NEW_GALLERY_DESCRIPTION" desc="Description of the about:flag option to the enable new gallery app.">
-    Use the experimental new gallery instead of the stable one.
+  <message name="IDS_FLAGS_DISABLE_NEW_ZIP_UNPACKER_DESCRIPTION" desc="Description of about::flags option to enable the new ZIP unpacker based on the File System Provider API.">
+    Enable the new ZIP unpacker flow, based on the File System Provider API.
+  </message>
+  <message name="IDS_FILE_SYSTEM_PROVIDER_UNRESPONSIVE_WARNING" desc="A warning shown in a notification that an operation is taking longer than expected.">
+    An operation is taking longer than expected. Do you want to abort it?
+  </message>
+  <message name="IDS_FILE_SYSTEM_PROVIDER_MANY_UNRESPONSIVE_WARNING" desc="A warning shown in a notification that more than one operations are taking longer than expected.">
+    Some operations are taking longer than expected. Do you want to abort them?
+  </message>
+  <message name="IDS_FILE_SYSTEM_PROVIDER_UNRESPONSIVE_ABORT_BUTTON" desc="Label of the button on the notification about an operation(s) taking to long.">
+    Abort
   </message>
   <message name="IDS_FILE_BROWSER_ARCHIVE_DIRECTORY_LABEL" desc="/archive directory label.">
     Archives
@@ -336,6 +304,27 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_GALLERY_CROP" desc="In the Gallery, the title on the button that cuts out a rectangular fragment from a photo">
     Crop
   </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_1_1" desc="Button label to fix aspect to 1:1 ratio when cropping.">
+    1x1
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_4_6" desc="Button label to fix aspect to 4:6 ratio when cropping.">
+    4x6
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_6_4" desc="Button label to fix aspect to 6:4 ratio when cropping.">
+    6x4
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_5_7" desc="Button label to fix aspect to 5:7 ratio when cropping.">
+    5x7
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_7_5" desc="Button label to fix aspect to 7:5 ratio when cropping.">
+    7x5
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_16_9" desc="Button label to fix aspect to 16:9 ratio when cropping.">
+    16x9
+  </message>
+  <message name="IDS_FILE_BROWSER_GALLERY_ASPECT_RATIO_9_16" desc="Button label to fix aspect to 9:16 ratio when cropping.">
+    9x16
+  </message>
   <message name="IDS_FILE_BROWSER_GALLERY_EXPOSURE" desc="In the Gallery, the title on the button that applies the Brightness/Contrast filter to a photo.">
     Brightness
   </message>
@@ -377,15 +366,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_FILE_BROWSER_GALLERY_IMAGE_TOO_BIG_ERROR" desc="In the Gallery, message informing that the image is too big to be displayed.">
     This file is too large to be opened.
-  </message>
-  <message name="IDS_FILE_BROWSER_GALLERY_VIDEO_ERROR" desc="In the Gallery, message informing that the video could not be played.">
-    This file could not be played.
-  </message>
-  <message name="IDS_FILE_BROWSER_GALLERY_VIDEO_DECODING_ERROR" desc="In the Gallery, message informing that an error occured while playing the movie.">
-    An error occurred. Click to restart from the beginning.
-  </message>
-  <message name="IDS_FILE_BROWSER_GALLERY_VIDEO_LOOPED_MODE" desc="In the Gallery, message informing that the movie will be played in a loop.">
-    This video will keep playing until the cows come home.
   </message>
   <message name="IDS_FILE_BROWSER_AUDIO_ERROR" desc="In the Audio Player, message informing that the file could not be played.">
     This file could not be played.
@@ -517,6 +497,9 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_SYNC_FILE_NAME" desc="File Manager status message.">
     Syncing <ph name="FILE_NAME">$1<ex>movie.avi</ex></ph>...
   </message>
+  <message name="IDS_FILE_BROWSER_SYNC_FILE_NUMBER" desc="File Manager status message.">
+    Syncing <ph name="NUMBER_OF_FILES">$1<ex>7</ex></ph> items...
+  </message>
   <message name="IDS_FILE_BROWSER_SYNC_DELETE_WITHOUT_PERMISSION_ERROR" desc="File Manager status message shown when the drive sync is failed because a user try to remove shared files that the user does not own.">
     "<ph name="FILENAME">$1<ex>photo.jpg</ex></ph>" has been shared with you. You cannot delete it because you do not own it.
   </message>
@@ -542,8 +525,8 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_COPY_PROGRESS_SUMMARY" desc="Summary message for multiple copying tasks above the progress bar.">
     Copying...
   </message>
-  <message name="IDS_FILE_BROWSER_MOVE_PROGRESS_SUMMARY" desc="Summary message for multiple moveing tasks above the progress bar.">
-    Moveing...
+  <message name="IDS_FILE_BROWSER_MOVE_PROGRESS_SUMMARY" desc="Summary message for multiple moving tasks above the progress bar.">
+    Moving...
   </message>
   <message name="IDS_FILE_BROWSER_ZIP_PROGRESS_SUMMARY" desc="Summary message for multiple zipping tasks above the progress bar.">
     Zipping...
@@ -666,6 +649,12 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_CONFIRM_MOBILE_DATA_USE_PLURAL" desc="Message informing the user that opening several files from Google Drive will use mobile data.">
     Fetching these files will use approximately <ph name="FILE_SIZE">$1<ex>44 MB</ex></ph> of mobile data.
   </message>
+  <message name="IDS_FILE_BROWSER_DISABLED_MOBILE_SYNC_NOTIFICATION_MESSAGE" desc="Notification message shown when the drive sync is needed on mobile network, but it is disabled.">
+    Google Drive sync is disabled by default, when using mobile data.
+  </message>
+  <message name="IDS_FILE_BROWSER_DISABLED_MOBILE_SYNC_NOTIFICATION_ENABLE_BUTTON" desc="Button label to enable drive sync over, on the notifcation of |IDS_FILE_BROWSER_DISABLED_MOBILE_SYNC_NOTIFICATION_MESSAGE|.">
+    Enable syncing over mobile data
+  </message>
   <message name="IDS_FILE_BROWSER_OPEN_IN_OTHER_DESKTOP_MESSAGE" desc="Message of an alert dialog that is shown when a user opens a file in a desktop of another profile but the file is opened in the original desktop.">
     This file opened on a different desktop. Move to <ph name="USER_NAME">$1<ex>John Doe</ex></ph> (<ph name="MAIL_ADDRESS">$2<ex>xxxxxx@gmail.com</ex></ph>) to view it.
   </message>
@@ -679,10 +668,10 @@ Press any key to continue exploring.
     These Drive files aren't shared yet
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how this file is shared.
+    Change how this file is shared
   </message>
   <message name="IDS_FILE_BROWSER_MULTI_PROFILE_SHARE_DIALOG_MESSAGE_PLURAL" desc="Message of a dialog to request drive share for files that come from other profiles during file transfering. Below the message, there are the e-mail address of the account to be shared with the file, and a drop down list to select a share type.">
-    Change how these files are shared.
+    Change how these files are shared
   </message>
   <message name="IDS_FILE_BROWSER_DRIVE_SHARE_TYPE_CAN_EDIT" desc="Label text of 'Can edit' share type. Please use the same string with Google Drive.">
     Can edit
@@ -771,14 +760,16 @@ Press any key to continue exploring.
     <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_EXECUTABLE" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
-    This file type is not supported. Please visit the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> to find a similar app.
-    <ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
+  </message>
+  <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_DMG" desc="Message shown when user tries to open a windows executable file, which we can't handle.">
+    This file is designed for a computer using Macintosh software. This is not compatible with your device which runs Chrome OS. Please search the <ph name="BEGIN_LINK">&lt;a target='_blank' href='$1'&gt;<ex>&lt;a target='_blank' href='$1'&gt;</ex></ph>Chrome Web Store<ph name="END_LINK">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph> for a suitable replacement app.<ph name="BEGIN_LINK_HELP">&lt;a target='_blank' href='$2'&gt;<ex>&lt;a target='_blank' href='$2'&gt;</ex></ph>Learn More<ph name="END_LINK_HELP">&lt;/a&gt;<ex>&lt;/a&gt;</ex></ph>
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX_TITLE" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
     Wait just a sec
   </message>
   <message name="IDS_FILE_BROWSER_NO_ACTION_FOR_CRX" desc="Message shown when a user tries to open a *.crx file, which we don't handle in Files.app.">
-    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Lean more<ph name="END_LINK">&lt;/a&gt;</ph>
+    We're constantly looking for ways to make your browsing safer. Previously, any website could prompt you to add an extension into your browser. In the latest versions of Google Chrome, you must explicitly tell Chrome that you want to install these extensions by adding them through the Extensions page. <ph name="BEGIN_LINK">&lt;a target='_blank' href='https://support.google.com/chrome_webstore/answer/2664769?p=crx_warning&amp;rd=1'&gt;</ph>Learn more<ph name="END_LINK">&lt;/a&gt;</ph>
   </message>
 
   <message name="IDS_FILE_BROWSER_FOLDER" desc="Folder entry type">
@@ -851,6 +842,9 @@ Press any key to continue exploring.
   <message name="IDS_FILE_BROWSER_GFORM_DOCUMENT_FILE_TYPE" desc="Google form file type">
     Google form
   </message>
+  <message name="IDS_FILE_BROWSER_GMAP_DOCUMENT_FILE_TYPE" desc="Google map file type">
+    Google map
+  </message>
   <message name="IDS_FILE_BROWSER_GLINK_DOCUMENT_FILE_TYPE" desc="Google Drive link file type">
     Google Drive link
   </message>
@@ -860,6 +854,12 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_FILE_BROWSER_ERROR_VIEWING_FILE" desc="Error message when user attempts to open a non-supported file in the Files app via Downloads panel.">
     This file type is not supported. Please visit the Chrome Web Store to find an app that can open this type of file.
+  </message>
+  <message name="IDS_FILE_BROWSER_ERROR_VIEWING_FILE_FOR_DMG" desc="Error message when user attempts to open a dmg file in the Files app via Downloads panel.">
+    This file is designed for a computer using Macintosh software. This is not compatible with your device which runs Chrome OS. Please search the Chrome Web Store for a suitable replacement app.
+  </message>
+  <message name="IDS_FILE_BROWSER_ERROR_VIEWING_FILE_FOR_EXECUTABLE" desc="Error message when user attempts to open a exe file in the Files app via Downloads panel.">
+    This file is designed for a PC using Windows software. This is not compatible with your device which runs Chrome OS. Please search the Chrome Web Store for a suitable replacement app.
   </message>
   <message name="IDS_FILE_BROWSER_ERROR_UNRESOLVABLE_FILE" desc="Error message when the file attempted to open from Downloads panel was not found under paths managed by file manager.">
     This file has wandered off somewhere. Please check your download location setting and try again.
@@ -906,6 +906,9 @@ Press any key to continue exploring.
     No items match &lt;b&gt;"<ph name="SEARCH_STRING">$1<ex>abc</ex></ph>"&lt;/b&gt;
   </message>
 
+  <message name="IDS_FILE_BROWSER_MORE_ACTIONS" desc="In the File Manager, the text in combobutton to show the user there exist actions which can be executed to the file.">
+    More actions...
+  </message>
   <message name="IDS_FILE_BROWSER_CHANGE_DEFAULT_MENU_ITEM" desc="In the File Manager, the text in the menu item to change the default action for a particular file type.">
     Change default...
   </message>
@@ -948,6 +951,29 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_FILE_BROWSER_FAILED_SPACE_INFO" desc="Menu item, saying that FileBrowser is failed to retrieve space information.">
     Failed to retrieve space info
+  </message>
+
+<!-- Video Player -->
+  <message name="IDS_VIDEO_PLAYER_PLAY_THIS_COMPUTER" desc="In the video player app, message of menu item which is shown at the top of the list of Chromecasts. This menuitem is to play the video on this computer (locally), intead of on TVs with Chromecast.">
+    This computer
+  </message>
+  <message name="IDS_VIDEO_PLAYER_PLAYING_ON" desc="In the video player app, message is shown ahead of the name of the current chromecast which plays the video now. For example, if this message is 'Playing on' and the Chromecast name is 'Foocast', 'Playing on Foocast' is shown.">
+    Playing on
+  </message>
+  <message name="IDS_VIDEO_PLAYER_PLAY_ON" desc="In the video player app, message is shown above the list of cast devices. The user will select one of them to play the current video on selected device.">
+    Play on
+  </message>
+  <message name="IDS_VIDEO_PLAYER_VIDEO_FILE_UNSUPPORTED" desc="In the video player app, message informing that the video could not be played.">
+    This file could not be played.
+  </message>
+  <message name="IDS_VIDEO_PLAYER_VIDEO_FILE_UNSUPPORTED_FOR_CAST" desc="Error message which is shown when the video which an user tried to play is not supported by the current cast device.">
+    Sorry, this video is not supported by your cast device.
+  </message>
+  <message name="IDS_VIDEO_PLAYER_PLAYBACK_ERROR" desc="In the video player app, message informing that an error occured while playing the movie.">
+    An error occurred. Click to restart from the beginning.
+  </message>
+  <message name="IDS_VIDEO_PLAYER_LOOPED_MODE" desc="In the video player app, message informing that the movie will be played in a loop.">
+    This video will keep playing until the cows come home.
   </message>
 
 <!-- Imageburn Strings -->
@@ -1070,17 +1096,23 @@ Press any key to continue exploring.
   <message name="IDS_ECHO_CONSENT_DISMISS_BUTTON" desc="Dismiss dialog button label for disabled echo dialog.">
     Dismiss
   </message>
-  <message name="IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_NAME" desc="Name for the flag to disable Chrome Office Viewer component extension.">
-    Disable Quickoffice component extension
+  <message name="IDS_FLAGS_DISABLE_OFFICE_EDITING_COMPONENT_APP_NAME" desc="Name for the flag to disable Office Editing for Docs, Sheets &amp; Slides component extension.">
+    Disable Office Editing for Docs, Sheets &amp; Slides
   </message>
-  <message name="IDS_FLAGS_DISABLE_QUICKOFFICE_COMPONENT_APP_DESCRIPTION" desc="Description for the flag to disable Chrome Office component extension.">
-    Disable Quickoffice component extension for testing purposes.
+  <message name="IDS_FLAGS_DISABLE_OFFICE_EDITING_COMPONENT_APP_DESCRIPTION" desc="Description for the flag to disable Office Editing for Docs, Sheets &amp; Slides component extension.">
+    Disable Office Editing for Docs, Sheets &amp; Slides for testing purposes
   </message>
   <message name="IDS_FLAGS_DISABLE_DISPLAY_COLOR_CALIBRATION_NAME" desc="Name for the flag to disable the color calibration of the display.">
     Disable the color calibration of the display.
   </message>
   <message name="IDS_FLAGS_DISABLE_DISPLAY_COLOR_CALIBRATION_DESCRIPTION" desc="Description for the flag to disable the color calibration of the display.">
     Disable calibrating the color of the display even if the display supports the feature.
+  </message>
+  <message name="IDS_FLAGS_WAKE_ON_PACKETS_NAME" desc="Name for the flag to enable wake on packets.">
+    Wake On Packets
+  </message>
+  <message name="IDS_FLAGS_WAKE_ON_PACKETS_DESCRIPTION" desc="Description for the flag to enable wake on packets.">
+    Enables waking the device based on the receipt of some network packets.
   </message>
   <message name="IDS_OFFERS_CONSENT_INFOBAR_LABEL_LEARN_MORE" desc="Text of the Learn More link in the echo dialog.">
     Learn More
@@ -1127,9 +1159,6 @@ Press any key to continue exploring.
   <message name="IDS_UPDATE_COMPLETED" desc="Notification for update completed">
     System update complete. Please restart the system.
   </message>
-  <message name="IDS_INSTALLING_UPDATE" desc="Label shown on the updates installation screen during OOBE">
-    Please wait while <ph name="PRODUCT_NAME">$1<ex>Chrome OS</ex></ph> installs the latest system updates.
-  </message>
   <message name="IDS_INSTALLING_UPDATE_DESC" desc="Additional info shown on the updates installation screen during OOBE">
     Your computer will restart when the update is complete.
   </message>
@@ -1160,12 +1189,6 @@ Press any key to continue exploring.
   <message name="IDS_UPDATE_CANCELLED" desc="Message shown when the update has been cancelled by user">
     Cancelling update...
   </message>
-  <message name="IDS_CHECKING_FOR_UPDATE_MSG" desc="Chrome OS OOBE: message shown during checking for update stage.">
-    <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> updates automatically so you always have the freshest version.
-  </message>
-  <message name="IDS_UPDATE_MSG" desc="Chrome OS OOBE: message shown during update stage.">
-    <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> updates automatically so you always have the freshest version. When this download completes, <ph name="PRODUCT_NAME">$1<ex>Chrome</ex></ph> will restart and you'll be on your way.
-  </message>
   <message name="IDS_REMORA_CONFIRM_MESSAGE" desc="Remora confirm message on the first OOBE screen">
     Chromebox for Meetings device is ready to be set up.
   </message>
@@ -1180,9 +1203,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_EULA_SCREEN_TITLE" desc="Title of the OOBE EULA screen">
     The small print
-  </message>
-  <message name="IDS_EULA_SCREEN_ACCESSIBLE_TITLE" desc="Title to be spoken on opening the OOBE EULA screen">
-    <ph name="PRODUCT_OS_NAME">$1<ex>Chrome OS</ex></ph> terms
   </message>
   <message name="IDS_AUTOSTART_WARNING_TITLE" desc="Title of the kiosk autostart screen">
     Auto-launch permission requested
@@ -1257,10 +1277,10 @@ Press any key to continue exploring.
     Select your keyboard:
   </message>
   <message name="IDS_HID_DETECTION_INVITATION_TEXT" desc="Text shown on top of HID detection screen inviting user to connect an input device.">
-    Please connect a mouse or keyboard
+    Searching for Bluetooth and USB devices...
   </message>
   <message name="IDS_HID_DETECTION_PRECONDITION_TEXT" desc="Text shown on HID detection screen beneath invitation.">
-    If you're using Bluetooth, make sure your devices are ready to pair.
+    Please connect a mouse or a keyboard. If you are using a Bluetooth device, make sure it is ready to pair.
   </message>
   <message name="IDS_HID_DETECTION_SEARCHING_MOUSE" desc="Text shown on HID detection screen next to mouse icon while device searching.">
     Searching for mouse...
@@ -1434,8 +1454,8 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_CONFIRM_PASSWORD_ERROR_TEXT" desc="Error text to show when the password typed by the user could not be verified.">
     Sorry, your password could not be verified. Please try again.
   </message>
-  <message name="IDS_LOGIN_FATAL_ERROR_NO_EMAIL" desc="Message to show when the authentication could not be completed because the user's e-mail address could not be retrieved.">
-    Oops, couldn't sign you in. Sign-in failed because your e-mail address could not be retrieved.
+  <message name="IDS_LOGIN_FATAL_ERROR_NO_ACCOUNT_DETAILS" desc="Message to show when the authentication could not be completed because the user's account details could not be retrieved.">
+    Oops, couldn't sign you in. Sign-in failed because your account details could not be retrieved.
   </message>
   <message name="IDS_LOGIN_FATAL_ERROR_NO_PASSWORD" desc="Message to show when the authentication could not be completed because the user's password could not be retrieved.">
     Something went wrong with signing in.
@@ -1482,169 +1502,169 @@ Press any key to continue exploring.
   <message name="IDS_BROWSE_WITHOUT_SIGNING_IN_HTML" desc="Text shown on side of Google sign-in UI.">
     You may also skip signing in and <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>browse as Guest<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph>.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_FEATURE_NAME" desc="Title close to icon shown on side of Google sign-in UI to create a supervised user.">
+  <message name="IDS_CREATE_SUPERVISED_USER_FEATURE_NAME" desc="Title close to icon shown on side of Google sign-in UI to create a supervised user.">
     Supervised user
   </message>
-    <message name="IDS_CREATE_LOCALLY_MANAGED_USER_HTML" desc="Text with actual link shown on side of Google sign-in UI to create a supervised user.">
+    <message name="IDS_CREATE_SUPERVISED_USER_HTML" desc="Text with actual link shown on side of Google sign-in UI to create a supervised user.">
       <ph name="LINK_START">$1<ex>&gt;a&lt;</ex></ph>Create a supervised user<ph name="LINK_END">$2<ex>&gt;/a&lt;</ex></ph> for this device.
     </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_NO_MANAGER_TEXT" desc="Text shown when supervised user can be created, but no users that can be manager exist.">
+  <message name="IDS_CREATE_SUPERVISED_USER_NO_MANAGER_TEXT" desc="Text shown when supervised user can be created, but no users that can be manager exist.">
     At least one account must exist on this device before creating a supervised user.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_RESTRICTED_TEXT" desc="Text shown when supervised user can be created, but owner of the device restricted managed user creation or whitelist has been enabled for this device.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_RESTRICTED_TEXT" desc="Text shown when supervised user can be created, but owner of the device restricted supervised user creation or whitelist has been enabled for this device.">
     Creation of supervised users is restricted by the owner of this device.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_TITLE" desc="Supervised user dialog, intro page, title">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_TEXT_TITLE" desc="Supervised user dialog, intro page, title">
     What is a supervised user?
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_ALTERNATE_TEXT" desc="Supervised user dialog, intro page, first paragraph">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_ALTERNATE_TEXT" desc="Supervised user dialog, intro page, first paragraph">
     A supervised user can explore the web with your guidance. As the manager of a supervised user, you can
     <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>allow or prohibit<ph name="END_BOLD">&lt;/strong&gt;</ph> certain websites,
     <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>review<ph name="END_BOLD">&lt;/strong&gt;</ph> websites the supervised user has visited, and
     <ph name="BEGIN_BOLD">&lt;strong&gt;</ph>manage<ph name="END_BOLD">&lt;/strong&gt;</ph> other settings.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_1" desc="Supervised user dialog, intro page, first paragraph">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_TEXT_1" desc="Supervised user dialog, intro page, first paragraph">
     A supervised user can explore the web with your guidance. As the manager of a supervised user in Chrome, you can:
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_1" desc="Supervised user dialog, intro page, options available to manager">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_1" desc="Supervised user dialog, intro page, options available to manager">
     allow or prohibit certain websites,
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_2" desc="Supervised user dialog, intro page, options available to manager">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_2" desc="Supervised user dialog, intro page, options available to manager">
     review websites the supervised user has visited, and
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_MANAGER_ITEM_3" desc="Supervised user dialog, intro page, options available to manager">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_MANAGER_ITEM_3" desc="Supervised user dialog, intro page, options available to manager">
     manage other settings
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_2" desc="Supervised user dialog, intro page, second paragraph">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_TEXT_2" desc="Supervised user dialog, intro page, second paragraph">
     Creating a supervised user does not create a Google Account, and their settings
     and data will not follow them to other devices with Chrome Sync. A supervised user applies only to this device.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_INTRO_TEXT_3" desc="Supervised user dialog, intro page, third paragraph">
+  <message name="IDS_CREATE_SUPERVISED_INTRO_TEXT_3" desc="Supervised user dialog, intro page, third paragraph">
     After you create a new supervised user, you can manage the settings at any time from any device at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_TITLE" desc="Supervised user dialog, manager selection page, title of the page">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PICK_MANAGER_TITLE" desc="Supervised user dialog, manager selection page, title of the page">
     Choose the manager for this supervised user
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PICK_MANAGER_EXPLANATION" desc="Supervised user dialog, manager selection page, explanation of the page">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PICK_MANAGER_EXPLANATION" desc="Supervised user dialog, manager selection page, explanation of the page">
     The manager will be able to configure restrictions and settings for this supervised user at <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_MANAGER_PASSWORD_HINT" desc="Supervised user dialog, manager selection page, text shown as a hint in the user password field.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_MANAGER_PASSWORD_HINT" desc="Supervised user dialog, manager selection page, text shown as a hint in the user password field.">
     Enter password
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_SETUP_ACCESSIBLE_TITLE" desc="Text to be spoken on opening supervised user creation username and password set-up dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_SETUP_ACCESSIBLE_TITLE" desc="Text to be spoken on opening supervised user creation username and password set-up dialog.">
     Set up new supervised user
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_TITLE" desc="Supervised user dialog, new user page, title for name of new user">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_TITLE" desc="Supervised user dialog, new user page, title for name of new user">
     Create a name -
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_EXPLANATION" desc="Supervised user dialog, new user page, explanation for name of new user">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_EXPLANATION" desc="Supervised user dialog, new user page, explanation for name of new user">
     This supervised user will be managed by <ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph>.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ACCOUNT_NAME_HINT" desc="Text shown as a hint in the new user name field in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_ACCOUNT_NAME_HINT" desc="Text shown as a hint in the new user name field in supervised user creation dialog.">
     Enter new name
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TITLE" desc="Supervised user dialog, new user page, title for password for new user.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_TITLE" desc="Supervised user dialog, new user page, title for password for new user.">
     Create a password -
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_EXPLANATION" desc="Supervised user dialog, new user page, explanation for password for new user.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_EXPLANATION" desc="Supervised user dialog, new user page, explanation for password for new user.">
     The supervised user will need to use this password to sign in, so choose a safe password and remember to discuss it with the supervised user.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_HINT" desc="Text shown as a hint in the password field in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_HINT" desc="Text shown as a hint in the password field in supervised user creation dialog.">
     Enter password
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_CONFIRM_HINT" desc="Text shown as a hint in the password confirmation field in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_CONFIRM_HINT" desc="Text shown as a hint in the password confirmation field in supervised user creation dialog.">
     Confirm password
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_CONTINUE_BUTTON_TEXT" desc="Text shown on continue button in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_CONTINUE_BUTTON_TEXT" desc="Text shown on continue button in supervised user creation dialog.">
     Continue
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_START_BUTTON_TEXT" desc="Text shown on start button in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_START_BUTTON_TEXT" desc="Text shown on start button in supervised user creation dialog.">
     Create supervised user
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_NEXT_BUTTON_TEXT" desc="Text shown on next button in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_NEXT_BUTTON_TEXT" desc="Text shown on next button in supervised user creation dialog.">
     Next
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PREVIOUS_BUTTON_TEXT" desc="Text shown on previous button in supervised user creation dialog.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PREVIOUS_BUTTON_TEXT" desc="Text shown on previous button in supervised user creation dialog.">
     Previous
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_1" desc="Supervised user dialog, getting started page 1, paragraph 1">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_1" desc="Supervised user dialog, getting started page 1, paragraph 1">
     A supervised user named <ph name="USER_DISPLAY_NAME">$1<ex>John</ex></ph> has been created.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_2" desc="Supervised user dialog, getting started page 1, paragraph 2">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_2" desc="Supervised user dialog, getting started page 1, paragraph 2">
     To set which websites the supervised user can view, you can configure restrictions
     and settings by visiting <ph name="MANAGEMENT_URL">$1<ex>www.example.com</ex></ph>.
     If you do not change the default settings, <ph name="USER_DISPLAY_NAME">$2<ex>John</ex></ph>
     can browse all sites on the web.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATED_1_TEXT_3" desc="Supervised user dialog, getting started page 1, paragraph 3">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATED_1_TEXT_3" desc="Supervised user dialog, getting started page 1, paragraph 3">
     Please check your email at <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="MANAGER_EMAIL">$1<ex>john.doe@example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph> for further instructions.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_GOT_IT_BUTTON_TITLE" desc="Text for button on a screen with successful supervised user creation text">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_GOT_IT_BUTTON_TITLE" desc="Text for button on a screen with successful supervised user creation text">
     Got it!
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT" desc="Text for button on an error screen that closes supervised user creation dialog">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_HANDLE_ERROR_BUTTON_TEXT" desc="Text for button on an error screen that closes supervised user creation dialog">
     Okay
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_USERNAME_ALREADY_EXISTS" desc="Error text shown in supervised user creation dialog when local account with suggested name already exists on a device.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_USERNAME_ALREADY_EXISTS" desc="Error text shown in supervised user creation dialog when local account with suggested name already exists on a device.">
     Whoops, this name is already in use!
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_ILLEGAL_USERNAME" desc="Error text shown in supervised user creation dialog when suggested name contains illegal characters (e.g. html tags).">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_ILLEGAL_USERNAME" desc="Error text shown in supervised user creation dialog when suggested name contains illegal characters (e.g. html tags).">
     Whoops, illegal symbols in name!
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_MISMATCH_ERROR" desc="Error text shown in supervised user creation dialog when typed passwords does not match.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_MISMATCH_ERROR" desc="Error text shown in supervised user creation dialog when typed passwords does not match.">
     Whoops, passwords do not match!
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATE_PASSWORD_TOO_SHORT" desc="Error text shown in supervised user creation dialog when typed password is too short.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATE_PASSWORD_TOO_SHORT" desc="Error text shown in supervised user creation dialog when typed password is too short.">
     Password is too short.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_PASSWORD_ERROR" desc="Error text shown in locally managed user creation dialog when manager password is incorrect.">
+  <message name="IDS_CREATE_SUPERVISED_USER_MANAGER_PASSWORD_ERROR" desc="Error text shown in supervised user creation dialog when manager password is incorrect.">
     Incorrect password.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE_TITLE" desc="Supervised user dialog, error page, manager account is in inconsistent state, title">
+  <message name="IDS_CREATE_SUPERVISED_USER_MANAGER_INCONSISTENT_STATE_TITLE" desc="Supervised user dialog, error page, manager account is in inconsistent state, title">
     Oops, something went wrong
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE" desc="Supervised user dialog, error page, manager account is in inconsistent state, text">
+  <message name="IDS_CREATE_SUPERVISED_USER_MANAGER_INCONSISTENT_STATE" desc="Supervised user dialog, error page, manager account is in inconsistent state, text">
     To recover from this error, you will need to sign in to your Google Account
     from the sign-in screen. You can then sign out of your Google Account and
     try creating a supervised user again.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_MANAGER_INCONSISTENT_STATE_BUTTON" desc="Supervised user dialog, error page, manager account is in inconsistent state, button title">
+  <message name="IDS_CREATE_SUPERVISED_USER_MANAGER_INCONSISTENT_STATE_BUTTON" desc="Supervised user dialog, error page, manager account is in inconsistent state, button title">
     OK, Take me back to sign-in screen
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_TPM_ERROR_TITLE" desc="Supervised user dialog, error page, tpm error during creation, title">
+  <message name="IDS_CREATE_SUPERVISED_USER_TPM_ERROR_TITLE" desc="Supervised user dialog, error page, tpm error during creation, title">
     Oops, TPM error.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_TPM_ERROR" desc="Supervised user dialog, error page, tpm error during creation, text">
+  <message name="IDS_CREATE_SUPERVISED_USER_TPM_ERROR" desc="Supervised user dialog, error page, tpm error during creation, text">
     Something is wrong with device.  To recover from this error you will need to reboot device and try again.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_TPM_ERROR_BUTTON" desc="Supervised user dialog, error page, tpm error during creation, button title">
+  <message name="IDS_CREATE_SUPERVISED_USER_TPM_ERROR_BUTTON" desc="Supervised user dialog, error page, tpm error during creation, button title">
     OK
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_TITLE" desc="Supervised user dialog, error page, generic error during creation, title">
+  <message name="IDS_CREATE_SUPERVISED_USER_GENERIC_ERROR_TITLE" desc="Supervised user dialog, error page, generic error during creation, title">
     Oops, something went wrong
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR" desc="Supervised user dialog, error page, generic error during creation, text">
+  <message name="IDS_CREATE_SUPERVISED_USER_GENERIC_ERROR" desc="Supervised user dialog, error page, generic error during creation, text">
     Due to an error, a supervised user was not created. Please try again later.
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_GENERIC_ERROR_BUTTON" desc="Supervised user dialog, error page, generic error during creation, button title">
+  <message name="IDS_CREATE_SUPERVISED_USER_GENERIC_ERROR_BUTTON" desc="Supervised user dialog, error page, generic error during creation, button title">
     OK
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_CANCEL_BUTTON_TITLE" desc="Text for button on an error reporting screen for supervised user creation, that is used to abort whole operation">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_ERROR_CANCEL_BUTTON_TITLE" desc="Text for button on an error reporting screen for supervised user creation, that is used to abort whole operation">
     Cancel
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE" desc="Text for button on an error reporting screen for supervised user creation, that is used to retry failed operation">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_ERROR_RETRY_BUTTON_TITLE" desc="Text for button on an error reporting screen for supervised user creation, that is used to retry failed operation">
     Retry
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_AUTH_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon manager authentication.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_AUTH_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon manager authentication.">
     Authenticating
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon supervised user creation.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_CREATION_PROGRESS_MESSAGE" desc="Text shown next to progress indicator upon supervised user creation.">
     Creating supervised user
   </message>
-  <message name="IDS_CREATE_LOCALLY_MANAGED_USER_CREATION_CREATION_TIMEOUT_MESSAGE" desc="Text shown at the place of progess indicator if creation takes too long and should be cancelled.">
+  <message name="IDS_CREATE_SUPERVISED_USER_CREATION_CREATION_TIMEOUT_MESSAGE" desc="Text shown at the place of progess indicator if creation takes too long and should be cancelled.">
     This is taking much longer than usual. You can keep waiting, or cancel and try again later.
   </message>
-  <message name="IDS_USER_IS_LOCALLY_MANAGED_BY_NOTICE" desc="Text for notifications showing that this user is locally managed">
+  <message name="IDS_USER_IS_SUPERVISED_BY_NOTICE" desc="Text for notifications showing that this user is supervised">
     Usage and history of this user can be reviewed by the manager (<ph name="MANAGER_EMAIL">$1<ex>user@example.com</ex></ph>) on chrome.com.
   </message>
   <message name="IDS_SUPERVISED_USER_EXPIRED_TOKEN_WARNING" desc="Warning text that is shown on login screen trying to sign in as a supervised user that has expired token">
@@ -1662,7 +1682,7 @@ Press any key to continue exploring.
   <message name="IDS_MULTI_PROFILES_RESTRICTED_POLICY_TITLE" desc="Text that is shown on the title of the bubble shown for user pod which is not allowed in multi-profiles session.">
     Can't set up multiple sign-in
   </message>
-  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy.">
+  <message name="IDS_MULTI_PROFILES_NOT_ALLOWED_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of not-allowed policy or because of usage policy-pushed certificates.">
     The administrator for this account has disallowed multiple sign-in.
   </message>
   <message name="IDS_MULTI_PROFILES_PRIMARY_ONLY_POLICY_MSG" desc="Text that is shown on the bubble shown for user pod which is not allowed in multi-profiles session because of primary-only policy.">
@@ -1707,9 +1727,6 @@ Press any key to continue exploring.
   <message name="IDS_LOGIN_CAPTCHA_INSTRUCTIONS" desc="Explanatory message shown when the user must type letters shown in a captcha image to reauthenticate.">
     Type the characters you see in the picture below.
   </message>
-  <message name="IDS_OPTIONS_EASY_UNLOCK_CHECKBOX_LABEL_CHROMEOS" desc="The label beside the checkbox to enable or disable easy unlock. This is the ChromeOS specific label.">
-    Enable Easy Unlock for this <ph name="DEVICE_TYPE">$1<ex>Chromebook</ex></ph>.
-  </message>
   <message name="IDS_OPTIONS_SETTINGS_SECONDARY_USER_BANNER" desc="Banner displayed in settings page when the user is secondary in a multi-profile session.">
     Some settings belonging to <ph name="PRIMARY_EMAIL">$1<ex>john@google.com</ex></ph> are being shared with you. These settings only affect your account when using multiple sign-in.
   </message>
@@ -1745,18 +1762,24 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_SECTION_TITLE_REMEMBERED_NETWORK" desc="Title for section in settings/internet for list of remembered (favirote) networks">
     Remembered networks
+
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_NETWORK_OFFLINE" desc="Message displayed when a user is not connected to a wireless network">
-    Offline
+  <!-- Network state strings -->
+  <message name="IDS_CHROMEOS_NETWORK_STATE_NOT_CONNECTED" desc="Displayed state for a network when not connected.">
+    Not connected
   </message>
+  <message name="IDS_CHROMEOS_NETWORK_STATE_CONNECTED" desc="Displayed state for a network when connected">
+    Connected
+  </message>
+  <message name="IDS_CHROMEOS_NETWORK_STATE_CONNECTING" desc="Displayed state for a network when connecting">
+    Not Connected
+  </message>
+
   <message name="IDS_OPTIONS_SETTINGS_NETWORK_DISABLED" desc="Message displayed when a type of network connection is disabled">
     Disabled
   </message>
   <message name="IDS_OPTIONS_SETTINGS_NETWORK_OTHER" desc="Menu option for connecting to a network that is not listed in the menu.">
     Join other...
-  </message>
-  <message name="IDS_OPTIONS_SETTINGS_NETWORK_NOT_CONNECTED" desc="Displayed for a network control when not connected.">
-    Not connected
   </message>
   <message name="IDS_OPTIONS_SETTINGS_NETWORK_DISABLE_WIFI" desc="Menu option in the Wi-Fi menu when there is a connected Wi-Fi network.">
     Disable Wi-Fi
@@ -1821,8 +1844,32 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_SECTION_TITLE_LANGUAGE">
     Language
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_SECTION_TITLE_ACCESSIBILITY">
-    Accessibility
+  <message name="IDS_OPTIONS_DEVICE_GROUP_BATTERY_STATUS_LABEL" desc="The prefix to the battery status in the device section.">
+    Battery - <ph name="status">$1<ex>56% - 2:03 left</ex></ph>
+  </message>
+  <message name="IDS_OPTIONS_BATTERY_STATUS" desc="The battery status in the device section and 'Power' overlay while the battery is discharging, showing the battery power as a percentage and the time left until the battery is empty.">
+    <ph name="percentage">$1<ex>56</ex></ph>% - <ph name="hour">$2<ex>2</ex></ph>:<ph name="minute">$3<ex>03</ex></ph> left
+  </message>
+  <message name="IDS_OPTIONS_BATTERY_STATUS_CHARGING" desc="The battery status in the device section and 'Power' overlay while the battery is charging, showing the battery power as a percentage and the time left until the battery is full.">
+    <ph name="percentage">$1<ex>56</ex></ph>% - <ph name="hour">$2<ex>2</ex></ph>:<ph name="minute">$3<ex>03</ex></ph> until full
+  </message>
+  <message name="IDS_OPTIONS_BATTERY_STATUS_SHORT" desc="The battery status in the device section and 'Power' overlay when the time left cannot be shown.">
+    <ph name="percentage">$1<ex>56</ex></ph>%
+  </message>
+  <message name="IDS_OPTIONS_DEVICE_GROUP_POWER_SETTINGS_BUTTON" desc="Text on button to take user to the 'Power' overlay.">
+    Manage power
+  </message>
+  <message name="IDS_OPTIONS_POWER_OVERLAY_TITLE" desc="The title for the 'Power' overlay.">
+    Power
+  </message>
+  <message name="IDS_OPTIONS_BATTERY_STATUS_LABEL" desc="The label for the battery information in the 'Power' overlay.">
+    Battery:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_BATTERY_DESCRIPTION" desc="The 'Battery' button on the chrome://settings page.">
+    Battery...
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_STORAGE_DESCRIPTION" desc="The 'Storage' button on the chrome://settings page.">
+    Stored data...
   </message>
   <message name="IDS_OPTIONS_SETTINGS_TIME_SYNCED_EXPLANATION" desc="In the settings tab, the text indicating that the date and time are set automatically.">
     Date and time are set automatically.
@@ -1980,7 +2027,7 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_BLUETOOTH_FORGET_FAILED">
     Failed to disconnect and unpair from "<ph name="DEVICE_NAME">%1<ex>Nexus S</ex></ph>".
   </message>
-  <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_EXPLANATION" desc="In the settings tab, this text explains the accessibiliy features.">
+  <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_EXPLANATION" desc="In the settings tab, this text explains the accessibility features.">
     Enable accessibility features to make your device easier to use.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACCESSIBILITY_SETTINGS" desc="Text of the link to open ChromeVox settings.">
@@ -2076,6 +2123,9 @@ Press any key to continue exploring.
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_RESOLUTION_ANNOTATION_BEST" desc="The text shown for resolution options to annotate this is the best resolution.">
     (Best)
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_RESOLUTION_ANNOTATION_NATIVE" desc="The text shown for resolution options to annotate this is the native resolution.">
+    (Native)
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_DISPLAY_OPTIONS_STANDARD_ORIENTATION" desc="The default value of display orientation option item.">
     Standard
   </message>
@@ -2132,9 +2182,6 @@ Press any key to continue exploring.
   </message>
   <message name="IDS_OPTIONS_SETTINGS_ACTIVATE" desc="In the settings tab, the text on the button to activate a cellular network.">
     Activate
-  </message>
-  <message name="IDS_OPTIONS_SETTINGS_BUY_PLAN" desc="In settings Internet options, the title for buy cellular data plan button.">
-    Buy plan
   </message>
   <message name="IDS_OPTIONS_SETTINGS_OPTIONS" desc="In the settings tab, the text on the button to display more options.">
     Options...
@@ -2697,50 +2744,56 @@ Press any key to continue exploring.
   <message name="IDS_RESET_SCREEN_WARNING_MSG" desc="Warning text shown on reset screen above the exclamation icon.">
     Reset this <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device
   </message>
-  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_POWERWASH_MSG" desc="Warning text shown on confirmation-form of reset screen above the exclamation icon.">
-    Powerwash your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device
-  </message>
-  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_POWERWASH_AND_ROLLBACK_MSG" desc="Warning text shown on confirmation-form of reset screen above the exclamation icon.">
-    Powerwash your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device and revert to a previous update
-  </message>
-  <message name="IDS_RESET_SCREEN_WARNING_DETAILS" desc="Warning text shown on reset screen below the exclamation icon.">
+  <message name="IDS_RESET_SCREEN_WARNING_POWERWASH_MSG" desc="Warning text shown on reset screen below the exclamation icon.">
     Powerwash to reset your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
   </message>
-  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_DETAILS" desc="Warning text shown on confirmation-form of reset screen below the exclamation icon.">
-    A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new.
-  </message>
-  <message name="IDS_RESET_SCREEN_CONFIRMATION_WARNING_ROLLBACK_DETAILS" desc="Warning text shown on confirmation-form of reset screen below the exclamation icon.">
-    A Powerwash resets your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device to be just like new. Additionally, your device will revert to a previous update of <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>.
+  <message name="IDS_RESET_SCREEN_WARNING_POWERWASH_AND_ROLLBACK_MSG" desc="Warning text shown on reset screen below the exclamation icon.">
+    Powerwash your <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> device and return to the previous version.
   </message>
   <message name="IDS_RESET_SCREEN_WARNING_DETAILS_DATA" desc="Additional warning text shown on reset screen below the main warning.">
     All user accounts and local data will be removed.
   </message>
   <message name="IDS_RESET_SCREEN_RESTART_MSG" desc="Text shown on reset screen below warning messages if device needs extra restart before powerwash.">
-    A restart is required before your device can be reset.
+    A restart is required to begin the Powerwash process. After restart you will be asked to confirm that you want to proceed.
   </message>
   <message name="IDS_RESET_SCREEN_ROLLBACK_OPTION" desc="Checkbox label for rollback option of powerwash process. Is shown on reset screen.">
-    Also revert to a previous <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> update.
+    Also return to the previously installed version of <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>.
   </message>
   <message name="IDS_RESET_SCREEN_POWERWASH" desc="Powerwash button text">
     Powerwash
   </message>
-  <message name="IDS_RESET_SCREEN_RESET" desc="Reset button text. Button launches powerwash.">
-    Reset
+  <message name="IDS_RESET_SCREEN_POWERWASH_AND_REVERT" desc="Powerwash+rollback button text">
+    Powerwash and Revert
   </message>
   <message name="IDS_RESET_SCREEN_PREPARING_REVERT_PROMISE" desc="Message shown on reset screen after user initiates powerwash with version revert while revert is prepared until reboot.">
-    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> will restart and reset momentarily.
+    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> will restart and reset momentarily
   </message>
   <message name="IDS_RESET_SCREEN_PREPARING_REVERT_SPINNER_MESSAGE" desc="Spinner message shown on reset screen after user initiates powerwash with version revert while revert is prepared until reboot.">
-    Reverting to previous <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> update.
+    Reverting to the previously installed version of <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph>
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR" desc="Error message shown when revert was initiated but unavailable to be performed." meaning="Device reset screen revert option context.">
     Oops, something went wrong.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_EXPLANATION" desc="Error description shown when revert was initiated but unavailable to be performed.">
-    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previous version. Please try Powerwash instead.
+    <ph name="IDS_SHORT_PRODUCT_NAME">$1<ex>Chrome</ex></ph> is unable to revert to the previously installed version. Please try again to Powerwash your device.
   </message>
   <message name="IDS_RESET_SCREEN_REVERT_ERROR_BUTTON" desc="Reset device dialog, error page, revert error while initiating it, button title.">
     OK
+  </message>
+  <message name="IDS_RESET_SCREEN_POPUP_POWERWASH_TITLE" desc="Confirmational pop-up on top of reset device dialog. Pop-up title for powerwash.">
+    Confirm Powerwash
+  </message>
+  <message name="IDS_RESET_SCREEN_POPUP_ROLLBACK_TITLE" desc="Confirmational pop-up on top of reset device dialog. Pop-up title for rollback.">
+    Confirm Powerwash with return to previous version
+  </message>
+  <message name="IDS_RESET_SCREEN_POPUP_POWERWASH_TEXT" desc="Confirmational pop-up on top of reset device dialog. Pop-up text for powerwash.">
+    Your device will be reset and all user accounts and local data will be removed. This cannot be undone.
+  </message>
+  <message name="IDS_RESET_SCREEN_POPUP_ROLLBACK_TEXT" desc="Confirmational pop-up on top of reset device dialog. Pop-up text for rollback.">
+    Your device will be returned to the previously installed version of Chrome. All user accounts and local data will be removed. This cannot be undone.
+  </message>
+  <message name="IDS_RESET_SCREEN_POPUP_CONFIRM_BUTTON" desc="Confirmational pop-up on top of reset device dialog. Confirm button text.">
+    Continue
   </message>
 
   <message name="IDS_WRONG_HWID_SCREEN_HEADER" desc="Header of message shown on screen notifying about malformed hardware ID.">
@@ -3422,6 +3475,34 @@ Press any key to continue exploring.
            desc="A label describing how to use the top-row keys' original actions when the treat-as-function-keys setting is enabled.">
     Hold the Search key to switch the behavior of the top-row keys.
   </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_ENABLE"
+           desc="The checkbox label for enabling keyboard auto-repeat.">
+    Enable auto-repeat
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_DELAY"
+           desc="The label for the slider for the delay before auto-repeat begins. The delay is the amount of time a key must be held down before auto-repeating begins.">
+    Delay before repeat:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_DELAY_LONG"
+           desc="The label for the beginning of the auto-repeat delay slider, representing a long delay.">
+    Long
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_DELAY_SHORT"
+           desc="The label for the end of the auto-repeat delay slider, representing a short delay.">
+    Short
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_RATE"
+           desc="The label for the slider for the auto-repeat rate. The rate is how many times a key repeats per second once auto-repeating has begun.">
+    Repeat rate:
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_RATE_SLOW"
+           desc="The label for the beginning of the auto-repeat rate slider, representing a slow repeat rate.">
+    Slow
+  </message>
+  <message name="IDS_OPTIONS_SETTINGS_LANGUAGES_AUTO_REPEAT_RATE_FAST"
+           desc="The label for the end of the auto-repeat rate slider, representing a fast repeat rate.">
+    Fast
+  </message>
   <message name="IDS_OPTIONS_SETTINGS_CHANGE_LANGUAGE_AND_INPUT_SETTINGS"
            desc="The link to open 'Language and input settings' window.">
     Change language and input settings
@@ -3463,9 +3544,6 @@ Press any key to continue exploring.
   <message name="IDS_STATUSBAR_NETWORK_DEVICE_CELLULAR" desc="Label for a cellular network device.">
     Mobile Data
   </message>
-  <message name="IDS_STATUSBAR_NETWORK_DEVICE_UNKNOWN" desc="Label for an unknown network device.">
-    Unknown
-  </message>
   <message name="IDS_NETWORK_TYPE_ETHERNET" desc="The ethernet network type.">
     Ethernet
   </message>
@@ -3479,7 +3557,7 @@ Press any key to continue exploring.
     Bluetooth
   </message>
   <message name="IDS_NETWORK_TYPE_CELLULAR" desc="The cellular network type.">
-    cellular
+    Cellular
   </message>
   <message name="IDS_NETWORK_TYPE_VPN" desc="The vpn network type.">
     VPN
@@ -3728,8 +3806,11 @@ Battery full
   <message name="IDS_REMOVABLE_DEVICE_DETECTION_TITLE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
     Removable device detected
   </message>
-  <message name="IDS_REMOVABLE_DEVICE_SCANNING_MESSAGE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
-    Scanning content...
+  <message name="IDS_REMOVABLE_DEVICE_NAVIGATION_MESSAGE" desc="Text of notification message to navigate users to Files.app. If user clicks a button in the notification, Files.app opens.">
+    Explore the device's content in the Files app.
+  </message>
+  <message name="IDS_REMOVABLE_DEVICE_NAVIGATION_BUTTON_LABEL" desc="Text of a button label in a notification to navigate users to FIles.app. If user clicks the button, Files.app opens.">
+    Open Files app
   </message>
   <message name="IDS_REMOVABLE_DEVICE_HARD_UNPLUG_TITLE" desc="Text of notification message which is shown when user removes removable device (SD card, USB key...) without clicking the eject icon">
     You removed your device too soon!
@@ -3742,6 +3823,9 @@ Battery full
   </message>
   <message name="IDS_DEVICE_UNKNOWN_MESSAGE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
    Sorry, the device <ph name="DEVICE_LABEL">$1<ex>My SD card</ex></ph> could not be recognized.
+  </message>
+  <message name="IDS_DEVICE_UNKNOWN_BUTTON_LABEL" desc="Text of a button label in a notification to format the device. If user clicks the button, Files.app opens and focus on unknown the device.">
+    Format this device
   </message>
   <message name="IDS_DEVICE_UNKNOWN_DEFAULT_MESSAGE" desc="Text of notification message which is shown when user inserts removable device (SD card, USB key...)">
    Sorry, your external storage device could not be recognized.
@@ -3760,9 +3844,6 @@ Battery full
   </message>
   <message name="IDS_DEVICE_HARD_UNPLUGGED_MESSAGE" desc="Text of notification message which is shown when user manually removes external storage without clicking the eject icon">
     In the future, be sure to eject your removable device in the Files app before unplugging it. Otherwise, you might lose data.
-  </message>
-  <message name="IDS_DEVICE_HARD_UNPLUGGED_BUTTON_LABEL" desc="Text of button label which is shown when user manually removes external storage without clicking the eject icon">
-    Got it
   </message>
 
   <!-- Formatting device notifications -->
@@ -3823,9 +3904,6 @@ Battery full
   <message name="IDS_CHROMEOS_NETWORK_ACTIVATION_STATE_PARTIALLY_ACTIVATED" desc="Description of state of partially activated cellular data plan state. Shown under details on chrome:stettings/internet page.">
     Partially activated
   </message>
-  <message name="IDS_CHROMEOS_NETWORK_ACTIVATION_STATE_UNKNOWN" desc="Description of cellular data plan with unknown status. Shown under details on chrome:stettings/internet page.">
-    Unknown
-  </message>
 
   <!-- Cellular network roaming status description strings for ChromeOS -->
   <message name="IDS_CHROMEOS_NETWORK_ROAMING_STATE_HOME" desc="Description of cellular roaming status while connected to home network. Shown under details on chrome:stettings/internet page.">
@@ -3833,9 +3911,6 @@ Battery full
   </message>
   <message name="IDS_CHROMEOS_NETWORK_ROAMING_STATE_ROAMING" desc="Description of cellular roaming status while roaming. Shown under details on chrome:stettings/internet page.">
     Roaming
-  </message>
-  <message name="IDS_CHROMEOS_NETWORK_ROAMING_STATE_UNKNOWN" desc="Description of unknown cellular roaming status. Shown under details on chrome:stettings/internet page.">
-    Unknown
   </message>
 
   <!-- Cellular network details -->
@@ -3924,65 +3999,65 @@ Battery full
     Type Ctrl+Alt+/ or Escape to hide
   </message>
   <!-- BEGIN GENERATED KEYBOARD OVERLAY STRINGS -->
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAST_LAUNCHER_ITEM" desc="The text in the keyboard overlay to explain the shortcut (Open the last launcher item).">
-    Activate last launcher item
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAST_SHELF_ITEM" desc="The text in the keyboard overlay to explain the shortcut (Open the last shelf item).">
+    Last shelf item
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAST_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate last tab
+    Last tab
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_1" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 1
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_1" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 1
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_2" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 2
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_2" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 2
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_3" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 3
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_3" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 3
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_4" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 4
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_4" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 4
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_5" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 5
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_5" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 5
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_6" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 6
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_6" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 6
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_7" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 7
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_7" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 7
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_LAUNCHER_ITEM_8" desc="The text in the keyboard overlay to explain the shortcut (Open the launcher item at the specified position).">
-    Activate launcher item 8
+  <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_SHELF_ITEM_8" desc="The text in the keyboard overlay to explain the shortcut (Open the shelf item at the specified position).">
+    Shelf item 8
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_NEXT_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate next tab
+    Next tab
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_PREVIOUS_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate previous tab
+    Previous tab
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_1" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 1
+    Tab 1
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_2" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 2
+    Tab 2
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_3" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 3
+    Tab 3
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_4" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 4
+    Tab 4
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_5" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 5
+    Tab 5
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_6" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 6
+    Tab 6
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_7" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 7
+    Tab 7
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ACTIVATE_TAB_8" desc="The text in the keyboard overlay to explain the shortcut.">
-    Activate tab 8
+    Tab 8
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_ADD_WWW_AND_COM_AND_OPEN_ADDRESS" desc="The text in the keyboard overlay to explain the shortcut.">
     Add www. and .com and open address
@@ -3991,7 +4066,7 @@ Battery full
     Bookmark all tabs
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_BOOKMARK_CURRENT_PAGE" desc="The text in the keyboard overlay to explain the shortcut.">
-    Bookmark current page
+    Add bookmark
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_BOOKMARK_MANAGER" desc="The text in the keyboard overlay to explain the shortcut (open the bookmark manager).">
     Bookmark manager
@@ -4015,7 +4090,7 @@ Battery full
     Cut
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_CYCLE_THROUGH_INPUT_METHODS" desc="The text in the keyboard overlay to explain the shortcut.">
-    Cycle through input methods
+    Next input method
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_DECREASE_KEY_BRIGHTNESS" desc="The text in the keyboard overlay to explain the shortcut (decrease the keyboard brightness).">
     Decrease key brightness
@@ -4087,25 +4162,25 @@ Battery full
     Find text
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FIND_TEXT_AGAIN" desc="The text in the keyboard overlay to explain the shortcut.">
-    Find text again
+    Find again
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_ADDRESS_BAR" desc="The text in the keyboard overlay to explain the shortcut.">
     Focus address bar
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_ADDRESS_BAR_IN_SEARCH_MODE" desc="The text in the keyboard overlay to explain the shortcut.">
-    Focus address bar in search mode
+    Focus address bar for search
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_BOOKMARKS" desc="The text in the keyboard overlay to explain the shortcut.">
     Focus bookmarks
   </message>
-  <message name="IDS_KEYBOARD_OVERLAY_FOCUS_LAUNCHER" desc="The text in the keyboard overlay to explain the shortcut (focus the application launcher).">
-    Focus launcher
+  <message name="IDS_KEYBOARD_OVERLAY_FOCUS_SHELF" desc="The text in the keyboard overlay to explain the shortcut (focus the application shelf).">
+    Focus shelf
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_NEXT_PANE" desc="The text in the keyboard overlay to explain the shortcut (switch focus to the next keyboard-accessible pane).">
-    Focus next pane
+    Next pane
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_PREVIOUS_PANE" desc="The text in the keyboard overlay to explain the shortcut (switch focus to the previous keyboard-accessible pane).">
-    Focus previous pane
+    Previous pane
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_FOCUS_TOOLBAR" desc="The text in the keyboard overlay to explain the shortcut.">
     Focus toolbar
@@ -4141,19 +4216,19 @@ Battery full
     Lock screen
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_LOCK_SCREEN_OR_POWER_OFF" desc="The text in the keyboard overlay to explain the shortcut.">
-    Lock screen or power off
+    Lock / power
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_MAGNIFIER_DECREASE_ZOOM" desc="The text in the keyboard overlay to explain the shortcut.">
-    Magnifier decrease zoom
+    Demagnify
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_MAGNIFIER_INCREASE_ZOOM" desc="The text in the keyboard overlay to explain the shortcut.">
-    Magnifier increase zoom
+    Magnify
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_MAXIMIZE_WINDOW" desc="The text in the keyboard overlay to explain the shortcut (maximize or restore the window).">
-    Maximize window
+    Maximize
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_MINIMIZE_WINDOW" desc="The text in the keyboard overlay to explain the shortcut (minimize the window).">
-    Minimize window
+    Minimize
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_MIRROR_MONITORS" desc="The text in the keyboard overlay to explain the shortcut (Mirror the monitors).">
     Mirror monitors
@@ -4183,13 +4258,13 @@ Battery full
     Open
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_OPEN_ADDRESS_IN_NEW_TAB" desc="The text in the keyboard overlay to explain the shortcut.">
-    Open address in new tab
+    Open in new tab
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_OPEN_FILE_MANAGER" desc="The text in the keyboard overlay to explain the shortcut (Open the file manager).">
-    Open file manager
+    File manager
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_OPEN_GOOGLE_CLOUD_PRINT" desc="The text in the keyboard overlay to explain the shortcut (Opens the 'Google Cloud Print' dialog).">
-    Open Google Cloud Print
+    Google Cloud Print
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_PAGE_DOWN" desc="The text in the keyboard overlay to explain the shortcut (Page down).">
     Page down
@@ -4216,7 +4291,7 @@ Battery full
     Print
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_RELOAD_CURRENT_PAGE" desc="The text in the keyboard overlay to explain the shortcut.">
-    Reload current page
+    Reload
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_RELOAD_IGNORING_CACHE" desc="The text in the keyboard overlay to explain the shortcut.">
     Reload ignoring cache
@@ -4249,16 +4324,16 @@ Battery full
     Select all
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_SELECT_PREVIOUS_INPUT_METHOD" desc="The text in the keyboard overlay to explain the shortcut.">
-    Select previous input method
+    Previous input method
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_SELECT_WORD_AT_A_TIME" desc="The text in the keyboard overlay to explain the shortcut.">
     Select "word at a time"
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_SHOW_MESSAGE_CENTER" desc="The text in the keyboard overlay to explain the shortcut (Show the message center).">
-    Show message center
+    Message center
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_SHOW_STATUS_MENU" desc="The text in the keyboard overlay to explain the shortcut (show the status menu).">
-    Show status menu
+    Status menu
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_SIGN_OUT" desc="The text in the keyboard overlay to explain the shortcut.">
     Sign out
@@ -4267,31 +4342,31 @@ Battery full
     Swap primary monitor
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TAKE_SCREENSHOT" desc="The text in the keyboard overlay to explain the shortcut.">
-    Take screenshot
+    Screenshot
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TASK_MANAGER" desc="The text in the keyboard overlay to explain the shortcut.">
     Task manager
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_BOOKMARK_BAR" desc="The text in the keyboard overlay to explain the shortcut.">
-    Toggle bookmark bar
+    Bookmark bar
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_CAPS_LOCK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable caps lock).">
-    Toggle caps lock
+    Caps Lock
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_CHROMEVOX_SPOKEN_FEEDBACK" desc="The text in the keyboard overlay to explain the shortcut (enable or disable spoken feedback).">
-    Toggle ChromeVox (spoken feedback)
+    ChromeVox (spoken feedback)
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_PROJECTION_TOUCH_HUD" desc="The text in the keyboard overlay to explain the shortcut.">
-    Toggle projection touch HUD
+    Projection touch HUD
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_TOGGLE_SPEECH_INPUT" desc="The text in the keyboard overlay to explain the shortcut (start or stop speech input).">
-    Toggle speech input
+    Speech input
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_UNDO" desc="The text in the keyboard overlay to explain the shortcut.">
     Undo
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_VIEW_KEYBOARD_OVERLAY" desc="The text in the keyboard overlay to explain the shortcut.">
-    View keyboard overlay
+    Keyboard overlay
   </message>
   <message name="IDS_KEYBOARD_OVERLAY_VIEW_SOURCE" desc="The text in the keyboard overlay to explain the shortcut.">
     View source
@@ -4517,171 +4592,377 @@ Battery full
     Irish
   </message>
 
-  <message name="IDS_STATUSBAR_LAYOUT_USA_MYSTERY" desc="In the language menu button, this shows the input mode [US Mystery keyboard].">
-    US Mystery
+  <message name="IDS_IME_NAME_KEYBOARD_ARMENIAN_PHONETIC" desc="The input method name shows in system tray menu, this shows [Armenian Phonetic keyboard].">
+    Armenian Phonetic keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_BELARUSIAN" desc="The input method name shows in system tray menu, this shows [Belarusian keyboard].">
+    Belarusian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_BELGIAN" desc="The input method name shows in system tray menu, this shows [Belgian keyboard].">
+    Belgian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_BRAZILIAN" desc="The input method name shows in system tray menu, this shows [Brazilian keyboard].">
+    Brazilian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_BULGARIAN" desc="The input method name shows in system tray menu, this shows [Bulgarian keyboard].">
+    Bulgarian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_BULGARIAN_PHONETIC" desc="The input method name shows in system tray menu, this shows [Bulgarian Phonetic keyboard].">
+    Bulgarian Phonetic keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CANADIAN_ENGLISH" desc="The input method name shows in system tray menu, this shows [Canadian English keyboard].">
+    Canadian English keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CANADIAN_FRENCH" desc="The input method name shows in system tray menu, this shows [Canadian French keyboard].">
+    Canadian French keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CANADIAN_MULTILINGUAL" desc="The input method name shows in system tray menu, this shows [Canadian Multilingual keyboard].">
+    Canadian Multilingual keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CATALAN" desc="The input method name shows in system tray menu, this shows [Catalan keyboard].">
+    Catalan keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CROATIAN" desc="The input method name shows in system tray menu, this shows [Croatian keyboard].">
+    Croatian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CZECH" desc="The input method name shows in system tray menu, this shows [Czech keyboard].">
+    Czech keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_CZECH_QWERTY" desc="The input method name shows in system tray menu, this shows [Czech QWERTY keyboard].">
+    Czech QWERTY keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_DANISH" desc="The input method name shows in system tray menu, this shows [Danish keyboard].">
+    Danish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_ESTONIAN" desc="The input method name shows in system tray menu, this shows [Estonian keyboard].">
+    Estonian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_FINNISH" desc="The input method name shows in system tray menu, this shows [Finnish keyboard].">
+    Finnish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_FRENCH" desc="The input method name shows in system tray menu, this shows [French keyboard].">
+    French keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_GEORGIAN" desc="The input method name shows in system tray menu, this shows [Georgian keyboard].">
+    Georgian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_GERMAN" desc="The input method name shows in system tray menu, this shows [German keyboard].">
+    German keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_GERMAN_NEO_2" desc="The input method name shows in system tray menu, this shows [German NEO 2 keyboard].">
+    German NEO 2 keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_GREEK" desc="The input method name shows in system tray menu, this shows [Greek keyboard].">
+    Greek keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_HEBREW" desc="The input method name shows in system tray menu, this shows [Hebrew keyboard].">
+    Hebrew keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_HUNGARIAN" desc="The input method name shows in system tray menu, this shows [Hungarian keyboard].">
+    Hungarian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_ICELANDIC" desc="The input method name shows in system tray menu, this shows [Icelandic keyboard].">
+    Icelandic keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_IRISH" desc="The input method name shows in system tray menu, this shows [Irish keyboard].">
+    Irish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_ITALIAN" desc="The input method name shows in system tray menu, this shows [Italian keyboard].">
+    Italian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_JAPANESE" desc="The input method name shows in system tray menu, this shows [Japanese keyboard].">
+    Japanese keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_LATIN_AMERICAN" desc="The input method name shows in system tray menu, this shows [Latin American keyboard].">
+    Latin American keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_LATVIAN" desc="The input method name shows in system tray menu, this shows [Latvian keyboard].">
+    Latvian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_LITHUANIAN" desc="The input method name shows in system tray menu, this shows [Lithuanian keyboard].">
+    Lithuanian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_MALTESE" desc="The input method name shows in system tray menu, this shows [Maltese keyboard].">
+    Maltese keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_MONGOLIAN" desc="The input method name shows in system tray menu, this shows [Mongolian keyboard].">
+    Mongolian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_NORWEGIAN" desc="The input method name shows in system tray menu, this shows [Norwegian keyboard].">
+    Norwegian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_POLISH" desc="The input method name shows in system tray menu, this shows [Polish keyboard].">
+    Polish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_PORTUGUESE" desc="The input method name shows in system tray menu, this shows [Portuguese keyboard].">
+    Portuguese keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_ROMANIAN" desc="The input method name shows in system tray menu, this shows [Romanian keyboard].">
+    Romanian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_RUSSIAN" desc="The input method name shows in system tray menu, this shows [Russian keyboard].">
+    Russian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC" desc="The input method name shows in system tray menu, this shows [Russian Phonetic keyboard].">
+    Russian Phonetic keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC_AATSEEL" desc="The input method name shows in system tray menu, this shows [Russian Phonetic (AATSEEL) keyboard].">
+    Russian Phonetic (AATSEEL) keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_RUSSIAN_PHONETIC_YAZHERT" desc="The input method name shows in system tray menu, this shows [Russian Phonetic (YaZHert) keyboard].">
+    Russian Phonetic (YaZHert) keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SERBIAN" desc="The input method name shows in system tray menu, this shows [Serbian keyboard].">
+    Serbian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SLOVAKIAN" desc="The input method name shows in system tray menu, this shows [Slovakian keyboard].">
+    Slovakian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SLOVENIAN" desc="The input method name shows in system tray menu, this shows [Slovenian keyboard].">
+    Slovenian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SPANISH" desc="The input method name shows in system tray menu, this shows [Spanish keyboard].">
+    Spanish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SWEDISH" desc="The input method name shows in system tray menu, this shows [Swedish keyboard].">
+    Swedish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SWISS_FRENCH" desc="The input method name shows in system tray menu, this shows [Swiss French keyboard].">
+    Swiss French keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_SWISS" desc="The input method name shows in system tray menu, this shows [Swiss keyboard].">
+    Swiss keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_TURKISH" desc="The input method name shows in system tray menu, this shows [Turkish keyboard].">
+    Turkish keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_UK_DVORAK" desc="The input method name shows in system tray menu, this shows [UK Dvorak keyboard].">
+    UK Dvorak keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_UK" desc="The input method name shows in system tray menu, this shows [UK keyboard].">
+    UK keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_UKRAINIAN" desc="The input method name shows in system tray menu, this shows [Ukrainian keyboard].">
+    Ukrainian keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_US_COLEMAK" desc="The input method name shows in system tray menu, this shows [US Colemak keyboard].">
+    US Colemak keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_US_DVORAK" desc="The input method name shows in system tray menu, this shows [US Dvorak keyboard].">
+    US Dvorak keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_US_EXTENDED" desc="The input method name shows in system tray menu, this shows [US Extended keyboard].">
+    US Extended keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_US_INTERNATIONAL" desc="The input method name shows in system tray menu, this shows [US International keyboard].">
+    US International keyboard
+  </message>
+  <message name="IDS_IME_NAME_KEYBOARD_US" desc="The input method name shows in system tray menu, this shows [US keyboard].">
+    US keyboard
   </message>
 
-  <!-- Attribution strings for stock user images, not translateable. -->
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR">
+  <message name="IDS_IME_NAME_INPUTMETHOD_ARRAY" desc="The input method name shows in system tray menu, this is Array (\u884c\u5217) input method for Traditional Chinese.">
+    Array input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_1">
+  <message name="IDS_IME_NAME_INPUTMETHOD_CANGJIE" desc="The input method name shows in system tray menu, this is Cangjie input method for Tradition Chinese.">
+    Cangjie input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_2">
+  <message name="IDS_IME_NAME_INPUTMETHOD_DAYI" desc="The input method name shows in system tray menu, this is Dayi (\u5927\u6613) input method for Traditional Chinese.">
+    Dayi input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_3">
+  <message name="IDS_IME_NAME_INPUTMETHOD_MOZC_JP" desc="The input method name shows in system tray menu, this is Japanese input method for Japanese keyboard.">
+    Google Japanese Input (for Japanese keyboard)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_4">
+  <message name="IDS_IME_NAME_INPUTMETHOD_MOZC_US" desc="The input method name shows in system tray menu, this is Japanese input method for US keyboard.">
+    Google Japanese Input (for US keyboard)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_5">
+  <message name="IDS_IME_NAME_INPUTMETHOD_PINYIN" desc="The input method name shows in system tray menu, this is Pinyin input method for Simplified Chinese.">
+    Pinyin input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_6">
+  <message name="IDS_IME_NAME_INPUTMETHOD_QUICK" desc="The input method name shows in system tray menu, this is Quick input method for Traditional Chinese.">
+    Quick input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_7">
+  <message name="IDS_IME_NAME_INPUTMETHOD_TRADITIONAL_PINYIN" desc="The input method name shows in system tray menu, this is Pinyin input method for Traditional Chinese.">
+    Traditional Pinyin input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_8">
+  <message name="IDS_IME_NAME_INPUTMETHOD_WUBI" desc="The input method name shows in system tray menu, this is Wubi input method for Simplified Chinese.">
+    Wubi input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_9">
+  <message name="IDS_IME_NAME_INPUTMETHOD_ZHUYIN" desc="The input method name shows in system tray menu, this is Zhuyin input method for Traditional Chinese.">
+    Zhuyin input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_10">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL" desc="The input method name shows in system tray menu, this is Korean Hangul input method.">
+    Hangul input method
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_11">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_2_SET" desc="The input method name shows in system tray menu, this is Korean Hangul input method, 2 Set mode.">
+    Hangul 2 Set
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_12">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_390" desc="The input method name shows in system tray menu, this is Korean Hangul input method, 3 Set (390) mode.">
+    Hangul 3 Set (390)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_13">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_FINAL" desc="The input method name shows in system tray menu, this is Korean Hangul input method, 3 Set (Final) mode.">
+    Hangul 3 Set (Final)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_14">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_3_SET_NO_SHIFT" desc="The input method name shows in system tray menu, this is Korean Hangul input method, 3 Set (No Shift) mode.">
+    Hangul 3 Set (No Shift)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_15">
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_ROMAJA" desc="The input method name shows in system tray menu, this is Korean Hangul input method, Romaja mode.">
+    Hangul Romaja
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_16">
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_17">
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_18">
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_19">
-    Kirsten Hammelbo
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_20">
-    Igor Djurovic
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_21">
-    Romain Guy
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_22">
-    Barbara Dudzińska
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_23">
-    Romain Guy
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_24">
-    Dirk Ercken
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_25">
-    Pauline Ilott
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_26">
-    cynoclub
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_27">
-    Romain Guy
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_28">
-    Vladimir Vladimirov
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_29">
-    MOF
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_30">
-    Romain Guy
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_31">
-    Shaun Lowe
-  </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_AUTHOR_32">
-    Magdalena Wasiczek
+  <message name="IDS_IME_NAME_INPUTMETHOD_HANGUL_AHNMATAE" desc="The input method name shows in system tray menu, this is Korean Hangul input method, Ahnmatae mode.">
+    Hangul Ahnmatae
   </message>
 
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE">
+  <message name="IDS_IME_NAME_KEYBOARD_ARABIC" desc="The input method name shows in system tray menu.">
+    Arabic keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_1">
+  <message name="IDS_IME_NAME_KEYBOARD_BENGALI_PHONETIC" desc="The input method name shows in system tray menu.">
+    Bengali keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_2">
+  <message name="IDS_IME_NAME_KEYBOARD_DEVANAGARI_PHONETIC" desc="The input method name shows in system tray menu.">
+    Devanagari keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_3">
+  <message name="IDS_IME_NAME_KEYBOARD_ETHIOPIC" desc="The input method name shows in system tray menu.">
+    Ethiopic keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_4">
+  <message name="IDS_IME_NAME_KEYBOARD_GUJARATI_PHONETIC" desc="The input method name shows in system tray menu.">
+    Gujarati keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_5">
+  <message name="IDS_IME_NAME_KEYBOARD_KANNADA_PHONETIC" desc="The input method name shows in system tray menu.">
+    Kannada keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_6">
+  <message name="IDS_IME_NAME_KEYBOARD_KHMER" desc="The input method name shows in system tray menu.">
+    Khmer keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_7">
+  <message name="IDS_IME_NAME_KEYBOARD_LAO" desc="The input method name shows in system tray menu.">
+    Lao keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_8">
+  <message name="IDS_IME_NAME_KEYBOARD_MALAYALAM_PHONETIC" desc="The input method name shows in system tray menu.">
+    Malayalam keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_9">
+  <message name="IDS_IME_NAME_KEYBOARD_MYANMAR" desc="The input method name shows in system tray menu.">
+    Myanmar keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_10">
+  <message name="IDS_IME_NAME_KEYBOARD_MYANMAR_MYANSAN" desc="The input method name shows in system tray menu.">
+    Myanmar Myansan keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_11">
+  <message name="IDS_IME_NAME_KEYBOARD_NEPALI_INSCRIPT" desc="The input method name shows in system tray menu.">
+    Nepali keyboard (InScript)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_12">
+  <message name="IDS_IME_NAME_KEYBOARD_NEPALI_PHONETIC" desc="The input method name shows in system tray menu.">
+    Nepali keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_13">
+  <message name="IDS_IME_NAME_KEYBOARD_PERSIAN" desc="The input method name shows in system tray menu.">
+    Persian keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_14">
+  <message name="IDS_IME_NAME_KEYBOARD_SINHALA" desc="The input method name shows in system tray menu.">
+    Sinhala keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_15">
+  <message name="IDS_IME_NAME_KEYBOARD_SORANIKURDISH_AR" desc="The input method name shows in system tray menu.">
+    Sorani Kurdish Arabic-based keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_16">
+  <message name="IDS_IME_NAME_KEYBOARD_SORANIKURDISH_EN" desc="The input method name shows in system tray menu.">
+    Sorani Kurdish English-based keyboard
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_17">
+  <message name="IDS_IME_NAME_KEYBOARD_TAMIL_INSCRIPT" desc="The input method name shows in system tray menu.">
+    Tamil keyboard (InScript)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_18">
+  <message name="IDS_IME_NAME_KEYBOARD_TAMIL_ITRANS" desc="The input method name shows in system tray menu.">
+    Tamil keyboard (itrans)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_19">
-    http://www.istockphoto.com/Kirkham
+  <message name="IDS_IME_NAME_KEYBOARD_TAMIL_PHONETIC" desc="The input method name shows in system tray menu.">
+    Tamil keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_20">
-    http://www.istockphoto.com/vectorig
+  <message name="IDS_IME_NAME_KEYBOARD_TAMIL_TAMIL99" desc="The input method name shows in system tray menu.">
+    Tamil keyboard (Tamil99)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_21">
-    http://www.curious-creature.org/
+  <message name="IDS_IME_NAME_KEYBOARD_TAMIL_TYPEWRITER" desc="The input method name shows in system tray menu.">
+    Tamil keyboard (Typewriter)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_22">
-    http://www.istockphoto.com/barol16
+  <message name="IDS_IME_NAME_KEYBOARD_TELUGU_PHONETIC" desc="The input method name shows in system tray menu.">
+    Telugu keyboard (Phonetic)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_23">
-    http://www.curious-creature.org/
+  <message name="IDS_IME_NAME_KEYBOARD_THAI_KEDMANEE" desc="The input method name shows in system tray menu.">
+    Thai keyboard (Kedmanee)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_24">
-    http://www.istockphoto.com/kikkerdirk
+  <message name="IDS_IME_NAME_KEYBOARD_THAI_PATTACHOTE" desc="The input method name shows in system tray menu.">
+    Thai keyboard (Pattachote)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_25">
-    http://www.istockphoto.com/pollypic
+  <message name="IDS_IME_NAME_KEYBOARD_THAI_TIS" desc="The input method name shows in system tray menu.">
+    Thai keyboard (TIS 820-2531)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_26">
-    http://www.istockphoto.com/cynoclub
+  <message name="IDS_IME_NAME_KEYBOARD_VIETNAMESE_TCVN" desc="The input method name shows in system tray menu.">
+    Vietnamese keyboard (TCVN)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_27">
-    http://www.curious-creature.org/
+  <message name="IDS_IME_NAME_KEYBOARD_VIETNAMESE_TELEX" desc="The input method name shows in system tray menu.">
+    Vietnamese keyboard (Telex)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_28">
-    http://www.istockphoto.com/portishead1
+  <message name="IDS_IME_NAME_KEYBOARD_VIETNAMESE_VIQR" desc="The input method name shows in system tray menu.">
+    Vietnamese keyboard (VIQR)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_29">
-    http://www.istockphoto.com/MOF
+  <message name="IDS_IME_NAME_KEYBOARD_VIETNAMESE_VNI" desc="The input method name shows in system tray menu.">
+    Vietnamese keyboard (VNI)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_30">
-    http://www.curious-creature.org/
+
+  <message name="IDS_IME_NAME_TRANSLITERATION_AM" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (salam &#x2192; &#x1230;&#x120b;&#x121d;)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_31">
-    http://www.istockphoto.com/shaunl
+  <message name="IDS_IME_NAME_TRANSLITERATION_AR" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (marhaban &#x2190; &#x0645;&#x0631;&#x062d;&#x0628;&#x0627;)
   </message>
-  <message translateable="false" name="IDS_LOGIN_DEFAULT_USER_WEBSITE_32">
-    http://www.magdawasiczek.pl
+  <message name="IDS_IME_NAME_TRANSLITERATION_BN" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaskar &#x2192; &#x09a8;&#x09ae;&#x09b8;&#x09cd;&#x0995;&#x09be;&#x09b0;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_EL" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (geia &#x2192; &#x03b3;&#x03b5;&#x03b9;&#x03b1;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_FA" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (salam &#x2190; &#x0633;&#x0644;&#x0627;&#x0645;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_GU" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaste &#x2192; &#x0aa8;&#x0aae;&#x0ab8;&#x0acd;&#x0aa4;&#x0ac7;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_HE" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (shalom &#x2190; &#x05e9;&#x05dc;&#x05d5;&#x05dd;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_HI" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaste &#x2192; &#x0928;&#x092e;&#x0938;&#x094d;&#x0924;&#x0947;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_KN" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaskaram &#x2192; &#x0ca8;&#x0cae;&#x0cb8;&#x0ccd;&#x0c95;&#x0cbe;&#x0cb0;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_ML" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaskar &#x2192; &#x0d28;&#x0d2e;&#x0d38;&#x0d4d;&#x0d15;&#x0d3e;&#x0d30;&#x0d02;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_MR" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaste &#x2192; &#x0928;&#x092e;&#x0938;&#x094d;&#x0915;&#x093e;&#x0930;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_NE" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaste &#x2192; &#x0928;&#x092e;&#x0938;&#x094d;&#x0924;&#x0947;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_OR" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (mausam &#x2192; &#x0b28;&#x0b2e;&#x0b38;&#x0b4d;&#x0b24;&#x0b47;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_PA" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (mausam &#x2192; &#x0a2e;&#x0a4c;&#x0a38;&#x0a2e;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_SA" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (namaste &#x2192; &#x0928;&#x092e;&#x0938;&#x094d;&#x0924;&#x0947;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_SR" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (zdravo &#x2192; &#x0437;&#x0434;&#x0440;&#x0430;&#x0432;&#x043e;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_TA" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (vanakkam &#x2192; &#x0bb5;&#x0ba3;&#x0b95;&#x0bcd;&#x0b95;&#x0bae;&#x0bcd;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_TE" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (emandi &#x2192; &#x0c0f;&#x0c2e;&#x0c02;&#x0c21;&#x0c40;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_TI" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (selam &#x2192; &#x1230;&#x120b;&#x121d;)
+  </message>
+  <message name="IDS_IME_NAME_TRANSLITERATION_UR" desc="The input method name shows in system tray menu. Please translate only for 'transliteration'.">
+    Transliteration (salam &#x2190; &#x0633;&#x0644;&#x0627;&#x0645;)
   </message>
 
   <message name="IDS_LOGIN_ERROR_WHITELIST" desc="Couldn't sign in because user is not whitelisted.">
@@ -4805,16 +5086,19 @@ Battery full
     Remove this user
   </message>
   <message name="IDS_LOGIN_VERSION_LABEL_FORMAT" desc="Login screen version text format.">
-    <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> <ph name="PRODUCT_VERSION">$2<ex>15.0.0.0</ex></ph> (Platform <ph name="PLATFORM_VERSION">$3<ex>900.0-11.09.01</ex></ph>)
+    <ph name="PRODUCT_NAME">$1<ex>Google Chrome</ex></ph> <ph name="PRODUCT_VERSION">$2<ex>15.0.0.0</ex></ph> (Platform <ph name="PLATFORM_VERSION">$3<ex>900.0-11.09.01</ex></ph>) <ph name="DEVICE_SERIAL_NUMBER">$4<ex>SN:123456789ABC</ex></ph>
   </message>
   <message name="IDS_DEVICE_OWNED_BY_NOTICE" desc="Text for notifications showing that this is managed device.">
     This device is managed by <ph name="DOMAIN">$1<ex>acmecorp.com</ex></ph>.
   </message>
   <message name="IDS_LOGIN_PUBLIC_ACCOUNT_INFO_FORMAT" desc="Template for text shown in the public account user pod, informing the user that this is a public, managed account.">
-    This device is managed by <ph name="DOMAIN">$1<ex>yourdomain.com</ex></ph>.
+    Managed by <ph name="DOMAIN">$1<ex>yourdomain.com</ex></ph>
   </message>
   <message name="IDS_LOGIN_PUBLIC_ACCOUNT_SIGNOUT_REMINDER" desc="Text shown in the public account user pod, reminding the user to log out.">
     Your information will be removed when you sign out.
+  </message>
+  <message name="IDS_LOGIN_PUBLIC_SESSION_LANGUAGE_AND_INPUT" desc="Link in public session pod that shows a section which allows the user to change the UI language and keyboard layout.">
+    Language and input
   </message>
   <message name="IDS_LOGIN_PUBLIC_ACCOUNT_ENTER" meaning="Label text for signing in." desc="Label text for the sign-in button in the public account user pod.">
     Enter
@@ -4830,6 +5114,18 @@ Battery full
   </message>
   <message name="IDS_LOGIN_CONNECTING_INDICATOR_TEXT" desc="A message to show telling the user that the device is attempting to re-connect to the network.">
     Connecting and verifying<ph name="ANIMATED_ELLIPSIS">$1<ex>...</ex></ph>
+  </message>
+  <message name="IDS_DEVICE_DISABLED_HEADING" desc="Heading of the message shown to the user when the device has been disabled by its owner.">
+    Locked
+  </message>
+  <message name="IDS_DEVICE_DISABLED_EXPLANATION_WITH_DOMAIN" desc="Explanation shown to the user when the device has been disabled by its owner. This version is used when the domain that owns the device is known.">
+    This device was locked by the <ph name="SAML_DOMAIN">$1<ex>example.com</ex></ph> administrator.
+  </message>
+  <message name="IDS_DEVICE_DISABLED_EXPLANATION_WITHOUT_DOMAIN" desc="Explanation shown to the user when the device has been disabled by its owner. This version is used when the domain that owns the device is not known.">
+    This device was locked by the owner.
+  </message>
+  <message name="IDS_DEVICE_DISABLED_HELP_LINK" desc="Link to a help center article explaining how the owner can re-enable the device. Shown to the user when the device has been disabled by its owner.">
+    Unlocking help for owners
   </message>
 
   <!-- Idle warning dialog -->
@@ -4848,11 +5144,53 @@ Battery full
   <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_INSTALL" desc="Error message used when a kiosk app fails to launch due to install failure.">
     Kiosk application could not be installed.
   </message>
+  <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_DOWNLOAD" desc="Error message used when a kiosk app fails to launch due to crx file download failure.">
+    Kiosk application could not be downloaded.
+  </message>
+  <message name="IDS_KIOSK_APP_ERROR_UNABLE_TO_LAUNCH" desc="Error message used when a kiosk app fails to launch due to app launching failure.">
+    Kiosk application could not be launched.
+  </message>
   <message name="IDS_KIOSK_APP_ERROR_USER_CANCEL" desc="Error message used when a kiosk app launch is canceled by user.">
     Kiosk application launch canceled.
   </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_IN_PROGRESS" desc="Message shown on screen when the system is updating kiosk apps from usb stick.">
+    Please wait....Kiosk app is in the process of being updated. Do not remove the USB stick.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_NO_UPDATES" desc="Error message for no external extensions to update.">
+    No Kiosk apps with newer version found. Nothing to update. Please remove the USB stick.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_INVALID_MANIFEST" desc="Error message for invalid external update manifest file from usb stick.">
+    Invalid Kiosk external update manifest file found. Failed to update Kiosk app. Please remove the USB stick.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_COMPLETE" desc="Message shown on screen when the system completes updating kiosk apps from usb stick.">
+    Kiosk app has been updated. Please remove the USB stick.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_SUCCESSFUL_UPDATED_APPS" desc="Message shown for successfully updated kiosk apps.">
+    The following kiosk apps "<ph name="updated_apps">$1<ex>PrintApp</ex></ph>" have been updated. Please reboot the device to complete the update process.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_FAILED_UPDATED_APPS" desc="Message shown for failed updated kiosk apps.">
+    The following kiosk apps have been failed for updating:
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_BAD_CRX" desc="Error message for crx file unpacking failure.">
+    Bad crx file, unpacking failed.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_SAME_OR_LOWER_APP_VERSION" desc="Error message for external extension is the same or lower version comparing to the existing one.">
+    External extension is at the same or lower version comparing to the existing one.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_REQUIRE_HIGHER_BROWSER_VERSION" desc="Error message for external extension requires higher version of chrome to be installed.">
+    The external extension requires chrome version <ph name="MINIMUM_CHROME_VERSION">$1<ex>1.0.0</ex></ph> or greater to be installed.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_CANNOT_INSTALL_IN_LOCAL_CACHE" desc="Error message for not being able to install kiosk external crx file in local cache.">
+    Can't install <ph name="EXTERNAL_CRX_FILE">$1<ex>/media/usb/app_v2.crx</ex></ph> in local cache.
+  </message>
+  <message name="IDS_KIOSK_EXTERNAL_UPDATE_FAILED_COPY_CRX_TO_TEMP" desc="Error message for not being able to copy external crx file to a temp file.">
+    Can't copy external crx file to <ph name="TEMP_CRX_FILE">$1<ex>/tmp/kiosk_update/app.crx</ex></ph>.
+  </message>
 
   <!-- About Chrome page -->
+  <message name="IDS_UPGRADE_BUTTON" desc="The button label to check for updates and apply (download and install) if found">
+    Check for and apply updates
+  </message>
   <message name="IDS_UPGRADE_OFFLINE" desc="Status label: Currently offline">
     You are currently offline.
   </message>
@@ -4867,8 +5205,17 @@ Battery full
   </message>
 
   <!-- Genius App -->
-  <message name="IDS_GENIUS_APP_NAME" desc="Name of the genius app in the app launcher">
+  <message name="IDS_GENIUS_APP_NAME" desc="Name of the genius app in the app shelf">
     Get Help
+  </message>
+  <message name="IDS_GENIUS_APP_DESCRIPTION" desc="Description of the genius app in the app shelf">
+    Get help with your Chrome device.
+  </message>
+  <message name="IDS_FILEMANAGER_APP_NAME" desc="Name for the File Manager app.">
+    Files
+  </message>
+  <message name="IDS_FILEMANAGER_APP_DESCRIPTION" desc="Description for the File Manager app.">
+    The Files app provides quick access to files that you've saved on Google Drive, external storage, or your Chrome OS device.
   </message>
 
   <!-- HDCP verification UI -->
@@ -5205,7 +5552,7 @@ All users must sign out to continue.
     Offline
   </message>
 
-  <!-- Strings for the new-style OAuth-based enterprise enrollment page -->
+  <!-- Strings for the "Chromebox for meeting" OOBE UI. -->
   <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_PROMPT_CANCEL" desc="Cancel button text in the device requisition poup.">
     Cancel
   </message>
@@ -5216,9 +5563,118 @@ All users must sign out to continue.
     Use this device requisition when enrolling the device for enterprise management:
   </message>
   <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_REMORA_PROMPT_TEXT" desc="Prompt shown in the device requisition remora prompt popup.">
-    Are you sure, you want to set up this device as a Chromebox for Meetings device?
+    Are you sure you want to set up this device as a Chromebox for Meetings device?
+  </message>
+  <message name="IDS_ENTERPRISE_DEVICE_REQUISITION_SHARK_PROMPT_TEXT" desc="Prompt shown in the device requisition shark prompt popup.">
+    Are you sure you want to set up this device as a "Shark"?
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_WELCOME" desc="Message shown on 'Chromebox for meetings' controller in the beginning of the setup process.">
+    Welcome to Chromebox for meetings
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_SEARCHING" desc="Message shown on 'Chromebox for meetings' controller when it is searching for host devices.">
+    Searching for nearby Chromeboxes...
+  </message>
+  <message name="IDS_PAIRING_NEED_HELP" desc="Text on the button launching help article about the 'Chromebox for meetings' setup process.">
+    Need help?
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_TROUBLE_CONNECTING" desc="Title of the the dialog giving an advice on how to improve a connection between a host and a controller during the 'Chromebox for meeting' setup process.">
+    Trouble connecting?
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONNECTING_ADVICE" desc="Text in the dialog giving an advice on how to improve a connection between a host and a controller during the 'Chromebox for meeting' setup process.">
+    Please make sure that your Hotrod device is turned on and connected to a TV.
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_ADVICE_GOT_IT" desc="Text on the confirmation button of the dialog giving an advice on how to improve a connection between a host and a controller during the 'Chromebox for meeting' setup process.">
+    OK, got it
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_SELECT_TITLE" desc="Title of the list of nearby 'Chromebox for meeting' devices, that is shown on a controller device during a setup process.">
+    Select a Chromebox to connect to
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONNECT" desc="Text on the button initiating a connection to the choosen device. After a user pressed the button, text changes to 'Connecting...'.">
+    Connect
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONNECTING" desc="Text on the button initiating a connection to the choosen device, after a user pressed it. The initial text is 'Connect'.">
+    Connecting...
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONFIRMATION_TITLE" desc="Title of the page showing the confirmation code on a controller's screen during the 'Chromebox for meeting' setup process.">
+    Pair with Chromebox
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONFIRMATION_QUESTION" desc="Text that is shown near 6-digit confirmation code on a controller's screen during the 'Chromebox for meeting' setup process.">
+    Does this code appear on your Chromebox screen?
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_REJECT_CODE" desc="Text on button, pressing which user reports that he doesn't see confirmation code on host screen.">
+    No, I don't see it
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_ACCEPT_CODE" desc="Text on button, pressing which user reports that he sees confirmation code on host screen and code is correct.">
+    Yes, I see it
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_UPDATE_TITLE" desc="Title of the controller's update page of the 'Chromebox for meeting' setup process.">
+    Updating Chromebox
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_UPDATE_TEXT" desc="Text on the controller's update page of the 'Chromebox for meeting' setup process.">
+    In order to bring you the latest features, your Chromebox needs to update.
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONNECTION_LOST_TITLE" desc="Title of the controller page which says that connection with host was lost during the 'Chromebox for meeting' setup process.">
+    Connection to Chromebox lost
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONNECTION_LOST_TEXT" desc="Text on the controller page which says that connection with host was lost during the 'Chromebox for meeting' setup process.">
+    Lost connection to your Chromebox. Please move closer, or check your device while we try to reconnect.
+  </message>
+  <message name="IDS_PAIRING_ENROLL_TITLE" desc="Title of the enroll page of the 'Chromebox for meeting' setup process.">
+    Enroll in your organization
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_ENROLL_TEXT_1" desc="First paragraph of text shown on the controller's enroll page of the 'Chromebox for meeting' setup process. Second paragraph is: 'This will only happen once, and your credentials will not be stored.'">
+    Chromebox for meetings needs to know what domain it belongs to. This will require you to sign in to your account.
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_ENROLL_TEXT_2" desc="Second paragraph of text shown on the controller's enroll page of the 'Chromebox for meeting' setup process. First paragraph is: 'Chromebox for meetings needs to know what domain it belongs to. This will require you to sign in to your account.'">
+    This will only happen once, and your credentials will not be stored.
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONTINUE" desc="Text on buttons leading to the next step of the 'Chromebox for meeting' setup process.">
+    Continue
+  </message>
+  <message name="IDS_PAIRING_ENROLLMENT_IN_PROGRESS" desc="Message shown on enroll screens of the 'Chromebox for meeting' setup process.">
+    Enrolling in <ph name="BEGIN_BOLD">&lt;strong&gt;</ph><ph name="DOMAIN_NAME">$1<ex>example.com</ex></ph><ph name="END_BOLD">&lt;/strong&gt;</ph>...
+  </message>
+  <message name="IDS_PAIRING_ENROLLMENT_ERROR_TITLE" desc="Title of the page shown when enrollment attempt is failed during the 'Chromebox for meeting' setup process.">
+    Unable to enroll
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_ENROLLMENT_ERROR_HOST_RESTARTS" desc="Text on the controller's page shown when enrollment attempt is failed during the 'Chromebox for meeting' setup process.">
+    Please wait while your Chromebox restarts...
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_SUCCESS_TITLE" desc="Title of the final controller's page shown when the 'Chromebox for meeting' setup process is finished.">
+    Success!
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_SUCCESS_TEXT" desc="Text on the final controller's page shown when the 'Chromebox for meeting' setup process is finished.">
+    <ph name="DEVICE_NAME">$1<ex>Chromebox-01</ex></ph> will now appear in the Admin Console
+  </message>
+  <message name="IDS_PAIRING_CONTROLLER_CONTINUE_TO_HANGOUTS" desc="Text on the button, shown on the final controller's page, displayed when the 'Chromebox for meeting' setup process is finished.">
+    Continue to Hangouts
+  </message>
+  <message name="IDS_PAIRING_HOST_WELCOME_TITLE" desc="Title of the host's welcome page of the 'Chromebox for meeting' setup process.">
+    Welcome to Chromebox for meetings!
+  </message>
+  <message name="IDS_PAIRING_HOST_WELCOME_TEXT" desc="Text on the host's welcome page of the 'Chromebox for meeting' setup process.">
+    Turn on your touch controller to set me up
+  </message>
+  <message name="IDS_PAIRING_HOST_CONFIRMATION_TITLE" desc="Title of the host's confirmation page of the 'Chromebox for meeting' setup process. 6-digit confirmation code is displayed below.">
+    Pair with a controller
+  </message>
+  <message name="IDS_PAIRING_HOST_UPDATING_TITLE" desc="Title of the host's update page of the 'Chromebox for meeting' setup process.">
+    Updating Chromebox...
+  </message>
+  <message name="IDS_PAIRING_HOST_UPDATING_TEXT" desc="Update progress shown on the host's update page of the 'Chromebox for meeting' setup process.">
+    <ph name="DOWNLOADED_AMOUNT_MB">$1<ex>13.7</ex></ph> MB / <ph name="TOTAL_AMOUNT_MB">$2<ex>23</ex></ph> MB downloaded
+  </message>
+  <message name="IDS_PAIRING_HOST_DONE_TITLE" desc="Title of the final host's page shown when the 'Chromebox for meeting' setup process is finished.">
+    Congratulations
+  </message>
+  <message name="IDS_PAIRING_HOST_DONE_TEXT" desc="Title of the final host's page shown when the 'Chromebox for meeting' setup process is finished.">
+    You're all set to continue on to Hangouts
+  </message>
+  <message name="IDS_PAIRING_HOST_EROLLMENT_ERROR_NEEDS_RESTART" desc="Text on the host's page of the 'Chromebox for meeting' setup process shown when enrollment attempt is failed.">
+    Chromebox needs to restart...
   </message>
 
+  <!-- Strings for the le OAuth-based enterprise enrollment page -->
   <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_REGISTRATION_FAILED" desc="Error message shown on the enrollment screen upon failed device registration.">
     Error when registering the device with the server: <ph name="CLIENT_ERROR">$1<ex>Failed to connect to the server</ex></ph>.
   </message>
@@ -5255,6 +5711,9 @@ All users must sign out to continue.
   </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_STORE_ERROR" desc="Error message shown on the enrollment screen when the installation of the policy on the device fails.">
     Failed to install policy settings on the device: <ph name="VALIDATION_ERROR">$1<ex>Policy parsing failed</ex></ph>.
+  </message>
+  <message name="IDS_ENTERPRISE_ENROLLMENT_STATUS_STORE_TOKEN_AND_ID_FAILED" desc="Error message shown on the enrollment screen when storing DM token and device ID fails.">
+    Oops!  The system failed to store the device token and ID.
   </message>
   <message name="IDS_ENTERPRISE_ENROLLMENT_AUTH_FATAL_ERROR" desc="Error message to show when there is an unrecoverable error while authenticating with GAIA.">
     Oops!  Something went wrong when trying to authenticate you.  Please double-check your sign-in credentials and try again.
@@ -5462,15 +5921,66 @@ All users must sign out to continue.
     Failed to submit NDEF:
   </message>
 
-  <!-- About the security section in the settings page -->
-  <message name="IDS_OPTIONS_SECURITY_SECTION_TITLE" desc="The title of the security section in the settings page.">
-    Security
+  <!-- About consumer management service -->
+  <message name="IDS_LOGIN_CONSUMER_MANAGEMENT_ENROLLMENT" desc="A message to show at the sign-in page when consumer management enrollment is in progress.">
+    The owner must sign in to complete enrollment with Google Device Manager.
   </message>
-  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLL_DESCRIPTION" desc="Description of the consumer management enroll button in the settings page.">
+  <message name="IDS_OPTIONS_DEVICE_CONTROL_SECTION_TITLE" desc="The title of the device control section in the settings page.">
+    Device control
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_DESCRIPTION" desc="Description of the consumer management service in the settings page.">
     Let Google help you remotely lock, erase, and locate your device.
   </message>
-  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLL_BUTTON" desc="The text of the consumer management enroll button in the settings page.">
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLL_BUTTON" desc="The text of the consumer management button in the settings page when the device is not enrolled.">
     Enroll
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_ENROLLING_BUTTON" desc="The text of the consumer management button in the settings page when enrollment is in progress.">
+    Enrolling...
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_UNENROLL_BUTTON" desc="The text of the consumer management button in the settings page when the device is enrolled.">
+    Unenroll
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_UNENROLLING_BUTTON" desc="The text of the consumer management button in the settings page when unenrollment is in progress.">
+    Unenrolling...
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY" desc="The title of the consumer management overlay in the settings page used for both enrollment and unenrollment.">
+    Consumer management
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_ENROLL_TITLE" desc="The title of the consumer management overlay in the settings page for enrollment.">
+    Enroll Chromebook
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_ENROLL_MESSAGE" desc="The description of the consumer management overlay in the settings page for enrollment.">
+    You are about to enroll this Chromebook with Google to enable the ability to remotely locate, wipe, and lock the device. This will require a reboot. Do you wish to continue?
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_ENROLL" desc="The button text of the consumer management overlay in the settings page for enrollment.">
+    Enroll and restart
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_UNENROLL_TITLE" desc="The title of the consumer management overlay in the settings page for unenrollment.">
+    Unenroll Chromebook
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_UNENROLL_MESSAGE" desc="The description of the consumer management overlay in the settings page for unenrollment.">
+    You are about to unenroll this Chromebook with Google to disable the ability to remotely locate, wipe, and lock the device. This will require a reboot. Do you wish to continue?
+  </message>
+  <message name="IDS_OPTIONS_CONSUMER_MANAGEMENT_OVERLAY_UNENROLL" desc="The button text of the consumer management overlay in the settings page for unenrollment.">
+    Unenroll and restart
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_NOTIFICATION_TITLE" desc="The title of the desktop notification shown when consumer management enrollment is completed">
+    Enrolled
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_NOTIFICATION_BODY" desc="The body of the desktop notification shown when consumer management enrollment is completed">
+    You can now lock this device remotely anytime on Chrome Manager.
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_FAILURE_NOTIFICATION_TITLE" desc="The title of the desktop notification shown when consumer management enrollment fails">
+    Unable to enroll
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_ENROLLMENT_FAILURE_NOTIFICATION_BODY" desc="The body of the desktop notification shown when consumer management enrollment fails">
+    Enrollment in Google Device Manager was not successful.
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_NOTIFICATION_MODIFY_SETTINGS_BUTTON" desc="The label of the modify settings button on the desktop notification shown when consumer management enrollment or unenrollment is completed">
+    Modify settings
+  </message>
+  <message name="IDS_CONSUMER_MANAGEMENT_NOTIFICATION_TRY_AGAIN_BUTTON" desc="The label of the modify settings button on the desktop notification shown when consumer management enrollment or unenrollment fails">
+    Try again
   </message>
 
   <!-- Set time/date UI display strings -->

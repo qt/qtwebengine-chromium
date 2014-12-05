@@ -25,13 +25,13 @@
 #include "core/css/CSSRule.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleDeclaration;
 class StyleRuleCSSStyleDeclaration;
 class StyleRule;
 
-class CSSStyleRule FINAL : public CSSRule {
+class CSSStyleRule final : public CSSRule {
 public:
     static PassRefPtrWillBeRawPtr<CSSStyleRule> create(StyleRule* rule, CSSStyleSheet* sheet)
     {
@@ -40,9 +40,9 @@ public:
 
     virtual ~CSSStyleRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return STYLE_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual CSSRule::Type type() const override { return STYLE_RULE; }
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     String selectorText() const;
     void setSelectorText(const String&);
@@ -52,7 +52,7 @@ public:
     // FIXME: Not CSSOM. Remove.
     StyleRule* styleRule() const { return m_styleRule.get(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CSSStyleRule(StyleRule*, CSSStyleSheet*);
@@ -65,6 +65,6 @@ private:
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSStyleRule, STYLE_RULE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSStyleRule_h

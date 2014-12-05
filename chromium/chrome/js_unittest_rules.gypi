@@ -26,8 +26,6 @@
 # Note that when you run your TestSuite, you'll need to call
 # chrome::RegisterPathProvider(). These path providers are required by
 # src/chrome/test/base/v8_unit_test.cc to setup and run the tests.
-#
-# See src/chrome/test/base/run_all_remoting_unittests.cc for an example.
 
 {
     'dependencies': [
@@ -56,6 +54,15 @@
       'rule_name': 'js2unit',
       'extension': 'gtestjs',
       'msvs_external_rule': 1,
+      'variables': {
+        'conditions': [
+          ['v8_use_external_startup_data==1', {
+            'external_v8': 'y',
+          }, {
+            'external_v8': 'n',
+          }],
+        ],
+      },
       'inputs': [
         '<(gypv8sh)',
         '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
@@ -71,6 +78,7 @@
       'action': [
         'python',
         '<@(_inputs)',
+        '--external', '<(external_v8)',
         'unit',
         '<(RULE_INPUT_PATH)',
         'chrome/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).<(_extension)',

@@ -27,18 +27,19 @@
 #define WebGLObject_h
 
 #include "platform/graphics/GraphicsTypes3D.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
 class WebGraphicsContext3D;
 }
 
-namespace WebCore {
+namespace blink {
 
 class WebGLContextGroup;
 class WebGLRenderingContextBase;
 
-class WebGLObject : public RefCounted<WebGLObject> {
+class WebGLObject : public RefCountedWillBeGarbageCollectedFinalized<WebGLObject> {
 public:
     virtual ~WebGLObject();
 
@@ -60,8 +61,10 @@ public:
     // True if this object belongs to the group or context.
     virtual bool validate(const WebGLContextGroup*, const WebGLRenderingContextBase*) const = 0;
 
+    virtual void trace(Visitor*) { }
+
 protected:
-    WebGLObject(WebGLRenderingContextBase*);
+    explicit WebGLObject(WebGLRenderingContextBase*);
 
     // setObject should be only called once right after creating a WebGLObject.
     void setObject(Platform3DObject);
@@ -71,7 +74,8 @@ protected:
 
     virtual bool hasGroupOrContext() const = 0;
 
-    virtual void detach();
+    void detach();
+    void detachAndDeleteObject();
 
     virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const = 0;
 
@@ -81,6 +85,6 @@ private:
     bool m_deleted;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLObject_h

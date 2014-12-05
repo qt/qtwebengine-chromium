@@ -34,19 +34,17 @@
 #include "platform/Length.h"
 #include "wtf/Assertions.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 static const float defaultMinimumScale = 0.25f;
 static const float defaultMaximumScale = 5.0f;
 
 PageScaleConstraintsSet::PageScaleConstraintsSet()
-    : m_lastContentsWidth(0)
+    : m_finalConstraints(1, 1, 1)
+    , m_lastContentsWidth(0)
     , m_needsReset(false)
     , m_constraintsDirty(false)
 {
-    m_finalConstraints = defaultConstraints();
 }
 
 PageScaleConstraints PageScaleConstraintsSet::defaultConstraints() const
@@ -144,21 +142,30 @@ void PageScaleConstraintsSet::didChangeViewSize(const IntSize& size)
     m_constraintsDirty = true;
 }
 
-IntSize PageScaleConstraintsSet::mainFrameSize(const IntSize& contentsSize) const
+IntSize PageScaleConstraintsSet::mainFrameSize(int contentWidthIncludingScrollbar) const
 {
     // If there's no explicit minimum scale factor set, size the frame so that its width == content width
     // so there's no horizontal scrolling at the minimum scale.
     if (m_pageDefinedConstraints.minimumScale < finalConstraints().minimumScale
         && m_userAgentConstraints.minimumScale < finalConstraints().minimumScale
-        && contentsSize.width()
-        && m_viewSize.width())
-        return IntSize(contentsSize.width(), computeHeightByAspectRatio(contentsSize.width(), m_viewSize));
+        && contentWidthIncludingScrollbar
+        && m_viewSize.width()) {
+
+        // Special case where the contents are exactly as wide as the viewport to prevent an off-by-one due
+        // to floating point imprecision in the aspect ratio height calculation.
+        if (contentWidthIncludingScrollbar == m_viewSize.width())
+            return m_viewSize;
+
+        return expandedIntSize(FloatSize(
+            contentWidthIncludingScrollbar,
+            computeHeightByAspectRatio(contentWidthIncludingScrollbar, m_viewSize)));
+    }
 
     // If there is a minimum scale (or there's no content size yet), the frame size should match the viewport
     // size at minimum scale, since the viewport must always be contained by the frame.
-    IntSize frameSize(m_viewSize);
+    FloatSize frameSize(m_viewSize);
     frameSize.scale(1 / finalConstraints().minimumScale);
-    return frameSize;
+    return expandedIntSize(frameSize);
 }
 
 void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportDescription& description, int layoutFallbackWidth, float deviceScaleFactor, bool supportTargetDensityDPI, bool wideViewportQuirkEnabled, bool useWideViewport, bool loadWithOverviewMode, bool nonUserScalableQuirkEnabled)
@@ -234,4 +241,4 @@ void PageScaleConstraintsSet::adjustForAndroidWebViewQuirks(const ViewportDescri
     m_pageDefinedConstraints.layoutSize.setHeight(adjustedLayoutSizeHeight);
 }
 
-} // namespace WebCore
+} // namespace blink

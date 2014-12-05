@@ -33,22 +33,19 @@
 #include "wtf/text/WTFString.h"
 
 namespace blink {
-class WebLayer;
 class WebScrollbarLayer;
 }
 
-namespace WebCore {
+namespace blink {
 
 typedef unsigned MainThreadScrollingReasons;
 
-class Document;
 class LocalFrame;
 class FrameView;
 class GraphicsLayer;
 class Page;
 class Region;
 class ScrollableArea;
-class ViewportConstraints;
 
 class ScrollingCoordinator {
 public:
@@ -87,6 +84,7 @@ public:
         HasSlowRepaintObjects = 1 << 0,
         HasViewportConstrainedObjectsWithoutSupportingFixedLayers = 1 << 1,
         HasNonLayerViewportConstrainedObjects = 1 << 2,
+        ThreadedScrollingDisabled = 1 << 3
     };
 
     MainThreadScrollingReasons mainThreadScrollingReasons() const;
@@ -120,6 +118,7 @@ protected:
     explicit ScrollingCoordinator(Page*);
 
     bool isForMainFrame(ScrollableArea*) const;
+    bool isForViewport(ScrollableArea*) const;
 
     Page* m_page;
 
@@ -135,7 +134,6 @@ private:
 
     bool hasVisibleSlowRepaintViewportConstrainedObjects(FrameView*) const;
 
-    bool touchHitTestingEnabled() const;
     void setShouldHandleScrollGestureOnMainThreadRegion(const Region&);
     void setTouchEventTargetRects(LayerHitTestRects&);
     void computeTouchEventTargetRects(LayerHitTestRects&);
@@ -146,7 +144,7 @@ private:
 
     bool frameViewIsDirty() const;
 
-    typedef HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer> > ScrollbarMap;
+    using ScrollbarMap = HashMap<ScrollableArea*, OwnPtr<blink::WebScrollbarLayer>>;
     ScrollbarMap m_horizontalScrollbars;
     ScrollbarMap m_verticalScrollbars;
     HashSet<const RenderLayer*> m_layersWithTouchRects;
@@ -156,6 +154,6 @@ private:
     MainThreadScrollingReasons m_lastMainThreadScrollingReasons;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScrollingCoordinator_h

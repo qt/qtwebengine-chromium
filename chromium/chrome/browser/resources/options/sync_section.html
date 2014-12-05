@@ -27,23 +27,23 @@
 
     <div id="sync-status" class="settings-row" hidden>
       <span id="sync-status-text"></span>
-      <button id="sync-action-link" class="link-button"></button>
+      <a is="action-link" id="sync-action-link"></a>
     </div>
 
 <if expr="chromeos">
-    <div class="checkbox">
-      <span class="controlled-setting-with-label">
-        <input id="enable-screen-lock" type="checkbox"
+    <div class="checkbox controlled-setting-with-label"
+        public-account-visibility="hidden">
+      <label>
+        <input type="checkbox"
             metric="Options_ScreenLock"
             pref="settings.enable_screen_lock">
-        <span>
-          <label for="enable-screen-lock" i18n-content="enableScreenlock">
-          </label>
-          <span class="controlled-setting-indicator"
-              pref="settings.enable_screen_lock">
-          </span>
-        </span>
-      </span>
+       <span>
+         <span i18n-content="enableScreenlock"></span>
+         <span class="controlled-setting-indicator"
+            i18n-values="textshared:screenLockShared"
+            pref="settings.enable_screen_lock"></span>
+       </span>
+      </label>
     </div>
   </div>
 </if>  <!-- chromeos -->
@@ -58,6 +58,7 @@
     </button>
 <if expr="chromeos">
     <button id="manage-accounts-button"
+        public-account-visibility="hidden"
         i18n-content="manageAccountsButtonTitle">
     </button>
 </if>  <!-- chromeos -->

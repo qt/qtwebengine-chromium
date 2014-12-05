@@ -25,14 +25,12 @@
 #include "config.h"
 #include "platform/graphics/filters/FEOffset.h"
 
-#include "SkFlattenableBuffers.h"
 #include "SkOffsetImageFilter.h"
-#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
-#include "third_party/skia/include/core/SkDevice.h"
 
-namespace WebCore {
+namespace blink {
 
 FEOffset::FEOffset(Filter* filter, float dx, float dy)
     : FilterEffect(filter)
@@ -76,22 +74,6 @@ FloatRect FEOffset::mapRect(const FloatRect& rect, bool forward)
     return result;
 }
 
-void FEOffset::applySoftware()
-{
-    FilterEffect* in = inputEffect(0);
-
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    setIsAlphaImage(in->isAlphaImage());
-
-    FloatRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
-    Filter* filter = this->filter();
-    drawingRegion.move(filter->applyHorizontalScale(m_dx), filter->applyVerticalScale(m_dy));
-    resultImage->context()->drawImageBuffer(in->asImageBuffer(), drawingRegion);
-}
-
 PassRefPtr<SkImageFilter> FEOffset::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
@@ -110,4 +92,4 @@ TextStream& FEOffset::externalRepresentation(TextStream& ts, int indent) const
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

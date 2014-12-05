@@ -12,9 +12,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/waitable_event.h"
 #include "media/base/android/media_resource_getter.h"
+#include "media/base/android/media_url_interceptor.h"
+#include "net/base/auth.h"
 #include "net/cookies/canonical_cookie.h"
 
-namespace fileapi {
+namespace storage {
 class FileSystemContext;
 }
 
@@ -35,26 +37,42 @@ class MediaResourceGetterImpl : public media::MediaResourceGetter {
   // |render_process_id| are passed to retrieve the CookieStore.
   // |file_system_context| are used to get the platform path.
   MediaResourceGetterImpl(BrowserContext* browser_context,
-                          fileapi::FileSystemContext* file_system_context,
-                          int render_process_id, int render_frame_id);
+                          storage::FileSystemContext* file_system_context,
+                          int render_process_id,
+                          int render_frame_id);
   virtual ~MediaResourceGetterImpl();
 
   // media::MediaResourceGetter implementation.
   // Must be called on the UI thread.
-  virtual void GetCookies(const GURL& url,
-                          const GURL& first_party_for_cookies,
-                          const GetCookieCB& callback) OVERRIDE;
+  virtual void GetAuthCredentials(
+      const GURL& url,
+      const GetAuthCredentialsCB& callback) override;
+  virtual void GetCookies(
+      const GURL& url,
+      const GURL& first_party_for_cookies,
+      const GetCookieCB& callback) override;
   virtual void GetPlatformPathFromURL(
       const GURL& url,
-      const GetPlatformPathCB& callback) OVERRIDE;
+      const GetPlatformPathCB& callback) override;
   virtual void ExtractMediaMetadata(
-      const std::string& url, const std::string& cookies,
+      const std::string& url,
+      const std::string& cookies,
       const std::string& user_agent,
-      const ExtractMediaMetadataCB& callback) OVERRIDE;
+      const ExtractMediaMetadataCB& callback) override;
+  virtual void ExtractMediaMetadata(
+      const int fd,
+      const int64 offset,
+      const int64 size,
+      const ExtractMediaMetadataCB& callback) override;
 
   static bool RegisterMediaResourceGetter(JNIEnv* env);
 
  private:
+  // Called when GetAuthCredentials() finishes.
+  void GetAuthCredentialsCallback(
+      const GetAuthCredentialsCB& callback,
+      const net::AuthCredentials& credentials);
+
   // Called when GetCookies() finishes.
   void GetCookiesCallback(
       const GetCookieCB& callback, const std::string& cookies);
@@ -67,7 +85,7 @@ class MediaResourceGetterImpl : public media::MediaResourceGetter {
   BrowserContext* browser_context_;
 
   // FileSystemContext to be used on FILE thread.
-  fileapi::FileSystemContext* file_system_context_;
+  storage::FileSystemContext* file_system_context_;
 
   // Render process id, used to check whether the process can access cookies.
   int render_process_id_;

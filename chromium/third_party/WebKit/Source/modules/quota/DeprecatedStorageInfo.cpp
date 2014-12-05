@@ -32,7 +32,6 @@
 
 #include "modules/quota/DeprecatedStorageInfo.h"
 
-#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/quota/DeprecatedStorageQuota.h"
@@ -40,18 +39,13 @@
 #include "modules/quota/StorageQuotaCallback.h"
 #include "modules/quota/StorageUsageCallback.h"
 
-namespace WebCore {
+namespace blink {
 
 DeprecatedStorageInfo::DeprecatedStorageInfo()
 {
-    ScriptWrappable::init(this);
 }
 
-DeprecatedStorageInfo::~DeprecatedStorageInfo()
-{
-}
-
-void DeprecatedStorageInfo::queryUsageAndQuota(ExecutionContext* executionContext, int storageType, PassOwnPtr<StorageUsageCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+void DeprecatedStorageInfo::queryUsageAndQuota(ExecutionContext* executionContext, int storageType, StorageUsageCallback* successCallback, StorageErrorCallback* errorCallback)
 {
     // Dispatching the request to DeprecatedStorageQuota, as this interface is deprecated in favor of DeprecatedStorageQuota.
     DeprecatedStorageQuota* storageQuota = getStorageQuota(storageType);
@@ -63,7 +57,7 @@ void DeprecatedStorageInfo::queryUsageAndQuota(ExecutionContext* executionContex
     storageQuota->queryUsageAndQuota(executionContext, successCallback, errorCallback);
 }
 
-void DeprecatedStorageInfo::requestQuota(ExecutionContext* executionContext, int storageType, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+void DeprecatedStorageInfo::requestQuota(ExecutionContext* executionContext, int storageType, unsigned long long newQuotaInBytes, StorageQuotaCallback* successCallback, StorageErrorCallback* errorCallback)
 {
     // Dispatching the request to DeprecatedStorageQuota, as this interface is deprecated in favor of DeprecatedStorageQuota.
     DeprecatedStorageQuota* storageQuota = getStorageQuota(storageType);
@@ -96,4 +90,4 @@ void DeprecatedStorageInfo::trace(Visitor* visitor)
     visitor->trace(m_persistentStorage);
 }
 
-} // namespace WebCore
+} // namespace blink

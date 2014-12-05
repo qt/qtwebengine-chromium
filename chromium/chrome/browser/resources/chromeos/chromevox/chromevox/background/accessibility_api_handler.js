@@ -5,7 +5,6 @@
 /**
  * @fileoverview Accesses Chrome's accessibility extension API and gives
  * spoken feedback for events that happen in the "Chrome of Chrome".
- *
  */
 
 goog.provide('cvox.AccessibilityApiHandler');
@@ -16,6 +15,7 @@ goog.require('cvox.BrailleInterface');
 goog.require('cvox.BrailleUtil');
 goog.require('cvox.ChromeVoxEditableTextBase');
 goog.require('cvox.NavBraille');
+goog.require('cvox.QueueMode');
 
 
 /**
@@ -107,9 +107,9 @@ cvox.AccessibilityApiHandler.prototype.editableTextName = '';
 
 /**
  * The queue mode for the next focus event.
- * @type {number}
+ * @type {cvox.QueueMode}
  */
-cvox.AccessibilityApiHandler.prototype.nextQueueMode = 0;
+cvox.AccessibilityApiHandler.prototype.nextQueueMode = cvox.QueueMode.FLUSH;
 
 /**
  * The timeout id for the pending text changed event - the return
@@ -163,6 +163,12 @@ cvox.AccessibilityApiHandler.prototype.setWebContext = function() {
   this.lastContext = '--internal-web--';
   this.editableTextHandler = null;
   this.editableTextName = '';
+
+  if (chrome.accessibilityPrivate.setFocusRing &&
+      cvox.ChromeVox.isChromeOS) {
+    // Clear the focus ring.
+    chrome.accessibilityPrivate.setFocusRing([]);
+  }
 };
 
 /**
@@ -175,24 +181,6 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
 
   var accessibility = chrome.accessibilityPrivate;
 
-  chrome.tabs.onCreated.addListener(goog.bind(function(tab) {
-    if (!cvox.ChromeVox.isActive) {
-      return;
-    }
-    this.tts.speak(msg('chrome_tab_created'),
-                   0,
-                   cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
-    this.braille.write(cvox.NavBraille.fromText(msg('chrome_tab_created')));
-    this.earcons.playEarcon(cvox.AbstractEarcons.OBJECT_OPEN);
-  }, this));
-
-  chrome.tabs.onRemoved.addListener(goog.bind(function(tab) {
-    if (!cvox.ChromeVox.isActive) {
-      return;
-    }
-    this.earcons.playEarcon(cvox.AbstractEarcons.OBJECT_CLOSE);
-  }, this));
-
   chrome.tabs.onActivated.addListener(goog.bind(function(activeInfo) {
     if (!cvox.ChromeVox.isActive) {
       return;
@@ -201,52 +189,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
       if (tab.status == 'loading') {
         return;
       }
-      var title = tab.title ? tab.title : tab.url;
-      this.tts.speak(msg('chrome_tab_selected',
-                         [title]),
-                     cvox.AbstractTts.QUEUE_MODE_FLUSH,
-                     cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
-      this.braille.write(
-          cvox.NavBraille.fromText(msg('chrome_tab_selected', [title])));
-      this.earcons.playEarcon(cvox.AbstractEarcons.OBJECT_SELECT);
       this.queueAlertsForActiveTab();
-    }, this));
-  }, this));
-
-  chrome.tabs.onUpdated.addListener(goog.bind(function(tabId, selectInfo) {
-    if (!cvox.ChromeVox.isActive) {
-      return;
-    }
-    chrome.tabs.get(tabId, goog.bind(function(tab) {
-      if (!tab.active) {
-        return;
-      }
-      if (tab.status == 'loading') {
-        this.earcons.playEarcon(cvox.AbstractEarcons.BUSY_PROGRESS_LOOP);
-      } else {
-        this.earcons.playEarcon(cvox.AbstractEarcons.TASK_SUCCESS);
-      }
-    }, this));
-  }, this));
-
-  chrome.windows.onFocusChanged.addListener(goog.bind(function(windowId) {
-    if (!cvox.ChromeVox.isActive) {
-      return;
-    }
-    if (windowId == chrome.windows.WINDOW_ID_NONE) {
-      return;
-    }
-    chrome.windows.get(windowId, goog.bind(function(window) {
-      chrome.tabs.getSelected(windowId, goog.bind(function(tab) {
-        var msgId = window.incognito ? 'chrome_incognito_window_selected' :
-          'chrome_normal_window_selected';
-        var title = tab.title ? tab.title : tab.url;
-        this.tts.speak(msg(msgId, [title]),
-                       cvox.AbstractTts.QUEUE_MODE_FLUSH,
-                       cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
-        this.braille.write(cvox.NavBraille.fromText(msg(msgId, [title])));
-        this.earcons.playEarcon(cvox.AbstractEarcons.OBJECT_SELECT);
-      }, this));
     }, this));
   }, this));
 
@@ -256,12 +199,12 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
       return;
     }
     this.tts.speak(win.name,
-                   cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                   cvox.QueueMode.FLUSH,
                    cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
     this.braille.write(cvox.NavBraille.fromText(win.name));
     // Queue the next utterance because a window opening is always followed
     // by a focus event.
-    this.nextQueueMode = 1;
+    this.nextQueueMode = cvox.QueueMode.QUEUE;
     this.earcons.playEarcon(cvox.AbstractEarcons.OBJECT_OPEN);
     this.queueAlertsForActiveTab();
   }, this));
@@ -281,7 +224,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
       return;
     }
     this.tts.speak(msg('chrome_menu_opened', [menu.name]),
-                   cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                   cvox.QueueMode.FLUSH,
                    cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
     this.braille.write(
         cvox.NavBraille.fromText(msg('chrome_menu_opened', [menu.name])));
@@ -339,7 +282,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
             this.earcons.playEarcon(cvox.AbstractEarcons.TASK_SUCCESS);
             this.tts.speak(
                 msg('chrome_brightness_changed', [brightness.brightness]),
-                cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                cvox.QueueMode.FLUSH,
                 cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
             this.braille.write(cvox.NavBraille.fromText(
                 msg('chrome_brightness_changed', [brightness.brightness])));
@@ -354,7 +297,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
         // Speak about system update when it's ready, otherwise speak nothing.
         if (status.state == 'NeedRestart') {
           this.tts.speak(msg('chrome_system_need_restart'),
-                         cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                         cvox.QueueMode.FLUSH,
                          cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
           this.braille.write(
               cvox.NavBraille.fromText(msg('chrome_system_need_restart')));
@@ -382,7 +325,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
 
     var description = this.describe(ctl, true);
     this.tts.speak(description.utterance,
-                   cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                   cvox.QueueMode.FLUSH,
                    description.ttsProps);
     description.braille.write();
     if (description.earcon) {
@@ -404,7 +347,7 @@ cvox.AccessibilityApiHandler.prototype.addEventListeners_ = function() {
 
       var description = this.describe(ctl, false);
       this.tts.speak(description.utterance,
-                     cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                     cvox.QueueMode.FLUSH,
                      description.ttsProps);
       description.braille.write();
       if (description.earcon) {
@@ -465,6 +408,12 @@ cvox.AccessibilityApiHandler.prototype.onControlFocused = function(ctl) {
     return;
   }
 
+  if (ctl.bounds &&
+      chrome.accessibilityPrivate.setFocusRing &&
+      cvox.ChromeVox.isChromeOS) {
+    chrome.accessibilityPrivate.setFocusRing([ctl.bounds]);
+  }
+
   // Call this first because it may clear this.editableTextHandler.
   var description = this.describe(ctl, false);
 
@@ -491,7 +440,7 @@ cvox.AccessibilityApiHandler.prototype.onControlFocused = function(ctl) {
                  this.nextQueueMode,
                  description.ttsProps);
   description.braille.write();
-  this.nextQueueMode = 0;
+  this.nextQueueMode = cvox.QueueMode.FLUSH;
   if (description.earcon) {
     this.earcons.playEarcon(description.earcon);
   }
@@ -528,7 +477,7 @@ cvox.AccessibilityApiHandler.prototype.onTtsIdle = function() {
   var utterance = this.idleSpeechQueue_.shift();
   var msg = goog.bind(cvox.ChromeVox.msgs.getMsg, cvox.ChromeVox.msgs);
   this.tts.speak(utterance,
-                 cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                 cvox.QueueMode.FLUSH,
                  cvox.AbstractTts.PERSONALITY_ANNOUNCEMENT);
 };
 
@@ -631,6 +580,9 @@ cvox.AccessibilityApiHandler.prototype.describe = function(control, isSelect) {
       earcon = cvox.AbstractEarcons.BUTTON;
       s += msg('describe_button', [name]);
       braille.roleMsg = 'tag_button';
+      break;
+    case 'statictext':
+      s += control.name;
       break;
     case 'combobox':
     case 'listbox':

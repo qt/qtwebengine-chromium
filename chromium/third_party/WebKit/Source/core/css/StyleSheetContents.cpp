@@ -21,12 +21,12 @@
 #include "config.h"
 #include "core/css/StyleSheetContents.h"
 
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaList.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleRuleImport.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/Node.h"
 #include "core/dom/StyleEngine.h"
@@ -36,7 +36,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Deque.h"
 
-namespace WebCore {
+namespace blink {
 
 // Rough size estimate for the memory cache.
 unsigned StyleSheetContents::estimatedSizeInBytes() const
@@ -318,7 +318,7 @@ const AtomicString& StyleSheetContents::determineNamespace(const AtomicString& p
 
 void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cachedStyleSheet, const SecurityOrigin* securityOrigin)
 {
-    TRACE_EVENT0("webkit", "StyleSheetContents::parseAuthorStyleSheet");
+    TRACE_EVENT0("blink", "StyleSheetContents::parseAuthorStyleSheet");
 
     bool quirksMode = isQuirksModeBehavior(m_parserContext.mode());
 
@@ -327,8 +327,7 @@ void StyleSheetContents::parseAuthorStyleSheet(const CSSStyleSheetResource* cach
     String sheetText = cachedStyleSheet->sheetText(enforceMIMEType, &hasValidMIMEType);
 
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
-    BisonCSSParser p(context);
-    p.parseSheet(this, sheetText, TextPosition::minimumPosition(), 0, true);
+    CSSParser::parseSheet(context, this, sheetText, TextPosition::minimumPosition(), 0, true);
 
     // If we're loading a stylesheet cross-origin, and the MIME type is not standard, require the CSS
     // to at least start with a syntactically valid CSS rule.
@@ -350,8 +349,7 @@ bool StyleSheetContents::parseString(const String& sheetText)
 bool StyleSheetContents::parseStringAtPosition(const String& sheetText, const TextPosition& startPosition, bool createdByParser)
 {
     CSSParserContext context(parserContext(), UseCounter::getFrom(this));
-    BisonCSSParser p(context);
-    p.parseSheet(this, sheetText, startPosition, 0, createdByParser);
+    CSSParser::parseSheet(context, this, sheetText, startPosition, 0, createdByParser);
 
     return true;
 }
@@ -391,8 +389,8 @@ void StyleSheetContents::checkLoaded()
         return;
     }
 
-    StyleSheetContents* root = rootStyleSheet();
-    if (root->m_loadingClients.isEmpty())
+    ASSERT(this == rootStyleSheet());
+    if (m_loadingClients.isEmpty())
         return;
 
     // Avoid |CSSSStyleSheet| and |ownerNode| being deleted by scripts that run via
@@ -431,8 +429,8 @@ void StyleSheetContents::notifyLoadedSheet(const CSSStyleSheetResource* sheet)
 void StyleSheetContents::startLoadingDynamicSheet()
 {
     StyleSheetContents* root = rootStyleSheet();
-    for (ClientsIterator it = root->m_loadingClients.begin(); it != root->m_loadingClients.end(); ++it)
-        (*it)->startLoadingDynamicSheet();
+    for (const auto& client : root->m_loadingClients)
+        client->startLoadingDynamicSheet();
     // Copy the completed clients to a vector for iteration.
     // startLoadingDynamicSheet will move the style sheet from the
     // completed state to the loading state which modifies the set of
@@ -617,8 +615,8 @@ RuleSet& StyleSheetContents::ensureRuleSet(const MediaQueryEvaluator& medium, Ad
 
 static void clearResolvers(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients)
 {
-    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >::iterator it = clients.begin(); it != clients.end(); ++it) {
-        if (Document* document = (*it)->ownerDocument())
+    for (const auto& sheet : clients) {
+        if (Document* document = sheet->ownerDocument())
             document->styleEngine()->clearResolver();
     }
 }
@@ -643,8 +641,8 @@ void StyleSheetContents::clearRuleSet()
 
 static void removeFontFaceRules(WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >& clients, const StyleRuleFontFace* fontFaceRule)
 {
-    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >::iterator it = clients.begin(); it != clients.end(); ++it) {
-        if (Node* ownerNode = (*it)->ownerNode())
+    for (const auto& sheet : clients) {
+        if (Node* ownerNode = sheet->ownerNode())
             ownerNode->document().styleEngine()->removeFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<const StyleRuleFontFace> >(1, fontFaceRule));
     }
 }
@@ -685,12 +683,14 @@ void StyleSheetContents::findFontFaceRules(WillBeHeapVector<RawPtrWillBeMember<c
 
 void StyleSheetContents::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_ownerRule);
     visitor->trace(m_importRules);
     visitor->trace(m_childRules);
     visitor->trace(m_loadingClients);
     visitor->trace(m_completedClients);
     visitor->trace(m_ruleSet);
+#endif
 }
 
 }

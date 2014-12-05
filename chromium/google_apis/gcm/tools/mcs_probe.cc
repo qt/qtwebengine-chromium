@@ -22,6 +22,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/worker_pool.h"
 #include "base/time/default_clock.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "google_apis/gcm/base/fake_encryptor.h"
 #include "google_apis/gcm/base/mcs_message.h"
@@ -42,8 +43,8 @@
 #include "net/http/transport_security_state.h"
 #include "net/socket/client_socket_factory.h"
 #include "net/socket/ssl_client_socket.h"
-#include "net/ssl/default_server_bound_cert_store.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "net/url_request/url_request_test_util.h"
 
 #if defined(OS_MACOSX)
@@ -139,7 +140,7 @@ class MyTestURLRequestContext : public net::TestURLRequestContext {
     Init();
   }
 
-  virtual ~MyTestURLRequestContext() {}
+  ~MyTestURLRequestContext() override {}
 };
 
 class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
@@ -148,7 +149,7 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop_proxy)
       : TestURLRequestContextGetter(io_message_loop_proxy) {}
 
-  virtual net::TestURLRequestContext* GetURLRequestContext() OVERRIDE {
+  net::TestURLRequestContext* GetURLRequestContext() override {
     // Construct |context_| lazily so it gets constructed on the right
     // thread (the IO thread).
     if (!context_)
@@ -157,38 +158,29 @@ class MyTestURLRequestContextGetter : public net::TestURLRequestContextGetter {
   }
 
  private:
-  virtual ~MyTestURLRequestContextGetter() {}
+  ~MyTestURLRequestContextGetter() override {}
 
   scoped_ptr<MyTestURLRequestContext> context_;
-};
-
-// A net log that logs all events by default.
-class MyTestNetLog : public net::NetLog {
- public:
-  MyTestNetLog() {
-    SetBaseLogLevel(LOG_ALL);
-  }
-  virtual ~MyTestNetLog() {}
 };
 
 // A cert verifier that access all certificates.
 class MyTestCertVerifier : public net::CertVerifier {
  public:
   MyTestCertVerifier() {}
-  virtual ~MyTestCertVerifier() {}
+  ~MyTestCertVerifier() override {}
 
-  virtual int Verify(net::X509Certificate* cert,
-                     const std::string& hostname,
-                     int flags,
-                     net::CRLSet* crl_set,
-                     net::CertVerifyResult* verify_result,
-                     const net::CompletionCallback& callback,
-                     RequestHandle* out_req,
-                     const net::BoundNetLog& net_log) OVERRIDE {
+  int Verify(net::X509Certificate* cert,
+             const std::string& hostname,
+             int flags,
+             net::CRLSet* crl_set,
+             net::CertVerifyResult* verify_result,
+             const net::CompletionCallback& callback,
+             RequestHandle* out_req,
+             const net::BoundNetLog& net_log) override {
     return net::OK;
   }
 
-  virtual void CancelRequest(RequestHandle req) OVERRIDE {
+  void CancelRequest(RequestHandle req) override {
     // Do nothing.
   }
 };
@@ -229,12 +221,11 @@ class MCSProbe {
 
   // Network state.
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter_;
-  MyTestNetLog net_log_;
+  net::NetLog net_log_;
   scoped_ptr<net::NetLogLogger> logger_;
-  scoped_ptr<base::Value> net_constants_;
   scoped_ptr<net::HostResolver> host_resolver_;
   scoped_ptr<net::CertVerifier> cert_verifier_;
-  scoped_ptr<net::ServerBoundCertService> system_server_bound_cert_service_;
+  scoped_ptr<net::ChannelIDService> system_channel_id_service_;
   scoped_ptr<net::TransportSecurityState> transport_security_state_;
   scoped_ptr<net::URLSecurityManager> url_security_manager_;
   scoped_ptr<net::HttpAuthHandlerFactory> http_auth_handler_factory_;
@@ -303,6 +294,7 @@ void MCSProbe::Start() {
       new ConnectionFactoryImpl(endpoints,
                                 kDefaultBackoffPolicy,
                                 network_session_,
+                                NULL,
                                 &net_log_,
                                 &recorder_));
   gcm_store_.reset(
@@ -313,7 +305,9 @@ void MCSProbe::Start() {
                                   &clock_,
                                   connection_factory_.get(),
                                   gcm_store_.get(),
-                                  &recorder_));
+                                  &recorder_,
+                                  make_scoped_ptr(new base::Timer(true,
+                                                                  false))));
   run_loop_.reset(new base::RunLoop());
   gcm_store_->Load(base::Bind(&MCSProbe::LoadCallback,
                               base::Unretained(this)));
@@ -363,9 +357,10 @@ void MCSProbe::InitializeNetworkState() {
     log_file = fopen(log_path.value().c_str(), "w");
 #endif
   }
-  net_constants_.reset(net::NetLogLogger::GetConstants());
   if (log_file != NULL) {
-    logger_.reset(new net::NetLogLogger(log_file, *net_constants_));
+    scoped_ptr<base::Value> net_constants(net::NetLogLogger::GetConstants());
+    logger_.reset(new net::NetLogLogger(log_file, *net_constants));
+    logger_->set_log_level(net::NetLog::LOG_ALL_BUT_BYTES);
     logger_->StartObserving(&net_log_);
   }
 
@@ -376,9 +371,9 @@ void MCSProbe::InitializeNetworkState() {
   } else {
     cert_verifier_.reset(net::CertVerifier::CreateDefault());
   }
-  system_server_bound_cert_service_.reset(
-      new net::ServerBoundCertService(
-          new net::DefaultServerBoundCertStore(NULL),
+  system_channel_id_service_.reset(
+      new net::ChannelIDService(
+          new net::DefaultChannelIDStore(NULL),
           base::WorkerPool::GetTaskRunner(true)));
 
   transport_security_state_.reset(new net::TransportSecurityState());
@@ -400,8 +395,7 @@ void MCSProbe::BuildNetworkSession() {
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = host_resolver_.get();
   session_params.cert_verifier = cert_verifier_.get();
-  session_params.server_bound_cert_service =
-      system_server_bound_cert_service_.get();
+  session_params.channel_id_service = system_channel_id_service_.get();
   session_params.transport_security_state = transport_security_state_.get();
   session_params.ssl_config_service = new net::SSLConfigServiceDefaults();
   session_params.http_auth_handler_factory = http_auth_handler_factory_.get();
@@ -431,8 +425,11 @@ void MCSProbe::CheckIn() {
       checkin_proto::ChromeBuildProto::CHANNEL_CANARY);
   chrome_build_proto.set_chrome_version(kChromeVersion);
 
-  CheckinRequest::RequestInfo request_info(
-      0, 0, std::string(), chrome_build_proto);
+  CheckinRequest::RequestInfo request_info(0,
+                                           0,
+                                           std::map<std::string, std::string>(),
+                                           std::string(),
+                                           chrome_build_proto);
 
   checkin_request_.reset(new CheckinRequest(
       GServicesSettings::DefaultCheckinURL(),

@@ -26,10 +26,11 @@
 #ifndef WebLayer_h
 #define WebLayer_h
 
-#include "WebAnimation.h"
 #include "WebBlendMode.h"
 #include "WebColor.h"
 #include "WebCommon.h"
+#include "WebCompositorAnimation.h"
+#include "WebDoublePoint.h"
 #include "WebFloatPoint3D.h"
 #include "WebPoint.h"
 #include "WebRect.h"
@@ -41,12 +42,11 @@ class SkMatrix44;
 class SkImageFilter;
 
 namespace blink {
-class WebAnimationDelegate;
+class WebCompositorAnimationDelegate;
 class WebFilterOperations;
 class WebLayerClient;
 class WebLayerScrollClient;
 struct WebFloatPoint;
-struct WebFloatRect;
 struct WebLayerPositionConstraint;
 
 class WebLayer {
@@ -57,7 +57,7 @@ public:
     virtual int id() const = 0;
 
     // Sets a region of the layer as invalid, i.e. needs to update its content.
-    virtual void invalidateRect(const WebFloatRect&) = 0;
+    virtual void invalidateRect(const WebRect&) = 0;
 
     // Sets the entire layer as invalid, i.e. needs to update its content.
     virtual void invalidate() = 0;
@@ -127,29 +127,22 @@ public:
     // WebFilterOperations object.
     virtual void setFilters(const WebFilterOperations&) = 0;
 
-    // Apply filters to pixels that show through the background of this layer.
-    // Note: These filters are only possible on layers that are drawn directly
-    // to a root render surface with an opaque background. This means if an
-    // ancestor of the background-filtered layer sets certain properties
-    // (opacity, transforms), it may conflict and hide the background filters.
-    virtual void setBackgroundFilters(const WebFilterOperations&) = 0;
-
     // An animation delegate is notified when animations are started and
     // stopped. The WebLayer does not take ownership of the delegate, and it is
     // the responsibility of the client to reset the layer's delegate before
     // deleting the delegate.
-    virtual void setAnimationDelegate(WebAnimationDelegate*) = 0;
+    virtual void setAnimationDelegate(WebCompositorAnimationDelegate*) = 0;
 
 
     // Returns false if the animation cannot be added.
-    // Takes ownership of the WebAnimation object.
-    virtual bool addAnimation(WebAnimation*) = 0;
+    // Takes ownership of the WebCompositorAnimation object.
+    virtual bool addAnimation(WebCompositorAnimation*) = 0;
 
     // Removes all animations with the given id.
     virtual void removeAnimation(int animationId) = 0;
 
     // Removes all animations with the given id targeting the given property.
-    virtual void removeAnimation(int animationId, WebAnimation::TargetProperty) = 0;
+    virtual void removeAnimation(int animationId, WebCompositorAnimation::TargetProperty) = 0;
 
     // Pauses all animations with the given id.
     virtual void pauseAnimation(int animationId, double timeOffset) = 0;
@@ -168,8 +161,8 @@ public:
     virtual void setClipParent(WebLayer*) = 0;
 
     // Scrolling
-    virtual void setScrollPosition(WebPoint) = 0;
-    virtual WebPoint scrollPosition() const = 0;
+    virtual void setScrollPositionDouble(WebDoublePoint) = 0;
+    virtual WebDoublePoint scrollPositionDouble() const = 0;
 
     // To set a WebLayer as scrollable we must specify the corresponding clip layer.
     virtual void setScrollClipLayer(WebLayer*) = 0;

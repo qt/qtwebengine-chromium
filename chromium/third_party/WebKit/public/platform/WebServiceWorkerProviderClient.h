@@ -34,7 +34,9 @@
 #include "public/platform/WebMessagePortChannel.h"
 
 namespace blink {
+
 class WebServiceWorker;
+class WebServiceWorkerRegistration;
 class WebString;
 
 // This class is the interface for embedders to talk to
@@ -43,14 +45,12 @@ class WebServiceWorkerProviderClient {
 public:
     virtual ~WebServiceWorkerProviderClient() { }
 
-    virtual void setActive(WebServiceWorker*) = 0;
     virtual void setController(WebServiceWorker*) = 0;
-    virtual void setInstalling(WebServiceWorker*) = 0;
-    virtual void setWaiting(WebServiceWorker*) = 0;
+    virtual void setReadyRegistration(WebServiceWorkerRegistration*) = 0;
 
     virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) = 0;
 };
 
-};
+} // namespace blink
 
 #endif // WebServiceWorkerProviderClient_h

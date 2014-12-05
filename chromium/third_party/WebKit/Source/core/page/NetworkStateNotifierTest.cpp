@@ -38,7 +38,7 @@
 #include "wtf/Functional.h"
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 class StateObserver : public NetworkStateNotifier::NetworkStateObserver {
 public:
@@ -85,7 +85,7 @@ public:
         : m_thread(thread)
     {
     }
-    virtual void run() OVERRIDE
+    virtual void run() override
     {
         m_thread->exitRunLoop();
     }
@@ -277,4 +277,4 @@ TEST_F(NetworkStateNotifierTest, RemoveAllContexts)
     EXPECT_EQ(observer2.observedType(), blink::ConnectionTypeNone);
 }
 
-} // namespace WebCore
+} // namespace blink

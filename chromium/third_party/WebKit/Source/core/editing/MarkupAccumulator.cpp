@@ -43,7 +43,7 @@
 #include "platform/weborigin/KURL.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -97,7 +97,7 @@ void MarkupAccumulator::appendCharactersReplacingEntities(StringBuilder& result,
         appendCharactersReplacingEntitiesInternal(result, source.characters16() + offset, length, entityMaps, WTF_ARRAY_LENGTH(entityMaps), entityMask);
 }
 
-MarkupAccumulator::MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node> >* nodes, EAbsoluteURLs resolveUrlsMethod, const Range* range, SerializationType serializationType)
+MarkupAccumulator::MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node>>* nodes, EAbsoluteURLs resolveUrlsMethod, const Range* range, SerializationType serializationType)
     : m_nodes(nodes)
     , m_range(range)
     , m_resolveURLsMethod(resolveUrlsMethod)
@@ -111,7 +111,7 @@ MarkupAccumulator::~MarkupAccumulator()
 
 String MarkupAccumulator::serializeNodes(Node& targetNode, EChildrenOnly childrenOnly, Vector<QualifiedName>* tagNamesToSkip)
 {
-    Namespaces* namespaces = 0;
+    Namespaces* namespaces = nullptr;
     Namespaces namespaceHash;
     if (!serializeAsHTMLDocument(targetNode)) {
         // Add pre-bound namespaces for XML fragments.
@@ -125,9 +125,9 @@ String MarkupAccumulator::serializeNodes(Node& targetNode, EChildrenOnly childre
 
 void MarkupAccumulator::serializeNodesWithNamespaces(Node& targetNode, EChildrenOnly childrenOnly, const Namespaces* namespaces, Vector<QualifiedName>* tagNamesToSkip)
 {
-    if (tagNamesToSkip) {
-        for (size_t i = 0; i < tagNamesToSkip->size(); ++i) {
-            if (targetNode.hasTagName(tagNamesToSkip->at(i)))
+    if (tagNamesToSkip && targetNode.isElementNode()) {
+        for (const auto& tag : *tagNamesToSkip) {
+            if (toElement(targetNode).hasTagName(tag))
                 return;
         }
     }
@@ -145,8 +145,8 @@ void MarkupAccumulator::serializeNodesWithNamespaces(Node& targetNode, EChildren
             serializeNodesWithNamespaces(*current, IncludeNode, &namespaceHash, tagNamesToSkip);
     }
 
-    if (!childrenOnly)
-        appendEndTag(targetNode);
+    if (!childrenOnly && targetNode.isElementNode())
+        appendEndTag(toElement(targetNode));
 }
 
 String MarkupAccumulator::resolveURLIfNeeded(const Element& element, const String& urlString) const
@@ -178,16 +178,16 @@ void MarkupAccumulator::appendStartTag(Node& node, Namespaces* namespaces)
         m_nodes->append(&node);
 }
 
-void MarkupAccumulator::appendEndTag(const Node& node)
+void MarkupAccumulator::appendEndTag(const Element& element)
 {
-    appendEndMarkup(m_markup, node);
+    appendEndMarkup(m_markup, element);
 }
 
 size_t MarkupAccumulator::totalLength(const Vector<String>& strings)
 {
     size_t length = 0;
-    for (size_t i = 0; i < strings.size(); ++i)
-        length += strings[i].length();
+    for (const auto& string : strings)
+        length += string.length();
     return length;
 }
 
@@ -290,7 +290,7 @@ EntityMask MarkupAccumulator::entityMaskForText(const Text& text) const
     if (!serializeAsHTMLDocument(text))
         return EntityMaskInPCDATA;
 
-    const QualifiedName* parentName = 0;
+    const QualifiedName* parentName = nullptr;
     if (text.parentElement())
         parentName = &(text.parentElement())->tagQName();
 
@@ -385,12 +385,9 @@ void MarkupAccumulator::appendElement(StringBuilder& result, Element& element, N
 {
     appendOpenTag(result, element, namespaces);
 
-    if (element.hasAttributes()) {
-        AttributeCollection attributes = element.attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it)
-            appendAttribute(result, element, *it, namespaces);
-    }
+    AttributeCollection attributes = element.attributes();
+    for (const auto& attribute : attributes)
+        appendAttribute(result, element, attribute, namespaces);
 
     // Give an opportunity to subclasses to add their own attributes.
     appendCustomAttributes(result, element, namespaces);
@@ -398,15 +395,10 @@ void MarkupAccumulator::appendElement(StringBuilder& result, Element& element, N
     appendCloseTag(result, element);
 }
 
-static String nodeNamePreservingCase(const Element& element)
-{
-    return element.tagQName().toString();
-}
-
 void MarkupAccumulator::appendOpenTag(StringBuilder& result, const Element& element, Namespaces* namespaces)
 {
     result.append('<');
-    result.append(nodeNamePreservingCase(element));
+    result.append(element.tagQName().toString());
     if (!serializeAsHTMLDocument(element) && namespaces && shouldAddNamespaceElement(element, *namespaces))
         appendNamespace(result, element.prefix(), element.namespaceURI(), *namespaces);
 }
@@ -437,35 +429,39 @@ void MarkupAccumulator::appendAttribute(StringBuilder& result, const Element& el
         result.append(' ');
         result.append(attribute.name().localName());
     } else {
-        if (attribute.namespaceURI() == XLinkNames::xlinkNamespaceURI) {
-            if (!attribute.prefix())
-                prefixedName.setPrefix(xlinkAtom);
-        } else if (attribute.namespaceURI() == XMLNames::xmlNamespaceURI) {
-            if (!attribute.prefix())
-                prefixedName.setPrefix(xmlAtom);
-        } else if (attribute.namespaceURI() == XMLNSNames::xmlnsNamespaceURI) {
+        if (attribute.namespaceURI() == XMLNSNames::xmlnsNamespaceURI) {
             if (!attribute.prefix() && attribute.localName() != xmlnsAtom)
                 prefixedName.setPrefix(xmlnsAtom);
             if (namespaces) { // Account for the namespace attribute we're about to append.
                 const AtomicString& lookupKey = (!attribute.prefix()) ? emptyAtom : attribute.localName();
                 namespaces->set(lookupKey, attribute.value());
             }
-        } else if (namespaces && shouldAddNamespaceAttribute(attribute, element)) {
-            if (!attribute.prefix()) {
-                // This behavior is in process of being standardized. See crbug.com/248044 and https://www.w3.org/Bugs/Public/show_bug.cgi?id=24208
-                String prefixPrefix("ns", 2);
-                for (unsigned i = attribute.namespaceURI().impl()->existingHash(); ; ++i) {
-                    AtomicString newPrefix(String(prefixPrefix + String::number(i)));
-                    AtomicString foundURI = namespaces->get(newPrefix);
-                    if (foundURI == attribute.namespaceURI() || foundURI == nullAtom) {
-                        // We already generated a prefix for this namespace.
-                        prefixedName.setPrefix(newPrefix);
-                        break;
+        } else if (attribute.namespaceURI() == XMLNames::xmlNamespaceURI) {
+            if (!attribute.prefix())
+                prefixedName.setPrefix(xmlAtom);
+        } else {
+            if (attribute.namespaceURI() == XLinkNames::xlinkNamespaceURI) {
+                if (!attribute.prefix())
+                    prefixedName.setPrefix(xlinkAtom);
+            }
+
+            if (namespaces && shouldAddNamespaceAttribute(attribute, element)) {
+                if (!prefixedName.prefix()) {
+                    // This behavior is in process of being standardized. See crbug.com/248044 and https://www.w3.org/Bugs/Public/show_bug.cgi?id=24208
+                    String prefixPrefix("ns", 2);
+                    for (unsigned i = attribute.namespaceURI().impl()->existingHash(); ; ++i) {
+                        AtomicString newPrefix(String(prefixPrefix + String::number(i)));
+                        AtomicString foundURI = namespaces->get(newPrefix);
+                        if (foundURI == attribute.namespaceURI() || foundURI == nullAtom) {
+                            // We already generated a prefix for this namespace.
+                            prefixedName.setPrefix(newPrefix);
+                            break;
+                        }
                     }
                 }
+                ASSERT(prefixedName.prefix());
+                appendNamespace(result, prefixedName.prefix(), attribute.namespaceURI(), *namespaces);
             }
-            ASSERT(prefixedName.prefix());
-            appendNamespace(result, prefixedName.prefix(), attribute.namespaceURI(), *namespaces);
         }
         result.append(' ');
         result.append(prefixedName.toString());
@@ -527,13 +523,13 @@ void MarkupAccumulator::appendStartMarkup(StringBuilder& result, Node& node, Nam
 // 2. Elements w/ children never self-close because they use a separate end tag.
 // 3. HTML elements which do not have a "forbidden" end tag will close with a separate end tag.
 // 4. Other elements self-close.
-bool MarkupAccumulator::shouldSelfClose(const Node& node)
+bool MarkupAccumulator::shouldSelfClose(const Element& element)
 {
-    if (serializeAsHTMLDocument(node))
+    if (serializeAsHTMLDocument(element))
         return false;
-    if (node.hasChildren())
+    if (element.hasChildren())
         return false;
-    if (node.isHTMLElement() && !elementCannotHaveEndTag(node))
+    if (element.isHTMLElement() && !elementCannotHaveEndTag(element))
         return false;
     return true;
 }
@@ -550,13 +546,13 @@ bool MarkupAccumulator::elementCannotHaveEndTag(const Node& node)
     return toHTMLElement(node).ieForbidsInsertHTML();
 }
 
-void MarkupAccumulator::appendEndMarkup(StringBuilder& result, const Node& node)
+void MarkupAccumulator::appendEndMarkup(StringBuilder& result, const Element& element)
 {
-    if (!node.isElementNode() || shouldSelfClose(node) || (!node.hasChildren() && elementCannotHaveEndTag(node)))
+    if (shouldSelfClose(element) || (!element.hasChildren() && elementCannotHaveEndTag(element)))
         return;
 
     result.appendLiteral("</");
-    result.append(nodeNamePreservingCase(toElement(node)));
+    result.append(element.tagQName().toString());
     result.append('>');
 }
 

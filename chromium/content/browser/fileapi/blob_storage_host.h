@@ -12,18 +12,18 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
-#include "webkit/common/blob/blob_data.h"
+#include "storage/common/blob/blob_data.h"
 
 class GURL;
 
-namespace webkit_blob {
+namespace storage {
 class BlobDataHandle;
 class BlobStorageHost;
 class BlobStorageContext;
 }
 
-using webkit_blob::BlobStorageContext;
-using webkit_blob::BlobData;
+using storage::BlobStorageContext;
+using storage::BlobData;
 
 namespace content {
 

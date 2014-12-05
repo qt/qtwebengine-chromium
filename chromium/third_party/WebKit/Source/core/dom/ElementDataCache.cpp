@@ -29,7 +29,9 @@
 
 #include "core/dom/ElementData.h"
 
-namespace WebCore {
+namespace blink {
+
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ElementDataCache)
 
 inline unsigned attributeHash(const Vector<Attribute>& attributes)
 {
@@ -38,12 +40,12 @@ inline unsigned attributeHash(const Vector<Attribute>& attributes)
 
 inline bool hasSameAttributes(const Vector<Attribute>& attributes, ShareableElementData& elementData)
 {
-    if (attributes.size() != elementData.attributeCount())
+    if (attributes.size() != elementData.attributes().size())
         return false;
     return !memcmp(attributes.data(), elementData.m_attributeArray, attributes.size() * sizeof(Attribute));
 }
 
-PassRefPtr<ShareableElementData> ElementDataCache::cachedShareableElementDataWithAttributes(const Vector<Attribute>& attributes)
+PassRefPtrWillBeRawPtr<ShareableElementData> ElementDataCache::cachedShareableElementDataWithAttributes(const Vector<Attribute>& attributes)
 {
     ASSERT(!attributes.isEmpty());
 
@@ -63,8 +65,11 @@ ElementDataCache::ElementDataCache()
 {
 }
 
-ElementDataCache::~ElementDataCache()
+void ElementDataCache::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
+    visitor->trace(m_shareableElementDataCache);
+#endif
 }
 
 }

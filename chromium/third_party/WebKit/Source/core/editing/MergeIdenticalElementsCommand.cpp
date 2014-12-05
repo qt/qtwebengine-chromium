@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/MergeIdenticalElementsCommand.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
 MergeIdenticalElementsCommand::MergeIdenticalElementsCommand(PassRefPtrWillBeRawPtr<Element> first, PassRefPtrWillBeRawPtr<Element> second)
     : SimpleEditCommand(first->document())
@@ -44,18 +44,16 @@ MergeIdenticalElementsCommand::MergeIdenticalElementsCommand(PassRefPtrWillBeRaw
 
 void MergeIdenticalElementsCommand::doApply()
 {
-    if (m_element1->nextSibling() != m_element2 || !m_element1->rendererIsEditable() || !m_element2->rendererIsEditable())
+    if (m_element1->nextSibling() != m_element2 || !m_element1->hasEditableStyle() || !m_element2->hasEditableStyle())
         return;
 
     m_atChild = m_element2->firstChild();
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
-    for (Node* child = m_element1->firstChild(); child; child = child->nextSibling())
-        children.append(child);
+    NodeVector children;
+    getChildNodes(*m_element1, children);
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element2->insertBefore(children[i].release(), m_atChild.get(), IGNORE_EXCEPTION);
+    for (auto& child : children)
+        m_element2->insertBefore(child.release(), m_atChild.get(), IGNORE_EXCEPTION);
 
     m_element1->remove(IGNORE_EXCEPTION);
 }
@@ -68,7 +66,7 @@ void MergeIdenticalElementsCommand::doUnapply()
     RefPtrWillBeRawPtr<Node> atChild = m_atChild.release();
 
     ContainerNode* parent = m_element2->parentNode();
-    if (!parent || !parent->rendererIsEditable())
+    if (!parent || !parent->hasEditableStyle())
         return;
 
     TrackExceptionState exceptionState;
@@ -77,13 +75,12 @@ void MergeIdenticalElementsCommand::doUnapply()
     if (exceptionState.hadException())
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> children;
     for (Node* child = m_element2->firstChild(); child && child != atChild; child = child->nextSibling())
         children.append(child);
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element1->appendChild(children[i].release(), exceptionState);
+    for (auto& child : children)
+        m_element1->appendChild(child.release(), exceptionState);
 }
 
 void MergeIdenticalElementsCommand::trace(Visitor* visitor)
@@ -94,4 +91,4 @@ void MergeIdenticalElementsCommand::trace(Visitor* visitor)
     SimpleEditCommand::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

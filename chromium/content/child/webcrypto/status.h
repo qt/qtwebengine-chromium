@@ -69,10 +69,6 @@ class CONTENT_EXPORT Status {
   // incompatible with the value requested by the Web Crypto call.
   static Status ErrorJwkExtInconsistent();
 
-  // The "alg" parameter could not be converted to an equivalent
-  // WebCryptoAlgorithm. Either it was malformed or unrecognized.
-  static Status ErrorJwkUnrecognizedAlgorithm();
-
   // The "alg" parameter is incompatible with the (optional) Algorithm
   // specified by the Web Crypto import operation.
   static Status ErrorJwkAlgorithmInconsistent();
@@ -97,9 +93,9 @@ class CONTENT_EXPORT Status {
   // are incompatible with each other.
   static Status ErrorJwkUseAndKeyopsInconsistent();
 
-  // The "kty" parameter was given and was a string, however it was
-  // unrecognized.
-  static Status ErrorJwkUnrecognizedKty();
+  // The "kty" parameter was given and was a string, however it was not the
+  // expected value.
+  static Status ErrorJwkUnexpectedKty(const std::string& expected);
 
   // The amount of key data provided was incompatible with the selected
   // algorithm. For instance if the algorith name was A128CBC then EXACTLY
@@ -107,9 +103,16 @@ class CONTENT_EXPORT Status {
   // given that is an error.
   static Status ErrorJwkIncorrectKeyLength();
 
-  // The JWK was for an RSA private key but only partially provided the optional
-  // parameters (p, q, dq, dq, qi).
-  static Status ErrorJwkIncompleteOptionalRsaPrivateKey();
+  // The JWK property |property| is supposed to represent a big-endian unsigned
+  // integer, however was the empty string.
+  static Status ErrorJwkEmptyBigInteger(const std::string& property);
+
+  // The big-endian unsigned integer |property| contained leading zeros. This
+  // violates the JWA requirement that such octet strings be minimal.
+  static Status ErrorJwkBigIntegerHasLeadingZero(const std::string& property);
+
+  // The key_ops lists a usage more than once.
+  static Status ErrorJwkDuplicateKeyOps();
 
   // ------------------------------------
   // Other errors
@@ -119,6 +122,14 @@ class CONTENT_EXPORT Status {
   // key. This does not apply to raw format, since it is possible to have empty
   // key data there.
   static Status ErrorImportEmptyKeyData();
+
+  // Tried importing a key using an unsupported format for the key type (for
+  // instance importing an HMAC key using format=spki).
+  static Status ErrorUnsupportedImportKeyFormat();
+
+  // Tried exporting a key using an unsupported format for the key type (for
+  // instance exporting an HMAC key using format=spki).
+  static Status ErrorUnsupportedExportKeyFormat();
 
   // The key data buffer provided for importKey() is an incorrect length for
   // AES.
@@ -135,6 +146,18 @@ class CONTENT_EXPORT Status {
   // When doing an AES-CBC encryption/decryption, the "iv" parameter was not 16
   // bytes.
   static Status ErrorIncorrectSizeAesCbcIv();
+
+  // When doing AES-CTR encryption/decryption, the "counter" parameter was not
+  // 16 bytes.
+  static Status ErrorIncorrectSizeAesCtrCounter();
+
+  // When doing AES-CTR encryption/decryption, the "length" parameter for the
+  // counter was out of range.
+  static Status ErrorInvalidAesCtrCounterLength();
+
+  // The input to encrypt/decrypt was too large. Based on the counter size, it
+  // would cause the counter to wraparound and repeat earlier values.
+  static Status ErrorAesCtrInputTooLongCounterRepeated();
 
   // The data provided to an encrypt/decrypt/sign/verify operation was too
   // large. This can either represent an internal limitation (for instance
@@ -172,8 +195,8 @@ class CONTENT_EXPORT Status {
   // The modulus bytes were empty when importing an RSA public key.
   static Status ErrorImportRsaEmptyModulus();
 
-  // The the modulus length was zero bits when generating an RSA public key.
-  static Status ErrorGenerateRsaZeroModulus();
+  // The modulus length was unsupported when generating an RSA key pair.
+  static Status ErrorGenerateRsaUnsupportedModulus();
 
   // The exponent bytes were empty when importing an RSA public key.
   static Status ErrorImportRsaEmptyExponent();

@@ -83,7 +83,9 @@ DesktopWindowTreeHostWin::DesktopWindowTreeHostWin(
       should_animate_window_close_(false),
       pending_close_(false),
       has_non_client_view_(false),
-      tooltip_(NULL) {
+      tooltip_(NULL),
+      need_synchronous_paint_(false),
+      in_sizing_loop_(false) {
 }
 
 DesktopWindowTreeHostWin::~DesktopWindowTreeHostWin() {
@@ -280,7 +282,28 @@ gfx::Rect DesktopWindowTreeHostWin::GetWorkAreaBoundsInScreen() const {
 
 void DesktopWindowTreeHostWin::SetShape(gfx::NativeRegion native_region) {
   if (native_region) {
-    message_handler_->SetRegion(gfx::CreateHRGNFromSkRegion(*native_region));
+    // TODO(wez): This would be a lot simpler if we were passed an SkPath.
+    // See crbug.com/410593.
+    gfx::NativeRegion shape = native_region;
+    SkRegion device_region;
+    if (gfx::GetDPIScale() > 1.0) {
+      shape = &device_region;
+      const float& scale = gfx::GetDPIScale();
+      std::vector<SkIRect> rects;
+      for (SkRegion::Iterator it(*native_region); !it.done(); it.next()) {
+        const SkIRect& rect = it.rect();
+        SkRect scaled_rect =
+            SkRect::MakeLTRB(rect.left() * scale, rect.top() * scale,
+                             rect.right() * scale, rect.bottom() * scale);
+        SkIRect rounded_scaled_rect;
+        scaled_rect.roundOut(&rounded_scaled_rect);
+        rects.push_back(rounded_scaled_rect);
+      }
+      if (!rects.empty())
+        device_region.setRects(&rects[0], rects.size());
+    }
+
+    message_handler_->SetRegion(gfx::CreateHRGNFromSkRegion(*shape));
   } else {
     message_handler_->SetRegion(NULL);
   }
@@ -382,7 +405,7 @@ void DesktopWindowTreeHostWin::FrameTypeChanged() {
 }
 
 void DesktopWindowTreeHostWin::SetFullscreen(bool fullscreen) {
-  message_handler_->fullscreen_handler()->SetFullscreen(fullscreen);
+  message_handler_->SetFullscreen(fullscreen);
   // TODO(sky): workaround for ScopedFullscreenVisibility showing window
   // directly. Instead of this should listen for visibility changes and then
   // update window.
@@ -413,7 +436,7 @@ void DesktopWindowTreeHostWin::FlashFrame(bool flash_frame) {
   message_handler_->FlashFrame(flash_frame);
 }
 
-void DesktopWindowTreeHostWin::OnRootViewLayout() const {
+void DesktopWindowTreeHostWin::OnRootViewLayout() {
 }
 
 void DesktopWindowTreeHostWin::OnNativeWidgetFocus() {
@@ -429,6 +452,10 @@ bool DesktopWindowTreeHostWin::IsAnimatingClosed() const {
 
 bool DesktopWindowTreeHostWin::IsTranslucentWindowOpacitySupported() const {
   return ui::win::IsAeroGlassEnabled();
+}
+
+void DesktopWindowTreeHostWin::SizeConstraintsChanged() {
+  message_handler_->SizeConstraintsChanged();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -505,14 +532,6 @@ void DesktopWindowTreeHostWin::ReleaseCapture() {
   message_handler_->ReleaseCapture();
 }
 
-void DesktopWindowTreeHostWin::PostNativeEvent(
-    const base::NativeEvent& native_event) {
-}
-
-void DesktopWindowTreeHostWin::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
-}
-
 void DesktopWindowTreeHostWin::SetCursorNative(gfx::NativeCursor cursor) {
   ui::CursorLoaderWin cursor_loader;
   cursor_loader.SetPlatformCursor(&cursor);
@@ -586,6 +605,10 @@ bool DesktopWindowTreeHostWin::CanResize() const {
 
 bool DesktopWindowTreeHostWin::CanMaximize() const {
   return GetWidget()->widget_delegate()->CanMaximize();
+}
+
+bool DesktopWindowTreeHostWin::CanMinimize() const {
+  return GetWidget()->widget_delegate()->CanMinimize();
 }
 
 bool DesktopWindowTreeHostWin::CanActivate() const {
@@ -693,7 +716,6 @@ void DesktopWindowTreeHostWin::HandleCancelMode() {
 
 void DesktopWindowTreeHostWin::HandleCaptureLost() {
   OnHostLostWindowCapture();
-  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopWindowTreeHostWin::HandleClose() {
@@ -701,6 +723,22 @@ void DesktopWindowTreeHostWin::HandleClose() {
 }
 
 bool DesktopWindowTreeHostWin::HandleCommand(int command) {
+  // Windows uses the 4 lower order bits of |notification_code| for type-
+  // specific information so we must exclude this when comparing.
+  static const int sc_mask = 0xFFF0;
+  switch (command & sc_mask) {
+    case SC_RESTORE:
+    case SC_MAXIMIZE:
+      need_synchronous_paint_ = true;
+      break;
+
+    case SC_SIZE:
+      in_sizing_loop_ = true;
+      break;
+
+    default:
+      break;
+  }
   return GetWidget()->widget_delegate()->ExecuteWindowsCommand(command);
 }
 
@@ -736,10 +774,16 @@ void DesktopWindowTreeHostWin::HandleDisplayChange() {
 }
 
 void DesktopWindowTreeHostWin::HandleBeginWMSizeMove() {
+  if (in_sizing_loop_)
+    need_synchronous_paint_ = true;
   native_widget_delegate_->OnNativeWidgetBeginUserBoundsChange();
 }
 
 void DesktopWindowTreeHostWin::HandleEndWMSizeMove() {
+  if (in_sizing_loop_) {
+    need_synchronous_paint_ = false;
+    in_sizing_loop_ = false;
+  }
   native_widget_delegate_->OnNativeWidgetEndUserBoundsChange();
 }
 
@@ -868,13 +912,6 @@ bool DesktopWindowTreeHostWin::HandleTooltipNotify(int w_param,
   return tooltip_ && tooltip_->HandleNotify(w_param, l_param, l_result);
 }
 
-void DesktopWindowTreeHostWin::HandleTooltipMouseMove(UINT message,
-                                                      WPARAM w_param,
-                                                      LPARAM l_param) {
-  // TooltipWin implementation doesn't need this.
-  // TODO(sky): remove from HWNDMessageHandler once non-aura path nuked.
-}
-
 void DesktopWindowTreeHostWin::HandleMenuLoop(bool in_menu_loop) {
   if (in_menu_loop) {
     tooltip_disabler_.reset(
@@ -903,8 +940,15 @@ bool DesktopWindowTreeHostWin::HandleScrollEvent(
 }
 
 void DesktopWindowTreeHostWin::HandleWindowSizeChanging() {
-  if (compositor())
+  if (compositor() && need_synchronous_paint_) {
     compositor()->FinishAllRendering();
+    // If we received the window size changing notification due to a restore or
+    // maximize operation, then we can reset the need_synchronous_paint_ flag
+    // here. For a sizing operation, the flag will be reset at the end of the
+    // operation.
+    if (!in_sizing_loop_)
+      need_synchronous_paint_ = false;
+  }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

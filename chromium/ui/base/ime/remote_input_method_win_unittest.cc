@@ -86,29 +86,26 @@ class MockTextInputClient : public DummyTextInputClient {
 
  private:
   // Overriden from DummyTextInputClient.
-  virtual void SetCompositionText(
-      const ui::CompositionText& composition) OVERRIDE {
+  void SetCompositionText(const ui::CompositionText& composition) override {
     ++call_count_set_composition_text_;
   }
-  virtual void InsertChar(base::char16 ch, int flags) OVERRIDE {
+  void InsertChar(base::char16 ch, int flags) override {
     inserted_text_.append(1, ch);
     ++call_count_insert_char_;
   }
-  virtual void InsertText(const base::string16& text) OVERRIDE {
+  void InsertText(const base::string16& text) override {
     inserted_text_.append(text);
     ++call_count_insert_text_;
   }
-  virtual ui::TextInputType GetTextInputType() const OVERRIDE {
+  ui::TextInputType GetTextInputType() const override {
     return text_input_type_;
   }
-  virtual ui::TextInputMode GetTextInputMode() const OVERRIDE {
+  ui::TextInputMode GetTextInputMode() const override {
     return text_input_mode_;
   }
-  virtual gfx::Rect GetCaretBounds() const {
-    return caret_bounds_;
-  }
-  virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) const OVERRIDE {
+  gfx::Rect GetCaretBounds() const override { return caret_bounds_; }
+  bool GetCompositionCharacterBounds(uint32 index,
+                                     gfx::Rect* rect) const override {
     // Emulate the situation of crbug.com/328237.
     if (emulate_pepper_flash_)
       return false;
@@ -117,19 +114,19 @@ class MockTextInputClient : public DummyTextInputClient {
     *rect = composition_character_bounds_[index];
     return true;
   }
-  virtual bool HasCompositionText() const OVERRIDE {
+  bool HasCompositionText() const override {
     return !composition_character_bounds_.empty();
   }
-  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE {
+  bool GetCompositionTextRange(gfx::Range* range) const override {
     if (composition_character_bounds_.empty())
       return false;
     *range = gfx::Range(0, composition_character_bounds_.size());
     return true;
   }
-  virtual void OnCandidateWindowShown() OVERRIDE {
+  void OnCandidateWindowShown() override {
     is_candidate_window_shown_called_ = true;
   }
-  virtual void OnCandidateWindowHidden() OVERRIDE {
+  void OnCandidateWindowHidden() override {
     is_candidate_window_hidden_called_ = true;
   }
 
@@ -159,7 +156,7 @@ class MockInputMethodDelegate : public internal::InputMethodDelegate {
   }
 
  private:
-  virtual bool DispatchKeyEventPostIME(const ui::KeyEvent& event) OVERRIDE {
+  bool DispatchKeyEventPostIME(const ui::KeyEvent& event) override {
     EXPECT_FALSE(event.HasNativeEvent());
     fabricated_key_events_.push_back(event.key_code());
     return true;
@@ -197,13 +194,11 @@ class MockRemoteInputMethodDelegateWin
   }
 
  private:
-  virtual void CancelComposition() OVERRIDE {
-    cancel_composition_called_ = true;
-  }
+  void CancelComposition() override { cancel_composition_called_ = true; }
 
-  virtual void OnTextInputClientUpdated(
+  void OnTextInputClientUpdated(
       const std::vector<int32>& input_scopes,
-      const std::vector<gfx::Rect>& composition_character_bounds) OVERRIDE {
+      const std::vector<gfx::Rect>& composition_character_bounds) override {
     text_input_client_updated_called_ = true;
     input_scopes_ = input_scopes;
     composition_character_bounds_ = composition_character_bounds;
@@ -237,22 +232,17 @@ class MockInputMethodObserver : public InputMethodObserver {
 
  private:
   // Overriden from InputMethodObserver.
-  virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE {
-  }
-  virtual void OnFocus() OVERRIDE {
-  }
-  virtual void OnBlur() OVERRIDE {
-  }
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE {
-  }
-  virtual void OnTextInputStateChanged(const TextInputClient* client) OVERRIDE {
+  void OnTextInputTypeChanged(const TextInputClient* client) override {}
+  void OnFocus() override {}
+  void OnBlur() override {}
+  void OnCaretBoundsChanged(const TextInputClient* client) override {}
+  void OnTextInputStateChanged(const TextInputClient* client) override {
     ++on_text_input_state_changed_;
   }
-  virtual void OnInputMethodDestroyed(const InputMethod* client) OVERRIDE {
+  void OnInputMethodDestroyed(const InputMethod* client) override {
     ++on_input_method_destroyed_changed_;
   }
-  virtual void OnShowImeIfNeeded() {
-  }
+  void OnShowImeIfNeeded() override {}
 
   size_t on_text_input_state_changed_;
   size_t on_input_method_destroyed_changed_;
@@ -548,7 +538,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_NativeKeyEvent) {
   scoped_ptr<InputMethod> input_method(CreateRemoteInputMethodWin(&delegate_));
 
   const MSG wm_keydown = { NULL, WM_KEYDOWN, ui::VKEY_A };
-  ui::KeyEvent native_keydown(wm_keydown, false);
+  ui::KeyEvent native_keydown(wm_keydown);
 
   // This must not cause a crash.
   EXPECT_FALSE(input_method->DispatchKeyEvent(native_keydown));
@@ -590,7 +580,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_NativeCharEvent) {
   scoped_ptr<InputMethod> input_method(CreateRemoteInputMethodWin(&delegate_));
 
   const MSG wm_char = { NULL, WM_CHAR, 'A', 0 };
-  ui::KeyEvent native_char(wm_char, true);
+  ui::KeyEvent native_char(wm_char);
 
   // This must not cause a crash.
   EXPECT_FALSE(input_method->DispatchKeyEvent(native_char));
@@ -633,7 +623,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_FabricatedKeyDown) {
   MockTextInputClient mock_text_input_client;
   scoped_ptr<InputMethod> input_method(CreateRemoteInputMethodWin(&delegate_));
 
-  ui::KeyEvent fabricated_keydown(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, false);
+  ui::KeyEvent fabricated_keydown(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
   fabricated_keydown.set_character(L'A');
 
   // This must not cause a crash.
@@ -684,8 +674,7 @@ TEST(RemoteInputMethodWinTest, DispatchKeyEvent_FabricatedChar) {
   MockTextInputClient mock_text_input_client;
   scoped_ptr<InputMethod> input_method(CreateRemoteInputMethodWin(&delegate_));
 
-  ui::KeyEvent fabricated_char(ui::ET_KEY_PRESSED, ui::VKEY_A, 0, true);
-  fabricated_char.set_character(L'A');
+  ui::KeyEvent fabricated_char(L'A', ui::VKEY_A, ui::EF_NONE);
 
   // This must not cause a crash.
   EXPECT_TRUE(input_method->DispatchKeyEvent(fabricated_char));

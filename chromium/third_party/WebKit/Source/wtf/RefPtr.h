@@ -33,8 +33,6 @@ namespace WTF {
     template<typename T> class PassRefPtr;
 
     template<typename T> class RefPtr {
-        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(RefPtr);
-        WTF_DISALLOW_ZERO_ASSIGNMENT(RefPtr);
     public:
         ALWAYS_INLINE RefPtr() : m_ptr(0) { }
         ALWAYS_INLINE RefPtr(std::nullptr_t) : m_ptr(0) { }
@@ -43,6 +41,9 @@ namespace WTF {
         ALWAYS_INLINE explicit RefPtr(T& ref) : m_ptr(&ref) { m_ptr->ref(); }
         ALWAYS_INLINE RefPtr(const RefPtr& o) : m_ptr(o.m_ptr) { refIfNotNull(m_ptr); }
         template<typename U> RefPtr(const RefPtr<U>& o, EnsurePtrConvertibleArgDecl(U, T)) : m_ptr(o.get()) { refIfNotNull(m_ptr); }
+
+        RefPtr(RefPtr&& o) : m_ptr(o.m_ptr) { o.m_ptr = 0; }
+        RefPtr& operator=(RefPtr&&);
 
         // See comments in PassRefPtr.h for an explanation of why this takes a const reference.
         template<typename U> RefPtr(const PassRefPtr<U>&, EnsurePtrConvertibleArgDecl(U, T));
@@ -99,6 +100,15 @@ namespace WTF {
     template<typename T> inline RefPtr<T>& RefPtr<T>::operator=(const RefPtr& o)
     {
         RefPtr ptr = o;
+        swap(ptr);
+        return *this;
+    }
+
+    template<typename T> inline RefPtr<T>& RefPtr<T>::operator=(RefPtr&& o)
+    {
+        // FIXME: Instead of explicitly casting to RefPtr&& here, we should use std::move, but that requires us to
+        // have a standard library that supports move semantics.
+        RefPtr ptr = static_cast<RefPtr&&>(o);
         swap(ptr);
         return *this;
     }

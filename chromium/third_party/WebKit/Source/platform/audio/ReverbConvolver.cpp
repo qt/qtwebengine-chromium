@@ -38,7 +38,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebThread.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace VectorMath;
 
@@ -122,7 +122,7 @@ ReverbConvolver::ReverbConvolver(AudioChannel* impulseResponse, size_t renderSli
     // Start up background thread
     // FIXME: would be better to up the thread priority here.  It doesn't need to be real-time, but higher than the default...
     if (useBackgroundThreads && m_backgroundStages.size() > 0)
-        m_backgroundThread = adoptPtr(blink::Platform::current()->createThread("Reverb convolution background thread"));
+        m_backgroundThread = adoptPtr(Platform::current()->createThread("Reverb convolution background thread"));
 }
 
 ReverbConvolver::~ReverbConvolver()
@@ -196,6 +196,6 @@ size_t ReverbConvolver::latencyFrames() const
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

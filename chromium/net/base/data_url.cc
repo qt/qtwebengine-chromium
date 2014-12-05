@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "net/base/escape.h"
 #include "net/base/mime_util.h"
+#include "net/http/http_util.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -42,7 +43,7 @@ bool DataURL::Parse(const GURL& url, std::string* mime_type,
   std::vector<std::string>::iterator iter = meta_data.begin();
   if (iter != meta_data.end()) {
     mime_type->swap(*iter);
-    StringToLowerASCII(mime_type);
+    base::StringToLowerASCII(mime_type);
     ++iter;
   }
 
@@ -57,14 +58,24 @@ bool DataURL::Parse(const GURL& url, std::string* mime_type,
     } else if (charset->empty() &&
                iter->compare(0, kCharsetTagLength, kCharsetTag) == 0) {
       charset->assign(iter->substr(kCharsetTagLength));
+      // The grammar for charset is not specially defined in RFC2045 and
+      // RFC2397. It just needs to be a token.
+      if (!net::HttpUtil::IsToken(*charset))
+        return false;
     }
   }
 
   if (mime_type->empty()) {
-    // fallback to defaults if nothing specified in the URL:
+    // Fallback to the default if nothing specified in the mediatype part as
+    // specified in RFC2045. As specified in RFC2397, we use |charset| even if
+    // |mime_type| is empty.
     mime_type->assign("text/plain");
   } else if (!ParseMimeTypeWithoutParameter(*mime_type, NULL, NULL)) {
-    return false;
+    // Fallback to the default as recommended in RFC2045 when the mediatype
+    // value is invalid. For this case, we don't respect |charset| but force it
+    // set to "US-ASCII".
+    mime_type->assign("text/plain");
+    charset->assign("US-ASCII");
   }
   if (charset->empty())
     charset->assign("US-ASCII");

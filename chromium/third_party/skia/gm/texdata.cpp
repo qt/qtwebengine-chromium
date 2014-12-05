@@ -78,10 +78,10 @@ protected:
                     }
                 }
 
-                GrTextureDesc desc;
+                GrSurfaceDesc desc;
                 // use RT flag bit because in GL it makes the texture be bottom-up
-                desc.fFlags     = i ? kRenderTarget_GrTextureFlagBit :
-                                      kNone_GrTextureFlags;
+                desc.fFlags     = i ? kRenderTarget_GrSurfaceFlag :
+                                      kNone_GrSurfaceFlags;
                 desc.fConfig    = kSkia8888_GrPixelConfig;
                 desc.fWidth     = 2 * S;
                 desc.fHeight    = 2 * S;
@@ -91,7 +91,7 @@ protected:
                 if (!texture) {
                     return;
                 }
-                SkAutoUnref au(texture);
+                SkAutoTUnref<GrTexture> au(texture);
 
                 GrContext::AutoClip acs(ctx, SkRect::MakeWH(2*S, 2*S));
 
@@ -111,7 +111,7 @@ protected:
                 SkMatrix tm;
                 tm = vm;
                 tm.postIDiv(2*S, 2*S);
-                paint.addColorTextureEffect(texture, tm);
+                paint.addColorTextureProcessor(texture, tm);
 
                 ctx->drawRect(paint, SkRect::MakeWH(2*S, 2*S));
 

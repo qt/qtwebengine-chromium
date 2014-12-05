@@ -20,7 +20,7 @@ GENRB_SYNTHETIC_ALIAS =
 # All aliases (to not be included under 'installed'), but not including root.
 GENRB_ALIAS_SOURCE = $(GENRB_SYNTHETIC_ALIAS)\
  zh_CN.txt zh_TW.txt zh_HK.txt zh_SG.txt\
- no.txt in.txt iw.txt
+ no.txt in.txt iw.txt tl.txt sh.txt
 
 # Ordinary resources
 GENRB_SOURCE =\
@@ -33,7 +33,7 @@ GENRB_SOURCE =\
  da.txt\
  de.txt\
  el.txt\
- en.txt en_GB.txt en_US.txt\
+ en.txt en_GB.txt en_US.txt en_AU.txt en_001.txt\
  es.txt es_ES.txt es_419.txt\
  es_AR.txt es_CO.txt es_EC.txt es_HN.txt es_PA.txt es_PY.txt es_UY.txt\
  es_BO.txt es_CR.txt es_MX.txt es_PE.txt es_SV.txt es_VE.txt es_CL.txt\
@@ -57,6 +57,7 @@ GENRB_SOURCE =\
  lv.txt\
  ml.txt\
  mr.txt\
+ ms.txt\
  nb.txt\
  nl.txt\
  pl.txt\
@@ -79,10 +80,12 @@ GENRB_SOURCE =\
  af.txt\
  ak.txt\
  az.txt\
- bem.txt\
  be.txt\
+ bem.txt\
+ br.txt\
  bs.txt\
  cy.txt\
+ ee.txt\
  eo.txt\
  eu.txt\
  fo.txt\
@@ -96,13 +99,17 @@ GENRB_SOURCE =\
  ka.txt\
  kk.txt\
  km.txt\
+ ky.txt\
  lg.txt\
+ ln.txt\
+ lo.txt\
  mfe.txt\
  mg.txt\
  mk.txt\
- mo.txt\
- ms.txt\
+ mn.txt\
+ mo.txt ro_MD.txt\
  mt.txt\
+ my.txt\
  ne.txt\
  nn.txt\
  nyn.txt\
@@ -111,14 +118,15 @@ GENRB_SOURCE =\
  pa.txt\
  ps.txt\
  rm.txt\
+ rn.txt\
  rw.txt\
  si.txt\
  sn.txt\
  so.txt\
  sq.txt\
+ sr_Latn.txt\
  tg.txt\
  ti.txt\
- tl.txt\
  to.txt\
  ur.txt\
  uz.txt\

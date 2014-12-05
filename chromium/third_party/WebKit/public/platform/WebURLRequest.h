@@ -35,12 +35,9 @@
 #include "WebHTTPBody.h"
 #include "WebReferrerPolicy.h"
 
-#if INSIDE_BLINK
-namespace WebCore { class ResourceRequest; }
-#endif
-
 namespace blink {
 
+class ResourceRequest;
 class WebCString;
 class WebHTTPBody;
 class WebHTTPHeaderVisitor;
@@ -67,25 +64,63 @@ public:
         PriorityVeryHigh,
     };
 
-    enum TargetType {
-        TargetIsMainFrame = 0,
-        TargetIsSubframe = 1,
-        TargetIsSubresource = 2,
-        TargetIsStyleSheet = 3,
-        TargetIsScript = 4,
-        TargetIsFontResource = 5,
-        TargetIsImage = 6,
-        TargetIsObject = 7,
-        TargetIsMedia = 8,
-        TargetIsWorker = 9,
-        TargetIsSharedWorker = 10,
-        TargetIsPrefetch = 11,
-        TargetIsFavicon = 12,
-        TargetIsXHR = 13,
-        TargetIsTextTrack = 14,
-        TargetIsPing = 15,
-        TargetIsServiceWorker = 16,
-        TargetIsUnspecified = 17,
+    // Corresponds to Fetch's "context": http://fetch.spec.whatwg.org/#concept-request-context
+    enum RequestContext {
+        RequestContextUnspecified = 0,
+        RequestContextAudio,
+        RequestContextBeacon,
+        RequestContextCSPReport,
+        RequestContextDownload,
+        RequestContextEmbed,
+        RequestContextEventSource,
+        RequestContextFavicon,
+        RequestContextFetch,
+        RequestContextFont,
+        RequestContextForm,
+        RequestContextFrame,
+        RequestContextHyperlink,
+        RequestContextIframe,
+        RequestContextImage,
+        RequestContextImageSet,
+        RequestContextImport,
+        RequestContextInternal,
+        RequestContextLocation,
+        RequestContextManifest,
+        RequestContextObject,
+        RequestContextPing,
+        RequestContextPlugin,
+        RequestContextPrefetch,
+        RequestContextScript,
+        RequestContextServiceWorker,
+        RequestContextSharedWorker,
+        RequestContextSubresource,
+        RequestContextStyle,
+        RequestContextTrack,
+        RequestContextVideo,
+        RequestContextWorker,
+        RequestContextXMLHttpRequest,
+        RequestContextXSLT
+    };
+
+    // Corresponds to Fetch's "context frame type": http://fetch.spec.whatwg.org/#concept-request-context-frame-type
+    enum FrameType {
+        FrameTypeAuxiliary,
+        FrameTypeNested,
+        FrameTypeNone,
+        FrameTypeTopLevel
+    };
+
+    enum FetchRequestMode {
+        FetchRequestModeSameOrigin,
+        FetchRequestModeNoCORS,
+        FetchRequestModeCORS,
+        FetchRequestModeCORSWithForcedPreflight
+    };
+
+    enum FetchCredentialsMode {
+        FetchCredentialsModeOmit,
+        FetchCredentialsModeSameOrigin,
+        FetchCredentialsModeInclude
     };
 
     class ExtraData {
@@ -154,10 +189,17 @@ public:
     BLINK_PLATFORM_EXPORT bool reportRawHeaders() const;
     BLINK_PLATFORM_EXPORT void setReportRawHeaders(bool);
 
-    BLINK_PLATFORM_EXPORT TargetType targetType() const;
-    BLINK_PLATFORM_EXPORT void setTargetType(TargetType);
+    BLINK_PLATFORM_EXPORT RequestContext requestContext() const;
+    BLINK_PLATFORM_EXPORT void setRequestContext(RequestContext);
+
+    BLINK_PLATFORM_EXPORT FrameType frameType() const;
+    BLINK_PLATFORM_EXPORT void setFrameType(FrameType);
 
     BLINK_PLATFORM_EXPORT WebReferrerPolicy referrerPolicy() const;
+
+    // Adds an HTTP origin header if it is empty and the HTTP method of the
+    // request requires it.
+    BLINK_PLATFORM_EXPORT void addHTTPOriginIfNeeded(const WebString& origin);
 
     // True if the request was user initiated.
     BLINK_PLATFORM_EXPORT bool hasUserGesture() const;
@@ -182,6 +224,18 @@ public:
     BLINK_PLATFORM_EXPORT bool downloadToFile() const;
     BLINK_PLATFORM_EXPORT void setDownloadToFile(bool);
 
+    // True if the request should not be handled by the ServiceWorker.
+    BLINK_PLATFORM_EXPORT bool skipServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setSkipServiceWorker(bool);
+
+    // The request mode which will be passed to the ServiceWorker.
+    BLINK_PLATFORM_EXPORT FetchRequestMode fetchRequestMode() const;
+    BLINK_PLATFORM_EXPORT void setFetchRequestMode(FetchRequestMode);
+
+    // The credentials mode which will be passed to the ServiceWorker.
+    BLINK_PLATFORM_EXPORT FetchCredentialsMode fetchCredentialsMode() const;
+    BLINK_PLATFORM_EXPORT void setFetchCredentialsMode(FetchCredentialsMode);
+
     // Extra data associated with the underlying resource request. Resource
     // requests can be copied. If non-null, each copy of a resource requests
     // holds a pointer to the extra data, and the extra data pointer will be
@@ -195,8 +249,8 @@ public:
     BLINK_PLATFORM_EXPORT void setPriority(Priority);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebCore::ResourceRequest& toMutableResourceRequest();
-    BLINK_PLATFORM_EXPORT const WebCore::ResourceRequest& toResourceRequest() const;
+    BLINK_PLATFORM_EXPORT ResourceRequest& toMutableResourceRequest();
+    BLINK_PLATFORM_EXPORT const ResourceRequest& toResourceRequest() const;
 #endif
 
 protected:

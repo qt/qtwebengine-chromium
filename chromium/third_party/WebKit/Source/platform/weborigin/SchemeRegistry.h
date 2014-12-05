@@ -32,7 +32,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashSet<String, CaseFoldingHash> URLSchemesMap;
 
@@ -78,6 +78,13 @@ public:
     static void registerURLSchemeAsCORSEnabled(const String& scheme);
     static bool shouldTreatURLSchemeAsCORSEnabled(const String& scheme);
 
+    // Serialize the registered schemes in a comma-separated list.
+    static String listOfCORSEnabledURLSchemes();
+
+    // "Legacy" schemes (e.g. 'ftp:', 'gopher:') which we might want to treat differently from "webby" schemes.
+    static void registerURLSchemeAsLegacy(const String& scheme);
+    static bool shouldTreatURLSchemeAsLegacy(const String& scheme);
+
     // Allow resources from some schemes to load on a page, regardless of its
     // Content Security Policy.
     static void registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme);
@@ -85,6 +92,6 @@ public:
     static bool schemeShouldBypassContentSecurityPolicy(const String& scheme);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SchemeRegistry_h

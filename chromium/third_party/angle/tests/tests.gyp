@@ -88,7 +88,6 @@
                 'preprocessor_tests/preprocessor_test_main.cpp',
             ],
         },
-
         {
             'target_name': 'compiler_tests',
             'type': 'executable',
@@ -112,6 +111,22 @@
             [
                 'compiler_tests/compiler_test_main.cpp',
             ],
+            'msvs_settings':
+            {
+                'VCLinkerTool':
+                {
+                    'conditions':
+                    [
+                        ['angle_build_winrt==1',
+                        {
+                            'AdditionalDependencies':
+                            [
+                                'runtimeobject.lib',
+                            ],
+                        }],
+                    ],
+                },
+            },
         },
     ],
 
@@ -130,6 +145,7 @@
                         '../src/angle.gyp:libGLESv2',
                         '../src/angle.gyp:libEGL',
                         'gtest',
+                        '../util/util.gyp:angle_util',
                     ],
                     'include_dirs':
                     [
@@ -161,6 +177,87 @@
                     'sources':
                     [
                         '<!@(python <(angle_path)/enumerate_files.py standalone_tests -types *.cpp *.h)'
+                    ],
+                },
+                {
+                    'target_name': 'angle_perf_tests',
+                    'type': 'executable',
+                    'includes': [ '../build/common_defines.gypi', ],
+                    'dependencies':
+                    [
+                        '../src/angle.gyp:libGLESv2',
+                        '../src/angle.gyp:libEGL',
+                        '../util/util.gyp:angle_util',
+                    ],
+                    'include_dirs':
+                    [
+                        '../include',
+                        'third_party/googletest/include',
+                    ],
+                    'sources':
+                    [
+                        'perf_tests/BufferSubData.cpp',
+                        'perf_tests/BufferSubData.h',
+                        'perf_tests/PointSprites.cpp',
+                        'perf_tests/PointSprites.h',
+                        'perf_tests/SimpleBenchmark.cpp',
+                        'perf_tests/SimpleBenchmark.h',
+                        'perf_tests/SimpleBenchmarks.cpp',
+                        'perf_tests/TexSubImage.cpp',
+                        'perf_tests/TexSubImage.h',
+                        'perf_tests/third_party/perf/perf_test.cc',
+                        'perf_tests/third_party/perf/perf_test.h',
+                    ],
+                },
+
+                {
+                    'target_name': 'angle_implementation_unit_tests',
+                    'type': 'executable',
+                    'dependencies':
+                    [
+                        '../src/angle.gyp:libGLESv2_static',
+                        'gtest',
+                        'gmock',
+                    ],
+                    'include_dirs':
+                    [
+                        '../include',
+                        '../src',
+                        'third_party/googletest/include',
+                        'third_party/googlemock/include',
+                    ],
+                    'includes':
+                    [
+                        '../build/common_defines.gypi',
+                        'angle_implementation_unit_tests/angle_implementation_unit_tests.gypi',
+                    ],
+                    'sources':
+                    [
+                        'angle_implementation_unit_tests/angle_implementation_unit_tests_main.cpp',
+                    ],
+                    'conditions':
+                    [
+                        ['angle_build_winrt==1',
+                        {
+                            'sources':
+                            [
+                                'angle_implementation_unit_tests/CoreWindowNativeWindow_unittest.cpp',
+                            ],
+                            'defines':
+                            [
+                                'ANGLE_ENABLE_D3D11',
+                            ],
+                            'msvs_settings':
+                            {
+                                'VCLinkerTool':
+                                {
+                                    'AdditionalDependencies':
+                                    [
+                                        'runtimeobject.lib',
+                                    ],
+                                },
+                            },
+                        }],
                     ],
                 },
             ],
@@ -266,6 +363,14 @@
                             [
                                 'CONFORMANCE_TESTS_TYPE=CONFORMANCE_TESTS_ES3',
                             ],
+                            'msvs_settings':
+                            {
+                                'VCCLCompilerTool':
+                                {
+                                    # MSVS has trouble compiling this due to the obj files becoming too large.
+                                    'AdditionalOptions': [ '/bigobj' ],
+                                },
+                            },
                             'actions':
                             [
                                 {

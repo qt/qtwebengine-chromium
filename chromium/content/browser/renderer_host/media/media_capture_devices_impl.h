@@ -15,8 +15,8 @@ class MediaCaptureDevicesImpl : public MediaCaptureDevices {
   static MediaCaptureDevicesImpl* GetInstance();
 
   // Overriden from MediaCaptureDevices
-  virtual const MediaStreamDevices& GetAudioCaptureDevices() OVERRIDE;
-  virtual const MediaStreamDevices& GetVideoCaptureDevices() OVERRIDE;
+  const MediaStreamDevices& GetAudioCaptureDevices() override;
+  const MediaStreamDevices& GetVideoCaptureDevices() override;
 
   // Called by MediaStreamManager to notify the change of media capture
   // devices, these 2 methods are called in IO thread.
@@ -26,7 +26,7 @@ class MediaCaptureDevicesImpl : public MediaCaptureDevices {
  private:
   friend struct DefaultSingletonTraits<MediaCaptureDevicesImpl>;
   MediaCaptureDevicesImpl();
-  virtual ~MediaCaptureDevicesImpl();
+  ~MediaCaptureDevicesImpl() override;
 
   void UpdateAudioDevicesOnUIThread(const content::MediaStreamDevices& devices);
   void UpdateVideoDevicesOnUIThread(const content::MediaStreamDevices& devices);

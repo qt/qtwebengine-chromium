@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #include "base/command_line.h"
+#include "ui/ozone/public/native_pixmap.h"
 #include "ui/ozone/public/surface_ozone_canvas.h"
 #include "ui/ozone/public/surface_ozone_egl.h"
 
@@ -16,17 +17,17 @@ namespace ui {
 SurfaceFactoryOzone* SurfaceFactoryOzone::impl_ = NULL;
 
 SurfaceFactoryOzone::SurfaceFactoryOzone() {
-  CHECK(!impl_) << "There should only be a single SurfaceFactoryOzone.";
+  DCHECK(!impl_) << "There should only be a single SurfaceFactoryOzone.";
   impl_ = this;
 }
 
 SurfaceFactoryOzone::~SurfaceFactoryOzone() {
-  CHECK_EQ(impl_, this);
+  DCHECK_EQ(impl_, this);
   impl_ = NULL;
 }
 
 SurfaceFactoryOzone* SurfaceFactoryOzone::GetInstance() {
-  CHECK(impl_) << "No SurfaceFactoryOzone implementation set.";
+  DCHECK(impl_) << "No SurfaceFactoryOzone implementation set.";
   return impl_;
 }
 
@@ -35,6 +36,13 @@ intptr_t SurfaceFactoryOzone::GetNativeDisplay() {
 }
 
 scoped_ptr<SurfaceOzoneEGL> SurfaceFactoryOzone::CreateEGLSurfaceForWidget(
+    gfx::AcceleratedWidget widget) {
+  NOTIMPLEMENTED();
+  return scoped_ptr<SurfaceOzoneEGL>();
+}
+
+scoped_ptr<SurfaceOzoneEGL>
+SurfaceFactoryOzone::CreateSurfacelessEGLSurfaceForWidget(
     gfx::AcceleratedWidget widget) {
   NOTIMPLEMENTED();
   return scoped_ptr<SurfaceOzoneEGL>();
@@ -56,20 +64,23 @@ ui::OverlayCandidatesOzone* SurfaceFactoryOzone::GetOverlayCandidates(
   return NULL;
 }
 
-void SurfaceFactoryOzone::ScheduleOverlayPlane(
-    gfx::AcceleratedWidget w,
-    int plane_z_order,
-    gfx::OverlayTransform plane_transform,
-    ui::NativeBufferOzone buffer,
-    const gfx::Rect& display_bounds,
-    gfx::RectF crop_rect) {
-  NOTREACHED();
-}
-
-ui::NativeBufferOzone SurfaceFactoryOzone::CreateNativeBuffer(
+scoped_refptr<ui::NativePixmap> SurfaceFactoryOzone::CreateNativePixmap(
     gfx::Size size,
     BufferFormat format) {
-  return 0;
+  return NULL;
 }
 
+bool SurfaceFactoryOzone::ScheduleOverlayPlane(
+    gfx::AcceleratedWidget widget,
+    int plane_z_order,
+    gfx::OverlayTransform plane_transform,
+    scoped_refptr<NativePixmap> buffer,
+    const gfx::Rect& display_bounds,
+    const gfx::RectF& crop_rect) {
+  return false;
+}
+
+bool SurfaceFactoryOzone::CanShowPrimaryPlaneAsOverlay() {
+  return false;
+}
 }  // namespace ui

@@ -28,7 +28,7 @@
 #include "config.h"
 #include "modules/filesystem/WorkerGlobalScopeFileSystem.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/FileError.h"
 #include "core/workers/WorkerGlobalScope.h"
@@ -43,9 +43,9 @@
 #include "platform/FileSystemType.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
-void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope& worker, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void WorkerGlobalScopeFileSystem::webkitRequestFileSystem(WorkerGlobalScope& worker, int type, long long size, FileSystemCallback* successCallback, ErrorCallback* errorCallback)
 {
     ExecutionContext* secureContext = worker.executionContext();
     if (!secureContext->securityOrigin()->canAccessFileSystem()) {
@@ -76,7 +76,7 @@ DOMFileSystemSync* WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(Work
         return 0;
     }
 
-    RefPtr<FileSystemSyncCallbackHelper> helper = FileSystemSyncCallbackHelper::create();
+    FileSystemSyncCallbackHelper* helper = FileSystemSyncCallbackHelper::create();
     OwnPtr<AsyncFileSystemCallbacks> callbacks = FileSystemCallbacks::create(helper->successCallback(), helper->errorCallback(), &worker, fileSystemType);
     callbacks->setShouldBlockUntilCompletion(true);
 
@@ -84,7 +84,7 @@ DOMFileSystemSync* WorkerGlobalScopeFileSystem::webkitRequestFileSystemSync(Work
     return helper->getResult(exceptionState);
 }
 
-void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalScope& worker, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemURL(WorkerGlobalScope& worker, const String& url, EntryCallback* successCallback, ErrorCallback* errorCallback)
 {
     KURL completedURL = worker.completeURL(url);
     ExecutionContext* secureContext = worker.executionContext();
@@ -115,7 +115,7 @@ EntrySync* WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemSyncURL(Work
         return 0;
     }
 
-    RefPtr<EntrySyncCallbackHelper> resolveURLHelper = EntrySyncCallbackHelper::create();
+    EntrySyncCallbackHelper* resolveURLHelper = EntrySyncCallbackHelper::create();
     OwnPtr<AsyncFileSystemCallbacks> callbacks = ResolveURICallbacks::create(resolveURLHelper->successCallback(), resolveURLHelper->errorCallback(), &worker);
     callbacks->setShouldBlockUntilCompletion(true);
 
@@ -127,4 +127,4 @@ EntrySync* WorkerGlobalScopeFileSystem::webkitResolveLocalFileSystemSyncURL(Work
 COMPILE_ASSERT(static_cast<int>(WorkerGlobalScopeFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), enum_mismatch);
 COMPILE_ASSERT(static_cast<int>(WorkerGlobalScopeFileSystem::PERSISTENT) == static_cast<int>(FileSystemTypePersistent), enum_mismatch);
 
-} // namespace WebCore
+} // namespace blink

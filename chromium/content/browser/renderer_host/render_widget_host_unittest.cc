@@ -9,6 +9,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/timer/timer.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/input/input_router_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -28,13 +29,15 @@
 #include "content/browser/renderer_host/render_widget_host_view_android.h"
 #endif
 
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+#include "content/browser/compositor/test/no_transport_image_transport_factory.h"
+#endif
+
 #if defined(USE_AURA)
-#include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/browser/renderer_host/ui_events_helper.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/test_screen.h"
-#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/events/event.h"
 #endif
 
@@ -64,50 +67,45 @@ class MockInputRouter : public InputRouter {
         message_received_(false),
         client_(client) {
   }
-  virtual ~MockInputRouter() {}
+  ~MockInputRouter() override {}
 
   // InputRouter
-  virtual void Flush() OVERRIDE {
-    flush_called_ = true;
-  }
-  virtual bool SendInput(scoped_ptr<IPC::Message> message) OVERRIDE {
+  void Flush() override { flush_called_ = true; }
+  bool SendInput(scoped_ptr<IPC::Message> message) override {
     send_event_called_ = true;
     return true;
   }
-  virtual void SendMouseEvent(
-      const MouseEventWithLatencyInfo& mouse_event) OVERRIDE {
+  void SendMouseEvent(const MouseEventWithLatencyInfo& mouse_event) override {
     sent_mouse_event_ = true;
   }
-  virtual void SendWheelEvent(
-      const MouseWheelEventWithLatencyInfo& wheel_event) OVERRIDE {
+  void SendWheelEvent(
+      const MouseWheelEventWithLatencyInfo& wheel_event) override {
     sent_wheel_event_ = true;
   }
-  virtual void SendKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event,
-      const ui::LatencyInfo& latency_info,
-      bool is_shortcut) OVERRIDE {
+  void SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
+                         const ui::LatencyInfo& latency_info,
+                         bool is_shortcut) override {
     sent_keyboard_event_ = true;
   }
-  virtual void SendGestureEvent(
-      const GestureEventWithLatencyInfo& gesture_event) OVERRIDE {
+  void SendGestureEvent(
+      const GestureEventWithLatencyInfo& gesture_event) override {
     sent_gesture_event_ = true;
   }
-  virtual void SendTouchEvent(
-      const TouchEventWithLatencyInfo& touch_event) OVERRIDE {
+  void SendTouchEvent(const TouchEventWithLatencyInfo& touch_event) override {
     send_touch_event_not_cancelled_ =
         client_->FilterInputEvent(touch_event.event, touch_event.latency) ==
         INPUT_EVENT_ACK_STATE_NOT_CONSUMED;
   }
-  virtual const NativeWebKeyboardEvent* GetLastKeyboardEvent() const OVERRIDE {
+  const NativeWebKeyboardEvent* GetLastKeyboardEvent() const override {
     NOTREACHED();
     return NULL;
   }
-  virtual bool ShouldForwardTouchEvent() const OVERRIDE { return true; }
-  virtual void OnViewUpdated(int view_flags) OVERRIDE {}
-  virtual bool HasPendingEvents() const OVERRIDE { return false; }
+  bool ShouldForwardTouchEvent() const override { return true; }
+  void OnViewUpdated(int view_flags) override {}
+  bool HasPendingEvents() const override { return false; }
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     message_received_ = true;
     return false;
   }
@@ -148,9 +146,8 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   using RenderWidgetHostImpl::resize_ack_pending_;
   using RenderWidgetHostImpl::input_router_;
 
-  virtual void OnTouchEventAck(
-      const TouchEventWithLatencyInfo& event,
-      InputEventAckState ack_result) OVERRIDE {
+  void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override {
     // Sniff touch acks.
     acked_touch_event_type_ = event.event.type;
     RenderWidgetHostImpl::OnTouchEventAck(event, ack_result);
@@ -160,7 +157,7 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
     return unresponsive_timer_fired_;
   }
 
-  void set_hung_renderer_delay_ms(int delay_ms) {
+  void set_hung_renderer_delay_ms(int64 delay_ms) {
     hung_renderer_delay_ms_ = delay_ms;
   }
 
@@ -182,7 +179,7 @@ class MockRenderWidgetHost : public RenderWidgetHostImpl {
   }
 
  protected:
-  virtual void NotifyRendererUnresponsive() OVERRIDE {
+  void NotifyRendererUnresponsive() override {
     unresponsive_timer_fired_ = true;
   }
 
@@ -200,15 +197,10 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
  public:
   explicit RenderWidgetHostProcess(BrowserContext* browser_context)
       : MockRenderProcessHost(browser_context),
-        update_msg_should_reply_(false),
         update_msg_reply_flags_(0) {
   }
-  virtual ~RenderWidgetHostProcess() {
-  }
+  ~RenderWidgetHostProcess() override {}
 
-  void set_update_msg_should_reply(bool reply) {
-    update_msg_should_reply_ = reply;
-  }
   void set_update_msg_reply_flags(int flags) {
     update_msg_reply_flags_ = flags;
   }
@@ -216,17 +208,9 @@ class RenderWidgetHostProcess : public MockRenderProcessHost {
   // Fills the given update parameters with resonable default values.
   void InitUpdateRectParams(ViewHostMsg_UpdateRect_Params* params);
 
-  virtual bool HasConnection() const OVERRIDE { return true; }
+  bool HasConnection() const override { return true; }
 
  protected:
-  virtual bool WaitForBackingStoreMsg(int render_widget_id,
-                                      const base::TimeDelta& max_delay,
-                                      IPC::Message* msg) OVERRIDE;
-
-  // Set to true when WaitForBackingStoreMsg should return a successful update
-  // message reply. False implies timeout.
-  bool update_msg_should_reply_;
-
   // Indicates the flags that should be sent with a repaint request. This
   // only has an effect when update_msg_should_reply_ is true.
   int update_msg_reply_flags_;
@@ -240,22 +224,6 @@ void RenderWidgetHostProcess::InitUpdateRectParams(
 
   params->view_size = gfx::Size(w, h);
   params->flags = update_msg_reply_flags_;
-}
-
-bool RenderWidgetHostProcess::WaitForBackingStoreMsg(
-    int render_widget_id,
-    const base::TimeDelta& max_delay,
-    IPC::Message* msg) {
-  if (!update_msg_should_reply_)
-    return false;
-
-  // Construct a fake update reply.
-  ViewHostMsg_UpdateRect_Params params;
-  InitUpdateRectParams(&params);
-
-  ViewHostMsg_UpdateRect message(render_widget_id, params);
-  *msg = message;
-  return true;
 }
 
 // TestView --------------------------------------------------------------------
@@ -303,33 +271,31 @@ class TestView : public TestRenderWidgetHostView {
   }
 
   // RenderWidgetHostView override.
-  virtual gfx::Rect GetViewBounds() const OVERRIDE {
-    return bounds_;
-  }
-  virtual void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
-                                      InputEventAckState ack_result) OVERRIDE {
+  gfx::Rect GetViewBounds() const override { return bounds_; }
+  void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
+                              InputEventAckState ack_result) override {
     acked_event_ = touch.event;
     ++acked_event_count_;
   }
-  virtual void WheelEventAck(const WebMouseWheelEvent& event,
-                             InputEventAckState ack_result) OVERRIDE {
+  void WheelEventAck(const WebMouseWheelEvent& event,
+                     InputEventAckState ack_result) override {
     if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED)
       return;
     unhandled_wheel_event_count_++;
     unhandled_wheel_event_ = event;
   }
-  virtual void GestureEventAck(const WebGestureEvent& event,
-                               InputEventAckState ack_result) OVERRIDE {
+  void GestureEventAck(const WebGestureEvent& event,
+                       InputEventAckState ack_result) override {
     gesture_event_type_ = event.type;
     ack_result_ = ack_result;
   }
-  virtual gfx::Size GetPhysicalBackingSize() const OVERRIDE {
+  gfx::Size GetPhysicalBackingSize() const override {
     if (use_fake_physical_backing_size_)
       return mock_physical_backing_size_;
     return TestRenderWidgetHostView::GetPhysicalBackingSize();
   }
 #if defined(USE_AURA)
-  virtual ~TestView() {
+  ~TestView() override {
     // Simulate the mouse exit event dispatched when an aura window is
     // destroyed. (MakeWebMouseEventFromAuraEvent translates ET_MOUSE_EXITED
     // into WebInputEvent::MouseMove.)
@@ -367,7 +333,7 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
         handle_wheel_event_(false),
         handle_wheel_event_called_(false) {
   }
-  virtual ~MockRenderWidgetHostDelegate() {}
+  ~MockRenderWidgetHostDelegate() override {}
 
   // Tests that make sure we ignore keyboard event acknowledgments to events we
   // didn't send work by making sure we didn't call UnhandledKeyboardEvent().
@@ -400,21 +366,19 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
   }
 
  protected:
-  virtual bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
-                                      bool* is_keyboard_shortcut) OVERRIDE {
+  bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
+                              bool* is_keyboard_shortcut) override {
     prehandle_keyboard_event_type_ = event.type;
     prehandle_keyboard_event_called_ = true;
     return prehandle_keyboard_event_;
   }
 
-  virtual void HandleKeyboardEvent(
-      const NativeWebKeyboardEvent& event) OVERRIDE {
+  void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override {
     unhandled_keyboard_event_type_ = event.type;
     unhandled_keyboard_event_called_ = true;
   }
 
-  virtual bool HandleWheelEvent(
-      const blink::WebMouseWheelEvent& event) OVERRIDE {
+  bool HandleWheelEvent(const blink::WebMouseWheelEvent& event) override {
     handle_wheel_event_called_ = true;
     return handle_wheel_event_;
   }
@@ -443,8 +407,7 @@ class RenderWidgetHostTest : public testing::Test {
     last_simulated_event_time_seconds_ =
         (base::TimeTicks::Now() - base::TimeTicks()).InSecondsF();
   }
-  virtual ~RenderWidgetHostTest() {
-  }
+  ~RenderWidgetHostTest() override {}
 
   bool KeyPressEventCallback(const NativeWebKeyboardEvent& /* event */) {
     return handle_key_press_event_;
@@ -455,16 +418,21 @@ class RenderWidgetHostTest : public testing::Test {
 
  protected:
   // testing::Test
-  virtual void SetUp() {
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+  void SetUp() override {
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kValidateInputEventStream);
 
     browser_context_.reset(new TestBrowserContext());
     delegate_.reset(new MockRenderWidgetHostDelegate());
     process_ = new RenderWidgetHostProcess(browser_context_.get());
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    if (IsDelegatedRendererEnabled()) {
+      ImageTransportFactory::InitializeForUnitTests(
+          scoped_ptr<ImageTransportFactory>(
+              new NoTransportImageTransportFactory));
+    }
+#endif
 #if defined(USE_AURA)
-    ImageTransportFactory::InitializeForUnitTests(
-        scoped_ptr<ui::ContextFactory>(new ui::InProcessContextFactory));
     aura::Env::CreateInstance(true);
     screen_.reset(aura::TestScreen::Create(gfx::Size()));
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, screen_.get());
@@ -476,7 +444,7 @@ class RenderWidgetHostTest : public testing::Test {
     host_->Init();
     host_->DisableGestureDebounce();
   }
-  virtual void TearDown() {
+  void TearDown() override {
     view_.reset();
     host_.reset();
     delegate_.reset();
@@ -486,7 +454,10 @@ class RenderWidgetHostTest : public testing::Test {
 #if defined(USE_AURA)
     aura::Env::DeleteInstance();
     screen_.reset();
-    ImageTransportFactory::Terminate();
+#endif
+#if defined(USE_AURA) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    if (IsDelegatedRendererEnabled())
+      ImageTransportFactory::Terminate();
 #endif
 
     // Process all pending tasks to avoid leaks.
@@ -779,7 +750,7 @@ TEST_F(RenderWidgetHostTest, ResizeThenCrash) {
 TEST_F(RenderWidgetHostTest, Background) {
   scoped_ptr<RenderWidgetHostViewBase> view;
 #if defined(USE_AURA)
-  view.reset(new RenderWidgetHostViewAura(host_.get()));
+  view.reset(new RenderWidgetHostViewAura(host_.get(), false));
   // TODO(derat): Call this on all platforms: http://crbug.com/102450.
   view->InitAsChild(NULL);
 #elif defined(OS_ANDROID)
@@ -788,7 +759,7 @@ TEST_F(RenderWidgetHostTest, Background) {
   host_->SetView(view.get());
 
   EXPECT_TRUE(view->GetBackgroundOpaque());
-  view->SetBackgroundOpaque(false);
+  view->SetBackgroundColor(SK_ColorTRANSPARENT);
   EXPECT_FALSE(view->GetBackgroundOpaque());
 
   const IPC::Message* set_background =
@@ -825,14 +796,14 @@ TEST_F(RenderWidgetHostTest, HiddenPaint) {
 
   // Now unhide.
   process_->sink().ClearMessages();
-  host_->WasShown();
+  host_->WasShown(ui::LatencyInfo());
   EXPECT_FALSE(host_->is_hidden_);
 
   // It should have sent out a restored message with a request to paint.
   const IPC::Message* restored = process_->sink().GetUniqueMessageMatching(
       ViewMsg_WasShown::ID);
   ASSERT_TRUE(restored);
-  Tuple1<bool> needs_repaint;
+  Tuple2<bool, ui::LatencyInfo> needs_repaint;
   ViewMsg_WasShown::Read(restored, &needs_repaint);
   EXPECT_TRUE(needs_repaint.a);
 }
@@ -1049,8 +1020,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   simulated_event_time_delta_seconds_ = 0.1;
   // Immediately ack all touches instead of sending them to the renderer.
   host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, false));
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, true, true));
+  host_->SetTouchEventEmulationEnabled(true);
   process_->sink().ClearMessages();
   view_->set_bounds(gfx::Rect(0, 0, 400, 200));
   view_->Show();
@@ -1149,8 +1119,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Turn off emulation during a pinch.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, false, false));
+  host_->SetTouchEventEmulationEnabled(false);
   EXPECT_EQ(WebInputEvent::TouchCancel, host_->acked_touch_event_type());
   EXPECT_EQ("GesturePinchEnd GestureScrollEnd",
             GetInputMessageTypes(process_));
@@ -1165,8 +1134,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Turn on emulation.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, true, true));
+  host_->SetTouchEventEmulationEnabled(true);
   EXPECT_EQ(0U, process_->sink().message_count());
 
   // Another touch.
@@ -1185,8 +1153,7 @@ TEST_F(RenderWidgetHostTest, TouchEmulator) {
                     INPUT_EVENT_ACK_STATE_CONSUMED);
 
   // Turn off emulation during a scroll.
-  host_->OnMessageReceived(
-      ViewHostMsg_SetTouchEventEmulationEnabled(0, false, false));
+  host_->SetTouchEventEmulationEnabled(false);
   EXPECT_EQ(WebInputEvent::TouchCancel, host_->acked_touch_event_type());
 
   EXPECT_EQ("GestureScrollEnd", GetInputMessageTypes(process_));
@@ -1334,7 +1301,7 @@ TEST_F(RenderWidgetHostTest, InputRouterReceivesHandleInputEvent_ACK) {
 TEST_F(RenderWidgetHostTest, InputRouterReceivesMoveCaret_ACK) {
   host_->SetupForInputRouterTest();
 
-  host_->OnMessageReceived(ViewHostMsg_MoveCaret_ACK(0));
+  host_->OnMessageReceived(InputHostMsg_MoveCaret_ACK(0));
 
   EXPECT_TRUE(host_->mock_input_router()->message_received_);
 }
@@ -1342,7 +1309,7 @@ TEST_F(RenderWidgetHostTest, InputRouterReceivesMoveCaret_ACK) {
 TEST_F(RenderWidgetHostTest, InputRouterReceivesSelectRange_ACK) {
   host_->SetupForInputRouterTest();
 
-  host_->OnMessageReceived(ViewHostMsg_SelectRange_ACK(0));
+  host_->OnMessageReceived(InputHostMsg_SelectRange_ACK(0));
 
   EXPECT_TRUE(host_->mock_input_router()->message_received_);
 }
@@ -1355,21 +1322,24 @@ TEST_F(RenderWidgetHostTest, InputRouterReceivesHasTouchEventHandlers) {
   EXPECT_TRUE(host_->mock_input_router()->message_received_);
 }
 
+ui::LatencyInfo GetLatencyInfoFromInputEvent(RenderWidgetHostProcess* process) {
+  const IPC::Message* message = process->sink().GetUniqueMessageMatching(
+      InputMsg_HandleInputEvent::ID);
+  EXPECT_TRUE(message);
+  InputMsg_HandleInputEvent::Param params;
+  EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
+  process->sink().ClearMessages();
+  return params.b;
+}
 
 void CheckLatencyInfoComponentInMessage(RenderWidgetHostProcess* process,
                                         int64 component_id,
                                         WebInputEvent::Type input_type) {
-  const IPC::Message* message = process->sink().GetUniqueMessageMatching(
-      InputMsg_HandleInputEvent::ID);
-  ASSERT_TRUE(message);
-  InputMsg_HandleInputEvent::Param params;
-  EXPECT_TRUE(InputMsg_HandleInputEvent::Read(message, &params));
-  ui::LatencyInfo latency_info = params.b;
+  ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process);
   EXPECT_TRUE(latency_info.FindLatency(
       ui::INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
       component_id,
       NULL));
-  process->sink().ClearMessages();
 }
 
 // Tests that after input event passes through RWHI through ForwardXXXEvent()
@@ -1428,10 +1398,97 @@ TEST_F(RenderWidgetHostTest, InputEventRWHLatencyComponent) {
   SendInputEventACK(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED);
 }
 
+// Tests that after input event passes through RWHI through
+// ForwardXXXEventWithLatencyInfo(), input event coordinates will be present in
+// the latency info.
+TEST_F(RenderWidgetHostTest, InputEventRWHLatencyInfoCoordinates) {
+  host_->OnMessageReceived(ViewHostMsg_HasTouchEventHandlers(0, true));
+  process_->sink().ClearMessages();
+
+  {
+    WebMouseWheelEvent event =
+        SyntheticWebMouseWheelEventBuilder::Build(-5, 0, 0, true);
+    event.x = 100;
+    event.y = 200;
+    host_->ForwardWheelEvent(event);
+    ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process_);
+    EXPECT_EQ(1u, latency_info.input_coordinates_size);
+    EXPECT_EQ(100, latency_info.input_coordinates[0].x);
+    EXPECT_EQ(200, latency_info.input_coordinates[0].y);
+    SendInputEventACK(WebInputEvent::MouseWheel,
+                      INPUT_EVENT_ACK_STATE_CONSUMED);
+  }
+
+  {
+    WebMouseEvent event =
+        SyntheticWebMouseEventBuilder::Build(WebInputEvent::MouseMove);
+    event.x = 300;
+    event.y = 400;
+    host_->ForwardMouseEvent(event);
+    ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process_);
+    EXPECT_EQ(1u, latency_info.input_coordinates_size);
+    EXPECT_EQ(300, latency_info.input_coordinates[0].x);
+    EXPECT_EQ(400, latency_info.input_coordinates[0].y);
+    SendInputEventACK(WebInputEvent::MouseMove, INPUT_EVENT_ACK_STATE_CONSUMED);
+  }
+
+  {
+    WebGestureEvent event = SyntheticWebGestureEventBuilder::Build(
+        WebInputEvent::GestureScrollBegin, blink::WebGestureDeviceTouchscreen);
+    event.x = 500;
+    event.y = 600;
+    host_->ForwardGestureEvent(event);
+    ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process_);
+    EXPECT_EQ(1u, latency_info.input_coordinates_size);
+    EXPECT_EQ(500, latency_info.input_coordinates[0].x);
+    EXPECT_EQ(600, latency_info.input_coordinates[0].y);
+    SendInputEventACK(WebInputEvent::GestureScrollBegin,
+                      INPUT_EVENT_ACK_STATE_CONSUMED);
+  }
+
+  {
+    PressTouchPoint(700, 800);
+    PressTouchPoint(900, 1000);
+    PressTouchPoint(1100, 1200);  // LatencyInfo only holds two coordinates.
+    SendTouchEvent();
+    ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process_);
+    EXPECT_EQ(2u, latency_info.input_coordinates_size);
+    EXPECT_EQ(700, latency_info.input_coordinates[0].x);
+    EXPECT_EQ(800, latency_info.input_coordinates[0].y);
+    EXPECT_EQ(900, latency_info.input_coordinates[1].x);
+    EXPECT_EQ(1000, latency_info.input_coordinates[1].y);
+    SendInputEventACK(WebInputEvent::TouchStart,
+                      INPUT_EVENT_ACK_STATE_CONSUMED);
+  }
+
+  {
+    NativeWebKeyboardEvent event;
+    event.type = WebKeyboardEvent::KeyDown;
+    host_->ForwardKeyboardEvent(event);
+    ui::LatencyInfo latency_info = GetLatencyInfoFromInputEvent(process_);
+    EXPECT_EQ(0u, latency_info.input_coordinates_size);
+    SendInputEventACK(WebInputEvent::KeyDown, INPUT_EVENT_ACK_STATE_CONSUMED);
+  }
+}
+
 TEST_F(RenderWidgetHostTest, RendererExitedResetsInputRouter) {
   // RendererExited will delete the view.
   host_->SetView(new TestView(host_.get()));
   host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
+
+  // Make sure the input router is in a fresh state.
+  ASSERT_FALSE(host_->input_router()->HasPendingEvents());
+}
+
+// Regression test for http://crbug.com/401859.
+TEST_F(RenderWidgetHostTest, RendererExitedResetsIsHidden) {
+  // RendererExited will delete the view.
+  host_->SetView(new TestView(host_.get()));
+  host_->WasHidden();
+
+  ASSERT_TRUE(host_->is_hidden());
+  host_->RendererExited(base::TERMINATION_STATUS_PROCESS_CRASHED, -1);
+  ASSERT_FALSE(host_->is_hidden());
 
   // Make sure the input router is in a fresh state.
   ASSERT_FALSE(host_->input_router()->HasPendingEvents());

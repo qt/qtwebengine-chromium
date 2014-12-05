@@ -133,48 +133,23 @@
     }
   };
 
-  /**
-   * Returns true if the script is injected into auth main page.
-   */
-  function isAuthMainPage() {
-    return window.location.href.indexOf(
-        'chrome-extension://mfffpogegjflfpflabcdkioaeobkgjik/main.html') == 0;
+  function onGetSAMLFlag(channel, isSAMLPage) {
+    if (!isSAMLPage)
+      return;
+    var pageURL = window.location.href;
+
+    channel.send({name: 'pageLoaded', url: pageURL});
+
+    var apiCallForwarder = new APICallForwarder();
+    apiCallForwarder.init(channel);
+
+    var passwordScraper = new PasswordInputScraper();
+    passwordScraper.init(channel, pageURL, document.documentElement);
   }
 
-  /**
-   * Heuristic test whether the current page is a relevant SAML page.
-   * Current implementation checks if it is a http or https page and has
-   * some content in it.
-   * @return {boolean} Whether the current page looks like a SAML page.
-   */
-  function isSAMLPage() {
-    var url = window.location.href;
-    if (!url.match(/^(http|https):\/\//))
-      return false;
+  var channel = new Channel();
+  channel.connect('injected');
+  channel.sendWithCallback({name: 'getSAMLFlag'},
+                           onGetSAMLFlag.bind(undefined, channel));
 
-    return document.body.scrollWidth > 50 && document.body.scrollHeight > 50;
-  }
-
-  if (isAuthMainPage()) {
-    // Use an event to signal the auth main to enable SAML support.
-    var e = document.createEvent('Event');
-    e.initEvent('enableSAML', false, false);
-    document.dispatchEvent(e);
-  } else {
-    var channel;
-    var passwordScraper;
-    if (isSAMLPage()) {
-      var pageURL = window.location.href;
-
-      channel = new Channel();
-      channel.connect('injected');
-      channel.send({name: 'pageLoaded', url: pageURL});
-
-      apiCallForwarder = new APICallForwarder();
-      apiCallForwarder.init(channel);
-
-      passwordScraper = new PasswordInputScraper();
-      passwordScraper.init(channel, pageURL, document.documentElement);
-    }
-  }
 })();

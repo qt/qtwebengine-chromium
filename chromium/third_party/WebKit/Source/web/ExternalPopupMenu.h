@@ -37,52 +37,54 @@
 #include "public/platform/WebScrollbar.h"
 #include "public/web/WebExternalPopupMenuClient.h"
 
-namespace WebCore {
-class FloatQuad;
-class LocalFrame;
-class FrameView;
-class IntRect;
-class IntSize;
-class PopupMenuClient;
-}
-
 namespace blink {
 
+class FloatQuad;
+class IntSize;
+class LocalFrame;
+class PopupMenuClient;
 class WebExternalPopupMenu;
+class WebMouseEvent;
 class WebViewImpl;
 struct WebPopupMenuInfo;
-class WebMouseEvent;
 
 // The ExternalPopupMenu connects the actual implementation of the popup menu
 // to the WebCore popup menu.
-class ExternalPopupMenu FINAL : public WebCore::PopupMenu, public WebExternalPopupMenuClient {
+class ExternalPopupMenu final : public PopupMenu, public WebExternalPopupMenuClient {
 public:
-    ExternalPopupMenu(WebCore::LocalFrame&, WebCore::PopupMenuClient*, WebViewImpl&);
+    ExternalPopupMenu(LocalFrame&, PopupMenuClient*, WebViewImpl&);
     virtual ~ExternalPopupMenu();
 
+    // Fills |info| with the popup menu information contained in the
+    // PopupMenuClient associated with this ExternalPopupMenu.
+    // FIXME: public only for test access. Need to revert once gtest
+    // helpers from chromium are available for blink.
+    static void getPopupMenuInfo(WebPopupMenuInfo&, PopupMenuClient&);
+    static int toPopupMenuItemIndex(int index, PopupMenuClient&);
+    static int toExternalPopupMenuItemIndex(int index, PopupMenuClient&);
+
+    virtual void trace(Visitor*) override;
+
 private:
-    // WebCore::PopupMenu methods:
-    virtual void show(const WebCore::FloatQuad& controlPosition, const WebCore::IntSize&, int index) OVERRIDE;
-    virtual void hide() OVERRIDE;
-    virtual void updateFromElement() OVERRIDE;
-    virtual void disconnectClient() OVERRIDE;
+    // PopupMenu methods:
+    virtual void show(const FloatQuad& controlPosition, const IntSize&, int index) override;
+    virtual void hide() override;
+    virtual void updateFromElement() override;
+    virtual void disconnectClient() override;
 
     // WebExternalPopupClient methods:
-    virtual void didChangeSelection(int index) OVERRIDE;
-    virtual void didAcceptIndex(int index) OVERRIDE;
-    virtual void didAcceptIndices(const WebVector<int>& indices) OVERRIDE;
-    virtual void didCancel() OVERRIDE;
+    virtual void didChangeSelection(int index) override;
+    virtual void didAcceptIndex(int index) override;
+    virtual void didAcceptIndices(const WebVector<int>& indices) override;
+    virtual void didCancel() override;
 
-    void dispatchEvent(WebCore::Timer<ExternalPopupMenu>*);
-    // Fills |info| with the popup menu information contained in the
-    // WebCore::PopupMenuClient associated with this ExternalPopupMenu.
-    void getPopupMenuInfo(WebPopupMenuInfo* info);
+    void dispatchEvent(Timer<ExternalPopupMenu>*);
 
-    WebCore::PopupMenuClient* m_popupMenuClient;
-    RefPtr<WebCore::FrameView> m_frameView;
+    PopupMenuClient* m_popupMenuClient;
+    RefPtrWillBeMember<LocalFrame> m_localFrame;
     WebViewImpl& m_webView;
     OwnPtr<WebMouseEvent> m_syntheticEvent;
-    WebCore::Timer<ExternalPopupMenu> m_dispatchEventTimer;
+    Timer<ExternalPopupMenu> m_dispatchEventTimer;
     // The actual implementor of the show menu.
     WebExternalPopupMenu* m_webExternalPopupMenu;
 };

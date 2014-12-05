@@ -26,20 +26,20 @@
 #include "platform/Length.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderTable;
 class RenderTableCell;
 
-class AutoTableLayout FINAL : public TableLayout {
+class AutoTableLayout final : public TableLayout {
 public:
     AutoTableLayout(RenderTable*);
     virtual ~AutoTableLayout();
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) OVERRIDE;
-    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const OVERRIDE;
-    virtual void layout() OVERRIDE;
-    virtual void willChangeTableLayout() OVERRIDE { }
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minWidth, LayoutUnit& maxWidth) override;
+    virtual void applyPreferredLogicalWidthQuirks(LayoutUnit& minWidth, LayoutUnit& maxWidth) const override;
+    virtual void layout() override;
+    virtual void willChangeTableLayout() override { }
 
 private:
     void fullRecalc();
@@ -76,6 +76,6 @@ private:
     mutable bool m_effectiveLogicalWidthDirty : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AutoTableLayout_h

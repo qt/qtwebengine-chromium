@@ -10,31 +10,36 @@
 #include "ui/gl/gl_image.h"
 
 namespace gfx {
-
 class SurfaceTexture;
 
 class GL_EXPORT GLImageSurfaceTexture : public GLImage {
  public:
-  explicit GLImageSurfaceTexture(gfx::Size size);
+  explicit GLImageSurfaceTexture(const gfx::Size& size);
 
-  bool Initialize(gfx::GpuMemoryBufferHandle buffer);
+  bool Initialize(SurfaceTexture* surface_texture);
 
   // Overridden from GLImage:
-  virtual void Destroy() OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage(unsigned target) OVERRIDE;
-  virtual void ReleaseTexImage(unsigned target) OVERRIDE {}
-  virtual void WillUseTexImage() OVERRIDE {}
-  virtual void DidUseTexImage() OVERRIDE {}
-  virtual void WillModifyTexImage() OVERRIDE {}
-  virtual void DidModifyTexImage() OVERRIDE {}
+  virtual void Destroy(bool have_context) override;
+  virtual gfx::Size GetSize() override;
+  virtual bool BindTexImage(unsigned target) override;
+  virtual void ReleaseTexImage(unsigned target) override {}
+  virtual bool CopyTexImage(unsigned target) override;
+  virtual void WillUseTexImage() override {}
+  virtual void DidUseTexImage() override {}
+  virtual void WillModifyTexImage() override {}
+  virtual void DidModifyTexImage() override {}
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    OverlayTransform transform,
+                                    const Rect& bounds_rect,
+                                    const RectF& crop_rect) override;
 
  protected:
   virtual ~GLImageSurfaceTexture();
 
  private:
   scoped_refptr<SurfaceTexture> surface_texture_;
-  gfx::Size size_;
+  const gfx::Size size_;
   GLint texture_id_;
 
   DISALLOW_COPY_AND_ASSIGN(GLImageSurfaceTexture);

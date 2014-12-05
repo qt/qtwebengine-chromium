@@ -64,6 +64,8 @@ class MESSAGE_CENTER_EXPORT Notification {
                const RichNotificationData& optional_fields,
                NotificationDelegate* delegate);
 
+  Notification(const std::string& id, const Notification& other);
+
   Notification(const Notification& other);
 
   virtual ~Notification();
@@ -183,7 +185,6 @@ class MESSAGE_CENTER_EXPORT Notification {
 
   // Delegate actions.
   void Display() const { delegate()->Display(); }
-  void Error() const { delegate()->Error(); }
   bool HasClickedListener() const { return delegate()->HasClickedListener(); }
   void Click() const { delegate()->Click(); }
   void ButtonClick(int index) const { delegate()->ButtonClick(index); }

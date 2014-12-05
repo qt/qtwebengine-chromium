@@ -16,14 +16,12 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/threading/thread_checker.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkPicture.h"
-#include "third_party/skia/include/record/SkRecording.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class SkPixelRef;
 
@@ -50,7 +48,6 @@ class CC_EXPORT Picture
     RECORD_NORMALLY,
     RECORD_WITH_SK_NULL_CANVAS,
     RECORD_WITH_PAINTING_DISABLED,
-    RECORD_WITH_SKRECORD,
     RECORDING_MODE_COUNT,  // Must be the last entry.
   };
 
@@ -59,21 +56,19 @@ class CC_EXPORT Picture
       ContentLayerClient* client,
       const SkTileGridFactory::TileGridInfo& tile_grid_info,
       bool gather_pixels_refs,
-      int num_raster_threads,
       RecordingMode recording_mode);
   static scoped_refptr<Picture> CreateFromValue(const base::Value* value);
   static scoped_refptr<Picture> CreateFromSkpValue(const base::Value* value);
 
   gfx::Rect LayerRect() const { return layer_rect_; }
-  gfx::Rect OpaqueRect() const { return opaque_rect_; }
-
-  // Get thread-safe clone for rasterizing with on a specific thread.
-  Picture* GetCloneForDrawingOnThread(unsigned thread_index);
 
   // Has Record() been called yet?
   bool HasRecording() const { return picture_.get() != NULL; }
 
   bool IsSuitableForGpuRasterization() const;
+  int ApproximateOpCount() const;
+
+  bool HasText() const;
 
   // Apply this scale and raster the negated region into the canvas.
   // |negated_content_region| specifies the region to be clipped out of the
@@ -82,7 +77,7 @@ class CC_EXPORT Picture
   int Raster(SkCanvas* canvas,
              SkDrawPictureCallback* callback,
              const Region& negated_content_region,
-             float contents_scale);
+             float contents_scale) const;
 
   // Draw the picture directly into the given canvas, without applying any
   // clip/scale/layer transformations.
@@ -137,16 +132,10 @@ class CC_EXPORT Picture
   // ownership to this picture.
   Picture(const skia::RefPtr<SkPicture>&,
           const gfx::Rect& layer_rect,
-          const gfx::Rect& opaque_rect,
           const PixelRefMap& pixel_refs);
   // This constructor will call AdoptRef on the SkPicture.
-  Picture(SkPicture*,
-          const gfx::Rect& layer_rect,
-          const gfx::Rect& opaque_rect);
+  Picture(SkPicture*, const gfx::Rect& layer_rect);
   ~Picture();
-
-  // Make thread-safe clones for rasterizing with.
-  void CloneForDrawing(int num_threads);
 
   // Record a paint operation. To be able to safely use this SkPicture for
   // playback on a different thread this can only be called once.
@@ -158,12 +147,7 @@ class CC_EXPORT Picture
   void GatherPixelRefs(const SkTileGridFactory::TileGridInfo& tile_grid_info);
 
   gfx::Rect layer_rect_;
-  gfx::Rect opaque_rect_;
   skia::RefPtr<SkPicture> picture_;
-  scoped_ptr<const EXPERIMENTAL::SkPlayback> playback_;
-
-  typedef std::vector<scoped_refptr<Picture> > PictureVector;
-  PictureVector clones_;
 
   PixelRefMap pixel_refs_;
   gfx::Point min_pixel_cell_;
@@ -174,8 +158,6 @@ class CC_EXPORT Picture
     AsTraceableRasterData(float scale) const;
   scoped_refptr<base::debug::ConvertableToTraceFormat>
     AsTraceableRecordData() const;
-
-  base::ThreadChecker raster_thread_checker_;
 
   friend class base::RefCountedThreadSafe<Picture>;
   friend class PixelRefIterator;

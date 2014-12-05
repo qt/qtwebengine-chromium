@@ -5,27 +5,26 @@
 #ifndef WebGLCompressedTextureETC1_h
 #define WebGLCompressedTextureETC1_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLTexture;
-
-class WebGLCompressedTextureETC1 FINAL : public WebGLExtension, public ScriptWrappable {
+class WebGLCompressedTextureETC1 final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<WebGLCompressedTextureETC1> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLCompressedTextureETC1> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~WebGLCompressedTextureETC1();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
-    WebGLCompressedTextureETC1(WebGLRenderingContextBase*);
+    explicit WebGLCompressedTextureETC1(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLCompressedTextureETC1_h

@@ -36,11 +36,9 @@
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 
-namespace WebCore {
-class RTCSessionDescriptionRequest;
-}
-
 namespace blink {
+
+class RTCSessionDescriptionRequest;
 class WebRTCSessionDescription;
 
 class WebRTCSessionDescriptionRequest {
@@ -76,11 +74,11 @@ public:
     BLINK_PLATFORM_EXPORT void setExtraData(ExtraData*);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebRTCSessionDescriptionRequest(const WTF::PassRefPtr<WebCore::RTCSessionDescriptionRequest>&);
+    BLINK_PLATFORM_EXPORT WebRTCSessionDescriptionRequest(RTCSessionDescriptionRequest*);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::RTCSessionDescriptionRequest> m_private;
+    WebPrivatePtr<RTCSessionDescriptionRequest> m_private;
 };
 
 } // namespace blink

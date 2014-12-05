@@ -31,25 +31,22 @@
 #include "config.h"
 #include "modules/webmidi/MIDIConnectionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 MIDIConnectionEvent::MIDIConnectionEvent()
 {
-    ScriptWrappable::init(this);
 }
 
-MIDIConnectionEvent::MIDIConnectionEvent(const AtomicString& type, PassRefPtrWillBeRawPtr<MIDIPort> port)
+MIDIConnectionEvent::MIDIConnectionEvent(const AtomicString& type, MIDIPort* port)
     : Event(type, false, false)
     , m_port(port)
 {
-    ScriptWrappable::init(this);
 }
 
 MIDIConnectionEvent::MIDIConnectionEvent(const AtomicString& type, const MIDIConnectionEventInit& initializer)
     : Event(type, initializer)
     , m_port(initializer.port)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create()
@@ -57,7 +54,7 @@ PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create()
     return adoptRefWillBeNoop(new MIDIConnectionEvent());
 }
 
-PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create(const AtomicString& type, PassRefPtrWillBeRawPtr<MIDIPort> port)
+PassRefPtrWillBeRawPtr<MIDIConnectionEvent> MIDIConnectionEvent::create(const AtomicString& type, MIDIPort* port)
 {
     return adoptRefWillBeNoop(new MIDIConnectionEvent(type, port));
 }
@@ -73,4 +70,4 @@ void MIDIConnectionEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

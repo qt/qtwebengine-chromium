@@ -12,12 +12,12 @@
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/safe_integer_conversions.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
@@ -194,7 +194,7 @@ bool BaseScrollBar::OnKeyPressed(const ui::KeyEvent& event) {
 }
 
 bool BaseScrollBar::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  ScrollByContentsOffset(event.y_offset());
+  OnScroll(event.x_offset(), event.y_offset());
   return true;
 }
 
@@ -294,7 +294,8 @@ void BaseScrollBar::ShowContextMenuForView(View* source,
 
   views::MenuItemView* menu = new views::MenuItemView(this);
   // MenuRunner takes ownership of |menu|.
-  menu_runner_.reset(new MenuRunner(menu));
+  menu_runner_.reset(new MenuRunner(
+      menu, MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU));
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollHere);
   menu->AppendSeparator();
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollStart);
@@ -305,14 +306,11 @@ void BaseScrollBar::ShowContextMenuForView(View* source,
   menu->AppendSeparator();
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollPrev);
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollNext);
-  if (menu_runner_->RunMenuAt(
-          GetWidget(),
-          NULL,
-          gfx::Rect(p, gfx::Size()),
-          MENU_ANCHOR_TOPLEFT,
-          source_type,
-          MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
-      MenuRunner::MENU_DELETED) {
+  if (menu_runner_->RunMenuAt(GetWidget(),
+                              NULL,
+                              gfx::Rect(p, gfx::Size()),
+                              MENU_ANCHOR_TOPLEFT,
+                              source_type) == MenuRunner::MENU_DELETED) {
     return;
   }
 }

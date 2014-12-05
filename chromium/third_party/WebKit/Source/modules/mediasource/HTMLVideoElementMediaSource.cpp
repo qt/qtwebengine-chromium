@@ -34,18 +34,18 @@
 #include "core/html/HTMLVideoElement.h"
 #include "modules/mediasource/VideoPlaybackQuality.h"
 
-namespace WebCore {
+namespace blink {
 
 HTMLVideoElementMediaSource::HTMLVideoElementMediaSource() { }
 
 HTMLVideoElementMediaSource::~HTMLVideoElementMediaSource() { }
 
-PassRefPtrWillBeRawPtr<VideoPlaybackQuality> HTMLVideoElementMediaSource::getVideoPlaybackQuality(HTMLVideoElement& videoElement)
+VideoPlaybackQuality* HTMLVideoElementMediaSource::getVideoPlaybackQuality(HTMLVideoElement& videoElement)
 {
     unsigned total = 0;
     unsigned dropped = 0;
     unsigned corrupted = 0;
-    blink::WebMediaPlayer* webMediaPlayer = videoElement.webMediaPlayer();
+    WebMediaPlayer* webMediaPlayer = videoElement.webMediaPlayer();
     if (webMediaPlayer) {
         total = webMediaPlayer->decodedFrameCount();
         dropped = webMediaPlayer->droppedFrameCount();
@@ -55,4 +55,4 @@ PassRefPtrWillBeRawPtr<VideoPlaybackQuality> HTMLVideoElementMediaSource::getVid
     return VideoPlaybackQuality::create(videoElement.document(), total, dropped, corrupted);
 }
 
-}
+} // namespace blink

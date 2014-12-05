@@ -50,7 +50,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 class RenderLayerCompositor;
@@ -89,13 +89,9 @@ public:
 
     RenderLayerStackingNode* ancestorStackingContextNode() const;
 
-    // Gets the enclosing stacking context for this node, possibly the node
-    // itself, if it is a stacking context.
-    RenderLayerStackingNode* enclosingStackingContextNode() { return isStackingContext() ? this : ancestorStackingContextNode(); }
-
     RenderLayer* layer() const { return m_layer; }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool layerListMutationAllowed() const { return m_layerListMutationAllowed; }
     void setLayerListMutationAllowed(bool flag) { m_layerListMutationAllowed = flag; }
 #endif
@@ -128,7 +124,7 @@ private:
     void rebuildZOrderLists();
     void collectLayers(OwnPtr<Vector<RenderLayerStackingNode*> >& posZOrderList, OwnPtr<Vector<RenderLayerStackingNode*> >& negZOrderList);
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool isInStackingParentZOrderLists() const;
     bool isInStackingParentNormalFlowList() const;
     void updateStackingParentForZOrderLists(RenderLayerStackingNode* stackingParent);
@@ -162,7 +158,7 @@ private:
     unsigned m_normalFlowListDirty: 1;
     unsigned m_isNormalFlowOnly : 1;
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     unsigned m_layerListMutationAllowed : 1;
     RenderLayerStackingNode* m_stackingParent;
 #endif
@@ -172,7 +168,7 @@ inline void RenderLayerStackingNode::clearZOrderLists()
 {
     ASSERT(!isStackingContext());
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     updateStackingParentForZOrderLists(0);
 #endif
 
@@ -194,7 +190,7 @@ inline void RenderLayerStackingNode::updateZOrderLists()
     rebuildZOrderLists();
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 class LayerListMutationDetector {
 public:
     explicit LayerListMutationDetector(RenderLayerStackingNode* stackingNode)
@@ -215,6 +211,6 @@ private:
 };
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderLayerStackingNode_h

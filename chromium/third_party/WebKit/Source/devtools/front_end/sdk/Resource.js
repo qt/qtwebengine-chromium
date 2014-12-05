@@ -28,8 +28,9 @@
 
 /**
  * @constructor
- * @extends {WebInspector.Object}
+ * @extends {WebInspector.SDKObject}
  * @implements {WebInspector.ContentProvider}
+ * @param {!WebInspector.Target} target
  * @param {?WebInspector.NetworkRequest} request
  * @param {string} url
  * @param {string} documentURL
@@ -39,8 +40,9 @@
  * @param {string} mimeType
  * @param {boolean=} isHidden
  */
-WebInspector.Resource = function(request, url, documentURL, frameId, loaderId, type, mimeType, isHidden)
+WebInspector.Resource = function(target, request, url, documentURL, frameId, loaderId, type, mimeType, isHidden)
 {
+    WebInspector.SDKObject.call(this, target);
     this._request = request;
     this.url = url;
     this._documentURL = documentURL;
@@ -60,6 +62,43 @@ WebInspector.Resource = function(request, url, documentURL, frameId, loaderId, t
 WebInspector.Resource.Events = {
     MessageAdded: "message-added",
     MessagesCleared: "messages-cleared",
+}
+
+/**
+ * @param {?string} content
+ * @param {string} mimeType
+ * @param {boolean} contentEncoded
+ * @return {?string}
+ */
+WebInspector.Resource.contentAsDataURL = function(content, mimeType, contentEncoded)
+{
+    const maxDataUrlSize = 1024 * 1024;
+    if (content === null || content.length > maxDataUrlSize)
+        return null;
+
+    return "data:" + mimeType + (contentEncoded ? ";base64," : ",") + content;
+}
+
+/**
+ * @param {string} url
+ * @param {string} mimeType
+ * @param {!WebInspector.ContentProvider} contentProvider
+ * @param {!Element} image
+ */
+WebInspector.Resource.populateImageSource = function(url, mimeType, contentProvider, image)
+{
+    /**
+     * @param {?string} content
+     */
+    function onResourceContent(content)
+    {
+        var imageSrc = WebInspector.Resource.contentAsDataURL(content, mimeType, true);
+        if (imageSrc === null)
+            imageSrc = url;
+        image.src = imageSrc;
+    }
+
+    contentProvider.requestContent(onResourceContent);
 }
 
 WebInspector.Resource.prototype = {
@@ -125,9 +164,9 @@ WebInspector.Resource.prototype = {
     /**
      * @return {!WebInspector.ResourceType}
      */
-    get type()
+    resourceType: function()
     {
-        return this._request ? this._request.type : this._type;
+        return this._request ? this._request.resourceType() : this._type;
     },
 
     /**
@@ -223,7 +262,7 @@ WebInspector.Resource.prototype = {
      */
     contentType: function()
     {
-        return this.type;
+        return this.resourceType();
     },
 
     /**
@@ -246,7 +285,7 @@ WebInspector.Resource.prototype = {
      */
     canonicalMimeType: function()
     {
-        return this.type.canonicalMimeType() || this.mimeType;
+        return this.resourceType().canonicalMimeType() || this.mimeType;
     },
 
     /**
@@ -266,13 +305,13 @@ WebInspector.Resource.prototype = {
             callback(searchMatches || []);
         }
 
-        if (this.type === WebInspector.resourceTypes.Document) {
+        if (this.resourceType() === WebInspector.resourceTypes.Document) {
             callback([]);
             return;
         }
 
         if (this.frameId)
-            PageAgent.searchInResource(this.frameId, this.url, query, caseSensitive, isRegex, callbackWrapper);
+            this.target().pageAgent().searchInResource(this.frameId, this.url, query, caseSensitive, isRegex, callbackWrapper);
         else
             callback([]);
     },
@@ -282,19 +321,7 @@ WebInspector.Resource.prototype = {
      */
     populateImageSource: function(image)
     {
-        /**
-         * @param {?string} content
-         * @this {WebInspector.Resource}
-         */
-        function onResourceContent(content)
-        {
-            var imageSrc = WebInspector.contentAsDataURL(this._content, this.mimeType, this._contentEncoded);
-            if (imageSrc === null)
-                imageSrc = this.url;
-            image.src = imageSrc;
-        }
-
-        this.requestContent(onResourceContent.bind(this));
+        WebInspector.Resource.populateImageSource(this._url, this._mimeType, this, image);
     },
 
     _requestFinished: function()
@@ -367,7 +394,7 @@ WebInspector.Resource.prototype = {
             contentLoaded.call(this, null, content, this.request.contentEncoded);
         }
 
-        PageAgent.getResourceContent(this.frameId, this.url, resourceContentLoaded.bind(this));
+        this.target().pageAgent().getResourceContent(this.frameId, this.url, resourceContentLoaded.bind(this));
     },
 
     /**
@@ -378,6 +405,19 @@ WebInspector.Resource.prototype = {
         return !!this._isHidden;
     },
 
-    __proto__: WebInspector.Object.prototype
+
+    /**
+     * @return {boolean}
+     */
+    hasTextContent: function()
+    {
+        if (this._type.isTextType())
+            return true;
+        if (this._type === WebInspector.resourceTypes.Other)
+            return !!this._content && !this._contentEncoded;
+        return false;
+    },
+
+    __proto__: WebInspector.SDKObject.prototype
 }
 

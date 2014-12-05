@@ -28,14 +28,13 @@
 
 #include "modules/webaudio/BiquadFilterNode.h"
 
-namespace WebCore {
+namespace blink {
 
 BiquadFilterNode::BiquadFilterNode(AudioContext* context, float sampleRate)
     : AudioBasicProcessorNode(context, sampleRate)
 {
-    ScriptWrappable::init(this);
     // Initially setup as lowpass filter.
-    m_processor = adoptPtr(new BiquadProcessor(context, sampleRate, 1, false));
+    m_processor = new BiquadProcessor(context, sampleRate, 1, false);
     setNodeType(NodeTypeBiquadFilter);
 }
 
@@ -93,9 +92,7 @@ bool BiquadFilterNode::setType(unsigned type)
     return true;
 }
 
-void BiquadFilterNode::getFrequencyResponse(const Float32Array* frequencyHz,
-                                            Float32Array* magResponse,
-                                            Float32Array* phaseResponse)
+void BiquadFilterNode::getFrequencyResponse(const DOMFloat32Array* frequencyHz, DOMFloat32Array* magResponse, DOMFloat32Array* phaseResponse)
 {
     if (!frequencyHz || !magResponse || !phaseResponse)
         return;
@@ -111,6 +108,6 @@ void BiquadFilterNode::getFrequencyResponse(const Float32Array* frequencyHz,
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

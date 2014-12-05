@@ -35,7 +35,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 QuotaTracker& QuotaTracker::instance()
 {
@@ -47,7 +47,7 @@ void QuotaTracker::getDatabaseSizeAndSpaceAvailableToOrigin(
     const String& originIdentifier, const String& databaseName,
     unsigned long long* databaseSize, unsigned long long* spaceAvailable)
 {
-    // Extra scope to unlock prior to potentially calling blink::Platform.
+    // Extra scope to unlock prior to potentially calling Platform.
     {
         MutexLocker lockData(m_dataGuard);
         ASSERT(m_databaseSizes.contains(originIdentifier));
@@ -62,7 +62,7 @@ void QuotaTracker::getDatabaseSizeAndSpaceAvailableToOrigin(
     }
 
     // The embedder hasn't pushed this value to us, so we pull it as needed.
-    *spaceAvailable = blink::Platform::current()->databaseGetSpaceAvailableForOrigin(originIdentifier);
+    *spaceAvailable = Platform::current()->databaseGetSpaceAvailableForOrigin(originIdentifier);
 }
 
 void QuotaTracker::updateDatabaseSize(
@@ -86,4 +86,4 @@ void QuotaTracker::resetSpaceAvailableToOrigin(const String& originIdentifier)
     m_spaceAvailableToOrigins.remove(originIdentifier);
 }
 
-} // namespace WebCore
+} // namespace blink

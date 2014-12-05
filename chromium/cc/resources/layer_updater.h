@@ -8,8 +8,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/vector2d.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/vector2d.h"
 
 namespace cc {
 
@@ -46,14 +47,11 @@ class CC_EXPORT LayerUpdater : public base::RefCounted<LayerUpdater> {
 
   virtual scoped_ptr<Resource> CreateResource(
       PrioritizedResourceManager* manager) = 0;
-  // The |resulting_opaque_rect| gives back a region of the layer that was
-  // painted opaque. If the layer is marked opaque in the updater, then this
-  // region should be ignored in preference for the entire layer's area.
-  virtual void PrepareToUpdate(const gfx::Rect& content_rect,
+  virtual void PrepareToUpdate(const gfx::Size& content_size,
+                               const gfx::Rect& paint_rect,
                                const gfx::Size& tile_size,
                                float contents_width_scale,
-                               float contents_height_scale,
-                               gfx::Rect* resulting_opaque_rect) {}
+                               float contents_height_scale) {}
   virtual void ReduceMemoryUsage() {}
 
   // Set true by the layer when it is known that the entire output is going to
@@ -62,6 +60,7 @@ class CC_EXPORT LayerUpdater : public base::RefCounted<LayerUpdater> {
   // Set true by the layer when it is known that the entire output bounds will
   // be rasterized.
   virtual void SetFillsBoundsCompletely(bool fills_bounds) {}
+  virtual void SetBackgroundColor(SkColor background_color) {}
 
  protected:
   virtual ~LayerUpdater() {}

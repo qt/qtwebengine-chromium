@@ -29,7 +29,7 @@
 #include "core/html/parser/HTMLToken.h"
 #include "platform/text/SegmentedString.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTokenizer;
 
@@ -51,6 +51,8 @@ private:
     SegmentedString m_currentSource;
 
     String m_cachedSourceForToken;
+
+    bool m_isStarted;
 };
 
 }

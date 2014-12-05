@@ -22,12 +22,11 @@
 
 #include "core/svg/SVGFEFuncAElement.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEFuncAElement::SVGFEFuncAElement(Document& document)
     : SVGComponentTransferFunctionElement(SVGNames::feFuncATag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGFEFuncAElement)

@@ -11,6 +11,7 @@
 #include "base/observer_list.h"
 #include "net/base/net_export.h"
 #include "net/cert/crl_set.h"
+#include "net/cert/ct_ev_whitelist.h"
 #include "net/ssl/ssl_config.h"
 
 namespace net {
@@ -50,8 +51,10 @@ class NET_EXPORT SSLConfigService
   static void SetCRLSet(scoped_refptr<CRLSet> crl_set);
   static scoped_refptr<CRLSet> GetCRLSet();
 
-  // Is SNI available in this configuration?
-  static bool IsSNIAvailable(SSLConfigService* service);
+  // Sets and gets the current, global EV certificates whitelist
+  static void SetEVCertsWhitelist(
+      scoped_refptr<ct::EVCertsWhitelist> ev_whitelist);
+  static scoped_refptr<ct::EVCertsWhitelist> GetEVCertsWhitelist();
 
   // Add an observer of this service.
   void AddObserver(Observer* observer);

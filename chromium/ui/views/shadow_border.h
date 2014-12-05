@@ -18,13 +18,13 @@ class VIEWS_EXPORT ShadowBorder : public views::Border {
                SkColor color,
                int vertical_offset,
                int horizontal_offset);
-  virtual ~ShadowBorder();
+  ~ShadowBorder() override;
 
  protected:
   // Overridden from views::Border:
-  virtual void Paint(const views::View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  void Paint(const views::View& view, gfx::Canvas* canvas) override;
+  gfx::Insets GetInsets() const override;
+  gfx::Size GetMinimumSize() const override;
 
  private:
   // Blur amount of the shadow in pixels. For details on how blur is defined see

@@ -12,12 +12,11 @@
 #include "cc/test/fake_ui_resource_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/safe_integer_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -36,9 +35,7 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
                               const gfx::Rect& border,
                               bool fill_center,
                               size_t expected_quad_size) {
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
   gfx::Rect visible_content_rect(layer_size);
   gfx::Rect expected_remaining(border.x(),
                                border.y(),
@@ -65,19 +62,18 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   layer->SetImageBounds(bitmap_size);
   layer->SetLayout(aperture_rect, border, fill_center);
   AppendQuadsData data;
-  layer->AppendQuads(&quad_culler, &data);
+  layer->AppendQuads(render_pass.get(), Occlusion(), &data);
 
   // Verify quad rects
-  const QuadList& quads = quad_culler.quad_list();
+  const QuadList& quads = render_pass->quad_list;
   EXPECT_EQ(expected_quad_size, quads.size());
 
   Region remaining(visible_content_rect);
-  for (size_t i = 0; i < quads.size(); ++i) {
-    DrawQuad* quad = quads[i];
-    gfx::Rect quad_rect = quad->rect;
+  for (auto iter = quads.cbegin(); iter != quads.cend(); ++iter) {
+    gfx::Rect quad_rect = iter->rect;
 
-    EXPECT_TRUE(visible_content_rect.Contains(quad_rect)) << i;
-    EXPECT_TRUE(remaining.Contains(quad_rect)) << i;
+    EXPECT_TRUE(visible_content_rect.Contains(quad_rect)) << iter.index();
+    EXPECT_TRUE(remaining.Contains(quad_rect)) << iter.index();
     remaining.Subtract(Region(quad_rect));
   }
 
@@ -92,8 +88,7 @@ void NinePatchLayerLayoutTest(const gfx::Size& bitmap_size,
   // Verify UV rects
   gfx::Rect bitmap_rect(bitmap_size);
   Region tex_remaining(bitmap_rect);
-  for (size_t i = 0; i < quads.size(); ++i) {
-    DrawQuad* quad = quads[i];
+  for (const auto& quad : quads) {
     const TextureDrawQuad* tex_quad = TextureDrawQuad::MaterialCast(quad);
     gfx::RectF tex_rect =
         gfx::BoundingRect(tex_quad->uv_top_left, tex_quad->uv_bottom_right);
@@ -267,11 +262,8 @@ TEST(NinePatchLayerImplTest, Occlusion) {
     impl.AppendQuadsWithOcclusion(nine_patch_layer_impl, occluded);
 
     size_t partially_occluded_count = 0;
-    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
-        impl.quad_list(),
-        gfx::Rect(layer_size),
-        occluded,
-        &partially_occluded_count);
+    LayerTestCommon::VerifyQuadsAreOccluded(
+        impl.quad_list(), occluded, &partially_occluded_count);
     // The layer outputs nine quads, three of which are partially occluded, and
     // three fully occluded.
     EXPECT_EQ(6u, impl.quad_list().size());

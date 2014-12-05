@@ -27,10 +27,10 @@
 #include "config.h"
 #include "core/css/CSSSelectorList.h"
 
-#include "core/css/CSSParserValues.h"
+#include "core/css/parser/CSSParserValues.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSSelectorList::~CSSSelectorList()
 {
@@ -114,7 +114,7 @@ String CSSSelectorList::selectorsText() const
 
     for (const CSSSelector* s = first(); s; s = next(*s)) {
         if (s != first())
-            result.append(", ");
+            result.appendLiteral(", ");
         result.append(s->selectorText());
     }
 
@@ -124,8 +124,7 @@ String CSSSelectorList::selectorsText() const
 template <typename Functor>
 static bool forEachTagSelector(Functor& functor, const CSSSelector& selector)
 {
-    const CSSSelector* current = &selector;
-    do {
+    for (const CSSSelector* current = &selector; current; current = current->tagHistory()) {
         if (functor(*current))
             return true;
         if (const CSSSelectorList* selectorList = current->selectorList()) {
@@ -134,7 +133,7 @@ static bool forEachTagSelector(Functor& functor, const CSSSelector& selector)
                     return true;
             }
         }
-    } while ((current = current->tagHistory()));
+    }
 
     return false;
 }
@@ -196,4 +195,4 @@ bool CSSSelectorList::selectorCrossesTreeScopes(size_t index) const
     return forEachTagSelector(functor, selectorAt(index));
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -10,19 +10,19 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_util.h"
-#include "webkit/browser/database/database_util.h"
+#include "storage/browser/database/database_util.h"
 
-using quota::QuotaClient;
-using webkit_database::DatabaseUtil;
+using storage::QuotaClient;
+using storage::DatabaseUtil;
 
 namespace content {
 namespace {
 
-quota::QuotaStatusCode DeleteOriginDataOnIndexedDBThread(
+storage::QuotaStatusCode DeleteOriginDataOnIndexedDBThread(
     IndexedDBContextImpl* context,
     const GURL& origin) {
   context->DeleteForOrigin(origin);
-  return quota::kQuotaStatusOk;
+  return storage::kQuotaStatusOk;
 }
 
 int64 GetOriginUsageOnIndexedDBThread(IndexedDBContextImpl* context,
@@ -49,11 +49,9 @@ void GetOriginsForHostOnIndexedDBThread(IndexedDBContextImpl* context,
                                         std::set<GURL>* origins_to_return) {
   DCHECK(context->TaskRunner()->RunsTasksOnCurrentThread());
   std::vector<GURL> all_origins = context->GetAllOrigins();
-  for (std::vector<GURL>::const_iterator iter = all_origins.begin();
-       iter != all_origins.end();
-       ++iter) {
-    if (host == net::GetHostOrSpecFromURL(*iter))
-      origins_to_return->insert(*iter);
+  for (const auto& origin_url : all_origins) {
+    if (host == net::GetHostOrSpecFromURL(origin_url))
+      origins_to_return->insert(origin_url);
   }
 }
 
@@ -72,13 +70,13 @@ QuotaClient::ID IndexedDBQuotaClient::id() const { return kIndexedDatabase; }
 void IndexedDBQuotaClient::OnQuotaManagerDestroyed() { delete this; }
 
 void IndexedDBQuotaClient::GetOriginUsage(const GURL& origin_url,
-                                          quota::StorageType type,
+                                          storage::StorageType type,
                                           const GetUsageCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // IndexedDB is in the temp namespace for now.
-  if (type != quota::kStorageTypeTemporary) {
+  if (type != storage::kStorageTypeTemporary) {
     callback.Run(0);
     return;
   }
@@ -98,13 +96,13 @@ void IndexedDBQuotaClient::GetOriginUsage(const GURL& origin_url,
 }
 
 void IndexedDBQuotaClient::GetOriginsForType(
-    quota::StorageType type,
+    storage::StorageType type,
     const GetOriginsCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // All databases are in the temp namespace for now.
-  if (type != quota::kStorageTypeTemporary) {
+  if (type != storage::kStorageTypeTemporary) {
     callback.Run(std::set<GURL>());
     return;
   }
@@ -125,14 +123,14 @@ void IndexedDBQuotaClient::GetOriginsForType(
 }
 
 void IndexedDBQuotaClient::GetOriginsForHost(
-    quota::StorageType type,
+    storage::StorageType type,
     const std::string& host,
     const GetOriginsCallback& callback) {
   DCHECK(!callback.is_null());
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 
   // All databases are in the temp namespace for now.
-  if (type != quota::kStorageTypeTemporary) {
+  if (type != storage::kStorageTypeTemporary) {
     callback.Run(std::set<GURL>());
     return;
   }
@@ -154,16 +152,16 @@ void IndexedDBQuotaClient::GetOriginsForHost(
 }
 
 void IndexedDBQuotaClient::DeleteOriginData(const GURL& origin,
-                                            quota::StorageType type,
+                                            storage::StorageType type,
                                             const DeletionCallback& callback) {
-  if (type != quota::kStorageTypeTemporary) {
-    callback.Run(quota::kQuotaErrorNotSupported);
+  if (type != storage::kStorageTypeTemporary) {
+    callback.Run(storage::kQuotaErrorNotSupported);
     return;
   }
 
   // No task runner means unit test; no cleanup necessary.
   if (!indexed_db_context_->TaskRunner()) {
-    callback.Run(quota::kQuotaStatusOk);
+    callback.Run(storage::kQuotaStatusOk);
     return;
   }
 
@@ -175,8 +173,8 @@ void IndexedDBQuotaClient::DeleteOriginData(const GURL& origin,
       callback);
 }
 
-bool IndexedDBQuotaClient::DoesSupport(quota::StorageType type) const {
-  return type == quota::kStorageTypeTemporary;
+bool IndexedDBQuotaClient::DoesSupport(storage::StorageType type) const {
+  return type == storage::kStorageTypeTemporary;
 }
 
 }  // namespace content

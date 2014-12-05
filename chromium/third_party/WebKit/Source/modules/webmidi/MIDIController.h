@@ -34,12 +34,12 @@
 #include "core/frame/LocalFrame.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccessInitializer;
 class MIDIClient;
 
-class MIDIController FINAL : public NoBaseWillBeGarbageCollectedFinalized<MIDIController>, public WillBeHeapSupplement<LocalFrame> {
+class MIDIController final : public NoBaseWillBeGarbageCollectedFinalized<MIDIController>, public WillBeHeapSupplement<LocalFrame> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIController);
 public:
     virtual ~MIDIController();
@@ -51,7 +51,7 @@ public:
     static const char* supplementName();
     static MIDIController* from(LocalFrame* frame) { return static_cast<MIDIController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 protected:
     explicit MIDIController(PassOwnPtr<MIDIClient>);
@@ -60,6 +60,6 @@ private:
     OwnPtr<MIDIClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIController_h

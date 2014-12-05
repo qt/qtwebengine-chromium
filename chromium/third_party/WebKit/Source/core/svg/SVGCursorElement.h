@@ -22,18 +22,17 @@
 #define SVGCursorElement_h
 
 #include "core/SVGNames.h"
-#include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGAnimatedLength.h"
-#include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGTests.h"
 #include "core/svg/SVGURIReference.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGCursorElement FINAL : public SVGElement,
+class SVGCursorElement final : public SVGElement,
                                public SVGTests,
                                public SVGURIReference {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGCursorElement);
 
@@ -48,18 +47,18 @@ public:
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit SVGCursorElement(Document&);
 
-    virtual bool isValid() const OVERRIDE { return SVGTests::isValid(); }
+    virtual bool isValid() const override { return SVGTests::isValid(); }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -67,6 +66,6 @@ private:
     WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> > m_clients;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGCursorElement_h

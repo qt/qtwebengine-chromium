@@ -44,8 +44,8 @@ void TestLoadTimingInfo(const ClientSocketHandle& handle) {
 
 scoped_refptr<TransportSocketParams> CreateProxyHostParams() {
   return new TransportSocketParams(
-      HostPortPair("proxy", 80), false, false,
-      OnHostResolutionCallback());
+      HostPortPair("proxy", 80), false, false, OnHostResolutionCallback(),
+      TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT);
 }
 
 scoped_refptr<SOCKSSocketParams> CreateSOCKSv4Params() {
@@ -103,7 +103,7 @@ class SOCKSClientSocketPoolTest : public testing::Test {
               NULL) {
   }
 
-  virtual ~SOCKSClientSocketPoolTest() {}
+  ~SOCKSClientSocketPoolTest() override {}
 
   int StartRequestV5(const std::string& group_name, RequestPriority priority) {
     return test_base_.StartRequestUsingPool(

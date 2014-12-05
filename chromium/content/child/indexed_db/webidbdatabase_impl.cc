@@ -78,7 +78,7 @@ void WebIDBDatabaseImpl::createTransaction(
     long long transaction_id,
     WebIDBDatabaseCallbacks* callbacks,
     const WebVector<long long>& object_store_ids,
-    WebIDBDatabase::TransactionMode mode) {
+    blink::WebIDBTransactionMode mode) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBDatabaseCreateTransaction(
@@ -90,6 +90,12 @@ void WebIDBDatabaseImpl::close() {
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
   dispatcher->RequestIDBDatabaseClose(ipc_database_id_,
                                       ipc_database_callbacks_id_);
+}
+
+void WebIDBDatabaseImpl::versionChangeIgnored() {
+  IndexedDBDispatcher* dispatcher =
+      IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());
+  dispatcher->NotifyIDBDatabaseVersionChangeIgnored(ipc_database_id_);
 }
 
 void WebIDBDatabaseImpl::get(long long transaction_id,
@@ -114,7 +120,7 @@ void WebIDBDatabaseImpl::put(long long transaction_id,
                              const blink::WebData& value,
                              const blink::WebVector<WebBlobInfo>& web_blob_info,
                              const WebIDBKey& key,
-                             PutMode put_mode,
+                             blink::WebIDBPutMode put_mode,
                              WebIDBCallbacks* callbacks,
                              const WebVector<long long>& web_index_ids,
                              const WebVector<WebIndexKeys>& web_index_keys) {
@@ -172,9 +178,9 @@ void WebIDBDatabaseImpl::openCursor(long long transaction_id,
                                     long long object_store_id,
                                     long long index_id,
                                     const WebIDBKeyRange& key_range,
-                                    WebIDBCursor::Direction direction,
+                                    blink::WebIDBCursorDirection direction,
                                     bool key_only,
-                                    TaskType task_type,
+                                    blink::WebIDBTaskType task_type,
                                     WebIDBCallbacks* callbacks) {
   IndexedDBDispatcher* dispatcher =
       IndexedDBDispatcher::ThreadSpecificInstance(thread_safe_sender_.get());

@@ -44,22 +44,13 @@
 #define CLANG_PRAGMA(PRAGMA) _Pragma(PRAGMA)
 
 /* Specific compiler features */
-#define WTF_COMPILER_SUPPORTS_CXX_VARIADIC_TEMPLATES __has_extension(cxx_variadic_templates)
-
-/* There is a bug in clang that comes with Xcode 4.2 where AtomicStrings can't be implicitly converted to Strings
-   in the presence of move constructors and/or move assignment operators. This bug has been fixed in Xcode 4.3 clang, so we
-   check for both cxx_rvalue_references as well as the unrelated cxx_nonstatic_member_init feature which we know was added in 4.3 */
-#define WTF_COMPILER_SUPPORTS_CXX_RVALUE_REFERENCES __has_extension(cxx_rvalue_references) && __has_extension(cxx_nonstatic_member_init)
 
 #define WTF_COMPILER_SUPPORTS_CXX_DELETED_FUNCTIONS __has_extension(cxx_deleted_functions)
-#define WTF_COMPILER_SUPPORTS_CXX_NULLPTR __has_feature(cxx_nullptr)
 #define WTF_COMPILER_SUPPORTS_CXX_EXPLICIT_CONVERSIONS __has_feature(cxx_explicit_conversions)
 #define WTF_COMPILER_SUPPORTS_BLOCKS __has_feature(blocks)
 #define WTF_COMPILER_SUPPORTS_C_STATIC_ASSERT __has_extension(c_static_assert)
 #define WTF_COMPILER_SUPPORTS_CXX_STATIC_ASSERT __has_extension(cxx_static_assert)
-#define WTF_COMPILER_SUPPORTS_CXX_OVERRIDE_CONTROL __has_extension(cxx_override_control)
 #define WTF_COMPILER_SUPPORTS_HAS_TRIVIAL_DESTRUCTOR __has_extension(has_trivial_destructor)
-#define WTF_COMPILER_SUPPORTS_CXX_STRONG_ENUMS __has_extension(cxx_strong_enums)
 
 #endif
 
@@ -70,19 +61,6 @@
 /* COMPILER(MSVC) - Microsoft Visual C++ */
 #if defined(_MSC_VER)
 #define WTF_COMPILER_MSVC 1
-
-/* Specific compiler features */
-#if !COMPILER(CLANG) && _MSC_VER >= 1600
-#define WTF_COMPILER_SUPPORTS_CXX_NULLPTR 1
-#endif
-
-#if COMPILER(CLANG)
-/* Keep strong enums turned off when building with clang-cl: We cannot yet build all of Blink without fallback to cl.exe, and strong enums are exposed at ABI boundaries. */
-#undef WTF_COMPILER_SUPPORTS_CXX_STRONG_ENUMS
-#else
-#define WTF_COMPILER_SUPPORTS_CXX_OVERRIDE_CONTROL 1
-#endif
-
 #endif
 
 /* COMPILER(GCC) - GNU Compiler Collection */
@@ -104,23 +82,13 @@
 #if defined(__GXX_EXPERIMENTAL_CXX0X__) || (defined(__cplusplus) && __cplusplus >= 201103L)
 /* C++11 support */
 #if GCC_VERSION_AT_LEAST(4, 3, 0)
-#define WTF_COMPILER_SUPPORTS_CXX_RVALUE_REFERENCES 1
 #define WTF_COMPILER_SUPPORTS_CXX_STATIC_ASSERT 1
-#define WTF_COMPILER_SUPPORTS_CXX_VARIADIC_TEMPLATES 1
 #endif
 #if GCC_VERSION_AT_LEAST(4, 4, 0)
 #define WTF_COMPILER_SUPPORTS_CXX_DELETED_FUNCTIONS 1
 #endif
 #if GCC_VERSION_AT_LEAST(4, 5, 0)
 #define WTF_COMPILER_SUPPORTS_CXX_EXPLICIT_CONVERSIONS 1
-#endif
-#if GCC_VERSION_AT_LEAST(4, 6, 0)
-#define WTF_COMPILER_SUPPORTS_CXX_NULLPTR 1
-/* Strong enums should work from gcc 4.4, but doesn't seem to support some operators */
-#define WTF_COMPILER_SUPPORTS_CXX_STRONG_ENUMS 1
-#endif
-#if GCC_VERSION_AT_LEAST(4, 7, 0)
-#define WTF_COMPILER_SUPPORTS_CXX_OVERRIDE_CONTROL 1
 #endif
 #endif /* defined(__GXX_EXPERIMENTAL_CXX0X__) || (defined(__cplusplus) && __cplusplus >= 201103L) */
 #endif /* COMPILER(GCC) */
@@ -178,7 +146,6 @@
 
 /* NO_RETURN */
 
-
 #ifndef NO_RETURN
 #if COMPILER(GCC)
 #define NO_RETURN __attribute((__noreturn__))
@@ -198,23 +165,11 @@
 #define WARN_UNUSED_RETURN
 #endif
 
-/* ALLOW_UNUSED */
 
-#if COMPILER(GCC)
-#define ALLOW_UNUSED __attribute__((unused))
-#else
-#define ALLOW_UNUSED
-#endif
+/* ALLOW_UNUSED_LOCAL */
 
-/* OVERRIDE and FINAL */
+#define ALLOW_UNUSED_LOCAL(x) false ? (void)x : (void)0
 
-#if COMPILER_SUPPORTS(CXX_OVERRIDE_CONTROL)
-#define OVERRIDE override
-#define FINAL final
-#else
-#define OVERRIDE
-#define FINAL
-#endif
 
 /* WTF_DELETED_FUNCTION */
 
@@ -223,6 +178,7 @@
 #else
 #define WTF_DELETED_FUNCTION
 #endif
+
 
 /* REFERENCED_FROM_ASM */
 
@@ -234,6 +190,7 @@
 #endif
 #endif
 
+
 /* OBJC_CLASS */
 
 #ifndef OBJC_CLASS
@@ -244,6 +201,7 @@
 #endif
 #endif
 
+
 /* WTF_PRETTY_FUNCTION */
 
 #if COMPILER(GCC)
@@ -251,7 +209,7 @@
 #define WTF_PRETTY_FUNCTION __PRETTY_FUNCTION__
 #elif COMPILER(MSVC)
 #define WTF_COMPILER_SUPPORTS_PRETTY_FUNCTION 1
-#define WTF_PRETTY_FUNCTION __FUNCDNAME__
+#define WTF_PRETTY_FUNCTION __FUNCSIG__
 #else
 #define WTF_PRETTY_FUNCTION __FUNCTION__
 #endif

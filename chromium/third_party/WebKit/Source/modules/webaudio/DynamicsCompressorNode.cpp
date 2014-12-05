@@ -36,30 +36,35 @@
 // Set output to stereo by default.
 static const unsigned defaultNumberOfOutputChannels = 2;
 
-namespace WebCore {
+namespace blink {
 
 DynamicsCompressorNode::DynamicsCompressorNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
 {
-    ScriptWrappable::init(this);
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, defaultNumberOfOutputChannels)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, defaultNumberOfOutputChannels));
 
     setNodeType(NodeTypeDynamicsCompressor);
 
-    m_threshold = AudioParam::create(context, "threshold", -24, -100, 0);
-    m_knee = AudioParam::create(context, "knee", 30, 0, 40);
-    m_ratio = AudioParam::create(context, "ratio", 12, 1, 20);
-    m_reduction = AudioParam::create(context, "reduction", 0, -20, 0);
-    m_attack = AudioParam::create(context, "attack", 0.003, 0, 1);
-    m_release = AudioParam::create(context, "release", 0.250, 0, 1);
+    m_threshold = AudioParam::create(context, -24);
+    m_knee = AudioParam::create(context, 30);
+    m_ratio = AudioParam::create(context, 12);
+    m_reduction = AudioParam::create(context, 0);
+    m_attack = AudioParam::create(context, 0.003);
+    m_release = AudioParam::create(context, 0.250);
 
     initialize();
 }
 
 DynamicsCompressorNode::~DynamicsCompressorNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void DynamicsCompressorNode::dispose()
+{
     uninitialize();
+    AudioNode::dispose();
 }
 
 void DynamicsCompressorNode::process(size_t framesToProcess)
@@ -103,6 +108,11 @@ void DynamicsCompressorNode::uninitialize()
     AudioNode::uninitialize();
 }
 
+void DynamicsCompressorNode::clearInternalStateWhenDisabled()
+{
+    m_reduction->setValue(0);
+}
+
 double DynamicsCompressorNode::tailTime() const
 {
     return m_dynamicsCompressor->tailTime();
@@ -124,6 +134,6 @@ void DynamicsCompressorNode::trace(Visitor* visitor)
     AudioNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

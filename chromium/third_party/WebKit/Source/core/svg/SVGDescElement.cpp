@@ -23,12 +23,11 @@
 
 #include "core/SVGNames.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGDescElement::SVGDescElement(Document& document)
     : SVGElement(SVGNames::descTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGDescElement)

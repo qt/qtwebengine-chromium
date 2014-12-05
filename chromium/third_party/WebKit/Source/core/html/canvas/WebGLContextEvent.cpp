@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/canvas/WebGLContextEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLContextEventInit::WebGLContextEventInit()
 {
@@ -34,21 +34,18 @@ WebGLContextEventInit::WebGLContextEventInit()
 
 WebGLContextEvent::WebGLContextEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 WebGLContextEvent::WebGLContextEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& statusMessage)
     : Event(type, canBubble, cancelable)
     , m_statusMessage(statusMessage)
 {
-    ScriptWrappable::init(this);
 }
 
 WebGLContextEvent::WebGLContextEvent(const AtomicString& type, const WebGLContextEventInit& initializer)
     : Event(type, initializer)
     , m_statusMessage(initializer.statusMessage)
 {
-    ScriptWrappable::init(this);
 }
 
 WebGLContextEvent::~WebGLContextEvent()
@@ -65,4 +62,4 @@ void WebGLContextEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

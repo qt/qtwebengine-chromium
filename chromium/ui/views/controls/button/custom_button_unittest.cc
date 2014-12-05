@@ -12,9 +12,9 @@
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/radio_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/test/views_test_base.h"
@@ -29,17 +29,16 @@ class TestCustomButton : public CustomButton {
       : CustomButton(listener) {
   }
 
-  virtual ~TestCustomButton() {}
+  ~TestCustomButton() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestCustomButton);
 };
 
 void PerformGesture(CustomButton* button, ui::EventType event_type) {
-  ui::GestureEventDetails gesture_details(event_type, 0, 0);
+  ui::GestureEventDetails gesture_details(event_type);
   base::TimeDelta time_stamp = base::TimeDelta::FromMicroseconds(0);
-  ui::GestureEvent gesture_event(gesture_details.type(), 0, 0, 0, time_stamp,
-                                 gesture_details, 1);
+  ui::GestureEvent gesture_event(0, 0, 0, time_stamp, gesture_details);
   button->OnGestureEvent(&gesture_event);
 }
 
@@ -140,13 +139,12 @@ TEST_F(CustomButtonTest, GestureEventsSetState) {
   EXPECT_EQ(CustomButton::STATE_NORMAL, button->state());
 }
 
-// Make sure all subclasses of CustomButton are correctly recognized
-// as CustomButton.
+// Ensure subclasses of CustomButton are correctly recognized as CustomButton.
 TEST_F(CustomButtonTest, AsCustomButton) {
   base::string16 text;
 
-  TextButton text_button(NULL, text);
-  EXPECT_TRUE(CustomButton::AsCustomButton(&text_button));
+  LabelButton label_button(NULL, text);
+  EXPECT_TRUE(CustomButton::AsCustomButton(&label_button));
 
   ImageButton image_button(NULL);
   EXPECT_TRUE(CustomButton::AsCustomButton(&image_button));

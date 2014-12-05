@@ -10,17 +10,17 @@
 #include "cc/base/cc_export.h"
 #include "cc/quads/content_draw_quad_base.h"
 #include "cc/resources/picture_pile_impl.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/rect_f.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
 // Used for on-demand tile rasterization.
 class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
  public:
-  static scoped_ptr<PictureDrawQuad> Create();
-  virtual ~PictureDrawQuad();
+  PictureDrawQuad();
+  ~PictureDrawQuad() override;
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -50,14 +50,12 @@ class CC_EXPORT PictureDrawQuad : public ContentDrawQuadBase {
   scoped_refptr<PicturePileImpl> picture_pile;
   ResourceFormat texture_format;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const PictureDrawQuad* MaterialCast(const DrawQuad* quad);
 
  private:
-  PictureDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

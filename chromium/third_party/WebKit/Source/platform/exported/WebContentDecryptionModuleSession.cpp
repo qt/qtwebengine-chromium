@@ -43,17 +43,32 @@ WebContentDecryptionModuleSession::Client::~Client()
 
 // FIXME: Remove the default implementations of these methods once the new
 // methods are implemented in Chromium.
-void WebContentDecryptionModuleSession::initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, const WebContentDecryptionModuleResult& result)
+void WebContentDecryptionModuleSession::initializeNewSession(const WebString& initDataType, const unsigned char* initData, size_t initDataLength, const WebString& sessionType, WebContentDecryptionModuleResult result)
 {
     ReportError(result);
 }
 
-void WebContentDecryptionModuleSession::update(const unsigned char* response, size_t responseLength, const WebContentDecryptionModuleResult& result)
+void WebContentDecryptionModuleSession::load(const WebString& sessionId, WebContentDecryptionModuleResult result)
 {
     ReportError(result);
 }
 
-void WebContentDecryptionModuleSession::release(const WebContentDecryptionModuleResult& result)
+void WebContentDecryptionModuleSession::update(const unsigned char* response, size_t responseLength, WebContentDecryptionModuleResult result)
+{
+    ReportError(result);
+}
+
+void WebContentDecryptionModuleSession::close(WebContentDecryptionModuleResult result)
+{
+    ReportError(result);
+}
+
+void WebContentDecryptionModuleSession::remove(WebContentDecryptionModuleResult result)
+{
+    ReportError(result);
+}
+
+void WebContentDecryptionModuleSession::release(WebContentDecryptionModuleResult result)
 {
     ReportError(result);
 }

@@ -21,17 +21,17 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
       LayerTreeImpl* tree_impl,
       int id,
       ScrollbarOrientation orientation);
-  virtual ~PaintedScrollbarLayerImpl();
+  ~PaintedScrollbarLayerImpl() override;
 
   // LayerImpl implementation.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
 
   void SetThumbThickness(int thumb_thickness);
   void SetThumbLength(int thumb_length);
@@ -51,14 +51,14 @@ class CC_EXPORT PaintedScrollbarLayerImpl : public ScrollbarLayerImplBase {
                             ScrollbarOrientation orientation);
 
   // ScrollbarLayerImplBase implementation.
-  virtual int ThumbThickness() const OVERRIDE;
-  virtual int ThumbLength() const OVERRIDE;
-  virtual float TrackLength() const OVERRIDE;
-  virtual int TrackStart() const OVERRIDE;
-  virtual bool IsThumbResizable() const OVERRIDE;
+  int ThumbThickness() const override;
+  int ThumbLength() const override;
+  float TrackLength() const override;
+  int TrackStart() const override;
+  bool IsThumbResizable() const override;
 
  private:
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   UIResourceId track_ui_resource_id_;
   UIResourceId thumb_ui_resource_id_;

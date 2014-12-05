@@ -16,7 +16,12 @@
 #include "base/values.h"
 #include "cc/base/cc_export.h"
 
-namespace base { class SingleThreadTaskRunner; }
+namespace base {
+namespace debug {
+class TracedValue;
+}
+class SingleThreadTaskRunner;
+}
 
 namespace gfx {
 class Rect;
@@ -24,7 +29,7 @@ class Vector2d;
 }
 
 namespace cc {
-
+class BlockingTaskRunner;
 class LayerTreeDebugState;
 class OutputSurface;
 struct RendererCapabilities;
@@ -51,6 +56,10 @@ class CC_EXPORT Proxy {
   virtual void FinishAllRendering() = 0;
 
   virtual bool IsStarted() const = 0;
+
+  // Will call LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted
+  // with the result of this function.
+  virtual void SetOutputSurface(scoped_ptr<OutputSurface> output_surface) = 0;
 
   // Indicates that the compositing surface associated with our context is
   // ready to use.
@@ -89,17 +98,22 @@ class CC_EXPORT Proxy {
   // Maximum number of sub-region texture updates supported for each commit.
   virtual size_t MaxPartialTextureUpdates() const = 0;
 
-  virtual scoped_ptr<base::Value> AsValue() const = 0;
+  virtual bool SupportsImplScrolling() const = 0;
+
+  virtual void AsValueInto(base::debug::TracedValue* value) const = 0;
 
   virtual void SetDebugState(const LayerTreeDebugState& debug_state) = 0;
 
   // Testing hooks
-  virtual bool CommitPendingForTesting() = 0;
-  virtual scoped_ptr<base::Value> SchedulerAsValueForTesting();
+  virtual bool MainFrameWillHappenForTesting() = 0;
+
+  BlockingTaskRunner* blocking_main_thread_task_runner() const {
+    return blocking_main_thread_task_runner_.get();
+  }
 
  protected:
-  explicit Proxy(
-      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
+  Proxy(scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
+        scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner);
   friend class DebugScopedSetImplThread;
   friend class DebugScopedSetMainThread;
   friend class DebugScopedSetMainThreadBlocked;
@@ -107,6 +121,8 @@ class CC_EXPORT Proxy {
  private:
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner_;
+  scoped_ptr<BlockingTaskRunner> blocking_main_thread_task_runner_;
+
 #if DCHECK_IS_ON
   const base::PlatformThreadId main_thread_id_;
   bool impl_thread_is_overridden_;

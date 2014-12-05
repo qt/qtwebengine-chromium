@@ -33,17 +33,16 @@
 #include "platform/audio/FFTFrame.h"
 
 #include "platform/audio/VectorMath.h"
-
-#ifndef NDEBUG
-#include <stdio.h>
-#endif
-
 #include "platform/Logging.h"
 #include "wtf/Complex.h"
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+#ifndef NDEBUG
+#include <stdio.h>
+#endif
+
+namespace blink {
 
 void FFTFrame::doPaddedFFT(const float* data, size_t dataSize)
 {
@@ -292,6 +291,6 @@ void FFTFrame::print()
 }
 #endif // NDEBUG
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

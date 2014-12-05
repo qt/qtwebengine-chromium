@@ -36,14 +36,7 @@
 #include "public/platform/Platform.h"
 #include "wtf/CurrentTime.h"
 
-#if ENABLE(SVG_FONTS)
-#include "core/SVGNames.h"
-#include "core/dom/XMLDocument.h"
-#include "core/html/HTMLCollection.h"
-#include "core/svg/SVGFontElement.h"
-#endif
-
-namespace WebCore {
+namespace blink {
 
 static const double fontLoadWaitLimitSec = 3.0;
 
@@ -76,14 +69,27 @@ static void recordPackageFormatHistogram(FontPackageFormat format)
 
 FontResource::FontResource(const ResourceRequest& resourceRequest)
     : Resource(resourceRequest, Font)
-    , m_loadInitiated(false)
+    , m_state(Unloaded)
     , m_exceedsFontLoadWaitLimit(false)
+    , m_corsFailed(false)
     , m_fontLoadWaitLimitTimer(this, &FontResource::fontLoadWaitLimitCallback)
 {
 }
 
 FontResource::~FontResource()
 {
+}
+
+void FontResource::didScheduleLoad()
+{
+    if (m_state == Unloaded)
+        m_state = LoadScheduled;
+}
+
+void FontResource::didUnscheduleLoad()
+{
+    if (m_state == LoadScheduled)
+        m_state = Unloaded;
 }
 
 void FontResource::load(ResourceFetcher*, const ResourceLoaderOptions& options)
@@ -103,8 +109,8 @@ void FontResource::didAddClient(ResourceClient* c)
 
 void FontResource::beginLoadIfNeeded(ResourceFetcher* dl)
 {
-    if (!m_loadInitiated) {
-        m_loadInitiated = true;
+    if (m_state != LoadInitiated) {
+        m_state = LoadInitiated;
         Resource::load(dl, m_options);
         m_fontLoadWaitLimitTimer.startOneShot(fontLoadWaitLimitSec, FROM_HERE);
 
@@ -132,70 +138,9 @@ bool FontResource::ensureCustomFontData()
 
 FontPlatformData FontResource::platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation orientation, FontWidthVariant widthVariant)
 {
-#if ENABLE(SVG_FONTS)
-    if (m_externalSVGDocument)
-        return FontPlatformData(size, bold, italic);
-#endif
     ASSERT(m_fontData);
     return m_fontData->fontPlatformData(size, bold, italic, orientation, widthVariant);
 }
-
-#if ENABLE(SVG_FONTS)
-bool FontResource::ensureSVGFontData()
-{
-    if (!m_externalSVGDocument && !errorOccurred() && !isLoading()) {
-        if (m_data) {
-            m_externalSVGDocument = XMLDocument::createSVG();
-
-            OwnPtr<TextResourceDecoder> decoder = TextResourceDecoder::create("application/xml");
-            String svgSource = decoder->decode(m_data->data(), m_data->size());
-            svgSource = svgSource + decoder->flush();
-
-            m_externalSVGDocument->setContent(svgSource);
-
-            if (decoder->sawError())
-                m_externalSVGDocument = nullptr;
-        }
-        if (m_externalSVGDocument) {
-            recordPackageFormatHistogram(PackageFormatSVG);
-        } else {
-            setStatus(DecodeError);
-            recordPackageFormatHistogram(PackageFormatUnknown);
-        }
-    }
-
-    return m_externalSVGDocument;
-}
-
-SVGFontElement* FontResource::getSVGFontById(const String& fontName) const
-{
-    RefPtrWillBeRawPtr<TagCollection> collection = m_externalSVGDocument->getElementsByTagNameNS(SVGNames::fontTag.namespaceURI(), SVGNames::fontTag.localName());
-    if (!collection)
-        return 0;
-
-    unsigned collectionLength = collection->length();
-    if (!collectionLength)
-        return 0;
-
-#ifndef NDEBUG
-    for (unsigned i = 0; i < collectionLength; ++i) {
-        ASSERT(collection->item(i));
-        ASSERT(isSVGFontElement(collection->item(i)));
-    }
-#endif
-
-    if (fontName.isEmpty())
-        return toSVGFontElement(collection->item(0));
-
-    for (unsigned i = 0; i < collectionLength; ++i) {
-        SVGFontElement* element = toSVGFontElement(collection->item(i));
-        if (element->getIdAttribute() == fontName)
-            return element;
-    }
-
-    return 0;
-}
-#endif
 
 bool FontResource::isSafeToUnlock() const
 {

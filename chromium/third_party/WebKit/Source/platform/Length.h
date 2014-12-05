@@ -33,7 +33,7 @@
 #include "wtf/Vector.h"
 #include <cstring>
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: This enum makes it hard to tell in general what values may be
 // appropriate for any given Length.
@@ -43,7 +43,7 @@ enum LengthType {
     MinContent, MaxContent, FillAvailable, FitContent,
     Calculated,
     ExtendToZoom, DeviceWidth, DeviceHeight,
-    Undefined
+    MaxSizeNone
 };
 
 enum ValueRange {
@@ -120,43 +120,13 @@ public:
         return *this;
     }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-    Length(Length&& length)
-    {
-        memcpy(this, &length, sizeof(Length));
-
-        // Reset |length|'s type to Auto to make sure its destructor
-        // won't call decrementCalculatedRef() as we don't call
-        // incrementCalculatedRef() here.
-        length.m_type = Auto;
-    }
-
-    Length& operator=(Length&& length)
-    {
-        if (this == &length)
-            return *this;
-
-        if (isCalculated())
-            decrementCalculatedRef();
-
-        memcpy(this, &length, sizeof(Length));
-
-        // Reset |length|'s type to Auto to make sure its destructor
-        // won't call decrementCalculatedRef() as we don't call
-        // incrementCalculatedRef() here.
-        length.m_type = Auto;
-
-        return *this;
-    }
-#endif
-
     ~Length()
     {
         if (isCalculated())
             decrementCalculatedRef();
     }
 
-    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isUndefined() || (getFloatValue() == o.getFloatValue()) || isCalculatedEqual(o)); }
+    bool operator==(const Length& o) const { return (m_type == o.m_type) && (m_quirk == o.m_quirk) && (isMaxSizeNone() || (getFloatValue() == o.getFloatValue()) || isCalculatedEqual(o)); }
     bool operator!=(const Length& o) const { return !(*this == o); }
 
     const Length& operator*=(float v)
@@ -240,7 +210,7 @@ public:
         *this = Length(value, Fixed);
     }
 
-    bool isUndefined() const { return type() == Undefined; }
+    bool isMaxSizeNone() const { return type() == MaxSizeNone; }
 
     // FIXME calc: https://bugs.webkit.org/show_bug.cgi?id=80357. A calculated Length
     // always contains a percentage, and without a maxValue passed to these functions
@@ -248,7 +218,7 @@ public:
     // are positive and non-zero for now.
     bool isZero() const
     {
-        ASSERT(!isUndefined());
+        ASSERT(!isMaxSizeNone());
         if (isCalculated())
             return false;
 
@@ -256,7 +226,7 @@ public:
     }
     bool isPositive() const
     {
-        if (isUndefined())
+        if (isMaxSizeNone())
             return false;
         if (isCalculated())
             return true;
@@ -265,7 +235,7 @@ public:
     }
     bool isNegative() const
     {
-        if (isUndefined() || isCalculated())
+        if (isMaxSizeNone() || isCalculated())
             return false;
 
         return getFloatValue() < 0;
@@ -309,7 +279,7 @@ public:
         if (isZero())
             resultType = from.type();
 
-        float blendedValue = WebCore::blend(from.value(), value(), progress);
+        float blendedValue = blink::blend(from.value(), value(), progress);
         if (range == ValueRangeNonNegative)
             blendedValue = clampTo<float>(blendedValue, 0);
         return Length(blendedValue, resultType);
@@ -317,7 +287,7 @@ public:
 
     float getFloatValue() const
     {
-        ASSERT(!isUndefined());
+        ASSERT(!isMaxSizeNone());
         return m_isFloat ? m_floatValue : m_intValue;
     }
     float nonNanCalculatedValue(int maxValue) const;
@@ -327,7 +297,7 @@ public:
 private:
     int getIntValue() const
     {
-        ASSERT(!isUndefined());
+        ASSERT(!isMaxSizeNone());
         return m_isFloat ? static_cast<int>(m_floatValue) : m_intValue;
     }
 
@@ -352,6 +322,6 @@ private:
 
 PLATFORM_EXPORT Vector<Length> parseHTMLAreaElementCoords(const String&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Length_h

@@ -29,23 +29,19 @@
 
 #include "core/dom/ClientRect.h"
 
-namespace WebCore {
+namespace blink {
+
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ClientRectList);
 
 ClientRectList::ClientRectList()
 {
-    ScriptWrappable::init(this);
 }
 
 ClientRectList::ClientRectList(const Vector<FloatQuad>& quads)
 {
-    ScriptWrappable::init(this);
     m_list.reserveInitialCapacity(quads.size());
     for (size_t i = 0; i < quads.size(); ++i)
         m_list.append(ClientRect::create(quads[i].enclosingBoundingBox()));
-}
-
-ClientRectList::~ClientRectList()
-{
 }
 
 unsigned ClientRectList::length() const
@@ -69,4 +65,4 @@ void ClientRectList::trace(Visitor* visitor)
     visitor->trace(m_list);
 }
 
-} // namespace WebCore
+} // namespace blink

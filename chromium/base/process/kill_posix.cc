@@ -9,7 +9,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
@@ -22,6 +22,7 @@ namespace base {
 
 namespace {
 
+#if !defined(OS_NACL_NONSFI)
 bool WaitpidWithTimeout(ProcessHandle handle,
                         int* status,
                         base::TimeDelta wait) {
@@ -83,6 +84,7 @@ bool WaitpidWithTimeout(ProcessHandle handle,
 
   return ret_pid > 0;
 }
+#endif  // !defined(OS_NACL_NONSFI)
 
 TerminationStatus GetTerminationStatusImpl(ProcessHandle handle,
                                            bool can_block,
@@ -130,6 +132,7 @@ TerminationStatus GetTerminationStatusImpl(ProcessHandle handle,
 
 }  // namespace
 
+#if !defined(OS_NACL_NONSFI)
 // Attempts to kill the process identified by the given process
 // entry structure.  Ignores specified exit_code; posix can't force that.
 // Returns true if this is successful, false otherwise.
@@ -191,6 +194,7 @@ bool KillProcessGroup(ProcessHandle process_group_id) {
     DPLOG(ERROR) << "Unable to terminate process group " << process_group_id;
   return result;
 }
+#endif  // !defined(OS_NACL_NONSFI)
 
 TerminationStatus GetTerminationStatus(ProcessHandle handle, int* exit_code) {
   return GetTerminationStatusImpl(handle, false /* can_block */, exit_code);
@@ -206,6 +210,7 @@ TerminationStatus GetKnownDeadTerminationStatus(ProcessHandle handle,
   return GetTerminationStatusImpl(handle, true /* can_block */, exit_code);
 }
 
+#if !defined(OS_NACL_NONSFI)
 bool WaitForExitCode(ProcessHandle handle, int* exit_code) {
   int status;
   if (HANDLE_EINTR(waitpid(handle, &status, 0)) == -1) {
@@ -354,7 +359,7 @@ static bool WaitForSingleNonChildProcess(ProcessHandle handle,
 
 bool WaitForSingleProcess(ProcessHandle handle, base::TimeDelta wait) {
   ProcessHandle parent_pid = GetParentProcessId(handle);
-  ProcessHandle our_pid = Process::Current().handle();
+  ProcessHandle our_pid = GetCurrentProcessHandle();
   if (parent_pid != our_pid) {
 #if defined(OS_MACOSX)
     // On Mac we can wait on non child processes.
@@ -410,7 +415,7 @@ class BackgroundReaper : public PlatformThread::Delegate {
   }
 
   // Overridden from PlatformThread::Delegate:
-  virtual void ThreadMain() OVERRIDE {
+  void ThreadMain() override {
     WaitForChildToDie();
     delete this;
   }
@@ -478,5 +483,6 @@ void EnsureProcessGetsReaped(ProcessHandle process) {
 }
 
 #endif  // !defined(OS_MACOSX)
+#endif  // !defined(OS_NACL_NONSFI)
 
 }  // namespace base

@@ -142,16 +142,16 @@ float PinchScaleToWheelDelta(float scale) {
 class InputRouterImplTest : public testing::Test {
  public:
   InputRouterImplTest() {}
-  virtual ~InputRouterImplTest() {}
+  ~InputRouterImplTest() override {}
 
  protected:
   // testing::Test
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     browser_context_.reset(new TestBrowserContext());
     process_.reset(new MockRenderProcessHost(browser_context_.get()));
     client_.reset(new MockInputRouterClient());
     ack_handler_.reset(new MockInputAckHandler());
-    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
     command_line->AppendSwitch(switches::kValidateInputEventStream);
     input_router_.reset(new InputRouterImpl(process_.get(),
                                             client_.get(),
@@ -162,7 +162,7 @@ class InputRouterImplTest : public testing::Test {
     ack_handler_->set_input_router(input_router());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Process all pending tasks to avoid leaks.
     base::MessageLoop::current()->RunUntilIdle();
 
@@ -284,7 +284,7 @@ class InputRouterImplTest : public testing::Test {
   }
 
   bool TouchEventTimeoutEnabled() const {
-    return input_router()->touch_event_queue_.ack_timeout_enabled();
+    return input_router()->touch_event_queue_.IsAckTimeoutEnabled();
   }
 
   void Flush() const {
@@ -354,7 +354,7 @@ TEST_F(InputRouterImplTest, CoalescesRangeSelection) {
 
   // Now ack the first message.
   {
-    scoped_ptr<IPC::Message> response(new ViewHostMsg_SelectRange_ACK(0));
+    scoped_ptr<IPC::Message> response(new InputHostMsg_SelectRange_ACK(0));
     input_router_->OnMessageReceived(*response);
   }
 
@@ -367,7 +367,197 @@ TEST_F(InputRouterImplTest, CoalescesRangeSelection) {
 
   // Acking the coalesced msg should not send any more msg.
   {
-    scoped_ptr<IPC::Message> response(new ViewHostMsg_SelectRange_ACK(0));
+    scoped_ptr<IPC::Message> response(new InputHostMsg_SelectRange_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+}
+
+TEST_F(InputRouterImplTest, CoalescesMoveRangeSelectionExtent) {
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(1, 2))));
+  ExpectIPCMessageWithArg1<InputMsg_MoveRangeSelectionExtent>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(1, 2));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Send two more messages without acking.
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(3, 4))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(5, 6))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  // Now ack the first message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_MoveRangeSelectionExtent_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  // Verify that the two messages are coalesced into one message.
+  ExpectIPCMessageWithArg1<InputMsg_MoveRangeSelectionExtent>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(5, 6));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Acking the coalesced msg should not send any more msg.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_MoveRangeSelectionExtent_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+}
+
+TEST_F(InputRouterImplTest, InterleaveSelectRangeAndMoveRangeSelectionExtent) {
+  // Send first message: SelectRange.
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_SelectRange(0, gfx::Point(1, 2), gfx::Point(3, 4))));
+  ExpectIPCMessageWithArg2<InputMsg_SelectRange>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(1, 2),
+      gfx::Point(3, 4));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Send second message: MoveRangeSelectionExtent.
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(5, 6))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  // Send third message: SelectRange.
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_SelectRange(0, gfx::Point(7, 8), gfx::Point(9, 10))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  // Ack the messages and verify that they're not coalesced and that they're in
+  // correct order.
+
+  // Ack the first message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_SelectRange_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  ExpectIPCMessageWithArg1<InputMsg_MoveRangeSelectionExtent>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(5, 6));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Ack the second message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_MoveRangeSelectionExtent_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  ExpectIPCMessageWithArg2<InputMsg_SelectRange>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(7, 8),
+      gfx::Point(9, 10));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Ack the third message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_SelectRange_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+}
+
+TEST_F(InputRouterImplTest,
+       CoalescesInterleavedSelectRangeAndMoveRangeSelectionExtent) {
+  // Send interleaved SelectRange and MoveRangeSelectionExtent messages. They
+  // should be coalesced as shown by the arrows.
+  //  > SelectRange
+  //    MoveRangeSelectionExtent
+  //    MoveRangeSelectionExtent
+  //  > MoveRangeSelectionExtent
+  //    SelectRange
+  //  > SelectRange
+  //  > MoveRangeSelectionExtent
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_SelectRange(0, gfx::Point(1, 2), gfx::Point(3, 4))));
+  ExpectIPCMessageWithArg2<InputMsg_SelectRange>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(1, 2),
+      gfx::Point(3, 4));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(5, 6))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(7, 8))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(9, 10))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_SelectRange(0, gfx::Point(11, 12), gfx::Point(13, 14))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_SelectRange(0, gfx::Point(15, 16), gfx::Point(17, 18))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  input_router_->SendInput(scoped_ptr<IPC::Message>(
+      new InputMsg_MoveRangeSelectionExtent(0, gfx::Point(19, 20))));
+  EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
+
+  // Ack the first message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_SelectRange_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  // Verify that the three MoveRangeSelectionExtent messages are coalesced into
+  // one message.
+  ExpectIPCMessageWithArg1<InputMsg_MoveRangeSelectionExtent>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(9, 10));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Ack the second message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_MoveRangeSelectionExtent_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  // Verify that the two SelectRange messages are coalesced into one message.
+  ExpectIPCMessageWithArg2<InputMsg_SelectRange>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(15, 16),
+      gfx::Point(17, 18));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Ack the third message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_SelectRange_ACK(0));
+    input_router_->OnMessageReceived(*response);
+  }
+
+  // Verify the fourth message.
+  ExpectIPCMessageWithArg1<InputMsg_MoveRangeSelectionExtent>(
+      process_->sink().GetMessageAt(0),
+      gfx::Point(19, 20));
+  EXPECT_EQ(1u, GetSentMessageCountAndResetSink());
+
+  // Ack the fourth message.
+  {
+    scoped_ptr<IPC::Message> response(
+        new InputHostMsg_MoveRangeSelectionExtent_ACK(0));
     input_router_->OnMessageReceived(*response);
   }
   EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
@@ -391,7 +581,7 @@ TEST_F(InputRouterImplTest, CoalescesCaretMove) {
 
   // Now ack the first message.
   {
-    scoped_ptr<IPC::Message> response(new ViewHostMsg_MoveCaret_ACK(0));
+    scoped_ptr<IPC::Message> response(new InputHostMsg_MoveCaret_ACK(0));
     input_router_->OnMessageReceived(*response);
   }
 
@@ -402,7 +592,7 @@ TEST_F(InputRouterImplTest, CoalescesCaretMove) {
 
   // Acking the coalesced msg should not send any more msg.
   {
-    scoped_ptr<IPC::Message> response(new ViewHostMsg_MoveCaret_ACK(0));
+    scoped_ptr<IPC::Message> response(new InputHostMsg_MoveCaret_ACK(0));
     input_router_->OnMessageReceived(*response);
   }
   EXPECT_EQ(0u, GetSentMessageCountAndResetSink());
@@ -619,8 +809,8 @@ TEST_F(InputRouterImplTest, TouchEventQueue) {
   EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
 }
 
-// Tests that the touch-queue is emptied if a page stops listening for touch
-// events.
+// Tests that the touch-queue is emptied after a page stops listening for touch
+// events and the outstanding ack is received.
 TEST_F(InputRouterImplTest, TouchEventQueueFlush) {
   OnHasTouchEventHandlers(true);
   EXPECT_TRUE(client_->has_touch_handler());
@@ -632,14 +822,22 @@ TEST_F(InputRouterImplTest, TouchEventQueueFlush) {
   // Send a touch-press event.
   PressTouchPoint(1, 1);
   SendTouchEvent();
+  MoveTouchPoint(0, 2, 2);
+  MoveTouchPoint(0, 3, 3);
   EXPECT_FALSE(TouchEventQueueEmpty());
   EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
 
-  // The page stops listening for touch-events. The touch-event queue should now
-  // be emptied, but none of the queued touch-events should be sent to the
-  // renderer.
+  // The page stops listening for touch-events. Note that flushing is deferred
+  // until the outstanding ack is received.
   OnHasTouchEventHandlers(false);
   EXPECT_FALSE(client_->has_touch_handler());
+  EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
+  EXPECT_FALSE(TouchEventQueueEmpty());
+  EXPECT_TRUE(input_router_->ShouldForwardTouchEvent());
+
+  // After the ack, the touch-event queue should be empty, and none of the
+  // flushed touch-events should have been sent to the renderer.
+  SendInputEventACK(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED);
   EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
   EXPECT_TRUE(TouchEventQueueEmpty());
   EXPECT_FALSE(input_router_->ShouldForwardTouchEvent());
@@ -1097,11 +1295,25 @@ TEST_F(InputRouterImplTest,
   // Start a touch sequence.
   PressTouchPoint(1, 1);
   SendTouchEvent();
+  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
 
   // TOUCH_ACTION_NONE should disable the timeout.
   OnSetTouchAction(TOUCH_ACTION_NONE);
   SendInputEventACK(WebInputEvent::TouchStart, INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_EQ(1U, ack_handler_->GetAndResetAckCount());
   EXPECT_FALSE(TouchEventTimeoutEnabled());
+
+  MoveTouchPoint(0, 1, 1);
+  SendTouchEvent();
+  EXPECT_FALSE(TouchEventTimeoutEnabled());
+  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
+
+  // Delay the move ack. The timeout should not fire.
+  RunTasksAndWait(base::TimeDelta::FromMilliseconds(timeout_ms + 1));
+  EXPECT_EQ(0U, ack_handler_->GetAndResetAckCount());
+  EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
+  SendInputEventACK(WebInputEvent::TouchEnd, INPUT_EVENT_ACK_STATE_CONSUMED);
+  EXPECT_EQ(1U, ack_handler_->GetAndResetAckCount());
 
   // End the touch sequence.
   ReleaseTouchPoint(0);
@@ -1111,39 +1323,12 @@ TEST_F(InputRouterImplTest,
   ack_handler_->GetAndResetAckCount();
   GetSentMessageCountAndResetSink();
 
-  // Start another touch sequence.  While this does restore the touch timeout
-  // the timeout will not apply until the *next* touch sequence. This affords a
-  // touch-action response from the renderer without racing against the timeout.
+  // Start another touch sequence.  This should restore the touch timeout.
   PressTouchPoint(1, 1);
   SendTouchEvent();
   EXPECT_TRUE(TouchEventTimeoutEnabled());
   EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
-
-  // Delay the ack.  The timeout should *not* fire.
-  RunTasksAndWait(base::TimeDelta::FromMilliseconds(timeout_ms + 1));
   EXPECT_EQ(0U, ack_handler_->GetAndResetAckCount());
-  EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
-
-  // Finally send the ack.  The touch sequence should not have been cancelled.
-  SendInputEventACK(WebInputEvent::TouchStart,
-                    INPUT_EVENT_ACK_STATE_NOT_CONSUMED);
-  EXPECT_TRUE(TouchEventTimeoutEnabled());
-  EXPECT_EQ(1U, ack_handler_->GetAndResetAckCount());
-  EXPECT_EQ(0U, GetSentMessageCountAndResetSink());
-
-  // End the sequence.
-  ReleaseTouchPoint(0);
-  SendTouchEvent();
-  SendInputEventACK(WebInputEvent::TouchEnd, INPUT_EVENT_ACK_STATE_CONSUMED);
-  EXPECT_EQ(1U, ack_handler_->GetAndResetAckCount());
-  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
-
-  // A new touch sequence should (finally) be subject to the timeout.
-  PressTouchPoint(1, 1);
-  SendTouchEvent();
-  EXPECT_TRUE(TouchEventTimeoutEnabled());
-  EXPECT_EQ(0U, ack_handler_->GetAndResetAckCount());
-  EXPECT_EQ(1U, GetSentMessageCountAndResetSink());
 
   // Wait for the touch ack timeout to fire.
   RunTasksAndWait(base::TimeDelta::FromMilliseconds(timeout_ms + 1));

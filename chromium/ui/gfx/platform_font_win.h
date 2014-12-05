@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "ui/gfx/gfx_export.h"
 #include "ui/gfx/platform_font.h"
@@ -54,18 +55,27 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   Font DeriveFontWithHeight(int height, int style);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  virtual Font DeriveFont(int size_delta, int style) const override;
+  virtual int GetHeight() const override;
+  virtual int GetBaseline() const override;
+  virtual int GetCapHeight() const override;
+  virtual int GetExpectedTextWidth(int length) const override;
+  virtual int GetStyle() const override;
+  virtual std::string GetFontName() const override;
+  virtual std::string GetActualFontNameForTesting() const override;
+  virtual int GetFontSize() const override;
+  virtual const FontRenderParams& GetFontRenderParams() const override;
+  virtual NativeFont GetNativeFont() const override;
+
+  // Called once during initialization if should be retrieving font metrics
+  // from skia.
+  static void set_use_skia_for_font_metrics(bool use_skia_for_font_metrics) {
+    use_skia_for_font_metrics_ = use_skia_for_font_metrics;
+  }
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
+
   virtual ~PlatformFontWin() {}
 
   // Chrome text drawing bottoms out in the Windows GDI functions that take an
@@ -76,7 +86,7 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // HFontRef is reference counted. Upon deletion, it deletes the HFONT.
   // By making HFontRef maintain the reference to the HFONT, multiple
   // HFontRefs can share the same HFONT, and Font can provide value semantics.
-  class HFontRef : public base::RefCounted<HFontRef> {
+  class GFX_EXPORT HFontRef : public base::RefCounted<HFontRef> {
    public:
     // This constructor takes control of the HFONT, and will delete it when
     // the HFontRef is deleted.
@@ -104,6 +114,7 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
 
    private:
     friend class base::RefCounted<HFontRef>;
+    FRIEND_TEST_ALL_PREFIXES(RenderTextTest, HarfBuzz_UniscribeFallback);
 
     ~HFontRef();
 
@@ -139,8 +150,22 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
   // UI thread.
   static HFontRef* GetBaseFontRef();
 
-  // Creates and returns a new HFONTRef from the specified HFONT.
+  // Creates and returns a new HFontRef from the specified HFONT.
   static HFontRef* CreateHFontRef(HFONT font);
+
+  // Creates and returns a new HFontRef from the specified HFONT. Uses provided
+  // |font_metrics| instead of calculating new one.
+  static HFontRef* CreateHFontRef(HFONT font, const TEXTMETRIC& font_metrics);
+
+  // Returns a largest derived Font whose height does not exceed the height of
+  // |base_font|.
+  static Font DeriveWithCorrectedSize(HFONT base_font);
+
+  // Creates and returns a new HFontRef from the specified HFONT using metrics
+  // from skia. Currently this is only used if we use DirectWrite for font
+  // metrics.
+  static PlatformFontWin::HFontRef* CreateHFontRefFromSkia(
+      HFONT gdi_font);
 
   // Creates a new PlatformFontWin with the specified HFontRef. Used when
   // constructing a Font from a HFONT we don't want to copy.
@@ -151,6 +176,10 @@ class GFX_EXPORT PlatformFontWin : public PlatformFont {
 
   // Indirect reference to the HFontRef, which references the underlying HFONT.
   scoped_refptr<HFontRef> font_ref_;
+
+  // Set to true if font metrics are to be retrieved from skia. Defaults to
+  // false.
+  static bool use_skia_for_font_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(PlatformFontWin);
 };

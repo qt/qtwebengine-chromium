@@ -32,7 +32,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatRect;
 
@@ -81,13 +81,13 @@ struct WindowFeatures {
     Vector<String> additionalFeatures;
 
 private:
-    typedef HashMap<String, String> DialogFeaturesMap;
+    using DialogFeaturesMap = HashMap<String, String>;
     static void parseDialogFeatures(const String&, HashMap<String, String>&);
     static bool boolFeature(const DialogFeaturesMap&, const char* key, bool defaultValue = false);
     static float floatFeature(const DialogFeaturesMap&, const char* key, float min, float max, float defaultValue);
     void setWindowFeature(const String& keyString, const String& valueString);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WindowFeatures_h

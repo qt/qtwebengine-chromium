@@ -11,6 +11,8 @@
 #define SkTypeface_DEFINED
 
 #include "SkAdvancedTypefaceMetrics.h"
+#include "SkFontStyle.h"
+#include "SkLazyPtr.h"
 #include "SkWeakRefCnt.h"
 
 class SkDescriptor;
@@ -49,17 +51,25 @@ public:
         kBoldItalic = 0x03
     };
 
-    /** Returns the typeface's intrinsic style attributes
-    */
-    Style style() const { return fStyle; }
+    /** Returns the typeface's intrinsic style attributes. */
+    SkFontStyle fontStyle() const {
+        return fStyle;
+    }
 
-    /** Returns true if getStyle() has the kBold bit set.
-    */
-    bool isBold() const { return (fStyle & kBold) != 0; }
+    /** Returns the typeface's intrinsic style attributes.
+     *  @deprecated use fontStyle() instead.
+     */
+    Style style() const {
+        return static_cast<Style>(
+            (fStyle.weight() >= SkFontStyle::kSemiBold_Weight ? kBold : kNormal) |
+            (fStyle.slant()  != SkFontStyle::kUpright_Slant ? kItalic : kNormal));
+    }
 
-    /** Returns true if getStyle() has the kItalic bit set.
-    */
-    bool isItalic() const { return (fStyle & kItalic) != 0; }
+    /** Returns true if style() has the kBold bit set. */
+    bool isBold() const { return fStyle.weight() >= SkFontStyle::kSemiBold_Weight; }
+
+    /** Returns true if style() has the kItalic bit set. */
+    bool isItalic() const { return fStyle.slant() != SkFontStyle::kUpright_Slant; }
 
     /** Returns true if the typeface claims to be fixed-pitch.
      *  This is a style bit, advance widths may vary even if this returns true.
@@ -114,13 +124,13 @@ public:
     /** Return a new typeface given a file. If the file does not exist, or is
         not a valid font file, returns null.
     */
-    static SkTypeface* CreateFromFile(const char path[]);
+    static SkTypeface* CreateFromFile(const char path[], int index = 0);
 
     /** Return a new typeface given a stream. If the stream is
         not a valid font file, returns null. Ownership of the stream is
         transferred, so the caller must not reference it again.
     */
-    static SkTypeface* CreateFromStream(SkStream* stream);
+    static SkTypeface* CreateFromStream(SkStream* stream, int index = 0);
 
     /** Write a unique signature to a stream, sufficient to reconstruct a
         typeface referencing the same font when Deserialize is called.
@@ -273,6 +283,13 @@ public:
     SkScalerContext* createScalerContext(const SkDescriptor*,
                                          bool allowFailure = false) const;
 
+    /**
+     *  Return a rectangle (scaled to 1-pt) that represents the union of the bounds of all
+     *  of the glyphs, but each one positioned at (0,). This may be conservatively large, and
+     *  will not take into account any hinting or other size-specific adjustments.
+     */
+    SkRect getBounds() const;
+
     // PRIVATE / EXPERIMENTAL -- do not call
     void filterRec(SkScalerContextRec* rec) const {
         this->onFilterRec(rec);
@@ -285,7 +302,7 @@ public:
 protected:
     /** uniqueID must be unique and non-zero
     */
-    SkTypeface(Style style, SkFontID uniqueID, bool isFixedPitch = false);
+    SkTypeface(const SkFontStyle& style, SkFontID uniqueID, bool isFixedPitch = false);
     virtual ~SkTypeface();
 
     /** Sets the fixedPitch bit. If used, must be called in the constructor. */
@@ -312,16 +329,26 @@ protected:
     virtual bool onGetKerningPairAdjustments(const uint16_t glyphs[], int count,
                                              int32_t adjustments[]) const;
 
+    /** Returns the family name of the typeface as known by its font manager.
+     *  This name may or may not be produced by the family name iterator.
+     */
+    virtual void onGetFamilyName(SkString* familyName) const = 0;
+
+    /** Returns an iterator over the family names in the font. */
     virtual LocalizedStrings* onCreateFamilyNameIterator() const = 0;
 
     virtual int onGetTableTags(SkFontTableTag tags[]) const = 0;
     virtual size_t onGetTableData(SkFontTableTag, size_t offset,
                                   size_t length, void* data) const = 0;
 
+    virtual bool onComputeBounds(SkRect*) const;
+
 private:
     friend class SkGTypeface;
     friend class SkPDFFont;
     friend class SkPDFCIDFont;
+    friend class GrPathRendering;
+    friend class GrGLPathRendering;
 
     /** Retrieve detailed typeface metrics.  Used by the PDF backend.
      @param perGlyphInfo Indicate what glyph specific information (advances,
@@ -342,9 +369,13 @@ private:
     static SkTypeface* CreateDefault(int style);  // SkLazyPtr requires an int, not a Style.
     static void        DeleteDefault(SkTypeface*);
 
-    SkFontID    fUniqueID;
-    Style       fStyle;
-    bool        fIsFixedPitch;
+    struct BoundsComputer;
+//    friend struct BoundsComputer;
+
+    SkLazyPtr<SkRect>   fLazyBounds;
+    SkFontID            fUniqueID;
+    SkFontStyle         fStyle;
+    bool                fIsFixedPitch;
 
     friend class SkPaint;
     friend class SkGlyphCache;  // GetDefaultTypeface

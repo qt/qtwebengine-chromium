@@ -21,20 +21,22 @@
 #ifndef SVGFilterPrimitiveStandardAttributes_h
 #define SVGFilterPrimitiveStandardAttributes_h
 
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Filter;
 class FilterEffect;
 class SVGFilterBuilder;
 
 class SVGFilterPrimitiveStandardAttributes : public SVGElement {
+    // No DEFINE_WRAPPERTYPEINFO() here because a) this class is never
+    // instantiated, and b) we don't generate corresponding V8T.h or V8T.cpp.
+    // The subclasses must write DEFINE_WRAPPERTYPEINFO().
 public:
     void setStandardAttributes(FilterEffect*) const;
 
@@ -53,23 +55,18 @@ protected:
     SVGFilterPrimitiveStandardAttributes(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    inline void invalidate()
-    {
-        if (RenderObject* primitiveRenderer = renderer())
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(primitiveRenderer);
-    }
-
+    void invalidate();
     void primitiveAttributeChanged(const QualifiedName&);
 
 private:
-    virtual bool isFilterEffect() const OVERRIDE FINAL { return true; }
+    virtual bool isFilterEffect() const override final { return true; }
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE FINAL;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL;
+    virtual RenderObject* createRenderer(RenderStyle*) override final;
+    virtual bool rendererIsNeeded(const RenderStyle&) override final;
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -80,6 +77,6 @@ private:
 
 void invalidateFilterPrimitiveParent(SVGElement*);
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFilterPrimitiveStandardAttributes_h

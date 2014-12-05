@@ -40,11 +40,11 @@ var DumpCreator = (function() {
         ' calls and for future WebRTC calls. When the box is unchecked or' +
         ' this page is closed, all ongoing recordings will be stopped and' +
         ' this recording functionality will be disabled for future WebRTC' +
-        ' calls. Recordings in multiple tabs is supported as well as multiple' +
-        ' recordings in the same tab. When enabling, you select a base' +
-        ' filename to save the dump(s) to. The base filename will have a' +
-        ' suffix appended to it as &lt;base filename&gt;.&lt;unique ID for' +
-        ' the render process&gt;.&lt;recording ID&gt;. If recordings are' +
+        ' calls. Recordings in multiple tabs are supported as well as' +
+        ' multiple recordings in the same tab. When enabling, you select a' +
+        ' base filename to save the dump(s) to. The base filename will have a' +
+        ' suffix appended to it as &lt;base filename&gt;.&lt;render process' +
+        ' ID&gt;.&lt;recording ID&gt;. If recordings are' +
         ' disabled and then enabled using the same base filename, the' +
         ' file(s) will be appended to and may become invalid. It is' +
         ' recommended to choose a new base filename each time or move' +
@@ -86,7 +86,9 @@ var DumpCreator = (function() {
                               {type: 'octet/stream'});
       var URL = window.URL.createObjectURL(textBlob);
 
-      this.root_.getElementsByTagName('a')[0].href = URL;
+      var anchor = this.root_.getElementsByTagName('a')[0];
+      anchor.href = URL;
+      anchor.download = 'webrtc_internals_dump.txt';
       // The default action of the anchor will download the URL.
     },
 

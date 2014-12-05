@@ -9,12 +9,13 @@
 #include "base/file_version_info.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
 
 using base::FilePath;
 
-FileVersionInfoWin::FileVersionInfoWin(void* data, int language, int code_page)
+FileVersionInfoWin::FileVersionInfoWin(void* data,
+                                       WORD language,
+                                       WORD code_page)
     : language_(language), code_page_(code_page) {
   base::ThreadRestrictions::AssertIOAllowed();
   data_.reset((char*) data);

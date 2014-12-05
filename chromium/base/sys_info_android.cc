@@ -7,6 +7,7 @@
 #include <dlfcn.h>
 #include <sys/system_properties.h>
 
+#include "base/android/sys_utils.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -14,8 +15,7 @@
 #include "base/strings/stringprintf.h"
 #include "base/sys_info_internal.h"
 
-// TODO(rmcilroy): Update API level when 'L' gets an official API level.
-#if (__ANDROID_API__ >= 9999 /* 'L' */)
+#if (__ANDROID_API__ >= 21 /* 5.0 - Lollipop */)
 
 namespace {
 
@@ -203,6 +203,15 @@ int SysInfo::DalvikHeapSizeMB() {
 int SysInfo::DalvikHeapGrowthLimitMB() {
   static int heap_growth_limit = GetDalvikHeapGrowthLimitMB();
   return heap_growth_limit;
+}
+
+static base::LazyInstance<
+    base::internal::LazySysInfoValue<bool,
+        android::SysUtils::IsLowEndDeviceFromJni> >::Leaky
+    g_lazy_low_end_device = LAZY_INSTANCE_INITIALIZER;
+
+bool SysInfo::IsLowEndDevice() {
+  return g_lazy_low_end_device.Get().value();
 }
 
 

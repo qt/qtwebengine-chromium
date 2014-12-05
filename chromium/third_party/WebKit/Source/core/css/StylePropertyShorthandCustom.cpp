@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/StylePropertyShorthand.h"
 
-namespace WebCore {
+namespace blink {
 
 const StylePropertyShorthand& borderShorthandForParsing()
 {
@@ -130,32 +130,9 @@ const StylePropertyShorthand& parsingShorthandForProperty(CSSPropertyID property
     }
 }
 
-bool isExpandedShorthand(CSSPropertyID id)
+bool isShorthandProperty(CSSPropertyID id)
 {
-    // The system fonts bypass the normal style resolution by using RenderTheme,
-    // thus we need to special case it here. FIXME: This is a violation of CSS 3 Fonts
-    // as we should still be able to change the longhands.
-    // DON'T ADD ANY SHORTHAND HERE UNLESS IT ISN'T ALWAYS EXPANDED AT PARSE TIME (which is wrong).
-    if (id == CSSPropertyFont)
-        return false;
-
     return shorthandForProperty(id).length();
-}
-
-bool isExpandedShorthandForAll(CSSPropertyID propertyId)
-{
-    // FIXME: isExpandedShorthand says "font" is not an expanded shorthand,
-    // but font is expanded to font-family, font-size, and so on.
-    // StylePropertySerializer::asText should not generate css text like
-    // "font: initial; font-family: initial;...". To avoid this, we need to
-    // treat "font" as an expanded shorthand.
-    // And while applying "all" property, we cannot apply "font" property
-    // directly. This causes ASSERT crash, because StyleBuilder assume that
-    // all given properties are not expanded shorthands.
-    // "marker" has the same issue.
-    if (propertyId == CSSPropertyMarker || propertyId == CSSPropertyFont)
-        return true;
-    return shorthandForProperty(propertyId).length();
 }
 
 unsigned indexOfShorthandForLonghand(CSSPropertyID shorthandID, const Vector<StylePropertyShorthand, 4>& shorthands)
@@ -168,4 +145,4 @@ unsigned indexOfShorthandForLonghand(CSSPropertyID shorthandID, const Vector<Sty
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

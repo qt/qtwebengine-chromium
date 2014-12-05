@@ -19,38 +19,12 @@
 
 namespace base {
 
-// The common code for different SparseHistogram macros.
-#define HISTOGRAM_SPARSE_COMMON(name, sample, flag) \
+#define UMA_HISTOGRAM_SPARSE_SLOWLY(name, sample) \
     do { \
-      base::HistogramBase* histogram( \
-          base::SparseHistogram::FactoryGet(name, flag)); \
-      DCHECK_EQ(histogram->histogram_name(), name); \
+      base::HistogramBase* histogram = base::SparseHistogram::FactoryGet( \
+          name, base::HistogramBase::kUmaTargetedHistogramFlag); \
       histogram->Add(sample); \
     } while (0)
-
-#define HISTOGRAM_SPARSE_SLOWLY(name, sample) \
-    HISTOGRAM_SPARSE_COMMON(name, sample, base::HistogramBase::kNoFlags)
-
-#define UMA_HISTOGRAM_SPARSE_SLOWLY(name, sample) \
-    HISTOGRAM_SPARSE_COMMON(name, sample, \
-                            base::HistogramBase::kUmaTargetedHistogramFlag)
-
-//------------------------------------------------------------------------------
-// Define debug only version of macros.
-#ifndef NDEBUG
-
-#define DHISTOGRAM_SPARSE_SLOWLY(name, sample) \
-    HISTOGRAM_SPARSE_SLOWLY(name, sample)
-
-#else  // NDEBUG
-
-#define DHISTOGRAM_SPARSE_SLOWLY(name, sample) \
-    while (0) { \
-      static_cast<void>(name); \
-      static_cast<void>(sample); \
-    }
-
-#endif  // NDEBUG
 
 class HistogramSamples;
 
@@ -60,24 +34,23 @@ class BASE_EXPORT_PRIVATE SparseHistogram : public HistogramBase {
   // new one.
   static HistogramBase* FactoryGet(const std::string& name, int32 flags);
 
-  virtual ~SparseHistogram();
+  ~SparseHistogram() override;
 
   // HistogramBase implementation:
-  virtual HistogramType GetHistogramType() const OVERRIDE;
-  virtual bool HasConstructionArguments(
-      Sample expected_minimum,
-      Sample expected_maximum,
-      size_t expected_bucket_count) const OVERRIDE;
-  virtual void Add(Sample value) OVERRIDE;
-  virtual void AddSamples(const HistogramSamples& samples) OVERRIDE;
-  virtual bool AddSamplesFromPickle(PickleIterator* iter) OVERRIDE;
-  virtual scoped_ptr<HistogramSamples> SnapshotSamples() const OVERRIDE;
-  virtual void WriteHTMLGraph(std::string* output) const OVERRIDE;
-  virtual void WriteAscii(std::string* output) const OVERRIDE;
+  HistogramType GetHistogramType() const override;
+  bool HasConstructionArguments(Sample expected_minimum,
+                                Sample expected_maximum,
+                                size_t expected_bucket_count) const override;
+  void Add(Sample value) override;
+  void AddSamples(const HistogramSamples& samples) override;
+  bool AddSamplesFromPickle(PickleIterator* iter) override;
+  scoped_ptr<HistogramSamples> SnapshotSamples() const override;
+  void WriteHTMLGraph(std::string* output) const override;
+  void WriteAscii(std::string* output) const override;
 
  protected:
   // HistogramBase implementation:
-  virtual bool SerializeInfoImpl(Pickle* pickle) const OVERRIDE;
+  bool SerializeInfoImpl(Pickle* pickle) const override;
 
  private:
   // Clients should always use FactoryGet to create SparseHistogram.
@@ -87,10 +60,10 @@ class BASE_EXPORT_PRIVATE SparseHistogram : public HistogramBase {
       PickleIterator* iter);
   static HistogramBase* DeserializeInfoImpl(PickleIterator* iter);
 
-  virtual void GetParameters(DictionaryValue* params) const OVERRIDE;
-  virtual void GetCountAndBucketData(Count* count,
-                                     int64* sum,
-                                     ListValue* buckets) const OVERRIDE;
+  void GetParameters(DictionaryValue* params) const override;
+  void GetCountAndBucketData(Count* count,
+                             int64* sum,
+                             ListValue* buckets) const override;
 
   // Helpers for emitting Ascii graphic.  Each method appends data to output.
   void WriteAsciiImpl(bool graph_it,

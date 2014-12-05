@@ -31,15 +31,15 @@
 #ifndef SVGLengthList_h
 #define SVGLengthList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGLength.h"
 #include "core/svg/properties/SVGListPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGLengthListTearOff;
 
-class SVGLengthList FINAL : public SVGListPropertyHelper<SVGLengthList, SVGLength> {
+class SVGLengthList final : public SVGListPropertyHelper<SVGLengthList, SVGLength> {
 public:
     typedef SVGLengthListTearOff TearOffType;
 
@@ -50,24 +50,25 @@ public:
 
     virtual ~SVGLengthList();
 
-    PassRefPtr<SVGLengthList> clone();
-
     void setValueAsString(const String&, ExceptionState&);
 
     // SVGPropertyBase:
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
-    virtual String valueAsString() const OVERRIDE;
+    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
+    virtual PassRefPtr<SVGLengthList> clone() override;
+    virtual String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) override;
 
     static AnimatedPropertyType classType() { return AnimatedLengthList; }
 
 private:
     explicit SVGLengthList(SVGLengthMode);
 
-    bool adjustFromToListValues(PassRefPtr<SVGLengthList> fromList, PassRefPtr<SVGLengthList> toList, float percentage, bool isToAnimation, bool resizeAnimatedListIfNeeded);
+    // Create SVGLength items used to adjust the list length
+    // when animation from/to lists are longer than this list.
+    virtual PassRefPtr<SVGLength> createPaddingItem() const override;
 
     template <typename CharType>
     void parseInternal(const CharType*& ptr, const CharType* end, ExceptionState&);
@@ -75,6 +76,6 @@ private:
     SVGLengthMode m_mode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGLengthList_h

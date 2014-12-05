@@ -27,7 +27,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
     class CSSSelectorList;
 
     // This class represents a selector for a StyleRule.
@@ -47,9 +47,6 @@ namespace WebCore {
     //   selectorText(): .a.b
     //   --> (relation == SubSelector)
     //     selectorText(): .b
-    //
-    // Note that currently a bare selector such as ".a" has a relation() of Descendant. This is a bug - instead the relation should be
-    // "None".
     //
     // The order of tagHistory() varies depending on the situation.
     // * Relations using combinators (http://www.w3.org/TR/css3-selectors/#combinators), such as descendant, sibling, etc., are parsed
@@ -106,35 +103,35 @@ namespace WebCore {
 
         /* how the attribute value has to match.... Default is Exact */
         enum Match {
-            Unknown = 0,
+            Unknown,
             Tag, // Example: div
             Id, // Example: #id
             Class, // example: .class
             PseudoClass, // Example:  :nth-child(2)
             PseudoElement, // Example: ::first-line
             PagePseudoClass, // ??
-            Exact, // Example: E[foo="bar"]
-            Set, // Example: E[foo]
-            Hyphen, // Example: E[foo|="bar"]
-            List, // Example: E[foo~="bar"]
-            Contain, // css3: E[foo*="bar"]
-            Begin, // css3: E[foo^="bar"]
-            End, // css3: E[foo$="bar"]
-            FirstAttributeSelectorMatch = Exact,
+            AttributeExact, // Example: E[foo="bar"]
+            AttributeSet, // Example: E[foo]
+            AttributeHyphen, // Example: E[foo|="bar"]
+            AttributeList, // Example: E[foo~="bar"]
+            AttributeContain, // css3: E[foo*="bar"]
+            AttributeBegin, // css3: E[foo^="bar"]
+            AttributeEnd, // css3: E[foo$="bar"]
+            FirstAttributeSelectorMatch = AttributeExact,
         };
 
         enum Relation {
-            Descendant = 0, // "Space" combinator
+            SubSelector, // No combinator
+            Descendant, // "Space" combinator
             Child, // > combinator
             DirectAdjacent, // + combinator
             IndirectAdjacent, // ~ combinator
-            SubSelector, // "No space" combinator
             ShadowPseudo, // Special case of shadow DOM pseudo elements / shadow pseudo element
             ShadowDeep // /deep/ combinator
         };
 
         enum PseudoType {
-            PseudoNotParsed = 0,
+            PseudoNotParsed,
             PseudoUnknown,
             PseudoEmpty,
             PseudoFirstChild,
@@ -180,10 +177,8 @@ namespace WebCore {
             PseudoRoot,
             PseudoScope,
             PseudoScrollbar,
-            PseudoScrollbarBack,
             PseudoScrollbarButton,
             PseudoScrollbarCorner,
-            PseudoScrollbarForward,
             PseudoScrollbarThumb,
             PseudoScrollbarTrack,
             PseudoScrollbarTrackPiece,
@@ -207,7 +202,6 @@ namespace WebCore {
             PseudoFullScreenAncestor,
             PseudoInRange,
             PseudoOutOfRange,
-            PseudoUserAgentCustomElement,
             PseudoWebKitCustomElement,
             PseudoCue,
             PseudoFutureCue,
@@ -216,7 +210,9 @@ namespace WebCore {
             PseudoContent,
             PseudoHost,
             PseudoHostContext,
-            PseudoShadow
+            PseudoShadow,
+            PseudoSpatialNavigationFocus,
+            PseudoListBox
         };
 
         enum MarginBoxType {
@@ -238,6 +234,11 @@ namespace WebCore {
             RightBottomMarginBox,
         };
 
+        enum AttributeMatchType {
+            CaseSensitive,
+            CaseInsensitive,
+        };
+
         PseudoType pseudoType() const
         {
             if (m_pseudoType == PseudoNotParsed)
@@ -245,7 +246,7 @@ namespace WebCore {
             return static_cast<PseudoType>(m_pseudoType);
         }
 
-        static PseudoType parsePseudoType(const AtomicString&);
+        static PseudoType parsePseudoType(const AtomicString&, bool hasArguments);
         static PseudoId pseudoId(PseudoType);
 
         // Selectors are kept in an array by CSSSelectorList. The next component of the selector is
@@ -261,6 +262,7 @@ namespace WebCore {
         // how you use the returned QualifiedName.
         // http://www.w3.org/TR/css3-selectors/#attrnmsp
         const QualifiedName& attribute() const;
+        AttributeMatchType attributeMatchType() const;
         // Returns the argument of a parameterized selector. For example, nth-child(2) would have an argument of 2.
         const AtomicString& argument() const { return m_hasRareData ? m_data.m_rareData->m_argument : nullAtom; }
         const CSSSelectorList* selectorList() const { return m_hasRareData ? m_data.m_rareData->m_selectorList.get() : 0; }
@@ -271,7 +273,7 @@ namespace WebCore {
 #endif
 
         void setValue(const AtomicString&);
-        void setAttribute(const QualifiedName&);
+        void setAttribute(const QualifiedName&, AttributeMatchType);
         void setArgument(const AtomicString&);
         void setSelectorList(PassOwnPtr<CSSSelectorList>);
         void setMatchUserAgentOnly();
@@ -280,17 +282,17 @@ namespace WebCore {
         bool matchNth(int count) const;
 
         bool matchesPseudoElement() const;
-        bool isUnknownPseudoElement() const;
         bool isCustomPseudoElement() const;
         bool isDirectAdjacentSelector() const { return m_relation == DirectAdjacent; }
+        bool isAdjacentSelector() const { return m_relation == DirectAdjacent || m_relation == IndirectAdjacent; }
+        bool isShadowSelector() const { return m_relation == ShadowPseudo || m_relation == ShadowDeep; }
         bool isSiblingSelector() const;
         bool isAttributeSelector() const;
         bool isContentPseudoElement() const;
         bool isShadowPseudoElement() const;
         bool isHostPseudoClass() const;
-
-        // FIXME: selectors with no tagHistory() get a relation() of Descendant (and sometimes even SubSelector). It should instead be
-        // None.
+        bool isTreeBoundaryCrossing() const;
+        bool isInsertionPointCrossing() const;
         Relation relation() const { return static_cast<Relation>(m_relation); }
         void setRelation(Relation relation)
         {
@@ -344,10 +346,19 @@ namespace WebCore {
 
             bool parseNth();
             bool matchNth(int count);
+            int nthAValue() const { return m_bits.m_nth.m_a; }
+            void setNthAValue(int nthA) { m_bits.m_nth.m_a = nthA; }
+            int nthBValue() const { return m_bits.m_nth.m_b; }
+            void setNthBValue(int nthB) { m_bits.m_nth.m_b = nthB; }
 
             AtomicString m_value;
-            int m_a; // Used for :nth-*
-            int m_b; // Used for :nth-*
+            union {
+                struct {
+                    int m_a; // Used for :nth-*
+                    int m_b; // Used for :nth-*
+                } m_nth;
+                AttributeMatchType m_attributeMatchType; // used for attribute selector (with value)
+            } m_bits;
             QualifiedName m_attribute; // used for attribute selector
             AtomicString m_argument; // Used for :contains, :lang, :nth-*
             OwnPtr<CSSSelectorList> m_selectorList; // Used for :-webkit-any and :not
@@ -372,6 +383,13 @@ inline const QualifiedName& CSSSelector::attribute() const
     return m_data.m_rareData->m_attribute;
 }
 
+inline CSSSelector::AttributeMatchType CSSSelector::attributeMatchType() const
+{
+    ASSERT(isAttributeSelector());
+    ASSERT(m_hasRareData);
+    return m_data.m_rareData->m_bits.m_attributeMatchType;
+}
+
 inline bool CSSSelector::matchesPseudoElement() const
 {
     if (m_pseudoType == PseudoUnknown)
@@ -379,14 +397,9 @@ inline bool CSSSelector::matchesPseudoElement() const
     return m_match == PseudoElement;
 }
 
-inline bool CSSSelector::isUnknownPseudoElement() const
-{
-    return m_match == PseudoElement && m_pseudoType == PseudoUnknown;
-}
-
 inline bool CSSSelector::isCustomPseudoElement() const
 {
-    return m_match == PseudoElement && (m_pseudoType == PseudoUserAgentCustomElement || m_pseudoType == PseudoWebKitCustomElement);
+    return m_match == PseudoElement && m_pseudoType == PseudoWebKitCustomElement;
 }
 
 inline bool CSSSelector::isHostPseudoClass() const
@@ -427,6 +440,17 @@ inline bool CSSSelector::isShadowPseudoElement() const
     return m_match == PseudoElement && pseudoType() == PseudoShadow;
 }
 
+inline bool CSSSelector::isTreeBoundaryCrossing() const
+{
+    return m_match == PseudoClass && (pseudoType() == PseudoHost || pseudoType() == PseudoHostContext);
+}
+
+inline bool CSSSelector::isInsertionPointCrossing() const
+{
+    return (m_match == PseudoClass && pseudoType() == PseudoHostContext)
+        || (m_match == PseudoElement && pseudoType() == PseudoContent);
+}
+
 inline void CSSSelector::setValue(const AtomicString& value)
 {
     ASSERT(m_match != Tag);
@@ -443,7 +467,7 @@ inline void CSSSelector::setValue(const AtomicString& value)
 }
 
 inline CSSSelector::CSSSelector()
-    : m_relation(Descendant)
+    : m_relation(SubSelector)
     , m_match(Unknown)
     , m_pseudoType(PseudoNotParsed)
     , m_parsedNth(false)
@@ -457,7 +481,7 @@ inline CSSSelector::CSSSelector()
 }
 
 inline CSSSelector::CSSSelector(const QualifiedName& tagQName, bool tagIsForNamespaceRule)
-    : m_relation(Descendant)
+    : m_relation(SubSelector)
     , m_match(Tag)
     , m_pseudoType(PseudoNotParsed)
     , m_parsedNth(false)
@@ -522,6 +546,6 @@ inline const AtomicString& CSSSelector::value() const
     return *reinterpret_cast<const AtomicString*>(&m_data.m_value);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSSelector_h

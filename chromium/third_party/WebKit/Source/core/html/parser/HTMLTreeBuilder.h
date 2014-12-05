@@ -39,19 +39,15 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class AtomicHTMLToken;
-class Document;
 class DocumentFragment;
 class Element;
-class LocalFrame;
-class HTMLToken;
 class HTMLDocument;
-class Node;
 class HTMLDocumentParser;
 
-class HTMLTreeBuilder FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLTreeBuilder> {
+class HTMLTreeBuilder final : public NoBaseWillBeGarbageCollectedFinalized<HTMLTreeBuilder> {
     WTF_MAKE_NONCOPYABLE(HTMLTreeBuilder); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<HTMLTreeBuilder> create(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool reportErrors, const HTMLParserOptions& options)
@@ -82,8 +78,9 @@ public:
     // Done, close any open tags, etc.
     void finished();
 
-    // Synchronously empty any queues, possibly creating more DOM nodes.
-    void flush() { m_tree.flush(); }
+    // Synchronously flush pending text and queued tasks, possibly creating more DOM nodes.
+    // Flushing pending text depends on |mode|.
+    void flush(FlushMode mode) { m_tree.flush(mode); }
 
     void setShouldSkipLeadingNewline(bool shouldSkip) { m_shouldSkipLeadingNewline = shouldSkip; }
 
@@ -214,7 +211,7 @@ private:
     };
 
     bool m_framesetOk;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_isAttached;
 #endif
     FragmentParsingContext m_fragmentContext;

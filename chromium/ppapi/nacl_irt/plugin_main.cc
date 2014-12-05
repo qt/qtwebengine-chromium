@@ -33,7 +33,7 @@ int PpapiPluginMain() {
   base::MessageLoop loop;
   ppapi::proxy::PluginGlobals plugin_globals;
 
-#if defined(__native_client__)
+#if defined(OS_NACL_SFI)
   // Currently on non-SFI mode, we don't use SRPC server on plugin.
   // TODO(hidehiko): Make sure this SRPC is actually used on SFI-mode.
 
@@ -52,7 +52,7 @@ int PpapiPluginMain() {
       ppapi::GetShutdownEvent(),
       ppapi::GetBrowserIPCFileDescriptor(),
       ppapi::GetRendererIPCFileDescriptor());
-  plugin_globals.set_plugin_proxy_delegate(&ppapi_dispatcher);
+  plugin_globals.SetPluginProxyDelegate(&ppapi_dispatcher);
 
   loop.Run();
 

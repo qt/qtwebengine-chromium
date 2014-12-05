@@ -28,10 +28,11 @@
 #include "config.h"
 #include "core/events/MessageEvent.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8ArrayBuffer.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline bool isValidSource(EventTarget* source)
 {
@@ -45,7 +46,6 @@ MessageEventInit::MessageEventInit()
 MessageEvent::MessageEvent()
     : m_dataType(DataTypeScriptValue)
 {
-    ScriptWrappable::init(this);
 }
 
 MessageEvent::MessageEvent(const AtomicString& type, const MessageEventInit& initializer)
@@ -54,13 +54,12 @@ MessageEvent::MessageEvent(const AtomicString& type, const MessageEventInit& ini
     , m_origin(initializer.origin)
     , m_lastEventId(initializer.lastEventId)
     , m_source(isValidSource(initializer.source.get()) ? initializer.source : nullptr)
-    , m_ports(adoptPtr(new MessagePortArray(initializer.ports)))
+    , m_ports(adoptPtrWillBeNoop(new MessagePortArray(initializer.ports)))
 {
-    ScriptWrappable::init(this);
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeScriptValue)
     , m_origin(origin)
@@ -68,11 +67,10 @@ MessageEvent::MessageEvent(const String& origin, const String& lastEventId, Pass
     , m_source(source)
     , m_ports(ports)
 {
-    ScriptWrappable::init(this);
     ASSERT(isValidSource(m_source.get()));
 }
 
-MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtr<MessagePortArray> ports)
+MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, PassRefPtrWillBeRawPtr<EventTarget> source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeSerializedScriptValue)
     , m_dataAsSerializedScriptValue(data)
@@ -81,7 +79,6 @@ MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String&
     , m_source(source)
     , m_ports(ports)
 {
-    ScriptWrappable::init(this);
     if (m_dataAsSerializedScriptValue)
         m_dataAsSerializedScriptValue->registerMemoryAllocatedWithCurrentScriptContext();
     ASSERT(isValidSource(m_source.get()));
@@ -96,7 +93,6 @@ MessageEvent::MessageEvent(PassRefPtr<SerializedScriptValue> data, const String&
     , m_source(source)
     , m_channels(channels)
 {
-    ScriptWrappable::init(this);
     if (m_dataAsSerializedScriptValue)
         m_dataAsSerializedScriptValue->registerMemoryAllocatedWithCurrentScriptContext();
     ASSERT(isValidSource(m_source.get()));
@@ -108,25 +104,22 @@ MessageEvent::MessageEvent(const String& data, const String& origin)
     , m_dataAsString(data)
     , m_origin(origin)
 {
-    ScriptWrappable::init(this);
 }
 
-MessageEvent::MessageEvent(PassRefPtrWillBeRawPtr<Blob> data, const String& origin)
+MessageEvent::MessageEvent(Blob* data, const String& origin)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeBlob)
     , m_dataAsBlob(data)
     , m_origin(origin)
 {
-    ScriptWrappable::init(this);
 }
 
-MessageEvent::MessageEvent(PassRefPtr<ArrayBuffer> data, const String& origin)
+MessageEvent::MessageEvent(PassRefPtr<DOMArrayBuffer> data, const String& origin)
     : Event(EventTypeNames::message, false, false)
     , m_dataType(DataTypeArrayBuffer)
     , m_dataAsArrayBuffer(data)
     , m_origin(origin)
 {
-    ScriptWrappable::init(this);
 }
 
 MessageEvent::~MessageEvent()
@@ -142,7 +135,7 @@ PassRefPtrWillBeRawPtr<MessageEvent> MessageEvent::create(const AtomicString& ty
     return adoptRefWillBeNoop(new MessageEvent(type, initializer));
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -156,7 +149,7 @@ void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bo
     m_ports = ports;
 }
 
-void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtr<MessagePortArray> ports)
+void MessageEvent::initMessageEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtr<SerializedScriptValue> data, const String& origin, const String& lastEventId, LocalDOMWindow* source, PassOwnPtrWillBeRawPtr<MessagePortArray> ports)
 {
     if (dispatched())
         return;
@@ -188,7 +181,34 @@ void MessageEvent::trace(Visitor* visitor)
 {
     visitor->trace(m_dataAsBlob);
     visitor->trace(m_source);
+#if ENABLE(OILPAN)
+    visitor->trace(m_ports);
+#endif
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+v8::Handle<v8::Object> MessageEvent::associateWithWrapper(const WrapperTypeInfo* wrapperType, v8::Handle<v8::Object> wrapper, v8::Isolate* isolate)
+{
+    Event::associateWithWrapper(wrapperType, wrapper, isolate);
+
+    // Ensures a wrapper is created for the data to return now so that V8 knows how
+    // much memory is used via the wrapper. To keep the wrapper alive, it's set to
+    // the wrapper of the MessageEvent as a hidden value.
+    switch (dataType()) {
+    case MessageEvent::DataTypeScriptValue:
+    case MessageEvent::DataTypeSerializedScriptValue:
+        break;
+    case MessageEvent::DataTypeString:
+        V8HiddenValue::setHiddenValue(isolate, wrapper, V8HiddenValue::stringData(isolate), v8String(isolate, dataAsString()));
+        break;
+    case MessageEvent::DataTypeBlob:
+        break;
+    case MessageEvent::DataTypeArrayBuffer:
+        V8HiddenValue::setHiddenValue(isolate, wrapper, V8HiddenValue::arrayBufferData(isolate), toV8(dataAsArrayBuffer(), wrapper, isolate));
+        break;
+    }
+
+    return wrapper;
+}
+
+} // namespace blink

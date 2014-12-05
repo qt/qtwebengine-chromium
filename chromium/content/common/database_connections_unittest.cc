@@ -6,12 +6,12 @@
 #include "base/message_loop/message_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
+#include "storage/common/database/database_connections.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/database/database_connections.h"
 
 using base::ASCIIToUTF16;
-using webkit_database::DatabaseConnections;
-using webkit_database::DatabaseConnectionsWrapper;
+using storage::DatabaseConnections;
+using storage::DatabaseConnectionsWrapper;
 
 namespace content {
 

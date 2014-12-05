@@ -17,11 +17,11 @@ class GpuProcess;
 class InProcessGpuThread : public base::Thread {
  public:
   explicit InProcessGpuThread(const std::string& channel_id);
-  virtual ~InProcessGpuThread();
+  ~InProcessGpuThread() override;
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
   std::string channel_id_;

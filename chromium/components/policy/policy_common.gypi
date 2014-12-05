@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 {
+  # GN version: //components/policy/core/common
   'dependencies': [
     '../base/base.gyp:base',
   ],
@@ -64,8 +65,6 @@
         'core/common/cloud/policy_header_io_helper.h',
         'core/common/cloud/policy_header_service.cc',
         'core/common/cloud/policy_header_service.h',
-        'core/common/cloud/rate_limiter.cc',
-        'core/common/cloud/rate_limiter.h',
         'core/common/cloud/resource_cache.cc',
         'core/common/cloud/resource_cache.h',
         'core/common/cloud/system_policy_request_context.cc',

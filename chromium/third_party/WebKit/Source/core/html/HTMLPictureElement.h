@@ -7,9 +7,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLPictureElement FINAL : public HTMLElement {
+class HTMLPictureElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLPictureElement);
 
@@ -17,8 +18,11 @@ public:
 
 protected:
     explicit HTMLPictureElement(Document&);
+
+private:
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLPictureElement_h

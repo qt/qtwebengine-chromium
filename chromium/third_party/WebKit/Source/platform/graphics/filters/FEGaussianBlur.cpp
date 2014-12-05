@@ -27,17 +27,11 @@
 
 #include "platform/graphics/filters/FEGaussianBlur.h"
 
-#include "platform/graphics/GraphicsContext.h"
-#include "platform/graphics/cpu/arm/filters/FEGaussianBlurNEON.h"
-#include "platform/graphics/filters/ParallelJobs.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
 #include "platform/text/TextStream.h"
-#include "wtf/MathExtras.h"
-#include "wtf/Uint8ClampedArray.h"
 
 #include "SkBlurImageFilter.h"
-
-using namespace std;
 
 static inline float gaussianKernelFactor()
 {
@@ -46,7 +40,7 @@ static inline float gaussianKernelFactor()
 
 static const int gMaxKernelSize = 1000;
 
-namespace WebCore {
+namespace blink {
 
 FEGaussianBlur::FEGaussianBlur(Filter* filter, float x, float y)
     : FilterEffect(filter)
@@ -88,13 +82,13 @@ IntSize FEGaussianBlur::calculateUnscaledKernelSize(const FloatPoint& std)
     // Limit the kernel size to 1000. A bigger radius won't make a big difference for the result image but
     // inflates the absolute paint rect to much. This is compatible with Firefox' behavior.
     if (std.x()) {
-        int size = max<unsigned>(2, static_cast<unsigned>(floorf(std.x() * gaussianKernelFactor() + 0.5f)));
-        kernelSize.setWidth(min(size, gMaxKernelSize));
+        int size = std::max<unsigned>(2, static_cast<unsigned>(floorf(std.x() * gaussianKernelFactor() + 0.5f)));
+        kernelSize.setWidth(std::min(size, gMaxKernelSize));
     }
 
     if (std.y()) {
-        int size = max<unsigned>(2, static_cast<unsigned>(floorf(std.y() * gaussianKernelFactor() + 0.5f)));
-        kernelSize.setHeight(min(size, gMaxKernelSize));
+        int size = std::max<unsigned>(2, static_cast<unsigned>(floorf(std.y() * gaussianKernelFactor() + 0.5f)));
+        kernelSize.setHeight(std::min(size, gMaxKernelSize));
     }
 
     return kernelSize;
@@ -138,34 +132,6 @@ FloatRect FEGaussianBlur::determineAbsolutePaintRect(const FloatRect& originalRe
     return outputRect;
 }
 
-void FEGaussianBlur::applySoftware()
-{
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    FilterEffect* in = inputEffect(0);
-
-    IntRect drawingRegion = drawingRegionOfInputImage(in->absolutePaintRect());
-
-    setIsAlphaImage(in->isAlphaImage());
-
-    float stdX = filter()->applyHorizontalScale(m_stdX);
-    float stdY = filter()->applyVerticalScale(m_stdY);
-
-    RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-
-    SkPaint paint;
-    GraphicsContext* dstContext = resultImage->context();
-    paint.setImageFilter(SkBlurImageFilter::Create(stdX, stdY))->unref();
-
-    SkRect bounds = SkRect::MakeWH(absolutePaintRect().width(), absolutePaintRect().height());
-    dstContext->saveLayer(&bounds, &paint);
-    paint.setColor(0xFFFFFFFF);
-    dstContext->drawImage(image.get(), drawingRegion.location(), CompositeCopy);
-    dstContext->restoreLayer();
-}
-
 PassRefPtr<SkImageFilter> FEGaussianBlur::createImageFilter(SkiaImageFilterBuilder* builder)
 {
     RefPtr<SkImageFilter> input(builder->build(inputEffect(0), operatingColorSpace()));
@@ -185,4 +151,4 @@ TextStream& FEGaussianBlur::externalRepresentation(TextStream& ts, int indent) c
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

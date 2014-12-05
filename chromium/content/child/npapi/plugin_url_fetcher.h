@@ -11,13 +11,10 @@
 #include "content/public/child/request_peer.h"
 #include "url/gurl.h"
 
-namespace webkit_glue {
-class MultipartResponseDelegate;
-class ResourceLoaderBridge;
-}
-
 namespace content {
+class MultipartResponseDelegate;
 class PluginStreamUrl;
+class ResourceLoaderBridge;
 
 // Fetches URLS for a plugin using ResourceDispatcher.
 class PluginURLFetcher : public RequestPeer {
@@ -37,7 +34,7 @@ class PluginURLFetcher : public RequestPeer {
                    int render_view_id,
                    unsigned long resource_id,
                    bool copy_stream_data);
-  virtual ~PluginURLFetcher();
+  ~PluginURLFetcher() override;
 
   // Cancels the current request.
   void Cancel();
@@ -55,28 +52,26 @@ class PluginURLFetcher : public RequestPeer {
 
  private:
   // RequestPeer implementation:
-  virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
-  virtual bool OnReceivedRedirect(const GURL& new_url,
-                                  const GURL& new_first_party_for_cookies,
-                                  const ResourceResponseInfo& info) OVERRIDE;
-  virtual void OnReceivedResponse(const ResourceResponseInfo& info) OVERRIDE;
-  virtual void OnDownloadedData(int len, int encoded_data_length) OVERRIDE;
-  virtual void OnReceivedData(const char* data,
-                              int data_length,
-                              int encoded_data_length) OVERRIDE;
-  virtual void OnCompletedRequest(int error_code,
-                                  bool was_ignored_by_handler,
-                                  bool stale_copy_in_cache,
-                                  const std::string& security_info,
-                                  const base::TimeTicks& completion_time,
-                                  int64 total_transfer_size) OVERRIDE;
+  void OnUploadProgress(uint64 position, uint64 size) override;
+  bool OnReceivedRedirect(const net::RedirectInfo& redirect_info,
+                          const ResourceResponseInfo& info) override;
+  void OnReceivedResponse(const ResourceResponseInfo& info) override;
+  void OnDownloadedData(int len, int encoded_data_length) override;
+  void OnReceivedData(const char* data,
+                      int data_length,
+                      int encoded_data_length) override;
+  void OnCompletedRequest(int error_code,
+                          bool was_ignored_by_handler,
+                          bool stale_copy_in_cache,
+                          const std::string& security_info,
+                          const base::TimeTicks& completion_time,
+                          int64 total_transfer_size) override;
 
   // |plugin_stream_| becomes NULL after Cancel() to ensure no further calls
   // |reach it.
   PluginStreamUrl* plugin_stream_;
   GURL url_;
   GURL first_party_for_cookies_;
-  std::string method_;
   GURL referrer_;
   bool notify_redirects_;
   bool is_plugin_src_load_;
@@ -88,9 +83,9 @@ class PluginURLFetcher : public RequestPeer {
   int64 data_offset_;
   bool pending_failure_notification_;
 
-  scoped_ptr<webkit_glue::MultipartResponseDelegate> multipart_delegate_;
+  scoped_ptr<MultipartResponseDelegate> multipart_delegate_;
 
-  scoped_ptr<webkit_glue::ResourceLoaderBridge> bridge_;
+  scoped_ptr<ResourceLoaderBridge> bridge_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginURLFetcher);
 };

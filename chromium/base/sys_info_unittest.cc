@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/environment.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
@@ -65,13 +65,20 @@ TEST_F(SysInfoTest, Uptime) {
   EXPECT_GT(up_time_2, up_time_1);
 }
 
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+TEST_F(SysInfoTest, HardwareModelName) {
+  std::string hardware_model = base::SysInfo::HardwareModelName();
+  EXPECT_FALSE(hardware_model.empty());
+}
+#endif
+
 #if defined(OS_CHROMEOS)
 
 TEST_F(SysInfoTest, GoogleChromeOSVersionNumbers) {
   int32 os_major_version = -1;
   int32 os_minor_version = -1;
   int32 os_bugfix_version = -1;
-  const char* kLsbRelease =
+  const char kLsbRelease[] =
       "FOO=1234123.34.5\n"
       "CHROMEOS_RELEASE_VERSION=1.2.3.4\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease, base::Time());
@@ -87,7 +94,7 @@ TEST_F(SysInfoTest, GoogleChromeOSVersionNumbersFirst) {
   int32 os_major_version = -1;
   int32 os_minor_version = -1;
   int32 os_bugfix_version = -1;
-  const char* kLsbRelease =
+  const char kLsbRelease[] =
       "CHROMEOS_RELEASE_VERSION=1.2.3.4\n"
       "FOO=1234123.34.5\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease, base::Time());
@@ -103,7 +110,7 @@ TEST_F(SysInfoTest, GoogleChromeOSNoVersionNumbers) {
   int32 os_major_version = -1;
   int32 os_minor_version = -1;
   int32 os_bugfix_version = -1;
-  const char* kLsbRelease = "FOO=1234123.34.5\n";
+  const char kLsbRelease[] = "FOO=1234123.34.5\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease, base::Time());
   base::SysInfo::OperatingSystemVersionNumbers(&os_major_version,
                                                &os_minor_version,
@@ -114,7 +121,7 @@ TEST_F(SysInfoTest, GoogleChromeOSNoVersionNumbers) {
 }
 
 TEST_F(SysInfoTest, GoogleChromeOSLsbReleaseTime) {
-  const char* kLsbRelease = "CHROMEOS_RELEASE_VERSION=1.2.3.4";
+  const char kLsbRelease[] = "CHROMEOS_RELEASE_VERSION=1.2.3.4";
   // Use a fake time that can be safely displayed as a string.
   const base::Time lsb_release_time(base::Time::FromDoubleT(12345.6));
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease, lsb_release_time);
@@ -127,19 +134,19 @@ TEST_F(SysInfoTest, IsRunningOnChromeOS) {
   base::SysInfo::SetChromeOSVersionInfoForTest("", base::Time());
   EXPECT_FALSE(base::SysInfo::IsRunningOnChromeOS());
 
-  const char* kLsbRelease1 =
+  const char kLsbRelease1[] =
       "CHROMEOS_RELEASE_NAME=Non Chrome OS\n"
       "CHROMEOS_RELEASE_VERSION=1.2.3.4\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease1, base::Time());
   EXPECT_FALSE(base::SysInfo::IsRunningOnChromeOS());
 
-  const char* kLsbRelease2 =
+  const char kLsbRelease2[] =
       "CHROMEOS_RELEASE_NAME=Chrome OS\n"
       "CHROMEOS_RELEASE_VERSION=1.2.3.4\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease2, base::Time());
   EXPECT_TRUE(base::SysInfo::IsRunningOnChromeOS());
 
-  const char* kLsbRelease3 =
+  const char kLsbRelease3[] =
       "CHROMEOS_RELEASE_NAME=Chromium OS\n";
   base::SysInfo::SetChromeOSVersionInfoForTest(kLsbRelease3, base::Time());
   EXPECT_TRUE(base::SysInfo::IsRunningOnChromeOS());

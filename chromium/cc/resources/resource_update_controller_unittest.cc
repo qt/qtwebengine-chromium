@@ -32,20 +32,19 @@ class WebGraphicsContext3DForUploadTest : public TestWebGraphicsContext3D {
   explicit WebGraphicsContext3DForUploadTest(ResourceUpdateControllerTest* test)
       : test_(test) {}
 
-  virtual void flush() OVERRIDE;
-  virtual void shallowFlushCHROMIUM() OVERRIDE;
-  virtual void texSubImage2D(GLenum target,
-                             GLint level,
-                             GLint xoffset,
-                             GLint yoffset,
-                             GLsizei width,
-                             GLsizei height,
-                             GLenum format,
-                             GLenum type,
-                             const void* pixels) OVERRIDE;
+  void flush() override;
+  void shallowFlushCHROMIUM() override;
+  void texSubImage2D(GLenum target,
+                     GLint level,
+                     GLint xoffset,
+                     GLint yoffset,
+                     GLsizei width,
+                     GLsizei height,
+                     GLenum format,
+                     GLenum type,
+                     const void* pixels) override;
 
-  virtual void getQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* value)
-      OVERRIDE;
+  void getQueryObjectuivEXT(GLuint id, GLenum pname, GLuint* value) override;
 
  private:
   ResourceUpdateControllerTest* test_;
@@ -125,9 +124,13 @@ class ResourceUpdateControllerTest : public Test {
     CHECK(output_surface_->BindToClient(&output_surface_client_));
 
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
-        false);
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
+                                                  shared_bitmap_manager_.get(),
+                                                  NULL,
+                                                  NULL,
+                                                  0,
+                                                  false,
+                                                  1);
   }
 
   void AppendFullUploadsOfIndexedTextureToUpdateQueue(int count,
@@ -324,7 +327,7 @@ class FakeResourceUpdateControllerClient
   void Reset() { ready_to_finalize_called_ = false; }
   bool ReadyToFinalizeCalled() const { return ready_to_finalize_called_; }
 
-  virtual void ReadyToFinalizeTextureUpdates() OVERRIDE {
+  void ReadyToFinalizeTextureUpdates() override {
     ready_to_finalize_called_ = true;
   }
 
@@ -348,7 +351,7 @@ class FakeResourceUpdateController : public ResourceUpdateController {
   void SetUpdateTextureTime(base::TimeDelta time) {
     update_textures_time_ = time;
   }
-  virtual base::TimeTicks UpdateMoreTexturesCompletionTime() OVERRIDE {
+  base::TimeTicks UpdateMoreTexturesCompletionTime() override {
     size_t total_updates =
         resource_provider_->NumBlockingUploads() + update_more_textures_size_;
     return now_ + total_updates * update_textures_time_;
@@ -356,7 +359,7 @@ class FakeResourceUpdateController : public ResourceUpdateController {
   void SetUpdateMoreTexturesSize(size_t size) {
     update_more_textures_size_ = size;
   }
-  virtual size_t UpdateMoreTexturesSize() const OVERRIDE {
+  size_t UpdateMoreTexturesSize() const override {
     return update_more_textures_size_;
   }
 

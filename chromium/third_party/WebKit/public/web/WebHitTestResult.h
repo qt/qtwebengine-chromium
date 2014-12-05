@@ -26,15 +26,13 @@
 #ifndef WebHitTestResult_h
 #define WebHitTestResult_h
 
-#include "../platform/WebPrivateOwnPtr.h"
-
-namespace WebCore {
-class HitTestResult;
-}
+#include "../platform/WebPrivatePtr.h"
 
 namespace blink {
 
+class HitTestResult;
 class WebElement;
+class WebHitTestResultPrivate;
 class WebNode;
 class WebURL;
 struct WebPoint;
@@ -72,13 +70,12 @@ public:
     BLINK_EXPORT bool isContentEditable() const;
 
 #if BLINK_IMPLEMENTATION
-    WebHitTestResult(const WebCore::HitTestResult&);
-    WebHitTestResult& operator=(const WebCore::HitTestResult&);
-    operator WebCore::HitTestResult() const;
+    WebHitTestResult(const HitTestResult&);
+    WebHitTestResult& operator=(const HitTestResult&);
 #endif
 
 protected:
-    WebPrivateOwnPtr<WebCore::HitTestResult> m_private;
+    WebPrivatePtr<WebHitTestResultPrivate> m_private;
 };
 
 } // namespace blink

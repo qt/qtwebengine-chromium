@@ -25,14 +25,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_PARSING_H_
-#define TALK_P2P_BASE_PARSING_H_
+#ifndef WEBRTC_P2P_BASE_PARSING_H_
+#define WEBRTC_P2P_BASE_PARSING_H_
 
 #include <string>
 #include <vector>
-#include "talk/base/basictypes.h"
-#include "talk/base/stringencode.h"
-#include "talk/xmllite/xmlelement.h"  // Needed to delete ParseError.extra.
+#include "webrtc/libjingle/xmllite/xmlelement.h"  // Needed to delete ParseError.extra.
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/stringencode.h"
 
 namespace cricket {
 
@@ -97,7 +97,7 @@ bool GetXmlAttr(const buzz::XmlElement* elem,
     return false;
   }
   std::string unparsed = elem->Attr(name);
-  return talk_base::FromString(unparsed, val_out);
+  return rtc::FromString(unparsed, val_out);
 }
 
 template <class T>
@@ -116,7 +116,7 @@ template <class T>
 bool AddXmlAttr(buzz::XmlElement* elem,
                 const buzz::QName& name, const T& val) {
   std::string buf;
-  if (!talk_base::ToString(val, &buf)) {
+  if (!rtc::ToString(val, &buf)) {
     return false;
   }
   elem->AddAttr(name, buf);
@@ -126,7 +126,7 @@ bool AddXmlAttr(buzz::XmlElement* elem,
 template <class T>
 bool SetXmlBody(buzz::XmlElement* elem, const T& val) {
   std::string buf;
-  if (!talk_base::ToString(val, &buf)) {
+  if (!rtc::ToString(val, &buf)) {
     return false;
   }
   elem->SetBodyText(buf);
@@ -154,4 +154,4 @@ std::vector<buzz::XmlElement*> CopyOfXmlChildren(const buzz::XmlElement* elem);
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_PARSING_H_
+#endif  // WEBRTC_P2P_BASE_PARSING_H_

@@ -13,7 +13,7 @@
 
 #include "GrAllocPool.h"
 #include "GrFontScaler.h"
-#include "GrTHashTable.h"
+#include "SkTDynamicHash.h"
 #include "GrGlyph.h"
 #include "GrDrawTarget.h"
 #include "GrAtlas.h"
@@ -23,29 +23,36 @@ class GrGpu;
 class GrFontPurgeListener;
 
 /**
- *  The textcache maps a hostfontscaler instance to a dictionary of
+ *  The textstrike maps a hostfontscaler instance to a dictionary of
  *  glyphid->strike
  */
 class GrTextStrike {
 public:
-    GrTextStrike(GrFontCache*, const GrKey* fontScalerKey, GrMaskFormat, GrAtlasMgr*);
+    GrTextStrike(GrFontCache*, const GrFontDescKey* fontScalerKey);
     ~GrTextStrike();
 
-    const GrKey* getFontScalerKey() const { return fFontScalerKey; }
+    const GrFontDescKey* getFontScalerKey() const { return fFontScalerKey; }
     GrFontCache* getFontCache() const { return fFontCache; }
-    GrMaskFormat getMaskFormat() const { return fMaskFormat; }
 
     inline GrGlyph* getGlyph(GrGlyph::PackedID, GrFontScaler*);
+    // returns true if glyph (or glyph+padding for distance field)
+    // is too large to ever fit in texture atlas subregions (GrPlots)
+    bool glyphTooLargeForAtlas(GrGlyph*);
+    // returns true if glyph successfully added to texture atlas, false otherwise
     bool addGlyphToAtlas(GrGlyph*, GrFontScaler*);
 
     // testing
-    int countGlyphs() const { return fCache.getArray().count(); }
-    const GrGlyph* glyphAt(int index) const {
-        return fCache.getArray()[index];
-    }
+    int countGlyphs() const { return fCache.count(); }
 
     // remove any references to this plot
     void removePlot(const GrPlot* plot);
+
+    static const GrFontDescKey& GetKey(const GrTextStrike& ts) {
+        return *(ts.fFontScalerKey);
+    }
+    static uint32_t Hash(const GrFontDescKey& key) {
+        return key.getHash();
+    }
 
 public:
     // for easy removal from list
@@ -53,17 +60,14 @@ public:
     GrTextStrike*   fNext;
 
 private:
-    class Key;
-    GrTHashTable<GrGlyph, Key, 7> fCache;
-    const GrKey* fFontScalerKey;
+    SkTDynamicHash<GrGlyph, GrGlyph::PackedID> fCache;
+    const GrFontDescKey* fFontScalerKey;
     GrTAllocPool<GrGlyph> fPool;
 
     GrFontCache*    fFontCache;
-    GrAtlasMgr*     fAtlasMgr;
-    GrMaskFormat    fMaskFormat;
     bool            fUseDistanceField;
 
-    GrAtlas         fAtlas;
+    GrAtlas::ClientPlotUsage fPlotUsage;
 
     GrGlyph* generateGlyph(GrGlyph::PackedID packed, GrFontScaler* scaler);
 
@@ -77,22 +81,24 @@ public:
 
     inline GrTextStrike* getStrike(GrFontScaler*, bool useDistanceField);
 
+    // add to texture atlas that matches this format
+    GrPlot* addToAtlas(GrMaskFormat format, GrAtlas::ClientPlotUsage* usage,
+                       int width, int height, const void* image,
+                       SkIPoint16* loc);
+
     void freeAll();
 
-    // make an unused plot available
-    bool freeUnusedPlot(GrTextStrike* preserveStrike);
+    // make an unused plot available for this glyph
+    bool freeUnusedPlot(GrTextStrike* preserveStrike, const GrGlyph* glyph);
 
     // testing
-    int countStrikes() const { return fCache.getArray().count(); }
-    const GrTextStrike* strikeAt(int index) const {
-        return fCache.getArray()[index];
-    }
+    int countStrikes() const { return fCache.count(); }
     GrTextStrike* getHeadStrike() const { return fHead; }
 
     void updateTextures() {
         for (int i = 0; i < kAtlasCount; ++i) {
-            if (fAtlasMgr[i]) {
-                fAtlasMgr[i]->uploadPlotsToTexture();
+            if (fAtlases[i]) {
+                fAtlases[i]->uploadPlotsToTexture();
             }
         }
     }
@@ -117,16 +123,15 @@ public:
 private:
     friend class GrFontPurgeListener;
 
-    class Key;
-    GrTHashTable<GrTextStrike, Key, 8> fCache;
+    SkTDynamicHash<GrTextStrike, GrFontDescKey> fCache;
     // for LRU
     GrTextStrike* fHead;
     GrTextStrike* fTail;
 
     GrGpu*      fGpu;
-    GrAtlasMgr* fAtlasMgr[kAtlasCount];
+    GrAtlas*    fAtlases[kAtlasCount];
 
-    GrTextStrike* generateStrike(GrFontScaler*, const Key&);
+    GrTextStrike* generateStrike(GrFontScaler*);
     inline void detachStrikeFromList(GrTextStrike*);
     void purgeStrike(GrTextStrike* strike);
 };

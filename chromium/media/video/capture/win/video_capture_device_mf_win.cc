@@ -34,34 +34,26 @@ static bool GetFrameSize(IMFMediaType* type, gfx::Size* frame_size) {
   return true;
 }
 
-static bool GetFrameRate(IMFMediaType* type,
-                         int* frame_rate_numerator,
-                         int* frame_rate_denominator) {
+static bool GetFrameRate(IMFMediaType* type, float* frame_rate) {
   UINT32 numerator, denominator;
   if (FAILED(MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &numerator,
                                  &denominator))||
       !denominator) {
     return false;
   }
-  *frame_rate_numerator = numerator;
-  *frame_rate_denominator = denominator;
+  *frame_rate = static_cast<float>(numerator) / denominator;
   return true;
 }
 
-static bool FillCapabilitiesFromType(IMFMediaType* type,
-                                     VideoCaptureCapabilityWin* capability) {
+static bool FillFormat(IMFMediaType* type, VideoCaptureFormat* format) {
   GUID type_guid;
   if (FAILED(type->GetGUID(MF_MT_SUBTYPE, &type_guid)) ||
-      !GetFrameSize(type, &capability->supported_format.frame_size) ||
-      !GetFrameRate(type,
-                    &capability->frame_rate_numerator,
-                    &capability->frame_rate_denominator) ||
+      !GetFrameSize(type, &format->frame_size) ||
+      !GetFrameRate(type, &format->frame_rate) ||
       !VideoCaptureDeviceMFWin::FormatFromGuid(type_guid,
-          &capability->supported_format.pixel_format)) {
+                                               &format->pixel_format)) {
     return false;
   }
-  capability->supported_format.frame_rate =
-      capability->frame_rate_numerator / capability->frame_rate_denominator;
 
   return true;
 }
@@ -72,11 +64,12 @@ HRESULT FillCapabilities(IMFSourceReader* source,
   ScopedComPtr<IMFMediaType> type;
   HRESULT hr;
   while (SUCCEEDED(hr = source->GetNativeMediaType(
-      MF_SOURCE_READER_FIRST_VIDEO_STREAM, stream_index, type.Receive()))) {
-    VideoCaptureCapabilityWin capability(stream_index++);
-    if (FillCapabilitiesFromType(type, &capability))
-      capabilities->Add(capability);
+                       kFirstVideoStream, stream_index, type.Receive()))) {
+    VideoCaptureFormat format;
+    if (FillFormat(type, &format))
+      capabilities->emplace_back(stream_index, format);
     type.Release();
+    ++stream_index;
   }
 
   if (capabilities->empty() && (SUCCEEDED(hr) || hr == MF_E_NO_MORE_TYPES))
@@ -86,7 +79,7 @@ HRESULT FillCapabilities(IMFSourceReader* source,
 }
 
 
-class MFReaderCallback FINAL
+class MFReaderCallback final
     : public base::RefCountedThreadSafe<MFReaderCallback>,
       public IMFSourceReaderCallback {
  public:
@@ -194,12 +187,12 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
   const size_t vid_location = unique_id_.find(kVidPrefix);
   if (vid_location == std::string::npos ||
       vid_location + vid_prefix_size + kVidPidSize > unique_id_.size()) {
-    return "";
+    return std::string();
   }
   const size_t pid_location = unique_id_.find(kPidPrefix);
   if (pid_location == std::string::npos ||
       pid_location + pid_prefix_size + kVidPidSize > unique_id_.size()) {
-    return "";
+    return std::string();
   }
   std::string id_vendor =
       unique_id_.substr(vid_location + vid_prefix_size, kVidPidSize);
@@ -245,34 +238,30 @@ void VideoCaptureDeviceMFWin::AllocateAndStart(
 
   CapabilityList capabilities;
   HRESULT hr = S_OK;
-  if (!reader_ || FAILED(hr = FillCapabilities(reader_, &capabilities))) {
-    OnError(hr);
-    return;
+  if (reader_) {
+    hr = FillCapabilities(reader_, &capabilities);
+    if (SUCCEEDED(hr)) {
+      const CapabilityWin found_capability =
+          GetBestMatchedCapability(params.requested_format, capabilities);
+      ScopedComPtr<IMFMediaType> type;
+      hr = reader_->GetNativeMediaType(
+          kFirstVideoStream, found_capability.stream_index, type.Receive());
+      if (SUCCEEDED(hr)) {
+        hr = reader_->SetCurrentMediaType(kFirstVideoStream, NULL, type);
+        if (SUCCEEDED(hr)) {
+          hr = reader_->ReadSample(kFirstVideoStream, 0, NULL, NULL, NULL,
+                                   NULL);
+          if (SUCCEEDED(hr)) {
+            capture_format_ = found_capability.supported_format;
+            capture_ = true;
+            return;
+          }
+        }
+      }
+    }
   }
 
-  VideoCaptureCapabilityWin found_capability =
-      capabilities.GetBestMatchedFormat(
-          params.requested_format.frame_size.width(),
-          params.requested_format.frame_size.height(),
-          params.requested_format.frame_rate);
-
-  ScopedComPtr<IMFMediaType> type;
-  if (FAILED(hr = reader_->GetNativeMediaType(
-          MF_SOURCE_READER_FIRST_VIDEO_STREAM, found_capability.stream_index,
-          type.Receive())) ||
-      FAILED(hr = reader_->SetCurrentMediaType(
-          MF_SOURCE_READER_FIRST_VIDEO_STREAM, NULL, type))) {
-    OnError(hr);
-    return;
-  }
-
-  if (FAILED(hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
-                                      NULL, NULL, NULL, NULL))) {
-    OnError(hr);
-    return;
-  }
-  capture_format_ = found_capability.supported_format;
-  capture_ = true;
+  OnError(hr);
 }
 
 void VideoCaptureDeviceMFWin::StopAndDeAllocate() {
@@ -285,8 +274,8 @@ void VideoCaptureDeviceMFWin::StopAndDeAllocate() {
     if (capture_) {
       capture_ = false;
       callback_->SetSignalOnFlush(&flushed);
-      HRESULT hr = reader_->Flush(MF_SOURCE_READER_ALL_STREAMS);
-      wait = SUCCEEDED(hr);
+      wait = SUCCEEDED(reader_->Flush(
+          static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS)));
       if (!wait) {
         callback_->SetSignalOnFlush(NULL);
       }
@@ -315,8 +304,8 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedData(
   }
 
   if (capture_) {
-    HRESULT hr = reader_->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
-                                     NULL, NULL, NULL, NULL);
+    HRESULT hr =
+        reader_->ReadSample(kFirstVideoStream, 0, NULL, NULL, NULL, NULL);
     if (FAILED(hr)) {
       // If running the *VideoCap* unit tests on repeat, this can sometimes
       // fail with HRESULT_FROM_WINHRESULT_FROM_WIN32(ERROR_INVALID_FUNCTION).
@@ -329,10 +318,11 @@ void VideoCaptureDeviceMFWin::OnIncomingCapturedData(
 }
 
 void VideoCaptureDeviceMFWin::OnError(HRESULT hr) {
-  std::string log_msg = base::StringPrintf("VideoCaptureDeviceMFWin: %x", hr);
-  DLOG(ERROR) << log_msg;
-  if (client_.get())
-    client_->OnError(log_msg);
+  if (client_.get()) {
+    client_->OnError(
+        base::StringPrintf("VideoCaptureDeviceMFWin: %s",
+                           logging::SystemErrorCodeToString(hr).c_str()));
+  }
 }
 
 }  // namespace media

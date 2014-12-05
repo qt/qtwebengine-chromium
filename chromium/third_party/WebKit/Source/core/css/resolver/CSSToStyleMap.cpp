@@ -40,7 +40,7 @@
 #include "core/rendering/style/BorderImageLengthBox.h"
 #include "core/rendering/style/FillLayer.h"
 
-namespace WebCore {
+namespace blink {
 
 const CSSToLengthConversionData& CSSToStyleMap::cssToLengthConversionData() const
 {
@@ -52,7 +52,7 @@ PassRefPtr<StyleImage> CSSToStyleMap::styleImage(CSSPropertyID propertyId, CSSVa
     return m_elementStyleResources.styleImage(m_state.document(), m_state.document().textLinkColors(), m_state.style()->color(), propertyId, value);
 }
 
-void CSSToStyleMap::mapFillAttachment(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillAttachment(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setAttachment(FillLayer::initialFillAttachment(layer->type()));
@@ -78,7 +78,7 @@ void CSSToStyleMap::mapFillAttachment(CSSPropertyID, FillLayer* layer, CSSValue*
     }
 }
 
-void CSSToStyleMap::mapFillClip(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillClip(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setClip(FillLayer::initialFillClip(layer->type()));
@@ -92,7 +92,7 @@ void CSSToStyleMap::mapFillClip(CSSPropertyID, FillLayer* layer, CSSValue* value
     layer->setClip(*primitiveValue);
 }
 
-void CSSToStyleMap::mapFillComposite(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillComposite(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setComposite(FillLayer::initialFillComposite(layer->type()));
@@ -106,7 +106,7 @@ void CSSToStyleMap::mapFillComposite(CSSPropertyID, FillLayer* layer, CSSValue* 
     layer->setComposite(*primitiveValue);
 }
 
-void CSSToStyleMap::mapFillBlendMode(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillBlendMode(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setBlendMode(FillLayer::initialFillBlendMode(layer->type()));
@@ -120,7 +120,7 @@ void CSSToStyleMap::mapFillBlendMode(CSSPropertyID, FillLayer* layer, CSSValue* 
     layer->setBlendMode(*primitiveValue);
 }
 
-void CSSToStyleMap::mapFillOrigin(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillOrigin(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setOrigin(FillLayer::initialFillOrigin(layer->type()));
@@ -135,17 +135,18 @@ void CSSToStyleMap::mapFillOrigin(CSSPropertyID, FillLayer* layer, CSSValue* val
 }
 
 
-void CSSToStyleMap::mapFillImage(CSSPropertyID property, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillImage(FillLayer* layer, CSSValue* value)
 {
     if (value->isInitialValue()) {
         layer->setImage(FillLayer::initialFillImage(layer->type()));
         return;
     }
 
+    CSSPropertyID property = layer->type() == BackgroundFillLayer ? CSSPropertyBackgroundImage : CSSPropertyWebkitMaskImage;
     layer->setImage(styleImage(property, value));
 }
 
-void CSSToStyleMap::mapFillRepeatX(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillRepeatX(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setRepeatX(FillLayer::initialFillRepeatX(layer->type()));
@@ -159,7 +160,7 @@ void CSSToStyleMap::mapFillRepeatX(CSSPropertyID, FillLayer* layer, CSSValue* va
     layer->setRepeatX(*primitiveValue);
 }
 
-void CSSToStyleMap::mapFillRepeatY(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillRepeatY(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setRepeatY(FillLayer::initialFillRepeatY(layer->type()));
@@ -173,7 +174,7 @@ void CSSToStyleMap::mapFillRepeatY(CSSPropertyID, FillLayer* layer, CSSValue* va
     layer->setRepeatY(*primitiveValue);
 }
 
-void CSSToStyleMap::mapFillSize(CSSPropertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillSize(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setSizeType(FillLayer::initialFillSizeType(layer->type()));
@@ -215,7 +216,7 @@ void CSSToStyleMap::mapFillSize(CSSPropertyID, FillLayer* layer, CSSValue* value
     layer->setSizeLength(b);
 }
 
-void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillXPosition(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setXPosition(FillLayer::initialFillXPosition(layer->type()));
@@ -227,10 +228,8 @@ void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer,
 
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Pair* pair = primitiveValue->getPairValue();
-    if (pair) {
-        ASSERT_UNUSED(propertyID, propertyID == CSSPropertyBackgroundPositionX || propertyID == CSSPropertyWebkitMaskPositionX);
+    if (pair)
         primitiveValue = pair->second();
-    }
 
     Length length = primitiveValue->convertToLength<FixedConversion | PercentConversion>(cssToLengthConversionData());
 
@@ -239,7 +238,7 @@ void CSSToStyleMap::mapFillXPosition(CSSPropertyID propertyID, FillLayer* layer,
         layer->setBackgroundXOrigin(*(pair->first()));
 }
 
-void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer, CSSValue* value) const
+void CSSToStyleMap::mapFillYPosition(FillLayer* layer, CSSValue* value) const
 {
     if (value->isInitialValue()) {
         layer->setYPosition(FillLayer::initialFillYPosition(layer->type()));
@@ -251,10 +250,8 @@ void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer,
 
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
     Pair* pair = primitiveValue->getPairValue();
-    if (pair) {
-        ASSERT_UNUSED(propertyID, propertyID == CSSPropertyBackgroundPositionY || propertyID == CSSPropertyWebkitMaskPositionY);
+    if (pair)
         primitiveValue = pair->second();
-    }
 
     Length length = primitiveValue->convertToLength<FixedConversion | PercentConversion>(cssToLengthConversionData());
 
@@ -263,7 +260,7 @@ void CSSToStyleMap::mapFillYPosition(CSSPropertyID propertyID, FillLayer* layer,
         layer->setBackgroundYOrigin(*(pair->first()));
 }
 
-void CSSToStyleMap::mapFillMaskSourceType(CSSPropertyID, FillLayer* layer, CSSValue* value)
+void CSSToStyleMap::mapFillMaskSourceType(FillLayer* layer, CSSValue* value) const
 {
     EMaskSourceType type = FillLayer::initialFillMaskSourceType(layer->type());
     if (value->isInitialValue()) {
@@ -294,7 +291,7 @@ double CSSToStyleMap::mapAnimationDelay(CSSValue* value)
 {
     if (value->isInitialValue())
         return CSSTimingData::initialDelay();
-    return toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>();
+    return toCSSPrimitiveValue(value)->computeSeconds();
 }
 
 Timing::PlaybackDirection CSSToStyleMap::mapAnimationDirection(CSSValue* value)
@@ -321,7 +318,7 @@ double CSSToStyleMap::mapAnimationDuration(CSSValue* value)
 {
     if (value->isInitialValue())
         return CSSTimingData::initialDuration();
-    return toCSSPrimitiveValue(value)->computeTime<double, CSSPrimitiveValue::Seconds>();
+    return toCSSPrimitiveValue(value)->computeSeconds();
 }
 
 Timing::FillMode CSSToStyleMap::mapAnimationFillMode(CSSValue* value)
@@ -431,7 +428,7 @@ PassRefPtr<TimingFunction> CSSToStyleMap::mapAnimationTimingFunction(CSSValue* v
         return CSSTimingData::initialTimingFunction();
 
     CSSStepsTimingFunctionValue* stepsTimingFunction = toCSSStepsTimingFunctionValue(value);
-    if (stepsTimingFunction->stepAtPosition() == StepsTimingFunction::StepAtMiddle && !allowStepMiddle)
+    if (stepsTimingFunction->stepAtPosition() == StepsTimingFunction::Middle && !allowStepMiddle)
         return CSSTimingData::initialTimingFunction();
     return StepsTimingFunction::create(stepsTimingFunction->numberOfSteps(), stepsTimingFunction->stepAtPosition());
 }
@@ -463,16 +460,17 @@ void CSSToStyleMap::mapNinePieceImage(RenderStyle* mutableStyle, CSSPropertyID p
             mapNinePieceImageSlice(current, image);
         else if (current->isValueList()) {
             CSSValueList* slashList = toCSSValueList(current);
+            size_t length = slashList->length();
             // Map in the image slices.
-            if (slashList->item(0) && slashList->item(0)->isBorderImageSliceValue())
+            if (length && slashList->item(0)->isBorderImageSliceValue())
                 mapNinePieceImageSlice(slashList->item(0), image);
 
             // Map in the border slices.
-            if (slashList->item(1))
+            if (length > 1)
                 image.setBorderSlices(mapNinePieceImageQuad(slashList->item(1)));
 
             // Map in the outset.
-            if (slashList->item(2))
+            if (length > 2)
                 image.setOutset(mapNinePieceImageQuad(slashList->item(2)));
         } else if (current->isPrimitiveValue()) {
             // Set the appropriate rules for stretch/round/repeat of the slices.

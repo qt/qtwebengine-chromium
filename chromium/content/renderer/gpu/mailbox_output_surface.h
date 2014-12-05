@@ -7,6 +7,7 @@
 
 #include <queue>
 
+#include "base/memory/ref_counted.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/transferable_resource.h"
 #include "content/renderer/gpu/compositor_output_surface.h"
@@ -17,6 +18,7 @@ class CompositorFrameAck;
 }
 
 namespace content {
+class FrameSwapMessageQueue;
 
 // Implementation of CompositorOutputSurface that renders to textures which
 // are sent to the browser through the mailbox extension.
@@ -29,20 +31,21 @@ class MailboxOutputSurface : public CompositorOutputSurface {
       uint32 output_surface_id,
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
       scoped_ptr<cc::SoftwareOutputDevice> software_device,
+      scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
       cc::ResourceFormat format);
-  virtual ~MailboxOutputSurface();
+  ~MailboxOutputSurface() override;
 
   // cc::OutputSurface implementation.
-  virtual void EnsureBackbuffer() OVERRIDE;
-  virtual void DiscardBackbuffer() OVERRIDE;
-  virtual void Reshape(const gfx::Size& size, float scale_factor) OVERRIDE;
-  virtual void BindFramebuffer() OVERRIDE;
-  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
+  void EnsureBackbuffer() override;
+  void DiscardBackbuffer() override;
+  void Reshape(const gfx::Size& size, float scale_factor) override;
+  void BindFramebuffer() override;
+  void SwapBuffers(cc::CompositorFrame* frame) override;
 
  private:
   // CompositorOutputSurface overrides.
-  virtual void OnSwapAck(uint32 output_surface_id,
-                         const cc::CompositorFrameAck& ack) OVERRIDE;
+  void OnSwapAck(uint32 output_surface_id,
+                 const cc::CompositorFrameAck& ack) override;
 
   size_t GetNumAcksPending();
 

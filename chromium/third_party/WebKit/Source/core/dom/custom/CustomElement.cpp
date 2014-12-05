@@ -36,14 +36,20 @@
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
+#include "core/dom/custom/CustomElementMicrotaskRunQueue.h"
 #include "core/dom/custom/CustomElementObserver.h"
 #include "core/dom/custom/CustomElementScheduler.h"
 
-namespace WebCore {
+namespace blink {
 
 CustomElementMicrotaskImportStep* CustomElement::didCreateImport(HTMLImportChild* import)
 {
     return CustomElementScheduler::scheduleImport(import);
+}
+
+void CustomElement::didFinishLoadingImport(Document& master)
+{
+    master.customElementMicrotaskRunQueue()->requestDispatchIfNeeded();
 }
 
 Vector<AtomicString>& CustomElement::embedderCustomElementNames()
@@ -60,6 +66,24 @@ void CustomElement::addEmbedderCustomElementName(const AtomicString& name)
     embedderCustomElementNames().append(lower);
 }
 
+static inline bool isValidNCName(const AtomicString& name)
+{
+    if (kNotFound != name.find(':'))
+        return false;
+
+    if (!name.string().is8Bit()) {
+        const UChar32 c = name.characters16()[0];
+        // These characters comes under CombiningChar in NCName and according to
+        // NCName only BaseChar and Ideodgraphic can come as first chars.
+        // Also these characters come under Letter_Other in UnicodeData, thats
+        // why they pass as valid document name.
+        if (c == 0x0B83 || c == 0x0F88 || c == 0x0F89 || c == 0x0F8A || c == 0x0F8B)
+            return false;
+    }
+
+    return Document::isValidName(name.string());
+}
+
 bool CustomElement::isValidName(const AtomicString& name, NameSet validNames)
 {
     if ((validNames & EmbedderNames) && kNotFound != embedderCustomElementNames().find(name))
@@ -68,19 +92,12 @@ bool CustomElement::isValidName(const AtomicString& name, NameSet validNames)
     if ((validNames & StandardNames) && kNotFound != name.find('-')) {
         DEFINE_STATIC_LOCAL(Vector<AtomicString>, reservedNames, ());
         if (reservedNames.isEmpty()) {
+            // FIXME(crbug.com/426605): We should be able to remove this.
             reservedNames.append(MathMLNames::annotation_xmlTag.localName());
-#if ENABLE(SVG_FONTS)
-            reservedNames.append(SVGNames::font_faceTag.localName());
-            reservedNames.append(SVGNames::font_face_srcTag.localName());
-            reservedNames.append(SVGNames::font_face_uriTag.localName());
-            reservedNames.append(SVGNames::font_face_formatTag.localName());
-            reservedNames.append(SVGNames::font_face_nameTag.localName());
-            reservedNames.append(SVGNames::missing_glyphTag.localName());
-#endif
         }
 
         if (kNotFound == reservedNames.find(name))
-            return Document::isValidName(name.string());
+            return isValidNCName(name);
     }
 
     return false;
@@ -98,7 +115,7 @@ void CustomElement::define(Element* element, PassRefPtr<CustomElementDefinition>
 
     case Element::WaitingForUpgrade:
         element->setCustomElementDefinition(definition);
-        CustomElementScheduler::scheduleCallback(definition->callbacks(), element, CustomElementLifecycleCallbacks::Created);
+        CustomElementScheduler::scheduleCallback(definition->callbacks(), element, CustomElementLifecycleCallbacks::CreatedCallback);
         break;
     }
 }
@@ -109,20 +126,20 @@ void CustomElement::attributeDidChange(Element* element, const AtomicString& nam
     CustomElementScheduler::scheduleAttributeChangedCallback(element->customElementDefinition()->callbacks(), element, name, oldValue, newValue);
 }
 
-void CustomElement::didEnterDocument(Element* element, const Document& document)
+void CustomElement::didAttach(Element* element, const Document& document)
 {
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::Attached);
+    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::AttachedCallback);
 }
 
-void CustomElement::didLeaveDocument(Element* element, const Document& document)
+void CustomElement::didDetach(Element* element, const Document& document)
 {
     ASSERT(element->customElementState() == Element::Upgraded);
     if (!document.domWindow())
         return;
-    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::Detached);
+    CustomElementScheduler::scheduleCallback(element->customElementDefinition()->callbacks(), element, CustomElementLifecycleCallbacks::DetachedCallback);
 }
 
 void CustomElement::wasDestroyed(Element* element)
@@ -139,4 +156,4 @@ void CustomElement::wasDestroyed(Element* element)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

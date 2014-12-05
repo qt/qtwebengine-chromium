@@ -32,20 +32,21 @@
 #include "core/svg/SVGURIReference.h"
 #include "core/svg/SVGUnitTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 struct PatternAttributes;
 
-class SVGPatternElement FINAL : public SVGElement,
+class SVGPatternElement final : public SVGElement,
                                 public SVGURIReference,
                                 public SVGTests,
                                 public SVGFitToViewBox {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGPatternElement);
 
     void collectPatternAttributes(PatternAttributes&) const;
 
-    virtual AffineTransform localCoordinateSpaceTransform(SVGElement::CTMScope) const OVERRIDE;
+    virtual AffineTransform localCoordinateSpaceTransform(SVGElement::CTMScope) const override;
 
     SVGAnimatedLength* x() const { return m_x.get(); }
     SVGAnimatedLength* y() const { return m_y.get(); }
@@ -61,17 +62,17 @@ public:
 private:
     explicit SVGPatternElement(Document&);
 
-    virtual bool isValid() const OVERRIDE { return SVGTests::isValid(); }
-    virtual bool needsPendingResourceHandling() const OVERRIDE { return false; }
+    virtual bool isValid() const override { return SVGTests::isValid(); }
+    virtual bool needsPendingResourceHandling() const override { return false; }
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -82,6 +83,6 @@ private:
     RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_patternContentUnits;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPatternElement_h

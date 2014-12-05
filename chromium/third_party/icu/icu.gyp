@@ -17,10 +17,16 @@
         # Tell ICU to not insert |using namespace icu;| into its headers,
         # so that chrome's source explicitly has to use |icu::|.
         'U_USING_ICU_NAMESPACE=0',
+        # We don't use ICU plugins and dyload is only necessary for them.
+        # NaCl-related builds also fail looking for dlfcn.h when it's enabled.
+        'U_ENABLE_DYLOAD=0',
       ],
     },
     'defines': [
       'U_USING_ICU_NAMESPACE=0',
+      'HAVE_DLOPEN=0',
+      # Only build encoding coverters and detectors necessary for HTML5.
+      'UCONFIG_NO_NON_HTML5_CONVERSION=1',
     ],
     'conditions': [
       ['component=="static_library"', {
@@ -69,6 +75,29 @@
     ['use_system_icu==0 or want_separate_host_toolset==1', {
       'targets': [
         {
+          'target_name': 'copy_icudtl_dat',
+          'type': 'none',
+          # icudtl.dat is the same for both host/target, so this only supports a
+          # single toolset. If a target requires that the .dat file be copied
+          # to the output directory, it should explicitly depend on this target
+          # with the host toolset (like copy_icudtl_dat#host).
+          'toolsets': [ 'host' ],
+          'copies': [{
+            'destination': '<(PRODUCT_DIR)',
+            'conditions': [
+              ['OS == "android"', {
+                'files': [
+                  'android/icudtl.dat',
+                ],
+              } , { # else: OS != android
+                'files': [
+                  'source/data/in/icudtl.dat',
+                ],
+              }],
+            ],
+          }],
+        },
+        {
           'target_name': 'icudata',
           'type': 'static_library',
           'defines': [
@@ -76,12 +105,12 @@
           ],
           'sources': [
              # These are hand-generated, but will do for now.  The linux
-             # version is an identical copy of the (mac) icudt46l_dat.S file,
+             # version is an identical copy of the (mac) icudtl_dat.S file,
              # modulo removal of the .private_extern and .const directives and
-             # with no leading underscore on the icudt46_dat symbol.
-             'android/icudt46l_dat.S',
-             'linux/icudt46l_dat.S',
-             'mac/icudt46l_dat.S',
+             # with no leading underscore on the icudt52_dat symbol.
+             'android/icudtl_dat.S',
+             'linux/icudtl_dat.S',
+             'mac/icudtl_dat.S',
           ],
           'conditions': [
             [ 'use_system_icu==1 and want_separate_host_toolset==1', {
@@ -106,27 +135,16 @@
             }],
             [ 'icu_use_data_file_flag==1', {
               # Remove any assembly data file.
-              'sources/': [['exclude', 'icudt46l_dat']],
+              'sources/': [['exclude', 'icudtl_dat']],
               # Compile in the stub data symbol.
               'sources': ['source/stubdata/stubdata.c'],
 
               # Make sure any binary depending on this gets the data file.
               'conditions': [
                 ['OS != "ios"', {
-                  'copies': [{
-                    'destination': '<(PRODUCT_DIR)',
-                    'conditions': [
-                      ['OS == "android"', {
-                        'files': [
-                          'android/icudtl.dat',
-                        ],
-                      } , { # else: OS != android
-                        'files': [
-                          'source/data/in/icudtl.dat',
-                        ],
-                      }],
-                    ],
-                  }],
+                  'dependencies': [
+                    'copy_icudtl_dat#host',
+                  ],
                 } , { # else: OS=="ios"
                   'link_settings': {
                     'mac_bundle_resources': [
@@ -141,15 +159,15 @@
             [ 'OS == "win" or OS == "mac" or OS == "ios" or '
               '(OS == "android" and (_toolset != "host" or host_os != "linux")) or '
               '(OS == "qnx" and (_toolset == "host" and host_os != "linux"))', {
-              'sources!': ['linux/icudt46l_dat.S'],
+              'sources!': ['linux/icudtl_dat.S'],
             }],
             [ 'OS != "android" or _toolset == "host"', {
-              'sources!': ['android/icudt46l_dat.S'],
+              'sources!': ['android/icudtl_dat.S'],
             }],
             [ 'OS != "mac" and OS != "ios" and '
               '((OS != "android" and OS != "qnx") or '
               '_toolset != "host" or host_os != "mac")', {
-              'sources!': ['mac/icudt46l_dat.S'],
+              'sources!': ['mac/icudtl_dat.S'],
             }],
           ], # target_conditions
         },
@@ -170,6 +188,34 @@
               'source/i18n',
             ],
           },
+          'variables': {
+            'clang_warning_flags': [
+              # ICU uses its own deprecated functions.
+              '-Wno-deprecated-declarations',
+              # ICU prefers `a && b || c` over `(a && b) || c`.
+              '-Wno-logical-op-parentheses',
+              # ICU has some `unsigned < 0` checks.
+              '-Wno-tautological-compare',
+              # Looks like a real issue, see http://crbug.com/114660
+              '-Wno-return-type-c-linkage',
+            ],
+          },
+          # Since ICU wants to internally use its own deprecated APIs, don't
+          # complain about it.
+          'cflags': [
+            '-Wno-deprecated-declarations',
+          ],
+          'cflags_cc': [
+            '-frtti',
+          ],
+          'xcode_settings': {
+            'GCC_ENABLE_CPP_RTTI': 'YES',       # -frtti
+          },
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'RuntimeTypeInfo': 'true',
+            },
+          },
           'conditions': [
             [ 'use_system_icu==1 and want_separate_host_toolset==1', {
               'toolsets': ['host'],
@@ -180,53 +226,6 @@
             [ 'use_system_icu==0 and want_separate_host_toolset==0', {
               'toolsets': ['target'],
             }],
-            [ 'os_posix == 1 and OS != "mac" and OS != "ios"', {
-              # Since ICU wants to internally use its own deprecated APIs, don't
-              # complain about it.
-              'cflags': [
-                '-Wno-deprecated-declarations',
-              ],
-              'cflags_cc': [
-                '-frtti',
-              ],
-            }],
-            ['OS == "mac" or OS == "ios"', {
-              'xcode_settings': {
-                'GCC_ENABLE_CPP_RTTI': 'YES',       # -frtti
-              },
-            }],
-            ['OS == "win"', {
-              'msvs_settings': {
-                'VCCLCompilerTool': {
-                  'RuntimeTypeInfo': 'true',
-                },
-              }
-            }],
-            ['clang==1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  # ICU uses its own deprecated functions.
-                  '-Wno-deprecated-declarations',
-                  # ICU prefers `a && b || c` over `(a && b) || c`.
-                  '-Wno-logical-op-parentheses',
-                  # ICU has some `unsigned < 0` checks.
-                  '-Wno-tautological-compare',
-                  # uspoof.h has a U_NAMESPACE_USE macro. That's a bug,
-                  # the header should use U_NAMESPACE_BEGIN instead.
-                  # http://bugs.icu-project.org/trac/ticket/9054
-                  '-Wno-header-hygiene',
-                  # Looks like a real issue, see http://crbug.com/114660
-                  '-Wno-return-type-c-linkage',
-                ],
-              },
-              'cflags': [
-                '-Wno-deprecated-declarations',
-                '-Wno-logical-op-parentheses',
-                '-Wno-tautological-compare',
-                '-Wno-header-hygiene',
-                '-Wno-return-type-c-linkage',
-              ],
-            }],
             ['OS == "android" and clang==0', {
                 # Disable sincos() optimization to avoid a linker error since
                 # Android's math library doesn't have sincos().  Either
@@ -235,21 +234,18 @@
                     '-fno-builtin-sin',
                 ],
             }],
-            ['OS == "android" and use_system_stlport == 1', {
-              'target_conditions': [
-                ['_toolset == "target"', {
-                  # ICU requires RTTI, which is not present in the system's
-                  # stlport, so we have to include gabi++.
-                  'include_dirs': [
-                    '<(android_src)/abi/cpp/include',
+            [ 'OS == "win" and clang==1', {
+              # Note: General clang warnings should go in the
+              # clang_warning_flags block above.
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': [
+                    # See http://bugs.icu-project.org/trac/ticket/11122
+                    '-Wno-inline-new-delete',
+                    '-Wno-implicit-exception-spec-mismatch',
                   ],
-                  'link_settings': {
-                    'libraries': [
-                      '-lgabi++',
-                    ],
-                  },
-                }],
-              ],
+                },
+              },
             }],
           ], # conditions
         },
@@ -277,6 +273,39 @@
               }],
             ],
           },
+          'variables': {
+            'clang_warning_flags': [
+              # ICU uses its own deprecated functions.
+              '-Wno-deprecated-declarations',
+              # ICU prefers `a && b || c` over `(a && b) || c`.
+              '-Wno-logical-op-parentheses',
+              # ICU has some `unsigned < 0` checks.
+              '-Wno-tautological-compare',
+              # uresdata.c has switch(RES_GET_TYPE(x)) code. The
+              # RES_GET_TYPE macro returns an UResType enum, but some switch
+              # statement contains case values that aren't part of that
+              # enum (e.g. URES_TABLE32 which is in UResInternalType). This
+              # is on purpose.
+              '-Wno-switch',
+            ],
+          },
+          'cflags': [
+            # Since ICU wants to internally use its own deprecated APIs,
+            # don't complain about it.
+            '-Wno-deprecated-declarations',
+            '-Wno-unused-function',
+          ],
+          'cflags_cc': [
+            '-frtti',
+          ],
+          'xcode_settings': {
+            'GCC_ENABLE_CPP_RTTI': 'YES',       # -frtti
+          },
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'RuntimeTypeInfo': 'true',
+            },
+          },
           'all_dependent_settings': {
             'msvs_settings': {
               'VCLinkerTool': {
@@ -296,73 +325,23 @@
             [ 'use_system_icu==0 and want_separate_host_toolset==0', {
               'toolsets': ['target'],
             }],
-            [ 'OS == "win"', {
+            [ 'OS == "win" and icu_use_data_file_flag==0', {
               'sources': [
                 'source/stubdata/stubdata.c',
               ],
             }],
-            [ 'os_posix == 1 and OS != "mac" and OS != "ios"', {
-              'cflags': [
-                # Since ICU wants to internally use its own deprecated APIs,
-                # don't complain about it.
-                '-Wno-deprecated-declarations',
-                '-Wno-unused-function',
-              ],
-              'cflags_cc': [
-                '-frtti',
-              ],
-            }],
-            ['OS == "mac" or OS == "ios"', {
-              'xcode_settings': {
-                'GCC_ENABLE_CPP_RTTI': 'YES',       # -frtti
-              },
-            }],
-            ['OS == "win"', {
+            [ 'OS == "win" and clang==1', {
+              # Note: General clang warnings should go in the
+              # clang_warning_flags block above.
               'msvs_settings': {
                 'VCCLCompilerTool': {
-                  'RuntimeTypeInfo': 'true',
+                  'AdditionalOptions': [
+                    # See http://bugs.icu-project.org/trac/ticket/11122
+                    '-Wno-inline-new-delete',
+                    '-Wno-implicit-exception-spec-mismatch',
+                  ],
                 },
               },
-            }],
-            ['OS == "android" and use_system_stlport == 1', {
-              'target_conditions': [
-                ['_toolset == "target"', {
-                  # ICU requires RTTI, which is not present in the system's
-                  # stlport, so we have to include gabi++.
-                  'include_dirs': [
-                    '<(android_src)/abi/cpp/include',
-                  ],
-                  'link_settings': {
-                    'libraries': [
-                      '-lgabi++',
-                    ],
-                  },
-                }],
-              ],
-            }],
-            ['clang==1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  # ICU uses its own deprecated functions.
-                  '-Wno-deprecated-declarations',
-                  # ICU prefers `a && b || c` over `(a && b) || c`.
-                  '-Wno-logical-op-parentheses',
-                  # ICU has some `unsigned < 0` checks.
-                  '-Wno-tautological-compare',
-                  # uresdata.c has switch(RES_GET_TYPE(x)) code. The
-                  # RES_GET_TYPE macro returns an UResType enum, but some switch
-                  # statement contains case values that aren't part of that
-                  # enum (e.g. URES_TABLE32 which is in UResInternalType). This
-                  # is on purpose.
-                  '-Wno-switch',
-                ],
-              },
-              'cflags': [
-                '-Wno-deprecated-declarations',
-                '-Wno-logical-op-parentheses',
-                '-Wno-tautological-compare',
-                '-Wno-switch',
-              ],
             }],
           ], # conditions
         },
@@ -374,20 +353,6 @@
           'target_name': 'system_icu',
           'type': 'none',
           'conditions': [
-            ['OS=="android"', {
-              'direct_dependent_settings': {
-                'include_dirs': [
-                  '<(android_src)/external/icu/icu4c/source/common',
-                  '<(android_src)/external/icu/icu4c/source/i18n',
-                ],
-              },
-              'link_settings': {
-                'libraries': [
-                  '-licui18n',
-                  '-licuuc',
-                ],
-              },
-            }],
             ['OS=="qnx"', {
               'link_settings': {
                 'libraries': [
@@ -396,7 +361,7 @@
                 ],
               },
             }],
-            ['OS!="android" and OS!="qnx"', {
+            ['OS!="qnx"', {
               'link_settings': {
                 'ldflags': [
                   '<!@(icu-config --ldflags)',
@@ -427,14 +392,13 @@
               # find third_party/icu/source/i18n/unicode -iname '*.h' \
               # -printf "'%p',\n" | \
               # sed -e 's|third_party/icu/source/i18n/||' | sort -u
+              'unicode/alphaindex.h',
               'unicode/basictz.h',
-              'unicode/bmsearch.h',
-              'unicode/bms.h',
               'unicode/calendar.h',
               'unicode/choicfmt.h',
               'unicode/coleitr.h',
-              'unicode/colldata.h',
               'unicode/coll.h',
+              'unicode/compactdecimalformat.h',
               'unicode/curramt.h',
               'unicode/currpinf.h',
               'unicode/currunit.h',
@@ -450,6 +414,7 @@
               'unicode/fmtable.h',
               'unicode/format.h',
               'unicode/fpositer.h',
+              'unicode/gender.h',
               'unicode/gregocal.h',
               'unicode/locdspnm.h',
               'unicode/measfmt.h',
@@ -463,6 +428,7 @@
               'unicode/rbnf.h',
               'unicode/rbtz.h',
               'unicode/regex.h',
+              'unicode/region.h',
               'unicode/search.h',
               'unicode/selfmt.h',
               'unicode/simpletz.h',
@@ -475,6 +441,8 @@
               'unicode/tmutamt.h',
               'unicode/tmutfmt.h',
               'unicode/translit.h',
+              'unicode/tzfmt.h',
+              'unicode/tznames.h',
               'unicode/tzrule.h',
               'unicode/tztrans.h',
               'unicode/ucal.h',
@@ -482,14 +450,21 @@
               'unicode/ucol.h',
               'unicode/ucsdet.h',
               'unicode/ucurr.h',
+              'unicode/udateintervalformat.h',
               'unicode/udat.h',
               'unicode/udatpg.h',
+              'unicode/udisplaycontext.h',
+              'unicode/uformattable.h',
+              'unicode/ugender.h',
               'unicode/uldnames.h',
               'unicode/ulocdata.h',
               'unicode/umsg.h',
               'unicode/unirepl.h',
               'unicode/unum.h',
+              'unicode/unumsys.h',
+              'unicode/upluralrules.h',
               'unicode/uregex.h',
+              'unicode/uregion.h',
               'unicode/usearch.h',
               'unicode/uspoof.h',
               'unicode/utmscale.h',
@@ -514,32 +489,32 @@
               # find third_party/icu/source/common/unicode -iname '*.h' \
               # -printf "'%p',\n" | \
               # sed -e 's|third_party/icu/source/common/||' | sort -u
+              'unicode/appendable.h',
               'unicode/brkiter.h',
               'unicode/bytestream.h',
+              'unicode/bytestriebuilder.h',
+              'unicode/bytestrie.h',
               'unicode/caniter.h',
               'unicode/chariter.h',
               'unicode/dbbi.h',
               'unicode/docmain.h',
               'unicode/dtintrv.h',
+              'unicode/enumset.h',
               'unicode/errorcode.h',
               'unicode/icudataver.h',
               'unicode/icuplug.h',
               'unicode/idna.h',
+              'unicode/listformatter.h',
               'unicode/localpointer.h',
               'unicode/locid.h',
+              'unicode/messagepattern.h',
               'unicode/normalizer2.h',
               'unicode/normlzr.h',
-              'unicode/pandroid.h',
               'unicode/parseerr.h',
               'unicode/parsepos.h',
-              'unicode/pfreebsd.h',
-              'unicode/plinux.h',
-              'unicode/pmac.h',
-              'unicode/popenbsd.h',
-              'unicode/ppalmos.h',
+              'unicode/platform.h',
               'unicode/ptypes.h',
               'unicode/putil.h',
-              'unicode/pwin32.h',
               'unicode/rbbi.h',
               'unicode/rep.h',
               'unicode/resbund.h',
@@ -547,12 +522,15 @@
               'unicode/std_string.h',
               'unicode/strenum.h',
               'unicode/stringpiece.h',
+              'unicode/stringtriebuilder.h',
               'unicode/symtable.h',
               'unicode/ubidi.h',
               'unicode/ubrk.h',
               'unicode/ucasemap.h',
               'unicode/ucat.h',
               'unicode/uchar.h',
+              'unicode/ucharstriebuilder.h',
+              'unicode/ucharstrie.h',
               'unicode/uchriter.h',
               'unicode/uclean.h',
               'unicode/ucnv_cb.h',
@@ -561,11 +539,8 @@
               'unicode/ucnvsel.h',
               'unicode/uconfig.h',
               'unicode/udata.h',
-              'unicode/udeprctd.h',
-              'unicode/udraft.h',
               'unicode/uenum.h',
               'unicode/uidna.h',
-              'unicode/uintrnal.h',
               'unicode/uiter.h',
               'unicode/uloc.h',
               'unicode/umachine.h',
@@ -578,7 +553,6 @@
               'unicode/unorm2.h',
               'unicode/unorm.h',
               'unicode/uobject.h',
-              'unicode/uobslete.h',
               'unicode/urename.h',
               'unicode/urep.h',
               'unicode/ures.h',
@@ -588,7 +562,7 @@
               'unicode/ushape.h',
               'unicode/usprep.h',
               'unicode/ustring.h',
-              'unicode/usystem.h',
+              'unicode/ustringtrie.h',
               'unicode/utext.h',
               'unicode/utf16.h',
               'unicode/utf32.h',
@@ -596,7 +570,6 @@
               'unicode/utf.h',
               'unicode/utf_old.h',
               'unicode/utrace.h',
-              'unicode/utypeinfo.h',
               'unicode/utypes.h',
               'unicode/uvernum.h',
               'unicode/uversion.h',

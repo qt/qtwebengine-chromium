@@ -13,12 +13,13 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "webrtc/base/thread_annotations.h"
 #include "webrtc/call.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/test/call_test.h"
 #include "webrtc/test/direct_transport.h"
 #include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/fake_decoder.h"
@@ -26,103 +27,45 @@
 #include "webrtc/test/frame_generator_capturer.h"
 
 namespace webrtc {
-
-static const int kTOFExtensionId = 4;
-static const int kASTExtensionId = 5;
-
-static unsigned int kDefaultTimeoutMs = 30 * 1000;
-static const uint32_t kSendSsrc = 0x654321;
-static const uint32_t kReceiverLocalSsrc = 0x123456;
-static const uint8_t kSendPayloadType = 125;
-
-class BitrateEstimatorTest : public ::testing::Test {
+namespace {
+// Note: consider to write tests that don't depend on the trace system instead
+// of re-using this class.
+class TraceObserver {
  public:
-  BitrateEstimatorTest()
-      : receiver_trace_(),
-        send_transport_(),
-        receive_transport_(),
-        sender_call_(),
-        receiver_call_(),
-        send_config_(),
-        receive_config_(),
-        streams_() {
-  }
-
-  virtual ~BitrateEstimatorTest() {
-    EXPECT_TRUE(streams_.empty());
-  }
-
-  virtual void SetUp() {
-    Trace::CreateTrace();
-    Trace::SetTraceCallback(&receiver_trace_);
-    // Reduce the chance that spurious traces will ruin the test.
+  TraceObserver() {
     Trace::set_level_filter(kTraceTerseInfo);
 
-    Call::Config receiver_call_config(&receive_transport_);
-    receiver_call_.reset(Call::Create(receiver_call_config));
+    Trace::CreateTrace();
+    Trace::SetTraceCallback(&callback_);
 
-    Call::Config sender_call_config(&send_transport_);
-    sender_call_.reset(Call::Create(sender_call_config));
-
-    send_transport_.SetReceiver(receiver_call_->Receiver());
-    receive_transport_.SetReceiver(sender_call_->Receiver());
-
-    send_config_ = sender_call_->GetDefaultSendConfig();
-    send_config_.rtp.ssrcs.push_back(kSendSsrc);
-    // Encoders will be set separately per stream.
-    send_config_.encoder_settings.encoder = NULL;
-    send_config_.encoder_settings.payload_name = "FAKE";
-    send_config_.encoder_settings.payload_type = kSendPayloadType;
-    video_streams_ = test::CreateVideoStreams(1);
-
-    receive_config_ = receiver_call_->GetDefaultReceiveConfig();
-    assert(receive_config_.codecs.empty());
-    VideoCodec codec =
-        test::CreateDecoderVideoCodec(send_config_.encoder_settings);
-    receive_config_.codecs.push_back(codec);
-    // receive_config_.external_decoders will be set by every stream separately.
-    receive_config_.rtp.remote_ssrc = send_config_.rtp.ssrcs[0];
-    receive_config_.rtp.local_ssrc = kReceiverLocalSsrc;
-    receive_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
-    receive_config_.rtp.extensions.push_back(
-        RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
+    // Call webrtc trace to initialize the tracer that would otherwise trigger a
+    // data-race if left to be initialized by multiple threads (i.e. threads
+    // spawned by test::DirectTransport members in BitrateEstimatorTest).
+    WEBRTC_TRACE(kTraceStateInfo,
+                 kTraceUtility,
+                 -1,
+                 "Instantiate without data races.");
   }
 
-  virtual void TearDown() {
-    std::for_each(streams_.begin(), streams_.end(),
-        std::mem_fun(&Stream::StopSending));
-
-    send_transport_.StopSending();
-    receive_transport_.StopSending();
-
-    while (!streams_.empty()) {
-      delete streams_.back();
-      streams_.pop_back();
-    }
-
-    receiver_call_.reset();
-
+  ~TraceObserver() {
     Trace::SetTraceCallback(NULL);
     Trace::ReturnTrace();
   }
 
- protected:
-  friend class Stream;
+  void PushExpectedLogLine(const std::string& expected_log_line) {
+    callback_.PushExpectedLogLine(expected_log_line);
+  }
 
-  class TraceObserver : public TraceCallback {
+  EventTypeWrapper Wait() {
+    return callback_.Wait();
+  }
+
+ private:
+  class Callback : public TraceCallback {
    public:
-    TraceObserver()
+    Callback()
         : crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
-          received_log_lines_(),
-          expected_log_lines_(),
-          done_(EventWrapper::Create()) {
-    }
-
-    void PushExpectedLogLine(const std::string& expected_log_line) {
-      CriticalSectionScoped lock(crit_sect_.get());
-      expected_log_lines_.push_back(expected_log_line);
-    }
+          done_(EventWrapper::Create()) {}
 
     virtual void Print(TraceLevel level,
                        const char* message,
@@ -149,7 +92,14 @@ class BitrateEstimatorTest : public ::testing::Test {
       }
     }
 
-    EventTypeWrapper Wait() { return done_->Wait(kDefaultTimeoutMs); }
+    EventTypeWrapper Wait() {
+      return done_->Wait(test::CallTest::kDefaultTimeoutMs);
+    }
+
+    void PushExpectedLogLine(const std::string& expected_log_line) {
+      CriticalSectionScoped lock(crit_sect_.get());
+      expected_log_lines_.push_back(expected_log_line);
+    }
 
    private:
     typedef std::list<std::string> Strings;
@@ -158,6 +108,75 @@ class BitrateEstimatorTest : public ::testing::Test {
     Strings expected_log_lines_ GUARDED_BY(crit_sect_);
     scoped_ptr<EventWrapper> done_;
   };
+
+  Callback callback_;
+};
+}  // namespace
+
+static const int kTOFExtensionId = 4;
+static const int kASTExtensionId = 5;
+
+class BitrateEstimatorTest : public test::CallTest {
+ public:
+  BitrateEstimatorTest()
+      : receiver_trace_(),
+        send_transport_(),
+        receive_transport_(),
+        sender_call_(),
+        receiver_call_(),
+        receive_config_(),
+        streams_() {
+  }
+
+  virtual ~BitrateEstimatorTest() {
+    EXPECT_TRUE(streams_.empty());
+  }
+
+  virtual void SetUp() {
+    Call::Config receiver_call_config(&receive_transport_);
+    receiver_call_.reset(Call::Create(receiver_call_config));
+
+    Call::Config sender_call_config(&send_transport_);
+    sender_call_.reset(Call::Create(sender_call_config));
+
+    send_transport_.SetReceiver(receiver_call_->Receiver());
+    receive_transport_.SetReceiver(sender_call_->Receiver());
+
+    send_config_ = VideoSendStream::Config();
+    send_config_.rtp.ssrcs.push_back(kSendSsrcs[0]);
+    // Encoders will be set separately per stream.
+    send_config_.encoder_settings.encoder = NULL;
+    send_config_.encoder_settings.payload_name = "FAKE";
+    send_config_.encoder_settings.payload_type = kFakeSendPayloadType;
+    encoder_config_.streams = test::CreateVideoStreams(1);
+
+    receive_config_ = VideoReceiveStream::Config();
+    // receive_config_.decoders will be set by every stream separately.
+    receive_config_.rtp.remote_ssrc = send_config_.rtp.ssrcs[0];
+    receive_config_.rtp.local_ssrc = kReceiverLocalSsrc;
+    receive_config_.rtp.extensions.push_back(
+        RtpExtension(RtpExtension::kTOffset, kTOFExtensionId));
+    receive_config_.rtp.extensions.push_back(
+        RtpExtension(RtpExtension::kAbsSendTime, kASTExtensionId));
+  }
+
+  virtual void TearDown() {
+    std::for_each(streams_.begin(), streams_.end(),
+        std::mem_fun(&Stream::StopSending));
+
+    send_transport_.StopSending();
+    receive_transport_.StopSending();
+
+    while (!streams_.empty()) {
+      delete streams_.back();
+      streams_.pop_back();
+    }
+
+    receiver_call_.reset();
+  }
+
+ protected:
+  friend class Stream;
 
   class Stream {
    public:
@@ -172,23 +191,24 @@ class BitrateEstimatorTest : public ::testing::Test {
       test_->send_config_.rtp.ssrcs[0]++;
       test_->send_config_.encoder_settings.encoder = &fake_encoder_;
       send_stream_ = test_->sender_call_->CreateVideoSendStream(
-          test_->send_config_, test_->video_streams_, NULL);
-      assert(test_->video_streams_.size() == 1);
-      frame_generator_capturer_.reset(
-          test::FrameGeneratorCapturer::Create(send_stream_->Input(),
-                                               test_->video_streams_[0].width,
-                                               test_->video_streams_[0].height,
-                                               30,
-                                               Clock::GetRealTimeClock()));
+          test_->send_config_, test_->encoder_config_);
+      assert(test_->encoder_config_.streams.size() == 1);
+      frame_generator_capturer_.reset(test::FrameGeneratorCapturer::Create(
+          send_stream_->Input(),
+          test_->encoder_config_.streams[0].width,
+          test_->encoder_config_.streams[0].height,
+          30,
+          Clock::GetRealTimeClock()));
       send_stream_->Start();
       frame_generator_capturer_->Start();
 
-      ExternalVideoDecoder decoder;
+      VideoReceiveStream::Decoder decoder;
       decoder.decoder = &fake_decoder_;
       decoder.payload_type = test_->send_config_.encoder_settings.payload_type;
+      decoder.payload_name = test_->send_config_.encoder_settings.payload_name;
+      test_->receive_config_.decoders.push_back(decoder);
       test_->receive_config_.rtp.remote_ssrc = test_->send_config_.rtp.ssrcs[0];
       test_->receive_config_.rtp.local_ssrc++;
-      test_->receive_config_.external_decoders.push_back(decoder);
       receive_stream_ = test_->receiver_call_->CreateVideoReceiveStream(
           test_->receive_config_);
       receive_stream_->Start();
@@ -228,8 +248,6 @@ class BitrateEstimatorTest : public ::testing::Test {
   test::DirectTransport receive_transport_;
   scoped_ptr<Call> sender_call_;
   scoped_ptr<Call> receiver_call_;
-  VideoSendStream::Config send_config_;
-  std::vector<VideoStream> video_streams_;
   VideoReceiveStream::Config receive_config_;
   std::vector<Stream*> streams_;
 };

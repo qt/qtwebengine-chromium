@@ -14,7 +14,7 @@
 #include "content/browser/media/capture/desktop_capture_device_uma_types.h"
 #include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/browser_thread.h"
-#include "media/base/bind_to_current_loop.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "media/base/video_util.h"
 #include "media/video/capture/video_capture_types.h"
 #include "skia/ext/image_operations.h"
@@ -47,7 +47,7 @@ void RenderCursorOnVideoFrame(
     const scoped_refptr<media::VideoFrame>& target,
     const SkBitmap& cursor_bitmap,
     const gfx::Point& cursor_position) {
-  DCHECK(target);
+  DCHECK(target.get());
   DCHECK(!cursor_bitmap.isNull());
 
   gfx::Rect rect = gfx::IntersectRects(
@@ -96,30 +96,29 @@ class DesktopVideoCaptureMachine
       public base::SupportsWeakPtr<DesktopVideoCaptureMachine> {
  public:
   DesktopVideoCaptureMachine(const DesktopMediaID& source);
-  virtual ~DesktopVideoCaptureMachine();
+  ~DesktopVideoCaptureMachine() override;
 
   // VideoCaptureFrameSource overrides.
-  virtual bool Start(const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
-                     const media::VideoCaptureParams& params) OVERRIDE;
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
+  bool Start(const scoped_refptr<ThreadSafeCaptureOracle>& oracle_proxy,
+             const media::VideoCaptureParams& params) override;
+  void Stop(const base::Closure& callback) override;
 
   // Implements aura::WindowObserver.
-  virtual void OnWindowBoundsChanged(aura::Window* window,
-                                     const gfx::Rect& old_bounds,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
-  virtual void OnWindowAddedToRootWindow(aura::Window* window) OVERRIDE;
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
-                                              aura::Window* new_root) OVERRIDE;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
+  void OnWindowDestroyed(aura::Window* window) override;
+  void OnWindowAddedToRootWindow(aura::Window* window) override;
+  void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                      aura::Window* new_root) override;
 
   // Implements ui::CompositorObserver.
-  virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE {}
-  virtual void OnCompositingStarted(ui::Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE {}
-  virtual void OnCompositingEnded(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE {}
-  virtual void OnCompositingLockStateChanged(
-      ui::Compositor* compositor) OVERRIDE {}
+  void OnCompositingDidCommit(ui::Compositor* compositor) override {}
+  void OnCompositingStarted(ui::Compositor* compositor,
+                            base::TimeTicks start_time) override {}
+  void OnCompositingEnded(ui::Compositor* compositor) override;
+  void OnCompositingAborted(ui::Compositor* compositor) override {}
+  void OnCompositingLockStateChanged(ui::Compositor* compositor) override {}
 
  private:
   // Captures a frame.
@@ -175,6 +174,10 @@ class DesktopVideoCaptureMachine
   gfx::Point cursor_hot_point_;
   SkBitmap scaled_cursor_bitmap_;
 
+  // TODO(jiayl): Remove power_save_blocker_ when there is an API to keep the
+  // screen from sleeping for the drive-by web.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
+
   DISALLOW_COPY_AND_ASSIGN(DesktopVideoCaptureMachine);
 };
 
@@ -214,17 +217,21 @@ bool DesktopVideoCaptureMachine::Start(
   if (desktop_window_->GetHost())
     desktop_window_->GetHost()->compositor()->AddObserver(this);
 
+  power_save_blocker_.reset(PowerSaveBlocker::Create(
+      PowerSaveBlocker::kPowerSaveBlockPreventDisplaySleep,
+      "DesktopCaptureDevice is running").release());
+
   // Starts timer.
-  timer_.Start(FROM_HERE, oracle_proxy_->capture_period(),
+  timer_.Start(FROM_HERE, oracle_proxy_->min_capture_period(),
                base::Bind(&DesktopVideoCaptureMachine::Capture, AsWeakPtr(),
                           false));
 
-  started_ = true;
   return true;
 }
 
 void DesktopVideoCaptureMachine::Stop(const base::Closure& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  power_save_blocker_.reset();
 
   // Stop observing compositor and window events.
   if (desktop_window_) {
@@ -237,17 +244,15 @@ void DesktopVideoCaptureMachine::Stop(const base::Closure& callback) {
   // Stop timer.
   timer_.Stop();
 
-  started_ = false;
-
   callback.Run();
 }
 
 void DesktopVideoCaptureMachine::UpdateCaptureSize() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (oracle_proxy_ && desktop_window_) {
-    ui::Layer* layer = desktop_window_->layer();
-    oracle_proxy_->UpdateCaptureSize(ui::ConvertSizeToPixel(
-        layer, layer->bounds().size()));
+  if (oracle_proxy_.get() && desktop_window_) {
+     ui::Layer* layer = desktop_window_->layer();
+     oracle_proxy_->UpdateCaptureSize(ui::ConvertSizeToPixel(
+         layer, layer->bounds().size()));
   }
   ClearCursorState();
 }
@@ -267,15 +272,13 @@ void DesktopVideoCaptureMachine::Capture(bool dirty) {
       dirty ? VideoCaptureOracle::kCompositorUpdate
             : VideoCaptureOracle::kTimerPoll;
   if (oracle_proxy_->ObserveEventAndDecideCapture(
-      event, start_time, &frame, &capture_frame_cb)) {
+          event, gfx::Rect(), start_time, &frame, &capture_frame_cb)) {
     scoped_ptr<cc::CopyOutputRequest> request =
         cc::CopyOutputRequest::CreateRequest(
             base::Bind(&DesktopVideoCaptureMachine::DidCopyOutput,
                        AsWeakPtr(), frame, start_time, capture_frame_cb));
-    gfx::Rect window_rect =
-        ui::ConvertRectToPixel(desktop_window_->layer(),
-                               gfx::Rect(desktop_window_->bounds().width(),
-                                         desktop_window_->bounds().height()));
+    gfx::Rect window_rect = gfx::Rect(desktop_window_->bounds().width(),
+                                      desktop_window_->bounds().height());
     request->set_area(window_rect);
     desktop_window_->layer()->RequestCopyOfOutput(request.Pass());
   }
@@ -296,14 +299,8 @@ void CopyOutputFinishedForVideo(
 }
 
 void RunSingleReleaseCallback(scoped_ptr<cc::SingleReleaseCallback> cb,
-                              const std::vector<uint32>& sync_points) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
-  DCHECK(gl_helper);
-  for (unsigned i = 0; i < sync_points.size(); i++)
-    gl_helper->WaitSyncPoint(sync_points[i]);
-  uint32 new_sync_point = gl_helper->InsertSyncPoint();
-  cb->Run(new_sync_point, false);
+                              uint32 sync_point) {
+  cb->Run(sync_point, false);
 }
 
 void DesktopVideoCaptureMachine::DidCopyOutput(
@@ -317,10 +314,14 @@ void DesktopVideoCaptureMachine::DidCopyOutput(
       video_frame, start_time, capture_frame_cb, result.Pass());
 
   base::TimeDelta capture_time = base::TimeTicks::Now() - start_time;
-  UMA_HISTOGRAM_TIMES(
-      window_id_.type == DesktopMediaID::TYPE_SCREEN ? kUmaScreenCaptureTime
-                                                     : kUmaWindowCaptureTime,
-      capture_time);
+
+  // The two UMA_ blocks must be put in its own scope since it creates a static
+  // variable which expected constant histogram name.
+  if (window_id_.type == DesktopMediaID::TYPE_SCREEN) {
+    UMA_HISTOGRAM_TIMES(kUmaScreenCaptureTime, capture_time);
+  } else {
+    UMA_HISTOGRAM_TIMES(kUmaWindowCaptureTime, capture_time);
+  }
 
   if (first_call) {
     first_call = false;
@@ -330,7 +331,7 @@ void DesktopVideoCaptureMachine::DidCopyOutput(
     } else {
       IncrementDesktopCaptureCounter(succeeded
                                          ? FIRST_WINDOW_CAPTURE_SUCCEEDED
-                                         : FIRST_WINDOW_CAPTURE_SUCCEEDED);
+                                         : FIRST_WINDOW_CAPTURE_FAILED);
     }
   }
 }
@@ -346,7 +347,7 @@ bool DesktopVideoCaptureMachine::ProcessCopyOutputResponse(
 
   if (capture_params_.requested_format.pixel_format ==
       media::PIXEL_FORMAT_TEXTURE) {
-    DCHECK(!video_frame);
+    DCHECK(!video_frame.get());
     cc::TextureMailbox texture_mailbox;
     scoped_ptr<cc::SingleReleaseCallback> release_callback;
     result->TakeTexture(&texture_mailbox, &release_callback);
@@ -357,8 +358,7 @@ bool DesktopVideoCaptureMachine::ProcessCopyOutputResponse(
         make_scoped_ptr(new gpu::MailboxHolder(texture_mailbox.mailbox(),
                                                texture_mailbox.target(),
                                                texture_mailbox.sync_point())),
-        media::BindToCurrentLoop(base::Bind(&RunSingleReleaseCallback,
-                                            base::Passed(&release_callback))),
+        base::Bind(&RunSingleReleaseCallback, base::Passed(&release_callback)),
         result->size(),
         gfx::Rect(result->size()),
         result->size(),
@@ -523,7 +523,7 @@ media::VideoCaptureDevice* DesktopCaptureDeviceAura::Create(
     const DesktopMediaID& source) {
   IncrementDesktopCaptureCounter(source.type == DesktopMediaID::TYPE_SCREEN
                                      ? SCREEN_CAPTURER_CREATED
-                                     : WINDOW_CATPTURER_CREATED);
+                                     : WINDOW_CAPTURER_CREATED);
   return new DesktopCaptureDeviceAura(source);
 }
 

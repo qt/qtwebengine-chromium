@@ -22,18 +22,19 @@
 
 #include "core/svg/SVGFELightElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFESpotLightElement FINAL : public SVGFELightElement {
+class SVGFESpotLightElement final : public SVGFELightElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFESpotLightElement);
 
 private:
     explicit SVGFESpotLightElement(Document&);
 
-    virtual PassRefPtr<LightSource> lightSource(Filter*) const OVERRIDE;
+    virtual PassRefPtr<LightSource> lightSource(Filter*) const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFESpotLightElement_h

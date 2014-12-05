@@ -17,16 +17,16 @@ class OAuth2TokenService;
 class FakeIdentityProvider : public IdentityProvider {
  public:
   explicit FakeIdentityProvider(OAuth2TokenService* token_service);
-  virtual ~FakeIdentityProvider();
+  ~FakeIdentityProvider() override;
 
   void LogIn(const std::string& account_id);
   void LogOut();
 
   // IdentityProvider:
-  virtual std::string GetActiveUsername() OVERRIDE;
-  virtual std::string GetActiveAccountId() OVERRIDE;
-  virtual OAuth2TokenService* GetTokenService() OVERRIDE;
-  virtual bool RequestLogin() OVERRIDE;
+  std::string GetActiveUsername() override;
+  std::string GetActiveAccountId() override;
+  OAuth2TokenService* GetTokenService() override;
+  bool RequestLogin() override;
 
  private:
   std::string account_id_;

@@ -14,11 +14,11 @@
 #include <linux/videodev2.h>
 #include <string.h>
 #include <sys/ioctl.h>
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <unistd.h>
 
-#include "talk/base/logging.h"
+#include "webrtc/base/logging.h"
 
 namespace cricket {
 

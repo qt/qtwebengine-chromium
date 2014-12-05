@@ -15,13 +15,15 @@
 #include <string.h>
 #include <limits.h>
 
+#include "./vpx_config.h"
+
+#if CONFIG_LIBYUV
 #include "third_party/libyuv/include/libyuv/scale.h"
+#endif
 
 #include "./args.h"
 #include "./ivfdec.h"
 
-#define VPX_CODEC_DISABLE_COMPAT 1
-#include "./vpx_config.h"
 #include "vpx/vpx_decoder.h"
 #include "vpx_ports/mem_ops.h"
 #include "vpx_ports/vpx_timer.h"
@@ -45,51 +47,59 @@ struct VpxDecInputContext {
   struct WebmInputContext *webm_ctx;
 };
 
-static const arg_def_t looparg = ARG_DEF(NULL, "loops", 1,
-                                          "Number of times to decode the file");
-static const arg_def_t codecarg = ARG_DEF(NULL, "codec", 1,
-                                          "Codec to use");
-static const arg_def_t use_yv12 = ARG_DEF(NULL, "yv12", 0,
-                                          "Output raw YV12 frames");
-static const arg_def_t use_i420 = ARG_DEF(NULL, "i420", 0,
-                                          "Output raw I420 frames");
-static const arg_def_t flipuvarg = ARG_DEF(NULL, "flipuv", 0,
-                                           "Flip the chroma planes in the output");
-static const arg_def_t noblitarg = ARG_DEF(NULL, "noblit", 0,
-                                           "Don't process the decoded frames");
-static const arg_def_t progressarg = ARG_DEF(NULL, "progress", 0,
-                                             "Show progress after each frame decodes");
-static const arg_def_t limitarg = ARG_DEF(NULL, "limit", 1,
-                                          "Stop decoding after n frames");
-static const arg_def_t skiparg = ARG_DEF(NULL, "skip", 1,
-                                         "Skip the first n input frames");
-static const arg_def_t postprocarg = ARG_DEF(NULL, "postproc", 0,
-                                             "Postprocess decoded frames");
-static const arg_def_t summaryarg = ARG_DEF(NULL, "summary", 0,
-                                            "Show timing summary");
-static const arg_def_t outputfile = ARG_DEF("o", "output", 1,
-                                            "Output file name pattern (see below)");
-static const arg_def_t threadsarg = ARG_DEF("t", "threads", 1,
-                                            "Max threads to use");
-static const arg_def_t verbosearg = ARG_DEF("v", "verbose", 0,
-                                            "Show version string");
-static const arg_def_t error_concealment = ARG_DEF(NULL, "error-concealment", 0,
-                                                   "Enable decoder error-concealment");
-static const arg_def_t scalearg = ARG_DEF("S", "scale", 0,
-                                            "Scale output frames uniformly");
-
-static const arg_def_t fb_arg =
-    ARG_DEF(NULL, "frame-buffers", 1, "Number of frame buffers to use");
-
-static const arg_def_t md5arg = ARG_DEF(NULL, "md5", 0,
-                                        "Compute the MD5 sum of the decoded frame");
+static const arg_def_t looparg = ARG_DEF(
+    NULL, "loops", 1, "Number of times to decode the file");
+static const arg_def_t codecarg = ARG_DEF(
+    NULL, "codec", 1, "Codec to use");
+static const arg_def_t use_yv12 = ARG_DEF(
+    NULL, "yv12", 0, "Output raw YV12 frames");
+static const arg_def_t use_i420 = ARG_DEF(
+    NULL, "i420", 0, "Output raw I420 frames");
+static const arg_def_t flipuvarg = ARG_DEF(
+    NULL, "flipuv", 0, "Flip the chroma planes in the output");
+static const arg_def_t rawvideo = ARG_DEF(
+    NULL, "rawvideo", 0, "Output raw YUV frames");
+static const arg_def_t noblitarg = ARG_DEF(
+    NULL, "noblit", 0, "Don't process the decoded frames");
+static const arg_def_t progressarg = ARG_DEF(
+    NULL, "progress", 0, "Show progress after each frame decodes");
+static const arg_def_t limitarg = ARG_DEF(
+    NULL, "limit", 1, "Stop decoding after n frames");
+static const arg_def_t skiparg = ARG_DEF(
+    NULL, "skip", 1, "Skip the first n input frames");
+static const arg_def_t postprocarg = ARG_DEF(
+    NULL, "postproc", 0, "Postprocess decoded frames");
+static const arg_def_t summaryarg = ARG_DEF(
+    NULL, "summary", 0, "Show timing summary");
+static const arg_def_t outputfile = ARG_DEF(
+    "o", "output", 1, "Output file name pattern (see below)");
+static const arg_def_t threadsarg = ARG_DEF(
+    "t", "threads", 1, "Max threads to use");
+static const arg_def_t verbosearg = ARG_DEF(
+    "v", "verbose", 0, "Show version string");
+static const arg_def_t error_concealment = ARG_DEF(
+    NULL, "error-concealment", 0, "Enable decoder error-concealment");
+static const arg_def_t scalearg = ARG_DEF(
+    "S", "scale", 0, "Scale output frames uniformly");
+static const arg_def_t continuearg = ARG_DEF(
+    "k", "keep-going", 0, "(debug) Continue decoding after error");
+static const arg_def_t fb_arg = ARG_DEF(
+    NULL, "frame-buffers", 1, "Number of frame buffers to use");
+static const arg_def_t md5arg = ARG_DEF(
+    NULL, "md5", 0, "Compute the MD5 sum of the decoded frame");
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+static const arg_def_t outbitdeptharg = ARG_DEF(
+    NULL, "output-bit-depth", 1, "Output bit-depth for decoded frames");
+#endif
 
 static const arg_def_t *all_args[] = {
-  &codecarg, &use_yv12, &use_i420, &flipuvarg, &noblitarg,
+  &codecarg, &use_yv12, &use_i420, &flipuvarg, &rawvideo, &noblitarg,
   &progressarg, &limitarg, &skiparg, &postprocarg, &summaryarg, &outputfile,
   &threadsarg, &verbosearg, &scalearg, &fb_arg,
-  &md5arg,
-  &error_concealment,
+  &md5arg, &error_concealment, &continuearg,
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  &outbitdeptharg,
+#endif
   NULL
 };
 
@@ -120,8 +130,29 @@ static const arg_def_t *vp8_pp_args[] = {
 };
 #endif
 
-static int vpx_image_scale(vpx_image_t *src, vpx_image_t *dst,
-                           FilterModeEnum mode) {
+#if CONFIG_LIBYUV
+static INLINE int vpx_image_scale(vpx_image_t *src, vpx_image_t *dst,
+                                  FilterModeEnum mode) {
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  if (src->fmt == VPX_IMG_FMT_I42016) {
+    assert(dst->fmt == VPX_IMG_FMT_I42016);
+    return I420Scale_16((uint16_t*)src->planes[VPX_PLANE_Y],
+                        src->stride[VPX_PLANE_Y]/2,
+                        (uint16_t*)src->planes[VPX_PLANE_U],
+                        src->stride[VPX_PLANE_U]/2,
+                        (uint16_t*)src->planes[VPX_PLANE_V],
+                        src->stride[VPX_PLANE_V]/2,
+                        src->d_w, src->d_h,
+                        (uint16_t*)dst->planes[VPX_PLANE_Y],
+                        dst->stride[VPX_PLANE_Y]/2,
+                        (uint16_t*)dst->planes[VPX_PLANE_U],
+                        dst->stride[VPX_PLANE_U]/2,
+                        (uint16_t*)dst->planes[VPX_PLANE_V],
+                        dst->stride[VPX_PLANE_V]/2,
+                        dst->d_w, dst->d_h,
+                        mode);
+  }
+#endif
   assert(src->fmt == VPX_IMG_FMT_I420);
   assert(dst->fmt == VPX_IMG_FMT_I420);
   return I420Scale(src->planes[VPX_PLANE_Y], src->stride[VPX_PLANE_Y],
@@ -134,6 +165,7 @@ static int vpx_image_scale(vpx_image_t *src, vpx_image_t *dst,
                    dst->d_w, dst->d_h,
                    mode);
 }
+#endif
 
 void usage_exit() {
   int i;
@@ -165,7 +197,7 @@ void usage_exit() {
   for (i = 0; i < get_vpx_decoder_count(); ++i) {
     const VpxInterface *const decoder = get_vpx_decoder_by_index(i);
     fprintf(stderr, "    %-6s - %s\n",
-            decoder->name, vpx_codec_iface_name(decoder->interface()));
+            decoder->name, vpx_codec_iface_name(decoder->codec_interface()));
   }
 
   exit(EXIT_FAILURE);
@@ -257,6 +289,11 @@ static void update_image_md5(const vpx_image_t *img, const int planes[3],
 static void write_image_file(const vpx_image_t *img, const int planes[3],
                              FILE *file) {
   int i, y;
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  const int bytes_per_sample = ((img->fmt & VPX_IMG_FMT_HIGHBITDEPTH) ? 2 : 1);
+#else
+  const int bytes_per_sample = 1;
+#endif
 
   for (i = 0; i < 3; ++i) {
     const int plane = planes[i];
@@ -266,7 +303,7 @@ static void write_image_file(const vpx_image_t *img, const int planes[3],
     const int h = vpx_img_plane_height(img, plane);
 
     for (y = 0; y < h; ++y) {
-      fwrite(buf, 1, w, file);
+      fwrite(buf, bytes_per_sample, w, file);
       buf += stride;
     }
   }
@@ -285,7 +322,7 @@ int file_is_raw(struct VpxInputContext *input) {
     if (mem_get_le32(buf) < 256 * 1024 * 1024) {
       for (i = 0; i < get_vpx_decoder_count(); ++i) {
         const VpxInterface *const decoder = get_vpx_decoder_by_index(i);
-        if (!vpx_codec_peek_stream_info(decoder->interface(),
+        if (!vpx_codec_peek_stream_info(decoder->codec_interface(),
                                         buf + 4, 32 - 4, &si)) {
           is_raw = 1;
           input->fourcc = decoder->fourcc;
@@ -344,7 +381,7 @@ int get_vp9_frame_buffer(void *cb_priv, size_t min_size,
 
   if (ext_fb_list->ext_fb[i].size < min_size) {
     free(ext_fb_list->ext_fb[i].data);
-    ext_fb_list->ext_fb[i].data = (uint8_t *)malloc(min_size);
+    ext_fb_list->ext_fb[i].data = (uint8_t *)calloc(min_size, sizeof(uint8_t));
     if (!ext_fb_list->ext_fb[i].data)
       return -1;
 
@@ -422,6 +459,7 @@ void generate_filename(const char *pattern, char *out, size_t q_len,
           break;
         default:
           die("Unrecognized pattern %%%c\n", p[1]);
+          break;
       }
 
       pat_len = strlen(q);
@@ -485,6 +523,16 @@ static FILE *open_outfile(const char *name) {
   }
 }
 
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+static int img_shifted_realloc_required(const vpx_image_t *img,
+                                        const vpx_image_t *shifted,
+                                        vpx_img_fmt_t required_fmt) {
+  return img->d_w != shifted->d_w ||
+         img->d_h != shifted->d_h ||
+         required_fmt != shifted->fmt;
+}
+#endif
+
 int main_loop(int argc, const char **argv_) {
   vpx_codec_ctx_t       decoder;
   char                  *fn = NULL;
@@ -497,6 +545,7 @@ int main_loop(int argc, const char **argv_) {
   int                    stop_after = 0, postproc = 0, summary = 0, quiet = 1;
   int                    arg_skip = 0;
   int                    ec_enabled = 0;
+  int                    keep_going = 0;
   const VpxInterface *interface = NULL;
   const VpxInterface *fourcc_interface = NULL;
   uint64_t dx_time = 0;
@@ -505,7 +554,12 @@ int main_loop(int argc, const char **argv_) {
 
   int                     single_file;
   int                     use_y4m = 1;
-  vpx_codec_dec_cfg_t     cfg = {0};
+  int                     opt_yv12 = 0;
+  int                     opt_i420 = 0;
+  vpx_codec_dec_cfg_t     cfg = {0, 0, 0};
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  int                     output_bit_depth = 0;
+#endif
 #if CONFIG_VP8_DECODER
   vp8_postproc_cfg_t      vp8_pp_cfg = {0};
   int                     vp8_dbg_color_ref_frame = 0;
@@ -517,9 +571,12 @@ int main_loop(int argc, const char **argv_) {
   int                     dec_flags = 0;
   int                     do_scale = 0;
   vpx_image_t             *scaled_img = NULL;
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  vpx_image_t             *img_shifted = NULL;
+#endif
   int                     frame_avail, got_data;
   int                     num_external_frame_buffers = 0;
-  struct ExternalFrameBufferList ext_fb_list = {0};
+  struct ExternalFrameBufferList ext_fb_list = {0, NULL};
 
   const char *outfile_pattern = NULL;
   char outfile_name[PATH_MAX] = {0};
@@ -528,10 +585,11 @@ int main_loop(int argc, const char **argv_) {
   MD5Context md5_ctx;
   unsigned char md5_digest[16];
 
-  struct VpxDecInputContext input = {0};
-  struct VpxInputContext vpx_input_ctx = {0};
+  struct VpxDecInputContext input = {NULL, NULL};
+  struct VpxInputContext vpx_input_ctx;
 #if CONFIG_WEBM_IO
-  struct WebmInputContext webm_ctx = {0};
+  struct WebmInputContext webm_ctx;
+  memset(&(webm_ctx), 0, sizeof(webm_ctx));
   input.webm_ctx = &webm_ctx;
 #endif
   input.vpx_input_ctx = &vpx_input_ctx;
@@ -555,9 +613,16 @@ int main_loop(int argc, const char **argv_) {
     else if (arg_match(&arg, &use_yv12, argi)) {
       use_y4m = 0;
       flipuv = 1;
+      opt_yv12 = 1;
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+      output_bit_depth = 8;  // For yv12 8-bit depth output is assumed
+#endif
     } else if (arg_match(&arg, &use_i420, argi)) {
       use_y4m = 0;
       flipuv = 0;
+      opt_i420 = 1;
+    } else if (arg_match(&arg, &rawvideo, argi)) {
+      use_y4m = 0;
     } else if (arg_match(&arg, &flipuvarg, argi))
       flipuv = 1;
     else if (arg_match(&arg, &noblitarg, argi))
@@ -582,7 +647,13 @@ int main_loop(int argc, const char **argv_) {
       do_scale = 1;
     else if (arg_match(&arg, &fb_arg, argi))
       num_external_frame_buffers = arg_parse_uint(&arg);
-
+    else if (arg_match(&arg, &continuearg, argi))
+      keep_going = 1;
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+    else if (arg_match(&arg, &outbitdeptharg, argi)) {
+      output_bit_depth = arg_parse_uint(&arg);
+    }
+#endif
 #if CONFIG_VP8_DECODER
     else if (arg_match(&arg, &addnoise_level, argi)) {
       postproc = 1;
@@ -633,8 +704,7 @@ int main_loop(int argc, const char **argv_) {
     } else if (arg_match(&arg, &error_concealment, argi)) {
       ec_enabled = 1;
     }
-
-#endif
+#endif  // CONFIG_VP8_DECODER
     else
       argj++;
   }
@@ -698,7 +768,7 @@ int main_loop(int argc, const char **argv_) {
   if (use_y4m && !noblit) {
     if (!single_file) {
       fprintf(stderr, "YUV4MPEG2 not supported with output patterns,"
-              " try --i420 or --yv12.\n");
+              " try --i420 or --yv12 or --rawvideo.\n");
       return EXIT_FAILURE;
     }
 
@@ -724,7 +794,8 @@ int main_loop(int argc, const char **argv_) {
 
   dec_flags = (postproc ? VPX_CODEC_USE_POSTPROC : 0) |
               (ec_enabled ? VPX_CODEC_USE_ERROR_CONCEALMENT : 0);
-  if (vpx_codec_dec_init(&decoder, interface->interface(), &cfg, dec_flags)) {
+  if (vpx_codec_dec_init(&decoder, interface->codec_interface(),
+                         &cfg, dec_flags)) {
     fprintf(stderr, "Failed to initialize decoder: %s\n",
             vpx_codec_error(&decoder));
     return EXIT_FAILURE;
@@ -814,7 +885,8 @@ int main_loop(int argc, const char **argv_) {
 
           if (detail)
             warn("Additional information: %s", detail);
-          goto fail;
+          if (!keep_going)
+            goto fail;
         }
 
         vpx_usec_timer_mark(&timer);
@@ -868,26 +940,70 @@ int main_loop(int argc, const char **argv_) {
               display_height = display_size[1];
             }
           }
-          scaled_img = vpx_img_alloc(NULL, VPX_IMG_FMT_I420, display_width,
+          scaled_img = vpx_img_alloc(NULL, img->fmt, display_width,
                                      display_height, 16);
+          scaled_img->bit_depth = img->bit_depth;
         }
 
         if (img->d_w != scaled_img->d_w || img->d_h != scaled_img->d_h) {
+#if CONFIG_LIBYUV
           vpx_image_scale(img, scaled_img, kFilterBox);
           img = scaled_img;
+#else
+          fprintf(stderr, "Failed  to scale output frame: %s.\n"
+                  "Scaling is disabled in this configuration. "
+                  "To enable scaling, configure with --enable-libyuv\n",
+                  vpx_codec_error(&decoder));
+          return EXIT_FAILURE;
+#endif
         }
       }
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+      // Default to codec bit depth if output bit depth not set
+      if (!output_bit_depth) {
+        output_bit_depth = img->bit_depth;
+      }
+      // Shift up or down if necessary
+      if (output_bit_depth != img->bit_depth) {
+        const vpx_img_fmt_t shifted_fmt = output_bit_depth == 8 ?
+            img->fmt ^ (img->fmt & VPX_IMG_FMT_HIGHBITDEPTH) :
+            img->fmt | VPX_IMG_FMT_HIGHBITDEPTH;
+        if (img_shifted &&
+            img_shifted_realloc_required(img, img_shifted, shifted_fmt)) {
+          vpx_img_free(img_shifted);
+          img_shifted = NULL;
+        }
+        if (!img_shifted) {
+          img_shifted = vpx_img_alloc(NULL, shifted_fmt,
+                                      img->d_w, img->d_h, 16);
+          img_shifted->bit_depth = output_bit_depth;
+        }
+        if (output_bit_depth > img->bit_depth) {
+          vpx_img_upshift(img_shifted, img,
+                          output_bit_depth - img->bit_depth);
+        } else {
+          vpx_img_downshift(img_shifted, img,
+                            img->bit_depth - output_bit_depth);
+        }
+        img = img_shifted;
+      }
+#endif
 
       if (single_file) {
         if (use_y4m) {
           char buf[Y4M_BUFFER_SIZE] = {0};
           size_t len = 0;
+          if (img->fmt == VPX_IMG_FMT_I440 || img->fmt == VPX_IMG_FMT_I44016) {
+            fprintf(stderr, "Cannot produce y4m output for 440 sampling.\n");
+            goto fail;
+          }
           if (frame_out == 1) {
             // Y4M file header
             len = y4m_write_file_header(buf, sizeof(buf),
                                         vpx_input_ctx.width,
                                         vpx_input_ctx.height,
-                                        &vpx_input_ctx.framerate, img->fmt);
+                                        &vpx_input_ctx.framerate,
+                                        img->fmt, img->bit_depth);
             if (do_md5) {
               MD5Update(&md5_ctx, (md5byte *)buf, (unsigned int)len);
             } else {
@@ -901,6 +1017,25 @@ int main_loop(int argc, const char **argv_) {
             MD5Update(&md5_ctx, (md5byte *)buf, (unsigned int)len);
           } else {
             fputs(buf, outfile);
+          }
+        } else {
+          if (frame_out == 1) {
+            // Check if --yv12 or --i420 options are consistent with the
+            // bit-stream decoded
+            if (opt_i420) {
+              if (img->fmt != VPX_IMG_FMT_I420 &&
+                  img->fmt != VPX_IMG_FMT_I42016) {
+                fprintf(stderr, "Cannot produce i420 output for bit-stream.\n");
+                goto fail;
+              }
+            }
+            if (opt_yv12) {
+              if ((img->fmt != VPX_IMG_FMT_I420 &&
+                   img->fmt != VPX_IMG_FMT_YV12) || img->bit_depth != 8) {
+                fprintf(stderr, "Cannot produce yv12 output for bit-stream.\n");
+                goto fail;
+              }
+            }
           }
         }
 
@@ -963,6 +1098,9 @@ fail:
     free(buf);
 
   if (scaled_img) vpx_img_free(scaled_img);
+#if CONFIG_VP9 && CONFIG_VP9_HIGHBITDEPTH
+  if (img_shifted) vpx_img_free(img_shifted);
+#endif
 
   for (i = 0; i < ext_fb_list.num_external_frame_buffers; ++i) {
     free(ext_fb_list.ext_fb[i].data);

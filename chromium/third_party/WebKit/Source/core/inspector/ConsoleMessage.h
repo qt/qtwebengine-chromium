@@ -1,87 +1,87 @@
-/*
- * Copyright (C) 2007, 2008 Apple Inc. All rights reserved.
- * Copyright (C) 2008 Matt Lilek <webkit@mattlilek.com>
- * Copyright (C) 2009, 2010 Google Inc. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *
- * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- * 2.  Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
- * 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
- *     its contributors may be used to endorse or promote products derived
- *     from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
+// Copyright 2014 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 #ifndef ConsoleMessage_h
 #define ConsoleMessage_h
 
-#include "bindings/v8/ScriptState.h"
-#include "core/InspectorFrontend.h"
-#include "core/inspector/ConsoleAPITypes.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/frame/ConsoleTypes.h"
+#include "core/inspector/ConsoleAPITypes.h"
+#include "core/inspector/ScriptCallStack.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
+#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class LocalDOMWindow;
-class InjectedScriptManager;
-class InspectorFrontend;
 class ScriptArguments;
-class ScriptCallFrame;
 class ScriptCallStack;
-class ScriptValue;
+class ScriptState;
+class WorkerGlobalScopeProxy;
 
-class ConsoleMessage {
-    WTF_MAKE_NONCOPYABLE(ConsoleMessage); WTF_MAKE_FAST_ALLOCATED;
+class ConsoleMessage final: public RefCountedWillBeGarbageCollectedFinalized<ConsoleMessage> {
 public:
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, const String& url, unsigned line, unsigned column, ScriptState*, unsigned long requestIdentifier);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>, unsigned long requestIdentifier);
-    ConsoleMessage(bool canGenerateCallStack, MessageSource, MessageType, MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptArguments>, ScriptState*, unsigned long requestIdentifier);
+    static PassRefPtrWillBeRawPtr<ConsoleMessage> create(MessageSource source, MessageLevel level, const String& message, const String& url = String(), unsigned lineNumber = 0, unsigned columnNumber = 0)
+    {
+        return adoptRefWillBeNoop(new ConsoleMessage(source, level, message, url, lineNumber, columnNumber));
+    }
     ~ConsoleMessage();
 
-    void addToFrontend(InspectorFrontend::Console*, InjectedScriptManager*, bool generatePreview);
-    void setTimestamp(double timestamp) { m_timestamp = timestamp; }
+    MessageType type() const;
+    void setType(MessageType);
+    int scriptId() const;
+    void setScriptId(int);
+    const String& url() const;
+    void setURL(const String&);
+    unsigned lineNumber() const;
+    void setLineNumber(unsigned);
+    PassRefPtrWillBeRawPtr<ScriptCallStack> callStack() const;
+    void setCallStack(PassRefPtrWillBeRawPtr<ScriptCallStack>);
+    ScriptState* scriptState() const;
+    void setScriptState(ScriptState*);
+    PassRefPtrWillBeRawPtr<ScriptArguments> scriptArguments() const;
+    void setScriptArguments(PassRefPtrWillBeRawPtr<ScriptArguments>);
+    unsigned long requestIdentifier() const;
+    void setRequestIdentifier(unsigned long);
+    double timestamp() const;
+    void setTimestamp(double);
+    WorkerGlobalScopeProxy* workerGlobalScopeProxy() { return m_workerProxy; }
+    void setWorkerGlobalScopeProxy(WorkerGlobalScopeProxy* proxy) { m_workerProxy = proxy; }
 
-    MessageType type() const { return m_type; }
+    MessageSource source() const;
+    MessageLevel level() const;
+    const String& message() const;
+    unsigned columnNumber() const;
 
-    void windowCleared(LocalDOMWindow*);
-
+    void frameWindowDiscarded(LocalDOMWindow*);
     unsigned argumentCount();
 
+    void collectCallStack();
+
+    void trace(Visitor*);
+
 private:
-    void autogenerateMetadata(bool canGenerateCallStack, ScriptState* = 0);
+    ConsoleMessage(MessageSource, MessageLevel, const String& message, const String& url = String(), unsigned lineNumber = 0, unsigned columnNumber = 0);
 
     MessageSource m_source;
-    MessageType m_type;
     MessageLevel m_level;
+    MessageType m_type;
     String m_message;
-    ScriptStateProtectingContext m_scriptState;
-    RefPtrWillBePersistent<ScriptArguments> m_arguments;
-    RefPtrWillBePersistent<ScriptCallStack> m_callStack;
+    int m_scriptId;
     String m_url;
-    unsigned m_line;
-    unsigned m_column;
-    String m_requestId;
+    unsigned m_lineNumber;
+    unsigned m_columnNumber;
+    RefPtrWillBeMember<ScriptCallStack> m_callStack;
+    OwnPtr<ScriptStateProtectingContext> m_scriptState;
+    RefPtrWillBeMember<ScriptArguments> m_scriptArguments;
+    unsigned long m_requestIdentifier;
     double m_timestamp;
+    WorkerGlobalScopeProxy* m_workerProxy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ConsoleMessage_h

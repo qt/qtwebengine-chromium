@@ -2,16 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/hash.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/pickle.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
@@ -75,12 +75,11 @@ class WrappedSimpleIndexFile : public SimpleIndexFile {
   using SimpleIndexFile::SerializeFinalData;
 
   explicit WrappedSimpleIndexFile(const base::FilePath& index_file_directory)
-      : SimpleIndexFile(base::MessageLoopProxy::current().get(),
-                        base::MessageLoopProxy::current().get(),
+      : SimpleIndexFile(base::ThreadTaskRunnerHandle::Get(),
+                        base::ThreadTaskRunnerHandle::Get(),
                         net::DISK_CACHE,
                         index_file_directory) {}
-  virtual ~WrappedSimpleIndexFile() {
-  }
+  ~WrappedSimpleIndexFile() override {}
 
   const base::FilePath& GetIndexFilePath() const {
     return index_file_;
@@ -99,24 +98,6 @@ class SimpleIndexFileTest : public testing::Test {
             b.last_used_time_seconds_since_epoch_ &&
         a.entry_size_ == b.entry_size_;
   }
-
- protected:
-  SimpleIndexFileTest() : callback_called_(false) {}
-
-  base::Closure GetCallback() {
-    return base::Bind(&SimpleIndexFileTest::LoadIndexEntriesCallback,
-                      base::Unretained(this));
-  }
-
-  bool callback_called() { return callback_called_; }
-
- private:
-  void LoadIndexEntriesCallback() {
-    EXPECT_FALSE(callback_called_);
-    callback_called_ = true;
-  }
-
-  bool callback_called_;
 };
 
 TEST_F(SimpleIndexFileTest, Serialize) {
@@ -189,8 +170,7 @@ TEST_F(SimpleIndexFileTest, LegacyIsIndexFileStale) {
       WrappedSimpleIndexFile::LegacyIsIndexFileStale(cache_mtime, index_path));
 }
 
-// This test is flaky, see http://crbug.com/255775.
-TEST_F(SimpleIndexFileTest, DISABLED_WriteThenLoadIndex) {
+TEST_F(SimpleIndexFileTest, WriteThenLoadIndex) {
   base::ScopedTempDir cache_dir;
   ASSERT_TRUE(cache_dir.CreateUniqueTempDir());
 
@@ -205,26 +185,24 @@ TEST_F(SimpleIndexFileTest, DISABLED_WriteThenLoadIndex) {
   }
 
   const uint64 kCacheSize = 456U;
+  net::TestClosure closure;
   {
     WrappedSimpleIndexFile simple_index_file(cache_dir.path());
-    simple_index_file.WriteToDisk(entries, kCacheSize,
-                                  base::TimeTicks(), false);
-    base::RunLoop().RunUntilIdle();
+    simple_index_file.WriteToDisk(entries, kCacheSize, base::TimeTicks(),
+                                  false, closure.closure());
+    closure.WaitForResult();
     EXPECT_TRUE(base::PathExists(simple_index_file.GetIndexFilePath()));
   }
 
   WrappedSimpleIndexFile simple_index_file(cache_dir.path());
   base::Time fake_cache_mtime;
-  ASSERT_TRUE(simple_util::GetMTime(simple_index_file.GetIndexFilePath(),
-                                    &fake_cache_mtime));
+  ASSERT_TRUE(simple_util::GetMTime(cache_dir.path(), &fake_cache_mtime));
   SimpleIndexLoadResult load_index_result;
-  simple_index_file.LoadIndexEntries(fake_cache_mtime,
-                                     GetCallback(),
+  simple_index_file.LoadIndexEntries(fake_cache_mtime, closure.closure(),
                                      &load_index_result);
-  base::RunLoop().RunUntilIdle();
+  closure.WaitForResult();
 
   EXPECT_TRUE(base::PathExists(simple_index_file.GetIndexFilePath()));
-  ASSERT_TRUE(callback_called());
   EXPECT_TRUE(load_index_result.did_load);
   EXPECT_FALSE(load_index_result.flush_required);
 
@@ -249,15 +227,13 @@ TEST_F(SimpleIndexFileTest, LoadCorruptIndex) {
                                     &fake_cache_mtime));
   EXPECT_FALSE(WrappedSimpleIndexFile::LegacyIsIndexFileStale(fake_cache_mtime,
                                                               index_path));
-
   SimpleIndexLoadResult load_index_result;
-  simple_index_file.LoadIndexEntries(fake_cache_mtime,
-                                     GetCallback(),
+  net::TestClosure closure;
+  simple_index_file.LoadIndexEntries(fake_cache_mtime, closure.closure(),
                                      &load_index_result);
-  base::RunLoop().RunUntilIdle();
+  closure.WaitForResult();
 
   EXPECT_FALSE(base::PathExists(index_path));
-  ASSERT_TRUE(callback_called());
   EXPECT_TRUE(load_index_result.did_load);
   EXPECT_TRUE(load_index_result.flush_required);
 }

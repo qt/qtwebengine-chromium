@@ -33,14 +33,16 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace XPath {
 
 struct EvaluationContext {
-    WTF_MAKE_FAST_ALLOCATED;
+    STACK_ALLOCATED();
 public:
-    RefPtrWillBePersistent<Node> node;
+    explicit EvaluationContext(Node&);
+
+    RefPtrWillBeMember<Node> node;
     unsigned long size;
     unsigned long position;
     HashMap<String, String> variableBindings;
@@ -57,13 +59,11 @@ public:
 class Expression : public ParseNode {
     WTF_MAKE_NONCOPYABLE(Expression); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static EvaluationContext& evaluationContext();
-
     Expression();
     virtual ~Expression();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
-    virtual Value evaluate() const = 0;
+    virtual Value evaluate(EvaluationContext&) const = 0;
 
     void addSubExpression(PassOwnPtrWillBeRawPtr<Expression> expr)
     {

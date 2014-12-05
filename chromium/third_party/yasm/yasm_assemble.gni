@@ -29,7 +29,7 @@
 #
 #       Example: defines = [ "FOO", "BAR=1" ]
 #
-#   source_prereqs, deps, visibility  (optional)
+#   inputs, deps, visibility  (optional)
 #       These have the same meaning as in an action.
 #
 # Example
@@ -81,17 +81,6 @@ if (is_mac || is_ios) {
   }
 }
 
-# Default yasm include dirs. Make it match the native build (source root and
-# root generated code directory).
-_yasm_flags += [
-  # Using "//." will produce a relative path "../.." which looks better than
-  # "../../" which will result from using "//" as the base (although both
-  # work). This is because rebase_path will terminate the result in a slash if
-  # the input ends in a slash.
-  "-I" + rebase_path("//.", root_build_dir),
-  "-I" + rebase_path(root_gen_dir, root_build_dir),
-]
-
 if (is_win) {
   asm_obj_extension = "obj"
 } else {
@@ -110,13 +99,14 @@ template("yasm_assemble") {
   source_set_name = target_name
 
   action_foreach(action_name) {
-    visibility = ":$source_set_name"  # Only the source set can depend on this.
+    # Only the source set can depend on this.
+    visibility = [ ":$source_set_name" ]
 
     script = "//third_party/yasm/run_yasm.py"
     sources = invoker.sources
 
-    if (defined(invoker.source_prereqs)) {
-      source_prereqs = invoker.source_prereqs
+    if (defined(invoker.inputs)) {
+      inputs = invoker.inputs
     }
 
     # Executable (first in the args). The binary might be in the root build dir
@@ -140,12 +130,26 @@ template("yasm_assemble") {
       args += invoker.yasm_flags
     }
 
-    # Extra include directories.
+    # User defined include dirs go first.
     if (defined(invoker.include_dirs)) {
       foreach(include, invoker.include_dirs) {
         args += [ "-I" + rebase_path(include, root_build_dir) ]
       }
     }
+
+    # Default yasm include dirs. Make it match the native build (source root and
+    # root generated code directory).
+    # This goes to the end of include list.
+    args += [
+      "-I.",
+      # Using "//." will produce a relative path "../.." which looks better than
+      # "../../" which will result from using "//" as the base (although both
+      # work). This is because rebase_path will terminate the result in a
+      # slash if the input ends in a slash.
+      "-I" + rebase_path("//.", root_build_dir),
+      "-I" + rebase_path(root_gen_dir, root_build_dir),
+    ]
+
 
     # Extra defines.
     if (defined(invoker.defines)) {
@@ -181,5 +185,7 @@ template("yasm_assemble") {
     }
 
     sources = get_target_outputs(":$action_name")
+
+    deps = [ ":$action_name" ]
   }
 }

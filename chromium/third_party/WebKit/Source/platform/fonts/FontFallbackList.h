@@ -27,14 +27,10 @@
 #include "wtf/Forward.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 class GlyphPageTreeNode;
-class GraphicsContext;
-class IntRect;
 class FontDescription;
-class FontPlatformData;
-class FontSelector;
 
 const int cAllFamiliesScanned = -1;
 
@@ -87,27 +83,40 @@ public:
 
     WidthCache& widthCache() const { return m_widthCache; }
 
-private:
-    FontFallbackList();
-
     const SimpleFontData* primarySimpleFontData(const FontDescription& fontDescription)
     {
         ASSERT(isMainThread());
         if (!m_cachedPrimarySimpleFontData)
-            m_cachedPrimarySimpleFontData = primaryFontData(fontDescription)->fontDataForCharacter(' ');
+            m_cachedPrimarySimpleFontData = determinePrimarySimpleFontData(fontDescription);
         return m_cachedPrimarySimpleFontData;
     }
+    const FontData* fontDataAt(const FontDescription&, unsigned index) const;
+
+    GlyphPageTreeNode* getPageNode(unsigned pageNumber) const
+    {
+        return pageNumber ? m_pages.get(pageNumber) : m_pageZero;
+    }
+
+    void setPageNode(unsigned pageNumber, GlyphPageTreeNode* node)
+    {
+        if (pageNumber)
+            m_pages.set(pageNumber, node);
+        else
+            m_pageZero = node;
+    }
+
+private:
+    FontFallbackList();
 
     PassRefPtr<FontData> getFontData(const FontDescription&, int& familyIndex) const;
 
-    const FontData* primaryFontData(const FontDescription&) const;
-    const FontData* fontDataAt(const FontDescription&, unsigned index) const;
+    const SimpleFontData* determinePrimarySimpleFontData(const FontDescription&) const;
 
     void releaseFontData();
 
     mutable Vector<RefPtr<FontData>, 1> m_fontList;
-    mutable GlyphPages m_pages;
-    mutable GlyphPageTreeNode* m_pageZero;
+    GlyphPages m_pages;
+    GlyphPageTreeNode* m_pageZero;
     mutable const SimpleFontData* m_cachedPrimarySimpleFontData;
     RefPtrWillBePersistent<FontSelector> m_fontSelector;
     mutable WidthCache m_widthCache;
@@ -116,10 +125,8 @@ private:
     unsigned short m_generation;
     mutable unsigned m_pitch : 3; // Pitch
     mutable bool m_hasLoadingFallback : 1;
-
-    friend class Font;
 };
 
-}
+} // namespace blink
 
 #endif

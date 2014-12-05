@@ -11,7 +11,7 @@
 #include <pthread.h>
 
 #include "base/debug/leak_annotations.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -34,20 +34,18 @@ class PrintBackendCUPS : public PrintBackend {
                    http_encryption_t encryption, bool blocking);
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list) OVERRIDE;
-  virtual std::string GetDefaultPrinterName() OVERRIDE;
-  virtual bool GetPrinterSemanticCapsAndDefaults(
+  bool EnumeratePrinters(PrinterList* printer_list) override;
+  std::string GetDefaultPrinterName() override;
+  bool GetPrinterSemanticCapsAndDefaults(
       const std::string& printer_name,
-      PrinterSemanticCapsAndDefaults* printer_info) OVERRIDE;
-  virtual bool GetPrinterCapsAndDefaults(
-      const std::string& printer_name,
-      PrinterCapsAndDefaults* printer_info) OVERRIDE;
-  virtual std::string GetPrinterDriverInfo(
-      const std::string& printer_name) OVERRIDE;
-  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
+      PrinterSemanticCapsAndDefaults* printer_info) override;
+  bool GetPrinterCapsAndDefaults(const std::string& printer_name,
+                                 PrinterCapsAndDefaults* printer_info) override;
+  std::string GetPrinterDriverInfo(const std::string& printer_name) override;
+  bool IsValidPrinter(const std::string& printer_name) override;
 
  protected:
-  virtual ~PrintBackendCUPS() {}
+  ~PrintBackendCUPS() override {}
 
  private:
   // Following functions are wrappers around corresponding CUPS functions.

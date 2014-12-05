@@ -30,15 +30,13 @@
 
 #include "core/dom/TreeScopeStyleSheetCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSStyleSheet;
 class ShadowRoot;
-class StyleSheet;
 class StyleSheetCollection;
 class StyleEngine;
 
-class ShadowTreeStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection {
+class ShadowTreeStyleSheetCollection final : public TreeScopeStyleSheetCollection {
     WTF_MAKE_NONCOPYABLE(ShadowTreeStyleSheetCollection);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -46,7 +44,7 @@ public:
 
     void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         TreeScopeStyleSheetCollection::trace(visitor);
     }

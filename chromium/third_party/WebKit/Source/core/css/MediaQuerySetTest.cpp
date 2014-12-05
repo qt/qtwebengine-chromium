@@ -11,7 +11,7 @@
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 typedef struct {
     const char* input;
@@ -29,7 +29,7 @@ static void testMediaQuery(TestCase test, MediaQuerySet& querySet, bool oldParse
         ++j;
         if (j >= querySet.queryVector().size())
             break;
-        output.append(", ");
+        output.appendLiteral(", ");
     }
     if (!oldParser || test.shouldWorkOnOldParser) {
         if (test.output)
@@ -67,6 +67,8 @@ TEST(MediaQuerySetTest, Basic)
         {"screen and (min-width: 400px) and (max-width: 700px)", "screen and (max-width: 700px) and (min-width: 400px)", true},
         {"screen and (device-width: 800px)", 0, true},
         {"screen and (device-height: 60em)", 0, true},
+        {"screen and (device-height: 60rem)", 0, true},
+        {"screen and (device-height: 60ch)", 0, true},
         {"screen and (device-aspect-ratio: 16/9)", 0, true},
         {"(device-aspect-ratio: 16.0/9.0)", "not all", true},
         {"(device-aspect-ratio: 16/ 9)", "(device-aspect-ratio: 16/9)", true},

@@ -5,28 +5,19 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_UTILS_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_UTILS_H_
 
+#include "base/macros.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
-#include "webkit/common/resource_type.h"
-
-class GURL;
+#include "content/public/common/resource_type.h"
+#include "url/gurl.h"
 
 namespace content {
 
 class ServiceWorkerUtils {
  public:
-  static bool IsMainResourceType(ResourceType::Type type) {
-    return ResourceType::IsFrame(type) ||
-           ResourceType::IsSharedWorker(type);
+  static bool IsMainResourceType(ResourceType type) {
+    return IsResourceTypeFrame(type) || type == RESOURCE_TYPE_SHARED_WORKER;
   }
-
-  static bool IsServiceWorkerResourceType(ResourceType::Type type) {
-    return ResourceType::IsServiceWorker(type);
-  }
-
-  // Returns true if the feature is enabled (or not disabled) by command-line
-  // flag.
-  static bool IsFeatureEnabled();
 
   // A helper for creating a do-nothing status callback.
   static void NoOpStatusCallback(ServiceWorkerStatusCode status) {}

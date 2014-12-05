@@ -32,9 +32,9 @@
 #include "core/accessibility/AXMockObject.h"
 #include "core/accessibility/AXTable.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXTableHeaderContainer FINAL : public AXMockObject {
+class AXTableHeaderContainer final : public AXMockObject {
 
 private:
     AXTableHeaderContainer();
@@ -42,18 +42,18 @@ public:
     static PassRefPtr<AXTableHeaderContainer> create();
     virtual ~AXTableHeaderContainer();
 
-    virtual AccessibilityRole roleValue() const OVERRIDE { return TableHeaderContainerRole; }
+    virtual AccessibilityRole roleValue() const override { return TableHeaderContainerRole; }
 
-    virtual void addChildren() OVERRIDE;
+    virtual void addChildren() override;
 
-    virtual LayoutRect elementRect() const OVERRIDE;
+    virtual LayoutRect elementRect() const override;
 
 private:
     LayoutRect m_headerRect;
 
-    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
+    virtual bool computeAccessibilityIsIgnored() const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXTableHeaderContainer_h

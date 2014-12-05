@@ -28,29 +28,30 @@
 
 #include "modules/webaudio/OfflineAudioContext.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
+#include "platform/audio/AudioUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<OfflineAudioContext> OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
+OfflineAudioContext* OfflineAudioContext::create(ExecutionContext* context, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState& exceptionState)
 {
     // FIXME: add support for workers.
     if (!context || !context->isDocument()) {
         exceptionState.throwDOMException(
             NotSupportedError,
             "Workers are not supported.");
-        return nullptr;
+        return 0;
     }
 
     Document* document = toDocument(context);
 
     if (!numberOfFrames) {
         exceptionState.throwDOMException(SyntaxError, "number of frames cannot be zero.");
-        return nullptr;
+        return 0;
     }
 
     if (numberOfChannels > AudioContext::maxNumberOfChannels()) {
@@ -63,15 +64,20 @@ PassRefPtrWillBeRawPtr<OfflineAudioContext> OfflineAudioContext::create(Executio
                 ExceptionMessages::InclusiveBound,
                 AudioContext::maxNumberOfChannels(),
                 ExceptionMessages::InclusiveBound));
+        return 0;
+    }
+
+    if (!AudioUtilities::isValidAudioBufferSampleRate(sampleRate)) {
+        exceptionState.throwDOMException(
+            IndexSizeError,
+            ExceptionMessages::indexOutsideRange(
+                "sampleRate", sampleRate,
+                AudioUtilities::minAudioBufferSampleRate(), ExceptionMessages::InclusiveBound,
+                AudioUtilities::maxAudioBufferSampleRate(), ExceptionMessages::InclusiveBound));
         return nullptr;
     }
 
-    if (!isSampleRateRangeGood(sampleRate)) {
-        exceptionState.throwDOMException(SyntaxError, "sample rate (" + String::number(sampleRate) + ") must be in the range 44100-96000 Hz.");
-        return nullptr;
-    }
-
-    RefPtrWillBeRawPtr<OfflineAudioContext> audioContext(adoptRefWillBeThreadSafeRefCountedGarbageCollected(new OfflineAudioContext(document, numberOfChannels, numberOfFrames, sampleRate)));
+    OfflineAudioContext* audioContext = new OfflineAudioContext(document, numberOfChannels, numberOfFrames, sampleRate);
 
     if (!audioContext->destination()) {
         exceptionState.throwDOMException(
@@ -83,19 +89,18 @@ PassRefPtrWillBeRawPtr<OfflineAudioContext> OfflineAudioContext::create(Executio
     }
 
     audioContext->suspendIfNeeded();
-    return audioContext.release();
+    return audioContext;
 }
 
 OfflineAudioContext::OfflineAudioContext(Document* document, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate)
     : AudioContext(document, numberOfChannels, numberOfFrames, sampleRate)
 {
-    ScriptWrappable::init(this);
 }
 
 OfflineAudioContext::~OfflineAudioContext()
 {
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

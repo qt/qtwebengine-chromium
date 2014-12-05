@@ -27,27 +27,25 @@
 #ifndef XPathNSResolver_h
 #define XPathNSResolver_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class XPathNSResolver : public RefCountedWillBeGarbageCollectedFinalized<XPathNSResolver>, public ScriptWrappable {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(XPathNSResolver);
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~XPathNSResolver();
     virtual AtomicString lookupNamespaceURI(const String& prefix) = 0;
 
     virtual void trace(Visitor*) { }
 
 protected:
-    XPathNSResolver()
-    {
-        ScriptWrappable::init(this);
-    }
+    XPathNSResolver() { }
 };
 
-}
+} // namespace blink
 
 #endif // XPathNSResolver_h

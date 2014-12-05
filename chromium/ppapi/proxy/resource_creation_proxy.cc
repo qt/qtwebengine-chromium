@@ -252,7 +252,9 @@ PP_Resource ResourceCreationProxy::CreateGraphics3D(
 PP_Resource ResourceCreationProxy::CreateGraphics3DRaw(
     PP_Instance instance,
     PP_Resource share_context,
-    const int32_t* attrib_list) {
+    const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
+    base::SharedMemoryHandle* shared_state) {
   // Not proxied. The raw creation function is used only in the implementation
   // of the proxy on the host side.
   return 0;

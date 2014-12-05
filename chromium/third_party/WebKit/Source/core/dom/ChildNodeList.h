@@ -25,13 +25,14 @@
 #ifndef ChildNodeList_h
 #define ChildNodeList_h
 
+#include "core/dom/ContainerNode.h"
 #include "core/dom/NodeList.h"
 #include "core/html/CollectionIndexCache.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class ChildNodeList FINAL : public NodeList {
+class ChildNodeList final : public NodeList {
 public:
     static PassRefPtrWillBeRawPtr<ChildNodeList> create(ContainerNode& rootNode)
     {
@@ -41,8 +42,8 @@ public:
     virtual ~ChildNodeList();
 
     // DOM API.
-    virtual unsigned length() const OVERRIDE { return m_collectionIndexCache.nodeCount(*this); }
-    virtual Node* item(unsigned index) const OVERRIDE { return m_collectionIndexCache.nodeAt(*this, index); }
+    virtual unsigned length() const override { return m_collectionIndexCache.nodeCount(*this); }
+    virtual Node* item(unsigned index) const override { return m_collectionIndexCache.nodeAt(*this, index); }
 
     // Non-DOM API.
     void invalidateCache() { m_collectionIndexCache.invalidate(); }
@@ -52,18 +53,18 @@ public:
 
     // CollectionIndexCache API.
     bool canTraverseBackward() const { return true; }
-    Node* traverseToFirstElement() const { return rootNode().firstChild(); }
-    Node* traverseToLastElement() const { return rootNode().lastChild(); }
+    Node* traverseToFirst() const { return rootNode().firstChild(); }
+    Node* traverseToLast() const { return rootNode().lastChild(); }
     Node* traverseForwardToOffset(unsigned offset, Node& currentNode, unsigned& currentOffset) const;
     Node* traverseBackwardToOffset(unsigned offset, Node& currentNode, unsigned& currentOffset) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit ChildNodeList(ContainerNode& rootNode);
 
-    virtual bool isChildNodeList() const OVERRIDE { return true; }
-    virtual Node* virtualOwnerNode() const OVERRIDE;
+    virtual bool isChildNodeList() const override { return true; }
+    virtual Node* virtualOwnerNode() const override;
 
     RefPtrWillBeMember<ContainerNode> m_parent;
     mutable CollectionIndexCache<ChildNodeList, Node> m_collectionIndexCache;
@@ -71,6 +72,6 @@ private:
 
 DEFINE_TYPE_CASTS(ChildNodeList, NodeList, nodeList, nodeList->isChildNodeList(), nodeList.isChildNodeList());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ChildNodeList_h

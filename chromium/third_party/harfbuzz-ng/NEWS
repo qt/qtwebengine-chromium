@@ -1,3 +1,168 @@
+Overview of changes leading to 0.9.35
+Saturday, August 13, 2014
+=====================================
+
+- Fix major shape-plan caching bug when more than one shaper were
+  provided to hb_shape_full() (as exercised by XeTeX).
+  http://www.mail-archive.com/debian-bugs-dist@lists.debian.org/msg1246370.html
+- Fix Arabic fallback shaping regression.  This was broken in 0.9.32.
+- Major hb-coretext fixes.  That backend is complete now, including
+  respecing buffer direction and language, down to vertical writing.
+- Build fixes for Windows CE.  Should build fine now.
+- Misc fixes:
+  Use atexit() only if it's safe to call from shared library
+  https://bugs.freedesktop.org/show_bug.cgi?id=82246
+  Mandaic had errors in its Unicode Joining_Type
+  https://bugs.freedesktop.org/show_bug.cgi?id=82306
+- API changes:
+
+  * hb_buffer_clear_contents() does not reset buffer flags now.
+
+    After 763e5466c0a03a7c27020e1e2598e488612529a7, one doesn't
+    need to set flags for different pieces of text.  The flags now
+    are something the client sets up once, depending on how it
+    actually uses the buffer.  As such, don't clear it in
+    clear_contents().
+
+    I don't expect any changes to be needed to any existing client.
+
+
+Overview of changes leading to 0.9.34
+Saturday, August 2, 2014
+=====================================
+
+- hb_feature_from_string() now accepts CSS font-feature-settings format.
+- As a result, hb-shape / hb-view --features also accept CSS-style strings.
+  Eg, "'liga' off" is accepted now.
+- Add old-spec Myanmar shaper:
+  https://bugs.freedesktop.org/show_bug.cgi?id=81775
+- Don't apply 'calt' in Hangul shaper.
+- Fix mark advance zeroing for Hebrew shaper:
+  https://bugs.freedesktop.org/show_bug.cgi?id=76767
+- Implement Windows-1256 custom Arabic shaping.  Only built on Windows,
+  and requires help from get_glyph().  Used by Firefox.
+  https://bugzilla.mozilla.org/show_bug.cgi?id=1045139
+- Disable 'liga' in vertical text.
+- Build fixes.
+- API changes:
+
+  * Make HB_BUFFER_FLAG_BOT/EOT easier to use.
+
+    Previously, we expected users to provide BOT/EOT flags when the
+    text *segment* was at paragraph boundaries.  This meant that for
+    clients that provide full paragraph to HarfBuzz (eg. Pango), they
+    had code like this:
+
+      hb_buffer_set_flags (hb_buffer,
+                           (item_offset == 0 ? HB_BUFFER_FLAG_BOT : 0) |
+                           (item_offset + item_length == paragraph_length ?
+                            HB_BUFFER_FLAG_EOT : 0));
+
+      hb_buffer_add_utf8 (hb_buffer,
+                          paragraph_text, paragraph_length,
+                          item_offset, item_length);
+
+    After this change such clients can simply say:
+
+      hb_buffer_set_flags (hb_buffer,
+                           HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT);
+
+      hb_buffer_add_utf8 (hb_buffer,
+                          paragraph_text, paragraph_length,
+                          item_offset, item_length);
+
+    Ie, HarfBuzz itself checks whether the segment is at the beginning/end
+    of the paragraph.  Clients that only pass item-at-a-time to HarfBuzz
+    continue not setting any flags whatsoever.
+
+    Another way to put it is: if there's pre-context text in the buffer,
+    HarfBuzz ignores the BOT flag.  If there's post-context, it ignores
+    EOT flag.
+
+
+Overview of changes leading to 0.9.32
+Thursday, July 17, 2014
+=====================================
+
+- Apply Arabic shaping features in spec order exactly.
+- Another fix for Mongolian free variation selectors.
+- For non-Arabic scripts in Arabic shaper apply 'rlig' and 'calt'
+  together.
+- Minor adjustment to U+FFFD logic.
+- Fix hb-coretext build.
+
+
+Overview of changes leading to 0.9.31
+Wednesday, July 16, 2014
+=====================================
+
+- Only accept valid UTF-8/16/32; we missed many cases before.
+- Better shaping of invalid UTF-8/16/32.  Falls back to
+  U+FFFD REPLACEMENT CHARACTER now.
+- With all changes in this release, the buffer will contain fully
+  valid Unicode after hb_buffer_add_utf8/16/32 no matter how
+  broken the input is.  This can be overriden though.  See below.
+- Fix Mongolian Variation Selectors for fonts without GDEF.
+- Fix minor invalid buffer access.
+- Accept zh-Hant and zh-Hans language tags.  hb_ot_tag_to_language()
+  now uses these instead of private tags.
+- Build fixes.
+- New API:
+  * hb_buffer_add_codepoints().  This does what hb_buffer_add_utf32()
+    used to do, ie. no validity check on the input at all.  add_utf32
+    now replaces invalid Unicode codepoints with the replacement
+    character (see below).
+  * hb_buffer_set_replacement_codepoint()
+  * hb_buffer_get_replacement_codepoint()
+    Previously, in hb_buffer_add_utf8 and hb_buffer_add_utf16, when
+    we detected broken input, we replaced that with (hb_codepoint_t)-1.
+    This has changed to use U+FFFD now, but can be changed using these
+    new API.
+
+
+Overview of changes leading to 0.9.30
+Wednesday, July 9, 2014
+=====================================
+
+- Update to Unicode 7.0.0:
+  * New scripts Manichaean and Psalter Pahlavi are shaped using
+    Arabic shaper.
+  * All the other new scripts to through the generic shaper for
+    now.
+- Minor Indic improvements.
+- Fix graphite2 backend cluster mapping [crasher!]
+- API changes:
+  * New HB_SCRIPT_* values for Unicode 7.0 scripts.
+  * New function hb_ot_layout_language_get_required_feature().
+- Build fixes.
+
+
+Overview of changes leading to 0.9.29
+Thursday, May 29, 2014
+=====================================
+
+- Implement cmap in hb-ot-font.h.  No variation-selectors yet.
+- Myanmar: Allow MedialYa+Asat.
+- Various Indic fixes:
+  * Support most characters in Extended Devanagary and Vedic
+    Unicode blocks.
+  * Allow digits and a some punctuation as consonant placeholders.
+- Build fixes.
+
+
+Overview of changes leading to 0.9.28
+Monday, April 28, 2014
+=====================================
+
+- Unbreak old-spec Indic shaping. (bug 76705)
+- Fix shaping of U+17DD and U+0FC6.
+- Add HB_NO_MERGE_CLUSTERS build option.  NOT to be enabled by default
+  for shipping libraries.  It's an option for further experimentation
+  right now.  When we are sure how to do it properly, we will add
+  public run-time API for the functionality.
+- Build fixes.
+
+
 Overview of changes leading to 0.9.27
 Tuesday, March 18, 2014
 =====================================

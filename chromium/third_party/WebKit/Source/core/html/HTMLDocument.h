@@ -27,13 +27,12 @@
 #include "core/fetch/ResourceClient.h"
 #include "wtf/HashCountedSet.h"
 
-namespace WebCore {
+namespace blink {
 
-class FrameView;
 class HTMLBodyElement;
-class HTMLElement;
 
 class HTMLDocument : public Document, public ResourceClient {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLDocument> create(const DocumentInit& initializer = DocumentInit())
     {
@@ -72,7 +71,7 @@ public:
 
     static bool isCaseSensitiveAttribute(const QualifiedName&);
 
-    virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren() OVERRIDE FINAL;
+    virtual PassRefPtrWillBeRawPtr<Document> cloneDocumentWithoutChildren() override final;
 
 protected:
     HTMLDocument(const DocumentInit&, DocumentClassFlags extendedDocumentClasses = DefaultDocumentClass);
@@ -102,6 +101,6 @@ inline bool HTMLDocument::hasExtraNamedItem(const AtomicString& name)
 
 DEFINE_DOCUMENT_TYPE_CASTS(HTMLDocument);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLDocument_h

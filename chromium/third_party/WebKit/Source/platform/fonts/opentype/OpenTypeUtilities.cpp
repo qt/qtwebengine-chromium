@@ -29,7 +29,7 @@
 
 #include "platform/SharedBuffer.h"
 
-namespace WebCore {
+namespace blink {
 
 struct BigEndianUShort {
     operator unsigned short() const { return (v & 0x00ff) << 8 | v >> 8; }
@@ -221,4 +221,4 @@ HANDLE renameAndActivateFont(SharedBuffer* fontData, const String& fontName)
     return fontHandle;
 }
 
-}
+} // namespace blink

@@ -30,11 +30,11 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  */
 WebInspector.IndexedDBModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.IndexedDBModel, target);
     this._agent = target.indexedDBAgent();
     this._agent.enable();
 
@@ -233,12 +233,8 @@ WebInspector.IndexedDBModel.prototype = {
      */
     _updateOriginDatabaseNames: function(securityOrigin, databaseNames)
     {
-        var newDatabaseNames = {};
-        for (var i = 0; i < databaseNames.length; ++i)
-            newDatabaseNames[databaseNames[i]] = true;
-        var oldDatabaseNames = {};
-        for (var i = 0; i < this._databaseNamesBySecurityOrigin[securityOrigin].length; ++i)
-            oldDatabaseNames[this._databaseNamesBySecurityOrigin[securityOrigin][i]] = true;
+        var newDatabaseNames = databaseNames.keySet();
+        var oldDatabaseNames = this._databaseNamesBySecurityOrigin[securityOrigin].keySet();
 
         this._databaseNamesBySecurityOrigin[securityOrigin] = databaseNames;
 
@@ -250,6 +246,21 @@ WebInspector.IndexedDBModel.prototype = {
             if (!oldDatabaseNames[databaseName])
                 this._databaseAdded(securityOrigin, databaseName);
         }
+    },
+
+    /**
+     * @return {!Array.<!WebInspector.IndexedDBModel.DatabaseId>}
+     */
+    databases: function()
+    {
+        var result = [];
+        for (var securityOrigin in this._databaseNamesBySecurityOrigin) {
+            var databaseNames = this._databaseNamesBySecurityOrigin[securityOrigin];
+            for (var i = 0; i < databaseNames.length; ++i) {
+                result.push(new WebInspector.IndexedDBModel.DatabaseId(securityOrigin, databaseNames[i]));
+            }
+        }
+        return result;
     },
 
     /**
@@ -317,7 +328,7 @@ WebInspector.IndexedDBModel.prototype = {
             if (!this._databaseNamesBySecurityOrigin[databaseId.securityOrigin])
                 return;
             var databaseModel = new WebInspector.IndexedDBModel.Database(databaseId, databaseWithObjectStores.version, databaseWithObjectStores.intVersion);
-            this._databases.put(databaseId, databaseModel);
+            this._databases.set(databaseId, databaseModel);
             for (var i = 0; i < databaseWithObjectStores.objectStores.length; ++i) {
                 var objectStore = databaseWithObjectStores.objectStores[i];
                 var objectStoreIDBKeyPath = WebInspector.IndexedDBModel.idbKeyPathFromKeyPath(objectStore.keyPath);
@@ -405,7 +416,7 @@ WebInspector.IndexedDBModel.prototype = {
         this._agent.requestData(databaseId.securityOrigin, databaseName, objectStoreName, indexName, skipCount, pageSize, keyRange ? keyRange : undefined, innerCallback.bind(this));
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**

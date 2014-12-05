@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/infobars/core
       'target_name': 'infobars_core',
       'type': 'static_library',
       'include_dirs': [
@@ -16,7 +17,11 @@
         '../ui/gfx/gfx.gyp:gfx',
         '../ui/strings/ui_strings.gyp:ui_strings',
       ],
+      'export_dependent_settings': [
+        '../skia/skia.gyp:skia',
+      ],
       'sources': [
+        # Note: sources duplicated in GN build.
         'infobars/core/confirm_infobar_delegate.cc',
         'infobars/core/confirm_infobar_delegate.h',
         'infobars/core/infobar.cc',
@@ -30,6 +35,22 @@
         'infobars/core/infobar_manager.h',
         'infobars/core/infobars_switches.cc',
         'infobars/core/infobars_switches.h',
+      ],
+    },
+    {
+      # GN version: //components/infobars/test:test_support
+      'target_name': 'infobars_test_support',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        '../base/base.gyp:base',
+        '../skia/skia.gyp:skia',
+      ],
+      'sources': [
+        # Note: sources list duplicated in GN build.
+        'infobars/test/infobar_test.cc',
       ],
     },
   ],

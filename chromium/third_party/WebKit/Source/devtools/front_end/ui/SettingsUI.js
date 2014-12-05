@@ -40,12 +40,12 @@ WebInspector.SettingsUI = {}
  */
 WebInspector.SettingsUI.createSettingCheckbox = function(name, setting, omitParagraphElement, inputElement, tooltip)
 {
-    var input = inputElement || document.createElement("input");
+    var input = inputElement || createElement("input");
     input.type = "checkbox";
     input.name = name;
     WebInspector.SettingsUI.bindCheckbox(input, setting);
 
-    var label = document.createElement("label");
+    var label = createElement("label");
     label.appendChild(input);
     label.createTextChild(name);
     if (tooltip)
@@ -54,7 +54,7 @@ WebInspector.SettingsUI.createSettingCheckbox = function(name, setting, omitPara
     if (omitParagraphElement)
         return label;
 
-    var p = document.createElement("p");
+    var p = createElement("p");
     p.appendChild(label);
     return p;
 }
@@ -95,7 +95,7 @@ WebInspector.SettingsUI.bindCheckbox = function(input, setting)
  */
 WebInspector.SettingsUI.createSettingInputField = function(label, setting, numeric, maxLength, width, validatorCallback, instant, clearForZero, placeholder)
 {
-    var p = document.createElement("p");
+    var p = createElement("p");
     var labelElement = p.createChild("label");
     labelElement.textContent = label;
     var inputElement = p.createChild("input");
@@ -115,11 +115,8 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     inputElement.addEventListener("keydown", onKeyDown, false);
 
     var errorMessageLabel;
-    if (validatorCallback) {
-        errorMessageLabel = p.createChild("div");
-        errorMessageLabel.classList.add("field-error-message");
-        validate();
-    }
+    if (validatorCallback)
+        errorMessageLabel = p.createChild("div", "field-error-message");
 
     function onInput()
     {
@@ -133,6 +130,36 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     {
         if (isEnterKey(event))
             apply();
+        incrementForArrows(event);
+    }
+
+    function incrementForArrows(event)
+    {
+        if (!numeric)
+            return;
+
+        var increment = event.keyIdentifier === "Up" ? 1 : event.keyIdentifier === "Down" ? -1 : 0;
+        if (!increment)
+            return;
+        if (event.shiftKey)
+            increment *= 10;
+
+        var value = inputElement.value;
+        if (validatorCallback && validatorCallback(value))
+            return;
+        value = Number(value);
+        if (clearForZero && !value)
+            return;
+        value += increment;
+        if (clearForZero && !value)
+            return;
+        value = String(value);
+        if (validatorCallback && validatorCallback(value))
+            return;
+
+        inputElement.value = value;
+        apply();
+        event.preventDefault();
     }
 
     function validate()
@@ -167,6 +194,9 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
     }
     onSettingChange();
 
+    if (validatorCallback)
+      validate();
+
     return p;
 }
 
@@ -177,11 +207,10 @@ WebInspector.SettingsUI.createSettingInputField = function(label, setting, numer
  */
 WebInspector.SettingsUI.createCustomSetting = function(name, element)
 {
-    var p = document.createElement("p");
-    var fieldsetElement = document.createElement("fieldset");
+    var p = createElement("p");
+    var fieldsetElement = p.createChild("fieldset");
     fieldsetElement.createChild("label").textContent = name;
     fieldsetElement.appendChild(element);
-    p.appendChild(fieldsetElement);
     return p;
 }
 
@@ -191,7 +220,7 @@ WebInspector.SettingsUI.createCustomSetting = function(name, element)
  */
 WebInspector.SettingsUI.createSettingFieldset = function(setting)
 {
-    var fieldset = document.createElement("fieldset");
+    var fieldset = createElement("fieldset");
     fieldset.disabled = !setting.get();
     setting.addChangeListener(settingChanged);
     return fieldset;

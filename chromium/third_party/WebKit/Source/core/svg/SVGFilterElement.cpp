@@ -29,7 +29,7 @@
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFilterElement::SVGFilterElement(Document& document)
     : SVGElement(SVGNames::filterTag, document)
@@ -42,8 +42,6 @@ inline SVGFilterElement::SVGFilterElement(Document& document)
     , m_primitiveUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::primitiveUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
     , m_filterRes(SVGAnimatedIntegerOptionalInteger::create(this, SVGNames::filterResAttr))
 {
-    ScriptWrappable::init(this);
-
     // Spec: If the x/y attribute is not specified, the effect is as if a value of "-10%" were specified.
     // Spec: If the width/height attribute is not specified, the effect is as if a value of "120%" were specified.
     m_x->setDefaultValueAsString("-10%");
@@ -64,7 +62,9 @@ DEFINE_NODE_FACTORY(SVGFilterElement)
 
 void SVGFilterElement::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_clientsToAdd);
+#endif
     SVGElement::trace(visitor);
 }
 
@@ -95,29 +95,7 @@ bool SVGFilterElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFilterElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::filterUnitsAttr)
-        m_filterUnits->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::primitiveUnitsAttr)
-        m_primitiveUnits->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::xAttr)
-        m_x->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::yAttr)
-        m_y->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::widthAttr)
-        m_width->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::heightAttr)
-        m_height->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::filterResAttr)
-        m_filterRes->setBaseValueAsString(value, parseError);
-    else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -140,11 +118,11 @@ void SVGFilterElement::svgAttributeChanged(const QualifiedName& attrName)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-void SVGFilterElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFilterElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (changedByParser)
+    if (change.byParser)
         return;
 
     if (RenderObject* object = renderer())
@@ -183,4 +161,4 @@ void SVGFilterElement::removeClient(Node* client)
     m_clientsToAdd.remove(client);
 }
 
-}
+} // namespace blink

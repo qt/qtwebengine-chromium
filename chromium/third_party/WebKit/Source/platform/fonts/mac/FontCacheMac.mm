@@ -34,6 +34,7 @@
 #import "platform/LayoutTestSupport.h"
 #import "platform/RuntimeEnabledFeatures.h"
 #import "platform/fonts/FontDescription.h"
+#import "platform/fonts/FontFaceCreationParams.h"
 #import "platform/fonts/FontPlatformData.h"
 #import "platform/fonts/SimpleFontData.h"
 #import "platform/mac/WebFontCache.h"
@@ -47,7 +48,7 @@
 + (NSFont*)findFontLike:(NSFont*)font forCharacter:(UniChar)uc inLanguage:(id)useNil;
 @end
 
-namespace WebCore {
+namespace blink {
 
 // The "void*" parameter makes the function match the prototype for callbacks from callOnMainThread.
 static void invalidateFontCache(void*)
@@ -71,7 +72,7 @@ static bool useHinting()
     // Enable hinting when subpixel font scaling is disabled or
     // when running the set of standard non-subpixel layout tests,
     // otherwise use subpixel glyph positioning.
-    return (isRunningLayoutTest() && !isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
+    return (LayoutTestSupport::isRunningLayoutTest() && !LayoutTestSupport::isFontAntialiasingEnabledForTest()) || !RuntimeEnabledFeatures::subpixelFontScalingEnabled();
 }
 
 void FontCache::platformInit()
@@ -148,7 +149,7 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
         traits = [fontManager traitsOfFont:nsFont];
         if (platformData.m_syntheticBold)
             traits |= NSBoldFontMask;
-        if (platformData.m_syntheticOblique)
+        if (platformData.m_syntheticItalic)
             traits |= NSFontItalicTrait;
         weight = [fontManager weightOfFont:nsFont];
         size = [nsFont pointSize];
@@ -178,7 +179,7 @@ PassRefPtr<SimpleFontData> FontCache::fallbackFontForCharacter(const FontDescrip
     FontPlatformData alternateFont(substituteFont, platformData.size(),
         isAppKitFontWeightBold(weight) && !isAppKitFontWeightBold(substituteFontWeight),
         (traits & NSFontItalicTrait) && !(substituteFontTraits & NSFontItalicTrait),
-        platformData.m_orientation);
+        platformData.orientation());
 
     return fontDataFromFontPlatformData(&alternateFont, DoNotRetain);
 }
@@ -201,13 +202,13 @@ PassRefPtr<SimpleFontData> FontCache::getLastResortFallbackFont(const FontDescri
     return getFontData(fontDescription, lucidaGrandeStr, false, shouldRetain);
 }
 
-FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const AtomicString& family, float fontSize)
+FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontDescription, const FontFaceCreationParams& creationParams, float fontSize)
 {
     NSFontTraitMask traits = fontDescription.style() ? NSFontItalicTrait : 0;
     NSInteger weight = toAppKitFontWeight(fontDescription.weight());
     float size = fontSize;
 
-    NSFont *nsFont = [WebFontCache fontWithFamily:family traits:traits weight:weight size:size];
+    NSFont *nsFont = [WebFontCache fontWithFamily:creationParams.family() traits:traits weight:weight size:size];
     if (!nsFont)
         return 0;
 
@@ -219,14 +220,14 @@ FontPlatformData* FontCache::createFontPlatformData(const FontDescription& fontD
 
     NSFont *platformFont = useHinting() ? [nsFont screenFont] : [nsFont printerFont];
     bool syntheticBold = (isAppKitFontWeightBold(weight) && !isAppKitFontWeightBold(actualWeight)) || fontDescription.isSyntheticBold();
-    bool syntheticOblique = ((traits & NSFontItalicTrait) && !(actualTraits & NSFontItalicTrait)) || fontDescription.isSyntheticItalic();
+    bool syntheticItalic = ((traits & NSFontItalicTrait) && !(actualTraits & NSFontItalicTrait)) || fontDescription.isSyntheticItalic();
 
     // FontPlatformData::font() can be null for the case of Chromium out-of-process font loading.
     // In that case, we don't want to use the platformData.
-    OwnPtr<FontPlatformData> platformData = adoptPtr(new FontPlatformData(platformFont, size, syntheticBold, syntheticOblique, fontDescription.orientation(), fontDescription.widthVariant()));
+    OwnPtr<FontPlatformData> platformData = adoptPtr(new FontPlatformData(platformFont, size, syntheticBold, syntheticItalic, fontDescription.orientation(), fontDescription.widthVariant()));
     if (!platformData->font())
         return 0;
     return platformData.leakPtr();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -37,13 +37,13 @@ bool ReadHistogramArguments(PickleIterator* iter,
                             int* flags,
                             int* declared_min,
                             int* declared_max,
-                            uint64* bucket_count,
+                            size_t* bucket_count,
                             uint32* range_checksum) {
   if (!iter->ReadString(histogram_name) ||
       !iter->ReadInt(flags) ||
       !iter->ReadInt(declared_min) ||
       !iter->ReadInt(declared_max) ||
-      !iter->ReadUInt64(bucket_count) ||
+      !iter->ReadSizeT(bucket_count) ||
       !iter->ReadUInt32(range_checksum)) {
     DLOG(ERROR) << "Pickle error decoding Histogram: " << *histogram_name;
     return false;
@@ -128,16 +128,9 @@ HistogramBase* Histogram::FactoryTimeGet(const string& name,
                                          TimeDelta maximum,
                                          size_t bucket_count,
                                          int32 flags) {
-  return FactoryGet(name, minimum.InMilliseconds(), maximum.InMilliseconds(),
-                    bucket_count, flags);
-}
-
-TimeTicks Histogram::DebugNow() {
-#ifndef NDEBUG
-  return TimeTicks::Now();
-#else
-  return TimeTicks();
-#endif
+  return FactoryGet(name, static_cast<Sample>(minimum.InMilliseconds()),
+                    static_cast<Sample>(maximum.InMilliseconds()), bucket_count,
+                    flags);
 }
 
 // Calculate what range of values are held in each bucket.
@@ -275,7 +268,7 @@ void Histogram::Add(int value) {
 }
 
 scoped_ptr<HistogramSamples> Histogram::SnapshotSamples() const {
-  return SnapshotSampleVector().PassAs<HistogramSamples>();
+  return SnapshotSampleVector().Pass();
 }
 
 void Histogram::AddSamples(const HistogramSamples& samples) {
@@ -304,7 +297,7 @@ bool Histogram::SerializeInfoImpl(Pickle* pickle) const {
       pickle->WriteInt(flags()) &&
       pickle->WriteInt(declared_min()) &&
       pickle->WriteInt(declared_max()) &&
-      pickle->WriteUInt64(bucket_count()) &&
+      pickle->WriteSizeT(bucket_count()) &&
       pickle->WriteUInt32(bucket_ranges()->checksum());
 }
 
@@ -354,7 +347,7 @@ HistogramBase* Histogram::DeserializeInfoImpl(PickleIterator* iter) {
   int flags;
   int declared_min;
   int declared_max;
-  uint64 bucket_count;
+  size_t bucket_count;
   uint32 range_checksum;
 
   if (!ReadHistogramArguments(iter, &histogram_name, &flags, &declared_min,
@@ -376,7 +369,7 @@ HistogramBase* Histogram::DeserializeInfoImpl(PickleIterator* iter) {
 scoped_ptr<SampleVector> Histogram::SnapshotSampleVector() const {
   scoped_ptr<SampleVector> samples(new SampleVector(bucket_ranges()));
   samples->Add(*samples_);
-  return samples.Pass();
+  return samples;
 }
 
 void Histogram::WriteAsciiImpl(bool graph_it,
@@ -536,8 +529,9 @@ HistogramBase* LinearHistogram::FactoryTimeGet(const string& name,
                                                TimeDelta maximum,
                                                size_t bucket_count,
                                                int32 flags) {
-  return FactoryGet(name, minimum.InMilliseconds(), maximum.InMilliseconds(),
-                    bucket_count, flags);
+  return FactoryGet(name, static_cast<Sample>(minimum.InMilliseconds()),
+                    static_cast<Sample>(maximum.InMilliseconds()), bucket_count,
+                    flags);
 }
 
 HistogramBase* LinearHistogram::FactoryGetWithRangeDescription(
@@ -642,7 +636,7 @@ HistogramBase* LinearHistogram::DeserializeInfoImpl(PickleIterator* iter) {
   int flags;
   int declared_min;
   int declared_max;
-  uint64 bucket_count;
+  size_t bucket_count;
   uint32 range_checksum;
 
   if (!ReadHistogramArguments(iter, &histogram_name, &flags, &declared_min,
@@ -697,7 +691,7 @@ HistogramBase* BooleanHistogram::DeserializeInfoImpl(PickleIterator* iter) {
   int flags;
   int declared_min;
   int declared_max;
-  uint64 bucket_count;
+  size_t bucket_count;
   uint32 range_checksum;
 
   if (!ReadHistogramArguments(iter, &histogram_name, &flags, &declared_min,
@@ -792,7 +786,7 @@ HistogramBase* CustomHistogram::DeserializeInfoImpl(PickleIterator* iter) {
   int flags;
   int declared_min;
   int declared_max;
-  uint64 bucket_count;
+  size_t bucket_count;
   uint32 range_checksum;
 
   if (!ReadHistogramArguments(iter, &histogram_name, &flags, &declared_min,

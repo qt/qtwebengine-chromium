@@ -33,24 +33,26 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
-class GraphicsContextStateSaver;
 class PointerEventsHitRules;
 class SVGGraphicsElement;
+
+enum ShapeGeometryCodePath {
+    PathGeometry,
+    RectGeometryFastPath,
+    EllipseGeometryFastPath
+};
 
 class RenderSVGShape : public RenderSVGModelObject {
 public:
     explicit RenderSVGShape(SVGGraphicsElement*);
-    RenderSVGShape(SVGGraphicsElement*, Path*, bool);
     virtual ~RenderSVGShape();
 
     void setNeedsShapeUpdate() { m_needsShapeUpdate = true; }
-    virtual void setNeedsBoundariesUpdate() OVERRIDE FINAL { m_needsBoundariesUpdate = true; }
-    virtual void setNeedsTransformUpdate() OVERRIDE FINAL { m_needsTransformUpdate = true; }
-    virtual void fillShape(GraphicsContext*) const;
-    virtual void strokeShape(GraphicsContext*) const;
+    virtual void setNeedsBoundariesUpdate() override final { m_needsBoundariesUpdate = true; }
+    virtual void setNeedsTransformUpdate() override final { m_needsTransformUpdate = true; }
 
     bool nodeAtFloatPointInternal(const HitTestRequest&, const FloatPoint&, PointerEventsHitRules);
 
@@ -59,19 +61,34 @@ public:
         ASSERT(m_path);
         return *m_path;
     }
+    bool hasPath() const { return m_path.get(); }
+
+    virtual bool isShapeEmpty() const { return path().isEmpty(); }
+
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const override final { return m_paintInvalidationBoundingBox; }
+
+    bool hasNonScalingStroke() const { return style()->svgStyle().vectorEffect() == VE_NON_SCALING_STROKE; }
+    Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
+    AffineTransform nonScalingStrokeTransform() const;
+    virtual AffineTransform localTransform() const override final { return m_localTransform; }
+
+    virtual const Vector<MarkerPosition>* markerPositions() const { return 0; }
+
+    float strokeWidth() const;
+
+    virtual ShapeGeometryCodePath geometryCodePath() const { return PathGeometry; }
+    virtual const Vector<FloatPoint>* zeroLengthLineCaps() const { return 0; }
+
+    virtual FloatRect objectBoundingBox() const override final { return m_fillBoundingBox; }
 
 protected:
     virtual void updateShapeFromElement();
-    virtual bool isShapeEmpty() const { return path().isEmpty(); }
     virtual bool shapeDependentStrokeContains(const FloatPoint&);
     virtual bool shapeDependentFillContains(const FloatPoint&, const WindRule) const;
-    float strokeWidth() const;
-    bool hasPath() const { return m_path.get(); }
     bool hasSmoothStroke() const;
 
-    bool hasNonScalingStroke() const { return style()->svgStyle()->vectorEffect() == VE_NON_SCALING_STROKE; }
-    AffineTransform nonScalingStrokeTransform() const;
-    Path* nonScalingStrokePath(const Path*, const AffineTransform&) const;
+    // Give RenderSVGPath a hook for updating markers in updateShapeFromElement.
+    virtual void processMarkerPositions() { };
 
     FloatRect m_fillBoundingBox;
     FloatRect m_strokeBoundingBox;
@@ -81,40 +98,26 @@ private:
     bool fillContains(const FloatPoint&, bool requiresFill = true, const WindRule fillRule = RULE_NONZERO);
     bool strokeContains(const FloatPoint&, bool requiresStroke = true);
 
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_repaintBoundingBox; }
-    virtual const AffineTransform& localToParentTransform() const OVERRIDE FINAL { return m_localTransform; }
-    virtual AffineTransform localTransform() const OVERRIDE FINAL { return m_localTransform; }
+    virtual const AffineTransform& localToParentTransform() const override final { return m_localTransform; }
 
-    virtual bool isSVGShape() const OVERRIDE FINAL { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGShape"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGShape || RenderSVGModelObject::isOfType(type); }
+    virtual const char* renderName() const override { return "RenderSVGShape"; }
 
-    virtual void layout() OVERRIDE FINAL;
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void layout() override final;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final;
+    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer) const override final;
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE FINAL;
+    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
 
-    virtual FloatRect objectBoundingBox() const OVERRIDE FINAL { return m_fillBoundingBox; }
-    virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL { return m_strokeBoundingBox; }
+    virtual FloatRect strokeBoundingBox() const override final { return m_strokeBoundingBox; }
     FloatRect calculateObjectBoundingBox() const;
     FloatRect calculateStrokeBoundingBox() const;
-    void updateRepaintBoundingBox();
-
-    bool setupNonScalingStrokeContext(AffineTransform&, GraphicsContextStateSaver&);
-
-    bool shouldGenerateMarkerPositions() const;
-    FloatRect markerRect(float strokeWidth) const;
-    void processMarkerPositions();
-
-    void fillShape(RenderStyle*, GraphicsContext*);
-    void strokeShape(RenderStyle*, GraphicsContext*);
-    void drawMarkers(PaintInfo&);
+    void updatePaintInvalidationBoundingBox();
 
 private:
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     AffineTransform m_localTransform;
     OwnPtr<Path> m_path;
-    Vector<MarkerPosition> m_markerPositions;
 
     bool m_needsBoundariesUpdate : 1;
     bool m_needsShapeUpdate : 1;

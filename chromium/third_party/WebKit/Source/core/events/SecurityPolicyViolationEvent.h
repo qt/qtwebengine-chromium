@@ -27,12 +27,10 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SecurityPolicyViolationEventInit : public EventInit {
-    SecurityPolicyViolationEventInit()
-    {
-    }
+    SecurityPolicyViolationEventInit() { }
 
     String documentURI;
     String referrer;
@@ -46,7 +44,8 @@ struct SecurityPolicyViolationEventInit : public EventInit {
     int statusCode;
 };
 
-class SecurityPolicyViolationEvent FINAL : public Event {
+class SecurityPolicyViolationEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SecurityPolicyViolationEvent> create()
     {
@@ -69,15 +68,12 @@ public:
     int columnNumber() const { return m_columnNumber; }
     int statusCode() const { return m_statusCode; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::SecurityPolicyViolationEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::SecurityPolicyViolationEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
 
 private:
-    SecurityPolicyViolationEvent()
-    {
-        ScriptWrappable::init(this);
-    }
+    SecurityPolicyViolationEvent() { }
 
     SecurityPolicyViolationEvent(const AtomicString& type, const SecurityPolicyViolationEventInit& initializer)
         : Event(type, initializer)
@@ -90,10 +86,7 @@ private:
         , m_sourceFile(initializer.sourceFile)
         , m_lineNumber(initializer.lineNumber)
         , m_columnNumber(initializer.columnNumber)
-        , m_statusCode(initializer.statusCode)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_statusCode(initializer.statusCode) { }
 
     String m_documentURI;
     String m_referrer;
@@ -107,6 +100,6 @@ private:
     int m_statusCode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SecurityPolicyViolationEvent_h

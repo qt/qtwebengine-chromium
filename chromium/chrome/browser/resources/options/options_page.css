@@ -37,7 +37,7 @@ body {
   min-width: 600px;
 }
 
-body.uber-frame #searchBox {
+body #searchBox {
   position: fixed;
   z-index: 4;
 }
@@ -67,20 +67,6 @@ div.disabled {
 
 .stretch {
   -webkit-box-flex: 1;
-}
-
-.frozen {
-  position: fixed;
-}
-
-#overlay-container-1 {
-  z-index: 11;
-}
-#overlay-container-2 {
-  z-index: 12;
-}
-#overlay-container-3 {
-  z-index: 13;
 }
 
 .raw-button,
@@ -116,10 +102,6 @@ div.disabled {
 
 .option {
   margin-top: 0;
-}
-
-.transparent {
-  opacity: 0;
 }
 
 .touch-slider {
@@ -333,11 +315,18 @@ list > :not([editing]) [displaymode='edit'] {
 }
 
 list > [editing] [displaymode='static'] {
-  /* Don't use display:none because we need to keep an element focusable. */
-  left: 0;
+  /* Don't use display:none or visibility:hidden because we need to keep an
+   * element focusable.
+   * We shrink only height.  We don't shrink width to avoid to change the size
+   * of containing boxes.
+   */
+  border-bottom: 0 !important;
+  border-top: 0 !important;
+  height: 0 !important;
+  margin-bottom: 0 !important;
+  margin-top: 0 !important;
+  overflow: hidden;
   pointer-events: none;
-  position: absolute;
-  visibility: hidden;
 }
 
 list > [editing] input:invalid {
@@ -361,11 +350,7 @@ list > [editing] input:invalid {
 }
 
 .option-name {
-  padding-right: 5px;
-}
-
-html[dir=rtl].option-name {
-  padding-left: 5px;
+  -webkit-padding-end: 5px;
 }
 
 .favicon-cell {
@@ -380,7 +365,8 @@ input[type='url'].favicon-cell {
   background-position-x: 4px;
 }
 
-html[dir=rtl] input.favicon-cell {
+html[dir=rtl] input.favicon-cell,
+input[dir=rtl].favicon-cell {
   background-position-x: -webkit-calc(100% - 4px);
 }
 
@@ -456,4 +442,8 @@ html:not([flashPluginSupportsClearSiteData]) .clear-plugin-lso-data-enabled,
 html[flashPluginSupportsClearSiteData] .clear-plugin-lso-data-disabled,
 html:not([enablePepperFlashSettings]) .pepper-flash-settings {
   display: none;
+}
+
+.standalone-action-link {
+  padding: 0;
 }

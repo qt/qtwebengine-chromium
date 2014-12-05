@@ -8,7 +8,7 @@
 #include "modules/encryptedmedia/MediaKeysClient.h"
 #include "public/platform/WebContentDecryptionModule.h"
 
-namespace WebCore {
+namespace blink {
 
 const char* MediaKeysController::supplementName()
 {
@@ -20,7 +20,7 @@ MediaKeysController::MediaKeysController(MediaKeysClient* client)
 {
 }
 
-PassOwnPtr<blink::WebContentDecryptionModule> MediaKeysController::createContentDecryptionModule(ExecutionContext* context, const String& keySystem)
+PassOwnPtr<WebContentDecryptionModule> MediaKeysController::createContentDecryptionModule(ExecutionContext* context, const String& keySystem)
 {
     return m_client->createContentDecryptionModule(context, keySystem);
 }
@@ -31,5 +31,5 @@ void MediaKeysController::provideMediaKeysTo(Page& page, MediaKeysClient* client
     MediaKeysController::provideTo(page, supplementName(), adoptPtrWillBeNoop(new MediaKeysController(client)));
 }
 
-} // namespace WebCore
+} // namespace blink
 

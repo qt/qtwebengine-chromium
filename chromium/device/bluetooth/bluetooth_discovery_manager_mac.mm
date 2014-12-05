@@ -44,13 +44,13 @@ class BluetoothDiscoveryManagerMacClassic
         inquiry_([[IOBluetoothDeviceInquiry alloc]
             initWithDelegate:inquiry_delegate_]) {}
 
-  virtual ~BluetoothDiscoveryManagerMacClassic() {}
+  ~BluetoothDiscoveryManagerMacClassic() override {}
 
   // BluetoothDiscoveryManagerMac override.
-  virtual bool IsDiscovering() const OVERRIDE { return should_do_discovery_; }
+  bool IsDiscovering() const override { return should_do_discovery_; }
 
   // BluetoothDiscoveryManagerMac override.
-  virtual bool StartDiscovery() OVERRIDE {
+  bool StartDiscovery() override {
     DVLOG(1) << "Bluetooth Classic: StartDiscovery";
     DCHECK(!should_do_discovery_);
 
@@ -78,7 +78,7 @@ class BluetoothDiscoveryManagerMacClassic
   }
 
   // BluetoothDiscoveryManagerMac override.
-  virtual bool StopDiscovery() OVERRIDE {
+  bool StopDiscovery() override {
     DVLOG(1) << "Bluetooth Classic: StopDiscovery";
     DCHECK(should_do_discovery_);
 
@@ -124,7 +124,7 @@ class BluetoothDiscoveryManagerMacClassic
   void DeviceFound(IOBluetoothDeviceInquiry* inquiry,
                    IOBluetoothDevice* device) {
     DCHECK(observer_);
-    observer_->DeviceFound(this, device);
+    observer_->DeviceFound(device);
   }
 
   void DeviceInquiryComplete(IOBluetoothDeviceInquiry* inquiry,
@@ -138,7 +138,7 @@ class BluetoothDiscoveryManagerMacClassic
     // If discovery is no longer desired, notify observers that discovery
     // has stopped and return.
     if (!should_do_discovery_) {
-      observer_->DiscoveryStopped(this, false /* unexpected */);
+      observer_->DiscoveryStopped(false /* unexpected */);
       return;
     }
 
@@ -147,7 +147,7 @@ class BluetoothDiscoveryManagerMacClassic
     if (error != kIOReturnSuccess) {
       DVLOG(1) << "Inquiry has stopped with an error: " << error;
       should_do_discovery_ = false;
-      observer_->DiscoveryStopped(this, true /* unexpected */);
+      observer_->DiscoveryStopped(true /* unexpected */);
       return;
     }
 
@@ -161,7 +161,7 @@ class BluetoothDiscoveryManagerMacClassic
     DVLOG(1) << "Failed to restart discovery";
     should_do_discovery_ = false;
     DCHECK(observer_);
-    observer_->DiscoveryStopped(this, true /* unexpected */);
+    observer_->DiscoveryStopped(true /* unexpected */);
   }
 
  private:

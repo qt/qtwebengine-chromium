@@ -34,8 +34,9 @@
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontFamily.h"
 #include "platform/fonts/SegmentedFontData.h"
+#include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 FontFallbackList::FontFallbackList()
     : m_pageZero(0)
@@ -71,23 +72,36 @@ void FontFallbackList::releaseFontData()
     for (unsigned i = 0; i < numFonts; ++i) {
         if (!m_fontList[i]->isCustomFont()) {
             ASSERT(!m_fontList[i]->isSegmented());
-            FontCache::fontCache()->releaseFontData(static_cast<const SimpleFontData*>(m_fontList[i].get()));
+            FontCache::fontCache()->releaseFontData(toSimpleFontData(m_fontList[i]));
         }
     }
 }
 
 void FontFallbackList::determinePitch(const FontDescription& fontDescription) const
 {
-    const FontData* fontData = primaryFontData(fontDescription);
-    if (!fontData->isSegmented())
-        m_pitch = static_cast<const SimpleFontData*>(fontData)->pitch();
-    else {
-        const SegmentedFontData* segmentedFontData = static_cast<const SegmentedFontData*>(fontData);
-        unsigned numRanges = segmentedFontData->numRanges();
-        if (numRanges == 1 && segmentedFontData->rangeAt(0).isEntireRange())
-            m_pitch = segmentedFontData->rangeAt(0).fontData()->pitch();
-        else
+    for (unsigned fontIndex = 0; ; ++fontIndex) {
+        const FontData* fontData = fontDataAt(fontDescription, fontIndex);
+        if (!fontData) {
+            // All fonts are custom fonts and are loading. Fallback should be variable pitch.
             m_pitch = VariablePitch;
+            break;
+        }
+
+        const SimpleFontData* simpleFontData;
+        if (fontData->isSegmented()) {
+            const SegmentedFontData* segmentedFontData = toSegmentedFontData(fontData);
+            if (segmentedFontData->numRanges() != 1 || !segmentedFontData->rangeAt(0).isEntireRange()) {
+                m_pitch = VariablePitch;
+                break;
+            }
+            simpleFontData = segmentedFontData->rangeAt(0).fontData().get();
+        } else {
+            simpleFontData = toSimpleFontData(fontData);
+        }
+        if (!fontData->isLoadingFallback()) {
+            m_pitch = simpleFontData->pitch();
+            break;
+        }
     }
 }
 
@@ -117,7 +131,7 @@ bool FontFallbackList::shouldSkipDrawing() const
     return false;
 }
 
-const FontData* FontFallbackList::primaryFontData(const FontDescription& fontDescription) const
+const SimpleFontData* FontFallbackList::determinePrimarySimpleFontData(const FontDescription& fontDescription) const
 {
     bool shouldLoadCustomFont = true;
 
@@ -127,28 +141,39 @@ const FontData* FontFallbackList::primaryFontData(const FontDescription& fontDes
             // All fonts are custom fonts and are loading. Return the first FontData.
             fontData = fontDataAt(fontDescription, 0);
             if (fontData)
-                return fontData->fontDataForCharacter(' ');
+                return fontData->fontDataForCharacter(space);
 
             SimpleFontData* lastResortFallback = FontCache::fontCache()->getLastResortFallbackFont(fontDescription).get();
             ASSERT(lastResortFallback);
             return lastResortFallback;
         }
 
-        if (fontData->isSegmented() && !toSegmentedFontData(fontData)->containsCharacter(' '))
+        if (fontData->isSegmented() && !toSegmentedFontData(fontData)->containsCharacter(space))
             continue;
 
-        const SimpleFontData* simpleFontData = fontData->fontDataForCharacter(' ');
-        ASSERT(simpleFontData);
+        const SimpleFontData* fontDataForSpace = fontData->fontDataForCharacter(space);
+        ASSERT(fontDataForSpace);
 
         // When a custom font is loading, we should use the correct fallback font to layout the text.
         // Here skip the temporary font for the loading custom font which may not act as the correct fallback font.
-        if (!simpleFontData->isLoadingFallback())
-            return fontData;
+        if (!fontDataForSpace->isLoadingFallback())
+            return fontDataForSpace;
+
+        if (fontData->isSegmented()) {
+            const SegmentedFontData* segmented = toSegmentedFontData(fontData);
+            for (unsigned i = 0; i < segmented->numRanges(); i++) {
+                const SimpleFontData* rangeFontData = segmented->rangeAt(i).fontData().get();
+                if (!rangeFontData->isLoadingFallback())
+                    return rangeFontData;
+            }
+            if (fontData->isLoading())
+                shouldLoadCustomFont = false;
+        }
 
         // Begin to load the first custom font if needed.
         if (shouldLoadCustomFont) {
             shouldLoadCustomFont = false;
-            simpleFontData->customFontData()->beginLoadIfNeeded();
+            fontDataForSpace->customFontData()->beginLoadIfNeeded();
         }
     }
 }
@@ -219,4 +244,4 @@ const FontData* FontFallbackList::fontDataAt(const FontDescription& fontDescript
     return result.get();
 }
 
-}
+} // namespace blink

@@ -4,13 +4,13 @@
 
 #include "cc/layers/append_quads_data.h"
 #include "cc/layers/ui_resource_layer_impl.h"
+#include "cc/quads/draw_quad.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/resources/ui_resource_client.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_ui_resource_layer_tree_host_impl.h"
 #include "cc/test/layer_test_common.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -45,15 +45,13 @@ scoped_ptr<UIResourceLayerImpl> GenerateUIResourceLayer(
 
 void QuadSizeTest(scoped_ptr<UIResourceLayerImpl> layer,
                   size_t expected_quad_size) {
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
   AppendQuadsData data;
-  layer->AppendQuads(&quad_culler, &data);
+  layer->AppendQuads(render_pass.get(), Occlusion(), &data);
 
   // Verify quad rects
-  const QuadList& quads = quad_culler.quad_list();
+  const QuadList& quads = render_pass->quad_list;
   EXPECT_EQ(expected_quad_size, quads.size());
 }
 
@@ -87,17 +85,15 @@ TEST(UIResourceLayerImplTest, VerifyDrawQuads) {
 
 void OpaqueBoundsTest(scoped_ptr<UIResourceLayerImpl> layer,
                  const gfx::Rect& expected_opaque_bounds) {
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
 
   AppendQuadsData data;
-  layer->AppendQuads(&quad_culler, &data);
+  layer->AppendQuads(render_pass.get(), Occlusion(), &data);
 
   // Verify quad rects
-  const QuadList& quads = quad_culler.quad_list();
+  const QuadList& quads = render_pass->quad_list;
   EXPECT_GE(quads.size(), (size_t)0);
-  gfx::Rect opaque_rect = quads.at(0)->opaque_rect;
+  gfx::Rect opaque_rect = quads.front()->opaque_rect;
   EXPECT_EQ(expected_opaque_bounds, opaque_rect);
 }
 
@@ -197,11 +193,8 @@ TEST(UIResourceLayerImplTest, Occlusion) {
     impl.AppendQuadsWithOcclusion(ui_resource_layer_impl, occluded);
 
     size_t partially_occluded_count = 0;
-    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
-        impl.quad_list(),
-        gfx::Rect(layer_size),
-        occluded,
-        &partially_occluded_count);
+    LayerTestCommon::VerifyQuadsAreOccluded(
+        impl.quad_list(), occluded, &partially_occluded_count);
     // The layer outputs one quad, which is partially occluded.
     EXPECT_EQ(1u, impl.quad_list().size());
     EXPECT_EQ(1u, partially_occluded_count);

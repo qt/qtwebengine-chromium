@@ -5,7 +5,7 @@
 #include "content/child/npapi/plugin_host.h"
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -275,7 +275,7 @@ bool PluginHost::SetPostData(const char* buf,
           break;
         case GETVALUE:
           // Got a header.
-          name = StringToLowerASCII(std::string(start, ptr - start));
+          name = base::StringToLowerASCII(std::string(start, ptr - start));
           base::TrimWhitespace(name, base::TRIM_ALL, &name);
           start = ptr + 1;
           break;

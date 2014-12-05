@@ -111,7 +111,7 @@ class NET_EXPORT HostResolverImpl
   // If any completion callbacks are pending when the resolver is destroyed,
   // the host resolutions are cancelled, and the completion callbacks will not
   // be called.
-  virtual ~HostResolverImpl();
+  ~HostResolverImpl() override;
 
   // Configures maximum number of Jobs in the queue. Exposed for testing.
   // Only allowed when the queue is empty.
@@ -124,21 +124,21 @@ class NET_EXPORT HostResolverImpl
   void SetDnsClient(scoped_ptr<DnsClient> dns_client);
 
   // HostResolver methods:
-  virtual int Resolve(const RequestInfo& info,
-                      RequestPriority priority,
-                      AddressList* addresses,
-                      const CompletionCallback& callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& source_net_log) OVERRIDE;
-  virtual int ResolveFromCache(const RequestInfo& info,
-                               AddressList* addresses,
-                               const BoundNetLog& source_net_log) OVERRIDE;
-  virtual void CancelRequest(RequestHandle req) OVERRIDE;
-  virtual void SetDefaultAddressFamily(AddressFamily address_family) OVERRIDE;
-  virtual AddressFamily GetDefaultAddressFamily() const OVERRIDE;
-  virtual void SetDnsClientEnabled(bool enabled) OVERRIDE;
-  virtual HostCache* GetHostCache() OVERRIDE;
-  virtual base::Value* GetDnsConfigAsValue() const OVERRIDE;
+  int Resolve(const RequestInfo& info,
+              RequestPriority priority,
+              AddressList* addresses,
+              const CompletionCallback& callback,
+              RequestHandle* out_req,
+              const BoundNetLog& source_net_log) override;
+  int ResolveFromCache(const RequestInfo& info,
+                       AddressList* addresses,
+                       const BoundNetLog& source_net_log) override;
+  void CancelRequest(RequestHandle req) override;
+  void SetDefaultAddressFamily(AddressFamily address_family) override;
+  AddressFamily GetDefaultAddressFamily() const override;
+  void SetDnsClientEnabled(bool enabled) override;
+  HostCache* GetHostCache() override;
+  base::Value* GetDnsConfigAsValue() const override;
 
   void set_proc_params_for_test(const ProcTaskParams& proc_params) {
     proc_params_ = proc_params;
@@ -220,10 +220,10 @@ class NET_EXPORT HostResolverImpl
   void TryServingAllJobsFromHosts();
 
   // NetworkChangeNotifier::IPAddressObserver:
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // NetworkChangeNotifier::DNSObserver:
-  virtual void OnDNSChanged() OVERRIDE;
+  void OnDNSChanged() override;
 
   // True if have a DnsClient with a valid DnsConfig.
   bool HaveDnsConfig() const;

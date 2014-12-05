@@ -39,8 +39,6 @@
 #include "public/web/WebViewClient.h"
 #include "web/WebViewImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -64,7 +62,7 @@ PageOverlay::PageOverlay(WebViewImpl* viewImpl, WebPageOverlay* overlay)
 {
 }
 
-class OverlayGraphicsLayerClientImpl : public WebCore::GraphicsLayerClient {
+class OverlayGraphicsLayerClientImpl : public GraphicsLayerClient {
 public:
     static PassOwnPtr<OverlayGraphicsLayerClientImpl> create(WebPageOverlay* overlay)
     {
@@ -73,18 +71,14 @@ public:
 
     virtual ~OverlayGraphicsLayerClientImpl() { }
 
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime) OVERRIDE { }
-
     virtual void paintContents(const GraphicsLayer*, GraphicsContext& gc, GraphicsLayerPaintingPhase, const IntRect& inClip)
     {
-        if (gc.paintingDisabled())
-            return;
         gc.save();
         m_overlay->paintPageOverlay(ToWebCanvas(&gc));
         gc.restore();
     }
 
-    virtual String debugName(const GraphicsLayer* graphicsLayer) OVERRIDE
+    virtual String debugName(const GraphicsLayer* graphicsLayer) override
     {
         return String("WebViewImpl Page Overlay Content Layer");
     }
@@ -104,7 +98,7 @@ void PageOverlay::clear()
 
     if (m_layer) {
         m_layer->removeFromParent();
-        if (WebCore::Page* page = m_viewImpl->page())
+        if (Page* page = m_viewImpl->page())
             page->inspectorController().didRemovePageOverlay(m_layer.get());
         m_layer = nullptr;
         m_layerClient = nullptr;
@@ -120,7 +114,7 @@ void PageOverlay::update()
         m_layer = GraphicsLayer::create(m_viewImpl->graphicsLayerFactory(), m_layerClient.get());
         m_layer->setDrawsContent(true);
 
-        if (WebCore::Page* page = m_viewImpl->page())
+        if (Page* page = m_viewImpl->page())
             page->inspectorController().willAddPageOverlay(m_layer.get());
 
         // This is required for contents of overlay to stay in sync with the page while scrolling.
@@ -142,7 +136,7 @@ void PageOverlay::update()
 
 void PageOverlay::paintWebFrame(GraphicsContext& gc)
 {
-    if (!m_viewImpl->isAcceleratedCompositingActive() && !gc.paintingDisabled()) {
+    if (!m_viewImpl->isAcceleratedCompositingActive()) {
         gc.save();
         m_overlay->paintPageOverlay(ToWebCanvas(&gc));
         gc.restore();

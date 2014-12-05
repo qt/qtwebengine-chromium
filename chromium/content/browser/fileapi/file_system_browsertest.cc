@@ -16,9 +16,9 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
-#include "webkit/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_manager.h"
 
-using quota::QuotaManager;
+using storage::QuotaManager;
 
 namespace content {
 
@@ -51,7 +51,7 @@ class FileSystemBrowserTest : public ContentBrowserTest {
 
 class FileSystemBrowserTestWithLowQuota : public FileSystemBrowserTest {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     const int kInitialQuotaKilobytes = 5000;
     const int kTemporaryStorageQuotaMaxSize =
         kInitialQuotaKilobytes * 1024 * QuotaManager::kPerHostTemporaryPortion;
@@ -70,7 +70,7 @@ class FileSystemBrowserTestWithLowQuota : public FileSystemBrowserTest {
       return;
     }
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-    qm->SetTemporaryGlobalOverrideQuota(bytes, quota::QuotaCallback());
+    qm->SetTemporaryGlobalOverrideQuota(bytes, storage::QuotaCallback());
     // Don't return until the quota has been set.
     scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
         BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get()));

@@ -33,12 +33,11 @@
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class DataObject;
 class DocumentFragment;
 class LocalFrame;
-class KURL;
 class Range;
 
 enum DragApplicationFlags {
@@ -64,13 +63,12 @@ public:
     bool containsURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames) const;
     bool containsPlainText() const;
     bool containsCompatibleContent() const;
-    String asURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames, String* title = 0) const;
+    String asURL(FilenameConversionPolicy filenamePolicy = ConvertFilenames, String* title = nullptr) const;
     String asPlainText() const;
-    void asFilenames(Vector<String>&) const;
+    void asFilePaths(Vector<String>&) const;
     PassRefPtrWillBeRawPtr<DocumentFragment> asFragment(LocalFrame*, PassRefPtrWillBeRawPtr<Range> context, bool allowPlainText, bool& chosePlainText) const;
     bool canSmartReplace() const;
     bool containsFiles() const;
-    unsigned numberOfFiles() const;
     int modifierKeyState() const;
 
     String droppedFileSystemId() const;

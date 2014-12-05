@@ -33,53 +33,53 @@
 #include "platform/fonts/FontWidthVariant.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ResourceFetcher;
 class FontPlatformData;
-class SVGFontElement;
 class FontCustomPlatformData;
 
-class FontResource FINAL : public Resource {
+class FontResource final : public Resource {
 public:
     typedef ResourceClient ClientType;
 
     FontResource(const ResourceRequest&);
     virtual ~FontResource();
 
-    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) OVERRIDE;
+    virtual void load(ResourceFetcher*, const ResourceLoaderOptions&) override;
 
-    virtual void didAddClient(ResourceClient*) OVERRIDE;
+    virtual void didAddClient(ResourceClient*) override;
 
-    virtual void allClientsRemoved() OVERRIDE;
+    virtual void allClientsRemoved() override;
     void beginLoadIfNeeded(ResourceFetcher* dl);
-    virtual bool stillNeedsLoad() const OVERRIDE { return !m_loadInitiated; }
+    virtual bool stillNeedsLoad() const override { return m_state != LoadInitiated; }
     bool exceedsFontLoadWaitLimit() const { return m_exceedsFontLoadWaitLimit; }
+
+    bool loadScheduled() const { return m_state != Unloaded; }
+    void didScheduleLoad();
+    void didUnscheduleLoad();
+
+    void setCORSFailed() { m_corsFailed = true; }
+    bool isCORSFailed() const { return m_corsFailed; }
 
     bool ensureCustomFontData();
     FontPlatformData platformDataFromCustomData(float size, bool bold, bool italic, FontOrientation = Horizontal, FontWidthVariant = RegularWidth);
 
-#if ENABLE(SVG_FONTS)
-    bool ensureSVGFontData();
-    SVGFontElement* getSVGFontById(const String&) const;
-#endif
-
 protected:
-    virtual bool isSafeToUnlock() const OVERRIDE;
+    virtual bool isSafeToUnlock() const override;
 
 private:
-    virtual void checkNotify() OVERRIDE;
+    virtual void checkNotify() override;
     void fontLoadWaitLimitCallback(Timer<FontResource>*);
 
-    OwnPtr<FontCustomPlatformData> m_fontData;
-    bool m_loadInitiated;
-    bool m_exceedsFontLoadWaitLimit;
-    Timer<FontResource> m_fontLoadWaitLimitTimer;
+    enum State { Unloaded, LoadScheduled, LoadInitiated };
 
-#if ENABLE(SVG_FONTS)
-    RefPtrWillBePersistent<Document> m_externalSVGDocument;
-#endif
+    OwnPtr<FontCustomPlatformData> m_fontData;
+    State m_state;
+    bool m_exceedsFontLoadWaitLimit;
+    bool m_corsFailed;
+    Timer<FontResource> m_fontLoadWaitLimitTimer;
 
     friend class MemoryCache;
 };
@@ -90,7 +90,7 @@ class FontResourceClient : public ResourceClient {
 public:
     virtual ~FontResourceClient() { }
     static ResourceClientType expectedType() { return FontType; }
-    virtual ResourceClientType resourceClientType() const OVERRIDE FINAL { return expectedType(); }
+    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
     virtual void fontLoaded(FontResource*) { }
     virtual void didStartFontLoad(FontResource*) { }
     virtual void fontLoadWaitLimitExceeded(FontResource*) { }

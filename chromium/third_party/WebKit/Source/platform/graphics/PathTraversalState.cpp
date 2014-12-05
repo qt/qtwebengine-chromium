@@ -23,7 +23,7 @@
 #include "wtf/MathExtras.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline FloatPoint midPoint(const FloatPoint& first, const FloatPoint& second)
 {
@@ -230,5 +230,5 @@ void PathTraversalState::processSegment()
     m_previous = m_current;
 }
 
-}
+} // namespace blink
 

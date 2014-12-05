@@ -122,9 +122,6 @@ include $(BASE_PATH)/bench/Android.mk
 # golden-master (fidelity / regression test)
 include $(BASE_PATH)/gm/Android.mk
 
-# unit-tests
-include $(BASE_PATH)/tests/Android.mk
-
 # diamond-master (one test to rule them all)
 include $(BASE_PATH)/dm/Android.mk
 """
@@ -149,28 +146,28 @@ class VarsDictData(object):
     self.name = name
 
 def write_local_path(f):
-    """Add the LOCAL_PATH line to the makefile.
+  """Add the LOCAL_PATH line to the makefile.
 
-    Args:
-      f: File open for writing.
-    """
-    f.write('LOCAL_PATH:= $(call my-dir)\n')
+  Args:
+    f: File open for writing.
+  """
+  f.write('LOCAL_PATH:= $(call my-dir)\n')
 
 def write_clear_vars(f):
-    """Add the CLEAR_VARS line to the makefile.
+  """Add the CLEAR_VARS line to the makefile.
 
-    Args:
-      f: File open for writing.
-    """
-    f.write('include $(CLEAR_VARS)\n')
+  Args:
+    f: File open for writing.
+  """
+  f.write('include $(CLEAR_VARS)\n')
 
 def write_include_stlport(f):
-    """Add a line to include stlport.
+  """Add a line to include stlport.
 
-    Args:
-      f: File open for writing.
-    """
-    f.write('include external/stlport/libstlport.mk\n')
+  Args:
+    f: File open for writing.
+  """
+  f.write('include external/stlport/libstlport.mk\n')
 
 def write_android_mk(target_dir, common, deviations_from_common):
   """Given all the variables, write the final make file.
@@ -197,6 +194,15 @@ def write_android_mk(target_dir, common, deviations_from_common):
     f.write(DEBUGGING_HELP)
 
     write_clear_vars(f)
+
+    # need flags to enable feedback driven optimization (FDO) when requested
+    # by the build system.
+    f.write('LOCAL_FDO_SUPPORT := true\n')
+    f.write('ifneq ($(strip $(TARGET_FDO_CFLAGS)),)\n')
+    f.write('\t# This should be the last -Oxxx specified in LOCAL_CFLAGS\n')
+    f.write('\tLOCAL_CFLAGS += -O2\n')
+    f.write('endif\n\n')
+
     f.write('LOCAL_ARM_MODE := thumb\n')
 
     # need a flag to tell the C side when we're on devices with large memory

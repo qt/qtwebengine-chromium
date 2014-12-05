@@ -32,13 +32,13 @@
 
 #include "modules/filesystem/FileWriterSync.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/Blob.h"
 #include "public/platform/WebFileWriter.h"
 #include "public/platform/WebURL.h"
 
-namespace WebCore {
+namespace blink {
 
 void FileWriterSync::write(Blob* data, ExceptionState& exceptionState)
 {
@@ -92,7 +92,7 @@ void FileWriterSync::didWrite(long long bytes, bool complete)
 {
     ASSERT(m_error == FileError::OK);
     ASSERT(!m_complete);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_complete = complete;
 #else
     ASSERT_UNUSED(complete, complete);
@@ -103,35 +103,34 @@ void FileWriterSync::didTruncate()
 {
     ASSERT(m_error == FileError::OK);
     ASSERT(!m_complete);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_complete = true;
 #endif
 }
 
-void FileWriterSync::didFail(blink::WebFileError error)
+void FileWriterSync::didFail(WebFileError error)
 {
     ASSERT(m_error == FileError::OK);
     m_error = static_cast<FileError::ErrorCode>(error);
     ASSERT(!m_complete);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_complete = true;
 #endif
 }
 
 FileWriterSync::FileWriterSync()
     : m_error(FileError::OK)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_complete(true)
 #endif
 {
-    ScriptWrappable::init(this);
 }
 
 void FileWriterSync::prepareForWrite()
 {
     ASSERT(m_complete);
     m_error = FileError::OK;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_complete = false;
 #endif
 }
@@ -141,4 +140,4 @@ FileWriterSync::~FileWriterSync()
 }
 
 
-} // namespace WebCore
+} // namespace blink

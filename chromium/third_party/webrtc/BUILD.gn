@@ -6,6 +6,8 @@
 # in the file PATENTS.  All contributing project authors may
 # be found in the AUTHORS file in the root of the source tree.
 
+# TODO(kjellander): Rebase this to webrtc/build/common.gypi changes after r6330.
+
 import("//build/config/arm.gni")
 import("//build/config/crypto.gni")
 import("//build/config/linux/pkg_config.gni")
@@ -21,7 +23,6 @@ config("common_inherited_config") {
   if (build_with_chromium) {
     defines = [
       "WEBRTC_CHROMIUM_BUILD",
-      "LOGGING_INSIDE_WEBRTC",
     ]
     include_dirs = [
       # overrides must be included first as that is the mechanism for
@@ -55,22 +56,26 @@ config("common_inherited_config") {
       "WEBRTC_LINUX",
       "WEBRTC_ANDROID",
     ]
-    if (enable_android_opensl) {
+    if (rtc_enable_android_opensl) {
       defines += [ "WEBRTC_ANDROID_OPENSLES" ]
     }
   }
 }
 
-pkg_config("dbus-glib") {
-  packages = [ "dbus-glib-1" ]
+if (rtc_have_dbus_glib) {
+  pkg_config("dbus-glib") {
+    packages = [ "dbus-glib-1" ]
+  }
 }
 
 config("common_config") {
-  if (restrict_webrtc_logging) {
+  cflags = []
+  cflags_cc = []
+  if (rtc_restrict_logging) {
     defines = [ "WEBRTC_RESTRICT_LOGGING" ]
   }
 
-  if (have_dbus_glib) {
+  if (rtc_have_dbus_glib) {
     defines += [ "HAVE_DBUS_GLIB" ]
     # TODO(kjellander): Investigate this, it seems like include <dbus/dbus.h>
     # is still not found even if the execution of
@@ -79,11 +84,13 @@ config("common_config") {
     all_dependent_configs = [ "dbus-glib" ]
   }
 
-  if (enable_video) {
+  if (rtc_enable_video) {
     defines += [ "WEBRTC_MODULE_UTILITY_VIDEO" ]
   }
 
-  if (!build_with_chromium) {
+  if (build_with_chromium) {
+    defines += [ "LOGGING_INSIDE_WEBRTC" ]
+  } else {
     if (is_posix) {
       # -Wextra is currently disabled in Chromium"s common.gypi. Enable
       # for targets that can handle it. For Android/arm64 right now
@@ -111,6 +118,10 @@ config("common_config") {
     if (is_clang) {
       cflags += [ "-Wthread-safety" ]
     }
+  }
+
+  if (cpu_arch == "arm64") {
+    defines += [ "WEBRTC_ARCH_ARM" ]
   }
 
   if (cpu_arch == "arm") {
@@ -168,7 +179,67 @@ config("common_config") {
 }
 
 static_library("webrtc") {
-  deps = [
-    "base:webrtc_base",
+  sources = [
+    "call.h",
+    "config.h",
+    "experiments.h",
+    "frame_callback.h",
+    "transport.h",
   ]
+
+  configs += [ ":common_config" ]
+  public_configs = [ ":common_inherited_config"]
+
+  deps = [
+    ":webrtc_common",
+    "base:webrtc_base",
+    "common_audio",
+    "common_video",
+    "modules/audio_coding",
+    "modules/audio_conference_mixer",
+    "modules/audio_device",
+    "modules/audio_processing",
+    "modules/bitrate_controller",
+    "modules/desktop_capture",
+    "modules/media_file",
+    "modules/rtp_rtcp",
+    "modules/utility",
+    "modules/video_capture",
+    "modules/video_coding",
+    "modules/video_processing",
+    "modules/video_render",
+    "system_wrappers",
+    "tools",
+    "video",
+    "video_engine",
+    "voice_engine",
+  ]
+}
+
+if (!build_with_chromium) {
+  executable("webrtc_tests") {
+    testonly = true
+    deps = [
+      ":webrtc",
+      "modules/video_render:video_render_internal_impl",
+      "modules/video_capture:video_capture_internal_impl",
+      "test",
+    ]
+  }
+}
+
+source_set("webrtc_common") {
+  sources = [
+    "config.h",
+    "config.cc",
+  ]
+
+  if (is_clang) {
+    # Suppress warnings from Chrome's Clang plugins.
+    # See http://code.google.com/p/webrtc/issues/detail?id=163 for details.
+    configs -= [ "//build/config/clang:find_bad_constructs" ]
+  }
+
+  configs += [ ":common_config" ]
+  public_configs = [ ":common_inherited_config" ]
 }

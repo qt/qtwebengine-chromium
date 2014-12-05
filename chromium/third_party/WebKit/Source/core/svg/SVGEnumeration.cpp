@@ -32,12 +32,12 @@
 
 #include "core/svg/SVGEnumeration.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 
-namespace WebCore {
+namespace blink {
 
 inline PassRefPtr<SVGEnumerationBase> toSVGEnumerationBase(PassRefPtr<SVGPropertyBase> passBase)
 {
@@ -66,7 +66,7 @@ String SVGEnumerationBase::valueAsString() const
             return it->second;
     }
 
-    ASSERT(m_value < maxEnumValue());
+    ASSERT(m_value < maxInternalEnumValue());
     return emptyString();
 }
 
@@ -77,8 +77,8 @@ void SVGEnumerationBase::setValue(unsigned short value, ExceptionState& exceptio
         return;
     }
 
-    if (value > maxEnumValue()) {
-        exceptionState.throwTypeError("The enumeration value provided (" + String::number(value) + ") is larger than the largest allowed value (" + String::number(maxEnumValue()) + ").");
+    if (value > maxExposedEnumValue()) {
+        exceptionState.throwTypeError("The enumeration value provided (" + String::number(value) + ") is larger than the largest allowed value (" + String::number(maxExposedEnumValue()) + ").");
         return;
     }
 

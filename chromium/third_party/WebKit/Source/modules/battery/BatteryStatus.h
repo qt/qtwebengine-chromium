@@ -6,15 +6,15 @@
 #define BatteryStatus_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
+#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class BatteryStatus FINAL : public RefCountedWillBeGarbageCollected<BatteryStatus> {
+class BatteryStatus final : public GarbageCollected<BatteryStatus> {
 public:
-    static PassRefPtrWillBeRawPtr<BatteryStatus> create();
-    static PassRefPtrWillBeRawPtr<BatteryStatus> create(bool charging, double chargingTime, double dischargingTime, double level);
+    static BatteryStatus* create();
+    static BatteryStatus* create(bool charging, double chargingTime, double dischargingTime, double level);
 
     bool charging() const { return m_charging; }
     double chargingTime() const  { return m_chargingTime; }
@@ -33,6 +33,6 @@ private:
     double m_level;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BatteryStatus_h

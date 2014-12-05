@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/stl_util.h"
+#include "content/public/renderer/render_frame.h"
 #include "content/public/renderer/resource_fetcher.h"
 #include "content/renderer/web_ui_runner.h"
 #include "gin/converter.h"
@@ -13,9 +14,6 @@
 #include "gin/per_context_data.h"
 #include "gin/public/context_holder.h"
 #include "gin/try_catch.h"
-#include "mojo/bindings/js/core.h"
-#include "mojo/bindings/js/handle.h"
-#include "mojo/bindings/js/support.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
@@ -36,14 +34,11 @@ namespace {
 const char kModulePrefix[] = "chrome://mojo/";
 
 void RunMain(base::WeakPtr<gin::Runner> runner,
-             mojo::ScopedMessagePipeHandle* handle,
              v8::Handle<v8::Value> module) {
   v8::Isolate* isolate = runner->GetContextHolder()->isolate();
   v8::Handle<v8::Function> start;
   CHECK(gin::ConvertFromV8(isolate, module, &start));
-  v8::Handle<v8::Value> args[] = {
-      gin::ConvertToV8(isolate, mojo::Handle(handle->release().value())) };
-  runner->Call(start, runner->global(), 1, args);
+  runner->Call(start, runner->global(), 0, NULL);
 }
 
 }  // namespace
@@ -59,7 +54,8 @@ WebUIMojoContextState::WebUIMojoContextState(blink::WebFrame* frame,
   runner_.reset(new WebUIRunner(frame_, context_holder));
   gin::Runner::Scope scoper(runner_.get());
   gin::ModuleRegistry::From(context)->AddObserver(this);
-  runner_->RegisterBuiltinModules();
+  content::RenderFrame::FromWebFrame(frame)
+      ->EnsureMojoBuiltinsAreAvailable(context_holder->isolate(), context);
   gin::ModuleRegistry::InstallGlobals(context->GetIsolate(), context->Global());
   // Warning |frame| may be destroyed.
   // TODO(sky): add test for this.
@@ -71,14 +67,12 @@ WebUIMojoContextState::~WebUIMojoContextState() {
       runner_->GetContextHolder()->context())->RemoveObserver(this);
 }
 
-void WebUIMojoContextState::SetHandle(mojo::ScopedMessagePipeHandle handle) {
+void WebUIMojoContextState::Run() {
   gin::ContextHolder* context_holder = runner_->GetContextHolder();
-  mojo::ScopedMessagePipeHandle* passed_handle =
-      new mojo::ScopedMessagePipeHandle(handle.Pass());
   gin::ModuleRegistry::From(context_holder->context())->LoadModule(
       context_holder->isolate(),
       "main",
-      base::Bind(RunMain, runner_->GetWeakPtr(), base::Owned(passed_handle)));
+      base::Bind(RunMain, runner_->GetWeakPtr()));
 }
 
 void WebUIMojoContextState::FetchModules(const std::vector<std::string>& ids) {
@@ -102,9 +96,13 @@ void WebUIMojoContextState::FetchModule(const std::string& id) {
   fetched_modules_.insert(id);
   ResourceFetcher* fetcher = ResourceFetcher::Create(url);
   module_fetchers_.push_back(fetcher);
-  fetcher->Start(frame_, blink::WebURLRequest::TargetIsScript,
+  fetcher->Start(frame_,
+                 blink::WebURLRequest::RequestContextScript,
+                 blink::WebURLRequest::FrameTypeNone,
+                 ResourceFetcher::PLATFORM_LOADER,
                  base::Bind(&WebUIMojoContextState::OnFetchModuleComplete,
-                            base::Unretained(this), fetcher));
+                            base::Unretained(this),
+                            fetcher));
 }
 
 void WebUIMojoContextState::OnFetchModuleComplete(

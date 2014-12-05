@@ -15,9 +15,12 @@ config("mesa_headers_config") {
 generated_src_dir = "src/chromium_gensrc"
 
 source_set("mesa_headers") {
-  direct_dependent_configs = [ ":mesa_headers_config" ]
+  public_configs = [ ":mesa_headers_config" ]
 }
 
+# This config must generally be prepended to the configs list so that the Mesa
+# dirs appear before the system ones on Windows. This is necessary so that
+# #include "GL/gl.h" means to include Mesa's, not the system's.
 config("mesa_internal_config") {
   cflags = []
   defines = [
@@ -110,7 +113,7 @@ config("mesa_internal_config") {
   if (is_win) {
     # TODO(scottmg): http://crbug.com/143877 These should be removed if
     # Mesa is ever rolled and the warnings are fixed.
-    cflags = [
+    cflags += [
       "/wd4005",  # Macro defined twice.
       "/wd4065",  # Switch statement contains 'default' but no 'case' labels.
       "/wd4090",  # 'Operation' : different 'modifier' qualifiers
@@ -118,6 +121,8 @@ config("mesa_internal_config") {
       "/wd4267",  # size_t to type.
       "/wd4273",  # Inconsistent DLL linkage.
       "/wd4291",  # No matching operator delete found for placement new.
+      "/wd4305",  # Truncation from int to float.
+      "/wd4334",  # Result of 32-bit shift implicitly converted to 64 bits.
       "/wd4345",  # POD-type default initializers.
     ]
   }
@@ -218,8 +223,10 @@ static_library("mesa_libglslcommon") {
     "src/src/glsl/ralloc.h",
     "src/src/glsl/s_expression.cpp",
     "src/src/glsl/s_expression.h",
-    "src/src/glsl/standalone_scaffolding.cpp",
-    "src/src/glsl/standalone_scaffolding.h",
+    # Skipped in the GN build. This file duplicates symbols from errors.c and
+    # happens to link in GYP due to static library link ordering.
+    #"src/src/glsl/standalone_scaffolding.cpp",
+    #"src/src/glsl/standalone_scaffolding.h",
     "src/src/glsl/strtod.c",
     "src/src/glsl/strtod.h",
   ]
@@ -228,9 +235,16 @@ static_library("mesa_libglslcommon") {
     "//build/config/compiler:chromium_code",
   ]
   configs += [
-    ":mesa_internal_config",
     "//build/config/compiler:no_chromium_code",
   ]
+  previous_configs = configs
+  configs = []
+  configs = [ ":mesa_internal_config" ] + previous_configs
+
+  if (is_clang) {
+    # Mesa triggers some of these Clang warnings.
+    configs -= [ "//build/config/clang:extra_warnings" ]
+  }
 
   deps = [
     ":mesa_headers",
@@ -243,8 +257,6 @@ static_library("mesa") {
     "$generated_src_dir/mesa/glapi_mapi_tmp_shared.h",
     "src/src/mapi/mapi/entry.c",
     "src/src/mapi/mapi/entry.h",
-    "src/src/mapi/mapi/mapi.c",
-    "src/src/mapi/mapi/mapi.h",
     "src/src/mapi/mapi/mapi_glapi.c",
     "src/src/mapi/mapi/stub.c",
     "src/src/mapi/mapi/stub.h",
@@ -260,7 +272,6 @@ static_library("mesa") {
     "src/src/mesa/main/api_arrayelt.h",
     "src/src/mesa/main/api_exec.c",
     "src/src/mesa/main/api_exec.h",
-    "$generated_src_dir/mesa/api_exec_es1.c",
     "src/src/mesa/main/api_loopback.c",
     "src/src/mesa/main/api_loopback.h",
     "src/src/mesa/main/api_validate.c",
@@ -309,8 +320,6 @@ static_library("mesa") {
     "src/src/mesa/main/enums.h",
     "src/src/mesa/main/errors.c",
     "src/src/mesa/main/errors.h",
-    "src/src/mesa/main/es1_conversion.c",
-    "src/src/mesa/main/es1_conversion.h",
     "src/src/mesa/main/eval.c",
     "src/src/mesa/main/eval.h",
     "src/src/mesa/main/execmem.c",
@@ -376,7 +385,6 @@ static_library("mesa") {
     "src/src/mesa/main/points.h",
     "src/src/mesa/main/polygon.c",
     "src/src/mesa/main/polygon.h",
-    "src/src/mesa/main/querymatrix.c",
     "src/src/mesa/main/queryobj.c",
     "src/src/mesa/main/queryobj.h",
     "src/src/mesa/main/rastpos.c",
@@ -508,90 +516,6 @@ static_library("mesa") {
     "src/src/mesa/program/string_to_uint_map.cpp",
     "src/src/mesa/program/symbol_table.c",
     "src/src/mesa/program/symbol_table.h",
-    "src/src/mesa/state_tracker/st_atom.c",
-    "src/src/mesa/state_tracker/st_atom.h",
-    "src/src/mesa/state_tracker/st_atom_array.c",
-    "src/src/mesa/state_tracker/st_atom_blend.c",
-    "src/src/mesa/state_tracker/st_atom_clip.c",
-    "src/src/mesa/state_tracker/st_atom_constbuf.c",
-    "src/src/mesa/state_tracker/st_atom_constbuf.h",
-    "src/src/mesa/state_tracker/st_atom_depth.c",
-    "src/src/mesa/state_tracker/st_atom_framebuffer.c",
-    "src/src/mesa/state_tracker/st_atom_msaa.c",
-    "src/src/mesa/state_tracker/st_atom_pixeltransfer.c",
-    "src/src/mesa/state_tracker/st_atom_rasterizer.c",
-    "src/src/mesa/state_tracker/st_atom_sampler.c",
-    "src/src/mesa/state_tracker/st_atom_scissor.c",
-    "src/src/mesa/state_tracker/st_atom_shader.c",
-    "src/src/mesa/state_tracker/st_atom_shader.h",
-    "src/src/mesa/state_tracker/st_atom_stipple.c",
-    "src/src/mesa/state_tracker/st_atom_texture.c",
-    "src/src/mesa/state_tracker/st_atom_viewport.c",
-    "src/src/mesa/state_tracker/st_cb_bitmap.c",
-    "src/src/mesa/state_tracker/st_cb_bitmap.h",
-    "src/src/mesa/state_tracker/st_cb_blit.c",
-    "src/src/mesa/state_tracker/st_cb_blit.h",
-    "src/src/mesa/state_tracker/st_cb_bufferobjects.c",
-    "src/src/mesa/state_tracker/st_cb_bufferobjects.h",
-    "src/src/mesa/state_tracker/st_cb_clear.c",
-    "src/src/mesa/state_tracker/st_cb_clear.h",
-    "src/src/mesa/state_tracker/st_cb_condrender.c",
-    "src/src/mesa/state_tracker/st_cb_condrender.h",
-    "src/src/mesa/state_tracker/st_cb_drawpixels.c",
-    "src/src/mesa/state_tracker/st_cb_drawpixels.h",
-    "src/src/mesa/state_tracker/st_cb_drawtex.c",
-    "src/src/mesa/state_tracker/st_cb_drawtex.h",
-    "src/src/mesa/state_tracker/st_cb_eglimage.c",
-    "src/src/mesa/state_tracker/st_cb_eglimage.h",
-    "src/src/mesa/state_tracker/st_cb_fbo.c",
-    "src/src/mesa/state_tracker/st_cb_fbo.h",
-    "src/src/mesa/state_tracker/st_cb_feedback.c",
-    "src/src/mesa/state_tracker/st_cb_feedback.h",
-    "src/src/mesa/state_tracker/st_cb_flush.c",
-    "src/src/mesa/state_tracker/st_cb_flush.h",
-    "src/src/mesa/state_tracker/st_cb_program.c",
-    "src/src/mesa/state_tracker/st_cb_program.h",
-    "src/src/mesa/state_tracker/st_cb_queryobj.c",
-    "src/src/mesa/state_tracker/st_cb_queryobj.h",
-    "src/src/mesa/state_tracker/st_cb_rasterpos.c",
-    "src/src/mesa/state_tracker/st_cb_rasterpos.h",
-    "src/src/mesa/state_tracker/st_cb_readpixels.c",
-    "src/src/mesa/state_tracker/st_cb_readpixels.h",
-    "src/src/mesa/state_tracker/st_cb_strings.c",
-    "src/src/mesa/state_tracker/st_cb_strings.h",
-    "src/src/mesa/state_tracker/st_cb_syncobj.c",
-    "src/src/mesa/state_tracker/st_cb_syncobj.h",
-    "src/src/mesa/state_tracker/st_cb_texture.c",
-    "src/src/mesa/state_tracker/st_cb_texture.h",
-    "src/src/mesa/state_tracker/st_cb_texturebarrier.c",
-    "src/src/mesa/state_tracker/st_cb_texturebarrier.h",
-    "src/src/mesa/state_tracker/st_cb_viewport.c",
-    "src/src/mesa/state_tracker/st_cb_viewport.h",
-    "src/src/mesa/state_tracker/st_cb_xformfb.c",
-    "src/src/mesa/state_tracker/st_cb_xformfb.h",
-    "src/src/mesa/state_tracker/st_context.c",
-    "src/src/mesa/state_tracker/st_context.h",
-    "src/src/mesa/state_tracker/st_debug.c",
-    "src/src/mesa/state_tracker/st_debug.h",
-    "src/src/mesa/state_tracker/st_draw.c",
-    "src/src/mesa/state_tracker/st_draw.h",
-    "src/src/mesa/state_tracker/st_draw_feedback.c",
-    "src/src/mesa/state_tracker/st_extensions.c",
-    "src/src/mesa/state_tracker/st_extensions.h",
-    "src/src/mesa/state_tracker/st_format.c",
-    "src/src/mesa/state_tracker/st_format.h",
-    "src/src/mesa/state_tracker/st_gen_mipmap.c",
-    "src/src/mesa/state_tracker/st_gen_mipmap.h",
-    "src/src/mesa/state_tracker/st_glsl_to_tgsi.cpp",
-    "src/src/mesa/state_tracker/st_glsl_to_tgsi.h",
-    "src/src/mesa/state_tracker/st_manager.c",
-    "src/src/mesa/state_tracker/st_manager.h",
-    "src/src/mesa/state_tracker/st_mesa_to_tgsi.c",
-    "src/src/mesa/state_tracker/st_mesa_to_tgsi.h",
-    "src/src/mesa/state_tracker/st_program.c",
-    "src/src/mesa/state_tracker/st_program.h",
-    "src/src/mesa/state_tracker/st_texture.c",
-    "src/src/mesa/state_tracker/st_texture.h",
     "src/src/mesa/swrast/s_aaline.c",
     "src/src/mesa/swrast/s_aaline.h",
     "src/src/mesa/swrast/s_aatriangle.c",
@@ -697,9 +621,11 @@ static_library("mesa") {
     "//build/config/compiler:chromium_code",
   ]
   configs += [
-    ":mesa_internal_config",
     "//build/config/compiler:no_chromium_code",
   ]
+  previous_configs = configs
+  configs = []
+  configs = [ ":mesa_internal_config" ] + previous_configs
 
   cflags = []
 
@@ -721,39 +647,53 @@ static_library("mesa") {
 
   deps = [
     ":mesa_headers",
-    ":mesa_libglslcommon",
   ]
 }
 
+if (!is_android) {  # TODO(GYP) enable for Android.
 
 # Building this target will hide the native OpenGL shared library and
 # replace it with a slow software renderer.
 # TODO(GYP) http://crbug.com/380327 need support for loadable_module.
 #loadable_module("osmesa") {
-#  sources = [
-#    "src/src/mesa/drivers/common/driverfuncs.c",
-#    "src/src/mesa/drivers/common/driverfuncs.h",
-#    "src/src/mesa/drivers/common/meta.c",
-#    "src/src/mesa/drivers/common/meta.h",
-#    "src/src/mesa/drivers/osmesa/osmesa.c",
-#    "src/src/mesa/drivers/osmesa/osmesa.def",
-#  ]
-#
-#  configs -= [
-#    "//build/config/compiler:chromium_code",
-#  ]
-#  configs += [
-#    ":mesa_headers_config",
-#    ":mesa_internal_config",
-#    "//build/config/compiler:no_chromium_code",
-#  ]
-#
-#  include_dirs = [ "src/src/mesa/drivers" ]
-#
-#  deps = [
-#    ":mesa_headers",
-#    ":mesa",
-#  ]
-#}
+shared_library("osmesa") {
+  sources = [
+    "src/src/mesa/drivers/common/driverfuncs.c",
+    "src/src/mesa/drivers/common/driverfuncs.h",
+    "src/src/mesa/drivers/common/meta.c",
+    "src/src/mesa/drivers/common/meta.h",
+    "src/src/mesa/drivers/osmesa/osmesa.c",
+    "src/src/mesa/drivers/osmesa/osmesa.def",
+  ]
+
+  configs -= [
+    "//build/config/compiler:chromium_code",
+  ]
+  configs += [
+    ":mesa_headers_config",
+    "//build/config/compiler:no_chromium_code",
+  ]
+  previous_configs = configs
+  configs = []
+  configs = [ ":mesa_internal_config" ] + previous_configs
+
+  include_dirs = [ "src/src/mesa/drivers" ]
+
+  deps = [
+    ":mesa_headers",
+    ":mesa",
+    ":mesa_libglslcommon",
+  ]
+
+  if (is_win) {
+    defines = [
+      "BUILD_GL32",
+      "KEYWORD1=GLAPI",
+      "KEYWORD2=GLAPIENTRY",
+    ]
+  }
+}
+
+}  # !is_android
 
 # TODO(GYP) Android osmesa_in_lib_dir target.

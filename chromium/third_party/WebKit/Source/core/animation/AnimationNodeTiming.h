@@ -5,13 +5,17 @@
 #ifndef AnimationNodeTiming_h
 #define AnimationNodeTiming_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/animation/AnimationNode.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class AnimationNodeTiming : public RefCountedWillBeGarbageCollectedFinalized<AnimationNodeTiming> {
+class DoubleOrString;
+
+class AnimationNodeTiming : public RefCountedWillBeGarbageCollectedFinalized<AnimationNodeTiming>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<AnimationNodeTiming> create(AnimationNode* parent);
     double delay();
@@ -19,7 +23,7 @@ public:
     String fill();
     double iterationStart();
     double iterations();
-    void getDuration(String propertyName, bool& element0Enabled, double& element0, bool& element1Enabled, String& element1);
+    void getDuration(String propertyName, DoubleOrString&);
     double playbackRate();
     String direction();
     String easing();
@@ -41,6 +45,6 @@ private:
     explicit AnimationNodeTiming(AnimationNode*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

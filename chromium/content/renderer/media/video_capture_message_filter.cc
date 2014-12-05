@@ -114,8 +114,7 @@ void VideoCaptureMessageFilter::OnBufferCreated(
     // Send the buffer back to Host in case it's waiting for all buffers
     // to be returned.
     base::SharedMemory::CloseHandle(handle);
-    Send(new VideoCaptureHostMsg_BufferReady(
-        device_id, buffer_id, std::vector<uint32>()));
+    Send(new VideoCaptureHostMsg_BufferReady(device_id, buffer_id, 0));
     return;
   }
 
@@ -126,6 +125,7 @@ void VideoCaptureMessageFilter::OnBufferReceived(
     int device_id,
     int buffer_id,
     const media::VideoCaptureFormat& format,
+    const gfx::Rect& visible_rect,
     base::TimeTicks timestamp) {
   Delegate* delegate = find_delegate(device_id);
   if (!delegate) {
@@ -134,12 +134,11 @@ void VideoCaptureMessageFilter::OnBufferReceived(
 
     // Send the buffer back to Host in case it's waiting for all buffers
     // to be returned.
-    Send(new VideoCaptureHostMsg_BufferReady(
-        device_id, buffer_id, std::vector<uint32>()));
+    Send(new VideoCaptureHostMsg_BufferReady(device_id, buffer_id, 0));
     return;
   }
 
-  delegate->OnBufferReceived(buffer_id, format, timestamp);
+  delegate->OnBufferReceived(buffer_id, format, visible_rect, timestamp);
 }
 
 void VideoCaptureMessageFilter::OnMailboxBufferReceived(
@@ -156,8 +155,7 @@ void VideoCaptureMessageFilter::OnMailboxBufferReceived(
 
     // Send the buffer back to Host in case it's waiting for all buffers
     // to be returned.
-    Send(new VideoCaptureHostMsg_BufferReady(
-        device_id, buffer_id, std::vector<uint32>()));
+    Send(new VideoCaptureHostMsg_BufferReady(device_id, buffer_id, 0));
     return;
   }
 

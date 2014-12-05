@@ -107,19 +107,19 @@ class CONTENT_EXPORT AudioInputRendererHost
                          media::UserInputMonitor* user_input_monitor);
 
   // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnChannelClosing() override;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // AudioInputController::EventHandler implementation.
-  virtual void OnCreated(media::AudioInputController* controller) OVERRIDE;
-  virtual void OnRecording(media::AudioInputController* controller) OVERRIDE;
-  virtual void OnError(media::AudioInputController* controller,
-      media::AudioInputController::ErrorCode error_code) OVERRIDE;
-  virtual void OnData(media::AudioInputController* controller,
-                      const media::AudioBus* data) OVERRIDE;
-  virtual void OnLog(media::AudioInputController* controller,
-                     const std::string& message) OVERRIDE;
+  void OnCreated(media::AudioInputController* controller) override;
+  void OnRecording(media::AudioInputController* controller) override;
+  void OnError(media::AudioInputController* controller,
+               media::AudioInputController::ErrorCode error_code) override;
+  void OnData(media::AudioInputController* controller,
+              const media::AudioBus* data) override;
+  void OnLog(media::AudioInputController* controller,
+             const std::string& message) override;
 
  private:
   // TODO(henrika): extend test suite (compare AudioRenderHost)
@@ -130,18 +130,26 @@ class CONTENT_EXPORT AudioInputRendererHost
   struct AudioEntry;
   typedef std::map<int, AudioEntry*> AudioEntryMap;
 
-  virtual ~AudioInputRendererHost();
+  ~AudioInputRendererHost() override;
 
   // Methods called on IO thread ----------------------------------------------
 
   // Audio related IPC message handlers.
+
+  // For ChromeOS: Checks if the stream should contain keyboard mic, if so
+  // registers to AudioInputDeviceManager. Then calls DoCreateStream.
+  // For non-ChromeOS: Just calls DoCreateStream.
+  void OnCreateStream(int stream_id,
+                      int render_view_id,
+                      int session_id,
+                      const AudioInputHostMsg_CreateStream_Config& config);
 
   // Creates an audio input stream with the specified format whose data is
   // consumed by an entity in the render view referenced by |render_view_id|.
   // |session_id| is used to find out which device to be used for the stream.
   // Upon success/failure, the peer is notified via the
   // NotifyStreamCreated message.
-  void OnCreateStream(int stream_id,
+  void DoCreateStream(int stream_id,
                       int render_view_id,
                       int session_id,
                       const AudioInputHostMsg_CreateStream_Config& config);
@@ -195,6 +203,11 @@ class CONTENT_EXPORT AudioInputRendererHost
   // This method is used to look up an AudioEntry after a controller
   // event is received.
   AudioEntry* LookupByController(media::AudioInputController* controller);
+
+  // If ChromeOS and |config|'s layout has keyboard mic, unregister in
+  // AudioInputDeviceManager.
+  void MaybeUnregisterKeyboardMicStream(
+      const AudioInputHostMsg_CreateStream_Config& config);
 
   // Used to create an AudioInputController.
   media::AudioManager* audio_manager_;

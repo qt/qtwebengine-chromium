@@ -20,7 +20,7 @@
 #ifndef DOMPlugin_h
 #define DOMPlugin_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/FrameDestructionObserver.h"
 #include "core/plugins/DOMMimeType.h"
 #include "platform/heap/Handle.h"
@@ -28,12 +28,14 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Plugin;
 class PluginData;
 
-class DOMPlugin FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMPlugin>, public ScriptWrappable, public FrameDestructionObserver {
+class DOMPlugin final : public RefCountedWillBeGarbageCollectedFinalized<DOMPlugin>, public ScriptWrappable, public FrameDestructionObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMPlugin);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DOMPlugin> create(PluginData* pluginData, LocalFrame* frame, unsigned index)
     {
@@ -51,7 +53,7 @@ public:
     bool canGetItemsForName(const AtomicString& propertyName);
     PassRefPtrWillBeRawPtr<DOMMimeType> namedItem(const AtomicString& propertyName);
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     const PluginInfo& pluginInfo() const { return m_pluginData->plugins()[m_index]; }
@@ -61,6 +63,6 @@ private:
     unsigned m_index;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Plugin_h

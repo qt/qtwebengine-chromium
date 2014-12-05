@@ -25,19 +25,18 @@
 #ifndef RTCStatsReport_h
 #define RTCStatsReport_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/HashMap.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCStatsReport FINAL : public RefCountedWillBeGarbageCollectedFinalized<RTCStatsReport>, public ScriptWrappable {
+class RTCStatsReport final : public GarbageCollectedFinalized<RTCStatsReport>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<RTCStatsReport> create(const String& id, const String& type, double timestamp);
+    static RTCStatsReport* create(const String& id, const String& type, double timestamp);
 
     double timestamp() const { return m_timestamp; }
     String id() { return m_id; }
@@ -46,9 +45,9 @@ public:
     Vector<String> names() const;
 
     // DEPRECATED
-    const PassRefPtrWillBeRawPtr<RTCStatsReport> local();
+    RTCStatsReport* local();
     // DEPRECATED
-    const PassRefPtrWillBeRawPtr<RTCStatsReport> remote();
+    RTCStatsReport* remote();
 
     void addStatistic(const String& name, const String& value);
 
@@ -63,6 +62,6 @@ private:
     HashMap<String, String> m_stats;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsReport_h

@@ -58,6 +58,7 @@ CERT_VerifyCert
 CERT_VerifyCertName
 CERT_VerifyCertNow
 CERT_VerifySignedDataWithPublicKey
+CERT_VerifySignedDataWithPublicKeyInfo
 DER_Lengths_Util
 DES_Decrypt
 DES_DestroyContext
@@ -302,3 +303,4 @@ VFY_End
 VFY_Update
 VFY_VerifyDataDirect
 VFY_VerifyDigestDirect
+_SGN_VerifyPKCS1DigestInfo

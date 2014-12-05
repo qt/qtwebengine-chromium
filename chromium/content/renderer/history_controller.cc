@@ -37,7 +37,7 @@
 
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 
 using blink::WebFrame;
 using blink::WebHistoryCommitType;
@@ -60,7 +60,7 @@ void HistoryController::GoToEntry(scoped_ptr<HistoryEntry> target_entry,
 
   provisional_entry_ = target_entry.Pass();
 
-  WebFrame* main_frame = render_view_->main_render_frame()->GetWebFrame();
+  WebFrame* main_frame = render_view_->GetMainRenderFrame()->GetWebFrame();
   if (current_entry_) {
     RecursiveGoToEntry(
         main_frame, same_document_loads, different_document_loads);

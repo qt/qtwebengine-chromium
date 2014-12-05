@@ -17,7 +17,7 @@ body {
 
 .non-google-page #ntp-contents {
   position: absolute;
-  top: -webkit-calc(50% - 155px);
+  top: calc(50% - 155px);
   width: 100%;
 }
 
@@ -36,9 +36,7 @@ body.fakebox-disable #fakebox > input {
 }
 
 #logo {
-  background-image: -webkit-image-set(
-      url('images/google_logo.png') 1x,
-      url('images/google_logo.png@2x') 2x);
+  background-image: url('images/google_logo.png@2x');
   background-repeat: no-repeat;
   background-size: 269px 95px;
   height: 95px;
@@ -48,7 +46,10 @@ body.fakebox-disable #fakebox > input {
 }
 
 body.alternate-logo #logo {
-  background-image: url(images/white_google_logo.png);
+  -webkit-mask-image: url('images/google_logo.png@2x');
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 100%;
+  background: #eee;
 }
 
 #fakebox {
@@ -59,11 +60,11 @@ body.alternate-logo #logo {
   border: 1px solid rgb(185, 185, 185);
   border-radius: 1px;
   border-top-color: rgb(160, 160, 160);
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
   cursor: text;
   font-size: 18px;
   height: 36px;
-  max-width: 620px;
+  line-height: 36px;
+  max-width: 672px;
   position: relative;
   /* #fakebox width (here and below) should be 2px less than #mv-tiles
      to account for its border. */
@@ -73,6 +74,10 @@ body.alternate-logo #logo {
 #fakebox:hover {
   border: 1px solid rgb(169, 169, 169);
   border-top-color: rgb(144, 144, 144);
+}
+
+.classical #fakebox {
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 body.fakebox-focused #fakebox {
@@ -91,10 +96,32 @@ body.fakebox-focused #fakebox {
   width: 100%;
 }
 
-body.rtl #fakebox > input {
+body[dir=rtl] #fakebox > input {
   padding-left: 0;
   padding-right: 8px;
   right: 0;
+}
+
+#fakebox-text {
+  color: #bbb;
+  font-family: arial, sans-serif;
+  font-size: 16px;
+  height: 100%;
+  left: 9px;
+  margin-top: 1px;
+  overflow: hidden;
+  position: absolute;
+  text-align: initial;
+  text-overflow: ellipsis;
+  vertical-align: middle;
+  visibility: inherit;
+  white-space: nowrap;
+  width: calc(100% - 2 * 9px);
+}
+
+body[dir=rtl] #fakebox-text {
+  left: auto;
+  right: 9px;
 }
 
 #cursor {
@@ -107,7 +134,7 @@ body.rtl #fakebox > input {
   width: 1px;
 }
 
-body.rtl #cursor {
+body[dir=rtl] #cursor {
   left: auto;
   right: 9px;
 }
@@ -121,6 +148,11 @@ body.rtl #cursor {
   }
 }
 
+body.fakebox-drag-focused #fakebox-text,
+body.fakebox-focused #fakebox-text {
+  visibility: hidden;
+}
+
 body.fakebox-drag-focused #cursor {
   visibility: inherit;
 }
@@ -132,111 +164,278 @@ body.fakebox-focused #cursor {
 
 #most-visited {
   -webkit-user-select: none;
-  margin-top: 51px;
   text-align: -webkit-center;
 }
 
+.classical #most-visited {
+  margin-top: 51px;
+}
+
+.md #most-visited {
+  margin-top: 64px;
+}
+
 #mv-tiles {
-  /* Use GPU compositing if available. */
-  -webkit-transform: translate3d(0, 0, 0);
-  height: 260px;
-  overflow: hidden;
-  padding: 0 1em;
-  white-space: nowrap;
-  width: 304px;
+  margin: 0;
+  position: relative;
+  text-align: left;
 }
 
-@media only screen and (min-width:660px) {
-  #fakebox {
-    width: 458px;
-  }
-  #mv-tiles {
-    width: 460px;
-  }
+body[dir=rtl] #mv-tiles {
+  text-align: right;
 }
 
-@media only screen and (min-width:820px) {
-  #fakebox {
-    width: 618px;
-  }
-  #mv-tiles {
-    width: 620px;
-  }
+.classical #mv-tiles {
+  height: calc(2 * 138px);
+  line-height: 138px;
 }
 
-.mv-row {
-  margin-bottom: 50px;
-}
-
-.mv-row:last-child {
-  margin-bottom: 0;
-}
-
-.mv-tile:first-child {
-  -webkit-margin-start: -1px;
+.md #mv-tiles {
+  height: calc(2 * 146px);
+  line-height: 146px;
 }
 
 .mv-tile {
-  -webkit-margin-start: 20px;
-  -webkit-transform: translate3d(0, 0, 0);
-  -webkit-transition-duration: 200ms;
-  -webkit-transition-property: -webkit-transform, margin, opacity, width;
-  background: -webkit-linear-gradient(#f2f2f2, #e8e8e8);
-  border: 1px solid transparent;
-  border-radius: 3px;
-  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .09);
   display: inline-block;
-  height: 83px;
-  width: 138px;
-}
-
-/* Class applied to tiles to trigger the blacklist animation. */
-.mv-tile.mv-blacklist {
-  -webkit-transform: scale(0.5);
-  opacity: 0;
+  position: relative;
+  vertical-align: top;
 }
 
 .mv-page-ready {
-  border: 1px solid #c0c0c0;
   cursor: pointer;
   outline: none;
 }
 
-.mv-page-ready:hover,
-.mv-page-ready:focus {
-  border-color: #7f7f7f
+.classical .mv-tile {
+  background: linear-gradient(#f2f2f2, #e8e8e8);
+  border-radius: 3px;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, .09);
+  height: 85px;
+  margin-left: 10px;
+  margin-right: 10px;  /* Total horizontal margins add to TILE_MARGIN. */
+  width: 140px;
 }
 
-.mv-thumb,
+.classical .mv-page-ready {
+  -webkit-transition-duration: 200ms;
+  -webkit-transition-property: -webkit-transform, margin, opacity, width;
+}
+
+.md .mv-tile {
+  background: rgb(242,242,242);
+  border-radius: 1px;
+  height: 130px;
+  margin-left: 8px;
+  margin-right: 8px;
+  width: 156px;
+}
+
+.md .mv-page-ready {
+  -webkit-transition-duration: 200ms;
+  -webkit-transition-property: -webkit-transform, margin, opacity, width;
+}
+
+.md.dark .mv-tile {
+  background: rgb(51,51,51);
+}
+
+.mv-tile-inner {
+  visibility: hidden;
+}
+
+.mv-page-ready .mv-tile-inner {
+  visibility: visible;
+}
+
+/* Class applied to tiles to trigger the blacklist animation. */
+.mv-tile.mv-blacklist {
+  opacity: 0;
+}
+
+.classical .mv-tile.mv-blacklist {
+  -webkit-transform: scale(0.5);
+}
+
+.md .mv-tile.mv-blacklist {
+  -webkit-transform: scale(0, 0);
+  -webkit-transform-origin: 0 41px;
+  margin-left: 0;
+  margin-right: 0;
+  width: 0;
+}
+
+/* .mv-mask is used to alter tile appearance, including borders, shadows, */
+/* and backgrounds. */
 .mv-mask {
-  border: none;
+  background: transparent;
+  border-style: solid;
+  border-width: 1px;
   cursor: pointer;
-  height: 83px;
-  left: 0;
+  pointer-events: none;
   position: absolute;
-  top: 0;
-  width: 138px;
+}
+
+.classical .mv-mask {
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.09);
+}
+
+.md .mv-mask {
+  border-color: transparent;
+  border-radius: 2px;
+  height: calc(130px - 2px);
+  width: calc(156px - 2px);
+}
+
+/* Styling border. */
+.classical .mv-page-ready .mv-mask {
+  border-style: solid;
+}
+
+.default-theme.classical .mv-page-ready .mv-mask {
+  border-color: #c0c0c0;
+}
+
+.default-theme.classical .mv-page-ready:hover .mv-mask,
+.default-theme.classical .mv-page-ready .mv-focused ~ .mv-mask {
+  border-color: #7f7f7f;
+}
+
+.default-theme.md.old-hover .mv-page-ready:hover .mv-mask,
+.default-theme.md.old-hover .mv-page-ready .mv-focused ~ .mv-mask {
+  border-color: #999;
+}
+
+.default-theme.md.dark .mv-page-ready:hover .mv-mask,
+.default-theme.md.dark .mv-page-ready .mv-focused ~ .mv-mask,
+.default-theme.md.old-hover.dark .mv-page-ready:hover .mv-mask,
+.default-theme.md.old-hover.dark .mv-page-ready .mv-focused ~ .mv-mask {
+  border-color: #888;
+}
+
+/* Styling shadow. */
+.default-theme.md .mv-page-ready .mv-mask {
+  -webkit-transition: box-shadow 200ms, border 200ms;
+}
+
+.default-theme.md .mv-page-ready:hover .mv-mask,
+.default-theme.md .mv-page-ready .mv-focused ~ .mv-mask {
+  box-shadow: 0 1px 2px 0 rgba(0,0,0,0.1), 0 4px 8px 0 rgba(0,0,0,0.2);
+}
+
+.default-theme.md.dark .mv-page-ready:hover .mv-mask,
+.default-theme.md.old-hover .mv-page-ready:hover .mv-mask {
+  box-shadow: none;
+}
+
+/* Styling background. */
+.classical .mv-page .mv-focused ~ .mv-mask {
+  -webkit-transition: background-color 100ms ease-in-out;
+  background: linear-gradient(rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 80%, rgba(255, 255, 255, 0.9));
+  background-color: rgba(0, 0, 0, 0.35);
+}
+
+.md .mv-page .mv-focused ~ .mv-mask {
+  -webkit-transition: box-shadow 200ms, border 200ms,
+      background-color 100ms ease-in-out;
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(0, 0, 0, 0.3);
 }
 
 .mv-title {
   border: none;
-  bottom: -28px;
+  position: absolute;
+}
+
+.classical .mv-title {
+  bottom: -27px;
   height: 18px;
   left: 0;
-  position: absolute;
   width: 140px;
 }
 
-.mv-mask {
-  opacity: 0.35;
-  pointer-events: none;
+.md .mv-title {
+  bottom: auto;
+  height: 15px;
+  left: 32px;
+  top: 9px;
+  width: calc(156px - 32px - 4px);
 }
 
-.mv-page:focus .mv-mask {
-  -webkit-transition: background-color 100ms ease-in-out;
-  background: -webkit-linear-gradient(rgba(255, 255, 255, 0),
-    rgba(255, 255, 255, 0) 80%, rgba(255, 255, 255, 0.9));
-  background-color: black;
+@media (-webkit-min-device-pixel-ratio: 2) {
+  .md .mv-title {
+    top: 8px;
+  }
+}
+
+body[dir=rtl] .md .mv-title {
+  left: auto;
+  right: 32px;
+}
+
+.mv-thumb {
+  border: none;
+  cursor: pointer;
+  position: absolute;
+}
+
+.classical .mv-thumb,
+.classical .mv-mask {
+  height: 83px;
+  width: 138px;
+}
+
+.classical .mv-thumb {
+  border-radius: 2px;
+  left: 1px;
+  top: 1px;
+}
+
+.classical .mv-mask {
+  border-radius: 3px;
+  left: 0;
+  top: 0;
+}
+
+.md .mv-thumb,
+.md .mv-thumb-fallback {
+  border-radius: 0;
+  height: 94px;
+  left: 4px;
+  top: 32px;
+  width: 148px;
+}
+
+body[dir=rtl] .md .mv-thumb,
+body[dir=rtl] .md .mv-thumb-fallback {
+  left: auto;
+  right: 4px;
+}
+
+.md .mv-thumb-fallback {
+  background-color: #fff;
+  position: absolute;
+}
+
+.md.dark .mv-thumb-fallback {
+  background-color: #555;
+}
+
+.md .mv-thumb-fallback .dot {
+  background-color: #f2f2f2;
+  border-radius: 8px;
+  display: block;
+  height: 16px;
+  left: 50%;
+  margin-left: -8px;
+  margin-top: -8px;
+  position: absolute;
+  top: 50%;
+  width: 16px;
+}
+
+.md.dark .mv-thumb-fallback .dot {
+  background-color: #333;
 }
 
 .mv-x-hide .mv-x {
@@ -245,33 +444,119 @@ body.fakebox-focused #cursor {
 
 /* An X button to blacklist a tile or hide the notification. */
 .mv-x {
-  background: transparent url(images/close_2.png);
+  background-color: transparent;
   border: none;
-  cursor: default;
-  height: 16px;
-  width: 16px;
-}
-
-.mv-x:hover,
-#mv-notice-x:focus {
-  background: transparent url(images/close_2_hover.png);
-}
-
-.mv-x:active {
-  background: transparent url(images/close_2_active.png);
+  cursor: pointer;
 }
 
 .mv-page .mv-x {
   -webkit-transition: opacity 150ms;
   opacity: 0;
   position: absolute;
+}
+
+.classical .mv-x {
+  background-image: url('images/close_2.png');
+  height: 16px;
+  width: 16px;
+}
+
+.classical .mv-x:hover,
+.classical #mv-notice-x:focus {
+  background-image: url('images/close_2_hover.png');
+}
+
+.classical .mv-x:active,
+.classical #mv-notice-x:active {
+  background-image: url('images/close_2_active.png');
+}
+
+.classical .mv-page .mv-x {
   right: 2px;
   top: 2px;
 }
 
-body.rtl .mv-page .mv-x {
+body[dir=rtl] .classical .mv-page .mv-x {
   left: 2px;
   right: auto;
+}
+
+#mv-notice-x {
+  display: inline-block;
+  position: relative;
+}
+
+.md #mv-notice-x {
+  -webkit-transform: translate(0,-8px);
+}
+
+.md .mv-x {
+  height: 32px;
+  width: 32px;
+}
+
+.md .mv-x .mv-x-inner {
+  -webkit-mask-image: -webkit-image-set(
+      url('images/close_3_mask.png') 1x,
+      url('images/close_3_mask.png@2x') 2x);
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-size: 10px 10px;
+  background-color: rgba(90,90,90,0.7);
+  height: 10px;
+  left: 50%;
+  margin-left: -5px;
+  margin-top: -5px;
+  position: absolute;
+  top: 50%;
+  width: 10px;
+}
+
+.md.dark .mv-x .mv-x-inner {
+  background-color: rgba(255,255,255,0.7);
+}
+
+.md .mv-x:hover .mv-x-inner,
+.md #mv-notice-x:focus .mv-x-inner {
+  background-color: rgb(90,90,90);
+}
+
+.md.dark .mv-x:hover .mv-x-inner,
+.md.dark #mv-notice-x:focus .mv-x-inner {
+  background-color: rgb(255,255,255);
+}
+
+.md .mv-x:active .mv-x-inner,
+.md #mv-notice-x:active .mv-x-inner {
+  background-color: rgb(66,133,244);
+}
+
+.md.dark .mv-x:active .mv-x-inner,
+.md.dark #mv-notice-x:active .mv-x-inner {
+  background-color: rgba(255,255,255,0.5);
+}
+
+.md .mv-page .mv-x {
+  /* background color needs to match .md .mv-tile */
+  background: linear-gradient(to right, transparent, rgb(242,242,242) 10%);
+  right: 0;
+  top: 0;
+}
+
+body[dir=rtl] .md .mv-page .mv-x {
+  /* background color needs to match .md .mv-tile */
+  background: linear-gradient(to left, transparent, rgb(242,242,242) 10%);
+  left: 0;
+  right: auto;
+}
+
+.md.dark .mv-page .mv-x {
+  /* background color needs to match .md.dark .mv-tile */
+  background: linear-gradient(to right, transparent, rgba(51,51,51,0.9) 30%);
+}
+
+body[dir=rtl] .md.dark .mv-page .mv-x {
+  /* background color needs to match .md.dark .mv-tile */
+  background: linear-gradient(to left, transparent, rgba(51,51,51,0.9) 30%);
 }
 
 .mv-page-ready:hover .mv-x {
@@ -285,12 +570,34 @@ body.rtl .mv-page .mv-x {
 
 .mv-favicon {
   background-size: 16px;
-  bottom: -8px;
   height: 16px;
-  left: 61px;
   pointer-events: none;
   position: absolute;
   width: 16px;
+}
+
+.classical .mv-favicon {
+  bottom: -7px;
+  left: 62px;
+}
+
+.md .mv-favicon {
+  left: 8px;
+  top: 8px;
+}
+
+body[dir=rtl] .md .mv-favicon {
+  left: auto;
+  right: 8px;
+  top: 8px;
+}
+
+.md .mv-favicon-fallback {
+  background-image: -webkit-image-set(
+      url('images/ntp_default_favicon.png') 1x,
+      url('images/ntp_default_favicon.png@2x') 2x);
+  background-repeat: no-repeat;
+  background-size: 16px 16px;
 }
 
 /* The notification shown when a tile is blacklisted. */
@@ -303,6 +610,10 @@ body.rtl .mv-page .mv-x {
 
 #mv-notice span {
   cursor: default;
+  display: inline-block;
+  height: 16px;
+  line-height: 16px;
+  vertical-align: top;
 }
 
 /* Links in the notification. */
@@ -318,6 +629,14 @@ body.rtl .mv-page .mv-x {
 #mv-notice-links span:focus,
 #recent-tabs:hover {
   text-decoration: underline;
+}
+
+.default-theme.dark #mv-msg {
+  color: #fff;
+}
+
+.default-theme.dark #mv-notice-links span {
+  color: #fff;
 }
 
 #mv-notice-links .mv-x {
@@ -349,7 +668,7 @@ body.rtl .mv-page .mv-x {
   z-index: -1;
 }
 
-body.rtl #attribution {
+body[dir=rtl] #attribution {
   text-align: right;
 }
 
@@ -368,7 +687,7 @@ body.rtl #attribution {
   right: 8px;
 }
 
-body.rtl #attribution,body.rtl #recent-tabs {
+body[dir=rtl] #attribution,body[dir=rtl] #recent-tabs {
   left: 8px;
   right: auto;
 }

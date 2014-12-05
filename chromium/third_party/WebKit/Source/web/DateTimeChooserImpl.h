@@ -32,43 +32,41 @@
 #define DateTimeChooserImpl_h
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
+#include "core/html/forms/DateTimeChooser.h"
 #include "core/page/PagePopupClient.h"
-#include "platform/DateTimeChooser.h"
-
-namespace WebCore {
-class PagePopup;
-class DateTimeChooserClient;
-}
 
 namespace blink {
 
 class ChromeClientImpl;
+class DateTimeChooserClient;
+class PagePopup;
 
-class DateTimeChooserImpl FINAL : public WebCore::DateTimeChooser, public WebCore::PagePopupClient {
+class DateTimeChooserImpl final : public DateTimeChooser, public PagePopupClient {
 public:
-    static PassRefPtrWillBeRawPtr<DateTimeChooserImpl> create(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    static PassRefPtr<DateTimeChooserImpl> create(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     virtual ~DateTimeChooserImpl();
-    virtual void trace(WebCore::Visitor*) OVERRIDE;
 
     // DateTimeChooser functions:
-    virtual void endChooser() OVERRIDE;
+    virtual void endChooser() override;
+    virtual AXObject* rootAXObject() override;
 
 private:
-    DateTimeChooserImpl(ChromeClientImpl*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    DateTimeChooserImpl(ChromeClientImpl*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     // PagePopupClient functions:
-    virtual WebCore::IntSize contentSize() OVERRIDE;
-    virtual void writeDocument(WebCore::SharedBuffer*) OVERRIDE;
-    virtual WebCore::Locale& locale() OVERRIDE;
-    virtual void setValueAndClosePopup(int, const String&) OVERRIDE;
-    virtual void setValue(const String&) OVERRIDE;
-    virtual void closePopup() OVERRIDE;
-    virtual void didClosePopup() OVERRIDE;
+    virtual IntSize contentSize() override;
+    virtual void writeDocument(SharedBuffer*) override;
+    virtual Locale& locale() override;
+    virtual void setValueAndClosePopup(int, const String&) override;
+    virtual void setValue(const String&) override;
+    virtual void closePopup() override;
+    virtual Element& ownerElement() override;
+    virtual void didClosePopup() override;
 
     ChromeClientImpl* m_chromeClient;
-    RawPtrWillBeMember<WebCore::DateTimeChooserClient> m_client;
-    WebCore::PagePopup* m_popup;
-    WebCore::DateTimeChooserParameters m_parameters;
-    OwnPtr<WebCore::Locale> m_locale;
+    DateTimeChooserClient* m_client;
+    PagePopup* m_popup;
+    DateTimeChooserParameters m_parameters;
+    OwnPtr<Locale> m_locale;
 };
 
 }

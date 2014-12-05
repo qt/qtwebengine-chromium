@@ -48,8 +48,6 @@ class TField
         return mLine;
     }
 
-    bool equals(const TField &other) const;
-
   private:
     DISALLOW_COPY_AND_ASSIGN(TField);
     TType *mType;
@@ -100,8 +98,6 @@ class TFieldListCollection
     size_t calculateObjectSize() const;
     virtual TString mangledNamePrefix() const = 0;
 
-    bool equals(const TFieldListCollection &other) const;
-
     const TString *mName;
     TFieldList *mFields;
 
@@ -144,6 +140,17 @@ class TStructure : public TFieldListCollection
 
   private:
     DISALLOW_COPY_AND_ASSIGN(TStructure);
+
+    // TODO(zmo): Find a way to get rid of the const_cast in function
+    // setName().  At the moment keep this function private so only
+    // friend class RegenerateStructNames may call it.
+    friend class RegenerateStructNames;
+    void setName(const TString &name)
+    {
+        TString *mutableName = const_cast<TString *>(mName);
+        *mutableName = name;
+    }
+
     virtual TString mangledNamePrefix() const
     {
         return "struct-";
@@ -192,8 +199,6 @@ class TInterfaceBlock : public TFieldListCollection
     {
         return mMatrixPacking;
     }
-
-    bool equals(const TInterfaceBlock &other) const;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(TInterfaceBlock);
@@ -384,10 +389,6 @@ class TType
 
         return mangled;
     }
-
-    // This is different from operator== as we also compare
-    // precision here.
-    bool equals(const TType &other) const;
 
     bool sameElementType(const TType &right) const
     {

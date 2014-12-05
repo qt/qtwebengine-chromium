@@ -29,14 +29,14 @@
 #include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Page;
 
 class NavigatorContentUtilsClient {
 public:
     virtual ~NavigatorContentUtilsClient() { }
-    virtual void registerProtocolHandler(const String& scheme, const KURL& baseURL, const KURL&, const String& title) = 0;
+    virtual void registerProtocolHandler(const String& scheme, const KURL&, const String& title) = 0;
 
     enum CustomHandlersState {
         CustomHandlersNew,
@@ -44,8 +44,8 @@ public:
         CustomHandlersDeclined
     };
 
-    virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const KURL& baseURL, const KURL&) = 0;
-    virtual void unregisterProtocolHandler(const String& scheme, const KURL& baseURL, const KURL&) = 0;
+    virtual CustomHandlersState isProtocolHandlerRegistered(const String& scheme, const KURL&) = 0;
+    virtual void unregisterProtocolHandler(const String& scheme, const KURL&) = 0;
 };
 
 void provideNavigatorContentUtilsTo(Page&, PassOwnPtr<NavigatorContentUtilsClient>);

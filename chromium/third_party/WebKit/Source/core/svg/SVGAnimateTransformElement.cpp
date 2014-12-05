@@ -27,13 +27,12 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGAnimateTransformElement::SVGAnimateTransformElement(Document& document)
     : SVGAnimateElement(SVGNames::animateTransformTag, document)
     , m_type(SVG_TRANSFORM_UNKNOWN)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGAnimateTransformElement)
@@ -50,21 +49,8 @@ bool SVGAnimateTransformElement::hasValidAttributeType()
     return animatedPropertyType() == AnimatedTransformList;
 }
 
-bool SVGAnimateTransformElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::typeAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGAnimateElement::parseAttribute(name, value);
-        return;
-    }
-
     if (name == SVGNames::typeAttr) {
         m_type = parseTransformType(value);
         if (m_type == SVG_TRANSFORM_MATRIX)
@@ -72,7 +58,7 @@ void SVGAnimateTransformElement::parseAttribute(const QualifiedName& name, const
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGAnimateElement::parseAttribute(name, value);
 }
 
 }

@@ -33,11 +33,9 @@
 
 #include "public/platform/WebPrivateOwnPtr.h"
 
-namespace WebCore {
-class WindowFocusAllowedIndicator;
-}
-
 namespace blink {
+
+class WindowFocusAllowedIndicator;
 
 class WebScopedWindowFocusAllowedIndicator {
 public:
@@ -48,7 +46,7 @@ private:
     BLINK_EXPORT void initialize();
     BLINK_EXPORT void reset();
 
-    WebPrivateOwnPtr<WebCore::WindowFocusAllowedIndicator> m_indicator;
+    WebPrivateOwnPtr<WindowFocusAllowedIndicator> m_indicator;
 };
 
 }

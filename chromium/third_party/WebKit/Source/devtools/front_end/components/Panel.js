@@ -71,21 +71,6 @@ WebInspector.Panel.prototype = {
     },
 
     /**
-     * @param {string} text
-     */
-    replaceSelectionWith: function(text)
-    {
-    },
-
-    /**
-     * @param {string} query
-     * @param {string} text
-     */
-    replaceAllWith: function(query, text)
-    {
-    },
-
-    /**
      * @return {!Array.<!Element>}
      */
     elementsToRestoreScrollPositionsFor: function()
@@ -127,7 +112,7 @@ WebInspector.Panel.prototype = {
 
     /**
      * @param {!Array.<!WebInspector.KeyboardShortcut.Descriptor>} keys
-     * @param {function(?Event=):boolean} handler
+     * @param {function(!Event=):boolean} handler
      */
     registerShortcuts: function(keys, handler)
     {
@@ -208,24 +193,38 @@ WebInspector.PanelDescriptor.prototype = {
     title: function() {},
 
     /**
-     * @return {!WebInspector.Panel}
+     * @return {!Promise.<!WebInspector.Panel>}
      */
     panel: function() {}
 }
 
 /**
+ * @interface
+ */
+WebInspector.PanelFactory = function()
+{
+}
+
+WebInspector.PanelFactory.prototype = {
+    /**
+     * @return {!WebInspector.Panel}
+     */
+    createPanel: function() { }
+}
+
+/**
  * @constructor
- * @param {!WebInspector.ModuleManager.Extension} extension
+ * @param {!Runtime.Extension} extension
  * @implements {WebInspector.PanelDescriptor}
  */
-WebInspector.ModuleManagerExtensionPanelDescriptor = function(extension)
+WebInspector.RuntimeExtensionPanelDescriptor = function(extension)
 {
     this._name = extension.descriptor()["name"];
     this._title = WebInspector.UIString(extension.descriptor()["title"]);
     this._extension = extension;
 }
 
-WebInspector.ModuleManagerExtensionPanelDescriptor.prototype = {
+WebInspector.RuntimeExtensionPanelDescriptor.prototype = {
     /**
      * @return {string}
      */
@@ -243,10 +242,19 @@ WebInspector.ModuleManagerExtensionPanelDescriptor.prototype = {
     },
 
     /**
-     * @return {!WebInspector.Panel}
+     * @return {!Promise.<!WebInspector.Panel>}
      */
     panel: function()
     {
-        return /** @type {!WebInspector.Panel} */ (this._extension.instance());
+        return this._extension.instancePromise().then(createPanel);
+
+        /**
+         * @param {!Object} panelFactory
+         * @return {!WebInspector.Panel}
+         */
+        function createPanel(panelFactory)
+        {
+            return /** @type {!WebInspector.PanelFactory} */ (panelFactory).createPanel();
+        }
     }
 }

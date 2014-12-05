@@ -38,7 +38,7 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 enum PaddingType {
     TopPadding,
@@ -70,14 +70,14 @@ RenderThemeChromiumSkia::~RenderThemeChromiumSkia()
 String RenderThemeChromiumSkia::extraDefaultStyleSheet()
 {
     return RenderTheme::extraDefaultStyleSheet() +
-        String(themeWinUserAgentStyleSheet, sizeof(themeWinUserAgentStyleSheet)) +
-        String(themeChromiumSkiaUserAgentStyleSheet, sizeof(themeChromiumSkiaUserAgentStyleSheet)) +
-        String(themeChromiumUserAgentStyleSheet, sizeof(themeChromiumUserAgentStyleSheet));
+        String(themeWinCss, sizeof(themeWinCss)) +
+        String(themeChromiumSkiaCss, sizeof(themeChromiumSkiaCss)) +
+        String(themeChromiumCss, sizeof(themeChromiumCss));
 }
 
 String RenderThemeChromiumSkia::extraQuirksStyleSheet()
 {
-    return String(themeWinQuirksUserAgentStyleSheet, sizeof(themeWinQuirksUserAgentStyleSheet));
+    return String(themeWinQuirksCss, sizeof(themeWinQuirksCss));
 }
 
 bool RenderThemeChromiumSkia::supportsHover(const RenderStyle* style) const
@@ -121,15 +121,15 @@ double RenderThemeChromiumSkia::caretBlinkInterval() const
 {
     // Disable the blinking caret in layout test mode, as it introduces
     // a race condition for the pixel tests. http://b/1198440
-    if (isRunningLayoutTest())
+    if (LayoutTestSupport::isRunningLayoutTest())
         return 0;
 
     return caretBlinkIntervalInternal();
 }
 
-void RenderThemeChromiumSkia::systemFont(CSSValueID valueID, FontDescription& fontDescription) const
+void RenderThemeChromiumSkia::systemFont(CSSValueID systemFontID, FontStyle& fontStyle, FontWeight& fontWeight, float& fontSize, AtomicString& fontFamily) const
 {
-    RenderThemeChromiumFontProvider::systemFont(valueID, fontDescription);
+    RenderThemeChromiumFontProvider::systemFont(systemFontID, fontStyle, fontWeight, fontSize, fontFamily);
 }
 
 int RenderThemeChromiumSkia::minimumMenuListSize(RenderStyle* style) const
@@ -316,6 +316,11 @@ bool RenderThemeChromiumSkia::paintMediaToggleClosedCaptionsButton(RenderObject*
     return RenderMediaControls::paintMediaControlsPart(MediaShowClosedCaptionsButton, o, paintInfo, r);
 }
 
+bool RenderThemeChromiumSkia::paintMediaCastButton(RenderObject* o, const PaintInfo& paintInfo, const IntRect& r)
+{
+    return RenderMediaControls::paintMediaControlsPart(MediaCastOffButton, o, paintInfo, r);
+}
+
 bool RenderThemeChromiumSkia::paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
     return RenderMediaControls::paintMediaControlsPart(MediaVolumeSliderThumb, object, paintInfo, rect);
@@ -351,7 +356,7 @@ bool RenderThemeChromiumSkia::paintMediaFullscreenButton(RenderObject* object, c
     return RenderMediaControls::paintMediaControlsPart(MediaEnterFullscreenButton, object, paintInfo, rect);
 }
 
-void RenderThemeChromiumSkia::adjustMenuListStyle(RenderStyle* style, WebCore::Element*) const
+void RenderThemeChromiumSkia::adjustMenuListStyle(RenderStyle* style, Element*) const
 {
     // Height is locked to auto on all browsers.
     style->setLineHeight(RenderStyle::initialLineHeight());
@@ -487,4 +492,4 @@ RenderThemeChromiumSkia::DirectionFlippingScope::~DirectionFlippingScope()
     m_paintInfo.context->restore();
 }
 
-} // namespace WebCore
+} // namespace blink

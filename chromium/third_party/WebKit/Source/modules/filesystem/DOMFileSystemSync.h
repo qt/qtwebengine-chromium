@@ -31,11 +31,11 @@
 #ifndef DOMFileSystemSync_h
 #define DOMFileSystemSync_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystemBase.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DirectoryEntrySync;
 class File;
@@ -43,7 +43,8 @@ class FileEntrySync;
 class FileWriterSync;
 class ExceptionState;
 
-class DOMFileSystemSync FINAL : public DOMFileSystemBase, public ScriptWrappable {
+class DOMFileSystemSync final : public DOMFileSystemBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static DOMFileSystemSync* create(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
     {
@@ -54,17 +55,17 @@ public:
 
     virtual ~DOMFileSystemSync();
 
-    virtual void reportError(PassOwnPtr<ErrorCallback>, PassRefPtrWillBeRawPtr<FileError>) OVERRIDE;
+    virtual void reportError(ErrorCallback*, FileError*) override;
 
     DirectoryEntrySync* root();
 
-    PassRefPtrWillBeRawPtr<File> createFile(const FileEntrySync*, ExceptionState&);
+    File* createFile(const FileEntrySync*, ExceptionState&);
     FileWriterSync* createWriter(const FileEntrySync*, ExceptionState&);
 
 private:
     DOMFileSystemSync(ExecutionContext*, const String& name, FileSystemType, const KURL& rootURL);
 };
 
-}
+} // namespace blink
 
 #endif // DOMFileSystemSync_h

@@ -33,33 +33,53 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
+#include "wtf/PassRefPtr.h"
+#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
+class CacheStorage;
+class Dictionary;
 class FetchManager;
 class Request;
 class ScriptPromise;
 class ScriptState;
-class ServiceWorkerThread;
 class ServiceWorkerClients;
+class ServiceWorkerThread;
+class WaitUntilObserver;
 class WorkerThreadStartupData;
 
-class ServiceWorkerGlobalScope FINAL : public WorkerGlobalScope {
+class ServiceWorkerGlobalScope final : public WorkerGlobalScope {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ServiceWorkerGlobalScope> create(ServiceWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
 
     virtual ~ServiceWorkerGlobalScope();
-    virtual bool isServiceWorkerGlobalScope() const OVERRIDE { return true; }
-    virtual void stopFetch() OVERRIDE;
+    virtual bool isServiceWorkerGlobalScope() const override { return true; }
+
+    // WorkerGlobalScope
+    virtual void stopFetch() override;
+    virtual void didEvaluateWorkerScript() override;
 
     // ServiceWorkerGlobalScope.idl
-    PassRefPtr<ServiceWorkerClients> clients();
+    ServiceWorkerClients* clients();
     String scope(ExecutionContext*);
+
+    CacheStorage* caches(ExecutionContext*);
+
     ScriptPromise fetch(ScriptState*, Request*);
+    ScriptPromise fetch(ScriptState*, Request*, const Dictionary&);
     ScriptPromise fetch(ScriptState*, const String&);
+    ScriptPromise fetch(ScriptState*, const String&, const Dictionary&);
+
+    void close(ExceptionState&);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    virtual const AtomicString& interfaceName() const override;
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override;
+
+    void dispatchExtendableEvent(PassRefPtrWillBeRawPtr<Event>, WaitUntilObserver*);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(install);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(activate);
@@ -67,15 +87,21 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(sync);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    ServiceWorkerGlobalScope(const KURL&, const String& userAgent, ServiceWorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    ServiceWorkerGlobalScope(const KURL&, const String& userAgent, ServiceWorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    virtual void importScripts(const Vector<String>& urls, ExceptionState&) override;
+    virtual void logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack>) override;
 
-    RefPtr<ServiceWorkerClients> m_clients;
+    PersistentWillBeMember<ServiceWorkerClients> m_clients;
     OwnPtr<FetchManager> m_fetchManager;
+    PersistentWillBeMember<CacheStorage> m_caches;
+    bool m_didEvaluateScript;
+    bool m_hadErrorInTopLevelEventHandler;
+    unsigned m_eventNestingLevel;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ServiceWorkerGlobalScope_h

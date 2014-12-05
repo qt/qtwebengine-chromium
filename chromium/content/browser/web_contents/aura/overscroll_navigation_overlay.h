@@ -29,7 +29,7 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
       public WindowSlider::Delegate {
  public:
   explicit OverscrollNavigationOverlay(WebContentsImpl* web_contents);
-  virtual ~OverscrollNavigationOverlay();
+  ~OverscrollNavigationOverlay() override;
 
   bool has_window() const { return !!window_.get(); }
 
@@ -77,16 +77,16 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
   ui::Layer* CreateSlideLayer(int offset);
 
   // Overridden from WindowSlider::Delegate:
-  virtual ui::Layer* CreateBackLayer() OVERRIDE;
-  virtual ui::Layer* CreateFrontLayer() OVERRIDE;
-  virtual void OnWindowSlideCompleting() OVERRIDE;
-  virtual void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) OVERRIDE;
-  virtual void OnWindowSlideAborted() OVERRIDE;
-  virtual void OnWindowSliderDestroyed() OVERRIDE;
+  ui::Layer* CreateBackLayer() override;
+  ui::Layer* CreateFrontLayer() override;
+  void OnWindowSlideCompleting() override;
+  void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) override;
+  void OnWindowSlideAborted() override;
+  void OnWindowSliderDestroyed() override;
 
   // Overridden from WebContentsObserver:
-  virtual void DidFirstVisuallyNonEmptyPaint() OVERRIDE;
-  virtual void DidStopLoading(RenderViewHost* host) OVERRIDE;
+  void DidFirstVisuallyNonEmptyPaint() override;
+  void DidStopLoading(RenderViewHost* host) override;
 
   // The WebContents which is being navigated.
   WebContentsImpl* web_contents_;
@@ -101,10 +101,10 @@ class CONTENT_EXPORT OverscrollNavigationOverlay
   bool loading_complete_;
   bool received_paint_update_;
 
-  // Unique ID of the NavigationEntry we are navigating to. This is needed to
+  // URL of the NavigationEntry we are navigating to. This is needed to
   // filter on WebContentsObserver callbacks and is used to dismiss the overlay
   // when the relevant page loads and paints.
-  int pending_entry_id_;
+  GURL pending_entry_url_;
 
   // The |WindowSlider| that allows sliding history layers while the page is
   // being reloaded.

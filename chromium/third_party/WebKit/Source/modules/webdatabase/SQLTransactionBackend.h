@@ -28,27 +28,25 @@
 #ifndef SQLTransactionBackend_h
 #define SQLTransactionBackend_h
 
-#include "modules/webdatabase/AbstractSQLStatement.h"
-#include "modules/webdatabase/AbstractSQLTransactionBackend.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 #include "wtf/ThreadingPrimitives.h"
-#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class AbstractSQLTransaction;
-class DatabaseBackend;
+class Database;
 class SQLErrorData;
 class SQLiteTransaction;
 class SQLStatementBackend;
+class SQLTransaction;
 class SQLTransactionBackend;
 class SQLValue;
 
-class SQLTransactionWrapper : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<SQLTransactionWrapper> {
+class SQLTransactionWrapper : public GarbageCollectedFinalized<SQLTransactionWrapper> {
 public:
     virtual ~SQLTransactionWrapper() { }
     virtual void trace(Visitor*) { }
@@ -58,39 +56,36 @@ public:
     virtual void handleCommitFailedAfterPostflight(SQLTransactionBackend*) = 0;
 };
 
-class SQLTransactionBackend FINAL : public AbstractSQLTransactionBackend, public SQLTransactionStateMachine<SQLTransactionBackend> {
+class SQLTransactionBackend final : public GarbageCollectedFinalized<SQLTransactionBackend>, public SQLTransactionStateMachine<SQLTransactionBackend> {
 public:
-    static PassRefPtrWillBeRawPtr<SQLTransactionBackend> create(DatabaseBackend*,
-        PassRefPtrWillBeRawPtr<AbstractSQLTransaction>, PassRefPtrWillBeRawPtr<SQLTransactionWrapper>, bool readOnly);
+    static SQLTransactionBackend* create(Database*, SQLTransaction*, SQLTransactionWrapper*, bool readOnly);
 
     virtual ~SQLTransactionBackend();
-    virtual void trace(Visitor*) OVERRIDE;
+    void trace(Visitor*);
 
     void lockAcquired();
     void performNextStep();
 
-    DatabaseBackend* database() { return m_database.get(); }
+    Database* database() { return m_database.get(); }
     bool isReadOnly() { return m_readOnly; }
     void notifyDatabaseThreadIsShuttingDown();
 
-private:
-    SQLTransactionBackend(DatabaseBackend*, PassRefPtrWillBeRawPtr<AbstractSQLTransaction>,
-        PassRefPtrWillBeRawPtr<SQLTransactionWrapper>, bool readOnly);
+    // APIs called from the frontend published:
+    void requestTransitToState(SQLTransactionState);
+    SQLErrorData* transactionError();
+    SQLStatement* currentStatement();
+    void setShouldRetryCurrentStatement(bool);
+    void executeSQL(SQLStatement*, const String& statement, const Vector<SQLValue>& arguments, int permissions);
 
-    // APIs called from the frontend published via AbstractSQLTransactionBackend:
-    virtual void requestTransitToState(SQLTransactionState) OVERRIDE;
-    virtual SQLErrorData* transactionError() OVERRIDE;
-    virtual AbstractSQLStatement* currentStatement() OVERRIDE;
-    virtual void setShouldRetryCurrentStatement(bool) OVERRIDE;
-    virtual void executeSQL(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>, const String& statement,
-        const Vector<SQLValue>& arguments, int permissions) OVERRIDE;
+private:
+    SQLTransactionBackend(Database*, SQLTransaction*, SQLTransactionWrapper*, bool readOnly);
 
     void doCleanup();
 
-    void enqueueStatementBackend(PassRefPtrWillBeRawPtr<SQLStatementBackend>);
+    void enqueueStatementBackend(SQLStatementBackend*);
 
     // State Machine functions:
-    virtual StateFunction stateFunctionFor(SQLTransactionState) OVERRIDE;
+    virtual StateFunction stateFunctionFor(SQLTransactionState) override;
     void computeNextStateAndCleanupIfNeeded();
 
     // State functions:
@@ -110,11 +105,11 @@ private:
 
     void getNextStatement();
 
-    RefPtrWillBeMember<AbstractSQLTransaction> m_frontend; // Has a reference cycle, and will break in doCleanup().
-    RefPtrWillBeMember<SQLStatementBackend> m_currentStatementBackend;
+    Member<SQLTransaction> m_frontend;
+    Member<SQLStatementBackend> m_currentStatementBackend;
 
-    RefPtrWillBeMember<DatabaseBackend> m_database;
-    RefPtrWillBeMember<SQLTransactionWrapper> m_wrapper;
+    Member<Database> m_database;
+    Member<SQLTransactionWrapper> m_wrapper;
     OwnPtr<SQLErrorData> m_transactionError;
 
     bool m_hasCallback;
@@ -127,11 +122,11 @@ private:
     bool m_hasVersionMismatch;
 
     Mutex m_statementMutex;
-    Deque<RefPtrWillBeMember<SQLStatementBackend> > m_statementQueue;
+    HeapDeque<Member<SQLStatementBackend> > m_statementQueue;
 
     OwnPtr<SQLiteTransaction> m_sqliteTransaction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLTransactionBackend_h

@@ -26,29 +26,30 @@
 #ifndef WebGLDebugShaders_h
 #define WebGLDebugShaders_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLShader;
 
-class WebGLDebugShaders FINAL : public WebGLExtension, public ScriptWrappable {
+class WebGLDebugShaders final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<WebGLDebugShaders> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLDebugShaders> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~WebGLDebugShaders();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
     String getTranslatedShaderSource(WebGLShader*);
 
 private:
-    WebGLDebugShaders(WebGLRenderingContextBase*);
+    explicit WebGLDebugShaders(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLDebugShaders_h

@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_VERSION_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -17,13 +18,19 @@
 #include "base/observer_list.h"
 #include "base/timer/timer.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
+#include "content/browser/service_worker/service_worker_cache_listener.h"
 #include "content/browser/service_worker/service_worker_script_cache_map.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "third_party/WebKit/public/platform/WebGeofencingEventType.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerEventResult.h"
 
 class GURL;
+
+namespace blink {
+struct WebCircularGeofencingRegion;
+}
 
 namespace content {
 
@@ -36,12 +43,8 @@ class ServiceWorkerVersionInfo;
 // This class corresponds to a specific version of a ServiceWorker
 // script for a given pattern. When a script is upgraded, there may be
 // more than one ServiceWorkerVersion "running" at a time, but only
-// one of them is active. This class connects the actual script with a
+// one of them is activated. This class connects the actual script with a
 // running worker.
-//
-// is_shutdown_ detects the live-ness of the object itself. If the object is
-// shut down, then it is in the process of being deleted from memory.
-// This happens when a version is replaced as well as at browser shutdown.
 class CONTENT_EXPORT ServiceWorkerVersion
     : NON_EXPORTED_BASE(public base::RefCounted<ServiceWorkerVersion>),
       public EmbeddedWorkerInstance::Listener {
@@ -60,39 +63,44 @@ class CONTENT_EXPORT ServiceWorkerVersion
     STOPPING = EmbeddedWorkerInstance::STOPPING,
   };
 
-  // Current version status; some of the status (e.g. INSTALLED and ACTIVE)
+  // Current version status; some of the status (e.g. INSTALLED and ACTIVATED)
   // should be persisted unlike running status.
   enum Status {
     NEW,         // The version is just created.
     INSTALLING,  // Install event is dispatched and being handled.
     INSTALLED,   // Install event is finished and is ready to be activated.
     ACTIVATING,  // Activate event is dispatched and being handled.
-    ACTIVE,      // Activation is finished and can run as active.
-    DEACTIVATED, // The version is no longer running as active, due to
-                 // unregistration or replace. (TODO(kinuko): we may need
-                 // different states for different termination sequences)
+    ACTIVATED,   // Activation is finished and can run as activated.
+    REDUNDANT,   // The version is no longer running as activated, due to
+                 // unregistration or replace.
   };
 
   class Listener {
    public:
-    virtual void OnWorkerStarted(ServiceWorkerVersion* version) = 0;
-    virtual void OnWorkerStopped(ServiceWorkerVersion* version) = 0;
-    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) = 0;
+    virtual void OnWorkerStarted(ServiceWorkerVersion* version) {}
+    virtual void OnWorkerStopped(ServiceWorkerVersion* version) {}
+    virtual void OnVersionStateChanged(ServiceWorkerVersion* version) {}
     virtual void OnErrorReported(ServiceWorkerVersion* version,
                                  const base::string16& error_message,
                                  int line_number,
                                  int column_number,
-                                 const GURL& source_url) = 0;
+                                 const GURL& source_url) {}
     virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
                                         int source_identifier,
                                         int message_level,
                                         const base::string16& message,
                                         int line_number,
-                                        const GURL& source_url) = 0;
+                                        const GURL& source_url) {}
+    // Fires when a version transitions from having a controllee to not.
+    virtual void OnNoControllees(ServiceWorkerVersion* version) {}
+
+   protected:
+    virtual ~Listener() {}
   };
 
   ServiceWorkerVersion(
       ServiceWorkerRegistration* registration,
+      const GURL& script_url,
       int64 version_id,
       base::WeakPtr<ServiceWorkerContextCore> context);
 
@@ -120,16 +128,25 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void StartWorker(const StatusCallback& callback);
 
   // Starts an embedded worker for this version.
-  // |potential_process_ids| is a list of processes in which to start the
-  // worker.
+  // |pause_after_download| notifies worker to pause after download finished
+  // which could be resumed by EmbeddedWorkerInstance::ResumeAfterDownload.
   // This returns OK (success) if the worker is already running.
-  void StartWorkerWithCandidateProcesses(
-      const std::vector<int>& potential_process_ids,
-      const StatusCallback& callback);
+  void StartWorker(bool pause_after_download,
+                   const StatusCallback& callback);
 
-  // Starts an embedded worker for this version.
+  // Stops an embedded worker for this version.
   // This returns OK (success) if the worker is already stopped.
   void StopWorker(const StatusCallback& callback);
+
+  // Schedules an update to be run 'soon'.
+  void ScheduleUpdate();
+
+  // If an update is scheduled but not yet started, this resets the timer
+  // delaying the start time by a 'small' amount.
+  void DeferScheduledUpdate();
+
+  // Starts an update now.
+  void StartUpdate();
 
   // Sends an IPC message to the worker.
   // If the worker is not running this first tries to start it by
@@ -139,10 +156,10 @@ class CONTENT_EXPORT ServiceWorkerVersion
   void SendMessage(const IPC::Message& message, const StatusCallback& callback);
 
   // Sends install event to the associated embedded worker and asynchronously
-  // calls |callback| when it errors out or it gets response from the worker
+  // calls |callback| when it errors out or it gets a response from the worker
   // to notify install completion.
   // |active_version_id| must be a valid positive ID
-  // if there's an active (previous) version running.
+  // if there's an activated (previous) version running.
   //
   // This must be called when the status() is NEW. Calling this changes
   // the version's status to INSTALLING.
@@ -152,52 +169,55 @@ class CONTENT_EXPORT ServiceWorkerVersion
                             const StatusCallback& callback);
 
   // Sends activate event to the associated embedded worker and asynchronously
-  // calls |callback| when it errors out or it gets response from the worker
+  // calls |callback| when it errors out or it gets a response from the worker
   // to notify activation completion.
   //
   // This must be called when the status() is INSTALLED. Calling this changes
   // the version's status to ACTIVATING.
-  // Upon completion, the version's status will be changed to ACTIVE
+  // Upon completion, the version's status will be changed to ACTIVATED
   // on success, or back to INSTALLED on failure.
   void DispatchActivateEvent(const StatusCallback& callback);
 
   // Sends fetch event to the associated embedded worker and calls
   // |callback| with the response from the worker.
   //
-  // This must be called when the status() is ACTIVE. Calling this in other
+  // This must be called when the status() is ACTIVATED. Calling this in other
   // statuses will result in an error SERVICE_WORKER_ERROR_FAILED.
   void DispatchFetchEvent(const ServiceWorkerFetchRequest& request,
-                          const FetchCallback& callback);
+                          const base::Closure& prepare_callback,
+                          const FetchCallback& fetch_callback);
 
   // Sends sync event to the associated embedded worker and asynchronously calls
-  // |callback| when it errors out or it gets response from the worker to notify
-  // completion.
+  // |callback| when it errors out or it gets a response from the worker to
+  // notify completion.
   //
-  // This must be called when the status() is ACTIVE.
+  // This must be called when the status() is ACTIVATED.
   void DispatchSyncEvent(const StatusCallback& callback);
 
   // Sends push event to the associated embedded worker and asynchronously calls
-  // |callback| when it errors out or it gets response from the worker to notify
-  // completion.
+  // |callback| when it errors out or it gets a response from the worker to
+  // notify completion.
   //
-  // This must be called when the status() is ACTIVE.
+  // This must be called when the status() is ACTIVATED.
   void DispatchPushEvent(const StatusCallback& callback,
                          const std::string& data);
 
-  // These are expected to be called when a renderer process host for the
-  // same-origin as for this ServiceWorkerVersion is created.  The added
-  // processes are used to run an in-renderer embedded worker.
-  void AddProcessToWorker(int process_id);
-  void RemoveProcessFromWorker(int process_id);
-
-  // Returns true if this has at least one process to run.
-  bool HasProcessToRun() const;
+  // Sends geofencing event to the associated embedded worker and asynchronously
+  // calls |callback| when it errors out or it gets a response from the worker
+  // to notify completion.
+  //
+  // This must be called when the status() is ACTIVATED.
+  void DispatchGeofencingEvent(
+      const StatusCallback& callback,
+      blink::WebGeofencingEventType event_type,
+      const std::string& region_id,
+      const blink::WebCircularGeofencingRegion& region);
 
   // Adds and removes |provider_host| as a controllee of this ServiceWorker.
+  // A potential controllee is a host having the version as its .installing
+  // or .waiting version.
   void AddControllee(ServiceWorkerProviderHost* provider_host);
   void RemoveControllee(ServiceWorkerProviderHost* provider_host);
-  void AddWaitingControllee(ServiceWorkerProviderHost* provider_host);
-  void RemoveWaitingControllee(ServiceWorkerProviderHost* provider_host);
 
   // Returns if it has controllee.
   bool HasControllee() const { return !controllee_map_.empty(); }
@@ -209,29 +229,39 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ServiceWorkerScriptCacheMap* script_cache_map() { return &script_cache_map_; }
   EmbeddedWorkerInstance* embedded_worker() { return embedded_worker_.get(); }
 
+  // Dooms this version to have REDUNDANT status and its resources deleted.  If
+  // the version is controlling a page, these changes will happen when the
+  // version no longer controls any pages.
+  void Doom();
+  bool is_doomed() const { return is_doomed_; }
+
  private:
+  friend class base::RefCounted<ServiceWorkerVersion>;
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerControlleeRequestHandlerTest,
+                           ActivateWaitingVersion);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, ScheduleStopWorker);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerVersionTest, ListenerAvailability);
   typedef ServiceWorkerVersion self;
   typedef std::map<ServiceWorkerProviderHost*, int> ControlleeMap;
   typedef IDMap<ServiceWorkerProviderHost> ControlleeByIDMap;
-  friend class base::RefCounted<ServiceWorkerVersion>;
 
-  virtual ~ServiceWorkerVersion();
+  ~ServiceWorkerVersion() override;
 
   // EmbeddedWorkerInstance::Listener overrides:
-  virtual void OnStarted() OVERRIDE;
-  virtual void OnStopped() OVERRIDE;
-  virtual void OnReportException(const base::string16& error_message,
-                                 int line_number,
-                                 int column_number,
-                                 const GURL& source_url) OVERRIDE;
-  virtual void OnReportConsoleMessage(int source_identifier,
-                                      int message_level,
-                                      const base::string16& message,
-                                      int line_number,
-                                      const GURL& source_url) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnStarted() override;
+  void OnStopped() override;
+  void OnReportException(const base::string16& error_message,
+                         int line_number,
+                         int column_number,
+                         const GURL& source_url) override;
+  void OnReportConsoleMessage(int source_identifier,
+                              int message_level,
+                              const base::string16& message,
+                              int line_number,
+                              const GURL& source_url) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
-  void RunStartWorkerCallbacksOnError(ServiceWorkerStatusCode status);
+  void OnStartMessageSent(ServiceWorkerStatusCode status);
 
   void DispatchInstallEventAfterStartWorker(int active_version_id,
                                             const StatusCallback& callback);
@@ -248,11 +278,13 @@ class CONTENT_EXPORT ServiceWorkerVersion
                             const ServiceWorkerResponse& response);
   void OnSyncEventFinished(int request_id);
   void OnPushEventFinished(int request_id);
+  void OnGeofencingEventFinished(int request_id);
   void OnPostMessageToDocument(int client_id,
                                const base::string16& message,
                                const std::vector<int>& sent_message_port_ids);
 
   void ScheduleStopWorker();
+  void DoomInternal();
 
   const int64 version_id_;
   int64 registration_id_;
@@ -260,6 +292,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   GURL scope_;
   Status status_;
   scoped_ptr<EmbeddedWorkerInstance> embedded_worker_;
+  scoped_ptr<ServiceWorkerCacheListener> cache_listener_;
   std::vector<StatusCallback> start_callbacks_;
   std::vector<StatusCallback> stop_callbacks_;
   std::vector<base::Closure> status_change_callbacks_;
@@ -270,6 +303,7 @@ class CONTENT_EXPORT ServiceWorkerVersion
   IDMap<FetchCallback, IDMapOwnPointer> fetch_callbacks_;
   IDMap<StatusCallback, IDMapOwnPointer> sync_callbacks_;
   IDMap<StatusCallback, IDMapOwnPointer> push_callbacks_;
+  IDMap<StatusCallback, IDMapOwnPointer> geofencing_callbacks_;
 
   ControlleeMap controllee_map_;
   ControlleeByIDMap controllee_by_id_;
@@ -277,6 +311,8 @@ class CONTENT_EXPORT ServiceWorkerVersion
   ObserverList<Listener> listeners_;
   ServiceWorkerScriptCacheMap script_cache_map_;
   base::OneShotTimer<ServiceWorkerVersion> stop_worker_timer_;
+  base::OneShotTimer<ServiceWorkerVersion> update_timer_;
+  bool is_doomed_;
 
   base::WeakPtrFactory<ServiceWorkerVersion> weak_factory_;
 

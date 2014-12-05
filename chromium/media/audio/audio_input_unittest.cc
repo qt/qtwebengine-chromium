@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/environment.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -23,15 +24,13 @@ class TestInputCallback : public AudioInputStream::AudioInputCallback {
       : callback_count_(0),
         had_error_(0) {
   }
-  virtual void OnData(AudioInputStream* stream,
-                      const AudioBus* source,
-                      uint32 hardware_delay_bytes,
-                      double volume) OVERRIDE {
+  void OnData(AudioInputStream* stream,
+              const AudioBus* source,
+              uint32 hardware_delay_bytes,
+              double volume) override {
     ++callback_count_;
   }
-  virtual void OnError(AudioInputStream* stream) OVERRIDE {
-    ++had_error_;
-  }
+  void OnError(AudioInputStream* stream) override { ++had_error_; }
   // Returns how many times OnData() has been called.
   int callback_count() const {
     return callback_count_;
@@ -56,9 +55,7 @@ class AudioInputTest : public testing::Test {
     base::RunLoop().RunUntilIdle();
   }
 
-  virtual ~AudioInputTest() {
-    base::RunLoop().RunUntilIdle();
-  }
+  ~AudioInputTest() override { base::RunLoop().RunUntilIdle(); }
 
  protected:
   AudioManager* audio_manager() { return audio_manager_.get(); }

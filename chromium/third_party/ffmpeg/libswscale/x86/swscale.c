@@ -202,7 +202,8 @@ static void yuv2yuvX_sse3(const int16_t *filter, int filterSize,
                            const uint8_t *dither, int offset)
 {
     if(((int)dest) & 15){
-        return yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
+        yuv2yuvX_mmxext(filter, filterSize, src, dest, dstW, dither, offset);
+        return;
     }
     if (offset) {
         __asm__ volatile("movq       (%0), %%xmm3\n\t"
@@ -447,7 +448,7 @@ switch(c->dstBpc){ \
         ASSIGN_VSCALE_FUNC(c->yuv2plane1, mmx, mmxext, cpu_flags & AV_CPU_FLAG_MMXEXT);
 
         switch (c->srcFormat) {
-        case AV_PIX_FMT_Y400A:
+        case AV_PIX_FMT_YA8:
             c->lumToYV12 = ff_yuyvToY_mmx;
             if (c->alpPixBuf)
                 c->alpToYV12 = ff_uyvyToY_mmx;
@@ -496,7 +497,7 @@ switch(c->dstBpc){ \
         ASSIGN_VSCALE_FUNC(c->yuv2plane1, sse2, sse2, 1);
 
         switch (c->srcFormat) {
-        case AV_PIX_FMT_Y400A:
+        case AV_PIX_FMT_YA8:
             c->lumToYV12 = ff_yuyvToY_sse2;
             if (c->alpPixBuf)
                 c->alpToYV12 = ff_uyvyToY_sse2;

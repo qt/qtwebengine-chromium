@@ -27,11 +27,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WTF{
-class TextEncoding;
-}
-
-namespace WebCore {
+namespace blink {
 
 class BlobDataHandle;
 
@@ -116,9 +112,6 @@ public:
     const Vector<char>& boundary() const { return m_boundary; }
     void setBoundary(Vector<char> boundary) { m_boundary = boundary; }
 
-    bool alwaysStream() const { return m_alwaysStream; }
-    void setAlwaysStream(bool alwaysStream) { m_alwaysStream = alwaysStream; }
-
     // Identifies a particular form submission instance.  A value of 0 is used
     // to indicate an unspecified identifier.
     void setIdentifier(int64_t identifier) { m_identifier = identifier; }
@@ -146,7 +139,6 @@ private:
     Vector<FormDataElement> m_elements;
 
     int64_t m_identifier;
-    bool m_alwaysStream;
     Vector<char> m_boundary;
     bool m_containsPasswordData;
 };
@@ -161,6 +153,6 @@ inline bool operator!=(const FormData& a, const FormData& b)
     return !(a == b);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

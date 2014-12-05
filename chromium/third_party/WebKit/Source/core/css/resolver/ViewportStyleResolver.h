@@ -36,7 +36,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class MutableStylePropertySet;
@@ -66,11 +66,11 @@ private:
     float viewportArgumentValue(CSSPropertyID) const;
     Length viewportLengthValue(CSSPropertyID) const;
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     RefPtrWillBeMember<MutableStylePropertySet> m_propertySet;
     bool m_hasAuthorStyle;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ViewportStyleResolver_h

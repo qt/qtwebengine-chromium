@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLObjectElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
@@ -44,7 +44,7 @@
 #include "platform/MIMETypeRegistry.h"
 #include "platform/Widget.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -52,7 +52,6 @@ inline HTMLObjectElement::HTMLObjectElement(Document& document, HTMLFormElement*
     : HTMLPlugInElement(objectTag, document, createdByParser, ShouldNotPreferPlugInsForImages)
     , m_useFallbackContent(false)
 {
-    ScriptWrappable::init(this);
     associateByParser(form);
 }
 
@@ -76,7 +75,7 @@ void HTMLObjectElement::trace(Visitor* visitor)
     HTMLPlugInElement::trace(visitor);
 }
 
-RenderWidget* HTMLObjectElement::existingRenderWidget() const
+RenderPart* HTMLObjectElement::existingRenderPart() const
 {
     return renderPart(); // This will return 0 if the renderer is not a RenderPart.
 }
@@ -116,7 +115,7 @@ void HTMLObjectElement::parseAttribute(const QualifiedName& name, const AtomicSt
             setNeedsWidgetUpdate(true);
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
-            m_imageLoader->updateFromElementIgnoringPreviousError();
+            m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         } else {
             reloadPluginOnAttributeChange(name);
         }
@@ -187,15 +186,12 @@ void HTMLObjectElement::parametersForPlugin(Vector<String>& paramNames, Vector<S
     }
 
     // Turn the attributes of the <object> element into arrays, but don't override <param> values.
-    if (hasAttributes()) {
-        AttributeCollection attributes = this->attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-            const AtomicString& name = it->name().localName();
-            if (!uniqueParamNames.contains(name.impl())) {
-                paramNames.append(name.string());
-                paramValues.append(it->value().string());
-            }
+    AttributeCollection attributes = this->attributes();
+    for (const Attribute& attribute : attributes) {
+        const AtomicString& name = attribute.name().localName();
+        if (!uniqueParamNames.contains(name.impl())) {
+            paramNames.append(name.string());
+            paramValues.append(attribute.value().string());
         }
     }
 
@@ -228,38 +224,9 @@ bool HTMLObjectElement::hasFallbackContent() const
     return false;
 }
 
-bool HTMLObjectElement::shouldAllowQuickTimeClassIdQuirk()
-{
-    // This site-specific hack maintains compatibility with Mac OS X Wiki Server,
-    // which embeds QuickTime movies using an object tag containing QuickTime's
-    // ActiveX classid. Treat this classid as valid only if OS X Server's unique
-    // 'generator' meta tag is present. Only apply this quirk if there is no
-    // fallback content, which ensures the quirk will disable itself if Wiki
-    // Server is updated to generate an alternate embed tag as fallback content.
-    if (!document().settings()
-        || !document().settings()->needsSiteSpecificQuirks()
-        || hasFallbackContent()
-        || !equalIgnoringCase(classId(), "clsid:02BF25D5-8C17-4B23-BC80-D3488ABDDC6B"))
-        return false;
-
-    RefPtrWillBeRawPtr<TagCollection> metaElements = document().getElementsByTagName(HTMLNames::metaTag.localName());
-    unsigned length = metaElements->length();
-    for (unsigned i = 0; i < length; ++i) {
-        ASSERT(metaElements->item(i)->isHTMLElement());
-        HTMLMetaElement* metaElement = toHTMLMetaElement(metaElements->item(i));
-        if (equalIgnoringCase(metaElement->name(), "generator") && metaElement->content().startsWith("Mac OS X Server Web Services Server", false))
-            return true;
-    }
-
-    return false;
-}
-
 bool HTMLObjectElement::hasValidClassId()
 {
     if (MIMETypeRegistry::isJavaAppletMIMEType(m_serviceType) && classId().startsWith("java:", false))
-        return true;
-
-    if (shouldAllowQuickTimeClassIdQuirk())
         return true;
 
     // HTML5 says that fallback content should be rendered if a non-empty
@@ -288,7 +255,7 @@ void HTMLObjectElement::reloadPluginOnAttributeChange(const QualifiedName& name)
     }
     setNeedsWidgetUpdate(true);
     if (needsInvalidation)
-        setNeedsStyleRecalc(SubtreeStyleChange);
+        lazyReattachIfNeeded();
 }
 
 // FIXME: This should be unified with HTMLEmbedElement::updateWidget and
@@ -359,19 +326,19 @@ void HTMLObjectElement::removedFrom(ContainerNode* insertionPoint)
     FormAssociatedElement::removedFrom(insertionPoint);
 }
 
-void HTMLObjectElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLObjectElement::childrenChanged(const ChildrenChange& change)
 {
     if (inDocument() && !useFallbackContent()) {
         setNeedsWidgetUpdate(true);
-        setNeedsStyleRecalc(SubtreeStyleChange);
+        lazyReattachIfNeeded();
     }
-    HTMLPlugInElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLPlugInElement::childrenChanged(change);
 }
 
 bool HTMLObjectElement::isURLAttribute(const Attribute& attribute) const
 {
     return attribute.name() == codebaseAttr || attribute.name() == dataAttr
-        || (attribute.name() == usemapAttr && attribute.value().string()[0] != '#')
+        || (attribute.name() == usemapAttr && attribute.value()[0] != '#')
         || HTMLPlugInElement::isURLAttribute(attribute);
 }
 
@@ -433,8 +400,8 @@ bool HTMLObjectElement::isExposed() const
         if (ancestor->isExposed())
             return false;
     }
-    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
-        if (isHTMLObjectElement(*element) || isHTMLEmbedElement(*element))
+    for (HTMLElement& element : Traversal<HTMLElement>::descendantsOf(*this)) {
+        if (isHTMLObjectElement(element) || isHTMLEmbedElement(element))
             return false;
     }
     return true;
@@ -445,14 +412,14 @@ bool HTMLObjectElement::containsJavaApplet() const
     if (MIMETypeRegistry::isJavaAppletMIMEType(getAttribute(typeAttr)))
         return true;
 
-    for (HTMLElement* child = Traversal<HTMLElement>::firstChild(*this); child; child = Traversal<HTMLElement>::nextSibling(*child)) {
-        if (isHTMLParamElement(*child)
-                && equalIgnoringCase(child->getNameAttribute(), "type")
-                && MIMETypeRegistry::isJavaAppletMIMEType(child->getAttribute(valueAttr).string()))
+    for (HTMLElement& child : Traversal<HTMLElement>::childrenOf(*this)) {
+        if (isHTMLParamElement(child)
+            && equalIgnoringCase(child.getNameAttribute(), "type")
+            && MIMETypeRegistry::isJavaAppletMIMEType(child.getAttribute(valueAttr).string()))
             return true;
-        if (isHTMLObjectElement(*child) && toHTMLObjectElement(*child).containsJavaApplet())
+        if (isHTMLObjectElement(child) && toHTMLObjectElement(child).containsJavaApplet())
             return true;
-        if (isHTMLAppletElement(*child))
+        if (isHTMLAppletElement(child))
             return true;
     }
 

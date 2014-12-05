@@ -6,10 +6,12 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "device/hid/hid_connection.h"
 #include "device/hid/hid_service.h"
+#include "device/test/usb_test_gadget.h"
 #include "net/base/io_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -19,110 +21,166 @@ namespace {
 
 using net::IOBufferWithSize;
 
-const int kUSBLUFADemoVID = 0x03eb;
-const int kUSBLUFADemoPID = 0x204f;
-const uint64_t kReport = 0x0903a65d030f8ec9ULL;
+class TestConnectCallback {
+ public:
+  TestConnectCallback()
+      : callback_(base::Bind(&TestConnectCallback::SetConnection,
+                             base::Unretained(this))) {}
+  ~TestConnectCallback() {}
 
-int g_read_times = 0;
-void Read(scoped_refptr<HidConnection> conn);
-
-void OnRead(scoped_refptr<HidConnection> conn,
-            scoped_refptr<IOBufferWithSize> buffer,
-            bool success,
-            size_t bytes) {
-  EXPECT_TRUE(success);
-  if (success) {
-    g_read_times++;
-    EXPECT_EQ(8U, bytes);
-    if (bytes == 8) {
-      uint64_t* data = reinterpret_cast<uint64_t*>(buffer->data());
-      EXPECT_EQ(kReport, *data);
-    } else {
-      base::MessageLoop::current()->Quit();
-    }
-  } else {
-    LOG(ERROR) << "~";
-    g_read_times++;
+  void SetConnection(scoped_refptr<HidConnection> connection) {
+    connection_ = connection;
+    run_loop_.Quit();
   }
 
-  if (g_read_times < 3){
-    base::MessageLoop::current()->PostTask(FROM_HERE, base::Bind(Read, conn));
-  } else {
-    base::MessageLoop::current()->Quit();
+  scoped_refptr<HidConnection> WaitForConnection() {
+    run_loop_.Run();
+    return connection_;
   }
-}
 
-void Read(scoped_refptr<HidConnection> conn) {
-  scoped_refptr<IOBufferWithSize> buffer(new IOBufferWithSize(8));
-  conn->Read(buffer, base::Bind(OnRead, conn, buffer));
-}
+  const HidService::ConnectCallback& callback() { return callback_; }
 
-void OnWriteNormal(bool success,
-                   size_t bytes) {
-  ASSERT_TRUE(success);
-  base::MessageLoop::current()->Quit();
-}
+ private:
+  HidService::ConnectCallback callback_;
+  base::RunLoop run_loop_;
+  scoped_refptr<HidConnection> connection_;
+};
 
-void WriteNormal(scoped_refptr<HidConnection> conn) {
-  scoped_refptr<IOBufferWithSize> buffer(new IOBufferWithSize(8));
-  *(int64_t*)buffer->data() = kReport;
+class TestIoCallback {
+ public:
+  TestIoCallback()
+      : read_callback_(
+            base::Bind(&TestIoCallback::SetReadResult, base::Unretained(this))),
+        write_callback_(base::Bind(&TestIoCallback::SetWriteResult,
+                                   base::Unretained(this))) {}
+  ~TestIoCallback() {}
 
-  conn->Write(0, buffer, base::Bind(OnWriteNormal));
-}
+  void SetReadResult(bool success,
+                     scoped_refptr<net::IOBuffer> buffer,
+                     size_t size) {
+    result_ = success;
+    buffer_ = buffer;
+    size_ = size;
+    run_loop_.Quit();
+  }
+
+  void SetWriteResult(bool success) {
+    result_ = success;
+    run_loop_.Quit();
+  }
+
+  bool WaitForResult() {
+    run_loop_.Run();
+    return result_;
+  }
+
+  const HidConnection::ReadCallback& read_callback() { return read_callback_; }
+  const HidConnection::WriteCallback write_callback() {
+    return write_callback_;
+  }
+  scoped_refptr<net::IOBuffer> buffer() const { return buffer_; }
+  size_t size() const { return size_; }
+
+ private:
+  base::RunLoop run_loop_;
+  bool result_;
+  size_t size_;
+  scoped_refptr<net::IOBuffer> buffer_;
+  HidConnection::ReadCallback read_callback_;
+  HidConnection::WriteCallback write_callback_;
+};
 
 }  // namespace
 
 class HidConnectionTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
+    if (!UsbTestGadget::IsTestEnabled()) return;
+
     message_loop_.reset(new base::MessageLoopForIO());
-    service_.reset(HidService::CreateInstance());
+    service_ = HidService::GetInstance(
+        message_loop_->message_loop_proxy(),
+        message_loop_->message_loop_proxy());
     ASSERT_TRUE(service_);
 
+    test_gadget_ = UsbTestGadget::Claim();
+    ASSERT_TRUE(test_gadget_);
+    ASSERT_TRUE(test_gadget_->SetType(UsbTestGadget::HID_ECHO));
+
+    device_id_ = kInvalidHidDeviceId;
+
+    base::RunLoop run_loop;
+    message_loop_->PostDelayedTask(
+        FROM_HERE,
+        base::Bind(&HidConnectionTest::FindDevice,
+                   base::Unretained(this), run_loop.QuitClosure(), 5),
+        base::TimeDelta::FromMilliseconds(250));
+    run_loop.Run();
+
+    ASSERT_NE(device_id_, kInvalidHidDeviceId);
+  }
+
+  void FindDevice(const base::Closure& done, int retries) {
     std::vector<HidDeviceInfo> devices;
     service_->GetDevices(&devices);
-    device_id_ = kInvalidHidDeviceId;
+
     for (std::vector<HidDeviceInfo>::iterator it = devices.begin();
-        it != devices.end();
-        ++it) {
-      if (it->vendor_id == kUSBLUFADemoVID &&
-          it->product_id == kUSBLUFADemoPID) {
+         it != devices.end();
+         ++it) {
+      if (it->serial_number == test_gadget_->GetSerialNumber()) {
         device_id_ = it->device_id;
-        return;
+        break;
       }
+    }
+
+    if (device_id_ == kInvalidHidDeviceId && --retries > 0) {
+      message_loop_->PostDelayedTask(
+          FROM_HERE,
+          base::Bind(&HidConnectionTest::FindDevice, base::Unretained(this),
+                     done, retries),
+          base::TimeDelta::FromMilliseconds(10));
+    } else {
+      message_loop_->PostTask(FROM_HERE, done);
     }
   }
 
-  virtual void TearDown() OVERRIDE {
-    service_.reset(NULL);
-    message_loop_.reset(NULL);
-  }
-
-  HidDeviceId device_id_;
   scoped_ptr<base::MessageLoopForIO> message_loop_;
-  scoped_ptr<HidService> service_;
+  HidService* service_;
+  scoped_ptr<UsbTestGadget> test_gadget_;
+  HidDeviceId device_id_;
 };
 
-TEST_F(HidConnectionTest, Create) {
-  scoped_refptr<HidConnection> connection = service_->Connect(device_id_);
-  ASSERT_TRUE(connection || device_id_ == kInvalidHidDeviceId);
-}
+TEST_F(HidConnectionTest, ReadWrite) {
+  if (!UsbTestGadget::IsTestEnabled()) return;
 
-TEST_F(HidConnectionTest, Read) {
-  scoped_refptr<HidConnection> connection = service_->Connect(device_id_);
-  if (connection) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(Read, connection));
-    message_loop_->Run();
+  TestConnectCallback connect_callback;
+  service_->Connect(device_id_, connect_callback.callback());
+  scoped_refptr<HidConnection> conn = connect_callback.WaitForConnection();
+  ASSERT_TRUE(conn.get());
+
+  const char kBufferSize = 9;
+  for (char i = 0; i < 8; ++i) {
+    scoped_refptr<IOBufferWithSize> buffer(new IOBufferWithSize(kBufferSize));
+    buffer->data()[0] = 0;
+    for (unsigned char j = 1; j < kBufferSize; ++j) {
+      buffer->data()[j] = i + j - 1;
+    }
+
+    TestIoCallback write_callback;
+    conn->Write(buffer, buffer->size(), write_callback.write_callback());
+    ASSERT_TRUE(write_callback.WaitForResult());
+
+    TestIoCallback read_callback;
+    conn->Read(read_callback.read_callback());
+    ASSERT_TRUE(read_callback.WaitForResult());
+    ASSERT_EQ(9UL, read_callback.size());
+    ASSERT_EQ(0, read_callback.buffer()->data()[0]);
+    for (unsigned char j = 1; j < kBufferSize; ++j) {
+      ASSERT_EQ(i + j - 1, read_callback.buffer()->data()[j]);
+    }
   }
-}
 
-TEST_F(HidConnectionTest, Write) {
-  scoped_refptr<HidConnection> connection = service_->Connect(device_id_);
-
-  if (connection) {
-    message_loop_->PostTask(FROM_HERE, base::Bind(WriteNormal, connection));
-    message_loop_->Run();
-  }
+  conn->Close();
 }
 
 }  // namespace device

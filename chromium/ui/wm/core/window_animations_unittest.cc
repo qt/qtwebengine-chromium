@@ -47,9 +47,7 @@ class WindowAnimationsTest : public aura::test::AuraTestBase {
  public:
   WindowAnimationsTest() {}
 
-  virtual void TearDown() OVERRIDE {
-    AuraTestBase::TearDown();
-  }
+  void TearDown() override { AuraTestBase::TearDown(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(WindowAnimationsTest);
@@ -255,16 +253,13 @@ TEST_F(WindowAnimationsTest, HideAnimationDetachLayersWithTransientChildren) {
 class NotifyHideCompletedAnimationHost : public aura::client::AnimationHost {
  public:
   NotifyHideCompletedAnimationHost() : hide_completed_(false) {}
-  virtual ~NotifyHideCompletedAnimationHost() {}
+  ~NotifyHideCompletedAnimationHost() override {}
 
   // Overridden from TestWindowDelegate:
-  virtual void OnWindowHidingAnimationCompleted() OVERRIDE {
-    hide_completed_ = true;
-  }
+  void OnWindowHidingAnimationCompleted() override { hide_completed_ = true; }
 
-  virtual void SetHostTransitionOffsets(
-      const gfx::Vector2d& top_left,
-      const gfx::Vector2d& bottom_right) OVERRIDE {}
+  void SetHostTransitionOffsets(const gfx::Vector2d& top_left,
+                                const gfx::Vector2d& bottom_right) override {}
 
   bool hide_completed() const { return hide_completed_; }
 
@@ -286,6 +281,23 @@ TEST_F(WindowAnimationsTest, NotifyHideCompleted) {
   EXPECT_FALSE(animation_host.hide_completed());
   AnimateOnChildWindowVisibilityChanged(window.get(), false);
   EXPECT_TRUE(animation_host.hide_completed());
+}
+
+// The rotation animation for hiding a window should not leak the animation
+// observer.
+TEST_F(WindowAnimationsTest, RotateHideNoLeak) {
+  ui::ScopedAnimationDurationScaleMode scale_mode(
+      ui::ScopedAnimationDurationScaleMode::FAST_DURATION);
+
+  scoped_ptr<aura::Window> window(aura::test::CreateTestWindowWithId(0, NULL));
+  ui::Layer* animating_layer = window->layer();
+  wm::SetWindowVisibilityAnimationType(window.get(),
+                                       WINDOW_VISIBILITY_ANIMATION_TYPE_ROTATE);
+
+  AnimateOnChildWindowVisibilityChanged(window.get(), true);
+  AnimateOnChildWindowVisibilityChanged(window.get(), false);
+
+  animating_layer->GetAnimator()->StopAnimating();
 }
 
 }  // namespace wm

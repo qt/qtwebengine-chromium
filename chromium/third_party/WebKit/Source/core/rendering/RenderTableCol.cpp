@@ -31,7 +31,7 @@
 #include "core/rendering/RenderTable.h"
 #include "core/rendering/RenderTableCell.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -42,6 +42,12 @@ RenderTableCol::RenderTableCol(Element* element)
     // init RenderObject attributes
     setInline(true); // our object is not Inline
     updateFromElement();
+}
+
+void RenderTableCol::trace(Visitor* visitor)
+{
+    visitor->trace(m_children);
+    RenderBox::trace(visitor);
 }
 
 void RenderTableCol::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -94,23 +100,23 @@ bool RenderTableCol::canHaveChildren() const
     return isTableColumnGroup();
 }
 
-LayoutRect RenderTableCol::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderTableCol::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
-    // For now, just repaint the whole table.
-    // FIXME: Find a better way to do this, e.g., need to repaint all the cells that we
+    // For now, just paint invalidate the whole table.
+    // FIXME: Find a better way to do this, e.g., need to paint invalidate all the cells that we
     // might have propagated a background color or borders into.
     // FIXME: check for paintInvalidationContainer each time here?
 
     RenderTable* parentTable = table();
     if (!parentTable)
         return LayoutRect();
-    return parentTable->clippedOverflowRectForPaintInvalidation(paintInvalidationContainer);
+    return parentTable->clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
 }
 
 void RenderTableCol::imageChanged(WrappedImagePtr, const IntRect*)
 {
-    // FIXME: Repaint only the rect the image paints in.
-    paintInvalidationForWholeRenderer();
+    // FIXME: Issue paint invalidation of only the rect the image paints in.
+    setShouldDoFullPaintInvalidation();
 }
 
 void RenderTableCol::clearPreferredLogicalWidthsDirtyBits()

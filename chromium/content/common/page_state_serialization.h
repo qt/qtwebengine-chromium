@@ -52,13 +52,19 @@ struct CONTENT_EXPORT ExplodedFrameState {
   gfx::Point scroll_offset;
   int64 item_sequence_number;
   int64 document_sequence_number;
+  int64 frame_sequence_number;
   double page_scale_factor;
   blink::WebReferrerPolicy referrer_policy;
   ExplodedHttpBody http_body;
   std::vector<ExplodedFrameState> children;
 
   ExplodedFrameState();
+  ExplodedFrameState(const ExplodedFrameState& other);
   ~ExplodedFrameState();
+  void operator=(const ExplodedFrameState& other);
+
+private:
+  void assign(const ExplodedFrameState& other);
 };
 
 struct CONTENT_EXPORT ExplodedPageState {

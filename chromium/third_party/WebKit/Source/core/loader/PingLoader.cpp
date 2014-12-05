@@ -35,6 +35,7 @@
 #include "core/FetchInitiatorTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchContext.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -50,10 +51,11 @@
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebURLLoader.h"
+#include "public/platform/WebURLRequest.h"
 #include "public/platform/WebURLResponse.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 {
@@ -63,7 +65,7 @@ void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
     }
 
     ResourceRequest request(url);
-    request.setTargetType(ResourceRequest::TargetIsPing);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPHeaderField("Cache-Control", "max-age=0");
     frame->loader().fetchContext().addAdditionalRequestHeaders(frame->document(), request, FetchSubresource);
     frame->loader().fetchContext().setFirstPartyForCookies(request);
@@ -77,7 +79,7 @@ void PingLoader::loadImage(LocalFrame* frame, const KURL& url)
 void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const KURL& destinationURL)
 {
     ResourceRequest request(pingURL);
-    request.setTargetType(ResourceRequest::TargetIsPing);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPMethod("POST");
     request.setHTTPContentType("text/ping");
     request.setHTTPBody(FormData::create("PING"));
@@ -106,7 +108,7 @@ void PingLoader::sendLinkAuditPing(LocalFrame* frame, const KURL& pingURL, const
 void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, PassRefPtr<FormData> report, ViolationReportType type)
 {
     ResourceRequest request(reportURL);
-    request.setTargetType(ResourceRequest::TargetIsSubresource);
+    request.setRequestContext(blink::WebURLRequest::RequestContextPing);
     request.setHTTPMethod("POST");
     request.setHTTPContentType(type == ContentSecurityPolicyViolationReport ? "application/csp-report" : "application/json");
     request.setHTTPBody(report);
@@ -120,10 +122,11 @@ void PingLoader::sendViolationReport(LocalFrame* frame, const KURL& reportURL, P
 
 void PingLoader::start(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
 {
-    OwnPtr<PingLoader> pingLoader = adoptPtr(new PingLoader(frame, request, initiatorInfo, credentialsAllowed));
+    if (!frame->loader().mixedContentChecker()->canRunInsecureContent(frame->document()->securityOrigin(), request.url()))
+        return;
 
     // Leak the ping loader, since it will kill itself as soon as it receives a response.
-    PingLoader* leakedPingLoader ALLOW_UNUSED = pingLoader.leakPtr();
+    new PingLoader(frame, request, initiatorInfo, credentialsAllowed);
 }
 
 PingLoader::PingLoader(LocalFrame* frame, ResourceRequest& request, const FetchInitiatorInfo& initiatorInfo, StoredCredentials credentialsAllowed)
@@ -134,16 +137,16 @@ PingLoader::PingLoader(LocalFrame* frame, ResourceRequest& request, const FetchI
 {
     frame->loader().client()->didDispatchPingLoader(request.url());
 
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", "data", InspectorSendRequestEvent::data(m_identifier, frame, request));
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
+    InspectorInstrumentation::willSendRequest(frame, m_identifier, frame->loader().documentLoader(), request, ResourceResponse(), initiatorInfo);
+
     m_loader = adoptPtr(blink::Platform::current()->createURLLoader());
     ASSERT(m_loader);
     blink::WrappedResourceRequest wrappedRequest(request);
     wrappedRequest.setAllowStoredCredentials(credentialsAllowed == AllowStoredCredentials);
     m_loader->loadAsynchronously(wrappedRequest, this);
-
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceSendRequest", "data", InspectorSendRequestEvent::data(m_identifier, frame, request));
-    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"), "CallStack", "stack", InspectorCallStackEvent::currentCallStack());
-    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentation::willSendRequest(frame, m_identifier, frame->loader().documentLoader(), request, ResourceResponse(), initiatorInfo);
 
     // If the server never responds, FrameLoader won't be able to cancel this load and
     // we'll sit here waiting forever. Set a very generous timeout, just in case.
@@ -156,12 +159,13 @@ PingLoader::~PingLoader()
         m_loader->cancel();
 }
 
-void PingLoader::didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&)
+void PingLoader::didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse& response)
 {
     if (Page* page = this->page()) {
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(m_identifier, 0, true));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-        InspectorInstrumentation::didFailLoading(page->deprecatedLocalMainFrame(), m_identifier, ResourceError::cancelledError(m_url));
+        const ResourceResponse& resourceResponse = response.toResourceResponse();
+        InspectorInstrumentation::didReceiveResourceResponse(page->deprecatedLocalMainFrame(), m_identifier, 0, resourceResponse, 0);
+        didFailLoading(page);
     }
     delete this;
 }
@@ -170,8 +174,7 @@ void PingLoader::didReceiveData(blink::WebURLLoader*, const char*, int, int)
 {
     if (Page* page = this->page()) {
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(m_identifier, 0, true));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-        InspectorInstrumentation::didFailLoading(page->deprecatedLocalMainFrame(), m_identifier, ResourceError::cancelledError(m_url));
+        didFailLoading(page);
     }
     delete this;
 }
@@ -180,8 +183,7 @@ void PingLoader::didFinishLoading(blink::WebURLLoader*, double, int64_t)
 {
     if (Page* page = this->page()) {
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(m_identifier, 0, true));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-        InspectorInstrumentation::didFailLoading(page->deprecatedLocalMainFrame(), m_identifier, ResourceError::cancelledError(m_url));
+        didFailLoading(page);
     }
     delete this;
 }
@@ -190,8 +192,7 @@ void PingLoader::didFail(blink::WebURLLoader*, const blink::WebURLError& resourc
 {
     if (Page* page = this->page()) {
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(m_identifier, 0, true));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-        InspectorInstrumentation::didFailLoading(page->deprecatedLocalMainFrame(), m_identifier, ResourceError(resourceError));
+        didFailLoading(page);
     }
     delete this;
 }
@@ -200,10 +201,17 @@ void PingLoader::timeout(Timer<PingLoader>*)
 {
     if (Page* page = this->page()) {
         TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(m_identifier, 0, true));
-        // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-        InspectorInstrumentation::didFailLoading(page->deprecatedLocalMainFrame(), m_identifier, ResourceError::cancelledError(m_url));
+        didFailLoading(page);
     }
     delete this;
+}
+
+void PingLoader::didFailLoading(Page* page)
+{
+    LocalFrame* frame = page->deprecatedLocalMainFrame();
+    InspectorInstrumentation::didFailLoading(frame, m_identifier, ResourceError::cancelledError(m_url));
+    // Notification to FrameConsole should come AFTER Resource Agent notification, front-end relies on this.
+    frame->console().didFailLoading(m_identifier, ResourceError::cancelledError(m_url));
 }
 
 }

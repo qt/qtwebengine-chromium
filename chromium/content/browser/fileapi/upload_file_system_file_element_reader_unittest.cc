@@ -11,24 +11,24 @@
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_url.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_url.h"
 
 using content::AsyncFileTestHelper;
-using fileapi::FileSystemContext;
-using fileapi::FileSystemType;
-using fileapi::FileSystemURL;
+using storage::FileSystemContext;
+using storage::FileSystemType;
+using storage::FileSystemURL;
 
 namespace content {
 
 namespace {
 
 const char kFileSystemURLOrigin[] = "http://remote";
-const fileapi::FileSystemType kFileSystemType =
-    fileapi::kFileSystemTypeTemporary;
+const storage::FileSystemType kFileSystemType =
+    storage::kFileSystemTypeTemporary;
 
 }  // namespace
 
@@ -36,7 +36,7 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
  public:
   UploadFileSystemFileElementReaderTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     file_system_context_ = CreateFileSystemContextForTesting(
@@ -45,7 +45,7 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
     file_system_context_->OpenFileSystem(
         GURL(kFileSystemURLOrigin),
         kFileSystemType,
-        fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+        storage::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::Bind(&UploadFileSystemFileElementReaderTest::OnOpenFileSystem,
                    base::Unretained(this)));
     base::RunLoop().RunUntilIdle();
@@ -74,7 +74,7 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
     EXPECT_FALSE(reader_->IsInMemory());
   }
 
- virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     reader_.reset();
     base::RunLoop().RunUntilIdle();
  }
@@ -88,7 +88,7 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
                            const char* buf,
                            int buf_size,
                            base::Time* modification_time) {
-    fileapi::FileSystemURL url =
+    storage::FileSystemURL url =
         file_system_context_->CreateCrackedFileSystemURL(
             GURL(kFileSystemURLOrigin),
             kFileSystemType,
@@ -96,12 +96,12 @@ class UploadFileSystemFileElementReaderTest : public testing::Test {
 
     ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::CreateFileWithData(
-                  file_system_context_, url, buf, buf_size));
+                  file_system_context_.get(), url, buf, buf_size));
 
     base::File::Info file_info;
     ASSERT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::GetMetadata(
-                  file_system_context_, url, &file_info));
+                  file_system_context_.get(), url, &file_info));
     *modification_time = file_info.last_modified;
   }
 

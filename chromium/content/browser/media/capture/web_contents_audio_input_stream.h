@@ -3,15 +3,12 @@
 // found in the LICENSE file.
 //
 // An AudioInputStream which provides a loop-back of all audio output generated
-// by the RenderView associated with a WebContents instance.  The single stream
-// of data is produced by format-converting and mixing all audio output from a
-// RenderView.  In other words, WebContentsAudioInputStream provides tab-level
+// by the entire RenderFrame tree associated with a WebContents instance.  The
+// single stream of data is produced by format-converting and mixing all audio
+// output streams.  As the RenderFrameHost tree mutates (e.g., due to page
+// navigations, or crashes/reloads), the stream will continue without
+// interruption.  In other words, WebContentsAudioInputStream provides tab-level
 // audio mirroring.
-//
-// The implementation observes a WebContents instance (which represents a
-// browser tab) so that it can track the replacement of RenderViews due to
-// navigation, crash/reload, etc. events; and take appropriate actions to
-// provide a seamless, uninterrupted mirroring experience.
 
 #ifndef CONTENT_BROWSER_MEDIA_CAPTURE_WEB_CONTENTS_AUDIO_INPUT_STREAM_H_
 #define CONTENT_BROWSER_MEDIA_CAPTURE_WEB_CONTENTS_AUDIO_INPUT_STREAM_H_
@@ -40,15 +37,16 @@ class CONTENT_EXPORT WebContentsAudioInputStream
     : NON_EXPORTED_BASE(public media::AudioInputStream) {
  public:
   // media::AudioInputStream implementation
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
-  virtual void SetAutomaticGainControl(bool enabled) OVERRIDE;
-  virtual bool GetAutomaticGainControl() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  void SetAutomaticGainControl(bool enabled) override;
+  bool GetAutomaticGainControl() override;
+  bool IsMuted() override;
 
   // Create a new audio mirroring session, or return NULL on error.  |device_id|
   // should be in the format accepted by
@@ -75,12 +73,12 @@ class CONTENT_EXPORT WebContentsAudioInputStream
   class Impl;
 
   WebContentsAudioInputStream(
-      int render_process_id, int render_view_id,
+      int render_process_id, int main_render_frame_id,
       AudioMirroringManager* mirroring_manager,
       const scoped_refptr<WebContentsTracker>& tracker,
       media::VirtualAudioInputStream* mixer_stream);
 
-  virtual ~WebContentsAudioInputStream();
+  ~WebContentsAudioInputStream() override;
 
   scoped_refptr<Impl> impl_;
 

@@ -6,12 +6,11 @@
 
 #include "core/html/canvas/EXTShaderTextureLOD.h"
 
-namespace WebCore {
+namespace blink {
 
 EXTShaderTextureLOD::EXTShaderTextureLOD(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     context->extensionsUtil()->ensureExtensionEnabled("GL_EXT_shader_texture_lod");
 }
 
@@ -24,9 +23,9 @@ WebGLExtensionName EXTShaderTextureLOD::name() const
     return EXTShaderTextureLODName;
 }
 
-PassRefPtr<EXTShaderTextureLOD> EXTShaderTextureLOD::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<EXTShaderTextureLOD> EXTShaderTextureLOD::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new EXTShaderTextureLOD(context));
+    return adoptRefWillBeNoop(new EXTShaderTextureLOD(context));
 }
 
 bool EXTShaderTextureLOD::supported(WebGLRenderingContextBase* context)
@@ -39,4 +38,4 @@ const char* EXTShaderTextureLOD::extensionName()
     return "EXT_shader_texture_lod";
 }
 
-} // namespace WebCore
+} // namespace blink

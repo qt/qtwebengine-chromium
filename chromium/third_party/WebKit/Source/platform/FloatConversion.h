@@ -29,7 +29,9 @@
 #ifndef FloatConversion_h
 #define FloatConversion_h
 
-namespace WebCore {
+#include "wtf/MathExtras.h"
+
+namespace blink {
 
 template<typename T>
 float narrowPrecisionToFloat(T);
@@ -37,9 +39,9 @@ float narrowPrecisionToFloat(T);
 template<>
 inline float narrowPrecisionToFloat(double number)
 {
-    return static_cast<float>(number);
+    return clampTo<float>(number);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FloatConversion_h

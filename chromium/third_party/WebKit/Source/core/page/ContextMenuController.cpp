@@ -28,17 +28,22 @@
 #include "core/page/ContextMenuController.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/Node.h"
 #include "core/events/Event.h"
 #include "core/events/MouseEvent.h"
-#include "core/dom/Node.h"
+#include "core/events/RelatedEvent.h"
 #include "core/frame/LocalFrame.h"
+#include "core/html/HTMLMenuElement.h"
 #include "core/page/ContextMenuClient.h"
 #include "core/page/ContextMenuProvider.h"
+#include "core/page/CustomContextMenuProvider.h"
 #include "core/page/EventHandler.h"
 #include "platform/ContextMenu.h"
 #include "platform/ContextMenuItem.h"
 
-namespace WebCore {
+namespace blink {
+
+using namespace HTMLNames;
 
 ContextMenuController::ContextMenuController(Page*, ContextMenuClient* client)
     : m_client(client)
@@ -50,9 +55,15 @@ ContextMenuController::~ContextMenuController()
 {
 }
 
-PassOwnPtr<ContextMenuController> ContextMenuController::create(Page* page, ContextMenuClient* client)
+PassOwnPtrWillBeRawPtr<ContextMenuController> ContextMenuController::create(Page* page, ContextMenuClient* client)
 {
-    return adoptPtr(new ContextMenuController(page, client));
+    return adoptPtrWillBeNoop(new ContextMenuController(page, client));
+}
+
+void ContextMenuController::trace(Visitor* visitor)
+{
+    visitor->trace(m_menuProvider);
+    visitor->trace(m_hitTestResult);
 }
 
 void ContextMenuController::clearContextMenu()
@@ -74,16 +85,38 @@ void ContextMenuController::documentDetached(Document* document)
     }
 }
 
+void ContextMenuController::populateCustomContextMenu(const Event& event)
+{
+    if (!RuntimeEnabledFeatures::contextMenuEnabled())
+        return;
+
+    Node* node = event.target()->toNode();
+    if (!node || !node->isHTMLElement())
+        return;
+
+    HTMLElement& element = toHTMLElement(*node);
+    RefPtrWillBeRawPtr<HTMLMenuElement> menuElement = element.contextMenu();
+    if (!menuElement || !equalIgnoringCase(menuElement->fastGetAttribute(typeAttr), "popup"))
+        return;
+    RefPtrWillBeRawPtr<RelatedEvent> relatedEvent = RelatedEvent::create(EventTypeNames::show, true, true, node);
+    if (!menuElement->dispatchEvent(relatedEvent.release()))
+        return;
+    if (menuElement != element.contextMenu())
+        return;
+    m_menuProvider = CustomContextMenuProvider::create(*menuElement, element);
+    m_menuProvider->populateContextMenu(m_contextMenu.get());
+}
+
 void ContextMenuController::handleContextMenuEvent(Event* event)
 {
     m_contextMenu = createContextMenu(event);
     if (!m_contextMenu)
         return;
-
+    populateCustomContextMenu(*event);
     showContextMenu(event);
 }
 
-void ContextMenuController::showContextMenu(Event* event, PassRefPtr<ContextMenuProvider> menuProvider)
+void ContextMenuController::showContextMenu(Event* event, PassRefPtrWillBeRawPtr<ContextMenuProvider> menuProvider)
 {
     m_menuProvider = menuProvider;
 
@@ -97,6 +130,21 @@ void ContextMenuController::showContextMenu(Event* event, PassRefPtr<ContextMenu
     showContextMenu(event);
 }
 
+void ContextMenuController::showContextMenuAtPoint(LocalFrame* frame, float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider> menuProvider)
+{
+    m_menuProvider = menuProvider;
+
+    LayoutPoint location(x, y);
+    m_contextMenu = createContextMenu(frame, location);
+    if (!m_contextMenu) {
+        clearContextMenu();
+        return;
+    }
+
+    m_menuProvider->populateContextMenu(m_contextMenu.get());
+    showContextMenu(nullptr);
+}
+
 PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
 {
     ASSERT(event);
@@ -105,10 +153,15 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
         return nullptr;
 
     MouseEvent* mouseEvent = toMouseEvent(event);
-    HitTestResult result(mouseEvent->absoluteLocation());
+    return createContextMenu(event->target()->toNode()->document().frame(), mouseEvent->absoluteLocation());
+}
 
-    if (LocalFrame* frame = event->target()->toNode()->document().frame())
-        result = frame->eventHandler().hitTestResultAtPoint(mouseEvent->absoluteLocation(), HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
+PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(LocalFrame* frame, const LayoutPoint& location)
+{
+    HitTestResult result(location);
+
+    if (frame)
+        result = frame->eventHandler().hitTestResultAtPoint(location, HitTestRequest::ReadOnly | HitTestRequest::Active);
 
     if (!result.innerNonSharedNode())
         return nullptr;
@@ -121,7 +174,8 @@ PassOwnPtr<ContextMenu> ContextMenuController::createContextMenu(Event* event)
 void ContextMenuController::showContextMenu(Event* event)
 {
     m_client->showContextMenu(m_contextMenu.get());
-    event->setDefaultHandled();
+    if (event)
+        event->setDefaultHandled();
 }
 
 void ContextMenuController::contextMenuItemSelected(const ContextMenuItem* item)
@@ -135,4 +189,4 @@ void ContextMenuController::contextMenuItemSelected(const ContextMenuItem* item)
     m_menuProvider->contextMenuItemSelected(item);
 }
 
-} // namespace WebCore
+} // namespace blink

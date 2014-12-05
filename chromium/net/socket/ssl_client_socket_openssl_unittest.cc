@@ -13,12 +13,13 @@
 #include <openssl/pem.h>
 #include <openssl/rsa.h>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/values.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/base/address_list.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -48,16 +49,6 @@ namespace {
 
 // These client auth tests are currently dependent on OpenSSL's struct X509.
 #if defined(USE_OPENSSL_CERTS)
-typedef OpenSSLClientKeyStore::ScopedEVP_PKEY ScopedEVP_PKEY;
-
-// BIO_free is a macro, it can't be used as a template parameter.
-void BIO_free_func(BIO* bio) {
-    BIO_free(bio);
-}
-
-typedef crypto::ScopedOpenSSL<BIO, BIO_free_func> ScopedBIO;
-typedef crypto::ScopedOpenSSL<RSA, RSA_free> ScopedRSA;
-typedef crypto::ScopedOpenSSL<BIGNUM, BN_free> ScopedBIGNUM;
 
 const SSLConfig kDefaultSSLConfig;
 
@@ -67,17 +58,16 @@ const SSLConfig kDefaultSSLConfig;
 // Returns true on success, false on failure.
 bool LoadPrivateKeyOpenSSL(
     const base::FilePath& filepath,
-    OpenSSLClientKeyStore::ScopedEVP_PKEY* pkey) {
+    crypto::ScopedEVP_PKEY* pkey) {
   std::string data;
   if (!base::ReadFileToString(filepath, &data)) {
     LOG(ERROR) << "Could not read private key file: "
                << filepath.value() << ": " << strerror(errno);
     return false;
   }
-  ScopedBIO bio(
-      BIO_new_mem_buf(
-          const_cast<char*>(reinterpret_cast<const char*>(data.data())),
-          static_cast<int>(data.size())));
+  crypto::ScopedBIO bio(BIO_new_mem_buf(
+      const_cast<char*>(reinterpret_cast<const char*>(data.data())),
+      static_cast<int>(data.size())));
   if (!bio.get()) {
     LOG(ERROR) << "Could not allocate BIO for buffer?";
     return false;
@@ -95,13 +85,13 @@ bool LoadPrivateKeyOpenSSL(
 class SSLClientSocketOpenSSLClientAuthTest : public PlatformTest {
  public:
   SSLClientSocketOpenSSLClientAuthTest()
-      : socket_factory_(net::ClientSocketFactory::GetDefaultFactory()),
-        cert_verifier_(new net::MockCertVerifier),
-        transport_security_state_(new net::TransportSecurityState) {
-    cert_verifier_->set_default_result(net::OK);
+      : socket_factory_(ClientSocketFactory::GetDefaultFactory()),
+        cert_verifier_(new MockCertVerifier),
+        transport_security_state_(new TransportSecurityState) {
+    cert_verifier_->set_default_result(OK);
     context_.cert_verifier = cert_verifier_.get();
     context_.transport_security_state = transport_security_state_.get();
-    key_store_ = net::OpenSSLClientKeyStore::GetInstance();
+    key_store_ = OpenSSLClientKeyStore::GetInstance();
   }
 
   virtual ~SSLClientSocketOpenSSLClientAuthTest() {
@@ -260,7 +250,7 @@ TEST_F(SSLClientSocketOpenSSLClientAuthTest, SendGoodCert) {
 
   // This is required to ensure that signing works with the client
   // certificate's private key.
-  OpenSSLClientKeyStore::ScopedEVP_PKEY client_private_key;
+  crypto::ScopedEVP_PKEY client_private_key;
   ASSERT_TRUE(LoadPrivateKeyOpenSSL(certs_dir.AppendASCII("client_1.key"),
                                     &client_private_key));
   EXPECT_TRUE(RecordPrivateKey(ssl_config, client_private_key.get()));

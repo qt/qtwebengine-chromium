@@ -27,7 +27,7 @@
 
 #include "core/rendering/style/BorderValue.h"
 
-namespace WebCore {
+namespace blink {
 
 class OutlineValue : public BorderValue {
 friend class RenderStyle;
@@ -47,13 +47,23 @@ public:
         return !(*this == o);
     }
 
+    bool visuallyEqual(const OutlineValue& o) const
+    {
+        if (m_style == BNONE && o.m_style == BNONE)
+            return true;
+        return *this == o;
+    }
+
     int offset() const { return m_offset; }
+    void setOffset(int offset) { m_offset = offset; }
+
     OutlineIsAuto isAuto() const { return static_cast<OutlineIsAuto>(m_isAuto); }
+    void setIsAuto(OutlineIsAuto isAuto) { m_isAuto = isAuto; }
 
 private:
     int m_offset;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OutlineValue_h

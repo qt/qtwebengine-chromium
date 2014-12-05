@@ -6,11 +6,13 @@
 
 cr.define('options', function() {
   /** @const */ var SettingsBannerBase = options.SettingsBannerBase;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * AutomaticSettingsResetBanner class
    * Provides encapsulated handling of the Reset Profile Settings banner.
    * @constructor
+   * @extends {options.SettingsBannerBase}
    */
   function AutomaticSettingsResetBanner() {}
 
@@ -21,14 +23,20 @@ cr.define('options', function() {
 
     /**
      * Initializes the banner's event handlers.
+     * @suppress {checkTypes}
+     * TODO(vitalyp): remove the suppression. Suppression is needed because
+     * method dismiss() is attached to AutomaticSettingsResetBanner at run-time
+     * via "Forward public APIs to protected implementations" pattern (see
+     * below). Currently the compiler pass and cr.js handles only forwarding to
+     * private implementations using cr.makePublic().
      */
     initialize: function() {
-      this.showMetricName_ = 'AutomaticSettingsReset_WebUIBanner_BannerShown';
+      this.showMetricName = 'AutomaticSettingsReset_WebUIBanner_BannerShown';
 
-      this.dismissNativeCallbackName_ =
+      this.dismissNativeCallbackName =
           'onDismissedAutomaticSettingsResetBanner';
 
-      this.setVisibilibyDomElement_ = $('automatic-settings-reset-banner');
+      this.visibilityDomElement = $('automatic-settings-reset-banner');
 
       $('automatic-settings-reset-banner-close').onclick = function(event) {
         chrome.send('metricsHandler:recordAction',
@@ -39,17 +47,23 @@ cr.define('options', function() {
         chrome.send('metricsHandler:recordAction',
             ['AutomaticSettingsReset_WebUIBanner_LearnMoreClicked']);
       };
+      $('automatic-settings-reset-banner-activate-reset').onclick =
+          function(event) {
+        chrome.send('metricsHandler:recordAction',
+            ['AutomaticSettingsReset_WebUIBanner_ResetClicked']);
+        PageManager.showPageByName('resetProfileSettings');
+      };
     },
   };
 
-  // Forward public APIs to private implementations.
+  // Forward public APIs to protected implementations.
   [
     'show',
     'dismiss',
   ].forEach(function(name) {
     AutomaticSettingsResetBanner[name] = function() {
       var instance = AutomaticSettingsResetBanner.getInstance();
-      return instance[name + '_'].apply(instance, arguments);
+      return instance[name].apply(instance, arguments);
     };
   });
 

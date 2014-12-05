@@ -32,7 +32,7 @@
 #include "core/dom/Element.h"
 #include "platform/scroll/ScrollTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSSelector;
 class ContainerNode;
@@ -47,49 +47,45 @@ public:
     enum VisitedMatchType { VisitedMatchDisabled, VisitedMatchEnabled };
     enum Mode { ResolvingStyle = 0, CollectingStyleRules, CollectingCSSRules, QueryingRules, SharingRules };
     explicit SelectorChecker(Document&, Mode);
-    enum BehaviorAtBoundary {
-        DoesNotCrossBoundary = 0,
-        // FIXME: refactor to remove BoundaryBehavior (i.e. DoesNotCrossBoundary and StaysWithinTreeScope).
-        StaysWithinTreeScope = 2,
-        BoundaryBehaviorMask = 3, // 2bit for boundary behavior
-        ScopeContainsLastMatchedElement = 4,
-        ScopeIsShadowRoot = 8,
-        TreatShadowHostAsNormalScope = 16,
-
-        ScopeIsShadowHostInPseudoHostParameter = ScopeIsShadowRoot | TreatShadowHostAsNormalScope
-    };
 
     struct SelectorCheckingContext {
+        STACK_ALLOCATED();
+    public:
         // Initial selector constructor
         SelectorCheckingContext(const CSSSelector& selector, Element* element, VisitedMatchType visitedMatchType)
             : selector(&selector)
             , element(element)
-            , previousElement(0)
-            , scope(0)
+            , previousElement(nullptr)
+            , scope(nullptr)
             , visitedMatchType(visitedMatchType)
             , pseudoId(NOPSEUDO)
             , elementStyle(0)
-            , scrollbar(0)
+            , scrollbar(nullptr)
             , scrollbarPart(NoPart)
             , isSubSelector(false)
             , hasScrollbarPseudo(false)
             , hasSelectionPseudo(false)
-            , behaviorAtBoundary(DoesNotCrossBoundary)
-        { }
+            , isUARule(false)
+            , scopeContainsLastMatchedElement(false)
+            , treatShadowHostAsNormalScope(false)
+        {
+        }
 
         const CSSSelector* selector;
-        Element* element;
-        Element* previousElement;
-        const ContainerNode* scope;
+        RawPtrWillBeMember<Element> element;
+        RawPtrWillBeMember<Element> previousElement;
+        RawPtrWillBeMember<const ContainerNode> scope;
         VisitedMatchType visitedMatchType;
         PseudoId pseudoId;
         RenderStyle* elementStyle;
-        RenderScrollbar* scrollbar;
+        RawPtrWillBeMember<RenderScrollbar> scrollbar;
         ScrollbarPart scrollbarPart;
-        bool isSubSelector;
-        bool hasScrollbarPseudo;
-        bool hasSelectionPseudo;
-        BehaviorAtBoundary behaviorAtBoundary;
+        unsigned isSubSelector : 1;
+        unsigned hasScrollbarPseudo : 1;
+        unsigned hasSelectionPseudo : 1;
+        unsigned isUARule : 1;
+        unsigned scopeContainsLastMatchedElement : 1;
+        unsigned treatShadowHostAsNormalScope : 1;
     };
 
     struct MatchResult {
@@ -114,12 +110,14 @@ public:
     static bool tagMatches(const Element&, const QualifiedName&);
     static bool isCommonPseudoClassSelector(const CSSSelector&);
     static bool matchesFocusPseudoClass(const Element&);
+    static bool matchesSpatialNavigationFocusPseudoClass(const Element&);
+    static bool matchesListBoxPseudoClass(const Element&);
     static bool checkExactAttribute(const Element&, const QualifiedName& selectorAttributeName, const StringImpl* value);
 
     enum LinkMatchMask { MatchLink = 1, MatchVisited = 2, MatchAll = MatchLink | MatchVisited };
     static unsigned determineLinkMatchType(const CSSSelector&);
 
-    static bool isHostInItsShadowTree(const Element&, BehaviorAtBoundary, const ContainerNode* scope);
+    static bool isHostInItsShadowTree(const Element&, const ContainerNode* scope);
 
 private:
     template<typename SiblingTraversalStrategy>
@@ -130,15 +128,18 @@ private:
     Match matchForShadowDistributed(const Element*, const SiblingTraversalStrategy&, SelectorCheckingContext& nextContext, MatchResult* = 0) const;
     template<typename SiblingTraversalStrategy>
     Match matchForPseudoShadow(const ContainerNode*, const SelectorCheckingContext&, const SiblingTraversalStrategy&, MatchResult*) const;
+    template<typename SiblingTraversalStrategy>
+    bool checkPseudoClass(const SelectorCheckingContext&, const SiblingTraversalStrategy&, unsigned* specificity) const;
+    template<typename SiblingTraversalStrategy>
+    bool checkPseudoElement(const SelectorCheckingContext&, const SiblingTraversalStrategy&) const;
 
     bool checkScrollbarPseudoClass(const SelectorCheckingContext&, Document*, const CSSSelector&) const;
-    Element* parentElement(const SelectorCheckingContext&, bool allowToCrossBoundary = false) const;
-    bool scopeContainsLastMatchedElement(const SelectorCheckingContext&) const;
+    template<typename SiblingTraversalStrategy>
+    bool checkPseudoHost(const SelectorCheckingContext&, const SiblingTraversalStrategy&, unsigned*) const;
 
     static bool isFrameFocused(const Element&);
 
     bool m_strictParsing;
-    bool m_documentIsHTML;
     Mode m_mode;
 };
 
@@ -166,18 +167,14 @@ inline bool SelectorChecker::tagMatches(const Element& element, const QualifiedN
 
 inline bool SelectorChecker::checkExactAttribute(const Element& element, const QualifiedName& selectorAttributeName, const StringImpl* value)
 {
-    if (!element.hasAttributesWithoutUpdate())
-        return false;
-    AttributeCollection attributes = element.attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        if (it->matches(selectorAttributeName) && (!value || it->value().impl() == value))
+    for (const auto& attribute : element.attributesWithoutUpdate()) {
+        if (attribute.matches(selectorAttributeName) && (!value || attribute.value().impl() == value))
             return true;
     }
     return false;
 }
 
-inline bool SelectorChecker::isHostInItsShadowTree(const Element& element, BehaviorAtBoundary behaviorAtBoundary, const ContainerNode* scope)
+inline bool SelectorChecker::isHostInItsShadowTree(const Element& element, const ContainerNode* scope)
 {
     return scope && scope->isInShadowTree() && scope->shadowHost() == element;
 }

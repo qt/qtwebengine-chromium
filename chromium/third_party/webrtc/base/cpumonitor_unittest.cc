@@ -23,6 +23,7 @@
 #include "webrtc/base/thread.h"
 #include "webrtc/base/timeutils.h"
 #include "webrtc/base/timing.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 

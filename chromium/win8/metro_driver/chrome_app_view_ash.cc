@@ -14,7 +14,6 @@
 #include "base/files/file_path.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/threading/thread.h"
 #include "base/win/metro.h"
 #include "base/win/win_util.h"
 #include "base/win/windows_version.h"
@@ -22,7 +21,7 @@
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_sender.h"
-#include "ui/events/gestures/gesture_sequence.h"
+#include "ui/events/gesture_detection/motion_event.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/win/dpi.h"
 #include "ui/metro_viewer/metro_viewer_messages.h"
@@ -87,6 +86,8 @@ enum KeyModifier {
   ALT = 4
 };
 
+const int kChromeChannelPollTimerMs = 100;
+
 // Helper function to send keystrokes via the SendInput function.
 // mnemonic_char: The keystroke to be sent.
 // modifiers: Combination with Alt, Ctrl, Shift, etc.
@@ -145,7 +146,7 @@ class ChromeChannelListener : public IPC::Listener {
       : ui_proxy_(ui_loop->message_loop_proxy()),
         app_view_(app_view) {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  virtual bool OnMessageReceived(const IPC::Message& message) override {
     IPC_BEGIN_MESSAGE_MAP(ChromeChannelListener, message)
       IPC_MESSAGE_HANDLER(MetroViewerHostMsg_ActivateDesktop,
                           OnActivateDesktop)
@@ -169,7 +170,7 @@ class ChromeChannelListener : public IPC::Listener {
     return true;
   }
 
-  virtual void OnChannelError() OVERRIDE {
+  virtual void OnChannelError() override {
     DVLOG(1) << "Channel error. Exiting.";
     ui_proxy_->PostTask(FROM_HERE,
         base::Bind(&ChromeAppViewAsh::OnMetroExit, base::Unretained(app_view_),
@@ -273,16 +274,6 @@ class ChromeChannelListener : public IPC::Listener {
   ChromeAppViewAsh* app_view_;
 };
 
-bool WaitForChromeIPCConnection(const std::string& channel_name) {
-  int ms_elapsed = 0;
-  while (!IPC::Channel::IsNamedServerInitialized(channel_name) &&
-         ms_elapsed < 10000) {
-    ms_elapsed += 100;
-    Sleep(100);
-  }
-  return IPC::Channel::IsNamedServerInitialized(channel_name);
-}
-
 void RunMessageLoop(winui::Core::ICoreDispatcher* dispatcher) {
   // We're entering a nested message loop, let's allow dispatching
   // tasks while we're in there.
@@ -346,7 +337,7 @@ bool LaunchChromeBrowserProcess(const wchar_t* additional_parameters,
   if (!PathService::Get(base::FILE_EXE, &chrome_exe_path))
     return false;
 
-  base::string16 parameters = L"--silent-launch --viewer-connect ";
+  base::string16 parameters = L"--silent-launch --connect-to-metro-viewer ";
   if (additional_parameters)
     parameters += additional_parameters;
 
@@ -419,7 +410,7 @@ class ChromeAppViewAsh::PointerInfoHandler {
     pointer_point_->get_PointerId(&pointer_id_);
     // Map the OS touch event id to a range allowed by the gesture recognizer.
     if (IsTouch())
-      pointer_id_ %= ui::GestureSequence::kMaxGesturePoints;
+      pointer_id_ %= ui::MotionEvent::MAX_TOUCH_POINT_COUNT;
 
     boolean left_button_state;
     hr = properties->get_IsLeftButtonPressed(&left_button_state);
@@ -530,7 +521,9 @@ ChromeAppViewAsh::ChromeAppViewAsh()
       ui_channel_(nullptr),
       core_window_hwnd_(NULL),
       metro_dpi_scale_(0),
-      win32_dpi_scale_(0) {
+      win32_dpi_scale_(0),
+      last_cursor_(NULL),
+      channel_listener_(NULL) {
   DVLOG(1) << __FUNCTION__;
   globals.previous_state =
       winapp::Activation::ApplicationExecutionState_NotRunning;
@@ -676,58 +669,29 @@ ChromeAppViewAsh::Run() {
   HRESULT hr = window_->get_Dispatcher(dispatcher.GetAddressOf());
   CheckHR(hr, "Dispatcher failed.");
 
-  hr = window_->Activate();
-  if (FAILED(hr)) {
-    DLOG(WARNING) << "activation failed hr=" << hr;
-    return hr;
-  }
-
   // Create the IPC channel IO thread. It needs to out-live the ChannelProxy.
-  base::Thread io_thread("metro_IO_thread");
+  io_thread_.reset(new base::Thread("metro_IO_thread"));
   base::Thread::Options options;
   options.message_loop_type = base::MessageLoop::TYPE_IO;
-  io_thread.StartWithOptions(options);
+  io_thread_->StartWithOptions(options);
 
-  // Start up Chrome and wait for the desired IPC server connection to exist.
-  WaitForChromeIPCConnection(win8::kMetroViewerIPCChannelName);
-
-  // In Aura mode we create an IPC channel to the browser, then ask it to
-  // connect to us.
   ChromeChannelListener ui_channel_listener(&ui_loop_, this);
-  scoped_ptr<IPC::ChannelProxy> channel =
-      IPC::ChannelProxy::Create(win8::kMetroViewerIPCChannelName,
-                                IPC::Channel::MODE_NAMED_CLIENT,
-                                &ui_channel_listener,
-                                io_thread.message_loop_proxy());
-  ui_channel_ = channel.get();
+  channel_listener_ = &ui_channel_listener;
 
-  // Upon receipt of the MetroViewerHostMsg_SetTargetSurface message the
-  // browser will use D3D from the browser process to present to our Window.
-  ui_channel_->Send(new MetroViewerHostMsg_SetTargetSurface(
-                    gfx::NativeViewId(core_window_hwnd_), win32_dpi_scale_));
-  DVLOG(1) << "ICoreWindow sent " << core_window_hwnd_;
+  // We can't do anything until the Chrome browser IPC channel is initialized.
+  // Lazy initialization in a timer.
+  ui_loop_.PostDelayedTask(FROM_HERE,
+      base::Bind(base::IgnoreResult(&ChromeAppViewAsh::StartChromeOSMode),
+                 base::Unretained(this)),
+      base::TimeDelta::FromMilliseconds(kChromeChannelPollTimerMs));
 
-  // Send an initial size message so that the Ash root window host gets sized
-  // correctly.
-  RECT rect = {0};
-  ::GetWindowRect(core_window_hwnd_, &rect);
-  ui_channel_->Send(
-      new MetroViewerHostMsg_WindowSizeChanged(rect.right - rect.left,
-                                               rect.bottom - rect.top));
-
-  input_source_ = metro_driver::InputSource::Create();
-  if (input_source_) {
-    input_source_->AddObserver(this);
-    // Send an initial input source.
-    OnInputSourceChanged();
-  }
-
-  // Start receiving IME popup window notifications.
-  metro_driver::AddImePopupObserver(this);
-
-  // And post the task that'll do the inner Metro message pumping to it.
+  // Post the task that'll do the inner Metro message pumping to it.
   ui_loop_.PostTask(FROM_HERE, base::Bind(&RunMessageLoop, dispatcher.Get()));
   ui_loop_.Run();
+
+  io_thread_.reset(NULL);
+  ui_channel_.reset(NULL);
+  channel_listener_ = NULL;
 
   DVLOG(0) << "ProcessEvents done, hr=" << hr;
   return hr;
@@ -815,7 +779,8 @@ void ChromeAppViewAsh::OnOpenURLOnDesktop(const base::FilePath& shortcut,
 }
 
 void ChromeAppViewAsh::OnSetCursor(HCURSOR cursor) {
-  ::SetCursor(HCURSOR(cursor));
+  ::SetCursor(cursor);
+  last_cursor_ = cursor;
 }
 
 void ChromeAppViewAsh::OnDisplayFileOpenDialog(
@@ -969,6 +934,9 @@ void ChromeAppViewAsh::OnMetroExit(MetroTerminateMethod method) {
     if (ui_channel_)
       ui_channel_->Close();
 
+    HWND core_window = core_window_hwnd();
+    ::PostMessage(core_window, WM_CLOSE, 0, 0);
+
     globals.app_exit->Exit();
   }
 }
@@ -976,6 +944,8 @@ void ChromeAppViewAsh::OnMetroExit(MetroTerminateMethod method) {
 void ChromeAppViewAsh::OnInputSourceChanged() {
   if (!input_source_)
     return;
+
+  DCHECK(ui_channel_);
 
   LANGID langid = 0;
   bool is_ime = false;
@@ -1007,6 +977,8 @@ void ChromeAppViewAsh::SendMouseButton(int x,
                                        uint32 flags,
                                        ui::EventFlags changed_button,
                                        bool is_horizontal_wheel) {
+  if (!ui_channel_)
+    return;
   MetroViewerHostMsg_MouseButtonParams params;
   params.x = static_cast<int32>(x);
   params.y = static_cast<int32>(y);
@@ -1076,12 +1048,20 @@ HRESULT ChromeAppViewAsh::OnActivate(
 
 HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
                                          winui::Core::IPointerEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
 
   if (pointer.IsMouse()) {
+    // If the mouse was moved towards the charms or the OS specific section,
+    // the cursor may change from what the browser last set. Restore it here.
+    if (::GetCursor() != last_cursor_)
+      SetCursor(last_cursor_);
+
     GenerateMouseEventFromMoveIfNecessary(pointer);
     ui_channel_->Send(new MetroViewerHostMsg_MouseMoved(
         pointer.x(),
@@ -1106,6 +1086,9 @@ HRESULT ChromeAppViewAsh::OnPointerMoved(winui::Core::ICoreWindow* sender,
 HRESULT ChromeAppViewAsh::OnPointerPressed(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
@@ -1129,6 +1112,9 @@ HRESULT ChromeAppViewAsh::OnPointerPressed(
 HRESULT ChromeAppViewAsh::OnPointerReleased(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
@@ -1154,13 +1140,16 @@ HRESULT ChromeAppViewAsh::OnPointerReleased(
 HRESULT ChromeAppViewAsh::OnWheel(
     winui::Core::ICoreWindow* sender,
     winui::Core::IPointerEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   PointerInfoHandler pointer(metro_dpi_scale_, win32_dpi_scale_);
   HRESULT hr = pointer.Init(args);
   if (FAILED(hr))
     return hr;
   DCHECK(pointer.IsMouse());
   SendMouseButton(pointer.x(), pointer.y(), pointer.wheel_delta(),
-                  ui::ET_MOUSEWHEEL, ui::EF_NONE, ui::EF_NONE,
+                  ui::ET_MOUSEWHEEL, GetKeyboardEventFlags(), ui::EF_NONE,
                   pointer.is_horizontal_wheel());
   return S_OK;
 }
@@ -1168,6 +1157,9 @@ HRESULT ChromeAppViewAsh::OnWheel(
 HRESULT ChromeAppViewAsh::OnKeyDown(
     winui::Core::ICoreWindow* sender,
     winui::Core::IKeyEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   winsys::VirtualKey virtual_key;
   HRESULT hr = args->get_VirtualKey(&virtual_key);
   if (FAILED(hr))
@@ -1187,6 +1179,9 @@ HRESULT ChromeAppViewAsh::OnKeyDown(
 HRESULT ChromeAppViewAsh::OnKeyUp(
     winui::Core::ICoreWindow* sender,
     winui::Core::IKeyEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   winsys::VirtualKey virtual_key;
   HRESULT hr = args->get_VirtualKey(&virtual_key);
   if (FAILED(hr))
@@ -1206,6 +1201,9 @@ HRESULT ChromeAppViewAsh::OnKeyUp(
 HRESULT ChromeAppViewAsh::OnAcceleratorKeyDown(
     winui::Core::ICoreDispatcher* sender,
     winui::Core::IAcceleratorKeyEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   winsys::VirtualKey virtual_key;
   HRESULT hr = args->get_VirtualKey(&virtual_key);
   if (FAILED(hr))
@@ -1238,6 +1236,13 @@ HRESULT ChromeAppViewAsh::OnAcceleratorKeyDown(
       if ((virtual_key == VK_F4) && ((keyboard_flags & ui::EF_ALT_DOWN) &&
           !(keyboard_flags & ui::EF_CONTROL_DOWN)))
         return S_OK;
+      // Don't send the EF_ALT_DOWN modifier along with the IPC message for
+      // the Alt or F10 key. The accelerator for VKEY_MENU is registered
+      // without modifiers in Chrome for historical reasons. Not sending the
+      // EF_ALT_DOWN modifier ensures that the accelerator is processed
+      // correctly.
+      if (virtual_key == winsys::VirtualKey_Menu)
+        keyboard_flags &= ~ui::EF_ALT_DOWN;
       ui_channel_->Send(new MetroViewerHostMsg_KeyDown(virtual_key,
                                                        status.RepeatCount,
                                                        status.ScanCode,
@@ -1260,6 +1265,9 @@ HRESULT ChromeAppViewAsh::OnAcceleratorKeyDown(
 HRESULT ChromeAppViewAsh::OnCharacterReceived(
   winui::Core::ICoreWindow* sender,
   winui::Core::ICharacterReceivedEventArgs* args) {
+  if (!ui_channel_)
+    return S_OK;
+
   unsigned int char_code = 0;
   HRESULT hr = args->get_KeyCode(&char_code);
   if (FAILED(hr))
@@ -1280,20 +1288,29 @@ HRESULT ChromeAppViewAsh::OnCharacterReceived(
 HRESULT ChromeAppViewAsh::OnWindowActivated(
     winui::Core::ICoreWindow* sender,
     winui::Core::IWindowActivatedEventArgs* args) {
-  winui::Core::CoreWindowActivationState state;
-  HRESULT hr = args->get_WindowActivationState(&state);
-  if (FAILED(hr))
-    return hr;
+  if (!ui_channel_)
+    return S_OK;
 
-  // Treat both full activation (Ash was reopened from the Start Screen or from
-  // any other Metro entry point in Windows) and pointer activation (user
-  // clicked back in Ash after using another app on another monitor) the same.
-  if (state == winui::Core::CoreWindowActivationState_CodeActivated ||
-      state == winui::Core::CoreWindowActivationState_PointerActivated) {
-    if (text_service_)
-      text_service_->OnWindowActivated();
-    ui_channel_->Send(new MetroViewerHostMsg_WindowActivated());
+  if (args) {
+    winui::Core::CoreWindowActivationState state;
+    HRESULT hr = args->get_WindowActivationState(&state);
+    if (FAILED(hr))
+      return hr;
+
+    // Treat both full activation (Ash was reopened from the Start Screen or
+    // from any other Metro entry point in Windows) and pointer activation
+    // (user clicked back in Ash after using another app on another monitor)
+    // the same.
+    if (state == winui::Core::CoreWindowActivationState_CodeActivated ||
+        state == winui::Core::CoreWindowActivationState_PointerActivated) {
+      ui_channel_->Send(new MetroViewerHostMsg_WindowActivated(false));
+    }
+  } else {
+    // On Windows 7, we force a repaint when the window is activated.
+    ui_channel_->Send(new MetroViewerHostMsg_WindowActivated(true));
   }
+  if (text_service_)
+    text_service_->OnWindowActivated();
   return S_OK;
 }
 
@@ -1348,18 +1365,19 @@ HRESULT ChromeAppViewAsh::HandleProtocolRequest(
 HRESULT ChromeAppViewAsh::OnEdgeGestureCompleted(
     winui::Input::IEdgeGesture* gesture,
     winui::Input::IEdgeGestureEventArgs* args) {
-  ui_channel_->Send(new MetroViewerHostMsg_EdgeGesture());
+  if (ui_channel_)
+    ui_channel_->Send(new MetroViewerHostMsg_EdgeGesture());
   return S_OK;
 }
 
 void ChromeAppViewAsh::OnSearchRequest(const base::string16& search_string) {
-  DCHECK(ui_channel_);
-  ui_channel_->Send(new MetroViewerHostMsg_SearchRequest(search_string));
+  if (ui_channel_)
+    ui_channel_->Send(new MetroViewerHostMsg_SearchRequest(search_string));
 }
 
 void ChromeAppViewAsh::OnNavigateToUrl(const base::string16& url) {
-  DCHECK(ui_channel_);
- ui_channel_->Send(new MetroViewerHostMsg_OpenURL(url));
+  if (ui_channel_)
+    ui_channel_->Send(new MetroViewerHostMsg_OpenURL(url));
 }
 
 HRESULT ChromeAppViewAsh::OnSizeChanged(winui::Core::ICoreWindow* sender,
@@ -1380,6 +1398,69 @@ HRESULT ChromeAppViewAsh::OnSizeChanged(winui::Core::ICoreWindow* sender,
   DVLOG(1) << "Window size changed: width=" << cx << ", height=" << cy;
   ui_channel_->Send(new MetroViewerHostMsg_WindowSizeChanged(cx, cy));
   return S_OK;
+}
+
+void ChromeAppViewAsh::StartChromeOSMode() {
+  static int ms_elapsed = 0;
+
+  if (!IPC::Channel::IsNamedServerInitialized(
+          win8::kMetroViewerIPCChannelName) && ms_elapsed < 10000) {
+    ms_elapsed += 100;
+    ui_loop_.PostDelayedTask(FROM_HERE,
+        base::Bind(base::IgnoreResult(&ChromeAppViewAsh::StartChromeOSMode),
+                   base::Unretained(this)),
+        base::TimeDelta::FromMilliseconds(kChromeChannelPollTimerMs));
+    return;
+  }
+
+  if (!IPC::Channel::IsNamedServerInitialized(
+          win8::kMetroViewerIPCChannelName)) {
+    DVLOG(1) << "Failed to connect to chrome channel : "
+             << win8::kMetroViewerIPCChannelName;
+    DVLOG(1) << "Exiting. Elapsed time :" << ms_elapsed;
+    PostMessage(core_window_hwnd_, WM_CLOSE, 0, 0);
+    return;
+  }
+
+  DVLOG(1) << "Found channel : " << win8::kMetroViewerIPCChannelName;
+
+  DCHECK(channel_listener_);
+
+  // In Aura mode we create an IPC channel to the browser, then ask it to
+  // connect to us.
+  ui_channel_ =
+      IPC::ChannelProxy::Create(win8::kMetroViewerIPCChannelName,
+                                IPC::Channel::MODE_NAMED_CLIENT,
+                                channel_listener_,
+                                io_thread_->message_loop_proxy());
+  DVLOG(1) << "Created channel proxy";
+
+  // Upon receipt of the MetroViewerHostMsg_SetTargetSurface message the
+  // browser will use D3D from the browser process to present to our Window.
+  ui_channel_->Send(new MetroViewerHostMsg_SetTargetSurface(
+      gfx::NativeViewId(core_window_hwnd_),
+      win32_dpi_scale_));
+  DVLOG(1) << "ICoreWindow sent " << core_window_hwnd_;
+
+  // Send an initial size message so that the Ash root window host gets sized
+  // correctly.
+  RECT rect = {0};
+  ::GetWindowRect(core_window_hwnd_, &rect);
+  ui_channel_->Send(
+      new MetroViewerHostMsg_WindowSizeChanged(rect.right - rect.left,
+                                               rect.bottom - rect.top));
+
+  input_source_ = metro_driver::InputSource::Create();
+  if (input_source_) {
+    input_source_->AddObserver(this);
+    // Send an initial input source.
+    OnInputSourceChanged();
+  }
+
+  // Start receiving IME popup window notifications.
+  metro_driver::AddImePopupObserver(this);
+
+  DVLOG(1) << "Channel setup complete";
 }
 
 ///////////////////////////////////////////////////////////////////////////////

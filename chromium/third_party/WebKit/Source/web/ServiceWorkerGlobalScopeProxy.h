@@ -32,17 +32,17 @@
 #define ServiceWorkerGlobalScopeProxy_h
 
 #include "core/workers/WorkerReportingProxy.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebServiceWorkerContextProxy.h"
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
-class ExecutionContext;
-}
-
 namespace blink {
 
+class ConsoleMessage;
+class Document;
+class ServiceWorkerGlobalScope;
 class WebEmbeddedWorkerImpl;
 class WebServiceWorkerContextClient;
 class WebServiceWorkerRequest;
@@ -57,43 +57,44 @@ class WebServiceWorkerRequest;
 // e.g. onfetch.
 //
 // An instance of this class is supposed to outlive until
-// workerGlobalScopeDestroyed() is called by its corresponding
+// workerThreadTerminated() is called by its corresponding
 // WorkerGlobalScope.
-class ServiceWorkerGlobalScopeProxy FINAL :
-    public WebServiceWorkerContextProxy,
-    public WebCore::WorkerReportingProxy {
+class ServiceWorkerGlobalScopeProxy final
+    : public WebServiceWorkerContextProxy
+    , public WorkerReportingProxy {
     WTF_MAKE_NONCOPYABLE(ServiceWorkerGlobalScopeProxy);
 public:
-    static PassOwnPtr<ServiceWorkerGlobalScopeProxy> create(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, WebServiceWorkerContextClient&);
+    static PassOwnPtr<ServiceWorkerGlobalScopeProxy> create(WebEmbeddedWorkerImpl&, Document&, WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeProxy();
 
     // WebServiceWorkerContextProxy overrides:
-    virtual void dispatchActivateEvent(int) OVERRIDE;
-    virtual void dispatchInstallEvent(int) OVERRIDE;
-    virtual void dispatchFetchEvent(int, const WebServiceWorkerRequest&) OVERRIDE;
-    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) OVERRIDE;
-    virtual void dispatchPushEvent(int, const WebString& data) OVERRIDE;
-    virtual void dispatchSyncEvent(int) OVERRIDE;
+    virtual void dispatchActivateEvent(int) override;
+    virtual void dispatchInstallEvent(int) override;
+    virtual void dispatchFetchEvent(int, const WebServiceWorkerRequest&) override;
+    virtual void dispatchGeofencingEvent(int, WebGeofencingEventType, const WebString& regionID, const WebCircularGeofencingRegion&) override;
+    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
+    virtual void dispatchPushEvent(int, const WebString& data) override;
+    virtual void dispatchSyncEvent(int) override;
 
     // WorkerReportingProxy overrides:
-    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) OVERRIDE;
-    virtual void reportConsoleMessage(WebCore::MessageSource, WebCore::MessageLevel, const String& message, int lineNumber, const String& sourceURL) OVERRIDE;
-    virtual void postMessageToPageInspector(const String&) OVERRIDE;
-    virtual void updateInspectorStateCookie(const String&) OVERRIDE;
-    virtual void workerGlobalScopeStarted(WebCore::WorkerGlobalScope*) OVERRIDE;
-    virtual void workerGlobalScopeClosed() OVERRIDE;
-    virtual void willDestroyWorkerGlobalScope() OVERRIDE;
-    virtual void workerGlobalScopeDestroyed() OVERRIDE;
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) override;
+    virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
+    virtual void postMessageToPageInspector(const String&) override;
+    virtual void didEvaluateWorkerScript(bool success) override;
+    virtual void workerGlobalScopeStarted(WorkerGlobalScope*) override;
+    virtual void workerGlobalScopeClosed() override;
+    virtual void willDestroyWorkerGlobalScope() override;
+    virtual void workerThreadTerminated() override;
 
 private:
-    ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl&, WebCore::ExecutionContext&, WebServiceWorkerContextClient&);
+    ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl&, Document&, WebServiceWorkerContextClient&);
 
     WebEmbeddedWorkerImpl& m_embeddedWorker;
-    WebCore::ExecutionContext& m_executionContext;
+    Document& m_document;
 
     WebServiceWorkerContextClient& m_client;
 
-    WebCore::WorkerGlobalScope* m_workerGlobalScope;
+    ServiceWorkerGlobalScope* m_workerGlobalScope;
 };
 
 } // namespace blink

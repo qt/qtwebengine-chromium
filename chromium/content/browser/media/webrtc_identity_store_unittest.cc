@@ -17,11 +17,11 @@
 
 namespace content {
 
-static const char* kFakeOrigin = "http://foo.com";
-static const char* kFakeIdentityName1 = "name1";
-static const char* kFakeIdentityName2 = "name2";
-static const char* kFakeCommonName1 = "cname1";
-static const char* kFakeCommonName2 = "cname2";
+static const char kFakeOrigin[] = "http://foo.com";
+static const char kFakeIdentityName1[] = "name1";
+static const char kFakeIdentityName2[] = "name2";
+static const char kFakeCommonName1[] = "cname1";
+static const char kFakeCommonName2[] = "cname2";
 
 static void OnRequestCompleted(bool* completed,
                                std::string* out_cert,
@@ -49,9 +49,7 @@ class WebRTCIdentityStoreTest : public testing::Test {
     webrtc_identity_store_->SetTaskRunnerForTesting(pool_owner_->pool());
   }
 
-  virtual ~WebRTCIdentityStoreTest() {
-    pool_owner_->pool()->Shutdown();
-  }
+  ~WebRTCIdentityStoreTest() override { pool_owner_->pool()->Shutdown(); }
 
   void SetValidityPeriod(base::TimeDelta validity_period) {
     webrtc_identity_store_->SetValidityPeriodForTesting(validity_period);

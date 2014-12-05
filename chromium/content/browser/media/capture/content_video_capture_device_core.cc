@@ -66,6 +66,7 @@ ThreadSafeCaptureOracle::~ThreadSafeCaptureOracle() {}
 
 bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
     VideoCaptureOracle::Event event,
+    const gfx::Rect& damage_rect,
     base::TimeTicks event_time,
     scoped_refptr<media::VideoFrame>* storage,
     CaptureFrameCallback* callback) {
@@ -74,11 +75,16 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
   if (!client_)
     return false;  // Capture is stopped.
 
+  // Always round up the coded size to multiple of 16 pixels.
+  // See http://crbug.com/402151.
+  const gfx::Size visible_size = params_.requested_format.frame_size;
+  const gfx::Size coded_size((visible_size.width() + 15) & ~15,
+                             (visible_size.height() + 15) & ~15);
+
   scoped_refptr<media::VideoCaptureDevice::Client::Buffer> output_buffer =
-      client_->ReserveOutputBuffer(video_frame_format_,
-                                   params_.requested_format.frame_size);
+      client_->ReserveOutputBuffer(video_frame_format_, coded_size);
   const bool should_capture =
-      oracle_->ObserveEventAndDecideCapture(event, event_time);
+      oracle_->ObserveEventAndDecideCapture(event, damage_rect, event_time);
   const bool content_is_dirty =
       (event == VideoCaptureOracle::kCompositorUpdate ||
        event == VideoCaptureOracle::kSoftwarePaint);
@@ -88,14 +94,14 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
        "paint"));
 
   // Consider the various reasons not to initiate a capture.
-  if (should_capture && !output_buffer) {
+  if (should_capture && !output_buffer.get()) {
     TRACE_EVENT_INSTANT1("mirroring",
-                         "EncodeLimited",
+                         "PipelineLimited",
                          TRACE_EVENT_SCOPE_THREAD,
                          "trigger",
                          event_name);
     return false;
-  } else if (!should_capture && output_buffer) {
+  } else if (!should_capture && output_buffer.get()) {
     if (content_is_dirty) {
       // This is a normal and acceptable way to drop a frame. We've hit our
       // capture rate limit: for example, the content is animating at 60fps but
@@ -105,10 +111,10 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
                            "trigger", event_name);
     }
     return false;
-  } else if (!should_capture && !output_buffer) {
+  } else if (!should_capture && !output_buffer.get()) {
     // We decided not to capture, but we wouldn't have been able to if we wanted
     // to because no output buffer was available.
-    TRACE_EVENT_INSTANT1("mirroring", "NearlyEncodeLimited",
+    TRACE_EVENT_INSTANT1("mirroring", "NearlyPipelineLimited",
                          TRACE_EVENT_SCOPE_THREAD,
                          "trigger", event_name);
     return false;
@@ -122,9 +128,9 @@ bool ThreadSafeCaptureOracle::ObserveEventAndDecideCapture(
   if (video_frame_format_ != media::VideoFrame::NATIVE_TEXTURE) {
     *storage = media::VideoFrame::WrapExternalPackedMemory(
         video_frame_format_,
-        params_.requested_format.frame_size,
-        gfx::Rect(params_.requested_format.frame_size),
-        params_.requested_format.frame_size,
+        coded_size,
+        gfx::Rect(visible_size),
+        visible_size,
         static_cast<uint8*>(output_buffer->data()),
         output_buffer->size(),
         base::SharedMemory::NULLHandle(),
@@ -149,7 +155,8 @@ void ThreadSafeCaptureOracle::UpdateCaptureSize(const gfx::Size& source_size) {
   // If this is the first call to UpdateCaptureSize(), or the receiver supports
   // variable resolution, then determine the capture size by treating the
   // requested width and height as maxima.
-  if (!capture_size_updated_ || params_.allow_resolution_change) {
+  if (!capture_size_updated_ || params_.resolution_change_policy ==
+      media::RESOLUTION_POLICY_DYNAMIC_WITHIN_LIMIT) {
     // The capture resolution should not exceed the source frame size.
     // In other words it should downscale the image but not upscale it.
     if (source_size.width() > params_.requested_format.frame_size.width() ||
@@ -192,7 +199,7 @@ void ThreadSafeCaptureOracle::DidCaptureFrame(
     return;  // Capture is stopped.
 
   if (success) {
-    if (oracle_->CompleteCapture(frame_number, timestamp)) {
+    if (oracle_->CompleteCapture(frame_number, &timestamp)) {
       media::VideoCaptureFormat format = params_.requested_format;
       format.frame_size = frame->coded_size();
       client_->OnIncomingCapturedVideoFrame(buffer, format, frame, timestamp);
@@ -296,9 +303,13 @@ void ContentVideoCaptureDeviceCore::CaptureStarted(bool success) {
 ContentVideoCaptureDeviceCore::ContentVideoCaptureDeviceCore(
     scoped_ptr<VideoCaptureMachine> capture_machine)
     : state_(kIdle),
-      capture_machine_(capture_machine.Pass()) {}
+      capture_machine_(capture_machine.Pass()) {
+  DCHECK(capture_machine_.get());
+}
 
 ContentVideoCaptureDeviceCore::~ContentVideoCaptureDeviceCore() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_NE(state_, kCapturing);
   // If capture_machine is not NULL, then we need to return to the UI thread to
   // safely stop the capture machine.
   if (capture_machine_) {
@@ -333,7 +344,7 @@ void ContentVideoCaptureDeviceCore::Error(const std::string& reason) {
   if (state_ == kIdle)
     return;
 
-  if (oracle_proxy_)
+  if (oracle_proxy_.get())
     oracle_proxy_->ReportError(reason);
 
   StopAndDeAllocate();

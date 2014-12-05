@@ -36,8 +36,8 @@ goog.addDependency(
     []);
 
 goog.addDependency(
-    '../host/interface/abstract_msgs.js',
-    ['cvox.AbstractMsgs'],
+    '../chromevox/messages/msgs.js',
+    ['cvox.Msgs'],
     []);
 
 goog.addDependency(
@@ -97,7 +97,7 @@ cvox.ChromeVox.braille;
  */
 cvox.ChromeVox.mathJax;
 /**
- * @type {cvox.AbstractMsgs}
+ * @type {cvox.Msgs}
  */
 cvox.ChromeVox.msgs = null;
 /**
@@ -261,3 +261,17 @@ cvox.ChromeVox.isStickyModeOn = function() {
     return cvox.ChromeVox.isStickyPrefOn;
   }
 };
+
+/**
+ * Shortcut for document.getElementById.
+ * @param {string} id of the element.
+ * @return {HTMLElement} with the id.
+ */
+function $(id) {
+  return document.getElementById(id);
+}
+
+/**
+ * @param {Array} tabs
+ */
+cvox.ChromeVox.injectChromeVoxIntoTabs = function(tabs) {};

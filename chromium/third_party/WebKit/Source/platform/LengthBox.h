@@ -27,9 +27,7 @@
 #include "platform/text/TextDirection.h"
 #include "platform/text/WritingMode.h"
 
-namespace WebCore {
-
-class RenderStyle;
+namespace blink {
 
 class PLATFORM_EXPORT LengthBox {
 public:
@@ -104,6 +102,6 @@ public:
     Length m_bottom;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LengthBox_h

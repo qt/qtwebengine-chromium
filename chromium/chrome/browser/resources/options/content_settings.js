@@ -2,8 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('options');
+
+/**
+ * @typedef {{appId: string,
+ *            appName: (string|undefined),
+ *            embeddingOrigin: (string|undefined),
+ *            origin: string,
+ *            setting: string,
+ *            source: string,
+ *            video: (string|undefined)}}
+ */
+options.Exception;
+
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
+
+  // Lookup table to generate the i18n strings.
+  /** @const */ var permissionsLookup = {
+    'location': 'location',
+    'notifications': 'notifications',
+    'media-stream': 'mediaStream',
+    'cookies': 'cookies',
+    'multiple-automatic-downloads': 'multipleAutomaticDownloads',
+    'images': 'images',
+    'plugins': 'plugins',
+    'popups': 'popups',
+    'javascript': 'javascript'
+  };
 
   //////////////////////////////////////////////////////////////////////////////
   // ContentSettings class:
@@ -11,58 +38,66 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of content settings page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function ContentSettings() {
     this.activeNavTab = null;
-    OptionsPage.call(this, 'content',
-                     loadTimeData.getString('contentSettingsPageTabTitle'),
-                     'content-settings-page');
+    Page.call(this, 'content',
+              loadTimeData.getString('contentSettingsPageTabTitle'),
+              'content-settings-page');
   }
 
   cr.addSingletonGetter(ContentSettings);
 
   ContentSettings.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var exceptionsButtons =
           this.pageDiv.querySelectorAll('.exceptions-list-button');
       for (var i = 0; i < exceptionsButtons.length; i++) {
         exceptionsButtons[i].onclick = function(event) {
-          var page = ContentSettingsExceptionsArea.getInstance();
-
-          // Add on the proper hash for the content type, and store that in the
-          // history so back/forward and tab restore works.
           var hash = event.currentTarget.getAttribute('contentType');
-          var url = page.name + '#' + hash;
-          uber.pushState({pageName: page.name}, url);
+          PageManager.showPageByName('contentExceptions', true,
+                                     {hash: '#' + hash});
+        };
+      }
 
-          // Navigate after the local history has been replaced in order to have
-          // the correct hash loaded.
-          OptionsPage.showPageByName('contentExceptions', false);
+      var experimentalExceptionsButtons =
+          this.pageDiv.querySelectorAll('.website-settings-permission-button');
+      for (var i = 0; i < experimentalExceptionsButtons.length; i++) {
+        experimentalExceptionsButtons[i].onclick = function(event) {
+          var hash = event.currentTarget.getAttribute('contentType');
+          WebsiteSettingsManager.showWebsiteSettings(hash);
         };
       }
 
       var manageHandlersButton = $('manage-handlers-button');
       if (manageHandlersButton) {
         manageHandlersButton.onclick = function(event) {
-          OptionsPage.navigateToPage('handlers');
+          PageManager.showPageByName('handlers');
         };
       }
 
-      if (cr.isChromeOS)
-        UIAccountTweaks.applyGuestModeVisibility(document);
+      if (cr.isChromeOS) {
+        // Disable some controls for Guest in Chrome OS.
+        UIAccountTweaks.applyGuestSessionVisibility(document);
+
+        // Disable some controls for Public session in Chrome OS.
+        UIAccountTweaks.applyPublicSessionVisibility(document);
+      }
 
       // Cookies filter page ---------------------------------------------------
       $('show-cookies-button').onclick = function(event) {
         chrome.send('coreOptionsUserMetricsAction', ['Options_ShowCookies']);
-        OptionsPage.navigateToPage('cookies');
+        PageManager.showPageByName('cookies');
       };
 
       $('content-settings-overlay-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
 
       $('media-pepper-flash-default').hidden = true;
       $('media-pepper-flash-exceptions').hidden = true;
@@ -71,6 +106,20 @@ cr.define('options', function() {
           ContentSettings.setDefaultMicrophone_);
       $('media-select-camera').addEventListener('change',
           ContentSettings.setDefaultCamera_);
+
+      if (loadTimeData.getBoolean('websiteSettingsManagerEnabled')) {
+        var oldUI =
+            this.pageDiv.querySelectorAll('.replace-with-website-settings');
+        for (var i = 0; i < oldUI.length; i++) {
+          oldUI[i].hidden = true;
+        }
+
+        var newUI =
+            this.pageDiv.querySelectorAll('.experimental-website-settings');
+        for (var i = 0; i < newUI.length; i++) {
+          newUI[i].hidden = false;
+        }
+      }
     },
   };
 
@@ -81,12 +130,20 @@ cr.define('options', function() {
   };
 
   /**
-   * Sets the values for all the content settings radios.
-   * @param {Object} dict A mapping from radio groups to the checked value for
-   *     that group.
+   * Sets the values for all the content settings radios and labels.
+   * @param {Object.<string, {managedBy: string, value: string}>} dict A mapping
+   *     from radio groups to the checked value for that group.
    */
   ContentSettings.setContentFilterSettingsValue = function(dict) {
     for (var group in dict) {
+      var settingLabel = $(group + '-default-string');
+      if (settingLabel) {
+        var value = dict[group].value;
+        var valueId =
+            permissionsLookup[group] + value[0].toUpperCase() + value.slice(1);
+        settingLabel.textContent = loadTimeData.getString(valueId);
+      }
+
       var managedBy = dict[group].managedBy;
       var controlledBy = managedBy == 'policy' || managedBy == 'extension' ?
           managedBy : null;
@@ -119,14 +176,16 @@ cr.define('options', function() {
    * Updates the labels and indicators for the Media settings. Those require
    * special handling because they are backed by multiple prefs and can change
    * their scope based on the managed state of the backing prefs.
-   * @param {Object} mediaSettings A dictionary containing the following fields:
-   *     {String} askText The label for the ask radio button.
-   *     {String} blockText The label for the block radio button.
-   *     {Boolean} cameraDisabled Whether to disable the camera dropdown.
-   *     {Boolean} micDisabled Whether to disable the microphone dropdown.
-   *     {Boolean} showBubble Wether to show the managed icon and bubble for the
-   *         media label.
-   *     {String} bubbleText The text to use inside the bubble if it is shown.
+   * @param {{askText: string, blockText: string, cameraDisabled: boolean,
+   *          micDisabled: boolean, showBubble: boolean, bubbleText: string}}
+   *     mediaSettings A dictionary containing the following fields:
+   *     askText The label for the ask radio button.
+   *     blockText The label for the block radio button.
+   *     cameraDisabled Whether to disable the camera dropdown.
+   *     micDisabled Whether to disable the microphone dropdown.
+   *     showBubble Wether to show the managed icon and bubble for the media
+   *                label.
+   *     bubbleText The text to use inside the bubble if it is shown.
    */
   ContentSettings.updateMediaUI = function(mediaSettings) {
     $('media-stream-ask-label').innerHTML =
@@ -139,7 +198,7 @@ cr.define('options', function() {
     if (mediaSettings.cameraDisabled)
       $('media-select-camera').disabled = true;
 
-    OptionsPage.hideBubble();
+    PageManager.hideBubble();
     // Create a synthetic pref change event decorated as
     // CoreOptionsHandler::CreateValueForPref() does.
     // TODO(arv): It was not clear what event type this should use?
@@ -159,9 +218,9 @@ cr.define('options', function() {
   /**
    * Initializes an exceptions list.
    * @param {string} type The content type that we are setting exceptions for.
-   * @param {Array} exceptions An array of pairs, where the first element of
-   *     each pair is the filter string, and the second is the setting
-   *     (allow/block).
+   * @param {Array.<options.Exception>} exceptions An array of pairs, where the
+   *     first element of each pair is the filter string, and the second is the
+   *     setting (allow/block).
    */
   ContentSettings.setExceptions = function(type, exceptions) {
     this.getExceptionsList(type, 'normal').setExceptions(exceptions);
@@ -177,18 +236,25 @@ cr.define('options', function() {
 
   ContentSettings.setOTRExceptions = function(type, otrExceptions) {
     var exceptionsList = this.getExceptionsList(type, 'otr');
-    exceptionsList.parentNode.hidden = false;
-    exceptionsList.setExceptions(otrExceptions);
+    // Settings for Guest hides many sections, so check for null first.
+    if (exceptionsList) {
+      exceptionsList.parentNode.hidden = false;
+      exceptionsList.setExceptions(otrExceptions);
+    }
   };
 
   /**
    * @param {string} type The type of exceptions (e.g. "location") to get.
    * @param {string} mode The mode of the desired exceptions list (e.g. otr).
-   * @return {?ExceptionsList} The corresponding exceptions list or null.
+   * @return {?options.contentSettings.ExceptionsList} The corresponding
+   *     exceptions list or null.
    */
   ContentSettings.getExceptionsList = function(type, mode) {
-    return document.querySelector(
+    var exceptionsList = document.querySelector(
         'div[contentType=' + type + '] list[mode=' + mode + ']');
+    return !exceptionsList ? null :
+        assertInstanceof(exceptionsList,
+                         options.contentSettings.ExceptionsList);
   };
 
   /**
@@ -197,7 +263,7 @@ cr.define('options', function() {
    * @param {string} type The content type.
    * @param {string} mode The browser mode.
    * @param {string} pattern The pattern.
-   * @param {bool} valid Whether said pattern is valid in the context of
+   * @param {boolean} valid Whether said pattern is valid in the context of
    *     a content exception setting.
    */
   ContentSettings.patternValidityCheckComplete =
@@ -228,7 +294,7 @@ cr.define('options', function() {
 
   /**
    * Shows/hides the whole Web MIDI settings.
-   * @param {bool} show Wether to show the whole Web MIDI settings.
+   * @param {boolean} show Wether to show the whole Web MIDI settings.
    */
   ContentSettings.showExperimentalWebMIDISettings = function(show) {
     $('experimental-web-midi-settings').hidden = !show;
@@ -269,7 +335,7 @@ cr.define('options', function() {
 
   /**
    * Enables/disables the protected content exceptions button.
-   * @param {bool} enable Whether to enable the button.
+   * @param {boolean} enable Whether to enable the button.
    */
   ContentSettings.enableProtectedContentExceptions = function(enable) {
     var exceptionsButton = $('protected-content-exceptions');

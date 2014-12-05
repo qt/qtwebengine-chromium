@@ -78,8 +78,8 @@ void ChaCha20XOR(unsigned char *out, const unsigned char *in, unsigned int inLen
     input[2] = U8TO32_LITTLE(sigma + 8);
     input[3] = U8TO32_LITTLE(sigma + 12);
 
-    input[12] = counter;
-    input[13] = counter >> 32;
+    input[12] = (PRUint32)counter;
+    input[13] = (PRUint32)(counter >> 32);
     input[14] = U8TO32_LITTLE(nonce + 0);
     input[15] = U8TO32_LITTLE(nonce + 4);
 

@@ -3,12 +3,14 @@
  * found in the LICENSE file.
  */
 
-/* From pp_codecs.idl modified Tue Jun 10 13:32:45 2014. */
+/* From pp_codecs.idl modified Wed Nov  5 13:38:52 2014. */
 
 #ifndef PPAPI_C_PP_CODECS_H_
 #define PPAPI_C_PP_CODECS_H_
 
 #include "ppapi/c/pp_macros.h"
+#include "ppapi/c/pp_point.h"
+#include "ppapi/c/pp_rect.h"
 #include "ppapi/c/pp_size.h"
 #include "ppapi/c/pp_stdint.h"
 
@@ -34,10 +36,26 @@ typedef enum {
   PP_VIDEOPROFILE_H264SCALABLEHIGH = 8,
   PP_VIDEOPROFILE_H264STEREOHIGH = 9,
   PP_VIDEOPROFILE_H264MULTIVIEWHIGH = 10,
-  PP_VIDEOPROFILE_VP8MAIN = 11,
-  PP_VIDEOPROFILE_VP9MAIN = 12,
-  PP_VIDEOPROFILE_MAX = PP_VIDEOPROFILE_VP9MAIN
+  PP_VIDEOPROFILE_VP8_ANY = 11,
+  PP_VIDEOPROFILE_VP9_ANY = 12,
+  PP_VIDEOPROFILE_MAX = PP_VIDEOPROFILE_VP9_ANY
 } PP_VideoProfile;
+
+/**
+ * Hardware acceleration options.
+ */
+typedef enum {
+  /** Create a hardware accelerated resource only. */
+  PP_HARDWAREACCELERATION_ONLY = 0,
+  /**
+   * Create a hardware accelerated resource if possible. Otherwise, fall back
+   * to the software implementation.
+   */
+  PP_HARDWAREACCELERATION_WITHFALLBACK = 1,
+  /** Create the software implementation only. */
+  PP_HARDWAREACCELERATION_NONE = 2,
+  PP_HARDWAREACCELERATION_LAST = PP_HARDWAREACCELERATION_NONE
+} PP_HardwareAcceleration;
 /**
  * @}
  */
@@ -64,8 +82,45 @@ struct PP_VideoPicture {
   uint32_t texture_id;
   /**
    * The GL texture target for the decoded picture. Possible values are:
-   *   GL_TEXTURE_2D                 (normalized texture coordinates)
-   *   GL_TEXTURE_RECTANGLE_ARB      (dimension dependent texture coordinates)
+   *   GL_TEXTURE_2D
+   *   GL_TEXTURE_RECTANGLE_ARB
+   *   GL_TEXTURE_EXTERNAL_OES
+   *
+   * The pixel format of the texture is GL_RGBA.
+   */
+  uint32_t texture_target;
+  /**
+   * Dimensions of the texture holding the decoded picture.
+   */
+  struct PP_Size texture_size;
+  /**
+   * The visible subrectangle of the picture. The plugin should display only
+   * this part of the picture.
+   */
+  struct PP_Rect visible_rect;
+};
+
+/**
+ * Struct describing a decoded video picture. The decoded picture data is stored
+ * in the GL texture corresponding to |texture_id|. The plugin can determine
+ * which Decode call generated the picture using |decode_id|.
+ */
+struct PP_VideoPicture_0_1 {
+  /**
+   * |decode_id| parameter of the Decode call which generated this picture.
+   * See the PPB_VideoDecoder function Decode() for more details.
+   */
+  uint32_t decode_id;
+  /**
+   * Texture ID in the plugin's GL context. The plugin can use this to render
+   * the decoded picture.
+   */
+  uint32_t texture_id;
+  /**
+   * The GL texture target for the decoded picture. Possible values are:
+   *   GL_TEXTURE_2D
+   *   GL_TEXTURE_RECTANGLE_ARB
+   *   GL_TEXTURE_EXTERNAL_OES
    *
    * The pixel format of the texture is GL_RGBA.
    */

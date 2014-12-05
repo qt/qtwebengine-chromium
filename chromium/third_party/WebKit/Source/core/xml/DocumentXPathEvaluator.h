@@ -30,13 +30,13 @@
 #include "core/xml/XPathEvaluator.h"
 #include "core/xml/XPathNSResolver.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class XPathExpression;
 class XPathResult;
 
-class DocumentXPathEvaluator FINAL : public NoBaseWillBeGarbageCollected<DocumentXPathEvaluator>, public DocumentSupplement {
+class DocumentXPathEvaluator final : public NoBaseWillBeGarbageCollected<DocumentXPathEvaluator>, public DocumentSupplement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DocumentXPathEvaluator);
 public:
     static DocumentXPathEvaluator& from(DocumentSupplementable&);
@@ -48,7 +48,7 @@ public:
         const String& expression, Node* contextNode, PassRefPtrWillBeRawPtr<XPathNSResolver>,
         unsigned short type, XPathResult*, ExceptionState&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     DocumentXPathEvaluator();
@@ -58,6 +58,6 @@ private:
     RefPtrWillBeMember<XPathEvaluator> m_xpathEvaluator;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentXPathEvaluator_h

@@ -7,9 +7,9 @@
 
 #include "core/html/HTMLNameCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class WindowNameCollection FINAL : public HTMLNameCollection {
+class WindowNameCollection final : public HTMLNameCollection {
 public:
     static PassRefPtrWillBeRawPtr<WindowNameCollection> create(ContainerNode& document, CollectionType type, const AtomicString& name)
     {
@@ -25,6 +25,6 @@ private:
 
 DEFINE_TYPE_CASTS(WindowNameCollection, LiveNodeListBase, collection, collection->type() == WindowNamedItems, collection.type() == WindowNamedItems);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WindowNameCollection_h

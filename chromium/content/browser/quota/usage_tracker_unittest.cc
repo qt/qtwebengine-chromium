@@ -6,16 +6,16 @@
 #include "base/run_loop.h"
 #include "content/public/test/mock_special_storage_policy.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/usage_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/usage_tracker.h"
 
-using quota::kQuotaStatusOk;
-using quota::kStorageTypeTemporary;
-using quota::QuotaClient;
-using quota::QuotaClientList;
-using quota::SpecialStoragePolicy;
-using quota::StorageType;
-using quota::UsageTracker;
+using storage::kQuotaStatusOk;
+using storage::kStorageTypeTemporary;
+using storage::QuotaClient;
+using storage::QuotaClientList;
+using storage::SpecialStoragePolicy;
+using storage::StorageType;
+using storage::UsageTracker;
 
 namespace content {
 
@@ -45,25 +45,23 @@ void DidGetUsage(bool* done,
 class MockQuotaClient : public QuotaClient {
  public:
   MockQuotaClient() {}
-  virtual ~MockQuotaClient() {}
+  ~MockQuotaClient() override {}
 
-  virtual ID id() const OVERRIDE {
-    return kFileSystem;
-  }
+  ID id() const override { return kFileSystem; }
 
-  virtual void OnQuotaManagerDestroyed() OVERRIDE {}
+  void OnQuotaManagerDestroyed() override {}
 
-  virtual void GetOriginUsage(const GURL& origin,
-                              StorageType type,
-                              const GetUsageCallback& callback) OVERRIDE {
+  void GetOriginUsage(const GURL& origin,
+                      StorageType type,
+                      const GetUsageCallback& callback) override {
     EXPECT_EQ(kStorageTypeTemporary, type);
     int64 usage = GetUsage(origin);
     base::MessageLoop::current()->PostTask(FROM_HERE,
                                            base::Bind(callback, usage));
   }
 
-  virtual void GetOriginsForType(StorageType type,
-                                 const GetOriginsCallback& callback) OVERRIDE {
+  void GetOriginsForType(StorageType type,
+                         const GetOriginsCallback& callback) override {
     EXPECT_EQ(kStorageTypeTemporary, type);
     std::set<GURL> origins;
     for (UsageMap::const_iterator itr = usage_map_.begin();
@@ -74,9 +72,9 @@ class MockQuotaClient : public QuotaClient {
                                            base::Bind(callback, origins));
   }
 
-  virtual void GetOriginsForHost(StorageType type,
-                                 const std::string& host,
-                                 const GetOriginsCallback& callback) OVERRIDE {
+  void GetOriginsForHost(StorageType type,
+                         const std::string& host,
+                         const GetOriginsCallback& callback) override {
     EXPECT_EQ(kStorageTypeTemporary, type);
     std::set<GURL> origins;
     for (UsageMap::const_iterator itr = usage_map_.begin();
@@ -88,17 +86,17 @@ class MockQuotaClient : public QuotaClient {
                                            base::Bind(callback, origins));
   }
 
-  virtual void DeleteOriginData(const GURL& origin,
-                                StorageType type,
-                                const DeletionCallback& callback) OVERRIDE {
+  void DeleteOriginData(const GURL& origin,
+                        StorageType type,
+                        const DeletionCallback& callback) override {
     EXPECT_EQ(kStorageTypeTemporary, type);
     usage_map_.erase(origin);
     base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(callback, kQuotaStatusOk));
   }
 
-  virtual bool DoesSupport(quota::StorageType type) const OVERRIDE {
-    return type == quota::kStorageTypeTemporary;
+  bool DoesSupport(storage::StorageType type) const override {
+    return type == storage::kStorageTypeTemporary;
   }
 
   int64 GetUsage(const GURL& origin) {
@@ -132,7 +130,7 @@ class UsageTrackerTest : public testing::Test {
                        storage_policy_.get(), NULL) {
   }
 
-  virtual ~UsageTrackerTest() {}
+  ~UsageTrackerTest() override {}
 
   UsageTracker* usage_tracker() {
     return &usage_tracker_;

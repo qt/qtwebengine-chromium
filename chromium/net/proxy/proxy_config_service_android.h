@@ -41,35 +41,49 @@ class NET_EXPORT ProxyConfigServiceAndroid : public ProxyConfigService {
     // Called from Java (on JNI thread) to signal that the proxy settings have
     // changed. The string and int arguments (the host/port pair for the proxy)
     // are either a host/port pair or ("", 0) to indicate "no proxy".
-    virtual void ProxySettingsChangedTo(JNIEnv*, jobject, jstring, jint) = 0;
+    // The third argument indicates the PAC url.
+    // The fourth argument is the proxy exclusion list.
+    virtual void ProxySettingsChangedTo(JNIEnv*,
+                                        jobject,
+                                        jstring,
+                                        jint,
+                                        jstring,
+                                        jobjectArray) = 0;
 
     // Called from Java (on JNI thread) to signal that the proxy settings have
     // changed. New proxy settings are fetched from the system property store.
     virtual void ProxySettingsChanged(JNIEnv*, jobject) = 0;
   };
 
-  ProxyConfigServiceAndroid(base::SequencedTaskRunner* network_task_runner,
-                            base::SequencedTaskRunner* jni_task_runner);
+  ProxyConfigServiceAndroid(
+      const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner);
 
   virtual ~ProxyConfigServiceAndroid();
 
   // Register JNI bindings.
   static bool Register(JNIEnv* env);
 
+  // Android provides a local HTTP proxy that does PAC resolution. When this
+  // setting is enabled, the proxy config service ignores the PAC URL and uses
+  // the local proxy for all proxy resolution.
+  void set_exclude_pac_url(bool enabled);
+
   // ProxyConfigService:
   // Called only on the network thread.
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) OVERRIDE;
+  virtual void AddObserver(Observer* observer) override;
+  virtual void RemoveObserver(Observer* observer) override;
+  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) override;
 
  private:
   friend class ProxyConfigServiceAndroidTestBase;
   class Delegate;
 
   // For tests.
-  ProxyConfigServiceAndroid(base::SequencedTaskRunner* network_task_runner,
-                            base::SequencedTaskRunner* jni_task_runner,
-                            GetPropertyCallback get_property_callback);
+  ProxyConfigServiceAndroid(
+      const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
+      const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner,
+      GetPropertyCallback get_property_callback);
 
   // For tests.
   void ProxySettingsChanged();

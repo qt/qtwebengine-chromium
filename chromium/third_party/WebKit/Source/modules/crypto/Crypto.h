@@ -29,36 +29,35 @@
 #ifndef Crypto_h
 #define Crypto_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/crypto/SubtleCrypto.h"
 #include "platform/heap/Handle.h"
-#include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
+class DOMArrayBufferView;
 class ExceptionState;
 
-class Crypto : public GarbageCollectedFinalized<Crypto>, public ScriptWrappable {
+class Crypto final : public GarbageCollected<Crypto>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static Crypto* create()
     {
         return new Crypto();
     }
 
-    void getRandomValues(ArrayBufferView*, ExceptionState&);
+    void getRandomValues(DOMArrayBufferView*, ExceptionState&);
 
     SubtleCrypto* subtle();
 
     void trace(Visitor*);
 
 private:
-    Crypto();
+    Crypto() { }
 
     Member<SubtleCrypto> m_subtleCrypto;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // Crypto_h

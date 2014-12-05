@@ -63,16 +63,16 @@ class GCM_EXPORT SocketInputStream
 
   // |socket| should already be connected.
   explicit SocketInputStream(net::StreamSocket* socket);
-  virtual ~SocketInputStream();
+  ~SocketInputStream() override;
 
   // ZeroCopyInputStream implementation.
-  virtual bool Next(const void** data, int* size) OVERRIDE;
-  virtual void BackUp(int count) OVERRIDE;
-  virtual bool Skip(int count) OVERRIDE;  // Not implemented.
-  virtual int64 ByteCount() const OVERRIDE;
+  bool Next(const void** data, int* size) override;
+  void BackUp(int count) override;
+  bool Skip(int count) override;  // Not implemented.
+  int64 ByteCount() const override;
 
   // The remaining amount of valid data available to be read.
-  size_t UnreadByteCount() const;
+  int UnreadByteCount() const;
 
   // Reads from the socket, appending a max of |byte_limit| bytes onto the read
   // buffer. net::ERR_IO_PENDING is returned if the refresh can't complete
@@ -159,12 +159,12 @@ class GCM_EXPORT SocketOutputStream
 
   // |socket| should already be connected.
   explicit SocketOutputStream(net::StreamSocket* socket);
-  virtual ~SocketOutputStream();
+  ~SocketOutputStream() override;
 
   // ZeroCopyOutputStream implementation.
-  virtual bool Next(void** data, int* size) OVERRIDE;
-  virtual void BackUp(int count) OVERRIDE;
-  virtual int64 ByteCount() const OVERRIDE;
+  bool Next(void** data, int* size) override;
+  void BackUp(int count) override;
+  int64 ByteCount() const override;
 
   // Writes the buffer into the Socket.
   net::Error Flush(const base::Closure& callback);

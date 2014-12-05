@@ -44,11 +44,11 @@
 #define TALK_MEDIA_BASE_STREAMPARAMS_H_
 
 #include <algorithm>
-#include <string>
 #include <set>
+#include <string>
 #include <vector>
 
-#include "talk/base/basictypes.h"
+#include "webrtc/base/basictypes.h"
 
 namespace cricket {
 
@@ -140,6 +140,16 @@ struct StreamParams {
   inline bool GetFidSsrc(uint32 primary_ssrc, uint32* fid_ssrc) const {
     return GetSecondarySsrc(kFidSsrcGroupSemantics, primary_ssrc, fid_ssrc);
   }
+
+  // Convenience to get all the SIM SSRCs if there are SIM ssrcs, or
+  // the first SSRC otherwise.
+  void GetPrimarySsrcs(std::vector<uint32>* ssrcs) const;
+
+  // Convenience to get all the FID SSRCs for the given primary ssrcs.
+  // If a given primary SSRC does not have a FID SSRC, the list of FID
+  // SSRCS will be smaller than the list of primary SSRCs.
+  void GetFidSsrcs(const std::vector<uint32>& primary_ssrcs,
+                   std::vector<uint32>* fid_ssrcs) const;
 
   std::string ToString() const;
 

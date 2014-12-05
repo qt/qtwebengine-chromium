@@ -1,5 +1,5 @@
 /*
-* Copyright (C) 1997-2009, International Business Machines Corporation and others.
+* Copyright (C) 1997-2013, International Business Machines Corporation and others.
 * All Rights Reserved.
 ********************************************************************************
 *
@@ -374,6 +374,7 @@ public:
      */
     virtual void roll(UCalendarDateFields field, int32_t amount, UErrorCode& status);
 
+#ifndef U_HIDE_DEPRECATED_API
     /**
      * Return the minimum value that this field could have, given the current date.
      * For the Gregorian calendar, this is the same as getMinimum() and getGreatestMinimum().
@@ -392,6 +393,7 @@ public:
      * @deprecated ICU 2.6. Use getActualMinimum(UCalendarDateFields field) instead. (Added to ICU 3.0 for signature consistency)
      */
     int32_t getActualMinimum(EDateFields field, UErrorCode& status) const;
+#endif  /* U_HIDE_DEPRECATED_API */
 
     /**
      * Return the minimum value that this field could have, given the current date.
@@ -403,6 +405,7 @@ public:
      */
     int32_t getActualMinimum(UCalendarDateFields field, UErrorCode &status) const;
 
+#ifndef U_HIDE_DEPRECATED_API
     /**
      * Return the maximum value that this field could have, given the current date.
      * For example, with the date "Feb 3, 1997" and the DAY_OF_MONTH field, the actual
@@ -413,6 +416,7 @@ public:
      * @deprecated ICU 2.6. Use getActualMaximum(UCalendarDateFields field) instead.
      */
     int32_t getActualMaximum(EDateFields field) const;
+#endif  /* U_HIDE_DEPRECATED_API */
 
     /**
      * Return the maximum value that this field could have, given the current date.
@@ -465,20 +469,16 @@ public:
     static UClassID U_EXPORT2 getStaticClassID(void);
 
     /**
-     * Get the calendar type, "gregorian", for use in DateFormatSymbols.
+     * Returns the calendar type name string for this Calendar object.
+     * The returned string is the legacy ICU calendar attribute value,
+     * for example, "gregorian" or "japanese".
      *
-     * @return calendar type
-     * @internal
+     * For more details see the Calendar::getType() documentation.
+     *
+     * @return legacy calendar type name string
+     * @stable ICU 49
      */
     virtual const char * getType() const;
-
-protected:
-
-    /**
-     * (Overrides Calendar) Converts GMT as milliseconds to time field values.
-     * @param status Fill-in parameter which receives the status of this operation.
-     * @stable ICU 2.0
-     */
 
  private:
     GregorianCalendar(); // default constructor not implemented
@@ -552,7 +552,8 @@ protected:
      * @internal
      */
     virtual int32_t monthLength(int32_t month, int32_t year) const;
-    
+
+#ifndef U_HIDE_INTERNAL_API
     /**
      * return the length of the given year.
      * @param year    the given year.
@@ -576,6 +577,7 @@ protected:
      * @internal
      */
     void pinDayOfMonth(void);
+#endif  /* U_HIDE_INTERNAL_API */
 
     /**
      * Return the day number with respect to the epoch.  January 1, 1970 (Gregorian)
@@ -686,7 +688,6 @@ protected:
      * (Gregorian) 00:00:00 UTC, that is, October 4, 1582 (Julian) is followed
      * by October 15, 1582 (Gregorian).  This corresponds to Julian day number
      * 2299161. This is measured from the standard epoch, not in Julian Days.
-     * @internal
      */
     UDate                fGregorianCutover;
 
@@ -749,69 +750,22 @@ protected:
  public: // internal implementation
 
     /**
-     * @internal 
      * @return TRUE if this calendar has the notion of a default century
+     * @internal 
      */
     virtual UBool haveDefaultCentury() const;
 
     /**
-     * @internal
      * @return the start of the default century
+     * @internal
      */
     virtual UDate defaultCenturyStart() const;
 
     /**
-     * @internal 
      * @return the beginning year of the default century
+     * @internal 
      */
     virtual int32_t defaultCenturyStartYear() const;
-
- private:
-    /**
-     * The system maintains a static default century start date.  This is initialized
-     * the first time it is used.  Before then, it is set to SYSTEM_DEFAULT_CENTURY to
-     * indicate an uninitialized state.  Once the system default century date and year
-     * are set, they do not change.
-     */
-    static UDate         fgSystemDefaultCenturyStart;
-
-    /**
-     * See documentation for systemDefaultCenturyStart.
-     */
-    static int32_t          fgSystemDefaultCenturyStartYear;
-
-    /**
-     * Default value that indicates the defaultCenturyStartYear is unitialized
-     */
-    static const int32_t    fgSystemDefaultCenturyYear;
-
-    /**
-     * Default value that indicates the UDate of the beginning of the system default century
-     */
-    static const UDate        fgSystemDefaultCentury;
-
-    /**
-     * Returns the beginning date of the 100-year window that dates with 2-digit years
-     * are considered to fall within.
-     * @return    the beginning date of the 100-year window that dates with 2-digit years
-     *            are considered to fall within.
-     */
-    UDate         internalGetDefaultCenturyStart(void) const;
-
-    /**
-     * Returns the first year of the 100-year window that dates with 2-digit years
-     * are considered to fall within.
-     * @return    the first year of the 100-year window that dates with 2-digit years
-     *            are considered to fall within.
-     */
-    int32_t          internalGetDefaultCenturyStartYear(void) const;
-
-    /**
-     * Initializes the 100-year window that dates with 2-digit years are considered
-     * to fall within so that its start date is 80 years before the current time.
-     */
-    static void  initializeSystemDefaultCentury(void);
-
 };
 
 U_NAMESPACE_END

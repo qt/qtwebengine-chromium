@@ -25,13 +25,13 @@
 
 #include "core/css/RuleSet.h"
 #include "core/css/SelectorChecker.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class StylePropertySet;
-class StyleRule;
 
 struct RuleRange {
     RuleRange(int& firstRuleIndex, int& lastRuleIndex): firstRuleIndex(firstRuleIndex), lastRuleIndex(lastRuleIndex) { }
@@ -40,43 +40,50 @@ struct RuleRange {
 };
 
 struct MatchRanges {
-    MatchRanges() : firstUARule(-1), lastUARule(-1), firstAuthorRule(-1), lastAuthorRule(-1), firstUserRule(-1), lastUserRule(-1) { }
+    MatchRanges() : firstUARule(-1), lastUARule(-1), firstAuthorRule(-1), lastAuthorRule(-1) { }
     int firstUARule;
     int lastUARule;
     int firstAuthorRule;
     int lastAuthorRule;
-    int firstUserRule;
-    int lastUserRule;
     RuleRange UARuleRange() { return RuleRange(firstUARule, lastUARule); }
     RuleRange authorRuleRange() { return RuleRange(firstAuthorRule, lastAuthorRule); }
-    RuleRange userRuleRange() { return RuleRange(firstUserRule, lastUserRule); }
 };
 
 struct MatchedProperties {
+    ALLOW_ONLY_INLINE_ALLOCATION();
+public:
     MatchedProperties();
     ~MatchedProperties();
 
-    RefPtr<StylePropertySet> properties;
+    void trace(Visitor*);
+
+    RefPtrWillBeMember<StylePropertySet> properties;
+
     union {
         struct {
             unsigned linkMatchType : 2;
             unsigned whitelistType : 2;
-        };
+        } m_types;
         // Used to make sure all memory is zero-initialized since we compute the hash over the bytes of this object.
         void* possiblyPaddedMember;
     };
 };
 
+} // namespace blink
+
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::MatchedProperties);
+
+namespace blink {
+
 class MatchResult {
     STACK_ALLOCATED();
 public:
     MatchResult() : isCacheable(true) { }
-    Vector<MatchedProperties, 64> matchedProperties;
-    WillBeHeapVector<RawPtrWillBeMember<StyleRule>, 64> matchedRules;
+    WillBeHeapVector<MatchedProperties, 64> matchedProperties;
     MatchRanges ranges;
     bool isCacheable;
 
-    void addMatchedProperties(const StylePropertySet* properties, StyleRule* = 0, unsigned linkMatchType = SelectorChecker::MatchAll, PropertyWhitelistType = PropertyWhitelistNone);
+    void addMatchedProperties(const StylePropertySet* properties, unsigned linkMatchType = SelectorChecker::MatchAll, PropertyWhitelistType = PropertyWhitelistNone);
 };
 
 inline bool operator==(const MatchRanges& a, const MatchRanges& b)
@@ -84,9 +91,7 @@ inline bool operator==(const MatchRanges& a, const MatchRanges& b)
     return a.firstUARule == b.firstUARule
         && a.lastUARule == b.lastUARule
         && a.firstAuthorRule == b.firstAuthorRule
-        && a.lastAuthorRule == b.lastAuthorRule
-        && a.firstUserRule == b.firstUserRule
-        && a.lastUserRule == b.lastUserRule;
+        && a.lastAuthorRule == b.lastAuthorRule;
 }
 
 inline bool operator!=(const MatchRanges& a, const MatchRanges& b)
@@ -96,7 +101,7 @@ inline bool operator!=(const MatchRanges& a, const MatchRanges& b)
 
 inline bool operator==(const MatchedProperties& a, const MatchedProperties& b)
 {
-    return a.properties == b.properties && a.linkMatchType == b.linkMatchType;
+    return a.properties == b.properties && a.m_types.linkMatchType == b.m_types.linkMatchType;
 }
 
 inline bool operator!=(const MatchedProperties& a, const MatchedProperties& b)
@@ -104,6 +109,6 @@ inline bool operator!=(const MatchedProperties& a, const MatchedProperties& b)
     return !(a == b);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MatchResult_h

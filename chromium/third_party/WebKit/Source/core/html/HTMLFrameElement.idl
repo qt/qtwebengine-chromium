@@ -22,12 +22,12 @@ interface HTMLFrameElement : HTMLElement {
 
     [Reflect] attribute DOMString frameBorder;
     [Reflect, URL] attribute DOMString longDesc;
-    [Reflect, TreatNullAs=NullString] attribute DOMString marginHeight;
-    [Reflect, TreatNullAs=NullString] attribute DOMString marginWidth;
+    [Reflect, TreatNullAs=EmptyString] attribute DOMString marginHeight;
+    [Reflect, TreatNullAs=EmptyString] attribute DOMString marginWidth;
     [Reflect] attribute DOMString name;
     [Reflect] attribute boolean noResize;
     [Reflect] attribute DOMString scrolling;
-    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
+    [Reflect, URL] attribute DOMString src;
 
     // Introduced in DOM Level 2:
     [CheckSecurity=Node] readonly attribute Document contentDocument;
@@ -36,7 +36,4 @@ interface HTMLFrameElement : HTMLElement {
     readonly attribute Window contentWindow;
 
     [CheckSecurity=Node, RaisesException] Document getSVGDocument();
-
-    [MeasureAs=HTMLFrameElementWidth] readonly attribute long width;
-    [MeasureAs=HTMLFrameElementHeight] readonly attribute long height;
 };

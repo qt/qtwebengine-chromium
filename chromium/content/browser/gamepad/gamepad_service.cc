@@ -15,24 +15,40 @@
 
 namespace content {
 
+namespace {
+GamepadService* g_gamepad_service = 0;
+}
+
 GamepadService::GamepadService()
     : num_active_consumers_(0),
       gesture_callback_pending_(false) {
+  SetInstance(this);
 }
 
 GamepadService::GamepadService(scoped_ptr<GamepadDataFetcher> fetcher)
     : provider_(new GamepadProvider(fetcher.Pass())),
       num_active_consumers_(0),
       gesture_callback_pending_(false) {
+  SetInstance(this);
   thread_checker_.DetachFromThread();
 }
 
 GamepadService::~GamepadService() {
+  SetInstance(NULL);
+}
+
+void GamepadService::SetInstance(GamepadService* instance) {
+  // Unit tests can create multiple instances but only one should exist at any
+  // given time so g_gamepad_service should only go from NULL to non-NULL and
+  // vica versa.
+  CHECK(!!instance != !!g_gamepad_service);
+  g_gamepad_service = instance;
 }
 
 GamepadService* GamepadService::GetInstance() {
-  return Singleton<GamepadService,
-                   LeakySingletonTraits<GamepadService> >::get();
+  if (!g_gamepad_service)
+    g_gamepad_service = new GamepadService;
+  return g_gamepad_service;
 }
 
 void GamepadService::ConsumerBecameActive(GamepadConsumer* consumer) {
@@ -46,6 +62,7 @@ void GamepadService::ConsumerBecameActive(GamepadConsumer* consumer) {
   insert_result.first->is_active = true;
   if (!insert_result.first->did_observe_user_gesture &&
       !gesture_callback_pending_) {
+    gesture_callback_pending_ = true;
     provider_->RegisterForUserGesture(
           base::Bind(&GamepadService::OnUserGesture,
                      base::Unretained(this)));

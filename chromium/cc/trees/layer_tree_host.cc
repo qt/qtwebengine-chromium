@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/stl_util.h"
@@ -21,6 +22,7 @@
 #include "cc/base/math_util.h"
 #include "cc/debug/devtools_instrumentation.h"
 #include "cc/debug/rendering_stats_instrumentation.h"
+#include "cc/input/layer_selection_bound.h"
 #include "cc/input/top_controls_manager.h"
 #include "cc/layers/heads_up_display_layer.h"
 #include "cc/layers/heads_up_display_layer_impl.h"
@@ -38,7 +40,7 @@
 #include "cc/trees/single_thread_proxy.h"
 #include "cc/trees/thread_proxy.h"
 #include "cc/trees/tree_synchronizer.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace {
 static base::StaticAtomicSequenceNumber s_layer_tree_host_sequence_number;
@@ -65,33 +67,41 @@ RendererCapabilities::~RendererCapabilities() {}
 
 scoped_ptr<LayerTreeHost> LayerTreeHost::CreateThreaded(
     LayerTreeHostClient* client,
-    SharedBitmapManager* manager,
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
     const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  DCHECK(impl_task_runner);
-  scoped_ptr<LayerTreeHost> layer_tree_host(
-      new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeThreaded(impl_task_runner);
+  DCHECK(main_task_runner.get());
+  DCHECK(impl_task_runner.get());
+  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
+      client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
+  layer_tree_host->InitializeThreaded(main_task_runner, impl_task_runner);
   return layer_tree_host.Pass();
 }
 
 scoped_ptr<LayerTreeHost> LayerTreeHost::CreateSingleThreaded(
     LayerTreeHostClient* client,
     LayerTreeHostSingleThreadClient* single_thread_client,
-    SharedBitmapManager* manager,
-    const LayerTreeSettings& settings) {
-  scoped_ptr<LayerTreeHost> layer_tree_host(
-      new LayerTreeHost(client, manager, settings));
-  layer_tree_host->InitializeSingleThreaded(single_thread_client);
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    const LayerTreeSettings& settings,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+  scoped_ptr<LayerTreeHost> layer_tree_host(new LayerTreeHost(
+      client, shared_bitmap_manager, gpu_memory_buffer_manager, settings));
+  layer_tree_host->InitializeSingleThreaded(single_thread_client,
+                                            main_task_runner);
   return layer_tree_host.Pass();
 }
 
-LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
-                             SharedBitmapManager* manager,
-                             const LayerTreeSettings& settings)
+LayerTreeHost::LayerTreeHost(
+    LayerTreeHostClient* client,
+    SharedBitmapManager* shared_bitmap_manager,
+    gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager,
+    const LayerTreeSettings& settings)
     : micro_benchmark_controller_(this),
       next_ui_resource_id_(1),
-      animating_(false),
+      inside_begin_main_frame_(false),
       needs_full_tree_sync_(true),
       client_(client),
       source_frame_number_(0),
@@ -100,7 +110,8 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       num_failed_recreate_attempts_(0),
       settings_(settings),
       debug_state_(settings.initial_debug_state),
-      overdraw_bottom_height_(0.f),
+      top_controls_layout_height_(0.f),
+      top_controls_content_offset_(0.f),
       device_scale_factor_(1.f),
       visible_(true),
       page_scale_factor_(1.f),
@@ -116,7 +127,10 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
       total_frames_used_for_lcd_text_metrics_(0),
       id_(s_layer_tree_host_sequence_number.GetNext() + 1),
       next_commit_forces_redraw_(false),
-      shared_bitmap_manager_(manager) {
+      shared_bitmap_manager_(shared_bitmap_manager),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
+      surface_id_namespace_(0u),
+      next_surface_sequence_(1u) {
   if (settings_.accelerated_animation_enabled)
     animation_registrar_ = AnimationRegistrar::Create();
   rendering_stats_instrumentation_->set_record_rendering_stats(
@@ -124,13 +138,17 @@ LayerTreeHost::LayerTreeHost(LayerTreeHostClient* client,
 }
 
 void LayerTreeHost::InitializeThreaded(
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner) {
-  InitializeProxy(ThreadProxy::Create(this, impl_task_runner));
+  InitializeProxy(
+      ThreadProxy::Create(this, main_task_runner, impl_task_runner));
 }
 
 void LayerTreeHost::InitializeSingleThreaded(
-    LayerTreeHostSingleThreadClient* single_thread_client) {
-  InitializeProxy(SingleThreadProxy::Create(this, single_thread_client));
+    LayerTreeHostSingleThreadClient* single_thread_client,
+    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner) {
+  InitializeProxy(
+      SingleThreadProxy::Create(this, single_thread_client, main_task_runner));
 }
 
 void LayerTreeHost::InitializeForTesting(scoped_ptr<Proxy> proxy_for_testing) {
@@ -142,15 +160,23 @@ void LayerTreeHost::InitializeProxy(scoped_ptr<Proxy> proxy) {
 
   proxy_ = proxy.Pass();
   proxy_->Start();
+  if (settings_.accelerated_animation_enabled) {
+    animation_registrar_->set_supports_scroll_animations(
+        proxy_->SupportsImplScrolling());
+  }
 }
 
 LayerTreeHost::~LayerTreeHost() {
   TRACE_EVENT0("cc", "LayerTreeHost::~LayerTreeHost");
 
-  overhang_ui_resource_.reset();
+  overhang_ui_resource_ = nullptr;
 
   if (root_layer_.get())
     root_layer_->SetLayerTreeHost(NULL);
+
+  DCHECK(swap_promise_monitor_.empty());
+
+  BreakSwapPromises(SwapPromise::COMMIT_FAILS);
 
   if (proxy_) {
     DCHECK(proxy_->IsMainThread());
@@ -221,10 +247,10 @@ void LayerTreeHost::DidBeginMainFrame() {
   client_->DidBeginMainFrame();
 }
 
-void LayerTreeHost::UpdateClientAnimations(base::TimeTicks frame_begin_time) {
-  animating_ = true;
-  client_->Animate(frame_begin_time);
-  animating_ = false;
+void LayerTreeHost::BeginMainFrame(const BeginFrameArgs& args) {
+  inside_begin_main_frame_ = true;
+  client_->BeginMainFrame(args);
+  inside_begin_main_frame_ = false;
 }
 
 void LayerTreeHost::DidStopFlinging() {
@@ -283,9 +309,11 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->set_source_frame_number(source_frame_number());
 
-  if (needs_full_tree_sync_)
+  if (needs_full_tree_sync_) {
     sync_tree->SetRootLayer(TreeSynchronizer::SynchronizeTrees(
         root_layer(), sync_tree->DetachLayerTree(), sync_tree));
+  }
+
   {
     TRACE_EVENT0("cc", "LayerTreeHost::PushProperties");
     TreeSynchronizer::PushProperties(root_layer(), sync_tree->root_layer());
@@ -305,15 +333,17 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
   sync_tree->set_background_color(background_color_);
   sync_tree->set_has_transparent_background(has_transparent_background_);
 
-  if (page_scale_layer_ && inner_viewport_scroll_layer_) {
-    sync_tree->SetViewportLayersFromIds(
-        page_scale_layer_->id(),
-        inner_viewport_scroll_layer_->id(),
-        outer_viewport_scroll_layer_ ? outer_viewport_scroll_layer_->id()
-                                     : Layer::INVALID_ID);
+  if (page_scale_layer_.get() && inner_viewport_scroll_layer_.get()) {
+    sync_tree->SetViewportLayersFromIds(page_scale_layer_->id(),
+                                        inner_viewport_scroll_layer_->id(),
+                                        outer_viewport_scroll_layer_.get()
+                                            ? outer_viewport_scroll_layer_->id()
+                                            : Layer::INVALID_ID);
   } else {
     sync_tree->ClearViewportLayers();
   }
+
+  sync_tree->RegisterSelection(selection_start_, selection_end_);
 
   float page_scale_delta =
       sync_tree->page_scale_delta() / sync_tree->sent_page_scale_delta();
@@ -325,20 +355,25 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
 
   sync_tree->PassSwapPromises(&swap_promise_list_);
 
+  sync_tree->set_top_controls_layout_height(top_controls_layout_height_);
+  sync_tree->set_top_controls_content_offset(top_controls_content_offset_);
+  sync_tree->set_top_controls_delta(sync_tree->top_controls_delta() -
+      sync_tree->sent_top_controls_delta());
+  sync_tree->set_sent_top_controls_delta(0.f);
+
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   RecordGpuRasterizationHistogram();
 
   host_impl->SetViewportSize(device_viewport_size_);
-  host_impl->SetOverdrawBottomHeight(overdraw_bottom_height_);
   host_impl->SetDeviceScaleFactor(device_scale_factor_);
   host_impl->SetDebugState(debug_state_);
   if (pending_page_scale_animation_) {
-    host_impl->StartPageScaleAnimation(
+    sync_tree->SetPageScaleAnimation(
         pending_page_scale_animation_->target_offset,
         pending_page_scale_animation_->use_anchor,
         pending_page_scale_animation_->scale,
         pending_page_scale_animation_->duration);
-    pending_page_scale_animation_.reset();
+    pending_page_scale_animation_ = nullptr;
   }
 
   if (!ui_resource_request_queue_.empty()) {
@@ -357,6 +392,8 @@ void LayerTreeHost::FinishCommitOnImplThread(LayerTreeHostImpl* host_impl) {
     if (sync_tree->ContentsTexturesPurged())
       sync_tree->ResetContentsTexturesPurged();
   }
+
+  sync_tree->set_has_ever_been_drawn(false);
 
   micro_benchmark_controller_.ScheduleImplBenchmarks(host_impl);
 }
@@ -383,8 +420,12 @@ void LayerTreeHost::CommitComplete() {
   client_->DidCommit();
 }
 
-scoped_ptr<OutputSurface> LayerTreeHost::CreateOutputSurface() {
-  return client_->CreateOutputSurface(num_failed_recreate_attempts_ >= 4);
+void LayerTreeHost::SetOutputSurface(scoped_ptr<OutputSurface> surface) {
+  proxy_->SetOutputSurface(surface.Pass());
+}
+
+void LayerTreeHost::RequestNewOutputSurface() {
+  client_->RequestNewOutputSurface(num_failed_recreate_attempts_ >= 4);
 }
 
 scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
@@ -396,9 +437,11 @@ scoped_ptr<LayerTreeHostImpl> LayerTreeHost::CreateLayerTreeHostImpl(
                                 proxy_.get(),
                                 rendering_stats_instrumentation_.get(),
                                 shared_bitmap_manager_,
+                                gpu_memory_buffer_manager_,
                                 id_);
   host_impl->SetUseGpuRasterization(UseGpuRasterization());
   shared_bitmap_manager_ = NULL;
+  gpu_memory_buffer_manager_ = NULL;
   if (settings_.calculate_top_controls_position &&
       host_impl->top_controls_manager()) {
     top_controls_manager_weak_ptr_ =
@@ -603,11 +646,19 @@ void LayerTreeHost::SetViewportSize(const gfx::Size& device_viewport_size) {
   SetNeedsCommit();
 }
 
-void LayerTreeHost::SetOverdrawBottomHeight(float overdraw_bottom_height) {
-  if (overdraw_bottom_height_ == overdraw_bottom_height)
+void LayerTreeHost::SetTopControlsLayoutHeight(float height) {
+  if (top_controls_layout_height_ == height)
     return;
 
-  overdraw_bottom_height_ = overdraw_bottom_height;
+  top_controls_layout_height_ = height;
+  SetNeedsCommit();
+}
+
+void LayerTreeHost::SetTopControlsContentOffset(float offset) {
+  if (top_controls_content_offset_ == offset)
+    return;
+
+  top_controls_content_offset_ = offset;
   SetNeedsCommit();
 }
 
@@ -675,13 +726,11 @@ void LayerTreeHost::NotifyInputThrottledUntilCommit() {
 
 void LayerTreeHost::Composite(base::TimeTicks frame_begin_time) {
   DCHECK(!proxy_->HasImplThread());
+  // This function is only valid when not using the scheduler.
+  DCHECK(!settings_.single_thread_proxy_scheduler);
   SingleThreadProxy* proxy = static_cast<SingleThreadProxy*>(proxy_.get());
 
-  if (output_surface_lost_)
-    proxy->CreateAndInitializeOutputSurface();
-  if (output_surface_lost_)
-    return;
-
+  SetLayerTreeHostClientReady();
   proxy->CompositeImmediately(frame_begin_time);
 }
 
@@ -767,11 +816,11 @@ bool LayerTreeHost::UpdateLayers(Layer* root_layer,
     UpdateHudLayer();
 
     Layer* root_scroll = FindFirstScrollableLayer(root_layer);
-    Layer* page_scale_layer = page_scale_layer_;
+    Layer* page_scale_layer = page_scale_layer_.get();
     if (!page_scale_layer && root_scroll)
       page_scale_layer = root_scroll->parent();
 
-    if (hud_layer_) {
+    if (hud_layer_.get()) {
       hud_layer_->PrepareForCalculateDrawProperties(
           device_viewport_size(), device_scale_factor_);
     }
@@ -1010,57 +1059,77 @@ void LayerTreeHost::PaintLayerContents(
   in_paint_layer_contents_ = false;
 }
 
-void LayerTreeHost::ApplyScrollAndScale(const ScrollAndScaleSet& info) {
-  if (!root_layer_.get())
-    return;
+void LayerTreeHost::ApplyScrollAndScale(ScrollAndScaleSet* info) {
+  ScopedPtrVector<SwapPromise>::iterator it = info->swap_promises.begin();
+  for (; it != info->swap_promises.end(); ++it) {
+    scoped_ptr<SwapPromise> swap_promise(info->swap_promises.take(it));
+    TRACE_EVENT_FLOW_STEP0("input",
+                           "LatencyInfo.Flow",
+                           TRACE_ID_DONT_MANGLE(swap_promise->TraceId()),
+                           "Main thread scroll update");
+    QueueSwapPromise(swap_promise.Pass());
+  }
 
   gfx::Vector2d inner_viewport_scroll_delta;
   gfx::Vector2d outer_viewport_scroll_delta;
 
-  for (size_t i = 0; i < info.scrolls.size(); ++i) {
-    Layer* layer =
-        LayerTreeHostCommon::FindLayerInSubtree(root_layer_.get(),
-                                                info.scrolls[i].layer_id);
-    if (!layer)
-      continue;
-    if (layer == outer_viewport_scroll_layer_.get()) {
-      outer_viewport_scroll_delta += info.scrolls[i].scroll_delta;
-    } else if (layer == inner_viewport_scroll_layer_.get()) {
-      inner_viewport_scroll_delta += info.scrolls[i].scroll_delta;
-    } else {
-      layer->SetScrollOffsetFromImplSide(layer->scroll_offset() +
-                                         info.scrolls[i].scroll_delta);
+  if (root_layer_.get()) {
+    for (size_t i = 0; i < info->scrolls.size(); ++i) {
+      Layer* layer = LayerTreeHostCommon::FindLayerInSubtree(
+          root_layer_.get(), info->scrolls[i].layer_id);
+      if (!layer)
+        continue;
+      if (layer == outer_viewport_scroll_layer_.get()) {
+        outer_viewport_scroll_delta += info->scrolls[i].scroll_delta;
+      } else if (layer == inner_viewport_scroll_layer_.get()) {
+        inner_viewport_scroll_delta += info->scrolls[i].scroll_delta;
+      } else {
+        layer->SetScrollOffsetFromImplSide(
+            gfx::ScrollOffsetWithDelta(layer->scroll_offset(),
+                                       info->scrolls[i].scroll_delta));
+      }
     }
   }
 
   if (!inner_viewport_scroll_delta.IsZero() ||
-      !outer_viewport_scroll_delta.IsZero() || info.page_scale_delta != 1.f) {
-    // SetScrollOffsetFromImplSide above could have destroyed the tree,
-    // so re-get this layer before doing anything to it.
-
+      !outer_viewport_scroll_delta.IsZero() ||
+      info->page_scale_delta != 1.f ||
+      info->top_controls_delta) {
     // Preemptively apply the scroll offset and scale delta here before sending
     // it to the client.  If the client comes back and sets it to the same
     // value, then the layer can early out without needing a full commit.
-    DCHECK(inner_viewport_scroll_layer_);  // We should always have this.
-
-    inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
-        inner_viewport_scroll_layer_->scroll_offset() +
-        inner_viewport_scroll_delta);
-    if (outer_viewport_scroll_layer_) {
-      outer_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
-          outer_viewport_scroll_layer_->scroll_offset() +
-          outer_viewport_scroll_delta);
+    if (inner_viewport_scroll_layer_.get()) {
+      inner_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
+          gfx::ScrollOffsetWithDelta(
+              inner_viewport_scroll_layer_->scroll_offset(),
+              inner_viewport_scroll_delta));
     }
-    ApplyPageScaleDeltaFromImplSide(info.page_scale_delta);
 
-    client_->ApplyScrollAndScale(
-        inner_viewport_scroll_delta + outer_viewport_scroll_delta,
-        info.page_scale_delta);
+    if (outer_viewport_scroll_layer_.get()) {
+      outer_viewport_scroll_layer_->SetScrollOffsetFromImplSide(
+          gfx::ScrollOffsetWithDelta(
+              outer_viewport_scroll_layer_->scroll_offset(),
+              outer_viewport_scroll_delta));
+    }
+
+    ApplyPageScaleDeltaFromImplSide(info->page_scale_delta);
+    if (!settings_.use_pinch_virtual_viewport) {
+      client_->ApplyViewportDeltas(
+          inner_viewport_scroll_delta + outer_viewport_scroll_delta,
+          info->page_scale_delta,
+          info->top_controls_delta);
+    } else {
+      client_->ApplyViewportDeltas(
+          inner_viewport_scroll_delta,
+          outer_viewport_scroll_delta,
+          info->page_scale_delta,
+          info->top_controls_delta);
+    }
   }
 }
 
 void LayerTreeHost::StartRateLimiter() {
-  if (animating_)
+  if (inside_begin_main_frame_)
     return;
 
   if (!rate_limit_timer_.IsRunning()) {
@@ -1132,10 +1201,10 @@ void LayerTreeHost::UpdateTopControlsState(TopControlsState constraints,
                  animate));
 }
 
-scoped_ptr<base::Value> LayerTreeHost::AsValue() const {
-  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
-  state->Set("proxy", proxy_->AsValue().release());
-  return state.PassAs<base::Value>();
+void LayerTreeHost::AsValueInto(base::debug::TracedValue* state) const {
+  state->BeginDictionary("proxy");
+  proxy_->AsValueInto(state);
+  state->EndDictionary();
 }
 
 void LayerTreeHost::AnimateLayers(base::TimeTicks monotonic_time) {
@@ -1221,6 +1290,16 @@ void LayerTreeHost::RegisterViewportLayers(
   outer_viewport_scroll_layer_ = outer_viewport_scroll_layer;
 }
 
+void LayerTreeHost::RegisterSelection(const LayerSelectionBound& start,
+                                      const LayerSelectionBound& end) {
+  if (selection_start_ == start && selection_end_ == end)
+    return;
+
+  selection_start_ = start;
+  selection_end_ = end;
+  SetNeedsCommit();
+}
+
 int LayerTreeHost::ScheduleMicroBenchmark(
     const std::string& benchmark_name,
     scoped_ptr<base::Value> value,
@@ -1250,8 +1329,6 @@ void LayerTreeHost::NotifySwapPromiseMonitorsOfSetNeedsCommit() {
 
 void LayerTreeHost::QueueSwapPromise(scoped_ptr<SwapPromise> swap_promise) {
   DCHECK(swap_promise);
-  if (swap_promise_list_.size() > kMaxQueuedSwapPromiseNumber)
-    BreakSwapPromises(SwapPromise::SWAP_PROMISE_LIST_OVERFLOW);
   swap_promise_list_.push_back(swap_promise.Pass());
 }
 
@@ -1259,6 +1336,14 @@ void LayerTreeHost::BreakSwapPromises(SwapPromise::DidNotSwapReason reason) {
   for (size_t i = 0; i < swap_promise_list_.size(); i++)
     swap_promise_list_[i]->DidNotSwap(reason);
   swap_promise_list_.clear();
+}
+
+void LayerTreeHost::set_surface_id_namespace(uint32_t id_namespace) {
+  surface_id_namespace_ = id_namespace;
+}
+
+SurfaceSequence LayerTreeHost::CreateSurfaceSequence() {
+  return SurfaceSequence(surface_id_namespace_, next_surface_sequence_++);
 }
 
 }  // namespace cc

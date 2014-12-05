@@ -34,7 +34,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/unicode/Unicode.h"
 
-namespace WebCore {
+namespace blink {
 
 class SimpleFontData;
 
@@ -59,14 +59,14 @@ public:
     void setMaxGlyphPageTreeLevel(unsigned level) const { m_maxGlyphPageTreeLevel = level; }
     unsigned maxGlyphPageTreeLevel() const { return m_maxGlyphPageTreeLevel; }
 
-#ifndef NDEBUG
-    virtual String description() const = 0;
-#endif
-
 private:
     mutable unsigned m_maxGlyphPageTreeLevel;
 };
 
-} // namespace WebCore
+#define DEFINE_FONT_DATA_TYPE_CASTS(thisType, predicate) \
+    template<typename T> inline thisType* to##thisType(const RefPtr<T>& fontData) { return to##thisType(fontData.get()); } \
+    DEFINE_TYPE_CASTS(thisType, FontData, fontData, fontData->isSegmented() == predicate, fontData.isSegmented() == predicate)
+
+} // namespace blink
 
 #endif // FontData_h

@@ -99,14 +99,6 @@
 #define WTF_USE_RUBBER_BANDING 1
 #endif /* OS(MACOSX) */
 
-// On Mac, the system allocator is the real OS X system allocator.
-// On Android, the system allocator is the libc system allocator.
-// On other platforms, we've overriden the system allocator with tcmalloc.
-// PartitionAlloc seems to be faster than all of these, so on all platforms
-// we use it for a subset of performance sensitive Blink classes (tagged by
-// WTF_MAKE_FAST_ALLOCATED.
-#define WTF_USE_SYSTEM_MALLOC 0
-
 #if OS(POSIX)
 #define HAVE_SIGNAL_H 1
 #define HAVE_SYS_TIME_H 1
@@ -120,7 +112,6 @@
 #endif
 
 #if OS(MACOSX)
-#define HAVE_PTHREAD_SETNAME_NP 1
 #define WTF_USE_NEW_THEME 1
 #endif /* OS(MACOSX) */
 
@@ -139,22 +130,11 @@
 
 #ifdef __cplusplus
 
-// These undefs match up with defines in WebCorePrefixMac.h for Mac OS X.
+// These undefs match up with defines in build/mac/Prefix.h for Mac OS X.
 // Helps us catch if anyone uses new or delete by accident in code and doesn't include "config.h".
 #undef new
 #undef delete
-#include "wtf/FastMalloc.h"
-
 #include <ciso646>
+#include <cstddef>
 
-#endif
-
-#if COMPILER(MSVC)
-#define SKIP_STATIC_CONSTRUCTORS_ON_MSVC 1
-#else
-#define SKIP_STATIC_CONSTRUCTORS_ON_GCC 1
-#endif
-
-#if OS(LINUX) || OS(ANDROID) || OS(WIN)
-#define WTF_USE_HARFBUZZ 1
 #endif

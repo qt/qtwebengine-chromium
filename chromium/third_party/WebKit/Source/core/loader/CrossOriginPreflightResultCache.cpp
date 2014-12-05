@@ -27,13 +27,13 @@
 #include "config.h"
 #include "core/loader/CrossOriginPreflightResultCache.h"
 
-#include "core/fetch/CrossOriginAccessControl.h"
+#include "core/fetch/FetchUtils.h"
 #include "platform/network/ResourceResponse.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 // These values are at the discretion of the user agent.
 static const unsigned defaultPreflightCacheTimeoutSeconds = 5;
@@ -103,8 +103,9 @@ bool CrossOriginPreflightResultCacheItem::parse(const ResourceResponse& response
     if (parseAccessControlMaxAge(response.httpHeaderField("Access-Control-Max-Age"), expiryDelta)) {
         if (expiryDelta > maxPreflightCacheTimeoutSeconds)
             expiryDelta = maxPreflightCacheTimeoutSeconds;
-    } else
+    } else {
         expiryDelta = defaultPreflightCacheTimeoutSeconds;
+    }
 
     m_absoluteExpiryTime = currentTime() + expiryDelta;
     return true;
@@ -112,7 +113,7 @@ bool CrossOriginPreflightResultCacheItem::parse(const ResourceResponse& response
 
 bool CrossOriginPreflightResultCacheItem::allowsCrossOriginMethod(const String& method, String& errorDescription) const
 {
-    if (m_methods.contains(method) || isOnAccessControlSimpleRequestMethodWhitelist(method))
+    if (m_methods.contains(method) || FetchUtils::isSimpleMethod(method))
         return true;
 
     errorDescription = "Method " + method + " is not allowed by Access-Control-Allow-Methods.";
@@ -123,7 +124,7 @@ bool CrossOriginPreflightResultCacheItem::allowsCrossOriginHeaders(const HTTPHea
 {
     HTTPHeaderMap::const_iterator end = requestHeaders.end();
     for (HTTPHeaderMap::const_iterator it = requestHeaders.begin(); it != end; ++it) {
-        if (!m_headers.contains(it->key) && !isOnAccessControlSimpleRequestHeaderWhitelist(it->key, it->value)) {
+        if (!m_headers.contains(it->key) && !FetchUtils::isSimpleHeader(it->key, it->value) && !FetchUtils::isForbiddenHeaderName(it->key)) {
             errorDescription = "Request header field " + it->key.string() + " is not allowed by Access-Control-Allow-Headers.";
             return false;
         }
@@ -172,4 +173,4 @@ bool CrossOriginPreflightResultCache::canSkipPreflight(const String& origin, con
     return false;
 }
 
-} // namespace WebCore
+} // namespace blink

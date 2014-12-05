@@ -34,46 +34,6 @@
   ],
   'targets': [
     {
-      'target_name': 'nacl_bootstrap_munge_phdr',
-      'type': 'executable',
-      'toolsets': ['host'],
-      'sources': [
-        'nacl_bootstrap_munge_phdr.c',
-      ],
-      'libraries': [
-        '-lelf',
-      ],
-      # This is an ugly kludge because gyp doesn't actually treat
-      # host_arch=x64 target_arch=ia32 as proper cross compilation.
-      # It still wants to compile the "host" program with -m32 et
-      # al.  Though a program built that way can indeed run on the
-      # x86-64 host, we cannot reliably build this program on such a
-      # host because Ubuntu does not provide the full suite of
-      # x86-32 libraries in packages that can be installed on an
-      # x86-64 host; in particular, libelf is missing.  So here we
-      # use the hack of eliding all the -m* flags from the
-      # compilation lines, getting the command close to what they
-      # would be if gyp were to really build properly for the host.
-      # TODO(bradnelson): Clean up with proper cross support.
-      'cflags/': [['exclude', '^-m.*'],
-                  ['exclude', '^--sysroot=.*']],
-      'ldflags/': [['exclude', '^-m.*'],
-                   ['exclude', '^--sysroot=.*']],
-      'cflags!': [
-        # MemorySanitizer reports an error in this binary unless instrumented
-        # libelf is supplied. Because libelf source code uses gcc extensions,
-        # building it with MemorySanitizer (which implies clang) is challenging,
-        # and it's much simpler to just disable MSan for this target.
-        '-fsanitize=memory',
-        '-fsanitize-memory-track-origins',
-        # This causes an "unused argument" warning in C targets.
-        '-stdlib=libc++',
-      ],
-      'ldflags!': [
-        '-fsanitize=memory',
-      ],
-    },
-    {
       'target_name': 'nacl_bootstrap_lib',
       'type': 'static_library',
       'product_dir': '<(SHARED_INTERMEDIATE_DIR)/nacl_bootstrap',
@@ -102,14 +62,23 @@
         '-fno-pie', '-fno-PIE',
       ],
       'cflags!': [
+        # ld_bfd.py that is used to link nacl_bootstrap_raw doesn't recognize
+        # the Clang driver flags and will fail to link instrumented
+        # nacl_bootstrap.o.
+        # We hope there's nothing to search for in this small program and
+        # disable all the sanitizers for it.
         '-fsanitize=address',
         '-fsanitize=memory',
+        '-fsanitize=null',
+        '-fsanitize=vptr',
+        '-fsanitize=undefined',
         '-w',
         # We filter these out because release_extra_cflags or another
         # such thing might be adding them in, and those options wind up
         # coming after the -fno-stack-protector we added above.
         '-fstack-protector',
         '-fstack-protector-all',
+        '-fstack-protector-strong',
         '-fprofile-generate',
         '-finstrument-functions',
         '-funwind-tables',
@@ -194,7 +163,16 @@
               'variables': {
                 'compiler': '<!(/bin/echo -n <(android_toolchain)/*-g++)',
               }
-            }, {
+            }],
+            # When building for ARM default to arm-linux-gnueabihf-g++ rather
+            # than g++.  This is needed when building with clang (since in
+            # this case $CC and $CXX are not set in the environment).
+            ['OS!="android" and target_arch=="arm"', {
+              'variables': {
+                'compiler': '<!(echo ${CXX:=arm-linux-gnueabihf-g++})',
+              }
+            }],
+            ['OS!="android" and target_arch!="arm"', {
               'variables': {
                 'compiler': '<!(echo ${CXX:=g++})',
               }
@@ -231,7 +209,6 @@
       'target_name': 'nacl_helper_bootstrap',
       'dependencies': [
         'nacl_bootstrap_raw',
-        'nacl_bootstrap_munge_phdr#host',
       ],
       'type': 'none',
       # See above about this magical flag.
@@ -242,7 +219,6 @@
       'actions': [{
         'action_name': 'munge_phdr',
         'inputs': ['nacl_bootstrap_munge_phdr.py',
-                   '<(PRODUCT_DIR)/nacl_bootstrap_munge_phdr',
                    '<(PRODUCT_DIR)/nacl_bootstrap_raw'],
         'outputs': ['<(PRODUCT_DIR)/nacl_helper_bootstrap'],
         'message': 'Munging ELF program header',

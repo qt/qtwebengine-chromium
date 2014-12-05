@@ -19,6 +19,7 @@
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_data_reader.h"
 #include "net/quic/quic_protocol.h"
+#include "net/tools/quic/quic_dispatcher.h"
 #include "net/tools/quic/quic_in_memory_cache.h"
 #include "net/tools/quic/quic_socket_utils.h"
 
@@ -28,12 +29,15 @@
 #define SO_RXQ_OVFL 40
 #endif
 
-const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
-static const char kSourceAddressTokenSecret[] = "secret";
-const uint32 kServerInitialFlowControlWindow = 100 * net::kMaxPacketSize;
-
 namespace net {
 namespace tools {
+
+namespace {
+
+const int kEpollFlags = EPOLLIN | EPOLLOUT | EPOLLET;
+const char kSourceAddressTokenSecret[] = "secret";
+
+}  // namespace
 
 QuicServer::QuicServer()
     : port_(0),
@@ -43,8 +47,6 @@ QuicServer::QuicServer()
       use_recvmmsg_(false),
       crypto_config_(kSourceAddressTokenSecret, QuicRandom::GetInstance()),
       supported_versions_(QuicSupportedVersions()) {
-  // Use hardcoded crypto parameters for now.
-  config_.SetDefaults();
   Initialize();
 }
 
@@ -75,9 +77,6 @@ void QuicServer::Initialize() {
       crypto_config_.AddDefaultConfig(
           QuicRandom::GetInstance(), &clock,
           QuicCryptoServerConfig::ConfigOptions()));
-
-  // Set flow control options in the config.
-  config_.SetInitialCongestionWindowToSend(kServerInitialFlowControlWindow);
 }
 
 QuicServer::~QuicServer() {
@@ -92,6 +91,8 @@ bool QuicServer::Listen(const IPEndPoint& address) {
     return false;
   }
 
+  // Enable the socket option that allows the local address to be
+  // returned if the socket is bound to more than one address.
   int rc = QuicSocketUtils::SetGetAddressInfo(fd_, address_family);
 
   if (rc < 0) {
@@ -119,20 +120,6 @@ bool QuicServer::Listen(const IPEndPoint& address) {
 
   if (!QuicSocketUtils::SetSendBufferSize(fd_,
                                           TcpReceiver::kReceiveWindowTCP)) {
-    return false;
-  }
-
-  // Enable the socket option that allows the local address to be
-  // returned if the socket is bound to more than on address.
-  int get_local_ip = 1;
-  rc = setsockopt(fd_, IPPROTO_IP, IP_PKTINFO,
-                  &get_local_ip, sizeof(get_local_ip));
-  if (rc == 0 && address_family == AF_INET6) {
-    rc = setsockopt(fd_, IPPROTO_IPV6, IPV6_RECVPKTINFO,
-                    &get_local_ip, sizeof(get_local_ip));
-  }
-  if (rc != 0) {
-    LOG(ERROR) << "Failed to set required socket options";
     return false;
   }
 
@@ -173,6 +160,7 @@ QuicDispatcher* QuicServer::CreateQuicDispatcher() {
       config_,
       crypto_config_,
       supported_versions_,
+      new QuicDispatcher::DefaultPacketWriterFactory(),
       &epoll_server_);
 }
 
@@ -199,7 +187,7 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
     while (read) {
         read = ReadAndDispatchSinglePacket(
             fd_, port_, dispatcher_.get(),
-            overflow_supported_ ? &packets_dropped_ : NULL);
+            overflow_supported_ ? &packets_dropped_ : nullptr);
     }
   }
   if (event->in_events & EPOLLOUT) {
@@ -215,7 +203,7 @@ void QuicServer::OnEvent(int fd, EpollEvent* event) {
 /* static */
 bool QuicServer::ReadAndDispatchSinglePacket(int fd,
                                              int port,
-                                             QuicDispatcher* dispatcher,
+                                             ProcessPacketInterface* processor,
                                              uint32* packets_dropped) {
   // Allocate some extra space so we can send an error if the client goes over
   // the limit.
@@ -235,7 +223,7 @@ bool QuicServer::ReadAndDispatchSinglePacket(int fd,
   QuicEncryptedPacket packet(buf, bytes_read, false);
 
   IPEndPoint server_address(server_ip, port);
-  dispatcher->ProcessPacket(server_address, client_address, packet);
+  processor->ProcessPacket(server_address, client_address, packet);
 
   return true;
 }

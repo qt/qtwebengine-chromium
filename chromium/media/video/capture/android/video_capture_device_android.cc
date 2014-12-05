@@ -179,18 +179,17 @@ VideoPixelFormat VideoCaptureDeviceAndroid::GetColorspace() {
   int current_capture_colorspace =
       Java_VideoCapture_getColorspace(env, j_capture_.obj());
   switch (current_capture_colorspace) {
-    case ANDROID_IMAGEFORMAT_YV12:
+    case ANDROID_IMAGE_FORMAT_YV12:
       return media::PIXEL_FORMAT_YV12;
-    case ANDROID_IMAGEFORMAT_NV21:
+    case ANDROID_IMAGE_FORMAT_NV21:
       return media::PIXEL_FORMAT_NV21;
-    case ANDROID_IMAGEFORMAT_UNKNOWN:
+    case ANDROID_IMAGE_FORMAT_UNKNOWN:
     default:
       return media::PIXEL_FORMAT_UNKNOWN;
   }
 }
 
 void VideoCaptureDeviceAndroid::SetErrorState(const std::string& reason) {
-  LOG(ERROR) << "VideoCaptureDeviceAndroid::SetErrorState: " << reason;
   {
     base::AutoLock lock(lock_);
     state_ = kError;

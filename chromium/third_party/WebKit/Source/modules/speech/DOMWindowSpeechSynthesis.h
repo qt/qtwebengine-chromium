@@ -31,15 +31,14 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 
-class DOMWindowSpeechSynthesis FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowSpeechSynthesis>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+class DOMWindowSpeechSynthesis final : public NoBaseWillBeGarbageCollected<DOMWindowSpeechSynthesis>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowSpeechSynthesis);
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowSpeechSynthesis);
 public:
-    virtual ~DOMWindowSpeechSynthesis();
-
     static SpeechSynthesis* speechSynthesis(LocalDOMWindow&);
     static DOMWindowSpeechSynthesis& from(LocalDOMWindow&);
 
@@ -54,6 +53,6 @@ private:
     PersistentWillBeMember<SpeechSynthesis> m_speechSynthesis;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowSpeechSynthesis_h

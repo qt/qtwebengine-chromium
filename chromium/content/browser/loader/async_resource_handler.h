@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
+#include "base/time/time.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/browser/loader/resource_message_delegate.h"
 #include "url/gurl.h"
@@ -30,27 +31,26 @@ class AsyncResourceHandler : public ResourceHandler,
  public:
   AsyncResourceHandler(net::URLRequest* request,
                        ResourceDispatcherHostImpl* rdh);
-  virtual ~AsyncResourceHandler();
+  ~AsyncResourceHandler() override;
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // ResourceHandler implementation:
-  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
-  virtual bool OnRequestRedirected(const GURL& new_url,
-                                   ResourceResponse* response,
-                                   bool* defer) OVERRIDE;
-  virtual bool OnResponseStarted(ResourceResponse* response,
-                                 bool* defer) OVERRIDE;
-  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
-  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
-  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& security_info,
-                                   bool* defer) OVERRIDE;
-  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
+  bool OnUploadProgress(uint64 position, uint64 size) override;
+  bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
+                           ResourceResponse* response,
+                           bool* defer) override;
+  bool OnResponseStarted(ResourceResponse* response, bool* defer) override;
+  bool OnWillStart(const GURL& url, bool* defer) override;
+  bool OnBeforeNetworkStart(const GURL& url, bool* defer) override;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& security_info,
+                           bool* defer) override;
+  void OnDataDownloaded(int bytes_downloaded) override;
 
  private:
   // IPC message handlers:
@@ -77,6 +77,8 @@ class AsyncResourceHandler : public ResourceHandler,
   bool sent_first_data_msg_;
 
   int64_t reported_transfer_size_;
+
+  base::TimeTicks redirect_start_time_;
 
   DISALLOW_COPY_AND_ASSIGN(AsyncResourceHandler);
 };

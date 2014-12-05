@@ -5,7 +5,6 @@
 #include "content/common/gpu/image_transport_surface_fbo_mac.h"
 
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/gpu/image_transport_surface_iosurface_mac.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
@@ -19,13 +18,14 @@ namespace {
 class DRTSurfaceOSMesa : public gfx::GLSurfaceOSMesa {
  public:
   // Size doesn't matter, the surface is resized to the right size later.
-  DRTSurfaceOSMesa() : GLSurfaceOSMesa(GL_RGBA, gfx::Size(1, 1)) {}
+  DRTSurfaceOSMesa()
+      : GLSurfaceOSMesa(gfx::OSMesaSurfaceFormatRGBA, gfx::Size(1, 1)) {}
 
   // Implement a subset of GLSurface.
-  virtual bool SwapBuffers() OVERRIDE;
+  bool SwapBuffers() override;
 
  private:
-  virtual ~DRTSurfaceOSMesa() {}
+  ~DRTSurfaceOSMesa() override {}
   DISALLOW_COPY_AND_ASSIGN(DRTSurfaceOSMesa);
 };
 
@@ -43,13 +43,13 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& surface_handle) {
   DCHECK(surface_handle.transport_type == gfx::NATIVE_DIRECT ||
-         surface_handle.transport_type == gfx::NATIVE_TRANSPORT);
+         surface_handle.transport_type == gfx::NULL_TRANSPORT);
 
   switch (gfx::GetGLImplementation()) {
     case gfx::kGLImplementationDesktopGL:
     case gfx::kGLImplementationAppleGL:
       return scoped_refptr<gfx::GLSurface>(new ImageTransportSurfaceFBO(
-          new IOSurfaceStorageProvider, manager, stub, surface_handle.handle));
+          manager, stub, surface_handle.handle));
     default:
       // Content shell in DRT mode spins up a gpu process which needs an
       // image transport surface, but that surface isn't used to read pixel

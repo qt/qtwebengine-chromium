@@ -161,7 +161,7 @@
                 'class_whitelist_regex':
                     'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver',
                 'category_whitelist_regex':
-                    'TCMInterposing|ScrollAnimatorChromiumMacExt|WebCoreTheme',
+                    'WebCoreFocusRingDrawing|WebCoreTheme',
               },
               'action': [
                 '../build/scripts/check_objc_rename.sh',
@@ -220,8 +220,7 @@
     'xcode_settings': {
       # Some Mac-specific parts of WebKit won't compile without having this
       # prefix header injected.
-      # FIXME: make this a first-class setting.
-      'GCC_PREFIX_HEADER': '../core/WebCorePrefixMac.h',
+      'GCC_PREFIX_HEADER': '<(DEPTH)/third_party/WebKit/Source/build/mac/Prefix.h',
     },
     'sources': [
       '<@(platform_files)',
@@ -236,7 +235,7 @@
     'sources/': [
       # Exclude all platform specific things, reinclude them below on a per-platform basis
       # FIXME: Figure out how to store these patterns in a variable.
-      ['exclude', '(cf|cg|harfbuzz|mac|opentype|win)/'],
+      ['exclude', '(cf|cg|mac|opentype|win)/'],
       ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
 
       # *NEON.cpp files need special compile options.
@@ -252,30 +251,21 @@
       ['OS=="linux" or OS=="android" or OS=="win"', {
         'sources/': [
           # Cherry-pick files excluded by the broader regular expressions above.
-          ['include', 'fonts/harfbuzz/FontHarfBuzz\\.cpp$'],
-          ['include', 'fonts/harfbuzz/FontPlatformDataHarfBuzz\\.cpp$'],
-          ['include', 'fonts/harfbuzz/HarfBuzzFace\\.(cpp|h)$'],
-          ['include', 'fonts/harfbuzz/HarfBuzzFaceSkia\\.cpp$'],
-          ['include', 'fonts/harfbuzz/HarfBuzzShaper\\.(cpp|h)$'],
           ['include', 'fonts/opentype/OpenTypeTypes\\.h$'],
           ['include', 'fonts/opentype/OpenTypeVerticalData\\.(cpp|h)$'],
-          ['include', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
         ],
         'dependencies': [
           '<(DEPTH)/third_party/harfbuzz-ng/harfbuzz.gyp:harfbuzz-ng',
         ],
-      }, { # OS!="linux" and OS!="android" and OS!="win"
-        'sources/': [
-          ['exclude', 'Harfbuzz[^/]+\\.(cpp|h)$'],
-        ],
-      }],
+      },
+      ],
       ['OS=="linux" or OS=="android"', {
         'sources/': [
-          ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+          ['include', 'fonts/linux/FontPlatformDataLinux\\.cpp$'],
         ]
       }, { # OS!="linux" and OS!="android"
         'sources/': [
-          ['exclude', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+          ['exclude', 'fonts/linux/FontPlatformDataLinux\\.cpp$'],
         ]
       }],
       ['OS=="mac"', {
@@ -303,13 +293,16 @@
 
           # Use native Mac font code from core.
           ['include', '(fonts/)?mac/[^/]*Font[^/]*\\.(cpp|mm?)$'],
-          ['include', 'fonts/mac/ComplexText[^/]*\\.(cpp|h)$'],
+
+          # TODO(dro): Merge the opentype vertical data files inclusion across all platforms.
+          ['include', 'fonts/opentype/OpenTypeTypes\\.h$'],
+          ['include', 'fonts/opentype/OpenTypeVerticalData\\.(cpp|h)$'],
 
           # Cherry-pick some files that can't be included by broader regexps.
           # Some of these are used instead of Chromium platform files, see
           # the specific exclusions in the "exclude" list below.
           ['include', 'audio/mac/FFTFrameMac\\.cpp$'],
-          ['include', 'fonts/mac/ComplexTextControllerCoreText\\.mm$'],
+          ['include', 'fonts/mac/GlyphPageTreeNodeMac\\.cpp$'],
           ['include', 'mac/ColorMac\\.mm$'],
           ['include', 'mac/BlockExceptions\\.mm$'],
           ['include', 'mac/KillRingMac\\.mm$'],
@@ -319,6 +312,8 @@
           ['include', 'mac/ScrollElasticityController\\.mm$'],
           ['include', 'mac/ThemeMac\\.h$'],
           ['include', 'mac/ThemeMac\\.mm$'],
+          ['include', 'mac/WebCoreNSCellExtras\\.h$'],
+          ['include', 'mac/WebCoreNSCellExtras\\.mm$'],
  
           # Mac uses only ScrollAnimatorMac.
           ['exclude', 'scroll/ScrollbarThemeNonMacCommon\\.(cpp|h)$'],
@@ -330,12 +325,6 @@
           ['exclude', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
 
           ['exclude', 'fonts/skia/FontCacheSkia\\.cpp$'],
-          ['exclude', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
-
-          # Mac uses Harfbuzz.
-          ['include', 'fonts/harfbuzz/HarfBuzzFaceCoreText\\.cpp$'],
-          ['include', 'fonts/harfbuzz/HarfBuzzFace\\.(cpp|h)$'],
-          ['include', 'fonts/harfbuzz/HarfBuzzShaper\\.(cpp|h)$'],
 
           ['include', 'geometry/mac/FloatPointMac\\.mm$'],
           ['include', 'geometry/mac/FloatRectMac\\.mm$'],
@@ -359,11 +348,6 @@
           ['exclude', 'geometry/mac/'],
           ['exclude', 'geometry/cg/'],
           ['exclude', 'scroll/ScrollbarThemeMac'],
-
-          # FIXME: We will eventually compile this too, but for now it's
-          # only used on mac.
-          ['exclude', 'fonts/FontPlatformData\\.cpp$'],
-          ['exclude', 'fonts/harfbuzz/HarfBuzzFaceCoreText\\.cpp$'],
         ],
       }],
       ['OS != "linux" and OS != "mac" and OS != "win"', {
@@ -382,7 +366,6 @@
           ['include', 'fonts/opentype/'],
           ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
           ['include', 'fonts/skia/FontCustomPlatformDataSkia\\.cpp$'],
-          ['include', 'fonts/skia/SimpleFontDataSkia\\.cpp$'],
           ['include', 'fonts/win/FontCacheSkiaWin\\.cpp$'],
           ['include', 'fonts/win/FontFallbackWin\\.(cpp|h)$'],
           ['include', 'fonts/win/FontPlatformDataWin\\.cpp$'],
@@ -451,7 +434,7 @@
       ['OS=="android"', {
         'sources/': [
             ['include', 'exported/linux/WebFontRenderStyle\\.cpp$'],
-            ['include', 'fonts/linux/FontPlatformDataLinuxHarfBuzz\\.cpp$'],
+            ['include', 'fonts/linux/FontPlatformDataLinux\\.cpp$'],
         ],
       }],
     ],

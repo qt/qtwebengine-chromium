@@ -12,6 +12,8 @@ namespace printing {
 
 PRINTING_EXPORT extern const char kIsFirstRequest[];
 PRINTING_EXPORT extern const char kPreviewRequestID[];
+PRINTING_EXPORT extern const char kPreviewInitiatorHostId[];
+PRINTING_EXPORT extern const char kPreviewInitiatorRoutingId[];
 PRINTING_EXPORT extern const char kPreviewUIID[];
 PRINTING_EXPORT extern const char kSettingCapabilities[];
 PRINTING_EXPORT extern const char kSettingCloudPrintId[];
@@ -36,6 +38,7 @@ PRINTING_EXPORT extern const char kSettingMediaSize[];
 PRINTING_EXPORT extern const char kSettingMediaSizeHeightMicrons[];
 PRINTING_EXPORT extern const char kSettingMediaSizeWidthMicrons[];
 PRINTING_EXPORT extern const char kSettingMediaSizeVendorId[];
+PRINTING_EXPORT extern const char kSettingMediaSizeIsDefault[];
 PRINTING_EXPORT extern const char kSettingMarginBottom[];
 PRINTING_EXPORT extern const char kSettingMarginLeft[];
 PRINTING_EXPORT extern const char kSettingMarginRight[];
@@ -61,6 +64,7 @@ PRINTING_EXPORT extern const char kSettingPrinterOptions[];
 PRINTING_EXPORT extern const char kSettingTicket[];
 PRINTING_EXPORT extern const char kSettingShouldPrintBackgrounds[];
 PRINTING_EXPORT extern const char kSettingShouldPrintSelectionOnly[];
+PRINTING_EXPORT extern const char kSettingShowSystemDialog[];
 
 PRINTING_EXPORT extern const int FIRST_PAGE_INDEX;
 PRINTING_EXPORT extern const int COMPLETE_PREVIEW_DOCUMENT_INDEX;

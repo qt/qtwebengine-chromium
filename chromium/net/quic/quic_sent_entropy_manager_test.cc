@@ -5,14 +5,12 @@
 #include "net/quic/quic_sent_entropy_manager.h"
 
 #include <algorithm>
-#include <vector>
 
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using std::make_pair;
 using std::pair;
-using std::vector;
 
 namespace net {
 namespace test {
@@ -24,30 +22,24 @@ class QuicSentEntropyManagerTest : public ::testing::Test {
 };
 
 TEST_F(QuicSentEntropyManagerTest, SentEntropyHash) {
-  EXPECT_EQ(0, entropy_manager_.EntropyHash(0));
+  EXPECT_EQ(0, entropy_manager_.GetCumulativeEntropy(0));
 
-  vector<pair<QuicPacketSequenceNumber, QuicPacketEntropyHash> > entropies;
-  entropies.push_back(make_pair(1, 12));
-  entropies.push_back(make_pair(2, 1));
-  entropies.push_back(make_pair(3, 33));
-  entropies.push_back(make_pair(4, 3));
-
-  for (size_t i = 0; i < entropies.size(); ++i) {
-    entropy_manager_.RecordPacketEntropyHash(entropies[i].first,
-                                             entropies[i].second);
+  QuicPacketEntropyHash entropies[4] = {12, 1, 33, 3};
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
+    entropy_manager_.RecordPacketEntropyHash(i + 1, entropies[i]);
   }
 
   QuicPacketEntropyHash hash = 0;
-  for (size_t i = 0; i < entropies.size(); ++i) {
-    hash ^= entropies[i].second;
-    EXPECT_EQ(hash, entropy_manager_.EntropyHash(i + 1));
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
+    hash ^= entropies[i];
+    EXPECT_EQ(hash, entropy_manager_.GetCumulativeEntropy(i + 1));
   }
 }
 
 TEST_F(QuicSentEntropyManagerTest, IsValidEntropy) {
   QuicPacketEntropyHash entropies[10] =
       {12, 1, 33, 3, 32, 100, 28, 42, 22, 255};
-  for (size_t i = 0; i < 10; ++i) {
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
     entropy_manager_.RecordPacketEntropyHash(i + 1, entropies[i]);
   }
 
@@ -58,7 +50,7 @@ TEST_F(QuicSentEntropyManagerTest, IsValidEntropy) {
   missing_packets.insert(8);
 
   QuicPacketEntropyHash entropy_hash = 0;
-  for (size_t i = 0; i < 10; ++i) {
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
     if (missing_packets.find(i + 1) == missing_packets.end()) {
       entropy_hash ^= entropies[i];
     }
@@ -66,6 +58,38 @@ TEST_F(QuicSentEntropyManagerTest, IsValidEntropy) {
 
   EXPECT_TRUE(entropy_manager_.IsValidEntropy(10, missing_packets,
                                               entropy_hash));
+}
+
+TEST_F(QuicSentEntropyManagerTest, ClearEntropiesBefore) {
+  QuicPacketEntropyHash entropies[10] =
+      {12, 1, 33, 3, 32, 100, 28, 42, 22, 255};
+
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
+    entropy_manager_.RecordPacketEntropyHash(i + 1, entropies[i]);
+  }
+
+  // Discard the first 5 entropies and ensure IsValidEntropy and EntropyHash
+  // still return correct results.
+  entropy_manager_.ClearEntropyBefore(5);
+
+  SequenceNumberSet missing_packets;
+  missing_packets.insert(7);
+  missing_packets.insert(8);
+
+  QuicPacketEntropyHash entropy_hash = 0;
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
+    if (missing_packets.find(i + 1) == missing_packets.end()) {
+      entropy_hash ^= entropies[i];
+    }
+  }
+  EXPECT_TRUE(entropy_manager_.IsValidEntropy(10, missing_packets,
+                                              entropy_hash));
+
+  entropy_hash = 0;
+  for (size_t i = 0; i < arraysize(entropies); ++i) {
+    entropy_hash ^= entropies[i];
+  }
+  EXPECT_EQ(entropy_hash, entropy_manager_.GetCumulativeEntropy(10));
 }
 
 }  // namespace

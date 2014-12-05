@@ -11,7 +11,7 @@
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/geometry_test_utils.h"
-#include "cc/test/mock_quad_culler.h"
+#include "cc/test/mock_occlusion_tracker.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -109,15 +109,18 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
 
   MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-  MockQuadCuller mock_quad_culler(render_pass.get(), &occlusion_tracker);
   AppendQuadsData append_quads_data;
 
   bool for_replica = false;
-  render_surface->AppendQuads(
-      &mock_quad_culler, &append_quads_data, for_replica, RenderPass::Id(2, 0));
+  render_surface->AppendQuads(render_pass.get(),
+                              occlusion_tracker,
+                              &append_quads_data,
+                              for_replica,
+                              RenderPassId(2, 0));
 
   ASSERT_EQ(1u, render_pass->shared_quad_state_list.size());
-  SharedQuadState* shared_quad_state = render_pass->shared_quad_state_list[0];
+  SharedQuadState* shared_quad_state =
+      render_pass->shared_quad_state_list.front();
 
   EXPECT_EQ(
       30.0,
@@ -132,16 +135,16 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectSharedQuadState) {
 
 class TestRenderPassSink : public RenderPassSink {
  public:
-  virtual void AppendRenderPass(scoped_ptr<RenderPass> render_pass) OVERRIDE {
+  void AppendRenderPass(scoped_ptr<RenderPass> render_pass) override {
     render_passes_.push_back(render_pass.Pass());
   }
 
-  const ScopedPtrVector<RenderPass>& RenderPasses() const {
+  const RenderPassList& RenderPasses() const {
     return render_passes_;
   }
 
  private:
-  ScopedPtrVector<RenderPass> render_passes_;
+  RenderPassList render_passes_;
 };
 
 TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectRenderPass) {
@@ -174,7 +177,7 @@ TEST(RenderSurfaceTest, SanityCheckSurfaceCreatesCorrectRenderPass) {
   ASSERT_EQ(1u, pass_sink.RenderPasses().size());
   RenderPass* pass = pass_sink.RenderPasses()[0];
 
-  EXPECT_EQ(RenderPass::Id(2, 0), pass->id);
+  EXPECT_EQ(RenderPassId(2, 0), pass->id);
   EXPECT_RECT_EQ(content_rect, pass->output_rect);
   EXPECT_EQ(origin, pass->transform_to_root_target);
 }

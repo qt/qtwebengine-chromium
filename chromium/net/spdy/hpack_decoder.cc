@@ -16,16 +16,13 @@ using std::string;
 
 namespace {
 
-const uint8 kNoState = 0;
-// Set on entries added to the reference set during this decoding.
-const uint8 kReferencedThisEncoding = 1;
-
 const char kCookieKey[] = "cookie";
 
 }  // namespace
 
 HpackDecoder::HpackDecoder(const HpackHuffmanTable& table)
     : max_string_literal_size_(kDefaultMaxStringLiteralSize),
+      regular_header_seen_(false),
       huffman_table_(table) {}
 
 HpackDecoder::~HpackDecoder() {}
@@ -48,6 +45,7 @@ bool HpackDecoder::HandleControlFrameHeadersData(SpdyStreamId id,
 bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id) {
   HpackInputStream input_stream(max_string_literal_size_,
                                 headers_block_buffer_);
+  regular_header_seen_ = false;
   while (input_stream.HasMoreData()) {
     if (!DecodeNextOpcode(&input_stream)) {
       headers_block_buffer_.clear();
@@ -56,21 +54,6 @@ bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id) {
   }
   headers_block_buffer_.clear();
 
-  // Emit everything in the reference set that hasn't already been emitted.
-  // Also clear entry state for the next decoded headers block.
-  // TODO(jgraettinger): We may need to revisit the order in which headers
-  // are emitted (b/14051713).
-  for (HpackHeaderTable::OrderedEntrySet::const_iterator it =
-          header_table_.reference_set().begin();
-       it != header_table_.reference_set().end(); ++it) {
-    HpackEntry* entry = *it;
-
-    if (entry->state() == kNoState) {
-      HandleHeaderRepresentation(entry->name(), entry->value());
-    } else {
-      entry->set_state(kNoState);
-    }
-  }
   // Emit the Cookie header, if any crumbles were encountered.
   if (!cookie_value_.empty()) {
     decoded_block_[kCookieKey] = cookie_value_;
@@ -79,9 +62,18 @@ bool HpackDecoder::HandleControlFrameHeadersComplete(SpdyStreamId id) {
   return true;
 }
 
-void HpackDecoder::HandleHeaderRepresentation(StringPiece name,
+bool HpackDecoder::HandleHeaderRepresentation(StringPiece name,
                                               StringPiece value) {
   typedef std::pair<std::map<string, string>::iterator, bool> InsertResult;
+
+  // Fail if pseudo-header follows regular header.
+  if (name.size() > 0) {
+    if (name[0] == kPseudoHeaderPrefix) {
+      if (regular_header_seen_) return false;
+    } else {
+      regular_header_seen_ = true;
+    }
+  }
 
   if (name == kCookieKey) {
     if (cookie_value_.empty()) {
@@ -100,52 +92,46 @@ void HpackDecoder::HandleHeaderRepresentation(StringPiece name,
                                   value.end());
     }
   }
+  return true;
 }
 
 bool HpackDecoder::DecodeNextOpcode(HpackInputStream* input_stream) {
-  // Implements 4.2: Indexed Header Field Representation.
+  // Implements 7.1: Indexed Header Field Representation.
   if (input_stream->MatchPrefixAndConsume(kIndexedOpcode)) {
     return DecodeNextIndexedHeader(input_stream);
   }
-  // Implements 4.3.1: Literal Header Field without Indexing.
-  if (input_stream->MatchPrefixAndConsume(kLiteralNoIndexOpcode)) {
-    return DecodeNextLiteralHeader(input_stream, false);
-  }
-  // Implements 4.3.2: Literal Header Field with Incremental Indexing.
+  // Implements 7.2.1: Literal Header Field with Incremental Indexing.
   if (input_stream->MatchPrefixAndConsume(kLiteralIncrementalIndexOpcode)) {
     return DecodeNextLiteralHeader(input_stream, true);
   }
-  // Implements 4.3.3: Literal Header Field never Indexed.
+  // Implements 7.2.2: Literal Header Field without Indexing.
+  if (input_stream->MatchPrefixAndConsume(kLiteralNoIndexOpcode)) {
+    return DecodeNextLiteralHeader(input_stream, false);
+  }
+  // Implements 7.2.3: Literal Header Field never Indexed.
   // TODO(jgraettinger): Preserve the never-indexed bit.
   if (input_stream->MatchPrefixAndConsume(kLiteralNeverIndexOpcode)) {
     return DecodeNextLiteralHeader(input_stream, false);
   }
-  // Implements 4.4: Encoding context update.
-  if (input_stream->MatchPrefixAndConsume(kEncodingContextOpcode)) {
-    return DecodeNextContextUpdate(input_stream);
+  // Implements 7.3: Header Table Size Update.
+  if (input_stream->MatchPrefixAndConsume(kHeaderTableSizeUpdateOpcode)) {
+    return DecodeNextHeaderTableSizeUpdate(input_stream);
   }
   // Unrecognized opcode.
   return false;
 }
 
-bool HpackDecoder::DecodeNextContextUpdate(HpackInputStream* input_stream) {
-  if (input_stream->MatchPrefixAndConsume(kEncodingContextEmptyReferenceSet)) {
-    header_table_.ClearReferenceSet();
-    return true;
+bool HpackDecoder::DecodeNextHeaderTableSizeUpdate(
+    HpackInputStream* input_stream) {
+  uint32 size = 0;
+  if (!input_stream->DecodeNextUint32(&size)) {
+    return false;
   }
-  if (input_stream->MatchPrefixAndConsume(kEncodingContextNewMaximumSize)) {
-    uint32 size = 0;
-    if (!input_stream->DecodeNextUint32(&size)) {
-      return false;
-    }
-    if (size > header_table_.settings_size_bound()) {
-      return false;
-    }
-    header_table_.SetMaxSize(size);
-    return true;
+  if (size > header_table_.settings_size_bound()) {
+    return false;
   }
-  // Unrecognized encoding context update.
-  return false;
+  header_table_.SetMaxSize(size);
+  return true;
 }
 
 bool HpackDecoder::DecodeNextIndexedHeader(HpackInputStream* input_stream) {
@@ -153,27 +139,11 @@ bool HpackDecoder::DecodeNextIndexedHeader(HpackInputStream* input_stream) {
   if (!input_stream->DecodeNextUint32(&index))
     return false;
 
-  HpackEntry* entry = header_table_.GetByIndex(index);
+  const HpackEntry* entry = header_table_.GetByIndex(index);
   if (entry == NULL)
     return false;
 
-  if (entry->IsStatic()) {
-    HandleHeaderRepresentation(entry->name(), entry->value());
-
-    HpackEntry* new_entry = header_table_.TryAddEntry(
-        entry->name(), entry->value());
-    if (new_entry) {
-      header_table_.Toggle(new_entry);
-      new_entry->set_state(kReferencedThisEncoding);
-    }
-  } else {
-    entry->set_state(kNoState);
-    if (header_table_.Toggle(entry)) {
-      HandleHeaderRepresentation(entry->name(), entry->value());
-      entry->set_state(kReferencedThisEncoding);
-    }
-  }
-  return true;
+  return HandleHeaderRepresentation(entry->name(), entry->value());
 }
 
 bool HpackDecoder::DecodeNextLiteralHeader(HpackInputStream* input_stream,
@@ -186,16 +156,12 @@ bool HpackDecoder::DecodeNextLiteralHeader(HpackInputStream* input_stream,
   if (!DecodeNextStringLiteral(input_stream, false, &value))
     return false;
 
-  HandleHeaderRepresentation(name, value);
+  if (!HandleHeaderRepresentation(name, value)) return false;
 
   if (!should_index)
     return true;
 
-  HpackEntry* new_entry = header_table_.TryAddEntry(name, value);
-  if (new_entry) {
-    header_table_.Toggle(new_entry);
-    new_entry->set_state(kReferencedThisEncoding);
-  }
+  ignore_result(header_table_.TryAddEntry(name, value));
   return true;
 }
 

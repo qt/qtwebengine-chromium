@@ -28,12 +28,12 @@
 #include "config.h"
 #include "modules/webdatabase/SQLStatementBackend.h"
 
-#include "platform/Logging.h"
+#include "modules/webdatabase/Database.h"
+#include "modules/webdatabase/SQLError.h"
+#include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/sqlite/SQLiteDatabase.h"
 #include "modules/webdatabase/sqlite/SQLiteStatement.h"
-#include "modules/webdatabase/AbstractSQLStatement.h"
-#include "modules/webdatabase/DatabaseBackend.h"
-#include "modules/webdatabase/SQLError.h"
+#include "platform/Logging.h"
 #include "wtf/text/CString.h"
 
 
@@ -43,14 +43,14 @@
 //
 //     At birth (in SQLTransactionBackend::executeSQL()):
 //     =================================================
-//     SQLTransactionBackend           // Deque<RefPtr<SQLStatementBackend> > m_statementQueue points to ...
-//     --> SQLStatementBackend         // OwnPtr<SQLStatement> m_frontend points to ...
+//     SQLTransactionBackend           // HeapDeque<Member<SQLStatementBackend> > m_statementQueue points to ...
+//     --> SQLStatementBackend         // Member<SQLStatement> m_frontend points to ...
 //         --> SQLStatement
 //
 //     After grabbing the statement for execution (in SQLTransactionBackend::getNextStatement()):
 //     =========================================================================================
-//     SQLTransactionBackend           // RefPtr<SQLStatementBackend> m_currentStatementBackend points to ...
-//     --> SQLStatementBackend         // OwnPtr<SQLStatement> m_frontend points to ...
+//     SQLTransactionBackend           // Member<SQLStatementBackend> m_currentStatementBackend points to ...
+//     --> SQLStatementBackend         // Member<SQLStatement> m_frontend points to ...
 //         --> SQLStatement
 //
 //     Then we execute the statement in SQLTransactionBackend::runCurrentStatementAndGetNextState().
@@ -69,15 +69,15 @@
 //     Note: unlike with SQLTransaction, there is no JS representation of SQLStatement.
 //     Hence, there is no GC dependency at play here.
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<SQLStatementBackend> SQLStatementBackend::create(PassOwnPtrWillBeRawPtr<AbstractSQLStatement> frontend,
+SQLStatementBackend* SQLStatementBackend::create(SQLStatement* frontend,
     const String& statement, const Vector<SQLValue>& arguments, int permissions)
 {
-    return adoptRefWillBeNoop(new SQLStatementBackend(frontend, statement, arguments, permissions));
+    return new SQLStatementBackend(frontend, statement, arguments, permissions);
 }
 
-SQLStatementBackend::SQLStatementBackend(PassOwnPtrWillBeRawPtr<AbstractSQLStatement> frontend,
+SQLStatementBackend::SQLStatementBackend(SQLStatement* frontend,
     const String& statement, const Vector<SQLValue>& arguments, int permissions)
     : m_frontend(frontend)
     , m_statement(statement.isolatedCopy())
@@ -94,10 +94,9 @@ void SQLStatementBackend::trace(Visitor* visitor)
 {
     visitor->trace(m_frontend);
     visitor->trace(m_resultSet);
-    AbstractSQLStatementBackend::trace(visitor);
 }
 
-AbstractSQLStatement* SQLStatementBackend::frontend()
+SQLStatement* SQLStatementBackend::frontend()
 {
     return m_frontend.get();
 }
@@ -112,7 +111,7 @@ SQLResultSet* SQLStatementBackend::sqlResultSet() const
     return m_resultSet->isValid() ? m_resultSet.get() : 0;
 }
 
-bool SQLStatementBackend::execute(DatabaseBackend* db)
+bool SQLStatementBackend::execute(Database* db)
 {
     ASSERT(!m_resultSet->isValid());
 
@@ -145,7 +144,7 @@ bool SQLStatementBackend::execute(DatabaseBackend* db)
     // If this is the case, they might be trying to do something fishy or malicious
     if (statement.bindParameterCount() != m_arguments.size()) {
         WTF_LOG(StorageAPI, "Bind parameter count doesn't match number of question marks");
-        m_error = SQLErrorData::create(db->isInterrupted() ? SQLError::DATABASE_ERR : SQLError::SYNTAX_ERR, "number of '?'s in statement string does not match argument count");
+        m_error = SQLErrorData::create(SQLError::SYNTAX_ERR, "number of '?'s in statement string does not match argument count");
         db->reportExecuteStatementResult(2, m_error->code(), 0);
         return false;
     }
@@ -213,14 +212,14 @@ bool SQLStatementBackend::execute(DatabaseBackend* db)
     return true;
 }
 
-void SQLStatementBackend::setVersionMismatchedError(DatabaseBackend* database)
+void SQLStatementBackend::setVersionMismatchedError(Database* database)
 {
     ASSERT(!m_error && !m_resultSet->isValid());
     database->reportExecuteStatementResult(7, SQLError::VERSION_ERR, 0);
     m_error = SQLErrorData::create(SQLError::VERSION_ERR, "current version of the database and `oldVersion` argument do not match");
 }
 
-void SQLStatementBackend::setFailureDueToQuota(DatabaseBackend* database)
+void SQLStatementBackend::setFailureDueToQuota(Database* database)
 {
     ASSERT(!m_error && !m_resultSet->isValid());
     database->reportExecuteStatementResult(8, SQLError::QUOTA_ERR, 0);
@@ -238,4 +237,4 @@ bool SQLStatementBackend::lastExecutionFailedDueToQuota() const
     return m_error && m_error->code() == SQLError::QUOTA_ERR;
 }
 
-} // namespace WebCore
+} // namespace blink

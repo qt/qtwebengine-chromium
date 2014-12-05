@@ -2,15 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-if (!is_android) {
+import("//tools/grit/grit_rule.gni")
 
 # GYP version: WebKit/public/blink.gyp:blink
 group("blink") {
   deps = [
     ":blink_headers",
     ":blink_minimal",
-    "//third_party/WebKit/Source/platform",
     "//third_party/WebKit/Source/web",
+    "//third_party/WebKit/Source/platform",
   ]
 }
 
@@ -26,35 +26,48 @@ group("blink_minimal") {
   ]
 }
 
-# TODO(GYP) enable this when web:test_support exists.
 # GYP version: WebKit/public/blink.gyp:blink_test_support
-#group("test_support") {
-#  deps = [
-#    "//third_party/WebKit/Source/web:test_support",
-#  ]
-#}
+group("test_support") {
+  deps = [
+    "//third_party/WebKit/Source/web:test_support",
+  ]
+}
 
 # GYP version: WebKit/public/all.gyp:all_blink
 group("all_blink") {
+  # This includes some test targets. Don't link into production!
+  testonly = true
+
   deps = [
     "//third_party/WebKit/Source/core",
     "//third_party/WebKit/Source/modules",
-    "//third_party/WebKit/Source/platform",
+    "//third_party/WebKit/Source/platform:heap_unittests",
+    "//third_party/WebKit/Source/platform:platform_unittests",
     "//third_party/WebKit/Source/web",
     "//third_party/WebKit/Source/wtf:wtf_unittests",
   ]
 }
 
-}  # !is_android
-
 config("blink_headers_config") {
   include_dirs = [ ".." ]
+}
+
+config("debug_devtools") {
+  if (debug_devtools) {
+    defines = [ "DEBUG_DEVTOOLS=1" ]
+  }
 }
 
 # Depend on this target to use public blink API headers for things like enums
 # and public structures without actually linking against any Blink libraries.
 source_set("blink_headers") {
-  direct_dependent_configs = [ ":blink_headers_config" ]
+  public_configs = [
+    ":blink_headers_config",
+    # Blink exposes icu headers in the public API.
+    "//third_party/icu:icu_config",
+    # Blink exposes NPAPI headers in the public API.
+    "//third_party/npapi:npapi_config",
+  ]
 }
 
 # GYP version: WebKit/public/blink_devtools.gyp:blink_devtools_frontend_resources
@@ -68,5 +81,17 @@ group("blink_devtools_frontend_resources") {
 group("blink_generate_devtools_grd") {
   deps = [
     "//third_party/WebKit/Source/devtools:generate_devtools_grd",
+  ]
+}
+
+# GYP version: WebKit/public/blink_resources.gyp:blink_resources
+grit("resources") {
+  output_dir = "$root_gen_dir/blink/public/resources"
+  use_qualified_include = true
+  source = "blink_resources.grd"
+  outputs = [
+    "grit/blink_resources.h",
+    "blink_resources.rc",
+    "blink_resources.pak",
   ]
 }

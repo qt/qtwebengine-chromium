@@ -35,16 +35,12 @@
 #include "core/dom/Document.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
-#include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 #include "platform/SharedBuffer.h"
 #include "public/platform/WebIDBDatabase.h"
 #include <gtest/gtest.h>
 #include <v8.h>
 
-using namespace WebCore;
-
-using blink::WebIDBDatabase;
-
+namespace blink {
 namespace {
 
 class IDBTransactionTest : public testing::Test {
@@ -65,30 +61,35 @@ public:
     ScriptState* scriptState() const { return m_scope.scriptState(); }
     ExecutionContext* executionContext() { return m_scope.scriptState()->executionContext(); }
 
+    void deactivateNewTransactions()
+    {
+        V8PerIsolateData::from(isolate())->ensureIDBPendingTransactionMonitor()->deactivateNewTransactions();
+    }
+
 private:
     V8TestingScope m_scope;
     RefPtrWillBePersistent<ExecutionContext> m_executionContext;
 };
 
-class FakeWebIDBDatabase FINAL : public blink::WebIDBDatabase {
+class FakeWebIDBDatabase final : public WebIDBDatabase {
 public:
     static PassOwnPtr<FakeWebIDBDatabase> create() { return adoptPtr(new FakeWebIDBDatabase()); }
 
-    virtual void commit(long long transactionId) OVERRIDE { }
-    virtual void abort(long long transactionId) OVERRIDE { }
-    virtual void close() OVERRIDE { }
+    virtual void commit(long long transactionId) override { }
+    virtual void abort(long long transactionId) override { }
+    virtual void close() override { }
 
 private:
     FakeWebIDBDatabase() { }
 };
 
-class FakeIDBDatabaseCallbacks FINAL : public IDBDatabaseCallbacks {
+class FakeIDBDatabaseCallbacks final : public IDBDatabaseCallbacks {
 public:
     static FakeIDBDatabaseCallbacks* create() { return new FakeIDBDatabaseCallbacks(); }
-    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion) OVERRIDE { }
-    virtual void onForcedClose() OVERRIDE { }
-    virtual void onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError> error) OVERRIDE { }
-    virtual void onComplete(int64_t transactionId) OVERRIDE { }
+    virtual void onVersionChange(int64_t oldVersion, int64_t newVersion) override { }
+    virtual void onForcedClose() override { }
+    virtual void onAbort(int64_t transactionId, DOMError* error) override { }
+    virtual void onComplete(int64_t transactionId) override { }
 private:
     FakeIDBDatabaseCallbacks() { }
 };
@@ -100,7 +101,7 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    Persistent<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, blink::WebIDBTransactionModeReadOnly, db.get());
+    Persistent<IDBTransaction> transaction = IDBTransaction::create(scriptState(), transactionId, transactionScope, WebIDBTransactionModeReadOnly, db.get());
     PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
     set.add(transaction);
 
@@ -108,7 +109,7 @@ TEST_F(IDBTransactionTest, EnsureLifetime)
     EXPECT_EQ(1u, set.size());
 
     Persistent<IDBRequest> request = IDBRequest::create(scriptState(), IDBAny::createUndefined(), transaction.get());
-    IDBPendingTransactionMonitor::from(*executionContext()).deactivateNewTransactions();
+    deactivateNewTransactions();
 
     Heap::collectAllGarbage();
     EXPECT_EQ(1u, set.size());
@@ -130,14 +131,14 @@ TEST_F(IDBTransactionTest, TransactionFinish)
 
     const int64_t transactionId = 1234;
     const Vector<String> transactionScope;
-    Persistent<IDBTransaction> transaction = IDBTransaction::create(executionContext(), transactionId, transactionScope, blink::WebIDBTransactionModeReadOnly, db.get());
+    Persistent<IDBTransaction> transaction = IDBTransaction::create(scriptState(), transactionId, transactionScope, WebIDBTransactionModeReadOnly, db.get());
     PersistentHeapHashSet<WeakMember<IDBTransaction> > set;
     set.add(transaction);
 
     Heap::collectAllGarbage();
     EXPECT_EQ(1u, set.size());
 
-    IDBPendingTransactionMonitor::from(*executionContext()).deactivateNewTransactions();
+    deactivateNewTransactions();
 
     Heap::collectAllGarbage();
     EXPECT_EQ(1u, set.size());
@@ -160,3 +161,4 @@ TEST_F(IDBTransactionTest, TransactionFinish)
 }
 
 } // namespace
+} // namespace blink

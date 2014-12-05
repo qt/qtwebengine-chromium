@@ -37,26 +37,28 @@
 #include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIConnectionEvent.h"
 #include "modules/webmidi/MIDIController.h"
-#include "modules/webmidi/MIDIOptions.h"
+#include "modules/webmidi/MIDIInput.h"
+#include "modules/webmidi/MIDIInputMap.h"
+#include "modules/webmidi/MIDIOutput.h"
+#include "modules/webmidi/MIDIOutputMap.h"
 #include "modules/webmidi/MIDIPort.h"
 #include "platform/AsyncMethodRunner.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 MIDIAccess::MIDIAccess(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
     : ActiveDOMObject(executionContext)
     , m_accessor(accessor)
     , m_sysexEnabled(sysexEnabled)
 {
-    ScriptWrappable::init(this);
     m_accessor->setClient(this);
     for (size_t i = 0; i < ports.size(); ++i) {
         const MIDIAccessInitializer::PortDescriptor& port = ports[i];
         if (port.type == MIDIPort::MIDIPortTypeInput) {
-            m_inputs.append(MIDIInput::create(this, port.id, port.manufacturer, port.name, port.version));
+            m_inputs.append(MIDIInput::create(this, port.id, port.manufacturer, port.name, port.version, port.isActive));
         } else {
-            m_outputs.append(MIDIOutput::create(this, m_outputs.size(), port.id, port.manufacturer, port.name, port.version));
+            m_outputs.append(MIDIOutput::create(this, m_outputs.size(), port.id, port.manufacturer, port.name, port.version, port.isActive));
         }
     }
 }
@@ -65,17 +67,67 @@ MIDIAccess::~MIDIAccess()
 {
 }
 
-void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIInputMap* MIDIAccess::inputs() const
 {
-    ASSERT(isMainThread());
-    m_inputs.append(MIDIInput::create(this, id, manufacturer, name, version));
+    HeapHashMap<String, Member<MIDIInput> > inputs;
+    size_t inactiveCount = 0;
+    for (size_t i = 0; i < m_inputs.size(); ++i) {
+        MIDIInput* input = m_inputs[i];
+        if (input->isActive())
+            inputs.add(input->id(), input);
+        else
+            inactiveCount++;
+    }
+    if ((inputs.size() + inactiveCount) != m_inputs.size()) {
+        // There is id duplication that violates the spec.
+        inputs.clear();
+    }
+    return new MIDIInputMap(inputs);
 }
 
-void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIOutputMap* MIDIAccess::outputs() const
+{
+    HeapHashMap<String, Member<MIDIOutput> > outputs;
+    size_t inactiveCount = 0;
+    for (size_t i = 0; i < m_outputs.size(); ++i) {
+        MIDIOutput* output = m_outputs[i];
+        if (output->isActive())
+            outputs.add(output->id(), output);
+        else
+            inactiveCount++;
+    }
+    if ((outputs.size() + inactiveCount) != m_outputs.size()) {
+        // There is id duplication that violates the spec.
+        outputs.clear();
+    }
+    return new MIDIOutputMap(outputs);
+}
+
+void MIDIAccess::didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+{
+    ASSERT(isMainThread());
+    m_inputs.append(MIDIInput::create(this, id, manufacturer, name, version, isActive));
+}
+
+void MIDIAccess::didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
 {
     ASSERT(isMainThread());
     unsigned portIndex = m_outputs.size();
-    m_outputs.append(MIDIOutput::create(this, portIndex, id, manufacturer, name, version));
+    m_outputs.append(MIDIOutput::create(this, portIndex, id, manufacturer, name, version, isActive));
+}
+
+void MIDIAccess::didSetInputPortState(unsigned portIndex, bool isActive)
+{
+    ASSERT(isMainThread());
+    if (portIndex < m_inputs.size())
+        m_inputs[portIndex]->setActiveState(isActive);
+}
+
+void MIDIAccess::didSetOutputPortState(unsigned portIndex, bool isActive)
+{
+    ASSERT(isMainThread());
+    if (portIndex < m_outputs.size())
+        m_outputs[portIndex]->setActiveState(isActive);
 }
 
 void MIDIAccess::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -129,4 +181,4 @@ void MIDIAccess::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -32,18 +32,17 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 
-namespace WebCore {
+namespace blink {
 
 GainNode::GainNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
     , m_lastGain(1.0)
     , m_sampleAccurateGainValues(AudioNode::ProcessingSizeInFrames) // FIXME: can probably share temp buffer in context
 {
-    ScriptWrappable::init(this);
-    m_gain = AudioParam::create(context, "gain", 1.0, 0.0, 1.0);
+    m_gain = AudioParam::create(context, 1.0);
 
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, 1));
 
     setNodeType(NodeTypeGain);
 
@@ -114,6 +113,6 @@ void GainNode::trace(Visitor* visitor)
     AudioNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

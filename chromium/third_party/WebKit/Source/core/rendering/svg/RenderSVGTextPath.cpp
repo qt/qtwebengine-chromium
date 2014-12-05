@@ -26,7 +26,7 @@
 #include "core/svg/SVGPathElement.h"
 #include "core/svg/SVGTextPathElement.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGTextPath::RenderSVGTextPath(Element* element)
     : RenderSVGInline(element)
@@ -37,13 +37,6 @@ bool RenderSVGTextPath::isChildAllowed(RenderObject* child, RenderStyle*) const
 {
     if (child->isText())
         return SVGRenderSupport::isRenderableTextNode(child);
-
-#if ENABLE(SVG_FONTS)
-    // 'altGlyph' is supported by the content model for 'textPath', but...
-    ASSERT(child->node());
-    if (isSVGAltGlyphElement(*child->node()))
-        return false;
-#endif
 
     return child->isSVGInline() && !child->isSVGTextPath();
 }
@@ -65,7 +58,7 @@ Path RenderSVGTextPath::layoutPath() const
     // the current 'text' element, including any adjustments to the current user coordinate
     // system due to a possible transform attribute on the current 'text' element.
     // http://www.w3.org/TR/SVG/text.html#TextPathElement
-    pathData.transform(pathElement.animatedLocalTransform());
+    pathData.transform(pathElement.calculateAnimatedLocalTransform());
     return pathData;
 }
 

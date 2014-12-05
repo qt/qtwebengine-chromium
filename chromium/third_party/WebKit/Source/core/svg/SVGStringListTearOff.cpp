@@ -31,12 +31,11 @@
 #include "config.h"
 #include "core/svg/SVGStringListTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGStringListTearOff::SVGStringListTearOff(PassRefPtr<SVGStringList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGStringList>(target, contextElement, propertyIsAnimVal, attributeName)
 {
-    ScriptWrappable::init(this);
 }
 
 }

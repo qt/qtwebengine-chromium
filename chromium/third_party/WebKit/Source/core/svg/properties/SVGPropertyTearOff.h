@@ -35,7 +35,7 @@
 #include "core/svg/properties/SVGProperty.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 enum PropertyIsAnimValType {
     PropertyIsNotAnimVal,
@@ -125,7 +125,7 @@ public:
         m_target = target;
     }
 
-    virtual AnimatedPropertyType type() const OVERRIDE
+    virtual AnimatedPropertyType type() const override
     {
         return Property::classType();
     }

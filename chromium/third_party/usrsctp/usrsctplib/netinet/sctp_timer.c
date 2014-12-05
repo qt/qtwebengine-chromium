@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet/sctp_timer.c 263237 2014-03-16 12:32:16Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet/sctp_timer.c 269448 2014-08-02 21:36:40Z tuexen $");
 #endif
 
 #define _IP_VHL
@@ -54,8 +54,10 @@ __FBSDID("$FreeBSD: head/sys/netinet/sctp_timer.c 263237 2014-03-16 12:32:16Z tu
 #include <netinet/sctp_input.h>
 #include <netinet/sctp.h>
 #include <netinet/sctp_uio.h>
+#if defined(INET) || defined(INET6)
 #if !defined(__Userspace_os_Windows)
 #include <netinet/udp.h>
+#endif
 #endif
 
 #if defined(__APPLE__)
@@ -216,7 +218,7 @@ sctp_find_alternate_net(struct sctp_tcb *stcb,
 				 *  t3 handler.
 				 */
 				if (mnet == net) {
- 					if (min_errors == -1) {
+					if (min_errors == -1) {
 						min_errors = mnet->error_count + 1;
 						min_errors_net = mnet;
 					} else if (mnet->error_count + 1 < min_errors) {
@@ -229,7 +231,7 @@ sctp_find_alternate_net(struct sctp_tcb *stcb,
 					}
 					continue;
 				} else {
- 					if (min_errors == -1) {
+					if (min_errors == -1) {
 						min_errors = mnet->error_count;
 						min_errors_net = mnet;
 					} else if (mnet->error_count < min_errors) {
@@ -333,7 +335,7 @@ sctp_find_alternate_net(struct sctp_tcb *stcb,
 	do {
 		alt = TAILQ_NEXT(mnet, sctp_next);
 		if (alt == NULL)
- 		{
+		{
 			once++;
 			if (once > 1) {
 				break;
@@ -439,7 +441,7 @@ sctp_recover_sent_list(struct sctp_tcb *stcb)
 				sctp_free_bufspace(stcb, asoc, chk, 1);
 				sctp_m_freem(chk->data);
 				chk->data = NULL;
-				if (asoc->peer_supports_prsctp && PR_SCTP_BUF_ENABLED(chk->flags)) {
+				if (asoc->prsctp_supported && PR_SCTP_BUF_ENABLED(chk->flags)) {
 					asoc->sent_queue_cnt_removeable--;
 				}
 			}
@@ -597,7 +599,7 @@ sctp_mark_all_for_resend(struct sctp_tcb *stcb,
 					continue;
 				}
 			}
-			if (stcb->asoc.peer_supports_prsctp && PR_SCTP_TTL_ENABLED(chk->flags)) {
+			if (stcb->asoc.prsctp_supported && PR_SCTP_TTL_ENABLED(chk->flags)) {
 				/* Is it expired? */
 #ifndef __FreeBSD__
 				if (timercmp(&now, &chk->rec.data.timetodrop, >)) {
@@ -615,7 +617,7 @@ sctp_mark_all_for_resend(struct sctp_tcb *stcb,
 					continue;
 				}
 			}
-			if (stcb->asoc.peer_supports_prsctp && PR_SCTP_RTX_ENABLED(chk->flags)) {
+			if (stcb->asoc.prsctp_supported && PR_SCTP_RTX_ENABLED(chk->flags)) {
 				/* Has it been retransmitted tv_sec times? */
 				if (chk->snd_count > chk->rec.data.timetodrop.tv_sec) {
 					if (chk->data) {
@@ -924,9 +926,9 @@ sctp_t3rxt_timer(struct sctp_inpcb *inp,
 		 */
 		if (net->ro._s_addr) {
 			sctp_free_ifa(net->ro._s_addr);
-	 		net->ro._s_addr = NULL;
+			net->ro._s_addr = NULL;
 		}
- 		net->src_addr_selected = 0;
+		net->src_addr_selected = 0;
 
 		/* Force a route allocation too */
 		if (net->ro.ro_rt) {
@@ -962,7 +964,7 @@ sctp_t3rxt_timer(struct sctp_inpcb *inp,
 		sctp_timer_start(SCTP_TIMER_TYPE_SEND, inp, stcb, net);
 		return (0);
 	}
-	if (stcb->asoc.peer_supports_prsctp) {
+	if (stcb->asoc.prsctp_supported) {
 		struct sctp_tmit_chunk *lchk;
 
 		lchk = sctp_try_advance_peer_ack_point(stcb, &stcb->asoc);
@@ -1477,7 +1479,7 @@ sctp_pathmtu_timer(struct sctp_inpcb *inp,
 #elif defined(SCTP_KAME)
 					(void)sa6_embedscope(sin6, MODULE_GLOBAL(ip6_use_defzone));
 #else
-                			(void)in6_embedscope(&sin6->sin6_addr, sin6);
+					(void)in6_embedscope(&sin6->sin6_addr, sin6);
 #endif
 				}
 #endif
@@ -1502,9 +1504,11 @@ sctp_pathmtu_timer(struct sctp_inpcb *inp,
 		}
 		if (net->ro._s_addr) {
 			mtu = SCTP_GATHER_MTU_FROM_ROUTE(net->ro._s_addr, &net->ro._s_addr.sa, net->ro.ro_rt);
+#if defined(INET) || defined(INET6)
 			if (net->port) {
 				mtu -= sizeof(struct udphdr);
 			}
+#endif
 			if (mtu > next_mtu) {
 				net->mtu = next_mtu;
 			}

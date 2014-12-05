@@ -39,7 +39,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<InputType> PasswordInputType::create(HTMLInputElement& element)
 {
@@ -76,24 +76,12 @@ void PasswordInputType::restoreFormControlState(const FormControlState&)
     ASSERT_NOT_REACHED();
 }
 
-bool PasswordInputType::shouldUseInputMethod() const
-{
-    // Input methods are disabled for the password field because otherwise
-    // anyone can access the underlying password and display it in clear text.
-    return false;
-}
-
 bool PasswordInputType::shouldRespectListAttribute()
 {
     return false;
 }
 
 bool PasswordInputType::shouldRespectSpeechAttribute()
-{
-    return true;
-}
-
-bool PasswordInputType::isPasswordField() const
 {
     return true;
 }
@@ -110,4 +98,4 @@ void PasswordInputType::disableSecureTextInput()
         element().document().setUseSecureKeyboardEntryWhenActive(false);
 }
 
-} // namespace WebCore
+} // namespace blink

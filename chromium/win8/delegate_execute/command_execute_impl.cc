@@ -9,7 +9,7 @@
 
 #include <shlguid.h>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/process_handle.h"
@@ -28,6 +28,7 @@
 #include "chrome/installer/util/shell_util.h"
 #include "chrome/installer/util/util_constants.h"
 #include "ui/base/clipboard/clipboard_util_win.h"
+#include "ui/base/ui_base_switches.h"
 #include "ui/gfx/win/dpi.h"
 #include "win8/delegate_execute/chrome_util.h"
 #include "win8/delegate_execute/delegate_execute_util.h"
@@ -154,7 +155,8 @@ bool CommandExecuteImpl::path_provider_initialized_ = false;
 //    c) If the activation returns E_APPLICATION_NOT_REGISTERED, then we fall
 //       back to launching chrome on the desktop via LaunchDestopChrome().  Note
 //       that this case can lead to strange behavior, because at this point we
-//       have pre-launched the browser with --silent-launch --viewer-connect.
+//       have pre-launched the browser with:
+//       --silent-launch --connect-to-metro-viewer.
 //       E_APPLICATION_NOT_REGISTERED is always returned if Chrome is not the
 //       default browser (this case will have already been checked for by
 //       GetLaunchMode() and AHE_DESKTOP returned), but we don't know if it can
@@ -208,13 +210,6 @@ STDMETHODIMP CommandExecuteImpl::SetDirectory(LPCWSTR directory) {
   return S_OK;
 }
 
-void CommandExecuteImpl::SetHighDPIRegistryKey(bool enable) {
-  uint32 key_value = enable ? 1 : 2;
-  base::win::RegKey high_dpi_key(HKEY_CURRENT_USER);
-  high_dpi_key.CreateKey(gfx::win::kRegistryProfilePath, KEY_SET_VALUE);
-  high_dpi_key.WriteValue(gfx::win::kHighDPISupportW, key_value);
-}
-
 STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   if (!GetLaunchScheme(&display_name_, &launch_scheme_)) {
     AtlTrace("Failed to get scheme, E_FAIL\n");
@@ -231,7 +226,6 @@ STDMETHODIMP CommandExecuteImpl::GetValue(enum AHE_TYPE* pahe) {
   // the browser process as well, it will appear laggy while they connect to
   // each other, so we pre-launch the browser process now.
   if (*pahe == AHE_IMMERSIVE && verb_ != win8::kMetroViewerConnectVerb) {
-    SetHighDPIRegistryKey(true);
     LaunchChromeBrowserProcess();
   }
   return S_OK;
@@ -398,8 +392,6 @@ HRESULT CommandExecuteImpl::LaunchDesktopChrome() {
       break;
   }
 
-  SetHighDPIRegistryKey(false);
-
   CommandLine chrome(
       delegate_execute::MakeChromeCommandLine(chrome_exe_, parameters_,
                                               display_name));
@@ -409,7 +401,7 @@ HRESULT CommandExecuteImpl::LaunchDesktopChrome() {
 
   PROCESS_INFORMATION temp_process_info = {};
   BOOL ret = CreateProcess(chrome_exe_.value().c_str(),
-                           const_cast<LPWSTR>(command_line.c_str()),
+                           &command_line[0],
                            NULL, NULL, FALSE, 0, NULL, NULL, &start_info_,
                            &temp_process_info);
   if (ret) {

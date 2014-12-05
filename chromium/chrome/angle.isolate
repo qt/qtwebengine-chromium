@@ -8,12 +8,10 @@
   'conditions': [
     ['OS=="win"', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
+          '<(PRODUCT_DIR)/d3dcompiler_46.dll',
           '<(PRODUCT_DIR)/libEGL.dll',
           '<(PRODUCT_DIR)/libGLESv2.dll',
-          '<(PRODUCT_DIR)/d3dcompiler_46.dll',
-          # TODO(kbr): really need D3DCompiler_43.dll as well for XP,
-          # but ANGLE doesn't contain the rule which extracts this.
         ],
       },
     }],

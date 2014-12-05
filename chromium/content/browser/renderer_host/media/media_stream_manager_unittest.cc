@@ -55,10 +55,10 @@ typedef media::FakeAudioManager AudioManagerPlatform;
 class MockAudioManager : public AudioManagerPlatform {
  public:
   MockAudioManager() : AudioManagerPlatform(&fake_audio_log_factory_) {}
-  virtual ~MockAudioManager() {}
+  ~MockAudioManager() override {}
 
-  virtual void GetAudioInputDeviceNames(
-      media::AudioDeviceNames* device_names) OVERRIDE {
+  void GetAudioInputDeviceNames(
+      media::AudioDeviceNames* device_names) override {
     DCHECK(device_names->empty());
     if (HasAudioInputDevices()) {
       AudioManagerBase::GetAudioInputDeviceNames(device_names);
@@ -79,7 +79,7 @@ class MediaStreamManagerTest : public ::testing::Test {
       : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
         message_loop_(base::MessageLoopProxy::current()) {
     // Create our own MediaStreamManager. Use fake devices to run on the bots.
-    CommandLine::ForCurrentProcess()->AppendSwitch(
+    base::CommandLine::ForCurrentProcess()->AppendSwitch(
         switches::kUseFakeDeviceForMediaStream);
     audio_manager_.reset(new MockAudioManager());
     media_stream_manager_.reset(new MediaStreamManager(audio_manager_.get()));
@@ -99,7 +99,7 @@ class MediaStreamManagerTest : public ::testing::Test {
  protected:
   std::string MakeMediaAccessRequest(int index) {
     const int render_process_id = 1;
-    const int render_view_id = 1;
+    const int render_frame_id = 1;
     const int page_request_id = 1;
     const GURL security_origin;
     MediaStreamManager::MediaRequestResponseCallback callback =
@@ -107,7 +107,7 @@ class MediaStreamManagerTest : public ::testing::Test {
                    base::Unretained(this), index);
     StreamOptions options(true, true);
     return media_stream_manager_->MakeMediaAccessRequest(render_process_id,
-                                                         render_view_id,
+                                                         render_frame_id,
                                                          page_request_id,
                                                          options,
                                                          security_origin,
@@ -146,7 +146,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
 
   // Second request.
   int render_process_id = 2;
-  int render_view_id = 2;
+  int render_frame_id = 2;
   int page_request_id = 2;
   GURL security_origin;
   StreamOptions options(true, true);
@@ -155,7 +155,7 @@ TEST_F(MediaStreamManagerTest, MakeMultipleRequests) {
                  base::Unretained(this), 1);
   std::string label2 = media_stream_manager_->MakeMediaAccessRequest(
       render_process_id,
-      render_view_id,
+      render_frame_id,
       page_request_id,
       options,
       security_origin,

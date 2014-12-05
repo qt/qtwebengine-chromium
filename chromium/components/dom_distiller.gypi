@@ -7,6 +7,7 @@
     ['android_webview_build == 0', {
       'targets': [
         {
+          # GN version: //components/dom_distiller/webui
           'target_name': 'dom_distiller_webui',
           'type': 'static_library',
           'dependencies': [
@@ -30,6 +31,7 @@
           ],
         },
         {
+          # GN version: //components/dom_distiller/core
           'target_name': 'dom_distiller_core',
           'type': 'static_library',
           'dependencies': [
@@ -41,6 +43,7 @@
             'components_resources.gyp:components_resources',
             'components_strings.gyp:components_strings',
             'distilled_page_proto',
+            'pref_registry',
           ],
           'include_dirs': [
             '..',
@@ -58,6 +61,10 @@
             'dom_distiller/core/article_entry.h',
             'dom_distiller/core/distilled_content_store.cc',
             'dom_distiller/core/distilled_content_store.h',
+            'dom_distiller/core/distilled_page_prefs.cc',
+            'dom_distiller/core/distilled_page_prefs.h',
+            'dom_distiller/core/distilled_page_prefs_android.cc',
+            'dom_distiller/core/distilled_page_prefs_android.h',
             'dom_distiller/core/distiller.cc',
             'dom_distiller/core/distiller.h',
             'dom_distiller/core/distiller_page.cc',
@@ -71,12 +78,16 @@
             'dom_distiller/core/dom_distiller_observer.h',
             'dom_distiller/core/dom_distiller_service.cc',
             'dom_distiller/core/dom_distiller_service.h',
+            'dom_distiller/core/dom_distiller_service_android.cc',
+            'dom_distiller/core/dom_distiller_service_android.h',
             'dom_distiller/core/dom_distiller_store.cc',
             'dom_distiller/core/dom_distiller_store.h',
             'dom_distiller/core/feedback_reporter.cc',
             'dom_distiller/core/feedback_reporter.h',
+            'dom_distiller/core/font_family_list.h',
             'dom_distiller/core/task_tracker.cc',
             'dom_distiller/core/task_tracker.h',
+            'dom_distiller/core/theme_list.h',
             'dom_distiller/core/url_constants.cc',
             'dom_distiller/core/url_constants.h',
             'dom_distiller/core/url_utils_android.cc',
@@ -95,6 +106,7 @@
           ],
         },
         {
+          # GN version: components/dom_distiller/core:test_support
           'target_name': 'dom_distiller_test_support',
           'type': 'static_library',
           'dependencies': [
@@ -116,6 +128,7 @@
           ],
         },
         {
+          # GN version: //components/dom_distiller/core/proto
           'target_name': 'distilled_page_proto',
           'type': 'static_library',
           'sources': [
@@ -133,6 +146,7 @@
         ['OS != "ios"', {
           'targets': [
             {
+              # GN version: //components/dom_distiller/content
               'target_name': 'dom_distiller_content',
               'type': 'static_library',
               'dependencies': [
@@ -161,9 +175,12 @@
         ['OS=="android"', {
           'targets': [
             {
+              # GN: //components/dom_distiller/android:dom_distiller_core_java
               'target_name': 'dom_distiller_core_java',
               'type': 'none',
               'dependencies': [
+                'dom_distiller_core_font_family_java',
+                'dom_distiller_core_theme_java',
                 '../base/base.gyp:base',
               ],
               'variables': {
@@ -172,15 +189,44 @@
               'includes': [ '../build/java.gypi' ],
             },
             {
+              # GN: //components/dom_distiller/android:dom_distiller_core_font_family_javagen
+              'target_name': 'dom_distiller_core_font_family_java',
+              'type': 'none',
+              'sources': [
+                'dom_distiller/android/java/src/org/chromium/components/dom_distiller/core/FontFamily.template',
+              ],
+              'variables': {
+                'package_name': 'org/chromium/components/dom_distiller/core',
+                'template_deps': ['dom_distiller/core/font_family_list.h'],
+              },
+              'includes': [ '../build/android/java_cpp_template.gypi' ],
+            },
+            {
+              # GN: //components/dom_distiller/core:jni_headers
               'target_name': 'dom_distiller_core_jni_headers',
               'type': 'none',
               'sources': [
+                'dom_distiller/android/java/src/org/chromium/components/dom_distiller/core/DistilledPagePrefs.java',
+                'dom_distiller/android/java/src/org/chromium/components/dom_distiller/core/DomDistillerService.java',
                 'dom_distiller/android/java/src/org/chromium/components/dom_distiller/core/DomDistillerUrlUtils.java',
               ],
               'variables': {
                 'jni_gen_package': 'dom_distiller_core',
               },
               'includes': [ '../build/jni_generator.gypi' ],
+            },
+            {
+              # GN: //components/dom_distiller/android:dom_distiller_core_theme_javagen
+              'target_name': 'dom_distiller_core_theme_java',
+              'type': 'none',
+              'sources': [
+                'dom_distiller/android/java/src/org/chromium/components/dom_distiller/core/Theme.template',
+              ],
+              'variables': {
+                'package_name': 'org/chromium/components/dom_distiller/core',
+                'template_deps': ['dom_distiller/core/theme_list.h'],
+              },
+              'includes': [ '../build/android/java_cpp_template.gypi' ],
             },
           ],
         }],

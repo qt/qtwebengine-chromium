@@ -14,13 +14,12 @@ namespace printing {
 namespace {
 
 const char* kMetafileKey = "CrMetafile";
-const char* kCustomScaleKey = "CrCustomScale";
 
 }  // namespace
 
 // static
 void MetafileSkiaWrapper::SetMetafileOnCanvas(const SkCanvas& canvas,
-                                              Metafile* metafile) {
+                                              PdfMetafileSkia* metafile) {
   skia::RefPtr<MetafileSkiaWrapper> wrapper;
   if (metafile)
     wrapper = skia::AdoptRef(new MetafileSkiaWrapper(metafile));
@@ -30,7 +29,8 @@ void MetafileSkiaWrapper::SetMetafileOnCanvas(const SkCanvas& canvas,
 }
 
 // static
-Metafile* MetafileSkiaWrapper::GetMetafileFromCanvas(const SkCanvas& canvas) {
+PdfMetafileSkia* MetafileSkiaWrapper::GetMetafileFromCanvas(
+    const SkCanvas& canvas) {
   SkMetaData& meta = skia::getMetaData(canvas);
   SkRefCnt* value;
   if (!meta.findRefCnt(kMetafileKey, &value) || !value)
@@ -39,26 +39,7 @@ Metafile* MetafileSkiaWrapper::GetMetafileFromCanvas(const SkCanvas& canvas) {
   return static_cast<MetafileSkiaWrapper*>(value)->metafile_;
 }
 
-// static
-void MetafileSkiaWrapper::SetCustomScaleOnCanvas(const SkCanvas& canvas,
-                                                 double scale) {
-  SkMetaData& meta = skia::getMetaData(canvas);
-  meta.setScalar(kCustomScaleKey, SkFloatToScalar(scale));
-}
-
-// static
-bool MetafileSkiaWrapper::GetCustomScaleOnCanvas(const SkCanvas& canvas,
-                                                 double* scale) {
-  SkMetaData& meta = skia::getMetaData(canvas);
-  SkScalar value;
-  if (!meta.findScalar(kCustomScaleKey, &value))
-    return false;
-
-  *scale = SkScalarToFloat(value);
-  return true;
-}
-
-MetafileSkiaWrapper::MetafileSkiaWrapper(Metafile* metafile)
+MetafileSkiaWrapper::MetafileSkiaWrapper(PdfMetafileSkia* metafile)
     : metafile_(metafile) {
 }
 

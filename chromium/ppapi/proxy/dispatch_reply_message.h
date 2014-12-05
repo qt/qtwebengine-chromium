@@ -11,7 +11,6 @@
 #define PPAPI_PROXY_DISPATCH_REPLY_MESSAGE_H_
 
 #include "base/callback.h"
-#include "base/profiler/scoped_profile.h"  // For TRACK_RUN_IN_IPC_HANDLER.
 #include "ipc/ipc_message_macros.h"
 #include "ppapi/c/pp_errors.h"
 
@@ -135,7 +134,7 @@ void DispatchResourceReplyOrDefaultParams(
 // unused variables or other errors if they're used with these macros.
 #define PPAPI_BEGIN_MESSAGE_MAP(class_name, msg) \
   { \
-    typedef class_name _IpcMessageHandlerClass; \
+    typedef class_name _IpcMessageHandlerClass ALLOW_UNUSED_TYPE; \
     const IPC::Message& ipc_message__ = msg; \
     switch (ipc_message__.type()) { \
 

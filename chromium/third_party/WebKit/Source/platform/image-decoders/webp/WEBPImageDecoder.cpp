@@ -74,7 +74,7 @@ inline uint32_t blendSrcOverDstNonPremultiplied(uint32_t src, uint32_t dst)
 
 // Returns two point ranges (<left, width> pairs) at row 'canvasY', that belong to 'src' but not 'dst'.
 // A point range is empty if the corresponding width is 0.
-inline void findBlendRangeAtRow(const WebCore::IntRect& src, const WebCore::IntRect& dst, int canvasY, int& left1, int& width1, int& left2, int& width2)
+inline void findBlendRangeAtRow(const blink::IntRect& src, const blink::IntRect& dst, int canvasY, int& left1, int& width1, int& left2, int& width2)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(canvasY >= src.y() && canvasY < src.maxY());
     left1 = -1;
@@ -99,31 +99,31 @@ inline void findBlendRangeAtRow(const WebCore::IntRect& src, const WebCore::IntR
     }
 }
 
-void alphaBlendPremultiplied(WebCore::ImageFrame& src, WebCore::ImageFrame& dst, int canvasY, int left, int width)
+void alphaBlendPremultiplied(blink::ImageFrame& src, blink::ImageFrame& dst, int canvasY, int left, int width)
 {
     for (int x = 0; x < width; ++x) {
         int canvasX = left + x;
-        WebCore::ImageFrame::PixelData& pixel = *src.getAddr(canvasX, canvasY);
+        blink::ImageFrame::PixelData& pixel = *src.getAddr(canvasX, canvasY);
         if (SkGetPackedA32(pixel) != 0xff) {
-            WebCore::ImageFrame::PixelData prevPixel = *dst.getAddr(canvasX, canvasY);
+            blink::ImageFrame::PixelData prevPixel = *dst.getAddr(canvasX, canvasY);
             pixel = SkPMSrcOver(pixel, prevPixel);
         }
     }
 }
 
-void alphaBlendNonPremultiplied(WebCore::ImageFrame& src, WebCore::ImageFrame& dst, int canvasY, int left, int width)
+void alphaBlendNonPremultiplied(blink::ImageFrame& src, blink::ImageFrame& dst, int canvasY, int left, int width)
 {
     for (int x = 0; x < width; ++x) {
         int canvasX = left + x;
-        WebCore::ImageFrame::PixelData& pixel = *src.getAddr(canvasX, canvasY);
+        blink::ImageFrame::PixelData& pixel = *src.getAddr(canvasX, canvasY);
         if (SkGetPackedA32(pixel) != 0xff) {
-            WebCore::ImageFrame::PixelData prevPixel = *dst.getAddr(canvasX, canvasY);
+            blink::ImageFrame::PixelData prevPixel = *dst.getAddr(canvasX, canvasY);
             pixel = blendSrcOverDstNonPremultiplied(pixel, prevPixel);
         }
     }
 }
 
-namespace WebCore {
+namespace blink {
 
 WEBPImageDecoder::WEBPImageDecoder(ImageSource::AlphaOption alphaOption,
     ImageSource::GammaAndColorProfileOption gammaAndColorProfileOption,
@@ -155,9 +155,7 @@ WEBPImageDecoder::~WEBPImageDecoder()
 void WEBPImageDecoder::clear()
 {
 #if USE(QCMSLIB)
-    if (m_transform)
-        qcms_transform_release(m_transform);
-    m_transform = 0;
+    clearColorTransform();
 #endif
     WebPDemuxDelete(m_demux);
     m_demux = 0;
@@ -410,18 +408,23 @@ void WEBPImageDecoder::clearFrameBuffer(size_t frameIndex)
 
 #if USE(QCMSLIB)
 
-void WEBPImageDecoder::createColorTransform(const char* data, size_t size)
+void WEBPImageDecoder::clearColorTransform()
 {
     if (m_transform)
         qcms_transform_release(m_transform);
     m_transform = 0;
+}
+
+bool WEBPImageDecoder::createColorTransform(const char* data, size_t size)
+{
+    clearColorTransform();
 
     qcms_profile* deviceProfile = ImageDecoder::qcmsOutputDeviceProfile();
     if (!deviceProfile)
-        return;
+        return false;
     qcms_profile* inputProfile = qcms_profile_from_memory(data, size);
     if (!inputProfile)
-        return;
+        return false;
 
     // We currently only support color profiles for RGB profiled images.
     ASSERT(icSigRgbData == qcms_profile_get_color_space(inputProfile));
@@ -431,6 +434,7 @@ void WEBPImageDecoder::createColorTransform(const char* data, size_t size)
     m_transform = qcms_transform_create(inputProfile, format, deviceProfile, QCMS_DATA_RGBA_8, QCMS_INTENT_PERCEPTUAL);
 
     qcms_profile_release(inputProfile);
+    return !!m_transform;
 }
 
 void WEBPImageDecoder::readColorProfile()
@@ -610,4 +614,4 @@ bool WEBPImageDecoder::decode(const uint8_t* dataBytes, size_t dataSize, bool on
     }
 }
 
-} // namespace WebCore
+} // namespace blink

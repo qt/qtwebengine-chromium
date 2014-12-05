@@ -33,11 +33,10 @@
 #include "core/html/HTMLMediaElement.h"
 #include "platform/text/PlatformLocale.h"
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
-
 
 static inline String queryString(WebLocalizedString::Name name)
 {
@@ -112,6 +111,10 @@ String AccessibilityMediaControl::accessibilityDescription() const
         return queryString(WebLocalizedString::AXMediaShowClosedCaptionsButton);
     case MediaHideClosedCaptionsButton:
         return queryString(WebLocalizedString::AXMediaHideClosedCaptionsButton);
+    case MediaCastOffButton:
+        return queryString(WebLocalizedString::AxMediaCastOffButton);
+    case MediaCastOnButton:
+        return queryString(WebLocalizedString::AxMediaCastOnButton);
     default:
         return queryString(WebLocalizedString::AXMediaDefault);
     }
@@ -142,6 +145,10 @@ String AccessibilityMediaControl::helpText() const
         return queryString(WebLocalizedString::AXMediaShowClosedCaptionsButtonHelp);
     case MediaHideClosedCaptionsButton:
         return queryString(WebLocalizedString::AXMediaHideClosedCaptionsButtonHelp);
+    case MediaCastOffButton:
+        return queryString(WebLocalizedString::AxMediaCastOffButtonHelp);
+    case MediaCastOnButton:
+        return queryString(WebLocalizedString::AxMediaCastOnButtonHelp);
     default:
         return queryString(WebLocalizedString::AXMediaDefault);
     }
@@ -208,12 +215,11 @@ String AXMediaControlsContainer::helpText() const
 
 bool AXMediaControlsContainer::controllingVideoElement() const
 {
-    if (!m_renderer->node())
+    Node* node = m_renderer->node();
+    if (!node)
         return true;
 
-    MediaControlTimeDisplayElement* element = static_cast<MediaControlTimeDisplayElement*>(m_renderer->node());
-
-    return isHTMLVideoElement(toParentMediaElement(element));
+    return isHTMLVideoElement(toParentMediaElement(node));
 }
 
 bool AXMediaControlsContainer::computeAccessibilityIsIgnored() const
@@ -297,4 +303,4 @@ String AccessibilityMediaTimeDisplay::stringValue() const
     return localizedMediaTimeDescription(fabsf(time));
 }
 
-} // namespace WebCore
+} // namespace blink

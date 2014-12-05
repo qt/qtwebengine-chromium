@@ -21,14 +21,13 @@
 #ifndef CSSStyleDeclaration_h
 #define CSSStyleDeclaration_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/CSSPropertyNames.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSProperty;
 class CSSRule;
 class CSSStyleSheet;
 class CSSValue;
@@ -36,6 +35,7 @@ class ExceptionState;
 class MutableStylePropertySet;
 
 class CSSStyleDeclaration : public NoBaseWillBeGarbageCollectedFinalized<CSSStyleDeclaration>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_NONCOPYABLE(CSSStyleDeclaration); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     virtual ~CSSStyleDeclaration() { }
@@ -73,12 +73,9 @@ public:
     virtual void trace(Visitor*) { }
 
 protected:
-    CSSStyleDeclaration()
-    {
-        ScriptWrappable::init(this);
-    }
+    CSSStyleDeclaration() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSStyleDeclaration_h

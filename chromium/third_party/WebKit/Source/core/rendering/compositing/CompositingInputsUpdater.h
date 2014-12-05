@@ -7,43 +7,55 @@
 
 #include "core/rendering/RenderGeometryMap.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 
 class CompositingInputsUpdater {
-private:
-    struct AncestorInfo {
-        AncestorInfo()
-            : enclosingCompositedLayer(0)
-            , ancestorScrollingLayer(0)
-        {
-        }
-
-        RenderLayer* enclosingCompositedLayer;
-        RenderLayer* ancestorScrollingLayer;
-    };
-
 public:
     explicit CompositingInputsUpdater(RenderLayer* rootRenderLayer);
     ~CompositingInputsUpdater();
 
+    void update();
+
+#if ENABLE(ASSERT)
+    static void assertNeedsCompositingInputsUpdateBitsCleared(RenderLayer*);
+#endif
+
+private:
     enum UpdateType {
         DoNotForceUpdate,
         ForceUpdate,
     };
 
-    void update(RenderLayer*, UpdateType = DoNotForceUpdate, AncestorInfo = AncestorInfo());
+    struct AncestorInfo {
+        AncestorInfo()
+            : ancestorStackingContext(0)
+            , enclosingCompositedLayer(0)
+            , lastScrollingAncestor(0)
+            , hasAncestorWithClipOrOverflowClip(false)
+            , hasAncestorWithClipPath(false)
+        {
+        }
 
-#if ASSERT_ENABLED
-    static void assertNeedsCompositingInputsUpdateBitsCleared(RenderLayer*);
-#endif
+        RenderLayer* ancestorStackingContext;
+        RenderLayer* enclosingCompositedLayer;
+        // Notice that lastScrollingAncestor isn't the same thing as
+        // ancestorScrollingLayer. The former is just the nearest scrolling
+        // along the RenderLayer::parent() chain. The latter is the layer that
+        // actually controls the scrolling of this layer, which we find on the
+        // containing block chain.
+        RenderLayer* lastScrollingAncestor;
+        bool hasAncestorWithClipOrOverflowClip;
+        bool hasAncestorWithClipPath;
+    };
 
-private:
+    void updateRecursive(RenderLayer*, UpdateType, AncestorInfo);
+
     RenderGeometryMap m_geometryMap;
     RenderLayer* m_rootRenderLayer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CompositingInputsUpdater_h

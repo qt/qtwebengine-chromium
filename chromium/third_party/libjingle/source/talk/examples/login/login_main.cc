@@ -29,11 +29,11 @@
 
 #include <iostream>
 
-#include "talk/base/thread.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/xmppclientsettings.h"
-#include "talk/xmpp/xmppengine.h"
-#include "talk/xmpp/xmppthread.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/xmppclientsettings.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmppthread.h"
+#include "webrtc/base/thread.h"
 
 int main(int argc, char **argv) {
   std::cout << "OAuth Access Token: ";
@@ -54,7 +54,7 @@ int main(int argc, char **argv) {
   xcs.set_use_tls(buzz::TLS_DISABLED);
   xcs.set_auth_token(buzz::AUTH_MECHANISM_OAUTH2,
                      auth_token.c_str());
-  xcs.set_server(talk_base::SocketAddress("talk.google.com", 5222));
+  xcs.set_server(rtc::SocketAddress("talk.google.com", 5222));
   thread.Login(xcs);
 
   // Use main thread for console input

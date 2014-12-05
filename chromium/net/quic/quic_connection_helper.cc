@@ -29,7 +29,7 @@ class QuicChromeAlarm : public QuicAlarm {
         weak_factory_(this) {}
 
  protected:
-  virtual void SetImpl() OVERRIDE {
+  void SetImpl() override {
     DCHECK(deadline().IsInitialized());
     if (task_deadline_.IsInitialized()) {
       if (task_deadline_ <= deadline()) {
@@ -54,7 +54,7 @@ class QuicChromeAlarm : public QuicAlarm {
     task_deadline_ = deadline();
   }
 
-  virtual void CancelImpl() OVERRIDE {
+  void CancelImpl() override {
     DCHECK(!deadline().IsInitialized());
     // Since tasks can not be un-posted, OnAlarm will be invoked which
     // will notice that deadline is not Initialized and will do nothing.
@@ -94,10 +94,10 @@ class QuicChromeAlarm : public QuicAlarm {
 QuicConnectionHelper::QuicConnectionHelper(base::TaskRunner* task_runner,
                                            const QuicClock* clock,
                                            QuicRandom* random_generator)
-    : weak_factory_(this),
-      task_runner_(task_runner),
+    : task_runner_(task_runner),
       clock_(clock),
-      random_generator_(random_generator) {
+      random_generator_(random_generator),
+      weak_factory_(this) {
 }
 
 QuicConnectionHelper::~QuicConnectionHelper() {

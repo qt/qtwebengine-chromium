@@ -25,7 +25,7 @@
 // http://dev.w3.org/2011/webrtc/editor/getusermedia.html#idl-def-MediaStream
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     Constructor,
     Constructor(MediaStream stream),
     Constructor(MediaStreamTrack[] tracks),
@@ -33,22 +33,23 @@
     NoInterfaceObject,
 ] interface MediaStream : EventTarget {
     // DEPRECATED
-    readonly attribute DOMString label;
+    [MeasureAs=MediaStreamLabel] readonly attribute DOMString label;
 
     readonly attribute DOMString id;
 
     sequence<MediaStreamTrack> getAudioTracks();
     sequence<MediaStreamTrack> getVideoTracks();
+    sequence<MediaStreamTrack> getTracks();
 
     [RaisesException] void addTrack(MediaStreamTrack track);
     [RaisesException] void removeTrack(MediaStreamTrack track);
     MediaStreamTrack getTrackById(DOMString trackId);
     [CallWith=ExecutionContext] MediaStream clone();
-
-    readonly attribute boolean ended;
+    // DEPRECATED
+    [MeasureAs=MediaStreamEnded] readonly attribute boolean ended;
 
     // DEPRECATED
-    void stop();
+    [MeasureAs=MediaStreamStop] void stop();
 
     attribute EventHandler onended;
     attribute EventHandler onaddtrack;

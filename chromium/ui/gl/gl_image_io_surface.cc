@@ -12,19 +12,21 @@
 
 namespace gfx {
 
-GLImageIOSurface::GLImageIOSurface(gfx::Size size)
-    : size_(size) {}
+GLImageIOSurface::GLImageIOSurface(const gfx::Size& size) : size_(size) {
+}
 
-GLImageIOSurface::~GLImageIOSurface() { Destroy(); }
+GLImageIOSurface::~GLImageIOSurface() {
+  DCHECK(!io_surface_);
+}
 
-bool GLImageIOSurface::Initialize(gfx::GpuMemoryBufferHandle buffer) {
-  io_surface_.reset(IOSurfaceLookup(buffer.io_surface_id));
-  if (!io_surface_) {
-    LOG(ERROR) << "IOSurface lookup failed";
-    return false;
-  }
-
+bool GLImageIOSurface::Initialize(IOSurfaceRef io_surface) {
+  DCHECK(!io_surface_);
+  io_surface_.reset(io_surface);
   return true;
+}
+
+void GLImageIOSurface::Destroy(bool have_context) {
+  io_surface_.reset();
 }
 
 gfx::Size GLImageIOSurface::GetSize() { return size_; }
@@ -56,6 +58,18 @@ bool GLImageIOSurface::BindTexImage(unsigned target) {
   }
 
   return true;
+}
+
+bool GLImageIOSurface::CopyTexImage(unsigned target) {
+  return false;
+}
+
+bool GLImageIOSurface::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                            int z_order,
+                                            OverlayTransform transform,
+                                            const Rect& bounds_rect,
+                                            const RectF& crop_rect) {
+  return false;
 }
 
 }  // namespace gfx

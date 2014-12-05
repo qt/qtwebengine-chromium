@@ -15,17 +15,23 @@ class GL_EXPORT GLImageStub : public GLImage {
   GLImageStub();
 
   // Overridden from GLImage:
-  virtual void Destroy() OVERRIDE {}
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage(unsigned target) OVERRIDE;
-  virtual void ReleaseTexImage(unsigned target) OVERRIDE {}
-  virtual void WillUseTexImage() OVERRIDE {}
-  virtual void DidUseTexImage() OVERRIDE {}
-  virtual void WillModifyTexImage() OVERRIDE {}
-  virtual void DidModifyTexImage() OVERRIDE {}
+  void Destroy(bool have_context) override {}
+  gfx::Size GetSize() override;
+  bool BindTexImage(unsigned target) override;
+  void ReleaseTexImage(unsigned target) override {}
+  bool CopyTexImage(unsigned target) override;
+  void WillUseTexImage() override {}
+  void DidUseTexImage() override {}
+  void WillModifyTexImage() override {}
+  void DidModifyTexImage() override {}
+  bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                            int z_order,
+                            OverlayTransform transform,
+                            const Rect& bounds_rect,
+                            const RectF& crop_rect) override;
 
  protected:
-  virtual ~GLImageStub();
+  ~GLImageStub() override;
 };
 
 }  // namespace gfx

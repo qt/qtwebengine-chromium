@@ -39,21 +39,17 @@
 #include "platform/weborigin/ReferrerPolicy.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
 PassOwnPtr<PrerenderHandle> PrerenderHandle::create(Document& document, PrerenderClient* client, const KURL& url, const unsigned prerenderRelTypes)
 {
     // Prerenders are unlike requests in most ways (for instance, they pass down fragments, and they don't return data),
     // but they do have referrers.
-    const ReferrerPolicy referrerPolicy = document.referrerPolicy();
-
     if (!document.frame())
         return PassOwnPtr<PrerenderHandle>();
 
-    const String referrer = SecurityPolicy::generateReferrerHeader(referrerPolicy, url, document.outgoingReferrer());
-
-    RefPtr<Prerender> prerender = Prerender::create(client, url, prerenderRelTypes, referrer, referrerPolicy);
+    RefPtr<Prerender> prerender = Prerender::create(client, url, prerenderRelTypes, SecurityPolicy::generateReferrer(document.referrerPolicy(), url, document.outgoingReferrer()));
 
     PrerendererClient* prerendererClient = PrerendererClient::from(document.page());
     if (prerendererClient)

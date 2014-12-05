@@ -1,8 +1,8 @@
+brettw@chromium.org
+cpu@chromium.org
 darin@chromium.org
-ben@chromium.org
+jam@chromium.org
 per-file .gitignore=*
-per-file .gn=brettw@chromium.org
-per-file BUILD.gn=brettw@chromium.org
 per-file DEPS=*
 per-file AUTHORS=*
 per-file WATCHLISTS=*
@@ -11,3 +11,6 @@ per-file Android.mk=torne@chromium.org
 per-file PRESUBMIT*.py=maruel@chromium.org
 per-file PRESUBMIT*.py=jochen@chromium.org
 per-file PRESUBMIT*.py=phajdan.jr@chromium.org
+
+# emeritus:
+ben@chromium.org

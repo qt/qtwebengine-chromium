@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "content/browser/accessibility/browser_accessibility.h"
 #include "content/common/accessibility_messages.h"
+#include "ui/accessibility/ax_tree_serializer.h"
 
 namespace content {
 
@@ -48,6 +49,15 @@ BrowserAccessibility* BrowserAccessibilityFactory::Create() {
   return BrowserAccessibility::Create();
 }
 
+BrowserAccessibilityFindInPageInfo::BrowserAccessibilityFindInPageInfo()
+    : request_id(-1),
+      match_index(-1),
+      start_id(-1),
+      start_offset(0),
+      end_id(-1),
+      end_offset(-1),
+      active_request_id(-1) {}
+
 #if !defined(OS_MACOSX) && \
     !defined(OS_WIN) && \
     !defined(OS_ANDROID) \
@@ -67,7 +77,7 @@ BrowserAccessibilityManager::BrowserAccessibilityManager(
     BrowserAccessibilityFactory* factory)
     : delegate_(delegate),
       factory_(factory),
-      tree_(new ui::AXTree()),
+      tree_(new ui::AXSerializableTree()),
       focus_(NULL),
       osk_state_(OSK_ALLOWED) {
   tree_->SetDelegate(this);
@@ -79,7 +89,7 @@ BrowserAccessibilityManager::BrowserAccessibilityManager(
     BrowserAccessibilityFactory* factory)
     : delegate_(delegate),
       factory_(factory),
-      tree_(new ui::AXTree()),
+      tree_(new ui::AXSerializableTree()),
       focus_(NULL),
       osk_state_(OSK_ALLOWED) {
   tree_->SetDelegate(this);
@@ -224,6 +234,43 @@ void BrowserAccessibilityManager::OnLocationChanges(
   }
 }
 
+void BrowserAccessibilityManager::OnFindInPageResult(
+    int request_id, int match_index, int start_id, int start_offset,
+    int end_id, int end_offset) {
+  find_in_page_info_.request_id = request_id;
+  find_in_page_info_.match_index = match_index;
+  find_in_page_info_.start_id = start_id;
+  find_in_page_info_.start_offset = start_offset;
+  find_in_page_info_.end_id = end_id;
+  find_in_page_info_.end_offset = end_offset;
+
+  if (find_in_page_info_.active_request_id == request_id)
+    ActivateFindInPageResult(request_id);
+}
+
+void BrowserAccessibilityManager::ActivateFindInPageResult(
+    int request_id) {
+  find_in_page_info_.active_request_id = request_id;
+  if (find_in_page_info_.request_id != request_id)
+    return;
+
+  BrowserAccessibility* node = GetFromID(find_in_page_info_.start_id);
+  if (!node)
+    return;
+
+  // If an ancestor of this node is a leaf node, fire the notification on that.
+  BrowserAccessibility* ancestor = node->GetParent();
+  while (ancestor && ancestor != GetRoot()) {
+    if (ancestor->PlatformIsLeaf())
+      node = ancestor;
+    ancestor = ancestor->GetParent();
+  }
+
+  // The "scrolled to anchor" notification is a great way to get a
+  // screen reader to jump directly to a specific location in a document.
+  NotifyAccessibilityEvent(ui::AX_EVENT_SCROLLED_TO_ANCHOR, node);
+}
+
 BrowserAccessibility* BrowserAccessibilityManager::GetActiveDescendantFocus(
     BrowserAccessibility* root) {
   BrowserAccessibility* node = BrowserAccessibilityManager::GetFocus(root);
@@ -283,8 +330,17 @@ void BrowserAccessibilityManager::ScrollToPoint(
   }
 }
 
+void BrowserAccessibilityManager::SetValue(
+    const BrowserAccessibility& node,
+    const base::string16& value) {
+  if (delegate_)
+    delegate_->AccessibilitySetValue(node.GetId(), value);
+}
+
 void BrowserAccessibilityManager::SetTextSelection(
-    const BrowserAccessibility& node, int start_offset, int end_offset) {
+    const BrowserAccessibility& node,
+    int start_offset,
+    int end_offset) {
   if (delegate_) {
     delegate_->AccessibilitySetTextSelection(
         node.GetId(), start_offset, end_offset);
@@ -361,6 +417,15 @@ void BrowserAccessibilityManager::OnNodeCreationFinished(ui::AXNode* node) {
 
 void BrowserAccessibilityManager::OnNodeChangeFinished(ui::AXNode* node) {
   GetFromAXNode(node)->OnUpdateFinished();
+}
+
+ui::AXTreeUpdate BrowserAccessibilityManager::SnapshotAXTreeForTesting() {
+  scoped_ptr<ui::AXTreeSource<const ui::AXNode*> > tree_source(
+      tree_->CreateTreeSource());
+  ui::AXTreeSerializer<const ui::AXNode*> serializer(tree_source.get());
+  ui::AXTreeUpdate update;
+  serializer.SerializeChanges(tree_->GetRoot(), &update);
+  return update;
 }
 
 }  // namespace content

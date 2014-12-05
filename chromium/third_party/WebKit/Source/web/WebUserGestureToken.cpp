@@ -50,12 +50,12 @@ void WebUserGestureToken::setJavascriptPrompt()
     m_token->setJavascriptPrompt();
 }
 
-WebUserGestureToken::WebUserGestureToken(PassRefPtr<WebCore::UserGestureToken> token)
+WebUserGestureToken::WebUserGestureToken(PassRefPtr<UserGestureToken> token)
 {
     m_token = token;
 }
 
-WebUserGestureToken::operator PassRefPtr<WebCore::UserGestureToken>() const
+WebUserGestureToken::operator PassRefPtr<UserGestureToken>() const
 {
     return m_token.get();
 }

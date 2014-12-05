@@ -32,7 +32,7 @@
 - (NSString*)webCoreFamilyName;
 @end
 
-namespace WebCore {
+namespace blink {
 
 class ThemeMac : public Theme {
 public:
@@ -51,14 +51,31 @@ public:
 
     virtual bool controlRequiresPreWhiteSpace(ControlPart part) const { return part == PushButtonPart; }
 
-    virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect&, float zoomFactor, ScrollView*) const;
+    virtual void paint(ControlPart, ControlStates, GraphicsContext*, const IntRect&, float zoomFactor, ScrollableArea*) const;
     virtual void inflateControlPaintRect(ControlPart, ControlStates, IntRect&, float zoomFactor) const;
 
+    // Inflate an IntRect to accout for specific padding around margins.
+    enum {
+        TopMargin = 0,
+        RightMargin = 1,
+        BottomMargin = 2,
+        LeftMargin = 3
+    };
+    static PLATFORM_EXPORT IntRect inflateRect(const IntRect&, const IntSize&, const int* margins, float zoomLevel = 1.0f);
+
+    // Inflate an IntRect to account for any bleeding that would happen due to anti-aliasing.
+    static PLATFORM_EXPORT IntRect inflateRectForAA(const IntRect&);
+
+    // Inflate an IntRect to account for its focus ring. This is only used when
+    // BUTTON_CELL_DRAW_WITH_FRAME_DRAWS_FOCUS_RING is defined (otherwise, the focus ring's
+    // bounds could be accurately computed with -[NSCell focusRingMaskBoundsForFrame:inView:]).
+    static PLATFORM_EXPORT IntRect inflateRectForFocusRing(const IntRect&);
+
     // FIXME: Once RenderThemeMac is converted over to use Theme then this can be internal to ThemeMac.
-    static NSView* ensuredView(ScrollView*);
+    static NSView* ensuredView(ScrollableArea*);
     static void setFocusRingClipRect(const FloatRect&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ThemeMac_h

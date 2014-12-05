@@ -43,12 +43,9 @@
 #include "wtf/RetainPtr.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
-class CSSFontFaceSource;
 class FontDescription;
-class SharedBuffer;
-struct WidthIterator;
 
 enum FontDataVariant { AutoVariant, NormalVariant, SmallCapsVariant, EmphasisMarkVariant, BrokenIdeographVariant };
 enum Pitch { UnknownPitch, FixedPitch, VariablePitch };
@@ -61,15 +58,7 @@ public:
         return adoptRef(new SimpleFontData(platformData, customData, isTextOrientationFallback));
     }
 
-    // Used to create SVG Fonts.
-    static PassRefPtr<SimpleFontData> create(PassRefPtr<CustomFontData> customData, float fontSize, bool syntheticBold, bool syntheticItalic)
-    {
-        return adoptRef(new SimpleFontData(customData, fontSize, syntheticBold, syntheticItalic));
-    }
-
     virtual ~SimpleFontData();
-
-    static const SimpleFontData* systemFallback() { return reinterpret_cast<const SimpleFontData*>(-1); }
 
     const FontPlatformData& platformData() const { return m_platformData; }
 #if ENABLE(OPENTYPE_VERTICAL)
@@ -119,12 +108,7 @@ public:
     float platformWidthForGlyph(Glyph) const;
 
     float spaceWidth() const { return m_spaceWidth; }
-    float adjustedSpaceWidth() const { return m_adjustedSpaceWidth; }
     void setSpaceWidth(float spaceWidth) { m_spaceWidth = spaceWidth; }
-
-#if OS(MACOSX)
-    float syntheticBoldOffset() const { return m_syntheticBoldOffset; }
-#endif
 
     Glyph spaceGlyph() const { return m_spaceGlyph; }
     void setSpaceGlyph(Glyph spaceGlyph) { m_spaceGlyph = spaceGlyph; }
@@ -134,34 +118,24 @@ public:
     Glyph zeroGlyph() const { return m_zeroGlyph; }
     void setZeroGlyph(Glyph zeroGlyph) { m_zeroGlyph = zeroGlyph; }
 
-    virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
+    virtual const SimpleFontData* fontDataForCharacter(UChar32) const override;
 
     Glyph glyphForCharacter(UChar32) const;
 
     void determinePitch();
     Pitch pitch() const { return m_treatAsFixedPitch ? FixedPitch : VariablePitch; }
 
-    bool isSVGFont() const { return m_customFontData && m_customFontData->isSVGFont(); }
-    virtual bool isCustomFont() const OVERRIDE { return m_customFontData; }
-    virtual bool isLoading() const OVERRIDE { return m_customFontData ? m_customFontData->isLoading() : false; }
-    virtual bool isLoadingFallback() const OVERRIDE { return m_customFontData ? m_customFontData->isLoadingFallback() : false; }
-    virtual bool isSegmented() const OVERRIDE;
-    virtual bool shouldSkipDrawing() const OVERRIDE { return m_customFontData && m_customFontData->shouldSkipDrawing(); }
+    virtual bool isCustomFont() const override { return m_customFontData; }
+    virtual bool isLoading() const override { return m_customFontData ? m_customFontData->isLoading() : false; }
+    virtual bool isLoadingFallback() const override { return m_customFontData ? m_customFontData->isLoadingFallback() : false; }
+    virtual bool isSegmented() const override;
+    virtual bool shouldSkipDrawing() const override { return m_customFontData && m_customFontData->shouldSkipDrawing(); }
 
     const GlyphData& missingGlyphData() const { return m_missingGlyphData; }
     void setMissingGlyphData(const GlyphData& glyphData) { m_missingGlyphData = glyphData; }
 
-#ifndef NDEBUG
-    virtual String description() const OVERRIDE;
-#endif
-
 #if OS(MACOSX)
-    const SimpleFontData* getCompositeFontReferenceFontData(NSFont *key) const;
     NSFont* getNSFont() const { return m_platformData.font(); }
-#endif
-
-#if OS(MACOSX)
-    CFDictionaryRef getCFStringAttributes(TypesettingFeatures, FontOrientation) const;
 #endif
 
     bool canRenderCombiningCharacterSequence(const UChar*, size_t) const;
@@ -179,10 +153,6 @@ protected:
 private:
     void platformInit();
     void platformGlyphInit();
-    void platformCharWidthInit();
-    void platformDestroy();
-
-    void initCharWidths();
 
     PassRefPtr<SimpleFontData> createScaledFontData(const FontDescription&, float scaleFactor) const;
     PassRefPtr<SimpleFontData> platformCreateScaledFontData(const FontDescription&, float scaleFactor) const;
@@ -208,7 +178,6 @@ private:
     Glyph m_spaceGlyph;
     float m_spaceWidth;
     Glyph m_zeroGlyph;
-    float m_adjustedSpaceWidth;
 
     Glyph m_zeroWidthSpaceGlyph;
 
@@ -224,9 +193,6 @@ private:
         RefPtr<SimpleFontData> brokenIdeograph;
         RefPtr<SimpleFontData> verticalRightOrientation;
         RefPtr<SimpleFontData> uprightOrientation;
-#if OS(MACOSX)
-        mutable RetainPtr<CFMutableDictionaryRef> compositeFontReferences;
-#endif
 
     private:
         DerivedFontData(bool custom)
@@ -238,13 +204,6 @@ private:
     mutable OwnPtr<DerivedFontData> m_derivedFontData;
 
     RefPtr<CustomFontData> m_customFontData;
-
-#if OS(MACOSX)
-    float m_syntheticBoldOffset;
-
-    mutable HashMap<unsigned, RetainPtr<CFDictionaryRef> > m_CFStringAttributes;
-#endif
-
     mutable OwnPtr<HashMap<String, bool> > m_combiningCharacterSequenceSupport;
 };
 
@@ -276,22 +235,18 @@ ALWAYS_INLINE float SimpleFontData::widthForGlyph(Glyph glyph) const
     if (width != cGlyphSizeUnknown)
         return width;
 
-    if (isSVGFont())
-        width = m_customFontData->widthForSVGGlyph(glyph, m_platformData.size());
 #if ENABLE(OPENTYPE_VERTICAL)
-    else if (m_verticalData)
-#if OS(MACOSX)
-        width = m_verticalData->advanceHeight(this, glyph) + m_syntheticBoldOffset;
-#else
+    if (m_verticalData)
         width = m_verticalData->advanceHeight(this, glyph);
-#endif
-#endif
     else
+#endif
         width = platformWidthForGlyph(glyph);
 
     m_glyphToWidthMap.setMetricsForGlyph(glyph, width);
     return width;
 }
 
-} // namespace WebCore
+DEFINE_FONT_DATA_TYPE_CASTS(SimpleFontData, false);
+
+} // namespace blink
 #endif // SimpleFontData_h

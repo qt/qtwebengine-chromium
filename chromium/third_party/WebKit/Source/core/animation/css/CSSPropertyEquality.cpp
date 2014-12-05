@@ -10,17 +10,15 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/ShadowList.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
 template <CSSPropertyID property>
-bool fillLayersEqual(const FillLayer* aLayer, const FillLayer* bLayer)
+bool fillLayersEqual(const FillLayer& aLayers, const FillLayer& bLayers)
 {
-    if (aLayer == bLayer)
-        return true;
-    if (!aLayer || !bLayer)
-        return false;
+    const FillLayer* aLayer = &aLayers;
+    const FillLayer* bLayer = &bLayers;
     while (aLayer && bLayer) {
         switch (property) {
         case CSSPropertyBackgroundPositionX:
@@ -62,8 +60,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
 {
     switch (prop) {
     case CSSPropertyBackgroundColor:
-        return a.backgroundColor().resolve(a.color()) == b.backgroundColor().resolve(b.color())
-            && a.visitedLinkBackgroundColor().resolve(a.color()) == b.visitedLinkBackgroundColor().resolve(b.color());
+        return a.backgroundColor() == b.backgroundColor()
+            && a.visitedLinkBackgroundColor() == b.visitedLinkBackgroundColor();
     case CSSPropertyBackgroundImage:
         return fillLayersEqual<CSSPropertyBackgroundImage>(a.backgroundLayers(), b.backgroundLayers());
     case CSSPropertyBackgroundPositionX:
@@ -75,8 +73,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyBaselineShift:
         return dataEquivalent(a.baselineShiftValue(), b.baselineShiftValue());
     case CSSPropertyBorderBottomColor:
-        return a.borderBottomColor().resolve(a.color()) == b.borderBottomColor().resolve(b.color())
-            && a.visitedLinkBorderBottomColor().resolve(a.color()) == b.visitedLinkBorderBottomColor().resolve(b.color());
+        return a.borderBottomColor() == b.borderBottomColor()
+            && a.visitedLinkBorderBottomColor() == b.visitedLinkBorderBottomColor();
     case CSSPropertyBorderBottomLeftRadius:
         return a.borderBottomLeftRadius() == b.borderBottomLeftRadius();
     case CSSPropertyBorderBottomRightRadius:
@@ -92,18 +90,18 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyBorderImageWidth:
         return a.borderImageWidth() == b.borderImageWidth();
     case CSSPropertyBorderLeftColor:
-        return a.borderLeftColor().resolve(a.color()) == b.borderLeftColor().resolve(b.color())
-            && a.visitedLinkBorderLeftColor().resolve(a.color()) == b.visitedLinkBorderLeftColor().resolve(b.color());
+        return a.borderLeftColor() == b.borderLeftColor()
+            && a.visitedLinkBorderLeftColor() == b.visitedLinkBorderLeftColor();
     case CSSPropertyBorderLeftWidth:
         return a.borderLeftWidth() == b.borderLeftWidth();
     case CSSPropertyBorderRightColor:
-        return a.borderRightColor().resolve(a.color()) == b.borderRightColor().resolve(b.color())
-            && a.visitedLinkBorderRightColor().resolve(a.color()) == b.visitedLinkBorderRightColor().resolve(b.color());
+        return a.borderRightColor() == b.borderRightColor()
+            && a.visitedLinkBorderRightColor() == b.visitedLinkBorderRightColor();
     case CSSPropertyBorderRightWidth:
         return a.borderRightWidth() == b.borderRightWidth();
     case CSSPropertyBorderTopColor:
-        return a.borderTopColor().resolve(a.color()) == b.borderTopColor().resolve(b.color())
-            && a.visitedLinkBorderTopColor().resolve(a.color()) == b.visitedLinkBorderTopColor().resolve(b.color());
+        return a.borderTopColor() == b.borderTopColor()
+            && a.visitedLinkBorderTopColor() == b.visitedLinkBorderTopColor();
     case CSSPropertyBorderTopLeftRadius:
         return a.borderTopLeftRadius() == b.borderTopLeftRadius();
     case CSSPropertyBorderTopRightRadius:
@@ -119,12 +117,12 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyColor:
         return a.color() == b.color() && a.visitedLinkColor() == b.visitedLinkColor();
     case CSSPropertyFill: {
-        const SVGRenderStyle& aSVG = *a.svgStyle();
-        const SVGRenderStyle& bSVG = *b.svgStyle();
+        const SVGRenderStyle& aSVG = a.svgStyle();
+        const SVGRenderStyle& bSVG = b.svgStyle();
         return aSVG.fillPaintType() == bSVG.fillPaintType()
-            && (aSVG.fillPaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.fillPaintColor() == bSVG.fillPaintColor())
+            && (aSVG.fillPaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.fillPaintColor() == bSVG.fillPaintColor())
             && aSVG.visitedLinkFillPaintType() == bSVG.visitedLinkFillPaintType()
-            && (aSVG.visitedLinkFillPaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkFillPaintColor() == bSVG.visitedLinkFillPaintColor());
+            && (aSVG.visitedLinkFillPaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkFillPaintColor() == bSVG.visitedLinkFillPaintColor());
     }
     case CSSPropertyFillOpacity:
         return a.fillOpacity() == b.fillOpacity();
@@ -144,6 +142,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         // FIXME: Should we introduce an option to pass the computed font size here, allowing consumers to
         // enable text zoom rather than Text Autosizing? See http://crbug.com/227545.
         return a.specifiedFontSize() == b.specifiedFontSize();
+    case CSSPropertyFontStretch:
+        return a.fontStretch() == b.fontStretch();
     case CSSPropertyFontWeight:
         return a.fontWeight() == b.fontWeight();
     case CSSPropertyHeight:
@@ -181,8 +181,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyOrphans:
         return a.orphans() == b.orphans();
     case CSSPropertyOutlineColor:
-        return a.outlineColor().resolve(a.color()) == b.outlineColor().resolve(b.color())
-            && a.visitedLinkOutlineColor().resolve(a.color()) == b.visitedLinkOutlineColor().resolve(b.color());
+        return a.outlineColor() == b.outlineColor()
+            && a.visitedLinkOutlineColor() == b.visitedLinkOutlineColor();
     case CSSPropertyOutlineOffset:
         return a.outlineOffset() == b.outlineOffset();
     case CSSPropertyOutlineWidth:
@@ -208,12 +208,12 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyStopOpacity:
         return a.stopOpacity() == b.stopOpacity();
     case CSSPropertyStroke: {
-        const SVGRenderStyle& aSVG = *a.svgStyle();
-        const SVGRenderStyle& bSVG = *b.svgStyle();
+        const SVGRenderStyle& aSVG = a.svgStyle();
+        const SVGRenderStyle& bSVG = b.svgStyle();
         return aSVG.strokePaintType() == bSVG.strokePaintType()
-            && (aSVG.strokePaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.strokePaintColor() == bSVG.strokePaintColor())
+            && (aSVG.strokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.strokePaintColor() == bSVG.strokePaintColor())
             && aSVG.visitedLinkStrokePaintType() == bSVG.visitedLinkStrokePaintType()
-            && (aSVG.visitedLinkStrokePaintType() != SVGPaint::SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkStrokePaintColor() == bSVG.visitedLinkStrokePaintColor());
+            && (aSVG.visitedLinkStrokePaintType() != SVG_PAINTTYPE_RGBCOLOR || aSVG.visitedLinkStrokePaintColor() == bSVG.visitedLinkStrokePaintColor());
     }
     case CSSPropertyStrokeDasharray:
         return dataEquivalent(a.strokeDashArray(), b.strokeDashArray());
@@ -226,8 +226,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyStrokeWidth:
         return dataEquivalent(a.strokeWidth(), b.strokeWidth());
     case CSSPropertyTextDecorationColor:
-        return a.textDecorationColor().resolve(a.color()) == b.textDecorationColor().resolve(b.color())
-            && a.visitedLinkTextDecorationColor().resolve(a.color()) == b.visitedLinkTextDecorationColor().resolve(b.color());
+        return a.textDecorationColor() == b.textDecorationColor()
+            && a.visitedLinkTextDecorationColor() == b.visitedLinkTextDecorationColor();
     case CSSPropertyTextIndent:
         return a.textIndent() == b.textIndent();
     case CSSPropertyTextShadow:
@@ -254,8 +254,8 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
     case CSSPropertyWebkitColumnGap:
         return a.columnGap() == b.columnGap();
     case CSSPropertyWebkitColumnRuleColor:
-        return a.columnRuleColor().resolve(a.color()) == b.columnRuleColor().resolve(b.color())
-            && a.visitedLinkColumnRuleColor().resolve(a.color()) == b.visitedLinkColumnRuleColor().resolve(b.color());
+        return a.columnRuleColor() == b.columnRuleColor()
+            && a.visitedLinkColumnRuleColor() == b.visitedLinkColumnRuleColor();
     case CSSPropertyWebkitColumnRuleWidth:
         return a.columnRuleWidth() == b.columnRuleWidth();
     case CSSPropertyWebkitColumnWidth:
@@ -282,23 +282,13 @@ bool CSSPropertyEquality::propertiesEqual(CSSPropertyID prop, const RenderStyle&
         return a.perspective() == b.perspective();
     case CSSPropertyPerspectiveOrigin:
         return a.perspectiveOriginX() == b.perspectiveOriginX() && a.perspectiveOriginY() == b.perspectiveOriginY();
-    case CSSPropertyWebkitPerspectiveOriginX:
-        return a.perspectiveOriginX() == b.perspectiveOriginX();
-    case CSSPropertyWebkitPerspectiveOriginY:
-        return a.perspectiveOriginY() == b.perspectiveOriginY();
     case CSSPropertyWebkitTextStrokeColor:
-        return a.textStrokeColor().resolve(a.color()) == b.textStrokeColor().resolve(b.color())
-            && a.visitedLinkTextStrokeColor().resolve(a.color()) == b.visitedLinkTextStrokeColor().resolve(b.color());
+        return a.textStrokeColor() == b.textStrokeColor()
+            && a.visitedLinkTextStrokeColor() == b.visitedLinkTextStrokeColor();
     case CSSPropertyTransform:
         return a.transform() == b.transform();
     case CSSPropertyTransformOrigin:
         return a.transformOriginX() == b.transformOriginX() && a.transformOriginY() == b.transformOriginY() && a.transformOriginZ() == b.transformOriginZ();
-    case CSSPropertyWebkitTransformOriginX:
-        return a.transformOriginX() == b.transformOriginX();
-    case CSSPropertyWebkitTransformOriginY:
-        return a.transformOriginY() == b.transformOriginY();
-    case CSSPropertyWebkitTransformOriginZ:
-        return a.transformOriginZ() == b.transformOriginZ();
     case CSSPropertyWidows:
         return a.widows() == b.widows();
     case CSSPropertyWidth:

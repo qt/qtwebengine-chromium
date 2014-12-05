@@ -31,9 +31,8 @@
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeferredImageDecoder;
 class ImageOrientation;
@@ -97,6 +96,7 @@ public:
     size_t clearCacheExceptFrame(size_t);
 
     bool initialized() const;
+    void resetDecoder();
 
     void setData(SharedBuffer& data, bool allDataReceived);
     String filenameExtension() const;
@@ -133,6 +133,6 @@ private:
     GammaAndColorProfileOption m_gammaAndColorProfileOption;
 };
 
-}
+} // namespace blink
 
 #endif

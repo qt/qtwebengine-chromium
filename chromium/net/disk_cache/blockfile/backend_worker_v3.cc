@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -93,11 +93,10 @@ bool InitExperiment(disk_cache::IndexHeader* header, bool cache_created) {
 
 namespace disk_cache {
 
-BackendImplV3::Worker::Worker(const base::FilePath& path,
-                              base::MessageLoopProxy* main_thread)
-      : path_(path),
-        block_files_(path),
-        init_(false) {
+BackendImplV3::Worker::Worker(
+    const base::FilePath& path,
+    const scoped_refptr<base::SingleThreadTaskRunner>& main_thread)
+    : path_(path), block_files_(path), init_(false) {
 }
 
 #if defined(V3_NOT_JUST_YET_READY)

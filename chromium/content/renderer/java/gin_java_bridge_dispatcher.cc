@@ -9,7 +9,7 @@
 #include "content/common/gin_java_bridge_messages.h"
 #include "content/public/renderer/render_frame.h"
 #include "content/renderer/java/gin_java_bridge_object.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 
 namespace content {
@@ -114,14 +114,16 @@ bool GinJavaBridgeDispatcher::HasJavaMethod(ObjectID object_id,
 scoped_ptr<base::Value> GinJavaBridgeDispatcher::InvokeJavaMethod(
     ObjectID object_id,
     const std::string& method_name,
-    const base::ListValue& arguments) {
+    const base::ListValue& arguments,
+    GinJavaBridgeError* error) {
   base::ListValue result_wrapper;
   render_frame()->Send(
       new GinJavaBridgeHostMsg_InvokeMethod(routing_id(),
                                             object_id,
                                             method_name,
                                             arguments,
-                                            &result_wrapper));
+                                            &result_wrapper,
+                                            error));
   base::Value* result;
   if (result_wrapper.Get(0, &result)) {
     return scoped_ptr<base::Value>(result->DeepCopy());

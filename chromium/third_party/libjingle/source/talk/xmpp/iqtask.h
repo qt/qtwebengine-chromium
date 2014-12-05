@@ -30,8 +30,8 @@
 
 #include <string>
 
-#include "talk/xmpp/xmpptask.h"
-#include "talk/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace buzz {
 
@@ -57,7 +57,7 @@ class IqTask : public XmppTask {
   virtual int OnTimeout();
 
   Jid to_;
-  talk_base::scoped_ptr<XmlElement> stanza_;
+  rtc::scoped_ptr<XmlElement> stanza_;
 };
 
 }  // namespace buzz

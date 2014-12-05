@@ -26,34 +26,18 @@
 #ifndef MediaPlayer_h
 #define MediaPlayer_h
 
-#include "platform/PlatformExport.h"
-#include "platform/graphics/GraphicsTypes3D.h"
 #include "public/platform/WebMediaPlayer.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
 namespace blink {
-class WebGraphicsContext3D;
-class WebContentDecryptionModule;
+
+class AudioSourceProvider;
+class KURL;
+class MediaPlayer;
 class WebInbandTextTrack;
 class WebLayer;
 class WebMediaSource;
-}
-
-namespace WebCore {
-
-class AudioSourceProvider;
-class GraphicsContext;
-class IntRect;
-class KURL;
-class MediaPlayer;
-class TimeRanges;
-
-// GL types as defined in OpenGL ES 2.0 header file gl2.h from khronos.org.
-// That header cannot be included directly due to a conflict with NPAPI headers.
-// See crbug.com/328085.
-typedef unsigned GC3Denum;
-typedef int GC3Dint;
 
 class MediaPlayerClient {
 public:
@@ -89,12 +73,12 @@ public:
     // the movie size has changed
     virtual void mediaPlayerSizeChanged() = 0;
 
-    virtual void mediaPlayerSetWebLayer(blink::WebLayer*) = 0;
+    virtual void mediaPlayerSetWebLayer(WebLayer*) = 0;
 
-    virtual void mediaPlayerDidAddTextTrack(blink::WebInbandTextTrack*) = 0;
-    virtual void mediaPlayerDidRemoveTextTrack(blink::WebInbandTextTrack*) = 0;
+    virtual void mediaPlayerDidAddTextTrack(WebInbandTextTrack*) = 0;
+    virtual void mediaPlayerDidRemoveTextTrack(WebInbandTextTrack*) = 0;
 
-    virtual void mediaPlayerMediaSourceOpened(blink::WebMediaSource*) = 0;
+    virtual void mediaPlayerMediaSourceOpened(WebMediaSource*) = 0;
 };
 
 typedef PassOwnPtr<MediaPlayer> (*CreateMediaEnginePlayer)(MediaPlayerClient*);
@@ -110,54 +94,17 @@ public:
     MediaPlayer() { }
     virtual ~MediaPlayer() { }
 
-    virtual void load(blink::WebMediaPlayer::LoadType, const String& url, blink::WebMediaPlayer::CORSMode) = 0;
-
-    virtual void play() = 0;
-    virtual void pause() = 0;
-
-    virtual bool supportsSave() const = 0;
-
-    virtual double duration() const = 0;
-
-    virtual double currentTime() const = 0;
-
-    virtual void seek(double) = 0;
-
-    virtual bool seeking() const = 0;
-
-    virtual double rate() const = 0;
-    virtual void setRate(double) = 0;
-
-    virtual bool paused() const = 0;
-
-    virtual void setPoster(const KURL&) = 0;
-
-    enum NetworkState { Empty, Idle, Loading, Loaded, FormatError, NetworkError, DecodeError };
-    virtual NetworkState networkState() const = 0;
-
-    virtual double maxTimeSeekable() const = 0;
-    virtual PassRefPtr<TimeRanges> buffered() const = 0;
-
-    virtual bool didLoadingProgress() const = 0;
-
-    virtual void paint(GraphicsContext*, const IntRect&) = 0;
-    virtual bool copyVideoTextureToPlatformTexture(blink::WebGraphicsContext3D*, Platform3DObject, GC3Dint, GC3Denum, GC3Denum, bool, bool) = 0;
+    virtual void load(WebMediaPlayer::LoadType, const String& url, WebMediaPlayer::CORSMode) = 0;
 
     enum Preload { None, MetaData, Auto };
     virtual void setPreload(Preload) = 0;
 
-    virtual bool hasSingleSecurityOrigin() const = 0;
-
-    // Time value in the movie's time scale. It is only necessary to override this if the media
-    // engine uses rational numbers to represent media time.
-    virtual double mediaTimeForTimeValue(double timeValue) const = 0;
-
 #if ENABLE(WEB_AUDIO)
     virtual AudioSourceProvider* audioSourceProvider() = 0;
 #endif
-    virtual blink::WebMediaPlayer* webMediaPlayer() const = 0;
+    virtual WebMediaPlayer* webMediaPlayer() const = 0;
 };
 
-}
+} // namespace blink
 
 #endif // MediaPlayer_h

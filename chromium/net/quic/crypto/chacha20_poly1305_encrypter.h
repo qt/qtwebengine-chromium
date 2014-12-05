@@ -24,7 +24,7 @@ class NET_EXPORT_PRIVATE ChaCha20Poly1305Encrypter : public AeadBaseEncrypter {
   };
 
   ChaCha20Poly1305Encrypter();
-  virtual ~ChaCha20Poly1305Encrypter();
+  ~ChaCha20Poly1305Encrypter() override;
 
   // Returns true if the underlying crypto library supports ChaCha20+Poly1305.
   static bool IsSupported();
@@ -32,10 +32,10 @@ class NET_EXPORT_PRIVATE ChaCha20Poly1305Encrypter : public AeadBaseEncrypter {
 #if !defined(USE_OPENSSL)
  protected:
   // AeadBaseEncrypter methods:
-  virtual void FillAeadParams(base::StringPiece nonce,
-                              base::StringPiece associated_data,
-                              size_t auth_tag_size,
-                              AeadParams* aead_params) const OVERRIDE;
+  void FillAeadParams(base::StringPiece nonce,
+                      base::StringPiece associated_data,
+                      size_t auth_tag_size,
+                      AeadParams* aead_params) const override;
 #endif
 
  private:

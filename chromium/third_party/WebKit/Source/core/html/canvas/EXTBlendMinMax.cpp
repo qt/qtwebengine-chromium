@@ -6,12 +6,11 @@
 
 #include "core/html/canvas/EXTBlendMinMax.h"
 
-namespace WebCore {
+namespace blink {
 
 EXTBlendMinMax::EXTBlendMinMax(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     context->extensionsUtil()->ensureExtensionEnabled("GL_EXT_blend_minmax");
 }
 
@@ -24,9 +23,9 @@ WebGLExtensionName EXTBlendMinMax::name() const
     return EXTBlendMinMaxName;
 }
 
-PassRefPtr<EXTBlendMinMax> EXTBlendMinMax::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<EXTBlendMinMax> EXTBlendMinMax::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new EXTBlendMinMax(context));
+    return adoptRefWillBeNoop(new EXTBlendMinMax(context));
 }
 
 bool EXTBlendMinMax::supported(WebGLRenderingContextBase* context)
@@ -39,4 +38,4 @@ const char* EXTBlendMinMax::extensionName()
     return "EXT_blend_minmax";
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -14,27 +14,60 @@
 #include "base/threading/thread_restrictions.h"
 #include "base/synchronization/waitable_event.h"
 #include "build/build_config.h"
-#include "crypto/nss_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(USE_NSS)
 #include <private/pprthred.h>  // PR_DetachThread
+#include "crypto/nss_crypto_module_delegate.h"
+#include "crypto/scoped_test_nss_db.h"
 #endif
 
 namespace net {
 
 namespace {
 
+#if defined(USE_NSS)
+class StubCryptoModuleDelegate : public crypto::NSSCryptoModuleDelegate {
+  public:
+   explicit StubCryptoModuleDelegate(crypto::ScopedPK11Slot slot)
+       : slot_(slot.Pass()) {}
+
+   std::string RequestPassword(const std::string& slot_name,
+                               bool retry,
+                               bool* cancelled) override {
+     return std::string();
+   }
+
+   crypto::ScopedPK11Slot RequestSlot() override {
+     return crypto::ScopedPK11Slot(PK11_ReferenceSlot(slot_.get()));
+   }
+
+  private:
+   crypto::ScopedPK11Slot slot_;
+};
+#endif
+
 class KeygenHandlerTest : public ::testing::Test {
  public:
   KeygenHandlerTest() {}
-  virtual ~KeygenHandlerTest() {}
+  ~KeygenHandlerTest() override {}
 
-  virtual void SetUp() {
-#if defined(OS_CHROMEOS) && defined(USE_NSS)
-    crypto::OpenPersistentNSSDB();
+  scoped_ptr<KeygenHandler> CreateKeygenHandler() {
+    scoped_ptr<KeygenHandler> handler(new KeygenHandler(
+        768, "some challenge", GURL("http://www.example.com")));
+#if defined(USE_NSS)
+    handler->set_crypto_module_delegate(
+        scoped_ptr<crypto::NSSCryptoModuleDelegate>(
+            new StubCryptoModuleDelegate(crypto::ScopedPK11Slot(
+                PK11_ReferenceSlot(test_nss_db_.slot())))));
 #endif
+    return handler.Pass();
   }
+
+ private:
+#if defined(USE_NSS)
+  crypto::ScopedTestNSSDB test_nss_db_;
+#endif
 };
 
 // Assert that |result| is a valid output for KeygenHandler given challenge
@@ -74,22 +107,22 @@ void AssertValidSignedPublicKeyAndChallenge(const std::string& result,
 }
 
 TEST_F(KeygenHandlerTest, SmokeTest) {
-  KeygenHandler handler(768, "some challenge", GURL("http://www.example.com"));
-  handler.set_stores_key(false);  // Don't leave the key-pair behind
-  std::string result = handler.GenKeyAndSignChallenge();
+  scoped_ptr<KeygenHandler> handler(CreateKeygenHandler());
+  handler->set_stores_key(false);  // Don't leave the key-pair behind
+  std::string result = handler->GenKeyAndSignChallenge();
   VLOG(1) << "KeygenHandler produced: " << result;
   AssertValidSignedPublicKeyAndChallenge(result, "some challenge");
 }
 
-void ConcurrencyTestCallback(base::WaitableEvent* event,
-                             const std::string& challenge,
+void ConcurrencyTestCallback(const std::string& challenge,
+                             base::WaitableEvent* event,
+                             scoped_ptr<KeygenHandler> handler,
                              std::string* result) {
   // We allow Singleton use on the worker thread here since we use a
   // WaitableEvent to synchronize, so it's safe.
   base::ThreadRestrictions::ScopedAllowSingleton scoped_allow_singleton;
-  KeygenHandler handler(768, challenge, GURL("http://www.example.com"));
-  handler.set_stores_key(false);  // Don't leave the key-pair behind.
-  *result = handler.GenKeyAndSignChallenge();
+  handler->set_stores_key(false);  // Don't leave the key-pair behind.
+  *result = handler->GenKeyAndSignChallenge();
   event->Signal();
 #if defined(USE_NSS)
   // Detach the thread from NSPR.
@@ -110,12 +143,15 @@ TEST_F(KeygenHandlerTest, ConcurrencyTest) {
   base::WaitableEvent* events[NUM_HANDLERS] = { NULL };
   std::string results[NUM_HANDLERS];
   for (int i = 0; i < NUM_HANDLERS; i++) {
+    scoped_ptr<KeygenHandler> handler(CreateKeygenHandler());
     events[i] = new base::WaitableEvent(false, false);
-    base::WorkerPool::PostTask(
-        FROM_HERE,
-        base::Bind(ConcurrencyTestCallback, events[i], "some challenge",
-                   &results[i]),
-        true);
+    base::WorkerPool::PostTask(FROM_HERE,
+                               base::Bind(ConcurrencyTestCallback,
+                                          "some challenge",
+                                          events[i],
+                                          base::Passed(&handler),
+                                          &results[i]),
+                               true);
   }
 
   for (int i = 0; i < NUM_HANDLERS; i++) {

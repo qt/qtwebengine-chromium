@@ -31,22 +31,24 @@
 #include "config.h"
 #include "core/inspector/PageRuntimeAgent.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
+#include "core/inspector/InspectorClient.h"
 #include "core/inspector/InspectorPageAgent.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/page/Page.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
-PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
+PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager, InspectorClient* client, ScriptDebugServer* scriptDebugServer, Page* page, InspectorPageAgent* pageAgent)
     : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
+    , m_client(client)
     , m_inspectedPage(page)
     , m_pageAgent(pageAgent)
     , m_mainWorldContextCreated(false)
@@ -55,7 +57,16 @@ PageRuntimeAgent::PageRuntimeAgent(InjectedScriptManager* injectedScriptManager,
 
 PageRuntimeAgent::~PageRuntimeAgent()
 {
+#if !ENABLE(OILPAN)
     m_instrumentingAgents->setPageRuntimeAgent(0);
+#endif
+}
+
+void PageRuntimeAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inspectedPage);
+    visitor->trace(m_pageAgent);
+    InspectorRuntimeAgent::trace(visitor);
 }
 
 void PageRuntimeAgent::init()
@@ -75,6 +86,11 @@ void PageRuntimeAgent::enable(ErrorString* errorString)
     // that are expected to be triggered only after the load is committed, see http://crbug.com/131623
     if (m_mainWorldContextCreated)
         reportExecutionContextCreation();
+}
+
+void PageRuntimeAgent::run(ErrorString* errorString)
+{
+    m_client->resumeStartup();
 }
 
 void PageRuntimeAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
@@ -154,13 +170,14 @@ void PageRuntimeAgent::frameWindowDiscarded(LocalDOMWindow* window)
     Vector<RefPtr<ScriptState> > scriptStatesToRemove;
     for (ScriptStateToId::iterator it = m_scriptStateToId.begin(); it != m_scriptStateToId.end(); ++it) {
         RefPtr<ScriptState> scriptState = it->key;
-        if (scriptState->contextIsEmpty() || window == scriptState->domWindow()) {
+        if (!scriptState->contextIsValid() || window == scriptState->domWindow()) {
             scriptStatesToRemove.append(scriptState);
             m_frontend->executionContextDestroyed(it->value);
         }
     }
     m_scriptStateToId.removeAll(scriptStatesToRemove);
+    injectedScriptManager()->discardInjectedScriptsFor(window);
 }
 
-} // namespace WebCore
+} // namespace blink
 

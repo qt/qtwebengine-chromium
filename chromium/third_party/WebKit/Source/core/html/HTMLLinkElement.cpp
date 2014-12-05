@@ -25,7 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLLinkElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/HTMLNames.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
@@ -41,6 +42,7 @@
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/SubresourceIntegrity.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/LinkManifest.h"
 #include "core/html/imports/LinkImport.h"
@@ -50,7 +52,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -139,7 +141,6 @@ inline HTMLLinkElement::HTMLLinkElement(Document& document, bool createdByParser
     , m_createdByParser(createdByParser)
     , m_isInShadowTree(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLLinkElement> HTMLLinkElement::create(Document& document, bool createdByParser)
@@ -174,7 +175,7 @@ void HTMLLinkElement::parseAttribute(const QualifiedName& name, const AtomicStri
         parseSizesAttribute(value, m_iconSizes);
         process();
     } else if (name == mediaAttr) {
-        m_media = value.string().lower();
+        m_media = value.lower();
         process();
     } else if (name == disabledAttr) {
         if (LinkStyle* link = linkStyle())
@@ -204,13 +205,13 @@ LinkResource* HTMLLinkElement::linkResourceToProcess()
     bool visible = inDocument() && !m_isInShadowTree;
     if (!visible) {
         ASSERT(!linkStyle() || !linkStyle()->hasSheet());
-        return 0;
+        return nullptr;
     }
 
     if (!m_link) {
-        if (m_relAttribute.isImport() && RuntimeEnabledFeatures::htmlImportsEnabled()) {
+        if (m_relAttribute.isImport()) {
             m_link = LinkImport::create(this);
-        } else if (m_relAttribute.isManifest() && RuntimeEnabledFeatures::manifestEnabled()) {
+        } else if (m_relAttribute.isManifest()) {
             m_link = LinkManifest::create(this);
         } else {
             OwnPtrWillBeRawPtr<LinkStyle> link = LinkStyle::create(this);
@@ -226,14 +227,14 @@ LinkResource* HTMLLinkElement::linkResourceToProcess()
 LinkStyle* HTMLLinkElement::linkStyle() const
 {
     if (!m_link || m_link->type() != LinkResource::Style)
-        return 0;
+        return nullptr;
     return static_cast<LinkStyle*>(m_link.get());
 }
 
 LinkImport* HTMLLinkElement::linkImport() const
 {
     if (!m_link || m_link->type() != LinkResource::Import)
-        return 0;
+        return nullptr;
     return static_cast<LinkImport*>(m_link.get());
 }
 
@@ -241,7 +242,7 @@ Document* HTMLLinkElement::import() const
 {
     if (LinkImport* link = linkImport())
         return link->importedDocument();
-    return 0;
+    return nullptr;
 }
 
 void HTMLLinkElement::process()
@@ -260,13 +261,26 @@ void HTMLLinkElement::enableIfExitTransitionStyle()
 
 Node::InsertionNotificationRequest HTMLLinkElement::insertedInto(ContainerNode* insertionPoint)
 {
+    if (insertionPoint->inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("link");
+            argv.append(fastGetAttribute(relAttr));
+            argv.append(fastGetAttribute(hrefAttr));
+            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
+        }
+    }
     HTMLElement::insertedInto(insertionPoint);
     if (!insertionPoint->inDocument())
         return InsertionDone;
 
     m_isInShadowTree = isInShadowTree();
-    if (m_isInShadowTree)
+    if (m_isInShadowTree) {
+        String message = "HTML element <link> is ignored in shadow tree.";
+        document().addConsoleMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel, message));
         return InsertionDone;
+    }
 
     document().styleEngine()->addStyleSheetCandidateNode(this, m_createdByParser);
 
@@ -442,6 +456,22 @@ void HTMLLinkElement::trace(Visitor* visitor)
     HTMLElement::trace(visitor);
 }
 
+void HTMLLinkElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == hrefAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("link");
+            argv.append(hrefAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
+}
+
 PassOwnPtrWillBeRawPtr<LinkStyle> LinkStyle::create(HTMLLinkElement* owner)
 {
     return adoptPtrWillBeNoop(new LinkStyle(owner));
@@ -475,8 +505,14 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
     if (!m_owner->inDocument()) {
         ASSERT(!m_sheet);
         return;
-
     }
+
+    if (!SubresourceIntegrity::CheckSubresourceIntegrity(*m_owner, cachedStyleSheet->sheetText(), KURL(KURL(), href))) {
+        m_loading = false;
+        removePendingSheet();
+        return;
+    }
+
     // Completing the sheet load may cause scripts to execute.
     RefPtrWillBeRawPtr<Node> protector(m_owner.get());
 
@@ -501,6 +537,7 @@ void LinkStyle::setCSSStyleSheet(const String& href, const KURL& baseURL, const 
 
     if (m_sheet)
         clearSheet();
+
     m_sheet = CSSStyleSheet::create(styleSheet, m_owner);
     m_sheet->setMediaQueries(MediaQuerySet::create(m_owner->media()));
     m_sheet->setTitle(m_owner->title());
@@ -664,14 +701,12 @@ void LinkStyle::process()
         m_loading = true;
 
         bool mediaQueryMatches = true;
-        if (!m_owner->media().isEmpty()) {
-            LocalFrame* frame = loadingFrame();
-            if (Document* document = loadingFrame()->document()) {
-                RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(*document);
-                RefPtrWillBeRawPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
-                MediaQueryEvaluator evaluator(frame->view()->mediaType(), frame);
-                mediaQueryMatches = evaluator.eval(media.get());
-            }
+        LocalFrame* frame = loadingFrame();
+        if (!m_owner->media().isEmpty() && frame && frame->document()) {
+            RefPtr<RenderStyle> documentStyle = StyleResolver::styleForDocument(*frame->document());
+            RefPtrWillBeRawPtr<MediaQuerySet> media = MediaQuerySet::create(m_owner->media());
+            MediaQueryEvaluator evaluator(frame);
+            mediaQueryMatches = evaluator.eval(media.get());
         }
 
         // Don't hold up render tree construction and script execution on stylesheets
@@ -720,4 +755,4 @@ void LinkStyle::trace(Visitor* visitor)
     LinkResource::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

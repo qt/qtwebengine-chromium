@@ -4,11 +4,13 @@
 
 #include "content/browser/service_worker/service_worker_write_to_cache_job.h"
 
+#include "base/debug/trace_event.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_histograms.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_util.h"
@@ -21,10 +23,13 @@ namespace content {
 ServiceWorkerWriteToCacheJob::ServiceWorkerWriteToCacheJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate,
+    ResourceType resource_type,
     base::WeakPtr<ServiceWorkerContextCore> context,
     ServiceWorkerVersion* version,
+    int extra_load_flags,
     int64 response_id)
     : net::URLRequestJob(request, network_delegate),
+      resource_type_(resource_type),
       context_(context),
       url_(request->url()),
       response_id_(response_id),
@@ -33,7 +38,7 @@ ServiceWorkerWriteToCacheJob::ServiceWorkerWriteToCacheJob(
       did_notify_started_(false),
       did_notify_finished_(false),
       weak_factory_(this) {
-  InitNetRequest();
+  InitNetRequest(extra_load_flags);
 }
 
 ServiceWorkerWriteToCacheJob::~ServiceWorkerWriteToCacheJob() {
@@ -41,6 +46,10 @@ ServiceWorkerWriteToCacheJob::~ServiceWorkerWriteToCacheJob() {
 }
 
 void ServiceWorkerWriteToCacheJob::Start() {
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                           this,
+                           "URL", request_->url().spec());
   if (!context_) {
     NotifyStartError(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, net::ERR_FAILED));
@@ -60,7 +69,9 @@ void ServiceWorkerWriteToCacheJob::Kill() {
   net_request_.reset();
   if (did_notify_started_ && !did_notify_finished_) {
     version_->script_cache_map()->NotifyFinishedCaching(
-        url_, false);
+        url_,
+        -1,
+        net::URLRequestStatus(net::URLRequestStatus::FAILED, net::ERR_ABORTED));
     did_notify_finished_ = true;
   }
   writer_.reset();
@@ -120,7 +131,7 @@ bool ServiceWorkerWriteToCacheJob::ReadRawData(
   // No more data to process, the job is complete.
   io_buffer_ = NULL;
   version_->script_cache_map()->NotifyFinishedCaching(
-      url_, status.is_success());
+      url_, writer_->amount_written(), status);
   did_notify_finished_ = true;
   return status.is_success();
 }
@@ -129,7 +140,8 @@ const net::HttpResponseInfo* ServiceWorkerWriteToCacheJob::http_info() const {
   return http_info_.get();
 }
 
-void ServiceWorkerWriteToCacheJob::InitNetRequest() {
+void ServiceWorkerWriteToCacheJob::InitNetRequest(
+    int extra_load_flags) {
   DCHECK(request());
   net_request_ = request()->context()->CreateRequest(
       request()->url(),
@@ -139,10 +151,21 @@ void ServiceWorkerWriteToCacheJob::InitNetRequest() {
   net_request_->set_first_party_for_cookies(
       request()->first_party_for_cookies());
   net_request_->SetReferrer(request()->referrer());
-  net_request_->SetExtraRequestHeaders(request()->extra_request_headers());
+  if (extra_load_flags)
+    net_request_->SetLoadFlags(net_request_->load_flags() | extra_load_flags);
+
+  if (resource_type_ == RESOURCE_TYPE_SERVICE_WORKER) {
+    // This will get copied into net_request_ when URLRequest::StartJob calls
+    // ServiceWorkerWriteToCacheJob::SetExtraRequestHeaders.
+    request()->SetExtraRequestHeaderByName("Service-Worker", "script", true);
+  }
 }
 
 void ServiceWorkerWriteToCacheJob::StartNetRequest() {
+  TRACE_EVENT_ASYNC_STEP_INTO0("ServiceWorker",
+                               "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                               this,
+                               "NetRequest");
   net_request_->Start();  // We'll continue in OnResponseStarted.
 }
 
@@ -179,11 +202,15 @@ void ServiceWorkerWriteToCacheJob::WriteHeadersToCache() {
         net::URLRequestStatus::FAILED, net::ERR_FAILED));
     return;
   }
+  TRACE_EVENT_ASYNC_STEP_INTO0("ServiceWorker",
+                               "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                               this,
+                               "WriteHeadersToCache");
   writer_ = context_->storage()->CreateResponseWriter(response_id_);
   info_buffer_ = new HttpResponseInfoIOBuffer(
       new net::HttpResponseInfo(net_request_->response_info()));
   writer_->WriteInfo(
-      info_buffer_,
+      info_buffer_.get(),
       base::Bind(&ServiceWorkerWriteToCacheJob::OnWriteHeadersComplete,
                  weak_factory_.GetWeakPtr()));
   SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
@@ -192,22 +219,32 @@ void ServiceWorkerWriteToCacheJob::WriteHeadersToCache() {
 void ServiceWorkerWriteToCacheJob::OnWriteHeadersComplete(int result) {
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_HEADERS_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_HEADERS_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
   }
   http_info_.reset(info_buffer_->http_info.release());
   info_buffer_ = NULL;
+  TRACE_EVENT_ASYNC_STEP_INTO0("ServiceWorker",
+                               "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                               this,
+                               "WriteHeadersToCacheCompleted");
   NotifyHeadersComplete();
 }
 
 void ServiceWorkerWriteToCacheJob::WriteDataToCache(int amount_to_write) {
   DCHECK_NE(0, amount_to_write);
+  TRACE_EVENT_ASYNC_STEP_INTO1("ServiceWorker",
+                               "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                               this,
+                               "WriteDataToCache",
+                               "Amount to write", amount_to_write);
   SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
   writer_->WriteData(
-      io_buffer_, amount_to_write,
+      io_buffer_.get(),
+      amount_to_write,
       base::Bind(&ServiceWorkerWriteToCacheJob::OnWriteDataComplete,
                  weak_factory_.GetWeakPtr()));
 }
@@ -221,32 +258,39 @@ void ServiceWorkerWriteToCacheJob::OnWriteDataComplete(int result) {
     return;
   }
   if (result < 0) {
-    ServiceWorkerHistograms::CountWriteResponseResult(
-        ServiceWorkerHistograms::WRITE_DATA_ERROR);
+    ServiceWorkerMetrics::CountWriteResponseResult(
+        ServiceWorkerMetrics::WRITE_DATA_ERROR);
     AsyncNotifyDoneHelper(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, result));
     return;
   }
-  ServiceWorkerHistograms::CountWriteResponseResult(
-      ServiceWorkerHistograms::WRITE_OK);
+  ServiceWorkerMetrics::CountWriteResponseResult(
+      ServiceWorkerMetrics::WRITE_OK);
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   NotifyReadComplete(result);
+  TRACE_EVENT_ASYNC_END0("ServiceWorker",
+                         "ServiceWorkerWriteToCacheJob::ExecutingJob",
+                         this);
 }
 
 void ServiceWorkerWriteToCacheJob::OnReceivedRedirect(
     net::URLRequest* request,
-    const GURL& new_url,
+    const net::RedirectInfo& redirect_info,
     bool* defer_redirect) {
   DCHECK_EQ(net_request_, request);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerWriteToCacheJob::OnReceivedRedirect");
   // Script resources can't redirect.
   AsyncNotifyDoneHelper(net::URLRequestStatus(
-      net::URLRequestStatus::FAILED, net::ERR_FAILED));
+      net::URLRequestStatus::FAILED, net::ERR_UNSAFE_REDIRECT));
 }
 
 void ServiceWorkerWriteToCacheJob::OnAuthRequired(
     net::URLRequest* request,
     net::AuthChallengeInfo* auth_info) {
   DCHECK_EQ(net_request_, request);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerWriteToCacheJob::OnAuthRequired");
   // TODO(michaeln): Pass this thru to our jobs client.
   AsyncNotifyDoneHelper(net::URLRequestStatus(
       net::URLRequestStatus::FAILED, net::ERR_FAILED));
@@ -256,27 +300,33 @@ void ServiceWorkerWriteToCacheJob::OnCertificateRequested(
     net::URLRequest* request,
     net::SSLCertRequestInfo* cert_request_info) {
   DCHECK_EQ(net_request_, request);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerWriteToCacheJob::OnCertificateRequested");
   // TODO(michaeln): Pass this thru to our jobs client.
   // see NotifyCertificateRequested.
   AsyncNotifyDoneHelper(net::URLRequestStatus(
       net::URLRequestStatus::FAILED, net::ERR_FAILED));
 }
 
-void ServiceWorkerWriteToCacheJob:: OnSSLCertificateError(
+void ServiceWorkerWriteToCacheJob::OnSSLCertificateError(
     net::URLRequest* request,
     const net::SSLInfo& ssl_info,
     bool fatal) {
   DCHECK_EQ(net_request_, request);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerWriteToCacheJob::OnSSLCertificateError");
   // TODO(michaeln): Pass this thru to our jobs client,
   // see NotifySSLCertificateError.
   AsyncNotifyDoneHelper(net::URLRequestStatus(
-      net::URLRequestStatus::FAILED, net::ERR_FAILED));
+      net::URLRequestStatus::FAILED, net::ERR_INSECURE_RESPONSE));
 }
 
 void ServiceWorkerWriteToCacheJob::OnBeforeNetworkStart(
     net::URLRequest* request,
     bool* defer) {
   DCHECK_EQ(net_request_, request);
+  TRACE_EVENT0("ServiceWorker",
+               "ServiceWorkerWriteToCacheJob::OnBeforeNetworkStart");
   NotifyBeforeNetworkStart(defer);
 }
 
@@ -294,6 +344,29 @@ void ServiceWorkerWriteToCacheJob::OnResponseStarted(
     // response to our consumer, just don't cache it?
     return;
   }
+  // OnSSLCertificateError is not called when the HTTPS connection is reused.
+  // So we check cert_status here.
+  if (net::IsCertStatusError(request->ssl_info().cert_status)) {
+    const net::HttpNetworkSession::Params* session_params =
+        request->context()->GetNetworkSessionParams();
+    if (!session_params || !session_params->ignore_certificate_errors) {
+      AsyncNotifyDoneHelper(net::URLRequestStatus(net::URLRequestStatus::FAILED,
+                                                  net::ERR_INSECURE_RESPONSE));
+      return;
+    }
+  }
+  // To prevent most user-uploaded content from being used as a serviceworker.
+  if (version_->script_url() == url_) {
+    std::string mime_type;
+    request->GetMimeType(&mime_type);
+    if (mime_type != "application/x-javascript" &&
+        mime_type != "text/javascript" &&
+        mime_type != "application/javascript") {
+      AsyncNotifyDoneHelper(net::URLRequestStatus(
+          net::URLRequestStatus::FAILED, net::ERR_INSECURE_RESPONSE));
+      return;
+    }
+  }
   WriteHeadersToCache();
 }
 
@@ -301,7 +374,8 @@ void ServiceWorkerWriteToCacheJob::OnReadCompleted(
     net::URLRequest* request,
     int bytes_read) {
   DCHECK_EQ(net_request_, request);
-  if (!request->status().is_success()) {
+  if (bytes_read < 0) {
+    DCHECK(!request->status().is_success());
     AsyncNotifyDoneHelper(request->status());
     return;
   }
@@ -309,16 +383,25 @@ void ServiceWorkerWriteToCacheJob::OnReadCompleted(
     WriteDataToCache(bytes_read);
     return;
   }
-  // We're done with all.
-  AsyncNotifyDoneHelper(request->status());
-  return;
+  // No more data to process, the job is complete.
+  DCHECK(request->status().is_success());
+  io_buffer_ = NULL;
+  version_->script_cache_map()->NotifyFinishedCaching(
+      url_, writer_->amount_written(), net::URLRequestStatus());
+  did_notify_finished_ = true;
+  SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
+  NotifyReadComplete(0);
 }
 
 void ServiceWorkerWriteToCacheJob::AsyncNotifyDoneHelper(
     const net::URLRequestStatus& status) {
   DCHECK(!status.is_io_pending());
-  version_->script_cache_map()->NotifyFinishedCaching(
-      url_, status.is_success());
+  DCHECK(!did_notify_finished_);
+  int size = -1;
+  if (writer_.get()) {
+    size = writer_->amount_written();
+  }
+  version_->script_cache_map()->NotifyFinishedCaching(url_, size, status);
   did_notify_finished_ = true;
   SetStatus(status);
   NotifyDone(status);

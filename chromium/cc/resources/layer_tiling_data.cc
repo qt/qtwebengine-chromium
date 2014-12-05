@@ -7,6 +7,8 @@
 #include <vector>
 
 #include "base/logging.h"
+#include "cc/base/region.h"
+#include "cc/base/simple_enclosed_region.h"
 
 namespace cc {
 
@@ -17,7 +19,7 @@ scoped_ptr<LayerTilingData> LayerTilingData::Create(const gfx::Size& tile_size,
 
 LayerTilingData::LayerTilingData(const gfx::Size& tile_size,
                                  BorderTexelOption border)
-    : tiling_data_(tile_size, gfx::Rect(), border == HAS_BORDER_TEXELS) {
+    : tiling_data_(tile_size, gfx::Size(), border == HAS_BORDER_TEXELS) {
   SetTileSize(tile_size);
 }
 
@@ -90,31 +92,9 @@ gfx::Rect LayerTilingData::TileRect(const Tile* tile) const {
   return tile_rect;
 }
 
-Region LayerTilingData::OpaqueRegionInContentRect(
-    const gfx::Rect& content_rect) const {
-  if (content_rect.IsEmpty())
-    return Region();
-
-  Region opaque_region;
-  int left, top, right, bottom;
-  ContentRectToTileIndices(content_rect, &left, &top, &right, &bottom);
-  for (int j = top; j <= bottom; ++j) {
-    for (int i = left; i <= right; ++i) {
-      Tile* tile = TileAt(i, j);
-      if (!tile)
-        continue;
-
-      gfx::Rect tile_opaque_rect =
-          gfx::IntersectRects(content_rect, tile->opaque_rect());
-      opaque_region.Union(tile_opaque_rect);
-    }
-  }
-  return opaque_region;
-}
-
-void LayerTilingData::SetTilingRect(const gfx::Rect& tiling_rect) {
-  tiling_data_.SetTilingRect(tiling_rect);
-  if (tiling_rect.IsEmpty()) {
+void LayerTilingData::SetTilingSize(const gfx::Size& tiling_size) {
+  tiling_data_.SetTilingSize(tiling_size);
+  if (tiling_size.IsEmpty()) {
     tiles_.clear();
     return;
   }
@@ -122,7 +102,8 @@ void LayerTilingData::SetTilingRect(const gfx::Rect& tiling_rect) {
   // Any tiles completely outside our new bounds are invalid and should be
   // dropped.
   int left, top, right, bottom;
-  ContentRectToTileIndices(tiling_rect, &left, &top, &right, &bottom);
+  ContentRectToTileIndices(
+      gfx::Rect(tiling_size), &left, &top, &right, &bottom);
   std::vector<TileMapKey> invalid_tile_keys;
   for (TileMap::const_iterator it = tiles_.begin(); it != tiles_.end(); ++it) {
     if (it->first.first > right || it->first.second > bottom)

@@ -18,9 +18,7 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    Custom=Wrap,
-] interface HTMLElement : Element {
+interface HTMLElement : Element {
     [Reflect] attribute DOMString title;
     [Reflect] attribute DOMString lang;
     attribute boolean translate;
@@ -28,7 +26,7 @@
 
     [CustomElementCallbacks] attribute long              tabIndex;
     [CustomElementCallbacks] attribute boolean           draggable;
-    [Reflect, TreatNullAs=NullString] attribute DOMString webkitdropzone;
+    [Reflect, TreatNullAs=NullString, MeasureAs=PrefixedHTMLElementDropzone] attribute DOMString webkitdropzone;
     [Reflect] attribute boolean hidden;
     [Reflect] attribute DOMString accessKey;
 
@@ -40,6 +38,7 @@
 
     [CustomElementCallbacks, RaisesException=Setter] attribute DOMString contentEditable;
     readonly attribute boolean isContentEditable;
+    [RuntimeEnabled=ContextMenu] attribute HTMLMenuElement? contextMenu;
 
              attribute boolean spellcheck;
 

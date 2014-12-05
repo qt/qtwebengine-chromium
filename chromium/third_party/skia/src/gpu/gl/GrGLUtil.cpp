@@ -39,50 +39,15 @@ void GrGLCheckErr(const GrGLInterface* gl,
                   const char* call) {
     uint32_t err = GR_GL_GET_ERROR(gl);
     if (GR_GL_NO_ERROR != err) {
-        GrPrintf("---- glGetError 0x%x(%s)", err, get_error_string(err));
-        if (NULL != location) {
-            GrPrintf(" at\n\t%s", location);
+        SkDebugf("---- glGetError 0x%x(%s)", err, get_error_string(err));
+        if (location) {
+            SkDebugf(" at\n\t%s", location);
         }
-        if (NULL != call) {
-            GrPrintf("\n\t\t%s", call);
+        if (call) {
+            SkDebugf("\n\t\t%s", call);
         }
-        GrPrintf("\n");
+        SkDebugf("\n");
     }
-}
-
-namespace {
-// Mesa uses a non-standard version string of format: 1.4 Mesa <mesa_major>.<mesa_minor>.
-// The mapping of from mesa version to GL version came from here: http://www.mesa3d.org/intro.html
-bool get_gl_version_for_mesa(int mesaMajorVersion, int* major, int* minor) {
-    switch (mesaMajorVersion) {
-        case 2:
-        case 3:
-        case 4:
-        case 5:
-        case 6:
-            *major = 1;
-            *minor = mesaMajorVersion - 1;
-            return true;
-        case 7:
-            *major = 2;
-            *minor = 1;
-            return true;
-        case 8:
-            *major = 3;
-            *minor = 0;
-            return true;
-        case 9:
-            *major = 3;
-            *minor = 1;
-            return true;
-        case 10:
-            *major = 3;
-            *minor = 3;
-            return true;
-        default:
-            return false;
-    }
-}
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,8 +94,18 @@ GrGLStandard GrGLGetStandardInUseFromString(const char* versionString) {
 
 bool GrGLIsMesaFromVersionString(const char* versionString) {
     int major, minor, mesaMajor, mesaMinor;
-    int n = sscanf(versionString, "%d.%d Mesa %d.%d", &major, &minor, &mesaMajor, &mesaMinor);
-    return 4 == n;
+
+    GrGLStandard standard = GrGLGetStandardInUseFromString(versionString);
+
+    if (standard == kGL_GrGLStandard) {
+        int n = sscanf(versionString, "%d.%d Mesa %d.%d", &major, &minor, &mesaMajor, &mesaMinor);
+        return 4 == n;
+    }
+    else {
+        int n = sscanf(versionString, "OpenGL ES %d.%d Mesa %d.%d", &major, &minor, &mesaMajor, &mesaMinor);
+        return 4 == n;
+    }
+    return false;
 }
 
 bool GrGLIsChromiumFromRendererString(const char* rendererString) {
@@ -149,11 +124,7 @@ GrGLVersion GrGLGetVersionFromString(const char* versionString) {
     int mesaMajor, mesaMinor;
     int n = sscanf(versionString, "%d.%d Mesa %d.%d", &major, &minor, &mesaMajor, &mesaMinor);
     if (4 == n) {
-        if (get_gl_version_for_mesa(mesaMajor, &major, &minor)) {
-            return GR_GL_VER(major, minor);
-        } else {
-            return GR_GL_INVALID_VER;
-        }
+        return GR_GL_VER(major, minor);
     }
 
     n = sscanf(versionString, "%d.%d", &major, &minor);
@@ -206,7 +177,7 @@ GrGLSLVersion GrGLGetGLSLVersionFromString(const char* versionString) {
 }
 
 GrGLVendor GrGLGetVendorFromString(const char* vendorString) {
-    if (NULL != vendorString) {
+    if (vendorString) {
         if (0 == strcmp(vendorString, "ARM")) {
             return kARM_GrGLVendor;
         }
@@ -219,16 +190,29 @@ GrGLVendor GrGLGetVendorFromString(const char* vendorString) {
         if (0 == strcmp(vendorString, "Qualcomm")) {
             return kQualcomm_GrGLVendor;
         }
+        if (0 == strcmp(vendorString, "NVIDIA Corporation")) {
+            return kNVIDIA_GrGLVendor;
+        }
     }
     return kOther_GrGLVendor;
 }
 
 GrGLRenderer GrGLGetRendererFromString(const char* rendererString) {
-    if (NULL != rendererString) {
+    if (rendererString) {
         if (0 == strcmp(rendererString, "NVIDIA Tegra 3")) {
             return kTegra3_GrGLRenderer;
         } else if (0 == strcmp(rendererString, "NVIDIA Tegra")) {
             return kTegra2_GrGLRenderer;
+        }
+        int lastDigit;
+        int n = sscanf(rendererString, "PowerVR SGX 54%d", &lastDigit);
+        if (1 == n && lastDigit >= 0 && lastDigit <= 9) {
+            return kPowerVR54x_GrGLRenderer;
+        }
+        static const char kPowerVRRogueStr[] = "PowerVR Rogue";
+        if (0 == strncmp(rendererString, kPowerVRRogueStr,
+                         SK_ARRAY_COUNT(kPowerVRRogueStr)-1)) {
+            return kPowerVRRogue_GrGLRenderer;
         }
     }
     return kOther_GrGLRenderer;
@@ -299,4 +283,29 @@ template<> void GrGLGetMatrix<4>(GrGLfloat* dest, const SkMatrix& src) {
     dest[13] = SkScalarToFloat(src[SkMatrix::kMTransY]);
     dest[14] = 0;
     dest[15] = SkScalarToFloat(src[SkMatrix::kMPersp2]);
+}
+
+GrGLenum GrToGLStencilFunc(GrStencilFunc basicFunc) {
+    static const GrGLenum gTable[] = {
+        GR_GL_ALWAYS,           // kAlways_StencilFunc
+        GR_GL_NEVER,            // kNever_StencilFunc
+        GR_GL_GREATER,          // kGreater_StencilFunc
+        GR_GL_GEQUAL,           // kGEqual_StencilFunc
+        GR_GL_LESS,             // kLess_StencilFunc
+        GR_GL_LEQUAL,           // kLEqual_StencilFunc,
+        GR_GL_EQUAL,            // kEqual_StencilFunc,
+        GR_GL_NOTEQUAL,         // kNotEqual_StencilFunc,
+    };
+    GR_STATIC_ASSERT(SK_ARRAY_COUNT(gTable) == kBasicStencilFuncCount);
+    GR_STATIC_ASSERT(0 == kAlways_StencilFunc);
+    GR_STATIC_ASSERT(1 == kNever_StencilFunc);
+    GR_STATIC_ASSERT(2 == kGreater_StencilFunc);
+    GR_STATIC_ASSERT(3 == kGEqual_StencilFunc);
+    GR_STATIC_ASSERT(4 == kLess_StencilFunc);
+    GR_STATIC_ASSERT(5 == kLEqual_StencilFunc);
+    GR_STATIC_ASSERT(6 == kEqual_StencilFunc);
+    GR_STATIC_ASSERT(7 == kNotEqual_StencilFunc);
+    SkASSERT((unsigned) basicFunc < kBasicStencilFuncCount);
+
+    return gTable[basicFunc];
 }

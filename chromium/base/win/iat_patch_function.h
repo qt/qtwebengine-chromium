@@ -47,6 +47,12 @@ class BASE_EXPORT IATPatchFunction {
               const char* function_name,
               void* new_function);
 
+  // Same as Patch(), but uses a handle to a |module| instead of the DLL name.
+  DWORD PatchFromModule(HMODULE module,
+                        const char* imported_from_module,
+                        const char* function_name,
+                        void* new_function);
+
   // Unpatch the IAT entry using internally saved original
   // function.
   //
@@ -59,6 +65,7 @@ class BASE_EXPORT IATPatchFunction {
 
   void* original_function() const;
 
+
  private:
   HMODULE module_handle_;
   void* intercept_function_;
@@ -67,6 +74,8 @@ class BASE_EXPORT IATPatchFunction {
 
   DISALLOW_COPY_AND_ASSIGN(IATPatchFunction);
 };
+
+BASE_EXPORT DWORD ModifyCode(void* old_code, void* new_code, int length);
 
 }  // namespace win
 }  // namespace base

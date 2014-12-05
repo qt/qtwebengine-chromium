@@ -4,21 +4,18 @@
 
 #include "mojo/public/cpp/bindings/lib/fixed_buffer.h"
 
-#include <assert.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <algorithm>
 
 #include "mojo/public/cpp/bindings/lib/bindings_serialization.h"
+#include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
 namespace internal {
 
 FixedBuffer::FixedBuffer(size_t size)
-    : ptr_(NULL),
-      cursor_(0),
-      size_(internal::Align(size)) {
+    : ptr_(nullptr), cursor_(0), size_(internal::Align(size)) {
   // calloc() required to zero memory and thus avoid info leaks.
   ptr_ = static_cast<char*>(calloc(size_, 1));
 }
@@ -31,8 +28,8 @@ void* FixedBuffer::Allocate(size_t delta) {
   delta = internal::Align(delta);
 
   if (delta == 0 || delta > size_ - cursor_) {
-    assert(false);
-    return NULL;
+    MOJO_DCHECK(false) << "Not reached";
+    return nullptr;
   }
 
   char* result = ptr_ + cursor_;
@@ -43,7 +40,7 @@ void* FixedBuffer::Allocate(size_t delta) {
 
 void* FixedBuffer::Leak() {
   char* ptr = ptr_;
-  ptr_ = NULL;
+  ptr_ = nullptr;
   cursor_ = 0;
   size_ = 0;
   return ptr;

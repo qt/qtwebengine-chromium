@@ -24,58 +24,31 @@
 
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEMergeNodeElement::SVGFEMergeNodeElement(Document& document)
     : SVGElement(SVGNames::feMergeNodeTag, document)
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_in1);
 }
 
 DEFINE_NODE_FACTORY(SVGFEMergeNodeElement)
 
-bool SVGFEMergeNodeElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::inAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGFEMergeNodeElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFEMergeNodeElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (attrName == SVGNames::inAttr) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         invalidateFilterPrimitiveParent(this);
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 }

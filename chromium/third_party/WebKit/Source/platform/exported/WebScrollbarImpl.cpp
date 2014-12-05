@@ -31,7 +31,7 @@
 
 namespace blink {
 
-WebScrollbarImpl::WebScrollbarImpl(WebCore::Scrollbar* scrollbar)
+WebScrollbarImpl::WebScrollbarImpl(Scrollbar* scrollbar)
     : m_scrollbar(scrollbar)
 {
 }
@@ -71,11 +71,6 @@ int WebScrollbarImpl::totalSize() const
     return m_scrollbar->totalSize();
 }
 
-bool WebScrollbarImpl::isScrollViewScrollbar() const
-{
-    return m_scrollbar->isScrollViewScrollbar();
-}
-
 bool WebScrollbarImpl::isScrollableAreaActive() const
 {
     return m_scrollbar->isScrollableAreaActive();
@@ -83,7 +78,7 @@ bool WebScrollbarImpl::isScrollableAreaActive() const
 
 void WebScrollbarImpl::getTickmarks(WebVector<WebRect>& webTickmarks) const
 {
-    Vector<WebCore::IntRect> tickmarks;
+    Vector<IntRect> tickmarks;
     m_scrollbar->getTickmarks(tickmarks);
 
     WebVector<WebRect> result(tickmarks.size());

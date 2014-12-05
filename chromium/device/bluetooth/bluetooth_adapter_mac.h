@@ -38,68 +38,66 @@ class BluetoothAdapterMac : public BluetoothAdapter,
   static base::WeakPtr<BluetoothAdapter> CreateAdapter();
 
   // BluetoothAdapter:
-  virtual void AddObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(BluetoothAdapter::Observer* observer) OVERRIDE;
-  virtual std::string GetAddress() const OVERRIDE;
-  virtual std::string GetName() const OVERRIDE;
-  virtual void SetName(const std::string& name,
+  void AddObserver(BluetoothAdapter::Observer* observer) override;
+  void RemoveObserver(BluetoothAdapter::Observer* observer) override;
+  std::string GetAddress() const override;
+  std::string GetName() const override;
+  void SetName(const std::string& name,
+               const base::Closure& callback,
+               const ErrorCallback& error_callback) override;
+  bool IsInitialized() const override;
+  bool IsPresent() const override;
+  bool IsPowered() const override;
+  void SetPowered(bool powered,
+                  const base::Closure& callback,
+                  const ErrorCallback& error_callback) override;
+  bool IsDiscoverable() const override;
+  void SetDiscoverable(bool discoverable,
                        const base::Closure& callback,
-                       const ErrorCallback& error_callback) OVERRIDE;
-  virtual bool IsInitialized() const OVERRIDE;
-  virtual bool IsPresent() const OVERRIDE;
-  virtual bool IsPowered() const OVERRIDE;
-  virtual void SetPowered(
-      bool powered,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual bool IsDiscoverable() const OVERRIDE;
-  virtual void SetDiscoverable(
-      bool discoverable,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual bool IsDiscovering() const OVERRIDE;
-  virtual void CreateRfcommService(
+                       const ErrorCallback& error_callback) override;
+  bool IsDiscovering() const override;
+  void CreateRfcommService(
       const BluetoothUUID& uuid,
-      int channel,
+      const ServiceOptions& options,
       const CreateServiceCallback& callback,
-      const CreateServiceErrorCallback& error_callback) OVERRIDE;
-  virtual void CreateL2capService(
+      const CreateServiceErrorCallback& error_callback) override;
+  void CreateL2capService(
       const BluetoothUUID& uuid,
-      int psm,
+      const ServiceOptions& options,
       const CreateServiceCallback& callback,
-      const CreateServiceErrorCallback& error_callback) OVERRIDE;
+      const CreateServiceErrorCallback& error_callback) override;
 
   // BluetoothDiscoveryManagerMac::Observer overrides
-  virtual void DeviceFound(BluetoothDiscoveryManagerMac* manager,
-                           IOBluetoothDevice* device) OVERRIDE;
-  virtual void DiscoveryStopped(BluetoothDiscoveryManagerMac* manager,
-                                bool unexpected) OVERRIDE;
+  void DeviceFound(IOBluetoothDevice* device) override;
+  void DiscoveryStopped(bool unexpected) override;
 
   // Registers that a new |device| has connected to the local host.
   void DeviceConnected(IOBluetoothDevice* device);
 
  protected:
   // BluetoothAdapter:
-  virtual void RemovePairingDelegateInternal(
-      device::BluetoothDevice::PairingDelegate* pairing_delegate) OVERRIDE;
+  void RemovePairingDelegateInternal(
+      device::BluetoothDevice::PairingDelegate* pairing_delegate) override;
 
  private:
   friend class BluetoothAdapterMacTest;
 
   BluetoothAdapterMac();
-  virtual ~BluetoothAdapterMac();
+  ~BluetoothAdapterMac() override;
 
   // BluetoothAdapter:
-  virtual void AddDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
-  virtual void RemoveDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE;
+  void AddDiscoverySession(const base::Closure& callback,
+                           const ErrorCallback& error_callback) override;
+  void RemoveDiscoverySession(const base::Closure& callback,
+                              const ErrorCallback& error_callback) override;
 
   void Init();
   void InitForTest(scoped_refptr<base::SequencedTaskRunner> ui_task_runner);
   void PollAdapter();
+
+  // Registers that a new |device| has replied to an Inquiry, is paired, or has
+  // connected to the local host.
+  void DeviceAdded(IOBluetoothDevice* device);
 
   // Updates |devices_| to include the currently paired devices, as well as any
   // connected, but unpaired, devices. Notifies observers if any previously
@@ -114,15 +112,6 @@ class BluetoothAdapterMac : public BluetoothAdapter,
 
   // Discovery manager for Bluetooth Classic.
   scoped_ptr<BluetoothDiscoveryManagerMac> classic_discovery_manager_;
-
-  // A list of discovered device addresses.
-  // This list is used to check if the same device is discovered twice during
-  // the discovery between consecutive inquiries.
-  base::hash_set<std::string> discovered_devices_;
-
-  // Timestamp for the recently accessed device.
-  // Used to determine if |devices_| needs an update.
-  base::scoped_nsobject<NSDate> recently_accessed_device_timestamp_;
 
   scoped_refptr<base::SequencedTaskRunner> ui_task_runner_;
 

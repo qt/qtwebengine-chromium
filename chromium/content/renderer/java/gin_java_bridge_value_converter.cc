@@ -68,14 +68,13 @@ class TypedArraySerializerImpl : public TypedArraySerializer {
  public:
   static scoped_ptr<TypedArraySerializer> Create(
       v8::Handle<v8::TypedArray> typed_array) {
-    scoped_ptr<TypedArraySerializerImpl<ElementType, ListType> > result(
+    return make_scoped_ptr(
         new TypedArraySerializerImpl<ElementType, ListType>(typed_array));
-    return result.template PassAs<TypedArraySerializer>();
   }
 
   virtual void serializeTo(char* data,
                    size_t data_length,
-                   base::ListValue* out) OVERRIDE {
+                   base::ListValue* out) override {
     DCHECK_EQ(data_length, typed_array_->Length() * sizeof(ElementType));
     for (ElementType *element = reinterpret_cast<ElementType*>(data),
                      *end = element + typed_array_->Length();

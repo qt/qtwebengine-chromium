@@ -77,10 +77,10 @@
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/umametrics.h"
-#include "talk/base/fileutils.h"
-#include "talk/base/socketaddress.h"
+#include "webrtc/base/fileutils.h"
+#include "webrtc/base/socketaddress.h"
 
-namespace talk_base {
+namespace rtc {
 class Thread;
 }
 
@@ -95,7 +95,7 @@ class AudioDeviceModule;
 class MediaConstraintsInterface;
 
 // MediaStream container interface.
-class StreamCollectionInterface : public talk_base::RefCountInterface {
+class StreamCollectionInterface : public rtc::RefCountInterface {
  public:
   // TODO(ronghuawu): Update the function names to c++ style, e.g. find -> Find.
   virtual size_t count() = 0;
@@ -111,15 +111,26 @@ class StreamCollectionInterface : public talk_base::RefCountInterface {
   ~StreamCollectionInterface() {}
 };
 
-class StatsObserver : public talk_base::RefCountInterface {
+class StatsObserver : public rtc::RefCountInterface {
  public:
-  virtual void OnComplete(const std::vector<StatsReport>& reports) = 0;
+  // TODO(tommi): Remove.
+  virtual void OnComplete(const std::vector<StatsReport>& reports) {}
+
+  // TODO(tommi): Make pure virtual and remove implementation.
+  virtual void OnComplete(const StatsReports& reports) {
+    std::vector<StatsReportCopyable> report_copies;
+    for (size_t i = 0; i < reports.size(); ++i)
+      report_copies.push_back(StatsReportCopyable(*reports[i]));
+    std::vector<StatsReport>* r =
+        reinterpret_cast<std::vector<StatsReport>*>(&report_copies);
+     OnComplete(*r);
+   }
 
  protected:
   virtual ~StatsObserver() {}
 };
 
-class UMAObserver : public talk_base::RefCountInterface {
+class UMAObserver : public rtc::RefCountInterface {
  public:
   virtual void IncrementCounter(PeerConnectionUMAMetricsCounter type) = 0;
   virtual void AddHistogramSample(PeerConnectionUMAMetricsName type,
@@ -129,7 +140,7 @@ class UMAObserver : public talk_base::RefCountInterface {
   virtual ~UMAObserver() {}
 };
 
-class PeerConnectionInterface : public talk_base::RefCountInterface {
+class PeerConnectionInterface : public rtc::RefCountInterface {
  public:
   // See http://dev.w3.org/2011/webrtc/editor/webrtc.html#state-definitions .
   enum SignalingState {
@@ -192,6 +203,38 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
     explicit RTCConfiguration(IceTransportsType type) : type(type) {}
   };
 
+  struct RTCOfferAnswerOptions {
+    static const int kUndefined = -1;
+    static const int kMaxOfferToReceiveMedia = 1;
+
+    // The default value for constraint offerToReceiveX:true.
+    static const int kOfferToReceiveMediaTrue = 1;
+
+    int offer_to_receive_video;
+    int offer_to_receive_audio;
+    bool voice_activity_detection;
+    bool ice_restart;
+    bool use_rtp_mux;
+
+    RTCOfferAnswerOptions()
+        : offer_to_receive_video(kUndefined),
+          offer_to_receive_audio(kUndefined),
+          voice_activity_detection(true),
+          ice_restart(false),
+          use_rtp_mux(true) {}
+
+    RTCOfferAnswerOptions(int offer_to_receive_video,
+                          int offer_to_receive_audio,
+                          bool voice_activity_detection,
+                          bool ice_restart,
+                          bool use_rtp_mux)
+        : offer_to_receive_video(offer_to_receive_video),
+          offer_to_receive_audio(offer_to_receive_audio),
+          voice_activity_detection(voice_activity_detection),
+          ice_restart(ice_restart),
+          use_rtp_mux(use_rtp_mux) {}
+  };
+
   // Used by GetStats to decide which stats to include in the stats reports.
   // |kStatsOutputLevelStandard| includes the standard stats for Javascript API;
   // |kStatsOutputLevelDebug| includes both the standard stats and additional
@@ -202,18 +245,17 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   };
 
   // Accessor methods to active local streams.
-  virtual talk_base::scoped_refptr<StreamCollectionInterface>
+  virtual rtc::scoped_refptr<StreamCollectionInterface>
       local_streams() = 0;
 
   // Accessor methods to remote streams.
-  virtual talk_base::scoped_refptr<StreamCollectionInterface>
+  virtual rtc::scoped_refptr<StreamCollectionInterface>
       remote_streams() = 0;
 
   // Add a new MediaStream to be sent on this PeerConnection.
   // Note that a SessionDescription negotiation is needed before the
   // remote peer can receive the stream.
-  virtual bool AddStream(MediaStreamInterface* stream,
-                         const MediaConstraintsInterface* constraints) = 0;
+  virtual bool AddStream(MediaStreamInterface* stream) = 0;
 
   // Remove a MediaStream from this PeerConnection.
   // Note that a SessionDescription negotiation is need before the
@@ -222,14 +264,14 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
 
   // Returns pointer to the created DtmfSender on success.
   // Otherwise returns NULL.
-  virtual talk_base::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
+  virtual rtc::scoped_refptr<DtmfSenderInterface> CreateDtmfSender(
       AudioTrackInterface* track) = 0;
 
   virtual bool GetStats(StatsObserver* observer,
                         MediaStreamTrackInterface* track,
                         StatsOutputLevel level) = 0;
 
-  virtual talk_base::scoped_refptr<DataChannelInterface> CreateDataChannel(
+  virtual rtc::scoped_refptr<DataChannelInterface> CreateDataChannel(
       const std::string& label,
       const DataChannelInit* config) = 0;
 
@@ -239,7 +281,13 @@ class PeerConnectionInterface : public talk_base::RefCountInterface {
   // Create a new offer.
   // The CreateSessionDescriptionObserver callback will be called when done.
   virtual void CreateOffer(CreateSessionDescriptionObserver* observer,
-                           const MediaConstraintsInterface* constraints) = 0;
+                           const MediaConstraintsInterface* constraints) {}
+
+  // TODO(jiayl): remove the default impl and the old interface when chromium
+  // code is updated.
+  virtual void CreateOffer(CreateSessionDescriptionObserver* observer,
+                           const RTCOfferAnswerOptions& options) {}
+
   // Create an answer to an offer.
   // The CreateSessionDescriptionObserver callback will be called when done.
   virtual void CreateAnswer(CreateSessionDescriptionObserver* observer,
@@ -295,8 +343,6 @@ class PeerConnectionObserver {
     kIceState,
   };
 
-  virtual void OnError() = 0;
-
   // Triggered when the SignalingState changed.
   virtual void OnSignalingChange(
      PeerConnectionInterface::SignalingState new_state) {}
@@ -312,8 +358,7 @@ class PeerConnectionObserver {
   virtual void OnRemoveStream(MediaStreamInterface* stream) = 0;
 
   // Triggered when a remote peer open a data channel.
-  // TODO(perkj): Make pure virtual.
-  virtual void OnDataChannel(DataChannelInterface* data_channel) {}
+  virtual void OnDataChannel(DataChannelInterface* data_channel) = 0;
 
   // Triggered when renegotiation is needed, for example the ICE has restarted.
   virtual void OnRenegotiationNeeded() = 0;
@@ -340,13 +385,13 @@ class PeerConnectionObserver {
 
 // Factory class used for creating cricket::PortAllocator that is used
 // for ICE negotiation.
-class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
+class PortAllocatorFactoryInterface : public rtc::RefCountInterface {
  public:
   struct StunConfiguration {
     StunConfiguration(const std::string& address, int port)
         : server(address, port) {}
     // STUN server address and port.
-    talk_base::SocketAddress server;
+    rtc::SocketAddress server;
   };
 
   struct TurnConfiguration {
@@ -361,7 +406,7 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
           password(password),
           transport_type(transport_type),
           secure(secure) {}
-    talk_base::SocketAddress server;
+    rtc::SocketAddress server;
     std::string username;
     std::string password;
     std::string transport_type;
@@ -378,7 +423,7 @@ class PortAllocatorFactoryInterface : public talk_base::RefCountInterface {
 };
 
 // Used to receive callbacks of DTLS identity requests.
-class DTLSIdentityRequestObserver : public talk_base::RefCountInterface {
+class DTLSIdentityRequestObserver : public rtc::RefCountInterface {
  public:
   virtual void OnFailure(int error) = 0;
   virtual void OnSuccess(const std::string& der_cert,
@@ -427,7 +472,7 @@ class DTLSIdentityServiceInterface {
 // CreatePeerConnectionFactory method which accepts threads as input and use the
 // CreatePeerConnection version that takes a PortAllocatorFactoryInterface as
 // argument.
-class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
+class PeerConnectionFactoryInterface : public rtc::RefCountInterface {
  public:
   class Options {
    public:
@@ -441,7 +486,7 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
 
   virtual void SetOptions(const Options& options) = 0;
 
-  virtual talk_base::scoped_refptr<PeerConnectionInterface>
+  virtual rtc::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
           const PeerConnectionInterface::RTCConfiguration& configuration,
           const MediaConstraintsInterface* constraints,
@@ -455,7 +500,7 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
   // and not IceServers. RTCConfiguration is made up of ice servers and
   // ice transport type.
   // http://dev.w3.org/2011/webrtc/editor/webrtc.html
-  inline talk_base::scoped_refptr<PeerConnectionInterface>
+  inline rtc::scoped_refptr<PeerConnectionInterface>
       CreatePeerConnection(
           const PeerConnectionInterface::IceServers& configuration,
           const MediaConstraintsInterface* constraints,
@@ -468,29 +513,29 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
                                   dtls_identity_service, observer);
   }
 
-  virtual talk_base::scoped_refptr<MediaStreamInterface>
+  virtual rtc::scoped_refptr<MediaStreamInterface>
       CreateLocalMediaStream(const std::string& label) = 0;
 
   // Creates a AudioSourceInterface.
   // |constraints| decides audio processing settings but can be NULL.
-  virtual talk_base::scoped_refptr<AudioSourceInterface> CreateAudioSource(
+  virtual rtc::scoped_refptr<AudioSourceInterface> CreateAudioSource(
       const MediaConstraintsInterface* constraints) = 0;
 
   // Creates a VideoSourceInterface. The new source take ownership of
   // |capturer|. |constraints| decides video resolution and frame rate but can
   // be NULL.
-  virtual talk_base::scoped_refptr<VideoSourceInterface> CreateVideoSource(
+  virtual rtc::scoped_refptr<VideoSourceInterface> CreateVideoSource(
       cricket::VideoCapturer* capturer,
       const MediaConstraintsInterface* constraints) = 0;
 
   // Creates a new local VideoTrack. The same |source| can be used in several
   // tracks.
-  virtual talk_base::scoped_refptr<VideoTrackInterface>
+  virtual rtc::scoped_refptr<VideoTrackInterface>
       CreateVideoTrack(const std::string& label,
                        VideoSourceInterface* source) = 0;
 
   // Creates an new AudioTrack. At the moment |source| can be NULL.
-  virtual talk_base::scoped_refptr<AudioTrackInterface>
+  virtual rtc::scoped_refptr<AudioTrackInterface>
       CreateAudioTrack(const std::string& label,
                        AudioSourceInterface* source) = 0;
 
@@ -499,7 +544,7 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
   // the ownerhip. If the operation fails, the file will be closed.
   // TODO(grunell): Remove when Chromium has started to use AEC in each source.
   // http://crbug.com/264611.
-  virtual bool StartAecDump(talk_base::PlatformFile file) = 0;
+  virtual bool StartAecDump(rtc::PlatformFile file) = 0;
 
  protected:
   // Dtor and ctor protected as objects shouldn't be created or deleted via
@@ -509,16 +554,16 @@ class PeerConnectionFactoryInterface : public talk_base::RefCountInterface {
 };
 
 // Create a new instance of PeerConnectionFactoryInterface.
-talk_base::scoped_refptr<PeerConnectionFactoryInterface>
+rtc::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory();
 
 // Create a new instance of PeerConnectionFactoryInterface.
 // Ownership of |factory|, |default_adm|, and optionally |encoder_factory| and
 // |decoder_factory| transferred to the returned factory.
-talk_base::scoped_refptr<PeerConnectionFactoryInterface>
+rtc::scoped_refptr<PeerConnectionFactoryInterface>
 CreatePeerConnectionFactory(
-    talk_base::Thread* worker_thread,
-    talk_base::Thread* signaling_thread,
+    rtc::Thread* worker_thread,
+    rtc::Thread* signaling_thread,
     AudioDeviceModule* default_adm,
     cricket::WebRtcVideoEncoderFactory* encoder_factory,
     cricket::WebRtcVideoDecoderFactory* decoder_factory);

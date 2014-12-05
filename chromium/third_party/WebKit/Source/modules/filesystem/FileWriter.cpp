@@ -31,22 +31,23 @@
 #include "config.h"
 #include "modules/filesystem/FileWriter.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/events/ProgressEvent.h"
 #include "core/fileapi/Blob.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "public/platform/WebFileWriter.h"
 #include "public/platform/WebURL.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int kMaxRecursionDepth = 3;
 static const double progressNotificationIntervalMS = 50;
 
 FileWriter* FileWriter::create(ExecutionContext* context)
 {
-    FileWriter* fileWriter = adoptRefCountedGarbageCollected(new FileWriter(context));
+    FileWriter* fileWriter = new FileWriter(context);
     fileWriter->suspendIfNeeded();
     return fileWriter;
 }
@@ -62,8 +63,8 @@ FileWriter::FileWriter(ExecutionContext* context)
     , m_numAborts(0)
     , m_recursionDepth(0)
     , m_lastProgressNotificationTimeMS(0)
+    , m_asyncOperationId(0)
 {
-    ScriptWrappable::init(this);
 }
 
 FileWriter::~FileWriter()
@@ -87,10 +88,14 @@ void FileWriter::stop()
     m_readyState = DONE;
 }
 
+bool FileWriter::hasPendingActivity() const
+{
+    return m_operationInProgress != OperationNone || m_queuedOperation != OperationNone || m_readyState == WRITING;
+}
+
 void FileWriter::write(Blob* data, ExceptionState& exceptionState)
 {
     ASSERT(writer());
-    ASSERT(data);
     ASSERT(m_truncateLength == -1);
     if (m_readyState == WRITING) {
         setError(FileError::INVALID_STATE_ERR, exceptionState);
@@ -204,7 +209,6 @@ void FileWriter::didWrite(long long bytes, bool complete)
     if (complete) {
       if (numAborts == m_numAborts)
           signalCompletion(FileError::OK);
-      unsetPendingActivity(this);
     }
 }
 
@@ -221,10 +225,9 @@ void FileWriter::didTruncate()
         setPosition(length());
     m_operationInProgress = OperationNone;
     signalCompletion(FileError::OK);
-    unsetPendingActivity(this);
 }
 
-void FileWriter::didFail(blink::WebFileError code)
+void FileWriter::didFail(WebFileError code)
 {
     ASSERT(m_operationInProgress != OperationNone);
     ASSERT(static_cast<FileError::ErrorCode>(code) != FileError::OK);
@@ -237,7 +240,6 @@ void FileWriter::didFail(blink::WebFileError code)
     m_blobBeingWritten.clear();
     m_operationInProgress = OperationNone;
     signalCompletion(static_cast<FileError::ErrorCode>(code));
-    unsetPendingActivity(this);
 }
 
 void FileWriter::completeAbort()
@@ -247,25 +249,23 @@ void FileWriter::completeAbort()
     Operation operation = m_queuedOperation;
     m_queuedOperation = OperationNone;
     doOperation(operation);
-    unsetPendingActivity(this);
 }
 
 void FileWriter::doOperation(Operation operation)
 {
+    m_asyncOperationId = InspectorInstrumentation::traceAsyncOperationStarting(executionContext(), "FileWriter", m_asyncOperationId);
     switch (operation) {
     case OperationWrite:
         ASSERT(m_operationInProgress == OperationNone);
         ASSERT(m_truncateLength == -1);
         ASSERT(m_blobBeingWritten.get());
         ASSERT(m_readyState == WRITING);
-        setPendingActivity(this);
         writer()->write(position(), m_blobBeingWritten->uuid());
         break;
     case OperationTruncate:
         ASSERT(m_operationInProgress == OperationNone);
         ASSERT(m_truncateLength >= 0);
         ASSERT(m_readyState == WRITING);
-        setPendingActivity(this);
         writer()->truncate(m_truncateLength);
         break;
     case OperationNone:
@@ -301,14 +301,19 @@ void FileWriter::signalCompletion(FileError::ErrorCode code)
     } else
         fireEvent(EventTypeNames::write);
     fireEvent(EventTypeNames::writeend);
+
+    InspectorInstrumentation::traceAsyncOperationCompleted(executionContext(), m_asyncOperationId);
+    m_asyncOperationId = 0;
 }
 
 void FileWriter::fireEvent(const AtomicString& type)
 {
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncCallbackStarting(executionContext(), m_asyncOperationId);
     ++m_recursionDepth;
     dispatchEvent(ProgressEvent::create(type, true, m_bytesWritten, m_bytesToWrite));
     --m_recursionDepth;
     ASSERT(m_recursionDepth >= 0);
+    InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
 }
 
 void FileWriter::setError(FileError::ErrorCode errorCode, ExceptionState& exceptionState)
@@ -326,4 +331,4 @@ void FileWriter::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

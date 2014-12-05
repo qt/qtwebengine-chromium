@@ -26,14 +26,14 @@
 #include "config.h"
 #include "core/editing/TextInsertionBaseCommand.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/events/BeforeTextInsertedEvent.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 TextInsertionBaseCommand::TextInsertionBaseCommand(Document& document)
     : CompositeEditCommand(document)
@@ -73,12 +73,12 @@ String dispatchBeforeTextInsertedEvent(const String& text, const VisibleSelectio
 
 bool canAppendNewLineFeedToSelection(const VisibleSelection& selection)
 {
-    Node* node = selection.rootEditableElement();
-    if (!node)
+    Element* element = selection.rootEditableElement();
+    if (!element)
         return false;
 
     RefPtrWillBeRawPtr<BeforeTextInsertedEvent> event = BeforeTextInsertedEvent::create(String("\n"));
-    node->dispatchEvent(event, IGNORE_EXCEPTION);
+    element->dispatchEvent(event, IGNORE_EXCEPTION);
     return event->text().length();
 }
 

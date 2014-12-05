@@ -23,14 +23,14 @@ class CONTENT_EXPORT BrowserThreadImpl : public BrowserThread,
   // thread already exists.
   BrowserThreadImpl(BrowserThread::ID identifier,
                     base::MessageLoop* message_loop);
-  virtual ~BrowserThreadImpl();
+  ~BrowserThreadImpl() override;
 
   static void ShutdownThreadPool();
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void Run(base::MessageLoop* message_loop) OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void Run(base::MessageLoop* message_loop) override;
+  void CleanUp() override;
 
  private:
   // We implement all the functionality of the public BrowserThread
@@ -61,7 +61,7 @@ class CONTENT_EXPORT BrowserThreadImpl : public BrowserThread,
   // For testing.
   friend class ContentTestSuiteBaseListener;
   friend class TestBrowserThreadBundle;
-  static void FlushThreadPoolHelper();
+  static void FlushThreadPoolHelperForTesting();
 
   // The identifier of this thread.  Only one thread can exist with a given
   // identifier at a given time.

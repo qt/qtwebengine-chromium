@@ -10,7 +10,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "content/common/gpu/media/vaapi_h264_decoder.h"
 #include "media/base/video_decoder_config.h"
@@ -127,7 +127,8 @@ bool VaapiH264DecoderLoop::Initialize(base::FilePath input_file,
   media::VideoCodecProfile profile = media::H264PROFILE_BASELINE;
   base::Closure report_error_cb =
       base::Bind(&LogOnError, VaapiH264Decoder::VAAPI_ERROR);
-  wrapper_ = VaapiWrapper::Create(profile, x_display_, report_error_cb);
+  wrapper_ = VaapiWrapper::Create(
+      VaapiWrapper::kDecode, profile, x_display_, report_error_cb);
   if (!wrapper_.get()) {
     LOG(ERROR) << "Can't create vaapi wrapper";
     return false;
@@ -248,8 +249,7 @@ bool VaapiH264DecoderLoop::ProcessVideoFrame(
     int to_write = media::VideoFrame::PlaneAllocationSize(
         frame->format(), i, frame->coded_size());
     const char* buf = reinterpret_cast<const char*>(frame->data(i));
-    int written = base::AppendToFile(output_file_, buf, to_write);
-    if (written != to_write)
+    if (!base::AppendToFile(output_file_, buf, to_write))
       return false;
   }
   return true;
@@ -349,7 +349,7 @@ TEST(VaapiH264DecoderTest, TestDecode) {
 
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);  // Removes gtest-specific args.
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
 
   // Needed to enable DVLOG through --vmodule.
   logging::LoggingSettings settings;
@@ -357,11 +357,11 @@ int main(int argc, char** argv) {
   CHECK(logging::InitLogging(settings));
 
   // Process command line.
-  CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   CHECK(cmd_line);
 
-  CommandLine::SwitchMap switches = cmd_line->GetSwitches();
-  for (CommandLine::SwitchMap::const_iterator it = switches.begin();
+  base::CommandLine::SwitchMap switches = cmd_line->GetSwitches();
+  for (base::CommandLine::SwitchMap::const_iterator it = switches.begin();
        it != switches.end();
        ++it) {
     if (it->first == "input_file") {

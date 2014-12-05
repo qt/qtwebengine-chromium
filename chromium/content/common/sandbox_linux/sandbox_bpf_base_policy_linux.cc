@@ -7,7 +7,10 @@
 #include <errno.h>
 
 #include "base/logging.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/seccomp-bpf-helpers/baseline_policy.h"
+
+using sandbox::bpf_dsl::ResultExpr;
 
 namespace content {
 
@@ -22,11 +25,14 @@ SandboxBPFBasePolicy::SandboxBPFBasePolicy()
     : baseline_policy_(new sandbox::BaselinePolicy(kFSDeniedErrno)) {}
 SandboxBPFBasePolicy::~SandboxBPFBasePolicy() {}
 
-ErrorCode SandboxBPFBasePolicy::EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                                int system_call_number) const {
+ResultExpr SandboxBPFBasePolicy::EvaluateSyscall(int system_call_number) const {
   DCHECK(baseline_policy_);
-  return baseline_policy_->EvaluateSyscall(sandbox_compiler,
-                                           system_call_number);
+  return baseline_policy_->EvaluateSyscall(system_call_number);
+}
+
+ResultExpr SandboxBPFBasePolicy::InvalidSyscall() const {
+  DCHECK(baseline_policy_);
+  return baseline_policy_->InvalidSyscall();
 }
 
 bool SandboxBPFBasePolicy::PreSandboxHook() {

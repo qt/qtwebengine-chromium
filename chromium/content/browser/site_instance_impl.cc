@@ -25,7 +25,7 @@ int32 SiteInstanceImpl::next_site_instance_id_ = 1;
 
 SiteInstanceImpl::SiteInstanceImpl(BrowsingInstance* browsing_instance)
     : id_(next_site_instance_id_++),
-      active_view_count_(0),
+      active_frame_count_(0),
       browsing_instance_(browsing_instance),
       process_(NULL),
       has_site_(false) {
@@ -120,6 +120,8 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
                                                         process_, site_);
     }
 
+    TRACE_EVENT2("navigation", "SiteInstanceImpl::GetProcess",
+                 "site id", id_, "process id", process_->GetID());
     GetContentClient()->browser()->SiteInstanceGotProcess(this);
 
     if (has_site_)
@@ -131,6 +133,8 @@ RenderProcessHost* SiteInstanceImpl::GetProcess() {
 }
 
 void SiteInstanceImpl::SetSite(const GURL& url) {
+  TRACE_EVENT2("navigation", "SiteInstanceImpl::SetSite",
+               "site id", id_, "url", url.possibly_invalid_spec());
   // A SiteInstance's site should not change.
   // TODO(creis): When following links or script navigations, we can currently
   // render pages from other sites in this SiteInstance.  This will eventually
@@ -241,10 +245,12 @@ SiteInstance* SiteInstance::CreateForURL(BrowserContext* browser_context,
 
 /*static*/
 bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
-                                 const GURL& real_url1,
-                                 const GURL& real_url2) {
-  GURL url1 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url1);
-  GURL url2 = SiteInstanceImpl::GetEffectiveURL(browser_context, real_url2);
+                                 const GURL& real_src_url,
+                                 const GURL& real_dest_url) {
+  GURL src_url = SiteInstanceImpl::GetEffectiveURL(browser_context,
+                                                   real_src_url);
+  GURL dest_url = SiteInstanceImpl::GetEffectiveURL(browser_context,
+                                                    real_dest_url);
 
   // We infer web site boundaries based on the registered domain name of the
   // top-level page and the scheme.  We do not pay attention to the port if
@@ -254,20 +260,26 @@ bool SiteInstance::IsSameWebSite(BrowserContext* browser_context,
   // Some special URLs will match the site instance of any other URL. This is
   // done before checking both of them for validity, since we want these URLs
   // to have the same site instance as even an invalid one.
-  if (IsRendererDebugURL(url1) || IsRendererDebugURL(url2))
+  if (IsRendererDebugURL(src_url) || IsRendererDebugURL(dest_url))
     return true;
 
   // If either URL is invalid, they aren't part of the same site.
-  if (!url1.is_valid() || !url2.is_valid())
+  if (!src_url.is_valid() || !dest_url.is_valid())
     return false;
 
+  // If the destination url is just a blank page, we treat them as part of the
+  // same site.
+  GURL blank_page(url::kAboutBlankURL);
+  if (dest_url == blank_page)
+    return true;
+
   // If the schemes differ, they aren't part of the same site.
-  if (url1.scheme() != url2.scheme())
+  if (src_url.scheme() != dest_url.scheme())
     return false;
 
   return net::registry_controlled_domains::SameDomainOrHost(
-      url1,
-      url2,
+      src_url,
+      dest_url,
       net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
 }
 
@@ -329,7 +341,8 @@ void SiteInstanceImpl::RenderProcessHostDestroyed(RenderProcessHost* host) {
 void SiteInstanceImpl::LockToOrigin() {
   // We currently only restrict this process to a particular site if the
   // --enable-strict-site-isolation or --site-per-process flags are present.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kEnableStrictSiteIsolation) ||
       command_line.HasSwitch(switches::kSitePerProcess)) {
     ChildProcessSecurityPolicyImpl* policy =

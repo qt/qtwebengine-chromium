@@ -8,7 +8,10 @@
     'type': 'static_library',
     'include_dirs' : [
       '../third_party/ktx',
-      '../src/gpu'
+      '../include/gpu',
+      '../src/core',
+      '../src/gpu',
+      '../src/utils',
     ],
     'sources': [
       '../third_party/ktx/ktx.cpp',

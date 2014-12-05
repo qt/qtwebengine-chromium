@@ -15,7 +15,8 @@ class MEDIA_EXPORT DataSource {
  public:
   typedef base::Callback<void(int64, int64)> StatusCallback;
   typedef base::Callback<void(int)> ReadCB;
-  static const int kReadError;
+
+  enum { kReadError = -1 };
 
   DataSource();
   virtual ~DataSource();
@@ -28,7 +29,7 @@ class MEDIA_EXPORT DataSource {
 
   // Stops the DataSource. Once this is called all future Read() calls will
   // return an error.
-  virtual void Stop(const base::Closure& callback) = 0;
+  virtual void Stop() = 0;
 
   // Returns true and the file size, false if the file size could not be
   // retrieved.

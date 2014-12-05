@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN verison: //components/cdm/common
       'target_name': 'cdm_common',
       'type': 'static_library',
       'dependencies': [
@@ -19,12 +20,12 @@
       ],
     },
     {
+      # GN version: //components/cdm/renderer
       'target_name': 'cdm_renderer',
       'type': 'static_library',
       'dependencies': [
         'cdm_common',
         '../base/base.gyp:base',
-        '../content/content.gyp:content_common',
         '../content/content.gyp:content_renderer',
         '../third_party/widevine/cdm/widevine_cdm.gyp:widevine_cdm_version_h',
       ],
@@ -41,8 +42,8 @@
           'sources': [
             'cdm/renderer/android_key_systems.cc',
             'cdm/renderer/android_key_systems.h',
-	  ],
-	}],
+          ],
+        }],
       ],
     },
   ],
@@ -50,6 +51,7 @@
     ['OS == "android"', {
       'targets': [
         {
+          # GN version: //components/cdm/browser
           'target_name': 'cdm_browser',
           'type': 'static_library',
           'dependencies': [

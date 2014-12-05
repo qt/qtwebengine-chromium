@@ -10,14 +10,17 @@
 
 namespace content {
 
-class BrowserAccessibilityAndroid : public BrowserAccessibility {
+class CONTENT_EXPORT BrowserAccessibilityAndroid : public BrowserAccessibility {
  public:
   // Overrides from BrowserAccessibility.
-  virtual void OnDataChanged() OVERRIDE;
-  virtual bool IsNative() const OVERRIDE;
+  virtual void OnDataChanged() override;
+  virtual bool IsNative() const override;
+  virtual void OnLocationChanged() override;
 
-  virtual bool PlatformIsLeaf() const OVERRIDE;
+  virtual bool PlatformIsLeaf() const override;
 
+  bool CanScrollForward() const;
+  bool CanScrollBackward() const;
   bool IsCheckable() const;
   bool IsChecked() const;
   bool IsClickable() const;
@@ -25,6 +28,7 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   bool IsCollectionItem() const;
   bool IsContentInvalid() const;
   bool IsDismissable() const;
+  bool IsEditableText() const;
   bool IsEnabled() const;
   bool IsFocusable() const;
   bool IsFocused() const;
@@ -36,6 +40,7 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   bool IsRangeType() const;
   bool IsScrollable() const;
   bool IsSelected() const;
+  bool IsSlider() const;
   bool IsVisibleToUser() const;
 
   bool CanOpenPopup() const;
@@ -78,6 +83,26 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   float RangeMax() const;
   float RangeCurrentValue() const;
 
+  // Calls GetLineBoundaries or GetWordBoundaries depending on the value
+  // of |granularity|, or fails if anything else is passed in |granularity|.
+  void GetGranularityBoundaries(int granularity,
+                                std::vector<int32>* starts,
+                                std::vector<int32>* ends,
+                                int offset);
+
+  // Append line start and end indices for the text of this node
+  // (as returned by GetText()), adding |offset| to each one.
+  void GetLineBoundaries(std::vector<int32>* line_starts,
+                         std::vector<int32>* line_ends,
+                         int offset);
+
+  // Append word start and end indices for the text of this node
+  // (as returned by GetText()) to |word_starts| and |word_ends|,
+  // adding |offset| to each one.
+  void GetWordBoundaries(std::vector<int32>* word_starts,
+                         std::vector<int32>* word_ends,
+                         int offset);
+
  private:
   // This gives BrowserAccessibility::Create access to the class constructor.
   friend class BrowserAccessibility;
@@ -85,6 +110,7 @@ class BrowserAccessibilityAndroid : public BrowserAccessibility {
   BrowserAccessibilityAndroid();
 
   bool HasOnlyStaticTextChildren() const;
+  bool HasOnlyTextAndImageChildren() const;
   bool IsIframe() const;
 
   void NotifyLiveRegionUpdate(base::string16& aria_live);

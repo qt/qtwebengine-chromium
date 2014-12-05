@@ -10,8 +10,7 @@
 #include "src/debug.h"
 #include "src/deoptimizer.h"
 #include "src/full-codegen.h"
-#include "src/runtime.h"
-#include "src/stub-cache.h"
+#include "src/runtime/runtime.h"
 
 namespace v8 {
 namespace internal {
@@ -40,7 +39,7 @@ void Builtins::Generate_Adaptor(MacroAssembler* masm,
     num_extra_args = 1;
     __ push(r1);
   } else {
-    ASSERT(extra_args == NO_EXTRA_ARGUMENTS);
+    DCHECK(extra_args == NO_EXTRA_ARGUMENTS);
   }
 
   // JumpToExternalReference expects r0 to contain the number of arguments
@@ -303,7 +302,7 @@ void Builtins::Generate_InOptimizationQueue(MacroAssembler* masm) {
   __ cmp(sp, Operand(ip));
   __ b(hs, &ok);
 
-  CallRuntimePassFunction(masm, Runtime::kHiddenTryInstallOptimizedCode);
+  CallRuntimePassFunction(masm, Runtime::kTryInstallOptimizedCode);
   GenerateTailCallToReturnedCode(masm);
 
   __ bind(&ok);
@@ -323,7 +322,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
   // -----------------------------------
 
   // Should never create mementos for api functions.
-  ASSERT(!is_api_function || !create_memento);
+  DCHECK(!is_api_function || !create_memento);
 
   Isolate* isolate = masm->isolate();
 
@@ -385,7 +384,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         __ push(r1);
 
         __ Push(r2, r1);  // r1 = constructor
-        __ CallRuntime(Runtime::kHiddenFinalizeInstanceSize, 1);
+        __ CallRuntime(Runtime::kFinalizeInstanceSize, 1);
 
         __ pop(r2);
         __ pop(r1);
@@ -411,11 +410,11 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r4: JSObject (not tagged)
       __ LoadRoot(r6, Heap::kEmptyFixedArrayRootIndex);
       __ mov(r5, r4);
-      ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
+      DCHECK_EQ(0 * kPointerSize, JSObject::kMapOffset);
       __ str(r2, MemOperand(r5, kPointerSize, PostIndex));
-      ASSERT_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
+      DCHECK_EQ(1 * kPointerSize, JSObject::kPropertiesOffset);
       __ str(r6, MemOperand(r5, kPointerSize, PostIndex));
-      ASSERT_EQ(2 * kPointerSize, JSObject::kElementsOffset);
+      DCHECK_EQ(2 * kPointerSize, JSObject::kElementsOffset);
       __ str(r6, MemOperand(r5, kPointerSize, PostIndex));
 
       // Fill all the in-object properties with the appropriate filler.
@@ -424,7 +423,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r3: object size (in words, including memento if create_memento)
       // r4: JSObject (not tagged)
       // r5: First in-object property of JSObject (not tagged)
-      ASSERT_EQ(3 * kPointerSize, JSObject::kHeaderSize);
+      DCHECK_EQ(3 * kPointerSize, JSObject::kHeaderSize);
       __ LoadRoot(r6, Heap::kUndefinedValueRootIndex);
 
       if (!is_api_function) {
@@ -463,11 +462,11 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
         // Fill in memento fields.
         // r5: points to the allocated but uninitialized memento.
         __ LoadRoot(r6, Heap::kAllocationMementoMapRootIndex);
-        ASSERT_EQ(0 * kPointerSize, AllocationMemento::kMapOffset);
+        DCHECK_EQ(0 * kPointerSize, AllocationMemento::kMapOffset);
         __ str(r6, MemOperand(r5, kPointerSize, PostIndex));
         // Load the AllocationSite
         __ ldr(r6, MemOperand(sp, 2 * kPointerSize));
-        ASSERT_EQ(1 * kPointerSize, AllocationMemento::kAllocationSiteOffset);
+        DCHECK_EQ(1 * kPointerSize, AllocationMemento::kAllocationSiteOffset);
         __ str(r6, MemOperand(r5, kPointerSize, PostIndex));
       } else {
         __ add(r0, r4, Operand(r3, LSL, kPointerSizeLog2));  // End of object.
@@ -522,9 +521,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r5: FixedArray (not tagged)
       __ LoadRoot(r6, Heap::kFixedArrayMapRootIndex);
       __ mov(r2, r5);
-      ASSERT_EQ(0 * kPointerSize, JSObject::kMapOffset);
+      DCHECK_EQ(0 * kPointerSize, JSObject::kMapOffset);
       __ str(r6, MemOperand(r2, kPointerSize, PostIndex));
-      ASSERT_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
+      DCHECK_EQ(1 * kPointerSize, FixedArray::kLengthOffset);
       __ SmiTag(r0, r3);
       __ str(r0, MemOperand(r2, kPointerSize, PostIndex));
 
@@ -535,7 +534,7 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
       // r4: JSObject
       // r5: FixedArray (not tagged)
       __ add(r6, r2, Operand(r3, LSL, kPointerSizeLog2));  // End of object.
-      ASSERT_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
+      DCHECK_EQ(2 * kPointerSize, FixedArray::kHeaderSize);
       { Label loop, entry;
         __ LoadRoot(r0, Heap::kUndefinedValueRootIndex);
         __ b(&entry);
@@ -578,9 +577,9 @@ static void Generate_JSConstructStubHelper(MacroAssembler* masm,
 
     __ push(r1);  // argument for Runtime_NewObject
     if (create_memento) {
-      __ CallRuntime(Runtime::kHiddenNewObjectWithAllocationSite, 2);
+      __ CallRuntime(Runtime::kNewObjectWithAllocationSite, 2);
     } else {
-      __ CallRuntime(Runtime::kHiddenNewObject, 1);
+      __ CallRuntime(Runtime::kNewObject, 1);
     }
     __ mov(r4, r0);
 
@@ -808,8 +807,8 @@ void Builtins::Generate_JSConstructEntryTrampoline(MacroAssembler* masm) {
 }
 
 
-void Builtins::Generate_CompileUnoptimized(MacroAssembler* masm) {
-  CallRuntimePassFunction(masm, Runtime::kHiddenCompileUnoptimized);
+void Builtins::Generate_CompileLazy(MacroAssembler* masm) {
+  CallRuntimePassFunction(masm, Runtime::kCompileLazy);
   GenerateTailCallToReturnedCode(masm);
 }
 
@@ -823,7 +822,7 @@ static void CallCompileOptimized(MacroAssembler* masm, bool concurrent) {
   // Whether to compile in a background thread.
   __ Push(masm->isolate()->factory()->ToBoolean(concurrent));
 
-  __ CallRuntime(Runtime::kHiddenCompileOptimized, 2);
+  __ CallRuntime(Runtime::kCompileOptimized, 2);
   // Restore receiver.
   __ pop(r1);
 }
@@ -918,7 +917,7 @@ static void Generate_NotifyStubFailureHelper(MacroAssembler* masm,
     // registers.
     __ stm(db_w, sp, kJSCallerSaved | kCalleeSaved);
     // Pass the function and deoptimization type to the runtime system.
-    __ CallRuntime(Runtime::kHiddenNotifyStubFailure, 0, save_doubles);
+    __ CallRuntime(Runtime::kNotifyStubFailure, 0, save_doubles);
     __ ldm(ia_w, sp, kJSCallerSaved | kCalleeSaved);
   }
 
@@ -944,7 +943,7 @@ static void Generate_NotifyDeoptimizedHelper(MacroAssembler* masm,
     // Pass the function and deoptimization type to the runtime system.
     __ mov(r0, Operand(Smi::FromInt(static_cast<int>(type))));
     __ push(r0);
-    __ CallRuntime(Runtime::kHiddenNotifyDeoptimized, 1);
+    __ CallRuntime(Runtime::kNotifyDeoptimized, 1);
   }
 
   // Get the full codegen state from the stack and untag it -> r6.
@@ -1035,7 +1034,7 @@ void Builtins::Generate_OsrAfterStackCheck(MacroAssembler* masm) {
   __ b(hs, &ok);
   {
     FrameAndConstantPoolScope scope(masm, StackFrame::INTERNAL);
-    __ CallRuntime(Runtime::kHiddenStackGuard, 0);
+    __ CallRuntime(Runtime::kStackGuard, 0);
   }
   __ Jump(masm->isolate()->builtins()->OnStackReplacement(),
           RelocInfo::CODE_TARGET);
@@ -1071,7 +1070,7 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
   // r1: function
   Label shift_arguments;
   __ mov(r4, Operand::Zero());  // indicate regular JS_FUNCTION
-  { Label convert_to_object, use_global_receiver, patch_receiver;
+  { Label convert_to_object, use_global_proxy, patch_receiver;
     // Change context eagerly in case we need the global receiver.
     __ ldr(cp, FieldMemOperand(r1, JSFunction::kContextOffset));
 
@@ -1096,10 +1095,10 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
 
     __ LoadRoot(r3, Heap::kUndefinedValueRootIndex);
     __ cmp(r2, r3);
-    __ b(eq, &use_global_receiver);
+    __ b(eq, &use_global_proxy);
     __ LoadRoot(r3, Heap::kNullValueRootIndex);
     __ cmp(r2, r3);
-    __ b(eq, &use_global_receiver);
+    __ b(eq, &use_global_proxy);
 
     STATIC_ASSERT(LAST_SPEC_OBJECT_TYPE == LAST_TYPE);
     __ CompareObjectType(r2, r3, r3, FIRST_SPEC_OBJECT_TYPE);
@@ -1128,9 +1127,9 @@ void Builtins::Generate_FunctionCall(MacroAssembler* masm) {
     __ mov(r4, Operand::Zero());
     __ jmp(&patch_receiver);
 
-    __ bind(&use_global_receiver);
+    __ bind(&use_global_proxy);
   __ ldr(r2, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-  __ ldr(r2, FieldMemOperand(r2, GlobalObject::kGlobalReceiverOffset));
+  __ ldr(r2, FieldMemOperand(r2, GlobalObject::kGlobalProxyOffset));
 
     __ bind(&patch_receiver);
     __ add(r3, sp, Operand(r0, LSL, kPointerSizeLog2));
@@ -1284,7 +1283,7 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
 
     // Compute the receiver.
     // Do not transform the receiver for strict mode functions.
-    Label call_to_object, use_global_receiver;
+    Label call_to_object, use_global_proxy;
     __ ldr(r2, FieldMemOperand(r2, SharedFunctionInfo::kCompilerHintsOffset));
     __ tst(r2, Operand(1 << (SharedFunctionInfo::kStrictModeFunction +
                              kSmiTagSize)));
@@ -1298,10 +1297,10 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ JumpIfSmi(r0, &call_to_object);
     __ LoadRoot(r1, Heap::kNullValueRootIndex);
     __ cmp(r0, r1);
-    __ b(eq, &use_global_receiver);
+    __ b(eq, &use_global_proxy);
     __ LoadRoot(r1, Heap::kUndefinedValueRootIndex);
     __ cmp(r0, r1);
-    __ b(eq, &use_global_receiver);
+    __ b(eq, &use_global_proxy);
 
     // Check if the receiver is already a JavaScript object.
     // r0: receiver
@@ -1316,9 +1315,9 @@ void Builtins::Generate_FunctionApply(MacroAssembler* masm) {
     __ InvokeBuiltin(Builtins::TO_OBJECT, CALL_FUNCTION);
     __ b(&push_receiver);
 
-    __ bind(&use_global_receiver);
+    __ bind(&use_global_proxy);
     __ ldr(r0, ContextOperand(cp, Context::GLOBAL_OBJECT_INDEX));
-    __ ldr(r0, FieldMemOperand(r0, GlobalObject::kGlobalReceiverOffset));
+    __ ldr(r0, FieldMemOperand(r0, GlobalObject::kGlobalProxyOffset));
 
     // Push the receiver.
     // r0: receiver
@@ -1422,13 +1421,7 @@ static void LeaveArgumentsAdaptorFrame(MacroAssembler* masm) {
   __ ldr(r1, MemOperand(fp, -(StandardFrameConstants::kFixedFrameSizeFromFp +
                               kPointerSize)));
 
-  if (FLAG_enable_ool_constant_pool) {
-    __ add(sp, fp, Operand(StandardFrameConstants::kConstantPoolOffset));
-    __ ldm(ia_w, sp, pp.bit() | fp.bit() | lr.bit());
-  } else {
-    __ mov(sp, fp);;
-    __ ldm(ia_w, sp, fp.bit() | lr.bit());
-  }
+  __ LeaveFrame(StackFrame::ARGUMENTS_ADAPTOR);
   __ add(sp, sp, Operand::PointerOffsetFromSmiKey(r1));
   __ add(sp, sp, Operand(kPointerSize));  // adjust for receiver
 }

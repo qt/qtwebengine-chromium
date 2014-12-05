@@ -41,19 +41,19 @@
 #include "talk/app/webrtc/test/fakeaudiocapturemodule.h"
 #include "talk/app/webrtc/test/fakeconstraints.h"
 #include "talk/app/webrtc/test/fakedtlsidentityservice.h"
-#include "talk/app/webrtc/test/fakevideotrackrenderer.h"
 #include "talk/app/webrtc/test/fakeperiodicvideocapturer.h"
+#include "talk/app/webrtc/test/fakevideotrackrenderer.h"
 #include "talk/app/webrtc/test/mockpeerconnectionobservers.h"
 #include "talk/app/webrtc/videosourceinterface.h"
-#include "talk/base/gunit.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/ssladapter.h"
-#include "talk/base/sslstreamadapter.h"
-#include "talk/base/thread.h"
 #include "talk/media/webrtc/fakewebrtcvideoengine.h"
-#include "talk/p2p/base/constants.h"
-#include "talk/p2p/base/sessiondescription.h"
+#include "webrtc/p2p/base/constants.h"
+#include "webrtc/p2p/base/sessiondescription.h"
 #include "talk/session/media/mediasession.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/ssladapter.h"
+#include "webrtc/base/sslstreamadapter.h"
+#include "webrtc/base/thread.h"
 
 #define MAYBE_SKIP_TEST(feature)                    \
   if (!(feature())) {                               \
@@ -90,6 +90,7 @@ static const int kMaxWaitMs = 2000;
 // warnings.
 #if !defined(THREAD_SANITIZER)
 static const int kMaxWaitForStatsMs = 3000;
+static const int kMaxWaitForRembMs = 5000;
 #endif
 static const int kMaxWaitForFramesMs = 10000;
 static const int kEndAudioFrameCount = 3;
@@ -154,31 +155,31 @@ class PeerConnectionTestClientBase
   }
 
   void AddMediaStream(bool audio, bool video) {
-    std::string label = kStreamLabelBase +
-        talk_base::ToString<int>(
+    std::string stream_label = kStreamLabelBase +
+        rtc::ToString<int>(
             static_cast<int>(peer_connection_->local_streams()->count()));
-    talk_base::scoped_refptr<webrtc::MediaStreamInterface> stream =
-        peer_connection_factory_->CreateLocalMediaStream(label);
+    rtc::scoped_refptr<webrtc::MediaStreamInterface> stream =
+        peer_connection_factory_->CreateLocalMediaStream(stream_label);
 
     if (audio && can_receive_audio()) {
       FakeConstraints constraints;
       // Disable highpass filter so that we can get all the test audio frames.
       constraints.AddMandatory(
           MediaConstraintsInterface::kHighpassFilter, false);
-      talk_base::scoped_refptr<webrtc::AudioSourceInterface> source =
+      rtc::scoped_refptr<webrtc::AudioSourceInterface> source =
           peer_connection_factory_->CreateAudioSource(&constraints);
       // TODO(perkj): Test audio source when it is implemented. Currently audio
       // always use the default input.
-      talk_base::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
-          peer_connection_factory_->CreateAudioTrack(kAudioTrackLabelBase,
-                                                     source));
+      std::string label = stream_label + kAudioTrackLabelBase;
+      rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
+          peer_connection_factory_->CreateAudioTrack(label, source));
       stream->AddTrack(audio_track);
     }
     if (video && can_receive_video()) {
-      stream->AddTrack(CreateLocalVideoTrack(label));
+      stream->AddTrack(CreateLocalVideoTrack(stream_label));
     }
 
-    EXPECT_TRUE(peer_connection_->AddStream(stream, NULL));
+    EXPECT_TRUE(peer_connection_->AddStream(stream));
   }
 
   size_t NumberOfLocalMediaStreams() {
@@ -236,13 +237,13 @@ class PeerConnectionTestClientBase
   }
   // Verify the CreateDtmfSender interface
   void VerifyDtmf() {
-    talk_base::scoped_ptr<DummyDtmfObserver> observer(new DummyDtmfObserver());
-    talk_base::scoped_refptr<DtmfSenderInterface> dtmf_sender;
+    rtc::scoped_ptr<DummyDtmfObserver> observer(new DummyDtmfObserver());
+    rtc::scoped_refptr<DtmfSenderInterface> dtmf_sender;
 
     // We can't create a DTMF sender with an invalid audio track or a non local
     // track.
     EXPECT_TRUE(peer_connection_->CreateDtmfSender(NULL) == NULL);
-    talk_base::scoped_refptr<webrtc::AudioTrackInterface> non_localtrack(
+    rtc::scoped_refptr<webrtc::AudioTrackInterface> non_localtrack(
         peer_connection_factory_->CreateAudioTrack("dummy_track",
                                                    NULL));
     EXPECT_TRUE(peer_connection_->CreateDtmfSender(non_localtrack) == NULL);
@@ -333,8 +334,8 @@ class PeerConnectionTestClientBase
   }
 
   int GetAudioOutputLevelStats(webrtc::MediaStreamTrackInterface* track) {
-    talk_base::scoped_refptr<MockStatsObserver>
-        observer(new talk_base::RefCountedObject<MockStatsObserver>());
+    rtc::scoped_refptr<MockStatsObserver>
+        observer(new rtc::RefCountedObject<MockStatsObserver>());
     EXPECT_TRUE(peer_connection_->GetStats(
         observer, track, PeerConnectionInterface::kStatsOutputLevelStandard));
     EXPECT_TRUE_WAIT(observer->called(), kMaxWaitMs);
@@ -342,8 +343,8 @@ class PeerConnectionTestClientBase
   }
 
   int GetAudioInputLevelStats() {
-    talk_base::scoped_refptr<MockStatsObserver>
-        observer(new talk_base::RefCountedObject<MockStatsObserver>());
+    rtc::scoped_refptr<MockStatsObserver>
+        observer(new rtc::RefCountedObject<MockStatsObserver>());
     EXPECT_TRUE(peer_connection_->GetStats(
         observer, NULL, PeerConnectionInterface::kStatsOutputLevelStandard));
     EXPECT_TRUE_WAIT(observer->called(), kMaxWaitMs);
@@ -351,8 +352,8 @@ class PeerConnectionTestClientBase
   }
 
   int GetBytesReceivedStats(webrtc::MediaStreamTrackInterface* track) {
-    talk_base::scoped_refptr<MockStatsObserver>
-    observer(new talk_base::RefCountedObject<MockStatsObserver>());
+    rtc::scoped_refptr<MockStatsObserver>
+    observer(new rtc::RefCountedObject<MockStatsObserver>());
     EXPECT_TRUE(peer_connection_->GetStats(
         observer, track, PeerConnectionInterface::kStatsOutputLevelStandard));
     EXPECT_TRUE_WAIT(observer->called(), kMaxWaitMs);
@@ -360,12 +361,22 @@ class PeerConnectionTestClientBase
   }
 
   int GetBytesSentStats(webrtc::MediaStreamTrackInterface* track) {
-    talk_base::scoped_refptr<MockStatsObserver>
-    observer(new talk_base::RefCountedObject<MockStatsObserver>());
+    rtc::scoped_refptr<MockStatsObserver>
+    observer(new rtc::RefCountedObject<MockStatsObserver>());
     EXPECT_TRUE(peer_connection_->GetStats(
         observer, track, PeerConnectionInterface::kStatsOutputLevelStandard));
     EXPECT_TRUE_WAIT(observer->called(), kMaxWaitMs);
     return observer->BytesSent();
+  }
+
+  int GetAvailableReceivedBandwidthStats() {
+    rtc::scoped_refptr<MockStatsObserver>
+        observer(new rtc::RefCountedObject<MockStatsObserver>());
+    EXPECT_TRUE(peer_connection_->GetStats(
+        observer, NULL, PeerConnectionInterface::kStatsOutputLevelStandard));
+    EXPECT_TRUE_WAIT(observer->called(), kMaxWaitMs);
+    int bw = observer->AvailableReceiveBandwidth();
+    return bw;
   }
 
   int rendered_width() {
@@ -415,7 +426,6 @@ class PeerConnectionTestClientBase
   }
 
   // PeerConnectionObserver callbacks.
-  virtual void OnError() {}
   virtual void OnMessage(const std::string&) {}
   virtual void OnSignalingMessage(const std::string& /*msg*/) {}
   virtual void OnSignalingChange(
@@ -447,6 +457,12 @@ class PeerConnectionTestClientBase
   webrtc::PeerConnectionInterface* pc() {
     return peer_connection_.get();
   }
+  void StopVideoCapturers() {
+    for (std::vector<cricket::VideoCapturer*>::iterator it =
+        video_capturers_.begin(); it != video_capturers_.end(); ++it) {
+      (*it)->Stop();
+    }
+  }
 
  protected:
   explicit PeerConnectionTestClientBase(const std::string& id)
@@ -464,9 +480,8 @@ class PeerConnectionTestClientBase
     if (!allocator_factory_) {
       return false;
     }
-    audio_thread_.Start();
     fake_audio_capture_module_ = FakeAudioCaptureModule::Create(
-        &audio_thread_);
+        rtc::Thread::Current());
 
     if (fake_audio_capture_module_ == NULL) {
       return false;
@@ -474,7 +489,7 @@ class PeerConnectionTestClientBase
     fake_video_decoder_factory_ = new FakeWebRtcVideoDecoderFactory();
     fake_video_encoder_factory_ = new FakeWebRtcVideoEncoderFactory();
     peer_connection_factory_ = webrtc::CreatePeerConnectionFactory(
-        talk_base::Thread::Current(), talk_base::Thread::Current(),
+        rtc::Thread::Current(), rtc::Thread::Current(),
         fake_audio_capture_module_, fake_video_encoder_factory_,
         fake_video_decoder_factory_);
     if (!peer_connection_factory_) {
@@ -484,7 +499,7 @@ class PeerConnectionTestClientBase
                                             constraints);
     return peer_connection_.get() != NULL;
   }
-  virtual talk_base::scoped_refptr<webrtc::PeerConnectionInterface>
+  virtual rtc::scoped_refptr<webrtc::PeerConnectionInterface>
       CreatePeerConnection(webrtc::PortAllocatorFactoryInterface* factory,
                            const MediaConstraintsInterface* constraints) = 0;
   MessageReceiver* signaling_message_receiver() {
@@ -523,32 +538,28 @@ class PeerConnectionTestClientBase
     std::vector<std::string> tones_;
   };
 
-  talk_base::scoped_refptr<webrtc::VideoTrackInterface>
+  rtc::scoped_refptr<webrtc::VideoTrackInterface>
   CreateLocalVideoTrack(const std::string stream_label) {
     // Set max frame rate to 10fps to reduce the risk of the tests to be flaky.
     FakeConstraints source_constraints = video_constraints_;
     source_constraints.SetMandatoryMaxFrameRate(10);
 
-    talk_base::scoped_refptr<webrtc::VideoSourceInterface> source =
+    cricket::FakeVideoCapturer* fake_capturer =
+        new webrtc::FakePeriodicVideoCapturer();
+    video_capturers_.push_back(fake_capturer);
+    rtc::scoped_refptr<webrtc::VideoSourceInterface> source =
         peer_connection_factory_->CreateVideoSource(
-            new webrtc::FakePeriodicVideoCapturer(),
-            &source_constraints);
+            fake_capturer, &source_constraints);
     std::string label = stream_label + kVideoTrackLabelBase;
     return peer_connection_factory_->CreateVideoTrack(label, source);
   }
 
   std::string id_;
-  // Separate thread for executing |fake_audio_capture_module_| tasks. Audio
-  // processing must not be performed on the same thread as signaling due to
-  // signaling time constraints and relative complexity of the audio pipeline.
-  // This is consistent with the video pipeline that us a a separate thread for
-  // encoding and decoding.
-  talk_base::Thread audio_thread_;
 
-  talk_base::scoped_refptr<webrtc::PortAllocatorFactoryInterface>
+  rtc::scoped_refptr<webrtc::PortAllocatorFactoryInterface>
       allocator_factory_;
-  talk_base::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
-  talk_base::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
+  rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
+  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
       peer_connection_factory_;
 
   typedef std::pair<std::string, std::string> IceUfragPwdPair;
@@ -556,7 +567,7 @@ class PeerConnectionTestClientBase
   bool expect_ice_restart_;
 
   // Needed to keep track of number of frames send.
-  talk_base::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
+  rtc::scoped_refptr<FakeAudioCaptureModule> fake_audio_capture_module_;
   // Needed to keep track of number of frames received.
   typedef std::map<std::string, webrtc::FakeVideoTrackRenderer*> RenderMap;
   RenderMap fake_video_renderers_;
@@ -569,6 +580,10 @@ class PeerConnectionTestClientBase
 
   // For remote peer communication.
   MessageReceiver* signaling_message_receiver_;
+
+  // Store references to the video capturers we've created, so that we can stop
+  // them, if required.
+  std::vector<cricket::VideoCapturer*> video_capturers_;
 };
 
 class JsepTestClient
@@ -590,8 +605,8 @@ class JsepTestClient
     Negotiate(true, true);
   }
   virtual void Negotiate(bool audio, bool video) {
-    talk_base::scoped_ptr<SessionDescriptionInterface> offer;
-    EXPECT_TRUE(DoCreateOffer(offer.use()));
+    rtc::scoped_ptr<SessionDescriptionInterface> offer;
+    ASSERT_TRUE(DoCreateOffer(offer.use()));
 
     if (offer->description()->GetContentByName("audio")) {
       offer->description()->GetContentByName("audio")->rejected = !audio;
@@ -621,7 +636,7 @@ class JsepTestClient
                                  int sdp_mline_index,
                                  const std::string& msg) {
     LOG(INFO) << id() << "ReceiveIceMessage";
-    talk_base::scoped_ptr<webrtc::IceCandidateInterface> candidate(
+    rtc::scoped_ptr<webrtc::IceCandidateInterface> candidate(
         webrtc::CreateIceCandidate(sdp_mid, sdp_mline_index, msg, NULL));
     EXPECT_TRUE(pc()->AddIceCandidate(candidate.get()));
   }
@@ -723,7 +738,7 @@ class JsepTestClient
         remove_sdes_(false) {
   }
 
-  virtual talk_base::scoped_refptr<webrtc::PeerConnectionInterface>
+  virtual rtc::scoped_refptr<webrtc::PeerConnectionInterface>
       CreatePeerConnection(webrtc::PortAllocatorFactoryInterface* factory,
                            const MediaConstraintsInterface* constraints) {
     // CreatePeerConnection with IceServers.
@@ -733,7 +748,7 @@ class JsepTestClient
     ice_servers.push_back(ice_server);
 
     FakeIdentityService* dtls_service =
-        talk_base::SSLStreamAdapter::HaveDtlsSrtp() ?
+        rtc::SSLStreamAdapter::HaveDtlsSrtp() ?
             new FakeIdentityService() : NULL;
     return peer_connection_factory()->CreatePeerConnection(
         ice_servers, constraints, factory, dtls_service, this);
@@ -745,10 +760,10 @@ class JsepTestClient
       // If we are not sending any streams ourselves it is time to add some.
       AddMediaStream(true, true);
     }
-    talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+    rtc::scoped_ptr<SessionDescriptionInterface> desc(
          webrtc::CreateSessionDescription("offer", msg, NULL));
     EXPECT_TRUE(DoSetRemoteDescription(desc.release()));
-    talk_base::scoped_ptr<SessionDescriptionInterface> answer;
+    rtc::scoped_ptr<SessionDescriptionInterface> answer;
     EXPECT_TRUE(DoCreateAnswer(answer.use()));
     std::string sdp;
     EXPECT_TRUE(answer->ToString(&sdp));
@@ -761,15 +776,15 @@ class JsepTestClient
 
   void HandleIncomingAnswer(const std::string& msg) {
     LOG(INFO) << id() << "HandleIncomingAnswer";
-    talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+    rtc::scoped_ptr<SessionDescriptionInterface> desc(
          webrtc::CreateSessionDescription("answer", msg, NULL));
     EXPECT_TRUE(DoSetRemoteDescription(desc.release()));
   }
 
   bool DoCreateOfferAnswer(SessionDescriptionInterface** desc,
                            bool offer) {
-    talk_base::scoped_refptr<MockCreateSessionDescriptionObserver>
-        observer(new talk_base::RefCountedObject<
+    rtc::scoped_refptr<MockCreateSessionDescriptionObserver>
+        observer(new rtc::RefCountedObject<
             MockCreateSessionDescriptionObserver>());
     if (offer) {
       pc()->CreateOffer(observer, &session_description_constraints_);
@@ -793,8 +808,8 @@ class JsepTestClient
   }
 
   bool DoSetLocalDescription(SessionDescriptionInterface* desc) {
-    talk_base::scoped_refptr<MockSetSessionDescriptionObserver>
-            observer(new talk_base::RefCountedObject<
+    rtc::scoped_refptr<MockSetSessionDescriptionObserver>
+            observer(new rtc::RefCountedObject<
                 MockSetSessionDescriptionObserver>());
     LOG(INFO) << id() << "SetLocalDescription ";
     pc()->SetLocalDescription(observer, desc);
@@ -802,7 +817,7 @@ class JsepTestClient
     // EXPECT_TRUE_WAIT, local ice candidates might be sent to the remote peer
     // before the offer which is an error.
     // The reason is that EXPECT_TRUE_WAIT uses
-    // talk_base::Thread::Current()->ProcessMessages(1);
+    // rtc::Thread::Current()->ProcessMessages(1);
     // ProcessMessages waits at least 1ms but processes all messages before
     // returning. Since this test is synchronous and send messages to the remote
     // peer whenever a callback is invoked, this can lead to messages being
@@ -814,8 +829,8 @@ class JsepTestClient
   }
 
   bool DoSetRemoteDescription(SessionDescriptionInterface* desc) {
-    talk_base::scoped_refptr<MockSetSessionDescriptionObserver>
-        observer(new talk_base::RefCountedObject<
+    rtc::scoped_refptr<MockSetSessionDescriptionObserver>
+        observer(new rtc::RefCountedObject<
             MockSetSessionDescriptionObserver>());
     LOG(INFO) << id() << "SetRemoteDescription ";
     pc()->SetRemoteDescription(observer, desc);
@@ -847,8 +862,8 @@ class JsepTestClient
   bool remove_bundle_;  // True if bundle should be removed in received SDP.
   bool remove_sdes_;  // True if a=crypto should be removed in received SDP.
 
-  talk_base::scoped_refptr<DataChannelInterface> data_channel_;
-  talk_base::scoped_ptr<MockDataChannelObserver> data_observer_;
+  rtc::scoped_refptr<DataChannelInterface> data_channel_;
+  rtc::scoped_ptr<MockDataChannelObserver> data_observer_;
 };
 
 template <typename SignalingClass>
@@ -903,9 +918,6 @@ class P2PTestConductor : public testing::Test {
     receiving_client_->VerifyLocalIceUfragAndPassword();
   }
 
-  P2PTestConductor() {
-    talk_base::InitializeSSL(NULL);
-  }
   ~P2PTestConductor() {
     if (initiating_client_) {
       initiating_client_->set_signaling_message_receiver(NULL);
@@ -913,7 +925,6 @@ class P2PTestConductor : public testing::Test {
     if (receiving_client_) {
       receiving_client_->set_signaling_message_receiver(NULL);
     }
-    talk_base::CleanupSSL();
   }
 
   bool CreateTestClients() {
@@ -1019,12 +1030,36 @@ class P2PTestConductor : public testing::Test {
     }
   }
 
+  // Wait until 'size' bytes of audio has been seen by the receiver, on the
+  // first audio stream.
+  void WaitForAudioData(int size) {
+    const int kMaxWaitForAudioDataMs = 10000;
+
+    StreamCollectionInterface* local_streams =
+        initializing_client()->local_streams();
+    ASSERT_GT(local_streams->count(), 0u);
+    ASSERT_GT(local_streams->at(0)->GetAudioTracks().size(), 0u);
+    MediaStreamTrackInterface* local_audio_track =
+        local_streams->at(0)->GetAudioTracks()[0];
+
+    // Wait until *any* audio has been received.
+    EXPECT_TRUE_WAIT(
+        receiving_client()->GetBytesReceivedStats(local_audio_track) > 0,
+        kMaxWaitForAudioDataMs);
+
+    // Wait until 'size' number of bytes have been received.
+    size += receiving_client()->GetBytesReceivedStats(local_audio_track);
+    EXPECT_TRUE_WAIT(
+        receiving_client()->GetBytesReceivedStats(local_audio_track) > size,
+        kMaxWaitForAudioDataMs);
+  }
+
   SignalingClass* initializing_client() { return initiating_client_.get(); }
   SignalingClass* receiving_client() { return receiving_client_.get(); }
 
  private:
-  talk_base::scoped_ptr<SignalingClass> initiating_client_;
-  talk_base::scoped_ptr<SignalingClass> receiving_client_;
+  rtc::scoped_ptr<SignalingClass> initiating_client_;
+  rtc::scoped_ptr<SignalingClass> receiving_client_;
 };
 typedef P2PTestConductor<JsepTestClient> JsepPeerConnectionP2PTestClient;
 
@@ -1081,7 +1116,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_LocalP2PTest1280By720) {
 // This test sets up a call between two endpoints that are configured to use
 // DTLS key agreement. As a result, DTLS is negotiated and used for transport.
 TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDtls) {
-  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
   FakeConstraints setup_constraints;
   setup_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                                  true);
@@ -1093,7 +1128,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDtls) {
 // This test sets up a audio call initially and then upgrades to audio/video,
 // using DTLS.
 TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDtlsRenegotiate) {
-  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
   FakeConstraints setup_constraints;
   setup_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                                  true);
@@ -1108,7 +1143,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestDtlsRenegotiate) {
 // DTLS key agreement. The offerer don't support SDES. As a result, DTLS is
 // negotiated and used for transport.
 TEST_F(JsepPeerConnectionP2PTestClient, LocalP2PTestOfferDtlsButNotSdes) {
-  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
   FakeConstraints setup_constraints;
   setup_constraints.AddMandatory(MediaConstraintsInterface::kEnableDtlsSrtp,
                                  true);
@@ -1320,7 +1355,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, RegisterDataChannelObserver) {
 
   // Wait a while to allow the sent data to arrive before an observer is
   // registered..
-  talk_base::Thread::Current()->ProcessMessages(100);
+  rtc::Thread::Current()->ProcessMessages(100);
 
   MockDataChannelObserver new_observer(receiving_client()->data_channel());
   EXPECT_EQ_WAIT(data, new_observer.last_message(), kMaxWaitMs);
@@ -1367,7 +1402,7 @@ TEST_F(JsepPeerConnectionP2PTestClient, AddDataChannelAfterRenegotiation) {
 // negotiation is completed without error.
 #ifdef HAVE_SCTP
 TEST_F(JsepPeerConnectionP2PTestClient, CreateOfferWithSctpDataChannel) {
-  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
   FakeConstraints constraints;
   constraints.SetMandatory(
       MediaConstraintsInterface::kEnableDtlsSrtp, true);
@@ -1438,4 +1473,71 @@ TEST_F(JsepPeerConnectionP2PTestClient,
   EnableVideoDecoderFactory();
   LocalP2PTest();
 }
+
+// Test receive bandwidth stats with only audio enabled at receiver.
+TEST_F(JsepPeerConnectionP2PTestClient, ReceivedBweStatsAudio) {
+  ASSERT_TRUE(CreateTestClients());
+  receiving_client()->SetReceiveAudioVideo(true, false);
+  LocalP2PTest();
+
+  // Wait until we have received some audio data. Following REMB shoud be zero.
+  WaitForAudioData(10000);
+  EXPECT_EQ_WAIT(
+      receiving_client()->GetAvailableReceivedBandwidthStats(), 0,
+      kMaxWaitForRembMs);
+}
+
+// Test receive bandwidth stats with combined BWE.
+// Disabled due to https://code.google.com/p/webrtc/issues/detail?id=3871.
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_ReceivedBweStatsCombined) {
+  FakeConstraints setup_constraints;
+  setup_constraints.AddOptional(
+      MediaConstraintsInterface::kCombinedAudioVideoBwe, true);
+  ASSERT_TRUE(CreateTestClients(&setup_constraints, &setup_constraints));
+  initializing_client()->AddMediaStream(true, true);
+  initializing_client()->AddMediaStream(false, true);
+  initializing_client()->AddMediaStream(false, true);
+  initializing_client()->AddMediaStream(false, true);
+  LocalP2PTest();
+
+  // Run until a non-zero bw is reported.
+  EXPECT_TRUE_WAIT(receiving_client()->GetAvailableReceivedBandwidthStats() > 0,
+                   kMaxWaitForRembMs);
+
+  // Halt video capturers, then run until we have gotten some audio. Following
+  // REMB should be non-zero.
+  initializing_client()->StopVideoCapturers();
+  WaitForAudioData(10000);
+  EXPECT_TRUE_WAIT(
+      receiving_client()->GetAvailableReceivedBandwidthStats() > 0,
+      kMaxWaitForRembMs);
+}
+
+// Test receive bandwidth stats with 1 video, 3 audio streams but no combined
+// BWE.
+// Disabled due to https://code.google.com/p/webrtc/issues/detail?id=3871.
+TEST_F(JsepPeerConnectionP2PTestClient, DISABLED_ReceivedBweStatsNotCombined) {
+  FakeConstraints setup_constraints;
+  setup_constraints.AddOptional(
+      MediaConstraintsInterface::kCombinedAudioVideoBwe, false);
+  ASSERT_TRUE(CreateTestClients(&setup_constraints, &setup_constraints));
+  initializing_client()->AddMediaStream(true, true);
+  initializing_client()->AddMediaStream(false, true);
+  initializing_client()->AddMediaStream(false, true);
+  initializing_client()->AddMediaStream(false, true);
+  LocalP2PTest();
+
+  // Run until a non-zero bw is reported.
+  EXPECT_TRUE_WAIT(receiving_client()->GetAvailableReceivedBandwidthStats() > 0,
+                   kMaxWaitForRembMs);
+
+  // Halt video capturers, then run until we have gotten some audio. Following
+  // REMB should be zero.
+  initializing_client()->StopVideoCapturers();
+  WaitForAudioData(10000);
+  EXPECT_EQ_WAIT(
+      receiving_client()->GetAvailableReceivedBandwidthStats(), 0,
+      kMaxWaitForRembMs);
+}
+
 #endif // if !defined(THREAD_SANITIZER)

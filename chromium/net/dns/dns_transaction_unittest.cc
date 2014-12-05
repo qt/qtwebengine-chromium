@@ -100,6 +100,11 @@ class DnsSocketData {
     AddResponse(response.Pass(), mode);
   }
 
+  // Add error response.
+  void AddReadError(int error, IoMode mode) {
+    reads_.push_back(MockRead(mode, error));
+  }
+
   // Build, if needed, and return the SocketDataProvider. No new responses
   // should be added afterwards.
   SocketDataProvider* GetProvider() {
@@ -147,8 +152,8 @@ class FailingUDPClientSocket : public MockUDPClientSocket {
                          net::NetLog* net_log)
       : MockUDPClientSocket(data, net_log) {
   }
-  virtual ~FailingUDPClientSocket() {}
-  virtual int Connect(const IPEndPoint& endpoint) OVERRIDE {
+  ~FailingUDPClientSocket() override {}
+  int Connect(const IPEndPoint& endpoint) override {
     return ERR_CONNECTION_REFUSED;
   }
 
@@ -164,8 +169,8 @@ class TestUDPClientSocket : public MockUDPClientSocket {
                       net::NetLog* net_log)
       : MockUDPClientSocket(data, net_log), factory_(factory) {
   }
-  virtual ~TestUDPClientSocket() {}
-  virtual int Connect(const IPEndPoint& endpoint) OVERRIDE;
+  ~TestUDPClientSocket() override {}
+  int Connect(const IPEndPoint& endpoint) override;
 
  private:
   TestSocketFactory* factory_;
@@ -177,13 +182,13 @@ class TestUDPClientSocket : public MockUDPClientSocket {
 class TestSocketFactory : public MockClientSocketFactory {
  public:
   TestSocketFactory() : fail_next_socket_(false) {}
-  virtual ~TestSocketFactory() {}
+  ~TestSocketFactory() override {}
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       net::NetLog* net_log,
-      const net::NetLog::Source& source) OVERRIDE {
+      const net::NetLog::Source& source) override {
     if (fail_next_socket_) {
       fail_next_socket_ = false;
       return scoped_ptr<DatagramClientSocket>(
@@ -193,7 +198,7 @@ class TestSocketFactory : public MockClientSocketFactory {
     scoped_ptr<TestUDPClientSocket> socket(
         new TestUDPClientSocket(this, data_provider, net_log));
     data_provider->set_socket(socket.get());
-    return socket.PassAs<DatagramClientSocket>();
+    return socket.Pass();
   }
 
   void OnConnect(const IPEndPoint& endpoint) {
@@ -436,7 +441,7 @@ class DnsTransactionTest : public testing::Test {
     }
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // By default set one server,
     ConfigureNumServers(1);
     // and no retransmissions,
@@ -446,7 +451,7 @@ class DnsTransactionTest : public testing::Test {
     ConfigureFactory();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Check that all socket data was at least written to.
     for (size_t i = 0; i < socket_data_.size(); ++i) {
       EXPECT_TRUE(socket_data_[i]->was_written()) << i;
@@ -902,6 +907,9 @@ TEST_F(DnsTransactionTest, TCPMalformed) {
   scoped_ptr<DnsSocketData> data(
       new DnsSocketData(0 /* id */, kT0HostName, kT0Qtype, ASYNC, true));
   // Valid response but length too short.
+  // This must be truncated in the question section. The DnsResponse doesn't
+  // examine the answer section until asked to parse it, so truncating it in
+  // the answer section would result in the DnsTransaction itself succeeding.
   data->AddResponseWithLength(
       make_scoped_ptr(
           new DnsResponse(reinterpret_cast<const char*>(kT0ResponseDatagram),
@@ -924,6 +932,70 @@ TEST_F(DnsTransactionTest, TCPTimeout) {
 
   TransactionHelper helper0(kT0HostName, kT0Qtype, ERR_DNS_TIMED_OUT);
   EXPECT_TRUE(helper0.RunUntilDone(transaction_factory_.get()));
+}
+
+TEST_F(DnsTransactionTest, TCPReadReturnsZeroAsync) {
+  AddAsyncQueryAndRcode(kT0HostName, kT0Qtype,
+                        dns_protocol::kRcodeNOERROR | dns_protocol::kFlagTC);
+  scoped_ptr<DnsSocketData> data(
+      new DnsSocketData(0 /* id */, kT0HostName, kT0Qtype, ASYNC, true));
+  // Return all but the last byte of the response.
+  data->AddResponseWithLength(
+      make_scoped_ptr(
+          new DnsResponse(reinterpret_cast<const char*>(kT0ResponseDatagram),
+                          arraysize(kT0ResponseDatagram) - 1, 0)),
+      ASYNC,
+      static_cast<uint16>(arraysize(kT0ResponseDatagram)));
+  // Then return a 0-length read.
+  data->AddReadError(0, ASYNC);
+  AddSocketData(data.Pass());
+
+  TransactionHelper helper0(kT0HostName, kT0Qtype, ERR_CONNECTION_CLOSED);
+  EXPECT_TRUE(helper0.Run(transaction_factory_.get()));
+}
+
+TEST_F(DnsTransactionTest, TCPReadReturnsZeroSynchronous) {
+  AddAsyncQueryAndRcode(kT0HostName, kT0Qtype,
+                        dns_protocol::kRcodeNOERROR | dns_protocol::kFlagTC);
+  scoped_ptr<DnsSocketData> data(
+      new DnsSocketData(0 /* id */, kT0HostName, kT0Qtype, ASYNC, true));
+  // Return all but the last byte of the response.
+  data->AddResponseWithLength(
+      make_scoped_ptr(
+          new DnsResponse(reinterpret_cast<const char*>(kT0ResponseDatagram),
+                          arraysize(kT0ResponseDatagram) - 1, 0)),
+      SYNCHRONOUS,
+      static_cast<uint16>(arraysize(kT0ResponseDatagram)));
+  // Then return a 0-length read.
+  data->AddReadError(0, SYNCHRONOUS);
+  AddSocketData(data.Pass());
+
+  TransactionHelper helper0(kT0HostName, kT0Qtype, ERR_CONNECTION_CLOSED);
+  EXPECT_TRUE(helper0.Run(transaction_factory_.get()));
+}
+
+TEST_F(DnsTransactionTest, TCPConnectionClosedAsync) {
+  AddAsyncQueryAndRcode(kT0HostName, kT0Qtype,
+                        dns_protocol::kRcodeNOERROR | dns_protocol::kFlagTC);
+  scoped_ptr<DnsSocketData> data(
+      new DnsSocketData(0 /* id */, kT0HostName, kT0Qtype, ASYNC, true));
+  data->AddReadError(ERR_CONNECTION_CLOSED, ASYNC);
+  AddSocketData(data.Pass());
+
+  TransactionHelper helper0(kT0HostName, kT0Qtype, ERR_CONNECTION_CLOSED);
+  EXPECT_TRUE(helper0.Run(transaction_factory_.get()));
+}
+
+TEST_F(DnsTransactionTest, TCPConnectionClosedSynchronous) {
+  AddAsyncQueryAndRcode(kT0HostName, kT0Qtype,
+                        dns_protocol::kRcodeNOERROR | dns_protocol::kFlagTC);
+  scoped_ptr<DnsSocketData> data(
+      new DnsSocketData(0 /* id */, kT0HostName, kT0Qtype, ASYNC, true));
+  data->AddReadError(ERR_CONNECTION_CLOSED, SYNCHRONOUS);
+  AddSocketData(data.Pass());
+
+  TransactionHelper helper0(kT0HostName, kT0Qtype, ERR_CONNECTION_CLOSED);
+  EXPECT_TRUE(helper0.Run(transaction_factory_.get()));
 }
 
 TEST_F(DnsTransactionTest, InvalidQuery) {

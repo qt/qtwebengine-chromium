@@ -20,12 +20,15 @@
 #ifndef SVGUnitTypes_h
 #define SVGUnitTypes_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGEnumeration.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGUnitTypes : public RefCounted<SVGUnitTypes> {
+class SVGUnitTypes final : public RefCountedWillBeGarbageCollected<SVGUnitTypes>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum SVGUnitType {
         SVG_UNIT_TYPE_UNKNOWN               = 0,
@@ -33,11 +36,14 @@ public:
         SVG_UNIT_TYPE_OBJECTBOUNDINGBOX     = 2
     };
 
+    void trace(Visitor*) { }
+
 private:
-    SVGUnitTypes() { }
+    SVGUnitTypes(); // No instantiation.
 };
+
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGUnitTypes::SVGUnitType>();
 
-}
+} // namespace blink
 
-#endif
+#endif // SVGUnitTypes_h

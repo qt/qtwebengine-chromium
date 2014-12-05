@@ -13,28 +13,34 @@ import module as mojom
 
 class PackedField(object):
   kind_to_size = {
-    mojom.BOOL:         1,
-    mojom.INT8:         1,
-    mojom.UINT8:        1,
-    mojom.INT16:        2,
-    mojom.UINT16:       2,
-    mojom.INT32:        4,
-    mojom.UINT32:       4,
-    mojom.FLOAT:        4,
-    mojom.HANDLE:       4,
-    mojom.MSGPIPE:      4,
-    mojom.SHAREDBUFFER: 4,
-    mojom.DCPIPE:       4,
-    mojom.DPPIPE:       4,
-    mojom.INT64:        8,
-    mojom.UINT64:       8,
-    mojom.DOUBLE:       8,
-    mojom.STRING:       8
+    mojom.BOOL:                  1,
+    mojom.INT8:                  1,
+    mojom.UINT8:                 1,
+    mojom.INT16:                 2,
+    mojom.UINT16:                2,
+    mojom.INT32:                 4,
+    mojom.UINT32:                4,
+    mojom.FLOAT:                 4,
+    mojom.HANDLE:                4,
+    mojom.MSGPIPE:               4,
+    mojom.SHAREDBUFFER:          4,
+    mojom.DCPIPE:                4,
+    mojom.DPPIPE:                4,
+    mojom.NULLABLE_HANDLE:       4,
+    mojom.NULLABLE_MSGPIPE:      4,
+    mojom.NULLABLE_SHAREDBUFFER: 4,
+    mojom.NULLABLE_DCPIPE:       4,
+    mojom.NULLABLE_DPPIPE:       4,
+    mojom.INT64:                 8,
+    mojom.UINT64:                8,
+    mojom.DOUBLE:                8,
+    mojom.STRING:                8,
+    mojom.NULLABLE_STRING:       8
   }
 
   @classmethod
   def GetSizeForKind(cls, kind):
-    if isinstance(kind, mojom.Array) or isinstance(kind, mojom.Struct):
+    if isinstance(kind, (mojom.Array, mojom.Map, mojom.Struct)):
       return 8
     if isinstance(kind, mojom.Interface) or \
        isinstance(kind, mojom.InterfaceRequest):
@@ -46,8 +52,15 @@ class PackedField(object):
       raise Exception("Invalid kind: %s" % kind.spec)
     return cls.kind_to_size[kind]
 
-  def __init__(self, field, ordinal):
+  def __init__(self, field, index, ordinal):
+    """
+    Args:
+      field: the original field.
+      index: the position of the original field in the struct.
+      ordinal: the ordinal of the field for serialization.
+    """
     self.field = field
+    self.index = index
     self.ordinal = ordinal
     self.size = self.GetSizeForKind(field.kind)
     self.offset = None
@@ -83,10 +96,10 @@ class PackedStruct(object):
     # Start by sorting by ordinal.
     src_fields = []
     ordinal = 0
-    for field in struct.fields:
+    for index, field in enumerate(struct.fields):
       if field.ordinal is not None:
         ordinal = field.ordinal
-      src_fields.append(PackedField(field, ordinal))
+      src_fields.append(PackedField(field, index, ordinal))
       ordinal += 1
     src_fields.sort(key=lambda field: field.ordinal)
 

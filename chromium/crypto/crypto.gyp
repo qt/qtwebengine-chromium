@@ -21,9 +21,6 @@
       'defines': [
         'CRYPTO_IMPLEMENTATION',
       ],
-      'msvs_disabled_warnings': [
-        4018,
-      ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "ios" and OS != "android"', {
           'dependencies': [
@@ -95,12 +92,14 @@
           ],
         }],
         [ 'OS == "win"', {
-          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-          'msvs_disabled_warnings': [4267, ],
+          'msvs_disabled_warnings': [
+            4267,  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+            4018,
+          ],
         }],
         [ 'use_openssl==1', {
             'dependencies': [
-              '../third_party/openssl/openssl.gyp:openssl',
+              '../third_party/boringssl/boringssl.gyp:boringssl',
             ],
             # TODO(joth): Use a glob to match exclude patterns once the
             #             OpenSSL file set is complete.
@@ -111,6 +110,7 @@
               'hmac_nss.cc',
               'nss_util.cc',
               'nss_util.h',
+              'nss_util_internal.h',
               'rsa_private_key_nss.cc',
               'secure_hash_default.cc',
               'signature_creator_nss.cc',
@@ -174,6 +174,7 @@
       ],
       'dependencies': [
         'crypto',
+        'crypto_test_support',
         '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
@@ -209,7 +210,7 @@
         }],
         [ 'use_openssl==1', {
           'dependencies': [
-            '../third_party/openssl/openssl.gyp:openssl',
+            '../third_party/boringssl/boringssl.gyp:boringssl',
           ],
           'sources!': [
             'nss_util_unittest.cc',
@@ -254,5 +255,47 @@
         },
       ],
     }],
+    ['use_nss==1', {
+      'targets': [
+        {
+          'target_name': 'crypto_test_support',
+          'type': 'static_library',
+          'dependencies': [
+            '../base/base.gyp:base',
+            'crypto',
+          ],
+          'sources': [
+            'scoped_test_nss_db.cc',
+            'scoped_test_nss_db.h',
+            'scoped_test_nss_chromeos_user.cc',
+            'scoped_test_nss_chromeos_user.h',
+            'scoped_test_system_nss_key_slot.cc',
+            'scoped_test_system_nss_key_slot.h',
+          ],
+          'conditions': [
+            ['use_nss==0', {
+              'sources!': [
+                'scoped_test_nss_db.cc',
+                'scoped_test_nss_db.h',
+              ],
+            }],
+            [ 'chromeos==0', {
+              'sources!': [
+                'scoped_test_nss_chromeos_user.cc',
+                'scoped_test_nss_chromeos_user.h',
+                'scoped_test_system_nss_key_slot.cc',
+                'scoped_test_system_nss_key_slot.h',
+              ],
+            }],
+          ],
+        }
+      ]}, {  # use_nss==0
+      'targets': [
+        {
+          'target_name': 'crypto_test_support',
+          'type': 'none',
+          'sources': [],
+        }
+    ]}],
   ],
 }

@@ -29,7 +29,7 @@
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/graphics/Color.h"
 
-namespace WebCore {
+namespace blink {
 
 class BorderValue {
 friend class RenderStyle;
@@ -87,7 +87,9 @@ public:
     StyleColor color() const { return m_colorIsCurrentColor ? StyleColor::currentColor() : StyleColor(m_color); }
 
     unsigned width() const { return m_width; }
+
     EBorderStyle style() const { return static_cast<EBorderStyle>(m_style); }
+    void setStyle(EBorderStyle style) { m_style = style; }
 
 protected:
     Color m_color;
@@ -100,6 +102,6 @@ protected:
     unsigned m_isAuto : 1; // OutlineIsAuto
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BorderValue_h

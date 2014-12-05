@@ -40,6 +40,9 @@ WebInspector.FilterSuggestionBuilder = function(keys)
     this._valueLists = {};
 }
 
+/** @typedef {{type: string, data: string, negative: boolean}} */
+WebInspector.FilterSuggestionBuilder.Filter;
+
 WebInspector.FilterSuggestionBuilder.prototype = {
     /**
      * @param {!HTMLInputElement} input
@@ -60,21 +63,27 @@ WebInspector.FilterSuggestionBuilder.prototype = {
         if (!prefix)
             return [];
 
+        var negative = prefix.startsWith("-");
+        if (negative)
+            prefix = prefix.substring(1);
+        var modifier = negative ? "-" : "";
         var valueDelimiterIndex = prefix.indexOf(":");
 
         var suggestions = [];
         if (valueDelimiterIndex === -1) {
+            var matcher = new RegExp("^" + prefix.escapeForRegExp(), "i");
             for (var j = 0; j < this._keys.length; ++j) {
-                if (this._keys[j].startsWith(prefix))
-                    suggestions.push(this._keys[j] + ":");
+                if (this._keys[j].match(matcher))
+                    suggestions.push(modifier + this._keys[j] + ":");
             }
         } else {
             var key = prefix.substring(0, valueDelimiterIndex);
             var value = prefix.substring(valueDelimiterIndex + 1);
+            var matcher = new RegExp("^" + value.escapeForRegExp(), "i");
             var items = this._values(key);
             for (var i = 0; i < items.length; ++i) {
-                if (items[i].startsWith(value) && (items[i] !== value))
-                    suggestions.push(key + ":" + items[i]);
+                if (items[i].match(matcher) && (items[i] !== value))
+                    suggestions.push(modifier + key + ":" + items[i]);
             }
         }
         return suggestions;
@@ -153,11 +162,11 @@ WebInspector.FilterSuggestionBuilder.prototype = {
 
     /**
      * @param {string} query
-     * @return {{text: !Array.<string>, filters: !Object.<string, string>}}
+     * @return {{text: !Array.<string>, filters: !Array.<!WebInspector.FilterSuggestionBuilder.Filter>}}
      */
     parseQuery: function(query)
     {
-        var filters = {};
+        var filters = [];
         var text = [];
         var i = 0;
         var j = 0;
@@ -172,6 +181,9 @@ WebInspector.FilterSuggestionBuilder.prototype = {
             }
             var spaceIndex = query.lastIndexOf(" ", colonIndex);
             var key = query.substring(spaceIndex + 1, colonIndex);
+            var negative = key.startsWith("-");
+            if (negative)
+                key = key.substring(1);
             if (this._keys.indexOf(key) == -1) {
                 i = colonIndex + 1;
                 continue;
@@ -181,10 +193,10 @@ WebInspector.FilterSuggestionBuilder.prototype = {
                 text.push(part);
             var nextSpace = query.indexOf(" ", colonIndex + 1);
             if (nextSpace == -1) {
-                filters[key] = query.substring(colonIndex + 1);
+                filters.push({type: key, data: query.substring(colonIndex + 1), negative: negative});
                 break;
             }
-            filters[key] = query.substring(colonIndex + 1, nextSpace);
+            filters.push({type: key, data: query.substring(colonIndex + 1, nextSpace), negative: negative});
             i = nextSpace + 1;
             j = i;
         }

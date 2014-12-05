@@ -1,38 +1,34 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/be.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/be.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/be.xml
+ * ICU <specials> source: <path>/common/main/be.xml
  */
 be{
     Currencies{
         AUD{
-            "AU$",
+            "A$",
             "аўстралійскі даляр",
         }
         BRL{
             "R$",
             "бразільскі рэал",
         }
-        BYB{
-            "Руб" /** ===  */,
-            "BYB",
-        }
         BYR{
-            "BYR",
+            "р.",
             "беларускі рубель",
         }
         CNY{
             "CN¥",
-            "кітайскі юань Renminbi",
+            "кітайскі юань",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "эрытрэйская накфа",
         }
         EUR{
@@ -44,7 +40,7 @@ be{
             "англійскі фунт",
         }
         INR{
-            "Rs",
+            "₹",
             "індыйская рупія",
         }
         JPY{
@@ -52,7 +48,7 @@ be{
             "японская іена",
         }
         NOK{
-            "Nkr",
+            "NOK",
             "нарвэская крона",
         }
         RUB{
@@ -68,5 +64,5 @@ be{
             "невядомая або недапушчальная валюта",
         }
     }
-    Version{"2.0.47.68"}
+    Version{"2.0.92.87"}
 }

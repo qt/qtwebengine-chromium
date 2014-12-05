@@ -31,27 +31,29 @@
 #ifndef ApplicationCacheHost_h
 #define ApplicationCacheHost_h
 
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/WebApplicationCacheHostClient.h"
-#include "wtf/Deque.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
     class ApplicationCache;
     class DocumentLoader;
-    class LocalFrame;
-    class ResourceLoader;
-    class ResourceError;
     class ResourceRequest;
     class ResourceResponse;
-    class SubstituteData;
 
-    class ApplicationCacheHost : public blink::WebApplicationCacheHostClient {
+    class ApplicationCacheHost final : public NoBaseWillBeGarbageCollectedFinalized<ApplicationCacheHost>, public WebApplicationCacheHostClient {
         WTF_MAKE_NONCOPYABLE(ApplicationCacheHost);
     public:
+        static PassOwnPtrWillBeRawPtr<ApplicationCacheHost> create(DocumentLoader* loader)
+        {
+            return adoptPtrWillBeNoop(new ApplicationCacheHost(loader));
+        }
+        virtual ~ApplicationCacheHost();
+
+        void dispose();
+
         // The Status numeric values are specified in the HTML5 spec.
         enum Status {
             UNCACHED = 0,
@@ -105,15 +107,12 @@ namespace WebCore {
 
         typedef Vector<ResourceInfo> ResourceInfoList;
 
-        explicit ApplicationCacheHost(DocumentLoader*);
-        virtual ~ApplicationCacheHost();
-
         void selectCacheWithoutManifest();
         void selectCacheWithManifest(const KURL& manifestURL);
 
         void willStartLoadingMainResource(ResourceRequest&);
         void didReceiveResponseForMainResource(const ResourceResponse&);
-        void mainResourceDataReceived(const char* data, int length);
+        void mainResourceDataReceived(const char* data, unsigned length);
         void finishedLoadingMainResource();
         void failedLoadingMainResource();
 
@@ -125,19 +124,23 @@ namespace WebCore {
         void abort();
 
         void setApplicationCache(ApplicationCache*);
-        void notifyApplicationCache(EventID, int progressTotal, int progressDone, blink::WebApplicationCacheHost::ErrorReason, const String& errorURL, int errorStatus, const String& errorMessage);
+        void notifyApplicationCache(EventID, int progressTotal, int progressDone, WebApplicationCacheHost::ErrorReason, const String& errorURL, int errorStatus, const String& errorMessage);
 
         void stopDeferringEvents(); // Also raises the events that have been queued up.
 
         void fillResourceList(ResourceInfoList*);
         CacheInfo applicationCacheInfo();
 
+        void trace(Visitor*);
+
     private:
+        explicit ApplicationCacheHost(DocumentLoader*);
+
         // WebApplicationCacheHostClient implementation
-        virtual void didChangeCacheAssociation() OVERRIDE FINAL;
-        virtual void notifyEventListener(blink::WebApplicationCacheHost::EventID) OVERRIDE FINAL;
-        virtual void notifyProgressEventListener(const blink::WebURL&, int progressTotal, int progressDone) OVERRIDE FINAL;
-        virtual void notifyErrorEventListener(blink::WebApplicationCacheHost::ErrorReason, const blink::WebURL&, int status, const blink::WebString& message) OVERRIDE FINAL;
+        virtual void didChangeCacheAssociation() override final;
+        virtual void notifyEventListener(WebApplicationCacheHost::EventID) override final;
+        virtual void notifyProgressEventListener(const WebURL&, int progressTotal, int progressDone) override final;
+        virtual void notifyErrorEventListener(WebApplicationCacheHost::ErrorReason, const WebURL&, int status, const WebString& message) override final;
 
         bool isApplicationCacheEnabled();
         DocumentLoader* documentLoader() const { return m_documentLoader; }
@@ -146,11 +149,11 @@ namespace WebCore {
             EventID eventID;
             int progressTotal;
             int progressDone;
-            blink::WebApplicationCacheHost::ErrorReason errorReason;
+            WebApplicationCacheHost::ErrorReason errorReason;
             String errorURL;
             int errorStatus;
             String errorMessage;
-            DeferredEvent(EventID id, int progressTotal, int progressDone, blink::WebApplicationCacheHost::ErrorReason errorReason, const String& errorURL, int errorStatus, const String& errorMessage)
+            DeferredEvent(EventID id, int progressTotal, int progressDone, WebApplicationCacheHost::ErrorReason errorReason, const String& errorURL, int errorStatus, const String& errorMessage)
                 : eventID(id)
                 , progressTotal(progressTotal)
                 , progressDone(progressDone)
@@ -162,16 +165,16 @@ namespace WebCore {
             }
         };
 
-        ApplicationCache* m_domApplicationCache;
+        RawPtrWillBeWeakMember<ApplicationCache> m_domApplicationCache;
         DocumentLoader* m_documentLoader;
         bool m_defersEvents; // Events are deferred until after document onload.
         Vector<DeferredEvent> m_deferredEvents;
 
-        void dispatchDOMEvent(EventID, int progressTotal, int progressDone, blink::WebApplicationCacheHost::ErrorReason, const String& errorURL, int errorStatus, const String& errorMessage);
+        void dispatchDOMEvent(EventID, int progressTotal, int progressDone, WebApplicationCacheHost::ErrorReason, const String& errorURL, int errorStatus, const String& errorMessage);
 
-        OwnPtr<blink::WebApplicationCacheHost> m_host;
+        OwnPtr<WebApplicationCacheHost> m_host;
     };
 
-}  // namespace WebCore
+}  // namespace blink
 
 #endif  // ApplicationCacheHost_h

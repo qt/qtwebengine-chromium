@@ -30,9 +30,7 @@
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/ImageBuffer.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 CrossfadeGeneratedImage::CrossfadeGeneratedImage(Image* fromImage, Image* toImage, float percentage, IntSize crossfadeSize, const IntSize& size)
     : m_fromImage(fromImage)
@@ -84,7 +82,7 @@ void CrossfadeGeneratedImage::drawCrossfade(GraphicsContext* context)
     context->endLayer();
 }
 
-void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode)
 {
     GraphicsContextStateSaver stateSaver(*context);
     context->setCompositeOperation(compositeOp, blendMode);
@@ -97,9 +95,9 @@ void CrossfadeGeneratedImage::draw(GraphicsContext* context, const FloatRect& ds
     drawCrossfade(context);
 }
 
-void CrossfadeGeneratedImage::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
+void CrossfadeGeneratedImage::drawPattern(GraphicsContext* context, const FloatRect& srcRect, const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
 {
-    OwnPtr<ImageBuffer> imageBuffer = context->createCompatibleBuffer(m_size);
+    OwnPtr<ImageBuffer> imageBuffer = context->createRasterBuffer(m_size);
     if (!imageBuffer)
         return;
 
@@ -111,4 +109,4 @@ void CrossfadeGeneratedImage::drawPattern(GraphicsContext* context, const FloatR
     imageBuffer->drawPattern(context, srcRect, scale, phase, compositeOp, dstRect, blendMode, repeatSpacing);
 }
 
-}
+} // namespace blink

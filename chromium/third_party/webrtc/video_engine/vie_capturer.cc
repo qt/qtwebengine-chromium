@@ -56,7 +56,6 @@ ViECapturer::ViECapturer(int capture_id,
       brightness_frame_stats_(NULL),
       current_brightness_level_(Normal),
       reported_brightness_level_(Normal),
-      denoising_enabled_(false),
       observer_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       observer_(NULL),
       overuse_detector_(new OveruseFrameDetector(Clock::GetRealTimeClock())) {
@@ -344,6 +343,10 @@ void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
   // the camera, and not when the camera actually captured the frame.
   video_frame.set_render_time_ms(video_frame.render_time_ms() - FrameDelay());
 
+  overuse_detector_->FrameCaptured(video_frame.width(),
+                                   video_frame.height(),
+                                   video_frame.render_time_ms());
+
   TRACE_EVENT_ASYNC_BEGIN1("webrtc", "Video", video_frame.render_time_ms(),
                            "render_time", video_frame.render_time_ms());
 
@@ -355,8 +358,6 @@ void ViECapturer::OnIncomingCapturedFrame(const int32_t capture_id,
     captured_frame_->SwapFrame(&video_frame);
   }
   capture_event_.Set();
-  overuse_detector_->FrameCaptured(captured_frame_->width(),
-                                   captured_frame_->height());
 }
 
 void ViECapturer::OnCaptureDelayChanged(const int32_t id,
@@ -400,28 +401,6 @@ int32_t ViECapturer::DecImageProcRefCount() {
     // Destroy module.
     VideoProcessingModule::Destroy(image_proc_module_);
     image_proc_module_ = NULL;
-  }
-  return 0;
-}
-
-int32_t ViECapturer::EnableDenoising(bool enable) {
-  CriticalSectionScoped cs(deliver_cs_.get());
-  if (enable) {
-    if (denoising_enabled_) {
-      // Already enabled, nothing need to be done.
-      return 0;
-    }
-    denoising_enabled_ = true;
-    if (IncImageProcRefCount() != 0) {
-      return -1;
-    }
-  } else {
-    if (denoising_enabled_ == false) {
-      // Already disabled, nothing need to be done.
-      return 0;
-    }
-    denoising_enabled_ = false;
-    DecImageProcRefCount();
   }
   return 0;
 }
@@ -473,11 +452,13 @@ bool ViECapturer::ViECaptureThreadFunction(void* obj) {
 }
 
 bool ViECapturer::ViECaptureProcess() {
+  int64_t capture_time = -1;
   if (capture_event_.Wait(kThreadWaitTimeMs) == kEventSignaled) {
     overuse_detector_->FrameProcessingStarted();
     int64_t encode_start_time = -1;
     deliver_cs_->Enter();
     if (SwapCapturedAndDeliverFrameIfAvailable()) {
+      capture_time = deliver_frame_->render_time_ms();
       encode_start_time = Clock::GetRealTimeClock()->TimeInMilliseconds();
       DeliverI420Frame(deliver_frame_.get());
       if (deliver_frame_->native_handle() != NULL)
@@ -498,6 +479,9 @@ bool ViECapturer::ViECaptureProcess() {
     }
   }
   // We're done!
+  if (capture_time != -1) {
+    overuse_detector_->FrameSent(capture_time);
+  }
   return true;
 }
 
@@ -515,9 +499,6 @@ void ViECapturer::DeliverI420Frame(I420VideoFrame* video_frame) {
     } else {
       LOG_F(LS_ERROR) << "Could not get frame stats.";
     }
-  }
-  if (denoising_enabled_) {
-    image_proc_module_->Denoising(video_frame);
   }
   if (brightness_frame_stats_) {
     if (image_proc_module_->GetFrameStats(brightness_frame_stats_,

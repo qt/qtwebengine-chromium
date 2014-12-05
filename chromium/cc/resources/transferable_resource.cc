@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/logging.h"
 #include "cc/resources/returned_resource.h"
 #include "cc/resources/transferable_resource.h"
 
@@ -13,7 +12,8 @@ TransferableResource::TransferableResource()
       format(RGBA_8888),
       filter(0),
       is_repeated(false),
-      is_software(false) {
+      is_software(false),
+      allow_overlay(false) {
 }
 
 TransferableResource::~TransferableResource() {

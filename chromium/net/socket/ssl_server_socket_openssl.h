@@ -30,42 +30,44 @@ class SSLServerSocketOpenSSL : public SSLServerSocket {
                          scoped_refptr<X509Certificate> certificate,
                          crypto::RSAPrivateKey* key,
                          const SSLConfig& ssl_config);
-  virtual ~SSLServerSocketOpenSSL();
+  ~SSLServerSocketOpenSSL() override;
 
   // SSLServerSocket interface.
-  virtual int Handshake(const CompletionCallback& callback) OVERRIDE;
+  int Handshake(const CompletionCallback& callback) override;
 
   // SSLSocket interface.
-  virtual int ExportKeyingMaterial(const base::StringPiece& label,
-                                   bool has_context,
-                                   const base::StringPiece& context,
-                                   unsigned char* out,
-                                   unsigned int outlen) OVERRIDE;
-  virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
+  int ExportKeyingMaterial(const base::StringPiece& label,
+                           bool has_context,
+                           const base::StringPiece& context,
+                           unsigned char* out,
+                           unsigned int outlen) override;
+  int GetTLSUniqueChannelBinding(std::string* out) override;
 
   // Socket interface (via StreamSocket).
-  virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf, int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
  private:
   enum State {

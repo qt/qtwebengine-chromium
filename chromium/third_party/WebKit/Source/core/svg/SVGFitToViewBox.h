@@ -33,7 +33,7 @@
 #include "core/svg/SVGRect.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class Document;
@@ -54,14 +54,6 @@ public:
     {
         if (name == SVGNames::viewBoxAttr) {
             m_viewBox->setBaseValueAsString(value, parseError);
-            if (m_viewBox->baseValue()->width() < 0.0f) {
-                document.accessSVGExtensions().reportError("A negative value for ViewBox width is not allowed");
-                m_viewBox->baseValue()->setInvalid();
-            }
-            if (m_viewBox->baseValue()->height() < 0.0f) {
-                document.accessSVGExtensions().reportError("A negative value for ViewBox height is not allowed");
-                m_viewBox->baseValue()->setInvalid();
-            }
             return true;
         }
         if (name == SVGNames::preserveAspectRatioAttr) {
@@ -88,6 +80,6 @@ private:
     RefPtr<SVGAnimatedPreserveAspectRatio> m_preserveAspectRatio;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGFitToViewBox_h

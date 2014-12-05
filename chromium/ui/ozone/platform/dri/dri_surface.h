@@ -5,56 +5,50 @@
 #ifndef UI_OZONE_PLATFORM_DRI_DRI_SURFACE_H_
 #define UI_OZONE_PLATFORM_DRI_DRI_SURFACE_H_
 
-#include "base/compiler_specific.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/memory/ref_counted.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/skia_util.h"
-#include "ui/ozone/ozone_export.h"
-#include "ui/ozone/platform/dri/scanout_surface.h"
+#include "ui/ozone/public/surface_ozone_canvas.h"
 
 class SkCanvas;
+class SkSurface;
 
 namespace ui {
 
 class DriBuffer;
+class DriWindowDelegate;
 class DriWrapper;
+class HardwareDisplayController;
 
-// An implementation of ScanoutSurface which uses dumb buffers (used for
-// software rendering).
-class OZONE_EXPORT DriSurface : public ScanoutSurface {
+class DriSurface : public SurfaceOzoneCanvas {
  public:
-  DriSurface(DriWrapper* dri, const gfx::Size& size);
-  virtual ~DriSurface();
+  DriSurface(DriWindowDelegate* window_delegate, DriWrapper* dri);
+  ~DriSurface() override;
 
-  // Get a Skia canvas for a backbuffer.
-  SkCanvas* GetDrawableForWidget();
-
-  // ScanoutSurface:
-  virtual bool Initialize() OVERRIDE;
-  virtual uint32_t GetFramebufferId() const OVERRIDE;
-  virtual uint32_t GetHandle() const OVERRIDE;
-  virtual void SwapBuffers() OVERRIDE;
-  virtual gfx::Size Size() const OVERRIDE;
+  // SurfaceOzoneCanvas:
+  skia::RefPtr<SkCanvas> GetCanvas() override;
+  void ResizeCanvas(const gfx::Size& viewport_size) override;
+  void PresentCanvas(const gfx::Rect& damage) override;
+  scoped_ptr<gfx::VSyncProvider> CreateVSyncProvider() override;
 
  private:
-  DriBuffer* frontbuffer() const { return bitmaps_[front_buffer_].get(); }
-  DriBuffer* backbuffer() const { return bitmaps_[front_buffer_ ^ 1].get(); }
+  void UpdateNativeSurface(const gfx::Rect& damage);
 
-  // Used to create the backing buffers.
-  virtual DriBuffer* CreateBuffer();
+  DriWindowDelegate* window_delegate_;
 
   // Stores the connection to the graphics card. Pointer not owned by this
   // class.
   DriWrapper* dri_;
 
   // The actual buffers used for painting.
-  scoped_ptr<DriBuffer> bitmaps_[2];
+  scoped_refptr<DriBuffer> buffers_[2];
 
   // Keeps track of which bitmap is |buffers_| is the frontbuffer.
   int front_buffer_;
 
-  // Surface size.
-  gfx::Size size_;
+  skia::RefPtr<SkSurface> surface_;
+  gfx::Rect last_damage_;
 
   DISALLOW_COPY_AND_ASSIGN(DriSurface);
 };

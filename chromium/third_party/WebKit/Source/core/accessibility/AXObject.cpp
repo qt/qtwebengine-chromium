@@ -29,11 +29,12 @@
 #include "config.h"
 #include "core/accessibility/AXObject.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/rendering/RenderListItem.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
@@ -44,7 +45,7 @@
 
 using blink::WebLocalizedString;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -76,6 +77,7 @@ static ARIARoleMap* createARIARoleMap()
         { "definition", DefinitionRole },
         { "document", DocumentRole },
         { "rowheader", RowHeaderRole },
+        { "form", FormRole },
         { "group", GroupRole },
         { "heading", HeadingRole },
         { "img", ImageRole },
@@ -91,10 +93,11 @@ static ARIARoleMap* createARIARoleMap()
         { "menu", MenuRole },
         { "menubar", MenuBarRole },
         { "menuitem", MenuItemRole },
-        { "menuitemcheckbox", MenuItemRole },
-        { "menuitemradio", MenuItemRole },
+        { "menuitemcheckbox", MenuItemCheckBoxRole },
+        { "menuitemradio", MenuItemRadioRole },
         { "note", NoteRole },
         { "navigation", NavigationRole },
+        { "none", NoneRole },
         { "option", ListBoxOptionRole },
         { "presentation", PresentationalRole },
         { "progressbar", ProgressIndicatorRole },
@@ -133,6 +136,10 @@ AXObject::AXObject()
     , m_role(UnknownRole)
     , m_lastKnownIsIgnoredValue(DefaultBehavior)
     , m_detached(false)
+    , m_parent(0)
+    , m_lastModificationCount(-1)
+    , m_cachedIsIgnored(false)
+    , m_cachedLiveRegionRoot(0)
 {
 }
 
@@ -155,11 +162,11 @@ bool AXObject::isDetached() const
     return m_detached;
 }
 
-AXObjectCache* AXObject::axObjectCache() const
+AXObjectCacheImpl* AXObject::axObjectCache() const
 {
     Document* doc = document();
     if (doc)
-        return doc->axObjectCache();
+        return toAXObjectCacheImpl(doc->axObjectCache());
     return 0;
 }
 
@@ -184,6 +191,7 @@ bool AXObject::isLandmarkRelated() const
     case ComplementaryRole:
     case ContentInfoRole:
     case FooterRole:
+    case FormRole:
     case MainRole:
     case NavigationRole:
     case RegionRole:
@@ -201,10 +209,21 @@ bool AXObject::isMenuRelated() const
     case MenuBarRole:
     case MenuButtonRole:
     case MenuItemRole:
+    case MenuItemCheckBoxRole:
+    case MenuItemRadioRole:
         return true;
     default:
         return false;
     }
+}
+
+bool AXObject::isPasswordFieldAndShouldHideValue() const
+{
+    Settings* settings = document()->settings();
+    if (!settings || settings->accessibilityPasswordValuesEnabled())
+        return false;
+
+    return isPasswordField();
 }
 
 bool AXObject::isTextControl() const
@@ -243,39 +262,26 @@ bool AXObject::isClickable() const
     }
 }
 
-bool AXObject::isExpanded() const
-{
-    if (equalIgnoringCase(getAttribute(aria_expandedAttr), "true"))
-        return true;
-
-    return false;
-}
-
 bool AXObject::accessibilityIsIgnored() const
 {
-    AXObjectCache* cache = axObjectCache();
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedIsIgnored;
+}
+
+void AXObject::updateCachedAttributeValuesIfNeeded() const
+{
+    AXObjectCacheImpl* cache = axObjectCache();
     if (!cache)
-        return true;
+        return;
 
-    AXComputedObjectAttributeCache* attributeCache = cache->computedObjectAttributeCache();
-    if (attributeCache) {
-        AXObjectInclusion ignored = attributeCache->getIgnored(axObjectID());
-        switch (ignored) {
-        case IgnoreObject:
-            return true;
-        case IncludeObject:
-            return false;
-        case DefaultBehavior:
-            break;
-        }
-    }
+    if (cache->modificationCount() == m_lastModificationCount)
+        return;
 
-    bool result = computeAccessibilityIsIgnored();
-
-    if (attributeCache)
-        attributeCache->setIgnored(axObjectID(), result ? IgnoreObject : IncludeObject);
-
-    return result;
+    m_lastModificationCount = cache->modificationCount();
+    m_cachedIsIgnored = computeAccessibilityIsIgnored();
+    m_cachedLiveRegionRoot = isLiveRegion() ?
+        this :
+        (parentObjectIfExists() ? parentObjectIfExists()->liveRegionRoot() : 0);
 }
 
 bool AXObject::accessibilityIsIgnoredByDefault() const
@@ -403,7 +409,7 @@ bool AXObject::ariaPressedIsPresent() const
 
 bool AXObject::supportsARIAAttributes() const
 {
-    return supportsARIALiveRegion()
+    return isLiveRegion()
         || supportsARIADragging()
         || supportsARIADropping()
         || supportsARIAFlowTo()
@@ -435,10 +441,40 @@ void AXObject::ariaTreeRows(AccessibilityChildrenVector& result)
     }
 }
 
-bool AXObject::supportsARIALiveRegion() const
+bool AXObject::isLiveRegion() const
 {
-    const AtomicString& liveRegion = ariaLiveRegionStatus();
+    const AtomicString& liveRegion = liveRegionStatus();
     return equalIgnoringCase(liveRegion, "polite") || equalIgnoringCase(liveRegion, "assertive");
+}
+
+const AXObject* AXObject::liveRegionRoot() const
+{
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedLiveRegionRoot;
+}
+
+const AtomicString& AXObject::containerLiveRegionStatus() const
+{
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedLiveRegionRoot ? m_cachedLiveRegionRoot->liveRegionStatus() : nullAtom;
+}
+
+const AtomicString& AXObject::containerLiveRegionRelevant() const
+{
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedLiveRegionRoot ? m_cachedLiveRegionRoot->liveRegionRelevant() : nullAtom;
+}
+
+bool AXObject::containerLiveRegionAtomic() const
+{
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedLiveRegionRoot ? m_cachedLiveRegionRoot->liveRegionAtomic() : false;
+}
+
+bool AXObject::containerLiveRegionBusy() const
+{
+    updateCachedAttributeValuesIfNeeded();
+    return m_cachedLiveRegionRoot ? m_cachedLiveRegionRoot->liveRegionBusy() : false;
 }
 
 void AXObject::markCachedElementRectDirty() const
@@ -468,7 +504,7 @@ IntRect AXObject::boundingBoxForQuads(RenderObject* obj, const Vector<FloatQuad>
         IntRect r = quads[i].enclosingBoundingBox();
         if (!r.isEmpty()) {
             if (obj->style()->hasAppearance())
-                RenderTheme::theme().adjustRepaintRect(obj, r);
+                RenderTheme::theme().adjustPaintInvalidationRect(obj, r);
             result.unite(r);
         }
     }
@@ -502,6 +538,28 @@ const AXObject::AccessibilityChildrenVector& AXObject::children()
     return m_children;
 }
 
+AXObject* AXObject::parentObject() const
+{
+    if (m_detached)
+        return 0;
+
+    if (m_parent)
+        return m_parent;
+
+    return computeParent();
+}
+
+AXObject* AXObject::parentObjectIfExists() const
+{
+    if (m_detached)
+        return 0;
+
+    if (m_parent)
+        return m_parent;
+
+    return computeParentIfExists();
+}
+
 AXObject* AXObject::parentObjectUnignored() const
 {
     AXObject* parent;
@@ -516,7 +574,7 @@ AXObject* AXObject::firstAccessibleObjectFromNode(const Node* node)
     if (!node)
         return 0;
 
-    AXObjectCache* cache = node->document().axObjectCache();
+    AXObjectCacheImpl* cache = toAXObjectCacheImpl(node->document().axObjectCache());
     AXObject* accessibleObject = cache->getOrCreate(node->renderer());
     while (accessibleObject && accessibleObject->accessibilityIsIgnored()) {
         node = NodeTraversal::next(*node);
@@ -541,7 +599,7 @@ void AXObject::updateChildrenIfNecessary()
 
 void AXObject::clearChildren()
 {
-    // Some objects have weak pointers to their parents and those associations need to be detached.
+    // Detach all weak pointers from objects to their parents.
     size_t length = m_children.size();
     for (size_t i = 0; i < length; i++)
         m_children[i]->detachFromParent();
@@ -560,7 +618,7 @@ AXObject* AXObject::focusedUIElement() const
     if (!page)
         return 0;
 
-    return AXObjectCache::focusedUIElementForPage(page);
+    return AXObjectCacheImpl::focusedUIElementForPage(page);
 }
 
 Document* AXObject::document() const
@@ -651,22 +709,46 @@ void AXObject::scrollToMakeVisible() const
 // logic is the same. The goal is to compute the best scroll offset
 // in order to make an object visible within a viewport.
 //
+// If the object is already fully visible, returns the same scroll
+// offset.
+//
 // In case the whole object cannot fit, you can specify a
 // subfocus - a smaller region within the object that should
 // be prioritized. If the whole object can fit, the subfocus is
 // ignored.
 //
-// Example: the viewport is scrolled to the right just enough
-// that the object is in view.
+// If possible, the object and subfocus are centered within the
+// viewport.
+//
+// Example 1: the object is already visible, so nothing happens.
+//   +----------Viewport---------+
+//                 +---Object---+
+//                 +--SubFocus--+
+//
+// Example 2: the object is not fully visible, so it's centered
+// within the viewport.
 //   Before:
 //   +----------Viewport---------+
 //                         +---Object---+
 //                         +--SubFocus--+
 //
 //   After:
-//          +----------Viewport---------+
+//                 +----------Viewport---------+
 //                         +---Object---+
 //                         +--SubFocus--+
+//
+// Example 3: the object is larger than the viewport, so the
+// viewport moves to show as much of the object as possible,
+// while also trying to center the subfocus.
+//   Before:
+//   +----------Viewport---------+
+//     +---------------Object--------------+
+//                         +-SubFocus-+
+//
+//   After:
+//             +----------Viewport---------+
+//     +---------------Object--------------+
+//                         +-SubFocus-+
 //
 // When constraints cannot be fully satisfied, the min
 // (left/top) position takes precedence over the max (right/bottom).
@@ -678,10 +760,17 @@ static int computeBestScrollOffset(int currentScrollOffset, int subfocusMin, int
 {
     int viewportSize = viewportMax - viewportMin;
 
-    // If the focus size is larger than the viewport size, shrink it in the
-    // direction of subfocus.
+    // If the object size is larger than the viewport size, consider
+    // only a portion that's as large as the viewport, centering on
+    // the subfocus as much as possible.
     if (objectMax - objectMin > viewportSize) {
-        // Subfocus must be within focus:
+        // Since it's impossible to fit the whole object in the
+        // viewport, exit now if the subfocus is already within the viewport.
+        if (subfocusMin - currentScrollOffset >= viewportMin
+            && subfocusMax - currentScrollOffset <= viewportMax)
+            return currentScrollOffset;
+
+        // Subfocus must be within focus.
         subfocusMin = std::max(subfocusMin, objectMin);
         subfocusMax = std::min(subfocusMax, objectMax);
 
@@ -689,12 +778,12 @@ static int computeBestScrollOffset(int currentScrollOffset, int subfocusMin, int
         if (subfocusMax - subfocusMin > viewportSize)
             subfocusMax = subfocusMin + viewportSize;
 
-        if (subfocusMin + viewportSize > objectMax) {
-            objectMin = objectMax - viewportSize;
-        } else {
-            objectMin = subfocusMin;
-            objectMax = subfocusMin + viewportSize;
-        }
+        // Compute the size of an object centered on the subfocus, the size of the viewport.
+        int centeredObjectMin = (subfocusMin + subfocusMax - viewportSize) / 2;
+        int centeredObjectMax = centeredObjectMin + viewportSize;
+
+        objectMin = std::max(objectMin, centeredObjectMin);
+        objectMax = std::min(objectMax, centeredObjectMax);
     }
 
     // Exit now if the focus is already within the viewport.
@@ -702,28 +791,21 @@ static int computeBestScrollOffset(int currentScrollOffset, int subfocusMin, int
         && objectMax - currentScrollOffset <= viewportMax)
         return currentScrollOffset;
 
-    // Scroll left if we're too far to the right.
-    if (objectMax - currentScrollOffset > viewportMax)
-        return objectMax - viewportMax;
-
-    // Scroll right if we're too far to the left.
-    if (objectMin - currentScrollOffset < viewportMin)
-        return objectMin - viewportMin;
-
-    ASSERT_NOT_REACHED();
-
-    // This shouldn't happen.
-    return currentScrollOffset;
+    // Center the object in the viewport.
+    return (objectMin + objectMax - viewportMin - viewportMax) / 2;
 }
 
 void AXObject::scrollToMakeVisibleWithSubFocus(const IntRect& subfocus) const
 {
     // Search up the parent chain until we find the first one that's scrollable.
     AXObject* scrollParent = parentObject();
-    ScrollableArea* scrollableArea;
-    for (scrollableArea = 0;
-        scrollParent && !(scrollableArea = scrollParent->getScrollableAreaIfScrollable());
-        scrollParent = scrollParent->parentObject()) { }
+    ScrollableArea* scrollableArea = 0;
+    while (scrollParent) {
+        scrollableArea = scrollParent->getScrollableAreaIfScrollable();
+        if (scrollableArea)
+            break;
+        scrollParent = scrollParent->parentObject();
+    }
     if (!scrollableArea)
         return;
 
@@ -744,9 +826,16 @@ void AXObject::scrollToMakeVisibleWithSubFocus(const IntRect& subfocus) const
 
     scrollParent->scrollTo(IntPoint(desiredX, desiredY));
 
+    // Convert the subfocus into the coordinates of the scroll parent.
+    IntRect newSubfocus = subfocus;
+    IntRect newElementRect = pixelSnappedIntRect(elementRect());
+    IntRect scrollParentRect = pixelSnappedIntRect(scrollParent->elementRect());
+    newSubfocus.move(newElementRect.x(), newElementRect.y());
+    newSubfocus.move(-scrollParentRect.x(), -scrollParentRect.y());
+
     // Recursively make sure the scroll parent itself is visible.
     if (scrollParent->parentObject())
-        scrollParent->scrollToMakeVisible();
+        scrollParent->scrollToMakeVisibleWithSubFocus(newSubfocus);
 }
 
 void AXObject::scrollToGlobalPoint(const IntPoint& globalPoint) const
@@ -896,4 +985,4 @@ AccessibilityRole AXObject::buttonRoleType() const
     return ButtonRole;
 }
 
-} // namespace WebCore
+} // namespace blink

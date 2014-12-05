@@ -4,7 +4,7 @@
 
 #include "media/base/test_data_util.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/path_service.h"
@@ -12,14 +12,28 @@
 
 namespace media {
 
+const base::FilePath::CharType kTestDataPath[] =
+    FILE_PATH_LITERAL("media/test/data");
+
 base::FilePath GetTestDataFilePath(const std::string& name) {
   base::FilePath file_path;
   CHECK(PathService::Get(base::DIR_SOURCE_ROOT, &file_path));
+  return file_path.Append(GetTestDataPath()).AppendASCII(name);
+}
 
-  return file_path.AppendASCII("media")
-      .AppendASCII("test")
-      .AppendASCII("data")
-      .AppendASCII(name);
+base::FilePath GetTestDataPath() {
+  return base::FilePath(kTestDataPath);
+}
+
+std::string GetURLQueryString(const base::StringPairs& query_params) {
+  std::string query = "";
+  base::StringPairs::const_iterator itr = query_params.begin();
+  for (; itr != query_params.end(); ++itr) {
+    if (itr != query_params.begin())
+      query.append("&");
+    query.append(itr->first + "=" + itr->second);
+  }
+  return query;
 }
 
 scoped_refptr<DecoderBuffer> ReadTestDataFile(const std::string& name) {

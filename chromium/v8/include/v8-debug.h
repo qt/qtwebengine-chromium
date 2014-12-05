@@ -19,8 +19,10 @@ enum DebugEvent {
   NewFunction = 3,
   BeforeCompile = 4,
   AfterCompile  = 5,
-  ScriptCollected = 6,
-  BreakForCommand = 7
+  CompileError = 6,
+  PromiseEvent = 7,
+  AsyncTaskEvent = 8,
+  BreakForCommand = 9
 };
 
 
@@ -164,6 +166,9 @@ class V8_EXPORT Debug {
   // Remove scheduled debugger break in given isolate if it has not
   // happened yet.
   static void CancelDebugBreak(Isolate* isolate);
+
+  // Check if a debugger break is scheduled in the given isolate.
+  static bool CheckDebugBreak(Isolate* isolate);
 
   // Break execution of JavaScript in the given isolate (this method
   // can be invoked from a non-VM thread) for further client command

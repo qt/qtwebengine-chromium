@@ -39,7 +39,7 @@ class FakeVideoDecoderTest
         is_reset_pending_(false) {}
 
   virtual ~FakeVideoDecoderTest() {
-    Stop();
+    Destroy();
   }
 
   void InitializeWithConfig(const VideoDecoderConfig& config) {
@@ -92,17 +92,17 @@ class FakeVideoDecoderTest
       case OK:
         EXPECT_EQ(0, pending_decode_requests_);
         ASSERT_EQ(VideoDecoder::kOk, last_decode_status_);
-        ASSERT_TRUE(last_decoded_frame_);
+        ASSERT_TRUE(last_decoded_frame_.get());
         break;
       case NOT_ENOUGH_DATA:
         EXPECT_EQ(0, pending_decode_requests_);
         ASSERT_EQ(VideoDecoder::kOk, last_decode_status_);
-        ASSERT_FALSE(last_decoded_frame_);
+        ASSERT_FALSE(last_decoded_frame_.get());
         break;
       case ABORTED:
         EXPECT_EQ(0, pending_decode_requests_);
         ASSERT_EQ(VideoDecoder::kAborted, last_decode_status_);
-        EXPECT_FALSE(last_decoded_frame_);
+        EXPECT_FALSE(last_decoded_frame_.get());
         break;
     }
   }
@@ -132,7 +132,7 @@ class FakeVideoDecoderTest
     last_decoded_frame_ = NULL;
     do {
       Decode();
-    } while (!last_decoded_frame_ && pending_decode_requests_ == 0);
+    } while (!last_decoded_frame_.get() && pending_decode_requests_ == 0);
   }
 
   void ReadAllFrames() {
@@ -197,8 +197,8 @@ class FakeVideoDecoderTest
     ExpectResetResult(OK);
   }
 
-  void Stop() {
-    decoder_->Stop();
+  void Destroy() {
+    decoder_.reset();
     message_loop_.RunUntilIdle();
 
     // All pending callbacks must have been fired.
@@ -274,7 +274,7 @@ TEST_P(FakeVideoDecoderTest, Read_Pending_NotEnoughData) {
   SatisfyDecodeAndExpect(NOT_ENOUGH_DATA);
 
   // Verify that FrameReady() hasn't been called.
-  EXPECT_FALSE(last_decoded_frame_);
+  EXPECT_FALSE(last_decoded_frame_.get());
 }
 
 TEST_P(FakeVideoDecoderTest, Read_Pending_OK) {
@@ -365,35 +365,35 @@ TEST_P(FakeVideoDecoderTest, Reset_PendingDuringPendingRead) {
   SatisfyReset();
 }
 
-TEST_P(FakeVideoDecoderTest, Stop) {
+TEST_P(FakeVideoDecoderTest, Destroy) {
   Initialize();
   ReadOneFrame();
   ExpectReadResult(OK);
-  Stop();
+  Destroy();
 }
 
-TEST_P(FakeVideoDecoderTest, Stop_DuringPendingInitialization) {
+TEST_P(FakeVideoDecoderTest, Destroy_DuringPendingInitialization) {
   EnterPendingInitState();
-  Stop();
+  Destroy();
 }
 
-TEST_P(FakeVideoDecoderTest, Stop_DuringPendingRead) {
+TEST_P(FakeVideoDecoderTest, Destroy_DuringPendingRead) {
   Initialize();
   EnterPendingReadState();
-  Stop();
+  Destroy();
 }
 
-TEST_P(FakeVideoDecoderTest, Stop_DuringPendingReset) {
+TEST_P(FakeVideoDecoderTest, Destroy_DuringPendingReset) {
   Initialize();
   EnterPendingResetState();
-  Stop();
+  Destroy();
 }
 
-TEST_P(FakeVideoDecoderTest, Stop_DuringPendingReadAndPendingReset) {
+TEST_P(FakeVideoDecoderTest, Destroy_DuringPendingReadAndPendingReset) {
   Initialize();
   EnterPendingReadState();
   EnterPendingResetState();
-  Stop();
+  Destroy();
 }
 
 }  // namespace media

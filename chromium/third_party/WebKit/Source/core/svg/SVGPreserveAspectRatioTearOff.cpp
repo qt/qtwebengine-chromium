@@ -32,10 +32,10 @@
 
 #include "core/svg/SVGPreserveAspectRatioTearOff.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 void SVGPreserveAspectRatioTearOff::setAlign(unsigned short align, ExceptionState& exceptionState)
 {
@@ -68,7 +68,6 @@ void SVGPreserveAspectRatioTearOff::setMeetOrSlice(unsigned short meetOrSlice, E
 SVGPreserveAspectRatioTearOff::SVGPreserveAspectRatioTearOff(PassRefPtr<SVGPreserveAspectRatio> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGPreserveAspectRatio>(target, contextElement, propertyIsAnimVal, attributeName)
 {
-    ScriptWrappable::init(this);
 }
 
 }

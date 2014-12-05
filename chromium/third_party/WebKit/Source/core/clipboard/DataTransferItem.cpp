@@ -31,28 +31,26 @@
 #include "config.h"
 #include "core/clipboard/DataTransferItem.h"
 
-#include "bindings/v8/V8Binding.h"
-#include "core/clipboard/Clipboard.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/clipboard/DataObjectItem.h"
+#include "core/clipboard/DataTransfer.h"
 #include "core/dom/StringCallback.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<DataTransferItem> DataTransferItem::create(PassRefPtrWillBeRawPtr<Clipboard> clipboard, PassRefPtrWillBeRawPtr<DataObjectItem> item)
-{
-    return adoptRefWillBeNoop(new DataTransferItem(clipboard, item));
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DataTransferItem);
 
-DataTransferItem::~DataTransferItem()
+PassRefPtrWillBeRawPtr<DataTransferItem> DataTransferItem::create(PassRefPtrWillBeRawPtr<DataTransfer> dataTransfer, PassRefPtrWillBeRawPtr<DataObjectItem> item)
 {
+    return adoptRefWillBeNoop(new DataTransferItem(dataTransfer, item));
 }
 
 String DataTransferItem::kind() const
 {
     DEFINE_STATIC_LOCAL(const String, kindString, ("string"));
     DEFINE_STATIC_LOCAL(const String, kindFile, ("file"));
-    if (!m_clipboard->canReadTypes())
+    if (!m_dataTransfer->canReadTypes())
         return String();
     switch (m_item->kind()) {
     case DataObjectItem::StringKind:
@@ -66,41 +64,40 @@ String DataTransferItem::kind() const
 
 String DataTransferItem::type() const
 {
-    if (!m_clipboard->canReadTypes())
+    if (!m_dataTransfer->canReadTypes())
         return String();
     return m_item->type();
 }
 
-void DataTransferItem::getAsString(ExecutionContext* context, PassOwnPtr<StringCallback> callback) const
+void DataTransferItem::getAsString(ExecutionContext* context, StringCallback* callback) const
 {
-    if (!m_clipboard->canReadData())
+    if (!m_dataTransfer->canReadData())
         return;
     if (!callback || m_item->kind() != DataObjectItem::StringKind)
         return;
 
-    StringCallback::scheduleCallback(callback, context, m_item->getAsString());
+    StringCallback::scheduleCallback(callback, context, m_item->getAsString(), "DataTransferItem.getAsString");
 }
 
-PassRefPtrWillBeRawPtr<Blob> DataTransferItem::getAsFile() const
+Blob* DataTransferItem::getAsFile() const
 {
-    if (!m_clipboard->canReadData())
+    if (!m_dataTransfer->canReadData())
         return nullptr;
 
     return m_item->getAsFile();
 }
 
-DataTransferItem::DataTransferItem(PassRefPtrWillBeRawPtr<Clipboard> clipboard, PassRefPtrWillBeRawPtr<DataObjectItem> item)
-    : m_clipboard(clipboard)
+DataTransferItem::DataTransferItem(PassRefPtrWillBeRawPtr<DataTransfer> dataTransfer, PassRefPtrWillBeRawPtr<DataObjectItem> item)
+    : m_dataTransfer(dataTransfer)
     , m_item(item)
 {
-    ScriptWrappable::init(this);
 }
 
 void DataTransferItem::trace(Visitor* visitor)
 {
-    visitor->trace(m_clipboard);
+    visitor->trace(m_dataTransfer);
     visitor->trace(m_item);
 }
 
-} // namespace WebCore
+} // namespace blink
 

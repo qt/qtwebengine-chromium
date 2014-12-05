@@ -43,16 +43,16 @@ class NET_EXPORT_PRIVATE WebSocketDeflateStream : public WebSocketStream {
                          WebSocketDeflater::ContextTakeOverMode mode,
                          int client_window_bits,
                          scoped_ptr<WebSocketDeflatePredictor> predictor);
-  virtual ~WebSocketDeflateStream();
+  ~WebSocketDeflateStream() override;
 
   // WebSocketStream functions.
-  virtual int ReadFrames(ScopedVector<WebSocketFrame>* frames,
-                         const CompletionCallback& callback) OVERRIDE;
-  virtual int WriteFrames(ScopedVector<WebSocketFrame>* frames,
-                          const CompletionCallback& callback) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual std::string GetSubProtocol() const OVERRIDE;
-  virtual std::string GetExtensions() const OVERRIDE;
+  int ReadFrames(ScopedVector<WebSocketFrame>* frames,
+                 const CompletionCallback& callback) override;
+  int WriteFrames(ScopedVector<WebSocketFrame>* frames,
+                  const CompletionCallback& callback) override;
+  void Close() override;
+  std::string GetSubProtocol() const override;
+  std::string GetExtensions() const override;
 
  private:
   enum ReadingState {

@@ -88,6 +88,17 @@ static inline void GrColorToRGBAFloat(GrColor color, float rgba[4]) {
     rgba[3] = GrColorUnpackA(color) * ONE_OVER_255;
 }
 
+/** Normalizes and coverts an uint8_t to a float. [0, 255] -> [0.0, 1.0] */
+static inline float GrNormalizeByteToFloat(uint8_t value) {
+    static const float ONE_OVER_255 = 1.f / 255.f;
+    return value * ONE_OVER_255;
+}
+
+/** Determines whether the color is opaque or not. */
+static inline bool GrColorIsOpaque(GrColor color) {
+    return (color & (0xFFU << GrColor_SHIFT_A)) == (0xFFU << GrColor_SHIFT_A);
+}
+
 /**
  * Flags used for bitfields of color components. They are defined so that the bit order reflects the
  * GrColor shift order.
@@ -134,18 +145,24 @@ static inline uint32_t GrPixelConfigComponentMask(GrPixelConfig config) {
         kRGBA_GrColorComponentFlags,    // kBGRA_8888_GrPixelConfig
         kRGB_GrColorComponentFlags,     // kETC1_GrPixelConfig
         kA_GrColorComponentFlag,        // kLATC_GrPixelConfig
+        kA_GrColorComponentFlag,        // kR11_EAC_GrPixelConfig
+        kRGBA_GrColorComponentFlags,    // kASTC_12x12_GrPixelConfig
+        kRGBA_GrColorComponentFlags,    // kRGBA_float_GrPixelConfig
     };
     return kFlags[config];
 
-    GR_STATIC_ASSERT(0 == kUnknown_GrPixelConfig);
-    GR_STATIC_ASSERT(1 == kAlpha_8_GrPixelConfig);
-    GR_STATIC_ASSERT(2 == kIndex_8_GrPixelConfig);
-    GR_STATIC_ASSERT(3 == kRGB_565_GrPixelConfig);
-    GR_STATIC_ASSERT(4 == kRGBA_4444_GrPixelConfig);
-    GR_STATIC_ASSERT(5 == kRGBA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(6 == kBGRA_8888_GrPixelConfig);
-    GR_STATIC_ASSERT(7 == kETC1_GrPixelConfig);
-    GR_STATIC_ASSERT(8 == kLATC_GrPixelConfig);
+    GR_STATIC_ASSERT(0  == kUnknown_GrPixelConfig);
+    GR_STATIC_ASSERT(1  == kAlpha_8_GrPixelConfig);
+    GR_STATIC_ASSERT(2  == kIndex_8_GrPixelConfig);
+    GR_STATIC_ASSERT(3  == kRGB_565_GrPixelConfig);
+    GR_STATIC_ASSERT(4  == kRGBA_4444_GrPixelConfig);
+    GR_STATIC_ASSERT(5  == kRGBA_8888_GrPixelConfig);
+    GR_STATIC_ASSERT(6  == kBGRA_8888_GrPixelConfig);
+    GR_STATIC_ASSERT(7  == kETC1_GrPixelConfig);
+    GR_STATIC_ASSERT(8  == kLATC_GrPixelConfig);
+    GR_STATIC_ASSERT(9  == kR11_EAC_GrPixelConfig);
+    GR_STATIC_ASSERT(10 == kASTC_12x12_GrPixelConfig);
+    GR_STATIC_ASSERT(11 == kRGBA_float_GrPixelConfig);
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kFlags) == kGrPixelConfigCnt);
 }
 

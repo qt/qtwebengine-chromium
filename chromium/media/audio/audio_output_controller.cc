@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/debug/trace_event.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/task_runner_util.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
@@ -16,12 +17,6 @@
 using base::TimeDelta;
 
 namespace media {
-
-#if defined(AUDIO_POWER_MONITORING)
-// Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments for
-// semantics.  This value was arbitrarily chosen, but seems to work well.
-static const int kPowerMeasurementTimeConstantMillis = 10;
-#endif
 
 AudioOutputController::AudioOutputController(
     AudioManager* audio_manager,
@@ -39,11 +34,9 @@ AudioOutputController::AudioOutputController(
       state_(kEmpty),
       sync_reader_(sync_reader),
       message_loop_(audio_manager->GetTaskRunner()),
-#if defined(AUDIO_POWER_MONITORING)
       power_monitor_(
           params.sample_rate(),
           TimeDelta::FromMilliseconds(kPowerMeasurementTimeConstantMillis)),
-#endif
       on_more_io_data_called_(0) {
   DCHECK(audio_manager);
   DCHECK(handler_);
@@ -200,11 +193,9 @@ void AudioOutputController::StopStream() {
     wedge_timer_.reset();
     stream_->Stop();
 
-#if defined(AUDIO_POWER_MONITORING)
     // A stopped stream is silent, and power_montior_.Scan() is no longer being
     // called; so we must reset the power monitor.
     power_monitor_.Reset();
-#endif
 
     state_ = kPaused;
   }
@@ -223,7 +214,7 @@ void AudioOutputController::DoPause() {
   // Let the renderer know we've stopped.  Necessary to let PPAPI clients know
   // audio has been shutdown.  TODO(dalecurtis): This stinks.  PPAPI should have
   // a better way to know when it should exit PPB_Audio_Shared::Run().
-  sync_reader_->UpdatePendingBytes(-1);
+  sync_reader_->UpdatePendingBytes(kuint32max);
 
   handler_->OnPaused();
 }
@@ -290,11 +281,11 @@ void AudioOutputController::DoReportError() {
 }
 
 int AudioOutputController::OnMoreData(AudioBus* dest,
-                                      AudioBuffersState buffers_state) {
+                                      uint32 total_bytes_delay) {
   TRACE_EVENT0("audio", "AudioOutputController::OnMoreData");
 
   // Indicate that we haven't wedged (at least not indefinitely, WedgeCheck()
-  // may have already fired if OnMoreIOData() took an abnormal amount of time).
+  // may have already fired if OnMoreData() took an abnormal amount of time).
   // Since this thread is the only writer of |on_more_io_data_called_| once the
   // thread starts, its safe to compare and then increment.
   if (base::AtomicRefCountIsZero(&on_more_io_data_called_))
@@ -303,12 +294,11 @@ int AudioOutputController::OnMoreData(AudioBus* dest,
   sync_reader_->Read(dest);
 
   const int frames = dest->frames();
-  sync_reader_->UpdatePendingBytes(
-      buffers_state.total_bytes() + frames * params_.GetBytesPerFrame());
+  sync_reader_->UpdatePendingBytes(base::saturated_cast<uint32>(
+      total_bytes_delay + frames * params_.GetBytesPerFrame()));
 
-#if defined(AUDIO_POWER_MONITORING)
-  power_monitor_.Scan(*dest, frames);
-#endif
+  if (will_monitor_audio_levels())
+    power_monitor_.Scan(*dest, frames);
 
   return frames;
 }
@@ -412,12 +402,8 @@ void AudioOutputController::DoStopDiverting() {
 }
 
 std::pair<float, bool> AudioOutputController::ReadCurrentPowerAndClip() {
-#if defined(AUDIO_POWER_MONITORING)
+  DCHECK(will_monitor_audio_levels());
   return power_monitor_.ReadCurrentPowerAndClip();
-#else
-  NOTREACHED();
-  return std::make_pair(AudioPowerMonitor::zero_power(), false);
-#endif
 }
 
 void AudioOutputController::WedgeCheck() {

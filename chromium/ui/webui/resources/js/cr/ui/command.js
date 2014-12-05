@@ -78,7 +78,7 @@ cr.define('cr.ui', function() {
      * Initializes the command.
      */
     decorate: function() {
-      CommandManager.init(this.ownerDocument);
+      CommandManager.init(assert(this.ownerDocument));
 
       if (this.hasAttribute('shortcut'))
         this.shortcut = this.getAttribute('shortcut');
@@ -163,25 +163,21 @@ cr.define('cr.ui', function() {
 
   /**
    * The label of the command.
-   * @type {string}
    */
   cr.defineProperty(Command, 'label', cr.PropertyKind.ATTR);
 
   /**
    * Whether the command is disabled or not.
-   * @type {boolean}
    */
   cr.defineProperty(Command, 'disabled', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Whether the command is hidden or not.
-   * @type {boolean}
    */
   cr.defineProperty(Command, 'hidden', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Whether the command is checked or not.
-   * @type {boolean}
    */
   cr.defineProperty(Command, 'checked', cr.PropertyKind.BOOL_ATTR);
 
@@ -191,18 +187,16 @@ cr.define('cr.ui', function() {
    * If false, the keyboard shortcut text (eg. "Ctrl+X" for the cut command)
    * is displayed in menu when the command is assosiated with a menu item.
    * Otherwise, no text is displayed.
-   *
-   * @type {boolean}
    */
   cr.defineProperty(Command, 'hideShortcutText', cr.PropertyKind.BOOL_ATTR);
 
   /**
    * Dispatches a canExecute event on the target.
-   * @param {cr.ui.Command} command The command that we are testing for.
-   * @param {Element} target The target element to dispatch the event on.
+   * @param {!cr.ui.Command} command The command that we are testing for.
+   * @param {EventTarget} target The target element to dispatch the event on.
    */
   function dispatchCanExecuteEvent(command, target) {
-    var e = new CanExecuteEvent(command, true);
+    var e = new CanExecuteEvent(command);
     target.dispatchEvent(e);
     command.disabled = !e.canExecute;
   }
@@ -242,11 +236,13 @@ cr.define('cr.ui', function() {
      * Handles focus changes on the document.
      * @param {Event} e The focus event object.
      * @private
+     * @suppress {checkTypes}
+     * TODO(vitalyp): remove the suppression.
      */
     handleFocus_: function(e) {
       var target = e.target;
 
-      // Ignore focus on a menu button or command item
+      // Ignore focus on a menu button or command item.
       if (target.menu || target.command)
         return;
 
@@ -294,7 +290,7 @@ cr.define('cr.ui', function() {
    * @class
    */
   function CanExecuteEvent(command) {
-    var e = new Event('canExecute', {bubbles: true});
+    var e = new Event('canExecute', {bubbles: true, cancelable: true});
     e.__proto__ = CanExecuteEvent.prototype;
     e.command = command;
     return e;
@@ -311,7 +307,8 @@ cr.define('cr.ui', function() {
 
     /**
      * Whether the target can execute the command. Setting this also stops the
-     * propagation.
+     * propagation and prevents the default. Callers can tell if an event has
+     * been handled via |this.defaultPrevented|.
      * @type {boolean}
      */
     canExecute_: false,
@@ -321,6 +318,7 @@ cr.define('cr.ui', function() {
     set canExecute(canExecute) {
       this.canExecute_ = !!canExecute;
       this.stopPropagation();
+      this.preventDefault();
     }
   };
 

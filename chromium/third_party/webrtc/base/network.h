@@ -188,23 +188,37 @@ class Network {
   std::string key() const { return key_; }
 
   // Returns the Network's current idea of the 'best' IP it has.
-  // 'Best' currently means the first one added.
-  // TODO: We should be preferring temporary addresses.
-  // Returns an unset IP if this network has no active addresses.
-  IPAddress ip() const {
-    if (ips_.size() == 0) {
-      return IPAddress();
-    }
-    return ips_.at(0);
-  }
+  // Or return an unset IP if this network has no active addresses.
+  // Here is the rule on how we mark the IPv6 address as ignorable for WebRTC.
+  // 1) return all global temporary dynamic and non-deprecrated ones.
+  // 2) if #1 not available, return global ones.
+  // 3) if #2 not available, use ULA ipv6 as last resort. (ULA stands
+  // for unique local address, which is not route-able in open
+  // internet but might be useful for a close WebRTC deployment.
+
+  // TODO(guoweis): rule #3 actually won't happen at current
+  // implementation. The reason being that ULA address starting with
+  // 0xfc 0r 0xfd will be grouped into its own Network. The result of
+  // that is WebRTC will have one extra Network to generate candidates
+  // but the lack of rule #3 shouldn't prevent turning on IPv6 since
+  // ULA should only be tried in a close deployment anyway.
+
+  // Note that when not specifying any flag, it's treated as case global
+  // IPv6 address
+  IPAddress GetBestIP() const;
+
+  // Keep the original function here for now.
+  // TODO(guoweis): Remove this when all callers are migrated to GetBestIP().
+  IPAddress ip() const { return GetBestIP(); }
+
   // Adds an active IP address to this network. Does not check for duplicates.
-  void AddIP(const IPAddress& ip) { ips_.push_back(ip); }
+  void AddIP(const InterfaceAddress& ip) { ips_.push_back(ip); }
 
   // Sets the network's IP address list. Returns true if new IP addresses were
   // detected. Passing true to already_changed skips this check.
-  bool SetIPs(const std::vector<IPAddress>& ips, bool already_changed);
+  bool SetIPs(const std::vector<InterfaceAddress>& ips, bool already_changed);
   // Get the list of IP Addresses associated with this network.
-  const std::vector<IPAddress>& GetIPs() { return ips_;}
+  const std::vector<InterfaceAddress>& GetIPs() const { return ips_;}
   // Clear the network's list of addresses.
   void ClearIPs() { ips_.clear(); }
 
@@ -231,7 +245,7 @@ class Network {
   IPAddress prefix_;
   int prefix_length_;
   std::string key_;
-  std::vector<IPAddress> ips_;
+  std::vector<InterfaceAddress> ips_;
   int scope_id_;
   bool ignored_;
   AdapterType type_;

@@ -30,12 +30,11 @@
 
 #include "core/inspector/InspectorOverlayHost.h"
 
-namespace WebCore {
+namespace blink {
 
 InspectorOverlayHost::InspectorOverlayHost()
-    : m_listener(0)
+    : m_listener(nullptr)
 {
-    ScriptWrappable::init(this);
 }
 
 InspectorOverlayHost::~InspectorOverlayHost()
@@ -54,4 +53,9 @@ void InspectorOverlayHost::stepOver()
         m_listener->overlaySteppedOver();
 }
 
-} // namespace WebCore
+void InspectorOverlayHost::trace(Visitor* visitor)
+{
+    visitor->trace(m_listener);
+}
+
+} // namespace blink

@@ -30,16 +30,16 @@ import logging
 import optparse
 import sys
 import tempfile
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.executive import Executive, ScriptError
 from webkitpy.common.system import executive_mock
 from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.common.system.path import abspath_to_uri
-from webkitpy.thirdparty.mock import Mock
 from webkitpy.tool.mocktool import MockOptions
 from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
+from webkitpy.common.system.systemhost import SystemHost
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
 from webkitpy.layout_tests.port import Port, Driver, DriverOutput
@@ -55,10 +55,6 @@ class PortTest(unittest.TestCase):
             add_unit_tests_to_mock_filesystem(host.filesystem)
             return TestPort(host, **kwargs)
         return Port(host, port_name or 'baseport', **kwargs)
-
-    def test_default_child_processes(self):
-        port = self.make_port()
-        self.assertIsNotNone(port.default_child_processes())
 
     def test_format_wdiff_output_as_html(self):
         output = "OUTPUT %s %s %s" % (Port._WDIFF_DEL, Port._WDIFF_ADD, Port._WDIFF_END)
@@ -142,6 +138,12 @@ class PortTest(unittest.TestCase):
         self.assertIn('exp.txt', diff)
         self.assertIn('act.txt', diff)
         self.assertNotIn('nosuchthing', diff)
+
+        # Test for missing newline at end of file diff output.
+        content_a = "Hello\n\nWorld"
+        content_b = "Hello\n\nWorld\n\n\n"
+        expected = "--- exp.txt\n+++ act.txt\n@@ -1,3 +1,5 @@\n Hello\n \n-World\n\ No newline at end of file\n+World\n+\n+\n"
+        self.assertEqual(expected, port.diff_text(content_a, content_b, 'exp.txt', 'act.txt'))
 
     def test_setup_test_run(self):
         port = self.make_port()
@@ -328,7 +330,7 @@ class PortTest(unittest.TestCase):
         port.host.platform.os_name = 'cygwin'
         self.assertFalse(port.http_server_supports_ipv6())
         port.host.platform.os_name = 'win'
-        self.assertTrue(port.http_server_supports_ipv6())
+        self.assertFalse(port.http_server_supports_ipv6())
 
     def test_check_httpd_success(self):
         port = self.make_port(executive=MockExecutive2())
@@ -356,7 +358,7 @@ class PortTest(unittest.TestCase):
 
         self.assertTrue(port.test_exists('virtual'))
         self.assertFalse(port.test_exists('virtual/does_not_exist.html'))
-        self.assertTrue(port.test_exists('virtual/passes/text.html'))
+        self.assertTrue(port.test_exists('virtual/virtual_passes/passes/text.html'))
 
     def test_test_isfile(self):
         port = self.make_port(with_tests=True)
@@ -365,7 +367,7 @@ class PortTest(unittest.TestCase):
         self.assertFalse(port.test_isfile('passes/does_not_exist.html'))
 
         self.assertFalse(port.test_isfile('virtual'))
-        self.assertTrue(port.test_isfile('virtual/passes/text.html'))
+        self.assertTrue(port.test_isfile('virtual/virtual_passes/passes/text.html'))
         self.assertFalse(port.test_isfile('virtual/does_not_exist.html'))
 
     def test_test_isdir(self):
@@ -378,25 +380,25 @@ class PortTest(unittest.TestCase):
         self.assertTrue(port.test_isdir('virtual'))
         self.assertFalse(port.test_isdir('virtual/does_not_exist.html'))
         self.assertFalse(port.test_isdir('virtual/does_not_exist/'))
-        self.assertFalse(port.test_isdir('virtual/passes/text.html'))
+        self.assertFalse(port.test_isdir('virtual/virtual_passes/passes/text.html'))
 
     def test_tests(self):
         port = self.make_port(with_tests=True)
         tests = port.tests([])
         self.assertIn('passes/text.html', tests)
-        self.assertIn('virtual/passes/text.html', tests)
+        self.assertIn('virtual/virtual_passes/passes/text.html', tests)
 
         tests = port.tests(['passes'])
         self.assertIn('passes/text.html', tests)
-        self.assertIn('passes/passes/test-virtual-passes.html', tests)
-        self.assertNotIn('virtual/passes/text.html', tests)
+        self.assertIn('passes/virtual_passes/test-virtual-passes.html', tests)
+        self.assertNotIn('virtual/virtual_passes/passes/text.html', tests)
 
-        tests = port.tests(['virtual/passes'])
+        tests = port.tests(['virtual/virtual_passes/passes'])
         self.assertNotIn('passes/text.html', tests)
-        self.assertIn('virtual/passes/test-virtual-passes.html', tests)
-        self.assertIn('virtual/passes/passes/test-virtual-passes.html', tests)
-        self.assertNotIn('virtual/passes/test-virtual-virtual/passes.html', tests)
-        self.assertNotIn('virtual/passes/virtual/passes/test-virtual-passes.html', tests)
+        self.assertIn('virtual/virtual_passes/passes/test-virtual-passes.html', tests)
+        self.assertNotIn('passes/test-virtual-passes.html', tests)
+        self.assertNotIn('virtual/virtual_passes/passes/test-virtual-virtual/passes.html', tests)
+        self.assertNotIn('virtual/virtual_passes/passes/virtual_passes/passes/test-virtual-passes.html', tests)
 
     def test_build_path(self):
         port = self.make_port(options=optparse.Values({'build_directory': '/my-build-directory/'}))
@@ -405,6 +407,32 @@ class PortTest(unittest.TestCase):
     def test_dont_require_http_server(self):
         port = self.make_port()
         self.assertEqual(port.requires_http_server(), False)
+
+    def test_can_load_actual_virtual_test_suite_file(self):
+        port = Port(SystemHost(), 'baseport')
+
+        # If this call returns successfully, we found and loaded the LayoutTests/VirtualTestSuites.
+        _ = port.virtual_test_suites()
+
+    def test_good_virtual_test_suite_file(self):
+        port = self.make_port()
+        fs = port._filesystem
+        fs.write_text_file(fs.join(port.layout_tests_dir(), 'VirtualTestSuites'),
+                           '[{"prefix": "bar", "base": "fast/bar", "args": ["--bar"]}]')
+
+        # If this call returns successfully, we found and loaded the LayoutTests/VirtualTestSuites.
+        _ = port.virtual_test_suites()
+
+    def test_virtual_test_suite_file_is_not_json(self):
+        port = self.make_port()
+        fs = port._filesystem
+        fs.write_text_file(fs.join(port.layout_tests_dir(), 'VirtualTestSuites'),
+                           '{[{[')
+        self.assertRaises(ValueError, port.virtual_test_suites)
+
+    def test_missing_virtual_test_suite_file(self):
+        port = self.make_port()
+        self.assertRaises(AssertionError, port.virtual_test_suites)
 
 
 class NaturalCompareTest(unittest.TestCase):
@@ -452,19 +480,10 @@ class KeyCompareTest(unittest.TestCase):
 
 class VirtualTestSuiteTest(unittest.TestCase):
     def test_basic(self):
-        suite = VirtualTestSuite('suite', 'base/foo', ['--args'])
+        suite = VirtualTestSuite(prefix='suite', base='base/foo', args=['--args'])
         self.assertEqual(suite.name, 'virtual/suite/base/foo')
         self.assertEqual(suite.base, 'base/foo')
         self.assertEqual(suite.args, ['--args'])
 
     def test_no_slash(self):
-        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'])
-        self.assertFalse(hasattr(suite, 'name'))
-        self.assertFalse(hasattr(suite, 'base'))
-        self.assertFalse(hasattr(suite, 'args'))
-
-    def test_legacy(self):
-        suite = VirtualTestSuite('suite/bar', 'base/foo', ['--args'], use_legacy_naming=True)
-        self.assertEqual(suite.name, 'virtual/suite/bar')
-        self.assertEqual(suite.base, 'base/foo')
-        self.assertEqual(suite.args, ['--args'])
+        self.assertRaises(AssertionError, VirtualTestSuite, prefix='suite/bar', base='base/foo', args=['--args'])

@@ -50,9 +50,13 @@ class CONTENT_EXPORT FrameTree {
             RenderFrameHostManager::Delegate* manager_delegate);
   ~FrameTree();
 
+  // Returns the FrameTreeNode with the given |frame_tree_node_id|.
+  static FrameTreeNode* GloballyFindByID(int64 frame_tree_node_id);
+
   FrameTreeNode* root() const { return root_.get(); }
 
-  // Returns the FrameTreeNode with the given |frame_tree_node_id|.
+  // Returns the FrameTreeNode with the given |frame_tree_node_id| if it is part
+  // of this FrameTree.
   FrameTreeNode* FindByID(int64 frame_tree_node_id);
 
   // Returns the FrameTreeNode with the given renderer-specific |routing_id|.
@@ -67,9 +71,18 @@ class CONTENT_EXPORT FrameTree {
 
   // Frame tree manipulation routines.
   RenderFrameHostImpl* AddFrame(FrameTreeNode* parent,
+                                int process_id,
                                 int new_routing_id,
                                 const std::string& frame_name);
   void RemoveFrame(FrameTreeNode* child);
+
+  // This method walks the entire frame tree and creates a RenderFrameProxyHost
+  // for the given |site_instance| in each node except the |source| one --
+  // the source will have a RenderFrameHost. It assumes that no frame tree
+  // nodes already have RenderFrameProxyHost for the given |site_instance|.
+  void CreateProxiesForSiteInstance(
+      FrameTreeNode* source,
+      SiteInstance* site_instance);
 
   // Clears process specific-state after a main frame process swap.
   // This destroys most of the frame tree but retains the root node so that
@@ -97,24 +110,22 @@ class CONTENT_EXPORT FrameTree {
   // Allows a client to listen for frame removal.  The listener should expect
   // to receive the RenderViewHostImpl containing the frame and the renderer-
   // specific frame routing ID of the removed frame.
-  // TODO(creis): These parameters will later change to be the RenderFrameHost.
   void SetFrameRemoveListener(
-      const base::Callback<void(RenderViewHostImpl*, int)>& on_frame_removed);
+      const base::Callback<void(RenderFrameHost*)>& on_frame_removed);
 
-  // Creates a RenderViewHost for a new main frame RenderFrameHost in the given
+  // Creates a RenderViewHost for a new RenderFrameHost in the given
   // |site_instance|.  The RenderViewHost will have its Shutdown method called
   // when all of the RenderFrameHosts using it are deleted.
-  RenderViewHostImpl* CreateRenderViewHostForMainFrame(
-      SiteInstance* site_instance,
-      int routing_id,
-      int main_frame_routing_id,
-      bool swapped_out,
-      bool hidden);
+  RenderViewHostImpl* CreateRenderViewHost(SiteInstance* site_instance,
+                                           int routing_id,
+                                           int main_frame_routing_id,
+                                           bool swapped_out,
+                                           bool hidden);
 
-  // Returns the existing RenderViewHost for a new subframe RenderFrameHost.
+  // Returns the existing RenderViewHost for a new RenderFrameHost.
   // There should always be such a RenderViewHost, because the main frame
   // RenderFrameHost for each SiteInstance should be created before subframes.
-  RenderViewHostImpl* GetRenderViewHostForSubFrame(SiteInstance* site_instance);
+  RenderViewHostImpl* GetRenderViewHost(SiteInstance* site_instance);
 
   // Keeps track of which RenderFrameHosts are using each RenderViewHost.  When
   // the number drops to zero, we call Shutdown on the RenderViewHost.
@@ -124,6 +135,11 @@ class CONTENT_EXPORT FrameTree {
  private:
   typedef base::hash_map<int, RenderViewHostImpl*> RenderViewHostMap;
   typedef std::multimap<int, RenderViewHostImpl*> RenderViewHostMultiMap;
+
+  // A variation to the public ForEach method with a difference that the subtree
+  // starting at |skip_this_subtree| will not be recursed into.
+  void ForEach(const base::Callback<bool(FrameTreeNode*)>& on_node,
+               FrameTreeNode* skip_this_subtree) const;
 
   // These delegates are installed into all the RenderViewHosts and
   // RenderFrameHosts that we create.
@@ -153,7 +169,7 @@ class CONTENT_EXPORT FrameTree {
 
   int64 focused_frame_tree_node_id_;
 
-  base::Callback<void(RenderViewHostImpl*, int)> on_frame_removed_;
+  base::Callback<void(RenderFrameHost*)> on_frame_removed_;
 
   DISALLOW_COPY_AND_ASSIGN(FrameTree);
 };

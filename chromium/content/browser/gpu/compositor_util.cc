@@ -7,6 +7,7 @@
 #include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
@@ -19,17 +20,6 @@ namespace {
 
 static bool IsGpuRasterizationBlacklisted() {
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
-  bool field_trial_enabled =
-      (base::FieldTrialList::FindFullName(
-           "GpuRasterizationExpandedDeviceWhitelist") == "Enabled");
-
-  if (field_trial_enabled) {
-    return manager->IsFeatureBlacklisted(
-               gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION) &&
-           manager->IsFeatureBlacklisted(
-               gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION_FIELD_TRIAL);
-  }
-
   return manager->IsFeatureBlacklisted(
         gpu::GPU_FEATURE_TYPE_GPU_RASTERIZATION);
 }
@@ -38,6 +28,10 @@ const char* kGpuCompositingFeatureName = "gpu_compositing";
 const char* kWebGLFeatureName = "webgl";
 const char* kRasterizationFeatureName = "rasterization";
 const char* kThreadedRasterizationFeatureName = "threaded_rasterization";
+const char* kMultipleRasterThreadsFeatureName = "multiple_raster_threads";
+
+const int kMinRasterThreads = 1;
+const int kMaxRasterThreads = 64;
 
 struct GpuFeatureInfo {
   std::string name;
@@ -48,7 +42,8 @@ struct GpuFeatureInfo {
 };
 
 const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   GpuDataManagerImpl* manager = GpuDataManagerImpl::GetInstance();
 
   const GpuFeatureInfo kGpuFeatureInfo[] = {
@@ -66,7 +61,7 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
       {
           kGpuCompositingFeatureName,
           manager->IsFeatureBlacklisted(gpu::GPU_FEATURE_TYPE_GPU_COMPOSITING),
-          false,
+          command_line.HasSwitch(switches::kDisableGpuCompositing),
           "Gpu compositing has been disabled, either via about:flags or"
           " command line. The browser will fall back to software compositing"
           " and hardware acceleration will be unavailable.",
@@ -152,8 +147,14 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
           "Threaded rasterization has not been enabled or"
           " is not supported by the current system.",
           false
-      }
-
+      },
+      {
+          kMultipleRasterThreadsFeatureName,
+          false,
+          NumberOfRendererRasterThreads() == 1,
+          "Raster is using a single thread.",
+          false
+      },
   };
   DCHECK(index < arraysize(kGpuFeatureInfo));
   *eof = (index == arraysize(kGpuFeatureInfo) - 1);
@@ -163,7 +164,8 @@ const GpuFeatureInfo GetGpuFeatureInfo(size_t index, bool* eof) {
 }  // namespace
 
 bool IsPinchVirtualViewportEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   // Command line switches take precedence over platform default.
   if (command_line.HasSwitch(cc::switches::kDisablePinchVirtualViewport))
@@ -171,25 +173,7 @@ bool IsPinchVirtualViewportEnabled() {
   if (command_line.HasSwitch(cc::switches::kEnablePinchVirtualViewport))
     return true;
 
-#if defined(OS_CHROMEOS)
-  return true;
-#else
-  return false;
-#endif
-}
-
-bool IsThreadedCompositingEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-
-  // Command line switches take precedence over blacklist.
-  if (command_line.HasSwitch(switches::kDisableThreadedCompositing))
-    return false;
-  if (command_line.HasSwitch(switches::kEnableThreadedCompositing))
-    return true;
-
-#if defined(USE_AURA) || defined(OS_MACOSX)
-  // We always want threaded compositing on Aura and Mac (the fallback is a
-  // threaded software compositor).
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
   return true;
 #else
   return false;
@@ -197,48 +181,66 @@ bool IsThreadedCompositingEnabled() {
 }
 
 bool IsDelegatedRendererEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   bool enabled = false;
 
-#if defined(USE_AURA)
-  // Enable on Aura.
+#if defined(USE_AURA) || defined(OS_MACOSX)
+  // Enable on Aura and Mac.
   enabled = true;
 #endif
 
   // Flags override.
   enabled |= command_line.HasSwitch(switches::kEnableDelegatedRenderer);
   enabled &= !command_line.HasSwitch(switches::kDisableDelegatedRenderer);
-
-  // Needs compositing, and thread.
-  if (enabled && !IsThreadedCompositingEnabled()) {
-    enabled = false;
-    LOG(ERROR) << "Disabling delegated-rendering because it needs "
-               << "force-compositing-mode and threaded-compositing.";
-  }
-
   return enabled;
 }
 
 bool IsImplSidePaintingEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
-  if (command_line.HasSwitch(switches::kDisableImplSidePainting))
+  if (command_line.HasSwitch(switches::kEnableImplSidePainting))
+    return true;
+  else if (command_line.HasSwitch(switches::kDisableImplSidePainting))
     return false;
-  else if (command_line.HasSwitch(switches::kEnableImplSidePainting))
-    return true;
-  else if (command_line.HasSwitch(
-      switches::kEnableBleedingEdgeRenderingFastPaths))
-    return true;
 
-#if defined(OS_MACOSX) || defined(OS_WIN)
-  return false;
-#else
-  return IsThreadedCompositingEnabled();
-#endif
+  return true;
+}
+
+int NumberOfRendererRasterThreads() {
+  int num_raster_threads = 1;
+
+  int force_num_raster_threads = ForceNumberOfRendererRasterThreads();
+  if (force_num_raster_threads)
+    num_raster_threads = force_num_raster_threads;
+
+  return num_raster_threads;
+}
+
+int ForceNumberOfRendererRasterThreads() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+
+  if (!command_line.HasSwitch(switches::kNumRasterThreads))
+    return 0;
+  std::string string_value =
+      command_line.GetSwitchValueASCII(switches::kNumRasterThreads);
+  int force_num_raster_threads = 0;
+  if (base::StringToInt(string_value, &force_num_raster_threads) &&
+      force_num_raster_threads >= kMinRasterThreads &&
+      force_num_raster_threads <= kMaxRasterThreads) {
+    return force_num_raster_threads;
+  } else {
+    LOG(WARNING) << "Failed to parse switch " <<
+        switches::kNumRasterThreads  << ": " << string_value;
+    return 0;
+  }
 }
 
 bool IsGpuRasterizationEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (!IsImplSidePaintingEnabled())
     return false;
@@ -256,12 +258,20 @@ bool IsGpuRasterizationEnabled() {
 }
 
 bool IsForceGpuRasterizationEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (!IsImplSidePaintingEnabled())
     return false;
 
   return command_line.HasSwitch(switches::kForceGpuRasterization);
+}
+
+bool UseSurfacesEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+
+  return command_line.HasSwitch(switches::kUseSurfaces);
 }
 
 base::Value* GetFeatureStatus() {
@@ -287,9 +297,9 @@ base::Value* GetFeatureStatus() {
     } else if (gpu_feature_info.blocked ||
                gpu_access_blocked) {
       status = "unavailable";
-      if (gpu_feature_info.fallback_to_software) {
+      if (gpu_feature_info.fallback_to_software)
         status += "_software";
-      } else
+      else
         status += "_off";
     } else {
       status = "enabled";
@@ -300,12 +310,13 @@ base::Value* GetFeatureStatus() {
         if (IsForceGpuRasterizationEnabled())
           status += "_force";
       }
-      if (gpu_feature_info.name == kThreadedRasterizationFeatureName)
+      if (gpu_feature_info.name == kMultipleRasterThreadsFeatureName) {
+        if (ForceNumberOfRendererRasterThreads() > 0)
+          status += "_force";
+      }
+      if (gpu_feature_info.name == kThreadedRasterizationFeatureName ||
+          gpu_feature_info.name == kMultipleRasterThreadsFeatureName)
         status += "_on";
-    }
-    if (gpu_feature_info.name == kGpuCompositingFeatureName) {
-      if (IsThreadedCompositingEnabled())
-        status += "_threaded";
     }
     if (gpu_feature_info.name == kWebGLFeatureName &&
         (gpu_feature_info.blocked || gpu_access_blocked) &&

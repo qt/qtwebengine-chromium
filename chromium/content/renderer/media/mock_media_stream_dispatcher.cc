@@ -44,7 +44,7 @@ void MockMediaStreamDispatcher::GenerateStream(
     AddAudioInputDeviceToArray(false);
   }
   if (components.video_requested) {
-    AddVideoDeviceToArray();
+    AddVideoDeviceToArray(true);
   }
   ++request_stream_counter_;
 }
@@ -59,8 +59,7 @@ void MockMediaStreamDispatcher::EnumerateDevices(
     int request_id,
     const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
     MediaStreamType type,
-    const GURL& security_origin,
-    bool hide_labels_if_no_access) {
+    const GURL& security_origin) {
   if (type == MEDIA_DEVICE_AUDIO_CAPTURE) {
     audio_input_request_id_ = request_id;
     audio_input_array_.clear();
@@ -73,7 +72,8 @@ void MockMediaStreamDispatcher::EnumerateDevices(
   } else if (type == MEDIA_DEVICE_VIDEO_CAPTURE) {
     video_request_id_ = request_id;
     video_array_.clear();
-    AddVideoDeviceToArray();
+    AddVideoDeviceToArray(true);
+    AddVideoDeviceToArray(false);
   }
 }
 
@@ -110,6 +110,7 @@ void MockMediaStreamDispatcher::AddAudioInputDeviceToArray(
   audio.device.id = "audio_input_device_id" + base::IntToString(session_id_);
   audio.device.name = "microphone";
   audio.device.type = MEDIA_DEVICE_AUDIO_CAPTURE;
+  audio.device.video_facing = MEDIA_VIDEO_FACING_NONE;
   if (matched_output) {
     audio.device.matched_output_device_id =
         kAudioOutputDeviceIdPrefix + base::IntToString(session_id_);
@@ -123,15 +124,18 @@ void MockMediaStreamDispatcher::AddAudioOutputDeviceToArray() {
   audio.device.id = kAudioOutputDeviceIdPrefix + base::IntToString(session_id_);
   audio.device.name = "speaker";
   audio.device.type = MEDIA_DEVICE_AUDIO_OUTPUT;
+  audio.device.video_facing = MEDIA_VIDEO_FACING_NONE;
   audio.session_id = session_id_;
   audio_output_array_.push_back(audio);
 }
 
-void MockMediaStreamDispatcher::AddVideoDeviceToArray() {
+void MockMediaStreamDispatcher::AddVideoDeviceToArray(bool facing_user) {
   StreamDeviceInfo video;
   video.device.id = "video_device_id" + base::IntToString(session_id_);
   video.device.name = "usb video camera";
   video.device.type = MEDIA_DEVICE_VIDEO_CAPTURE;
+  video.device.video_facing = facing_user ? MEDIA_VIDEO_FACING_USER
+                                          : MEDIA_VIDEO_FACING_ENVIRONMENT;
   video.session_id = session_id_;
   video_array_.push_back(video);
 }

@@ -17,8 +17,7 @@ cr.define('cr.ui.login', function() {
     /**
      * Tutorial slides.
      */
-    slides_: ['slide-welcome',
-              'slide-your-chrome',
+    slides_: ['slide-your-chrome',
               'slide-friends',
               'slide-guests',
               'slide-complete',
@@ -72,9 +71,15 @@ cr.define('cr.ui.login', function() {
     handleAddUserClick_: function(e) {
       chrome.send('addUser');
       $('user-manager-tutorial').hidden = true;
-      // Prevent further propagation of click event. Otherwise, the click event
-      // handler of document object will set wallpaper to user's wallpaper when
-      // there is only one existing user. See http://crbug.com/166477
+      e.stopPropagation();
+    },
+
+    /**
+     * Add a button click handler to dismiss the last tutorial bubble.
+     * @private
+     */
+    handleDismissBubbleClick_: function(e) {
+      $('user-manager-tutorial').hidden = true;
       e.stopPropagation();
     },
 
@@ -94,6 +99,8 @@ cr.define('cr.ui.login', function() {
       }
       $('slide-add-user').addEventListener('click',
           this.handleAddUserClick_.bind(this));
+      $('dismiss-bubble-button').addEventListener('click',
+          this.handleDismissBubbleClick_.bind(this));
     }
   };
 
@@ -107,7 +114,6 @@ cr.define('cr.ui.login', function() {
     // Otherwise, center the slides and disable interacting with the pods
     // while the tutorial is showing.
     if ($('pod-row').pods.length == 1) {
-      $('slide-welcome').classList.add('single-pod');
       $('slide-your-chrome').classList.add('single-pod');
       $('slide-complete').classList.add('single-pod');
     }

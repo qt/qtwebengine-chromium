@@ -2,10 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// MSVC++ requires this to be set before any other includes to get M_PI.
+#define _USE_MATH_DEFINES
+
 #include "content/browser/renderer_host/input/web_input_event_util.h"
+
+#include <cmath>
 
 #include "base/strings/string_util.h"
 #include "content/common/input/web_touch_event_traits.h"
+#include "ui/events/event_constants.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
 #include "ui/events/gesture_detection/motion_event.h"
 
@@ -188,7 +194,42 @@ WebTouchPoint CreateWebTouchPoint(const MotionEvent& event,
   touch.position.y = event.GetY(pointer_index);
   touch.screenPosition.x = event.GetRawX(pointer_index);
   touch.screenPosition.y = event.GetRawY(pointer_index);
-  touch.radiusX = touch.radiusY = event.GetTouchMajor(pointer_index) * 0.5f;
+
+  // A note on touch ellipse specifications:
+  //
+  // Android MotionEvent provides the major and minor axes of the touch ellipse,
+  // as well as the orientation of the major axis clockwise from vertical, in
+  // radians. See:
+  // http://developer.android.com/reference/android/view/MotionEvent.html
+  //
+  // The proposed extension to W3C Touch Events specifies the touch ellipse
+  // using two radii along x- & y-axes and a positive acute rotation angle in
+  // degrees. See:
+  // http://dvcs.w3.org/hg/webevents/raw-file/default/touchevents.html
+
+  float major_radius = event.GetTouchMajor(pointer_index) / 2.f;
+  float minor_radius = event.GetTouchMinor(pointer_index) / 2.f;
+  float orientation_deg = event.GetOrientation(pointer_index) * 180.f / M_PI;
+  DCHECK_GE(major_radius, 0);
+  DCHECK_GE(minor_radius, 0);
+  DCHECK_GE(major_radius, minor_radius);
+  // Allow a small bound tolerance to account for floating point conversion.
+  DCHECK_GT(orientation_deg, -90.01f);
+  DCHECK_LT(orientation_deg, 90.01f);
+  if (orientation_deg >= 0) {
+    // The case orientation_deg == 0 is handled here on purpose: although the
+    // 'else' block is equivalent in this case, we want to pass the 0 value
+    // unchanged (and 0 is the default value for many devices that don't
+    // report elliptical touches).
+    touch.radiusX = minor_radius;
+    touch.radiusY = major_radius;
+    touch.rotationAngle = orientation_deg;
+  } else {
+    touch.radiusX = major_radius;
+    touch.radiusY = minor_radius;
+    touch.rotationAngle = orientation_deg + 90;
+  }
+
   touch.force = event.GetPressure(pointer_index);
 
   return touch;
@@ -215,6 +256,10 @@ void UpdateWindowsKeyCodeAndKeyIdentifier(blink::WebKeyboardEvent* event,
 
 blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
     const ui::MotionEvent& event) {
+  COMPILE_ASSERT(static_cast<int>(MotionEvent::MAX_TOUCH_POINT_COUNT) ==
+                     static_cast<int>(blink::WebTouchEvent::touchesLengthCap),
+                 inconsistent_maximum_number_of_active_touch_points);
+
   blink::WebTouchEvent result;
 
   WebTouchEventTraits::ResetType(
@@ -222,6 +267,7 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
       (event.GetEventTime() - base::TimeTicks()).InSecondsF(),
       &result);
 
+  result.modifiers = EventFlagsToWebEventModifiers(event.GetFlags());
   result.touchesLength =
       std::min(event.GetPointerCount(),
                static_cast<size_t>(WebTouchEvent::touchesLengthCap));
@@ -236,6 +282,7 @@ blink::WebTouchEvent CreateWebTouchEventFromMotionEvent(
 WebGestureEvent CreateWebGestureEventFromGestureEventData(
     const ui::GestureEventData& data) {
   WebGestureEvent gesture;
+  gesture.modifiers = EventFlagsToWebEventModifiers(data.flags);
   gesture.x = data.x;
   gesture.y = data.y;
   gesture.globalX = data.raw_x;
@@ -330,6 +377,62 @@ WebGestureEvent CreateWebGestureEventFromGestureEventData(
   }
 
   return gesture;
+}
+
+int EventFlagsToWebEventModifiers(int flags) {
+  int modifiers = 0;
+
+  if (flags & ui::EF_SHIFT_DOWN)
+    modifiers |= blink::WebInputEvent::ShiftKey;
+  if (flags & ui::EF_CONTROL_DOWN)
+    modifiers |= blink::WebInputEvent::ControlKey;
+  if (flags & ui::EF_ALT_DOWN)
+    modifiers |= blink::WebInputEvent::AltKey;
+  if (flags & ui::EF_COMMAND_DOWN)
+    modifiers |= blink::WebInputEvent::MetaKey;
+
+  if (flags & ui::EF_LEFT_MOUSE_BUTTON)
+    modifiers |= blink::WebInputEvent::LeftButtonDown;
+  if (flags & ui::EF_MIDDLE_MOUSE_BUTTON)
+    modifiers |= blink::WebInputEvent::MiddleButtonDown;
+  if (flags & ui::EF_RIGHT_MOUSE_BUTTON)
+    modifiers |= blink::WebInputEvent::RightButtonDown;
+  if (flags & ui::EF_CAPS_LOCK_DOWN)
+    modifiers |= blink::WebInputEvent::CapsLockOn;
+  if (flags & ui::EF_IS_REPEAT)
+    modifiers |= blink::WebInputEvent::IsAutoRepeat;
+  if (flags & ui::EF_NUMPAD_KEY)
+    modifiers |= blink::WebInputEvent::IsKeyPad;
+
+  return modifiers;
+}
+
+int WebEventModifiersToEventFlags(int modifiers) {
+  int flags = 0;
+
+  if (modifiers & blink::WebInputEvent::ShiftKey)
+    flags |= ui::EF_SHIFT_DOWN;
+  if (modifiers & blink::WebInputEvent::ControlKey)
+    flags |= ui::EF_CONTROL_DOWN;
+  if (modifiers & blink::WebInputEvent::AltKey)
+    flags |= ui::EF_ALT_DOWN;
+  if (modifiers & blink::WebInputEvent::MetaKey)
+    flags |= ui::EF_COMMAND_DOWN;
+
+  if (modifiers & blink::WebInputEvent::LeftButtonDown)
+    flags |= ui::EF_LEFT_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::MiddleButtonDown)
+    flags |= ui::EF_MIDDLE_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::RightButtonDown)
+    flags |= ui::EF_RIGHT_MOUSE_BUTTON;
+  if (modifiers & blink::WebInputEvent::CapsLockOn)
+    flags |= ui::EF_CAPS_LOCK_DOWN;
+  if (modifiers & blink::WebInputEvent::IsAutoRepeat)
+    flags |= ui::EF_IS_REPEAT;
+  if (modifiers & blink::WebInputEvent::IsKeyPad)
+    flags |= ui::EF_NUMPAD_KEY;
+
+  return flags;
 }
 
 }  // namespace content

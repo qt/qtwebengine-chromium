@@ -3,22 +3,24 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * AlertOverlay class
    * Encapsulated handling of a generic alert.
-   * @class
+   * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function AlertOverlay() {
-    OptionsPage.call(this, 'alertOverlay', '', 'alertOverlay');
+    Page.call(this, 'alertOverlay', '', 'alertOverlay');
   }
 
   cr.addSingletonGetter(AlertOverlay);
 
   AlertOverlay.prototype = {
-    // Inherit AlertOverlay from OptionsPage.
-    __proto__: OptionsPage.prototype,
+    // Inherit AlertOverlay from Page.
+    __proto__: Page.prototype,
 
     /**
      * Whether the page can be shown. Used to make sure the page is only
@@ -27,12 +29,12 @@ cr.define('options', function() {
      */
     canShow_: false,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to start preference initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
+
+      // AlertOverlay is special in that it is not tied to one page or overlay.
+      this.alwaysOnTop = true;
 
       var self = this;
       $('alertOverlayOk').onclick = function(event) {
@@ -44,21 +46,13 @@ cr.define('options', function() {
       };
     },
 
-    /** @override */
-    get nestingLevel() {
-      // AlertOverlay is special in that it is not tied to one page or overlay.
-      // Set the nesting level arbitrarily high so as to always be recognized as
-      // the top-most visible page.
-      return 99;
-    },
-
     /**
      * Handle the 'ok' button.  Clear the overlay and call the ok callback if
      * available.
      * @private
      */
     handleOK_: function() {
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
       if (this.okCallback != undefined) {
         this.okCallback.call();
       }
@@ -70,7 +64,7 @@ cr.define('options', function() {
      * @private
      */
     handleCancel_: function() {
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
       if (this.cancelCallback != undefined) {
         this.cancelCallback.call();
       }
@@ -78,9 +72,10 @@ cr.define('options', function() {
 
     /**
      * The page is getting hidden. Don't let it be shown again.
+     * @override
      */
     willHidePage: function() {
-      canShow_ = false;
+      this.canShow_ = false;
     },
 
     /** @override */
@@ -98,10 +93,10 @@ cr.define('options', function() {
    *     no button is shown.
    * @param {string} cancelTitle The title of the cancel button. If undefined or
    *     empty, no button is shown.
-   * @param {function} okCallback A function to be called when the user presses
-   *     the ok button.  The alert window will be closed automatically.  Can be
-   *     undefined.
-   * @param {function} cancelCallback A function to be called when the user
+   * @param {function()} okCallback A function to be called when the user
+   *     presses the ok button.  The alert window will be closed automatically.
+   *     Can be undefined.
+   * @param {function()} cancelCallback A function to be called when the user
    *     presses the cancel button.  The alert window will be closed
    *     automatically.  Can be undefined.
    */
@@ -142,7 +137,7 @@ cr.define('options', function() {
 
     // Intentionally don't show the URL in the location bar as we don't want
     // people trying to navigate here by hand.
-    OptionsPage.showPageByName('alertOverlay', false);
+    PageManager.showPageByName('alertOverlay', false);
   };
 
   // Export

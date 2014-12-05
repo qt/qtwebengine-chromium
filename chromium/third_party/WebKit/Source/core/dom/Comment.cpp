@@ -24,12 +24,11 @@
 
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 inline Comment::Comment(Document& document, const String& text)
     : CharacterData(document, text, CreateOther)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<Comment> Comment::create(Document& document, const String& text)
@@ -52,4 +51,4 @@ PassRefPtrWillBeRawPtr<Node> Comment::cloneNode(bool /*deep*/)
     return create(document(), data());
 }
 
-} // namespace WebCore
+} // namespace blink

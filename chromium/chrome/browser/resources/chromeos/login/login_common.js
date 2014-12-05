@@ -6,31 +6,34 @@
  * @fileoverview Common OOBE controller methods.
  */
 
-<include src="../../login/screen.js"></include>
-<include src="screen_context.js"></include>
-<include src="../user_images_grid.js"></include>
-<include src="apps_menu.js"></include>
-<include src="../../login/bubble.js"></include>
-<include src="../../login/display_manager.js"></include>
-<include src="header_bar.js"></include>
-<include src="network_dropdown.js"></include>
-<include src="oobe_screen_reset.js"></include>
-<include src="oobe_screen_autolaunch.js"></include>
-<include src="oobe_screen_enable_kiosk.js"></include>
-<include src="oobe_screen_terms_of_service.js"></include>
-<include src="oobe_screen_user_image.js"></include>
-<include src="../../login/screen_account_picker.js"></include>
-<include src="screen_app_launch_splash.js"></include>
-<include src="screen_error_message.js"></include>
-<include src="screen_gaia_signin.js"></include>
-<include src="screen_locally_managed_user_creation.js"></include>
-<include src="screen_password_changed.js"></include>
-<include src="screen_tpm_error.js"></include>
-<include src="screen_wrong_hwid.js"></include>
-<include src="screen_confirm_password.js"></include>
-<include src="screen_fatal_error.js"></include>
-<include src="../../login/user_pod_row.js"></include>
-<include src="../../login/resource_loader.js"></include>
+<include src="../../../../../ui/login/screen.js">
+<include src="screen_context.js">
+<include src="../user_images_grid.js">
+<include src="apps_menu.js">
+<include src="../../../../../ui/login/bubble.js">
+<include src="../../../../../ui/login/display_manager.js">
+<include src="header_bar.js">
+<include src="network_dropdown.js">
+<include src="oobe_screen_reset_confirmation_overlay.js">
+<include src="oobe_screen_reset.js">
+<include src="oobe_screen_autolaunch.js">
+<include src="oobe_screen_enable_kiosk.js">
+<include src="oobe_screen_terms_of_service.js">
+<include src="oobe_screen_user_image.js">
+<include src="../../../../../ui/login/account_picker/screen_account_picker.js">
+<include src="screen_app_launch_splash.js">
+<include src="screen_error_message.js">
+<include src="screen_gaia_signin.js">
+<include src="screen_password_changed.js">
+<include src="screen_supervised_user_creation.js">
+<include src="screen_tpm_error.js">
+<include src="screen_wrong_hwid.js">
+<include src="screen_confirm_password.js">
+<include src="screen_fatal_error.js">
+<include src="screen_device_disabled.js">
+<include src="../../../../../ui/login/login_ui_tools.js">
+<include src="../../../../../ui/login/account_picker/user_pod_row.js">
+<include src="../../../../../ui/login/resource_loader.js">
 
 cr.define('cr.ui', function() {
   var DisplayManager = cr.ui.login.DisplayManager;
@@ -157,10 +160,10 @@ cr.define('cr.ui', function() {
   };
 
   /**
-   * Shows dialog to create managed user.
+   * Shows dialog to create a supervised user.
    */
-  Oobe.showManagedUserCreationScreen = function() {
-    DisplayManager.showManagedUserCreationScreen();
+  Oobe.showSupervisedUserCreationScreen = function() {
+    DisplayManager.showSupervisedUserCreationScreen();
   };
 
   /**
@@ -260,7 +263,7 @@ cr.define('cr.ui', function() {
   Oobe.loginForTesting = function(username, password) {
     Oobe.disableSigninUI();
     chrome.send('skipToLoginForTesting', [username]);
-    chrome.send('completeLogin', [username, password, false]);
+    chrome.send('completeLogin', ['12345', username, password, false]);
   };
 
   /**
@@ -352,19 +355,30 @@ disableTextSelectAndDrag(function(e) {
   js: ['chrome://oobe/enrollment.js']
 }].forEach(cr.ui.login.ResourceLoader.registerAssets);
 
-document.addEventListener('DOMContentLoaded', function() {
+(function() {
   'use strict';
 
-  // Immediately load async assets.
-  // TODO(dconnelly): remove this at some point and only load as needed.
-  // See crbug.com/236426
-  cr.ui.login.ResourceLoader.loadAssets(SCREEN_OOBE_ENROLLMENT, function() {
-    // This screen is async-loaded so we manually trigger i18n processing.
-    i18nTemplate.process($('oauth-enrollment'), loadTimeData);
-    // Delayed binding since this isn't defined yet.
-    login.OAuthEnrollmentScreen.register();
-  });
+  function initializeOobe() {
+    // Immediately load async assets.
+    // TODO(dconnelly): remove this at some point and only load as needed.
+    // See crbug.com/236426
+    cr.ui.login.ResourceLoader.loadAssets(SCREEN_OOBE_ENROLLMENT, function() {
+      // This screen is async-loaded so we manually trigger i18n processing.
+      i18nTemplate.process($('oauth-enrollment'), loadTimeData);
+      // Delayed binding since this isn't defined yet.
+      login.OAuthEnrollmentScreen.register();
+    });
 
-  // Delayed binding since this isn't defined yet.
-  cr.ui.Oobe.initialize();
-});
+    cr.ui.Oobe.initialize();
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    if (!window['WAIT_FOR_POLYMER']) {
+      initializeOobe();
+      return;
+    }
+    window.addEventListener('polymer-ready', function() {
+      initializeOobe();
+    });
+  });
+})();

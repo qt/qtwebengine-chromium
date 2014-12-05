@@ -31,32 +31,32 @@
 #ifndef NavigatorWebMIDI_h
 #define NavigatorWebMIDI_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "modules/webmidi/MIDIOptions.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Navigator;
 
-class NavigatorWebMIDI FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorWebMIDI>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+class NavigatorWebMIDI final : public NoBaseWillBeGarbageCollected<NavigatorWebMIDI>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorWebMIDI);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(NavigatorWebMIDI);
 public:
-    virtual ~NavigatorWebMIDI();
     static NavigatorWebMIDI& from(Navigator&);
 
-    static ScriptPromise requestMIDIAccess(ScriptState*, Navigator&, const Dictionary&);
-    ScriptPromise requestMIDIAccess(ScriptState*, const Dictionary&);
+    static ScriptPromise requestMIDIAccess(ScriptState*, Navigator&, const MIDIOptions&);
+    ScriptPromise requestMIDIAccess(ScriptState*, const MIDIOptions&);
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Navigator>::trace(visitor); }
+    virtual void trace(Visitor*) override;
 
 private:
     NavigatorWebMIDI(LocalFrame*);
     static const char* supplementName();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorWebMIDI_h

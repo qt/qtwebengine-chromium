@@ -7,6 +7,10 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
+#include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/image/image.h"
+#include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/insets.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/notification.h"
@@ -51,7 +55,7 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
               const NotifierId& notifier_id,
               const gfx::ImageSkia& small_image,
               const base::string16& display_source);
-  virtual ~MessageView();
+  ~MessageView() override;
 
   // Updates this view with the new data contained in the notification.
   virtual void UpdateWithNotification(const Notification& notification);
@@ -70,21 +74,20 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   }
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnKeyReleased(const ui::KeyEvent& event) override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void OnFocus() override;
+  void OnBlur() override;
+  void Layout() override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from ButtonListener:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  void ButtonPressed(views::Button* sender, const ui::Event& event) override;
 
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
   std::string notification_id() { return notification_id_; }
@@ -93,7 +96,7 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
 
  protected:
   // Overridden from views::SlideOutView:
-  virtual void OnSlideOut() OVERRIDE;
+  void OnSlideOut() override;
 
   views::ImageView* small_image() { return small_image_view_.get(); }
   views::ImageButton* close_button() { return close_button_.get(); }
@@ -113,6 +116,10 @@ class MESSAGE_CENTER_EXPORT MessageView : public views::SlideOutView,
   base::string16 display_source_;
 
   scoped_ptr<views::Painter> focus_painter_;
+
+  // Changes the background color being used by |background_view_| and schedules
+  // a paint.
+  void SetDrawBackgroundAsActive(bool active);
 
   DISALLOW_COPY_AND_ASSIGN(MessageView);
 };

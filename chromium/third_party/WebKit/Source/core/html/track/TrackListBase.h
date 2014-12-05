@@ -10,10 +10,10 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TrackEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 template<class T>
-class TrackListBase : public RefCountedWillBeRefCountedGarbageCollected<TrackListBase<T> >, public EventTargetWithInlineData {
+class TrackListBase : public RefCountedWillBeGarbageCollectedFinalized<TrackListBase<T>>, public EventTargetWithInlineData {
     REFCOUNTED_EVENT_TARGET(TrackListBase);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TrackListBase);
 public:
@@ -34,7 +34,7 @@ public:
     T* anonymousIndexedGetter(unsigned index) const
     {
         if (index >= m_tracks.size())
-            return 0;
+            return nullptr;
         return m_tracks[index].get();
     }
 
@@ -45,7 +45,7 @@ public:
                 return m_tracks[i].get();
         }
 
-        return 0;
+        return nullptr;
     }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(change);
@@ -53,11 +53,11 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(removetrack);
 
     // EventTarget interface
-    virtual ExecutionContext* executionContext() const OVERRIDE
+    virtual ExecutionContext* executionContext() const override
     {
         if (m_mediaElement)
             return m_mediaElement->executionContext();
-        return 0;
+        return nullptr;
     }
 
 #if !ENABLE(OILPAN)
@@ -101,10 +101,7 @@ public:
 
     void scheduleChangeEvent()
     {
-        EventInit initializer;
-        initializer.bubbles = false;
-        initializer.cancelable = false;
-        RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::change, initializer);
+        RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::change);
         event->setTarget(this);
         m_mediaElement->scheduleEvent(event);
     }
@@ -130,7 +127,7 @@ private:
         m_mediaElement->scheduleEvent(event);
     }
 
-    WillBeHeapVector<RefPtrWillBeMember<T> > m_tracks;
+    WillBeHeapVector<RefPtrWillBeMember<T>> m_tracks;
     RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 };
 

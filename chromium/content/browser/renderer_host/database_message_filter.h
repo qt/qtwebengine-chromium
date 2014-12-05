@@ -8,31 +8,29 @@
 #include "base/containers/hash_tables.h"
 #include "base/strings/string16.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "webkit/browser/database/database_tracker.h"
-#include "webkit/common/database/database_connections.h"
-#include "webkit/common/quota/quota_types.h"
+#include "storage/browser/database/database_tracker.h"
+#include "storage/common/database/database_connections.h"
+#include "storage/common/quota/quota_types.h"
 
 namespace content {
 
-class DatabaseMessageFilter
-    : public BrowserMessageFilter,
-      public webkit_database::DatabaseTracker::Observer {
+class DatabaseMessageFilter : public BrowserMessageFilter,
+                              public storage::DatabaseTracker::Observer {
  public:
-  explicit DatabaseMessageFilter(webkit_database::DatabaseTracker* db_tracker);
+  explicit DatabaseMessageFilter(storage::DatabaseTracker* db_tracker);
 
   // BrowserMessageFilter implementation.
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnChannelClosing() override;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                BrowserThread::ID* thread) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
-  webkit_database::DatabaseTracker* database_tracker() const {
+  storage::DatabaseTracker* database_tracker() const {
     return db_tracker_.get();
   }
 
  private:
-  virtual ~DatabaseMessageFilter();
+  ~DatabaseMessageFilter() override;
 
   class PromptDelegate;
 
@@ -55,7 +53,7 @@ class DatabaseMessageFilter
   void OnDatabaseGetSpaceAvailable(const std::string& origin_identifier,
                                    IPC::Message* reply_msg);
   void OnDatabaseGetUsageAndQuota(IPC::Message* reply_msg,
-                                  quota::QuotaStatusCode status,
+                                  storage::QuotaStatusCode status,
                                   int64 usage,
                                   int64 quota);
 
@@ -73,12 +71,12 @@ class DatabaseMessageFilter
                            int error);
 
   // DatabaseTracker::Observer callbacks (file thread)
-  virtual void OnDatabaseSizeChanged(const std::string& origin_identifier,
-                                     const base::string16& database_name,
-                                     int64 database_size) OVERRIDE;
-  virtual void OnDatabaseScheduledForDeletion(
+  void OnDatabaseSizeChanged(const std::string& origin_identifier,
+                             const base::string16& database_name,
+                             int64 database_size) override;
+  void OnDatabaseScheduledForDeletion(
       const std::string& origin_identifier,
-      const base::string16& database_name) OVERRIDE;
+      const base::string16& database_name) override;
 
   void DatabaseDeleteFile(const base::string16& vfs_file_name,
                           bool sync_dir,
@@ -86,14 +84,14 @@ class DatabaseMessageFilter
                           int reschedule_count);
 
   // The database tracker for the current browser context.
-  scoped_refptr<webkit_database::DatabaseTracker> db_tracker_;
+  scoped_refptr<storage::DatabaseTracker> db_tracker_;
 
   // True if and only if this instance was added as an observer
   // to DatabaseTracker.
   bool observer_added_;
 
   // Keeps track of all DB connections opened by this renderer
-  webkit_database::DatabaseConnections database_connections_;
+  storage::DatabaseConnections database_connections_;
 };
 
 }  // namespace content

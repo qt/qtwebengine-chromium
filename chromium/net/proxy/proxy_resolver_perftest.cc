@@ -4,7 +4,7 @@
 
 #include "base/base_paths.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/test/perf_time_logger.h"
@@ -199,20 +199,17 @@ class MockJSBindings : public net::ProxyResolverV8::JSBindings {
  public:
   MockJSBindings() {}
 
-  virtual void Alert(const base::string16& message) OVERRIDE {
-    CHECK(false);
-  }
+  void Alert(const base::string16& message) override { CHECK(false); }
 
-  virtual bool ResolveDns(const std::string& host,
-                          ResolveDnsOperation op,
-                          std::string* output,
-                          bool* terminate) OVERRIDE {
+  bool ResolveDns(const std::string& host,
+                  ResolveDnsOperation op,
+                  std::string* output,
+                  bool* terminate) override {
     CHECK(false);
     return false;
   }
 
-  virtual void OnError(int line_number,
-                       const base::string16& message) OVERRIDE {
+  void OnError(int line_number, const base::string16& message) override {
     CHECK(false);
   }
 };

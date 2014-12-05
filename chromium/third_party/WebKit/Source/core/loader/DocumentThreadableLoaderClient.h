@@ -33,7 +33,7 @@
 
 #include "core/loader/ThreadableLoaderClient.h"
 
-namespace WebCore {
+namespace blink {
 
 class ResourceRequest;
 class ResourceResponse;
@@ -42,14 +42,14 @@ class DocumentThreadableLoaderClient : public ThreadableLoaderClient {
     WTF_MAKE_NONCOPYABLE(DocumentThreadableLoaderClient);
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    virtual bool isDocumentThreadableLoaderClient()  OVERRIDE FINAL { return true; }
+    bool isDocumentThreadableLoaderClient()  override final { return true; }
 
-    virtual void willSendRequest(ResourceRequest& /*newRequest*/, const ResourceResponse& /*redirectResponse*/) { }
+    virtual void willFollowRedirect(ResourceRequest& /*newRequest*/, const ResourceResponse& /*redirectResponse*/) { }
 
 protected:
     DocumentThreadableLoaderClient() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentThreadableLoaderClient_h

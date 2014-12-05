@@ -36,11 +36,9 @@
 #include "public/platform/WebPrivatePtr.h"
 #include "public/platform/WebString.h"
 
-namespace WebCore {
-class UserMediaRequest;
-}
-
 namespace blink {
+
+class UserMediaRequest;
 class WebDocument;
 class WebMediaConstraints;
 class WebMediaStream;
@@ -82,13 +80,12 @@ public:
     BLINK_EXPORT void requestFailed(const WebString& description = WebString()) { requestDenied(description); }
 
 #if BLINK_IMPLEMENTATION
-    WebUserMediaRequest(const PassRefPtrWillBeRawPtr<WebCore::UserMediaRequest>&);
-    WebUserMediaRequest(WebCore::UserMediaRequest*);
-    operator WebCore::UserMediaRequest*() const;
+    WebUserMediaRequest(UserMediaRequest*);
+    operator UserMediaRequest*() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::UserMediaRequest> m_private;
+    WebPrivatePtr<UserMediaRequest> m_private;
 };
 
 inline bool operator==(const WebUserMediaRequest& a, const WebUserMediaRequest& b)

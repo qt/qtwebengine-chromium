@@ -33,19 +33,19 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class GenericEventQueue FINAL : public EventQueue {
+class GenericEventQueue final : public EventQueue {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<GenericEventQueue> create(EventTarget*);
     virtual ~GenericEventQueue();
 
     // EventQueue
-    virtual void trace(Visitor*) OVERRIDE;
-    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE;
-    virtual bool cancelEvent(Event*) OVERRIDE;
-    virtual void close() OVERRIDE;
+    virtual void trace(Visitor*) override;
+    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override;
+    virtual bool cancelEvent(Event*) override;
+    virtual void close() override;
 
     void cancelAllEvents();
     bool hasPendingEvents() const;
@@ -55,7 +55,7 @@ private:
     void timerFired(Timer<GenericEventQueue>*);
 
     RawPtrWillBeMember<EventTarget> m_owner;
-    WillBeHeapVector<RefPtrWillBeMember<Event> > m_pendingEvents;
+    WillBeHeapVector<RefPtrWillBeMember<Event>> m_pendingEvents;
     Timer<GenericEventQueue> m_timer;
 
     bool m_isClosed;

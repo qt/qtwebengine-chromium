@@ -137,6 +137,10 @@ public:
             return false;
         }
 
+        void set(int i, const char* str) {
+            fStrings[i].set(str);
+        }
+
     private:
         void reset() { fStrings.reset(); }
 
@@ -412,7 +416,7 @@ private:
         , fStrings(NULL) {
         fNext = SkCommandLineFlags::gHead;
         SkCommandLineFlags::gHead = this;
-        SkASSERT(NULL != name && strlen(name) > 1);
+        SkASSERT(name && strlen(name) > 1);
         SkASSERT(NULL == shortName || 1 == strlen(shortName));
     }
 

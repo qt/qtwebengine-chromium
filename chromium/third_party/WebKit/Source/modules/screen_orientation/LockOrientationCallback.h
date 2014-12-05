@@ -11,27 +11,26 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptPromiseResolverWithContext;
+class ScriptPromiseResolver;
 
 // LockOrientationCallback is an implementation of WebLockOrientationCallback
 // that will resolve the underlying promise depending on the result passed to
 // the callback.
-class LockOrientationCallback FINAL : public blink::WebLockOrientationCallback {
+class LockOrientationCallback final : public WebLockOrientationCallback {
     WTF_MAKE_NONCOPYABLE(LockOrientationCallback);
 public:
-    explicit LockOrientationCallback(PassRefPtr<ScriptPromiseResolverWithContext>);
+    explicit LockOrientationCallback(PassRefPtr<ScriptPromiseResolver>);
     virtual ~LockOrientationCallback();
 
-    virtual void onSuccess(unsigned angle, blink::WebScreenOrientationType) OVERRIDE;
-    virtual void onError(ErrorType) OVERRIDE;
-    virtual void onError(blink::WebLockOrientationError) OVERRIDE;
+    virtual void onSuccess() override;
+    virtual void onError(WebLockOrientationError) override;
 
 private:
-    RefPtr<ScriptPromiseResolverWithContext> m_resolver;
+    RefPtr<ScriptPromiseResolver> m_resolver;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LockOrientationCallback_h

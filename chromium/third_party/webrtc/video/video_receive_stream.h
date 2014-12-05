@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "webrtc/call.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/video_render/include/video_render_defines.h"
 #include "webrtc/system_wrappers/interface/clock.h"
@@ -40,7 +41,6 @@ namespace internal {
 class VideoReceiveStream : public webrtc::VideoReceiveStream,
                            public I420FrameCallback,
                            public VideoRenderCallback {
-
  public:
   VideoReceiveStream(webrtc::VideoEngine* video_engine,
                      const VideoReceiveStream::Config& config,
@@ -53,8 +53,6 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   virtual void Stop() OVERRIDE;
   virtual Stats GetStats() const OVERRIDE;
 
-  virtual void GetCurrentReceiveCodec(VideoCodec* receive_codec) OVERRIDE;
-
   // Overrides I420FrameCallback.
   virtual void FrameCallback(I420VideoFrame* video_frame) OVERRIDE;
 
@@ -62,11 +60,14 @@ class VideoReceiveStream : public webrtc::VideoReceiveStream,
   virtual int32_t RenderFrame(const uint32_t stream_id,
                               I420VideoFrame& video_frame) OVERRIDE;
 
- public:
+  void SignalNetworkState(Call::NetworkState state);
+
   virtual bool DeliverRtcp(const uint8_t* packet, size_t length);
   virtual bool DeliverRtp(const uint8_t* packet, size_t length);
 
  private:
+  void SetRtcpMode(newapi::RtcpMode mode);
+
   TransportAdapter transport_adapter_;
   EncodedFrameCallbackAdapter encoded_frame_proxy_;
   const VideoReceiveStream::Config config_;

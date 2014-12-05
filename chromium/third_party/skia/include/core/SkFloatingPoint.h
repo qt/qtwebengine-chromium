@@ -31,7 +31,13 @@ static inline float sk_float_pow(float base, float exp) {
 
 static inline float sk_float_copysign(float x, float y) {
 // c++11 contains a 'float copysign(float, float)' function in <cmath>.
-#if __cplusplus >= 201103L || (defined(_MSC_VER) && _MSC_VER >= 1800)
+// clang-cl reports __cplusplus for clang, not the __cplusplus vc++ version _MSC_VER would report.
+#if (defined(_MSC_VER) && defined(__clang__))
+#    define SK_BUILD_WITH_CLANG_CL 1
+#else
+#    define SK_BUILD_WITH_CLANG_CL 0
+#endif
+#if (!SK_BUILD_WITH_CLANG_CL && __cplusplus >= 201103L) || (_MSC_VER >= 1800)
     return copysign(x, y);
 
 // Posix has demanded 'float copysignf(float, float)' (from C99) since Issue 6.
@@ -110,6 +116,13 @@ static inline float sk_float_copysign(float x, float y) {
     #define sk_float_ceil2int(x)    (int)sk_float_ceil(x)
 #endif
 
+#define sk_double_floor(x)          floor(x)
+#define sk_double_round(x)          floor((x) + 0.5)
+#define sk_double_ceil(x)           ceil(x)
+#define sk_double_floor2int(x)      (int)floor(x)
+#define sk_double_round2int(x)      (int)floor((x) + 0.5f)
+#define sk_double_ceil2int(x)       (int)ceil(x)
+
 extern const uint32_t gIEEENotANumber;
 extern const uint32_t gIEEEInfinity;
 extern const uint32_t gIEEENegativeInfinity;
@@ -120,7 +133,7 @@ extern const uint32_t gIEEENegativeInfinity;
 
 #if defined(__SSE__)
 #include <xmmintrin.h>
-#elif defined(__ARM_NEON__)
+#elif defined(SK_ARM_HAS_NEON)
 #include <arm_neon.h>
 #endif
 
@@ -136,7 +149,7 @@ static inline float sk_float_rsqrt(const float x) {
     float result;
     _mm_store_ss(&result, _mm_rsqrt_ss(_mm_set_ss(x)));
     return result;
-#elif defined(__ARM_NEON__)
+#elif defined(SK_ARM_HAS_NEON)
     // Get initial estimate.
     const float32x2_t xx = vdup_n_f32(x);  // Clever readers will note we're doing everything 2x.
     float32x2_t estimate = vrsqrte_f32(xx);

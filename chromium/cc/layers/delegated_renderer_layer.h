@@ -15,28 +15,27 @@
 #include "cc/resources/returned_resource.h"
 
 namespace cc {
-class BlockingTaskRunner;
 
 class CC_EXPORT DelegatedRendererLayer : public Layer {
  public:
   static scoped_refptr<DelegatedRendererLayer> Create(
       const scoped_refptr<DelegatedFrameProvider>& frame_provider);
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* impl) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void PushPropertiesTo(LayerImpl* impl) override;
 
   // Called by the DelegatedFrameProvider when a new frame is available to be
   // picked up.
   void ProviderHasNewFrame();
+  bool HasDelegatedContent() const override;
 
  protected:
   DelegatedRendererLayer(
       const scoped_refptr<DelegatedFrameProvider>& frame_provider);
-  virtual ~DelegatedRendererLayer();
+  ~DelegatedRendererLayer() override;
 
  private:
   scoped_refptr<DelegatedFrameProvider> frame_provider_;
@@ -46,7 +45,6 @@ class CC_EXPORT DelegatedRendererLayer : public Layer {
   DelegatedFrameData* frame_data_;
   gfx::RectF frame_damage_;
 
-  scoped_refptr<BlockingTaskRunner> main_thread_runner_;
   base::WeakPtrFactory<DelegatedRendererLayer> weak_ptrs_;
 
   DISALLOW_COPY_AND_ASSIGN(DelegatedRendererLayer);

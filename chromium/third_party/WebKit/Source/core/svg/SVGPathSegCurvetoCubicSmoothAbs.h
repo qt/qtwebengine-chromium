@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegCurvetoCubicSmooth.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegCurvetoCubicSmoothAbs FINAL : public SVGPathSegCurvetoCubicSmooth {
+class SVGPathSegCurvetoCubicSmoothAbs final : public SVGPathSegCurvetoCubicSmooth {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegCurvetoCubicSmoothAbs> create(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x2, float y2)
+    static PassRefPtr<SVGPathSegCurvetoCubicSmoothAbs> create(SVGPathElement* element, float x, float y, float x2, float y2)
     {
-        return adoptRef(new SVGPathSegCurvetoCubicSmoothAbs(element, role, x, y, x2, y2));
+        return adoptRef(new SVGPathSegCurvetoCubicSmoothAbs(element, x, y, x2, y2));
     }
 
 private:
-    SVGPathSegCurvetoCubicSmoothAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x2, float y2)
-        : SVGPathSegCurvetoCubicSmooth(element, role, x, y, x2, y2)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegCurvetoCubicSmoothAbs(SVGPathElement* element, float x, float y, float x2, float y2)
+        : SVGPathSegCurvetoCubicSmooth(element, x, y, x2, y2) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_CURVETO_CUBIC_SMOOTH_ABS; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "S"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_CURVETO_CUBIC_SMOOTH_ABS; }
+    virtual String pathSegTypeAsLetter() const override { return "S"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegCurvetoCubicSmoothAbs_h

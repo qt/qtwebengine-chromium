@@ -21,6 +21,7 @@
 #ifndef MediaList_h
 #define MediaList_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
@@ -29,7 +30,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSRule;
 class CSSStyleSheet;
@@ -69,7 +70,8 @@ private:
     WillBeHeapVector<OwnPtrWillBeMember<MediaQuery> > m_queries;
 };
 
-class MediaList : public RefCountedWillBeGarbageCollectedFinalized<MediaList> {
+class MediaList : public RefCountedWillBeGarbageCollectedFinalized<MediaList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MediaList> create(MediaQuerySet* mediaQueries, CSSStyleSheet* parentSheet)
     {
@@ -106,7 +108,6 @@ public:
     void trace(Visitor*);
 
 private:
-    MediaList();
     MediaList(MediaQuerySet*, CSSStyleSheet* parentSheet);
     MediaList(MediaQuerySet*, CSSRule* parentRule);
 
@@ -120,6 +121,6 @@ private:
 // Adds message to inspector console whenever dpi or dpcm values are used for "screen" media.
 void reportMediaQueryWarningIfNeeded(Document*, const MediaQuerySet*);
 
-} // namespace
+} // namespace blink
 
 #endif

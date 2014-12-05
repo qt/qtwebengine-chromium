@@ -26,7 +26,7 @@
 #include "core/rendering/RenderView.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 // By imaging to a width a little wider than the available pixels,
 // thin pages will be scaled down a little, matching the way they
@@ -44,7 +44,7 @@ const float printingMaximumShrinkFactor = 2;
 PrintContext::PrintContext(LocalFrame* frame)
     : m_frame(frame)
     , m_isPrinting(false)
-    , m_linkedDestinationsValid(false)
+    , m_linkAndLinkedDestinationsValid(false)
 {
 }
 
@@ -54,7 +54,7 @@ PrintContext::~PrintContext()
         end();
 }
 
-void PrintContext::computePageRects(const FloatRect& printRect, float headerHeight, float footerHeight, float userScaleFactor, float& outPageHeight, bool allowHorizontalTiling)
+void PrintContext::computePageRects(const FloatRect& printRect, float headerHeight, float footerHeight, float userScaleFactor, float& outPageHeight)
 {
     m_pageRects.clear();
     outPageHeight = 0;
@@ -81,7 +81,7 @@ void PrintContext::computePageRects(const FloatRect& printRect, float headerHeig
         return;
     }
 
-    computePageRectsWithPageSizeInternal(FloatSize(pageWidth / userScaleFactor, pageHeight / userScaleFactor), allowHorizontalTiling);
+    computePageRectsWithPageSizeInternal(FloatSize(pageWidth / userScaleFactor, pageHeight / userScaleFactor), false);
 }
 
 void PrintContext::computePageRectsWithPageSize(const FloatSize& pageSizeInPixels, bool allowHorizontalTiling)
@@ -113,7 +113,7 @@ void PrintContext::computePageRectsWithPageSizeInternal(const FloatSize& pageSiz
     int blockDirectionStart;
     int blockDirectionEnd;
     if (isHorizontal) {
-        if (view->style()->isFlippedBlocksWritingMode()) {
+        if (view->style()->slowIsFlippedBlocksWritingMode()) {
             blockDirectionStart = docRect.maxY();
             blockDirectionEnd = docRect.y();
         } else {
@@ -123,7 +123,7 @@ void PrintContext::computePageRectsWithPageSizeInternal(const FloatSize& pageSiz
         inlineDirectionStart = view->style()->isLeftToRightDirection() ? docRect.x() : docRect.maxX();
         inlineDirectionEnd = view->style()->isLeftToRightDirection() ? docRect.maxX() : docRect.x();
     } else {
-        if (view->style()->isFlippedBlocksWritingMode()) {
+        if (view->style()->slowIsFlippedBlocksWritingMode()) {
             blockDirectionStart = docRect.maxX();
             blockDirectionEnd = docRect.x();
         } else {
@@ -171,29 +171,14 @@ void PrintContext::begin(float width, float height)
     m_frame->setPrinting(true, minLayoutSize, originalPageSize, printingMaximumShrinkFactor / printingMinimumShrinkFactor);
 }
 
-void PrintContext::spoolPage(GraphicsContext& ctx, int pageNumber, float width)
-{
-    // FIXME: Not correct for vertical text.
-    IntRect pageRect = m_pageRects[pageNumber];
-    float scale = width / pageRect.width();
-
-    ctx.save();
-    ctx.scale(scale, scale);
-    ctx.translate(-pageRect.x(), -pageRect.y());
-    ctx.clip(pageRect);
-    m_frame->view()->paintContents(&ctx, pageRect);
-    if (ctx.supportsURLFragments())
-        outputLinkedDestinations(ctx, m_frame->document(), pageRect);
-    ctx.restore();
-}
-
 void PrintContext::end()
 {
     ASSERT(m_isPrinting);
     m_isPrinting = false;
     m_frame->setPrinting(false, FloatSize(), FloatSize(), 0);
     m_linkedDestinations.clear();
-    m_linkedDestinationsValid = false;
+    m_linkDestinations.clear();
+    m_linkAndLinkedDestinationsValid = false;
 }
 
 static RenderBoxModelObject* enclosingBoxModelObject(RenderObject* object)
@@ -202,7 +187,7 @@ static RenderBoxModelObject* enclosingBoxModelObject(RenderObject* object)
     while (object && !object->isBoxModelObject())
         object = object->parent();
     if (!object)
-        return 0;
+        return nullptr;
     return toRenderBoxModelObject(object);
 }
 
@@ -235,10 +220,10 @@ int PrintContext::pageNumberForElement(Element* element, const FloatSize& pageSi
     return -1;
 }
 
-void PrintContext::collectLinkedDestinations(Node* node)
+void PrintContext::collectLinkAndLinkedDestinations(Node* node)
 {
     for (Node* i = node->firstChild(); i; i = i->nextSibling())
-        collectLinkedDestinations(i);
+        collectLinkAndLinkedDestinations(i);
 
     if (!node->isLink() || !node->isElementNode())
         return;
@@ -248,32 +233,55 @@ void PrintContext::collectLinkedDestinations(Node* node)
     KURL url = node->document().completeURL(href);
     if (!url.isValid())
         return;
+
+    bool linkIsValid = true;
     if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(url, node->document().baseURL())) {
         String name = url.fragmentIdentifier();
         Element* element = node->document().findAnchor(name);
         if (element)
             m_linkedDestinations.set(name, element);
+        else
+            linkIsValid = false;
     }
+
+    if (linkIsValid)
+        m_linkDestinations.set(toElement(node), url);
 }
 
-void PrintContext::outputLinkedDestinations(GraphicsContext& graphicsContext, Node* node, const IntRect& pageRect)
+void PrintContext::outputLinkAndLinkedDestinations(GraphicsContext& graphicsContext, Node* node, const IntRect& pageRect)
 {
-    if (!m_linkedDestinationsValid) {
-        collectLinkedDestinations(node);
-        m_linkedDestinationsValid = true;
+    if (!m_linkAndLinkedDestinationsValid) {
+        collectLinkAndLinkedDestinations(node);
+        m_linkAndLinkedDestinationsValid = true;
     }
 
-    HashMap<String, Element*>::const_iterator end = m_linkedDestinations.end();
-    for (HashMap<String, Element*>::const_iterator it = m_linkedDestinations.begin(); it != end; ++it) {
-        RenderObject* renderer = it->value->renderer();
-        if (renderer) {
-            IntRect boundingBox = renderer->absoluteBoundingBoxRect();
-            if (pageRect.intersects(boundingBox)) {
-                IntPoint point = boundingBox.minXMinYCorner();
-                point.clampNegativeToZero();
-                graphicsContext.addURLTargetAtPoint(it->key, point);
-            }
+    for (const auto& entry : m_linkDestinations) {
+        RenderObject* renderer = entry.key->renderer();
+        if (!renderer)
+            continue;
+        KURL url = entry.value;
+        IntRect boundingBox = renderer->absoluteBoundingBoxRect();
+        if (!pageRect.intersects(boundingBox))
+            continue;
+        if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(url, renderer->document().baseURL())) {
+            String name = url.fragmentIdentifier();
+            ASSERT(renderer->document().findAnchor(name));
+            graphicsContext.setURLFragmentForRect(name, boundingBox);
+        } else {
+            graphicsContext.setURLForRect(url, boundingBox);
         }
+    }
+
+    for (const auto& entry : m_linkedDestinations) {
+        RenderObject* renderer = entry.value->renderer();
+        if (!renderer)
+            continue;
+        IntRect boundingBox = renderer->absoluteBoundingBoxRect();
+        if (!pageRect.intersects(boundingBox))
+            continue;
+        IntPoint point = boundingBox.minXMinYCorner();
+        point.clampNegativeToZero();
+        graphicsContext.addURLTargetAtPoint(entry.key, point);
     }
 }
 
@@ -331,52 +339,13 @@ int PrintContext::numberOfPages(LocalFrame* frame, const FloatSize& pageSizeInPi
     return printContext.pageCount();
 }
 
-void PrintContext::spoolAllPagesWithBoundaries(LocalFrame* frame, GraphicsContext& graphicsContext, const FloatSize& pageSizeInPixels)
+void PrintContext::trace(Visitor* visitor)
 {
-    if (!frame->document() || !frame->view() || !frame->document()->renderView())
-        return;
-
-    frame->document()->updateLayout();
-
-    PrintContext printContext(frame);
-    printContext.begin(pageSizeInPixels.width(), pageSizeInPixels.height());
-
-    float pageHeight;
-    printContext.computePageRects(FloatRect(FloatPoint(0, 0), pageSizeInPixels), 0, 0, 1, pageHeight);
-
-    const float pageWidth = pageSizeInPixels.width();
-    const Vector<IntRect>& pageRects = printContext.pageRects();
-    int totalHeight = pageRects.size() * (pageSizeInPixels.height() + 1) - 1;
-
-    // Fill the whole background by white.
-    graphicsContext.setFillColor(Color(255, 255, 255));
-    graphicsContext.fillRect(FloatRect(0, 0, pageWidth, totalHeight));
-
-    graphicsContext.save();
-    graphicsContext.translate(0, totalHeight);
-    graphicsContext.scale(1, -1);
-
-    int currentHeight = 0;
-    for (size_t pageIndex = 0; pageIndex < pageRects.size(); pageIndex++) {
-        // Draw a line for a page boundary if this isn't the first page.
-        if (pageIndex > 0) {
-            graphicsContext.save();
-            graphicsContext.setStrokeColor(Color(0, 0, 255));
-            graphicsContext.setFillColor(Color(0, 0, 255));
-            graphicsContext.drawLine(IntPoint(0, currentHeight),
-                                     IntPoint(pageWidth, currentHeight));
-            graphicsContext.restore();
-        }
-
-        graphicsContext.save();
-        graphicsContext.translate(0, currentHeight);
-        printContext.spoolPage(graphicsContext, pageIndex, pageWidth);
-        graphicsContext.restore();
-
-        currentHeight += pageSizeInPixels.height() + 1;
-    }
-
-    graphicsContext.restore();
+#if ENABLE(OILPAN)
+    visitor->trace(m_frame);
+    visitor->trace(m_linkDestinations);
+    visitor->trace(m_linkedDestinations);
+#endif
 }
 
 }

@@ -58,11 +58,6 @@ Status Status::ErrorJwkExtInconsistent() {
       "specified by the Web Crypto call");
 }
 
-Status Status::ErrorJwkUnrecognizedAlgorithm() {
-  return Status(blink::WebCryptoErrorTypeData,
-                "The JWK \"alg\" property was not recognized");
-}
-
 Status Status::ErrorJwkAlgorithmInconsistent() {
   return Status(blink::WebCryptoErrorTypeData,
                 "The JWK \"alg\" property was inconsistent with that specified "
@@ -99,9 +94,9 @@ Status Status::ErrorJwkUseAndKeyopsInconsistent() {
                 "but are inconsistent with each other.");
 }
 
-Status Status::ErrorJwkUnrecognizedKty() {
+Status Status::ErrorJwkUnexpectedKty(const std::string& expected) {
   return Status(blink::WebCryptoErrorTypeData,
-                "The JWK \"kty\" property was unrecognized");
+                "The JWK \"kty\" property was not \"" + expected + "\"");
 }
 
 Status Status::ErrorJwkIncorrectKeyLength() {
@@ -110,14 +105,35 @@ Status Status::ErrorJwkIncorrectKeyLength() {
                 "of key data for the given algorithm.");
 }
 
-Status Status::ErrorJwkIncompleteOptionalRsaPrivateKey() {
+Status Status::ErrorJwkEmptyBigInteger(const std::string& property) {
   return Status(blink::WebCryptoErrorTypeData,
-                "The optional JWK properties p, q, dp, dq, qi must either all "
-                "be provided, or none provided");
+                "The JWK \"" + property + "\" property was empty.");
+}
+
+Status Status::ErrorJwkBigIntegerHasLeadingZero(const std::string& property) {
+  return Status(
+      blink::WebCryptoErrorTypeData,
+      "The JWK \"" + property + "\" property contained a leading zero.");
+}
+
+Status Status::ErrorJwkDuplicateKeyOps() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The \"key_ops\" property of the JWK dictionary contains "
+                "duplicate usages.");
 }
 
 Status Status::ErrorImportEmptyKeyData() {
   return Status(blink::WebCryptoErrorTypeData, "No key data was provided");
+}
+
+Status Status::ErrorUnsupportedImportKeyFormat() {
+  return Status(blink::WebCryptoErrorTypeNotSupported,
+                "Unsupported import key format for algorithm");
+}
+
+Status Status::ErrorUnsupportedExportKeyFormat() {
+  return Status(blink::WebCryptoErrorTypeNotSupported,
+                "Unsupported export key format for algorithm");
 }
 
 Status Status::ErrorImportAesKeyLength() {
@@ -138,6 +154,21 @@ Status Status::ErrorUnexpectedKeyType() {
 Status Status::ErrorIncorrectSizeAesCbcIv() {
   return Status(blink::WebCryptoErrorTypeData,
                 "The \"iv\" has an unexpected length -- must be 16 bytes");
+}
+
+Status Status::ErrorIncorrectSizeAesCtrCounter() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The \"counter\" has an unexpected length -- must be 16 bytes");
+}
+
+Status Status::ErrorInvalidAesCtrCounterLength() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The \"length\" property must be >= 1 and <= 128");
+}
+
+Status Status::ErrorAesCtrInputTooLongCounterRepeated() {
+  return Status(blink::WebCryptoErrorTypeData,
+                "The input is too large for the counter length.");
 }
 
 Status Status::ErrorDataTooLarge() {
@@ -185,9 +216,10 @@ Status Status::ErrorImportRsaEmptyModulus() {
   return Status(blink::WebCryptoErrorTypeData, "The modulus is empty");
 }
 
-Status Status::ErrorGenerateRsaZeroModulus() {
-  return Status(blink::WebCryptoErrorTypeData,
-                "The modulus bit length cannot be zero");
+Status Status::ErrorGenerateRsaUnsupportedModulus() {
+  return Status(blink::WebCryptoErrorTypeNotSupported,
+                "The modulus length must be a multiple of 8 bits and >= 256 "
+                "and <= 16384");
 }
 
 Status Status::ErrorImportRsaEmptyExponent() {
@@ -207,7 +239,7 @@ Status Status::ErrorGenerateKeyLength() {
 }
 
 Status Status::ErrorCreateKeyBadUsages() {
-  return Status(blink::WebCryptoErrorTypeData,
+  return Status(blink::WebCryptoErrorTypeSyntax,
                 "Cannot create a key using the specified key usages.");
 }
 

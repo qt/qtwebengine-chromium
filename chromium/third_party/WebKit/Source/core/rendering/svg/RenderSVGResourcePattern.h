@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2006 Nikolas Zimmermann <zimmermann@kde.org>
  * Copyright (C) Research In Motion Limited 2010. All rights reserved.
+ * Copyright 2014 The Chromium Authors. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -21,53 +22,50 @@
 #ifndef RenderSVGResourcePattern_h
 #define RenderSVGResourcePattern_h
 
-#include "core/rendering/svg/RenderSVGResourceContainer.h"
+#include "core/rendering/svg/RenderSVGResourcePaintServer.h"
 #include "core/svg/PatternAttributes.h"
-#include "core/svg/SVGPatternElement.h"
-#include "core/svg/SVGUnitTypes.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/Pattern.h"
-#include "platform/transforms/AffineTransform.h"
 
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-struct PatternData {
-    WTF_MAKE_FAST_ALLOCATED;
-public:
-    RefPtr<Pattern> pattern;
-    AffineTransform transform;
-};
+class AffineTransform;
+class DisplayList;
+class FloatRect;
+class SVGPatternElement;
+struct PatternData;
 
-class RenderSVGResourcePattern FINAL : public RenderSVGResourceContainer {
+class RenderSVGResourcePattern final : public RenderSVGResourcePaintServer {
 public:
     explicit RenderSVGResourcePattern(SVGPatternElement*);
 
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGResourcePattern"; }
+    virtual const char* renderName() const override { return "RenderSVGResourcePattern"; }
 
-    virtual void removeAllClientsFromCache(bool markForInvalidation = true) OVERRIDE;
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) OVERRIDE;
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) override;
 
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE;
-    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*) OVERRIDE;
+    virtual SVGPaintServer preparePaintServer(const RenderObject&) override;
 
-    virtual RenderSVGResourceType resourceType() const OVERRIDE { return s_resourceType; }
-    static const RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType = PatternResourceType;
+    virtual RenderSVGResourceType resourceType() const override { return s_resourceType; }
 
 private:
-    bool buildTileImageTransform(RenderObject*, const PatternAttributes&, const SVGPatternElement*, FloatRect& patternBoundaries, AffineTransform& tileImageTransform) const;
-
-    PassOwnPtr<ImageBuffer> createTileImage(const PatternAttributes&, const FloatRect& tileBoundaries,
-                                            const FloatRect& absoluteTileBoundaries, const AffineTransform& tileImageTransform) const;
-
-    PatternData* buildPattern(RenderObject*, unsigned short resourceMode);
+    PassOwnPtr<PatternData> buildPatternData(const RenderObject&);
+    PassRefPtr<DisplayList> asDisplayList(const FloatRect& tileBounds, const AffineTransform&) const;
+    PatternData* patternForRenderer(const RenderObject&);
 
     bool m_shouldCollectPatternAttributes : 1;
     PatternAttributes m_attributes;
-    HashMap<RenderObject*, OwnPtr<PatternData> > m_patternMap;
+
+    // FIXME: we can almost do away with this per-object map, but not quite: the tile size can be
+    // relative to the client bounding box, and it gets captured in the cached Pattern shader.
+    // Hence, we need one Pattern shader per client. The display list OTOH is the same => we
+    // should be able to cache a single display list per RenderSVGResourcePattern + one
+    // Pattern(shader) for each client -- this would avoid re-recording when multiple clients
+    // share the same pattern.
+    HashMap<const RenderObject*, OwnPtr<PatternData> > m_patternMap;
 };
 
 }

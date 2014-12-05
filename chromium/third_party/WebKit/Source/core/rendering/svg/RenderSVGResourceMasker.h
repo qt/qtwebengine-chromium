@@ -30,34 +30,36 @@
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DisplayList;
 class GraphicsContext;
 
-class RenderSVGResourceMasker FINAL : public RenderSVGResourceContainer {
+class RenderSVGResourceMasker final : public RenderSVGResourceContainer {
 public:
     explicit RenderSVGResourceMasker(SVGMaskElement*);
     virtual ~RenderSVGResourceMasker();
 
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGResourceMasker"; }
+    virtual const char* renderName() const override { return "RenderSVGResourceMasker"; }
 
-    virtual void removeAllClientsFromCache(bool markForInvalidation = true) OVERRIDE;
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) OVERRIDE;
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE;
-    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short, const Path*, const RenderSVGShape*) OVERRIDE;
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) override;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) override;
+
+    bool prepareEffect(RenderObject*, GraphicsContext*&);
+    void finishEffect(RenderObject*, GraphicsContext*&);
+
     FloatRect resourceBoundingBox(const RenderObject*);
 
     SVGUnitTypes::SVGUnitType maskUnits() const { return toSVGMaskElement(element())->maskUnits()->currentValue()->enumValue(); }
     SVGUnitTypes::SVGUnitType maskContentUnits() const { return toSVGMaskElement(element())->maskContentUnits()->currentValue()->enumValue(); }
 
-    virtual RenderSVGResourceType resourceType() const OVERRIDE { return s_resourceType; }
-    static const RenderSVGResourceType s_resourceType;
+    static const RenderSVGResourceType s_resourceType = MaskerResourceType;
+    virtual RenderSVGResourceType resourceType() const override { return s_resourceType; }
 
 private:
-    void calculateMaskContentRepaintRect();
+    void calculateMaskContentPaintInvalidationRect();
     void drawMaskForRenderer(GraphicsContext*, const FloatRect& targetBoundingBox);
-    PassRefPtr<DisplayList> asDisplayList(GraphicsContext*, const AffineTransform&);
+    void createDisplayList(GraphicsContext*);
 
     RefPtr<DisplayList> m_maskContentDisplayList;
     FloatRect m_maskContentBoundaries;

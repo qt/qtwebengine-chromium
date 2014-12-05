@@ -28,7 +28,7 @@ class TestGinObject : public gin::Wrappable<TestGinObject> {
 
  private:
   TestGinObject(bool* alive) : alive_(alive) { *alive_ = true; }
-  virtual ~TestGinObject() { *alive_ = false; }
+  ~TestGinObject() override { *alive_ = false; }
 
   bool* alive_;
 
@@ -40,9 +40,9 @@ gin::WrapperInfo TestGinObject::kWrapperInfo = { gin::kEmbedderNativeGin };
 class GinBrowserTest : public RenderViewTest {
  public:
   GinBrowserTest() {}
-  virtual ~GinBrowserTest() {}
+  ~GinBrowserTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     CommandLine::ForCurrentProcess()->AppendSwitchASCII(
         switches::kJavaScriptFlags, "--expose_gc");
 
@@ -75,7 +75,7 @@ TEST_F(GinBrowserTest, GinAndGarbageCollection) {
   CHECK(alive);
 
   // Should not crash.
-  v8::V8::LowMemoryNotification();
+  blink::mainThreadIsolate()->LowMemoryNotification();
 
   CHECK(!alive);
 }

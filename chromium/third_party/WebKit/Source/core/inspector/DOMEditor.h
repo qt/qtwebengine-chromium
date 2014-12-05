@@ -34,7 +34,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class ExceptionState;
@@ -44,7 +44,7 @@ class Text;
 
 typedef String ErrorString;
 
-class DOMEditor FINAL : public NoBaseWillBeGarbageCollected<DOMEditor> {
+class DOMEditor final : public NoBaseWillBeGarbageCollected<DOMEditor> {
     WTF_MAKE_NONCOPYABLE(DOMEditor);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -83,6 +83,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(DOMEditor_h)

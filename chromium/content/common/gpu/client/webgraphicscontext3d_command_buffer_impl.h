@@ -142,14 +142,10 @@ class WebGraphicsContext3DCommandBufferImpl
     return mem_limits_.mapped_memory_reclaim_limit;
   }
 
+  CONTENT_EXPORT bool InitializeOnCurrentThread();
+
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
-
-  // Must be called after initialize() and before any of the following methods.
-  // Permanently binds to the first calling thread. Returns false if the
-  // graphics context fails to create. Do not call from more than one thread.
-  virtual bool makeContextCurrent();
-
   virtual bool isContextLost();
 
   virtual WGC3Denum getGraphicsResetStatusARB();
@@ -160,30 +156,6 @@ class WebGraphicsContext3DCommandBufferImpl
     SUCCESS               = 0x3000,
     BAD_ATTRIBUTE         = 0x3004,
     CONTEXT_LOST          = 0x300E
-  };
-  // WebGraphicsContext3DCommandBufferImpl configuration attributes. Those in
-  // the 16-bit range are the same as used by EGL. Those outside the 16-bit
-  // range are unique to Chromium. Attributes are matched using a closest fit
-  // algorithm.
-  // Changes to this enum should also be copied to
-  // gpu/command_buffer/common/gles2_cmd_utils.cc and to
-  // gpu/command_buffer/client/gl_in_process_context.cc
-  enum Attribute {
-    ALPHA_SIZE = 0x3021,
-    BLUE_SIZE = 0x3022,
-    GREEN_SIZE = 0x3023,
-    RED_SIZE = 0x3024,
-    DEPTH_SIZE = 0x3025,
-    STENCIL_SIZE = 0x3026,
-    SAMPLES = 0x3031,
-    SAMPLE_BUFFERS = 0x3032,
-    HEIGHT = 0x3056,
-    WIDTH = 0x3057,
-    NONE = 0x3038,  // Attrib list = terminator
-    SHARE_RESOURCES = 0x10000,
-    BIND_GENERATES_RESOURCES = 0x10001,
-    FAIL_IF_MAJOR_PERF_CAVEAT = 0x10002,
-    LOSE_CONTEXT_WHEN_OUT_OF_MEMORY = 0x10003,
   };
 
   // Initialize the underlying GL context. May be called multiple times; second
@@ -226,8 +198,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   gfx::GpuPreference gpu_preference_;
 
-  base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
-
   scoped_ptr<CommandBufferProxyImpl> command_buffer_;
   scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
   scoped_ptr<gpu::TransferBuffer> transfer_buffer_;
@@ -236,6 +206,11 @@ class WebGraphicsContext3DCommandBufferImpl
   Error last_error_;
   SharedMemoryLimits mem_limits_;
   scoped_refptr<ShareGroup> share_group_;
+
+  // Member variables should appear before the WeakPtrFactory, to ensure
+  // that any WeakPtrs to Controller are invalidated before its members
+  // variable's destructors are executed, rendering them invalid.
+  base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
 };
 
 }  // namespace content

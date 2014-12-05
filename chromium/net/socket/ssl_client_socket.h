@@ -17,7 +17,9 @@
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
 class CTVerifier;
+class HostPortPair;
 class ServerBoundCertService;
 class SSLCertRequestInfo;
 struct SSLConfig;
@@ -30,23 +32,23 @@ class X509Certificate;
 struct SSLClientSocketContext {
   SSLClientSocketContext()
       : cert_verifier(NULL),
-        server_bound_cert_service(NULL),
+        channel_id_service(NULL),
         transport_security_state(NULL),
         cert_transparency_verifier(NULL) {}
 
   SSLClientSocketContext(CertVerifier* cert_verifier_arg,
-                         ServerBoundCertService* server_bound_cert_service_arg,
+                         ChannelIDService* channel_id_service_arg,
                          TransportSecurityState* transport_security_state_arg,
                          CTVerifier* cert_transparency_verifier_arg,
                          const std::string& ssl_session_cache_shard_arg)
       : cert_verifier(cert_verifier_arg),
-        server_bound_cert_service(server_bound_cert_service_arg),
+        channel_id_service(channel_id_service_arg),
         transport_security_state(transport_security_state_arg),
         cert_transparency_verifier(cert_transparency_verifier_arg),
         ssl_session_cache_shard(ssl_session_cache_shard_arg) {}
 
   CertVerifier* cert_verifier;
-  ServerBoundCertService* server_bound_cert_service;
+  ChannelIDService* channel_id_service;
   TransportSecurityState* transport_security_state;
   CTVerifier* cert_transparency_verifier;
   // ssl_session_cache_shard is an opaque string that identifies a shard of the
@@ -77,9 +79,49 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
                                 // the first protocol in our list.
   };
 
+  // TLS extension used to negotiate protocol.
+  enum SSLNegotiationExtension {
+    kExtensionUnknown,
+    kExtensionALPN,
+    kExtensionNPN,
+  };
+
   // StreamSocket:
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
+  bool WasNpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+
+  // Computes a unique key string for the SSL session cache.
+  virtual std::string GetSessionCacheKey() const = 0;
+
+  // Returns true if there is a cache entry in the SSL session cache
+  // for the cache key of the SSL socket.
+  //
+  // The cache key consists of a host and port concatenated with a session
+  // cache shard. These two strings are passed to the constructor of most
+  // subclasses of SSLClientSocket.
+  virtual bool InSessionCache() const = 0;
+
+  // Sets |callback| to be run when the handshake has fully completed.
+  // For example, in the case of False Start, Connect() will return
+  // early, before the peer's TLS Finished message has been verified,
+  // in order to allow the caller to call Write() and send application
+  // data with the client's Finished message.
+  // In such situations, |callback| will be invoked sometime after
+  // Connect() - either during a Write() or Read() call, and before
+  // invoking the Read() or Write() callback.
+  // Otherwise, during a traditional TLS connection (i.e. no False
+  // Start), this will be called right before the Connect() callback
+  // is called.
+  //
+  // Note that it's not valid to mutate this socket during such
+  // callbacks, including deleting the socket.
+  //
+  // TODO(mshelley): Provide additional details about whether or not
+  // the handshake actually succeeded or not. This can be inferred
+  // from the result to Connect()/Read()/Write(), but may be useful
+  // to inform here as well.
+  virtual void SetHandshakeCompletionCallback(
+      const base::Closure& callback) = 0;
 
   // Gets the SSL CertificateRequest info of the socket after Connect failed
   // with ERR_SSL_CLIENT_AUTH_CERT_NEEDED.
@@ -93,19 +135,13 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   //   kNextProtoNegotiated:  *proto is set to the negotiated protocol.
   //   kNextProtoNoOverlap:   *proto is set to the first protocol in the
   //                          supported list.
-  // *server_protos is set to the server advertised protocols.
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) = 0;
+  virtual NextProtoStatus GetNextProto(std::string* proto) = 0;
 
   static NextProto NextProtoFromString(const std::string& proto_string);
 
   static const char* NextProtoToString(NextProto next_proto);
 
   static const char* NextProtoStatusToString(const NextProtoStatus status);
-
-  // Can be used with the second argument(|server_protos|) of |GetNextProto| to
-  // construct a comma separated string of server advertised protocols.
-  static std::string ServerProtosToString(const std::string& server_protos);
 
   static bool IgnoreCertError(int error, int load_flags);
 
@@ -121,9 +157,11 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
 
   virtual void set_protocol_negotiated(NextProto protocol_negotiated);
 
-  // Returns the ServerBoundCertService used by this socket, or NULL if
-  // server bound certificates are not supported.
-  virtual ServerBoundCertService* GetServerBoundCertService() const = 0;
+  void set_negotiation_extension(SSLNegotiationExtension negotiation_extension);
+
+  // Returns the ChannelIDService used by this socket, or NULL if
+  // channel ids are not supported.
+  virtual ChannelIDService* GetChannelIDService() const = 0;
 
   // Returns true if a channel ID was sent on this connection.
   // This may be useful for protocols, like SPDY, which allow the same
@@ -132,6 +170,10 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   //
   // Public for ssl_client_socket_openssl_unittest.cc.
   virtual bool WasChannelIDSent() const;
+
+  // Record which TLS extension was used to negotiate protocol and protocol
+  // chosen in a UMA histogram.
+  void RecordNegotiationExtension();
 
  protected:
   virtual void set_channel_id_sent(bool channel_id_sent);
@@ -145,15 +187,23 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   // Records histograms for channel id support during full handshakes - resumed
   // handshakes are ignored.
   static void RecordChannelIDSupport(
-      ServerBoundCertService* server_bound_cert_service,
+      ChannelIDService* channel_id_service,
       bool negotiated_channel_id,
       bool channel_id_enabled,
       bool supports_ecc);
 
+  // Records ConnectionType histograms for a successful SSL connection.
+  static void RecordConnectionTypeMetrics(int ssl_version);
+
   // Returns whether TLS channel ID is enabled.
   static bool IsChannelIDEnabled(
       const SSLConfig& ssl_config,
-      ServerBoundCertService* server_bound_cert_service);
+      ChannelIDService* channel_id_service);
+
+  // Serializes |next_protos| in the wire format for ALPN: protocols are listed
+  // in order, each prefixed by a one-byte length.
+  static std::vector<uint8_t> SerializeNextProtos(
+      const std::vector<std::string>& next_protos);
 
   // For unit testing only.
   // Returns the unverified certificate chain as presented by server.
@@ -185,6 +235,8 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   bool signed_cert_timestamps_received_;
   // True if a stapled OCSP response was received.
   bool stapled_ocsp_response_received_;
+  // Protocol negotiation extension used.
+  SSLNegotiationExtension negotiation_extension_;
 };
 
 }  // namespace net

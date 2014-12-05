@@ -25,9 +25,10 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEOffset.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEOffsetElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEOffsetElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEOffsetElement);
 
@@ -38,15 +39,15 @@ private:
     explicit SVGFEOffsetElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtr<SVGAnimatedNumber> m_dx;
     RefPtr<SVGAnimatedNumber> m_dy;
     RefPtr<SVGAnimatedString> m_in1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEOffsetElement_h

@@ -141,7 +141,7 @@ bool X509Certificate::IsIssuedByEncoded(
 // static
 bool X509Certificate::GetDEREncoded(X509Certificate::OSCertHandle cert_handle,
                                     std::string* encoded) {
-  if (!cert_handle->derCert.len)
+  if (!cert_handle || !cert_handle->derCert.len)
     return false;
   encoded->assign(reinterpret_cast<char*>(cert_handle->derCert.data),
                   cert_handle->derCert.len);
@@ -225,6 +225,21 @@ SHA1HashValue X509Certificate::CalculateFingerprint(
 }
 
 // static
+SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
+  SHA256HashValue sha256;
+  memset(sha256.data, 0, sizeof(sha256.data));
+
+  DCHECK(NULL != cert->derCert.data);
+  DCHECK_NE(0U, cert->derCert.len);
+
+  SECStatus rv = HASH_HashBuf(
+      HASH_AlgSHA256, sha256.data, cert->derCert.data, cert->derCert.len);
+  DCHECK_EQ(SECSuccess, rv);
+
+  return sha256;
+}
+
+// static
 SHA1HashValue X509Certificate::CalculateCAFingerprint(
     const OSCertHandles& intermediates) {
   SHA1HashValue sha1;
@@ -264,6 +279,15 @@ void X509Certificate::GetPublicKeyInfo(OSCertHandle cert_handle,
                                        size_t* size_bits,
                                        PublicKeyType* type) {
   x509_util::GetPublicKeyInfo(cert_handle, size_bits, type);
+}
+
+// static
+bool X509Certificate::IsSelfSigned(OSCertHandle cert_handle) {
+  crypto::ScopedSECKEYPublicKey public_key(CERT_ExtractPublicKey(cert_handle));
+  if (!public_key.get())
+    return false;
+  return SECSuccess == CERT_VerifySignedDataWithPublicKey(
+      &cert_handle->signatureWrap, public_key.get(), NULL);
 }
 
 }  // namespace net

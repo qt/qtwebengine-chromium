@@ -37,72 +37,76 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
-class GraphicsLayer;
-class Page;
-class PagePopupClient;
-class PlatformKeyboardEvent;
-}
-
 namespace blink {
 
+class GraphicsLayer;
+class Page;
 class PagePopupChromeClient;
+class PagePopupClient;
+class PlatformKeyboardEvent;
 class WebLayerTreeView;
 class WebLayer;
 class WebViewImpl;
+class LocalDOMWindow;
 
-class WebPagePopupImpl FINAL :
-    public WebPagePopup,
-    public PageWidgetEventHandler,
-    public WebCore::PagePopup,
-    public RefCounted<WebPagePopupImpl> {
+class WebPagePopupImpl final
+    : public WebPagePopup
+    , public PageWidgetEventHandler
+    , public PagePopup
+    , public RefCounted<WebPagePopupImpl> {
     WTF_MAKE_NONCOPYABLE(WebPagePopupImpl);
     WTF_MAKE_FAST_ALLOCATED;
 
 public:
     virtual ~WebPagePopupImpl();
-    bool initialize(WebViewImpl*, WebCore::PagePopupClient*, const WebCore::IntRect& originBoundsInRootView);
-    bool handleKeyEvent(const WebCore::PlatformKeyboardEvent&);
+    bool initialize(WebViewImpl*, PagePopupClient*, const IntRect& originBoundsInRootView);
+    bool handleKeyEvent(const PlatformKeyboardEvent&);
     void closePopup();
     WebWidgetClient* widgetClient() const { return m_widgetClient; }
     bool hasSamePopupClient(WebPagePopupImpl* other) { return other && m_popupClient == other->m_popupClient; }
+    LocalDOMWindow* window();
+    virtual void compositeAndReadbackAsync(WebCompositeAndReadbackAsyncCallback*) override;
+    virtual WebPoint positionRelativeToOwner() override;
 
 private:
     // WebWidget functions
-    virtual WebSize size() OVERRIDE;
-    virtual void animate(double) OVERRIDE;
-    virtual void layout() OVERRIDE;
-    virtual void willCloseLayerTreeView() OVERRIDE;
-    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE;
-    virtual void resize(const WebSize&) OVERRIDE;
-    virtual void close() OVERRIDE;
-    virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE;
-    virtual void setFocus(bool) OVERRIDE;
-    virtual bool isPagePopup() const OVERRIDE { return true; }
-    virtual bool isAcceleratedCompositingActive() const OVERRIDE { return m_isAcceleratedCompositingActive; }
+    virtual WebSize size() override;
+    virtual void beginFrame(const WebBeginFrameArgs&) override;
+    virtual void layout() override;
+    virtual void willCloseLayerTreeView() override;
+    virtual void paint(WebCanvas*, const WebRect&) override;
+    virtual void resize(const WebSize&) override;
+    virtual void close() override;
+    virtual bool handleInputEvent(const WebInputEvent&) override;
+    virtual void setFocus(bool) override;
+    virtual bool isPagePopup() const override { return true; }
+    virtual bool isAcceleratedCompositingActive() const override { return m_isAcceleratedCompositingActive; }
 
     // PageWidgetEventHandler functions
-    virtual bool handleKeyEvent(const WebKeyboardEvent&) OVERRIDE;
-    virtual bool handleCharEvent(const WebKeyboardEvent&) OVERRIDE;
-    virtual bool handleGestureEvent(const WebGestureEvent&) OVERRIDE;
+    virtual bool handleKeyEvent(const WebKeyboardEvent&) override;
+    virtual bool handleCharEvent(const WebKeyboardEvent&) override;
+    virtual bool handleGestureEvent(const WebGestureEvent&) override;
+
+    // PagePopup function
+    virtual AXObject* rootAXObject() override;
 
     explicit WebPagePopupImpl(WebWidgetClient*);
     bool initializePage();
     void destroyPage();
-    void setRootGraphicsLayer(WebCore::GraphicsLayer*);
+    void setRootGraphicsLayer(GraphicsLayer*);
     void setIsAcceleratedCompositingActive(bool enter);
 
     WebWidgetClient* m_widgetClient;
     WebRect m_windowRectInScreen;
     WebViewImpl* m_webView;
-    OwnPtrWillBePersistent<WebCore::Page> m_page;
+    OwnPtrWillBePersistent<Page> m_page;
     OwnPtr<PagePopupChromeClient> m_chromeClient;
-    WebCore::PagePopupClient* m_popupClient;
+    PagePopupClient* m_popupClient;
     bool m_closing;
 
     WebLayerTreeView* m_layerTreeView;
     WebLayer* m_rootLayer;
-    WebCore::GraphicsLayer* m_rootGraphicsLayer;
+    GraphicsLayer* m_rootGraphicsLayer;
     bool m_isAcceleratedCompositingActive;
 
     friend class WebPagePopup;
@@ -110,9 +114,9 @@ private:
 };
 
 DEFINE_TYPE_CASTS(WebPagePopupImpl, WebWidget, widget, widget->isPagePopup(), widget.isPagePopup());
-// WebPagePopupImpl is the only implementation of WebCore::PagePopup, so no
+// WebPagePopupImpl is the only implementation of PagePopup, so no
 // further checking required.
-DEFINE_TYPE_CASTS(WebPagePopupImpl, WebCore::PagePopup, popup, true, true);
+DEFINE_TYPE_CASTS(WebPagePopupImpl, PagePopup, popup, true, true);
 
 } // namespace blink
 #endif // WebPagePopupImpl_h

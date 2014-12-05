@@ -4,36 +4,36 @@
 
 #include "mojo/public/cpp/bindings/message.h"
 
-#include <assert.h>
 #include <stdlib.h>
 
 #include <algorithm>
 
+#include "mojo/public/cpp/environment/logging.h"
+
 namespace mojo {
 
-Message::Message()
-    : data_num_bytes_(0),
-      data_(NULL) {
+Message::Message() : data_num_bytes_(0), data_(nullptr) {
 }
 
 Message::~Message() {
   free(data_);
 
   for (std::vector<Handle>::iterator it = handles_.begin();
-       it != handles_.end(); ++it) {
+       it != handles_.end();
+       ++it) {
     if (it->is_valid())
       CloseRaw(*it);
   }
 }
 
 void Message::AllocUninitializedData(uint32_t num_bytes) {
-  assert(!data_);
+  MOJO_DCHECK(!data_);
   data_num_bytes_ = num_bytes;
   data_ = static_cast<internal::MessageData*>(malloc(num_bytes));
 }
 
 void Message::AdoptData(uint32_t num_bytes, internal::MessageData* data) {
-  assert(!data_);
+  MOJO_DCHECK(!data_);
   data_num_bytes_ = num_bytes;
   data_ = data;
 }
@@ -51,9 +51,9 @@ MojoResult ReadAndDispatchMessage(MessagePipeHandle handle,
 
   uint32_t num_bytes = 0, num_handles = 0;
   rv = ReadMessageRaw(handle,
-                      NULL,
+                      nullptr,
                       &num_bytes,
-                      NULL,
+                      nullptr,
                       &num_handles,
                       MOJO_READ_MESSAGE_FLAG_NONE);
   if (rv != MOJO_RESULT_RESOURCE_EXHAUSTED)
@@ -63,15 +63,15 @@ MojoResult ReadAndDispatchMessage(MessagePipeHandle handle,
   message.AllocUninitializedData(num_bytes);
   message.mutable_handles()->resize(num_handles);
 
-  rv = ReadMessageRaw(handle,
-                      message.mutable_data(),
-                      &num_bytes,
-                      message.mutable_handles()->empty()
-                          ? NULL
-                          : reinterpret_cast<MojoHandle*>(
-                                &message.mutable_handles()->front()),
-                      &num_handles,
-                      MOJO_READ_MESSAGE_FLAG_NONE);
+  rv = ReadMessageRaw(
+      handle,
+      message.mutable_data(),
+      &num_bytes,
+      message.mutable_handles()->empty()
+          ? nullptr
+          : reinterpret_cast<MojoHandle*>(&message.mutable_handles()->front()),
+      &num_handles,
+      MOJO_READ_MESSAGE_FLAG_NONE);
   if (receiver && rv == MOJO_RESULT_OK)
     *receiver_result = receiver->Accept(&message);
 

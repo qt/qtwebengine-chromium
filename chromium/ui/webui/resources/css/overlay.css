@@ -150,6 +150,10 @@ html[dir='rtl'] .overlay .page .action-area {
   border-color: rgba(0, 0, 0, 0.5);
 }
 
+.overlay .page .spacer-div {
+  -webkit-box-flex: 1;
+}
+
 /* On OSX 10.7, hidden scrollbars may prevent the user from realizing that the
  * overlay contains scrollable content. To resolve this, style the scrollbars on
  * OSX so they are always visible. See http://crbug.com/123010. */
@@ -178,4 +182,20 @@ html[dir='rtl'] .overlay .page .action-area {
   color: #888;
   display: -webkit-box;
   padding: 14px 17px;
+}
+
+/* Prevent the page underneath the overlay from scrolling. */
+.frozen {
+  position: fixed;
+}
+
+#overlay-container-1 {
+  z-index: 11;
+}
+#overlay-container-2 {
+  z-index: 12;
+}
+
+.transparent {
+  opacity: 0;
 }

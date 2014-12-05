@@ -38,7 +38,6 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/socket/nss_ssl_util.h"
-#include "net/socket/ssl_error_params.h"
 
 // SSL plaintext fragments are shorter than 16KB. Although the record layer
 // overhead is allowed to be 2K + 5 bytes, in practice the overhead is much
@@ -60,7 +59,7 @@ class NSSSSLServerInitSingleton {
   NSSSSLServerInitSingleton() {
     EnsureNSSSSLInit();
 
-    SSL_ConfigServerSessionIDCache(1024, 5, 5, NULL);
+    SSL_ConfigServerSessionIDCache(64, 28800, 28800, NULL);
     g_nss_server_sockets_init = true;
   }
 
@@ -85,7 +84,7 @@ scoped_ptr<SSLServerSocket> CreateSSLServerSocket(
     crypto::RSAPrivateKey* key,
     const SSLConfig& ssl_config) {
   DCHECK(g_nss_server_sockets_init) << "EnableSSLServerSockets() has not been"
-                                    << "called yet!";
+                                    << " called yet!";
 
   return scoped_ptr<SSLServerSocket>(
       new SSLServerSocketNSS(socket.Pass(), cert, key, ssl_config));
@@ -446,7 +445,7 @@ int SSLServerSocketNSS::InitializeSSLOptions() {
   }
 
   SECKEYPrivateKeyStr* private_key = NULL;
-  PK11SlotInfo* slot = crypto::GetPrivateNSSKeySlot();
+  PK11SlotInfo* slot = PK11_GetInternalSlot();
   if (!slot) {
     CERT_DestroyCertificate(cert);
     return ERR_UNEXPECTED;

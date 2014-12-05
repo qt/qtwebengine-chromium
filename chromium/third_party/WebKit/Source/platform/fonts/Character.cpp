@@ -31,25 +31,13 @@
 #include "config.h"
 #include "platform/fonts/Character.h"
 
-#include "platform/fonts/FontPlatformFeatures.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
 using namespace WTF;
 using namespace Unicode;
 
-namespace WebCore {
-
-const uint8_t Character::s_roundingHackCharacterTable[256] = {
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 1 /*\t*/, 1 /*\n*/, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    1 /*space*/, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 /*-*/, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1 /*?*/,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    1 /*no-break space*/, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-};
+namespace blink {
 
 static const UChar32 cjkIsolatedSymbolsArray[] = {
     // 0x2C7 Caron, Mandarin Chinese 3rd Tone
@@ -112,12 +100,6 @@ CodePath Character::characterRangeCodePath(const UChar* characters, unsigned len
         0x1A00, 0x1CFF,
         // U+1DC0 through U+1DFF Comining diacritical mark supplement
         0x1DC0, 0x1DFF,
-        // RIGHT-TO-LEFT MARK
-        0x200B, 0x200F,
-        // RIGHT-TO-LEFT OVERRIDE
-        0x202A, 0x202E,
-        // Nominal Digit Shape
-        0x2060, 0x206F,
         // U+20D0 through U+20FF Combining marks for symbols
         0x20D0, 0x20FF,
         // U+2CEF through U+2CF1 Combining marks for Coptic
@@ -305,7 +287,6 @@ unsigned Character::expansionOpportunityCount(const LChar* characters, size_t le
 
 unsigned Character::expansionOpportunityCount(const UChar* characters, size_t length, TextDirection direction, bool& isAfterExpansion)
 {
-    static bool expandAroundIdeographs = FontPlatformFeatures::canExpandAroundIdeographsInComplexText();
     unsigned count = 0;
     if (direction == LTR) {
         for (size_t i = 0; i < length; ++i) {
@@ -318,13 +299,6 @@ unsigned Character::expansionOpportunityCount(const UChar* characters, size_t le
             if (U16_IS_LEAD(character) && i + 1 < length && U16_IS_TRAIL(characters[i + 1])) {
                 character = U16_GET_SUPPLEMENTARY(character, characters[i + 1]);
                 i++;
-            }
-            if (expandAroundIdeographs && isCJKIdeographOrSymbol(character)) {
-                if (!isAfterExpansion)
-                    count++;
-                count++;
-                isAfterExpansion = true;
-                continue;
             }
             isAfterExpansion = false;
         }
@@ -339,13 +313,6 @@ unsigned Character::expansionOpportunityCount(const UChar* characters, size_t le
             if (U16_IS_TRAIL(character) && i > 1 && U16_IS_LEAD(characters[i - 2])) {
                 character = U16_GET_SUPPLEMENTARY(characters[i - 2], character);
                 i--;
-            }
-            if (expandAroundIdeographs && isCJKIdeographOrSymbol(character)) {
-                if (!isAfterExpansion)
-                    count++;
-                count++;
-                isAfterExpansion = true;
-                continue;
             }
             isAfterExpansion = false;
         }
@@ -389,4 +356,4 @@ String Character::normalizeSpaces(const UChar* characters, unsigned length)
     return normalizeSpacesInternal(characters, length);
 }
 
-}
+} // namespace blink

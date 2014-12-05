@@ -34,11 +34,11 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
                     QuicFramer* framer,
                     QuicRandom* random_generator);
 
-  virtual ~QuicPacketCreator();
+  ~QuicPacketCreator() override;
 
   // QuicFecBuilderInterface
-  virtual void OnBuiltFecProtectedPayload(const QuicPacketHeader& header,
-                                          base::StringPiece payload) OVERRIDE;
+  void OnBuiltFecProtectedPayload(const QuicPacketHeader& header,
+                                  base::StringPiece payload) override;
 
   // Turn on FEC protection for subsequently created packets. FEC should be
   // enabled first (max_packets_per_fec_group should be non-zero) for FEC
@@ -65,11 +65,10 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   // can be safely changed.
   void UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicByteCount congestion_window);
+      QuicPacketCount max_packets_in_flight);
 
   // The overhead the framing will add for a packet with one frame.
   static size_t StreamFramePacketOverhead(
-      QuicVersion version,
       QuicConnectionIdLength connection_id_length,
       bool include_version,
       QuicSequenceNumberLength sequence_number_length,
@@ -126,7 +125,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   // Returns true if subsequent packets will be FEC protected. Note: True does
   // not mean that an FEC packet is currently under construction; i.e.,
-  // fec_group_.get() may still be NULL, until MaybeStartFec() is called.
+  // fec_group_.get() may still be nullptr, until MaybeStartFec() is called.
   bool IsFecProtected() const;
 
   // Returns the number of bytes which are available to be used by additional
@@ -156,11 +155,11 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   bool AddSavedFrame(const QuicFrame& frame);
 
   // Serializes all frames which have been added and adds any which should be
-  // retransmitted to |retransmittable_frames| if it's not NULL. All frames must
-  // fit into a single packet. Sets the entropy hash of the serialized
+  // retransmitted to |retransmittable_frames| if it's not nullptr. All frames
+  // must fit into a single packet. Sets the entropy hash of the serialized
   // packet to a random bool and returns that value as a member of
-  // SerializedPacket. Also, sets |serialized_frames| in the SerializedPacket
-  // to the corresponding RetransmittableFrames if any frames are to be
+  // SerializedPacket. Also, sets |serialized_frames| in the SerializedPacket to
+  // the corresponding RetransmittableFrames if any frames are to be
   // retransmitted.
   SerializedPacket SerializePacket();
 
@@ -201,6 +200,10 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
     return connection_id_length_;
   }
 
+  void set_connection_id_length(QuicConnectionIdLength length) {
+    connection_id_length_ = length;
+  }
+
   QuicSequenceNumberLength next_sequence_number_length() const {
     return next_sequence_number_length_;
   }
@@ -215,7 +218,7 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
 
   void set_max_packet_length(size_t length) {
     // |max_packet_length_| should not be changed mid-packet or mid-FEC group.
-    DCHECK(fec_group_.get() == NULL && queued_frames_.empty());
+    DCHECK(fec_group_.get() == nullptr && queued_frames_.empty());
     max_packet_length_ = length;
   }
 
@@ -225,12 +228,10 @@ class NET_EXPORT_PRIVATE QuicPacketCreator : public QuicFecBuilderInterface {
   }
 
   // Sets creator's max number of packets covered by an FEC group.
-  void set_max_packets_per_fec_group(
-      size_t max_packets_per_fec_group) {
-    // To turn off FEC protection, use StopFecProtectingPackets().
-    DCHECK_NE(0u, max_packets_per_fec_group);
-    max_packets_per_fec_group_ = max_packets_per_fec_group;
-  }
+  // Note: While there are no constraints on |max_packets_per_fec_group|,
+  // this setter enforces a min value of kLowestMaxPacketsPerFecGroup.
+  // To turn off FEC protection, use StopFecProtectingPackets().
+  void set_max_packets_per_fec_group(size_t max_packets_per_fec_group);
 
  private:
   friend class test::QuicPacketCreatorPeer;

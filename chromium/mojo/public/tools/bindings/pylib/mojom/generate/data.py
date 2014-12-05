@@ -38,9 +38,20 @@ def istr(index, string):
     def __lt__(self, other):
       return self.__index__ < other.__index__
 
-  istr = IndexedString(string)
-  istr.__index__ = index
-  return istr
+  rv = IndexedString(string)
+  rv.__index__ = index
+  return rv
+
+builtin_values = frozenset([
+    "double.INFINITY",
+    "double.NEGATIVE_INFINITY",
+    "double.NAN",
+    "float.INFINITY",
+    "float.NEGATIVE_INFINITY",
+    "float.NAN"])
+
+def IsBuiltinValue(value):
+  return value in builtin_values
 
 def LookupKind(kinds, spec, scope):
   """Tries to find which Kind a spec refers to, given the scope in which its
@@ -65,11 +76,18 @@ def LookupKind(kinds, spec, scope):
 
   return kinds.get(spec)
 
-def LookupValue(values, name, scope):
+def LookupValue(values, name, scope, kind):
   """Like LookupKind, but for constant values."""
-  for i in xrange(len(scope), -1, -1):
-    if i > 0:
-      test_spec = '.'.join(scope[:i]) + '.'
+  # If the type is an enum, the value can be specified as a qualified name, in
+  # which case the form EnumName.ENUM_VALUE must be used. We use the presence
+  # of a '.' in the requested name to identify this. Otherwise, we prepend the
+  # enum name.
+  if isinstance(kind, mojom.Enum) and '.' not in name:
+    name = '%s.%s' % (kind.spec.split(':', 1)[1], name)
+  for i in reversed(xrange(len(scope) + 1)):
+    test_spec = '.'.join(scope[:i])
+    if test_spec:
+      test_spec += '.'
     test_spec += name
     value = values.get(test_spec)
     if value:
@@ -77,12 +95,18 @@ def LookupValue(values, name, scope):
 
   return values.get(name)
 
-def FixupExpression(module, value, scope):
-  """Translates an IDENTIFIER into a structured Value object."""
+def FixupExpression(module, value, scope, kind):
+  """Translates an IDENTIFIER into a built-in value or structured NamedValue
+     object."""
   if isinstance(value, tuple) and value[0] == 'IDENTIFIER':
-    result = LookupValue(module.values, value[1], scope)
+    # Allow user defined values to shadow builtins.
+    result = LookupValue(module.values, value[1], scope, kind)
     if result:
+      if isinstance(result, tuple):
+        raise Exception('Unable to resolve expression: %r' % value[1])
       return result
+    if IsBuiltinValue(value[1]):
+      return mojom.BuiltinValue(value[1])
   return value
 
 def KindToData(kind):
@@ -92,22 +116,38 @@ def KindFromData(kinds, data, scope):
   kind = LookupKind(kinds, data, scope)
   if kind:
     return kind
-  if data.startswith('a:'):
-    kind = mojom.Array()
-    kind.kind = KindFromData(kinds, data[2:], scope)
+
+  if data.startswith('?'):
+    kind = KindFromData(kinds, data[1:], scope).MakeNullableKind()
+  elif data.startswith('a:'):
+    kind = mojom.Array(KindFromData(kinds, data[2:], scope))
+  elif data.startswith('a'):
+    colon = data.find(':')
+    length = int(data[1:colon])
+    kind = mojom.Array(KindFromData(kinds, data[colon+1:], scope), length)
   elif data.startswith('r:'):
-    kind = mojom.InterfaceRequest()
-    kind.kind = KindFromData(kinds, data[2:], scope)
+    kind = mojom.InterfaceRequest(KindFromData(kinds, data[2:], scope))
+  elif data.startswith('m['):
+    # Isolate the two types from their brackets
+    first_kind = data[2:data.find(']')]
+    second_kind = data[data.rfind('[')+1:data.rfind(']')]
+    kind = mojom.Map(KindFromData(kinds, first_kind, scope),
+                     KindFromData(kinds, second_kind, scope))
   else:
-    kind = mojom.Kind()
-  kind.spec = data
+    kind = mojom.Kind(data)
+
   kinds[data] = kind
   return kind
 
 def KindFromImport(original_kind, imported_from):
   """Used with 'import module' - clones the kind imported from the given
   module's namespace. Only used with Structs, Interfaces and Enums."""
-  kind = copy.deepcopy(original_kind)
+  kind = copy.copy(original_kind)
+  # |shared_definition| is used to store various properties (see
+  # |AddSharedProperty()| in module.py), including |imported_from|. We don't
+  # want the copy to share these with the original, so copy it if necessary.
+  if hasattr(original_kind, 'shared_definition'):
+    kind.shared_definition = copy.copy(original_kind.shared_definition)
   kind.imported_from = imported_from
   return kind
 
@@ -128,7 +168,9 @@ def ImportFromData(module, data):
   # Ditto for values.
   for value in import_module.values.itervalues():
     if value.imported_from is None:
-      value = copy.deepcopy(value)
+      # Values don't have shared definitions (since they're not nullable), so no
+      # need to do anything special.
+      value = copy.copy(value)
       value.imported_from = import_item
       module.values[value.GetSpec()] = value
 
@@ -172,7 +214,7 @@ def FieldFromData(module, data, struct):
       module.kinds, data['kind'], (module.namespace, struct.name))
   field.ordinal = data.get('ordinal')
   field.default = FixupExpression(
-      module, data.get('default'), (module.namespace, struct.name))
+      module, data.get('default'), (module.namespace, struct.name), field.kind)
   return field
 
 def ParameterToData(parameter):
@@ -248,10 +290,10 @@ def EnumFieldFromData(module, enum, data, parent_kind):
   # vice versa?
   if parent_kind:
     field.value = FixupExpression(
-        module, data['value'], (module.namespace, parent_kind.name))
+        module, data['value'], (module.namespace, parent_kind.name), enum)
   else:
     field.value = FixupExpression(
-        module, data['value'], (module.namespace, ))
+        module, data['value'], (module.namespace, ), enum)
   value = mojom.EnumValue(module, enum, field)
   module.values[value.GetSpec()] = value
   return field
@@ -280,9 +322,9 @@ def ConstantFromData(module, data, parent_kind):
     scope = (module.namespace, )
   # TODO(mpcomplete): maybe we should only support POD kinds.
   constant.kind = KindFromData(module.kinds, data['kind'], scope)
-  constant.value = FixupExpression(module, data.get('value'), scope)
+  constant.value = FixupExpression(module, data.get('value'), scope, None)
 
-  value = mojom.NamedValue(module, parent_kind, constant.name)
+  value = mojom.ConstantValue(module, parent_kind, constant)
   module.values[value.GetSpec()] = value
   return constant
 
@@ -338,7 +380,6 @@ def ModuleFromData(data):
 
 def OrderedModuleFromData(data):
   module = ModuleFromData(data)
-  next_interface_ordinal = 0
   for interface in module.interfaces:
     next_ordinal = 0
     for method in interface.methods:

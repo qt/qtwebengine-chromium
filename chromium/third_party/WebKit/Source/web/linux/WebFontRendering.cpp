@@ -31,15 +31,12 @@
 #include "config.h"
 #include "public/web/linux/WebFontRendering.h"
 
+#include "core/rendering/RenderThemeChromiumFontProvider.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/FontPlatformData.h"
 
-#if OS(LINUX)
-#include "public/platform/linux/WebFontInfo.h"
-#endif
-
-using WebCore::FontDescription;
-using WebCore::FontPlatformData;
+using blink::FontDescription;
+using blink::FontPlatformData;
 
 namespace blink {
 
@@ -77,9 +74,6 @@ void WebFontRendering::setSubpixelRendering(bool useSubpixelRendering)
 void WebFontRendering::setSubpixelPositioning(bool useSubpixelPositioning)
 {
     FontDescription::setSubpixelPositioning(useSubpixelPositioning);
-#if OS(LINUX)
-    WebFontInfo::setSubpixelPositioning(useSubpixelPositioning);
-#endif
 }
 
 // static
@@ -92,6 +86,12 @@ void WebFontRendering::setLCDOrder(SkFontHost::LCDOrder order)
 void WebFontRendering::setLCDOrientation(SkFontHost::LCDOrientation orientation)
 {
     SkFontHost::SetSubpixelOrientation(orientation);
+}
+
+// static
+void WebFontRendering::setDefaultFontSize(int size)
+{
+    RenderThemeChromiumFontProvider::setDefaultFontSize(size);
 }
 
 } // namespace blink

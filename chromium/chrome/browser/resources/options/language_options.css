@@ -38,7 +38,6 @@
 
 .language-options-header,
 .language-options-footer {
-  line-height: 1.2em;
   margin: 10px 0;
 }
 
@@ -190,8 +189,4 @@
 /* TODO(hshi): Remove this temporary hack once the bug is fixed in Chrome. */
 #add-language-overlay-language-list {
   width: -webkit-calc(100% - 4px);
-}
-
-.standalone-link-button {
-  padding: 0;
 }

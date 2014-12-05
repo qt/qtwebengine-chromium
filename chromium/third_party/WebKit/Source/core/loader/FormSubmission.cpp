@@ -32,6 +32,7 @@
 #include "core/loader/FormSubmission.h"
 
 #include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/html/DOMFormData.h"
@@ -41,7 +42,6 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoadRequest.h"
 #include "core/loader/FrameLoader.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/heap/Handle.h"
 #include "platform/network/FormData.h"
 #include "platform/network/FormDataBuilder.h"
@@ -49,7 +49,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -108,7 +108,7 @@ FormSubmission::Method FormSubmission::Attributes::parseMethodType(const String&
 {
     if (equalIgnoringCase(type, "post"))
         return FormSubmission::PostMethod;
-    if (RuntimeEnabledFeatures::dialogElementEnabled() && equalIgnoringCase(type, "dialog"))
+    if (equalIgnoringCase(type, "dialog"))
         return FormSubmission::DialogMethod;
     return FormSubmission::GetMethod;
 }
@@ -220,7 +220,7 @@ PassRefPtrWillBeRawPtr<FormSubmission> FormSubmission::create(HTMLFormElement* f
             control->appendFormData(*domFormData, isMultiPartForm);
         if (isHTMLInputElement(element)) {
             HTMLInputElement& input = toHTMLInputElement(element);
-            if (input.isPasswordField() && !input.value().isEmpty())
+            if (input.type() == InputTypeNames::password && !input.value().isEmpty())
                 containsPasswordData = true;
         }
     }
@@ -267,9 +267,6 @@ void FormSubmission::populateFrameLoadRequest(FrameLoadRequest& frameRequest)
     if (!m_target.isEmpty())
         frameRequest.setFrameName(m_target);
 
-    if (!m_referrer.referrer.isEmpty())
-        frameRequest.resourceRequest().setHTTPReferrer(m_referrer);
-
     if (m_method == FormSubmission::PostMethod) {
         frameRequest.resourceRequest().setHTTPMethod("POST");
         frameRequest.resourceRequest().setHTTPBody(m_formData);
@@ -282,7 +279,6 @@ void FormSubmission::populateFrameLoadRequest(FrameLoadRequest& frameRequest)
     }
 
     frameRequest.resourceRequest().setURL(requestURL());
-    FrameLoader::addHTTPOriginIfNeeded(frameRequest.resourceRequest(), AtomicString(m_origin));
 }
 
 }

@@ -25,24 +25,25 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLLIElement FINAL : public HTMLElement {
+class HTMLLIElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLLIElement);
 
 private:
     explicit HTMLLIElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void attach(const AttachContext& = AttachContext()) override;
 
     void parseValue(const AtomicString&);
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLLIElement_h

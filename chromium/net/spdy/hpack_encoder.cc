@@ -16,18 +16,6 @@ namespace net {
 using base::StringPiece;
 using std::string;
 
-namespace {
-
-const uint8 kNoState = 0;
-// Set on a referenced HpackEntry which is part of the current header set.
-const uint8 kReferencedImplicitOn = 1;
-// Set on a referenced HpackEntry which is not part of the current header set.
-const uint8 kReferencedExplicitOff = 2;
-// Set on a entries added to the reference set during this encoding.
-const uint8 kReferencedThisEncoding = 3;
-
-}  // namespace
-
 HpackEncoder::HpackEncoder(const HpackHuffmanTable& table)
     : output_stream_(),
       allow_huffman_compression_(true),
@@ -39,59 +27,65 @@ HpackEncoder::~HpackEncoder() {}
 
 bool HpackEncoder::EncodeHeaderSet(const std::map<string, string>& header_set,
                                    string* output) {
-  // Walk the set of entries to encode, which are not already implied by the
-  // header table's reference set. They must be explicitly emitted.
-  Representations explicit_set(DetermineEncodingDelta(header_set));
-  for (Representations::const_iterator it = explicit_set.begin();
-       it != explicit_set.end(); ++it) {
-    // Try to find an exact match. Note that dynamic entries are preferred
-    // by the header table index.
-    HpackEntry* entry = header_table_.GetByNameAndValue(it->first, it->second);
-    if (entry != NULL && !entry->IsStatic()) {
-      // Already in the dynamic table. Simply toggle on.
-      CHECK_EQ(kNoState, entry->state());
-      EmitDynamicIndex(entry);
-      continue;
+  // Separate header set into pseudo-headers and regular headers.
+  Representations pseudo_headers;
+  Representations regular_headers;
+  for (std::map<string, string>::const_iterator it = header_set.begin();
+       it != header_set.end(); ++it) {
+    if (it->first == "cookie") {
+      // Note that there can only be one "cookie" header, because header_set is
+      // a map.
+      CookieToCrumbs(*it, &regular_headers);
+    } else if (it->first[0] == kPseudoHeaderPrefix) {
+      DecomposeRepresentation(*it, &pseudo_headers);
+    } else {
+      DecomposeRepresentation(*it, &regular_headers);
     }
+  }
 
-    // Walk the set of entries to be evicted by this insertion.
-    HpackHeaderTable::EntryTable::iterator evict_begin, evict_end, evict_it;
-    header_table_.EvictionSet(it->first, it->second, &evict_begin, &evict_end);
-
-    for (evict_it = evict_begin; evict_it != evict_end; ++evict_it) {
-      HpackEntry* evictee = &(*evict_it);
-
-      if (evict_it->state() == kReferencedImplicitOn) {
-        // Issue twice to explicitly emit.
-        EmitDynamicIndex(evictee);
-        EmitDynamicIndex(evictee);
-      } else if (evictee->state() == kReferencedExplicitOff) {
-        // Eviction saves us from having to explicitly toggle off.
-        evictee->set_state(kNoState);
-      } else if (evictee->state() == kReferencedThisEncoding) {
-        // Already emitted. No action required.
-        evictee->set_state(kNoState);
+  // Encode pseudo-headers.
+  for (Representations::const_iterator it = pseudo_headers.begin();
+       it != pseudo_headers.end(); ++it) {
+    const HpackEntry* entry =
+        header_table_.GetByNameAndValue(it->first, it->second);
+    if (entry != NULL) {
+      EmitIndex(entry);
+    } else {
+      if (it->first == ":authority") {
+        // :authority is always present and rarely changes, and has moderate
+        // length, therefore it makes a lot of sense to index (insert in the
+        // header table).
+        EmitIndexedLiteral(*it);
+      } else {
+        // Most common pseudo-header fields are represented in the static table,
+        // while uncommon ones are small, so do not index them.
+        EmitNonIndexedLiteral(*it);
       }
     }
-    if (entry != NULL) {
-      EmitStaticIndex(entry);
-    } else {
-      EmitIndexedLiteral(*it);
-    }
   }
-  // Walk the reference set, toggling off as needed and clearing encoding state.
-  for (HpackHeaderTable::OrderedEntrySet::const_iterator it =
-           header_table_.reference_set().begin();
-       it != header_table_.reference_set().end();) {
-    HpackEntry* entry = *(it++);  // Step to prevent invalidation.
-    CHECK_NE(kNoState, entry->state());
 
-    if (entry->state() == kReferencedExplicitOff) {
-      // Explicitly toggle off.
-      EmitDynamicIndex(entry);
+  // Encode regular headers that are already in the header table first,
+  // save the rest into another vector.  This way we avoid evicting an entry
+  // from the header table before it can be used.
+  Representations literal_headers;
+  for (Representations::const_iterator it = regular_headers.begin();
+       it != regular_headers.end(); ++it) {
+    const HpackEntry* entry =
+        header_table_.GetByNameAndValue(it->first, it->second);
+    if (entry != NULL) {
+      EmitIndex(entry);
+    } else {
+      literal_headers.push_back(*it);
     }
-    entry->set_state(kNoState);
   }
+
+  // Encode the remaining header fields, while inserting them in the header
+  // table.
+  for (Representations::const_iterator it = literal_headers.begin();
+       it != literal_headers.end(); ++it) {
+    EmitIndexedLiteral(*it);
+  }
+
   output_stream_.TakeString(output);
   return true;
 }
@@ -111,42 +105,15 @@ bool HpackEncoder::EncodeHeaderSetWithoutCompression(
   return true;
 }
 
-void HpackEncoder::EmitDynamicIndex(HpackEntry* entry) {
-  DCHECK(!entry->IsStatic());
+void HpackEncoder::EmitIndex(const HpackEntry* entry) {
   output_stream_.AppendPrefix(kIndexedOpcode);
   output_stream_.AppendUint32(header_table_.IndexOf(entry));
-
-  entry->set_state(kNoState);
-  if (header_table_.Toggle(entry)) {
-    // Was added to the reference set.
-    entry->set_state(kReferencedThisEncoding);
-  }
-}
-
-void HpackEncoder::EmitStaticIndex(HpackEntry* entry) {
-  DCHECK(entry->IsStatic());
-  output_stream_.AppendPrefix(kIndexedOpcode);
-  output_stream_.AppendUint32(header_table_.IndexOf(entry));
-
-  HpackEntry* new_entry = header_table_.TryAddEntry(entry->name(),
-                                                    entry->value());
-  if (new_entry) {
-    // This is a static entry: no need to pin.
-    header_table_.Toggle(new_entry);
-    new_entry->set_state(kReferencedThisEncoding);
-  }
 }
 
 void HpackEncoder::EmitIndexedLiteral(const Representation& representation) {
   output_stream_.AppendPrefix(kLiteralIncrementalIndexOpcode);
   EmitLiteral(representation);
-
-  HpackEntry* new_entry = header_table_.TryAddEntry(representation.first,
-                                                    representation.second);
-  if (new_entry) {
-    header_table_.Toggle(new_entry);
-    new_entry->set_state(kReferencedThisEncoding);
-  }
+  header_table_.TryAddEntry(representation.first, representation.second);
 }
 
 void HpackEncoder::EmitNonIndexedLiteral(
@@ -183,61 +150,6 @@ void HpackEncoder::EmitString(StringPiece str) {
   UpdateCharacterCounts(str);
 }
 
-// static
-HpackEncoder::Representations HpackEncoder::DetermineEncodingDelta(
-    const std::map<string, string>& header_set) {
-  // Flatten & crumble headers into an ordered list of representations.
-  Representations full_set;
-  for (std::map<string, string>::const_iterator it = header_set.begin();
-       it != header_set.end(); ++it) {
-    if (it->first == "cookie") {
-      // |CookieToCrumbs()| produces ordered crumbs.
-      CookieToCrumbs(*it, &full_set);
-    } else {
-      // Note std::map guarantees representations are ordered.
-      full_set.push_back(make_pair(
-          StringPiece(it->first), StringPiece(it->second)));
-    }
-  }
-  // Perform a linear merge of ordered representations with the (also ordered)
-  // reference set. Mark each referenced entry with current membership state,
-  // and gather representations which must be explicitly emitted.
-  Representations::const_iterator r_it = full_set.begin();
-  HpackHeaderTable::OrderedEntrySet::const_iterator s_it =
-      header_table_.reference_set().begin();
-
-  Representations explicit_set;
-  while (r_it != full_set.end() &&
-         s_it != header_table_.reference_set().end()) {
-    // Compare on name, then value.
-    int result = r_it->first.compare((*s_it)->name());
-    if (result == 0) {
-      result = r_it->second.compare((*s_it)->value());
-    }
-
-    if (result < 0) {
-      explicit_set.push_back(*r_it);
-      ++r_it;
-    } else if (result > 0) {
-      (*s_it)->set_state(kReferencedExplicitOff);
-      ++s_it;
-    } else {
-      (*s_it)->set_state(kReferencedImplicitOn);
-      ++s_it;
-      ++r_it;
-    }
-  }
-  while (r_it != full_set.end()) {
-    explicit_set.push_back(*r_it);
-    ++r_it;
-  }
-  while (s_it != header_table_.reference_set().end()) {
-    (*s_it)->set_state(kReferencedExplicitOff);
-    ++s_it;
-  }
-  return explicit_set;
-}
-
 void HpackEncoder::SetCharCountsStorage(std::vector<size_t>* char_counts,
                                         size_t* total_char_counts) {
   CHECK_LE(256u, char_counts->size());
@@ -260,8 +172,8 @@ void HpackEncoder::CookieToCrumbs(const Representation& cookie,
                                   Representations* out) {
   size_t prior_size = out->size();
 
-  // See Section 8.1.3.4 "Compressing the Cookie Header Field" in the HTTP/2
-  // specification at http://tools.ietf.org/html/draft-ietf-httpbis-http2-11
+  // See Section 8.1.2.5. "Compressing the Cookie Header Field" in the HTTP/2
+  // specification at https://tools.ietf.org/html/draft-ietf-httpbis-http2-14.
   // Cookie values are split into individually-encoded HPACK representations.
   for (size_t pos = 0;;) {
     size_t end = cookie.second.find(";", pos);
@@ -286,6 +198,19 @@ void HpackEncoder::CookieToCrumbs(const Representation& cookie,
   std::sort(out->begin() + prior_size, out->end());
   out->erase(std::unique(out->begin() + prior_size, out->end()),
              out->end());
+}
+
+// static
+void HpackEncoder::DecomposeRepresentation(const Representation& header_field,
+                                           Representations* out) {
+  size_t pos = 0;
+  size_t end = 0;
+  while (end != StringPiece::npos) {
+    end = header_field.second.find('\0', pos);
+    out->push_back(make_pair(header_field.first,
+                             header_field.second.substr(pos, end - pos)));
+    pos = end + 1;
+  }
 }
 
 }  // namespace net

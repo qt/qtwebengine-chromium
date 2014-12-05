@@ -26,79 +26,34 @@
 #ifndef FilterEffectRenderer_h
 #define FilterEffectRenderer_h
 
-#include "core/svg/graphics/filters/SVGFilterBuilder.h"
-#include "platform/geometry/FloatRect.h"
-#include "platform/geometry/IntRectExtent.h"
-#include "platform/geometry/LayoutRect.h"
-#include "platform/graphics/ImageBuffer.h"
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
-#include "platform/graphics/filters/FilterOperations.h"
-#include "platform/graphics/filters/SourceGraphic.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
+#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
+class FilterOperations;
+class FloatRect;
 class GraphicsContext;
-class RenderLayer;
+class ReferenceFilter;
 class RenderObject;
 
-class FilterEffectRendererHelper {
-public:
-    FilterEffectRendererHelper(bool haveFilterEffect)
-        : m_savedGraphicsContext(0)
-        , m_renderLayer(0)
-        , m_haveFilterEffect(haveFilterEffect)
-    {
-    }
-
-    bool haveFilterEffect() const { return m_haveFilterEffect; }
-    bool hasStartedFilterEffect() const { return m_savedGraphicsContext; }
-
-    bool prepareFilterEffect(RenderLayer*, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect, const LayoutRect& layerRepaintRect);
-    GraphicsContext* beginFilterEffect(GraphicsContext* oldContext);
-    GraphicsContext* applyFilterEffect();
-
-    const LayoutRect& repaintRect() const { return m_repaintRect; }
-private:
-    GraphicsContext* m_savedGraphicsContext;
-    RenderLayer* m_renderLayer;
-
-    LayoutRect m_repaintRect;
-    bool m_haveFilterEffect;
-};
-
-class FilterEffectRenderer FINAL : public Filter
+class FilterEffectRenderer final : public RefCounted<FilterEffectRenderer>
 {
     WTF_MAKE_FAST_ALLOCATED;
 public:
+    virtual ~FilterEffectRenderer();
     static PassRefPtr<FilterEffectRenderer> create()
     {
         return adoptRef(new FilterEffectRenderer());
     }
 
-    void setSourceImageRect(const IntRect& sourceImageRect)
-    {
-        m_sourceDrawingRegion = sourceImageRect;
-        m_graphicsBufferAttached = false;
-    }
-    virtual IntRect sourceImageRect() const OVERRIDE { return m_sourceDrawingRegion; }
-
-    GraphicsContext* inputContext();
-    ImageBuffer* output() const { return lastEffect()->asImageBuffer(); }
-
     bool build(RenderObject* renderer, const FilterOperations&);
-    bool updateBackingStoreRect(const FloatRect& filterRect);
-    void allocateBackingStoreIfNeeded();
+    bool beginFilterEffect(GraphicsContext*, const FloatRect& filterBoxRect);
+    void endFilterEffect(GraphicsContext*);
     void clearIntermediateResults();
-    void apply();
-
-    IntRect outputRect() const { return lastEffect()->hasResult() ? lastEffect()->absolutePaintRect() : IntRect(); }
-
-    bool hasFilterThatMovesPixels() const { return m_hasFilterThatMovesPixels; }
-    LayoutRect computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect);
 
     PassRefPtr<FilterEffect> lastEffect() const
     {
@@ -107,20 +62,12 @@ public:
 private:
 
     FilterEffectRenderer();
-    virtual ~FilterEffectRenderer();
 
-    IntRect m_sourceDrawingRegion;
-
-    RefPtr<SourceGraphic> m_sourceGraphic;
     RefPtr<FilterEffect> m_lastEffect;
-
-    IntRectExtent m_outsets;
-
-    bool m_graphicsBufferAttached;
-    bool m_hasFilterThatMovesPixels;
+    Vector<RefPtr<ReferenceFilter> > m_referenceFilters;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // FilterEffectRenderer_h

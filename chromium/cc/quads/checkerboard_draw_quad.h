@@ -14,7 +14,7 @@ namespace cc {
 
 class CC_EXPORT CheckerboardDrawQuad : public DrawQuad {
  public:
-  static scoped_ptr<CheckerboardDrawQuad> Create();
+  CheckerboardDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -30,14 +30,12 @@ class CC_EXPORT CheckerboardDrawQuad : public DrawQuad {
 
   SkColor color;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-    OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const CheckerboardDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
-  CheckerboardDrawQuad();
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

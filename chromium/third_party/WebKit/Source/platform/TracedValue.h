@@ -10,26 +10,47 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
+class JSONArray;
+class JSONObject;
 class JSONValue;
 
 class PLATFORM_EXPORT TracedValue : public TraceEvent::ConvertableToTraceFormat {
     WTF_MAKE_NONCOPYABLE(TracedValue);
-public:
-    static PassRefPtr<TraceEvent::ConvertableToTraceFormat> fromJSONValue(PassRefPtr<JSONValue> value)
-    {
-        return adoptRef(new TracedValue(value));
-    }
 
-    String asTraceFormat() const OVERRIDE;
+public:
+    static PassRefPtr<TracedValue> create();
+
+    void endDictionary();
+    void endArray();
+
+    void setInteger(const char* name, int value);
+    void setDouble(const char* name, double);
+    void setBoolean(const char* name, bool value);
+    void setString(const char* name, const String& value);
+    void setArray(const char* name, PassRefPtr<JSONArray> value);
+    void beginArray(const char* name);
+    void beginDictionary(const char* name);
+
+    void pushInteger(int);
+    void pushDouble(double);
+    void pushBoolean(bool);
+    void pushString(const String&);
+    void beginArray();
+    void beginDictionary();
+
+    virtual String asTraceFormat() const override;
 
 private:
-    explicit TracedValue(PassRefPtr<JSONValue>);
+    TracedValue();
     virtual ~TracedValue();
 
-    RefPtr<JSONValue> m_value;
+    JSONObject* currentDictionary() const;
+    JSONArray* currentArray() const;
+
+    Vector<RefPtr<JSONValue> > m_stack;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TracedValue_h

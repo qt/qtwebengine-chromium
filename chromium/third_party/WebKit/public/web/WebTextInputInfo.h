@@ -33,6 +33,7 @@ namespace blink {
 
 struct WebTextInputInfo {
     WebTextInputType type;
+    int flags;
 
     // The value of the currently focused input field.
     WebString value;
@@ -59,6 +60,7 @@ struct WebTextInputInfo {
 
     WebTextInputInfo()
         : type(WebTextInputTypeNone)
+        , flags(WebTextInputFlagNone)
         , selectionStart(0)
         , selectionEnd(0)
         , compositionStart(-1)

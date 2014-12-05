@@ -33,7 +33,7 @@
 #include "platform/graphics/GraphicsLayer.h"
 #include "web/PageOverlayList.h"
 
-using namespace WebCore;
+using namespace blink;
 
 namespace blink {
 
@@ -45,7 +45,7 @@ void ContinuousPainter::setNeedsDisplayRecursive(GraphicsLayer* layer, PageOverl
     if (pageOverlays && pageOverlays->findGraphicsLayer(layer) != WTF::kNotFound)
         return;
 
-    TRACE_EVENT0("webkit", "ContinuousPainter::setNeedsDisplayRecursive");
+    TRACE_EVENT0("blink", "ContinuousPainter::setNeedsDisplayRecursive");
     layer->setNeedsDisplay();
 
     setNeedsDisplayRecursive(layer->maskLayer(), pageOverlays);

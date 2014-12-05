@@ -44,29 +44,29 @@ class SpeechRecognitionBrowserTest :
   };
 
   // MockGoogleStreamingServerDelegate methods.
-  virtual void OnClientConnected() OVERRIDE {
+  void OnClientConnected() override {
     ASSERT_EQ(kTestAudioControllerOpened, streaming_server_state_);
     streaming_server_state_ = kClientConnected;
   }
 
-  virtual void OnClientAudioUpload() OVERRIDE {
+  void OnClientAudioUpload() override {
     if (streaming_server_state_ == kClientConnected)
       streaming_server_state_ = kClientAudioUpload;
   }
 
-  virtual void OnClientAudioUploadComplete() OVERRIDE {
+  void OnClientAudioUploadComplete() override {
     ASSERT_EQ(kTestAudioControllerClosed, streaming_server_state_);
     streaming_server_state_ = kClientAudioUploadComplete;
   }
 
-  virtual void OnClientDisconnected() OVERRIDE {
+  void OnClientDisconnected() override {
     ASSERT_EQ(kClientAudioUploadComplete, streaming_server_state_);
     streaming_server_state_ = kClientDisconnected;
   }
 
   // media::TestAudioInputControllerDelegate methods.
-  virtual void TestAudioControllerOpened(
-      media::TestAudioInputController* controller) OVERRIDE {
+  void TestAudioControllerOpened(
+      media::TestAudioInputController* controller) override {
     ASSERT_EQ(kIdle, streaming_server_state_);
     streaming_server_state_ = kTestAudioControllerOpened;
     const int capture_packet_interval_ms =
@@ -79,8 +79,8 @@ class SpeechRecognitionBrowserTest :
     FeedAudioController(1000 /* ms */, /*noise=*/ false);
   }
 
-  virtual void TestAudioControllerClosed(
-      media::TestAudioInputController* controller) OVERRIDE {
+  void TestAudioControllerClosed(
+      media::TestAudioInputController* controller) override {
     ASSERT_EQ(kClientAudioUpload, streaming_server_state_);
     streaming_server_state_ = kTestAudioControllerClosed;
     mock_streaming_server_->MockGoogleStreamingServer::SimulateResult(
@@ -103,7 +103,7 @@ class SpeechRecognitionBrowserTest :
 
  protected:
   // ContentBrowserTest methods.
-  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+  void SetUpInProcessBrowserTestFixture() override {
     test_audio_input_controller_factory_.set_delegate(this);
     media::AudioInputController::set_factory_for_testing(
         &test_audio_input_controller_factory_);
@@ -111,18 +111,18 @@ class SpeechRecognitionBrowserTest :
     streaming_server_state_ = kIdle;
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ASSERT_TRUE(SpeechRecognitionManagerImpl::GetInstance());
     SpeechRecognizerImpl::SetAudioManagerForTesting(
         new media::MockAudioManager(BrowserThread::GetMessageLoopProxyForThread(
             BrowserThread::IO)));
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     SpeechRecognizerImpl::SetAudioManagerForTesting(NULL);
   }
 
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+  void TearDownInProcessBrowserTestFixture() override {
     test_audio_input_controller_factory_.set_delegate(NULL);
     mock_streaming_server_.reset();
   }
@@ -148,7 +148,7 @@ class SpeechRecognitionBrowserTest :
     audio_bus->FromInterleaved(&audio_buffer.get()[0],
                                audio_bus->frames(),
                                audio_params.bits_per_sample() / 8);
-    controller->event_handler()->OnData(controller, audio_bus.get());
+    controller->event_handler()->OnData(controller.get(), audio_bus.get());
   }
 
   void FeedAudioController(int duration_ms, bool feed_with_noise) {
@@ -188,7 +188,13 @@ class SpeechRecognitionBrowserTest :
 
 // Simply loads the test page and checks if it was able to create a Speech
 // Recognition object in JavaScript, to make sure the Web Speech API is enabled.
-IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, Precheck) {
+// http://crbug.com/396414
+#if defined(OS_WIN) || defined(OS_MACOSX)
+#define MAYBE_Precheck DISABLED_Precheck
+#else
+#define MAYBE_Precheck Precheck
+#endif
+IN_PROC_BROWSER_TEST_F(SpeechRecognitionBrowserTest, MAYBE_Precheck) {
   NavigateToURLBlockUntilNavigationsComplete(
       shell(), GetTestUrlFromFragment("precheck"), 2);
 

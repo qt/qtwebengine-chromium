@@ -30,6 +30,9 @@ const SourceVideoResolution kVideoResolutions[] = {{1920, 1080},
 // Frame rates for sources with no support for capability enumeration.
 const int kVideoFrameRates[] = {30, 60};
 
+// Hard upper-bound frame rate for tab/desktop capture.
+const double kMaxScreenCastFrameRate = 120.0;
+
 }  // namespace
 
 namespace content {
@@ -38,8 +41,7 @@ VideoCapturerDelegate::VideoCapturerDelegate(
     const StreamDeviceInfo& device_info)
     : session_id_(device_info.session_id),
       is_screen_cast_(device_info.device.type == MEDIA_TAB_VIDEO_CAPTURE ||
-                      device_info.device.type == MEDIA_DESKTOP_VIDEO_CAPTURE),
-      got_first_frame_(false) {
+                      device_info.device.type == MEDIA_DESKTOP_VIDEO_CAPTURE) {
   DVLOG(3) << "VideoCapturerDelegate::ctor";
 
   // NULL in unit test.
@@ -60,23 +62,24 @@ VideoCapturerDelegate::~VideoCapturerDelegate() {
 void VideoCapturerDelegate::GetCurrentSupportedFormats(
     int max_requested_width,
     int max_requested_height,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
-  DVLOG(3) << "GetCurrentSupportedFormats("
-           << " { max_requested_height = " << max_requested_height << "})"
-           << " { max_requested_width = " << max_requested_width << "})";
+  DVLOG(3)
+      << "GetCurrentSupportedFormats("
+      << " { max_requested_height = " << max_requested_height << "})"
+      << " { max_requested_width = " << max_requested_width << "})"
+      << " { max_requested_frame_rate = " << max_requested_frame_rate << "})";
 
   if (is_screen_cast_) {
-    media::VideoCaptureFormats formats;
     const int width = max_requested_width ?
         max_requested_width : MediaStreamVideoSource::kDefaultWidth;
     const int height = max_requested_height ?
         max_requested_height : MediaStreamVideoSource::kDefaultHeight;
-    formats.push_back(
-          media::VideoCaptureFormat(
-              gfx::Size(width, height),
-              MediaStreamVideoSource::kDefaultFrameRate,
-              media::PIXEL_FORMAT_I420));
-    callback.Run(formats);
+    callback.Run(media::VideoCaptureFormats(1, media::VideoCaptureFormat(
+        gfx::Size(width, height),
+        static_cast<float>(std::min(kMaxScreenCastFrameRate,
+                                    max_requested_frame_rate)),
+        media::PIXEL_FORMAT_I420)));
     return;
   }
 
@@ -103,7 +106,6 @@ void VideoCapturerDelegate::StartCapture(
   DCHECK(params.requested_format.IsValid());
   DCHECK(thread_checker_.CalledOnValidThread());
   running_callback_ = running_callback;
-  got_first_frame_ = false;
 
   // NULL in unit test.
   if (!RenderThreadImpl::current())
@@ -137,11 +139,12 @@ void VideoCapturerDelegate::OnStateUpdateOnRenderThread(
   DCHECK(thread_checker_.CalledOnValidThread());
   DVLOG(3) << "OnStateUpdateOnRenderThread state = " << state;
   if (state == VIDEO_CAPTURE_STATE_STARTED && !running_callback_.is_null()) {
-    running_callback_.Run(true);
+    running_callback_.Run(MEDIA_DEVICE_OK);
     return;
   }
   if (state > VIDEO_CAPTURE_STATE_STARTED && !running_callback_.is_null()) {
-    base::ResetAndReturn(&running_callback_).Run(false);
+    base::ResetAndReturn(&running_callback_).Run(
+        MEDIA_DEVICE_TRACK_START_FAILURE);
   }
 }
 
@@ -218,20 +221,24 @@ MediaStreamVideoCapturerSource::~MediaStreamVideoCapturerSource() {
 void MediaStreamVideoCapturerSource::GetCurrentSupportedFormats(
     int max_requested_width,
     int max_requested_height,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
   delegate_->GetCurrentSupportedFormats(
       max_requested_width,
       max_requested_height,
+      max_requested_frame_rate,
       callback);
 }
 
 void MediaStreamVideoCapturerSource::StartSourceImpl(
-    const media::VideoCaptureParams& params,
+    const media::VideoCaptureFormat& format,
     const VideoCaptureDeliverFrameCB& frame_callback) {
-  media::VideoCaptureParams new_params(params);
+  media::VideoCaptureParams new_params;
+  new_params.requested_format = format;
   if (device_info().device.type == MEDIA_TAB_VIDEO_CAPTURE ||
       device_info().device.type == MEDIA_DESKTOP_VIDEO_CAPTURE) {
-    new_params.allow_resolution_change = true;
+    new_params.resolution_change_policy =
+        media::RESOLUTION_POLICY_DYNAMIC_WITHIN_LIMIT;
   }
   delegate_->StartCapture(
       new_params,

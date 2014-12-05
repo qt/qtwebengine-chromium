@@ -33,11 +33,9 @@
 
 #include "WebDocument.h"
 
-#if BLINK_IMPLEMENTATION
-namespace WebCore { class PluginDocument; }
-#endif
-
 namespace blink {
+
+class PluginDocument;
 class WebPlugin;
 
 // Wraps a WebDocument for full page plugins.
@@ -56,9 +54,9 @@ public:
     BLINK_EXPORT WebPlugin* plugin();
 
 #if BLINK_IMPLEMENTATION
-    WebPluginDocument(const PassRefPtrWillBeRawPtr<WebCore::PluginDocument>&);
-    WebPluginDocument& operator=(const PassRefPtrWillBeRawPtr<WebCore::PluginDocument>&);
-    operator PassRefPtrWillBeRawPtr<WebCore::PluginDocument>() const;
+    WebPluginDocument(const PassRefPtrWillBeRawPtr<PluginDocument>&);
+    WebPluginDocument& operator=(const PassRefPtrWillBeRawPtr<PluginDocument>&);
+    operator PassRefPtrWillBeRawPtr<PluginDocument>() const;
 #endif
 };
 

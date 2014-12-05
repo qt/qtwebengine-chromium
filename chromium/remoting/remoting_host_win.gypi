@@ -199,15 +199,8 @@
             'host/desktop_process_main.cc',
             'host/host_main.cc',
             'host/host_main.h',
-            'host/ipc_constants.cc',
-            'host/ipc_constants.h',
             'host/it2me/it2me_native_messaging_host_main.cc',
             'host/it2me/it2me_native_messaging_host_main.h',
-            'host/remoting_me2me_host.cc',
-            'host/sas_injector.h',
-            'host/sas_injector_win.cc',
-            'host/setup/me2me_native_messaging_host.cc',
-            'host/setup/me2me_native_messaging_host.h',
             'host/setup/me2me_native_messaging_host_main.cc',
             'host/setup/me2me_native_messaging_host_main.h',
             'host/verify_config_window_win.cc',
@@ -257,6 +250,16 @@
                 '/EXPORT:DllUnregisterServer=PsDllUnregisterServer,PRIVATE',
               ],
             },
+            'conditions': [
+              ['clang==1', {
+                # atlapp.h contains a global "using namespace WTL;".
+                # TODO: Remove once remoting/host/verify_config_window_win.h no
+                # longer depends on atlapp.h, http://crbug.com/5027
+                'VCCLCompilerTool': {
+                  'AdditionalOptions': ['-Wno-header-hygiene'],
+                },
+              }],
+            ],
           },
         },  # end of target 'remoting_core'
         {
@@ -509,6 +512,7 @@
                 'python', 'tools/zip2msi.py',
                 '--wix_path', '<(wix_path)',
                 '--intermediate_dir', '<(INTERMEDIATE_DIR)/installation',
+                '--target_arch', '<(target_arch)',
                 '<(RULE_INPUT_PATH)',
                 '<@(_outputs)',
               ],

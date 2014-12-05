@@ -31,7 +31,7 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT ContextMenu {
     WTF_MAKE_NONCOPYABLE(ContextMenu); WTF_MAKE_FAST_ALLOCATED;
@@ -40,6 +40,7 @@ public:
     const ContextMenuItem* itemWithAction(unsigned) const;
     const Vector<ContextMenuItem>& items() const { return m_items; }
     void appendItem(const ContextMenuItem& item) { m_items.append(item); }
+    void removeLastItem() { m_items.removeLast(); }
 
 private:
     Vector<ContextMenuItem> m_items;

@@ -42,10 +42,10 @@ WebInspector.Object.prototype = {
             console.assert(false);
 
         if (!this._listeners)
-            this._listeners = {};
-        if (!this._listeners[eventType])
-            this._listeners[eventType] = [];
-        this._listeners[eventType].push({ thisObject: thisObject, listener: listener });
+            this._listeners = new Map();
+        if (!this._listeners.has(eventType))
+            this._listeners.set(eventType, []);
+        this._listeners.get(eventType).push({ thisObject: thisObject, listener: listener });
     },
 
     /**
@@ -57,16 +57,16 @@ WebInspector.Object.prototype = {
     {
         console.assert(listener);
 
-        if (!this._listeners || !this._listeners[eventType])
+        if (!this._listeners || !this._listeners.has(eventType))
             return;
-        var listeners = this._listeners[eventType];
+        var listeners = this._listeners.get(eventType);
         for (var i = 0; i < listeners.length; ++i) {
             if (listeners[i].listener === listener && listeners[i].thisObject === thisObject)
                 listeners.splice(i--, 1);
         }
 
         if (!listeners.length)
-            delete this._listeners[eventType];
+            this._listeners.delete(eventType);
     },
 
     removeAllListeners: function()
@@ -80,7 +80,7 @@ WebInspector.Object.prototype = {
      */
     hasEventListeners: function(eventType)
     {
-        if (!this._listeners || !this._listeners[eventType])
+        if (!this._listeners || !this._listeners.has(eventType))
             return false;
         return true;
     },
@@ -92,11 +92,11 @@ WebInspector.Object.prototype = {
      */
     dispatchEventToListeners: function(eventType, eventData)
     {
-        if (!this._listeners || !this._listeners[eventType])
+        if (!this._listeners || !this._listeners.has(eventType))
             return false;
 
         var event = new WebInspector.Event(this, eventType, eventData);
-        var listeners = this._listeners[eventType].slice(0);
+        var listeners = this._listeners.get(eventType).slice(0);
         for (var i = 0; i < listeners.length; ++i) {
             listeners[i].listener.call(listeners[i].thisObject, event);
             if (event._stoppedPropagation)
@@ -142,51 +142,6 @@ WebInspector.Event.prototype = {
         if (preventDefault)
             this.preventDefault();
     }
-}
-
-/**
- * @constructor
- * @extends {WebInspector.Object}
- */
-WebInspector.Lock = function()
-{
-    this._count = 0; // Reentrant.
-}
-
-/**
- * @enum {string}
- */
-WebInspector.Lock.Events = {
-    StateChanged: "StateChanged"
-}
-
-WebInspector.Lock.prototype = {
-    /**
-     * @return {boolean}
-     */
-    isAcquired: function()
-    {
-        return !!this._count;
-    },
-
-    acquire: function()
-    {
-        if (++this._count === 1)
-            this.dispatchEventToListeners(WebInspector.Lock.Events.StateChanged);
-    },
-
-    release: function()
-    {
-        --this._count;
-        if (this._count < 0) {
-            console.error("WebInspector.Lock acquire/release calls are unbalanced " + new Error().stack);
-            return;
-        }
-        if (!this._count)
-            this.dispatchEventToListeners(WebInspector.Lock.Events.StateChanged);
-    },
-
-    __proto__: WebInspector.Object.prototype
 }
 
 /**

@@ -20,32 +20,31 @@
 #include "media/base/android/media_player_manager.h"
 #include "media/base/android/video_decoder_job.h"
 
-
 namespace media {
 
 MediaSourcePlayer::MediaSourcePlayer(
     int player_id,
     MediaPlayerManager* manager,
     const RequestMediaResourcesCB& request_media_resources_cb,
-    const ReleaseMediaResourcesCB& release_media_resources_cb,
     scoped_ptr<DemuxerAndroid> demuxer,
     const GURL& frame_url)
     : MediaPlayerAndroid(player_id,
                          manager,
                          request_media_resources_cb,
-                         release_media_resources_cb,
                          frame_url),
       demuxer_(demuxer.Pass()),
       pending_event_(NO_EVENT_PENDING),
       playing_(false),
-      clock_(&default_tick_clock_),
+      interpolator_(&default_tick_clock_),
       doing_browser_seek_(false),
       pending_seek_(false),
       drm_bridge_(NULL),
       cdm_registration_id_(0),
       is_waiting_for_key_(false),
+      key_added_while_decode_pending_(false),
       is_waiting_for_audio_decoder_(false),
       is_waiting_for_video_decoder_(false),
+      prerolling_(true),
       weak_factory_(this) {
   audio_decoder_job_.reset(new AudioDecoderJob(
       base::Bind(&DemuxerAndroid::RequestDemuxerData,
@@ -58,11 +57,10 @@ MediaSourcePlayer::MediaSourcePlayer(
                  base::Unretained(demuxer_.get()),
                  DemuxerStream::VIDEO),
       base::Bind(request_media_resources_cb_, player_id),
-      base::Bind(release_media_resources_cb_, player_id),
       base::Bind(&MediaSourcePlayer::OnDemuxerConfigsChanged,
                  weak_factory_.GetWeakPtr())));
   demuxer_->Initialize(this);
-  clock_.SetMaxTime(base::TimeDelta());
+  interpolator_.SetUpperBound(base::TimeDelta());
   weak_this_ = weak_factory_.GetWeakPtr();
 }
 
@@ -90,7 +88,7 @@ void MediaSourcePlayer::ScheduleSeekEventAndStopDecoding(
 
   pending_seek_ = false;
 
-  clock_.SetTime(seek_time, seek_time);
+  interpolator_.SetBounds(seek_time, seek_time);
 
   if (audio_decoder_job_->is_decoding())
     audio_decoder_job_->StopDecode();
@@ -152,11 +150,11 @@ bool MediaSourcePlayer::IsPlaying() {
 }
 
 int MediaSourcePlayer::GetVideoWidth() {
-  return video_decoder_job_->width();
+  return video_decoder_job_->output_width();
 }
 
 int MediaSourcePlayer::GetVideoHeight() {
-  return video_decoder_job_->height();
+  return video_decoder_job_->output_height();
 }
 
 void MediaSourcePlayer::SeekTo(base::TimeDelta timestamp) {
@@ -179,7 +177,7 @@ void MediaSourcePlayer::SeekTo(base::TimeDelta timestamp) {
 }
 
 base::TimeDelta MediaSourcePlayer::GetCurrentTime() {
-  return clock_.Elapsed();
+  return std::min(interpolator_.GetInterpolatedTime(), duration_);
 }
 
 base::TimeDelta MediaSourcePlayer::GetDuration() {
@@ -189,7 +187,6 @@ base::TimeDelta MediaSourcePlayer::GetDuration() {
 void MediaSourcePlayer::Release() {
   DVLOG(1) << __FUNCTION__;
 
-  is_surface_in_use_ = false;
   audio_decoder_job_->ReleaseDecoderResources();
   video_decoder_job_->ReleaseDecoderResources();
 
@@ -197,14 +194,11 @@ void MediaSourcePlayer::Release() {
   playing_ = false;
 
   decoder_starvation_callback_.Cancel();
+  DetachListener();
 }
 
 void MediaSourcePlayer::SetVolume(double volume) {
   audio_decoder_job_->SetVolume(volume);
-}
-
-bool MediaSourcePlayer::IsSurfaceInUse() const {
-  return is_surface_in_use_;
 }
 
 bool MediaSourcePlayer::CanPause() {
@@ -229,10 +223,12 @@ void MediaSourcePlayer::StartInternal() {
   if (pending_event_ != NO_EVENT_PENDING)
     return;
 
-  // When we start, we'll have new demuxed data coming in. This new data could
-  // be clear (not encrypted) or encrypted with different keys. So
-  // |is_waiting_for_key_| condition may not be true anymore.
+  // When we start, we could have new demuxed data coming in. This new data
+  // could be clear (not encrypted) or encrypted with different keys. So key
+  // related info should all be cleared.
   is_waiting_for_key_ = false;
+  key_added_while_decode_pending_ = false;
+  AttachListener(NULL);
 
   SetPendingEvent(PREFETCH_REQUEST_EVENT_PENDING);
   ProcessPendingEvents();
@@ -243,7 +239,6 @@ void MediaSourcePlayer::OnDemuxerConfigsAvailable(
   DVLOG(1) << __FUNCTION__;
   DCHECK(!HasAudio() && !HasVideo());
   duration_ = configs.duration;
-  clock_.SetDuration(duration_);
 
   audio_decoder_job_->SetDemuxerConfigs(configs);
   video_decoder_job_->SetDemuxerConfigs(configs);
@@ -263,7 +258,6 @@ void MediaSourcePlayer::OnDemuxerDataAvailable(const DemuxerData& data) {
 
 void MediaSourcePlayer::OnDemuxerDurationChanged(base::TimeDelta duration) {
   duration_ = duration;
-  clock_.SetDuration(duration_);
 }
 
 void MediaSourcePlayer::OnMediaCryptoReady() {
@@ -336,7 +330,7 @@ void MediaSourcePlayer::OnDemuxerSeekDone(
     DCHECK(seek_time >= GetCurrentTime());
     DVLOG(1) << __FUNCTION__ << " : setting clock to actual browser seek time: "
              << seek_time.InSecondsF();
-    clock_.SetTime(seek_time, seek_time);
+    interpolator_.SetBounds(seek_time, seek_time);
     audio_decoder_job_->SetBaseTimestamp(seek_time);
   } else {
     DCHECK(actual_browser_seek_time == kNoTimestamp());
@@ -352,6 +346,7 @@ void MediaSourcePlayer::OnDemuxerSeekDone(
     audio_decoder_job_->BeginPrerolling(preroll_timestamp_);
   if (HasVideo())
     video_decoder_job_->BeginPrerolling(preroll_timestamp_);
+  prerolling_ = true;
 
   if (!doing_browser_seek_)
     manager()->OnSeekComplete(player_id(), current_time);
@@ -362,8 +357,11 @@ void MediaSourcePlayer::OnDemuxerSeekDone(
 void MediaSourcePlayer::UpdateTimestamps(
     base::TimeDelta current_presentation_timestamp,
     base::TimeDelta max_presentation_timestamp) {
-  clock_.SetTime(current_presentation_timestamp, max_presentation_timestamp);
-  manager()->OnTimeUpdate(player_id(), GetCurrentTime());
+  interpolator_.SetBounds(current_presentation_timestamp,
+                          max_presentation_timestamp);
+  manager()->OnTimeUpdate(player_id(),
+                          GetCurrentTime(),
+                          base::TimeTicks::Now());
 }
 
 void MediaSourcePlayer::ProcessPendingEvents() {
@@ -484,8 +482,11 @@ void MediaSourcePlayer::MediaDecoderCallback(
                      max_presentation_timestamp);
   }
 
-  if (status == MEDIA_CODEC_OUTPUT_END_OF_STREAM)
+  if (status == MEDIA_CODEC_OUTPUT_END_OF_STREAM) {
     PlaybackCompleted(is_audio);
+    if (is_clock_manager)
+      interpolator_.StopInterpolating();
+  }
 
   if (pending_event_ != NO_EVENT_PENDING) {
     ProcessPendingEvents();
@@ -497,20 +498,43 @@ void MediaSourcePlayer::MediaDecoderCallback(
 
   if (!playing_) {
     if (is_clock_manager)
-      clock_.Pause();
+      interpolator_.StopInterpolating();
     return;
   }
 
   if (status == MEDIA_CODEC_NO_KEY) {
-    is_waiting_for_key_ = true;
+    if (key_added_while_decode_pending_) {
+      DVLOG(2) << __FUNCTION__ << ": Key was added during decoding.";
+      ResumePlaybackAfterKeyAdded();
+    } else {
+      is_waiting_for_key_ = true;
+    }
     return;
   }
+
+  // If |key_added_while_decode_pending_| is true and both audio and video
+  // decoding succeeded, we should clear |key_added_while_decode_pending_| here.
+  // But that would add more complexity into this function. If we don't clear it
+  // here, the worst case would be we call ResumePlaybackAfterKeyAdded() when
+  // we don't really have a new key. This should rarely happen and the
+  // performance impact should be pretty small.
+  // TODO(qinmin/xhwang): This class is complicated because we handle both audio
+  // and video in one file. If we separate them, we should be able to remove a
+  // lot of duplication.
 
   // If the status is MEDIA_CODEC_STOPPED, stop decoding new data. The player is
   // in the middle of a seek or stop event and needs to wait for the IPCs to
   // come.
   if (status == MEDIA_CODEC_STOPPED)
     return;
+
+  if (prerolling_ && IsPrerollFinished(is_audio)) {
+    if (IsPrerollFinished(!is_audio)) {
+      prerolling_ = false;
+      StartInternal();
+    }
+    return;
+  }
 
   if (is_clock_manager) {
     // If we have a valid timestamp, start the starvation callback. Otherwise,
@@ -527,6 +551,12 @@ void MediaSourcePlayer::MediaDecoderCallback(
     DecodeMoreAudio();
   else
     DecodeMoreVideo();
+}
+
+bool MediaSourcePlayer::IsPrerollFinished(bool is_audio) const {
+  if (is_audio)
+    return !HasAudio() || !audio_decoder_job_->prerolling();
+  return !HasVideo() || !video_decoder_job_->prerolling();
 }
 
 void MediaSourcePlayer::DecodeMoreAudio() {
@@ -579,7 +609,6 @@ void MediaSourcePlayer::PlaybackCompleted(bool is_audio) {
 
   if (AudioFinished() && VideoFinished()) {
     playing_ = false;
-    clock_.Pause();
     start_time_ticks_ = base::TimeTicks();
     manager()->OnPlaybackComplete(player_id());
   }
@@ -592,11 +621,11 @@ void MediaSourcePlayer::ClearDecodingData() {
   start_time_ticks_ = base::TimeTicks();
 }
 
-bool MediaSourcePlayer::HasVideo() {
+bool MediaSourcePlayer::HasVideo() const {
   return video_decoder_job_->HasStream();
 }
 
-bool MediaSourcePlayer::HasAudio() {
+bool MediaSourcePlayer::HasAudio() const {
   return audio_decoder_job_->HasStream();
 }
 
@@ -678,8 +707,8 @@ void MediaSourcePlayer::OnPrefetchDone() {
 
   start_time_ticks_ = base::TimeTicks::Now();
   start_presentation_timestamp_ = GetCurrentTime();
-  if (!clock_.IsPlaying())
-    clock_.Play();
+  if (!interpolator_.interpolating())
+    interpolator_.StartInterpolating();
 
   if (!AudioFinished())
     DecodeMoreAudio();
@@ -742,24 +771,45 @@ void MediaSourcePlayer::RetryDecoderCreation(bool audio, bool video) {
 
 void MediaSourcePlayer::OnKeyAdded() {
   DVLOG(1) << __FUNCTION__;
-  if (!is_waiting_for_key_)
+
+  if (is_waiting_for_key_) {
+    ResumePlaybackAfterKeyAdded();
     return;
+  }
+
+  if ((audio_decoder_job_->is_content_encrypted() &&
+       audio_decoder_job_->is_decoding()) ||
+      (video_decoder_job_->is_content_encrypted() &&
+       video_decoder_job_->is_decoding())) {
+    DVLOG(1) << __FUNCTION__ << ": " << "Key added during pending decode.";
+    key_added_while_decode_pending_ = true;
+  }
+}
+
+void MediaSourcePlayer::ResumePlaybackAfterKeyAdded() {
+  DVLOG(1) << __FUNCTION__;
+  DCHECK(is_waiting_for_key_ || key_added_while_decode_pending_);
 
   is_waiting_for_key_ = false;
+  key_added_while_decode_pending_ = false;
+
+  // StartInternal() will trigger a prefetch, where in most cases we'll just
+  // use previously received data.
   if (playing_)
     StartInternal();
 }
 
 void MediaSourcePlayer::OnCdmUnset() {
   DVLOG(1) << __FUNCTION__;
-  // TODO(xhwang): Support detachment of CDM. This will be needed when we start
-  // to support setMediaKeys(0) (see http://crbug.com/330324), or when we
-  // release MediaDrm when the video is paused, or when the device goes to
-  // sleep (see http://crbug.com/272421).
-  NOTREACHED() << "CDM detachment not supported.";
   DCHECK(drm_bridge_);
+  // TODO(xhwang): Currently this is only called during teardown. Support full
+  // detachment of CDM during playback. This will be needed when we start to
+  // support setMediaKeys(0) (see http://crbug.com/330324), or when we release
+  // MediaDrm when the video is paused, or when the device goes to sleep (see
+  // http://crbug.com/272421).
   audio_decoder_job_->SetDrmBridge(NULL);
   video_decoder_job_->SetDrmBridge(NULL);
+  cdm_registration_id_ = 0;
   drm_bridge_ = NULL;
 }
 

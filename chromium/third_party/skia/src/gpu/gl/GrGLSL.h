@@ -35,6 +35,14 @@ enum GrGLSLGeneration {
      * Desktop GLSL 1.50
      */
     k150_GrGLSLGeneration,
+    /**
+     * Desktop GLSL 3.30, and ES GLSL 3.00
+     */
+    k330_GrGLSLGeneration,
+    /**
+     * ES GLSL 3.10 only TODO Make GLSLCap objects to make this more granular
+     */
+    k310es_GrGLSLGeneration,
 };
 
 /**
@@ -310,10 +318,9 @@ private:
 
 /**
  * Does an inplace mul, *=, of vec4VarName by mulFactor.
- * A semicolon and newline are added after the assignment.
+ * A semicolon is added after the assignment.
  */
-void GrGLSLMulVarBy4f(SkString* outAppend, unsigned tabCnt,
-                      const char* vec4VarName, const GrGLSLExpr4& mulFactor);
+void GrGLSLMulVarBy4f(SkString* outAppend, const char* vec4VarName, const GrGLSLExpr4& mulFactor);
 
 #include "GrGLSL_impl.h"
 

@@ -28,8 +28,8 @@
 #include "config.h"
 #include "core/html/forms/InputType.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/InputTypeNames.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/NodeRenderStyle.h"
@@ -42,6 +42,7 @@
 #include "core/html/HTMLShadowElement.h"
 #include "core/html/forms/ButtonInputType.h"
 #include "core/html/forms/CheckboxInputType.h"
+#include "core/html/forms/ColorChooser.h"
 #include "core/html/forms/ColorInputType.h"
 #include "core/html/forms/DateInputType.h"
 #include "core/html/forms/DateTimeLocalInputType.h"
@@ -65,12 +66,11 @@
 #include "core/html/forms/WeekInputType.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
-#include "platform/ColorChooser.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextBreakIterator.h"
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
@@ -138,16 +138,6 @@ InputType::~InputType()
 }
 
 bool InputType::isTextField() const
-{
-    return false;
-}
-
-bool InputType::isTextType() const
-{
-    return false;
-}
-
-bool InputType::isRangeControl() const
 {
     return false;
 }
@@ -240,6 +230,16 @@ bool InputType::valueMissing(const String&) const
 }
 
 bool InputType::hasBadInput() const
+{
+    return false;
+}
+
+bool InputType::tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const
+{
+    return false;
+}
+
+bool InputType::tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const
 {
     return false;
 }
@@ -375,6 +375,9 @@ String InputType::validationMessage() const
     if (element().tooLong())
         return locale().validationMessageTooLongText(value.length(), element().maxLength());
 
+    if (element().tooShort())
+        return locale().validationMessageTooShortText(value.length(), element().minLength());
+
     if (!isSteppable())
         return emptyString();
 
@@ -439,7 +442,7 @@ Chrome* InputType::chrome() const
 {
     if (FrameHost* host = element().document().frameHost())
         return &host->chrome();
-    return 0;
+    return nullptr;
 }
 
 Locale& InputType::locale() const
@@ -463,11 +466,6 @@ bool InputType::isKeyboardFocusable() const
 }
 
 bool InputType::shouldShowFocusRingOnMouseFocus() const
-{
-    return false;
-}
-
-bool InputType::shouldUseInputMethod() const
 {
     return false;
 }
@@ -510,10 +508,10 @@ bool InputType::rendererIsNeeded()
 
 FileList* InputType::files()
 {
-    return 0;
+    return nullptr;
 }
 
-void InputType::setFiles(PassRefPtrWillBeRawPtr<FileList>)
+void InputType::setFiles(FileList*)
 {
 }
 
@@ -555,7 +553,7 @@ bool InputType::shouldDispatchFormControlChangeEvent(String& oldValue, String& n
 void InputType::setValue(const String& sanitizedValue, bool valueChanged, TextFieldEventBehavior eventBehavior)
 {
     element().setValueInternal(sanitizedValue, eventBehavior);
-    element().setNeedsStyleRecalc(SubtreeStyleChange);
+    element().setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ControlValue));
     if (!valueChanged)
         return;
     switch (eventBehavior) {
@@ -591,6 +589,18 @@ String InputType::sanitizeValue(const String& proposedValue) const
     return proposedValue;
 }
 
+void InputType::warnIfValueIsInvalidAndElementIsVisible(const String& value) const
+{
+    // Don't warn if the value is set in Modernizr.
+    RenderStyle* style = element().renderStyle();
+    if (style && style->visibility() != HIDDEN)
+        warnIfValueIsInvalid(value);
+}
+
+void InputType::warnIfValueIsInvalid(const String&) const
+{
+}
+
 bool InputType::receiveDroppedFiles(const DragData*)
 {
     ASSERT_NOT_REACHED();
@@ -618,89 +628,9 @@ bool InputType::isTextButton() const
     return false;
 }
 
-bool InputType::isRadioButton() const
-{
-    return false;
-}
-
-bool InputType::isSearchField() const
-{
-    return false;
-}
-
-bool InputType::isHiddenType() const
-{
-    return false;
-}
-
-bool InputType::isPasswordField() const
-{
-    return false;
-}
-
-bool InputType::isCheckbox() const
-{
-    return false;
-}
-
-bool InputType::isEmailField() const
-{
-    return false;
-}
-
-bool InputType::isFileUpload() const
-{
-    return false;
-}
-
-bool InputType::isImageButton() const
-{
-    return false;
-}
-
 bool InputType::isInteractiveContent() const
 {
     return true;
-}
-
-bool InputType::isNumberField() const
-{
-    return false;
-}
-
-bool InputType::isTelephoneField() const
-{
-    return false;
-}
-
-bool InputType::isURLField() const
-{
-    return false;
-}
-
-bool InputType::isDateField() const
-{
-    return false;
-}
-
-bool InputType::isDateTimeLocalField() const
-{
-    return false;
-}
-
-bool InputType::isMonthField() const
-{
-    return false;
-}
-
-bool InputType::isTimeField() const
-{
-    return false;
-}
-
-bool InputType::isWeekField() const
-{
-    return false;
 }
 
 bool InputType::isEnumeratable()
@@ -718,14 +648,19 @@ bool InputType::isSteppable() const
     return false;
 }
 
-bool InputType::isColorControl() const
+bool InputType::shouldRespectHeightAndWidthAttributes()
 {
     return false;
 }
 
-bool InputType::shouldRespectHeightAndWidthAttributes()
+int InputType::maxLength() const
 {
-    return false;
+    return HTMLInputElement::maximumLength;
+}
+
+int InputType::minLength() const
+{
+    return 0;
 }
 
 bool InputType::supportsPlaceholder() const
@@ -763,7 +698,7 @@ const QualifiedName& InputType::subResourceAttributeName() const
     return QualifiedName::null();
 }
 
-bool InputType::supportsIndeterminateAppearance() const
+bool InputType::shouldAppearIndeterminate() const
 {
     return false;
 }
@@ -786,6 +721,16 @@ unsigned InputType::height() const
 unsigned InputType::width() const
 {
     return 0;
+}
+
+TextDirection InputType::computedTextDirection()
+{
+    return element().computedStyle()->direction();
+}
+
+ColorChooserClient* InputType::colorChooserClient()
+{
+    return nullptr;
 }
 
 void InputType::applyStep(const Decimal& current, int count, AnyStepHandling anyStepHandling, TextFieldEventBehavior eventBehavior, ExceptionState& exceptionState)
@@ -815,7 +760,7 @@ void InputType::applyStep(const Decimal& current, int count, AnyStepHandling any
         if (count < 0)
             newValue = base + ((current - base) / step).floor() * step;
         else if (count > 0)
-            newValue = base + ((current - base) / step).ceiling() * step;
+            newValue = base + ((current - base) / step).ceil() * step;
         else
             newValue = current;
 
@@ -847,7 +792,7 @@ void InputType::applyStep(const Decimal& current, int count, AnyStepHandling any
         setValueAsDecimal(newValue, eventBehavior, exceptionState);
     }
     if (AXObjectCache* cache = element().document().existingAXObjectCache())
-        cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
+        cache->handleValueChanged(&element());
 }
 
 bool InputType::getAllowedValueStep(Decimal* step) const
@@ -970,4 +915,4 @@ StepRange InputType::createStepRange(AnyStepHandling anyStepHandling, const Deci
     return StepRange(stepBase, minimum, maximum, step, stepDescription);
 }
 
-} // namespace WebCore
+} // namespace blink

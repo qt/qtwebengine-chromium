@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-var Capabilities = {
-    isMainFrontend: false,
-    canProfilePower: false,
-}
-
 /**
  * @constructor
  */
@@ -47,6 +42,7 @@ WebInspector.Settings = function()
     this.eventListenersFilter = this.createSetting("eventListenersFilter", "all");
     this.lastViewedScriptFile = this.createSetting("lastViewedScriptFile", "application");
     this.monitoringXHREnabled = this.createSetting("monitoringXHREnabled", false);
+    this.hideNetworkMessages = this.createSetting("hideNetworkMessages", false);
     this.preserveConsoleLog = this.createSetting("preserveConsoleLog", false);
     this.consoleTimestampsEnabled = this.createSetting("consoleTimestampsEnabled", false);
     this.resourcesLargeRows = this.createSetting("resourcesLargeRows", true);
@@ -66,6 +62,7 @@ WebInspector.Settings = function()
     this.savedURLs = this.createSetting("savedURLs", {});
     this.javaScriptDisabled = this.createSetting("javaScriptDisabled", false);
     this.showAdvancedHeapSnapshotProperties = this.createSetting("showAdvancedHeapSnapshotProperties", false);
+    this.recordAllocationStacks = this.createSetting("recordAllocationStacks", false);
     this.highResolutionCpuProfiling = this.createSetting("highResolutionCpuProfiling", false);
     this.searchInContentScripts = this.createSetting("searchInContentScripts", false);
     this.textEditorIndent = this.createSetting("textEditorIndent", "    ");
@@ -85,12 +82,22 @@ WebInspector.Settings = function()
     this.visiblePanels = this.createSetting("visiblePanels", {});
     this.shortcutPanelSwitch = this.createSetting("shortcutPanelSwitch", false);
     this.showWhitespacesInEditor = this.createSetting("showWhitespacesInEditor", false);
-    this.skipStackFramesSwitch = this.createSetting("skipStackFramesSwitch", false);
     this.skipStackFramesPattern = this.createRegExpSetting("skipStackFramesPattern", "");
+    this.skipContentScripts = this.createSetting("skipContentScripts", false);
     this.pauseOnExceptionEnabled = this.createSetting("pauseOnExceptionEnabled", false);
     this.pauseOnCaughtException = this.createSetting("pauseOnCaughtException", false);
     this.enableAsyncStackTraces = this.createSetting("enableAsyncStackTraces", false);
     this.showMediaQueryInspector = this.createSetting("showMediaQueryInspector", false);
+    this.disableOverridesWarning = this.createSetting("disableOverridesWarning", false);
+    this.testPath = this.createSetting("testPath", "");
+    this.frameViewerHideChromeWindow = this.createSetting("frameViewerHideChromeWindow", false);
+
+    // Rendering options
+    this.showPaintRects = this.createSetting("showPaintRects", false);
+    this.showDebugBorders = this.createSetting("showDebugBorders", false);
+    this.showFPSCounter = this.createSetting("showFPSCounter", false);
+    this.continuousPainting = this.createSetting("continuousPainting", false);
+    this.showScrollBottleneckRects = this.createSetting("showScrollBottleneckRects", false);
 }
 
 WebInspector.Settings.prototype = {
@@ -117,28 +124,6 @@ WebInspector.Settings.prototype = {
         if (!this._registry[key])
             this._registry[key] = new WebInspector.RegExpSetting(key, defaultValue, this._eventSupport, window.localStorage, regexFlags);
         return this._registry[key];
-    },
-
-    /**
-     * @param {string} key
-     * @param {*} defaultValue
-     * @param {function(*, function(string, ...))} setterCallback
-     * @return {!WebInspector.Setting}
-     */
-    createBackendSetting: function(key, defaultValue, setterCallback)
-    {
-        if (!this._registry[key])
-            this._registry[key] = new WebInspector.BackendSetting(key, defaultValue, this._eventSupport, window.localStorage, setterCallback);
-        return this._registry[key];
-    },
-
-    initializeBackendSettings: function()
-    {
-        this.showPaintRects = WebInspector.settings.createBackendSetting("showPaintRects", false, PageAgent.setShowPaintRects.bind(PageAgent));
-        this.showDebugBorders = WebInspector.settings.createBackendSetting("showDebugBorders", false, PageAgent.setShowDebugBorders.bind(PageAgent));
-        this.continuousPainting = WebInspector.settings.createBackendSetting("continuousPainting", false, PageAgent.setContinuousPaintingEnabled.bind(PageAgent));
-        this.showFPSCounter = WebInspector.settings.createBackendSetting("showFPSCounter", false, PageAgent.setShowFPSCounter.bind(PageAgent));
-        this.showScrollBottleneckRects = WebInspector.settings.createBackendSetting("showScrollBottleneckRects", false, PageAgent.setShowScrollBottleneckRects.bind(PageAgent));
     }
 }
 
@@ -201,18 +186,54 @@ WebInspector.Setting.prototype = {
         return this._value;
     },
 
+    /**
+     * @param {V} value
+     */
     set: function(value)
     {
         this._value = value;
         if (this._storage) {
             try {
-                this._storage[this._name] = JSON.stringify(value);
+                var settingString = JSON.stringify(value);
+                try {
+                    this._storage[this._name] = settingString;
+                } catch(e) {
+                    this._printSettingsSavingError(e.message, this._name, settingString);
+                }
             } catch(e) {
-                console.error("Error saving setting with name:" + this._name);
+                WebInspector.console.error("Cannot stringify setting with name: " + this._name + ", error: " + e.message);
             }
         }
         this._eventSupport.dispatchEventToListeners(this._name, value);
-    }
+    },
+
+    /**
+     * @param {string} message
+     * @param {string} name
+     * @param {string} value
+     */
+    _printSettingsSavingError: function(message, name, value)
+    {
+        var errorMessage = "Error saving setting with name: " + this._name + ", value length: " + value.length + ". Error: " + message;
+        console.error(errorMessage);
+        WebInspector.console.error(errorMessage);
+        WebInspector.console.log("Ten largest settings: ");
+
+        var sizes = { __proto__: null };
+        for (var key in this._storage)
+            sizes[key] = this._storage.getItem(key).length;
+        var keys = Object.keys(sizes);
+
+        function comparator(key1, key2)
+        {
+            return sizes[key2] - sizes[key1];
+        }
+
+        keys.sort(comparator);
+
+        for (var i = 0; i < 10 && i < keys.length; ++i)
+            WebInspector.console.log("Setting: '" + keys[i] + "', size: " + sizes[keys[i]]);
+    },
 }
 
 /**
@@ -226,12 +247,48 @@ WebInspector.Setting.prototype = {
  */
 WebInspector.RegExpSetting = function(name, defaultValue, eventSupport, storage, regexFlags)
 {
-    WebInspector.Setting.call(this, name, defaultValue, eventSupport, storage);
+    WebInspector.Setting.call(this, name, defaultValue ? [{ pattern: defaultValue }] : [], eventSupport, storage);
     this._regexFlags = regexFlags;
 }
 
 WebInspector.RegExpSetting.prototype = {
+    /**
+     * @override
+     * @return {string}
+     */
+    get: function()
+    {
+        var result = [];
+        var items = this.getAsArray();
+        for (var i = 0; i < items.length; ++i) {
+            var item = items[i];
+            if (item.pattern && !item.disabled)
+                result.push(item.pattern);
+        }
+        return result.join("|");
+    },
+
+    /**
+     * @return {!Array.<{pattern: string, disabled: (boolean|undefined)}>}
+     */
+    getAsArray: function()
+    {
+        return WebInspector.Setting.prototype.get.call(this);
+    },
+
+    /**
+     * @override
+     * @param {string} value
+     */
     set: function(value)
+    {
+        this.setAsArray([{ pattern: value }]);
+    },
+
+    /**
+     * @param {!Array.<{pattern: string, disabled: (boolean|undefined)}>} value
+     */
+    setAsArray: function(value)
     {
         delete this._regex;
         WebInspector.Setting.prototype.set.call(this, value);
@@ -246,7 +303,9 @@ WebInspector.RegExpSetting.prototype = {
             return this._regex;
         this._regex = null;
         try {
-            this._regex = new RegExp(this.get(), this._regexFlags || "");
+            var pattern = this.get();
+            if (pattern)
+                this._regex = new RegExp(pattern, this._regexFlags || "");
         } catch (e) {
         }
         return this._regex;
@@ -257,229 +316,12 @@ WebInspector.RegExpSetting.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.Setting}
- * @param {string} name
- * @param {*} defaultValue
- * @param {!WebInspector.Object} eventSupport
- * @param {?Storage} storage
- * @param {function(*,function(string, ...))} setterCallback
- */
-WebInspector.BackendSetting = function(name, defaultValue, eventSupport, storage, setterCallback)
-{
-    WebInspector.Setting.call(this, name, defaultValue, eventSupport, storage);
-    this._setterCallback = setterCallback;
-    var currentValue = this.get();
-    if (currentValue !== defaultValue)
-        this.set(currentValue);
-}
-
-WebInspector.BackendSetting.prototype = {
-    set: function(value)
-    {
-        /**
-         * @param {?Protocol.Error} error
-         * @this {WebInspector.BackendSetting}
-         */
-        function callback(error)
-        {
-            if (error) {
-                WebInspector.messageSink.addErrorMessage("Error applying setting " + this._name + ": " + error);
-                this._eventSupport.dispatchEventToListeners(this._name, this._value);
-                return;
-            }
-            WebInspector.Setting.prototype.set.call(this, value);
-        }
-        this._setterCallback(value, callback.bind(this));
-    },
-
-    __proto__: WebInspector.Setting.prototype
-}
-
-/**
- * @constructor
- * @param {boolean} experimentsEnabled
- */
-WebInspector.ExperimentsSettings = function(experimentsEnabled)
-{
-    this._experimentsEnabled = experimentsEnabled;
-    this._setting = WebInspector.settings.createSetting("experiments", {});
-    this._experiments = [];
-    this._enabledForTest = {};
-
-    // Add currently running experiments here.
-    this.applyCustomStylesheet = this._createExperiment("applyCustomStylesheet", "Allow custom UI themes");
-    this.canvasInspection = this._createExperiment("canvasInspection ", "Canvas inspection");
-    this.devicesPanel = this._createExperiment("devicesPanel", "Devices panel", true);
-    this.disableAgentsWhenProfile = this._createExperiment("disableAgentsWhenProfile", "Disable other agents and UI when profiler is active", true);
-    this.dockToLeft = this._createExperiment("dockToLeft", "Dock to left", true);
-    this.editorInDrawer = this._createExperiment("showEditorInDrawer", "Editor in drawer", true);
-    this.fileSystemInspection = this._createExperiment("fileSystemInspection", "FileSystem inspection");
-    this.frameworksDebuggingSupport = this._createExperiment("frameworksDebuggingSupport", "JavaScript frameworks debugging");
-    this.gpuTimeline = this._createExperiment("gpuTimeline", "GPU data on timeline", true);
-    this.heapAllocationProfiler = this._createExperiment("allocationProfiler", "Heap allocation profiler");
-    this.heapSnapshotStatistics = this._createExperiment("heapSnapshotStatistics", "Heap snapshot statistics", true);
-    this.layersPanel = this._createExperiment("layersPanel", "Layers panel", true);
-    this.networkConditions = this._createExperiment("networkConditions", "Network conditions", true);
-    this.responsiveDesign = this._createExperiment("responsiveDesign", "Responsive design");
-    this.timelineFlameChart = this._createExperiment("timelineFlameChart", "Timeline flame chart");
-    this.timelineOnTraceEvents = this._createExperiment("timelineOnTraceEvents", "Timeline on trace events", true);
-    this.timelinePowerProfiler = this._createExperiment("timelinePowerProfiler", "Timeline power profiler");
-    this.timelineTracingMode = this._createExperiment("timelineTracingMode", "Timeline tracing mode");
-    this.timelineJSCPUProfile = this._createExperiment("timelineJSCPUProfile", "Timeline with JS sampling");
-    this.timelineNoLiveUpdate = this._createExperiment("timelineNoLiveUpdate", "Timeline w/o live update", true);
-    this.workersInMainWindow = this._createExperiment("workersInMainWindow", "Workers in main window", true);
-
-    this._cleanUpSetting();
-}
-
-WebInspector.ExperimentsSettings.prototype = {
-    /**
-     * @return {!Array.<!WebInspector.Experiment>}
-     */
-    get experiments()
-    {
-        return this._experiments.slice();
-    },
-
-    /**
-     * @return {boolean}
-     */
-    get experimentsEnabled()
-    {
-        return this._experimentsEnabled;
-    },
-
-    /**
-     * @param {string} experimentName
-     * @param {string} experimentTitle
-     * @param {boolean=} hidden
-     * @return {!WebInspector.Experiment}
-     */
-    _createExperiment: function(experimentName, experimentTitle, hidden)
-    {
-        var experiment = new WebInspector.Experiment(this, experimentName, experimentTitle, !!hidden);
-        this._experiments.push(experiment);
-        return experiment;
-    },
-
-    /**
-     * @param {string} experimentName
-     * @return {boolean}
-     */
-    isEnabled: function(experimentName)
-    {
-        if (this._enabledForTest[experimentName])
-            return true;
-
-        if (!this.experimentsEnabled)
-            return false;
-
-        var experimentsSetting = this._setting.get();
-        return experimentsSetting[experimentName];
-    },
-
-    /**
-     * @param {string} experimentName
-     * @param {boolean} enabled
-     */
-    setEnabled: function(experimentName, enabled)
-    {
-        var experimentsSetting = this._setting.get();
-        experimentsSetting[experimentName] = enabled;
-        this._setting.set(experimentsSetting);
-    },
-
-    /**
-     * @param {string} experimentName
-     */
-    _enableForTest: function(experimentName)
-    {
-        this._enabledForTest[experimentName] = true;
-    },
-
-    _cleanUpSetting: function()
-    {
-        var experimentsSetting = this._setting.get();
-        var cleanedUpExperimentSetting = {};
-        for (var i = 0; i < this._experiments.length; ++i) {
-            var experimentName = this._experiments[i].name;
-            if (experimentsSetting[experimentName])
-                cleanedUpExperimentSetting[experimentName] = true;
-        }
-        this._setting.set(cleanedUpExperimentSetting);
-    }
-}
-
-/**
- * @constructor
- * @param {!WebInspector.ExperimentsSettings} experimentsSettings
- * @param {string} name
- * @param {string} title
- * @param {boolean} hidden
- */
-WebInspector.Experiment = function(experimentsSettings, name, title, hidden)
-{
-    this._name = name;
-    this._title = title;
-    this._hidden = hidden;
-    this._experimentsSettings = experimentsSettings;
-}
-
-WebInspector.Experiment.prototype = {
-    /**
-     * @return {string}
-     */
-    get name()
-    {
-        return this._name;
-    },
-
-    /**
-     * @return {string}
-     */
-    get title()
-    {
-        return this._title;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    get hidden()
-    {
-        return this._hidden;
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isEnabled: function()
-    {
-        return this._experimentsSettings.isEnabled(this._name);
-    },
-
-    /**
-     * @param {boolean} enabled
-     */
-    setEnabled: function(enabled)
-    {
-        this._experimentsSettings.setEnabled(this._name, enabled);
-    },
-
-    enableForTest: function()
-    {
-        this._experimentsSettings._enableForTest(this._name);
-    }
-}
-
-/**
- * @constructor
  */
 WebInspector.VersionController = function()
 {
 }
 
-WebInspector.VersionController.currentVersion = 8;
+WebInspector.VersionController.currentVersion = 10;
 
 WebInspector.VersionController.prototype = {
     updateVersion: function()
@@ -621,7 +463,6 @@ WebInspector.VersionController.prototype = {
             "sourcesPanelNavigatorSplitViewState": "sourcesPanelNavigatorSplitViewState",
             "elementsPanelSplitViewState": "elementsPanelSplitViewState",
             "canvasProfileViewReplaySplitViewState": "canvasProfileViewReplaySplitViewState",
-            "editorInDrawerSplitViewState": "editorInDrawerSplitViewState",
             "stylesPaneSplitViewState": "stylesPaneSplitViewState",
             "sourcesPanelDebuggerSidebarSplitViewState": "sourcesPanelDebuggerSidebarSplitViewState"
         };
@@ -666,6 +507,47 @@ WebInspector.VersionController.prototype = {
         setting.set(value);
     },
 
+    _updateVersionFrom8To9: function()
+    {
+        if (!window.localStorage)
+            return;
+
+        var settingNames = [
+            "skipStackFramesPattern",
+            "workspaceFolderExcludePattern"
+        ];
+
+        for (var i = 0; i < settingNames.length; ++i) {
+            var settingName = settingNames[i];
+            if (!(settingName in window.localStorage))
+                continue;
+            try {
+                var value = JSON.parse(window.localStorage[settingName]);
+                if (!value)
+                    continue;
+                if (typeof value === "string")
+                    value = [value];
+                for (var j = 0; j < value.length; ++j) {
+                    if (typeof value[j] === "string")
+                        value[j] = { pattern: value[j] };
+                }
+                window.localStorage[settingName] = JSON.stringify(value);
+            } catch(e) {
+            }
+        }
+    },
+
+    _updateVersionFrom9To10: function()
+    {
+        if (!window.localStorage)
+            return;
+
+        for (var key in window.localStorage) {
+            if (key.startsWith("revision-history"))
+                window.localStorage.removeItem(key);
+        }
+    },
+
     /**
      * @param {!WebInspector.Setting} breakpointsSetting
      * @param {number} maxBreakpointsCount
@@ -683,11 +565,6 @@ WebInspector.VersionController.prototype = {
  * @type {!WebInspector.Settings}
  */
 WebInspector.settings;
-
-/**
- * @type {!WebInspector.ExperimentsSettings}
- */
-WebInspector.experimentsSettings;
 
 // These methods are added for backwards compatibility with Devtools CodeSchool extension.
 // DO NOT REMOVE

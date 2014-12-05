@@ -26,9 +26,9 @@
 #ifndef ContentSecurityPolicy_h
 #define ContentSecurityPolicy_h
 
-#include "bindings/v8/ScriptState.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/frame/ConsoleTypes.h"
 #include "platform/network/ContentSecurityPolicyParsers.h"
 #include "platform/network/HTTPParsers.h"
 #include "platform/weborigin/ReferrerPolicy.h"
@@ -45,17 +45,19 @@ namespace WTF {
 class OrdinalNumber;
 }
 
-namespace WebCore {
+namespace blink {
 
 class ContentSecurityPolicyResponseHeaders;
+class ConsoleMessage;
 class CSPDirectiveList;
-class DOMStringList;
-class JSONObject;
+class CSPSource;
+class Document;
 class KURL;
 class SecurityOrigin;
 
 typedef int SandboxFlags;
 typedef Vector<OwnPtr<CSPDirectiveList> > CSPDirectiveListVector;
+typedef WillBePersistentHeapVector<RefPtrWillBeMember<ConsoleMessage> > ConsoleMessageVector;
 
 class ContentSecurityPolicy : public RefCounted<ContentSecurityPolicy> {
     WTF_MAKE_FAST_ALLOCATED;
@@ -73,7 +75,7 @@ public:
     static const char ScriptSrc[];
     static const char StyleSrc[];
 
-    // CSP 1.1 Directives
+    // CSP Level 2 Directives
     static const char BaseURI[];
     static const char ChildSrc[];
     static const char FormAction[];
@@ -82,18 +84,23 @@ public:
     static const char ReflectedXSS[];
     static const char Referrer[];
 
-    static PassRefPtr<ContentSecurityPolicy> create(ExecutionContext* executionContext)
-    {
-        return adoptRef(new ContentSecurityPolicy(executionContext));
-    }
-    ~ContentSecurityPolicy();
-
-    void copyStateFrom(const ContentSecurityPolicy*);
+    // Manifest Directives (to be merged into CSP Level 2)
+    // https://w3c.github.io/manifest/#content-security-policy
+    static const char ManifestSrc[];
 
     enum ReportingStatus {
         SendReport,
         SuppressReport
     };
+
+    static PassRefPtr<ContentSecurityPolicy> create()
+    {
+        return adoptRef(new ContentSecurityPolicy());
+    }
+    ~ContentSecurityPolicy();
+
+    void bindToExecutionContext(ExecutionContext*);
+    void copyStateFrom(const ContentSecurityPolicy*);
 
     void didReceiveHeaders(const ContentSecurityPolicyResponseHeaders&);
     void didReceiveHeader(const String&, ContentSecurityPolicyHeaderType, ContentSecurityPolicyHeaderSource);
@@ -120,16 +127,22 @@ public:
     bool allowConnectToSource(const KURL&, ReportingStatus = SendReport) const;
     bool allowFormAction(const KURL&, ReportingStatus = SendReport) const;
     bool allowBaseURI(const KURL&, ReportingStatus = SendReport) const;
-    bool allowAncestors(LocalFrame*, ReportingStatus = SendReport) const;
+    bool allowAncestors(LocalFrame*, const KURL&, ReportingStatus = SendReport) const;
     bool allowChildContextFromSource(const KURL&, ReportingStatus = SendReport) const;
     bool allowWorkerContextFromSource(const KURL&, ReportingStatus = SendReport) const;
 
+    bool allowManifestFromSource(const KURL&, ReportingStatus = SendReport) const;
+
     // The nonce and hash allow functions are guaranteed to not have any side
     // effects, including reporting.
-    bool allowScriptNonce(const String& nonce) const;
-    bool allowStyleNonce(const String& nonce) const;
-    bool allowScriptHash(const String& source) const;
-    bool allowStyleHash(const String& source) const;
+    // Nonce/Hash functions check all policies relating to use of a script/style
+    // with the given nonce/hash and return true all CSP policies allow it.
+    // If these return true, callers can then process the content or
+    // issue a load and be safe disabling any further CSP checks.
+    bool allowScriptWithNonce(const String& nonce) const;
+    bool allowStyleWithNonce(const String& nonce) const;
+    bool allowScriptWithHash(const String& source) const;
+    bool allowStyleWithHash(const String& source) const;
 
     void usesScriptHashAlgorithms(uint8_t ContentSecurityPolicyHashAlgorithm);
     void usesStyleHashAlgorithms(uint8_t ContentSecurityPolicyHashAlgorithm);
@@ -140,32 +153,42 @@ public:
     bool didSetReferrerPolicy() const;
 
     void setOverrideAllowInlineStyle(bool);
+    void setOverrideURLForSelf(const KURL&);
 
     bool isActive() const;
 
-    void reportDirectiveAsSourceExpression(const String& directiveName, const String& sourceExpression) const;
-    void reportDuplicateDirective(const String&) const;
-    void reportInvalidDirectiveValueCharacter(const String& directiveName, const String& value) const;
-    void reportInvalidPathCharacter(const String& directiveName, const String& value, const char) const;
-    void reportInvalidPluginTypes(const String&) const;
-    void reportInvalidSandboxFlags(const String&) const;
-    void reportInvalidSourceExpression(const String& directiveName, const String& source) const;
-    void reportInvalidReflectedXSS(const String&) const;
-    void reportMissingReportURI(const String&) const;
-    void reportUnsupportedDirective(const String&) const;
-    void reportInvalidInReportOnly(const String&) const;
-    void reportInvalidReferrer(const String&) const;
-    void reportReportOnlyInMeta(const String&) const;
-    void reportMetaOutsideHead(const String&) const;
-    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<KURL>& reportURIs, const String& header);
+    // If a frame is passed in, the message will be logged to its active document's console.
+    // Otherwise, the message will be logged to this object's |m_executionContext|.
+    void logToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>, LocalFrame* = 0);
+
+    void reportDirectiveAsSourceExpression(const String& directiveName, const String& sourceExpression);
+    void reportDuplicateDirective(const String&);
+    void reportInvalidDirectiveValueCharacter(const String& directiveName, const String& value);
+    void reportInvalidPathCharacter(const String& directiveName, const String& value, const char);
+    void reportInvalidPluginTypes(const String&);
+    void reportInvalidSandboxFlags(const String&);
+    void reportInvalidSourceExpression(const String& directiveName, const String& source);
+    void reportInvalidReflectedXSS(const String&);
+    void reportMissingReportURI(const String&);
+    void reportUnsupportedDirective(const String&);
+    void reportInvalidInReportOnly(const String&);
+    void reportInvalidReferrer(const String&);
+    void reportReportOnlyInMeta(const String&);
+    void reportMetaOutsideHead(const String&);
+
+    // If a frame is passed in, the report will be sent using it as a context. If no frame is
+    // passed in, the report will be sent via this object's |m_executionContext| (or dropped
+    // on the floor if no such context is available).
+    void reportViolation(const String& directiveText, const String& effectiveDirective, const String& consoleMessage, const KURL& blockedURL, const Vector<String>& reportEndpoints, const String& header, LocalFrame* = 0);
 
     void reportBlockedScriptExecutionToInspector(const String& directiveText) const;
 
     const KURL url() const;
-    KURL completeURL(const String&) const;
-    SecurityOrigin* securityOrigin() const;
-    void enforceSandboxFlags(SandboxFlags) const;
+    void enforceSandboxFlags(SandboxFlags);
     String evalDisabledErrorMessage() const;
+
+    bool urlMatchesSelf(const KURL&) const;
+    bool protocolMatchesSelf(const KURL&) const;
 
     bool experimentalFeaturesEnabled() const;
 
@@ -173,13 +196,16 @@ public:
 
     static bool isDirectiveName(const String&);
 
-    ExecutionContext* executionContext() const { return m_executionContext; }
-    Document* document() const { return m_executionContext->isDocument() ? toDocument(m_executionContext) : 0; }
-
 private:
-    explicit ContentSecurityPolicy(ExecutionContext*);
+    ContentSecurityPolicy();
 
-    void logToConsole(const String& message) const;
+    void applyPolicySideEffectsToExecutionContext();
+
+    Document* document() const;
+    SecurityOrigin* securityOrigin() const;
+    KURL completeURL(const String&) const;
+
+    void logToConsole(const String& message, MessageLevel = ErrorMessageLevel);
     void addPolicyFromHeaderValue(const String&, ContentSecurityPolicyHeaderType, ContentSecurityPolicyHeaderSource);
 
     bool shouldSendViolationReport(const String&) const;
@@ -188,6 +214,7 @@ private:
     ExecutionContext* m_executionContext;
     bool m_overrideInlineStyleAllowed;
     CSPDirectiveListVector m_policies;
+    ConsoleMessageVector m_consoleMessages;
 
     HashSet<unsigned, AlreadyHashed> m_violationReportsSent;
 
@@ -196,6 +223,14 @@ private:
     // for validation.
     uint8_t m_scriptHashAlgorithmsUsed;
     uint8_t m_styleHashAlgorithmsUsed;
+
+    // State flags used to configure the environment after parsing a policy.
+    SandboxFlags m_sandboxMask;
+    ReferrerPolicy m_referrerPolicy;
+    String m_disableEvalErrorMessage;
+
+    OwnPtr<CSPSource> m_selfSource;
+    String m_selfProtocol;
 };
 
 }

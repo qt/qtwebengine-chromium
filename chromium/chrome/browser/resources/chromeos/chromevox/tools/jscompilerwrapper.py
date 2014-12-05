@@ -19,8 +19,8 @@ _CHROME_SOURCE_DIR = os.path.normpath(
 
 # Compiler path.
 _CLOSURE_COMPILER_JAR = os.path.join(
-    _CHROME_SOURCE_DIR, 'third_party', 'WebKit', 'Source', 'devtools',
-    'scripts', 'closure', 'compiler.jar')
+    _CHROME_SOURCE_DIR, 'third_party', 'closure_compiler', 'compiler',
+    'compiler.jar')
 
 # List of compilation errors to enable with the --jscomp_errors flag.
 _JSCOMP_ERRORS = [ 'accessControls', 'checkTypes', 'checkVars', 'invalidCasts',
@@ -55,7 +55,7 @@ def _CheckJava():
   output = _ExecuteCommand([_java_executable, '-version'])
   match = re.search(r'version "(?:\d+)\.(\d+)', output)
   if match is None or int(match.group(1)) < 7:
-    _error('Java 7 or later is required: \n%s' % output)
+    _Error('Java 7 or later is required: \n%s' % output)
 
 _CheckJava()
 

@@ -34,13 +34,16 @@
 #include "platform/graphics/ImageOrientation.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "third_party/skia/include/core/SkXfermode.h"
+#include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/RetainPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+class SkImage;
+
+namespace blink {
 
 class FloatPoint;
 class FloatRect;
@@ -68,6 +71,8 @@ public:
     virtual bool isBitmapImage() const { return false; }
     virtual bool currentFrameKnownToBeOpaque() = 0;
 
+    virtual PassRefPtr<SkImage> skImage();
+
     // Derived classes should override this if they can assure that the current
     // image frame contains only resources from its own security origin.
     virtual bool currentFrameHasSingleSecurityOrigin() const { return false; }
@@ -79,6 +84,10 @@ public:
     virtual bool usesContainerSize() const { return false; }
     virtual bool hasRelativeWidth() const { return false; }
     virtual bool hasRelativeHeight() const { return false; }
+
+    // Computes (extracts) the intrinsic dimensions and ratio from the Image. The intrinsic ratio
+    // will be the 'viewport' of the image. (Same as the dimensions for a raster image. For SVG
+    // images it can be the dimensions defined by the 'viewBox'.)
     virtual void computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio);
 
     virtual IntSize size() const = 0;
@@ -114,11 +123,13 @@ public:
 
     virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() { return nullptr; }
 
+    virtual PassRefPtr<Image> imageForDefaultFrame();
+
     virtual void drawPattern(GraphicsContext*, const FloatRect&,
         const FloatSize&, const FloatPoint& phase, CompositeOperator,
-        const FloatRect&, blink::WebBlendMode = blink::WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
+        const FloatRect&, WebBlendMode = WebBlendModeNormal, const IntSize& repeatSpacing = IntSize());
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     virtual bool notSolidColor() { return true; }
 #endif
 
@@ -128,10 +139,10 @@ protected:
     static void fillWithSolidColor(GraphicsContext*, const FloatRect& dstRect, const Color&, CompositeOperator);
     static FloatRect adjustForNegativeSize(const FloatRect&); // A helper method for translating negative width and height values.
 
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode) = 0;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode, RespectImageOrientationEnum);
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode) = 0;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatPoint& srcPoint, const FloatSize& tileSize,
-        CompositeOperator, blink::WebBlendMode, const IntSize& repeatSpacing);
+        CompositeOperator, WebBlendMode, const IntSize& repeatSpacing);
     void drawTiled(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, const FloatSize& tileScaleFactor, TileRule hRule, TileRule vRule, CompositeOperator);
 
     // Supporting tiled drawing
@@ -146,6 +157,6 @@ private:
 #define DEFINE_IMAGE_TYPE_CASTS(typeName) \
     DEFINE_TYPE_CASTS(typeName, Image, image, image->is##typeName(), image.is##typeName())
 
-}
+} // namespace blink
 
 #endif

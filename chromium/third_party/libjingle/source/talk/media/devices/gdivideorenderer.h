@@ -30,8 +30,8 @@
 #define TALK_MEDIA_DEVICES_GDIVIDEORENDERER_H_
 
 #ifdef WIN32
-#include "talk/base/scoped_ptr.h"
 #include "talk/media/base/videorenderer.h"
+#include "webrtc/base/scoped_ptr.h"
 
 namespace cricket {
 
@@ -48,7 +48,7 @@ class GdiVideoRenderer : public VideoRenderer {
 
  private:
   class VideoWindow;  // forward declaration, defined in the .cc file
-  talk_base::scoped_ptr<VideoWindow> window_;
+  rtc::scoped_ptr<VideoWindow> window_;
   // The initial position of the window.
   int initial_x_;
   int initial_y_;

@@ -43,7 +43,7 @@
   /**
    * URL to get latest wallpaper RSS feed.
    */
-  WallpaperRssURL: 'https://commondatastorage.googleapis.com/' +
+  WallpaperRssURL: 'https://storage.googleapis.com/' +
       'chromeos-wallpaper-public/wallpaper.rss',
 
   /**
@@ -59,7 +59,8 @@
       Online: 'ONLINE',
       OEM: 'OEM',
       Custom: 'CUSTOM',
-      AddNew: 'ADDNEW'
+      AddNew: 'ADDNEW',
+      Default: 'DEFAULT'
   },
 
   /**
@@ -70,5 +71,18 @@
   /**
    * Sync storage.
    */
-  WallpaperSyncStorage: chrome.storage.sync
+  WallpaperSyncStorage: chrome.storage.sync,
+
+  /**
+   * Suffix to append to file name if it is a thumbnail.
+   */
+  CustomWallpaperThumbnailSuffix: '_thumbnail',
+
+  /**
+   * Wallpaper directory enum.
+   */
+  WallpaperDirNameEnum: {
+      ORIGINAL: 'original',
+      THUMBNAIL: 'thumbnail'
+  }
 };

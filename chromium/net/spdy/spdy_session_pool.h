@@ -34,6 +34,7 @@ class ClientSocketHandle;
 class HostResolver;
 class HttpServerProperties;
 class SpdySession;
+class TransportSecurityState;
 
 // This is a very simple pool for open SpdySessions.
 class NET_EXPORT SpdySessionPool
@@ -50,6 +51,7 @@ class NET_EXPORT SpdySessionPool
       HostResolver* host_resolver,
       SSLConfigService* ssl_config_service,
       const base::WeakPtr<HttpServerProperties>& http_server_properties,
+      TransportSecurityState* transport_security_state,
       bool force_single_domain,
       bool enable_compression,
       bool enable_ping_based_connection_checking,
@@ -59,7 +61,7 @@ class NET_EXPORT SpdySessionPool
       size_t max_concurrent_streams_limit,
       SpdySessionPool::TimeFunc time_func,
       const std::string& trusted_spdy_proxy);
-  virtual ~SpdySessionPool();
+  ~SpdySessionPool() override;
 
   // In the functions below, a session is "available" if this pool has
   // a reference to it and there is some SpdySessionKey for which
@@ -131,19 +133,19 @@ class NET_EXPORT SpdySessionPool
   // We flush all idle sessions and release references to the active ones so
   // they won't get re-used.  The active ones will either complete successfully
   // or error out due to the IP address change.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // SSLConfigService::Observer methods:
 
   // We perform the same flushing as described above when SSL settings change.
-  virtual void OnSSLConfigChanged() OVERRIDE;
+  void OnSSLConfigChanged() override;
 
   // CertDatabase::Observer methods:
 
   // We perform the same flushing as described above when certificate database
   // is changed.
-  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
-  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
+  void OnCertAdded(const X509Certificate* cert) override;
+  void OnCACertChanged(const X509Certificate* cert) override;
 
  private:
   friend class SpdySessionPoolPeer;  // For testing.
@@ -190,6 +192,8 @@ class NET_EXPORT SpdySessionPool
       bool idle_only);
 
   const base::WeakPtr<HttpServerProperties> http_server_properties_;
+
+  TransportSecurityState* transport_security_state_;
 
   // The set of all sessions. This is a superset of the sessions in
   // |available_sessions_|.

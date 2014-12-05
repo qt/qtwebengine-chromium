@@ -5,65 +5,54 @@
 #include <string>
 
 #include "base/message_loop/message_loop.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_host.h"
+#include "content/browser/appcache/appcache_update_job.h"
 #include "content/browser/appcache/mock_appcache_service.h"
+#include "content/common/appcache_interfaces.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_update_job.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
-
-using appcache::AppCache;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheGroup;
-using appcache::AppCacheHost;
-using appcache::AppCacheServiceImpl;
-using appcache::AppCacheUpdateJob;
 
 namespace {
 
-class TestAppCacheFrontend : public appcache::AppCacheFrontend {
+class TestAppCacheFrontend : public content::AppCacheFrontend {
  public:
   TestAppCacheFrontend()
       : last_host_id_(-1), last_cache_id_(-1),
-        last_status_(appcache::APPCACHE_STATUS_OBSOLETE) {
+        last_status_(content::APPCACHE_STATUS_OBSOLETE) {
   }
 
-  virtual void OnCacheSelected(
-      int host_id, const appcache::AppCacheInfo& info) OVERRIDE {
+  void OnCacheSelected(int host_id,
+                       const content::AppCacheInfo& info) override {
     last_host_id_ = host_id;
     last_cache_id_ = info.cache_id;
     last_status_ = info.status;
   }
 
-  virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                               appcache::AppCacheStatus status) OVERRIDE {
-  }
+  void OnStatusChanged(const std::vector<int>& host_ids,
+                       content::AppCacheStatus status) override {}
 
-  virtual void OnEventRaised(const std::vector<int>& host_ids,
-                             appcache::AppCacheEventID event_id) OVERRIDE {
-  }
+  void OnEventRaised(const std::vector<int>& host_ids,
+                     content::AppCacheEventID event_id) override {}
 
-  virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                  const appcache::AppCacheErrorDetails& details)
-      OVERRIDE {}
+  void OnErrorEventRaised(
+      const std::vector<int>& host_ids,
+      const content::AppCacheErrorDetails& details) override {}
 
-  virtual void OnProgressEventRaised(const std::vector<int>& host_ids,
-                                     const GURL& url,
-                                     int num_total, int num_complete) OVERRIDE {
-  }
+  void OnProgressEventRaised(const std::vector<int>& host_ids,
+                             const GURL& url,
+                             int num_total,
+                             int num_complete) override {}
 
-  virtual void OnLogMessage(int host_id, appcache::AppCacheLogLevel log_level,
-                            const std::string& message) OVERRIDE {
-  }
+  void OnLogMessage(int host_id,
+                    content::AppCacheLogLevel log_level,
+                    const std::string& message) override {}
 
-  virtual void OnContentBlocked(int host_id,
-                                const GURL& manifest_url) OVERRIDE {
-  }
+  void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
 
   int last_host_id_;
   int64 last_cache_id_;
-  appcache::AppCacheStatus last_status_;
+  content::AppCacheStatus last_status_;
 };
 
 }  // namespace anon
@@ -75,7 +64,7 @@ class TestUpdateObserver : public AppCacheGroup::UpdateObserver {
   TestUpdateObserver() : update_completed_(false), group_has_cache_(false) {
   }
 
-  virtual void OnUpdateComplete(AppCacheGroup* group) OVERRIDE {
+  void OnUpdateComplete(AppCacheGroup* group) override {
     update_completed_ = true;
     group_has_cache_ = group->HasCache();
   }
@@ -95,7 +84,7 @@ class TestAppCacheHost : public AppCacheHost {
         update_completed_(false) {
   }
 
-  virtual void OnUpdateComplete(AppCacheGroup* group) OVERRIDE {
+  void OnUpdateComplete(AppCacheGroup* group) override {
     update_completed_ = true;
   }
 
@@ -118,60 +107,60 @@ TEST_F(AppCacheGroupTest, AddRemoveCache) {
   cache1->set_complete(true);
   cache1->set_update_time(now);
   group->AddCache(cache1.get());
-  EXPECT_EQ(cache1, group->newest_complete_cache());
+  EXPECT_EQ(cache1.get(), group->newest_complete_cache());
 
   // Adding older cache does not change newest complete cache.
   scoped_refptr<AppCache> cache2(new AppCache(service.storage(), 222));
   cache2->set_complete(true);
   cache2->set_update_time(now - base::TimeDelta::FromDays(1));
   group->AddCache(cache2.get());
-  EXPECT_EQ(cache1, group->newest_complete_cache());
+  EXPECT_EQ(cache1.get(), group->newest_complete_cache());
 
   // Adding newer cache does change newest complete cache.
   scoped_refptr<AppCache> cache3(new AppCache(service.storage(), 333));
   cache3->set_complete(true);
   cache3->set_update_time(now + base::TimeDelta::FromDays(1));
   group->AddCache(cache3.get());
-  EXPECT_EQ(cache3, group->newest_complete_cache());
+  EXPECT_EQ(cache3.get(), group->newest_complete_cache());
 
   // Adding cache with same update time uses one with larger ID.
   scoped_refptr<AppCache> cache4(new AppCache(service.storage(), 444));
   cache4->set_complete(true);
   cache4->set_update_time(now + base::TimeDelta::FromDays(1));  // same as 3
   group->AddCache(cache4.get());
-  EXPECT_EQ(cache4, group->newest_complete_cache());
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());
 
   // smaller id
   scoped_refptr<AppCache> cache5(new AppCache(service.storage(), 55));
   cache5->set_complete(true);
   cache5->set_update_time(now + base::TimeDelta::FromDays(1));  // same as 4
   group->AddCache(cache5.get());
-  EXPECT_EQ(cache4, group->newest_complete_cache());  // no change
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());  // no change
 
   // Old caches can always be removed.
   group->RemoveCache(cache1.get());
   EXPECT_FALSE(cache1->owning_group());
-  EXPECT_EQ(cache4, group->newest_complete_cache());  // newest unchanged
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());  // newest unchanged
 
   // Remove rest of caches.
   group->RemoveCache(cache2.get());
   EXPECT_FALSE(cache2->owning_group());
-  EXPECT_EQ(cache4, group->newest_complete_cache());  // newest unchanged
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());  // newest unchanged
   group->RemoveCache(cache3.get());
   EXPECT_FALSE(cache3->owning_group());
-  EXPECT_EQ(cache4, group->newest_complete_cache());  // newest unchanged
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());  // newest unchanged
   group->RemoveCache(cache5.get());
   EXPECT_FALSE(cache5->owning_group());
-  EXPECT_EQ(cache4, group->newest_complete_cache());  // newest unchanged
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());  // newest unchanged
   group->RemoveCache(cache4.get());                   // newest removed
   EXPECT_FALSE(cache4->owning_group());
   EXPECT_FALSE(group->newest_complete_cache());       // no more newest cache
 
   // Can remove newest cache if there are older caches.
   group->AddCache(cache1.get());
-  EXPECT_EQ(cache1, group->newest_complete_cache());
+  EXPECT_EQ(cache1.get(), group->newest_complete_cache());
   group->AddCache(cache4.get());
-  EXPECT_EQ(cache4, group->newest_complete_cache());
+  EXPECT_EQ(cache4.get(), group->newest_complete_cache());
   group->RemoveCache(cache4.get());  // remove newest
   EXPECT_FALSE(cache4->owning_group());
   EXPECT_FALSE(group->newest_complete_cache());  // newest removed
@@ -197,12 +186,12 @@ TEST_F(AppCacheGroupTest, CleanupUnusedGroup) {
   host1.AssociateCompleteCache(cache1);
   EXPECT_EQ(frontend.last_host_id_, host1.host_id());
   EXPECT_EQ(frontend.last_cache_id_, cache1->cache_id());
-  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_IDLE);
+  EXPECT_EQ(frontend.last_status_, APPCACHE_STATUS_IDLE);
 
   host2.AssociateCompleteCache(cache1);
   EXPECT_EQ(frontend.last_host_id_, host2.host_id());
   EXPECT_EQ(frontend.last_cache_id_, cache1->cache_id());
-  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_IDLE);
+  EXPECT_EQ(frontend.last_status_, APPCACHE_STATUS_IDLE);
 
   AppCache* cache2 = new AppCache(service.storage(), 222);
   cache2->set_complete(true);
@@ -214,8 +203,8 @@ TEST_F(AppCacheGroupTest, CleanupUnusedGroup) {
   host1.AssociateNoCache(GURL());
   host2.AssociateNoCache(GURL());
   EXPECT_EQ(frontend.last_host_id_, host2.host_id());
-  EXPECT_EQ(frontend.last_cache_id_, appcache::kAppCacheNoCacheId);
-  EXPECT_EQ(frontend.last_status_, appcache::APPCACHE_STATUS_UNCACHED);
+  EXPECT_EQ(frontend.last_cache_id_, kAppCacheNoCacheId);
+  EXPECT_EQ(frontend.last_status_, APPCACHE_STATUS_UNCACHED);
 }
 
 TEST_F(AppCacheGroupTest, StartUpdate) {

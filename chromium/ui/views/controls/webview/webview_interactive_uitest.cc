@@ -15,6 +15,10 @@
 #include "ui/views/test/webview_test_helper.h"
 #include "ui/views/test/widget_test.h"
 
+#if defined(OS_WIN)
+#include "ui/gfx/win/dpi.h"
+#endif
+
 namespace {
 
 class WebViewInteractiveUiTest : public views::test::WidgetTest {
@@ -22,9 +26,12 @@ class WebViewInteractiveUiTest : public views::test::WidgetTest {
   WebViewInteractiveUiTest()
       : ui_thread_(content::BrowserThread::UI, base::MessageLoop::current()) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     gfx::GLSurface::InitializeOneOffForTests();
     WidgetTest::SetUp();
+#if defined(OS_WIN)
+    gfx::InitDeviceScaleFactor(1.0f);
+#endif
   }
 
  protected:

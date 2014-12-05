@@ -19,7 +19,7 @@ class FakeSensorManagerAndroid : public SensorManagerAndroid {
   FakeSensorManagerAndroid() { }
   virtual ~FakeSensorManagerAndroid() { }
 
-  virtual int GetNumberActiveDeviceMotionSensors() OVERRIDE {
+  virtual int GetNumberActiveDeviceMotionSensors() override {
     return number_active_sensors_;
   }
 
@@ -28,11 +28,11 @@ class FakeSensorManagerAndroid : public SensorManagerAndroid {
   }
 
  protected:
-  virtual bool Start(EventType event_type) OVERRIDE {
+  virtual bool Start(EventType event_type) override {
     return true;
   }
 
-  virtual void Stop(EventType event_type) OVERRIDE {
+  virtual void Stop(EventType event_type) override {
   }
 
  private:
@@ -42,10 +42,12 @@ class FakeSensorManagerAndroid : public SensorManagerAndroid {
 class AndroidSensorManagerTest : public testing::Test {
  protected:
   AndroidSensorManagerTest() {
+    light_buffer_.reset(new DeviceLightHardwareBuffer);
     motion_buffer_.reset(new DeviceMotionHardwareBuffer);
     orientation_buffer_.reset(new DeviceOrientationHardwareBuffer);
   }
 
+  scoped_ptr<DeviceLightHardwareBuffer> light_buffer_;
   scoped_ptr<DeviceMotionHardwareBuffer> motion_buffer_;
   scoped_ptr<DeviceOrientationHardwareBuffer> orientation_buffer_;
 };
@@ -84,7 +86,8 @@ TEST_F(AndroidSensorManagerTest, ThreeDeviceMotionSensorsActive) {
   ASSERT_TRUE(motion_buffer_->data.hasRotationRateBeta);
   ASSERT_EQ(9, motion_buffer_->data.rotationRateGamma);
   ASSERT_TRUE(motion_buffer_->data.hasRotationRateGamma);
-  ASSERT_EQ(kInertialSensorIntervalMillis, motion_buffer_->data.interval);
+  ASSERT_EQ(kInertialSensorIntervalMicroseconds / 1000.,
+            motion_buffer_->data.interval);
 
   sensorManager.StopFetchingDeviceMotionData();
   ASSERT_FALSE(motion_buffer_->data.allAvailableSensorsAreActive);
@@ -103,7 +106,8 @@ TEST_F(AndroidSensorManagerTest, TwoDeviceMotionSensorsActive) {
 
   sensorManager.GotAccelerationIncludingGravity(0, 0, 1, 2, 3);
   ASSERT_TRUE(motion_buffer_->data.allAvailableSensorsAreActive);
-  ASSERT_EQ(kInertialSensorIntervalMillis, motion_buffer_->data.interval);
+  ASSERT_EQ(kInertialSensorIntervalMicroseconds / 1000.,
+            motion_buffer_->data.interval);
 
   sensorManager.StopFetchingDeviceMotionData();
   ASSERT_FALSE(motion_buffer_->data.allAvailableSensorsAreActive);
@@ -116,7 +120,8 @@ TEST_F(AndroidSensorManagerTest, ZeroDeviceMotionSensorsActive) {
 
   sensorManager.StartFetchingDeviceMotionData(motion_buffer_.get());
   ASSERT_TRUE(motion_buffer_->data.allAvailableSensorsAreActive);
-  ASSERT_EQ(kInertialSensorIntervalMillis, motion_buffer_->data.interval);
+  ASSERT_EQ(kInertialSensorIntervalMicroseconds / 1000.,
+            motion_buffer_->data.interval);
 
   sensorManager.StopFetchingDeviceMotionData();
   ASSERT_FALSE(motion_buffer_->data.allAvailableSensorsAreActive);
@@ -142,6 +147,19 @@ TEST_F(AndroidSensorManagerTest, DeviceOrientationSensorsActive) {
   ASSERT_FALSE(orientation_buffer_->data.allAvailableSensorsAreActive);
 }
 
+// DeviceLight
+TEST_F(AndroidSensorManagerTest, DeviceLightSensorsActive) {
+  FakeSensorManagerAndroid::Register(base::android::AttachCurrentThread());
+  FakeSensorManagerAndroid sensorManager;
+
+  sensorManager.StartFetchingDeviceLightData(light_buffer_.get());
+
+  sensorManager.GotLight(0, 0, 100);
+  ASSERT_EQ(100, light_buffer_->data.value);
+
+  sensorManager.StopFetchingDeviceLightData();
+  ASSERT_EQ(-1, light_buffer_->data.value);
+}
 
 }  // namespace
 

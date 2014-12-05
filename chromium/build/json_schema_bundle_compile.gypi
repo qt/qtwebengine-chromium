@@ -5,39 +5,49 @@
 {
   'variables': {
     # When including this gypi, the following variables must be set:
-    #   schema_files: an array of json or idl files that comprise the api model.
-    #   cc_dir: path to generated files
-    #   root_namespace: the C++ namespace that all generated files go under
+    #   schema_files:
+    #     An array of json or idl files that comprise the api model.
+    #   schema_include_rules (optional):
+    #     An array of paths to include when searching for referenced objects,
+    #     with the namespace separated by a :.
+    #     Example:
+    #       [ '/foo/bar:Foo::Bar::%(namespace)s' ]
+    #   cc_dir:
+    #     The directory to put the generated code in.
+    #   root_namespace:
+    #     A Python string substituion pattern used to generate the C++
+    #     namespace for each API. Use %(namespace)s to replace with the API
+    #     namespace, like "toplevel::%(namespace)s_api".
+    #
     # Functions and namespaces can be excluded by setting "nocompile" to true.
     # The default root path of API implementation sources is
     # chrome/browser/extensions/api and can be overridden by setting "impl_dir".
     'api_gen_dir': '<(DEPTH)/tools/json_schema_compiler',
     'api_gen': '<(api_gen_dir)/compiler.py',
-    'impl_dir%': 'chrome/browser/extensions/api',
+    'generator_files': [
+      '<(api_gen_dir)/cc_generator.py',
+      '<(api_gen_dir)/code.py',
+      '<(api_gen_dir)/compiler.py',
+      '<(api_gen_dir)/cpp_bundle_generator.py',
+      '<(api_gen_dir)/cpp_type_generator.py',
+      '<(api_gen_dir)/cpp_util.py',
+      '<(api_gen_dir)/h_generator.py',
+      '<(api_gen_dir)/idl_schema.py',
+      '<(api_gen_dir)/json_schema.py',
+      '<(api_gen_dir)/model.py',
+      '<(api_gen_dir)/util_cc_helper.py',
+    ],
+    'schema_include_rules': [],
   },
   'actions': [
     {
-      # GN version: //build/json_schema.gni
-      #             (json_schema_bundle_compile templates)
-      'action_name': 'genapi_bundle',
+      'action_name': 'genapi_bundle_schema',
       'inputs': [
-        '<(api_gen_dir)/cc_generator.py',
-        '<(api_gen_dir)/code.py',
-        '<(api_gen_dir)/compiler.py',
-        '<(api_gen_dir)/cpp_bundle_generator.py',
-        '<(api_gen_dir)/cpp_type_generator.py',
-        '<(api_gen_dir)/cpp_util.py',
-        '<(api_gen_dir)/h_generator.py',
-        '<(api_gen_dir)/idl_schema.py',
-        '<(api_gen_dir)/json_schema.py',
-        '<(api_gen_dir)/model.py',
-        '<(api_gen_dir)/util_cc_helper.py',
+        '<@(generator_files)',
         '<@(schema_files)',
         '<@(non_compiled_schema_files)',
       ],
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/generated_api.h',
-        '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/generated_api.cc',
         '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/generated_schemas.h',
         '<(SHARED_INTERMEDIATE_DIR)/<(cc_dir)/generated_schemas.cc',
       ],
@@ -47,14 +57,16 @@
         '--root=<(DEPTH)',
         '--destdir=<(SHARED_INTERMEDIATE_DIR)',
         '--namespace=<(root_namespace)',
-        '--generator=cpp-bundle',
-        '--impl-dir=<(impl_dir)',
+        '--generator=cpp-bundle-schema',
+        '--include-rules=<(schema_include_rules)',
         '<@(schema_files)',
         '<@(non_compiled_schema_files)',
       ],
-      'message': 'Generating C++ API bundle code',
+      'message': 'Generating C++ API bundle code for schemas',
       'process_outputs_as_sources': 1,
-    }
+      # Avoid running MIDL compiler on IDL input files.
+      'explicit_idl_action': 1,
+    },
   ],
   'include_dirs': [
     '<(SHARED_INTERMEDIATE_DIR)',

@@ -24,11 +24,11 @@ class CONTENT_EXPORT PepperVideoDestinationHost
                              PP_Instance instance,
                              PP_Resource resource);
 
-  virtual ~PepperVideoDestinationHost();
+  ~PepperVideoDestinationHost() override;
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
  private:
   int32_t OnHostMsgOpen(ppapi::host::HostMessageContext* context,

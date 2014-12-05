@@ -11,7 +11,7 @@ cr.define('cr.ui', function() {
    * Creates a new autocomplete list item.
    * This is suitable for selecting a web site, and used by default.
    * A different behavior can be set by AutocompleteListItem.itemConstructor.
-   * @param {Object} pageInfo The page this item represents.
+   * @param {*} pageInfo The page this item represents.
    * @constructor
    * @extends {cr.ui.ListItem}
    */
@@ -142,9 +142,9 @@ cr.define('cr.ui', function() {
      * Handles the selected suggestion. Called when a suggestion is selected.
      * By default, sets the target input element's value to the 'url' field
      * of the selected suggestion.
-     * @param {Event} event The change event.
+     * @param {Object} selectedSuggestion
      */
-    handleSelectedSuggestion : function(selectedSuggestion) {
+    handleSelectedSuggestion: function(selectedSuggestion) {
       var input = this.targetInput_;
       if (!input)
         return;
@@ -216,7 +216,7 @@ cr.define('cr.ui', function() {
 
     /**
      * syncWidthAndPositionToInput function bound to |this|.
-     * @type {Function}
+     * @type {!Function|undefined}
      * @private
      */
     boundSyncWidthAndPositionToInput_: undefined,

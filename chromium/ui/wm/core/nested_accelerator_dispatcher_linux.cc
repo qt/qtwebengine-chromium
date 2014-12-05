@@ -51,22 +51,22 @@ class NestedAcceleratorDispatcherLinux : public NestedAcceleratorDispatcher,
       : NestedAcceleratorDispatcher(delegate),
         restore_dispatcher_(OverrideDispatcher(this)) {}
 
-  virtual ~NestedAcceleratorDispatcherLinux() {}
+  ~NestedAcceleratorDispatcherLinux() override {}
 
  private:
   // AcceleratorDispatcher:
-  virtual scoped_ptr<base::RunLoop> CreateRunLoop() OVERRIDE {
+  scoped_ptr<base::RunLoop> CreateRunLoop() override {
     return scoped_ptr<base::RunLoop>(new base::RunLoop());
   }
 
   // ui::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override {
     return true;
   }
 
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override {
     if (IsKeyEvent(event)) {
-      ui::KeyEvent key_event(event, false);
+      ui::KeyEvent key_event(event);
       ui::Accelerator accelerator = CreateAcceleratorFromKeyEvent(key_event);
 
       switch (delegate_->ProcessAccelerator(accelerator)) {
@@ -85,8 +85,8 @@ class NestedAcceleratorDispatcherLinux : public NestedAcceleratorDispatcher,
     }
     ui::PlatformEventDispatcher* prev = *restore_dispatcher_;
 
-    return prev ? prev->DispatchEvent(event)
-                : ui::POST_DISPATCH_PERFORM_DEFAULT;
+    uint32_t perform_default = ui::POST_DISPATCH_PERFORM_DEFAULT;
+    return prev ? prev->DispatchEvent(event) : perform_default;
   }
 
   scoped_ptr<ui::ScopedEventDispatcher> restore_dispatcher_;

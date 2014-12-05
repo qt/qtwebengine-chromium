@@ -26,6 +26,7 @@
 
 #include "webrtc/base/common.h"
 #include "webrtc/base/logging.h"
+#include "webrtc/base/safe_conversions.h"
 #include "webrtc/base/stream.h"
 #include "webrtc/base/openssl.h"
 #include "webrtc/base/openssladapter.h"
@@ -114,7 +115,7 @@ static int stream_read(BIO* b, char* out, int outl) {
   int error;
   StreamResult result = stream->Read(out, outl, &read, &error);
   if (result == SR_SUCCESS) {
-    return read;
+    return checked_cast<int>(read);
   } else if (result == SR_EOS) {
     b->num = 1;
   } else if (result == SR_BLOCK) {
@@ -132,7 +133,7 @@ static int stream_write(BIO* b, const char* in, int inl) {
   int error;
   StreamResult result = stream->Write(in, inl, &written, &error);
   if (result == SR_SUCCESS) {
-    return written;
+    return checked_cast<int>(written);
   } else if (result == SR_BLOCK) {
     BIO_set_retry_write(b);
   }
@@ -140,7 +141,7 @@ static int stream_write(BIO* b, const char* in, int inl) {
 }
 
 static int stream_puts(BIO* b, const char* str) {
-  return stream_write(b, str, strlen(str));
+  return stream_write(b, str, checked_cast<int>(strlen(str)));
 }
 
 static long stream_ctrl(BIO* b, int cmd, long num, void* ptr) {
@@ -364,7 +365,7 @@ StreamResult OpenSSLStreamAdapter::Write(const void* data, size_t data_len,
 
   ssl_write_needs_read_ = false;
 
-  int code = SSL_write(ssl_, data, data_len);
+  int code = SSL_write(ssl_, data, checked_cast<int>(data_len));
   int ssl_error = SSL_get_error(ssl_, code);
   switch (ssl_error) {
   case SSL_ERROR_NONE:
@@ -425,7 +426,7 @@ StreamResult OpenSSLStreamAdapter::Read(void* data, size_t data_len,
 
   ssl_read_needs_write_ = false;
 
-  int code = SSL_read(ssl_, data, data_len);
+  int code = SSL_read(ssl_, data, checked_cast<int>(data_len));
   int ssl_error = SSL_get_error(ssl_, code);
   switch (ssl_error) {
     case SSL_ERROR_NONE:
@@ -615,6 +616,16 @@ int OpenSSLStreamAdapter::BeginSSL() {
   SSL_set_mode(ssl_, SSL_MODE_ENABLE_PARTIAL_WRITE |
                SSL_MODE_ACCEPT_MOVING_WRITE_BUFFER);
 
+  // Specify an ECDH group for ECDHE ciphers, otherwise they cannot be
+  // negotiated when acting as the server. Use NIST's P-256 which is commonly
+  // supported.
+  EC_KEY* ecdh = EC_KEY_new_by_curve_name(NID_X9_62_prime256v1);
+  if (ecdh == NULL)
+    return -1;
+  SSL_set_options(ssl_, SSL_OP_SINGLE_ECDH_USE);
+  SSL_set_tmp_ecdh(ssl_, ecdh);
+  EC_KEY_free(ecdh);
+
   // Do the connect
   return ContinueSSL();
 }
@@ -685,6 +696,12 @@ void OpenSSLStreamAdapter::Cleanup() {
   }
 
   if (ssl_) {
+    int ret = SSL_shutdown(ssl_);
+    if (ret < 0) {
+      LOG(LS_WARNING) << "SSL_shutdown failed, error = "
+                      << SSL_get_error(ssl_, ret);
+    }
+
     SSL_free(ssl_);
     ssl_ = NULL;
   }
@@ -733,8 +750,15 @@ SSL_CTX* OpenSSLStreamAdapter::SetupSSLContext() {
   SSL_CTX_set_info_callback(ctx, OpenSSLAdapter::SSLInfoCallback);
 #endif
 
-  SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER |SSL_VERIFY_FAIL_IF_NO_PEER_CERT,
-                     SSLVerifyCallback);
+  int mode = SSL_VERIFY_PEER;
+  if (client_auth_enabled()) {
+    // Require a certificate from the client.
+    // Note: Normally this is always true in production, but it may be disabled
+    // for testing purposes (e.g. SSLAdapter unit tests).
+    mode |= SSL_VERIFY_FAIL_IF_NO_PEER_CERT;
+  }
+
+  SSL_CTX_set_verify(ctx, mode, SSLVerifyCallback);
   SSL_CTX_set_verify_depth(ctx, 4);
   SSL_CTX_set_cipher_list(ctx, "ALL:!ADH:!LOW:!EXP:!MD5:@STRENGTH");
 

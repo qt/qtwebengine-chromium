@@ -6,36 +6,35 @@
 #define SizesAttributeParser_h
 
 #include "core/css/MediaValues.h"
+#include "core/css/parser/MediaQueryBlockWatcher.h"
 #include "core/css/parser/MediaQueryParser.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class SizesAttributeParser {
     STACK_ALLOCATED();
 public:
-    static unsigned findEffectiveSize(const String& attribute, PassRefPtr<MediaValues>);
+    SizesAttributeParser(PassRefPtr<MediaValues>, const String&);
+
+    float length();
 
 private:
-    SizesAttributeParser(PassRefPtr<MediaValues> mediaValues)
-        : m_mediaValues(mediaValues)
-        , m_length(0)
-        , m_lengthWasSet(false)
-    {
-    }
-
-    bool parse(Vector<MediaQueryToken>& tokens);
-    bool parseMediaConditionAndLength(MediaQueryTokenIterator startToken, MediaQueryTokenIterator endToken);
-    unsigned effectiveSize();
-    bool calculateLengthInPixels(MediaQueryTokenIterator startToken, MediaQueryTokenIterator endToken, unsigned& result);
+    bool parse(Vector<CSSParserToken>& tokens);
+    bool parseMediaConditionAndLength(CSSParserTokenIterator startToken, CSSParserTokenIterator endToken);
+    float effectiveSize();
+    bool calculateLengthInPixels(CSSParserTokenIterator startToken, CSSParserTokenIterator endToken, float& result);
     bool mediaConditionMatches(PassRefPtrWillBeRawPtr<MediaQuerySet> mediaCondition);
     unsigned effectiveSizeDefaultValue();
 
     RefPtrWillBeMember<MediaQuerySet> m_mediaCondition;
     RefPtr<MediaValues> m_mediaValues;
-    unsigned m_length;
+    float m_length;
     bool m_lengthWasSet;
+    Vector<CSSParserToken> m_tokens;
+    bool m_isValid;
+    MediaQueryBlockWatcher m_blockWatcher;
 };
 
 } // namespace

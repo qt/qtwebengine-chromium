@@ -20,7 +20,7 @@ class PluginModule;
 class HostGlobals : public ppapi::PpapiGlobals {
  public:
   HostGlobals();
-  virtual ~HostGlobals();
+  ~HostGlobals() override;
 
   // Getter for the global singleton. Generally, you should use
   // PpapiGlobals::Get() when possible. Use this only when you need some
@@ -31,27 +31,26 @@ class HostGlobals : public ppapi::PpapiGlobals {
   }
 
   // PpapiGlobals implementation.
-  virtual ppapi::ResourceTracker* GetResourceTracker() OVERRIDE;
-  virtual ppapi::VarTracker* GetVarTracker() OVERRIDE;
-  virtual ppapi::CallbackTracker* GetCallbackTrackerForInstance(
-      PP_Instance instance) OVERRIDE;
-  virtual ppapi::thunk::PPB_Instance_API* GetInstanceAPI(PP_Instance instance)
-      OVERRIDE;
-  virtual ppapi::thunk::ResourceCreationAPI* GetResourceCreationAPI(
-      PP_Instance instance) OVERRIDE;
-  virtual PP_Module GetModuleForInstance(PP_Instance instance) OVERRIDE;
-  virtual std::string GetCmdLine() OVERRIDE;
-  virtual void PreCacheFontForFlash(const void* logfontw) OVERRIDE;
-  virtual void LogWithSource(PP_Instance instance,
-                             PP_LogLevel level,
-                             const std::string& source,
-                             const std::string& value) OVERRIDE;
-  virtual void BroadcastLogWithSource(PP_Module module,
-                                      PP_LogLevel level,
-                                      const std::string& source,
-                                      const std::string& value) OVERRIDE;
-  virtual ppapi::MessageLoopShared* GetCurrentMessageLoop() OVERRIDE;
-  virtual base::TaskRunner* GetFileTaskRunner() OVERRIDE;
+  ppapi::ResourceTracker* GetResourceTracker() override;
+  ppapi::VarTracker* GetVarTracker() override;
+  ppapi::CallbackTracker* GetCallbackTrackerForInstance(
+      PP_Instance instance) override;
+  ppapi::thunk::PPB_Instance_API* GetInstanceAPI(PP_Instance instance) override;
+  ppapi::thunk::ResourceCreationAPI* GetResourceCreationAPI(
+      PP_Instance instance) override;
+  PP_Module GetModuleForInstance(PP_Instance instance) override;
+  std::string GetCmdLine() override;
+  void PreCacheFontForFlash(const void* logfontw) override;
+  void LogWithSource(PP_Instance instance,
+                     PP_LogLevel level,
+                     const std::string& source,
+                     const std::string& value) override;
+  void BroadcastLogWithSource(PP_Module module,
+                              PP_LogLevel level,
+                              const std::string& source,
+                              const std::string& value) override;
+  ppapi::MessageLoopShared* GetCurrentMessageLoop() override;
+  base::TaskRunner* GetFileTaskRunner() override;
 
   HostVarTracker* host_var_tracker() { return &host_var_tracker_; }
 
@@ -88,7 +87,7 @@ class HostGlobals : public ppapi::PpapiGlobals {
 
  private:
   // PpapiGlobals overrides.
-  virtual bool IsHostGlobals() const OVERRIDE;
+  bool IsHostGlobals() const override;
 
   static HostGlobals* host_globals_;
 

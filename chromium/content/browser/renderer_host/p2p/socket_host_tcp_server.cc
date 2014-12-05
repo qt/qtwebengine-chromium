@@ -23,7 +23,7 @@ namespace content {
 P2PSocketHostTcpServer::P2PSocketHostTcpServer(IPC::Sender* message_sender,
                                                int socket_id,
                                                P2PSocketType client_type)
-    : P2PSocketHost(message_sender, socket_id),
+    : P2PSocketHost(message_sender, socket_id, P2PSocketHost::TCP),
       client_type_(client_type),
       socket_(new net::TCPServerSocket(NULL, net::NetLog::Source())),
       accept_callback_(base::Bind(&P2PSocketHostTcpServer::OnAccepted,
@@ -61,7 +61,10 @@ bool P2PSocketHostTcpServer::Init(const net::IPEndPoint& local_address,
   VLOG(1) << "Local address: " << local_address_.ToString();
 
   state_ = STATE_OPEN;
-  message_sender_->Send(new P2PMsg_OnSocketCreated(id_, local_address_));
+  // NOTE: Remote address can be empty as socket is just listening
+  // in this state.
+  message_sender_->Send(new P2PMsg_OnSocketCreated(
+      id_, local_address_, remote_address.ip_address));
   DoAccept();
   return true;
 }
@@ -116,7 +119,7 @@ void P2PSocketHostTcpServer::OnAccepted(int result) {
 
 void P2PSocketHostTcpServer::Send(const net::IPEndPoint& to,
                                   const std::vector<char>& data,
-                                  const talk_base::PacketOptions& options,
+                                  const rtc::PacketOptions& options,
                                   uint64 packet_id) {
   NOTREACHED();
   OnError();

@@ -33,7 +33,7 @@
 
 class SkData;
 
-namespace WebCore {
+namespace blink {
 
 class ImageFrameGenerator;
 
@@ -42,7 +42,7 @@ class ImageFrameGenerator;
 //
 // This class does not own an ImageDecode. It does not own encoded data. It serves
 // as and adapter to ImageFrameGenerator which actually performs decoding.
-class DecodingImageGenerator FINAL : public SkImageGenerator {
+class DecodingImageGenerator final : public SkImageGenerator {
 public:
     DecodingImageGenerator(PassRefPtr<ImageFrameGenerator>, const SkImageInfo&, size_t index);
     virtual ~DecodingImageGenerator();
@@ -50,9 +50,10 @@ public:
     void setGenerationId(size_t id) { m_generationId = id; }
 
 protected:
-    virtual SkData* onRefEncodedData() OVERRIDE;
-    virtual bool onGetInfo(SkImageInfo*) OVERRIDE;
-    virtual bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount) OVERRIDE;
+    virtual SkData* onRefEncodedData() override;
+    virtual bool onGetInfo(SkImageInfo*) override;
+    virtual bool onGetPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount) override;
+    virtual bool onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3], SkYUVColorSpace*) override;
 
 private:
     RefPtr<ImageFrameGenerator> m_frameGenerator;
@@ -61,6 +62,6 @@ private:
     size_t m_generationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DecodingImageGenerator_h_

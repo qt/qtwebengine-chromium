@@ -11,13 +11,26 @@
             ]
         },
         {
-            "type": "@WebInspector.StatusBarButton.Provider",
+            "type": "@WebInspector.StatusBarItem.Provider",
             "actionId": "settings.show",
             "location": "toolbar-right",
             "title": "Settings",
-            "order": 0,
+            "order": 3,
             "elementClass": "settings-status-bar-item"
+        },
+        {
+            "type": "ui-setting",
+            "section": "Sources",
+            "settingType": "custom",
+            "className": "WebInspector.SettingsScreen.SkipStackFramePatternSettingDelegate"
         }
     ],
-    "scripts": [ "SettingsScreen.js" ]
+    "dependencies": [
+        "components"
+    ],
+    "scripts": [
+        "EditFileSystemDialog.js",
+        "FrameworkBlackboxDialog.js",
+        "SettingsScreen.js"
+    ]
 }

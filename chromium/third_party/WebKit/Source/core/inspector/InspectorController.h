@@ -32,22 +32,24 @@
 #define InspectorController_h
 
 #include "core/inspector/InspectorBaseAgent.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class DOMWrapperWorld;
+class ContextMenuProvider;
 class LocalFrame;
 class GraphicsContext;
 class GraphicsLayer;
 class InjectedScriptManager;
 class InspectorBackendDispatcher;
 class InspectorAgent;
+class InspectorAnimationAgent;
 class InspectorClient;
+class InspectorCSSAgent;
 class InspectorDOMAgent;
 class InspectorFrontend;
 class InspectorFrontendChannel;
@@ -58,10 +60,7 @@ class InspectorResourceAgent;
 class InspectorTimelineAgent;
 class InspectorTracingAgent;
 class InspectorOverlay;
-class InspectorState;
 class InstrumentingAgents;
-class IntPoint;
-class IntSize;
 class Page;
 class PlatformGestureEvent;
 class PlatformKeyboardEvent;
@@ -69,24 +68,27 @@ class PlatformMouseEvent;
 class PlatformTouchEvent;
 class Node;
 
-class InspectorController {
+class InspectorController : public NoBaseWillBeGarbageCollectedFinalized<InspectorController> {
     WTF_MAKE_NONCOPYABLE(InspectorController);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     ~InspectorController();
+    void trace(Visitor*);
 
-    static PassOwnPtr<InspectorController> create(Page*, InspectorClient*);
+    static PassOwnPtrWillBeRawPtr<InspectorController> create(Page*, InspectorClient*);
 
     // Settings overrides.
     void setTextAutosizingEnabled(bool);
     void setDeviceScaleAdjustment(float);
+    void setPreferCompositingToLCDTextEnabled(bool);
 
     void willBeDestroyed();
-    void registerModuleAgent(PassOwnPtr<InspectorAgent>);
+    void registerModuleAgent(PassOwnPtrWillBeRawPtr<InspectorAgent>);
 
-    void setInspectorFrontendClient(PassOwnPtr<InspectorFrontendClient>);
+    void setInspectorFrontendClient(InspectorFrontendClient*);
     void didClearDocumentOfWindowObject(LocalFrame*);
     void setInjectedScriptForOrigin(const String& origin, const String& source);
+    void showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
 
     void dispatchMessageFromFrontend(const String& message);
 
@@ -105,8 +107,9 @@ public:
     bool handleTouchEvent(LocalFrame*, const PlatformTouchEvent&);
     bool handleKeyboardEvent(LocalFrame*, const PlatformKeyboardEvent&);
 
-    void requestPageScaleFactor(float scale, const IntPoint& origin);
+    void deviceOrPageScaleFactorChanged();
     bool deviceEmulationEnabled();
+    bool screencastEnabled();
 
     bool isUnderTest();
     void evaluateForTestInFrontend(long callId, const String& script);
@@ -114,6 +117,7 @@ public:
     void resume();
 
     void setResourcesDataSizeLimitsFromInternals(int maximumResourcesContentSize, int maximumSingleResourceContentSize);
+    PassRefPtr<JSONObject> highlightJSONForNode(Node*);
 
     void willProcessTask();
     void didProcessTask();
@@ -139,25 +143,26 @@ private:
 
     friend InstrumentingAgents* instrumentationForPage(Page*);
 
-    RefPtr<InstrumentingAgents> m_instrumentingAgents;
-    OwnPtr<InjectedScriptManager> m_injectedScriptManager;
-    OwnPtr<InspectorCompositeState> m_state;
+    RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
+    OwnPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
+    OwnPtrWillBeMember<InspectorCompositeState> m_state;
     OwnPtr<InspectorOverlay> m_overlay;
 
-    InspectorDOMAgent* m_domAgent;
-    InspectorPageAgent* m_pageAgent;
-    InspectorResourceAgent* m_resourceAgent;
-    InspectorTimelineAgent* m_timelineAgent;
-    InspectorLayerTreeAgent* m_layerTreeAgent;
-    InspectorTracingAgent* m_tracingAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InspectorTimelineAgent> m_timelineAgent;
+    RawPtrWillBeMember<InspectorCSSAgent> m_cssAgent;
+    RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
+    RawPtrWillBeMember<InspectorLayerTreeAgent> m_layerTreeAgent;
+    RawPtrWillBeMember<InspectorTracingAgent> m_tracingAgent;
+    RawPtrWillBeMember<InspectorAnimationAgent> m_animationAgent;
 
-    RefPtr<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
-    OwnPtr<InspectorFrontendClient> m_inspectorFrontendClient;
+    RefPtrWillBeMember<InspectorBackendDispatcher> m_inspectorBackendDispatcher;
+    InspectorFrontendClient* m_inspectorFrontendClient;
     OwnPtr<InspectorFrontend> m_inspectorFrontend;
-    Page* m_page;
+    RawPtrWillBeMember<Page> m_page;
     InspectorClient* m_inspectorClient;
     InspectorAgentRegistry m_agents;
-    Vector<InspectorAgent*> m_moduleAgents;
     bool m_isUnderTest;
     bool m_deferredAgentsInitialized;
     String m_hostId;

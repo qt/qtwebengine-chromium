@@ -36,15 +36,18 @@
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
+#include "wtf/PassRefPtr.h"
 
-class SkCanvas;
 class SkBitmap;
+class SkCanvas;
+class SkImage;
+class SkPicture;
 
-namespace blink { class WebLayer; }
-
-namespace WebCore {
+namespace blink {
 
 class ImageBuffer;
+class WebLayer;
+class FloatRect;
 
 enum OpacityMode {
     NonOpaque,
@@ -54,22 +57,28 @@ enum OpacityMode {
 class PLATFORM_EXPORT ImageBufferSurface {
     WTF_MAKE_NONCOPYABLE(ImageBufferSurface); WTF_MAKE_FAST_ALLOCATED;
 public:
-    virtual ~ImageBufferSurface() { }
+    virtual ~ImageBufferSurface();
 
     virtual SkCanvas* canvas() const = 0;
-    virtual const SkBitmap& bitmap() const;
-    virtual void willUse() { } // Called by ImageBuffer before reading or writing to the surface.
+    virtual const SkBitmap& bitmap();
+    virtual void willAccessPixels() { }
     virtual bool isValid() const = 0;
     virtual bool restore() { return false; };
-    virtual blink::WebLayer* layer() const { return 0; };
+    virtual WebLayer* layer() const { return 0; };
     virtual bool isAccelerated() const { return false; }
     virtual Platform3DObject getBackingTexture() const { return 0; }
+    virtual void didModifyBackingTexture() { }
     virtual bool cachedBitmapEnabled() const { return false; }
     virtual const SkBitmap& cachedBitmap() const;
     virtual void invalidateCachedBitmap() { }
     virtual void updateCachedBitmapIfNeeded() { }
     virtual void setIsHidden(bool) { }
     virtual void setImageBuffer(ImageBuffer*) { }
+    virtual PassRefPtr<SkPicture> getPicture();
+    virtual void didClearCanvas() { }
+    virtual void finalizeFrame(const FloatRect &dirtyRect) { }
+    virtual void willDrawVideo() { }
+    virtual PassRefPtr<SkImage> newImageSnapshot() const;
 
     OpacityMode opacityMode() const { return m_opacityMode; }
     const IntSize& size() const { return m_size; }
@@ -84,6 +93,6 @@ private:
     IntSize m_size;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

@@ -32,21 +32,21 @@
 #include "modules/webaudio/WaveShaperProcessor.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WaveShaperProcessor;
 
 // WaveShaperDSPKernel is an AudioDSPKernel and is responsible for non-linear distortion on one channel.
 
-class WaveShaperDSPKernel FINAL : public AudioDSPKernel {
+class WaveShaperDSPKernel final : public AudioDSPKernel {
 public:
     explicit WaveShaperDSPKernel(WaveShaperProcessor*);
 
     // AudioDSPKernel
-    virtual void process(const float* source, float* dest, size_t framesToProcess) OVERRIDE;
-    virtual void reset() OVERRIDE;
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE;
+    virtual void process(const float* source, float* dest, size_t framesToProcess) override;
+    virtual void reset() override;
+    virtual double tailTime() const override { return 0; }
+    virtual double latencyTime() const override;
 
     // Oversampling requires more resources, so let's only allocate them if needed.
     void lazyInitializeOversampling();
@@ -70,6 +70,6 @@ protected:
     OwnPtr<DownSampler> m_downSampler2;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WaveShaperDSPKernel_h

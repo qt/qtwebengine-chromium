@@ -19,9 +19,7 @@ StackGuard::StackGuard()
 
 
 void StackGuard::set_interrupt_limits(const ExecutionAccess& lock) {
-  ASSERT(isolate_ != NULL);
-  // Ignore attempts to interrupt when interrupts are postponed.
-  if (should_postpone_interrupts(lock)) return;
+  DCHECK(isolate_ != NULL);
   thread_local_.jslimit_ = kInterruptLimit;
   thread_local_.climit_ = kInterruptLimit;
   isolate_->heap()->SetStackLimits();
@@ -29,10 +27,21 @@ void StackGuard::set_interrupt_limits(const ExecutionAccess& lock) {
 
 
 void StackGuard::reset_limits(const ExecutionAccess& lock) {
-  ASSERT(isolate_ != NULL);
+  DCHECK(isolate_ != NULL);
   thread_local_.jslimit_ = thread_local_.real_jslimit_;
   thread_local_.climit_ = thread_local_.real_climit_;
   isolate_->heap()->SetStackLimits();
+}
+
+
+static void PrintDeserializedCodeInfo(Handle<JSFunction> function) {
+  if (function->code() == function->shared()->code() &&
+      function->shared()->deserialized()) {
+    PrintF("Running deserialized script ");
+    Object* script = function->shared()->script();
+    if (script->IsScript()) Script::cast(script)->name()->ShortPrint();
+    PrintF("\n");
+  }
 }
 
 
@@ -70,13 +79,12 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
   // receiver instead to avoid having a 'this' pointer which refers
   // directly to a global object.
   if (receiver->IsGlobalObject()) {
-    Handle<GlobalObject> global = Handle<GlobalObject>::cast(receiver);
-    receiver = Handle<JSObject>(global->global_receiver());
+    receiver = handle(Handle<GlobalObject>::cast(receiver)->global_proxy());
   }
 
   // Make sure that the global object of the context we're about to
   // make the current one is indeed a global object.
-  ASSERT(function->context()->global_object()->IsGlobalObject());
+  DCHECK(function->context()->global_object()->IsGlobalObject());
 
   {
     // Save and restore context around invocation and block the
@@ -90,6 +98,7 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
     JSFunction* func = *function;
     Object* recv = *receiver;
     Object*** argv = reinterpret_cast<Object***>(args);
+    if (FLAG_profile_deserialization) PrintDeserializedCodeInfo(function);
     value =
         CALL_GENERATED_CODE(stub_entry, function_entry, func, recv, argc, argv);
   }
@@ -100,7 +109,7 @@ MUST_USE_RESULT static MaybeHandle<Object> Invoke(
 
   // Update the pending exception flag and return the value.
   bool has_exception = value->IsException();
-  ASSERT(has_exception == isolate->has_pending_exception());
+  DCHECK(has_exception == isolate->has_pending_exception());
   if (has_exception) {
     isolate->ReportPendingMessages();
     // Reset stepping state when script exits with uncaught exception.
@@ -133,13 +142,8 @@ MaybeHandle<Object> Execution::Call(Isolate* isolate,
       !func->shared()->native() &&
       func->shared()->strict_mode() == SLOPPY) {
     if (receiver->IsUndefined() || receiver->IsNull()) {
-      Object* global = func->context()->global_object()->global_receiver();
-      // Under some circumstances, 'global' can be the JSBuiltinsObject
-      // In that case, don't rewrite.  (FWIW, the same holds for
-      // GetIsolate()->global_object()->global_receiver().)
-      if (!global->IsJSBuiltinsObject()) {
-        receiver = Handle<Object>(global, func->GetIsolate());
-      }
+      receiver = handle(func->global_proxy());
+      DCHECK(!receiver->IsJSBuiltinsObject());
     } else {
       ASSIGN_RETURN_ON_EXCEPTION(
           isolate, receiver, ToObject(isolate, receiver), Object);
@@ -153,52 +157,55 @@ MaybeHandle<Object> Execution::Call(Isolate* isolate,
 MaybeHandle<Object> Execution::New(Handle<JSFunction> func,
                                    int argc,
                                    Handle<Object> argv[]) {
-  return Invoke(true, func, func->GetIsolate()->global_object(), argc, argv);
+  return Invoke(true, func, handle(func->global_proxy()), argc, argv);
 }
 
 
 MaybeHandle<Object> Execution::TryCall(Handle<JSFunction> func,
-                                       Handle<Object> receiver,
-                                       int argc,
+                                       Handle<Object> receiver, int argc,
                                        Handle<Object> args[],
-                                       Handle<Object>* exception_out) {
+                                       MaybeHandle<Object>* exception_out) {
+  bool is_termination = false;
+  Isolate* isolate = func->GetIsolate();
+  MaybeHandle<Object> maybe_result;
+  if (exception_out != NULL) *exception_out = MaybeHandle<Object>();
   // Enter a try-block while executing the JavaScript code. To avoid
   // duplicate error printing it must be non-verbose.  Also, to avoid
   // creating message objects during stack overflow we shouldn't
   // capture messages.
-  v8::TryCatch catcher;
-  catcher.SetVerbose(false);
-  catcher.SetCaptureMessage(false);
+  {
+    v8::TryCatch catcher;
+    catcher.SetVerbose(false);
+    catcher.SetCaptureMessage(false);
 
-  // Get isolate now, because handle might be persistent
-  // and get destroyed in the next call.
-  Isolate* isolate = func->GetIsolate();
-  MaybeHandle<Object> maybe_result = Invoke(false, func, receiver, argc, args);
+    maybe_result = Invoke(false, func, receiver, argc, args);
 
-  if (maybe_result.is_null()) {
-    ASSERT(catcher.HasCaught());
-    ASSERT(isolate->has_pending_exception());
-    ASSERT(isolate->external_caught_exception());
-    if (exception_out != NULL) {
-      if (isolate->pending_exception() ==
-          isolate->heap()->termination_exception()) {
-        *exception_out = isolate->factory()->termination_exception();
-      } else {
-        *exception_out = v8::Utils::OpenHandle(*catcher.Exception());
+    if (maybe_result.is_null()) {
+      DCHECK(catcher.HasCaught());
+      DCHECK(isolate->has_pending_exception());
+      DCHECK(isolate->external_caught_exception());
+      if (exception_out != NULL) {
+        if (isolate->pending_exception() ==
+            isolate->heap()->termination_exception()) {
+          is_termination = true;
+        } else {
+          *exception_out = v8::Utils::OpenHandle(*catcher.Exception());
+        }
       }
+      isolate->OptionalRescheduleException(true);
     }
-    isolate->OptionalRescheduleException(true);
-  }
 
-  ASSERT(!isolate->has_pending_exception());
-  ASSERT(!isolate->external_caught_exception());
+    DCHECK(!isolate->has_pending_exception());
+    DCHECK(!isolate->external_caught_exception());
+  }
+  if (is_termination) isolate->TerminateExecution();
   return maybe_result;
 }
 
 
 Handle<Object> Execution::GetFunctionDelegate(Isolate* isolate,
                                               Handle<Object> object) {
-  ASSERT(!object->IsJSFunction());
+  DCHECK(!object->IsJSFunction());
   Factory* factory = isolate->factory();
 
   // If you return a function from here, it will be called when an
@@ -225,7 +232,7 @@ Handle<Object> Execution::GetFunctionDelegate(Isolate* isolate,
 
 MaybeHandle<Object> Execution::TryGetFunctionDelegate(Isolate* isolate,
                                                       Handle<Object> object) {
-  ASSERT(!object->IsJSFunction());
+  DCHECK(!object->IsJSFunction());
 
   // If object is a function proxy, get its handler. Iterate if necessary.
   Object* fun = *object;
@@ -244,16 +251,15 @@ MaybeHandle<Object> Execution::TryGetFunctionDelegate(Isolate* isolate,
 
   // If the Object doesn't have an instance-call handler we should
   // throw a non-callable exception.
-  i::Handle<i::Object> error_obj = isolate->factory()->NewTypeError(
-      "called_non_callable", i::HandleVector<i::Object>(&object, 1));
-
-  return isolate->Throw<Object>(error_obj);
+  THROW_NEW_ERROR(isolate, NewTypeError("called_non_callable",
+                                        i::HandleVector<i::Object>(&object, 1)),
+                  Object);
 }
 
 
 Handle<Object> Execution::GetConstructorDelegate(Isolate* isolate,
                                                  Handle<Object> object) {
-  ASSERT(!object->IsJSFunction());
+  DCHECK(!object->IsJSFunction());
 
   // If you return a function from here, it will be called when an
   // attempt is made to call the given object as a constructor.
@@ -279,7 +285,7 @@ Handle<Object> Execution::GetConstructorDelegate(Isolate* isolate,
 
 MaybeHandle<Object> Execution::TryGetConstructorDelegate(
     Isolate* isolate, Handle<Object> object) {
-  ASSERT(!object->IsJSFunction());
+  DCHECK(!object->IsJSFunction());
 
   // If you return a function from here, it will be called when an
   // attempt is made to call the given object as a constructor.
@@ -301,9 +307,9 @@ MaybeHandle<Object> Execution::TryGetConstructorDelegate(
 
   // If the Object doesn't have an instance-call handler we should
   // throw a non-callable exception.
-  i::Handle<i::Object> error_obj = isolate->factory()->NewTypeError(
-      "called_non_callable", i::HandleVector<i::Object>(&object, 1));
-  return isolate->Throw<Object>(error_obj);
+  THROW_NEW_ERROR(isolate, NewTypeError("called_non_callable",
+                                        i::HandleVector<i::Object>(&object, 1)),
+                  Object);
 }
 
 
@@ -337,36 +343,71 @@ void StackGuard::DisableInterrupts() {
 }
 
 
-bool StackGuard::CheckInterrupt(int flagbit) {
+void StackGuard::PushPostponeInterruptsScope(PostponeInterruptsScope* scope) {
   ExecutionAccess access(isolate_);
-  return thread_local_.interrupt_flags_ & flagbit;
+  // Intercept already requested interrupts.
+  int intercepted = thread_local_.interrupt_flags_ & scope->intercept_mask_;
+  scope->intercepted_flags_ = intercepted;
+  thread_local_.interrupt_flags_ &= ~intercepted;
+  if (!has_pending_interrupts(access)) reset_limits(access);
+  // Add scope to the chain.
+  scope->prev_ = thread_local_.postpone_interrupts_;
+  thread_local_.postpone_interrupts_ = scope;
 }
 
 
-void StackGuard::RequestInterrupt(int flagbit) {
+void StackGuard::PopPostponeInterruptsScope() {
   ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ |= flagbit;
+  PostponeInterruptsScope* top = thread_local_.postpone_interrupts_;
+  // Make intercepted interrupts active.
+  DCHECK((thread_local_.interrupt_flags_ & top->intercept_mask_) == 0);
+  thread_local_.interrupt_flags_ |= top->intercepted_flags_;
+  if (has_pending_interrupts(access)) set_interrupt_limits(access);
+  // Remove scope from chain.
+  thread_local_.postpone_interrupts_ = top->prev_;
+}
+
+
+bool StackGuard::CheckInterrupt(InterruptFlag flag) {
+  ExecutionAccess access(isolate_);
+  return thread_local_.interrupt_flags_ & flag;
+}
+
+
+void StackGuard::RequestInterrupt(InterruptFlag flag) {
+  ExecutionAccess access(isolate_);
+  // Check the chain of PostponeInterruptsScopes for interception.
+  if (thread_local_.postpone_interrupts_ &&
+      thread_local_.postpone_interrupts_->Intercept(flag)) {
+    return;
+  }
+
+  // Not intercepted.  Set as active interrupt flag.
+  thread_local_.interrupt_flags_ |= flag;
   set_interrupt_limits(access);
 }
 
 
-void StackGuard::ClearInterrupt(int flagbit) {
+void StackGuard::ClearInterrupt(InterruptFlag flag) {
   ExecutionAccess access(isolate_);
-  thread_local_.interrupt_flags_ &= ~flagbit;
-  if (!should_postpone_interrupts(access) && !has_pending_interrupts(access)) {
-    reset_limits(access);
+  // Clear the interrupt flag from the chain of PostponeInterruptsScopes.
+  for (PostponeInterruptsScope* current = thread_local_.postpone_interrupts_;
+       current != NULL;
+       current = current->prev_) {
+    current->intercepted_flags_ &= ~flag;
   }
+
+  // Clear the interrupt flag from the active interrupt flags.
+  thread_local_.interrupt_flags_ &= ~flag;
+  if (!has_pending_interrupts(access)) reset_limits(access);
 }
 
 
 bool StackGuard::CheckAndClearInterrupt(InterruptFlag flag) {
   ExecutionAccess access(isolate_);
-  int flagbit = 1 << flag;
-  bool result = (thread_local_.interrupt_flags_ & flagbit);
-  thread_local_.interrupt_flags_ &= ~flagbit;
-  if (!should_postpone_interrupts(access) && !has_pending_interrupts(access)) {
-    reset_limits(access);
-  }
+  bool result = (thread_local_.interrupt_flags_ & flag);
+  thread_local_.interrupt_flags_ &= ~flag;
+  if (!has_pending_interrupts(access)) reset_limits(access);
   return result;
 }
 
@@ -408,8 +449,7 @@ void StackGuard::ThreadLocal::Clear() {
   jslimit_ = kIllegalLimit;
   real_climit_ = kIllegalLimit;
   climit_ = kIllegalLimit;
-  nesting_ = 0;
-  postpone_interrupts_nesting_ = 0;
+  postpone_interrupts_ = NULL;
   interrupt_flags_ = 0;
 }
 
@@ -417,19 +457,16 @@ void StackGuard::ThreadLocal::Clear() {
 bool StackGuard::ThreadLocal::Initialize(Isolate* isolate) {
   bool should_set_stack_limits = false;
   if (real_climit_ == kIllegalLimit) {
-    // Takes the address of the limit variable in order to find out where
-    // the top of stack is right now.
     const uintptr_t kLimitSize = FLAG_stack_size * KB;
-    uintptr_t limit = reinterpret_cast<uintptr_t>(&limit) - kLimitSize;
-    ASSERT(reinterpret_cast<uintptr_t>(&limit) > kLimitSize);
+    DCHECK(GetCurrentStackPosition() > kLimitSize);
+    uintptr_t limit = GetCurrentStackPosition() - kLimitSize;
     real_jslimit_ = SimulatorStack::JsLimitFromCLimit(isolate, limit);
     jslimit_ = SimulatorStack::JsLimitFromCLimit(isolate, limit);
     real_climit_ = limit;
     climit_ = limit;
     should_set_stack_limits = true;
   }
-  nesting_ = 0;
-  postpone_interrupts_nesting_ = 0;
+  postpone_interrupts_ = NULL;
   interrupt_flags_ = 0;
   return should_set_stack_limits;
 }
@@ -461,7 +498,7 @@ void StackGuard::InitThread(const ExecutionAccess& lock) {
     return Call(isolate,                                                \
                 isolate->name##_fun(),                                  \
                 isolate->js_builtins_object(),                          \
-                ARRAY_SIZE(argv), argv);                                \
+                arraysize(argv), argv);                                \
   } while (false)
 
 
@@ -552,7 +589,7 @@ Handle<Object> Execution::CharAt(Handle<String> string, uint32_t index) {
   Handle<Object> result;
   if (!TryCall(Handle<JSFunction>::cast(char_at),
                string,
-               ARRAY_SIZE(index_arg),
+               arraysize(index_arg),
                index_arg).ToHandle(&result)) {
     return factory->undefined_value();
   }
@@ -579,7 +616,7 @@ MaybeHandle<JSFunction> Execution::InstantiateFunction(
       Call(isolate,
            isolate->instantiate_fun(),
            isolate->js_builtins_object(),
-           ARRAY_SIZE(args),
+           arraysize(args),
            args),
       JSFunction);
   return Handle<JSFunction>::cast(result);
@@ -606,7 +643,7 @@ MaybeHandle<JSObject> Execution::InstantiateObject(
         Call(isolate,
              isolate->instantiate_fun(),
              isolate->js_builtins_object(),
-             ARRAY_SIZE(args),
+             arraysize(args),
              args),
         JSObject);
   }
@@ -622,7 +659,7 @@ MaybeHandle<Object> Execution::ConfigureInstance(
   return Execution::Call(isolate,
                          isolate->configure_instance_fun(),
                          isolate->js_builtins_object(),
-                         ARRAY_SIZE(args),
+                         arraysize(args),
                          args);
 }
 
@@ -636,7 +673,7 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
   MaybeHandle<Object> maybe_result =
       TryCall(isolate->get_stack_trace_line_fun(),
               isolate->js_builtins_object(),
-              ARRAY_SIZE(args),
+              arraysize(args),
               args);
   Handle<Object> result;
   if (!maybe_result.ToHandle(&result) || !result->IsString()) {
@@ -648,13 +685,6 @@ Handle<String> Execution::GetStackTraceLine(Handle<Object> recv,
 
 
 Object* StackGuard::HandleInterrupts() {
-  {
-    ExecutionAccess access(isolate_);
-    if (should_postpone_interrupts(access)) {
-      return isolate_->heap()->undefined_value();
-    }
-  }
-
   if (CheckAndClearInterrupt(GC_REQUEST)) {
     isolate_->heap()->CollectAllGarbage(Heap::kNoGCFlags, "GC interrupt");
   }
@@ -672,7 +702,7 @@ Object* StackGuard::HandleInterrupts() {
   }
 
   if (CheckAndClearInterrupt(INSTALL_CODE)) {
-    ASSERT(isolate_->concurrent_recompilation_enabled());
+    DCHECK(isolate_->concurrent_recompilation_enabled());
     isolate_->optimizing_compiler_thread()->InstallOptimizedFunctions();
   }
 

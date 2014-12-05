@@ -36,8 +36,6 @@
 #include "public/platform/WebRTCSessionDescription.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -54,7 +52,7 @@ private:
 
 } // namespace
 
-WebRTCSessionDescriptionRequest::WebRTCSessionDescriptionRequest(const PassRefPtr<RTCSessionDescriptionRequest>& constraints)
+WebRTCSessionDescriptionRequest::WebRTCSessionDescriptionRequest(RTCSessionDescriptionRequest* constraints)
     : m_private(constraints)
 {
 }

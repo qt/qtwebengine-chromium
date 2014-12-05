@@ -25,10 +25,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/xmpp/presencereceivetask.h"
+#include "webrtc/libjingle/xmpp/presencereceivetask.h"
 
-#include "talk/base/stringencode.h"
-#include "talk/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/base/stringencode.h"
 
 namespace buzz {
 
@@ -108,7 +108,7 @@ void PresenceReceiveTask::DecodeStatus(const Jid& from,
     const XmlElement * priority = stanza->FirstNamed(QN_PRIORITY);
     if (priority != NULL) {
       int pri;
-      if (talk_base::FromString(priority->BodyText(), &pri)) {
+      if (rtc::FromString(priority->BodyText(), &pri)) {
         presence_status->set_priority(pri);
       }
     }

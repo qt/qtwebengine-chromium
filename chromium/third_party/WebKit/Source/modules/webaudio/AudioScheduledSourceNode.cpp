@@ -28,17 +28,16 @@
 
 #include "modules/webaudio/AudioScheduledSourceNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/EventModules.h"
 #include "modules/webaudio/AudioContext.h"
 #include "platform/audio/AudioUtilities.h"
-#include <algorithm>
 #include "wtf/MathExtras.h"
+#include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const double AudioScheduledSourceNode::UnknownTime = -1;
 
@@ -93,7 +92,7 @@ void AudioScheduledSourceNode::updateSchedulingInfo(size_t quantumFrameSize,
     }
 
     quantumFrameOffset = startFrame > quantumStartFrame ? startFrame - quantumStartFrame : 0;
-    quantumFrameOffset = min(quantumFrameOffset, quantumFrameSize); // clamp to valid range
+    quantumFrameOffset = std::min(quantumFrameOffset, quantumFrameSize); // clamp to valid range
     nonSilentFramesToProcess = quantumFrameSize - quantumFrameOffset;
 
     if (!nonSilentFramesToProcess) {
@@ -146,6 +145,13 @@ void AudioScheduledSourceNode::start(double when, ExceptionState& exceptionState
         return;
     }
 
+    if (!std::isfinite(when) || (when < 0)) {
+        exceptionState.throwDOMException(
+            InvalidAccessError,
+            "Start time must be a finite non-negative number: " + String::number(when));
+        return;
+    }
+
     m_startTime = when;
     m_playbackState = SCHEDULED_STATE;
 }
@@ -158,13 +164,21 @@ void AudioScheduledSourceNode::stop(double when, ExceptionState& exceptionState)
         exceptionState.throwDOMException(
             InvalidStateError,
             "cannot call stop without calling start first.");
-    } else {
-        // stop() can be called more than once, with the last call to stop taking effect, unless the
-        // source has already stopped due to earlier calls to stop. No exceptions are thrown in any
-        // case.
-        when = max(0.0, when);
-        m_endTime = when;
+        return;
     }
+
+    if (!std::isfinite(when) || (when < 0)) {
+        exceptionState.throwDOMException(
+            InvalidAccessError,
+            "Stop time must be a finite non-negative number: " + String::number(when));
+        return;
+    }
+
+    // stop() can be called more than once, with the last call to stop taking effect, unless the
+    // source has already stopped due to earlier calls to stop. No exceptions are thrown in any
+    // case.
+    when = std::max(0.0, when);
+    m_endTime = when;
 }
 
 void AudioScheduledSourceNode::setOnended(PassRefPtr<EventListener> listener)
@@ -181,32 +195,16 @@ void AudioScheduledSourceNode::finish()
         m_playbackState = FINISHED_STATE;
     }
 
-    if (m_hasEndedListener) {
-        // |task| will keep the AudioScheduledSourceNode alive until the listener has been handled.
-        OwnPtr<NotifyEndedTask> task = adoptPtr(new NotifyEndedTask(this));
-        callOnMainThread(&AudioScheduledSourceNode::notifyEndedDispatch, task.leakPtr());
+    if (m_hasEndedListener && context()->executionContext()) {
+        context()->executionContext()->postTask(createCrossThreadTask(&AudioScheduledSourceNode::notifyEnded, this));
     }
 }
 
-void AudioScheduledSourceNode::notifyEndedDispatch(void* userData)
+void AudioScheduledSourceNode::notifyEnded()
 {
-    OwnPtr<NotifyEndedTask> task = adoptPtr(static_cast<NotifyEndedTask*>(userData));
-
-    task->notifyEnded();
+    dispatchEvent(Event::create(EventTypeNames::ended));
 }
 
-AudioScheduledSourceNode::NotifyEndedTask::NotifyEndedTask(PassRefPtr<AudioScheduledSourceNode> sourceNode)
-    : m_scheduledNode(sourceNode)
-{
-}
-
-void AudioScheduledSourceNode::NotifyEndedTask::notifyEnded()
-{
-    RefPtrWillBeRawPtr<Event> event = Event::create(EventTypeNames::ended);
-    event->setTarget(m_scheduledNode.get());
-    m_scheduledNode->dispatchEvent(event.get());
-}
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

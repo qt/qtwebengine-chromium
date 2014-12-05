@@ -33,7 +33,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class EventTarget;
@@ -42,12 +42,7 @@ class TouchEvent;
 class TouchList;
 class TreeScope;
 
-enum EventDispatchBehavior {
-    RetargetEvent,
-    StayInsideShadowDOM
-};
-
-class EventPath : public NoBaseWillBeGarbageCollectedFinalized<EventPath> {
+class EventPath final : public NoBaseWillBeGarbageCollected<EventPath> {
 public:
     explicit EventPath(Event*);
     explicit EventPath(Node*);
@@ -55,7 +50,7 @@ public:
 
     NodeEventContext& operator[](size_t index) { return m_nodeEventContexts[index]; }
     const NodeEventContext& operator[](size_t index) const { return m_nodeEventContexts[index]; }
-    const NodeEventContext& last() const { return m_nodeEventContexts[size() - 1]; }
+    NodeEventContext& last() { return m_nodeEventContexts[size() - 1]; }
 
     bool isEmpty() const { return m_nodeEventContexts.isEmpty(); }
     size_t size() const { return m_nodeEventContexts.size(); }
@@ -81,24 +76,24 @@ private:
     void shrink(size_t newSize) { m_nodeEventContexts.shrink(newSize); }
     void shrinkIfNeeded(const Node* target, const EventTarget* relatedTarget);
 
-    void adjustTouchList(const Node*, const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope> >& treeScopes);
+    void adjustTouchList(const Node*, const TouchList*, WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope>>& treeScopes);
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RefPtrWillBeMember<TreeScopeEventContext> > TreeScopeEventContextMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RefPtrWillBeMember<TreeScopeEventContext>> TreeScopeEventContextMap;
     TreeScopeEventContext* ensureTreeScopeEventContext(Node* currentTarget, TreeScope*, TreeScopeEventContextMap&);
 
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RawPtrWillBeMember<EventTarget> > RelatedTargetMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<TreeScope>, RawPtrWillBeMember<EventTarget>> RelatedTargetMap;
 
     static void buildRelatedNodeMap(const Node*, RelatedTargetMap&);
     static EventTarget* findRelatedNode(TreeScope*, RelatedTargetMap&);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     static void checkReachability(TreeScope&, TouchList&);
 #endif
 
     WillBeHeapVector<NodeEventContext, 64> m_nodeEventContexts;
     RawPtrWillBeMember<Node> m_node;
     RawPtrWillBeMember<Event> m_event;
-    WillBeHeapVector<RefPtrWillBeMember<TreeScopeEventContext> > m_treeScopeEventContexts;
+    WillBeHeapVector<RefPtrWillBeMember<TreeScopeEventContext>> m_treeScopeEventContexts;
 };
 
 } // namespace

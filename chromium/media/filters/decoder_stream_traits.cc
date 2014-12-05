@@ -15,7 +15,7 @@
 namespace media {
 
 std::string DecoderStreamTraits<DemuxerStream::AUDIO>::ToString() {
-  return "Audio";
+  return "audio";
 }
 
 void DecoderStreamTraits<DemuxerStream::AUDIO>::Initialize(
@@ -25,19 +25,6 @@ void DecoderStreamTraits<DemuxerStream::AUDIO>::Initialize(
     const PipelineStatusCB& status_cb,
     const OutputCB& output_cb) {
   decoder->Initialize(config, status_cb, output_cb);
-}
-
-bool DecoderStreamTraits<DemuxerStream::AUDIO>::FinishInitialization(
-    const StreamInitCB& init_cb,
-    DecoderType* decoder,
-    DemuxerStream* stream) {
-  DCHECK(stream);
-  if (!decoder) {
-    init_cb.Run(false);
-    return false;
-  }
-  init_cb.Run(true);
-  return true;
 }
 
 void DecoderStreamTraits<DemuxerStream::AUDIO>::ReportStatistics(
@@ -60,7 +47,7 @@ scoped_refptr<DecoderStreamTraits<DemuxerStream::AUDIO>::OutputType>
 }
 
 std::string DecoderStreamTraits<DemuxerStream::VIDEO>::ToString() {
-  return "Video";
+  return "video";
 }
 
 void DecoderStreamTraits<DemuxerStream::VIDEO>::Initialize(
@@ -72,19 +59,9 @@ void DecoderStreamTraits<DemuxerStream::VIDEO>::Initialize(
   decoder->Initialize(config, low_delay, status_cb, output_cb);
 }
 
-bool DecoderStreamTraits<DemuxerStream::VIDEO>::FinishInitialization(
-    const StreamInitCB& init_cb,
-    DecoderType* decoder,
-    DemuxerStream* stream) {
-  DCHECK(stream);
-  if (!decoder) {
-    init_cb.Run(false);
-    return false;
-  }
-  if (decoder->NeedsBitstreamConversion())
-    stream->EnableBitstreamConverter();
-  init_cb.Run(true);
-  return true;
+bool DecoderStreamTraits<DemuxerStream::VIDEO>::NeedsBitstreamConversion(
+    DecoderType* decoder) {
+  return decoder->NeedsBitstreamConversion();
 }
 
 void DecoderStreamTraits<DemuxerStream::VIDEO>::ReportStatistics(

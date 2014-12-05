@@ -25,13 +25,13 @@ class WebPluginAcceleratedSurfaceProxy : public WebPluginAcceleratedSurface {
       WebPluginProxy* plugin_proxy,
       gfx::GpuPreference gpu_preference);
 
-  virtual ~WebPluginAcceleratedSurfaceProxy();
+  ~WebPluginAcceleratedSurfaceProxy() override;
 
   // WebPluginAcceleratedSurface implementation.
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
-  virtual CGLContextObj context() OVERRIDE;
-  virtual void StartDrawing() OVERRIDE;
-  virtual void EndDrawing() OVERRIDE;
+  void SetSize(const gfx::Size& size) override;
+  CGLContextObj context() override;
+  void StartDrawing() override;
+  void EndDrawing() override;
 
  private:
   WebPluginAcceleratedSurfaceProxy(WebPluginProxy* plugin_proxy,

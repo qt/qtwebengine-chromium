@@ -11,7 +11,7 @@ namespace {
 
 // Subclass of LinkedFontsIterator for testing that allows mocking the linked
 // fonts vector.
-class TestLinkedFontsIterator : public LinkedFontsIterator {
+class TestLinkedFontsIterator : public internal::LinkedFontsIterator {
  public:
   explicit TestLinkedFontsIterator(Font font) : LinkedFontsIterator(font) {
   }
@@ -24,7 +24,7 @@ class TestLinkedFontsIterator : public LinkedFontsIterator {
     test_linked_fonts.push_back(font);
   }
 
-  virtual const std::vector<Font>* GetLinkedFonts() const OVERRIDE {
+  virtual const std::vector<Font>* GetLinkedFonts() const override {
     return &test_linked_fonts;
   }
 

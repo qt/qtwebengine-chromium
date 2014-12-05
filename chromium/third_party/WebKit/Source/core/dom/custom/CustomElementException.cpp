@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementException.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 String CustomElementException::preamble(const AtomicString& type)
 {
@@ -61,7 +61,7 @@ void CustomElementException::throwException(Reason reason, const AtomicString& t
         return;
 
     case ContextDestroyedRegisteringDefinition:
-        exceptionState.throwDOMException(NotSupportedError, preamble(type) + "The context is no longer valid.");
+        exceptionState.throwDOMException(InvalidStateError, preamble(type) + "The context is no longer valid.");
         return;
 
     case ExtendsIsInvalidName:
@@ -80,10 +80,6 @@ void CustomElementException::throwException(Reason reason, const AtomicString& t
         exceptionState.throwDOMException(NotSupportedError, preamble(type) + "The prototype is already in-use as an interface prototype object.");
         return;
 
-    case PrototypeNotAnObject:
-        exceptionState.throwDOMException(NotSupportedError, preamble(type) + "The prototype option is not an object.");
-        return;
-
     case TypeAlreadyRegistered:
         exceptionState.throwDOMException(NotSupportedError, preamble(type) + "A type with that name is already registered.");
         return;
@@ -92,4 +88,4 @@ void CustomElementException::throwException(Reason reason, const AtomicString& t
     ASSERT_NOT_REACHED();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,7 +26,7 @@
 #include "config.h"
 #include "modules/speech/SpeechSynthesisVoice.h"
 
-namespace WebCore {
+namespace blink {
 
 SpeechSynthesisVoice* SpeechSynthesisVoice::create(PlatformSpeechSynthesisVoice* voice)
 {
@@ -36,7 +36,6 @@ SpeechSynthesisVoice* SpeechSynthesisVoice::create(PlatformSpeechSynthesisVoice*
 SpeechSynthesisVoice::SpeechSynthesisVoice(PlatformSpeechSynthesisVoice* voice)
     : m_platformVoice(voice)
 {
-    ScriptWrappable::init(this);
 }
 
 void SpeechSynthesisVoice::trace(Visitor* visitor)
@@ -44,4 +43,4 @@ void SpeechSynthesisVoice::trace(Visitor* visitor)
     visitor->trace(m_platformVoice);
 }
 
-} // namespace WebCore
+} // namespace blink

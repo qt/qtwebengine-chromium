@@ -77,8 +77,10 @@ bool    sk_fidentical(SkFILE* a, SkFILE* b);
  */
 int     sk_fileno(SkFILE* f);
 
-// Returns true if something (file, directory, ???) exists at this path.
-bool    sk_exists(const char *path);
+/** Returns true if something (file, directory, ???) exists at this path,
+ *  and has the specified access flags.
+ */
+bool    sk_exists(const char *path, SkFILE_Flags = (SkFILE_Flags)0);
 
 // Returns true if a directory exists at this path.
 bool    sk_isdir(const char *path);
@@ -118,23 +120,10 @@ public:
     };
 };
 
-class SkUTF16_Str {
-public:
-    SkUTF16_Str(const char src[]);
-    ~SkUTF16_Str()
-    {
-        sk_free(fStr);
-    }
-    const uint16_t* get() const { return fStr; }
-
-private:
-    uint16_t*   fStr;
-};
-
 /**
  *  Functions for modifying SkStrings which represent paths on the filesystem.
  */
-class SkOSPath {
+class SkOSPath   {
 public:
     /**
      * Assembles rootPath and relativePath into a single path, like this:
@@ -144,7 +133,7 @@ public:
      *
      * Uses SkPATH_SEPARATOR, to work on all platforms.
      */
-    static SkString SkPathJoin(const char *rootPath, const char *relativePath);
+    static SkString Join(const char* rootPath, const char* relativePath);
 
     /**
      *  Return the name of the file, ignoring the directory structure.
@@ -154,6 +143,18 @@ public:
      *  @return SkString The basename of the file - anything beyond the
      *      final slash, or the full name if there is no slash.
      */
-    static SkString SkBasename(const char* fullPath);
+    static SkString Basename(const char* fullPath);
+
+    /**
+     *  Given a qualified file name returns the directory.
+     *  Behaves like python's os.path.dirname. If the fullPath is
+     *  /dir/subdir/ the return will be /dir/subdir/
+     *  @param fullPath Full path to the file.
+     *  @return SkString The dir containing the file - anything preceding the
+     *      final slash, or the full name if ending in a slash.
+     */
+    static SkString Dirname(const char* fullPath);
+    
 };
+
 #endif

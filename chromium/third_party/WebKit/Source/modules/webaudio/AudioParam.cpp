@@ -35,7 +35,7 @@
 #include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 const double AudioParam::DefaultSmoothingConstant = 0.05;
 const double AudioParam::SnapThreshold = 0.001;
@@ -164,37 +164,29 @@ void AudioParam::calculateTimelineValues(float* values, unsigned numberOfValues)
     m_value = m_timeline.valuesForTimeRange(startTime, endTime, narrowPrecisionToFloat(m_value), values, numberOfValues, sampleRate, sampleRate);
 }
 
-void AudioParam::connect(AudioNodeOutput* output)
+void AudioParam::connect(AudioNodeOutput& output)
 {
     ASSERT(context()->isGraphOwner());
 
-    ASSERT(output);
-    if (!output)
+    if (m_outputs.contains(&output))
         return;
 
-    if (m_outputs.contains(output))
-        return;
-
-    output->addParam(this);
-    m_outputs.add(output);
+    output.addParam(*this);
+    m_outputs.add(&output);
     changedOutputs();
 }
 
-void AudioParam::disconnect(AudioNodeOutput* output)
+void AudioParam::disconnect(AudioNodeOutput& output)
 {
     ASSERT(context()->isGraphOwner());
 
-    ASSERT(output);
-    if (!output)
-        return;
-
-    if (m_outputs.contains(output)) {
-        m_outputs.remove(output);
+    if (m_outputs.contains(&output)) {
+        m_outputs.remove(&output);
         changedOutputs();
-        output->removeParam(this);
+        output.removeParam(*this);
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

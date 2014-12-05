@@ -13,8 +13,6 @@
 #include "base/strings/string16.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/common/content_export.h"
-#include "content/public/common/media_stream_request.h"
-#include "content/public/common/page_transition_types.h"
 #include "net/base/load_states.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "ui/base/window_open_disposition.h"
@@ -24,7 +22,6 @@ class SkBitmap;
 struct ViewHostMsg_CreateWindow_Params;
 struct FrameHostMsg_DidCommitProvisionalLoad_Params;
 struct ViewMsg_PostMessage_Params;
-struct WebPreferences;
 
 namespace base {
 class ListValue;
@@ -53,12 +50,12 @@ class SessionStorageNamespace;
 class SiteInstance;
 class WebContents;
 class WebContentsImpl;
-struct AXEventNotificationDetails;
 struct FileChooserParams;
 struct GlobalRequestID;
 struct NativeWebKeyboardEvent;
 struct Referrer;
 struct RendererPreferences;
+struct WebPreferences;
 
 //
 // RenderViewHostDelegate
@@ -112,8 +109,8 @@ class CONTENT_EXPORT RenderViewHostDelegate {
                            int32 page_id,
                            const PageState& state) {}
 
-  // The destination URL has changed should be updated
-  virtual void UpdateTargetURL(int32 page_id, const GURL& url) {}
+  // The destination URL has changed should be updated.
+  virtual void UpdateTargetURL(const GURL& url) {}
 
   // The page is trying to close the RenderView's representation in the client.
   virtual void Close(RenderViewHost* render_view_host) {}
@@ -141,9 +138,9 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   virtual RendererPreferences GetRendererPrefs(
       BrowserContext* browser_context) const = 0;
 
-  // Returns a WebPreferences object that will be used by the renderer
+  // Computes a WebPreferences object that will be used by the renderer
   // associated with the owning render view host.
-  virtual WebPreferences GetWebkitPrefs();
+  virtual WebPreferences ComputeWebkitPrefs();
 
   // Notification the user has made a gesture while focus was on the
   // page. This is used to avoid uninitiated user downloads (aka carpet
@@ -158,9 +155,7 @@ class CONTENT_EXPORT RenderViewHostDelegate {
 
   // Notification that the renderer has become unresponsive. The
   // delegate can use this notification to show a warning to the user.
-  virtual void RendererUnresponsive(RenderViewHost* render_view_host,
-                                    bool is_during_before_unload,
-                                    bool is_during_unload) {}
+  virtual void RendererUnresponsive(RenderViewHost* render_view_host) {}
 
   // Notification that a previously unresponsive renderer has become
   // responsive again. The delegate can use this notification to end the
@@ -266,13 +261,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // Show the newly created full screen widget. Similar to above.
   virtual void ShowCreatedFullscreenWidget(int route_id) {}
 
-  // The render view has requested access to media devices listed in
-  // |request|, and the client should grant or deny that permission by
-  // calling |callback|.
-  virtual void RequestMediaAccessPermission(
-      const MediaStreamRequest& request,
-      const MediaResponseCallback& callback) {}
-
   // Returns the SessionStorageNamespace the render view should use. Might
   // create the SessionStorageNamespace on the fly.
   virtual SessionStorageNamespace* GetSessionStorageNamespace(
@@ -291,10 +279,6 @@ class CONTENT_EXPORT RenderViewHostDelegate {
   // TODO(ajwong): Remove once the main frame RenderFrameHost is no longer
   // created by the RenderViewHost.
   virtual FrameTree* GetFrameTree();
-
-  // Invoked when an accessibility event is received from the renderer.
-  virtual void AccessibilityEventReceived(
-      const std::vector<AXEventNotificationDetails>& details) {}
 
  protected:
   virtual ~RenderViewHostDelegate() {}

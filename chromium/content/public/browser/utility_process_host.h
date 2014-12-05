@@ -34,12 +34,15 @@ struct ChildProcessData;
 class UtilityProcessHost : public IPC::Sender,
                            public base::SupportsWeakPtr<UtilityProcessHost> {
  public:
-  // Used to create a utility process.
+  // Used to create a utility process. |client| is optional. If supplied it will
+  // be notified of incoming messages from the utility process.
+  // |client_task_runner| is required if |client| is supplied and is the task
+  // runner upon which |client| will be invoked.
   CONTENT_EXPORT static UtilityProcessHost* Create(
-      UtilityProcessHostClient* client,
-      base::SequencedTaskRunner* client_task_runner);
+      const scoped_refptr<UtilityProcessHostClient>& client,
+      const scoped_refptr<base::SequencedTaskRunner>& client_task_runner);
 
-  virtual ~UtilityProcessHost() {}
+  ~UtilityProcessHost() override {}
 
   // Starts utility process in batch mode. Caller must call EndBatchMode()
   // to finish the utility process.

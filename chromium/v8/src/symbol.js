@@ -69,20 +69,16 @@ function SymbolKeyFor(symbol) {
 
 // ES6 19.1.2.8
 function ObjectGetOwnPropertySymbols(obj) {
-  if (!IS_SPEC_OBJECT(obj)) {
-    throw MakeTypeError("called_on_non_object",
-                        ["Object.getOwnPropertySymbols"]);
-  }
+  obj = ToObject(obj);
 
   // TODO(arv): Proxies use a shared trap for String and Symbol keys.
 
-  return ObjectGetOwnPropertyKeys(obj, true);
+  return ObjectGetOwnPropertyKeys(obj, PROPERTY_ATTRIBUTES_STRING);
 }
 
 
 //-------------------------------------------------------------------
 
-var symbolCreate = InternalSymbol("Symbol.create");
 var symbolHasInstance = InternalSymbol("Symbol.hasInstance");
 var symbolIsConcatSpreadable = InternalSymbol("Symbol.isConcatSpreadable");
 var symbolIsRegExp = InternalSymbol("Symbol.isRegExp");
@@ -100,12 +96,14 @@ function SetUpSymbol() {
   %FunctionSetPrototype($Symbol, new $Object());
 
   InstallConstants($Symbol, $Array(
-    "create", symbolCreate,
-    "hasInstance", symbolHasInstance,
-    "isConcatSpreadable", symbolIsConcatSpreadable,
-    "isRegExp", symbolIsRegExp,
+    // TODO(rossberg): expose when implemented.
+    // "hasInstance", symbolHasInstance,
+    // "isConcatSpreadable", symbolIsConcatSpreadable,
+    // "isRegExp", symbolIsRegExp,
     "iterator", symbolIterator,
-    "toStringTag", symbolToStringTag,
+    // TODO(dslomov, caitp): Currently defined in harmony-tostring.js ---
+    // Move here when shipping
+    // "toStringTag", symbolToStringTag,
     "unscopables", symbolUnscopables
   ));
   InstallFunctions($Symbol, DONT_ENUM, $Array(
@@ -113,7 +111,9 @@ function SetUpSymbol() {
     "keyFor", SymbolKeyFor
   ));
 
-  %SetProperty($Symbol.prototype, "constructor", $Symbol, DONT_ENUM);
+  %AddNamedProperty($Symbol.prototype, "constructor", $Symbol, DONT_ENUM);
+  %AddNamedProperty(
+      $Symbol.prototype, symbolToStringTag, "Symbol", DONT_ENUM | READ_ONLY);
   InstallFunctions($Symbol.prototype, DONT_ENUM, $Array(
     "toString", SymbolToString,
     "valueOf", SymbolValueOf

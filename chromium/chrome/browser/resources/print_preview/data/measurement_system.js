@@ -123,7 +123,7 @@ cr.define('print_preview', function() {
       var precision = MeasurementSystem.Precision_[this.unitType_];
       var roundedValue = Math.round(value / precision) * precision;
       // Truncate
-      return roundedValue.toFixed(
+      return +roundedValue.toFixed(
           MeasurementSystem.DecimalPlaces_[this.unitType_]);
     },
 
@@ -140,7 +140,7 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * @param {number} Value in local units to convert to points.
+     * @param {number} localUnits Value in local units to convert to points.
      * @return {number} Value in points.
      */
     convertToPoints: function(localUnits) {

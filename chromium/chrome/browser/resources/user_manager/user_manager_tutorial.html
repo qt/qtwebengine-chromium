@@ -1,20 +1,5 @@
 <div id="user-manager-tutorial" hidden>
-  <div class="tutorial-slide" id="slide-welcome">
-    <div class="slide-image"></div>
-    <div class="slide-contents">
-      <div class="slide-title" i18n-content="slideWelcomeTitle"></div>
-      <div class="slide-text" i18n-content="slideWelcomeText"></div>
-    </div>
-    <div class="slide-buttons">
-      <button id="slide-welcome-next"
-          class="left custom-appearance button-fancy button-blue"
-          i18n-content="tutorialStart"></button>
-      <button id="slide-welcome-skip" class="right"
-          i18n-content="tutorialSkip"></button>
-    </div>
-  </div>
-
-  <div class="tutorial-slide hidden" id="slide-your-chrome">
+  <div class="tutorial-slide" id="slide-your-chrome">
     <div class="slide-image"></div>
     <div class="slide-contents">
       <div class="slide-title" i18n-content="slideYourChromeTitle"></div>
@@ -61,10 +46,11 @@
   </div>
 
   <div class="tutorial-slide hidden" id="slide-not-you">
+    <div id="dismiss-bubble-button"></div>
     <div class="slide-buttons">
       <div class="slide-text" i18n-content="slideCompleteUserNotFound"></div>
-      <button id="slide-add-user" class="link-button"
-          i18n-content="slideCompleteAddUser"></button>
+      <a is="action-link" id="slide-add-user"
+          i18n-content="slideCompleteAddUser"></a>
     </div>
     <div class="arrow-down"></div>
   </div>

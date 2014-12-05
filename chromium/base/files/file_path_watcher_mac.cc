@@ -15,9 +15,9 @@ namespace {
 
 class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
  public:
-  virtual bool Watch(const FilePath& path,
-                     bool recursive,
-                     const FilePathWatcher::Callback& callback) OVERRIDE {
+  bool Watch(const FilePath& path,
+             bool recursive,
+             const FilePathWatcher::Callback& callback) override {
     // Use kqueue for non-recursive watches and FSEvents for recursive ones.
     DCHECK(!impl_.get());
     if (recursive) {
@@ -33,20 +33,20 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate {
     return impl_->Watch(path, recursive, callback);
   }
 
-  virtual void Cancel() OVERRIDE {
-    if (impl_)
+  void Cancel() override {
+    if (impl_.get())
       impl_->Cancel();
     set_cancelled();
   }
 
-  virtual void CancelOnMessageLoopThread() OVERRIDE {
-    if (impl_)
+  void CancelOnMessageLoopThread() override {
+    if (impl_.get())
       impl_->Cancel();
     set_cancelled();
   }
 
  protected:
-  virtual ~FilePathWatcherImpl() {}
+  ~FilePathWatcherImpl() override {}
 
   scoped_refptr<PlatformDelegate> impl_;
 };

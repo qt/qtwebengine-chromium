@@ -6,7 +6,8 @@
 
 #include <vector>
 
-#include "base/file_util.h"
+#include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/hash.h"
 #include "base/logging.h"
@@ -21,6 +22,8 @@
 #include "net/disk_cache/simple/simple_synchronous_entry.h"
 #include "net/disk_cache/simple/simple_util.h"
 #include "third_party/zlib/zlib.h"
+
+using base::File;
 
 namespace disk_cache {
 namespace {
@@ -66,10 +69,16 @@ void UmaRecordIndexInitMethod(IndexInitMethod method,
 }
 
 bool WritePickleFile(Pickle* pickle, const base::FilePath& file_name) {
-  int bytes_written = base::WriteFile(
-      file_name, static_cast<const char*>(pickle->data()), pickle->size());
+  File file(
+      file_name,
+      File::FLAG_CREATE | File::FLAG_WRITE | File::FLAG_SHARE_DELETE);
+  if (!file.IsValid())
+    return false;
+
+  int bytes_written =
+      file.Write(0, static_cast<const char*>(pickle->data()), pickle->size());
   if (bytes_written != implicit_cast<int>(pickle->size())) {
-    base::DeleteFile(file_name, /* recursive = */ false);
+    simple_util::SimpleCacheDeleteFile(file_name);
     return false;
   }
   return true;
@@ -95,7 +104,7 @@ void ProcessEntryFile(SimpleIndex::EntrySet* entries,
     return;
   }
 
-  base::File::Info file_info;
+  File::Info file_info;
   if (!base::GetFileInfo(file_path, &file_info)) {
     LOG(ERROR) << "Could not get file info for " << file_path.value();
     return;
@@ -190,6 +199,15 @@ void SimpleIndexFile::SyncWriteToDisk(net::CacheType cache_type,
                                       scoped_ptr<Pickle> pickle,
                                       const base::TimeTicks& start_time,
                                       bool app_on_background) {
+  DCHECK_EQ(index_filename.DirName().value(),
+            temp_index_filename.DirName().value());
+  base::FilePath index_file_directory = temp_index_filename.DirName();
+  if (!base::DirectoryExists(index_file_directory) &&
+      !base::CreateDirectory(index_file_directory)) {
+    LOG(ERROR) << "Could not create a directory to hold the index file";
+    return;
+  }
+
   // There is a chance that the index containing all the necessary data about
   // newly created entries will appear to be stale. This can happen if on-disk
   // part of a Create operation does not fit into the time budget for the index
@@ -202,19 +220,16 @@ void SimpleIndexFile::SyncWriteToDisk(net::CacheType cache_type,
   }
   SerializeFinalData(cache_dir_mtime, pickle.get());
   if (!WritePickleFile(pickle.get(), temp_index_filename)) {
-    if (!base::CreateDirectory(temp_index_filename.DirName())) {
-      LOG(ERROR) << "Could not create a directory to hold the index file";
-      return;
-    }
-    if (!WritePickleFile(pickle.get(), temp_index_filename)) {
-      LOG(ERROR) << "Failed to write the temporary index file";
-      return;
-    }
+    LOG(ERROR) << "Failed to write the temporary index file";
+    return;
   }
 
   // Atomically rename the temporary index file to become the real one.
-  bool result = base::ReplaceFile(temp_index_filename, index_filename, NULL);
-  DCHECK(result);
+  // TODO(gavinp): DCHECK when not shutting down, since that is very strange.
+  // The rename failing during shutdown is legal because it's legal to begin
+  // erasing a cache as soon as the destructor has been called.
+  if (!base::ReplaceFile(temp_index_filename, index_filename, NULL))
+    return;
 
   if (app_on_background) {
     SIMPLE_CACHE_UMA(TIMES,
@@ -234,8 +249,8 @@ bool SimpleIndexFile::IndexMetadata::CheckIndexMetadata() {
 }
 
 SimpleIndexFile::SimpleIndexFile(
-    base::SingleThreadTaskRunner* cache_thread,
-    base::TaskRunner* worker_pool,
+    const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+    const scoped_refptr<base::TaskRunner>& worker_pool,
     net::CacheType cache_type,
     const base::FilePath& cache_directory)
     : cache_thread_(cache_thread),
@@ -263,18 +278,18 @@ void SimpleIndexFile::LoadIndexEntries(base::Time cache_last_modified,
 void SimpleIndexFile::WriteToDisk(const SimpleIndex::EntrySet& entry_set,
                                   uint64 cache_size,
                                   const base::TimeTicks& start,
-                                  bool app_on_background) {
+                                  bool app_on_background,
+                                  const base::Closure& callback) {
   IndexMetadata index_metadata(entry_set.size(), cache_size);
   scoped_ptr<Pickle> pickle = Serialize(index_metadata, entry_set);
-  cache_thread_->PostTask(FROM_HERE, base::Bind(
-      &SimpleIndexFile::SyncWriteToDisk,
-      cache_type_,
-      cache_directory_,
-      index_file_,
-      temp_index_file_,
-      base::Passed(&pickle),
-      base::TimeTicks::Now(),
-      app_on_background));
+  base::Closure task =
+      base::Bind(&SimpleIndexFile::SyncWriteToDisk,
+                 cache_type_, cache_directory_, index_file_, temp_index_file_,
+                 base::Passed(&pickle), start, app_on_background);
+  if (callback.is_null())
+    cache_thread_->PostTask(FROM_HERE, task);
+  else
+    cache_thread_->PostTaskAndReply(FROM_HERE, task, callback);
 }
 
 // static
@@ -332,10 +347,14 @@ void SimpleIndexFile::SyncLoadFromDisk(const base::FilePath& index_filename,
                                        SimpleIndexLoadResult* out_result) {
   out_result->Reset();
 
+  File file(index_filename,
+            File::FLAG_OPEN | File::FLAG_READ | File::FLAG_SHARE_DELETE);
+  if (!file.IsValid())
+    return;
+
   base::MemoryMappedFile index_file_map;
-  if (!index_file_map.Initialize(index_filename)) {
-    LOG(WARNING) << "Could not map Simple Index file.";
-    base::DeleteFile(index_filename, false);
+  if (!index_file_map.Initialize(file.Pass())) {
+    simple_util::SimpleCacheDeleteFile(index_filename);
     return;
   }
 
@@ -346,7 +365,7 @@ void SimpleIndexFile::SyncLoadFromDisk(const base::FilePath& index_filename,
       out_result);
 
   if (!out_result->did_load)
-    base::DeleteFile(index_filename, false);
+    simple_util::SimpleCacheDeleteFile(index_filename);
 }
 
 // static
@@ -434,7 +453,7 @@ void SimpleIndexFile::SyncRestoreFromDisk(
     const base::FilePath& index_file_path,
     SimpleIndexLoadResult* out_result) {
   VLOG(1) << "Simple Cache Index is being restored from disk.";
-  base::DeleteFile(index_file_path, /* recursive = */ false);
+  simple_util::SimpleCacheDeleteFile(index_file_path);
   out_result->Reset();
   SimpleIndex::EntrySet* entries = &out_result->entries;
 

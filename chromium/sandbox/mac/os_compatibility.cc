@@ -13,6 +13,7 @@ namespace sandbox {
 
 namespace {
 
+#pragma pack(push, 4)
 // Verified from launchd-329.3.3 (10.6.8).
 struct look_up2_request_10_6 {
   mach_msg_header_t Head;
@@ -56,6 +57,7 @@ struct swap_integer_request_10_6 {
   vproc_gsk_t outkey;
   int64_t inval;
 };
+#pragma pack(pop)
 
 // TODO(rsesek): Libc provides strnlen() starting in 10.7.
 size_t strnlen(const char* str, size_t maxlen) {
@@ -67,8 +69,13 @@ size_t strnlen(const char* str, size_t maxlen) {
   return len;
 }
 
+uint64_t MachGetMessageID(const IPCMessage message) {
+  return message.mach->msgh_id;
+}
+
 template <typename R>
-std::string LaunchdLookUp2GetRequestName(const mach_msg_header_t* header) {
+std::string LaunchdLookUp2GetRequestName(const IPCMessage message) {
+  mach_msg_header_t* header = message.mach;
   DCHECK_EQ(sizeof(R), header->msgh_size);
   const R* request = reinterpret_cast<const R*>(header);
   // Make sure the name is properly NUL-terminated.
@@ -79,8 +86,8 @@ std::string LaunchdLookUp2GetRequestName(const mach_msg_header_t* header) {
 }
 
 template <typename R>
-void LaunchdLookUp2FillReply(mach_msg_header_t* header, mach_port_t port) {
-  R* reply = reinterpret_cast<R*>(header);
+void LaunchdLookUp2FillReply(IPCMessage message, mach_port_t port) {
+  R* reply = reinterpret_cast<R*>(message.mach);
   reply->Head.msgh_size = sizeof(R);
   reply->Head.msgh_bits =
       MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_MOVE_SEND_ONCE) |
@@ -92,8 +99,8 @@ void LaunchdLookUp2FillReply(mach_msg_header_t* header, mach_port_t port) {
 }
 
 template <typename R>
-bool LaunchdSwapIntegerIsGetOnly(const mach_msg_header_t* header) {
-  const R* request = reinterpret_cast<const R*>(header);
+bool LaunchdSwapIntegerIsGetOnly(const IPCMessage message) {
+  const R* request = reinterpret_cast<const R*>(message.mach);
   return request->inkey == 0 && request->inval == 0 && request->outkey != 0;
 }
 
@@ -101,6 +108,7 @@ bool LaunchdSwapIntegerIsGetOnly(const mach_msg_header_t* header) {
 
 const LaunchdCompatibilityShim GetLaunchdCompatibilityShim() {
   LaunchdCompatibilityShim shim = {
+    .ipc_message_get_id = &MachGetMessageID,
     .msg_id_look_up2 = 404,
     .msg_id_swap_integer = 416,
     .look_up2_fill_reply = &LaunchdLookUp2FillReply<look_up2_reply_10_6>,

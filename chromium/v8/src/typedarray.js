@@ -291,6 +291,13 @@ function TypedArraySet(obj, offset) {
   }
 }
 
+function TypedArrayGetToStringTag() {
+  if (!%IsTypedArray(this)) return;
+  var name = %_ClassOf(this);
+  if (IS_UNDEFINED(name)) return;
+  return name;
+}
+
 // -------------------------------------------------------------------
 
 function SetupTypedArrays() {
@@ -299,18 +306,19 @@ macro SETUP_TYPED_ARRAY(ARRAY_ID, NAME, ELEMENT_SIZE)
   %SetCode(global.NAME, NAMEConstructor);
   %FunctionSetPrototype(global.NAME, new $Object());
 
-  %SetProperty(global.NAME, "BYTES_PER_ELEMENT", ELEMENT_SIZE,
-               READ_ONLY | DONT_ENUM | DONT_DELETE);
-  %SetProperty(global.NAME.prototype,
-               "constructor", global.NAME, DONT_ENUM);
-  %SetProperty(global.NAME.prototype,
-               "BYTES_PER_ELEMENT", ELEMENT_SIZE,
-               READ_ONLY | DONT_ENUM | DONT_DELETE);
+  %AddNamedProperty(global.NAME, "BYTES_PER_ELEMENT", ELEMENT_SIZE,
+                    READ_ONLY | DONT_ENUM | DONT_DELETE);
+  %AddNamedProperty(global.NAME.prototype,
+                    "constructor", global.NAME, DONT_ENUM);
+  %AddNamedProperty(global.NAME.prototype,
+                    "BYTES_PER_ELEMENT", ELEMENT_SIZE,
+                    READ_ONLY | DONT_ENUM | DONT_DELETE);
   InstallGetter(global.NAME.prototype, "buffer", NAME_GetBuffer);
   InstallGetter(global.NAME.prototype, "byteOffset", NAME_GetByteOffset);
   InstallGetter(global.NAME.prototype, "byteLength", NAME_GetByteLength);
   InstallGetter(global.NAME.prototype, "length", NAME_GetLength);
-
+  InstallGetter(global.NAME.prototype, symbolToStringTag,
+                TypedArrayGetToStringTag);
   InstallFunctions(global.NAME.prototype, DONT_ENUM, $Array(
         "subarray", NAMESubArray,
         "set", TypedArraySet
@@ -436,7 +444,9 @@ function SetupDataView() {
   %FunctionSetPrototype($DataView, new $Object);
 
   // Set up constructor property on the DataView prototype.
-  %SetProperty($DataView.prototype, "constructor", $DataView, DONT_ENUM);
+  %AddNamedProperty($DataView.prototype, "constructor", $DataView, DONT_ENUM);
+  %AddNamedProperty(
+      $DataView.prototype, symbolToStringTag, "DataView", READ_ONLY|DONT_ENUM);
 
   InstallGetter($DataView.prototype, "buffer", DataViewGetBufferJS);
   InstallGetter($DataView.prototype, "byteOffset", DataViewGetByteOffset);

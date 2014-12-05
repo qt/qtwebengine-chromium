@@ -31,20 +31,16 @@ class AudioSyncReader : public media::AudioOutputController::SyncReader {
   AudioSyncReader(base::SharedMemory* shared_memory,
                   const media::AudioParameters& params);
 
-  virtual ~AudioSyncReader();
+  ~AudioSyncReader() override;
 
   // media::AudioOutputController::SyncReader implementations.
-  virtual void UpdatePendingBytes(uint32 bytes) OVERRIDE;
-  virtual void Read(media::AudioBus* dest) OVERRIDE;
-  virtual void Close() OVERRIDE;
+  void UpdatePendingBytes(uint32 bytes) override;
+  void Read(media::AudioBus* dest) override;
+  void Close() override;
 
   bool Init();
-  bool PrepareForeignSocketHandle(base::ProcessHandle process_handle,
-#if defined(OS_WIN)
-                                  base::SyncSocket::Handle* foreign_handle);
-#else
-                                  base::FileDescriptor* foreign_handle);
-#endif
+  bool PrepareForeignSocket(base::ProcessHandle process_handle,
+                            base::SyncSocket::TransitDescriptor* descriptor);
 
  private:
   // Blocks until data is ready for reading or a timeout expires.  Returns false

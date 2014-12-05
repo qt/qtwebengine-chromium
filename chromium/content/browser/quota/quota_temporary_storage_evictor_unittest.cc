@@ -13,13 +13,13 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "content/public/test/mock_storage_client.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_temporary_storage_evictor.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/quota_temporary_storage_evictor.h"
 
-using quota::QuotaTemporaryStorageEvictor;
-using quota::StorageType;
-using quota::UsageAndQuota;
+using storage::QuotaTemporaryStorageEvictor;
+using storage::StorageType;
+using storage::UsageAndQuota;
 
 namespace content {
 
@@ -27,7 +27,7 @@ class QuotaTemporaryStorageEvictorTest;
 
 namespace {
 
-class MockQuotaEvictionHandler : public quota::QuotaEvictionHandler {
+class MockQuotaEvictionHandler : public storage::QuotaEvictionHandler {
  public:
   explicit MockQuotaEvictionHandler(QuotaTemporaryStorageEvictorTest *test)
       : quota_(0),
@@ -35,35 +35,33 @@ class MockQuotaEvictionHandler : public quota::QuotaEvictionHandler {
         error_on_evict_origin_data_(false),
         error_on_get_usage_and_quota_(false) {}
 
-  virtual void EvictOriginData(
-      const GURL& origin,
-      StorageType type,
-      const EvictOriginDataCallback& callback) OVERRIDE {
+  void EvictOriginData(const GURL& origin,
+                       StorageType type,
+                       const EvictOriginDataCallback& callback) override {
     if (error_on_evict_origin_data_) {
-      callback.Run(quota::kQuotaErrorInvalidModification);
+      callback.Run(storage::kQuotaErrorInvalidModification);
       return;
     }
     int64 origin_usage = EnsureOriginRemoved(origin);
     if (origin_usage >= 0)
       available_space_ += origin_usage;
-    callback.Run(quota::kQuotaStatusOk);
+    callback.Run(storage::kQuotaStatusOk);
   }
 
-  virtual void GetUsageAndQuotaForEviction(
-      const UsageAndQuotaCallback& callback) OVERRIDE {
+  void GetUsageAndQuotaForEviction(
+      const UsageAndQuotaCallback& callback) override {
     if (error_on_get_usage_and_quota_) {
-      callback.Run(quota::kQuotaErrorInvalidAccess, UsageAndQuota());
+      callback.Run(storage::kQuotaErrorInvalidAccess, UsageAndQuota());
       return;
     }
     if (!task_for_get_usage_and_quota_.is_null())
       task_for_get_usage_and_quota_.Run();
     UsageAndQuota quota_and_usage(-1, GetUsage(), quota_, available_space_);
-    callback.Run(quota::kQuotaStatusOk, quota_and_usage);
+    callback.Run(storage::kQuotaStatusOk, quota_and_usage);
   }
 
-  virtual void GetLRUOrigin(
-      StorageType type,
-      const GetLRUOriginCallback& callback) OVERRIDE {
+  void GetLRUOrigin(StorageType type,
+                    const GetLRUOriginCallback& callback) override {
     if (origin_order_.empty())
       callback.Run(GURL());
     else
@@ -143,7 +141,7 @@ class QuotaTemporaryStorageEvictorTest : public testing::Test {
       : num_get_usage_and_quota_for_eviction_(0),
         weak_factory_(this) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     quota_eviction_handler_.reset(new MockQuotaEvictionHandler(this));
 
     // Run multiple evictions in a single RunUntilIdle() when interval_ms == 0
@@ -151,7 +149,7 @@ class QuotaTemporaryStorageEvictorTest : public testing::Test {
         quota_eviction_handler_.get(), 0));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     temporary_storage_evictor_.reset();
     quota_eviction_handler_.reset();
     base::RunLoop().RunUntilIdle();

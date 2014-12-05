@@ -28,41 +28,39 @@
 
 #include "core/accessibility/AXMockObject.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXMenuList;
 class AXMenuListOption;
 class HTMLElement;
-class HTMLSelectElement;
 
-class AXMenuListPopup FINAL : public AXMockObject {
+class AXMenuListPopup final : public AXMockObject {
 public:
     static PassRefPtr<AXMenuListPopup> create() { return adoptRef(new AXMenuListPopup); }
 
-    virtual bool isEnabled() const OVERRIDE;
-    virtual bool isOffScreen() const OVERRIDE;
+    virtual bool isEnabled() const override;
+    virtual bool isOffScreen() const override;
 
     void didUpdateActiveOption(int optionIndex);
 
 private:
     AXMenuListPopup();
 
-    virtual bool isMenuListPopup() const OVERRIDE { return true; }
+    virtual bool isMenuListPopup() const override { return true; }
 
-    virtual LayoutRect elementRect() const OVERRIDE { return LayoutRect(); }
-    virtual AccessibilityRole roleValue() const OVERRIDE { return MenuListPopupRole; }
+    virtual LayoutRect elementRect() const override { return LayoutRect(); }
+    virtual AccessibilityRole roleValue() const override { return MenuListPopupRole; }
 
-    virtual bool isVisible() const OVERRIDE;
-    virtual bool press() const OVERRIDE;
-    virtual void addChildren() OVERRIDE;
-    virtual void childrenChanged() OVERRIDE;
-    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
+    virtual bool isVisible() const override;
+    virtual bool press() const override;
+    virtual void addChildren() override;
+    virtual void childrenChanged() override;
+    virtual bool computeAccessibilityIsIgnored() const override;
 
     AXMenuListOption* menuListOptionAXObject(HTMLElement*) const;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXMenuListPopup, isMenuListPopup());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXMenuListPopup_h

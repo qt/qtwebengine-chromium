@@ -69,7 +69,12 @@ class CONTENT_EXPORT WebRtcAudioRenderer
     float volume_;
   };
 
+
+  // Returns platform specific optimal buffer size for rendering audio.
+  static int GetOptimalBufferSize(int sample_rate, int hardware_buffer_size);
+
   WebRtcAudioRenderer(
+      const scoped_refptr<base::SingleThreadTaskRunner>& signaling_thread,
       const scoped_refptr<webrtc::MediaStreamInterface>& media_stream,
       int source_render_view_id,
       int source_render_frame_id,
@@ -99,18 +104,19 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // Accessors to the sink audio parameters.
   int channels() const { return sink_params_.channels(); }
   int sample_rate() const { return sink_params_.sample_rate(); }
+  int frames_per_buffer() const { return sink_params_.frames_per_buffer(); }
 
  private:
   // MediaStreamAudioRenderer implementation.  This is private since we want
   // callers to use proxy objects.
   // TODO(tommi): Make the MediaStreamAudioRenderer implementation a pimpl?
-  virtual void Start() OVERRIDE;
-  virtual void Play() OVERRIDE;
-  virtual void Pause() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(float volume) OVERRIDE;
-  virtual base::TimeDelta GetCurrentRenderTime() const OVERRIDE;
-  virtual bool IsLocalRenderer() const OVERRIDE;
+  void Start() override;
+  void Play() override;
+  void Pause() override;
+  void Stop() override;
+  void SetVolume(float volume) override;
+  base::TimeDelta GetCurrentRenderTime() const override;
+  bool IsLocalRenderer() const override;
 
   // Called when an audio renderer, either the main or a proxy, starts playing.
   // Here we maintain a reference count of how many renderers are currently
@@ -123,7 +129,7 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   void EnterPauseState();
 
  protected:
-  virtual ~WebRtcAudioRenderer();
+  ~WebRtcAudioRenderer() override;
 
  private:
   enum State {
@@ -148,9 +154,8 @@ class CONTENT_EXPORT WebRtcAudioRenderer
 
   // media::AudioRendererSink::RenderCallback implementation.
   // These two methods are called on the AudioOutputDevice worker thread.
-  virtual int Render(media::AudioBus* audio_bus,
-                     int audio_delay_milliseconds) OVERRIDE;
-  virtual void OnRenderError() OVERRIDE;
+  int Render(media::AudioBus* audio_bus, int audio_delay_milliseconds) override;
+  void OnRenderError() override;
 
   // Called by AudioPullFifo when more data is necessary.
   // This method is called on the AudioOutputDevice worker thread.
@@ -184,6 +189,8 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   const int source_render_view_id_;
   const int source_render_frame_id_;
   const int session_id_;
+
+  const scoped_refptr<base::SingleThreadTaskRunner> signaling_thread_;
 
   // The sink (destination) for rendered audio.
   scoped_refptr<media::AudioOutputDevice> sink_;
@@ -228,6 +235,10 @@ class CONTENT_EXPORT WebRtcAudioRenderer
   // state objects lies with the renderers and they must leave the playing state
   // before being destructed (PlayingState object goes out of scope).
   SourcePlayingStates source_playing_states_;
+
+  // Used for triggering new UMA histogram. Counts number of render
+  // callbacks modulo |kNumCallbacksBetweenRenderTimeHistograms|.
+  int render_callback_count_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(WebRtcAudioRenderer);
 };

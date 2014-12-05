@@ -107,7 +107,7 @@ cr.define('uber', function() {
     // If the page isn't the current page, load it fresh. Even if the page is
     // already loaded, it may have state not reflected in the URL, such as the
     // history page's "Remove selected items" overlay. http://crbug.com/377386
-    if (getRequiredElement(params.id) !== getSelectedIframe())
+    if (getRequiredElement(params.id) !== getSelectedIframeContainer())
       showPage(params.id, HISTORY_STATE_OPTION.NONE, params.path);
 
     // Either way, send the state down to it.
@@ -129,8 +129,15 @@ cr.define('uber', function() {
   /**
    * @return {Object} The currently selected iframe container.
    */
-  function getSelectedIframe() {
+  function getSelectedIframeContainer() {
     return document.querySelector('.iframe-container.selected');
+  }
+
+  /**
+   * @return {Object} The currently selected iframe's contentWindow.
+   */
+  function getSelectedIframeWindow() {
+    return getSelectedIframeContainer().querySelector('iframe').contentWindow;
   }
 
   /**
@@ -149,6 +156,7 @@ cr.define('uber', function() {
    * @param {Event} e The posted object.
    */
   function handleWindowMessage(e) {
+    e = /** @type{!MessageEvent.<!{method: string, params: *}>} */(e);
     if (e.data.method === 'beginInterceptingEvents') {
       backgroundNavigation();
     } else if (e.data.method === 'stopInterceptingEvents') {
@@ -167,9 +175,11 @@ cr.define('uber', function() {
     } else if (e.data.method === 'navigationControlsLoaded') {
       onNavigationControlsLoaded();
     } else if (e.data.method === 'adjustToScroll') {
-      adjustToScroll(e.data.params);
+      adjustToScroll(/** @type {number} */(e.data.params));
     } else if (e.data.method === 'mouseWheel') {
-      forwardMouseWheel(e.data.params);
+      forwardMouseWheel(/** @type {Object} */(e.data.params));
+    } else if (e.data.method === 'mouseDown') {
+      forwardMouseDown();
     } else {
       console.error('Received unexpected message', e.data);
     }
@@ -203,20 +213,21 @@ cr.define('uber', function() {
 
     if (isRTL()) {
       uber.invokeMethodOnWindow(navFrame.firstChild.contentWindow,
-                                'setContentChanging',
-                                enabled);
+                                'setContentChanging', enabled);
     }
   }
 
   /**
    * Get an iframe based on the origin of a received post message.
    * @param {string} origin The origin of a post message.
-   * @return {!HTMLElement} The frame associated to |origin| or null.
+   * @return {!Element} The frame associated to |origin| or null.
    */
   function getIframeFromOrigin(origin) {
     assert(origin.substr(-1) != '/', 'invalid origin given');
     var query = '.iframe-container > iframe[src^="' + origin + '/"]';
-    return document.querySelector(query);
+    var element = document.querySelector(query);
+    assert(element);
+    return /** @type {!Element} */(element);
   }
 
   /**
@@ -236,7 +247,7 @@ cr.define('uber', function() {
 
     assert(histFunc, 'invalid historyOption given ' + historyOption);
 
-    var pageId = getSelectedIframe().id;
+    var pageId = getSelectedIframeContainer().id;
     var args = [state, '', '/' + pageId + '/' + (path || '')];
     histFunc.apply(window.history, args);
   }
@@ -255,7 +266,7 @@ cr.define('uber', function() {
         replace ? HISTORY_STATE_OPTION.REPLACE : HISTORY_STATE_OPTION.PUSH;
     // Only update the currently displayed path if this is the visible frame.
     var container = getIframeFromOrigin(origin).parentNode;
-    if (container == getSelectedIframe())
+    if (container == getSelectedIframeContainer())
       changePathTo(state, path, historyOption);
   }
 
@@ -272,7 +283,7 @@ cr.define('uber', function() {
     container.dataset.title = title;
 
     // Only update the currently displayed title if this is the visible frame.
-    if (container == getSelectedIframe())
+    if (container == getSelectedIframeContainer())
       document.title = title;
   }
 
@@ -313,7 +324,7 @@ cr.define('uber', function() {
   /**
    * Selects and navigates a subpage. This is called from uber-frame.
    * @param {string} pageId Should match an id of one of the iframe containers.
-   * @param {integer} historyOption Indicates whether we should push or replace
+   * @param {number} historyOption Indicates whether we should push or replace
    *     browser history.
    * @param {string} path A sub-page path.
    */
@@ -357,22 +368,27 @@ cr.define('uber', function() {
 
     // Trigger a layout after making it visible and before setting
     // the class to 'selected', so that it animates in.
+    /** @suppress {uselessCode} */
     container.offsetTop;
     container.classList.add('selected');
 
     setContentChanging(true);
     adjustToScroll(0);
 
-    var selectedFrame = getSelectedIframe().querySelector('iframe');
-    uber.invokeMethodOnWindow(selectedFrame.contentWindow, 'frameSelected');
+    var selectedWindow = getSelectedIframeWindow();
+    uber.invokeMethodOnWindow(selectedWindow, 'frameSelected');
+    selectedWindow.focus();
 
     if (historyOption != HISTORY_STATE_OPTION.NONE)
       changePathTo({}, path, historyOption);
 
     if (container.dataset.title)
       document.title = container.dataset.title;
-    $('favicon').href = 'chrome://theme/' + container.dataset.favicon;
-    $('favicon2x').href = 'chrome://theme/' + container.dataset.favicon + '@2x';
+    assert('favicon' in container.dataset);
+
+    var dataset = /** @type {{favicon: string}} */(container.dataset);
+    $('favicon').href = 'chrome://theme/' + dataset.favicon;
+    $('favicon2x').href = 'chrome://theme/' + dataset.favicon + '@2x';
 
     updateNavigationControls();
   }
@@ -386,9 +402,9 @@ cr.define('uber', function() {
    * It should be called whenever the selected iframe changes.
    */
   function updateNavigationControls() {
-    var iframe = getSelectedIframe();
+    var container = getSelectedIframeContainer();
     uber.invokeMethodOnWindow(navFrame.firstChild.contentWindow,
-                              'changeSelection', {pageId: iframe.id});
+                              'changeSelection', {pageId: container.id});
   }
 
   /**
@@ -418,8 +434,12 @@ cr.define('uber', function() {
    * @param {Object} params Relevant parameters of wheel event.
    */
   function forwardMouseWheel(params) {
-    var iframe = getSelectedIframe().querySelector('iframe');
-    uber.invokeMethodOnWindow(iframe.contentWindow, 'mouseWheel', params);
+    uber.invokeMethodOnWindow(getSelectedIframeWindow(), 'mouseWheel', params);
+  }
+
+  /** Forward mouse down events to subpages. */
+  function forwardMouseDown() {
+    uber.invokeMethodOnWindow(getSelectedIframeWindow(), 'mouseDown');
   }
 
   /**

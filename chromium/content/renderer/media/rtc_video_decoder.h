@@ -45,7 +45,7 @@ class CONTENT_EXPORT RTCVideoDecoder
     : NON_EXPORTED_BASE(public webrtc::VideoDecoder),
       public media::VideoDecodeAccelerator::Client {
  public:
-  virtual ~RTCVideoDecoder();
+  ~RTCVideoDecoder() override;
 
   // Creates a RTCVideoDecoder. Returns NULL if failed. The video decoder will
   // run on the message loop of |factories|.
@@ -55,35 +55,34 @@ class CONTENT_EXPORT RTCVideoDecoder
 
   // webrtc::VideoDecoder implementation.
   // Called on WebRTC DecodingThread.
-  virtual int32_t InitDecode(const webrtc::VideoCodec* codecSettings,
-                             int32_t numberOfCores) OVERRIDE;
+  int32_t InitDecode(const webrtc::VideoCodec* codecSettings,
+                     int32_t numberOfCores) override;
   // Called on WebRTC DecodingThread.
-  virtual int32_t Decode(
-      const webrtc::EncodedImage& inputImage,
-      bool missingFrames,
-      const webrtc::RTPFragmentationHeader* fragmentation,
-      const webrtc::CodecSpecificInfo* codecSpecificInfo = NULL,
-      int64_t renderTimeMs = -1) OVERRIDE;
+  int32_t Decode(const webrtc::EncodedImage& inputImage,
+                 bool missingFrames,
+                 const webrtc::RTPFragmentationHeader* fragmentation,
+                 const webrtc::CodecSpecificInfo* codecSpecificInfo = NULL,
+                 int64_t renderTimeMs = -1) override;
   // Called on WebRTC DecodingThread.
-  virtual int32_t RegisterDecodeCompleteCallback(
-      webrtc::DecodedImageCallback* callback) OVERRIDE;
+  int32_t RegisterDecodeCompleteCallback(
+      webrtc::DecodedImageCallback* callback) override;
   // Called on Chrome_libJingle_WorkerThread. The child thread is blocked while
   // this runs.
-  virtual int32_t Release() OVERRIDE;
+  int32_t Release() override;
   // Called on Chrome_libJingle_WorkerThread. The child thread is blocked while
   // this runs.
-  virtual int32_t Reset() OVERRIDE;
+  int32_t Reset() override;
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 count,
-                                     const gfx::Size& size,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  void ProvidePictureBuffers(uint32 count,
+                             const gfx::Size& size,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyEndOfBitstreamBuffer(int32 id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
 
  private:
   class SHMBuffer;
@@ -91,15 +90,11 @@ class CONTENT_EXPORT RTCVideoDecoder
   struct BufferData {
     BufferData(int32 bitstream_buffer_id,
                uint32_t timestamp,
-               int width,
-               int height,
                size_t size);
     BufferData();
     ~BufferData();
     int32 bitstream_buffer_id;
     uint32_t timestamp;  // in 90KHz
-    uint32_t width;
-    uint32_t height;
     size_t size;  // buffer size
   };
 
@@ -107,6 +102,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   FRIEND_TEST_ALL_PREFIXES(RTCVideoDecoderTest, IsFirstBufferAfterReset);
 
   RTCVideoDecoder(
+      webrtc::VideoCodecType type,
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories);
 
   // Requests a buffer to be decoded by VDA.
@@ -138,10 +134,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   scoped_refptr<media::VideoFrame> CreateVideoFrame(
       const media::Picture& picture,
       const media::PictureBuffer& pb,
-      uint32_t timestamp,
-      uint32_t width,
-      uint32_t height,
-      size_t size);
+      uint32_t timestamp);
 
   // Resets VDA.
   void ResetInternal();
@@ -152,7 +145,7 @@ class CONTENT_EXPORT RTCVideoDecoder
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
       int64 picture_buffer_id,
       uint32 texture_id,
-      const std::vector<uint32>& release_sync_points);
+      uint32 release_sync_point);
   // Tells VDA that a picture buffer can be recycled.
   void ReusePictureBuffer(int64 picture_buffer_id);
 
@@ -176,11 +169,7 @@ class CONTENT_EXPORT RTCVideoDecoder
   // Stores the buffer metadata to |input_buffer_data_|.
   void RecordBufferData(const BufferData& buffer_data);
   // Gets the buffer metadata from |input_buffer_data_|.
-  void GetBufferData(int32 bitstream_buffer_id,
-                     uint32_t* timestamp,
-                     uint32_t* width,
-                     uint32_t* height,
-                     size_t* size);
+  void GetBufferData(int32 bitstream_buffer_id, uint32_t* timestamp);
 
   // Records the result of InitDecode to UMA and returns |status|.
   int32_t RecordInitDecodeUMA(int32_t status);
@@ -201,6 +190,9 @@ class CONTENT_EXPORT RTCVideoDecoder
 
   // The hardware video decoder.
   scoped_ptr<media::VideoDecodeAccelerator> vda_;
+
+  // The video codec type, as reported by WebRTC.
+  const webrtc::VideoCodecType video_codec_type_;
 
   // The size of the incoming video frames.
   gfx::Size frame_size_;

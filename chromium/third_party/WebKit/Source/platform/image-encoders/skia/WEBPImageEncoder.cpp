@@ -38,7 +38,7 @@
 
 typedef int (*WebPImporter)(WebPPicture* const, const uint8_t* const data, int rowStride);
 
-namespace WebCore {
+namespace blink {
 
 static int writeOutput(const uint8_t* data, size_t size, const WebPPicture* const picture)
 {
@@ -83,6 +83,14 @@ template <bool Premultiplied> inline bool importPictureRGBX(const unsigned char*
     return rgbPictureImport(pixels, Premultiplied, &WebPPictureImportRGBX, &WebPPictureImportRGB, picture);
 }
 
+static bool platformPremultipliedImportPicture(const unsigned char* pixels, WebPPicture* picture)
+{
+    if (SK_B32_SHIFT) // Android
+        return importPictureRGBX<true>(pixels, picture);
+
+    return importPictureBGRX<true>(pixels, picture);
+}
+
 static bool encodePixels(IntSize imageSize, const unsigned char* pixels, bool premultiplied, int quality, Vector<unsigned char>* output)
 {
     WebPConfig config;
@@ -100,7 +108,7 @@ static bool encodePixels(IntSize imageSize, const unsigned char* pixels, bool pr
         return false;
     picture.height = imageSize.height();
 
-    if (premultiplied && !importPictureBGRX<true>(pixels, &picture))
+    if (premultiplied && !platformPremultipliedImportPicture(pixels, &picture))
         return false;
     if (!premultiplied && !importPictureRGBX<false>(pixels, &picture))
         return false;
@@ -119,7 +127,7 @@ bool WEBPImageEncoder::encode(const SkBitmap& bitmap, int quality, Vector<unsign
 {
     SkAutoLockPixels bitmapLock(bitmap);
 
-    if (bitmap.colorType() != kPMColor_SkColorType || !bitmap.getPixels())
+    if (bitmap.colorType() != kN32_SkColorType || !bitmap.getPixels())
         return false; // Only support 32 bit/pixel skia bitmaps.
 
     return encodePixels(IntSize(bitmap.width(), bitmap.height()), static_cast<unsigned char *>(bitmap.getPixels()), true, quality, output);
@@ -130,4 +138,4 @@ bool WEBPImageEncoder::encode(const ImageDataBuffer& imageData, int quality, Vec
     return encodePixels(imageData.size(), imageData.data(), false, quality, output);
 }
 
-} // namespace WebCore
+} // namespace blink

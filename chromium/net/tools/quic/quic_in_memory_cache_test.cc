@@ -39,9 +39,7 @@ class QuicInMemoryCacheTest : public ::testing::Test {
     headers->ReplaceOrAppendHeader("host", host);
   }
 
-  virtual void SetUp() OVERRIDE {
-    QuicInMemoryCachePeer::ResetForTests();
-  }
+  void SetUp() override { QuicInMemoryCachePeer::ResetForTests(); }
 
   // This method was copied from end_to_end_test.cc in this directory.
   void AddToCache(const StringPiece& method,
@@ -64,7 +62,7 @@ class QuicInMemoryCacheTest : public ::testing::Test {
     QuicInMemoryCache* cache = QuicInMemoryCache::GetInstance();
     const QuicInMemoryCache::Response* cached_response =
         cache->GetResponse(request_headers);
-    if (cached_response != NULL) {
+    if (cached_response != nullptr) {
       std::string cached_response_headers_str, response_headers_str;
       cached_response->headers().DumpToString(&cached_response_headers_str);
       response_headers.DumpToString(&response_headers_str);

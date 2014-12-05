@@ -27,13 +27,12 @@
 #include "config.h"
 #include "core/events/DOMWindowEventQueue.h"
 
-#include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/SuspendableTimer.h"
 #include "core/inspector/InspectorInstrumentation.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMWindowEventQueueTimer : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowEventQueueTimer>, public SuspendableTimer {
     WTF_MAKE_NONCOPYABLE(DOMWindowEventQueueTimer);
@@ -67,8 +66,10 @@ DOMWindowEventQueue::~DOMWindowEventQueue()
 
 void DOMWindowEventQueue::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_pendingEventTimer);
     visitor->trace(m_queuedEvents);
+#endif
     EventQueue::trace(visitor);
 }
 
@@ -107,9 +108,11 @@ void DOMWindowEventQueue::close()
     m_isClosed = true;
     m_pendingEventTimer->stop();
     if (InspectorInstrumentation::hasFrontends()) {
-        WillBeHeapListHashSet<RefPtrWillBeMember<Event>, 16>::iterator it = m_queuedEvents.begin();
-        for (; it != m_queuedEvents.end(); ++it)
-            InspectorInstrumentation::didRemoveEvent((*it)->target(), it->get());
+        for (const auto& queuedEvent : m_queuedEvents) {
+            RefPtrWillBeRawPtr<Event> event = queuedEvent;
+            if (event)
+                InspectorInstrumentation::didRemoveEvent(event->target(), event.get());
+        }
     }
     m_queuedEvents.clear();
 }

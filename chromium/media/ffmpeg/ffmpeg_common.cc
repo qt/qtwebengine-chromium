@@ -285,11 +285,19 @@ void AVCodecContextToAudioDecoderConfig(
   ChannelLayout channel_layout = ChannelLayoutToChromeChannelLayout(
       codec_context->channel_layout, codec_context->channels);
 
+  int sample_rate = codec_context->sample_rate;
   if (codec == kCodecOpus) {
     // |codec_context->sample_fmt| is not set by FFmpeg because Opus decoding is
     // not enabled in FFmpeg.  It doesn't matter what value is set here, so long
     // as it's valid, the true sample format is selected inside the decoder.
     sample_format = kSampleFormatF32;
+
+    // Always use 48kHz for OPUS.  Technically we should match to the highest
+    // supported hardware sample rate among [8, 12, 16, 24, 48] kHz, but we
+    // don't know the hardware sample rate at this point and those rates are
+    // rarely used for output.  See the "Input Sample Rate" section of the spec:
+    // http://tools.ietf.org/html/draft-terriberry-oggopus-01#page-11
+    sample_rate = 48000;
   }
 
   base::TimeDelta seek_preroll;
@@ -301,7 +309,7 @@ void AVCodecContextToAudioDecoderConfig(
   config->Initialize(codec,
                      sample_format,
                      channel_layout,
-                     codec_context->sample_rate,
+                     sample_rate,
                      codec_context->extradata,
                      codec_context->extradata_size,
                      is_encrypted,
@@ -374,9 +382,9 @@ void AVStreamToVideoDecoderConfig(
 
   VideoCodecProfile profile = VIDEO_CODEC_PROFILE_UNKNOWN;
   if (codec == kCodecVP8)
-    profile = VP8PROFILE_MAIN;
+    profile = VP8PROFILE_ANY;
   else if (codec == kCodecVP9)
-    profile = VP9PROFILE_MAIN;
+    profile = VP9PROFILE_ANY;
   else
     profile = ProfileIDToVideoCodecProfile(stream->codec->profile);
 
@@ -396,7 +404,7 @@ void AVStreamToVideoDecoderConfig(
   if (codec == kCodecVP9) {
     // TODO(tomfinegan): libavcodec doesn't know about VP9.
     format = VideoFrame::YV12;
-    coded_size = natural_size;
+    coded_size = visible_rect.size();
   }
 
   // Pad out |coded_size| for subsampled YUV formats.

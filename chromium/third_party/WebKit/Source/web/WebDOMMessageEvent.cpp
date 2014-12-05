@@ -31,7 +31,7 @@
 #include "config.h"
 #include "public/web/WebDOMMessageEvent.h"
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/MessageEvent.h"
@@ -40,8 +40,6 @@
 #include "public/web/WebFrame.h"
 #include "public/web/WebSerializedScriptValue.h"
 #include "web/WebLocalFrameImpl.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -52,7 +50,7 @@ void WebDOMMessageEvent::initMessageEvent(const WebString& type, bool canBubble,
     LocalDOMWindow* window = 0;
     if (sourceFrame)
         window = toWebLocalFrameImpl(sourceFrame)->frame()->domWindow();
-    OwnPtr<MessagePortArray> ports;
+    OwnPtrWillBeRawPtr<MessagePortArray> ports = nullptr;
     if (sourceFrame)
         ports = MessagePort::toMessagePortArray(window->document(), webChannels);
     unwrap<MessageEvent>()->initMessageEvent(type, canBubble, cancelable, messageData, origin, lastEventId, window, ports.release());

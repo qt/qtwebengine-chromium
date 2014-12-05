@@ -19,19 +19,18 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGFEFloodElement.h"
 
 #include "core/SVGNames.h"
+#include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/SVGRenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEFloodElement::SVGFEFloodElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feFloodTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGFEFloodElement)
@@ -45,9 +44,9 @@ bool SVGFEFloodElement::setFilterEffectAttribute(FilterEffect* effect, const Qua
     FEFlood* flood = static_cast<FEFlood*>(effect);
 
     if (attrName == SVGNames::flood_colorAttr)
-        return flood->setFloodColor(style->svgStyle()->floodColor());
+        return flood->setFloodColor(style->svgStyle().floodColor());
     if (attrName == SVGNames::flood_opacityAttr)
-        return flood->setFloodOpacity(style->svgStyle()->floodOpacity());
+        return flood->setFloodOpacity(style->svgStyle().floodOpacity());
 
     ASSERT_NOT_REACHED();
     return false;
@@ -60,10 +59,10 @@ PassRefPtr<FilterEffect> SVGFEFloodElement::build(SVGFilterBuilder*, Filter* fil
         return nullptr;
 
     ASSERT(renderer->style());
-    const SVGRenderStyle* svgStyle = renderer->style()->svgStyle();
+    const SVGRenderStyle& svgStyle = renderer->style()->svgStyle();
 
-    Color color = svgStyle->floodColor();
-    float opacity = svgStyle->floodOpacity();
+    Color color = svgStyle.floodColor();
+    float opacity = svgStyle.floodOpacity();
 
     return FEFlood::create(filter, color, opacity);
 }

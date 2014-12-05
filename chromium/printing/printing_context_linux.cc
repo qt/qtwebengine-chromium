@@ -27,13 +27,12 @@ gfx::Size (*get_pdf_paper_size_)(
 namespace printing {
 
 // static
-PrintingContext* PrintingContext::Create(const std::string& app_locale) {
-  return static_cast<PrintingContext*>(new PrintingContextLinux(app_locale));
+scoped_ptr<PrintingContext> PrintingContext::Create(Delegate* delegate) {
+  return make_scoped_ptr<PrintingContext>(new PrintingContextLinux(delegate));
 }
 
-PrintingContextLinux::PrintingContextLinux(const std::string& app_locale)
-    : PrintingContext(app_locale),
-      print_dialog_(NULL) {
+PrintingContextLinux::PrintingContextLinux(Delegate* delegate)
+    : PrintingContext(delegate), print_dialog_(NULL) {
 }
 
 PrintingContextLinux::~PrintingContextLinux() {
@@ -60,14 +59,12 @@ void PrintingContextLinux::SetPdfPaperSizeFunction(
   get_pdf_paper_size_ = get_pdf_paper_size;
 }
 
-void PrintingContextLinux::PrintDocument(const Metafile* metafile) {
+void PrintingContextLinux::PrintDocument(const MetafilePlayer& metafile) {
   DCHECK(print_dialog_);
-  DCHECK(metafile);
   print_dialog_->PrintDocument(metafile, document_name_);
 }
 
 void PrintingContextLinux::AskUserForSettings(
-    gfx::NativeView parent_view,
     int max_pages,
     bool has_selection,
     const PrintSettingsCallback& callback) {
@@ -79,7 +76,8 @@ void PrintingContextLinux::AskUserForSettings(
     return;
   }
 
-  print_dialog_->ShowDialog(parent_view, has_selection, callback);
+  print_dialog_->ShowDialog(
+      delegate_->GetParentView(), has_selection, callback);
 }
 
 PrintingContext::Result PrintingContextLinux::UseDefaultSettings() {
@@ -107,7 +105,9 @@ gfx::Size PrintingContextLinux::GetPdfPaperSizeDeviceUnits() {
 }
 
 PrintingContext::Result PrintingContextLinux::UpdatePrinterSettings(
-    bool external_preview) {
+    bool external_preview,
+    bool show_system_dialog) {
+  DCHECK(!show_system_dialog);
   DCHECK(!in_print_job_);
   DCHECK(!external_preview) << "Not implemented";
 

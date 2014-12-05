@@ -18,9 +18,8 @@
 #include "ipc/ipc_sync_message_filter.h"
 #include "third_party/WebKit/public/platform/WebBlobInfo.h"
 #include "third_party/WebKit/public/platform/WebIDBCallbacks.h"
-#include "third_party/WebKit/public/platform/WebIDBCursor.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseCallbacks.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBMsg_CallbacksSuccessCursorContinue_Params;
@@ -53,7 +52,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   // two copies of RenderThreadImpl on the same thread.  Everyone else probably
   // wants to use ThreadSpecificInstance().
   explicit IndexedDBDispatcher(ThreadSafeSender* thread_safe_sender);
-  virtual ~IndexedDBDispatcher();
+  ~IndexedDBDispatcher() override;
 
   // |thread_safe_sender| needs to be passed in because if the call leads to
   // construction it will be needed.
@@ -61,7 +60,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
       ThreadSafeSender* thread_safe_sender);
 
   // WorkerTaskRunner::Observer implementation.
-  virtual void OnWorkerRunLoopStopped() OVERRIDE;
+  void OnWorkerRunLoopStopped() override;
 
   static blink::WebIDBMetadata ConvertMetadata(
       const IndexedDBDatabaseMetadata& idb_metadata);
@@ -113,12 +112,14 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
   void RequestIDBDatabaseClose(int32 ipc_database_id,
                                int32 ipc_database_callbacks_id);
 
+  void NotifyIDBDatabaseVersionChangeIgnored(int32 ipc_database_id);
+
   void RequestIDBDatabaseCreateTransaction(
       int32 ipc_database_id,
       int64 transaction_id,
       blink::WebIDBDatabaseCallbacks* database_callbacks_ptr,
       blink::WebVector<long long> object_store_ids,
-      blink::WebIDBDatabase::TransactionMode mode);
+      blink::WebIDBTransactionMode mode);
 
   void RequestIDBDatabaseGet(int32 ipc_database_id,
                              int64 transaction_id,
@@ -135,7 +136,7 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
       const blink::WebData& value,
       const blink::WebVector<blink::WebBlobInfo>& web_blob_info,
       const IndexedDBKey& key,
-      blink::WebIDBDatabase::PutMode put_mode,
+      blink::WebIDBPutMode put_mode,
       blink::WebIDBCallbacks* callbacks,
       const blink::WebVector<long long>& index_ids,
       const blink::WebVector<blink::WebVector<blink::WebIDBKey> >& index_keys);
@@ -145,9 +146,9 @@ class CONTENT_EXPORT IndexedDBDispatcher : public WorkerTaskRunner::Observer {
                                     int64 object_store_id,
                                     int64 index_id,
                                     const IndexedDBKeyRange& key_range,
-                                    blink::WebIDBCursor::Direction direction,
+                                    blink::WebIDBCursorDirection direction,
                                     bool key_only,
-                                    blink::WebIDBDatabase::TaskType task_type,
+                                    blink::WebIDBTaskType task_type,
                                     blink::WebIDBCallbacks* callbacks);
 
   void RequestIDBDatabaseCount(int32 ipc_database_id,

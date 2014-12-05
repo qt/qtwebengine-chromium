@@ -32,10 +32,9 @@
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ActiveDOMObject;
-class ContextLifecycleObserver;
 class ExecutionContext;
 
 class ContextLifecycleNotifier : public LifecycleNotifier<ExecutionContext> {
@@ -48,8 +47,8 @@ public:
 
     const ActiveDOMObjectSet& activeDOMObjects() const { return m_activeDOMObjects; }
 
-    virtual void addObserver(Observer*) OVERRIDE;
-    virtual void removeObserver(Observer*) OVERRIDE;
+    virtual void addObserver(Observer*) override;
+    virtual void removeObserver(Observer*) override;
 
     void notifyResumingActiveDOMObjects();
     void notifySuspendingActiveDOMObjects();
@@ -70,6 +69,6 @@ inline PassOwnPtr<ContextLifecycleNotifier> ContextLifecycleNotifier::create(Exe
     return adoptPtr(new ContextLifecycleNotifier(context));
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ContextLifecycleNotifier_h

@@ -8,7 +8,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_restrictions.h"
@@ -59,6 +59,7 @@ TestURLFetcher::~TestURLFetcher() {
 
 void TestURLFetcher::SetUploadData(const std::string& upload_content_type,
                                    const std::string& upload_content) {
+  upload_content_type_ = upload_content_type;
   upload_data_ = upload_content;
 }
 

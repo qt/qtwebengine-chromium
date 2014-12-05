@@ -16,7 +16,9 @@ class FilePath;
 }
 
 namespace sandbox {
-class SandboxBPFPolicy;
+namespace bpf_dsl {
+class Policy;
+}
 struct SandboxInterfaceInfo;
 }
 
@@ -86,11 +88,11 @@ class SandboxInitializerDelegate;
 // Initialize a seccomp-bpf sandbox. |policy| may not be NULL.
 // Returns true if the sandbox has been properly engaged.
 CONTENT_EXPORT bool InitializeSandbox(
-    scoped_ptr<sandbox::SandboxBPFPolicy> policy);
+    scoped_ptr<sandbox::bpf_dsl::Policy> policy);
 
 // Return a "baseline" policy. This is used by a SandboxInitializerDelegate to
 // implement a policy that is derived from the baseline.
-CONTENT_EXPORT scoped_ptr<sandbox::SandboxBPFPolicy>
+CONTENT_EXPORT scoped_ptr<sandbox::bpf_dsl::Policy>
 GetBPFSandboxBaselinePolicy();
 #endif  // defined(OS_LINUX)
 

@@ -19,16 +19,16 @@ namespace tools {
 class QuicDefaultPacketWriter : public QuicPacketWriter {
  public:
   explicit QuicDefaultPacketWriter(int fd);
-  virtual ~QuicDefaultPacketWriter();
+  ~QuicDefaultPacketWriter() override;
 
   // QuicPacketWriter
-  virtual WriteResult WritePacket(const char* buffer,
-                                  size_t buf_len,
-                                  const IPAddressNumber& self_address,
-                                  const IPEndPoint& peer_address) OVERRIDE;
-  virtual bool IsWriteBlockedDataBuffered() const OVERRIDE;
-  virtual bool IsWriteBlocked() const OVERRIDE;
-  virtual void SetWritable() OVERRIDE;
+  WriteResult WritePacket(const char* buffer,
+                          size_t buf_len,
+                          const IPAddressNumber& self_address,
+                          const IPEndPoint& peer_address) override;
+  bool IsWriteBlockedDataBuffered() const override;
+  bool IsWriteBlocked() const override;
+  void SetWritable() override;
 
   void set_fd(int fd) { fd_ = fd; }
 

@@ -1,17 +1,29 @@
-diff --git a/javascript/atoms/device.js b/javascript/atoms/device.js
-index e2693f8..3731db3 100644
---- a/javascript/atoms/device.js
-+++ b/javascript/atoms/device.js
-@@ -627,6 +627,7 @@ bot.Device.prototype.maybeToggleOption = function() {
-   // Only WebKit fires the change event itself and only for multi-selects,
-   // except for Android versions >= 4.0.
-   if (!(goog.userAgent.WEBKIT && select.multiple) ||
-+      (goog.userAgent.product.CHROME && bot.userAgent.isProductVersion(28)) ||
-       (goog.userAgent.product.ANDROID && bot.userAgent.isProductVersion(4))) {
-     bot.events.fire(select, bot.events.EventType.CHANGE);
-   }
+diff --git a/javascript/atoms/mouse.js b/javascript/atoms/mouse.js
+index bed494b..d6c3be1 100644
+--- a/javascript/atoms/mouse.js
++++ b/javascript/atoms/mouse.js
+@@ -141,7 +141,7 @@ bot.Mouse.NO_BUTTON_VALUE_INDEX_ = 3;
+  *               click/    mouseup/   mouseout/  mousemove  contextmenu
+  *               dblclick  mousedown  mouseover
+  * IE_DOC_PRE9   0 0 0 X   1 4 2 X    0 0 0 0    1 4 2 0    X X 0 X
+- * WEBKIT/IE9    0 1 2 X   0 1 2 X    0 1 2 0    0 1 2 0    X X 2 X
++ * WEBKIT/IE9    0 1 2 X   0 1 2 X    0 1 2 4    0 1 2 4    X X 2 X
+  * GECKO/OPERA   0 1 2 X   0 1 2 X    0 0 0 0    0 0 0 0    X X 2 X
+  * </pre>
+  * @private {!Object.<bot.events.EventType, !Array.<?number>>}
+@@ -161,8 +161,8 @@ bot.Mouse.MOUSE_BUTTON_VALUE_MAP_ = (function() {
+     buttonValueMap[bot.events.EventType.CLICK] = [0, 1, 2, null];
+     buttonValueMap[bot.events.EventType.CONTEXTMENU] = [null, null, 2, null];
+     buttonValueMap[bot.events.EventType.MOUSEUP] = [0, 1, 2, null];
+-    buttonValueMap[bot.events.EventType.MOUSEOUT] = [0, 1, 2, 0];
+-    buttonValueMap[bot.events.EventType.MOUSEMOVE] = [0, 1, 2, 0];
++    buttonValueMap[bot.events.EventType.MOUSEOUT] = [0, 1, 2, 4];
++    buttonValueMap[bot.events.EventType.MOUSEMOVE] = [0, 1, 2, 4];
+   } else {
+     buttonValueMap[bot.events.EventType.CLICK] = [0, 1, 2, null];
+     buttonValueMap[bot.events.EventType.CONTEXTMENU] = [null, null, 2, null];
 diff --git a/javascript/chrome-driver/build.desc b/javascript/chrome-driver/build.desc
-index 423c450..1889095 100644
+index 356eefd..b0e6cae 100644
 --- a/javascript/chrome-driver/build.desc
 +++ b/javascript/chrome-driver/build.desc
 @@ -24,6 +24,11 @@ js_fragment(name = "get_page_zoom",
@@ -26,11 +38,11 @@ index 423c450..1889095 100644
  js_test(name = "test",
    srcs = [ "test/*_test.html" ],
    deps = [
-@@ -39,6 +44,7 @@ js_fragment_cpp(name = "atoms",
+@@ -52,6 +57,7 @@ js_fragment_cpp(name = "atoms",
      "//javascript/chrome-driver:get_location_in_view:chrome",
      "//javascript/chrome-driver:get_page_zoom:chrome",
      "//javascript/chrome-driver:is_element_clickable:chrome",
 +    "//javascript/chrome-driver:touch_single_tap:chrome",
-     "//javascript/webdriver/atoms:clear:chrome",
-     "//javascript/webdriver/atoms:clear_local_storage:chrome",
-     "//javascript/webdriver/atoms:clear_session_storage:chrome",
+     "//javascript/webdriver/atoms/fragments:clear_local_storage:chrome",
+     "//javascript/webdriver/atoms/fragments:clear_session_storage:chrome",
+     "//javascript/webdriver/atoms/fragments:get_appcache_status:chrome",

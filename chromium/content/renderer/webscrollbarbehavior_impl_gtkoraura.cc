@@ -31,17 +31,31 @@ bool WebScrollbarBehaviorImpl::shouldSnapBackToDragOrigin(
   // guessing/extrapolation.
   static const int kOffEndMultiplier = 3;
   static const int kOffSideMultiplier = 8;
+  static const int kDefaultWinScrollbarThickness = 17;
 
   // Find the rect within which we shouldn't snap, by expanding the track rect
   // in both dimensions.
   gfx::Rect noSnapRect(scrollbarRect);
-  const int thickness = isHorizontal ? noSnapRect.height() : noSnapRect.width();
+  int thickness = isHorizontal ? noSnapRect.height() : noSnapRect.width();
+  // Even if the platform's scrollbar is narrower than the default Windows one,
+  // we still want to provide at least as much slop area, since a slightly
+  // narrower scrollbar doesn't necessarily imply that users will drag
+  // straighter.
+  thickness = std::max(thickness, kDefaultWinScrollbarThickness);
   noSnapRect.Inset(
       (isHorizontal ? kOffEndMultiplier : kOffSideMultiplier) * -thickness,
       (isHorizontal ? kOffSideMultiplier : kOffEndMultiplier) * -thickness);
 
-  // We should snap iff the event is outside our calculated rect.
+  // On most platforms, we should snap iff the event is outside our calculated
+  // rect.  On Linux, however, we should not snap for events off the ends, but
+  // not the sides, of the rect.
+#if (defined(OS_LINUX) && !defined(OS_CHROMEOS))
+  return isHorizontal ?
+      (eventPoint.y < noSnapRect.y() || eventPoint.y >= noSnapRect.bottom()) :
+      (eventPoint.x < noSnapRect.x() || eventPoint.x >= noSnapRect.right());
+#else
   return !noSnapRect.Contains(eventPoint);
+#endif
 }
 
 }  // namespace content

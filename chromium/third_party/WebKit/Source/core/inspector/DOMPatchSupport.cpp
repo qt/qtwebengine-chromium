@@ -31,13 +31,14 @@
 #include "config.h"
 #include "core/inspector/DOMPatchSupport.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/Node.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/dom/XMLDocument.h"
 #include "core/html/HTMLBodyElement.h"
 #include "core/html/HTMLDocument.h"
@@ -54,7 +55,7 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct DOMPatchSupport::Digest {
     explicit Digest(Node* node) : m_node(node) { }
@@ -82,31 +83,32 @@ DOMPatchSupport::DOMPatchSupport(DOMEditor* domEditor, Document& document)
 void DOMPatchSupport::patchDocument(const String& markup)
 {
     RefPtrWillBeRawPtr<Document> newDocument = nullptr;
-    if (m_document.isHTMLDocument())
+    if (document().isHTMLDocument())
         newDocument = HTMLDocument::create();
-    else if (m_document.isXHTMLDocument())
+    else if (document().isXHTMLDocument())
         newDocument = XMLDocument::createXHTML();
-    else if (m_document.isXMLDocument())
+    else if (document().isXMLDocument())
         newDocument = XMLDocument::create();
 
     ASSERT(newDocument);
-    newDocument->setContextFeatures(m_document.contextFeatures());
+    newDocument->setContextFeatures(document().contextFeatures());
     RefPtrWillBeRawPtr<DocumentParser> parser = nullptr;
-    if (m_document.isHTMLDocument())
+    if (document().isHTMLDocument())
         parser = HTMLDocumentParser::create(toHTMLDocument(*newDocument), false);
     else
         parser = XMLDocumentParser::create(*newDocument, 0);
+    parser->pinToMainThread();
     parser->insert(markup); // Use insert() so that the parser will not yield.
     parser->finish();
     parser->detach();
 
-    OwnPtr<Digest> oldInfo = createDigest(m_document.documentElement(), 0);
+    OwnPtr<Digest> oldInfo = createDigest(document().documentElement(), 0);
     OwnPtr<Digest> newInfo = createDigest(newDocument->documentElement(), &m_unusedNodesMap);
 
     if (!innerPatchNode(oldInfo.get(), newInfo.get(), IGNORE_EXCEPTION)) {
         // Fall back to rewrite.
-        m_document.write(markup);
-        m_document.close();
+        document().write(markup);
+        document().close();
     }
 }
 
@@ -119,17 +121,17 @@ Node* DOMPatchSupport::patchNode(Node* node, const String& markup, ExceptionStat
     }
 
     Node* previousSibling = node->previousSibling();
-    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(m_document);
-    Node* targetNode = node->parentElementOrShadowRoot() ? node->parentElementOrShadowRoot() : m_document.documentElement();
+    RefPtrWillBeRawPtr<DocumentFragment> fragment = DocumentFragment::create(document());
+    Node* targetNode = node->parentElementOrShadowRoot() ? node->parentElementOrShadowRoot() : document().documentElement();
 
     // Use the document BODY as the context element when editing immediate shadow root children,
     // as it provides an equivalent parsing context.
     if (targetNode->isShadowRoot())
-        targetNode = m_document.body();
+        targetNode = document().body();
     Element* targetElement = toElement(targetNode);
 
     // FIXME: This code should use one of createFragment* in markup.h
-    if (m_document.isHTMLDocument())
+    if (document().isHTMLDocument())
         fragment->parseHTML(markup, targetElement);
     else
         fragment->parseXML(markup, targetElement);
@@ -146,9 +148,9 @@ Node* DOMPatchSupport::patchNode(Node* node, const String& markup, ExceptionStat
     for (Node* child = parentNode->firstChild(); child != node; child = child->nextSibling())
         newList.append(createDigest(child, 0));
     for (Node* child = fragment->firstChild(); child; child = child->nextSibling()) {
-        if (isHTMLHeadElement(*child) && !child->firstChild() && markupCopy.find("</head>") == kNotFound)
+        if (isHTMLHeadElement(*child) && !child->hasChildren() && markupCopy.find("</head>") == kNotFound)
             continue; // HTML5 parser inserts empty <head> tag whenever it parses <body>
-        if (isHTMLBodyElement(*child) && !child->firstChild() && markupCopy.find("</body>") == kNotFound)
+        if (isHTMLBodyElement(*child) && !child->hasChildren() && markupCopy.find("</body>") == kNotFound)
             continue; // HTML5 parser inserts empty <body> tag whenever it parses </head>
         newList.append(createDigest(child, &m_unusedNodesMap));
     }
@@ -187,22 +189,18 @@ bool DOMPatchSupport::innerPatchNode(Digest* oldDigest, Digest* newDigest, Excep
     Element* newElement = toElement(newNode);
     if (oldDigest->m_attrsSHA1 != newDigest->m_attrsSHA1) {
         // FIXME: Create a function in Element for removing all properties. Take in account whether did/willModifyAttribute are important.
-        if (oldElement->hasAttributesWithoutUpdate()) {
-            while (oldElement->attributeCount()) {
-                const Attribute& attribute = oldElement->attributeAt(0);
-                if (!m_domEditor->removeAttribute(oldElement, attribute.localName(), exceptionState))
-                    return false;
-            }
+        while (oldElement->attributesWithoutUpdate().size()) {
+            const Attribute& attribute = oldElement->attributesWithoutUpdate().at(0);
+            if (!m_domEditor->removeAttribute(oldElement, attribute.localName(), exceptionState))
+                return false;
         }
 
         // FIXME: Create a function in Element for copying properties. cloneDataFromElement() is close but not enough for this case.
-        if (newElement->hasAttributesWithoutUpdate()) {
-            AttributeCollection attributes = newElement->attributes();
-            AttributeCollection::const_iterator end = attributes.end();
-            for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-                if (!m_domEditor->setAttribute(oldElement, it->name().localName(), it->value(), exceptionState))
-                    return false;
-            }
+        AttributeCollection attributes = newElement->attributesWithoutUpdate();
+        AttributeCollection::iterator end = attributes.end();
+        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+            if (!m_domEditor->setAttribute(oldElement, it->name().localName(), it->value(), exceptionState))
+                return false;
         }
     }
 
@@ -380,7 +378,7 @@ bool DOMPatchSupport::innerPatchChildren(ContainerNode* parentNode, const Vector
     for (size_t i = 0; i < newMap.size(); ++i) {
         if (newMap[i].first || merges.contains(newList[i].get()))
             continue;
-        if (!insertBeforeAndMarkAsUsed(parentNode, newList[i].get(), parentNode->traverseToChildAt(i), exceptionState))
+        if (!insertBeforeAndMarkAsUsed(parentNode, newList[i].get(), NodeTraversal::childAt(*parentNode, i), exceptionState))
             return false;
     }
 
@@ -389,7 +387,7 @@ bool DOMPatchSupport::innerPatchChildren(ContainerNode* parentNode, const Vector
         if (!oldMap[i].first)
             continue;
         RefPtrWillBeRawPtr<Node> node = oldMap[i].first->m_node;
-        Node* anchorNode = parentNode->traverseToChildAt(oldMap[i].second);
+        Node* anchorNode = NodeTraversal::childAt(*parentNode, oldMap[i].second);
         if (node == anchorNode)
             continue;
         if (isHTMLBodyElement(*node) || isHTMLHeadElement(*node))
@@ -428,11 +426,11 @@ PassOwnPtr<DOMPatchSupport::Digest> DOMPatchSupport::createDigest(Node* node, Un
             digest->m_children.append(childInfo.release());
         }
 
-        if (element.hasAttributesWithoutUpdate()) {
+        AttributeCollection attributes = element.attributesWithoutUpdate();
+        if (!attributes.isEmpty()) {
             OwnPtr<blink::WebCryptoDigestor> attrsDigestor = createDigestor(HashAlgorithmSha1);
-            AttributeCollection attributes = element.attributes();
-            AttributeCollection::const_iterator end = attributes.end();
-            for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+            AttributeCollection::iterator end = attributes.end();
+            for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
                 addStringToDigestor(attrsDigestor.get(), it->name().toString());
                 addStringToDigestor(attrsDigestor.get(), it->value().string());
             }
@@ -514,5 +512,5 @@ void DOMPatchSupport::dumpMap(const ResultMap& map, const String& name)
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink
 

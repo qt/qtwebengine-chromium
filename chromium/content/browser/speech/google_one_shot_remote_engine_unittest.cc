@@ -26,13 +26,13 @@ class GoogleOneShotRemoteEngineTest : public SpeechRecognitionEngineDelegate,
   void CreateAndTestRequest(bool success, const std::string& http_response);
 
   // SpeechRecognitionRequestDelegate methods.
-  virtual void OnSpeechRecognitionEngineResults(
-      const SpeechRecognitionResults& results) OVERRIDE {
+  void OnSpeechRecognitionEngineResults(
+      const SpeechRecognitionResults& results) override {
     results_ = results;
   }
 
-  virtual void OnSpeechRecognitionEngineError(
-      const SpeechRecognitionError& error) OVERRIDE {
+  void OnSpeechRecognitionEngineError(
+      const SpeechRecognitionError& error) override {
     error_ = error.code;
   }
 

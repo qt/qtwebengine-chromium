@@ -32,15 +32,16 @@
 #ifndef PerformanceEntry_h
 #define PerformanceEntry_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PerformanceEntry : public RefCountedWillBeGarbageCollectedFinalized<PerformanceEntry>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~PerformanceEntry();
 
@@ -70,6 +71,6 @@ private:
     const double m_duration;
 };
 
-}
+} // namespace blink
 
-#endif // !defined(PerformanceEntry_h)
+#endif // PerformanceEntry_h

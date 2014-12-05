@@ -15,6 +15,7 @@
 #include "gpu/command_buffer/service/cmd_buffer_engine.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/logger.h"
+#include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "gpu/command_buffer/service/vertex_attrib_manager.h"
@@ -95,14 +96,17 @@ GLES2DecoderTestBase::GLES2DecoderTestBase()
       client_fragment_shader_id_(122),
       client_query_id_(123),
       client_vertexarray_id_(124),
+      client_valuebuffer_id_(125),
+      service_renderbuffer_id_(0),
+      service_renderbuffer_valid_(false),
       ignore_cached_state_for_test_(GetParam()),
       cached_color_mask_red_(true),
       cached_color_mask_green_(true),
       cached_color_mask_blue_(true),
       cached_color_mask_alpha_(true),
       cached_depth_mask_(true),
-      cached_stencil_front_mask_(0xFFFFFFFFU),
-      cached_stencil_back_mask_(0xFFFFFFFFU) {
+      cached_stencil_front_mask_(static_cast<GLuint>(-1)),
+      cached_stencil_back_mask_(static_cast<GLuint>(-1)) {
   memset(immediate_buffer_, 0xEE, sizeof(immediate_buffer_));
 }
 
@@ -166,7 +170,6 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
     feature_info = new FeatureInfo(*command_line);
   group_ = scoped_refptr<ContextGroup>(
       new ContextGroup(NULL,
-                       NULL,
                        memory_tracker_,
                        new ShaderTranslatorCache,
                        feature_info.get(),
@@ -186,7 +189,7 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   context_->SetGLVersionString(normalized_init.gl_version.c_str());
 
   context_->MakeCurrent(surface_.get());
-  gfx::GLSurface::InitializeDynamicMockBindingsForTests(context_);
+  gfx::GLSurface::InitializeDynamicMockBindingsForTests(context_.get());
 
   TestHelper::SetupContextGroupInitExpectations(
       gl_.get(),
@@ -199,6 +202,12 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   // we can use the ContextGroup to figure out how the real GLES2Decoder
   // will initialize itself.
   mock_decoder_.reset(new MockGLES2Decoder());
+
+  // Install FakeDoCommands handler so we can use individual DoCommand()
+  // expectations.
+  EXPECT_CALL(*mock_decoder_, DoCommands(_, _, _, _)).WillRepeatedly(
+      Invoke(mock_decoder_.get(), &MockGLES2Decoder::FakeDoCommands));
+
   EXPECT_TRUE(
       group_->Initialize(mock_decoder_.get(), DisallowedFeatures()));
 
@@ -352,7 +361,7 @@ void GLES2DecoderTestBase::InitDecoderWithCommandLine(
   shared_memory_id_ = kSharedMemoryId;
   shared_memory_base_ = buffer->memory();
 
-  static const int32 kLoseContextWhenOutOfMemory = 0x10003;
+  static const int32 kLoseContextWhenOutOfMemory = 0x10002;
 
   int32 attributes[] = {
       EGL_ALPHA_SIZE,
@@ -728,8 +737,8 @@ void GLES2DecoderTestBase::SetupExpectationsForDepthMask(bool mask) {
   }
 }
 
-void GLES2DecoderTestBase::SetupExpectationsForStencilMask(uint32 front_mask,
-                                                           uint32 back_mask) {
+void GLES2DecoderTestBase::SetupExpectationsForStencilMask(GLuint front_mask,
+                                                           GLuint back_mask) {
   if (ignore_cached_state_for_test_ ||
       cached_stencil_front_mask_ != front_mask) {
     cached_stencil_front_mask_ = front_mask;
@@ -901,12 +910,57 @@ void GLES2DecoderTestBase::DoDeleteFramebuffer(
 
 void GLES2DecoderTestBase::DoBindRenderbuffer(
     GLenum target, GLuint client_id, GLuint service_id) {
+  service_renderbuffer_id_ = service_id;
+  service_renderbuffer_valid_ = true;
   EXPECT_CALL(*gl_, BindRenderbufferEXT(target, service_id))
       .Times(1)
       .RetiresOnSaturation();
   cmds::BindRenderbuffer cmd;
   cmd.Init(target, client_id);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+}
+
+void GLES2DecoderTestBase::DoRenderbufferStorageMultisampleCHROMIUM(
+    GLenum target,
+    GLsizei samples,
+    GLenum internal_format,
+    GLenum gl_format,
+    GLsizei width,
+    GLsizei height) {
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_,
+              RenderbufferStorageMultisampleEXT(
+                  target, samples, gl_format, width, height))
+      .Times(1)
+      .RetiresOnSaturation();
+  EXPECT_CALL(*gl_, GetError())
+      .WillOnce(Return(GL_NO_ERROR))
+      .RetiresOnSaturation();
+  cmds::RenderbufferStorageMultisampleCHROMIUM cmd;
+  cmd.Init(target, samples, internal_format, width, height);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+void GLES2DecoderTestBase::RestoreRenderbufferBindings() {
+  GetDecoder()->RestoreRenderbufferBindings();
+  service_renderbuffer_valid_ = false;
+}
+
+void GLES2DecoderTestBase::EnsureRenderbufferBound(bool expect_bind) {
+  EXPECT_NE(expect_bind, service_renderbuffer_valid_);
+
+  if (expect_bind) {
+    service_renderbuffer_valid_ = true;
+    EXPECT_CALL(*gl_,
+                BindRenderbufferEXT(GL_RENDERBUFFER, service_renderbuffer_id_))
+        .Times(1)
+        .RetiresOnSaturation();
+  } else {
+    EXPECT_CALL(*gl_, BindRenderbufferEXT(_, _)).Times(0);
+  }
 }
 
 bool GLES2DecoderTestBase::DoIsRenderbuffer(GLuint client_id) {
@@ -1408,8 +1462,10 @@ void GLES2DecoderTestBase::SetupShader(
       GL_FRAGMENT_SHADER, fragment_shader_client_id,
       fragment_shader_service_id);
 
-  GetShader(vertex_shader_client_id)->SetStatus(true, "", NULL);
-  GetShader(fragment_shader_client_id)->SetStatus(true, "", NULL);
+  TestHelper::SetShaderStates(
+      gl_.get(), GetShader(vertex_shader_client_id), true);
+  TestHelper::SetShaderStates(
+      gl_.get(), GetShader(fragment_shader_client_id), true);
 
   cmds::AttachShader attach_cmd;
   attach_cmd.Init(program_client_id, vertex_shader_client_id);

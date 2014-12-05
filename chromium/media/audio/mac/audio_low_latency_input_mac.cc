@@ -9,11 +9,15 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/mac/mac_logging.h"
+#include "base/metrics/sparse_histogram.h"
 #include "media/audio/mac/audio_manager_mac.h"
 #include "media/base/audio_bus.h"
 #include "media/base/data_buffer.h"
 
 namespace media {
+
+// Number of blocks of buffers used in the |fifo_|.
+const int kNumberOfBlocksBufferInFifo = 2;
 
 static std::ostream& operator<<(std::ostream& os,
                                 const AudioStreamBasicDescription& format) {
@@ -34,17 +38,18 @@ static std::ostream& operator<<(std::ostream& os,
 
 AUAudioInputStream::AUAudioInputStream(AudioManagerMac* manager,
                                        const AudioParameters& input_params,
-                                       const AudioParameters& output_params,
                                        AudioDeviceID audio_device_id)
     : manager_(manager),
+      number_of_frames_(input_params.frames_per_buffer()),
       sink_(NULL),
       audio_unit_(0),
       input_device_id_(audio_device_id),
       started_(false),
       hardware_latency_frames_(0),
-      fifo_delay_bytes_(0),
       number_of_channels_in_frame_(0),
-      audio_bus_(media::AudioBus::Create(input_params)) {
+      fifo_(input_params.channels(),
+            number_of_frames_,
+            kNumberOfBlocksBufferInFifo) {
   DCHECK(manager_);
 
   // Set up the desired (output) format specified by the client.
@@ -62,12 +67,6 @@ AUAudioInputStream::AUAudioInputStream(AudioManagerMac* manager,
 
   DVLOG(1) << "Desired ouput format: " << format_;
 
-  // Set number of sample frames per callback used by the internal audio layer.
-  // An internal FIFO is then utilized to adapt the internal size to the size
-  // requested by the client.
-  number_of_frames_ = output_params.frames_per_buffer();
-  DVLOG(1) << "Size of data buffer in frames : " << number_of_frames_;
-
   // Derive size (in bytes) of the buffers that we will render to.
   UInt32 data_byte_size = number_of_frames_ * format_.mBytesPerFrame;
   DVLOG(1) << "Size of data buffer in bytes : " << data_byte_size;
@@ -82,38 +81,6 @@ AUAudioInputStream::AUAudioInputStream(AudioManagerMac* manager,
   audio_buffer->mNumberChannels = input_params.channels();
   audio_buffer->mDataByteSize = data_byte_size;
   audio_buffer->mData = audio_data_buffer_.get();
-
-  // Set up an internal FIFO buffer that will accumulate recorded audio frames
-  // until a requested size is ready to be sent to the client.
-  // It is not possible to ask for less than |kAudioFramesPerCallback| number of
-  // audio frames.
-  size_t requested_size_frames =
-      input_params.GetBytesPerBuffer() / format_.mBytesPerPacket;
-  if (requested_size_frames < number_of_frames_) {
-    // For devices that only support a low sample rate like 8kHz, we adjust the
-    // buffer size to match number_of_frames_.  The value of number_of_frames_
-    // in this case has not been calculated based on hardware settings but
-    // rather our hardcoded defaults (see ChooseBufferSize).
-    requested_size_frames = number_of_frames_;
-  }
-
-  requested_size_bytes_ = requested_size_frames * format_.mBytesPerFrame;
-  DVLOG(1) << "Requested buffer size in bytes : " << requested_size_bytes_;
-  DVLOG_IF(0, requested_size_frames > number_of_frames_) << "FIFO is used";
-
-  const int number_of_bytes = number_of_frames_ * format_.mBytesPerFrame;
-  fifo_delay_bytes_ = requested_size_bytes_ - number_of_bytes;
-
-  // Allocate some extra memory to avoid memory reallocations.
-  // Ensure that the size is an even multiple of |number_of_frames_ and
-  // larger than |requested_size_frames|.
-  // Example: number_of_frames_=128, requested_size_frames=480 =>
-  // allocated space equals 4*128=512 audio frames
-  const int max_forward_capacity = number_of_bytes *
-      ((requested_size_frames / number_of_frames_) + 1);
-  fifo_.reset(new media::SeekableBuffer(0, max_forward_capacity));
-
-  data_ = new media::DataBuffer(requested_size_bytes_);
 }
 
 AUAudioInputStream::~AUAudioInputStream() {}
@@ -132,20 +99,20 @@ bool AUAudioInputStream::Open() {
 
   // Start by obtaining an AudioOuputUnit using an AUHAL component description.
 
-  Component comp;
-  ComponentDescription desc;
-
   // Description for the Audio Unit we want to use (AUHAL in this case).
-  desc.componentType = kAudioUnitType_Output;
-  desc.componentSubType = kAudioUnitSubType_HALOutput;
-  desc.componentManufacturer = kAudioUnitManufacturer_Apple;
-  desc.componentFlags = 0;
-  desc.componentFlagsMask = 0;
-  comp = FindNextComponent(0, &desc);
+  AudioComponentDescription desc = {
+      kAudioUnitType_Output,
+      kAudioUnitSubType_HALOutput,
+      kAudioUnitManufacturer_Apple,
+      0,
+      0
+  };
+
+  AudioComponent comp = AudioComponentFindNext(0, &desc);
   DCHECK(comp);
 
   // Get access to the service provided by the specified Audio Unit.
-  OSStatus result = OpenAComponent(comp, &audio_unit_);
+  OSStatus result = AudioComponentInstanceNew(comp, &audio_unit_);
   if (result) {
     HandleError(result);
     return false;
@@ -199,6 +166,24 @@ bool AUAudioInputStream::Open() {
     return false;
   }
 
+  // Set up the the desired (output) format.
+  // For obtaining input from a device, the device format is always expressed
+  // on the output scope of the AUHAL's Element 1.
+  result = AudioUnitSetProperty(audio_unit_,
+                                kAudioUnitProperty_StreamFormat,
+                                kAudioUnitScope_Output,
+                                1,
+                                &format_,
+                                sizeof(format_));
+  if (result) {
+    HandleError(result);
+    return false;
+  }
+
+  if (!manager_->MaybeChangeBufferSize(
+          input_device_id_, audio_unit_, 1, number_of_frames_))
+    return false;
+
   // Register the input procedure for the AUHAL.
   // This procedure will be called when the AUHAL has received new data
   // from the input device.
@@ -214,53 +199,6 @@ bool AUAudioInputStream::Open() {
   if (result) {
     HandleError(result);
     return false;
-  }
-
-  // Set up the the desired (output) format.
-  // For obtaining input from a device, the device format is always expressed
-  // on the output scope of the AUHAL's Element 1.
-  result = AudioUnitSetProperty(audio_unit_,
-                                kAudioUnitProperty_StreamFormat,
-                                kAudioUnitScope_Output,
-                                1,
-                                &format_,
-                                sizeof(format_));
-  if (result) {
-    HandleError(result);
-    return false;
-  }
-
-  // Set the desired number of frames in the IO buffer (output scope).
-  // WARNING: Setting this value changes the frame size for all input audio
-  // units in the current process.  As a result, the AURenderCallback must be
-  // able to handle arbitrary buffer sizes and FIFO appropriately.
-  UInt32 buffer_size = 0;
-  UInt32 property_size = sizeof(buffer_size);
-  result = AudioUnitGetProperty(audio_unit_,
-                                kAudioDevicePropertyBufferFrameSize,
-                                kAudioUnitScope_Output,
-                                1,
-                                &buffer_size,
-                                &property_size);
-  if (result != noErr) {
-    HandleError(result);
-    return false;
-  }
-
-  // Only set the buffer size if we're the only active stream or the buffer size
-  // is lower than the current buffer size.
-  if (manager_->input_stream_count() == 1 || number_of_frames_ < buffer_size) {
-    buffer_size = number_of_frames_;
-    result = AudioUnitSetProperty(audio_unit_,
-                                  kAudioDevicePropertyBufferFrameSize,
-                                  kAudioUnitScope_Output,
-                                  1,
-                                  &buffer_size,
-                                  sizeof(buffer_size));
-    if (result != noErr) {
-      HandleError(result);
-      return false;
-    }
   }
 
   // Finally, initialize the audio unit and ensure that it is ready to render.
@@ -320,6 +258,7 @@ void AUAudioInputStream::Stop() {
   DCHECK_EQ(result, noErr);
   started_ = false;
   sink_ = NULL;
+  fifo_.Clear();
 
   OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
       << "Failed to stop acquiring data";
@@ -333,10 +272,14 @@ void AUAudioInputStream::Close() {
   }
   if (audio_unit_) {
     // Deallocate the audio unit’s resources.
-    AudioUnitUninitialize(audio_unit_);
+    OSStatus result = AudioUnitUninitialize(audio_unit_);
+    OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+        << "AudioUnitUninitialize() failed.";
 
-    // Terminates our connection to the AUHAL component.
-    CloseComponent(audio_unit_);
+    result = AudioComponentInstanceDispose(audio_unit_);
+    OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+        << "AudioComponentInstanceDispose() failed.";
+
     audio_unit_ = 0;
   }
 
@@ -480,6 +423,29 @@ double AUAudioInputStream::GetVolume() {
   return 0.0;
 }
 
+bool AUAudioInputStream::IsMuted() {
+  // Verify that we have a valid device.
+  DCHECK_NE(input_device_id_, kAudioObjectUnknown) << "Device ID is unknown";
+
+  AudioObjectPropertyAddress property_address = {
+    kAudioDevicePropertyMute,
+    kAudioDevicePropertyScopeInput,
+    kAudioObjectPropertyElementMaster
+  };
+
+  if (!AudioObjectHasProperty(input_device_id_, &property_address)) {
+    DLOG(ERROR) << "Device does not support checking master mute state";
+    return false;
+  }
+
+  UInt32 muted = 0;
+  UInt32 size = sizeof(muted);
+  OSStatus result = AudioObjectGetPropertyData(
+      input_device_id_, &property_address, 0, NULL, &size, &muted);
+  DLOG_IF(WARNING, result != noErr) << "Failed to get mute state";
+  return result == noErr && muted != 0;
+}
+
 // AUHAL AudioDeviceOutput unit callback
 OSStatus AUAudioInputStream::InputProc(void* user_data,
                                        AudioUnitRenderActionFlags* flags,
@@ -495,6 +461,31 @@ OSStatus AUAudioInputStream::InputProc(void* user_data,
   if (!audio_input)
     return kAudioUnitErr_InvalidElement;
 
+  // Update the |mDataByteSize| value in the audio_buffer_list() since
+  // |number_of_frames| can be changed on the fly.
+  // |mDataByteSize| needs to be exactly mapping to |number_of_frames|,
+  // otherwise it will put CoreAudio into bad state and results in
+  // AudioUnitRender() returning -50 for the new created stream.
+  // We have also seen kAudioUnitErr_TooManyFramesToProcess (-10874) and
+  // kAudioUnitErr_CannotDoInCurrentContext (-10863) as error codes.
+  // See crbug/428706 for details.
+  UInt32 new_size = number_of_frames * audio_input->format_.mBytesPerFrame;
+  AudioBuffer* audio_buffer = audio_input->audio_buffer_list()->mBuffers;
+  if (new_size != audio_buffer->mDataByteSize) {
+    if (new_size > audio_buffer->mDataByteSize) {
+      // This can happen if the device is unpluged during recording. We
+      // allocate enough memory here to avoid depending on how CoreAudio
+      // handles it.
+      // See See http://www.crbug.com/434681 for one example when we can enter
+      // this scope.
+      audio_input->audio_data_buffer_.reset(new uint8[new_size]);
+      audio_buffer->mData = audio_input->audio_data_buffer_.get();
+    }
+
+    // Update the |mDataByteSize| to match |number_of_frames|.
+    audio_buffer->mDataByteSize = new_size;
+  }
+
   // Receive audio from the AUHAL from the output scope of the Audio Unit.
   OSStatus result = AudioUnitRender(audio_input->audio_unit(),
                                     flags,
@@ -502,8 +493,11 @@ OSStatus AUAudioInputStream::InputProc(void* user_data,
                                     bus_number,
                                     number_of_frames,
                                     audio_input->audio_buffer_list());
-  if (result)
+  if (result) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Media.AudioInputCbErrorMac", result);
+    OSSTATUS_DLOG(ERROR, result) << "AudioUnitRender() failed ";
     return result;
+  }
 
   // Deliver recorded data to the consumer as a callback.
   return audio_input->Provide(number_of_frames,
@@ -527,29 +521,36 @@ OSStatus AUAudioInputStream::Provide(UInt32 number_of_frames,
   uint8* audio_data = reinterpret_cast<uint8*>(buffer.mData);
   uint32 capture_delay_bytes = static_cast<uint32>
       ((capture_latency_frames + 0.5) * format_.mBytesPerFrame);
-  // Account for the extra delay added by the FIFO.
-  capture_delay_bytes += fifo_delay_bytes_;
   DCHECK(audio_data);
   if (!audio_data)
     return kAudioUnitErr_InvalidElement;
 
-  // Accumulate captured audio in FIFO until we can match the output size
-  // requested by the client.
-  fifo_->Append(audio_data, buffer.mDataByteSize);
+  // Dynamically increase capacity of the FIFO to handle larger buffers from
+  // CoreAudio. This can happen in combination with Apple Thunderbolt Displays
+  // when the Display Audio is used as capture source and the cable is first
+  // remove and then inserted again.
+  // See http://www.crbug.com/434681 for details.
+  if (static_cast<int>(number_of_frames) > fifo_.GetUnfilledFrames()) {
+    // Derive required increase in number of FIFO blocks. The increase is
+    // typically one block.
+    const int blocks =
+        static_cast<int>((number_of_frames - fifo_.GetUnfilledFrames()) /
+                         number_of_frames_) + 1;
+    DLOG(WARNING) << "Increasing FIFO capacity by " << blocks << " blocks";
+    fifo_.IncreaseCapacity(blocks);
+  }
 
-  // Deliver recorded data to the client as soon as the FIFO contains a
-  // sufficient amount.
-  if (fifo_->forward_bytes() >= requested_size_bytes_) {
-    // Read from FIFO into temporary data buffer.
-    fifo_->Read(data_->writable_data(), requested_size_bytes_);
+  // Copy captured (and interleaved) data into FIFO.
+  fifo_.Push(audio_data, number_of_frames, format_.mBitsPerChannel / 8);
 
-    // Copy captured (and interleaved) data into deinterleaved audio bus.
-    audio_bus_->FromInterleaved(
-        data_->data(), audio_bus_->frames(), format_.mBitsPerChannel / 8);
+  // Consume and deliver the data when the FIFO has a block of available data.
+  while (fifo_.available_blocks()) {
+    const AudioBus* audio_bus = fifo_.Consume();
+    DCHECK_EQ(audio_bus->frames(), static_cast<int>(number_of_frames_));
 
-    // Deliver data packet, delay estimation and volume level to the user.
-    sink_->OnData(
-        this, audio_bus_.get(), capture_delay_bytes, normalized_volume);
+    // Compensate the audio delay caused by the FIFO.
+    capture_delay_bytes += fifo_.GetAvailableFrames() * format_.mBytesPerFrame;
+    sink_->OnData(this, audio_bus, capture_delay_bytes, normalized_volume);
   }
 
   return noErr;

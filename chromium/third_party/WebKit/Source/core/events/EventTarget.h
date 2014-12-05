@@ -32,21 +32,18 @@
 #ifndef EventTarget_h
 #define EventTarget_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/events/EventListenerMap.h"
 #include "core/events/ThreadLocalEventNames.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class Event;
 class ExceptionState;
 class MessagePort;
 class Node;
-class TextTrack;
-class TextTrackCue;
-class XMLHttpRequest;
-class XMLHttpRequestUpload;
 
 struct FiringEventIterator {
     FiringEventIterator(const AtomicString& eventType, size_t& iterator, size_t& end)
@@ -72,7 +69,30 @@ public:
     OwnPtr<FiringEventIteratorVector> firingEventIterators;
 };
 
-class EventTarget : public WillBeGarbageCollectedMixin {
+// This is the base class for all DOM event targets. To make your class an
+// EventTarget, follow these steps:
+// - Make your IDL interface inherit from EventTarget.
+//   Optionally add "attribute EventHandler onfoo;" attributes.
+// - Inherit from EventTargetWithInlineData (only in rare cases should you use
+//   EventTarget directly).
+// - Figure out if you now need to inherit from ActiveDOMObject as well.
+// - In your class declaration, you will typically use
+//   REFCOUNTED_EVENT_TARGET(YourClassName) and
+//   WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(YourClassName). Make sure to include
+//   this header file in your .h file, or you will get very strange compiler
+//   errors.
+// - If you added an onfoo attribute, use DEFINE_ATTRIBUTE_EVENT_LISTENER(foo)
+//   in your class declaration.
+// - Override EventTarget::interfaceName() and executionContext(). The former
+//   will typically return EventTargetNames::YourClassName. The latter will
+//   return ActiveDOMObject::executionContext (if you are an ActiveDOMObject)
+//   or the document you're in.
+// - Your trace() method will need to call EventTargetWithInlineData::trace.
+//
+// Optionally, add a FooEvent.idl class, but that's outside the scope of this
+// comment (and much more straightforward).
+class EventTarget : public WillBeGarbageCollectedMixin, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
 #if !ENABLE(OILPAN)
     void ref() { refEventTarget(); }
@@ -94,7 +114,7 @@ public:
     virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     bool removeEventListener() { return false; }
     bool removeEventListener(const AtomicString& eventType) { return false; }
-    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false);
+    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false);
     virtual void removeAllEventListeners();
     virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>);
     bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>, ExceptionState&); // DOM API
@@ -114,7 +134,10 @@ public:
 
     virtual void trace(Visitor*) { }
 
+    virtual bool keepEventInNode(Event*) { return false; };
+
 protected:
+    EventTarget();
     virtual ~EventTarget();
 
     // Subclasses should likely not override these themselves; instead, they should subclass EventTargetWithInlineData.
@@ -139,8 +162,8 @@ private:
 
 class EventTargetWithInlineData : public EventTarget {
 protected:
-    virtual EventTargetData* eventTargetData() OVERRIDE FINAL { return &m_eventTargetData; }
-    virtual EventTargetData& ensureEventTargetData() OVERRIDE FINAL { return m_eventTargetData; }
+    virtual EventTargetData* eventTargetData() override final { return &m_eventTargetData; }
+    virtual EventTargetData& ensureEventTargetData() override final { return m_eventTargetData; }
 private:
     EventTargetData m_eventTargetData;
 };
@@ -215,7 +238,7 @@ inline bool EventTarget::hasCapturingEventListeners(const AtomicString& eventTyp
     return d->eventListenerMap.containsCapturing(eventType);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #if ENABLE(OILPAN)
 #define DEFINE_EVENT_TARGET_REFCOUNTING(baseClass) \
@@ -231,8 +254,8 @@ public: \
     using baseClass::ref; \
     using baseClass::deref; \
 private: \
-    virtual void refEventTarget() OVERRIDE FINAL { ref(); } \
-    virtual void derefEventTarget() OVERRIDE FINAL { deref(); } \
+    virtual void refEventTarget() override final { ref(); } \
+    virtual void derefEventTarget() override final { deref(); } \
     typedef int thisIsHereToForceASemiColonAfterThisEventTargetMacro
 #define DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(baseClass) DEFINE_EVENT_TARGET_REFCOUNTING(baseClass)
 #endif
@@ -240,6 +263,6 @@ private: \
 // Use this macro if your EventTarget subclass is also a subclass of WTF::RefCounted.
 // A ref-counted class that uses a different method of refcounting should use DEFINE_EVENT_TARGET_REFCOUNTING directly.
 // Both of these macros are meant to be placed just before the "public:" section of the class declaration.
-#define REFCOUNTED_EVENT_TARGET(className) DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedWillBeRefCountedGarbageCollected<className>)
+#define REFCOUNTED_EVENT_TARGET(className) DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCounted<className>)
 
 #endif // EventTarget_h

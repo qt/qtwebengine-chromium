@@ -30,6 +30,7 @@
 #include "WebCommon.h"
 
 namespace blink {
+
 struct WebRect;
 struct WebFloatRect;
 
@@ -46,7 +47,7 @@ public:
     // optimizations.
     // The |disableContext| enum controls most processing in
     // GraphicsContext to isolate the painting code in performance tests.
-    virtual void paintContents(WebCanvas*, const WebRect& clip, bool canPaintLCDText, WebFloatRect& opaque, GraphicsContextStatus = GraphicsContextEnabled) = 0;
+    virtual void paintContents(WebCanvas*, const WebRect& clip, bool canPaintLCDText, GraphicsContextStatus = GraphicsContextEnabled) = 0;
 
 protected:
     virtual ~WebContentLayerClient() { }

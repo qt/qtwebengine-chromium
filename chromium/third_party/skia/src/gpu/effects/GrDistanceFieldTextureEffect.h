@@ -8,11 +8,32 @@
 #ifndef GrDistanceFieldTextureEffect_DEFINED
 #define GrDistanceFieldTextureEffect_DEFINED
 
-#include "GrEffect.h"
-#include "GrVertexEffect.h"
+#include "GrProcessor.h"
+#include "GrGeometryProcessor.h"
 
 class GrGLDistanceFieldTextureEffect;
+class GrGLDistanceFieldNoGammaTextureEffect;
 class GrGLDistanceFieldLCDTextureEffect;
+
+enum GrDistanceFieldEffectFlags {
+    kSimilarity_DistanceFieldEffectFlag = 0x01,   // ctm is similarity matrix
+    kRectToRect_DistanceFieldEffectFlag = 0x02,   // ctm maps rects to rects
+    kUseLCD_DistanceFieldEffectFlag     = 0x04,   // use lcd text
+    kBGR_DistanceFieldEffectFlag        = 0x08,   // lcd display has bgr order
+    kPortrait_DistanceFieldEffectFlag   = 0x10,   // lcd display is in portrait mode (not used yet)
+
+    kInvalid_DistanceFieldEffectFlag    = 0x80,   // invalid state (for initialization)
+    
+    kUniformScale_DistanceFieldEffectMask = kSimilarity_DistanceFieldEffectFlag |
+                                            kRectToRect_DistanceFieldEffectFlag,
+    // The subset of the flags relevant to GrDistanceFieldTextureEffect
+    kNonLCD_DistanceFieldEffectMask       = kSimilarity_DistanceFieldEffectFlag,
+    // The subset of the flags relevant to GrDistanceFieldLCDTextureEffect
+    kLCD_DistanceFieldEffectMask          = kSimilarity_DistanceFieldEffectFlag |
+                                            kRectToRect_DistanceFieldEffectFlag |
+                                            kUseLCD_DistanceFieldEffectFlag |
+                                            kBGR_DistanceFieldEffectFlag,
+};
 
 /**
  * The output color of this effect is a modulation of the input color and a sample from a
@@ -20,57 +41,100 @@ class GrGLDistanceFieldLCDTextureEffect;
  * It allows explicit specification of the filtering and wrap modes (GrTextureParams). The input
  * coords are a custom attribute. Gamma correction is handled via a texture LUT.
  */
-class GrDistanceFieldTextureEffect : public GrVertexEffect {
+class GrDistanceFieldTextureEffect : public GrGeometryProcessor {
 public:
 #ifdef SK_GAMMA_APPLY_TO_A8
-    static GrEffectRef* Create(GrTexture* tex, const GrTextureParams& params,
-                               GrTexture* gamma, const GrTextureParams& gammaParams, float lum,
-                               bool similarity) {
-        AutoEffectUnref effect(SkNEW_ARGS(GrDistanceFieldTextureEffect, (tex, params,
-                                                                         gamma, gammaParams, lum,
-                                                                         similarity)));
-#else
-    static GrEffectRef* Create(GrTexture* tex, const GrTextureParams& params,
-                               bool similarity) {
-        AutoEffectUnref effect(SkNEW_ARGS(GrDistanceFieldTextureEffect, (tex, params,
-                                                                         similarity)));
-#endif
-        return CreateEffectRef(effect);
+    static GrGeometryProcessor* Create(GrTexture* tex, const GrTextureParams& params,
+                                       GrTexture* gamma, const GrTextureParams& gammaParams,
+                                       float lum, uint32_t flags) {
+       return SkNEW_ARGS(GrDistanceFieldTextureEffect, (tex, params, gamma, gammaParams, lum,
+                                                        flags));
     }
+#else
+    static GrGeometryProcessor* Create(GrTexture* tex, const GrTextureParams& params,
+                                       uint32_t flags) {
+        return  SkNEW_ARGS(GrDistanceFieldTextureEffect, (tex, params, flags));
+    }
+#endif
 
     virtual ~GrDistanceFieldTextureEffect() {}
 
     static const char* Name() { return "DistanceFieldTexture"; }
 
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
+    const GrShaderVar& inTextureCoords() const { return fInTextureCoords; }
 #ifdef SK_GAMMA_APPLY_TO_A8
     float getLuminance() const { return fLuminance; }
 #endif
-    bool isSimilarity() const { return fIsSimilarity; }
+    uint32_t getFlags() const { return fFlags; }
 
-    typedef GrGLDistanceFieldTextureEffect GLEffect;
+    typedef GrGLDistanceFieldTextureEffect GLProcessor;
 
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual const GrBackendGeometryProcessorFactory& getFactory() const SK_OVERRIDE;
 
 private:
     GrDistanceFieldTextureEffect(GrTexture* texture, const GrTextureParams& params,
 #ifdef SK_GAMMA_APPLY_TO_A8
                                  GrTexture* gamma, const GrTextureParams& gammaParams, float lum,
 #endif
-                                 bool uniformScale);
+                                 uint32_t flags);
 
-    virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
 
-    GrTextureAccess fTextureAccess;
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
+
+    GrTextureAccess    fTextureAccess;
 #ifdef SK_GAMMA_APPLY_TO_A8
-    GrTextureAccess fGammaTextureAccess;
-    float           fLuminance;
+    GrTextureAccess    fGammaTextureAccess;
+    float              fLuminance;
 #endif
-    bool            fIsSimilarity;
+    uint32_t           fFlags;
+    const GrShaderVar& fInTextureCoords;
 
-    GR_DECLARE_EFFECT_TEST;
+    GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
 
-    typedef GrVertexEffect INHERITED;
+    typedef GrGeometryProcessor INHERITED;
+};
+
+
+/**
+* The output color of this effect is a modulation of the input color and a sample from a
+* distance field texture (using a smoothed step function near 0.5).
+* It allows explicit specification of the filtering and wrap modes (GrTextureParams). The input
+* coords are a custom attribute. No gamma correct blending is applied.
+*/
+class GrDistanceFieldNoGammaTextureEffect : public GrGeometryProcessor {
+public:
+    static GrGeometryProcessor* Create(GrTexture* tex, const GrTextureParams& params,
+                                       uint32_t flags) {
+        return SkNEW_ARGS(GrDistanceFieldNoGammaTextureEffect, (tex, params, flags));
+    }
+
+    virtual ~GrDistanceFieldNoGammaTextureEffect() {}
+
+    static const char* Name() { return "DistanceFieldTexture"; }
+
+    const GrShaderVar& inTextureCoords() const { return fInTextureCoords; }
+    uint32_t getFlags() const { return fFlags; }
+
+    typedef GrGLDistanceFieldNoGammaTextureEffect GLProcessor;
+
+    virtual const GrBackendGeometryProcessorFactory& getFactory() const SK_OVERRIDE;
+
+private:
+    GrDistanceFieldNoGammaTextureEffect(GrTexture* texture, const GrTextureParams& params,
+                                        uint32_t flags);
+
+    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
+
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
+
+    GrTextureAccess    fTextureAccess;
+    uint32_t           fFlags;
+    const GrShaderVar& fInTextureCoords;
+
+    GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
+
+    typedef GrGeometryProcessor INHERITED;
 };
 
 /**
@@ -79,48 +143,46 @@ private:
  * It allows explicit specification of the filtering and wrap modes (GrTextureParams). The input
  * coords are a custom attribute. Gamma correction is handled via a texture LUT.
  */
-class GrDistanceFieldLCDTextureEffect : public GrVertexEffect {
+class GrDistanceFieldLCDTextureEffect : public GrGeometryProcessor {
 public:
-    static GrEffectRef* Create(GrTexture* tex, const GrTextureParams& params,
-                               GrTexture* gamma, const GrTextureParams& gammaParams, 
-                               SkColor textColor,
-                               bool uniformScale, bool useBGR) {
-        AutoEffectUnref effect(SkNEW_ARGS(GrDistanceFieldLCDTextureEffect,
-                                          (tex, params, gamma, gammaParams, textColor, uniformScale,
-                                           useBGR)));
-        return CreateEffectRef(effect);
+    static GrGeometryProcessor* Create(GrTexture* tex, const GrTextureParams& params,
+                                       GrTexture* gamma, const GrTextureParams& gammaParams,
+                                       SkColor textColor, uint32_t flags) {
+        return SkNEW_ARGS(GrDistanceFieldLCDTextureEffect,
+                          (tex, params, gamma, gammaParams, textColor, flags));
     }
 
     virtual ~GrDistanceFieldLCDTextureEffect() {}
 
     static const char* Name() { return "DistanceFieldLCDTexture"; }
 
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
+    const GrShaderVar& inTextureCoords() const { return fInTextureCoords; }
     GrColor getTextColor() const { return fTextColor; }
-    bool isUniformScale() const { return fUniformScale; }
-    bool useBGR() const { return fUseBGR; }
+    uint32_t getFlags() const { return fFlags; }
 
-    typedef GrGLDistanceFieldLCDTextureEffect GLEffect;
+    typedef GrGLDistanceFieldLCDTextureEffect GLProcessor;
 
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual const GrBackendGeometryProcessorFactory& getFactory() const SK_OVERRIDE;
 
 private:
     GrDistanceFieldLCDTextureEffect(GrTexture* texture, const GrTextureParams& params,
                                     GrTexture* gamma, const GrTextureParams& gammaParams,
                                     SkColor textColor,
-                                    bool uniformScale, bool useBGR);
+                                    uint32_t flags);
 
-    virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
 
-    GrTextureAccess fTextureAccess;
-    GrTextureAccess fGammaTextureAccess;
-    GrColor         fTextColor;
-    bool            fUniformScale;
-    bool            fUseBGR;
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
 
-    GR_DECLARE_EFFECT_TEST;
+    GrTextureAccess    fTextureAccess;
+    GrTextureAccess    fGammaTextureAccess;
+    GrColor            fTextColor;
+    uint32_t           fFlags;
+    const GrShaderVar& fInTextureCoords;
 
-    typedef GrVertexEffect INHERITED;
+    GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
+
+    typedef GrGeometryProcessor INHERITED;
 };
 
 #endif

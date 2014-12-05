@@ -31,36 +31,36 @@
 #include "config.h"
 #include "core/css/resolver/AnimatedStyleBuilder.h"
 
-#include "core/animation/AnimatableClipPathOperation.h"
-#include "core/animation/AnimatableColor.h"
-#include "core/animation/AnimatableDouble.h"
-#include "core/animation/AnimatableFilterOperations.h"
-#include "core/animation/AnimatableImage.h"
-#include "core/animation/AnimatableLength.h"
-#include "core/animation/AnimatableLengthBox.h"
-#include "core/animation/AnimatableLengthBoxAndBool.h"
-#include "core/animation/AnimatableLengthPoint.h"
-#include "core/animation/AnimatableLengthPoint3D.h"
-#include "core/animation/AnimatableLengthSize.h"
-#include "core/animation/AnimatableRepeatable.h"
-#include "core/animation/AnimatableSVGLength.h"
-#include "core/animation/AnimatableSVGPaint.h"
-#include "core/animation/AnimatableShadow.h"
-#include "core/animation/AnimatableShapeValue.h"
-#include "core/animation/AnimatableStrokeDasharrayList.h"
-#include "core/animation/AnimatableTransform.h"
-#include "core/animation/AnimatableUnknown.h"
-#include "core/animation/AnimatableValue.h"
-#include "core/animation/AnimatableVisibility.h"
-#include "core/animation/css/CSSAnimations.h"
+#include "core/animation/animatable/AnimatableClipPathOperation.h"
+#include "core/animation/animatable/AnimatableColor.h"
+#include "core/animation/animatable/AnimatableDouble.h"
+#include "core/animation/animatable/AnimatableFilterOperations.h"
+#include "core/animation/animatable/AnimatableImage.h"
+#include "core/animation/animatable/AnimatableLength.h"
+#include "core/animation/animatable/AnimatableLengthBox.h"
+#include "core/animation/animatable/AnimatableLengthBoxAndBool.h"
+#include "core/animation/animatable/AnimatableLengthPoint.h"
+#include "core/animation/animatable/AnimatableLengthPoint3D.h"
+#include "core/animation/animatable/AnimatableLengthSize.h"
+#include "core/animation/animatable/AnimatableRepeatable.h"
+#include "core/animation/animatable/AnimatableSVGLength.h"
+#include "core/animation/animatable/AnimatableSVGPaint.h"
+#include "core/animation/animatable/AnimatableShadow.h"
+#include "core/animation/animatable/AnimatableShapeValue.h"
+#include "core/animation/animatable/AnimatableStrokeDasharrayList.h"
+#include "core/animation/animatable/AnimatableTransform.h"
+#include "core/animation/animatable/AnimatableUnknown.h"
+#include "core/animation/animatable/AnimatableValue.h"
+#include "core/animation/animatable/AnimatableVisibility.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
+#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/resolver/StyleBuilder.h"
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "wtf/MathExtras.h"
 #include "wtf/TypeTraits.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -118,6 +118,16 @@ LengthPoint animatableValueToLengthPoint(const AnimatableValue* value, const Sty
         animatableValueToLength(animatableLengthPoint->y(), state, range));
 }
 
+TransformOrigin animatableValueToTransformOrigin(const AnimatableValue* value, const StyleResolverState& state, ValueRange range = ValueRangeAll)
+{
+    const AnimatableLengthPoint3D* animatableLengthPoint3D = toAnimatableLengthPoint3D(value);
+    return TransformOrigin(
+        animatableValueToLength(animatableLengthPoint3D->x(), state),
+        animatableValueToLength(animatableLengthPoint3D->y(), state),
+        clampTo<float>(toAnimatableDouble(animatableLengthPoint3D->z())->toDouble())
+    );
+}
+
 LengthSize animatableValueToLengthSize(const AnimatableValue* value, const StyleResolverState& state, ValueRange range)
 {
     const AnimatableLengthSize* animatableLengthSize = toAnimatableLengthSize(value);
@@ -126,13 +136,12 @@ LengthSize animatableValueToLengthSize(const AnimatableValue* value, const Style
         animatableValueToLength(animatableLengthSize->height(), state, range));
 }
 
-template <CSSPropertyID property>
 void setFillSize(FillLayer* fillLayer, const AnimatableValue* value, const StyleResolverState& state)
 {
     if (value->isLengthSize())
         fillLayer->setSize(FillSize(SizeLength, animatableValueToLengthSize(value, state, ValueRangeNonNegative)));
     else
-        state.styleMap().mapFillSize(property, fillLayer, toAnimatableUnknown(value)->toCSSValue().get());
+        state.styleMap().mapFillSize(fillLayer, toAnimatableUnknown(value)->toCSSValue().get());
 }
 
 PassRefPtr<SVGLength> animatableValueToNonNegativeSVGLength(const AnimatableValue* value)
@@ -144,32 +153,15 @@ PassRefPtr<SVGLength> animatableValueToNonNegativeSVGLength(const AnimatableValu
 }
 
 template <CSSPropertyID property>
-void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleResolverState& state)
+void setOnFillLayers(FillLayer& fillLayers, const AnimatableValue* value, StyleResolverState& state)
 {
     const WillBeHeapVector<RefPtrWillBeMember<AnimatableValue> >& values = toAnimatableRepeatable(value)->values();
     ASSERT(!values.isEmpty());
+    FillLayer* fillLayer = &fillLayers;
     FillLayer* prev = 0;
     for (size_t i = 0; i < values.size(); ++i) {
-        if (!fillLayer) {
-            switch (property) {
-            case CSSPropertyBackgroundImage:
-            case CSSPropertyBackgroundPositionX:
-            case CSSPropertyBackgroundPositionY:
-            case CSSPropertyBackgroundSize:
-            case CSSPropertyWebkitBackgroundSize:
-                fillLayer = new FillLayer(BackgroundFillLayer);
-                break;
-            case CSSPropertyWebkitMaskImage:
-            case CSSPropertyWebkitMaskPositionX:
-            case CSSPropertyWebkitMaskPositionY:
-            case CSSPropertyWebkitMaskSize:
-                fillLayer = new FillLayer(MaskFillLayer);
-                break;
-            default:
-                ASSERT_NOT_REACHED();
-            }
-            prev->setNext(fillLayer);
-        }
+        if (!fillLayer)
+            fillLayer = prev->ensureNext();
         const AnimatableValue* layerValue = values[i].get();
         switch (property) {
         case CSSPropertyBackgroundImage:
@@ -192,7 +184,7 @@ void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleRe
         case CSSPropertyBackgroundSize:
         case CSSPropertyWebkitBackgroundSize:
         case CSSPropertyWebkitMaskSize:
-            setFillSize<property>(fillLayer, layerValue, state);
+            setFillSize(fillLayer, layerValue, state);
             break;
         default:
             ASSERT_NOT_REACHED();
@@ -226,6 +218,26 @@ void setOnFillLayers(FillLayer* fillLayer, const AnimatableValue* value, StyleRe
     }
 }
 
+FontStretch animatableValueToFontStretch(const AnimatableValue* value)
+{
+    ASSERT(FontStretchUltraCondensed == 1 && FontStretchUltraExpanded == 9);
+    unsigned index = round(toAnimatableDouble(value)->toDouble()) - 1;
+    static const FontStretch stretchValues[] = {
+        FontStretchUltraCondensed,
+        FontStretchExtraCondensed,
+        FontStretchCondensed,
+        FontStretchSemiCondensed,
+        FontStretchNormal,
+        FontStretchSemiExpanded,
+        FontStretchExpanded,
+        FontStretchExtraExpanded,
+        FontStretchUltraExpanded
+    };
+
+    index = clampTo<unsigned>(index, 0, WTF_ARRAY_LENGTH(stretchValues) - 1);
+    return stretchValues[index];
+}
+
 FontWeight animatableValueToFontWeight(const AnimatableValue* value)
 {
     int index = round(toAnimatableDouble(value)->toDouble() / 100) - 1;
@@ -252,7 +264,7 @@ FontWeight animatableValueToFontWeight(const AnimatableValue* value)
 // FIXME: Generate this function.
 void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverState& state, const AnimatableValue* value)
 {
-    ASSERT(CSSAnimations::isAnimatableProperty(property));
+    ASSERT(CSSPropertyMetadata::isAnimatableProperty(property));
     if (value->isUnknown()) {
         StyleBuilder::applyProperty(property, state, toAnimatableUnknown(value)->toCSSValue().get());
         return;
@@ -339,7 +351,6 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         return;
     case CSSPropertyClip:
         style->setClip(animatableValueToLengthBox(value, state));
-        style->setHasClip(true);
         return;
     case CSSPropertyColor:
         style->setColor(toAnimatableColor(value)->color());
@@ -351,8 +362,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyFill:
         {
             const AnimatableSVGPaint* svgPaint = toAnimatableSVGPaint(value);
-            style->accessSVGStyle()->setFillPaint(svgPaint->paintType(), svgPaint->color(), svgPaint->uri(), true, false);
-            style->accessSVGStyle()->setFillPaint(svgPaint->visitedLinkPaintType(), svgPaint->visitedLinkColor(), svgPaint->visitedLinkURI(), false, true);
+            style->accessSVGStyle().setFillPaint(svgPaint->paintType(), svgPaint->color(), svgPaint->uri(), true, false);
+            style->accessSVGStyle().setFillPaint(svgPaint->visitedLinkPaintType(), svgPaint->visitedLinkColor(), svgPaint->visitedLinkURI(), false, true);
         }
         return;
     case CSSPropertyFlexGrow:
@@ -372,6 +383,9 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         return;
     case CSSPropertyFontSize:
         style->setFontSize(clampTo<float>(toAnimatableDouble(value)->toDouble(), 0));
+        return;
+    case CSSPropertyFontStretch:
+        style->setFontStretch(animatableValueToFontStretch(value));
         return;
     case CSSPropertyFontWeight:
         style->setFontWeight(animatableValueToFontWeight(value));
@@ -480,8 +494,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyStroke:
         {
             const AnimatableSVGPaint* svgPaint = toAnimatableSVGPaint(value);
-            style->accessSVGStyle()->setStrokePaint(svgPaint->paintType(), svgPaint->color(), svgPaint->uri(), true, false);
-            style->accessSVGStyle()->setStrokePaint(svgPaint->visitedLinkPaintType(), svgPaint->visitedLinkColor(), svgPaint->visitedLinkURI(), false, true);
+            style->accessSVGStyle().setStrokePaint(svgPaint->paintType(), svgPaint->color(), svgPaint->uri(), true, false);
+            style->accessSVGStyle().setStrokePaint(svgPaint->visitedLinkPaintType(), svgPaint->visitedLinkColor(), svgPaint->visitedLinkURI(), false, true);
         }
         return;
     case CSSPropertyTextDecorationColor:
@@ -556,20 +570,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     case CSSPropertyPerspective:
         style->setPerspective(clampTo<float>(toAnimatableDouble(value)->toDouble()));
         return;
-    case CSSPropertyPerspectiveOrigin: {
-        ASSERT(RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        const AnimatableLengthPoint* animatableLengthPoint = toAnimatableLengthPoint(value);
-        style->setPerspectiveOriginX(animatableValueToLength(animatableLengthPoint->x(), state));
-        style->setPerspectiveOriginY(animatableValueToLength(animatableLengthPoint->y(), state));
-        return;
-    }
-    case CSSPropertyWebkitPerspectiveOriginX:
-        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        style->setPerspectiveOriginX(animatableValueToLength(value, state));
-        return;
-    case CSSPropertyWebkitPerspectiveOriginY:
-        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        style->setPerspectiveOriginY(animatableValueToLength(value, state));
+    case CSSPropertyPerspectiveOrigin:
+        style->setPerspectiveOrigin(animatableValueToLengthPoint(value, state));
         return;
     case CSSPropertyShapeOutside:
         style->setShapeOutside(toAnimatableShapeValue(value)->shapeValue());
@@ -590,25 +592,8 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
         style->setTransform(operations.size() ? operations : TransformOperations(true));
         return;
     }
-    case CSSPropertyTransformOrigin: {
-        ASSERT(RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        const AnimatableLengthPoint3D* animatableLengthPoint3D = toAnimatableLengthPoint3D(value);
-        style->setTransformOriginX(animatableValueToLength(animatableLengthPoint3D->x(), state));
-        style->setTransformOriginY(animatableValueToLength(animatableLengthPoint3D->y(), state));
-        style->setTransformOriginZ(clampTo<float>(toAnimatableDouble(animatableLengthPoint3D->z())->toDouble()));
-        return;
-    }
-    case CSSPropertyWebkitTransformOriginX:
-        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        style->setTransformOriginX(animatableValueToLength(value, state));
-        return;
-    case CSSPropertyWebkitTransformOriginY:
-        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        style->setTransformOriginY(animatableValueToLength(value, state));
-        return;
-    case CSSPropertyWebkitTransformOriginZ:
-        ASSERT(!RuntimeEnabledFeatures::cssTransformsUnprefixedEnabled());
-        style->setTransformOriginZ(toAnimatableDouble(value)->toDouble());
+    case CSSPropertyTransformOrigin:
+        style->setTransformOrigin(animatableValueToTransformOrigin(value, state));
         return;
     case CSSPropertyWidows:
         style->setWidows(animatableValueRoundClampTo<unsigned short>(value, 1));
@@ -636,4 +621,4 @@ void AnimatedStyleBuilder::applyProperty(CSSPropertyID property, StyleResolverSt
     }
 }
 
-} // namespace WebCore
+} // namespace blink

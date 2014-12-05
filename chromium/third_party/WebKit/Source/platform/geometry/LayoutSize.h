@@ -32,12 +32,11 @@
 #define LayoutSize_h
 
 #include "platform/LayoutUnit.h"
+#include "platform/geometry/DoubleSize.h"
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntSize.h"
 
-namespace WebCore {
-
-class LayoutPoint;
+namespace blink {
 
 enum AspectRatioFit {
     AspectRatioFitShrink,
@@ -51,6 +50,7 @@ public:
     LayoutSize(LayoutUnit width, LayoutUnit height) : m_width(width), m_height(height) { }
 
     explicit LayoutSize(const FloatSize& size) : m_width(size.width()), m_height(size.height()) { }
+    explicit LayoutSize(const DoubleSize& size) : m_width(size.width()), m_height(size.height()) { }
 
     LayoutUnit width() const { return m_width; }
     LayoutUnit height() const { return m_height; }
@@ -189,6 +189,6 @@ inline LayoutSize roundedLayoutSize(const FloatSize& s)
     return LayoutSize(s);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LayoutSize_h

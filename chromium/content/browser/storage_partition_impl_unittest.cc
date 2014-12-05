@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "base/threading/thread.h"
@@ -20,8 +20,8 @@
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 namespace {
@@ -49,16 +49,16 @@ const base::FilePath::CharType kDomStorageOrigin2[] =
 const base::FilePath::CharType kDomStorageOrigin3[] =
     FILE_PATH_LITERAL("http_host3_1.localstorage");
 
-const quota::StorageType kTemporary = quota::kStorageTypeTemporary;
-const quota::StorageType kPersistent = quota::kStorageTypePersistent;
+const storage::StorageType kTemporary = storage::kStorageTypeTemporary;
+const storage::StorageType kPersistent = storage::kStorageTypePersistent;
 
-const quota::QuotaClient::ID kClientFile = quota::QuotaClient::kFileSystem;
+const storage::QuotaClient::ID kClientFile = storage::QuotaClient::kFileSystem;
 
 const uint32 kAllQuotaRemoveMask =
-    StoragePartition::REMOVE_DATA_MASK_INDEXEDDB |
-    StoragePartition::REMOVE_DATA_MASK_WEBSQL |
+    StoragePartition::REMOVE_DATA_MASK_APPCACHE |
     StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS |
-    StoragePartition::REMOVE_DATA_MASK_APPCACHE;
+    StoragePartition::REMOVE_DATA_MASK_INDEXEDDB |
+    StoragePartition::REMOVE_DATA_MASK_WEBSQL;
 
 class AwaitCompletionHelper {
  public:
@@ -225,7 +225,7 @@ bool IsWebSafeSchemeForTest(const std::string& scheme) {
 
 bool DoesOriginMatchForUnprotectedWeb(
     const GURL& origin,
-    quota::SpecialStoragePolicy* special_storage_policy) {
+    storage::SpecialStoragePolicy* special_storage_policy) {
   if (IsWebSafeSchemeForTest(origin.scheme()))
     return !special_storage_policy->IsStorageProtected(origin.GetOrigin());
 
@@ -234,23 +234,22 @@ bool DoesOriginMatchForUnprotectedWeb(
 
 bool DoesOriginMatchForBothProtectedAndUnprotectedWeb(
     const GURL& origin,
-    quota::SpecialStoragePolicy* special_storage_policy) {
+    storage::SpecialStoragePolicy* special_storage_policy) {
   return true;
 }
 
 bool DoesOriginMatchUnprotected(
     const GURL& origin,
-    quota::SpecialStoragePolicy* special_storage_policy) {
+    storage::SpecialStoragePolicy* special_storage_policy) {
   return origin.GetOrigin().scheme() != kOriginDevTools.scheme();
 }
 
 void ClearQuotaData(content::StoragePartition* partition,
                     base::RunLoop* loop_to_quit) {
-  partition->ClearData(
-      kAllQuotaRemoveMask,
-      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
-      GURL(), StoragePartition::OriginMatcherFunction(),
-      base::Time(), base::Time::Max(), loop_to_quit->QuitClosure());
+  partition->ClearData(kAllQuotaRemoveMask,
+                       StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL, GURL(),
+                       StoragePartition::OriginMatcherFunction(), base::Time(),
+                       base::Time::Max(), loop_to_quit->QuitClosure());
 }
 
 void ClearQuotaDataWithOriginMatcher(
@@ -280,13 +279,11 @@ void ClearQuotaDataForNonPersistent(
     content::StoragePartition* partition,
     const base::Time delete_begin,
     base::RunLoop* loop_to_quit) {
-  uint32 quota_storage_remove_mask_no_persistent =
-      StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL &
-      ~StoragePartition::QUOTA_MANAGED_STORAGE_MASK_PERSISTENT;
   partition->ClearData(
-      kAllQuotaRemoveMask, quota_storage_remove_mask_no_persistent,
-      GURL(), StoragePartition::OriginMatcherFunction(),
-      delete_begin, base::Time::Max(), loop_to_quit->QuitClosure());
+      kAllQuotaRemoveMask,
+      ~StoragePartition::QUOTA_MANAGED_STORAGE_MASK_PERSISTENT,
+      GURL(), StoragePartition::OriginMatcherFunction(), delete_begin,
+      base::Time::Max(), loop_to_quit->QuitClosure());
 }
 
 void ClearCookies(content::StoragePartition* partition,
@@ -367,7 +364,7 @@ class StoragePartitionShaderClearTest : public testing::Test {
     cache_ = ShaderCacheFactory::GetInstance()->Get(kDefaultClientId);
   }
 
-  virtual ~StoragePartitionShaderClearTest() {
+  ~StoragePartitionShaderClearTest() override {
     cache_ = NULL;
     ShaderCacheFactory::GetInstance()->RemoveCacheInfo(kDefaultClientId);
   }
@@ -416,27 +413,23 @@ TEST_F(StoragePartitionShaderClearTest, ClearShaderCache) {
 }
 
 TEST_F(StoragePartitionImplTest, QuotaClientMaskGeneration) {
-  EXPECT_EQ(quota::QuotaClient::kFileSystem,
+  EXPECT_EQ(storage::QuotaClient::kFileSystem,
             StoragePartitionImpl::GenerateQuotaClientMask(
                 StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS));
-  EXPECT_EQ(quota::QuotaClient::kDatabase,
+  EXPECT_EQ(storage::QuotaClient::kDatabase,
             StoragePartitionImpl::GenerateQuotaClientMask(
                 StoragePartition::REMOVE_DATA_MASK_WEBSQL));
-  EXPECT_EQ(quota::QuotaClient::kAppcache,
+  EXPECT_EQ(storage::QuotaClient::kAppcache,
             StoragePartitionImpl::GenerateQuotaClientMask(
                 StoragePartition::REMOVE_DATA_MASK_APPCACHE));
-  EXPECT_EQ(quota::QuotaClient::kIndexedDatabase,
+  EXPECT_EQ(storage::QuotaClient::kIndexedDatabase,
             StoragePartitionImpl::GenerateQuotaClientMask(
                 StoragePartition::REMOVE_DATA_MASK_INDEXEDDB));
-  EXPECT_EQ(quota::QuotaClient::kFileSystem |
-            quota::QuotaClient::kDatabase |
-            quota::QuotaClient::kAppcache |
-            quota::QuotaClient::kIndexedDatabase,
-            StoragePartitionImpl::GenerateQuotaClientMask(
-                StoragePartition::REMOVE_DATA_MASK_FILE_SYSTEMS |
-                StoragePartition::REMOVE_DATA_MASK_WEBSQL |
-                StoragePartition::REMOVE_DATA_MASK_APPCACHE |
-                StoragePartition::REMOVE_DATA_MASK_INDEXEDDB));
+  EXPECT_EQ(storage::QuotaClient::kFileSystem |
+                storage::QuotaClient::kDatabase |
+                storage::QuotaClient::kAppcache |
+                storage::QuotaClient::kIndexedDatabase,
+            StoragePartitionImpl::GenerateQuotaClientMask(kAllQuotaRemoveMask));
 }
 
 void PopulateTestQuotaManagedPersistentData(MockQuotaManager* manager) {
@@ -679,7 +672,7 @@ TEST_F(StoragePartitionImplTest, RemoveQuotaManagedUnprotectedOrigins) {
       BrowserContext::GetDefaultStoragePartition(browser_context()));
   partition->OverrideQuotaManagerForTesting(
       GetMockManager());
-  partition->OverrideSpecialStoragePolicyForTesting(mock_policy);
+  partition->OverrideSpecialStoragePolicyForTesting(mock_policy.get());
 
   base::RunLoop run_loop;
   base::MessageLoop::current()->PostTask(
@@ -715,7 +708,7 @@ TEST_F(StoragePartitionImplTest, RemoveQuotaManagedProtectedSpecificOrigin) {
       BrowserContext::GetDefaultStoragePartition(browser_context()));
   partition->OverrideQuotaManagerForTesting(
       GetMockManager());
-  partition->OverrideSpecialStoragePolicyForTesting(mock_policy);
+  partition->OverrideSpecialStoragePolicyForTesting(mock_policy.get());
 
   // Try to remove kOrigin1. Expect failure.
   base::RunLoop run_loop;
@@ -754,7 +747,7 @@ TEST_F(StoragePartitionImplTest, RemoveQuotaManagedProtectedOrigins) {
       BrowserContext::GetDefaultStoragePartition(browser_context()));
   partition->OverrideQuotaManagerForTesting(
       GetMockManager());
-  partition->OverrideSpecialStoragePolicyForTesting(mock_policy);
+  partition->OverrideSpecialStoragePolicyForTesting(mock_policy.get());
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ClearQuotaDataWithOriginMatcher,
@@ -855,7 +848,7 @@ TEST_F(StoragePartitionImplTest, RemoveUnprotectedLocalStorageForever) {
 
   StoragePartitionImpl* partition = static_cast<StoragePartitionImpl*>(
       BrowserContext::GetDefaultStoragePartition(browser_context()));
-  partition->OverrideSpecialStoragePolicyForTesting(mock_policy);
+  partition->OverrideSpecialStoragePolicyForTesting(mock_policy.get());
 
   base::RunLoop run_loop;
   base::MessageLoop::current()->PostTask(
@@ -887,7 +880,7 @@ TEST_F(StoragePartitionImplTest, RemoveProtectedLocalStorageForever) {
 
   StoragePartitionImpl* partition = static_cast<StoragePartitionImpl*>(
       BrowserContext::GetDefaultStoragePartition(browser_context()));
-  partition->OverrideSpecialStoragePolicyForTesting(mock_policy);
+  partition->OverrideSpecialStoragePolicyForTesting(mock_policy.get());
 
   base::RunLoop run_loop;
   base::MessageLoop::current()->PostTask(

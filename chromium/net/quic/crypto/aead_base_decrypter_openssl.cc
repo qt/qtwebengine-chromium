@@ -59,7 +59,7 @@ bool AeadBaseDecrypter::SetKey(StringPiece key) {
 
   EVP_AEAD_CTX_cleanup(ctx_.get());
   if (!EVP_AEAD_CTX_init(ctx_.get(), aead_alg_, key_, key_size_,
-                         auth_tag_size_, NULL)) {
+                         auth_tag_size_, nullptr)) {
     DLogOpenSslErrors();
     return false;
   }
@@ -86,21 +86,18 @@ bool AeadBaseDecrypter::Decrypt(StringPiece nonce,
     return false;
   }
 
-  ssize_t len = EVP_AEAD_CTX_open(
-      ctx_.get(), output, ciphertext.size(),
+  if (!EVP_AEAD_CTX_open(
+      ctx_.get(), output, output_length, ciphertext.size(),
       reinterpret_cast<const uint8_t*>(nonce.data()), nonce.size(),
       reinterpret_cast<const uint8_t*>(ciphertext.data()), ciphertext.size(),
       reinterpret_cast<const uint8_t*>(associated_data.data()),
-      associated_data.size());
-
-  if (len < 0) {
+      associated_data.size())) {
     // Because QuicFramer does trial decryption, decryption errors are expected
     // when encryption level changes. So we don't log decryption errors.
     ClearOpenSslErrors();
     return false;
   }
 
-  *output_length = len;
   return true;
 }
 
@@ -109,7 +106,7 @@ QuicData* AeadBaseDecrypter::DecryptPacket(
     StringPiece associated_data,
     StringPiece ciphertext) {
   if (ciphertext.length() < auth_tag_size_) {
-    return NULL;
+    return nullptr;
   }
   size_t plaintext_size = ciphertext.length();
   scoped_ptr<char[]> plaintext(new char[plaintext_size]);
@@ -123,7 +120,7 @@ QuicData* AeadBaseDecrypter::DecryptPacket(
                associated_data, ciphertext,
                reinterpret_cast<uint8*>(plaintext.get()),
                &plaintext_size)) {
-    return NULL;
+    return nullptr;
   }
   return new QuicData(plaintext.release(), plaintext_size, true);
 }

@@ -32,7 +32,7 @@ class NET_EXPORT UploadFileElementReader : public UploadElementReader {
                           uint64 range_offset,
                           uint64 range_length,
                           const base::Time& expected_modification_time);
-  virtual ~UploadFileElementReader();
+  ~UploadFileElementReader() override;
 
   const base::FilePath& path() const { return path_; }
   uint64 range_offset() const { return range_offset_; }
@@ -42,21 +42,17 @@ class NET_EXPORT UploadFileElementReader : public UploadElementReader {
   }
 
   // UploadElementReader overrides:
-  virtual const UploadFileElementReader* AsFileReader() const OVERRIDE;
-  virtual int Init(const CompletionCallback& callback) OVERRIDE;
-  virtual uint64 GetContentLength() const OVERRIDE;
-  virtual uint64 BytesRemaining() const OVERRIDE;
-  virtual int Read(IOBuffer* buf,
-                   int buf_length,
-                   const CompletionCallback& callback) OVERRIDE;
+  const UploadFileElementReader* AsFileReader() const override;
+  int Init(const CompletionCallback& callback) override;
+  uint64 GetContentLength() const override;
+  uint64 BytesRemaining() const override;
+  int Read(IOBuffer* buf,
+           int buf_length,
+           const CompletionCallback& callback) override;
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(UploadDataStreamTest, FileSmallerThanLength);
+  FRIEND_TEST_ALL_PREFIXES(ElementsUploadDataStreamTest, FileSmallerThanLength);
   FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionTest,
-                           UploadFileSmallerThanLength);
-  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy2Test,
-                           UploadFileSmallerThanLength);
-  FRIEND_TEST_ALL_PREFIXES(HttpNetworkTransactionSpdy3Test,
                            UploadFileSmallerThanLength);
 
   // Resets this instance to the uninitialized state.

@@ -39,15 +39,21 @@ struct Charmap {
 // Given text to escape and a Charmap defining which values to escape,
 // return an escaped string.  If use_plus is true, spaces are converted
 // to +, otherwise, if spaces are in the charmap, they are converted to
-// %20.
-std::string Escape(const std::string& text, const Charmap& charmap,
-                   bool use_plus) {
+// %20. And if keep_escaped is true, %XX will be kept as it is, otherwise, if
+// '%' is in the charmap, it is converted to %25.
+std::string Escape(const std::string& text,
+                   const Charmap& charmap,
+                   bool use_plus,
+                   bool keep_escaped = false) {
   std::string escaped;
   escaped.reserve(text.length() * 3);
   for (unsigned int i = 0; i < text.length(); ++i) {
     unsigned char c = static_cast<unsigned char>(text[i]);
     if (use_plus && ' ' == c) {
       escaped.push_back('+');
+    } else if (keep_escaped && '%' == c && i + 2 < text.length() &&
+               IsHexDigit(text[i + 1]) && IsHexDigit(text[i + 2])) {
+      escaped.push_back('%');
     } else if (charmap.Contains(c)) {
       escaped.push_back('%');
       escaped.push_back(IntToHex(c >> 4));
@@ -114,10 +120,48 @@ bool UnescapeUnsignedCharAtIndex(const STR& escaped_text,
       static_cast<typename STR::value_type>(escaped_text[index + 2]));
   if (IsHexDigit(most_sig_digit) && IsHexDigit(least_sig_digit)) {
     *value = HexDigitToInt(most_sig_digit) * 16 +
-      HexDigitToInt(least_sig_digit);
+        HexDigitToInt(least_sig_digit);
     return true;
   }
   return false;
+}
+
+// Returns true if there is an Arabic Language Mark at |index|. |first_byte|
+// is the byte at |index|.
+template<typename STR>
+bool HasArabicLanguageMarkAtIndex(const STR& escaped_text,
+                                  unsigned char first_byte,
+                                  size_t index) {
+  if (first_byte != 0xD8)
+    return false;
+  unsigned char second_byte;
+  if (!UnescapeUnsignedCharAtIndex(escaped_text, index + 3, &second_byte))
+    return false;
+  return second_byte == 0x9c;
+}
+
+// Returns true if there is a BiDi control char at |index|. |first_byte| is the
+// byte at |index|.
+template<typename STR>
+bool HasThreeByteBidiControlCharAtIndex(const STR& escaped_text,
+                                        unsigned char first_byte,
+                                        size_t index) {
+  if (first_byte != 0xE2)
+    return false;
+  unsigned char second_byte;
+  if (!UnescapeUnsignedCharAtIndex(escaped_text, index + 3, &second_byte))
+    return false;
+  if (second_byte != 0x80 && second_byte != 0x81)
+    return false;
+  unsigned char third_byte;
+  if (!UnescapeUnsignedCharAtIndex(escaped_text, index + 6, &third_byte))
+    return false;
+  if (second_byte == 0x80) {
+    return third_byte == 0x8E ||
+           third_byte == 0x8F ||
+           (third_byte >= 0xAA && third_byte <= 0xAE);
+  }
+  return third_byte >= 0xA6 && third_byte <= 0xA9;
 }
 
 // Unescapes |escaped_text| according to |rules|, returning the resulting
@@ -172,27 +216,21 @@ STR UnescapeURLWithAdjustmentsImpl(
       // U+2067 RIGHT-TO-LEFT ISOLATE      (%E2%81%A7)
       // U+2068 FIRST STRONG ISOLATE       (%E2%81%A8)
       // U+2069 POP DIRECTIONAL ISOLATE    (%E2%81%A9)
-
-      unsigned char second_byte;
-      // Check for ALM.
-      if ((first_byte == 0xD8) &&
-          UnescapeUnsignedCharAtIndex(escaped_text, i + 3, &second_byte) &&
-          (second_byte == 0x9c)) {
-        result.append(escaped_text, i, 6);
-        i += 5;
-        continue;
-      }
-
-      // Check for other BiDi control characters.
-      if ((first_byte == 0xE2) &&
-          UnescapeUnsignedCharAtIndex(escaped_text, i + 3, &second_byte) &&
-          ((second_byte == 0x80) || (second_byte == 0x81))) {
-        unsigned char third_byte;
-        if (UnescapeUnsignedCharAtIndex(escaped_text, i + 6, &third_byte) &&
-            ((second_byte == 0x80) ?
-             ((third_byte == 0x8E) || (third_byte == 0x8F) ||
-              ((third_byte >= 0xAA) && (third_byte <= 0xAE))) :
-             ((third_byte >= 0xA6) && (third_byte <= 0xA9)))) {
+      //
+      // However, some schemes such as data: and file: need to parse the exact
+      // binary data when loading the URL. For that reason, CONTROL_CHARS allows
+      // unescaping BiDi control characters.
+      // DO NOT use CONTROL_CHARS if the parsed URL is going to be displayed
+      // in the UI.
+      if (!(rules & UnescapeRule::CONTROL_CHARS)) {
+        if (HasArabicLanguageMarkAtIndex(escaped_text, first_byte, i)) {
+          // Keep Arabic Language Mark escaped.
+          result.append(escaped_text, i, 6);
+          i += 5;
+          continue;
+        }
+        if (HasThreeByteBidiControlCharAtIndex(escaped_text, first_byte, i)) {
+          // Keep BiDi control char escaped.
           result.append(escaped_text, i, 9);
           i += 8;
           continue;
@@ -244,7 +282,7 @@ void AppendEscapedCharForHTMLImpl(typename str::value_type c, str* output) {
     { '\'', "&#39;" },
   };
   size_t k;
-  for (k = 0; k < ARRAYSIZE_UNSAFE(kCharsToEscape); ++k) {
+  for (k = 0; k < arraysize(kCharsToEscape); ++k) {
     if (c == kCharsToEscape[k].key) {
       const char* p = kCharsToEscape[k].replacement;
       while (*p)
@@ -252,7 +290,7 @@ void AppendEscapedCharForHTMLImpl(typename str::value_type c, str* output) {
       break;
     }
   }
-  if (k == ARRAYSIZE_UNSAFE(kCharsToEscape))
+  if (k == arraysize(kCharsToEscape))
     output->push_back(c);
 }
 
@@ -293,9 +331,9 @@ static const Charmap kNonASCIICharmap = {{
 }};
 
 // Everything except alphanumerics, the reserved characters(;/?:@&=+$,) and
-// !'()*-._~%
+// !'()*-._~#[]
 static const Charmap kExternalHandlerCharmap = {{
-  0xffffffffL, 0x5000080dL, 0x68000000L, 0xb8000001L,
+  0xffffffffL, 0x50000025L, 0x50000000L, 0xb8000001L,
   0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL
 }};
 
@@ -318,7 +356,7 @@ std::string EscapeNonASCII(const std::string& input) {
 }
 
 std::string EscapeExternalHandlerValue(const std::string& text) {
-  return Escape(text, kExternalHandlerCharmap, false);
+  return Escape(text, kExternalHandlerCharmap, false, true);
 }
 
 void AppendEscapedCharForHTML(char c, std::string* output) {
@@ -385,14 +423,14 @@ base::string16 UnescapeForHTML(const base::string16& input) {
   if (input.find(base::ASCIIToUTF16("&")) == std::string::npos)
     return input;
 
-  base::string16 ampersand_chars[ARRAYSIZE_UNSAFE(kEscapeToChars)];
+  base::string16 ampersand_chars[arraysize(kEscapeToChars)];
   base::string16 text(input);
   for (base::string16::iterator iter = text.begin();
        iter != text.end(); ++iter) {
     if (*iter == '&') {
       // Potential ampersand encode char.
       size_t index = iter - text.begin();
-      for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kEscapeToChars); i++) {
+      for (size_t i = 0; i < arraysize(kEscapeToChars); i++) {
         if (ampersand_chars[i].empty()) {
           ampersand_chars[i] =
               base::ASCIIToUTF16(kEscapeToChars[i].ampersand_code);

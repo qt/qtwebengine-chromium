@@ -28,11 +28,12 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLElement;
+class HTMLUListElement;
 
-class InsertListCommand FINAL : public CompositeEditCommand {
+class InsertListCommand final : public CompositeEditCommand {
 public:
     enum Type { OrderedList, UnorderedList };
 
@@ -41,27 +42,27 @@ public:
         return adoptRefWillBeNoop(new InsertListCommand(document, listType));
     }
 
-    virtual bool preservesTypingStyle() const OVERRIDE { return true; }
+    virtual bool preservesTypingStyle() const override { return true; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     InsertListCommand(Document&, Type);
 
-    virtual void doApply() OVERRIDE;
-    virtual EditAction editingAction() const OVERRIDE { return EditActionInsertList; }
+    virtual void doApply() override;
+    virtual EditAction editingAction() const override { return EditActionInsertList; }
 
-    HTMLElement* fixOrphanedListChild(Node*);
-    bool selectionHasListOfType(const VisibleSelection& selection, const QualifiedName&);
+    HTMLUListElement* fixOrphanedListChild(Node*);
+    bool selectionHasListOfType(const VisibleSelection&, const HTMLQualifiedName&);
     PassRefPtrWillBeRawPtr<HTMLElement> mergeWithNeighboringLists(PassRefPtrWillBeRawPtr<HTMLElement>);
-    void doApplyForSingleParagraph(bool forceCreateList, const QualifiedName&, Range& currentSelection);
+    void doApplyForSingleParagraph(bool forceCreateList, const HTMLQualifiedName&, Range& currentSelection);
     void unlistifyParagraph(const VisiblePosition& originalStart, HTMLElement* listNode, Node* listChildNode);
-    PassRefPtrWillBeRawPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const QualifiedName& listTag);
+    PassRefPtrWillBeRawPtr<HTMLElement> listifyParagraph(const VisiblePosition& originalStart, const HTMLQualifiedName& listTag);
 
     RefPtrWillBeMember<HTMLElement> m_listElement;
     Type m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertListCommand_h

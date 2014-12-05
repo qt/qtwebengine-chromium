@@ -33,7 +33,7 @@
 
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class KURL;
 class SecurityOrigin;
@@ -53,10 +53,10 @@ public:
     virtual void unregisterURL(const KURL&) = 0;
 
     // These are optional APIs
-    virtual URLRegistrable* lookup(const String&) { ASSERT_NOT_REACHED(); return 0; }
+    virtual URLRegistrable* lookup(const String&) { ASSERT_NOT_REACHED(); return nullptr; }
     virtual bool contains(const String&) { ASSERT_NOT_REACHED(); return false; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // URLRegistry_h

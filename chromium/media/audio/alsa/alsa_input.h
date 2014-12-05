@@ -39,16 +39,17 @@ class AlsaPcmInputStream : public AgcAudioStream<AudioInputStream> {
                      const AudioParameters& params,
                      AlsaWrapper* wrapper);
 
-  virtual ~AlsaPcmInputStream();
+  ~AlsaPcmInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool IsMuted() override;
 
  private:
   // Logs the error and invokes any registered callbacks.

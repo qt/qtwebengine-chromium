@@ -38,13 +38,13 @@ bool ChannelReader::AsyncReadComplete(int bytes_read) {
   return DispatchInputData(input_buf_, bytes_read);
 }
 
-bool ChannelReader::IsInternalMessage(const Message& m) const {
+bool ChannelReader::IsInternalMessage(const Message& m) {
   return m.routing_id() == MSG_ROUTING_NONE &&
       m.type() >= Channel::CLOSE_FD_MESSAGE_TYPE &&
       m.type() <= Channel::HELLO_MESSAGE_TYPE;
 }
 
-bool ChannelReader::IsHelloMessage(const Message& m) const {
+bool ChannelReader::IsHelloMessage(const Message& m) {
   return m.routing_id() == MSG_ROUTING_NONE &&
       m.type() == Channel::HELLO_MESSAGE_TYPE;
 }
@@ -80,9 +80,8 @@ bool ChannelReader::DispatchInputData(const char* input_data,
         return false;
 
 #ifdef IPC_MESSAGE_LOG_ENABLED
-      Logging* logger = Logging::GetInstance();
       std::string name;
-      logger->GetMessageText(m.type(), &name, &m, NULL);
+      Logging::GetInstance()->GetMessageText(m.type(), &name, &m, NULL);
       TRACE_EVENT1("ipc,toplevel", "ChannelReader::DispatchInputData",
                    "name", name);
 #else

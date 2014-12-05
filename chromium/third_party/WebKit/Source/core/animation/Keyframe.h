@@ -6,13 +6,13 @@
 #define Keyframe_h
 
 #include "core/CSSPropertyNames.h"
-#include "core/animation/AnimatableValue.h"
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationNode.h"
+#include "core/animation/animatable/AnimatableValue.h"
 
-namespace WebCore {
+namespace blink {
 
-typedef HashSet<CSSPropertyID> PropertySet;
+using PropertySet = HashSet<CSSPropertyID>;
 
 class Element;
 
@@ -28,7 +28,7 @@ public:
     AnimationEffect::CompositeOperation composite() const { return m_composite; }
 
     void setEasing(PassRefPtr<TimingFunction> easing) { m_easing = easing; }
-    TimingFunction* easing() const { return m_easing.get(); }
+    TimingFunction& easing() const { return *m_easing; }
 
     static bool compareOffsets(const RefPtrWillBeMember<Keyframe>& a, const RefPtrWillBeMember<Keyframe>& b)
     {
@@ -54,7 +54,7 @@ public:
     public:
         virtual ~PropertySpecificKeyframe() { }
         double offset() const { return m_offset; }
-        TimingFunction* easing() const { return m_easing.get(); }
+        TimingFunction& easing() const { return *m_easing; }
         AnimationEffect::CompositeOperation composite() const { return m_composite; }
         virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> cloneWithOffset(double offset) const = 0;
 
@@ -64,7 +64,7 @@ public:
         virtual bool isStringPropertySpecificKeyframe() const { return false; }
 
         virtual PassOwnPtrWillBeRawPtr<PropertySpecificKeyframe> neutralKeyframe(double offset, PassRefPtr<TimingFunction> easing) const = 0;
-        virtual PassRefPtrWillBeRawPtr<Interpolation> createInterpolation(CSSPropertyID, WebCore::Keyframe::PropertySpecificKeyframe* end, Element*) const = 0;
+        virtual PassRefPtrWillBeRawPtr<Interpolation> createInterpolation(CSSPropertyID, blink::Keyframe::PropertySpecificKeyframe* end, Element*) const = 0;
 
         virtual void trace(Visitor*) { }
 

@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_default.h"
 #include "jingle/glue/resolving_client_socket_factory.h"
 #include "net/base/address_list.h"
 #include "net/base/net_errors.h"
@@ -22,9 +23,9 @@
 #include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/libjingle/source/talk/base/ipaddress.h"
-#include "third_party/libjingle/source/talk/base/sigslot.h"
-#include "third_party/libjingle/source/talk/base/socketaddress.h"
+#include "third_party/webrtc/base/ipaddress.h"
+#include "third_party/webrtc/base/sigslot.h"
+#include "third_party/webrtc/base/socketaddress.h"
 
 namespace jingle_glue {
 
@@ -35,14 +36,14 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
  public:
   AsyncSocketDataProvider() : has_pending_read_(false) {}
 
-  virtual ~AsyncSocketDataProvider() {
+  ~AsyncSocketDataProvider() override {
     EXPECT_TRUE(writes_.empty());
     EXPECT_TRUE(reads_.empty());
   }
 
   // If there's no read, sets the "has pending read" flag.  Otherwise,
   // pops the next read.
-  virtual net::MockRead GetNextRead() OVERRIDE {
+  net::MockRead GetNextRead() override {
     if (reads_.empty()) {
       DCHECK(!has_pending_read_);
       has_pending_read_ = true;
@@ -56,7 +57,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // Simply pops the next write and, if applicable, compares it to
   // |data|.
-  virtual net::MockWriteResult OnWrite(const std::string& data) OVERRIDE {
+  net::MockWriteResult OnWrite(const std::string& data) override {
     DCHECK(!writes_.empty());
     net::MockWrite mock_write = writes_.front();
     writes_.pop_front();
@@ -73,7 +74,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // We ignore resets so we can pre-load the socket data provider with
   // read/write events.
-  virtual void Reset() OVERRIDE {}
+  void Reset() override {}
 
   // If there is a pending read, completes it with the given read.
   // Otherwise, queues up the given read.
@@ -113,15 +114,15 @@ class MockXmppClientSocketFactory : public ResolvingClientSocketFactory {
   }
 
   // ResolvingClientSocketFactory implementation.
-  virtual scoped_ptr<net::StreamSocket> CreateTransportClientSocket(
-      const net::HostPortPair& host_and_port) OVERRIDE {
+  scoped_ptr<net::StreamSocket> CreateTransportClientSocket(
+      const net::HostPortPair& host_and_port) override {
     return mock_client_socket_factory_->CreateTransportClientSocket(
         address_list_, NULL, net::NetLog::Source());
   }
 
-  virtual scoped_ptr<net::SSLClientSocket> CreateSSLClientSocket(
+  scoped_ptr<net::SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<net::ClientSocketHandle> transport_socket,
-      const net::HostPortPair& host_and_port) OVERRIDE {
+      const net::HostPortPair& host_and_port) override {
     net::SSLClientSocketContext context;
     context.cert_verifier = cert_verifier_.get();
     context.transport_security_state = transport_security_state_.get();
@@ -143,7 +144,15 @@ class ChromeAsyncSocketTest
  protected:
   ChromeAsyncSocketTest()
       : ssl_socket_data_provider_(net::ASYNC, net::OK),
-        addr_("localhost", 35) {}
+        addr_("localhost", 35) {
+    // GTest death tests execute in a fork()ed but not exec()ed process.
+    // On OS X a CoreFoundation-backed message loop will exit with a
+    // __THE_PROCESS_HAS_FORKED_AND_YOU_CANNOT_USE_THIS_COREFOUNDATION_FUNCTIONALITY___YOU_MUST_EXEC__
+    // when called.
+    // Explicitly create a MessagePumpDefault which can run in this enivronment.
+    scoped_ptr<base::MessagePump> pump(new base::MessagePumpDefault());
+    message_loop_.reset(new base::MessageLoop(pump.Pass()));
+  }
 
   virtual ~ChromeAsyncSocketTest() {}
 
@@ -182,7 +191,7 @@ class ChromeAsyncSocketTest
 
   virtual void TearDown() {
     // Run any tasks that we forgot to pump.
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
     ExpectClosed();
     ExpectNoSignal();
     chrome_async_socket_.reset();
@@ -342,7 +351,7 @@ class ChromeAsyncSocketTest
     EXPECT_TRUE(chrome_async_socket_->Connect(addr_));
     ExpectNonErrorState(ChromeAsyncSocket::STATE_CONNECTING);
 
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
     // We may not necessarily be open; may have been other events
     // queued up.
     ExpectSignalSocketState(
@@ -372,7 +381,7 @@ class ChromeAsyncSocketTest
     EXPECT_EQ(kDummyData, DrainRead(1));
 
     EXPECT_TRUE(chrome_async_socket_->StartTls("fakedomain.com"));
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
     ExpectSSLConnectSignal();
     ExpectNoSignal();
     ExpectNonErrorState(ChromeAsyncSocket::STATE_TLS_OPEN);
@@ -415,14 +424,14 @@ class ChromeAsyncSocketTest
   }
 
   // ChromeAsyncSocket expects a message loop.
-  base::MessageLoop message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
 
   AsyncSocketDataProvider async_socket_data_provider_;
   net::SSLSocketDataProvider ssl_socket_data_provider_;
 
   scoped_ptr<ChromeAsyncSocket> chrome_async_socket_;
   std::deque<SignalSocketState> signal_socket_states_;
-  const talk_base::SocketAddress addr_;
+  const rtc::SocketAddress addr_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ChromeAsyncSocketTest);
@@ -464,9 +473,9 @@ TEST_F(ChromeAsyncSocketTest, DoubleClose) {
 }
 
 TEST_F(ChromeAsyncSocketTest, NoHostnameConnect) {
-  talk_base::IPAddress ip_address;
-  EXPECT_TRUE(talk_base::IPFromString("127.0.0.1", &ip_address));
-  const talk_base::SocketAddress no_hostname_addr(ip_address, addr_.port());
+  rtc::IPAddress ip_address;
+  EXPECT_TRUE(rtc::IPFromString("127.0.0.1", &ip_address));
+  const rtc::SocketAddress no_hostname_addr(ip_address, addr_.port());
   EXPECT_FALSE(chrome_async_socket_->Connect(no_hostname_addr));
   ExpectErrorState(ChromeAsyncSocket::STATE_CLOSED,
                    ChromeAsyncSocket::ERROR_DNS);
@@ -476,7 +485,7 @@ TEST_F(ChromeAsyncSocketTest, NoHostnameConnect) {
 }
 
 TEST_F(ChromeAsyncSocketTest, ZeroPortConnect) {
-  const talk_base::SocketAddress zero_port_addr(addr_.hostname(), 0);
+  const rtc::SocketAddress zero_port_addr(addr_.hostname(), 0);
   EXPECT_FALSE(chrome_async_socket_->Connect(zero_port_addr));
   ExpectErrorState(ChromeAsyncSocket::STATE_CLOSED,
                    ChromeAsyncSocket::ERROR_DNS);
@@ -510,7 +519,7 @@ TEST_F(ChromeAsyncSocketTest, ImmediateConnectCloseBeforeRead) {
       SignalSocketState::NoError(
           SIGNAL_CLOSE, ChromeAsyncSocket::STATE_CLOSED));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(ChromeAsyncSocketTest, HangingConnect) {
@@ -532,14 +541,14 @@ TEST_F(ChromeAsyncSocketTest, PendingConnect) {
   ExpectNonErrorState(ChromeAsyncSocket::STATE_CONNECTING);
   ExpectNoSignal();
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectNonErrorState(ChromeAsyncSocket::STATE_OPEN);
   ExpectSignalSocketState(
       SignalSocketState::NoError(
           SIGNAL_CONNECT, ChromeAsyncSocket::STATE_OPEN));
   ExpectNoSignal();
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   DoCloseOpenedNoError();
 }
@@ -552,14 +561,14 @@ TEST_F(ChromeAsyncSocketTest, PendingConnectCloseBeforeRead) {
       net::MockConnect(net::ASYNC, net::OK));
   EXPECT_TRUE(chrome_async_socket_->Connect(addr_));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectSignalSocketState(
       SignalSocketState::NoError(
           SIGNAL_CONNECT, ChromeAsyncSocket::STATE_OPEN));
 
   DoCloseOpenedNoError();
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(ChromeAsyncSocketTest, PendingConnectError) {
@@ -567,7 +576,7 @@ TEST_F(ChromeAsyncSocketTest, PendingConnectError) {
       net::MockConnect(net::ASYNC, net::ERR_TIMED_OUT));
   EXPECT_TRUE(chrome_async_socket_->Connect(addr_));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectSignalSocketState(
       SignalSocketState(
@@ -629,7 +638,7 @@ TEST_F(ChromeAsyncSocketTest, Read) {
 
   EXPECT_EQ(kReadData, DrainRead(1));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   DoCloseOpenedNoError();
 }
@@ -643,7 +652,7 @@ TEST_F(ChromeAsyncSocketTest, ReadTwice) {
 
   EXPECT_EQ(kReadData, DrainRead(1));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   const char kReadData2[] = "mydatatoread2";
   async_socket_data_provider_.AddRead(net::MockRead(kReadData2));
@@ -665,7 +674,7 @@ TEST_F(ChromeAsyncSocketTest, ReadError) {
 
   EXPECT_EQ(kReadData, DrainRead(1));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   async_socket_data_provider_.AddRead(
       net::MockRead(net::SYNCHRONOUS, net::ERR_TIMED_OUT));
@@ -699,7 +708,7 @@ TEST_F(ChromeAsyncSocketTest, PendingRead) {
 
   EXPECT_EQ(kReadData, DrainRead(1));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   DoCloseOpenedNoError();
 }
@@ -755,12 +764,12 @@ TEST_F(ChromeAsyncSocketTest, SyncWrite) {
   DoOpenClosed();
 
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData, 3));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 3, 5));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 8,
                                           arraysize(kWriteData) - 8));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectNoSignal();
 
@@ -778,12 +787,12 @@ TEST_F(ChromeAsyncSocketTest, AsyncWrite) {
       net::MockWrite(net::ASYNC, kWriteData + 8, arraysize(kWriteData) - 8));
 
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData, 3));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 3, 5));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 8,
                                           arraysize(kWriteData) - 8));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectNoSignal();
 
@@ -801,12 +810,12 @@ TEST_F(ChromeAsyncSocketTest, AsyncWriteError) {
       net::MockWrite(net::ASYNC, net::ERR_TIMED_OUT));
 
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData, 3));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 3, 5));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 8,
                                           arraysize(kWriteData) - 8));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectSignalSocketState(
       SignalSocketState(
@@ -874,7 +883,7 @@ TEST_F(ChromeAsyncSocketTest, ImmediateSSLConnect) {
   ExpectReadSignal();
 
   EXPECT_TRUE(chrome_async_socket_->StartTls("fakedomain.com"));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectSSLConnectSignal();
   ExpectNoSignal();
   ExpectNonErrorState(ChromeAsyncSocket::STATE_TLS_OPEN);
@@ -889,7 +898,7 @@ TEST_F(ChromeAsyncSocketTest, DoubleSSLConnect) {
     ExpectReadSignal();
 
     EXPECT_TRUE(chrome_async_socket_->StartTls("fakedomain.com"));
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
     ExpectSSLConnectSignal();
     ExpectNoSignal();
     ExpectNonErrorState(ChromeAsyncSocket::STATE_TLS_OPEN);
@@ -913,7 +922,7 @@ TEST_F(ChromeAsyncSocketTest, FailedSSLConnect) {
   ExpectReadSignal();
 
   EXPECT_TRUE(chrome_async_socket_->StartTls("fakedomain.com"));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectSignalSocketState(
       SignalSocketState(
           SIGNAL_CLOSE, ChromeAsyncSocket::STATE_CLOSED,
@@ -941,7 +950,7 @@ TEST_F(ChromeAsyncSocketTest, ReadDuringSSLConnecting) {
   EXPECT_TRUE(chrome_async_socket_->Read(buf, sizeof(buf), &len_read));
   EXPECT_EQ(0U, len_read);
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectSSLConnectSignal();
   ExpectSSLReadSignal();
   ExpectNoSignal();
@@ -972,11 +981,11 @@ TEST_F(ChromeAsyncSocketTest, WriteDuringSSLConnecting) {
   // TODO(akalin): Figure out how to test that the write happens
   // *after* the SSL connect.
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   ExpectSSLConnectSignal();
   ExpectNoSignal();
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   DoSSLCloseOpenedNoError();
 }
@@ -1005,7 +1014,7 @@ TEST_F(ChromeAsyncSocketTest, SSLConnectDuringPostedWrite) {
 
     EXPECT_FALSE(chrome_async_socket_->StartTls("fakedomain.com"));
 
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
 
     DoCloseOpened(
         SignalSocketState(SIGNAL_CLOSE,
@@ -1020,14 +1029,14 @@ TEST_F(ChromeAsyncSocketTest, SSLConnectDuringPostedWrite) {
 TEST_F(ChromeAsyncSocketTest, SSLRead) {
   DoSSLOpenClosed();
   async_socket_data_provider_.AddRead(net::MockRead(kReadData));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectSSLReadSignal();
   ExpectNoSignal();
 
   EXPECT_EQ(kReadData, DrainRead(1));
 
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   DoSSLCloseOpenedNoError();
 }
@@ -1043,12 +1052,12 @@ TEST_F(ChromeAsyncSocketTest, SSLSyncWrite) {
   DoSSLOpenClosed();
 
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData, 3));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 3, 5));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 8,
                                           arraysize(kWriteData) - 8));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectNoSignal();
 
@@ -1066,12 +1075,12 @@ TEST_F(ChromeAsyncSocketTest, SSLAsyncWrite) {
       net::MockWrite(net::ASYNC, kWriteData + 8, arraysize(kWriteData) - 8));
 
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData, 3));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 3, 5));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
   EXPECT_TRUE(chrome_async_socket_->Write(kWriteData + 8,
                                           arraysize(kWriteData) - 8));
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 
   ExpectNoSignal();
 

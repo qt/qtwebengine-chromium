@@ -27,12 +27,11 @@
 
 #include "core/html/canvas/WebGLDepthTexture.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLDepthTexture::WebGLDepthTexture(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_depth_texture");
 }
 
@@ -45,9 +44,9 @@ WebGLExtensionName WebGLDepthTexture::name() const
     return WebGLDepthTextureName;
 }
 
-PassRefPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLDepthTexture> WebGLDepthTexture::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLDepthTexture(context));
+    return adoptRefWillBeNoop(new WebGLDepthTexture(context));
 }
 
 bool WebGLDepthTexture::supported(WebGLRenderingContextBase* context)
@@ -68,4 +67,4 @@ const char* WebGLDepthTexture::extensionName()
     return "WEBGL_depth_texture";
 }
 
-} // namespace WebCore
+} // namespace blink

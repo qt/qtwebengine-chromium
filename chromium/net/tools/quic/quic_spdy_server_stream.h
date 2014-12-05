@@ -28,14 +28,14 @@ class QuicSpdyServerStreamPeer;
 class QuicSpdyServerStream : public QuicDataStream {
  public:
   QuicSpdyServerStream(QuicStreamId id, QuicSession* session);
-  virtual ~QuicSpdyServerStream();
+  ~QuicSpdyServerStream() override;
 
   // ReliableQuicStream implementation called by the session when there's
   // data for us.
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
-  virtual void OnFinRead() OVERRIDE;
+  uint32 ProcessData(const char* data, uint32 data_len) override;
+  void OnFinRead() override;
 
-  int ParseRequestHeaders();
+  void ParseRequestHeaders();
 
  private:
   friend class test::QuicSpdyServerStreamPeer;

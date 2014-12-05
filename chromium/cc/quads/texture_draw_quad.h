@@ -8,13 +8,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/quads/draw_quad.h"
-#include "ui/gfx/rect_f.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace cc {
 
 class CC_EXPORT TextureDrawQuad : public DrawQuad {
  public:
-  static scoped_ptr<TextureDrawQuad> Create();
+  TextureDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -49,14 +49,12 @@ class CC_EXPORT TextureDrawQuad : public DrawQuad {
   float vertex_opacity[4];
   bool flipped;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const TextureDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  TextureDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

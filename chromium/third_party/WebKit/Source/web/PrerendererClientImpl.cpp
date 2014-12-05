@@ -32,7 +32,6 @@
 #include "config.h"
 #include "web/PrerendererClientImpl.h"
 
-#include "core/dom/Document.h"
 #include "platform/Prerender.h"
 #include "public/platform/WebPrerender.h"
 #include "public/web/WebPrerendererClient.h"
@@ -45,7 +44,7 @@ PrerendererClientImpl::PrerendererClientImpl(WebPrerendererClient* client)
 {
 }
 
-void PrerendererClientImpl::willAddPrerender(WebCore::Prerender* prerender)
+void PrerendererClientImpl::willAddPrerender(Prerender* prerender)
 {
     if (!m_client)
         return;
@@ -53,4 +52,4 @@ void PrerendererClientImpl::willAddPrerender(WebCore::Prerender* prerender)
     m_client->willAddPrerender(&webPrerender);
 }
 
-}
+} // namespace blink

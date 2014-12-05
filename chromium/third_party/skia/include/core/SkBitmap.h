@@ -14,6 +14,16 @@
 #include "SkPoint.h"
 #include "SkRefCnt.h"
 
+#ifdef SK_SUPPORT_LEGACY_ALLOCPIXELS_BOOL
+    #define SK_ALLOCPIXELS_RETURN_TYPE  bool
+    #define SK_ALLOCPIXELS_RETURN_TRUE  return true
+    #define SK_ALLOCPIXELS_RETURN_FAIL  return false
+#else
+    #define SK_ALLOCPIXELS_RETURN_TYPE  void
+    #define SK_ALLOCPIXELS_RETURN_TRUE  return
+    #define SK_ALLOCPIXELS_RETURN_FAIL  sk_throw()
+#endif
+
 struct SkMask;
 struct SkIRect;
 struct SkRect;
@@ -37,29 +47,6 @@ class GrTexture;
 class SK_API SkBitmap {
 public:
     class SK_API Allocator;
-
-#ifdef SK_SUPPORT_LEGACY_BITMAP_CONFIG
-    enum Config {
-        kNo_Config,         //!< bitmap has not been configured
-        kA8_Config,         //!< 8-bits per pixel, with only alpha specified (0 is transparent, 0xFF is opaque)
-        kIndex8_Config,     //!< 8-bits per pixel, using SkColorTable to specify the colors
-        kRGB_565_Config,    //!< 16-bits per pixel, (see SkColorPriv.h for packing)
-        kARGB_4444_Config,  //!< 16-bits per pixel, (see SkColorPriv.h for packing)
-        kARGB_8888_Config,  //!< 32-bits per pixel, (see SkColorPriv.h for packing)
-    };
-
-    // do not add this to the Config enum, otherwise the compiler will let us
-    // pass this as a valid parameter for Config.
-    enum {
-        kConfigCount = kARGB_8888_Config + 1
-    };
-
-    /** Return the config for the bitmap. */
-    Config  config() const;
-    
-    SK_ATTR_DEPRECATED("use config()")
-    Config  getConfig() const { return this->config(); }
-#endif
 
     /**
      *  Default construct creates a bitmap with zero width and height, and no pixels.
@@ -91,23 +78,10 @@ public:
 
     const SkImageInfo& info() const { return fInfo; }
 
-    int width() const { return fInfo.fWidth; }
-    int height() const { return fInfo.fHeight; }
-    SkColorType colorType() const { return fInfo.fColorType; }
-    SkAlphaType alphaType() const { return fInfo.fAlphaType; }
-
-#ifdef SK_SUPPORT_LEGACY_ASIMAGEINFO
-    bool asImageInfo(SkImageInfo* info) const {
-        // compatibility: return false for kUnknown
-        if (kUnknown_SkColorType == this->colorType()) {
-            return false;
-        }
-        if (info) {
-            *info = this->info();
-        }
-        return true;
-    }
-#endif
+    int width() const { return fInfo.width(); }
+    int height() const { return fInfo.height(); }
+    SkColorType colorType() const { return fInfo.colorType(); }
+    SkAlphaType alphaType() const { return fInfo.alphaType(); }
 
     /**
      *  Return the number of bytes per pixel based on the colortype. If the colortype is
@@ -168,7 +142,7 @@ public:
         Note this truncates the result to 32bits. Call getSize64() to detect
         if the real size exceeds 32bits.
     */
-    size_t getSize() const { return fInfo.fHeight * fRowBytes; }
+    size_t getSize() const { return fInfo.height() * fRowBytes; }
 
     /** Return the number of bytes from the pointer returned by getPixels()
         to the end of the allocated space in the buffer. Required in
@@ -180,7 +154,7 @@ public:
      *  Return the full size of the bitmap, in bytes.
      */
     int64_t computeSize64() const {
-        return sk_64_mul(fInfo.fHeight, fRowBytes);
+        return sk_64_mul(fInfo.height(), fRowBytes);
     }
 
     /**
@@ -229,28 +203,6 @@ public:
     */
     void reset();
 
-#ifdef SK_SUPPORT_LEGACY_COMPUTE_CONFIG_SIZE
-    /** Given a config and a width, this computes the optimal rowBytes value. This is called automatically
-        if you pass 0 for rowBytes to setConfig().
-    */
-    static size_t ComputeRowBytes(Config c, int width);
-
-    /** Return the bytes-per-pixel for the specified config. If the config is
-        not at least 1-byte per pixel, return 0, including for kNo_Config.
-    */
-    static int ComputeBytesPerPixel(Config c);
-
-    /** Return the shift-per-pixel for the specified config. If the config is
-     not at least 1-byte per pixel, return 0, including for kNo_Config.
-     */
-    static int ComputeShiftPerPixel(Config c) {
-        return ComputeBytesPerPixel(c) >> 1;
-    }
-
-    static int64_t ComputeSize64(Config, int width, int height);
-    static size_t ComputeSize(Config, int width, int height);
-#endif
-
     /**
      *  This will brute-force return true if all of the pixels in the bitmap
      *  are opaque. If it fails to read the pixels, or encounters an error,
@@ -268,53 +220,64 @@ public:
     void getBounds(SkRect* bounds) const;
     void getBounds(SkIRect* bounds) const;
 
-#ifdef SK_SUPPORT_LEGACY_SETCONFIG
-    /** Set the bitmap's config and dimensions. If rowBytes is 0, then
-        ComputeRowBytes() is called to compute the optimal value. This resets
-        any pixel/colortable ownership, just like reset().
-    */
-    bool setConfig(Config, int width, int height, size_t rowBytes, SkAlphaType);
-
-    bool setConfig(Config config, int width, int height, size_t rowBytes = 0) {
-        return this->setConfig(config, width, height, rowBytes,
-                               kPremul_SkAlphaType);
-    }
-#endif
+    SkIRect bounds() const { return fInfo.bounds(); }
+    SkISize dimensions() const { return fInfo.dimensions(); }
 
     bool setInfo(const SkImageInfo&, size_t rowBytes = 0);
 
-#ifdef SK_SUPPORT_LEGACY_SETCONFIG_INFO
-    bool setConfig(const SkImageInfo& info, size_t rowBytes = 0) {
-        return this->setInfo(info, rowBytes);
-    }
-#endif
-
     /**
-     *  Allocate a pixelref to match the specified image info. If the Factory
+     *  Allocate the bitmap's pixels to match the requested image info. If the Factory
      *  is non-null, call it to allcoate the pixelref. If the ImageInfo requires
      *  a colortable, then ColorTable must be non-null, and will be ref'd.
      *  On failure, the bitmap will be set to empty and return false.
      */
-    bool allocPixels(const SkImageInfo&, SkPixelRefFactory*, SkColorTable*);
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(const SkImageInfo&, SkPixelRefFactory*, SkColorTable*);
+
+    SK_ALLOCPIXELS_RETURN_TYPE allocPixels(const SkImageInfo& info, SkPixelRefFactory* factory,
+                                           SkColorTable* ctable) {
+        if (!this->tryAllocPixels(info, factory, ctable)) {
+            SK_ALLOCPIXELS_RETURN_FAIL;
+        }
+        SK_ALLOCPIXELS_RETURN_TRUE;
+    }
 
     /**
-     *  Allocate a pixelref to match the specified image info, using the default
-     *  allocator.
-     *  On success, the bitmap's pixels will be "locked", and return true.
-     *  On failure, the bitmap will be set to empty and return false.
+     *  Allocate the bitmap's pixels to match the requested image info and
+     *  rowBytes. If the request cannot be met (e.g. the info is invalid or
+     *  the requested rowBytes are not compatible with the info
+     *  (e.g. rowBytes < info.minRowBytes() or rowBytes is not aligned with
+     *  the pixel size specified by info.colorType()) then false is returned
+     *  and the bitmap is set to empty.
      */
-    bool allocPixels(const SkImageInfo& info) {
-        return this->allocPixels(info, NULL, NULL);
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(const SkImageInfo& info, size_t rowBytes);
+
+    SK_ALLOCPIXELS_RETURN_TYPE allocPixels(const SkImageInfo& info, size_t rowBytes) {
+        if (!this->tryAllocPixels(info, rowBytes)) {
+            SK_ALLOCPIXELS_RETURN_FAIL;
+        }
+        SK_ALLOCPIXELS_RETURN_TRUE;
     }
 
-    bool allocN32Pixels(int width, int height, bool isOpaque = false) {
-        SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-        if (isOpaque) {
-            info.fAlphaType = kOpaque_SkAlphaType;
-        }
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(const SkImageInfo& info) {
+        return this->tryAllocPixels(info, info.minRowBytes());
+    }
+
+    SK_ALLOCPIXELS_RETURN_TYPE allocPixels(const SkImageInfo& info) {
+        return this->allocPixels(info, info.minRowBytes());
+    }
+
+    bool SK_WARN_UNUSED_RESULT tryAllocN32Pixels(int width, int height, bool isOpaque = false) {
+        SkImageInfo info = SkImageInfo::MakeN32(width, height,
+                                            isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
+        return this->tryAllocPixels(info);
+    }
+    
+    SK_ALLOCPIXELS_RETURN_TYPE allocN32Pixels(int width, int height, bool isOpaque = false) {
+        SkImageInfo info = SkImageInfo::MakeN32(width, height,
+                                            isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType);
         return this->allocPixels(info);
     }
-
+    
     /**
      *  Install a pixelref that wraps the specified pixels and rowBytes, and
      *  optional ReleaseProc and context. When the pixels are no longer
@@ -324,14 +287,6 @@ public:
      */
     bool installPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkColorTable*,
                        void (*releaseProc)(void* addr, void* context), void* context);
-
-#ifdef SK_SUPPORT_LEGACY_INSTALLPIXELSPARAMS
-    bool installPixels(const SkImageInfo& info, void* pixels, size_t rowBytes,
-                       void (*releaseProc)(void* addr, void* context),
-                       void* context) {
-        return this->installPixels(info, pixels, rowBytes, NULL, releaseProc, context);
-    }
-#endif
 
     /**
      *  Call installPixels with no ReleaseProc specified. This means that the
@@ -395,7 +350,11 @@ public:
         @return true if the allocation succeeds. If not the pixelref field of
                      the bitmap will be unchanged.
     */
-    bool allocPixels(SkColorTable* ctable = NULL) {
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(SkColorTable* ctable = NULL) {
+        return this->tryAllocPixels(NULL, ctable);
+    }
+
+    SK_ALLOCPIXELS_RETURN_TYPE allocPixels(SkColorTable* ctable = NULL) {
         return this->allocPixels(NULL, ctable);
     }
 
@@ -417,7 +376,14 @@ public:
         @return true if the allocation succeeds. If not the pixelref field of
                      the bitmap will be unchanged.
     */
-    bool allocPixels(Allocator* allocator, SkColorTable* ctable);
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(Allocator* allocator, SkColorTable* ctable);
+
+    SK_ALLOCPIXELS_RETURN_TYPE allocPixels(Allocator* allocator, SkColorTable* ctable) {
+        if (!this->tryAllocPixels(allocator, ctable)) {
+            SK_ALLOCPIXELS_RETURN_FAIL;
+        }
+        SK_ALLOCPIXELS_RETURN_TRUE;
+    }
 
     /**
      *  Return the current pixelref object or NULL if there is none. This does
@@ -481,7 +447,7 @@ public:
     */
     bool readyToDraw() const {
         return this->getPixels() != NULL &&
-               (this->colorType() != kIndex_8_SkColorType || NULL != fColorTable);
+               (this->colorType() != kIndex_8_SkColorType || fColorTable);
     }
 
     /** Returns the pixelRef's texture, or NULL
@@ -643,6 +609,28 @@ public:
     }
 
     /**
+     *  Copy the bitmap's pixels into the specified buffer (pixels + rowBytes),
+     *  converting them into the requested format (SkImageInfo). The src pixels are read
+     *  starting at the specified (srcX,srcY) offset, relative to the top-left corner.
+     *
+     *  The specified ImageInfo and (srcX,srcY) offset specifies a source rectangle
+     *
+     *      srcR.setXYWH(srcX, srcY, dstInfo.width(), dstInfo.height());
+     *
+     *  srcR is intersected with the bounds of the bitmap. If this intersection is not empty,
+     *  then we have two sets of pixels (of equal size). Replace the dst pixels with the
+     *  corresponding src pixels, performing any colortype/alphatype transformations needed
+     *  (in the case where the src and dst have different colortypes or alphatypes).
+     *
+     *  This call can fail, returning false, for several reasons:
+     *  - If srcR does not intersect the bitmap bounds.
+     *  - If the requested colortype/alphatype cannot be converted from the src's types.
+     *  - If the src pixels are not available.
+     */
+    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
+                    int srcX, int srcY) const;
+
+    /**
      *  Returns true if this bitmap's pixels can be converted into the requested
      *  colorType, such that copyTo() could succeed.
      */
@@ -755,9 +743,7 @@ private:
     SkIPoint    fPixelRefOrigin;
 
     enum Flags {
-        kImageIsOpaque_Flag     = 0x01,
         kImageIsVolatile_Flag   = 0x02,
-        kImageIsImmutable_Flag  = 0x04,
 #ifdef SK_BUILD_FOR_ANDROID
         /* A hint for the renderer responsible for drawing this bitmap
          * indicating that it should attempt to use mipmaps when this bitmap
@@ -896,14 +882,5 @@ inline SkPMColor SkBitmap::getIndex8Color(int x, int y) const {
     SkASSERT(fColorTable);
     return (*fColorTable)[*((const uint8_t*)fPixels + y * fRowBytes + x)];
 }
-
-#ifdef SK_SUPPORT_LEGACY_BITMAP_CONFIG
-///////////////////////////////////////////////////////////////////////////////
-//
-// Helpers until we can fully deprecate SkBitmap::Config
-//
-extern SkBitmap::Config SkColorTypeToBitmapConfig(SkColorType);
-extern SkColorType SkBitmapConfigToColorType(SkBitmap::Config);
-#endif
 
 #endif

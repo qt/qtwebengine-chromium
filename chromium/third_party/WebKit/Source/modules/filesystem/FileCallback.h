@@ -31,13 +31,16 @@
 #ifndef FileCallback_h
 #define FileCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class File;
 
-class FileCallback {
+class FileCallback : public GarbageCollectedFinalized<FileCallback> {
 public:
     virtual ~FileCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(File*) = 0;
 };
 

@@ -98,6 +98,9 @@ extern double vp8_calc_ssimg
 #ifdef OUTPUT_YUV_SRC
 FILE *yuv_file;
 #endif
+#ifdef OUTPUT_YUV_DENOISED
+FILE *yuv_denoised_file;
+#endif
 
 #if 0
 FILE *framepsnr;
@@ -610,6 +613,26 @@ static void cyclic_background_refresh(VP8_COMP *cpi, int Q, int lf_adjustment)
         while(block_count && i != cpi->cyclic_refresh_mode_index);
 
         cpi->cyclic_refresh_mode_index = i;
+
+#if CONFIG_TEMPORAL_DENOISING
+        if (cpi->oxcf.noise_sensitivity > 0) {
+          if (cpi->denoiser.denoiser_mode == kDenoiserOnYUVAggressive &&
+              Q < (int)cpi->denoiser.denoise_pars.qp_thresh) {
+            // Under aggressive denoising, use segmentation to turn off loop
+            // filter below some qp thresh. The filter is turned off for all
+            // blocks that have been encoded as ZEROMV LAST x frames in a row,
+            // where x is set by cpi->denoiser.denoise_pars.consec_zerolast.
+            // This is to avoid "dot" artifacts that can occur from repeated
+            // loop filtering on noisy input source.
+            cpi->cyclic_refresh_q = Q;
+            lf_adjustment = -MAX_LOOP_FILTER;
+            for (i = 0; i < mbs_in_frame; ++i) {
+              seg_map[i] = (cpi->consec_zero_last[i] >
+                            cpi->denoiser.denoise_pars.consec_zerolast) ? 1 : 0;
+            }
+          }
+        }
+#endif
     }
 
     /* Activate segmentation. */
@@ -1256,6 +1279,15 @@ void vp8_alloc_compressor_data(VP8_COMP *cpi)
 
     vpx_free(cpi->tplist);
     CHECK_MEM_ERROR(cpi->tplist, vpx_malloc(sizeof(TOKENLIST) * cm->mb_rows));
+
+#if CONFIG_TEMPORAL_DENOISING
+    if (cpi->oxcf.noise_sensitivity > 0) {
+      vp8_denoiser_free(&cpi->denoiser);
+      vp8_denoiser_allocate(&cpi->denoiser, width, height,
+                            cm->mb_rows, cm->mb_cols,
+                            cpi->oxcf.noise_sensitivity);
+    }
+#endif
 }
 
 
@@ -1402,7 +1434,7 @@ static void update_layer_contexts (VP8_COMP *cpi)
         double prev_layer_framerate=0;
 
         assert(oxcf->number_of_layers <= VPX_TS_MAX_LAYERS);
-        for (i=0; i<oxcf->number_of_layers; i++)
+        for (i = 0; i < oxcf->number_of_layers && i < VPX_TS_MAX_LAYERS; ++i)
         {
             LAYER_CONTEXT *lc = &cpi->layer_context[i];
 
@@ -1748,7 +1780,9 @@ void vp8_change_config(VP8_COMP *cpi, VP8_CONFIG *oxcf)
       {
         int width = (cpi->oxcf.Width + 15) & ~15;
         int height = (cpi->oxcf.Height + 15) & ~15;
-        vp8_denoiser_allocate(&cpi->denoiser, width, height);
+        vp8_denoiser_allocate(&cpi->denoiser, width, height,
+                              cm->mb_rows, cm->mb_cols,
+                              cpi->oxcf.noise_sensitivity);
       }
     }
 #endif
@@ -1875,6 +1909,13 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
      */
     cpi->cyclic_refresh_mode_enabled = cpi->oxcf.error_resilient_mode;
     cpi->cyclic_refresh_mode_max_mbs_perframe = (cpi->common.mb_rows * cpi->common.mb_cols) / 5;
+    if (cpi->oxcf.number_of_layers == 1) {
+        cpi->cyclic_refresh_mode_max_mbs_perframe =
+            (cpi->common.mb_rows * cpi->common.mb_cols) / 20;
+    } else if (cpi->oxcf.number_of_layers == 2) {
+        cpi->cyclic_refresh_mode_max_mbs_perframe =
+            (cpi->common.mb_rows * cpi->common.mb_cols) / 10;
+    }
     cpi->cyclic_refresh_mode_index = 0;
     cpi->cyclic_refresh_q = 32;
 
@@ -1884,6 +1925,9 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
     }
     else
         cpi->cyclic_refresh_map = (signed char *) NULL;
+
+    CHECK_MEM_ERROR(cpi->consec_zero_last,
+                    vpx_calloc(cpi->common.mb_rows * cpi->common.mb_cols, 1));
 
 #ifdef VP8_ENTROPY_STATS
     init_context_counters();
@@ -1960,6 +2004,9 @@ struct VP8_COMP* vp8_create_compressor(VP8_CONFIG *oxcf)
 
 #ifdef OUTPUT_YUV_SRC
     yuv_file = fopen("bd.yuv", "ab");
+#endif
+#ifdef OUTPUT_YUV_DENOISED
+    yuv_denoised_file = fopen("denoised.yuv", "ab");
 #endif
 
 #if 0
@@ -2402,6 +2449,7 @@ void vp8_remove_compressor(VP8_COMP **ptr)
     vpx_free(cpi->mb.ss);
     vpx_free(cpi->tok);
     vpx_free(cpi->cyclic_refresh_map);
+    vpx_free(cpi->consec_zero_last);
 
     vp8_remove_common(&cpi->common);
     vpx_free(cpi);
@@ -2409,6 +2457,9 @@ void vp8_remove_compressor(VP8_COMP **ptr)
 
 #ifdef OUTPUT_YUV_SRC
     fclose(yuv_file);
+#endif
+#ifdef OUTPUT_YUV_DENOISED
+    fclose(yuv_denoised_file);
 #endif
 
 #if 0
@@ -2610,10 +2661,9 @@ int vp8_update_entropy(VP8_COMP *cpi, int update)
 }
 
 
-#if OUTPUT_YUV_SRC
-void vp8_write_yuv_frame(const char *name, YV12_BUFFER_CONFIG *s)
+#if defined(OUTPUT_YUV_SRC) || defined(OUTPUT_YUV_DENOISED)
+void vp8_write_yuv_frame(FILE *yuv_file, YV12_BUFFER_CONFIG *s)
 {
-    FILE *yuv_file = fopen(name, "ab");
     unsigned char *src = s->y_buffer;
     int h = s->y_height;
 
@@ -2643,11 +2693,8 @@ void vp8_write_yuv_frame(const char *name, YV12_BUFFER_CONFIG *s)
         src += s->uv_stride;
     }
     while (--h);
-
-    fclose(yuv_file);
 }
 #endif
-
 
 static void scale_and_extend_source(YV12_BUFFER_CONFIG *sd, VP8_COMP *cpi)
 {
@@ -3105,10 +3152,8 @@ static void update_reference_frames(VP8_COMP *cpi)
 
         cm->alt_fb_idx = cm->gld_fb_idx = cm->new_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
         cpi->current_ref_frames[GOLDEN_FRAME] = cm->current_video_frame;
         cpi->current_ref_frames[ALTREF_FRAME] = cm->current_video_frame;
-#endif
     }
     else    /* For non key frames */
     {
@@ -3120,9 +3165,7 @@ static void update_reference_frames(VP8_COMP *cpi)
             cm->yv12_fb[cm->alt_fb_idx].flags &= ~VP8_ALTR_FRAME;
             cm->alt_fb_idx = cm->new_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
             cpi->current_ref_frames[ALTREF_FRAME] = cm->current_video_frame;
-#endif
         }
         else if (cm->copy_buffer_to_arf)
         {
@@ -3136,10 +3179,8 @@ static void update_reference_frames(VP8_COMP *cpi)
                     yv12_fb[cm->alt_fb_idx].flags &= ~VP8_ALTR_FRAME;
                     cm->alt_fb_idx = cm->lst_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
                     cpi->current_ref_frames[ALTREF_FRAME] =
                         cpi->current_ref_frames[LAST_FRAME];
-#endif
                 }
             }
             else /* if (cm->copy_buffer_to_arf == 2) */
@@ -3150,10 +3191,8 @@ static void update_reference_frames(VP8_COMP *cpi)
                     yv12_fb[cm->alt_fb_idx].flags &= ~VP8_ALTR_FRAME;
                     cm->alt_fb_idx = cm->gld_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
                     cpi->current_ref_frames[ALTREF_FRAME] =
                         cpi->current_ref_frames[GOLDEN_FRAME];
-#endif
                 }
             }
         }
@@ -3166,9 +3205,7 @@ static void update_reference_frames(VP8_COMP *cpi)
             cm->yv12_fb[cm->gld_fb_idx].flags &= ~VP8_GOLD_FRAME;
             cm->gld_fb_idx = cm->new_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
             cpi->current_ref_frames[GOLDEN_FRAME] = cm->current_video_frame;
-#endif
         }
         else if (cm->copy_buffer_to_gf)
         {
@@ -3182,10 +3219,8 @@ static void update_reference_frames(VP8_COMP *cpi)
                     yv12_fb[cm->gld_fb_idx].flags &= ~VP8_GOLD_FRAME;
                     cm->gld_fb_idx = cm->lst_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
                     cpi->current_ref_frames[GOLDEN_FRAME] =
                         cpi->current_ref_frames[LAST_FRAME];
-#endif
                 }
             }
             else /* if (cm->copy_buffer_to_gf == 2) */
@@ -3196,10 +3231,8 @@ static void update_reference_frames(VP8_COMP *cpi)
                     yv12_fb[cm->gld_fb_idx].flags &= ~VP8_GOLD_FRAME;
                     cm->gld_fb_idx = cm->alt_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
                     cpi->current_ref_frames[GOLDEN_FRAME] =
                         cpi->current_ref_frames[ALTREF_FRAME];
-#endif
                 }
             }
         }
@@ -3211,9 +3244,7 @@ static void update_reference_frames(VP8_COMP *cpi)
         cm->yv12_fb[cm->lst_fb_idx].flags &= ~VP8_LAST_FRAME;
         cm->lst_fb_idx = cm->new_fb_idx;
 
-#if CONFIG_MULTI_RES_ENCODING
         cpi->current_ref_frames[LAST_FRAME] = cm->current_video_frame;
-#endif
     }
 
 #if CONFIG_TEMPORAL_DENOISING
@@ -3226,17 +3257,9 @@ static void update_reference_frames(VP8_COMP *cpi)
         if (cm->frame_type == KEY_FRAME)
         {
             int i;
-            vp8_yv12_copy_frame(
-                    cpi->Source,
-                    &cpi->denoiser.yv12_running_avg[LAST_FRAME]);
-
-            vp8_yv12_extend_frame_borders(
-                    &cpi->denoiser.yv12_running_avg[LAST_FRAME]);
-
-            for (i = 2; i < MAX_REF_FRAMES - 1; i++)
-                vp8_yv12_copy_frame(
-                        &cpi->denoiser.yv12_running_avg[LAST_FRAME],
-                        &cpi->denoiser.yv12_running_avg[i]);
+            for (i = LAST_FRAME; i < MAX_REF_FRAMES; ++i)
+              vp8_yv12_copy_frame(cpi->Source,
+                                  &cpi->denoiser.yv12_running_avg[i]);
         }
         else /* For non key frames */
         {
@@ -3262,11 +3285,132 @@ static void update_reference_frames(VP8_COMP *cpi)
                         &cpi->denoiser.yv12_running_avg[LAST_FRAME]);
             }
         }
+        if (cpi->oxcf.noise_sensitivity == 4)
+          vp8_yv12_copy_frame(cpi->Source, &cpi->denoiser.yv12_last_source);
 
     }
 #endif
 
 }
+
+#if CONFIG_TEMPORAL_DENOISING
+static void process_denoiser_mode_change(VP8_COMP *cpi) {
+  const VP8_COMMON *const cm = &cpi->common;
+  int i, j;
+  int total = 0;
+  int num_blocks = 0;
+  // Number of blocks skipped along row/column in computing the
+  // nmse (normalized mean square error) of source.
+  int skip = 2;
+  // Only select blocks for computing nmse that have been encoded
+  // as ZERO LAST min_consec_zero_last frames in a row.
+  // Scale with number of temporal layers.
+  int min_consec_zero_last = 8 / cpi->oxcf.number_of_layers;
+  // Decision is tested for changing the denoising mode every
+  // num_mode_change times this function is called. Note that this
+  // function called every 8 frames, so (8 * num_mode_change) is number
+  // of frames where denoising mode change is tested for switch.
+  int num_mode_change = 15;
+  // Framerate factor, to compensate for larger mse at lower framerates.
+  // Use ref_framerate, which is full source framerate for temporal layers.
+  // TODO(marpan): Adjust this factor.
+  int fac_framerate = cpi->ref_framerate < 25.0f ? 80 : 100;
+  int tot_num_blocks = cm->mb_rows * cm->mb_cols;
+  int ystride = cpi->Source->y_stride;
+  unsigned char *src = cpi->Source->y_buffer;
+  unsigned char *dst = cpi->denoiser.yv12_last_source.y_buffer;
+  static const unsigned char const_source[16] = {
+      128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128, 128,
+      128, 128, 128};
+
+  // Loop through the Y plane, every skip blocks along rows and columns,
+  // summing the normalized mean square error, only for blocks that have
+  // been encoded as ZEROMV LAST at least min_consec_zero_last least frames in
+  // a row and have small sum difference between current and previous frame.
+  // Normalization here is by the contrast of the current frame block.
+  for (i = 0; i < cm->Height; i += 16 * skip) {
+    int block_index_row = (i >> 4) * cm->mb_cols;
+    for (j = 0; j < cm->Width; j += 16 * skip) {
+      int index = block_index_row + (j >> 4);
+      if (cpi->consec_zero_last[index] >= min_consec_zero_last) {
+        unsigned int sse;
+        const unsigned int mse = vp8_mse16x16(src + j,
+                                              ystride,
+                                              dst + j,
+                                              ystride,
+                                              &sse);
+        const unsigned int var = vp8_variance16x16(src + j,
+                                                   ystride,
+                                                   dst + j,
+                                                   ystride,
+                                                   &sse);
+        // Only consider this block as valid for noise measurement
+        // if the sum_diff average of the current and previous frame
+        // is small (to avoid effects from lighting change).
+        if ((mse - var) < 256) {
+          const unsigned int act = vp8_variance16x16(src + j,
+                                                     ystride,
+                                                     const_source,
+                                                     0,
+                                                     &sse);
+          if (act > 0)
+            total += mse / act;
+          num_blocks++;
+        }
+      }
+    }
+    src += 16 * skip * ystride;
+    dst += 16 * skip * ystride;
+  }
+  total = total * fac_framerate / 100;
+
+  // Only consider this frame as valid sample if we have computed nmse over
+  // at least ~1/16 blocks, and Total > 0 (Total == 0 can happen if the
+  // application inputs duplicate frames, or contrast is all zero).
+  if (total > 0 &&
+      (num_blocks > (tot_num_blocks >> 4))) {
+    // Update the recursive mean square source_diff.
+    if (cpi->denoiser.nmse_source_diff_count == 0) {
+      // First sample in new interval.
+      cpi->denoiser.nmse_source_diff = total;
+      cpi->denoiser.qp_avg = cm->base_qindex;
+    } else {
+      // For subsequent samples, use average with weight ~1/4 for new sample.
+      cpi->denoiser.nmse_source_diff = (int)((total >> 2) +
+          3 * (cpi->denoiser.nmse_source_diff >> 2));
+      cpi->denoiser.qp_avg = (int)((cm->base_qindex >> 2) +
+          3 * (cpi->denoiser.qp_avg >> 2));
+    }
+    cpi->denoiser.nmse_source_diff_count++;
+  }
+  // Check for changing the denoiser mode, when we have obtained #samples =
+  // num_mode_change. Condition the change also on the bitrate and QP.
+  if (cpi->denoiser.nmse_source_diff_count == num_mode_change) {
+    // Check for going up: from normal to aggressive mode.
+    if ((cpi->denoiser.denoiser_mode == kDenoiserOnYUV) &&
+        (cpi->denoiser.nmse_source_diff >
+        cpi->denoiser.threshold_aggressive_mode) &&
+        (cpi->denoiser.qp_avg < cpi->denoiser.qp_threshold_up &&
+         cpi->target_bandwidth > cpi->denoiser.bitrate_threshold)) {
+      vp8_denoiser_set_parameters(&cpi->denoiser, kDenoiserOnYUVAggressive);
+    } else {
+      // Check for going down: from aggressive to normal mode.
+      if (((cpi->denoiser.denoiser_mode == kDenoiserOnYUVAggressive) &&
+          (cpi->denoiser.nmse_source_diff <
+          cpi->denoiser.threshold_aggressive_mode)) ||
+          ((cpi->denoiser.denoiser_mode == kDenoiserOnYUVAggressive) &&
+          (cpi->denoiser.qp_avg > cpi->denoiser.qp_threshold_down ||
+           cpi->target_bandwidth < cpi->denoiser.bitrate_threshold))) {
+        vp8_denoiser_set_parameters(&cpi->denoiser, kDenoiserOnYUV);
+      }
+    }
+    // Reset metric and counter for next interval.
+    cpi->denoiser.nmse_source_diff = 0;
+    cpi->denoiser.qp_avg = 0;
+    cpi->denoiser.nmse_source_diff_count = 0;
+  }
+}
+#endif
 
 void vp8_loopfilter_frame(VP8_COMP *cpi, VP8_COMMON *cm)
 {
@@ -3424,6 +3568,12 @@ static void encode_frame_to_data_rate
     {
         /* Key frame from VFW/auto-keyframe/first frame */
         cm->frame_type = KEY_FRAME;
+#if CONFIG_TEMPORAL_DENOISING
+        if (cpi->oxcf.noise_sensitivity == 4) {
+          // For adaptive mode, reset denoiser to normal mode on key frame.
+          vp8_denoiser_set_parameters(&cpi->denoiser, kDenoiserOnYUV);
+        }
+#endif
     }
 
 #if CONFIG_MULTI_RES_ENCODING
@@ -3457,6 +3607,31 @@ static void encode_frame_to_data_rate
     }
 #endif
 
+    // Find the reference frame closest to the current frame.
+    cpi->closest_reference_frame = LAST_FRAME;
+    if (cm->frame_type != KEY_FRAME) {
+      int i;
+      MV_REFERENCE_FRAME closest_ref = INTRA_FRAME;
+      if (cpi->ref_frame_flags & VP8_LAST_FRAME) {
+        closest_ref = LAST_FRAME;
+      } else if (cpi->ref_frame_flags & VP8_GOLD_FRAME) {
+        closest_ref = GOLDEN_FRAME;
+      } else if (cpi->ref_frame_flags & VP8_ALTR_FRAME) {
+        closest_ref = ALTREF_FRAME;
+      }
+      for (i = 1; i <= 3; i++) {
+        vpx_ref_frame_type_t ref_frame_type = (vpx_ref_frame_type_t)
+            ((i == 3) ? 4 : i);
+        if (cpi->ref_frame_flags & ref_frame_type) {
+          if ((cm->current_video_frame - cpi->current_ref_frames[i]) <
+            (cm->current_video_frame - cpi->current_ref_frames[closest_ref])) {
+            closest_ref = i;
+          }
+        }
+      }
+      cpi->closest_reference_frame = closest_ref;
+    }
+
     /* Set various flags etc to special state if it is a key frame */
     if (cm->frame_type == KEY_FRAME)
     {
@@ -3473,6 +3648,9 @@ static void encode_frame_to_data_rate
         {
             cpi->mb.rd_thresh_mult[i] = 128;
         }
+
+        // Reset the zero_last counter to 0 on key frame.
+        vpx_memset(cpi->consec_zero_last, 0, cm->mb_rows * cm->mb_cols);
     }
 
 #if 0
@@ -3845,6 +4023,17 @@ static void encode_frame_to_data_rate
 
     scale_and_extend_source(cpi->un_scaled_source, cpi);
 
+#if CONFIG_TEMPORAL_DENOISING && CONFIG_POSTPROC
+    // Option to apply spatial blur under the aggressive or adaptive
+    // (temporal denoising) mode.
+    if (cpi->oxcf.noise_sensitivity >= 3) {
+      if (cpi->denoiser.denoise_pars.spatial_blur != 0) {
+        vp8_de_noise(cm, cpi->Source, cpi->Source,
+            cpi->denoiser.denoise_pars.spatial_blur, 1, 0, 0);
+      }
+    }
+#endif
+
 #if !(CONFIG_REALTIME_ONLY) && CONFIG_POSTPROC && !(CONFIG_TEMPORAL_DENOISING)
 
     if (cpi->oxcf.noise_sensitivity > 0)
@@ -3877,11 +4066,11 @@ static void encode_frame_to_data_rate
 
         if (cm->frame_type == KEY_FRAME)
         {
-            vp8_de_noise(cm, cpi->Source, cpi->Source, l , 1,  0);
+            vp8_de_noise(cm, cpi->Source, cpi->Source, l , 1,  0, 1);
         }
         else
         {
-            vp8_de_noise(cm, cpi->Source, cpi->Source, l , 1,  0);
+            vp8_de_noise(cm, cpi->Source, cpi->Source, l , 1,  0, 1);
 
             src = cpi->Source->y_buffer;
 
@@ -3894,8 +4083,9 @@ static void encode_frame_to_data_rate
 
 #endif
 
+
 #ifdef OUTPUT_YUV_SRC
-    vp8_write_yuv_frame(cpi->Source);
+    vp8_write_yuv_frame(yuv_file, cpi->Source);
 #endif
 
     do
@@ -3989,6 +4179,8 @@ static void encode_frame_to_data_rate
                 else
                   disable_segmentation(cpi);
               }
+              // Reset the consec_zero_last counter on key frame.
+              vpx_memset(cpi->consec_zero_last, 0, cm->mb_rows * cm->mb_cols);
               vp8_set_quantizer(cpi, Q);
             }
 
@@ -4377,7 +4569,8 @@ static void encode_frame_to_data_rate
             {
                 for (mb_col = 0; mb_col < cm->mb_cols; mb_col ++)
                 {
-                    if(tmp->mbmi.mode == ZEROMV)
+                    if (tmp->mbmi.mode == ZEROMV &&
+                       tmp->mbmi.ref_frame == LAST_FRAME)
                         cpi->zeromv_count++;
                     tmp++;
                 }
@@ -4419,6 +4612,21 @@ static void encode_frame_to_data_rate
 
     cm->frame_to_show = &cm->yv12_fb[cm->new_fb_idx];
 
+#if CONFIG_TEMPORAL_DENOISING
+    // For the adaptive denoising mode (noise_sensitivity == 4), sample the mse
+    // of source diff (between current and previous frame), and determine if we
+    // should switch the denoiser mode. Sampling refers to computing the mse for
+    // a sub-sample of the frame (i.e., skip x blocks along row/column), and
+    // only for blocks in that set that have used ZEROMV LAST, along with some
+    // constraint on the sum diff between blocks. This process is called every
+    // ~8 frames, to further reduce complexity.
+    if (cpi->oxcf.noise_sensitivity == 4 &&
+        cpi->frames_since_key % 8 == 0 &&
+        cm->frame_type != KEY_FRAME) {
+      process_denoiser_mode_change(cpi);
+    }
+#endif
+
 #if CONFIG_MULTITHREAD
     if (cpi->b_multi_threaded)
     {
@@ -4433,6 +4641,11 @@ static void encode_frame_to_data_rate
     }
 
     update_reference_frames(cpi);
+
+#ifdef OUTPUT_YUV_DENOISED
+    vp8_write_yuv_frame(yuv_denoised_file,
+                        &cpi->denoiser.yv12_running_avg[INTRA_FRAME]);
+#endif
 
 #if !(CONFIG_REALTIME_ONLY & CONFIG_ONTHEFLY_BITPACKING)
     if (cpi->oxcf.error_resilient_mode)
@@ -4875,6 +5088,7 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
     if (setjmp(cpi->common.error.jmp))
     {
         cpi->common.error.setjmp = 0;
+        vp8_clear_system_state();
         return VPX_CODEC_CORRUPT_FRAME;
     }
 
@@ -5025,7 +5239,8 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags, unsigned l
 
                 /* Update frame rates for each layer */
                 assert(cpi->oxcf.number_of_layers <= VPX_TS_MAX_LAYERS);
-                for (i=0; i<cpi->oxcf.number_of_layers; i++)
+                for (i = 0; i < cpi->oxcf.number_of_layers &&
+                     i < VPX_TS_MAX_LAYERS; ++i)
                 {
                     LAYER_CONTEXT *lc = &cpi->layer_context[i];
                     lc->framerate = cpi->ref_framerate /

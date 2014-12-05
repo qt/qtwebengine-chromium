@@ -29,23 +29,22 @@
  */
 
 #include "config.h"
-
 #include "modules/mediastream/RTCVoidRequestImpl.h"
 
 #include "core/html/VoidCallback.h"
 #include "modules/mediastream/RTCErrorCallback.h"
 #include "modules/mediastream/RTCPeerConnection.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<RTCVoidRequestImpl> RTCVoidRequestImpl::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
+RTCVoidRequestImpl* RTCVoidRequestImpl::create(ExecutionContext* context, RTCPeerConnection* requester, VoidCallback* successCallback, RTCErrorCallback* errorCallback)
 {
-    RefPtr<RTCVoidRequestImpl> request = adoptRef(new RTCVoidRequestImpl(context, requester, successCallback, errorCallback));
+    RTCVoidRequestImpl* request = new RTCVoidRequestImpl(context, requester, successCallback, errorCallback);
     request->suspendIfNeeded();
-    return request.release();
+    return request;
 }
 
-RTCVoidRequestImpl::RTCVoidRequestImpl(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<RTCErrorCallback> errorCallback)
+RTCVoidRequestImpl::RTCVoidRequestImpl(ExecutionContext* context, RTCPeerConnection* requester, VoidCallback* successCallback, RTCErrorCallback* errorCallback)
     : ActiveDOMObject(context)
     , m_successCallback(successCallback)
     , m_errorCallback(errorCallback)
@@ -88,4 +87,12 @@ void RTCVoidRequestImpl::clear()
     m_requester.clear();
 }
 
-} // namespace WebCore
+void RTCVoidRequestImpl::trace(Visitor* visitor)
+{
+    visitor->trace(m_successCallback);
+    visitor->trace(m_errorCallback);
+    visitor->trace(m_requester);
+    RTCVoidRequest::trace(visitor);
+}
+
+} // namespace blink

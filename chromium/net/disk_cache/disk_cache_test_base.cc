@@ -4,9 +4,11 @@
 
 #include "net/disk_cache/disk_cache_test_base.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/platform_thread.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -48,6 +50,20 @@ bool DiskCacheTest::CleanupCacheDir() {
 
 void DiskCacheTest::TearDown() {
   base::RunLoop().RunUntilIdle();
+}
+
+DiskCacheTestWithCache::TestIterator::TestIterator(
+    scoped_ptr<disk_cache::Backend::Iterator> iterator)
+    : iterator_(iterator.Pass()) {
+}
+
+DiskCacheTestWithCache::TestIterator::~TestIterator() {}
+
+int DiskCacheTestWithCache::TestIterator::OpenNextEntry(
+    disk_cache::Entry** next_entry) {
+  net::TestCompletionCallback cb;
+  int rv = iterator_->OpenNextEntry(next_entry, cb.callback());
+  return cb.GetResult(rv);
 }
 
 DiskCacheTestWithCache::DiskCacheTestWithCache()
@@ -151,11 +167,9 @@ int DiskCacheTestWithCache::DoomEntriesSince(const base::Time initial_time) {
   return cb.GetResult(rv);
 }
 
-int DiskCacheTestWithCache::OpenNextEntry(void** iter,
-                                          disk_cache::Entry** next_entry) {
-  net::TestCompletionCallback cb;
-  int rv = cache_->OpenNextEntry(iter, next_entry, cb.callback());
-  return cb.GetResult(rv);
+scoped_ptr<DiskCacheTestWithCache::TestIterator>
+    DiskCacheTestWithCache::CreateIterator() {
+  return scoped_ptr<TestIterator>(new TestIterator(cache_->CreateIterator()));
 }
 
 void DiskCacheTestWithCache::FlushQueueForTest() {
@@ -280,21 +294,21 @@ void DiskCacheTestWithCache::InitDiskCache() {
 }
 
 void DiskCacheTestWithCache::CreateBackend(uint32 flags, base::Thread* thread) {
-  base::MessageLoopProxy* runner;
+  scoped_refptr<base::SingleThreadTaskRunner> runner;
   if (use_current_thread_)
-    runner = base::MessageLoopProxy::current().get();
+    runner = base::ThreadTaskRunnerHandle::Get();
   else
-    runner = thread->message_loop_proxy().get();
+    runner = thread->task_runner();
 
   if (simple_cache_mode_) {
     net::TestCompletionCallback cb;
     scoped_ptr<disk_cache::SimpleBackendImpl> simple_backend(
         new disk_cache::SimpleBackendImpl(
-            cache_path_, size_, type_, make_scoped_refptr(runner).get(), NULL));
+            cache_path_, size_, type_, runner, NULL));
     int rv = simple_backend->Init(cb.callback());
     ASSERT_EQ(net::OK, cb.GetResult(rv));
     simple_cache_impl_ = simple_backend.get();
-    cache_ = simple_backend.PassAs<disk_cache::Backend>();
+    cache_ = simple_backend.Pass();
     if (simple_cache_wait_for_index_) {
       net::TestCompletionCallback wait_for_index_cb;
       rv = simple_cache_impl_->index()->ExecuteWhenReady(

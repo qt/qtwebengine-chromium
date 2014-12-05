@@ -15,6 +15,7 @@ MockMediaStreamVideoSource::MockMediaStreamVideoSource(
     : manual_get_supported_formats_(manual_get_supported_formats),
       max_requested_height_(0),
       max_requested_width_(0),
+      max_requested_frame_rate_(0.0),
       attempted_to_start_(false) {
   supported_formats_.push_back(
       media::VideoCaptureFormat(
@@ -29,13 +30,13 @@ MockMediaStreamVideoSource::~MockMediaStreamVideoSource() {}
 void MockMediaStreamVideoSource::StartMockedSource() {
   DCHECK(attempted_to_start_);
   attempted_to_start_ = false;
-  OnStartDone(true);
+  OnStartDone(MEDIA_DEVICE_OK);
 }
 
 void MockMediaStreamVideoSource::FailToStartMockedSource() {
   DCHECK(attempted_to_start_);
   attempted_to_start_ = false;
-  OnStartDone(false);
+  OnStartDone(MEDIA_DEVICE_TRACK_START_FAILURE);
 }
 
 void MockMediaStreamVideoSource::CompleteGetSupportedFormats() {
@@ -46,10 +47,12 @@ void MockMediaStreamVideoSource::CompleteGetSupportedFormats() {
 void MockMediaStreamVideoSource::GetCurrentSupportedFormats(
     int max_requested_height,
     int max_requested_width,
+    double max_requested_frame_rate,
     const VideoCaptureDeviceFormatsCB& callback) {
   DCHECK(formats_callback_.is_null());
   max_requested_height_ = max_requested_height;
   max_requested_width_ = max_requested_width;
+  max_requested_frame_rate_ = max_requested_frame_rate;
 
   if (manual_get_supported_formats_) {
     formats_callback_ = callback;
@@ -59,10 +62,10 @@ void MockMediaStreamVideoSource::GetCurrentSupportedFormats(
 }
 
 void MockMediaStreamVideoSource::StartSourceImpl(
-    const media::VideoCaptureParams& params,
+    const media::VideoCaptureFormat& format,
     const VideoCaptureDeliverFrameCB& frame_callback) {
   DCHECK(frame_callback_.is_null());
-  params_ = params;
+  format_ = format;
   attempted_to_start_ = true;
   frame_callback_ = frame_callback;
 }
@@ -76,7 +79,7 @@ void MockMediaStreamVideoSource::DeliverVideoFrame(
   io_message_loop()->PostTask(
       FROM_HERE,
       base::Bind(&MockMediaStreamVideoSource::DeliverVideoFrameOnIO,
-                 base::Unretained(this), frame, params_.requested_format,
+                 base::Unretained(this), frame, format_,
                  base::TimeTicks(), frame_callback_));
 }
 

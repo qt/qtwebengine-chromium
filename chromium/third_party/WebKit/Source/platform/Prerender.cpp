@@ -36,19 +36,18 @@
 #include "public/platform/WebPrerender.h"
 #include "public/platform/WebPrerenderingSupport.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<Prerender> Prerender::create(PrerenderClient* client, const KURL& url, unsigned relTypes, const String& referrer, ReferrerPolicy policy)
+PassRefPtr<Prerender> Prerender::create(PrerenderClient* client, const KURL& url, unsigned relTypes, const Referrer& referrer)
 {
-    return adoptRef(new Prerender(client, url, relTypes, referrer, policy));
+    return adoptRef(new Prerender(client, url, relTypes, referrer));
 }
 
-Prerender::Prerender(PrerenderClient* client, const KURL& url, const unsigned relTypes, const String& referrer, ReferrerPolicy policy)
+Prerender::Prerender(PrerenderClient* client, const KURL& url, const unsigned relTypes, const Referrer& referrer)
     : m_client(client)
     , m_url(url)
     , m_relTypes(relTypes)
     , m_referrer(referrer)
-    , m_referrerPolicy(policy)
 {
 }
 
@@ -63,26 +62,20 @@ void Prerender::removeClient()
 
 void Prerender::add()
 {
-    blink::WebPrerenderingSupport* platform = blink::WebPrerenderingSupport::current();
-    if (!platform)
-        return;
-    platform->add(blink::WebPrerender(this));
+    if (WebPrerenderingSupport* platform = WebPrerenderingSupport::current())
+        platform->add(WebPrerender(this));
 }
 
 void Prerender::cancel()
 {
-    blink::WebPrerenderingSupport* platform = blink::WebPrerenderingSupport::current();
-    if (!platform)
-        return;
-    platform->cancel(blink::WebPrerender(this));
+    if (WebPrerenderingSupport* platform = WebPrerenderingSupport::current())
+        platform->cancel(WebPrerender(this));
 }
 
 void Prerender::abandon()
 {
-    blink::WebPrerenderingSupport* platform = blink::WebPrerenderingSupport::current();
-    if (!platform)
-        return;
-    platform->abandon(blink::WebPrerender(this));
+    if (WebPrerenderingSupport* platform = WebPrerenderingSupport::current())
+        platform->abandon(WebPrerender(this));
 }
 
 void Prerender::didStartPrerender()
@@ -109,4 +102,4 @@ void Prerender::didSendDOMContentLoadedForPrerender()
         m_client->didSendDOMContentLoadedForPrerender();
 }
 
-}
+} // namespace blink

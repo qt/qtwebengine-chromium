@@ -37,7 +37,7 @@
 #include "core/html/HTMLLinkElement.h"
 #include "core/html/HTMLStyleElement.h"
 
-namespace WebCore {
+namespace blink {
 
 TreeScopeStyleSheetCollection::TreeScopeStyleSheetCollection(TreeScope& treeScope)
     : m_treeScope(treeScope)
@@ -59,21 +59,6 @@ void TreeScopeStyleSheetCollection::addStyleSheetCandidateNode(Node* node, bool 
         m_styleSheetCandidateNodes.parserAdd(node);
     else
         m_styleSheetCandidateNodes.add(node);
-
-    if (!isHTMLStyleElement(*node))
-        return;
-
-    ContainerNode* scopingNode = toHTMLStyleElement(*node).scopingNode();
-    if (!isTreeScopeRoot(scopingNode))
-        m_scopingNodesForStyleScoped.add(scopingNode);
-}
-
-void TreeScopeStyleSheetCollection::removeStyleSheetCandidateNode(Node* node, ContainerNode* scopingNode)
-{
-    m_styleSheetCandidateNodes.remove(node);
-
-    if (!isTreeScopeRoot(scopingNode))
-        m_scopingNodesForStyleScoped.remove(scopingNode);
 }
 
 TreeScopeStyleSheetCollection::StyleResolverUpdateType TreeScopeStyleSheetCollection::compareStyleSheets(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& oldStyleSheets, const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStylesheets, WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >& addedSheets)
@@ -202,20 +187,6 @@ void TreeScopeStyleSheetCollection::enableExitTransitionStylesheets()
     }
 }
 
-void TreeScopeStyleSheetCollection::resetAllRuleSetsInTreeScope(StyleResolver* styleResolver)
-{
-    // FIXME: If many web developers use style scoped, implement reset RuleSets in per-scoping node manner.
-    if (DocumentOrderedList* styleScopedScopingNodes = scopingNodesForStyleScoped()) {
-        for (DocumentOrderedList::iterator it = styleScopedScopingNodes->begin(); it != styleScopedScopingNodes->end(); ++it)
-            styleResolver->resetAuthorStyle(toContainerNode(*it));
-    }
-    if (ListHashSet<Node*, 4>* removedNodes = scopingNodesRemoved()) {
-        for (ListHashSet<Node*, 4>::iterator it = removedNodes->begin(); it != removedNodes->end(); ++it)
-            styleResolver->resetAuthorStyle(toContainerNode(*it));
-    }
-    styleResolver->resetAuthorStyle(toContainerNode(&m_treeScope.rootNode()));
-}
-
 static bool styleSheetsUseRemUnits(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& sheets)
 {
     for (unsigned i = 0; i < sheets.size(); ++i) {
@@ -228,6 +199,13 @@ static bool styleSheetsUseRemUnits(const WillBeHeapVector<RefPtrWillBeMember<CSS
 void TreeScopeStyleSheetCollection::updateUsesRemUnits()
 {
     m_usesRemUnits = styleSheetsUseRemUnits(m_activeAuthorStyleSheets);
+}
+
+void TreeScopeStyleSheetCollection::trace(Visitor* visitor)
+{
+    visitor->trace(m_treeScope);
+    visitor->trace(m_styleSheetCandidateNodes);
+    StyleSheetCollection::trace(visitor);
 }
 
 }

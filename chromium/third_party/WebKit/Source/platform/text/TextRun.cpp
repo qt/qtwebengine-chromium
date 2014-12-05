@@ -26,7 +26,7 @@
 #include "config.h"
 #include "platform/text/TextRun.h"
 
-namespace WebCore {
+namespace blink {
 
 struct ExpectedTextRunSize {
     const void* pointer;
@@ -36,17 +36,11 @@ struct ExpectedTextRunSize {
     float float3;
     uint32_t bitfields : 10;
     unsigned anUnsigned;
+    bool b;
     RefPtr<TextRun::RenderingContext> renderingContext;
 };
 
 COMPILE_ASSERT(sizeof(TextRun) == sizeof(ExpectedTextRunSize), TextRun_is_not_of_expected_size);
-
-bool TextRun::s_allowsRoundingHacks = false;
-
-void TextRun::setAllowsRoundingHacks(bool allowsRoundingHacks)
-{
-    s_allowsRoundingHacks = allowsRoundingHacks;
-}
 
 void TextRun::setText(const String& string)
 {
@@ -61,11 +55,6 @@ void TextRun::setText(const String& string)
         m_data.characters8 = string.characters8();
     else
         m_data.characters16 = string.characters16();
-}
-
-bool TextRun::allowsRoundingHacks()
-{
-    return s_allowsRoundingHacks;
 }
 
 }

@@ -26,15 +26,16 @@ namespace content {
 
 SensorManagerAndroid::SensorManagerAndroid()
     : number_active_device_motion_sensors_(0),
+      device_light_buffer_(NULL),
       device_motion_buffer_(NULL),
       device_orientation_buffer_(NULL),
+      is_light_buffer_ready_(false),
       is_motion_buffer_ready_(false),
-      is_orientation_buffer_ready_(false) {
+      is_orientation_buffer_ready_(false),
+      is_using_backup_sensors_for_orientation_(false) {
   memset(received_motion_data_, 0, sizeof(received_motion_data_));
-  device_orientation_.Reset(
-      Java_DeviceSensors_getInstance(
-          AttachCurrentThread(),
-          base::android::GetApplicationContext()));
+  device_sensors_.Reset(Java_DeviceSensors_getInstance(
+      AttachCurrentThread(), base::android::GetApplicationContext()));
 }
 
 SensorManagerAndroid::~SensorManagerAndroid() {
@@ -67,7 +68,7 @@ void SensorManagerAndroid::GotOrientation(
 
   if (!is_orientation_buffer_ready_) {
     SetOrientationBufferReadyStatus(true);
-    updateRotationVectorHistogram(true);
+    updateRotationVectorHistogram(!is_using_backup_sensors_for_orientation_);
   }
 }
 
@@ -137,30 +138,84 @@ void SensorManagerAndroid::GotRotationRate(
   }
 }
 
+void SensorManagerAndroid::GotLight(JNIEnv*, jobject, double value) {
+  base::AutoLock autolock(light_buffer_lock_);
+
+  if (!device_light_buffer_)
+    return;
+
+  device_light_buffer_->seqlock.WriteBegin();
+  device_light_buffer_->data.value = value;
+  device_light_buffer_->seqlock.WriteEnd();
+}
+
 bool SensorManagerAndroid::Start(EventType event_type) {
-  DCHECK(!device_orientation_.is_null());
-  return Java_DeviceSensors_start(
-      AttachCurrentThread(), device_orientation_.obj(),
-      reinterpret_cast<intptr_t>(this), static_cast<jint>(event_type),
-      kInertialSensorIntervalMillis);
+  DCHECK(!device_sensors_.is_null());
+  int rate_in_microseconds = (event_type == kTypeLight)
+                                 ? kLightSensorIntervalMicroseconds
+                                 : kInertialSensorIntervalMicroseconds;
+  return Java_DeviceSensors_start(AttachCurrentThread(),
+                                  device_sensors_.obj(),
+                                  reinterpret_cast<intptr_t>(this),
+                                  static_cast<jint>(event_type),
+                                  rate_in_microseconds);
 }
 
 void SensorManagerAndroid::Stop(EventType event_type) {
-  DCHECK(!device_orientation_.is_null());
-  Java_DeviceSensors_stop(
-      AttachCurrentThread(), device_orientation_.obj(),
-      static_cast<jint>(event_type));
+  DCHECK(!device_sensors_.is_null());
+  Java_DeviceSensors_stop(AttachCurrentThread(),
+                          device_sensors_.obj(),
+                          static_cast<jint>(event_type));
 }
 
 int SensorManagerAndroid::GetNumberActiveDeviceMotionSensors() {
-  DCHECK(!device_orientation_.is_null());
+  DCHECK(!device_sensors_.is_null());
   return Java_DeviceSensors_getNumberActiveDeviceMotionSensors(
-      AttachCurrentThread(), device_orientation_.obj());
+      AttachCurrentThread(), device_sensors_.obj());
 }
 
+bool SensorManagerAndroid::isUsingBackupSensorsForOrientation() {
+  DCHECK(!device_sensors_.is_null());
+  return Java_DeviceSensors_isUsingBackupSensorsForOrientation(
+      AttachCurrentThread(), device_sensors_.obj());
+}
 
 // ----- Shared memory API methods
 
+// --- Device Light
+
+bool SensorManagerAndroid::StartFetchingDeviceLightData(
+    DeviceLightHardwareBuffer* buffer) {
+  DCHECK(buffer);
+  {
+    base::AutoLock autolock(light_buffer_lock_);
+    device_light_buffer_ = buffer;
+    SetLightBufferValue(-1);
+  }
+  bool success = Start(kTypeLight);
+  if (!success) {
+    base::AutoLock autolock(light_buffer_lock_);
+    SetLightBufferValue(std::numeric_limits<double>::infinity());
+  }
+  return success;
+}
+
+void SensorManagerAndroid::StopFetchingDeviceLightData() {
+  Stop(kTypeLight);
+  {
+    base::AutoLock autolock(light_buffer_lock_);
+    if (device_light_buffer_) {
+      SetLightBufferValue(-1);
+      device_light_buffer_ = NULL;
+    }
+  }
+}
+
+void SensorManagerAndroid::SetLightBufferValue(double lux) {
+  device_light_buffer_->seqlock.WriteBegin();
+  device_light_buffer_->data.value = lux;
+  device_light_buffer_->seqlock.WriteEnd();
+}
 // --- Device Motion
 
 bool SensorManagerAndroid::StartFetchingDeviceMotionData(
@@ -201,7 +256,8 @@ void SensorManagerAndroid::CheckMotionBufferReadyToRead() {
       received_motion_data_[RECEIVED_MOTION_DATA_ROTATION_RATE] ==
       number_active_device_motion_sensors_) {
     device_motion_buffer_->seqlock.WriteBegin();
-    device_motion_buffer_->data.interval = kInertialSensorIntervalMillis;
+    device_motion_buffer_->data.interval =
+        kInertialSensorIntervalMicroseconds / 1000.;
     device_motion_buffer_->seqlock.WriteEnd();
     SetMotionBufferReadyStatus(true);
 
@@ -258,6 +314,9 @@ bool SensorManagerAndroid::StartFetchingDeviceOrientationData(
 
   if (!success)
     updateRotationVectorHistogram(false);
+  else
+    is_using_backup_sensors_for_orientation_ =
+        isUsingBackupSensorsForOrientation();
 
   return success;
 }

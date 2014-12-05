@@ -17,6 +17,14 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree_update.h"
 
+// Singly-included section for custom types.
+#ifndef CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+#define CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+
+typedef std::map<int32, int> FrameIDMap;
+
+#endif  // CONTENT_COMMON_ACCESSIBILITY_MESSAGES_H_
+
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
 
@@ -55,6 +63,15 @@ IPC_STRUCT_BEGIN(AccessibilityHostMsg_EventParams)
   // The tree update.
   IPC_STRUCT_MEMBER(ui::AXTreeUpdate, update)
 
+  // Mapping from node id to routing id of its child frame - either the
+  // routing id of a RenderFrame or a RenderFrameProxy for an out-of-process
+  // iframe.
+  IPC_STRUCT_MEMBER(FrameIDMap, node_to_frame_routing_id_map)
+
+  // Mapping from node id to the browser plugin instance id of a child
+  // browser plugin.
+  IPC_STRUCT_MEMBER(FrameIDMap, node_to_browser_plugin_instance_id_map)
+
   // Type of event.
   IPC_STRUCT_MEMBER(ui::AXEvent, event_type)
 
@@ -69,6 +86,26 @@ IPC_STRUCT_BEGIN(AccessibilityHostMsg_LocationChangeParams)
   // The object's new location, in frame-relative coordinates (same
   // as the coordinates in AccessibilityNodeData).
   IPC_STRUCT_MEMBER(gfx::Rect, new_location)
+IPC_STRUCT_END()
+
+IPC_STRUCT_BEGIN(AccessibilityHostMsg_FindInPageResultParams)
+  // The find in page request id.
+  IPC_STRUCT_MEMBER(int, request_id)
+
+  // The index of the result match.
+  IPC_STRUCT_MEMBER(int, match_index)
+
+  // The id of the accessibility object for the start of the match range.
+  IPC_STRUCT_MEMBER(int, start_id)
+
+  // The character offset into the text of the start object.
+  IPC_STRUCT_MEMBER(int, start_offset)
+
+  // The id of the accessibility object for the end of the match range.
+  IPC_STRUCT_MEMBER(int, end_id)
+
+  // The character offset into the text of the end object.
+  IPC_STRUCT_MEMBER(int, end_offset)
 IPC_STRUCT_END()
 
 // Messages sent from the browser to the renderer.
@@ -105,27 +142,61 @@ IPC_MESSAGE_ROUTED3(AccessibilityMsg_SetTextSelection,
                     int /* New start offset */,
                     int /* New end offset */)
 
+// Relay a request from assistive technology to set the value of an
+// editable text element.
+IPC_MESSAGE_ROUTED2(AccessibilityMsg_SetValue,
+                    int /* object id */,
+                    base::string16 /* Value */)
+
 // Determine the accessibility object under a given point and reply with
 // a AccessibilityHostMsg_HitTestResult with the same id.
 IPC_MESSAGE_ROUTED1(AccessibilityMsg_HitTest,
-                    gfx::Point /* location to test */);
+                    gfx::Point /* location to test */)
+
+// Relay a request from assistive technology to set accessibility focus
+// to a given node. On platforms where this is used (currently Android),
+// inline text boxes are only computed for the node with accessibility focus,
+// rather than for the whole tree.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_SetAccessibilityFocus,
+                    int /* object id */)
 
 // Tells the render view that a AccessibilityHostMsg_Events
 // message was processed and it can send addition events.
 IPC_MESSAGE_ROUTED0(AccessibilityMsg_Events_ACK)
 
-// Kill the renderer because we got a fatal error in the accessibility tree.
+// Tell the renderer to reset and send a new accessibility tree from
+// scratch because the browser is out of sync. It passes a sequential
+// reset token. This should be rare, and if we need reset the same renderer
+// too many times we just kill it. After sending a reset, the browser ignores
+// incoming accessibility IPCs until it receives one with the matching reset
+// token. Conversely, it ignores IPCs with a reset token if it was not
+// expecting a reset.
+IPC_MESSAGE_ROUTED1(AccessibilityMsg_Reset,
+                    int /* reset token */)
+
+// Kill the renderer because we got a fatal error in the accessibility tree
+// and we've already reset too many times.
 IPC_MESSAGE_ROUTED0(AccessibilityMsg_FatalError)
 
 // Messages sent from the renderer to the browser.
 
 // Sent to notify the browser about renderer accessibility events.
 // The browser responds with a AccessibilityMsg_Events_ACK.
-IPC_MESSAGE_ROUTED1(
+// The second parameter, reset_token, is set if this IPC was sent in response
+// to a reset request from the browser. When the browser requests a reset,
+// it ignores incoming IPCs until it sees one with the correct reset token.
+// Any other time, it ignores IPCs with a reset token.
+IPC_MESSAGE_ROUTED2(
     AccessibilityHostMsg_Events,
-    std::vector<AccessibilityHostMsg_EventParams>)
+    std::vector<AccessibilityHostMsg_EventParams> /* events */,
+    int /* reset_token */)
 
 // Sent to update the browser of the location of accessibility objects.
 IPC_MESSAGE_ROUTED1(
     AccessibilityHostMsg_LocationChanges,
     std::vector<AccessibilityHostMsg_LocationChangeParams>)
+
+// Sent to update the browser of the location of accessibility objects.
+IPC_MESSAGE_ROUTED1(
+    AccessibilityHostMsg_FindInPageResult,
+    AccessibilityHostMsg_FindInPageResultParams)

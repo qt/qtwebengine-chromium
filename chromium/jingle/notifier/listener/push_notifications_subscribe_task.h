@@ -13,8 +13,8 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "jingle/notifier/listener/notification_defines.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/xmpptask.h"
+#include "third_party/webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace notifier {
 class PushNotificationsSubscribeTask : public buzz::XmppTask {
@@ -29,12 +29,12 @@ class PushNotificationsSubscribeTask : public buzz::XmppTask {
   PushNotificationsSubscribeTask(buzz::XmppTaskParentInterface* parent,
                                  const SubscriptionList& subscriptions,
                                  Delegate* delegate);
-  virtual ~PushNotificationsSubscribeTask();
+  ~PushNotificationsSubscribeTask() override;
 
   // Overridden from XmppTask.
-  virtual int ProcessStart() OVERRIDE;
-  virtual int ProcessResponse() OVERRIDE;
-  virtual bool HandleStanza(const buzz::XmlElement* stanza) OVERRIDE;
+  int ProcessStart() override;
+  int ProcessResponse() override;
+  bool HandleStanza(const buzz::XmlElement* stanza) override;
 
  private:
   // Assembles an Xmpp stanza which can be sent to subscribe to notifications.

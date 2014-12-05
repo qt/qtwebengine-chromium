@@ -11,14 +11,15 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/sequenced_task_runner.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/win/scoped_handle.h"
+#include "device/bluetooth/bluetooth_device.h"
 #include "device/bluetooth/bluetooth_init_win.h"
+#include "device/bluetooth/bluetooth_low_energy_win.h"
 #include "device/bluetooth/bluetooth_service_record_win.h"
 #include "net/base/winsock_init.h"
 
@@ -28,9 +29,52 @@ const int kNumThreadsInWorkerPool = 3;
 const char kBluetoothThreadName[] = "BluetoothPollingThreadWin";
 const int kMaxNumDeviceAddressChar = 127;
 const int kServiceDiscoveryResultBufferSize = 5000;
-const int kMaxDeviceDiscoveryTimeout = 48;
+
+// See http://goo.gl/iNTRQe: cTimeoutMultiplier: A value that indicates the time
+// out for the inquiry, expressed in increments of 1.28 seconds. For example, an
+// inquiry of 12.8 seconds has a cTimeoutMultiplier value of 10. The maximum
+// value for this member is 48. When a value greater than 48 is used, the
+// calling function immediately fails and returns
+const int kMaxDeviceDiscoveryTimeoutMultiplier = 48;
 
 typedef device::BluetoothTaskManagerWin::ServiceRecordState ServiceRecordState;
+
+// Note: The string returned here must have the same format as
+// BluetoothDevice::CanonicalizeAddress.
+std::string BluetoothAddressToCanonicalString(const BLUETOOTH_ADDRESS& btha) {
+  std::string result = base::StringPrintf("%02X:%02X:%02X:%02X:%02X:%02X",
+                                          btha.rgBytes[5],
+                                          btha.rgBytes[4],
+                                          btha.rgBytes[3],
+                                          btha.rgBytes[2],
+                                          btha.rgBytes[1],
+                                          btha.rgBytes[0]);
+  DCHECK_EQ(result, device::BluetoothDevice::CanonicalizeAddress(result));
+  return result;
+}
+
+device::BluetoothUUID BluetoothLowEnergyUuidToBluetoothUuid(
+    const BTH_LE_UUID& bth_le_uuid) {
+  if (bth_le_uuid.IsShortUuid) {
+    std::string uuid_hex =
+        base::StringPrintf("%04x", bth_le_uuid.Value.ShortUuid);
+    return device::BluetoothUUID(uuid_hex);
+  } else {
+    return device::BluetoothUUID(
+        base::StringPrintf("%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x",
+                           bth_le_uuid.Value.LongUuid.Data1,
+                           bth_le_uuid.Value.LongUuid.Data2,
+                           bth_le_uuid.Value.LongUuid.Data3,
+                           bth_le_uuid.Value.LongUuid.Data4[0],
+                           bth_le_uuid.Value.LongUuid.Data4[1],
+                           bth_le_uuid.Value.LongUuid.Data4[2],
+                           bth_le_uuid.Value.LongUuid.Data4[3],
+                           bth_le_uuid.Value.LongUuid.Data4[4],
+                           bth_le_uuid.Value.LongUuid.Data4[5],
+                           bth_le_uuid.Value.LongUuid.Data4[6],
+                           bth_le_uuid.Value.LongUuid.Data4[7]));
+  }
+}
 
 // Populates bluetooth adapter state using adapter_handle.
 void GetAdapterState(HANDLE adapter_handle,
@@ -43,13 +87,7 @@ void GetAdapterState(HANDLE adapter_handle,
       ERROR_SUCCESS == BluetoothGetRadioInfo(adapter_handle,
                                              &adapter_info)) {
     name = base::SysWideToUTF8(adapter_info.szName);
-    address = base::StringPrintf("%02X:%02X:%02X:%02X:%02X:%02X",
-        adapter_info.address.rgBytes[5],
-        adapter_info.address.rgBytes[4],
-        adapter_info.address.rgBytes[3],
-        adapter_info.address.rgBytes[2],
-        adapter_info.address.rgBytes[1],
-        adapter_info.address.rgBytes[0]);
+    address = BluetoothAddressToCanonicalString(adapter_info.address);
     powered = !!BluetoothIsConnectable(adapter_handle);
   }
   state->name = name;
@@ -60,60 +98,11 @@ void GetAdapterState(HANDLE adapter_handle,
 void GetDeviceState(const BLUETOOTH_DEVICE_INFO& device_info,
                     device::BluetoothTaskManagerWin::DeviceState* state) {
   state->name = base::SysWideToUTF8(device_info.szName);
-  state->address = base::StringPrintf("%02X:%02X:%02X:%02X:%02X:%02X",
-      device_info.Address.rgBytes[5],
-      device_info.Address.rgBytes[4],
-      device_info.Address.rgBytes[3],
-      device_info.Address.rgBytes[2],
-      device_info.Address.rgBytes[1],
-      device_info.Address.rgBytes[0]);
+  state->address = BluetoothAddressToCanonicalString(device_info.Address);
   state->bluetooth_class = device_info.ulClassofDevice;
   state->visible = true;
   state->connected = !!device_info.fConnected;
   state->authenticated = !!device_info.fAuthenticated;
-}
-
-void DiscoverDeviceServices(
-    const std::string& device_address,
-    const GUID& protocol_uuid,
-    ScopedVector<ServiceRecordState>* service_record_states) {
-  // Bluetooth and WSAQUERYSET for Service Inquiry. See http://goo.gl/2v9pyt.
-  WSAQUERYSET sdp_query;
-  ZeroMemory(&sdp_query, sizeof(sdp_query));
-  sdp_query.dwSize = sizeof(sdp_query);
-  GUID protocol = protocol_uuid;
-  sdp_query.lpServiceClassId = &protocol;
-  sdp_query.dwNameSpace = NS_BTH;
-  wchar_t device_address_context[kMaxNumDeviceAddressChar];
-  std::size_t length = base::SysUTF8ToWide("(" + device_address + ")").copy(
-      device_address_context, kMaxNumDeviceAddressChar);
-  device_address_context[length] = NULL;
-  sdp_query.lpszContext = device_address_context;
-  HANDLE sdp_handle;
-  if (ERROR_SUCCESS !=
-      WSALookupServiceBegin(&sdp_query, LUP_RETURN_ALL, &sdp_handle)) {
-    return;
-  }
-  char sdp_buffer[kServiceDiscoveryResultBufferSize];
-  LPWSAQUERYSET sdp_result_data = reinterpret_cast<LPWSAQUERYSET>(sdp_buffer);
-  while (true) {
-    DWORD sdp_buffer_size = sizeof(sdp_buffer);
-    if (ERROR_SUCCESS !=
-        WSALookupServiceNext(
-            sdp_handle, LUP_RETURN_ALL, &sdp_buffer_size, sdp_result_data)) {
-      break;
-    }
-    ServiceRecordState* service_record_state = new ServiceRecordState();
-    service_record_state->name =
-        base::SysWideToUTF8(sdp_result_data->lpszServiceInstanceName);
-    service_record_state->address = device_address;
-    for (uint64 i = 0; i < sdp_result_data->lpBlob->cbSize; i++) {
-      service_record_state->sdp_bytes.push_back(
-          sdp_result_data->lpBlob->pBlobData[i]);
-    }
-    service_record_states->push_back(service_record_state);
-  }
-  WSALookupServiceEnd(sdp_handle);
 }
 
 }  // namespace
@@ -148,7 +137,8 @@ BluetoothTaskManagerWin::DeviceState::~DeviceState() {
 BluetoothTaskManagerWin::BluetoothTaskManagerWin(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner)
     : ui_task_runner_(ui_task_runner),
-      discovering_(false) {
+      discovering_(false),
+      current_logging_batch_count_(0) {
 }
 
 BluetoothTaskManagerWin::~BluetoothTaskManagerWin() {
@@ -237,6 +227,38 @@ void BluetoothTaskManagerWin::PostStopDiscoveryTask() {
       base::Bind(&BluetoothTaskManagerWin::StopDiscovery, this));
 }
 
+void BluetoothTaskManagerWin::LogPollingError(const char* message,
+                                              int win32_error) {
+  const int kLogPeriodInMilliseconds = 60 * 1000;
+  const int kMaxMessagesPerLogPeriod = 10;
+
+  // Check if we need to discard this message
+  if (!current_logging_batch_ticks_.is_null()) {
+    if (base::TimeTicks::Now() - current_logging_batch_ticks_ <=
+        base::TimeDelta::FromMilliseconds(kLogPeriodInMilliseconds)) {
+      if (current_logging_batch_count_ >= kMaxMessagesPerLogPeriod)
+        return;
+    } else {
+      // The batch expired, reset it to "null".
+      current_logging_batch_ticks_ = base::TimeTicks();
+    }
+  }
+
+  // Keep track of this batch of messages
+  if (current_logging_batch_ticks_.is_null()) {
+    current_logging_batch_ticks_ = base::TimeTicks::Now();
+    current_logging_batch_count_ = 0;
+  }
+  ++current_logging_batch_count_;
+
+  // Log the message
+  if (win32_error == 0)
+    LOG(WARNING) << message;
+  else
+    LOG(WARNING) << message << ": "
+                 << logging::SystemErrorCodeToString(win32_error);
+}
+
 void BluetoothTaskManagerWin::OnAdapterStateChanged(const AdapterState* state) {
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
   FOR_EACH_OBSERVER(BluetoothTaskManagerWin::Observer, observers_,
@@ -255,18 +277,11 @@ void BluetoothTaskManagerWin::OnDiscoveryStopped() {
                     DiscoveryStopped());
 }
 
-void BluetoothTaskManagerWin::OnDevicesUpdated(
+void BluetoothTaskManagerWin::OnDevicesPolled(
     const ScopedVector<DeviceState>* devices) {
   DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-  FOR_EACH_OBSERVER(BluetoothTaskManagerWin::Observer, observers_,
-                    DevicesUpdated(*devices));
-}
-
-void BluetoothTaskManagerWin::OnDevicesDiscovered(
-    const ScopedVector<DeviceState>* devices) {
-  DCHECK(ui_task_runner_->RunsTasksOnCurrentThread());
-  FOR_EACH_OBSERVER(BluetoothTaskManagerWin::Observer, observers_,
-                    DevicesDiscovered(*devices));
+  FOR_EACH_OBSERVER(
+      BluetoothTaskManagerWin::Observer, observers_, DevicesPolled(*devices));
 }
 
 void BluetoothTaskManagerWin::PollAdapter() {
@@ -276,7 +291,7 @@ void BluetoothTaskManagerWin::PollAdapter() {
   if (!discovering_) {
     const BLUETOOTH_FIND_RADIO_PARAMS adapter_param =
         { sizeof(BLUETOOTH_FIND_RADIO_PARAMS) };
-    if (adapter_handle_)
+    if (adapter_handle_.IsValid())
       adapter_handle_.Close();
     HANDLE temp_adapter_handle;
     HBLUETOOTH_RADIO_FIND handle = BluetoothFindFirstRadio(
@@ -287,6 +302,7 @@ void BluetoothTaskManagerWin::PollAdapter() {
       GetKnownDevices();
       BluetoothFindRadioClose(handle);
     }
+
     PostAdapterStateToUi();
   }
 
@@ -301,7 +317,7 @@ void BluetoothTaskManagerWin::PollAdapter() {
 void BluetoothTaskManagerWin::PostAdapterStateToUi() {
   DCHECK(bluetooth_task_runner_->RunsTasksOnCurrentThread());
   AdapterState* state = new AdapterState();
-  GetAdapterState(adapter_handle_, state);
+  GetAdapterState(adapter_handle_.Get(), state);
   ui_task_runner_->PostTask(
       FROM_HERE,
       base::Bind(&BluetoothTaskManagerWin::OnAdapterStateChanged,
@@ -315,10 +331,11 @@ void BluetoothTaskManagerWin::SetPowered(
     const BluetoothAdapter::ErrorCallback& error_callback) {
   DCHECK(bluetooth_task_runner_->RunsTasksOnCurrentThread());
   bool success = false;
-  if (adapter_handle_) {
+  if (adapter_handle_.IsValid()) {
     if (!powered)
-      BluetoothEnableDiscovery(adapter_handle_, false);
-    success = !!BluetoothEnableIncomingConnections(adapter_handle_, powered);
+      BluetoothEnableDiscovery(adapter_handle_.Get(), false);
+    success =
+        !!BluetoothEnableIncomingConnections(adapter_handle_.Get(), powered);
   }
 
   if (success) {
@@ -335,8 +352,8 @@ void BluetoothTaskManagerWin::StartDiscovery() {
       FROM_HERE,
       base::Bind(&BluetoothTaskManagerWin::OnDiscoveryStarted,
                  this,
-                 !!adapter_handle_));
-  if (!adapter_handle_)
+                 adapter_handle_.IsValid()));
+  if (!adapter_handle_.IsValid())
     return;
   discovering_ = true;
 
@@ -351,101 +368,291 @@ void BluetoothTaskManagerWin::StopDiscovery() {
       base::Bind(&BluetoothTaskManagerWin::OnDiscoveryStopped, this));
 }
 
-void BluetoothTaskManagerWin::DiscoverDevices(int timeout) {
+void BluetoothTaskManagerWin::DiscoverDevices(int timeout_multiplier) {
   DCHECK(bluetooth_task_runner_->RunsTasksOnCurrentThread());
-  if (!discovering_ || !adapter_handle_) {
+  if (!discovering_ || !adapter_handle_.IsValid()) {
     ui_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(&BluetoothTaskManagerWin::OnDiscoveryStopped, this));
     return;
   }
 
-  ScopedVector<DeviceState>* device_list = new ScopedVector<DeviceState>();
-  SearchDevices(timeout, false, device_list);
-  if (device_list->empty()) {
-    delete device_list;
-  } else {
-    DiscoverServices(device_list);
+  scoped_ptr<ScopedVector<DeviceState> > device_list(
+      new ScopedVector<DeviceState>());
+  if (SearchDevices(timeout_multiplier, false, device_list.get())) {
     ui_task_runner_->PostTask(
         FROM_HERE,
-        base::Bind(&BluetoothTaskManagerWin::OnDevicesDiscovered,
+        base::Bind(&BluetoothTaskManagerWin::OnDevicesPolled,
                    this,
-                   base::Owned(device_list)));
+                   base::Owned(device_list.release())));
   }
 
-  if (timeout < kMaxDeviceDiscoveryTimeout) {
-    bluetooth_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BluetoothTaskManagerWin::DiscoverDevices,
-                   this,
-                   timeout + 1));
-  } else {
-    ui_task_runner_->PostTask(
-        FROM_HERE,
-        base::Bind(&BluetoothTaskManagerWin::OnDiscoveryStopped, this));
-    discovering_ = false;
-  }
+  if (timeout_multiplier < kMaxDeviceDiscoveryTimeoutMultiplier)
+    ++timeout_multiplier;
+  bluetooth_task_runner_->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &BluetoothTaskManagerWin::DiscoverDevices, this, timeout_multiplier));
 }
 
 void BluetoothTaskManagerWin::GetKnownDevices() {
-  ScopedVector<DeviceState>* device_list = new ScopedVector<DeviceState>();
-  SearchDevices(1, true, device_list);
-  if (device_list->empty()) {
-    delete device_list;
-    return;
+  scoped_ptr<ScopedVector<DeviceState> > device_list(
+      new ScopedVector<DeviceState>());
+  if (SearchDevices(1, true, device_list.get())) {
+    ui_task_runner_->PostTask(
+        FROM_HERE,
+        base::Bind(&BluetoothTaskManagerWin::OnDevicesPolled,
+                   this,
+                   base::Owned(device_list.release())));
   }
-  DiscoverServices(device_list);
-  ui_task_runner_->PostTask(
-      FROM_HERE,
-      base::Bind(&BluetoothTaskManagerWin::OnDevicesUpdated,
-                 this,
-                 base::Owned(device_list)));
 }
 
-void BluetoothTaskManagerWin::SearchDevices(
-    int timeout,
+bool BluetoothTaskManagerWin::SearchDevices(
+    int timeout_multiplier,
     bool search_cached_devices_only,
     ScopedVector<DeviceState>* device_list) {
-  BLUETOOTH_DEVICE_SEARCH_PARAMS device_search_params = {
-      sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS),
-      1,  // return authenticated devices
-      1,  // return remembered devicess
-      search_cached_devices_only ? 0 : 1,  // return unknown devices
-      1,  // return connected devices
-      search_cached_devices_only ? 0 : 1,  // issue a new inquiry
-      timeout,  // timeout for the inquiry in increments of 1.28 seconds
-      adapter_handle_
-  };
-
-  BLUETOOTH_DEVICE_INFO device_info = { sizeof(BLUETOOTH_DEVICE_INFO), 0 };
-  // Issues a device inquiry and waits for |timeout| * 1.28 seconds.
-  HBLUETOOTH_DEVICE_FIND handle =
-      BluetoothFindFirstDevice(&device_search_params, &device_info);
-  if (handle) {
-    do {
-      DeviceState* device_state = new DeviceState();
-      GetDeviceState(device_info, device_state);
-      device_list->push_back(device_state);
-    } while (BluetoothFindNextDevice(handle, &device_info));
-
-    BluetoothFindDeviceClose(handle);
-  }
+  return SearchClassicDevices(
+             timeout_multiplier, search_cached_devices_only, device_list) &&
+         SearchLowEnergyDevices(device_list) &&
+         DiscoverServices(device_list, search_cached_devices_only);
 }
 
-void BluetoothTaskManagerWin::DiscoverServices(
+bool BluetoothTaskManagerWin::SearchClassicDevices(
+    int timeout_multiplier,
+    bool search_cached_devices_only,
     ScopedVector<DeviceState>* device_list) {
+  // Issues a device inquiry and waits for |timeout_multiplier| * 1.28 seconds.
+  BLUETOOTH_DEVICE_SEARCH_PARAMS device_search_params;
+  ZeroMemory(&device_search_params, sizeof(device_search_params));
+  device_search_params.dwSize = sizeof(BLUETOOTH_DEVICE_SEARCH_PARAMS);
+  device_search_params.fReturnAuthenticated = 1;
+  device_search_params.fReturnRemembered = 1;
+  device_search_params.fReturnUnknown = (search_cached_devices_only ? 0 : 1);
+  device_search_params.fReturnConnected = 1;
+  device_search_params.fIssueInquiry = (search_cached_devices_only ? 0 : 1);
+  device_search_params.cTimeoutMultiplier = timeout_multiplier;
+
+  BLUETOOTH_DEVICE_INFO device_info;
+  ZeroMemory(&device_info, sizeof(device_info));
+  device_info.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+  HBLUETOOTH_DEVICE_FIND handle =
+      BluetoothFindFirstDevice(&device_search_params, &device_info);
+  if (!handle) {
+    int last_error = GetLastError();
+    if (last_error == ERROR_NO_MORE_ITEMS) {
+      return true;  // No devices is not an error.
+    }
+    LogPollingError("Error calling BluetoothFindFirstDevice", last_error);
+    return false;
+  }
+
+  while (true) {
+    DeviceState* device_state = new DeviceState();
+    GetDeviceState(device_info, device_state);
+    device_list->push_back(device_state);
+
+    // Reset device info before next call (as a safety precaution).
+    ZeroMemory(&device_info, sizeof(device_info));
+    device_info.dwSize = sizeof(BLUETOOTH_DEVICE_INFO);
+    if (!BluetoothFindNextDevice(handle, &device_info)) {
+      int last_error = GetLastError();
+      if (last_error == ERROR_NO_MORE_ITEMS) {
+        break;  // No more items is expected error when done enumerating.
+      }
+      LogPollingError("Error calling BluetoothFindNextDevice", last_error);
+      BluetoothFindDeviceClose(handle);
+      return false;
+    }
+  }
+
+  if (!BluetoothFindDeviceClose(handle)) {
+    LogPollingError("Error calling BluetoothFindDeviceClose", GetLastError());
+    return false;
+  }
+  return true;
+}
+
+bool BluetoothTaskManagerWin::SearchLowEnergyDevices(
+    ScopedVector<DeviceState>* device_list) {
+  if (!win::IsBluetoothLowEnergySupported())
+    return true;  // Bluetooth LE not supported is not an error.
+
+  ScopedVector<win::BluetoothLowEnergyDeviceInfo> btle_devices;
+  std::string error;
+  bool success =
+      win::EnumerateKnownBluetoothLowEnergyDevices(&btle_devices, &error);
+  if (!success) {
+    LogPollingError(error.c_str(), 0);
+    return false;
+  }
+
+  for (ScopedVector<win::BluetoothLowEnergyDeviceInfo>::iterator iter =
+           btle_devices.begin();
+       iter != btle_devices.end();
+       ++iter) {
+    win::BluetoothLowEnergyDeviceInfo* device_info = (*iter);
+    DeviceState* device_state = new DeviceState();
+    device_state->name = device_info->friendly_name;
+    device_state->address =
+        BluetoothAddressToCanonicalString(device_info->address);
+    device_state->visible = device_info->visible;
+    device_state->authenticated = device_info->authenticated;
+    device_state->connected = device_info->connected;
+    device_state->path = device_info->path;
+    device_list->push_back(device_state);
+  }
+  return true;
+}
+
+bool BluetoothTaskManagerWin::DiscoverServices(
+    ScopedVector<DeviceState>* device_list,
+    bool search_cached_services_only) {
   DCHECK(bluetooth_task_runner_->RunsTasksOnCurrentThread());
   net::EnsureWinsockInit();
   for (ScopedVector<DeviceState>::iterator iter = device_list->begin();
       iter != device_list->end();
       ++iter) {
-    const std::string device_address = (*iter)->address;
+    DeviceState* device = (*iter);
     ScopedVector<ServiceRecordState>* service_record_states =
         &(*iter)->service_record_states;
 
-    DiscoverDeviceServices(
-        device_address, L2CAP_PROTOCOL_UUID, service_record_states);
+    if ((*iter)->is_bluetooth_classic()) {
+      if (!DiscoverClassicDeviceServices(device->address,
+                                         L2CAP_PROTOCOL_UUID,
+                                         search_cached_services_only,
+                                         service_record_states)) {
+        return false;
+      }
+    } else {
+      if (!DiscoverLowEnergyDeviceServices(device->path,
+                                           service_record_states)) {
+        return false;
+      }
+    }
   }
+  return true;
+}
+
+bool BluetoothTaskManagerWin::DiscoverClassicDeviceServices(
+    const std::string& device_address,
+    const GUID& protocol_uuid,
+    bool search_cached_services_only,
+    ScopedVector<ServiceRecordState>* service_record_states) {
+  int error_code =
+      DiscoverClassicDeviceServicesWorker(device_address,
+                                          protocol_uuid,
+                                          search_cached_services_only,
+                                          service_record_states);
+  // If the device is "offline", no services are returned when specifying
+  // "LUP_FLUSHCACHE". Try again without flushing the cache so that the list
+  // of previously known services is returned.
+  if (!search_cached_services_only &&
+      (error_code == WSASERVICE_NOT_FOUND || error_code == WSANO_DATA)) {
+    error_code = DiscoverClassicDeviceServicesWorker(
+        device_address, protocol_uuid, true, service_record_states);
+  }
+
+  return (error_code == ERROR_SUCCESS);
+}
+
+int BluetoothTaskManagerWin::DiscoverClassicDeviceServicesWorker(
+    const std::string& device_address,
+    const GUID& protocol_uuid,
+    bool search_cached_services_only,
+    ScopedVector<ServiceRecordState>* service_record_states) {
+  // Bluetooth and WSAQUERYSET for Service Inquiry. See http://goo.gl/2v9pyt.
+  WSAQUERYSET sdp_query;
+  ZeroMemory(&sdp_query, sizeof(sdp_query));
+  sdp_query.dwSize = sizeof(sdp_query);
+  GUID protocol = protocol_uuid;
+  sdp_query.lpServiceClassId = &protocol;
+  sdp_query.dwNameSpace = NS_BTH;
+  wchar_t device_address_context[kMaxNumDeviceAddressChar];
+  std::size_t length = base::SysUTF8ToWide("(" + device_address + ")").copy(
+      device_address_context, kMaxNumDeviceAddressChar);
+  device_address_context[length] = NULL;
+  sdp_query.lpszContext = device_address_context;
+  DWORD control_flags = LUP_RETURN_ALL;
+  // See http://goo.gl/t1Hulo: "Applications should generally specify
+  // LUP_FLUSHCACHE. This flag instructs the system to ignore any cached
+  // information and establish an over-the-air SDP connection to the specified
+  // device to perform the SDP search. This non-cached operation may take
+  // several seconds (whereas a cached search returns quickly)."
+  // In summary, we need to specify LUP_FLUSHCACHE if we want to obtain the list
+  // of services for devices which have not been discovered before.
+  if (!search_cached_services_only)
+    control_flags |= LUP_FLUSHCACHE;
+  HANDLE sdp_handle;
+  if (ERROR_SUCCESS !=
+      WSALookupServiceBegin(&sdp_query, control_flags, &sdp_handle)) {
+    int last_error = WSAGetLastError();
+    // If the device is "offline", no services are returned when specifying
+    // "LUP_FLUSHCACHE". Don't log error in that case.
+    if (!search_cached_services_only &&
+        (last_error == WSASERVICE_NOT_FOUND || last_error == WSANO_DATA)) {
+      return last_error;
+    }
+    LogPollingError("Error calling WSALookupServiceBegin", last_error);
+    return last_error;
+  }
+  char sdp_buffer[kServiceDiscoveryResultBufferSize];
+  LPWSAQUERYSET sdp_result_data = reinterpret_cast<LPWSAQUERYSET>(sdp_buffer);
+  while (true) {
+    DWORD sdp_buffer_size = sizeof(sdp_buffer);
+    if (ERROR_SUCCESS !=
+        WSALookupServiceNext(
+            sdp_handle, control_flags, &sdp_buffer_size, sdp_result_data)) {
+      int last_error = WSAGetLastError();
+      if (last_error == WSA_E_NO_MORE || last_error == WSAENOMORE) {
+        break;
+      }
+      LogPollingError("Error calling WSALookupServiceNext", last_error);
+      WSALookupServiceEnd(sdp_handle);
+      return last_error;
+    }
+    ServiceRecordState* service_record_state = new ServiceRecordState();
+    service_record_state->name =
+        base::SysWideToUTF8(sdp_result_data->lpszServiceInstanceName);
+    for (uint64 i = 0; i < sdp_result_data->lpBlob->cbSize; i++) {
+      service_record_state->sdp_bytes.push_back(
+          sdp_result_data->lpBlob->pBlobData[i]);
+    }
+    service_record_states->push_back(service_record_state);
+  }
+  if (ERROR_SUCCESS != WSALookupServiceEnd(sdp_handle)) {
+    int last_error = WSAGetLastError();
+    LogPollingError("Error calling WSALookupServiceEnd", last_error);
+    return last_error;
+  }
+
+  return ERROR_SUCCESS;
+}
+
+bool BluetoothTaskManagerWin::DiscoverLowEnergyDeviceServices(
+    const base::FilePath& device_path,
+    ScopedVector<ServiceRecordState>* service_record_states) {
+  if (!win::IsBluetoothLowEnergySupported())
+    return true;  // Bluetooth LE not supported is not an error.
+
+  std::string error;
+  ScopedVector<win::BluetoothLowEnergyServiceInfo> services;
+  bool success = win::EnumerateKnownBluetoothLowEnergyServices(
+      device_path, &services, &error);
+  if (!success) {
+    LogPollingError(error.c_str(), 0);
+    return false;
+  }
+
+  for (ScopedVector<win::BluetoothLowEnergyServiceInfo>::iterator iter2 =
+           services.begin();
+       iter2 != services.end();
+       ++iter2) {
+    ServiceRecordState* service_state = new ServiceRecordState();
+    service_state->gatt_uuid =
+        BluetoothLowEnergyUuidToBluetoothUuid((*iter2)->uuid);
+    service_record_states->push_back(service_state);
+  }
+  return true;
 }
 
 }  // namespace device

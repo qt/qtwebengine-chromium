@@ -13,6 +13,16 @@
         'angle_id_header_base': 'commit.h',
         'angle_id_header': '<(angle_gen_path)/id/<(angle_id_header_base)',
         'angle_use_commit_id%': '<!(python <(angle_id_script_base) check ..)',
+        'angle_enable_d3d9%': 0,
+        'angle_enable_d3d11%': 0,
+        'conditions':
+        [
+            ['OS=="win"',
+            {
+                'angle_enable_d3d9%': 1,
+                'angle_enable_d3d11%': 1,
+            }],
+        ],
     },
     'includes':
     [
@@ -26,12 +36,26 @@
         {
             'target_name': 'copy_scripts',
             'type': 'none',
+            'includes': [ '../build/common_defines.gypi', ],
+            'hard_dependency': 1,
             'copies':
             [
                 {
                     'destination': '<(angle_gen_path)',
                     'files': [ 'copy_compiler_dll.bat', '<(angle_id_script_base)' ],
                 },
+            ],
+            'conditions':
+            [
+                ['angle_build_winrt==1',
+                {
+                    'msvs_enable_winrt' : '1',
+                    'type' : 'shared_library',
+                }],
+                ['angle_build_winphone==1',
+                {
+                    'msvs_enable_winphone' : '1',
+                }],
             ],
         },
     ],
@@ -46,6 +70,7 @@
                     'type': 'none',
                     'includes': [ '../build/common_defines.gypi', ],
                     'dependencies': [ 'copy_scripts', ],
+                    'hard_dependency': 1,
                     'actions':
                     [
                         {
@@ -61,13 +86,25 @@
                             ],
                         },
                     ],
-                    'direct_dependent_settings':
+                    'all_dependent_settings':
                     {
                         'include_dirs':
                         [
                             '<(angle_gen_path)',
                         ],
                     },
+                    'conditions':
+                    [
+                        ['angle_build_winrt==1',
+                        {
+                            'msvs_enable_winrt' : '1',
+                            'type' : 'shared_library',
+                        }],
+                        ['angle_build_winphone==1',
+                        {
+                            'msvs_enable_winphone' : '1',
+                        }],
+                    ],
                 }
             ]
         },
@@ -77,6 +114,8 @@
                 {
                     'target_name': 'commit_id',
                     'type': 'none',
+                    'hard_dependency': 1,
+                    'includes': [ '../build/common_defines.gypi', ],
                     'copies':
                     [
                         {
@@ -84,13 +123,25 @@
                             'files': [ '<(angle_id_header_base)' ]
                         }
                     ],
-                    'direct_dependent_settings':
+                    'all_dependent_settings':
                     {
                         'include_dirs':
                         [
                             '<(angle_gen_path)',
                         ],
                     },
+                    'conditions':
+                    [
+                        ['angle_build_winrt==1',
+                        {
+                            'msvs_enable_winrt' : '1',
+                            'type' : 'shared_library',
+                        }],
+                        ['angle_build_winphone==1',
+                        {
+                            'msvs_enable_winphone' : '1',
+                        }],
+                    ],
                 }
             ]
         }],
@@ -103,23 +154,38 @@
                     'type': 'none',
                     'dependencies': [ 'copy_scripts', ],
                     'includes': [ '../build/common_defines.gypi', ],
-                    'actions':
+                    'conditions':
                     [
+                        ['angle_build_winrt==0',
                         {
-                            'action_name': 'copy_dll',
-                            'message': 'Copying D3D Compiler DLL...',
-                            'msvs_cygwin_shell': 0,
-                            'inputs': [ 'copy_compiler_dll.bat' ],
-                            'outputs': [ '<(PRODUCT_DIR)/D3DCompiler_46.dll' ],
-                            'action':
+                            'actions':
                             [
-                                "<(angle_gen_path)/copy_compiler_dll.bat",
-                                "$(PlatformName)",
-                                "<(windows_sdk_path)",
-                                "<(PRODUCT_DIR)"
-                            ],
-                        },
-                    ], #actions
+                                {
+                                    'action_name': 'copy_dll',
+                                    'message': 'Copying D3D Compiler DLL...',
+                                    'msvs_cygwin_shell': 0,
+                                    'inputs': [ 'copy_compiler_dll.bat' ],
+                                    'outputs': [ '<(PRODUCT_DIR)/d3dcompiler_46.dll' ],
+                                    'action':
+                                    [
+                                        "<(angle_gen_path)/copy_compiler_dll.bat",
+                                        "$(PlatformName)",
+                                        "<(windows_sdk_path)",
+                                        "<(PRODUCT_DIR)"
+                                    ],
+                                },
+                            ], #actions
+                        }],
+                        ['angle_build_winrt==1',
+                        {
+                            'msvs_enable_winrt' : '1',
+                            'type' : 'shared_library',
+                        }],
+                        ['angle_build_winphone==1',
+                        {
+                            'msvs_enable_winphone' : '1',
+                        }],
+                    ]
                 },
             ], # targets
         }],

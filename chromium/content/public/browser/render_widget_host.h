@@ -114,7 +114,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // hosts.
   static scoped_ptr<RenderWidgetHostIterator> GetRenderWidgetHosts();
 
-  virtual ~RenderWidgetHost() {}
+  ~RenderWidgetHost() override {}
 
   // Update the text direction of the focused input element and notify it to a
   // renderer process.
@@ -181,49 +181,13 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
       const gfx::Rect& src_rect,
       const gfx::Size& accelerated_dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config& bitmap_config) = 0;
+      const SkColorType color_type) = 0;
   // Ensures that the view does not drop the backing store even when hidden.
   virtual bool CanCopyFromBackingStore() = 0;
 #if defined(OS_ANDROID)
   virtual void LockBackingStore() = 0;
   virtual void UnlockBackingStore() = 0;
 #endif
-
-  // Send a command to the renderer to turn on full accessibility.
-  virtual void EnableFullAccessibilityMode() = 0;
-
-  // Check whether this RenderWidget has full accessibility mode.
-  virtual bool IsFullAccessibilityModeForTesting() = 0;
-
-  // Send a command to the renderer to turn on tree only accessibility.
-  virtual void EnableTreeOnlyAccessibilityMode() = 0;
-
-  // Check whether this RenderWidget has tree-only accessibility mode.
-  virtual bool IsTreeOnlyAccessibilityModeForTesting() = 0;
-
-  // Relay a request from assistive technology to perform the default action
-  // on a given node.
-  virtual void AccessibilityDoDefaultAction(int object_id) = 0;
-
-  // Relay a request from assistive technology to set focus to a given node.
-  virtual void AccessibilitySetFocus(int object_id) = 0;
-
-  // Relay a request from assistive technology to make a given object
-  // visible by scrolling as many scrollable containers as necessary.
-  // In addition, if it's not possible to make the entire object visible,
-  // scroll so that the |subfocus| rect is visible at least. The subfocus
-  // rect is in local coordinates of the object itself.
-  virtual void AccessibilityScrollToMakeVisible(
-      int acc_obj_id, gfx::Rect subfocus) = 0;
-
-  // Relay a request from assistive technology to move a given object
-  // to a specific location, in the WebContents area coordinate space, i.e.
-  // (0, 0) is the top-left corner of the WebContents.
-  virtual void AccessibilityScrollToPoint(int acc_obj_id, gfx::Point point) = 0;
-
-  // Relay a request from assistive technology to set text selection.
-  virtual void AccessibilitySetTextSelection(
-      int acc_obj_id, int start_offset, int end_offset) = 0;
 
   // Forwards the given message to the renderer. These are called by
   // the view when it has received a message.
@@ -233,8 +197,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
       const blink::WebMouseWheelEvent& wheel_event) = 0;
   virtual void ForwardKeyboardEvent(
       const NativeWebKeyboardEvent& key_event) = 0;
-
-  virtual const gfx::Vector2d& GetLastScrollOffset() const = 0;
 
   virtual RenderProcessHost* GetProcess() const = 0;
 
@@ -265,9 +227,6 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
 
   virtual void SetIgnoreInputEvents(bool ignore_input_events) = 0;
 
-  // Stops loading the page.
-  virtual void Stop() = 0;
-
   // Called to notify the RenderWidget that it has been resized.
   virtual void WasResized() = 0;
 
@@ -290,7 +249,7 @@ class CONTENT_EXPORT RenderWidgetHost : public IPC::Sender {
   // Get the screen info corresponding to this render widget.
   virtual void GetWebScreenInfo(blink::WebScreenInfo* result) = 0;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() = 0;
+  virtual SkColorType PreferredReadbackFormat() = 0;
 
  protected:
   friend class RenderWidgetHostImpl;

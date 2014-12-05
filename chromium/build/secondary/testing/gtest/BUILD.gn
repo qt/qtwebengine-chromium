@@ -9,11 +9,12 @@ config("gtest_config") {
   ]
 
   defines = [
-    "UNIT_TEST",
 
     # In order to allow regex matches in gtest to be shared between Windows
     # and other systems, we tell gtest to always use it's internal engine.
     "GTEST_HAS_POSIX_RE=0",
+    # Chrome doesn't support / require C++11, yet.
+    "GTEST_LANG_CXX11=0",
   ]
 
   # Gtest headers need to be able to find themselves.
@@ -52,7 +53,14 @@ config("gtest_config") {
   }
 }
 
+config("gtest_direct_config") {
+  visibility = [ ":*" ]
+  defines = [ "UNIT_TEST" ]
+}
+
 static_library("gtest") {
+  # TODO http://crbug.com/412064 enable this flag all the time.
+  testonly = !is_component_build
   sources = [
     "include/gtest/gtest-death-test.h",
     "include/gtest/gtest-message.h",
@@ -98,12 +106,15 @@ static_library("gtest") {
   include_dirs = [ "." ]
 
   all_dependent_configs = [ ":gtest_config" ]
+  public_configs = [ ":gtest_direct_config" ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
 }
 
 source_set("gtest_main") {
+  # TODO http://crbug.com/412064 enable this flag all the time.
+  testonly = !is_component_build
   sources = [ "src/gtest_main.cc" ]
   deps = [ ":gtest" ]
 }

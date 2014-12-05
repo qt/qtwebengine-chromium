@@ -1,147 +1,315 @@
 /*
- * Copyright (C) 2012 Google Inc. All rights reserved.
+ * Copyright (C) 2013 Google Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
+ * modification, are permitted provided that the following conditions are
+ * met:
  *
- * 1.  Redistributions of source code must retain the above copyright
- *     notice, this list of conditions and the following disclaimer.
- * 2.  Redistributions in binary form must reproduce the above copyright
- *     notice, this list of conditions and the following disclaimer in the
- *     documentation and/or other materials provided with the distribution.
+ *     * Redistributions of source code must retain the above copyright
+ * notice, this list of conditions and the following disclaimer.
+ *     * Redistributions in binary form must reproduce the above
+ * copyright notice, this list of conditions and the following disclaimer
+ * in the documentation and/or other materials provided with the
+ * distribution.
+ *     * Neither the name of Google Inc. nor the names of its
+ * contributors may be used to endorse or promote products derived from
+ * this software without specific prior written permission.
  *
- * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY
- * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
- * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
- * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+ * LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+ * A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+ * OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ * LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+ * DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+ * THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+ * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+ * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 #ifndef TextAutosizer_h
 #define TextAutosizer_h
 
-#include "core/HTMLNames.h"
-#include "platform/text/WritingMode.h"
+#include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderTable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
+#include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class RenderBlock;
-class RenderObject;
-struct TextAutosizingWindowInfo;
+class RenderListItem;
+class RenderListMarker;
 
-// Represents cluster related data. Instances should not persist between calls to processSubtree.
-struct TextAutosizingClusterInfo {
-    explicit TextAutosizingClusterInfo(RenderBlock* root)
-        : root(root)
-        , blockContainingAllText(0)
-        , maxAllowedDifferenceFromTextWidth(150)
-    {
-    }
+// Single-pass text autosizer. Documentation at:
+// http://tinyurl.com/TextAutosizer
 
-    RenderBlock* root;
-    const RenderBlock* blockContainingAllText;
-
-    // Upper limit on the difference between the width of the cluster's block containing all
-    // text and that of a narrow child before the child becomes a separate cluster.
-    float maxAllowedDifferenceFromTextWidth;
-
-    // Descendants of the cluster that are narrower than the block containing all text and must be
-    // processed together.
-    Vector<TextAutosizingClusterInfo> narrowDescendants;
-};
-
-class TextAutosizer FINAL {
+class TextAutosizer final : public NoBaseWillBeGarbageCollectedFinalized<TextAutosizer> {
     WTF_MAKE_NONCOPYABLE(TextAutosizer);
-
 public:
-    static PassOwnPtr<TextAutosizer> create(Document* document) { return adoptPtr(new TextAutosizer(document)); }
-
-    bool processSubtree(RenderObject* layoutRoot);
-    void recalculateMultipliers();
-
+    static PassOwnPtrWillBeRawPtr<TextAutosizer> create(const Document* document)
+    {
+        return adoptPtrWillBeNoop(new TextAutosizer(document));
+    }
     static float computeAutosizedFontSize(float specifiedSize, float multiplier);
 
-private:
-    friend class FastTextAutosizer;
+    void updatePageInfoInAllFrames();
+    void updatePageInfo();
+    void record(const RenderBlock*);
+    void destroy(const RenderBlock*);
+    void inflateListItem(RenderListItem*, RenderListMarker*);
 
-    enum TraversalDirection {
-        FirstToLast,
-        LastToFirst
+    void trace(Visitor*);
+
+    class LayoutScope {
+    public:
+        explicit LayoutScope(RenderBlock*);
+        ~LayoutScope();
+    protected:
+        TextAutosizer* m_textAutosizer;
+        RenderBlock* m_block;
     };
 
-    explicit TextAutosizer(Document*);
+    class TableLayoutScope : LayoutScope {
+    public:
+        explicit TableLayoutScope(RenderTable*);
+    };
 
-    bool isApplicable() const;
-    float clusterMultiplier(WritingMode, const TextAutosizingWindowInfo&, float textWidth) const;
+    class DeferUpdatePageInfo {
+        STACK_ALLOCATED();
+    public:
+        explicit DeferUpdatePageInfo(Page*);
+        ~DeferUpdatePageInfo();
+    private:
+        RefPtrWillBeMember<LocalFrame> m_mainFrame;
+    };
 
-    void processClusterInternal(TextAutosizingClusterInfo&, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&, float multiplier);
-    void processCluster(TextAutosizingClusterInfo&, RenderBlock* container, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
-    void processCompositeCluster(Vector<TextAutosizingClusterInfo>&, const TextAutosizingWindowInfo&);
-    void processContainer(float multiplier, RenderBlock* container, TextAutosizingClusterInfo&, RenderObject* subtreeRoot, const TextAutosizingWindowInfo&);
+private:
+    typedef HashSet<const RenderBlock*> BlockSet;
 
-    void setMultiplier(RenderObject*, float);
-    void setMultiplierForList(RenderObject* renderer, float multiplier);
+    enum HasEnoughTextToAutosize {
+        UnknownAmountOfText,
+        HasEnoughText,
+        NotEnoughText
+    };
 
-    unsigned getCachedHash(const RenderObject* renderer, bool putInCacheIfAbsent);
+    enum RelayoutBehavior {
+        AlreadyInLayout, // The default; appropriate if we are already in layout.
+        LayoutNeeded // Use this if changing a multiplier outside of layout.
+    };
 
-    static bool isAutosizingContainer(const RenderObject*);
-    static bool isNarrowDescendant(const RenderBlock*, TextAutosizingClusterInfo& parentClusterInfo);
-    static bool isWiderDescendant(const RenderBlock*, const TextAutosizingClusterInfo& parentClusterInfo);
-    static bool isIndependentDescendant(const RenderBlock*);
-    static bool isAutosizingCluster(const RenderBlock*, TextAutosizingClusterInfo& parentClusterInfo);
+    enum BeginLayoutBehavior {
+        StopLayout,
+        ContinueLayout
+    };
 
-    static bool containerShouldBeAutosized(const RenderBlock* container);
-    static bool containerContainsOneOfTags(const RenderBlock* cluster, const Vector<QualifiedName>& tags);
-    static bool containerIsRowOfLinks(const RenderObject* container);
-    static bool contentHeightIsConstrained(const RenderBlock* container);
-    static bool compositeClusterShouldBeAutosized(Vector<TextAutosizingClusterInfo>&, float blockWidth);
-    static void measureDescendantTextWidth(const RenderBlock* container, TextAutosizingClusterInfo&, float minTextWidth, float& textWidth);
-    unsigned computeCompositeClusterHash(Vector<TextAutosizingClusterInfo>&);
-    float computeMultiplier(Vector<TextAutosizingClusterInfo>&, const TextAutosizingWindowInfo&, float textWidth);
+    enum InflateBehavior {
+        ThisBlockOnly,
+        DescendToInnerBlocks
+    };
 
-    // Use to traverse the tree of descendants, excluding descendants of containers (but returning the containers themselves).
-    static RenderObject* nextInPreOrderSkippingDescendantsOfContainers(const RenderObject*, const RenderObject* stayWithin);
+    enum BlockFlag {
+        // A block that is evaluated for becoming a cluster root.
+        POTENTIAL_ROOT = 1 << 0,
+        // A cluster root that establishes an independent multiplier.
+        INDEPENDENT = 1 << 1,
+        // A cluster root with an explicit width. These are likely to be independent.
+        EXPLICIT_WIDTH = 1 << 2,
+        // A cluster that is wider or narrower than its parent. These also create an
+        // independent multiplier, but this state cannot be determined until layout.
+        WIDER_OR_NARROWER = 1 << 3,
+        // A cluster that suppresses autosizing.
+        SUPPRESSING = 1 << 4
+    };
 
-    static const RenderBlock* findDeepestBlockContainingAllText(const RenderBlock* cluster);
+    typedef unsigned BlockFlags;
 
-    // Depending on the traversal direction specified, finds the first or the last leaf text node child that doesn't
-    // belong to any cluster.
-    static const RenderObject* findFirstTextLeafNotInCluster(const RenderObject*, size_t& depth, TraversalDirection);
+    // A supercluster represents autosizing information about a set of two or
+    // more blocks that all have the same fingerprint. Clusters whose roots
+    // belong to a supercluster will share a common multiplier and
+    // text-length-based autosizing status.
+    struct Supercluster {
+        explicit Supercluster(const BlockSet* roots)
+            : m_roots(roots)
+            , m_hasEnoughTextToAutosize(UnknownAmountOfText)
+            , m_multiplier(0)
+        {
+        }
 
-    // Returns groups of narrow descendants of a given autosizing cluster. The groups are combined
-    // by the difference between the width of the descendant and the width of the parent cluster's
-    // |blockContainingAllText|.
-    static void getNarrowDescendantsGroupedByWidth(const TextAutosizingClusterInfo& parentClusterInfo, Vector<Vector<TextAutosizingClusterInfo> >&);
+        const BlockSet* const m_roots;
+        HasEnoughTextToAutosize m_hasEnoughTextToAutosize;
+        float m_multiplier;
+    };
 
-    void addNonAutosizedCluster(unsigned key, TextAutosizingClusterInfo& value);
-    void secondPassProcessStaleNonAutosizedClusters();
-    void processStaleContainer(float multiplier, RenderBlock* cluster, TextAutosizingClusterInfo&);
+    struct Cluster {
+        explicit Cluster(const RenderBlock* root, BlockFlags flags, Cluster* parent, Supercluster* supercluster = 0)
+            : m_root(root)
+            , m_flags(flags)
+            , m_deepestBlockContainingAllText(0)
+            , m_parent(parent)
+            , m_multiplier(0)
+            , m_hasEnoughTextToAutosize(UnknownAmountOfText)
+            , m_supercluster(supercluster)
+            , m_hasTableAncestor(root->isTableCell() || (m_parent && m_parent->m_hasTableAncestor))
+        {
+        }
 
-    Document* m_document;
+        const RenderBlock* const m_root;
+        BlockFlags m_flags;
+        // The deepest block containing all text is computed lazily (see:
+        // deepestBlockContainingAllText). A value of 0 indicates the value has not been computed yet.
+        const RenderBlock* m_deepestBlockContainingAllText;
+        Cluster* m_parent;
+        // The multiplier is computed lazily (see: clusterMultiplier) because it must be calculated
+        // after the lowest block containing all text has entered layout (the
+        // m_blocksThatHaveBegunLayout assertions cover this). Note: the multiplier is still
+        // calculated when m_autosize is false because child clusters may depend on this multiplier.
+        float m_multiplier;
+        HasEnoughTextToAutosize m_hasEnoughTextToAutosize;
+        // A set of blocks that are similar to this block.
+        Supercluster* m_supercluster;
+        bool m_hasTableAncestor;
+    };
 
-    HashMap<const RenderObject*, unsigned> m_hashCache;
+    enum TextLeafSearch {
+        First,
+        Last
+    };
 
-    // Mapping from all autosized (i.e. multiplier > 1) cluster hashes to their respective multipliers.
-    HashMap<unsigned, float> m_hashToMultiplier;
-    Vector<unsigned> m_hashesToAutosizeSecondPass;
+    struct FingerprintSourceData {
+        FingerprintSourceData()
+            : m_parentHash(0)
+            , m_qualifiedNameHash(0)
+            , m_packedStyleProperties(0)
+            , m_column(0)
+            , m_width(0)
+        {
+        }
 
-    // Mapping from a cluster hash to the corresponding cluster infos which have not been autosized yet.
-    HashMap<unsigned, OwnPtr<Vector<TextAutosizingClusterInfo> > > m_nonAutosizedClusters;
+        unsigned m_parentHash;
+        unsigned m_qualifiedNameHash;
+        // Style specific selection of signals
+        unsigned m_packedStyleProperties;
+        unsigned m_column;
+        float m_width;
+    };
+    // Ensures efficient hashing using StringHasher.
+    COMPILE_ASSERT(!(sizeof(FingerprintSourceData) % sizeof(UChar)),
+        Sizeof_FingerprintSourceData_must_be_multiple_of_UChar);
 
-    bool m_previouslyAutosized;
+    typedef unsigned Fingerprint;
+    typedef HashMap<Fingerprint, OwnPtr<Supercluster> > SuperclusterMap;
+    typedef Vector<OwnPtr<Cluster> > ClusterStack;
+
+    // Fingerprints are computed during style recalc, for (some subset of)
+    // blocks that will become cluster roots.
+    class FingerprintMapper {
+    public:
+        void add(const RenderObject*, Fingerprint);
+        void addTentativeClusterRoot(const RenderBlock*, Fingerprint);
+        // Returns true if any BlockSet was modified or freed by the removal.
+        bool remove(const RenderObject*);
+        Fingerprint get(const RenderObject*);
+        BlockSet* getTentativeClusterRoots(Fingerprint);
+        bool hasFingerprints() const { return !m_fingerprints.isEmpty(); }
+    private:
+        typedef HashMap<const RenderObject*, Fingerprint> FingerprintMap;
+        typedef HashMap<Fingerprint, OwnPtr<BlockSet> > ReverseFingerprintMap;
+
+        FingerprintMap m_fingerprints;
+        ReverseFingerprintMap m_blocksForFingerprint;
+#if ENABLE(ASSERT)
+        void assertMapsAreConsistent();
+#endif
+    };
+
+    struct PageInfo {
+        PageInfo()
+            : m_frameWidth(0)
+            , m_layoutWidth(0)
+            , m_baseMultiplier(0)
+            , m_pageNeedsAutosizing(false)
+            , m_hasAutosized(false)
+            , m_settingEnabled(false)
+        {
+        }
+
+        int m_frameWidth; // LocalFrame width in density-independent pixels (DIPs).
+        int m_layoutWidth; // Layout width in CSS pixels.
+        float m_baseMultiplier; // Includes accessibility font scale factor and device scale adjustment.
+        bool m_pageNeedsAutosizing;
+        bool m_hasAutosized;
+        bool m_settingEnabled;
+    };
+
+    explicit TextAutosizer(const Document*);
+
+    void beginLayout(RenderBlock*);
+    void endLayout(RenderBlock*);
+    void inflateAutoTable(RenderTable*);
+    float inflate(RenderObject*, InflateBehavior = ThisBlockOnly, float multiplier = 0);
+    bool shouldHandleLayout() const;
+    IntSize windowSize() const;
+    void setAllTextNeedsLayout();
+    void resetMultipliers();
+    BeginLayoutBehavior prepareForLayout(const RenderBlock*);
+    void prepareClusterStack(const RenderObject*);
+    bool clusterHasEnoughTextToAutosize(Cluster*, const RenderBlock* widthProvider = 0);
+    bool superclusterHasEnoughTextToAutosize(Supercluster*, const RenderBlock* widthProvider = 0);
+    bool clusterWouldHaveEnoughTextToAutosize(const RenderBlock* root, const RenderBlock* widthProvider = 0);
+    Fingerprint getFingerprint(const RenderObject*);
+    Fingerprint computeFingerprint(const RenderObject*);
+    Cluster* maybeCreateCluster(const RenderBlock*);
+    Supercluster* getSupercluster(const RenderBlock*);
+    float clusterMultiplier(Cluster*);
+    float superclusterMultiplier(Cluster*);
+    // A cluster's width provider is typically the deepest block containing all text.
+    // There are exceptions, such as tables and table cells which use the table itself for width.
+    const RenderBlock* clusterWidthProvider(const RenderBlock*) const;
+    const RenderBlock* maxClusterWidthProvider(const Supercluster*, const RenderBlock* currentRoot) const;
+    // Typically this returns a block's computed width. In the case of tables layout, this
+    // width is not yet known so the fixed width is used if it's available, or the containing
+    // block's width otherwise.
+    float widthFromBlock(const RenderBlock*) const;
+    float multiplierFromBlock(const RenderBlock*);
+    void applyMultiplier(RenderObject*, float, RelayoutBehavior = AlreadyInLayout);
+    bool isWiderOrNarrowerDescendant(Cluster*);
+    Cluster* currentCluster() const;
+    const RenderBlock* deepestBlockContainingAllText(Cluster*);
+    const RenderBlock* deepestBlockContainingAllText(const RenderBlock*) const;
+    // Returns the first text leaf that is in the current cluster. We attempt to not include text
+    // from descendant clusters but because descendant clusters may not exist, this is only an approximation.
+    // The TraversalDirection controls whether we return the first or the last text leaf.
+    const RenderObject* findTextLeaf(const RenderObject*, size_t&, TextLeafSearch) const;
+    BlockFlags classifyBlock(const RenderObject*, BlockFlags mask = UINT_MAX) const;
+#ifdef AUTOSIZING_DOM_DEBUG_INFO
+    void writeClusterDebugInfo(Cluster*);
+#endif
+
+    RawPtrWillBeMember<const Document> m_document;
+    const RenderBlock* m_firstBlockToBeginLayout;
+#if ENABLE(ASSERT)
+    BlockSet m_blocksThatHaveBegunLayout; // Used to ensure we don't compute properties of a block before beginLayout() is called on it.
+#endif
+
+    // Clusters are created and destroyed during layout. The map key is the
+    // cluster root. Clusters whose roots share the same fingerprint use the
+    // same multiplier.
+    SuperclusterMap m_superclusters;
+    ClusterStack m_clusterStack;
+    FingerprintMapper m_fingerprintMapper;
+    Vector<RefPtr<RenderStyle> > m_stylesRetainedDuringLayout;
+    // FIXME: All frames should share the same m_pageInfo instance.
+    PageInfo m_pageInfo;
+    bool m_updatePageInfoDeferred;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextAutosizer_h

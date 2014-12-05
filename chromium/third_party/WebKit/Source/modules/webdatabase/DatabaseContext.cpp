@@ -38,15 +38,15 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 // How the DatabaseContext Life-Cycle works?
 // ========================================
 // ... in other words, who's keeping the DatabaseContext alive and how long does
 // it need to stay alive?
 //
-// The DatabaseContext is referenced from RefPtrs in:
-// 1. ExecutionContext
+// The DatabaseContext is referenced from:
+// 1. DatabaseManager
 // 2. Database
 //
 // At Birth:
@@ -54,8 +54,9 @@ namespace WebCore {
 // We create a DatabaseContext only when there is a need i.e. the script tries to
 // open a Database via DatabaseManager::openDatabase().
 //
-// The DatabaseContext constructor will call ref(). This lets DatabaseContext keep itself alive.
-// Note that paired deref() is called from contextDestroyed().
+// The DatabaseContext constructor will register itself to DatabaseManager. This
+// lets DatabaseContext keep itself alive until it is unregisterd in
+// contextDestroyed().
 //
 // Once a DatabaseContext is associated with a ExecutionContext, it will
 // live until after the ExecutionContext destructs. This is true even if
@@ -77,21 +78,22 @@ namespace WebCore {
 // 2. "outlive" the Databases.
 //    - This is because they may make use of the DatabaseContext to execute a close
 //      task and shutdown in an orderly manner. When the Databases are destructed,
-//      they will deref the DatabaseContext from the DatabaseThread.
+//      they will release the DatabaseContext reference from the DatabaseThread.
 //
 // During shutdown, the ExecutionContext is shutting down on the script thread
 // while the Databases are shutting down on the DatabaseThread. Hence, there can be
 // a race condition as to whether the ExecutionContext or the Databases
 // destruct first.
 //
-// The RefPtrs in the Databases and ExecutionContext will ensure that the
-// DatabaseContext will outlive both regardless of which of the 2 destructs first.
+// The Members in the Databases and DatabaseManager will ensure that the
+// DatabaseContext will outlive Database and ExecutionContext regardless of
+// which of the 2 destructs first.
 
-PassRefPtrWillBeRawPtr<DatabaseContext> DatabaseContext::create(ExecutionContext* context)
+DatabaseContext* DatabaseContext::create(ExecutionContext* context)
 {
-    RefPtrWillBeRawPtr<DatabaseContext> self = adoptRefWillBeNoop(new DatabaseContext(context));
-    DatabaseManager::manager().registerDatabaseContext(self.get());
-    return self.release();
+    DatabaseContext* self = new DatabaseContext(context);
+    DatabaseManager::manager().registerDatabaseContext(self);
+    return self;
 }
 
 DatabaseContext::DatabaseContext(ExecutionContext* context)
@@ -105,8 +107,6 @@ DatabaseContext::DatabaseContext(ExecutionContext* context)
     // For debug accounting only. We must do this before we register the
     // instance. The assertions assume this.
     DatabaseManager::manager().didConstructDatabaseContext();
-    if (context->isWorkerGlobalScope())
-        toWorkerGlobalScope(context)->registerTerminationObserver(this);
 }
 
 DatabaseContext::~DatabaseContext()
@@ -119,7 +119,6 @@ DatabaseContext::~DatabaseContext()
 void DatabaseContext::trace(Visitor* visitor)
 {
     visitor->trace(m_databaseThread);
-    visitor->trace(m_openSyncDatabases);
 }
 
 // This is called if the associated ExecutionContext is destructing while
@@ -129,22 +128,14 @@ void DatabaseContext::trace(Visitor* visitor)
 // It is not safe to just delete the context here.
 void DatabaseContext::contextDestroyed()
 {
-    RefPtrWillBeRawPtr<DatabaseContext> protector(this);
     stopDatabases();
-    if (executionContext()->isWorkerGlobalScope())
-        toWorkerGlobalScope(executionContext())->unregisterTerminationObserver(this);
     DatabaseManager::manager().unregisterDatabaseContext(this);
     ActiveDOMObject::contextDestroyed();
 }
 
-void DatabaseContext::wasRequestedToTerminate()
-{
-    DatabaseManager::manager().interruptAllDatabasesForContext(this);
-}
-
-// stop() is from stopActiveDOMObjects() which indicates that the owner LocalFrame
-// or WorkerThread is shutting down. Initiate the orderly shutdown by stopping
-// the associated databases.
+// stop() is from stopActiveDOMObjects() which indicates that the owner
+// LocalFrame is shutting down. Initiate the orderly shutdown by stopping the
+// associated databases.
 void DatabaseContext::stop()
 {
     stopDatabases();
@@ -173,60 +164,13 @@ DatabaseThread* DatabaseContext::databaseThread()
     return m_databaseThread.get();
 }
 
-void DatabaseContext::didOpenDatabase(DatabaseBackendBase& database)
+bool DatabaseContext::databaseThreadAvailable()
 {
-    if (!database.isSyncDatabase())
-        return;
-    ASSERT(isContextThread());
-#if ENABLE(OILPAN)
-    m_openSyncDatabases.add(&database, adoptPtr(new DatabaseCloser(database)));
-#else
-    m_openSyncDatabases.add(&database);
-#endif
-}
-
-void DatabaseContext::didCloseDatabase(DatabaseBackendBase& database)
-{
-#if !ENABLE(OILPAN)
-    if (!database.isSyncDatabase())
-        return;
-    ASSERT(isContextThread());
-    m_openSyncDatabases.remove(&database);
-#endif
-}
-
-#if ENABLE(OILPAN)
-DatabaseContext::DatabaseCloser::~DatabaseCloser()
-{
-    m_database.closeImmediately();
-}
-#endif
-
-void DatabaseContext::stopSyncDatabases()
-{
-    // SQLite is "multi-thread safe", but each database handle can only be used
-    // on a single thread at a time.
-    //
-    // For DatabaseBackendSync, we open the SQLite database on the script
-    // context thread. And hence we should also close it on that same
-    // thread. This means that the SQLite database need to be closed here in the
-    // destructor.
-    ASSERT(isContextThread());
-#if ENABLE(OILPAN)
-    m_openSyncDatabases.clear();
-#else
-    Vector<DatabaseBackendBase*> syncDatabases;
-    copyToVector(m_openSyncDatabases, syncDatabases);
-    m_openSyncDatabases.clear();
-    for (size_t i = 0; i < syncDatabases.size(); ++i)
-        syncDatabases[i]->closeImmediately();
-#endif
+    return databaseThread() && !m_hasRequestedTermination;
 }
 
 void DatabaseContext::stopDatabases()
 {
-    stopSyncDatabases();
-
     // Though we initiate termination of the DatabaseThread here in
     // stopDatabases(), we can't clear the m_databaseThread ref till we get to
     // the destructor. This is because the Databases that are managed by
@@ -237,21 +181,16 @@ void DatabaseContext::stopDatabases()
     // m_databaseThread RefPtr destructor will deref and delete the
     // DatabaseThread.
 
-    if (m_databaseThread && !m_hasRequestedTermination) {
-        TaskSynchronizer sync;
-        m_databaseThread->requestTermination(&sync);
+    if (databaseThreadAvailable()) {
         m_hasRequestedTermination = true;
-        sync.waitForTaskCompletion();
+        // This blocks until the database thread finishes the cleanup task.
+        m_databaseThread->terminate();
     }
 }
 
 bool DatabaseContext::allowDatabaseAccess() const
 {
-    if (executionContext()->isDocument())
-        return toDocument(executionContext())->isActive();
-    ASSERT(executionContext()->isWorkerGlobalScope());
-    // allowDatabaseAccess is not yet implemented for workers.
-    return true;
+    return toDocument(executionContext())->isActive();
 }
 
 SecurityOrigin* DatabaseContext::securityOrigin() const
@@ -264,4 +203,4 @@ bool DatabaseContext::isContextThread() const
     return executionContext()->isContextThread();
 }
 
-} // namespace WebCore
+} // namespace blink

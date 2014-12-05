@@ -11,7 +11,6 @@
 #include "cc/test/begin_frame_args_test.h"
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
-#include "cc/test/scheduler_test_common.h"
 #include "cc/test/test_context_provider.h"
 #include "cc/test/test_web_graphics_context_3d.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -32,6 +31,11 @@ class TestOutputSurface : public OutputSurface {
   TestOutputSurface(scoped_refptr<ContextProvider> context_provider,
                     scoped_ptr<SoftwareOutputDevice> software_device)
       : OutputSurface(context_provider, software_device.Pass()) {}
+
+  void SwapBuffers(CompositorFrame* frame) override {
+    client_->DidSwapBuffers();
+    client_->DidSwapBuffersComplete();
+  }
 
   bool InitializeNewContext3d(
       scoped_refptr<ContextProvider> new_context_provider) {
@@ -59,11 +63,11 @@ class TestOutputSurface : public OutputSurface {
 class TestSoftwareOutputDevice : public SoftwareOutputDevice {
  public:
   TestSoftwareOutputDevice();
-  virtual ~TestSoftwareOutputDevice();
+  ~TestSoftwareOutputDevice() override;
 
   // Overriden from cc:SoftwareOutputDevice
-  virtual void DiscardBackbuffer() OVERRIDE;
-  virtual void EnsureBackbuffer() OVERRIDE;
+  void DiscardBackbuffer() override;
+  void EnsureBackbuffer() override;
 
   int discard_backbuffer_count() { return discard_backbuffer_count_; }
   int ensure_backbuffer_count() { return ensure_backbuffer_count_; }
@@ -154,7 +158,7 @@ TEST_F(OutputSurfaceTestInitializeNewContext3d, Success) {
 
   EXPECT_TRUE(output_surface_.InitializeNewContext3d(context_provider_));
   EXPECT_TRUE(client_.deferred_initialize_called());
-  EXPECT_EQ(context_provider_, output_surface_.context_provider());
+  EXPECT_EQ(context_provider_.get(), output_surface_.context_provider());
 
   EXPECT_FALSE(client_.did_lose_output_surface_called());
   context_provider_->ContextGL()->LoseContextCHROMIUM(
@@ -210,8 +214,7 @@ TEST(OutputSurfaceTest, SoftwareOutputDeviceBackbufferManagement) {
 
   // TestOutputSurface now owns software_output_device and has responsibility to
   // free it.
-  scoped_ptr<TestSoftwareOutputDevice> p(software_output_device);
-  TestOutputSurface output_surface(p.PassAs<SoftwareOutputDevice>());
+  TestOutputSurface output_surface(make_scoped_ptr(software_output_device));
 
   EXPECT_EQ(0, software_output_device->ensure_backbuffer_count());
   EXPECT_EQ(0, software_output_device->discard_backbuffer_count());

@@ -21,7 +21,6 @@ const int kNotificationIconSize = 80;
 const int kNotificationImageBorderSize = 10;
 const int kNotificationPreferredImageWidth = 360;
 const int kNotificationPreferredImageHeight = 240;
-const int kSettingsIconSize = 16;
 const int kSmallImageSize = 16;
 const int kSmallImagePadding = 4;
 
@@ -78,6 +77,10 @@ extern const SkColor kIconBackgroundColor;         // Used behind icons smaller
 extern const SkColor kRegularTextColor;            // Title, message, ...
 extern const SkColor kDimTextColor;
 extern const SkColor kFocusBorderColor;  // The focus border.
+extern const SkColor
+    kSmallImageMaskForegroundColor;  // Foreground of small icon image.
+extern const SkColor
+    kSmallImageMaskBackgroundColor;  // Background of small icon image.
 
 // Limits.
 

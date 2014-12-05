@@ -21,21 +21,21 @@ class BASE_PREFS_EXPORT ValueMapPrefStore : public WriteablePrefStore {
   ValueMapPrefStore();
 
   // PrefStore overrides:
-  virtual bool GetValue(const std::string& key,
-                        const base::Value** value) const OVERRIDE;
-  virtual void AddObserver(PrefStore::Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(PrefStore::Observer* observer) OVERRIDE;
-  virtual bool HasObservers() const OVERRIDE;
+  bool GetValue(const std::string& key,
+                const base::Value** value) const override;
+  void AddObserver(PrefStore::Observer* observer) override;
+  void RemoveObserver(PrefStore::Observer* observer) override;
+  bool HasObservers() const override;
 
   // WriteablePrefStore overrides:
-  virtual void SetValue(const std::string& key, base::Value* value) OVERRIDE;
-  virtual void RemoveValue(const std::string& key) OVERRIDE;
-  virtual bool GetMutableValue(const std::string& key,
-                               base::Value** value) OVERRIDE;
-  virtual void ReportValueChanged(const std::string& key) OVERRIDE;
+  void SetValue(const std::string& key, base::Value* value) override;
+  void RemoveValue(const std::string& key) override;
+  bool GetMutableValue(const std::string& key, base::Value** value) override;
+  void ReportValueChanged(const std::string& key) override;
+  void SetValueSilently(const std::string& key, base::Value* value) override;
 
  protected:
-  virtual ~ValueMapPrefStore();
+  ~ValueMapPrefStore() override;
 
   // Notify observers about the initialization completed event.
   void NotifyInitializationCompleted();

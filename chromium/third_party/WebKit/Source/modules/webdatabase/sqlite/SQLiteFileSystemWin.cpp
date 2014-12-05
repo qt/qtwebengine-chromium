@@ -35,12 +35,12 @@
 #include <sqlite3.h>
 #include "public/platform/Platform.h"
 
-using namespace WebCore;
-
 // Defined in Chromium's codebase in third_party/sqlite/src/os_win.c
 extern "C" {
 int chromium_sqlite3_initialize_win_sqlite3_file(sqlite3_file* file, HANDLE handle);
 }
+
+namespace blink {
 
 // Chromium's Windows implementation of SQLite VFS
 namespace {
@@ -55,7 +55,7 @@ namespace {
 int chromiumOpen(sqlite3_vfs*, const char* fileName,
                  sqlite3_file* id, int desiredFlags, int* usedFlags)
 {
-    HANDLE h = blink::Platform::current()->databaseOpenFile(String(fileName), desiredFlags);
+    HANDLE h = Platform::current()->databaseOpenFile(String(fileName), desiredFlags);
     if (h == INVALID_HANDLE_VALUE) {
         if (desiredFlags & SQLITE_OPEN_READWRITE) {
             int newFlags = (desiredFlags | SQLITE_OPEN_READONLY) & ~SQLITE_OPEN_READWRITE;
@@ -82,7 +82,7 @@ int chromiumOpen(sqlite3_vfs*, const char* fileName,
 //           should be synched after the file is deleted.
 int chromiumDelete(sqlite3_vfs*, const char* fileName, int)
 {
-    return blink::Platform::current()->databaseDeleteFile(String(fileName), false);
+    return Platform::current()->databaseDeleteFile(String(fileName), false);
 }
 
 // Check the existance and status of the given file.
@@ -93,7 +93,7 @@ int chromiumDelete(sqlite3_vfs*, const char* fileName, int)
 // res - the result.
 int chromiumAccess(sqlite3_vfs*, const char* fileName, int flag, int* res)
 {
-    DWORD attr = blink::Platform::current()->databaseGetFileAttributes(String(fileName));
+    DWORD attr = Platform::current()->databaseGetFileAttributes(String(fileName));
     switch (flag) {
     case SQLITE_ACCESS_READ:
     case SQLITE_ACCESS_EXISTS:
@@ -138,8 +138,6 @@ void* chromiumDlOpen(sqlite3_vfs*, const char*)
 
 } // namespace
 
-namespace WebCore {
-
 void SQLiteFileSystem::registerSQLiteVFS()
 {
     sqlite3_vfs* win32_vfs = sqlite3_vfs_find("win32");
@@ -166,4 +164,4 @@ void SQLiteFileSystem::registerSQLiteVFS()
     sqlite3_vfs_register(&chromium_vfs, 0);
 }
 
-} // namespace WebCore
+} // namespace blink

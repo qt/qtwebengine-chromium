@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/gcm_driver
       'target_name': 'gcm_driver',
       'type': 'static_library',
       'dependencies': [
@@ -12,25 +13,39 @@
         '../base/base.gyp:base',
         '../google_apis/gcm/gcm.gyp:gcm',
         '../net/net.gyp:net',
+        '../sync/sync.gyp:sync_proto',
       ],
       'include_dirs': [
         '..',
       ],
       'sources': [
+         # Note: file list duplicated in GN build.
         'gcm_driver/android/component_jni_registrar.cc',
         'gcm_driver/android/component_jni_registrar.h',
         'gcm_driver/default_gcm_app_handler.cc',
         'gcm_driver/default_gcm_app_handler.h',
+        'gcm_driver/gcm_account_mapper.cc',
+        'gcm_driver/gcm_account_mapper.h',
         'gcm_driver/gcm_activity.cc',
         'gcm_driver/gcm_activity.h',
         'gcm_driver/gcm_app_handler.cc',
         'gcm_driver/gcm_app_handler.h',
+        'gcm_driver/gcm_backoff_policy.cc',
+        'gcm_driver/gcm_backoff_policy.h',
+        'gcm_driver/gcm_channel_status_request.cc',
+        'gcm_driver/gcm_channel_status_request.h',
+        'gcm_driver/gcm_channel_status_syncer.cc',
+        'gcm_driver/gcm_channel_status_syncer.h',
         'gcm_driver/gcm_client.cc',
         'gcm_driver/gcm_client.h',
         'gcm_driver/gcm_client_factory.cc',
         'gcm_driver/gcm_client_factory.h',
         'gcm_driver/gcm_client_impl.cc',
         'gcm_driver/gcm_client_impl.h',
+        'gcm_driver/gcm_connection_observer.cc',
+        'gcm_driver/gcm_connection_observer.h',
+        'gcm_driver/gcm_delayed_task_controller.cc',
+        'gcm_driver/gcm_delayed_task_controller.h',
         'gcm_driver/gcm_driver.cc',
         'gcm_driver/gcm_driver.h',
         'gcm_driver/gcm_driver_android.cc',
@@ -42,6 +57,11 @@
         'gcm_driver/system_encryptor.cc',
         'gcm_driver/system_encryptor.h',
       ],
+      'variables': {
+        'proto_in_dir': 'gcm_driver/proto',
+        'proto_out_dir': 'components/gcm_driver/proto',
+      },
+      'includes': [ '../build/protoc.gypi' ],
       'conditions': [
         ['OS == "android"', {
           'dependencies': [
@@ -51,19 +71,34 @@
             '../google_apis/gcm/gcm.gyp:gcm',
           ],
           'sources!': [
+            'gcm_driver/gcm_account_mapper.cc',
+            'gcm_driver/gcm_account_mapper.h',
+            'gcm_driver/gcm_channel_status_request.cc',
+            'gcm_driver/gcm_channel_status_request.h',
+            'gcm_driver/gcm_channel_status_syncer.cc',
+            'gcm_driver/gcm_channel_status_syncer.h',
             'gcm_driver/gcm_client_factory.cc',
             'gcm_driver/gcm_client_factory.h',
             'gcm_driver/gcm_client_impl.cc',
             'gcm_driver/gcm_client_impl.h',
+            'gcm_driver/gcm_delayed_task_controller.cc',
+            'gcm_driver/gcm_delayed_task_controller.h',
             'gcm_driver/gcm_driver_desktop.cc',
             'gcm_driver/gcm_driver_desktop.h',
             'gcm_driver/gcm_stats_recorder_impl.cc',
             'gcm_driver/gcm_stats_recorder_impl.h',
+            'gcm_driver/proto/gcm_channel_status.proto',
+          ],
+        }],
+        ['chromeos == 1', {
+          'dependencies': [
+            'timers',
           ],
         }],
       ],
     },
     {
+      # GN version: //components/gcm_driver:test_support
       'target_name': 'gcm_driver_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -76,6 +111,7 @@
         '..',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'gcm_driver/fake_gcm_app_handler.cc',
         'gcm_driver/fake_gcm_app_handler.h',
         'gcm_driver/fake_gcm_client.cc',
@@ -104,6 +140,7 @@
     ['OS == "android"', {
       'targets': [
         {
+          # GN version: //components/gcm_driver/android:gcm_driver_java
           'target_name': 'gcm_driver_java',
           'type': 'none',
           'dependencies': [
@@ -118,6 +155,7 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN version: //components/gcm_driver/android:jni_headers
           'target_name': 'gcm_driver_jni_headers',
           'type': 'none',
           'sources': [

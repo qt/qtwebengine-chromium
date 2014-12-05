@@ -14,11 +14,11 @@ namespace {
 class DefaultFocusManagerFactory : public FocusManagerFactory {
  public:
   DefaultFocusManagerFactory() : FocusManagerFactory() {}
-  virtual ~DefaultFocusManagerFactory() {}
+  ~DefaultFocusManagerFactory() override {}
 
  protected:
-  virtual FocusManager* CreateFocusManager(Widget* widget,
-                                           bool desktop_widget) OVERRIDE {
+  FocusManager* CreateFocusManager(Widget* widget,
+                                   bool desktop_widget) override {
     return new FocusManager(widget, NULL /* delegate */);
   }
 

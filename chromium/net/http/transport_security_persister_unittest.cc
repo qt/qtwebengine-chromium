@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "net/http/transport_security_state.h"
@@ -23,11 +23,11 @@ class TransportSecurityPersisterTest : public testing::Test {
   TransportSecurityPersisterTest() {
   }
 
-  virtual ~TransportSecurityPersisterTest() {
+  ~TransportSecurityPersisterTest() override {
     base::MessageLoopForIO::current()->RunUntilIdle();
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     persister_.reset(new TransportSecurityPersister(
         &state_,
@@ -57,7 +57,7 @@ TEST_F(TransportSecurityPersisterTest, SerializeData2) {
   const base::Time expiry = current_time + base::TimeDelta::FromSeconds(1000);
   static const char kYahooDomain[] = "yahoo.com";
 
-  EXPECT_FALSE(state_.GetStaticDomainState(kYahooDomain, true, &domain_state));
+  EXPECT_FALSE(state_.GetStaticDomainState(kYahooDomain, &domain_state));
   EXPECT_FALSE(state_.GetDynamicDomainState(kYahooDomain, &domain_state));
 
   bool include_subdomains = true;
@@ -81,7 +81,7 @@ TEST_F(TransportSecurityPersisterTest, SerializeData2) {
       state_.GetDynamicDomainState("foo.bar.baz.yahoo.com", &domain_state));
   EXPECT_EQ(domain_state.sts.upgrade_mode,
             TransportSecurityState::DomainState::MODE_FORCE_HTTPS);
-  EXPECT_FALSE(state_.GetStaticDomainState("com", true, &domain_state));
+  EXPECT_FALSE(state_.GetStaticDomainState("com", &domain_state));
 }
 
 TEST_F(TransportSecurityPersisterTest, SerializeData3) {

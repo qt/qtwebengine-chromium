@@ -15,7 +15,7 @@
 #include "ppapi/c/pp_time.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 namespace content {
 class PepperFileRefHost;
@@ -40,7 +40,7 @@ class PepperFileRefBackend {
   virtual int32_t ReadDirectoryEntries(
       ppapi::host::ReplyMessageContext context) = 0;
   virtual int32_t GetAbsolutePath(ppapi::host::ReplyMessageContext context) = 0;
-  virtual fileapi::FileSystemURL GetFileSystemURL() const = 0;
+  virtual storage::FileSystemURL GetFileSystemURL() const = 0;
   virtual base::FilePath GetExternalFilePath() const = 0;
 
   // Returns an error from the pp_errors.h enum.
@@ -65,17 +65,17 @@ class CONTENT_EXPORT PepperFileRefHost
                     PP_Resource resource,
                     const base::FilePath& external_path);
 
-  virtual ~PepperFileRefHost();
+  ~PepperFileRefHost() override;
 
   // ResourceHost overrides.
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
-  virtual bool IsFileRefHost() OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
+  bool IsFileRefHost() override;
 
   // Required to support Rename().
   PP_FileSystemType GetFileSystemType() const;
-  fileapi::FileSystemURL GetFileSystemURL() const;
+  storage::FileSystemURL GetFileSystemURL() const;
 
   // Required to support FileIO.
   base::FilePath GetExternalFilePath() const;

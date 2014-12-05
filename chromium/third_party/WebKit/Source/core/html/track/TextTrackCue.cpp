@@ -32,13 +32,13 @@
 #include "config.h"
 #include "core/html/track/TextTrackCue.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/events/Event.h"
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TextTrackCueList.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int invalidCueIndex = -1;
 
@@ -168,4 +168,4 @@ void TextTrackCue::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

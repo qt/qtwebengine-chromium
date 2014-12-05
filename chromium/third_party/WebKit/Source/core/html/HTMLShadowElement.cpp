@@ -32,16 +32,17 @@
 #include "core/html/HTMLShadowElement.h"
 
 #include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/inspector/ConsoleMessage.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
 inline HTMLShadowElement::HTMLShadowElement(Document& document)
     : InsertionPoint(HTMLNames::shadowTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLShadowElement)
@@ -54,13 +55,13 @@ ShadowRoot* HTMLShadowElement::olderShadowRoot()
 {
     ShadowRoot* containingRoot = containingShadowRoot();
     if (!containingRoot)
-        return 0;
+        return nullptr;
 
     document().updateDistributionForNodeIfNeeded(this);
 
     ShadowRoot* older = containingRoot->olderShadowRoot();
     if (!older || !older->shouldExposeToBindings() || older->shadowInsertionPointOfYoungerShadowRoot() != this)
-        return 0;
+        return nullptr;
 
     ASSERT(older->shouldExposeToBindings());
     return older;
@@ -73,11 +74,11 @@ Node::InsertionNotificationRequest HTMLShadowElement::insertedInto(ContainerNode
         ShadowRoot* root = containingShadowRoot();
         if (root && root->olderShadowRoot() && root->type() != root->olderShadowRoot()->type()) {
             String message = String::format("<shadow> doesn't work for %s element host.", root->host()->tagName().utf8().data());
-            document().addConsoleMessage(RenderingMessageSource, WarningMessageLevel, message);
+            document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel, message));
         }
     }
     return InsertionPoint::insertedInto(insertionPoint);
 }
 
-} // namespace WebCore
+} // namespace blink
 

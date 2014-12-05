@@ -103,7 +103,7 @@ static int read_intra_segment_id(VP9_COMMON *const cm, MACROBLOCKD *const xd,
                                  int mi_row, int mi_col,
                                  vp9_reader *r) {
   struct segmentation *const seg = &cm->seg;
-  const BLOCK_SIZE bsize = xd->mi[0]->mbmi.sb_type;
+  const BLOCK_SIZE bsize = xd->mi[0].src_mi->mbmi.sb_type;
   int segment_id;
 
   if (!seg->enabled)
@@ -120,7 +120,7 @@ static int read_intra_segment_id(VP9_COMMON *const cm, MACROBLOCKD *const xd,
 static int read_inter_segment_id(VP9_COMMON *const cm, MACROBLOCKD *const xd,
                                  int mi_row, int mi_col, vp9_reader *r) {
   struct segmentation *const seg = &cm->seg;
-  MB_MODE_INFO *const mbmi = &xd->mi[0]->mbmi;
+  MB_MODE_INFO *const mbmi = &xd->mi[0].src_mi->mbmi;
   const BLOCK_SIZE bsize = mbmi->sb_type;
   int predicted_segment_id, segment_id;
 
@@ -160,10 +160,10 @@ static int read_skip(VP9_COMMON *cm, const MACROBLOCKD *xd,
 static void read_intra_frame_mode_info(VP9_COMMON *const cm,
                                        MACROBLOCKD *const xd,
                                        int mi_row, int mi_col, vp9_reader *r) {
-  MODE_INFO *const mi = xd->mi[0];
+  MODE_INFO *const mi = xd->mi[0].src_mi;
   MB_MODE_INFO *const mbmi = &mi->mbmi;
-  const MODE_INFO *above_mi = xd->mi[-cm->mi_stride];
-  const MODE_INFO *left_mi  = xd->left_available ? xd->mi[-1] : NULL;
+  const MODE_INFO *above_mi = xd->mi[-cm->mi_stride].src_mi;
+  const MODE_INFO *left_mi  = xd->left_available ? xd->mi[-1].src_mi : NULL;
   const BLOCK_SIZE bsize = mbmi->sb_type;
   int i;
 
@@ -222,7 +222,6 @@ static int read_mv_component(vp9_reader *r,
   // Fractional part
   fr = vp9_read_tree(r, vp9_mv_fp_tree, class0 ? mvcomp->class0_fp[d]
                                                : mvcomp->fp);
-
 
   // High precision part (if hp is not used, the default value of the hp is 1)
   hp = usehp ? vp9_read(r, class0 ? mvcomp->class0_hp : mvcomp->hp)
@@ -435,6 +434,16 @@ static void read_inter_block_mode_info(VP9_COMMON *const cm,
 
   for (ref = 0; ref < 1 + is_compound; ++ref) {
     const MV_REFERENCE_FRAME frame = mbmi->ref_frame[ref];
+    RefBuffer *ref_buf = &cm->frame_refs[frame - LAST_FRAME];
+    xd->block_refs[ref] = ref_buf;
+    if ((!vp9_is_valid_scale(&ref_buf->sf)))
+      vpx_internal_error(&cm->error, VPX_CODEC_UNSUP_BITSTREAM,
+                         "Reference frame has invalid dimensions");
+    if (ref_buf->buf->corrupted)
+      vpx_internal_error(&cm->error, VPX_CODEC_CORRUPT_FRAME,
+                         "Block reference is corrupt");
+    vp9_setup_pre_planes(xd, ref, ref_buf->buf, mi_row, mi_col,
+                         &ref_buf->sf);
     vp9_find_mv_refs(cm, xd, tile, mi, frame, mbmi->ref_mvs[frame],
                      mi_row, mi_col);
   }
@@ -514,7 +523,7 @@ static void read_inter_frame_mode_info(VP9_COMMON *const cm,
                                        MACROBLOCKD *const xd,
                                        const TileInfo *const tile,
                                        int mi_row, int mi_col, vp9_reader *r) {
-  MODE_INFO *const mi = xd->mi[0];
+  MODE_INFO *const mi = xd->mi[0].src_mi;
   MB_MODE_INFO *const mbmi = &mi->mbmi;
   int inter_block;
 

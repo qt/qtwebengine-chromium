@@ -5,25 +5,22 @@
 #ifndef PushRegistration_h
 #define PushRegistration_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebPushRegistration.h"
-#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptPromiseResolverWithContext;
+class ScriptPromiseResolver;
 
-class PushRegistration FINAL : public GarbageCollectedFinalized<PushRegistration>, public ScriptWrappable {
+class PushRegistration final : public GarbageCollectedFinalized<PushRegistration>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // For CallbackPromiseAdapter.
-    typedef blink::WebPushRegistration WebType;
-    static PushRegistration* from(ScriptPromiseResolverWithContext*, WebType* registrationRaw)
-    {
-        OwnPtr<WebType> registration = adoptPtr(registrationRaw);
-        return new PushRegistration(registration->endpoint, registration->registrationId);
-    }
+    typedef WebPushRegistration WebType;
+    static PushRegistration* take(ScriptPromiseResolver*, WebType* registrationRaw);
+    static void dispose(WebType* registrationRaw);
 
     virtual ~PushRegistration();
 
@@ -39,6 +36,6 @@ private:
     String m_pushRegistrationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PushRegistration_h

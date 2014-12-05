@@ -33,13 +33,13 @@
 
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
 class TestAnimationNodeEventDelegate : public AnimationNode::EventDelegate {
 public:
-    virtual void onEventCondition(const AnimationNode* animationNode) OVERRIDE
+    virtual void onEventCondition(const AnimationNode* animationNode) override
     {
         m_eventTriggered = true;
 
@@ -72,10 +72,10 @@ public:
         AnimationNode::updateInheritedTime(time, reason);
     }
 
-    virtual void updateChildrenAndEffects() const OVERRIDE { }
+    virtual void updateChildrenAndEffects() const override { }
     void willDetach() { }
-    TestAnimationNodeEventDelegate* eventDelegate() { return m_eventDelegate; }
-    virtual double calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const OVERRIDE
+    TestAnimationNodeEventDelegate* eventDelegate() { return m_eventDelegate.get(); }
+    virtual double calculateTimeToEffectChange(bool forwards, double localTime, double timeToNextIteration) const override
     {
         m_localTime = localTime;
         m_timeToNextIteration = timeToNextIteration;
@@ -95,14 +95,20 @@ public:
         return result;
     }
 
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_eventDelegate);
+        AnimationNode::trace(visitor);
+    }
+
 private:
     TestAnimationNode(const Timing& specified, TestAnimationNodeEventDelegate* eventDelegate)
-        : AnimationNode(specified, adoptPtr(eventDelegate))
+        : AnimationNode(specified, adoptPtrWillBeNoop(eventDelegate))
         , m_eventDelegate(eventDelegate)
     {
     }
 
-    TestAnimationNodeEventDelegate* m_eventDelegate;
+    RawPtrWillBeMember<TestAnimationNodeEventDelegate> m_eventDelegate;
     mutable double m_localTime;
     mutable double m_timeToNextIteration;
 };

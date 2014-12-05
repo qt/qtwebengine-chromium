@@ -14,6 +14,7 @@
 #include "content/common/content_export.h"
 #include "content/common/input/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
+#include "ui/events/gesture_detection/bitset_32.h"
 #include "ui/gfx/geometry/point_f.h"
 
 namespace content {
@@ -61,11 +62,6 @@ class CONTENT_EXPORT TouchEventQueue {
     // Determines the bounds of the (square) touchmove slop suppression region.
     // Defaults to 0 (disabled).
     double touchmove_slop_suppression_length_dips;
-
-    // Whether the touchmove slop suppression region is boundary inclusive.
-    // Defaults to true.
-    // TODO(jdduke): Remove when unified GR enabled, crbug.com/332418.
-    bool touchmove_slop_suppression_region_includes_boundary;
 
     // Determines the type of touch scrolling.
     // Defaults to TouchEventQueue:::TOUCH_SCROLLING_MODE_DEFAULT.
@@ -119,6 +115,10 @@ class CONTENT_EXPORT TouchEventQueue {
   // it will take effect only for the following touch sequence.
   void SetAckTimeoutEnabled(bool enabled);
 
+  bool IsAckTimeoutEnabled() const;
+
+  bool IsForwardingTouches();
+
   bool empty() const WARN_UNUSED_RESULT {
     return touch_queue_.empty();
   }
@@ -127,13 +127,7 @@ class CONTENT_EXPORT TouchEventQueue {
     return touch_queue_.size();
   }
 
-  bool ack_timeout_enabled() const {
-    return ack_timeout_enabled_;
-  }
-
-  bool has_handlers() const {
-    return touch_filtering_state_ != DROP_ALL_TOUCHES;
-  }
+  bool has_handlers() const { return has_handlers_; }
 
  private:
   class TouchTimeoutHandler;
@@ -165,9 +159,11 @@ class CONTENT_EXPORT TouchEventQueue {
   void PopTouchEventToClient(InputEventAckState ack_result,
                              const ui::LatencyInfo& renderer_latency_info);
 
-  // Ack all coalesced events in |acked_event| to the client with |ack_result|.
+  // Ack all coalesced events in |acked_event| to the client with |ack_result|,
+  // updating the acked events with |optional_latency_info| if it exists.
   void AckTouchEventToClient(InputEventAckState ack_result,
-                             scoped_ptr<CoalescedWebTouchEvent> acked_event);
+                             scoped_ptr<CoalescedWebTouchEvent> acked_event,
+                             const ui::LatencyInfo* optional_latency_info);
 
   // Safely pop the head of the queue.
   scoped_ptr<CoalescedWebTouchEvent> PopTouchEvent();
@@ -184,10 +180,8 @@ class CONTENT_EXPORT TouchEventQueue {
   // has no touch handler.
   PreFilterResult FilterBeforeForwarding(const blink::WebTouchEvent& event);
   void ForwardToRenderer(const TouchEventWithLatencyInfo& event);
-  void UpdateTouchAckStates(const blink::WebTouchEvent& event,
-                            InputEventAckState ack_result);
-  bool AllTouchAckStatesHaveState(InputEventAckState ack_state) const;
-
+  void UpdateTouchConsumerStates(const blink::WebTouchEvent& event,
+                                 InputEventAckState ack_result);
 
   // Handles touch event forwarding and ack'ed event dispatch.
   TouchEventQueueClient* client_;
@@ -195,9 +189,11 @@ class CONTENT_EXPORT TouchEventQueue {
   typedef std::deque<CoalescedWebTouchEvent*> TouchQueue;
   TouchQueue touch_queue_;
 
-  // Maintain the ACK status for each touch point.
-  typedef std::map<int, InputEventAckState> TouchPointAckStates;
-  TouchPointAckStates touch_ack_states_;
+  // Maps whether each active pointer has a consumer (i.e., a touch point has a
+  // valid consumer iff |touch_consumer_states[pointer.id]| is true.).
+  // TODO(jdduke): Consider simply tracking whether *any* touchstart had a
+  // consumer, crbug.com/416497.
+  ui::BitSet32 touch_consumer_states_;
 
   // Position of the first touch in the most recent sequence forwarded to the
   // client.
@@ -212,18 +208,18 @@ class CONTENT_EXPORT TouchEventQueue {
   // ack after forwarding a touch event to the client.
   bool dispatching_touch_;
 
-  enum TouchFilteringState {
-    FORWARD_ALL_TOUCHES,           // Don't filter at all - the default.
-    FORWARD_TOUCHES_UNTIL_TIMEOUT, // Don't filter unless we get an ACK timeout.
-    DROP_TOUCHES_IN_SEQUENCE,      // Filter all events until a new touch
-                                   // sequence is received.
-    DROP_ALL_TOUCHES,              // Filter all events, e.g., no touch handler.
-    TOUCH_FILTERING_STATE_DEFAULT = FORWARD_ALL_TOUCHES,
-  };
-  TouchFilteringState touch_filtering_state_;
+  // Whether the renderer has at least one touch handler.
+  bool has_handlers_;
+
+  // Whether to allow any remaining touches for the current sequence. Note that
+  // this is a stricter condition than an empty |touch_consumer_states_|, as it
+  // also prevents forwarding of touchstart events for new pointers in the
+  // current sequence. This is only used when the event is synthetically
+  // cancelled after a touch timeout, or after a scroll event when the
+  // mode is TOUCH_SCROLLING_MODE_TOUCHCANCEL.
+  bool drop_remaining_touches_in_sequence_;
 
   // Optional handler for timed-out touch event acks.
-  bool ack_timeout_enabled_;
   scoped_ptr<TouchTimeoutHandler> timeout_handler_;
 
   // Suppression of TouchMove's within a slop region when a sequence has not yet

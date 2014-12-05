@@ -34,7 +34,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/RenderBlock.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLMediaElement;
 class MediaControls;
@@ -63,6 +63,10 @@ enum MediaControlElementType {
     MediaTextTrackDisplay,
     MediaExitFullscreenButton,
     MediaOverlayPlayButton,
+    MediaCastOffButton,
+    MediaCastOnButton,
+    MediaOverlayCastOffButton,
+    MediaOverlayCastOnButton,
 };
 
 HTMLMediaElement* toParentMediaElement(Node*);
@@ -79,6 +83,8 @@ public:
 
     MediaControlElementType displayType() { return m_displayType; }
 
+    virtual void trace(Visitor*);
+
 protected:
     MediaControlElement(MediaControls&, MediaControlElementType, HTMLElement*);
 
@@ -90,16 +96,18 @@ protected:
 private:
     MediaControls& m_mediaControls;
     MediaControlElementType m_displayType;
-    HTMLElement* m_element;
+    RawPtrWillBeMember<HTMLElement> m_element;
 };
 
 // ----------------------------
 
 class MediaControlDivElement : public HTMLDivElement, public MediaControlElement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaControlDivElement);
+public:
+    virtual void trace(Visitor*) override;
 
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
+    virtual bool isMediaControlElement() const override final { return true; }
     MediaControlDivElement(MediaControls&, MediaControlElementType);
 };
 
@@ -107,14 +115,16 @@ protected:
 
 class MediaControlInputElement : public HTMLInputElement, public MediaControlElement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaControlInputElement);
+public:
+    virtual void trace(Visitor*) override;
 
 protected:
-    virtual bool isMediaControlElement() const OVERRIDE FINAL { return true; }
+    virtual bool isMediaControlElement() const override final { return true; }
     MediaControlInputElement(MediaControls&, MediaControlElementType);
 
 private:
     virtual void updateDisplayType() { }
-    virtual bool isMouseFocusable() const OVERRIDE;
+    virtual bool isMouseFocusable() const override;
 };
 
 // ----------------------------
@@ -131,6 +141,6 @@ private:
     double m_currentValue;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaControlElementTypes_h

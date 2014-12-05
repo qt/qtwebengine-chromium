@@ -26,7 +26,7 @@ void BitmapSkPictureContentLayerUpdater::Resource::Update(
   SkAlphaType at =
       updater_->layer_is_opaque() ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
   bitmap_.allocPixels(SkImageInfo::Make(
-      source_rect.width(), source_rect.height(), kPMColor_SkColorType, at));
+      source_rect.width(), source_rect.height(), kN32_SkColorType, at));
   SkCanvas canvas(bitmap_);
   updater_->PaintContentsRect(&canvas, source_rect);
 
@@ -62,7 +62,7 @@ BitmapSkPictureContentLayerUpdater::~BitmapSkPictureContentLayerUpdater() {}
 scoped_ptr<LayerUpdater::Resource>
 BitmapSkPictureContentLayerUpdater::CreateResource(
     PrioritizedResourceManager* manager) {
-  return scoped_ptr<LayerUpdater::Resource>(
+  return make_scoped_ptr(
       new Resource(this, PrioritizedResource::Create(manager)));
 }
 
@@ -72,16 +72,9 @@ void BitmapSkPictureContentLayerUpdater::PaintContentsRect(
   if (!canvas)
     return;
   // Translate the origin of content_rect to that of source_rect.
-  canvas->translate(content_rect().x() - source_rect.x(),
-                    content_rect().y() - source_rect.y());
-  base::TimeTicks start_time =
-      rendering_stats_instrumentation_->StartRecording();
+  canvas->translate(paint_rect().x() - source_rect.x(),
+                    paint_rect().y() - source_rect.y());
   DrawPicture(canvas);
-  base::TimeDelta duration =
-      rendering_stats_instrumentation_->EndRecording(start_time);
-  rendering_stats_instrumentation_->AddRaster(
-      duration,
-      source_rect.width() * source_rect.height());
 }
 
 }  // namespace cc

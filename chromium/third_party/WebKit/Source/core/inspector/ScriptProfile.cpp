@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/inspector/ScriptProfile.h"
 
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 ScriptProfile::~ScriptProfile()
 {
@@ -112,4 +112,4 @@ PassRefPtr<TypeBuilder::Array<double> > ScriptProfile::buildInspectorObjectForTi
     return array.release();
 }
 
-} // namespace WebCore
+} // namespace blink

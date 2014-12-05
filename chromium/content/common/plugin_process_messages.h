@@ -10,6 +10,7 @@
 #include "content/public/common/common_param_traits.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message_macros.h"
+#include "ui/gfx/ipc/gfx_param_traits.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
@@ -66,13 +67,6 @@ IPC_MESSAGE_CONTROL2(PluginProcessHostMsg_PluginWindowDestroyed,
 // that it can add and remove them from stacking groups, hide and show the
 // menu bar, etc.  We pass the window rect for convenience so that the
 // browser can easily tell if the window is fullscreen.
-
-// Notifies the browser that the plugin has selected a window (i.e., brought
-// it to the front and wants it to have keyboard focus).
-IPC_MESSAGE_CONTROL3(PluginProcessHostMsg_PluginSelectWindow,
-                     uint32 /* window ID */,
-                     gfx::Rect /* window rect */,
-                     bool /* modal */)
 
 // Notifies the browser that the plugin has shown a window.
 IPC_MESSAGE_CONTROL3(PluginProcessHostMsg_PluginShowWindow,

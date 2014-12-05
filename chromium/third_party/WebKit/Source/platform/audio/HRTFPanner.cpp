@@ -30,13 +30,12 @@
 
 #include <algorithm>
 #include "platform/audio/AudioBus.h"
+#include "platform/audio/AudioUtilities.h"
 #include "platform/audio/HRTFDatabase.h"
 #include "wtf/MathExtras.h"
 #include "wtf/RefPtr.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 // The value of 2 milliseconds is larger than the largest delay which exists in any HRTFKernel from the default HRTFDatabase (0.0136 seconds).
 // We ASSERT the delay values used in process() with this value.
@@ -77,10 +76,20 @@ HRTFPanner::~HRTFPanner()
 size_t HRTFPanner::fftSizeForSampleRate(float sampleRate)
 {
     // The HRTF impulse responses (loaded as audio resources) are 512 sample-frames @44.1KHz.
-    // Currently, we truncate the impulse responses to half this size, but an FFT-size of twice impulse response size is needed (for convolution).
-    // So for sample rates around 44.1KHz an FFT size of 512 is good. We double the FFT-size only for sample rates at least double this.
-    ASSERT(sampleRate >= 44100 && sampleRate <= 96000.0);
-    return (sampleRate < 88200.0) ? 512 : 1024;
+    // Currently, we truncate the impulse responses to half this size,
+    // but an FFT-size of twice impulse response size is needed (for convolution).
+    // So for sample rates around 44.1KHz an FFT size of 512 is good.
+    // For different sample rates, the truncated response is resampled.
+    // The resampled length is used to compute the FFT size by choosing a power of two that is
+    // greater than or equal the resampled length. This power of two is doubled to get the actual FFT size.
+
+    ASSERT(AudioUtilities::isValidAudioBufferSampleRate(sampleRate));
+
+    int truncatedImpulseLength = 256;
+    double sampleRateRatio = sampleRate / 44100;
+    double resampledLength = truncatedImpulseLength * sampleRateRatio;
+
+    return 2 * (1 << static_cast<unsigned>(log2(resampledLength)));
 }
 
 void HRTFPanner::reset()
@@ -113,8 +122,8 @@ int HRTFPanner::calculateDesiredAzimuthIndexAndBlend(double azimuth, double& azi
 
     // We don't immediately start using this azimuth index, but instead approach this index from the last index we rendered at.
     // This minimizes the clicks and graininess for moving sources which occur otherwise.
-    desiredAzimuthIndex = max(0, desiredAzimuthIndex);
-    desiredAzimuthIndex = min(numberOfAzimuths - 1, desiredAzimuthIndex);
+    desiredAzimuthIndex = std::max(0, desiredAzimuthIndex);
+    desiredAzimuthIndex = std::min(numberOfAzimuths - 1, desiredAzimuthIndex);
     return desiredAzimuthIndex;
 }
 
@@ -308,6 +317,12 @@ double HRTFPanner::latencyTime() const
     return (fftSize() / 2) / static_cast<double>(sampleRate());
 }
 
-} // namespace WebCore
+void HRTFPanner::trace(Visitor* visitor)
+{
+    visitor->trace(m_databaseLoader);
+    Panner::trace(visitor);
+}
+
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

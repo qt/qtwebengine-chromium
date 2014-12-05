@@ -35,10 +35,20 @@
 #include "core/animation/AnimationClock.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
+#include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
 #include "platform/TraceEvent.h"
 
-namespace WebCore {
+namespace blink {
+
+namespace {
+
+bool compareAnimationPlayers(const RefPtrWillBeMember<blink::AnimationPlayer>& left, const RefPtrWillBeMember<blink::AnimationPlayer>& right)
+{
+    return AnimationPlayer::hasLowerPriority(left.get(), right.get());
+}
+
+}
 
 // This value represents 1 frame at 30Hz plus a little bit of wiggle room.
 // TODO: Plumb a nominal framerate through and derive this value from that.
@@ -52,6 +62,7 @@ PassRefPtrWillBeRawPtr<AnimationTimeline> AnimationTimeline::create(Document* do
 
 AnimationTimeline::AnimationTimeline(Document* document, PassOwnPtrWillBeRawPtr<PlatformTiming> timing)
     : m_document(document)
+    , m_zeroTime(0)
 {
     if (!timing)
         m_timing = adoptPtrWillBeNoop(new AnimationTimelineTiming(this));
@@ -64,8 +75,8 @@ AnimationTimeline::AnimationTimeline(Document* document, PassOwnPtrWillBeRawPtr<
 AnimationTimeline::~AnimationTimeline()
 {
 #if !ENABLE(OILPAN)
-    for (WillBeHeapHashSet<RawPtrWillBeWeakMember<AnimationPlayer> >::iterator it = m_players.begin(); it != m_players.end(); ++it)
-        (*it)->timelineDestroyed();
+    for (const auto& player : m_players)
+        player->timelineDestroyed();
 #endif
 }
 
@@ -81,10 +92,20 @@ AnimationPlayer* AnimationTimeline::createAnimationPlayer(AnimationNode* child)
 AnimationPlayer* AnimationTimeline::play(AnimationNode* child)
 {
     if (!m_document)
-        return 0;
+        return nullptr;
     AnimationPlayer* player = createAnimationPlayer(child);
-    m_document->compositorPendingAnimations().add(player);
     return player;
+}
+
+WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer>> AnimationTimeline::getAnimationPlayers()
+{
+    WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer>> animationPlayers;
+    for (const auto& player : m_players) {
+        if (player->source() && player->source()->isCurrent())
+            animationPlayers.append(player);
+    }
+    std::sort(animationPlayers.begin(), animationPlayers.end(), compareAnimationPlayers);
+    return animationPlayers;
 }
 
 void AnimationTimeline::wake()
@@ -94,19 +115,20 @@ void AnimationTimeline::wake()
 
 void AnimationTimeline::serviceAnimations(TimingUpdateReason reason)
 {
-    TRACE_EVENT0("webkit", "AnimationTimeline::serviceAnimations");
+    TRACE_EVENT0("blink", "AnimationTimeline::serviceAnimations");
 
     m_timing->cancelWake();
 
     double timeToNextEffect = std::numeric_limits<double>::infinity();
-    WillBeHeapVector<RawPtrWillBeMember<AnimationPlayer> > players;
-    for (WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer> >::iterator it = m_playersNeedingUpdate.begin(); it != m_playersNeedingUpdate.end(); ++it)
-        players.append(it->get());
+
+    WillBeHeapVector<RawPtrWillBeMember<AnimationPlayer>> players;
+    players.reserveInitialCapacity(m_playersNeedingUpdate.size());
+    for (RefPtrWillBeMember<AnimationPlayer> player : m_playersNeedingUpdate)
+        players.append(player.get());
 
     std::sort(players.begin(), players.end(), AnimationPlayer::hasLowerPriority);
 
-    for (size_t i = 0; i < players.size(); ++i) {
-        AnimationPlayer* player = players[i];
+    for (AnimationPlayer* player : players) {
         if (player->update(reason))
             timeToNextEffect = std::min(timeToNextEffect, player->timeToEffectChange());
         else
@@ -141,6 +163,14 @@ void AnimationTimeline::AnimationTimelineTiming::trace(Visitor* visitor)
 {
     visitor->trace(m_timeline);
     AnimationTimeline::PlatformTiming::trace(visitor);
+}
+
+double AnimationTimeline::zeroTime()
+{
+    if (!m_zeroTime && m_document && m_document->loader()) {
+        m_zeroTime = m_document->loader()->timing()->referenceMonotonicTime();
+    }
+    return m_zeroTime;
 }
 
 double AnimationTimeline::currentTime(bool& isNull)
@@ -178,15 +208,15 @@ double AnimationTimeline::effectiveTime()
 
 void AnimationTimeline::pauseAnimationsForTesting(double pauseTime)
 {
-    for (WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer> >::iterator it = m_playersNeedingUpdate.begin(); it != m_playersNeedingUpdate.end(); ++it)
-        (*it)->pauseForTesting(pauseTime);
+    for (const auto& player : m_playersNeedingUpdate)
+        player->pauseForTesting(pauseTime);
     serviceAnimations(TimingUpdateOnDemand);
 }
 
 bool AnimationTimeline::hasOutdatedAnimationPlayer() const
 {
-    for (WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer> >::iterator it = m_playersNeedingUpdate.begin(); it != m_playersNeedingUpdate.end(); ++it) {
-        if ((*it)->outdated())
+    for (const auto& player : m_playersNeedingUpdate) {
+        if (player->outdated())
             return true;
     }
     return false;
@@ -200,19 +230,6 @@ void AnimationTimeline::setOutdatedAnimationPlayer(AnimationPlayer* player)
         m_timing->serviceOnNextFrame();
 }
 
-size_t AnimationTimeline::numberOfActiveAnimationsForTesting() const
-{
-    // Includes all players whose directly associated timed items
-    // are current or in effect.
-    size_t count = 0;
-    for (WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer> >::iterator it = m_playersNeedingUpdate.begin(); it != m_playersNeedingUpdate.end(); ++it) {
-        const AnimationNode* animationNode = (*it)->source();
-        if ((*it)->hasStartTime())
-            count += (animationNode && (animationNode->isCurrent() || animationNode->isInEffect()));
-    }
-    return count;
-}
-
 #if !ENABLE(OILPAN)
 void AnimationTimeline::detachFromDocument()
 {
@@ -223,10 +240,12 @@ void AnimationTimeline::detachFromDocument()
 
 void AnimationTimeline::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_document);
     visitor->trace(m_timing);
     visitor->trace(m_playersNeedingUpdate);
     visitor->trace(m_players);
+#endif
 }
 
 } // namespace

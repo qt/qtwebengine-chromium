@@ -4,7 +4,6 @@
 
 #include "ui/gl/gl_context.h"
 
-#include "base/android/sys_utils.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/sys_info.h"
@@ -28,14 +27,14 @@ class GLNonOwnedContext : public GLContextReal {
 
   // Implement GLContext.
   virtual bool Initialize(GLSurface* compatible_surface,
-                          GpuPreference gpu_preference) OVERRIDE;
-  virtual void Destroy() OVERRIDE {}
-  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
-  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE {}
-  virtual bool IsCurrent(GLSurface* surface) OVERRIDE { return true; }
-  virtual void* GetHandle() OVERRIDE { return NULL; }
-  virtual void SetSwapInterval(int interval) OVERRIDE {}
-  virtual std::string GetExtensions() OVERRIDE;
+                          GpuPreference gpu_preference) override;
+  virtual void Destroy() override {}
+  virtual bool MakeCurrent(GLSurface* surface) override;
+  virtual void ReleaseCurrent(GLSurface* surface) override {}
+  virtual bool IsCurrent(GLSurface* surface) override { return true; }
+  virtual void* GetHandle() override { return NULL; }
+  virtual void SetSwapInterval(int interval) override {}
+  virtual std::string GetExtensions() override;
 
  protected:
   virtual ~GLNonOwnedContext() {}
@@ -128,7 +127,7 @@ bool GLContextEGL::GetTotalGpuMemory(size_t* bytes) {
   if (limit_bytes == 0) {
     // NOTE: Non-low-end devices use only 50% of these limits,
     // except during 'emergencies' where 100% can be used.
-    if (!base::android::SysUtils::IsLowEndDevice()) {
+    if (!base::SysInfo::IsLowEndDevice()) {
       if (physical_memory_mb >= 1536)
         limit_bytes = physical_memory_mb / 8; // >192MB
       else if (physical_memory_mb >= 1152)

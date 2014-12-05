@@ -28,17 +28,18 @@
 #include "core/dom/shadow/ElementShadow.h"
 
 #include "core/css/StyleSheetList.h"
-#include "core/dom/ContainerNodeAlgorithms.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ContentDistribution.h"
 #include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLShadowElement.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "platform/EventDispatchForbiddenScope.h"
+#include "platform/ScriptForbiddenScope.h"
 
-namespace WebCore {
+namespace blink {
 
-class DistributionPool FINAL {
+class DistributionPool final {
     STACK_ALLOCATED();
 public:
     explicit DistributionPool(const ContainerNode&);
@@ -143,7 +144,8 @@ ElementShadow::~ElementShadow()
 
 ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::ShadowRootType type)
 {
-    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = ShadowRoot::create(shadowHost.document(), type);
+    EventDispatchForbiddenScope assertNoEventDispatch;
+    ScriptForbiddenScope forbidScript;
 
     if (type == ShadowRoot::AuthorShadowRoot && (!youngestShadowRoot() || youngestShadowRoot()->type() == ShadowRoot::UserAgentShadowRoot))
         shadowHost.willAddFirstAuthorShadowRoot();
@@ -151,17 +153,16 @@ ShadowRoot& ElementShadow::addShadowRoot(Element& shadowHost, ShadowRoot::Shadow
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot())
         root->lazyReattachIfAttached();
 
+    RefPtrWillBeRawPtr<ShadowRoot> shadowRoot = ShadowRoot::create(shadowHost.document(), type);
     shadowRoot->setParentOrShadowHostNode(&shadowHost);
     shadowRoot->setParentTreeScope(shadowHost.treeScope());
     m_shadowRoots.push(shadowRoot.get());
-    shadowHost.notifyNodeInserted(*shadowRoot);
     setNeedsDistributionRecalc();
 
+    shadowRoot->insertedInto(&shadowHost);
     InspectorInstrumentation::didPushShadowRoot(&shadowHost, shadowRoot.get());
 
-    ASSERT(m_shadowRoots.head());
-    ASSERT(shadowRoot.get() == m_shadowRoots.head());
-    return *m_shadowRoots.head();
+    return *shadowRoot;
 }
 
 #if !ENABLE(OILPAN)
@@ -253,8 +254,8 @@ const DestinationInsertionPoints* ElementShadow::destinationInsertionPointsFor(c
 
 void ElementShadow::distribute()
 {
-    host()->setNeedsStyleRecalc(SubtreeStyleChange);
-    Vector<HTMLShadowElement*, 32> shadowInsertionPoints;
+    host()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Shadow));
+    WillBeHeapVector<RawPtrWillBeMember<HTMLShadowElement>, 32> shadowInsertionPoints;
     DistributionPool pool(*host());
 
     for (ShadowRoot* root = youngestShadowRoot(); root; root = root->olderShadowRoot()) {
@@ -317,12 +318,12 @@ void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot& root)
     if (!root.containsShadowRoots() && !root.containsContentElements())
         return;
 
-    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(*element, &root)) {
-        if (ElementShadow* shadow = element->shadow())
+    for (Element& element : ElementTraversal::descendantsOf(root)) {
+        if (ElementShadow* shadow = element.shadow())
             m_selectFeatures.add(shadow->ensureSelectFeatureSet());
-        if (!isHTMLContentElement(*element))
+        if (!isHTMLContentElement(element))
             continue;
-        const CSSSelectorList& list = toHTMLContentElement(*element).selectorList();
+        const CSSSelectorList& list = toHTMLContentElement(element).selectorList();
         for (const CSSSelector* selector = list.first(); selector; selector = CSSSelectorList::next(*selector)) {
             for (const CSSSelector* component = selector; component; component = component->tagHistory())
                 m_selectFeatures.collectFeaturesFromSelector(*component);
@@ -330,9 +331,9 @@ void ElementShadow::collectSelectFeatureSetFrom(ShadowRoot& root)
     }
 }
 
-void ElementShadow::didAffectSelector(AffectedSelectorMask mask)
+void ElementShadow::distributedNodePseudoStateChanged(CSSSelector::PseudoType pseudo)
 {
-    if (ensureSelectFeatureSet().hasSelectorFor(mask))
+    if (ensureSelectFeatureSet().hasSelectorForPseudoType(pseudo))
         setNeedsDistributionRecalc();
 }
 
@@ -356,12 +357,14 @@ void ElementShadow::clearDistribution()
 
 void ElementShadow::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_nodeToInsertionPoints);
     visitor->trace(m_selectFeatures);
     // Shadow roots are linked with previous and next pointers which are traced.
     // It is therefore enough to trace one of the shadow roots here and the
     // rest will be traced from there.
     visitor->trace(m_shadowRoots.head());
+#endif
 }
 
 } // namespace

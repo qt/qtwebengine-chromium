@@ -20,15 +20,14 @@
 #include <OpenGL/CGLMacro.h>
 #include <OpenGL/OpenGL.h>
 
+#include "webrtc/base/macutils.h"
 #include "webrtc/modules/desktop_capture/desktop_capture_options.h"
 #include "webrtc/modules/desktop_capture/desktop_frame.h"
 #include "webrtc/modules/desktop_capture/desktop_geometry.h"
 #include "webrtc/modules/desktop_capture/desktop_region.h"
 #include "webrtc/modules/desktop_capture/mac/desktop_configuration.h"
 #include "webrtc/modules/desktop_capture/mac/desktop_configuration_monitor.h"
-#include "webrtc/modules/desktop_capture/mac/osx_version.h"
 #include "webrtc/modules/desktop_capture/mac/scoped_pixel_buffer_object.h"
-#include "webrtc/modules/desktop_capture/mouse_cursor_shape.h"
 #include "webrtc/modules/desktop_capture/screen_capture_frame_queue.h"
 #include "webrtc/modules/desktop_capture/screen_capturer_helper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -200,14 +199,10 @@ class ScreenCapturerMac : public ScreenCapturer {
   virtual void Start(Callback* callback) OVERRIDE;
   virtual void Capture(const DesktopRegion& region) OVERRIDE;
   virtual void SetExcludedWindow(WindowId window) OVERRIDE;
-  virtual void SetMouseShapeObserver(
-      MouseShapeObserver* mouse_shape_observer) OVERRIDE;
   virtual bool GetScreenList(ScreenList* screens) OVERRIDE;
   virtual bool SelectScreen(ScreenId id) OVERRIDE;
 
  private:
-  void CaptureCursor();
-
   void GlBlitFast(const DesktopFrame& frame,
                   const DesktopRegion& region);
   void GlBlitSlow(const DesktopFrame& frame);
@@ -239,7 +234,6 @@ class ScreenCapturerMac : public ScreenCapturer {
   DesktopFrame* CreateFrame();
 
   Callback* callback_;
-  MouseShapeObserver* mouse_shape_observer_;
 
   CGLContextObj cgl_context_;
   ScopedPixelBufferObject pixel_buffer_object_;
@@ -263,9 +257,6 @@ class ScreenCapturerMac : public ScreenCapturer {
   // A thread-safe list of invalid rectangles, and the size of the most
   // recently captured screen.
   ScreenCapturerHelper helper_;
-
-  // The last cursor that we sent to the client.
-  MouseCursorShape last_cursor_;
 
   // Contains an invalid region from the previous capture.
   DesktopRegion last_invalid_region_;
@@ -318,7 +309,6 @@ class InvertedDesktopFrame : public DesktopFrame {
 ScreenCapturerMac::ScreenCapturerMac(
     scoped_refptr<DesktopConfigurationMonitor> desktop_config_monitor)
     : callback_(NULL),
-      mouse_shape_observer_(NULL),
       cgl_context_(NULL),
       current_display_(0),
       dip_to_pixel_scale_(1.0f),
@@ -425,10 +415,11 @@ void ScreenCapturerMac::Capture(const DesktopRegion& region_to_capture) {
   DesktopFrame* current_frame = queue_.current_frame();
 
   bool flip = false;  // GL capturers need flipping.
-  if (IsOSLionOrLater()) {
+  if (rtc::GetOSVersionName() >= rtc::kMacOSLion) {
     // Lion requires us to use their new APIs for doing screen capture. These
     // APIS currently crash on 10.6.8 if there is no monitor attached.
     if (!CgBlitPostLion(*current_frame, region)) {
+      desktop_config_monitor_->Unlock();
       callback_->OnCaptureCompleted(NULL);
       return;
     }
@@ -457,9 +448,6 @@ void ScreenCapturerMac::Capture(const DesktopRegion& region_to_capture) {
   // and accessing display structures.
   desktop_config_monitor_->Unlock();
 
-  // Capture the current cursor shape and notify |callback_| if it has changed.
-  CaptureCursor();
-
   new_frame->set_capture_time_ms(
       (TickTime::Now() - capture_start_time).Milliseconds());
   callback_->OnCaptureCompleted(new_frame);
@@ -469,16 +457,9 @@ void ScreenCapturerMac::SetExcludedWindow(WindowId window) {
   excluded_window_ = window;
 }
 
-void ScreenCapturerMac::SetMouseShapeObserver(
-      MouseShapeObserver* mouse_shape_observer) {
-  assert(!mouse_shape_observer_);
-  assert(mouse_shape_observer);
-  mouse_shape_observer_ = mouse_shape_observer;
-}
-
 bool ScreenCapturerMac::GetScreenList(ScreenList* screens) {
   assert(screens->size() == 0);
-  if (!IsOSLionOrLater()) {
+  if (rtc::GetOSVersionName() < rtc::kMacOSLion) {
     // Single monitor cast is not supported on pre OS X 10.7.
     Screen screen;
     screen.id = kFullDesktopScreenId;
@@ -496,7 +477,7 @@ bool ScreenCapturerMac::GetScreenList(ScreenList* screens) {
 }
 
 bool ScreenCapturerMac::SelectScreen(ScreenId id) {
-  if (!IsOSLionOrLater()) {
+  if (rtc::GetOSVersionName() < rtc::kMacOSLion) {
     // Ignore the screen selection on unsupported OS.
     assert(!current_display_);
     return id == kFullDesktopScreenId;
@@ -515,61 +496,6 @@ bool ScreenCapturerMac::SelectScreen(ScreenId id) {
 
   ScreenConfigurationChanged();
   return true;
-}
-
-void ScreenCapturerMac::CaptureCursor() {
-  if (!mouse_shape_observer_)
-    return;
-
-  NSCursor* cursor = [NSCursor currentSystemCursor];
-  if (cursor == nil)
-    return;
-
-  NSImage* nsimage = [cursor image];
-  NSPoint hotspot = [cursor hotSpot];
-  NSSize size = [nsimage size];
-  CGImageRef image = [nsimage CGImageForProposedRect:NULL
-                                             context:nil
-                                               hints:nil];
-  if (image == nil)
-    return;
-
-  if (CGImageGetBitsPerPixel(image) != 32 ||
-      CGImageGetBytesPerRow(image) != (size.width * 4) ||
-      CGImageGetBitsPerComponent(image) != 8) {
-    return;
-  }
-
-  CGDataProviderRef provider = CGImageGetDataProvider(image);
-  CFDataRef image_data_ref = CGDataProviderCopyData(provider);
-  if (image_data_ref == NULL)
-    return;
-
-  const char* cursor_src_data =
-      reinterpret_cast<const char*>(CFDataGetBytePtr(image_data_ref));
-  int data_size = CFDataGetLength(image_data_ref);
-
-  // Create a MouseCursorShape that describes the cursor and pass it to
-  // the client.
-  scoped_ptr<MouseCursorShape> cursor_shape(new MouseCursorShape());
-  cursor_shape->size.set(size.width, size.height);
-  cursor_shape->hotspot.set(hotspot.x, hotspot.y);
-  cursor_shape->data.assign(cursor_src_data, cursor_src_data + data_size);
-
-  CFRelease(image_data_ref);
-
-  // Compare the current cursor with the last one we sent to the client. If
-  // they're the same, then don't bother sending the cursor again.
-  if (last_cursor_.size.equals(cursor_shape->size) &&
-      last_cursor_.hotspot.equals(cursor_shape->hotspot) &&
-      last_cursor_.data == cursor_shape->data) {
-    return;
-  }
-
-  // Record the last cursor image that we sent to the client.
-  last_cursor_ = *cursor_shape;
-
-  mouse_shape_observer_->OnCursorShapeChanged(cursor_shape.release());
 }
 
 void ScreenCapturerMac::GlBlitFast(const DesktopFrame& frame,
@@ -874,7 +800,7 @@ void ScreenCapturerMac::ScreenConfigurationChanged() {
   // contents. Although the API exists in OS 10.6, it crashes the caller if
   // the machine has no monitor connected, so we fall back to depcreated APIs
   // when running on 10.6.
-  if (IsOSLionOrLater()) {
+  if (rtc::GetOSVersionName() >= rtc::kMacOSLion) {
     LOG(LS_INFO) << "Using CgBlitPostLion.";
     // No need for any OpenGL support on Lion
     return;
@@ -922,10 +848,11 @@ void ScreenCapturerMac::ScreenConfigurationChanged() {
   LOG(LS_INFO) << "Using GlBlit";
 
   CGLPixelFormatAttribute attributes[] = {
-    // This function does an early return if IsOSLionOrLater(), this code only
-    // runs on 10.6 and can be deleted once 10.6 support is dropped.  So just
-    // keep using kCGLPFAFullScreen even though it was deprecated in 10.6 --
-    // it's still functional there, and it's not used on newer OS X versions.
+    // This function does an early return if GetOSVersionName() >= kMacOSLion,
+    // this code only runs on 10.6 and can be deleted once 10.6 support is
+    // dropped.  So just keep using kCGLPFAFullScreen even though it was
+    // deprecated in 10.6 -- it's still functional there, and it's not used on
+    // newer OS X versions.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdeprecated-declarations"
     kCGLPFAFullScreen,

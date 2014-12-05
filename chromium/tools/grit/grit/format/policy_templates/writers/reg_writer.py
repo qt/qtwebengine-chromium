@@ -47,7 +47,7 @@ class RegWriter(template_writer.TemplateWriter):
     list.sort() methods to sort policies.
     See TemplateWriter.SortPoliciesGroupsFirst for usage.
     '''
-    is_list = policy['type'] == 'list'
+    is_list = policy['type'] in ('list', 'string-enum-list')
     # Lists come after regular policies.
     return (is_list, policy['name'])
 
@@ -57,7 +57,7 @@ class RegWriter(template_writer.TemplateWriter):
     if policy['type'] == 'external':
       # This type can only be set through cloud policy.
       return
-    elif policy['type'] == 'list':
+    elif policy['type'] in ('list', 'string-enum-list'):
       self._StartBlock(key, policy['name'], list)
       i = 1
       for item in example_value:
@@ -82,10 +82,14 @@ class RegWriter(template_writer.TemplateWriter):
 
       list.append('"%s"=%s' % (policy['name'], example_value_str))
 
+  def WriteComment(self, comment):
+    self._prefix.append('; ' + comment)
+
   def WritePolicy(self, policy):
-    self._WritePolicy(policy,
-                      self.config['win_reg_mandatory_key_name'],
-                      self._mandatory)
+    if self.CanBeMandatory(policy):
+      self._WritePolicy(policy,
+                        self.config['win_reg_mandatory_key_name'],
+                        self._mandatory)
 
   def WriteRecommendedPolicy(self, policy):
     self._WritePolicy(policy,
@@ -102,8 +106,12 @@ class RegWriter(template_writer.TemplateWriter):
     self._mandatory = []
     self._recommended = []
     self._last_key = {}
+    self._prefix = []
 
   def GetTemplateText(self):
-    prefix = ['Windows Registry Editor Version 5.00']
-    all = prefix + self._mandatory + self._recommended
+    self._prefix.append('Windows Registry Editor Version 5.00')
+    if self._GetChromiumVersionString() is not None:
+      self.WriteComment(self.config['build'] + ' version: ' + \
+          self._GetChromiumVersionString())
+    all = self._prefix + self._mandatory + self._recommended
     return self.NEWLINE.join(all)

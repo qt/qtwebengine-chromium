@@ -26,24 +26,17 @@
     'app/content_main_runner.cc',
     'app/mojo/mojo_init.cc',
     'app/mojo/mojo_init.h',
-    'app/startup_helper_win.cc',
     'public/app/android_library_loader_hooks.h',
     'public/app/content_main.h',
     'public/app/content_main_delegate.cc',
     'public/app/content_main_delegate.h',
     'public/app/content_main_runner.h',
-    'public/app/startup_helper_win.h',
   ],
   'conditions': [
     ['((OS=="linux" and os_posix==1 and use_aura==1) or OS=="android") and use_allocator!="none"', {
       'dependencies': [
         # This is needed by app/content_main_runner.cc
         '../base/allocator/allocator.gyp:allocator',
-      ],
-    }],
-    ['OS=="win"', {
-      'dependencies': [
-        '../sandbox/sandbox.gyp:sandbox',
       ],
     }],
     ['OS=="android"', {
@@ -58,6 +51,11 @@
         '../build/android/cpufeatures.gypi',
       ],
     }],
+    ['OS=="win"', {
+      'dependencies': [
+        'content_startup_helper_win',
+      ],
+    }],
     ['OS=="ios"', {
       'sources!': [
         'app/content_main.cc',
@@ -66,10 +64,9 @@
       ],
     }, {  # OS!="ios"
       'dependencies': [
-        '../mojo/mojo.gyp:mojo_environment_chromium',
-        '../mojo/mojo.gyp:mojo_service_manager',
-        '../mojo/mojo.gyp:mojo_service_provider_bindings',
-        '../mojo/mojo.gyp:mojo_system_impl',
+        '../mojo/edk/mojo_edk.gyp:mojo_system_impl',
+        '../mojo/mojo_base.gyp:mojo_environment_chromium',
+        '../mojo/public/mojo_public.gyp:mojo_application_bindings',
      ],
     }],
   ],

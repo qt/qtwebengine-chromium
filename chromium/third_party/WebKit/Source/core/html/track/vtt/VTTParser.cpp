@@ -40,7 +40,7 @@
 #include "platform/text/SegmentedString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -90,13 +90,13 @@ VTTParser::VTTParser(VTTParserClient* client, Document& document)
 {
 }
 
-void VTTParser::getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >& outputCues)
+void VTTParser::getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue>>& outputCues)
 {
     outputCues = m_cueList;
     m_cueList.clear();
 }
 
-void VTTParser::getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >& outputRegions)
+void VTTParser::getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion>>& outputRegions)
 {
     outputRegions = m_regionList;
     m_regionList.clear();
@@ -291,7 +291,7 @@ VTTParser::ParseState VTTParser::collectCueText(const String& line)
         return recoverCue(line);
     }
     if (!m_currentContent.isEmpty())
-        m_currentContent.append("\n");
+        m_currentContent.append('\n');
     m_currentContent.append(line);
 
     return CueText;

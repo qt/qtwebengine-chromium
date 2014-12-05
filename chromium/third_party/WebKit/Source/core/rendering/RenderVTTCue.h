@@ -30,17 +30,17 @@
 #include "core/rendering/RenderInline.h"
 #include "platform/geometry/FloatPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 class VTTCue;
 class VTTCueBox;
 
-class RenderVTTCue FINAL : public RenderBlockFlow {
+class RenderVTTCue final : public RenderBlockFlow {
 public:
     explicit RenderVTTCue(VTTCueBox*);
 
 private:
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
     bool isOutside() const;
     bool isOverlapping() const;
@@ -59,6 +59,6 @@ private:
     FloatPoint m_fallbackPosition;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderVTTCue_h

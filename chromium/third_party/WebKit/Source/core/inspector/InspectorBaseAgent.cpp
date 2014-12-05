@@ -34,7 +34,7 @@
 #include "core/inspector/InspectorState.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 InspectorAgent::InspectorAgent(const String& name)
     : m_name(name)
@@ -43,6 +43,15 @@ InspectorAgent::InspectorAgent(const String& name)
 
 InspectorAgent::~InspectorAgent()
 {
+#if ENABLE(OILPAN)
+    m_state = nullptr;
+#endif
+}
+
+void InspectorAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_instrumentingAgents);
+    visitor->trace(m_state);
 }
 
 void InspectorAgent::appended(InstrumentingAgents* instrumentingAgents, InspectorState* inspectorState)
@@ -58,7 +67,7 @@ InspectorAgentRegistry::InspectorAgentRegistry(InstrumentingAgents* instrumentin
 {
 }
 
-void InspectorAgentRegistry::append(PassOwnPtr<InspectorAgent> agent)
+void InspectorAgentRegistry::append(PassOwnPtrWillBeRawPtr<InspectorAgent> agent)
 {
     agent->appended(m_instrumentingAgents, m_inspectorState->createAgentState(agent->name()));
     m_agents.append(agent);
@@ -100,5 +109,20 @@ void InspectorAgentRegistry::flushPendingFrontendMessages()
         m_agents[i]->flushPendingFrontendMessages();
 }
 
-} // namespace WebCore
+void InspectorAgentRegistry::trace(Visitor* visitor)
+{
+    visitor->trace(m_instrumentingAgents);
+    visitor->trace(m_inspectorState);
+#if ENABLE(OILPAN)
+    visitor->trace(m_agents);
+#endif
+}
+
+void InspectorAgentRegistry::didCommitLoadForMainFrame()
+{
+    for (size_t i = 0; i < m_agents.size(); i++)
+        m_agents[i]->didCommitLoadForMainFrame();
+}
+
+} // namespace blink
 

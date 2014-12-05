@@ -50,6 +50,7 @@
         'skia_arch_type%': 'x86',
         'arm_version%': 0,
         'arm_neon%': 0,
+        'skia_egl%': 0,
       },
 
       # Re-define all variables defined within the level-3 'variables' dict,
@@ -59,6 +60,7 @@
       'skia_arch_type%': '<(skia_arch_type)',
       'arm_version%': '<(arm_version)',
       'arm_neon%': '<(arm_neon)',
+      'skia_egl%': '<(skia_egl)',
 
       'conditions': [
         [ 'skia_android_framework == 1', {
@@ -87,6 +89,7 @@
         }],
         [ 'skia_os == "android"', {
           'skia_static_initializers%': 0,
+          'skia_egl%': 1,
         }, {
           'skia_static_initializers%': 1,
         }],
@@ -94,6 +97,9 @@
           'skia_arch_type%': 'arm',
           'arm_version%': 7,
           'arm_neon%': 0, # neon asm files known not to work with the ios build
+        }],
+        [ 'skia_os == "nacl"', {
+          'skia_egl%': 1,
         }],
         [ 'skia_os in ["android", "nacl"] and not skia_android_framework',
           # skia_freetype_static - on OS variants that normally would
@@ -139,7 +145,7 @@
       'skia_resource_cache_mb_limit%': 0,
       'skia_resource_cache_count_limit%': 0,
       'skia_angle%': 0,
-      'skia_directwrite%': 0,
+      'skia_gdi%': 0,
       'skia_gpu%': 1,
       'skia_osx_deployment_target%': '',
       'skia_profile_enabled%': 0,
@@ -180,6 +186,12 @@
         'skia_clang_build%': 0,
         'skia_keep_frame_pointer%': 0,
       }],
+      [ 'skia_shared_lib or skia_sanitizer or skia_os == "android"', {
+          'skia_pic%' : 1,
+        }, {
+          'skia_pic%' : 0,
+        }
+      ],
     ],
 
     # Re-define all variables defined within the level-2 'variables' dict,
@@ -211,9 +223,10 @@
     'skia_arch_width%': '<(skia_arch_width)',
     'skia_arch_type%': '<(skia_arch_type)',
     'skia_chrome_utils%': '<(skia_chrome_utils)',
-    'skia_directwrite%': '<(skia_directwrite)',
+    'skia_gdi%': '<(skia_gdi)',
     'skia_gpu%': '<(skia_gpu)',
     'skia_win_exceptions%': 0,
+    'skia_win_ltcg%': 1,
     'skia_osx_deployment_target%': '<(skia_osx_deployment_target)',
     'skia_profile_enabled%': '<(skia_profile_enabled)',
     'skia_shared_lib%': '<(skia_shared_lib)',
@@ -225,6 +238,8 @@
     'skia_run_pdfviewer_in_gm%': 0,
     'skia_disable_inlining%': 0,
     'skia_moz2d%': 0,
+    'skia_is_bot%': '<!(python -c "import os; print os.environ.get(\'CHROME_HEADLESS\', 0)")',
+    'skia_egl%': '<(skia_egl)',
 
     # These are referenced by our .gypi files that list files (e.g. core.gypi)
     #

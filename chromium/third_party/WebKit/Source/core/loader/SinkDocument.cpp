@@ -28,7 +28,7 @@
 
 #include "core/dom/RawDataDocumentParser.h"
 
-namespace WebCore {
+namespace blink {
 
 class SinkDocumentParser : public RawDataDocumentParser {
 public:
@@ -44,7 +44,7 @@ private:
     }
 
     // Ignore all data.
-    virtual void appendBytes(const char*, size_t) OVERRIDE { }
+    virtual void appendBytes(const char*, size_t) override { }
 };
 
 SinkDocument::SinkDocument(const DocumentInit& initializer)
@@ -59,4 +59,4 @@ PassRefPtrWillBeRawPtr<DocumentParser> SinkDocument::createParser()
     return SinkDocumentParser::create(this);
 }
 
-} // namespace WebCore
+} // namespace blink

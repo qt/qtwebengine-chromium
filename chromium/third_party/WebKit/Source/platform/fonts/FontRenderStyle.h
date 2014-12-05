@@ -30,7 +30,7 @@
 #ifndef FontRenderStyle_h
 #define FontRenderStyle_h
 
-namespace WebCore {
+namespace blink {
 
 // FontRenderStyle describes the user's preferences for rendering a font at a
 // given size.
@@ -72,6 +72,6 @@ struct FontRenderStyle {
     char useSubpixelPositioning; // use subpixel positioning (fractional X positions for glyphs)
 };
 
-}
+} // namespace blink
 
 #endif // FontRenderStyle_h

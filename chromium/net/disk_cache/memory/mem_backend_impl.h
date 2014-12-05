@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
+#include "base/memory/weak_ptr.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/disk_cache/memory/mem_rankings.h"
 
@@ -25,7 +26,7 @@ class MemEntryImpl;
 class NET_EXPORT_PRIVATE MemBackendImpl : public Backend {
  public:
   explicit MemBackendImpl(net::NetLog* net_log);
-  virtual ~MemBackendImpl();
+  ~MemBackendImpl() override;
 
   // Returns an instance of a Backend implemented only in memory. The returned
   // object should be deleted when not needed anymore. max_bytes is the maximum
@@ -62,28 +63,31 @@ class NET_EXPORT_PRIVATE MemBackendImpl : public Backend {
   void RemoveFromRankingList(MemEntryImpl* entry);
 
   // Backend interface.
-  virtual net::CacheType GetCacheType() const OVERRIDE;
-  virtual int32 GetEntryCount() const OVERRIDE;
-  virtual int OpenEntry(const std::string& key, Entry** entry,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int CreateEntry(const std::string& key, Entry** entry,
-                          const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntry(const std::string& key,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomAllEntries(const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesBetween(base::Time initial_time,
-                                 base::Time end_time,
-                                 const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesSince(base::Time initial_time,
-                               const CompletionCallback& callback) OVERRIDE;
-  virtual int OpenNextEntry(void** iter, Entry** next_entry,
-                            const CompletionCallback& callback) OVERRIDE;
-  virtual void EndEnumeration(void** iter) OVERRIDE;
-  virtual void GetStats(
-      std::vector<std::pair<std::string, std::string> >* stats) OVERRIDE {}
-  virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
+  net::CacheType GetCacheType() const override;
+  int32 GetEntryCount() const override;
+  int OpenEntry(const std::string& key,
+                Entry** entry,
+                const CompletionCallback& callback) override;
+  int CreateEntry(const std::string& key,
+                  Entry** entry,
+                  const CompletionCallback& callback) override;
+  int DoomEntry(const std::string& key,
+                const CompletionCallback& callback) override;
+  int DoomAllEntries(const CompletionCallback& callback) override;
+  int DoomEntriesBetween(base::Time initial_time,
+                         base::Time end_time,
+                         const CompletionCallback& callback) override;
+  int DoomEntriesSince(base::Time initial_time,
+                       const CompletionCallback& callback) override;
+  scoped_ptr<Iterator> CreateIterator() override;
+  void GetStats(
+      std::vector<std::pair<std::string, std::string>>* stats) override {}
+  void OnExternalCacheHit(const std::string& key) override;
 
  private:
+  class MemIterator;
+  friend class MemIterator;
+
   typedef base::hash_map<std::string, MemEntryImpl*> EntryMap;
 
   // Old Backend interface.
@@ -94,7 +98,6 @@ class NET_EXPORT_PRIVATE MemBackendImpl : public Backend {
   bool DoomEntriesBetween(const base::Time initial_time,
                           const base::Time end_time);
   bool DoomEntriesSince(const base::Time initial_time);
-  bool OpenNextEntry(void** iter, Entry** next_entry);
 
   // Deletes entries from the cache until the current size is below the limit.
   // If empty is true, the whole cache will be trimmed, regardless of being in
@@ -111,6 +114,8 @@ class NET_EXPORT_PRIVATE MemBackendImpl : public Backend {
   int32 current_size_;
 
   net::NetLog* net_log_;
+
+  base::WeakPtrFactory<MemBackendImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MemBackendImpl);
 };

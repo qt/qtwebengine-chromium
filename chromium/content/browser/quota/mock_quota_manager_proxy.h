@@ -6,12 +6,12 @@
 #define CONTENT_BROWSER_QUOTA_MOCK_QUOTA_MANAGER_PROXY_H_
 
 #include "content/browser/quota/mock_quota_manager.h"
+#include "storage/browser/quota/quota_client.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/common/quota/quota_types.h"
 
-using quota::QuotaManagerProxy;
+using storage::QuotaManagerProxy;
 
 namespace content {
 
@@ -23,39 +23,39 @@ class MockQuotaManagerProxy : public QuotaManagerProxy {
   MockQuotaManagerProxy(MockQuotaManager* quota_manager,
                         base::SingleThreadTaskRunner* task_runner);
 
-  virtual void RegisterClient(QuotaClient* client) OVERRIDE;
+  void RegisterClient(QuotaClient* client) override;
 
   void SimulateQuotaManagerDestroyed();
 
   // We don't mock them.
-  virtual void NotifyOriginInUse(const GURL& origin) OVERRIDE {}
-  virtual void NotifyOriginNoLongerInUse(const GURL& origin) OVERRIDE {}
-  virtual void SetUsageCacheEnabled(QuotaClient::ID client_id,
-                                    const GURL& origin,
-                                    StorageType type,
-                                    bool enabled) OVERRIDE {}
-  virtual void GetUsageAndQuota(
+  void NotifyOriginInUse(const GURL& origin) override {}
+  void NotifyOriginNoLongerInUse(const GURL& origin) override {}
+  void SetUsageCacheEnabled(QuotaClient::ID client_id,
+                            const GURL& origin,
+                            StorageType type,
+                            bool enabled) override {}
+  void GetUsageAndQuota(
       base::SequencedTaskRunner* original_task_runner,
       const GURL& origin,
       StorageType type,
-      const QuotaManager::GetUsageAndQuotaCallback& callback) OVERRIDE {}
+      const QuotaManager::GetUsageAndQuotaCallback& callback) override {}
 
   // Validates the |client_id| and updates the internal access count
   // which can be accessed via notify_storage_accessed_count().
   // The also records the |origin| and |type| in last_notified_origin_ and
   // last_notified_type_.
-  virtual void NotifyStorageAccessed(QuotaClient::ID client_id,
-                                     const GURL& origin,
-                                     StorageType type) OVERRIDE;
+  void NotifyStorageAccessed(QuotaClient::ID client_id,
+                             const GURL& origin,
+                             StorageType type) override;
 
   // Records the |origin|, |type| and |delta| as last_notified_origin_,
   // last_notified_type_ and last_notified_delta_ respecitvely.
   // If non-null MockQuotaManager is given to the constructor this also
   // updates the manager's internal usage information.
-  virtual void NotifyStorageModified(QuotaClient::ID client_id,
-                                     const GURL& origin,
-                                     StorageType type,
-                                     int64 delta) OVERRIDE;
+  void NotifyStorageModified(QuotaClient::ID client_id,
+                             const GURL& origin,
+                             StorageType type,
+                             int64 delta) override;
 
   int notify_storage_accessed_count() const { return storage_accessed_count_; }
   int notify_storage_modified_count() const { return storage_modified_count_; }
@@ -64,7 +64,7 @@ class MockQuotaManagerProxy : public QuotaManagerProxy {
   int64 last_notified_delta() const { return last_notified_delta_; }
 
  protected:
-  virtual ~MockQuotaManagerProxy();
+  ~MockQuotaManagerProxy() override;
 
  private:
   MockQuotaManager* mock_manager() const {

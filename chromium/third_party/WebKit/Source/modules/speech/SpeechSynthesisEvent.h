@@ -28,9 +28,10 @@
 
 #include "modules/EventModules.h"
 
-namespace WebCore {
+namespace blink {
 
-class SpeechSynthesisEvent FINAL : public Event {
+class SpeechSynthesisEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create();
     static PassRefPtrWillBeRawPtr<SpeechSynthesisEvent> create(const AtomicString& type, unsigned long charIndex, float elapsedTime, const String& name);
@@ -39,9 +40,9 @@ public:
     float elapsedTime() const { return m_elapsedTime; }
     const String& name() const { return m_name; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::SpeechSynthesisEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::SpeechSynthesisEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         Event::trace(visitor);
     }
@@ -55,6 +56,6 @@ private:
     String m_name;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechSynthesisEvent_h

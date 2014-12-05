@@ -28,13 +28,12 @@
 #define InspectorClient_h
 
 #include "core/inspector/InspectorStateClient.h"
+#include "core/page/ContextMenuProvider.h"
 #include "wtf/Forward.h"
-#include "wtf/HashMap.h"
-#include "wtf/HashSet.h"
+#include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class IntPoint;
 class PlatformKeyboardEvent;
 class PlatformMouseEvent;
 
@@ -57,7 +56,7 @@ public:
     virtual void startGPUEventsRecording() { }
     virtual void stopGPUEventsRecording() { }
 
-    virtual void setDeviceMetricsOverride(int /*width*/, int /*height*/, float /*deviceScaleFactor*/, bool /*emulateViewport*/, bool /*fitWindow*/) { }
+    virtual void setDeviceMetricsOverride(int /*width*/, int /*height*/, float /*deviceScaleFactor*/, bool /*mobile*/, bool /*fitWindow*/, float /* scale */, float /* offsetX */, float /* offsetY */) { }
     virtual void clearDeviceMetricsOverride() { }
     virtual void setTouchEventEmulationEnabled(bool) { }
 
@@ -68,17 +67,21 @@ public:
     virtual void setContinuousPaintingEnabled(bool) { }
     virtual void setShowScrollBottleneckRects(bool) { }
 
-    virtual void requestPageScaleFactor(float scale, const IntPoint& origin) { }
-    virtual void getAllocatedObjects(HashSet<const void*>&) { }
-    virtual void dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>&) { }
+    virtual void resetScrollAndPageScaleFactor() { }
+    virtual float minimumPageScaleFactor() { return 1; }
+    virtual float maximumPageScaleFactor() { return 1; }
+    virtual void setPageScaleFactor(float) { }
+    virtual void showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>) { }
 
     virtual void dispatchKeyEvent(const PlatformKeyboardEvent&) { }
     virtual void dispatchMouseEvent(const PlatformMouseEvent&) { }
+
+    virtual void resumeStartup() { }
 
 protected:
     virtual ~InspectorClient() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorClient_h)

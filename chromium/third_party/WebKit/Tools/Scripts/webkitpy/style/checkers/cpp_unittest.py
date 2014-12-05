@@ -38,7 +38,8 @@
 import os
 import random
 import re
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
+
 import cpp as cpp_style
 from cpp import CppChecker
 from ..filter import FilterConfiguration
@@ -1601,10 +1602,10 @@ class CppStyleTest(CppStyleTestBase):
             'int foo() const {',
             'Place brace on its own line for function definitions.  [whitespace/braces] [4]')
         self.assert_multi_line_lint(
-            'int foo() const OVERRIDE {',
+            'int foo() override {',
             'Place brace on its own line for function definitions.  [whitespace/braces] [4]')
         self.assert_multi_line_lint(
-            'int foo() OVERRIDE {',
+            'int foo() final {',
             'Place brace on its own line for function definitions.  [whitespace/braces] [4]')
         self.assert_multi_line_lint(
             'int foo() const\n'
@@ -1612,7 +1613,12 @@ class CppStyleTest(CppStyleTestBase):
             '}\n',
             '')
         self.assert_multi_line_lint(
-            'int foo() OVERRIDE\n'
+            'int foo() override\n'
+            '{\n'
+            '}\n',
+            '')
+        self.assert_multi_line_lint(
+            'int foo() final\n'
             '{\n'
             '}\n',
             '')
@@ -1773,6 +1779,15 @@ class CppStyleTest(CppStyleTestBase):
         self.assert_lint('a<Foo*> t <<= *b / &c; // Test', '')
         self.assert_lint('if (a=b == 1)', 'Missing spaces around =  [whitespace/operators] [4]')
         self.assert_lint('a = 1<<20', 'Missing spaces around <<  [whitespace/operators] [3]')
+        self.assert_lint('a = 1>> 20', 'Missing spaces around >>  [whitespace/operators] [3]')
+        self.assert_lint('a = 1 >>20', 'Missing spaces around >>  [whitespace/operators] [3]')
+        self.assert_lint('a = 1>>20', 'Missing spaces around >>  [whitespace/operators] [3]')
+        self.assert_lint('func(OwnPtr<Vector<Foo>>)', '')
+        self.assert_lint('func(OwnPtr<Vector<Foo>> foo)', '')
+        self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar>>>)', '')
+        # FIXME: The following test should not show any error.
+        self.assert_lint('func(OwnPtr<HashMap<Foo, Member<Bar\n    >>>)',
+                         'Missing spaces around <  [whitespace/operators] [3]')
         self.assert_lint('if (a = b == 1)', '')
         self.assert_lint('a = 1 << 20', '')
         self.assert_multi_line_lint('#include <sys/io.h>\n', '')
@@ -1900,25 +1915,11 @@ class CppStyleTest(CppStyleTestBase):
         self.assert_lint('printf("\\"%s // In quotes.")', '')
         self.assert_lint('printf("%s", "// In quotes.")', '')
 
-    def test_one_spaces_after_punctuation_in_comments(self):
+    def test_line_ending_in_whitespace(self):
         self.assert_lint('int a; // This is a sentence.',
                          '')
         self.assert_lint('int a; // This is a sentence.  ',
                          'Line ends in whitespace.  Consider deleting these extra spaces.  [whitespace/end_of_line] [4]')
-        self.assert_lint('int a; // This is a sentence. This is a another sentence.',
-                         '')
-        self.assert_lint('int a; // This is a sentence.  This is a another sentence.',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
-        self.assert_lint('int a; // This is a sentence!  This is a another sentence.',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
-        self.assert_lint('int a; // Why did I write this?  This is a another sentence.',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
-        self.assert_lint('int a; // Elementary,  my dear.',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
-        self.assert_lint('int a; // The following should be clear:  Is it?',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
-        self.assert_lint('int a; // Look at the follow semicolon;  I hope this gives an error.',
-                         'Should have only a single space after a punctuation in a comment.  [whitespace/comments] [5]')
 
     def test_space_after_comment_marker(self):
         self.assert_lint('//', '')
@@ -5037,11 +5038,6 @@ class WebKitStyleTest(CppStyleTestBase):
 
         # vm_throw is allowed as well.
         self.assert_lint('int vm_throw;', '')
-
-        # Attributes.
-        self.assert_lint('int foo ALLOW_UNUSED;', '')
-        self.assert_lint('int foo_error ALLOW_UNUSED;', 'foo_error' + name_underscore_error_message)
-        self.assert_lint('ThreadFunctionInvocation* leakedInvocation ALLOW_UNUSED = invocation.leakPtr()', '')
 
         # Bitfields.
         self.assert_lint('unsigned _fillRule : 1;',

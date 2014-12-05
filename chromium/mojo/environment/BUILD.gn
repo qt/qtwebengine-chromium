@@ -2,8 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# GYP version: mojo.gyp:mojo_environment_chromium
-static_library("chromium") {
+# GYP version: mojo_base.gyp:mojo_environment_chromium
+source_set("chromium") {
   output_name = "mojo_environment_chromium"
 
   sources = [
@@ -13,20 +13,15 @@ static_library("chromium") {
     "../public/cpp/environment/lib/logging.cc",
   ]
 
-  deps = [
-    ":chromium_impl",
-    "//mojo/common",
-  ]
-
-  forward_dependent_configs_from = [
+  public_deps = [
     ":chromium_impl",
   ]
 }
 
-# GYP version: mojo.gyp:mojo_environment_chromium_impl
+# GYP version: mojo_base.gyp:mojo_environment_chromium_impl
 component("chromium_impl") {
   output_name = "mojo_environment_impl"
-  visibility = "//mojo/*"
+  visibility = [ "//mojo/*" ]
 
   sources = [
     "default_async_waiter_impl.cc",

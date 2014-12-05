@@ -29,45 +29,43 @@
 #ifndef InspectorDatabaseAgent_h
 #define InspectorDatabaseAgent_h
 
-#include "InspectorFrontend.h"
+#include "core/InspectorFrontend.h"
 #include "core/inspector/InspectorBaseAgent.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Database;
-class DocumentLoader;
-class LocalFrame;
 class InspectorDatabaseResource;
 class InspectorFrontend;
-class InstrumentingAgents;
 
 typedef String ErrorString;
 
-class InspectorDatabaseAgent FINAL : public InspectorBaseAgent<InspectorDatabaseAgent>, public InspectorBackendDispatcher::DatabaseCommandHandler {
+class InspectorDatabaseAgent final : public InspectorBaseAgent<InspectorDatabaseAgent>, public InspectorBackendDispatcher::DatabaseCommandHandler {
 public:
-    static PassOwnPtr<InspectorDatabaseAgent> create()
+    static PassOwnPtrWillBeRawPtr<InspectorDatabaseAgent> create()
     {
-        return adoptPtr(new InspectorDatabaseAgent());
+        return adoptPtrWillBeNoop(new InspectorDatabaseAgent());
     }
     virtual ~InspectorDatabaseAgent();
+    virtual void trace(Visitor*) override;
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
+    virtual void setFrontend(InspectorFrontend*) override;
+    virtual void clearFrontend() override;
+    virtual void restore() override;
 
-    virtual void didCommitLoadForMainFrame() OVERRIDE;
+    virtual void didCommitLoadForMainFrame() override;
 
     // Called from the front-end.
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
-    virtual void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String> >& names) OVERRIDE;
-    virtual void executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtr<ExecuteSQLCallback>) OVERRIDE;
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+    virtual void getDatabaseTableNames(ErrorString*, const String& databaseId, RefPtr<TypeBuilder::Array<String> >& names) override;
+    virtual void executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtrWillBeRawPtr<ExecuteSQLCallback>) override;
 
-    void didOpenDatabase(PassRefPtrWillBeRawPtr<Database>, const String& domain, const String& name, const String& version);
+    void didOpenDatabase(Database*, const String& domain, const String& name, const String& version);
 private:
     explicit InspectorDatabaseAgent();
 
@@ -75,11 +73,11 @@ private:
     InspectorDatabaseResource* findByFileName(const String& fileName);
 
     InspectorFrontend::Database* m_frontend;
-    typedef WillBePersistentHeapHashMap<String, RefPtrWillBeMember<InspectorDatabaseResource> > DatabaseResourcesHeapMap;
+    typedef PersistentHeapHashMapWillBeHeapHashMap<String, Member<InspectorDatabaseResource> > DatabaseResourcesHeapMap;
     DatabaseResourcesHeapMap m_resources;
     bool m_enabled;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorDatabaseAgent_h)

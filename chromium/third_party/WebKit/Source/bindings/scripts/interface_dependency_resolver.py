@@ -37,6 +37,7 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-compiler#TOC
 """
 
 import os.path
+from utilities import idl_filename_to_component, is_valid_component_dependency
 
 # The following extended attributes can be applied to a dependency interface,
 # and are then applied to the individual members when merging.
@@ -63,7 +64,7 @@ class InterfaceDependencyResolver(object):
         self.interfaces_info = interfaces_info
         self.reader = reader
 
-    def resolve_dependencies(self, definitions):
+    def resolve_dependencies(self, definitions, component):
         """Resolve dependencies, merging them into IDL definitions of main file.
 
         Dependencies consist of 'partial interface' for the same interface as
@@ -81,7 +82,27 @@ class InterfaceDependencyResolver(object):
 
         Args:
             definitions: IdlDefinitions object, modified in place
+            component:
+                string, describing where the above definitions are defined,
+                'core' or 'modules'. See KNOWN_COMPONENTS in utilities.py
+
+        Returns:
+            A dictionary whose key is component and value is IdlDefinitions
+            object whose dependency is resolved.
+
+        Raises:
+            Exception:
+                A given IdlDefinitions object doesn't have any interfaces,
+                or a given IdlDefinitions object has incorrect referenced
+                interfaces.
         """
+        # FIXME: we need to resolve dependency when we implement partial
+        # dictionary.
+        if not definitions.interfaces:
+            raise Exception('No need to resolve any dependencies of '
+                            'this definition: %s, because this should '
+                            'have a dictionary.' % definitions.idl_name)
+
         target_interface = next(definitions.interfaces.itervalues())
         interface_name = target_interface.name
         interface_info = self.interfaces_info[interface_name]
@@ -90,36 +111,118 @@ class InterfaceDependencyResolver(object):
             target_interface.extended_attributes.update(
                 interface_info['inherited_extended_attributes'])
 
-        merge_interface_dependencies(definitions,
-                                     target_interface,
-                                     interface_info['dependencies_full_paths'],
-                                     self.reader)
+        resolved_definitions = merge_interface_dependencies(
+            definitions,
+            component,
+            target_interface,
+            interface_info['dependencies_full_paths'] +
+            interface_info['dependencies_other_component_full_paths'],
+            self.reader)
 
         for referenced_interface_name in interface_info['referenced_interfaces']:
             referenced_definitions = self.reader.read_idl_definitions(
                 self.interfaces_info[referenced_interface_name]['full_path'])
-            definitions.update(referenced_definitions)
+
+            for referenced_component in referenced_definitions:
+                if not is_valid_component_dependency(component, referenced_component):
+                    raise Exception('This definitions: %s is defined in %s '
+                                    'but reference interface:%s is defined '
+                                    'in %s' % (definitions.idl_name,
+                                               component,
+                                               referenced_interface_name,
+                                               referenced_component))
+
+                resolved_definitions[component].update(referenced_definitions[component])
+
+        return resolved_definitions
 
 
-def merge_interface_dependencies(definitions, target_interface, dependency_idl_filenames, reader):
+def merge_interface_dependencies(definitions, component, target_interface, dependency_idl_filenames, reader):
     """Merge dependencies ('partial interface' and 'implements') in dependency_idl_filenames into target_interface.
 
-    No return: modifies target_interface in place.
+    Args:
+        definitions: IdlDefinitions object, modified in place
+        component:
+            string, describing where the above definitions are defined,
+            'core' or 'modules'. See KNOWN_COMPONENTS in utilities.py
+        target_interface: IdlInterface object, modified in place
+        dependency_idl_filenames:
+            Idl filenames which depend on the above definitions.
+        reader: IdlReader object.
+    Returns:
+        A dictionary whose key is component and value is IdlDefinitions
+        object whose dependency is resolved.
     """
+    resolved_definitions = {component: definitions}
     # Sort so order consistent, so can compare output from run to run.
     for dependency_idl_filename in sorted(dependency_idl_filenames):
         dependency_definitions = reader.read_idl_file(dependency_idl_filename)
+        dependency_component = idl_filename_to_component(dependency_idl_filename)
+
         dependency_interface = next(dependency_definitions.interfaces.itervalues())
         dependency_interface_basename, _ = os.path.splitext(os.path.basename(dependency_idl_filename))
 
         transfer_extended_attributes(dependency_interface,
                                      dependency_interface_basename)
-        definitions.update(dependency_definitions)  # merges partial interfaces
-        if not dependency_interface.is_partial:
+
+        # We need to use different checkdeps here for partial interface and
+        # inheritance.
+        if dependency_interface.is_partial:
+            # Case: dependency_interface is a partial interface of
+            # target_interface.
+            # So,
+            # - A partial interface defined in modules can update
+            #   the original interface defined in core.
+            # However,
+            # - A partial interface defined in core cannot update
+            #   the original interface defined in modules.
+            if not is_valid_component_dependency(dependency_component, component):
+                raise Exception('The partial interface:%s in %s cannot update '
+                                'the original interface:%s in %s' % (dependency_interface.name,
+                                                                     dependency_component,
+                                                                     target_interface.name,
+                                                                     component))
+
+            if dependency_component in resolved_definitions:
+                resolved_definitions[dependency_component].update(dependency_definitions)
+                continue
+
+            dependency_interface.extended_attributes.update(target_interface.extended_attributes)
+            assert target_interface == definitions.interfaces[dependency_interface.name]
+            dependency_interface.original_interface = target_interface
+            target_interface.partial_interfaces.append(dependency_interface)
+            resolved_definitions[dependency_component] = dependency_definitions
+        else:
+            # Case: target_interface implements dependency_interface.
+            # So,
+            # - An interface defined in modules can implement some interface
+            #   defined in core.
+            #   In this case, we need "NoInterfaceObject" extended attribute.
+            # However,
+            # - An interface defined in core cannot implement any interface
+            #   defined in modules.
+            if not is_valid_component_dependency(component, dependency_component):
+                raise Exception('The interface:%s in %s cannot implement '
+                                'the interface:%s in %s.' % (dependency_interface.name,
+                                                             dependency_component,
+                                                             target_interface.name,
+                                                             component))
+
+            if component != dependency_component and 'NoInterfaceObject' not in dependency_interface.extended_attributes:
+                raise Exception('The interface:%s in %s cannot implement '
+                                'the interface:%s in %s because of '
+                                'missing NoInterfaceObject.' % (dependency_interface.name,
+                                                                dependency_component,
+                                                                target_interface.name,
+                                                                component))
+
+            resolved_definitions[component].update(dependency_definitions)  # merges partial interfaces
             # Implemented interfaces (non-partial dependencies) are also merged
             # into the target interface, so Code Generator can just iterate
             # over one list (and not need to handle 'implements' itself).
             target_interface.merge(dependency_interface)
+
+    return resolved_definitions
 
 
 def transfer_extended_attributes(dependency_interface, dependency_interface_basename):

@@ -132,7 +132,7 @@ class NET_EXPORT NetworkChangeNotifier {
 
   // See the description of NetworkChangeNotifier::GetConnectionType().
   // Implementations must be thread-safe. Implementations must also be
-  // cheap as this could be called (repeatedly) from the network thread.
+  // cheap as it is called often.
   virtual ConnectionType GetCurrentConnectionType() const = 0;
 
   // Replaces the default class factory instance of NetworkChangeNotifier class.
@@ -158,6 +158,12 @@ class NET_EXPORT NetworkChangeNotifier {
   // example, if the device is connected using Wifi to a 3G gateway to access
   // the internet, the connection type is CONNECTION_WIFI.
   static ConnectionType GetConnectionType();
+
+  // Returns a theoretical upper limit on download bandwidth, potentially based
+  // on underlying connection type, signal strength, or some other signal. The
+  // default mapping of connection type to maximum bandwidth is provided in the
+  // NetInfo spec: http://w3c.github.io/netinfo/.
+  static double GetMaxBandwidth();
 
   // Retrieve the last read DnsConfig. This could be expensive if the system has
   // a large HOSTS file.
@@ -212,9 +218,15 @@ class NET_EXPORT NetworkChangeNotifier {
   static void RemoveNetworkChangeObserver(NetworkChangeObserver* observer);
 
   // Allow unit tests to trigger notifications.
-  static void NotifyObserversOfIPAddressChangeForTests() {
-    NotifyObserversOfIPAddressChange();
-  }
+  static void NotifyObserversOfIPAddressChangeForTests();
+  static void NotifyObserversOfConnectionTypeChangeForTests(
+      ConnectionType type);
+  static void NotifyObserversOfNetworkChangeForTests(ConnectionType type);
+
+  // Enable or disable notifications from the host. After setting to true, be
+  // sure to pump the RunLoop until idle to finish any preexisting
+  // notifications.
+  static void SetTestNotificationsOnly(bool test_only);
 
   // Return a string equivalent to |type|.
   static const char* ConnectionTypeToString(ConnectionType type);
@@ -289,6 +301,11 @@ class NET_EXPORT NetworkChangeNotifier {
       GetAddressTrackerInternal() const;
 #endif
 
+  // See the description of NetworkChangeNotifier::GetMaxBandwidth().
+  // Implementations must be thread-safe. Implementations must also be
+  // cheap as it is called often.
+  virtual double GetCurrentMaxBandwidth() const;
+
   // Broadcasts a notification to all registered observers.  Note that this
   // happens asynchronously, even for observers on the current thread, even in
   // tests.
@@ -309,6 +326,11 @@ class NET_EXPORT NetworkChangeNotifier {
   class NetworkState;
   class NetworkChangeCalculator;
 
+  void NotifyObserversOfIPAddressChangeImpl();
+  void NotifyObserversOfConnectionTypeChangeImpl(ConnectionType type);
+  void NotifyObserversOfDNSChangeImpl();
+  void NotifyObserversOfNetworkChangeImpl(ConnectionType type);
+
   const scoped_refptr<ObserverListThreadSafe<IPAddressObserver> >
       ip_address_observer_list_;
   const scoped_refptr<ObserverListThreadSafe<ConnectionTypeObserver> >
@@ -326,6 +348,9 @@ class NET_EXPORT NetworkChangeNotifier {
 
   // Computes NetworkChange signal from IPAddress and ConnectionType signals.
   scoped_ptr<NetworkChangeCalculator> network_change_calculator_;
+
+  // Set true to disable non-test notifications (to prevent flakes in tests).
+  bool test_notifications_only_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifier);
 };

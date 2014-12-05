@@ -37,7 +37,8 @@ enum VideoCodec {
 };
 
 // Video stream profile.  This *must* match PP_VideoDecoder_Profile.
-// (enforced in webkit/plugins/ppapi/ppb_video_decoder_impl.cc)
+// (enforced in webkit/plugins/ppapi/ppb_video_decoder_impl.cc) and
+// gpu::VideoCodecProfile.
 enum VideoCodecProfile {
   // Keep the values in this enum unique, as they imply format (h.264 vs. VP8,
   // for example), and keep the values for a particular format grouped
@@ -58,11 +59,11 @@ enum VideoCodecProfile {
   H264PROFILE_MULTIVIEWHIGH = 10,
   H264PROFILE_MAX = H264PROFILE_MULTIVIEWHIGH,
   VP8PROFILE_MIN = 11,
-  VP8PROFILE_MAIN = VP8PROFILE_MIN,
-  VP8PROFILE_MAX = VP8PROFILE_MAIN,
+  VP8PROFILE_ANY = VP8PROFILE_MIN,
+  VP8PROFILE_MAX = VP8PROFILE_ANY,
   VP9PROFILE_MIN = 12,
-  VP9PROFILE_MAIN = VP9PROFILE_MIN,
-  VP9PROFILE_MAX = VP9PROFILE_MAIN,
+  VP9PROFILE_ANY = VP9PROFILE_MIN,
+  VP9PROFILE_MAX = VP9PROFILE_ANY,
   VIDEO_CODEC_PROFILE_MAX = VP9PROFILE_MAX,
 };
 

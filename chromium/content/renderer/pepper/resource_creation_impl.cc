@@ -4,7 +4,6 @@
 
 #include "content/renderer/pepper/resource_creation_impl.h"
 
-#include "content/renderer/pepper/common.h"
 #include "content/renderer/pepper/ppb_audio_impl.h"
 #include "content/renderer/pepper/ppb_broker_impl.h"
 #include "content/renderer/pepper/ppb_buffer_impl.h"
@@ -13,12 +12,20 @@
 #include "content/renderer/pepper/ppb_image_data_impl.h"
 #include "content/renderer/pepper/ppb_scrollbar_impl.h"
 #include "content/renderer/pepper/ppb_video_decoder_impl.h"
+#include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_size.h"
+#include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/ppb_audio_config_shared.h"
 #include "ppapi/shared_impl/ppb_audio_shared.h"
 #include "ppapi/shared_impl/ppb_image_data_shared.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/shared_impl/var.h"
+
+#if defined(OS_WIN)
+#include "base/command_line.h"
+#include "base/win/windows_version.h"
+#include "content/public/common/content_switches.h"
+#endif
 
 using ppapi::InputEventData;
 using ppapi::PPB_InputEvent_Shared;
@@ -105,8 +112,11 @@ PP_Resource ResourceCreationImpl::CreateGraphics3D(PP_Instance instance,
 PP_Resource ResourceCreationImpl::CreateGraphics3DRaw(
     PP_Instance instance,
     PP_Resource share_context,
-    const int32_t* attrib_list) {
-  return PPB_Graphics3D_Impl::CreateRaw(instance, share_context, attrib_list);
+    const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
+    base::SharedMemoryHandle* shared_state) {
+  return PPB_Graphics3D_Impl::CreateRaw(instance, share_context, attrib_list,
+                                        capabilities, shared_state);
 }
 
 PP_Resource ResourceCreationImpl::CreateHostResolver(PP_Instance instance) {
@@ -122,6 +132,20 @@ PP_Resource ResourceCreationImpl::CreateImageData(PP_Instance instance,
                                                   PP_ImageDataFormat format,
                                                   const PP_Size* size,
                                                   PP_Bool init_to_zero) {
+#if defined(OS_WIN)
+  // If Win32K lockdown mitigations are enabled for Windows 8 and beyond,
+  // we use the SIMPLE image data type as the PLATFORM image data type
+  // calls GDI functions to create DIB sections etc which fail in Win32K
+  // lockdown mode.
+  // TODO(ananta)
+  // Look into whether this causes a loss of functionality. From cursory
+  // testing things seem to work well.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableWin32kRendererLockDown) &&
+      base::win::GetVersion() >= base::win::VERSION_WIN8) {
+    return CreateImageDataSimple(instance, format, size, init_to_zero);
+  }
+#endif
   return PPB_ImageData_Impl::Create(instance,
                                     ppapi::PPB_ImageData_Shared::PLATFORM,
                                     format,

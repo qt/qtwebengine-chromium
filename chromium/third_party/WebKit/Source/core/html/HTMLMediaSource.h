@@ -32,24 +32,27 @@
 #define HTMLMediaSource_h
 
 #include "core/html/URLRegistry.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
 namespace blink {
 class WebMediaSource;
 }
 
-namespace WebCore {
+namespace blink {
 
 class HTMLMediaElement;
 class TimeRanges;
 
-class HTMLMediaSource : public URLRegistrable {
+class HTMLMediaSource : public URLRegistrable, public WillBeGarbageCollectedMixin {
 public:
     static void setRegistry(URLRegistry*);
     static HTMLMediaSource* lookup(const String& url) { return s_registry ? static_cast<HTMLMediaSource*>(s_registry->lookup(url)) : 0; }
 
+#if !ENABLE(OILPAN)
     void ref() { refHTMLMediaSource(); }
     void deref() { derefHTMLMediaSource(); }
+#endif
 
     // Called when an HTMLMediaElement is attempting to attach to this object,
     // and helps enforce attachment to at most one element at a time.
@@ -63,12 +66,14 @@ public:
     virtual void close() = 0;
     virtual bool isClosed() const = 0;
     virtual double duration() const = 0;
-    virtual PassRefPtr<TimeRanges> buffered() const = 0;
+    virtual PassRefPtrWillBeRawPtr<TimeRanges> buffered() const = 0;
+#if !ENABLE(OILPAN)
     virtual void refHTMLMediaSource() = 0;
     virtual void derefHTMLMediaSource() = 0;
+#endif
 
     // URLRegistrable
-    virtual URLRegistry& registry() const OVERRIDE { return *s_registry; }
+    virtual URLRegistry& registry() const override { return *s_registry; }
 
 private:
     static URLRegistry* s_registry;

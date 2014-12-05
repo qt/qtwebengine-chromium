@@ -37,8 +37,6 @@
 #include "public/web/WebWorkerPermissionClientProxy.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 PassOwnPtrWillBeRawPtr<WorkerPermissionClient> WorkerPermissionClient::create(PassOwnPtr<WebWorkerPermissionClientProxy> proxy)
@@ -48,13 +46,6 @@ PassOwnPtrWillBeRawPtr<WorkerPermissionClient> WorkerPermissionClient::create(Pa
 
 WorkerPermissionClient::~WorkerPermissionClient()
 {
-}
-
-bool WorkerPermissionClient::allowDatabase(const WebString& name, const WebString& displayName, unsigned long estimatedSize)
-{
-    if (!m_proxy)
-        return true;
-    return m_proxy->allowDatabase(name, displayName, estimatedSize);
 }
 
 bool WorkerPermissionClient::requestFileSystemAccessSync()

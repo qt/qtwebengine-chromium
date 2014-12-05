@@ -32,11 +32,11 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 #include "wtf/Threading.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 // What you should know about Supplementable and Supplement
 // ========================================================
@@ -100,13 +100,11 @@ struct SupplementableTraits;
 template<typename T>
 struct SupplementableTraits<T, true> {
     typedef RawPtr<SupplementBase<T, true> > SupplementArgumentType;
-    typedef HeapHashMap<const char*, Member<SupplementBase<T, true> >, PtrHash<const char*> > SupplementMap;
 };
 
 template<typename T>
 struct SupplementableTraits<T, false> {
     typedef PassOwnPtr<SupplementBase<T, false> > SupplementArgumentType;
-    typedef HashMap<const char*, OwnPtr<SupplementBase<T, false> >, PtrHash<const char*> > SupplementMap;
 };
 
 template<bool>
@@ -119,12 +117,19 @@ template<>
 class SupplementTracing<false> {
 public:
     virtual ~SupplementTracing() { }
+    // FIXME: Oilpan: this trace() method is only provided to minimize
+    // the use of ENABLE(OILPAN) for Supplements deriving from the
+    // transition type WillBeHeapSupplement<>.
+    //
+    // When that transition type is removed (or its use is substantially
+    // reduced), remove this dummy trace method also.
+    virtual void trace(Visitor*) { }
 };
 
 template<typename T, bool isGarbageCollected = false>
 class SupplementBase : public SupplementTracing<isGarbageCollected> {
 public:
-#if SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
     virtual bool isRefCountedWrapper() const { return false; }
 #endif
 
@@ -142,23 +147,32 @@ public:
     {
         return host ? host->requireSupplement(key) : 0;
     }
-
-    virtual void trace(Visitor*) { }
-    virtual void willBeDestroyed() { }
-
-    // FIXME: Oilpan: Remove this callback once PersistentHeapSupplementable is removed again.
-    virtual void persistentHostHasBeenDestroyed() { }
 };
 
-template<typename T, bool>
+template<typename T, bool isGarbageCollected>
 class SupplementableTracing;
 
 template<typename T>
-class SupplementableTracing<T, true> { };
+class SupplementableTracing<T, true> : public GarbageCollectedMixin {
+public:
+    virtual void trace(Visitor* visitor)
+    {
+        visitor->trace(m_supplements);
+    }
+
+protected:
+    typedef HeapHashMap<const char*, Member<SupplementBase<T, true> >, PtrHash<const char*> > SupplementMap;
+    SupplementMap m_supplements;
+};
 
 template<typename T>
-class SupplementableTracing<T, false> { };
+class SupplementableTracing<T, false> {
+protected:
+    typedef HashMap<const char*, OwnPtr<SupplementBase<T, false> >, PtrHash<const char*> > SupplementMap;
+    SupplementMap m_supplements;
+};
 
+// Helper class for implementing Supplementable and HeapSupplementable.
 template<typename T, bool isGarbageCollected = false>
 class SupplementableBase : public SupplementableTracing<T, isGarbageCollected> {
 public:
@@ -183,26 +197,12 @@ public:
 
     void reattachThread()
     {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         m_threadId = currentThread();
 #endif
     }
 
-    virtual void trace(Visitor* visitor) { visitor->trace(m_supplements); }
-
-    void willBeDestroyed()
-    {
-        typedef typename SupplementableTraits<T, isGarbageCollected>::SupplementMap::iterator SupplementIterator;
-        for (SupplementIterator it = m_supplements.begin(); it != m_supplements.end(); ++it)
-            it->value->willBeDestroyed();
-    }
-
-    // FIXME: Oilpan: Make private and remove this ignore once PersistentHeapSupplementable is removed again.
-protected:
-    GC_PLUGIN_IGNORE("")
-    typename SupplementableTraits<T, isGarbageCollected>::SupplementMap m_supplements;
-
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 protected:
     SupplementableBase() : m_threadId(currentThread()) { }
 
@@ -214,31 +214,8 @@ private:
 template<typename T>
 class HeapSupplement : public SupplementBase<T, true> { };
 
-// FIXME: Oilpan: Move GarbageCollectedMixin to SupplementableBase<T, true> once PersistentHeapSupplementable is removed again.
 template<typename T>
-class HeapSupplementable : public SupplementableBase<T, true>, public GarbageCollectedMixin { };
-
-template<typename T>
-class PersistentHeapSupplementable : public SupplementableBase<T, true> {
-public:
-    PersistentHeapSupplementable() : m_root(this) { }
-    virtual ~PersistentHeapSupplementable()
-    {
-        typedef typename SupplementableTraits<T, true>::SupplementMap::iterator SupplementIterator;
-        for (SupplementIterator it = this->m_supplements.begin(); it != this->m_supplements.end(); ++it)
-            it->value->persistentHostHasBeenDestroyed();
-    }
-private:
-    class TraceDelegate : PersistentBase<ThreadLocalPersistents<AnyThread>, TraceDelegate> {
-    public:
-        TraceDelegate(PersistentHeapSupplementable* owner) : m_owner(owner) { }
-        void trace(Visitor* visitor) { m_owner->trace(visitor); }
-    private:
-        PersistentHeapSupplementable* m_owner;
-    };
-
-    TraceDelegate m_root;
-};
+class HeapSupplementable : public SupplementableBase<T, true> { };
 
 template<typename T>
 class Supplement : public SupplementBase<T, false> { };
@@ -247,15 +224,15 @@ template<typename T>
 class Supplementable : public SupplementableBase<T, false> { };
 
 template<typename T>
-struct ThreadingTrait<WebCore::SupplementBase<T, true> > {
+struct ThreadingTrait<SupplementBase<T, true> > {
     static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
 };
 
 template<typename T>
-struct ThreadingTrait<WebCore::SupplementableBase<T, true> > {
+struct ThreadingTrait<SupplementableBase<T, true> > {
     static const ThreadAffinity Affinity = ThreadingTrait<T>::Affinity;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Supplementable_h

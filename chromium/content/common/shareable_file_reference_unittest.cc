@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using webkit_blob::ShareableFileReference;
+using storage::ShareableFileReference;
 
 namespace content {
 

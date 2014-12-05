@@ -38,13 +38,11 @@
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
-class EventHandler;
-class IntSize;
-class Node;
-}
-
 namespace blink {
+
+class EventHandler;
+class FrameView;
+class Node;
 
 // ViewportAnchor provides a way to anchor a viewport origin to a DOM node.
 // In particular, the user supplies the current viewport (in CSS coordinates)
@@ -54,26 +52,35 @@ namespace blink {
 // its orientation relative to the node, and the viewport origin maintains its
 // orientation relative to the anchor.
 class ViewportAnchor {
-    WTF_MAKE_NONCOPYABLE(ViewportAnchor);
+    STACK_ALLOCATED();
 public:
-    explicit ViewportAnchor(WebCore::EventHandler* eventHandler);
+    explicit ViewportAnchor(EventHandler*);
 
-    void setAnchor(const WebCore::IntRect& viewRect, const WebCore::FloatSize& anchorInViewCoords);
+    void setAnchor(const IntRect& outerViewRect, const IntRect& innerViewRect, const FloatSize& anchorInViewCoords);
 
-    WebCore::IntPoint computeOrigin(const WebCore::IntSize& currentViewSize) const;
+    void computeOrigins(const FrameView&, const FloatSize& innerSize,
+        IntPoint& mainFrameOffset, FloatPoint& pinchViewportOffset) const;
 
 private:
-    WebCore::EventHandler* m_eventHandler;
+    FloatPoint getInnerOrigin(const FloatSize& innerSize) const;
 
-    WebCore::IntRect m_viewRect;
+private:
+    RawPtrWillBeMember<EventHandler> m_eventHandler;
 
-    RefPtrWillBePersistent<WebCore::Node> m_anchorNode;
-    WebCore::LayoutRect m_anchorNodeBounds;
+    // Inner viewport origin in the reference frame of the document in CSS pixels
+    FloatPoint m_pinchViewportInDocument;
 
-    WebCore::FloatSize m_anchorInViewCoords;
-    WebCore::FloatSize m_anchorInNodeCoords;
+    // Inner viewport origin in the reference frame of the outer viewport
+    // normalized to the outer viewport size.
+    FloatSize m_normalizedPinchViewportOffset;
+
+    RefPtrWillBeMember<Node> m_anchorNode;
+    LayoutRect m_anchorNodeBounds;
+
+    FloatSize m_anchorInInnerViewCoords;
+    FloatSize m_anchorInNodeCoords;
 };
 
 } // namespace blink
 
- #endif
+#endif

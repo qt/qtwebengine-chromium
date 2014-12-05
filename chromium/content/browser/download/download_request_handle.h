@@ -45,7 +45,7 @@ class CONTENT_EXPORT DownloadRequestHandleInterface {
 class CONTENT_EXPORT DownloadRequestHandle
     : public DownloadRequestHandleInterface {
  public:
-  virtual ~DownloadRequestHandle();
+  ~DownloadRequestHandle() override;
 
   // Create a null DownloadRequestHandle: getters will return null, and
   // all actions are no-ops.
@@ -63,12 +63,12 @@ class CONTENT_EXPORT DownloadRequestHandle
                         int request_id);
 
   // Implement DownloadRequestHandleInterface interface.
-  virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual DownloadManager* GetDownloadManager() const OVERRIDE;
-  virtual void PauseRequest() const OVERRIDE;
-  virtual void ResumeRequest() const OVERRIDE;
-  virtual void CancelRequest() const OVERRIDE;
-  virtual std::string DebugString() const OVERRIDE;
+  WebContents* GetWebContents() const override;
+  DownloadManager* GetDownloadManager() const override;
+  void PauseRequest() const override;
+  void ResumeRequest() const override;
+  void CancelRequest() const override;
+  std::string DebugString() const override;
 
  private:
   base::WeakPtr<DownloadResourceHandler> handler_;

@@ -48,23 +48,20 @@
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 class ImageBitmapTest : public ::testing::Test {
 protected:
     virtual void SetUp()
     {
-        ASSERT_TRUE(m_bitmap.allocN32Pixels(10, 10));
+        m_bitmap.allocN32Pixels(10, 10);
         m_bitmap.eraseColor(0xFFFFFFFF);
 
-        ASSERT_TRUE(m_bitmap2.allocN32Pixels(5, 5));
+        m_bitmap2.allocN32Pixels(5, 5);
         m_bitmap2.eraseColor(0xAAAAAAAA);
 
         // Save the global memory cache to restore it upon teardown.
-        m_globalMemoryCache = adoptPtr(memoryCache());
-        // Create the test memory cache instance and hook it in.
-        m_testingMemoryCache = adoptPtr(new MemoryCache());
-        setMemoryCacheForTesting(m_testingMemoryCache.leakPtr());
+        m_globalMemoryCache = replaceMemoryCacheForTesting(MemoryCache::create());
     }
     virtual void TearDown()
     {
@@ -73,16 +70,11 @@ protected:
         // them from the cache.
         Heap::collectGarbage(ThreadState::NoHeapPointersOnStack);
 
-        // Regain the ownership of testing memory cache, so that it will be
-        // destroyed.
-        m_testingMemoryCache = adoptPtr(memoryCache());
-        // Yield the ownership of the global memory cache back.
-        setMemoryCacheForTesting(m_globalMemoryCache.leakPtr());
+        replaceMemoryCacheForTesting(m_globalMemoryCache.release());
     }
 
     SkBitmap m_bitmap, m_bitmap2;
-    OwnPtr<MemoryCache> m_testingMemoryCache;
-    OwnPtr<MemoryCache> m_globalMemoryCache;
+    OwnPtrWillBePersistent<MemoryCache> m_globalMemoryCache;
 };
 
 // Verifies that the image resource held by an ImageBitmap is the same as the
@@ -172,6 +164,11 @@ TEST_F(ImageBitmapTest, ImageBitmapLiveResourcePriority)
     // There is still an ImageBitmap that references this image.
     ASSERT_EQ(memoryCache()->priority(imageInteriorCrop->cachedImage()), MemoryCacheLiveResourcePriorityHigh);
     imageBitmapInteriorCrop = nullptr;
+
+    cachedImageNoCrop->removeClient(&mockClient1);
+    cachedImageInteriorCrop->removeClient(&mockClient2);
+    cachedImageExteriorCrop->removeClient(&mockClient3);
+    cachedImageOutsideCrop->removeClient(&mockClient4);
 }
 
 // Verifies that ImageBitmaps constructed from HTMLImageElements hold a reference to the original Image if the HTMLImageElement src is changed.

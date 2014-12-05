@@ -10,29 +10,36 @@
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/extensions',
       },
+      'dependencies': [
+        '../device/serial/serial.gyp:device_serial_mojo',
+      ],
       'actions': [
         {
-          'action_name': 'extensions_resources',
+          'action_name': 'generate_extensions_resources',
           'variables': {
             'grit_grd_file': 'extensions_resources.grd',
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
-          'action_name': 'extensions_renderer_resources',
+          'action_name': 'generate_extensions_browser_resources',
+          'variables': {
+            'grit_grd_file': 'browser/resources/extensions_browser_resources.grd',
+          },
+          'includes': [ '../build/grit_action.gypi' ],
+        },
+        {
+          'action_name': 'generate_extensions_renderer_resources',
           'variables': {
             'grit_grd_file': 'renderer/resources/extensions_renderer_resources.grd',
+            'grit_additional_defines': [
+              '-E', 'mojom_root=<(SHARED_INTERMEDIATE_DIR)',
+            ],
           },
           'includes': [ '../build/grit_action.gypi' ],
         },
       ],
       'includes': [ '../build/grit_target.gypi' ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '<(SHARED_INTERMEDIATE_DIR)/extensions',
-        ]
-      },
-      'hard_dependency': 1,
     }
   ]
 }

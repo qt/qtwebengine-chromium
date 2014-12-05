@@ -63,33 +63,34 @@ class RenderTextWin : public RenderText {
   virtual ~RenderTextWin();
 
   // Overridden from RenderText:
-  virtual Size GetStringSize() OVERRIDE;
-  virtual SelectionModel FindCursorPosition(const Point& point) OVERRIDE;
-  virtual std::vector<FontSpan> GetFontSpansForTesting() OVERRIDE;
+  virtual Size GetStringSize() override;
+  virtual SelectionModel FindCursorPosition(const Point& point) override;
+  virtual std::vector<FontSpan> GetFontSpansForTesting() override;
 
  protected:
   // Overridden from RenderText:
-  virtual int GetLayoutTextBaseline() OVERRIDE;
+  virtual int GetLayoutTextBaseline() override;
   virtual SelectionModel AdjacentCharSelectionModel(
       const SelectionModel& selection,
-      VisualCursorDirection direction) OVERRIDE;
+      VisualCursorDirection direction) override;
   virtual SelectionModel AdjacentWordSelectionModel(
       const SelectionModel& selection,
-      VisualCursorDirection direction) OVERRIDE;
-  virtual Range GetGlyphBounds(size_t index) OVERRIDE;
-  virtual std::vector<Rect> GetSubstringBounds(const Range& range) OVERRIDE;
-  virtual size_t TextIndexToLayoutIndex(size_t index) const OVERRIDE;
-  virtual size_t LayoutIndexToTextIndex(size_t index) const OVERRIDE;
-  virtual bool IsValidCursorIndex(size_t index) OVERRIDE;
-  virtual void ResetLayout() OVERRIDE;
-  virtual void EnsureLayout() OVERRIDE;
-  virtual void DrawVisualText(Canvas* canvas) OVERRIDE;
+      VisualCursorDirection direction) override;
+  virtual Range GetGlyphBounds(size_t index) override;
+  virtual std::vector<Rect> GetSubstringBounds(const Range& range) override;
+  virtual size_t TextIndexToLayoutIndex(size_t index) const override;
+  virtual size_t LayoutIndexToTextIndex(size_t index) const override;
+  virtual bool IsValidCursorIndex(size_t index) override;
+  virtual void ResetLayout() override;
+  virtual void EnsureLayout() override;
+  virtual void DrawVisualText(Canvas* canvas) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_BreakRunsByUnicodeBlocks);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Win_LogicalClusters);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_MinWidth);
   FRIEND_TEST_ALL_PREFIXES(RenderTextTest, Multiline_NormalWidth);
+  FRIEND_TEST_ALL_PREFIXES(RenderTextTest, BreakRunsByUnicodeBlocks);
 
   void ItemizeLogicalText();
   void LayoutVisualText();
@@ -100,7 +101,8 @@ class RenderTextWin : public RenderText {
   HRESULT ShapeTextRunWithFont(internal::TextRun* run, const Font& font);
 
   // Returns the number of characters in |run| that have missing glyphs.
-  int CountCharsWithMissingGlyphs(internal::TextRun* run) const;
+  int CountCharsWithMissingGlyphs(internal::TextRun* run,
+                                  HRESULT shaping_result) const;
 
   // Return the run index that contains the argument; or the length of the
   // |runs_| vector if argument exceeds the text length or width.

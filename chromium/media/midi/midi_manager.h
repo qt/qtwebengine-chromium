@@ -5,7 +5,6 @@
 #ifndef MEDIA_MIDI_MIDI_MANAGER_H_
 #define MEDIA_MIDI_MIDI_MANAGER_H_
 
-#include <map>
 #include <set>
 #include <vector>
 
@@ -30,9 +29,20 @@ class MEDIA_EXPORT MidiManagerClient {
  public:
   virtual ~MidiManagerClient() {}
 
+  // AddInputPort() and AddOutputPort() are called before CompleteStartSession()
+  // is called to notify existing MIDI ports, and also called after that to
+  // notify new MIDI ports are added.
+  virtual void AddInputPort(const MidiPortInfo& info) = 0;
+  virtual void AddOutputPort(const MidiPortInfo& info) = 0;
+
+  // TODO(toyoshim): DisableInputPort(const MidiPortInfo& info) and
+  // DisableOutputPort(const MidiPortInfo& info) should be added.
+  // On DisableInputPort(), internal states, e.g. received_messages_queues in
+  // MidiHost, should be reset.
+
   // CompleteStartSession() is called when platform dependent preparation is
   // finished.
-  virtual void CompleteStartSession(int client_id, MidiResult result) = 0;
+  virtual void CompleteStartSession(MidiResult result) = 0;
 
   // ReceiveMidiData() is called when MIDI data has been received from the
   // MIDI system.
@@ -71,7 +81,7 @@ class MEDIA_EXPORT MidiManager {
   // Otherwise CompleteStartSession() is called with proper MidiResult code.
   // StartSession() and EndSession() can be called on the Chrome_IOThread.
   // CompleteStartSession() will be invoked on the same Chrome_IOThread.
-  void StartSession(MidiManagerClient* client, int client_id);
+  void StartSession(MidiManagerClient* client);
 
   // A client calls EndSession() to stop receiving MIDI data.
   void EndSession(MidiManagerClient* client);
@@ -89,16 +99,6 @@ class MEDIA_EXPORT MidiManager {
                                     uint32 port_index,
                                     const std::vector<uint8>& data,
                                     double timestamp);
-
-  // input_ports() is a list of MIDI ports for receiving MIDI data.
-  // Each individual port in this list can be identified by its
-  // integer index into this list.
-  const MidiPortInfoList& input_ports() const { return input_ports_; }
-
-  // output_ports() is a list of MIDI ports for sending MIDI data.
-  // Each individual port in this list can be identified by its
-  // integer index into this list.
-  const MidiPortInfoList& output_ports() const { return output_ports_; }
 
  protected:
   friend class MidiManagerUsb;
@@ -146,14 +146,14 @@ class MEDIA_EXPORT MidiManager {
 
  private:
   void CompleteInitializationInternal(MidiResult result);
+  void AddInitialPorts(MidiManagerClient* client);
 
   // Keeps track of all clients who wish to receive MIDI data.
-  typedef std::set<MidiManagerClient*> ClientList;
-  ClientList clients_;
+  typedef std::set<MidiManagerClient*> ClientSet;
+  ClientSet clients_;
 
   // Keeps track of all clients who are waiting for CompleteStartSession().
-  typedef std::multimap<MidiManagerClient*, int> PendingClientMap;
-  PendingClientMap pending_clients_;
+  ClientSet pending_clients_;
 
   // Keeps a SingleThreadTaskRunner of the thread that calls StartSession in
   // order to invoke CompleteStartSession() on the thread.
@@ -166,12 +166,13 @@ class MEDIA_EXPORT MidiManager {
   // completed. Otherwise keeps MIDI_NOT_SUPPORTED.
   MidiResult result_;
 
-  // Protects access to |clients_|, |pending_clients_|, |initialized_|, and
-  // |result_|.
-  base::Lock lock_;
-
+  // Keeps all MidiPortInfo.
   MidiPortInfoList input_ports_;
   MidiPortInfoList output_ports_;
+
+  // Protects access to |clients_|, |pending_clients_|, |initialized_|,
+  // |result_|, |input_ports_| and |output_ports_|.
+  base::Lock lock_;
 
   DISALLOW_COPY_AND_ASSIGN(MidiManager);
 };

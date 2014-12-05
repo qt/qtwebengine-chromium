@@ -131,7 +131,7 @@ bool DependencyScan::RecomputeDirty(Edge* edge, string* err) {
 }
 
 bool DependencyScan::RecomputeOutputsDirty(Edge* edge,
-                                           Node* most_recent_input) {   
+                                           Node* most_recent_input) {
   string command = edge->EvaluateCommand(true);
   for (vector<Node*>::iterator i = edge->outputs_.begin();
        i != edge->outputs_.end(); ++i) {
@@ -215,7 +215,10 @@ bool Edge::AllInputsReady() const {
 
 /// An Env for an Edge, providing $in and $out.
 struct EdgeEnv : public Env {
-  explicit EdgeEnv(Edge* edge) : edge_(edge) {}
+  enum EscapeKind { kShellEscape, kDoNotEscape };
+
+  explicit EdgeEnv(Edge* edge, EscapeKind escape)
+      : edge_(edge), escape_in_out_(escape) {}
   virtual string LookupVariable(const string& var);
 
   /// Given a span of Nodes, construct a list of paths suitable for a command
@@ -225,6 +228,7 @@ struct EdgeEnv : public Env {
                       char sep);
 
   Edge* edge_;
+  EscapeKind escape_in_out_;
 };
 
 string EdgeEnv::LookupVariable(const string& var) {
@@ -250,13 +254,18 @@ string EdgeEnv::MakePathList(vector<Node*>::iterator begin,
                              char sep) {
   string result;
   for (vector<Node*>::iterator i = begin; i != end; ++i) {
-    if (!result.empty()) result.push_back(sep);
-    const string& path = (*i)->path();
+    if (!result.empty())
+      result.push_back(sep);
+    const string& path = (*i)->PathDecanonicalized();
+    if (escape_in_out_ == kShellEscape) {
 #if _WIN32
-    GetWin32EscapedString(path, &result);
+      GetWin32EscapedString(path, &result);
 #else
-    GetShellEscapedString(path, &result);
+      GetShellEscapedString(path, &result);
 #endif
+    } else {
+      result.append(path);
+    }
   }
   return result;
 }
@@ -272,12 +281,22 @@ string Edge::EvaluateCommand(bool incl_rsp_file) {
 }
 
 string Edge::GetBinding(const string& key) {
-  EdgeEnv env(this);
+  EdgeEnv env(this, EdgeEnv::kShellEscape);
   return env.LookupVariable(key);
 }
 
 bool Edge::GetBindingBool(const string& key) {
   return !GetBinding(key).empty();
+}
+
+string Edge::GetUnescapedDepfile() {
+  EdgeEnv env(this, EdgeEnv::kDoNotEscape);
+  return env.LookupVariable("depfile");
+}
+
+string Edge::GetUnescapedRspfile() {
+  EdgeEnv env(this, EdgeEnv::kDoNotEscape);
+  return env.LookupVariable("rspfile");
 }
 
 void Edge::Dump(const char* prefix) const {
@@ -309,6 +328,20 @@ bool Edge::use_console() const {
   return pool() == &State::kConsolePool;
 }
 
+string Node::PathDecanonicalized() const {
+  string result = path_;
+#ifdef _WIN32
+  unsigned int mask = 1;
+  for (char* c = &result[0]; (c = strchr(c, '/')) != NULL;) {
+    if (slash_bits_ & mask)
+      *c = '\\';
+    c++;
+    mask <<= 1;
+  }
+#endif
+  return result;
+}
+
 void Node::Dump(const char* prefix) const {
   printf("%s <%s 0x%p> mtime: %d%s, (:%s), ",
          prefix, path().c_str(), this,
@@ -331,7 +364,7 @@ bool ImplicitDepLoader::LoadDeps(Edge* edge, string* err) {
   if (!deps_type.empty())
     return LoadDepsFromLog(edge, err);
 
-  string depfile = edge->GetBinding("depfile");
+  string depfile = edge->GetUnescapedDepfile();
   if (!depfile.empty())
     return LoadDepFile(edge, depfile, err);
 
@@ -360,6 +393,11 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
     return false;
   }
 
+  unsigned int unused;
+  if (!CanonicalizePath(const_cast<char*>(depfile.out_.str_),
+                        &depfile.out_.len_, &unused, err))
+    return false;
+
   // Check that this depfile matches the edge's output.
   Node* first_output = edge->outputs_[0];
   StringPiece opath = StringPiece(first_output->path());
@@ -376,10 +414,12 @@ bool ImplicitDepLoader::LoadDepFile(Edge* edge, const string& path,
   // Add all its in-edges.
   for (vector<StringPiece>::iterator i = depfile.ins_.begin();
        i != depfile.ins_.end(); ++i, ++implicit_dep) {
-    if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, err))
+    unsigned int slash_bits;
+    if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits,
+                          err))
       return false;
 
-    Node* node = state_->GetNode(*i);
+    Node* node = state_->GetNode(*i, slash_bits);
     *implicit_dep = node;
     node->AddOutEdge(edge);
     CreatePhonyInEdge(node);

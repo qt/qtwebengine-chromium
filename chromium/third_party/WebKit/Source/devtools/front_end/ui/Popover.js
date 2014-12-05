@@ -37,18 +37,18 @@ WebInspector.Popover = function(popoverHelper)
 {
     WebInspector.View.call(this);
     this.markAsRoot();
-    this.element.className = "popover custom-popup-vertical-scroll custom-popup-horizontal-scroll"; // Override
+    this.element.className = WebInspector.Popover._classNamePrefix; // Override
+    WebInspector.installComponentRootStyles(this.element);
+    this._containerElement = createElementWithClass("div", "fill popover-container");
 
-    this._popupArrowElement = document.createElement("div");
-    this._popupArrowElement.className = "arrow";
-    this.element.appendChild(this._popupArrowElement);
-
-    this._contentDiv = document.createElement("div");
-    this._contentDiv.className = "content";
-    this.element.appendChild(this._contentDiv);
+    this._popupArrowElement = this.element.createChild("div", "arrow");
+    this._contentDiv = this.element.createChild("div", "content");
 
     this._popoverHelper = popoverHelper;
+    this._hideBound = this.hide.bind(this);
 }
+
+WebInspector.Popover._classNamePrefix = "popover custom-popup-vertical-scroll custom-popup-horizontal-scroll";
 
 WebInspector.Popover.prototype = {
     /**
@@ -86,24 +86,29 @@ WebInspector.Popover.prototype = {
     {
         if (this._disposed)
             return;
-        this.contentElement = contentElement;
+        this._contentElement = contentElement;
 
         // This should not happen, but we hide previous popup to be on the safe side.
         if (WebInspector.Popover._popover)
-            WebInspector.Popover._popover.detach();
+            WebInspector.Popover._popover.hide();
         WebInspector.Popover._popover = this;
 
+        var document = anchor instanceof Element ? anchor.ownerDocument : contentElement.ownerDocument;
+        var window = document.defaultView;
+
         // Temporarily attach in order to measure preferred dimensions.
-        var preferredSize = view ? view.measurePreferredSize() : this.contentElement.measurePreferredSize();
+        var preferredSize = view ? view.measurePreferredSize() : WebInspector.measurePreferredSize(this._contentElement);
         preferredWidth = preferredWidth || preferredSize.width;
         preferredHeight = preferredHeight || preferredSize.height;
 
-        WebInspector.View.prototype.show.call(this, document.body);
+        window.addEventListener("resize", this._hideBound, false);
+        document.body.appendChild(this._containerElement);
+        WebInspector.View.prototype.show.call(this, this._containerElement);
 
         if (view)
             view.show(this._contentDiv);
         else
-            this._contentDiv.appendChild(this.contentElement);
+            this._contentDiv.appendChild(this._contentElement);
 
         this._positionElement(anchor, preferredWidth, preferredHeight, arrowDirection);
 
@@ -115,7 +120,9 @@ WebInspector.Popover.prototype = {
 
     hide: function()
     {
+        this._containerElement.ownerDocument.defaultView.removeEventListener("resize", this._hideBound, false);
         this.detach();
+        this._containerElement.remove();
         delete WebInspector.Popover._popover;
     },
 
@@ -134,7 +141,7 @@ WebInspector.Popover.prototype = {
     setCanShrink: function(canShrink)
     {
         this._hasFixedHeight = !canShrink;
-        this._contentDiv.classList.add("fixed-height");
+        this._contentDiv.classList.toggle("fixed-height", this._hasFixedHeight);
     },
 
     /**
@@ -217,7 +224,8 @@ WebInspector.Popover.prototype = {
             this._popupArrowElement.style.left += anchorBox.width / 2;
         }
 
-        this.element.className = "popover custom-popup-vertical-scroll custom-popup-horizontal-scroll " + verticalAlignment + "-" + horizontalAlignment + "-arrow";
+        this.element.className = WebInspector.Popover._classNamePrefix + " " + verticalAlignment + "-" + horizontalAlignment + "-arrow";
+        WebInspector.installComponentRootStyles(this.element);
         this.element.positionAt(newElementPosition.x - borderWidth, newElementPosition.y - borderWidth, container);
         this.element.style.width = newElementPosition.width + borderWidth * 2 + "px";
         this.element.style.height = newElementPosition.height + borderWidth * 2 + "px";
@@ -229,7 +237,7 @@ WebInspector.Popover.prototype = {
 /**
  * @constructor
  * @param {!Element} panelElement
- * @param {function(!Element, !Event):(!Element|!AnchorBox)|undefined} getAnchor
+ * @param {function(!Element, !Event):(!Element|!AnchorBox|undefined)} getAnchor
  * @param {function(!Element, !WebInspector.Popover):undefined} showPopover
  * @param {function()=} onHide
  * @param {boolean=} disableOnClick
@@ -244,13 +252,21 @@ WebInspector.PopoverHelper = function(panelElement, getAnchor, showPopover, onHi
     panelElement.addEventListener("mousedown", this._mouseDown.bind(this), false);
     panelElement.addEventListener("mousemove", this._mouseMove.bind(this), false);
     panelElement.addEventListener("mouseout", this._mouseOut.bind(this), false);
-    this.setTimeout(1000);
+    this.setTimeout(1000, 500);
 }
 
 WebInspector.PopoverHelper.prototype = {
-    setTimeout: function(timeout)
+    /**
+     * @param {number} timeout
+     * @param {number=} hideTimeout
+     */
+    setTimeout: function(timeout, hideTimeout)
     {
         this._timeout = timeout;
+        if (typeof hideTimeout === "number")
+            this._hideTimeout = hideTimeout;
+        else
+            this._hideTimeout = timeout / 2;
     },
 
     /**
@@ -304,7 +320,7 @@ WebInspector.PopoverHelper.prototype = {
 
     _startHidePopoverTimer: function()
     {
-        // User has 500ms (this._timeout / 2) to reach the popup.
+        // User has 500ms (this._hideTimeout) to reach the popup.
         if (!this._popover || this._hidePopoverTimer)
             return;
 
@@ -316,7 +332,7 @@ WebInspector.PopoverHelper.prototype = {
             this._hidePopover();
             delete this._hidePopoverTimer;
         }
-        this._hidePopoverTimer = setTimeout(doHide.bind(this), this._timeout / 2);
+        this._hidePopoverTimer = setTimeout(doHide.bind(this), this._hideTimeout);
     },
 
     _handleMouseAction: function(event, isMouseDown)

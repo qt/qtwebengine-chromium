@@ -62,8 +62,8 @@ class CheckedNumeric {
   template <typename Src>
   CheckedNumeric(Src value)
       : state_(value) {
-    COMPILE_ASSERT(std::numeric_limits<Src>::is_specialized,
-                   argument_must_be_numeric);
+    static_assert(std::numeric_limits<Src>::is_specialized,
+                  "Argument must be numeric.");
   }
 
   // IsValid() is the public API to test if a CheckedNumeric is currently valid.
@@ -87,7 +87,7 @@ class CheckedNumeric {
   // we provide an easy method for extracting them directly, without a risk of
   // crashing on a CHECK.
   T ValueFloating() const {
-    COMPILE_ASSERT(std::numeric_limits<T>::is_iec559, argument_must_be_float);
+    static_assert(std::numeric_limits<T>::is_iec559, "Argument must be float.");
     return CheckedNumeric<T>::cast(*this).ValueUnsafe();
   }
 
@@ -205,9 +205,10 @@ class CheckedNumeric {
           lhs.ValueUnsafe() OP rhs.ValueUnsafe(),                             \
           GetRangeConstraint(rhs.validity() | lhs.validity()));               \
     RangeConstraint validity = RANGE_VALID;                                   \
-    T result = Checked##NAME(static_cast<Promotion>(lhs.ValueUnsafe()),       \
-                             static_cast<Promotion>(rhs.ValueUnsafe()),       \
-                             &validity);                                      \
+    T result = static_cast<T>(Checked##NAME(                                  \
+        static_cast<Promotion>(lhs.ValueUnsafe()),                            \
+        static_cast<Promotion>(rhs.ValueUnsafe()),                            \
+        &validity));                                                          \
     return CheckedNumeric<Promotion>(                                         \
         result,                                                               \
         GetRangeConstraint(validity | lhs.validity() | rhs.validity()));      \

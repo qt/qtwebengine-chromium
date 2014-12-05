@@ -34,14 +34,14 @@
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLVideoElement;
 class VideoPlaybackQuality;
 
 class HTMLVideoElementMediaSource {
 public:
-    static PassRefPtrWillBeRawPtr<VideoPlaybackQuality> getVideoPlaybackQuality(HTMLVideoElement&);
+    static VideoPlaybackQuality* getVideoPlaybackQuality(HTMLVideoElement&);
 
 private:
     HTMLVideoElementMediaSource();

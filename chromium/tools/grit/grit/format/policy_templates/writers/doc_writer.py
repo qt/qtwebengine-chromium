@@ -4,6 +4,7 @@
 # found in the LICENSE file.
 
 
+import json
 from xml.dom import minidom
 from grit import lazy_re
 from grit.format.policy_templates.writers import xml_formatted_writer
@@ -116,7 +117,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     # Replace URLs with links in the description.
     self._AddTextWithLinks(parent, policy['desc'])
     # Add list of enum items.
-    if policy['type'] in ('string-enum', 'int-enum'):
+    if policy['type'] in ('string-enum', 'int-enum', 'string-enum-list'):
       ul = self.AddElement(parent, 'ul')
       for item in policy['items']:
         if policy['type'] == 'int-enum':
@@ -179,7 +180,10 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     win = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
     win_text = []
     cnt = 1
-    key_name = self.config['win_reg_mandatory_key_name']
+    if self.CanBeRecommended(policy) and not self.CanBeMandatory(policy):
+      key_name = self.config['win_reg_recommended_key_name']
+    else:
+      key_name = self.config['win_reg_mandatory_key_name']
     for item in example_value:
       win_text.append(
           '%s\\%s\\%d = "%s"' %
@@ -286,9 +290,12 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
     self.AddElement(parent, 'dt', {}, 'Windows:')
     win = self._AddStyledElement(parent, 'dd', ['.monospace', '.pre'])
-    key_name = self.config['win_reg_mandatory_key_name']
-    example = str(policy['example_value'])
-    self.AddText(win, '%s\\%s = "%s"' % (key_name, policy['name'], example))
+    if self.CanBeRecommended(policy) and not self.CanBeMandatory(policy):
+      key_name = self.config['win_reg_recommended_key_name']
+    else:
+      key_name = self.config['win_reg_mandatory_key_name']
+    example = json.dumps(policy['example_value'])
+    self.AddText(win, '%s\\%s = %s' % (key_name, policy['name'], example))
 
   def _AddDictionaryExampleLinux(self, parent, policy):
     '''Adds an example value for Linux of a 'dict' policy to a DOM node.
@@ -300,7 +307,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
     self.AddElement(parent, 'dt', {}, 'Linux:')
     linux = self._AddStyledElement(parent, 'dd', ['.monospace'])
-    example = str(policy['example_value'])
+    example = json.dumps(policy['example_value'])
     self.AddText(linux, '%s: %s' % (policy['name'], example))
 
   def _AddDictionaryExample(self, parent, policy):
@@ -379,7 +386,7 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       self.AddText(parent, ', '.join(pieces))
     elif policy_type == 'string-enum':
       self.AddText(parent, '"%s"' % (example_value))
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       self._AddListExample(parent, policy)
     elif policy_type == 'dict':
       self._AddDictionaryExample(parent, policy)
@@ -458,10 +465,14 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
     if policy['type'] != 'external':
       # All types except 'external' can be set through platform policy.
       if self.IsPolicySupportedOnPlatform(policy, 'win'):
+        if self.CanBeRecommended(policy) and not self.CanBeMandatory(policy):
+          key_name = self.config['win_reg_recommended_key_name']
+        else:
+          key_name = self.config['win_reg_mandatory_key_name']
         self._AddPolicyAttribute(
             dl,
             'win_reg_loc',
-            self.config['win_reg_mandatory_key_name'] + '\\' + policy['name'],
+            key_name + '\\' + policy['name'],
             ['.monospace'])
       if (self.IsPolicySupportedOnPlatform(policy, 'linux') or
           self.IsPolicySupportedOnPlatform(policy, 'mac')):
@@ -579,6 +590,10 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
 
   def BeginTemplate(self):
     # Add a <div> for the summary section.
+    if self._GetChromiumVersionString() is not None:
+      self.AddComment(self._main_div, self.config['build'] + \
+          ' version: ' + self._GetChromiumVersionString())
+
     summary_div = self.AddElement(self._main_div, 'div')
     self.AddElement(summary_div, 'a', {'name': 'top'})
     self.AddElement(summary_div, 'br')
@@ -640,16 +655,19 @@ class DocWriter(xml_formatted_writer.XMLFormattedWriter):
       'int-enum': 'Integer',
       'string-enum': 'String',
       'list': 'List of strings',
+      'string-enum-list': 'List of strings',
       'dict': 'Dictionary',
       'external': 'External data reference',
     }
+    reg_dict = 'REG_SZ; %s' % self._GetLocalizedMessage(
+        'complex_policies_on_windows')
     self._REG_TYPE_MAP = {
       'string': 'REG_SZ',
       'int': 'REG_DWORD',
       'main': 'REG_DWORD',
       'int-enum': 'REG_DWORD',
       'string-enum': 'REG_SZ',
-      'dict': 'REG_SZ, encoded as a JSON string',
+      'dict': reg_dict,
     }
     # The CSS style-sheet used for the document. It will be used in Google
     # Sites, which strips class attributes from HTML tags. To work around this,

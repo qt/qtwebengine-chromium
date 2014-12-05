@@ -21,9 +21,9 @@ void SkProxyCanvas::setProxy(SkCanvas* proxy) {
 
 ///////////////////////////////// Overrides ///////////
 
-void SkProxyCanvas::willSave(SaveFlags flags) {
-    fProxy->save(flags);
-    this->INHERITED::willSave(flags);
+void SkProxyCanvas::willSave() {
+    fProxy->save();
+    this->INHERITED::willSave();
 }
 
 SkCanvas::SaveLayerStrategy SkProxyCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint,
@@ -95,6 +95,17 @@ void SkProxyCanvas::drawPath(const SkPath& path, const SkPaint& paint) {
     fProxy->drawPath(path, paint);
 }
 
+void SkProxyCanvas::drawImage(const SkImage* image, SkScalar left, SkScalar top,
+                       const SkPaint* paint) {
+    fProxy->drawImage(image, left, top, paint);
+}
+
+void SkProxyCanvas::drawImageRect(const SkImage* image, const SkRect* src,
+                           const SkRect& dst,
+                           const SkPaint* paint) {
+    fProxy->drawImageRect(image, src, dst, paint);
+}
+
 void SkProxyCanvas::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
                                const SkPaint* paint) {
     fProxy->drawBitmap(bitmap, x, y, paint);
@@ -136,8 +147,14 @@ void SkProxyCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const 
     fProxy->drawTextOnPath(text, byteLength, path, matrix, paint);
 }
 
-void SkProxyCanvas::onDrawPicture(const SkPicture* picture) {
-    fProxy->drawPicture(picture);
+void SkProxyCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
+                                   const SkPaint& paint) {
+    fProxy->drawTextBlob(blob, x, y, paint);
+}
+
+void SkProxyCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix,
+                                  const SkPaint* paint) {
+    fProxy->drawPicture(picture, matrix, paint);
 }
 
 void SkProxyCanvas::drawVertices(VertexMode vmode, int vertexCount,
@@ -147,6 +164,12 @@ void SkProxyCanvas::drawVertices(VertexMode vmode, int vertexCount,
                                  const SkPaint& paint) {
     fProxy->drawVertices(vmode, vertexCount, vertices, texs, colors,
                                      xmode, indices, indexCount, paint);
+}
+
+void SkProxyCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
+                                const SkPoint texCoords[4], SkXfermode* xmode,
+                                const SkPaint& paint) {
+    fProxy->drawPatch(cubics, colors, texCoords, xmode, paint);
 }
 
 void SkProxyCanvas::drawData(const void* data, size_t length) {

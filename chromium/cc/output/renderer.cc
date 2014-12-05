@@ -4,13 +4,11 @@
 
 #include "cc/output/renderer.h"
 
+#include "cc/quads/render_pass_id.h"
+
 namespace cc {
 
-bool Renderer::HasAllocatedResourcesForTesting(RenderPass::Id id) const {
-  return false;
-}
-
-bool Renderer::IsContextLost() {
+bool Renderer::HasAllocatedResourcesForTesting(RenderPassId id) const {
   return false;
 }
 
@@ -29,10 +27,10 @@ RendererCapabilitiesImpl::RendererCapabilitiesImpl()
       using_shared_memory_resources(false),
       using_partial_swap(false),
       using_egl_image(false),
-      avoid_pow2_textures(false),
-      using_map_image(false),
+      using_image(false),
       using_discard_framebuffer(false),
-      allow_rasterize_on_demand(false) {}
+      allow_rasterize_on_demand(false) {
+}
 
 RendererCapabilitiesImpl::~RendererCapabilitiesImpl() {}
 

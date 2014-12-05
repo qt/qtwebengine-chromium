@@ -54,6 +54,7 @@ static SkBitmap make_bmp(int w, int h) {
     }
 
     paint.setAntiAlias(true);
+    sk_tool_utils::set_portable_typeface(&paint);
     paint.setTextSize(wScalar / 2.2f);
     paint.setShader(0);
     paint.setColor(SK_ColorLTGRAY);
@@ -149,6 +150,7 @@ protected:
         SkPaint txtPaint;
         txtPaint.setTextSize(23.f);
         txtPaint.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&txtPaint);
         txtPaint.setColor(SK_ColorDKGRAY);
         SkScalar textW = txtPaint.measureText(kTxt, SK_ARRAY_COUNT(kTxt)-1);
 
@@ -156,7 +158,7 @@ protected:
         int testLayers = kBench_Mode != this->getMode();
         for (int doLayer = 0; doLayer <= testLayers; ++doLayer) {
             for (SkTLList<Clip>::Iter iter(fClips, SkTLList<Clip>::Iter::kHead_IterStart);
-                 NULL != iter.get();
+                 iter.get();
                  iter.next()) {
                 const Clip* clip = iter.get();
                 SkScalar x = startX;

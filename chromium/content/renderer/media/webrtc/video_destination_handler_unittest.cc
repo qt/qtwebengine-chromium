@@ -20,6 +20,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 
 using ::testing::_;
 
@@ -40,8 +41,9 @@ class VideoDestinationHandlerTest : public PpapiUnittest {
     registry_->Init(kTestStreamUrl);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     registry_.reset();
+    blink::WebHeap::collectAllGarbageForTesting();
     PpapiUnittest::TearDown();
   }
 
@@ -94,11 +96,16 @@ TEST_F(VideoDestinationHandlerTest, PutFrame) {
 
     EXPECT_CALL(sink, OnVideoFrame()).WillOnce(
         RunClosure(quit_closure));
-    frame_writer->PutFrame(image, 10);
+    frame_writer->PutFrame(image.get(), 10);
     run_loop.Run();
+    // Run all pending tasks to let the the test clean up before the test ends.
+    // This is due to that
+    // FrameWriterDelegate::FrameWriterDelegate::DeliverFrame use
+    // PostTaskAndReply to the IO thread and expects the reply to process
+    // on the main render thread to clean up its resources. However, the
+    // QuitClosure above ends before that.
+    base::MessageLoop::current()->RunUntilIdle();
   }
-  // TODO(perkj): Verify that the track output I420 when
-  // https://codereview.chromium.org/213423006/ is landed.
   EXPECT_EQ(1, sink.number_of_frames());
   native_track->RemoveSink(&sink);
 

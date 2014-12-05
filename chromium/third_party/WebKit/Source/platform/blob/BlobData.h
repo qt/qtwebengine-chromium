@@ -38,7 +38,7 @@
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class BlobDataHandle;
 
@@ -172,6 +172,7 @@ public:
     const BlobDataItemList& items() const { return m_items; }
     void swapItems(BlobDataItemList&);
 
+    void appendBytes(const void*, size_t length);
     void appendData(PassRefPtr<RawData>, long long offset, long long length);
     void appendFile(const String& path);
     void appendFile(const String& path, long long offset, long long length, double expectedModificationTime);
@@ -186,13 +187,13 @@ public:
     long long length() const;
 
 private:
-    friend class BlobRegistryImpl;
-    friend class BlobStorageData;
-
-    // Used by appendArrayBuffer and appendArrayBufferView.
-    void appendBytes(const void*, long long length);
-
     BlobData() { }
+
+    // Make this private so that the otherwise-generated implicit assignment
+    // operator doesn't reference BlobDataItemList's operator=, which would
+    // require BlobDataItem to have an implicit operator= which it can't have
+    // because it has a const member.
+    BlobData& operator=(const BlobData&);
 
     String m_contentType;
     BlobDataItemList m_items;
@@ -235,6 +236,6 @@ private:
     const long long m_size;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BlobData_h

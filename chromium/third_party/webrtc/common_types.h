@@ -202,17 +202,31 @@ struct RtcpPacketTypeCounter {
   RtcpPacketTypeCounter()
     : nack_packets(0),
       fir_packets(0),
-      pli_packets(0) {}
+      pli_packets(0),
+      nack_requests(0),
+      unique_nack_requests(0) {}
 
   void Add(const RtcpPacketTypeCounter& other) {
     nack_packets += other.nack_packets;
     fir_packets += other.fir_packets;
     pli_packets += other.pli_packets;
+    nack_requests += other.nack_requests;
+    unique_nack_requests += other.unique_nack_requests;
   }
 
-  uint32_t nack_packets;
-  uint32_t fir_packets;
-  uint32_t pli_packets;
+  int UniqueNackRequestsInPercent() const {
+    if (nack_requests == 0) {
+      return 0;
+    }
+    return static_cast<int>(
+        (unique_nack_requests * 100.0f / nack_requests) + 0.5f);
+  }
+
+  uint32_t nack_packets;          // Number of RTCP NACK packets.
+  uint32_t fir_packets;           // Number of RTCP FIR packets.
+  uint32_t pli_packets;           // Number of RTCP PLI packets.
+  uint32_t nack_requests;         // Number of NACKed RTP packets.
+  uint32_t unique_nack_requests;  // Number of unique NACKed RTP packets.
 };
 
 // Data usage statistics for a (rtp) stream
@@ -225,6 +239,7 @@ struct StreamDataCounters {
      retransmitted_packets(0),
      fec_packets(0) {}
 
+  // TODO(pbos): Rename bytes -> media_bytes.
   uint32_t bytes;  // Payload bytes, excluding RTP headers and padding.
   uint32_t header_bytes;  // Number of bytes used by RTP headers.
   uint32_t padding_bytes;  // Number of padding bytes.
@@ -256,7 +271,9 @@ class BitrateStatisticsObserver {
  public:
   virtual ~BitrateStatisticsObserver() {}
 
-  virtual void Notify(const BitrateStatistics& stats, uint32_t ssrc) = 0;
+  virtual void Notify(const BitrateStatistics& total_stats,
+                      const BitrateStatistics& retransmit_stats,
+                      uint32_t ssrc) = 0;
 };
 
 // Callback, used to notify an observer whenever frame counts have been updated
@@ -266,6 +283,15 @@ class FrameCountObserver {
   virtual void FrameCountUpdated(FrameType frame_type,
                                  uint32_t frame_count,
                                  const unsigned int ssrc) = 0;
+};
+
+// Callback, used to notify an observer whenever the send-side delay is updated.
+class SendSideDelayObserver {
+ public:
+  virtual ~SendSideDelayObserver() {}
+  virtual void SendSideDelayUpdated(int avg_delay_ms,
+                                    int max_delay_ms,
+                                    uint32_t ssrc) = 0;
 };
 
 // ==================================================================
@@ -327,9 +353,9 @@ struct NetworkStatistics           // NETEQ statistics
     uint16_t preferredBufferSize;
     // adding extra delay due to "peaky jitter"
     bool jitterPeaksFound;
-    // loss rate (network + late) in percent (in Q14)
+    // Loss rate (network + late); fraction between 0 and 1, scaled to Q14.
     uint16_t currentPacketLossRate;
-    // late loss rate in percent (in Q14)
+    // Late loss rate; fraction between 0 and 1, scaled to Q14.
     uint16_t currentDiscardRate;
     // fraction (of original stream) of synthesized speech inserted through
     // expansion (in Q14)
@@ -587,20 +613,45 @@ struct VideoCodecVP8 {
   }
 };
 
-// Video codec types
-enum VideoCodecType
-{
-    kVideoCodecVP8,
-    kVideoCodecI420,
-    kVideoCodecRED,
-    kVideoCodecULPFEC,
-    kVideoCodecGeneric,
-    kVideoCodecUnknown
+// VP9 specific
+struct VideoCodecVP9 {
+  VideoCodecComplexity complexity;
+  int                  resilience;
+  unsigned char        numberOfTemporalLayers;
+  bool                 denoisingOn;
+  bool                 frameDroppingOn;
+  int                  keyFrameInterval;
+  bool                 adaptiveQpMode;
 };
 
-union VideoCodecUnion
-{
-    VideoCodecVP8       VP8;
+// H264 specific.
+struct VideoCodecH264 {
+  VideoCodecProfile profile;
+  bool           frameDroppingOn;
+  int            keyFrameInterval;
+  // These are NULL/0 if not externally negotiated.
+  const uint8_t* spsData;
+  size_t         spsLen;
+  const uint8_t* ppsData;
+  size_t         ppsLen;
+};
+
+// Video codec types
+enum VideoCodecType {
+  kVideoCodecVP8,
+  kVideoCodecVP9,
+  kVideoCodecH264,
+  kVideoCodecI420,
+  kVideoCodecRED,
+  kVideoCodecULPFEC,
+  kVideoCodecGeneric,
+  kVideoCodecUnknown
+};
+
+union VideoCodecUnion {
+  VideoCodecVP8       VP8;
+  VideoCodecVP9       VP9;
+  VideoCodecH264      H264;
 };
 
 

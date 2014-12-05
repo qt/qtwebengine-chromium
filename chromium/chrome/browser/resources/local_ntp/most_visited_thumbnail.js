@@ -24,7 +24,8 @@ window.addEventListener('DOMContentLoaded', function() {
     }
     function showDomainElement() {
       var link = createMostVisitedLink(
-          params, data.url, data.title, undefined, data.provider);
+          params, data.url, data.title, undefined, data.direction,
+          data.provider);
       var domain = document.createElement('div');
       domain.textContent = data.domain;
       link.appendChild(domain);
@@ -34,22 +35,26 @@ window.addEventListener('DOMContentLoaded', function() {
     // externally by the page itself.
     function showEmptyTile() {
       displayLink(createMostVisitedLink(
-          params, data.url, data.title, undefined, data.provider));
+          params, data.url, data.title, undefined, data.direction,
+          data.provider));
     }
     // Creates and adds an image.
     function createThumbnail(src) {
       var image = document.createElement('img');
       image.onload = function() {
-        var shadow = document.createElement('span');
-        shadow.className = 'shadow';
         var link = createMostVisitedLink(
-            params, data.url, data.title, undefined, data.provider);
-        link.appendChild(shadow);
+            params, data.url, data.title, undefined, data.direction,
+            data.provider);
+        // Use blocker to prevent context menu from showing image-related items.
+        var blocker = document.createElement('span');
+        blocker.className = 'blocker';
+        link.appendChild(blocker);
         link.appendChild(image);
         displayLink(link);
       };
       image.onerror = function() {
-        if (data.domain) {
+        // If no external thumbnail fallback (etfb), and have domain.
+        if (!params.etfb && data.domain) {
           showDomainElement();
           logEvent(NTP_LOGGING_EVENT_TYPE.NTP_GRAY_TILE_FALLBACK);
         } else {
@@ -61,7 +66,10 @@ window.addEventListener('DOMContentLoaded', function() {
       image.src = src;
     }
 
-    if (data.thumbnailUrl) {
+    if (data.dummy) {
+      showEmptyTile();
+      logEvent(NTP_LOGGING_EVENT_TYPE.NTP_EXTERNAL_TILE);
+    } else if (data.thumbnailUrl) {
       createThumbnail(data.thumbnailUrl);
       logEvent(NTP_LOGGING_EVENT_TYPE.NTP_THUMBNAIL_TILE);
     } else if (data.domain) {

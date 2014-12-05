@@ -29,17 +29,20 @@
 
 #include "core/HTMLNames.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/animation/ActiveAnimations.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/EditingBoundary.h"
 #include "core/editing/FrameSelection.h"
 #include "core/editing/htmlediting.h"
 #include "core/fetch/ResourceLoadPriorityOptimizer.h"
 #include "core/fetch/ResourceLoader.h"
+#include "core/frame/EventHandlerRegistry.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLAnchorElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLHtmlElement.h"
@@ -48,8 +51,7 @@
 #include "core/page/AutoscrollController.h"
 #include "core/page/EventHandler.h"
 #include "core/page/Page.h"
-#include "core/frame/Settings.h"
-#include "core/frame/UseCounter.h"
+#include "core/paint/ObjectPainter.h"
 #include "core/rendering/FlowThreadController.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderCounter.h"
@@ -63,7 +65,8 @@
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderMarquee.h"
+#include "core/rendering/RenderObjectInlines.h"
+#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderScrollbarPart.h"
 #include "core/rendering/RenderTableCaption.h"
 #include "core/rendering/RenderTableCell.h"
@@ -90,9 +93,7 @@
 #include <stdio.h>
 #endif
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -102,7 +103,7 @@ static bool gModifyRenderTreeStructureAnyState = false;
 
 using namespace HTMLNames;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 
 RenderObject::SetLayoutNeededForbiddenScope::SetLayoutNeededForbiddenScope(RenderObject& renderObject)
     : m_renderObject(renderObject)
@@ -120,8 +121,11 @@ RenderObject::SetLayoutNeededForbiddenScope::~SetLayoutNeededForbiddenScope()
 struct SameSizeAsRenderObject {
     virtual ~SameSizeAsRenderObject() { } // Allocate vtable pointer.
     void* pointers[5];
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     unsigned m_debugBitfields : 2;
+#if ENABLE(OILPAN)
+    unsigned m_oilpanBitfields : 1;
+#endif
 #endif
     unsigned m_bitfields;
     unsigned m_bitfields2;
@@ -133,6 +137,10 @@ COMPILE_ASSERT(sizeof(RenderObject) == sizeof(SameSizeAsRenderObject), RenderObj
 
 bool RenderObject::s_affectsParentBlock = false;
 
+typedef HashMap<const RenderObject*, LayoutRect> SelectionPaintInvalidationMap;
+static SelectionPaintInvalidationMap* selectionPaintInvalidationMap = 0;
+
+#if !ENABLE(OILPAN)
 void* RenderObject::operator new(size_t sz)
 {
     ASSERT(isMainThread());
@@ -144,6 +152,7 @@ void RenderObject::operator delete(void* ptr)
     ASSERT(isMainThread());
     partitionFree(ptr);
 }
+#endif
 
 RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
 {
@@ -159,7 +168,7 @@ RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
         // trigger a style change now as the node is not fully attached. Moving this code to style change
         // doesn't make sense as it should be run once at renderer creation.
         image->setStyleInternal(style);
-        if (const StyleImage* styleImage = static_cast<const ImageContentData*>(contentData)->image()) {
+        if (const StyleImage* styleImage = toImageContentData(contentData)->image()) {
             image->setImageResource(RenderImageResourceStyleImage::create(const_cast<StyleImage*>(styleImage)));
             image->setIsGeneratedContent();
         } else
@@ -196,7 +205,7 @@ RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
         return new RenderTableCaption(element);
     case BOX:
     case INLINE_BOX:
-        return new RenderDeprecatedFlexibleBox(element);
+        return new RenderDeprecatedFlexibleBox(*element);
     case FLEX:
     case INLINE_FLEX:
         return new RenderFlexibleBox(element);
@@ -209,32 +218,48 @@ RenderObject* RenderObject::createObject(Element* element, RenderStyle* style)
 }
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, renderObjectCounter, ("RenderObject"));
+unsigned RenderObject::s_instanceCount = 0;
 
 RenderObject::RenderObject(Node* node)
     : ImageResourceClient()
     , m_style(nullptr)
     , m_node(node)
-    , m_parent(0)
-    , m_previous(0)
-    , m_next(0)
-#ifndef NDEBUG
+    , m_parent(nullptr)
+    , m_previous(nullptr)
+    , m_next(nullptr)
+#if ENABLE(ASSERT)
     , m_hasAXObject(false)
     , m_setNeedsLayoutForbidden(false)
+#if ENABLE(OILPAN)
+    , m_didCallDestroy(false)
+#endif
 #endif
     , m_bitfields(node)
 {
 #ifndef NDEBUG
     renderObjectCounter.increment();
 #endif
+    ++s_instanceCount;
 }
 
 RenderObject::~RenderObject()
 {
-    ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()->removeRenderObject(this);
-#ifndef NDEBUG
     ASSERT(!m_hasAXObject);
+#if ENABLE(OILPAN)
+    ASSERT(m_didCallDestroy);
+#endif
+#ifndef NDEBUG
     renderObjectCounter.decrement();
 #endif
+    --s_instanceCount;
+}
+
+void RenderObject::trace(Visitor* visitor)
+{
+    visitor->trace(m_node);
+    visitor->trace(m_parent);
+    visitor->trace(m_previous);
+    visitor->trace(m_next);
 }
 
 String RenderObject::debugName() const
@@ -362,8 +387,8 @@ RenderObject* RenderObject::nextInPreOrder() const
 
 RenderObject* RenderObject::nextInPreOrderAfterChildren() const
 {
-    RenderObject* o;
-    if (!(o = nextSibling())) {
+    RenderObject* o = nextSibling();
+    if (!o) {
         o = parent();
         while (o && !o->nextSibling())
             o = o->parent();
@@ -388,8 +413,8 @@ RenderObject* RenderObject::nextInPreOrderAfterChildren(const RenderObject* stay
         return 0;
 
     const RenderObject* current = this;
-    RenderObject* next;
-    while (!(next = current->nextSibling())) {
+    RenderObject* next = current->nextSibling();
+    for (; !next; next = current->nextSibling()) {
         current = current->parent();
         if (!current || current == stayWithin)
             return 0;
@@ -463,7 +488,7 @@ void RenderObject::addLayers(RenderLayer* parentLayer)
 
     RenderObject* object = this;
     RenderLayer* beforeChild = 0;
-    WebCore::addLayers(this, parentLayer, object, beforeChild);
+    blink::addLayers(this, parentLayer, object, beforeChild);
 }
 
 void RenderObject::removeLayers(RenderLayer* parentLayer)
@@ -540,9 +565,8 @@ RenderLayer* RenderObject::enclosingLayer() const
         if (current->hasLayer())
             return toRenderLayerModelObject(current)->layer();
     }
-    // FIXME: We should remove the one caller that triggers this case and make
-    // this function return a reference.
-    ASSERT(!m_parent && !isRenderView());
+    // FIXME: we should get rid of detached render subtrees, at which point this code should
+    // not be reached. crbug.com/411429
     return 0;
 }
 
@@ -613,6 +637,19 @@ RenderFlowThread* RenderObject::locateFlowThreadContainingBlock() const
         curr = curr->containingBlock();
     }
     return 0;
+}
+
+bool RenderObject::skipInvalidationWhenLaidOutChildren() const
+{
+    if (!neededLayoutBecauseOfChildren())
+        return false;
+
+    // SVG renderers need to be invalidated when their children are laid out.
+    // RenderBlocks with line boxes are responsible to invalidate them so we can't ignore them.
+    if (isSVG() || (isRenderBlockFlow() && toRenderBlockFlow(this)->firstLineBox()))
+        return false;
+
+    return rendererHasNoBoxEffect();
 }
 
 RenderBlock* RenderObject::firstLineBlock() const
@@ -705,7 +742,7 @@ void RenderObject::markContainingBlocksForLayout(bool scheduleRelayout, RenderOb
         last->scheduleRelayout();
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 void RenderObject::checkBlockPositionedObjectsNeedLayout()
 {
     ASSERT(!needsLayout());
@@ -746,12 +783,6 @@ void RenderObject::invalidateContainerPreferredLogicalWidths()
             break;
         o = container;
     }
-}
-
-void RenderObject::setLayerNeedsFullPaintInvalidationForPositionedMovementLayout()
-{
-    ASSERT(hasLayer());
-    toRenderLayerModelObject(this)->layer()->repainter().setRepaintStatus(NeedsFullRepaintForPositionedMovementLayout);
 }
 
 RenderBlock* RenderObject::containerForFixedPosition(const RenderLayerModelObject* paintInvalidationContainer, bool* paintInvalidationContainerSkipped) const
@@ -814,32 +845,10 @@ RenderBlock* RenderObject::containingBlock() const
     return toRenderBlock(o);
 }
 
-RenderObject* RenderObject::clippingContainer() const
-{
-    RenderObject* container = const_cast<RenderObject*>(this);
-    while (container) {
-        if (container->style()->position() == FixedPosition) {
-            for (container = container->parent(); container && !container->canContainFixedPositionObjects(); container = container->parent()) {
-                // CSS clip applies to fixed position elements even for ancestors that are not what the
-                // fixed element is positioned with respect to.
-                if (container->hasClip())
-                    return container;
-            }
-        } else {
-            container = container->containingBlock();
-        }
-
-        if (!container)
-            return 0;
-        if (container->hasClipOrOverflowClip())
-            return container;
-    }
-    return 0;
-}
-
 bool RenderObject::canRenderBorderImage() const
 {
-    ASSERT(style()->hasBorder());
+    if (!style()->hasBorder())
+        return false;
 
     StyleImage* borderImage = style()->borderImage().image();
     return borderImage && borderImage->canRender(*this, style()->effectiveZoom()) && borderImage->isLoaded();
@@ -921,14 +930,14 @@ bool RenderObject::mustInvalidateFillLayersPaintOnHeightChange(const FillLayer& 
 
 bool RenderObject::mustInvalidateBackgroundOrBorderPaintOnWidthChange() const
 {
-    if (hasMask() && mustInvalidateFillLayersPaintOnWidthChange(*style()->maskLayers()))
+    if (hasMask() && mustInvalidateFillLayersPaintOnWidthChange(style()->maskLayers()))
         return true;
 
     // If we don't have a background/border/mask, then nothing to do.
-    if (!hasBoxDecorations())
+    if (!hasBoxDecorationBackground())
         return false;
 
-    if (mustInvalidateFillLayersPaintOnWidthChange(*style()->backgroundLayers()))
+    if (mustInvalidateFillLayersPaintOnWidthChange(style()->backgroundLayers()))
         return true;
 
     // Our fill layers are ok. Let's check border.
@@ -940,14 +949,14 @@ bool RenderObject::mustInvalidateBackgroundOrBorderPaintOnWidthChange() const
 
 bool RenderObject::mustInvalidateBackgroundOrBorderPaintOnHeightChange() const
 {
-    if (hasMask() && mustInvalidateFillLayersPaintOnHeightChange(*style()->maskLayers()))
+    if (hasMask() && mustInvalidateFillLayersPaintOnHeightChange(style()->maskLayers()))
         return true;
 
     // If we don't have a background/border/mask, then nothing to do.
-    if (!hasBoxDecorations())
+    if (!hasBoxDecorationBackground())
         return false;
 
-    if (mustInvalidateFillLayersPaintOnHeightChange(*style()->backgroundLayers()))
+    if (mustInvalidateFillLayersPaintOnHeightChange(style()->backgroundLayers()))
         return true;
 
     // Our fill layers are ok.  Let's check border.
@@ -957,359 +966,12 @@ bool RenderObject::mustInvalidateBackgroundOrBorderPaintOnHeightChange() const
     return false;
 }
 
-void RenderObject::drawLineForBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-                                      BoxSide side, Color color, EBorderStyle style,
-                                      int adjacentWidth1, int adjacentWidth2, bool antialias)
-{
-    int thickness;
-    int length;
-    if (side == BSTop || side == BSBottom) {
-        thickness = y2 - y1;
-        length = x2 - x1;
-    } else {
-        thickness = x2 - x1;
-        length = y2 - y1;
-    }
-
-    // FIXME: We really would like this check to be an ASSERT as we don't want to draw empty borders. However
-    // nothing guarantees that the following recursive calls to drawLineForBoxSide will have non-null dimensions.
-    if (!thickness || !length)
-        return;
-
-    if (style == DOUBLE && thickness < 3)
-        style = SOLID;
-
-    switch (style) {
-    case BNONE:
-    case BHIDDEN:
-        return;
-    case DOTTED:
-    case DASHED:
-        drawDashedOrDottedBoxSide(graphicsContext, x1, y1, x2, y2, side,
-            color, thickness, style, antialias);
-        break;
-    case DOUBLE:
-        drawDoubleBoxSide(graphicsContext, x1, y1, x2, y2, length, side, color,
-            thickness, adjacentWidth1, adjacentWidth2, antialias);
-        break;
-    case RIDGE:
-    case GROOVE:
-        drawRidgeOrGrooveBoxSide(graphicsContext, x1, y1, x2, y2, side, color,
-            style, adjacentWidth1, adjacentWidth2, antialias);
-        break;
-    case INSET:
-        // FIXME: Maybe we should lighten the colors on one side like Firefox.
-        // https://bugs.webkit.org/show_bug.cgi?id=58608
-        if (side == BSTop || side == BSLeft)
-            color = color.dark();
-        // fall through
-    case OUTSET:
-        if (style == OUTSET && (side == BSBottom || side == BSRight))
-            color = color.dark();
-        // fall through
-    case SOLID:
-        drawSolidBoxSide(graphicsContext, x1, y1, x2, y2, side, color, adjacentWidth1, adjacentWidth2, antialias);
-        break;
-    }
-}
-
-void RenderObject::drawDashedOrDottedBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-    BoxSide side, Color color, int thickness, EBorderStyle style, bool antialias)
-{
-    if (thickness <= 0)
-        return;
-
-    bool wasAntialiased = graphicsContext->shouldAntialias();
-    StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
-    graphicsContext->setShouldAntialias(antialias);
-    graphicsContext->setStrokeColor(color);
-    graphicsContext->setStrokeThickness(thickness);
-    graphicsContext->setStrokeStyle(style == DASHED ? DashedStroke : DottedStroke);
-
-    switch (side) {
-    case BSBottom:
-    case BSTop:
-        graphicsContext->drawLine(IntPoint(x1, (y1 + y2) / 2), IntPoint(x2, (y1 + y2) / 2));
-        break;
-    case BSRight:
-    case BSLeft:
-        graphicsContext->drawLine(IntPoint((x1 + x2) / 2, y1), IntPoint((x1 + x2) / 2, y2));
-        break;
-    }
-    graphicsContext->setShouldAntialias(wasAntialiased);
-    graphicsContext->setStrokeStyle(oldStrokeStyle);
-}
-
-void RenderObject::drawDoubleBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-    int length, BoxSide side, Color color, int thickness, int adjacentWidth1, int adjacentWidth2, bool antialias)
-{
-    int thirdOfThickness = (thickness + 1) / 3;
-    ASSERT(thirdOfThickness);
-
-    if (!adjacentWidth1 && !adjacentWidth2) {
-        StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
-        graphicsContext->setStrokeStyle(NoStroke);
-        graphicsContext->setFillColor(color);
-
-        bool wasAntialiased = graphicsContext->shouldAntialias();
-        graphicsContext->setShouldAntialias(antialias);
-
-        switch (side) {
-        case BSTop:
-        case BSBottom:
-            graphicsContext->drawRect(IntRect(x1, y1, length, thirdOfThickness));
-            graphicsContext->drawRect(IntRect(x1, y2 - thirdOfThickness, length, thirdOfThickness));
-            break;
-        case BSLeft:
-        case BSRight:
-            // FIXME: Why do we offset the border by 1 in this case but not the other one?
-            if (length > 1) {
-                graphicsContext->drawRect(IntRect(x1, y1 + 1, thirdOfThickness, length - 1));
-                graphicsContext->drawRect(IntRect(x2 - thirdOfThickness, y1 + 1, thirdOfThickness, length - 1));
-            }
-            break;
-        }
-
-        graphicsContext->setShouldAntialias(wasAntialiased);
-        graphicsContext->setStrokeStyle(oldStrokeStyle);
-        return;
-    }
-
-    int adjacent1BigThird = ((adjacentWidth1 > 0) ? adjacentWidth1 + 1 : adjacentWidth1 - 1) / 3;
-    int adjacent2BigThird = ((adjacentWidth2 > 0) ? adjacentWidth2 + 1 : adjacentWidth2 - 1) / 3;
-
-    switch (side) {
-    case BSTop:
-        drawLineForBoxSide(graphicsContext, x1 + max((-adjacentWidth1 * 2 + 1) / 3, 0),
-            y1, x2 - max((-adjacentWidth2 * 2 + 1) / 3, 0), y1 + thirdOfThickness,
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        drawLineForBoxSide(graphicsContext, x1 + max((adjacentWidth1 * 2 + 1) / 3, 0),
-            y2 - thirdOfThickness, x2 - max((adjacentWidth2 * 2 + 1) / 3, 0), y2,
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        break;
-    case BSLeft:
-        drawLineForBoxSide(graphicsContext, x1, y1 + max((-adjacentWidth1 * 2 + 1) / 3, 0),
-            x1 + thirdOfThickness, y2 - max((-adjacentWidth2 * 2 + 1) / 3, 0),
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        drawLineForBoxSide(graphicsContext, x2 - thirdOfThickness, y1 + max((adjacentWidth1 * 2 + 1) / 3, 0),
-            x2, y2 - max((adjacentWidth2 * 2 + 1) / 3, 0),
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        break;
-    case BSBottom:
-        drawLineForBoxSide(graphicsContext, x1 + max((adjacentWidth1 * 2 + 1) / 3, 0),
-            y1, x2 - max((adjacentWidth2 * 2 + 1) / 3, 0), y1 + thirdOfThickness,
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        drawLineForBoxSide(graphicsContext, x1 + max((-adjacentWidth1 * 2 + 1) / 3, 0),
-            y2 - thirdOfThickness, x2 - max((-adjacentWidth2 * 2 + 1) / 3, 0), y2,
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        break;
-    case BSRight:
-        drawLineForBoxSide(graphicsContext, x1, y1 + max((adjacentWidth1 * 2 + 1) / 3, 0),
-            x1 + thirdOfThickness, y2 - max((adjacentWidth2 * 2 + 1) / 3, 0),
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        drawLineForBoxSide(graphicsContext, x2 - thirdOfThickness, y1 + max((-adjacentWidth1 * 2 + 1) / 3, 0),
-            x2, y2 - max((-adjacentWidth2 * 2 + 1) / 3, 0),
-            side, color, SOLID, adjacent1BigThird, adjacent2BigThird, antialias);
-        break;
-    default:
-        break;
-    }
-}
-
-void RenderObject::drawRidgeOrGrooveBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-    BoxSide side, Color color, EBorderStyle style, int adjacentWidth1, int adjacentWidth2, bool antialias)
-{
-    EBorderStyle s1;
-    EBorderStyle s2;
-    if (style == GROOVE) {
-        s1 = INSET;
-        s2 = OUTSET;
-    } else {
-        s1 = OUTSET;
-        s2 = INSET;
-    }
-
-    int adjacent1BigHalf = ((adjacentWidth1 > 0) ? adjacentWidth1 + 1 : adjacentWidth1 - 1) / 2;
-    int adjacent2BigHalf = ((adjacentWidth2 > 0) ? adjacentWidth2 + 1 : adjacentWidth2 - 1) / 2;
-
-    switch (side) {
-    case BSTop:
-        drawLineForBoxSide(graphicsContext, x1 + max(-adjacentWidth1, 0) / 2, y1, x2 - max(-adjacentWidth2, 0) / 2, (y1 + y2 + 1) / 2,
-            side, color, s1, adjacent1BigHalf, adjacent2BigHalf, antialias);
-        drawLineForBoxSide(graphicsContext, x1 + max(adjacentWidth1 + 1, 0) / 2, (y1 + y2 + 1) / 2, x2 - max(adjacentWidth2 + 1, 0) / 2, y2,
-            side, color, s2, adjacentWidth1 / 2, adjacentWidth2 / 2, antialias);
-        break;
-    case BSLeft:
-        drawLineForBoxSide(graphicsContext, x1, y1 + max(-adjacentWidth1, 0) / 2, (x1 + x2 + 1) / 2, y2 - max(-adjacentWidth2, 0) / 2,
-            side, color, s1, adjacent1BigHalf, adjacent2BigHalf, antialias);
-        drawLineForBoxSide(graphicsContext, (x1 + x2 + 1) / 2, y1 + max(adjacentWidth1 + 1, 0) / 2, x2, y2 - max(adjacentWidth2 + 1, 0) / 2,
-            side, color, s2, adjacentWidth1 / 2, adjacentWidth2 / 2, antialias);
-        break;
-    case BSBottom:
-        drawLineForBoxSide(graphicsContext, x1 + max(adjacentWidth1, 0) / 2, y1, x2 - max(adjacentWidth2, 0) / 2, (y1 + y2 + 1) / 2,
-            side, color, s2, adjacent1BigHalf, adjacent2BigHalf, antialias);
-        drawLineForBoxSide(graphicsContext, x1 + max(-adjacentWidth1 + 1, 0) / 2, (y1 + y2 + 1) / 2, x2 - max(-adjacentWidth2 + 1, 0) / 2, y2,
-            side, color, s1, adjacentWidth1 / 2, adjacentWidth2 / 2, antialias);
-        break;
-    case BSRight:
-        drawLineForBoxSide(graphicsContext, x1, y1 + max(adjacentWidth1, 0) / 2, (x1 + x2 + 1) / 2, y2 - max(adjacentWidth2, 0) / 2,
-            side, color, s2, adjacent1BigHalf, adjacent2BigHalf, antialias);
-        drawLineForBoxSide(graphicsContext, (x1 + x2 + 1) / 2, y1 + max(-adjacentWidth1 + 1, 0) / 2, x2, y2 - max(-adjacentWidth2 + 1, 0) / 2,
-            side, color, s1, adjacentWidth1 / 2, adjacentWidth2 / 2, antialias);
-        break;
-    }
-}
-
-void RenderObject::drawSolidBoxSide(GraphicsContext* graphicsContext, int x1, int y1, int x2, int y2,
-    BoxSide side, Color color, int adjacentWidth1, int adjacentWidth2, bool antialias)
-{
-    StrokeStyle oldStrokeStyle = graphicsContext->strokeStyle();
-    graphicsContext->setStrokeStyle(NoStroke);
-    graphicsContext->setFillColor(color);
-    ASSERT(x2 >= x1);
-    ASSERT(y2 >= y1);
-    if (!adjacentWidth1 && !adjacentWidth2) {
-        // Turn off antialiasing to match the behavior of drawConvexPolygon();
-        // this matters for rects in transformed contexts.
-        bool wasAntialiased = graphicsContext->shouldAntialias();
-        graphicsContext->setShouldAntialias(antialias);
-        graphicsContext->drawRect(IntRect(x1, y1, x2 - x1, y2 - y1));
-        graphicsContext->setShouldAntialias(wasAntialiased);
-        graphicsContext->setStrokeStyle(oldStrokeStyle);
-        return;
-    }
-    FloatPoint quad[4];
-    switch (side) {
-    case BSTop:
-        quad[0] = FloatPoint(x1 + max(-adjacentWidth1, 0), y1);
-        quad[1] = FloatPoint(x1 + max(adjacentWidth1, 0), y2);
-        quad[2] = FloatPoint(x2 - max(adjacentWidth2, 0), y2);
-        quad[3] = FloatPoint(x2 - max(-adjacentWidth2, 0), y1);
-        break;
-    case BSBottom:
-        quad[0] = FloatPoint(x1 + max(adjacentWidth1, 0), y1);
-        quad[1] = FloatPoint(x1 + max(-adjacentWidth1, 0), y2);
-        quad[2] = FloatPoint(x2 - max(-adjacentWidth2, 0), y2);
-        quad[3] = FloatPoint(x2 - max(adjacentWidth2, 0), y1);
-        break;
-    case BSLeft:
-        quad[0] = FloatPoint(x1, y1 + max(-adjacentWidth1, 0));
-        quad[1] = FloatPoint(x1, y2 - max(-adjacentWidth2, 0));
-        quad[2] = FloatPoint(x2, y2 - max(adjacentWidth2, 0));
-        quad[3] = FloatPoint(x2, y1 + max(adjacentWidth1, 0));
-        break;
-    case BSRight:
-        quad[0] = FloatPoint(x1, y1 + max(adjacentWidth1, 0));
-        quad[1] = FloatPoint(x1, y2 - max(adjacentWidth2, 0));
-        quad[2] = FloatPoint(x2, y2 - max(-adjacentWidth2, 0));
-        quad[3] = FloatPoint(x2, y1 + max(-adjacentWidth1, 0));
-        break;
-    }
-
-    graphicsContext->drawConvexPolygon(4, quad, antialias);
-    graphicsContext->setStrokeStyle(oldStrokeStyle);
-}
-
-void RenderObject::paintFocusRing(PaintInfo& paintInfo, const LayoutPoint& paintOffset, RenderStyle* style)
-{
-    Vector<IntRect> focusRingRects;
-    addFocusRingRects(focusRingRects, paintOffset, paintInfo.paintContainer());
-    if (style->outlineStyleIsAuto())
-        paintInfo.context->drawFocusRing(focusRingRects, style->outlineWidth(), style->outlineOffset(), resolveColor(style, CSSPropertyOutlineColor));
-    else
-        addPDFURLRect(paintInfo.context, unionRect(focusRingRects));
-}
-
-void RenderObject::addPDFURLRect(GraphicsContext* context, const LayoutRect& rect)
-{
-    if (rect.isEmpty())
-        return;
-    Node* n = node();
-    if (!n || !n->isLink() || !n->isElementNode())
-        return;
-    const AtomicString& href = toElement(n)->getAttribute(hrefAttr);
-    if (href.isNull())
-        return;
-    KURL url = n->document().completeURL(href);
-    if (!url.isValid())
-        return;
-    if (context->supportsURLFragments() && url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(url, n->document().baseURL())) {
-        String name = url.fragmentIdentifier();
-        if (document().findAnchor(name))
-            context->setURLFragmentForRect(name, pixelSnappedIntRect(rect));
-        return;
-    }
-    context->setURLForRect(url, pixelSnappedIntRect(rect));
-}
-
 void RenderObject::paintOutline(PaintInfo& paintInfo, const LayoutRect& paintRect)
 {
-    if (!hasOutline())
-        return;
-
-    RenderStyle* styleToUse = style();
-    LayoutUnit outlineWidth = styleToUse->outlineWidth();
-
-    int outlineOffset = styleToUse->outlineOffset();
-
-    if (styleToUse->outlineStyleIsAuto() || hasOutlineAnnotation()) {
-        if (RenderTheme::theme().shouldDrawDefaultFocusRing(this)) {
-            // Only paint the focus ring by hand if the theme isn't able to draw the focus ring.
-            paintFocusRing(paintInfo, paintRect.location(), styleToUse);
-        }
-    }
-
-    if (styleToUse->outlineStyleIsAuto() || styleToUse->outlineStyle() == BNONE)
-        return;
-
-    IntRect inner = pixelSnappedIntRect(paintRect);
-    inner.inflate(outlineOffset);
-
-    IntRect outer = pixelSnappedIntRect(inner);
-    outer.inflate(outlineWidth);
-
-    // FIXME: This prevents outlines from painting inside the object. See bug 12042
-    if (outer.isEmpty())
-        return;
-
-    EBorderStyle outlineStyle = styleToUse->outlineStyle();
-    Color outlineColor = resolveColor(styleToUse, CSSPropertyOutlineColor);
-
-    GraphicsContext* graphicsContext = paintInfo.context;
-    bool useTransparencyLayer = outlineColor.hasAlpha();
-    if (useTransparencyLayer) {
-        if (outlineStyle == SOLID) {
-            Path path;
-            path.addRect(outer);
-            path.addRect(inner);
-            graphicsContext->setFillRule(RULE_EVENODD);
-            graphicsContext->setFillColor(outlineColor);
-            graphicsContext->fillPath(path);
-            return;
-        }
-        graphicsContext->beginTransparencyLayer(static_cast<float>(outlineColor.alpha()) / 255);
-        outlineColor = Color(outlineColor.red(), outlineColor.green(), outlineColor.blue());
-    }
-
-    int leftOuter = outer.x();
-    int leftInner = inner.x();
-    int rightOuter = outer.maxX();
-    int rightInner = inner.maxX();
-    int topOuter = outer.y();
-    int topInner = inner.y();
-    int bottomOuter = outer.maxY();
-    int bottomInner = inner.maxY();
-
-    drawLineForBoxSide(graphicsContext, leftOuter, topOuter, leftInner, bottomOuter, BSLeft, outlineColor, outlineStyle, outlineWidth, outlineWidth);
-    drawLineForBoxSide(graphicsContext, leftOuter, topOuter, rightOuter, topInner, BSTop, outlineColor, outlineStyle, outlineWidth, outlineWidth);
-    drawLineForBoxSide(graphicsContext, rightInner, topOuter, rightOuter, bottomOuter, BSRight, outlineColor, outlineStyle, outlineWidth, outlineWidth);
-    drawLineForBoxSide(graphicsContext, leftOuter, bottomInner, rightOuter, bottomOuter, BSBottom, outlineColor, outlineStyle, outlineWidth, outlineWidth);
-
-    if (useTransparencyLayer)
-        graphicsContext->endLayer();
+    ObjectPainter(*this).paintOutline(paintInfo, paintRect);
 }
 
-void RenderObject::addChildFocusRingRects(Vector<IntRect>& rects, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer)
+void RenderObject::addChildFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer) const
 {
     for (RenderObject* current = slowFirstChild(); current; current = current->nextSibling()) {
         if (current->isText() || current->isListMarker())
@@ -1318,34 +980,21 @@ void RenderObject::addChildFocusRingRects(Vector<IntRect>& rects, const LayoutPo
         if (current->isBox()) {
             RenderBox* box = toRenderBox(current);
             if (box->hasLayer()) {
-                Vector<IntRect> layerFocusRingRects;
+                Vector<LayoutRect> layerFocusRingRects;
                 box->addFocusRingRects(layerFocusRingRects, LayoutPoint(), box);
                 for (size_t i = 0; i < layerFocusRingRects.size(); ++i) {
-                    FloatQuad quadInBox = box->localToContainerQuad(FloatRect(layerFocusRingRects[i]), paintContainer);
-                    rects.append(pixelSnappedIntRect(LayoutRect(quadInBox.boundingBox())));
+                    FloatQuad quadInBox = box->localToContainerQuad(FloatQuad(layerFocusRingRects[i]), paintContainer);
+                    LayoutRect rect = LayoutRect(quadInBox.boundingBox());
+                    if (!rect.isEmpty())
+                        rects.append(rect);
                 }
             } else {
-                FloatPoint pos(additionalOffset);
-                pos.move(box->locationOffset()); // FIXME: Snap offsets? crbug.com/350474
-                box->addFocusRingRects(rects, flooredIntPoint(pos), paintContainer);
+                box->addFocusRingRects(rects, additionalOffset + box->locationOffset(), paintContainer);
             }
         } else {
             current->addFocusRingRects(rects, additionalOffset, paintContainer);
         }
     }
-}
-
-// FIXME: In repaint-after-layout, we should be able to change the logic to remove the need for this function. See crbug.com/368416.
-LayoutPoint RenderObject::positionFromPaintInvalidationContainer(const RenderLayerModelObject* paintInvalidationContainer) const
-{
-    // FIXME: This assert should be re-enabled when we move paint invalidation to after compositing update. crbug.com/360286
-    // ASSERT(containerForPaintInvalidation() == paintInvalidationContainer);
-
-    LayoutPoint offset = isBox() ? toRenderBox(this)->location() : LayoutPoint();
-    if (paintInvalidationContainer == this)
-        return offset;
-
-    return roundedIntPoint(localToContainerPoint(offset, paintInvalidationContainer));
 }
 
 IntRect RenderObject::absoluteBoundingBoxRect() const
@@ -1379,14 +1028,12 @@ IntRect RenderObject::absoluteBoundingBoxRectIgnoringTransforms() const
     return pixelSnappedIntRect(result);
 }
 
-void RenderObject::absoluteFocusRingQuads(Vector<FloatQuad>& quads)
+IntRect RenderObject::absoluteFocusRingBoundingBoxRect() const
 {
-    Vector<IntRect> rects;
+    Vector<LayoutRect> rects;
     const RenderLayerModelObject* container = containerForPaintInvalidation();
     addFocusRingRects(rects, LayoutPoint(localToContainerPoint(FloatPoint(), container)), container);
-    size_t count = rects.size();
-    for (size_t i = 0; i < count; ++i)
-        quads.append(container->localToAbsoluteQuad(FloatQuad(rects[i])));
+    return container->localToAbsoluteQuad(FloatQuad(unionRect(rects))).enclosingBoundingBox();
 }
 
 FloatRect RenderObject::absoluteBoundingBoxRectForRange(const Range* range)
@@ -1429,33 +1076,23 @@ void RenderObject::paint(PaintInfo&, const LayoutPoint&)
 
 const RenderLayerModelObject* RenderObject::containerForPaintInvalidation() const
 {
-    if (!isRooted())
-        return 0;
-
+    RELEASE_ASSERT(isRooted());
     return adjustCompositedContainerForSpecialAncestors(enclosingCompositedContainer());
 }
 
 const RenderLayerModelObject* RenderObject::enclosingCompositedContainer() const
 {
     RenderLayerModelObject* container = 0;
-    if (view()->usesCompositing()) {
-        // FIXME: CompositingState is not necessarily up to date for many callers of this function.
-        DisableCompositingQueryAsserts disabler;
+    // FIXME: CompositingState is not necessarily up to date for many callers of this function.
+    DisableCompositingQueryAsserts disabler;
 
-        if (RenderLayer* compositingLayer = enclosingLayer()->enclosingCompositingLayerForRepaint())
-            container = compositingLayer->renderer();
-    }
+    if (RenderLayer* compositingLayer = enclosingLayer()->enclosingLayerForPaintInvalidationCrossingFrameBoundaries())
+        container = compositingLayer->renderer();
     return container;
 }
 
 const RenderLayerModelObject* RenderObject::adjustCompositedContainerForSpecialAncestors(const RenderLayerModelObject* paintInvalidationContainer) const
 {
-
-    if (document().view()->hasSoftwareFilters()) {
-        if (RenderLayer* enclosingFilterLayer = enclosingLayer()->enclosingFilterLayer())
-            return enclosingFilterLayer->renderer();
-    }
-
     // If we have a flow thread, then we need to do individual paint invalidations within the RenderRegions instead.
     // Return the flow thread as a paint invalidation container in order to create a chokepoint that allows us to change
     // paint invalidation to do individual region paint invalidations.
@@ -1465,119 +1102,107 @@ const RenderLayerModelObject* RenderObject::adjustCompositedContainerForSpecialA
         if (!paintInvalidationContainer || paintInvalidationContainer->flowThreadContainingBlock() != parentRenderFlowThread)
             paintInvalidationContainer = parentRenderFlowThread;
     }
-    return paintInvalidationContainer ? paintInvalidationContainer : view();
+
+    if (paintInvalidationContainer)
+        return paintInvalidationContainer;
+
+    RenderView* renderView = view();
+    while (renderView->frame()->ownerRenderer())
+        renderView = renderView->frame()->ownerRenderer()->view();
+    return renderView;
 }
 
 bool RenderObject::isPaintInvalidationContainer() const
 {
-    return hasLayer() && toRenderLayerModelObject(this)->layer()->isRepaintContainer();
+    return hasLayer() && toRenderLayerModelObject(this)->layer()->isPaintInvalidationContainer();
 }
 
-template<typename T> PassRefPtr<JSONValue> jsonObjectForRect(const T& rect)
+template <typename T>
+void addJsonObjectForRect(TracedValue* value, const char* name, const T& rect)
 {
-    RefPtr<JSONObject> object = JSONObject::create();
-    object->setNumber("x", rect.x());
-    object->setNumber("y", rect.y());
-    object->setNumber("width", rect.width());
-    object->setNumber("height", rect.height());
-    return object.release();
+    value->beginDictionary(name);
+    value->setDouble("x", rect.x());
+    value->setDouble("y", rect.y());
+    value->setDouble("width", rect.width());
+    value->setDouble("height", rect.height());
+    value->endDictionary();
 }
 
-static PassRefPtr<JSONValue> jsonObjectForPaintInvalidationInfo(const IntRect& rect, const String& invalidationReason)
+template <typename T>
+void addJsonObjectForPoint(TracedValue* value, const char* name, const T& point)
 {
-    RefPtr<JSONObject> object = JSONObject::create();
-    object->setValue("rect", jsonObjectForRect(rect));
-    object->setString("invalidation_reason", invalidationReason);
-    return object.release();
+    value->beginDictionary(name);
+    value->setDouble("x", point.x());
+    value->setDouble("y", point.y());
+    value->endDictionary();
 }
 
-LayoutRect RenderObject::computePaintInvalidationRect(const RenderLayerModelObject* paintInvalidationContainer) const
+static PassRefPtr<TraceEvent::ConvertableToTraceFormat> jsonObjectForPaintInvalidationInfo(const LayoutRect& rect, const String& invalidationReason)
 {
-    return clippedOverflowRectForPaintInvalidation(paintInvalidationContainer);
+    RefPtr<TracedValue> value = TracedValue::create();
+    addJsonObjectForRect(value.get(), "rect", rect);
+    value->setString("invalidation_reason", invalidationReason);
+    return value;
 }
 
-void RenderObject::invalidatePaintUsingContainer(const RenderLayerModelObject* paintInvalidationContainer, const IntRect& r, InvalidationReason invalidationReason) const
+LayoutRect RenderObject::computePaintInvalidationRect(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
+    return clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState);
+}
+
+void RenderObject::invalidatePaintUsingContainer(const RenderLayerModelObject* paintInvalidationContainer, const LayoutRect& r, PaintInvalidationReason invalidationReason) const
+{
+    if (RuntimeEnabledFeatures::slimmingPaintEnabled())
+        view()->viewDisplayList().invalidate(this);
+
     if (r.isEmpty())
         return;
 
-    // FIXME: This should be an assert, but editing/selection can trigger this case to invalidate
-    // the selection. crbug.com/368140.
-    if (!isRooted())
-        return;
+    RELEASE_ASSERT(isRooted());
 
+    // FIXME: Unify "devtools.timeline.invalidationTracking" and "blink.invalidation". crbug.com/413527.
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"),
+        "PaintInvalidationTracking",
+        "data", InspectorPaintInvalidationTrackingEvent::data(this, paintInvalidationContainer));
     TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"), "RenderObject::invalidatePaintUsingContainer()",
         "object", this->debugName().ascii(),
-        "info", TracedValue::fromJSONValue(jsonObjectForPaintInvalidationInfo(r, invalidationReasonToString(invalidationReason))));
-
-    // For querying RenderLayer::compositingState()
-    DisableCompositingQueryAsserts disabler;
+        "info", jsonObjectForPaintInvalidationInfo(r, paintInvalidationReasonToString(invalidationReason)));
 
     if (paintInvalidationContainer->isRenderFlowThread()) {
-        toRenderFlowThread(paintInvalidationContainer)->repaintRectangleInRegions(r);
+        toRenderFlowThread(paintInvalidationContainer)->paintInvalidationRectangleInRegions(r);
         return;
     }
 
-    if (paintInvalidationContainer->hasFilter() && paintInvalidationContainer->layer()->requiresFullLayerImageForFilters()) {
-        paintInvalidationContainer->layer()->repainter().setFilterBackendNeedsRepaintingInRect(r);
-        return;
-    }
-
-    RenderView* v = view();
     if (paintInvalidationContainer->isRenderView()) {
-        ASSERT(paintInvalidationContainer == v);
-        v->repaintViewRectangle(r);
+        toRenderView(paintInvalidationContainer)->invalidatePaintForRectangle(r, invalidationReason);
         return;
     }
 
-    if (v->usesCompositing()) {
-        ASSERT(paintInvalidationContainer->hasLayer() && (paintInvalidationContainer->layer()->compositingState() == PaintsIntoOwnBacking || paintInvalidationContainer->layer()->compositingState() == PaintsIntoGroupedBacking));
-        paintInvalidationContainer->layer()->repainter().setBackingNeedsRepaintInRect(r);
+    if (paintInvalidationContainer->view()->usesCompositing()) {
+        ASSERT(paintInvalidationContainer->isPaintInvalidationContainer());
+        paintInvalidationContainer->setBackingNeedsPaintInvalidationInRect(r, invalidationReason);
     }
 }
 
-void RenderObject::paintInvalidationForWholeRenderer() const
-{
-    if (!isRooted())
-        return;
-
-    if (view()->document().printing())
-        return; // Don't invalidate paints if we're printing.
-
-    // FIXME: really, we're in the paint invalidation phase here, and the following queries are legal.
-    // Until those states are fully fledged, I'll just disable the ASSERTS.
-    DisableCompositingQueryAsserts disabler;
-    const RenderLayerModelObject* paintInvalidationContainer = containerForPaintInvalidation();
-    LayoutRect paintInvalidationRect = boundsRectForPaintInvalidation(paintInvalidationContainer);
-    invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(paintInvalidationRect), InvalidationPaint);
-}
-
-LayoutRect RenderObject::boundsRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderObject::boundsRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     if (!paintInvalidationContainer)
-        return computePaintInvalidationRect(paintInvalidationContainer);
-    return RenderLayer::computeRepaintRect(this, paintInvalidationContainer->layer());
+        return computePaintInvalidationRect(paintInvalidationContainer, paintInvalidationState);
+    return RenderLayer::computePaintInvalidationRect(this, paintInvalidationContainer->layer(), paintInvalidationState);
 }
 
 void RenderObject::invalidatePaintRectangle(const LayoutRect& r) const
 {
-    if (!isRooted())
-        return;
+    RELEASE_ASSERT(isRooted());
 
     if (view()->document().printing())
         return; // Don't invalidate paints if we're printing.
 
     LayoutRect dirtyRect(r);
 
-    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
-        // FIXME: layoutDelta needs to be applied in parts before/after transforms and
-        // paint invalidation containers. https://bugs.webkit.org/show_bug.cgi?id=23308
-        dirtyRect.move(view()->layoutDelta());
-    }
-
     const RenderLayerModelObject* paintInvalidationContainer = containerForPaintInvalidation();
-    RenderLayer::mapRectToRepaintBacking(this, paintInvalidationContainer, dirtyRect);
-    invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(dirtyRect), InvalidationPaintRectangle);
+    RenderLayer::mapRectToPaintInvalidationBacking(this, paintInvalidationContainer, dirtyRect);
+    invalidatePaintUsingContainer(paintInvalidationContainer, dirtyRect, PaintInvalidationRectangle);
 }
 
 IntRect RenderObject::pixelSnappedAbsoluteClippedOverflowRect() const
@@ -1585,207 +1210,181 @@ IntRect RenderObject::pixelSnappedAbsoluteClippedOverflowRect() const
     return pixelSnappedIntRect(absoluteClippedOverflowRect());
 }
 
-const char* RenderObject::invalidationReasonToString(InvalidationReason reason) const
+void RenderObject::invalidateTreeIfNeeded(const PaintInvalidationState& paintInvalidationState)
 {
-    switch (reason) {
-    case InvalidationIncremental:
-        return "incremental";
-    case InvalidationSelfLayout:
-        return "self layout";
-    case InvalidationBorderFitLines:
-        return "border fit lines";
-    case InvalidationBorderRadius:
-        return "border radius";
-    case InvalidationBoundsChangeWithBackground:
-        return "bounds change with background";
-    case InvalidationBoundsChange:
-        return "bounds change";
-    case InvalidationLocationChange:
-        return "location change";
-    case InvalidationScroll:
-        return "scroll";
-    case InvalidationSelection:
-        return "selection";
-    case InvalidationLayer:
-        return "layer";
-    case InvalidationPaint:
-        return "invalidate paint";
-    case InvalidationPaintRectangle:
-        return "invalidate paint rectangle";
-    }
-    ASSERT_NOT_REACHED();
-    return "";
-}
+    ASSERT(!needsLayout());
 
-void RenderObject::invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer)
-{
     // If we didn't need paint invalidation then our children don't need as well.
     // Skip walking down the tree as everything should be fine below us.
-    if (!shouldCheckForPaintInvalidationAfterLayout())
+    if (!shouldCheckForPaintInvalidation(paintInvalidationState))
         return;
 
-    clearPaintInvalidationState();
+    invalidatePaintIfNeeded(paintInvalidationState, paintInvalidationState.paintInvalidationContainer());
+    clearPaintInvalidationState(paintInvalidationState);
+    invalidatePaintOfSubtreesIfNeeded(paintInvalidationState);
+}
 
+void RenderObject::invalidatePaintOfSubtreesIfNeeded(const PaintInvalidationState& childPaintInvalidationState)
+{
     for (RenderObject* child = slowFirstChild(); child; child = child->nextSibling()) {
         if (!child->isOutOfFlowPositioned())
-            child->invalidateTreeAfterLayout(paintInvalidationContainer);
+            child->invalidateTreeIfNeeded(childPaintInvalidationState);
     }
 }
 
-static PassRefPtr<JSONValue> jsonObjectForOldAndNewRects(const LayoutRect& oldRect, const LayoutRect& newRect)
+static PassRefPtr<TraceEvent::ConvertableToTraceFormat> jsonObjectForOldAndNewRects(const LayoutRect& oldRect, const LayoutPoint& oldLocation, const LayoutRect& newRect, const LayoutPoint& newLocation)
 {
-    RefPtr<JSONObject> object = JSONObject::create();
-
-    object->setValue("old", jsonObjectForRect(oldRect));
-    object->setValue("new", jsonObjectForRect(newRect));
-    return object.release();
+    RefPtr<TracedValue> value = TracedValue::create();
+    addJsonObjectForRect(value.get(), "oldRect", oldRect);
+    addJsonObjectForPoint(value.get(), "oldLocation", oldLocation);
+    addJsonObjectForRect(value.get(), "newRect", newRect);
+    addJsonObjectForPoint(value.get(), "newLocation", newLocation);
+    return value;
 }
 
-bool RenderObject::invalidatePaintAfterLayoutIfNeeded(const RenderLayerModelObject* paintInvalidationContainer, bool wasSelfLayout,
-    const LayoutRect& oldBounds, const LayoutPoint& oldLocation, const LayoutRect* newBoundsPtr, const LayoutPoint* newLocationPtr)
+LayoutRect RenderObject::previousSelectionRectForPaintInvalidation() const
+{
+    ASSERT(shouldInvalidateSelection());
+
+    if (!selectionPaintInvalidationMap)
+        return LayoutRect();
+
+    return selectionPaintInvalidationMap->get(this);
+}
+
+void RenderObject::setPreviousSelectionRectForPaintInvalidation(const LayoutRect& selectionRect)
+{
+    if (!selectionPaintInvalidationMap)
+        selectionPaintInvalidationMap = new SelectionPaintInvalidationMap();
+
+    selectionPaintInvalidationMap->set(this, selectionRect);
+}
+
+void RenderObject::invalidateSelectionIfNeeded(const RenderLayerModelObject& paintInvalidationContainer, PaintInvalidationReason invalidationReason)
+{
+    if (!shouldInvalidateSelection())
+        return;
+
+    LayoutRect oldSelectionRect = previousSelectionRectForPaintInvalidation();
+    LayoutRect previousSelectionRectForPaintInvalidation = selectionRectForPaintInvalidation(&paintInvalidationContainer);
+    // FIXME: groupedMapping() leaks the squashing abstraction.
+    if (paintInvalidationContainer.layer()->groupedMapping())
+        RenderLayer::mapRectToPaintBackingCoordinates(&paintInvalidationContainer, previousSelectionRectForPaintInvalidation);
+    setPreviousSelectionRectForPaintInvalidation(previousSelectionRectForPaintInvalidation);
+
+    if (view()->doingFullPaintInvalidation() || isFullPaintInvalidationReason(invalidationReason))
+        return;
+
+    fullyInvalidatePaint(paintInvalidationContainer, PaintInvalidationSelection, oldSelectionRect, previousSelectionRectForPaintInvalidation);
+}
+
+PaintInvalidationReason RenderObject::invalidatePaintIfNeeded(const PaintInvalidationState& paintInvalidationState, const RenderLayerModelObject& paintInvalidationContainer)
 {
     RenderView* v = view();
     if (v->document().printing())
-        return false; // Don't invalidate paints if we're printing.
+        return PaintInvalidationNone; // Don't invalidate paints if we're printing.
 
-    // This ASSERT fails due to animations.  See https://bugs.webkit.org/show_bug.cgi?id=37048
-    // ASSERT(!newBoundsPtr || *newBoundsPtr == clippedOverflowRectForPaintInvalidation(paintInvalidationContainer));
-    LayoutRect newBounds = newBoundsPtr ? *newBoundsPtr : computePaintInvalidationRect();
-    LayoutPoint newLocation = newLocationPtr ? (*newLocationPtr) : RenderLayer::positionFromPaintInvalidationContainer(this, paintInvalidationContainer);
+    const LayoutRect oldBounds = previousPaintInvalidationRect();
+    const LayoutPoint oldLocation = previousPositionFromPaintInvalidationBacking();
+    const LayoutRect newBounds = boundsRectForPaintInvalidation(&paintInvalidationContainer, &paintInvalidationState);
+    const LayoutPoint newLocation = RenderLayer::positionFromPaintInvalidationBacking(this, &paintInvalidationContainer, &paintInvalidationState);
+    setPreviousPaintInvalidationRect(newBounds);
+    setPreviousPositionFromPaintInvalidationBacking(newLocation);
 
-    // FIXME: This should use a ConvertableToTraceFormat when they are available in Blink.
-    TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"), "RenderObject::invalidatePaintAfterLayoutIfNeeded()",
+    PaintInvalidationReason invalidationReason = paintInvalidationReason(paintInvalidationContainer, oldBounds, oldLocation, newBounds, newLocation);
+
+    // We need to invalidate the selection before checking for whether we are doing a full invalidation.
+    // This is because we need to update the old rect regardless.
+    invalidateSelectionIfNeeded(paintInvalidationContainer, invalidationReason);
+
+    // If we are set to do a full paint invalidation that means the RenderView will issue
+    // paint invalidations. We can then skip issuing of paint invalidations for the child
+    // renderers as they'll be covered by the RenderView.
+    if (view()->doingFullPaintInvalidation())
+        return invalidationReason;
+
+    TRACE_EVENT2(TRACE_DISABLED_BY_DEFAULT("blink.invalidation"), "RenderObject::invalidatePaintIfNeeded()",
         "object", this->debugName().ascii(),
-        "info", TracedValue::fromJSONValue(jsonObjectForOldAndNewRects(oldBounds, newBounds)));
+        "info", jsonObjectForOldAndNewRects(oldBounds, oldLocation, newBounds, newLocation));
 
-    InvalidationReason invalidationReason = wasSelfLayout ? InvalidationSelfLayout : InvalidationIncremental;
+    if (invalidationReason == PaintInvalidationNone)
+        return invalidationReason;
 
-    // Presumably a background or a border exists if border-fit:lines was specified.
-    if (invalidationReason == InvalidationIncremental && style()->borderFit() == BorderFitLines)
-        invalidationReason = InvalidationBorderFitLines;
-
-    if (invalidationReason == InvalidationIncremental && style()->hasBorderRadius()) {
-        // If a border-radius exists and width/height is smaller than
-        // radius width/height, we cannot use delta-paint-invalidation.
-        RoundedRect oldRoundedRect = style()->getRoundedBorderFor(oldBounds);
-        RoundedRect newRoundedRect = style()->getRoundedBorderFor(newBounds);
-        if (oldRoundedRect.radii() != newRoundedRect.radii())
-            invalidationReason = InvalidationBorderRadius;
+    if (invalidationReason == PaintInvalidationIncremental) {
+        incrementallyInvalidatePaint(paintInvalidationContainer, oldBounds, newBounds, newLocation);
+        return invalidationReason;
     }
 
-    if (invalidationReason == InvalidationIncremental && compositingState() != PaintsIntoOwnBacking && newLocation != oldLocation)
-        invalidationReason = InvalidationLocationChange;
+    fullyInvalidatePaint(paintInvalidationContainer, invalidationReason, oldBounds, newBounds);
+    return invalidationReason;
+}
+
+PaintInvalidationReason RenderObject::paintInvalidationReason(const RenderLayerModelObject& paintInvalidationContainer,
+    const LayoutRect& oldBounds, const LayoutPoint& oldPositionFromPaintInvalidationBacking,
+    const LayoutRect& newBounds, const LayoutPoint& newPositionFromPaintInvalidationBacking) const
+{
+    // First check for InvalidationLocationChange to avoid it from being hidden by other
+    // invalidation reasons because we'll need to force check for paint invalidation for
+    // children when location of this object changed.
+    if (newPositionFromPaintInvalidationBacking != oldPositionFromPaintInvalidationBacking)
+        return PaintInvalidationLocationChange;
+
+    if (shouldDoFullPaintInvalidation())
+        return m_bitfields.fullPaintInvalidationReason();
 
     // If the bounds are the same then we know that none of the statements below
     // can match, so we can early out since we will not need to do any
     // invalidation.
-    if (invalidationReason == InvalidationIncremental && oldBounds == newBounds)
-        return false;
-
-    if (invalidationReason == InvalidationIncremental) {
-        if (oldBounds.width() != newBounds.width() && mustInvalidateBackgroundOrBorderPaintOnWidthChange())
-            invalidationReason = InvalidationBoundsChangeWithBackground;
-        else if (oldBounds.height() != newBounds.height() && mustInvalidateBackgroundOrBorderPaintOnHeightChange())
-            invalidationReason = InvalidationBoundsChangeWithBackground;
-    }
+    if (oldBounds == newBounds)
+        return PaintInvalidationNone;
 
     // If we shifted, we don't know the exact reason so we are conservative and trigger a full invalidation. Shifting could
     // be caused by some layout property (left / top) or some in-flow renderer inserted / removed before us in the tree.
-    if (invalidationReason == InvalidationIncremental && newBounds.location() != oldBounds.location())
-        invalidationReason = InvalidationBoundsChange;
+    if (newBounds.location() != oldBounds.location())
+        return PaintInvalidationBoundsChange;
+
+    // This covers the case where we mark containing blocks for layout
+    // and they change size but don't have anything to paint. This is
+    // a pretty common case for <body> as we add / remove children
+    // (and the default background is done by FrameView).
+    if (skipInvalidationWhenLaidOutChildren())
+        return PaintInvalidationNone;
 
     // If the size is zero on one of our bounds then we know we're going to have
     // to do a full invalidation of either old bounds or new bounds. If we fall
     // into the incremental invalidation we'll issue two invalidations instead
     // of one.
-    if (invalidationReason == InvalidationIncremental && (oldBounds.size().isZero() || newBounds.size().isZero()))
-        invalidationReason = InvalidationBoundsChange;
+    if (oldBounds.isEmpty())
+        return PaintInvalidationBecameVisible;
+    if (newBounds.isEmpty())
+        return PaintInvalidationBecameInvisible;
 
-    ASSERT(paintInvalidationContainer);
+    return PaintInvalidationIncremental;
+}
 
-    if (invalidationReason != InvalidationIncremental) {
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(oldBounds), invalidationReason);
-        if (newBounds != oldBounds)
-            invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(newBounds), invalidationReason);
-        return true;
-    }
-
-    LayoutUnit deltaLeft = newBounds.x() - oldBounds.x();
-    if (deltaLeft > 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(oldBounds.x(), oldBounds.y(), deltaLeft, oldBounds.height()), invalidationReason);
-    else if (deltaLeft < 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(newBounds.x(), newBounds.y(), -deltaLeft, newBounds.height()), invalidationReason);
+void RenderObject::incrementallyInvalidatePaint(const RenderLayerModelObject& paintInvalidationContainer, const LayoutRect& oldBounds, const LayoutRect& newBounds, const LayoutPoint& positionFromPaintInvalidationBacking)
+{
+    ASSERT(oldBounds.location() == newBounds.location());
 
     LayoutUnit deltaRight = newBounds.maxX() - oldBounds.maxX();
     if (deltaRight > 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(oldBounds.maxX(), newBounds.y(), deltaRight, newBounds.height()), invalidationReason);
+        invalidatePaintUsingContainer(&paintInvalidationContainer, LayoutRect(oldBounds.maxX(), newBounds.y(), deltaRight, newBounds.height()), PaintInvalidationIncremental);
     else if (deltaRight < 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(newBounds.maxX(), oldBounds.y(), -deltaRight, oldBounds.height()), invalidationReason);
-
-    LayoutUnit deltaTop = newBounds.y() - oldBounds.y();
-    if (deltaTop > 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(oldBounds.x(), oldBounds.y(), oldBounds.width(), deltaTop), invalidationReason);
-    else if (deltaTop < 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(newBounds.x(), newBounds.y(), newBounds.width(), -deltaTop), invalidationReason);
+        invalidatePaintUsingContainer(&paintInvalidationContainer, LayoutRect(newBounds.maxX(), oldBounds.y(), -deltaRight, oldBounds.height()), PaintInvalidationIncremental);
 
     LayoutUnit deltaBottom = newBounds.maxY() - oldBounds.maxY();
     if (deltaBottom > 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(newBounds.x(), oldBounds.maxY(), newBounds.width(), deltaBottom), invalidationReason);
+        invalidatePaintUsingContainer(&paintInvalidationContainer, LayoutRect(newBounds.x(), oldBounds.maxY(), newBounds.width(), deltaBottom), PaintInvalidationIncremental);
     else if (deltaBottom < 0)
-        invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(oldBounds.x(), newBounds.maxY(), oldBounds.width(), -deltaBottom), invalidationReason);
+        invalidatePaintUsingContainer(&paintInvalidationContainer, LayoutRect(oldBounds.x(), newBounds.maxY(), oldBounds.width(), -deltaBottom), PaintInvalidationIncremental);
+}
 
-    // FIXME: This is a limitation of our visual overflow being a single rectangle.
-    if (!style()->boxShadow() && !style()->hasBorderImageOutsets() && !style()->hasOutline())
-        return false;
-
-    // We didn't move, but we did change size. Invalidate the delta, which will consist of possibly
-    // two rectangles (but typically only one).
-    RenderStyle* outlineStyle = outlineStyleForPaintInvalidation();
-    LayoutUnit outlineWidth = outlineStyle->outlineSize();
-    LayoutBoxExtent insetShadowExtent = style()->getBoxShadowInsetExtent();
-    LayoutUnit width = absoluteValue(newBounds.width() - oldBounds.width());
-    if (width) {
-        LayoutUnit shadowLeft;
-        LayoutUnit shadowRight;
-        style()->getBoxShadowHorizontalExtent(shadowLeft, shadowRight);
-        int borderRight = isBox() ? toRenderBox(this)->borderRight() : 0;
-        LayoutUnit boxWidth = isBox() ? toRenderBox(this)->width() : LayoutUnit();
-        LayoutUnit minInsetRightShadowExtent = min<LayoutUnit>(-insetShadowExtent.right(), min<LayoutUnit>(newBounds.width(), oldBounds.width()));
-        LayoutUnit borderWidth = max<LayoutUnit>(borderRight, max<LayoutUnit>(valueForLength(style()->borderTopRightRadius().width(), boxWidth), valueForLength(style()->borderBottomRightRadius().width(), boxWidth)));
-        LayoutUnit decorationsLeftWidth = max<LayoutUnit>(-outlineStyle->outlineOffset(), borderWidth + minInsetRightShadowExtent) + max<LayoutUnit>(outlineWidth, -shadowLeft);
-        LayoutUnit decorationsRightWidth = max<LayoutUnit>(-outlineStyle->outlineOffset(), borderWidth + minInsetRightShadowExtent) + max<LayoutUnit>(outlineWidth, shadowRight);
-        LayoutRect rightRect(newBounds.x() + min(newBounds.width(), oldBounds.width()) - decorationsLeftWidth,
-            newBounds.y(),
-            width + decorationsLeftWidth + decorationsRightWidth,
-            max(newBounds.height(), oldBounds.height()));
-        LayoutUnit right = min<LayoutUnit>(newBounds.maxX(), oldBounds.maxX());
-        if (rightRect.x() < right) {
-            rightRect.setWidth(min(rightRect.width(), right - rightRect.x()));
-            invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(rightRect), invalidationReason);
-        }
-    }
-    LayoutUnit height = absoluteValue(newBounds.height() - oldBounds.height());
-    if (height) {
-        LayoutUnit shadowTop;
-        LayoutUnit shadowBottom;
-        style()->getBoxShadowVerticalExtent(shadowTop, shadowBottom);
-        int borderBottom = isBox() ? toRenderBox(this)->borderBottom() : 0;
-        LayoutUnit boxHeight = isBox() ? toRenderBox(this)->height() : LayoutUnit();
-        LayoutUnit minInsetBottomShadowExtent = min<LayoutUnit>(-insetShadowExtent.bottom(), min<LayoutUnit>(newBounds.height(), oldBounds.height()));
-        LayoutUnit borderHeight = max<LayoutUnit>(borderBottom, max<LayoutUnit>(valueForLength(style()->borderBottomLeftRadius().height(), boxHeight), valueForLength(style()->borderBottomRightRadius().height(), boxHeight)));
-        LayoutUnit decorationsTopHeight = max<LayoutUnit>(-outlineStyle->outlineOffset(), borderHeight + minInsetBottomShadowExtent) + max<LayoutUnit>(outlineWidth, -shadowTop);
-        LayoutUnit decorationsBottomHeight = max<LayoutUnit>(-outlineStyle->outlineOffset(), borderHeight + minInsetBottomShadowExtent) + max<LayoutUnit>(outlineWidth, shadowBottom);
-        LayoutRect bottomRect(newBounds.x(),
-            min(newBounds.maxY(), oldBounds.maxY()) - decorationsTopHeight,
-            max(newBounds.width(), oldBounds.width()),
-            height + decorationsTopHeight + decorationsBottomHeight);
-        LayoutUnit bottom = min(newBounds.maxY(), oldBounds.maxY());
-        if (bottomRect.y() < bottom) {
-            bottomRect.setHeight(min(bottomRect.height(), bottom - bottomRect.y()));
-            invalidatePaintUsingContainer(paintInvalidationContainer, pixelSnappedIntRect(bottomRect), invalidationReason);
-        }
-    }
-    return false;
+void RenderObject::fullyInvalidatePaint(const RenderLayerModelObject& paintInvalidationContainer, PaintInvalidationReason invalidationReason, const LayoutRect& oldBounds, const LayoutRect& newBounds)
+{
+    // Otherwise do full paint invalidation.
+    invalidatePaintUsingContainer(&paintInvalidationContainer, oldBounds, invalidationReason);
+    if (newBounds != oldBounds)
+        invalidatePaintUsingContainer(&paintInvalidationContainer, newBounds, invalidationReason);
 }
 
 void RenderObject::invalidatePaintForOverflow()
@@ -1798,33 +1397,35 @@ void RenderObject::invalidatePaintForOverflowIfNeeded()
         invalidatePaintForOverflow();
 }
 
-bool RenderObject::checkForPaintInvalidation() const
+LayoutRect RenderObject::rectWithOutlineForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, LayoutUnit outlineWidth, const PaintInvalidationState* paintInvalidationState) const
 {
-    return !document().view()->needsFullPaintInvalidation() && everHadLayout();
-}
-
-bool RenderObject::checkForPaintInvalidationDuringLayout() const
-{
-    return !RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && checkForPaintInvalidation();
-}
-
-LayoutRect RenderObject::rectWithOutlineForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, LayoutUnit outlineWidth) const
-{
-    LayoutRect r(clippedOverflowRectForPaintInvalidation(paintInvalidationContainer));
+    LayoutRect r(clippedOverflowRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationState));
     r.inflate(outlineWidth);
     return r;
 }
 
-LayoutRect RenderObject::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject*) const
+LayoutRect RenderObject::absoluteClippedOverflowRect() const
+{
+    return clippedOverflowRectForPaintInvalidation(view());
+}
+
+LayoutRect RenderObject::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject*, const PaintInvalidationState*) const
 {
     ASSERT_NOT_REACHED();
     return LayoutRect();
 }
 
-void RenderObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, bool fixed) const
+void RenderObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
     if (paintInvalidationContainer == this)
         return;
+
+    if (paintInvalidationState && paintInvalidationState->canMapToContainer(paintInvalidationContainer)) {
+        rect.move(paintInvalidationState->paintOffset());
+        if (paintInvalidationState->isClipped())
+            rect.intersect(paintInvalidationState->clipRect());
+        return;
+    }
 
     if (RenderObject* o = parent()) {
         if (o->isRenderBlockFlow()) {
@@ -1835,16 +1436,16 @@ void RenderObject::mapRectToPaintInvalidationBacking(const RenderLayerModelObjec
 
         if (o->hasOverflowClip()) {
             RenderBox* boxParent = toRenderBox(o);
-            boxParent->applyCachedClipAndScrollOffsetForRepaint(rect);
+            boxParent->applyCachedClipAndScrollOffsetForPaintInvalidation(rect);
             if (rect.isEmpty())
                 return;
         }
 
-        o->mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, fixed);
+        o->mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, paintInvalidationState);
     }
 }
 
-void RenderObject::computeFloatRectForPaintInvalidation(const RenderLayerModelObject*, FloatRect&, bool) const
+void RenderObject::computeFloatRectForPaintInvalidation(const RenderLayerModelObject*, FloatRect&, const PaintInvalidationState*) const
 {
     ASSERT_NOT_REACHED();
 }
@@ -1879,13 +1480,6 @@ void RenderObject::showRenderObject() const
 
 void RenderObject::showRenderObject(int printedCharacters) const
 {
-    // As this function is intended to be used when debugging, the
-    // this pointer may be 0.
-    if (!this) {
-        fputs("(null)\n", stderr);
-        return;
-    }
-
     printedCharacters += fprintf(stderr, "%s %p", renderName(), this);
 
     if (node()) {
@@ -1909,8 +1503,6 @@ void RenderObject::showRenderTreeAndMark(const RenderObject* markedObject1, cons
         fputc(' ', stderr);
 
     showRenderObject(printedCharacters);
-    if (!this)
-        return;
 
     for (const RenderObject* child = slowFirstChild(); child; child = child->nextSibling())
         child->showRenderTreeAndMark(markedObject1, markedLabel1, markedObject2, markedLabel2, depth + 1);
@@ -1985,42 +1577,38 @@ void RenderObject::handleDynamicFloatPositionChange()
     }
 }
 
-StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff, unsigned contextSensitiveProperties) const
+StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff) const
 {
-    if (contextSensitiveProperties & ContextSensitivePropertyTransform && isSVG())
+    if (diff.transformChanged() && isSVG())
         diff.setNeedsFullLayout();
 
     // If transform changed, and the layer does not paint into its own separate backing, then we need to invalidate paints.
-    if (contextSensitiveProperties & ContextSensitivePropertyTransform) {
+    if (diff.transformChanged()) {
         // Text nodes share style with their parents but transforms don't apply to them,
         // hence the !isText() check.
-        if (!isText() && (!hasLayer() || !toRenderLayerModelObject(this)->layer()->styleDeterminedCompositingReasons()))
-            diff.setNeedsRepaintLayer();
-        else
-            diff.setNeedsRecompositeLayer();
+        if (!isText() && (!hasLayer() || !toRenderLayerModelObject(this)->layer()->hasStyleDeterminedDirectCompositingReasons()))
+            diff.setNeedsPaintInvalidationLayer();
     }
 
     // If opacity or zIndex changed, and the layer does not paint into its own separate backing, then we need to invalidate paints (also
     // ignoring text nodes)
-    if (contextSensitiveProperties & (ContextSensitivePropertyOpacity | ContextSensitivePropertyZIndex)) {
-        if (!isText() && (!hasLayer() || !toRenderLayerModelObject(this)->layer()->styleDeterminedCompositingReasons()))
-            diff.setNeedsRepaintLayer();
-        else
-            diff.setNeedsRecompositeLayer();
+    if (diff.opacityChanged() || diff.zIndexChanged()) {
+        if (!isText() && (!hasLayer() || !toRenderLayerModelObject(this)->layer()->hasStyleDeterminedDirectCompositingReasons()))
+            diff.setNeedsPaintInvalidationLayer();
     }
 
     // If filter changed, and the layer does not paint into its own separate backing or it paints with filters, then we need to invalidate paints.
-    if ((contextSensitiveProperties & ContextSensitivePropertyFilter) && hasLayer()) {
+    if (diff.filterChanged() && hasLayer()) {
         RenderLayer* layer = toRenderLayerModelObject(this)->layer();
-        if (!layer->styleDeterminedCompositingReasons() || layer->paintsWithFilters())
-            diff.setNeedsRepaintLayer();
-        else
-            diff.setNeedsRecompositeLayer();
+        if (!layer->hasStyleDeterminedDirectCompositingReasons() || layer->paintsWithFilters())
+            diff.setNeedsPaintInvalidationLayer();
     }
 
-    if ((contextSensitiveProperties & ContextSensitivePropertyTextOrColor) && !diff.needsRepaint()
-        && hasImmediateNonWhitespaceTextChildOrPropertiesDependentOnColor())
-        diff.setNeedsRepaintObject();
+    if (diff.textOrColorChanged() && !diff.needsPaintInvalidation()) {
+        if (style()->hasBorder() || style()->hasOutline()
+            || (isText() && !toRenderText(this)->isAllCollapsibleWhitespace()))
+            diff.setNeedsPaintInvalidationObject();
+    }
 
     // The answer to layerTypeRequired() for plugins, iframes, and canvas can change without the actual
     // style changing, since it depends on whether we decide to composite these elements. When the
@@ -2031,10 +1619,10 @@ StyleDifference RenderObject::adjustStyleDifference(StyleDifference diff, unsign
             diff.setNeedsFullLayout();
     }
 
-    // If we have no layer(), just treat a RepaintLayer hint as a normal paint invalidation.
-    if (diff.needsRepaintLayer() && !hasLayer()) {
-        diff.clearNeedsRepaint();
-        diff.setNeedsRepaintObject();
+    // If we have no layer(), just treat a PaintInvalidationLayer hint as a normal paint invalidation.
+    if (diff.needsPaintInvalidationLayer() && !hasLayer()) {
+        diff.clearNeedsPaintInvalidation();
+        diff.setNeedsPaintInvalidationObject();
     }
 
     return diff;
@@ -2063,19 +1651,6 @@ void RenderObject::setPseudoStyle(PassRefPtr<RenderStyle> pseudoStyle)
     setStyle(pseudoStyle);
 }
 
-inline bool RenderObject::hasImmediateNonWhitespaceTextChildOrPropertiesDependentOnColor() const
-{
-    if (style()->hasBorder() || style()->hasOutline())
-        return true;
-    for (const RenderObject* r = slowFirstChild(); r; r = r->nextSibling()) {
-        if (r->isText() && !toRenderText(r)->isAllCollapsibleWhitespace())
-            return true;
-        if (r->style()->hasOutline() || r->style()->hasBorder())
-            return true;
-    }
-    return false;
-}
-
 void RenderObject::markContainingBlocksForOverflowRecalc()
 {
     for (RenderBlock* container = containingBlock(); container && !container->childNeedsOverflowRecalcAfterStyleChange(); container = container->containingBlock())
@@ -2102,39 +1677,38 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
     }
 
     StyleDifference diff;
-    unsigned contextSensitiveProperties = ContextSensitivePropertyNone;
     if (m_style)
-        diff = m_style->visualInvalidationDiff(*style, contextSensitiveProperties);
+        diff = m_style->visualInvalidationDiff(*style);
 
-    diff = adjustStyleDifference(diff, contextSensitiveProperties);
+    diff = adjustStyleDifference(diff);
 
     styleWillChange(diff, *style);
 
     RefPtr<RenderStyle> oldStyle = m_style.release();
     setStyleInternal(style);
 
-    updateFillImages(oldStyle ? oldStyle->backgroundLayers() : 0, m_style ? m_style->backgroundLayers() : 0);
-    updateFillImages(oldStyle ? oldStyle->maskLayers() : 0, m_style ? m_style->maskLayers() : 0);
+    updateFillImages(oldStyle ? &oldStyle->backgroundLayers() : 0, m_style->backgroundLayers());
+    updateFillImages(oldStyle ? &oldStyle->maskLayers() : 0, m_style->maskLayers());
 
-    updateImage(oldStyle ? oldStyle->borderImage().image() : 0, m_style ? m_style->borderImage().image() : 0);
-    updateImage(oldStyle ? oldStyle->maskBoxImage().image() : 0, m_style ? m_style->maskBoxImage().image() : 0);
+    updateImage(oldStyle ? oldStyle->borderImage().image() : 0, m_style->borderImage().image());
+    updateImage(oldStyle ? oldStyle->maskBoxImage().image() : 0, m_style->maskBoxImage().image());
 
-    updateShapeImage(oldStyle ? oldStyle->shapeOutside() : 0, m_style ? m_style->shapeOutside() : 0);
+    updateShapeImage(oldStyle ? oldStyle->shapeOutside() : 0, m_style->shapeOutside());
 
-    bool doesNotNeedLayout = !m_parent || isText();
+    bool doesNotNeedLayoutOrPaintInvalidation = !m_parent;
 
     styleDidChange(diff, oldStyle.get());
 
     // FIXME: |this| might be destroyed here. This can currently happen for a RenderTextFragment when
     // its first-letter block gets an update in RenderTextFragment::styleDidChange. For RenderTextFragment(s),
-    // we will safely bail out with the doesNotNeedLayout flag. We might want to broaden this condition
-    // in the future as we move renderer changes out of layout and into style changes.
-    if (doesNotNeedLayout)
+    // we will safely bail out with the doesNotNeedLayoutOrPaintInvalidation flag. We might want to broaden
+    // this condition in the future as we move renderer changes out of layout and into style changes.
+    if (doesNotNeedLayoutOrPaintInvalidation)
         return;
 
     // Now that the layer (if any) has been updated, we need to adjust the diff again,
     // check whether we should layout now, and decide if we need to invalidate paints.
-    StyleDifference updatedDiff = adjustStyleDifference(diff, contextSensitiveProperties);
+    StyleDifference updatedDiff = adjustStyleDifference(diff);
 
     if (!diff.needsFullLayout()) {
         if (updatedDiff.needsFullLayout())
@@ -2143,19 +1717,15 @@ void RenderObject::setStyle(PassRefPtr<RenderStyle> style)
             setNeedsPositionedMovementLayout();
     }
 
-    if (contextSensitiveProperties & ContextSensitivePropertyTransform && !needsLayout()) {
+    if (diff.transformChanged() && !needsLayout()) {
         if (RenderBlock* container = containingBlock())
             container->setNeedsOverflowRecalcAfterStyleChange();
     }
 
-    if (updatedDiff.needsRepaint()) {
-        // Invalidate paints with the new style, e.g., for example if we go from not having
-        // an outline to having an outline.
-        if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && needsLayout())
-            setShouldDoFullPaintInvalidationAfterLayout(true);
-        else if (!selfNeedsLayout())
-            paintInvalidationForWholeRenderer();
-    }
+    if (updatedDiff.needsPaintInvalidationLayer())
+        toRenderLayerModelObject(this)->layer()->setShouldDoFullPaintInvalidationIncludingNonCompositingDescendants();
+    else if (diff.needsPaintInvalidationObject() || updatedDiff.needsPaintInvalidationObject())
+        setShouldDoFullPaintInvalidation();
 }
 
 static inline bool rendererHasBackground(const RenderObject* renderer)
@@ -2180,22 +1750,8 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle& newS
         // Keep layer hierarchy visibility bits up to date if visibility changes.
         if (m_style->visibility() != newStyle.visibility()) {
             // We might not have an enclosing layer yet because we might not be in the tree.
-            if (RenderLayer* layer = enclosingLayer()) {
-                if (newStyle.visibility() == VISIBLE) {
-                    layer->setHasVisibleContent();
-                } else if (layer->hasVisibleContent() && (this == layer->renderer() || layer->renderer()->style()->visibility() != VISIBLE)) {
-                    layer->dirtyVisibleContentStatus();
-                    if (diff.needsLayout())
-                        paintInvalidationForWholeRenderer();
-                }
-            }
-        }
-
-        if (m_parent && diff.needsRepaintObject()) {
-            if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && (diff.needsLayout() || needsLayout()))
-                setShouldDoFullPaintInvalidationAfterLayout(true);
-            else if (!diff.needsFullLayout() && !selfNeedsLayout())
-                paintInvalidationForWholeRenderer();
+            if (RenderLayer* layer = enclosingLayer())
+                layer->potentiallyDirtyVisibleContentStatus(newStyle.visibility());
         }
 
         if (isFloating() && (m_style->floating() != newStyle.floating()))
@@ -2260,10 +1816,11 @@ void RenderObject::styleWillChange(StyleDifference diff, const RenderStyle& newS
     // handler will have already been added for its parent so ignore it.
     TouchAction oldTouchAction = m_style ? m_style->touchAction() : TouchActionAuto;
     if (node() && !node()->isTextNode() && (oldTouchAction == TouchActionAuto) != (newStyle.touchAction() == TouchActionAuto)) {
+        EventHandlerRegistry& registry = document().frameHost()->eventHandlerRegistry();
         if (newStyle.touchAction() != TouchActionAuto)
-            document().didAddTouchEventHandler(node());
+            registry.didAddEventHandler(*node(), EventHandlerRegistry::TouchEvent);
         else
-            document().didRemoveTouchEventHandler(node());
+            registry.didRemoveEventHandler(*node(), EventHandlerRegistry::TouchEvent);
     }
 }
 
@@ -2329,30 +1886,34 @@ void RenderObject::propagateStyleToAnonymousChildren(bool blockChildrenOnly)
             continue;
 
         RefPtr<RenderStyle> newStyle = RenderStyle::createAnonymousStyleWithDisplay(style(), child->style()->display());
-        if (style()->specifiesColumns()) {
-            if (child->style()->specifiesColumns())
-                newStyle->inheritColumnPropertiesFrom(style());
-            if (child->style()->columnSpan())
-                newStyle->setColumnSpan(ColumnSpanAll);
+        if (!document().regionBasedColumnsEnabled()) {
+            if (style()->specifiesColumns()) {
+                if (child->style()->specifiesColumns())
+                    newStyle->inheritColumnPropertiesFrom(style());
+                if (child->style()->columnSpan())
+                    newStyle->setColumnSpan(ColumnSpanAll);
+            }
         }
 
-        // Preserve the position style of anonymous block continuations as they can have relative or sticky position when
-        // they contain block descendants of relative or sticky positioned inlines.
-        if (child->isInFlowPositioned() && toRenderBlock(child)->isAnonymousBlockContinuation())
+        // Preserve the position style of anonymous block continuations as they can have relative position when
+        // they contain block descendants of relative positioned inlines.
+        if (child->isRelPositioned() && toRenderBlock(child)->isAnonymousBlockContinuation())
             newStyle->setPosition(child->style()->position());
+
+        updateAnonymousChildStyle(child, newStyle.get());
 
         child->setStyle(newStyle.release());
     }
 }
 
-void RenderObject::updateFillImages(const FillLayer* oldLayers, const FillLayer* newLayers)
+void RenderObject::updateFillImages(const FillLayer* oldLayers, const FillLayer& newLayers)
 {
     // Optimize the common case
-    if (oldLayers && !oldLayers->next() && newLayers && !newLayers->next() && (oldLayers->image() == newLayers->image()))
+    if (oldLayers && !oldLayers->next() && !newLayers.next() && (oldLayers->image() == newLayers.image()))
         return;
 
     // Go through the new layers and addClients first, to avoid removing all clients of an image.
-    for (const FillLayer* currNew = newLayers; currNew; currNew = currNew->next()) {
+    for (const FillLayer* currNew = &newLayers; currNew; currNew = currNew->next()) {
         if (currNew->image())
             currNew->image()->addClient(this);
     }
@@ -2410,7 +1971,7 @@ FloatQuad RenderObject::absoluteToLocalQuad(const FloatQuad& quad, MapCoordinate
     return transformState.lastPlanarQuad();
 }
 
-void RenderObject::mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed) const
+void RenderObject::mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState& transformState, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
     if (paintInvalidationContainer == this)
         return;
@@ -2422,7 +1983,7 @@ void RenderObject::mapLocalToContainer(const RenderLayerModelObject* paintInvali
     // FIXME: this should call offsetFromContainer to share code, but I'm not sure it's ever called.
     LayoutPoint centerPoint = roundedLayoutPoint(transformState.mappedPoint());
     if (mode & ApplyContainerFlip && o->isBox()) {
-        if (o->style()->isFlippedBlocksWritingMode())
+        if (o->style()->slowIsFlippedBlocksWritingMode())
             transformState.move(toRenderBox(o)->flipForWritingModeIncludingColumns(roundedLayoutPoint(transformState.mappedPoint())) - centerPoint);
         mode &= ~ApplyContainerFlip;
     }
@@ -2432,7 +1993,7 @@ void RenderObject::mapLocalToContainer(const RenderLayerModelObject* paintInvali
     if (o->hasOverflowClip())
         transformState.move(-toRenderBox(o)->scrolledContentOffset());
 
-    o->mapLocalToContainer(paintInvalidationContainer, transformState, mode, wasFixed);
+    o->mapLocalToContainer(paintInvalidationContainer, transformState, mode, wasFixed, paintInvalidationState);
 }
 
 const RenderObject* RenderObject::pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap& geometryMap) const
@@ -2474,8 +2035,8 @@ void RenderObject::getTransformFromContainer(const RenderObject* containerObject
 {
     transform.makeIdentity();
     transform.translate(offsetInContainer.width().toFloat(), offsetInContainer.height().toFloat());
-    RenderLayer* layer;
-    if (hasLayer() && (layer = toRenderLayerModelObject(this)->layer()) && layer->transform())
+    RenderLayer* layer = hasLayer() ? toRenderLayerModelObject(this)->layer() : 0;
+    if (layer && layer->transform())
         transform.multiply(layer->currentTransform());
 
     if (containerObject && containerObject->hasLayer() && containerObject->style()->hasPerspective()) {
@@ -2503,14 +2064,33 @@ FloatQuad RenderObject::localToContainerQuad(const FloatQuad& localQuad, const R
     return transformState.lastPlanarQuad();
 }
 
-FloatPoint RenderObject::localToContainerPoint(const FloatPoint& localPoint, const RenderLayerModelObject* paintInvalidationContainer, MapCoordinatesFlags mode, bool* wasFixed) const
+FloatPoint RenderObject::localToContainerPoint(const FloatPoint& localPoint, const RenderLayerModelObject* paintInvalidationContainer, MapCoordinatesFlags mode, bool* wasFixed, const PaintInvalidationState* paintInvalidationState) const
 {
     TransformState transformState(TransformState::ApplyTransformDirection, localPoint);
-    mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip | UseTransforms, wasFixed);
+    mapLocalToContainer(paintInvalidationContainer, transformState, mode | ApplyContainerFlip | UseTransforms, wasFixed, paintInvalidationState);
     transformState.flatten();
 
     return transformState.lastPlanarPoint();
 }
+
+FloatPoint RenderObject::localToInvalidationBackingPoint(const LayoutPoint& localPoint, RenderLayer** backingLayer)
+{
+    const RenderLayerModelObject* paintInvalidationContainer = containerForPaintInvalidation();
+    ASSERT(paintInvalidationContainer);
+    RenderLayer* layer = paintInvalidationContainer->layer();
+    ASSERT(layer);
+
+    if (backingLayer)
+        *backingLayer = layer;
+    FloatPoint containerPoint = localToContainerPoint(localPoint, paintInvalidationContainer, TraverseDocumentBoundaries);
+
+    if (layer->compositingState() == NotComposited) // This can happen for RenderFlowThread.
+        return containerPoint;
+
+    RenderLayer::mapPointToPaintBackingCoordinates(paintInvalidationContainer, containerPoint);
+    return containerPoint;
+}
+
 
 LayoutSize RenderObject::offsetFromContainer(const RenderObject* o, const LayoutPoint& point, bool* offsetDependsOnPoint) const
 {
@@ -2537,7 +2117,7 @@ LayoutSize RenderObject::offsetFromAncestorContainer(const RenderObject* contain
         ASSERT(nextContainer);  // This means we reached the top without finding container.
         if (!nextContainer)
             break;
-        ASSERT(!currContainer->hasTransform());
+        ASSERT(!currContainer->hasTransformRelatedProperty());
         LayoutSize currentOffset = currContainer->offsetFromContainer(nextContainer, referencePoint);
         offset += currentOffset;
         referencePoint.move(currentOffset);
@@ -2597,7 +2177,7 @@ void RenderObject::addLayerHitTestRects(LayerHitTestRects& layerRects, const Ren
     const size_t maxRectsPerLayer = 100;
 
     LayerHitTestRects::iterator iter = layerRects.find(currentLayer);
-    Vector<WebCore::LayoutRect>* iterValue;
+    Vector<LayoutRect>* iterValue;
     if (iter == layerRects.end())
         iterValue = &layerRects.add(currentLayer, Vector<LayoutRect>()).storedValue->value;
     else
@@ -2652,7 +2232,7 @@ RenderObject* RenderObject::rendererForRootBackground()
         // anonymous blocks created by inline <body> tags etc. We can locate the <body>
         // render object very easily via the DOM.
         HTMLElement* body = document().body();
-        RenderObject* bodyObject = (body && body->hasLocalName(bodyTag)) ? body->renderer() : 0;
+        RenderObject* bodyObject = isHTMLBodyElement(body) ? body->renderer() : 0;
         if (bodyObject)
             return bodyObject;
     }
@@ -2666,11 +2246,6 @@ RespectImageOrientationEnum RenderObject::shouldRespectImageOrientation() const
     // an <img> and the setting to respect it everywhere is set.
     return document().isImageDocument()
         || (document().settings() && document().settings()->shouldRespectImageOrientation() && isHTMLImageElement(node())) ? RespectImageOrientation : DoNotRespectImageOrientation;
-}
-
-bool RenderObject::hasOutlineAnnotation() const
-{
-    return node() && node()->isLink() && document().printing();
 }
 
 bool RenderObject::hasEntirelyFixedBackground() const
@@ -2776,14 +2351,20 @@ void RenderObject::willBeDestroyed()
     if (hasCounterNodeMap())
         RenderCounter::destroyCounterNodes(*this);
 
-    // Remove the handler if node had touch-action set. Don't call when
-    // document is being destroyed as all handlers will have been cleared
-    // previously. Handlers are not added for text nodes so don't try removing
-    // for one too. Need to check if m_style is null in cases of partial construction.
-    if (!documentBeingDestroyed() && node() && !node()->isTextNode() && m_style && m_style->touchAction() != TouchActionAuto)
-        document().didRemoveTouchEventHandler(node());
+    // Remove the handler if node had touch-action set. Handlers are not added
+    // for text nodes so don't try removing for one too. Need to check if
+    // m_style is null in cases of partial construction. Any handler we added
+    // previously may have already been removed by the Document independently.
+    if (node() && !node()->isTextNode() && m_style && m_style->touchAction() != TouchActionAuto) {
+        EventHandlerRegistry& registry = document().frameHost()->eventHandlerRegistry();
+        if (registry.eventHandlerTargets(EventHandlerRegistry::TouchEvent)->contains(node()))
+            registry.didRemoveEventHandler(*node(), EventHandlerRegistry::TouchEvent);
+    }
 
     setAncestorLineBoxDirty(false);
+
+    if (selectionPaintInvalidationMap)
+        selectionPaintInvalidationMap->remove(this);
 
     clearLayoutRootIfNeeded();
 }
@@ -2806,11 +2387,14 @@ void RenderObject::insertedIntoTree()
         if (!layer)
             layer = parent()->enclosingLayer();
         if (layer)
-            layer->setHasVisibleContent();
+            layer->dirtyVisibleContentStatus();
     }
 
     if (!isFloating() && parent()->childrenInline())
         parent()->dirtyLinesFromChangedChild(this);
+
+    if (RenderFlowThread* flowThread = parent()->flowThreadContainingBlock())
+        flowThread->flowThreadDescendantWasInserted(this);
 }
 
 void RenderObject::willBeRemovedFromTree()
@@ -2860,7 +2444,6 @@ void RenderObject::removeFromRenderFlowThreadRecursive(RenderFlowThread* renderF
         for (RenderObject* child = children->firstChild(); child; child = child->nextSibling())
             child->removeFromRenderFlowThreadRecursive(renderFlowThread);
     }
-
     setFlowThreadState(NotInsideFlowThread);
 }
 
@@ -2882,8 +2465,8 @@ void RenderObject::destroyAndCleanupAnonymousWrappers()
         if (destroyRootParent->isRenderFlowThread() || destroyRootParent->isAnonymousColumnSpanBlock())
             break;
 
-        if (destroyRootParent->slowFirstChild() != this || destroyRootParent->slowLastChild() != this)
-            break;
+        if (destroyRootParent->slowFirstChild() != destroyRoot || destroyRootParent->slowLastChild() != destroyRoot)
+            break; // Need to keep the anonymous parent, since it won't become empty by the removal of this renderer.
     }
 
     destroyRoot->destroy();
@@ -2893,6 +2476,10 @@ void RenderObject::destroyAndCleanupAnonymousWrappers()
 
 void RenderObject::destroy()
 {
+#if ENABLE(ASSERT) && ENABLE(OILPAN)
+    ASSERT(!m_didCallDestroy);
+    m_didCallDestroy = true;
+#endif
     willBeDestroyed();
     postDestroy();
 }
@@ -2909,12 +2496,12 @@ void RenderObject::postDestroy()
 {
     // It seems ugly that this is not in willBeDestroyed().
     if (m_style) {
-        for (const FillLayer* bgLayer = m_style->backgroundLayers(); bgLayer; bgLayer = bgLayer->next()) {
+        for (const FillLayer* bgLayer = &m_style->backgroundLayers(); bgLayer; bgLayer = bgLayer->next()) {
             if (StyleImage* backgroundImage = bgLayer->image())
                 backgroundImage->removeClient(this);
         }
 
-        for (const FillLayer* maskLayer = m_style->maskLayers(); maskLayer; maskLayer = maskLayer->next()) {
+        for (const FillLayer* maskLayer = &m_style->maskLayers(); maskLayer; maskLayer = maskLayer->next()) {
             if (StyleImage* maskImage = maskLayer->image())
                 maskImage->removeClient(this);
         }
@@ -2927,8 +2514,10 @@ void RenderObject::postDestroy()
 
         removeShapeImageClient(m_style->shapeOutside());
     }
-
+    ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()->removeRenderObject(this);
+#if !ENABLE(OILPAN)
     delete this;
+#endif
 }
 
 PositionWithAffinity RenderObject::positionForPoint(const LayoutPoint&)
@@ -2942,9 +2531,9 @@ void RenderObject::updateDragState(bool dragOn)
     setIsDragging(dragOn);
     if (valueChanged && node()) {
         if (node()->isElementNode() && toElement(node())->childrenOrSiblingsAffectedByDrag())
-            node()->setNeedsStyleRecalc(SubtreeStyleChange);
+            node()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Drag));
         else if (style()->affectedByDrag())
-            node()->setNeedsStyleRecalc(LocalStyleChange);
+            node()->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Drag));
     }
     for (RenderObject* curr = slowFirstChild(); curr; curr = curr->nextSibling())
         curr->updateDragState(dragOn);
@@ -2955,7 +2544,7 @@ CompositingState RenderObject::compositingState() const
     return hasLayer() ? toRenderLayerModelObject(this)->layer()->compositingState() : NotComposited;
 }
 
-CompositingReasons RenderObject::additionalCompositingReasons(CompositingTriggerFlags) const
+CompositingReasons RenderObject::additionalCompositingReasons() const
 {
     return CompositingReasonNone;
 }
@@ -3029,7 +2618,7 @@ void RenderObject::scheduleRelayout()
 void RenderObject::forceLayout()
 {
     setSelfNeedsLayout(true);
-    setShouldDoFullPaintInvalidationAfterLayout(true);
+    setShouldDoFullPaintInvalidation();
     layout();
 }
 
@@ -3265,7 +2854,7 @@ int RenderObject::caretMinOffset() const
 int RenderObject::caretMaxOffset() const
 {
     if (isReplaced())
-        return node() ? max(1U, node()->countChildren()) : 1;
+        return node() ? std::max(1U, node()->countChildren()) : 1;
     if (isHR())
         return 1;
     return 0;
@@ -3356,14 +2945,14 @@ PositionWithAffinity RenderObject::createPositionWithAffinity(int offset, EAffin
 {
     // If this is a non-anonymous renderer in an editable area, then it's simple.
     if (Node* node = nonPseudoNode()) {
-        if (!node->rendererIsEditable()) {
+        if (!node->hasEditableStyle()) {
             // If it can be found, we prefer a visually equivalent position that is editable.
             Position position = createLegacyEditingPosition(node, offset);
             Position candidate = position.downstream(CanCrossEditingBoundary);
-            if (candidate.deprecatedNode()->rendererIsEditable())
+            if (candidate.deprecatedNode()->hasEditableStyle())
                 return PositionWithAffinity(candidate, affinity);
             candidate = position.upstream(CanCrossEditingBoundary);
-            if (candidate.deprecatedNode()->rendererIsEditable())
+            if (candidate.deprecatedNode()->hasEditableStyle())
                 return PositionWithAffinity(candidate, affinity);
         }
         // FIXME: Eliminate legacy editing positions
@@ -3379,15 +2968,13 @@ PositionWithAffinity RenderObject::createPositionWithAffinity(int offset, EAffin
     RenderObject* child = this;
     while (RenderObject* parent = child->parent()) {
         // Find non-anonymous content after.
-        RenderObject* renderer = child;
-        while ((renderer = renderer->nextInPreOrder(parent))) {
+        for (RenderObject* renderer = child->nextInPreOrder(parent); renderer; renderer = renderer->nextInPreOrder(parent)) {
             if (Node* node = renderer->nonPseudoNode())
                 return PositionWithAffinity(firstPositionInOrBeforeNode(node), DOWNSTREAM);
         }
 
         // Find non-anonymous content before.
-        renderer = child;
-        while ((renderer = renderer->previousInPreOrder())) {
+        for (RenderObject* renderer = child->previousInPreOrder(); renderer; renderer = renderer->previousInPreOrder()) {
             if (renderer == parent)
                 break;
             if (Node* node = renderer->nonPseudoNode())
@@ -3426,7 +3013,7 @@ bool RenderObject::canUpdateSelectionOnRootLineBoxes()
         return false;
 
     RenderBlock* containingBlock = this->containingBlock();
-    return containingBlock ? !containingBlock->needsLayout() : true;
+    return containingBlock ? !containingBlock->needsLayout() : false;
 }
 
 // We only create "generated" child renderers like one for first-letter if:
@@ -3487,14 +3074,49 @@ bool RenderObject::isRelayoutBoundaryForInspector() const
     return objectIsRelayoutBoundary(this);
 }
 
-void RenderObject::clearPaintInvalidationState()
+static PaintInvalidationReason documentLifecycleBasedPaintInvalidationReason(const DocumentLifecycle& documentLifecycle)
 {
-    setShouldDoFullPaintInvalidationAfterLayout(false);
-    setShouldDoFullPaintInvalidationIfSelfPaintingLayer(false);
-    setOnlyNeededPositionedMovementLayout(false);
+    switch (documentLifecycle.state()) {
+    case DocumentLifecycle::InStyleRecalc:
+        return PaintInvalidationStyleChange;
+    case DocumentLifecycle::InPreLayout:
+    case DocumentLifecycle::InPerformLayout:
+    case DocumentLifecycle::AfterPerformLayout:
+        return PaintInvalidationForcedByLayout;
+    case DocumentLifecycle::InCompositingUpdate:
+        return PaintInvalidationCompositingUpdate;
+    default:
+        return PaintInvalidationFull;
+    }
+}
+
+void RenderObject::setShouldDoFullPaintInvalidation(PaintInvalidationReason reason)
+{
+    // Only full invalidation reasons are allowed.
+    ASSERT(isFullPaintInvalidationReason(reason));
+
+    if (m_bitfields.fullPaintInvalidationReason() == PaintInvalidationNone) {
+        if (reason == PaintInvalidationFull)
+            reason = documentLifecycleBasedPaintInvalidationReason(document().lifecycle());
+        m_bitfields.setFullPaintInvalidationReason(reason);
+    }
+
+    ASSERT(document().lifecycle().state() != DocumentLifecycle::InPaintInvalidation);
+    frame()->page()->animator().scheduleVisualUpdate(); // In case that this is called not during FrameView::updateLayoutAndStyleForPainting().
+    markContainingBlockChainForPaintInvalidation();
+}
+
+void RenderObject::clearPaintInvalidationState(const PaintInvalidationState& paintInvalidationState)
+{
+    // paintInvalidationStateIsDirty should be kept in sync with the
+    // booleans that are cleared below.
+    ASSERT(paintInvalidationState.forceCheckForPaintInvalidation() || paintInvalidationStateIsDirty());
+    clearShouldDoFullPaintInvalidation();
+    setNeededLayoutBecauseOfChildren(false);
     setShouldInvalidateOverflowForPaint(false);
-    setLayoutDidGetCalled(false);
+    clearLayoutDidGetCalledSinceLastFrame();
     setMayNeedPaintInvalidation(false);
+    clearShouldInvalidateSelection();
 }
 
 bool RenderObject::isAllowedToModifyRenderTreeStructure(Document& document)
@@ -3513,31 +3135,48 @@ bool DeprecatedDisableModifyRenderTreeStructureAsserts::canModifyRenderTreeState
     return gModifyRenderTreeStructureAnyState;
 }
 
-} // namespace WebCore
+// Since we're only painting non-composited layers, we know that they all share the same paintInvalidationContainer.
+void RenderObject::invalidatePaintIncludingNonCompositingDescendants()
+{
+    invalidatePaintIncludingNonCompositingDescendantsInternal(containerForPaintInvalidation());
+}
+
+void RenderObject::invalidatePaintIncludingNonCompositingDescendantsInternal(const RenderLayerModelObject* paintInvalidationContainer)
+{
+    invalidatePaintUsingContainer(paintInvalidationContainer, previousPaintInvalidationRect(), PaintInvalidationLayer);
+
+    for (RenderObject* child = slowFirstChild(); child; child = child->nextSibling()) {
+        if (!child->isPaintInvalidationContainer())
+            child->invalidatePaintIncludingNonCompositingDescendantsInternal(paintInvalidationContainer);
+    }
+}
+
+
+} // namespace blink
 
 #ifndef NDEBUG
 
-void showTree(const WebCore::RenderObject* object)
+void showTree(const blink::RenderObject* object)
 {
     if (object)
         object->showTreeForThis();
 }
 
-void showLineTree(const WebCore::RenderObject* object)
+void showLineTree(const blink::RenderObject* object)
 {
     if (object)
         object->showLineTreeForThis();
 }
 
-void showRenderTree(const WebCore::RenderObject* object1)
+void showRenderTree(const blink::RenderObject* object1)
 {
     showRenderTree(object1, 0);
 }
 
-void showRenderTree(const WebCore::RenderObject* object1, const WebCore::RenderObject* object2)
+void showRenderTree(const blink::RenderObject* object1, const blink::RenderObject* object2)
 {
     if (object1) {
-        const WebCore::RenderObject* root = object1;
+        const blink::RenderObject* root = object1;
         while (root->parent())
             root = root->parent();
         root->showRenderTreeAndMark(object1, "*", object2, "-", 0);

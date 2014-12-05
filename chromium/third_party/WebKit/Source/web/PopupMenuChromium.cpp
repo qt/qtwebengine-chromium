@@ -39,8 +39,6 @@
 
 namespace blink {
 
-using namespace WebCore;
-
 PopupMenuChromium::PopupMenuChromium(LocalFrame& frame, PopupMenuClient* client)
     : m_popupClient(client)
     , m_frameView(frame.view())
@@ -49,10 +47,27 @@ PopupMenuChromium::PopupMenuChromium(LocalFrame& frame, PopupMenuClient* client)
 
 PopupMenuChromium::~PopupMenuChromium()
 {
+#if ENABLE(OILPAN)
+    // Verify that dispose() has been called when disconnecting.
+    ASSERT(!m_popupClient);
+#else
+    dispose();
+#endif
+}
+
+void PopupMenuChromium::dispose()
+{
     // When the PopupMenuChromium is destroyed, the client could already have been deleted.
     if (m_popup)
-        m_popup->listBox()->disconnectClient();
+        m_popup->disconnectClient();
     hide();
+}
+
+void PopupMenuChromium::trace(Visitor* visitor)
+{
+    visitor->trace(m_frameView);
+    visitor->trace(m_popup);
+    PopupMenu::trace(visitor);
 }
 
 void PopupMenuChromium::show(const FloatQuad& controlPosition, const IntSize& controlSize, int index)
@@ -72,13 +87,20 @@ void PopupMenuChromium::hide()
 
 void PopupMenuChromium::updateFromElement()
 {
-    m_popup->listBox()->updateFromElement();
+    m_popup->updateFromElement();
 }
 
 
 void PopupMenuChromium::disconnectClient()
 {
     m_popupClient = 0;
+#if ENABLE(OILPAN)
+    // Cannot be done during finalization, so instead done when the
+    // render object is destroyed and disconnected.
+    //
+    // FIXME: do this always, regardless of ENABLE(OILPAN).
+    dispose();
+#endif
 }
 
 } // namespace blink

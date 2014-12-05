@@ -29,11 +29,12 @@
 #include "config.h"
 #include "modules/indexeddb/IDBRequest.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/IDBBindingUtilities.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/modules/v8/IDBBindingUtilities.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
+#include "modules/IndexedDBNames.h"
 #include "modules/indexeddb/IDBCursorWithValue.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBEventDispatcher.h"
@@ -43,11 +44,11 @@
 
 using blink::WebIDBCursor;
 
-namespace WebCore {
+namespace blink {
 
 IDBRequest* IDBRequest::create(ScriptState* scriptState, IDBAny* source, IDBTransaction* transaction)
 {
-    IDBRequest* request = adoptRefCountedGarbageCollectedWillBeNoop(new IDBRequest(scriptState, source, transaction));
+    IDBRequest* request = new IDBRequest(scriptState, source, transaction);
     request->suspendIfNeeded();
     // Requests associated with IDBFactory (open/deleteDatabase/getDatabaseNames) are not associated with transactions.
     if (transaction)
@@ -65,18 +66,22 @@ IDBRequest::IDBRequest(ScriptState* scriptState, IDBAny* source, IDBTransaction*
     , m_source(source)
     , m_hasPendingActivity(true)
     , m_cursorType(IndexedDB::CursorKeyAndValue)
-    , m_cursorDirection(blink::WebIDBCursorDirectionNext)
+    , m_cursorDirection(WebIDBCursorDirectionNext)
     , m_pendingCursor(nullptr)
     , m_didFireUpgradeNeededEvent(false)
     , m_preventPropagation(false)
     , m_resultDirty(true)
 {
-    ScriptWrappable::init(this);
 }
 
 IDBRequest::~IDBRequest()
 {
     ASSERT(m_readyState == DONE || m_readyState == EarlyDeath || !executionContext());
+    ASSERT(!m_blobInfo || m_blobInfo->size() == 0);
+}
+
+void IDBRequest::dispose()
+{
     handleBlobAcks();
 }
 
@@ -109,7 +114,7 @@ ScriptValue IDBRequest::result(ExceptionState& exceptionState)
     return value;
 }
 
-PassRefPtrWillBeRawPtr<DOMError> IDBRequest::error(ExceptionState& exceptionState) const
+DOMError* IDBRequest::error(ExceptionState& exceptionState) const
 {
     if (m_readyState != DONE) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::requestNotFinishedErrorMessage);
@@ -129,13 +134,11 @@ ScriptValue IDBRequest::source() const
 const String& IDBRequest::readyState() const
 {
     ASSERT(m_readyState == PENDING || m_readyState == DONE);
-    DEFINE_STATIC_LOCAL(AtomicString, pending, ("pending", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, done, ("done", AtomicString::ConstructFromLiteral));
 
     if (m_readyState == PENDING)
-        return pending;
+        return IndexedDBNames::pending;
 
-    return done;
+    return IndexedDBNames::done;
 }
 
 void IDBRequest::abort()
@@ -160,7 +163,7 @@ void IDBRequest::abort()
     m_requestAborted = true;
 }
 
-void IDBRequest::setCursorDetails(IndexedDB::CursorType cursorType, blink::WebIDBCursorDirection direction)
+void IDBRequest::setCursorDetails(IndexedDB::CursorType cursorType, WebIDBCursorDirection direction)
 {
     ASSERT(m_readyState == PENDING);
     ASSERT(!m_pendingCursor);
@@ -195,16 +198,23 @@ IDBCursor* IDBRequest::getResultCursor() const
     return 0;
 }
 
-void IDBRequest::setResultCursor(IDBCursor* cursor, IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> > blobInfo)
+void IDBRequest::setResultCursor(IDBCursor* cursor, IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<WebBlobInfo> > blobInfo)
 {
     ASSERT(m_readyState == PENDING);
     m_cursorKey = key;
     m_cursorPrimaryKey = primaryKey;
     m_cursorValue = value;
-    ASSERT(!m_blobInfo.get());
-    m_blobInfo = blobInfo;
+    setBlobInfo(blobInfo);
 
     onSuccessInternal(IDBAny::create(cursor));
+}
+
+void IDBRequest::setBlobInfo(PassOwnPtr<Vector<WebBlobInfo>> blobInfo)
+{
+    ASSERT(!m_blobInfo);
+    m_blobInfo = blobInfo;
+    if (m_blobInfo && m_blobInfo->size() > 0)
+        ThreadState::current()->registerPreFinalizer(*this);
 }
 
 void IDBRequest::handleBlobAcks()
@@ -212,6 +222,7 @@ void IDBRequest::handleBlobAcks()
     if (m_blobInfo.get() && m_blobInfo->size()) {
         m_transaction->db()->ackReceivedBlobs(m_blobInfo.get());
         m_blobInfo.clear();
+        ThreadState::current()->unregisterPreFinalizer(*this);
     }
 }
 
@@ -227,7 +238,7 @@ bool IDBRequest::shouldEnqueueEvent() const
     return true;
 }
 
-void IDBRequest::onError(PassRefPtrWillBeRawPtr<DOMError> error)
+void IDBRequest::onError(DOMError* error)
 {
     IDB_TRACE("IDBRequest::onError()");
     if (!shouldEnqueueEvent())
@@ -251,7 +262,7 @@ void IDBRequest::onSuccess(const Vector<String>& stringList)
     onSuccessInternal(IDBAny::create(domStringList.release()));
 }
 
-void IDBRequest::onSuccess(PassOwnPtr<blink::WebIDBCursor> backend, IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> > blobInfo)
+void IDBRequest::onSuccess(PassOwnPtr<WebIDBCursor> backend, IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<WebBlobInfo> > blobInfo)
 {
     IDB_TRACE("IDBRequest::onSuccess(IDBCursor)");
     if (!shouldEnqueueEvent())
@@ -284,7 +295,7 @@ void IDBRequest::onSuccess(IDBKey* idbKey)
         onSuccessInternal(IDBAny::createUndefined());
 }
 
-void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer, PassOwnPtr<Vector<blink::WebBlobInfo> > blobInfo)
+void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer, PassOwnPtr<Vector<WebBlobInfo> > blobInfo)
 {
     IDB_TRACE("IDBRequest::onSuccess(SharedBuffer)");
     if (!shouldEnqueueEvent())
@@ -298,12 +309,11 @@ void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> valueBuffer, PassOwnPtr<Vect
         m_pendingCursor.clear();
     }
 
-    ASSERT(!m_blobInfo.get());
-    m_blobInfo = blobInfo;
+    setBlobInfo(blobInfo);
     onSuccessInternal(IDBAny::create(valueBuffer, m_blobInfo.get()));
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 static IDBObjectStore* effectiveObjectStore(IDBAny* source)
 {
     if (source->type() == IDBAny::IDBObjectStoreType)
@@ -316,22 +326,19 @@ static IDBObjectStore* effectiveObjectStore(IDBAny* source)
 }
 #endif
 
-void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> prpValueBuffer, PassOwnPtr<Vector<blink::WebBlobInfo> > blobInfo, IDBKey* prpPrimaryKey, const IDBKeyPath& keyPath)
+void IDBRequest::onSuccess(PassRefPtr<SharedBuffer> prpValueBuffer, PassOwnPtr<Vector<WebBlobInfo> > blobInfo, IDBKey* prpPrimaryKey, const IDBKeyPath& keyPath)
 {
     IDB_TRACE("IDBRequest::onSuccess(SharedBuffer, IDBKey, IDBKeyPath)");
     if (!shouldEnqueueEvent())
         return;
 
-#ifndef NDEBUG
     ASSERT(keyPath == effectiveObjectStore(m_source)->metadata().keyPath);
-#endif
 
     RefPtr<SharedBuffer> valueBuffer = prpValueBuffer;
     IDBKey* primaryKey = prpPrimaryKey;
-    ASSERT(!m_blobInfo.get());
-    m_blobInfo = blobInfo;
+    setBlobInfo(blobInfo);
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     assertPrimaryKeyValidOrInjectable(m_scriptState.get(), valueBuffer, m_blobInfo.get(), primaryKey, keyPath);
 #endif
 
@@ -368,7 +375,7 @@ void IDBRequest::setResult(IDBAny* result)
     m_resultDirty = true;
 }
 
-void IDBRequest::onSuccess(IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<blink::WebBlobInfo> > blobInfo)
+void IDBRequest::onSuccess(IDBKey* key, IDBKey* primaryKey, PassRefPtr<SharedBuffer> value, PassOwnPtr<Vector<WebBlobInfo> > blobInfo)
 {
     IDB_TRACE("IDBRequest::onSuccess(key, primaryKey, value)");
     if (!shouldEnqueueEvent())
@@ -451,8 +458,11 @@ bool IDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
     IDBCursor* cursorToNotify = 0;
     if (event->type() == EventTypeNames::success) {
         cursorToNotify = getResultCursor();
-        if (cursorToNotify)
+        if (cursorToNotify) {
+            if (m_blobInfo && m_blobInfo->size() > 0)
+                ThreadState::current()->unregisterPreFinalizer(*this);
             cursorToNotify->setValueReady(m_cursorKey.release(), m_cursorPrimaryKey.release(), m_cursorValue.release(), m_blobInfo.release());
+        }
     }
 
     if (event->type() == EventTypeNames::upgradeneeded) {
@@ -546,4 +556,4 @@ void IDBRequest::dequeueEvent(Event* event)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

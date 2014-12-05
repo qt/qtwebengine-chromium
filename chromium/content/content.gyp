@@ -25,7 +25,28 @@
     ['OS != "ios"', {
       'includes': [
         'content_common_mojo_bindings.gypi',
+        'content_resources.gypi',
         '../build/win_precompile.gypi',
+      ],
+    }],
+    ['OS == "win"', {
+      'targets': [
+        {
+          'target_name': 'content_startup_helper_win',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'dependencies': [
+            '../base/base.gyp:base',
+            '../base/base.gyp:base_i18n',
+            '../sandbox/sandbox.gyp:sandbox',
+          ],
+          'sources': [
+            'app/startup_helper_win.cc',
+            'public/app/startup_helper_win.h',
+          ],
+        }
       ],
     }],
     # In component mode, we build all of content as a single DLL.
@@ -40,10 +61,14 @@
       ],
       'targets': [
         {
+          # GN version: //content
           'target_name': 'content',
           'type': 'none',
           'dependencies': [
             'content_browser',
+            'content_common',
+          ],
+          'export_dependent_settings': [
             'content_common',
           ],
           'conditions': [
@@ -55,12 +80,12 @@
                 'content_ppapi_plugin',
                 'content_renderer',
                 'content_utility',
-                'content_worker',
               ],
             }],
           ],
         },
         {
+          # GN version: //content/app:browser
           'target_name': 'content_app_browser',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -68,6 +93,9 @@
             'content_app.gypi',
           ],
           'dependencies': [
+            'content_common',
+          ],
+          'export_dependent_settings': [
             'content_common',
           ],
           'conditions': [
@@ -79,6 +107,7 @@
           ],
         },
         {
+          # GN version: //content/app:child
           'target_name': 'content_app_child',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -86,6 +115,9 @@
             'content_app.gypi',
           ],
           'dependencies': [
+            'content_common',
+          ],
+          'export_dependent_settings': [
             'content_common',
           ],
           'conditions': [
@@ -97,6 +129,7 @@
           ],
         },
         {
+          # GN version: //content/app:both
           'target_name': 'content_app_both',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -111,15 +144,21 @@
           ],
         },
         {
+          # GN version: //content/browser and //content/public/browser
           'target_name': 'content_browser',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'includes': [
             'content_browser.gypi',
+            # Disable LTO due to ELF section name out of range
+            # crbug.com/422251
+            '../build/android/disable_lto.gypi',
           ],
           'dependencies': [
             'content_common',
-            'content_resources.gyp:content_resources',
+          ],
+          'export_dependent_settings': [
+            'content_common',
           ],
           'conditions': [
             ['java_bridge==1', {
@@ -133,9 +172,15 @@
                 'content_utility',
               ],
             }],
+            ['OS != "ios"', {
+              'dependencies': [
+                'content_resources',
+              ],
+            }],
           ],
         },
         {
+          # GN version: //content/common and //content/public/common
           'target_name': 'content_common',
           'type': 'static_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
@@ -145,7 +190,7 @@
           'conditions': [
             ['OS != "ios"', {
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
             }],
           ],
@@ -157,6 +202,7 @@
         ['OS != "ios"', {
           'targets': [
             {
+              # GN version: //content/child and //content/public/child
               'target_name': 'content_child',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
@@ -164,12 +210,13 @@
                 'content_child.gypi',
               ],
               'dependencies': [
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               # Disable c4267 warnings until we fix size_t to int truncations.
               'msvs_disabled_warnings': [ 4267, ],
             },
             {
+              # GN version: //content/gpu
               'target_name': 'content_gpu',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
@@ -182,6 +229,7 @@
               ],
             },
             {
+              # GN version: //content/plugin and //content/public/plugin
               'target_name': 'content_plugin',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
@@ -194,6 +242,7 @@
               ],
             },
             {
+              # GN version: //content/ppapi_plugin
               'target_name': 'content_ppapi_plugin',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
@@ -204,6 +253,7 @@
               'msvs_disabled_warnings': [ 4267, ],
             },
             {
+              # GN version: //content/renderer and //content/public/renderer
               'target_name': 'content_renderer',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
@@ -213,7 +263,7 @@
               'dependencies': [
                 'content_child',
                 'content_common',
-                'content_resources.gyp:content_resources',
+                'content_resources',
               ],
               'conditions': [
                 ['chromium_enable_vtune_jit_for_v8==1', {
@@ -224,23 +274,12 @@
               ],
             },
             {
+              # GN version: //content/utility and //content/public/utility
               'target_name': 'content_utility',
               'type': 'static_library',
               'variables': { 'enable_wexit_time_destructors': 1, },
               'includes': [
                 'content_utility.gypi',
-              ],
-              'dependencies': [
-                'content_child',
-                'content_common',
-              ],
-            },
-            {
-              'target_name': 'content_worker',
-              'type': 'static_library',
-              'variables': { 'enable_wexit_time_destructors': 1, },
-              'includes': [
-                'content_worker.gypi',
               ],
               'dependencies': [
                 'content_child',
@@ -254,11 +293,12 @@
     {  # component != static_library
       'targets': [
         {
+          # GN version: //content
           'target_name': 'content',
           'type': 'shared_library',
           'variables': { 'enable_wexit_time_destructors': 1, },
           'dependencies': [
-           'content_resources.gyp:content_resources',
+            'content_resources',
           ],
           'conditions': [
             ['chromium_enable_vtune_jit_for_v8==1', {
@@ -277,7 +317,6 @@
             'content_ppapi_plugin.gypi',
             'content_renderer.gypi',
             'content_utility.gypi',
-            'content_worker.gypi',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
@@ -290,51 +329,60 @@
           },
         },
         {
+          # GN version: //content/app:browser
           'target_name': 'content_app_browser',
           'type': 'none',
           'dependencies': ['content', 'content_browser'],
         },
         {
+          # GN version: //content/app:child
           'target_name': 'content_app_child',
           'type': 'none',
           'dependencies': ['content', 'content_child'],
         },
         {
+          # GN version: //content/app:both
           'target_name': 'content_app_both',
           'type': 'none',
           'dependencies': ['content'],
           'export_dependent_settings': ['content'],
         },
         {
+          # GN version: //content/browser and //content/public/browser
           'target_name': 'content_browser',
           'type': 'none',
           'dependencies': ['content'],
           'export_dependent_settings': ['content'],
         },
         {
+          # GN version: //content/common and //content/public/common
           'target_name': 'content_common',
           'type': 'none',
-          'dependencies': ['content', 'content_resources.gyp:content_resources'],
+          'dependencies': ['content', 'content_resources'],
           # Disable c4267 warnings until we fix size_t to int truncations.
           'msvs_disabled_warnings': [ 4267, ],
           'export_dependent_settings': ['content'],
         },
         {
+          # GN Version: //content/child
           'target_name': 'content_child',
           'type': 'none',
           'dependencies': ['content'],
         },
         {
+          # GN version: //content/gpu
           'target_name': 'content_gpu',
           'type': 'none',
           'dependencies': ['content'],
         },
         {
+          # GN version: //content/plugin
           'target_name': 'content_plugin',
           'type': 'none',
           'dependencies': ['content'],
         },
         {
+          # GN version: //content/ppapi_plugin
           'target_name': 'content_ppapi_plugin',
           'type': 'none',
           'dependencies': ['content'],
@@ -342,20 +390,17 @@
           'msvs_disabled_warnings': [ 4267, ],
         },
         {
+          # GN version: //content/renderer and //content/public/renderer
           'target_name': 'content_renderer',
           'type': 'none',
           'dependencies': ['content'],
         },
         {
+          # GN version: //content/utility
           'target_name': 'content_utility',
           'type': 'none',
           'dependencies': ['content'],
           'export_dependent_settings': ['content'],
-        },
-        {
-          'target_name': 'content_worker',
-          'type': 'none',
-          'dependencies': ['content'],
         },
       ],
     }],
@@ -379,7 +424,10 @@
           'type': 'none',
           'dependencies': [
             '../base/base.gyp:base',
+            '../device/battery/battery.gyp:device_battery_java',
             '../media/media.gyp:media_java',
+            '../mojo/mojo_base.gyp:mojo_system_java',
+            '../mojo/public/mojo_public.gyp:mojo_bindings_java',
             '../net/net.gyp:net',
             '../ui/android/ui_android.gyp:ui_java',
             'common_aidl',
@@ -387,9 +435,9 @@
             'content_strings_grd',
             'content_gamepad_mapping',
             'gesture_event_type_java',
-            'page_transition_types_java',
             'popup_item_type_java',
             'result_codes_java',
+            'selection_event_type_java',
             'speech_recognition_error_java',
             'top_controls_state_java',
             'screen_orientation_values_java',
@@ -404,7 +452,6 @@
             ['android_webview_build == 0', {
               'dependencies': [
                 '../third_party/eyesfree/eyesfree.gyp:eyesfree_java',
-                '../third_party/guava/guava.gyp:guava_javalib',
               ],
             }],
           ],
@@ -423,88 +470,68 @@
           ],
         },
         {
-          'target_name': 'gesture_event_type_java',
+          'target_name': 'content_gamepad_mapping',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/GestureEventType.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/browser',
-            'template_deps': ['browser/android/gesture_event_type_list.h'],
+            'source_file': 'browser/gamepad/gamepad_standard_mappings.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
-          'target_name': 'page_transition_types_java',
+          'target_name': 'gesture_event_type_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/PageTransitionTypes.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/browser',
-            'template_deps': ['public/common/page_transition_types_list.h'],
+            'source_file': 'browser/android/gesture_event_type.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'popup_item_type_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/input/PopupItemType.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/browser/input',
-            'template_deps': ['browser/android/popup_item_type_list.h'],
+            'source_file': 'browser/android/content_view_core_impl.cc',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'result_codes_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/common/ResultCodes.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/common',
-            'template_deps': ['public/common/result_codes_list.h'],
+            'source_file': 'public/common/result_codes.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
+        },
+        {
+          'target_name': 'selection_event_type_java',
+          'type': 'none',
+          'variables': {
+            'source_file': 'browser/renderer_host/input/selection_event_type.h',
+          },
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'speech_recognition_error_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/SpeechRecognitionError.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/browser',
-            'template_deps': ['public/common/speech_recognition_error_list.h'],
+            'source_file': 'public/common/speech_recognition_error.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'top_controls_state_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/common/TopControlsState.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/common',
-            'template_deps': ['public/common/top_controls_state_list.h'],
+            'source_file': 'public/common/top_controls_state.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'screen_orientation_values_java',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/common/ScreenOrientationValues.template',
-          ],
           'variables': {
-            'package_name': 'org/chromium/content/common',
-            'template_deps': ['public/common/screen_orientation_values_list.h'],
+            'source_file': 'public/common/screen_orientation_values.h',
           },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
+          'includes': [ '../build/android/java_cpp_enum.gypi' ],
         },
         {
           'target_name': 'java_set_jni_headers',
@@ -550,20 +577,21 @@
           ],
         },
         {
-          'target_name': 'content_gamepad_mapping',
+          'target_name': 'content_v8_external_data',
           'type': 'none',
-          'sources': [
-            'public/android/java/src/org/chromium/content/browser/input/CanonicalButtonIndex.template',
-            'public/android/java/src/org/chromium/content/browser/input/CanonicalAxisIndex.template',
+          'conditions': [
+            ['v8_use_external_startup_data==1', {
+              'copies': [
+                {
+                  'destination': '<(PRODUCT_DIR)/content_shell/assets',
+                  'files': [
+                    '<(PRODUCT_DIR)/natives_blob.bin',
+                    '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                },
+              ],
+            }],
           ],
-          'variables': {
-            'package_name': 'org/chromium/content/browser/input',
-            'template_deps': [
-              'browser/gamepad/canonical_axis_index_list.h',
-              'browser/gamepad/canonical_button_index_list.h',
-            ],
-          },
-          'includes': [ '../build/android/java_cpp_template.gypi' ],
         },
       ],
     }],  # OS == "android"

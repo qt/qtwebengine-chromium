@@ -31,16 +31,17 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class DOMSettableTokenList FINAL
+class DOMSettableTokenList final
     : public DOMTokenList
 #if !ENABLE(OILPAN)
     , public RefCounted<DOMSettableTokenList>
 #endif
     {
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassRefPtrWillBeRawPtr<DOMSettableTokenList> create()
@@ -50,18 +51,18 @@ public:
     virtual ~DOMSettableTokenList();
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE { RefCounted<DOMSettableTokenList>::ref(); }
-    virtual void deref() OVERRIDE { RefCounted<DOMSettableTokenList>::deref(); }
+    virtual void ref() override { RefCounted<DOMSettableTokenList>::ref(); }
+    virtual void deref() override { RefCounted<DOMSettableTokenList>::deref(); }
 #endif
 
-    virtual unsigned length() const OVERRIDE { return m_tokens.size(); }
-    virtual const AtomicString item(unsigned index) const OVERRIDE;
+    virtual unsigned length() const override { return m_tokens.size(); }
+    virtual const AtomicString item(unsigned index) const override;
 
-    virtual void add(const Vector<String>&, ExceptionState&) OVERRIDE;
-    virtual void remove(const Vector<String>&, ExceptionState&) OVERRIDE;
+    virtual void add(const Vector<String>&, ExceptionState&) override;
+    virtual void remove(const Vector<String>&, ExceptionState&) override;
 
-    virtual const AtomicString& value() const OVERRIDE { return m_value; }
-    virtual void setValue(const AtomicString&) OVERRIDE;
+    virtual const AtomicString& value() const override { return m_value; }
+    virtual void setValue(const AtomicString&) override;
 
     const SpaceSplitString& tokens() const { return m_tokens; }
 
@@ -69,14 +70,14 @@ protected:
     DOMSettableTokenList();
 
 private:
-    virtual void addInternal(const AtomicString&) OVERRIDE;
-    virtual bool containsInternal(const AtomicString&) const OVERRIDE;
-    virtual void removeInternal(const AtomicString&) OVERRIDE;
+    virtual void addInternal(const AtomicString&) override;
+    virtual bool containsInternal(const AtomicString&) const override;
+    virtual void removeInternal(const AtomicString&) override;
 
     AtomicString m_value;
     SpaceSplitString m_tokens;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMSettableTokenList_h

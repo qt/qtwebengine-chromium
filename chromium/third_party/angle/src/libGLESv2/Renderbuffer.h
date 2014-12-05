@@ -12,12 +12,10 @@
 #ifndef LIBGLESV2_RENDERBUFFER_H_
 #define LIBGLESV2_RENDERBUFFER_H_
 
-#include <GLES3/gl3.h>
-#include <GLES2/gl2.h>
+#include "angle_gl.h"
 
 #include "common/angleutils.h"
 #include "common/RefCountObject.h"
-#include "libGLESv2/FramebufferAttachment.h"
 
 namespace rx
 {
@@ -29,11 +27,43 @@ class TextureStorage;
 
 namespace gl
 {
+class RenderbufferStorage;
+class FramebufferAttachment;
+
+// A GL renderbuffer object is usually used as a depth or stencil buffer attachment
+// for a framebuffer object. The renderbuffer itself is a distinct GL object, see
+// FramebufferAttachment and Framebuffer for how they are applied to an FBO via an
+// attachment point.
+
+class Renderbuffer : public RefCountObject
+{
+  public:
+    Renderbuffer(GLuint id, RenderbufferStorage *newStorage);
+    virtual ~Renderbuffer();
+
+    void setStorage(RenderbufferStorage *newStorage);
+    RenderbufferStorage *getStorage();
+
+    GLsizei getWidth() const;
+    GLsizei getHeight() const;
+    GLenum getInternalFormat() const;
+    GLenum getActualFormat() const;
+    GLsizei getSamples() const;
+    GLuint getRedSize() const;
+    GLuint getGreenSize() const;
+    GLuint getBlueSize() const;
+    GLuint getAlphaSize() const;
+    GLuint getDepthSize() const;
+    GLuint getStencilSize() const;
+
+  private:
+    RenderbufferStorage *mStorage;
+};
 
 // A class derived from RenderbufferStorage is created whenever glRenderbufferStorage
 // is called. The specific concrete type depends on whether the internal format is
 // colour depth, stencil or packed depth/stencil.
-class RenderbufferStorage : public FramebufferAttachmentInterface
+class RenderbufferStorage
 {
   public:
     RenderbufferStorage();
@@ -41,8 +71,6 @@ class RenderbufferStorage : public FramebufferAttachmentInterface
     virtual ~RenderbufferStorage() = 0;
 
     virtual rx::RenderTarget *getRenderTarget();
-    virtual rx::RenderTarget *getDepthStencil();
-    virtual rx::TextureStorage *getTextureStorage();
 
     virtual GLsizei getWidth() const;
     virtual GLsizei getHeight() const;
@@ -55,7 +83,7 @@ class RenderbufferStorage : public FramebufferAttachmentInterface
     virtual bool isTexture() const;
     virtual unsigned int getTextureSerial() const;
 
-    static unsigned int issueSerials(GLuint count);
+    static unsigned int issueSerials(unsigned int count);
 
   protected:
     GLsizei mWidth;
@@ -96,7 +124,7 @@ class DepthStencilbuffer : public RenderbufferStorage
 
     ~DepthStencilbuffer();
 
-    virtual rx::RenderTarget *getDepthStencil();
+    virtual rx::RenderTarget *getRenderTarget();
 
   protected:
     rx::RenderTarget  *mDepthStencil;
@@ -126,6 +154,7 @@ class Stencilbuffer : public DepthStencilbuffer
   private:
     DISALLOW_COPY_AND_ASSIGN(Stencilbuffer);
 };
+
 }
 
 #endif   // LIBGLESV2_RENDERBUFFER_H_

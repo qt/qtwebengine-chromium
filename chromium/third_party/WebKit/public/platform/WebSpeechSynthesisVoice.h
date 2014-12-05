@@ -30,11 +30,9 @@
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 
-namespace WebCore {
-class PlatformSpeechSynthesisVoice;
-}
-
 namespace blink {
+
+class PlatformSpeechSynthesisVoice;
 
 class WebSpeechSynthesisVoice {
 public:
@@ -58,11 +56,11 @@ public:
     BLINK_PLATFORM_EXPORT void setIsDefault(bool);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT operator WebCore::PlatformSpeechSynthesisVoice*() const;
+    BLINK_PLATFORM_EXPORT operator PlatformSpeechSynthesisVoice*() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::PlatformSpeechSynthesisVoice> m_private;
+    WebPrivatePtr<PlatformSpeechSynthesisVoice> m_private;
 };
 
 } // namespace blink

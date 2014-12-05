@@ -37,7 +37,6 @@ enum ResourceRequestAction {
 class CONTENT_EXPORT InterstitialPageImpl
     : public NON_EXPORTED_BASE(InterstitialPage),
       public NotificationObserver,
-      public WebContentsObserver,
       public NON_EXPORTED_BASE(RenderFrameHostDelegate),
       public RenderViewHostDelegate,
       public RenderWidgetHostDelegate,
@@ -55,18 +54,18 @@ class CONTENT_EXPORT InterstitialPageImpl
                        bool new_navigation,
                        const GURL& url,
                        InterstitialPageDelegate* delegate);
-  virtual ~InterstitialPageImpl();
+  ~InterstitialPageImpl() override;
 
   // InterstitialPage implementation:
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual void DontProceed() OVERRIDE;
-  virtual void Proceed() OVERRIDE;
-  virtual RenderViewHost* GetRenderViewHostForTesting() const OVERRIDE;
-  virtual InterstitialPageDelegate* GetDelegateForTesting() OVERRIDE;
-  virtual void DontCreateViewForTesting() OVERRIDE;
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
-  virtual void Focus() OVERRIDE;
+  void Show() override;
+  void Hide() override;
+  void DontProceed() override;
+  void Proceed() override;
+  RenderViewHost* GetRenderViewHostForTesting() const override;
+  InterstitialPageDelegate* GetDelegateForTesting() override;
+  void DontCreateViewForTesting() override;
+  void SetSize(const gfx::Size& size) override;
+  void Focus() override;
 
   // Allows the user to navigate away by disabling the interstitial, canceling
   // the pending request, and unblocking the hidden renderer.  The interstitial
@@ -99,82 +98,66 @@ class CONTENT_EXPORT InterstitialPageImpl
 
  protected:
   // NotificationObserver method:
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
-
-  // WebContentsObserver implementation:
-  virtual bool OnMessageReceived(const IPC::Message& message,
-                                 RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void WebContentsDestroyed() OVERRIDE;
-  virtual void NavigationEntryCommitted(
-      const LoadCommittedDetails& load_details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
 
   // RenderFrameHostDelegate implementation:
-  virtual bool OnMessageReceived(RenderFrameHost* render_frame_host,
-                                 const IPC::Message& message) OVERRIDE;
-  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void UpdateTitle(RenderFrameHost* render_frame_host,
-                           int32 page_id,
-                           const base::string16& title,
-                           base::i18n::TextDirection title_direction) OVERRIDE;
+  bool OnMessageReceived(RenderFrameHost* render_frame_host,
+                         const IPC::Message& message) override;
+  void RenderFrameCreated(RenderFrameHost* render_frame_host) override;
+  void UpdateTitle(RenderFrameHost* render_frame_host,
+                   int32 page_id,
+                   const base::string16& title,
+                   base::i18n::TextDirection title_direction) override;
+  AccessibilityMode GetAccessibilityMode() const override;
 
   // RenderViewHostDelegate implementation:
-  virtual RenderViewHostDelegateView* GetDelegateView() OVERRIDE;
-  virtual bool OnMessageReceived(RenderViewHost* render_view_host,
-                                 const IPC::Message& message) OVERRIDE;
-  virtual const GURL& GetMainFrameLastCommittedURL() const OVERRIDE;
-  virtual void RenderViewTerminated(RenderViewHost* render_view_host,
-                                    base::TerminationStatus status,
-                                    int error_code) OVERRIDE;
-  virtual RendererPreferences GetRendererPrefs(
-      BrowserContext* browser_context) const OVERRIDE;
-  virtual WebPreferences GetWebkitPrefs() OVERRIDE;
-  virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
-  virtual void CreateNewWindow(
+  RenderViewHostDelegateView* GetDelegateView() override;
+  bool OnMessageReceived(RenderViewHost* render_view_host,
+                         const IPC::Message& message) override;
+  const GURL& GetMainFrameLastCommittedURL() const override;
+  void RenderViewTerminated(RenderViewHost* render_view_host,
+                            base::TerminationStatus status,
+                            int error_code) override;
+  RendererPreferences GetRendererPrefs(
+      BrowserContext* browser_context) const override;
+  WebPreferences ComputeWebkitPrefs() override;
+  gfx::Rect GetRootWindowResizerRect() const override;
+  void CreateNewWindow(
       int render_process_id,
       int route_id,
       int main_frame_route_id,
       const ViewHostMsg_CreateWindow_Params& params,
-      SessionStorageNamespace* session_storage_namespace) OVERRIDE;
-  virtual void CreateNewWidget(int render_process_id,
-                               int route_id,
-                               blink::WebPopupType popup_type) OVERRIDE;
-  virtual void CreateNewFullscreenWidget(int render_process_id,
-                                         int route_id) OVERRIDE;
-  virtual void ShowCreatedWindow(int route_id,
-                                 WindowOpenDisposition disposition,
-                                 const gfx::Rect& initial_pos,
-                                 bool user_gesture) OVERRIDE;
-  virtual void ShowCreatedWidget(int route_id,
-                                 const gfx::Rect& initial_pos) OVERRIDE;
-  virtual void ShowCreatedFullscreenWidget(int route_id) OVERRIDE;
+      SessionStorageNamespace* session_storage_namespace) override;
+  void CreateNewWidget(int render_process_id,
+                       int route_id,
+                       blink::WebPopupType popup_type) override;
+  void CreateNewFullscreenWidget(int render_process_id, int route_id) override;
+  void ShowCreatedWindow(int route_id,
+                         WindowOpenDisposition disposition,
+                         const gfx::Rect& initial_pos,
+                         bool user_gesture) override;
+  void ShowCreatedWidget(int route_id, const gfx::Rect& initial_pos) override;
+  void ShowCreatedFullscreenWidget(int route_id) override;
 
-  virtual SessionStorageNamespace* GetSessionStorageNamespace(
-      SiteInstance* instance) OVERRIDE;
+  SessionStorageNamespace* GetSessionStorageNamespace(
+      SiteInstance* instance) override;
 
-  virtual FrameTree* GetFrameTree() OVERRIDE;
+  FrameTree* GetFrameTree() override;
 
   // RenderWidgetHostDelegate implementation:
-  virtual void RenderWidgetDeleted(
-      RenderWidgetHostImpl* render_widget_host) OVERRIDE;
-  virtual bool PreHandleKeyboardEvent(
-      const NativeWebKeyboardEvent& event,
-      bool* is_keyboard_shortcut) OVERRIDE;
-  virtual void HandleKeyboardEvent(
-      const NativeWebKeyboardEvent& event) OVERRIDE;
+  void RenderWidgetDeleted(RenderWidgetHostImpl* render_widget_host) override;
+  bool PreHandleKeyboardEvent(const NativeWebKeyboardEvent& event,
+                              bool* is_keyboard_shortcut) override;
+  void HandleKeyboardEvent(const NativeWebKeyboardEvent& event) override;
 #if defined(OS_WIN)
-  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() OVERRIDE;
+  virtual gfx::NativeViewAccessible GetParentNativeViewAccessible() override;
 #endif
 
   bool enabled() const { return enabled_; }
   WebContents* web_contents() const;
   const GURL& url() const { return url_; }
-
-  // Creates the RenderViewHost containing the interstitial content.
-  // Overriden in unit tests.
-  virtual RenderViewHost* CreateRenderViewHost();
 
   // Creates the WebContentsView that shows the interstitial RVH.
   // Overriden in unit tests.
@@ -185,6 +168,27 @@ class CONTENT_EXPORT InterstitialPageImpl
 
  private:
   class InterstitialPageRVHDelegateView;
+  class UnderlyingContentObserver : public WebContentsObserver {
+   public:
+    UnderlyingContentObserver(WebContents* web_contents,
+                              InterstitialPageImpl* interstitial);
+
+    // WebContentsObserver implementation:
+    void WebContentsDestroyed() override;
+    void NavigationEntryCommitted(
+        const LoadCommittedDetails& load_details) override;
+
+    // This observer does not override OnMessageReceived or otherwise handle
+    // messages from the underlying content, because the interstitial should not
+    // care about them. Messages from the interstitial page (which has its own
+    // FrameTree) arrive through the RenderFrameHostDelegate interface, not
+    // WebContentsObserver.
+
+   private:
+    InterstitialPageImpl* const interstitial_;
+
+    DISALLOW_COPY_AND_ASSIGN(UnderlyingContentObserver);
+  };
 
   // Disable the interstitial:
   // - if it is not yet showing, then it won't be shown.
@@ -204,6 +208,12 @@ class CONTENT_EXPORT InterstitialPageImpl
   // IPC message handlers.
   void OnDomOperationResponse(const std::string& json_string,
                               int automation_id);
+
+  // Creates the RenderViewHost containing the interstitial content.
+  RenderViewHostImpl* CreateRenderViewHost();
+
+  // Watches the underlying WebContents for reasons to cancel the interstitial.
+  UnderlyingContentObserver underlying_content_observer_;
 
   // The contents in which we are displayed.  This is valid until Hide is
   // called, at which point it will be set to NULL because the WebContents
@@ -281,9 +291,9 @@ class CONTENT_EXPORT InterstitialPageImpl
 
   scoped_ptr<InterstitialPageDelegate> delegate_;
 
-  base::WeakPtrFactory<InterstitialPageImpl> weak_ptr_factory_;
-
   scoped_refptr<SessionStorageNamespace> session_storage_namespace_;
+
+  base::WeakPtrFactory<InterstitialPageImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InterstitialPageImpl);
 };

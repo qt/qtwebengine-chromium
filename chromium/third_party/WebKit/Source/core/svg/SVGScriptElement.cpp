@@ -22,14 +22,15 @@
 
 #include "core/svg/SVGScriptElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
 #include "core/XLinkNames.h"
 #include "core/dom/Attribute.h"
-#include "core/dom/Document.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/dom/ScriptRunner.h"
+#include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedByParser, bool alreadyStarted)
     : SVGElement(SVGNames::scriptTag, document)
@@ -37,7 +38,10 @@ inline SVGScriptElement::SVGScriptElement(Document& document, bool wasInsertedBy
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
-    ScriptWrappable::init(this);
+}
+
+SVGScriptElement::~SVGScriptElement()
+{
 }
 
 PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& document, bool insertedByParser)
@@ -45,56 +49,23 @@ PassRefPtrWillBeRawPtr<SVGScriptElement> SVGScriptElement::create(Document& docu
     return adoptRefWillBeNoop(new SVGScriptElement(document, insertedByParser, false));
 }
 
-bool SVGScriptElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::typeAttr);
-        supportedAttributes.add(HTMLNames::onerrorAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-    if (name == SVGNames::typeAttr)
-        return;
-
-    if (name == HTMLNames::onerrorAttr) {
+    if (name == HTMLNames::onerrorAttr)
         setAttributeEventListener(EventTypeNames::error, createAttributeEventListener(this, name, value, eventParameterName()));
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    else
+        parseAttributeNew(name, value);
 }
 
 void SVGScriptElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
-    if (attrName == SVGNames::typeAttr || attrName == HTMLNames::onerrorAttr)
-        return;
-
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         m_loader->handleSourceAttribute(hrefString());
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 Node::InsertionNotificationRequest SVGScriptElement::insertedInto(ContainerNode* rootParent)
@@ -113,10 +84,17 @@ void SVGScriptElement::didNotifySubtreeInsertionsToDocument()
     }
 }
 
-void SVGScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGScriptElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
     m_loader->childrenChanged();
+}
+
+void SVGScriptElement::didMoveToNewDocument(Document& oldDocument)
+{
+    if (RefPtrWillBeRawPtr<Document> contextDocument = document().contextDocument().get())
+        oldDocument.scriptRunner()->movePendingAsyncScript(contextDocument->scriptRunner(), m_loader.get());
+    SVGElement::didMoveToNewDocument(oldDocument);
 }
 
 bool SVGScriptElement::isURLAttribute(const Attribute& attribute) const
@@ -190,7 +168,7 @@ void SVGScriptElement::dispatchLoadEvent()
     dispatchEvent(Event::create(EventTypeNames::load));
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 {
     if (name == SVGNames::typeAttr)
@@ -200,4 +178,10 @@ bool SVGScriptElement::isAnimatableAttribute(const QualifiedName& name) const
 }
 #endif
 
+void SVGScriptElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_loader);
+    SVGElement::trace(visitor);
 }
+
+} // namespace blink

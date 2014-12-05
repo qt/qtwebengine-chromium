@@ -7,7 +7,6 @@
 
 #include <cairo/cairo.h>
 #include <pango/pango.h>
-#include <string>
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
@@ -15,20 +14,9 @@
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/gfx_export.h"
 
-typedef struct _PangoContext PangoContext;
-
 namespace gfx {
 
-class Font;
-class PlatformFontPango;
-class Rect;
-
-// Creates and returns a PangoContext. The caller owns the context.
-PangoContext* GetPangoContext();
-
-// Returns the resolution (DPI) used by pango. A negative values means the
-// resolution hasn't been set.
-double GetPangoResolution();
+class FontList;
 
 // Utility class to ensure that PangoFontDescription is freed.
 class ScopedPangoFontDescription {
@@ -36,6 +24,11 @@ class ScopedPangoFontDescription {
   explicit ScopedPangoFontDescription(PangoFontDescription* description)
       : description_(description) {
     DCHECK(description);
+  }
+
+  explicit ScopedPangoFontDescription(const std::string& str)
+      : description_(pango_font_description_from_string(str.c_str())) {
+    DCHECK(description_);
   }
 
   ~ScopedPangoFontDescription() {
@@ -55,19 +48,16 @@ class ScopedPangoFontDescription {
 // They are shared with internal skia interfaces.
 // ----------------------------------------------------------------------------
 
-// Setup pango |layout|; set the |text|, the font description based on
-// |font_description|, the |width| in PANGO_SCALE for RTL locale, the base
-// |text_direction|, alignment, ellipsis, word wrapping, resolution, etc.
-void SetupPangoLayoutWithFontDescription(
+// Configures |layout| for the passed-in parameters.
+void SetUpPangoLayout(
     PangoLayout* layout,
     const base::string16& text,
-    const std::string& font_description,
-    int width,
+    const FontList& font_list,
     base::i18n::TextDirection text_direction,
     int flags);
 
 // Returns the size in pixels for the specified |pango_font|.
-size_t GetPangoFontSizeInPixels(PangoFontDescription* pango_font);
+int GetPangoFontSizeInPixels(PangoFontDescription* pango_font);
 
 // Retrieves the Pango metrics for a Pango font description. Caches the metrics
 // and never frees them. The metrics objects are relatively small and very

@@ -25,16 +25,16 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/xmpp/jid.h"
+#include "webrtc/libjingle/xmpp/jid.h"
 
 #include <ctype.h>
 
 #include <algorithm>
 #include <string>
 
-#include "talk/base/common.h"
-#include "talk/base/logging.h"
-#include "talk/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/logging.h"
 
 namespace buzz {
 

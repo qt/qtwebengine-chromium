@@ -31,11 +31,12 @@
 #include "core/html/track/TextTrack.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLMediaElement;
 
-class HTMLTrackElement FINAL : public HTMLElement {
+class HTMLTrackElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLTrackElement);
 
@@ -55,18 +56,18 @@ public:
 
     const AtomicString& mediaElementCrossOriginAttribute() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit HTMLTrackElement(Document&);
     virtual ~HTMLTrackElement();
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual bool isURLAttribute(const Attribute&) const override;
 
     void loadTimerFired(Timer<HTMLTrackElement>*);
 
@@ -79,6 +80,6 @@ private:
     Timer<HTMLTrackElement> m_loadTimer;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // HTMLTrackElement_h

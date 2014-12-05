@@ -21,12 +21,6 @@
 #include "SkTArray.h"
 #include "SkNulCanvas.h"
 
-#if SK_SUPPORT_GPU
-#include "GrContextFactory.h"
-#include "GrContext.h"
-#include "SkGpuDevice.h"
-#endif
-
 DEFINE_string2(readPath, r, "", "pdf files or directories of pdf files to process.");
 DEFINE_string2(writePath, w, "", "Directory to write the rendered pages.");
 DEFINE_bool2(noExtensionForOnePagePdf, n, false, "No page extension if only one page.");
@@ -42,18 +36,10 @@ DEFINE_double(DPI, 72, "DPI to be used for rendering (scale).");
 DEFINE_int32(benchLoad, 0, "Load the pdf file minimally N times, without any rendering and \n"
              "\tminimal parsing to ensure correctness. Default 0 (disabled).");
 DEFINE_int32(benchRender, 0, "Render the pdf content N times. Default 0 (disabled)");
-#if SK_SUPPORT_GPU
-DEFINE_string2(config, c, "8888", "Canvas to render:\n"
-                                  "\t8888 - argb\n"
-                                  "\tgpu: use the gpu\n"
-                                  "\tnul - render in null canvas, any draw will just return.\n"
-               );
-#else
 DEFINE_string2(config, c, "8888", "Canvas to render:\n"
                                   "\t8888 - argb\n"
                                   "\tnul - render in null canvas, any draw will just return.\n"
                );
-#endif
 DEFINE_bool2(transparentBackground, t, false, "Make background transparent instead of white.");
 
 /**
@@ -103,7 +89,7 @@ static bool add_page_and_replace_filename_extension(SkString* path, int page,
 static bool make_output_filepath(SkString* path, const SkString& dir,
                                  const SkString& name,
                                  int page) {
-    *path = SkOSPath::SkPathJoin(dir.c_str(), name.c_str());
+    *path = SkOSPath::Join(dir.c_str(), name.c_str());
     return add_page_and_replace_filename_extension(path, page,
                                                    PDF_FILE_EXTENSION,
                                                    PNG_FILE_EXTENSION);
@@ -124,10 +110,6 @@ static void setup_bitmap(SkBitmap* bitmap, int width, int height, SkColor color)
 #ifdef PDF_TRACE_DIFF_IN_PNG
 extern "C" SkBitmap* gDumpBitmap;
 extern "C" SkCanvas* gDumpCanvas;
-#endif
-
-#if SK_SUPPORT_GPU
-GrContextFactory gContextFactory;
 #endif
 
 static bool render_page(const SkString& outputDir,
@@ -164,30 +146,7 @@ static bool render_page(const SkString& outputDir,
         SkAutoTUnref<SkBaseDevice> device;
         if (strcmp(FLAGS_config[0], "8888") == 0) {
             device.reset(SkNEW_ARGS(SkBitmapDevice, (bitmap)));
-        }
-#if SK_SUPPORT_GPU
-        else if (strcmp(FLAGS_config[0], "gpu") == 0) {
-            SkAutoTUnref<GrSurface> target;
-            GrContext* gr = gContextFactory.get(GrContextFactory::kNative_GLContextType);
-            if (gr) {
-                // create a render target to back the device
-                GrTextureDesc desc;
-                desc.fConfig = kSkia8888_GrPixelConfig;
-                desc.fFlags = kRenderTarget_GrTextureFlagBit;
-                desc.fWidth = SkScalarCeilToInt(width);
-                desc.fHeight = SkScalarCeilToInt(height);
-                desc.fSampleCnt = 0;
-                target.reset(gr->createUncachedTexture(desc, NULL, 0));
-            }
-            if (NULL == target.get()) {
-                SkASSERT(0);
-                return false;
-            }
-
-            device.reset(SkGpuDevice::Create(target));
-        }
-#endif
-        else {
+        } else {
             SkDebugf("unknown --config: %s\n", FLAGS_config[0]);
             return false;
         }
@@ -220,7 +179,7 @@ static bool render_page(const SkString& outputDir,
 static bool process_pdf(const SkString& inputPath, const SkString& outputDir) {
     SkDebugf("Loading PDF:  %s\n", inputPath.c_str());
 
-    SkString inputFilename = SkOSPath::SkBasename(inputPath.c_str());
+    SkString inputFilename = SkOSPath::Basename(inputPath.c_str());
 
     SkAutoTDelete<SkPdfRenderer> renderer(SkPdfRenderer::CreateFromFile(inputPath.c_str()));
     if (NULL == renderer.get()) {
@@ -298,7 +257,7 @@ static int process_input(const char* input, const SkString& outputDir) {
         SkOSFile::Iter iter(input, PDF_FILE_EXTENSION);
         SkString inputFilename;
         while (iter.next(&inputFilename)) {
-            SkString inputPath = SkOSPath::SkPathJoin(input, inputFilename.c_str());
+            SkString inputPath = SkOSPath::Join(input, inputFilename.c_str());
             if (!process_pdf(inputPath, outputDir)) {
                 ++failures;
             }

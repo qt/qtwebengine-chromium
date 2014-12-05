@@ -31,10 +31,12 @@
 #include "core/dom/Text.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/HTMLQuoteElement.h"
 #include "core/rendering/RenderListItem.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -67,29 +69,29 @@ void BreakBlockquoteCommand::doApply()
     Position pos = endingSelection().start().downstream();
 
     // Find the top-most blockquote from the start.
-    Node* topBlockquote = highestEnclosingNodeOfType(pos, isMailBlockquote);
-    if (!topBlockquote || !topBlockquote->parentNode() || !topBlockquote->isElementNode())
+    HTMLQuoteElement* topBlockquote = toHTMLQuoteElement(highestEnclosingNodeOfType(pos, isMailHTMLBlockquoteElement));
+    if (!topBlockquote || !topBlockquote->parentNode())
         return;
 
-    RefPtrWillBeRawPtr<Element> breakNode = createBreakElement(document());
+    RefPtrWillBeRawPtr<HTMLBRElement> breakElement = createBreakElement(document());
 
     bool isLastVisPosInNode = isLastVisiblePositionInNode(visiblePos, topBlockquote);
 
     // If the position is at the beginning of the top quoted content, we don't need to break the quote.
     // Instead, insert the break before the blockquote, unless the position is as the end of the the quoted content.
     if (isFirstVisiblePositionInNode(visiblePos, topBlockquote) && !isLastVisPosInNode) {
-        insertNodeBefore(breakNode.get(), topBlockquote);
-        setEndingSelection(VisibleSelection(positionBeforeNode(breakNode.get()), DOWNSTREAM, endingSelection().isDirectional()));
+        insertNodeBefore(breakElement.get(), topBlockquote);
+        setEndingSelection(VisibleSelection(positionBeforeNode(breakElement.get()), DOWNSTREAM, endingSelection().isDirectional()));
         rebalanceWhitespace();
         return;
     }
 
     // Insert a break after the top blockquote.
-    insertNodeAfter(breakNode.get(), topBlockquote);
+    insertNodeAfter(breakElement.get(), topBlockquote);
 
     // If we're inserting the break at the end of the quoted content, we don't need to break the quote.
     if (isLastVisPosInNode) {
-        setEndingSelection(VisibleSelection(positionBeforeNode(breakNode.get()), DOWNSTREAM, endingSelection().isDirectional()));
+        setEndingSelection(VisibleSelection(positionBeforeNode(breakElement.get()), DOWNSTREAM, endingSelection().isDirectional()));
         rebalanceWhitespace();
         return;
     }
@@ -100,7 +102,7 @@ void BreakBlockquoteCommand::doApply()
         pos = pos.next();
 
     // Adjust the position so we don't split at the beginning of a quote.
-    while (isFirstVisiblePositionInNode(VisiblePosition(pos), enclosingNodeOfType(pos, isMailBlockquote)))
+    while (isFirstVisiblePositionInNode(VisiblePosition(pos), toHTMLQuoteElement(enclosingNodeOfType(pos, isMailHTMLBlockquoteElement))))
         pos = pos.previous();
 
     // startNode is the first node that we need to move to the new blockquote.
@@ -116,7 +118,7 @@ void BreakBlockquoteCommand::doApply()
         } else if (pos.deprecatedEditingOffset() > 0)
             splitTextNode(textNode, pos.deprecatedEditingOffset());
     } else if (pos.deprecatedEditingOffset() > 0) {
-        Node* childAtOffset = startNode->traverseToChildAt(pos.deprecatedEditingOffset());
+        Node* childAtOffset = NodeTraversal::childAt(*startNode, pos.deprecatedEditingOffset());
         startNode = childAtOffset ? childAtOffset : NodeTraversal::next(*startNode);
         ASSERT(startNode);
     }
@@ -128,13 +130,13 @@ void BreakBlockquoteCommand::doApply()
     }
 
     // Build up list of ancestors in between the start node and the top blockquote.
-    WillBeHeapVector<RefPtrWillBeMember<Element> > ancestors;
+    WillBeHeapVector<RefPtrWillBeMember<Element>> ancestors;
     for (Element* node = startNode->parentElement(); node && node != topBlockquote; node = node->parentElement())
         ancestors.append(node);
 
     // Insert a clone of the top blockquote after the break.
-    RefPtrWillBeRawPtr<Element> clonedBlockquote = toElement(topBlockquote)->cloneElementWithoutChildren();
-    insertNodeAfter(clonedBlockquote.get(), breakNode.get());
+    RefPtrWillBeRawPtr<Element> clonedBlockquote = topBlockquote->cloneElementWithoutChildren();
+    insertNodeAfter(clonedBlockquote.get(), breakElement.get());
 
     // Clone startNode's ancestors into the cloned blockquote.
     // On exiting this loop, clonedAncestor is the lowest ancestor
@@ -173,7 +175,7 @@ void BreakBlockquoteCommand::doApply()
             moveRemainingSiblingsToNewParent(ancestor->nextSibling(), 0, clonedParent);
 
         // If the startNode's original parent is now empty, remove it
-        Node* originalParent = ancestors.first().get();
+        Element* originalParent = ancestors.first().get();
         if (!originalParent->hasChildren())
             removeNode(originalParent);
     }
@@ -182,8 +184,8 @@ void BreakBlockquoteCommand::doApply()
     addBlockPlaceholderIfNeeded(clonedBlockquote.get());
 
     // Put the selection right before the break.
-    setEndingSelection(VisibleSelection(positionBeforeNode(breakNode.get()), DOWNSTREAM, endingSelection().isDirectional()));
+    setEndingSelection(VisibleSelection(positionBeforeNode(breakElement.get()), DOWNSTREAM, endingSelection().isDirectional()));
     rebalanceWhitespace();
 }
 
-} // namespace WebCore
+} // namespace blink

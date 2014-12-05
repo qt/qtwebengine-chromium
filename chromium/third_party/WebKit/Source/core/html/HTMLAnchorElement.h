@@ -30,7 +30,7 @@
 #include "core/html/HTMLElement.h"
 #include "platform/LinkHash.h"
 
-namespace WebCore {
+namespace blink {
 
 // Link relation bitmask values.
 // FIXME: Uncomment as the various link relations are implemented.
@@ -56,6 +56,7 @@ enum {
 };
 
 class HTMLAnchorElement : public HTMLElement, public DOMURLUtils {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLAnchorElement> create(Document&);
 
@@ -66,15 +67,15 @@ public:
 
     const AtomicString& name() const;
 
-    virtual KURL url() const OVERRIDE FINAL;
-    virtual void setURL(const KURL&) OVERRIDE FINAL;
+    virtual KURL url() const override final;
+    virtual void setURL(const KURL&) override final;
 
-    virtual String input() const OVERRIDE FINAL;
-    virtual void setInput(const String&) OVERRIDE FINAL;
+    virtual String input() const override final;
+    virtual void setInput(const String&) override final;
 
-    bool isLiveLink() const;
+    virtual bool isLiveLink() const override final;
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE FINAL;
+    virtual bool willRespondToMouseClickEvents() override final;
 
     bool hasRel(uint32_t relation) const;
     void setRel(const AtomicString&);
@@ -82,51 +83,49 @@ public:
     LinkHash visitedLinkHash() const;
     void invalidateCachedVisitedLinkHash() { m_cachedVisitedLinkHash = 0; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    void sendPings(const KURL& destinationURL) const;
 
 protected:
     HTMLAnchorElement(const QualifiedName&, Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool supportsFocus() const OVERRIDE;
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool supportsFocus() const override;
 
 private:
-    virtual bool isMouseFocusable() const OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual void defaultEventHandler(Event*) OVERRIDE FINAL;
-    virtual void setActive(bool = true) OVERRIDE FINAL;
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE FINAL;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE FINAL;
-    virtual bool canStartSelection() const OVERRIDE FINAL;
-    virtual short tabIndex() const OVERRIDE FINAL;
-    virtual bool draggable() const OVERRIDE FINAL;
-    virtual bool isInteractiveContent() const OVERRIDE FINAL;
-
-    void sendPings(const KURL& destinationURL);
-    AtomicString target() const;
+    virtual bool shouldHaveFocusAppearance() const override final;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual bool isMouseFocusable() const override;
+    virtual bool isKeyboardFocusable() const override;
+    virtual void defaultEventHandler(Event*) override final;
+    virtual void setActive(bool = true) override final;
+    virtual void accessKeyAction(bool sendMouseEvents) override final;
+    virtual bool isURLAttribute(const Attribute&) const override final;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override final;
+    virtual bool canStartSelection() const override final;
+    virtual short tabIndex() const override final;
+    virtual bool draggable() const override final;
+    virtual bool isInteractiveContent() const override final;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
     void handleClick(Event*);
 
-    class PrefetchEventHandler;
-    PrefetchEventHandler* prefetchEventHandler();
-
     uint32_t m_linkRelations;
-    OwnPtrWillBeMember<PrefetchEventHandler> m_prefetchEventHandler;
     mutable LinkHash m_cachedVisitedLinkHash;
+    bool m_wasFocusedByMouse;
 };
 
 inline LinkHash HTMLAnchorElement::visitedLinkHash() const
 {
     if (!m_cachedVisitedLinkHash)
-        m_cachedVisitedLinkHash = WebCore::visitedLinkHash(document().baseURL(), fastGetAttribute(HTMLNames::hrefAttr));
+        m_cachedVisitedLinkHash = blink::visitedLinkHash(document().baseURL(), fastGetAttribute(HTMLNames::hrefAttr));
     return m_cachedVisitedLinkHash;
 }
 
 // Functions shared with the other anchor elements (i.e., SVG).
 
-bool isEnterKeyKeydownEvent(Event*);
+bool isEnterKeyKeypressEvent(Event*);
 bool isLinkClick(Event*);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLAnchorElement_h

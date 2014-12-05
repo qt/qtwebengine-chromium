@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/RangeInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/accessibility/AXObjectCache.h"
@@ -44,6 +44,7 @@
 #include "core/dom/TouchList.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
@@ -58,7 +59,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -87,11 +88,6 @@ RangeInputType::RangeInputType(HTMLInputElement& element)
 void RangeInputType::countUsage()
 {
     countUsageIfVisible(UseCounter::InputTypeRange);
-}
-
-bool RangeInputType::isRangeControl() const
-{
-    return true;
 }
 
 const AtomicString& RangeInputType::formControlType() const
@@ -228,7 +224,7 @@ void RangeInputType::handleKeydownEvent(KeyboardEvent* event)
         setValueAsDecimal(newValue, eventBehavior, IGNORE_EXCEPTION);
 
         if (AXObjectCache* cache = element().document().existingAXObjectCache())
-            cache->postNotification(&element(), AXObjectCache::AXValueChanged, true);
+            cache->handleValueChanged(&element());
     }
 
     event->setDefaultHandled();
@@ -346,11 +342,10 @@ void RangeInputType::updateTickMarkValues()
     HTMLDataListElement* dataList = element().dataList();
     if (!dataList)
         return;
-    RefPtrWillBeRawPtr<HTMLCollection> options = dataList->options();
+    RefPtrWillBeRawPtr<HTMLDataListOptionsCollection> options = dataList->options();
     m_tickMarkValues.reserveCapacity(options->length());
     for (unsigned i = 0; i < options->length(); ++i) {
-        Element* element = options->item(i);
-        HTMLOptionElement* optionElement = toHTMLOptionElement(element);
+        HTMLOptionElement* optionElement = options->item(i);
         String optionValue = optionElement->value();
         if (!this->element().isValidValue(optionValue))
             continue;
@@ -393,4 +388,4 @@ Decimal RangeInputType::findClosestTickMarkValue(const Decimal& value)
     return closestLeft;
 }
 
-} // namespace WebCore
+} // namespace blink

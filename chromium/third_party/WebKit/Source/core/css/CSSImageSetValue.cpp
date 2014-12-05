@@ -37,7 +37,7 @@
 #include "core/rendering/style/StylePendingImage.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSImageSetValue::CSSImageSetValue()
     : CSSValueList(ImageSetClass, CommaSeparator)
@@ -149,7 +149,7 @@ String CSSImageSetValue::customCSSText() const
     size_t i = 0;
     while (i < length) {
         if (i > 0)
-            result.append(", ");
+            result.appendLiteral(", ");
 
         const CSSValue* imageValue = item(i);
         result.append(imageValue->cssText());
@@ -166,7 +166,7 @@ String CSSImageSetValue::customCSSText() const
         ++i;
     }
 
-    result.append(")");
+    result.append(')');
     return result.toString();
 }
 
@@ -192,4 +192,4 @@ PassRefPtrWillBeRawPtr<CSSImageSetValue> CSSImageSetValue::cloneForCSSOM() const
     return adoptRefWillBeNoop(new CSSImageSetValue(*this));
 }
 
-} // namespace WebCore
+} // namespace blink

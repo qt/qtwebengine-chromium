@@ -68,7 +68,8 @@ std::string ToString(const scoped_refptr<IOBuffer>& buffer, size_t size) {
 }
 
 std::string ToString(const WebSocketFrame* frame) {
-  return frame->data ? ToString(frame->data, frame->header.payload_length) : "";
+  return frame->data.get() ? ToString(frame->data, frame->header.payload_length)
+                           : "";
 }
 
 void AppendTo(ScopedVector<WebSocketFrame>* frames,
@@ -110,7 +111,7 @@ class MockWebSocketStream : public WebSocketStream {
 class WebSocketDeflatePredictorMock : public WebSocketDeflatePredictor {
  public:
   WebSocketDeflatePredictorMock() : result_(DEFLATE) {}
-  virtual ~WebSocketDeflatePredictorMock() {
+  ~WebSocketDeflatePredictorMock() override {
     // Verify whether all expectaions are consumed.
     if (!frames_to_be_input_.empty()) {
       ADD_FAILURE() << "There are missing frames to be input.";
@@ -123,11 +124,11 @@ class WebSocketDeflatePredictorMock : public WebSocketDeflatePredictor {
   }
 
   // WebSocketDeflatePredictor functions.
-  virtual Result Predict(const ScopedVector<WebSocketFrame>& frames,
-                         size_t frame_index) OVERRIDE {
+  Result Predict(const ScopedVector<WebSocketFrame>& frames,
+                 size_t frame_index) override {
     return result_;
   }
-  virtual void RecordInputDataFrame(const WebSocketFrame* frame) OVERRIDE {
+  void RecordInputDataFrame(const WebSocketFrame* frame) override {
     if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode)) {
       ADD_FAILURE() << "Control frames should not be recorded.";
       return;
@@ -146,7 +147,7 @@ class WebSocketDeflatePredictorMock : public WebSocketDeflatePredictor {
     }
     frames_to_be_input_.pop_front();
   }
-  virtual void RecordWrittenDataFrame(const WebSocketFrame* frame) OVERRIDE {
+  void RecordWrittenDataFrame(const WebSocketFrame* frame) override {
     if (!WebSocketFrameHeader::IsKnownDataOpCode(frame->header.opcode)) {
       ADD_FAILURE() << "Control frames should not be recorded.";
       return;
@@ -211,9 +212,9 @@ class WebSocketDeflateStreamTest : public ::testing::Test {
   WebSocketDeflateStreamTest()
       : mock_stream_(NULL),
         predictor_(NULL) {}
-  virtual ~WebSocketDeflateStreamTest() {}
+  ~WebSocketDeflateStreamTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     Initialize(WebSocketDeflater::TAKE_OVER_CONTEXT, kWindowBits);
   }
 
@@ -244,9 +245,9 @@ class WebSocketDeflateStreamWithDoNotTakeOverContextTest
     : public WebSocketDeflateStreamTest {
  public:
   WebSocketDeflateStreamWithDoNotTakeOverContextTest() {}
-  virtual ~WebSocketDeflateStreamWithDoNotTakeOverContextTest() {}
+  ~WebSocketDeflateStreamWithDoNotTakeOverContextTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     Initialize(WebSocketDeflater::DO_NOT_TAKE_OVER_CONTEXT, kWindowBits);
   }
 };
@@ -255,10 +256,10 @@ class WebSocketDeflateStreamWithClientWindowBitsTest
     : public WebSocketDeflateStreamTest {
  public:
   WebSocketDeflateStreamWithClientWindowBitsTest() {}
-  virtual ~WebSocketDeflateStreamWithClientWindowBitsTest() {}
+  ~WebSocketDeflateStreamWithClientWindowBitsTest() override {}
 
   // Overridden to postpone the call to Initialize().
-  virtual void SetUp() {}
+  void SetUp() override {}
 
   // This needs to be called explicitly from the tests.
   void SetUpWithWindowBits(int window_bits) {

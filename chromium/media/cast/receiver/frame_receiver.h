@@ -9,17 +9,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "media/cast/base/clock_drift_smoother.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_receiver.h"
-#include "media/cast/framer/framer.h"
+#include "media/cast/common/clock_drift_smoother.h"
+#include "media/cast/common/transport_encryption_handler.h"
 #include "media/cast/logging/logging_defines.h"
-#include "media/cast/rtcp/receiver_rtcp_event_subscriber.h"
-#include "media/cast/rtcp/rtcp.h"
-#include "media/cast/rtp_receiver/receiver_stats.h"
-#include "media/cast/rtp_receiver/rtp_parser/rtp_parser.h"
-#include "media/cast/rtp_receiver/rtp_receiver_defines.h"
-#include "media/cast/transport/utility/transport_encryption_handler.h"
+#include "media/cast/net/rtcp/receiver_rtcp_event_subscriber.h"
+#include "media/cast/net/rtcp/rtcp.h"
+#include "media/cast/net/rtp/framer.h"
+#include "media/cast/net/rtp/receiver_stats.h"
+#include "media/cast/net/rtp/rtp_parser.h"
+#include "media/cast/net/rtp/rtp_receiver_defines.h"
 
 namespace media {
 namespace cast {
@@ -50,9 +50,9 @@ class FrameReceiver : public RtpPayloadFeedback,
   FrameReceiver(const scoped_refptr<CastEnvironment>& cast_environment,
                 const FrameReceiverConfig& config,
                 EventMediaType event_media_type,
-                transport::PacedPacketSender* const packet_sender);
+                PacedPacketSender* const packet_sender);
 
-  virtual ~FrameReceiver();
+  ~FrameReceiver() override;
 
   // Request an encoded frame.
   //
@@ -76,7 +76,7 @@ class FrameReceiver : public RtpPayloadFeedback,
                            size_t payload_size);
 
   // RtpPayloadFeedback implementation.
-  virtual void CastFeedback(const RtcpCastMessage& cast_message) OVERRIDE;
+  void CastFeedback(const RtcpCastMessage& cast_message) override;
 
  private:
   // Processes ready-to-consume packets from |framer_|, decrypting each packet's
@@ -89,10 +89,17 @@ class FrameReceiver : public RtpPayloadFeedback,
   // EmitAvailableEncodedFrames().
   void EmitAvailableEncodedFramesAfterWaiting();
 
+  // Helper that runs |callback|, passing ownership of |encoded_frame| to it.
+  // This method is used by EmitAvailableEncodedFrames() to return to the event
+  // loop, but make sure that FrameReceiver is still alive before the callback
+  // is run.
+  void EmitOneFrame(const ReceiveEncodedFrameCallback& callback,
+                    scoped_ptr<EncodedFrame> encoded_frame) const;
+
   // Computes the playout time for a frame with the given |rtp_timestamp|.
   // Because lip-sync info is refreshed regularly, calling this method with the
   // same argument may return different results.
-  base::TimeTicks GetPlayoutTime(uint32 rtp_timestamp) const;
+  base::TimeTicks GetPlayoutTime(const EncodedFrame& frame) const;
 
   // Schedule timing for the next cast message.
   void ScheduleNextCastMessage();
@@ -130,7 +137,7 @@ class FrameReceiver : public RtpPayloadFeedback,
   // transmit/retransmit, receive, decode, and render; given its run-time
   // environment (sender/receiver hardware performance, network conditions,
   // etc.).
-  const base::TimeDelta target_playout_delay_;
+  base::TimeDelta target_playout_delay_;
 
   // Hack: This is used in logic that determines whether to skip frames.
   // TODO(miu): Revisit this.  Logic needs to also account for expected decode
@@ -152,7 +159,7 @@ class FrameReceiver : public RtpPayloadFeedback,
   Rtcp rtcp_;
 
   // Decrypts encrypted frames.
-  transport::TransportEncryptionHandler decryptor_;
+  TransportEncryptionHandler decryptor_;
 
   // Outstanding callbacks to run to deliver on client requests for frames.
   std::list<ReceiveEncodedFrameCallback> frame_request_queue_;
@@ -171,6 +178,9 @@ class FrameReceiver : public RtpPayloadFeedback,
   RtpTimestamp lip_sync_rtp_timestamp_;
   base::TimeTicks lip_sync_reference_time_;
   ClockDriftSmoother lip_sync_drift_;
+
+  // Time interval for sending a RTCP report.
+  const base::TimeDelta rtcp_interval_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<FrameReceiver> weak_factory_;

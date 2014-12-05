@@ -30,16 +30,18 @@
 #include "modules/speech/SpeechRecognitionClient.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class SpeechRecognitionController FINAL : public NoBaseWillBeGarbageCollectedFinalized<SpeechRecognitionController>, public WillBeHeapSupplement<Page> {
+class MediaStreamTrack;
+
+class SpeechRecognitionController final : public NoBaseWillBeGarbageCollectedFinalized<SpeechRecognitionController>, public WillBeHeapSupplement<Page> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognitionController);
 public:
     virtual ~SpeechRecognitionController();
 
-    void start(SpeechRecognition* recognition, const SpeechGrammarList* grammars, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives)
+    void start(SpeechRecognition* recognition, const SpeechGrammarList* grammars, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
     {
-        m_client->start(recognition, grammars, lang, continuous, interimResults, maxAlternatives);
+        m_client->start(recognition, grammars, lang, continuous, interimResults, maxAlternatives, audioTrack);
     }
 
     void stop(SpeechRecognition* recognition) { m_client->stop(recognition); }
@@ -49,7 +51,7 @@ public:
     static const char* supplementName();
     static SpeechRecognitionController* from(Page* page) { return static_cast<SpeechRecognitionController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<Page>::trace(visitor); }
 
 private:
     explicit SpeechRecognitionController(PassOwnPtr<SpeechRecognitionClient>);
@@ -57,6 +59,6 @@ private:
     OwnPtr<SpeechRecognitionClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechRecognitionController_h

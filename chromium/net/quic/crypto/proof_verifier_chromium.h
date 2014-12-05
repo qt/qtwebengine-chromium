@@ -21,13 +21,23 @@
 namespace net {
 
 class CertVerifier;
-class SingleRequestCertVerifier;
+class TransportSecurityState;
 
 // ProofVerifyDetailsChromium is the implementation-specific information that a
 // ProofVerifierChromium returns about a certificate verification.
-struct ProofVerifyDetailsChromium : public ProofVerifyDetails {
+class NET_EXPORT_PRIVATE ProofVerifyDetailsChromium
+    : public ProofVerifyDetails {
  public:
+
+  // ProofVerifyDetails implementation
+  ProofVerifyDetails* Clone() const override;
+
   CertVerifyResult cert_verify_result;
+
+  // pinning_failure_log contains a message produced by
+  // TransportSecurityState::DomainState::CheckPublicKeyPins in the event of a
+  // pinning failure. It is a (somewhat) human-readable string.
+  std::string pinning_failure_log;
 };
 
 // ProofVerifyContextChromium is the implementation-specific information that a
@@ -44,31 +54,33 @@ struct ProofVerifyContextChromium : public ProofVerifyContext {
 // capable of handling multiple simultaneous requests.
 class NET_EXPORT_PRIVATE ProofVerifierChromium : public ProofVerifier {
  public:
-  explicit ProofVerifierChromium(CertVerifier* cert_verifier);
-  virtual ~ProofVerifierChromium();
+  ProofVerifierChromium(CertVerifier* cert_verifier,
+                        TransportSecurityState* transport_security_state);
+  ~ProofVerifierChromium() override;
 
   // ProofVerifier interface
-  virtual QuicAsyncStatus VerifyProof(
-      const std::string& hostname,
-      const std::string& server_config,
-      const std::vector<std::string>& certs,
-      const std::string& signature,
-      const ProofVerifyContext* verify_context,
-      std::string* error_details,
-      scoped_ptr<ProofVerifyDetails>* verify_details,
-      ProofVerifierCallback* callback) OVERRIDE;
+  QuicAsyncStatus VerifyProof(const std::string& hostname,
+                              const std::string& server_config,
+                              const std::vector<std::string>& certs,
+                              const std::string& signature,
+                              const ProofVerifyContext* verify_context,
+                              std::string* error_details,
+                              scoped_ptr<ProofVerifyDetails>* verify_details,
+                              ProofVerifierCallback* callback) override;
 
  private:
   class Job;
+  typedef std::set<Job*> JobSet;
 
   void OnJobComplete(Job* job);
 
   // Set owning pointers to active jobs.
-  typedef std::set<Job*> JobSet;
   JobSet active_jobs_;
 
   // Underlying verifier used to verify certificates.
   CertVerifier* const cert_verifier_;
+
+  TransportSecurityState* const transport_security_state_;
 
   DISALLOW_COPY_AND_ASSIGN(ProofVerifierChromium);
 };

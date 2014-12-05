@@ -27,7 +27,6 @@
 #define CheckedArithmetic_h
 
 #include "wtf/Assertions.h"
-#include "wtf/EnumClass.h"
 #include "wtf/TypeTraits.h"
 
 #include <limits>
@@ -67,11 +66,11 @@
 
 namespace WTF {
 
-ENUM_CLASS(CheckedState)
+enum class CheckedState
 {
     DidOverflow,
     DidNotOverflow
-} ENUM_CLASS_END(CheckedState);
+};
 
 class CrashOnOverflow {
 protected:
@@ -251,7 +250,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         } // if the signs do not match this operation can't overflow
-        result = lhs + rhs;
+        result = static_cast<ResultType>(lhs + rhs);
         return true;
     }
 
@@ -266,7 +265,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         } // if the signs match this operation can't overflow
-        result = lhs - rhs;
+        result = static_cast<ResultType>(lhs - rhs);
         return true;
     }
 
@@ -291,7 +290,7 @@ template <typename LHS, typename RHS, typename ResultType> struct ArithmeticOper
                     return false;
             }
         }
-        result = lhs * rhs;
+        result = static_cast<ResultType>(lhs * rhs);
         return true;
     }
 

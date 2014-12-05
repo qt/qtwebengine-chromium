@@ -27,7 +27,7 @@ class MockInputApi(object):
     self.files = []
     self.is_committing = False
 
-  def AffectedFiles(self):
+  def AffectedFiles(self, file_filter=None):
     return self.files
 
   def PresubmitLocalPath(self):
@@ -413,6 +413,28 @@ class InvalidOSMacroNamesTest(unittest.TestCase):
     self.assertEqual(0, len(errors))
 
 
+class InvalidIfDefinedMacroNamesTest(unittest.TestCase):
+  def testInvalidIfDefinedMacroNames(self):
+    lines = ['#if defined(TARGET_IPHONE_SIMULATOR)',
+             '#if !defined(TARGET_IPHONE_SIMULATOR)',
+             '#elif defined(TARGET_IPHONE_SIMULATOR)',
+             '#ifdef TARGET_IPHONE_SIMULATOR',
+             ' # ifdef TARGET_IPHONE_SIMULATOR',
+             '# if defined(VALID) || defined(TARGET_IPHONE_SIMULATOR)',
+             '# else  // defined(TARGET_IPHONE_SIMULATOR)',
+             '#endif  // defined(TARGET_IPHONE_SIMULATOR)',]
+    errors = PRESUBMIT._CheckForInvalidIfDefinedMacrosInFile(
+        MockInputApi(), MockFile('some/path/source.mm', lines))
+    self.assertEqual(len(lines), len(errors))
+
+  def testValidIfDefinedMacroNames(self):
+    lines = ['#if defined(FOO)',
+             '#ifdef BAR',]
+    errors = PRESUBMIT._CheckForInvalidIfDefinedMacrosInFile(
+        MockInputApi(), MockFile('some/path/source.cc', lines))
+    self.assertEqual(0, len(errors))
+
+
 class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
   def testFilesToCheckForIncomingDeps(self):
     changed_lines = [
@@ -421,7 +443,7 @@ class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
       '"+chrome/plugin/chrome_content_plugin_client.h",',
       '"+chrome/utility/chrome_content_utility_client.h",',
       '"+chromeos/chromeos_paths.h",',
-      '"+components/breakpad",',
+      '"+components/crash",',
       '"+components/nacl/common",',
       '"+content/public/browser/render_process_host.h",',
       '"+jni/fooblat.h",',
@@ -440,7 +462,7 @@ class CheckAddedDepsHaveTetsApprovalsTest(unittest.TestCase):
       'chrome/plugin/chrome_content_plugin_client.h',
       'chrome/utility/chrome_content_utility_client.h',
       'chromeos/chromeos_paths.h',
-      'components/breakpad/DEPS',
+      'components/crash/DEPS',
       'components/nacl/common/DEPS',
       'content/public/browser/render_process_host.h',
       'policy/DEPS',
@@ -646,6 +668,109 @@ class IDLParsingTest(unittest.TestCase):
       actual_error = PRESUBMIT._GetIDLParseError(input_api, filename)
       self.assertTrue(expected_error in str(actual_error),
                       "'%s' not found in '%s'" % (expected_error, actual_error))
+
+
+class TryServerMasterTest(unittest.TestCase):
+  def testTryServerMasters(self):
+    bots = {
+        'tryserver.chromium.gpu': [
+            'mac_gpu',
+            'mac_gpu_triggered_tests',
+            'linux_gpu',
+            'linux_gpu_triggered_tests',
+            'win_gpu',
+            'win_gpu_triggered_tests',
+        ],
+        'tryserver.chromium.mac': [
+            'ios_dbg_simulator',
+            'ios_rel_device',
+            'ios_rel_device_ninja',
+            'mac_asan',
+            'mac_asan_64',
+            'mac_chromium_compile_dbg',
+            'mac_chromium_compile_rel',
+            'mac_chromium_dbg',
+            'mac_chromium_rel',
+            'mac_nacl_sdk',
+            'mac_nacl_sdk_build',
+            'mac_rel_naclmore',
+            'mac_valgrind',
+            'mac_x64_rel',
+            'mac_xcodebuild',
+        ],
+        'tryserver.chromium.linux': [
+            'android_aosp',
+            'android_chromium_gn_compile_dbg',
+            'android_chromium_gn_compile_rel',
+            'android_clang_dbg',
+            'android_dbg',
+            'android_dbg_recipe',
+            'android_dbg_triggered_tests',
+            'android_dbg_triggered_tests_recipe',
+            'android_fyi_dbg',
+            'android_fyi_dbg_triggered_tests',
+            'android_rel',
+            'android_rel_triggered_tests',
+            'android_x86_dbg',
+            'blink_android_compile_dbg',
+            'blink_android_compile_rel',
+            'blink_presubmit',
+            'chromium_presubmit',
+            'linux_arm_cross_compile',
+            'linux_arm_tester',
+            'linux_chromeos_asan',
+            'linux_chromeos_browser_asan',
+            'linux_chromeos_valgrind',
+            'linux_chromium_chromeos_dbg',
+            'linux_chromium_chromeos_rel',
+            'linux_chromium_compile_dbg',
+            'linux_chromium_compile_rel',
+            'linux_chromium_dbg',
+            'linux_chromium_gn_dbg',
+            'linux_chromium_gn_rel',
+            'linux_chromium_rel',
+            'linux_chromium_trusty32_dbg',
+            'linux_chromium_trusty32_rel',
+            'linux_chromium_trusty_dbg',
+            'linux_chromium_trusty_rel',
+            'linux_clang_tsan',
+            'linux_ecs_ozone',
+            'linux_layout',
+            'linux_layout_asan',
+            'linux_layout_rel',
+            'linux_layout_rel_32',
+            'linux_nacl_sdk',
+            'linux_nacl_sdk_bionic',
+            'linux_nacl_sdk_bionic_build',
+            'linux_nacl_sdk_build',
+            'linux_redux',
+            'linux_rel_naclmore',
+            'linux_rel_precise32',
+            'linux_valgrind',
+            'tools_build_presubmit',
+        ],
+        'tryserver.chromium.win': [
+            'win8_aura',
+            'win8_chromium_dbg',
+            'win8_chromium_rel',
+            'win_chromium_compile_dbg',
+            'win_chromium_compile_rel',
+            'win_chromium_dbg',
+            'win_chromium_rel',
+            'win_chromium_rel',
+            'win_chromium_x64_dbg',
+            'win_chromium_x64_rel',
+            'win_drmemory',
+            'win_nacl_sdk',
+            'win_nacl_sdk_build',
+            'win_rel_naclmore',
+         ],
+    }
+    for master, bots in bots.iteritems():
+      for bot in bots:
+        self.assertEqual(master, PRESUBMIT.GetTryServerMasterForBot(bot),
+                         'bot=%s: expected %s, computed %s' % (
+            bot, master, PRESUBMIT.GetTryServerMasterForBot(bot)))
 
 
 if __name__ == '__main__':

@@ -22,12 +22,11 @@
 
 #include "core/svg/SVGPolylineElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGPolylineElement::SVGPolylineElement(Document& document)
     : SVGPolyElement(SVGNames::polylineTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGPolylineElement)

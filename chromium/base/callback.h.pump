@@ -148,8 +148,8 @@ $var MAX_ARITY = 7
 //
 //   base::Bind(&MyClass::Foo, GetWeakPtr());
 //
-//   The callback will not be issued if the object is destroyed at the time
-//   it's issued. DANGER: weak pointers are not threadsafe, so don't use this
+//   The callback will not be run if the object has already been destroyed.
+//   DANGER: weak pointers are not threadsafe, so don't use this
 //   when passing between threads!
 //
 // BINDING A CLASS METHOD WITH MANUAL LIFETIME MANAGEMENT
@@ -427,7 +427,7 @@ $for ARG , [[typename internal::CallbackParamTraits<A$(ARG)>::ForwardType]]);
 
 ]]  $$ for ARITY
 
-// Syntactic sugar to make Callbacks<void(void)> easier to declare since it
+// Syntactic sugar to make Callback<void(void)> easier to declare since it
 // will be used in a lot of APIs with delayed execution.
 typedef Callback<void(void)> Closure;
 

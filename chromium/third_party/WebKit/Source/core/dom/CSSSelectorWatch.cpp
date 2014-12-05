@@ -31,16 +31,16 @@
 #include "config.h"
 #include "core/dom/CSSSelectorWatch.h"
 
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSSelectorList.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/LocalFrame.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/rendering/style/StyleRareNonInheritedData.h"
 
-namespace WebCore {
+namespace blink {
 
 // The address of this string is important; its value is just documentation.
 static const char kSupplementName[] = "CSSSelectorWatch";
@@ -72,12 +72,12 @@ void CSSSelectorWatch::callbackSelectorChangeTimerFired(Timer<CSSSelectorWatch>*
         m_callbackSelectorChangeTimer.startOneShot(0, FROM_HERE);
         return;
     }
-    if (m_document.frame()) {
+    if (document().frame()) {
         Vector<String> addedSelectors;
         Vector<String> removedSelectors;
         copyToVector(m_addedSelectors, addedSelectors);
         copyToVector(m_removedSelectors, removedSelectors);
-        m_document.frame()->loader().client()->selectorMatchChanged(addedSelectors, removedSelectors);
+        document().frame()->loader().client()->selectorMatchChanged(addedSelectors, removedSelectors);
     }
     m_addedSelectors.clear();
     m_removedSelectors.clear();
@@ -141,10 +141,9 @@ static bool allCompound(const CSSSelectorList& selectorList)
 void CSSSelectorWatch::watchCSSSelectors(const Vector<String>& selectors)
 {
     m_watchedCallbackSelectors.clear();
-    BisonCSSParser parser(CSSParserContext(UASheetMode, 0));
+    CSSParser parser(CSSParserContext(UASheetMode, 0));
 
-    const CSSProperty callbackProperty(CSSPropertyInternalCallback, CSSPrimitiveValue::createIdentifier(CSSValueInternalPresence));
-    const RefPtr<StylePropertySet> callbackPropertySet = ImmutableStylePropertySet::create(&callbackProperty, 1, UASheetMode);
+    const RefPtrWillBeRawPtr<StylePropertySet> callbackPropertySet = ImmutableStylePropertySet::create(nullptr, 0, UASheetMode);
 
     CSSSelectorList selectorList;
     for (unsigned i = 0; i < selectors.size(); ++i) {
@@ -161,13 +160,14 @@ void CSSSelectorWatch::watchCSSSelectors(const Vector<String>& selectors)
         rule->setProperties(callbackPropertySet);
         m_watchedCallbackSelectors.append(rule.release());
     }
-    m_document.changedSelectorWatch();
+    document().changedSelectorWatch();
 }
 
 void CSSSelectorWatch::trace(Visitor* visitor)
 {
     visitor->trace(m_watchedCallbackSelectors);
+    visitor->trace(m_document);
     DocumentSupplement::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

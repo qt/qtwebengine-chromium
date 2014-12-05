@@ -28,7 +28,7 @@
 
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Text;
 
@@ -38,7 +38,7 @@ class Text;
 #define AppleStyleSpanClass       "Apple-style-span"
 #define AppleTabSpanClass         "Apple-tab-span"
 
-enum EAnnotateForInterchange { DoNotAnnotateForInterchange, AnnotateForInterchange };
+enum EAnnotateForInterchange { DoNotAnnotateForInterchange, AnnotateForInterchange, AnnotateForNavigationTransition };
 
 String convertHTMLTextToInterchangeFormat(const String&, const Text&);
 

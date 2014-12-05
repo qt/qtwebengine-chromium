@@ -26,18 +26,18 @@ class CONTENT_EXPORT GeolocationProviderImpl
       public base::Thread {
  public:
   // GeolocationProvider implementation:
-  virtual scoped_ptr<GeolocationProvider::Subscription>
-      AddLocationUpdateCallback(const LocationUpdateCallback& callback,
-                                bool use_high_accuracy) OVERRIDE;
-  virtual void UserDidOptIntoLocationServices() OVERRIDE;
-  virtual void OverrideLocationForTesting(const Geoposition& position) OVERRIDE;
+  scoped_ptr<GeolocationProvider::Subscription> AddLocationUpdateCallback(
+      const LocationUpdateCallback& callback,
+      bool use_high_accuracy) override;
+  void UserDidOptIntoLocationServices() override;
+  void OverrideLocationForTesting(const Geoposition& position) override;
 
   // Callback from the LocationArbitrator. Public for testing.
   void OnLocationUpdate(const Geoposition& position);
 
   // Gets a pointer to the singleton instance of the location relayer, which
   // is in turn bound to the browser's global context objects. This must only be
-  // called on the IO thread so that the GeolocationProviderImpl is always
+  // called on the UI thread so that the GeolocationProviderImpl is always
   // instantiated on the same thread. Ownership is NOT returned.
   static GeolocationProviderImpl* GetInstance();
 
@@ -48,7 +48,7 @@ class CONTENT_EXPORT GeolocationProviderImpl
  protected:
   friend struct DefaultSingletonTraits<GeolocationProviderImpl>;
   GeolocationProviderImpl();
-  virtual ~GeolocationProviderImpl();
+  ~GeolocationProviderImpl() override;
 
   // Useful for injecting mock geolocation arbitrator in tests.
   virtual LocationArbitrator* CreateArbitrator();
@@ -75,8 +75,8 @@ class CONTENT_EXPORT GeolocationProviderImpl
   void NotifyClients(const Geoposition& position);
 
   // Thread
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
   base::CallbackList<void(const Geoposition&)> high_accuracy_callbacks_;
   base::CallbackList<void(const Geoposition&)> low_accuracy_callbacks_;

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/pref_registry
       'target_name': 'pref_registry',
       'type': '<(component)',
       'dependencies': [
@@ -26,10 +27,12 @@
       ],
     },
     {
+      # GN version: //components/pref_registry:test_support
       'target_name': 'pref_registry_test_support',
       'type': 'static_library',
       'dependencies': [
         'pref_registry',
+        '../base/base.gyp:base_prefs_test_support',
       ],
       'include_dirs': [
         '..',

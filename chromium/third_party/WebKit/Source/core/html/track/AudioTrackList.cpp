@@ -5,11 +5,11 @@
 #include "config.h"
 #include "core/html/track/AudioTrackList.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<AudioTrackList> AudioTrackList::create(HTMLMediaElement& mediaElement)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new AudioTrackList(mediaElement));
+    return adoptRefWillBeNoop(new AudioTrackList(mediaElement));
 }
 
 AudioTrackList::~AudioTrackList()
@@ -19,7 +19,6 @@ AudioTrackList::~AudioTrackList()
 AudioTrackList::AudioTrackList(HTMLMediaElement& mediaElement)
     : TrackListBase<AudioTrack>(&mediaElement)
 {
-    ScriptWrappable::init(this);
 }
 
 bool AudioTrackList::hasEnabledTrack() const

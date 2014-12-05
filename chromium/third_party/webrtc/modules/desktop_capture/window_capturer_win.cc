@@ -12,6 +12,7 @@
 
 #include <assert.h>
 
+#include "webrtc/base/win32.h"
 #include "webrtc/modules/desktop_capture/desktop_frame_win.h"
 #include "webrtc/modules/desktop_capture/win/window_capture_utils.h"
 #include "webrtc/system_wrappers/interface/logging.h"
@@ -22,22 +23,6 @@ namespace webrtc {
 namespace {
 
 typedef HRESULT (WINAPI *DwmIsCompositionEnabledFunc)(BOOL* enabled);
-
-// Coverts a zero-terminated UTF-16 string to UTF-8. Returns an empty string if
-// error occurs.
-std::string Utf16ToUtf8(const WCHAR* str) {
-  int len_utf8 = WideCharToMultiByte(CP_UTF8, 0, str, -1,
-                                     NULL, 0, NULL, NULL);
-  if (len_utf8 <= 0)
-    return std::string();
-  std::string result(len_utf8, '\0');
-  int rv = WideCharToMultiByte(CP_UTF8, 0, str, -1,
-                               &*(result.begin()), len_utf8, NULL, NULL);
-  if (rv != len_utf8)
-    assert(false);
-
-  return result;
-}
 
 BOOL CALLBACK WindowsEnumerationHandler(HWND hwnd, LPARAM param) {
   WindowCapturer::WindowList* list =
@@ -70,7 +55,7 @@ BOOL CALLBACK WindowsEnumerationHandler(HWND hwnd, LPARAM param) {
   WCHAR window_title[kTitleLength];
   // Truncate the title if it's longer than kTitleLength.
   GetWindowText(hwnd, window_title, kTitleLength);
-  window.title = Utf16ToUtf8(window_title);
+  window.title = rtc::ToUtf8(window_title);
 
   // Skip windows when we failed to convert the title or it is empty.
   if (window.title.empty())
@@ -188,6 +173,17 @@ void WindowCapturerWin::Capture(const DesktopRegion& region) {
     return;
   }
 
+  // Return a 1x1 black frame if the window is minimized, to match the behavior
+  // on Mac.
+  if (IsIconic(window_)) {
+    BasicDesktopFrame* frame = new BasicDesktopFrame(DesktopSize(1, 1));
+    memset(frame->data(), 0, frame->stride() * frame->size().height());
+
+    previous_size_ = frame->size();
+    callback_->OnCaptureCompleted(frame);
+    return;
+  }
+
   DesktopRect original_rect;
   DesktopRect cropped_rect;
   if (!GetCroppedWindowRect(window_, &cropped_rect, &original_rect)) {
@@ -250,6 +246,9 @@ void WindowCapturerWin::Capture(const DesktopRegion& region) {
   ReleaseDC(window_, window_dc);
 
   previous_size_ = frame->size();
+
+  frame->mutable_updated_region()->SetRect(
+      DesktopRect::MakeSize(frame->size()));
 
   if (!result) {
     LOG(LS_ERROR) << "Both PrintWindow() and BitBlt() failed.";

@@ -39,6 +39,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   };
 
   enum UniformApiType {
+    kUniformNone = 0,
     kUniform1i = 1 << 0,
     kUniform2i = 1 << 1,
     kUniform3i = 1 << 2,
@@ -79,7 +80,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   };
   struct VertexAttrib {
     VertexAttrib(GLsizei _size, GLenum _type, const std::string& _name,
-                     GLint _location)
+                 GLint _location)
         : size(_size),
           type(_type),
           location(_location),
@@ -115,7 +116,7 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
        &attrib_infos_[index] : NULL;
   }
 
-  GLint GetAttribLocation(const std::string& name) const;
+  GLint GetAttribLocation(const std::string& original_name) const;
 
   const VertexAttrib* GetAttribInfoByLocation(GLuint location) const {
     if (location < attrib_location_to_index_map_.size()) {
@@ -215,6 +216,10 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
   // is not declared in vertex shader.
   bool DetectVaryingsMismatch(std::string* conflicting_name) const;
 
+  // Return true if any built-in invariant matching rules are broken as in
+  // GLSL ES spec 1.00.17, section 4.6.4, Invariance and Linkage.
+  bool DetectBuiltInInvariantConflicts() const;
+
   // Return true if an uniform and an attribute share the same name.
   bool DetectGlobalNameConflicts(std::string* conflicting_name) const;
 
@@ -281,9 +286,17 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
       const std::string& name, const std::string& original_name,
       size_t* next_available_index);
 
-  void GetCorrectedVariableInfo(
-      bool use_uniforms, const std::string& name, std::string* corrected_name,
-      std::string* original_name, GLsizei* size, GLenum* type) const;
+  // Query uniform data returned by ANGLE translator by the mapped name.
+  // Some drivers incorrectly return an uniform name of size-1 array without
+  // "[0]". In this case, we correct the name by appending "[0]" to it.
+  void GetCorrectedUniformData(
+      const std::string& name,
+      std::string* corrected_name, std::string* original_name,
+      GLsizei* size, GLenum* type) const;
+
+  // Query VertexAttrib data returned by ANGLE translator by the mapped name.
+  void GetVertexAttribData(
+      const std::string& name, std::string* original_name, GLenum* type) const;
 
   void DetachShaders(ShaderManager* manager);
 
@@ -356,11 +369,6 @@ class GPU_EXPORT Program : public base::RefCounted<Program> {
 // need to be shared by multiple GLES2Decoders.
 class GPU_EXPORT ProgramManager {
  public:
-  enum TranslatedShaderSourceType {
-    kANGLE,
-    kGL,  // GL or GLES
-  };
-
   explicit ProgramManager(ProgramCache* program_cache,
                           uint32 max_varying_vectors);
   ~ProgramManager();
@@ -399,11 +407,6 @@ class GPU_EXPORT ProgramManager {
   bool IsOwned(Program* program);
 
   static int32 MakeFakeLocation(int32 index, int32 element);
-
-  void DoCompileShader(
-      Shader* shader,
-      ShaderTranslator* translator,
-      TranslatedShaderSourceType translated_shader_source_type);
 
   uint32 max_varying_vectors() const {
     return max_varying_vectors_;

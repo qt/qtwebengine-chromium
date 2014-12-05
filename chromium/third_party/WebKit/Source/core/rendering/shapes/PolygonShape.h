@@ -34,9 +34,9 @@
 #include "core/rendering/shapes/ShapeInterval.h"
 #include "platform/geometry/FloatPolygon.h"
 
-namespace WebCore {
+namespace blink {
 
-class OffsetPolygonEdge FINAL : public VertexPair {
+class OffsetPolygonEdge final : public VertexPair {
 public:
     OffsetPolygonEdge(const FloatPolygonEdge& edge, const FloatSize& offset)
         : m_vertex1(edge.vertex1() + offset)
@@ -44,8 +44,8 @@ public:
     {
     }
 
-    virtual const FloatPoint& vertex1() const OVERRIDE { return m_vertex1; }
-    virtual const FloatPoint& vertex2() const OVERRIDE { return m_vertex2; }
+    virtual const FloatPoint& vertex1() const override { return m_vertex1; }
+    virtual const FloatPoint& vertex2() const override { return m_vertex2; }
 
     bool isWithinYRange(float y1, float y2) const { return y1 <= minY() && y2 >= maxY(); }
     bool overlapsYRange(float y1, float y2) const { return y2 >= minY() && y1 <= maxY(); }
@@ -57,7 +57,7 @@ private:
     FloatPoint m_vertex2;
 };
 
-class PolygonShape FINAL : public Shape {
+class PolygonShape final : public Shape {
     WTF_MAKE_NONCOPYABLE(PolygonShape);
 public:
     PolygonShape(PassOwnPtr<Vector<FloatPoint> > vertices, WindRule fillRule)
@@ -66,15 +66,15 @@ public:
     {
     }
 
-    virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE;
-    virtual bool isEmpty() const OVERRIDE { return m_polygon.isEmpty(); }
-    virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
+    virtual LayoutRect shapeMarginLogicalBoundingBox() const override;
+    virtual bool isEmpty() const override { return m_polygon.isEmpty(); }
+    virtual LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const override;
+    virtual void buildDisplayPaths(DisplayPaths&) const override;
 
 private:
     FloatPolygon m_polygon;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PolygonShape_h

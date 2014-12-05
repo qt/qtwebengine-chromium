@@ -31,32 +31,30 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/WeakPtr.h"
 
-namespace WTF{
-class TextEncoding;
-}
-
-namespace WebCore {
+namespace blink {
 
 class Event;
 class FormAssociatedElement;
-class FormData;
 class GenericEventQueue;
 class HTMLFormControlElement;
 class HTMLFormControlsCollection;
 class HTMLImageElement;
-class HTMLInputElement;
+class RadioNodeListOrElement;
 
-class HTMLFormElement FINAL : public HTMLElement {
+class HTMLFormElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFormElement> create(Document&);
     virtual ~HTMLFormElement();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
+
+    void setNeedsValidityCheck();
 
     PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
-    void getNamedElements(const AtomicString&, WillBeHeapVector<RefPtrWillBeMember<Element> >&);
+    void getNamedElements(const AtomicString&, WillBeHeapVector<RefPtrWillBeMember<Element>>&);
 
     unsigned length() const;
-    Element* item(unsigned index);
+    HTMLElement* item(unsigned index);
 
     String enctype() const { return m_attributes.encodingType(); }
     void setEnctype(const AtomicString&);
@@ -98,6 +96,9 @@ public:
     HTMLFormControlElement* defaultButton() const;
 
     bool checkValidity();
+    bool reportValidity();
+    virtual bool matchesValidityPseudoClasses() const override final;
+    virtual bool isValidElement() override final;
 
     enum AutocompleteResult {
         AutocompleteResultSuccess,
@@ -115,27 +116,28 @@ public:
     RadioButtonGroupScope& radioButtonGroupScope() { return m_radioButtonGroupScope; }
 
     const FormAssociatedElement::List& associatedElements() const;
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& imageElements();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement>>& imageElements();
 
-    void anonymousNamedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<RadioNodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
+    void anonymousNamedGetter(const AtomicString& name, RadioNodeListOrElement&);
 
 private:
     explicit HTMLFormElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void finishParsingChildren() OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void finishParsingChildren() override;
 
-    virtual void handleLocalEvents(Event*) OVERRIDE;
+    virtual void handleLocalEvents(Event*) override;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
+    virtual void attributeWillChange(const QualifiedName&, const AtomicString& oldValue, const AtomicString& newValue) override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
 
-    virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
+    virtual bool shouldRegisterAsNamedItem() const override { return true; }
 
-    virtual void copyNonAttributePropertiesFromElement(const Element&) OVERRIDE;
+    virtual void copyNonAttributePropertiesFromElement(const Element&) override;
 
     void submitDialog(PassRefPtrWillBeRawPtr<FormSubmission>);
     void submit(Event*, bool activateSubmitButton, bool processingUserGesture, FormSubmissionTrigger);
@@ -143,21 +145,21 @@ private:
     void scheduleFormSubmission(PassRefPtrWillBeRawPtr<FormSubmission>);
 
     void collectAssociatedElements(Node& root, FormAssociatedElement::List&) const;
-    void collectImageElements(Node& root, WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >&);
+    void collectImageElements(Node& root, WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement>>&);
 
     // Returns true if the submission should proceed.
-    bool validateInteractively(Event*);
+    bool validateInteractively();
 
     // Validates each of the controls, and stores controls of which 'invalid'
     // event was not canceled to the specified vector. Returns true if there
     // are any invalid controls in this form.
-    bool checkInvalidControlsAndCollectUnhandled(WillBeHeapVector<RefPtrWillBeMember<FormAssociatedElement> >*);
+    bool checkInvalidControlsAndCollectUnhandled(WillBeHeapVector<RefPtrWillBeMember<HTMLFormControlElement>>*, CheckValidityEventBehavior);
 
     Element* elementFromPastNamesMap(const AtomicString&);
     void addToPastNamesMap(Element*, const AtomicString& pastName);
     void removeFromPastNamesMap(HTMLElement&);
 
-    typedef WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<Element> > PastNamesMap;
+    typedef WillBeHeapHashMap<AtomicString, RawPtrWillBeMember<Element>> PastNamesMap;
 
     FormSubmission::Attributes m_attributes;
     OwnPtrWillBeMember<PastNamesMap> m_pastNamesMap;
@@ -167,24 +169,26 @@ private:
     // Do not access m_associatedElements directly. Use associatedElements() instead.
     FormAssociatedElement::List m_associatedElements;
     // Do not access m_imageElements directly. Use imageElements() instead.
-    WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> > m_imageElements;
+    WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement>> m_imageElements;
 #if !ENABLE(OILPAN)
     WeakPtrFactory<HTMLFormElement> m_weakPtrFactory;
 #endif
-    bool m_associatedElementsAreDirty;
-    bool m_imageElementsAreDirty;
-    bool m_hasElementsAssociatedByParser;
-    bool m_didFinishParsingChildren;
+    bool m_associatedElementsAreDirty : 1;
+    bool m_imageElementsAreDirty : 1;
+    bool m_hasElementsAssociatedByParser : 1;
+    bool m_didFinishParsingChildren : 1;
 
-    bool m_wasUserSubmitted;
+    bool m_wasUserSubmitted : 1;
+    bool m_isSubmittingOrInUserJSSubmitEvent : 1;
+    bool m_shouldSubmit : 1;
 
-    bool m_isInResetFunction;
+    bool m_isInResetFunction : 1;
 
-    bool m_wasDemoted;
+    bool m_wasDemoted : 1;
 
     OwnPtrWillBeMember<GenericEventQueue> m_pendingAutocompleteEventsQueue;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLFormElement_h

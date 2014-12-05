@@ -9,8 +9,8 @@
 #include "base/memory/weak_ptr.h"
 #include "cc/input/top_controls_state.h"
 #include "cc/layers/layer_impl.h"
-#include "ui/gfx/size.h"
-#include "ui/gfx/vector2d_f.h"
+#include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/vector2d_f.h"
 
 namespace base {
 class TimeTicks;
@@ -39,10 +39,10 @@ class CC_EXPORT TopControlsManager
       float top_controls_hide_threshold);
   virtual ~TopControlsManager();
 
-  float controls_top_offset() { return controls_top_offset_; }
-  float content_top_offset() {
-    return controls_top_offset_ + top_controls_height_;
-  }
+  float controls_height() { return top_controls_height_; }
+  float ControlsTopOffset();
+  float ContentTopOffset();
+
   KeyframedFloatAnimationCurve* animation() {
     return top_controls_animation_.get();
   }
@@ -62,6 +62,8 @@ class CC_EXPORT TopControlsManager
   void PinchEnd();
 
   gfx::Vector2dF Animate(base::TimeTicks monotonic_time);
+  void SetControlsTopOffset(float offset);
+  float top_controls_height() { return top_controls_height_; }
 
  protected:
   TopControlsManager(TopControlsManagerClient* client,
@@ -70,7 +72,6 @@ class CC_EXPORT TopControlsManager
                      float top_controls_hide_threshold);
 
  private:
-  void SetControlsTopOffset(float offset);
   void ResetAnimations();
   void SetupAnimation(AnimationDirection direction);
   void StartAnimationIfNecessary();
@@ -82,7 +83,6 @@ class CC_EXPORT TopControlsManager
   scoped_ptr<KeyframedFloatAnimationCurve> top_controls_animation_;
   AnimationDirection animation_direction_;
   TopControlsState permitted_state_;
-  float controls_top_offset_;
   float top_controls_height_;
 
   float current_scroll_delta_;

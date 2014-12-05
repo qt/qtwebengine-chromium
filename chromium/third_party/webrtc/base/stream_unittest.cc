@@ -10,9 +10,13 @@
 
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/stream.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 
+namespace {
+static const int kTimeoutMs = 10000;
+}  // namespace
 ///////////////////////////////////////////////////////////////////////////////
 // TestStream
 ///////////////////////////////////////////////////////////////////////////////
@@ -449,7 +453,8 @@ TEST(AsyncWriteTest, TestWrite) {
   EXPECT_NE(SR_SUCCESS, buf->ReadOffset(&bytes, 3, 0, &count));
   // Now we process the messages on the thread's queue, so "abc" has
   // been written.
-  EXPECT_TRUE_WAIT(SR_SUCCESS == buf->ReadOffset(&bytes, 3, 0, &count), 10);
+  EXPECT_TRUE_WAIT(SR_SUCCESS == buf->ReadOffset(&bytes, 3, 0, &count),
+                   kTimeoutMs);
   EXPECT_EQ(3u, count);
   EXPECT_EQ(0, memcmp(bytes, "abc", 3));
 

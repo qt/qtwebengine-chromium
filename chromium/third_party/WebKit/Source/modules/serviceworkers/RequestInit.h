@@ -5,25 +5,29 @@
 #ifndef RequestInit_h
 #define RequestInit_h
 
-#include "bindings/v8/Dictionary.h"
-#include "modules/serviceworkers/HeaderMap.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
+#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-struct RequestInit {
-    explicit RequestInit(const Dictionary& options)
-        : method("GET")
-    {
-        options.get("url", url);
-        // FIXME: Spec uses ByteString for method. http://crbug.com/347426
-        options.get("method", method);
-        options.get("headers", headers);
-    }
+class BlobDataHandle;
+class ExceptionState;
+class Headers;
 
-    String url;
+// FIXME: Use IDL dictionary instead of this class.
+class RequestInit {
+    STACK_ALLOCATED();
+public:
+    explicit RequestInit(ExecutionContext*, const Dictionary&, ExceptionState&);
+
     String method;
-    RefPtr<HeaderMap> headers;
+    Member<Headers> headers;
+    Dictionary headersDictionary;
+    RefPtr<BlobDataHandle> bodyBlobHandle;
+    String mode;
+    String credentials;
 };
 
 }

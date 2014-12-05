@@ -51,11 +51,11 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierWin
   friend class NetworkChangeNotifierWinTest;
 
   // NetworkChangeNotifier methods:
-  virtual ConnectionType GetCurrentConnectionType() const OVERRIDE;
+  virtual ConnectionType GetCurrentConnectionType() const override;
 
   // ObjectWatcher::Delegate methods:
   // Must only be called on the thread |this| was created on.
-  virtual void OnObjectSignaled(HANDLE object) OVERRIDE;
+  virtual void OnObjectSignaled(HANDLE object) override;
 
   // Does the actual work to determine the current connection type.
   // It is not thread safe, see crbug.com/324913.
@@ -95,9 +95,6 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierWin
   // Number of times WatchForAddressChange has failed in a row.
   int sequential_failures_;
 
-  // Used for calling WatchForAddressChange again on failure.
-  base::WeakPtrFactory<NetworkChangeNotifierWin> weak_factory_;
-
   // Thread on which we can run DnsConfigService.
   scoped_ptr<DnsConfigServiceThread> dns_config_service_thread_;
 
@@ -109,6 +106,9 @@ class NET_EXPORT_PRIVATE NetworkChangeNotifierWin
   bool last_announced_offline_;
   // Number of times polled to check if still offline.
   int offline_polls_;
+
+  // Used for calling WatchForAddressChange again on failure.
+  base::WeakPtrFactory<NetworkChangeNotifierWin> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkChangeNotifierWin);
 };

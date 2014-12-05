@@ -6,49 +6,48 @@
 #define RespondWithObserver_h
 
 #include "core/dom/ContextLifecycleObserver.h"
-#include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
+#include "public/platform/WebURLRequest.h"
 
-namespace WebCore {
+namespace blink {
 
+class ExceptionState;
 class ExecutionContext;
-class Response;
 class ScriptState;
 class ScriptValue;
 
 // This class observes the service worker's handling of a FetchEvent and
 // notifies the client.
-class RespondWithObserver FINAL : public ContextLifecycleObserver, public RefCounted<RespondWithObserver> {
+class RespondWithObserver final : public GarbageCollectedFinalized<RespondWithObserver>, public ContextLifecycleObserver {
 public:
-    static PassRefPtr<RespondWithObserver> create(ExecutionContext*, int eventID);
-    ~RespondWithObserver();
+    static RespondWithObserver* create(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
 
-    virtual void contextDestroyed() OVERRIDE;
+    virtual void contextDestroyed() override;
 
     void didDispatchEvent();
 
     // Observes the promise and delays calling didHandleFetchEvent() until the
     // given promise is resolved or rejected.
-    void respondWith(ScriptState*, const ScriptValue&);
+    void respondWith(ScriptState*, const ScriptValue&, ExceptionState&);
 
     void responseWasRejected();
     void responseWasFulfilled(const ScriptValue&);
 
+    void trace(Visitor*) { }
+
 private:
     class ThenFunction;
 
-    RespondWithObserver(ExecutionContext*, int eventID);
-
-    // Sends a response back to the client. The null response means to fallback
-    // to native.
-    void sendResponse(PassRefPtr<Response>);
+    RespondWithObserver(ExecutionContext*, int eventID, WebURLRequest::FetchRequestMode, WebURLRequest::FrameType);
 
     int m_eventID;
+    WebURLRequest::FetchRequestMode m_requestMode;
+    WebURLRequest::FrameType m_frameType;
 
     enum State { Initial, Pending, Done };
     State m_state;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RespondWithObserver_h

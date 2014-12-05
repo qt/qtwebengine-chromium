@@ -37,8 +37,6 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -55,12 +53,12 @@ private:
 
 } // namespace
 
-WebMediaStream::WebMediaStream(const PassRefPtr<WebCore::MediaStreamDescriptor>& mediaStreamDescriptor)
+WebMediaStream::WebMediaStream(const PassRefPtr<MediaStreamDescriptor>& mediaStreamDescriptor)
     : m_private(mediaStreamDescriptor)
 {
 }
 
-WebMediaStream::WebMediaStream(WebCore::MediaStreamDescriptor* mediaStreamDescriptor)
+WebMediaStream::WebMediaStream(MediaStreamDescriptor* mediaStreamDescriptor)
     : m_private(mediaStreamDescriptor)
 {
 }
@@ -118,18 +116,18 @@ void WebMediaStream::removeTrack(const WebMediaStreamTrack& track)
     m_private->removeRemoteTrack(track);
 }
 
-WebMediaStream& WebMediaStream::operator=(const PassRefPtr<WebCore::MediaStreamDescriptor>& mediaStreamDescriptor)
+WebMediaStream& WebMediaStream::operator=(const PassRefPtr<MediaStreamDescriptor>& mediaStreamDescriptor)
 {
     m_private = mediaStreamDescriptor;
     return *this;
 }
 
-WebMediaStream::operator PassRefPtr<WebCore::MediaStreamDescriptor>() const
+WebMediaStream::operator PassRefPtr<MediaStreamDescriptor>() const
 {
     return m_private.get();
 }
 
-WebMediaStream::operator WebCore::MediaStreamDescriptor*() const
+WebMediaStream::operator MediaStreamDescriptor*() const
 {
     return m_private.get();
 }

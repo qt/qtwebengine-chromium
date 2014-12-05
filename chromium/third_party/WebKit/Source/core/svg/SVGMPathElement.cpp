@@ -27,13 +27,12 @@
 #include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGPathElement.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGMPathElement::SVGMPathElement(Document& document)
     : SVGElement(SVGNames::mpathTag, document)
     , SVGURIReference(this)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGMPathElement)
@@ -62,10 +61,10 @@ void SVGMPathElement::buildPendingResource()
             document().accessSVGExtensions().addPendingResource(id, this);
             ASSERT(hasPendingResources());
         }
-    } else if (target->isSVGElement()) {
+    } else if (isSVGPathElement(target)) {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document().accessSVGExtensions().addElementReferencingTarget(this, toSVGElement(target));
+        addReferenceTo(toSVGElement(target));
     }
 
     targetPathChanged();
@@ -73,7 +72,7 @@ void SVGMPathElement::buildPendingResource()
 
 void SVGMPathElement::clearResourceReferences()
 {
-    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
+    removeAllOutgoingReferences();
 }
 
 Node::InsertionNotificationRequest SVGMPathElement::insertedInto(ContainerNode* rootParent)
@@ -92,44 +91,20 @@ void SVGMPathElement::removedFrom(ContainerNode* rootParent)
         clearResourceReferences();
 }
 
-bool SVGMPathElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGMPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGMPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
         buildPendingResource();
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::svgAttributeChanged(attrName);
 }
 
 SVGPathElement* SVGMPathElement::pathElement()
@@ -149,4 +124,4 @@ void SVGMPathElement::notifyParentOfPathChange(ContainerNode* parent)
         toSVGAnimateMotionElement(parent)->updateAnimationPath();
 }
 
-} // namespace WebCore
+} // namespace blink

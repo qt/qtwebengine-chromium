@@ -58,6 +58,7 @@ typedef struct {
     int image_width, image_height;
     XShmSegmentInfo yuv_shminfo;
     int xv_port;
+    Atom wm_delete_message;
 } XVContext;
 
 typedef struct XVTagFormatMap
@@ -66,7 +67,7 @@ typedef struct XVTagFormatMap
     enum AVPixelFormat format;
 } XVTagFormatMap;
 
-static XVTagFormatMap tag_codec_map[] = {
+static const XVTagFormatMap tag_codec_map[] = {
     { MKTAG('I','4','2','0'), AV_PIX_FMT_YUV420P },
     { MKTAG('U','Y','V','Y'), AV_PIX_FMT_UYVY422 },
     { MKTAG('Y','U','Y','2'), AV_PIX_FMT_YUYV422 },
@@ -75,7 +76,7 @@ static XVTagFormatMap tag_codec_map[] = {
 
 static int xv_get_tag_from_format(enum AVPixelFormat format)
 {
-    XVTagFormatMap *m = tag_codec_map;
+    const XVTagFormatMap *m = tag_codec_map;
     int i;
     for (i = 0; m->tag; m = &tag_codec_map[++i]) {
         if (m->format == format)
@@ -156,6 +157,8 @@ static int xv_write_header(AVFormatContext *s)
             }
         }
         XStoreName(xv->display, xv->window, xv->window_title);
+        xv->wm_delete_message = XInternAtom(xv->display, "WM_DELETE_WINDOW", False);
+        XSetWMProtocols(xv->display, xv->window, &xv->wm_delete_message, 1);
         XMapWindow(xv->display, xv->window);
     } else
         xv->window = xv->window_id;
@@ -297,6 +300,19 @@ static int write_picture(AVFormatContext *s, AVPicture *pict)
         img->data + img->offsets[1],
         img->data + img->offsets[2]
     };
+
+    /* Check messages. Window might get closed. */
+    if (!xv->window_id) {
+        XEvent event;
+        while (XPending(xv->display)) {
+            XNextEvent(xv->display, &event);
+            if (event.type == ClientMessage && event.xclient.data.l[0] == xv->wm_delete_message) {
+                av_log(xv, AV_LOG_DEBUG, "Window close event.\n");
+                return AVERROR(EPIPE);
+            }
+        }
+    }
+
     av_image_copy(data, img->pitches, (const uint8_t **)pict->data, pict->linesize,
                   xv->image_format, img->width, img->height);
     return xv_repaint(s);

@@ -25,18 +25,19 @@
 #ifndef NamedNodeMap_h
 #define NamedNodeMap_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/Element.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 class ExceptionState;
 
-class NamedNodeMap FINAL : public NoBaseWillBeGarbageCollectedFinalized<NamedNodeMap>, public ScriptWrappable {
+class NamedNodeMap final : public NoBaseWillBeGarbageCollected<NamedNodeMap>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     friend class Element;
 public:
@@ -74,12 +75,11 @@ private:
     {
         // Only supports NamedNodeMaps with Element associated.
         ASSERT(m_element);
-        ScriptWrappable::init(this);
     }
 
     RawPtrWillBeMember<Element> m_element;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NamedNodeMap_h

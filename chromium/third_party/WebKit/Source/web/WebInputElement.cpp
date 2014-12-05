@@ -32,9 +32,11 @@
 #include "public/web/WebInputElement.h"
 
 #include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
@@ -42,8 +44,6 @@
 #include "public/platform/WebString.h"
 #include "public/web/WebElementCollection.h"
 #include "wtf/PassRefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -54,27 +54,32 @@ bool WebInputElement::isTextField() const
 
 bool WebInputElement::isText() const
 {
-    return constUnwrap<HTMLInputElement>()->isText();
+    return constUnwrap<HTMLInputElement>()->isTextField() && constUnwrap<HTMLInputElement>()->type() != InputTypeNames::number;
+}
+
+bool WebInputElement::isEmailField() const
+{
+    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::email;
 }
 
 bool WebInputElement::isPasswordField() const
 {
-    return constUnwrap<HTMLInputElement>()->isPasswordField();
+    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::password;
 }
 
 bool WebInputElement::isImageButton() const
 {
-    return constUnwrap<HTMLInputElement>()->isImageButton();
+    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::image;
 }
 
 bool WebInputElement::isRadioButton() const
 {
-    return constUnwrap<HTMLInputElement>()->isRadioButton();
+    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::radio;
 }
 
 bool WebInputElement::isCheckbox() const
 {
-    return constUnwrap<HTMLInputElement>()->isCheckbox();
+    return constUnwrap<HTMLInputElement>()->type() == InputTypeNames::checkbox;
 }
 
 int WebInputElement::maxLength() const

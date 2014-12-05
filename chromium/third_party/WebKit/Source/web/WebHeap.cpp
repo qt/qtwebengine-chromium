@@ -31,28 +31,28 @@
 #include "config.h"
 #include "public/web/WebHeap.h"
 
-#include "platform/heap/ThreadState.h"
+#include "platform/heap/Handle.h"
 
 namespace blink {
 
-void WebHeap::attachThread()
-{
-    WebCore::ThreadState::attach();
-}
-
-void WebHeap::detachThread()
-{
-    WebCore::ThreadState::detach();
-}
-
 WebHeap::SafePointScope::SafePointScope()
 {
-    WebCore::ThreadState::current()->enterSafePointWithPointers(this);
+    ThreadState::current()->enterSafePointWithPointers(this);
 }
 
 WebHeap::SafePointScope::~SafePointScope()
 {
-    WebCore::ThreadState::current()->leaveSafePoint();
+    ThreadState::current()->leaveSafePoint();
+}
+
+void WebHeap::collectGarbageForTesting()
+{
+    Heap::collectGarbage(ThreadState::HeapPointersOnStack);
+}
+
+void WebHeap::collectAllGarbageForTesting()
+{
+    Heap::collectAllGarbage();
 }
 
 } // namespace blink

@@ -20,16 +20,14 @@ class CC_EXPORT HeadsUpDisplayLayer : public ContentsScalingLayer {
   void PrepareForCalculateDrawProperties(
       const gfx::Size& device_viewport, float device_scale_factor);
 
-  virtual bool DrawsContent() const OVERRIDE;
-
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
  protected:
   HeadsUpDisplayLayer();
+  bool HasDrawableContent() const override;
 
  private:
-  virtual ~HeadsUpDisplayLayer();
+  ~HeadsUpDisplayLayer() override;
 
   DISALLOW_COPY_AND_ASSIGN(HeadsUpDisplayLayer);
 };

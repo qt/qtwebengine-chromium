@@ -12,12 +12,13 @@ found in the LICENSE file.
 <script src="chrome://resources/js/util.js"></script>
 <script src="chrome://resources/js/cr.js"></script>
 <script src="chrome://resources/js/cr/event_target.js"></script>
-<script src="chrome://resources/js/i18n_template.js"></script>
 
 <link rel="stylesheet" href="chrome://resources/css/tabs.css">
+<script src="chrome://resources/js/load_time_data.js"></script>
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/tabs.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
+<script src="chrome://syncfs-internals/strings.js"></script>
 <script src="chrome://syncfs-internals/utils.js"></script>
 
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
@@ -32,22 +33,23 @@ found in the LICENSE file.
   </tabs>
   <tabpanels>
     <tabpanel>
-      <include src="sync_service.html" />
+      <include src="sync_service.html" >
     </tabpanel>
     <tabpanel>
-      <include src="task_log.html" />
+      <include src="task_log.html" >
     </tabpanel>
     <tabpanel>
-      <include src="extension_statuses.html" />
+      <include src="extension_statuses.html" >
     </tabpanel>
     <tabpanel>
-      <include src="file_metadata.html" />
+      <include src="file_metadata.html" >
     </tabpanel>
     <tabpanel>
-      <include src="dump_database.html" />
+      <include src="dump_database.html" >
     </tabpanel>
   </tabpanels>
 </tabbox>
 
+<script src="chrome://resources/js/i18n_template2.js"></script>
 </body>
 </html>

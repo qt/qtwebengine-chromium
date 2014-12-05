@@ -30,13 +30,13 @@
 #include "core/HTMLNames.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SiblingTraversalStrategies.h"
-#include "core/css/parser/BisonCSSParser.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -45,7 +45,6 @@ inline HTMLContentElement::HTMLContentElement(Document& document)
     , m_shouldParseSelect(false)
     , m_isValidSelector(true)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLContentElement)
@@ -58,7 +57,7 @@ void HTMLContentElement::parseSelect()
 {
     ASSERT(m_shouldParseSelect);
 
-    BisonCSSParser parser(CSSParserContext(document(), 0));
+    CSSParser parser(CSSParserContext(document(), 0));
     parser.parseSelector(m_select, m_selectorList);
     m_shouldParseSelect = false;
     m_isValidSelector = validateSelect();
@@ -82,7 +81,11 @@ void HTMLContentElement::parseAttribute(const QualifiedName& name, const AtomicS
 
 static inline bool includesDisallowedPseudoClass(const CSSSelector& selector)
 {
-    return selector.match() == CSSSelector::PseudoClass && selector.pseudoType() != CSSSelector::PseudoNot;
+    if (selector.pseudoType() == CSSSelector::PseudoNot) {
+        const CSSSelector* subSelector = selector.selectorList()->first();
+        return subSelector->match() == CSSSelector::PseudoClass;
+    }
+    return selector.match() == CSSSelector::PseudoClass;
 }
 
 bool HTMLContentElement::validateSelect() const

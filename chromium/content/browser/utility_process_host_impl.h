@@ -35,23 +35,24 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   static void RegisterUtilityMainThreadFactory(
       UtilityMainThreadFactoryFunction create);
 
-  UtilityProcessHostImpl(UtilityProcessHostClient* client,
-                         base::SequencedTaskRunner* client_task_runner);
-  virtual ~UtilityProcessHostImpl();
+  UtilityProcessHostImpl(
+      const scoped_refptr<UtilityProcessHostClient>& client,
+      const scoped_refptr<base::SequencedTaskRunner>& client_task_runner);
+  ~UtilityProcessHostImpl() override;
 
   // UtilityProcessHost implementation:
-  virtual bool Send(IPC::Message* message) OVERRIDE;
-  virtual bool StartBatchMode() OVERRIDE;
-  virtual void EndBatchMode() OVERRIDE;
-  virtual void SetExposedDir(const base::FilePath& dir) OVERRIDE;
-  virtual void EnableMDns() OVERRIDE;
-  virtual void DisableSandbox() OVERRIDE;
+  bool Send(IPC::Message* message) override;
+  bool StartBatchMode() override;
+  void EndBatchMode() override;
+  void SetExposedDir(const base::FilePath& dir) override;
+  void EnableMDns() override;
+  void DisableSandbox() override;
 #if defined(OS_WIN)
-  virtual void ElevatePrivileges() OVERRIDE;
+  virtual void ElevatePrivileges() override;
 #endif
-  virtual const ChildProcessData& GetData() OVERRIDE;
+  const ChildProcessData& GetData() override;
 #if defined(OS_POSIX)
-  virtual void SetEnv(const base::EnvironmentMap& env) OVERRIDE;
+  void SetEnv(const base::EnvironmentMap& env) override;
 #endif
 
   void set_child_flags(int flags) { child_flags_ = flags; }
@@ -62,9 +63,9 @@ class CONTENT_EXPORT UtilityProcessHostImpl
   bool StartProcess();
 
   // BrowserChildProcessHost:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnProcessLaunchFailed() OVERRIDE;
-  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnProcessLaunchFailed() override;
+  void OnProcessCrashed(int exit_code) override;
 
   // A pointer to our client interface, who will be informed of progress.
   scoped_refptr<UtilityProcessHostClient> client_;

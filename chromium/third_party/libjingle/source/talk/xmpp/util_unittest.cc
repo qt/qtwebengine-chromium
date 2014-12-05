@@ -1,13 +1,13 @@
 // Copyright 2004 Google, Inc. All Rights Reserved.
 // Author: Joe Beda
 
-#include <string>
-#include <sstream>
 #include <iostream>
-#include "talk/base/gunit.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/xmppengine.h"
-#include "talk/xmpp/util_unittest.h"
+#include <sstream>
+#include <string>
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/util_unittest.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/base/gunit.h"
 
 namespace buzz {
 

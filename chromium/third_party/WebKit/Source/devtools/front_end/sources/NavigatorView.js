@@ -33,23 +33,18 @@
 WebInspector.NavigatorView = function()
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("navigatorView.css");
-
-    var scriptsTreeElement = document.createElement("ol");
-    this._scriptsTree = new WebInspector.NavigatorTreeOutline(scriptsTreeElement);
-
-    var scriptsOutlineElement = document.createElement("div");
-    scriptsOutlineElement.classList.add("outline-disclosure");
-    scriptsOutlineElement.classList.add("navigator");
-    scriptsOutlineElement.appendChild(scriptsTreeElement);
+    this.registerRequiredCSS("sources/navigatorView.css");
 
     this.element.classList.add("navigator-container");
-    this.element.appendChild(scriptsOutlineElement);
+    var scriptsOutlineElement = this.element.createChild("div", "outline-disclosure navigator");
+    var scriptsTreeElement = scriptsOutlineElement.createChild("ol");
+    this._scriptsTree = new WebInspector.NavigatorTreeOutline(scriptsTreeElement);
+
     this.setDefaultFocusedElement(this._scriptsTree.element);
 
     /** @type {!Map.<!WebInspector.UISourceCode, !WebInspector.NavigatorUISourceCodeTreeNode>} */
     this._uiSourceCodeNodes = new Map();
-    /** @type {!Map.<!WebInspector.NavigatorTreeNode, !StringMap.<!WebInspector.NavigatorFolderTreeNode>>} */
+    /** @type {!Map.<!WebInspector.NavigatorTreeNode, !Map.<string, !WebInspector.NavigatorFolderTreeNode>>} */
     this._subfolderNodes = new Map();
 
     this._rootNode = new WebInspector.NavigatorRootTreeNode(this);
@@ -112,7 +107,7 @@ WebInspector.NavigatorView.prototype = {
         var projectNode = this._projectNode(uiSourceCode.project());
         var folderNode = this._folderNode(projectNode, uiSourceCode.parentPath());
         var uiSourceCodeNode = new WebInspector.NavigatorUISourceCodeTreeNode(this, uiSourceCode);
-        this._uiSourceCodeNodes.put(uiSourceCode, uiSourceCodeNode);
+        this._uiSourceCodeNodes.set(uiSourceCode, uiSourceCodeNode);
         folderNode.appendChild(uiSourceCodeNode);
     },
 
@@ -140,6 +135,7 @@ WebInspector.NavigatorView.prototype = {
     _projectRemoved: function(event)
     {
         var project = /** @type {!WebInspector.Project} */ (event.data);
+        project.removeEventListener(WebInspector.Project.Events.DisplayNameUpdated, this._updateProjectNodeTitle, this);
         var uiSourceCodes = project.uiSourceCodes();
         for (var i = 0; i < uiSourceCodes.length; ++i)
             this._removeUISourceCode(uiSourceCodes[i]);
@@ -156,11 +152,34 @@ WebInspector.NavigatorView.prototype = {
 
         var projectNode = this._rootNode.child(project.id());
         if (!projectNode) {
-            var type = project.type() === WebInspector.projectTypes.FileSystem ? WebInspector.NavigatorTreeOutline.Types.FileSystem : WebInspector.NavigatorTreeOutline.Types.Domain;
-            projectNode = new WebInspector.NavigatorFolderTreeNode(this, project, project.id(), type, "", project.displayName());
+            projectNode = this._createProjectNode(project);
             this._rootNode.appendChild(projectNode);
         }
         return projectNode;
+    },
+
+    /**
+     * @param {!WebInspector.Project} project
+     * @return {!WebInspector.NavigatorTreeNode}
+     */
+    _createProjectNode: function(project)
+    {
+        var type = project.type() === WebInspector.projectTypes.FileSystem ? WebInspector.NavigatorTreeOutline.Types.FileSystem : WebInspector.NavigatorTreeOutline.Types.Domain;
+        var projectNode = new WebInspector.NavigatorFolderTreeNode(this, project, project.id(), type, "", project.displayName());
+        project.addEventListener(WebInspector.Project.Events.DisplayNameUpdated, this._updateProjectNodeTitle, this);
+        return projectNode;
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _updateProjectNodeTitle: function(event)
+    {
+        var project = /** @type {!WebInspector.Project} */(event.target);
+        var projectNode = this._rootNode.child(project.id());
+        if (!projectNode)
+            return;
+        projectNode.treeElement().titleText = project.displayName();
     },
 
     /**
@@ -175,8 +194,8 @@ WebInspector.NavigatorView.prototype = {
 
         var subfolderNodes = this._subfolderNodes.get(projectNode);
         if (!subfolderNodes) {
-            subfolderNodes = /** @type {!StringMap.<!WebInspector.NavigatorFolderTreeNode>} */ (new StringMap());
-            this._subfolderNodes.put(projectNode, subfolderNodes);
+            subfolderNodes = /** @type {!Map.<string, !WebInspector.NavigatorFolderTreeNode>} */ (new Map());
+            this._subfolderNodes.set(projectNode, subfolderNodes);
         }
 
         var folderNode = subfolderNodes.get(folderPath);
@@ -190,7 +209,7 @@ WebInspector.NavigatorView.prototype = {
 
         var name = folderPath.substring(index + 1);
         folderNode = new WebInspector.NavigatorFolderTreeNode(this, null, name, WebInspector.NavigatorTreeOutline.Types.Folder, folderPath, name);
-        subfolderNodes.put(folderPath, folderNode);
+        subfolderNodes.set(folderPath, folderNode);
         parentNode.appendChild(folderNode);
         return folderNode;
     },
@@ -266,7 +285,7 @@ WebInspector.NavigatorView.prototype = {
 
     reset: function()
     {
-        var nodes = this._uiSourceCodeNodes.values();
+        var nodes = this._uiSourceCodeNodes.valuesArray();
         for (var i = 0; i < nodes.length; ++i)
             nodes[i].dispose();
 
@@ -277,7 +296,7 @@ WebInspector.NavigatorView.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     handleContextMenu: function(event)
     {
@@ -504,7 +523,7 @@ WebInspector.NavigatorView.prototype = {
 WebInspector.SourcesNavigatorView = function()
 {
     WebInspector.NavigatorView.call(this);
-    WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.InspectedURLChanged, this._inspectedURLChanged, this);
+    WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.InspectedURLChanged, this._inspectedURLChanged, this);
 }
 
 WebInspector.SourcesNavigatorView.prototype = {
@@ -526,10 +545,11 @@ WebInspector.SourcesNavigatorView.prototype = {
      */
     _inspectedURLChanged: function(event)
     {
-       var nodes = this._uiSourceCodeNodes.values();
+       var nodes = this._uiSourceCodeNodes.valuesArray();
        for (var i = 0; i < nodes.length; ++i) {
            var uiSourceCode = nodes[i].uiSourceCode();
-           if (uiSourceCode.url === WebInspector.resourceTreeModel.inspectedPageURL())
+           var inspectedPageURL = WebInspector.targetManager.inspectedPageURL();
+           if (inspectedPageURL && uiSourceCode.url === inspectedPageURL)
               this.revealUISourceCode(uiSourceCode, true);
        }
     },
@@ -540,7 +560,8 @@ WebInspector.SourcesNavigatorView.prototype = {
     _addUISourceCode: function(uiSourceCode)
     {
         WebInspector.NavigatorView.prototype._addUISourceCode.call(this, uiSourceCode);
-        if (uiSourceCode.url === WebInspector.resourceTreeModel.inspectedPageURL())
+        var inspectedPageURL = WebInspector.targetManager.inspectedPageURL();
+        if (inspectedPageURL && uiSourceCode.url === inspectedPageURL)
             this.revealUISourceCode(uiSourceCode, true);
      },
 
@@ -605,7 +626,7 @@ WebInspector.NavigatorTreeOutline._treeElementsCompare = function compare(treeEl
     {
         var type = treeElement.type();
         if (type === WebInspector.NavigatorTreeOutline.Types.Domain) {
-            if (treeElement.titleText === WebInspector.resourceTreeModel.inspectedPageDomain())
+            if (treeElement.titleText === WebInspector.targetManager.inspectedPageDomain())
                 return 1;
             return 2;
         }
@@ -678,24 +699,18 @@ WebInspector.BaseNavigatorTreeElement.prototype = {
                 this.listItemElement.classList.add(this._iconClasses[i]);
         }
 
-        var selectionElement = document.createElement("div");
-        selectionElement.className = "selection";
-        this.listItemElement.appendChild(selectionElement);
+        this.listItemElement.createChild("div", "selection");
 
-        if (!this._noIcon) {
-            this.imageElement = document.createElement("img");
-            this.imageElement.className = "icon";
-            this.listItemElement.appendChild(this.imageElement);
-        }
+        if (!this._noIcon)
+            this.imageElement = this.listItemElement.createChild("img", "icon");
 
-        this.titleElement = document.createElement("div");
-        this.titleElement.className = "base-navigator-tree-element-title";
-        this._titleTextNode = document.createTextNode("");
-        this._titleTextNode.textContent = this._titleText;
-        this.titleElement.appendChild(this._titleTextNode);
-        this.listItemElement.appendChild(this.titleElement);
+        this.titleElement = this.listItemElement.createChild("div", "base-navigator-tree-element-title");
+        this.titleElement.textContent = this._titleText;
     },
 
+    /**
+     * @param {!Array.<string>} iconClasses
+     */
     updateIconClasses: function(iconClasses)
     {
         for (var i = 0; i < this._iconClasses.length; ++i)
@@ -724,8 +739,10 @@ WebInspector.BaseNavigatorTreeElement.prototype = {
         if (this._titleText === titleText)
             return;
         this._titleText = titleText || "";
-        if (this.titleElement)
+        if (this.titleElement) {
             this.titleElement.textContent = this._titleText;
+            this.titleElement.title = this._titleText;
+        }
     },
 
     /**
@@ -782,14 +799,14 @@ WebInspector.NavigatorFolderTreeElement.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _handleContextMenuEvent: function(event)
     {
         if (!this._node)
             return;
         this.select();
-        this._navigatorView.handleFolderContextMenu(/** @type {!Event} */ (event), this._node);
+        this._navigatorView.handleFolderContextMenu(event, this._node);
     },
 
     __proto__: WebInspector.BaseNavigatorTreeElement.prototype
@@ -861,6 +878,7 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
         if (!this._uiSourceCode.canRename())
             return false;
         var isSelected = this === this.treeOutline.selectedTreeElement;
+        var document = this.treeOutline.childrenListElement.ownerDocument;
         var isFocused = this.treeOutline.childrenListElement.isSelfOrAncestor(document.activeElement);
         return isSelected && isFocused && !WebInspector.isBeingEdited(this.treeOutline.element);
     },
@@ -957,8 +975,8 @@ WebInspector.NavigatorSourceTreeElement.prototype = {
 WebInspector.NavigatorTreeNode = function(id)
 {
     this.id = id;
-    /** @type {!StringMap.<!WebInspector.NavigatorTreeNode>} */
-    this._children = new StringMap();
+    /** @type {!Map.<string, !WebInspector.NavigatorTreeNode>} */
+    this._children = new Map();
 }
 
 WebInspector.NavigatorTreeNode.prototype = {
@@ -1033,7 +1051,7 @@ WebInspector.NavigatorTreeNode.prototype = {
      */
     isEmpty: function()
     {
-        return !this._children.size();
+        return !this._children.size;
     },
 
     /**
@@ -1050,7 +1068,7 @@ WebInspector.NavigatorTreeNode.prototype = {
      */
     children: function()
     {
-        return this._children.values();
+        return this._children.valuesArray();
     },
 
     /**
@@ -1058,7 +1076,7 @@ WebInspector.NavigatorTreeNode.prototype = {
      */
     appendChild: function(node)
     {
-        this._children.put(node.id, node);
+        this._children.set(node.id, node);
         node.parent = this;
         this.didAddChild(node);
     },

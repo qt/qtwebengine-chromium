@@ -5,26 +5,13 @@
 #ifndef CONTENT_RENDERER_P2P_PORT_ALLOCATOR_H_
 #define CONTENT_RENDERER_P2P_PORT_ALLOCATOR_H_
 
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "net/base/net_util.h"
-#include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
-#include "third_party/libjingle/source/talk/p2p/client/basicportallocator.h"
-
-namespace blink {
-class WebFrame;
-class WebURLLoader;
-}  // namespace blink
+#include "third_party/webrtc/p2p/client/basicportallocator.h"
 
 namespace content {
 
-class P2PHostAddressRequest;
 class P2PPortAllocatorSession;
 class P2PSocketDispatcher;
 
-// TODO(sergeyu): There is overlap between this class and HttpPortAllocator.
-// Refactor this class to inherit from HttpPortAllocator to avoid code
-// duplication.
 class P2PPortAllocator : public cricket::BasicPortAllocator {
  public:
   struct Config {
@@ -43,42 +30,36 @@ class P2PPortAllocator : public cricket::BasicPortAllocator {
       bool secure;
     };
 
-    // STUN server address and port.
-    std::string stun_server;
-    int stun_server_port;
+    std::set<rtc::SocketAddress> stun_servers;
 
     std::vector<RelayServerConfig> relays;
 
-    bool legacy_relay;
     // Disable TCP-based transport when set to true.
     bool disable_tcp_transport;
   };
 
-  P2PPortAllocator(blink::WebFrame* web_frame,
-                   P2PSocketDispatcher* socket_dispatcher,
-                   talk_base::NetworkManager* network_manager,
-                   talk_base::PacketSocketFactory* socket_factory,
+  P2PPortAllocator(P2PSocketDispatcher* socket_dispatcher,
+                   rtc::NetworkManager* network_manager,
+                   rtc::PacketSocketFactory* socket_factory,
                    const Config& config);
-  virtual ~P2PPortAllocator();
+  ~P2PPortAllocator() override;
 
-  virtual cricket::PortAllocatorSession* CreateSessionInternal(
+  cricket::PortAllocatorSession* CreateSessionInternal(
       const std::string& content_name,
       int component,
       const std::string& ice_username_fragment,
-      const std::string& ice_password) OVERRIDE;
+      const std::string& ice_password) override;
 
  private:
   friend class P2PPortAllocatorSession;
 
-  blink::WebFrame* web_frame_;
   P2PSocketDispatcher* socket_dispatcher_;
   Config config_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PPortAllocator);
 };
 
-class P2PPortAllocatorSession : public cricket::BasicPortAllocatorSession,
-                                public blink::WebURLLoaderClient  {
+class P2PPortAllocatorSession : public cricket::BasicPortAllocatorSession {
  public:
   P2PPortAllocatorSession(
       P2PPortAllocator* allocator,
@@ -86,40 +67,14 @@ class P2PPortAllocatorSession : public cricket::BasicPortAllocatorSession,
       int component,
       const std::string& ice_username_fragment,
       const std::string& ice_password);
-  virtual ~P2PPortAllocatorSession();
-
-  // blink::WebURLLoaderClient overrides.
-  virtual void didReceiveData(blink::WebURLLoader* loader,
-                              const char* data,
-                              int data_length,
-                              int encoded_data_length) OVERRIDE;
-  virtual void didFinishLoading(blink::WebURLLoader* loader,
-                                double finish_time,
-                                int64_t total_encoded_data_length) OVERRIDE;
-  virtual void didFail(blink::WebURLLoader* loader,
-                       const blink::WebURLError& error) OVERRIDE;
+  ~P2PPortAllocatorSession() override;
 
  protected:
   // Overrides for cricket::BasicPortAllocatorSession.
-  virtual void GetPortConfigurations() OVERRIDE;
+  void GetPortConfigurations() override;
 
  private:
-  // This method allocates non-TURN relay sessions.
-  void AllocateLegacyRelaySession();
-  void ParseRelayResponse();
-
-  void AddConfig();
-
   P2PPortAllocator* allocator_;
-
-  scoped_ptr<blink::WebURLLoader> relay_session_request_;
-  int relay_session_attempts_;
-  std::string relay_session_response_;
-  talk_base::SocketAddress relay_ip_;
-  int relay_udp_port_;
-  int relay_tcp_port_;
-  int relay_ssltcp_port_;
-  int pending_relay_requests_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PPortAllocatorSession);
 };

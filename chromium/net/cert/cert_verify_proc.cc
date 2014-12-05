@@ -262,6 +262,9 @@ int CertVerifyProc::Verify(X509Certificate* cert,
       rv = MapCertStatusToNetError(verify_result->cert_status);
   }
 
+  if (verify_result->has_sha1)
+    verify_result->cert_status |= CERT_STATUS_SHA1_SIGNATURE_PRESENT;
+
   // Flag certificates from publicly-trusted CAs that are issued to intranet
   // hosts. While the CA/Browser Forum Baseline Requirements (v1.1) permit
   // these to be issued until 1 November 2015, they represent a real risk for
@@ -413,10 +416,6 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // Win32/Sirefef.gen!C generates fake certificates with this public key.
     {0xa4, 0xf5, 0x6e, 0x9e, 0x1d, 0x9a, 0x3b, 0x7b, 0x1a, 0xc3,
      0x31, 0xcf, 0x64, 0xfc, 0x76, 0x2c, 0xd0, 0x51, 0xfb, 0xa4},
-    // ANSSI certificate under which a MITM proxy was mistakenly operated.
-    // Expires: Jul 18 10:05:28 2014 GMT
-    {0x3e, 0xcf, 0x4b, 0xbb, 0xe4, 0x60, 0x96, 0xd5, 0x14, 0xbb,
-     0x53, 0x9b, 0xb9, 0x13, 0xd7, 0x7a, 0xa4, 0xef, 0x31, 0xbf},
     // Three retired intermediate certificates from Symantec. No compromise;
     // just for robustness. All expire May 17 23:59:59 2018.
     // See https://bugzilla.mozilla.org/show_bug.cgi?id=966060
@@ -441,6 +440,13 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
     // Expires: March 5th, 2024.
     {0xe5, 0x8e, 0x31, 0x5b, 0xaa, 0xee, 0xaa, 0xc6, 0xe7, 0x2e,
      0xc9, 0x57, 0x36, 0x70, 0xca, 0x2f, 0x25, 0x4e, 0xc3, 0x47},
+    // C=DE, O=Fraunhofer, OU=Fraunhofer Corporate PKI,
+    // CN=Fraunhofer Service CA 2007.
+    // Expires: Jun 30 2019.
+    // No compromise, just for robustness. See
+    // https://bugzilla.mozilla.org/show_bug.cgi?id=1076940
+    {0x38, 0x4d, 0x0c, 0x1d, 0xc4, 0x77, 0xa7, 0xb3, 0xf8, 0x67,
+     0x86, 0xd0, 0x18, 0x51, 0x9f, 0x58, 0x9f, 0x1e, 0x9e, 0x25},
   };
 
   for (unsigned i = 0; i < kNumHashes; i++) {
@@ -456,13 +462,13 @@ bool CertVerifyProc::IsPublicKeyBlacklisted(
   return false;
 }
 
-static const size_t kMaxTLDLength = 4;
+static const size_t kMaxDomainLength = 18;
 
 // CheckNameConstraints verifies that every name in |dns_names| is in one of
-// the domains specified by |tlds|. The |tlds| array is terminated by an empty
-// string.
+// the domains specified by |domains|. The |domains| array is terminated by an
+// empty string.
 static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
-                                 const char tlds[][kMaxTLDLength]) {
+                                 const char domains[][kMaxDomainLength]) {
   for (std::vector<std::string>::const_iterator i = dns_names.begin();
        i != dns_names.end(); ++i) {
     bool ok = false;
@@ -480,16 +486,16 @@ static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
     if (registry_len == 0)
       continue;
 
-    for (size_t j = 0; tlds[j][0]; ++j) {
-      const size_t tld_length = strlen(tlds[j]);
-      // The DNS name must have "." + tlds[j] as a suffix.
-      if (i->size() <= (1 /* period before TLD */ + tld_length))
+    for (size_t j = 0; domains[j][0]; ++j) {
+      const size_t domain_length = strlen(domains[j]);
+      // The DNS name must have "." + domains[j] as a suffix.
+      if (i->size() <= (1 /* period before domain */ + domain_length))
         continue;
 
-      const char* suffix = &dns_name[i->size() - tld_length - 1];
+      const char* suffix = &dns_name[i->size() - domain_length - 1];
       if (suffix[0] != '.')
         continue;
-      if (memcmp(&suffix[1], tlds[j], tld_length) != 0)
+      if (memcmp(&suffix[1], domains[j], domain_length) != 0)
         continue;
       ok = true;
       break;
@@ -502,12 +508,12 @@ static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
   return true;
 }
 
-// PublicKeyTLDLimitation contains a SHA1, SPKI hash and a pointer to an array
-// of fixed-length strings that contain the TLDs that the SPKI is allowed to
-// issue for.
-struct PublicKeyTLDLimitation {
+// PublicKeyDomainLimitation contains a SHA1, SPKI hash and a pointer to an
+// array of fixed-length strings that contain the domains that the SPKI is
+// allowed to issue for.
+struct PublicKeyDomainLimitation {
   uint8 public_key[base::kSHA1Length];
-  const char (*tlds)[kMaxTLDLength];
+  const char (*domains)[kMaxDomainLength];
 };
 
 // static
@@ -516,7 +522,7 @@ bool CertVerifyProc::HasNameConstraintsViolation(
     const std::string& common_name,
     const std::vector<std::string>& dns_names,
     const std::vector<std::string>& ip_addrs) {
-  static const char kTLDsANSSI[][kMaxTLDLength] = {
+  static const char kDomainsANSSI[][kMaxDomainLength] = {
     "fr",  // France
     "gp",  // Guadeloupe
     "gf",  // Guyane
@@ -533,25 +539,57 @@ bool CertVerifyProc::HasNameConstraintsViolation(
     "",
   };
 
-  static const char kTLDsTest[][kMaxTLDLength] = {
-    "com",
+  static const char kDomainsIndiaCCA[][kMaxDomainLength] = {
+    "gov.in",
+    "nic.in",
+    "ac.in",
+    "rbi.org.in",
+    "bankofindia.co.in",
+    "ncode.in",
+    "tcs.co.in",
     "",
   };
 
-  static const PublicKeyTLDLimitation kLimits[] = {
+  static const char kDomainsTest[][kMaxDomainLength] = {
+    "example.com",
+    "",
+  };
+
+  static const PublicKeyDomainLimitation kLimits[] = {
     // C=FR, ST=France, L=Paris, O=PM/SGDN, OU=DCSSI,
     // CN=IGC/A/emailAddress=igca@sgdn.pm.gouv.fr
     {
       {0x79, 0x23, 0xd5, 0x8d, 0x0f, 0xe0, 0x3c, 0xe6, 0xab, 0xad,
        0xae, 0x27, 0x1a, 0x6d, 0x94, 0xf4, 0x14, 0xd1, 0xa8, 0x73},
-      kTLDsANSSI,
+      kDomainsANSSI,
+    },
+    // C=IN, O=India PKI, CN=CCA India 2007
+    // Expires: July 4th 2015.
+    {
+      {0xfe, 0xe3, 0x95, 0x21, 0x2d, 0x5f, 0xea, 0xfc, 0x7e, 0xdc,
+       0xcf, 0x88, 0x3f, 0x1e, 0xc0, 0x58, 0x27, 0xd8, 0xb8, 0xe4},
+      kDomainsIndiaCCA,
+    },
+    // C=IN, O=India PKI, CN=CCA India 2011
+    // Expires: March 11 2016.
+    {
+      {0xf1, 0x42, 0xf6, 0xa2, 0x7d, 0x29, 0x3e, 0xa8, 0xf9, 0x64,
+       0x52, 0x56, 0xed, 0x07, 0xa8, 0x63, 0xf2, 0xdb, 0x1c, 0xdf},
+      kDomainsIndiaCCA,
+    },
+    // C=IN, O=India PKI, CN=CCA India 2014
+    // Expires: March 5 2024.
+    {
+      {0x36, 0x8c, 0x4a, 0x1e, 0x2d, 0xb7, 0x81, 0xe8, 0x6b, 0xed,
+       0x5a, 0x0a, 0x42, 0xb8, 0xc5, 0xcf, 0x6d, 0xb3, 0x57, 0xe1},
+      kDomainsIndiaCCA,
     },
     // Not a real certificate - just for testing. This is the SPKI hash of
     // the keys used in net/data/ssl/certificates/name_constraint_*.crt.
     {
-      {0x15, 0x45, 0xd7, 0x3b, 0x58, 0x6b, 0x47, 0xcf, 0xc1, 0x44,
-       0xa2, 0xc9, 0xaa, 0xab, 0x98, 0x3d, 0x21, 0xcc, 0x42, 0xde},
-      kTLDsTest,
+      {0x61, 0xec, 0x82, 0x8b, 0xdb, 0x5c, 0x78, 0x2a, 0x8f, 0xcc,
+       0x4f, 0x0f, 0x14, 0xbb, 0x85, 0x31, 0x93, 0x9f, 0xf7, 0x3d},
+      kDomainsTest,
     },
   };
 
@@ -563,10 +601,10 @@ bool CertVerifyProc::HasNameConstraintsViolation(
         if (dns_names.empty() && ip_addrs.empty()) {
           std::vector<std::string> dns_names;
           dns_names.push_back(common_name);
-          if (!CheckNameConstraints(dns_names, kLimits[i].tlds))
+          if (!CheckNameConstraints(dns_names, kLimits[i].domains))
             return true;
         } else {
-          if (!CheckNameConstraints(dns_names, kLimits[i].tlds))
+          if (!CheckNameConstraints(dns_names, kLimits[i].domains))
             return true;
         }
       }

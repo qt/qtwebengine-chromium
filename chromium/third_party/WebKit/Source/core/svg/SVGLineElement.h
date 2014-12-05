@@ -26,9 +26,10 @@
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGLineElement FINAL : public SVGGeometryElement {
+class SVGLineElement final : public SVGGeometryElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGLineElement);
 
@@ -41,10 +42,10 @@ private:
     explicit SVGLineElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
     RefPtr<SVGAnimatedLength> m_x1;
     RefPtr<SVGAnimatedLength> m_y1;
@@ -52,6 +53,6 @@ private:
     RefPtr<SVGAnimatedLength> m_y2;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGLineElement_h

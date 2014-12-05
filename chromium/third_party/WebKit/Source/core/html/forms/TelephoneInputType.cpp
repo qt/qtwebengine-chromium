@@ -34,7 +34,7 @@
 #include "core/InputTypeNames.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<InputType> TelephoneInputType::create(HTMLInputElement& element)
 {
@@ -56,9 +56,4 @@ bool TelephoneInputType::shouldRespectSpeechAttribute()
     return true;
 }
 
-bool TelephoneInputType::isTelephoneField() const
-{
-    return true;
-}
-
-} // namespace WebCore
+} // namespace blink

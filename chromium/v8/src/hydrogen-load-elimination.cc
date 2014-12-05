@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "src/hydrogen-alias-analysis.h"
-#include "src/hydrogen-load-elimination.h"
-#include "src/hydrogen-instructions.h"
 #include "src/hydrogen-flow-engine.h"
+#include "src/hydrogen-instructions.h"
+#include "src/hydrogen-load-elimination.h"
 
 namespace v8 {
 namespace internal {
@@ -122,7 +122,7 @@ class HLoadEliminationTable : public ZoneObject {
                                       HLoadEliminationTable* pred_state,
                                       HBasicBlock* pred_block,
                                       Zone* zone) {
-    ASSERT(pred_state != NULL);
+    DCHECK(pred_state != NULL);
     if (succ_state == NULL) {
       return pred_state->Copy(succ_block, pred_block, zone);
     } else {
@@ -135,7 +135,7 @@ class HLoadEliminationTable : public ZoneObject {
   static HLoadEliminationTable* Finish(HLoadEliminationTable* state,
                                        HBasicBlock* block,
                                        Zone* zone) {
-    ASSERT(state != NULL);
+    DCHECK(state != NULL);
     return state;
   }
 
@@ -200,7 +200,7 @@ class HLoadEliminationTable : public ZoneObject {
   // which the load should be replaced. Otherwise, return {instr}.
   HValue* load(HLoadNamedField* instr) {
     // There must be no loads from non observable in-object properties.
-    ASSERT(!instr->access().IsInobject() ||
+    DCHECK(!instr->access().IsInobject() ||
            instr->access().existing_inobject_property());
 
     int field = FieldOf(instr->access());
@@ -382,7 +382,7 @@ class HLoadEliminationTable : public ZoneObject {
   // farthest away from the current instruction.
   HFieldApproximation* ReuseLastApproximation(int field) {
     HFieldApproximation* approx = fields_[field];
-    ASSERT(approx != NULL);
+    DCHECK(approx != NULL);
 
     HFieldApproximation* prev = NULL;
     while (approx->next_ != NULL) {

@@ -37,12 +37,12 @@ extern "C" {
 #include <mediastreamer2/mediastream.h>
 }
 
-#include "talk/base/scoped_ptr.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/base/mediaengine.h"
+#include "webrtc/base/scoped_ptr.h"
 
-namespace talk_base {
+namespace rtc {
 class StreamInterface;
 }
 
@@ -70,7 +70,6 @@ class LinphoneMediaEngine : public MediaEngineInterface {
   virtual VideoMediaChannel* CreateVideoChannel(VoiceMediaChannel* voice_ch);
   virtual SoundclipMedia* CreateSoundclip() { return NULL; }
   virtual bool SetAudioOptions(int options) { return true; }
-  virtual bool SetVideoOptions(int options) { return true; }
   virtual bool SetDefaultVideoEncoderConfig(const VideoEncoderConfig& config) {
     return true;
   }
@@ -81,7 +80,6 @@ class LinphoneMediaEngine : public MediaEngineInterface {
   virtual bool SetOutputVolume(int level) { return true; }
   virtual int GetInputLevel() { return 0; }
   virtual bool SetLocalMonitor(bool enable) { return true; }
-  virtual bool SetLocalRenderer(VideoRenderer* renderer) { return true; }
   // TODO: control channel send?
   virtual bool SetVideoCapture(bool capture) { return true; }
   virtual const std::vector<AudioCodec>& audio_codecs() {
@@ -140,12 +138,11 @@ class LinphoneVoiceChannel : public VoiceMediaChannel {
   virtual bool GetStats(VoiceMediaInfo* info) { return true; }
 
   // Implement pure virtual methods of MediaChannel.
-  virtual void OnPacketReceived(talk_base::Buffer* packet);
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) {}
+  virtual void OnPacketReceived(rtc::Buffer* packet);
+  virtual void OnRtcpReceived(rtc::Buffer* packet) {}
   virtual void SetSendSsrc(uint32 id) {}  // TODO: change RTP packet?
   virtual bool SetRtcpCName(const std::string& cname) { return true; }
   virtual bool Mute(bool on) { return mute_; }
-  virtual bool SetStartSendBandwidth(int bps) { return true; }
   virtual bool SetMaxSendBandwidth(int bps) { return true; }
   virtual bool SetOptions(int options) { return true; }
   virtual bool SetRecvRtpHeaderExtensions(
@@ -163,8 +160,8 @@ class LinphoneVoiceChannel : public VoiceMediaChannel {
   AudioStream *audio_stream_;
   LinphoneMediaEngine *engine_;
   RingStream* ring_stream_;
-  talk_base::scoped_ptr<talk_base::AsyncSocket> socket_;
-  void OnIncomingData(talk_base::AsyncSocket *s);
+  rtc::scoped_ptr<rtc::AsyncSocket> socket_;
+  void OnIncomingData(rtc::AsyncSocket *s);
 
   DISALLOW_COPY_AND_ASSIGN(LinphoneVoiceChannel);
 };

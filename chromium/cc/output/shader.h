@@ -9,7 +9,6 @@
 
 #include "base/basictypes.h"
 #include "cc/base/cc_export.h"
-#include "third_party/skia/include/core/SkColorPriv.h"
 
 namespace gfx {
 class Point;
@@ -37,6 +36,25 @@ enum SamplerType {
   SamplerType2DRect = 2,
   SamplerTypeExternalOES = 3,
   NumSamplerTypes = 4
+};
+
+enum BlendMode {
+  BlendModeNormal,
+  BlendModeOverlay,
+  BlendModeDarken,
+  BlendModeLighten,
+  BlendModeColorDodge,
+  BlendModeColorBurn,
+  BlendModeHardLight,
+  BlendModeSoftLight,
+  BlendModeDifference,
+  BlendModeExclusion,
+  BlendModeMultiply,
+  BlendModeHue,
+  BlendModeSaturation,
+  BlendModeColor,
+  BlendModeLuminosity,
+  NumBlendModes
 };
 
 // Note: The highp_threshold_cache must be provided by the caller to make
@@ -280,7 +298,32 @@ class VertexShaderVideoTransform {
   DISALLOW_COPY_AND_ASSIGN(VertexShaderVideoTransform);
 };
 
-class FragmentTexAlphaBinding {
+class FragmentTexBlendMode {
+ public:
+  int backdrop_location() const { return backdrop_location_; }
+  int backdrop_rect_location() const { return backdrop_rect_location_; }
+
+  BlendMode blend_mode() const { return blend_mode_; }
+  void set_blend_mode(BlendMode blend_mode) { blend_mode_ = blend_mode; }
+  bool is_default_blend_mode() const { return blend_mode_ == BlendModeNormal; }
+
+ protected:
+  FragmentTexBlendMode();
+
+  std::string SetBlendModeFunctions(std::string shader_string) const;
+
+  int backdrop_location_;
+  int backdrop_rect_location_;
+
+ private:
+  BlendMode blend_mode_;
+
+  std::string GetHelperFunctions() const;
+  std::string GetBlendFunction() const;
+  std::string GetBlendFunctionBodyForRGB() const;
+};
+
+class FragmentTexAlphaBinding : public FragmentTexBlendMode {
  public:
   FragmentTexAlphaBinding();
 
@@ -298,7 +341,7 @@ class FragmentTexAlphaBinding {
   DISALLOW_COPY_AND_ASSIGN(FragmentTexAlphaBinding);
 };
 
-class FragmentTexColorMatrixAlphaBinding {
+class FragmentTexColorMatrixAlphaBinding : public FragmentTexBlendMode {
  public:
     FragmentTexColorMatrixAlphaBinding();
 
@@ -318,7 +361,7 @@ class FragmentTexColorMatrixAlphaBinding {
     int color_offset_location_;
 };
 
-class FragmentTexOpaqueBinding {
+class FragmentTexOpaqueBinding : public FragmentTexBlendMode {
  public:
   FragmentTexOpaqueBinding();
 
@@ -336,7 +379,7 @@ class FragmentTexOpaqueBinding {
   DISALLOW_COPY_AND_ASSIGN(FragmentTexOpaqueBinding);
 };
 
-class FragmentTexBackgroundBinding {
+class FragmentTexBackgroundBinding : public FragmentTexBlendMode {
  public:
   FragmentTexBackgroundBinding();
 
@@ -418,7 +461,7 @@ class FragmentShaderRGBATexSwizzleOpaque : public FragmentTexOpaqueBinding {
       TexCoordPrecision precision, SamplerType sampler) const;
 };
 
-class FragmentShaderRGBATexAlphaAA {
+class FragmentShaderRGBATexAlphaAA : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaAA();
 
@@ -438,7 +481,7 @@ class FragmentShaderRGBATexAlphaAA {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderRGBATexAlphaAA);
 };
 
-class FragmentTexClampAlphaAABinding {
+class FragmentTexClampAlphaAABinding : public FragmentTexBlendMode {
  public:
   FragmentTexClampAlphaAABinding();
 
@@ -474,7 +517,7 @@ class FragmentShaderRGBATexClampSwizzleAlphaAA
       TexCoordPrecision precision, SamplerType sampler) const;
 };
 
-class FragmentShaderRGBATexAlphaMask {
+class FragmentShaderRGBATexAlphaMask : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaMask();
   std::string GetShaderString(
@@ -503,7 +546,7 @@ class FragmentShaderRGBATexAlphaMask {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderRGBATexAlphaMask);
 };
 
-class FragmentShaderRGBATexAlphaMaskAA {
+class FragmentShaderRGBATexAlphaMaskAA : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaMaskAA();
   std::string GetShaderString(
@@ -532,7 +575,8 @@ class FragmentShaderRGBATexAlphaMaskAA {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderRGBATexAlphaMaskAA);
 };
 
-class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
+class FragmentShaderRGBATexAlphaMaskColorMatrixAA
+    : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaMaskColorMatrixAA();
   std::string GetShaderString(
@@ -563,7 +607,7 @@ class FragmentShaderRGBATexAlphaMaskColorMatrixAA {
   int color_offset_location_;
 };
 
-class FragmentShaderRGBATexAlphaColorMatrixAA {
+class FragmentShaderRGBATexAlphaColorMatrixAA : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaColorMatrixAA();
   std::string GetShaderString(
@@ -584,7 +628,7 @@ class FragmentShaderRGBATexAlphaColorMatrixAA {
   int color_offset_location_;
 };
 
-class FragmentShaderRGBATexAlphaMaskColorMatrix {
+class FragmentShaderRGBATexAlphaMaskColorMatrix : public FragmentTexBlendMode {
  public:
   FragmentShaderRGBATexAlphaMaskColorMatrix();
   std::string GetShaderString(
@@ -615,7 +659,7 @@ class FragmentShaderRGBATexAlphaMaskColorMatrix {
   int color_offset_location_;
 };
 
-class FragmentShaderYUVVideo {
+class FragmentShaderYUVVideo : public FragmentTexBlendMode {
  public:
   FragmentShaderYUVVideo();
   std::string GetShaderString(
@@ -642,8 +686,7 @@ class FragmentShaderYUVVideo {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVVideo);
 };
 
-
-class FragmentShaderYUVAVideo {
+class FragmentShaderYUVAVideo : public FragmentTexBlendMode {
  public:
   FragmentShaderYUVAVideo();
   std::string GetShaderString(
@@ -673,7 +716,7 @@ class FragmentShaderYUVAVideo {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderYUVAVideo);
 };
 
-class FragmentShaderColor {
+class FragmentShaderColor : public FragmentTexBlendMode {
  public:
   FragmentShaderColor();
   std::string GetShaderString(
@@ -690,7 +733,7 @@ class FragmentShaderColor {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderColor);
 };
 
-class FragmentShaderColorAA {
+class FragmentShaderColorAA : public FragmentTexBlendMode {
  public:
   FragmentShaderColorAA();
   std::string GetShaderString(
@@ -707,7 +750,7 @@ class FragmentShaderColorAA {
   DISALLOW_COPY_AND_ASSIGN(FragmentShaderColorAA);
 };
 
-class FragmentShaderCheckerboard {
+class FragmentShaderCheckerboard : public FragmentTexBlendMode {
  public:
   FragmentShaderCheckerboard();
   std::string GetShaderString(

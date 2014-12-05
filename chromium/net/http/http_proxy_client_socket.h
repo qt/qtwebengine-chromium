@@ -31,6 +31,7 @@ class HttpAuthCache;
 class HttpStream;
 class HttpStreamParser;
 class IOBuffer;
+class ProxyDelegate;
 
 class HttpProxyClientSocket : public ProxyClientSocket {
  public:
@@ -47,45 +48,45 @@ class HttpProxyClientSocket : public ProxyClientSocket {
                         bool tunnel,
                         bool using_spdy,
                         NextProto protocol_negotiated,
+                        ProxyDelegate* proxy_delegate,
                         bool is_https_proxy);
 
   // On destruction Disconnect() is called.
-  virtual ~HttpProxyClientSocket();
+  ~HttpProxyClientSocket() override;
 
   // ProxyClientSocket implementation.
-  virtual const HttpResponseInfo* GetConnectResponseInfo() const OVERRIDE;
-  virtual HttpStream* CreateConnectResponseStream() OVERRIDE;
-  virtual int RestartWithAuth(const CompletionCallback& callback) OVERRIDE;
-  virtual const scoped_refptr<HttpAuthController>& GetAuthController() const
-      OVERRIDE;
-  virtual bool IsUsingSpdy() const OVERRIDE;
-  virtual NextProto GetProtocolNegotiated() const OVERRIDE;
+  const HttpResponseInfo* GetConnectResponseInfo() const override;
+  HttpStream* CreateConnectResponseStream() override;
+  int RestartWithAuth(const CompletionCallback& callback) override;
+  const scoped_refptr<HttpAuthController>& GetAuthController() const override;
+  bool IsUsingSpdy() const override;
+  NextProto GetProtocolNegotiated() const override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
 
  private:
   enum State {
@@ -162,6 +163,11 @@ class HttpProxyClientSocket : public ProxyClientSocket {
   // Used only for redirects.
   bool redirect_has_load_timing_info_;
   LoadTimingInfo redirect_load_timing_info_;
+
+  const HostPortPair proxy_server_;
+
+  // This delegate must outlive this proxy client socket.
+  ProxyDelegate* proxy_delegate_;
 
   const BoundNetLog net_log_;
 

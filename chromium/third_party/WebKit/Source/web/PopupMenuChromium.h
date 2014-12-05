@@ -34,30 +34,31 @@
 #include "platform/PopupMenu.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
-class LocalFrame;
-class FrameView;
-class PopupMenuClient;
-}
-
 namespace blink {
 
+class LocalFrame;
+class FrameView;
 class PopupContainer;
+class PopupMenuClient;
 
-class PopupMenuChromium FINAL : public WebCore::PopupMenu {
+class PopupMenuChromium final : public PopupMenu {
 public:
-    PopupMenuChromium(WebCore::LocalFrame&, WebCore::PopupMenuClient*);
+    PopupMenuChromium(LocalFrame&, PopupMenuClient*);
     virtual ~PopupMenuChromium();
 
-    virtual void show(const WebCore::FloatQuad& controlPosition, const WebCore::IntSize& controlSize, int index) OVERRIDE;
-    virtual void hide() OVERRIDE;
-    virtual void updateFromElement() OVERRIDE;
-    virtual void disconnectClient() OVERRIDE;
+    virtual void show(const FloatQuad& controlPosition, const IntSize& controlSize, int index) override;
+    virtual void hide() override;
+    virtual void updateFromElement() override;
+    virtual void disconnectClient() override;
+
+    virtual void trace(Visitor*) override;
 
 private:
-    WebCore::PopupMenuClient* m_popupClient;
-    RefPtr<WebCore::FrameView> m_frameView;
-    RefPtr<PopupContainer> m_popup;
+    void dispose();
+
+    PopupMenuClient* m_popupClient;
+    RefPtrWillBeMember<FrameView> m_frameView;
+    RefPtrWillBeMember<PopupContainer> m_popup;
 };
 
 } // namespace blink

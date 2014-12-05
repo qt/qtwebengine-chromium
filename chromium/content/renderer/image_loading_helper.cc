@@ -14,7 +14,7 @@
 #include "skia/ext/image_operations.h"
 #include "third_party/WebKit/public/platform/WebURLRequest.h"
 #include "third_party/WebKit/public/platform/WebVector.h"
-#include "third_party/WebKit/public/web/WebFrame.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/size.h"
@@ -141,8 +141,8 @@ bool ImageLoadingHelper::DownloadImage(int id,
       image_url,
       render_frame()->GetWebFrame(),
       id,
-      is_favicon ? WebURLRequest::TargetIsFavicon :
-                   WebURLRequest::TargetIsImage,
+      is_favicon ? WebURLRequest::RequestContextFavicon
+                 : WebURLRequest::RequestContextImage,
       base::Bind(&ImageLoadingHelper::DidDownloadImage,
                  base::Unretained(this),
                  max_image_size)));

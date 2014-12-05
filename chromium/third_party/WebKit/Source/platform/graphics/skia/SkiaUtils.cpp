@@ -37,11 +37,11 @@
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/ImageBuffer.h"
 
-namespace WebCore {
+namespace blink {
 
 static const struct CompositOpToXfermodeMode {
-    uint8_t mCompositOp;
-    uint8_t m_xfermodeMode;
+    CompositeOperator mCompositOp;
+    SkXfermode::Mode m_xfermodeMode;
 } gMapCompositOpsToXfermodeModes[] = {
     { CompositeClear,           SkXfermode::kClear_Mode },
     { CompositeCopy,            SkXfermode::kSrc_Mode },
@@ -58,46 +58,43 @@ static const struct CompositOpToXfermodeMode {
     { CompositePlusLighter,     SkXfermode::kPlus_Mode }
 };
 
-// keep this array in sync with blink::WebBlendMode enum in public/platform/WebBlendMode.h
-static const uint8_t gMapBlendOpsToXfermodeModes[] = {
-    SkXfermode::kClear_Mode, // blink::WebBlendModeNormal
-    SkXfermode::kMultiply_Mode, // blink::WebBlendModeMultiply
-    SkXfermode::kScreen_Mode, // blink::WebBlendModeScreen
-    SkXfermode::kOverlay_Mode, // blink::WebBlendModeOverlay
-    SkXfermode::kDarken_Mode, // blink::WebBlendModeDarken
-    SkXfermode::kLighten_Mode, // blink::WebBlendModeLighten
-    SkXfermode::kColorDodge_Mode, // blink::WebBlendModeColorDodge
-    SkXfermode::kColorBurn_Mode, // blink::WebBlendModeColorBurn
-    SkXfermode::kHardLight_Mode, // blink::WebBlendModeHardLight
-    SkXfermode::kSoftLight_Mode, // blink::WebBlendModeSoftLight
-    SkXfermode::kDifference_Mode, // blink::WebBlendModeDifference
-    SkXfermode::kExclusion_Mode, // blink::WebBlendModeExclusion
-    SkXfermode::kHue_Mode, // blink::WebBlendModeHue
-    SkXfermode::kSaturation_Mode, // blink::WebBlendModeSaturation
-    SkXfermode::kColor_Mode, // blink::WebBlendModeColor
-    SkXfermode::kLuminosity_Mode // blink::WebBlendModeLuminosity
+// keep this array in sync with WebBlendMode enum in public/platform/WebBlendMode.h
+static const SkXfermode::Mode gMapBlendOpsToXfermodeModes[] = {
+    SkXfermode::kClear_Mode, // WebBlendModeNormal
+    SkXfermode::kMultiply_Mode, // WebBlendModeMultiply
+    SkXfermode::kScreen_Mode, // WebBlendModeScreen
+    SkXfermode::kOverlay_Mode, // WebBlendModeOverlay
+    SkXfermode::kDarken_Mode, // WebBlendModeDarken
+    SkXfermode::kLighten_Mode, // WebBlendModeLighten
+    SkXfermode::kColorDodge_Mode, // WebBlendModeColorDodge
+    SkXfermode::kColorBurn_Mode, // WebBlendModeColorBurn
+    SkXfermode::kHardLight_Mode, // WebBlendModeHardLight
+    SkXfermode::kSoftLight_Mode, // WebBlendModeSoftLight
+    SkXfermode::kDifference_Mode, // WebBlendModeDifference
+    SkXfermode::kExclusion_Mode, // WebBlendModeExclusion
+    SkXfermode::kHue_Mode, // WebBlendModeHue
+    SkXfermode::kSaturation_Mode, // WebBlendModeSaturation
+    SkXfermode::kColor_Mode, // WebBlendModeColor
+    SkXfermode::kLuminosity_Mode // WebBlendModeLuminosity
 };
 
-PassRefPtr<SkXfermode> WebCoreCompositeToSkiaComposite(CompositeOperator op, blink::WebBlendMode blendMode)
+SkXfermode::Mode WebCoreCompositeToSkiaComposite(CompositeOperator op, WebBlendMode blendMode)
 {
-    if (blendMode != blink::WebBlendModeNormal) {
-        if ((uint8_t)blendMode >= SK_ARRAY_COUNT(gMapBlendOpsToXfermodeModes)) {
-            SkDEBUGF(("GraphicsContext::setPlatformCompositeOperation unknown blink::WebBlendMode %d\n", blendMode));
-            return adoptRef(SkXfermode::Create(SkXfermode::kSrcOver_Mode));
+    if (blendMode != WebBlendModeNormal) {
+        if (static_cast<uint8_t>(blendMode) >= SK_ARRAY_COUNT(gMapBlendOpsToXfermodeModes)) {
+            SkDEBUGF(("GraphicsContext::setPlatformCompositeOperation unknown WebBlendMode %d\n", blendMode));
+            return SkXfermode::kSrcOver_Mode;
         }
-        SkXfermode::Mode mode = (SkXfermode::Mode)gMapBlendOpsToXfermodeModes[(uint8_t)blendMode];
-        return adoptRef(SkXfermode::Create(mode));
+        return gMapBlendOpsToXfermodeModes[static_cast<uint8_t>(blendMode)];
     }
 
     const CompositOpToXfermodeMode* table = gMapCompositOpsToXfermodeModes;
-
-    for (unsigned i = 0; i < SK_ARRAY_COUNT(gMapCompositOpsToXfermodeModes); i++) {
-        if (table[i].mCompositOp == op)
-            return adoptRef(SkXfermode::Create((SkXfermode::Mode)table[i].m_xfermodeMode));
+    if (static_cast<uint8_t>(op) >= SK_ARRAY_COUNT(gMapCompositOpsToXfermodeModes)) {
+        SkDEBUGF(("GraphicsContext::setPlatformCompositeOperation unknown CompositeOperator %d\n", op));
+        return SkXfermode::kSrcOver_Mode;
     }
-
-    SkDEBUGF(("GraphicsContext::setPlatformCompositeOperation unknown CompositeOperator %d\n", op));
-    return adoptRef(SkXfermode::Create(SkXfermode::kSrcOver_Mode)); // fall-back
+    SkASSERT(table[static_cast<uint8_t>(op)].mCompositOp == op);
+    return table[static_cast<uint8_t>(op)].m_xfermodeMode;
 }
 
 static U8CPU InvScaleByte(U8CPU component, uint32_t scale)
@@ -189,4 +186,132 @@ SkMatrix affineTransformToSkMatrix(const AffineTransform& source)
     return result;
 }
 
-}  // namespace WebCore
+bool nearlyIntegral(float value)
+{
+    return fabs(value - floorf(value)) < std::numeric_limits<float>::epsilon();
+}
+
+InterpolationQuality limitInterpolationQuality(const GraphicsContext* context, InterpolationQuality resampling)
+{
+    return std::min(resampling, context->imageInterpolationQuality());
+}
+
+InterpolationQuality computeInterpolationQuality(
+    const SkMatrix& matrix,
+    float srcWidth,
+    float srcHeight,
+    float destWidth,
+    float destHeight,
+    bool isDataComplete)
+{
+    // The percent change below which we will not resample. This usually means
+    // an off-by-one error on the web page, and just doing nearest neighbor
+    // sampling is usually good enough.
+    const float kFractionalChangeThreshold = 0.025f;
+
+    // Images smaller than this in either direction are considered "small" and
+    // are not resampled ever (see below).
+    const int kSmallImageSizeThreshold = 8;
+
+    // The amount an image can be stretched in a single direction before we
+    // say that it is being stretched so much that it must be a line or
+    // background that doesn't need resampling.
+    const float kLargeStretch = 3.0f;
+
+    // Figure out if we should resample this image. We try to prune out some
+    // common cases where resampling won't give us anything, since it is much
+    // slower than drawing stretched.
+    float diffWidth = fabs(destWidth - srcWidth);
+    float diffHeight = fabs(destHeight - srcHeight);
+    bool widthNearlyEqual = diffWidth < std::numeric_limits<float>::epsilon();
+    bool heightNearlyEqual = diffHeight < std::numeric_limits<float>::epsilon();
+    // We don't need to resample if the source and destination are the same.
+    if (widthNearlyEqual && heightNearlyEqual)
+        return InterpolationNone;
+
+    if (srcWidth <= kSmallImageSizeThreshold
+        || srcHeight <= kSmallImageSizeThreshold
+        || destWidth <= kSmallImageSizeThreshold
+        || destHeight <= kSmallImageSizeThreshold) {
+        // Small image detected.
+
+        // Resample in the case where the new size would be non-integral.
+        // This can cause noticeable breaks in repeating patterns, except
+        // when the source image is only one pixel wide in that dimension.
+        if ((!nearlyIntegral(destWidth) && srcWidth > 1 + std::numeric_limits<float>::epsilon())
+            || (!nearlyIntegral(destHeight) && srcHeight > 1 + std::numeric_limits<float>::epsilon()))
+            return InterpolationLow;
+
+        // Otherwise, don't resample small images. These are often used for
+        // borders and rules (think 1x1 images used to make lines).
+        return InterpolationNone;
+    }
+
+    if (srcHeight * kLargeStretch <= destHeight || srcWidth * kLargeStretch <= destWidth) {
+        // Large image detected.
+
+        // Don't resample if it is being stretched a lot in only one direction.
+        // This is trying to catch cases where somebody has created a border
+        // (which might be large) and then is stretching it to fill some part
+        // of the page.
+        if (widthNearlyEqual || heightNearlyEqual)
+            return InterpolationNone;
+
+        // The image is growing a lot and in more than one direction. Resampling
+        // is slow and doesn't give us very much when growing a lot.
+        return InterpolationLow;
+    }
+
+    if ((diffWidth / srcWidth < kFractionalChangeThreshold)
+        && (diffHeight / srcHeight < kFractionalChangeThreshold)) {
+        // It is disappointingly common on the web for image sizes to be off by
+        // one or two pixels. We don't bother resampling if the size difference
+        // is a small fraction of the original size.
+        return InterpolationNone;
+    }
+
+    // When the image is not yet done loading, use linear. We don't cache the
+    // partially resampled images, and as they come in incrementally, it causes
+    // us to have to resample the whole thing every time.
+    if (!isDataComplete)
+        return InterpolationLow;
+
+    // Everything else gets resampled.
+    // High quality interpolation only enabled for scaling and translation.
+    if (!(matrix.getType() & (SkMatrix::kAffine_Mask | SkMatrix::kPerspective_Mask)))
+        return InterpolationHigh;
+
+    return InterpolationLow;
+}
+
+
+bool shouldDrawAntiAliased(const GraphicsContext* context, const SkRect& destRect)
+{
+    if (!context->shouldAntialias())
+        return false;
+    const SkMatrix totalMatrix = context->getTotalMatrix();
+    // Don't disable anti-aliasing if we're rotated or skewed.
+    if (!totalMatrix.rectStaysRect())
+        return true;
+    // Disable anti-aliasing for scales or n*90 degree rotations.
+    // Allow to opt out of the optimization though for "hairline" geometry
+    // images - using the shouldAntialiasHairlineImages() GraphicsContext flag.
+    if (!context->shouldAntialiasHairlineImages())
+        return false;
+    // Check if the dimensions of the destination are "small" (less than one
+    // device pixel). To prevent sudden drop-outs. Since we know that
+    // kRectStaysRect_Mask is set, the matrix either has scale and no skew or
+    // vice versa. We can query the kAffine_Mask flag to determine which case
+    // it is.
+    // FIXME: This queries the CTM while drawing, which is generally
+    // discouraged. Always drawing with AA can negatively impact performance
+    // though - that's why it's not always on.
+    SkScalar widthExpansion, heightExpansion;
+    if (totalMatrix.getType() & SkMatrix::kAffine_Mask)
+        widthExpansion = totalMatrix[SkMatrix::kMSkewY], heightExpansion = totalMatrix[SkMatrix::kMSkewX];
+    else
+        widthExpansion = totalMatrix[SkMatrix::kMScaleX], heightExpansion = totalMatrix[SkMatrix::kMScaleY];
+    return destRect.width() * fabs(widthExpansion) < 1 || destRect.height() * fabs(heightExpansion) < 1;
+}
+
+}  // namespace blink

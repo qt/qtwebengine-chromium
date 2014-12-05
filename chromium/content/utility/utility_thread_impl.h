@@ -28,29 +28,29 @@ class UtilityThreadImpl : public UtilityThread,
   UtilityThreadImpl();
   // Constructor that's used when running in single process mode.
   explicit UtilityThreadImpl(const std::string& channel_name);
-  virtual ~UtilityThreadImpl();
-  virtual void Shutdown() OVERRIDE;
+  ~UtilityThreadImpl() override;
+  void Shutdown() override;
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual void ReleaseProcessIfNeeded() OVERRIDE;
+  bool Send(IPC::Message* msg) override;
+  void ReleaseProcessIfNeeded() override;
 #if defined(OS_WIN)
-  virtual void PreCacheFont(const LOGFONT& log_font) OVERRIDE;
-  virtual void ReleaseCachedFonts() OVERRIDE;
+  virtual void PreCacheFont(const LOGFONT& log_font) override;
+  virtual void ReleaseCachedFonts() override;
 #endif
 
  private:
   void Init();
 
   // ChildThread implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnControlMessageReceived(const IPC::Message& msg) override;
 
   // IPC message handlers.
   void OnBatchModeStarted();
   void OnBatchModeFinished();
 
-#if defined(OS_POSIX)
+#if defined(OS_POSIX) && defined(ENABLE_PLUGINS)
   void OnLoadPlugins(const std::vector<base::FilePath>& plugin_paths);
-#endif  // OS_POSIX
+#endif
 
   // True when we're running in batch mode.
   bool batch_mode_;
@@ -58,7 +58,7 @@ class UtilityThreadImpl : public UtilityThread,
   // True if running in single process mode.
   bool single_process_;
 
-  scoped_ptr<BlinkPlatformImpl> webkit_platform_support_;
+  scoped_ptr<BlinkPlatformImpl> blink_platform_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(UtilityThreadImpl);
 };

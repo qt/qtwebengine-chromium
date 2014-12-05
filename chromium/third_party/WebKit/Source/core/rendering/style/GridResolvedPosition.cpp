@@ -8,7 +8,7 @@
 #include "core/rendering/RenderBox.h"
 #include "core/rendering/style/GridCoordinate.h"
 
-namespace WebCore {
+namespace blink {
 
 static const NamedGridLinesMap& gridLinesForSide(const RenderStyle& style, GridPositionSide side)
 {
@@ -94,7 +94,8 @@ PassOwnPtr<GridSpan> GridResolvedPosition::resolveGridPositionsFromStyle(const R
     GridPositionSide finalPositionSide = calculateFinalPositionSide(direction);
 
     if (initialPosition.shouldBeResolvedAgainstOppositePosition() && finalPosition.shouldBeResolvedAgainstOppositePosition()) {
-        if (gridContainerStyle.gridAutoFlow() == AutoFlowNone)
+        // FIXME: Implement properly "stack" value in auto-placement algorithm.
+        if (gridContainerStyle.isGridAutoFlowAlgorithmStack())
             return adoptPtr(new GridSpan(0, 0));
 
         // We can't get our grid positions without running the auto placement algorithm.
@@ -125,12 +126,12 @@ PassOwnPtr<GridSpan> GridResolvedPosition::resolveGridPositionsFromStyle(const R
 
 size_t GridResolvedPosition::explicitGridColumnCount(const RenderStyle& gridContainerStyle)
 {
-    return gridContainerStyle.gridTemplateColumns().size();
+    return std::min(gridContainerStyle.gridTemplateColumns().size(), kGridMaxTracks);
 }
 
 size_t GridResolvedPosition::explicitGridRowCount(const RenderStyle& gridContainerStyle)
 {
-    return gridContainerStyle.gridTemplateRows().size();
+    return std::min(gridContainerStyle.gridTemplateRows().size(), kGridMaxTracks);
 }
 
 size_t GridResolvedPosition::explicitGridSizeForSide(const RenderStyle& gridContainerStyle, GridPositionSide side)
@@ -250,4 +251,4 @@ PassOwnPtr<GridSpan> GridResolvedPosition::resolveNamedGridLinePositionAgainstOp
     return GridSpan::createWithNamedSpanAgainstOpposite(resolvedOppositePosition, position, side, it->value);
 }
 
-} // namespace WebCore
+} // namespace blink

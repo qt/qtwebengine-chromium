@@ -26,15 +26,17 @@
 #define NavigatorUserMediaErrorCallback_h
 
 #include "modules/mediastream/NavigatorUserMediaError.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class NavigatorUserMediaErrorCallback {
+class NavigatorUserMediaErrorCallback : public GarbageCollectedFinalized<NavigatorUserMediaErrorCallback> {
 public:
     virtual ~NavigatorUserMediaErrorCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(NavigatorUserMediaError*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorUserMediaErrorCallback_h

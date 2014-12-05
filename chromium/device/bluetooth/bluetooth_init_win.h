@@ -18,13 +18,14 @@
 #include <ws2bth.h>
 
 #pragma comment(lib, "Bthprops.lib")
+#pragma comment(lib, "BluetoothApis.lib")
 
 namespace device {
 namespace bluetooth_init_win {
 
 // Returns true if the machine has a bluetooth stack available. The first call
 // to this function will involve file IO, so it should be done on an appropriate
-// thread. This function is not threadsafe.
+// thread. This function is not thread-safe.
 bool HasBluetoothStack();
 
 }  // namespace bluetooth_init_win

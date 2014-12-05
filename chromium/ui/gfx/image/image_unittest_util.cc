@@ -54,8 +54,7 @@ std::vector<float> Get1xAnd2xScales() {
 
 const SkBitmap CreateBitmap(int width, int height) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(width, height);
   bitmap.eraseARGB(255, 0, 255, 0);
   return bitmap;
 }
@@ -104,8 +103,8 @@ bool IsEqual(const SkBitmap& bmp1, const SkBitmap& bmp2) {
 
   if (bmp1.width() != bmp2.width() ||
       bmp1.height() != bmp2.height() ||
-      bmp1.config() != SkBitmap::kARGB_8888_Config ||
-      bmp2.config() != SkBitmap::kARGB_8888_Config) {
+      bmp1.colorType() != kN32_SkColorType ||
+      bmp2.colorType() != kN32_SkColorType) {
     return false;
   }
 

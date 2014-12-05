@@ -29,12 +29,11 @@
 
 #include "core/dom/ExecutionContext.h"
 
-namespace WebCore {
+namespace blink {
 
 ActiveDOMObject::ActiveDOMObject(ExecutionContext* executionContext)
     : ContextLifecycleObserver(executionContext, ActiveDOMObjectType)
-    , m_pendingActivityCount(0)
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     , m_suspendIfNeededCalled(false)
 #endif
 {
@@ -58,7 +57,7 @@ ActiveDOMObject::~ActiveDOMObject()
 
 void ActiveDOMObject::suspendIfNeeded()
 {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     ASSERT(!m_suspendIfNeededCalled);
     m_suspendIfNeededCalled = true;
 #endif
@@ -68,7 +67,7 @@ void ActiveDOMObject::suspendIfNeeded()
 
 bool ActiveDOMObject::hasPendingActivity() const
 {
-    return m_pendingActivityCount;
+    return false;
 }
 
 void ActiveDOMObject::suspend()
@@ -100,4 +99,4 @@ void ActiveDOMObject::didMoveToNewExecutionContext(ExecutionContext* context)
     resume();
 }
 
-} // namespace WebCore
+} // namespace blink

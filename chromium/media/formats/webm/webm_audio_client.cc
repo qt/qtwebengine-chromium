@@ -29,6 +29,7 @@ bool WebMAudioClient::InitializeConfig(
     int64 seek_preroll, int64 codec_delay, bool is_encrypted,
     AudioDecoderConfig* config) {
   DCHECK(config);
+  SampleFormat sample_format = kSampleFormatPlanarF32;
 
   AudioCodec audio_codec = kUnknownAudioCodec;
   if (codec_id == "A_VORBIS") {
@@ -58,6 +59,13 @@ bool WebMAudioClient::InitializeConfig(
   if (output_samples_per_second_ > 0)
     samples_per_second = output_samples_per_second_;
 
+  // Always use 48kHz for OPUS.  See the "Input Sample Rate" section of the
+  // spec: http://tools.ietf.org/html/draft-terriberry-oggopus-01#page-11
+  if (audio_codec == kCodecOpus) {
+    samples_per_second = 48000;
+    sample_format = kSampleFormatF32;
+  }
+
   const uint8* extra_data = NULL;
   size_t extra_data_size = 0;
   if (codec_private.size() > 0) {
@@ -76,7 +84,7 @@ bool WebMAudioClient::InitializeConfig(
 
   config->Initialize(
       audio_codec,
-      (audio_codec == kCodecOpus) ? kSampleFormatS16 : kSampleFormatPlanarF32,
+      sample_format,
       channel_layout,
       samples_per_second,
       extra_data,

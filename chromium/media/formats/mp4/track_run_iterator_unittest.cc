@@ -108,6 +108,9 @@ class TrackRunIteratorTest : public testing::Test {
       case 'N':
         sample_depends_on = kSampleDependsOnNoOther;
         break;
+      case 'R':
+        sample_depends_on = kSampleDependsOnReserved;
+        break;
       default:
         CHECK(false) << "Invalid sample dependency character '"
                      << str[0] << "'";
@@ -291,7 +294,7 @@ TEST_F(TrackRunIteratorTest, BasicOperationTest) {
   EXPECT_EQ(iter_->track_id(), 1u);
   EXPECT_EQ(iter_->sample_offset(), 100);
   EXPECT_EQ(iter_->sample_size(), 1);
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(0, kAudioScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(0, kAudioScale));
   EXPECT_EQ(iter_->cts(), TimeDeltaFromRational(0, kAudioScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(1024, kAudioScale));
   EXPECT_TRUE(iter_->is_keyframe());
@@ -301,7 +304,7 @@ TEST_F(TrackRunIteratorTest, BasicOperationTest) {
   EXPECT_EQ(iter_->track_id(), 1u);
   EXPECT_EQ(iter_->sample_offset(), 100 + kSumAscending1);
   EXPECT_EQ(iter_->sample_size(), 10);
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(1024 * 9, kAudioScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(1024 * 9, kAudioScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(1024, kAudioScale));
   EXPECT_TRUE(iter_->is_keyframe());
 
@@ -317,14 +320,14 @@ TEST_F(TrackRunIteratorTest, BasicOperationTest) {
   EXPECT_EQ(iter_->sample_offset(), 200 + kSumAscending1);
   EXPECT_EQ(iter_->sample_size(), 10);
   int64 base_dts = kSumAscending1 + moof.tracks[1].decode_time.decode_time;
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(base_dts, kVideoScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(base_dts, kVideoScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(10, kVideoScale));
   EXPECT_FALSE(iter_->is_keyframe());
 
   // Test final run
   iter_->AdvanceRun();
   EXPECT_EQ(iter_->track_id(), 1u);
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(1024 * 10, kAudioScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(1024 * 10, kAudioScale));
   iter_->AdvanceSample();
   EXPECT_EQ(moof.tracks[0].runs[1].data_offset +
             moof.tracks[0].header.default_sample_size,
@@ -349,7 +352,7 @@ TEST_F(TrackRunIteratorTest, TrackExtendsDefaultsTest) {
   EXPECT_EQ(iter_->sample_size(), 3);
   EXPECT_EQ(iter_->sample_offset(), moof.tracks[0].runs[0].data_offset + 3);
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(50, kAudioScale));
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(50, kAudioScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(50, kAudioScale));
 }
 
 TEST_F(TrackRunIteratorTest, FirstSampleFlagTest) {
@@ -367,6 +370,25 @@ TEST_F(TrackRunIteratorTest, FirstSampleFlagTest) {
 
   iter_->AdvanceRun();
   EXPECT_EQ("2 KR P P P P P P P P P", KeyframeAndRAPInfo(iter_.get()));
+}
+
+// Verify that parsing fails if a reserved value is in the sample flags.
+TEST_F(TrackRunIteratorTest, SampleInfoTest_ReservedInSampleFlags) {
+  iter_.reset(new TrackRunIterator(&moov_, log_cb_));
+  MovieFragment moof = CreateFragment();
+  // Change the "depends on" field on one of the samples to a
+  // reserved value.
+  moof.tracks[1].runs[0].sample_flags[0] = ToSampleFlags("RS");
+  ASSERT_FALSE(iter_->Init(moof));
+}
+
+// Verify that parsing fails if a reserved value is in the default sample flags.
+TEST_F(TrackRunIteratorTest, SampleInfoTest_ReservedInDefaultSampleFlags) {
+  iter_.reset(new TrackRunIterator(&moov_, log_cb_));
+  MovieFragment moof = CreateFragment();
+  // Set the default flag to contain a reserved "depends on" value.
+  moof.tracks[0].header.default_sample_flags = ToSampleFlags("RN");
+  ASSERT_FALSE(iter_->Init(moof));
 }
 
 TEST_F(TrackRunIteratorTest, ReorderingTest) {
@@ -408,15 +430,15 @@ TEST_F(TrackRunIteratorTest, ReorderingTest) {
 
   ASSERT_TRUE(iter_->Init(moof));
   iter_->AdvanceRun();
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(0, kVideoScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(0, kVideoScale));
   EXPECT_EQ(iter_->cts(), TimeDeltaFromRational(0, kVideoScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(1, kVideoScale));
   iter_->AdvanceSample();
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(1, kVideoScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(1, kVideoScale));
   EXPECT_EQ(iter_->cts(), TimeDeltaFromRational(4, kVideoScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(2, kVideoScale));
   iter_->AdvanceSample();
-  EXPECT_EQ(iter_->dts(), TimeDeltaFromRational(3, kVideoScale));
+  EXPECT_EQ(iter_->dts(), DecodeTimestampFromRational(3, kVideoScale));
   EXPECT_EQ(iter_->cts(), TimeDeltaFromRational(1, kVideoScale));
   EXPECT_EQ(iter_->duration(), TimeDeltaFromRational(3, kVideoScale));
 }

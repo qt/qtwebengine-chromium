@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "net/base/net_log.h"
 #include "net/base/network_delegate.h"
+#include "net/base/sdch_manager.h"
 #include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_store.h"
 #include "net/dns/host_resolver.h"
@@ -15,7 +16,7 @@
 #include "net/http/http_server_properties.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/proxy/proxy_service.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/url_request/fraudulent_certificate_reporter.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request_context.h"
@@ -47,10 +48,10 @@ void URLRequestContextStorage::set_cert_verifier(CertVerifier* cert_verifier) {
   cert_verifier_.reset(cert_verifier);
 }
 
-void URLRequestContextStorage::set_server_bound_cert_service(
-    ServerBoundCertService* server_bound_cert_service) {
-  context_->set_server_bound_cert_service(server_bound_cert_service);
-  server_bound_cert_service_.reset(server_bound_cert_service);
+void URLRequestContextStorage::set_channel_id_service(
+    ChannelIDService* channel_id_service) {
+  context_->set_channel_id_service(channel_id_service);
+  channel_id_service_.reset(channel_id_service);
 }
 
 void URLRequestContextStorage::set_fraudulent_certificate_reporter(
@@ -122,6 +123,12 @@ void URLRequestContextStorage::set_http_user_agent_settings(
     HttpUserAgentSettings* http_user_agent_settings) {
   context_->set_http_user_agent_settings(http_user_agent_settings);
   http_user_agent_settings_.reset(http_user_agent_settings);
+}
+
+void URLRequestContextStorage::set_sdch_manager(
+    scoped_ptr<SdchManager> sdch_manager) {
+  context_->set_sdch_manager(sdch_manager.get());
+  sdch_manager_ = sdch_manager.Pass();
 }
 
 }  // namespace net

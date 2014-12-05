@@ -1,28 +1,52 @@
-// Copyright 2011 Google Inc. All Rights Reserved.
-
+/*
+ * libjingle
+ * Copyright 2011, Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include <string>
 
-#include "talk/base/asynchttprequest.h"
-#include "talk/base/gunit.h"
-#include "talk/base/fakenetwork.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/socketaddress.h"
-#include "talk/p2p/base/basicpacketsocketfactory.h"
-#include "talk/p2p/base/relayport.h"
-#include "talk/p2p/base/stunport.h"
-#include "talk/p2p/client/connectivitychecker.h"
-#include "talk/p2p/client/httpportallocator.h"
+#include "webrtc/p2p/base/basicpacketsocketfactory.h"
+#include "webrtc/p2p/base/relayport.h"
+#include "webrtc/p2p/base/stunport.h"
+#include "webrtc/p2p/client/connectivitychecker.h"
+#include "webrtc/p2p/client/httpportallocator.h"
+#include "webrtc/base/asynchttprequest.h"
+#include "webrtc/base/fakenetwork.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/socketaddress.h"
 
 namespace cricket {
 
-static const talk_base::SocketAddress kClientAddr1("11.11.11.11", 0);
-static const talk_base::SocketAddress kClientAddr2("22.22.22.22", 0);
-static const talk_base::SocketAddress kExternalAddr("33.33.33.33", 3333);
-static const talk_base::SocketAddress kStunAddr("44.44.44.44", 4444);
-static const talk_base::SocketAddress kRelayAddr("55.55.55.55", 5555);
-static const talk_base::SocketAddress kProxyAddr("66.66.66.66", 6666);
-static const talk_base::ProxyType kProxyType = talk_base::PROXY_HTTPS;
+static const rtc::SocketAddress kClientAddr1("11.11.11.11", 0);
+static const rtc::SocketAddress kClientAddr2("22.22.22.22", 0);
+static const rtc::SocketAddress kExternalAddr("33.33.33.33", 3333);
+static const rtc::SocketAddress kStunAddr("44.44.44.44", 4444);
+static const rtc::SocketAddress kRelayAddr("55.55.55.55", 5555);
+static const rtc::SocketAddress kProxyAddr("66.66.66.66", 6666);
+static const rtc::ProxyType kProxyType = rtc::PROXY_HTTPS;
 static const char kRelayHost[] = "relay.google.com";
 static const char kRelayToken[] =
     "CAESFwoOb2phQGdvb2dsZS5jb20Q043h47MmGhBTB1rbfIXkhuarDCZe+xF6";
@@ -42,9 +66,9 @@ static const int kMaxPort = 2000;
 // Fake implementation to mock away real network usage.
 class FakeRelayPort : public RelayPort {
  public:
-  FakeRelayPort(talk_base::Thread* thread,
-                talk_base::PacketSocketFactory* factory,
-                talk_base::Network* network, const talk_base::IPAddress& ip,
+  FakeRelayPort(rtc::Thread* thread,
+                rtc::PacketSocketFactory* factory,
+                rtc::Network* network, const rtc::IPAddress& ip,
                 int min_port, int max_port,
                 const std::string& username, const std::string& password)
       : RelayPort(thread, factory, network, ip, min_port, max_port,
@@ -60,21 +84,21 @@ class FakeRelayPort : public RelayPort {
 // Fake implementation to mock away real network usage.
 class FakeStunPort : public StunPort {
  public:
-  FakeStunPort(talk_base::Thread* thread,
-               talk_base::PacketSocketFactory* factory,
-               talk_base::Network* network,
-               const talk_base::IPAddress& ip,
+  FakeStunPort(rtc::Thread* thread,
+               rtc::PacketSocketFactory* factory,
+               rtc::Network* network,
+               const rtc::IPAddress& ip,
                int min_port, int max_port,
                const std::string& username, const std::string& password,
-               const talk_base::SocketAddress& server_addr)
+               const ServerAddresses& server_addr)
       : StunPort(thread, factory, network, ip, min_port, max_port,
                  username, password, server_addr) {
   }
 
   // Just set external address and signal that we are done.
   virtual void PrepareAddress() {
-    AddAddress(kExternalAddr, kExternalAddr, talk_base::SocketAddress(), "udp",
-               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_SRFLX, true);
+    AddAddress(kExternalAddr, kExternalAddr, rtc::SocketAddress(), "udp", "",
+               STUN_PORT_TYPE, ICE_TYPE_PREFERENCE_SRFLX, 0, true);
     SignalPortComplete(this);
   }
 };
@@ -88,7 +112,7 @@ class FakeHttpPortAllocatorSession : public TestHttpPortAllocatorSession {
       const std::string& content_name,
       int component,
       const std::string& ice_ufrag, const std::string& ice_pwd,
-      const std::vector<talk_base::SocketAddress>& stun_hosts,
+      const std::vector<rtc::SocketAddress>& stun_hosts,
       const std::vector<std::string>& relay_hosts,
       const std::string& relay_token,
       const std::string& agent)
@@ -108,16 +132,16 @@ class FakeHttpPortAllocatorSession : public TestHttpPortAllocatorSession {
 
   // Pass results to the real implementation.
   void FakeReceiveSessionResponse(const std::string& host, int port) {
-    talk_base::AsyncHttpRequest* response = CreateAsyncHttpResponse(port);
+    rtc::AsyncHttpRequest* response = CreateAsyncHttpResponse(port);
     TestHttpPortAllocatorSession::OnRequestDone(response);
     response->Destroy(true);
   }
 
  private:
   // Helper method for creating a response to a relay session request.
-  talk_base::AsyncHttpRequest* CreateAsyncHttpResponse(int port) {
-    talk_base::AsyncHttpRequest* request =
-        new talk_base::AsyncHttpRequest(kBrowserAgent);
+  rtc::AsyncHttpRequest* CreateAsyncHttpResponse(int port) {
+    rtc::AsyncHttpRequest* request =
+        new rtc::AsyncHttpRequest(kBrowserAgent);
     std::stringstream ss;
     ss << "username=" << kUserName << std::endl
        << "password=" << kPassword << std::endl
@@ -127,10 +151,10 @@ class FakeHttpPortAllocatorSession : public TestHttpPortAllocatorSession {
        << "relay.tcp_port=" << kRelayTcpPort << std::endl
        << "relay.ssltcp_port=" << kRelaySsltcpPort << std::endl;
     request->response().document.reset(
-        new talk_base::MemoryStream(ss.str().c_str()));
+        new rtc::MemoryStream(ss.str().c_str()));
     request->response().set_success();
     request->set_port(port);
-    request->set_secure(port == talk_base::HTTP_SECURE_PORT);
+    request->set_secure(port == rtc::HTTP_SECURE_PORT);
     return request;
   }
 };
@@ -138,7 +162,7 @@ class FakeHttpPortAllocatorSession : public TestHttpPortAllocatorSession {
 // Fake implementation for creating fake http sessions.
 class FakeHttpPortAllocator : public HttpPortAllocator {
  public:
-  FakeHttpPortAllocator(talk_base::NetworkManager* network_manager,
+  FakeHttpPortAllocator(rtc::NetworkManager* network_manager,
                         const std::string& user_agent)
       : HttpPortAllocator(network_manager, user_agent) {
   }
@@ -146,7 +170,7 @@ class FakeHttpPortAllocator : public HttpPortAllocator {
   virtual PortAllocatorSession* CreateSessionInternal(
       const std::string& content_name, int component,
       const std::string& ice_ufrag, const std::string& ice_pwd) {
-    std::vector<talk_base::SocketAddress> stun_hosts;
+    std::vector<rtc::SocketAddress> stun_hosts;
     stun_hosts.push_back(kStunAddr);
     std::vector<std::string> relay_hosts;
     relay_hosts.push_back(kRelayHost);
@@ -164,7 +188,7 @@ class FakeHttpPortAllocator : public HttpPortAllocator {
 
 class ConnectivityCheckerForTest : public ConnectivityChecker {
  public:
-  ConnectivityCheckerForTest(talk_base::Thread* worker,
+  ConnectivityCheckerForTest(rtc::Thread* worker,
                              const std::string& jid,
                              const std::string& session_id,
                              const std::string& user_agent,
@@ -179,7 +203,7 @@ class ConnectivityCheckerForTest : public ConnectivityChecker {
         proxy_initiated_(false) {
   }
 
-  talk_base::FakeNetworkManager* network_manager() const {
+  rtc::FakeNetworkManager* network_manager() const {
     return network_manager_;
   }
 
@@ -189,19 +213,19 @@ class ConnectivityCheckerForTest : public ConnectivityChecker {
 
  protected:
   // Overridden methods for faking a real network.
-  virtual talk_base::NetworkManager* CreateNetworkManager() {
-    network_manager_ = new talk_base::FakeNetworkManager();
+  virtual rtc::NetworkManager* CreateNetworkManager() {
+    network_manager_ = new rtc::FakeNetworkManager();
     return network_manager_;
   }
-  virtual talk_base::BasicPacketSocketFactory* CreateSocketFactory(
-      talk_base::Thread* thread) {
+  virtual rtc::BasicPacketSocketFactory* CreateSocketFactory(
+      rtc::Thread* thread) {
     // Create socket factory, for simplicity, let it run on the current thread.
     socket_factory_ =
-        new talk_base::BasicPacketSocketFactory(talk_base::Thread::Current());
+        new rtc::BasicPacketSocketFactory(rtc::Thread::Current());
     return socket_factory_;
   }
   virtual HttpPortAllocator* CreatePortAllocator(
-      talk_base::NetworkManager* network_manager,
+      rtc::NetworkManager* network_manager,
       const std::string& user_agent,
       const std::string& relay_token) {
     fake_port_allocator_ =
@@ -210,20 +234,36 @@ class ConnectivityCheckerForTest : public ConnectivityChecker {
   }
   virtual StunPort* CreateStunPort(
       const std::string& username, const std::string& password,
-      const PortConfiguration* config, talk_base::Network* network) {
-    return new FakeStunPort(worker(), socket_factory_,
-                            network, network->ip(),
-                            kMinPort, kMaxPort,
-                            username, password,
-                            config->stun_address);
+      const PortConfiguration* config, rtc::Network* network) {
+    return new FakeStunPort(worker(),
+                            socket_factory_,
+                            network,
+#ifdef USE_WEBRTC_DEV_BRANCH
+                            network->GetBestIP(),
+#else  // USE_WEBRTC_DEV_BRANCH
+                            network->ip(),
+#endif  // USE_WEBRTC_DEV_BRANCH
+                            kMinPort,
+                            kMaxPort,
+                            username,
+                            password,
+                            config->stun_servers);
   }
   virtual RelayPort* CreateRelayPort(
       const std::string& username, const std::string& password,
-      const PortConfiguration* config, talk_base::Network* network) {
-    return new FakeRelayPort(worker(), socket_factory_,
-                             network, network->ip(),
-                             kMinPort, kMaxPort,
-                             username, password);
+      const PortConfiguration* config, rtc::Network* network) {
+    return new FakeRelayPort(worker(),
+                             socket_factory_,
+                             network,
+#ifdef USE_WEBRTC_DEV_BRANCH
+                             network->GetBestIP(),
+#else  // USE_WEBRTC_DEV_BRANCH
+                             network->ip(),
+#endif  // USE_WEBRTC_DEV_BRANCH
+                             kMinPort,
+                             kMaxPort,
+                             username,
+                             password);
   }
   virtual void InitiateProxyDetection() {
     if (!proxy_initiated_) {
@@ -234,27 +274,28 @@ class ConnectivityCheckerForTest : public ConnectivityChecker {
     }
   }
 
-  virtual talk_base::ProxyInfo GetProxyInfo() const {
+  virtual rtc::ProxyInfo GetProxyInfo() const {
     return proxy_info_;
   }
 
  private:
-  talk_base::BasicPacketSocketFactory* socket_factory_;
+  rtc::BasicPacketSocketFactory* socket_factory_;
   FakeHttpPortAllocator* fake_port_allocator_;
-  talk_base::FakeNetworkManager* network_manager_;
-  talk_base::ProxyInfo proxy_info_;
+  rtc::FakeNetworkManager* network_manager_;
+  rtc::ProxyInfo proxy_info_;
   bool proxy_initiated_;
 };
 
 class ConnectivityCheckerTest : public testing::Test {
  protected:
   void VerifyNic(const NicInfo& info,
-                 const talk_base::SocketAddress& local_address) {
+                 const rtc::SocketAddress& local_address) {
     // Verify that the external address has been set.
     EXPECT_EQ(kExternalAddr, info.external_address);
 
     // Verify that the stun server address has been set.
-    EXPECT_EQ(kStunAddr, info.stun_server_address);
+    EXPECT_EQ(1U, info.stun_server_addresses.size());
+    EXPECT_EQ(kStunAddr, *(info.stun_server_addresses.begin()));
 
     // Verify that the media server address has been set. Don't care
     // about port since it is different for different protocols.
@@ -282,7 +323,7 @@ class ConnectivityCheckerTest : public testing::Test {
 // combinations of ip/proxy are created and that all protocols are
 // tested on each combination.
 TEST_F(ConnectivityCheckerTest, TestStart) {
-  ConnectivityCheckerForTest connectivity_checker(talk_base::Thread::Current(),
+  ConnectivityCheckerForTest connectivity_checker(rtc::Thread::Current(),
                                                   kJid,
                                                   kSessionId,
                                                   kBrowserAgent,
@@ -294,7 +335,7 @@ TEST_F(ConnectivityCheckerTest, TestStart) {
   connectivity_checker.network_manager()->AddInterface(kClientAddr2);
 
   connectivity_checker.Start();
-  talk_base::Thread::Current()->ProcessMessages(1000);
+  rtc::Thread::Current()->ProcessMessages(1000);
 
   NicMap nics = connectivity_checker.GetResults();
 
@@ -303,7 +344,7 @@ TEST_F(ConnectivityCheckerTest, TestStart) {
   EXPECT_EQ(4U, nics.size());
 
   // First verify interfaces without proxy.
-  talk_base::SocketAddress nilAddress;
+  rtc::SocketAddress nilAddress;
 
   // First lookup the address of the first nic combined with no proxy.
   NicMap::iterator i = nics.find(NicId(kClientAddr1.ipaddr(), nilAddress));
@@ -332,7 +373,7 @@ TEST_F(ConnectivityCheckerTest, TestStart) {
 // Tests that nothing bad happens if thera are no network interfaces
 // available to check.
 TEST_F(ConnectivityCheckerTest, TestStartNoNetwork) {
-  ConnectivityCheckerForTest connectivity_checker(talk_base::Thread::Current(),
+  ConnectivityCheckerForTest connectivity_checker(rtc::Thread::Current(),
                                                   kJid,
                                                   kSessionId,
                                                   kBrowserAgent,
@@ -340,7 +381,7 @@ TEST_F(ConnectivityCheckerTest, TestStartNoNetwork) {
                                                   kConnection);
   connectivity_checker.Initialize();
   connectivity_checker.Start();
-  talk_base::Thread::Current()->ProcessMessages(1000);
+  rtc::Thread::Current()->ProcessMessages(1000);
 
   NicMap nics = connectivity_checker.GetResults();
 

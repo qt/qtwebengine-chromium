@@ -26,65 +26,47 @@ namespace content {
 class PeerConnectionDependencyFactory;
 
 class CONTENT_EXPORT MediaStreamCenter
-    : NON_EXPORTED_BASE(public blink::WebMediaStreamCenter),
-      public RenderProcessObserver {
+    : NON_EXPORTED_BASE(public blink::WebMediaStreamCenter) {
  public:
   MediaStreamCenter(blink::WebMediaStreamCenterClient* client,
                     PeerConnectionDependencyFactory* factory);
   virtual ~MediaStreamCenter();
 
  private:
-  virtual bool getMediaStreamTrackSources(
-      const blink::WebMediaStreamTrackSourcesRequest& request) OVERRIDE;
-
   virtual void didCreateMediaStreamTrack(
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
+      const blink::WebMediaStreamTrack& track) override;
 
   virtual void didEnableMediaStreamTrack(
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
+      const blink::WebMediaStreamTrack& track) override;
 
   virtual void didDisableMediaStreamTrack(
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
+      const blink::WebMediaStreamTrack& track) override;
 
   virtual void didStopLocalMediaStream(
-      const blink::WebMediaStream& stream) OVERRIDE;
+      const blink::WebMediaStream& stream) override;
 
   virtual bool didStopMediaStreamTrack(
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
+      const blink::WebMediaStreamTrack& track) override;
 
   virtual blink::WebAudioSourceProvider*
       createWebAudioSourceFromMediaStreamTrack(
-          const blink::WebMediaStreamTrack& track) OVERRIDE;
+          const blink::WebMediaStreamTrack& track) override;
 
 
   virtual void didCreateMediaStream(
-      blink::WebMediaStream& stream) OVERRIDE;
+      blink::WebMediaStream& stream) override;
 
   virtual bool didAddMediaStreamTrack(
       const blink::WebMediaStream& stream,
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
+      const blink::WebMediaStreamTrack& track) override;
 
   virtual bool didRemoveMediaStreamTrack(
       const blink::WebMediaStream& stream,
-      const blink::WebMediaStreamTrack& track) OVERRIDE;
-
-  // RenderProcessObserver implementation.
-  virtual bool OnControlMessageReceived(const IPC::Message& message) OVERRIDE;
-
-  void OnGetSourcesComplete(int request_id,
-                            const content::StreamDeviceInfoArray& devices);
+      const blink::WebMediaStreamTrack& track) override;
 
   // |rtc_factory_| is a weak pointer and is owned by the RenderThreadImpl.
   // It is valid as long as  RenderThreadImpl exist.
   PeerConnectionDependencyFactory* rtc_factory_;
-
-  // A strictly increasing id that's used to label incoming GetSources()
-  // requests.
-  int next_request_id_;
-
-  typedef std::map<int, blink::WebMediaStreamTrackSourcesRequest> RequestMap;
-  // Maps request ids to request objects.
-  RequestMap requests_;
 
   DISALLOW_COPY_AND_ASSIGN(MediaStreamCenter);
 };

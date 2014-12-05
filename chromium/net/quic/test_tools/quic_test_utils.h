@@ -16,7 +16,10 @@
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_client_session_base.h"
 #include "net/quic/quic_connection.h"
+#include "net/quic/quic_dispatcher.h"
 #include "net/quic/quic_framer.h"
+#include "net/quic/quic_per_connection_packet_writer.h"
+#include "net/quic/quic_sent_packet_manager.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/test_tools/mock_clock.h"
 #include "net/quic/test_tools/mock_random.h"
@@ -79,6 +82,7 @@ bool DecodeHexString(const base::StringPiece& hex, std::string* bytes);
 size_t GetPacketLengthForOneStream(
     QuicVersion version,
     bool include_version,
+    QuicConnectionIdLength connection_id_length,
     QuicSequenceNumberLength sequence_number_length,
     InFecGroup is_in_fec_group,
     size_t* payload_length);
@@ -89,10 +93,9 @@ QuicConfig DefaultQuicConfig();
 // Returns a version vector consisting of |version|.
 QuicVersionVector SupportedVersions(QuicVersion version);
 
-// Testing convenience method to construct a QuicAckFrame with all packets
-// from least_unacked to largest_observed acked.
-QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed,
-                          QuicPacketSequenceNumber least_unacked);
+// Testing convenience method to construct a QuicAckFrame with entropy_hash set
+// to 0 and largest_observed from peer set to |largest_observed|.
+QuicAckFrame MakeAckFrame(QuicPacketSequenceNumber largest_observed);
 
 // Testing convenience method to construct a QuicAckFrame with |num_nack_ranges|
 // nack ranges of width 1 packet, starting from |least_unacked|.
@@ -100,7 +103,7 @@ QuicAckFrame MakeAckFrameWithNackRanges(size_t num_nack_ranges,
                                         QuicPacketSequenceNumber least_unacked);
 
 // Returns a SerializedPacket whose |packet| member is owned by the caller, and
-// is populated with the fields in |header| and |frames|, or is NULL if the
+// is populated with the fields in |header| and |frames|, or is nullptr if the
 // packet could not be created.
 SerializedPacket BuildUnsizedDataPacket(QuicFramer* framer,
                                         const QuicPacketHeader& header,
@@ -188,35 +191,32 @@ class NoOpFramerVisitor : public QuicFramerVisitorInterface {
  public:
   NoOpFramerVisitor() {}
 
-  virtual void OnError(QuicFramer* framer) OVERRIDE {}
-  virtual void OnPacket() OVERRIDE {}
-  virtual void OnPublicResetPacket(
-      const QuicPublicResetPacket& packet) OVERRIDE {}
-  virtual void OnVersionNegotiationPacket(
-      const QuicVersionNegotiationPacket& packet) OVERRIDE {}
-  virtual void OnRevivedPacket() OVERRIDE {}
-  virtual bool OnProtocolVersionMismatch(QuicVersion version) OVERRIDE;
-  virtual bool OnUnauthenticatedHeader(const QuicPacketHeader& header) OVERRIDE;
-  virtual bool OnUnauthenticatedPublicHeader(
-      const QuicPacketPublicHeader& header) OVERRIDE;
-  virtual void OnDecryptedPacket(EncryptionLevel level) OVERRIDE {}
-  virtual bool OnPacketHeader(const QuicPacketHeader& header) OVERRIDE;
-  virtual void OnFecProtectedPayload(base::StringPiece payload) OVERRIDE {}
-  virtual bool OnStreamFrame(const QuicStreamFrame& frame) OVERRIDE;
-  virtual bool OnAckFrame(const QuicAckFrame& frame) OVERRIDE;
-  virtual bool OnCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& frame) OVERRIDE;
-  virtual bool OnStopWaitingFrame(
-      const QuicStopWaitingFrame& frame) OVERRIDE;
-  virtual bool OnPingFrame(const QuicPingFrame& frame) OVERRIDE;
-  virtual void OnFecData(const QuicFecData& fec) OVERRIDE {}
-  virtual bool OnRstStreamFrame(const QuicRstStreamFrame& frame) OVERRIDE;
-  virtual bool OnConnectionCloseFrame(
-      const QuicConnectionCloseFrame& frame) OVERRIDE;
-  virtual bool OnGoAwayFrame(const QuicGoAwayFrame& frame) OVERRIDE;
-  virtual bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) OVERRIDE;
-  virtual bool OnBlockedFrame(const QuicBlockedFrame& frame) OVERRIDE;
-  virtual void OnPacketComplete() OVERRIDE {}
+  void OnError(QuicFramer* framer) override {}
+  void OnPacket() override {}
+  void OnPublicResetPacket(const QuicPublicResetPacket& packet) override {}
+  void OnVersionNegotiationPacket(
+      const QuicVersionNegotiationPacket& packet) override {}
+  void OnRevivedPacket() override {}
+  bool OnProtocolVersionMismatch(QuicVersion version) override;
+  bool OnUnauthenticatedHeader(const QuicPacketHeader& header) override;
+  bool OnUnauthenticatedPublicHeader(
+      const QuicPacketPublicHeader& header) override;
+  void OnDecryptedPacket(EncryptionLevel level) override {}
+  bool OnPacketHeader(const QuicPacketHeader& header) override;
+  void OnFecProtectedPayload(base::StringPiece payload) override {}
+  bool OnStreamFrame(const QuicStreamFrame& frame) override;
+  bool OnAckFrame(const QuicAckFrame& frame) override;
+  bool OnCongestionFeedbackFrame(
+      const QuicCongestionFeedbackFrame& frame) override;
+  bool OnStopWaitingFrame(const QuicStopWaitingFrame& frame) override;
+  bool OnPingFrame(const QuicPingFrame& frame) override;
+  void OnFecData(const QuicFecData& fec) override {}
+  bool OnRstStreamFrame(const QuicRstStreamFrame& frame) override;
+  bool OnConnectionCloseFrame(const QuicConnectionCloseFrame& frame) override;
+  bool OnGoAwayFrame(const QuicGoAwayFrame& frame) override;
+  bool OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame) override;
+  bool OnBlockedFrame(const QuicBlockedFrame& frame) override;
+  void OnPacketComplete() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NoOpFramerVisitor);
@@ -237,6 +237,7 @@ class MockConnectionVisitor : public QuicConnectionVisitorInterface {
   MOCK_METHOD2(OnConnectionClosed, void(QuicErrorCode error, bool from_peer));
   MOCK_METHOD0(OnWriteBlocked, void());
   MOCK_METHOD0(OnCanWrite, void());
+  MOCK_METHOD1(OnCongestionWindowChange, void(QuicTime now));
   MOCK_CONST_METHOD0(WillingAndAbleToWrite, bool());
   MOCK_CONST_METHOD0(HasPendingHandshake, bool());
   MOCK_CONST_METHOD0(HasOpenDataStreams, bool());
@@ -251,10 +252,10 @@ class MockConnectionVisitor : public QuicConnectionVisitorInterface {
 class MockHelper : public QuicConnectionHelperInterface {
  public:
   MockHelper();
-  virtual ~MockHelper();
-  virtual const QuicClock* GetClock() const OVERRIDE;
-  virtual QuicRandom* GetRandomGenerator() OVERRIDE;
-  virtual QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) OVERRIDE;
+  ~MockHelper() override;
+  const QuicClock* GetClock() const override;
+  QuicRandom* GetRandomGenerator() override;
+  QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) override;
   void AdvanceTime(QuicTime::Delta delta);
 
  private:
@@ -309,12 +310,11 @@ class MockConnection : public QuicConnection {
     QuicConnection::ProcessUdpPacket(self_address, peer_address, packet);
   }
 
-  virtual bool OnProtocolVersionMismatch(QuicVersion version) OVERRIDE {
+  virtual bool OnProtocolVersionMismatch(QuicVersion version) override {
     return false;
   }
 
  private:
-  scoped_ptr<QuicPacketWriter> writer_;
   scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
@@ -327,11 +327,9 @@ class PacketSavingConnection : public MockConnection {
   PacketSavingConnection(bool is_server,
                          const QuicVersionVector& supported_versions);
 
-  virtual ~PacketSavingConnection();
+  ~PacketSavingConnection() override;
 
-  virtual bool SendOrQueuePacket(EncryptionLevel level,
-                                 const SerializedPacket& packet,
-                                 TransmissionType transmission_type) OVERRIDE;
+  void SendOrQueuePacket(QueuedPacket packet) override;
 
   std::vector<QuicPacket*> packets_;
   std::vector<QuicEncryptedPacket*> encrypted_packets_;
@@ -383,7 +381,7 @@ class TestSession : public QuicSession {
 
   void SetCryptoStream(QuicCryptoStream* stream);
 
-  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE;
+  virtual QuicCryptoStream* GetCryptoStream() override;
 
  private:
   QuicCryptoStream* crypto_stream_;
@@ -408,7 +406,7 @@ class TestClientSession : public QuicClientSessionBase {
 
   void SetCryptoStream(QuicCryptoStream* stream);
 
-  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE;
+  virtual QuicCryptoStream* GetCryptoStream() override;
 
  private:
   QuicCryptoStream* crypto_stream_;
@@ -440,26 +438,34 @@ class MockSendAlgorithm : public SendAlgorithmInterface {
   virtual ~MockSendAlgorithm();
 
   MOCK_METHOD2(SetFromConfig, void(const QuicConfig& config, bool is_server));
+  MOCK_METHOD1(SetNumEmulatedConnections, void(int num_connections));
   MOCK_METHOD1(SetMaxPacketSize, void(QuicByteCount max_packet_size));
   MOCK_METHOD2(OnIncomingQuicCongestionFeedbackFrame,
                void(const QuicCongestionFeedbackFrame&,
                     QuicTime feedback_receive_time));
   MOCK_METHOD4(OnCongestionEvent, void(bool rtt_updated,
                                        QuicByteCount bytes_in_flight,
-                                       const CongestionMap& acked_packets,
-                                       const CongestionMap& lost_packets));
+                                       const CongestionVector& acked_packets,
+                                       const CongestionVector& lost_packets));
   MOCK_METHOD5(OnPacketSent,
                bool(QuicTime, QuicByteCount, QuicPacketSequenceNumber,
                     QuicByteCount, HasRetransmittableData));
   MOCK_METHOD1(OnRetransmissionTimeout, void(bool));
+  MOCK_METHOD0(RevertRetransmissionTimeout, void());
   MOCK_CONST_METHOD3(TimeUntilSend,
                      QuicTime::Delta(QuicTime now,
                                      QuicByteCount bytes_in_flight,
                                      HasRetransmittableData));
+  MOCK_CONST_METHOD0(PacingRate, QuicBandwidth(void));
   MOCK_CONST_METHOD0(BandwidthEstimate, QuicBandwidth(void));
+  MOCK_CONST_METHOD0(HasReliableBandwidthEstimate, bool());
   MOCK_METHOD1(OnRttUpdated, void(QuicPacketSequenceNumber));
   MOCK_CONST_METHOD0(RetransmissionDelay, QuicTime::Delta(void));
   MOCK_CONST_METHOD0(GetCongestionWindow, QuicByteCount());
+  MOCK_CONST_METHOD0(InSlowStart, bool());
+  MOCK_CONST_METHOD0(InRecovery, bool());
+  MOCK_CONST_METHOD0(GetSlowStartThreshold, QuicByteCount());
+  MOCK_CONST_METHOD0(GetCongestionControlType, CongestionControlType());
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSendAlgorithm);
@@ -486,10 +492,10 @@ class TestEntropyCalculator :
       public QuicReceivedEntropyHashCalculatorInterface {
  public:
   TestEntropyCalculator();
-  virtual ~TestEntropyCalculator();
+  ~TestEntropyCalculator() override;
 
-  virtual QuicPacketEntropyHash EntropyHash(
-      QuicPacketSequenceNumber sequence_number) const OVERRIDE;
+  QuicPacketEntropyHash EntropyHash(
+      QuicPacketSequenceNumber sequence_number) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestEntropyCalculator);
@@ -524,6 +530,57 @@ class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
+};
+
+class MockNetworkChangeVisitor :
+      public QuicSentPacketManager::NetworkChangeVisitor {
+ public:
+  MockNetworkChangeVisitor();
+  virtual ~MockNetworkChangeVisitor();
+
+  MOCK_METHOD0(OnCongestionWindowChange, void());
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(MockNetworkChangeVisitor);
+};
+
+// Creates per-connection packet writers that register themselves with the
+// TestWriterFactory on each write so that TestWriterFactory::OnPacketSent can
+// be routed to the appropriate QuicConnection.
+class TestWriterFactory : public QuicDispatcher::PacketWriterFactory {
+ public:
+  TestWriterFactory();
+  ~TestWriterFactory() override;
+
+  QuicPacketWriter* Create(QuicServerPacketWriter* writer,
+                           QuicConnection* connection) override;
+
+  // Calls OnPacketSent on the last QuicConnection to write through one of the
+  // packet writers created by this factory.
+  void OnPacketSent(WriteResult result);
+
+ private:
+  class PerConnectionPacketWriter : public QuicPerConnectionPacketWriter {
+   public:
+    PerConnectionPacketWriter(TestWriterFactory* factory,
+                              QuicServerPacketWriter* writer,
+                              QuicConnection* connection);
+    ~PerConnectionPacketWriter() override;
+
+    WriteResult WritePacket(const char* buffer,
+                            size_t buf_len,
+                            const IPAddressNumber& self_address,
+                            const IPEndPoint& peer_address) override;
+
+   private:
+    TestWriterFactory* factory_;
+  };
+
+  // If an asynchronous write is happening and |writer| gets deleted, this
+  // clears the pointer to it to prevent use-after-free.
+  void Unregister(PerConnectionPacketWriter* writer);
+
+  PerConnectionPacketWriter* current_writer_;
 };
 
 }  // namespace test

@@ -29,7 +29,7 @@
 #include "core/CSSPropertyNames.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSComputedStyleDeclaration.h"
-#include "core/css/parser/BisonCSSParser.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/frame/UseCounter.h"
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGElement.h"
@@ -37,11 +37,10 @@
 #include "platform/FloatConversion.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document& document)
     : SVGSMILElement(tagName, document)
-    , SVGTests(this)
     , m_fromPropertyValueType(RegularPropertyValue)
     , m_toPropertyValueType(RegularPropertyValue)
     , m_animationValid(false)
@@ -53,11 +52,37 @@ SVGAnimationElement::SVGAnimationElement(const QualifiedName& tagName, Document&
     UseCounter::count(document, UseCounter::SVGAnimationElement);
 }
 
-static void parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)
+static bool parseValues(const String& value, Vector<String>& result)
+{
+    // Per the SMIL specification, leading and trailing white space,
+    // and white space before and after semicolon separators, is allowed and will be ignored.
+    // http://www.w3.org/TR/SVG11/animate.html#ValuesAttribute
+    result.clear();
+    Vector<String> parseList;
+    value.split(';', true, parseList);
+    unsigned last = parseList.size() - 1;
+    for (unsigned i = 0; i <= last; ++i) {
+        if (parseList[i].isEmpty()) {
+            // Tolerate trailing ';'
+            if (i < last)
+                goto fail;
+        } else {
+            parseList[i] = parseList[i].stripWhiteSpace();
+            result.append(parseList[i]);
+        }
+    }
+
+    return true;
+fail:
+    result.clear();
+    return false;
+}
+
+static bool parseKeyTimes(const String& string, Vector<float>& result, bool verifyOrder)
 {
     result.clear();
     Vector<String> parseList;
-    string.split(';', parseList);
+    string.split(';', true, parseList);
     for (unsigned n = 0; n < parseList.size(); ++n) {
         String timeString = parseList[n];
         bool ok;
@@ -73,76 +98,70 @@ static void parseKeyTimes(const String& string, Vector<float>& result, bool veri
         }
         result.append(time);
     }
-    return;
+    return true;
 fail:
     result.clear();
+    return false;
 }
 
 template<typename CharType>
-static void parseKeySplinesInternal(const String& string, Vector<UnitBezier>& result)
+static bool parseKeySplinesInternal(const String& string, Vector<UnitBezier>& result)
 {
     const CharType* ptr = string.getCharacters<CharType>();
     const CharType* end = ptr + string.length();
 
     skipOptionalSVGSpaces(ptr, end);
 
-    bool delimParsed = false;
     while (ptr < end) {
-        delimParsed = false;
         float posA = 0;
-        if (!parseNumber(ptr, end, posA)) {
-            result.clear();
-            return;
-        }
+        if (!parseNumber(ptr, end, posA))
+            return false;
 
         float posB = 0;
-        if (!parseNumber(ptr, end, posB)) {
-            result.clear();
-            return;
-        }
+        if (!parseNumber(ptr, end, posB))
+            return false;
 
         float posC = 0;
-        if (!parseNumber(ptr, end, posC)) {
-            result.clear();
-            return;
-        }
+        if (!parseNumber(ptr, end, posC))
+            return false;
 
         float posD = 0;
-        if (!parseNumber(ptr, end, posD, DisallowWhitespace)) {
-            result.clear();
-            return;
-        }
+        if (!parseNumber(ptr, end, posD, DisallowWhitespace))
+            return false;
 
         skipOptionalSVGSpaces(ptr, end);
 
-        if (ptr < end && *ptr == ';') {
-            delimParsed = true;
+        if (ptr < end && *ptr == ';')
             ptr++;
-        }
         skipOptionalSVGSpaces(ptr, end);
 
         result.append(UnitBezier(posA, posB, posC, posD));
     }
-    if (!(ptr == end && !delimParsed))
-        result.clear();
+
+    return ptr == end;
 }
 
-static void parseKeySplines(const String& string, Vector<UnitBezier>& result)
+static bool parseKeySplines(const String& string, Vector<UnitBezier>& result)
 {
     result.clear();
     if (string.isEmpty())
-        return;
+        return true;
+    bool parsed = true;
     if (string.is8Bit())
-        parseKeySplinesInternal<LChar>(string, result);
+        parsed = parseKeySplinesInternal<LChar>(string, result);
     else
-        parseKeySplinesInternal<UChar>(string, result);
+        parsed = parseKeySplinesInternal<UChar>(string, result);
+    if (!parsed) {
+        result.clear();
+        return false;
+    }
+    return true;
 }
 
 bool SVGAnimationElement::isSupportedAttribute(const QualifiedName& attrName)
 {
     DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
     if (supportedAttributes.isEmpty()) {
-        SVGTests::addSupportedAttributes(supportedAttributes);
         supportedAttributes.add(SVGNames::valuesAttr);
         supportedAttributes.add(SVGNames::keyTimesAttr);
         supportedAttributes.add(SVGNames::keyPointsAttr);
@@ -164,19 +183,17 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
     }
 
     if (name == SVGNames::valuesAttr) {
-        // Per the SMIL specification, leading and trailing white space,
-        // and white space before and after semicolon separators, is allowed and will be ignored.
-        // http://www.w3.org/TR/SVG11/animate.html#ValuesAttribute
-        value.string().split(';', m_values);
-        for (unsigned i = 0; i < m_values.size(); ++i)
-            m_values[i] = m_values[i].stripWhiteSpace();
-
+        if (!parseValues(value, m_values)) {
+            reportAttributeParsingError(ParsingAttributeFailedError, name, value);
+            return;
+        }
         updateAnimationMode();
         return;
     }
 
     if (name == SVGNames::keyTimesAttr) {
-        parseKeyTimes(value, m_keyTimes, true);
+        if (!parseKeyTimes(value, m_keyTimes, true))
+            reportAttributeParsingError(ParsingAttributeFailedError, name, value);
         return;
     }
 
@@ -184,13 +201,15 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
         if (isSVGAnimateMotionElement(*this)) {
             // This is specified to be an animateMotion attribute only but it is simpler to put it here
             // where the other timing calculatations are.
-            parseKeyTimes(value, m_keyPoints, false);
+            if (!parseKeyTimes(value, m_keyPoints, false))
+                reportAttributeParsingError(ParsingAttributeFailedError, name, value);
         }
         return;
     }
 
     if (name == SVGNames::keySplinesAttr) {
-        parseKeySplines(value, m_keySplines);
+        if (!parseKeySplines(value, m_keySplines))
+            reportAttributeParsingError(ParsingAttributeFailedError, name, value);
         return;
     }
 
@@ -208,9 +227,6 @@ void SVGAnimationElement::parseAttribute(const QualifiedName& name, const Atomic
         updateAnimationMode();
         return;
     }
-
-    if (SVGTests::parseAttribute(name, value))
-        return;
 
     ASSERT_NOT_REACHED();
 }
@@ -551,6 +567,9 @@ void SVGAnimationElement::startedActiveInterval()
 {
     m_animationValid = false;
 
+    if (!isValid())
+        return;
+
     if (!hasValidAttributeType())
         return;
 
@@ -573,6 +592,9 @@ void SVGAnimationElement::startedActiveInterval()
     String to = toValue();
     String by = byValue();
     if (animationMode == NoAnimation)
+        return;
+    if ((animationMode == FromToAnimation || animationMode == FromByAnimation || animationMode == ToAnimation || animationMode == ByAnimation)
+        && (fastHasAttribute(SVGNames::keyPointsAttr) && fastHasAttribute(SVGNames::keyTimesAttr) && (m_keyTimes.size() < 2 || m_keyTimes.size() != m_keyPoints.size())))
         return;
     if (animationMode == FromToAnimation)
         m_animationValid = calculateFromAndToValues(from, to);

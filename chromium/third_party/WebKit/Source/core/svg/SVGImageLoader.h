@@ -22,11 +22,11 @@
 
 #include "core/loader/ImageLoader.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGImageElement;
 
-class SVGImageLoader FINAL : public ImageLoader {
+class SVGImageLoader final : public ImageLoader {
 public:
     static PassOwnPtrWillBeRawPtr<SVGImageLoader> create(SVGImageElement* element)
     {
@@ -35,10 +35,10 @@ public:
 
 private:
     explicit SVGImageLoader(SVGImageElement*);
-    virtual void dispatchLoadEvent() OVERRIDE;
-    virtual String sourceURI(const AtomicString&) const OVERRIDE;
+    virtual void dispatchLoadEvent() override;
+    virtual String sourceURI(const AtomicString&) const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGImageLoader_h

@@ -30,19 +30,16 @@ class WebUIMojo
  public:
   explicit WebUIMojo(RenderView* render_view);
 
-  // Sets the handle to the current WebUI.
-  void SetBrowserHandle(mojo::ScopedMessagePipeHandle handle);
-
  private:
   class MainFrameObserver : public RenderFrameObserver {
    public:
     explicit MainFrameObserver(WebUIMojo* web_ui_mojo);
-    virtual ~MainFrameObserver();
+    ~MainFrameObserver() override;
 
     // RenderFrameObserver overrides:
-    virtual void WillReleaseScriptContext(v8::Handle<v8::Context> context,
-                                          int world_id) OVERRIDE;
-    virtual void DidFinishDocumentLoad() OVERRIDE;
+    void WillReleaseScriptContext(v8::Handle<v8::Context> context,
+                                  int world_id) override;
+    void DidFinishDocumentLoad() override;
 
    private:
     WebUIMojo* web_ui_mojo_;
@@ -50,34 +47,22 @@ class WebUIMojo
     DISALLOW_COPY_AND_ASSIGN(MainFrameObserver);
   };
 
-  virtual ~WebUIMojo();
+  ~WebUIMojo() override;
 
   void CreateContextState();
   void DestroyContextState(v8::Handle<v8::Context> context);
 
-  // Invoked when the frame finishes loading. Invokes SetHandleOnContextState()
-  // if necessary.
+  // Invoked when the frame finishes loading. Invokes Run() on the
+  // WebUIMojoContextState.
   void OnDidFinishDocumentLoad();
-
-  // Invokes SetHandle() on the WebUIMojoContextState (if there is one).
-  void SetHandleOnContextState(mojo::ScopedMessagePipeHandle handle);
 
   WebUIMojoContextState* GetContextState();
 
   // RenderViewObserver overrides:
-  virtual void DidClearWindowObject(blink::WebLocalFrame* frame) OVERRIDE;
+  void DidCreateDocumentElement(blink::WebLocalFrame* frame) override;
+  void DidClearWindowObject(blink::WebLocalFrame* frame) override;
 
   MainFrameObserver main_frame_observer_;
-
-  // Set to true in DidFinishDocumentLoad(). 'main' is only executed once this
-  // happens.
-  bool did_finish_document_load_;
-
-  // If SetBrowserHandle() is invoked before the document finishes loading the
-  // MessagePipeHandle is stored here. When the document finishes loading
-  // SetHandleOnContextState() is invoked to send the handle to the
-  // WebUIMojoContextState and ultimately the page.
-  mojo::ScopedMessagePipeHandle pending_handle_;
 
   DISALLOW_COPY_AND_ASSIGN(WebUIMojo);
 };

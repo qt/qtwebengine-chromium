@@ -1,17 +1,17 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/mt.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/mt.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/mt.xml
+ * ICU <specials> source: <path>/common/main/mt.xml
  */
 mt{
     Countries{
-        419{"Amerika Latina u l-Karibew"}
+        419{"Amerika Latina"}
         AD{"Andorra"}
         AE{"Emirati Għarab Maqgħuda"}
         AF{"Afganistan"}
@@ -61,7 +61,6 @@ mt{
         CN{"Ċina"}
         CO{"Kolumbja"}
         CR{"Kosta Rika"}
-        CS{"Serbja u Montenegro"}
         CU{"Kuba"}
         CV{"Kape Verde"}
         CX{"Christmas Island"}
@@ -105,7 +104,7 @@ mt{
         GU{"Gwam"}
         GW{"Ginea-Bissaw"}
         GY{"Gujana"}
-        HK{"Ħong Kong S.A.R., Ċina"}
+        HK{"Ħong Kong S.A.R. Ċina"}
         HM{"Heard Island and McDonald Islands"}
         HN{"Ħonduras"}
         HR{"Kroazja"}
@@ -190,7 +189,7 @@ mt{
         PM{"Saint Pierre and Miquelon"}
         PN{"Pitcairn"}
         PR{"Puerto Rico"}
-        PS{"Palestinian Territory"}
+        PS{"Territorju Palestinjan"}
         PT{"Portugall"}
         PW{"Palau"}
         PY{"Paragwaj"}
@@ -254,7 +253,7 @@ mt{
         ZA{"Afrika t’Isfel"}
         ZM{"Żambja"}
         ZW{"Żimbabwe"}
-        ZZ{"Reġjun Mhux Magħruf jew Mhux Validu"}
+        ZZ{"Reġjun Mhux Magħruf"}
     }
-    Version{"2.0.47.67"}
+    Version{"2.0.92.87"}
 }

@@ -37,9 +37,11 @@ cr.define('options', function() {
     'file_system': [['origin', 'label_file_system_origin'],
                     ['persistent', 'label_file_system_persistent_usage'],
                     ['temporary', 'label_file_system_temporary_usage']],
-    'server_bound_cert': [['serverId', 'label_server_bound_cert_server_id'],
-                          ['certType', 'label_server_bound_cert_type'],
-                          ['created', 'label_server_bound_cert_created']],
+    'channel_id': [['serverId', 'label_channel_id_server_id'],
+                          ['certType', 'label_channel_id_type'],
+                          ['created', 'label_channel_id_created']],
+    'service_worker': [['origin', 'label_service_worker_origin'],
+                       ['scopes', 'label_service_worker_scopes']],
     'flash_lso': [['domain', 'label_cookie_domain']],
   };
 
@@ -55,7 +57,7 @@ cr.define('options', function() {
     // Use the fixed animation target height if set, in case the element is
     // currently being animated and we'd get an intermediate height below.
     if (height && height.substr(-2) == 'px')
-      return parseInt(height.substr(0, height.length - 2));
+      return parseInt(height.substr(0, height.length - 2), 10);
     return item.getBoundingClientRect().height;
   }
 
@@ -64,7 +66,7 @@ cr.define('options', function() {
    * into the given list using its @{code splice} method at the given index.
    * @param {Array.<Object>} data The data objects for the nodes to add.
    * @param {number} start The index at which to start inserting the nodes.
-   * @return {Array.<CookieTreeNode>} An array of CookieTreeNodes added.
+   * @return {Array.<options.CookieTreeNode>} An array of CookieTreeNodes added.
    */
   function spliceTreeNodes(data, start, list) {
     var nodes = data.map(function(x) { return new CookieTreeNode(x); });
@@ -79,7 +81,7 @@ cr.define('options', function() {
 
   /**
    * Adds information about an app that protects this data item to the
-   * @{code element}.
+   * |element|.
    * @param {Element} element The DOM element the information should be
          appended to.
    * @param {{id: string, name: string}} appInfo Information about an app.
@@ -102,12 +104,12 @@ cr.define('options', function() {
    * stateless. We cache the expanded item in @{code CookiesList} though, so it
    * can keep state. (Mostly just which item is selected.)
    * @param {Object} origin Data used to create a cookie list item.
-   * @param {CookiesList} list The list that will contain this item.
+   * @param {options.CookiesList} list The list that will contain this item.
    * @constructor
-   * @extends {DeletableItem}
+   * @extends {options.DeletableItem}
    */
   function CookieListItem(origin, list) {
-    var listItem = new DeletableItem(null);
+    var listItem = new DeletableItem();
     listItem.__proto__ = CookieListItem.prototype;
 
     listItem.origin = origin;
@@ -171,12 +173,12 @@ cr.define('options', function() {
         return;
       this.expanded_ = expanded;
       if (expanded) {
+        this.classList.add('show-items');
         var oldExpanded = this.list.expandedItem;
         this.list.expandedItem = this;
         this.updateItems_();
         if (oldExpanded)
           oldExpanded.expanded = false;
-        this.classList.add('show-items');
       } else {
         if (this.list.expandedItem == this) {
           this.list.expandedItem = null;
@@ -227,6 +229,7 @@ cr.define('options', function() {
       // Force relayout before enabling animation, so that if we have
       // changed things since the last layout, they will not be animated
       // during subsequent layouts.
+      /** @suppress {suspiciousCode} */
       this.itemsChild.offsetHeight;
       this.classList.remove('measure-items');
       this.itemsChild.style.height = itemsHeight + 'px';
@@ -246,7 +249,8 @@ cr.define('options', function() {
         appCache: false,
         indexedDb: false,
         fileSystem: false,
-        serverBoundCerts: 0,
+        channelIDs: 0,
+        serviceWorker: false,
       };
       if (this.origin)
         this.origin.collectSummaryInfo(info);
@@ -264,8 +268,10 @@ cr.define('options', function() {
         list.push(loadTimeData.getString('cookie_app_cache'));
       if (info.fileSystem)
         list.push(loadTimeData.getString('cookie_file_system'));
-      if (info.serverBoundCerts)
-        list.push(loadTimeData.getString('cookie_server_bound_cert'));
+      if (info.channelIDs)
+        list.push(loadTimeData.getString('cookie_channel_id'));
+      if (info.serviceWorker)
+        list.push(loadTimeData.getString('cookie_service_worker'));
       if (info.flashLSO)
         list.push(loadTimeData.getString('cookie_flash_lso'));
 
@@ -309,7 +315,7 @@ cr.define('options', function() {
 
     /**
      * Append a new cookie node "bubble" to this list item.
-     * @param {CookieTreeNode} node The cookie node to add a bubble for.
+     * @param {options.CookieTreeNode} node The cookie node to add a bubble for.
      * @param {Element} div The DOM element for the bubble itself.
      * @return {number} The index the bubble was added at.
      */
@@ -336,7 +342,7 @@ cr.define('options', function() {
 
     /**
      * Set the currently selected cookie node ("cookie bubble") index to
-     * @{code itemIndex}, unselecting any previously selected node first.
+     * |itemIndex|, unselecting any previously selected node first.
      * @param {number} itemIndex The index to set as the selected index.
      */
     set selectedIndex(itemIndex) {
@@ -480,8 +486,10 @@ cr.define('options', function() {
           info.fileSystem = true;
         } else if (this.data.type == 'quota') {
           info.quota = this.data;
-        } else if (this.data.type == 'server_bound_cert') {
-          info.serverBoundCerts++;
+        } else if (this.data.type == 'channel_id') {
+          info.channelIDs++;
+        } else if (this.data.type == 'service_worker') {
+          info.serviceWorker = true;
         } else if (this.data.type == 'flash_lso') {
           info.flashLSO = true;
         }
@@ -500,7 +508,8 @@ cr.define('options', function() {
     /**
      * Create the cookie "bubbles" for this node, recursing into children
      * if there are any. Append the cookie bubbles to @{code item}.
-     * @param {CookieListItem} item The cookie list item to create items in.
+     * @param {options.CookieListItem} item The cookie list item to create items
+     *     in.
      */
     createItems: function(item) {
       if (this.children.length > 0) {
@@ -528,7 +537,6 @@ cr.define('options', function() {
       div.className = 'cookie-item';
       // Help out screen readers and such: this is a clickable thing.
       div.setAttribute('role', 'button');
-      div.tabIndex = 0;
       div.textContent = text;
       var apps = this.data.appsProtectingThis;
       if (apps)
@@ -574,7 +582,7 @@ cr.define('options', function() {
 
     /**
      * The parent of this cookie tree node.
-     * @type {?CookieTreeNode|CookieListItem}
+     * @type {?(options.CookieTreeNode|options.CookieListItem)}
      */
     get parent() {
       // See below for an explanation of this special case.
@@ -671,7 +679,7 @@ cr.define('options', function() {
    * Creates a new cookies list.
    * @param {Object=} opt_propertyBag Optional properties.
    * @constructor
-   * @extends {DeletableItemList}
+   * @extends {options.DeletableItemList}
    */
   var CookiesList = cr.ui.define('list');
 
@@ -789,12 +797,15 @@ cr.define('options', function() {
 
     /**
      * The currently expanded item. Used by CookieListItem above.
-     * @type {?CookieListItem}
+     * @type {?options.CookieListItem}
      */
     expandedItem: null,
 
     // from cr.ui.List
-    /** @override */
+    /**
+     * @override
+     * @param {Object} data
+     */
     createItem: function(data) {
       // We use the cached expanded item in order to allow it to maintain some
       // state (like its fixed height, and which bubble is selected).
@@ -916,6 +927,8 @@ cr.define('options', function() {
   };
 
   return {
-    CookiesList: CookiesList
+    CookiesList: CookiesList,
+    CookieListItem: CookieListItem,
+    CookieTreeNode: CookieTreeNode,
   };
 });

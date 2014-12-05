@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -58,7 +58,7 @@ class DOMStorageAreaTest : public testing::Test {
   class VerifyChangesCommittedDatabase : public DOMStorageDatabase {
    public:
     VerifyChangesCommittedDatabase() {}
-    virtual ~VerifyChangesCommittedDatabase() {
+    ~VerifyChangesCommittedDatabase() override {
       const base::string16 kKey(ASCIIToUTF16("key"));
       const base::string16 kValue(ASCIIToUTF16("value"));
       DOMStorageValuesMap values;
@@ -443,7 +443,7 @@ TEST_F(DOMStorageAreaTest, DatabaseFileNames) {
       "file__0.localstorage-journal" },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kCases); ++i) {
+  for (size_t i = 0; i < arraysize(kCases); ++i) {
     GURL origin = GURL(kCases[i].origin).GetOrigin();
     base::FilePath file_name =
         base::FilePath().AppendASCII(kCases[i].file_name);

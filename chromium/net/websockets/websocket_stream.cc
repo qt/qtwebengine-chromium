@@ -8,9 +8,13 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/base/load_flags.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_status_code.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/websockets/websocket_errors.h"
@@ -25,6 +29,12 @@
 namespace net {
 namespace {
 
+// The timeout duration of WebSocket handshake.
+// It is defined as the same value as the TCP connection timeout value in
+// net/socket/websocket_transport_client_socket_pool.cc to make it hard for
+// JavaScript programs to recognize the timeout cause.
+const int kHandshakeTimeoutIntervalInSeconds = 240;
+
 class StreamRequestImpl;
 
 class Delegate : public URLRequest::Delegate {
@@ -38,15 +48,15 @@ class Delegate : public URLRequest::Delegate {
 
   explicit Delegate(StreamRequestImpl* owner)
       : owner_(owner), result_(INCOMPLETE) {}
-  virtual ~Delegate() {
+  ~Delegate() override {
     UMA_HISTOGRAM_ENUMERATION(
         "Net.WebSocket.HandshakeResult", result_, NUM_HANDSHAKE_RESULT_TYPES);
   }
 
   // Implementation of URLRequest::Delegate methods.
-  virtual void OnReceivedRedirect(URLRequest* request,
-                                  const GURL& new_url,
-                                  bool* defer_redirect) OVERRIDE {
+  void OnReceivedRedirect(URLRequest* request,
+                          const RedirectInfo& redirect_info,
+                          bool* defer_redirect) override {
     // HTTP status codes returned by HttpStreamParser are filtered by
     // WebSocketBasicHandshakeStream, and only 101, 401 and 407 are permitted
     // back up the stack to HttpNetworkTransaction. In particular, redirect
@@ -55,20 +65,19 @@ class Delegate : public URLRequest::Delegate {
     NOTREACHED();
   }
 
-  virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
+  void OnResponseStarted(URLRequest* request) override;
 
-  virtual void OnAuthRequired(URLRequest* request,
-                              AuthChallengeInfo* auth_info) OVERRIDE;
+  void OnAuthRequired(URLRequest* request,
+                      AuthChallengeInfo* auth_info) override;
 
-  virtual void OnCertificateRequested(URLRequest* request,
-                                      SSLCertRequestInfo* cert_request_info)
-      OVERRIDE;
+  void OnCertificateRequested(URLRequest* request,
+                              SSLCertRequestInfo* cert_request_info) override;
 
-  virtual void OnSSLCertificateError(URLRequest* request,
-                                     const SSLInfo& ssl_info,
-                                     bool fatal) OVERRIDE;
+  void OnSSLCertificateError(URLRequest* request,
+                             const SSLInfo& ssl_info,
+                             bool fatal) override;
 
-  virtual void OnReadCompleted(URLRequest* request, int bytes_read) OVERRIDE;
+  void OnReadCompleted(URLRequest* request, int bytes_read) override;
 
  private:
   StreamRequestImpl* owner_;
@@ -84,7 +93,8 @@ class StreamRequestImpl : public WebSocketStreamRequest {
       scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
       scoped_ptr<WebSocketHandshakeStreamCreateHelper> create_helper)
       : delegate_(new Delegate(this)),
-        url_request_(url, DEFAULT_PRIORITY, delegate_.get(), context),
+        url_request_(context->CreateRequest(url, DEFAULT_PRIORITY,
+                                            delegate_.get(), NULL)),
         connect_delegate_(connect_delegate.Pass()),
         create_helper_(create_helper.release()) {
     create_helper_->set_failure_message(&failure_message_);
@@ -94,50 +104,79 @@ class StreamRequestImpl : public WebSocketStreamRequest {
     headers.SetHeader(HttpRequestHeaders::kOrigin, origin.string());
     headers.SetHeader(websockets::kSecWebSocketVersion,
                       websockets::kSupportedVersion);
-    url_request_.SetExtraRequestHeaders(headers);
+    url_request_->SetExtraRequestHeaders(headers);
 
     // This passes the ownership of |create_helper_| to |url_request_|.
-    url_request_.SetUserData(
+    url_request_->SetUserData(
         WebSocketHandshakeStreamBase::CreateHelper::DataKey(),
         create_helper_);
-    url_request_.SetLoadFlags(LOAD_DISABLE_CACHE |
-                              LOAD_BYPASS_CACHE |
-                              LOAD_DO_NOT_PROMPT_FOR_LOGIN);
+    url_request_->SetLoadFlags(LOAD_DISABLE_CACHE |
+                               LOAD_BYPASS_CACHE |
+                               LOAD_DO_NOT_PROMPT_FOR_LOGIN);
   }
 
   // Destroying this object destroys the URLRequest, which cancels the request
   // and so terminates the handshake if it is incomplete.
-  virtual ~StreamRequestImpl() {}
+  ~StreamRequestImpl() override {}
 
-  void Start() {
-    url_request_.Start();
+  void Start(scoped_ptr<base::Timer> timer) {
+    DCHECK(timer);
+    TimeDelta timeout(TimeDelta::FromSeconds(
+        kHandshakeTimeoutIntervalInSeconds));
+    timer_ = timer.Pass();
+    timer_->Start(FROM_HERE, timeout,
+                  base::Bind(&StreamRequestImpl::OnTimeout,
+                             base::Unretained(this)));
+    url_request_->Start();
   }
 
   void PerformUpgrade() {
-    connect_delegate_->OnSuccess(create_helper_->stream()->Upgrade());
+    DCHECK(timer_);
+    timer_->Stop();
+    connect_delegate_->OnSuccess(create_helper_->Upgrade());
   }
 
   void ReportFailure() {
+    DCHECK(timer_);
+    timer_->Stop();
     if (failure_message_.empty()) {
-      switch (url_request_.status().status()) {
+      switch (url_request_->status().status()) {
         case URLRequestStatus::SUCCESS:
         case URLRequestStatus::IO_PENDING:
           break;
         case URLRequestStatus::CANCELED:
-          failure_message_ = "WebSocket opening handshake was canceled";
+          if (url_request_->status().error() == ERR_TIMED_OUT)
+            failure_message_ = "WebSocket opening handshake timed out";
+          else
+            failure_message_ = "WebSocket opening handshake was canceled";
           break;
         case URLRequestStatus::FAILED:
           failure_message_ =
               std::string("Error in connection establishment: ") +
-              ErrorToString(url_request_.status().error());
+              ErrorToString(url_request_->status().error());
           break;
       }
     }
-    connect_delegate_->OnFailure(failure_message_);
+    ReportFailureWithMessage(failure_message_);
+  }
+
+  void ReportFailureWithMessage(const std::string& failure_message) {
+    connect_delegate_->OnFailure(failure_message);
+  }
+
+  void OnFinishOpeningHandshake() {
+    WebSocketDispatchOnFinishOpeningHandshake(connect_delegate(),
+                                              url_request_->url(),
+                                              url_request_->response_headers(),
+                                              url_request_->response_time());
   }
 
   WebSocketStream::ConnectDelegate* connect_delegate() const {
     return connect_delegate_.get();
+  }
+
+  void OnTimeout() {
+    url_request_->CancelWithError(ERR_TIMED_OUT);
   }
 
  private:
@@ -147,7 +186,7 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   // Deleting the StreamRequestImpl object deletes this URLRequest object,
   // cancelling the whole connection.
-  URLRequest url_request_;
+  scoped_ptr<URLRequest> url_request_;
 
   scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate_;
 
@@ -156,6 +195,9 @@ class StreamRequestImpl : public WebSocketStreamRequest {
 
   // The failure message supplied by WebSocketBasicHandshakeStream, if any.
   std::string failure_message_;
+
+  // A timer for handshake timeout.
+  scoped_ptr<base::Timer> timer_;
 };
 
 class SSLErrorCallbacks : public WebSocketEventInterface::SSLErrorCallbacks {
@@ -163,7 +205,7 @@ class SSLErrorCallbacks : public WebSocketEventInterface::SSLErrorCallbacks {
   explicit SSLErrorCallbacks(URLRequest* url_request)
       : url_request_(url_request) {}
 
-  virtual void CancelSSLRequest(int error, const SSLInfo* ssl_info) OVERRIDE {
+  void CancelSSLRequest(int error, const SSLInfo* ssl_info) override {
     if (ssl_info) {
       url_request_->CancelWithSSLError(error, *ssl_info);
     } else {
@@ -171,7 +213,7 @@ class SSLErrorCallbacks : public WebSocketEventInterface::SSLErrorCallbacks {
     }
   }
 
-  virtual void ContinueSSLRequest() OVERRIDE {
+  void ContinueSSLRequest() override {
     url_request_->ContinueDespiteLastError();
   }
 
@@ -198,7 +240,16 @@ void Delegate::OnResponseStarted(URLRequest* request) {
       return;
 
     case HTTP_UNAUTHORIZED:
+      result_ = FAILED;
+      owner_->OnFinishOpeningHandshake();
+      owner_->ReportFailureWithMessage(
+          "HTTP Authentication failed; no valid credentials available");
+      return;
+
     case HTTP_PROXY_AUTHENTICATION_REQUIRED:
+      result_ = FAILED;
+      owner_->OnFinishOpeningHandshake();
+      owner_->ReportFailureWithMessage("Proxy authentication failed");
       return;
 
     default:
@@ -263,8 +314,8 @@ scoped_ptr<WebSocketStreamRequest> WebSocketStream::CreateAndConnectStream(
                             origin,
                             connect_delegate.Pass(),
                             create_helper.Pass()));
-  request->Start();
-  return request.PassAs<WebSocketStreamRequest>();
+  request->Start(scoped_ptr<base::Timer>(new base::Timer(false, false)));
+  return request.Pass();
 }
 
 // This is declared in websocket_test_util.h.
@@ -274,15 +325,32 @@ scoped_ptr<WebSocketStreamRequest> CreateAndConnectStreamForTesting(
     const url::Origin& origin,
     URLRequestContext* url_request_context,
     const BoundNetLog& net_log,
-    scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate) {
+    scoped_ptr<WebSocketStream::ConnectDelegate> connect_delegate,
+    scoped_ptr<base::Timer> timer) {
   scoped_ptr<StreamRequestImpl> request(
       new StreamRequestImpl(socket_url,
                             url_request_context,
                             origin,
                             connect_delegate.Pass(),
                             create_helper.Pass()));
-  request->Start();
-  return request.PassAs<WebSocketStreamRequest>();
+  request->Start(timer.Pass());
+  return request.Pass();
+}
+
+void WebSocketDispatchOnFinishOpeningHandshake(
+    WebSocketStream::ConnectDelegate* connect_delegate,
+    const GURL& url,
+    const scoped_refptr<HttpResponseHeaders>& headers,
+    base::Time response_time) {
+  DCHECK(connect_delegate);
+  if (headers.get()) {
+    connect_delegate->OnFinishOpeningHandshake(make_scoped_ptr(
+        new WebSocketHandshakeResponseInfo(url,
+                                           headers->response_code(),
+                                           headers->GetStatusText(),
+                                           headers,
+                                           response_time)));
+  }
 }
 
 }  // namespace net

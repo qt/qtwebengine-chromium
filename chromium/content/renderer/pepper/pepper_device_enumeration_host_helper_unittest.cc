@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/memory/weak_ptr.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/host/host_message_context.h"
@@ -24,22 +25,22 @@ namespace content {
 
 namespace {
 
-class TestDelegate : public PepperDeviceEnumerationHostHelper::Delegate {
+class TestDelegate : public PepperDeviceEnumerationHostHelper::Delegate,
+                     public base::SupportsWeakPtr<TestDelegate> {
  public:
   TestDelegate() : last_used_id_(0) {}
 
-  virtual ~TestDelegate() { CHECK(callbacks_.empty()); }
+  ~TestDelegate() override { CHECK(callbacks_.empty()); }
 
-  virtual int EnumerateDevices(PP_DeviceType_Dev /* type */,
-                               const GURL& /* document_url */,
-                               const EnumerateDevicesCallback& callback)
-      OVERRIDE {
+  int EnumerateDevices(PP_DeviceType_Dev /* type */,
+                       const GURL& /* document_url */,
+                       const EnumerateDevicesCallback& callback) override {
     last_used_id_++;
     callbacks_[last_used_id_] = callback;
     return last_used_id_;
   }
 
-  virtual void StopEnumerateDevices(int request_id) OVERRIDE {
+  void StopEnumerateDevices(int request_id) override {
     std::map<int, EnumerateDevicesCallback>::iterator iter =
         callbacks_.find(request_id);
     CHECK(iter != callbacks_.end());
@@ -76,11 +77,11 @@ class PepperDeviceEnumerationHostHelperTest : public testing::Test {
       : ppapi_host_(&sink_, ppapi::PpapiPermissions()),
         resource_host_(&ppapi_host_, 12345, 67890),
         device_enumeration_(&resource_host_,
-                            &delegate_,
+                            delegate_.AsWeakPtr(),
                             PP_DEVICETYPE_DEV_AUDIOCAPTURE,
                             GURL("http://example.com")) {}
 
-  virtual ~PepperDeviceEnumerationHostHelperTest() {}
+  ~PepperDeviceEnumerationHostHelperTest() override {}
 
   void SimulateMonitorDeviceChangeReceived(uint32_t callback_id) {
     PpapiHostMsg_DeviceEnumeration_MonitorDeviceChange msg(callback_id);

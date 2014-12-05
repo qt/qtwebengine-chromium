@@ -3,17 +3,26 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * Encapsulated handling of a search bubble.
    * @constructor
+   * @extends {HTMLDivElement}
    */
   function SearchBubble(text) {
     var el = cr.doc.createElement('div');
     SearchBubble.decorate(el);
     el.content = text;
     return el;
+  }
+
+  /**
+   * Prohibit search for guests on desktop.
+   */
+  function ShouldEnableSearch() {
+    return !loadTimeData.getBoolean('profileIsGuest') || cr.isChromeOS;
   }
 
   SearchBubble.decorate = function(el) {
@@ -112,18 +121,19 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of the search page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function SearchPage() {
-    OptionsPage.call(this, 'search',
-                     loadTimeData.getString('searchPageTabTitle'),
-                     'searchPage');
+    Page.call(this, 'search',
+              loadTimeData.getString('searchPageTabTitle'),
+              'searchPage');
   }
 
   cr.addSingletonGetter(SearchPage);
 
   SearchPage.prototype = {
-    // Inherit SearchPage from OptionsPage.
-    __proto__: OptionsPage.prototype,
+    // Inherit SearchPage from Page.
+    __proto__: Page.prototype,
 
     /**
      * A boolean to prevent recursion. Used by setSearchText_().
@@ -132,12 +142,9 @@ cr.define('options', function() {
      */
     insideSetSearchText_: false,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to start preference initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.searchField = $('search-field');
 
@@ -157,24 +164,24 @@ cr.define('options', function() {
       return true;
     },
 
-    /**
-     * Called after this page has shown.
-     */
+    /** @override */
     didShowPage: function() {
-      // This method is called by the Options page after all pages have
-      // had their visibilty attribute set.  At this point we can perform the
-      // search specific DOM manipulation.
+      // This method is called by the PageManager after all pages have had their
+      // visibility attribute set. At this point we can perform the
+      // search-specific DOM manipulation.
       this.setSearchActive_(true);
     },
 
-    /**
-     * Called before this page will be hidden.
-     */
+    /** @override */
+    didChangeHash: function() {
+      this.setSearchActive_(true);
+    },
+
+    /** @override */
     willHidePage: function() {
-      // This method is called by the Options page before all pages have
-      // their visibilty attribute set.  Before that happens, we need to
-      // undo the search specific DOM manipulation that was performed in
-      // didShowPage.
+      // This method is called by the PageManager before all pages have their
+      // visibility attribute set. Before that happens, we need to undo the
+      // search-specific DOM manipulation that was performed in didShowPage.
       this.setSearchActive_(false);
     },
 
@@ -189,17 +196,20 @@ cr.define('options', function() {
       if (!this.searchActive_ && !active)
         return;
 
+      if (!ShouldEnableSearch())
+        return;
+
       this.searchActive_ = active;
 
       if (active) {
-        var hash = location.hash;
+        var hash = this.hash;
         if (hash) {
           this.searchField.value =
               decodeURIComponent(hash.slice(1).replace(/\+/g, ' '));
         } else if (!this.searchField.value) {
           // This should only happen if the user goes directly to
           // chrome://settings-frame/search
-          OptionsPage.showDefaultPage();
+          PageManager.showDefaultPage();
           return;
         }
 
@@ -211,6 +221,8 @@ cr.define('options', function() {
           for (var i = 0, section; section = this.advancedSections_[i]; i++)
             $('settings').appendChild(section);
         }
+      } else {
+        this.searchField.value = '';
       }
 
       var pagesToSearch = this.getSearchablePages_();
@@ -234,7 +246,7 @@ cr.define('options', function() {
 
         if (active) {
           // When search is active, remove the 'hidden' tag.  This tag may have
-          // been added by the OptionsPage.
+          // been added by the PageManager.
           page.pageDiv.hidden = false;
         }
       }
@@ -262,6 +274,9 @@ cr.define('options', function() {
      * @private
      */
     setSearchText_: function(text) {
+      if (!ShouldEnableSearch())
+        return;
+
       // Prevent recursive execution of this method.
       if (this.insideSetSearchText_) return;
       this.insideSetSearchText_ = true;
@@ -269,21 +284,21 @@ cr.define('options', function() {
       // Cleanup the search query string.
       text = SearchPage.canonicalizeQuery(text);
 
-      // Set the hash on the current page, and the enclosing uber page
-      var hash = text ? '#' + encodeURIComponent(text) : '';
-      var path = text ? this.name : '';
-      uber.pushState({}, path + hash);
-
-      // Toggle the search page if necessary.
-      if (text) {
-        if (!this.searchActive_)
-          OptionsPage.showPageByName(this.name, false);
-      } else {
+      // If the search string becomes empty, flip back to the default page.
+      if (!text) {
         if (this.searchActive_)
-          OptionsPage.showPageByName(OptionsPage.getDefaultPage().name, false);
-
+          PageManager.showDefaultPage();
         this.insideSetSearchText_ = false;
         return;
+      }
+
+      // Toggle the search page if necessary. Otherwise, update the hash.
+      var hash = '#' + encodeURIComponent(text);
+      if (this.searchActive_) {
+        if (this.hash != hash)
+          this.setHash(hash);
+      } else {
+        PageManager.showPageByName(this.name, true, {hash: hash});
       }
 
       var foundMatches = false;
@@ -346,7 +361,7 @@ cr.define('options', function() {
       $('searchPageNoMatches').hidden = foundMatches;
 
       // Create search balloons for sub-page results.
-      length = bubbleControls.length;
+      var length = bubbleControls.length;
       for (var i = 0; i < length; i++)
         this.createSearchBubble_(bubbleControls[i], text);
 
@@ -492,9 +507,9 @@ cr.define('options', function() {
      */
     getSearchablePages_: function() {
       var name, page, pages = [];
-      for (name in OptionsPage.registeredPages) {
+      for (name in PageManager.registeredPages) {
         if (name != this.name) {
-          page = OptionsPage.registeredPages[name];
+          page = PageManager.registeredPages[name];
           if (!page.parentPage)
             pages.push(page);
         }
@@ -510,16 +525,16 @@ cr.define('options', function() {
      */
     getSearchableSubPages_: function() {
       var name, pageInfo, page, pages = [];
-      for (name in OptionsPage.registeredPages) {
-        page = OptionsPage.registeredPages[name];
+      for (name in PageManager.registeredPages) {
+        page = PageManager.registeredPages[name];
         if (page.parentPage &&
             page.associatedSection &&
             !page.associatedSection.hidden) {
           pages.push(page);
         }
       }
-      for (name in OptionsPage.registeredOverlayPages) {
-        page = OptionsPage.registeredOverlayPages[name];
+      for (name in PageManager.registeredOverlayPages) {
+        page = PageManager.registeredOverlayPages[name];
         if (page.associatedSection &&
             !page.associatedSection.hidden &&
             page.pageDiv != undefined) {
@@ -531,7 +546,7 @@ cr.define('options', function() {
 
     /**
      * A function to handle key press events.
-     * @return {Event} a keydown event.
+     * @param {Event} event A keydown event.
      * @private
      */
     keyDownEventHandler_: function(event) {
@@ -561,7 +576,7 @@ cr.define('options', function() {
 
   /**
    * Standardizes a user-entered text query by removing extra whitespace.
-   * @param {string} The user-entered text.
+   * @param {string} text The user-entered text.
    * @return {string} The trimmed query.
    */
   SearchPage.canonicalizeQuery = function(text) {

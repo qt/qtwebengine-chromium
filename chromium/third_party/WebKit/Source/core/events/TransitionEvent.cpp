@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/events/TransitionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 TransitionEventInit::TransitionEventInit()
     : elapsedTime(0)
@@ -37,7 +37,6 @@ TransitionEventInit::TransitionEventInit()
 TransitionEvent::TransitionEvent()
     : m_elapsedTime(0)
 {
-    ScriptWrappable::init(this);
 }
 
 TransitionEvent::TransitionEvent(const AtomicString& type, const String& propertyName, double elapsedTime, const String& pseudoElement)
@@ -46,7 +45,6 @@ TransitionEvent::TransitionEvent(const AtomicString& type, const String& propert
     , m_elapsedTime(elapsedTime)
     , m_pseudoElement(pseudoElement)
 {
-    ScriptWrappable::init(this);
 }
 
 TransitionEvent::TransitionEvent(const AtomicString& type, const TransitionEventInit& initializer)
@@ -55,7 +53,6 @@ TransitionEvent::TransitionEvent(const AtomicString& type, const TransitionEvent
     , m_elapsedTime(initializer.elapsedTime)
     , m_pseudoElement(initializer.pseudoElement)
 {
-    ScriptWrappable::init(this);
 }
 
 TransitionEvent::~TransitionEvent()
@@ -87,4 +84,4 @@ void TransitionEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

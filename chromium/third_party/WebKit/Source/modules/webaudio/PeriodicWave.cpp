@@ -41,47 +41,47 @@ const unsigned PeriodicWaveSize = 4096; // This must be a power of two.
 const unsigned NumberOfRanges = 36; // There should be 3 * log2(PeriodicWaveSize) 1/3 octave ranges.
 const float CentsPerRange = 1200 / 3; // 1/3 Octave.
 
-namespace WebCore {
+namespace blink {
 
 using namespace VectorMath;
 
-PassRefPtrWillBeRawPtr<PeriodicWave> PeriodicWave::create(float sampleRate, Float32Array* real, Float32Array* imag)
+PeriodicWave* PeriodicWave::create(float sampleRate, Float32Array* real, Float32Array* imag)
 {
     bool isGood = real && imag && real->length() == imag->length();
     ASSERT(isGood);
     if (isGood) {
-        RefPtrWillBeRawPtr<PeriodicWave> periodicWave = adoptRefWillBeNoop(new PeriodicWave(sampleRate));
+        PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
         size_t numberOfComponents = real->length();
         periodicWave->createBandLimitedTables(real->data(), imag->data(), numberOfComponents);
         return periodicWave;
     }
-    return nullptr;
+    return 0;
 }
 
-PassRefPtrWillBeRawPtr<PeriodicWave> PeriodicWave::createSine(float sampleRate)
+PeriodicWave* PeriodicWave::createSine(float sampleRate)
 {
-    RefPtrWillBeRawPtr<PeriodicWave> periodicWave = adoptRefWillBeNoop(new PeriodicWave(sampleRate));
+    PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
     periodicWave->generateBasicWaveform(OscillatorNode::SINE);
     return periodicWave;
 }
 
-PassRefPtrWillBeRawPtr<PeriodicWave> PeriodicWave::createSquare(float sampleRate)
+PeriodicWave* PeriodicWave::createSquare(float sampleRate)
 {
-    RefPtrWillBeRawPtr<PeriodicWave> periodicWave = adoptRefWillBeNoop(new PeriodicWave(sampleRate));
+    PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
     periodicWave->generateBasicWaveform(OscillatorNode::SQUARE);
     return periodicWave;
 }
 
-PassRefPtrWillBeRawPtr<PeriodicWave> PeriodicWave::createSawtooth(float sampleRate)
+PeriodicWave* PeriodicWave::createSawtooth(float sampleRate)
 {
-    RefPtrWillBeRawPtr<PeriodicWave> periodicWave = adoptRefWillBeNoop(new PeriodicWave(sampleRate));
+    PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
     periodicWave->generateBasicWaveform(OscillatorNode::SAWTOOTH);
     return periodicWave;
 }
 
-PassRefPtrWillBeRawPtr<PeriodicWave> PeriodicWave::createTriangle(float sampleRate)
+PeriodicWave* PeriodicWave::createTriangle(float sampleRate)
 {
-    RefPtrWillBeRawPtr<PeriodicWave> periodicWave = adoptRefWillBeNoop(new PeriodicWave(sampleRate));
+    PeriodicWave* periodicWave = new PeriodicWave(sampleRate);
     periodicWave->generateBasicWaveform(OscillatorNode::TRIANGLE);
     return periodicWave;
 }
@@ -92,7 +92,6 @@ PeriodicWave::PeriodicWave(float sampleRate)
     , m_numberOfRanges(NumberOfRanges)
     , m_centsPerRange(CentsPerRange)
 {
-    ScriptWrappable::init(this);
     float nyquist = 0.5 * m_sampleRate;
     m_lowestFundamentalFrequency = nyquist / maxNumberOfPartials();
     m_rateScale = m_periodicWaveSize / m_sampleRate;
@@ -300,6 +299,6 @@ void PeriodicWave::generateBasicWaveform(int shape)
     createBandLimitedTables(realP, imagP, halfSize);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/atomicops.h"
+#include "base/base_export.h"
 #include "base/callback.h"
 #include "base/containers/hash_tables.h"
 #include "base/gtest_prod_util.h"
@@ -22,7 +23,6 @@
 #include "base/synchronization/lock.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_local.h"
-#include "base/timer/timer.h"
 
 // Older style trace macros with explicit id and extra data
 // Only these macros result in publishing data to ETW as currently implemented.
@@ -44,17 +44,6 @@
 template <typename Type>
 struct DefaultSingletonTraits;
 
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-template <>
-struct hash<base::MessageLoop*> {
-  std::size_t operator()(base::MessageLoop* value) const {
-    return reinterpret_cast<std::size_t>(value);
-  }
-};
-}  // BASE_HASH_NAMESPACE
-#endif
-
 namespace base {
 
 class WaitableEvent;
@@ -64,13 +53,20 @@ namespace debug {
 
 // For any argument of type TRACE_VALUE_TYPE_CONVERTABLE the provided
 // class must implement this interface.
-class ConvertableToTraceFormat : public RefCounted<ConvertableToTraceFormat> {
+class BASE_EXPORT ConvertableToTraceFormat
+    : public RefCounted<ConvertableToTraceFormat> {
  public:
   // Append the class info to the provided |out| string. The appended
   // data must be a valid JSON object. Strings must be properly quoted, and
   // escaped. There is no processing applied to the content after it is
   // appended.
   virtual void AppendAsTraceFormat(std::string* out) const = 0;
+
+  std::string ToString() const {
+    std::string result;
+    AppendAsTraceFormat(&result);
+    return result;
+  }
 
  protected:
   virtual ~ConvertableToTraceFormat() {}
@@ -182,7 +178,7 @@ class BASE_EXPORT TraceEvent {
 // TraceBufferChunk is the basic unit of TraceBuffer.
 class BASE_EXPORT TraceBufferChunk {
  public:
-  TraceBufferChunk(uint32 seq)
+  explicit TraceBufferChunk(uint32 seq)
       : next_free_(0),
         seq_(seq) {
   }
@@ -284,7 +280,7 @@ class BASE_EXPORT CategoryFilter {
   // The default category filter, used when none is provided.
   // Allows all categories through, except if they end in the suffix 'Debug' or
   // 'Test'.
-  static const char* kDefaultCategoryFilterString;
+  static const char kDefaultCategoryFilterString[];
 
   // |filter_string| is a comma-delimited list of category wildcards.
   // A category can have an optional '-' prefix to make it an excluded category.
@@ -308,6 +304,8 @@ class BASE_EXPORT CategoryFilter {
   //          would make swap buffers take at least 16 ms every other time it
   //          is called.
   explicit CategoryFilter(const std::string& filter_string);
+
+  CategoryFilter();
 
   CategoryFilter(const CategoryFilter& cf);
 
@@ -334,7 +332,7 @@ class BASE_EXPORT CategoryFilter {
 
   // Clears both included/excluded pattern lists. This would be equivalent to
   // creating a CategoryFilter with an empty string, through the constructor.
-  // i.e: CategoryFilter("").
+  // i.e: CategoryFilter().
   //
   // When using an empty filter, all categories are considered included as we
   // are not excluding anything.
@@ -364,28 +362,70 @@ class BASE_EXPORT CategoryFilter {
 
 class TraceSamplingThread;
 
+// Options determines how the trace buffer stores data.
+enum TraceRecordMode {
+  // Record until the trace buffer is full.
+  RECORD_UNTIL_FULL,
+
+  // Record until the user ends the trace. The trace buffer is a fixed size
+  // and we use it as a ring buffer during recording.
+  RECORD_CONTINUOUSLY,
+
+  // Echo to console. Events are discarded.
+  ECHO_TO_CONSOLE,
+
+  // Record until the trace buffer is full, but with a huge buffer size.
+  RECORD_AS_MUCH_AS_POSSIBLE
+};
+
+struct BASE_EXPORT TraceOptions {
+  TraceOptions()
+      : record_mode(RECORD_UNTIL_FULL),
+        enable_sampling(false),
+        enable_systrace(false) {}
+
+  explicit TraceOptions(TraceRecordMode record_mode)
+      : record_mode(record_mode),
+        enable_sampling(false),
+        enable_systrace(false) {}
+
+  // |options_string| is a comma-delimited list of trace options.
+  // Possible options are: "record-until-full", "record-continuously",
+  // "trace-to-console", "enable-sampling" and "enable-systrace".
+  // The first 3 options are trace recoding modes and hence
+  // mutually exclusive. If more than one trace recording modes appear in the
+  // options_string, the last one takes precedence. If none of the trace
+  // recording mode is specified, recording mode is RECORD_UNTIL_FULL.
+  //
+  // The trace option will first be reset to the default option
+  // (record_mode set to RECORD_UNTIL_FULL, enable_sampling and enable_systrace
+  // set to false) before options parsed from |options_string| are applied on
+  // it.
+  // If |options_string| is invalid, the final state of trace_options is
+  // undefined.
+  //
+  // Example: trace_options.SetFromString("record-until-full")
+  // Example: trace_options.SetFromString(
+  //              "record-continuously, enable-sampling")
+  // Example: trace_options.SetFromString("record-until-full, trace-to-console")
+  // will set ECHO_TO_CONSOLE as the recording mode.
+  //
+  // Returns true on success.
+  bool SetFromString(const std::string& options_string);
+
+  std::string ToString() const;
+
+  TraceRecordMode record_mode;
+  bool enable_sampling;
+  bool enable_systrace;
+};
+
 class BASE_EXPORT TraceLog {
  public:
   enum Mode {
     DISABLED = 0,
     RECORDING_MODE,
     MONITORING_MODE,
-  };
-
-  // Options determines how the trace buffer stores data.
-  enum Options {
-    // Record until the trace buffer is full.
-    RECORD_UNTIL_FULL = 1 << 0,
-
-    // Record until the user ends the trace. The trace buffer is a fixed size
-    // and we use it as a ring buffer during recording.
-    RECORD_CONTINUOUSLY = 1 << 1,
-
-    // Enable the sampling profiler in the recording mode.
-    ENABLE_SAMPLING = 1 << 2,
-
-    // Echo to console. Events are discarded.
-    ECHO_TO_CONSOLE = 1 << 3,
   };
 
   // The pointer returned from GetCategoryGroupEnabledInternal() points to a
@@ -410,16 +450,15 @@ class BASE_EXPORT TraceLog {
   // Retrieves a copy (for thread-safety) of the current CategoryFilter.
   CategoryFilter GetCurrentCategoryFilter();
 
-  Options trace_options() const {
-    return static_cast<Options>(subtle::NoBarrier_Load(&trace_options_));
-  }
+  // Retrieves a copy (for thread-safety) of the current TraceOptions.
+  TraceOptions GetCurrentTraceOptions() const;
 
   // Enables normal tracing (recording trace events in the trace buffer).
   // See CategoryFilter comments for details on how to control what categories
   // will be traced. If tracing has already been enabled, |category_filter| will
   // be merged into the current category filter.
   void SetEnabled(const CategoryFilter& category_filter,
-                  Mode mode, Options options);
+                  Mode mode, const TraceOptions& options);
 
   // Disables normal tracing for all categories.
   void SetDisabled();
@@ -442,7 +481,7 @@ class BASE_EXPORT TraceLog {
   // Enabled state listeners give a callback when tracing is enabled or
   // disabled. This can be used to tie into other library's tracing systems
   // on-demand.
-  class EnabledStateObserver {
+  class BASE_EXPORT EnabledStateObserver {
    public:
     // Called just after the tracing system becomes enabled, outside of the
     // |lock_|. TraceLog::IsEnabled() is true at this point.
@@ -599,12 +638,20 @@ class BASE_EXPORT TraceLog {
   void SetCurrentThreadBlocksMessageLoop();
 
  private:
+  typedef unsigned int InternalTraceOptions;
+
   FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
                            TraceBufferRingBufferGetReturnChunk);
   FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
                            TraceBufferRingBufferHalfIteration);
   FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
                            TraceBufferRingBufferFullIteration);
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceBufferVectorReportFull);
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           ConvertTraceOptionsToInternalOptions);
+  FRIEND_TEST_ALL_PREFIXES(TraceEventTestFixture,
+                           TraceRecordAsMuchAsPossibleMode);
 
   // This allows constructor and destructor to be private and usable only
   // by the Singleton class.
@@ -616,11 +663,14 @@ class BASE_EXPORT TraceLog {
   // the category group, or event_callback_ is not null and
   // event_callback_category_filter_ matches the category group.
   void UpdateCategoryGroupEnabledFlags();
-  void UpdateCategoryGroupEnabledFlag(int category_index);
+  void UpdateCategoryGroupEnabledFlag(size_t category_index);
 
   // Configure synthetic delays based on the values set in the current
   // category filter.
   void UpdateSyntheticDelaysFromCategoryFilter();
+
+  InternalTraceOptions GetInternalOptionsFromTraceOptions(
+      const TraceOptions& options);
 
   class ThreadLocalEventBuffer;
   class OptionalAutoLock;
@@ -630,8 +680,14 @@ class BASE_EXPORT TraceLog {
   const unsigned char* GetCategoryGroupEnabledInternal(const char* name);
   void AddMetadataEventsWhileLocked();
 
+  InternalTraceOptions trace_options() const {
+    return static_cast<InternalTraceOptions>(
+        subtle::NoBarrier_Load(&trace_options_));
+  }
+
   TraceBuffer* trace_buffer() const { return logged_events_.get(); }
   TraceBuffer* CreateTraceBuffer();
+  TraceBuffer* CreateTraceBufferVectorOfSize(size_t max_chunks);
 
   std::string EventToConsoleMessage(unsigned char phase,
                                     const TimeTicks& timestamp,
@@ -668,6 +724,15 @@ class BASE_EXPORT TraceLog {
     return timestamp - time_offset_;
   }
 
+  // Internal representation of trace options since we store the currently used
+  // trace option as an AtomicWord.
+  static const InternalTraceOptions kInternalNone;
+  static const InternalTraceOptions kInternalRecordUntilFull;
+  static const InternalTraceOptions kInternalRecordContinuously;
+  static const InternalTraceOptions kInternalEchoToConsole;
+  static const InternalTraceOptions kInternalEnableSampling;
+  static const InternalTraceOptions kInternalRecordAsMuchAsPossible;
+
   // This lock protects TraceLog member accesses (except for members protected
   // by thread_info_lock_) from arbitrary threads.
   mutable Lock lock_;
@@ -691,6 +756,8 @@ class BASE_EXPORT TraceLog {
   // The following two maps are used only when ECHO_TO_CONSOLE.
   base::hash_map<int, std::stack<TimeTicks> > thread_event_start_times_;
   base::hash_map<std::string, int> thread_colors_;
+
+  TimeTicks buffer_limit_reached_timestamp_;
 
   // XORed with TraceID to make it unlikely to collide with other processes.
   unsigned long long process_id_hash_;

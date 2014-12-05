@@ -25,6 +25,7 @@
 # THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
 from StringIO import StringIO
 
 from webkitpy.common.system.environment import Environment
@@ -37,6 +38,7 @@ from webkitpy.common.system.workspace_mock import MockWorkspace
 
 class MockSystemHost(object):
     def __init__(self, log_executive=False, executive_throws_when_run=None, os_name=None, os_version=None, executive=None, filesystem=None):
+        self.executable = 'python'
         self.executive = executive or MockExecutive(should_log=log_executive, should_throw_when_run=executive_throws_when_run)
         self.filesystem = filesystem or MockFileSystem()
         self.user = MockUser()
@@ -49,6 +51,7 @@ class MockSystemHost(object):
         # FIXME: Should this take pointers to the filesystem and the executive?
         self.workspace = MockWorkspace()
 
+        self.stdin = StringIO()
         self.stdout = StringIO()
         self.stderr = StringIO()
 
@@ -58,8 +61,5 @@ class MockSystemHost(object):
     def print_(self, *args, **kwargs):
         sep = kwargs.get('sep', ' ')
         end = kwargs.get('end', '\n')
-        file = kwargs.get('file', None)
-        stderr = kwargs.get('stderr', False)
-
-        file = file or (self.stderr if stderr else self.stdout)
-        file.write(sep.join([str(arg) for arg in args]) + end)
+        stream = kwargs.get('stream', self.stdout)
+        stream.write(sep.join([str(arg) for arg in args]) + end)

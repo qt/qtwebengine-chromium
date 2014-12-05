@@ -4,6 +4,8 @@
 
 #include "crypto/rsa_private_key.h"
 
+#include <openssl/bio.h>
+#include <openssl/bn.h>
 #include <openssl/evp.h>
 #include <openssl/pkcs12.h>
 #include <openssl/rsa.h>
@@ -11,6 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 
 namespace crypto {
 
@@ -29,7 +32,7 @@ bool ExportKey(EVP_PKEY* key,
     return false;
 
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  ScopedOpenSSL<BIO, BIO_free_all> bio(BIO_new(BIO_s_mem()));
+  ScopedBIO bio(BIO_new(BIO_s_mem()));
 
   int res = export_fn(bio.get(), key);
   if (!res)
@@ -50,8 +53,8 @@ bool ExportKey(EVP_PKEY* key,
 RSAPrivateKey* RSAPrivateKey::Create(uint16 num_bits) {
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
-  ScopedOpenSSL<RSA, RSA_free> rsa_key(RSA_new());
-  ScopedOpenSSL<BIGNUM, BN_free> bn(BN_new());
+  ScopedRSA rsa_key(RSA_new());
+  ScopedBIGNUM bn(BN_new());
   if (!rsa_key.get() || !bn.get() || !BN_set_word(bn.get(), 65537L))
     return NULL;
 
@@ -75,14 +78,14 @@ RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfo(
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
   // BIO_new_mem_buf is not const aware, but it does not modify the buffer.
   char* data = reinterpret_cast<char*>(const_cast<uint8*>(&input[0]));
-  ScopedOpenSSL<BIO, BIO_free_all> bio(BIO_new_mem_buf(data, input.size()));
+  ScopedBIO bio(BIO_new_mem_buf(data, input.size()));
   if (!bio.get())
     return NULL;
 
   // Importing is a little more involved than exporting, as we must first
   // PKCS#8 decode the input, and then import the EVP_PKEY from Private Key
   // Info structure returned.
-  ScopedOpenSSL<PKCS8_PRIV_KEY_INFO, PKCS8_PRIV_KEY_INFO_free> p8inf(
+  ScopedOpenSSL<PKCS8_PRIV_KEY_INFO, PKCS8_PRIV_KEY_INFO_free>::Type p8inf(
       d2i_PKCS8_PRIV_KEY_INFO_bio(bio.get(), NULL));
   if (!p8inf.get())
     return NULL;
@@ -93,6 +96,16 @@ RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfo(
     return NULL;
 
   return result.release();
+}
+
+// static
+RSAPrivateKey* RSAPrivateKey::CreateFromKey(EVP_PKEY* key) {
+  DCHECK(key);
+  if (EVP_PKEY_type(key->type) != EVP_PKEY_RSA)
+    return NULL;
+  RSAPrivateKey* copy = new RSAPrivateKey();
+  copy->key_ = EVP_PKEY_dup(key);
+  return copy;
 }
 
 RSAPrivateKey::RSAPrivateKey()
@@ -106,11 +119,11 @@ RSAPrivateKey::~RSAPrivateKey() {
 
 RSAPrivateKey* RSAPrivateKey::Copy() const {
   scoped_ptr<RSAPrivateKey> copy(new RSAPrivateKey());
-  RSA* rsa = EVP_PKEY_get1_RSA(key_);
+  ScopedRSA rsa(EVP_PKEY_get1_RSA(key_));
   if (!rsa)
     return NULL;
   copy->key_ = EVP_PKEY_new();
-  if (!EVP_PKEY_set1_RSA(copy->key_, rsa))
+  if (!EVP_PKEY_set1_RSA(copy->key_, rsa.get()))
     return NULL;
   return copy.release();
 }

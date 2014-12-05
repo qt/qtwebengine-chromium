@@ -15,6 +15,7 @@
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/common/view_messages.h"
 #include "content/public/common/content_switches.h"
+#include "content/renderer/gpu/frame_swap_message_queue.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
@@ -54,12 +55,14 @@ CompositorOutputSurface::CompositorOutputSurface(
     uint32 output_surface_id,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
     scoped_ptr<cc::SoftwareOutputDevice> software_device,
+    scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
     bool use_swap_compositor_frame_message)
     : OutputSurface(context_provider, software_device.Pass()),
       output_surface_id_(output_surface_id),
       use_swap_compositor_frame_message_(use_swap_compositor_frame_message),
       output_surface_filter_(
           RenderThreadImpl::current()->compositor_output_surface_filter()),
+      frame_swap_message_queue_(swap_frame_message_queue),
       routing_id_(routing_id),
       prefers_smoothness_(false),
 #if defined(OS_WIN)
@@ -71,6 +74,7 @@ CompositorOutputSurface::CompositorOutputSurface(
       layout_test_mode_(RenderThreadImpl::current()->layout_test_mode()),
       weak_ptrs_(this) {
   DCHECK(output_surface_filter_.get());
+  DCHECK(frame_swap_message_queue_.get());
   DetachFromThread();
   message_sender_ = RenderThreadImpl::current()->sync_message_filter();
   DCHECK(message_sender_.get());
@@ -107,7 +111,7 @@ bool CompositorOutputSurface::BindToClient(
     client->SetMemoryPolicy(cc::ManagedMemoryPolicy(
         128 * 1024 * 1024,
         gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE,
-        cc::ManagedMemoryPolicy::kDefaultNumResourcesLimit));
+        base::SharedMemory::GetHandleLimit() / 3));
   }
 
   return true;
@@ -130,7 +134,8 @@ void CompositorOutputSurface::ShortcutSwapAck(
 }
 
 void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
-  if (layout_test_mode_ && use_swap_compositor_frame_message_) {
+  DCHECK(use_swap_compositor_frame_message_);
+  if (layout_test_mode_) {
     // This code path is here to support layout tests that are currently
     // doing a readback in the renderer instead of the browser. So they
     // are using deprecated code paths in the renderer and don't need to
@@ -149,37 +154,34 @@ void CompositorOutputSurface::SwapBuffers(cc::CompositorFrame* frame) {
                    base::Passed(&frame->gl_frame_data),
                    base::Passed(&frame->software_frame_data));
 
-    if (context_provider_) {
-      gpu::gles2::GLES2Interface* context = context_provider_->ContextGL();
+    if (context_provider()) {
+      gpu::gles2::GLES2Interface* context = context_provider()->ContextGL();
       context->Flush();
       uint32 sync_point = context->InsertSyncPointCHROMIUM();
-      context_provider_->ContextSupport()->SignalSyncPoint(sync_point, closure);
+      context_provider()->ContextSupport()->SignalSyncPoint(sync_point,
+                                                            closure);
     } else {
       base::MessageLoopProxy::current()->PostTask(FROM_HERE, closure);
     }
     client_->DidSwapBuffers();
     return;
-  }
-
-  if (use_swap_compositor_frame_message_) {
-    Send(new ViewHostMsg_SwapCompositorFrame(routing_id_,
-                                             output_surface_id_,
-                                             *frame));
+  } else {
+    {
+      ScopedVector<IPC::Message> messages;
+      std::vector<IPC::Message> messages_to_deliver_with_frame;
+      scoped_ptr<FrameSwapMessageQueue::SendMessageScope> send_message_scope =
+          frame_swap_message_queue_->AcquireSendMessageScope();
+      frame_swap_message_queue_->DrainMessages(&messages);
+      FrameSwapMessageQueue::TransferMessages(messages,
+                                              &messages_to_deliver_with_frame);
+      Send(new ViewHostMsg_SwapCompositorFrame(routing_id_,
+                                               output_surface_id_,
+                                               *frame,
+                                               messages_to_deliver_with_frame));
+      // ~send_message_scope.
+    }
     client_->DidSwapBuffers();
-    return;
   }
-
-  if (frame->gl_frame_data) {
-    context_provider_->ContextGL()->ShallowFlushCHROMIUM();
-    ContextProviderCommandBuffer* provider_command_buffer =
-        static_cast<ContextProviderCommandBuffer*>(context_provider_.get());
-    CommandBufferProxyImpl* command_buffer_proxy =
-        provider_command_buffer->GetCommandBufferProxy();
-    DCHECK(command_buffer_proxy);
-    command_buffer_proxy->SetLatencyInfo(frame->metadata.latency_info);
-  }
-
-  OutputSurface::SwapBuffers(frame);
 }
 
 void CompositorOutputSurface::OnMessageReceived(const IPC::Message& message) {

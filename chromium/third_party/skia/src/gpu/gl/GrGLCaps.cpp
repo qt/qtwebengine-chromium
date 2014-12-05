@@ -7,6 +7,7 @@
 
 
 #include "GrGLCaps.h"
+
 #include "GrGLContext.h"
 #include "SkTSearch.h"
 #include "SkTSort.h"
@@ -22,7 +23,6 @@ void GrGLCaps::reset() {
     fStencilFormats.reset();
     fStencilVerifiedColorConfigs.reset();
     fMSFBOType = kNone_MSFBOType;
-    fFBFetchType = kNone_FBFetchType;
     fInvalidateFBType = kNone_InvalidateFBType;
     fLATCAlias = kLATC_LATCAlias;
     fMapBufferType = kNone_MapBufferType;
@@ -48,6 +48,11 @@ void GrGLCaps::reset() {
     fIsCoreProfile = false;
     fFullClearIsFree = false;
     fDropsTileOnZeroDivide = false;
+    fFBFetchSupport = false;
+    fFBFetchColorName = NULL;
+    fFBFetchExtensionString = NULL;
+
+    fReadPixelsSupportedCache.reset();
 }
 
 GrGLCaps::GrGLCaps(const GrGLCaps& caps) : GrDrawTargetCaps() {
@@ -65,7 +70,6 @@ GrGLCaps& GrGLCaps::operator= (const GrGLCaps& caps) {
     fMaxFragmentTextureUnits = caps.fMaxFragmentTextureUnits;
     fMaxFixedFunctionTextureCoords = caps.fMaxFixedFunctionTextureCoords;
     fMSFBOType = caps.fMSFBOType;
-    fFBFetchType = caps.fFBFetchType;
     fInvalidateFBType = caps.fInvalidateFBType;
     fMapBufferType = caps.fMapBufferType;
     fRGBA8RenderbufferSupport = caps.fRGBA8RenderbufferSupport;
@@ -86,6 +90,9 @@ GrGLCaps& GrGLCaps::operator= (const GrGLCaps& caps) {
     fIsCoreProfile = caps.fIsCoreProfile;
     fFullClearIsFree = caps.fFullClearIsFree;
     fDropsTileOnZeroDivide = caps.fDropsTileOnZeroDivide;
+    fFBFetchSupport = caps.fFBFetchSupport;
+    fFBFetchColorName = caps.fFBFetchColorName;
+    fFBFetchExtensionString = caps.fFBFetchExtensionString;
 
     return *this;
 }
@@ -193,9 +200,10 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     // can change based on which render target is bound
     fTwoFormatLimit = kGLES_GrGLStandard == standard;
 
+    // Frag Coords Convention support is not part of ES
     // Known issue on at least some Intel platforms:
     // http://code.google.com/p/skia/issues/detail?id=946
-    if (kIntel_GrGLVendor != ctxInfo.vendor()) {
+    if (kIntel_GrGLVendor != ctxInfo.vendor() && kGLES_GrGLStandard != standard) {
         fFragCoordsConventionSupport = ctxInfo.glslGeneration() >= k150_GrGLSLGeneration ||
                                        ctxInfo.hasExtension("GL_ARB_fragment_coord_conventions");
     }
@@ -205,7 +213,9 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     // data for dynamic content on these GPUs. Perhaps we should read the renderer string and
     // limit this decision to specific GPU families rather than basing it on the vendor alone.
     if (!GR_GL_MUST_USE_VBO &&
-        (kARM_GrGLVendor == ctxInfo.vendor() || kImagination_GrGLVendor == ctxInfo.vendor())) {
+        (kARM_GrGLVendor == ctxInfo.vendor() ||
+         kImagination_GrGLVendor == ctxInfo.vendor() ||
+         kQualcomm_GrGLVendor == ctxInfo.vendor())) {
         fUseNonVBOVertexAndIndexDynamicData = true;
     }
 
@@ -233,9 +243,19 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
 
     if (kGLES_GrGLStandard == standard) {
         if (ctxInfo.hasExtension("GL_EXT_shader_framebuffer_fetch")) {
-            fFBFetchType = kEXT_FBFetchType;
+            fFBFetchSupport = true;
+            fFBFetchColorName = "gl_LastFragData[0]";
+            fFBFetchExtensionString = "GL_EXT_shader_framebuffer_fetch";
         } else if (ctxInfo.hasExtension("GL_NV_shader_framebuffer_fetch")) {
-            fFBFetchType = kNV_FBFetchType;
+            fFBFetchSupport = true;
+            fFBFetchColorName = "gl_LastFragData[0]";
+            fFBFetchExtensionString = "GL_NV_shader_framebuffer_fetch";
+        } else if (ctxInfo.hasExtension("GL_ARM_shader_framebuffer_fetch")) {
+            // The arm extension also requires an additional flag which we will set onResetContext
+            // This is all temporary.
+            fFBFetchSupport = true;
+            fFBFetchColorName = "gl_LastFragColorARM";
+            fFBFetchExtensionString = "GL_ARM_shader_framebuffer_fetch";
         }
     }
 
@@ -311,12 +331,31 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
     // attachment, hence this min:
     fMaxRenderTargetSize = SkTMin(fMaxTextureSize, fMaxRenderTargetSize);
 
-    fPathRenderingSupport = ctxInfo.hasExtension("GL_NV_path_rendering") &&
-        ctxInfo.hasExtension("GL_EXT_direct_state_access");
+    fPathRenderingSupport = ctxInfo.hasExtension("GL_NV_path_rendering");
+
+    if (fPathRenderingSupport) {
+        if (kGL_GrGLStandard == standard) {
+            // We need one of the two possible texturing methods: using fixed function pipeline
+            // (PathTexGen, texcoords, ...)  or using the newer NVPR API additions that support
+            // setting individual fragment inputs with ProgramPathFragmentInputGen. The API
+            // additions are detected by checking the existence of the function. Eventually we may
+            // choose to remove the fixed function codepath.
+            // Set fMaxFixedFunctionTextureCoords = 0 here if you want to force
+            // ProgramPathFragmentInputGen usage on desktop.
+            fPathRenderingSupport = ctxInfo.hasExtension("GL_EXT_direct_state_access") &&
+                (fMaxFixedFunctionTextureCoords > 0 ||
+                 ((ctxInfo.version() >= GR_GL_VER(4,3) ||
+                   ctxInfo.hasExtension("GL_ARB_program_interface_query")) &&
+                  gli->fFunctions.fProgramPathFragmentInputGen));
+        } else {
+            fPathRenderingSupport = ctxInfo.version() >= GR_GL_VER(3,1);
+        }
+    }
 
     fGpuTracingSupport = ctxInfo.hasExtension("GL_EXT_debug_marker");
 
-    fDstReadInShaderSupport = kNone_FBFetchType != fFBFetchType;
+    // For now these two are equivalent but we could have dst read in shader via some other method
+    fDstReadInShaderSupport = fFBFetchSupport;
 
     // Disable scratch texture reuse on Mali and Adreno devices
     fReuseScratchTextures = kARM_GrGLVendor != ctxInfo.vendor() &&
@@ -331,13 +370,19 @@ bool GrGLCaps::init(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
         fGeometryShaderSupport = ctxInfo.version() >= GR_GL_VER(3,2) &&
                                  ctxInfo.glslGeneration() >= k150_GrGLSLGeneration;
     } else {
-        fShaderDerivativeSupport = ctxInfo.hasExtension("GL_OES_standard_derivatives");
+        fShaderDerivativeSupport = ctxInfo.version() >= GR_GL_VER(3, 0) ||
+                                   ctxInfo.hasExtension("GL_OES_standard_derivatives");
     }
 
     if (GrGLCaps::kES_IMG_MsToTexture_MSFBOType == fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES_IMG, &fMaxSampleCount);
     } else if (GrGLCaps::kNone_MSFBOType != fMSFBOType) {
         GR_GL_GetIntegerv(gli, GR_GL_MAX_SAMPLES, &fMaxSampleCount);
+    }
+
+    if (kPowerVR54x_GrGLRenderer == ctxInfo.renderer() ||
+        kPowerVRRogue_GrGLRenderer == ctxInfo.renderer()) {
+        fUseDrawInsteadOfClear = true;
     }
 
     this->initConfigTexturableTable(ctxInfo, gli);
@@ -425,6 +470,10 @@ void GrGLCaps::initConfigRenderableTable(const GrGLContextInfo& ctxInfo) {
         }
     }
 
+    if (this->isConfigTexturable(kRGBA_float_GrPixelConfig)) {
+        fConfigRenderSupport[kRGBA_float_GrPixelConfig][kNo_MSAA] = true;
+    }
+
     // If we don't support MSAA then undo any places above where we set a config as renderable with
     // msaa.
     if (kNone_MSFBOType == fMSFBOType) {
@@ -479,13 +528,16 @@ void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const G
     // however, it is only available on standard OpenGL after version 1.3
     bool hasCompressTex2D = (kGL_GrGLStandard != standard || version >= GR_GL_VER(1, 3));
 
+    fCompressedTexSubImageSupport =
+        hasCompressTex2D && (gli->fFunctions.fCompressedTexSubImage2D);
+
     // Check for ETC1
     bool hasETC1 = false;
 
     // First check version for support
     if (kGL_GrGLStandard == standard) {
         hasETC1 = hasCompressTex2D &&
-            (version >= GR_GL_VER(4, 3) || 
+            (version >= GR_GL_VER(4, 3) ||
              ctxInfo.hasExtension("GL_ARB_ES3_compatibility"));
     } else {
         hasETC1 = hasCompressTex2D &&
@@ -531,11 +583,37 @@ void GrGLCaps::initConfigTexturableTable(const GrGLContextInfo& ctxInfo, const G
 
     fConfigTextureSupport[kLATC_GrPixelConfig] = hasLATC;
     fLATCAlias = alias;
+
+    // Check for R11_EAC ... We don't support R11_EAC on desktop, as most
+    // cards default to decompressing the textures in the driver, and is
+    // generally slower.
+    if (kGL_GrGLStandard != standard) {
+        fConfigTextureSupport[kR11_EAC_GrPixelConfig] = version >= GR_GL_VER(3, 0);
+    }
+
+    // Check for ASTC
+    fConfigTextureSupport[kASTC_12x12_GrPixelConfig] =
+        ctxInfo.hasExtension("GL_KHR_texture_compression_astc_hdr") ||
+        ctxInfo.hasExtension("GL_KHR_texture_compression_astc_ldr") ||
+        ctxInfo.hasExtension("GL_OES_texture_compression_astc");
+
+    // Check for floating point texture support
+    // NOTE: We disallow floating point textures on ES devices if linear
+    // filtering modes are not supported.  This is for simplicity, but a more
+    // granular approach is possible.  Coincidentally, floating point textures became part of
+    // the standard in ES3.1 / OGL 3.1, hence the shorthand
+    bool hasFPTextures = version >= GR_GL_VER(3, 1);
+    if (!hasFPTextures) {
+        hasFPTextures = ctxInfo.hasExtension("GL_ARB_texture_float") ||
+                        (ctxInfo.hasExtension("OES_texture_float_linear") &&
+                         ctxInfo.hasExtension("GL_OES_texture_float"));
+    }
+    fConfigTextureSupport[kRGBA_float_GrPixelConfig] = hasFPTextures;
 }
 
-bool GrGLCaps::readPixelsSupported(const GrGLInterface* intf,
-                                   GrGLenum format,
-                                   GrGLenum type) const {
+bool GrGLCaps::doReadPixelsSupported(const GrGLInterface* intf,
+                                     GrGLenum format,
+                                     GrGLenum type) const {
     if (GR_GL_RGBA == format && GR_GL_UNSIGNED_BYTE == type) {
         // ES 2 guarantees this format is supported
         return true;
@@ -560,6 +638,26 @@ bool GrGLCaps::readPixelsSupported(const GrGLInterface* intf,
                       &otherType);
 
     return (GrGLenum)otherFormat == format && (GrGLenum)otherType == type;
+}
+
+bool GrGLCaps::readPixelsSupported(const GrGLInterface* intf,
+                                   GrGLenum format,
+                                   GrGLenum type,
+                                   GrGLenum currFboFormat) const {
+
+    ReadPixelsSupportedFormats::Key key = {format, type, currFboFormat};
+
+    ReadPixelsSupportedFormats* cachedValue = fReadPixelsSupportedCache.find(key);
+
+    if (NULL == cachedValue) {
+        bool value = doReadPixelsSupported(intf, format, type);
+        ReadPixelsSupportedFormats newValue(key, value);
+        fReadPixelsSupportedCache.add(newValue);
+
+        return newValue.value();
+    }
+
+    return cachedValue->value();
 }
 
 void GrGLCaps::initFSAASupport(const GrGLContextInfo& ctxInfo, const GrGLInterface* gli) {
@@ -725,16 +823,6 @@ SkString GrGLCaps::dump() const {
     GR_STATIC_ASSERT(6 == kES_EXT_MsToTexture_MSFBOType);
     GR_STATIC_ASSERT(SK_ARRAY_COUNT(kMSFBOExtStr) == kLast_MSFBOType + 1);
 
-    static const char* kFBFetchTypeStr[] = {
-        "None",
-        "EXT",
-        "NV",
-    };
-    GR_STATIC_ASSERT(0 == kNone_FBFetchType);
-    GR_STATIC_ASSERT(1 == kEXT_FBFetchType);
-    GR_STATIC_ASSERT(2 == kNV_FBFetchType);
-    GR_STATIC_ASSERT(SK_ARRAY_COUNT(kFBFetchTypeStr) == kLast_FBFetchType + 1);
-
     static const char* kInvalidateFBTypeStr[] = {
         "None",
         "Discard",
@@ -759,7 +847,7 @@ SkString GrGLCaps::dump() const {
 
     r.appendf("Core Profile: %s\n", (fIsCoreProfile ? "YES" : "NO"));
     r.appendf("MSAA Type: %s\n", kMSFBOExtStr[fMSFBOType]);
-    r.appendf("FB Fetch Type: %s\n", kFBFetchTypeStr[fFBFetchType]);
+    r.appendf("FB Fetch Support: %s\n", (fFBFetchSupport ? "YES" : "NO"));
     r.appendf("Invalidate FB Type: %s\n", kInvalidateFBTypeStr[fInvalidateFBType]);
     r.appendf("Map Buffer Type: %s\n", kMapBufferTypeStr[fMapBufferType]);
     r.appendf("Max FS Uniform Vectors: %d\n", fMaxFragmentUniformVectors);

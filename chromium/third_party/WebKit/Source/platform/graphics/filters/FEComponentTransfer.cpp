@@ -27,15 +27,10 @@
 
 #include "SkColorFilterImageFilter.h"
 #include "SkTableColorFilter.h"
-#include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
-#include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/text/TextStream.h"
-#include "wtf/MathExtras.h"
-#include "wtf/StdLibExtras.h"
-#include "wtf/Uint8ClampedArray.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef void (*TransferType)(unsigned char*, const ComponentTransferFunction&);
 
@@ -150,34 +145,6 @@ static void gamma(unsigned char* values, const ComponentTransferFunction& transf
     }
 }
 
-void FEComponentTransfer::applySoftware()
-{
-    FilterEffect* in = inputEffect(0);
-    ImageBuffer* resultImage = createImageBufferResult();
-    if (!resultImage)
-        return;
-
-    RefPtr<Image> image = in->asImageBuffer()->copyImage(DontCopyBackingStore);
-    RefPtr<NativeImageSkia> nativeImage = image->nativeImageForCurrentFrame();
-    if (!nativeImage)
-        return;
-
-    unsigned char rValues[256], gValues[256], bValues[256], aValues[256];
-    getValues(rValues, gValues, bValues, aValues);
-
-    IntRect destRect = drawingRegionOfInputImage(in->absolutePaintRect());
-    SkPaint paint;
-    paint.setColorFilter(SkTableColorFilter::CreateARGB(aValues, rValues, gValues, bValues))->unref();
-    paint.setXfermodeMode(SkXfermode::kSrc_Mode);
-    resultImage->context()->drawBitmap(nativeImage->bitmap(), destRect.x(), destRect.y(), &paint);
-
-    if (affectsTransparentPixels()) {
-        IntRect fullRect = IntRect(IntPoint(), absolutePaintRect().size());
-        resultImage->context()->clipOut(destRect);
-        resultImage->context()->fillRect(fullRect, Color(rValues[0], gValues[0], bValues[0], aValues[0]));
-    }
-}
-
 bool FEComponentTransfer::affectsTransparentPixels()
 {
     double intercept = 0;
@@ -281,4 +248,4 @@ TextStream& FEComponentTransfer::externalRepresentation(TextStream& ts, int inde
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

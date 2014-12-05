@@ -31,16 +31,15 @@
 #ifndef StorageQuota_h
 #define StorageQuota_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class ExecutionContext;
-
-class StorageQuota FINAL : public GarbageCollectedFinalized<StorageQuota>, public ScriptWrappable {
+class StorageQuota final : public GarbageCollected<StorageQuota>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static StorageQuota* create()
     {
@@ -52,14 +51,12 @@ public:
     ScriptPromise queryInfo(ScriptState*, String type);
     ScriptPromise requestPersistentQuota(ScriptState*, unsigned long long newQuota);
 
-    ~StorageQuota();
-
     void trace(Visitor*) { }
 
 private:
     StorageQuota();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageQuota_h

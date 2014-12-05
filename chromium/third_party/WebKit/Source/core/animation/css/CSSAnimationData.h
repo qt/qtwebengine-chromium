@@ -9,18 +9,18 @@
 #include "core/animation/css/CSSTimingData.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSAnimationData FINAL : public CSSTimingData {
+class CSSAnimationData final : public CSSTimingData {
 public:
-    static PassOwnPtrWillBeRawPtr<CSSAnimationData> create()
+    static PassOwnPtr<CSSAnimationData> create()
     {
-        return adoptPtrWillBeNoop(new CSSAnimationData);
+        return adoptPtr(new CSSAnimationData);
     }
 
-    static PassOwnPtrWillBeRawPtr<CSSAnimationData> create(const CSSAnimationData& animationData)
+    static PassOwnPtr<CSSAnimationData> create(const CSSAnimationData& animationData)
     {
-        return adoptPtrWillBeNoop(new CSSAnimationData(animationData));
+        return adoptPtr(new CSSAnimationData(animationData));
     }
 
     bool animationsMatchForStyleRecalc(const CSSAnimationData& other) const;
@@ -56,6 +56,6 @@ private:
     Vector<EAnimPlayState> m_playStateList;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSAnimationData_h

@@ -44,16 +44,8 @@
 #include "public/platform/WebVector.h"
 #include "public/web/WebDocument.h"
 #include "public/web/WebSecurityOrigin.h"
-#include "wtf/Vector.h"
-
-using namespace WebCore;
 
 namespace blink {
-
-WebUserMediaRequest::WebUserMediaRequest(const PassRefPtrWillBeRawPtr<UserMediaRequest>& request)
-    : m_private(request)
-{
-}
 
 WebUserMediaRequest::WebUserMediaRequest(UserMediaRequest* request)
     : m_private(request)

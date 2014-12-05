@@ -33,10 +33,12 @@
 #include "core/rendering/style/QuotesData.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleReflection.h"
+#include "core/rendering/style/TransformOrigin.h"
 #include "core/svg/SVGLength.h"
 #include "platform/LengthSize.h"
+#include "platform/fonts/FontDescription.h"
 
-namespace WebCore {
+namespace blink {
 
 // Note that we assume the parser only allows valid CSSValue types.
 
@@ -44,8 +46,17 @@ class StyleBuilderConverter {
 public:
     static PassRefPtr<StyleReflection> convertBoxReflect(StyleResolverState&, CSSValue*);
     static AtomicString convertFragmentIdentifier(StyleResolverState&, CSSValue*);
+    static Color convertColor(StyleResolverState&, CSSValue*, bool forVisitedLink = false);
     template <typename T> static T convertComputedLength(StyleResolverState&, CSSValue*);
+    static LengthBox convertClip(StyleResolverState&, CSSValue*);
+    template <typename T> static T convertFlags(StyleResolverState&, CSSValue*);
+    static FontDescription::FamilyDescription convertFontFamily(StyleResolverState&, CSSValue*);
+    static PassRefPtr<FontFeatureSettings> convertFontFeatureSettings(StyleResolverState&, CSSValue*);
+    static FontDescription::Size convertFontSize(StyleResolverState&, CSSValue*);
+    static FontWeight convertFontWeight(StyleResolverState&, CSSValue*);
+    static FontDescription::VariantLigatures convertFontVariantLigatures(StyleResolverState&, CSSValue*);
     static EGlyphOrientation convertGlyphOrientation(StyleResolverState&, CSSValue*);
+    static GridAutoFlow convertGridAutoFlow(StyleResolverState&, CSSValue*);
     static GridPosition convertGridPosition(StyleResolverState&, CSSValue*);
     static GridTrackSize convertGridTrackSize(StyleResolverState&, CSSValue*);
     template <typename T> static T convertLineWidth(StyleResolverState&, CSSValue*);
@@ -56,16 +67,21 @@ public:
     static LengthPoint convertLengthPoint(StyleResolverState&, CSSValue*);
     static LineBoxContain convertLineBoxContain(StyleResolverState&, CSSValue*);
     static float convertNumberOrPercentage(StyleResolverState&, CSSValue*);
+    static float convertPerspective(StyleResolverState&, CSSValue*);
+    static LengthPoint convertPerspectiveOrigin(StyleResolverState&, CSSValue*);
     static PassRefPtr<QuotesData> convertQuotes(StyleResolverState&, CSSValue*);
     static LengthSize convertRadius(StyleResolverState&, CSSValue*);
     static EPaintOrder convertPaintOrder(StyleResolverState&, CSSValue*);
     static PassRefPtr<ShadowList> convertShadow(StyleResolverState&, CSSValue*);
+    static PassRefPtr<ShapeValue> convertShapeValue(StyleResolverState&, CSSValue*);
     static float convertSpacing(StyleResolverState&, CSSValue*);
     template <CSSValueID IdForNone> static AtomicString convertString(StyleResolverState&, CSSValue*);
     static PassRefPtr<SVGLengthList> convertStrokeDasharray(StyleResolverState&, CSSValue*);
+    static StyleColor convertStyleColor(StyleResolverState&, CSSValue*, bool forVisitedLink = false);
     static Color convertSVGColor(StyleResolverState&, CSSValue*);
     static PassRefPtr<SVGLength> convertSVGLength(StyleResolverState&, CSSValue*);
     static float convertTextStrokeWidth(StyleResolverState&, CSSValue*);
+    static TransformOrigin convertTransformOrigin(StyleResolverState&, CSSValue*);
 
     static bool convertGridTrackList(CSSValue*, Vector<GridTrackSize>&, NamedGridLinesMap&, OrderedNamedGridLines&, StyleResolverState&);
     static void createImplicitNamedGridLinesFromGridArea(const NamedGridAreaMap&, NamedGridLinesMap&, GridTrackSizingDirection);
@@ -75,6 +91,17 @@ template <typename T>
 T StyleBuilderConverter::convertComputedLength(StyleResolverState& state, CSSValue* value)
 {
     return toCSSPrimitiveValue(value)->computeLength<T>(state.cssToLengthConversionData());
+}
+
+template <typename T>
+T StyleBuilderConverter::convertFlags(StyleResolverState& state, CSSValue* value)
+{
+    T flags = static_cast<T>(0);
+    if (value->isPrimitiveValue() && toCSSPrimitiveValue(value)->getValueID() == CSSValueNone)
+        return flags;
+    for (CSSValueListIterator i(value); i.hasMore(); i.advance())
+        flags |= *toCSSPrimitiveValue(i.value());
+    return flags;
 }
 
 template <typename T>
@@ -112,6 +139,6 @@ AtomicString StyleBuilderConverter::convertString(StyleResolverState&, CSSValue*
     return AtomicString(primitiveValue->getStringValue());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

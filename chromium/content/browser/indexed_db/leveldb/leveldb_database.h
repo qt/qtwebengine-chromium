@@ -18,6 +18,7 @@
 namespace leveldb {
 class Comparator;
 class DB;
+class FilterPolicy;
 class Env;
 class Snapshot;
 }
@@ -58,15 +59,14 @@ class CONTENT_EXPORT LevelDBDatabase {
    public:
     explicit ComparatorAdapter(const LevelDBComparator* comparator);
 
-    virtual int Compare(const leveldb::Slice& a,
-                        const leveldb::Slice& b) const OVERRIDE;
+    int Compare(const leveldb::Slice& a,
+                const leveldb::Slice& b) const override;
 
-    virtual const char* Name() const OVERRIDE;
+    const char* Name() const override;
 
-    virtual void FindShortestSeparator(std::string* start,
-                                       const leveldb::Slice& limit) const
-        OVERRIDE;
-    virtual void FindShortSuccessor(std::string* key) const OVERRIDE;
+    void FindShortestSeparator(std::string* start,
+                               const leveldb::Slice& limit) const override;
+    void FindShortSuccessor(std::string* key) const override;
 
    private:
     const LevelDBComparator* comparator_;
@@ -104,6 +104,7 @@ class CONTENT_EXPORT LevelDBDatabase {
   scoped_ptr<leveldb::Env> env_;
   scoped_ptr<leveldb::Comparator> comparator_adapter_;
   scoped_ptr<leveldb::DB> db_;
+  scoped_ptr<const leveldb::FilterPolicy> filter_policy_;
   const LevelDBComparator* comparator_;
 };
 

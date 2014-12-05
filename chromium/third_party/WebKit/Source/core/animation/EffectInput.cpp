@@ -31,17 +31,16 @@
 #include "config.h"
 #include "core/animation/EffectInput.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "core/animation/AnimationHelpers.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "core/animation/AnimationInputHelpers.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/animation/StringKeyframe.h"
-#include "core/css/parser/BisonCSSParser.h"
-#include "core/css/resolver/CSSToStyleMap.h"
 #include "core/css/resolver/StyleResolver.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "wtf/NonCopyingSort.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, const Vector<Dictionary>& keyframeDictionaryVector, ExceptionState& exceptionState)
 {
@@ -51,68 +50,61 @@ PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, c
 
     StyleSheetContents* styleSheetContents = element->document().elementSheet().contents();
     StringKeyframeVector keyframes;
-    bool everyFrameHasOffset = true;
-    bool looselySortedByOffset = true;
-    double lastOffset = -std::numeric_limits<double>::infinity();
+    double lastOffset = 0;
 
     for (size_t i = 0; i < keyframeDictionaryVector.size(); ++i) {
         RefPtrWillBeRawPtr<StringKeyframe> keyframe = StringKeyframe::create();
 
-        bool frameHasOffset = false;
-        double offset;
-        if (keyframeDictionaryVector[i].get("offset", offset)) {
-            // Keyframes with offsets outside the range [0.0, 1.0] are ignored.
-            if (std::isnan(offset) || offset < 0 || offset > 1)
-                continue;
+        ScriptValue scriptValue;
+        bool frameHasOffset = DictionaryHelper::get(keyframeDictionaryVector[i], "offset", scriptValue) && !scriptValue.isNull();
 
-            frameHasOffset = true;
-            // The JS value null gets converted to 0 so we need to check whether the original value is null.
-            if (offset == 0) {
-                ScriptValue scriptValue;
-                if (keyframeDictionaryVector[i].get("offset", scriptValue) && scriptValue.isNull())
-                    frameHasOffset = false;
+        if (frameHasOffset) {
+            double offset;
+            DictionaryHelper::get(keyframeDictionaryVector[i], "offset", offset);
+
+            // Keyframes with offsets outside the range [0.0, 1.0] are an error.
+            if (std::isnan(offset)) {
+                exceptionState.throwDOMException(InvalidModificationError, "Non numeric offset provided");
             }
-            if (frameHasOffset) {
-                keyframe->setOffset(offset);
-                if (offset < lastOffset)
-                    looselySortedByOffset = false;
-                lastOffset = offset;
+
+            if (offset < 0 || offset > 1) {
+                exceptionState.throwDOMException(InvalidModificationError, "Offsets provided outside the range [0, 1]");
+                return nullptr;
             }
+
+            if (offset < lastOffset) {
+                exceptionState.throwDOMException(InvalidModificationError, "Keyframes with specified offsets are not sorted");
+                return nullptr;
+            }
+
+            lastOffset = offset;
+
+            keyframe->setOffset(offset);
         }
-        everyFrameHasOffset = everyFrameHasOffset && frameHasOffset;
-
         keyframes.append(keyframe);
 
         String compositeString;
-        keyframeDictionaryVector[i].get("composite", compositeString);
+        DictionaryHelper::get(keyframeDictionaryVector[i], "composite", compositeString);
         if (compositeString == "add")
             keyframe->setComposite(AnimationEffect::CompositeAdd);
 
         String timingFunctionString;
-        if (keyframeDictionaryVector[i].get("easing", timingFunctionString)) {
-            if (RefPtrWillBeRawPtr<CSSValue> timingFunctionValue = BisonCSSParser::parseAnimationTimingFunctionValue(timingFunctionString))
-                keyframe->setEasing(CSSToStyleMap::mapAnimationTimingFunction(timingFunctionValue.get(), true));
+        if (DictionaryHelper::get(keyframeDictionaryVector[i], "easing", timingFunctionString)) {
+            if (RefPtr<TimingFunction> timingFunction = AnimationInputHelpers::parseTimingFunction(timingFunctionString))
+                keyframe->setEasing(timingFunction);
         }
 
         Vector<String> keyframeProperties;
-        keyframeDictionaryVector[i].getOwnPropertyNames(keyframeProperties);
+        keyframeDictionaryVector[i].getPropertyNames(keyframeProperties);
         for (size_t j = 0; j < keyframeProperties.size(); ++j) {
             String property = keyframeProperties[j];
-            CSSPropertyID id = camelCaseCSSPropertyNameToID(property);
+            CSSPropertyID id = AnimationInputHelpers::keyframeAttributeToCSSPropertyID(property);
             if (id == CSSPropertyInvalid)
                 continue;
             String value;
-            keyframeDictionaryVector[i].get(property, value);
+            DictionaryHelper::get(keyframeDictionaryVector[i], property, value);
             keyframe->setPropertyValue(id, value, styleSheetContents);
         }
-    }
-
-    if (!looselySortedByOffset) {
-        if (!everyFrameHasOffset) {
-            exceptionState.throwDOMException(InvalidModificationError, "Keyframes are not loosely sorted by offset.");
-            return nullptr;
-        }
-        nonCopyingSort(keyframes.begin(), keyframes.end(), Keyframe::compareOffsets);
     }
 
     RefPtrWillBeRawPtr<StringKeyframeEffectModel> keyframeEffectModel = StringKeyframeEffectModel::create(keyframes);
@@ -125,4 +117,4 @@ PassRefPtrWillBeRawPtr<AnimationEffect> EffectInput::convert(Element* element, c
     return keyframeEffectModel;
 }
 
-} // namespace WebCore
+} // namespace blink

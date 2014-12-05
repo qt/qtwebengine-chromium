@@ -55,13 +55,19 @@ class RenderFrameProxyHost
     : public IPC::Listener,
       public IPC::Sender {
  public:
+  static RenderFrameProxyHost* FromID(int process_id, int routing_id);
+
   RenderFrameProxyHost(SiteInstance* site_instance,
                        FrameTreeNode* frame_tree_node);
-  virtual ~RenderFrameProxyHost();
+  ~RenderFrameProxyHost() override;
 
   RenderProcessHost* GetProcess() {
     return site_instance_->GetProcess();
   }
+
+  // Initializes the object and creates the RenderFrameProxy in the process
+  // for the SiteInstance.
+  bool InitRenderFrameProxy();
 
   int GetRoutingID() {
     return routing_id_;
@@ -70,6 +76,8 @@ class RenderFrameProxyHost
   SiteInstance* GetSiteInstance() {
     return site_instance_.get();
   }
+
+  FrameTreeNode* frame_tree_node() const { return frame_tree_node_; };
 
   void SetChildRWHView(RenderWidgetHostView* view);
 
@@ -81,22 +89,27 @@ class RenderFrameProxyHost
   RenderViewHostImpl* GetRenderViewHost();
 
   void TakeFrameHostOwnership(
-      scoped_ptr<RenderFrameHostImpl> render_frame_host) {
-    render_frame_host_ = render_frame_host.Pass();
-  }
+      scoped_ptr<RenderFrameHostImpl> render_frame_host);
   scoped_ptr<RenderFrameHostImpl> PassFrameHostOwnership();
 
   // IPC::Sender
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   CrossProcessFrameConnector* cross_process_frame_connector() {
     return cross_process_frame_connector_.get();
   }
 
+  // Set the frame's opener to null in the renderer process in response to an
+  // action in another renderer process.
+  void DisownOpener();
+
  private:
+  // IPC Message handlers.
+  void OnOpenURL(const FrameHostMsg_OpenURL_Params& params);
+
   // This RenderFrameProxyHost's routing id.
   int routing_id_;
 

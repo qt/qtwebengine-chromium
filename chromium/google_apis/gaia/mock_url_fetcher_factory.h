@@ -31,9 +31,9 @@ class MockFetcher : public net::TestURLFetcher {
               net::URLFetcher::RequestType request_type,
               net::URLFetcherDelegate* d);
 
-  virtual ~MockFetcher();
+  ~MockFetcher() override;
 
-  virtual void Start() OVERRIDE;
+  void Start() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockFetcher);
@@ -52,7 +52,7 @@ class MockURLFetcherFactory : public net::URLFetcherFactory,
       int id,
       const GURL& url,
       net::URLFetcher::RequestType request_type,
-      net::URLFetcherDelegate* d) OVERRIDE {
+      net::URLFetcherDelegate* d) override {
     return new T(success_, url, results_, request_type, d);
   }
   void set_success(bool success) {

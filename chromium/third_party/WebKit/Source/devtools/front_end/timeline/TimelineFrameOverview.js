@@ -136,6 +136,11 @@ WebInspector.TimelineFrameOverview.prototype = {
      */
     _computeTargetFrameLength: function(frames)
     {
+        const targetFPS = 20;
+        var result = 1000.0 / targetFPS;
+        if (!frames.length)
+            return result;
+
         var durations = [];
         for (var i = 0; i < frames.length; ++i) {
             if (frames[i])
@@ -145,8 +150,6 @@ WebInspector.TimelineFrameOverview.prototype = {
 
         // Optimize appearance for 30fps, but leave some space so it's evident when a frame overflows.
         // However, if at least half frames won't fit at this scale, fall back to using autoscale.
-        const targetFPS = 20;
-        var result = 1000.0 / targetFPS;
         if (result >= medianFrameLength)
             return result;
 
@@ -272,7 +275,7 @@ WebInspector.TimelineFrameOverview.prototype = {
         var y0 = Math.floor(windowHeight - frame.duration * scale) + 0.5;
         var y1 = windowHeight + 0.5;
 
-        this._context.strokeStyle = "rgba(90, 90, 90, 0.3)";
+        this._context.strokeStyle = "rgba(90, 90, 90, 0.2)";
         this._context.beginPath();
         this._context.moveTo(x, y1);
         this._context.lineTo(x, y0);

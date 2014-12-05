@@ -26,35 +26,34 @@
 #ifndef DOMError_h
 #define DOMError_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class DOMError : public RefCountedWillBeGarbageCollectedFinalized<DOMError>, public ScriptWrappable {
+class DOMError : public GarbageCollectedFinalized<DOMError>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DOMError> create(const String& name)
+    static DOMError* create(const String& name)
     {
-        return adoptRefWillBeNoop(new DOMError(name));
+        return new DOMError(name);
     }
-    static PassRefPtrWillBeRawPtr<DOMError> create(const String& name, const String& message)
+    static DOMError* create(const String& name, const String& message)
     {
-        return adoptRefWillBeNoop(new DOMError(name, message));
-    }
-
-    static PassRefPtrWillBeRawPtr<DOMError> create(ExceptionCode ec)
-    {
-        return adoptRefWillBeNoop(new DOMError(DOMException::getErrorName(ec), DOMException::getErrorMessage(ec)));
+        return new DOMError(name, message);
     }
 
-    static PassRefPtrWillBeRawPtr<DOMError> create(ExceptionCode ec, const String& message)
+    static DOMError* create(ExceptionCode ec)
     {
-        return adoptRefWillBeNoop(new DOMError(DOMException::getErrorName(ec), message));
+        return new DOMError(DOMException::getErrorName(ec), DOMException::getErrorMessage(ec));
+    }
+
+    static DOMError* create(ExceptionCode ec, const String& message)
+    {
+        return new DOMError(DOMException::getErrorName(ec), message);
     }
 
     const String& name() const { return m_name; }
@@ -71,6 +70,6 @@ private:
     const String m_message;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMError_h

@@ -27,45 +27,26 @@ const char kInvalidJsonString[] = "$$$";
 
 class FakeUrlFetchRequest : public UrlFetchRequestBase {
  public:
-  explicit FakeUrlFetchRequest(RequestSender* sender,
-                               const EntryActionCallback& callback,
-                               const GURL& url)
+  FakeUrlFetchRequest(RequestSender* sender,
+                      const EntryActionCallback& callback,
+                      const GURL& url)
       : UrlFetchRequestBase(sender),
         callback_(callback),
         url_(url) {
   }
 
-  virtual ~FakeUrlFetchRequest() {
-  }
+  ~FakeUrlFetchRequest() override {}
 
  protected:
-  virtual GURL GetURL() const OVERRIDE { return url_; }
-  virtual void ProcessURLFetchResults(const net::URLFetcher* source) OVERRIDE {
+  GURL GetURL() const override { return url_; }
+  void ProcessURLFetchResults(const net::URLFetcher* source) override {
     callback_.Run(GetErrorCode());
   }
-  virtual void RunCallbackOnPrematureFailure(GDataErrorCode code) OVERRIDE {
+  void RunCallbackOnPrematureFailure(GDataErrorCode code) override {
     callback_.Run(code);
   }
 
   EntryActionCallback callback_;
-  GURL url_;
-};
-
-class FakeGetDataRequest : public GetDataRequest {
- public:
-  explicit FakeGetDataRequest(RequestSender* sender,
-                              const GetDataCallback& callback,
-                              const GURL& url)
-      : GetDataRequest(sender, callback),
-        url_(url) {
-  }
-
-  virtual ~FakeGetDataRequest() {
-  }
-
- protected:
-  virtual GURL GetURL() const OVERRIDE { return url_; }
-
   GURL url_;
 };
 
@@ -75,7 +56,7 @@ class BaseRequestsTest : public testing::Test {
  public:
   BaseRequestsTest() : response_code_(net::HTTP_OK) {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     request_context_getter_ = new net::TestURLRequestContextGetter(
         message_loop_.message_loop_proxy());
 
@@ -96,7 +77,7 @@ class BaseRequestsTest : public testing::Test {
     response->set_code(response_code_);
     response->set_content(response_body_);
     response->set_content_type("application/json");
-    return response.PassAs<net::test_server::HttpResponse>();
+    return response.Pass();
   }
 
   base::MessageLoopForIO message_loop_;
@@ -109,11 +90,7 @@ class BaseRequestsTest : public testing::Test {
 };
 
 TEST_F(BaseRequestsTest, ParseValidJson) {
-  scoped_ptr<base::Value> json;
-  ParseJson(message_loop_.message_loop_proxy(),
-            kValidJsonString,
-            base::Bind(test_util::CreateCopyResultCallback(&json)));
-  base::RunLoop().RunUntilIdle();
+  scoped_ptr<base::Value> json(ParseJson(kValidJsonString));
 
   base::DictionaryValue* root_dict = NULL;
   ASSERT_TRUE(json);
@@ -125,14 +102,7 @@ TEST_F(BaseRequestsTest, ParseValidJson) {
 }
 
 TEST_F(BaseRequestsTest, ParseInvalidJson) {
-  // Initialize with a valid pointer to verify that null is indeed assigned.
-  scoped_ptr<base::Value> json(base::Value::CreateNullValue());
-  ParseJson(message_loop_.message_loop_proxy(),
-            kInvalidJsonString,
-            base::Bind(test_util::CreateCopyResultCallback(&json)));
-  base::RunLoop().RunUntilIdle();
-
-  EXPECT_FALSE(json);
+  EXPECT_FALSE(ParseJson(kInvalidJsonString));
 }
 
 TEST_F(BaseRequestsTest, UrlFetchRequestBaseResponseCodeOverride) {
@@ -163,42 +133,6 @@ TEST_F(BaseRequestsTest, UrlFetchRequestBaseResponseCodeOverride) {
 
   // HTTP_FORBIDDEN (403) is overridden by the error reason.
   EXPECT_EQ(HTTP_SERVICE_UNAVAILABLE, error);
-}
-
-TEST_F(BaseRequestsTest, GetDataRequestParseValidResponse) {
-  response_body_ = kValidJsonString;
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> value;
-  base::RunLoop run_loop;
-  sender_->StartRequestWithRetry(
-      new FakeGetDataRequest(
-          sender_.get(),
-          test_util::CreateQuitCallback(
-              &run_loop, test_util::CreateCopyResultCallback(&error, &value)),
-          test_server_.base_url()));
-  run_loop.Run();
-
-  EXPECT_EQ(HTTP_SUCCESS, error);
-  EXPECT_TRUE(value);
-}
-
-TEST_F(BaseRequestsTest, GetDataRequestParseInvalidResponse) {
-  response_body_ = kInvalidJsonString;
-
-  GDataErrorCode error = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> value;
-  base::RunLoop run_loop;
-  sender_->StartRequestWithRetry(
-      new FakeGetDataRequest(
-          sender_.get(),
-          test_util::CreateQuitCallback(
-              &run_loop, test_util::CreateCopyResultCallback(&error, &value)),
-          test_server_.base_url()));
-  run_loop.Run();
-
-  EXPECT_EQ(GDATA_PARSE_ERROR, error);
-  EXPECT_FALSE(value);
 }
 
 }  // namespace google_apis

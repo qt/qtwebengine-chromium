@@ -37,11 +37,11 @@
 #include "wtf/PassOwnPtr.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
-class MarkingBooleanTask FINAL : public ExecutionContextTask {
+class MarkingBooleanTask final : public ExecutionContextTask {
 public:
     static PassOwnPtr<MarkingBooleanTask> create(bool* toBeMarked)
     {
@@ -54,7 +54,7 @@ public:
 private:
     MarkingBooleanTask(bool* toBeMarked) : m_toBeMarked(toBeMarked) { }
 
-    virtual void performTask(ExecutionContext* context) OVERRIDE
+    virtual void performTask(ExecutionContext* context) override
     {
         *m_toBeMarked = true;
     }
@@ -70,7 +70,7 @@ TEST(MainThreadTaskRunnerTest, PostTask)
 
     runner->postTask(MarkingBooleanTask::create(&isMarked));
     EXPECT_FALSE(isMarked);
-    WebCore::testing::runPendingTasks();
+    blink::testing::runPendingTasks();
     EXPECT_TRUE(isMarked);
 }
 
@@ -83,12 +83,12 @@ TEST(MainThreadTaskRunnerTest, SuspendTask)
     context->setTasksNeedSuspension(true);
     runner->postTask(MarkingBooleanTask::create(&isMarked));
     runner->suspend();
-    WebCore::testing::runPendingTasks();
+    blink::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);
 
     context->setTasksNeedSuspension(false);
     runner->resume();
-    WebCore::testing::runPendingTasks();
+    blink::testing::runPendingTasks();
     EXPECT_TRUE(isMarked);
 }
 
@@ -101,7 +101,7 @@ TEST(MainThreadTaskRunnerTest, RemoveRunner)
     context->setTasksNeedSuspension(true);
     runner->postTask(MarkingBooleanTask::create(&isMarked));
     runner.clear();
-    WebCore::testing::runPendingTasks();
+    blink::testing::runPendingTasks();
     EXPECT_FALSE(isMarked);
 }
 

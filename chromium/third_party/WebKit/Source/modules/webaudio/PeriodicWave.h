@@ -29,26 +29,24 @@
 #ifndef PeriodicWave_h
 #define PeriodicWave_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/audio/AudioArray.h"
 #include "wtf/Float32Array.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
+#include "wtf/Forward.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class PeriodicWave : public RefCountedWillBeGarbageCollectedFinalized<PeriodicWave>, public ScriptWrappable {
+class PeriodicWave : public GarbageCollectedFinalized<PeriodicWave>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<PeriodicWave> createSine(float sampleRate);
-    static PassRefPtrWillBeRawPtr<PeriodicWave> createSquare(float sampleRate);
-    static PassRefPtrWillBeRawPtr<PeriodicWave> createSawtooth(float sampleRate);
-    static PassRefPtrWillBeRawPtr<PeriodicWave> createTriangle(float sampleRate);
+    static PeriodicWave* createSine(float sampleRate);
+    static PeriodicWave* createSquare(float sampleRate);
+    static PeriodicWave* createSawtooth(float sampleRate);
+    static PeriodicWave* createTriangle(float sampleRate);
 
     // Creates an arbitrary periodic wave given the frequency components (Fourier coefficients).
-    static PassRefPtrWillBeRawPtr<PeriodicWave> create(float sampleRate, Float32Array* real, Float32Array* imag);
+    static PeriodicWave* create(float sampleRate, Float32Array* real, Float32Array* imag);
 
     // Returns pointers to the lower and higher wave data for the pitch range containing
     // the given fundamental frequency. These two tables are in adjacent "pitch" ranges
@@ -92,6 +90,6 @@ private:
     Vector<OwnPtr<AudioFloatArray> > m_bandLimitedTables;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PeriodicWave_h

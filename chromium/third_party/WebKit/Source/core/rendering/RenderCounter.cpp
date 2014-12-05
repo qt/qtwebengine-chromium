@@ -23,7 +23,6 @@
 #include "core/rendering/RenderCounter.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLOListElement.h"
@@ -38,7 +37,7 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -356,10 +355,15 @@ RenderCounter::RenderCounter(Document* node, const CounterContent& counter)
 
 RenderCounter::~RenderCounter()
 {
+}
+
+void RenderCounter::destroy()
+{
     if (m_counterNode) {
         m_counterNode->removeRenderer(this);
         ASSERT(!m_counterNode);
     }
+    RenderText::destroy();
 }
 
 void RenderCounter::willBeDestroyed()
@@ -372,11 +376,6 @@ void RenderCounter::willBeDestroyed()
 const char* RenderCounter::renderName() const
 {
     return "RenderCounter";
-}
-
-bool RenderCounter::isCounter() const
-{
-    return true;
 }
 
 PassRefPtr<StringImpl> RenderCounter::originalText() const
@@ -552,10 +551,10 @@ void RenderCounter::rendererStyleChanged(RenderObject& renderer, const RenderSty
     Node* node = renderer.generatingNode();
     if (!node || node->needsAttach())
         return; // cannot have generated content or if it can have, it will be handled during attaching
-    const CounterDirectiveMap* newCounterDirectives;
-    const CounterDirectiveMap* oldCounterDirectives;
-    if (oldStyle && (oldCounterDirectives = oldStyle->counterDirectives())) {
-        if (newStyle && (newCounterDirectives = newStyle->counterDirectives())) {
+    const CounterDirectiveMap* oldCounterDirectives = oldStyle ? oldStyle->counterDirectives() : 0;
+    const CounterDirectiveMap* newCounterDirectives = newStyle ? newStyle->counterDirectives() : 0;
+    if (oldCounterDirectives) {
+        if (newCounterDirectives) {
             CounterDirectiveMap::const_iterator newMapEnd = newCounterDirectives->end();
             CounterDirectiveMap::const_iterator oldMapEnd = oldCounterDirectives->end();
             for (CounterDirectiveMap::const_iterator it = newCounterDirectives->begin(); it != newMapEnd; ++it) {
@@ -579,7 +578,7 @@ void RenderCounter::rendererStyleChanged(RenderObject& renderer, const RenderSty
             if (renderer.hasCounterNodeMap())
                 RenderCounter::destroyCounterNodes(renderer);
         }
-    } else if (newStyle && (newCounterDirectives = newStyle->counterDirectives())) {
+    } else if (newCounterDirectives) {
         CounterDirectiveMap::const_iterator newMapEnd = newCounterDirectives->end();
         for (CounterDirectiveMap::const_iterator it = newCounterDirectives->begin(); it != newMapEnd; ++it) {
             // We must create this node here, because the added node may be a node with no display such as
@@ -590,27 +589,27 @@ void RenderCounter::rendererStyleChanged(RenderObject& renderer, const RenderSty
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 
-void showCounterRendererTree(const WebCore::RenderObject* renderer, const char* counterName)
+void showCounterRendererTree(const blink::RenderObject* renderer, const char* counterName)
 {
     if (!renderer)
         return;
-    const WebCore::RenderObject* root = renderer;
+    const blink::RenderObject* root = renderer;
     while (root->parent())
         root = root->parent();
 
     AtomicString identifier(counterName);
-    for (const WebCore::RenderObject* current = root; current; current = current->nextInPreOrder()) {
+    for (const blink::RenderObject* current = root; current; current = current->nextInPreOrder()) {
         fprintf(stderr, "%c", (current == renderer) ? '*' : ' ');
-        for (const WebCore::RenderObject* parent = current; parent && parent != root; parent = parent->parent())
+        for (const blink::RenderObject* parent = current; parent && parent != root; parent = parent->parent())
             fprintf(stderr, "    ");
         fprintf(stderr, "%p N:%p P:%p PS:%p NS:%p C:%p\n",
             current, current->node(), current->parent(), current->previousSibling(),
             current->nextSibling(), current->hasCounterNodeMap() ?
-            counterName ? WebCore::counterMaps().get(current)->get(identifier) : (WebCore::CounterNode*)1 : (WebCore::CounterNode*)0);
+            counterName ? blink::counterMaps().get(current)->get(identifier) : (blink::CounterNode*)1 : (blink::CounterNode*)0);
     }
     fflush(stderr);
 }

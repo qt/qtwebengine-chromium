@@ -25,12 +25,14 @@
 #include "config.h"
 #include "core/html/HTMLIFrameElement.h"
 
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/html/HTMLDocument.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/rendering/RenderIFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -38,7 +40,6 @@ inline HTMLIFrameElement::HTMLIFrameElement(Document& document)
     : HTMLFrameElementBase(iframeTag, document)
     , m_didLoadNonEmptyDocument(false)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLIFrameElement)
@@ -69,6 +70,22 @@ void HTMLIFrameElement::collectStyleForPresentationAttribute(const QualifiedName
         HTMLFrameElementBase::collectStyleForPresentationAttribute(name, value, style);
 }
 
+void HTMLIFrameElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == srcAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("iframe");
+            argv.append(srcAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLFrameElementBase::attributeWillChange(name, oldValue, newValue);
+}
+
 void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == nameAttr) {
@@ -82,7 +99,7 @@ void HTMLIFrameElement::parseAttribute(const QualifiedName& name, const AtomicSt
         String invalidTokens;
         setSandboxFlags(value.isNull() ? SandboxNone : parseSandboxPolicy(value, invalidTokens));
         if (!invalidTokens.isNull())
-            document().addConsoleMessage(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens);
+            document().addConsoleMessage(ConsoleMessage::create(OtherMessageSource, ErrorMessageLevel, "Error while parsing the 'sandbox' attribute: " + invalidTokens));
     } else {
         HTMLFrameElementBase::parseAttribute(name, value);
     }
@@ -100,6 +117,15 @@ RenderObject* HTMLIFrameElement::createRenderer(RenderStyle*)
 
 Node::InsertionNotificationRequest HTMLIFrameElement::insertedInto(ContainerNode* insertionPoint)
 {
+    if (insertionPoint->inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("iframe");
+            argv.append(fastGetAttribute(srcAttr));
+            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
+        }
+    }
     InsertionNotificationRequest result = HTMLFrameElementBase::insertedInto(insertionPoint);
     if (insertionPoint->inDocument() && document().isHTMLDocument() && !insertionPoint->isInShadowTree())
         toHTMLDocument(document()).addExtraNamedItem(m_name);

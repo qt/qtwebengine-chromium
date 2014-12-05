@@ -22,6 +22,7 @@ class CONTENT_EXPORT WebThreadBase : public blink::WebThread {
   virtual void removeTaskObserver(TaskObserver* observer);
 
   virtual bool isCurrentThread() const = 0;
+  virtual blink::PlatformThreadId threadId() const = 0;
 
  protected:
   WebThreadBase();
@@ -46,7 +47,8 @@ class CONTENT_EXPORT WebThreadImpl : public WebThreadBase {
 
   base::MessageLoop* message_loop() const { return thread_->message_loop(); }
 
-  virtual bool isCurrentThread() const OVERRIDE;
+  virtual bool isCurrentThread() const override;
+  virtual blink::PlatformThreadId threadId() const override;
 
  private:
   scoped_ptr<base::Thread> thread_;
@@ -58,15 +60,18 @@ class WebThreadImplForMessageLoop : public WebThreadBase {
       base::MessageLoopProxy* message_loop);
   CONTENT_EXPORT virtual ~WebThreadImplForMessageLoop();
 
-  virtual void postTask(Task* task) OVERRIDE;
-  virtual void postDelayedTask(Task* task, long long delay_ms) OVERRIDE;
+  virtual void postTask(Task* task) override;
+  virtual void postDelayedTask(Task* task, long long delay_ms) override;
 
-  virtual void enterRunLoop() OVERRIDE;
-  virtual void exitRunLoop() OVERRIDE;
+  virtual void enterRunLoop() override;
+  virtual void exitRunLoop() override;
 
  private:
-  virtual bool isCurrentThread() const OVERRIDE;
+  virtual bool isCurrentThread() const override;
+  virtual blink::PlatformThreadId threadId() const override;
+
   scoped_refptr<base::MessageLoopProxy> message_loop_;
+  blink::PlatformThreadId thread_id_;
 };
 
 } // namespace content

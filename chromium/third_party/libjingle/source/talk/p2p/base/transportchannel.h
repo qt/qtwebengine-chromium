@@ -25,22 +25,22 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TRANSPORTCHANNEL_H_
-#define TALK_P2P_BASE_TRANSPORTCHANNEL_H_
+#ifndef WEBRTC_P2P_BASE_TRANSPORTCHANNEL_H_
+#define WEBRTC_P2P_BASE_TRANSPORTCHANNEL_H_
 
 #include <string>
 #include <vector>
 
-#include "talk/base/asyncpacketsocket.h"
-#include "talk/base/basictypes.h"
-#include "talk/base/dscp.h"
-#include "talk/base/sigslot.h"
-#include "talk/base/socket.h"
-#include "talk/base/sslidentity.h"
-#include "talk/base/sslstreamadapter.h"
-#include "talk/p2p/base/candidate.h"
-#include "talk/p2p/base/transport.h"
-#include "talk/p2p/base/transportdescription.h"
+#include "webrtc/p2p/base/candidate.h"
+#include "webrtc/p2p/base/transport.h"
+#include "webrtc/p2p/base/transportdescription.h"
+#include "webrtc/base/asyncpacketsocket.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/dscp.h"
+#include "webrtc/base/sigslot.h"
+#include "webrtc/base/socket.h"
+#include "webrtc/base/sslidentity.h"
+#include "webrtc/base/sslstreamadapter.h"
 
 namespace cricket {
 
@@ -83,12 +83,12 @@ class TransportChannel : public sigslot::has_slots<> {
   // Attempts to send the given packet.  The return value is < 0 on failure.
   // TODO: Remove the default argument once channel code is updated.
   virtual int SendPacket(const char* data, size_t len,
-                         const talk_base::PacketOptions& options,
+                         const rtc::PacketOptions& options,
                          int flags = 0) = 0;
 
   // Sets a socket option on this channel.  Note that not all options are
   // supported by all transport types.
-  virtual int SetOption(talk_base::Socket::Option opt, int value) = 0;
+  virtual int SetOption(rtc::Socket::Option opt, int value) = 0;
 
   // Returns the most recent error that occurred on this channel.
   virtual int GetError() = 0;
@@ -100,7 +100,7 @@ class TransportChannel : public sigslot::has_slots<> {
   virtual bool IsDtlsActive() const = 0;
 
   // Default implementation.
-  virtual bool GetSslRole(talk_base::SSLRole* role) const = 0;
+  virtual bool GetSslRole(rtc::SSLRole* role) const = 0;
 
   // Sets up the ciphers to use for DTLS-SRTP.
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers) = 0;
@@ -109,10 +109,10 @@ class TransportChannel : public sigslot::has_slots<> {
   virtual bool GetSrtpCipher(std::string* cipher) = 0;
 
   // Gets a copy of the local SSL identity, owned by the caller.
-  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const = 0;
+  virtual bool GetLocalIdentity(rtc::SSLIdentity** identity) const = 0;
 
   // Gets a copy of the remote side's SSL certificate, owned by the caller.
-  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const = 0;
+  virtual bool GetRemoteCertificate(rtc::SSLCertificate** cert) const = 0;
 
   // Allows key material to be extracted for external encryption.
   virtual bool ExportKeyingMaterial(const std::string& label,
@@ -124,7 +124,7 @@ class TransportChannel : public sigslot::has_slots<> {
 
   // Signalled each time a packet is received on this channel.
   sigslot::signal5<TransportChannel*, const char*,
-                   size_t, const talk_base::PacketTime&, int> SignalReadPacket;
+                   size_t, const rtc::PacketTime&, int> SignalReadPacket;
 
   // This signal occurs when there is a change in the way that packets are
   // being routed, i.e. to a different remote location. The candidate
@@ -157,4 +157,4 @@ class TransportChannel : public sigslot::has_slots<> {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TRANSPORTCHANNEL_H_
+#endif  // WEBRTC_P2P_BASE_TRANSPORTCHANNEL_H_

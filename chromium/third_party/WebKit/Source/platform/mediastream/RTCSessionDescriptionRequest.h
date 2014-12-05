@@ -31,17 +31,14 @@
 #ifndef RTCSessionDescriptionRequest_h
 #define RTCSessionDescriptionRequest_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 class WebRTCSessionDescription;
-}
 
-namespace WebCore {
-
-class RTCSessionDescriptionRequest : public RefCounted<RTCSessionDescriptionRequest> {
+class RTCSessionDescriptionRequest : public GarbageCollectedFinalized<RTCSessionDescriptionRequest> {
 public:
     class ExtraData {
     public:
@@ -50,11 +47,13 @@ public:
 
     virtual ~RTCSessionDescriptionRequest() { }
 
-    virtual void requestSucceeded(const blink::WebRTCSessionDescription&) = 0;
+    virtual void requestSucceeded(const WebRTCSessionDescription&) = 0;
     virtual void requestFailed(const String& error) = 0;
 
     ExtraData* extraData() const { return m_extraData.get(); }
     void setExtraData(PassOwnPtr<ExtraData> extraData) { m_extraData = extraData; }
+
+    virtual void trace(Visitor*) { }
 
 protected:
     RTCSessionDescriptionRequest() { }
@@ -63,6 +62,6 @@ private:
     OwnPtr<ExtraData> m_extraData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCSessionDescriptionRequest_h

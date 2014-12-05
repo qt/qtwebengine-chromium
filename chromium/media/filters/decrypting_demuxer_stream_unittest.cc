@@ -53,9 +53,9 @@ ACTION_P(ReturnBuffer, buffer) {
 // Sets the |decryptor| if the DecryptorReadyCB (arg0) is not null. Sets
 // |is_decryptor_set| to true if a non-NULL |decryptor| has been set through the
 // callback.
-ACTION_P2(SetDecryptorIfNotNull, decryptor, is_decryptor_set) {
+ACTION_P3(SetDecryptorIfNotNull, decryptor, done_cb, is_decryptor_set) {
   if (!arg0.is_null())
-    arg0.Run(decryptor);
+    arg0.Run(decryptor, done_cb);
 
   *is_decryptor_set = !arg0.is_null() && decryptor;
 }
@@ -89,6 +89,13 @@ class DecryptingDemuxerStreamTest : public testing::Test {
         decrypted_buffer_(new DecoderBuffer(kFakeBufferSize)) {
   }
 
+  virtual ~DecryptingDemuxerStreamTest() {
+    if (is_decryptor_set_)
+      EXPECT_CALL(*decryptor_, CancelDecrypt(_));
+    demuxer_stream_.reset();
+    message_loop_.RunUntilIdle();
+  }
+
   void InitializeAudioAndExpectStatus(const AudioDecoderConfig& config,
                                       PipelineStatus status) {
     input_audio_stream_->set_audio_decoder_config(config);
@@ -105,14 +112,23 @@ class DecryptingDemuxerStreamTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
+  void ExpectDecryptorNotification(Decryptor* decryptor, bool expected_result) {
+    EXPECT_CALL(*this, RequestDecryptorNotification(_))
+        .WillOnce(SetDecryptorIfNotNull(
+            decryptor,
+            base::Bind(&DecryptingDemuxerStreamTest::DecryptorSet,
+                       base::Unretained(this)),
+            &is_decryptor_set_));
+    EXPECT_CALL(*this, DecryptorSet(expected_result));
+  }
+
   // The following functions are used to test stream-type-neutral logic in
   // DecryptingDemuxerStream. Therefore, we don't specify audio or video in the
   // function names. But for testing purpose, they all use an audio input
   // demuxer stream.
 
   void Initialize() {
-    EXPECT_CALL(*this, RequestDecryptorNotification(_))
-        .WillOnce(SetDecryptorIfNotNull(decryptor_.get(), &is_decryptor_set_));
+    ExpectDecryptorNotification(decryptor_.get(), true);
     EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kAudio, _))
         .WillOnce(SaveArg<1>(&key_added_cb_));
 
@@ -237,19 +253,12 @@ class DecryptingDemuxerStreamTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
-  // Stops the |demuxer_stream_| without satisfying/aborting any pending
-  // operations.
-  void Stop() {
-    if (is_decryptor_set_)
-      EXPECT_CALL(*decryptor_, CancelDecrypt(Decryptor::kAudio));
-    demuxer_stream_->Stop(NewExpectedClosure());
-    message_loop_.RunUntilIdle();
-  }
-
   MOCK_METHOD1(RequestDecryptorNotification, void(const DecryptorReadyCB&));
 
   MOCK_METHOD2(BufferReady, void(DemuxerStream::Status,
                                  const scoped_refptr<DecoderBuffer>&));
+
+  MOCK_METHOD1(DecryptorSet, void(bool));
 
   base::MessageLoop message_loop_;
   scoped_ptr<DecryptingDemuxerStream> demuxer_stream_;
@@ -278,8 +287,7 @@ TEST_F(DecryptingDemuxerStreamTest, Initialize_NormalAudio) {
 }
 
 TEST_F(DecryptingDemuxerStreamTest, Initialize_NormalVideo) {
-  EXPECT_CALL(*this, RequestDecryptorNotification(_))
-      .WillOnce(SetDecryptorIfNotNull(decryptor_.get(), &is_decryptor_set_));
+  ExpectDecryptorNotification(decryptor_.get(), true);
   EXPECT_CALL(*decryptor_, RegisterNewKeyCB(Decryptor::kVideo, _))
       .WillOnce(SaveArg<1>(&key_added_cb_));
 
@@ -305,10 +313,7 @@ TEST_F(DecryptingDemuxerStreamTest, Initialize_NormalVideo) {
 }
 
 TEST_F(DecryptingDemuxerStreamTest, Initialize_NullDecryptor) {
-  EXPECT_CALL(*this, RequestDecryptorNotification(_))
-      .WillRepeatedly(SetDecryptorIfNotNull(static_cast<Decryptor*>(NULL),
-                                            &is_decryptor_set_));
-
+  ExpectDecryptorNotification(NULL, false);
   AudioDecoderConfig input_config(kCodecVorbis, kSampleFormatPlanarF32,
                                   CHANNEL_LAYOUT_STEREO, 44100, NULL, 0, true);
   InitializeAudioAndExpectStatus(input_config, DECODER_ERROR_NOT_SUPPORTED);
@@ -379,8 +384,7 @@ TEST_F(DecryptingDemuxerStreamTest, KeyAdded_DruingPendingDecrypt) {
   message_loop_.RunUntilIdle();
 }
 
-// Test resetting when the DecryptingDemuxerStream is in kDecryptorRequested
-// state.
+// Test resetting in kDecryptorRequested state.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringDecryptorRequested) {
   // One for decryptor request, one for canceling request during Reset().
   EXPECT_CALL(*this, RequestDecryptorNotification(_))
@@ -392,22 +396,20 @@ TEST_F(DecryptingDemuxerStreamTest, Reset_DuringDecryptorRequested) {
   Reset();
 }
 
-// Test resetting when the DecryptingDemuxerStream is in kIdle state but has
-// not returned any buffer.
+// Test resetting in kIdle state but has not returned any buffer.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringIdleAfterInitialization) {
   Initialize();
   Reset();
 }
 
-// Test resetting when the DecryptingDemuxerStream is in kIdle state after it
-// has returned one buffer.
+// Test resetting in kIdle state after having returned one buffer.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringIdleAfterReadOneBuffer) {
   Initialize();
   EnterNormalReadingState();
   Reset();
 }
 
-// Test resetting when DecryptingDemuxerStream is in kPendingDemuxerRead state.
+// Test resetting in kPendingDemuxerRead state.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringPendingDemuxerRead) {
   Initialize();
   EnterPendingReadState();
@@ -419,7 +421,7 @@ TEST_F(DecryptingDemuxerStreamTest, Reset_DuringPendingDemuxerRead) {
   message_loop_.RunUntilIdle();
 }
 
-// Test resetting when the DecryptingDemuxerStream is in kPendingDecrypt state.
+// Test resetting in kPendingDecrypt state.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringPendingDecrypt) {
   Initialize();
   EnterPendingDecryptState();
@@ -429,7 +431,7 @@ TEST_F(DecryptingDemuxerStreamTest, Reset_DuringPendingDecrypt) {
   Reset();
 }
 
-// Test resetting when the DecryptingDemuxerStream is in kWaitingForKey state.
+// Test resetting in kWaitingForKey state.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringWaitingForKey) {
   Initialize();
   EnterWaitingForKeyState();
@@ -439,7 +441,7 @@ TEST_F(DecryptingDemuxerStreamTest, Reset_DuringWaitingForKey) {
   Reset();
 }
 
-// Test resetting after the DecryptingDemuxerStream has been reset.
+// Test resetting after reset.
 TEST_F(DecryptingDemuxerStreamTest, Reset_AfterReset) {
   Initialize();
   EnterNormalReadingState();
@@ -458,7 +460,7 @@ TEST_F(DecryptingDemuxerStreamTest, DemuxerRead_Aborted) {
   ReadAndExpectBufferReadyWith(DemuxerStream::kAborted, NULL);
 }
 
-// Test resetting when DecryptingDemuxerStream is waiting for an aborted read.
+// Test resetting when waiting for an aborted read.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringAbortedDemuxerRead) {
   Initialize();
   EnterPendingReadState();
@@ -487,8 +489,7 @@ TEST_F(DecryptingDemuxerStreamTest, DemuxerRead_ConfigChanged) {
   ReadAndExpectBufferReadyWith(DemuxerStream::kConfigChanged, NULL);
 }
 
-// Test resetting when DecryptingDemuxerStream is waiting for a config changed
-// read.
+// Test resetting when waiting for a config changed read.
 TEST_F(DecryptingDemuxerStreamTest, Reset_DuringConfigChangedDemuxerRead) {
   Initialize();
   EnterPendingReadState();
@@ -501,9 +502,11 @@ TEST_F(DecryptingDemuxerStreamTest, Reset_DuringConfigChangedDemuxerRead) {
   message_loop_.RunUntilIdle();
 }
 
-// Test stopping when the DecryptingDemuxerStream is in kDecryptorRequested
-// state.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringDecryptorRequested) {
+// The following tests test destruction in various scenarios. The destruction
+// happens in DecryptingDemuxerStreamTest's dtor.
+
+// Test destruction in kDecryptorRequested state.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringDecryptorRequested) {
   // One for decryptor request, one for canceling request during Reset().
   EXPECT_CALL(*this, RequestDecryptorNotification(_))
       .Times(2);
@@ -511,57 +514,48 @@ TEST_F(DecryptingDemuxerStreamTest, Stop_DuringDecryptorRequested) {
       kCodecVorbis, kSampleFormatPlanarF32, CHANNEL_LAYOUT_STEREO, 44100,
       NULL, 0, true);
   InitializeAudioAndExpectStatus(input_config, PIPELINE_ERROR_ABORT);
-  Stop();
 }
 
-// Test stopping when the DecryptingDemuxerStream is in kIdle state but has
-// not returned any buffer.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringIdleAfterInitialization) {
+// Test destruction in kIdle state but has not returned any buffer.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringIdleAfterInitialization) {
   Initialize();
-  Stop();
 }
 
-// Test stopping when the DecryptingDemuxerStream is in kIdle state after it
-// has returned one buffer.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringIdleAfterReadOneBuffer) {
+// Test destruction in kIdle state after having returned one buffer.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringIdleAfterReadOneBuffer) {
   Initialize();
   EnterNormalReadingState();
-  Stop();
 }
 
-// Test stopping when DecryptingDemuxerStream is in kPendingDemuxerRead state.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringPendingDemuxerRead) {
+// Test destruction in kPendingDemuxerRead state.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringPendingDemuxerRead) {
   Initialize();
   EnterPendingReadState();
 
   EXPECT_CALL(*this, BufferReady(DemuxerStream::kAborted, IsNull()));
-  Stop();
 }
 
-// Test stopping when the DecryptingDemuxerStream is in kPendingDecrypt state.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringPendingDecrypt) {
+// Test destruction in kPendingDecrypt state.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringPendingDecrypt) {
   Initialize();
   EnterPendingDecryptState();
 
   EXPECT_CALL(*this, BufferReady(DemuxerStream::kAborted, IsNull()));
-  Stop();
 }
 
-// Test stopping when the DecryptingDemuxerStream is in kWaitingForKey state.
-TEST_F(DecryptingDemuxerStreamTest, Stop_DuringWaitingForKey) {
+// Test destruction in kWaitingForKey state.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_DuringWaitingForKey) {
   Initialize();
   EnterWaitingForKeyState();
 
   EXPECT_CALL(*this, BufferReady(DemuxerStream::kAborted, IsNull()));
-  Stop();
 }
 
-// Test stopping after the DecryptingDemuxerStream has been reset.
-TEST_F(DecryptingDemuxerStreamTest, Stop_AfterReset) {
+// Test destruction after reset.
+TEST_F(DecryptingDemuxerStreamTest, Destroy_AfterReset) {
   Initialize();
   EnterNormalReadingState();
   Reset();
-  Stop();
 }
 
 }  // namespace media

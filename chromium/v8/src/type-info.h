@@ -14,37 +14,33 @@ namespace v8 {
 namespace internal {
 
 // Forward declarations.
-class ICStub;
 class SmallMapList;
 
 
 class TypeFeedbackOracle: public ZoneObject {
  public:
   TypeFeedbackOracle(Handle<Code> code,
-                     Handle<FixedArray> feedback_vector,
-                     Handle<Context> native_context,
-                     Zone* zone);
+                     Handle<TypeFeedbackVector> feedback_vector,
+                     Handle<Context> native_context, Zone* zone);
 
   bool LoadIsUninitialized(TypeFeedbackId id);
   bool StoreIsUninitialized(TypeFeedbackId id);
-  bool StoreIsKeyedPolymorphic(TypeFeedbackId id);
-  bool CallIsMonomorphic(int slot);
-  bool CallIsMonomorphic(TypeFeedbackId aid);
+  bool CallIsMonomorphic(FeedbackVectorICSlot slot);
   bool KeyedArrayCallIsHoley(TypeFeedbackId id);
-  bool CallNewIsMonomorphic(int slot);
+  bool CallNewIsMonomorphic(FeedbackVectorSlot slot);
 
   // TODO(1571) We can't use ForInStatement::ForInType as the return value due
   // to various cycles in our headers.
   // TODO(rossberg): once all oracle access is removed from ast.cc, it should
   // be possible.
-  byte ForInType(int feedback_vector_slot);
+  byte ForInType(FeedbackVectorSlot feedback_vector_slot);
 
-  KeyedAccessStoreMode GetStoreMode(TypeFeedbackId id);
+  void GetStoreModeAndKeyType(TypeFeedbackId id,
+                              KeyedAccessStoreMode* store_mode,
+                              IcCheckType* key_type);
 
-  void PropertyReceiverTypes(TypeFeedbackId id,
-                             Handle<String> name,
-                             SmallMapList* receiver_types,
-                             bool* is_prototype);
+  void PropertyReceiverTypes(TypeFeedbackId id, Handle<String> name,
+                             SmallMapList* receiver_types);
   void KeyedPropertyReceiverTypes(TypeFeedbackId id,
                                   SmallMapList* receiver_types,
                                   bool* is_string);
@@ -53,7 +49,8 @@ class TypeFeedbackOracle: public ZoneObject {
                                SmallMapList* receiver_types);
   void KeyedAssignmentReceiverTypes(TypeFeedbackId id,
                                     SmallMapList* receiver_types,
-                                    KeyedAccessStoreMode* store_mode);
+                                    KeyedAccessStoreMode* store_mode,
+                                    IcCheckType* key_type);
   void CountReceiverTypes(TypeFeedbackId id,
                           SmallMapList* receiver_types);
 
@@ -64,13 +61,12 @@ class TypeFeedbackOracle: public ZoneObject {
   static bool CanRetainOtherContext(JSFunction* function,
                                     Context* native_context);
 
-  Handle<JSFunction> GetCallTarget(int slot);
-  Handle<AllocationSite> GetCallAllocationSite(int slot);
-  Handle<JSFunction> GetCallNewTarget(int slot);
-  Handle<AllocationSite> GetCallNewAllocationSite(int slot);
+  Handle<JSFunction> GetCallTarget(FeedbackVectorICSlot slot);
+  Handle<AllocationSite> GetCallAllocationSite(FeedbackVectorICSlot slot);
+  Handle<JSFunction> GetCallNewTarget(FeedbackVectorSlot slot);
+  Handle<AllocationSite> GetCallNewAllocationSite(FeedbackVectorSlot slot);
 
   bool LoadIsBuiltin(TypeFeedbackId id, Builtins::Name builtin_id);
-  bool LoadIsStub(TypeFeedbackId id, ICStub* stub);
 
   // TODO(1571) We can't use ToBooleanStub::Types as the return value because
   // of various cycles in our headers. Death to tons of implementations in
@@ -118,13 +114,14 @@ class TypeFeedbackOracle: public ZoneObject {
 
   // Returns an element from the type feedback vector. Returns undefined
   // if there is no information.
-  Handle<Object> GetInfo(int slot);
+  Handle<Object> GetInfo(FeedbackVectorSlot slot);
+  Handle<Object> GetInfo(FeedbackVectorICSlot slot);
 
  private:
   Handle<Context> native_context_;
   Zone* zone_;
   Handle<UnseededNumberDictionary> dictionary_;
-  Handle<FixedArray> feedback_vector_;
+  Handle<TypeFeedbackVector> feedback_vector_;
 
   DISALLOW_COPY_AND_ASSIGN(TypeFeedbackOracle);
 };

@@ -16,28 +16,23 @@
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 
 class GURL;
-struct WebPreferences;
-
-namespace gfx {
-class Point;
-}
 
 namespace base {
 class FilePath;
 class Value;
 }
 
-namespace media {
-class AudioOutputController;
-}
-
-namespace ui {
-struct SelectedFileInfo;
-}
-
 namespace blink {
 struct WebMediaPlayerAction;
 struct WebPluginAction;
+}
+
+namespace gfx {
+class Point;
+}
+
+namespace media {
+class AudioOutputController;
 }
 
 namespace content {
@@ -48,6 +43,8 @@ class RenderViewHostDelegate;
 class SessionStorageNamespace;
 class SiteInstance;
 struct DropData;
+struct FileChooserFileInfo;
+struct WebPreferences;
 
 // A RenderViewHost is responsible for creating and talking to a RenderView
 // object in a child process. It exposes a high level API to users, for things
@@ -70,7 +67,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // because RenderWidgetHost is a virtual base class.
   static RenderViewHost* From(RenderWidgetHost* rwh);
 
-  virtual ~RenderViewHost() {}
+  ~RenderViewHost() override {}
 
   // Returns the main frame for this render view.
   virtual RenderFrameHost* GetMainFrame() = 0;
@@ -163,7 +160,7 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // from a file chooser dialog for the form. |permissions| is the file
   // selection mode in which the chooser dialog was created.
   virtual void FilesSelectedInChooser(
-      const std::vector<ui::SelectedFileInfo>& files,
+      const std::vector<content::FileChooserFileInfo>& files,
       FileChooserParams::Mode permissions) = 0;
 
   virtual RenderViewHostDelegate* GetDelegate() const = 0;
@@ -194,8 +191,13 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
   // RenderViewHostDelegate.
   virtual void SyncRendererPrefs() = 0;
 
-  // Returns the current WebKit preferences.
+  // Returns the current WebKit preferences. Note: WebPreferences is cached, so
+  // this lookup will be fast
   virtual WebPreferences GetWebkitPreferences() = 0;
+
+  // If any state that affects the webkit preferences changed, this method must
+  // be called. This triggers recomputing preferences.
+  virtual void OnWebkitPreferencesChanged() = 0;
 
   // Passes a list of Webkit preferences to the renderer.
   virtual void UpdateWebkitPreferences(const WebPreferences& prefs) = 0;
@@ -209,9 +211,6 @@ class CONTENT_EXPORT RenderViewHost : virtual public RenderWidgetHost {
       GetAudioOutputControllersCallback;
   virtual void GetAudioOutputControllers(
       const GetAudioOutputControllersCallback& callback) const = 0;
-
-  // Sets the mojo handle for WebUI pages.
-  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) = 0;
 
   // Notify the render view host to select the word around the caret.
   virtual void SelectWordAroundCaret() = 0;

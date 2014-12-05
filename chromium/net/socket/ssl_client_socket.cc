@@ -5,10 +5,14 @@
 #include "net/socket/ssl_client_socket.h"
 
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/strings/string_util.h"
 #include "crypto/ec_private_key.h"
-#include "net/ssl/server_bound_cert_service.h"
+#include "net/base/connection_type_histograms.h"
+#include "net/base/host_port_pair.h"
+#include "net/ssl/channel_id_service.h"
 #include "net/ssl/ssl_config_service.h"
+#include "net/ssl/ssl_connection_status_flags.h"
 
 namespace net {
 
@@ -18,7 +22,8 @@ SSLClientSocket::SSLClientSocket()
       protocol_negotiated_(kProtoUnknown),
       channel_id_sent_(false),
       signed_cert_timestamps_received_(false),
-      stapled_ocsp_response_received_(false) {
+      stapled_ocsp_response_received_(false),
+      negotiation_extension_(kExtensionUnknown) {
 }
 
 // static
@@ -32,8 +37,8 @@ NextProto SSLClientSocket::NextProtoFromString(
     return kProtoSPDY3;
   } else if (proto_string == "spdy/3.1") {
     return kProtoSPDY31;
-  } else if (proto_string == "h2-12") {
-    // This is the HTTP/2 draft 12 identifier. For internal
+  } else if (proto_string == "h2-14") {
+    // This is the HTTP/2 draft 14 identifier. For internal
     // consistency, HTTP/2 is named SPDY4 within Chromium.
     return kProtoSPDY4;
   } else if (proto_string == "quic/1+spdy/3") {
@@ -55,9 +60,9 @@ const char* SSLClientSocket::NextProtoToString(NextProto next_proto) {
     case kProtoSPDY31:
       return "spdy/3.1";
     case kProtoSPDY4:
-      // This is the HTTP/2 draft 12 identifier. For internal
+      // This is the HTTP/2 draft 14 identifier. For internal
       // consistency, HTTP/2 is named SPDY4 within Chromium.
-      return "h2-12";
+      return "h2-14";
     case kProtoQUIC1SPDY3:
       return "quic/1+spdy/3";
     case kProtoUnknown:
@@ -78,21 +83,6 @@ const char* SSLClientSocket::NextProtoStatusToString(
       return "no-overlap";
   }
   return NULL;
-}
-
-// static
-std::string SSLClientSocket::ServerProtosToString(
-    const std::string& server_protos) {
-  const char* protos = server_protos.c_str();
-  size_t protos_len = server_protos.length();
-  std::vector<std::string> server_protos_with_commas;
-  for (size_t i = 0; i < protos_len; ) {
-    const size_t len = protos[i];
-    std::string proto_str(&protos[i + 1], len);
-    server_protos_with_commas.push_back(proto_str);
-    i += len + 1;
-  }
-  return JoinString(server_protos_with_commas, ',');
 }
 
 bool SSLClientSocket::WasNpnNegotiated() const {
@@ -138,6 +128,11 @@ void SSLClientSocket::set_protocol_negotiated(NextProto protocol_negotiated) {
   protocol_negotiated_ = protocol_negotiated;
 }
 
+void SSLClientSocket::set_negotiation_extension(
+    SSLNegotiationExtension negotiation_extension) {
+  negotiation_extension_ = negotiation_extension;
+}
+
 bool SSLClientSocket::WasChannelIDSent() const {
   return channel_id_sent_;
 }
@@ -158,7 +153,7 @@ void SSLClientSocket::set_stapled_ocsp_response_received(
 
 // static
 void SSLClientSocket::RecordChannelIDSupport(
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
     bool negotiated_channel_id,
     bool channel_id_enabled,
     bool supports_ecc) {
@@ -169,45 +164,129 @@ void SSLClientSocket::RecordChannelIDSupport(
     CLIENT_AND_SERVER = 2,
     CLIENT_NO_ECC = 3,
     CLIENT_BAD_SYSTEM_TIME = 4,
-    CLIENT_NO_SERVER_BOUND_CERT_SERVICE = 5,
-    DOMAIN_BOUND_CERT_USAGE_MAX
+    CLIENT_NO_CHANNEL_ID_SERVICE = 5,
+    CHANNEL_ID_USAGE_MAX
   } supported = DISABLED;
   if (negotiated_channel_id) {
     supported = CLIENT_AND_SERVER;
   } else if (channel_id_enabled) {
-    if (!server_bound_cert_service)
-      supported = CLIENT_NO_SERVER_BOUND_CERT_SERVICE;
+    if (!channel_id_service)
+      supported = CLIENT_NO_CHANNEL_ID_SERVICE;
     else if (!supports_ecc)
       supported = CLIENT_NO_ECC;
-    else if (!server_bound_cert_service->IsSystemTimeValid())
+    else if (!channel_id_service->IsSystemTimeValid())
       supported = CLIENT_BAD_SYSTEM_TIME;
     else
       supported = CLIENT_ONLY;
   }
   UMA_HISTOGRAM_ENUMERATION("DomainBoundCerts.Support", supported,
-                            DOMAIN_BOUND_CERT_USAGE_MAX);
+                            CHANNEL_ID_USAGE_MAX);
+}
+
+// static
+void SSLClientSocket::RecordConnectionTypeMetrics(int ssl_version) {
+  UpdateConnectionTypeHistograms(CONNECTION_SSL);
+  switch (ssl_version) {
+    case SSL_CONNECTION_VERSION_SSL2:
+      UpdateConnectionTypeHistograms(CONNECTION_SSL_SSL2);
+      break;
+    case SSL_CONNECTION_VERSION_SSL3:
+      UpdateConnectionTypeHistograms(CONNECTION_SSL_SSL3);
+      break;
+    case SSL_CONNECTION_VERSION_TLS1:
+      UpdateConnectionTypeHistograms(CONNECTION_SSL_TLS1);
+      break;
+    case SSL_CONNECTION_VERSION_TLS1_1:
+      UpdateConnectionTypeHistograms(CONNECTION_SSL_TLS1_1);
+      break;
+    case SSL_CONNECTION_VERSION_TLS1_2:
+      UpdateConnectionTypeHistograms(CONNECTION_SSL_TLS1_2);
+      break;
+  }
 }
 
 // static
 bool SSLClientSocket::IsChannelIDEnabled(
     const SSLConfig& ssl_config,
-    ServerBoundCertService* server_bound_cert_service) {
+    ChannelIDService* channel_id_service) {
   if (!ssl_config.channel_id_enabled)
     return false;
-  if (!server_bound_cert_service) {
-    DVLOG(1) << "NULL server_bound_cert_service_, not enabling channel ID.";
+  if (!channel_id_service) {
+    DVLOG(1) << "NULL channel_id_service_, not enabling channel ID.";
     return false;
   }
   if (!crypto::ECPrivateKey::IsSupported()) {
     DVLOG(1) << "Elliptic Curve not supported, not enabling channel ID.";
     return false;
   }
-  if (!server_bound_cert_service->IsSystemTimeValid()) {
+  if (!channel_id_service->IsSystemTimeValid()) {
     DVLOG(1) << "System time is not within the supported range for certificate "
                 "generation, not enabling channel ID.";
     return false;
   }
   return true;
+}
+
+// static
+std::vector<uint8_t> SSLClientSocket::SerializeNextProtos(
+    const std::vector<std::string>& next_protos) {
+  // Do a first pass to determine the total length.
+  size_t wire_length = 0;
+  for (std::vector<std::string>::const_iterator i = next_protos.begin();
+       i != next_protos.end(); ++i) {
+    if (i->size() > 255) {
+      LOG(WARNING) << "Ignoring overlong NPN/ALPN protocol: " << *i;
+      continue;
+    }
+    if (i->size() == 0) {
+      LOG(WARNING) << "Ignoring empty NPN/ALPN protocol";
+      continue;
+    }
+    wire_length += i->size();
+    wire_length++;
+  }
+
+  // Allocate memory for the result and fill it in.
+  std::vector<uint8_t> wire_protos;
+  wire_protos.reserve(wire_length);
+  for (std::vector<std::string>::const_iterator i = next_protos.begin();
+       i != next_protos.end(); i++) {
+    if (i->size() == 0 || i->size() > 255)
+      continue;
+    wire_protos.push_back(i->size());
+    wire_protos.resize(wire_protos.size() + i->size());
+    memcpy(&wire_protos[wire_protos.size() - i->size()],
+           i->data(), i->size());
+  }
+  DCHECK_EQ(wire_protos.size(), wire_length);
+
+  return wire_protos;
+}
+
+void SSLClientSocket::RecordNegotiationExtension() {
+  if (negotiation_extension_ == kExtensionUnknown)
+    return;
+  std::string proto;
+  SSLClientSocket::NextProtoStatus status = GetNextProto(&proto);
+  if (status == kNextProtoUnsupported)
+    return;
+  // Convert protocol into numerical value for histogram.
+  NextProto protocol_negotiated = SSLClientSocket::NextProtoFromString(proto);
+  base::HistogramBase::Sample sample =
+      static_cast<base::HistogramBase::Sample>(protocol_negotiated);
+  // In addition to the protocol negotiated, we want to record which TLS
+  // extension was used, and in case of NPN, whether there was overlap between
+  // server and client list of supported protocols.
+  if (negotiation_extension_ == kExtensionNPN) {
+    if (status == kNextProtoNoOverlap) {
+      sample += 1000;
+    } else {
+      sample += 500;
+    }
+  } else {
+    DCHECK_EQ(kExtensionALPN, negotiation_extension_);
+  }
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSLProtocolNegotiation", sample);
 }
 
 }  // namespace net

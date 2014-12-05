@@ -21,16 +21,16 @@
 #ifndef TextCheckingHelper_h
 #define TextCheckingHelper_h
 
+#include "core/dom/Position.h"
 #include "platform/heap/Handle.h"
 #include "platform/text/TextChecking.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class LocalFrame;
 class Range;
-class Position;
 class SpellCheckerClient;
 class TextCheckerClient;
 struct TextCheckingResult;
@@ -82,7 +82,7 @@ class TextCheckingHelper {
     WTF_MAKE_NONCOPYABLE(TextCheckingHelper);
     STACK_ALLOCATED();
 public:
-    TextCheckingHelper(SpellCheckerClient&, PassRefPtrWillBeRawPtr<Range>);
+    TextCheckingHelper(SpellCheckerClient&, const Position& start, const Position& end);
     ~TextCheckingHelper();
 
     String findFirstMisspelling(int& firstMisspellingOffset, bool markAll, RefPtrWillBeRawPtr<Range>& firstMisspellingRange);
@@ -93,7 +93,8 @@ public:
 
 private:
     SpellCheckerClient* m_client;
-    RefPtrWillBeMember<Range> m_range;
+    Position m_start;
+    Position m_end;
 
     int findFirstGrammarDetail(const Vector<GrammarDetail>& grammarDetails, int badGrammarPhraseLocation, int startOffset, int endOffset, bool markAll) const;
     bool unifiedTextCheckerEnabled() const;
@@ -103,6 +104,6 @@ void checkTextOfParagraph(TextCheckerClient&, const String&, TextCheckingTypeMas
 
 bool unifiedTextCheckerEnabled(const LocalFrame*);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextCheckingHelper_h

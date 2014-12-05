@@ -28,7 +28,7 @@
 #ifndef TALK_SESSION_PHONE_FAKEWEBRTCCOMMON_H_
 #define TALK_SESSION_PHONE_FAKEWEBRTCCOMMON_H_
 
-#include "talk/base/common.h"
+#include "webrtc/base/common.h"
 
 namespace cricket {
 
@@ -40,6 +40,11 @@ namespace cricket {
 
 #define WEBRTC_BOOL_STUB(method, args) \
   virtual bool method args OVERRIDE { return true; }
+
+#ifdef USE_WEBRTC_DEV_BRANCH
+#define WEBRTC_BOOL_STUB_CONST(method, args) \
+  virtual bool method args const OVERRIDE { return true; }
+#endif
 
 #define WEBRTC_VOID_STUB(method, args) \
   virtual void method args OVERRIDE {}

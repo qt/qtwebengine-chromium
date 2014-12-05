@@ -10,7 +10,7 @@
 #ifndef SkPDFDevice_DEFINED
 #define SkPDFDevice_DEFINED
 
-#include "SkBitmapDevice.h"
+#include "SkDevice.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "SkPaint.h"
@@ -45,7 +45,7 @@ struct NamedDestination;
 
     The drawing context for the PDF backend.
 */
-class SkPDFDevice : public SkBitmapDevice {
+class SkPDFDevice : public SkBaseDevice {
 public:
     /** Create a PDF drawing context with the given width and height.
      *  72 points/in means letter paper is 612x792.
@@ -82,8 +82,8 @@ public:
                             size_t count, const SkPoint[],
                             const SkPaint& paint) SK_OVERRIDE;
     virtual void drawRect(const SkDraw&, const SkRect& r, const SkPaint& paint);
-    virtual void drawRRect(const SkDraw&, const SkRRect& rr,
-                           const SkPaint& paint) SK_OVERRIDE;
+    virtual void drawOval(const SkDraw&, const SkRect& oval, const SkPaint& paint) SK_OVERRIDE;
+    virtual void drawRRect(const SkDraw&, const SkRRect& rr, const SkPaint& paint) SK_OVERRIDE;
     virtual void drawPath(const SkDraw&, const SkPath& origpath,
                           const SkPaint& paint, const SkMatrix* prePathMatrix,
                           bool pathIsMutable) SK_OVERRIDE;
@@ -98,8 +98,8 @@ public:
     virtual void drawText(const SkDraw&, const void* text, size_t len,
                           SkScalar x, SkScalar y, const SkPaint&) SK_OVERRIDE;
     virtual void drawPosText(const SkDraw&, const void* text, size_t len,
-                             const SkScalar pos[], SkScalar constY,
-                             int scalarsPerPos, const SkPaint&) SK_OVERRIDE;
+                             const SkScalar pos[], int scalarsPerPos,
+                             const SkPoint& offset, const SkPaint&) SK_OVERRIDE;
     virtual void drawTextOnPath(const SkDraw&, const void* text, size_t len,
                                 const SkPath& path, const SkMatrix* matrix,
                                 const SkPaint& paint) SK_OVERRIDE;
@@ -113,6 +113,7 @@ public:
 
     virtual void onAttachToCanvas(SkCanvas* canvas) SK_OVERRIDE;
     virtual void onDetachFromCanvas() SK_OVERRIDE;
+    virtual SkImageInfo imageInfo() const SK_OVERRIDE;    
 
     enum DrawingArea {
         kContent_DrawingArea,  // Drawing area for the page content.
@@ -208,7 +209,11 @@ public:
     }
 
 protected:
-    virtual bool allowImageFilter(const SkImageFilter*) SK_OVERRIDE;
+    virtual const SkBitmap& onAccessBitmap() SK_OVERRIDE {
+        return fLegacyBitmap;
+    }
+
+    virtual SkSurface* newSurface(const SkImageInfo&, const SkSurfaceProps&) SK_OVERRIDE;
 
 private:
     // TODO(vandebo): push most of SkPDFDevice's state into a core object in
@@ -247,6 +252,8 @@ private:
 
     SkPicture::EncodeBitmap fEncoder;
     SkScalar fRasterDpi;
+
+    SkBitmap fLegacyBitmap;
 
     SkPDFDevice(const SkISize& layerSize, const SkClipStack& existingClipStack,
                 const SkRegion& existingClipRegion);
@@ -323,7 +330,7 @@ private:
     void defineNamedDestination(SkData* nameData, const SkPoint& point,
                                 const SkMatrix& matrix);
 
-    typedef SkBitmapDevice INHERITED;
+    typedef SkBaseDevice INHERITED;
 
     // TODO(edisonn): Only SkDocument_PDF and SkPDFImageShader should be able to create
     // an SkPDFDevice

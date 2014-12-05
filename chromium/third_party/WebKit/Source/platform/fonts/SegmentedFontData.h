@@ -30,7 +30,7 @@
 #include "platform/fonts/FontData.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class SimpleFontData;
 
@@ -64,26 +64,22 @@ public:
     const FontDataRange& rangeAt(unsigned i) const { return m_ranges[i]; }
     bool containsCharacter(UChar32) const;
 
-#ifndef NDEBUG
-    virtual String description() const OVERRIDE;
-#endif
-
 private:
     SegmentedFontData() { }
 
-    virtual const SimpleFontData* fontDataForCharacter(UChar32) const OVERRIDE;
+    virtual const SimpleFontData* fontDataForCharacter(UChar32) const override;
 
-    virtual bool isCustomFont() const OVERRIDE;
-    virtual bool isLoading() const OVERRIDE;
-    virtual bool isLoadingFallback() const OVERRIDE;
-    virtual bool isSegmented() const OVERRIDE;
-    virtual bool shouldSkipDrawing() const OVERRIDE;
+    virtual bool isCustomFont() const override;
+    virtual bool isLoading() const override;
+    virtual bool isLoadingFallback() const override;
+    virtual bool isSegmented() const override;
+    virtual bool shouldSkipDrawing() const override;
 
     Vector<FontDataRange, 1> m_ranges;
 };
 
-DEFINE_TYPE_CASTS(SegmentedFontData, FontData, fontData, fontData->isSegmented(), fontData.isSegmented());
+DEFINE_FONT_DATA_TYPE_CASTS(SegmentedFontData, true);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SegmentedFontData_h

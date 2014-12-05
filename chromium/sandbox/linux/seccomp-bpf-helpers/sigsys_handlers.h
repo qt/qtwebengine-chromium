@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "build/build_config.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl_forward.h"
 #include "sandbox/sandbox_export.h"
 
 // The handlers are suitable for use in Trap() error codes. They are
@@ -46,6 +47,25 @@ SANDBOX_EXPORT intptr_t
 // argument.
 SANDBOX_EXPORT intptr_t
     SIGSYSFutexFailure(const struct arch_seccomp_data& args, void* aux);
+// If the syscall is not being called on the current tid, crashes in the same
+// way as CrashSIGSYS_Handler.  Otherwise, returns the result of calling the
+// syscall with the pid argument set to 0 (which for these calls means the
+// current thread).  The following syscalls are supported:
+//
+// sched_getaffinity(), sched_getattr(), sched_getparam(), sched_getscheduler(),
+// sched_rr_get_interval(), sched_setaffinity(), sched_setattr(),
+// sched_setparam(), sched_setscheduler()
+SANDBOX_EXPORT intptr_t
+    SIGSYSSchedHandler(const struct arch_seccomp_data& args, void* aux);
+
+// Variants of the above functions for use with bpf_dsl.
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYS();
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSClone();
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSPrctl();
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSIoctl();
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSKill();
+SANDBOX_EXPORT bpf_dsl::ResultExpr CrashSIGSYSFutex();
+SANDBOX_EXPORT bpf_dsl::ResultExpr RewriteSchedSIGSYS();
 
 // Following four functions return substrings of error messages used
 // in the above four functions. They are useful in death tests.

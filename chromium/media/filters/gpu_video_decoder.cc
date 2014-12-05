@@ -18,7 +18,6 @@
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decoder_buffer.h"
-#include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
 #include "media/base/pipeline_status.h"
@@ -61,12 +60,10 @@ GpuVideoDecoder::BufferData::BufferData(
 GpuVideoDecoder::BufferData::~BufferData() {}
 
 GpuVideoDecoder::GpuVideoDecoder(
-    const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
-    const scoped_refptr<MediaLog>& media_log)
+    const scoped_refptr<GpuVideoAcceleratorFactories>& factories)
     : needs_bitstream_conversion_(false),
       factories_(factories),
       state_(kNormal),
-      media_log_(media_log),
       decoder_texture_target_(0),
       next_picture_buffer_id_(0),
       next_bitstream_buffer_id_(0),
@@ -96,15 +93,6 @@ void GpuVideoDecoder::Reset(const base::Closure& closure)  {
   pending_reset_cb_ = BindToCurrentLoop(closure);
 
   vda_->Reset();
-}
-
-void GpuVideoDecoder::Stop() {
-  DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
-  if (vda_)
-    DestroyVDA();
-  DCHECK(bitstream_buffers_in_decoder_.empty());
-  if (!pending_reset_cb_.is_null())
-    base::ResetAndReturn(&pending_reset_cb_).Run();
 }
 
 static bool IsCodedSizeSupported(const gfx::Size& coded_size) {
@@ -145,6 +133,10 @@ static void ReportGpuVideoDecoderInitializeStatusToUMAAndRunCB(
   UMA_HISTOGRAM_ENUMERATION(
       "Media.GpuVideoDecoderInitializeStatus", status, PIPELINE_STATUS_MAX + 1);
   cb.Run(status);
+}
+
+std::string GpuVideoDecoder::GetDisplayName() const {
+  return "GpuVideoDecoder";
 }
 
 void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
@@ -196,7 +188,6 @@ void GpuVideoDecoder::Initialize(const VideoDecoderConfig& config,
   }
 
   DVLOG(3) << "GpuVideoDecoder::Initialize() succeeded.";
-  media_log_->SetStringProperty("video_decoder", "gpu");
   status_cb.Run(PIPELINE_OK);
 }
 
@@ -431,8 +422,22 @@ void GpuVideoDecoder::PictureReady(const media::Picture& picture) {
   }
   const PictureBuffer& pb = it->second;
 
+  // Validate picture rectangle from GPU. This is for sanity/security check
+  // even the rectangle is not used in this class.
+  if (picture.visible_rect().IsEmpty() ||
+      !gfx::Rect(pb.size()).Contains(picture.visible_rect())) {
+    NOTREACHED() << "Invalid picture size from VDA: "
+                 << picture.visible_rect().ToString() << " should fit in "
+                 << pb.size().ToString();
+    NotifyError(media::VideoDecodeAccelerator::PLATFORM_FAILURE);
+    return;
+  }
+
   // Update frame's timestamp.
   base::TimeDelta timestamp;
+  // Some of the VDAs don't support and thus don't provide us with visible
+  // size in picture.size, passing coded size instead, so always drop it and
+  // use config information instead.
   gfx::Rect visible_rect;
   gfx::Size natural_size;
   GetBufferData(picture.bitstream_buffer_id(), &timestamp, &visible_rect,
@@ -481,11 +486,9 @@ void GpuVideoDecoder::ReleaseMailbox(
     const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
     int64 picture_buffer_id,
     uint32 texture_id,
-    const std::vector<uint32>& release_sync_points) {
+    uint32 release_sync_point) {
   DCHECK(factories->GetTaskRunner()->BelongsToCurrentThread());
-
-  for (size_t i = 0; i < release_sync_points.size(); i++)
-    factories->WaitSyncPoint(release_sync_points[i]);
+  factories->WaitSyncPoint(release_sync_point);
 
   if (decoder) {
     decoder->ReusePictureBuffer(picture_buffer_id);
@@ -560,14 +563,20 @@ void GpuVideoDecoder::NotifyEndOfBitstreamBuffer(int32 id) {
 
 GpuVideoDecoder::~GpuVideoDecoder() {
   DCheckGpuVideoAcceleratorFactoriesTaskRunnerIsCurrent();
-  // Stop should have been already called.
-  DCHECK(!vda_.get() && assigned_picture_buffers_.empty());
+  if (vda_)
+    DestroyVDA();
   DCHECK(bitstream_buffers_in_decoder_.empty());
+  DCHECK(assigned_picture_buffers_.empty());
+
+  if (!pending_reset_cb_.is_null())
+    base::ResetAndReturn(&pending_reset_cb_).Run();
+
   for (size_t i = 0; i < available_shm_segments_.size(); ++i) {
     available_shm_segments_[i]->shm->Close();
     delete available_shm_segments_[i];
   }
   available_shm_segments_.clear();
+
   for (std::map<int32, PendingDecoderBuffer>::iterator it =
            bitstream_buffers_in_decoder_.begin();
        it != bitstream_buffers_in_decoder_.end(); ++it) {

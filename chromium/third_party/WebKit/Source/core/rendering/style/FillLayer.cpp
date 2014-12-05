@@ -24,7 +24,7 @@
 
 #include "core/rendering/style/DataEquivalency.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsFillLayer {
     FillLayer* m_next;
@@ -363,7 +363,7 @@ bool FillLayer::hasOpaqueImage(const RenderObject* renderer) const
     if (m_composite == CompositeClear || m_composite == CompositeCopy)
         return true;
 
-    if (m_blendMode != blink::WebBlendModeNormal)
+    if (m_blendMode != WebBlendModeNormal)
         return false;
 
     if (m_composite == CompositeSourceOver)
@@ -377,4 +377,4 @@ bool FillLayer::hasRepeatXY() const
     return m_repeatX == RepeatFill && m_repeatY == RepeatFill;
 }
 
-} // namespace WebCore
+} // namespace blink

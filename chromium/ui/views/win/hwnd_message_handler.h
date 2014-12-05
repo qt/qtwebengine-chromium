@@ -203,36 +203,46 @@ class VIEWS_EXPORT HWNDMessageHandler :
     use_system_default_icon_ = use_system_default_icon;
   }
 
+  void SetFullscreen(bool fullscreen);
+
+  // Updates the window style to reflect whether it can be resized or maximized.
+  void SizeConstraintsChanged();
+
  private:
   typedef std::set<DWORD> TouchIDs;
 
   // Overridden from internal::InputMethodDelegate:
-  virtual void DispatchKeyEventPostIME(const ui::KeyEvent& key) OVERRIDE;
+  virtual void DispatchKeyEventPostIME(const ui::KeyEvent& key) override;
 
   // Overridden from WindowImpl:
-  virtual HICON GetDefaultWindowIcon() const OVERRIDE;
+  virtual HICON GetDefaultWindowIcon() const override;
   virtual LRESULT OnWndProc(UINT message,
                             WPARAM w_param,
-                            LPARAM l_param) OVERRIDE;
+                            LPARAM l_param) override;
 
   // Overridden from WindowEventTarget
   virtual LRESULT HandleMouseMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) override;
   virtual LRESULT HandleKeyboardMessage(unsigned int message,
                                         WPARAM w_param,
-                                        LPARAM l_param) OVERRIDE;
+                                        LPARAM l_param,
+                                        bool* handled) override;
   virtual LRESULT HandleTouchMessage(unsigned int message,
                                      WPARAM w_param,
-                                     LPARAM l_param) OVERRIDE;
+                                     LPARAM l_param,
+                                     bool* handled) override;
 
   virtual LRESULT HandleScrollMessage(unsigned int message,
                                       WPARAM w_param,
-                                      LPARAM l_param) OVERRIDE;
+                                      LPARAM l_param,
+                                      bool* handled) override;
 
   virtual LRESULT HandleNcHitTestMessage(unsigned int message,
                                          WPARAM w_param,
-                                         LPARAM l_param) OVERRIDE;
+                                         LPARAM l_param,
+                                         bool* handled) override;
 
   // Returns the auto-hide edges of the appbar. See
   // ViewsDelegate::GetAppbarAutohideEdges() for details. If the edges change,
@@ -478,6 +488,9 @@ class VIEWS_EXPORT HWNDMessageHandler :
                                  int message_time,
                                  LPARAM l_param);
 
+  // Provides functionality to transition a frame to DWM.
+  void PerformDwmTransition();
+
   HWNDMessageHandlerDelegate* delegate_;
 
   scoped_ptr<FullscreenHandler> fullscreen_handler_;
@@ -606,6 +619,14 @@ class VIEWS_EXPORT HWNDMessageHandler :
   // Time the last WM_MOUSEHWHEEL message is received. Please refer to the
   // HandleMouseEventInternal function as to why this is needed.
   long last_mouse_hwheel_time_;
+
+  // On Windows Vista and beyond, if we are transitioning from custom frame
+  // to Aero(glass) we delay setting the DWM related properties in full
+  // screen mode as DWM is not supported in full screen windows. We perform
+  // the DWM related operations when the window comes out of fullscreen mode.
+  // This member variable is set to true if the window is transitioning to
+  // glass. Defaults to false.
+  bool dwm_transition_desired_;
 
   DISALLOW_COPY_AND_ASSIGN(HWNDMessageHandler);
 };

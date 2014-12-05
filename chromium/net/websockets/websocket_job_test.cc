@@ -45,27 +45,23 @@ class MockSocketStream : public SocketStream {
                    URLRequestContext* context, CookieStore* cookie_store)
       : SocketStream(url, delegate, context, cookie_store) {}
 
-  virtual void Connect() OVERRIDE {}
-  virtual bool SendData(const char* data, int len) OVERRIDE {
+  void Connect() override {}
+  bool SendData(const char* data, int len) override {
     sent_data_ += std::string(data, len);
     return true;
   }
 
-  virtual void Close() OVERRIDE {}
-  virtual void RestartWithAuth(
-      const AuthCredentials& credentials) OVERRIDE {
-  }
+  void Close() override {}
+  void RestartWithAuth(const AuthCredentials& credentials) override {}
 
-  virtual void DetachDelegate() OVERRIDE {
-    delegate_ = NULL;
-  }
+  void DetachDelegate() override { delegate_ = NULL; }
 
   const std::string& sent_data() const {
     return sent_data_;
   }
 
  protected:
-  virtual ~MockSocketStream() {}
+  ~MockSocketStream() override {}
 
  private:
   std::string sent_data_;
@@ -78,7 +74,7 @@ class MockSocketStreamDelegate : public SocketStream::Delegate {
   void set_allow_all_cookies(bool allow_all_cookies) {
     allow_all_cookies_ = allow_all_cookies;
   }
-  virtual ~MockSocketStreamDelegate() {}
+  ~MockSocketStreamDelegate() override {}
 
   void SetOnStartOpenConnection(const base::Closure& callback) {
     on_start_open_connection_ = callback;
@@ -96,42 +92,40 @@ class MockSocketStreamDelegate : public SocketStream::Delegate {
     on_close_ = callback;
   }
 
-  virtual int OnStartOpenConnection(
-      SocketStream* socket,
-      const CompletionCallback& callback) OVERRIDE {
+  int OnStartOpenConnection(SocketStream* socket,
+                            const CompletionCallback& callback) override {
     if (!on_start_open_connection_.is_null())
       on_start_open_connection_.Run();
     return OK;
   }
-  virtual void OnConnected(SocketStream* socket,
-                           int max_pending_send_allowed) OVERRIDE {
+  void OnConnected(SocketStream* socket,
+                   int max_pending_send_allowed) override {
     if (!on_connected_.is_null())
       on_connected_.Run();
   }
-  virtual void OnSentData(SocketStream* socket,
-                          int amount_sent) OVERRIDE {
+  void OnSentData(SocketStream* socket, int amount_sent) override {
     amount_sent_ += amount_sent;
     if (!on_sent_data_.is_null())
       on_sent_data_.Run();
   }
-  virtual void OnReceivedData(SocketStream* socket,
-                              const char* data, int len) OVERRIDE {
+  void OnReceivedData(SocketStream* socket,
+                      const char* data,
+                      int len) override {
     received_data_ += std::string(data, len);
     if (!on_received_data_.is_null())
       on_received_data_.Run();
   }
-  virtual void OnClose(SocketStream* socket) OVERRIDE {
+  void OnClose(SocketStream* socket) override {
     if (!on_close_.is_null())
       on_close_.Run();
   }
-  virtual bool CanGetCookies(SocketStream* socket,
-                             const GURL& url) OVERRIDE {
+  bool CanGetCookies(SocketStream* socket, const GURL& url) override {
     return allow_all_cookies_;
   }
-  virtual bool CanSetCookie(SocketStream* request,
-                            const GURL& url,
-                            const std::string& cookie_line,
-                            CookieOptions* options) OVERRIDE {
+  bool CanSetCookie(SocketStream* request,
+                    const GURL& url,
+                    const std::string& cookie_line,
+                    CookieOptions* options) override {
     return allow_all_cookies_;
   }
 
@@ -186,72 +180,76 @@ class MockCookieStore : public CookieStore {
   }
 
   // CookieStore:
-  virtual void SetCookieWithOptionsAsync(
-      const GURL& url,
-      const std::string& cookie_line,
-      const CookieOptions& options,
-      const SetCookiesCallback& callback) OVERRIDE {
+  void SetCookieWithOptionsAsync(const GURL& url,
+                                 const std::string& cookie_line,
+                                 const CookieOptions& options,
+                                 const SetCookiesCallback& callback) override {
     bool result = SetCookieWithOptions(url, cookie_line, options);
     if (!callback.is_null())
       callback.Run(result);
   }
 
-  virtual void GetCookiesWithOptionsAsync(
-      const GURL& url,
-      const CookieOptions& options,
-      const GetCookiesCallback& callback) OVERRIDE {
+  void GetCookiesWithOptionsAsync(const GURL& url,
+                                  const CookieOptions& options,
+                                  const GetCookiesCallback& callback) override {
     if (!callback.is_null())
       callback.Run(GetCookiesWithOptions(url, options));
   }
 
-  virtual void GetAllCookiesForURLAsync(
+  void GetAllCookiesForURLAsync(
       const GURL& url,
-      const GetCookieListCallback& callback) OVERRIDE {
+      const GetCookieListCallback& callback) override {
     ADD_FAILURE();
   }
 
-  virtual void DeleteCookieAsync(const GURL& url,
-                                 const std::string& cookie_name,
-                                 const base::Closure& callback) OVERRIDE {
+  void DeleteCookieAsync(const GURL& url,
+                         const std::string& cookie_name,
+                         const base::Closure& callback) override {
     ADD_FAILURE();
   }
 
-  virtual void DeleteAllCreatedBetweenAsync(
-      const base::Time& delete_begin,
-      const base::Time& delete_end,
-      const DeleteCallback& callback) OVERRIDE {
+  void DeleteAllCreatedBetweenAsync(const base::Time& delete_begin,
+                                    const base::Time& delete_end,
+                                    const DeleteCallback& callback) override {
     ADD_FAILURE();
   }
 
-  virtual void DeleteAllCreatedBetweenForHostAsync(
+  void DeleteAllCreatedBetweenForHostAsync(
       const base::Time delete_begin,
       const base::Time delete_end,
       const GURL& url,
-      const DeleteCallback& callback) OVERRIDE {
+      const DeleteCallback& callback) override {
     ADD_FAILURE();
   }
 
-  virtual void DeleteSessionCookiesAsync(const DeleteCallback&) OVERRIDE {
+  void DeleteSessionCookiesAsync(const DeleteCallback&) override {
     ADD_FAILURE();
   }
 
-  virtual CookieMonster* GetCookieMonster() OVERRIDE { return NULL; }
+  CookieMonster* GetCookieMonster() override { return NULL; }
+
+  scoped_ptr<CookieStore::CookieChangedSubscription>
+  AddCallbackForCookie(const GURL& url, const std::string& name,
+                       const CookieChangedCallback& callback) override {
+    ADD_FAILURE();
+    return scoped_ptr<CookieChangedSubscription>();
+  }
 
   const std::vector<Entry>& entries() const { return entries_; }
 
  private:
   friend class base::RefCountedThreadSafe<MockCookieStore>;
-  virtual ~MockCookieStore() {}
+  ~MockCookieStore() override {}
 
   std::vector<Entry> entries_;
 };
 
 class MockSSLConfigService : public SSLConfigService {
  public:
-  virtual void GetSSLConfig(SSLConfig* config) OVERRIDE {}
+  void GetSSLConfig(SSLConfig* config) override {}
 
  protected:
-  virtual ~MockSSLConfigService() {}
+  ~MockSSLConfigService() override {}
 };
 
 class MockURLRequestContext : public URLRequestContext {
@@ -266,7 +264,7 @@ class MockURLRequestContext : public URLRequestContext {
                                       include_subdomains);
   }
 
-  virtual ~MockURLRequestContext() {}
+  ~MockURLRequestContext() override { AssertNoURLRequests(); }
 
  private:
   TransportSecurityState transport_security_state_;
@@ -294,21 +292,18 @@ class MockHttpTransactionFactory : public HttpTransactionFactory {
         http_session_, spdy_session_key_, BoundNetLog());
   }
 
-  virtual int CreateTransaction(
-      RequestPriority priority,
-      scoped_ptr<HttpTransaction>* trans) OVERRIDE {
+  int CreateTransaction(RequestPriority priority,
+                        scoped_ptr<HttpTransaction>* trans) override {
     NOTREACHED();
     return ERR_UNEXPECTED;
   }
 
-  virtual HttpCache* GetCache() OVERRIDE {
+  HttpCache* GetCache() override {
     NOTREACHED();
     return NULL;
   }
 
-  virtual HttpNetworkSession* GetSession() OVERRIDE {
-    return http_session_.get();
-  }
+  HttpNetworkSession* GetSession() override { return http_session_.get(); }
 
  private:
   OrderedSocketData* data_;
@@ -347,35 +342,35 @@ class DeletingSocketStreamDelegate : public SocketStream::Delegate {
 
   // OnStartOpenConnection() is not implemented by SocketStreamDispatcherHost
 
-  virtual void OnConnected(SocketStream* socket,
-                           int max_pending_send_allowed) OVERRIDE {
+  void OnConnected(SocketStream* socket,
+                   int max_pending_send_allowed) override {
     DeleteJobMaybe();
   }
 
-  virtual void OnSentData(SocketStream* socket, int amount_sent) OVERRIDE {
+  void OnSentData(SocketStream* socket, int amount_sent) override {
     DeleteJobMaybe();
   }
 
-  virtual void OnReceivedData(SocketStream* socket,
-                              const char* data,
-                              int len) OVERRIDE {
+  void OnReceivedData(SocketStream* socket,
+                      const char* data,
+                      int len) override {
     DeleteJobMaybe();
   }
 
-  virtual void OnClose(SocketStream* socket) OVERRIDE { DeleteJobMaybe(); }
+  void OnClose(SocketStream* socket) override { DeleteJobMaybe(); }
 
-  virtual void OnAuthRequired(SocketStream* socket,
-                              AuthChallengeInfo* auth_info) OVERRIDE {
+  void OnAuthRequired(SocketStream* socket,
+                      AuthChallengeInfo* auth_info) override {
     DeleteJobMaybe();
   }
 
-  virtual void OnSSLCertificateError(SocketStream* socket,
-                                     const SSLInfo& ssl_info,
-                                     bool fatal) OVERRIDE {
+  void OnSSLCertificateError(SocketStream* socket,
+                             const SSLInfo& ssl_info,
+                             bool fatal) override {
     DeleteJobMaybe();
   }
 
-  virtual void OnError(const SocketStream* socket, int error) OVERRIDE {
+  void OnError(const SocketStream* socket, int error) override {
     DeleteJobMaybe();
   }
 
@@ -396,12 +391,12 @@ class WebSocketJobTest : public PlatformTest,
       : spdy_util_(GetParam()),
         enable_websocket_over_spdy_(false) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     stream_type_ = STREAM_INVALID;
     cookie_store_ = new MockCookieStore;
     context_.reset(new MockURLRequestContext(cookie_store_.get()));
   }
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     cookie_store_ = NULL;
     context_.reset();
     websocket_ = NULL;
@@ -1103,9 +1098,9 @@ void WebSocketJobTest::TestThrottlingLimit() {
     scoped_refptr<WebSocketJob> job = new WebSocketJob(NULL);
     job->addresses_ = AddressList(AddressList::CreateFromIPAddress(ip, 80));
     if (i >= kMaxWebSocketJobsThrottled)
-      EXPECT_FALSE(WebSocketThrottle::GetInstance()->PutInQueue(job));
+      EXPECT_FALSE(WebSocketThrottle::GetInstance()->PutInQueue(job.get()));
     else
-      EXPECT_TRUE(WebSocketThrottle::GetInstance()->PutInQueue(job));
+      EXPECT_TRUE(WebSocketThrottle::GetInstance()->PutInQueue(job.get()));
     jobs.push_back(job);
   }
 

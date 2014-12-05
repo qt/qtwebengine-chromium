@@ -37,15 +37,13 @@
 #include "wtf/StdLibExtras.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace VectorMath;
 
-PassRefPtrWillBeRawPtr<OscillatorNode> OscillatorNode::create(AudioContext* context, float sampleRate)
+OscillatorNode* OscillatorNode::create(AudioContext* context, float sampleRate)
 {
-    return adoptRefWillBeNoop(new OscillatorNode(context, sampleRate));
+    return new OscillatorNode(context, sampleRate);
 }
 
 OscillatorNode::OscillatorNode(AudioContext* context, float sampleRate)
@@ -56,26 +54,31 @@ OscillatorNode::OscillatorNode(AudioContext* context, float sampleRate)
     , m_phaseIncrements(AudioNode::ProcessingSizeInFrames)
     , m_detuneValues(AudioNode::ProcessingSizeInFrames)
 {
-    ScriptWrappable::init(this);
     setNodeType(NodeTypeOscillator);
 
     // Use musical pitch standard A440 as a default.
-    m_frequency = AudioParam::create(context, "frequency", 440, 0, 100000);
+    m_frequency = AudioParam::create(context, 440);
     // Default to no detuning.
-    m_detune = AudioParam::create(context, "detune", 0, -4800, 4800);
+    m_detune = AudioParam::create(context, 0);
 
     // Sets up default wavetable.
     setType(m_type);
 
     // An oscillator is always mono.
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addOutput(AudioNodeOutput::create(this, 1));
 
     initialize();
 }
 
 OscillatorNode::~OscillatorNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void OscillatorNode::dispose()
+{
     uninitialize();
+    AudioScheduledSourceNode::dispose();
 }
 
 String OscillatorNode::type() const
@@ -116,22 +119,22 @@ bool OscillatorNode::setType(unsigned type)
 
     switch (type) {
     case SINE: {
-        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(PeriodicWave, periodicWaveSine, (PeriodicWave::createSine(sampleRate)));
+        DEFINE_STATIC_LOCAL(Persistent<PeriodicWave>, periodicWaveSine, (PeriodicWave::createSine(sampleRate)));
         periodicWave = periodicWaveSine;
         break;
     }
     case SQUARE: {
-        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(PeriodicWave, periodicWaveSquare, (PeriodicWave::createSquare(sampleRate)));
+        DEFINE_STATIC_LOCAL(Persistent<PeriodicWave>, periodicWaveSquare, (PeriodicWave::createSquare(sampleRate)));
         periodicWave = periodicWaveSquare;
         break;
     }
     case SAWTOOTH: {
-        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(PeriodicWave, periodicWaveSawtooth, (PeriodicWave::createSawtooth(sampleRate)));
+        DEFINE_STATIC_LOCAL(Persistent<PeriodicWave>, periodicWaveSawtooth, (PeriodicWave::createSawtooth(sampleRate)));
         periodicWave = periodicWaveSawtooth;
         break;
     }
     case TRIANGLE: {
-        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(PeriodicWave, periodicWaveTriangle, (PeriodicWave::createTriangle(sampleRate)));
+        DEFINE_STATIC_LOCAL(Persistent<PeriodicWave>, periodicWaveTriangle, (PeriodicWave::createTriangle(sampleRate)));
         periodicWave = periodicWaveTriangle;
         break;
     }
@@ -267,7 +270,7 @@ void OscillatorNode::process(size_t framesToProcess)
     float frequency = 0;
     float* higherWaveData = 0;
     float* lowerWaveData = 0;
-    float tableInterpolationFactor;
+    float tableInterpolationFactor = 0;
 
     if (!hasSampleAccurateValues) {
         frequency = m_frequency->smoothedValue();
@@ -349,6 +352,6 @@ void OscillatorNode::trace(Visitor* visitor)
     AudioScheduledSourceNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

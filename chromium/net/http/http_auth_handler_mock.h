@@ -33,7 +33,7 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
   class Factory : public HttpAuthHandlerFactory {
    public:
     Factory();
-    virtual ~Factory();
+    ~Factory() override;
 
     void AddMockHandler(HttpAuthHandler* handler, HttpAuth::Target target);
 
@@ -42,14 +42,13 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
     }
 
     // HttpAuthHandlerFactory:
-    virtual int CreateAuthHandler(
-        HttpAuthChallengeTokenizer* challenge,
-        HttpAuth::Target target,
-        const GURL& origin,
-        CreateReason reason,
-        int nonce_count,
-        const BoundNetLog& net_log,
-        scoped_ptr<HttpAuthHandler>* handler) OVERRIDE;
+    int CreateAuthHandler(HttpAuthChallengeTokenizer* challenge,
+                          HttpAuth::Target target,
+                          const GURL& origin,
+                          CreateReason reason,
+                          int nonce_count,
+                          const BoundNetLog& net_log,
+                          scoped_ptr<HttpAuthHandler>* handler) override;
 
    private:
     ScopedVector<HttpAuthHandler> handlers_[HttpAuth::AUTH_NUM_TARGETS];
@@ -58,7 +57,7 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
 
   HttpAuthHandlerMock();
 
-  virtual ~HttpAuthHandlerMock();
+  ~HttpAuthHandlerMock() override;
 
   void SetResolveExpectation(Resolve resolve);
 
@@ -87,19 +86,19 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
   }
 
   // HttpAuthHandler:
-  virtual HttpAuth::AuthorizationResult HandleAnotherChallenge(
-      HttpAuthChallengeTokenizer* challenge) OVERRIDE;
-  virtual bool NeedsIdentity() OVERRIDE;
-  virtual bool AllowsDefaultCredentials() OVERRIDE;
-  virtual bool AllowsExplicitCredentials() OVERRIDE;
+  HttpAuth::AuthorizationResult HandleAnotherChallenge(
+      HttpAuthChallengeTokenizer* challenge) override;
+  bool NeedsIdentity() override;
+  bool AllowsDefaultCredentials() override;
+  bool AllowsExplicitCredentials() override;
 
  protected:
-  virtual bool Init(HttpAuthChallengeTokenizer* challenge) OVERRIDE;
+  bool Init(HttpAuthChallengeTokenizer* challenge) override;
 
-  virtual int GenerateAuthTokenImpl(const AuthCredentials* credentials,
-                                    const HttpRequestInfo* request,
-                                    const CompletionCallback& callback,
-                                    std::string* auth_token) OVERRIDE;
+  int GenerateAuthTokenImpl(const AuthCredentials* credentials,
+                            const HttpRequestInfo* request,
+                            const CompletionCallback& callback,
+                            std::string* auth_token) override;
 
  private:
   void OnResolveCanonicalName();
@@ -108,7 +107,6 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
 
   Resolve resolve_;
   CompletionCallback callback_;
-  base::WeakPtrFactory<HttpAuthHandlerMock> weak_factory_;
   bool generate_async_;
   int generate_rv_;
   std::string* auth_token_;
@@ -117,6 +115,7 @@ class HttpAuthHandlerMock : public HttpAuthHandler {
   bool allows_default_credentials_;
   bool allows_explicit_credentials_;
   GURL request_url_;
+  base::WeakPtrFactory<HttpAuthHandlerMock> weak_factory_;
 };
 
 }  // namespace net

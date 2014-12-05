@@ -9,28 +9,12 @@
 #include "cc/base/region.h"
 #include "cc/debug/debug_colors.h"
 #include "cc/resources/picture_pile_impl.h"
-#include "cc/resources/raster_worker_pool.h"
 #include "skia/ext/analysis_canvas.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
-#include "third_party/skia/include/core/SkSize.h"
-#include "ui/gfx/rect_conversions.h"
-#include "ui/gfx/size_conversions.h"
-#include "ui/gfx/skia_util.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace cc {
-
-PicturePileImpl::ClonesForDrawing::ClonesForDrawing(
-    const PicturePileImpl* pile, int num_threads) {
-  for (int i = 0; i < num_threads; i++) {
-    scoped_refptr<PicturePileImpl> clone =
-        PicturePileImpl::CreateCloneForDrawing(pile, i);
-    clones_.push_back(clone);
-  }
-}
-
-PicturePileImpl::ClonesForDrawing::~ClonesForDrawing() {
-}
 
 scoped_refptr<PicturePileImpl> PicturePileImpl::Create() {
   return make_scoped_refptr(new PicturePileImpl);
@@ -41,63 +25,60 @@ scoped_refptr<PicturePileImpl> PicturePileImpl::CreateFromOther(
   return make_scoped_refptr(new PicturePileImpl(other));
 }
 
-scoped_refptr<PicturePileImpl> PicturePileImpl::CreateCloneForDrawing(
-    const PicturePileImpl* other, unsigned thread_index) {
-  return make_scoped_refptr(new PicturePileImpl(other, thread_index));
-}
-
 PicturePileImpl::PicturePileImpl()
-    : clones_for_drawing_(ClonesForDrawing(this, 0)) {
+    : background_color_(SK_ColorTRANSPARENT),
+      contents_opaque_(false),
+      contents_fill_bounds_completely_(false),
+      is_solid_color_(false),
+      solid_color_(SK_ColorTRANSPARENT),
+      has_any_recordings_(false),
+      is_mask_(false),
+      clear_canvas_with_debug_color_(false),
+      min_contents_scale_(0.f),
+      slow_down_raster_scale_factor_for_debug_(0),
+      likely_to_be_used_for_transform_animation_(false) {
 }
 
 PicturePileImpl::PicturePileImpl(const PicturePileBase* other)
-    : PicturePileBase(other),
-      clones_for_drawing_(ClonesForDrawing(
-                              this, RasterWorkerPool::GetNumRasterThreads())) {
-}
-
-PicturePileImpl::PicturePileImpl(
-    const PicturePileImpl* other, unsigned thread_index)
-    : PicturePileBase(other, thread_index),
-      clones_for_drawing_(ClonesForDrawing(this, 0)) {
+    : picture_map_(other->picture_map_),
+      tiling_(other->tiling_),
+      background_color_(other->background_color_),
+      contents_opaque_(other->contents_opaque_),
+      contents_fill_bounds_completely_(other->contents_fill_bounds_completely_),
+      is_solid_color_(other->is_solid_color_),
+      solid_color_(other->solid_color_),
+      recorded_viewport_(other->recorded_viewport_),
+      has_any_recordings_(other->has_any_recordings_),
+      is_mask_(other->is_mask_),
+      clear_canvas_with_debug_color_(other->clear_canvas_with_debug_color_),
+      min_contents_scale_(other->min_contents_scale_),
+      slow_down_raster_scale_factor_for_debug_(
+          other->slow_down_raster_scale_factor_for_debug_),
+      likely_to_be_used_for_transform_animation_(false) {
 }
 
 PicturePileImpl::~PicturePileImpl() {
 }
 
-PicturePileImpl* PicturePileImpl::GetCloneForDrawingOnThread(
-    unsigned thread_index) const {
-  CHECK_GT(clones_for_drawing_.clones_.size(), thread_index);
-  return clones_for_drawing_.clones_[thread_index].get();
-}
-
-void PicturePileImpl::RasterDirect(
-    SkCanvas* canvas,
-    const gfx::Rect& canvas_rect,
-    float contents_scale,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+void PicturePileImpl::RasterDirect(SkCanvas* canvas,
+                                   const gfx::Rect& canvas_rect,
+                                   float contents_scale) const {
   RasterCommon(canvas,
                NULL,
                canvas_rect,
                contents_scale,
-               rendering_stats_instrumentation,
                false);
 }
 
-void PicturePileImpl::RasterForAnalysis(
-    skia::AnalysisCanvas* canvas,
-    const gfx::Rect& canvas_rect,
-    float contents_scale,
-    RenderingStatsInstrumentation* stats_instrumentation) {
-  RasterCommon(
-      canvas, canvas, canvas_rect, contents_scale, stats_instrumentation, true);
+void PicturePileImpl::RasterForAnalysis(skia::AnalysisCanvas* canvas,
+                                        const gfx::Rect& canvas_rect,
+                                        float contents_scale) const {
+  RasterCommon(canvas, canvas, canvas_rect, contents_scale, true);
 }
 
-void PicturePileImpl::RasterToBitmap(
-    SkCanvas* canvas,
-    const gfx::Rect& canvas_rect,
-    float contents_scale,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+void PicturePileImpl::PlaybackToCanvas(SkCanvas* canvas,
+                                       const gfx::Rect& canvas_rect,
+                                       float contents_scale) const {
   canvas->discard();
   if (clear_canvas_with_debug_color_) {
     // Any non-painted areas in the content bounds will be left in this color.
@@ -113,7 +94,7 @@ void PicturePileImpl::RasterToBitmap(
     // texel (since the recording won't cover it) and outside the last texel
     // (due to linear filtering when using this texture).
     gfx::Rect content_tiling_rect = gfx::ToEnclosingRect(
-        gfx::ScaleRect(tiling_.tiling_rect(), contents_scale));
+        gfx::ScaleRect(gfx::Rect(tiling_.tiling_size()), contents_scale));
 
     // The final texel of content may only be partially covered by a
     // rasterization; this rect represents the content rect that is fully
@@ -159,14 +140,13 @@ void PicturePileImpl::RasterToBitmap(
                NULL,
                canvas_rect,
                contents_scale,
-               rendering_stats_instrumentation,
                false);
 }
 
 void PicturePileImpl::CoalesceRasters(const gfx::Rect& canvas_rect,
                                       const gfx::Rect& content_rect,
                                       float contents_scale,
-                                      PictureRegionMap* results) {
+                                      PictureRegionMap* results) const {
   DCHECK(results);
   // Rasterize the collection of relevant picture piles.
   gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
@@ -197,11 +177,11 @@ void PicturePileImpl::CoalesceRasters(const gfx::Rect& canvas_rect,
   for (TilingData::Iterator tile_iter(&tiling_, layer_rect, include_borders);
        tile_iter;
        ++tile_iter) {
-    PictureMap::iterator map_iter = picture_map_.find(tile_iter.index());
+    PictureMap::const_iterator map_iter = picture_map_.find(tile_iter.index());
     if (map_iter == picture_map_.end())
       continue;
-    PictureInfo& info = map_iter->second;
-    Picture* picture = info.GetPicture();
+    const PictureInfo& info = map_iter->second;
+    const Picture* picture = info.GetPicture();
     if (!picture)
       continue;
 
@@ -263,13 +243,12 @@ void PicturePileImpl::RasterCommon(
     SkDrawPictureCallback* callback,
     const gfx::Rect& canvas_rect,
     float contents_scale,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation,
-    bool is_analysis) {
+    bool is_analysis) const {
   DCHECK(contents_scale >= min_contents_scale_);
 
   canvas->translate(-canvas_rect.x(), -canvas_rect.y());
   gfx::Rect content_tiling_rect = gfx::ToEnclosingRect(
-      gfx::ScaleRect(tiling_.tiling_rect(), contents_scale));
+      gfx::ScaleRect(gfx::Rect(tiling_.tiling_size()), contents_scale));
   content_tiling_rect.Intersect(canvas_rect);
 
   canvas->clipRect(gfx::RectToSkRect(content_tiling_rect),
@@ -288,7 +267,7 @@ void PicturePileImpl::RasterCommon(
   for (PictureRegionMap::iterator it = picture_region_map.begin();
        it != picture_region_map.end();
        ++it) {
-    Picture* picture = it->first;
+    const Picture* picture = it->first;
     Region negated_clip_region = it->second;
 
 #ifndef NDEBUG
@@ -299,34 +278,10 @@ void PicturePileImpl::RasterCommon(
     total_clip.Union(positive_clip);
 #endif  // NDEBUG
 
-    base::TimeDelta best_duration = base::TimeDelta::Max();
     int repeat_count = std::max(1, slow_down_raster_scale_factor_for_debug_);
-    int rasterized_pixel_count = 0;
 
-    for (int j = 0; j < repeat_count; ++j) {
-      base::TimeTicks start_time;
-      if (rendering_stats_instrumentation)
-        start_time = rendering_stats_instrumentation->StartRecording();
-
-      rasterized_pixel_count = picture->Raster(
-          canvas, callback, negated_clip_region, contents_scale);
-
-      if (rendering_stats_instrumentation) {
-        base::TimeDelta duration =
-            rendering_stats_instrumentation->EndRecording(start_time);
-        best_duration = std::min(best_duration, duration);
-      }
-    }
-
-    if (rendering_stats_instrumentation) {
-      if (is_analysis) {
-        rendering_stats_instrumentation->AddAnalysis(best_duration,
-                                                     rasterized_pixel_count);
-      } else {
-        rendering_stats_instrumentation->AddRaster(best_duration,
-                                                   rasterized_pixel_count);
-      }
-    }
+    for (int j = 0; j < repeat_count; ++j)
+      picture->Raster(canvas, callback, negated_clip_region, contents_scale);
   }
 
 #ifndef NDEBUG
@@ -345,52 +300,106 @@ void PicturePileImpl::RasterCommon(
 skia::RefPtr<SkPicture> PicturePileImpl::GetFlattenedPicture() {
   TRACE_EVENT0("cc", "PicturePileImpl::GetFlattenedPicture");
 
-  gfx::Rect tiling_rect(tiling_.tiling_rect());
+  gfx::Rect tiling_rect(tiling_.tiling_size());
   SkPictureRecorder recorder;
   SkCanvas* canvas =
       recorder.beginRecording(tiling_rect.width(), tiling_rect.height());
   if (!tiling_rect.IsEmpty())
-    RasterToBitmap(canvas, tiling_rect, 1.0, NULL);
+    PlaybackToCanvas(canvas, tiling_rect, 1.0);
   skia::RefPtr<SkPicture> picture = skia::AdoptRef(recorder.endRecording());
 
   return picture;
 }
 
-void PicturePileImpl::AnalyzeInRect(
+void PicturePileImpl::PerformSolidColorAnalysis(
     const gfx::Rect& content_rect,
     float contents_scale,
-    PicturePileImpl::Analysis* analysis) {
-  AnalyzeInRect(content_rect, contents_scale, analysis, NULL);
-}
-
-void PicturePileImpl::AnalyzeInRect(
-    const gfx::Rect& content_rect,
-    float contents_scale,
-    PicturePileImpl::Analysis* analysis,
-    RenderingStatsInstrumentation* stats_instrumentation) {
+    RasterSource::SolidColorAnalysis* analysis) const {
   DCHECK(analysis);
-  TRACE_EVENT0("cc", "PicturePileImpl::AnalyzeInRect");
+  TRACE_EVENT0("cc", "PicturePileImpl::PerformSolidColorAnalysis");
 
   gfx::Rect layer_rect = gfx::ScaleToEnclosingRect(
       content_rect, 1.0f / contents_scale);
 
-  layer_rect.Intersect(tiling_.tiling_rect());
+  layer_rect.Intersect(gfx::Rect(tiling_.tiling_size()));
 
   skia::AnalysisCanvas canvas(layer_rect.width(), layer_rect.height());
 
-  RasterForAnalysis(&canvas, layer_rect, 1.0f, stats_instrumentation);
+  RasterForAnalysis(&canvas, layer_rect, 1.0f);
 
   analysis->is_solid_color = canvas.GetColorIfSolid(&analysis->solid_color);
 }
 
-// Since there are situations when we can skip analysis, the variables have to
-// be set to their safest values. That is, we have to assume that the tile is
-// not solid color. As well, we have to assume that the tile has text so we
-// don't early out incorrectly.
-PicturePileImpl::Analysis::Analysis() : is_solid_color(false) {
+void PicturePileImpl::GatherPixelRefs(
+    const gfx::Rect& content_rect,
+    float contents_scale,
+    std::vector<SkPixelRef*>* pixel_refs) const {
+  DCHECK_EQ(0u, pixel_refs->size());
+  for (PixelRefIterator iter(content_rect, contents_scale, this); iter;
+       ++iter) {
+    pixel_refs->push_back(*iter);
+  }
 }
 
-PicturePileImpl::Analysis::~Analysis() {
+bool PicturePileImpl::CoversRect(const gfx::Rect& content_rect,
+                                 float contents_scale) const {
+  if (tiling_.tiling_size().IsEmpty())
+    return false;
+  gfx::Rect layer_rect =
+      gfx::ScaleToEnclosingRect(content_rect, 1.f / contents_scale);
+  layer_rect.Intersect(gfx::Rect(tiling_.tiling_size()));
+
+  // Common case inside of viewport to avoid the slower map lookups.
+  if (recorded_viewport_.Contains(layer_rect)) {
+    // Sanity check that there are no false positives in recorded_viewport_.
+    DCHECK(CanRasterSlowTileCheck(layer_rect));
+    return true;
+  }
+
+  return CanRasterSlowTileCheck(layer_rect);
+}
+
+gfx::Rect PicturePileImpl::PaddedRect(const PictureMapKey& key) const {
+  gfx::Rect padded_rect = tiling_.TileBounds(key.first, key.second);
+  padded_rect.Inset(-buffer_pixels(), -buffer_pixels(), -buffer_pixels(),
+                    -buffer_pixels());
+  return padded_rect;
+}
+
+bool PicturePileImpl::CanRasterSlowTileCheck(
+    const gfx::Rect& layer_rect) const {
+  bool include_borders = false;
+  for (TilingData::Iterator tile_iter(&tiling_, layer_rect, include_borders);
+       tile_iter; ++tile_iter) {
+    PictureMap::const_iterator map_iter = picture_map_.find(tile_iter.index());
+    if (map_iter == picture_map_.end())
+      return false;
+    if (!map_iter->second.GetPicture())
+      return false;
+  }
+  return true;
+}
+
+bool PicturePileImpl::SuitableForDistanceFieldText() const {
+  return likely_to_be_used_for_transform_animation_;
+}
+
+void PicturePileImpl::AsValueInto(base::debug::TracedValue* pictures) const {
+  gfx::Rect tiling_rect(tiling_.tiling_size());
+  std::set<const void*> appended_pictures;
+  bool include_borders = true;
+  for (TilingData::Iterator tile_iter(&tiling_, tiling_rect, include_borders);
+       tile_iter; ++tile_iter) {
+    PictureMap::const_iterator map_iter = picture_map_.find(tile_iter.index());
+    if (map_iter == picture_map_.end())
+      continue;
+
+    const Picture* picture = map_iter->second.GetPicture();
+    if (picture && (appended_pictures.count(picture) == 0)) {
+      appended_pictures.insert(picture);
+      TracedValue::AppendIDRef(picture, pictures);
+    }
+  }
 }
 
 PicturePileImpl::PixelRefIterator::PixelRefIterator(
@@ -444,11 +453,11 @@ void PicturePileImpl::PixelRefIterator::AdvanceToTilePictureWithPixelRefs() {
 }
 
 void PicturePileImpl::DidBeginTracing() {
-  std::set<void*> processed_pictures;
+  std::set<const void*> processed_pictures;
   for (PictureMap::iterator it = picture_map_.begin();
        it != picture_map_.end();
        ++it) {
-    Picture* picture = it->second.GetPicture();
+    const Picture* picture = it->second.GetPicture();
     if (picture && (processed_pictures.count(picture) == 0)) {
       picture->EmitTraceSnapshot();
       processed_pictures.insert(picture);

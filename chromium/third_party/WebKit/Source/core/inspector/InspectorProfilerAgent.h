@@ -38,37 +38,36 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
+class ExecutionContext;
 class InjectedScriptManager;
 class InspectorFrontend;
 class InspectorOverlay;
-class InstrumentingAgents;
-class ScriptState;
-class ScriptCallStack;
-class ScriptProfile;
 
 
 typedef String ErrorString;
 
-class InspectorProfilerAgent FINAL : public InspectorBaseAgent<InspectorProfilerAgent>, public InspectorBackendDispatcher::ProfilerCommandHandler {
-    WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent); WTF_MAKE_FAST_ALLOCATED;
+class InspectorProfilerAgent final : public InspectorBaseAgent<InspectorProfilerAgent>, public InspectorBackendDispatcher::ProfilerCommandHandler {
+    WTF_MAKE_NONCOPYABLE(InspectorProfilerAgent);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<InspectorProfilerAgent> create(InjectedScriptManager*, InspectorOverlay*);
+    static PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> create(InjectedScriptManager*, InspectorOverlay*);
     virtual ~InspectorProfilerAgent();
+    virtual void trace(Visitor*) override;
 
-    void consoleProfile(const String& title, ScriptState*);
-    void consoleProfileEnd(const String& title, ScriptState*);
+    void consoleProfile(ExecutionContext*, const String& title);
+    void consoleProfileEnd(const String& title);
 
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
-    virtual void setSamplingInterval(ErrorString*, int) OVERRIDE;
-    virtual void start(ErrorString*) OVERRIDE;
-    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) OVERRIDE;
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+    virtual void setSamplingInterval(ErrorString*, int) override;
+    virtual void start(ErrorString*) override;
+    virtual void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>&) override;
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
+    virtual void setFrontend(InspectorFrontend*) override;
+    virtual void clearFrontend() override;
+    virtual void restore() override;
 
     void willProcessTask();
     void didProcessTask();
@@ -82,7 +81,7 @@ private:
     void stop(ErrorString*, RefPtr<TypeBuilder::Profiler::CPUProfile>*);
     String nextProfileId();
 
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorFrontend::Profiler* m_frontend;
     bool m_recordingCPUProfile;
     class ProfileDescriptor;
@@ -98,7 +97,7 @@ private:
     void idleFinished();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorProfilerAgent_h)

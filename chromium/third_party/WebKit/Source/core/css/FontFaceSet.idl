@@ -34,16 +34,15 @@ enum FontFaceSetLoadStatus { "loading", "loaded" };
     ActiveDOMObject,
     SetWrapperReferenceFrom=document,
     NoInterfaceObject,
-    RuntimeEnabled=FontLoadEvents,
 ] interface FontFaceSet : EventTarget {
 
     attribute EventHandler onloading;
     attribute EventHandler onloadingdone;
     attribute EventHandler onloadingerror;
 
-    [RaisesException] boolean check(DOMString font, optional DOMString text = null);
-    [CallWith=ScriptState] Promise load(DOMString font, optional DOMString text = null);
-    [MeasureAs=FontFaceSetReady, CallWith=ScriptState] Promise ready();
+    [RaisesException] boolean check(DOMString font, optional DOMString text = " ");
+    [CallWith=ScriptState] Promise load(DOMString font, optional DOMString text = " ");
+    [DeprecateAs=FontFaceSetReady, CallWith=ScriptState] Promise ready();
 
     [RaisesException] void add(FontFace fontFace);
     void clear();

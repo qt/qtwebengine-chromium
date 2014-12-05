@@ -14,16 +14,16 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 
+#include "webrtc/base/thread_annotations.h"
 #include "webrtc/call.h"
 #include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
-#include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/event_wrapper.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/system_wrappers/interface/sleep.h"
-#include "webrtc/system_wrappers/interface/thread_annotations.h"
+#include "webrtc/test/call_test.h"
 #include "webrtc/test/direct_transport.h"
 #include "webrtc/test/encoder_settings.h"
 #include "webrtc/test/fake_encoder.h"
@@ -34,8 +34,7 @@
 
 namespace webrtc {
 
-static const uint32_t kSendSsrc = 0x654321;
-static const int kFullStackTestDurationSecs = 10;
+static const int kFullStackTestDurationSecs = 60;
 
 struct FullStackTestParams {
   const char* test_label;
@@ -44,25 +43,17 @@ struct FullStackTestParams {
     size_t width, height;
     int fps;
   } clip;
-  unsigned int bitrate;
+  int min_bitrate_bps;
+  int target_bitrate_bps;
+  int max_bitrate_bps;
   double avg_psnr_threshold;
   double avg_ssim_threshold;
+  FakeNetworkPipe::Config link;
 };
 
-FullStackTestParams paris_qcif = {
-    "net_delay_0_0_plr_0", {"paris_qcif", 176, 144, 30}, 300, 36.0, 0.96};
-
-// TODO(pbos): Decide on psnr/ssim thresholds for foreman_cif.
-FullStackTestParams foreman_cif = {
-    "foreman_cif_net_delay_0_0_plr_0",
-    {"foreman_cif", 352, 288, 30},
-    700,
-    0.0,
-    0.0};
-
-class FullStackTest : public ::testing::TestWithParam<FullStackTestParams> {
+class FullStackTest : public test::CallTest {
  protected:
-  std::map<uint32_t, bool> reserved_ssrcs_;
+  void RunTest(const FullStackTestParams& params);
 };
 
 class VideoAnalyzer : public PacketReceiver,
@@ -115,7 +106,7 @@ class VideoAnalyzer : public PacketReceiver,
                                        size_t length) OVERRIDE {
     scoped_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
     RTPHeader header;
-    parser->Parse(packet, static_cast<int>(length), &header);
+    parser->Parse(packet, length, &header);
     {
       CriticalSectionScoped lock(crit_.get());
       recv_times_[header.timestamp - rtp_timestamp_delta_] =
@@ -154,7 +145,7 @@ class VideoAnalyzer : public PacketReceiver,
   virtual bool SendRtp(const uint8_t* packet, size_t length) OVERRIDE {
     scoped_ptr<RtpHeaderParser> parser(RtpHeaderParser::Create());
     RTPHeader header;
-    parser->Parse(packet, static_cast<int>(length), &header);
+    parser->Parse(packet, length, &header);
 
     {
       CriticalSectionScoped lock(crit_.get());
@@ -200,7 +191,9 @@ class VideoAnalyzer : public PacketReceiver,
     last_rendered_frame_.CopyFrame(video_frame);
   }
 
-  void Wait() { done_->Wait(120 * 1000); }
+  void Wait() {
+    EXPECT_EQ(kEventSignaled, done_->Wait(FullStackTest::kLongTimeoutMs));
+  }
 
   VideoSendStreamInput* input_;
   Transport* transport_;
@@ -367,8 +360,8 @@ class VideoAnalyzer : public PacketReceiver,
   std::map<uint32_t, int64_t> send_times_ GUARDED_BY(crit_);
   std::map<uint32_t, int64_t> recv_times_ GUARDED_BY(crit_);
   I420VideoFrame* first_send_frame_ GUARDED_BY(crit_);
-  double avg_psnr_threshold_ GUARDED_BY(crit_);
-  double avg_ssim_threshold_ GUARDED_BY(crit_);
+  const double avg_psnr_threshold_;
+  const double avg_ssim_threshold_;
 
   const scoped_ptr<CriticalSectionWrapper> comparison_lock_;
   const scoped_ptr<ThreadWrapper> comparison_thread_;
@@ -376,44 +369,47 @@ class VideoAnalyzer : public PacketReceiver,
   const scoped_ptr<EventWrapper> done_;
 };
 
-TEST_P(FullStackTest, NoPacketLoss) {
-  static const uint32_t kReceiverLocalSsrc = 0x123456;
-  FullStackTestParams params = GetParam();
-
-  test::DirectTransport transport;
+void FullStackTest::RunTest(const FullStackTestParams& params) {
+  test::DirectTransport send_transport(params.link);
+  test::DirectTransport recv_transport(params.link);
   VideoAnalyzer analyzer(NULL,
-                         &transport,
+                         &send_transport,
                          params.test_label,
                          params.avg_psnr_threshold,
                          params.avg_ssim_threshold,
                          kFullStackTestDurationSecs * params.clip.fps);
 
-  Call::Config call_config(&analyzer);
+  CreateCalls(Call::Config(&analyzer), Call::Config(&recv_transport));
 
-  scoped_ptr<Call> call(Call::Create(call_config));
-  analyzer.SetReceiver(call->Receiver());
-  transport.SetReceiver(&analyzer);
+  analyzer.SetReceiver(receiver_call_->Receiver());
+  send_transport.SetReceiver(&analyzer);
+  recv_transport.SetReceiver(sender_call_->Receiver());
 
-  VideoSendStream::Config send_config = call->GetDefaultSendConfig();
-  send_config.rtp.ssrcs.push_back(kSendSsrc);
+  CreateSendConfig(1);
 
-  scoped_ptr<VP8Encoder> encoder(VP8Encoder::Create());
-  send_config.encoder_settings.encoder = encoder.get();
-  send_config.encoder_settings.payload_name = "VP8";
-  send_config.encoder_settings.payload_type = 124;
-  std::vector<VideoStream> video_streams = test::CreateVideoStreams(1);
-  VideoStream* stream = &video_streams[0];
+  scoped_ptr<VideoEncoder> encoder(
+      VideoEncoder::Create(VideoEncoder::kVp8));
+  send_config_.encoder_settings.encoder = encoder.get();
+  send_config_.encoder_settings.payload_name = "VP8";
+  send_config_.encoder_settings.payload_type = 124;
+  send_config_.rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
+
+  VideoStream* stream = &encoder_config_.streams[0];
   stream->width = params.clip.width;
   stream->height = params.clip.height;
-  stream->min_bitrate_bps = stream->target_bitrate_bps =
-      stream->max_bitrate_bps = params.bitrate * 1000;
+  stream->min_bitrate_bps = params.min_bitrate_bps;
+  stream->target_bitrate_bps = params.target_bitrate_bps;
+  stream->max_bitrate_bps = params.max_bitrate_bps;
   stream->max_framerate = params.clip.fps;
 
-  VideoSendStream* send_stream =
-      call->CreateVideoSendStream(send_config, video_streams, NULL);
-  analyzer.input_ = send_stream->Input();
+  CreateMatchingReceiveConfigs();
+  receive_configs_[0].renderer = &analyzer;
+  receive_configs_[0].rtp.nack.rtp_history_ms = kNackRtpHistoryMs;
 
-  scoped_ptr<test::FrameGeneratorCapturer> file_capturer(
+  CreateStreams();
+  analyzer.input_ = send_stream_->Input();
+
+  frame_generator_capturer_.reset(
       test::FrameGeneratorCapturer::CreateFromYuvFile(
           &analyzer,
           test::ResourcePath(params.clip.name, "yuv").c_str(),
@@ -421,39 +417,134 @@ TEST_P(FullStackTest, NoPacketLoss) {
           params.clip.height,
           params.clip.fps,
           Clock::GetRealTimeClock()));
-  ASSERT_TRUE(file_capturer.get() != NULL)
+
+  ASSERT_TRUE(frame_generator_capturer_.get() != NULL)
       << "Could not create capturer for " << params.clip.name
       << ".yuv. Is this resource file present?";
 
-  VideoReceiveStream::Config receive_config = call->GetDefaultReceiveConfig();
-  VideoCodec codec =
-      test::CreateDecoderVideoCodec(send_config.encoder_settings);
-  receive_config.codecs.push_back(codec);
-  receive_config.rtp.remote_ssrc = send_config.rtp.ssrcs[0];
-  receive_config.rtp.local_ssrc = kReceiverLocalSsrc;
-  receive_config.renderer = &analyzer;
-
-  VideoReceiveStream* receive_stream =
-      call->CreateVideoReceiveStream(receive_config);
-
-  receive_stream->Start();
-  send_stream->Start();
-  file_capturer->Start();
+  Start();
 
   analyzer.Wait();
 
-  file_capturer->Stop();
-  send_stream->Stop();
-  receive_stream->Stop();
+  send_transport.StopSending();
+  recv_transport.StopSending();
 
-  call->DestroyVideoReceiveStream(receive_stream);
-  call->DestroyVideoSendStream(send_stream);
+  Stop();
 
-  transport.StopSending();
+  DestroyStreams();
 }
 
-INSTANTIATE_TEST_CASE_P(FullStack,
-                        FullStackTest,
-                        ::testing::Values(paris_qcif, foreman_cif));
+TEST_F(FullStackTest, ParisQcifWithoutPacketLoss) {
+  FullStackTestParams paris_qcif = {"net_delay_0_0_plr_0",
+                                    {"paris_qcif", 176, 144, 30},
+                                    300000,
+                                    300000,
+                                    300000,
+                                    36.0,
+                                    0.96
+                                   };
+  RunTest(paris_qcif);
+}
 
+TEST_F(FullStackTest, ForemanCifWithoutPacketLoss) {
+  // TODO(pbos): Decide on psnr/ssim thresholds for foreman_cif.
+  FullStackTestParams foreman_cif = {"foreman_cif_net_delay_0_0_plr_0",
+                                     {"foreman_cif", 352, 288, 30},
+                                     700000,
+                                     700000,
+                                     700000,
+                                     0.0,
+                                     0.0
+                                    };
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCifPlr5) {
+  FullStackTestParams foreman_cif = {"foreman_cif_delay_50_0_plr_5",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     500000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.loss_percent = 5;
+  foreman_cif.link.queue_delay_ms = 50;
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCif500kbps) {
+  FullStackTestParams foreman_cif = {"foreman_cif_500kbps",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     500000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.queue_length_packets = 0;
+  foreman_cif.link.queue_delay_ms = 0;
+  foreman_cif.link.link_capacity_kbps = 500;
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCif500kbpsLimitedQueue) {
+  FullStackTestParams foreman_cif = {"foreman_cif_500kbps_32pkts_queue",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     500000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.queue_length_packets = 32;
+  foreman_cif.link.queue_delay_ms = 0;
+  foreman_cif.link.link_capacity_kbps = 500;
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCif500kbps100ms) {
+  FullStackTestParams foreman_cif = {"foreman_cif_500kbps_100ms",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     500000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.queue_length_packets = 0;
+  foreman_cif.link.queue_delay_ms = 100;
+  foreman_cif.link.link_capacity_kbps = 500;
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCif500kbps100msLimitedQueue) {
+  FullStackTestParams foreman_cif = {"foreman_cif_500kbps_100ms_32pkts_queue",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     500000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.queue_length_packets = 32;
+  foreman_cif.link.queue_delay_ms = 100;
+  foreman_cif.link.link_capacity_kbps = 500;
+  RunTest(foreman_cif);
+}
+
+TEST_F(FullStackTest, ForemanCif1000kbps100msLimitedQueue) {
+  FullStackTestParams foreman_cif = {"foreman_cif_1000kbps_100ms_32pkts_queue",
+                                     {"foreman_cif", 352, 288, 30},
+                                     30000,
+                                     2000000,
+                                     2000000,
+                                     0.0,
+                                     0.0
+                                    };
+  foreman_cif.link.queue_length_packets = 32;
+  foreman_cif.link.queue_delay_ms = 100;
+  foreman_cif.link.link_capacity_kbps = 1000;
+  RunTest(foreman_cif);
+}
 }  // namespace webrtc

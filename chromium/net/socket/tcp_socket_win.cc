@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "net/socket/tcp_socket.h"
 #include "net/socket/tcp_socket_win.h"
 
 #include <mstcpip.h>
@@ -9,6 +10,7 @@
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/metrics/stats_counters.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/win/windows_version.h"
 #include "net/base/address_list.h"
 #include "net/base/connection_type_histograms.h"
@@ -122,6 +124,12 @@ int MapConnectError(int os_error) {
 }  // namespace
 
 //-----------------------------------------------------------------------------
+
+// Nothing to do for Windows since it doesn't support TCP FastOpen.
+// TODO(jri): Remove these along with the corresponding global variables.
+bool IsTCPFastOpenSupported() { return false; }
+bool IsTCPFastOpenUserEnabled() { return false; }
+void CheckSupportAndMaybeEnableTCPFastOpen(bool user_enabled) {}
 
 // This class encapsulates all the state that has to be preserved as long as
 // there is a network IO operation in progress. If the owner TCPSocketWin is
@@ -238,6 +246,11 @@ void TCPSocketWin::Core::WatchForWrite() {
 }
 
 void TCPSocketWin::Core::ReadDelegate::OnObjectSignaled(HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "TCPSocketWin_Core_ReadDelegate_OnObjectSignaled"));
+
   DCHECK_EQ(object, core_->read_overlapped_.hEvent);
   if (core_->socket_) {
     if (core_->socket_->waiting_connect_)
@@ -251,6 +264,11 @@ void TCPSocketWin::Core::ReadDelegate::OnObjectSignaled(HANDLE object) {
 
 void TCPSocketWin::Core::WriteDelegate::OnObjectSignaled(
     HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "TCPSocketWin_Core_WriteDelegate_OnObjectSignaled"));
+
   DCHECK_EQ(object, core_->write_overlapped_.hEvent);
   if (core_->socket_)
     core_->socket_->DidCompleteWrite();
@@ -485,7 +503,7 @@ int TCPSocketWin::Read(IOBuffer* buf,
   DCHECK(CalledOnValidThread());
   DCHECK_NE(socket_, INVALID_SOCKET);
   DCHECK(!waiting_read_);
-  DCHECK(read_callback_.is_null());
+  CHECK(read_callback_.is_null());
   DCHECK(!core_->read_iobuffer_);
 
   return DoRead(buf, buf_len, callback);
@@ -497,7 +515,7 @@ int TCPSocketWin::Write(IOBuffer* buf,
   DCHECK(CalledOnValidThread());
   DCHECK_NE(socket_, INVALID_SOCKET);
   DCHECK(!waiting_write_);
-  DCHECK(write_callback_.is_null());
+  CHECK(write_callback_.is_null());
   DCHECK_GT(buf_len, 0);
   DCHECK(!core_->write_iobuffer_);
 
@@ -694,11 +712,6 @@ void TCPSocketWin::Close() {
   connect_os_error_ = 0;
 }
 
-bool TCPSocketWin::UsingTCPFastOpen() const {
-  // Not supported on windows.
-  return false;
-}
-
 void TCPSocketWin::StartLoggingMultipleConnectAttempts(
     const AddressList& addresses) {
   if (!logging_multiple_connect_attempts_) {
@@ -753,6 +766,10 @@ int TCPSocketWin::AcceptInternal(scoped_ptr<TCPSocketWin>* socket,
 }
 
 void TCPSocketWin::OnObjectSignaled(HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("TCPSocketWin_OnObjectSignaled"));
+
   WSANETWORKEVENTS ev;
   if (WSAEnumNetworkEvents(socket_, accept_event_, &ev) == SOCKET_ERROR) {
     PLOG(ERROR) << "WSAEnumNetworkEvents()";
@@ -1017,8 +1034,10 @@ void TCPSocketWin::DidSignalRead() {
   core_->read_buffer_length_ = 0;
 
   DCHECK_NE(rv, ERR_IO_PENDING);
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("TCPSocketWin::DidSignalRead"));
   base::ResetAndReturn(&read_callback_).Run(rv);
 }
 
 }  // namespace net
-

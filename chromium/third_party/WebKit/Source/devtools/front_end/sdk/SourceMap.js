@@ -91,8 +91,23 @@ WebInspector.SourceMap = function(sourceMappingURL, payload)
  */
 WebInspector.SourceMap.load = function(sourceMapURL, compiledURL, callback)
 {
-    var headers = {};
-    NetworkAgent.loadResourceForFrontend(WebInspector.resourceTreeModel.mainFrame.id, sourceMapURL, headers, contentLoaded);
+    var resourceTreeModel = WebInspector.resourceTreeModel;
+    if (resourceTreeModel.cachedResourcesLoaded())
+        loadResource();
+    else
+        resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, cachedResourcesLoaded);
+
+    function cachedResourcesLoaded()
+    {
+        resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded, cachedResourcesLoaded);
+        loadResource();
+    }
+
+    function loadResource()
+    {
+        var headers = {};
+        NetworkAgent.loadResourceForFrontend(resourceTreeModel.mainFrame.id, sourceMapURL, headers, contentLoaded);
+    }
 
     /**
      * @param {?Protocol.Error} error
@@ -210,17 +225,19 @@ WebInspector.SourceMap.prototype = {
     /**
      * @param {string} sourceURL of the originating resource
      * @param {number} lineNumber in the originating resource
-     * @return {!Array.<*>}
+     * @param {number=} span
+     * @return {?Array.<*>}
      */
-    findEntryReversed: function(sourceURL, lineNumber)
+    findEntryReversed: function(sourceURL, lineNumber, span)
     {
         var mappings = this._reverseMappingsBySourceURL[sourceURL];
-        for ( ; lineNumber < mappings.length; ++lineNumber) {
+        var maxLineNumber = typeof span === "number" ? Math.min(lineNumber + span + 1, mappings.length) : mappings.length;
+        for ( ; lineNumber < maxLineNumber; ++lineNumber) {
             var mapping = mappings[lineNumber];
             if (mapping)
                 return mapping;
         }
-        return this._mappings[0];
+        return null;
     },
 
     /**
@@ -267,7 +284,7 @@ WebInspector.SourceMap.prototype = {
             }
 
             columnNumber += this._decodeVLQ(stringCharIterator);
-            if (this._isSeparator(stringCharIterator.peek())) {
+            if (!stringCharIterator.hasNext() || this._isSeparator(stringCharIterator.peek())) {
                 this._mappings.push([lineNumber, columnNumber]);
                 continue;
             }

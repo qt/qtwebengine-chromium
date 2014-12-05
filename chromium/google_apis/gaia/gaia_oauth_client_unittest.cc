@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "base/json/json_reader.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
@@ -47,9 +48,9 @@ class MockOAuthFetcher : public net::TestURLFetcher {
     SetResponseString(results);
   }
 
-  virtual ~MockOAuthFetcher() { }
+  ~MockOAuthFetcher() override {}
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     if ((GetResponseCode() != net::HTTP_OK) && (max_failure_count_ != -1) &&
         (current_failure_count_ == max_failure_count_)) {
       set_response_code(net::HTTP_OK);
@@ -86,12 +87,11 @@ class MockOAuthFetcherFactory : public net::URLFetcherFactory,
         response_code_(net::HTTP_OK),
         complete_immediately_(true) {
   }
-  virtual ~MockOAuthFetcherFactory() {}
-  virtual net::URLFetcher* CreateURLFetcher(
-      int id,
-      const GURL& url,
-      net::URLFetcher::RequestType request_type,
-      net::URLFetcherDelegate* d) OVERRIDE {
+  ~MockOAuthFetcherFactory() override {}
+  net::URLFetcher* CreateURLFetcher(int id,
+                                    const GURL& url,
+                                    net::URLFetcher::RequestType request_type,
+                                    net::URLFetcherDelegate* d) override {
     url_fetcher_ = new MockOAuthFetcher(
         response_code_,
         max_failure_count_,
@@ -134,19 +134,31 @@ const std::string kTestUserId = "8675309";
 const int kTestExpiresIn = 3920;
 
 const std::string kDummyGetTokensResult =
-  "{\"access_token\":\"" + kTestAccessToken + "\","
-  "\"expires_in\":" + base::IntToString(kTestExpiresIn) + ","
-  "\"refresh_token\":\"" + kTestRefreshToken + "\"}";
+    "{\"access_token\":\"" + kTestAccessToken + "\","
+    "\"expires_in\":" + base::IntToString(kTestExpiresIn) + ","
+    "\"refresh_token\":\"" + kTestRefreshToken + "\"}";
 
 const std::string kDummyRefreshTokenResult =
-  "{\"access_token\":\"" + kTestAccessToken + "\","
-  "\"expires_in\":" + base::IntToString(kTestExpiresIn) + "}";
+    "{\"access_token\":\"" + kTestAccessToken + "\","
+    "\"expires_in\":" + base::IntToString(kTestExpiresIn) + "}";
 
 const std::string kDummyUserInfoResult =
-  "{\"email\":\"" + kTestUserEmail + "\"}";
+    "{\"email\":\"" + kTestUserEmail + "\"}";
 
 const std::string kDummyUserIdResult =
-  "{\"id\":\"" + kTestUserId + "\"}";
+    "{\"id\":\"" + kTestUserId + "\"}";
+
+const std::string kDummyFullUserInfoResult =
+    "{"
+      "\"family_name\": \"Bar\", "
+      "\"name\": \"Foo Bar\", "
+      "\"picture\": \"https://lh4.googleusercontent.com/hash/photo.jpg\", "
+      "\"locale\": \"en\", "
+      "\"gender\": \"male\", "
+      "\"link\": \"https://plus.google.com/+FooBar\", "
+      "\"given_name\": \"Foo\", "
+      "\"id\": \"12345678901234567890\""
+    "}";
 
 const std::string kDummyTokenInfoResult =
   "{\"issued_to\": \"1234567890.apps.googleusercontent.com\","
@@ -159,7 +171,7 @@ namespace gaia {
 
 class GaiaOAuthClientTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     client_info_.client_id = "test_client_id";
     client_info_.client_secret = "test_client_secret";
     client_info_.redirect_uri = "test_redirect_uri";
@@ -167,11 +179,11 @@ class GaiaOAuthClientTest : public testing::Test {
 
  protected:
   net::TestURLRequestContextGetter* GetRequestContext() {
-    if (!request_context_getter_) {
+    if (!request_context_getter_.get()) {
       request_context_getter_ = new net::TestURLRequestContextGetter(
           message_loop_.message_loop_proxy());
     }
-    return request_context_getter_;
+    return request_context_getter_.get();
   }
 
   base::MessageLoop message_loop_;
@@ -198,15 +210,23 @@ class MockGaiaOAuthClientDelegate : public gaia::GaiaOAuthClient::Delegate {
   // work-around is to create a mock method that takes a raw ptr, and
   // override the problematic method to call through to it.
   // https://groups.google.com/a/chromium.org/d/msg/chromium-dev/01sDxsJ1OYw/I_S0xCBRF2oJ
+  MOCK_METHOD1(OnGetUserInfoResponsePtr,
+               void(const base::DictionaryValue* user_info));
+  virtual void OnGetUserInfoResponse(
+      scoped_ptr<base::DictionaryValue> user_info) override {
+    user_info_.reset(user_info.release());
+    OnGetUserInfoResponsePtr(user_info_.get());
+  }
   MOCK_METHOD1(OnGetTokenInfoResponsePtr,
                void(const base::DictionaryValue* token_info));
   virtual void OnGetTokenInfoResponse(
-      scoped_ptr<base::DictionaryValue> token_info) OVERRIDE {
+      scoped_ptr<base::DictionaryValue> token_info) override {
     token_info_.reset(token_info.release());
     OnGetTokenInfoResponsePtr(token_info_.get());
   }
 
  private:
+  scoped_ptr<base::DictionaryValue> user_info_;
   scoped_ptr<base::DictionaryValue> token_info_;
   DISALLOW_COPY_AND_ASSIGN(MockGaiaOAuthClientDelegate);
 };
@@ -325,6 +345,29 @@ TEST_F(GaiaOAuthClientTest, GetUserId) {
 
   GaiaOAuthClient auth(GetRequestContext());
   auth.GetUserId("access_token", 1, &delegate);
+}
+
+TEST_F(GaiaOAuthClientTest, GetUserInfo) {
+  const base::DictionaryValue* captured_result;
+
+  MockGaiaOAuthClientDelegate delegate;
+  EXPECT_CALL(delegate, OnGetUserInfoResponsePtr(_))
+      .WillOnce(SaveArg<0>(&captured_result));
+
+  MockOAuthFetcherFactory factory;
+  factory.set_results(kDummyFullUserInfoResult);
+
+  GaiaOAuthClient auth(GetRequestContext());
+  auth.GetUserInfo("access_token", 1, &delegate);
+
+  scoped_ptr<base::Value> value(
+      base::JSONReader::Read(kDummyFullUserInfoResult));
+  DCHECK(value);
+  ASSERT_TRUE(value->IsType(base::Value::TYPE_DICTIONARY));
+  base::DictionaryValue* expected_result;
+  value->GetAsDictionary(&expected_result);
+
+  ASSERT_TRUE(expected_result->Equals(captured_result));
 }
 
 TEST_F(GaiaOAuthClientTest, GetTokenInfo) {

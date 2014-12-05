@@ -43,19 +43,13 @@ GeolocationClientProxy::~GeolocationClientProxy()
 {
 }
 
-void GeolocationClientProxy::setController(WebCore::GeolocationController* controller)
+void GeolocationClientProxy::setController(GeolocationController* controller)
 {
     // We support there not being a client, provided we don't do any Geolocation.
     if (m_client) {
         // Ownership of the WebGeolocationController is transferred to the client.
         m_client->setController(new WebGeolocationController(controller));
     }
-}
-
-void GeolocationClientProxy::geolocationDestroyed()
-{
-    if (m_client)
-        m_client->geolocationDestroyed();
 }
 
 void GeolocationClientProxy::startUpdating()
@@ -73,25 +67,31 @@ void GeolocationClientProxy::setEnableHighAccuracy(bool highAccuracy)
     m_client->setEnableHighAccuracy(highAccuracy);
 }
 
-WebCore::GeolocationPosition* GeolocationClientProxy::lastPosition()
+GeolocationPosition* GeolocationClientProxy::lastPosition()
 {
     WebGeolocationPosition webPosition;
     if (m_client->lastPosition(webPosition))
-        m_lastPosition = static_cast<WebCore::GeolocationPosition*>(webPosition);
+        m_lastPosition = static_cast<GeolocationPosition*>(webPosition);
     else
         m_lastPosition.clear();
 
     return m_lastPosition.get();
 }
 
-void GeolocationClientProxy::requestPermission(WebCore::Geolocation* geolocation)
+void GeolocationClientProxy::requestPermission(Geolocation* geolocation)
 {
     m_client->requestPermission(WebGeolocationPermissionRequest(geolocation));
 }
 
-void GeolocationClientProxy::cancelPermissionRequest(WebCore::Geolocation* geolocation)
+void GeolocationClientProxy::cancelPermissionRequest(Geolocation* geolocation)
 {
     m_client->cancelPermissionRequest(WebGeolocationPermissionRequest(geolocation));
 }
 
+void GeolocationClientProxy::trace(Visitor* visitor)
+{
+    visitor->trace(m_lastPosition);
+    GeolocationClient::trace(visitor);
 }
+
+} // namespace blink

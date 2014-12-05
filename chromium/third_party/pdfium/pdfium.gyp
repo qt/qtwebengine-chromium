@@ -1,6 +1,5 @@
 {
   'variables': {
-    'win_third_party_warn_as_error': 'false',
     'pdf_use_skia%': 0,
   },
   'target_defaults': {
@@ -9,45 +8,26 @@
       '_FXFT_VERSION_=2501',
       '_FPDFSDK_LIB',
       '_NO_GDIPLUS_',  # workaround text rendering issues on Windows
+      'OPJ_STATIC',
     ],
     'conditions': [
       ['pdf_use_skia==1', {
         'defines': ['_SKIA_SUPPORT_'],
       }],
       ['OS=="linux"', {
-        'cflags!': [
-          '-fno-exceptions',
-        ],
         'conditions': [
           ['target_arch=="x64"', {
-            'defines' : [
-              '_FX_CPU_=_FX_X64_',
-            ],
-            'cflags': [
-              '-fPIC',
-            ],
+            'defines' : [ '_FX_CPU_=_FX_X64_', ],
+            'cflags': [ '-fPIC', ],
           }],
           ['target_arch=="ia32"', {
-            'defines' : [
-              '_FX_CPU_=_FX_X86_',
-            ],
+            'defines' : [ '_FX_CPU_=_FX_X86_', ],
           }],
         ],
-      }],
-      ['OS=="mac"', {
-        'xcode_settings': {
-          'GCC_ENABLE_CPP_EXCEPTIONS': 'YES',
-          'GCC_TREAT_WARNINGS_AS_ERRORS': 'NO',    # -Werror
-        },
-      }],
-      ['clang==1', {
-         'cflags!': [
-           '-Werror',
-         ],
       }],
     ],
     'msvs_disabled_warnings': [
-      4005, 4018, 4146, 4333, 4345
+      4005, 4018, 4146, 4333, 4345, 4267
     ],
   },
   'targets': [
@@ -55,6 +35,7 @@
       'target_name': 'pdfium',
       'type': 'static_library',
       'dependencies': [
+        'safemath',
         'fdrm',
         'fpdfdoc',
         'fpdfapi',
@@ -141,6 +122,19 @@
           }],
         ],
       },
+    },
+    {
+      'target_name': 'safemath',
+      'type': 'none',
+      'sources': [
+        'third_party/logging.h',
+        'third_party/macros.h',
+        'third_party/template_util.h',
+        'third_party/numerics/safe_conversions.h',
+        'third_party/numerics/safe_conversions_impl.h',
+        'third_party/numerics/safe_math.h',
+        'third_party/numerics/safe_math_impl.h',
+      ],
     },
     {
       'target_name': 'fdrm',
@@ -527,7 +521,6 @@
         'core/src/fxcrt/fx_basic_list.cpp',
         'core/src/fxcrt/fx_basic_maps.cpp',
         'core/src/fxcrt/fx_basic_memmgr.cpp',
-        'core/src/fxcrt/fx_basic_memmgr_mini.cpp',
         'core/src/fxcrt/fx_basic_plex.cpp',
         'core/src/fxcrt/fx_basic_utf.cpp',
         'core/src/fxcrt/fx_basic_util.cpp',
@@ -537,7 +530,6 @@
         'core/src/fxcrt/fx_unicode.cpp',
         'core/src/fxcrt/fx_xml_composer.cpp',
         'core/src/fxcrt/fx_xml_parser.cpp',
-        'core/src/fxcrt/mem_int.h',
         'core/src/fxcrt/plex.h',
         'core/src/fxcrt/xml_int.h',
       ],
@@ -667,7 +659,6 @@
         }],
         ['OS=="win"', {
           'defines!': [
-            'NOMINMAX',
             'WIN32_LEAN_AND_MEAN'
           ],
           'sources': [
@@ -745,10 +736,12 @@
       'target_name': 'javascript',
       'type': 'static_library',
         'include_dirs': [
+          '<(DEPTH)/v8',
           '<(DEPTH)/v8/include',
         ],
       'dependencies': [
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
+        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_libplatform',
       ],
       'export_dependent_settings': [
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
@@ -809,6 +802,7 @@
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'include_dirs': [
+        '<(DEPTH)/v8',
         '<(DEPTH)/v8/include',
       ],
       'ldflags': [ '-L<(PRODUCT_DIR)',],

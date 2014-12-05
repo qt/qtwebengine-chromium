@@ -21,13 +21,14 @@
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
 class ClientSocketFactory;
 class ClientSocketPoolHistograms;
 class CTVerifier;
 class HttpProxyClientSocketPool;
 class HostResolver;
 class NetLog;
-class ServerBoundCertService;
+class ProxyDelegate;
 class ProxyService;
 class SOCKSClientSocketPool;
 class SSLClientSocketPool;
@@ -61,38 +62,40 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
                               ClientSocketFactory* socket_factory,
                               HostResolver* host_resolver,
                               CertVerifier* cert_verifier,
-                              ServerBoundCertService* server_bound_cert_service,
+                              ChannelIDService* channel_id_service,
                               TransportSecurityState* transport_security_state,
                               CTVerifier* cert_transparency_verifier,
                               const std::string& ssl_session_cache_shard,
                               ProxyService* proxy_service,
                               SSLConfigService* ssl_config_service,
+                              bool enable_ssl_connect_job_waiting,
+                              ProxyDelegate* proxy_delegate,
                               HttpNetworkSession::SocketPoolType pool_type);
-  virtual ~ClientSocketPoolManagerImpl();
+  ~ClientSocketPoolManagerImpl() override;
 
-  virtual void FlushSocketPoolsWithError(int error) OVERRIDE;
-  virtual void CloseIdleSockets() OVERRIDE;
+  void FlushSocketPoolsWithError(int error) override;
+  void CloseIdleSockets() override;
 
-  virtual TransportClientSocketPool* GetTransportSocketPool() OVERRIDE;
+  TransportClientSocketPool* GetTransportSocketPool() override;
 
-  virtual SSLClientSocketPool* GetSSLSocketPool() OVERRIDE;
+  SSLClientSocketPool* GetSSLSocketPool() override;
 
-  virtual SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const HostPortPair& socks_proxy) OVERRIDE;
+  SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
+      const HostPortPair& socks_proxy) override;
 
-  virtual HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
-      const HostPortPair& http_proxy) OVERRIDE;
+  HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
+      const HostPortPair& http_proxy) override;
 
-  virtual SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const HostPortPair& proxy_server) OVERRIDE;
+  SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
+      const HostPortPair& proxy_server) override;
 
   // Creates a Value summary of the state of the socket pools. The caller is
   // responsible for deleting the returned value.
-  virtual base::Value* SocketPoolInfoToValue() const OVERRIDE;
+  base::Value* SocketPoolInfoToValue() const override;
 
   // CertDatabase::Observer methods:
-  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
-  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
+  void OnCertAdded(const X509Certificate* cert) override;
+  void OnCACertChanged(const X509Certificate* cert) override;
 
  private:
   typedef internal::OwnedPoolMap<HostPortPair, TransportClientSocketPool*>
@@ -108,12 +111,13 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
   ClientSocketFactory* const socket_factory_;
   HostResolver* const host_resolver_;
   CertVerifier* const cert_verifier_;
-  ServerBoundCertService* const server_bound_cert_service_;
+  ChannelIDService* const channel_id_service_;
   TransportSecurityState* const transport_security_state_;
   CTVerifier* const cert_transparency_verifier_;
   const std::string ssl_session_cache_shard_;
   ProxyService* const proxy_service_;
   const scoped_refptr<SSLConfigService> ssl_config_service_;
+  bool enable_ssl_connect_job_waiting_;
   const HttpNetworkSession::SocketPoolType pool_type_;
 
   // Note: this ordering is important.
@@ -144,6 +148,8 @@ class ClientSocketPoolManagerImpl : public base::NonThreadSafe,
 
   ClientSocketPoolHistograms ssl_socket_pool_for_proxies_histograms_;
   SSLSocketPoolMap ssl_socket_pools_for_proxies_;
+
+  const ProxyDelegate* proxy_delegate_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientSocketPoolManagerImpl);
 };

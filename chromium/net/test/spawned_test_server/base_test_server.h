@@ -111,6 +111,14 @@ class BaseTestServer {
       TLS_INTOLERANT_TLS1_2 = 3,  // Intolerant of TLS 1.2 or higher.
     };
 
+    // Values which control how the server reacts in response to a ClientHello
+    // it is intolerant of.
+    enum TLSIntoleranceType {
+      TLS_INTOLERANCE_ALERT = 0,  // Send a handshake_failure alert.
+      TLS_INTOLERANCE_CLOSE = 1,  // Close the connection.
+      TLS_INTOLERANCE_RESET = 2,  // Send a TCP reset.
+    };
+
     // Initialize a new SSLOptions using CERT_OK as the certificate.
     SSLOptions();
 
@@ -171,6 +179,10 @@ class BaseTestServer {
     // negotiates an intolerant TLS version in order to test version fallback.
     TLSIntolerantLevel tls_intolerant;
 
+    // If |tls_intolerant| is not TLS_INTOLERANT_NONE, how the server reacts to
+    // an intolerant TLS version.
+    TLSIntoleranceType tls_intolerance_type;
+
     // fallback_scsv_enabled, if true, causes the server to process the
     // TLS_FALLBACK_SCSV cipher suite. This cipher suite is sent by Chrome
     // when performing TLS version fallback in response to an SSL handshake
@@ -191,6 +203,11 @@ class BaseTestServer {
 
     // Whether to enable NPN support.
     bool enable_npn;
+
+    // Whether to disable TLS session caching. When session caching is
+    // disabled, the server will use an empty session ID in the
+    // ServerHello.
+    bool disable_session_cache;
   };
 
   // Pass as the 'host' parameter during construction to server on 127.0.0.1
@@ -228,6 +245,12 @@ class BaseTestServer {
   static bool UsingSSL(Type type) {
     return type == BaseTestServer::TYPE_HTTPS ||
            type == BaseTestServer::TYPE_WSS;
+  }
+
+  // Enable HTTP basic authentication. Currently this only works for TYPE_WS and
+  // TYPE_WSS.
+  void set_websocket_basic_auth(bool ws_basic_auth) {
+    ws_basic_auth_ = ws_basic_auth;
   }
 
  protected:
@@ -295,6 +318,9 @@ class BaseTestServer {
 
   // Enables logging of the server to the console.
   bool log_to_console_;
+
+  // Is WebSocket basic HTTP authentication enabled?
+  bool ws_basic_auth_;
 
   scoped_ptr<ScopedPortException> allowed_port_;
 

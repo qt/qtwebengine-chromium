@@ -35,18 +35,19 @@ typedef enum {
   SWITCHABLE = 4  /* should be the last one */
 } INTERP_FILTER;
 
+// Number of switchable filters
+#define SWITCHABLE_FILTERS 3
+
+// The codec can operate in four possible inter prediction filter mode:
+// 8-tap, 8-tap-smooth, 8-tap-sharp, and switching between the three.
+#define SWITCHABLE_FILTER_CONTEXTS (SWITCHABLE_FILTERS + 1)
+
 typedef int16_t InterpKernel[SUBPEL_TAPS];
 
 const InterpKernel *vp9_get_interp_kernel(INTERP_FILTER filter);
 
 DECLARE_ALIGNED(256, extern const InterpKernel,
                 vp9_bilinear_filters[SUBPEL_SHIFTS]);
-DECLARE_ALIGNED(256, extern const InterpKernel,
-                vp9_sub_pel_filters_8[SUBPEL_SHIFTS]);
-DECLARE_ALIGNED(256, extern const InterpKernel,
-                vp9_sub_pel_filters_8s[SUBPEL_SHIFTS]);
-DECLARE_ALIGNED(256, extern const InterpKernel,
-                vp9_sub_pel_filters_8lp[SUBPEL_SHIFTS]);
 
 // The VP9_BILINEAR_FILTERS_2TAP macro returns a pointer to the bilinear
 // filter kernel as a 2 tap filter.

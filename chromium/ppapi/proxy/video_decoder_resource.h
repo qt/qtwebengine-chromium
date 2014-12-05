@@ -40,26 +40,34 @@ class PPAPI_PROXY_EXPORT VideoDecoderResource
   virtual ~VideoDecoderResource();
 
   // Resource overrides.
-  virtual thunk::PPB_VideoDecoder_API* AsPPB_VideoDecoder_API() OVERRIDE;
+  virtual thunk::PPB_VideoDecoder_API* AsPPB_VideoDecoder_API() override;
 
   // PPB_VideoDecoder_API implementation.
+  virtual int32_t Initialize0_1(
+      PP_Resource graphics_context,
+      PP_VideoProfile profile,
+      PP_Bool allow_software_fallback,
+      scoped_refptr<TrackedCallback> callback) override;
   virtual int32_t Initialize(PP_Resource graphics_context,
                              PP_VideoProfile profile,
-                             PP_Bool allow_software_fallback,
-                             scoped_refptr<TrackedCallback> callback) OVERRIDE;
+                             PP_HardwareAcceleration acceleration,
+                             scoped_refptr<TrackedCallback> callback) override;
   virtual int32_t Decode(uint32_t decode_id,
                          uint32_t size,
                          const void* buffer,
-                         scoped_refptr<TrackedCallback> callback) OVERRIDE;
+                         scoped_refptr<TrackedCallback> callback) override;
+  virtual int32_t GetPicture0_1(
+      PP_VideoPicture_0_1* picture,
+      scoped_refptr<TrackedCallback> callback) override;
   virtual int32_t GetPicture(PP_VideoPicture* picture,
-                             scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual void RecyclePicture(const PP_VideoPicture* picture) OVERRIDE;
-  virtual int32_t Flush(scoped_refptr<TrackedCallback> callback) OVERRIDE;
-  virtual int32_t Reset(scoped_refptr<TrackedCallback> callback) OVERRIDE;
+                             scoped_refptr<TrackedCallback> callback) override;
+  virtual void RecyclePicture(const PP_VideoPicture* picture) override;
+  virtual int32_t Flush(scoped_refptr<TrackedCallback> callback) override;
+  virtual int32_t Reset(scoped_refptr<TrackedCallback> callback) override;
 
   // PluginResource implementation.
   virtual void OnReplyReceived(const ResourceMessageReplyParams& params,
-                               const IPC::Message& msg) OVERRIDE;
+                               const IPC::Message& msg) override;
 
   // Called only by unit tests. This bypasses Graphics3D setup, which doesn't
   // work in ppapi::proxy::PluginProxyTest.
@@ -91,18 +99,15 @@ class PPAPI_PROXY_EXPORT VideoDecoderResource
 
   // Struct to hold a picture received from the decoder.
   struct Picture {
-    Picture(int32_t decode_id, uint32_t texture_id);
+    Picture(int32_t decode_id,
+            uint32_t texture_id,
+            const PP_Rect& visible_rect);
     ~Picture();
 
     int32_t decode_id;
     uint32_t texture_id;
+    PP_Rect visible_rect;
   };
-
-  int32_t InitializeInternal(PP_Resource graphics_context,
-                             PP_VideoProfile profile,
-                             PP_Bool allow_software_fallback,
-                             scoped_refptr<TrackedCallback> callback,
-                             bool testing);
 
   // Unsolicited reply message handlers.
   void OnPluginMsgRequestTextures(const ResourceMessageReplyParams& params,
@@ -112,7 +117,8 @@ class PPAPI_PROXY_EXPORT VideoDecoderResource
                                   const std::vector<gpu::Mailbox>& mailboxes);
   void OnPluginMsgPictureReady(const ResourceMessageReplyParams& params,
                                int32_t decode_id,
-                               uint32_t texture_id);
+                               uint32_t texture_id,
+                               const PP_Rect& visible_rect);
   void OnPluginMsgDismissPicture(const ResourceMessageReplyParams& params,
                                  uint32_t texture_id);
   void OnPluginMsgNotifyError(const ResourceMessageReplyParams& params,
@@ -127,7 +133,7 @@ class PPAPI_PROXY_EXPORT VideoDecoderResource
 
   void RunCallbackWithError(scoped_refptr<TrackedCallback>* callback);
   void DeleteGLTexture(uint32_t texture_id);
-  void WriteNextPicture(PP_VideoPicture* picture);
+  void WriteNextPicture();
 
   // ScopedVector to own the shared memory buffers.
   ScopedVector<ShmBuffer> shm_buffers_;
@@ -164,6 +170,7 @@ class PPAPI_PROXY_EXPORT VideoDecoderResource
 
   // State for pending get_picture_callback_.
   PP_VideoPicture* get_picture_;
+  PP_VideoPicture_0_1* get_picture_0_1_;
 
   ScopedPPResource graphics3d_;
   gpu::gles2::GLES2Implementation* gles2_impl_;

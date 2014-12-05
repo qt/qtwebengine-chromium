@@ -38,8 +38,6 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebSecurityPolicy::registerURLSchemeAsLocal(const WebString& scheme)
@@ -106,7 +104,7 @@ void WebSecurityPolicy::resetOriginAccessWhitelists()
 
 WebString WebSecurityPolicy::generateReferrerHeader(WebReferrerPolicy referrerPolicy, const WebURL& url, const WebString& referrer)
 {
-    return SecurityPolicy::generateReferrerHeader(static_cast<ReferrerPolicy>(referrerPolicy), url, referrer);
+    return SecurityPolicy::generateReferrer(static_cast<ReferrerPolicy>(referrerPolicy), url, referrer).referrer;
 }
 
 void WebSecurityPolicy::registerURLSchemeAsNotAllowingJavascriptURLs(const WebString& scheme)

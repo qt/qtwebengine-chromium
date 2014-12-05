@@ -84,7 +84,16 @@ bool BrowserAccessibility::IsDescendantOf(
 BrowserAccessibility* BrowserAccessibility::PlatformGetChild(
     uint32 child_index) const {
   DCHECK(child_index < InternalChildCount());
-  return InternalGetChild(child_index);
+  BrowserAccessibility* result = InternalGetChild(child_index);
+
+  if (result->HasBoolAttribute(ui::AX_ATTR_IS_AX_TREE_HOST)) {
+    BrowserAccessibilityManager* child_manager =
+        manager_->delegate()->AccessibilityGetChildFrame(result->GetId());
+    if (child_manager)
+      result = child_manager->GetRoot();
+  }
+
+  return result;
 }
 
 BrowserAccessibility* BrowserAccessibility::GetPreviousSibling() {
@@ -122,7 +131,18 @@ BrowserAccessibility* BrowserAccessibility::GetParent() const {
   if (!node_ || !manager_)
     return NULL;
   ui::AXNode* parent = node_->parent();
-  return parent ? manager_->GetFromAXNode(parent) : NULL;
+  if (parent)
+    return manager_->GetFromAXNode(parent);
+
+  if (!manager_->delegate())
+    return NULL;
+
+  BrowserAccessibility* host_node =
+      manager_->delegate()->AccessibilityGetParentFrame();
+  if (!host_node)
+    return NULL;
+
+  return host_node->GetParent();
 }
 
 int32 BrowserAccessibility::GetIndexInParent() const {
@@ -153,7 +173,7 @@ int32 BrowserAccessibility::GetState() const {
   return GetData().state;
 }
 
-const std::vector<std::pair<std::string, std::string> >&
+const BrowserAccessibility::HtmlAttributes&
 BrowserAccessibility::GetHtmlAttributes() const {
   return GetData().html_attributes;
 }

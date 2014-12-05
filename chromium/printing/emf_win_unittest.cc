@@ -11,8 +11,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -22,11 +22,13 @@
 #include "ui/gfx/point.h"
 #include "ui/gfx/size.h"
 
+namespace printing {
+
 namespace {
 
 // This test is automatically disabled if no printer named "UnitTest Printer" is
 // available.
-class EmfPrintingTest : public testing::Test {
+class EmfPrintingTest : public testing::Test, public PrintingContext::Delegate {
  public:
   typedef testing::Test Parent;
   static bool IsTestCaseDisabled() {
@@ -37,18 +39,20 @@ class EmfPrintingTest : public testing::Test {
     DeleteDC(hdc);
     return false;
   }
+
+  // PrintingContext::Delegate methods.
+  virtual gfx::NativeView GetParentView() override { return NULL; }
+  virtual std::string GetAppLocale() override { return std::string(); }
 };
 
 const uint32 EMF_HEADER_SIZE = 128;
 
 }  // namespace
 
-namespace printing {
-
 TEST(EmfTest, DC) {
   // Simplest use case.
   uint32 size;
-  std::vector<BYTE> data;
+  std::vector<char> data;
   {
     Emf emf;
     EXPECT_TRUE(emf.Init());
@@ -83,7 +87,7 @@ TEST_F(EmfPrintingTest, Enumerate) {
   settings.set_device_name(L"UnitTest Printer");
 
   // Initialize it.
-  scoped_ptr<PrintingContext> context(PrintingContext::Create(std::string()));
+  scoped_ptr<PrintingContext> context(PrintingContext::Create(this));
   EXPECT_EQ(context->InitWithSettings(settings), PrintingContext::OK);
 
   base::FilePath emf_file;
@@ -106,8 +110,8 @@ TEST_F(EmfPrintingTest, Enumerate) {
   context->NewDocument(L"EmfTest.Enumerate");
   context->NewPage();
   // Process one at a time.
-  Emf::Enumerator emf_enum(emf, context->context(),
-                           &emf.GetPageBounds(1).ToRECT());
+  RECT page_bounds = emf.GetPageBounds(1).ToRECT();
+  Emf::Enumerator emf_enum(emf, context->context(), &page_bounds);
   for (Emf::Enumerator::const_iterator itr = emf_enum.begin();
        itr != emf_enum.end();
        ++itr) {
@@ -130,7 +134,7 @@ TEST_F(EmfPrintingTest, PageBreak) {
   if (!dc.Get())
     return;
   uint32 size;
-  std::vector<BYTE> data;
+  std::vector<char> data;
   {
     Emf emf;
     EXPECT_TRUE(emf.Init());
@@ -161,7 +165,7 @@ TEST_F(EmfPrintingTest, PageBreak) {
   // Since presumably the printer is not real, let us just delete the job from
   // the queue.
   HANDLE printer = NULL;
-  if (::OpenPrinter(L"UnitTest Printer", &printer, NULL)) {
+  if (::OpenPrinter(const_cast<LPTSTR>(L"UnitTest Printer"), &printer, NULL)) {
     ::SetJob(printer, job_id, 0, NULL, JOB_CONTROL_DELETE);
     ClosePrinter(printer);
   }
@@ -175,7 +179,7 @@ TEST(EmfTest, FileBackedEmf) {
   EXPECT_TRUE(base::CreateTemporaryFileInDir(scratch_metafile_dir.path(),
                                              &metafile_path));
   uint32 size;
-  std::vector<BYTE> data;
+  std::vector<char> data;
   {
     Emf emf;
     EXPECT_TRUE(emf.InitToFile(metafile_path));
@@ -217,12 +221,12 @@ TEST(EmfTest, RasterizeMetafile) {
   // Just 1px bitmap but should be stretched to the same bounds.
   EXPECT_EQ(emf.GetPageBounds(1), raster->GetPageBounds(1));
 
-  raster.reset(emf.RasterizeMetafile(20));
+  raster = emf.RasterizeMetafile(20);
   EXPECT_EQ(emf.GetPageBounds(1), raster->GetPageBounds(1));
 
-  raster.reset(emf.RasterizeMetafile(16*1024*1024));
+  raster = emf.RasterizeMetafile(16 * 1024 * 1024);
   // Expected size about 64MB.
-  EXPECT_LE(abs(int(raster->GetDataSize()) - 64*1024*1024), 1024*1024);
+  EXPECT_LE(abs(int(raster->GetDataSize()) - 64 * 1024 * 1024), 1024 * 1024);
   // Bounds should still be the same.
   EXPECT_EQ(emf.GetPageBounds(1), raster->GetPageBounds(1));
 }

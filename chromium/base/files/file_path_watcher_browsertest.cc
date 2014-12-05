@@ -17,8 +17,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -111,9 +111,9 @@ class TestDelegate : public TestDelegateBase {
       : collector_(collector) {
     collector_->Register(this);
   }
-  virtual ~TestDelegate() {}
+  ~TestDelegate() override {}
 
-  virtual void OnFileChanged(const FilePath& path, bool error) OVERRIDE {
+  void OnFileChanged(const FilePath& path, bool error) override {
     if (error)
       ADD_FAILURE() << "Error " << path.value();
     else
@@ -146,7 +146,7 @@ class FilePathWatcherTest : public testing::Test {
   virtual ~FilePathWatcherTest() {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // Create a separate file thread in order to test proper thread usage.
     base::Thread::Options options(MessageLoop::TYPE_IO, 0);
     ASSERT_TRUE(file_thread_.StartWithOptions(options));
@@ -154,7 +154,7 @@ class FilePathWatcherTest : public testing::Test {
     collector_ = new NotificationCollector();
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     RunLoop().RunUntilIdle();
   }
 
@@ -272,9 +272,9 @@ class Deleter : public TestDelegateBase {
       : watcher_(watcher),
         loop_(loop) {
   }
-  virtual ~Deleter() {}
+  ~Deleter() override {}
 
-  virtual void OnFileChanged(const FilePath&, bool) OVERRIDE {
+  void OnFileChanged(const FilePath&, bool) override {
     watcher_.reset();
     loop_->PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
   }
@@ -528,7 +528,7 @@ TEST_F(FilePathWatcherTest, RecursiveWatch) {
   ASSERT_TRUE(WaitForEvents());
 
   // Modify "$dir/subdir/subdir_child_dir/child_dir_file1" attributes.
-  ASSERT_TRUE(file_util::MakeFileUnreadable(child_dir_file1));
+  ASSERT_TRUE(base::MakeFileUnreadable(child_dir_file1));
   ASSERT_TRUE(WaitForEvents());
 
   // Delete "$dir/subdir/subdir_file1".
@@ -618,7 +618,7 @@ TEST_F(FilePathWatcherTest, FileAttributesChanged) {
   ASSERT_TRUE(SetupWatch(test_file(), &watcher, delegate.get(), false));
 
   // Now make sure we get notified if the file is modified.
-  ASSERT_TRUE(file_util::MakeFileUnreadable(test_file()));
+  ASSERT_TRUE(base::MakeFileUnreadable(test_file()));
   ASSERT_TRUE(WaitForEvents());
   DeleteDelegateOnFileThread(delegate.release());
 }

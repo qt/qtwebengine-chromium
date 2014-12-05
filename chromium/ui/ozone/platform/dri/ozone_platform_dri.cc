@@ -5,43 +5,30 @@
 #include "ui/ozone/platform/dri/ozone_platform_dri.h"
 
 #include "base/at_exit.h"
+#include "ui/base/cursor/ozone/bitmap_cursor_factory_ozone.h"
 #include "ui/events/ozone/device/device_manager.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
 #include "ui/events/ozone/evdev/event_factory_evdev.h"
-#include "ui/ozone/ozone_platform.h"
-#include "ui/ozone/platform/dri/cursor_factory_evdev_dri.h"
-#include "ui/ozone/platform/dri/dri_surface.h"
+#include "ui/ozone/platform/dri/dri_buffer.h"
+#include "ui/ozone/platform/dri/dri_cursor.h"
+#include "ui/ozone/platform/dri/dri_gpu_platform_support.h"
+#include "ui/ozone/platform/dri/dri_gpu_platform_support_host.h"
 #include "ui/ozone/platform/dri/dri_surface_factory.h"
+#include "ui/ozone/platform/dri/dri_window.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_impl.h"
+#include "ui/ozone/platform/dri/dri_window_delegate_manager.h"
+#include "ui/ozone/platform/dri/dri_window_manager.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
-#include "ui/ozone/platform/dri/scanout_surface.h"
+#include "ui/ozone/platform/dri/native_display_delegate_dri.h"
 #include "ui/ozone/platform/dri/screen_manager.h"
-#include "ui/ozone/platform/dri/virtual_terminal_manager.h"
-
-#if defined(OS_CHROMEOS)
-#include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
-#include "ui/ozone/platform/dri/chromeos/native_display_delegate_dri.h"
-#endif
+#include "ui/ozone/public/ozone_platform.h"
+#include "ui/ozone/public/ui_thread_gpu.h"
 
 namespace ui {
 
 namespace {
 
 const char kDefaultGraphicsCardPath[] = "/dev/dri/card0";
-
-class DriSurfaceGenerator : public ScanoutSurfaceGenerator {
- public:
-  DriSurfaceGenerator(DriWrapper* dri) : dri_(dri) {}
-  virtual ~DriSurfaceGenerator() {}
-
-  virtual ScanoutSurface* Create(const gfx::Size& size) OVERRIDE {
-    return new DriSurface(dri_, size);
-  }
-
- private:
-  DriWrapper* dri_;  // Not owned.
-
-  DISALLOW_COPY_AND_ASSIGN(DriSurfaceGenerator);
-};
 
 // OzonePlatform for Linux DRI (Direct Rendering Infrastructure)
 //
@@ -50,66 +37,81 @@ class DriSurfaceGenerator : public ScanoutSurfaceGenerator {
 class OzonePlatformDri : public OzonePlatform {
  public:
   OzonePlatformDri()
-      : vt_manager_(new VirtualTerminalManager()),
-        dri_(new DriWrapper(kDefaultGraphicsCardPath)),
-        surface_generator_(new DriSurfaceGenerator(dri_.get())),
-        screen_manager_(new ScreenManager(dri_.get(),
-                                          surface_generator_.get())),
+      : dri_(new DriWrapper(kDefaultGraphicsCardPath)),
+        buffer_generator_(new DriBufferGenerator(dri_.get())),
+        screen_manager_(new ScreenManager(dri_.get(), buffer_generator_.get())),
         device_manager_(CreateDeviceManager()) {
     base::AtExitManager::RegisterTask(
         base::Bind(&base::DeletePointer<OzonePlatformDri>, this));
   }
-  virtual ~OzonePlatformDri() {}
+  ~OzonePlatformDri() override {}
 
   // OzonePlatform:
-  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
+  ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
     return surface_factory_ozone_.get();
   }
-  virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
-    return event_factory_ozone_.get();
-  }
-  virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
+  CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
   }
-  virtual GpuPlatformSupport* GetGpuPlatformSupport() OVERRIDE {
-    return NULL;  // no GPU support
+  GpuPlatformSupport* GetGpuPlatformSupport() override {
+    return gpu_platform_support_.get();
   }
-  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
-    return NULL;  // no GPU support
+  GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
+    return gpu_platform_support_host_.get();
   }
-#if defined(OS_CHROMEOS)
-  virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
-      OVERRIDE {
+  scoped_ptr<PlatformWindow> CreatePlatformWindow(
+      PlatformWindowDelegate* delegate,
+      const gfx::Rect& bounds) override {
+    scoped_ptr<DriWindow> platform_window(
+        new DriWindow(delegate, bounds, gpu_platform_support_host_.get(),
+                      event_factory_ozone_.get(), window_manager_.get()));
+    platform_window->Initialize();
+    return platform_window.Pass();
+  }
+  scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateDri(
         dri_.get(), screen_manager_.get(), device_manager_.get()));
   }
-  virtual scoped_ptr<TouchscreenDeviceManager>
-      CreateTouchscreenDeviceManager() OVERRIDE {
-    return scoped_ptr<TouchscreenDeviceManager>(
-        new TouchscreenDeviceManagerOzone());
-  }
-#endif
-  virtual void InitializeUI() OVERRIDE {
-    surface_factory_ozone_.reset(
-        new DriSurfaceFactory(dri_.get(), screen_manager_.get()));
-    cursor_factory_ozone_.reset(
-        new CursorFactoryEvdevDri(surface_factory_ozone_.get()));
-    event_factory_ozone_.reset(new EventFactoryEvdev(
-        cursor_factory_ozone_.get(), device_manager_.get()));
+  void InitializeUI() override {
+    dri_->Initialize();
+    surface_factory_ozone_.reset(new DriSurfaceFactory(
+        dri_.get(), screen_manager_.get(), &window_delegate_manager_));
+    gpu_platform_support_.reset(new DriGpuPlatformSupport(
+        surface_factory_ozone_.get(), &window_delegate_manager_,
+        screen_manager_.get(), scoped_ptr<NativeDisplayDelegateDri>()));
+    gpu_platform_support_host_.reset(new DriGpuPlatformSupportHost());
+    cursor_factory_ozone_.reset(new BitmapCursorFactoryOzone);
+    window_manager_.reset(new DriWindowManager(surface_factory_ozone_.get()));
+    event_factory_ozone_.reset(new EventFactoryEvdev(window_manager_->cursor(),
+                                                     device_manager_.get()));
+    if (surface_factory_ozone_->InitializeHardware() !=
+        DriSurfaceFactory::INITIALIZED)
+      LOG(FATAL) << "Failed to initialize display hardware.";
+
+    if (!ui_thread_gpu_.Initialize())
+      LOG(FATAL) << "Failed to initialize dummy channel.";
   }
 
-  virtual void InitializeGPU() OVERRIDE {}
+  void InitializeGPU() override {}
 
  private:
-  scoped_ptr<VirtualTerminalManager> vt_manager_;
   scoped_ptr<DriWrapper> dri_;
-  scoped_ptr<DriSurfaceGenerator> surface_generator_;
+  scoped_ptr<DriBufferGenerator> buffer_generator_;
   scoped_ptr<ScreenManager> screen_manager_;
   scoped_ptr<DeviceManager> device_manager_;
 
   scoped_ptr<DriSurfaceFactory> surface_factory_ozone_;
-  scoped_ptr<CursorFactoryEvdevDri> cursor_factory_ozone_;
+  scoped_ptr<BitmapCursorFactoryOzone> cursor_factory_ozone_;
   scoped_ptr<EventFactoryEvdev> event_factory_ozone_;
+
+  scoped_ptr<DriWindowManager> window_manager_;
+
+  scoped_ptr<DriGpuPlatformSupport> gpu_platform_support_;
+  scoped_ptr<DriGpuPlatformSupportHost> gpu_platform_support_host_;
+
+  DriWindowDelegateManager window_delegate_manager_;
+
+  UiThreadGpu ui_thread_gpu_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformDri);
 };

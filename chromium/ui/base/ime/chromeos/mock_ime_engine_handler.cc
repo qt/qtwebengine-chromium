@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "ui/base/ime/chromeos/mock_ime_engine_handler.h"
+#include "ui/base/ime/text_input_flags.h"
 
 namespace chromeos {
 
@@ -13,7 +14,8 @@ MockIMEEngineHandler::MockIMEEngineHandler()
       process_key_event_call_count_(0),
       reset_call_count_(0),
       last_text_input_context_(ui::TEXT_INPUT_TYPE_NONE,
-                               ui::TEXT_INPUT_MODE_DEFAULT),
+                               ui::TEXT_INPUT_MODE_DEFAULT,
+                               ui::TEXT_INPUT_FLAG_NONE),
       last_set_surrounding_cursor_pos_(0),
       last_set_surrounding_anchor_pos_(0) {
 }
@@ -33,7 +35,7 @@ void MockIMEEngineHandler::FocusOut() {
   last_text_input_context_.type = ui::TEXT_INPUT_TYPE_NONE;
 }
 
-void MockIMEEngineHandler::Enable() {
+void MockIMEEngineHandler::Enable(const std::string& component_id) {
 }
 
 void MockIMEEngineHandler::Disable() {
@@ -65,6 +67,9 @@ void MockIMEEngineHandler::SetSurroundingText(const std::string& text,
   last_set_surrounding_text_ = text;
   last_set_surrounding_cursor_pos_ = cursor_pos;
   last_set_surrounding_anchor_pos_ = anchor_pos;
+}
+
+void MockIMEEngineHandler::SetCompositionBounds(const gfx::Rect& bounds) {
 }
 
 } // namespace chromeos

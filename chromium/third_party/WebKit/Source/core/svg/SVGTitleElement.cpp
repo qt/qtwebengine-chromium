@@ -24,12 +24,11 @@
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGTitleElement::SVGTitleElement(Document& document)
     : SVGElement(SVGNames::titleTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGTitleElement)
@@ -39,8 +38,8 @@ Node::InsertionNotificationRequest SVGTitleElement::insertedInto(ContainerNode* 
     SVGElement::insertedInto(rootParent);
     if (!rootParent->inDocument())
         return InsertionDone;
-    if (firstChild() && document().isSVGDocument())
-        document().setTitleElement(textContent(), this);
+    if (hasChildren() && document().isSVGDocument())
+        document().setTitleElement(this);
     return InsertionDone;
 }
 
@@ -51,11 +50,11 @@ void SVGTitleElement::removedFrom(ContainerNode* rootParent)
         document().removeTitle(this);
 }
 
-void SVGTitleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGTitleElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
     if (inDocument() && document().isSVGDocument())
-        document().setTitleElement(textContent(), this);
+        document().setTitleElement(this);
 }
 
 }

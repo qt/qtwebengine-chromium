@@ -27,11 +27,12 @@
 #include "config.h"
 #include "core/fetch/ScriptResource.h"
 
+#include "core/fetch/ResourceClientWalker.h"
 #include "platform/MIMETypeRegistry.h"
 #include "platform/SharedBuffer.h"
 #include "platform/network/HTTPParsers.h"
 
-namespace WebCore {
+namespace blink {
 
 ScriptResource::ScriptResource(const ResourceRequest& resourceRequest, const String& charset)
     : TextResource(resourceRequest, Script, "application/javascript", charset)
@@ -46,6 +47,20 @@ ScriptResource::ScriptResource(const ResourceRequest& resourceRequest, const Str
 
 ScriptResource::~ScriptResource()
 {
+}
+
+void ScriptResource::didAddClient(ResourceClient* client)
+{
+    ASSERT(client->resourceClientType() == ScriptResourceClient::expectedType());
+    Resource::didAddClient(client);
+}
+
+void ScriptResource::appendData(const char* data, unsigned length)
+{
+    Resource::appendData(data, length);
+    ResourceClientWalker<ScriptResourceClient> walker(m_clients);
+    while (ScriptResourceClient* client = walker.next())
+        client->notifyAppendData(this);
 }
 
 AtomicString ScriptResource::mimeType() const
@@ -76,4 +91,4 @@ bool ScriptResource::mimeTypeAllowedByNosniff() const
     return parseContentTypeOptionsHeader(m_response.httpHeaderField("X-Content-Type-Options")) != ContentTypeOptionsNosniff || MIMETypeRegistry::isSupportedJavaScriptMIMEType(mimeType());
 }
 
-} // namespace WebCore
+} // namespace blink

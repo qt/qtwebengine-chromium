@@ -11,6 +11,7 @@
 #include "base/debug/leak_tracker.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "base/threading/non_thread_safe.h"
@@ -47,10 +48,12 @@ class AppCacheInterceptor;
 
 namespace net {
 
+class ChunkedUploadDataStream;
 class CookieOptions;
 class HostPortPair;
 class IOBuffer;
 struct LoadTimingInfo;
+struct RedirectInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
 class UploadDataStream;
@@ -106,6 +109,15 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   enum ReferrerPolicy {
     CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE,
     NEVER_CLEAR_REFERRER,
+  };
+
+  // First-party URL redirect policy: During server redirects, the first-party
+  // URL for cookies normally doesn't change. However, if the request is a
+  // top-level first-party request, the first-party URL should be updated to the
+  // URL on every redirect.
+  enum FirstPartyURLPolicy {
+    NEVER_CHANGE_FIRST_PARTY_URL,
+    UPDATE_FIRST_PARTY_URL_ON_REDIRECT,
   };
 
   // This class handles network interception.  Use with
@@ -185,10 +197,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   //
   class NET_EXPORT Delegate {
    public:
-    // Called upon a server-initiated redirect.  The delegate may call the
-    // request's Cancel method to prevent the redirect from being followed.
-    // Since there may be multiple chained redirects, there may also be more
-    // than one redirect call.
+    // Called upon receiving a redirect.  The delegate may call the request's
+    // Cancel method to prevent the redirect from being followed.  Since there
+    // may be multiple chained redirects, there may also be more than one
+    // redirect call.
     //
     // When this function is called, the request will still contain the
     // original URL, the destination of the redirect is provided in 'new_url'.
@@ -202,7 +214,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     // need to set it if they are happy with the default behavior of not
     // deferring redirect.
     virtual void OnReceivedRedirect(URLRequest* request,
-                                    const GURL& new_url,
+                                    const RedirectInfo& redirect_info,
                                     bool* defer_redirect);
 
     // Called when we receive an authentication failure.  The delegate should
@@ -263,24 +275,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual ~Delegate() {}
   };
 
-  // TODO(tburkard): we should get rid of this constructor, and have each
-  // creator of a URLRequest specifically list the cookie store to be used.
-  // For now, this constructor will use the cookie store in |context|.
-  URLRequest(const GURL& url,
-             RequestPriority priority,
-             Delegate* delegate,
-             const URLRequestContext* context);
-
-  URLRequest(const GURL& url,
-             RequestPriority priority,
-             Delegate* delegate,
-             const URLRequestContext* context,
-             CookieStore* cookie_store);
-
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
   // will not have any more of its methods called.
-  virtual ~URLRequest();
+  ~URLRequest() override;
 
   // Changes the default cookie policy from allowing all cookies to blocking all
   // cookies. Embedders that want to implement a more flexible policy should
@@ -324,9 +322,16 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const GURL& first_party_for_cookies() const {
     return first_party_for_cookies_;
   }
-  // This method may be called before Start() or FollowDeferredRedirect() is
-  // called.
+  // This method may only be called before Start().
   void set_first_party_for_cookies(const GURL& first_party_for_cookies);
+
+  // The first-party URL policy to apply when updating the first party URL
+  // during redirects. The first-party URL policy may only be changed before
+  // Start() is called.
+  FirstPartyURLPolicy first_party_url_policy() const {
+    return first_party_url_policy_;
+  }
+  void set_first_party_url_policy(FirstPartyURLPolicy first_party_url_policy);
 
   // The request method, as an uppercase string.  "GET" is the default value.
   // The request method may only be changed before Start() is called and
@@ -350,6 +355,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // The referrer policy to apply when updating the referrer during redirects.
   // The referrer policy may only be changed before Start() is called.
+  ReferrerPolicy referrer_policy() const { return referrer_policy_; }
   void set_referrer_policy(ReferrerPolicy referrer_policy);
 
   // Sets the delegate of the request.  This value may be changed at any time,
@@ -515,11 +521,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Get the mime type.  This method may only be called once the delegate's
   // OnResponseStarted method has been called.
-  void GetMimeType(std::string* mime_type);
+  void GetMimeType(std::string* mime_type) const;
 
   // Get the charset (character encoding).  This method may only be called once
   // the delegate's OnResponseStarted method has been called.
-  void GetCharset(std::string* charset);
+  void GetCharset(std::string* charset) const;
 
   // Returns the HTTP response code (e.g., 200, 404, and so on).  This method
   // may only be called once the delegate's OnResponseStarted method has been
@@ -661,7 +667,7 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   void set_received_response_content_length(int64 received_content_length) {
     received_response_content_length_ = received_content_length;
   }
-  int64 received_response_content_length() {
+  int64 received_response_content_length() const {
     return received_response_content_length_;
   }
 
@@ -678,14 +684,15 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Allow the URLRequestJob class to set our status too
   void set_status(const URLRequestStatus& value) { status_ = value; }
 
-  CookieStore* cookie_store() const { return cookie_store_; }
+  CookieStore* cookie_store() const { return cookie_store_.get(); }
 
   // Allow the URLRequestJob to redirect this request.  Returns OK if
   // successful, otherwise an error code is returned.
-  int Redirect(const GURL& location, int http_status_code);
+  int Redirect(const RedirectInfo& redirect_info);
 
   // Called by URLRequestJob to allow interception when a redirect occurs.
-  void NotifyReceivedRedirect(const GURL& location, bool* defer_redirect);
+  void NotifyReceivedRedirect(const RedirectInfo& redirect_info,
+                              bool* defer_redirect);
 
   // Called by URLRequestHttpJob (note, only HTTP(S) jobs will call this) to
   // allow deferral of network initialization.
@@ -697,19 +704,22 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
  private:
   friend class URLRequestJob;
+  friend class URLRequestContext;
+
+  // URLRequests are always created by calling URLRequestContext::CreateRequest.
+  //
+  // If no cookie store or network delegate are passed in, will use the ones
+  // from the URLRequestContext.
+  URLRequest(const GURL& url,
+             RequestPriority priority,
+             Delegate* delegate,
+             const URLRequestContext* context,
+             CookieStore* cookie_store,
+             NetworkDelegate* network_delegate);
 
   // Registers or unregisters a network interception class.
   static void RegisterRequestInterceptor(Interceptor* interceptor);
   static void UnregisterRequestInterceptor(Interceptor* interceptor);
-
-  // Initializes the URLRequest. Code shared between the two constructors.
-  // TODO(tburkard): This can ultimately be folded into a single constructor
-  // again.
-  void Init(const GURL& url,
-            RequestPriority priotity,
-            Delegate* delegate,
-            const URLRequestContext* context,
-            CookieStore* cookie_store);
 
   // Resumes or blocks a request paused by the NetworkDelegate::OnBeforeRequest
   // handler. If |blocked| is true, the request is blocked and an error page is
@@ -782,12 +792,17 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   scoped_refptr<URLRequestJob> job_;
   scoped_ptr<UploadDataStream> upload_data_stream_;
+  // TODO(mmenke):  Make whether or not an upload is chunked transparent to the
+  // URLRequest.
+  ChunkedUploadDataStream* upload_chunked_data_stream_;
+
   std::vector<GURL> url_chain_;
   GURL first_party_for_cookies_;
   GURL delegate_redirect_url_;
   std::string method_;  // "GET", "POST", etc. Should be all uppercase.
   std::string referrer_;
   ReferrerPolicy referrer_policy_;
+  FirstPartyURLPolicy first_party_url_policy_;
   HttpRequestHeaders extra_request_headers_;
   int load_flags_;  // Flags indicating the request type for the load;
                     // expected values are LOAD_* enums above.

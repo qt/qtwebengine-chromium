@@ -33,16 +33,13 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 struct FocusCandidate;
-class Document;
 class Element;
 class Frame;
 class HTMLFrameOwnerElement;
 class HTMLShadowElement;
-class IntRect;
-class KeyboardEvent;
 class Node;
 class Page;
 class TreeScope;
@@ -52,37 +49,39 @@ class FocusNavigationScope {
 public:
     Node* rootNode() const;
     Element* owner() const;
-    static FocusNavigationScope focusNavigationScopeOf(Node*);
-    static FocusNavigationScope ownedByNonFocusableFocusScopeOwner(Node*);
-    static FocusNavigationScope ownedByShadowHost(Node*);
-    static FocusNavigationScope ownedByShadowInsertionPoint(HTMLShadowElement*);
-    static FocusNavigationScope ownedByIFrame(HTMLFrameOwnerElement*);
+    static FocusNavigationScope focusNavigationScopeOf(Node&);
+    static FocusNavigationScope ownedByNonFocusableFocusScopeOwner(Node&);
+    static FocusNavigationScope ownedByShadowHost(Node&);
+    static FocusNavigationScope ownedByShadowInsertionPoint(HTMLShadowElement&);
+    static FocusNavigationScope ownedByIFrame(HTMLFrameOwnerElement&);
 
 private:
     explicit FocusNavigationScope(TreeScope*);
     RawPtrWillBeMember<TreeScope> m_rootTreeScope;
 };
 
-class FocusController {
-    WTF_MAKE_NONCOPYABLE(FocusController); WTF_MAKE_FAST_ALLOCATED;
+class FocusController final : public NoBaseWillBeGarbageCollectedFinalized<FocusController> {
+    WTF_MAKE_NONCOPYABLE(FocusController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<FocusController> create(Page*);
+    static PassOwnPtrWillBeRawPtr<FocusController> create(Page*);
 
-    void setFocusedFrame(PassRefPtr<Frame>);
-    void focusDocumentView(PassRefPtr<Frame>);
+    void setFocusedFrame(PassRefPtrWillBeRawPtr<Frame>);
+    void focusDocumentView(PassRefPtrWillBeRawPtr<Frame>);
     Frame* focusedFrame() const { return m_focusedFrame.get(); }
     Frame* focusedOrMainFrame() const;
 
     bool setInitialFocus(FocusType);
     bool advanceFocus(FocusType type) { return advanceFocus(type, false); }
 
-    bool setFocusedElement(Element*, PassRefPtr<Frame>, FocusType = FocusTypeNone);
+    bool setFocusedElement(Element*, PassRefPtrWillBeRawPtr<Frame>, FocusType = FocusTypeNone);
 
     void setActive(bool);
     bool isActive() const { return m_isActive; }
 
     void setFocused(bool);
     bool isFocused() const { return m_isFocused; }
+
+    void trace(Visitor*);
 
 private:
     explicit FocusController(Page*);
@@ -114,13 +113,13 @@ private:
     bool advanceFocusDirectionallyInContainer(Node* container, const LayoutRect& startingRect, FocusType);
     void findFocusCandidateInContainer(Node& container, const LayoutRect& startingRect, FocusType, FocusCandidate& closest);
 
-    Page* m_page;
-    RefPtr<Frame> m_focusedFrame;
+    RawPtrWillBeMember<Page> m_page;
+    RefPtrWillBeMember<Frame> m_focusedFrame;
     bool m_isActive;
     bool m_isFocused;
     bool m_isChangingFocusedFrame;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FocusController_h

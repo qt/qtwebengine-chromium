@@ -30,12 +30,13 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   class Delegate {
    public:
     virtual ~Delegate() {}
+    virtual void OnPacketSent(WriteResult result) = 0;
     virtual void OnCanWrite() = 0;
   };
 
   PacketDroppingTestWriter();
 
-  virtual ~PacketDroppingTestWriter();
+  ~PacketDroppingTestWriter() override;
 
   // Must be called before blocking, reordering or delaying (loss is OK). May be
   // called after connecting if the helper is not available before.
@@ -44,15 +45,14 @@ class PacketDroppingTestWriter : public QuicPacketWriterWrapper {
   void Initialize(QuicEpollConnectionHelper* helper, Delegate* on_can_write);
 
   // QuicPacketWriter methods:
-  virtual WriteResult WritePacket(
-      const char* buffer,
-      size_t buf_len,
-      const IPAddressNumber& self_address,
-      const IPEndPoint& peer_address) OVERRIDE;
+  WriteResult WritePacket(const char* buffer,
+                          size_t buf_len,
+                          const IPAddressNumber& self_address,
+                          const IPEndPoint& peer_address) override;
 
-  virtual bool IsWriteBlocked() const OVERRIDE;
+  bool IsWriteBlocked() const override;
 
-  virtual void SetWritable() OVERRIDE;
+  void SetWritable() override;
 
   // Writes out any packet which should have been sent by now
   // to the contained writer and returns the time

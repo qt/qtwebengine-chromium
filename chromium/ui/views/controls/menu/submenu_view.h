@@ -43,7 +43,7 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
 
   // Creates a SubmenuView for the specified menu item.
   explicit SubmenuView(MenuItemView* parent);
-  virtual ~SubmenuView();
+  ~SubmenuView() override;
 
   // Returns the number of child views that are MenuItemViews.
   // MenuItemViews are identified by ID.
@@ -54,40 +54,40 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
 
   // Positions and sizes the child views. This tiles the views vertically,
   // giving each child the available width.
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
 
   // Override from View.
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  ui::TextInputClient* GetTextInputClient() override;
 
   // Painting.
-  virtual void PaintChildren(gfx::Canvas* canvas,
-                             const views::CullSet& cull_view) OVERRIDE;
+  void PaintChildren(gfx::Canvas* canvas,
+                     const views::CullSet& cull_view) override;
 
   // Drag and drop methods. These are forwarded to the MenuController.
-  virtual bool GetDropFormats(
+  bool GetDropFormats(
       int* formats,
-      std::set<OSExchangeData::CustomFormat>* custom_formats) OVERRIDE;
-  virtual bool AreDropTypesRequired() OVERRIDE;
-  virtual bool CanDrop(const OSExchangeData& data) OVERRIDE;
-  virtual void OnDragEntered(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual void OnDragExited() OVERRIDE;
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
+      std::set<OSExchangeData::CustomFormat>* custom_formats) override;
+  bool AreDropTypesRequired() override;
+  bool CanDrop(const OSExchangeData& data) override;
+  void OnDragEntered(const ui::DropTargetEvent& event) override;
+  int OnDragUpdated(const ui::DropTargetEvent& event) override;
+  void OnDragExited() override;
+  int OnPerformDrop(const ui::DropTargetEvent& event) override;
 
   // Scrolls on menu item boundaries.
-  virtual bool OnMouseWheel(const ui::MouseWheelEvent& e) OVERRIDE;
+  bool OnMouseWheel(const ui::MouseWheelEvent& e) override;
 
   // Overridden from ui::EventHandler.
   // Scrolls on menu item boundaries.
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from PrefixDelegate.
-  virtual int GetRowCount() OVERRIDE;
-  virtual int GetSelectedRow() OVERRIDE;
-  virtual void SetSelectedRow(int row) OVERRIDE;
-  virtual base::string16 GetTextForRow(int row) OVERRIDE;
+  int GetRowCount() override;
+  int GetSelectedRow() override;
+  void SetSelectedRow(int row) override;
+  base::string16 GetTextForRow(int row) override;
 
   // Returns true if the menu is showing.
   bool IsShowing();
@@ -118,7 +118,7 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
   void ReleaseCapture();
 
   // Overriden from View to prevent tab from doing anything.
-  virtual bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) OVERRIDE;
+  bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& e) override;
 
   // Returns the parent menu item we're showing children for.
   MenuItemView* GetMenuItem() const;
@@ -158,13 +158,13 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
 
  protected:
   // Overridden from View:
-  virtual const char* GetClassName() const OVERRIDE;
+  const char* GetClassName() const override;
 
   // View method. Overridden to schedule a paint. We do this so that when
   // scrolling occurs, everything is repainted correctly.
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
 
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
+  void ChildPreferredSizeChanged(View* child) override;
 
  private:
   // Paints the drop indicator. This is only invoked if item is non-NULL and
@@ -181,7 +181,7 @@ class VIEWS_EXPORT SubmenuView : public PrefixDelegate,
                                          MenuDelegate::DropPosition position);
 
   // Implementation of ScrollDelegate
-  virtual bool OnScroll(float dx, float dy) OVERRIDE;
+  bool OnScroll(float dx, float dy) override;
 
   // Parent menu item.
   MenuItemView* parent_menu_item_;

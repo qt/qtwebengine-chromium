@@ -28,47 +28,44 @@
 #include "core/svg/SVGPathSegList.h"
 #include "platform/geometry/FloatPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPathElement;
 
-class SVGPathSegListBuilder FINAL : public SVGPathConsumer {
+class SVGPathSegListBuilder final : public SVGPathConsumer {
 public:
     SVGPathSegListBuilder();
 
     void setCurrentSVGPathElement(SVGPathElement* pathElement) { m_pathElement = pathElement; }
     void setCurrentSVGPathSegList(PassRefPtr<SVGPathSegList> pathSegList) { m_pathSegList = pathSegList; }
-    void setCurrentSVGPathSegRole(SVGPathSegRole pathSegRole) { m_pathSegRole = pathSegRole; }
 
 private:
-    virtual void incrementPathSegmentCount() OVERRIDE { }
-    virtual bool continueConsuming() OVERRIDE { return true; }
-    virtual void cleanup() OVERRIDE
+    virtual void incrementPathSegmentCount() override { }
+    virtual bool continueConsuming() override { return true; }
+    virtual void cleanup() override
     {
         m_pathElement = 0;
         m_pathSegList = nullptr;
-        m_pathSegRole = PathSegUndefinedRole;
     }
 
     // Used in UnalteredParsing/NormalizedParsing modes.
-    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) OVERRIDE;
-    virtual void lineTo(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void closePath() OVERRIDE;
+    virtual void moveTo(const FloatPoint&, bool closed, PathCoordinateMode) override;
+    virtual void lineTo(const FloatPoint&, PathCoordinateMode) override;
+    virtual void curveToCubic(const FloatPoint&, const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
+    virtual void closePath() override;
 
     // Only used in UnalteredParsing mode.
-    virtual void lineToHorizontal(float, PathCoordinateMode) OVERRIDE;
-    virtual void lineToVertical(float, PathCoordinateMode) OVERRIDE;
-    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) OVERRIDE;
-    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) OVERRIDE;
+    virtual void lineToHorizontal(float, PathCoordinateMode) override;
+    virtual void lineToVertical(float, PathCoordinateMode) override;
+    virtual void curveToCubicSmooth(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
+    virtual void curveToQuadratic(const FloatPoint&, const FloatPoint&, PathCoordinateMode) override;
+    virtual void curveToQuadraticSmooth(const FloatPoint&, PathCoordinateMode) override;
+    virtual void arcTo(float, float, float, bool largeArcFlag, bool sweepFlag, const FloatPoint&, PathCoordinateMode) override;
 
     SVGPathElement* m_pathElement;
     RefPtr<SVGPathSegList> m_pathSegList;
-    SVGPathSegRole m_pathSegRole;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGPathSegListBuilder_h

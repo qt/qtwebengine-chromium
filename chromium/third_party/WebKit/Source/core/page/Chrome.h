@@ -29,7 +29,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class ChromeClient;
 class ColorChooser;
@@ -47,13 +47,12 @@ class Page;
 class PopupMenu;
 class PopupMenuClient;
 class PopupOpeningObserver;
-class SearchPopupMenu;
 
 struct DateTimeChooserParameters;
 struct ViewportDescription;
 struct WindowFeatures;
 
-class Chrome FINAL : public HostWindow {
+class Chrome final : public HostWindow {
 public:
     virtual ~Chrome();
 
@@ -62,13 +61,12 @@ public:
     ChromeClient& client() { return *m_client; }
 
     // HostWindow methods.
-    virtual void invalidateContentsAndRootView(const IntRect&) OVERRIDE;
-    virtual void invalidateContentsForSlowScroll(const IntRect&) OVERRIDE;
-    virtual void scroll(const IntSize&, const IntRect&, const IntRect&) OVERRIDE;
-    virtual IntRect rootViewToScreen(const IntRect&) const OVERRIDE;
-    virtual blink::WebScreenInfo screenInfo() const OVERRIDE;
+    virtual void invalidateContentsAndRootView(const IntRect&) override;
+    virtual void invalidateContentsForSlowScroll(const IntRect&) override;
+    virtual IntRect rootViewToScreen(const IntRect&) const override;
+    virtual blink::WebScreenInfo screenInfo() const override;
 
-    virtual void scheduleAnimation() OVERRIDE;
+    virtual void scheduleAnimation() override;
 
     void contentsSizeChanged(LocalFrame*, const IntSize&) const;
 
@@ -117,8 +115,8 @@ public:
 
     void print(LocalFrame*);
 
-    PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color& initialColor);
-    PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
+    PassOwnPtrWillBeRawPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color& initialColor);
+    PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&);
     void openTextDataListChooser(HTMLInputElement&);
 
     void runOpenPanel(LocalFrame*, PassRefPtr<FileChooser>);
@@ -127,7 +125,7 @@ public:
     void dispatchViewportPropertiesDidChange(const ViewportDescription&) const;
 
     bool hasOpenedPopup() const;
-    PassRefPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
+    PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const;
 
     void registerPopupOpeningObserver(PopupOpeningObserver*);
     void unregisterPopupOpeningObserver(PopupOpeningObserver*);
@@ -143,6 +141,6 @@ private:
     Vector<PopupOpeningObserver*> m_popupOpeningObservers;
 };
 
-}
+} // namespace blink
 
 #endif // Chrome_h

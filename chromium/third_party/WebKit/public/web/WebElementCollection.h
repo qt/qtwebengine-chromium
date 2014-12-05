@@ -35,13 +35,14 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebPrivatePtr.h"
 
-namespace WebCore { class HTMLCollection; }
 #if BLINK_IMPLEMENTATION
 #include "platform/heap/Handle.h"
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
 namespace blink {
+
+class HTMLCollection;
 class WebElement;
 
 // Provides readonly access to some properties of a DOM node.
@@ -67,12 +68,12 @@ public:
     BLINK_EXPORT WebElement firstItem() const;
 
 #if BLINK_IMPLEMENTATION
-    WebElementCollection(const PassRefPtrWillBeRawPtr<WebCore::HTMLCollection>&);
-    WebElementCollection& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLCollection>&);
+    WebElementCollection(const PassRefPtrWillBeRawPtr<HTMLCollection>&);
+    WebElementCollection& operator=(const PassRefPtrWillBeRawPtr<HTMLCollection>&);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::HTMLCollection> m_private;
+    WebPrivatePtr<HTMLCollection> m_private;
     mutable unsigned m_current;
 };
 

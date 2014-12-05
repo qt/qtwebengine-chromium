@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/memory/ref_counted.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -18,12 +19,12 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/browser/shell_content_browser_client.h"
 #include "content/shell/browser/shell_network_delegate.h"
-#include "content/test/net/url_request_failed_job.h"
-#include "content/test/net/url_request_mock_http_job.h"
 #include "net/base/net_errors.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "net/test/url_request/url_request_failed_job.h"
+#include "net/test/url_request/url_request_mock_http_job.h"
 
 using base::ASCIIToUTF16;
 
@@ -35,25 +36,28 @@ class ResourceDispatcherHostBrowserTest : public ContentBrowserTest,
   ResourceDispatcherHostBrowserTest() : got_downloads_(false) {}
 
  protected:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     base::FilePath path = GetTestFilePath("", "");
     BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&URLRequestMockHTTPJob::AddUrlHandler, path));
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(
+            &net::URLRequestMockHTTPJob::AddUrlHandler,
+            path,
+            make_scoped_refptr(content::BrowserThread::GetBlockingPool())));
     BrowserThread::PostTask(
         BrowserThread::IO, FROM_HERE,
-        base::Bind(&URLRequestFailedJob::AddUrlHandler));
+        base::Bind(&net::URLRequestFailedJob::AddUrlHandler));
   }
 
-  virtual void OnDownloadCreated(
-      DownloadManager* manager,
-      DownloadItem* item) OVERRIDE {
+  void OnDownloadCreated(DownloadManager* manager,
+                         DownloadItem* item) override {
     if (!got_downloads_)
       got_downloads_ = !!manager->InProgressCount();
   }
 
   GURL GetMockURL(const std::string& file) {
-    return URLRequestMockHTTPJob::GetMockUrl(
+    return net::URLRequestMockHTTPJob::GetMockUrl(
         base::FilePath().AppendASCII(file));
   }
 
@@ -219,9 +223,10 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   ASSERT_FALSE(got_downloads());
 }
 
+// Flaky everywhere. http://crbug.com/130404
 // Tests that onunload is run for cross-site requests.  (Bug 1114994)
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
-                       CrossSiteOnunloadCookie) {
+                       DISABLED_CrossSiteOnunloadCookie) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url = embedded_test_server()->GetURL("/onunload_cookie.html");
@@ -266,7 +271,7 @@ scoped_ptr<net::test_server::HttpResponse> NoContentResponseHandler(
   scoped_ptr<net::test_server::BasicHttpResponse> http_response(
       new net::test_server::BasicHttpResponse);
   http_response->set_code(net::HTTP_NO_CONTENT);
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 }  // namespace
@@ -333,12 +338,12 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   CheckTitleTest(url, "Title Of Awesomeness");
 }
 
+// Flaky everywhere. http://crbug.com/130404
 // Tests that a cross-site navigation to an error page (resulting in the link
 // doctor page) still runs the onunload handler and can support navigations
 // away from the link doctor page.  (Bug 1235537)
-// Flaky: http://crbug.com/100823
 IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
-                       CrossSiteNavigationErrorPage) {
+                       DISABLED_CrossSiteNavigationErrorPage) {
   ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   GURL url(embedded_test_server()->GetURL("/onunload_cookie.html"));
@@ -348,7 +353,7 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   // TODO(creis): If this causes crashes or hangs, it might be for the same
   // reason as ErrorPageTest::DNSError.  See bug 1199491 and
   // http://crbug.com/22877.
-  GURL failed_url = URLRequestFailedJob::GetMockHttpUrl(
+  GURL failed_url = net::URLRequestFailedJob::GetMockHttpUrl(
       net::ERR_NAME_NOT_RESOLVED);
   NavigateToURL(shell(), failed_url);
 
@@ -393,7 +398,7 @@ IN_PROC_BROWSER_TEST_F(ResourceDispatcherHostBrowserTest,
   // TODO(creis): If this causes crashes or hangs, it might be for the same
   // reason as ErrorPageTest::DNSError.  See bug 1199491 and
   // http://crbug.com/22877.
-  GURL failed_url = URLRequestFailedJob::GetMockHttpUrl(
+  GURL failed_url = net::URLRequestFailedJob::GetMockHttpUrl(
       net::ERR_NAME_NOT_RESOLVED);
 
   NavigateToURL(shell(), failed_url);
@@ -445,7 +450,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleRedirectRequest(
   http_response->set_code(net::HTTP_FOUND);
   http_response->AddCustomHeader(
       "Location", request.relative_url.substr(request_path.length()));
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 }  // namespace

@@ -103,6 +103,7 @@ class WebSocketOptions:
     self.tls_client_ca = None
     self.tls_module = 'ssl'
     self.use_basic_auth = False
+    self.basic_auth_credential = 'Basic ' + base64.b64encode('test:test')
 
 
 class RecordingSSLSessionCache(object):
@@ -154,8 +155,9 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
   def __init__(self, server_address, request_hander_class, pem_cert_and_key,
                ssl_client_auth, ssl_client_cas, ssl_client_cert_types,
                ssl_bulk_ciphers, ssl_key_exchanges, enable_npn,
-               record_resume_info, tls_intolerant, signed_cert_timestamps,
-               fallback_scsv_enabled, ocsp_response):
+               record_resume_info, tls_intolerant,
+               tls_intolerance_type, signed_cert_timestamps,
+               fallback_scsv_enabled, ocsp_response, disable_session_cache):
     self.cert_chain = tlslite.api.X509CertChain()
     self.cert_chain.parsePemList(pem_cert_and_key)
     # Force using only python implementation - otherwise behavior is different
@@ -172,10 +174,6 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
       self.next_protos = ['http/1.1']
     else:
       self.next_protos = None
-    if tls_intolerant == 0:
-      self.tls_intolerant = None
-    else:
-      self.tls_intolerant = (3, tls_intolerant)
     self.signed_cert_timestamps = signed_cert_timestamps
     self.fallback_scsv_enabled = fallback_scsv_enabled
     self.ocsp_response = ocsp_response
@@ -199,8 +197,14 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
       self.ssl_handshake_settings.cipherNames = ssl_bulk_ciphers
     if ssl_key_exchanges is not None:
       self.ssl_handshake_settings.keyExchangeNames = ssl_key_exchanges
+    if tls_intolerant != 0:
+      self.ssl_handshake_settings.tlsIntolerant = (3, tls_intolerant)
+      self.ssl_handshake_settings.tlsIntoleranceType = tls_intolerance_type
 
-    if record_resume_info:
+
+    if disable_session_cache:
+      self.session_cache = None
+    elif record_resume_info:
       # If record_resume_info is true then we'll replace the session cache with
       # an object that records the lookups and inserts that it sees.
       self.session_cache = RecordingSSLSessionCache()
@@ -223,7 +227,6 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
                                     reqCAs=self.ssl_client_cas,
                                     reqCertTypes=self.ssl_client_cert_types,
                                     nextProtos=self.next_protos,
-                                    tlsIntolerant=self.tls_intolerant,
                                     signedCertTimestamps=
                                     self.signed_cert_timestamps,
                                     fallbackSCSV=self.fallback_scsv_enabled,
@@ -328,10 +331,12 @@ class TestPageHandler(testserver_base.BasePageHandler):
       self.ContentTypeHandler,
       self.NoContentHandler,
       self.ServerRedirectHandler,
+      self.CrossSiteRedirectHandler,
       self.ClientRedirectHandler,
       self.GetSSLSessionCacheHandler,
       self.SSLManySmallRecords,
       self.GetChannelID,
+      self.ClientCipherListHandler,
       self.CloseSocketHandler,
       self.RangeResetHandler,
       self.DefaultResponseHandler]
@@ -353,6 +358,7 @@ class TestPageHandler(testserver_base.BasePageHandler):
       'gif': 'image/gif',
       'jpeg' : 'image/jpeg',
       'jpg' : 'image/jpeg',
+      'js' : 'application/javascript',
       'json': 'application/json',
       'pdf' : 'application/pdf',
       'txt' : 'text/plain',
@@ -1414,6 +1420,35 @@ class TestPageHandler(testserver_base.BasePageHandler):
 
     return True
 
+  def CrossSiteRedirectHandler(self):
+    """Sends a server redirect to the given site. The syntax is
+    '/cross-site/hostname/...' to redirect to //hostname/...
+    It is used to navigate between different Sites, causing
+    cross-site/cross-process navigations in the browser."""
+
+    test_name = "/cross-site"
+    if not self._ShouldHandleRequest(test_name):
+      return False
+
+    params = urllib.unquote(self.path[(len(test_name) + 1):])
+    slash = params.find('/')
+    if slash < 0:
+      self.sendRedirectHelp(test_name)
+      return True
+
+    host = params[:slash]
+    path = params[(slash+1):]
+    dest = "//%s:%s/%s" % (host, str(self.server.server_port), path)
+
+    self.send_response(301)  # moved permanently
+    self.send_header('Location', dest)
+    self.send_header('Content-Type', 'text/html')
+    self.end_headers()
+    self.wfile.write('<html><head>')
+    self.wfile.write('</head><body>Redirecting to %s</body></html>' % dest)
+
+    return True
+
   def ClientRedirectHandler(self):
     """Sends a client redirect to the given URL. The syntax is
     '/client-redirect?http://foo.bar/asdf' to redirect to
@@ -1487,6 +1522,22 @@ class TestPageHandler(testserver_base.BasePageHandler):
     self.end_headers()
     channel_id = bytes(self.server.tlsConnection.channel_id)
     self.wfile.write(hashlib.sha256(channel_id).digest().encode('base64'))
+    return True
+
+  def ClientCipherListHandler(self):
+    """Send a reply containing the cipher suite list that the client
+    provided. Each cipher suite value is serialized in decimal, followed by a
+    newline."""
+
+    if not self._ShouldHandleRequest('/client-cipher-list'):
+      return False
+
+    self.send_response(200)
+    self.send_header('Content-Type', 'text/plain')
+    self.end_headers()
+
+    cipher_suites = self.server.tlsConnection.clientHello.cipher_suites
+    self.wfile.write('\n'.join(str(c) for c in cipher_suites))
     return True
 
   def CloseSocketHandler(self):
@@ -1982,10 +2033,12 @@ class ServerRunner(testserver_base.TestServerRunner):
                              self.options.enable_npn,
                              self.options.record_resume,
                              self.options.tls_intolerant,
+                             self.options.tls_intolerance_type,
                              self.options.signed_cert_timestamps_tls_ext.decode(
                                  "base64"),
                              self.options.fallback_scsv,
-                             stapled_ocsp_response)
+                             stapled_ocsp_response,
+                             self.options.disable_session_cache)
         print 'HTTPS server started on https://%s:%d...' % \
             (host, server.server_port)
       else:
@@ -2011,6 +2064,7 @@ class ServerRunner(testserver_base.TestServerRunner):
         websocket_options.private_key = self.options.cert_and_key_file
         websocket_options.certificate = self.options.cert_and_key_file
       if self.options.ssl_client_auth:
+        websocket_options.tls_client_cert_optional = False
         websocket_options.tls_client_auth = True
         if len(self.options.ssl_client_ca) != 1:
           raise testserver_base.OptionError(
@@ -2024,6 +2078,7 @@ class ServerRunner(testserver_base.TestServerRunner):
       print 'WebSocket server started on %s://%s:%d...' % \
           (scheme, host, server.server_port)
       server_data['port'] = server.server_port
+      websocket_options.use_basic_auth = self.options.ws_basic_auth
     elif self.options.server_type == SERVER_TCP_ECHO:
       # Used for generating the key (randomly) that encodes the "echo request"
       # message.
@@ -2083,6 +2138,11 @@ class ServerRunner(testserver_base.TestServerRunner):
 
   def add_options(self):
     testserver_base.TestServerRunner.add_options(self)
+    self.option_parser.add_option('--disable-session-cache',
+                                  action='store_true',
+                                  dest='disable_session_cache',
+                                  help='tells the server to disable the'
+                                  'TLS session cache.')
     self.option_parser.add_option('-f', '--ftp', action='store_const',
                                   const=SERVER_FTP, default=SERVER_HTTP,
                                   dest='server_type',
@@ -2128,6 +2188,12 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'aborted. 2 means TLS 1.1 or higher will be '
                                   'aborted. 3 means TLS 1.2 or higher will be '
                                   'aborted.')
+    self.option_parser.add_option('--tls-intolerance-type',
+                                  dest='tls_intolerance_type',
+                                  default="alert",
+                                  help='Controls how the server reacts to a '
+                                  'TLS version it is intolerant to. Valid '
+                                  'values are "alert", "close", and "reset".')
     self.option_parser.add_option('--signed-cert-timestamps-tls-ext',
                                   dest='signed_cert_timestamps_tls_ext',
                                   default='',
@@ -2199,6 +2265,10 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'support for exactly one protocol, http/1.1')
     self.option_parser.add_option('--file-root-url', default='/files/',
                                   help='Specify a root URL for files served.')
+    # TODO(ricea): Generalize this to support basic auth for HTTP too.
+    self.option_parser.add_option('--ws-basic-auth', action='store_true',
+                                  dest='ws_basic_auth',
+                                  help='Enable basic-auth for WebSocket')
 
 
 if __name__ == '__main__':

@@ -34,8 +34,6 @@
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 EditorClientImpl::EditorClientImpl(WebViewImpl* webview)
@@ -47,11 +45,11 @@ EditorClientImpl::~EditorClientImpl()
 {
 }
 
-void EditorClientImpl::respondToChangedSelection(LocalFrame* frame, WebCore::SelectionType selectionType)
+void EditorClientImpl::respondToChangedSelection(LocalFrame* frame, SelectionType selectionType)
 {
     WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
     if (webFrame->client())
-        webFrame->client()->didChangeSelection(selectionType != WebCore::RangeSelection);
+        webFrame->client()->didChangeSelection(selectionType != RangeSelection);
 }
 
 void EditorClientImpl::respondToChangedContents()
@@ -81,4 +79,4 @@ bool EditorClientImpl::handleKeyboardEvent()
     return m_webView->client() && m_webView->client()->handleCurrentKeyboardEvent();
 }
 
-} // namesace blink
+} // namespace blink

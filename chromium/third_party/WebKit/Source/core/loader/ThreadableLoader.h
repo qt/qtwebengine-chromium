@@ -32,16 +32,15 @@
 #define ThreadableLoader_h
 
 #include "core/fetch/ResourceLoaderOptions.h"
+#include "platform/CrossThreadCopier.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-    class ResourceError;
     class ResourceRequest;
-    class ResourceResponse;
     class ExecutionContext;
     class ThreadableLoaderClient;
 
@@ -69,11 +68,48 @@ namespace WebCore {
             , contentSecurityPolicyEnforcement(EnforceConnectSrcDirective)
             , timeoutMilliseconds(0) { }
 
+        // When adding members, CrossThreadThreadableLoaderOptionsData should
+        // be updated.
         PreflightPolicy preflightPolicy; // If AccessControl is used, how to determine if a preflight is needed.
         CrossOriginRequestPolicy crossOriginRequestPolicy;
         AtomicString initiator;
         ContentSecurityPolicyEnforcement contentSecurityPolicyEnforcement;
         unsigned long timeoutMilliseconds;
+    };
+
+    // Encode AtomicString as String to cross threads.
+    struct CrossThreadThreadableLoaderOptionsData {
+        explicit CrossThreadThreadableLoaderOptionsData(const ThreadableLoaderOptions& options)
+            : preflightPolicy(options.preflightPolicy)
+            , crossOriginRequestPolicy(options.crossOriginRequestPolicy)
+            , initiator(options.initiator.string().isolatedCopy())
+            , contentSecurityPolicyEnforcement(options.contentSecurityPolicyEnforcement)
+            , timeoutMilliseconds(options.timeoutMilliseconds) { }
+
+        operator ThreadableLoaderOptions() const
+        {
+            ThreadableLoaderOptions options;
+            options.preflightPolicy = preflightPolicy;
+            options.crossOriginRequestPolicy = crossOriginRequestPolicy;
+            options.initiator = AtomicString(initiator);
+            options.contentSecurityPolicyEnforcement = contentSecurityPolicyEnforcement;
+            options.timeoutMilliseconds = timeoutMilliseconds;
+            return options;
+        }
+
+        PreflightPolicy preflightPolicy;
+        CrossOriginRequestPolicy crossOriginRequestPolicy;
+        String initiator;
+        ContentSecurityPolicyEnforcement contentSecurityPolicyEnforcement;
+        unsigned long timeoutMilliseconds;
+    };
+
+    template<> struct CrossThreadCopierBase<false, false, false, ThreadableLoaderOptions> {
+        typedef CrossThreadThreadableLoaderOptionsData Type;
+        static Type copy(const ThreadableLoaderOptions& options)
+        {
+            return CrossThreadThreadableLoaderOptionsData(options);
+        }
     };
 
     // Useful for doing loader operations from any thread (not threadsafe,
@@ -90,6 +126,13 @@ namespace WebCore {
         static void loadResourceSynchronously(ExecutionContext&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         static PassRefPtr<ThreadableLoader> create(ExecutionContext&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
 
+        // A ThreadableLoader may have a timeout specified. It is possible, in some cases, for
+        // the timeout to be overridden after the request is sent (for example, XMLHttpRequests
+        // may override their timeout setting after sending).
+        //
+        // Set a new timeout relative to the time the request started, in milliseconds.
+        virtual void overrideTimeout(unsigned long timeoutMilliseconds) = 0;
+
         virtual void cancel() = 0;
 
         virtual ~ThreadableLoader() { }
@@ -98,6 +141,6 @@ namespace WebCore {
         ThreadableLoader() { }
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ThreadableLoader_h

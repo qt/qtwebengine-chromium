@@ -37,20 +37,19 @@
 #include "modules/filesystem/FileCallback.h"
 #include "modules/filesystem/FileWriterCallback.h"
 
-namespace WebCore {
+namespace blink {
 
 FileEntry::FileEntry(DOMFileSystemBase* fileSystem, const String& fullPath)
     : Entry(fileSystem, fullPath)
 {
-    ScriptWrappable::init(this);
 }
 
-void FileEntry::createWriter(PassOwnPtr<FileWriterCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void FileEntry::createWriter(FileWriterCallback* successCallback, ErrorCallback* errorCallback)
 {
     filesystem()->createWriter(this, successCallback, errorCallback);
 }
 
-void FileEntry::file(PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void FileEntry::file(FileCallback* successCallback, ErrorCallback* errorCallback)
 {
     filesystem()->createFile(this, successCallback, errorCallback);
 }

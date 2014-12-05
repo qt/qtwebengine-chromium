@@ -30,12 +30,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.RuntimeModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.RuntimeModel, target);
 
     this._debuggerModel = target.debuggerModel;
     this._agent = target.runtimeAgent();
@@ -67,7 +67,7 @@ WebInspector.RuntimeModel.prototype = {
      */
     _executionContextCreated: function(context)
     {
-        var executionContext = new WebInspector.ExecutionContext(this.target(), context.id, context.name, context.isPageContext, context.frameId);
+        var executionContext = new WebInspector.ExecutionContext(this.target(), context.id, context.name, context.origin, context.isPageContext, context.frameId);
         this._executionContextById[executionContext.id] = executionContext;
         this.dispatchEventToListeners(WebInspector.RuntimeModel.Events.ExecutionContextCreated, executionContext);
     },
@@ -129,7 +129,7 @@ WebInspector.RuntimeModel.prototype = {
         return new WebInspector.RemoteObjectProperty(name, this.createRemoteObjectFromPrimitiveValue(value));
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -162,18 +162,20 @@ WebInspector.RuntimeDispatcher.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAware}
+ * @extends {WebInspector.SDKObject}
  * @param {!WebInspector.Target} target
  * @param {number|undefined} id
  * @param {string} name
+ * @param {string} origin
  * @param {boolean} isPageContext
  * @param {string=} frameId
  */
-WebInspector.ExecutionContext = function(target, id, name, isPageContext, frameId)
+WebInspector.ExecutionContext = function(target, id, name, origin, isPageContext, frameId)
 {
-    WebInspector.TargetAware.call(this, target);
+    WebInspector.SDKObject.call(this, target);
     this.id = id;
-    this.name = (isPageContext && !name) ? "<page context>" : name;
+    this.name = name;
+    this.origin = origin;
     this.isMainWorldContext = isPageContext;
     this._debuggerModel = target.debuggerModel;
     this.frameId = frameId;
@@ -195,6 +197,35 @@ WebInspector.ExecutionContext.comparator = function(a, b)
 }
 
 WebInspector.ExecutionContext.prototype = {
+    /**
+     * @param {string} expression
+     * @param {string} objectGroup
+     * @param {boolean} includeCommandLineAPI
+     * @param {boolean} doNotPauseOnExceptionsAndMuteConsole
+     * @param {boolean} returnByValue
+     * @param {boolean} generatePreview
+     * @param {function(?WebInspector.RemoteObject, boolean, ?RuntimeAgent.RemoteObject=, ?DebuggerAgent.ExceptionDetails=)} callback
+     */
+    evaluate: function(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback)
+    {
+        // FIXME: It will be moved to separate ExecutionContext.
+        if (this._debuggerModel.selectedCallFrame()) {
+            this._debuggerModel.evaluateOnSelectedCallFrame(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback);
+            return;
+        }
+        this._evaluateGlobal.apply(this, arguments);
+    },
+
+    /**
+     * @param {string} objectGroup
+     * @param {boolean} returnByValue
+     * @param {boolean} generatePreview
+     * @param {function(?WebInspector.RemoteObject, boolean, ?RuntimeAgent.RemoteObject=, ?DebuggerAgent.ExceptionDetails=)} callback
+     */
+    globalObject: function(objectGroup, returnByValue, generatePreview, callback)
+    {
+        this._evaluateGlobal("this", objectGroup, false, true, returnByValue, generatePreview, callback);
+    },
 
     /**
      * @param {string} expression
@@ -203,16 +234,10 @@ WebInspector.ExecutionContext.prototype = {
      * @param {boolean} doNotPauseOnExceptionsAndMuteConsole
      * @param {boolean} returnByValue
      * @param {boolean} generatePreview
-     * @param {function(?WebInspector.RemoteObject, boolean, ?RuntimeAgent.RemoteObject=)} callback
+     * @param {function(?WebInspector.RemoteObject, boolean, ?RuntimeAgent.RemoteObject=, ?DebuggerAgent.ExceptionDetails=)} callback
      */
-    evaluate: function(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback)
+    _evaluateGlobal: function(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback)
     {
-        //FIXME: It will be moved to separate ExecutionContext
-        if (this._debuggerModel.selectedCallFrame()) {
-            this._debuggerModel.evaluateOnSelectedCallFrame(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, returnByValue, generatePreview, callback);
-            return;
-        }
-
         if (!expression) {
             // There is no expression, so the completion should happen against global properties.
             expression = "this";
@@ -223,8 +248,9 @@ WebInspector.ExecutionContext.prototype = {
          * @param {?Protocol.Error} error
          * @param {!RuntimeAgent.RemoteObject} result
          * @param {boolean=} wasThrown
+         * @param {?DebuggerAgent.ExceptionDetails=} exceptionDetails
          */
-        function evalCallback(error, result, wasThrown)
+        function evalCallback(error, result, wasThrown, exceptionDetails)
         {
             if (error) {
                 callback(null, false);
@@ -232,9 +258,9 @@ WebInspector.ExecutionContext.prototype = {
             }
 
             if (returnByValue)
-                callback(null, !!wasThrown, wasThrown ? null : result);
+                callback(null, !!wasThrown, wasThrown ? null : result, exceptionDetails);
             else
-                callback(this.target().runtimeModel.createRemoteObject(result), !!wasThrown);
+                callback(this.target().runtimeModel.createRemoteObject(result), !!wasThrown, undefined, exceptionDetails);
         }
         this.target().runtimeAgent().evaluate(expression, objectGroup, includeCommandLineAPI, doNotPauseOnExceptionsAndMuteConsole, this.id, returnByValue, generatePreview, evalCallback.bind(this));
     },
@@ -400,7 +426,7 @@ WebInspector.ExecutionContext.prototype = {
         completionsReadyCallback(results);
     },
 
-    __proto__: WebInspector.TargetAware.prototype
+    __proto__: WebInspector.SDKObject.prototype
 }
 
 /**

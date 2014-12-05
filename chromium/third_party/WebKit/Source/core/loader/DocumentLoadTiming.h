@@ -28,9 +28,8 @@
 
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
-class LocalFrame;
 class KURL;
 
 class DocumentLoadTiming {
@@ -85,6 +84,6 @@ private:
     bool m_hasSameOriginAsPreviousDocument;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

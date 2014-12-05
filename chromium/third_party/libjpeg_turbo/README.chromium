@@ -4,12 +4,15 @@ Version: 1.3.1
 License: Custom license
 License File: LICENSE.txt
 Security Critical: yes
+License Android Compatible: yes
 
 Description:
 This consists of the components:
 * A partial copy of libjpeg-turbo 1.3.1 (r1219);
 * Revision r1188 cherry-picked from upstream trunk into config.h;
 * Revision r1220 cherry-picked from upstream trunk into jchuff.c;
+* Revisions r1108, r1109, r1333, r1375, r1386, r1389 and r1390 cherry-picked
+  from upstream trunk for Arm64;
 * A build file (libjpeg.gyp), and;
 * Patched header files used by Chromium.
 
@@ -25,6 +28,9 @@ following changes which are not merged to upstream:
 * Added the 'private_extern' flags on Mac (or the 'hidden' flags on Linux) to
   all the global symbols in '.asm' files to prevent making them external ones.
 * Supported motion-JPEG frames that do not have DHT markers.
+* Removed .func / .endfunc lines from arm assembly
+  ( https://sourceforge.net/p/libjpeg-turbo/bugs/72/ , landed at
+  https://sourceforge.net/p/libjpeg-turbo/code/1375 ).
 
 The 'google.patch' file represents our changes from the original
 libjpeg-turbo-1.2.

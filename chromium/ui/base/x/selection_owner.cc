@@ -4,11 +4,13 @@
 
 #include "ui/base/x/selection_owner.h"
 
+#include <algorithm>
 #include <X11/Xlib.h>
 #include <X11/Xatom.h>
 
 #include "base/logging.h"
 #include "ui/base/x/selection_utils.h"
+#include "ui/base/x/x11_foreign_window_manager.h"
 #include "ui/base/x/x11_util.h"
 
 namespace ui {
@@ -16,24 +18,47 @@ namespace ui {
 namespace {
 
 const char kAtomPair[] = "ATOM_PAIR";
+const char kIncr[] = "INCR";
 const char kMultiple[] = "MULTIPLE";
 const char kSaveTargets[] = "SAVE_TARGETS";
 const char kTargets[] = "TARGETS";
 
 const char* kAtomsToCache[] = {
   kAtomPair,
+  kIncr,
   kMultiple,
   kSaveTargets,
   kTargets,
   NULL
 };
 
+// The period of |incremental_transfer_abort_timer_|. Arbitrary but must be <=
+// than kIncrementalTransferTimeoutMs.
+const int kTimerPeriodMs = 1000;
+
+// The amount of time to wait for the selection requestor to process the data
+// sent by the selection owner before aborting an incremental data transfer.
+const int kIncrementalTransferTimeoutMs = 10000;
+
+COMPILE_ASSERT(kTimerPeriodMs <= kIncrementalTransferTimeoutMs,
+               timer_period_must_be_less_or_equal_to_transfer_timeout);
+
+// Returns a conservative max size of the data we can pass into
+// XChangeProperty(). Copied from GTK.
+size_t GetMaxRequestSize(XDisplay* display) {
+  long extended_max_size = XExtendedMaxRequestSize(display);
+  long max_size =
+      (extended_max_size ? extended_max_size : XMaxRequestSize(display)) - 100;
+  return std::min(static_cast<long>(0x40000),
+                  std::max(static_cast<long>(0), max_size));
+}
+
 // Gets the value of an atom pair array property. On success, true is returned
 // and the value is stored in |value|.
 bool GetAtomPairArrayProperty(XID window,
-                              Atom property,
-                              std::vector<std::pair<Atom,Atom> >* value) {
-  Atom type = None;
+                              XAtom property,
+                              std::vector<std::pair<XAtom,XAtom> >* value) {
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* properties = NULL;
@@ -62,7 +87,7 @@ bool GetAtomPairArrayProperty(XID window,
     return false;
   }
 
-  Atom* atom_properties = reinterpret_cast<Atom*>(properties);
+  XAtom* atom_properties = reinterpret_cast<XAtom*>(properties);
   value->clear();
   for (size_t i = 0; i < num_items; i+=2)
     value->push_back(std::make_pair(atom_properties[i], atom_properties[i+1]));
@@ -72,12 +97,13 @@ bool GetAtomPairArrayProperty(XID window,
 
 }  // namespace
 
-SelectionOwner::SelectionOwner(Display* x_display,
-                               Window x_window,
-                               Atom selection_name)
+SelectionOwner::SelectionOwner(XDisplay* x_display,
+                               XID x_window,
+                               XAtom selection_name)
     : x_display_(x_display),
       x_window_(x_window),
       selection_name_(selection_name),
+      max_request_size_(GetMaxRequestSize(x_display)),
       atom_cache_(x_display_, kAtomsToCache) {
 }
 
@@ -89,7 +115,7 @@ SelectionOwner::~SelectionOwner() {
     XSetSelectionOwner(x_display_, selection_name_, None, CurrentTime);
 }
 
-void SelectionOwner::RetrieveTargets(std::vector<Atom>* targets) {
+void SelectionOwner::RetrieveTargets(std::vector<XAtom>* targets) {
   for (SelectionFormatMap::const_iterator it = format_map_.begin();
        it != format_map_.end(); ++it) {
     targets->push_back(it->first);
@@ -111,28 +137,32 @@ void SelectionOwner::ClearSelectionOwner() {
   format_map_ = SelectionFormatMap();
 }
 
-void SelectionOwner::OnSelectionRequest(const XSelectionRequestEvent& event) {
+void SelectionOwner::OnSelectionRequest(const XEvent& event) {
+  XID requestor = event.xselectionrequest.requestor;
+  XAtom requested_target = event.xselectionrequest.target;
+  XAtom requested_property = event.xselectionrequest.property;
+
   // Incrementally build our selection. By default this is a refusal, and we'll
   // override the parts indicating success in the different cases.
   XEvent reply;
   reply.xselection.type = SelectionNotify;
-  reply.xselection.requestor = event.requestor;
-  reply.xselection.selection = event.selection;
-  reply.xselection.target = event.target;
+  reply.xselection.requestor = requestor;
+  reply.xselection.selection = event.xselectionrequest.selection;
+  reply.xselection.target = requested_target;
   reply.xselection.property = None;  // Indicates failure
-  reply.xselection.time = event.time;
+  reply.xselection.time = event.xselectionrequest.time;
 
-  if (event.target == atom_cache_.GetAtom(kMultiple)) {
-    // The contents of |event.property| should be a list of
+  if (requested_target == atom_cache_.GetAtom(kMultiple)) {
+    // The contents of |requested_property| should be a list of
     // <target,property> pairs.
-    std::vector<std::pair<Atom,Atom> > conversions;
-    if (GetAtomPairArrayProperty(event.requestor,
-                                 event.property,
+    std::vector<std::pair<XAtom,XAtom> > conversions;
+    if (GetAtomPairArrayProperty(requestor,
+                                 requested_property,
                                  &conversions)) {
-      std::vector<Atom> conversion_results;
+      std::vector<XAtom> conversion_results;
       for (size_t i = 0; i < conversions.size(); ++i) {
         bool conversion_successful = ProcessTarget(conversions[i].first,
-                                                   event.requestor,
+                                                   requestor,
                                                    conversions[i].second);
         conversion_results.push_back(conversions[i].first);
         conversion_results.push_back(
@@ -143,38 +173,54 @@ void SelectionOwner::OnSelectionRequest(const XSelectionRequestEvent& event) {
       // what GTK does.
       XChangeProperty(
           x_display_,
-          event.requestor,
-          event.property,
+          requestor,
+          requested_property,
           atom_cache_.GetAtom(kAtomPair),
           32,
           PropModeReplace,
           reinterpret_cast<const unsigned char*>(&conversion_results.front()),
           conversion_results.size());
 
-      reply.xselection.property = event.property;
+      reply.xselection.property = requested_property;
     }
   } else {
-    if (ProcessTarget(event.target, event.requestor, event.property))
-      reply.xselection.property = event.property;
+    if (ProcessTarget(requested_target, requestor, requested_property))
+      reply.xselection.property = requested_property;
   }
 
   // Send off the reply.
-  XSendEvent(x_display_, event.requestor, False, 0, &reply);
+  XSendEvent(x_display_, requestor, False, 0, &reply);
 }
 
-void SelectionOwner::OnSelectionClear(const XSelectionClearEvent& event) {
+void SelectionOwner::OnSelectionClear(const XEvent& event) {
   DLOG(ERROR) << "SelectionClear";
 
   // TODO(erg): If we receive a SelectionClear event while we're handling data,
   // we need to delay clearing.
 }
 
-bool SelectionOwner::ProcessTarget(Atom target,
-                                   ::Window requestor,
-                                   ::Atom property) {
-  Atom multiple_atom = atom_cache_.GetAtom(kMultiple);
-  Atom save_targets_atom = atom_cache_.GetAtom(kSaveTargets);
-  Atom targets_atom = atom_cache_.GetAtom(kTargets);
+bool SelectionOwner::CanDispatchPropertyEvent(const XEvent& event) {
+  return event.xproperty.state == PropertyDelete &&
+         FindIncrementalTransferForEvent(event) != incremental_transfers_.end();
+}
+
+void SelectionOwner::OnPropertyEvent(const XEvent& event) {
+  std::vector<IncrementalTransfer>::iterator it =
+      FindIncrementalTransferForEvent(event);
+  if (it == incremental_transfers_.end())
+    return;
+
+  ProcessIncrementalTransfer(&(*it));
+  if (!it->data.get())
+    CompleteIncrementalTransfer(it);
+}
+
+bool SelectionOwner::ProcessTarget(XAtom target,
+                                   XID requestor,
+                                   XAtom property) {
+  XAtom multiple_atom = atom_cache_.GetAtom(kMultiple);
+  XAtom save_targets_atom = atom_cache_.GetAtom(kSaveTargets);
+  XAtom targets_atom = atom_cache_.GetAtom(kTargets);
 
   if (target == multiple_atom || target == save_targets_atom)
     return false;
@@ -182,7 +228,7 @@ bool SelectionOwner::ProcessTarget(Atom target,
   if (target == targets_atom) {
     // We have been asked for TARGETS. Send an atom array back with the data
     // types we support.
-    std::vector<Atom> targets;
+    std::vector<XAtom> targets;
     targets.push_back(targets_atom);
     targets.push_back(save_targets_atom);
     targets.push_back(multiple_atom);
@@ -197,12 +243,59 @@ bool SelectionOwner::ProcessTarget(Atom target,
     // Try to find the data type in map.
     SelectionFormatMap::const_iterator it = format_map_.find(target);
     if (it != format_map_.end()) {
-      XChangeProperty(x_display_, requestor, property, target, 8,
-                      PropModeReplace,
-                      const_cast<unsigned char*>(
-                          reinterpret_cast<const unsigned char*>(
-                              it->second->front())),
-                      it->second->size());
+      if (it->second->size() > max_request_size_) {
+        // We must send the data back in several chunks due to a limitation in
+        // the size of X requests. Notify the selection requestor that the data
+        // will be sent incrementally by returning data of type "INCR".
+        long length = it->second->size();
+        XChangeProperty(x_display_,
+                        requestor,
+                        property,
+                        atom_cache_.GetAtom(kIncr),
+                        32,
+                        PropModeReplace,
+                        reinterpret_cast<unsigned char*>(&length),
+                        1);
+
+        // Wait for the selection requestor to indicate that it has processed
+        // the selection result before sending the first chunk of data. The
+        // selection requestor indicates this by deleting |property|.
+        base::TimeTicks timeout =
+            base::TimeTicks::Now() +
+            base::TimeDelta::FromMilliseconds(kIncrementalTransferTimeoutMs);
+        int foreign_window_manager_id =
+            ui::XForeignWindowManager::GetInstance()->RequestEvents(
+                requestor, PropertyChangeMask);
+        incremental_transfers_.push_back(
+            IncrementalTransfer(requestor,
+                                target,
+                                property,
+                                it->second,
+                                0,
+                                timeout,
+                                foreign_window_manager_id));
+
+        // Start a timer to abort the data transfer in case that the selection
+        // requestor does not support the INCR property or gets destroyed during
+        // the data transfer.
+        if (!incremental_transfer_abort_timer_.IsRunning()) {
+          incremental_transfer_abort_timer_.Start(
+              FROM_HERE,
+              base::TimeDelta::FromMilliseconds(kTimerPeriodMs),
+              this,
+              &SelectionOwner::AbortStaleIncrementalTransfers);
+        }
+      } else {
+        XChangeProperty(
+            x_display_,
+            requestor,
+            property,
+            target,
+            8,
+            PropModeReplace,
+            const_cast<unsigned char*>(it->second->front()),
+            it->second->size());
+      }
       return true;
     }
     // I would put error logging here, but GTK ignores TARGETS and spams us
@@ -211,5 +304,81 @@ bool SelectionOwner::ProcessTarget(Atom target,
   return false;
 }
 
-}  // namespace ui
+void SelectionOwner::ProcessIncrementalTransfer(IncrementalTransfer* transfer) {
+  size_t remaining = transfer->data->size() - transfer->offset;
+  size_t chunk_length = std::min(remaining, max_request_size_);
+  XChangeProperty(
+      x_display_,
+      transfer->window,
+      transfer->property,
+      transfer->target,
+      8,
+      PropModeReplace,
+      const_cast<unsigned char*>(transfer->data->front() + transfer->offset),
+      chunk_length);
+  transfer->offset += chunk_length;
+  transfer->timeout = base::TimeTicks::Now() +
+      base::TimeDelta::FromMilliseconds(kIncrementalTransferTimeoutMs);
 
+  // When offset == data->size(), we still need to transfer a zero-sized chunk
+  // to notify the selection requestor that the transfer is complete. Clear
+  // transfer->data once the zero-sized chunk is sent to indicate that state
+  // related to this data transfer can be cleared.
+  if (chunk_length == 0)
+    transfer->data = NULL;
+}
+
+void SelectionOwner::AbortStaleIncrementalTransfers() {
+  base::TimeTicks now = base::TimeTicks::Now();
+  for (int i = static_cast<int>(incremental_transfers_.size()) - 1;
+       i >= 0; --i) {
+    if (incremental_transfers_[i].timeout <= now)
+      CompleteIncrementalTransfer(incremental_transfers_.begin() + i);
+  }
+}
+
+void SelectionOwner::CompleteIncrementalTransfer(
+    std::vector<IncrementalTransfer>::iterator it) {
+  ui::XForeignWindowManager::GetInstance()->CancelRequest(
+      it->foreign_window_manager_id);
+  incremental_transfers_.erase(it);
+
+  if (incremental_transfers_.empty())
+    incremental_transfer_abort_timer_.Stop();
+}
+
+std::vector<SelectionOwner::IncrementalTransfer>::iterator
+    SelectionOwner::FindIncrementalTransferForEvent(const XEvent& event) {
+  for (std::vector<IncrementalTransfer>::iterator it =
+           incremental_transfers_.begin();
+       it != incremental_transfers_.end();
+       ++it) {
+    if (it->window == event.xproperty.window &&
+        it->property == event.xproperty.atom) {
+      return it;
+    }
+  }
+  return incremental_transfers_.end();
+}
+
+SelectionOwner::IncrementalTransfer::IncrementalTransfer(
+    XID window,
+    XAtom target,
+    XAtom property,
+    const scoped_refptr<base::RefCountedMemory>& data,
+    int offset,
+    base::TimeTicks timeout,
+    int foreign_window_manager_id)
+    : window(window),
+      target(target),
+      property(property),
+      data(data),
+      offset(offset),
+      timeout(timeout),
+      foreign_window_manager_id(foreign_window_manager_id) {
+}
+
+SelectionOwner::IncrementalTransfer::~IncrementalTransfer() {
+}
+
+}  // namespace ui

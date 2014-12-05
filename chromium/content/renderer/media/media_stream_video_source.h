@@ -35,9 +35,9 @@ class VideoTrackAdapter;
 // on a PeerConnection or a source created in NaCl.
 // All methods calls will be done from the main render thread.
 //
-// When  the first track is added to the source by calling AddTrack
-// the MediaStreamVideoSource implementation calls GetCurrentSupportedFormats.
-// the source implementation must call OnSupportedFormats.
+// When the first track is added to the source by calling AddTrack, the
+// MediaStreamVideoSource implementation calls GetCurrentSupportedFormats.
+// The source implementation must call OnSupportedFormats.
 // MediaStreamVideoSource then match the constraints provided in AddTrack with
 // the formats and call StartSourceImpl. The source implementation must call
 // OnStartDone when the underlying source has been started or failed to start.
@@ -81,12 +81,16 @@ class CONTENT_EXPORT MediaStreamVideoSource
   static const int kDefaultWidth;
   static const int kDefaultHeight;
   static const int kDefaultFrameRate;
+  static const int kUnknownFrameRate;
 
  protected:
-  virtual void DoStopSource() OVERRIDE;
+  void DoStopSource() override;
 
   // Sets ready state and notifies the ready state to all registered tracks.
   virtual void SetReadyState(blink::WebMediaStreamSource::ReadyState state);
+
+  // Sets muted state and notifies it to all registered tracks.
+  virtual void SetMutedState(bool state);
 
   // An implementation must fetch the formats that can currently be used by
   // the source and call OnSupportedFormats when done.
@@ -97,18 +101,17 @@ class CONTENT_EXPORT MediaStreamVideoSource
   virtual void GetCurrentSupportedFormats(
       int max_requested_width,
       int max_requested_height,
+      double max_requested_frame_rate,
       const VideoCaptureDeviceFormatsCB& callback) = 0;
 
   // An implementation must start capture frames using the resolution in
   // |params|. When the source has started or the source failed to start
   // OnStartDone must be called. An implementation must call
-  // invoke |frame_callback| on the IO thread with the captured frames.
-  // TODO(perkj): pass a VideoCaptureFormats instead of VideoCaptureParams for
-  // subclasses to customize.
+  // |frame_callback| on the IO thread with the captured frames.
   virtual void StartSourceImpl(
-      const media::VideoCaptureParams& params,
+      const media::VideoCaptureFormat& format,
       const VideoCaptureDeliverFrameCB& frame_callback) = 0;
-  void OnStartDone(bool success);
+  void OnStartDone(MediaStreamRequestResult result);
 
   // An implementation must immediately stop capture video frames and must not
   // call OnSupportedFormats after this method has been called. After this

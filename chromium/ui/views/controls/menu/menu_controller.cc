@@ -10,7 +10,6 @@
 #include "base/time/time.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
 #include "ui/gfx/canvas.h"
@@ -290,10 +289,12 @@ MenuItemView* MenuController::Run(Widget* parent,
                                   const gfx::Rect& bounds,
                                   MenuAnchorPosition position,
                                   bool context_menu,
+                                  bool is_nested_drag,
                                   int* result_event_flags) {
   exit_type_ = EXIT_NONE;
   possible_drag_ = false;
   drag_in_progress_ = false;
+  did_initiate_drag_ = false;
   closing_event_time_ = base::TimeDelta();
   menu_start_time_ = base::TimeTicks::Now();
   menu_start_mouse_press_loc_ = gfx::Point();
@@ -324,7 +325,8 @@ MenuItemView* MenuController::Run(Widget* parent,
     DCHECK(blocking_run_);
 
     // We're already showing, push the current state.
-    menu_stack_.push_back(state_);
+    menu_stack_.push_back(
+        std::make_pair(state_, make_linked_ptr(pressed_lock_.release())));
 
     // The context menu should be owned by the same parent.
     DCHECK_EQ(owner_, parent);
@@ -347,14 +349,16 @@ MenuItemView* MenuController::Run(Widget* parent,
   SetSelection(root, SELECTION_OPEN_SUBMENU | SELECTION_UPDATE_IMMEDIATELY);
 
   if (!blocking_run_) {
-    // Start the timer to hide the menu. This is needed as we get no
-    // notification when the drag has finished.
-    StartCancelAllTimer();
+    if (!is_nested_drag) {
+      // Start the timer to hide the menu. This is needed as we get no
+      // notification when the drag has finished.
+      StartCancelAllTimer();
+    }
     return NULL;
   }
 
   if (button)
-    menu_button_ = button;
+    pressed_lock_.reset(new MenuButton::PressedLock(button));
 
   // Make sure Chrome doesn't attempt to shut down while the menu is showing.
   if (ViewsDelegate::views_delegate)
@@ -396,12 +400,14 @@ MenuItemView* MenuController::Run(Widget* parent,
   }
 #endif
 
+  linked_ptr<MenuButton::PressedLock> nested_pressed_lock;
   if (nested_menu) {
     DCHECK(!menu_stack_.empty());
     // We're running from within a menu, restore the previous state.
     // The menus are already showing, so we don't have to show them.
-    state_ = menu_stack_.back();
-    pending_state_ = menu_stack_.back();
+    state_ = menu_stack_.back().first;
+    pending_state_ = menu_stack_.back().first;
+    nested_pressed_lock = menu_stack_.back().second;
     menu_stack_.pop_back();
   } else {
     showing_ = false;
@@ -431,12 +437,10 @@ MenuItemView* MenuController::Run(Widget* parent,
     }
   }
 
-  // If we stopped running because one of the menus was destroyed chances are
-  // the button was also destroyed.
-  if (exit_type_ != EXIT_DESTROYED && menu_button_) {
-    menu_button_->SetState(CustomButton::STATE_NORMAL);
-    menu_button_->SchedulePaint();
-  }
+  // Reset our pressed lock to the previous state's, if there was one.
+  // The lock handles the case if the button was destroyed.
+  pressed_lock_.reset(nested_pressed_lock.release());
+
   return result;
 }
 
@@ -782,6 +786,20 @@ void MenuController::OnDragExitedScrollButton(SubmenuView* source) {
   StopScrolling();
 }
 
+void MenuController::OnDragWillStart() {
+  DCHECK(!drag_in_progress_);
+  drag_in_progress_ = true;
+}
+
+void MenuController::OnDragComplete(bool should_close) {
+  DCHECK(drag_in_progress_);
+  drag_in_progress_ = false;
+  if (showing_ && should_close && GetActiveInstance() == this) {
+    CloseAllNestedMenus();
+    Cancel(EXIT_ALL);
+  }
+}
+
 void MenuController::UpdateSubmenuSelection(SubmenuView* submenu) {
   if (submenu->IsShowing()) {
     gfx::Point point = GetScreen()->GetCursorScreenPoint();
@@ -798,6 +816,10 @@ void MenuController::OnWidgetDestroying(Widget* widget) {
   owner_->RemoveObserver(this);
   owner_ = NULL;
   message_loop_->ClearOwner();
+}
+
+bool MenuController::IsCancelAllTimerRunningForTest() {
+  return cancel_all_timer_.IsRunning();
 }
 
 // static
@@ -912,7 +934,7 @@ void MenuController::SetSelectionOnPointerDown(SubmenuView* source,
       gfx::Point screen_loc(event.location());
       View::ConvertPointToScreen(source->GetScrollViewContainer(), &screen_loc);
       MenuPart last_part = GetMenuPartByScreenCoordinateUsingMenu(
-          menu_stack_.back().item, screen_loc);
+          menu_stack_.back().first.item, screen_loc);
       if (last_part.type != MenuPart::NONE)
         exit_type = EXIT_OUTERMOST;
     }
@@ -970,19 +992,11 @@ void MenuController::StartDrag(SubmenuView* source,
                                        &data);
   StopScrolling();
   int drag_ops = item->GetDelegate()->GetDragOperations(item);
-  drag_in_progress_ = true;
+  did_initiate_drag_ = true;
   // TODO(varunjain): Properly determine and send DRAG_EVENT_SOURCE below.
   item->GetWidget()->RunShellDrag(NULL, data, widget_loc, drag_ops,
       ui::DragDropTypes::DRAG_EVENT_SOURCE_MOUSE);
-  drag_in_progress_ = false;
-
-  if (GetActiveInstance() == this) {
-    if (showing_) {
-      // We're still showing, close all menus.
-      CloseAllNestedMenus();
-      Cancel(EXIT_ALL);
-    }  // else case, drop was on us.
-  }  // else case, someone canceled us, don't do anything
+  did_initiate_drag_ = false;
 }
 
 bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
@@ -1021,11 +1035,15 @@ bool MenuController::OnKeyDown(ui::KeyboardCode key_code) {
     case ui::VKEY_F4:
       if (!is_combobox_)
         break;
-      // Fallthrough to accept on F4, so combobox menus match Windows behavior.
+    // Fallthrough to accept or dismiss combobox menus on F4, like windows.
     case ui::VKEY_RETURN:
       if (pending_state_.item) {
         if (pending_state_.item->HasSubmenu()) {
-          OpenSubmenuChangeSelectionIfCan();
+          if (key_code == ui::VKEY_F4 &&
+              pending_state_.item->GetSubmenu()->IsShowing())
+            return false;
+          else
+            OpenSubmenuChangeSelectionIfCan();
         } else {
           SendAcceleratorResultType result = SendAcceleratorToHotTrackedView();
           if (result == ACCELERATOR_NOT_PROCESSED &&
@@ -1071,10 +1089,10 @@ MenuController::MenuController(ui::NativeTheme* theme,
       owner_(NULL),
       possible_drag_(false),
       drag_in_progress_(false),
+      did_initiate_drag_(false),
       valid_drop_coordinates_(false),
       last_drop_operation_(MenuDelegate::DROP_UNKNOWN),
       showing_submenu_(false),
-      menu_button_(NULL),
       active_mouse_view_id_(ViewStorage::GetInstance()->CreateStorageID()),
       delegate_(delegate),
       message_loop_depth_(0),
@@ -1165,7 +1183,7 @@ void MenuController::Accept(MenuItemView* item, int event_flags) {
 
 bool MenuController::ShowSiblingMenu(SubmenuView* source,
                                      const gfx::Point& mouse_location) {
-  if (!menu_stack_.empty() || !menu_button_)
+  if (!menu_stack_.empty() || !pressed_lock_.get())
     return false;
 
   View* source_view = source->GetScrollViewContainer();
@@ -1205,11 +1223,7 @@ bool MenuController::ShowSiblingMenu(SubmenuView* source,
 
   // There is a sibling menu, update the button state, hide the current menu
   // and show the new one.
-  menu_button_->SetState(CustomButton::STATE_NORMAL);
-  menu_button_->SchedulePaint();
-  menu_button_ = button;
-  menu_button_->SetState(CustomButton::STATE_PRESSED);
-  menu_button_->SchedulePaint();
+  pressed_lock_.reset(new MenuButton::PressedLock(button));
 
   // Need to reset capture when we show the menu again, otherwise we aren't
   // going to get any events.
@@ -1253,16 +1267,17 @@ bool MenuController::ShowContextMenu(MenuItemView* menu_item,
 }
 
 void MenuController::CloseAllNestedMenus() {
-  for (std::list<State>::iterator i = menu_stack_.begin();
+  for (std::list<NestedState>::iterator i = menu_stack_.begin();
        i != menu_stack_.end(); ++i) {
-    MenuItemView* last_item = i->item;
+    State& state = i->first;
+    MenuItemView* last_item = state.item;
     for (MenuItemView* item = last_item; item;
          item = item->GetParentMenuItem()) {
       CloseMenu(item);
       last_item = item;
     }
-    i->submenu_open = false;
-    i->item = last_item;
+    state.submenu_open = false;
+    state.item = last_item;
   }
 }
 

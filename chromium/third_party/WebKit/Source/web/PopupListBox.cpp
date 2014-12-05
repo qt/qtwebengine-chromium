@@ -47,11 +47,12 @@
 #include "platform/fonts/FontSelector.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
-#include "platform/scroll/FramelessScrollViewClient.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "platform/text/StringTruncator.h"
 #include "platform/text/TextRun.h"
 #include "web/PopupContainer.h"
+#include "web/PopupContainerClient.h"
 #include "web/PopupMenuChromium.h"
 #include "wtf/ASCIICType.h"
 #include "wtf/CurrentTime.h"
@@ -60,14 +61,13 @@
 namespace blink {
 
 using namespace WTF::Unicode;
-using namespace WebCore;
 
 const int PopupListBox::defaultMaxHeight = 500;
 static const int maxVisibleRows = 20;
 static const int minEndOfLinePadding = 2;
 static const TimeStamp typeAheadTimeoutMs = 1000;
 
-PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch)
+PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch, PopupContainer* container)
     : m_deviceSupportsTouch(deviceSupportsTouch)
     , m_originalIndex(0)
     , m_selectedIndex(0)
@@ -79,13 +79,35 @@ PopupListBox::PopupListBox(PopupMenuClient* client, bool deviceSupportsTouch)
     , m_repeatingChar(0)
     , m_lastCharTime(0)
     , m_maxWindowWidth(std::numeric_limits<int>::max())
+    , m_container(container)
 {
-    setScrollbarModes(ScrollbarAlwaysOff, ScrollbarAlwaysOff);
+}
+
+PopupListBox::~PopupListBox()
+{
+    clear();
+
+    // Oilpan: the scrollbars of the ScrollView are self-sufficient,
+    // capable of detaching themselves from their animator on
+    // finalization.
+#if !ENABLE(OILPAN)
+    setHasVerticalScrollbar(false);
+#endif
+}
+
+void PopupListBox::trace(Visitor* visitor)
+{
+    visitor->trace(m_capturingScrollbar);
+    visitor->trace(m_lastScrollbarUnderMouse);
+    visitor->trace(m_focusedElement);
+    visitor->trace(m_container);
+    visitor->trace(m_verticalScrollbar);
+    Widget::trace(visitor);
 }
 
 bool PopupListBox::handleMouseDownEvent(const PlatformMouseEvent& event)
 {
-    Scrollbar* scrollbar = scrollbarAtPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
     if (scrollbar) {
         m_capturingScrollbar = scrollbar;
         m_capturingScrollbar->mouseDown(event);
@@ -105,7 +127,7 @@ bool PopupListBox::handleMouseMoveEvent(const PlatformMouseEvent& event)
         return true;
     }
 
-    Scrollbar* scrollbar = scrollbarAtPoint(event.position());
+    Scrollbar* scrollbar = scrollbarAtWindowPoint(event.position());
     if (m_lastScrollbarUnderMouse != scrollbar) {
         // Send mouse exited to the old scrollbar.
         if (m_lastScrollbarUnderMouse)
@@ -243,6 +265,11 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
         break;
     }
 
+    if (event.altKey() && (event.keyIdentifier() == "Down" || event.keyIdentifier() == "Up")) {
+        hidePopup();
+        return true;
+    }
+
     if (m_originalIndex != m_selectedIndex) {
         // Keyboard events should update the selection immediately (but we don't
         // want to fire the onchange event until the popup is closed, to match
@@ -272,7 +299,7 @@ bool PopupListBox::handleKeyEvent(const PlatformKeyboardEvent& event)
 
 HostWindow* PopupListBox::hostWindow() const
 {
-    // Our parent is the root ScrollView, so it is the one that has a
+    // Our parent is the root FrameView, so it is the one that has a
     // HostWindow. FrameView::hostWindow() works similarly.
     return parent() ? parent()->hostWindow() : 0;
 }
@@ -370,7 +397,17 @@ void PopupListBox::paint(GraphicsContext* gc, const IntRect& rect)
 
     gc->restore();
 
-    ScrollView::paint(gc, rect);
+    if (m_verticalScrollbar) {
+        GraphicsContextStateSaver stateSaver(*gc);
+        IntRect scrollbarDirtyRect = rect;
+        IntRect visibleAreaWithScrollbars(location(), visibleContentRect(IncludeScrollbars).size());
+        scrollbarDirtyRect.intersect(visibleAreaWithScrollbars);
+        gc->translate(x(), y());
+        scrollbarDirtyRect.moveBy(-location());
+        gc->clip(IntRect(IntPoint(), visibleAreaWithScrollbars.size()));
+
+        m_verticalScrollbar->paint(gc, scrollbarDirtyRect);
+    }
 }
 
 static const int separatorPadding = 4;
@@ -397,7 +434,6 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
     } else {
         backColor = style.backgroundColor();
         textColor = style.foregroundColor();
-
 #if OS(LINUX) || OS(ANDROID)
         // On other platforms, the <option> background color is the same as the
         // <select> background color. On Linux, that makes the <option>
@@ -464,7 +500,7 @@ void PopupListBox::paintRow(GraphicsContext* gc, const IntRect& rect, int rowInd
     gc->drawBidiText(itemFont, textRunPaintInfo, IntPoint(textX, textY));
 }
 
-Font PopupListBox::getRowFont(int rowIndex)
+Font PopupListBox::getRowFont(int rowIndex) const
 {
     Font itemFont = m_popupClient->itemStyle(rowIndex).font();
     if (m_popupClient->itemIsLabel(rowIndex)) {
@@ -481,7 +517,7 @@ Font PopupListBox::getRowFont(int rowIndex)
 
 void PopupListBox::abandon()
 {
-    RefPtr<PopupListBox> keepAlive(this);
+    RefPtrWillBeRawPtr<PopupListBox> protect(this);
 
     m_selectedIndex = m_originalIndex;
 
@@ -505,7 +541,7 @@ int PopupListBox::pointToRowIndex(const IntPoint& point)
     }
 
     // Last item?
-    if (y < contentsHeight())
+    if (y < contentsSize().height())
         return m_items.size()-1;
 
     return -1;
@@ -529,7 +565,7 @@ bool PopupListBox::acceptIndex(int index)
     }
 
     if (isSelectableItem(index)) {
-        RefPtr<PopupListBox> keepAlive(this);
+        RefPtrWillBeRawPtr<PopupListBox> protect(this);
 
         // Hide ourselves first since valueChanged may have numerous side-effects.
         hidePopup();
@@ -565,7 +601,7 @@ void PopupListBox::setOriginalIndex(int index)
     m_originalIndex = m_selectedIndex = index;
 }
 
-int PopupListBox::getRowHeight(int index)
+int PopupListBox::getRowHeight(int index) const
 {
     int minimumHeight = m_deviceSupportsTouch ? optionRowHeightForTouch : minRowHeight;
 
@@ -593,8 +629,7 @@ void PopupListBox::invalidateRow(int index)
     if (index < 0)
         return;
 
-    // Invalidate in the window contents, as FramelessScrollView::invalidateRect
-    // paints in the window coordinates.
+    // Invalidate in the window contents, as invalidateRect paints in the window coordinates.
     IntRect clipRect = contentsToWindow(getRowBounds(index));
     if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
         clipRect.move(verticalScrollbar()->width(), 0);
@@ -610,10 +645,10 @@ void PopupListBox::scrollToRevealRow(int index)
 
     if (rowRect.y() < scrollY()) {
         // Row is above current scroll position, scroll up.
-        ScrollView::setScrollPosition(IntPoint(0, rowRect.y()));
+        updateScrollbars(IntPoint(0, rowRect.y()));
     } else if (rowRect.maxY() > scrollY() + visibleHeight()) {
         // Row is below current scroll position, scroll down.
-        ScrollView::setScrollPosition(IntPoint(0, rowRect.maxY() - visibleHeight()));
+        updateScrollbars(IntPoint(0, rowRect.maxY() - visibleHeight()));
     }
 }
 
@@ -680,10 +715,9 @@ void PopupListBox::adjustSelectedIndex(int delta)
 void PopupListBox::hidePopup()
 {
     if (parent()) {
-        PopupContainer* container = static_cast<PopupContainer*>(parent());
-        if (container->client())
-            container->client()->popupClosed(container);
-        container->notifyPopupHidden();
+        if (m_container->client())
+            m_container->client()->popupClosed(m_container);
+        m_container->notifyPopupHidden();
     }
 
     if (m_popupClient)
@@ -708,6 +742,7 @@ void PopupListBox::updateFromElement()
         PopupMenuStyle style = m_popupClient->itemStyle(i);
         m_items[i]->textDirection = style.textDirection();
         m_items[i]->hasTextDirectionOverride = style.hasTextDirectionOverride();
+        m_items[i]->displayNone = style.isDisplayNone();
     }
 
     m_selectedIndex = m_popupClient->selectedIndex();
@@ -720,6 +755,17 @@ void PopupListBox::setMaxWidthAndLayout(int maxWidth)
 {
     m_maxWindowWidth = maxWidth;
     layout();
+}
+
+int PopupListBox::getRowBaseWidth(int index)
+{
+    Font font = getRowFont(index);
+    PopupMenuStyle style = m_popupClient->itemStyle(index);
+    String text = m_popupClient->itemText(index);
+    if (text.isEmpty())
+        return 0;
+    TextRun textRun(text, 0, 0, TextRun::AllowTrailingExpansion, style.textDirection(), style.hasTextDirectionOverride());
+    return font.width(textRun);
 }
 
 void PopupListBox::layout()
@@ -739,13 +785,7 @@ void PopupListBox::layout()
         y += getRowHeight(i);
 
         // Ensure the popup is wide enough to fit this item.
-        Font itemFont = getRowFont(i);
-        String text = m_popupClient->itemText(i);
-        int width = 0;
-        if (!text.isEmpty())
-            width = itemFont.width(TextRun(text));
-
-        baseWidth = max(baseWidth, width);
+        baseWidth = max(baseWidth, getRowBaseWidth(i));
         // FIXME: http://b/1210481 We should get the padding of individual
         // option elements.
         paddingWidth = max<int>(paddingWidth,
@@ -810,8 +850,7 @@ void PopupListBox::layout()
 
 void PopupListBox::clear()
 {
-    for (Vector<PopupItem*>::iterator it = m_items.begin(); it != m_items.end(); ++it)
-        delete *it;
+    deleteAllValues(m_items);
     m_items.clear();
 }
 
@@ -823,6 +862,207 @@ bool PopupListBox::isPointInBounds(const IntPoint& point)
 int PopupListBox::popupContentHeight() const
 {
     return height();
+}
+
+void PopupListBox::invalidateRect(const IntRect& rect)
+{
+    if (HostWindow* h = hostWindow())
+        h->invalidateContentsAndRootView(rect);
+}
+
+IntRect PopupListBox::windowClipRect() const
+{
+    IntRect clipRect = visibleContentRect();
+    if (shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar() && !verticalScrollbar()->isOverlayScrollbar())
+        clipRect.move(verticalScrollbar()->width(), 0);
+    return contentsToWindow(clipRect);
+}
+
+void PopupListBox::invalidateScrollbarRect(Scrollbar* scrollbar, const IntRect& rect)
+{
+    // Add in our offset within the FrameView.
+    IntRect dirtyRect = rect;
+    dirtyRect.move(scrollbar->x(), scrollbar->y());
+    invalidateRect(dirtyRect);
+}
+
+bool PopupListBox::isActive() const
+{
+    // FIXME
+    return true;
+}
+
+bool PopupListBox::scrollbarsCanBeActive() const
+{
+    return isActive();
+}
+
+IntRect PopupListBox::scrollableAreaBoundingBox() const
+{
+    return windowClipRect();
+}
+
+// FIXME: The following methods are based on code in FrameView, with
+// simplifications for the constraints of PopupListBox (e.g. only vertical
+// scrollbar, not horizontal). This functionality should be moved into
+// ScrollableArea after http://crbug.com/417782 is fixed.
+
+void PopupListBox::setHasVerticalScrollbar(bool hasBar)
+{
+    if (hasBar && !m_verticalScrollbar) {
+        m_verticalScrollbar = Scrollbar::create(this, VerticalScrollbar, RegularScrollbar);
+        m_verticalScrollbar->setParent(this);
+        didAddScrollbar(m_verticalScrollbar.get(), VerticalScrollbar);
+        m_verticalScrollbar->styleChanged();
+    } else if (!hasBar && m_verticalScrollbar) {
+        m_verticalScrollbar->setParent(0);
+        willRemoveScrollbar(m_verticalScrollbar.get(), VerticalScrollbar);
+        m_verticalScrollbar = nullptr;
+    }
+}
+
+Scrollbar* PopupListBox::scrollbarAtWindowPoint(const IntPoint& windowPoint)
+{
+    return m_verticalScrollbar && m_verticalScrollbar->frameRect().contains(
+        convertFromContainingWindow(windowPoint)) ? m_verticalScrollbar.get() : 0;
+}
+
+IntRect PopupListBox::contentsToWindow(const IntRect& contentsRect) const
+{
+    IntRect viewRect = contentsRect;
+    viewRect.moveBy(-scrollPosition());
+    return convertToContainingWindow(viewRect);
+}
+
+void PopupListBox::setContentsSize(const IntSize& newSize)
+{
+    if (contentsSize() == newSize)
+        return;
+    m_contentsSize = newSize;
+    updateScrollbars(scrollPosition());
+}
+
+void PopupListBox::setFrameRect(const IntRect& newRect)
+{
+    IntRect oldRect = frameRect();
+    if (newRect == oldRect)
+        return;
+
+    Widget::setFrameRect(newRect);
+    updateScrollbars(scrollPosition());
+    // NOTE: We do not need to call m_verticalScrollbar->frameRectsChanged as
+    // Scrollbar does not implement it.
+}
+
+IntRect PopupListBox::visibleContentRect(IncludeScrollbarsInRect scrollbarInclusion) const
+{
+    // NOTE: Unlike FrameView we do not need to incorporate any scaling factor,
+    // and there is only one scrollbar to exclude.
+    IntSize size = frameRect().size();
+    Scrollbar* verticalBar = verticalScrollbar();
+    if (scrollbarInclusion == ExcludeScrollbars && verticalBar && !verticalBar->isOverlayScrollbar()) {
+        size.setWidth(std::max(0, size.width() - verticalBar->width()));
+    }
+    return IntRect(m_scrollOffset, size);
+}
+
+void PopupListBox::updateScrollbars(IntPoint desiredOffset)
+{
+    IntSize oldVisibleSize = visibleContentRect().size();
+    adjustScrollbarExistence();
+    updateScrollbarGeometry();
+    IntSize newVisibleSize = visibleContentRect().size();
+
+    if (newVisibleSize.width() > oldVisibleSize.width()) {
+        if (shouldPlaceVerticalScrollbarOnLeft())
+            invalidateRect(IntRect(0, 0, newVisibleSize.width() - oldVisibleSize.width(), newVisibleSize.height()));
+        else
+            invalidateRect(IntRect(oldVisibleSize.width(), 0, newVisibleSize.width() - oldVisibleSize.width(), newVisibleSize.height()));
+    }
+
+    desiredOffset = desiredOffset.shrunkTo(maximumScrollPosition());
+    desiredOffset = desiredOffset.expandedTo(minimumScrollPosition());
+
+    if (desiredOffset != scrollPosition())
+        ScrollableArea::scrollToOffsetWithoutAnimation(desiredOffset);
+}
+
+void PopupListBox::adjustScrollbarExistence()
+{
+    bool needsVerticalScrollbar = contentsSize().height() > visibleHeight();
+    if (!!m_verticalScrollbar != needsVerticalScrollbar) {
+        setHasVerticalScrollbar(needsVerticalScrollbar);
+        contentsResized();
+    }
+}
+
+void PopupListBox::updateScrollbarGeometry()
+{
+    if (m_verticalScrollbar) {
+        int clientHeight = visibleHeight();
+        IntRect oldRect(m_verticalScrollbar->frameRect());
+        IntRect vBarRect(shouldPlaceVerticalScrollbarOnLeft() ? 0 : (width() - m_verticalScrollbar->width()),
+            0, m_verticalScrollbar->width(), height());
+        m_verticalScrollbar->setFrameRect(vBarRect);
+        if (oldRect != m_verticalScrollbar->frameRect())
+            m_verticalScrollbar->invalidate();
+
+        m_verticalScrollbar->setEnabled(contentsSize().height() > clientHeight);
+        m_verticalScrollbar->setProportion(clientHeight, contentsSize().height());
+        m_verticalScrollbar->offsetDidChange();
+        // NOTE: PopupListBox does not support suppressing scrollbars.
+    }
+}
+
+IntPoint PopupListBox::convertChildToSelf(const Widget* child, const IntPoint& point) const
+{
+    // NOTE: m_verticalScrollbar is the only child.
+    IntPoint newPoint = point;
+    newPoint.moveBy(child->location());
+    return newPoint;
+}
+
+IntPoint PopupListBox::convertSelfToChild(const Widget* child, const IntPoint& point) const
+{
+    // NOTE: m_verticalScrollbar is the only child.
+    IntPoint newPoint = point;
+    newPoint.moveBy(-child->location());
+    return newPoint;
+}
+
+int PopupListBox::scrollSize(ScrollbarOrientation orientation) const
+{
+    return (orientation == HorizontalScrollbar || !m_verticalScrollbar) ?
+        0 : m_verticalScrollbar->totalSize() - m_verticalScrollbar->visibleSize();
+}
+
+void PopupListBox::setScrollOffset(const IntPoint& newOffset)
+{
+    // NOTE: We do not support any "fast path" for scrolling. When the scroll
+    // offset changes, we just repaint the whole popup.
+    IntSize scrollDelta = newOffset - m_scrollOffset;
+    if (scrollDelta == IntSize())
+        return;
+    m_scrollOffset = newOffset;
+
+    if (HostWindow* window = hostWindow()) {
+        IntRect clipRect = windowClipRect();
+        IntRect updateRect = clipRect;
+        updateRect.intersect(convertToContainingWindow(IntRect((shouldPlaceVerticalScrollbarOnLeft() && verticalScrollbar()) ? verticalScrollbar()->width() : 0, 0, visibleWidth(), visibleHeight())));
+        window->invalidateContentsForSlowScroll(updateRect);
+    }
+}
+
+IntPoint PopupListBox::maximumScrollPosition() const
+{
+    IntPoint maximumOffset(contentsSize().width() - visibleWidth() - scrollOrigin().x(), contentsSize().height() - visibleHeight() - scrollOrigin().y());
+    maximumOffset.clampNegativeToZero();
+    return maximumOffset;
+}
+
+IntPoint PopupListBox::minimumScrollPosition() const
+{
+    return IntPoint(-scrollOrigin().x(), -scrollOrigin().y());
 }
 
 } // namespace blink

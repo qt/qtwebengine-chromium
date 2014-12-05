@@ -49,7 +49,7 @@
 #include "platform/PlatformMouseEvent.h"
 #include "platform/network/ResourceRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -57,8 +57,8 @@ inline SVGAElement::SVGAElement(Document& document)
     : SVGGraphicsElement(SVGNames::aTag, document)
     , SVGURIReference(this)
     , m_svgTarget(SVGAnimatedString::create(this, SVGNames::targetAttr, SVGString::create()))
+    , m_wasFocusedByMouse(false)
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_svgTarget);
 }
 
@@ -75,53 +75,28 @@ String SVGAElement::title() const
     return SVGElement::title();
 }
 
-bool SVGAElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        SVGURIReference::addSupportedAttributes(supportedAttributes);
-        supportedAttributes.add(SVGNames::targetAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGAElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::targetAttr) {
-        m_svgTarget->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGAElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
-        SVGGraphicsElement::svgAttributeChanged(attrName);
-        return;
-    }
-
-    SVGElement::InvalidationGuard invalidationGuard(this);
-
     // Unlike other SVG*Element classes, SVGAElement only listens to SVGURIReference changes
     // as none of the other properties changes the linking behaviour for our <a> element.
     if (SVGURIReference::isKnownAttribute(attrName)) {
+        SVGElement::InvalidationGuard invalidationGuard(this);
+
         bool wasLink = isLink();
         setIsLink(!hrefString().isNull());
 
         if (wasLink != isLink())
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::LinkColorChange));
+
+        return;
     }
+
+    SVGGraphicsElement::svgAttributeChanged(attrName);
 }
 
 RenderObject* SVGAElement::createRenderer(RenderStyle*)
@@ -135,7 +110,10 @@ RenderObject* SVGAElement::createRenderer(RenderStyle*)
 void SVGAElement::defaultEventHandler(Event* event)
 {
     if (isLink()) {
-        if (focused() && isEnterKeyKeydownEvent(event)) {
+        ASSERT(event->target());
+        Node* target = event->target()->toNode();
+        ASSERT(target);
+        if ((focused() || target->focused()) && isEnterKeyKeypressEvent(event)) {
             event->setDefaultHandled();
             dispatchSimulatedClick(event);
             return;
@@ -179,10 +157,22 @@ short SVGAElement::tabIndex() const
 
 bool SVGAElement::supportsFocus() const
 {
-    if (rendererIsEditable())
+    if (hasEditableStyle())
         return SVGGraphicsElement::supportsFocus();
     // If not a link we should still be able to focus the element if it has tabIndex.
-    return isLink() || Element::supportsFocus();
+    return isLink() || SVGGraphicsElement::supportsFocus();
+}
+
+bool SVGAElement::shouldHaveFocusAppearance() const
+{
+    return !m_wasFocusedByMouse || SVGGraphicsElement::supportsFocus();
+}
+
+void SVGAElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+{
+    if (type != FocusTypePage)
+        m_wasFocusedByMouse = type == FocusTypeMouse;
+    SVGGraphicsElement::dispatchFocusEvent(oldFocusedElement, type);
 }
 
 bool SVGAElement::isURLAttribute(const Attribute& attribute) const
@@ -192,10 +182,8 @@ bool SVGAElement::isURLAttribute(const Attribute& attribute) const
 
 bool SVGAElement::isMouseFocusable() const
 {
-    // Links are focusable by default, but only allow links with tabindex or contenteditable to be mouse focusable.
-    // https://bugs.webkit.org/show_bug.cgi?id=26856
     if (isLink())
-        return Element::supportsFocus();
+        return supportsFocus();
 
     return SVGElement::isMouseFocusable();
 }
@@ -214,7 +202,7 @@ bool SVGAElement::canStartSelection() const
 {
     if (!isLink())
         return SVGElement::canStartSelection();
-    return rendererIsEditable();
+    return hasEditableStyle();
 }
 
 bool SVGAElement::willRespondToMouseClickEvents()
@@ -222,4 +210,4 @@ bool SVGAElement::willRespondToMouseClickEvents()
     return isLink() || SVGGraphicsElement::willRespondToMouseClickEvents();
 }
 
-} // namespace WebCore
+} // namespace blink

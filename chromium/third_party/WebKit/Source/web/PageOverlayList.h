@@ -33,12 +33,10 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
+
 class GraphicsContext;
 class GraphicsLayer;
-}
-
-namespace blink {
 class PageOverlay;
 class WebPageOverlay;
 class WebViewImpl;
@@ -57,9 +55,9 @@ public:
     bool remove(WebPageOverlay*);
 
     void update();
-    void paintWebFrame(WebCore::GraphicsContext&);
+    void paintWebFrame(GraphicsContext&);
 
-    size_t findGraphicsLayer(WebCore::GraphicsLayer*);
+    size_t findGraphicsLayer(GraphicsLayer*);
 
 private:
     typedef Vector<OwnPtr<PageOverlay>, 2> PageOverlays;

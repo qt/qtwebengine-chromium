@@ -10,18 +10,18 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/run_loop.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "storage/common/blob/shareable_file_reference.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/blob/shareable_file_reference.h"
 
-using webkit_blob::ShareableFileReference;
+using storage::ShareableFileReference;
 
 namespace content {
 

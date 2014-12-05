@@ -40,13 +40,14 @@ WebInspector.TabbedPane = function()
     this._headerElement = this.element.createChild("div", "tabbed-pane-header");
     this._headerContentsElement = this._headerElement.createChild("div", "tabbed-pane-header-contents");
     this._tabsElement = this._headerContentsElement.createChild("div", "tabbed-pane-header-tabs");
-    this._contentElement = this.element.createChild("div", "tabbed-pane-content scroll-target");
+    this._contentElement = this.element.createChild("div", "tabbed-pane-content");
     /** @type {!Array.<!WebInspector.TabbedPaneTab>} */
     this._tabs = [];
     /** @type {!Array.<!WebInspector.TabbedPaneTab>} */
     this._tabsHistory = [];
     /** @type {!Object.<string, !WebInspector.TabbedPaneTab>} */
     this._tabsById = {};
+    this._currentTabLocked = false;
 
     this._dropDownButton = this._createDropDownButton();
     WebInspector.zoomManager.addEventListener(WebInspector.ZoomManager.Events.ZoomChanged, this._zoomChanged, this);
@@ -58,6 +59,15 @@ WebInspector.TabbedPane.EventTypes = {
 }
 
 WebInspector.TabbedPane.prototype = {
+    /**
+     * @param {boolean} locked
+     */
+    setCurrentTabLocked: function(locked)
+    {
+        this._currentTabLocked = locked;
+        this._headerElement.classList.toggle("locked", this._currentTabLocked);
+    },
+
     /**
      * @return {?WebInspector.View}
      */
@@ -196,7 +206,7 @@ WebInspector.TabbedPane.prototype = {
             return this._tabOrderComparator(tab1.id, tab2.id);
         }
 
-        if (this._retainTabOrder && this._tabOrderComparator)
+        if (this._tabOrderComparator)
             this._tabs.splice(insertionIndexForObjectInListSortedByFunction(tab, this._tabs, comparator.bind(this)), 0, tab);
         else
             this._tabs.push(tab);
@@ -303,6 +313,8 @@ WebInspector.TabbedPane.prototype = {
      */
     selectTab: function(id, userGesture)
     {
+        if (this._currentTabLocked)
+            return false;
         var focused = this.hasFocus();
         var tab = this._tabsById[id];
         if (!tab)
@@ -348,6 +360,18 @@ WebInspector.TabbedPane.prototype = {
     {
         var tab = this._tabsById[id];
         if (tab._setIconClass(iconClass, iconTooltip))
+            this._updateTabElements();
+    },
+
+    /**
+     * @param {string} id
+     * @param {string} className
+     * @param {boolean=} force
+     */
+    toggleTabClass: function(id, className, force)
+    {
+        var tab = this._tabsById[id];
+        if (tab._toggleClass(className, force))
             this._updateTabElements();
     },
 
@@ -496,10 +520,9 @@ WebInspector.TabbedPane.prototype = {
 
     _createDropDownButton: function()
     {
-        var dropDownContainer = document.createElement("div");
-        dropDownContainer.classList.add("tabbed-pane-header-tabs-drop-down-container");
+        var dropDownContainer = createElementWithClass("div", "tabbed-pane-header-tabs-drop-down-container");
         var dropDownButton = dropDownContainer.createChild("div", "tabbed-pane-header-tabs-drop-down");
-        dropDownButton.appendChild(document.createTextNode("\u00bb"));
+        dropDownButton.createTextChild("\u00bb");
 
         this._dropDownMenu = new WebInspector.DropDownMenu();
         this._dropDownMenu.addEventListener(WebInspector.DropDownMenu.Events.ItemSelected, this._dropDownMenuItemSelected, this);
@@ -726,7 +749,7 @@ WebInspector.TabbedPane.prototype = {
      */
     _insertBefore: function(tab, index)
     {
-        this._tabsElement.insertBefore(tab._tabElement, this._tabsElement.childNodes[index]);
+        this._tabsElement.insertBefore(tab._tabElement || null, this._tabsElement.childNodes[index]);
         var oldIndex = this._tabs.indexOf(tab);
         this._tabs.splice(oldIndex, 1);
         if (oldIndex < index)
@@ -804,7 +827,7 @@ WebInspector.TabbedPaneTab.prototype = {
 
     /**
      * @param {string} iconClass
-     * @param {string} iconTooltip
+     * @param {string=} iconTooltip
      * @return {boolean}
      */
     _setIconClass: function(iconClass, iconTooltip)
@@ -817,6 +840,22 @@ WebInspector.TabbedPaneTab.prototype = {
             this._iconElement.remove();
         if (this._iconClass && this._tabElement)
             this._iconElement = this._createIconElement(this._tabElement, this._titleElement);
+        delete this._measuredWidth;
+        return true;
+    },
+
+    /**
+     * @param {string} className
+     * @param {boolean=} force
+     * @return {boolean}
+     */
+    _toggleClass: function(className, force)
+    {
+        var element = this.tabElement;
+        var hasClass = element.classList.contains(className);
+        if (hasClass === force)
+            return false;
+        element.classList.toggle(className, force);
         delete this._measuredWidth;
         return true;
     },
@@ -887,8 +926,7 @@ WebInspector.TabbedPaneTab.prototype = {
 
     _createIconElement: function(tabElement, titleElement)
     {
-        var iconElement = document.createElement("span");
-        iconElement.className = "tabbed-pane-header-tab-icon " + this._iconClass;
+        var iconElement = createElementWithClass("span", "tabbed-pane-header-tab-icon " + this._iconClass);
         if (this._iconTooltip)
             iconElement.title = this._iconTooltip;
         tabElement.insertBefore(iconElement, titleElement);
@@ -901,8 +939,7 @@ WebInspector.TabbedPaneTab.prototype = {
      */
     _createTabElement: function(measuring)
     {
-        var tabElement = document.createElement("div");
-        tabElement.classList.add("tabbed-pane-header-tab");
+        var tabElement = createElementWithClass("div", "tabbed-pane-header-tab");
         tabElement.id = "tab-" + this._id;
         tabElement.tabIndex = -1;
         tabElement.selectTabForTest = this._tabbedPane.selectTab.bind(this._tabbedPane, this.id, true);
@@ -935,7 +972,7 @@ WebInspector.TabbedPaneTab.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _tabClicked: function(event)
     {
@@ -950,7 +987,7 @@ WebInspector.TabbedPaneTab.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _tabMouseDown: function(event)
     {
@@ -960,7 +997,7 @@ WebInspector.TabbedPaneTab.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _tabMouseUp: function(event)
     {
@@ -1106,28 +1143,33 @@ WebInspector.ExtensibleTabbedPaneController = function(tabbedPane, extensionPoin
     this._tabbedPane = tabbedPane;
     this._extensionPoint = extensionPoint;
     this._viewCallback = viewCallback;
+    this._tabOrders = {};
+    /** @type {!Object.<string, !Promise.<!WebInspector.View>>} */
+    this._promiseForId = {};
 
-    this._tabbedPane.setRetainTabOrder(true, WebInspector.moduleManager.orderComparator(extensionPoint, "name", "order"));
+    this._tabbedPane.setRetainTabOrder(true, this._tabOrderComparator.bind(this));
     this._tabbedPane.addEventListener(WebInspector.TabbedPane.EventTypes.TabSelected, this._tabSelected, this);
-    /** @type {!StringMap.<?WebInspector.View>} */
-    this._views = new StringMap();
+    /** @type {!Map.<string, ?WebInspector.View>} */
+    this._views = new Map();
     this._initialize();
 }
 
 WebInspector.ExtensibleTabbedPaneController.prototype = {
     _initialize: function()
     {
-        this._extensions = {};
-        var extensions = WebInspector.moduleManager.extensions(this._extensionPoint);
+        /** @type {!Map.<string, !Runtime.Extension>} */
+        this._extensions = new Map();
+        var extensions = self.runtime.extensions(this._extensionPoint);
 
         for (var i = 0; i < extensions.length; ++i) {
             var descriptor = extensions[i].descriptor();
             var id = descriptor["name"];
+            this._tabOrders[id] = i;
             var title = WebInspector.UIString(descriptor["title"]);
             var settingName = descriptor["setting"];
             var setting = settingName ? /** @type {!WebInspector.Setting|undefined} */ (WebInspector.settings[settingName]) : null;
 
-            this._extensions[id] = extensions[i];
+            this._extensions.set(id, extensions[i]);
 
             if (setting) {
                 setting.addChangeListener(this._toggleSettingBasedView.bind(this, id, title, setting));
@@ -1156,25 +1198,69 @@ WebInspector.ExtensibleTabbedPaneController.prototype = {
      */
     _tabSelected: function(event)
     {
-        var tabId = this._tabbedPane.selectedTabId;
-        if (!tabId)
-            return;
-        var view = this._viewForId(tabId);
-        if (view)
+        var tabId = /** @type {string} */ (event.data.tabId);
+        this.viewForId(tabId).then(viewLoaded.bind(this)).done();
+
+        /**
+         * @this {WebInspector.ExtensibleTabbedPaneController}
+         * @param {!WebInspector.View} view
+         */
+        function viewLoaded(view)
+        {
+            var shouldFocus = this._tabbedPane.visibleView.element.isSelfOrAncestor(WebInspector.currentFocusElement());
             this._tabbedPane.changeTabView(tabId, view);
+            if (shouldFocus)
+                view.focus();
+        }
     },
 
     /**
-     * @return {?WebInspector.View}
+     * @return {!Array.<string>}
      */
-    _viewForId: function(id)
+    viewIds: function()
     {
-        if (this._views.contains(id))
-            return /** @type {!WebInspector.View} */ (this._views.get(id));
-        var view = this._extensions[id] ? /** @type {!WebInspector.View} */ (this._extensions[id].instance()) : null;
-        this._views.put(id, view);
-        if (this._viewCallback && view)
-            this._viewCallback(id, view);
-        return view;
+        return this._extensions.keysArray();
+    },
+
+    /**
+     * @param {string} id
+     * @return {!Promise.<!WebInspector.View>}
+     */
+    viewForId: function(id)
+    {
+        if (this._views.has(id))
+            return Promise.resolve(/** @type {!WebInspector.View} */ (this._views.get(id)));
+        if (!this._extensions.has(id))
+            return Promise.rejectWithError("No view registered for given type and id: " + this._extensionPoint + ", " + id);
+        if (this._promiseForId[id])
+            return this._promiseForId[id];
+
+        var promise = this._extensions.get(id).instancePromise();
+        this._promiseForId[id] = /** @type {!Promise.<!WebInspector.View>} */ (promise);
+        return promise.then(cacheView.bind(this));
+
+        /**
+         * @param {!Object} object
+         * @this {WebInspector.ExtensibleTabbedPaneController}
+         */
+        function cacheView(object)
+        {
+            var view = /** @type {!WebInspector.View} */ (object);
+            delete this._promiseForId[id];
+            this._views.set(id, view);
+            if (this._viewCallback && view)
+                this._viewCallback(id, view);
+            return view;
+        }
+    },
+
+    /**
+     * @param {string} id1
+     * @param {string} id2
+     * @return {number}
+     */
+    _tabOrderComparator: function(id1, id2)
+    {
+        return this._tabOrders[id2] = this._tabOrders[id1];
     }
 }

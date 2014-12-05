@@ -110,8 +110,12 @@ class Buffer {
 // The following assertion does not build on Mac and Android. This is because
 // static_assert only works with compile-time constants, but mac uses
 // libstdc++4.2 and android uses stlport, which both don't mark
-// numeric_limits::max() as constexp.
-#if __cplusplus >= 201103 && !defined(OS_ANDROID) && !defined(OS_MACOSX) && !defined(OS_IOS)
+// numeric_limits::max() as constexp.  Likewise, MSVS2013's standard library
+// also doesn't mark max() as constexpr yet. cl.exe supports static_cast but
+// doesn't really implement constexpr yet so it doesn't complain, but clang
+// does.
+#if __cplusplus >= 201103 && !defined(OS_ANDROID) && !defined(OS_MACOSX) && \
+    !defined(OS_IOS) && !(defined(__clang__) && defined(OS_WIN))
     COMPILE_ASSERT(kSSizeMaxConst == \
                    static_cast<size_t>(std::numeric_limits<ssize_t>::max()),
                    kSSizeMax_is_the_max_value_of_an_ssize_t);
@@ -172,8 +176,7 @@ class Buffer {
   // overflowed |size_|) at any time during padding.
   inline bool Pad(char pad, size_t padding, size_t len) {
     DEBUG_CHECK(pad);
-    DEBUG_CHECK(padding >= 0 && padding <= kSSizeMax);
-    DEBUG_CHECK(len >= 0);
+    DEBUG_CHECK(padding <= kSSizeMax);
     for (; padding > len; --padding) {
       if (!Out(pad)) {
         if (--padding) {
@@ -279,7 +282,6 @@ bool Buffer::IToASCII(bool sign, bool upcase, int64_t i, int base,
   DEBUG_CHECK(base <= 16);
   DEBUG_CHECK(!sign || base == 10);
   DEBUG_CHECK(pad == '0' || pad == ' ');
-  DEBUG_CHECK(padding >= 0);
   DEBUG_CHECK(padding <= kSSizeMax);
   DEBUG_CHECK(!(sign && prefix && *prefix));
 
@@ -508,7 +510,7 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
         buffer.Pad(' ', padding, 1);
 
         // Convert the argument to an ASCII character and output it.
-        char ch = static_cast<char>(arg.i);
+        char ch = static_cast<char>(arg.integer.i);
         if (!ch) {
           goto end_of_output_buffer;
         }
@@ -534,7 +536,7 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
             DEBUG_CHECK(arg.type == Arg::INT || arg.type == Arg::UINT);
             goto fail_to_expand;
           }
-          i = arg.i;
+          i = arg.integer.i;
 
           if (ch != 'd') {
             // The Arg() constructor automatically performed sign expansion on
@@ -544,8 +546,8 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
             // We have to do this here, instead of in the Arg() constructor, as
             // the Arg() constructor cannot tell whether we will output a %d
             // or a %x. Only the latter should experience masking.
-            if (arg.width < sizeof(int64_t)) {
-              i &= (1LL << (8*arg.width)) - 1;
+            if (arg.integer.width < sizeof(int64_t)) {
+              i &= (1LL << (8*arg.integer.width)) - 1;
             }
           }
         } else {
@@ -554,8 +556,9 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
             i = reinterpret_cast<uintptr_t>(arg.ptr);
           } else if (arg.type == Arg::STRING) {
             i = reinterpret_cast<uintptr_t>(arg.str);
-          } else if (arg.type == Arg::INT && arg.width == sizeof(NULL) &&
-                     arg.i == 0) {  // Allow C++'s version of NULL
+          } else if (arg.type == Arg::INT &&
+                     arg.integer.width == sizeof(NULL) &&
+                     arg.integer.i == 0) {  // Allow C++'s version of NULL
             i = 0;
           } else {
             DEBUG_CHECK(arg.type == Arg::POINTER || arg.type == Arg::STRING);
@@ -588,8 +591,8 @@ ssize_t SafeSNPrintf(char* buf, size_t sz, const char* fmt, const Arg* args,
         const char *s;
         if (arg.type == Arg::STRING) {
           s = arg.str ? arg.str : "<NULL>";
-        } else if (arg.type == Arg::INT && arg.width == sizeof(NULL) &&
-                   arg.i == 0) {  // Allow C++'s version of NULL
+        } else if (arg.type == Arg::INT && arg.integer.width == sizeof(NULL) &&
+                   arg.integer.i == 0) {  // Allow C++'s version of NULL
           s = "<NULL>";
         } else {
           DEBUG_CHECK(arg.type == Arg::STRING);

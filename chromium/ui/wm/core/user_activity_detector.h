@@ -27,7 +27,10 @@ class WM_EXPORT UserActivityDetector : public ui::EventHandler {
   static const int kDisplayPowerChangeIgnoreMouseMs;
 
   UserActivityDetector();
-  virtual ~UserActivityDetector();
+  ~UserActivityDetector() override;
+
+  // Returns the UserActivityDetector instance if one was created.
+  static UserActivityDetector* Get();
 
   base::TimeTicks last_activity_time() const { return last_activity_time_; }
 
@@ -41,11 +44,11 @@ class WM_EXPORT UserActivityDetector : public ui::EventHandler {
   void OnDisplayPowerChanging();
 
   // ui::EventHandler implementation.
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnTouchEvent(ui::TouchEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
  private:
   // Returns |now_for_test_| if set or base::TimeTicks::Now() otherwise.

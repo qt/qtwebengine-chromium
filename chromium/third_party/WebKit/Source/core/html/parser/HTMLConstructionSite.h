@@ -37,7 +37,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 struct HTMLConstructionSiteTask {
     ALLOW_ONLY_INLINE_ALLOCATION();
@@ -78,11 +78,11 @@ public:
     bool selfClosing;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::HTMLConstructionSiteTask);
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::HTMLConstructionSiteTask);
 
-namespace WebCore {
+namespace blink {
 
 // Note: These are intentionally ordered so that when we concatonate
 // strings and whitespaces the resulting whitespace is ws = min(ws1, ws2).
@@ -92,12 +92,20 @@ enum WhitespaceMode {
     AllWhitespace,
 };
 
+enum FlushMode {
+    // Flush pending text. Flush queued tasks.
+    FlushAlways,
+
+    // Flush pending text if node has length limit. Flush queued tasks.
+    FlushIfAtTextLimit,
+};
+
 class AtomicHTMLToken;
 class Document;
 class Element;
 class HTMLFormElement;
 
-class HTMLConstructionSite FINAL {
+class HTMLConstructionSite final {
     WTF_MAKE_NONCOPYABLE(HTMLConstructionSite);
     DISALLOW_ALLOCATION();
 public:
@@ -113,16 +121,16 @@ public:
     void executeQueuedTasks();
 
     // flushPendingText turns pending text into queued Text insertions, but does not execute them.
-    void flushPendingText();
+    void flushPendingText(FlushMode);
 
     // Called before every token in HTMLTreeBuilder::processToken, thus inlined:
-    void flush()
+    void flush(FlushMode mode)
     {
         if (!hasPendingTasks())
             return;
-        flushPendingText();
+        flushPendingText(mode);
         executeQueuedTasks(); // NOTE: Possible reentrancy via JavaScript execution.
-        ASSERT(!hasPendingTasks());
+        ASSERT(mode == FlushIfAtTextLimit || !hasPendingTasks());
     }
 
     bool hasPendingTasks()
@@ -225,7 +233,7 @@ private:
 
     void findFosterSite(HTMLConstructionSiteTask&);
 
-    PassRefPtrWillBeRawPtr<Element> createHTMLElement(AtomicHTMLToken*);
+    PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(AtomicHTMLToken*);
     PassRefPtrWillBeRawPtr<Element> createElement(AtomicHTMLToken*, const AtomicString& namespaceURI);
 
     void mergeAttributesFromTokenIntoElement(AtomicHTMLToken*, Element*);
@@ -248,7 +256,7 @@ private:
 
     TaskQueue m_taskQueue;
 
-    class PendingText FINAL {
+    class PendingText final {
         DISALLOW_ALLOCATION();
     public:
         PendingText()
@@ -311,6 +319,6 @@ private:
     bool m_inQuirksMode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

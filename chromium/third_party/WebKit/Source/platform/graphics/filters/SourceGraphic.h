@@ -22,10 +22,10 @@
 #ifndef SourceGraphic_h
 #define SourceGraphic_h
 
-#include "platform/graphics/filters/Filter.h"
+#include "platform/graphics/DisplayList.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT SourceGraphic : public FilterEffect {
 public:
@@ -33,11 +33,15 @@ public:
 
     static const AtomicString& effectName();
 
-    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
-    virtual FilterEffectType filterEffectType() const OVERRIDE { return FilterEffectTypeSourceInput; }
+    virtual FilterEffectType filterEffectType() const override { return FilterEffectTypeSourceInput; }
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
+    PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
+
+    void setDisplayList(PassRefPtr<DisplayList>);
+
 
 private:
     SourceGraphic(Filter* filter)
@@ -46,9 +50,9 @@ private:
         setOperatingColorSpace(ColorSpaceDeviceRGB);
     }
 
-    virtual void applySoftware() OVERRIDE;
+    RefPtr<DisplayList> m_displayList;
 };
 
-} //namespace WebCore
+} //namespace blink
 
 #endif // SourceGraphic_h

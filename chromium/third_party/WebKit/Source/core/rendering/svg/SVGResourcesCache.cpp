@@ -26,7 +26,7 @@
 #include "core/rendering/svg/SVGResourcesCycleSolver.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGResourcesCache::SVGResourcesCache()
 {
@@ -42,8 +42,7 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
     ASSERT(style);
     ASSERT(!m_cache.contains(object));
 
-    const SVGRenderStyle* svgStyle = style->svgStyle();
-    ASSERT(svgStyle);
+    const SVGRenderStyle& svgStyle = style->svgStyle();
 
     // Build a list of all resources associated with the passed RenderObject
     OwnPtr<SVGResources> newResources = SVGResources::buildResources(object, svgStyle);
@@ -61,9 +60,8 @@ void SVGResourcesCache::addResourcesFromRenderObject(RenderObject* object, const
     HashSet<RenderSVGResourceContainer*> resourceSet;
     resources->buildSetOfResources(resourceSet);
 
-    HashSet<RenderSVGResourceContainer*>::iterator end = resourceSet.end();
-    for (HashSet<RenderSVGResourceContainer*>::iterator it = resourceSet.begin(); it != end; ++it)
-        (*it)->addClient(object);
+    for (auto* resourceContainer : resourceSet)
+        resourceContainer->addClient(object);
 }
 
 void SVGResourcesCache::removeResourcesFromRenderObject(RenderObject* object)
@@ -76,9 +74,8 @@ void SVGResourcesCache::removeResourcesFromRenderObject(RenderObject* object)
     HashSet<RenderSVGResourceContainer*> resourceSet;
     resources->buildSetOfResources(resourceSet);
 
-    HashSet<RenderSVGResourceContainer*>::iterator end = resourceSet.end();
-    for (HashSet<RenderSVGResourceContainer*>::iterator it = resourceSet.begin(); it != end; ++it)
-        (*it)->removeClient(object);
+    for (auto* resourceContainer : resourceSet)
+        resourceContainer->removeClient(object);
 }
 
 static inline SVGResourcesCache* resourcesCacheFromRenderObject(const RenderObject* renderer)
@@ -122,10 +119,10 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
     ASSERT(renderer->node());
     ASSERT(renderer->node()->isSVGElement());
 
-    if (diff.hasNoChange() || !renderer->parent())
+    if (!diff.hasDifference() || !renderer->parent())
         return;
 
-    // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or repaint.
+    // In this case the proper SVGFE*Element will decide whether the modified CSS properties require a relayout or paintInvalidation.
     if (renderer->isSVGResourceFilterPrimitive() && !diff.needsLayout())
         return;
 
@@ -138,14 +135,14 @@ void SVGResourcesCache::clientStyleChanged(RenderObject* renderer, StyleDifferen
         cache->addResourcesFromRenderObject(renderer, newStyle);
     }
 
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer, false);
+    RenderSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, false);
 }
 
 void SVGResourcesCache::clientWasAddedToTree(RenderObject* renderer, const RenderStyle* newStyle)
 {
     if (!renderer->node())
         return;
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer, false);
+    RenderSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, false);
 
     if (!rendererCanHaveResources(renderer))
         return;
@@ -157,7 +154,7 @@ void SVGResourcesCache::clientWillBeRemovedFromTree(RenderObject* renderer)
 {
     if (!renderer->node())
         return;
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer, false);
+    RenderSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, false);
 
     if (!rendererCanHaveResources(renderer))
         return;
@@ -185,13 +182,12 @@ void SVGResourcesCache::resourceDestroyed(RenderSVGResourceContainer* resource)
     // The resource itself may have clients, that need to be notified.
     cache->removeResourcesFromRenderObject(resource);
 
-        CacheMap::iterator end = cache->m_cache.end();
-        for (CacheMap::iterator it = cache->m_cache.begin(); it != end; ++it) {
-        it->value->resourceDestroyed(resource);
+    for (auto& objectResources : cache->m_cache) {
+        objectResources.value->resourceDestroyed(resource);
 
         // Mark users of destroyed resources as pending resolution based on the id of the old resource.
         Element* resourceElement = resource->element();
-        Element* clientElement = toElement(it->key->node());
+        Element* clientElement = toElement(objectResources.key->node());
         SVGDocumentExtensions& extensions = clientElement->document().accessSVGExtensions();
 
         extensions.addPendingResource(resourceElement->fastGetAttribute(HTMLNames::idAttr), clientElement);

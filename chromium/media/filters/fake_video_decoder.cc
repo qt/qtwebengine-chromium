@@ -25,7 +25,23 @@ FakeVideoDecoder::FakeVideoDecoder(int decoding_delay,
 }
 
 FakeVideoDecoder::~FakeVideoDecoder() {
-  DCHECK_EQ(state_, STATE_UNINITIALIZED);
+  DCHECK(thread_checker_.CalledOnValidThread());
+
+  if (state_ == STATE_UNINITIALIZED)
+    return;
+
+  if (!init_cb_.IsNull())
+    SatisfyInit();
+  if (!held_decode_callbacks_.empty())
+    SatisfyDecode();
+  if (!reset_cb_.IsNull())
+    SatisfyReset();
+
+  decoded_frames_.clear();
+}
+
+std::string FakeVideoDecoder::GetDisplayName() const {
+  return "FakeVideoDecoder";
 }
 
 void FakeVideoDecoder::Initialize(const VideoDecoderConfig& config,
@@ -62,12 +78,13 @@ void FakeVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
             decoding_delay_ + held_decode_callbacks_.size());
   DCHECK_LT(static_cast<int>(held_decode_callbacks_.size()),
             max_parallel_decoding_requests_);
+  DCHECK_NE(state_, STATE_END_OF_STREAM);
 
   int buffer_size = buffer->end_of_stream() ? 0 : buffer->data_size();
-  DecodeCB wrapped_decode_cb =
-      BindToCurrentLoop(base::Bind(&FakeVideoDecoder::OnFrameDecoded,
-                                   weak_factory_.GetWeakPtr(),
-                                   buffer_size, decode_cb));
+  DecodeCB wrapped_decode_cb = base::Bind(&FakeVideoDecoder::OnFrameDecoded,
+                                          weak_factory_.GetWeakPtr(),
+                                          buffer_size,
+                                          BindToCurrentLoop(decode_cb));
 
   if (state_ == STATE_ERROR) {
     wrapped_decode_cb.Run(kDecodeError);
@@ -98,20 +115,6 @@ void FakeVideoDecoder::Reset(const base::Closure& closure) {
     return;
 
   DoReset();
-}
-
-void FakeVideoDecoder::Stop() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-
-  if (!init_cb_.IsNull())
-    SatisfyInit();
-  if (!held_decode_callbacks_.empty())
-    SatisfyDecode();
-  if (!reset_cb_.IsNull())
-    SatisfyReset();
-
-  decoded_frames_.clear();
-  state_ = STATE_UNINITIALIZED;
 }
 
 void FakeVideoDecoder::HoldNextInit() {
@@ -225,6 +228,7 @@ void FakeVideoDecoder::RunDecodeCallback(const DecodeCB& decode_cb) {
         output_cb_.Run(decoded_frames_.front());
         decoded_frames_.pop_front();
       }
+      state_ = STATE_NORMAL;
     } else if (!decoded_frames_.empty()) {
       output_cb_.Run(decoded_frames_.front());
       decoded_frames_.pop_front();

@@ -31,12 +31,11 @@
 #include "core/css/CSSSegmentedFontFace.h"
 #include "core/css/FontFaceSet.h"
 #include "core/css/RemoteFontFaceSource.h"
-#include "core/dom/Document.h"
 #include "core/frame/UseCounter.h"
 #include "platform/fonts/FontDescription.h"
 #include "platform/fonts/SimpleFontData.h"
 
-namespace WebCore {
+namespace blink {
 
 void CSSFontFace::addSource(PassOwnPtrWillBeRawPtr<CSSFontFaceSource> source)
 {
@@ -64,11 +63,6 @@ void CSSFontFace::fontLoaded(RemoteFontFaceSource* source)
     if (loadStatus() == FontFace::Loading) {
         if (source->ensureFontData()) {
             setLoadStatus(FontFace::Loaded);
-#if ENABLE(SVG_FONTS)
-            Document* document = m_segmentedFontFace ? m_segmentedFontFace->fontSelector()->document() : 0;
-            if (document && source->isSVGFontFaceSource())
-                UseCounter::count(*document, UseCounter::SVGFontInCSS);
-#endif
         } else {
             m_sources.removeFirst();
             load();
@@ -161,7 +155,10 @@ void CSSFontFace::load(const FontDescription& fontDescription)
 void CSSFontFace::setLoadStatus(FontFace::LoadStatus newStatus)
 {
     ASSERT(m_fontFace);
-    m_fontFace->setLoadStatus(newStatus);
+    if (newStatus == FontFace::Error)
+        m_fontFace->setError();
+    else
+        m_fontFace->setLoadStatus(newStatus);
 
     if (!m_segmentedFontFace)
         return;

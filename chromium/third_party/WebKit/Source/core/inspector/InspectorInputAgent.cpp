@@ -50,44 +50,44 @@
 
 namespace {
 
-class SyntheticInspectorTouchPoint : public WebCore::PlatformTouchPoint {
+class SyntheticInspectorTouchPoint : public blink::PlatformTouchPoint {
 public:
-    SyntheticInspectorTouchPoint(unsigned id, State state, const WebCore::IntPoint& screenPos, const WebCore::IntPoint& pos, int radiusX, int radiusY, double rotationAngle, double force)
+    SyntheticInspectorTouchPoint(unsigned id, State state, const blink::IntPoint& screenPos, const blink::IntPoint& pos, int radiusX, int radiusY, double rotationAngle, double force)
     {
         m_id = id;
         m_screenPos = screenPos;
         m_pos = pos;
         m_state = state;
-        m_radius = WebCore::FloatSize(radiusX, radiusY);
+        m_radius = blink::FloatSize(radiusX, radiusY);
         m_rotationAngle = rotationAngle;
         m_force = force;
     }
 };
 
-class SyntheticInspectorTouchEvent : public WebCore::PlatformTouchEvent {
+class SyntheticInspectorTouchEvent : public blink::PlatformTouchEvent {
 public:
-    SyntheticInspectorTouchEvent(const WebCore::PlatformEvent::Type type, unsigned modifiers, double timestamp)
+    SyntheticInspectorTouchEvent(const blink::PlatformEvent::Type type, unsigned modifiers, double timestamp)
     {
         m_type = type;
         m_modifiers = modifiers;
         m_timestamp = timestamp;
     }
 
-    void append(const WebCore::PlatformTouchPoint& point)
+    void append(const blink::PlatformTouchPoint& point)
     {
         m_touchPoints.append(point);
     }
 };
 
-void ConvertInspectorPoint(WebCore::Page* page, const WebCore::IntPoint& point, WebCore::IntPoint* convertedPoint, WebCore::IntPoint* globalPoint)
+void ConvertInspectorPoint(blink::Page* page, const blink::IntPoint& point, blink::IntPoint* convertedPoint, blink::IntPoint* globalPoint)
 {
     *convertedPoint = page->deprecatedLocalMainFrame()->view()->convertToContainingWindow(point);
-    *globalPoint = page->chrome().rootViewToScreen(WebCore::IntRect(point, WebCore::IntSize(0, 0))).location();
+    *globalPoint = page->chrome().rootViewToScreen(blink::IntRect(point, blink::IntSize(0, 0))).location();
 }
 
 } // namespace
 
-namespace WebCore {
+namespace blink {
 
 InspectorInputAgent::InspectorInputAgent(Page* page, InspectorClient* client)
     : InspectorBaseAgent<InspectorInputAgent>("Input")
@@ -122,20 +122,16 @@ void InspectorInputAgent::dispatchKeyEvent(ErrorString* error, const String& typ
         keyIdentifier ? *keyIdentifier : "",
         windowsVirtualKeyCode ? *windowsVirtualKeyCode : 0,
         nativeVirtualKeyCode ? *nativeVirtualKeyCode : 0,
-        autoRepeat ? *autoRepeat : false,
-        isKeypad ? *isKeypad : false,
-        isSystemKey ? *isSystemKey : false,
+        asBool(autoRepeat),
+        asBool(isKeypad),
+        asBool(isSystemKey),
         static_cast<PlatformEvent::Modifiers>(modifiers ? *modifiers : 0),
         timestamp ? *timestamp : currentTime());
     m_client->dispatchKeyEvent(event);
 }
 
-void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount, const bool* deviceSpace)
+void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount)
 {
-    if (deviceSpace && *deviceSpace) {
-        *error = "Internal error: events with device coordinates should be processed on the embedder level.";
-        return;
-    }
     PlatformEvent::Type convertedType;
     if (type == "mousePressed")
         convertedType = PlatformEvent::MousePressed;
@@ -179,6 +175,7 @@ void InspectorInputAgent::dispatchMouseEvent(ErrorString* error, const String& t
         convertedModifiers & PlatformEvent::CtrlKey,
         convertedModifiers & PlatformEvent::AltKey,
         convertedModifiers & PlatformEvent::MetaKey,
+        PlatformMouseEvent::RealOrIndistinguishable,
         timestamp ? *timestamp : currentTime());
 
     m_client->dispatchMouseEvent(event);
@@ -270,5 +267,11 @@ void InspectorInputAgent::dispatchTouchEvent(ErrorString* error, const String& t
     m_page->deprecatedLocalMainFrame()->eventHandler().handleTouchEvent(event);
 }
 
-} // namespace WebCore
+void InspectorInputAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink
 

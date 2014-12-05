@@ -90,6 +90,10 @@ class GL_EXPORT GLContext : public base::RefCounted<GLContext> {
   // transitioning can cause corruption and hangs (OS X only).
   virtual void SetSafeToForceGpuSwitch();
 
+  // Attempt to force the context to move to the GPU of its sharegroup. Return
+  // false only in the event of an unexpected error on the context.
+  virtual bool ForceGpuSwitchIfNeeded();
+
   // Indicate that the real context switches should unbind the FBO first
   // (For an Android work-around only).
   virtual void SetUnbindFboOnMakeCurrent();
@@ -186,9 +190,9 @@ class GL_EXPORT GLContextReal : public GLContext {
   explicit GLContextReal(GLShareGroup* share_group);
 
  protected:
-  virtual ~GLContextReal();
+  ~GLContextReal() override;
 
-  virtual void SetCurrent(GLSurface* surface) OVERRIDE;
+  void SetCurrent(GLSurface* surface) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLContextReal);

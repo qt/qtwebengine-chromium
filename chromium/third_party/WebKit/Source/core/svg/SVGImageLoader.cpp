@@ -27,7 +27,7 @@
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/svg/SVGImageElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGImageLoader::SVGImageLoader(SVGImageElement* node)
     : ImageLoader(node)
@@ -36,11 +36,11 @@ SVGImageLoader::SVGImageLoader(SVGImageElement* node)
 
 void SVGImageLoader::dispatchLoadEvent()
 {
-    if (image()->errorOccurred())
+    if (image()->errorOccurred()) {
         element()->dispatchEvent(Event::create(EventTypeNames::error));
-    else {
+    } else {
         SVGImageElement* imageElement = toSVGImageElement(element());
-        imageElement->sendSVGLoadEventIfPossible(true);
+        imageElement->sendSVGLoadEventToSelfAndAncestorChainIfPossible();
     }
 }
 

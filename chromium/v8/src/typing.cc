@@ -6,6 +6,7 @@
 
 #include "src/frames.h"
 #include "src/frames-inl.h"
+#include "src/ostreams.h"
 #include "src/parser.h"  // for CompileTimeValue; TODO(rossberg): should move
 #include "src/scopes.h"
 
@@ -27,7 +28,7 @@ AstTyper::AstTyper(CompilationInfo* info)
 
 #define RECURSE(call)                         \
   do {                                        \
-    ASSERT(!visitor->HasStackOverflow());     \
+    DCHECK(!visitor->HasStackOverflow());     \
     call;                                     \
     if (visitor->HasStackOverflow()) return;  \
   } while (false)
@@ -50,12 +51,12 @@ void AstTyper::Run(CompilationInfo* info) {
 
 #ifdef OBJECT_PRINT
   static void PrintObserved(Variable* var, Object* value, Type* type) {
-    PrintF("  observed %s ", var->IsParameter() ? "param" : "local");
-    var->name()->Print();
-    PrintF(" : ");
-    value->ShortPrint();
-    PrintF(" -> ");
-    type->TypePrint();
+    OFStream os(stdout);
+    os << "  observed " << (var->IsParameter() ? "param" : "local") << "  ";
+    var->name()->Print(os);
+    os << " : " << Brief(value) << " -> ";
+    type->PrintTo(os);
+    os << std::endl;
   }
 #endif  // OBJECT_PRINT
 
@@ -75,7 +76,7 @@ void AstTyper::ObserveTypesAtOsrEntry(IterationStatement* stmt) {
   Scope* scope = info_->scope();
 
   // Assert that the frame on the stack belongs to the function we want to OSR.
-  ASSERT_EQ(*info_->closure(), frame->function());
+  DCHECK_EQ(*info_->closure(), frame->function());
 
   int params = scope->num_parameters();
   int locals = scope->StackLocalCount();
@@ -118,7 +119,7 @@ void AstTyper::ObserveTypesAtOsrEntry(IterationStatement* stmt) {
 
 #define RECURSE(call)                \
   do {                               \
-    ASSERT(!HasStackOverflow());     \
+    DCHECK(!HasStackOverflow());     \
     call;                            \
     if (HasStackOverflow()) return;  \
   } while (false)
@@ -351,6 +352,9 @@ void AstTyper::VisitFunctionLiteral(FunctionLiteral* expr) {
 }
 
 
+void AstTyper::VisitClassLiteral(ClassLiteral* expr) {}
+
+
 void AstTyper::VisitNativeFunctionLiteral(NativeFunctionLiteral* expr) {
 }
 
@@ -435,14 +439,16 @@ void AstTyper::VisitAssignment(Assignment* expr) {
     if (!expr->IsUninitialized()) {
       if (prop->key()->IsPropertyName()) {
         Literal* lit_key = prop->key()->AsLiteral();
-        ASSERT(lit_key != NULL && lit_key->value()->IsString());
+        DCHECK(lit_key != NULL && lit_key->value()->IsString());
         Handle<String> name = Handle<String>::cast(lit_key->value());
         oracle()->AssignmentReceiverTypes(id, name, expr->GetReceiverTypes());
       } else {
         KeyedAccessStoreMode store_mode;
-        oracle()->KeyedAssignmentReceiverTypes(
-            id, expr->GetReceiverTypes(), &store_mode);
+        IcCheckType key_type;
+        oracle()->KeyedAssignmentReceiverTypes(id, expr->GetReceiverTypes(),
+                                               &store_mode, &key_type);
         expr->set_store_mode(store_mode);
+        expr->set_key_type(key_type);
       }
     }
   }
@@ -483,12 +489,9 @@ void AstTyper::VisitProperty(Property* expr) {
   if (!expr->IsUninitialized()) {
     if (expr->key()->IsPropertyName()) {
       Literal* lit_key = expr->key()->AsLiteral();
-      ASSERT(lit_key != NULL && lit_key->value()->IsString());
+      DCHECK(lit_key != NULL && lit_key->value()->IsString());
       Handle<String> name = Handle<String>::cast(lit_key->value());
-      bool is_prototype;
-      oracle()->PropertyReceiverTypes(
-          id, name, expr->GetReceiverTypes(), &is_prototype);
-      expr->set_is_function_prototype(is_prototype);
+      oracle()->PropertyReceiverTypes(id, name, expr->GetReceiverTypes());
     } else {
       bool is_string;
       oracle()->KeyedPropertyReceiverTypes(
@@ -586,7 +589,11 @@ void AstTyper::VisitUnaryOperation(UnaryOperation* expr) {
 void AstTyper::VisitCountOperation(CountOperation* expr) {
   // Collect type feedback.
   TypeFeedbackId store_id = expr->CountStoreFeedbackId();
-  expr->set_store_mode(oracle()->GetStoreMode(store_id));
+  KeyedAccessStoreMode store_mode;
+  IcCheckType key_type;
+  oracle()->GetStoreModeAndKeyType(store_id, &store_mode, &key_type);
+  expr->set_store_mode(store_mode);
+  expr->set_key_type(key_type);
   oracle()->CountReceiverTypes(store_id, expr->GetReceiverTypes());
   expr->set_type(oracle()->CountType(expr->CountBinOpFeedbackId()));
   // TODO(rossberg): merge the count type with the generic expression type.
@@ -723,6 +730,9 @@ void AstTyper::VisitCompareOperation(CompareOperation* expr) {
 
 void AstTyper::VisitThisFunction(ThisFunction* expr) {
 }
+
+
+void AstTyper::VisitSuperReference(SuperReference* expr) {}
 
 
 void AstTyper::VisitDeclarations(ZoneList<Declaration*>* decls) {

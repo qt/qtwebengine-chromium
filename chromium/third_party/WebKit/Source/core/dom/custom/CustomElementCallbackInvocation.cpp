@@ -35,14 +35,14 @@
 #include "core/dom/Element.h"
 #include "core/dom/custom/CustomElementScheduler.h"
 
-namespace WebCore {
+namespace blink {
 
 class AttachedDetachedInvocation : public CustomElementCallbackInvocation {
 public:
     AttachedDetachedInvocation(PassRefPtr<CustomElementLifecycleCallbacks>, CustomElementLifecycleCallbacks::CallbackType which);
 
 private:
-    virtual void dispatch(Element*) OVERRIDE;
+    virtual void dispatch(Element*) override;
 
     CustomElementLifecycleCallbacks::CallbackType m_which;
 };
@@ -51,16 +51,16 @@ AttachedDetachedInvocation::AttachedDetachedInvocation(PassRefPtr<CustomElementL
     : CustomElementCallbackInvocation(callbacks)
     , m_which(which)
 {
-    ASSERT(m_which == CustomElementLifecycleCallbacks::Attached || m_which == CustomElementLifecycleCallbacks::Detached);
+    ASSERT(m_which == CustomElementLifecycleCallbacks::AttachedCallback || m_which == CustomElementLifecycleCallbacks::DetachedCallback);
 }
 
 void AttachedDetachedInvocation::dispatch(Element* element)
 {
     switch (m_which) {
-    case CustomElementLifecycleCallbacks::Attached:
+    case CustomElementLifecycleCallbacks::AttachedCallback:
         callbacks()->attached(element);
         break;
-    case CustomElementLifecycleCallbacks::Detached:
+    case CustomElementLifecycleCallbacks::DetachedCallback:
         callbacks()->detached(element);
         break;
     default:
@@ -73,7 +73,7 @@ public:
     AttributeChangedInvocation(PassRefPtr<CustomElementLifecycleCallbacks>, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue);
 
 private:
-    virtual void dispatch(Element*) OVERRIDE;
+    virtual void dispatch(Element*) override;
 
     AtomicString m_name;
     AtomicString m_oldValue;
@@ -101,25 +101,25 @@ public:
     }
 
 private:
-    virtual void dispatch(Element*) OVERRIDE;
-    virtual bool isCreated() const OVERRIDE { return true; }
+    virtual void dispatch(Element*) override;
+    virtual bool isCreatedCallback() const override { return true; }
 };
 
 void CreatedInvocation::dispatch(Element* element)
 {
     if (element->inDocument() && element->document().domWindow())
-        CustomElementScheduler::scheduleCallback(callbacks(), element, CustomElementLifecycleCallbacks::Attached);
+        CustomElementScheduler::scheduleCallback(callbacks(), element, CustomElementLifecycleCallbacks::AttachedCallback);
     callbacks()->created(element);
 }
 
 PassOwnPtr<CustomElementCallbackInvocation> CustomElementCallbackInvocation::createInvocation(PassRefPtr<CustomElementLifecycleCallbacks> callbacks, CustomElementLifecycleCallbacks::CallbackType which)
 {
     switch (which) {
-    case CustomElementLifecycleCallbacks::Created:
+    case CustomElementLifecycleCallbacks::CreatedCallback:
         return adoptPtr(new CreatedInvocation(callbacks));
 
-    case CustomElementLifecycleCallbacks::Attached:
-    case CustomElementLifecycleCallbacks::Detached:
+    case CustomElementLifecycleCallbacks::AttachedCallback:
+    case CustomElementLifecycleCallbacks::DetachedCallback:
         return adoptPtr(new AttachedDetachedInvocation(callbacks, which));
     default:
         ASSERT_NOT_REACHED();
@@ -132,4 +132,4 @@ PassOwnPtr<CustomElementCallbackInvocation> CustomElementCallbackInvocation::cre
     return adoptPtr(new AttributeChangedInvocation(callbacks, name, oldValue, newValue));
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -29,14 +29,17 @@
 #ifndef SQLStatementErrorCallback_h
 #define SQLStatementErrorCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class SQLTransaction;
 class SQLError;
 
-class SQLStatementErrorCallback {
+class SQLStatementErrorCallback : public GarbageCollectedFinalized<SQLStatementErrorCallback> {
 public:
     virtual ~SQLStatementErrorCallback() { }
+    virtual void trace(Visitor*) { }
     virtual bool handleEvent(SQLTransaction*, SQLError*) = 0;
 };
 

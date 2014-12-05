@@ -206,8 +206,7 @@ NativeViewAccessibility* NativeViewAccessibility::Create(View* view) {
 }
 
 NativeViewAccessibilityWin::NativeViewAccessibilityWin()
-    : view_(NULL),
-      unique_id_(next_unique_id_++) {
+    : unique_id_(next_unique_id_++) {
 }
 
 NativeViewAccessibilityWin::~NativeViewAccessibilityWin() {
@@ -530,8 +529,12 @@ STDMETHODIMP NativeViewAccessibilityWin::get_accChild(VARIANT var_child,
   }
 
   *disp_child = child_view->GetNativeViewAccessible();
-  (*disp_child)->AddRef();
-  return S_OK;
+  if (*disp_child) {
+    (*disp_child)->AddRef();
+    return S_OK;
+  }
+
+  return E_FAIL;
 }
 
 STDMETHODIMP NativeViewAccessibilityWin::get_accChildCount(LONG* child_count) {
@@ -924,6 +927,31 @@ STDMETHODIMP NativeViewAccessibilityWin::get_relationTargetsOfType(
   return S_OK;
 }
 
+STDMETHODIMP NativeViewAccessibilityWin::get_attributes(BSTR* attributes) {
+  if (!view_)
+    return E_FAIL;
+
+  if (!attributes)
+    return E_INVALIDARG;
+
+  base::string16 attributes_str;
+
+  // Text fields need to report the attribute "text-model:a1" to instruct
+  // screen readers to use IAccessible2 APIs to handle text editing in this
+  // object (as opposed to treating it like a native Windows text box).
+  // The text-model:a1 attribute is documented here:
+  // http://www.linuxfoundation.org/collaborate/workgroups/accessibility/ia2/ia2_implementation_guide
+  ui::AXViewState state;
+  view_->GetAccessibleState(&state);
+  if (state.role == ui::AX_ROLE_TEXT_FIELD) {
+    attributes_str = L"text-model:a1;";
+  }
+
+  *attributes = SysAllocString(attributes_str.c_str());
+  DCHECK(*attributes);
+  return S_OK;
+}
+
 //
 // IAccessibleText
 //
@@ -1224,9 +1252,15 @@ int32 NativeViewAccessibilityWin::MSAAEvent(ui::AXEvent event) {
       return EVENT_SYSTEM_MENUPOPUPSTART;
     case ui::AX_EVENT_MENU_POPUP_END:
       return EVENT_SYSTEM_MENUPOPUPEND;
+    case ui::AX_EVENT_SELECTION:
+      return EVENT_OBJECT_SELECTION;
+    case ui::AX_EVENT_SELECTION_ADD:
+      return EVENT_OBJECT_SELECTIONADD;
+    case ui::AX_EVENT_SELECTION_REMOVE:
+      return EVENT_OBJECT_SELECTIONREMOVE;
     case ui::AX_EVENT_TEXT_CHANGED:
       return EVENT_OBJECT_NAMECHANGE;
-    case ui::AX_EVENT_SELECTION_CHANGED:
+    case ui::AX_EVENT_TEXT_SELECTION_CHANGED:
       return IA2_EVENT_TEXT_CARET_MOVED;
     case ui::AX_EVENT_VALUE_CHANGED:
       return EVENT_OBJECT_VALUECHANGE;
@@ -1297,6 +1331,8 @@ int32 NativeViewAccessibilityWin::MSAARole(ui::AXRole role) {
       return ROLE_SYSTEM_TITLEBAR;
     case ui::AX_ROLE_TOOLBAR:
       return ROLE_SYSTEM_TOOLBAR;
+    case ui::AX_ROLE_WEB_VIEW:
+      return ROLE_SYSTEM_GROUPING;
     case ui::AX_ROLE_WINDOW:
       return ROLE_SYSTEM_WINDOW;
     case ui::AX_ROLE_CLIENT:
@@ -1335,6 +1371,8 @@ int32 NativeViewAccessibilityWin::MSAAState(const ui::AXViewState& state) {
     msaa_state |= STATE_SYSTEM_PROTECTED;
   if (state.HasStateFlag(ui::AX_STATE_READ_ONLY))
     msaa_state |= STATE_SYSTEM_READONLY;
+  if (state.HasStateFlag(ui::AX_STATE_SELECTABLE))
+    msaa_state |= STATE_SYSTEM_SELECTABLE;
   if (state.HasStateFlag(ui::AX_STATE_SELECTED))
     msaa_state |= STATE_SYSTEM_SELECTED;
   if (state.HasStateFlag(ui::AX_STATE_FOCUSED))
@@ -1455,13 +1493,11 @@ void NativeViewAccessibilityWin::PopulateChildWidgetVector(
     return;
 
   std::set<Widget*> child_widgets;
-  Widget::GetAllChildWidgets(widget->GetNativeView(), &child_widgets);
   Widget::GetAllOwnedWidgets(widget->GetNativeView(), &child_widgets);
   for (std::set<Widget*>::const_iterator iter = child_widgets.begin();
            iter != child_widgets.end(); ++iter) {
     Widget* child_widget = *iter;
-    if (child_widget == widget)
-      continue;
+    DCHECK_NE(widget, child_widget);
 
     if (!child_widget->IsVisible())
       continue;

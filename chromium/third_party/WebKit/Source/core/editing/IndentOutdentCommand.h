@@ -29,9 +29,9 @@
 #include "core/editing/ApplyBlockElementCommand.h"
 #include "core/editing/EditAction.h"
 
-namespace WebCore {
+namespace blink {
 
-class IndentOutdentCommand FINAL : public ApplyBlockElementCommand {
+class IndentOutdentCommand final : public ApplyBlockElementCommand {
 public:
     enum EIndentType { Indent, Outdent };
     static PassRefPtrWillBeRawPtr<IndentOutdentCommand> create(Document& document, EIndentType type)
@@ -39,24 +39,24 @@ public:
         return adoptRefWillBeNoop(new IndentOutdentCommand(document, type));
     }
 
-    virtual bool preservesTypingStyle() const OVERRIDE { return true; }
+    virtual bool preservesTypingStyle() const override { return true; }
 
 private:
     IndentOutdentCommand(Document&, EIndentType);
 
-    virtual EditAction editingAction() const OVERRIDE { return m_typeOfAction == Indent ? EditActionIndent : EditActionOutdent; }
+    virtual EditAction editingAction() const override { return m_typeOfAction == Indent ? EditActionIndent : EditActionOutdent; }
 
     void outdentRegion(const VisiblePosition&, const VisiblePosition&);
     void outdentParagraph();
     bool tryIndentingAsListItem(const Position&, const Position&);
-    void indentIntoBlockquote(const Position&, const Position&, RefPtrWillBeRawPtr<Element>&);
+    void indentIntoBlockquote(const Position&, const Position&, RefPtrWillBeRawPtr<HTMLElement>&);
 
-    virtual void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection) OVERRIDE;
-    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<Element>& blockquoteForNextIndent) OVERRIDE;
+    virtual void formatSelection(const VisiblePosition& startOfSelection, const VisiblePosition& endOfSelection) override;
+    virtual void formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<HTMLElement>& blockquoteForNextIndent) override;
 
     EIndentType m_typeOfAction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IndentOutdentCommand_h

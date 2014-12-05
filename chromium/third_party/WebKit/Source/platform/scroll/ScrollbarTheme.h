@@ -30,12 +30,11 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/scroll/ScrollTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 class GraphicsContext;
 class PlatformMouseEvent;
 class ScrollbarThemeClient;
-class ScrollView;
 
 class PLATFORM_EXPORT ScrollbarTheme {
     WTF_MAKE_NONCOPYABLE(ScrollbarTheme); WTF_MAKE_FAST_ALLOCATED;
@@ -49,6 +48,7 @@ public:
     virtual ScrollbarPart hitTest(ScrollbarThemeClient*, const IntPoint&);
 
     virtual int scrollbarThickness(ScrollbarControlSize = RegularScrollbar) { return 0; }
+    virtual int scrollbarMargin() const { return 0; }
 
     virtual ScrollbarButtonsPlacement buttonsPlacement() const { return ScrollbarButtonsSingle; }
 

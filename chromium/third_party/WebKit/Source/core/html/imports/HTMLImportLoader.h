@@ -31,6 +31,7 @@
 #ifndef HTMLImportLoader_h
 #define HTMLImportLoader_h
 
+#include "core/dom/DocumentParserClient.h"
 #include "core/fetch/RawResource.h"
 #include "core/fetch/ResourceOwner.h"
 #include "platform/heap/Handle.h"
@@ -38,7 +39,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementSyncMicrotaskQueue;
 class Document;
@@ -53,7 +54,8 @@ class HTMLImportsController;
 // HTMLImportLoader is owned by HTMLImportsController.
 //
 //
-class HTMLImportLoader FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportLoader>, public ResourceOwner<RawResource> {
+class HTMLImportLoader final : public NoBaseWillBeGarbageCollectedFinalized<HTMLImportLoader>, public ResourceOwner<RawResource>, public DocumentParserClient {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLImportLoader);
 public:
     enum State {
         StateLoading,
@@ -88,9 +90,6 @@ public:
 #endif
     void startLoading(const ResourcePtr<RawResource>&);
 
-    // Tells the loader that the parser is done with this import.
-    // Called by Document::finishedParsing, after DOMContentLoaded was dispatched.
-    void didFinishParsing();
     // Tells the loader that all of the import's stylesheets finished
     // loading.
     // Called by Document::didRemoveAllPendingStylesheet.
@@ -98,15 +97,20 @@ public:
 
     PassRefPtrWillBeRawPtr<CustomElementSyncMicrotaskQueue> microtaskQueue() const;
 
-    virtual void trace(Visitor*);
+    virtual void trace(Visitor*) override;
 
 private:
     HTMLImportLoader(HTMLImportsController*);
 
     // RawResourceClient
-    virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
-    virtual void dataReceived(Resource*, const char* data, int length) OVERRIDE;
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    virtual void dataReceived(Resource*, const char* data, unsigned length) override;
+    virtual void notifyFinished(Resource*) override;
+
+    // DocumentParserClient
+
+    // Called after document parse is complete after DOMContentLoaded was dispatched.
+    virtual void notifyParserStopped() override;
 
     State startWritingAndParsing(const ResourceResponse&);
     State finishWriting();
@@ -121,13 +125,13 @@ private:
 #endif
 
     RawPtrWillBeMember<HTMLImportsController> m_controller;
-    WillBeHeapVector<RawPtrWillBeMember<HTMLImportChild> > m_imports;
+    WillBeHeapVector<RawPtrWillBeMember<HTMLImportChild>> m_imports;
     State m_state;
     RefPtrWillBeMember<Document> m_document;
     RefPtrWillBeMember<DocumentWriter> m_writer;
     RefPtrWillBeMember<CustomElementSyncMicrotaskQueue> m_microtaskQueue;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLImportLoader_h

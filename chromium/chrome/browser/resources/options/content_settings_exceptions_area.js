@@ -178,7 +178,7 @@ cr.define('options.contentSettings', function() {
 
       if (controlledBy == 'policy' || controlledBy == 'extension') {
         this.querySelector('.row-delete-button').hidden = true;
-        var indicator = ControlledSettingIndicator();
+        var indicator = new ControlledSettingIndicator();
         indicator.setAttribute('content-exception', this.contentType);
         // Create a synthetic pref change event decorated as
         // CoreOptionsHandler::CreateValueForPref() does.
@@ -225,14 +225,11 @@ cr.define('options.contentSettings', function() {
      * @type {string}
      */
     get pattern() {
-      if (!this.isEmbeddingRule()) {
+      if (!this.isEmbeddingRule())
         return this.dataItem.origin;
-      } else {
-        return loadTimeData.getStringF('embeddedOnHost',
-                                       this.dataItem.embeddingOrigin);
-      }
 
-      return this.dataItem.displayPattern;
+      return loadTimeData.getStringF('embeddedOnHost',
+                                     this.dataItem.embeddingOrigin);
     },
     set pattern(pattern) {
       if (!this.editable)
@@ -360,7 +357,7 @@ cr.define('options.contentSettings', function() {
      * @param {Event} e The cancel event.
      * @private
      */
-    onEditCancelled_: function() {
+    onEditCancelled_: function(e) {
       this.updateEditables();
       this.setPatternValid(true);
     },
@@ -400,7 +397,7 @@ cr.define('options.contentSettings', function() {
    * @param {boolean} enableAskOption Whether to show an 'ask every time' option
    *     in the select.
    * @constructor
-   * @extends {cr.ui.ExceptionsListItem}
+   * @extends {options.contentSettings.ExceptionsListItem}
    */
   function ExceptionsAddRowListItem(contentType, mode, enableAskOption) {
     var el = cr.doc.createElement('div');
@@ -457,7 +454,7 @@ cr.define('options.contentSettings', function() {
    * Creates a new exceptions list.
    *
    * @constructor
-   * @extends {cr.ui.List}
+   * @extends {options.InlineEditableItemList}
    */
   var ExceptionsList = cr.ui.define('list');
 
@@ -512,8 +509,8 @@ cr.define('options.contentSettings', function() {
     /**
      * Sets the exceptions in the js model.
      *
-     * @param {Object} entries A list of dictionaries of values, each dictionary
-     *     represents an exception.
+     * @param {Array.<options.Exception>} entries A list of dictionaries of
+     *     values, each dictionary represents an exception.
      */
     setExceptions: function(entries) {
       var deleteCount = this.dataModel.length;
@@ -533,7 +530,7 @@ cr.define('options.contentSettings', function() {
      * item to reflect this.
      *
      * @param {string} pattern The pattern.
-     * @param {bool} valid Whether said pattern is valid in the context of a
+     * @param {boolean} valid Whether said pattern is valid in the context of a
      *     content exception setting.
      */
     patternValidityCheckComplete: function(pattern, valid) {
@@ -579,36 +576,36 @@ cr.define('options.contentSettings', function() {
         return;
 
       var dataItem = listItem.dataItem;
-      var args = [listItem.contentType];
-      if (listItem.contentType == 'notifications')
-        args.push(dataItem.origin, dataItem.setting);
-      else
-        args.push(listItem.mode, dataItem.origin, dataItem.embeddingOrigin);
-
-      chrome.send('removeException', args);
+      chrome.send('removeException', [listItem.contentType,
+                                      listItem.mode,
+                                      dataItem.origin,
+                                      dataItem.embeddingOrigin]);
     },
   };
 
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * Encapsulated handling of content settings list subpage.
    *
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function ContentSettingsExceptionsArea() {
-    OptionsPage.call(this, 'contentExceptions',
-                     loadTimeData.getString('contentSettingsPageTabTitle'),
-                     'content-settings-exceptions-area');
+    Page.call(this, 'contentExceptions',
+              loadTimeData.getString('contentSettingsPageTabTitle'),
+              'content-settings-exceptions-area');
   }
 
   cr.addSingletonGetter(ContentSettingsExceptionsArea);
 
   ContentSettingsExceptionsArea.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var exceptionsLists = this.pageDiv.querySelectorAll('list');
       for (var i = 0; i < exceptionsLists.length; i++) {
@@ -621,7 +618,7 @@ cr.define('options.contentSettings', function() {
       this.showList('cookies');
 
       $('content-settings-exceptions-overlay-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
     },
 
     /**
@@ -656,9 +653,8 @@ cr.define('options.contentSettings', function() {
      * location's hash.
      */
     didShowPage: function() {
-      var hash = location.hash;
-      if (hash)
-        this.showList(hash.slice(1));
+      if (this.hash)
+        this.showList(this.hash.slice(1));
     },
   };
 

@@ -14,10 +14,10 @@ namespace net {
 class MockAllowURLSecurityManager : public URLSecurityManager {
  public:
   MockAllowURLSecurityManager();
-  virtual ~MockAllowURLSecurityManager();
+  ~MockAllowURLSecurityManager() override;
 
-  virtual bool CanUseDefaultCredentials(const GURL& auth_origin) const OVERRIDE;
-  virtual bool CanDelegate(const GURL& auth_origin) const OVERRIDE;
+  bool CanUseDefaultCredentials(const GURL& auth_origin) const override;
+  bool CanDelegate(const GURL& auth_origin) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockAllowURLSecurityManager);

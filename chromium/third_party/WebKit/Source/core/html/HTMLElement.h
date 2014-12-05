@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2007, 2009, 2014 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -25,11 +25,11 @@
 
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentFragment;
-class HTMLCollection;
 class HTMLFormElement;
+class HTMLMenuElement;
 class ExceptionState;
 
 enum TranslateAttributeMode {
@@ -39,11 +39,14 @@ enum TranslateAttributeMode {
 };
 
 class HTMLElement : public Element {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLElement);
 
-    virtual String title() const OVERRIDE FINAL;
-    virtual short tabIndex() const OVERRIDE;
+    bool hasTagName(const HTMLQualifiedName& name) const { return hasLocalName(name.localName()); }
+
+    virtual String title() const override final;
+    virtual short tabIndex() const override;
 
     void setInnerText(const String&, ExceptionState&);
     void setOuterText(const String&, ExceptionState&);
@@ -67,11 +70,11 @@ public:
 
     void click();
 
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual void accessKeyAction(bool sendMouseEvents) override;
 
     bool ieForbidsInsertHTML() const;
 
-    virtual HTMLFormElement* formOwner() const { return 0; }
+    virtual HTMLFormElement* formOwner() const { return nullptr; }
 
     HTMLFormElement* findFormAncestor() const;
 
@@ -84,14 +87,17 @@ public:
     virtual bool isLabelable() const { return false; }
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/elements.html#interactive-content
     virtual bool isInteractiveContent() const;
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
     static const AtomicString& eventNameForAttributeName(const QualifiedName& attrName);
 
-    virtual bool matchesReadOnlyPseudoClass() const OVERRIDE;
-    virtual bool matchesReadWritePseudoClass() const OVERRIDE;
+    virtual bool matchesReadOnlyPseudoClass() const override;
+    virtual bool matchesReadWritePseudoClass() const override;
 
     static const AtomicString& eventParameterName();
+
+    HTMLMenuElement* contextMenu() const;
+    void setContextMenu(HTMLMenuElement*);
 
 protected:
     HTMLElement(const QualifiedName& tagName, Document&, ConstructionType);
@@ -102,16 +108,19 @@ protected:
     void applyAlignmentAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
     void applyBorderAttributeToStyle(const AtomicString&, MutableStylePropertySet*);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
     unsigned parseBorderWidthAttribute(const AtomicString&) const;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) override;
     void calculateAndAdjustDirectionality();
 
 private:
-    virtual String nodeName() const OVERRIDE FINAL;
+    virtual String nodeName() const override final;
+
+    bool isHTMLElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+    bool isStyledElement() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
 
     void mapLanguageAttributeToLocale(const AtomicString&, MutableStylePropertySet*);
 
@@ -119,7 +128,7 @@ private:
 
     void dirAttributeChanged(const AtomicString&);
     void adjustDirectionalityIfNeededAfterChildAttributeChanged(Element* child);
-    void adjustDirectionalityIfNeededAfterChildrenChanged(Node* beforeChange, int childCountDelta);
+    void adjustDirectionalityIfNeededAfterChildrenChanged(const ChildrenChange&);
     TextDirection directionality(Node** strongDirectionalityTextNode= 0) const;
 
     TranslateAttributeMode translateAttributeMode() const;
@@ -129,7 +138,6 @@ private:
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLElement, isHTMLElement());
 
-template <> inline bool isElementOfType<const HTMLElement>(const Node& node) { return node.isHTMLElement(); }
 template <typename T> bool isElementOfType(const HTMLElement&);
 template <> inline bool isElementOfType<const HTMLElement>(const HTMLElement&) { return true; }
 
@@ -137,8 +145,21 @@ inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document
     : Element(tagName, &document, type)
 {
     ASSERT(!tagName.localName().isNull());
-    ScriptWrappable::init(this);
 }
+
+inline bool Node::hasTagName(const HTMLQualifiedName& name) const
+{
+    return isHTMLElement() && toHTMLElement(*this).hasTagName(name);
+}
+
+// Functor used to match HTMLElements with a specific HTML tag when using the ElementTraversal API.
+class HasHTMLTagName {
+public:
+    explicit HasHTMLTagName(const HTMLQualifiedName& tagName): m_tagName(tagName) { }
+    bool operator() (const HTMLElement& element) const { return element.hasTagName(m_tagName); }
+private:
+    const HTMLQualifiedName& m_tagName;
+};
 
 // This requires isHTML*Element(const Element&) and isHTML*Element(const HTMLElement&).
 // When the input element is an HTMLElement, we don't need to check the namespace URI, just the local name.
@@ -146,15 +167,15 @@ inline HTMLElement::HTMLElement(const QualifiedName& tagName, Document& document
     inline bool is##thisType(const thisType* element); \
     inline bool is##thisType(const thisType& element); \
     inline bool is##thisType(const HTMLElement* element) { return element && is##thisType(*element); } \
+    inline bool is##thisType(const Node& node) { return node.isHTMLElement() ? is##thisType(toHTMLElement(node)) : false; } \
+    inline bool is##thisType(const Node* node) { return node && is##thisType(*node); } \
     inline bool is##thisType(const Element* element) { return element && is##thisType(*element); } \
-    inline bool is##thisType(const Node& node) { return node.isElementNode() ? is##thisType(toElement(node)) : false; } \
-    inline bool is##thisType(const Node* node) { return node && node->isElementNode() ? is##thisType(*toElement(node)) : false; } \
     template<typename T> inline bool is##thisType(const PassRefPtr<T>& node) { return is##thisType(node.get()); } \
     template<typename T> inline bool is##thisType(const RefPtr<T>& node) { return is##thisType(node.get()); } \
     template <> inline bool isElementOfType<const thisType>(const HTMLElement& element) { return is##thisType(element); } \
     DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(thisType)
 
-} // namespace WebCore
+} // namespace blink
 
 #include "core/HTMLElementTypeHelpers.h"
 

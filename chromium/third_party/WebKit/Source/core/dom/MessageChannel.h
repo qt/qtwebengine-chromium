@@ -27,24 +27,25 @@
 #ifndef MessageChannel_h
 #define MessageChannel_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class MessagePort;
 class ExecutionContext;
 
-class MessageChannel FINAL : public RefCountedWillBeGarbageCollectedFinalized<MessageChannel>, public ScriptWrappable {
+class MessageChannel final : public RefCountedWillBeGarbageCollected<MessageChannel>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MessageChannel);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MessageChannel> create(ExecutionContext* context)
     {
         return adoptRefWillBeNoop(new MessageChannel(context));
     }
-    ~MessageChannel();
 
     MessagePort* port1() const { return m_port1.get(); }
     MessagePort* port2() const { return m_port2.get(); }
@@ -58,6 +59,6 @@ private:
     RefPtrWillBeMember<MessagePort> m_port2;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MessageChannel_h

@@ -22,18 +22,22 @@
 #include "platform/plugins/PluginData.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMPlugin::DOMPlugin(PluginData* pluginData, LocalFrame* frame, unsigned index)
     : FrameDestructionObserver(frame)
     , m_pluginData(pluginData)
     , m_index(index)
 {
-    ScriptWrappable::init(this);
 }
 
 DOMPlugin::~DOMPlugin()
 {
+}
+
+void DOMPlugin::trace(Visitor* visitor)
+{
+    FrameDestructionObserver::trace(visitor);
 }
 
 String DOMPlugin::name() const
@@ -89,4 +93,4 @@ PassRefPtrWillBeRawPtr<DOMMimeType> DOMPlugin::namedItem(const AtomicString& pro
     return nullptr;
 }
 
-} // namespace WebCore
+} // namespace blink

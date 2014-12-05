@@ -9,7 +9,7 @@
 #include "base/command_line.h"
 #include "base/cpu.h"
 #include "base/debug/crash_logging.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
@@ -24,7 +24,7 @@
 #include "content/common/sandbox_util.h"
 #include "content/ppapi_plugin/broker_process_dispatcher.h"
 #include "content/ppapi_plugin/plugin_process_dispatcher.h"
-#include "content/ppapi_plugin/ppapi_webkitplatformsupport_impl.h"
+#include "content/ppapi_plugin/ppapi_blink_platform_impl.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/pepper_plugin_info.h"
@@ -107,12 +107,12 @@ PpapiThread::PpapiThread(const CommandLine& command_line, bool is_broker)
           base::RandInt(0, std::numeric_limits<PP_Module>::max())),
       next_plugin_dispatcher_id_(1) {
   ppapi::proxy::PluginGlobals* globals = ppapi::proxy::PluginGlobals::Get();
-  globals->set_plugin_proxy_delegate(this);
+  globals->SetPluginProxyDelegate(this);
   globals->set_command_line(
       command_line.GetSwitchValueASCII(switches::kPpapiFlashArgs));
 
-  webkit_platform_support_.reset(new PpapiWebKitPlatformSupportImpl);
-  blink::initialize(webkit_platform_support_.get());
+  blink_platform_impl_.reset(new PpapiBlinkPlatformImpl);
+  blink::initialize(blink_platform_impl_.get());
 
   if (!is_broker_) {
     channel()->AddFilter(
@@ -125,10 +125,12 @@ PpapiThread::~PpapiThread() {
 }
 
 void PpapiThread::Shutdown() {
-  ppapi::proxy::PluginGlobals::Get()->set_plugin_proxy_delegate(NULL);
+  ChildThread::Shutdown();
+
+  ppapi::proxy::PluginGlobals::Get()->ResetPluginProxyDelegate();
   if (plugin_entry_points_.shutdown_module)
     plugin_entry_points_.shutdown_module();
-  webkit_platform_support_->Shutdown();
+  blink_platform_impl_->Shutdown();
   blink::shutdown();
 }
 
@@ -179,7 +181,7 @@ IPC::PlatformFileForTransit PpapiThread::ShareHandleWithRemote(
 #if defined(OS_WIN)
   if (peer_handle_.IsValid()) {
     DCHECK(is_broker_);
-    return IPC::GetFileHandleForProcess(handle, peer_handle_,
+    return IPC::GetFileHandleForProcess(handle, peer_handle_.Get(),
                                         should_close_source);
   }
 #endif
@@ -490,7 +492,7 @@ bool PpapiThread::SetupRendererChannel(base::ProcessId renderer_pid,
   // On POSIX, transfer ownership of the renderer-side (client) FD.
   // This ensures this process will be notified when it is closed even if a
   // connection is not established.
-  handle->socket = base::FileDescriptor(dispatcher->TakeRendererFD(), true);
+  handle->socket = base::FileDescriptor(dispatcher->TakeRendererFD());
   if (handle->socket.fd == -1)
     return false;
 #endif

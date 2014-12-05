@@ -28,7 +28,7 @@
 #include "core/events/EventDispatchMediator.h"
 #include "core/frame/LocalDOMWindow.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef LocalDOMWindow AbstractView;
 
@@ -40,6 +40,7 @@ struct UIEventInit : public EventInit {
 };
 
 class UIEvent : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<UIEvent> create()
     {
@@ -58,11 +59,10 @@ public:
     void initUIEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>, int detail);
 
     AbstractView* view() const { return m_view.get(); }
-    AbstractView* view(bool& isNull) const { isNull = !m_view; return m_view.get(); }
     int detail() const { return m_detail; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual bool isUIEvent() const OVERRIDE FINAL;
+    virtual const AtomicString& interfaceName() const override;
+    virtual bool isUIEvent() const override final;
 
     virtual int keyCode() const;
     virtual int charCode() const;
@@ -75,7 +75,7 @@ public:
 
     virtual int which() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
     UIEvent();
@@ -87,6 +87,6 @@ private:
     int m_detail;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // UIEvent_h

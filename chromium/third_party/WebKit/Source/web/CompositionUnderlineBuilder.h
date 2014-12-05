@@ -34,19 +34,18 @@
 #include "core/editing/CompositionUnderline.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebCompositionUnderline.h"
-#include "wtf/Vector.h"
 
 namespace blink {
 
 // This class is used for converting from WebCompositionUnderline to
-// WebCore::CompositionUnderline.
+// CompositionUnderline.
 
-class CompositionUnderlineBuilder : public WebCore::CompositionUnderline {
+class CompositionUnderlineBuilder : public CompositionUnderline {
 public:
     CompositionUnderlineBuilder(const WebCompositionUnderline& u)
-        : WebCore::CompositionUnderline(u.startOffset, u.endOffset,
-            WebCore::Color(u.color), u.thick,
-            WebCore::Color(u.backgroundColor)) { }
+        : CompositionUnderline(u.startOffset, u.endOffset,
+            Color(u.color), u.thick,
+            Color(u.backgroundColor)) { }
 };
 
 } // namespace blink

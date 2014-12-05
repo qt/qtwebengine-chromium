@@ -34,7 +34,7 @@ class MESSAGE_CENTER_EXPORT MessageCenterTray : public MessageCenterObserver {
  public:
   MessageCenterTray(MessageCenterTrayDelegate* delegate,
                     message_center::MessageCenter* message_center);
-  virtual ~MessageCenterTray();
+  ~MessageCenterTray() override;
 
   // Shows or updates the message center bubble and hides the popup bubble.
   // Returns whether the message center is visible after the call, whether or
@@ -74,21 +74,17 @@ class MESSAGE_CENTER_EXPORT MessageCenterTray : public MessageCenterObserver {
   message_center::MessageCenter* message_center() { return message_center_; }
 
   // Overridden from MessageCenterObserver:
-  virtual void OnNotificationAdded(const std::string& notification_id) OVERRIDE;
-  virtual void OnNotificationRemoved(const std::string& notification_id,
-                                     bool by_user) OVERRIDE;
-  virtual void OnNotificationUpdated(
-      const std::string& notification_id) OVERRIDE;
-  virtual void OnNotificationClicked(
-      const std::string& notification_id) OVERRIDE;
-  virtual void OnNotificationButtonClicked(
-      const std::string& notification_id,
-      int button_index) OVERRIDE;
-  virtual void OnNotificationDisplayed(
-      const std::string& notification_id,
-      const DisplaySource source) OVERRIDE;
-  virtual void OnQuietModeChanged(bool in_quiet_mode) OVERRIDE;
-  virtual void OnBlockingStateChanged(NotificationBlocker* blocker) OVERRIDE;
+  void OnNotificationAdded(const std::string& notification_id) override;
+  void OnNotificationRemoved(const std::string& notification_id,
+                             bool by_user) override;
+  void OnNotificationUpdated(const std::string& notification_id) override;
+  void OnNotificationClicked(const std::string& notification_id) override;
+  void OnNotificationButtonClicked(const std::string& notification_id,
+                                   int button_index) override;
+  void OnNotificationDisplayed(const std::string& notification_id,
+                               const DisplaySource source) override;
+  void OnQuietModeChanged(bool in_quiet_mode) override;
+  void OnBlockingStateChanged(NotificationBlocker* blocker) override;
 
  private:
   void OnMessageCenterChanged();

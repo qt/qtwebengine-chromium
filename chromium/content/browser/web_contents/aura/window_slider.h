@@ -70,7 +70,7 @@ class CONTENT_EXPORT WindowSlider : public ui::EventHandler,
                aura::Window* event_window,
                aura::Window* owner);
 
-  virtual ~WindowSlider();
+  ~WindowSlider() override;
 
   // Changes the owner of the slider.
   void ChangeOwner(aura::Window* new_owner);
@@ -105,14 +105,14 @@ class CONTENT_EXPORT WindowSlider : public ui::EventHandler,
                                     scoped_ptr<ShadowLayerDelegate> shadow);
 
   // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from aura::WindowObserver:
-  virtual void OnWindowRemovingFromRootWindow(aura::Window* window,
-                                              aura::Window* new_root) OVERRIDE;
+  void OnWindowRemovingFromRootWindow(aura::Window* window,
+                                      aura::Window* new_root) override;
 
   Delegate* delegate_;
 
@@ -140,13 +140,13 @@ class CONTENT_EXPORT WindowSlider : public ui::EventHandler,
   // This manages the shadow for the layers.
   scoped_ptr<ShadowLayerDelegate> shadow_;
 
-  base::WeakPtrFactory<WindowSlider> weak_factory_;
-
   float active_start_threshold_;
 
   const float start_threshold_touchscreen_;
   const float start_threshold_touchpad_;
   const float complete_threshold_;
+
+  base::WeakPtrFactory<WindowSlider> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WindowSlider);
 };

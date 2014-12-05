@@ -18,12 +18,13 @@
  */
 
 #include "platform/PlatformExport.h"
+#include "platform/geometry/IntRect.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "wtf/Noncopyable.h"
 
 OBJC_CLASS NSGraphicsContext;
 
-namespace WebCore {
+namespace blink {
 
 class GraphicsContext;
 
@@ -32,26 +33,14 @@ class GraphicsContext;
 class PLATFORM_EXPORT LocalCurrentGraphicsContext {
     WTF_MAKE_NONCOPYABLE(LocalCurrentGraphicsContext);
 public:
-    LocalCurrentGraphicsContext(GraphicsContext* graphicsContext);
+    LocalCurrentGraphicsContext(GraphicsContext*, IntRect clipRect);
     ~LocalCurrentGraphicsContext();
     CGContextRef cgContext();
 private:
+
     GraphicsContext* m_savedGraphicsContext;
     NSGraphicsContext* m_savedNSGraphicsContext;
     bool m_didSetGraphicsContext;
-    gfx::SkiaBitLocker m_skiaBitLocker;
-};
-
-class PLATFORM_EXPORT ContextContainer {
-    WTF_MAKE_NONCOPYABLE(ContextContainer);
-public:
-    ContextContainer(GraphicsContext*);
-
-    // This synchronizes the CGContext to reflect the current SkCanvas state.
-    // The implementation may not return the same CGContext each time.
-    CGContextRef context() { return m_skiaBitLocker.cgContext(); }
-
-private:
     gfx::SkiaBitLocker m_skiaBitLocker;
 };
 

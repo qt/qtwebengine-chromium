@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegLinetoHorizontal.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegLinetoHorizontalAbs FINAL : public SVGPathSegLinetoHorizontal {
+class SVGPathSegLinetoHorizontalAbs final : public SVGPathSegLinetoHorizontal {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegLinetoHorizontalAbs> create(SVGPathElement* element, SVGPathSegRole role, float x)
+    static PassRefPtr<SVGPathSegLinetoHorizontalAbs> create(SVGPathElement* element, float x)
     {
-        return adoptRef(new SVGPathSegLinetoHorizontalAbs(element, role, x));
+        return adoptRef(new SVGPathSegLinetoHorizontalAbs(element, x));
     }
 
 private:
-    SVGPathSegLinetoHorizontalAbs(SVGPathElement* element, SVGPathSegRole role, float x)
-        : SVGPathSegLinetoHorizontal(element, role, x)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegLinetoHorizontalAbs(SVGPathElement* element, float x)
+        : SVGPathSegLinetoHorizontal(element, x) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_LINETO_HORIZONTAL_ABS; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "H"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_LINETO_HORIZONTAL_ABS; }
+    virtual String pathSegTypeAsLetter() const override { return "H"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegLinetoHorizontalAbs_h

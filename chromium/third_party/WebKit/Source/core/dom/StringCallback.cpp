@@ -35,38 +35,45 @@
 #include "core/dom/ExecutionContextTask.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-class DispatchCallbackTask FINAL : public ExecutionContextTask {
+class DispatchCallbackTask final : public ExecutionContextTask {
 public:
-    static PassOwnPtr<DispatchCallbackTask> create(PassOwnPtr<StringCallback> callback, const String& data)
+    static PassOwnPtr<DispatchCallbackTask> create(StringCallback* callback, const String& data, const String& taskName)
     {
-        return adoptPtr(new DispatchCallbackTask(callback, data));
+        return adoptPtr(new DispatchCallbackTask(callback, data, taskName));
     }
 
-    virtual void performTask(ExecutionContext*) OVERRIDE
+    virtual void performTask(ExecutionContext*) override
     {
         m_callback->handleEvent(m_data);
     }
 
+    virtual String taskNameForInstrumentation() const override
+    {
+        return m_taskName;
+    }
+
 private:
-    DispatchCallbackTask(PassOwnPtr<StringCallback> callback, const String& data)
+    DispatchCallbackTask(StringCallback* callback, const String& data, const String& taskName)
         : m_callback(callback)
         , m_data(data)
+        , m_taskName(taskName)
     {
     }
 
-    OwnPtr<StringCallback> m_callback;
+    Persistent<StringCallback> m_callback;
     const String m_data;
+    const String m_taskName;
 };
 
 } // namespace
 
-void StringCallback::scheduleCallback(PassOwnPtr<StringCallback> callback, ExecutionContext* context, const String& data)
+void StringCallback::scheduleCallback(StringCallback* callback, ExecutionContext* context, const String& data, const String& instrumentationName)
 {
-    context->postTask(DispatchCallbackTask::create(callback, data));
+    context->postTask(DispatchCallbackTask::create(callback, data, instrumentationName));
 }
 
-} // namespace WebCore
+} // namespace blink

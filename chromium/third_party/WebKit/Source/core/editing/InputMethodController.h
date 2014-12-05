@@ -28,17 +28,17 @@
 
 #include "core/editing/CompositionUnderline.h"
 #include "core/editing/PlainTextRange.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Editor;
-class EditorClient;
 class LocalFrame;
 class Range;
 class Text;
 
-class InputMethodController {
+class InputMethodController final : public NoBaseWillBeGarbageCollectedFinalized<InputMethodController> {
     WTF_MAKE_NONCOPYABLE(InputMethodController);
 public:
     enum ConfirmCompositionBehavior {
@@ -46,8 +46,9 @@ public:
         KeepSelection,
     };
 
-    static PassOwnPtr<InputMethodController> create(LocalFrame&);
+    static PassOwnPtrWillBeRawPtr<InputMethodController> create(LocalFrame&);
     ~InputMethodController();
+    void trace(Visitor*);
 
     // international text input composition
     bool hasComposition() const;
@@ -94,8 +95,8 @@ private:
     };
     friend class SelectionOffsetsScope;
 
-    LocalFrame& m_frame;
-    RefPtrWillBePersistent<Text> m_compositionNode;
+    RawPtrWillBeMember<LocalFrame> m_frame;
+    RefPtrWillBeMember<Text> m_compositionNode;
     // We don't use PlainTextRange which is immutable, for composition range.
     unsigned m_compositionStart;
     unsigned m_compositionEnd;
@@ -104,7 +105,14 @@ private:
     Vector<CompositionUnderline> m_customCompositionUnderlines;
 
     explicit InputMethodController(LocalFrame&);
+
     Editor& editor() const;
+    LocalFrame& frame() const
+    {
+        ASSERT(m_frame);
+        return *m_frame;
+    }
+
     bool insertTextForConfirmedComposition(const String& text);
     void selectComposition() const;
     enum FinishCompositionMode { ConfirmComposition, CancelComposition };
@@ -113,6 +121,6 @@ private:
     bool setSelectionOffsets(const PlainTextRange&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InputMethodController_h

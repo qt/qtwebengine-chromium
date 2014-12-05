@@ -37,8 +37,6 @@
 #include "web/WebViewImpl.h"
 #include "wtf/CurrentTime.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 ValidationMessageClientImpl::ValidationMessageClientImpl(WebViewImpl& webView)
@@ -64,7 +62,7 @@ FrameView* ValidationMessageClientImpl::currentView()
     return m_currentAnchor->document().view();
 }
 
-void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, const String& message)
+void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, const String& message, TextDirection messageDir, const String& subMessage, TextDirection subMessageDir)
 {
     if (message.isEmpty()) {
         hideValidationMessage(anchor);
@@ -79,15 +77,14 @@ void ValidationMessageClientImpl::showValidationMessage(const Element& anchor, c
     m_lastAnchorRectInScreen = currentView()->hostWindow()->rootViewToScreen(anchorInRootView);
     m_lastPageScaleFactor = m_webView.pageScaleFactor();
     m_message = message;
-
-    WebTextDirection dir = m_currentAnchor->renderer()->style()->direction() == RTL ? WebTextDirectionRightToLeft : WebTextDirectionLeftToRight;
-    AtomicString title = m_currentAnchor->fastGetAttribute(HTMLNames::titleAttr);
-    m_webView.client()->showValidationMessage(anchorInRootView, m_message, title, dir);
-
     const double minimumSecondToShowValidationMessage = 5.0;
     const double secondPerCharacter = 0.05;
     const double statusCheckInterval = 0.1;
-    m_finishTime = monotonicallyIncreasingTime() + std::max(minimumSecondToShowValidationMessage, (message.length() + title.length()) * secondPerCharacter);
+
+    m_webView.client()->showValidationMessage(anchorInRootView, m_message, toWebTextDirection(messageDir),
+        subMessage, toWebTextDirection(subMessageDir));
+
+    m_finishTime = monotonicallyIncreasingTime() + std::max(minimumSecondToShowValidationMessage, (message.length() + subMessage.length()) * secondPerCharacter);
     // FIXME: We should invoke checkAnchorStatus actively when layout, scroll,
     // or page scale change happen.
     m_timer.startRepeating(statusCheckInterval, FROM_HERE);
@@ -126,7 +123,7 @@ void ValidationMessageClientImpl::checkAnchorStatus(Timer<ValidationMessageClien
     // Check the visibility of the element.
     // FIXME: Can we check invisibility by scrollable non-frame elements?
     IntRect newAnchorRect = currentView()->contentsToRootView(m_currentAnchor->pixelSnappedBoundingBox());
-    newAnchorRect = intersection(currentView()->convertToRootView(currentView()->boundsRect()), newAnchorRect);
+    newAnchorRect = intersection(currentView()->convertToContainingWindow(currentView()->boundsRect()), newAnchorRect);
     if (newAnchorRect.isEmpty()) {
         hideValidationMessage(*m_currentAnchor);
         return;
@@ -152,4 +149,4 @@ void ValidationMessageClientImpl::trace(Visitor* visitor)
     ValidationMessageClient::trace(visitor);
 }
 
-}
+} // namespace blink

@@ -8,7 +8,6 @@
 #include "base/logging.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/models/combobox_model.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -21,6 +20,7 @@
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/common_theme.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/background.h"
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -32,6 +32,7 @@
 #include "ui/views/controls/menu/menu_runner_handler.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/controls/prefix_selector.h"
+#include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/ime/input_method.h"
 #include "ui/views/mouse_constants.h"
 #include "ui/views/painter.h"
@@ -91,9 +92,9 @@ class TransparentButton : public CustomButton {
       : CustomButton(listener) {
     SetAnimationDuration(LabelButton::kHoverAnimationDurationMs);
   }
-  virtual ~TransparentButton() {}
+  ~TransparentButton() override {}
 
-  virtual bool OnMousePressed(const ui::MouseEvent& mouse_event) OVERRIDE {
+  bool OnMousePressed(const ui::MouseEvent& mouse_event) override {
     parent()->RequestFocus();
     return true;
   }
@@ -232,6 +233,7 @@ Combobox::Combobox(ui::ComboboxModel* model)
       listener_(NULL),
       selected_index_(model_->GetDefaultIndex()),
       invalid_(false),
+      menu_(NULL),
       dropdown_open_(false),
       text_button_(new TransparentButton(this)),
       arrow_button_(new TransparentButton(this)),
@@ -409,6 +411,10 @@ gfx::Size Combobox::GetPreferredSize() const {
   // The preferred size will drive the local bounds which in turn is used to set
   // the minimum width for the dropdown list.
   gfx::Insets insets = GetInsets();
+  insets += gfx::Insets(Textfield::kTextPadding,
+                        Textfield::kTextPadding,
+                        Textfield::kTextPadding,
+                        Textfield::kTextPadding);
   int total_width = std::max(kMinComboboxWidth, content_size_.width()) +
       insets.width() + GetDisclosureArrowLeftPadding() +
       ArrowSize().width() + GetDisclosureArrowRightPadding();
@@ -589,9 +595,9 @@ void Combobox::ButtonPressed(Button* sender, const ui::Event& event) {
 void Combobox::UpdateFromModel() {
   const gfx::FontList& font_list = Combobox::GetFontList();
 
-  MenuItemView* menu = new MenuItemView(this);
-  // MenuRunner owns |menu|.
-  dropdown_list_menu_runner_.reset(new MenuRunner(menu));
+  menu_ = new MenuItemView(this);
+  // MenuRunner owns |menu_|.
+  dropdown_list_menu_runner_.reset(new MenuRunner(menu_, MenuRunner::COMBOBOX));
 
   int num_items = model()->GetItemCount();
   int width = 0;
@@ -602,7 +608,7 @@ void Combobox::UpdateFromModel() {
     // always selected and rendered on the top of the action button.
     if (model()->IsItemSeparatorAt(i)) {
       if (text_item_appended || style_ != STYLE_ACTION)
-        menu->AppendSeparator();
+        menu_->AppendSeparator();
       continue;
     }
 
@@ -613,7 +619,7 @@ void Combobox::UpdateFromModel() {
     base::i18n::AdjustStringForLocaleDirection(&text);
 
     if (style_ != STYLE_ACTION || i > 0) {
-      menu->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
+      menu_->AppendMenuItem(i + kFirstMenuItemId, text, MenuItemView::NORMAL);
       text_item_appended = true;
     }
 
@@ -627,10 +633,10 @@ void Combobox::UpdateFromModel() {
 void Combobox::UpdateBorder() {
   scoped_ptr<FocusableBorder> border(new FocusableBorder());
   if (style_ == STYLE_ACTION)
-    border->SetInsets(8, 13, 8, 13);
+    border->SetInsets(5, 10, 5, 10);
   if (invalid_)
     border->SetColor(kWarningColor);
-  SetBorder(border.PassAs<Border>());
+  SetBorder(border.Pass());
 }
 
 void Combobox::AdjustBoundsForRTLUI(gfx::Rect* rect) const {
@@ -639,6 +645,7 @@ void Combobox::AdjustBoundsForRTLUI(gfx::Rect* rect) const {
 
 void Combobox::PaintText(gfx::Canvas* canvas) {
   gfx::Insets insets = GetInsets();
+  insets += gfx::Insets(0, Textfield::kTextPadding, 0, Textfield::kTextPadding);
 
   gfx::ScopedCanvas scoped_canvas(canvas);
   canvas->ClipRect(GetContentsBounds());
@@ -752,8 +759,7 @@ void Combobox::ShowDropDownMenu(ui::MenuSourceType source_type) {
     UpdateFromModel();
 
   // Extend the menu to the width of the combobox.
-  MenuItemView* menu = dropdown_list_menu_runner_->GetMenu();
-  SubmenuView* submenu = menu->CreateSubmenu();
+  SubmenuView* submenu = menu_->CreateSubmenu();
   submenu->set_minimum_preferred_width(
       size().width() - (kMenuBorderWidthLeft + kMenuBorderWidthRight));
 
@@ -782,9 +788,8 @@ void Combobox::ShowDropDownMenu(ui::MenuSourceType source_type) {
   dropdown_open_ = true;
   MenuAnchorPosition anchor_position =
       style_ == STYLE_ACTION ? MENU_ANCHOR_TOPRIGHT : MENU_ANCHOR_TOPLEFT;
-  if (dropdown_list_menu_runner_->RunMenuAt(GetWidget(), NULL, bounds,
-                                            anchor_position, source_type,
-                                            MenuRunner::COMBOBOX) ==
+  if (dropdown_list_menu_runner_->RunMenuAt(
+          GetWidget(), NULL, bounds, anchor_position, source_type) ==
       MenuRunner::MENU_DELETED) {
     return;
   }

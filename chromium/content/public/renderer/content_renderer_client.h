@@ -8,14 +8,15 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
-#include "content/public/common/page_transition_types.h"
 #include "ipc/ipc_message.h"
 #include "third_party/WebKit/public/web/WebNavigationPolicy.h"
 #include "third_party/WebKit/public/web/WebNavigationType.h"
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
+#include "ui/base/page_transition_types.h"
 #include "v8/include/v8.h"
 
 class GURL;
@@ -37,6 +38,7 @@ class WebMediaStreamCenter;
 class WebMediaStreamCenterClient;
 class WebPlugin;
 class WebPluginContainer;
+class WebPluginPlaceholder;
 class WebPrescientNetworking;
 class WebRTCPeerConnectionHandler;
 class WebRTCPeerConnectionHandlerClient;
@@ -49,12 +51,16 @@ struct WebPluginParams;
 struct WebURLError;
 }
 
+namespace media {
+struct KeySystemInfo;
+}
+
 namespace content {
+class BrowserPluginDelegate;
 class DocumentState;
 class RenderFrame;
 class RenderView;
 class SynchronousCompositor;
-struct KeySystemInfo;
 struct WebPluginInfo;
 
 // Embedder API for participating in renderer logic.
@@ -83,8 +89,13 @@ class CONTENT_EXPORT ContentRendererClient {
   // none.
   virtual SkBitmap* GetSadWebViewBitmap();
 
-  // Returns the default text encoding.
-  virtual std::string GetDefaultEncoding();
+  // Allows the embedder to create a plugin placeholder instead of a plugin.
+  // Called before OverrideCreatePlugin. May return null to decline to provide
+  // a plugin placeholder.
+  virtual scoped_ptr<blink::WebPluginPlaceholder> CreatePluginPlaceholder(
+      RenderFrame* render_frame,
+      blink::WebLocalFrame* frame,
+      const blink::WebPluginParams& params);
 
   // Allows the embedder to override creating a plugin. If it returns true, then
   // |plugin| will contain the created plugin, although it could be NULL. If it
@@ -100,6 +111,12 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual blink::WebPlugin* CreatePluginReplacement(
       RenderFrame* render_frame,
       const base::FilePath& plugin_path);
+
+  // Creates a delegate for browser plugin.
+  virtual BrowserPluginDelegate* CreateBrowserPluginDelegate(
+      RenderFrame* render_frame,
+      const std::string& mime_type,
+      const GURL& original_url);
 
   // Returns true if the embedder has an error page to show for the given http
   // status code. If so |error_domain| should be set to according to WebURLError
@@ -207,7 +224,7 @@ class CONTENT_EXPORT ContentRendererClient {
   // Notifies the embedder that the given frame is requesting the resource at
   // |url|.  If the function returns true, the url is changed to |new_url|.
   virtual bool WillSendRequest(blink::WebFrame* frame,
-                               PageTransition transition_type,
+                               ui::PageTransition transition_type,
                                const GURL& url,
                                const GURL& first_party_for_cookies,
                                GURL* new_url);
@@ -240,7 +257,7 @@ class CONTENT_EXPORT ContentRendererClient {
 
   // Gives the embedder a chance to register the key system(s) it supports by
   // populating |key_systems|.
-  virtual void AddKeySystems(std::vector<KeySystemInfo>* key_systems);
+  virtual void AddKeySystems(std::vector<media::KeySystemInfo>* key_systems);
 
   // Returns true if we should report a detailed message (including a stack
   // trace) for console [logs|errors|exceptions]. |source| is the WebKit-
@@ -258,6 +275,19 @@ class CONTENT_EXPORT ContentRendererClient {
   virtual blink::WebWorkerPermissionClientProxy*
       CreateWorkerPermissionClientProxy(RenderFrame* render_frame,
                                         blink::WebFrame* frame);
+
+  // Returns true if the page at |url| can use Pepper Compositor APIs.
+  virtual bool IsPluginAllowedToUseCompositorAPI(const GURL& url);
+
+  // Returns true if the page at |url| can use Pepper VideoDecoder APIs.
+  virtual bool IsPluginAllowedToUseVideoDecodeAPI(const GURL& url);
+
+  // Returns true if dev channel APIs are available for plugins.
+  virtual bool IsPluginAllowedToUseDevChannelAPIs();
+
+  // Returns a user agent override specific for |url|, or empty string if
+  // default user agent should be used.
+  virtual std::string GetUserAgentOverrideForURL(const GURL& url);
 };
 
 }  // namespace content

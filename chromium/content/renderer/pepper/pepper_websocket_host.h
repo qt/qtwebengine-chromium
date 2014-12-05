@@ -34,9 +34,9 @@ class CONTENT_EXPORT PepperWebSocketHost
                                PP_Resource resource);
   virtual ~PepperWebSocketHost();
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // WebSocketClient implementation.
   virtual void didConnect();

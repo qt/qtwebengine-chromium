@@ -6,6 +6,7 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "content/child/child_thread.h"
+#include "content/child/multipart_response_delegate.h"
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/plugin_stream_url.h"
@@ -15,6 +16,7 @@
 #include "content/child/request_extra_data.h"
 #include "content/child/request_info.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/resource_loader_bridge.h"
 #include "content/child/web_url_loader_impl.h"
 #include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_types.h"
@@ -22,11 +24,9 @@
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
-#include "net/url_request/url_request.h"
+#include "net/url_request/redirect_info.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "webkit/child/multipart_response_delegate.h"
-#include "webkit/child/resource_loader_bridge.h"
 
 namespace content {
 namespace {
@@ -46,18 +46,19 @@ class MultiPartResponseClient : public blink::WebURLLoaderClient {
   // blink::WebURLLoaderClient implementation:
   virtual void didReceiveResponse(
       blink::WebURLLoader* loader,
-      const blink::WebURLResponse& response) OVERRIDE {
+      const blink::WebURLResponse& response) override {
     int64 byte_range_upper_bound, instance_size;
-    if (!webkit_glue::MultipartResponseDelegate::ReadContentRanges(
-            response, &byte_range_lower_bound_, &byte_range_upper_bound,
-            &instance_size)) {
+    if (!MultipartResponseDelegate::ReadContentRanges(response,
+                                                      &byte_range_lower_bound_,
+                                                      &byte_range_upper_bound,
+                                                      &instance_size)) {
       NOTREACHED();
     }
   }
   virtual void didReceiveData(blink::WebURLLoader* loader,
                               const char* data,
                               int data_length,
-                              int encoded_data_length) OVERRIDE {
+                              int encoded_data_length) override {
     // TODO(ananta)
     // We should defer further loads on multipart resources on the same lines
     // as regular resources requested by plugins to prevent reentrancy.
@@ -94,7 +95,6 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
     : plugin_stream_(plugin_stream),
       url_(url),
       first_party_for_cookies_(first_party_for_cookies),
-      method_(method),
       referrer_(referrer),
       notify_redirects_(notify_redirects),
       is_plugin_src_load_(is_plugin_src_load),
@@ -112,8 +112,10 @@ PluginURLFetcher::PluginURLFetcher(PluginStreamUrl* plugin_stream,
   request_info.referrer = referrer;
   request_info.load_flags = net::LOAD_NORMAL;
   request_info.requestor_pid = origin_pid;
-  request_info.request_type = ResourceType::OBJECT;
+  request_info.request_type = RESOURCE_TYPE_OBJECT;
   request_info.routing_id = render_view_id;
+  // ServiceWorker is disabled for NPAPI.
+  request_info.skip_service_worker = true;
 
   RequestExtraData extra_data;
   extra_data.set_render_frame_id(render_frame_id);
@@ -190,8 +192,7 @@ void PluginURLFetcher::OnUploadProgress(uint64 position, uint64 size) {
 }
 
 bool PluginURLFetcher::OnReceivedRedirect(
-    const GURL& new_url,
-    const GURL& new_first_party_for_cookies,
+    const net::RedirectInfo& redirect_info,
     const ResourceResponseInfo& info) {
   if (!plugin_stream_)
     return false;
@@ -205,32 +206,28 @@ bool PluginURLFetcher::OnReceivedRedirect(
   // initiated by plug-ins.
   if (is_plugin_src_load_ &&
       !plugin_stream_->instance()->webplugin()->CheckIfRunInsecureContent(
-          new_url)) {
+          redirect_info.new_url)) {
     plugin_stream_->DidFail(resource_id_);  // That will delete |this|.
     return false;
   }
 
-  // It's unfortunate that this logic of when a redirect's method changes is
-  // in url_request.cc, but weburlloader_impl.cc and this file have to duplicate
-  // it instead of passing that information.
-  int response_code = info.headers->response_code();
-  method_ = net::URLRequest::ComputeMethodForRedirect(method_, response_code);
   GURL old_url = url_;
-  url_ = new_url;
-  first_party_for_cookies_ = new_first_party_for_cookies;
+  url_ = redirect_info.new_url;
+  first_party_for_cookies_ = redirect_info.new_first_party_for_cookies;
 
   // If the plugin does not participate in url redirect notifications then just
   // block cross origin 307 POST redirects.
   if (!notify_redirects_) {
-    if (response_code == 307 && method_ == "POST" &&
-        old_url.GetOrigin() != new_url.GetOrigin()) {
+    if (redirect_info.status_code == 307 &&
+        redirect_info.new_method == "POST" &&
+        old_url.GetOrigin() != url_.GetOrigin()) {
       plugin_stream_->DidFail(resource_id_);  // That will delete |this|.
       return false;
     }
   } else {
     // Pause the request while we ask the plugin what to do about the redirect.
     bridge_->SetDefersLoading(true);
-    plugin_stream_->WillSendRequest(url_, response_code);
+    plugin_stream_->WillSendRequest(url_, redirect_info.status_code);
   }
 
   return true;
@@ -254,14 +251,14 @@ void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
       WebURLLoaderImpl::PopulateURLResponse(url_, info, &response);
 
       std::string multipart_boundary;
-      if (webkit_glue::MultipartResponseDelegate::ReadMultipartBoundary(
+      if (MultipartResponseDelegate::ReadMultipartBoundary(
               response, &multipart_boundary)) {
         plugin_stream_->instance()->webplugin()->DidStartLoading();
 
         MultiPartResponseClient* multi_part_response_client =
             new MultiPartResponseClient(plugin_stream_);
 
-        multipart_delegate_.reset(new webkit_glue::MultipartResponseDelegate(
+        multipart_delegate_.reset(new MultipartResponseDelegate(
             multi_part_response_client, NULL, response, multipart_boundary));
 
         // Multiple ranges requested, data will be delivered by
@@ -273,7 +270,7 @@ void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
       int64 upper_bound = 0, instance_size = 0;
       // Single range requested - go through original processing for
       // non-multipart requests, but update data offset.
-      webkit_glue::MultipartResponseDelegate::ReadContentRanges(
+      MultipartResponseDelegate::ReadContentRanges(
           response, &data_offset_, &upper_bound, &instance_size);
     } else if (response_code == 200) {
       // TODO: should we handle this case? We used to but it's not clear that we
@@ -289,7 +286,7 @@ void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
   base::Time temp;
   uint32 last_modified = 0;
   std::string headers;
-  if (info.headers) {  // NULL for data: urls.
+  if (info.headers.get()) {  // NULL for data: urls.
     if (info.headers->GetLastModifiedValue(&temp))
       last_modified = static_cast<uint32>(temp.ToDoubleT());
 
@@ -312,7 +309,7 @@ void PluginURLFetcher::OnReceivedResponse(const ResourceResponseInfo& info) {
     // of the HTTP requests issued via NPN_GetURLNotify. Webkit and FF destroy
     // the stream and invoke the NPP_DestroyStream function on the plugin if the
     // HTTPrequest fails.
-    if ((url_.SchemeIs("http") || url_.SchemeIs("https")) &&
+    if ((url_.SchemeIs(url::kHttpScheme) || url_.SchemeIs(url::kHttpsScheme)) &&
         (response_code < 100 || response_code >= 400)) {
       pending_failure_notification_ = true;
     }

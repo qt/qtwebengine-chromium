@@ -38,13 +38,13 @@
 #include "platform/graphics/GraphicsContext.h"
 #include <windows.h>
 
-namespace WebCore {
+namespace blink {
 
 // Maximum font size, in pixels, at which embedded bitmaps will be used
 // if available.
 const float kMaxSizeForEmbeddedBitmap = 24.0f;
 
-void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context) const
+void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context, const Font*) const
 {
     const float ts = m_textSize >= 0 ? m_textSize : 12;
     paint->setTextSize(SkFloatToScalar(m_textSize));
@@ -63,7 +63,21 @@ void FontPlatformData::setupPaint(SkPaint* paint, GraphicsContext* context) cons
         flags |= SkPaint::kEmbeddedBitmapText_Flag;
 
     if (ts >= m_minSizeForAntiAlias) {
-        if (m_useSubpixelPositioning)
+
+        if (m_useSubpixelPositioning
+            // Disable subpixel text for certain older fonts at smaller sizes as
+            // they tend to get quite blurry at non-integer sizes and positions.
+            // For high-DPI this workaround isn't required.
+            && (ts >= m_minSizeForSubpixel
+                || FontCache::fontCache()->deviceScaleFactor() >= 1.5)
+
+            // Subpixel text positioning looks pretty bad without font
+            // smoothing. Disable it unless some type of font smoothing is used.
+            // As most tests run without font smoothing we enable it for tests
+            // to ensure we get good test coverage matching the more common
+            // smoothing enabled behavior.
+            && ((textFlags & SkPaint::kAntiAlias_Flag)
+                || LayoutTestSupport::isRunningLayoutTest()))
             flags |= SkPaint::kSubpixelText_Flag;
 
         // Only set painting flags when we're actually painting.
@@ -126,8 +140,8 @@ static bool isWebFont(const String& familyName)
 
 static int computePaintTextFlags(String fontFamilyName)
 {
-    if (isRunningLayoutTest())
-        return isFontAntialiasingEnabledForTest() ? SkPaint::kAntiAlias_Flag : 0;
+    if (LayoutTestSupport::isRunningLayoutTest())
+        return LayoutTestSupport::isFontAntialiasingEnabledForTest() ? SkPaint::kAntiAlias_Flag : 0;
 
     int textFlags = getSystemTextFlags();
 
@@ -151,4 +165,4 @@ bool FontPlatformData::defaultUseSubpixelPositioning()
     return FontCache::fontCache()->useSubpixelPositioning();
 }
 
-} // namespace WebCore
+} // namespace blink

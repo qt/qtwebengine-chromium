@@ -11,32 +11,16 @@ config("sdk") {
 
   defines = [
     "_ATL_NO_OPENGL",
-    "_WIN32_WINNT=0x0602",
     "_WINDOWS",
     "CERT_CHAIN_PARA_HAS_EXTRA_FIELDS",
     "NTDDI_VERSION=0x06020000",
     "PSAPI_VERSION=1",
     "WIN32",
-    "WINVER=0x0602",
   ]
 
-  # The Windows SDK include directories must be first. They both have a sal.h,
-  # and the SDK one is newer and the SDK uses some newer features from it not
-  # present in the Visual Studio one.
-  include_dirs = [
-    "$windows_sdk_path\Include\shared",
-    "$windows_sdk_path\Include\um",
-    "$windows_sdk_path\Include\winrt",
-    "$visual_studio_path\VC\include",
-    "$visual_studio_path\VC\atlmfc\include",
-  ]
+  include_dirs = system_include_dirs
 
   if (is_visual_studio_express) {
-    include_dirs += [
-      "$wdk_path/inc/atl71",
-      "$wdk_path/inc/mfc42",
-    ]
-
     # https://code.google.com/p/chromium/issues/detail?id=372451#c20
     # Warning 4702 ("Unreachable code") should be re-enabled once Express users
     # are updated to VS2013 Update 2.
@@ -45,6 +29,15 @@ config("sdk") {
     # Only supported on non-Express versions.
     defines += [ "_SECURE_ATL" ]
   }
+}
+
+# Sets the default Windows build version. This is separated because some
+# targets need to manually override it for their compiles.
+config("winver") {
+  defines = [
+    "_WIN32_WINNT=0x0602",
+    "WINVER=0x0602",
+  ]
 }
 
 # Linker flags for Windows SDK setup, this is applied only to EXEs and DLLs.

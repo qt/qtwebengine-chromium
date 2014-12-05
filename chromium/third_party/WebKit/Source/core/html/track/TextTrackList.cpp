@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/track/TextTrackList.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/events/GenericEventQueue.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/InbandTextTrack.h"
@@ -34,13 +34,12 @@
 #include "core/html/track/TextTrack.h"
 #include "core/html/track/TrackEvent.h"
 
-using namespace WebCore;
+using namespace blink;
 
 TextTrackList::TextTrackList(HTMLMediaElement* owner)
     : m_owner(owner)
     , m_asyncEventQueue(GenericEventQueue::create(this))
 {
-    ScriptWrappable::init(this);
 }
 
 TextTrackList::~TextTrackList()
@@ -158,7 +157,7 @@ TextTrack* TextTrackList::getTrackById(const AtomicString& id)
 
 void TextTrackList::invalidateTrackIndexesAfterTrack(TextTrack* track)
 {
-    WillBeHeapVector<RefPtrWillBeMember<TextTrack> >* tracks = 0;
+    WillBeHeapVector<RefPtrWillBeMember<TextTrack>>* tracks = 0;
 
     if (track->trackType() == TextTrack::TrackElement) {
         tracks = &m_elementTracks;
@@ -170,10 +169,11 @@ void TextTrackList::invalidateTrackIndexesAfterTrack(TextTrack* track)
         tracks = &m_addTrackTracks;
         for (size_t i = 0; i < m_inbandTracks.size(); ++i)
             m_inbandTracks[i]->invalidateTrackIndex();
-    } else if (track->trackType() == TextTrack::InBand)
+    } else if (track->trackType() == TextTrack::InBand) {
         tracks = &m_inbandTracks;
-    else
+    } else {
         ASSERT_NOT_REACHED();
+    }
 
     size_t index = tracks->find(track);
     if (index == kNotFound)
@@ -187,9 +187,9 @@ void TextTrackList::append(PassRefPtrWillBeRawPtr<TextTrack> prpTrack)
 {
     RefPtrWillBeRawPtr<TextTrack> track = prpTrack;
 
-    if (track->trackType() == TextTrack::AddTrack)
+    if (track->trackType() == TextTrack::AddTrack) {
         m_addTrackTracks.append(track);
-    else if (track->trackType() == TextTrack::TrackElement) {
+    } else if (track->trackType() == TextTrack::TrackElement) {
         // Insert tracks added for <track> element in tree order.
         size_t index = static_cast<LoadableTextTrack*>(track.get())->trackElementIndex();
         m_elementTracks.insert(index, track);
@@ -197,8 +197,9 @@ void TextTrackList::append(PassRefPtrWillBeRawPtr<TextTrack> prpTrack)
         // Insert tracks added for in-band in the media file order.
         size_t index = static_cast<InbandTextTrack*>(track.get())->inbandTrackIndex();
         m_inbandTracks.insert(index, track);
-    } else
+    } else {
         ASSERT_NOT_REACHED();
+    }
 
     invalidateTrackIndexesAfterTrack(track.get());
 
@@ -210,7 +211,7 @@ void TextTrackList::append(PassRefPtrWillBeRawPtr<TextTrack> prpTrack)
 
 void TextTrackList::remove(TextTrack* track)
 {
-    WillBeHeapVector<RefPtrWillBeMember<TextTrack> >* tracks = 0;
+    WillBeHeapVector<RefPtrWillBeMember<TextTrack>>* tracks = 0;
 
     if (track->trackType() == TextTrack::TrackElement) {
         tracks = &m_elementTracks;
@@ -246,7 +247,7 @@ void TextTrackList::removeAllInbandTracks()
 
 bool TextTrackList::contains(TextTrack* track) const
 {
-    const WillBeHeapVector<RefPtrWillBeMember<TextTrack> >* tracks = 0;
+    const WillBeHeapVector<RefPtrWillBeMember<TextTrack>>* tracks = 0;
 
     if (track->trackType() == TextTrack::TrackElement)
         tracks = &m_elementTracks;
@@ -308,11 +309,7 @@ void TextTrackList::scheduleChangeEvent()
     // Fire a simple event named change at the media element's textTracks
     // attribute's TextTrackList object.
 
-    EventInit initializer;
-    initializer.bubbles = false;
-    initializer.cancelable = false;
-
-    m_asyncEventQueue->enqueueEvent(Event::create(EventTypeNames::change, initializer));
+    m_asyncEventQueue->enqueueEvent(Event::create(EventTypeNames::change));
 }
 
 void TextTrackList::scheduleRemoveTrackEvent(PassRefPtrWillBeRawPtr<TextTrack> track)

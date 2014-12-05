@@ -29,17 +29,15 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "platform/mediastream/MediaStreamWebAudioSource.h"
 
 #include "platform/audio/AudioBus.h"
 #include "public/platform/WebAudioSourceProvider.h"
 
-namespace WebCore {
+namespace blink {
 
-MediaStreamWebAudioSource::MediaStreamWebAudioSource(PassOwnPtr<blink::WebAudioSourceProvider> provider)
+MediaStreamWebAudioSource::MediaStreamWebAudioSource(PassOwnPtr<WebAudioSourceProvider> provider)
     : m_webAudioSourceProvider(provider)
 {
 }
@@ -61,13 +59,13 @@ void MediaStreamWebAudioSource::provideInput(AudioBus* bus, size_t framesToProce
 
     // Wrap the AudioBus channel data using WebVector.
     size_t n = bus->numberOfChannels();
-    blink::WebVector<float*> webAudioData(n);
+    WebVector<float*> webAudioData(n);
     for (size_t i = 0; i < n; ++i)
         webAudioData[i] = bus->channel(i)->mutableData();
 
     m_webAudioSourceProvider->provideInput(webAudioData, framesToProcess);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

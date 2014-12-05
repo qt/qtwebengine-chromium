@@ -26,23 +26,26 @@
 #ifndef WebGLActiveInfo_h
 #define WebGLActiveInfo_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/graphics/GraphicsTypes3D.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLActiveInfo : public RefCounted<WebGLActiveInfo>, public ScriptWrappable {
+class WebGLActiveInfo final : public RefCountedWillBeGarbageCollectedFinalized<WebGLActiveInfo>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<WebGLActiveInfo> create(const String& name, GLenum type, GLint size)
+    static PassRefPtrWillBeRawPtr<WebGLActiveInfo> create(const String& name, GLenum type, GLint size)
     {
-        return adoptRef(new WebGLActiveInfo(name, type, size));
+        return adoptRefWillBeNoop(new WebGLActiveInfo(name, type, size));
     }
     String name() const { return m_name; }
     GLenum type() const { return m_type; }
     GLint size() const { return m_size; }
+
+    void trace(Visitor*) { }
 
 private:
     WebGLActiveInfo(const String& name, GLenum type, GLint size)
@@ -53,13 +56,12 @@ private:
         ASSERT(name.length());
         ASSERT(type);
         ASSERT(size);
-        ScriptWrappable::init(this);
     }
     String m_name;
     GLenum m_type;
     GLint m_size;
 };
 
-}
+} // namespace blink
 
 #endif // WebGLActiveInfo_h

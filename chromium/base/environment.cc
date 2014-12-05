@@ -22,8 +22,7 @@ namespace {
 
 class EnvironmentImpl : public base::Environment {
  public:
-  virtual bool GetVar(const char* variable_name,
-                      std::string* result) OVERRIDE {
+  bool GetVar(const char* variable_name, std::string* result) override {
     if (GetVarImpl(variable_name, result))
       return true;
 
@@ -36,18 +35,18 @@ class EnvironmentImpl : public base::Environment {
     if (first_char >= 'a' && first_char <= 'z')
       alternate_case_var = StringToUpperASCII(std::string(variable_name));
     else if (first_char >= 'A' && first_char <= 'Z')
-      alternate_case_var = StringToLowerASCII(std::string(variable_name));
+      alternate_case_var = base::StringToLowerASCII(std::string(variable_name));
     else
       return false;
     return GetVarImpl(alternate_case_var.c_str(), result);
   }
 
-  virtual bool SetVar(const char* variable_name,
-                      const std::string& new_value) OVERRIDE {
+  bool SetVar(const char* variable_name,
+              const std::string& new_value) override {
     return SetVarImpl(variable_name, new_value);
   }
 
-  virtual bool UnSetVar(const char* variable_name) OVERRIDE {
+  bool UnSetVar(const char* variable_name) override {
     return UnSetVarImpl(variable_name);
   }
 

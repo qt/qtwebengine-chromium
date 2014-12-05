@@ -31,24 +31,24 @@
 #ifndef SVGListPropertyHelper_h
 #define SVGListPropertyHelper_h
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/svg/properties/SVGProperty.h"
+#include "core/svg/SVGAnimationElement.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 // This is an implementation of the SVG*List property spec:
 // http://www.w3.org/TR/SVG/single-page.html#types-InterfaceSVGLengthList
 template<typename Derived, typename ItemProperty>
-class SVGListPropertyHelper : public SVGPropertyBase {
+class SVGListPropertyHelper : public SVGPropertyHelper<Derived> {
 public:
     typedef ItemProperty ItemPropertyType;
 
     SVGListPropertyHelper()
-        : SVGPropertyBase(Derived::classType())
     {
     }
 
@@ -128,6 +128,13 @@ public:
         return !length();
     }
 
+    virtual PassRefPtr<Derived> clone()
+    {
+        RefPtr<Derived> svgList = Derived::create();
+        svgList->deepCopy(static_cast<Derived*>(this));
+        return svgList.release();
+    }
+
     // SVGList*Property DOM spec:
 
     size_t length() const
@@ -146,6 +153,13 @@ public:
 
 protected:
     void deepCopy(PassRefPtr<Derived>);
+
+    bool adjustFromToListValues(PassRefPtr<Derived> fromList, PassRefPtr<Derived> toList, float percentage, AnimationMode);
+
+    virtual PassRefPtr<ItemPropertyType> createPaddingItem() const
+    {
+        return ItemPropertyType::create();
+    }
 
 private:
     inline bool checkIndexBound(size_t, ExceptionState&);
@@ -364,6 +378,40 @@ void SVGListPropertyHelper<Derived, ItemProperty>::deepCopy(PassRefPtr<Derived> 
     for (; it != itEnd; ++it) {
         append((*it)->clone());
     }
+}
+
+template<typename Derived, typename ItemProperty>
+bool SVGListPropertyHelper<Derived, ItemProperty>::adjustFromToListValues(PassRefPtr<Derived> passFromList, PassRefPtr<Derived> passToList, float percentage, AnimationMode mode)
+{
+    RefPtr<Derived> fromList = passFromList;
+    RefPtr<Derived> toList = passToList;
+
+    // If no 'to' value is given, nothing to animate.
+    size_t toListSize = toList->length();
+    if (!toListSize)
+        return false;
+
+    // If the 'from' value is given and it's length doesn't match the 'to' value list length, fallback to a discrete animation.
+    size_t fromListSize = fromList->length();
+    if (fromListSize != toListSize && fromListSize) {
+        if (percentage < 0.5) {
+            if (mode != ToAnimation)
+                deepCopy(fromList);
+        } else {
+            deepCopy(toList);
+        }
+
+        return false;
+    }
+
+    ASSERT(!fromListSize || fromListSize == toListSize);
+    if (length() < toListSize) {
+        size_t paddingCount = toListSize - length();
+        for (size_t i = 0; i < paddingCount; ++i)
+            append(createPaddingItem());
+    }
+
+    return true;
 }
 
 }

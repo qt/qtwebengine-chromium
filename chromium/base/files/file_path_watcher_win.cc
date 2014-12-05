@@ -5,12 +5,13 @@
 #include "base/files/file_path_watcher.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/time/time.h"
 #include "base/win/object_watcher.h"
 
@@ -29,16 +30,16 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate,
   // FilePathWatcher::PlatformDelegate overrides.
   virtual bool Watch(const FilePath& path,
                      bool recursive,
-                     const FilePathWatcher::Callback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+                     const FilePathWatcher::Callback& callback) override;
+  virtual void Cancel() override;
 
   // Deletion of the FilePathWatcher will call Cancel() to dispose of this
   // object in the right thread. This also observes destruction of the required
   // cleanup thread, in case it quits before Cancel() is called.
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  virtual void WillDestroyCurrentMessageLoop() override;
 
   // Callback from MessageLoopForIO.
-  virtual void OnObjectSignaled(HANDLE object);
+  virtual void OnObjectSignaled(HANDLE object) override;
 
  private:
   virtual ~FilePathWatcherImpl() {}
@@ -58,7 +59,7 @@ class FilePathWatcherImpl : public FilePathWatcher::PlatformDelegate,
   void DestroyWatch();
 
   // Cleans up and stops observing the |message_loop_| thread.
-  void CancelOnMessageLoopThread() OVERRIDE;
+  void CancelOnMessageLoopThread() override;
 
   // Callback to notify upon changes.
   FilePathWatcher::Callback callback_;
@@ -146,6 +147,10 @@ void FilePathWatcherImpl::WillDestroyCurrentMessageLoop() {
 }
 
 void FilePathWatcherImpl::OnObjectSignaled(HANDLE object) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("FilePathWatcherImpl_OnObjectSignaled"));
+
   DCHECK(object == handle_);
   // Make sure we stay alive through the body of this function.
   scoped_refptr<FilePathWatcherImpl> keep_alive(this);
@@ -233,7 +238,6 @@ bool FilePathWatcherImpl::SetupWatchHandle(const FilePath& dir,
       error_code != ERROR_ACCESS_DENIED &&
       error_code != ERROR_SHARING_VIOLATION &&
       error_code != ERROR_DIRECTORY) {
-    using ::operator<<; // Pick the right operator<< below.
     DPLOG(ERROR) << "FindFirstChangeNotification failed for "
                  << dir.value();
     return false;

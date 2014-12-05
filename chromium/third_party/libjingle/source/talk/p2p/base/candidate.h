@@ -25,19 +25,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_CANDIDATE_H_
-#define TALK_P2P_BASE_CANDIDATE_H_
+#ifndef WEBRTC_P2P_BASE_CANDIDATE_H_
+#define WEBRTC_P2P_BASE_CANDIDATE_H_
 
 #include <limits.h>
 #include <math.h>
 
-#include <string>
-#include <sstream>
 #include <iomanip>
+#include <sstream>
+#include <string>
 
-#include "talk/base/basictypes.h"
-#include "talk/base/socketaddress.h"
-#include "talk/p2p/base/constants.h"
+#include "webrtc/p2p/base/constants.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/socketaddress.h"
 
 namespace cricket {
 
@@ -49,7 +49,7 @@ class Candidate {
   // candidate-attribute syntax. http://tools.ietf.org/html/rfc5245#section-15.1
   Candidate() : component_(0), priority_(0), generation_(0) {}
   Candidate(const std::string& id, int component, const std::string& protocol,
-            const talk_base::SocketAddress& address, uint32 priority,
+            const rtc::SocketAddress& address, uint32 priority,
             const std::string& username, const std::string& password,
             const std::string& type, const std::string& network_name,
             uint32 generation, const std::string& foundation)
@@ -68,8 +68,8 @@ class Candidate {
   const std::string & protocol() const { return protocol_; }
   void set_protocol(const std::string & protocol) { protocol_ = protocol; }
 
-  const talk_base::SocketAddress & address() const { return address_; }
-  void set_address(const talk_base::SocketAddress & address) {
+  const rtc::SocketAddress & address() const { return address_; }
+  void set_address(const rtc::SocketAddress & address) {
     address_ = address;
   }
 
@@ -94,7 +94,7 @@ class Candidate {
     // This can happen for e.g. when preference = 3.
     uint64 prio_val = static_cast<uint64>(preference * 127) << 24;
     priority_ = static_cast<uint32>(
-      talk_base::_min(prio_val, static_cast<uint64>(UINT_MAX)));
+      rtc::_min(prio_val, static_cast<uint64>(UINT_MAX)));
   }
 
   const std::string & username() const { return username_; }
@@ -132,12 +132,16 @@ class Candidate {
     foundation_ = foundation;
   }
 
-  const talk_base::SocketAddress & related_address() const {
+  const rtc::SocketAddress & related_address() const {
     return related_address_;
   }
   void set_related_address(
-      const talk_base::SocketAddress & related_address) {
+      const rtc::SocketAddress & related_address) {
     related_address_ = related_address;
+  }
+  const std::string& tcptype() const { return tcptype_; }
+  void set_tcptype(const std::string& tcptype){
+    tcptype_ = tcptype;
   }
 
   // Determines whether this candidate is equivalent to the given one.
@@ -166,7 +170,8 @@ class Candidate {
   }
 
   uint32 GetPriority(uint32 type_preference,
-                     int network_adapter_preference) const {
+                     int network_adapter_preference,
+                     int relay_preference) const {
     // RFC 5245 - 4.1.2.1.
     // priority = (2^24)*(type preference) +
     //            (2^8)*(local preference) +
@@ -181,10 +186,11 @@ class Candidate {
     //      +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     // NIC Type - Type of the network adapter e.g. 3G/Wifi/Wired.
     // Addr Pref - Address preference value as per RFC 3484.
-    // local preference is calculated as - NIC Type << 8 | Addr_Pref.
+    // local preference =  (NIC Type << 8 | Addr_Pref) - relay preference.
 
     int addr_pref = IPAddressPrecedence(address_.ipaddr());
-    int local_preference = (network_adapter_preference << 8) | addr_pref;
+    int local_preference = ((network_adapter_preference << 8) | addr_pref) +
+        relay_preference;
 
     return (type_preference << 24) |
            (local_preference << 8) |
@@ -206,7 +212,7 @@ class Candidate {
   std::string id_;
   int component_;
   std::string protocol_;
-  talk_base::SocketAddress address_;
+  rtc::SocketAddress address_;
   uint32 priority_;
   std::string username_;
   std::string password_;
@@ -214,9 +220,10 @@ class Candidate {
   std::string network_name_;
   uint32 generation_;
   std::string foundation_;
-  talk_base::SocketAddress related_address_;
+  rtc::SocketAddress related_address_;
+  std::string tcptype_;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_CANDIDATE_H_
+#endif  // WEBRTC_P2P_BASE_CANDIDATE_H_

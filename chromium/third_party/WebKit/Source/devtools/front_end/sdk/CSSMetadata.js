@@ -76,7 +76,7 @@ WebInspector.CSSMetadata.cssPropertiesMetainfo = new WebInspector.CSSMetadata([]
  */
 WebInspector.CSSMetadata.isColorAwareProperty = function(propertyName)
 {
-    return WebInspector.CSSMetadata._colorAwareProperties[propertyName] === true;
+    return !!WebInspector.CSSMetadata._colorAwareProperties[propertyName.toLowerCase()];
 }
 
 /**
@@ -89,14 +89,27 @@ WebInspector.CSSMetadata.colors = function()
     return WebInspector.CSSMetadata._colorsKeySet;
 }
 
-// Taken from http://www.w3.org/TR/CSS21/propidx.html.
+/**
+ * @param {string} propertyName
+ * @return {boolean}
+ */
+WebInspector.CSSMetadata.isLengthProperty = function(propertyName)
+{
+    if (propertyName === "line-height")
+        return false;
+    if (!WebInspector.CSSMetadata._distancePropertiesKeySet)
+        WebInspector.CSSMetadata._distancePropertiesKeySet = WebInspector.CSSMetadata._distanceProperties.keySet();
+    return WebInspector.CSSMetadata._distancePropertiesKeySet[propertyName] || propertyName.startsWith("margin") || propertyName.startsWith("padding") || propertyName.indexOf("width") !== -1 || propertyName.indexOf("height") !== -1;
+}
+
+// Originally taken from http://www.w3.org/TR/CSS21/propidx.html and augmented.
 WebInspector.CSSMetadata.InheritedProperties = [
     "azimuth", "border-collapse", "border-spacing", "caption-side", "color", "cursor", "direction", "elevation",
     "empty-cells", "font-family", "font-size", "font-style", "font-variant", "font-weight", "font", "letter-spacing",
-    "line-height", "list-style-image", "list-style-position", "list-style-type", "list-style", "orphans", "pitch-range",
+    "line-height", "list-style-image", "list-style-position", "list-style-type", "list-style", "orphans", "overflow-wrap", "pitch-range",
     "pitch", "quotes", "resize", "richness", "speak-header", "speak-numeral", "speak-punctuation", "speak", "speech-rate", "stress",
-    "text-align", "text-indent", "text-transform", "text-shadow", "visibility", "voice-family", "volume", "white-space", "widows",
-    "word-spacing", "zoom"
+    "text-align", "text-indent", "text-transform", "text-shadow", "-webkit-user-select", "visibility", "voice-family", "volume", "white-space", "widows",
+    "word-spacing", "word-wrap", "zoom"
 ].keySet();
 
 // These non-standard Blink-specific properties augment the InheritedProperties.
@@ -151,11 +164,15 @@ WebInspector.CSSMetadata._colors = [
     "wheat", "whitesmoke", "yellowgreen"
 ];
 
+WebInspector.CSSMetadata._distanceProperties = [
+    'background-position', 'border-spacing', 'bottom', 'font-size', 'height', 'left', 'letter-spacing', 'max-height', 'max-width', 'min-height',
+    'min-width', 'right', 'text-indent', 'top', 'width', 'word-spacing'
+];
+
 WebInspector.CSSMetadata._colorAwareProperties = [
     "background", "background-color", "background-image", "border", "border-color", "border-top", "border-right", "border-bottom",
     "border-left", "border-top-color", "border-right-color", "border-bottom-color", "border-left-color", "box-shadow", "color",
-    "fill", "outline", "outline-color", "stroke", "text-line-through-color", "text-overline-color",
-    "text-shadow", "text-underline-color", "-webkit-box-shadow", "-webkit-column-rule-color",
+    "fill", "outline", "outline-color", "stroke", "text-shadow", "-webkit-box-shadow", "-webkit-column-rule-color",
     "-webkit-text-decoration-color", "-webkit-text-emphasis", "-webkit-text-emphasis-color"
 ].keySet();
 
@@ -178,9 +195,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     "clear": { values: [
         "none", "left", "right", "both"
     ] },
-    "text-underline-mode": { values: [
-        "continuous", "skip-white-space"
-    ] },
     "overflow-x": { values: [
         "hidden", "auto", "visible", "overlay", "scroll"
     ] },
@@ -192,9 +206,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "border-bottom-width": { values: [
         "medium", "thick", "thin"
-    ] },
-    "marquee-speed": { values: [
-        "normal", "slow", "fast"
     ] },
     "margin-top-collapse": { values: [
         "collapse", "separate", "discard"
@@ -209,12 +220,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "normal", "wider", "narrower", "ultra-condensed", "extra-condensed", "condensed", "semi-condensed",
         "semi-expanded", "expanded", "extra-expanded", "ultra-expanded"
     ] },
-    "text-underline-style": { values: [
-        "none", "dotted", "dashed", "solid", "double", "dot-dash", "dot-dot-dash", "wave"
-    ] },
-    "text-overline-mode": { values: [
-        "continuous", "skip-white-space"
-    ] },
     "-webkit-background-composite": { values: [
         "highlight", "clear", "copy", "source-over", "source-in", "source-out", "source-atop", "destination-over",
         "destination-in", "destination-out", "destination-atop", "xor", "plus-darker", "plus-lighter"
@@ -228,9 +233,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     "-webkit-writing-mode": { values: [
         "lr", "rl", "tb", "lr-tb", "rl-tb", "tb-rl", "horizontal-tb", "vertical-rl", "vertical-lr", "horizontal-bt"
     ] },
-    "text-line-through-mode": { values: [
-        "continuous", "skip-white-space"
-    ] },
     "border-collapse": { values: [
         "collapse", "separate"
     ] },
@@ -242,9 +244,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "outline-color": { values: [
         "invert"
-    ] },
-    "text-line-through-style": { values: [
-        "none", "dotted", "dashed", "solid", "double", "dot-dash", "dot-dot-dash", "wave"
     ] },
     "outline-style": { values: [
         "none", "hidden", "inset", "groove", "ridge", "outset", "dotted", "dashed", "solid", "double"
@@ -270,9 +269,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "direction": { values: [
         "ltr", "rtl"
-    ] },
-    "marquee-direction": { values: [
-        "left", "right", "auto", "reverse", "forwards", "backwards", "ahead", "up", "down"
     ] },
     "enable-background": { values: [
         "accumulate", "new"
@@ -318,9 +314,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "margin-before-collapse": { values: [
         "collapse", "separate", "discard"
-    ] },
-    "text-overline-width": { values: [
-        "normal", "medium", "auto", "thick", "thin"
     ] },
     "text-transform": { values: [
         "none", "capitalize", "uppercase", "lowercase"
@@ -394,9 +387,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     "outline-width": { values: [
         "medium", "thick", "thin"
     ] },
-    "text-line-through-width": { values: [
-        "normal", "medium", "auto", "thick", "thin"
-    ] },
     "box-align": { values: [
         "baseline", "center", "stretch", "start", "end"
     ] },
@@ -457,9 +447,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     "zoom": { values: [
         "normal", "document", "reset"
     ] },
-    "text-overline-style": { values: [
-        "none", "dotted", "dashed", "solid", "double", "dot-dash", "dot-dot-dash", "wave"
-    ] },
     "max-width": { values: [
         "none"
     ] },
@@ -494,14 +481,8 @@ WebInspector.CSSMetadata._propertyDataMap = {
     "vertical-align": { values: [
         "baseline", "middle", "sub", "super", "text-top", "text-bottom", "top", "bottom", "-webkit-baseline-middle"
     ] },
-    "marquee-style": { values: [
-        "none", "scroll", "slide", "alternate"
-    ] },
     "white-space": { values: [
         "normal", "nowrap", "pre", "pre-line", "pre-wrap"
-    ] },
-    "text-underline-width": { values: [
-        "normal", "medium", "auto", "thick", "thin"
     ] },
     "box-lines": { values: [
         "single", "multiple"
@@ -514,9 +495,6 @@ WebInspector.CSSMetadata._propertyDataMap = {
     ] },
     "margin": { values: [
         "auto"
-    ] },
-    "marquee-repetition": { values: [
-        "infinite"
     ] },
     "margin-right": { values: [
         "auto"
@@ -538,7 +516,7 @@ WebInspector.CSSMetadata._propertyDataMap = {
         "from-image", "snap"
     ] },
     "box-sizing": { values: [
-        "content-box", "padding-box", "border-box"
+        "content-box", "border-box"
     ] },
     "clip": { values: [
         "auto"
@@ -711,7 +689,7 @@ WebInspector.CSSMetadata.keywordsForProperty = function(propertyName)
     var descriptor = WebInspector.CSSMetadata.descriptor(propertyName);
     if (descriptor && descriptor.values)
         acceptedKeywords.push.apply(acceptedKeywords, descriptor.values);
-    if (propertyName in WebInspector.CSSMetadata._colorAwareProperties)
+    if (WebInspector.CSSMetadata.isColorAwareProperty(propertyName))
         acceptedKeywords.push.apply(acceptedKeywords, WebInspector.CSSMetadata._colors);
     return new WebInspector.CSSMetadata(acceptedKeywords);
 }
@@ -725,6 +703,7 @@ WebInspector.CSSMetadata.descriptor = function(propertyName)
     if (!propertyName)
         return null;
     var unprefixedName = propertyName.replace(/^-webkit-/, "");
+    propertyName = propertyName.toLowerCase();
     var entry = WebInspector.CSSMetadata._propertyDataMap[propertyName];
     if (!entry && unprefixedName !== propertyName)
         entry = WebInspector.CSSMetadata._propertyDataMap[unprefixedName];

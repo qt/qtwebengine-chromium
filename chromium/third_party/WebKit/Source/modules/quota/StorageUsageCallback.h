@@ -31,11 +31,14 @@
 #ifndef StorageUsageCallback_h
 #define StorageUsageCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
 
-class StorageUsageCallback {
+namespace blink {
+
+class StorageUsageCallback : public GarbageCollectedFinalized<StorageUsageCallback> {
 public:
     virtual ~StorageUsageCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(unsigned long long currentUsageInBytes, unsigned long long currentQuotaInBytes) = 0;
 };
 

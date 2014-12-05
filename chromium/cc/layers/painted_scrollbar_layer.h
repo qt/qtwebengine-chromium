@@ -19,41 +19,36 @@ class ScrollbarThemeComposite;
 class CC_EXPORT PaintedScrollbarLayer : public ScrollbarLayerInterface,
                                         public ContentsScalingLayer {
  public:
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   static scoped_refptr<PaintedScrollbarLayer> Create(
       scoped_ptr<Scrollbar> scrollbar,
       int scroll_layer_id);
 
-  virtual bool OpacityCanAnimateOnImplThread() const OVERRIDE;
-  virtual ScrollbarLayerInterface* ToScrollbarLayer() OVERRIDE;
+  bool OpacityCanAnimateOnImplThread() const override;
+  ScrollbarLayerInterface* ToScrollbarLayer() override;
 
   // ScrollbarLayerInterface
-  virtual int ScrollLayerId() const OVERRIDE;
-  virtual void SetScrollLayer(int layer_id) OVERRIDE;
-  virtual void SetClipLayer(int layer_id) OVERRIDE;
+  int ScrollLayerId() const override;
+  void SetScrollLayer(int layer_id) override;
+  void SetClipLayer(int layer_id) override;
 
-  virtual ScrollbarOrientation orientation() const OVERRIDE;
+  ScrollbarOrientation orientation() const override;
 
   // Layer interface
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void PushScrollClipPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void CalculateContentsScale(float ideal_contents_scale,
-                                      float device_scale_factor,
-                                      float page_scale_factor,
-                                      float maximum_animation_contents_scale,
-                                      bool animating_transform_to_screen,
-                                      float* contents_scale_x,
-                                      float* contents_scale_y,
-                                      gfx::Size* content_bounds) OVERRIDE;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  void PushScrollClipPropertiesTo(LayerImpl* layer) override;
+  void CalculateContentsScale(float ideal_contents_scale,
+                              float* contents_scale_x,
+                              float* contents_scale_y,
+                              gfx::Size* content_bounds) override;
 
  protected:
   PaintedScrollbarLayer(scoped_ptr<Scrollbar> scrollbar, int scroll_layer_id);
-  virtual ~PaintedScrollbarLayer();
+  ~PaintedScrollbarLayer() override;
 
   // For unit tests
   UIResourceId track_resource_id() {

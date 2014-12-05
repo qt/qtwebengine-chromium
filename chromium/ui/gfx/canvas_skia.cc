@@ -8,6 +8,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/rect.h"
@@ -100,7 +101,7 @@ Range StripAcceleratorChars(int flags, base::string16* text) {
 // Elides |text| and adjusts |range| appropriately. If eliding causes |range|
 // to no longer point to the same character in |text|, |range| is made invalid.
 void ElideTextAndAdjustRange(const FontList& font_list,
-                             int width,
+                             float width,
                              base::string16* text,
                              Range* range) {
   const base::char16 start_char =
@@ -124,10 +125,7 @@ void UpdateRenderText(const Rect& rect,
   render_text->SetFontList(font_list);
   render_text->SetText(text);
   render_text->SetCursorEnabled(false);
-
-  Rect display_rect = rect;
-  display_rect.set_height(font_list.GetHeight());
-  render_text->SetDisplayRect(display_rect);
+  render_text->SetDisplayRect(rect);
 
   // Set the text alignment explicitly based on the directionality of the UI,
   // if not specified.
@@ -177,10 +175,11 @@ void Canvas::SizeStringFloat(const base::string16& text,
     else if (!(flags & NO_ELLIPSIS))
       wrap_behavior = ELIDE_LONG_WORDS;
 
-    Rect rect(*width, INT_MAX);
     std::vector<base::string16> strings;
-    ElideRectangleText(adjusted_text, font_list, rect.width(), rect.height(),
+    ElideRectangleText(adjusted_text, font_list,
+                       *width, INT_MAX,
                        wrap_behavior, &strings);
+    Rect rect(ClampToInt(*width), INT_MAX);
     scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
     UpdateRenderText(rect, base::string16(), font_list, flags, 0,
                      render_text.get());
@@ -192,7 +191,9 @@ void Canvas::SizeStringFloat(const base::string16& text,
       render_text->SetText(strings[i]);
       const SizeF& string_size = render_text->GetStringSizeF();
       w = std::max(w, string_size.width());
-      h += (i > 0 && line_height > 0) ? line_height : string_size.height();
+      h += (i > 0 && line_height > 0) ?
+               std::max(static_cast<float>(line_height), string_size.height())
+                   : string_size.height();
     }
     *width = w;
     *height = h;
@@ -201,11 +202,12 @@ void Canvas::SizeStringFloat(const base::string16& text,
     // will inexplicably fail with result E_INVALIDARG. Guard against this.
     const size_t kMaxRenderTextLength = 5000;
     if (adjusted_text.length() >= kMaxRenderTextLength) {
-      *width = font_list.GetExpectedTextWidth(adjusted_text.length());
-      *height = font_list.GetHeight();
+      *width = static_cast<float>(
+          font_list.GetExpectedTextWidth(adjusted_text.length()));
+      *height = static_cast<float>(font_list.GetHeight());
     } else {
       scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
-      Rect rect(*width, *height);
+      Rect rect(ClampToInt(*width), ClampToInt(*height));
       StripAcceleratorChars(flags, &adjusted_text);
       UpdateRenderText(rect, adjusted_text, font_list, flags, 0,
                        render_text.get());
@@ -250,7 +252,8 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
       wrap_behavior = ELIDE_LONG_WORDS;
 
     std::vector<base::string16> strings;
-    ElideRectangleText(adjusted_text, font_list, text_bounds.width(),
+    ElideRectangleText(adjusted_text, font_list,
+                       static_cast<float>(text_bounds.width()),
                        text_bounds.height(), wrap_behavior, &strings);
 
     for (size_t i = 0; i < strings.size(); i++) {
@@ -297,17 +300,13 @@ void Canvas::DrawStringRectWithShadows(const base::string16& text,
 #endif
 
     if (elide_text) {
-      ElideTextAndAdjustRange(font_list, text_bounds.width(), &adjusted_text,
-                              &range);
+      ElideTextAndAdjustRange(font_list,
+                              static_cast<float>(text_bounds.width()),
+                              &adjusted_text, &range);
     }
 
     UpdateRenderText(rect, adjusted_text, font_list, flags, color,
                      render_text.get());
-
-    const int text_height = render_text->GetStringSize().height();
-    rect += Vector2d(0, (text_bounds.height() - text_height) / 2);
-    rect.set_height(text_height);
-    render_text->SetDisplayRect(rect);
     if (range.IsValid())
       render_text->ApplyStyle(UNDERLINE, true, range);
     render_text->Draw(this);
@@ -395,11 +394,6 @@ void Canvas::DrawFadedString(const base::string16& text,
   Rect rect = display_rect;
   UpdateRenderText(rect, text, font_list, flags, color, render_text.get());
   render_text->SetElideBehavior(FADE_TAIL);
-
-  const int line_height = render_text->GetStringSize().height();
-  rect += Vector2d(0, (display_rect.height() - line_height) / 2);
-  rect.set_height(line_height);
-  render_text->SetDisplayRect(rect);
 
   canvas_->save();
   ClipRect(display_rect);

@@ -20,7 +20,7 @@ namespace ct {
 
 class CTObjectsExtractorTest : public ::testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     precert_chain_ =
         CreateCertificateListFromFile(GetTestCertsDirectory(),
                                       "ct-test-embedded-cert.pem",
@@ -107,7 +107,7 @@ TEST_F(CTObjectsExtractorTest, ExtractedSCTVerifies) {
                                  precert_chain_[1]->os_cert_handle(),
                                  &entry));
 
-  EXPECT_TRUE(log_->Verify(entry, *sct));
+  EXPECT_TRUE(log_->Verify(entry, *sct.get()));
 }
 
 // Test that an externally-provided SCT verifies over the LogEntry
@@ -120,7 +120,7 @@ TEST_F(CTObjectsExtractorTest, ComplementarySCTVerifies) {
   LogEntry entry;
   ASSERT_TRUE(GetX509LogEntry(test_cert_->os_cert_handle(), &entry));
 
-  EXPECT_TRUE(log_->Verify(entry, *sct));
+  EXPECT_TRUE(log_->Verify(entry, *sct.get()));
 }
 
 // Test that the extractor can parse OCSP responses.

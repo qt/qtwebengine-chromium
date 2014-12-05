@@ -4,8 +4,8 @@
 
 #include "content/browser/media/webrtc_identity_store_backend.h"
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/strings/string_util.h"
 #include "content/public/browser/browser_thread.h"
@@ -13,12 +13,12 @@
 #include "sql/error_delegate_util.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace content {
 
-static const char* kWebRTCIdentityStoreDBName = "webrtc_identity_store";
+static const char kWebRTCIdentityStoreDBName[] = "webrtc_identity_store";
 
 static const base::FilePath::CharType kWebRTCIdentityStoreDirectory[] =
     FILE_PATH_LITERAL("WebRTCIdentityStore");
@@ -112,7 +112,7 @@ class WebRTCIdentityStoreBackend::SqlLiteStorage
  public:
   SqlLiteStorage(base::TimeDelta validity_period,
                  const base::FilePath& path,
-                 quota::SpecialStoragePolicy* policy)
+                 storage::SpecialStoragePolicy* policy)
       : validity_period_(validity_period), special_storage_policy_(policy) {
     if (!path.empty())
       path_ = path.Append(kWebRTCIdentityStoreDirectory);
@@ -169,7 +169,7 @@ class WebRTCIdentityStoreBackend::SqlLiteStorage
   base::TimeDelta validity_period_;
   // The file path of the DB. Empty if temporary.
   base::FilePath path_;
-  scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
+  scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;
   scoped_ptr<sql::Connection> db_;
   // Batched DB operations pending to commit.
   PendingOperationList pending_operations_;
@@ -179,11 +179,12 @@ class WebRTCIdentityStoreBackend::SqlLiteStorage
 
 WebRTCIdentityStoreBackend::WebRTCIdentityStoreBackend(
     const base::FilePath& path,
-    quota::SpecialStoragePolicy* policy,
+    storage::SpecialStoragePolicy* policy,
     base::TimeDelta validity_period)
     : validity_period_(validity_period),
       state_(NOT_STARTED),
-      sql_lite_storage_(new SqlLiteStorage(validity_period, path, policy)) {}
+      sql_lite_storage_(new SqlLiteStorage(validity_period, path, policy)) {
+}
 
 bool WebRTCIdentityStoreBackend::FindIdentity(
     const GURL& origin,

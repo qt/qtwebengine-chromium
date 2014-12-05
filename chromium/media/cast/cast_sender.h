@@ -19,7 +19,7 @@
 #include "media/base/audio_bus.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
-#include "media/cast/transport/cast_transport_sender.h"
+#include "media/cast/net/cast_transport_sender.h"
 
 namespace media {
 class VideoFrame;
@@ -63,7 +63,7 @@ class CastSender {
  public:
   static scoped_ptr<CastSender> Create(
       scoped_refptr<CastEnvironment> cast_environment,
-      transport::CastTransportSender* const transport_sender);
+      CastTransportSender* const transport_sender);
 
   virtual ~CastSender() {}
 
@@ -72,10 +72,6 @@ class CastSender {
 
   // All audio frames for the session should be inserted to this object.
   virtual scoped_refptr<AudioFrameInput> audio_frame_input() = 0;
-
-  // All RTCP packets for the session should be inserted to this object.
-  // This function and the callback must be called on the main thread.
-  virtual transport::PacketReceiverCallback packet_receiver() = 0;
 
   // Initialize the audio stack. Must be called in order to send audio frames.
   // Status of the initialization will be returned on cast_initialization_cb.
@@ -90,6 +86,11 @@ class CastSender {
       const CastInitializationCallback& cast_initialization_cb,
       const CreateVideoEncodeAcceleratorCallback& create_vea_cb,
       const CreateVideoEncodeMemoryCallback& create_video_encode_mem_cb) = 0;
+
+  // Change the target delay. This is only valid if the receiver
+  // supports the "adaptive_target_delay" rtp extension.
+  virtual void SetTargetPlayoutDelay(
+      base::TimeDelta new_target_playout_delay) = 0;
 };
 
 }  // namespace cast

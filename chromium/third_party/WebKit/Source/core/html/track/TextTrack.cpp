@@ -32,9 +32,8 @@
 #include "config.h"
 #include "core/html/track/TextTrack.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/TextTrackCueList.h"
@@ -43,7 +42,7 @@
 #include "core/html/track/vtt/VTTRegionList.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int invalidTrackIndex = -1;
 
@@ -95,7 +94,7 @@ const AtomicString& TextTrack::showingKeyword()
     return ended;
 }
 
-TextTrack::TextTrack(Document& document, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
+TextTrack::TextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType type)
     : TrackBase(TrackBase::TextTrack, label, language, id)
     , m_cues(nullptr)
     , m_regions(nullptr)
@@ -107,7 +106,6 @@ TextTrack::TextTrack(Document& document, const AtomicString& kind, const AtomicS
     , m_renderedTrackIndex(invalidTrackIndex)
     , m_hasBeenConfigured(false)
 {
-    ScriptWrappable::init(this);
     setKind(kind);
 }
 
@@ -194,7 +192,7 @@ TextTrackCueList* TextTrack::cues()
     // http://www.whatwg.org/specs/web-apps/current-work/#dom-texttrack-cues
     if (m_mode != disabledKeyword())
         return ensureTextTrackCueList();
-    return 0;
+    return nullptr;
 }
 
 void TextTrack::removeAllCues()
@@ -221,7 +219,7 @@ TextTrackCueList* TextTrack::activeCues() const
     // http://www.whatwg.org/specs/web-apps/current-work/#dom-texttrack-activecues
     if (m_cues && m_mode != disabledKeyword())
         return m_cues->activeCues();
-    return 0;
+    return nullptr;
 }
 
 void TextTrack::addCue(PassRefPtrWillBeRawPtr<TextTrackCue> prpCue)
@@ -298,7 +296,7 @@ VTTRegionList* TextTrack::regions()
     // each time.
     if (RuntimeEnabledFeatures::webVTTRegionsEnabled() && m_mode != disabledKeyword())
         return ensureVTTRegionList();
-    return 0;
+    return nullptr;
 }
 
 void TextTrack::addRegion(PassRefPtrWillBeRawPtr<VTTRegion> prpRegion)
@@ -448,4 +446,4 @@ void TextTrack::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

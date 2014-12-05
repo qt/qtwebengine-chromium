@@ -2,6 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/**
+ * @typedef {{canBeDefault: boolean,
+ *            canBeEdited: boolean,
+ *            canBeRemoved: boolean,
+ *            default: boolean,
+ *            displayName: string,
+ *            extension: (Object|undefined),
+ *            iconURL: (string|undefined),
+ *            isOmniboxExtension: boolean,
+ *            keyword: string,
+ *            modelIndex: string,
+ *            name: string,
+ *            url: string,
+ *            urlLocked: boolean}}
+ * @see chrome/browser/ui/webui/options/search_engine_manager_handler.cc
+ */
+var SearchEngine;
+
 cr.define('options.search_engines', function() {
   /** @const */ var ControlledSettingIndicator =
                     options.ControlledSettingIndicator;
@@ -11,9 +29,9 @@ cr.define('options.search_engines', function() {
 
   /**
    * Creates a new search engine list item.
-   * @param {Object} searchEnigne The search engine this represents.
+   * @param {SearchEngine} searchEngine The search engine this represents.
    * @constructor
-   * @extends {cr.ui.ListItem}
+   * @extends {options.InlineEditableItem}
    */
   function SearchEngineListItem(searchEngine) {
     var el = cr.doc.createElement('div');
@@ -69,6 +87,11 @@ cr.define('options.search_engines', function() {
      */
     currentlyValid_: false,
 
+    /**
+     * @type {?SearchEngine}
+     */
+    searchEngine_: null,
+
     /** @override */
     decorate: function() {
       InlineEditableItem.prototype.decorate.call(this);
@@ -88,6 +111,7 @@ cr.define('options.search_engines', function() {
         this.classList.add('default');
 
       this.deletable = engine.canBeRemoved;
+      this.closeButtonElement.tabIndex = 0;
 
       // Construct the name column.
       var nameColEl = this.ownerDocument.createElement('div');
@@ -117,7 +141,7 @@ cr.define('options.search_engines', function() {
       // And the URL column.
       var urlEl = this.createEditableTextCell(engine.url);
       // Extensions should not display a URL column.
-      if (!engine.isExtension) {
+      if (!engine.isOmniboxExtension) {
         var urlWithButtonEl = this.ownerDocument.createElement('div');
         urlWithButtonEl.appendChild(urlEl);
         urlWithButtonEl.className = 'url-column';
@@ -146,17 +170,16 @@ cr.define('options.search_engines', function() {
       }
 
       // Do final adjustment to the input fields.
-      this.nameField_ = nameEl.querySelector('input');
+      this.nameField_ = /** @type {HTMLElement} */(
+          nameEl.querySelector('input'));
       // The editable field uses the raw name, not the display name.
       this.nameField_.value = engine.name;
-      this.keywordField_ = keywordEl.querySelector('input');
-      this.urlField_ = urlEl.querySelector('input');
+      this.keywordField_ = /** @type {HTMLElement} */(
+          keywordEl.querySelector('input'));
+      this.urlField_ = /** @type {HTMLElement} */(urlEl.querySelector('input'));
 
       if (engine.urlLocked)
         this.urlField_.disabled = true;
-
-      if (engine.isExtension)
-        this.nameField_.disabled = true;
 
       if (this.isPlaceholder) {
         this.nameField_.placeholder =
@@ -180,7 +203,7 @@ cr.define('options.search_engines', function() {
       } else {
         this.editable = false;
         this.querySelector('.row-delete-button').hidden = true;
-        var indicator = ControlledSettingIndicator();
+        var indicator = new ControlledSettingIndicator();
         indicator.setAttribute('setting', 'search-engine');
         // Create a synthetic pref change event decorated as
         // CoreOptionsHandler::CreateValueForPref() does.
@@ -235,7 +258,7 @@ cr.define('options.search_engines', function() {
      * @param {Event} e The cancel event.
      * @private
      */
-    onEditCancelled_: function() {
+    onEditCancelled_: function(e) {
       chrome.send('searchEngineEditCancelled');
 
       // The name field has been automatically set to match the display name,
@@ -248,7 +271,7 @@ cr.define('options.search_engines', function() {
      * Returns the input field values as an array suitable for passing to
      * chrome.send. The order of the array is important.
      * @private
-     * @return {array} The current input field values.
+     * @return {Array} The current input field values.
      */
     getInputFieldValues_: function() {
       return [this.nameField_.value,
@@ -300,12 +323,19 @@ cr.define('options.search_engines', function() {
     },
   };
 
+  /**
+   * @constructor
+   * @extends {options.InlineEditableItemList}
+   */
   var SearchEngineList = cr.ui.define('list');
 
   SearchEngineList.prototype = {
     __proto__: InlineEditableItemList.prototype,
 
-    /** @override */
+    /**
+     * @override
+     * @param {SearchEngine} searchEngine
+     */
     createItem: function(searchEngine) {
       return new SearchEngineListItem(searchEngine);
     },

@@ -32,11 +32,10 @@
 #define OrderIterator_h
 
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
 
 #include <set>
 
-namespace WebCore {
+namespace blink {
 
 class RenderBox;
 
@@ -79,6 +78,6 @@ private:
     OrderIterator& m_iterator;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif //  OrderIterator_h

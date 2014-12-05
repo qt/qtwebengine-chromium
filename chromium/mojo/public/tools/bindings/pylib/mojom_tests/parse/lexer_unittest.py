@@ -7,9 +7,6 @@ import os.path
 import sys
 import unittest
 
-# Disable lint check for finding modules:
-# pylint: disable=F0401
-
 def _GetDirAbove(dirname):
   """Returns the directory "above" this file containing |dirname| (which must
   also be "above" this file)."""
@@ -85,6 +82,10 @@ class LexerTest(unittest.TestCase):
                       _MakeLexTokenForKeyword("false"))
     self.assertEquals(self._SingleTokenForInput("default"),
                       _MakeLexTokenForKeyword("default"))
+    self.assertEquals(self._SingleTokenForInput("array"),
+                      _MakeLexTokenForKeyword("array"))
+    self.assertEquals(self._SingleTokenForInput("map"),
+                      _MakeLexTokenForKeyword("map"))
 
   def testValidIdentifiers(self):
     """Tests identifiers."""
@@ -127,8 +128,6 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("INT_CONST_HEX", "0x01aB2eF3"))
     self.assertEquals(self._SingleTokenForInput("123.456"),
                       _MakeLexToken("FLOAT_CONST", "123.456"))
-    self.assertEquals(self._SingleTokenForInput("'x'"),
-                      _MakeLexToken("CHAR_CONST", "'x'"))
     self.assertEquals(self._SingleTokenForInput("\"hello\""),
                       _MakeLexToken("STRING_LITERAL", "\"hello\""))
     self.assertEquals(self._SingleTokenForInput("+"),
@@ -137,6 +136,8 @@ class LexerTest(unittest.TestCase):
                       _MakeLexToken("MINUS", "-"))
     self.assertEquals(self._SingleTokenForInput("&"),
                       _MakeLexToken("AMP", "&"))
+    self.assertEquals(self._SingleTokenForInput("?"),
+                      _MakeLexToken("QSTN", "?"))
     self.assertEquals(self._SingleTokenForInput("="),
                       _MakeLexToken("EQUALS", "="))
     self.assertEquals(self._SingleTokenForInput("=>"),

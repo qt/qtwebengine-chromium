@@ -47,6 +47,14 @@ def DoMain(argv):
 
       excluded = False
       for exclusion in args:
+        # Require precise exclusions. Find the right-most third_party
+        # in the relative path, and if there is more than one ignore
+        # the exclusion if it's completely contained within the part
+        # before right-most third_party path component.
+        split = relpath.rsplit(os.sep + 'third_party' + os.sep, 1)
+        if len(split) > 1 and split[0].startswith(exclusion):
+          continue
+
         if relpath.startswith(exclusion):
           # Multiple exclusions can match the same path. Go through all of them
           # and mark each one as used.
@@ -58,6 +66,13 @@ def DoMain(argv):
       # Deleting gyp files almost always leads to gyp failures.
       # These files come from Chromium project, and can be replaced if needed.
       if f.endswith('.gyp') or f.endswith('.gypi'):
+        continue
+
+      # Deleting .isolate files leads to gyp failures. They are usually
+      # not used by a distro build anyway.
+      # See http://www.chromium.org/developers/testing/isolated-testing
+      # for more info.
+      if f.endswith('.isolate'):
         continue
 
       if options.do_remove:

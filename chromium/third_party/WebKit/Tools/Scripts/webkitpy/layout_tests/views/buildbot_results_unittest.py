@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 # Copyright (C) 2012 Google Inc. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import StringIO
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.host_mock import MockHost
 
@@ -90,6 +89,14 @@ class BuildBotPrinterTests(unittest.TestCase):
         output = out.getvalue()
         self.assertTrue(output)
         self.assertTrue(output.find('Skip') == -1)
+
+    def test_print_unexpected_results_fail_on_retry_also(self):
+        port = MockHost().port_factory.get('test')
+        printer, out = self.get_printer()
+        summary = test_run_results_unittest.summarized_results(port, expected=False, passing=False, flaky=True, fail_on_retry=True)
+        printer.print_unexpected_results(summary)
+        output = out.getvalue()
+        self.assertIn('Regressions: Unexpected crashes (1)\n  failures/expected/timeout.html [ Crash Failure ]', output)
 
     def test_print_results(self):
         port = MockHost().port_factory.get('test')

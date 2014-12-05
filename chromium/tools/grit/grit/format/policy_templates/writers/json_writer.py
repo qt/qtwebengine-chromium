@@ -39,6 +39,9 @@ class JsonWriter(template_writer.TemplateWriter):
   def PreprocessPolicies(self, policy_list):
     return self.FlattenGroupsAndSortPolicies(policy_list)
 
+  def WriteComment(self, comment):
+    self._out.append('// ' + comment)
+
   def WritePolicy(self, policy):
     if policy['type'] == 'external':
       # This type can only be set through cloud policy.
@@ -48,6 +51,13 @@ class JsonWriter(template_writer.TemplateWriter):
     # Add comma to the end of the previous line.
     if not self._first_written:
       self._out[-2] += ','
+
+    if not self.CanBeMandatory(policy) and self.CanBeRecommended(policy):
+      line = '  // Note: this policy is supported only in recommended mode.'
+      self._out.append(line)
+      line = '  // The JSON file should be placed in %srecommended.' % \
+             self.config['linux_policy_path']
+      self._out.append(line)
 
     line = '  // %s' % policy['caption']
     self._out.append(line)
@@ -62,6 +72,9 @@ class JsonWriter(template_writer.TemplateWriter):
     self._first_written = False
 
   def BeginTemplate(self):
+    if self._GetChromiumVersionString() is not None:
+      self.WriteComment(self.config['build'] + ''' version: ''' + \
+          self._GetChromiumVersionString())
     self._out.append(TEMPLATE_HEADER)
 
   def EndTemplate(self):

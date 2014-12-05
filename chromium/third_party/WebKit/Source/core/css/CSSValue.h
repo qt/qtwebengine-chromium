@@ -21,6 +21,7 @@
 #ifndef CSSValue_h
 #define CSSValue_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -29,10 +30,9 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
-class StyleSheetContents;
 
 enum CSSTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
 
@@ -41,7 +41,7 @@ enum CSSTextFormattingFlags { QuoteCSSStringIfNeeded, AlwaysQuoteCSSString };
 // They should be handled by separate wrapper classes.
 
 // Please don't expose more CSSValue types to the web.
-class CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue> {
+class CSSValue : public RefCountedWillBeGarbageCollectedFinalized<CSSValue>, public ScriptWrappableBase {
 public:
     enum Type {
         CSS_INHERIT = 0,
@@ -74,7 +74,6 @@ public:
 
     bool isBaseValueList() const { return m_classType == ValueListClass; }
 
-    bool isAspectRatioValue() const { return m_classType == AspectRatioClass; }
     bool isBorderImageSliceValue() const { return m_classType == BorderImageSliceClass; }
     bool isCanvasValue() const { return m_classType == CanvasClass; }
     bool isCursorImageValue() const { return m_classType == CursorImageClass; }
@@ -101,17 +100,16 @@ public:
     bool isLineBoxContainValue() const { return m_classType == LineBoxContainClass; }
     bool isCalcValue() const {return m_classType == CalculationClass; }
     bool isFilterValue() const { return m_classType == CSSFilterClass; }
-    bool isArrayFunctionValue() const { return m_classType == CSSArrayFunctionValueClass; }
     bool isGridTemplateAreasValue() const { return m_classType == GridTemplateAreasClass; }
-    bool isSVGPaint() const { return m_classType == SVGPaintClass; }
     bool isSVGDocumentValue() const { return m_classType == CSSSVGDocumentClass; }
+    bool isContentDistributionValue() const { return m_classType == CSSContentDistributionClass; }
     bool isUnicodeRangeValue() const { return m_classType == UnicodeRangeClass; }
     bool isGridLineNamesValue() const { return m_classType == GridLineNamesClass; }
 
     bool isCSSOMSafe() const { return m_isCSSOMSafe; }
     bool isSubtypeExposedToCSSOM() const
     {
-        return isPrimitiveValue() || isSVGPaint() || isValueList();
+        return isPrimitiveValue() || isValueList();
     }
 
     PassRefPtrWillBeRawPtr<CSSValue> cloneForCSSOM() const;
@@ -145,7 +143,6 @@ protected:
         StepsTimingFunctionClass,
 
         // Other class types.
-        AspectRatioClass,
         BorderImageSliceClass,
         FontFeatureClass,
         FontClass,
@@ -163,14 +160,14 @@ protected:
         GridTemplateAreasClass,
 
         // SVG classes.
-        SVGPaintClass,
         CSSSVGDocumentClass,
+
+        CSSContentDistributionClass,
 
         // List class types must appear after ValueListClass.
         ValueListClass,
         ImageSetClass,
         CSSFilterClass,
-        CSSArrayFunctionValueClass,
         CSSTransformClass,
         GridLineNamesClass,
         // Do not append non-list class types here.
@@ -259,6 +256,6 @@ inline bool compareCSSValuePtr(const Member<CSSValueType>& first, const Member<C
 #define DEFINE_CSS_VALUE_TYPE_CASTS(thisType, predicate) \
     DEFINE_TYPE_CASTS(thisType, CSSValue, value, value->predicate, value.predicate)
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSValue_h

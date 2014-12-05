@@ -36,15 +36,15 @@
 #include "talk/app/webrtc/test/mockpeerconnectionobservers.h"
 #include "talk/app/webrtc/test/testsdpstrings.h"
 #include "talk/app/webrtc/videosource.h"
-#include "talk/base/gunit.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/ssladapter.h"
-#include "talk/base/sslstreamadapter.h"
-#include "talk/base/stringutils.h"
-#include "talk/base/thread.h"
 #include "talk/media/base/fakevideocapturer.h"
 #include "talk/media/sctp/sctpdataengine.h"
 #include "talk/session/media/mediasession.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/ssladapter.h"
+#include "webrtc/base/sslstreamadapter.h"
+#include "webrtc/base/stringutils.h"
+#include "webrtc/base/thread.h"
 
 static const char kStreamLabel1[] = "local_stream_1";
 static const char kStreamLabel2[] = "local_stream_2";
@@ -66,8 +66,8 @@ static const uint32 kTimeout = 5000U;
     return;                                         \
   }
 
-using talk_base::scoped_ptr;
-using talk_base::scoped_refptr;
+using rtc::scoped_ptr;
+using rtc::scoped_refptr;
 using webrtc::AudioSourceInterface;
 using webrtc::AudioTrackInterface;
 using webrtc::DataBuffer;
@@ -132,7 +132,6 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
       state_ = pc_->signaling_state();
     }
   }
-  virtual void OnError() {}
   virtual void OnSignalingChange(
       PeerConnectionInterface::SignalingState new_state) {
     EXPECT_EQ(pc_->signaling_state(), new_state);
@@ -229,15 +228,10 @@ class MockPeerConnectionObserver : public PeerConnectionObserver {
 class PeerConnectionInterfaceTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    talk_base::InitializeSSL(NULL);
     pc_factory_ = webrtc::CreatePeerConnectionFactory(
-        talk_base::Thread::Current(), talk_base::Thread::Current(), NULL, NULL,
+        rtc::Thread::Current(), rtc::Thread::Current(), NULL, NULL,
         NULL);
     ASSERT_TRUE(pc_factory_.get() != NULL);
-  }
-
-  virtual void TearDown() {
-    talk_base::CleanupSSL();
   }
 
   void CreatePeerConnection() {
@@ -325,7 +319,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<VideoTrackInterface> video_track(
         pc_factory_->CreateVideoTrack(label + "v0", video_source));
     stream->AddTrack(video_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
@@ -337,7 +331,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<AudioTrackInterface> audio_track(
         pc_factory_->CreateAudioTrack(label + "a0", NULL));
     stream->AddTrack(audio_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
@@ -355,14 +349,14 @@ class PeerConnectionInterfaceTest : public testing::Test {
     scoped_refptr<VideoTrackInterface> video_track(
         pc_factory_->CreateVideoTrack(video_track_label, NULL));
     stream->AddTrack(video_track.get());
-    EXPECT_TRUE(pc_->AddStream(stream, NULL));
+    EXPECT_TRUE(pc_->AddStream(stream));
     EXPECT_TRUE_WAIT(observer_.renegotiation_needed_, kTimeout);
     observer_.renegotiation_needed_ = false;
   }
 
   bool DoCreateOfferAnswer(SessionDescriptionInterface** desc, bool offer) {
-    talk_base::scoped_refptr<MockCreateSessionDescriptionObserver>
-        observer(new talk_base::RefCountedObject<
+    rtc::scoped_refptr<MockCreateSessionDescriptionObserver>
+        observer(new rtc::RefCountedObject<
             MockCreateSessionDescriptionObserver>());
     if (offer) {
       pc_->CreateOffer(observer, NULL);
@@ -383,8 +377,8 @@ class PeerConnectionInterfaceTest : public testing::Test {
   }
 
   bool DoSetSessionDescription(SessionDescriptionInterface* desc, bool local) {
-    talk_base::scoped_refptr<MockSetSessionDescriptionObserver>
-        observer(new talk_base::RefCountedObject<
+    rtc::scoped_refptr<MockSetSessionDescriptionObserver>
+        observer(new rtc::RefCountedObject<
             MockSetSessionDescriptionObserver>());
     if (local) {
       pc_->SetLocalDescription(observer, desc);
@@ -407,8 +401,8 @@ class PeerConnectionInterfaceTest : public testing::Test {
   // It does not verify the values in the StatReports since a RTCP packet might
   // be required.
   bool DoGetStats(MediaStreamTrackInterface* track) {
-    talk_base::scoped_refptr<MockStatsObserver> observer(
-        new talk_base::RefCountedObject<MockStatsObserver>());
+    rtc::scoped_refptr<MockStatsObserver> observer(
+        new rtc::RefCountedObject<MockStatsObserver>());
     if (!pc_->GetStats(
         observer, track, PeerConnectionInterface::kStatsOutputLevelStandard))
       return false;
@@ -438,7 +432,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
   }
 
   void CreateOfferAsRemoteDescription() {
-    talk_base::scoped_ptr<SessionDescriptionInterface> offer;
+    rtc::scoped_ptr<SessionDescriptionInterface> offer;
     EXPECT_TRUE(DoCreateOffer(offer.use()));
     std::string sdp;
     EXPECT_TRUE(offer->ToString(&sdp));
@@ -490,7 +484,7 @@ class PeerConnectionInterfaceTest : public testing::Test {
   }
 
   void CreateOfferAsLocalDescription() {
-    talk_base::scoped_ptr<SessionDescriptionInterface> offer;
+    rtc::scoped_ptr<SessionDescriptionInterface> offer;
     ASSERT_TRUE(DoCreateOffer(offer.use()));
     // TODO(perkj): Currently SetLocalDescription fails if any parameters in an
     // audio codec change, even if the parameter has nothing to do with
@@ -579,7 +573,7 @@ TEST_F(PeerConnectionInterfaceTest, AddStreams) {
       pc_factory_->CreateAudioTrack(
           kStreamLabel3, static_cast<AudioSourceInterface*>(NULL)));
   stream->AddTrack(audio_track.get());
-  EXPECT_TRUE(pc_->AddStream(stream, NULL));
+  EXPECT_TRUE(pc_->AddStream(stream));
   EXPECT_EQ(3u, pc_->local_streams()->count());
 
   // Remove the third stream.
@@ -772,7 +766,10 @@ TEST_F(PeerConnectionInterfaceTest, GetStatsForVideoTrack) {
 }
 
 // Test that we don't get statistics for an invalid track.
-TEST_F(PeerConnectionInterfaceTest, GetStatsForInvalidTrack) {
+// TODO(tommi): Fix this test.  DoGetStats will return true
+// for the unknown track (since GetStats is async), but no
+// data is returned for the track.
+TEST_F(PeerConnectionInterfaceTest, DISABLED_GetStatsForInvalidTrack) {
   InitiateCall();
   scoped_refptr<AudioTrackInterface> unknown_audio_track(
       pc_factory_->CreateAudioTrack("unknown track", NULL));
@@ -789,9 +786,9 @@ TEST_F(PeerConnectionInterfaceTest, TestDataChannel) {
   scoped_refptr<DataChannelInterface> data2  =
       pc_->CreateDataChannel("test2", NULL);
   ASSERT_TRUE(data1 != NULL);
-  talk_base::scoped_ptr<MockDataChannelObserver> observer1(
+  rtc::scoped_ptr<MockDataChannelObserver> observer1(
       new MockDataChannelObserver(data1));
-  talk_base::scoped_ptr<MockDataChannelObserver> observer2(
+  rtc::scoped_ptr<MockDataChannelObserver> observer2(
       new MockDataChannelObserver(data2));
 
   EXPECT_EQ(DataChannelInterface::kConnecting, data1->state());
@@ -836,9 +833,9 @@ TEST_F(PeerConnectionInterfaceTest, TestSendBinaryOnRtpDataChannel) {
   scoped_refptr<DataChannelInterface> data2  =
       pc_->CreateDataChannel("test2", NULL);
   ASSERT_TRUE(data1 != NULL);
-  talk_base::scoped_ptr<MockDataChannelObserver> observer1(
+  rtc::scoped_ptr<MockDataChannelObserver> observer1(
       new MockDataChannelObserver(data1));
-  talk_base::scoped_ptr<MockDataChannelObserver> observer2(
+  rtc::scoped_ptr<MockDataChannelObserver> observer2(
       new MockDataChannelObserver(data2));
 
   EXPECT_EQ(DataChannelInterface::kConnecting, data1->state());
@@ -851,7 +848,7 @@ TEST_F(PeerConnectionInterfaceTest, TestSendBinaryOnRtpDataChannel) {
   EXPECT_EQ(DataChannelInterface::kOpen, data1->state());
   EXPECT_EQ(DataChannelInterface::kOpen, data2->state());
 
-  talk_base::Buffer buffer("test", 4);
+  rtc::Buffer buffer("test", 4);
   EXPECT_FALSE(data1->Send(DataBuffer(buffer, true)));
 }
 
@@ -863,7 +860,7 @@ TEST_F(PeerConnectionInterfaceTest, TestSendOnlyDataChannel) {
   CreatePeerConnection(&constraints);
   scoped_refptr<DataChannelInterface> data1  =
       pc_->CreateDataChannel("test1", NULL);
-  talk_base::scoped_ptr<MockDataChannelObserver> observer1(
+  rtc::scoped_ptr<MockDataChannelObserver> observer1(
       new MockDataChannelObserver(data1));
 
   CreateOfferReceiveAnswerWithoutSsrc();
@@ -894,7 +891,7 @@ TEST_F(PeerConnectionInterfaceTest, TestReceiveOnlyDataChannel) {
   std::string receive_label = "answer_channel";
   std::string sdp;
   EXPECT_TRUE(pc_->local_description()->ToString(&sdp));
-  talk_base::replace_substrs(offer_label.c_str(), offer_label.length(),
+  rtc::replace_substrs(offer_label.c_str(), offer_label.length(),
                              receive_label.c_str(), receive_label.length(),
                              &sdp);
   CreateAnswerAsRemoteDescription(sdp);
@@ -1045,9 +1042,9 @@ TEST_F(PeerConnectionInterfaceTest, DataChannelCloseWhenPeerConnectionClose) {
   scoped_refptr<DataChannelInterface> data2  =
       pc_->CreateDataChannel("test2", NULL);
   ASSERT_TRUE(data1 != NULL);
-  talk_base::scoped_ptr<MockDataChannelObserver> observer1(
+  rtc::scoped_ptr<MockDataChannelObserver> observer1(
       new MockDataChannelObserver(data1));
-  talk_base::scoped_ptr<MockDataChannelObserver> observer2(
+  rtc::scoped_ptr<MockDataChannelObserver> observer2(
       new MockDataChannelObserver(data2));
 
   CreateOfferReceiveAnswer();
@@ -1088,7 +1085,7 @@ TEST_F(PeerConnectionInterfaceTest, TestRejectDataChannelInAnswer) {
 // FireFox, use it as a remote session description, generate an answer and use
 // the answer as a local description.
 TEST_F(PeerConnectionInterfaceTest, ReceiveFireFoxOffer) {
-  MAYBE_SKIP_TEST(talk_base::SSLStreamAdapter::HaveDtlsSrtp);
+  MAYBE_SKIP_TEST(rtc::SSLStreamAdapter::HaveDtlsSrtp);
   FakeConstraints constraints;
   constraints.AddMandatory(webrtc::MediaConstraintsInterface::kEnableDtlsSrtp,
                            true);
@@ -1182,10 +1179,10 @@ TEST_F(PeerConnectionInterfaceTest, CloseAndTestMethods) {
   pc_->Close();
 
   pc_->RemoveStream(local_stream);
-  EXPECT_FALSE(pc_->AddStream(local_stream, NULL));
+  EXPECT_FALSE(pc_->AddStream(local_stream));
 
   ASSERT_FALSE(local_stream->GetAudioTracks().empty());
-  talk_base::scoped_refptr<webrtc::DtmfSenderInterface> dtmf_sender(
+  rtc::scoped_refptr<webrtc::DtmfSenderInterface> dtmf_sender(
       pc_->CreateDtmfSender(local_stream->GetAudioTracks()[0]));
   EXPECT_TRUE(NULL == dtmf_sender);  // local stream has been removed.
 
@@ -1194,9 +1191,9 @@ TEST_F(PeerConnectionInterfaceTest, CloseAndTestMethods) {
   EXPECT_TRUE(pc_->local_description() != NULL);
   EXPECT_TRUE(pc_->remote_description() != NULL);
 
-  talk_base::scoped_ptr<SessionDescriptionInterface> offer;
+  rtc::scoped_ptr<SessionDescriptionInterface> offer;
   EXPECT_TRUE(DoCreateOffer(offer.use()));
-  talk_base::scoped_ptr<SessionDescriptionInterface> answer;
+  rtc::scoped_ptr<SessionDescriptionInterface> answer;
   EXPECT_TRUE(DoCreateAnswer(answer.use()));
 
   std::string sdp;

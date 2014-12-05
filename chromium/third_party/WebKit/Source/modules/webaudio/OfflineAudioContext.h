@@ -27,13 +27,14 @@
 
 #include "modules/webaudio/AudioContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class OfflineAudioContext FINAL : public AudioContext {
+class OfflineAudioContext final : public AudioContext {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<OfflineAudioContext> create(ExecutionContext*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
+    static OfflineAudioContext* create(ExecutionContext*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
 
     virtual ~OfflineAudioContext();
 
@@ -41,6 +42,6 @@ private:
     OfflineAudioContext(Document*, unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OfflineAudioContext_h

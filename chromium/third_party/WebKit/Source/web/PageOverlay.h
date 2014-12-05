@@ -32,17 +32,13 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
+
 class GraphicsContext;
 class GraphicsLayer;
 class GraphicsLayerClient;
-}
-
-namespace blink {
-class OverlayGraphicsLayerClientImpl;
 class WebPageOverlay;
 class WebViewImpl;
-struct WebRect;
 
 class PageOverlay {
 public:
@@ -58,9 +54,9 @@ public:
 
     void clear();
     void update();
-    void paintWebFrame(WebCore::GraphicsContext&);
+    void paintWebFrame(GraphicsContext&);
 
-    WebCore::GraphicsLayer* graphicsLayer() const { return m_layer.get(); }
+    GraphicsLayer* graphicsLayer() const { return m_layer.get(); }
 
 private:
     PageOverlay(WebViewImpl*, WebPageOverlay*);
@@ -68,8 +64,8 @@ private:
 
     WebViewImpl* m_viewImpl;
     WebPageOverlay* m_overlay;
-    OwnPtr<WebCore::GraphicsLayerClient> m_layerClient;
-    OwnPtr<WebCore::GraphicsLayer> m_layer;
+    OwnPtr<GraphicsLayerClient> m_layerClient;
+    OwnPtr<GraphicsLayer> m_layer;
     int m_zOrder;
 };
 

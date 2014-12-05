@@ -34,7 +34,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
@@ -50,7 +50,6 @@ public:
         ExtendsIsCustomElementName,
         InvalidName,
         PrototypeInUse,
-        PrototypeNotAnObject,
         TypeAlreadyRegistered
     };
 
@@ -62,6 +61,6 @@ private:
     static String preamble(const AtomicString& type);
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementException_h

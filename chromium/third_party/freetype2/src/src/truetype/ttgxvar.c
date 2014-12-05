@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    TrueType GX Font Variation loader                                    */
 /*                                                                         */
-/*  Copyright 2004, 2005, 2006, 2007, 2008, 2009 by                        */
+/*  Copyright 2004-2011 by                                                 */
 /*  David Turner, Robert Wilhelm, Werner Lemberg, and George Williams.     */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -94,11 +94,8 @@
 #define ALL_POINTS  (FT_UShort*)( -1 )
 
 
-  enum
-  {
-    GX_PT_POINTS_ARE_WORDS     = 0x80,
-    GX_PT_POINT_RUN_COUNT_MASK = 0x7F
-  };
+#define GX_PT_POINTS_ARE_WORDS      0x80
+#define GX_PT_POINT_RUN_COUNT_MASK  0x7F
 
 
   /*************************************************************************/
@@ -126,14 +123,14 @@
   ft_var_readpackedpoints( FT_Stream  stream,
                            FT_UInt   *point_cnt )
   {
-    FT_UShort *points;
+    FT_UShort *points = NULL;
     FT_Int     n;
     FT_Int     runcnt;
     FT_Int     i;
     FT_Int     j;
     FT_Int     first;
     FT_Memory  memory = stream->memory;
-    FT_Error   error = TT_Err_Ok;
+    FT_Error   error  = TT_Err_Ok;
 
     FT_UNUSED( error );
 
@@ -157,7 +154,7 @@
         runcnt = runcnt & GX_PT_POINT_RUN_COUNT_MASK;
         first  = points[i++] = FT_GET_USHORT();
 
-        if ( runcnt < 1 )
+        if ( runcnt < 1 || i + runcnt >= n )
           goto Exit;
 
         /* first point not included in runcount */
@@ -168,7 +165,7 @@
       {
         first = points[i++] = FT_GET_BYTE();
 
-        if ( runcnt < 1 )
+        if ( runcnt < 1 || i + runcnt >= n )
           goto Exit;
 
         for ( j = 0; j < runcnt; ++j )
@@ -213,12 +210,12 @@
   ft_var_readpackeddeltas( FT_Stream  stream,
                            FT_Offset  delta_cnt )
   {
-    FT_Short  *deltas;
-    FT_Int     runcnt;
+    FT_Short  *deltas = NULL;
+    FT_UInt    runcnt;
     FT_Offset  i;
-    FT_Offset  j;
+    FT_UInt    j;
     FT_Memory  memory = stream->memory;
-    FT_Error   error = TT_Err_Ok;
+    FT_Error   error  = TT_Err_Ok;
 
     FT_UNUSED( error );
 
@@ -625,7 +622,7 @@
     FT_Error             error  = TT_Err_Ok;
     FT_ULong             fvar_start;
     FT_Int               i, j;
-    FT_MM_Var*           mmvar;
+    FT_MM_Var*           mmvar = NULL;
     FT_Fixed*            next_coords;
     FT_String*           next_name;
     FT_Var_Axis*         a;
@@ -685,7 +682,11 @@
       if ( fvar_head.version != (FT_Long)0x00010000L                      ||
            fvar_head.countSizePairs != 2                                  ||
            fvar_head.axisSize != 20                                       ||
+           /* axisCount limit implied by 16-bit instanceSize */
+           fvar_head.axisCount > 0x3FFE                                   ||
            fvar_head.instanceSize != 4 + 4 * fvar_head.axisCount          ||
+           /* instanceCount limit implied by limited range of name IDs */
+           fvar_head.instanceCount > 0x7EFF                               ||
            fvar_head.offsetToData + fvar_head.axisCount * 20U +
              fvar_head.instanceCount * fvar_head.instanceSize > table_len )
       {
@@ -696,7 +697,7 @@
       if ( FT_NEW( face->blend ) )
         goto Exit;
 
-      /* XXX: TODO - check for overflows */
+      /* cannot overflow 32-bit arithmetic because of limits above */
       face->blend->mmvar_len =
         sizeof ( FT_MM_Var ) +
         fvar_head.axisCount * sizeof ( FT_Var_Axis ) +
@@ -1324,7 +1325,7 @@
     FT_Stream   stream = face->root.stream;
     FT_Memory   memory = stream->memory;
     GX_Blend    blend  = face->blend;
-    FT_Vector*  delta_xy;
+    FT_Vector*  delta_xy = NULL;
 
     FT_Error    error;
     FT_ULong    glyph_start;
@@ -1473,6 +1474,9 @@
       {
         for ( j = 0; j < point_count; ++j )
         {
+          if ( localpoints[j] >= n_points )
+            continue;
+
           delta_xy[localpoints[j]].x += FT_MulFix( deltas_x[j], apply );
           delta_xy[localpoints[j]].y += FT_MulFix( deltas_y[j], apply );
         }

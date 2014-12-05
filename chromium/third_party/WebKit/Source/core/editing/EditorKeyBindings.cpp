@@ -32,7 +32,7 @@
 #include "core/page/EditorClient.h"
 #include "platform/PlatformKeyboardEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 bool Editor::handleEditingKeyboardEvent(KeyboardEvent* evt)
 {
@@ -71,4 +71,4 @@ void Editor::handleKeyboardEvent(KeyboardEvent* evt)
         evt->setDefaultHandled();
 }
 
-} // namesace WebCore
+} // namespace blink

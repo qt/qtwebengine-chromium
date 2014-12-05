@@ -42,24 +42,20 @@
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebPermissionClient.h"
 #include "public/web/WebWorkerPermissionClientProxy.h"
-#include "web/DatabaseClientImpl.h"
 #include "web/LocalFileSystemClient.h"
 #include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
 #include "web/WorkerPermissionClient.h"
 
-using namespace WebCore;
-
 namespace blink {
 
-WebCore::WorkerGlobalScopeProxy* WorkerGlobalScopeProxyProviderImpl::createWorkerGlobalScopeProxy(Worker* worker)
+WorkerGlobalScopeProxy* WorkerGlobalScopeProxyProviderImpl::createWorkerGlobalScopeProxy(Worker* worker)
 {
     if (worker->executionContext()->isDocument()) {
         Document* document = toDocument(worker->executionContext());
         WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(document->frame());
         OwnPtrWillBeRawPtr<WorkerClients> workerClients = WorkerClients::create();
         provideLocalFileSystemToWorker(workerClients.get(), LocalFileSystemClient::create());
-        provideDatabaseClientToWorker(workerClients.get(), DatabaseClientImpl::create());
         providePermissionClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createWorkerPermissionClientProxy(webFrame)));
         provideServiceWorkerContainerClientToWorker(workerClients.get(), adoptPtr(webFrame->client()->createServiceWorkerProvider(webFrame)));
         return new WorkerMessagingProxy(worker, workerClients.release());

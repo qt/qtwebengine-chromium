@@ -31,20 +31,19 @@
 #ifndef KeyAlgorithm_h
 #define KeyAlgorithm_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebCryptoKeyAlgorithm.h"
 #include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class KeyAlgorithm : public GarbageCollectedFinalized<KeyAlgorithm>, public ScriptWrappable {
 public:
     virtual ~KeyAlgorithm();
 
-    static KeyAlgorithm* create(const blink::WebCryptoKeyAlgorithm&);
-    static KeyAlgorithm* createHash(const blink::WebCryptoAlgorithm&);
+    static KeyAlgorithm* create(const WebCryptoKeyAlgorithm&);
+    static KeyAlgorithm* createHash(const WebCryptoAlgorithm&);
 
     String name();
 
@@ -56,14 +55,14 @@ public:
     virtual void trace(Visitor*);
 
 protected:
-    explicit KeyAlgorithm(const blink::WebCryptoKeyAlgorithm&);
+    explicit KeyAlgorithm(const WebCryptoKeyAlgorithm&);
 
-    blink::WebCryptoKeyAlgorithm m_algorithm;
+    WebCryptoKeyAlgorithm m_algorithm;
 };
 
 #define DEFINE_KEY_ALGORITHM_TYPE_CASTS(thisType) \
     DEFINE_TYPE_CASTS(thisType, KeyAlgorithm, value, value->is##thisType(), value.is##thisType())
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

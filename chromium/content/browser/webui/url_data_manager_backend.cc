@@ -44,8 +44,6 @@
 #include "net/url_request/url_request_job_factory.h"
 #include "url/url_util.h"
 
-using appcache::AppCacheServiceImpl;
-
 namespace content {
 
 namespace {
@@ -92,6 +90,19 @@ void URLToRequestPath(const GURL& url, std::string* path) {
     path->assign(spec.substr(offset));
 }
 
+// Returns a value of 'Origin:' header for the |request| if the header is set.
+// Otherwise returns an empty string.
+std::string GetOriginHeaderValue(const net::URLRequest* request) {
+  std::string result;
+  if (request->extra_request_headers().GetHeader(
+          net::HttpRequestHeaders::kOrigin, &result))
+    return result;
+  net::HttpRequestHeaders headers;
+  if (request->GetFullRequestHeaders(&headers))
+    headers.GetHeader(net::HttpRequestHeaders::kOrigin, &result);
+  return result;
+}
+
 }  // namespace
 
 // URLRequestChromeJob is a net::URLRequestJob that manages running
@@ -108,14 +119,12 @@ class URLRequestChromeJob : public net::URLRequestJob,
                       bool is_incognito);
 
   // net::URLRequestJob implementation.
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int* bytes_read) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
+  void Start() override;
+  void Kill() override;
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  int GetResponseCode() const override;
+  void GetResponseInfo(net::HttpResponseInfo* info) override;
 
   // Used to notify that the requested data's |mime_type| is ready.
   void MimeTypeAvailable(const std::string& mime_type);
@@ -154,13 +163,17 @@ class URLRequestChromeJob : public net::URLRequestJob,
     send_content_type_header_ = send_content_type_header;
   }
 
+  void set_access_control_allow_origin(const std::string& value) {
+    access_control_allow_origin_ = value;
+  }
+
   // Returns true when job was generated from an incognito profile.
   bool is_incognito() const {
     return is_incognito_;
   }
 
  private:
-  virtual ~URLRequestChromeJob();
+  ~URLRequestChromeJob() override;
 
   // Helper for Start(), to let us start asynchronously.
   // (This pattern is shared by most net::URLRequestJob implementations.)
@@ -204,10 +217,14 @@ class URLRequestChromeJob : public net::URLRequestJob,
   // If true, sets the "Content-Type: <mime-type>" header.
   bool send_content_type_header_;
 
+  // If not empty, "Access-Control-Allow-Origin:" is set to the value of this
+  // string.
+  std::string access_control_allow_origin_;
+
   // True when job is generated from an incognito profile.
   const bool is_incognito_;
 
-  // The backend is owned by ChromeURLRequestContext and always outlives us.
+  // The backend is owned by net::URLRequestContext and always outlives us.
   URLDataManagerBackend* backend_;
 
   base::WeakPtrFactory<URLRequestChromeJob> weak_factory_;
@@ -294,6 +311,12 @@ void URLRequestChromeJob::GetResponseInfo(net::HttpResponseInfo* info) {
         base::StringPrintf("%s:%s", net::HttpRequestHeaders::kContentType,
                            mime_type_.c_str());
     info->headers->AddHeader(content_type);
+  }
+
+  if (!access_control_allow_origin_.empty()) {
+    info->headers->AddHeader("Access-Control-Allow-Origin: " +
+                             access_control_allow_origin_);
+    info->headers->AddHeader("Vary: Origin");
   }
 }
 
@@ -434,11 +457,11 @@ class ChromeProtocolHandler
         is_incognito_(is_incognito),
         appcache_service_(appcache_service),
         blob_storage_context_(blob_storage_context) {}
-  virtual ~ChromeProtocolHandler() {}
+  ~ChromeProtocolHandler() override {}
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     DCHECK(request);
 
     // Check for chrome://view-http-cache/*, which uses its own job type.
@@ -479,7 +502,7 @@ class ChromeProtocolHandler
         GetURLDataManagerForResourceContext(resource_context_), is_incognito_);
   }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return false;
   }
 
@@ -579,6 +602,15 @@ bool URLDataManagerBackend::StartRequest(const net::URLRequest* request,
       source->source()->ShouldDenyXFrameOptions());
   job->set_send_content_type_header(
       source->source()->ShouldServeMimeTypeAsContentTypeHeader());
+
+  std::string origin = GetOriginHeaderValue(request);
+  if (!origin.empty()) {
+    std::string header =
+        source->source()->GetAccessControlAllowOriginForOrigin(origin);
+    DCHECK(header.empty() || header == origin || header == "*" ||
+           header == "null");
+    job->set_access_control_allow_origin(header);
+  }
 
   // Look up additional request info to pass down.
   int render_process_id = -1;
@@ -695,11 +727,11 @@ class DevToolsJobFactory
   // |is_incognito| should be set for incognito profiles.
   DevToolsJobFactory(content::ResourceContext* resource_context,
                      bool is_incognito);
-  virtual ~DevToolsJobFactory();
+  ~DevToolsJobFactory() override;
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
+      net::NetworkDelegate* network_delegate) const override;
 
  private:
   // |resource_context_| and |network_delegate_| are owned by ProfileIOData,

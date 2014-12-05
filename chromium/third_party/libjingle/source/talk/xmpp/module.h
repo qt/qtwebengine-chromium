@@ -25,13 +25,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _module_h_
-#define _module_h_
+#ifndef TALK_XMPP_MODULE_H_
+#define TALK_XMPP_MODULE_H_
+
+#include "webrtc/libjingle/xmpp/xmppengine.h"
 
 namespace buzz {
 
 class XmppEngine;
-enum XmppReturnStatus;
 
 //! This is the base class for extension modules.
 //! An engine is registered with the module and the module then hooks the
@@ -48,4 +49,4 @@ public:
 };
 
 }
-#endif
+#endif  // TALK_XMPP_MODULE_H_

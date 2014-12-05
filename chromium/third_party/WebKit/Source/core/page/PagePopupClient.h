@@ -36,8 +36,9 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
+class Element;
 class Locale;
 
 class PagePopupClient {
@@ -51,6 +52,7 @@ public:
     //  - window.setValueAndClosePopup(number, string).
     virtual void writeDocument(SharedBuffer*) = 0;
 
+    virtual Element& ownerElement() = 0;
     // Returns a Locale object associated to the client.
     virtual Locale& locale() = 0;
 

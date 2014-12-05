@@ -29,12 +29,12 @@
 #include "config.h"
 #include "core/accessibility/AXTableColumn.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/accessibility/AXTableCell.h"
 #include "core/rendering/RenderTableCell.h"
 
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -181,4 +181,4 @@ void AXTableColumn::addChildren()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

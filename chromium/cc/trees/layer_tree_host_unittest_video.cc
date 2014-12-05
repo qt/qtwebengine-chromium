@@ -22,15 +22,15 @@ class LayerTreeHostVideoTest : public LayerTreeTest {};
 class LayerTreeHostVideoTestSetNeedsDisplay
     : public LayerTreeHostVideoTest {
  public:
-  virtual void SetupTree() OVERRIDE {
+  void SetupTree() override {
     scoped_refptr<Layer> root = Layer::Create();
     root->SetBounds(gfx::Size(10, 10));
     root->SetIsDrawable(true);
 
-    scoped_refptr<VideoLayer> video = VideoLayer::Create(
-        &video_frame_provider_);
+    scoped_refptr<VideoLayer> video =
+        VideoLayer::Create(&video_frame_provider_, media::VIDEO_ROTATION_90);
     video->SetPosition(gfx::PointF(3.f, 3.f));
-    video->SetBounds(gfx::Size(4, 4));
+    video->SetBounds(gfx::Size(4, 5));
     video->SetIsDrawable(true);
     root->AddChild(video);
 
@@ -39,14 +39,14 @@ class LayerTreeHostVideoTestSetNeedsDisplay
     LayerTreeHostVideoTest::SetupTree();
   }
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     num_draws_ = 0;
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
-                                           LayerTreeHostImpl::FrameData* frame,
-                                           DrawResult draw_result) OVERRIDE {
+  DrawResult PrepareToDrawOnThread(LayerTreeHostImpl* host_impl,
+                                   LayerTreeHostImpl::FrameData* frame,
+                                   DrawResult draw_result) override {
     LayerImpl* root_layer = host_impl->active_tree()->root_layer();
     RenderSurfaceImpl* root_surface = root_layer->render_surface();
     gfx::RectF damage_rect =
@@ -60,7 +60,7 @@ class LayerTreeHostVideoTestSetNeedsDisplay
         break;
       case 1:
         // Second frame the video layer is damaged.
-        EXPECT_EQ(gfx::RectF(6.f, 6.f, 8.f, 8.f).ToString(),
+        EXPECT_EQ(gfx::RectF(6.f, 6.f, 8.f, 10.f).ToString(),
                   damage_rect.ToString());
         EndTest();
         break;
@@ -70,9 +70,11 @@ class LayerTreeHostVideoTestSetNeedsDisplay
     return draw_result;
   }
 
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
     VideoLayerImpl* video = static_cast<VideoLayerImpl*>(
         host_impl->active_tree()->root_layer()->children()[0]);
+
+    EXPECT_EQ(media::VIDEO_ROTATION_90, video->video_rotation());
 
     if (num_draws_ == 0)
       video->SetNeedsRedraw();
@@ -80,9 +82,7 @@ class LayerTreeHostVideoTestSetNeedsDisplay
     ++num_draws_;
   }
 
-  virtual void AfterTest() OVERRIDE {
-    EXPECT_EQ(2, num_draws_);
-  }
+  void AfterTest() override { EXPECT_EQ(2, num_draws_); }
 
  private:
   int num_draws_;

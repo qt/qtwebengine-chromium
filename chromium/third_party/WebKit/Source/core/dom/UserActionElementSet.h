@@ -32,12 +32,12 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 class Element;
 
-class UserActionElementSet FINAL {
+class UserActionElementSet final {
     DISALLOW_ALLOCATION();
 public:
     bool isFocused(const Node* node) { return hasFlags(node, IsFocusedFlag); }

@@ -19,16 +19,17 @@ class GIN_EXPORT V8Platform : public NON_EXPORTED_BASE(v8::Platform) {
   static V8Platform* Get();
 
   // v8::Platform implementation.
-  virtual void CallOnBackgroundThread(
+  void CallOnBackgroundThread(
       v8::Task* task,
-      v8::Platform::ExpectedRuntime expected_runtime) OVERRIDE;
-  virtual void CallOnForegroundThread(v8::Isolate* isolate,
-                                      v8::Task* task) OVERRIDE;
+      v8::Platform::ExpectedRuntime expected_runtime) override;
+  void CallOnForegroundThread(v8::Isolate* isolate, v8::Task* task) override;
+  double MonotonicallyIncreasingTime() override;
+
  private:
   friend struct base::DefaultLazyInstanceTraits<V8Platform>;
 
   V8Platform();
-  virtual ~V8Platform();
+  ~V8Platform() override;
 
   DISALLOW_COPY_AND_ASSIGN(V8Platform);
 };

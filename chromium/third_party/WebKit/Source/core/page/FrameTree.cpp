@@ -34,11 +34,11 @@
 
 using std::swap;
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-const unsigned invalidChildCount = ~0;
+const unsigned invalidChildCount = ~0U;
 
 } // namespace
 
@@ -50,6 +50,7 @@ FrameTree::FrameTree(Frame* thisFrame)
 
 FrameTree::~FrameTree()
 {
+#if !ENABLE(OILPAN)
     // FIXME: Why is this here? Doesn't this parallel what we already do in ~LocalFrame?
     for (Frame* child = firstChild(); child; child = child->tree().nextSibling()) {
         if (child->isLocalFrame())
@@ -57,6 +58,7 @@ FrameTree::~FrameTree()
         else if (child->isRemoteFrame())
             toRemoteFrame(child)->setView(nullptr);
     }
+#endif
 }
 
 void FrameTree::setName(const AtomicString& name, const AtomicString& fallbackName)
@@ -73,7 +75,7 @@ void FrameTree::setName(const AtomicString& name, const AtomicString& fallbackNa
 Frame* FrameTree::parent() const
 {
     if (!m_thisFrame->client())
-        return 0;
+        return nullptr;
     return m_thisFrame->client()->parent();
 }
 
@@ -85,34 +87,34 @@ Frame* FrameTree::top() const
     if (!m_thisFrame->client())
         return m_thisFrame;
     Frame* candidate = m_thisFrame->client()->top();
-    return candidate ? candidate : m_thisFrame;
+    return candidate ? candidate : m_thisFrame.get();
 }
 
 Frame* FrameTree::previousSibling() const
 {
     if (!m_thisFrame->client())
-        return 0;
+        return nullptr;
     return m_thisFrame->client()->previousSibling();
 }
 
 Frame* FrameTree::nextSibling() const
 {
     if (!m_thisFrame->client())
-        return 0;
+        return nullptr;
     return m_thisFrame->client()->nextSibling();
 }
 
 Frame* FrameTree::firstChild() const
 {
     if (!m_thisFrame->client())
-        return 0;
+        return nullptr;
     return m_thisFrame->client()->firstChild();
 }
 
 Frame* FrameTree::lastChild() const
 {
     if (!m_thisFrame->client())
-        return 0;
+        return nullptr;
     return m_thisFrame->client()->lastChild();
 }
 
@@ -171,10 +173,10 @@ AtomicString FrameTree::uniqueChildName(const AtomicString& requestedName) const
 Frame* FrameTree::scopedChild(unsigned index) const
 {
     if (!m_thisFrame->isLocalFrame())
-        return 0;
+        return nullptr;
     TreeScope* scope = toLocalFrame(m_thisFrame)->document();
     if (!scope)
-        return 0;
+        return nullptr;
 
     unsigned scopedIndex = 0;
     for (Frame* result = firstChild(); result; result = result->tree().nextSibling()) {
@@ -185,22 +187,22 @@ Frame* FrameTree::scopedChild(unsigned index) const
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 Frame* FrameTree::scopedChild(const AtomicString& name) const
 {
     if (!m_thisFrame->isLocalFrame())
-        return 0;
+        return nullptr;
 
     TreeScope* scope = toLocalFrame(m_thisFrame)->document();
     if (!scope)
-        return 0;
+        return nullptr;
 
     for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
         if (child->tree().name() == name && child->isLocalFrame() && toLocalFrame(child)->inScope(scope))
             return child;
-    return 0;
+    return nullptr;
 }
 
 inline unsigned FrameTree::scopedChildCount(TreeScope* scope) const
@@ -242,7 +244,7 @@ Frame* FrameTree::child(const AtomicString& name) const
     for (Frame* child = firstChild(); child; child = child->tree().nextSibling())
         if (child->tree().name() == name)
             return child;
-    return 0;
+    return nullptr;
 }
 
 Frame* FrameTree::find(const AtomicString& name) const
@@ -254,11 +256,11 @@ Frame* FrameTree::find(const AtomicString& name) const
         return top();
 
     if (name == "_parent")
-        return parent() ? parent() : m_thisFrame;
+        return parent() ? parent() : m_thisFrame.get();
 
     // Since "_blank" should never be any frame's name, the following just amounts to an optimization.
     if (name == "_blank")
-        return 0;
+        return nullptr;
 
     // Search subtree starting with this frame first.
     for (Frame* frame = m_thisFrame; frame; frame = frame->tree().traverseNext(m_thisFrame))
@@ -270,7 +272,7 @@ Frame* FrameTree::find(const AtomicString& name) const
 
     // The frame could have been detached from the page, so check it.
     if (!page)
-        return 0;
+        return nullptr;
 
     for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext())
         if (frame->tree().name() == name)
@@ -279,9 +281,7 @@ Frame* FrameTree::find(const AtomicString& name) const
     // Search the entire tree of each of the other pages in this namespace.
     // FIXME: Is random order OK?
     const HashSet<Page*>& pages = Page::ordinaryPages();
-    HashSet<Page*>::const_iterator end = pages.end();
-    for (HashSet<Page*>::const_iterator it = pages.begin(); it != end; ++it) {
-        Page* otherPage = *it;
+    for (const Page* otherPage : pages) {
         if (otherPage != page) {
             for (Frame* frame = otherPage->mainFrame(); frame; frame = frame->tree().traverseNext()) {
                 if (frame->tree().name() == name)
@@ -290,7 +290,7 @@ Frame* FrameTree::find(const AtomicString& name) const
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 bool FrameTree::isDescendantOf(const Frame* ancestor) const
@@ -316,7 +316,7 @@ Frame* FrameTree::traverseNext(const Frame* stayWithin) const
     }
 
     if (m_thisFrame == stayWithin)
-        return 0;
+        return nullptr;
 
     Frame* sibling = nextSibling();
     if (sibling) {
@@ -328,7 +328,7 @@ Frame* FrameTree::traverseNext(const Frame* stayWithin) const
     while (!sibling && (!stayWithin || frame->tree().parent() != stayWithin)) {
         frame = frame->tree().parent();
         if (!frame)
-            return 0;
+            return nullptr;
         sibling = frame->tree().nextSibling();
     }
 
@@ -337,7 +337,7 @@ Frame* FrameTree::traverseNext(const Frame* stayWithin) const
         return sibling;
     }
 
-    return 0;
+    return nullptr;
 }
 
 Frame* FrameTree::traverseNextWithWrap(bool wrap) const
@@ -348,7 +348,7 @@ Frame* FrameTree::traverseNextWithWrap(bool wrap) const
     if (wrap)
         return m_thisFrame->page()->mainFrame();
 
-    return 0;
+    return nullptr;
 }
 
 Frame* FrameTree::traversePreviousWithWrap(bool wrap) const
@@ -365,7 +365,7 @@ Frame* FrameTree::traversePreviousWithWrap(bool wrap) const
         return deepLastChild();
 
     // top view is always the last one in this ordering, so prev is nil without wrap
-    return 0;
+    return nullptr;
 }
 
 Frame* FrameTree::deepLastChild() const
@@ -377,7 +377,12 @@ Frame* FrameTree::deepLastChild() const
     return result;
 }
 
-} // namespace WebCore
+void FrameTree::trace(Visitor* visitor)
+{
+    visitor->trace(m_thisFrame);
+}
+
+} // namespace blink
 
 #ifndef NDEBUG
 
@@ -387,7 +392,7 @@ static void printIndent(int indent)
         printf("    ");
 }
 
-static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targetFrame, int indent)
+static void printFrames(const blink::Frame* frame, const blink::Frame* targetFrame, int indent)
 {
     if (frame == targetFrame) {
         printf("--> ");
@@ -395,7 +400,7 @@ static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targe
     } else
         printIndent(indent);
 
-    WebCore::FrameView* view = frame->isLocalFrame() ? toLocalFrame(frame)->view() : 0;
+    blink::FrameView* view = frame->isLocalFrame() ? toLocalFrame(frame)->view() : 0;
     printf("Frame %p %dx%d\n", frame, view ? view->width() : 0, view ? view->height() : 0);
     printIndent(indent);
     printf("  owner=%p\n", frame->owner());
@@ -406,11 +411,11 @@ static void printFrames(const WebCore::Frame* frame, const WebCore::Frame* targe
     printIndent(indent);
     printf("  uri=%s\n\n", frame->isLocalFrame() ? toLocalFrame(frame)->document()->url().string().utf8().data() : 0);
 
-    for (WebCore::Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
+    for (blink::Frame* child = frame->tree().firstChild(); child; child = child->tree().nextSibling())
         printFrames(child, targetFrame, indent + 1);
 }
 
-void showFrameTree(const WebCore::Frame* frame)
+void showFrameTree(const blink::Frame* frame)
 {
     if (!frame) {
         printf("Null input frame\n");

@@ -27,13 +27,13 @@
 #ifndef XPathEvaluator_h
 #define XPathEvaluator_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Node;
@@ -41,7 +41,8 @@ class XPathExpression;
 class XPathNSResolver;
 class XPathResult;
 
-class XPathEvaluator : public RefCountedWillBeGarbageCollectedFinalized<XPathEvaluator>, public ScriptWrappable {
+class XPathEvaluator final : public RefCountedWillBeGarbageCollected<XPathEvaluator>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<XPathEvaluator> create()
     {
@@ -56,12 +57,9 @@ public:
     void trace(Visitor*) { }
 
 private:
-    XPathEvaluator()
-    {
-        ScriptWrappable::init(this);
-    }
+    XPathEvaluator() { }
 };
 
-}
+} // namespace blink
 
 #endif // XPathEvaluator_h

@@ -4,6 +4,9 @@
 
 #include "content/browser/accessibility/browser_accessibility_android.h"
 
+#include "base/i18n/break_iterator.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/accessibility/browser_accessibility_manager_android.h"
 #include "content/common/accessibility_messages.h"
@@ -55,6 +58,10 @@ bool BrowserAccessibilityAndroid::IsNative() const {
   return true;
 }
 
+void BrowserAccessibilityAndroid::OnLocationChanged() {
+  manager()->NotifyAccessibilityEvent(ui::AX_EVENT_LOCATION_CHANGED, this);
+}
+
 bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
   if (InternalChildCount() == 0)
     return true;
@@ -69,6 +76,10 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
   // If it has a focusable child, we definitely can't leave out children.
   if (HasFocusableChild())
     return false;
+
+  // Date and time controls should drop their children.
+  if (GetRole() == ui::AX_ROLE_DATE || GetRole() == ui::AX_ROLE_TIME)
+    return true;
 
   // Headings with text can drop their children.
   base::string16 name = GetText();
@@ -86,6 +97,24 @@ bool BrowserAccessibilityAndroid::PlatformIsLeaf() const {
   return BrowserAccessibility::PlatformIsLeaf();
 }
 
+bool BrowserAccessibilityAndroid::CanScrollForward() const {
+  if (!IsSlider())
+    return false;
+
+  float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+  float max = GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
+  return value < max;
+}
+
+bool BrowserAccessibilityAndroid::CanScrollBackward() const {
+  if (!IsSlider())
+    return false;
+
+  float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+  float min = GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
+  return value > min;
+}
+
 bool BrowserAccessibilityAndroid::IsCheckable() const {
   bool checkable = false;
   bool is_aria_pressed_defined;
@@ -93,6 +122,8 @@ bool BrowserAccessibilityAndroid::IsCheckable() const {
   GetAriaTristate("aria-pressed", &is_aria_pressed_defined, &is_mixed);
   if (GetRole() == ui::AX_ROLE_CHECK_BOX ||
       GetRole() == ui::AX_ROLE_RADIO_BUTTON ||
+      GetRole() == ui::AX_ROLE_MENU_ITEM_CHECK_BOX ||
+      GetRole() == ui::AX_ROLE_MENU_ITEM_RADIO ||
       is_aria_pressed_defined) {
     checkable = true;
   }
@@ -113,6 +144,7 @@ bool BrowserAccessibilityAndroid::IsCollection() const {
   return (GetRole() == ui::AX_ROLE_GRID ||
           GetRole() == ui::AX_ROLE_LIST ||
           GetRole() == ui::AX_ROLE_LIST_BOX ||
+          GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
           GetRole() == ui::AX_ROLE_TABLE ||
           GetRole() == ui::AX_ROLE_TREE);
 }
@@ -134,6 +166,12 @@ bool BrowserAccessibilityAndroid::IsContentInvalid() const {
 
 bool BrowserAccessibilityAndroid::IsDismissable() const {
   return false;  // No concept of "dismissable" on the web currently.
+}
+
+bool BrowserAccessibilityAndroid::IsEditableText() const {
+  return (GetRole() == ui::AX_ROLE_EDITABLE_TEXT ||
+          GetRole() == ui::AX_ROLE_TEXT_AREA ||
+          GetRole() == ui::AX_ROLE_TEXT_FIELD);
 }
 
 bool BrowserAccessibilityAndroid::IsEnabled() const {
@@ -161,6 +199,7 @@ bool BrowserAccessibilityAndroid::IsHeading() const {
 
 bool BrowserAccessibilityAndroid::IsHierarchical() const {
   return (GetRole() == ui::AX_ROLE_LIST ||
+          GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
           GetRole() == ui::AX_ROLE_TREE);
 }
 
@@ -192,6 +231,10 @@ bool BrowserAccessibilityAndroid::IsSelected() const {
   return HasState(ui::AX_STATE_SELECTED);
 }
 
+bool BrowserAccessibilityAndroid::IsSlider() const {
+  return GetRole() == ui::AX_ROLE_SLIDER;
+}
+
 bool BrowserAccessibilityAndroid::IsVisibleToUser() const {
   return !HasState(ui::AX_STATE_INVISIBLE);
 }
@@ -213,12 +256,15 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
     case ui::AX_ROLE_SLIDER:
       class_name = "android.widget.SeekBar";
       break;
+    case ui::AX_ROLE_COLOR_WELL:
     case ui::AX_ROLE_COMBO_BOX:
+    case ui::AX_ROLE_DATE:
+    case ui::AX_ROLE_POP_UP_BUTTON:
+    case ui::AX_ROLE_TIME:
       class_name = "android.widget.Spinner";
       break;
     case ui::AX_ROLE_BUTTON:
     case ui::AX_ROLE_MENU_BUTTON:
-    case ui::AX_ROLE_POP_UP_BUTTON:
       class_name = "android.widget.Button";
       break;
     case ui::AX_ROLE_CHECK_BOX:
@@ -232,8 +278,10 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_CANVAS:
     case ui::AX_ROLE_IMAGE:
+    case ui::AX_ROLE_SVG_ROOT:
       class_name = "android.widget.Image";
       break;
+    case ui::AX_ROLE_METER:
     case ui::AX_ROLE_PROGRESS_INDICATOR:
       class_name = "android.widget.ProgressBar";
       break;
@@ -246,6 +294,7 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_LIST:
     case ui::AX_ROLE_LIST_BOX:
+    case ui::AX_ROLE_DESCRIPTION_LIST:
       class_name = "android.widget.ListView";
       break;
     case ui::AX_ROLE_DIALOG:
@@ -253,6 +302,11 @@ const char* BrowserAccessibilityAndroid::GetClassName() const {
       break;
     case ui::AX_ROLE_ROOT_WEB_AREA:
       class_name = "android.webkit.WebView";
+      break;
+    case ui::AX_ROLE_MENU_ITEM:
+    case ui::AX_ROLE_MENU_ITEM_CHECK_BOX:
+    case ui::AX_ROLE_MENU_ITEM_RADIO:
+      class_name = "android.view.MenuItem";
       break;
     default:
       class_name = "android.view.View";
@@ -271,15 +325,59 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
   // See comment in browser_accessibility_win.cc for details.
   // The difference here is that we can only expose one accessible
   // name on Android, not 2 or 3 like on Windows or Mac.
-  //
-  // The basic rule is: prefer description (aria-labelledby or aria-label),
-  // then help (title), then name (inner text), then value (control value).
-  // However, if title_elem_id is set, that means there's a label element
+
+  // First, always return the |value| attribute if this is an
+  // input field.
+  if (!value().empty()) {
+    if (HasState(ui::AX_STATE_EDITABLE))
+      return base::UTF8ToUTF16(value());
+
+    switch (GetRole()) {
+      case ui::AX_ROLE_COMBO_BOX:
+      case ui::AX_ROLE_EDITABLE_TEXT:
+      case ui::AX_ROLE_POP_UP_BUTTON:
+      case ui::AX_ROLE_TEXT_AREA:
+      case ui::AX_ROLE_TEXT_FIELD:
+        return base::UTF8ToUTF16(value());
+    }
+  }
+
+  // For color wells, the color is stored in separate attributes.
+  // Perhaps we could return color names in the future?
+  if (GetRole() == ui::AX_ROLE_COLOR_WELL) {
+    int red = GetIntAttribute(ui::AX_ATTR_COLOR_VALUE_RED);
+    int green = GetIntAttribute(ui::AX_ATTR_COLOR_VALUE_GREEN);
+    int blue = GetIntAttribute(ui::AX_ATTR_COLOR_VALUE_BLUE);
+    return base::UTF8ToUTF16(
+        base::StringPrintf("#%02X%02X%02X", red, green, blue));
+  }
+
+  // Always prefer visible text if this is a link. Sites sometimes add
+  // a "title" attribute to a link with more information, but we can't
+  // lose the link text.
+  if (!name().empty() && GetRole() == ui::AX_ROLE_LINK)
+    return base::UTF8ToUTF16(name());
+
+  // If there's no text value, the basic rule is: prefer description
+  // (aria-labelledby or aria-label), then help (title), then name
+  // (inner text), then value (control value).  However, if
+  // title_elem_id is set, that means there's a label element
   // supplying the name and then name takes precedence over help.
   // TODO(dmazzoni): clean this up by providing more granular labels in
   // Blink, making the platform-specific mapping to accessible text simpler.
   base::string16 description = GetString16Attribute(ui::AX_ATTR_DESCRIPTION);
   base::string16 help = GetString16Attribute(ui::AX_ATTR_HELP);
+
+  base::string16 placeholder;
+  switch (GetRole()) {
+    case ui::AX_ROLE_DATE:
+    case ui::AX_ROLE_EDITABLE_TEXT:
+    case ui::AX_ROLE_TEXT_AREA:
+    case ui::AX_ROLE_TEXT_FIELD:
+    case ui::AX_ROLE_TIME:
+      GetHtmlAttribute("placeholder", &placeholder);
+  }
+
   int title_elem_id = GetIntAttribute(
       ui::AX_ATTR_TITLE_UI_ELEMENT);
   base::string16 text;
@@ -291,27 +389,23 @@ base::string16 BrowserAccessibilityAndroid::GetText() const {
     text = help;
   else if (!name().empty())
     text = base::UTF8ToUTF16(name());
+  else if (!placeholder.empty())
+    text = placeholder;
   else if (!value().empty())
     text = base::UTF8ToUTF16(value());
 
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
-  if (text.empty() && HasOnlyStaticTextChildren()) {
+  if (text.empty() &&
+      (HasOnlyStaticTextChildren() ||
+       (IsFocusable() && HasOnlyTextAndImageChildren()))) {
     for (uint32 i = 0; i < InternalChildCount(); i++) {
       BrowserAccessibility* child = InternalGetChild(i);
       text += static_cast<BrowserAccessibilityAndroid*>(child)->GetText();
     }
   }
 
-  switch(GetRole()) {
-    case ui::AX_ROLE_HEADING:
-      // Only append "heading" if this node already has text.
-      if (!text.empty())
-        text += base::ASCIIToUTF16(" Heading");
-      break;
-  }
-
-  if (text.empty() && IsLink()) {
+  if (text.empty() && (IsLink() || GetRole() == ui::AX_ROLE_IMAGE)) {
     base::string16 url = GetString16Attribute(ui::AX_ATTR_URL);
     // Given a url like http://foo.com/bar/baz.png, just return the
     // base name, e.g., "baz".
@@ -344,11 +438,13 @@ int BrowserAccessibilityAndroid::GetItemIndex() const {
       break;
     case ui::AX_ROLE_SLIDER:
     case ui::AX_ROLE_PROGRESS_INDICATOR: {
-      float value_for_range;
-      if (GetFloatAttribute(
-              ui::AX_ATTR_VALUE_FOR_RANGE, &value_for_range)) {
-        index = static_cast<int>(value_for_range);
-      }
+      // Return a percentage here for live feedback in an AccessibilityEvent.
+      // The exact value is returned in RangeCurrentValue.
+      float min = GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
+      float max = GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
+      float value = GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+      if (max > min && value >= min && value <= max)
+        index = static_cast<int>(((value - min)) * 100 / (max - min));
       break;
     }
   }
@@ -360,17 +456,16 @@ int BrowserAccessibilityAndroid::GetItemCount() const {
   switch(GetRole()) {
     case ui::AX_ROLE_LIST:
     case ui::AX_ROLE_LIST_BOX:
+    case ui::AX_ROLE_DESCRIPTION_LIST:
       count = PlatformChildCount();
       break;
     case ui::AX_ROLE_SLIDER:
-    case ui::AX_ROLE_PROGRESS_INDICATOR: {
-      float max_value_for_range;
-      if (GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE,
-                            &max_value_for_range)) {
-        count = static_cast<int>(max_value_for_range);
-      }
+    case ui::AX_ROLE_PROGRESS_INDICATOR:
+      // An AccessibilityEvent can only return integer information about a
+      // seek control, so we return a percentage. The real range is returned
+      // in RangeMin and RangeMax.
+      count = 100;
       break;
-    }
   }
   return count;
 }
@@ -523,6 +618,7 @@ int BrowserAccessibilityAndroid::RowCount() const {
 
   if (GetRole() == ui::AX_ROLE_LIST ||
       GetRole() == ui::AX_ROLE_LIST_BOX ||
+      GetRole() == ui::AX_ROLE_DESCRIPTION_LIST ||
       GetRole() == ui::AX_ROLE_TREE) {
     return PlatformChildCount();
   }
@@ -572,6 +668,116 @@ float BrowserAccessibilityAndroid::RangeCurrentValue() const {
   return GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
 }
 
+void BrowserAccessibilityAndroid::GetGranularityBoundaries(
+    int granularity,
+    std::vector<int32>* starts,
+    std::vector<int32>* ends,
+    int offset) {
+  switch (granularity) {
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_LINE:
+      GetLineBoundaries(starts, ends, offset);
+      break;
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_WORD:
+      GetWordBoundaries(starts, ends, offset);
+      break;
+    default:
+      NOTREACHED();
+  }
+}
+
+void BrowserAccessibilityAndroid::GetLineBoundaries(
+    std::vector<int32>* line_starts,
+    std::vector<int32>* line_ends,
+    int offset) {
+  // If this node has no children, treat it as all one line.
+  if (GetText().size() > 0 && !InternalChildCount()) {
+    line_starts->push_back(offset);
+    line_ends->push_back(offset + GetText().size());
+  }
+
+  // If this is a static text node, get the line boundaries from the
+  // inline text boxes if possible.
+  if (GetRole() == ui::AX_ROLE_STATIC_TEXT) {
+    int last_y = 0;
+    for (uint32 i = 0; i < InternalChildCount(); i++) {
+      BrowserAccessibilityAndroid* child =
+          static_cast<BrowserAccessibilityAndroid*>(InternalGetChild(i));
+      CHECK_EQ(ui::AX_ROLE_INLINE_TEXT_BOX, child->GetRole());
+      // TODO(dmazzoni): replace this with a proper API to determine
+      // if two inline text boxes are on the same line. http://crbug.com/421771
+      int y = child->GetLocation().y();
+      if (i == 0) {
+        line_starts->push_back(offset);
+      } else if (y != last_y) {
+        line_ends->push_back(offset);
+        line_starts->push_back(offset);
+      }
+      offset += child->GetText().size();
+      last_y = y;
+    }
+    line_ends->push_back(offset);
+    return;
+  }
+
+  // Otherwise, call GetLineBoundaries recursively on the children.
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibilityAndroid* child =
+        static_cast<BrowserAccessibilityAndroid*>(InternalGetChild(i));
+    child->GetLineBoundaries(line_starts, line_ends, offset);
+    offset += child->GetText().size();
+  }
+}
+
+void BrowserAccessibilityAndroid::GetWordBoundaries(
+    std::vector<int32>* word_starts,
+    std::vector<int32>* word_ends,
+    int offset) {
+  if (GetRole() == ui::AX_ROLE_INLINE_TEXT_BOX) {
+    const std::vector<int32>& starts = GetIntListAttribute(
+        ui::AX_ATTR_WORD_STARTS);
+    const std::vector<int32>& ends = GetIntListAttribute(
+        ui::AX_ATTR_WORD_ENDS);
+    for (size_t i = 0; i < starts.size(); ++i) {
+      word_starts->push_back(offset + starts[i]);
+      word_ends->push_back(offset + ends[i]);
+    }
+    return;
+  }
+
+  base::string16 concatenated_text;
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibilityAndroid* child =
+        static_cast<BrowserAccessibilityAndroid*>(InternalGetChild(i));
+    base::string16 child_text = child->GetText();
+    concatenated_text += child->GetText();
+  }
+
+  base::string16 text = GetText();
+  if (text.empty() || concatenated_text == text) {
+    // Great - this node is just the concatenation of its children, so
+    // we can get the word boundaries recursively.
+    for (uint32 i = 0; i < InternalChildCount(); i++) {
+      BrowserAccessibilityAndroid* child =
+          static_cast<BrowserAccessibilityAndroid*>(InternalGetChild(i));
+      child->GetWordBoundaries(word_starts, word_ends, offset);
+      offset += child->GetText().size();
+    }
+  } else {
+    // This node has its own accessible text that doesn't match its
+    // visible text - like alt text for an image or something with an
+    // aria-label, so split the text into words locally.
+    base::i18n::BreakIterator iter(text, base::i18n::BreakIterator::BREAK_WORD);
+    if (!iter.Init())
+      return;
+    while (iter.Advance()) {
+      if (iter.IsWord()) {
+        word_starts->push_back(iter.prev());
+        word_ends->push_back(iter.pos());
+      }
+    }
+  }
+}
+
 bool BrowserAccessibilityAndroid::HasFocusableChild() const {
   // This is called from PlatformIsLeaf, so don't call PlatformChildCount
   // from within this!
@@ -592,6 +798,19 @@ bool BrowserAccessibilityAndroid::HasOnlyStaticTextChildren() const {
     BrowserAccessibility* child = InternalGetChild(i);
     if (child->GetRole() != ui::AX_ROLE_STATIC_TEXT)
       return false;
+  }
+  return true;
+}
+
+bool BrowserAccessibilityAndroid::HasOnlyTextAndImageChildren() const {
+  // This is called from PlatformIsLeaf, so don't call PlatformChildCount
+  // from within this!
+  for (uint32 i = 0; i < InternalChildCount(); i++) {
+    BrowserAccessibility* child = InternalGetChild(i);
+    if (child->GetRole() != ui::AX_ROLE_STATIC_TEXT &&
+        child->GetRole() != ui::AX_ROLE_IMAGE) {
+      return false;
+    }
   }
   return true;
 }

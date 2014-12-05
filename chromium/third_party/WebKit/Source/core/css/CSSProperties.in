@@ -1,319 +1,389 @@
-// FIXME: When we have all the properties using the new StyleBuilder, we
-//   should use this for make_css_property_names.py
-// Note that type_name is currently only used for non-custom value application
-// and when explicitly referred to in generated applicators.
-// Note: Mandatory blank line to skip parameter parsing phase
+// This file specifies all the CSS properties we support and the necessary
+// information for our code generation. The various supported arguments
+// are described below with example usage
+
+
+// - alias_for=other-property
+// Properties specifying alias_for do not get their own enum and instead map
+// directly onto the CSSPropertyID they alias. Currently this means that the
+// UseCounter will not pick up on these (crbug.com/304855)
+
+
+// - runtime_flag=CSSGridLayout
+// The flag on RuntimeEnabledFeatures conditionally enables the property
+
+
+// - longhands=property;other-property
+// The property is a shorthand for several other properties.
+
+
+// Flags which go into CSSPropertyMetadata:
+// - animatable
+// The animatable flag indicates whether a property can be animated by CSS
+// animations and transitions. If this flag is set, the property should also be
+// added to the switch statements in AnimatedStyleBuilder, CSSPropertyEquality,
+// and CSSAnimatableValueFactory.
+// - inherited
+// The property will inherit by default if no value is specified, typically
+// mentioned in specifications as "Inherited: yes"
+
+
+// The remaining arguments are used for the StyleBuilder and allow us to
+// succinctly describe how to apply properties. When default handlers are not
+// sufficient, we should prefer to use converter, and failing that define
+// custom property handlers in StyleBuilderCustom.cpp. We only should use
+// StyleBuilderFunctions.cpp.tmpl to define handlers when there are multiple
+// properties requiring the same handling, but converter doesn't suffice.
+
+// - font
+// The default property handlers call into the FontBuilder instead of setting
+// values directly onto the RenderStyle
+// - svg
+// The default property handlers access the SVGRenderStyle
+
+// - name_for_methods=BlendMode
+// Tweaks how we choose defaults for getter, setter, initial and type_name.
+// For example, setting this to BlendMode will make us use a setter of setBlendMode
+// - initial
+// The initial value accessor on the RenderStyle, defaults to e.g. initialBoxShadow
+// - getter
+// The RenderStyle getter, defaults to e.g. borderBottomLeft
+// - setter
+// The RenderStyle setter, defaults to e.g. setBorderBottomLeft
+// - type_name
+// The computed type for the property. Only required for the default value
+// application, defaults to e.g. EDisplay
+
+// - converter=convertRadius
+// The StyleBuilder will call the specified function on StyleBuilderConverter
+// to convert a CSSValue to an appropriate platform value
+
+// - custom_initial
+// - custom_inherit
+// - custom_value
+// - custom_all
+// Handlers of the given types will be declared but not defined. Setting
+// custom_all is equivalent to setting the other three flags
+
+// - use_handlers_for=CSSPropertyTransform
+// Use handlers for the specified property instead of defining new ones
+
+// - builder_skip
+// Ignore this property in the StyleBuilder
+
+// - direction_aware
+// This property resolves to a different property based on the current direction
+// and writing mode.
+
+
+// Properties with StyleBuilder handling
+
+// High Priority and all other font properties.
+// Other properties can depend upon high priority properties (e.g. font-size / ems)
+color animatable, inherited, custom_all
+direction inherited, custom_value
+font-family inherited, font, type_name=FontDescription::FamilyDescription, name_for_methods=FamilyDescription, converter=convertFontFamily
+font-kerning inherited, font, type_name=FontDescription::Kerning, name_for_methods=Kerning
+font-size animatable, inherited, font, name_for_methods=Size, converter=convertFontSize
+font-stretch inherited, font, type_name=FontStretch, name_for_methods=Stretch
+font-style inherited, font, type_name=FontStyle, name_for_methods=Style
+font-variant inherited, font, type_name=FontVariant, name_for_methods=Variant
+font-variant-ligatures inherited, font, name_for_methods=VariantLigatures, converter=convertFontVariantLigatures
+font-weight animatable, inherited, font, type_name=FontWeight, name_for_methods=Weight, converter=convertFontWeight
+-webkit-font-feature-settings inherited, font, name_for_methods=FeatureSettings, converter=convertFontFeatureSettings
+-webkit-font-smoothing inherited, font, type_name=FontSmoothingMode
+-webkit-locale inherited, custom_value
+-webkit-text-orientation inherited, custom_value
+-webkit-writing-mode inherited, custom_value
+text-rendering inherited, font, type_name=TextRenderingMode
+zoom animatable, custom_all
 
 align-content
-align-items custom_value
-align-self custom_value
+align-items custom_all
+alignment-baseline svg
+align-self custom_all
+backface-visibility
 background-attachment custom_all
 background-blend-mode custom_all
 background-clip custom_all
-background-color custom_all
-background-image custom_all
+background-color animatable, custom_all
+background-image animatable, custom_all
 background-origin custom_all
-background-position-x custom_all
-background-position-y custom_all
+background-position-x animatable, custom_all
+background-position-y animatable, custom_all
 background-repeat-x custom_all
 background-repeat-y custom_all
-background-size custom_all
-border-bottom-color custom_all
-border-bottom-left-radius type_name=LengthSize, initial=initialBorderRadius, converter=convertRadius
-border-bottom-right-radius type_name=LengthSize, initial=initialBorderRadius, converter=convertRadius
+background-size animatable, custom_all
+baseline-shift animatable, svg, custom_inherit, custom_value
+border-bottom-color animatable, custom_all
+border-bottom-left-radius animatable, initial=initialBorderRadius, converter=convertRadius
+border-bottom-right-radius animatable, initial=initialBorderRadius, converter=convertRadius
 border-bottom-style type_name=EBorderStyle, initial=initialBorderStyle
-border-bottom-width type_name=unsigned, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
-border-collapse
-border-image-outset custom_all
+border-bottom-width animatable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
+border-collapse inherited
+border-image-outset animatable, custom_all
 border-image-repeat custom_all
-border-image-slice custom_all
-border-image-source custom_value
-border-image-width custom_all
-border-left-color custom_all
+border-image-slice animatable, custom_all
+border-image-source animatable, custom_value
+border-image-width animatable, custom_all
+border-left-color animatable, custom_all
 border-left-style type_name=EBorderStyle, initial=initialBorderStyle
-border-left-width type_name=unsigned, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
-border-right-color custom_all
+border-left-width animatable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
+border-right-color animatable, custom_all
 border-right-style type_name=EBorderStyle, initial=initialBorderStyle
-border-right-width type_name=unsigned, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
-border-top-color custom_all
-border-top-left-radius type_name=LengthSize, initial=initialBorderRadius, converter=convertRadius
-border-top-right-radius type_name=LengthSize, initial=initialBorderRadius, converter=convertRadius
+border-right-width animatable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
+border-top-color animatable, custom_all
+border-top-left-radius animatable, initial=initialBorderRadius, converter=convertRadius
+border-top-right-radius animatable, initial=initialBorderRadius, converter=convertRadius
 border-top-style type_name=EBorderStyle, initial=initialBorderStyle
-border-top-width type_name=unsigned, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
-bottom type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
-box-shadow converter=convertShadow
+border-top-width animatable, initial=initialBorderWidth, converter=convertLineWidth<unsigned>
+bottom animatable, initial=initialOffset, converter=convertLengthOrAuto
+box-shadow animatable, converter=convertShadow
 box-sizing
-caption-side
+buffered-rendering svg
+caption-side inherited
 clear
-clip custom_all
-color custom_all
+clip animatable, converter=convertClip, custom_all
+clip-path svg, name_for_methods=ClipperResource, converter=convertFragmentIdentifier
+clip-rule inherited, svg, type_name=WindRule
+color-interpolation inherited, svg
+color-interpolation-filters inherited, svg, type_name=EColorInterpolation
+color-rendering inherited, svg
+column-fill runtime_flag=RegionBasedColumns, type_name=ColumnFill
 content custom_all
 counter-increment custom_all
 counter-reset custom_all
-cursor custom_all
-direction custom_value
-display custom_inherit, custom_value
-empty-cells type_name=EEmptyCell
-flex-basis type_name=Length, converter=convertLengthOrAuto
+cursor inherited, custom_all
+display
+dominant-baseline svg
+empty-cells inherited, type_name=EEmptyCell
+fill animatable, inherited, svg, setter=setFillPaint, custom_all
+fill-opacity animatable, inherited, svg, converter=convertNumberOrPercentage
+fill-rule inherited, svg, type_name=WindRule
+filter svg, name_for_methods=FilterResource, converter=convertFragmentIdentifier
+flex-basis animatable, converter=convertLengthOrAuto
 flex-direction
-flex-grow type_name=float
-flex-shrink type_name=float
+flex-grow animatable, type_name=float
+flex-shrink animatable, type_name=float
 flex-wrap
 float type_name=EFloat, name_for_methods=Floating
-font custom_all
-font-family custom_all
-font-kerning font, type_name=FontDescription::Kerning, name_for_methods=Kerning
-font-size custom_all
-font-style font, type_name=FontStyle, name_for_methods=Style
-font-variant font, type_name=FontVariant, name_for_methods=Variant
-font-variant-ligatures custom_all
-font-weight custom_all
-grid-auto-flow type_name=GridAutoFlow
-grid-auto-columns converter=convertGridTrackSize
-grid-auto-rows converter=convertGridTrackSize
-grid-column-start converter=convertGridPosition
-grid-column-end converter=convertGridPosition
-grid-row-start converter=convertGridPosition
-grid-row-end converter=convertGridPosition
-grid-template-columns custom_all
-grid-template-rows custom_all
-grid-template-areas custom_all
-height type_name=Length, initial=initialSize, converter=convertLengthSizing
-justify-content
-image-rendering
-internal-callback custom_all
-isolation
-justify-self custom_value
-left type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
-letter-spacing type_name=float, initial=initialLetterWordSpacing, converter=convertSpacing
-line-height getter=specifiedLineHeight, custom_value
-list-style-image type_name=StyleImage*, custom_value
-list-style-position
-list-style-type
-margin-bottom type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
-margin-left type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
-margin-right type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
-margin-top type_name=Length, initial=initialMargin, converter=convertLengthOrAuto
-mask-source-type custom_all
-max-height type_name=Length, initial=initialMaxSize, converter=convertLengthMaxSizing
-max-width type_name=Length, initial=initialMaxSize, converter=convertLengthMaxSizing
-min-height type_name=Length, initial=initialMinSize, converter=convertLengthSizing
-min-width type_name=Length, initial=initialMinSize, converter=convertLengthSizing
-mix-blend-mode type_name=blink::WebBlendMode, name_for_methods=BlendMode
+flood-color animatable, svg, converter=convertSVGColor
+flood-opacity animatable, svg, converter=convertNumberOrPercentage
+glyph-orientation-horizontal inherited, svg, converter=convertGlyphOrientation
+glyph-orientation-vertical inherited, svg, custom_value
+grid-auto-columns runtime_flag=CSSGridLayout, converter=convertGridTrackSize
+grid-auto-flow runtime_flag=CSSGridLayout, converter=convertGridAutoFlow
+grid-auto-rows runtime_flag=CSSGridLayout, converter=convertGridTrackSize
+grid-column-end runtime_flag=CSSGridLayout, converter=convertGridPosition
+grid-column-start runtime_flag=CSSGridLayout, converter=convertGridPosition
+grid-row-end runtime_flag=CSSGridLayout, converter=convertGridPosition
+grid-row-start runtime_flag=CSSGridLayout, converter=convertGridPosition
+grid-template-areas runtime_flag=CSSGridLayout, custom_all
+grid-template-columns runtime_flag=CSSGridLayout, custom_all
+grid-template-rows runtime_flag=CSSGridLayout, custom_all
+height animatable, initial=initialSize, converter=convertLengthSizing
+image-rendering inherited
+isolation runtime_flag=CSSCompositing
+justify-content custom_all
+justify-items runtime_flag=CSSGridLayout, custom_all
+justify-self runtime_flag=CSSGridLayout, custom_all
+left animatable, initial=initialOffset, converter=convertLengthOrAuto
+letter-spacing animatable, inherited, initial=initialLetterWordSpacing, converter=convertSpacing
+lighting-color animatable, svg, converter=convertSVGColor
+line-height animatable, inherited, getter=specifiedLineHeight, custom_value
+list-style-image animatable, inherited, custom_value
+list-style-position inherited
+list-style-type inherited
+margin-bottom animatable, initial=initialMargin, converter=convertLengthOrAuto
+margin-left animatable, initial=initialMargin, converter=convertLengthOrAuto
+margin-right animatable, initial=initialMargin, converter=convertLengthOrAuto
+margin-top animatable, initial=initialMargin, converter=convertLengthOrAuto
+marker-end inherited, svg, name_for_methods=MarkerEndResource, converter=convertFragmentIdentifier
+marker-mid inherited, svg, name_for_methods=MarkerMidResource, converter=convertFragmentIdentifier
+marker-start inherited, svg, name_for_methods=MarkerStartResource, converter=convertFragmentIdentifier
+mask svg, name_for_methods=MaskerResource, converter=convertFragmentIdentifier
+mask-source-type runtime_flag=CSSMaskSourceType, custom_all
+mask-type svg
+max-height animatable, initial=initialMaxSize, converter=convertLengthMaxSizing
+max-width animatable, initial=initialMaxSize, converter=convertLengthMaxSizing
+min-height animatable, initial=initialMinSize, converter=convertLengthSizing
+min-width animatable, initial=initialMinSize, converter=convertLengthSizing
+mix-blend-mode runtime_flag=CSSCompositing, type_name=blink::WebBlendMode, name_for_methods=BlendMode
 object-fit type_name=ObjectFit
-object-position type_name=LengthPoint, initial=initialObjectPosition, converter=convertLengthPoint
-opacity type_name=float
+object-position animatable, converter=convertLengthPoint
+opacity animatable, type_name=float
 order type_name=int
-orphans type_name=short, custom_all
-outline-color custom_all
-outline-offset type_name=int, converter=convertComputedLength<int>
+orphans animatable, inherited, type_name=short, custom_all
+outline-color animatable, custom_all
+outline-offset animatable, converter=convertComputedLength<int>
 outline-style custom_all
-outline-width type_name=unsigned short, converter=convertLineWidth<unsigned short>
-overflow-wrap
+outline-width animatable, converter=convertLineWidth<unsigned short>
+overflow-wrap inherited
 overflow-x type_name=EOverflow
 overflow-y type_name=EOverflow
-padding-bottom type_name=Length, initial=initialPadding, converter=convertLength
-padding-left type_name=Length, initial=initialPadding, converter=convertLength
-padding-right type_name=Length, initial=initialPadding, converter=convertLength
-padding-top type_name=Length, initial=initialPadding, converter=convertLength
+padding-bottom animatable, initial=initialPadding, converter=convertLength
+padding-left animatable, initial=initialPadding, converter=convertLength
+padding-right animatable, initial=initialPadding, converter=convertLength
+padding-top animatable, initial=initialPadding, converter=convertLength
 page-break-after type_name=EPageBreak, initial=initialPageBreak
 page-break-before type_name=EPageBreak, initial=initialPageBreak
 page-break-inside type_name=EPageBreak, initial=initialPageBreak
-perspective custom_value
-pointer-events
+paint-order inherited, svg, converter=convertPaintOrder
+perspective animatable, converter=convertPerspective
+perspective-origin animatable, converter=convertPerspectiveOrigin
+pointer-events inherited
 position
-quotes converter=convertQuotes
+quotes inherited, converter=convertQuotes
 resize custom_value
-right type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
-scroll-behavior type_name=ScrollBehavior
-shape-image-threshold type_name=float
-shape-margin type_name=Length, converter=convertLength
-shape-outside type_name=ShapeValue*, custom_value
+right animatable, initial=initialOffset, converter=convertLengthOrAuto
+scroll-behavior runtime_flag=CSSOMSmoothScroll, type_name=ScrollBehavior
+shape-image-threshold animatable, type_name=float
+shape-margin animatable, converter=convertLength
+shape-outside animatable, converter=convertShapeValue
+shape-rendering inherited, svg
 size custom_all
-speak
+speak inherited
+stop-color animatable, svg, converter=convertSVGColor
+stop-opacity animatable, svg, converter=convertNumberOrPercentage
+stroke animatable, inherited, svg, setter=setStrokePaint, custom_all
+stroke-dasharray animatable, inherited, svg, name_for_methods=StrokeDashArray, converter=convertStrokeDasharray
+stroke-dashoffset animatable, inherited, svg, name_for_methods=StrokeDashOffset, converter=convertSVGLength
+stroke-linecap svg, inherited, type_name=LineCap, name_for_methods=CapStyle
+stroke-linejoin svg, inherited, type_name=LineJoin, name_for_methods=JoinStyle
+stroke-miterlimit animatable, inherited, svg, type_name=float, name_for_methods=StrokeMiterLimit
+stroke-opacity animatable, inherited, svg, converter=convertNumberOrPercentage
+stroke-width animatable, inherited, svg, converter=convertSVGLength
 table-layout
-tab-size type_name=unsigned
-text-align custom_value
-text-align-last type_name=TextAlignLast
-text-decoration custom_value
-text-decoration-line use_handlers_for=CSSPropertyTextDecoration
-text-decoration-color custom_all
-text-decoration-style type_name=TextDecorationStyle
-text-indent custom_all
-text-justify type_name=TextJustify
+tab-size inherited, type_name=unsigned
+text-align inherited, custom_value
+text-align-last runtime_flag=CSS3Text, inherited, type_name=TextAlignLast
+text-anchor inherited, svg
+// FIXME: We shouldn't switch between shorthand/not shorthand based on a runtime flag
+text-decoration use_handlers_for=CSSPropertyTextDecorationLine, longhands=text-decoration-line;text-decoration-style;text-decoration-color
+text-decoration-color runtime_flag=CSS3TextDecorations, animatable, custom_all
+text-decoration-line runtime_flag=CSS3TextDecorations, name_for_methods=TextDecoration, converter=convertFlags<TextDecoration>
+text-decoration-style runtime_flag=CSS3TextDecorations, type_name=TextDecorationStyle
+text-indent animatable, inherited, custom_all
+text-justify runtime_flag=CSS3Text, inherited, type_name=TextJustify
 text-overflow type_name=TextOverflow
-text-rendering font, type_name=TextRenderingMode
-text-shadow converter=convertShadow
-text-transform
-top type_name=Length, initial=initialOffset, converter=convertLengthOrAuto
-touch-action type_name=TouchAction, custom_value
-touch-action-delay type_name=TouchActionDelay, initial=initialTouchActionDelay
+text-shadow animatable, inherited, converter=convertShadow
+text-transform inherited
+text-underline-position runtime_flag=CSS3TextDecorations, inherited, type_name=TextUnderlinePosition
+top animatable, initial=initialOffset, converter=convertLengthOrAuto
+touch-action converter=convertFlags<TouchAction>
+touch-action-delay runtime_flag=CSSTouchActionDelay, inherited, type_name=TouchActionDelay
+transform animatable, custom_value
+transform-origin animatable, converter=convertTransformOrigin
+transform-style name_for_methods=TransformStyle3D
 unicode-bidi
-vertical-align custom_inherit, custom_value
-visibility
-white-space
-widows type_name=short, custom_all
-width type_name=Length, initial=initialSize, converter=convertLengthSizing
-will-change custom_all
-word-break
-word-spacing type_name=float, initial=initialLetterWordSpacing, converter=convertSpacing
-// UAs must treat 'word-wrap' as an alternate name for the 'overflow-wrap' property. So using the same handlers.
-word-wrap name_for_methods=OverflowWrap
-zoom custom_all
-z-index type_name=int, custom_all
-
+vector-effect svg
+vertical-align animatable, custom_inherit, custom_value
+visibility animatable, inherited
 -webkit-animation-delay custom_all
 -webkit-animation-direction custom_all
 -webkit-animation-duration custom_all
--webkit-animation-fillMode custom_all
+-webkit-animation-fill-mode custom_all
 -webkit-animation-iteration-count custom_all
 -webkit-animation-name custom_all
 -webkit-animation-play-state custom_all
 -webkit-animation-timing-function custom_all
--webkit-app-region custom_all
 -webkit-appearance type_name=ControlPart
--webkit-aspect-ratio custom_all
-backface-visibility
--webkit-backface-visibility
+-webkit-app-region custom_all
+-webkit-backface-visibility use_handlers_for=CSSPropertyBackfaceVisibility
 -webkit-background-clip use_handlers_for=CSSPropertyBackgroundClip
 -webkit-background-composite custom_all
 -webkit-background-origin use_handlers_for=CSSPropertyBackgroundOrigin
--webkit-background-size use_handlers_for=CSSPropertyBackgroundSize
--webkit-border-fit
--webkit-border-horizontal-spacing type_name=short, name_for_methods=HorizontalBorderSpacing, converter=convertComputedLength<short>
+-webkit-background-size animatable, use_handlers_for=CSSPropertyBackgroundSize
+-webkit-border-horizontal-spacing animatable, inherited, name_for_methods=HorizontalBorderSpacing, converter=convertComputedLength<short>
 -webkit-border-image initial=initialNinePieceImage, custom_value
--webkit-border-vertical-spacing type_name=short, name_for_methods=VerticalBorderSpacing, converter=convertComputedLength<short>
+-webkit-border-vertical-spacing animatable, inherited, name_for_methods=VerticalBorderSpacing, converter=convertComputedLength<short>
 -webkit-box-align type_name=EBoxAlignment
 -webkit-box-decoration-break
--webkit-box-direction
--webkit-box-flex-group type_name=unsigned int
+-webkit-box-direction inherited
 -webkit-box-flex type_name=float
+-webkit-box-flex-group type_name=unsigned int
 -webkit-box-lines
 -webkit-box-ordinal-group type_name=unsigned int
 -webkit-box-orient
 -webkit-box-pack
 -webkit-box-reflect converter=convertBoxReflect
--webkit-box-shadow use_handlers_for=CSSPropertyBoxShadow
--webkit-clip-path custom_value
+-webkit-box-shadow animatable, use_handlers_for=CSSPropertyBoxShadow
+-webkit-clip-path animatable, custom_value
 -webkit-column-break-after type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-before type_name=EPageBreak, initial=initialPageBreak
 -webkit-column-break-inside type_name=EPageBreak, initial=initialPageBreak
--webkit-column-count type_name=unsigned short, custom_all
-column-fill type_name=ColumnFill
--webkit-column-gap type_name=float, custom_all
--webkit-column-rule-color custom_all
+-webkit-column-count animatable, type_name=unsigned short, custom_all
+-webkit-column-gap animatable, converter=convertComputedLength<float>, custom_all
+-webkit-column-rule-color animatable, custom_all
 -webkit-column-rule-style type_name=EBorderStyle, initial=initialBorderStyle
--webkit-column-rule-width type_name=unsigned short, converter=convertLineWidth<unsigned short>
+-webkit-column-rule-width animatable, converter=convertLineWidth<unsigned short>
 -webkit-column-span type_name=ColumnSpan
--webkit-column-width type_name=float, custom_all
--webkit-filter custom_value
--webkit-font-feature-settings custom_all
--webkit-font-smoothing font, type_name=FontSmoothingMode
--webkit-highlight type_name=AtomicString, converter=convertString<CSSValueNone>
--webkit-hyphenate-character type_name=AtomicString, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
--webkit-line-box-contain converter=convertLineBoxContain
--webkit-line-break type_name=LineBreak
+-webkit-column-width animatable, converter=convertComputedLength<float>, custom_all
+-webkit-filter animatable, custom_value
+-webkit-highlight inherited, converter=convertString<CSSValueNone>
+-webkit-hyphenate-character inherited, name_for_methods=HyphenationString, converter=convertString<CSSValueAuto>
+-webkit-line-box-contain inherited, converter=convertLineBoxContain
+-webkit-line-break inherited, type_name=LineBreak
 -webkit-line-clamp type_name=LineClampValue
--webkit-locale custom_value
 -webkit-margin-after-collapse type_name=EMarginCollapse
 -webkit-margin-before-collapse type_name=EMarginCollapse
 -webkit-margin-bottom-collapse type_name=EMarginCollapse, name_for_methods=MarginAfterCollapse
 -webkit-margin-top-collapse type_name=EMarginCollapse, name_for_methods=MarginBeforeCollapse
--internal-marquee-direction type_name=EMarqueeDirection, name_for_methods=MarqueeDirection
--internal-marquee-increment custom_value, name_for_methods=MarqueeIncrement
--internal-marquee-repetition type_name=int, name_for_methods=MarqueeLoopCount, custom_value
--internal-marquee-speed custom_value, name_for_methods=MarqueeSpeed
--internal-marquee-style name_for_methods=MarqueeBehavior
--webkit-mask-box-image-outset custom_all
+-webkit-mask-box-image-outset animatable, custom_all
 -webkit-mask-box-image-repeat custom_all
--webkit-mask-box-image-slice custom_all
--webkit-mask-box-image-source custom_value
--webkit-mask-box-image-width custom_all
+-webkit-mask-box-image-slice animatable, custom_all
+-webkit-mask-box-image-source animatable, custom_value
+-webkit-mask-box-image-width animatable, custom_all
 -webkit-mask-clip custom_all
 -webkit-mask-composite custom_all
--webkit-mask-image custom_all
+-webkit-mask-image animatable, custom_all
 -webkit-mask-origin custom_all
--webkit-mask-position-x custom_all
--webkit-mask-position-y custom_all
+-webkit-mask-position-x animatable, custom_all
+-webkit-mask-position-y animatable, custom_all
 -webkit-mask-repeat-x custom_all
 -webkit-mask-repeat-y custom_all
--webkit-mask-size custom_all
--webkit-perspective custom_all
-perspective-origin custom_all
--webkit-perspective-origin custom_all
--webkit-perspective-origin-x type_name=Length, converter=convertLength
--webkit-perspective-origin-y type_name=Length, converter=convertLength
--webkit-print-color-adjust type_name=PrintColorAdjust
--webkit-rtl-ordering type_name=Order, getter=rtlOrdering, setter=setRTLOrdering, initial=initialRTLOrdering
--webkit-ruby-position type_name=RubyPosition
--webkit-tap-highlight-color custom_value
--webkit-text-combine type_name=TextCombine
--webkit-text-emphasis-color custom_all
--webkit-text-emphasis-position type_name=TextEmphasisPosition
--webkit-text-emphasis-style custom_all
--webkit-text-fill-color custom_all
--webkit-text-orientation custom_value
--webkit-text-security
--webkit-text-stroke-color custom_all
--webkit-text-stroke-width converter=convertTextStrokeWidth
-text-underline-position custom_value
-transform custom_value
+-webkit-mask-size animatable, custom_all
+-webkit-perspective use_handlers_for=CSSPropertyPerspective
+-webkit-perspective-origin use_handlers_for=CSSPropertyPerspectiveOrigin
+-webkit-perspective-origin-x converter=convertLength
+-webkit-perspective-origin-y converter=convertLength
+-webkit-print-color-adjust inherited, type_name=PrintColorAdjust
+-webkit-rtl-ordering inherited, type_name=Order, setter=setRTLOrdering, initial=initialRTLOrdering
+-webkit-ruby-position inherited, type_name=RubyPosition
+-webkit-tap-highlight-color inherited, converter=convertColor
+-webkit-text-combine inherited, type_name=TextCombine
+-webkit-text-emphasis-color inherited, custom_all
+-webkit-text-emphasis-position inherited, type_name=TextEmphasisPosition
+-webkit-text-emphasis-style inherited, custom_all
+-webkit-text-fill-color inherited, custom_all
+-webkit-text-security inherited
+-webkit-text-stroke-color animatable, inherited, custom_all
+-webkit-text-stroke-width inherited, converter=convertTextStrokeWidth
 -webkit-transform use_handlers_for=CSSPropertyTransform
-transform-origin custom_all
--webkit-transform-origin-x type_name=Length, converter=convertLength
--webkit-transform-origin-y type_name=Length, converter=convertLength
--webkit-transform-origin-z type_name=float, converter=convertComputedLength<float>
-transform-style name_for_methods=TransformStyle3D
+-webkit-transform-origin use_handlers_for=CSSPropertyTransformOrigin
+-webkit-transform-origin-x converter=convertLength
+-webkit-transform-origin-y converter=convertLength
+-webkit-transform-origin-z converter=convertComputedLength<float>
 -webkit-transform-style name_for_methods=TransformStyle3D
 -webkit-transition-delay custom_all
 -webkit-transition-duration custom_all
 -webkit-transition-property custom_all
 -webkit-transition-timing-function custom_all
 -webkit-user-drag
--webkit-user-modify
--webkit-user-select
--webkit-wrap-flow type_name=WrapFlow
--webkit-wrap-through type_name=WrapThrough
--webkit-writing-mode custom_value
+-webkit-user-modify inherited
+-webkit-user-select inherited
+white-space inherited
+widows animatable, inherited, type_name=short, custom_all
+width animatable, initial=initialSize, converter=convertLengthSizing
+will-change custom_all
+word-break inherited
+word-spacing animatable, inherited, initial=initialLetterWordSpacing, converter=convertSpacing
+// UAs must treat 'word-wrap' as an alternate name for the 'overflow-wrap' property. So using the same handlers.
+word-wrap inherited, name_for_methods=OverflowWrap
+writing-mode inherited, svg, type_name=SVGWritingMode
+z-index animatable, type_name=int, custom_all
 
-alignment-baseline svg
-baseline-shift svg, custom_value
-buffered-rendering svg
-clip-path svg, type_name=String, name_for_methods=ClipperResource, converter=convertFragmentIdentifier
-clip-rule svg, type_name=WindRule
-color-interpolation svg
-color-interpolation-filters svg, type_name=EColorInterpolation
-color-rendering svg
-dominant-baseline svg
-fill svg, setter=setFillPaint, custom_all
-fill-opacity svg, type_name=float, converter=convertNumberOrPercentage
-fill-rule svg, type_name=WindRule
-filter svg, type_name=String, name_for_methods=FilterResource, converter=convertFragmentIdentifier
-flood-color svg, converter=convertSVGColor
-flood-opacity svg, type_name=float, converter=convertNumberOrPercentage
-glyph-orientation-horizontal svg, converter=convertGlyphOrientation
-glyph-orientation-vertical svg, custom_value
-lighting-color svg, converter=convertSVGColor
-marker-start svg, type_name=String, name_for_methods=MarkerStartResource, converter=convertFragmentIdentifier
-marker-mid svg, type_name=String, name_for_methods=MarkerMidResource, converter=convertFragmentIdentifier
-marker-end svg, type_name=String, name_for_methods=MarkerEndResource, converter=convertFragmentIdentifier
-mask svg, type_name=String, name_for_methods=MaskerResource, converter=convertFragmentIdentifier
-mask-type svg
-paint-order svg, converter=convertPaintOrder
-shape-rendering svg
-stop-color svg, converter=convertSVGColor
-stop-opacity svg, type_name=float, converter=convertNumberOrPercentage
-stroke svg, setter=setStrokePaint, custom_all
-stroke-dasharray svg, name_for_methods=StrokeDashArray, converter=convertStrokeDasharray
-stroke-dashoffset svg, type_name=SVGLength, name_for_methods=StrokeDashOffset, converter=convertSVGLength
-stroke-linecap svg, type_name=LineCap, name_for_methods=CapStyle
-stroke-linejoin svg, type_name=LineJoin, name_for_methods=JoinStyle
-stroke-miterlimit svg, type_name=float, name_for_methods=StrokeMiterLimit
-stroke-opacity svg, type_name=float, converter=convertNumberOrPercentage
-stroke-width svg, type_name=SVGLength, converter=convertSVGLength
-text-anchor svg
-vector-effect svg
-writing-mode svg, type_name=SVGWritingMode
+// Non-standard direction aware properties
 
 -webkit-border-end-color direction_aware
 -webkit-border-end-style direction_aware
@@ -342,42 +412,113 @@ writing-mode svg, type_name=SVGWritingMode
 -webkit-max-logical-width direction_aware
 -webkit-max-logical-height direction_aware
 
-// FIXME: We should look over these and see if some should actually be
-// marked as unreachable.
-animation-delay skip
-animation-direction skip
-animation-duration skip
-animation-fill-mode skip
-animation-iteration-count skip
-animation-name skip
-animation-play-state skip
-animation-timing-function skip
-transition-delay skip
-transition-duration skip
-transition-property skip
-transition-timing-function skip
-font-stretch skip
-page skip
-src skip
-text-line-through-color skip
-text-line-through-mode skip
-text-line-through-style skip
-text-line-through-width skip
-text-overline-color skip
-text-overline-mode skip
-text-overline-style skip
-text-overline-width skip
-text-underline-color skip
-text-underline-mode skip
-text-underline-style skip
-text-underline-width skip
-unicode-range skip
--webkit-font-size-delta skip
--webkit-text-decorations-in-effect skip
-max-zoom skip
-min-zoom skip
-user-zoom skip
-orientation skip
-enable-background skip
-invalid skip
-all skip
+// Properties that we ignore in the StyleBuilder. Note that unprefixed animation
+// and transition properties are here due to the way they have been unprefixed
+// FIXME: We should see if any of these should actually be unreachable
+
+all builder_skip
+animation-delay runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-direction runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-duration runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-fill-mode runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-iteration-count runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-name runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-play-state runtime_flag=CSSAnimationUnprefixed, builder_skip
+animation-timing-function runtime_flag=CSSAnimationUnprefixed, builder_skip
+enable-background builder_skip
+max-zoom builder_skip
+min-zoom builder_skip
+orientation builder_skip
+page builder_skip
+src builder_skip
+transition-delay builder_skip
+transition-duration builder_skip
+transition-property builder_skip
+transition-timing-function builder_skip
+unicode-range builder_skip
+user-zoom builder_skip
+-webkit-font-size-delta builder_skip
+-webkit-text-decorations-in-effect inherited, builder_skip
+
+// Shorthands
+
+animation runtime_flag=CSSAnimationUnprefixed, longhands=animation-name;animation-duration;animation-timing-function;animation-delay;animation-iteration-count;animation-direction;animation-fill-mode;animation-play-state
+background longhands=background-image;background-position-x;background-position-y;background-size;background-repeat-x;background-repeat-y;background-attachment;background-origin;background-clip;background-color
+background-position longhands=background-position-x;background-position-y
+background-repeat longhands=background-repeat-x;background-repeat-y
+border longhands=border-top-color;border-top-style;border-top-width;border-right-color;border-right-style;border-right-width;border-bottom-color;border-bottom-style;border-bottom-width;border-left-color;border-left-style;border-left-width
+border-bottom longhands=border-bottom-width;border-bottom-style;border-bottom-color
+border-color longhands=border-top-color;border-right-color;border-bottom-color;border-left-color
+border-image longhands=border-image-source;border-image-slice;border-image-width;border-image-outset;border-image-repeat
+border-left longhands=border-left-width;border-left-style;border-left-color
+border-radius longhands=border-top-left-radius;border-top-right-radius;border-bottom-right-radius;border-bottom-left-radius
+border-right longhands=border-right-width;border-right-style;border-right-color
+border-spacing longhands=-webkit-border-horizontal-spacing;-webkit-border-vertical-spacing
+border-style longhands=border-top-style;border-right-style;border-bottom-style;border-left-style
+border-top longhands=border-top-width;border-top-style;border-top-color
+border-width longhands=border-top-width;border-right-width;border-bottom-width;border-left-width
+flex longhands=flex-grow;flex-shrink;flex-basis
+flex-flow longhands=flex-direction;flex-wrap
+font longhands=font-family;font-size;font-style;font-variant;font-weight;font-stretch;line-height
+grid runtime_flag=CSSGridLayout, longhands=grid-template-columns;grid-template-rows;grid-template-areas;grid-auto-flow;grid-auto-columns;grid-auto-rows
+grid-area runtime_flag=CSSGridLayout, longhands=grid-row-start;grid-column-start;grid-row-end;grid-column-end
+grid-column runtime_flag=CSSGridLayout, longhands=grid-column-start;grid-column-end
+grid-row runtime_flag=CSSGridLayout, longhands=grid-row-start;grid-row-end
+grid-template runtime_flag=CSSGridLayout, longhands=grid-template-columns;grid-template-rows;grid-template-areas
+list-style longhands=list-style-type;list-style-position;list-style-image
+margin longhands=margin-top;margin-right;margin-bottom;margin-left
+marker longhands=marker-start;marker-mid;marker-end
+outline longhands=outline-color;outline-style;outline-width
+overflow longhands=overflow-x;overflow-y
+padding longhands=padding-top;padding-right;padding-bottom;padding-left
+transition longhands=transition-property;transition-duration;transition-timing-function;transition-delay
+-webkit-animation longhands=-webkit-animation-name;-webkit-animation-duration;-webkit-animation-timing-function;-webkit-animation-delay;-webkit-animation-iteration-count;-webkit-animation-direction;-webkit-animation-fill-mode;-webkit-animation-play-state
+-webkit-border-after longhands=-webkit-border-after-width;-webkit-border-after-style;-webkit-border-after-color
+-webkit-border-before longhands=-webkit-border-before-width;-webkit-border-before-style;-webkit-border-before-color
+-webkit-border-end longhands=-webkit-border-end-width;-webkit-border-end-style;-webkit-border-end-color
+// "-webkit-border-radius: 1px 2px" behaves as "border-radius: 1px / 2px"
+-webkit-border-radius longhands=border-top-left-radius;border-top-right-radius;border-bottom-right-radius;border-bottom-left-radius
+-webkit-border-start longhands=-webkit-border-start-width;-webkit-border-start-style;-webkit-border-start-color
+-webkit-column-rule longhands=-webkit-column-rule-width;-webkit-column-rule-style;-webkit-column-rule-color
+-webkit-columns longhands=-webkit-column-width;-webkit-column-count
+-webkit-margin-collapse longhands=-webkit-margin-before-collapse;-webkit-margin-after-collapse
+-webkit-mask longhands=-webkit-mask-image;-webkit-mask-position-x;-webkit-mask-position-y;-webkit-mask-size;-webkit-mask-repeat-x;-webkit-mask-repeat-y;-webkit-mask-origin;-webkit-mask-clip
+-webkit-mask-box-image longhands=-webkit-mask-box-image-source;-webkit-mask-box-image-slice;-webkit-mask-box-image-width;-webkit-mask-box-image-outset;-webkit-mask-box-image-repeat
+-webkit-mask-position longhands=-webkit-mask-position-x;-webkit-mask-position-y
+-webkit-mask-repeat longhands=-webkit-mask-repeat-x;-webkit-mask-repeat-y
+-webkit-text-emphasis longhands=-webkit-text-emphasis-style;-webkit-text-emphasis-color
+-webkit-text-stroke longhands=-webkit-text-stroke-width;-webkit-text-stroke-color
+-webkit-transition longhands=-webkit-transition-property;-webkit-transition-duration;-webkit-transition-timing-function;-webkit-transition-delay
+
+// Aliases; these map to the same CSSPropertyID
+
+-epub-caption-side alias_for=caption-side
+-epub-text-combine alias_for=-webkit-text-combine
+-epub-text-emphasis alias_for=-webkit-text-emphasis
+-epub-text-emphasis-color alias_for=-webkit-text-emphasis-color
+-epub-text-emphasis-style alias_for=-webkit-text-emphasis-style
+-epub-text-orientation alias_for=-webkit-text-orientation
+-epub-text-transform alias_for=text-transform
+-epub-word-break alias_for=word-break
+-epub-writing-mode alias_for=-webkit-writing-mode
+-webkit-align-content alias_for=align-content
+-webkit-align-items alias_for=align-items
+-webkit-align-self alias_for=align-self
+-webkit-border-bottom-left-radius alias_for=border-bottom-left-radius
+-webkit-border-bottom-right-radius alias_for=border-bottom-right-radius
+-webkit-border-top-left-radius alias_for=border-top-left-radius
+-webkit-border-top-right-radius alias_for=border-top-right-radius
+-webkit-box-sizing alias_for=box-sizing
+-webkit-flex alias_for=flex
+-webkit-flex-basis alias_for=flex-basis
+-webkit-flex-direction alias_for=flex-direction
+-webkit-flex-flow alias_for=flex-flow
+-webkit-flex-grow alias_for=flex-grow
+-webkit-flex-shrink alias_for=flex-shrink
+-webkit-flex-wrap alias_for=flex-wrap
+-webkit-justify-content alias_for=justify-content
+-webkit-opacity alias_for=opacity
+-webkit-order alias_for=order
+-webkit-shape-image-threshold alias_for=shape-image-threshold
+-webkit-shape-margin alias_for=shape-margin
+-webkit-shape-outside alias_for=shape-outside

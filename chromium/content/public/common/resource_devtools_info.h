@@ -10,15 +10,19 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_split.h"
 #include "content/common/content_export.h"
 
 namespace content {
 
+// Note: when modifying this structure, also update DeepCopy in
+// resource_devtools_info.cc.
 struct ResourceDevToolsInfo : base::RefCounted<ResourceDevToolsInfo> {
-  typedef std::vector<std::pair<std::string, std::string> >
-      HeadersVector;
+  typedef base::StringPairs HeadersVector;
 
   CONTENT_EXPORT ResourceDevToolsInfo();
+
+  scoped_refptr<ResourceDevToolsInfo> DeepCopy() const;
 
   int32 http_status_code;
   std::string http_status_text;

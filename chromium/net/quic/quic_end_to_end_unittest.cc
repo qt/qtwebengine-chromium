@@ -7,6 +7,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
@@ -48,23 +49,18 @@ class TestTransactionFactory : public HttpTransactionFactory {
   TestTransactionFactory(const HttpNetworkSession::Params& params)
       : session_(new HttpNetworkSession(params)) {}
 
-  virtual ~TestTransactionFactory() {
-  }
+  ~TestTransactionFactory() override {}
 
   // HttpTransactionFactory methods
-  virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans) OVERRIDE {
-    trans->reset(new HttpNetworkTransaction(priority, session_));
+  int CreateTransaction(RequestPriority priority,
+                        scoped_ptr<HttpTransaction>* trans) override {
+    trans->reset(new HttpNetworkTransaction(priority, session_.get()));
     return OK;
   }
 
-  virtual HttpCache* GetCache() OVERRIDE {
-    return NULL;
-  }
+  HttpCache* GetCache() override { return nullptr; }
 
-  virtual HttpNetworkSession* GetSession() OVERRIDE {
-    return session_;
-  };
+  HttpNetworkSession* GetSession() override { return session_.get(); };
 
  private:
   scoped_refptr<HttpNetworkSession> session_;
@@ -76,7 +72,7 @@ class QuicEndToEndTest : public PlatformTest {
  protected:
   QuicEndToEndTest()
       : host_resolver_impl_(CreateResolverImpl()),
-        host_resolver_(host_resolver_impl_.PassAs<HostResolver>()),
+        host_resolver_(host_resolver_impl_.Pass()),
         ssl_config_service_(new SSLConfigServiceDefaults),
         proxy_service_(ProxyService::CreateDirect()),
         auth_handler_factory_(
@@ -87,8 +83,8 @@ class QuicEndToEndTest : public PlatformTest {
     request_.load_flags = 0;
 
     params_.enable_quic = true;
-    params_.quic_clock = NULL;
-    params_.quic_random = NULL;
+    params_.quic_clock = nullptr;
+    params_.quic_random = nullptr;
     params_.host_resolver = &host_resolver_;
     params_.cert_verifier = &cert_verifier_;
     params_.transport_security_state = &transport_security_state_;
@@ -106,7 +102,7 @@ class QuicEndToEndTest : public PlatformTest {
     return resolver;
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     QuicInMemoryCachePeer::ResetForTests();
     StartServer();
 
@@ -124,7 +120,7 @@ class QuicEndToEndTest : public PlatformTest {
     transaction_factory_.reset(new TestTransactionFactory(params_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     StopServer();
     QuicInMemoryCachePeer::ResetForTests();
   }
@@ -134,7 +130,6 @@ class QuicEndToEndTest : public PlatformTest {
     net::IPAddressNumber ip;
     CHECK(net::ParseIPLiteralToNumber("127.0.0.1", &ip));
     server_address_ = IPEndPoint(ip, 0);
-    server_config_.SetDefaults();
     server_config_.SetInitialFlowControlWindowToSend(
         kInitialSessionFlowControlWindowForTest);
     server_config_.SetInitialStreamFlowControlWindowToSend(
@@ -191,7 +186,8 @@ class QuicEndToEndTest : public PlatformTest {
     element_readers.push_back(
         new UploadBytesElementReader(request_body_.data(),
                                      request_body_.length()));
-    upload_data_stream_.reset(new UploadDataStream(element_readers.Pass(), 0));
+    upload_data_stream_.reset(
+        new ElementsUploadDataStream(element_readers.Pass(), 0));
     request_.method = "POST";
     request_.url = GURL("http://www.google.com/");
     request_.upload_data_stream = upload_data_stream_.get();

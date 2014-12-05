@@ -8,6 +8,7 @@
 #include <deque>
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/weak_ptr.h"
 #include "base/synchronization/condition_variable.h"
@@ -15,6 +16,7 @@
 #include "base/threading/platform_thread.h"
 #include "media/base/decryptor.h"
 #include "media/base/demuxer_stream.h"
+#include "media/base/media_log.h"
 #include "media/base/pipeline_status.h"
 #include "media/base/video_decoder.h"
 #include "media/base/video_frame.h"
@@ -52,28 +54,24 @@ class MEDIA_EXPORT VideoRendererImpl
       ScopedVector<VideoDecoder> decoders,
       const SetDecryptorReadyCB& set_decryptor_ready_cb,
       const PaintCB& paint_cb,
-      bool drop_frames);
-  virtual ~VideoRendererImpl();
+      bool drop_frames,
+      const scoped_refptr<MediaLog>& media_log);
+  ~VideoRendererImpl() override;
 
   // VideoRenderer implementation.
-  virtual void Initialize(DemuxerStream* stream,
-                          bool low_delay,
-                          const PipelineStatusCB& init_cb,
-                          const StatisticsCB& statistics_cb,
-                          const TimeCB& max_time_cb,
-                          const base::Closure& ended_cb,
-                          const PipelineStatusCB& error_cb,
-                          const TimeDeltaCB& get_time_cb,
-                          const TimeDeltaCB& get_duration_cb) OVERRIDE;
-  virtual void Play(const base::Closure& callback) OVERRIDE;
-  virtual void Flush(const base::Closure& callback) OVERRIDE;
-  virtual void Preroll(base::TimeDelta time,
-                       const PipelineStatusCB& cb) OVERRIDE;
-  virtual void Stop(const base::Closure& callback) OVERRIDE;
-  virtual void SetPlaybackRate(float playback_rate) OVERRIDE;
+  void Initialize(DemuxerStream* stream,
+                  bool low_delay,
+                  const PipelineStatusCB& init_cb,
+                  const StatisticsCB& statistics_cb,
+                  const BufferingStateCB& buffering_state_cb,
+                  const base::Closure& ended_cb,
+                  const PipelineStatusCB& error_cb,
+                  const TimeDeltaCB& get_time_cb) override;
+  void Flush(const base::Closure& callback) override;
+  void StartPlayingFrom(base::TimeDelta timestamp) override;
 
   // PlatformThread::Delegate implementation.
-  virtual void ThreadMain() OVERRIDE;
+  void ThreadMain() override;
 
  private:
   // Callback for |video_frame_stream_| initialization.
@@ -96,17 +94,6 @@ class MEDIA_EXPORT VideoRendererImpl
   // Called when VideoFrameStream::Reset() completes.
   void OnVideoFrameStreamResetDone();
 
-  // Calculates the duration to sleep for based on |last_timestamp_|,
-  // the next frame timestamp (may be NULL), and the provided playback rate.
-  //
-  // We don't use |playback_rate_| to avoid locking.
-  base::TimeDelta CalculateSleepDuration(
-      const scoped_refptr<VideoFrame>& next_frame,
-      float playback_rate);
-
-  // Helper function that flushes the buffers when a Stop() or error occurs.
-  void DoStopOrError_Locked();
-
   // Runs |paint_cb_| with the next frame from |ready_frames_|.
   //
   // A read is scheduled to replace the frame.
@@ -117,11 +104,10 @@ class MEDIA_EXPORT VideoRendererImpl
   // A read is scheduled to replace the frame.
   void DropNextReadyFrame_Locked();
 
-  void TransitionToPrerolled_Locked();
-
-  // Returns true of all conditions have been met to transition from
-  // kPrerolling to kPrerolled.
-  bool ShouldTransitionToPrerolled_Locked();
+  // Returns true if the renderer has enough data for playback purposes.
+  // Note that having enough data may be due to reaching end of stream.
+  bool HaveEnoughData_Locked();
+  void TransitionToHaveEnough_Locked();
 
   // Runs |statistics_cb_| with |frames_decoded_| and |frames_dropped_|, resets
   // them to 0, and then waits on |frame_available_| for up to the
@@ -134,7 +120,7 @@ class MEDIA_EXPORT VideoRendererImpl
   base::Lock lock_;
 
   // Provides video frames to VideoRendererImpl.
-  VideoFrameStream video_frame_stream_;
+  scoped_ptr<VideoFrameStream> video_frame_stream_;
 
   // Flag indicating low-delay mode.
   bool low_delay_;
@@ -152,38 +138,29 @@ class MEDIA_EXPORT VideoRendererImpl
   // always check |state_| to see if it was set to STOPPED after waking up!
   base::ConditionVariable frame_available_;
 
-  // State transition Diagram of this class:
-  //       [kUninitialized]
-  //              |
-  //              | Initialize()
-  //        [kInitializing]
-  //              |
-  //              V
-  //   +------[kFlushed]<---------------OnVideoFrameStreamResetDone()
-  //   |          | Preroll() or upon               ^
-  //   |          V got first frame            [kFlushing]
-  //   |      [kPrerolling]                         ^
-  //   |          |                                 |
-  //   |          V Got enough frames               |
-  //   |      [kPrerolled]--------------------------|
-  //   |          |                Flush()          ^
-  //   |          V Play()                          |
-  //   |       [kPlaying]---------------------------|
-  //   |                           Flush()          ^ Flush()
-  //   |                                            |
-  //   +-----> [kStopped]                 [Any state other than]
-  //                                      [   kUninitialized   ]
-
-  // Simple state tracking variable.
+  // Important detail: being in kPlaying doesn't imply that video is being
+  // rendered. Rather, it means that the renderer is ready to go. The actual
+  // rendering of video is controlled by time advancing via |get_time_cb_|.
+  //
+  //   kUninitialized
+  //         | Initialize()
+  //         |
+  //         V
+  //    kInitializing
+  //         | Decoders initialized
+  //         |
+  //         V            Decoders reset
+  //      kFlushed <------------------ kFlushing
+  //         | StartPlayingFrom()         ^
+  //         |                            |
+  //         |                            | Flush()
+  //         `---------> kPlaying --------'
   enum State {
     kUninitialized,
     kInitializing,
-    kPrerolled,
     kFlushing,
     kFlushed,
-    kPrerolling,
-    kPlaying,
-    kStopped,
+    kPlaying
   };
   State state_;
 
@@ -196,22 +173,20 @@ class MEDIA_EXPORT VideoRendererImpl
 
   bool drop_frames_;
 
-  float playback_rate_;
+  BufferingState buffering_state_;
 
   // Playback operation callbacks.
   base::Closure flush_cb_;
-  PipelineStatusCB preroll_cb_;
 
   // Event callbacks.
   PipelineStatusCB init_cb_;
   StatisticsCB statistics_cb_;
-  TimeCB max_time_cb_;
+  BufferingStateCB buffering_state_cb_;
   base::Closure ended_cb_;
   PipelineStatusCB error_cb_;
   TimeDeltaCB get_time_cb_;
-  TimeDeltaCB get_duration_cb_;
 
-  base::TimeDelta preroll_timestamp_;
+  base::TimeDelta start_timestamp_;
 
   // Embedder callback for notifying a new frame is available for painting.
   PaintCB paint_cb_;
@@ -221,10 +196,16 @@ class MEDIA_EXPORT VideoRendererImpl
   // during flushing.
   base::TimeDelta last_timestamp_;
 
+  // The timestamp of the last successfully painted frame. Set to kNoTimestamp()
+  // during flushing.
+  base::TimeDelta last_painted_timestamp_;
+
   // Keeps track of the number of frames decoded and dropped since the
   // last call to |statistics_cb_|. These must be accessed under lock.
   int frames_decoded_;
   int frames_dropped_;
+
+  bool is_shutting_down_;
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<VideoRendererImpl> weak_factory_;

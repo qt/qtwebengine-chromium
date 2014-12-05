@@ -30,9 +30,9 @@
 
 #include <map>
 #include <string>
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/jid.h"
-#include "talk/xmpp/xmpptask.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/jid.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace buzz {
 

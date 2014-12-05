@@ -43,16 +43,15 @@ void AddTestSurfaceQuad(TestRenderPass* pass,
                             blend_mode,
                             0);
 
-  scoped_ptr<SurfaceDrawQuad> surface_quad = SurfaceDrawQuad::Create();
+  SurfaceDrawQuad* surface_quad =
+      pass->CreateAndAppendDrawQuad<SurfaceDrawQuad>();
   gfx::Rect quad_rect = gfx::Rect(surface_size);
   surface_quad->SetNew(pass->shared_quad_state_list.back(),
                        gfx::Rect(surface_size),
                        gfx::Rect(surface_size),
                        surface_id);
-  pass->quad_list.push_back(surface_quad.PassAs<DrawQuad>());
 }
-void AddTestRenderPassQuad(TestRenderPass* pass,
-                           RenderPass::Id render_pass_id) {
+void AddTestRenderPassQuad(TestRenderPass* pass, RenderPassId render_pass_id) {
   gfx::Rect output_rect = gfx::Rect(0, 0, 5, 5);
   SharedQuadState* shared_state = pass->CreateAndAppendSharedQuadState();
   shared_state->SetAll(gfx::Transform(),
@@ -63,18 +62,18 @@ void AddTestRenderPassQuad(TestRenderPass* pass,
                        1,
                        SkXfermode::kSrcOver_Mode,
                        0);
-  scoped_ptr<RenderPassDrawQuad> quad = RenderPassDrawQuad::Create();
+  RenderPassDrawQuad* quad =
+      pass->CreateAndAppendDrawQuad<RenderPassDrawQuad>();
   quad->SetNew(shared_state,
                output_rect,
                output_rect,
                render_pass_id,
-               false,
                0,
-               output_rect,
-               gfx::RectF(),
+               gfx::Vector2dF(),
+               gfx::Size(),
                FilterOperations(),
+               gfx::Vector2dF(),
                FilterOperations());
-  pass->AppendDrawQuad(quad.PassAs<DrawQuad>());
 }
 
 void AddQuadInPass(TestRenderPass* pass, Quad desc) {
@@ -108,7 +107,7 @@ void AddPasses(RenderPassList* pass_list,
   }
 }
 
-void TestQuadMatchesExpectations(Quad expected_quad, DrawQuad* quad) {
+void TestQuadMatchesExpectations(Quad expected_quad, const DrawQuad* quad) {
   switch (expected_quad.material) {
     case DrawQuad::SOLID_COLOR: {
       ASSERT_EQ(DrawQuad::SOLID_COLOR, quad->material);
@@ -119,23 +118,33 @@ void TestQuadMatchesExpectations(Quad expected_quad, DrawQuad* quad) {
       EXPECT_EQ(expected_quad.color, solid_color_quad->color);
       break;
     }
+    case DrawQuad::RENDER_PASS: {
+      ASSERT_EQ(DrawQuad::RENDER_PASS, quad->material);
+
+      const RenderPassDrawQuad* render_pass_quad =
+          RenderPassDrawQuad::MaterialCast(quad);
+
+      EXPECT_EQ(expected_quad.render_pass_id, render_pass_quad->render_pass_id);
+      break;
+    }
     default:
       NOTREACHED();
       break;
   }
 }
 
-void TestPassMatchesExpectations(Pass expected_pass, RenderPass* pass) {
+void TestPassMatchesExpectations(Pass expected_pass, const RenderPass* pass) {
   ASSERT_EQ(expected_pass.quad_count, pass->quad_list.size());
-  for (size_t i = 0u; i < pass->quad_list.size(); ++i) {
-    SCOPED_TRACE(base::StringPrintf("Quad number %" PRIuS, i));
-    TestQuadMatchesExpectations(expected_pass.quads[i], pass->quad_list.at(i));
+  for (auto iter = pass->quad_list.cbegin(); iter != pass->quad_list.cend();
+       ++iter) {
+    SCOPED_TRACE(base::StringPrintf("Quad number %" PRIuS, iter.index()));
+    TestQuadMatchesExpectations(expected_pass.quads[iter.index()], *iter);
   }
 }
 
 void TestPassesMatchExpectations(Pass* expected_passes,
                                  size_t expected_pass_count,
-                                 RenderPassList* passes) {
+                                 const RenderPassList* passes) {
   ASSERT_EQ(expected_pass_count, passes->size());
 
   for (size_t i = 0; i < passes->size(); ++i) {
@@ -143,29 +152,6 @@ void TestPassesMatchExpectations(Pass* expected_passes,
     RenderPass* pass = passes->at(i);
     TestPassMatchesExpectations(expected_passes[i], pass);
   }
-}
-
-void SubmitFrame(Pass* passes, size_t pass_count, Surface* surface) {
-  RenderPassList pass_list;
-  AddPasses(&pass_list, gfx::Rect(surface->size()), passes, pass_count);
-
-  scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
-  pass_list.swap(frame_data->render_pass_list);
-
-  scoped_ptr<CompositorFrame> frame(new CompositorFrame);
-  frame->delegated_frame_data = frame_data.Pass();
-
-  surface->QueueFrame(frame.Pass());
-}
-
-void QueuePassAsFrame(scoped_ptr<RenderPass> pass, Surface* surface) {
-  scoped_ptr<DelegatedFrameData> delegated_frame_data(new DelegatedFrameData);
-  delegated_frame_data->render_pass_list.push_back(pass.Pass());
-
-  scoped_ptr<CompositorFrame> child_frame(new CompositorFrame);
-  child_frame->delegated_frame_data = delegated_frame_data.Pass();
-
-  surface->QueueFrame(child_frame.Pass());
 }
 
 }  // namespace test

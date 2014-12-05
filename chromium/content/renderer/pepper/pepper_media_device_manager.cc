@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "content/renderer/media/media_stream_dispatcher.h"
-#include "content/renderer/render_view_impl.h"
+#include "content/renderer/render_frame_impl.h"
 #include "ppapi/shared_impl/ppb_device_ref_shared.h"
 
 namespace content {
@@ -16,25 +16,28 @@ namespace {
 ppapi::DeviceRefData FromStreamDeviceInfo(const StreamDeviceInfo& info) {
   ppapi::DeviceRefData data;
   data.id = info.device.id;
-  data.name = info.device.name;
+  // Some Flash content can't handle an empty string, so stick a space in to
+  // make them happy. See crbug.com/408404.
+  data.name = info.device.name.empty() ? std::string(" ") : info.device.name;
   data.type = PepperMediaDeviceManager::FromMediaStreamType(info.device.type);
   return data;
 }
 
 }  // namespace
 
-PepperMediaDeviceManager* PepperMediaDeviceManager::GetForRenderView(
-    RenderView* render_view) {
+base::WeakPtr<PepperMediaDeviceManager>
+PepperMediaDeviceManager::GetForRenderFrame(
+    RenderFrame* render_frame) {
   PepperMediaDeviceManager* handler =
-      PepperMediaDeviceManager::Get(render_view);
+      PepperMediaDeviceManager::Get(render_frame);
   if (!handler)
-    handler = new PepperMediaDeviceManager(render_view);
-  return handler;
+    handler = new PepperMediaDeviceManager(render_frame);
+  return handler->AsWeakPtr();
 }
 
-PepperMediaDeviceManager::PepperMediaDeviceManager(RenderView* render_view)
-    : RenderViewObserver(render_view),
-      RenderViewObserverTracker<PepperMediaDeviceManager>(render_view),
+PepperMediaDeviceManager::PepperMediaDeviceManager(RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame),
+      RenderFrameObserverTracker<PepperMediaDeviceManager>(render_frame),
       next_id_(1) {}
 
 PepperMediaDeviceManager::~PepperMediaDeviceManager() {
@@ -50,12 +53,11 @@ int PepperMediaDeviceManager::EnumerateDevices(
   int request_id = next_id_++;
 
 #if defined(ENABLE_WEBRTC)
-  GetRenderViewImpl()->media_stream_dispatcher()->EnumerateDevices(
+  GetMediaStreamDispatcher()->EnumerateDevices(
       request_id,
       AsWeakPtr(),
       PepperMediaDeviceManager::FromPepperDeviceType(type),
-      document_url.GetOrigin(),
-      false);
+      document_url.GetOrigin());
 #else
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -76,10 +78,20 @@ void PepperMediaDeviceManager::StopEnumerateDevices(int request_id) {
   // of EnumerateDevices.
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&MediaStreamDispatcher::StopEnumerateDevices,
-                 GetRenderViewImpl()->media_stream_dispatcher()->AsWeakPtr(),
-                 request_id,
-                 AsWeakPtr()));
+      base::Bind(&PepperMediaDeviceManager::StopEnumerateDevicesDelayed,
+                 AsWeakPtr(),
+                 request_id));
+#endif
+}
+
+void PepperMediaDeviceManager::StopEnumerateDevicesDelayed(int request_id) {
+#if defined(ENABLE_WEBRTC)
+  // This method is being invoked by the message loop at some unknown
+  // point-in-time after StopEnumerateDevices().  Therefore, check that
+  // render_frame() is not NULL, in order to guarantee
+  // GetMediaStreamDispatcher() won't return NULL.
+  if (render_frame())
+    GetMediaStreamDispatcher()->StopEnumerateDevices(request_id, AsWeakPtr());
 #endif
 }
 
@@ -91,7 +103,7 @@ int PepperMediaDeviceManager::OpenDevice(PP_DeviceType_Dev type,
   int request_id = next_id_++;
 
 #if defined(ENABLE_WEBRTC)
-  GetRenderViewImpl()->media_stream_dispatcher()->OpenDevice(
+  GetMediaStreamDispatcher()->OpenDevice(
       request_id,
       AsWeakPtr(),
       device_id,
@@ -112,14 +124,13 @@ void PepperMediaDeviceManager::CancelOpenDevice(int request_id) {
   open_callbacks_.erase(request_id);
 
 #if defined(ENABLE_WEBRTC)
-  GetRenderViewImpl()->media_stream_dispatcher()->CancelOpenDevice(request_id,
-                                                                   AsWeakPtr());
+  GetMediaStreamDispatcher()->CancelOpenDevice(request_id, AsWeakPtr());
 #endif
 }
 
 void PepperMediaDeviceManager::CloseDevice(const std::string& label) {
 #if defined(ENABLE_WEBRTC)
-  GetRenderViewImpl()->media_stream_dispatcher()->CloseDevice(label);
+  GetMediaStreamDispatcher()->CloseDevice(label);
 #endif
 }
 
@@ -128,11 +139,9 @@ int PepperMediaDeviceManager::GetSessionID(PP_DeviceType_Dev type,
 #if defined(ENABLE_WEBRTC)
   switch (type) {
     case PP_DEVICETYPE_DEV_AUDIOCAPTURE:
-      return GetRenderViewImpl()->media_stream_dispatcher()->audio_session_id(
-          label, 0);
+      return GetMediaStreamDispatcher()->audio_session_id(label, 0);
     case PP_DEVICETYPE_DEV_VIDEOCAPTURE:
-      return GetRenderViewImpl()->media_stream_dispatcher()->video_session_id(
-          label, 0);
+      return GetMediaStreamDispatcher()->video_session_id(label, 0);
     default:
       NOTREACHED();
       return 0;
@@ -236,8 +245,13 @@ void PepperMediaDeviceManager::NotifyDeviceOpened(int request_id,
   callback.Run(request_id, succeeded, label);
 }
 
-RenderViewImpl* PepperMediaDeviceManager::GetRenderViewImpl() {
-  return static_cast<RenderViewImpl*>(render_view());
+MediaStreamDispatcher* PepperMediaDeviceManager::GetMediaStreamDispatcher()
+    const {
+  DCHECK(render_frame());
+  MediaStreamDispatcher* const dispatcher =
+      static_cast<RenderFrameImpl*>(render_frame())->GetMediaStreamDispatcher();
+  DCHECK(dispatcher);
+  return dispatcher;
 }
 
 }  // namespace content

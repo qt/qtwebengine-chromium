@@ -25,41 +25,52 @@ namespace net {
 
 class NET_EXPORT_PRIVATE PacingSender : public SendAlgorithmInterface {
  public:
+  // Create a PacingSender to wrap the specified sender.  |alarm_granularity|
+  // indicates to the pacer to send that far into the future, since it should
+  // not expect a callback before that time delta.  |initial_packet_burst| is
+  // the number of packets sent without pacing after quiescence.
   PacingSender(SendAlgorithmInterface* sender,
-               QuicTime::Delta alarm_granularity);
-  virtual ~PacingSender();
+               QuicTime::Delta alarm_granularity,
+               uint32 initial_packet_burst);
+  ~PacingSender() override;
 
   // SendAlgorithmInterface methods.
-  virtual void SetFromConfig(const QuicConfig& config, bool is_server) OVERRIDE;
-  virtual void OnIncomingQuicCongestionFeedbackFrame(
-      const QuicCongestionFeedbackFrame& feedback,
-      QuicTime feedback_receive_time) OVERRIDE;
-  virtual void OnCongestionEvent(bool rtt_updated,
-                                 QuicByteCount bytes_in_flight,
-                                 const CongestionMap& acked_packets,
-                                 const CongestionMap& lost_packets) OVERRIDE;
-  virtual bool OnPacketSent(QuicTime sent_time,
-                            QuicByteCount bytes_in_flight,
-                            QuicPacketSequenceNumber sequence_number,
-                            QuicByteCount bytes,
-                            HasRetransmittableData is_retransmittable) OVERRIDE;
-  virtual void OnRetransmissionTimeout(bool packets_retransmitted) OVERRIDE;
-  virtual QuicTime::Delta TimeUntilSend(
+  void SetFromConfig(const QuicConfig& config, bool is_server) override;
+  void SetNumEmulatedConnections(int num_connections) override;
+  void OnCongestionEvent(bool rtt_updated,
+                         QuicByteCount bytes_in_flight,
+                         const CongestionVector& acked_packets,
+                         const CongestionVector& lost_packets) override;
+  bool OnPacketSent(QuicTime sent_time,
+                    QuicByteCount bytes_in_flight,
+                    QuicPacketSequenceNumber sequence_number,
+                    QuicByteCount bytes,
+                    HasRetransmittableData is_retransmittable) override;
+  void OnRetransmissionTimeout(bool packets_retransmitted) override;
+  void RevertRetransmissionTimeout() override;
+  QuicTime::Delta TimeUntilSend(
       QuicTime now,
       QuicByteCount bytes_in_flight,
-      HasRetransmittableData has_retransmittable_data) const OVERRIDE;
-  virtual QuicBandwidth BandwidthEstimate() const OVERRIDE;
-  virtual QuicTime::Delta RetransmissionDelay() const OVERRIDE;
-  virtual QuicByteCount GetCongestionWindow() const OVERRIDE;
+      HasRetransmittableData has_retransmittable_data) const override;
+  QuicBandwidth PacingRate() const override;
+  QuicBandwidth BandwidthEstimate() const override;
+  bool HasReliableBandwidthEstimate() const override;
+  QuicTime::Delta RetransmissionDelay() const override;
+  QuicByteCount GetCongestionWindow() const override;
+  bool InSlowStart() const override;
+  bool InRecovery() const override;
+  QuicByteCount GetSlowStartThreshold() const override;
+  CongestionControlType GetCongestionControlType() const override;
 
  private:
   scoped_ptr<SendAlgorithmInterface> sender_;  // Underlying sender.
   QuicTime::Delta alarm_granularity_;
+  uint32 initial_packet_burst_;
+  mutable uint32 burst_tokens_;
   // Send time of the last packet considered delayed.
   QuicTime last_delayed_packet_sent_time_;
   QuicTime next_packet_send_time_;  // When can the next packet be sent.
   mutable bool was_last_send_delayed_;  // True when the last send was delayed.
-  bool has_valid_rtt_;  // True if we have at least one RTT update.
 
   DISALLOW_COPY_AND_ASSIGN(PacingSender);
 };

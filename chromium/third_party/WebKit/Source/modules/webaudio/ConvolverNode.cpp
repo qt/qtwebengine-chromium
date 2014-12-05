@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/ConvolverNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/audio/Reverb.h"
 #include "modules/webaudio/AudioBuffer.h"
@@ -45,15 +45,14 @@
 // Very large FFTs will have worse phase errors. Given these constraints 32768 is a good compromise.
 const size_t MaxFFTSize = 32768;
 
-namespace WebCore {
+namespace blink {
 
 ConvolverNode::ConvolverNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
     , m_normalize(true)
 {
-    ScriptWrappable::init(this);
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, 2));
 
     // Node-specific default mixing rules.
     m_channelCount = 2;
@@ -66,7 +65,13 @@ ConvolverNode::ConvolverNode(AudioContext* context, float sampleRate)
 
 ConvolverNode::~ConvolverNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void ConvolverNode::dispose()
+{
     uninitialize();
+    AudioNode::dispose();
 }
 
 void ConvolverNode::process(size_t framesToProcess)
@@ -185,6 +190,6 @@ void ConvolverNode::trace(Visitor* visitor)
     AudioNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

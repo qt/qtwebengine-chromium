@@ -45,6 +45,10 @@
                     'src/shared/ppapi_proxy/ppruntime.h',
                   ],
                 },
+              ],
+            }],
+            ['target_arch=="ia32"', {
+              'copies': [
                 # Here we copy linker scripts out of the Native Client repo..
                 # These are source, not build artifacts.
                 {
@@ -54,16 +58,20 @@
                   ],
                 },
                 {
-                  'destination': '>(tc_lib_dir_newlib64)',
-                  'files': [
-                    'src/untrusted/irt_stub/libppapi.a',
-                  ],
-                },
-                {
                   'destination': '>(tc_lib_dir_glibc32)',
                   'files': [
                     'src/untrusted/irt_stub/libppapi.a',
                     'src/untrusted/irt_stub/libppapi.so',
+                  ],
+                },
+              ],
+            }],
+            ['target_arch=="x64" or (target_arch=="ia32" and OS=="win")', {
+              'copies': [
+                {
+                  'destination': '>(tc_lib_dir_newlib64)',
+                  'files': [
+                    'src/untrusted/irt_stub/libppapi.a',
                   ],
                 },
                 {
@@ -113,7 +121,6 @@
             'build_newlib': 0,
             'build_irt': 1,
             'include_dirs': [
-              'lib/gl/include',
               '..',
             ],
             'link_flags': [
@@ -252,7 +259,7 @@
             ],
           },
           'dependencies': [
-            'src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:shim_for_irt',
+            'src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:irt',
             '../ppapi_proxy_nacl.gyp:ppapi_proxy_nacl',
             '../ppapi_ipc_nacl.gyp:ppapi_ipc_nacl',
             '../ppapi_shared_nacl.gyp:ppapi_shared_nacl',

@@ -9,7 +9,7 @@
 #include "base/basictypes.h"
 
 #if defined(OS_WIN)
-#include <windows.h>
+#include "base/win/scoped_handle.h"
 #endif
 
 #if defined(OS_POSIX)
@@ -53,6 +53,7 @@ class BASE_EXPORT WaitableEvent {
   // Create a WaitableEvent from an Event HANDLE which has already been
   // created. This objects takes ownership of the HANDLE and will close it when
   // deleted.
+  // TODO(rvargas): Pass ScopedHandle instead (and on Release).
   explicit WaitableEvent(HANDLE event_handle);
 
   // Releases ownership of the handle from this object.
@@ -72,16 +73,25 @@ class BASE_EXPORT WaitableEvent {
   // is not a manual reset event, then this test will cause a reset.
   bool IsSignaled();
 
-  // Wait indefinitely for the event to be signaled.
+  // Wait indefinitely for the event to be signaled. Wait's return "happens
+  // after" |Signal| has completed. This means that it's safe for a
+  // WaitableEvent to synchronise its own destruction, like this:
+  //
+  //   WaitableEvent *e = new WaitableEvent;
+  //   SendToOtherThread(e);
+  //   e->Wait();
+  //   delete e;
   void Wait();
 
   // Wait up until max_time has passed for the event to be signaled.  Returns
   // true if the event was signaled.  If this method returns false, then it
   // does not necessarily mean that max_time was exceeded.
+  //
+  // TimedWait can synchronise its own destruction like |Wait|.
   bool TimedWait(const TimeDelta& max_time);
 
 #if defined(OS_WIN)
-  HANDLE handle() const { return handle_; }
+  HANDLE handle() const { return handle_.Get(); }
 #endif
 
   // Wait, synchronously, on multiple events.
@@ -91,7 +101,8 @@ class BASE_EXPORT WaitableEvent {
   // returns: the index of a WaitableEvent which has been signaled.
   //
   // You MUST NOT delete any of the WaitableEvent objects while this wait is
-  // happening.
+  // happening, however WaitMany's return "happens after" the |Signal| call
+  // that caused it has completed, like |Wait|.
   static size_t WaitMany(WaitableEvent** waitables, size_t count);
 
   // For asynchronous waiting, see WaitableEventWatcher
@@ -130,7 +141,7 @@ class BASE_EXPORT WaitableEvent {
   friend class WaitableEventWatcher;
 
 #if defined(OS_WIN)
-  HANDLE handle_;
+  win::ScopedHandle handle_;
 #else
   // On Windows, one can close a HANDLE which is currently being waited on. The
   // MSDN documentation says that the resulting behaviour is 'undefined', but

@@ -63,9 +63,13 @@ struct WebWindowFeatures {
     WebVector<WebString> additionalFeatures;
 
     WebWindowFeatures()
-        : xSet(false)
+        : x(0)
+        , xSet(false)
+        , y(0)
         , ySet(false)
+        , width(0)
         , widthSet(false)
+        , height(0)
         , heightSet(false)
         , menuBarVisible(true)
         , statusBarVisible(true)
@@ -80,7 +84,7 @@ struct WebWindowFeatures {
 
 
 #if BLINK_IMPLEMENTATION
-    WebWindowFeatures(const WebCore::WindowFeatures& f)
+    WebWindowFeatures(const WindowFeatures& f)
         : x(f.x)
         , xSet(f.xSet)
         , y(f.y)
@@ -101,9 +105,9 @@ struct WebWindowFeatures {
     {
     }
 
-    operator WebCore::WindowFeatures() const
+    operator WindowFeatures() const
     {
-        WebCore::WindowFeatures result;
+        WindowFeatures result;
         result.x = x;
         result.xSet = xSet;
         result.y = y;

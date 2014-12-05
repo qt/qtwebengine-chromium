@@ -7,11 +7,9 @@
 
 #include "base/macros.h"
 #include "base/memory/scoped_vector.h"
+#include "ui/ozone/platform/dri/scoped_drm_types.h"
 
-typedef struct _drmModeConnector drmModeConnector;
-typedef struct _drmModeCrtc drmModeCrtc;
 typedef struct _drmModeModeInfo drmModeModeInfo;
-typedef struct _drmModeRes drmModeRes;
 
 namespace ui {
 
@@ -19,15 +17,16 @@ namespace ui {
 // native display.
 class HardwareDisplayControllerInfo {
  public:
-  HardwareDisplayControllerInfo(drmModeConnector* connector, drmModeCrtc* crtc);
+  HardwareDisplayControllerInfo(ScopedDrmConnectorPtr connector,
+                                ScopedDrmCrtcPtr crtc);
   ~HardwareDisplayControllerInfo();
 
-  drmModeConnector* connector() const { return connector_; }
-  drmModeCrtc* crtc() const { return crtc_; }
+  drmModeConnector* connector() const { return connector_.get(); }
+  drmModeCrtc* crtc() const { return crtc_.get(); }
 
  private:
-  drmModeConnector* connector_;
-  drmModeCrtc* crtc_;
+  ScopedDrmConnectorPtr connector_;
+  ScopedDrmCrtcPtr crtc_;
 
   DISALLOW_COPY_AND_ASSIGN(HardwareDisplayControllerInfo);
 };
@@ -35,9 +34,15 @@ class HardwareDisplayControllerInfo {
 // Looks-up and parses the native display configurations returning all available
 // displays.
 ScopedVector<HardwareDisplayControllerInfo>
-GetAvailableDisplayControllerInfos(int fd, drmModeRes* resources);
+GetAvailableDisplayControllerInfos(int fd);
 
 bool SameMode(const drmModeModeInfo& lhs, const drmModeModeInfo& rhs);
+
+// Memory maps a DRM buffer.
+bool MapDumbBuffer(int fd,
+                   uint32_t handle,
+                   uint32_t size,
+                   void** pixels);
 
 }  // namespace ui
 

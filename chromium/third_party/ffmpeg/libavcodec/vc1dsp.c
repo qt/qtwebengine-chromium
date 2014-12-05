@@ -28,8 +28,8 @@
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/intreadwrite.h"
-#include "dsputil.h"
 #include "h264chroma.h"
+#include "qpeldsp.h"
 #include "rnd_avg.h"
 #include "vc1dsp.h"
 #include "startcode.h"
@@ -1025,7 +1025,7 @@ av_cold void ff_vc1dsp_init(VC1DSPContext *dsp)
     dsp->sprite_v_double_twoscale = sprite_v_double_twoscale_c;
 #endif /* CONFIG_WMV3IMAGE_DECODER || CONFIG_VC1IMAGE_DECODER */
 
-    dsp->vc1_find_start_code_candidate = ff_startcode_find_candidate_c;
+    dsp->startcode_find_candidate = ff_startcode_find_candidate_c;
 
     if (ARCH_AARCH64)
         ff_vc1dsp_init_aarch64(dsp);

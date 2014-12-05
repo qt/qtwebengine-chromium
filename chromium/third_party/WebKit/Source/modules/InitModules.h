@@ -6,22 +6,14 @@
 #define InitModules_h
 
 #include "core/Init.h"
-#include "platform/heap/Handle.h"
 
-namespace WebCore {
-
-class Event;
-class ExceptionState;
+namespace blink {
 
 class ModulesInitializer : public CoreInitializer {
 public:
-    virtual void registerEventFactory() OVERRIDE;
-    virtual void initEventNames() OVERRIDE;
-    virtual void initEventTargetNames() OVERRIDE;
+    virtual void init() override;
 };
 
-PassRefPtrWillBeRawPtr<Event> createEventModules(const String& eventType, ExceptionState&);
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // InitModules_h

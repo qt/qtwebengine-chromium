@@ -7,13 +7,22 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_backend_impl.h"
+#include "content/browser/appcache/appcache_database.h"
+#include "content/browser/appcache/appcache_entry.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_host.h"
 #include "content/browser/appcache/appcache_interceptor.h"
+#include "content/browser/appcache/appcache_request_handler.h"
+#include "content/browser/appcache/appcache_service_impl.h"
+#include "content/browser/appcache/appcache_storage_impl.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
 #include "net/http/http_response_headers.h"
@@ -22,40 +31,8 @@
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "sql/test/test_helpers.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_backend_impl.h"
-#include "webkit/browser/appcache/appcache_database.h"
-#include "webkit/browser/appcache/appcache_entry.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/appcache/appcache_service_impl.h"
-#include "webkit/browser/appcache/appcache_storage_impl.h"
-#include "webkit/browser/quota/quota_manager.h"
-
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
-using appcache::AppCacheBackendImpl;
-using appcache::AppCacheDatabase;
-using appcache::AppCacheEntry;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheHost;
-using appcache::AppCacheInfo;
-using appcache::AppCacheGroup;
-using appcache::AppCacheServiceImpl;
-using appcache::AppCacheStorage;
-using appcache::AppCacheStorageImpl;
-using appcache::AppCacheStorageReference;
-using appcache::AppCache;
-using appcache::AppCacheErrorDetails;
-using appcache::AppCacheEventID;
-using appcache::kAppCacheNoCacheId;
-using appcache::kAppCacheNoResponseId;
-using appcache::APPCACHE_INTERCEPT_NAMESPACE;
-using appcache::AppCacheLogLevel;
-using appcache::Namespace;
-using appcache::AppCacheStatus;
 
 namespace content {
 
@@ -149,11 +126,23 @@ class MockHttpServer {
 class MockHttpServerJobFactory
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual net::URLRequestJob* MaybeCreateJob(
+  MockHttpServerJobFactory(
+     scoped_ptr<net::URLRequestInterceptor> appcache_start_interceptor)
+     : appcache_start_interceptor_(appcache_start_interceptor.Pass()) {
+  }
+
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
+    net::URLRequestJob* appcache_job =
+        appcache_start_interceptor_->MaybeInterceptRequest(
+            request, network_delegate);
+    if (appcache_job)
+      return appcache_job;
     return MockHttpServer::CreateJob(request, network_delegate);
   }
+ private:
+  scoped_ptr<net::URLRequestInterceptor> appcache_start_interceptor_;
 };
 
 class IOThread : public base::Thread {
@@ -162,25 +151,26 @@ class IOThread : public base::Thread {
       : base::Thread(name) {
   }
 
-  virtual ~IOThread() {
-    Stop();
-  }
+  ~IOThread() override { Stop(); }
 
   net::URLRequestContext* request_context() {
     return request_context_.get();
   }
 
-  virtual void Init() OVERRIDE {
+  void Init() override {
     scoped_ptr<net::URLRequestJobFactoryImpl> factory(
         new net::URLRequestJobFactoryImpl());
-    factory->SetProtocolHandler("http", new MockHttpServerJobFactory);
+    factory->SetProtocolHandler(
+        "http",
+        new MockHttpServerJobFactory(
+            AppCacheInterceptor::CreateStartInterceptor()));
     job_factory_ = factory.Pass();
     request_context_.reset(new net::TestURLRequestContext());
     request_context_->set_job_factory(job_factory_.get());
     AppCacheInterceptor::EnsureRegistered();
   }
 
-  virtual void CleanUp() OVERRIDE {
+  void CleanUp() override {
     request_context_.reset();
     job_factory_.reset();
   }
@@ -205,14 +195,14 @@ class AppCacheStorageImplTest : public testing::Test {
           found_cache_id_(kAppCacheNoCacheId), test_(test) {
     }
 
-    virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE {
+    void OnCacheLoaded(AppCache* cache, int64 cache_id) override {
       loaded_cache_ = cache;
       loaded_cache_id_ = cache_id;
       test_->ScheduleNextTask();
     }
 
-    virtual void OnGroupLoaded(AppCacheGroup* group,
-                               const GURL& manifest_url) OVERRIDE {
+    void OnGroupLoaded(AppCacheGroup* group,
+                       const GURL& manifest_url) override {
       loaded_group_ = group;
       loaded_manifest_url_ = manifest_url;
       loaded_groups_newest_cache_ = group ? group->newest_complete_cache()
@@ -220,30 +210,31 @@ class AppCacheStorageImplTest : public testing::Test {
       test_->ScheduleNextTask();
     }
 
-    virtual void OnGroupAndNewestCacheStored(
-        AppCacheGroup* group, AppCache* newest_cache, bool success,
-        bool would_exceed_quota) OVERRIDE {
+    void OnGroupAndNewestCacheStored(AppCacheGroup* group,
+                                     AppCache* newest_cache,
+                                     bool success,
+                                     bool would_exceed_quota) override {
       stored_group_ = group;
       stored_group_success_ = success;
       would_exceed_quota_ = would_exceed_quota;
       test_->ScheduleNextTask();
     }
 
-    virtual void OnGroupMadeObsolete(AppCacheGroup* group,
-                                     bool success,
-                                     int response_code) OVERRIDE {
+    void OnGroupMadeObsolete(AppCacheGroup* group,
+                             bool success,
+                             int response_code) override {
       obsoleted_group_ = group;
       obsoleted_success_ = success;
       test_->ScheduleNextTask();
     }
 
-    virtual void OnMainResponseFound(const GURL& url,
-                                     const AppCacheEntry& entry,
-                                     const GURL& namespace_entry_url,
-                                     const AppCacheEntry& fallback_entry,
-                                     int64 cache_id,
-                                     int64 group_id,
-                                     const GURL& manifest_url) OVERRIDE {
+    void OnMainResponseFound(const GURL& url,
+                             const AppCacheEntry& entry,
+                             const GURL& namespace_entry_url,
+                             const AppCacheEntry& fallback_entry,
+                             int64 cache_id,
+                             int64 group_id,
+                             const GURL& manifest_url) override {
       found_url_ = url;
       found_entry_ = entry;
       found_namespace_entry_url_ = namespace_entry_url;
@@ -274,7 +265,7 @@ class AppCacheStorageImplTest : public testing::Test {
     AppCacheStorageImplTest* test_;
   };
 
-  class MockQuotaManager : public quota::QuotaManager {
+  class MockQuotaManager : public storage::QuotaManager {
    public:
     MockQuotaManager()
         : QuotaManager(true /* is_incognito */,
@@ -284,11 +275,10 @@ class AppCacheStorageImplTest : public testing::Test {
                        NULL),
           async_(false) {}
 
-    virtual void GetUsageAndQuota(
-        const GURL& origin,
-        quota::StorageType type,
-        const GetUsageAndQuotaCallback& callback) OVERRIDE {
-      EXPECT_EQ(quota::kStorageTypeTemporary, type);
+    void GetUsageAndQuota(const GURL& origin,
+                          storage::StorageType type,
+                          const GetUsageAndQuotaCallback& callback) override {
+      EXPECT_EQ(storage::kStorageTypeTemporary, type);
       if (async_) {
         base::MessageLoop::current()->PostTask(
             FROM_HERE,
@@ -301,16 +291,16 @@ class AppCacheStorageImplTest : public testing::Test {
     }
 
     void CallCallback(const GetUsageAndQuotaCallback& callback) {
-      callback.Run(quota::kQuotaStatusOk, 0, kMockQuota);
+      callback.Run(storage::kQuotaStatusOk, 0, kMockQuota);
     }
 
     bool async_;
 
    protected:
-    virtual ~MockQuotaManager() {}
+    ~MockQuotaManager() override {}
   };
 
-  class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
+  class MockQuotaManagerProxy : public storage::QuotaManagerProxy {
    public:
     MockQuotaManagerProxy()
         : QuotaManagerProxy(NULL, NULL),
@@ -321,39 +311,38 @@ class AppCacheStorageImplTest : public testing::Test {
       manager_ = mock_manager_.get();
     }
 
-    virtual void NotifyStorageAccessed(quota::QuotaClient::ID client_id,
-                                       const GURL& origin,
-                                       quota::StorageType type) OVERRIDE {
-      EXPECT_EQ(quota::QuotaClient::kAppcache, client_id);
-      EXPECT_EQ(quota::kStorageTypeTemporary, type);
+    void NotifyStorageAccessed(storage::QuotaClient::ID client_id,
+                               const GURL& origin,
+                               storage::StorageType type) override {
+      EXPECT_EQ(storage::QuotaClient::kAppcache, client_id);
+      EXPECT_EQ(storage::kStorageTypeTemporary, type);
       ++notify_storage_accessed_count_;
       last_origin_ = origin;
     }
 
-    virtual void NotifyStorageModified(quota::QuotaClient::ID client_id,
-                                       const GURL& origin,
-                                       quota::StorageType type,
-                                       int64 delta) OVERRIDE {
-      EXPECT_EQ(quota::QuotaClient::kAppcache, client_id);
-      EXPECT_EQ(quota::kStorageTypeTemporary, type);
+    void NotifyStorageModified(storage::QuotaClient::ID client_id,
+                               const GURL& origin,
+                               storage::StorageType type,
+                               int64 delta) override {
+      EXPECT_EQ(storage::QuotaClient::kAppcache, client_id);
+      EXPECT_EQ(storage::kStorageTypeTemporary, type);
       ++notify_storage_modified_count_;
       last_origin_ = origin;
       last_delta_ = delta;
     }
 
     // Not needed for our tests.
-    virtual void RegisterClient(quota::QuotaClient* client) OVERRIDE {}
-    virtual void NotifyOriginInUse(const GURL& origin) OVERRIDE {}
-    virtual void NotifyOriginNoLongerInUse(const GURL& origin) OVERRIDE {}
-    virtual void SetUsageCacheEnabled(quota::QuotaClient::ID client_id,
-                                      const GURL& origin,
-                                      quota::StorageType type,
-                                      bool enabled) OVERRIDE {}
-    virtual void GetUsageAndQuota(
-        base::SequencedTaskRunner* original_task_runner,
-        const GURL& origin,
-        quota::StorageType type,
-        const GetUsageAndQuotaCallback& callback) OVERRIDE {}
+    void RegisterClient(storage::QuotaClient* client) override {}
+    void NotifyOriginInUse(const GURL& origin) override {}
+    void NotifyOriginNoLongerInUse(const GURL& origin) override {}
+    void SetUsageCacheEnabled(storage::QuotaClient::ID client_id,
+                              const GURL& origin,
+                              storage::StorageType type,
+                              bool enabled) override {}
+    void GetUsageAndQuota(base::SequencedTaskRunner* original_task_runner,
+                          const GURL& origin,
+                          storage::StorageType type,
+                          const GetUsageAndQuotaCallback& callback) override {}
 
     int notify_storage_accessed_count_;
     int notify_storage_modified_count_;
@@ -362,7 +351,7 @@ class AppCacheStorageImplTest : public testing::Test {
     scoped_refptr<MockQuotaManager> mock_manager_;
 
    protected:
-    virtual ~MockQuotaManagerProxy() {}
+    ~MockQuotaManagerProxy() override {}
   };
 
   template <class Method>
@@ -421,8 +410,7 @@ class AppCacheStorageImplTest : public testing::Test {
   void SetUpTest() {
     DCHECK(base::MessageLoop::current() == io_thread->message_loop());
     service_.reset(new AppCacheServiceImpl(NULL));
-    service_->Initialize(
-        base::FilePath(), db_thread->message_loop_proxy().get(), NULL);
+    service_->Initialize(base::FilePath(), db_thread->task_runner(), NULL);
     mock_quota_manager_proxy_ = new MockQuotaManagerProxy();
     service_->quota_manager_proxy_ = mock_quota_manager_proxy_;
     delegate_.reset(new MockStorageDelegate(this));
@@ -734,7 +722,7 @@ class AppCacheStorageImplTest : public testing::Test {
         base::Unretained(this), now));
 
     // Conduct the test.
-    EXPECT_EQ(cache_, group_->newest_complete_cache());
+    EXPECT_EQ(cache_.get(), group_->newest_complete_cache());
     storage()->StoreGroupAndNewestCache(group_.get(), cache_.get(), delegate());
     EXPECT_FALSE(delegate()->stored_group_success_);
   }
@@ -742,7 +730,7 @@ class AppCacheStorageImplTest : public testing::Test {
   void Verify_StoreExistingGroupExistingCache(
       base::Time expected_update_time) {
     EXPECT_TRUE(delegate()->stored_group_success_);
-    EXPECT_EQ(cache_, group_->newest_complete_cache());
+    EXPECT_EQ(cache_.get(), group_->newest_complete_cache());
 
     AppCacheDatabase::CacheRecord cache_record;
     EXPECT_TRUE(database()->FindCache(1, &cache_record));
@@ -1054,12 +1042,12 @@ class AppCacheStorageImplTest : public testing::Test {
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::FALLBACK, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::FALLBACK, 2));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace2,
                   kEntryUrl2,
                   false));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl,
                   false));
@@ -1132,10 +1120,10 @@ class AppCacheStorageImplTest : public testing::Test {
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::INTERCEPT, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::INTERCEPT, 2));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace2,
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace2,
                   kEntryUrl2, false));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
                   kEntryUrl, false));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
@@ -1202,8 +1190,8 @@ class AppCacheStorageImplTest : public testing::Test {
     MakeCacheAndGroup(kManifestUrl, 2, 1, true);
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::INTERCEPT, 1));
     cache_->intercept_namespaces_.push_back(
-        Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptPatternNamespace,
-                  kEntryUrl, true));
+        AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE,
+            kInterceptPatternNamespace, kEntryUrl, true));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
     std::vector<AppCacheDatabase::NamespaceRecord> intercepts;
@@ -1289,8 +1277,8 @@ class AppCacheStorageImplTest : public testing::Test {
     MakeCacheAndGroup(kManifestUrl, 2, 1, true);
     cache_->AddEntry(kEntryUrl, AppCacheEntry(AppCacheEntry::FALLBACK, 1));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackPatternNamespace,
-                  kEntryUrl, true));
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
+            kFallbackPatternNamespace, kEntryUrl, true));
     AppCacheDatabase::CacheRecord cache_record;
     std::vector<AppCacheDatabase::EntryRecord> entries;
     std::vector<AppCacheDatabase::NamespaceRecord> intercepts;
@@ -1420,7 +1408,7 @@ class AppCacheStorageImplTest : public testing::Test {
     fallback_namespace_record.origin = manifest_url.GetOrigin();
     EXPECT_TRUE(database()->InsertNamespace(&fallback_namespace_record));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl2,
                   false));
@@ -1435,7 +1423,7 @@ class AppCacheStorageImplTest : public testing::Test {
     EXPECT_TRUE(delegate()->found_entry_.IsExplicit());
     EXPECT_FALSE(delegate()->found_fallback_entry_.has_response_id());
 
-    // Conduct another test perferring kManifestUrl
+    // Conduct another test preferring kManifestUrl
     delegate_.reset(new MockStorageDelegate(this));
     PushNextTask(base::Bind(
         &AppCacheStorageImplTest::Verify_FindMainResponseWithMultipleHits2,
@@ -1453,7 +1441,7 @@ class AppCacheStorageImplTest : public testing::Test {
     EXPECT_TRUE(delegate()->found_entry_.IsExplicit());
     EXPECT_FALSE(delegate()->found_fallback_entry_.has_response_id());
 
-    // Conduct the another test perferring kManifestUrl2
+    // Conduct the another test preferring kManifestUrl2
     delegate_.reset(new MockStorageDelegate(this));
     PushNextTask(base::Bind(
         &AppCacheStorageImplTest::Verify_FindMainResponseWithMultipleHits3,
@@ -1535,16 +1523,16 @@ class AppCacheStorageImplTest : public testing::Test {
         AppCacheEntry(AppCacheEntry::EXPLICIT | AppCacheEntry::FOREIGN, 1));
     cache_->AddEntry(kEntryUrl2, AppCacheEntry(AppCacheEntry::FALLBACK, 2));
     cache_->fallback_namespaces_.push_back(
-        Namespace(APPCACHE_FALLBACK_NAMESPACE,
+        AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE,
                   kFallbackNamespace,
                   kEntryUrl2,
                   false));
     cache_->online_whitelist_namespaces_.push_back(
-        Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespace,
+        AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespace,
                   GURL(), false));
     cache_->online_whitelist_namespaces_.push_back(
-        Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceWithinFallback,
-                  GURL(), false));
+        AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE,
+            kOnlineNamespaceWithinFallback, GURL(), false));
 
     AppCacheDatabase::EntryRecord entry_record;
     entry_record.cache_id = 1;
@@ -1622,8 +1610,8 @@ class AppCacheStorageImplTest : public testing::Test {
     explicit MockServiceObserver(AppCacheStorageImplTest* test)
         : test_(test) {}
 
-    virtual void OnServiceReinitialized(
-        AppCacheStorageReference* old_storage_ref) OVERRIDE {
+    void OnServiceReinitialized(
+        AppCacheStorageReference* old_storage_ref) override {
       observed_old_storage_ = old_storage_ref;
       test_->ScheduleNextTask();
     }
@@ -1636,25 +1624,23 @@ class AppCacheStorageImplTest : public testing::Test {
    public:
     MockAppCacheFrontend() : error_event_was_raised_(false) {}
 
-    virtual void OnCacheSelected(
-        int host_id, const AppCacheInfo& info) OVERRIDE {}
-    virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                                 AppCacheStatus status) OVERRIDE {}
-    virtual void OnEventRaised(const std::vector<int>& host_ids,
-                               AppCacheEventID event_id) OVERRIDE {}
-    virtual void OnProgressEventRaised(
-        const std::vector<int>& host_ids,
-        const GURL& url,
-        int num_total, int num_complete) OVERRIDE {}
-    virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                    const AppCacheErrorDetails& details)
-        OVERRIDE {
+    void OnCacheSelected(int host_id, const AppCacheInfo& info) override {}
+    void OnStatusChanged(const std::vector<int>& host_ids,
+                         AppCacheStatus status) override {}
+    void OnEventRaised(const std::vector<int>& host_ids,
+                       AppCacheEventID event_id) override {}
+    void OnProgressEventRaised(const std::vector<int>& host_ids,
+                               const GURL& url,
+                               int num_total,
+                               int num_complete) override {}
+    void OnErrorEventRaised(const std::vector<int>& host_ids,
+                            const AppCacheErrorDetails& details) override {
       error_event_was_raised_ = true;
     }
-    virtual void OnLogMessage(int host_id, AppCacheLogLevel log_level,
-                              const std::string& message) OVERRIDE {}
-    virtual void OnContentBlocked(
-        int host_id, const GURL& manifest_url) OVERRIDE {}
+    void OnLogMessage(int host_id,
+                      AppCacheLogLevel log_level,
+                      const std::string& message) override {}
+    void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
 
     bool error_event_was_raised_;
   };
@@ -1733,10 +1719,9 @@ class AppCacheStorageImplTest : public testing::Test {
     // Recreate the service to point at the db and corruption on disk.
     service_.reset(new AppCacheServiceImpl(NULL));
     service_->set_request_context(io_thread->request_context());
-    service_->Initialize(
-        temp_directory_.path(),
-        db_thread->message_loop_proxy().get(),
-        db_thread->message_loop_proxy().get());
+    service_->Initialize(temp_directory_.path(),
+                         db_thread->task_runner(),
+                         db_thread->task_runner());
     mock_quota_manager_proxy_ = new MockQuotaManagerProxy();
     service_->quota_manager_proxy_ = mock_quota_manager_proxy_;
     delegate_.reset(new MockStorageDelegate(this));
@@ -1791,7 +1776,7 @@ class AppCacheStorageImplTest : public testing::Test {
       AppCacheInterceptor::SetExtraRequestInfo(
           request_.get(), service_.get(),
           backend_->process_id(), host2->host_id(),
-          ResourceType::MAIN_FRAME);
+          RESOURCE_TYPE_MAIN_FRAME);
       request_->Start();
     }
 
@@ -1823,7 +1808,7 @@ class AppCacheStorageImplTest : public testing::Test {
       EXPECT_TRUE(frontend_.error_event_was_raised_);
       AppCacheHost* host1 = backend_->GetHost(1);
       EXPECT_FALSE(host1->associated_cache());
-      EXPECT_FALSE(host1->group_being_updated_);
+      EXPECT_FALSE(host1->group_being_updated_.get());
       EXPECT_TRUE(host1->disabled_storage_reference_.get());
     } else {
       ASSERT_EQ(CORRUPT_CACHE_ON_LOAD_EXISTING, test_case);

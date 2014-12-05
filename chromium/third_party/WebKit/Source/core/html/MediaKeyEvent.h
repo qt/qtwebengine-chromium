@@ -26,24 +26,26 @@
 #ifndef MediaKeyEvent_h
 #define MediaKeyEvent_h
 
+#include "core/dom/DOMTypedArray.h"
 #include "core/events/Event.h"
 #include "core/html/MediaKeyError.h"
 
-namespace WebCore {
+namespace blink {
 
 struct MediaKeyEventInit : public EventInit {
     MediaKeyEventInit();
 
     String keySystem;
     String sessionId;
-    RefPtr<Uint8Array> initData;
-    RefPtr<Uint8Array> message;
+    RefPtr<DOMUint8Array> initData;
+    RefPtr<DOMUint8Array> message;
     String defaultURL;
-    RefPtr<MediaKeyError> errorCode;
+    RefPtrWillBeMember<MediaKeyError> errorCode;
     unsigned short systemCode;
 };
 
-class MediaKeyEvent FINAL : public Event {
+class MediaKeyEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~MediaKeyEvent();
 
@@ -57,18 +59,17 @@ public:
         return adoptRefWillBeNoop(new MediaKeyEvent(type, initializer));
     }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     String keySystem() const { return m_keySystem; }
     String sessionId() const { return m_sessionId; }
-    Uint8Array* initData() const { return m_initData.get(); }
-    Uint8Array* message() const { return m_message.get(); }
+    DOMUint8Array* initData() const { return m_initData.get(); }
+    DOMUint8Array* message() const { return m_message.get(); }
     String defaultURL() const { return m_defaultURL; }
     MediaKeyError* errorCode() const { return m_errorCode.get(); }
-    MediaKeyError* errorCode(bool& isNull) const { isNull = !m_errorCode; return m_errorCode.get(); }
     unsigned short systemCode() const { return m_systemCode; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaKeyEvent();
@@ -76,13 +77,13 @@ private:
 
     String m_keySystem;
     String m_sessionId;
-    RefPtr<Uint8Array> m_initData;
-    RefPtr<Uint8Array> m_message;
+    RefPtr<DOMUint8Array> m_initData;
+    RefPtr<DOMUint8Array> m_message;
     String m_defaultURL;
-    RefPtr<MediaKeyError> m_errorCode;
+    RefPtrWillBeMember<MediaKeyError> m_errorCode;
     unsigned short m_systemCode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // MediaKeyEvent_h

@@ -25,9 +25,7 @@
 #include "config.h"
 #include "public/platform/WebWorkerRunLoop.h"
 
-#include "core/workers/WorkerRunLoop.h"
-
-using namespace WebCore;
+#include "core/workers/WorkerThread.h"
 
 namespace blink {
 
@@ -56,24 +54,25 @@ private:
 
 }
 
-WebWorkerRunLoop::WebWorkerRunLoop(WorkerRunLoop* workerRunLoop)
-    : m_workerRunLoop(workerRunLoop)
+WebWorkerRunLoop::WebWorkerRunLoop(WorkerThread* workerThread)
+    : m_workerThread(workerThread)
 {
 }
 
 bool WebWorkerRunLoop::postTask(Task* task)
 {
-    return m_workerRunLoop->postTask(TaskForwarder::create(adoptPtr(task)));
+    m_workerThread->postTask(TaskForwarder::create(adoptPtr(task)));
+    return !m_workerThread->terminated();
 }
 
 bool WebWorkerRunLoop::equals(const WebWorkerRunLoop& o) const
 {
-    return m_workerRunLoop == o.m_workerRunLoop;
+    return m_workerThread == o.m_workerThread;
 }
 
 bool WebWorkerRunLoop::lessThan(const WebWorkerRunLoop& o) const
 {
-    return m_workerRunLoop < o.m_workerRunLoop;
+    return m_workerThread < o.m_workerThread;
 }
 
-}
+} // namespace blink

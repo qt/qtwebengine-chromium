@@ -29,7 +29,7 @@
 #include "config.h"
 #include "modules/webdatabase/InspectorDatabaseAgent.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/VoidCallback.h"
 #include "core/inspector/InspectorState.h"
@@ -49,9 +49,9 @@
 #include "platform/JSONValues.h"
 #include "wtf/Vector.h"
 
-typedef WebCore::InspectorBackendDispatcher::DatabaseCommandHandler::ExecuteSQLCallback ExecuteSQLCallback;
+typedef blink::InspectorBackendDispatcher::DatabaseCommandHandler::ExecuteSQLCallback ExecuteSQLCallback;
 
-namespace WebCore {
+namespace blink {
 
 namespace DatabaseAgentState {
 static const char databaseAgentEnabled[] = "databaseAgentEnabled";
@@ -67,16 +67,22 @@ void reportTransactionFailed(ExecuteSQLCallback* requestCallback, SQLError* erro
     requestCallback->sendSuccess(nullptr, nullptr, errorObject.release());
 }
 
-class StatementCallback FINAL : public SQLStatementCallback {
+class StatementCallback final : public SQLStatementCallback {
 public:
-    static PassOwnPtr<StatementCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static StatementCallback* create(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptPtr(new StatementCallback(requestCallback));
+        return new StatementCallback(requestCallback);
     }
 
     virtual ~StatementCallback() { }
 
-    virtual bool handleEvent(SQLTransaction*, SQLResultSet* resultSet) OVERRIDE
+    virtual void trace(Visitor* visitor)
+    {
+        visitor->trace(m_requestCallback);
+        SQLStatementCallback::trace(visitor);
+    }
+
+    virtual bool handleEvent(SQLTransaction*, SQLResultSet* resultSet) override
     {
         SQLResultSetRowList* rowList = resultSet->rows();
 
@@ -100,90 +106,108 @@ public:
     }
 
 private:
-    StatementCallback(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    StatementCallback(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
         : m_requestCallback(requestCallback) { }
-    RefPtr<ExecuteSQLCallback> m_requestCallback;
+    RefPtrWillBeMember<ExecuteSQLCallback> m_requestCallback;
 };
 
-class StatementErrorCallback FINAL : public SQLStatementErrorCallback {
+class StatementErrorCallback final : public SQLStatementErrorCallback {
 public:
-    static PassOwnPtr<StatementErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static StatementErrorCallback* create(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptPtr(new StatementErrorCallback(requestCallback));
+        return new StatementErrorCallback(requestCallback);
     }
 
     virtual ~StatementErrorCallback() { }
 
-    virtual bool handleEvent(SQLTransaction*, SQLError* error) OVERRIDE
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_requestCallback);
+        SQLStatementErrorCallback::trace(visitor);
+    }
+
+    virtual bool handleEvent(SQLTransaction*, SQLError* error) override
     {
         reportTransactionFailed(m_requestCallback.get(), error);
         return true;
     }
 
 private:
-    StatementErrorCallback(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    StatementErrorCallback(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
         : m_requestCallback(requestCallback) { }
-    RefPtr<ExecuteSQLCallback> m_requestCallback;
+    RefPtrWillBeMember<ExecuteSQLCallback> m_requestCallback;
 };
 
-class TransactionCallback FINAL : public SQLTransactionCallback {
+class TransactionCallback final : public SQLTransactionCallback {
 public:
-    static PassOwnPtr<TransactionCallback> create(const String& sqlStatement, PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static TransactionCallback* create(const String& sqlStatement, PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptPtr(new TransactionCallback(sqlStatement, requestCallback));
+        return new TransactionCallback(sqlStatement, requestCallback);
     }
 
     virtual ~TransactionCallback() { }
 
-    virtual bool handleEvent(SQLTransaction* transaction) OVERRIDE
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_requestCallback);
+        SQLTransactionCallback::trace(visitor);
+    }
+
+    virtual bool handleEvent(SQLTransaction* transaction) override
     {
         if (!m_requestCallback->isActive())
             return true;
 
         Vector<SQLValue> sqlValues;
-        OwnPtr<SQLStatementCallback> callback(StatementCallback::create(m_requestCallback.get()));
-        OwnPtr<SQLStatementErrorCallback> errorCallback(StatementErrorCallback::create(m_requestCallback.get()));
-        transaction->executeSQL(m_sqlStatement, sqlValues, callback.release(), errorCallback.release(), IGNORE_EXCEPTION);
+        SQLStatementCallback* callback = StatementCallback::create(m_requestCallback.get());
+        SQLStatementErrorCallback* errorCallback = StatementErrorCallback::create(m_requestCallback.get());
+        transaction->executeSQL(m_sqlStatement, sqlValues, callback, errorCallback, IGNORE_EXCEPTION);
         return true;
     }
 private:
-    TransactionCallback(const String& sqlStatement, PassRefPtr<ExecuteSQLCallback> requestCallback)
+    TransactionCallback(const String& sqlStatement, PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
         : m_sqlStatement(sqlStatement)
         , m_requestCallback(requestCallback) { }
     String m_sqlStatement;
-    RefPtr<ExecuteSQLCallback> m_requestCallback;
+    RefPtrWillBeMember<ExecuteSQLCallback> m_requestCallback;
 };
 
-class TransactionErrorCallback FINAL : public SQLTransactionErrorCallback {
+class TransactionErrorCallback final : public SQLTransactionErrorCallback {
 public:
-    static PassOwnPtr<TransactionErrorCallback> create(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    static TransactionErrorCallback* create(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
     {
-        return adoptPtr(new TransactionErrorCallback(requestCallback));
+        return new TransactionErrorCallback(requestCallback);
     }
 
     virtual ~TransactionErrorCallback() { }
 
-    virtual bool handleEvent(SQLError* error) OVERRIDE
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_requestCallback);
+        SQLTransactionErrorCallback::trace(visitor);
+    }
+
+    virtual bool handleEvent(SQLError* error) override
     {
         reportTransactionFailed(m_requestCallback.get(), error);
         return true;
     }
 private:
-    TransactionErrorCallback(PassRefPtr<ExecuteSQLCallback> requestCallback)
+    TransactionErrorCallback(PassRefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback)
         : m_requestCallback(requestCallback) { }
-    RefPtr<ExecuteSQLCallback> m_requestCallback;
+    RefPtrWillBeMember<ExecuteSQLCallback> m_requestCallback;
 };
 
-class TransactionSuccessCallback FINAL : public VoidCallback {
+class TransactionSuccessCallback final : public VoidCallback {
 public:
-    static PassOwnPtr<TransactionSuccessCallback> create()
+    static TransactionSuccessCallback* create()
     {
-        return adoptPtr(new TransactionSuccessCallback());
+        return new TransactionSuccessCallback();
     }
 
     virtual ~TransactionSuccessCallback() { }
 
-    virtual void handleEvent() OVERRIDE { }
+    virtual void handleEvent() override { }
 
 private:
     TransactionSuccessCallback() { }
@@ -191,14 +215,14 @@ private:
 
 } // namespace
 
-void InspectorDatabaseAgent::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
+void InspectorDatabaseAgent::didOpenDatabase(Database* database, const String& domain, const String& name, const String& version)
 {
     if (InspectorDatabaseResource* resource = findByFileName(database->fileName())) {
         resource->setDatabase(database);
         return;
     }
 
-    RefPtrWillBeRawPtr<InspectorDatabaseResource> resource = InspectorDatabaseResource::create(database, domain, name, version);
+    InspectorDatabaseResource* resource = InspectorDatabaseResource::create(database, domain, name, version);
     m_resources.set(resource->id(), resource);
     // Resources are only bound while visible.
     if (m_frontend && m_enabled)
@@ -275,9 +299,9 @@ void InspectorDatabaseAgent::getDatabaseTableNames(ErrorString* error, const Str
     }
 }
 
-void InspectorDatabaseAgent::executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtr<ExecuteSQLCallback> prpRequestCallback)
+void InspectorDatabaseAgent::executeSQL(ErrorString*, const String& databaseId, const String& query, PassRefPtrWillBeRawPtr<ExecuteSQLCallback> prpRequestCallback)
 {
-    RefPtr<ExecuteSQLCallback> requestCallback = prpRequestCallback;
+    RefPtrWillBeRawPtr<ExecuteSQLCallback> requestCallback = prpRequestCallback;
 
     if (!m_enabled) {
         requestCallback->sendFailure("Database agent is not enabled");
@@ -290,10 +314,10 @@ void InspectorDatabaseAgent::executeSQL(ErrorString*, const String& databaseId, 
         return;
     }
 
-    OwnPtr<SQLTransactionCallback> callback(TransactionCallback::create(query, requestCallback.get()));
-    OwnPtr<SQLTransactionErrorCallback> errorCallback(TransactionErrorCallback::create(requestCallback.get()));
-    OwnPtr<VoidCallback> successCallback(TransactionSuccessCallback::create());
-    database->transaction(callback.release(), errorCallback.release(), successCallback.release());
+    SQLTransactionCallback* callback = TransactionCallback::create(query, requestCallback.get());
+    SQLTransactionErrorCallback* errorCallback = TransactionErrorCallback::create(requestCallback.get());
+    VoidCallback* successCallback = TransactionSuccessCallback::create();
+    database->transaction(callback, errorCallback, successCallback);
 }
 
 InspectorDatabaseResource* InspectorDatabaseAgent::findByFileName(const String& fileName)
@@ -313,4 +337,12 @@ Database* InspectorDatabaseAgent::databaseForId(const String& databaseId)
     return it->value->database();
 }
 
-} // namespace WebCore
+void InspectorDatabaseAgent::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_resources);
+#endif
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink

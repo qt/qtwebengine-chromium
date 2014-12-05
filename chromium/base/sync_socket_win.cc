@@ -85,7 +85,7 @@ bool CreatePairImpl(HANDLE* socket_a, HANDLE* socket_b, bool overlapped) {
     return false;
   }
 
-  if (!ConnectNamedPipe(handle_a, NULL)) {
+  if (!ConnectNamedPipe(handle_a.Get(), NULL)) {
     DWORD error = GetLastError();
     if (error != ERROR_PIPE_CONNECTED) {
       DPLOG(ERROR) << "ConnectNamedPipe failed";
@@ -150,25 +150,32 @@ size_t CancelableFileOperation(Function operation,
       if (::GetLastError() == ERROR_IO_PENDING) {
         HANDLE events[] = { io_event->handle(), cancel_event->handle() };
         const int wait_result = WaitForMultipleObjects(
-            ARRAYSIZE_UNSAFE(events), events, FALSE,
-            timeout_in_ms == INFINITE
-                ? timeout_in_ms
-                : (finish_time - current_time).InMilliseconds());
-        if (wait_result == (WAIT_OBJECT_0 + 0)) {
-          GetOverlappedResult(file, &ol, &len, TRUE);
-        } else if (wait_result == (WAIT_OBJECT_0 + 1)) {
-          DVLOG(1) << "Shutdown was signaled. Closing socket.";
+            arraysize(events), events, FALSE,
+            timeout_in_ms == INFINITE ?
+                timeout_in_ms :
+                static_cast<DWORD>(
+                    (finish_time - current_time).InMilliseconds()));
+        if (wait_result != WAIT_OBJECT_0 + 0) {
+          // CancelIo() doesn't synchronously cancel outstanding IO, only marks
+          // outstanding IO for cancellation. We must call GetOverlappedResult()
+          // below to ensure in flight writes complete before returning.
           CancelIo(file);
-          socket->Close();
-          count = 0;
-          break;
-        } else {
-          // Timeout happened.
-          DCHECK_EQ(WAIT_TIMEOUT, wait_result);
-          if (!CancelIo(file))
-            DLOG(WARNING) << "CancelIo() failed";
-          break;
         }
+
+        // We set the |bWait| parameter to TRUE for GetOverlappedResult() to
+        // ensure writes are complete before returning.
+        if (!GetOverlappedResult(file, &ol, &len, TRUE))
+          len = 0;
+
+        if (wait_result == WAIT_OBJECT_0 + 1) {
+          DVLOG(1) << "Shutdown was signaled. Closing socket.";
+          socket->Close();
+          return count;
+        }
+
+        // Timeouts will be handled by the while() condition below since
+        // GetOverlappedResult() may complete successfully after CancelIo().
+        DCHECK(wait_result == WAIT_OBJECT_0 + 0 || wait_result == WAIT_TIMEOUT);
       } else {
         break;
       }
@@ -205,6 +212,23 @@ SyncSocket::~SyncSocket() {
 // static
 bool SyncSocket::CreatePair(SyncSocket* socket_a, SyncSocket* socket_b) {
   return CreatePairImpl(&socket_a->handle_, &socket_b->handle_, false);
+}
+
+// static
+SyncSocket::Handle SyncSocket::UnwrapHandle(
+    const TransitDescriptor& descriptor) {
+  return descriptor;
+}
+
+bool SyncSocket::PrepareTransitDescriptor(ProcessHandle peer_process_handle,
+                                          TransitDescriptor* descriptor) {
+  DCHECK(descriptor);
+  if (!::DuplicateHandle(GetCurrentProcess(), handle(), peer_process_handle,
+                         descriptor, 0, FALSE, DUPLICATE_SAME_ACCESS)) {
+    DPLOG(ERROR) << "Cannot duplicate socket handle for peer process.";
+    return false;
+  }
+  return true;
 }
 
 bool SyncSocket::Close() {
@@ -305,7 +329,8 @@ size_t CancelableSyncSocket::ReceiveWithTimeout(void* buffer,
                                                 TimeDelta timeout) {
   return CancelableFileOperation(
       &ReadFile, handle_, reinterpret_cast<char*>(buffer), length,
-      &file_operation_, &shutdown_event_, this, timeout.InMilliseconds());
+      &file_operation_, &shutdown_event_, this,
+      static_cast<DWORD>(timeout.InMilliseconds()));
 }
 
 // static

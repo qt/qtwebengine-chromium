@@ -31,13 +31,14 @@
 #ifndef Metadata_h
 #define Metadata_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/FileMetadata.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Metadata : public GarbageCollectedFinalized<Metadata>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static Metadata* create(const FileMetadata& platformMetadata)
     {
@@ -57,14 +58,11 @@ public:
 
 private:
     explicit Metadata(const FileMetadata& platformMetadata)
-        : m_platformMetadata(platformMetadata)
-    {
-        ScriptWrappable::init(this);
-    }
+        : m_platformMetadata(platformMetadata) { }
 
     FileMetadata m_platformMetadata;
 };
 
-} // namespace
+} // namespace blink
 
 #endif // Metadata_h

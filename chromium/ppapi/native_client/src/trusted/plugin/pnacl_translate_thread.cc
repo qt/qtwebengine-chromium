@@ -19,8 +19,8 @@ namespace plugin {
 namespace {
 
 template <typename Val>
-nacl::string MakeCommandLineArg(const char* key, const Val val) {
-  nacl::stringstream ss;
+std::string MakeCommandLineArg(const char* key, const Val val) {
+  std::stringstream ss;
   ss << key << val;
   return ss.str();
 }
@@ -30,8 +30,8 @@ void GetLlcCommandLine(Plugin* plugin,
                        size_t obj_files_size,
                        int32_t opt_level,
                        bool is_debug,
-                       const nacl::string &architecture_attributes) {
-  typedef std::vector<nacl::string> Args;
+                       const std::string &architecture_attributes) {
+  typedef std::vector<std::string> Args;
   Args args;
 
   // TODO(dschuff): This CL override is ugly. Change llc to default to
@@ -76,7 +76,7 @@ void PnaclTranslateThread::RunTranslate(
     ErrorInfo* error_info,
     PnaclResources* resources,
     PP_PNaClOptions* pnacl_options,
-    const nacl::string &architecture_attributes,
+    const std::string &architecture_attributes,
     PnaclCoordinator* coordinator,
     Plugin* plugin) {
   PLUGIN_PRINTF(("PnaclStreamingTranslateThread::RunTranslate)\n"));
@@ -111,37 +111,22 @@ void PnaclTranslateThread::RunTranslate(
 }
 
 // Called from main thread to send bytes to the translator.
-void PnaclTranslateThread::PutBytes(std::vector<char>* bytes,
-                                             int count) {
-  PLUGIN_PRINTF(("PutBytes (this=%p, bytes=%p, size=%" NACL_PRIuS
-                 ", count=%d)\n",
-                 this, bytes, bytes ? bytes->size() : 0, count));
-  size_t buffer_size = 0;
-  // If we are done (error or not), Signal the translation thread to stop.
-  if (count <= PP_OK) {
-    NaClXMutexLock(&cond_mu_);
-    done_ = true;
-    NaClXCondVarSignal(&buffer_cond_);
-    NaClXMutexUnlock(&cond_mu_);
-    return;
-  }
-
+void PnaclTranslateThread::PutBytes(const void* bytes, int32_t count) {
   CHECK(bytes != NULL);
-  // Ensure that the buffer we send to the translation thread is the right size
-  // (count can be < the buffer size). This can be done without the lock.
-  buffer_size = bytes->size();
-  bytes->resize(count);
-
   NaClXMutexLock(&cond_mu_);
-
   data_buffers_.push_back(std::vector<char>());
-  bytes->swap(data_buffers_.back()); // Avoid copying the buffer data.
-
+  data_buffers_.back().insert(data_buffers_.back().end(),
+                              static_cast<const char*>(bytes),
+                              static_cast<const char*>(bytes) + count);
   NaClXCondVarSignal(&buffer_cond_);
   NaClXMutexUnlock(&cond_mu_);
+}
 
-  // Ensure the buffer we send back to the coordinator is the expected size
-  bytes->resize(buffer_size);
+void PnaclTranslateThread::EndStream() {
+  NaClXMutexLock(&cond_mu_);
+  done_ = true;
+  NaClXCondVarSignal(&buffer_cond_);
+  NaClXMutexUnlock(&cond_mu_);
 }
 
 void WINAPI PnaclTranslateThread::DoTranslateThread(void* arg) {
@@ -162,13 +147,13 @@ void PnaclTranslateThread::DoTranslate() {
 
   pp::Core* core = pp::Module::Get()->core();
   int64_t llc_start_time = NaClGetTimeOfDayMicroseconds();
-  PP_FileHandle llc_file_handle = resources_->TakeLlcFileHandle();
-  // On success, ownership of llc_file_handle is transferred.
+  PP_NaClFileInfo llc_file_info = resources_->TakeLlcFileInfo();
+  // On success, ownership of llc_file_info is transferred.
   NaClSubprocess* llc_subprocess = plugin_->LoadHelperNaClModule(
-      resources_->GetLlcUrl(), llc_file_handle, &error_info);
+      resources_->GetLlcUrl(), llc_file_info, &error_info);
   if (llc_subprocess == NULL) {
-    if (llc_file_handle != PP_kInvalidFileHandle)
-      CloseFileHandle(llc_file_handle);
+    if (llc_file_info.handle != PP_kInvalidFileHandle)
+      CloseFileHandle(llc_file_info.handle);
     TranslateFailed(PP_NACL_ERROR_PNACL_LLC_SETUP,
                     "Compile process could not be created: " +
                     error_info.message());
@@ -230,8 +215,8 @@ void PnaclTranslateThread::DoTranslate() {
         NACL_SRPC_RESULT_APP_ERROR) {
       // The error message is only present if the error was returned from llc
       TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
-                      nacl::string("Stream init failed: ") +
-                      nacl::string(params.outs()[0]->arrays.str));
+                      std::string("Stream init failed: ") +
+                      std::string(params.outs()[0]->arrays.str));
     } else {
       TranslateFailed(PP_NACL_ERROR_PNACL_LLC_INTERNAL,
                       "Stream init internal error");
@@ -334,15 +319,15 @@ bool PnaclTranslateThread::RunLdSubprocess() {
 
   nacl::DescWrapper* ld_out_file = nexe_file_->write_wrapper();
   int64_t ld_start_time = NaClGetTimeOfDayMicroseconds();
-  PP_FileHandle ld_file_handle = resources_->TakeLdFileHandle();
-  // On success, ownership of ld_file_handle is transferred.
+  PP_NaClFileInfo ld_file_info = resources_->TakeLdFileInfo();
+  // On success, ownership of ld_file_info is transferred.
   nacl::scoped_ptr<NaClSubprocess> ld_subprocess(
-      plugin_->LoadHelperNaClModule(resources_->GetLlcUrl(),
-                                    ld_file_handle,
+      plugin_->LoadHelperNaClModule(resources_->GetLdUrl(),
+                                    ld_file_info,
                                     &error_info));
   if (ld_subprocess.get() == NULL) {
-    if (ld_file_handle != PP_kInvalidFileHandle)
-      CloseFileHandle(ld_file_handle);
+    if (ld_file_info.handle != PP_kInvalidFileHandle)
+      CloseFileHandle(ld_file_info.handle);
     TranslateFailed(PP_NACL_ERROR_PNACL_LD_SETUP,
                     "Link process could not be created: " +
                     error_info.message());
@@ -408,7 +393,7 @@ bool PnaclTranslateThread::RunLdSubprocess() {
 
 void PnaclTranslateThread::TranslateFailed(
     PP_NaClError err_code,
-    const nacl::string& error_string) {
+    const std::string& error_string) {
   PLUGIN_PRINTF(("PnaclTranslateThread::TranslateFailed (error_string='%s')\n",
                  error_string.c_str()));
   pp::Core* core = pp::Module::Get()->core();
@@ -416,7 +401,7 @@ void PnaclTranslateThread::TranslateFailed(
     // Only use our message if one hasn't already been set by the coordinator
     // (e.g. pexe load failed).
     coordinator_error_info_->SetReport(err_code,
-                                       nacl::string("PnaclCoordinator: ") +
+                                       std::string("PnaclCoordinator: ") +
                                        error_string);
   }
   core->CallOnMainThread(0, report_translate_finished_, PP_ERROR_FAILED);

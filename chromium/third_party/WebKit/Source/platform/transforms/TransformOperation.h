@@ -30,7 +30,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 // CSS Transforms (may become part of CSS3)
 
@@ -56,8 +56,6 @@ public:
 
     virtual bool operator==(const TransformOperation&) const = 0;
     bool operator!=(const TransformOperation& o) const { return !(*this == o); }
-
-    virtual bool isIdentity() const = 0;
 
     virtual void apply(TransformationMatrix&, const FloatSize& borderBoxSize) const = 0;
 
@@ -85,6 +83,6 @@ public:
     virtual bool dependsOnBoxSize() const { return false; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TransformOperation_h

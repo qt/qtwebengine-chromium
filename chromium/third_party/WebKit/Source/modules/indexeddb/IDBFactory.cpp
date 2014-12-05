@@ -29,8 +29,8 @@
 #include "config.h"
 #include "modules/indexeddb/IDBFactory.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/IDBBindingUtilities.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/modules/v8/IDBBindingUtilities.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/indexeddb/IDBDatabase.h"
@@ -46,17 +46,12 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebIDBFactory.h"
 
-namespace WebCore {
+namespace blink {
 
 static const char permissionDeniedErrorMessage[] = "The user denied permission to access the database.";
 
 IDBFactory::IDBFactory(IndexedDBClient* permissionClient)
     : m_permissionClient(permissionClient)
-{
-    ScriptWrappable::init(this);
-}
-
-IDBFactory::~IDBFactory()
 {
 }
 
@@ -92,7 +87,7 @@ IDBRequest* IDBFactory::getDatabaseNames(ScriptState* scriptState, ExceptionStat
         return request;
     }
 
-    blink::Platform::current()->idbFactory()->getDatabaseNames(WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
+    Platform::current()->idbFactory()->getDatabaseNames(WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
     return request;
 }
 
@@ -108,7 +103,7 @@ IDBOpenDBRequest* IDBFactory::open(ScriptState* scriptState, const String& name,
 
 IDBOpenDBRequest* IDBFactory::openInternal(ScriptState* scriptState, const String& name, int64_t version, ExceptionState& exceptionState)
 {
-    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
+    Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBOpenCall, IDBMethodsMax);
     ASSERT(version >= 1 || version == IDBDatabaseMetadata::NoIntVersion);
     if (name.isNull()) {
         exceptionState.throwTypeError("The name provided must not be empty.");
@@ -130,7 +125,7 @@ IDBOpenDBRequest* IDBFactory::openInternal(ScriptState* scriptState, const Strin
         return request;
     }
 
-    blink::Platform::current()->idbFactory()->open(name, version, transactionId, WebIDBCallbacksImpl::create(request).leakPtr(), WebIDBDatabaseCallbacksImpl::create(databaseCallbacks).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
+    Platform::current()->idbFactory()->open(name, version, transactionId, WebIDBCallbacksImpl::create(request).leakPtr(), WebIDBDatabaseCallbacksImpl::create(databaseCallbacks).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
     return request;
 }
 
@@ -143,7 +138,7 @@ IDBOpenDBRequest* IDBFactory::open(ScriptState* scriptState, const String& name,
 IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBFactory::deleteDatabase");
-    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
+    Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteDatabaseCall, IDBMethodsMax);
     if (name.isNull()) {
         exceptionState.throwTypeError("The name provided must not be empty.");
         return 0;
@@ -162,7 +157,7 @@ IDBOpenDBRequest* IDBFactory::deleteDatabase(ScriptState* scriptState, const Str
         return request;
     }
 
-    blink::Platform::current()->idbFactory()->deleteDatabase(name, WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
+    Platform::current()->idbFactory()->deleteDatabase(name, WebIDBCallbacksImpl::create(request).leakPtr(), createDatabaseIdentifierFromSecurityOrigin(scriptState->executionContext()->securityOrigin()));
     return request;
 }
 
@@ -182,4 +177,4 @@ short IDBFactory::cmp(ScriptState* scriptState, const ScriptValue& firstValue, c
     return static_cast<short>(first->compare(second));
 }
 
-} // namespace WebCore
+} // namespace blink

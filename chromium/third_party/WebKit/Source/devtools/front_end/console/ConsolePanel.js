@@ -26,9 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-importScript("ConsoleViewMessage.js");
-importScript("ConsoleView.js");
-
 /**
  * @constructor
  * @extends {WebInspector.Panel}
@@ -45,7 +42,7 @@ WebInspector.ConsolePanel = function()
 WebInspector.ConsolePanel._view = function()
 {
     if (!WebInspector.ConsolePanel._consoleView)
-        WebInspector.ConsolePanel._consoleView = new WebInspector.ConsoleView(!Capabilities.isMainFrontend);
+        WebInspector.ConsolePanel._consoleView = new WebInspector.ConsoleView();
 
     return WebInspector.ConsolePanel._consoleView;
 }
@@ -130,17 +127,49 @@ WebInspector.ConsolePanel.ConsoleRevealer = function()
 WebInspector.ConsolePanel.ConsoleRevealer.prototype = {
     /**
      * @param {!Object} object
+     * @return {!Promise}
      */
     reveal: function(object)
     {
-        if (!(object instanceof WebInspector.ConsoleModel))
-            return;
-
         var consoleView = WebInspector.ConsolePanel._view();
         if (consoleView.isShowing()) {
             consoleView.focus();
-            return;
+            return Promise.resolve();
         }
         WebInspector.inspectorView.showViewInDrawer("console");
+        return Promise.resolve();
+    }
+}
+
+WebInspector.ConsolePanel.show = function()
+{
+    WebInspector.inspectorView.setCurrentPanel(WebInspector.ConsolePanel._instance());
+}
+
+/**
+ * @return {!WebInspector.ConsolePanel}
+ */
+WebInspector.ConsolePanel._instance = function()
+{
+    if (!WebInspector.ConsolePanel._instanceObject)
+        WebInspector.ConsolePanel._instanceObject = new WebInspector.ConsolePanel();
+    return WebInspector.ConsolePanel._instanceObject;
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.PanelFactory}
+ */
+WebInspector.ConsolePanelFactory = function()
+{
+}
+
+WebInspector.ConsolePanelFactory.prototype = {
+    /**
+     * @return {!WebInspector.Panel}
+     */
+    createPanel: function()
+    {
+        return WebInspector.ConsolePanel._instance();
     }
 }

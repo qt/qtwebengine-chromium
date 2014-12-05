@@ -22,6 +22,9 @@ class PListStringsWriter(template_writer.TemplateWriter):
   [lang].lproj subdirectories of the manifest bundle.
   '''
 
+  def WriteComment(self, comment):
+    self._out.append('/* ' + comment + ' */' )
+
   def _AddToStringTable(self, item_name, caption, desc):
     '''Add a title and a description of an item to the string table.
 
@@ -52,7 +55,7 @@ class PListStringsWriter(template_writer.TemplateWriter):
     if policy['type'] == 'external':
       # This type can only be set through cloud policy.
       return
-    elif policy['type'] in ('int-enum','string-enum'):
+    elif policy['type'] in ('int-enum','string-enum', 'string-enum-list'):
       # Append the captions of enum items to the description string.
       item_descs = []
       for item in policy['items']:
@@ -63,6 +66,9 @@ class PListStringsWriter(template_writer.TemplateWriter):
 
   def BeginTemplate(self):
     app_name = plist_helper.GetPlistFriendlyName(self.config['app_name'])
+    if self._GetChromiumVersionString() is not None:
+      self.WriteComment(self.config['build'] + ''' version: ''' + \
+          self._GetChromiumVersionString())
     self._AddToStringTable(
         app_name,
         self.config['app_name'],

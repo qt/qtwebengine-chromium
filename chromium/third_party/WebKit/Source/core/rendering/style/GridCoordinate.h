@@ -36,7 +36,10 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
+
+// Recommended maximum size for both explicit and implicit grids.
+const size_t kGridMaxTracks = 1000000;
 
 // A span in a single direction (either rows or columns). Note that |resolvedInitialPosition|
 // and |resolvedFinalPosition| are grid areas' indexes, NOT grid lines'. Iterating over the
@@ -103,8 +106,8 @@ struct GridSpan {
     }
 
     GridSpan(const GridResolvedPosition& resolvedInitialPosition, const GridResolvedPosition& resolvedFinalPosition)
-        : resolvedInitialPosition(resolvedInitialPosition)
-        , resolvedFinalPosition(resolvedFinalPosition)
+        : resolvedInitialPosition(std::min(resolvedInitialPosition.toInt(), kGridMaxTracks - 1))
+        , resolvedFinalPosition(std::min(resolvedFinalPosition.toInt(), kGridMaxTracks))
     {
         ASSERT(resolvedInitialPosition <= resolvedFinalPosition);
     }
@@ -182,6 +185,6 @@ struct GridCoordinate {
 
 typedef HashMap<String, GridCoordinate> NamedGridAreaMap;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GridCoordinate_h

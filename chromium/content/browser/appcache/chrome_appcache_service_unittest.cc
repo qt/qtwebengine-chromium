@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
+#include "content/browser/appcache/appcache_database.h"
+#include "content/browser/appcache/appcache_storage_impl.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/resource_context.h"
@@ -15,8 +17,6 @@
 #include "content/test/appcache_test_helper.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache_database.h"
-#include "webkit/browser/appcache/appcache_storage_impl.h"
 
 #include <set>
 
@@ -39,17 +39,15 @@ class MockURLRequestContextGetter : public net::URLRequestContextGetter {
       : context_(context), message_loop_proxy_(message_loop_proxy) {
   }
 
-  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
-    return context_;
-  }
+  net::URLRequestContext* GetURLRequestContext() override { return context_; }
 
-  virtual scoped_refptr<base::SingleThreadTaskRunner>
-      GetNetworkTaskRunner() const OVERRIDE {
+  scoped_refptr<base::SingleThreadTaskRunner> GetNetworkTaskRunner()
+      const override {
     return message_loop_proxy_;
   }
 
  protected:
-  virtual ~MockURLRequestContextGetter() {}
+  ~MockURLRequestContextGetter() override {}
 
  private:
   net::URLRequestContext* context_;
@@ -116,8 +114,8 @@ ChromeAppCacheServiceTest::CreateAppCacheServiceImpl(
   // Steps needed to initialize the storage of AppCache data.
   message_loop_.RunUntilIdle();
   if (init_storage) {
-    appcache::AppCacheStorageImpl* storage =
-        static_cast<appcache::AppCacheStorageImpl*>(
+    AppCacheStorageImpl* storage =
+        static_cast<AppCacheStorageImpl*>(
             appcache_service->storage());
     storage->database_->db_connection();
     storage->disk_cache();

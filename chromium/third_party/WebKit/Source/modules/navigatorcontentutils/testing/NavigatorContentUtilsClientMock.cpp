@@ -6,17 +6,16 @@
 #include "NavigatorContentUtilsClientMock.h"
 
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
-void NavigatorContentUtilsClientMock::registerProtocolHandler(const String& scheme, const WebCore::KURL& baseURL,
-    const WebCore::KURL& url, const String& title)
+void NavigatorContentUtilsClientMock::registerProtocolHandler(const String& scheme,
+    const KURL& url, const String& title)
 {
     ProtocolInfo info;
     info.scheme = scheme;
-    info.baseURL = baseURL;
     info.url = url;
     info.title = title;
 
@@ -24,7 +23,7 @@ void NavigatorContentUtilsClientMock::registerProtocolHandler(const String& sche
 }
 
 NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientMock::isProtocolHandlerRegistered(const String& scheme,
-    const WebCore::KURL& baseURL, const WebCore::KURL& url)
+    const KURL& url)
 {
     // "declined" state is checked by NavigatorContentUtils::isProtocolHandlerRegistered() before calling this function.
     if (m_protocolMap.contains(scheme))
@@ -33,10 +32,10 @@ NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientMock
     return NavigatorContentUtilsClient::CustomHandlersNew;
 }
 
-void NavigatorContentUtilsClientMock::unregisterProtocolHandler(const String& scheme, const WebCore::KURL& baseURL,
-    const WebCore::KURL& url)
+void NavigatorContentUtilsClientMock::unregisterProtocolHandler(const String& scheme,
+    const KURL& url)
 {
     m_protocolMap.remove(scheme);
 }
 
-} // WebCore
+} // namespace blink

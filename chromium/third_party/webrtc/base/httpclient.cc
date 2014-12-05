@@ -18,6 +18,7 @@
 #include "webrtc/base/httpclient.h"
 #include "webrtc/base/logging.h"
 #include "webrtc/base/pathutils.h"
+#include "webrtc/base/scoped_ptr.h"
 #include "webrtc/base/socketstream.h"
 #include "webrtc/base/stringencode.h"
 #include "webrtc/base/stringutils.h"
@@ -91,7 +92,7 @@ HttpCacheState HttpGetCacheState(const HttpTransaction& t) {
   time_t u_temp;
 
   // Current time
-  size_t now = time(0);
+  time_t now = time(0);
 
   HttpAttributeList cache_control;
   if (t.response.hasHeader(HH_CACHE_CONTROL, &s_temp)) {
@@ -113,7 +114,7 @@ HttpCacheState HttpGetCacheState(const HttpTransaction& t) {
     apparent_age = response_time - date;
   }
 
-  size_t corrected_received_age = apparent_age;
+  time_t corrected_received_age = apparent_age;
   size_t i_temp;
   if (t.response.hasHeader(HH_AGE, &s_temp)
       && HttpStringToUInt(s_temp, (&i_temp))) {
@@ -121,13 +122,13 @@ HttpCacheState HttpGetCacheState(const HttpTransaction& t) {
     corrected_received_age = stdmax(apparent_age, u_temp);
   }
 
-  size_t response_delay = response_time - request_time;
-  size_t corrected_initial_age = corrected_received_age + response_delay;
-  size_t resident_time = now - response_time;
-  size_t current_age = corrected_initial_age + resident_time;
+  time_t response_delay = response_time - request_time;
+  time_t corrected_initial_age = corrected_received_age + response_delay;
+  time_t resident_time = now - response_time;
+  time_t current_age = corrected_initial_age + resident_time;
 
   // Compute lifetime of document
-  size_t lifetime;
+  time_t lifetime;
   if (HttpHasAttribute(cache_control, "max-age", &s_temp)) {
     lifetime = atoi(s_temp.c_str());
   } else if (t.response.hasHeader(HH_EXPIRES, &s_temp)
@@ -596,8 +597,10 @@ HttpError HttpClient::ReadCacheBody(const std::string& id) {
   if ((HE_NONE == error)
       && (HV_HEAD != request().verb)
       && response().document) {
-    char buffer[1024 * 64];
-    StreamResult result = Flow(stream.get(), buffer, ARRAY_SIZE(buffer),
+    // Allocate on heap to not explode the stack.
+    const int array_size = 1024 * 64;
+    scoped_ptr<char[]> buffer(new char[array_size]);
+    StreamResult result = Flow(stream.get(), buffer.get(), array_size,
                                response().document.get());
     if (SR_SUCCESS != result) {
       error = HE_STREAM;

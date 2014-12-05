@@ -7,8 +7,8 @@
 
 #include "base/memory/ref_counted.h"
 #include "ipc/ipc_sync_message_filter.h"
+#include "storage/common/database/database_connections.h"
 #include "third_party/WebKit/public/platform/WebDatabaseObserver.h"
-#include "webkit/common/database/database_connections.h"
 
 namespace content {
 
@@ -31,32 +31,26 @@ class WebDatabaseObserverImpl : public blink::WebDatabaseObserver {
   virtual void reportOpenDatabaseResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int callsite, int websql_error, int sqlite_error);
   virtual void reportChangeVersionResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int callsite, int websql_error, int sqlite_error);
   virtual void reportStartTransactionResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int callsite, int websql_error, int sqlite_error);
   virtual void reportCommitTransactionResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int callsite, int websql_error, int sqlite_error);
   virtual void reportExecuteStatementResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int callsite, int websql_error, int sqlite_error);
   virtual void reportVacuumDatabaseResult(
       const blink::WebString& origin_identifier,
       const blink::WebString& database_name,
-      bool is_sync_database,
       int sqlite_error);
 
   void WaitForAllDatabasesToClose();
@@ -67,7 +61,7 @@ class WebDatabaseObserverImpl : public blink::WebDatabaseObserver {
                          int error);
 
   scoped_refptr<IPC::SyncMessageFilter> sender_;
-  scoped_refptr<webkit_database::DatabaseConnectionsWrapper> open_connections_;
+  scoped_refptr<storage::DatabaseConnectionsWrapper> open_connections_;
 
   DISALLOW_COPY_AND_ASSIGN(WebDatabaseObserverImpl);
 };

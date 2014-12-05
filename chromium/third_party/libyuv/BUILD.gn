@@ -69,12 +69,18 @@ source_set("libyuv") {
     "source/video_common.cc",
   ]
 
-  direct_dependent_configs = [ ":libyuv_config" ]
+  public_configs = [ ":libyuv_config" ]
 
   defines = []
 
   if (!is_ios) {
     defines += [ "HAVE_JPEG" ]
+  }
+
+  if (is_msan) {
+    # MemorySanitizer does not support assembly code yet.
+    # http://crbug.com/344505
+    defines += [ "LIBYUV_DISABLE_X86" ]
   }
 
   deps = [

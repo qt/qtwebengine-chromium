@@ -21,7 +21,7 @@
 #include "config.h"
 #include "core/css/CSSPrimitiveValue.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/css/CSSBasicShapes.h"
 #include "core/css/CSSCalculationValue.h"
 #include "core/css/CSSHelper.h"
@@ -44,7 +44,7 @@
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 // Max/min values for CSS, needs to slightly smaller/larger than the true max/min values to allow for rounding without overflowing.
 // Subtract two (rather than one) to allow for values to be converted to float and back without exceeding the LayoutUnit::max.
@@ -95,9 +95,6 @@ static inline bool isValidCSSUnitTypeForDoubleConversion(CSSPrimitiveValue::Unit
     case CSSPrimitiveValue::CSS_VALUE_ID:
     case CSSPrimitiveValue::CSS_PAIR:
     case CSSPrimitiveValue::CSS_PARSER_HEXCOLOR:
-    case CSSPrimitiveValue::CSS_PARSER_IDENTIFIER:
-    case CSSPrimitiveValue::CSS_PARSER_INTEGER:
-    case CSSPrimitiveValue::CSS_PARSER_OPERATOR:
     case CSSPrimitiveValue::CSS_RECT:
     case CSSPrimitiveValue::CSS_QUAD:
     case CSSPrimitiveValue::CSS_RGBCOLOR:
@@ -138,11 +135,14 @@ StringToUnitTable createStringToUnitTable()
     table.set(String("dppx"), CSSPrimitiveValue::CSS_DPPX);
     table.set(String("vw"), CSSPrimitiveValue::CSS_VW);
     table.set(String("vh"), CSSPrimitiveValue::CSS_VH);
-    table.set(String("vmax"), CSSPrimitiveValue::CSS_VMIN);
-    table.set(String("vmin"), CSSPrimitiveValue::CSS_VMAX);
+    table.set(String("vmin"), CSSPrimitiveValue::CSS_VMIN);
+    table.set(String("vmax"), CSSPrimitiveValue::CSS_VMAX);
+    table.set(String("rem"), CSSPrimitiveValue::CSS_REMS);
+    table.set(String("fr"), CSSPrimitiveValue::CSS_FR);
+    table.set(String("turn"), CSSPrimitiveValue::CSS_TURN);
+    table.set(String("ch"), CSSPrimitiveValue::CSS_CHS);
     return table;
 }
-
 
 CSSPrimitiveValue::UnitType CSSPrimitiveValue::fromName(const String& unit)
 {
@@ -216,6 +216,10 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::primitiveType() const
         return static_cast<UnitType>(m_primitiveUnitType);
 
     switch (m_value.calc->category()) {
+    case CalcAngle:
+        return CSS_DEG;
+    case CalcFrequency:
+        return CSS_HZ;
     case CalcNumber:
         return CSS_NUMBER;
     case CalcPercent:
@@ -226,6 +230,8 @@ CSSPrimitiveValue::UnitType CSSPrimitiveValue::primitiveType() const
         return CSS_CALC_PERCENTAGE_WITH_NUMBER;
     case CalcPercentLength:
         return CSS_CALC_PERCENTAGE_WITH_LENGTH;
+    case CalcTime:
+        return CSS_MS;
     case CalcOther:
         return CSS_UNKNOWN;
     }
@@ -272,14 +278,6 @@ CSSPrimitiveValue::CSSPrimitiveValue(CSSPropertyID propertyID)
     m_value.propertyID = propertyID;
 }
 
-CSSPrimitiveValue::CSSPrimitiveValue(int parserOperator, UnitType type)
-    : CSSValue(PrimitiveClass)
-{
-    ASSERT(type == CSS_PARSER_OPERATOR);
-    m_primitiveUnitType = CSS_PARSER_OPERATOR;
-    m_value.parserOperator = parserOperator;
-}
-
 CSSPrimitiveValue::CSSPrimitiveValue(double num, UnitType type)
     : CSSValue(PrimitiveClass)
 {
@@ -292,7 +290,8 @@ CSSPrimitiveValue::CSSPrimitiveValue(const String& str, UnitType type)
     : CSSValue(PrimitiveClass)
 {
     m_primitiveUnitType = type;
-    if ((m_value.string = str.impl()))
+    m_value.string = str.impl();
+    if (m_value.string)
         m_value.string->ref();
 }
 
@@ -376,7 +375,7 @@ CSSPrimitiveValue::CSSPrimitiveValue(const Length& length, float zoom)
     }
     case DeviceWidth:
     case DeviceHeight:
-    case Undefined:
+    case MaxSizeNone:
         ASSERT_NOT_REACHED();
         break;
     }
@@ -488,7 +487,6 @@ void CSSPrimitiveValue::cleanup()
 #endif
         break;
     case CSS_NUMBER:
-    case CSS_PARSER_INTEGER:
     case CSS_PERCENTAGE:
     case CSS_EMS:
     case CSS_EXS:
@@ -521,8 +519,6 @@ void CSSPrimitiveValue::cleanup()
     case CSS_DIMENSION:
     case CSS_UNKNOWN:
     case CSS_UNICODE_RANGE:
-    case CSS_PARSER_OPERATOR:
-    case CSS_PARSER_IDENTIFIER:
     case CSS_PROPERTY_ID:
     case CSS_VALUE_ID:
         break;
@@ -534,9 +530,23 @@ void CSSPrimitiveValue::cleanup()
     }
 }
 
+double CSSPrimitiveValue::computeSeconds()
+{
+    ASSERT(isTime() || (isCalculated() && cssCalcValue()->category() == CalcTime));
+    UnitType currentType = isCalculated() ? cssCalcValue()->expressionNode()->primitiveType() : static_cast<UnitType>(m_primitiveUnitType);
+    if (currentType == CSS_S)
+        return getDoubleValue();
+    if (currentType == CSS_MS)
+        return getDoubleValue() / 1000;
+    ASSERT_NOT_REACHED();
+    return 0;
+}
+
 double CSSPrimitiveValue::computeDegrees()
 {
-    switch (m_primitiveUnitType) {
+    ASSERT(isAngle() || (isCalculated() && cssCalcValue()->category() == CalcAngle));
+    UnitType currentType = isCalculated() ? cssCalcValue()->expressionNode()->primitiveType() : static_cast<UnitType>(m_primitiveUnitType);
+    switch (currentType) {
     case CSS_DEG:
         return getDoubleValue();
     case CSS_RAD:
@@ -1035,7 +1045,6 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
 {
     switch (type) {
     case CSS_NUMBER:
-    case CSS_PARSER_INTEGER:
         return "";
     case CSS_PERCENTAGE:
         return "%";
@@ -1105,8 +1114,6 @@ const char* CSSPrimitiveValue::unitTypeToString(UnitType type)
     case CSS_RGBCOLOR:
     case CSS_PARSER_HEXCOLOR:
     case CSS_PAIR:
-    case CSS_PARSER_OPERATOR:
-    case CSS_PARSER_IDENTIFIER:
     case CSS_CALC:
     case CSS_SHAPE:
     case CSS_IDENT:
@@ -1135,7 +1142,6 @@ String CSSPrimitiveValue::customCSSText(CSSTextFormattingFlags formattingFlag) c
             // FIXME
             break;
         case CSS_NUMBER:
-        case CSS_PARSER_INTEGER:
         case CSS_PERCENTAGE:
         case CSS_EMS:
         case CSS_EXS:
@@ -1234,14 +1240,6 @@ String CSSPrimitiveValue::customCSSText(CSSTextFormattingFlags formattingFlag) c
         case CSS_PAIR:
             text = getPairValue()->cssText();
             break;
-        case CSS_PARSER_OPERATOR: {
-            char c = static_cast<char>(m_value.parserOperator);
-            text = String(&c, 1U);
-            break;
-        }
-        case CSS_PARSER_IDENTIFIER:
-            text = quoteCSSStringIfNeeded(m_value.string);
-            break;
         case CSS_CALC:
             text = m_value.calc->cssText();
             break;
@@ -1289,7 +1287,6 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() con
         result = CSSPrimitiveValue::create(m_value.shape);
         break;
     case CSS_NUMBER:
-    case CSS_PARSER_INTEGER:
     case CSS_PERCENTAGE:
     case CSS_EMS:
     case CSS_EXS:
@@ -1330,8 +1327,6 @@ PassRefPtrWillBeRawPtr<CSSPrimitiveValue> CSSPrimitiveValue::cloneForCSSOM() con
         break;
     case CSS_DIMENSION:
     case CSS_UNKNOWN:
-    case CSS_PARSER_OPERATOR:
-    case CSS_PARSER_IDENTIFIER:
     case CSS_PARSER_HEXCOLOR:
         ASSERT_NOT_REACHED();
         break;
@@ -1351,7 +1346,6 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case CSS_UNKNOWN:
         return false;
     case CSS_NUMBER:
-    case CSS_PARSER_INTEGER:
     case CSS_PERCENTAGE:
     case CSS_EMS:
     case CSS_EXS:
@@ -1388,7 +1382,6 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
     case CSS_URI:
     case CSS_ATTR:
     case CSS_COUNTER_NAME:
-    case CSS_PARSER_IDENTIFIER:
     case CSS_PARSER_HEXCOLOR:
         return equal(m_value.string, other.m_value.string);
     case CSS_COUNTER:
@@ -1401,8 +1394,6 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
         return m_value.rgbcolor == other.m_value.rgbcolor;
     case CSS_PAIR:
         return m_value.pair && other.m_value.pair && m_value.pair->equals(*other.m_value.pair);
-    case CSS_PARSER_OPERATOR:
-        return m_value.parserOperator == other.m_value.parserOperator;
     case CSS_CALC:
         return m_value.calc && other.m_value.calc && m_value.calc->equals(*other.m_value.calc);
     case CSS_SHAPE:
@@ -1413,6 +1404,7 @@ bool CSSPrimitiveValue::equals(const CSSPrimitiveValue& other) const
 
 void CSSPrimitiveValue::traceAfterDispatch(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     switch (m_primitiveUnitType) {
     case CSS_COUNTER:
         visitor->trace(m_value.counter);
@@ -1435,7 +1427,8 @@ void CSSPrimitiveValue::traceAfterDispatch(Visitor* visitor)
     default:
         break;
     }
+#endif
     CSSValue::traceAfterDispatch(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

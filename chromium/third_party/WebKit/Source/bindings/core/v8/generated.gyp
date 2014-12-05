@@ -10,6 +10,7 @@
   'includes': [
     # ../../.. == Source
     '../../../bindings/bindings.gypi',
+    '../../../bindings/core/core.gypi',
     '../../../bindings/core/generated.gypi',
     '../../../bindings/core/idl.gypi',
     # FIXME: need info about modules IDL files because some core IDL files
@@ -51,16 +52,14 @@
       'msvs_external_rule': 1,
       'inputs': [
         '<@(idl_lexer_parser_files)',  # to be explicit (covered by parsetab)
+        '<@(idl_cache_files)',
         '<@(idl_compiler_files)',
-        '<(bindings_scripts_output_dir)/lextab.py',
-        '<(bindings_scripts_output_dir)/parsetab.pickle',
-        '<(bindings_scripts_output_dir)/cached_jinja_templates.stamp',
         '<(bindings_dir)/IDLExtendedAttributes.txt',
         # If the dependency structure or public interface info (e.g.,
         # [ImplementedAs]) changes, we rebuild all files, since we're not
         # computing dependencies file-by-file in the build.
         # This data is generally stable.
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
         # Further, if any dependency (partial interface or implemented
         # interface) changes, rebuild everything, since every IDL potentially
         # depends on them, because we're not computing dependencies
@@ -80,14 +79,13 @@
       # Update that regex if command line changes (other than changing flags)
       'action': [
         'python',
-        '-S',  # skip 'import site' to speed up startup
         '<(bindings_scripts_dir)/idl_compiler.py',
         '--cache-dir',
         '<(bindings_scripts_output_dir)',
         '--output-dir',
         '<(bindings_core_v8_output_dir)',
         '--interfaces-info',
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
         '--write-file-only-if-changed',
         '<(write_file_only_if_changed)',
         '<(RULE_INPUT_PATH)',
@@ -122,10 +120,72 @@
   },
 ################################################################################
   {
+    # GN version: //third_party/WebKit/Source/bindings/core/v8:bindings_core_impl_generated
+    # http://crbug.com/358074; See comments on
+    # 'bindings_core_v8_generated_individual' target
+    'target_name': 'bindings_core_impl_generated',
+    'type': 'none',
+    'hard_dependency': 1,
+    'dependencies': [
+      '<(bindings_scripts_dir)/scripts.gyp:cached_jinja_templates',
+      '<(bindings_scripts_dir)/scripts.gyp:cached_lex_yacc_tables',
+      '../../core/generated.gyp:interfaces_info_individual_core',
+      '../../modules/generated.gyp:interfaces_info',
+    ],
+    'sources': [
+      '<@(core_dictionary_idl_files)',
+      '<@(core_testing_dictionary_idl_files)',
+    ],
+    'actions': [{
+      'action_name': 'idl_dictionary',
+      # Mark as explicit idl action to prevent MSVS emulation on Windows.
+      'explicit_idl_action': 1,
+      'msvs_cygwin_shell': 0,
+      'inputs': [
+        '<@(core_dictionary_idl_files)',
+        '<@(core_testing_dictionary_idl_files)',
+        '<@(idl_lexer_parser_files)',
+        '<@(idl_cache_files)',
+        '<@(idl_compiler_files)',
+        '<(bindings_dir)/IDLExtendedAttributes.txt',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
+      ],
+      'outputs': [
+        '<@(bindings_core_v8_generated_union_type_files)',
+        '<@(generated_core_dictionary_files)',
+        '<@(generated_core_testing_dictionary_files)',
+      ],
+      'action': [
+        'python',
+        '<(bindings_scripts_dir)/idl_compiler.py',
+        '--cache-dir',
+        '<(bindings_scripts_output_dir)',
+        '--output-dir',
+        '<(bindings_core_v8_output_dir)',
+        '--impl-output-dir',
+        '<(SHARED_INTERMEDIATE_DIR)/blink/',
+        '--interfaces-info',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
+        '--component-info',
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
+        '--target-component',
+        'core',
+        '--write-file-only-if-changed',
+        '<(write_file_only_if_changed)',
+        '--generate-impl',
+        '<(core_dictionary_idl_files_list)',
+      ],
+      'message': 'Generating core IDL dictionary impl classes',
+    }],
+  },
+################################################################################
+  {
     # GN version: //third_party/WebKit/Source/bindings/core/v8:bindings_core_v8_generated
     'target_name': 'bindings_core_v8_generated',
     'type': 'none',
     'dependencies': [
+      'bindings_core_impl_generated',
       'bindings_core_v8_generated_aggregate',
       'bindings_core_v8_generated_individual',
     ],

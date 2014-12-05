@@ -10,6 +10,7 @@
 #include <cmath>
 
 #include "base/timer/timer.h"
+#include "ui/events/gesture_detection/gesture_listeners.h"
 #include "ui/events/gesture_detection/motion_event.h"
 
 namespace ui {
@@ -52,66 +53,11 @@ GestureDetector::Config::Config()
       maximum_swipe_deviation_angle(20.f),
       two_finger_tap_enabled(false),
       two_finger_tap_max_separation(300),
-      two_finger_tap_timeout(base::TimeDelta::FromMilliseconds(700)) {
+      two_finger_tap_timeout(base::TimeDelta::FromMilliseconds(700)),
+      velocity_tracker_strategy(VelocityTracker::Strategy::STRATEGY_DEFAULT) {
 }
 
 GestureDetector::Config::~Config() {}
-
-bool GestureDetector::SimpleGestureListener::OnDown(const MotionEvent& e) {
-  return false;
-}
-
-void GestureDetector::SimpleGestureListener::OnShowPress(const MotionEvent& e) {
-}
-
-bool GestureDetector::SimpleGestureListener::OnSingleTapUp(
-    const MotionEvent& e) {
-  return false;
-}
-
-void GestureDetector::SimpleGestureListener::OnLongPress(const MotionEvent& e) {
-}
-
-bool GestureDetector::SimpleGestureListener::OnScroll(const MotionEvent& e1,
-                                                      const MotionEvent& e2,
-                                                      float distance_x,
-                                                      float distance_y) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnFling(const MotionEvent& e1,
-                                                     const MotionEvent& e2,
-                                                     float velocity_x,
-                                                     float velocity_y) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnSwipe(const MotionEvent& e1,
-                                                     const MotionEvent& e2,
-                                                     float velocity_x,
-                                                     float velocity_y) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnTwoFingerTap(
-    const MotionEvent& e1,
-    const MotionEvent& e2) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnSingleTapConfirmed(
-    const MotionEvent& e) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnDoubleTap(const MotionEvent& e) {
-  return false;
-}
-
-bool GestureDetector::SimpleGestureListener::OnDoubleTapEvent(
-    const MotionEvent& e) {
-  return false;
-}
 
 class GestureDetector::TimeoutGestureHandler {
  public:
@@ -187,8 +133,10 @@ GestureDetector::GestureDetector(
       down_focus_x_(0),
       down_focus_y_(0),
       longpress_enabled_(true),
+      showpress_enabled_(true),
       swipe_enabled_(false),
-      two_finger_tap_enabled_(false) {
+      two_finger_tap_enabled_(false),
+      velocity_tracker_(config.velocity_tracker_strategy) {
   DCHECK(listener_);
   Init(config);
 }
@@ -315,7 +263,8 @@ bool GestureDetector::OnTouchEvent(const MotionEvent& ev) {
 
       // Always start the SHOW_PRESS timer before the LONG_PRESS timer to ensure
       // proper timeout ordering.
-      timeout_handler_->StartTimeout(SHOW_PRESS);
+      if (showpress_enabled_)
+        timeout_handler_->StartTimeout(SHOW_PRESS);
       if (longpress_enabled_)
         timeout_handler_->StartTimeout(LONG_PRESS);
       handled |= listener_->OnDown(ev);

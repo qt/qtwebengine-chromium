@@ -31,23 +31,24 @@
 #ifndef LayerRect_h
 #define LayerRect_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ClientRect.h"
-
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
-class LayerRect FINAL : public RefCountedWillBeGarbageCollectedFinalized<LayerRect> {
+class LayerRect final : public GarbageCollectedFinalized<LayerRect>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<LayerRect> create(PassRefPtrWillBeRawPtr<Node> node, const String& layerType, int nodeOffsetX, int nodeOffsetY, PassRefPtrWillBeRawPtr<ClientRect> rect)
+    static LayerRect* create(PassRefPtrWillBeRawPtr<Node> node, const String& layerType, int nodeOffsetX, int nodeOffsetY, PassRefPtrWillBeRawPtr<ClientRect> rect)
     {
-        return adoptRefWillBeNoop(new LayerRect(node, layerType, nodeOffsetX, nodeOffsetY, rect));
+        return new LayerRect(node, layerType, nodeOffsetX, nodeOffsetY, rect);
     }
 
     Node* layerAssociatedNode() const { return m_layerAssociatedNode.get(); }
@@ -68,9 +69,7 @@ private:
         , m_layerType(layerName)
         , m_associatedNodeOffsetX(nodeOffsetX)
         , m_associatedNodeOffsetY(nodeOffsetY)
-        , m_rect(rect)
-    {
-    }
+        , m_rect(rect) { }
 
     RefPtrWillBeMember<Node> m_layerAssociatedNode;
     String m_layerType;
@@ -79,6 +78,6 @@ private:
     RefPtrWillBeMember<ClientRect> m_rect;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // LayerRect_h

@@ -30,34 +30,55 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class ContainerNode;
 class ElementRuleCollector;
 class RuleFeatureSet;
 
-class TreeBoundaryCrossingRules {
+class TreeBoundaryCrossingRules final {
     DISALLOW_ALLOCATION();
 public:
-    void addTreeBoundaryCrossingRules(const RuleSet&, ContainerNode& scope, CSSStyleSheet*);
+    void addTreeBoundaryCrossingRules(const RuleSet&, CSSStyleSheet*, unsigned sheetIndex, ContainerNode&);
 
     void reset(const ContainerNode* scopingNode);
     void collectFeaturesTo(RuleFeatureSet&);
     void collectTreeBoundaryCrossingRules(Element*, ElementRuleCollector&, bool includeEmptyRules);
 
-    void trace(Visitor* visitor) { visitor->trace(m_treeBoundaryCrossingRuleSetMap); }
+    void trace(Visitor*);
 
 private:
     size_t size() const { return m_scopingNodes.size(); }
-    typedef WillBeHeapVector<std::pair<CSSStyleSheet*, OwnPtrWillBeMember<RuleSet> > > CSSStyleSheetRuleSubSet;
+    class RuleSubSet final : public NoBaseWillBeGarbageCollected<RuleSubSet> {
+    public:
+        static PassOwnPtrWillBeRawPtr<RuleSubSet> create(CSSStyleSheet* sheet, unsigned index, PassOwnPtrWillBeRawPtr<RuleSet> rules)
+        {
+            return adoptPtrWillBeNoop(new RuleSubSet(sheet, index, rules));
+        }
+
+        CSSStyleSheet* parentStyleSheet;
+        unsigned parentIndex;
+        OwnPtrWillBeMember<RuleSet> ruleSet;
+
+        void trace(Visitor*);
+
+    private:
+        RuleSubSet(CSSStyleSheet* sheet, unsigned index, PassOwnPtrWillBeRawPtr<RuleSet> rules)
+            : parentStyleSheet(sheet)
+            , parentIndex(index)
+            , ruleSet(rules)
+        {
+        }
+    };
+    typedef WillBeHeapVector<OwnPtrWillBeMember<RuleSubSet> > CSSStyleSheetRuleSubSet;
     void collectFeaturesFromRuleSubSet(CSSStyleSheetRuleSubSet*, RuleFeatureSet&);
 
     DocumentOrderedList m_scopingNodes;
-    typedef WillBeHeapHashMap<const ContainerNode*, OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> > TreeBoundaryCrossingRuleSetMap;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<const ContainerNode>, OwnPtrWillBeMember<CSSStyleSheetRuleSubSet> > TreeBoundaryCrossingRuleSetMap;
     TreeBoundaryCrossingRuleSetMap m_treeBoundaryCrossingRuleSetMap;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TreeBoundaryCrossingRules_h

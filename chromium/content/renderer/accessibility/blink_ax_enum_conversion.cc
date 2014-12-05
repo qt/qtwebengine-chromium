@@ -13,8 +13,13 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o) {
   if (o.isChecked())
     state |= (1 << ui::AX_STATE_CHECKED);
 
-  if (o.isCollapsed())
-    state |= (1 << ui::AX_STATE_COLLAPSED);
+  blink::WebAXExpanded expanded = o.isExpanded();
+  if (expanded) {
+    if (expanded == blink::WebAXExpandedCollapsed)
+      state |= (1 << ui::AX_STATE_COLLAPSED);
+    else if (expanded == blink::WebAXExpandedExpanded)
+      state |= (1 << ui::AX_STATE_EXPANDED);
+  }
 
   if (o.canSetFocusAttribute())
     state |= (1 << ui::AX_STATE_FOCUSABLE);
@@ -23,11 +28,8 @@ uint32 AXStateFromBlink(const blink::WebAXObject& o) {
     state |= (1 << ui::AX_STATE_FOCUSED);
 
   if (o.role() == blink::WebAXRolePopUpButton ||
-      o.ariaHasPopup()) {
+      o.ariaHasPopup())
     state |= (1 << ui::AX_STATE_HASPOPUP);
-    if (!o.isCollapsed())
-      state |= (1 << ui::AX_STATE_EXPANDED);
-  }
 
   if (o.isHovered())
     state |= (1 << ui::AX_STATE_HOVERED);
@@ -94,6 +96,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_ARTICLE;
     case blink::WebAXRoleBanner:
       return ui::AX_ROLE_BANNER;
+    case blink::WebAXRoleBlockquote:
+      return ui::AX_ROLE_BLOCKQUOTE;
     case blink::WebAXRoleBrowser:
       return ui::AX_ROLE_BROWSER;
     case blink::WebAXRoleBusyIndicator:
@@ -118,12 +122,20 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_COMPLEMENTARY;
     case blink::WebAXRoleContentInfo:
       return ui::AX_ROLE_CONTENT_INFO;
+    case blink::WebAXRoleDate:
+      return ui::AX_ROLE_DATE;
+    case blink::WebAXRoleDateTime:
+      return ui::AX_ROLE_DATE_TIME;
     case blink::WebAXRoleDefinition:
       return ui::AX_ROLE_DEFINITION;
     case blink::WebAXRoleDescriptionListDetail:
       return ui::AX_ROLE_DESCRIPTION_LIST_DETAIL;
+    case blink::WebAXRoleDescriptionList:
+      return ui::AX_ROLE_DESCRIPTION_LIST;
     case blink::WebAXRoleDescriptionListTerm:
       return ui::AX_ROLE_DESCRIPTION_LIST_TERM;
+    case blink::WebAXRoleDetails:
+      return ui::AX_ROLE_DETAILS;
     case blink::WebAXRoleDialog:
       return ui::AX_ROLE_DIALOG;
     case blink::WebAXRoleDirectory:
@@ -140,6 +152,10 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_EDITABLE_TEXT;
     case blink::WebAXRoleEmbeddedObject:
       return ui::AX_ROLE_EMBEDDED_OBJECT;
+    case blink::WebAXRoleFigcaption:
+      return ui::AX_ROLE_FIGCAPTION;
+    case blink::WebAXRoleFigure:
+      return ui::AX_ROLE_FIGURE;
     case blink::WebAXRoleFooter:
       return ui::AX_ROLE_FOOTER;
     case blink::WebAXRoleForm:
@@ -194,8 +210,6 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_MARQUEE;
     case blink::WebAXRoleMath:
       return ui::AX_ROLE_MATH;
-    case blink::WebAXRoleMathElement:
-      return ui::AX_ROLE_MATH_ELEMENT;
     case blink::WebAXRoleMatte:
       return ui::AX_ROLE_MATTE;
     case blink::WebAXRoleMenu:
@@ -206,12 +220,20 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_MENU_BUTTON;
     case blink::WebAXRoleMenuItem:
       return ui::AX_ROLE_MENU_ITEM;
+    case blink::WebAXRoleMenuItemCheckBox:
+      return ui::AX_ROLE_MENU_ITEM_CHECK_BOX;
+    case blink::WebAXRoleMenuItemRadio:
+      return ui::AX_ROLE_MENU_ITEM_RADIO;
     case blink::WebAXRoleMenuListOption:
       return ui::AX_ROLE_MENU_LIST_OPTION;
     case blink::WebAXRoleMenuListPopup:
       return ui::AX_ROLE_MENU_LIST_POPUP;
+    case blink::WebAXRoleMeter:
+      return ui::AX_ROLE_METER;
     case blink::WebAXRoleNavigation:
       return ui::AX_ROLE_NAVIGATION;
+    case blink::WebAXRoleNone:
+      return ui::AX_ROLE_NONE;
     case blink::WebAXRoleNote:
       return ui::AX_ROLE_NOTE;
     case blink::WebAXRoleOutline:
@@ -220,6 +242,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_PARAGRAPH;
     case blink::WebAXRolePopUpButton:
       return ui::AX_ROLE_POP_UP_BUTTON;
+    case blink::WebAXRolePre:
+      return ui::AX_ROLE_PRE;
     case blink::WebAXRolePresentational:
       return ui::AX_ROLE_PRESENTATIONAL;
     case blink::WebAXRoleProgressIndicator:
@@ -286,6 +310,8 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
       return ui::AX_ROLE_TEXT_AREA;
     case blink::WebAXRoleTextField:
       return ui::AX_ROLE_TEXT_FIELD;
+    case blink::WebAXRoleTime:
+      return ui::AX_ROLE_TIME;
     case blink::WebAXRoleTimer:
       return ui::AX_ROLE_TIMER;
     case blink::WebAXRoleToggleButton:
@@ -311,7 +337,9 @@ ui::AXRole AXRoleFromBlink(blink::WebAXRole role) {
     default:
       // We can't add an assertion here, that prevents us
       // from adding new role enums in Blink.
-      return static_cast<ui::AXRole>(-1);
+      LOG(WARNING) << "Warning: Blink WebAXRole " << role
+                   << " not handled by Chromium yet.";
+      return ui::AX_ROLE_UNKNOWN;
   }
 }
 
@@ -325,16 +353,12 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
       return ui::AX_EVENT_ARIA_ATTRIBUTE_CHANGED;
     case blink::WebAXEventAutocorrectionOccured:
       return ui::AX_EVENT_AUTOCORRECTION_OCCURED;
-    case blink::WebAXEventBlur:
-      return ui::AX_EVENT_BLUR;
     case blink::WebAXEventCheckedStateChanged:
       return ui::AX_EVENT_CHECKED_STATE_CHANGED;
     case blink::WebAXEventChildrenChanged:
       return ui::AX_EVENT_CHILDREN_CHANGED;
     case blink::WebAXEventFocus:
       return ui::AX_EVENT_FOCUS;
-    case blink::WebAXEventHide:
-      return ui::AX_EVENT_HIDE;
     case blink::WebAXEventInvalidStatusChanged:
       return ui::AX_EVENT_INVALID_STATUS_CHANGED;
     case blink::WebAXEventLayoutComplete:
@@ -362,15 +386,9 @@ ui::AXEvent AXEventFromBlink(blink::WebAXEvent event) {
     case blink::WebAXEventSelectedChildrenChanged:
       return ui::AX_EVENT_SELECTED_CHILDREN_CHANGED;
     case blink::WebAXEventSelectedTextChanged:
-      return ui::AX_EVENT_SELECTED_TEXT_CHANGED;
-    case blink::WebAXEventShow:
-      return ui::AX_EVENT_SHOW;
+      return ui::AX_EVENT_TEXT_SELECTION_CHANGED;
     case blink::WebAXEventTextChanged:
       return ui::AX_EVENT_TEXT_CHANGED;
-    case blink::WebAXEventTextInserted:
-      return ui::AX_EVENT_TEXT_INSERTED;
-    case blink::WebAXEventTextRemoved:
-      return ui::AX_EVENT_TEXT_REMOVED;
     case blink::WebAXEventValueChanged:
       return ui::AX_EVENT_VALUE_CHANGED;
     default:

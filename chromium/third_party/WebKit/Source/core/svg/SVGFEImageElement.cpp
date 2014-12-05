@@ -20,25 +20,24 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGFEImageElement.h"
 
 #include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/rendering/svg/RenderSVGResource.h"
+#include "core/svg/SVGDocumentExtensions.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
+#include "core/svg/graphics/filters/SVGFEImage.h"
 #include "platform/graphics/Image.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEImageElement::SVGFEImageElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feImageTag, document)
     , SVGURIReference(this)
     , m_preserveAspectRatio(SVGAnimatedPreserveAspectRatio::create(this, SVGNames::preserveAspectRatioAttr, SVGPreserveAspectRatio::create()))
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_preserveAspectRatio);
 }
 
@@ -71,7 +70,7 @@ void SVGFEImageElement::clearResourceReferences()
         m_cachedImage = 0;
     }
 
-    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
+    removeAllOutgoingReferences();
 }
 
 void SVGFEImageElement::fetchImageResource()
@@ -101,7 +100,7 @@ void SVGFEImageElement::buildPendingResource()
     } else if (target->isSVGElement()) {
         // Register us with the target in the dependencies map. Any change of hrefElement
         // that leads to relayout/repainting now informs us, so we can react to it.
-        document().accessSVGExtensions().addElementReferencingTarget(this, toSVGElement(target));
+        addReferenceTo(toSVGElement(target));
     }
 
     invalidate();
@@ -119,21 +118,7 @@ bool SVGFEImageElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFEImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::preserveAspectRatioAttr) {
-        m_preserveAspectRatio->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFEImageElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -184,7 +169,7 @@ void SVGFEImageElement::notifyFinished(Resource*)
         return;
 
     if (RenderObject* renderer = this->renderer())
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        markForLayoutAndParentResourceInvalidation(renderer);
 }
 
 PassRefPtr<FilterEffect> SVGFEImageElement::build(SVGFilterBuilder*, Filter* filter)

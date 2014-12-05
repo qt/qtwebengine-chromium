@@ -38,7 +38,7 @@
 #else
 #include <algorithm>
 #include <cmath>
-#include <ui/gfx/rect_f.h>
+#include <ui/gfx/geometry/rect_f.h>
 #endif
 
 namespace blink {
@@ -68,7 +68,7 @@ struct WebFloatRect {
     }
 
 #if INSIDE_BLINK
-    WebFloatRect(const WebCore::FloatRect& r)
+    WebFloatRect(const FloatRect& r)
         : x(r.x())
         , y(r.y())
         , width(r.width())
@@ -76,7 +76,7 @@ struct WebFloatRect {
     {
     }
 
-    WebFloatRect& operator=(const WebCore::FloatRect& r)
+    WebFloatRect& operator=(const FloatRect& r)
     {
         x = r.x();
         y = r.y();
@@ -85,9 +85,9 @@ struct WebFloatRect {
         return *this;
     }
 
-    operator WebCore::FloatRect() const
+    operator FloatRect() const
     {
-        return WebCore::FloatRect(x, y, width, height);
+        return FloatRect(x, y, width, height);
     }
 #else
     WebFloatRect(const gfx::RectF& r)

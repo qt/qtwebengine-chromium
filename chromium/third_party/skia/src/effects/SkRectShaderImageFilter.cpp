@@ -20,34 +20,40 @@ SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const SkRe
         flags = 0x0;
     }
     CropRect cropRect(rect, flags);
-    return SkNEW_ARGS(SkRectShaderImageFilter, (s, &cropRect));
+    return s ? SkNEW_ARGS(SkRectShaderImageFilter, (s, &cropRect)) : NULL;
 }
 
-SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const CropRect* cropRect) {
+SkRectShaderImageFilter* SkRectShaderImageFilter::Create(SkShader* s, const CropRect* cropRect, uint32_t uniqueID) {
     SkASSERT(s);
-    return SkNEW_ARGS(SkRectShaderImageFilter, (s, cropRect));
+    return s ? SkNEW_ARGS(SkRectShaderImageFilter, (s, cropRect, uniqueID)) : NULL;
 }
 
-SkRectShaderImageFilter::SkRectShaderImageFilter(SkShader* s, const CropRect* cropRect)
-  : INHERITED(NULL, cropRect)
-  , fShader(s) {
-    SkASSERT(s);
-    s->ref();
+SkRectShaderImageFilter::SkRectShaderImageFilter(SkShader* s, const CropRect* cropRect,
+                                                 uint32_t uniqueID)
+  : INHERITED(0, NULL, cropRect, uniqueID)
+  , fShader(SkRef(s)) {
 }
 
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkRectShaderImageFilter::SkRectShaderImageFilter(SkReadBuffer& buffer)
-  : INHERITED(1, buffer) {
+  : INHERITED(0, buffer) {
     fShader = buffer.readShader();
+}
+#endif
+
+SkFlattenable* SkRectShaderImageFilter::CreateProc(SkReadBuffer& buffer) {
+    SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 0);
+    SkAutoTUnref<SkShader> shader(buffer.readShader());
+    return Create(shader.get(), &common.cropRect(), common.uniqueID());
 }
 
 void SkRectShaderImageFilter::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-
     buffer.writeFlattenable(fShader);
 }
 
 SkRectShaderImageFilter::~SkRectShaderImageFilter() {
-    SkSafeUnref(fShader);
+    fShader->unref();
 }
 
 bool SkRectShaderImageFilter::onFilterImage(Proxy* proxy,
@@ -70,7 +76,7 @@ bool SkRectShaderImageFilter::onFilterImage(Proxy* proxy,
     SkPaint paint;
     SkMatrix matrix(ctx.ctm());
     matrix.postTranslate(SkIntToScalar(-bounds.left()), SkIntToScalar(-bounds.top()));
-    paint.setShader(SkShader::CreateLocalMatrixShader(fShader, matrix))->unref();
+    SkSafeUnref(paint.setShader(SkShader::CreateLocalMatrixShader(fShader, matrix)));
 
     SkRect rect = SkRect::MakeWH(SkIntToScalar(bounds.width()), SkIntToScalar(bounds.height()));
     canvas.drawRect(rect, paint);

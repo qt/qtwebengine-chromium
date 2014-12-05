@@ -10,6 +10,7 @@
 #include "ui/events/gesture_detection/gesture_detection_export.h"
 #include "ui/events/gesture_detection/gesture_detector.h"
 #include "ui/events/gesture_detection/gesture_event_data.h"
+#include "ui/events/gesture_detection/gesture_touch_uma_histogram.h"
 #include "ui/events/gesture_detection/scale_gesture_detector.h"
 #include "ui/events/gesture_detection/snap_scroll_controller.h"
 #include "ui/gfx/display.h"
@@ -42,14 +43,18 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
 
     // If |gesture_begin_end_types_enabled| is true, fire an ET_GESTURE_BEGIN
     // event for every added touch point, and an ET_GESTURE_END event for every
-    // removed touch point. Defaults to false.
+    // removed touch point. This requires one ACTION_CANCEL event to be sent per
+    // touch point, which only occurs on Aura. Defaults to false.
     bool gesture_begin_end_types_enabled;
 
-    // The minimum size (both length and width, in dips) of the generated
+    // The min and max size (both length and width, in dips) of the generated
     // bounding box for all gesture types. This is useful for touch streams
-    // that may report zero or unreasonably small touch sizes.
-    // Defaults to 0.
+    // that may report zero or unreasonably small or large touch sizes.
+    // Note that these bounds are only applied for touch or unknown tool types;
+    // mouse and stylus-derived gestures will not be affected.
+    // Both values default to 0 (disabled).
     float min_gesture_bounds_length;
+    float max_gesture_bounds_length;
   };
 
   GestureProvider(const Config& config, GestureProviderClient* client);
@@ -87,48 +92,24 @@ class GESTURE_DETECTION_EXPORT GestureProvider {
   }
 
  private:
-  void InitGestureDetectors(const Config& config);
-
   bool CanHandle(const MotionEvent& event) const;
-
-  void Fling(const MotionEvent& e, float velocity_x, float velocity_y);
-  void Send(GestureEventData gesture);
-  bool SendLongTapIfNecessary(const MotionEvent& event);
-  void EndTouchScrollIfNecessary(const MotionEvent& event,
-                                 bool send_scroll_end_event);
   void OnTouchEventHandlingBegin(const MotionEvent& event);
   void OnTouchEventHandlingEnd(const MotionEvent& event);
   void UpdateDoubleTapDetectionSupport();
 
-  GestureProviderClient* const client_;
-
   class GestureListenerImpl;
-  friend class GestureListenerImpl;
   scoped_ptr<GestureListenerImpl> gesture_listener_;
-
-  class ScaleGestureListenerImpl;
-  friend class ScaleGestureListenerImpl;
-  scoped_ptr<ScaleGestureListenerImpl> scale_gesture_listener_;
 
   scoped_ptr<MotionEvent> current_down_event_;
 
-  // Whether the respective {SCROLL,PINCH}_BEGIN gestures have been terminated
-  // with a {SCROLL,PINCH}_END.
-  bool touch_scroll_in_progress_;
-  bool pinch_in_progress_;
+  // Logs information on touch and gesture events.
+  GestureTouchUMAHistogram uma_histogram_;
 
   // Whether double-tap gesture detection is currently supported.
   bool double_tap_support_for_page_;
   bool double_tap_support_for_platform_;
 
-  // Keeps track of the current GESTURE_LONG_PRESS event. If a context menu is
-  // opened after a GESTURE_LONG_PRESS, this is used to insert a
-  // GESTURE_TAP_CANCEL for removing any ::active styling.
-  base::TimeTicks current_longpress_time_;
-
   const bool gesture_begin_end_types_enabled_;
-
-  const float min_gesture_bounds_length_;
 };
 
 }  //  namespace ui

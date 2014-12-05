@@ -133,6 +133,13 @@ WebInspector.TextEditor.prototype = {
 
     /**
      * @param {number} lineNumber
+     * @param {string} className
+     * @param {boolean} toggled
+     */
+    toggleLineClass: function(lineNumber, className, toggled) { },
+
+    /**
+     * @param {number} lineNumber
      * @param {!Element} element
      */
     addDecoration: function(lineNumber, element) { },
@@ -344,13 +351,6 @@ WebInspector.TextEditorDelegate.prototype = {
      * @param {number} lineNumber
      */
     populateTextAreaContextMenu: function(contextMenu, lineNumber) { },
-
-    /**
-     * @param {string} hrefValue
-     * @param {boolean} isExternal
-     * @return {!Element}
-     */
-    createLink: function(hrefValue, isExternal) { },
 
     /**
      * @param {?WebInspector.TextRange} from

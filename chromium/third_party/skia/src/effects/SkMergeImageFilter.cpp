@@ -40,20 +40,11 @@ void SkMergeImageFilter::initModes(const SkXfermode::Mode modes[]) {
     }
 }
 
-SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* first, SkImageFilter* second,
-                                       SkXfermode::Mode mode,
-                                       const CropRect* cropRect) : INHERITED(first, second, cropRect) {
-    if (SkXfermode::kSrcOver_Mode != mode) {
-        SkXfermode::Mode modes[] = { mode, mode };
-        this->initModes(modes);
-    } else {
-        fModes = NULL;
-    }
-}
-
 SkMergeImageFilter::SkMergeImageFilter(SkImageFilter* filters[], int count,
                                        const SkXfermode::Mode modes[],
-                                       const CropRect* cropRect) : INHERITED(count, filters, cropRect) {
+                                       const CropRect* cropRect,
+                                       uint32_t uniqueID)
+  : INHERITED(count, filters, cropRect, uniqueID) {
     SkASSERT(count >= 0);
     this->initModes(modes);
 }
@@ -116,15 +107,41 @@ bool SkMergeImageFilter::onFilterImage(Proxy* proxy, const SkBitmap& src,
     return true;
 }
 
+SkFlattenable* SkMergeImageFilter::CreateProc(SkReadBuffer& buffer) {
+    Common common;
+    if (!common.unflatten(buffer, -1)) {
+        return NULL;
+    }
+
+    const int count = common.inputCount();
+    bool hasModes = buffer.readBool();
+    if (hasModes) {
+        SkAutoSTArray<4, SkXfermode::Mode> modes(count);
+        SkAutoSTArray<4, uint8_t> modes8(count);
+        if (!buffer.readByteArray(modes8.get(), count)) {
+            return NULL;
+        }
+        for (int i = 0; i < count; ++i) {
+            modes[i] = (SkXfermode::Mode)modes8[i];
+            buffer.validate(SkIsValidMode(modes[i]));
+        }
+        if (!buffer.isValid()) {
+            return NULL;
+        }
+        return Create(common.inputs(), count, modes.get(), &common.cropRect(), common.uniqueID());
+    }
+    return Create(common.inputs(), count, NULL, &common.cropRect(), common.uniqueID());
+}
+
 void SkMergeImageFilter::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
-
     buffer.writeBool(fModes != NULL);
     if (fModes) {
         buffer.writeByteArray(fModes, countInputs() * sizeof(fModes[0]));
     }
 }
 
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkMergeImageFilter::SkMergeImageFilter(SkReadBuffer& buffer)
   : INHERITED(-1, buffer) {
     bool hasModes = buffer.readBool();
@@ -143,3 +160,4 @@ SkMergeImageFilter::SkMergeImageFilter(SkReadBuffer& buffer)
         fModes = 0;
     }
 }
+#endif

@@ -32,7 +32,7 @@
 #include "platform/PlatformExport.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT GraphicsContextStateSaver {
     WTF_MAKE_FAST_ALLOCATED;
@@ -58,6 +58,13 @@ public:
         m_saveAndRestore = true;
     }
 
+    void saveIfNeeded()
+    {
+        if (saved())
+            return;
+        save();
+    }
+
     void restore()
     {
         ASSERT(m_saveAndRestore);
@@ -73,6 +80,6 @@ private:
     bool m_saveAndRestore;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GraphicsContextStateSaver_h

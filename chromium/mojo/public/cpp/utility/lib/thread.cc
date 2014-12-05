@@ -8,18 +8,11 @@
 
 namespace mojo {
 
-Thread::Thread()
-    : options_(),
-      thread_(),
-      started_(false),
-      joined_(false) {
+Thread::Thread() : options_(), thread_(), started_(false), joined_(false) {
 }
 
 Thread::Thread(const Options& options)
-    : options_(options),
-      thread_(),
-      started_(false),
-      joined_(false) {
+    : options_(options), thread_(), started_(false), joined_(false) {
 }
 
 Thread::~Thread() {
@@ -32,7 +25,8 @@ void Thread::Start() {
   assert(!joined_);
 
   pthread_attr_t attr;
-  int rv MOJO_ALLOW_UNUSED = pthread_attr_init(&attr);
+  int rv = pthread_attr_init(&attr);
+  MOJO_ALLOW_UNUSED_LOCAL(rv);
   assert(rv == 0);
 
   // Non-default stack size?
@@ -55,7 +49,8 @@ void Thread::Join() {
   assert(!joined_);
 
   joined_ = true;
-  int rv MOJO_ALLOW_UNUSED = pthread_join(thread_, NULL);
+  int rv = pthread_join(thread_, NULL);
+  MOJO_ALLOW_UNUSED_LOCAL(rv);
   assert(rv == 0);
 }
 

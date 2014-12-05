@@ -40,6 +40,10 @@ int BlacklistSize();
 // Returns if true if the blacklist has been initialized.
 extern "C" bool IsBlacklistInitialized();
 
+// Returns the index of the DLL named |dll_name| on the blacklist, or -1 if not
+// found.
+extern "C" int GetBlacklistIndex(const wchar_t* dll_name);
+
 // Adds the given dll name to the blacklist. Returns true if the dll name is in
 // the blacklist when this returns, false on error. Note that this will copy
 // |dll_name| and will leak it on exit if the string is not subsequently removed
@@ -62,7 +66,7 @@ extern "C" void SuccessfullyBlocked(const wchar_t** blocked_dlls, int* size);
 
 // Add the dlls, originally passed in through finch, from the registry to the
 // blacklist so that they will be blocked identically to those hard coded in.
-extern "C" bool AddDllsFromRegistryToBlacklist();
+extern "C" void AddDllsFromRegistryToBlacklist();
 
 // Record that the dll at the given index was blocked.
 void BlockedDll(size_t blocked_index);

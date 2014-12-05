@@ -5,10 +5,10 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_STRUCT_PTR_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_STRUCT_PTR_H_
 
-#include <assert.h>
-
 #include <new>
 
+#include "mojo/public/cpp/bindings/type_converter.h"
+#include "mojo/public/cpp/environment/logging.h"
 #include "mojo/public/cpp/system/macros.h"
 
 namespace mojo {
@@ -18,7 +18,9 @@ template <typename Struct>
 class StructHelper {
  public:
   template <typename Ptr>
-  static void Initialize(Ptr* ptr) { ptr->Initialize(); }
+  static void Initialize(Ptr* ptr) {
+    ptr->Initialize();
+  }
 };
 
 }  // namespace internal
@@ -26,15 +28,13 @@ class StructHelper {
 template <typename Struct>
 class StructPtr {
   MOJO_MOVE_ONLY_TYPE_FOR_CPP_03(StructPtr, RValue);
+
  public:
-  typedef typename Struct::Data_ Data_;
 
-  StructPtr() : ptr_(NULL) {}
-  ~StructPtr() {
-    delete ptr_;
-  }
+  StructPtr() : ptr_(nullptr) {}
+  ~StructPtr() { delete ptr_; }
 
-  StructPtr(RValue other) : ptr_(NULL) { Take(other.object); }
+  StructPtr(RValue other) : ptr_(nullptr) { Take(other.object); }
   StructPtr& operator=(RValue other) {
     Take(other.object);
     return *this;
@@ -42,30 +42,39 @@ class StructPtr {
 
   template <typename U>
   U To() const {
-    return TypeConverter<StructPtr, U>::ConvertTo(*this);
+    return TypeConverter<U, StructPtr>::Convert(*this);
   }
 
   void reset() {
     if (ptr_) {
       delete ptr_;
-      ptr_ = NULL;
+      ptr_ = nullptr;
     }
   }
 
-  bool is_null() const { return ptr_ == NULL; }
+  bool is_null() const { return ptr_ == nullptr; }
 
   Struct& operator*() const {
-    assert(ptr_);
+    MOJO_DCHECK(ptr_);
     return *ptr_;
   }
   Struct* operator->() const {
-    assert(ptr_);
+    MOJO_DCHECK(ptr_);
     return ptr_;
   }
   Struct* get() const { return ptr_; }
 
-  void Swap(StructPtr* other) {
-    std::swap(ptr_, other->ptr_);
+  void Swap(StructPtr* other) { std::swap(ptr_, other->ptr_); }
+
+  // Please note that calling this method will fail compilation if the value
+  // type |Struct| doesn't have a Clone() method defined (which usually means
+  // that it contains Mojo handles).
+  StructPtr Clone() const { return is_null() ? StructPtr() : ptr_->Clone(); }
+
+  bool Equals(const StructPtr& other) const {
+    if (is_null() || other.is_null())
+      return is_null() && other.is_null();
+    return ptr_->Equals(*other.ptr_);
   }
 
  private:
@@ -76,7 +85,10 @@ class StructPtr {
 
  private:
   friend class internal::StructHelper<Struct>;
-  void Initialize() { assert(!ptr_); ptr_ = new Struct(); }
+  void Initialize() {
+    MOJO_DCHECK(!ptr_);
+    ptr_ = new Struct();
+  }
 
   void Take(StructPtr* other) {
     reset();
@@ -90,8 +102,8 @@ class StructPtr {
 template <typename Struct>
 class InlinedStructPtr {
   MOJO_MOVE_ONLY_TYPE_FOR_CPP_03(InlinedStructPtr, RValue);
+
  public:
-  typedef typename Struct::Data_ Data_;
 
   InlinedStructPtr() : is_null_(true) {}
   ~InlinedStructPtr() {}
@@ -104,23 +116,23 @@ class InlinedStructPtr {
 
   template <typename U>
   U To() const {
-    return TypeConverter<InlinedStructPtr, U>::ConvertTo(*this);
+    return TypeConverter<U, InlinedStructPtr>::Convert(*this);
   }
 
   void reset() {
     is_null_ = true;
-    value_.~Struct();
+    value_. ~Struct();
     new (&value_) Struct();
   }
 
   bool is_null() const { return is_null_; }
 
   Struct& operator*() const {
-    assert(!is_null_);
+    MOJO_DCHECK(!is_null_);
     return value_;
   }
   Struct* operator->() const {
-    assert(!is_null_);
+    MOJO_DCHECK(!is_null_);
     return &value_;
   }
   Struct* get() const { return &value_; }
@@ -128,6 +140,15 @@ class InlinedStructPtr {
   void Swap(InlinedStructPtr* other) {
     std::swap(value_, other->value_);
     std::swap(is_null_, other->is_null_);
+  }
+
+  InlinedStructPtr Clone() const {
+    return is_null() ? InlinedStructPtr() : value_.Clone();
+  }
+  bool Equals(const InlinedStructPtr& other) const {
+    if (is_null() || other.is_null())
+      return is_null() && other.is_null();
+    return value_.Equals(other.value_);
   }
 
  private:

@@ -9,9 +9,9 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/strings/string_util.h"
+#include "content/grit/content_resources.h"
 #include "content/public/common/content_client.h"
-#include "grit/content_resources.h"
-#include "mojo/public/js/bindings/constants.h"
+#include "mojo/public/js/constants.h"
 #include "ui/base/webui/jstemplate_builder.h"
 #include "ui/base/webui/web_ui_util.h"
 
@@ -31,13 +31,15 @@ WebUIDataSource* WebUIDataSource::AddMojoDataSource(
     const char* path;
     int id;
   } resources[] = {
+    { mojo::kBufferModuleName, IDR_MOJO_BUFFER_JS },
     { mojo::kCodecModuleName, IDR_MOJO_CODEC_JS },
     { mojo::kConnectionModuleName, IDR_MOJO_CONNECTION_JS },
     { mojo::kConnectorModuleName, IDR_MOJO_CONNECTOR_JS },
     { mojo::kRouterModuleName, IDR_MOJO_ROUTER_JS },
     { mojo::kUnicodeModuleName, IDR_MOJO_UNICODE_JS },
+    { mojo::kValidatorModuleName, IDR_MOJO_VALIDATOR_JS },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(resources); ++i)
+  for (size_t i = 0; i < arraysize(resources); ++i)
     mojo_source->AddResourcePath(resources[i].path, resources[i].id);
 
   URLDataManager::AddWebUIDataSource(browser_context, mojo_source);
@@ -57,44 +59,39 @@ class WebUIDataSourceImpl::InternalDataSource : public URLDataSource {
   InternalDataSource(WebUIDataSourceImpl* parent) : parent_(parent) {
   }
 
-  virtual ~InternalDataSource() {
-  }
+  ~InternalDataSource() override {}
 
   // URLDataSource implementation.
-  virtual std::string GetSource() const OVERRIDE {
-    return parent_->GetSource();
-  }
-  virtual std::string GetMimeType(const std::string& path) const OVERRIDE {
+  std::string GetSource() const override { return parent_->GetSource(); }
+  std::string GetMimeType(const std::string& path) const override {
     return parent_->GetMimeType(path);
   }
-  virtual void StartDataRequest(
+  void StartDataRequest(
       const std::string& path,
       int render_process_id,
       int render_frame_id,
-      const URLDataSource::GotDataCallback& callback) OVERRIDE {
+      const URLDataSource::GotDataCallback& callback) override {
     return parent_->StartDataRequest(path, render_process_id, render_frame_id,
                                      callback);
   }
-  virtual bool ShouldReplaceExistingSource() const OVERRIDE {
+  bool ShouldReplaceExistingSource() const override {
     return parent_->replace_existing_source_;
   }
-  virtual bool AllowCaching() const OVERRIDE {
-    return false;
-  }
-  virtual bool ShouldAddContentSecurityPolicy() const OVERRIDE {
+  bool AllowCaching() const override { return false; }
+  bool ShouldAddContentSecurityPolicy() const override {
     return parent_->add_csp_;
   }
-  virtual std::string GetContentSecurityPolicyObjectSrc() const OVERRIDE {
+  std::string GetContentSecurityPolicyObjectSrc() const override {
     if (parent_->object_src_set_)
       return parent_->object_src_;
     return URLDataSource::GetContentSecurityPolicyObjectSrc();
   }
-  virtual std::string GetContentSecurityPolicyFrameSrc() const OVERRIDE {
+  std::string GetContentSecurityPolicyFrameSrc() const override {
     if (parent_->frame_src_set_)
       return parent_->frame_src_;
     return URLDataSource::GetContentSecurityPolicyFrameSrc();
   }
-  virtual bool ShouldDenyXFrameOptions() const OVERRIDE {
+  bool ShouldDenyXFrameOptions() const override {
     return parent_->deny_xframe_options_;
   }
 
@@ -108,7 +105,6 @@ WebUIDataSourceImpl::WebUIDataSourceImpl(const std::string& source_name)
           new InternalDataSource(this)),
       source_name_(source_name),
       default_resource_(-1),
-      json_js_format_v2_(false),
       add_csp_(true),
       object_src_set_(false),
       frame_src_set_(false),
@@ -147,10 +143,6 @@ void WebUIDataSourceImpl::AddBoolean(const std::string& name, bool value) {
 
 void WebUIDataSourceImpl::SetJsonPath(const std::string& path) {
   json_path_ = path;
-}
-
-void WebUIDataSourceImpl::SetUseJsonJSFormatV2() {
-  json_js_format_v2_ = true;
 }
 
 void WebUIDataSourceImpl::AddResourcePath(const std::string &path,
@@ -240,10 +232,6 @@ void WebUIDataSourceImpl::SendLocalizedStringsAsJSON(
   std::string template_data;
   if (!disable_set_font_strings_)
     webui::SetFontAndTextDirection(&localized_strings_);
-
-  scoped_ptr<webui::UseVersion2> version2;
-  if (json_js_format_v2_)
-    version2.reset(new webui::UseVersion2);
 
   webui::AppendJsonJS(&localized_strings_, &template_data);
   callback.Run(base::RefCountedString::TakeString(&template_data));

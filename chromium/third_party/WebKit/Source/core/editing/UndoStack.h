@@ -35,12 +35,12 @@
 #include "wtf/Deque.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class UndoStep;
 
-class UndoStack FINAL : public NoBaseWillBeGarbageCollected<UndoStack> {
+class UndoStack final : public NoBaseWillBeGarbageCollected<UndoStack> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(UndoStack)
 public:
     static PassOwnPtrWillBeRawPtr<UndoStack> create();
@@ -58,7 +58,7 @@ public:
 private:
     UndoStack();
 
-    typedef WillBeHeapDeque<RefPtrWillBeMember<UndoStep> > UndoStepStack;
+    typedef WillBeHeapDeque<RefPtrWillBeMember<UndoStep>> UndoStepStack;
 
     void filterOutUndoSteps(UndoStepStack&, const LocalFrame&);
 
@@ -67,6 +67,6 @@ private:
     UndoStepStack m_redoStack;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

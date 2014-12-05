@@ -29,14 +29,17 @@
 #include "config.h"
 #include "core/accessibility/AXNodeObject.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/InputTypeNames.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/Text.h"
+#include "core/html/HTMLDListElement.h"
 #include "core/html/HTMLFieldSetElement.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLLegendElement.h"
+#include "core/html/HTMLPlugInElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/HTMLTextAreaElement.h"
 #include "core/rendering/RenderObject.h"
@@ -44,7 +47,7 @@
 #include "wtf/text/StringBuilder.h"
 
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -52,7 +55,7 @@ AXNodeObject::AXNodeObject(Node* node)
     : AXObject()
     , m_ariaRole(UnknownRole)
     , m_childrenDirty(false)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_initialized(false)
 #endif
     , m_node(node)
@@ -91,7 +94,7 @@ static String accessibleNameForNode(Node* node)
     return String();
 }
 
-String AXNodeObject::accessibilityDescriptionForElements(Vector<Element*> &elements) const
+String AXNodeObject::accessibilityDescriptionForElements(WillBeHeapVector<RawPtrWillBeMember<Element> > &elements) const
 {
     StringBuilder builder;
     unsigned size = elements.size();
@@ -99,8 +102,8 @@ String AXNodeObject::accessibilityDescriptionForElements(Vector<Element*> &eleme
         Element* idElement = elements[i];
 
         builder.append(accessibleNameForNode(idElement));
-        for (Node* n = idElement->firstChild(); n; n = NodeTraversal::next(*n, idElement))
-            builder.append(accessibleNameForNode(n));
+        for (Node& n : NodeTraversal::descendantsOf(*idElement))
+            builder.append(accessibleNameForNode(&n));
 
         if (i != size - 1)
             builder.append(' ');
@@ -133,7 +136,7 @@ String AXNodeObject::ariaAccessibilityDescription() const
 }
 
 
-void AXNodeObject::ariaLabeledByElements(Vector<Element*>& elements) const
+void AXNodeObject::ariaLabeledByElements(WillBeHeapVector<RawPtrWillBeMember<Element> >& elements) const
 {
     elementsFromAttribute(elements, aria_labeledbyAttr);
     if (!elements.size())
@@ -149,12 +152,12 @@ void AXNodeObject::changeValueByStep(bool increase)
 
     setValue(String::number(value));
 
-    axObjectCache()->postNotification(node(), AXObjectCache::AXValueChanged, true);
+    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged, true);
 }
 
 bool AXNodeObject::computeAccessibilityIsIgnored() const
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // Double-check that an AXObject is never accessed before
     // it's been initialized.
     ASSERT(m_initialized);
@@ -189,21 +192,47 @@ AccessibilityRole AXNodeObject::determineAccessibilityRole()
         return StaticTextRole;
     if (isHTMLButtonElement(*node()))
         return buttonRoleType();
+    if (isHTMLDetailsElement(*node()))
+        return DetailsRole;
+    if (isHTMLSummaryElement(*node())) {
+        if (node()->parentNode() && isHTMLDetailsElement(node()->parentNode()))
+            return DisclosureTriangleRole;
+        return UnknownRole;
+    }
+
     if (isHTMLInputElement(*node())) {
         HTMLInputElement& input = toHTMLInputElement(*node());
-        if (input.isCheckbox())
+        const AtomicString& type = input.type();
+        if (type == InputTypeNames::button) {
+            if ((node()->parentNode() && isHTMLMenuElement(node()->parentNode())) || (parentObject() && parentObject()->roleValue() == MenuRole))
+                return MenuItemRole;
+            return buttonRoleType();
+        }
+        if (type == InputTypeNames::checkbox) {
+            if ((node()->parentNode() && isHTMLMenuElement(node()->parentNode())) || (parentObject() && parentObject()->roleValue() == MenuRole))
+                return MenuItemCheckBoxRole;
             return CheckBoxRole;
-        if (input.isRadioButton())
+        }
+        if (type == InputTypeNames::date)
+            return DateRole;
+        if (type == InputTypeNames::datetime
+            || type == InputTypeNames::datetime_local
+            || type == InputTypeNames::month
+            || type == InputTypeNames::week)
+            return DateTimeRole;
+        if (type == InputTypeNames::radio) {
+            if ((node()->parentNode() && isHTMLMenuElement(node()->parentNode())) || (parentObject() && parentObject()->roleValue() == MenuRole))
+                return MenuItemRadioRole;
             return RadioButtonRole;
+        }
         if (input.isTextButton())
             return buttonRoleType();
-        if (input.isRangeControl())
+        if (type == InputTypeNames::range)
             return SliderRole;
-
-        const AtomicString& type = input.getAttribute(typeAttr);
-        if (equalIgnoringCase(type, "color"))
+        if (type == InputTypeNames::color)
             return ColorWellRole;
-
+        if (type == InputTypeNames::time)
+            return TimeRole;
         return TextFieldRole;
     }
     if (isHTMLSelectElement(*node())) {
@@ -216,15 +245,27 @@ AccessibilityRole AXNodeObject::determineAccessibilityRole()
         return HeadingRole;
     if (isHTMLDivElement(*node()))
         return DivRole;
+    if (isHTMLMeterElement(*node()))
+        return MeterRole;
+    if (isHTMLOutputElement(*node()))
+        return StatusRole;
     if (isHTMLParagraphElement(*node()))
         return ParagraphRole;
     if (isHTMLLabelElement(*node()))
         return LabelRole;
+    if (isHTMLDListElement(*node()))
+        return DescriptionListRole;
+    if (node()->isElementNode() && node()->hasTagName(blockquoteTag))
+        return BlockquoteRole;
+    if (node()->isElementNode() && node()->hasTagName(figcaptionTag))
+        return FigcaptionRole;
+    if (node()->isElementNode() && node()->hasTagName(figureTag))
+        return FigureRole;
     if (node()->isElementNode() && toElement(node())->isFocusable())
         return GroupRole;
     if (isHTMLAnchorElement(*node()) && isClickable())
         return LinkRole;
-    if (node()->hasTagName(iframeTag))
+    if (isHTMLIFrameElement(*node()))
         return IframeRole;
     if (isEmbeddedObject())
         return EmbeddedObjectRole;
@@ -241,7 +282,7 @@ AccessibilityRole AXNodeObject::determineAriaRoleAttribute() const
     AccessibilityRole role = ariaRoleToWebCoreRole(ariaRole);
 
     // ARIA states if an item can get focus, it should not be presentational.
-    if (role == PresentationalRole && canSetFocusAttribute())
+    if ((role == NoneRole || role == PresentationalRole) && canSetFocusAttribute())
         return UnknownRole;
 
     if (role == ButtonRole)
@@ -258,7 +299,7 @@ AccessibilityRole AXNodeObject::determineAriaRoleAttribute() const
     return UnknownRole;
 }
 
-void AXNodeObject::elementsFromAttribute(Vector<Element*>& elements, const QualifiedName& attribute) const
+void AXNodeObject::elementsFromAttribute(WillBeHeapVector<RawPtrWillBeMember<Element> >& elements, const QualifiedName& attribute) const
 {
     Node* node = this->node();
     if (!node || !node->isElementNode())
@@ -283,7 +324,7 @@ void AXNodeObject::elementsFromAttribute(Vector<Element*>& elements, const Quali
     }
 }
 
-// If you call node->rendererIsEditable() since that will return true if an ancestor is editable.
+// If you call node->hasEditableStyle() since that will return true if an ancestor is editable.
 // This only returns true if this is the element that actually has the contentEditable attribute set.
 bool AXNodeObject::hasContentEditableAttributeSet() const
 {
@@ -350,12 +391,7 @@ HTMLLabelElement* AXNodeObject::labelForElement(Element* element) const
             return label;
     }
 
-    for (Element* parent = element->parentElement(); parent; parent = parent->parentElement()) {
-        if (isHTMLLabelElement(*parent))
-            return toHTMLLabelElement(parent);
-    }
-
-    return 0;
+    return Traversal<HTMLLabelElement>::firstAncestor(*element);
 }
 
 AXObject* AXNodeObject::menuButtonForMenu() const
@@ -401,8 +437,8 @@ Element* AXNodeObject::mouseButtonListener() const
         return 0;
 
     // check if our parent is a mouse button listener
-    while (node && !node->isElementNode())
-        node = node->parentNode();
+    if (!node->isElementNode())
+        node = node->parentElement();
 
     if (!node)
         return 0;
@@ -446,7 +482,7 @@ AccessibilityRole AXNodeObject::remapAriaRoleDueToParent(AccessibilityRole role)
 
 void AXNodeObject::init()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     ASSERT(!m_initialized);
     m_initialized = true;
 #endif
@@ -477,9 +513,7 @@ bool AXNodeObject::isControl() const
 
 bool AXNodeObject::isEmbeddedObject() const
 {
-    return node()
-        && (node()->hasTagName(objectTag) || node()->hasTagName(embedTag)
-        || node()->hasTagName(appletTag));
+    return isHTMLPlugInElement(node());
 }
 
 bool AXNodeObject::isFieldset() const
@@ -515,7 +549,7 @@ bool AXNodeObject::isInputImage() const
 {
     Node* node = this->node();
     if (roleValue() == ButtonRole && isHTMLInputElement(node))
-        return toHTMLInputElement(*node).isImageButton();
+        return toHTMLInputElement(*node).type() == InputTypeNames::image;
 
     return false;
 }
@@ -553,7 +587,7 @@ bool AXNodeObject::isNativeCheckboxOrRadio() const
         return false;
 
     HTMLInputElement* input = toHTMLInputElement(node);
-    return input->isCheckbox() || input->isRadioButton();
+    return input->type() == InputTypeNames::checkbox || input->type() == InputTypeNames::radio;
 }
 
 bool AXNodeObject::isNativeImage() const
@@ -565,11 +599,11 @@ bool AXNodeObject::isNativeImage() const
     if (isHTMLImageElement(*node))
         return true;
 
-    if (isHTMLAppletElement(*node) || isHTMLEmbedElement(*node) || isHTMLObjectElement(*node))
+    if (isHTMLPlugInElement(*node))
         return true;
 
     if (isHTMLInputElement(*node))
-        return toHTMLInputElement(*node).isImageButton();
+        return toHTMLInputElement(*node).type() == InputTypeNames::image;
 
     return false;
 }
@@ -583,10 +617,8 @@ bool AXNodeObject::isNativeTextControl() const
     if (isHTMLTextAreaElement(*node))
         return true;
 
-    if (isHTMLInputElement(*node)) {
-        HTMLInputElement* input = toHTMLInputElement(node);
-        return input->isText() || input->isNumberField();
-    }
+    if (isHTMLInputElement(*node))
+        return toHTMLInputElement(node)->isTextField();
 
     return false;
 }
@@ -614,7 +646,7 @@ bool AXNodeObject::isPasswordField() const
     if (ariaRoleAttribute() != UnknownRole)
         return false;
 
-    return toHTMLInputElement(node)->isPasswordField();
+    return toHTMLInputElement(node)->type() == InputTypeNames::password;
 }
 
 bool AXNodeObject::isProgressIndicator() const
@@ -637,9 +669,11 @@ bool AXNodeObject::isChecked() const
     if (isHTMLInputElement(*node))
         return toHTMLInputElement(*node).shouldAppearChecked();
 
-    // Else, if this is an ARIA checkbox or radio, respect the aria-checked attribute
+    // Else, if this is an ARIA checkbox or radio OR ARIA role menuitemcheckbox
+    // or menuitemradio, respect the aria-checked attribute
     AccessibilityRole ariaRole = ariaRoleAttribute();
-    if (ariaRole == RadioButtonRole || ariaRole == CheckBoxRole) {
+    if (ariaRole == RadioButtonRole || ariaRole == CheckBoxRole
+        || ariaRole == MenuItemCheckBoxRole || ariaRole == MenuItemRadioRole) {
         if (equalIgnoringCase(getAttribute(aria_checkedAttr), "true"))
             return true;
         return false;
@@ -673,6 +707,17 @@ bool AXNodeObject::isEnabled() const
         return true;
 
     return !toElement(node)->isDisabledFormControl();
+}
+
+AccessibilityExpanded AXNodeObject::isExpanded() const
+{
+    const AtomicString& expanded = getAttribute(aria_expandedAttr);
+    if (equalIgnoringCase(expanded, "true"))
+        return ExpandedExpanded;
+    if (equalIgnoringCase(expanded, "false"))
+        return ExpandedCollapsed;
+
+    return ExpandedUndefined;
 }
 
 bool AXNodeObject::isIndeterminate() const
@@ -718,7 +763,7 @@ bool AXNodeObject::isReadOnly() const
             return input.isReadOnly();
     }
 
-    return !node->rendererIsEditable();
+    return !node->hasEditableStyle();
 }
 
 bool AXNodeObject::isRequired() const
@@ -814,27 +859,31 @@ int AXNodeObject::headingLevel() const
     // headings can be in block flow and non-block flow
     Node* node = this->node();
     if (!node)
-        return false;
+        return 0;
 
     if (ariaRoleAttribute() == HeadingRole)
         return getAttribute(aria_levelAttr).toInt();
 
-    if (node->hasTagName(h1Tag))
+    if (!node->isHTMLElement())
+        return 0;
+
+    HTMLElement& element = toHTMLElement(*node);
+    if (element.hasTagName(h1Tag))
         return 1;
 
-    if (node->hasTagName(h2Tag))
+    if (element.hasTagName(h2Tag))
         return 2;
 
-    if (node->hasTagName(h3Tag))
+    if (element.hasTagName(h3Tag))
         return 3;
 
-    if (node->hasTagName(h4Tag))
+    if (element.hasTagName(h4Tag))
         return 4;
 
-    if (node->hasTagName(h5Tag))
+    if (element.hasTagName(h5Tag))
         return 5;
 
-    if (node->hasTagName(h6Tag))
+    if (element.hasTagName(h6Tag))
         return 6;
 
     return 0;
@@ -954,7 +1003,7 @@ float AXNodeObject::valueForRange() const
 
     if (isHTMLInputElement(node())) {
         HTMLInputElement& input = toHTMLInputElement(*node());
-        if (input.isRangeControl())
+        if (input.type() == InputTypeNames::range)
             return input.valueAsNumber();
     }
 
@@ -968,7 +1017,7 @@ float AXNodeObject::maxValueForRange() const
 
     if (isHTMLInputElement(node())) {
         HTMLInputElement& input = toHTMLInputElement(*node());
-        if (input.isRangeControl())
+        if (input.type() == InputTypeNames::range)
             return input.maximum();
     }
 
@@ -982,7 +1031,7 @@ float AXNodeObject::minValueForRange() const
 
     if (isHTMLInputElement(node())) {
         HTMLInputElement& input = toHTMLInputElement(*node());
-        if (input.isRangeControl())
+        if (input.type() == InputTypeNames::range)
             return input.minimum();
     }
 
@@ -1034,18 +1083,30 @@ String AXNodeObject::stringValue() const
     return String();
 }
 
+
+const AtomicString& AXNodeObject::textInputType() const
+{
+    Node* node = this->node();
+    if (!isHTMLInputElement(node))
+        return nullAtom;
+
+    HTMLInputElement& input = toHTMLInputElement(*node);
+    if (input.isTextField())
+        return input.type();
+    return nullAtom;
+}
+
 String AXNodeObject::ariaDescribedByAttribute() const
 {
-    Vector<Element*> elements;
+    WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
     elementsFromAttribute(elements, aria_describedbyAttr);
 
     return accessibilityDescriptionForElements(elements);
 }
 
-
 String AXNodeObject::ariaLabeledByAttribute() const
 {
-    Vector<Element*> elements;
+    WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
     ariaLabeledByElements(elements);
 
     return accessibilityDescriptionForElements(elements);
@@ -1058,7 +1119,7 @@ AccessibilityRole AXNodeObject::ariaRoleAttribute() const
 
 // When building the textUnderElement for an object, determine whether or not
 // we should include the inner text of this given descendant object or skip it.
-static bool shouldUseAccessiblityObjectInnerText(AXObject* obj)
+static bool shouldUseAccessibilityObjectInnerText(AXObject* obj)
 {
     // Consider this hypothetical example:
     // <div tabindex=0>
@@ -1100,7 +1161,7 @@ String AXNodeObject::textUnderElement() const
 
     StringBuilder builder;
     for (AXObject* child = firstChild(); child; child = child->nextSibling()) {
-        if (!shouldUseAccessiblityObjectInnerText(child))
+        if (!shouldUseAccessibilityObjectInnerText(child))
             continue;
 
         if (child->isAXNodeObject()) {
@@ -1180,6 +1241,8 @@ String AXNodeObject::title() const
     case ListBoxOptionRole:
     case MenuButtonRole:
     case MenuItemRole:
+    case MenuItemCheckBoxRole:
+    case MenuItemRadioRole:
     case RadioButtonRole:
     case TabRole:
         return textUnderElement();
@@ -1247,8 +1310,28 @@ LayoutRect AXNodeObject::elementRect() const
     if (!m_explicitElementRect.isEmpty())
         return m_explicitElementRect;
 
-    // AXNodeObjects have no mechanism yet to return a size or position.
-    // For now, let's return the position of the ancestor that does have a position,
+    // FIXME: If there are a lot of elements in the canvas, it will be inefficient.
+    // We can avoid the inefficient calculations by using AXComputedObjectAttributeCache.
+    if (node()->parentElement()->isInCanvasSubtree()) {
+        LayoutRect rect;
+
+        for (Node* child = node()->firstChild(); child; child = child->nextSibling()) {
+            if (child->isHTMLElement()) {
+                if (AXObject* obj = axObjectCache()->get(child)) {
+                    if (rect.isEmpty())
+                        rect = obj->elementRect();
+                    else
+                        rect.unite(obj->elementRect());
+                }
+            }
+        }
+
+        if (!rect.isEmpty())
+            return rect;
+    }
+
+    // If this object doesn't have an explicit element rect or computable from its children,
+    // for now, let's return the position of the ancestor that does have a position,
     // and make it the width of that parent, and about the height of a line of text, so that it's clear the object is a child of the parent.
 
     LayoutRect boundingBox;
@@ -1265,7 +1348,7 @@ LayoutRect AXNodeObject::elementRect() const
     return boundingBox;
 }
 
-AXObject* AXNodeObject::parentObject() const
+AXObject* AXNodeObject::computeParent() const
 {
     if (!node())
         return 0;
@@ -1277,9 +1360,16 @@ AXObject* AXNodeObject::parentObject() const
     return 0;
 }
 
-AXObject* AXNodeObject::parentObjectIfExists() const
+AXObject* AXNodeObject::computeParentIfExists() const
 {
-    return parentObject();
+    if (!node())
+        return 0;
+
+    Node* parentObj = node()->parentNode();
+    if (parentObj)
+        return axObjectCache()->get(parentObj);
+
+    return 0;
 }
 
 AXObject* AXNodeObject::firstChild() const
@@ -1324,6 +1414,9 @@ void AXNodeObject::addChildren()
 
     for (Node* child = m_node->firstChild(); child; child = child->nextSibling())
         addChild(axObjectCache()->getOrCreate(child));
+
+    for (unsigned i = 0; i < m_children.size(); ++i)
+        m_children[i].get()->setParent(this);
 }
 
 void AXNodeObject::addChild(AXObject* child)
@@ -1373,7 +1466,7 @@ bool AXNodeObject::canHaveChildren() const
     case ScrollBarRole:
         return false;
     case StaticTextRole:
-        if (!axObjectCache()->inlineTextBoxAccessibility())
+        if (!axObjectCache()->inlineTextBoxAccessibilityEnabled())
             return false;
     default:
         return true;
@@ -1412,6 +1505,8 @@ Element* AXNodeObject::actionElement() const
     case ToggleButtonRole:
     case TabRole:
     case MenuItemRole:
+    case MenuItemCheckBoxRole:
+    case MenuItemRadioRole:
     case ListItemRole:
         return toElement(node);
     default:
@@ -1430,7 +1525,7 @@ Element* AXNodeObject::anchorElement() const
     if (!node)
         return 0;
 
-    AXObjectCache* cache = axObjectCache();
+    AXObjectCacheImpl* cache = axObjectCache();
 
     // search up the DOM tree for an anchor element
     // NOTE: this assumes that any non-image with an anchor is an HTMLAnchorElement
@@ -1527,7 +1622,7 @@ void AXNodeObject::childrenChanged()
     if (!node() && !renderer())
         return;
 
-    axObjectCache()->postNotification(this, document(), AXObjectCache::AXChildrenChanged, true);
+    axObjectCache()->postNotification(this, document(), AXObjectCacheImpl::AXChildrenChanged, true);
 
     // Go up the accessibility parent chain, but only if the element already exists. This method is
     // called during render layouts, minimal work should be done.
@@ -1540,13 +1635,13 @@ void AXNodeObject::childrenChanged()
         // In other words, they need to be sent even when the screen reader has not accessed this live region since the last update.
 
         // If this element supports ARIA live regions, then notify the AT of changes.
-        if (parent->supportsARIALiveRegion())
-            axObjectCache()->postNotification(parent, parent->document(), AXObjectCache::AXLiveRegionChanged, true);
+        if (parent->isLiveRegion())
+            axObjectCache()->postNotification(parent, parent->document(), AXObjectCacheImpl::AXLiveRegionChanged, true);
 
         // If this element is an ARIA text box or content editable, post a "value changed" notification on it
         // so that it behaves just like a native input element or textarea.
         if (isNonNativeTextControl())
-            axObjectCache()->postNotification(parent, parent->document(), AXObjectCache::AXValueChanged, true);
+            axObjectCache()->postNotification(parent, parent->document(), AXObjectCacheImpl::AXValueChanged, true);
     }
 }
 
@@ -1556,7 +1651,7 @@ void AXNodeObject::selectionChanged()
     // focused (to handle form controls, ARIA text boxes and contentEditable),
     // or the web area if the selection is just in the document somewhere.
     if (isFocused() || isWebArea())
-        axObjectCache()->postNotification(this, document(), AXObjectCache::AXSelectedTextChanged, true);
+        axObjectCache()->postNotification(this, document(), AXObjectCacheImpl::AXSelectedTextChanged, true);
     else
         AXObject::selectionChanged(); // Calls selectionChanged on parent.
 }
@@ -1565,19 +1660,19 @@ void AXNodeObject::textChanged()
 {
     // If this element supports ARIA live regions, or is part of a region with an ARIA editable role,
     // then notify the AT of changes.
-    AXObjectCache* cache = axObjectCache();
+    AXObjectCacheImpl* cache = axObjectCache();
     for (Node* parentNode = node(); parentNode; parentNode = parentNode->parentNode()) {
         AXObject* parent = cache->get(parentNode);
         if (!parent)
             continue;
 
-        if (parent->supportsARIALiveRegion())
-            cache->postNotification(parentNode, AXObjectCache::AXLiveRegionChanged, true);
+        if (parent->isLiveRegion())
+            cache->postNotification(parentNode, AXObjectCacheImpl::AXLiveRegionChanged, true);
 
         // If this element is an ARIA text box or content editable, post a "value changed" notification on it
         // so that it behaves just like a native input element or textarea.
         if (parent->isNonNativeTextControl())
-            cache->postNotification(parentNode, AXObjectCache::AXValueChanged, true);
+            cache->postNotification(parentNode, AXObjectCacheImpl::AXValueChanged, true);
     }
 }
 
@@ -1614,25 +1709,21 @@ String AXNodeObject::alternativeTextForWebArea() const
             return ariaLabel;
     }
 
-    Node* owner = document->ownerElement();
-    if (owner) {
+    if (HTMLFrameOwnerElement* owner = document->ownerElement()) {
         if (isHTMLFrameElementBase(*owner)) {
-            const AtomicString& title = toElement(owner)->getAttribute(titleAttr);
+            const AtomicString& title = owner->getAttribute(titleAttr);
             if (!title.isEmpty())
                 return title;
-            return toElement(owner)->getNameAttribute();
         }
-        if (owner->isHTMLElement())
-            return toHTMLElement(owner)->getNameAttribute();
+        return owner->getNameAttribute();
     }
 
     String documentTitle = document->title();
     if (!documentTitle.isEmpty())
         return documentTitle;
 
-    owner = document->body();
-    if (owner && owner->isHTMLElement())
-        return toHTMLElement(owner)->getNameAttribute();
+    if (HTMLElement* body = document->body())
+        return body->getNameAttribute();
 
     return String();
 }
@@ -1665,7 +1756,7 @@ void AXNodeObject::ariaLabeledByText(Vector<AccessibilityText>& textOrder) const
 {
     String ariaLabeledBy = ariaLabeledByAttribute();
     if (!ariaLabeledBy.isEmpty()) {
-        Vector<Element*> elements;
+        WillBeHeapVector<RawPtrWillBeMember<Element> > elements;
         ariaLabeledByElements(elements);
 
         unsigned length = elements.size();
@@ -1684,7 +1775,7 @@ void AXNodeObject::changeValueByPercent(float percentChange)
     value += range * (percentChange / 100);
     setValue(String::number(value));
 
-    axObjectCache()->postNotification(node(), AXObjectCache::AXValueChanged, true);
+    axObjectCache()->postNotification(node(), AXObjectCacheImpl::AXValueChanged, true);
 }
 
-} // namespace WebCore
+} // namespace blink

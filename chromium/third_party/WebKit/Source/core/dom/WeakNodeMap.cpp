@@ -7,8 +7,9 @@
 
 #include "core/dom/Node.h"
 
-namespace WebCore {
+namespace blink {
 
+#if !ENABLE(OILPAN)
 class NodeToWeakNodeMaps {
 public:
     bool addedToMap(Node*, WeakNodeMap*);
@@ -70,7 +71,7 @@ WeakNodeMap::~WeakNodeMap()
 
 void WeakNodeMap::put(Node* node, int value)
 {
-    ASSERT(!m_nodeToValue.contains(node));
+    ASSERT(node && !m_nodeToValue.contains(node));
     m_nodeToValue.set(node, value);
     m_valueToNode.set(value, node);
 
@@ -100,5 +101,6 @@ void WeakNodeMap::notifyNodeDestroyed(Node* node)
 {
     NodeToWeakNodeMaps::instance().nodeDestroyed(node);
 }
+#endif
 
 }

@@ -38,7 +38,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<InputType> CheckboxInputType::create(HTMLInputElement& element)
 {
@@ -97,14 +97,9 @@ void CheckboxInputType::didDispatchClick(Event* event, const ClickHandlingState&
     event->setDefaultHandled();
 }
 
-bool CheckboxInputType::isCheckbox() const
+bool CheckboxInputType::shouldAppearIndeterminate() const
 {
-    return true;
+    return element().indeterminate();
 }
 
-bool CheckboxInputType::supportsIndeterminateAppearance() const
-{
-    return true;
-}
-
-} // namespace WebCore
+} // namespace blink

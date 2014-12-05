@@ -8,11 +8,16 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/rand_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
+using net::InsertStatus;
 using net::StrikeRegister;
+using std::make_pair;
+using std::min;
+using std::pair;
 using std::set;
 using std::string;
 
@@ -36,21 +41,34 @@ TEST(StrikeRegisterTest, SimpleHorizon) {
                      StrikeRegister::DENY_REQUESTS_AT_STARTUP);
   uint8 nonce[32];
   SetNonce(nonce, 999, kOrbit);
-  ASSERT_FALSE(set.Insert(nonce, 1000));
+  EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce, 1000));
   SetNonce(nonce, 1000, kOrbit);
-  ASSERT_FALSE(set.Insert(nonce, 1000));
+  EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce, 1000));
+
+  EXPECT_EQ(0u, set.GetCurrentValidWindowSecs(1000 /* current time */));
+  EXPECT_EQ(0u, set.GetCurrentValidWindowSecs(1100 /* current time */));
+  EXPECT_EQ(1u, set.GetCurrentValidWindowSecs(1101 /* current time */));
+  EXPECT_EQ(50u, set.GetCurrentValidWindowSecs(1150 /* current time */));
+  EXPECT_EQ(100u, set.GetCurrentValidWindowSecs(1200 /* current time */));
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1300 /* current time */));
 }
 
 TEST(StrikeRegisterTest, NoStartupMode) {
   // Check that a strike register works immediately if NO_STARTUP_PERIOD_NEEDED
   // is specified.
-  StrikeRegister set(10 /* max size */, 0 /* current time */,
+  StrikeRegister set(10 /* max size */, 1000 /* current time */,
                      100 /* window secs */, kOrbit,
                      StrikeRegister::NO_STARTUP_PERIOD_NEEDED);
   uint8 nonce[32];
-  SetNonce(nonce, 0, kOrbit);
-  ASSERT_TRUE(set.Insert(nonce, 0));
-  ASSERT_FALSE(set.Insert(nonce, 0));
+  SetNonce(nonce, 1000, kOrbit);
+  EXPECT_EQ(net::NONCE_OK, set.Insert(nonce, 1000));
+  EXPECT_EQ(net::NONCE_NOT_UNIQUE_FAILURE, set.Insert(nonce, 1000));
+
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1000 /* current time */));
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1050 /* current time */));
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1100 /* current time */));
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1200 /* current time */));
+  EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1300 /* current time */));
 }
 
 TEST(StrikeRegisterTest, WindowFuture) {
@@ -60,9 +78,9 @@ TEST(StrikeRegisterTest, WindowFuture) {
                      StrikeRegister::DENY_REQUESTS_AT_STARTUP);
   uint8 nonce[32];
   SetNonce(nonce, 1101, kOrbit);
-  ASSERT_FALSE(set.Insert(nonce, 1000));
+  EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce, 1000));
   SetNonce(nonce, 999, kOrbit);
-  ASSERT_FALSE(set.Insert(nonce, 1100));
+  EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce, 1100));
 }
 
 TEST(StrikeRegisterTest, BadOrbit) {
@@ -73,7 +91,7 @@ TEST(StrikeRegisterTest, BadOrbit) {
   uint8 nonce[32];
   static const uint8 kBadOrbit[8] = { 0, 0, 0, 0, 1, 1, 1, 1 };
   SetNonce(nonce, 1101, kBadOrbit);
-  ASSERT_FALSE(set.Insert(nonce, 1100));
+  EXPECT_EQ(net::NONCE_INVALID_ORBIT_FAILURE, set.Insert(nonce, 1100));
 }
 
 TEST(StrikeRegisterTest, OneValue) {
@@ -82,7 +100,7 @@ TEST(StrikeRegisterTest, OneValue) {
                      StrikeRegister::DENY_REQUESTS_AT_STARTUP);
   uint8 nonce[32];
   SetNonce(nonce, 1101, kOrbit);
-  ASSERT_TRUE(set.Insert(nonce, 1100));
+  EXPECT_EQ(net::NONCE_OK, set.Insert(nonce, 1101));
 }
 
 TEST(StrikeRegisterTest, RejectDuplicate) {
@@ -92,29 +110,62 @@ TEST(StrikeRegisterTest, RejectDuplicate) {
                      StrikeRegister::DENY_REQUESTS_AT_STARTUP);
   uint8 nonce[32];
   SetNonce(nonce, 1101, kOrbit);
-  ASSERT_TRUE(set.Insert(nonce, 1100));
-  ASSERT_FALSE(set.Insert(nonce, 1100));
+  EXPECT_EQ(net::NONCE_OK, set.Insert(nonce, 1101));
+  EXPECT_EQ(net::NONCE_NOT_UNIQUE_FAILURE, set.Insert(nonce, 1101));
 }
 
 TEST(StrikeRegisterTest, HorizonUpdating) {
-  StrikeRegister set(5 /* max size */, 1000 /* current time */,
-                     100 /* window secs */, kOrbit,
-                     StrikeRegister::DENY_REQUESTS_AT_STARTUP);
-  uint8 nonce[6][32];
-  for (unsigned i = 0; i < 5; i++) {
-    SetNonce(nonce[i], 1101, kOrbit);
-    nonce[i][31] = i;
-    ASSERT_TRUE(set.Insert(nonce[i], 1100));
+  StrikeRegister::StartupType startup_types[] = {
+    StrikeRegister::DENY_REQUESTS_AT_STARTUP,
+    StrikeRegister::NO_STARTUP_PERIOD_NEEDED
+  };
+
+  for (size_t type_idx = 0; type_idx < arraysize(startup_types); ++type_idx) {
+    StrikeRegister set(5 /* max size */, 500 /* current time */,
+                       100 /* window secs */, kOrbit,
+                       startup_types[type_idx]);
+    uint8 nonce[6][32];
+    for (unsigned i = 0; i < 5; i++) {
+      SetNonce(nonce[i], 1101 + i, kOrbit);
+      nonce[i][31] = i;
+      EXPECT_EQ(net::NONCE_OK, set.Insert(nonce[i], 1100));
+    }
+
+    // Valid window is still equal to |window_secs + 1|.
+    EXPECT_EQ(101u, set.GetCurrentValidWindowSecs(1100));
+
+    // This should push the oldest value out and force the horizon to
+    // be updated.
+    SetNonce(nonce[5], 1110, kOrbit);
+    EXPECT_EQ(net::NONCE_OK, set.Insert(nonce[5], 1110));
+    // Effective horizon is computed based on the timestamp of the
+    // value that was pushed out.
+    EXPECT_EQ(9u, set.GetCurrentValidWindowSecs(1110));
+
+    SetNonce(nonce[5], 1111, kOrbit);
+    EXPECT_EQ(net::NONCE_OK, set.Insert(nonce[5], 1110));
+    EXPECT_EQ(8u, set.GetCurrentValidWindowSecs(1110));
+
+    // This should be behind the horizon now:
+    SetNonce(nonce[5], 1101, kOrbit);
+    nonce[5][31] = 10;
+    EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce[5], 1110));
+
+    // Insert beyond the valid range.
+    SetNonce(nonce[5], 1117, kOrbit);
+    nonce[5][31] = 2;
+    EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce[5], 1110));
+
+    // Insert at the upper valid range.
+    SetNonce(nonce[5], 1116, kOrbit);
+    nonce[5][31] = 1;
+    EXPECT_EQ(net::NONCE_OK, set.Insert(nonce[5], 1110));
+
+    // This should be beyond the upper valid range now:
+    SetNonce(nonce[5], 1116, kOrbit);
+    nonce[5][31] = 2;
+    EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce[5], 1110));
   }
-
-  // This should push the oldest value out and force the horizon to be updated.
-  SetNonce(nonce[5], 1102, kOrbit);
-  ASSERT_TRUE(set.Insert(nonce[5], 1100));
-
-  // This should be behind the horizon now:
-  SetNonce(nonce[5], 1101, kOrbit);
-  nonce[5][31] = 10;
-  ASSERT_FALSE(set.Insert(nonce[5], 1100));
 }
 
 TEST(StrikeRegisterTest, InsertMany) {
@@ -127,7 +178,7 @@ TEST(StrikeRegisterTest, InsertMany) {
   for (unsigned i = 0; i < 100000; i++) {
     SetNonce(nonce, 1101 + i/500, kOrbit);
     memcpy(nonce + 12, &i, sizeof(i));
-    set.Insert(nonce, 1100);
+    EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, set.Insert(nonce, 1100));
   }
 }
 
@@ -147,51 +198,59 @@ class SlowStrikeRegister {
       : max_entries_(max_entries),
         window_secs_(window_secs),
         creation_time_(current_time),
-        horizon_(ExternalTimeToInternal(current_time + window_secs)) {
+        horizon_(ExternalTimeToInternal(current_time + window_secs) + 1) {
     memcpy(orbit_, orbit, sizeof(orbit_));
   }
 
-  bool Insert(const uint8 nonce_bytes[32], const uint32 current_time_external) {
+  InsertStatus Insert(const uint8 nonce_bytes[32],
+                      const uint32 nonce_time_external,
+                      const uint32 current_time_external) {
+    if (nonces_.size() == max_entries_) {
+      DropOldestEntry();
+    }
+
     const uint32 current_time = ExternalTimeToInternal(current_time_external);
 
     // Check to see if the orbit is correct.
     if (memcmp(nonce_bytes + 4, orbit_, sizeof(orbit_))) {
-      return false;
+      return net::NONCE_INVALID_ORBIT_FAILURE;
     }
     const uint32 nonce_time =
         ExternalTimeToInternal(TimeFromBytes(nonce_bytes));
-    // We have dropped one or more nonces with a time value of |horizon_|, so
-    // we have to reject anything with a timestamp less than or equal to that.
-    if (nonce_time <= horizon_) {
-      return false;
+    EXPECT_EQ(ExternalTimeToInternal(nonce_time_external), nonce_time);
+    // We have dropped one or more nonces with a time value of |horizon_ - 1|,
+    // so we have to reject anything with a timestamp less than or
+    // equal to that.
+    if (nonce_time < horizon_) {
+      return net::NONCE_INVALID_TIME_FAILURE;
     }
 
     // Check that the timestamp is in the current window.
     if ((current_time > window_secs_ &&
          nonce_time < (current_time - window_secs_)) ||
         nonce_time > (current_time + window_secs_)) {
-      return false;
+      return net::NONCE_INVALID_TIME_FAILURE;
     }
 
-    string nonce;
-    nonce.reserve(32);
-    nonce +=
-        string(reinterpret_cast<const char*>(&nonce_time), sizeof(nonce_time));
-    nonce +=
-        string(reinterpret_cast<const char*>(nonce_bytes) + sizeof(nonce_time),
-               32 - sizeof(nonce_time));
+    pair<uint32, string> nonce = make_pair(
+        nonce_time,
+        string(reinterpret_cast<const char*>(nonce_bytes), 32));
 
-    set<string>::const_iterator it = nonces_.find(nonce);
+    set<pair<uint32, string> >::const_iterator it = nonces_.find(nonce);
     if (it != nonces_.end()) {
-      return false;
-    }
-
-    if (nonces_.size() == max_entries_) {
-      DropOldestEntry();
+      return net::NONCE_NOT_UNIQUE_FAILURE;
     }
 
     nonces_.insert(nonce);
-    return true;
+    return net::NONCE_OK;
+  }
+
+  uint32 GetCurrentValidWindowSecs(const uint32 current_time_external) const {
+    const uint32 current_time = ExternalTimeToInternal(current_time_external);
+    if (horizon_ > current_time) {
+      return 0;
+    }
+    return 1 + min(current_time - horizon_, window_secs_);
   }
 
  private:
@@ -203,7 +262,7 @@ class SlowStrikeRegister {
            static_cast<uint32>(d[3]);
   }
 
-  uint32 ExternalTimeToInternal(uint32 external_time) {
+  uint32 ExternalTimeToInternal(uint32 external_time) const {
     static const uint32 kCreationTimeFromInternalEpoch = 63115200.0;
     uint32 internal_epoch = 0;
     if (creation_time_ > kCreationTimeFromInternalEpoch) {
@@ -214,21 +273,9 @@ class SlowStrikeRegister {
   }
 
   void DropOldestEntry() {
-    set<string>::iterator oldest = nonces_.begin(), it;
-    uint32 oldest_time =
-        TimeFromBytes(reinterpret_cast<const uint8*>(oldest->data()));
-
-    for (it = oldest; it != nonces_.end(); it++) {
-      uint32 t = TimeFromBytes(reinterpret_cast<const uint8*>(it->data()));
-      if (t < oldest_time ||
-          (t == oldest_time && memcmp(it->data(), oldest->data(), 32) < 0)) {
-        oldest_time = t;
-        oldest = it;
-      }
-    }
-
+    set<pair<uint32, string> >::iterator oldest = nonces_.begin();
+    horizon_ = oldest->first + 1;
     nonces_.erase(oldest);
-    horizon_ = oldest_time;
   }
 
   const unsigned max_entries_;
@@ -237,10 +284,65 @@ class SlowStrikeRegister {
   uint8 orbit_[8];
   uint32 horizon_;
 
-  set<string> nonces_;
+  set<pair<uint32, string> > nonces_;
 };
 
-TEST(StrikeRegisterStressTest, Stress) {
+class StrikeRegisterStressTest : public ::testing::Test {
+};
+
+TEST_F(StrikeRegisterStressTest, InOrderInsertion) {
+  // Fixed seed gives reproducibility for this test.
+  srand(42);
+
+  unsigned max_entries = 64;
+  uint32 current_time = 10000, window = 200;
+  scoped_ptr<StrikeRegister> s1(
+      new StrikeRegister(max_entries, current_time, window, kOrbit,
+                         StrikeRegister::DENY_REQUESTS_AT_STARTUP));
+  scoped_ptr<SlowStrikeRegister> s2(
+      new SlowStrikeRegister(max_entries, current_time, window, kOrbit));
+
+  uint64 i;
+  const uint64 kMaxIterations = 10000;
+  for (i = 0; i < kMaxIterations; i++) {
+    const uint32 time = current_time + i;
+
+    uint8 nonce[32];
+    SetNonce(nonce, time, kOrbit);
+
+    // There are 2048 possible nonce values:
+    const uint32 v = rand() % 2048;
+    nonce[30] = v >> 8;
+    nonce[31] = v;
+
+    const InsertStatus nonce_error2 = s2->Insert(nonce, time, time);
+    const InsertStatus nonce_error1 = s1->Insert(nonce, time);
+    EXPECT_EQ(nonce_error1, nonce_error2);
+
+    // Inserts succeed after the startup period.
+    if (time > current_time + window) {
+      EXPECT_EQ(net::NONCE_OK, nonce_error1);
+    } else {
+      EXPECT_EQ(net::NONCE_INVALID_TIME_FAILURE, nonce_error1);
+    }
+    EXPECT_EQ(s1->GetCurrentValidWindowSecs(time),
+              s2->GetCurrentValidWindowSecs(time));
+
+    if (i % 10 == 0) {
+      s1->Validate();
+    }
+
+    if (HasFailure()) {
+      break;
+    }
+  }
+
+  if (i != kMaxIterations) {
+    FAIL() << "Failed after " << i << " iterations";
+  }
+}
+
+TEST_F(StrikeRegisterStressTest, Stress) {
   // Fixed seed gives reproducibility for this test.
   srand(42);
   unsigned max_entries = 64;
@@ -283,15 +385,18 @@ TEST(StrikeRegisterStressTest, Stress) {
     nonce[30] = v >> 8;
     nonce[31] = v;
 
-    const bool r2 = s2->Insert(nonce, time);
-    const bool r1 = s1->Insert(nonce, time);
-
-    if (r1 != r2) {
-      break;
-    }
+    const InsertStatus nonce_error2 = s2->Insert(nonce, time, time);
+    const InsertStatus nonce_error1 = s1->Insert(nonce, time);
+    EXPECT_EQ(nonce_error1, nonce_error2);
+    EXPECT_EQ(s1->GetCurrentValidWindowSecs(time),
+              s2->GetCurrentValidWindowSecs(time));
 
     if (i % 10 == 0) {
       s1->Validate();
+    }
+
+    if (HasFailure()) {
+      break;
     }
   }
 

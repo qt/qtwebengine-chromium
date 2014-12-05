@@ -33,23 +33,21 @@
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSSelector;
 class ContainerNode;
 class Document;
 class Element;
 class ExceptionState;
-class Node;
-class SimpleNodeList;
-class StaticNodeList;
-class SpaceSplitString;
+template <typename NodeType> class StaticNodeTypeList;
+typedef StaticNodeTypeList<Element> StaticElementList;
 
 class SelectorDataList {
 public:
     void initialize(const CSSSelectorList&);
     bool matches(Element&) const;
-    PassRefPtrWillBeRawPtr<StaticNodeList> queryAll(ContainerNode& rootNode) const;
+    PassRefPtrWillBeRawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
     PassRefPtrWillBeRawPtr<Element> queryFirst(ContainerNode& rootNode) const;
 
 private:
@@ -91,7 +89,7 @@ public:
     static PassOwnPtr<SelectorQuery> adopt(CSSSelectorList&);
 
     bool matches(Element&) const;
-    PassRefPtrWillBeRawPtr<StaticNodeList> queryAll(ContainerNode& rootNode) const;
+    PassRefPtrWillBeRawPtr<StaticElementList> queryAll(ContainerNode& rootNode) const;
     PassRefPtrWillBeRawPtr<Element> queryFirst(ContainerNode& rootNode) const;
 private:
     explicit SelectorQuery(CSSSelectorList&);

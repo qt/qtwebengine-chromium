@@ -11,9 +11,9 @@
 #include <oleacc.h>
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_comptr.h"
 #include "content/common/content_export.h"
+#include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -21,8 +21,6 @@ class WindowEventTarget;
 }
 
 namespace content {
-class BrowserAccessibilityManagerWin;
-
 // Reasons for the existence of this class outlined below:-
 // 1. Some screen readers expect every tab / every unique web content container
 //    to be in its own HWND with class name Chrome_RenderWidgetHostHWND.
@@ -40,12 +38,11 @@ class BrowserAccessibilityManagerWin;
 //    fail.
 //    We should look to get rid of this code when all of the above are fixed.
 
+class LegacyRenderWidgetHostHWNDDelegate;
+
 // This class implements a child HWND with the same size as the content area,
-// that delegates its accessibility implementation to the root of the
-// BrowserAccessibilityManager tree. This HWND is hooked up as the parent of
-// the root object in the BrowserAccessibilityManager tree, so when any
-// accessibility client calls ::WindowFromAccessibleObject, they get this
-// HWND instead of the DesktopWindowTreeHostWin.
+// and delegates its accessibility implementation to the
+// gfx::NativeViewAccessible provided by the owner class.
 class CONTENT_EXPORT LegacyRenderWidgetHostHWND
     : public ATL::CWindowImpl<LegacyRenderWidgetHostHWND,
                               NON_EXPORTED_BASE(ATL::CWindow),
@@ -57,12 +54,14 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
                            NON_EXPORTED_BASE(ATL::CWindow),
                            ATL::CWinTraits<WS_CHILD> > Base;
 
-  ~LegacyRenderWidgetHostHWND();
+  virtual ~LegacyRenderWidgetHostHWND();
 
   // Creates and returns an instance of the LegacyRenderWidgetHostHWND class on
   // successful creation of a child window parented to the parent window passed
   // in.
-  static scoped_ptr<LegacyRenderWidgetHostHWND> Create(HWND parent);
+  static LegacyRenderWidgetHostHWND* Create(
+      HWND parent,
+      LegacyRenderWidgetHostHWNDDelegate* delegate);
 
   BEGIN_MSG_MAP_EX(LegacyRenderWidgetHostHWND)
     MESSAGE_HANDLER_EX(WM_GETOBJECT, OnGetObject)
@@ -84,6 +83,8 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
     MESSAGE_HANDLER_EX(WM_SIZE, OnSize)
   END_MSG_MAP()
 
+  // May be deleted at any time by Windows! Other classes should never store
+  // this value.
   HWND hwnd() { return m_hWnd; }
 
   // Called when the child window is to be reparented to a new window.
@@ -93,13 +94,6 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
 
   IAccessible* window_accessible() { return window_accessible_; }
 
-  void set_browser_accessibility_manager(
-      content::BrowserAccessibilityManagerWin* manager) {
-    manager_ = manager;
-  }
-
-  void OnManagerDeleted();
-
   // Functions to show and hide the window.
   void Show();
   void Hide();
@@ -107,11 +101,9 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
   // Resizes the window to the bounds passed in.
   void SetBounds(const gfx::Rect& bounds);
 
- protected:
-  virtual void OnFinalMessage(HWND hwnd) OVERRIDE;
-
  private:
-  LegacyRenderWidgetHostHWND(HWND parent);
+  LegacyRenderWidgetHostHWND(HWND parent,
+                             LegacyRenderWidgetHostHWNDDelegate* delegate);
 
   bool Init();
 
@@ -136,7 +128,8 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
   LRESULT OnNCCalcSize(UINT message, WPARAM w_param, LPARAM l_param);
   LRESULT OnSize(UINT message, WPARAM w_param, LPARAM l_param);
 
-  content::BrowserAccessibilityManagerWin* manager_;
+  LegacyRenderWidgetHostHWNDDelegate* delegate_;
+
   base::win::ScopedComPtr<IAccessible> window_accessible_;
 
   // Set to true if we turned on mouse tracking.
@@ -148,4 +141,3 @@ class CONTENT_EXPORT LegacyRenderWidgetHostHWND
 }  // namespace content
 
 #endif  // CONTENT_BROWSER_RENDERER_HOST_LEGACY_RENDER_WIDGET_HOST_WIN_H_
-

@@ -22,14 +22,14 @@
 namespace media {
 namespace mp4 {
 
-// TODO(xhwang): Figure out the init data type appropriately once it's spec'ed.
-static const char kMp4InitDataType[] = "video/mp4";
+static const char kCencInitDataType[] = "cenc";
 
 MP4StreamParser::MP4StreamParser(const std::set<int>& audio_object_types,
                                  bool has_sbr)
     : state_(kWaitingForInit),
       moof_head_(0),
       mdat_tail_(0),
+      highest_end_offset_(0),
       has_audio_(false),
       has_video_(false),
       audio_track_id_(0),
@@ -353,7 +353,7 @@ void MP4StreamParser::EmitNeedKeyIfNecessary(
            headers[i].raw_box.size());
     pos += headers[i].raw_box.size();
   }
-  need_key_cb_.Run(kMp4InitDataType, init_data);
+  need_key_cb_.Run(kCencInitDataType, init_data);
 }
 
 bool MP4StreamParser::PrepareAVCBuffer(
@@ -382,8 +382,7 @@ bool MP4StreamParser::PrepareAVCBuffer(
     RCHECK(AVC::InsertParamSetsAnnexB(avc_config, frame_buf, subsamples));
   }
 
-  // TODO(acolwell): Improve IsValidAnnexB() so it can handle encrypted content.
-  DCHECK(runs_->is_encrypted() || AVC::IsValidAnnexB(*frame_buf));
+  DCHECK(AVC::IsValidAnnexB(*frame_buf, *subsamples));
   return true;
 }
 

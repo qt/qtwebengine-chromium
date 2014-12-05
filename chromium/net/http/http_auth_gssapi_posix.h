@@ -16,6 +16,8 @@
     MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_9
 // Including gssapi.h directly is deprecated in the 10.9 SDK.
 #include <GSS/gssapi.h>
+#elif defined(OS_FREEBSD)
+#include <gssapi/gssapi.h>
 #else
 #include <gssapi.h>
 #endif
@@ -99,7 +101,6 @@ class NET_EXPORT_PRIVATE GSSAPILibrary {
       OM_uint32* ctx_flags,
       int* locally_initiated,
       int* open) = 0;
-
 };
 
 // GSSAPISharedLibrary class is defined here so that unit tests can access it.
@@ -108,79 +109,70 @@ class NET_EXPORT_PRIVATE GSSAPISharedLibrary : public GSSAPILibrary {
   // If |gssapi_library_name| is empty, hard-coded default library names are
   // used.
   explicit GSSAPISharedLibrary(const std::string& gssapi_library_name);
-  virtual ~GSSAPISharedLibrary();
+  ~GSSAPISharedLibrary() override;
 
   // GSSAPILibrary methods:
-  virtual bool Init() OVERRIDE;
-  virtual OM_uint32 import_name(
-      OM_uint32* minor_status,
-      const gss_buffer_t input_name_buffer,
-      const gss_OID input_name_type,
-      gss_name_t* output_name) OVERRIDE;
-  virtual OM_uint32 release_name(
-      OM_uint32* minor_status,
-      gss_name_t* input_name) OVERRIDE;
-  virtual OM_uint32 release_buffer(
-      OM_uint32* minor_status,
-      gss_buffer_t buffer) OVERRIDE;
-  virtual OM_uint32 display_name(
-      OM_uint32* minor_status,
-      const gss_name_t input_name,
-      gss_buffer_t output_name_buffer,
-      gss_OID* output_name_type) OVERRIDE;
-  virtual OM_uint32 display_status(
-      OM_uint32* minor_status,
-      OM_uint32 status_value,
-      int status_type,
-      const gss_OID mech_type,
-      OM_uint32* message_contex,
-      gss_buffer_t status_string) OVERRIDE;
-  virtual OM_uint32 init_sec_context(
-      OM_uint32* minor_status,
-      const gss_cred_id_t initiator_cred_handle,
-      gss_ctx_id_t* context_handle,
-      const gss_name_t target_name,
-      const gss_OID mech_type,
-      OM_uint32 req_flags,
-      OM_uint32 time_req,
-      const gss_channel_bindings_t input_chan_bindings,
-      const gss_buffer_t input_token,
-      gss_OID* actual_mech_type,
-      gss_buffer_t output_token,
-      OM_uint32* ret_flags,
-      OM_uint32* time_rec) OVERRIDE;
-  virtual OM_uint32 wrap_size_limit(
-      OM_uint32* minor_status,
-      const gss_ctx_id_t context_handle,
-      int conf_req_flag,
-      gss_qop_t qop_req,
-      OM_uint32 req_output_size,
-      OM_uint32* max_input_size) OVERRIDE;
-  virtual OM_uint32 delete_sec_context(
-      OM_uint32* minor_status,
-      gss_ctx_id_t* context_handle,
-      gss_buffer_t output_token) OVERRIDE;
-  virtual OM_uint32 inquire_context(
-      OM_uint32* minor_status,
-      const gss_ctx_id_t context_handle,
-      gss_name_t* src_name,
-      gss_name_t* targ_name,
-      OM_uint32* lifetime_rec,
-      gss_OID* mech_type,
-      OM_uint32* ctx_flags,
-      int* locally_initiated,
-      int* open) OVERRIDE;
+  bool Init() override;
+  OM_uint32 import_name(OM_uint32* minor_status,
+                        const gss_buffer_t input_name_buffer,
+                        const gss_OID input_name_type,
+                        gss_name_t* output_name) override;
+  OM_uint32 release_name(OM_uint32* minor_status,
+                         gss_name_t* input_name) override;
+  OM_uint32 release_buffer(OM_uint32* minor_status,
+                           gss_buffer_t buffer) override;
+  OM_uint32 display_name(OM_uint32* minor_status,
+                         const gss_name_t input_name,
+                         gss_buffer_t output_name_buffer,
+                         gss_OID* output_name_type) override;
+  OM_uint32 display_status(OM_uint32* minor_status,
+                           OM_uint32 status_value,
+                           int status_type,
+                           const gss_OID mech_type,
+                           OM_uint32* message_contex,
+                           gss_buffer_t status_string) override;
+  OM_uint32 init_sec_context(OM_uint32* minor_status,
+                             const gss_cred_id_t initiator_cred_handle,
+                             gss_ctx_id_t* context_handle,
+                             const gss_name_t target_name,
+                             const gss_OID mech_type,
+                             OM_uint32 req_flags,
+                             OM_uint32 time_req,
+                             const gss_channel_bindings_t input_chan_bindings,
+                             const gss_buffer_t input_token,
+                             gss_OID* actual_mech_type,
+                             gss_buffer_t output_token,
+                             OM_uint32* ret_flags,
+                             OM_uint32* time_rec) override;
+  OM_uint32 wrap_size_limit(OM_uint32* minor_status,
+                            const gss_ctx_id_t context_handle,
+                            int conf_req_flag,
+                            gss_qop_t qop_req,
+                            OM_uint32 req_output_size,
+                            OM_uint32* max_input_size) override;
+  OM_uint32 delete_sec_context(OM_uint32* minor_status,
+                               gss_ctx_id_t* context_handle,
+                               gss_buffer_t output_token) override;
+  OM_uint32 inquire_context(OM_uint32* minor_status,
+                            const gss_ctx_id_t context_handle,
+                            gss_name_t* src_name,
+                            gss_name_t* targ_name,
+                            OM_uint32* lifetime_rec,
+                            gss_OID* mech_type,
+                            OM_uint32* ctx_flags,
+                            int* locally_initiated,
+                            int* open) override;
 
  private:
-  typedef typeof(&gss_import_name) gss_import_name_type;
-  typedef typeof(&gss_release_name) gss_release_name_type;
-  typedef typeof(&gss_release_buffer) gss_release_buffer_type;
-  typedef typeof(&gss_display_name) gss_display_name_type;
-  typedef typeof(&gss_display_status) gss_display_status_type;
-  typedef typeof(&gss_init_sec_context) gss_init_sec_context_type;
-  typedef typeof(&gss_wrap_size_limit) gss_wrap_size_limit_type;
-  typedef typeof(&gss_delete_sec_context) gss_delete_sec_context_type;
-  typedef typeof(&gss_inquire_context) gss_inquire_context_type;
+  typedef decltype(&gss_import_name) gss_import_name_type;
+  typedef decltype(&gss_release_name) gss_release_name_type;
+  typedef decltype(&gss_release_buffer) gss_release_buffer_type;
+  typedef decltype(&gss_display_name) gss_display_name_type;
+  typedef decltype(&gss_display_status) gss_display_status_type;
+  typedef decltype(&gss_init_sec_context) gss_init_sec_context_type;
+  typedef decltype(&gss_wrap_size_limit) gss_wrap_size_limit_type;
+  typedef decltype(&gss_delete_sec_context) gss_delete_sec_context_type;
+  typedef decltype(&gss_inquire_context) gss_inquire_context_type;
 
   FRIEND_TEST_ALL_PREFIXES(HttpAuthGSSAPIPOSIXTest, GSSAPIStartup);
 

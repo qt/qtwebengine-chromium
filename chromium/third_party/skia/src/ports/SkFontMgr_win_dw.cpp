@@ -331,7 +331,7 @@ struct ProtoDWriteTypeface {
     IDWriteFontFamily* fDWriteFontFamily;
 };
 
-static bool FindByDWriteFont(SkTypeface* cached, SkTypeface::Style, void* ctx) {
+static bool FindByDWriteFont(SkTypeface* cached, const SkFontStyle&, void* ctx) {
     DWriteFontTypeface* cshFace = reinterpret_cast<DWriteFontTypeface*>(cached);
     ProtoDWriteTypeface* ctxFace = reinterpret_cast<ProtoDWriteTypeface*>(ctx);
     bool same;
@@ -435,7 +435,7 @@ SkTypeface* SkFontMgr_DirectWrite::createTypefaceFromDWriteFont(
     if (NULL == face) {
         face = DWriteFontTypeface::Create(fFactory.get(), fontFace, font, fontFamily);
         if (face) {
-            fTFCache.add(face, get_style(font), true);
+            fTFCache.add(face, get_style(font));
         }
     }
     return face;

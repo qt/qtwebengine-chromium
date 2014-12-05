@@ -21,24 +21,43 @@
 #define RenderSVGResourceContainer_h
 
 #include "core/rendering/svg/RenderSVGHiddenContainer.h"
-#include "core/rendering/svg/RenderSVGResource.h"
+#include "core/svg/SVGDocumentExtensions.h"
 
-namespace WebCore {
+namespace blink {
+
+enum RenderSVGResourceType {
+    MaskerResourceType,
+    MarkerResourceType,
+    PatternResourceType,
+    LinearGradientResourceType,
+    RadialGradientResourceType,
+    FilterResourceType,
+    ClipperResourceType
+};
 
 class RenderLayer;
 
-class RenderSVGResourceContainer : public RenderSVGHiddenContainer,
-                                   public RenderSVGResource {
+class RenderSVGResourceContainer : public RenderSVGHiddenContainer {
 public:
     explicit RenderSVGResourceContainer(SVGElement*);
     virtual ~RenderSVGResourceContainer();
 
-    virtual void layout() OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE FINAL;
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) = 0;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) = 0;
 
-    virtual bool isSVGResourceContainer() const OVERRIDE FINAL { return true; }
+    virtual void layout() override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override final;
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGResourceContainer || RenderSVGHiddenContainer::isOfType(type); }
 
-    static AffineTransform transformOnNonScalingStroke(RenderObject*, const AffineTransform& resourceTransform);
+    virtual RenderSVGResourceType resourceType() const = 0;
+
+    bool isSVGPaintServer() const
+    {
+        RenderSVGResourceType resourceType = this->resourceType();
+        return resourceType == PatternResourceType
+            || resourceType == LinearGradientResourceType
+            || resourceType == RadialGradientResourceType;
+    }
 
     void idChanged();
     void addClientRenderLayer(Node*);
@@ -47,12 +66,14 @@ public:
 
     void invalidateCacheAndMarkForLayout(SubtreeLayoutScope* = 0);
 
+    static void markForLayoutAndParentResourceInvalidation(RenderObject*, bool needsLayout = true);
+
 protected:
     // When adding modes, make sure we don't overflow m_invalidationMask below.
     enum InvalidationMode {
         LayoutAndBoundariesInvalidation = 1 << 0,
         BoundariesInvalidation = 1 << 1,
-        RepaintInvalidation = 1 << 2,
+        PaintInvalidation = 1 << 2,
         ParentOnlyInvalidation = 1 << 3
     };
 
@@ -63,8 +84,6 @@ protected:
 
     void clearInvalidationMask() { m_invalidationMask = 0; }
 
-    static AffineTransform computeResourceSpaceTransform(RenderObject*, const AffineTransform& baseTransform, const SVGRenderStyle*, unsigned short resourceMode);
-
     bool m_isInLayout;
 
 private:
@@ -72,15 +91,15 @@ private:
     void addClient(RenderObject*);
     void removeClient(RenderObject*);
 
-    virtual void willBeDestroyed() OVERRIDE FINAL;
+    virtual void willBeDestroyed() override final;
     void registerResource();
 
     AtomicString m_id;
     // Track global (markAllClientsForInvalidation) invals to avoid redundant crawls.
     unsigned m_invalidationMask : 8;
 
-    bool m_registered : 1;
-    bool m_isInvalidating : 1;
+    unsigned m_registered : 1;
+    unsigned m_isInvalidating : 1;
     // 22 padding bits available
 
     HashSet<RenderObject*> m_clients;
@@ -101,13 +120,17 @@ inline RenderSVGResourceContainer* getRenderSVGResourceContainerById(TreeScope& 
 template<typename Renderer>
 Renderer* getRenderSVGResourceById(TreeScope& treeScope, const AtomicString& id)
 {
-    if (RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(treeScope, id))
-        return container->cast<Renderer>();
-
+    if (RenderSVGResourceContainer* container = getRenderSVGResourceContainerById(treeScope, id)) {
+        if (container->resourceType() == Renderer::s_resourceType)
+            return static_cast<Renderer*>(container);
+    }
     return 0;
 }
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGResourceContainer, isSVGResourceContainer());
+
+#define DEFINE_RENDER_SVG_RESOURCE_TYPE_CASTS(thisType, typeName) \
+    DEFINE_TYPE_CASTS(thisType, RenderSVGResourceContainer, resource, resource->resourceType() == typeName, resource.resourceType() == typeName)
 
 }
 

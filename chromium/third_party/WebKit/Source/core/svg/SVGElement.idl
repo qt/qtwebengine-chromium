@@ -20,17 +20,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    Custom=Wrap,
-] interface SVGElement : Element {
-    attribute DOMString xmlbase;
-    [TypeChecking=Interface|Nullable] readonly attribute SVGSVGElement? ownerSVGElement;
-    [TypeChecking=Interface|Nullable] readonly attribute SVGElement? viewportElement;
+interface SVGElement : Element {
+    [Reflect] attribute DOMString xmlbase;
+    readonly attribute SVGSVGElement? ownerSVGElement;
+    readonly attribute SVGElement? viewportElement;
 
-    attribute DOMString xmllang;
-    attribute DOMString xmlspace;
+    [Reflect] attribute DOMString xmllang;
+    [Reflect] attribute DOMString xmlspace;
 
-    [MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
+    [RuntimeEnabled=SVG1DOM, MeasureAs=SVGClassName] readonly attribute SVGAnimatedString className;
 
     readonly attribute CSSStyleDeclaration style;
 
@@ -38,4 +36,3 @@
 };
 
 SVGElement implements GlobalEventHandlers;
-

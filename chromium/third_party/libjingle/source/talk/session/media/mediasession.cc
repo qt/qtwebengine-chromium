@@ -32,16 +32,16 @@
 #include <set>
 #include <utility>
 
-#include "talk/base/helpers.h"
-#include "talk/base/logging.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/cryptoparams.h"
-#include "talk/p2p/base/constants.h"
+#include "webrtc/p2p/base/constants.h"
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/srtpfilter.h"
-#include "talk/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/stringutils.h"
 
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
@@ -55,7 +55,7 @@ const char kInline[] = "inline:";
 
 namespace cricket {
 
-using talk_base::scoped_ptr;
+using rtc::scoped_ptr;
 
 // RTP Profile names
 // http://www.iana.org/assignments/rtp-parameters/rtp-parameters.xml
@@ -89,7 +89,7 @@ static bool CreateCryptoParams(int tag, const std::string& cipher,
   std::string key;
   key.reserve(SRTP_MASTER_KEY_BASE64_LEN);
 
-  if (!talk_base::CreateRandomString(SRTP_MASTER_KEY_BASE64_LEN, &key)) {
+  if (!rtc::CreateRandomString(SRTP_MASTER_KEY_BASE64_LEN, &key)) {
     return false;
   }
   out->tag = tag;
@@ -236,7 +236,7 @@ static bool GenerateCname(const StreamParamsVec& params_vec,
   // Generate a random string for the RTCP CNAME, as stated in RFC 6222.
   // This string is only used for synchronization, and therefore is opaque.
   do {
-    if (!talk_base::CreateRandomString(16, cname)) {
+    if (!rtc::CreateRandomString(16, cname)) {
       ASSERT(false);
       return false;
     }
@@ -254,7 +254,7 @@ static void GenerateSsrcs(const StreamParamsVec& params_vec,
   for (int i = 0; i < num_ssrcs; i++) {
     uint32 candidate;
     do {
-      candidate = talk_base::CreateRandomNonZeroId();
+      candidate = rtc::CreateRandomNonZeroId();
     } while (GetStreamBySsrc(params_vec, candidate, NULL) ||
              std::count(ssrcs->begin(), ssrcs->end(), candidate) > 0);
     ssrcs->push_back(candidate);
@@ -270,7 +270,7 @@ static bool GenerateSctpSid(const StreamParamsVec& params_vec,
     return false;
   }
   while (true) {
-    uint32 candidate = talk_base::CreateRandomNonZeroId() % kMaxSctpSid;
+    uint32 candidate = rtc::CreateRandomNonZeroId() % kMaxSctpSid;
     if (!GetStreamBySsrc(params_vec, candidate, NULL)) {
       *sid = candidate;
       return true;
@@ -610,7 +610,7 @@ static bool IsRtpContent(SessionDescription* sdesc,
       return false;
     }
     is_rtp = media_desc->protocol().empty() ||
-             talk_base::starts_with(media_desc->protocol().data(),
+             rtc::starts_with(media_desc->protocol().data(),
                                     kMediaProtocolRtpPrefix);
   }
   return is_rtp;
@@ -775,6 +775,11 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
           negotiated.SetParam(kCodecParamAssociatedPayloadType, apt_value);
         }
         negotiated.id = theirs->id;
+        // RFC3264: Although the answerer MAY list the formats in their desired
+        // order of preference, it is RECOMMENDED that unless there is a
+        // specific reason, the answerer list formats in the same relative order
+        // they were present in the offer.
+        negotiated.preference = theirs->preference;
         negotiated_codecs->push_back(negotiated);
       }
     }
@@ -815,7 +820,7 @@ static void FindCodecsToOffer(
     if (!FindMatchingCodec<C>(*offered_codecs, *it, NULL) && IsRtxCodec(*it)) {
       C rtx_codec = *it;
       int referenced_pl_type =
-          talk_base::FromString<int>(0,
+          rtc::FromString<int>(0,
               rtx_codec.params[kCodecParamAssociatedPayloadType]);
       new_rtx_codecs.insert(std::pair<int, C>(referenced_pl_type,
                                               rtx_codec));
@@ -838,7 +843,7 @@ static void FindCodecsToOffer(
       if (rtx_it != new_rtx_codecs.end()) {
         C& rtx_codec = rtx_it->second;
         rtx_codec.params[kCodecParamAssociatedPayloadType] =
-            talk_base::ToString(codec.id);
+            rtc::ToString(codec.id);
       }
     }
   }
@@ -1070,37 +1075,33 @@ std::string MediaTypeToString(MediaType type) {
   return type_str;
 }
 
-void MediaSessionOptions::AddStream(MediaType type,
+void MediaSessionOptions::AddSendStream(MediaType type,
                                     const std::string& id,
                                     const std::string& sync_label) {
-  AddStreamInternal(type, id, sync_label, 1);
+  AddSendStreamInternal(type, id, sync_label, 1);
 }
 
-void MediaSessionOptions::AddVideoStream(
+void MediaSessionOptions::AddSendVideoStream(
     const std::string& id,
     const std::string& sync_label,
     int num_sim_layers) {
-  AddStreamInternal(MEDIA_TYPE_VIDEO, id, sync_label, num_sim_layers);
+  AddSendStreamInternal(MEDIA_TYPE_VIDEO, id, sync_label, num_sim_layers);
 }
 
-void MediaSessionOptions::AddStreamInternal(
+void MediaSessionOptions::AddSendStreamInternal(
     MediaType type,
     const std::string& id,
     const std::string& sync_label,
     int num_sim_layers) {
   streams.push_back(Stream(type, id, sync_label, num_sim_layers));
 
-  if (type == MEDIA_TYPE_VIDEO)
-    has_video = true;
-  else if (type == MEDIA_TYPE_AUDIO)
-    has_audio = true;
   // If we haven't already set the data_channel_type, and we add a
   // stream, we assume it's an RTP data stream.
-  else if (type == MEDIA_TYPE_DATA && data_channel_type == DCT_NONE)
+  if (type == MEDIA_TYPE_DATA && data_channel_type == DCT_NONE)
     data_channel_type = DCT_RTP;
 }
 
-void MediaSessionOptions::RemoveStream(MediaType type,
+void MediaSessionOptions::RemoveSendStream(MediaType type,
                                        const std::string& id) {
   Streams::iterator stream_it = streams.begin();
   for (; stream_it != streams.end(); ++stream_it) {
@@ -1110,6 +1111,16 @@ void MediaSessionOptions::RemoveStream(MediaType type,
     }
   }
   ASSERT(false);
+}
+
+bool MediaSessionOptions::HasSendMediaStream(MediaType type) const {
+  Streams::const_iterator stream_it = streams.begin();
+  for (; stream_it != streams.end(); ++stream_it) {
+    if (stream_it->type == type) {
+      return true;
+    }
+  }
+  return false;
 }
 
 MediaSessionDescriptionFactory::MediaSessionDescriptionFactory(
@@ -1135,8 +1146,6 @@ MediaSessionDescriptionFactory::MediaSessionDescriptionFactory(
 SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
     const MediaSessionOptions& options,
     const SessionDescription* current_description) const {
-  bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
-
   scoped_ptr<SessionDescription> offer(new SessionDescription());
 
   StreamParamsVec current_streams;
@@ -1158,117 +1167,64 @@ SessionDescription* MediaSessionDescriptionFactory::CreateOffer(
   GetRtpHdrExtsToOffer(current_description, &audio_rtp_extensions,
                        &video_rtp_extensions);
 
-  // Handle m=audio.
-  if (options.has_audio) {
-    cricket::SecurePolicy sdes_policy =
-        IsDtlsActive(CN_AUDIO, current_description) ?
-            cricket::SEC_DISABLED : secure();
+  bool audio_added = false;
+  bool video_added = false;
+  bool data_added = false;
 
-    scoped_ptr<AudioContentDescription> audio(new AudioContentDescription());
-    std::vector<std::string> crypto_suites;
-    GetSupportedAudioCryptoSuites(&crypto_suites);
-    if (!CreateMediaContentOffer(
-            options,
-            audio_codecs,
-            sdes_policy,
-            GetCryptos(GetFirstAudioContentDescription(current_description)),
-            crypto_suites,
-            audio_rtp_extensions,
-            add_legacy_,
-            &current_streams,
-            audio.get())) {
-      return NULL;
-    }
-
-    audio->set_lang(lang_);
-    SetMediaProtocol(secure_transport, audio.get());
-    offer->AddContent(CN_AUDIO, NS_JINGLE_RTP, audio.release());
-    if (!AddTransportOffer(CN_AUDIO, options.transport_options,
-                           current_description, offer.get())) {
-      return NULL;
-    }
-  }
-
-  // Handle m=video.
-  if (options.has_video) {
-    cricket::SecurePolicy sdes_policy =
-        IsDtlsActive(CN_VIDEO, current_description) ?
-            cricket::SEC_DISABLED : secure();
-
-    scoped_ptr<VideoContentDescription> video(new VideoContentDescription());
-    std::vector<std::string> crypto_suites;
-    GetSupportedVideoCryptoSuites(&crypto_suites);
-    if (!CreateMediaContentOffer(
-            options,
-            video_codecs,
-            sdes_policy,
-            GetCryptos(GetFirstVideoContentDescription(current_description)),
-            crypto_suites,
-            video_rtp_extensions,
-            add_legacy_,
-            &current_streams,
-            video.get())) {
-      return NULL;
-    }
-
-    video->set_bandwidth(options.video_bandwidth);
-    SetMediaProtocol(secure_transport, video.get());
-    offer->AddContent(CN_VIDEO, NS_JINGLE_RTP, video.release());
-    if (!AddTransportOffer(CN_VIDEO, options.transport_options,
-                           current_description, offer.get())) {
-      return NULL;
+  // Iterate through the contents of |current_description| to maintain the order
+  // of the m-lines in the new offer.
+  if (current_description) {
+    ContentInfos::const_iterator it = current_description->contents().begin();
+    for (; it != current_description->contents().end(); ++it) {
+      if (IsMediaContentOfType(&*it, MEDIA_TYPE_AUDIO)) {
+        if (!AddAudioContentForOffer(options, current_description,
+                                     audio_rtp_extensions, audio_codecs,
+                                     &current_streams, offer.get())) {
+          return NULL;
+        }
+        audio_added = true;
+      } else if (IsMediaContentOfType(&*it, MEDIA_TYPE_VIDEO)) {
+        if (!AddVideoContentForOffer(options, current_description,
+                                     video_rtp_extensions, video_codecs,
+                                     &current_streams, offer.get())) {
+          return NULL;
+        }
+        video_added = true;
+      } else if (IsMediaContentOfType(&*it, MEDIA_TYPE_DATA)) {
+        MediaSessionOptions options_copy(options);
+        if (IsSctp(static_cast<const MediaContentDescription*>(
+                it->description))) {
+          options_copy.data_channel_type = DCT_SCTP;
+        }
+        if (!AddDataContentForOffer(options_copy, current_description,
+                                    &data_codecs, &current_streams,
+                                    offer.get())) {
+          return NULL;
+        }
+        data_added = true;
+      } else {
+        ASSERT(false);
+      }
     }
   }
 
-  // Handle m=data.
-  if (options.has_data()) {
-    scoped_ptr<DataContentDescription> data(new DataContentDescription());
-    bool is_sctp = (options.data_channel_type == DCT_SCTP);
-
-    FilterDataCodecs(&data_codecs, is_sctp);
-
-    cricket::SecurePolicy sdes_policy =
-        IsDtlsActive(CN_DATA, current_description) ?
-            cricket::SEC_DISABLED : secure();
-    std::vector<std::string> crypto_suites;
-    if (is_sctp) {
-      // SDES doesn't make sense for SCTP, so we disable it, and we only
-      // get SDES crypto suites for RTP-based data channels.
-      sdes_policy = cricket::SEC_DISABLED;
-      // Unlike SetMediaProtocol below, we need to set the protocol
-      // before we call CreateMediaContentOffer.  Otherwise,
-      // CreateMediaContentOffer won't know this is SCTP and will
-      // generate SSRCs rather than SIDs.
-      data->set_protocol(
-          secure_transport ? kMediaProtocolDtlsSctp : kMediaProtocolSctp);
-    } else {
-      GetSupportedDataCryptoSuites(&crypto_suites);
-    }
-
-    if (!CreateMediaContentOffer(
-            options,
-            data_codecs,
-            sdes_policy,
-            GetCryptos(GetFirstDataContentDescription(current_description)),
-            crypto_suites,
-            RtpHeaderExtensions(),
-            add_legacy_,
-            &current_streams,
-            data.get())) {
-      return NULL;
-    }
-
-    if (is_sctp) {
-      offer->AddContent(CN_DATA, NS_JINGLE_DRAFT_SCTP, data.release());
-    } else {
-      data->set_bandwidth(options.data_bandwidth);
-      SetMediaProtocol(secure_transport, data.get());
-      offer->AddContent(CN_DATA, NS_JINGLE_RTP, data.release());
-    }
-    if (!AddTransportOffer(CN_DATA, options.transport_options,
-                           current_description, offer.get())) {
-      return NULL;
-    }
+  // Append contents that are not in |current_description|.
+  if (!audio_added && options.has_audio() &&
+      !AddAudioContentForOffer(options, current_description,
+                               audio_rtp_extensions, audio_codecs,
+                               &current_streams, offer.get())) {
+    return NULL;
+  }
+  if (!video_added && options.has_video() &&
+      !AddVideoContentForOffer(options, current_description,
+                               video_rtp_extensions, video_codecs,
+                               &current_streams, offer.get())) {
+    return NULL;
+  }
+  if (!data_added && options.has_data() &&
+      !AddDataContentForOffer(options, current_description, &data_codecs,
+                              &current_streams, offer.get())) {
+    return NULL;
   }
 
   // Bundle the contents together, if we've been asked to do so, and update any
@@ -1304,168 +1260,27 @@ SessionDescription* MediaSessionDescriptionFactory::CreateAnswer(
   StreamParamsVec current_streams;
   GetCurrentStreamParams(current_description, &current_streams);
 
-  bool bundle_enabled =
-      offer->HasGroup(GROUP_TYPE_BUNDLE) && options.bundle_enabled;
-
-  // Handle m=audio.
-  const ContentInfo* audio_content = GetFirstAudioContent(offer);
-  if (audio_content) {
-    scoped_ptr<TransportDescription> audio_transport(
-        CreateTransportAnswer(audio_content->name, offer,
-                              options.transport_options,
-                              current_description));
-    if (!audio_transport) {
-      return NULL;
-    }
-
-    AudioCodecs audio_codecs = audio_codecs_;
-    if (!options.vad_enabled) {
-      StripCNCodecs(&audio_codecs);
-    }
-
-    scoped_ptr<AudioContentDescription> audio_answer(
-        new AudioContentDescription());
-    // Do not require or create SDES cryptos if DTLS is used.
-    cricket::SecurePolicy sdes_policy =
-        audio_transport->secure() ? cricket::SEC_DISABLED : secure();
-    if (!CreateMediaContentAnswer(
-            static_cast<const AudioContentDescription*>(
-                audio_content->description),
-            options,
-            audio_codecs,
-            sdes_policy,
-            GetCryptos(GetFirstAudioContentDescription(current_description)),
-            audio_rtp_extensions_,
-            &current_streams,
-            add_legacy_,
-            bundle_enabled,
-            audio_answer.get())) {
-      return NULL;  // Fails the session setup.
-    }
-
-    bool rejected = !options.has_audio || audio_content->rejected ||
-        !IsMediaProtocolSupported(MEDIA_TYPE_AUDIO,
-                                  audio_answer->protocol(),
-                                  audio_transport->secure());
-    if (!rejected) {
-      AddTransportAnswer(audio_content->name, *(audio_transport.get()),
-                         answer.get());
-    } else {
-      // RFC 3264
-      // The answer MUST contain the same number of m-lines as the offer.
-      LOG(LS_INFO) << "Audio is not supported in the answer.";
-    }
-
-    answer->AddContent(audio_content->name, audio_content->type, rejected,
-                       audio_answer.release());
-  } else {
-    LOG(LS_INFO) << "Audio is not available in the offer.";
-  }
-
-  // Handle m=video.
-  const ContentInfo* video_content = GetFirstVideoContent(offer);
-  if (video_content) {
-    scoped_ptr<TransportDescription> video_transport(
-        CreateTransportAnswer(video_content->name, offer,
-                              options.transport_options,
-                              current_description));
-    if (!video_transport) {
-      return NULL;
-    }
-
-    scoped_ptr<VideoContentDescription> video_answer(
-        new VideoContentDescription());
-    // Do not require or create SDES cryptos if DTLS is used.
-    cricket::SecurePolicy sdes_policy =
-        video_transport->secure() ? cricket::SEC_DISABLED : secure();
-    if (!CreateMediaContentAnswer(
-            static_cast<const VideoContentDescription*>(
-                video_content->description),
-            options,
-            video_codecs_,
-            sdes_policy,
-            GetCryptos(GetFirstVideoContentDescription(current_description)),
-            video_rtp_extensions_,
-            &current_streams,
-            add_legacy_,
-            bundle_enabled,
-            video_answer.get())) {
-      return NULL;
-    }
-    bool rejected = !options.has_video || video_content->rejected ||
-        !IsMediaProtocolSupported(MEDIA_TYPE_VIDEO,
-                                  video_answer->protocol(),
-                                  video_transport->secure());
-    if (!rejected) {
-      if (!AddTransportAnswer(video_content->name, *(video_transport.get()),
-                              answer.get())) {
-        return NULL;
+  if (offer) {
+    ContentInfos::const_iterator it = offer->contents().begin();
+    for (; it != offer->contents().end(); ++it) {
+      if (IsMediaContentOfType(&*it, MEDIA_TYPE_AUDIO)) {
+        if (!AddAudioContentForAnswer(offer, options, current_description,
+                                  &current_streams, answer.get())) {
+          return NULL;
+        }
+      } else if (IsMediaContentOfType(&*it, MEDIA_TYPE_VIDEO)) {
+        if (!AddVideoContentForAnswer(offer, options, current_description,
+                                      &current_streams, answer.get())) {
+          return NULL;
+        }
+      } else {
+        ASSERT(IsMediaContentOfType(&*it, MEDIA_TYPE_DATA));
+        if (!AddDataContentForAnswer(offer, options, current_description,
+                                     &current_streams, answer.get())) {
+          return NULL;
+        }
       }
-      video_answer->set_bandwidth(options.video_bandwidth);
-    } else {
-      // RFC 3264
-      // The answer MUST contain the same number of m-lines as the offer.
-      LOG(LS_INFO) << "Video is not supported in the answer.";
     }
-    answer->AddContent(video_content->name, video_content->type, rejected,
-                       video_answer.release());
-  } else {
-    LOG(LS_INFO) << "Video is not available in the offer.";
-  }
-
-  // Handle m=data.
-  const ContentInfo* data_content = GetFirstDataContent(offer);
-  if (data_content) {
-    scoped_ptr<TransportDescription> data_transport(
-        CreateTransportAnswer(data_content->name, offer,
-                              options.transport_options,
-                              current_description));
-    if (!data_transport) {
-      return NULL;
-    }
-    bool is_sctp = (options.data_channel_type == DCT_SCTP);
-    std::vector<DataCodec> data_codecs(data_codecs_);
-    FilterDataCodecs(&data_codecs, is_sctp);
-
-    scoped_ptr<DataContentDescription> data_answer(
-        new DataContentDescription());
-    // Do not require or create SDES cryptos if DTLS is used.
-    cricket::SecurePolicy sdes_policy =
-        data_transport->secure() ? cricket::SEC_DISABLED : secure();
-    if (!CreateMediaContentAnswer(
-            static_cast<const DataContentDescription*>(
-                data_content->description),
-            options,
-            data_codecs_,
-            sdes_policy,
-            GetCryptos(GetFirstDataContentDescription(current_description)),
-            RtpHeaderExtensions(),
-            &current_streams,
-            add_legacy_,
-            bundle_enabled,
-            data_answer.get())) {
-      return NULL;  // Fails the session setup.
-    }
-
-    bool rejected = !options.has_data() || data_content->rejected ||
-        !IsMediaProtocolSupported(MEDIA_TYPE_DATA,
-                                  data_answer->protocol(),
-                                  data_transport->secure());
-    if (!rejected) {
-      data_answer->set_bandwidth(options.data_bandwidth);
-      if (!AddTransportAnswer(data_content->name, *(data_transport.get()),
-                              answer.get())) {
-        return NULL;
-      }
-    } else {
-      // RFC 3264
-      // The answer MUST contain the same number of m-lines as the offer.
-      LOG(LS_INFO) << "Data is not supported in the answer.";
-    }
-    answer->AddContent(data_content->name, data_content->type, rejected,
-                       data_answer.release());
-  } else {
-    LOG(LS_INFO) << "Data is not available in the offer.";
   }
 
   // If the offer supports BUNDLE, and we want to use it too, create a BUNDLE
@@ -1587,7 +1402,7 @@ bool MediaSessionDescriptionFactory::AddTransportOffer(
      return false;
   const TransportDescription* current_tdesc =
       GetTransportDescription(content_name, current_desc);
-  talk_base::scoped_ptr<TransportDescription> new_tdesc(
+  rtc::scoped_ptr<TransportDescription> new_tdesc(
       transport_desc_factory_->CreateOffer(transport_options, current_tdesc));
   bool ret = (new_tdesc.get() != NULL &&
       offer_desc->AddTransportInfo(TransportInfo(content_name, *new_tdesc)));
@@ -1624,6 +1439,329 @@ bool MediaSessionDescriptionFactory::AddTransportAnswer(
         << "Failed to AddTransportAnswer, content name=" << content_name;
     return false;
   }
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    const RtpHeaderExtensions& audio_rtp_extensions,
+    const AudioCodecs& audio_codecs,
+    StreamParamsVec* current_streams,
+    SessionDescription* desc) const {
+  cricket::SecurePolicy sdes_policy =
+      IsDtlsActive(CN_AUDIO, current_description) ?
+          cricket::SEC_DISABLED : secure();
+
+  scoped_ptr<AudioContentDescription> audio(new AudioContentDescription());
+  std::vector<std::string> crypto_suites;
+  GetSupportedAudioCryptoSuites(&crypto_suites);
+  if (!CreateMediaContentOffer(
+          options,
+          audio_codecs,
+          sdes_policy,
+          GetCryptos(GetFirstAudioContentDescription(current_description)),
+          crypto_suites,
+          audio_rtp_extensions,
+          add_legacy_,
+          current_streams,
+          audio.get())) {
+    return false;
+  }
+  audio->set_lang(lang_);
+
+  bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
+  SetMediaProtocol(secure_transport, audio.get());
+
+  if (!options.recv_audio) {
+    audio->set_direction(MD_SENDONLY);
+  }
+
+  desc->AddContent(CN_AUDIO, NS_JINGLE_RTP, audio.release());
+  if (!AddTransportOffer(CN_AUDIO, options.transport_options,
+                         current_description, desc)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    const RtpHeaderExtensions& video_rtp_extensions,
+    const VideoCodecs& video_codecs,
+    StreamParamsVec* current_streams,
+    SessionDescription* desc) const {
+  cricket::SecurePolicy sdes_policy =
+      IsDtlsActive(CN_VIDEO, current_description) ?
+          cricket::SEC_DISABLED : secure();
+
+  scoped_ptr<VideoContentDescription> video(new VideoContentDescription());
+  std::vector<std::string> crypto_suites;
+  GetSupportedVideoCryptoSuites(&crypto_suites);
+  if (!CreateMediaContentOffer(
+          options,
+          video_codecs,
+          sdes_policy,
+          GetCryptos(GetFirstVideoContentDescription(current_description)),
+          crypto_suites,
+          video_rtp_extensions,
+          add_legacy_,
+          current_streams,
+          video.get())) {
+    return false;
+  }
+
+  video->set_bandwidth(options.video_bandwidth);
+
+  bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
+  SetMediaProtocol(secure_transport, video.get());
+
+  if (!options.recv_video) {
+    video->set_direction(MD_SENDONLY);
+  }
+
+  desc->AddContent(CN_VIDEO, NS_JINGLE_RTP, video.release());
+  if (!AddTransportOffer(CN_VIDEO, options.transport_options,
+                         current_description, desc)) {
+    return false;
+  }
+
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddDataContentForOffer(
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    DataCodecs* data_codecs,
+    StreamParamsVec* current_streams,
+    SessionDescription* desc) const {
+  bool secure_transport = (transport_desc_factory_->secure() != SEC_DISABLED);
+
+  scoped_ptr<DataContentDescription> data(new DataContentDescription());
+  bool is_sctp = (options.data_channel_type == DCT_SCTP);
+
+  FilterDataCodecs(data_codecs, is_sctp);
+
+  cricket::SecurePolicy sdes_policy =
+      IsDtlsActive(CN_DATA, current_description) ?
+          cricket::SEC_DISABLED : secure();
+  std::vector<std::string> crypto_suites;
+  if (is_sctp) {
+    // SDES doesn't make sense for SCTP, so we disable it, and we only
+    // get SDES crypto suites for RTP-based data channels.
+    sdes_policy = cricket::SEC_DISABLED;
+    // Unlike SetMediaProtocol below, we need to set the protocol
+    // before we call CreateMediaContentOffer.  Otherwise,
+    // CreateMediaContentOffer won't know this is SCTP and will
+    // generate SSRCs rather than SIDs.
+    data->set_protocol(
+        secure_transport ? kMediaProtocolDtlsSctp : kMediaProtocolSctp);
+  } else {
+    GetSupportedDataCryptoSuites(&crypto_suites);
+  }
+
+  if (!CreateMediaContentOffer(
+          options,
+          *data_codecs,
+          sdes_policy,
+          GetCryptos(GetFirstDataContentDescription(current_description)),
+          crypto_suites,
+          RtpHeaderExtensions(),
+          add_legacy_,
+          current_streams,
+          data.get())) {
+    return false;
+  }
+
+  if (is_sctp) {
+    desc->AddContent(CN_DATA, NS_JINGLE_DRAFT_SCTP, data.release());
+  } else {
+    data->set_bandwidth(options.data_bandwidth);
+    SetMediaProtocol(secure_transport, data.get());
+    desc->AddContent(CN_DATA, NS_JINGLE_RTP, data.release());
+  }
+  if (!AddTransportOffer(CN_DATA, options.transport_options,
+                         current_description, desc)) {
+    return false;
+  }
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
+    const SessionDescription* offer,
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    StreamParamsVec* current_streams,
+    SessionDescription* answer) const {
+  const ContentInfo* audio_content = GetFirstAudioContent(offer);
+
+  scoped_ptr<TransportDescription> audio_transport(
+      CreateTransportAnswer(audio_content->name, offer,
+                            options.transport_options,
+                            current_description));
+  if (!audio_transport) {
+    return false;
+  }
+
+  AudioCodecs audio_codecs = audio_codecs_;
+  if (!options.vad_enabled) {
+    StripCNCodecs(&audio_codecs);
+  }
+
+  bool bundle_enabled =
+      offer->HasGroup(GROUP_TYPE_BUNDLE) && options.bundle_enabled;
+  scoped_ptr<AudioContentDescription> audio_answer(
+      new AudioContentDescription());
+  // Do not require or create SDES cryptos if DTLS is used.
+  cricket::SecurePolicy sdes_policy =
+      audio_transport->secure() ? cricket::SEC_DISABLED : secure();
+  if (!CreateMediaContentAnswer(
+          static_cast<const AudioContentDescription*>(
+              audio_content->description),
+          options,
+          audio_codecs,
+          sdes_policy,
+          GetCryptos(GetFirstAudioContentDescription(current_description)),
+          audio_rtp_extensions_,
+          current_streams,
+          add_legacy_,
+          bundle_enabled,
+          audio_answer.get())) {
+    return false;  // Fails the session setup.
+  }
+
+  bool rejected = !options.has_audio() || audio_content->rejected ||
+      !IsMediaProtocolSupported(MEDIA_TYPE_AUDIO,
+                                audio_answer->protocol(),
+                                audio_transport->secure());
+  if (!rejected) {
+    AddTransportAnswer(audio_content->name, *(audio_transport.get()), answer);
+  } else {
+    // RFC 3264
+    // The answer MUST contain the same number of m-lines as the offer.
+    LOG(LS_INFO) << "Audio is not supported in the answer.";
+  }
+
+  answer->AddContent(audio_content->name, audio_content->type, rejected,
+                     audio_answer.release());
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
+    const SessionDescription* offer,
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    StreamParamsVec* current_streams,
+    SessionDescription* answer) const {
+  const ContentInfo* video_content = GetFirstVideoContent(offer);
+  scoped_ptr<TransportDescription> video_transport(
+      CreateTransportAnswer(video_content->name, offer,
+                            options.transport_options,
+                            current_description));
+  if (!video_transport) {
+    return false;
+  }
+
+  scoped_ptr<VideoContentDescription> video_answer(
+      new VideoContentDescription());
+  // Do not require or create SDES cryptos if DTLS is used.
+  cricket::SecurePolicy sdes_policy =
+      video_transport->secure() ? cricket::SEC_DISABLED : secure();
+  bool bundle_enabled =
+      offer->HasGroup(GROUP_TYPE_BUNDLE) && options.bundle_enabled;
+  if (!CreateMediaContentAnswer(
+          static_cast<const VideoContentDescription*>(
+              video_content->description),
+          options,
+          video_codecs_,
+          sdes_policy,
+          GetCryptos(GetFirstVideoContentDescription(current_description)),
+          video_rtp_extensions_,
+          current_streams,
+          add_legacy_,
+          bundle_enabled,
+          video_answer.get())) {
+    return false;
+  }
+  bool rejected = !options.has_video() || video_content->rejected ||
+      !IsMediaProtocolSupported(MEDIA_TYPE_VIDEO,
+                                video_answer->protocol(),
+                                video_transport->secure());
+  if (!rejected) {
+    if (!AddTransportAnswer(video_content->name, *(video_transport.get()),
+                            answer)) {
+      return false;
+    }
+    video_answer->set_bandwidth(options.video_bandwidth);
+  } else {
+    // RFC 3264
+    // The answer MUST contain the same number of m-lines as the offer.
+    LOG(LS_INFO) << "Video is not supported in the answer.";
+  }
+  answer->AddContent(video_content->name, video_content->type, rejected,
+                     video_answer.release());
+  return true;
+}
+
+bool MediaSessionDescriptionFactory::AddDataContentForAnswer(
+    const SessionDescription* offer,
+    const MediaSessionOptions& options,
+    const SessionDescription* current_description,
+    StreamParamsVec* current_streams,
+    SessionDescription* answer) const {
+  const ContentInfo* data_content = GetFirstDataContent(offer);
+  scoped_ptr<TransportDescription> data_transport(
+      CreateTransportAnswer(data_content->name, offer,
+                            options.transport_options,
+                            current_description));
+  if (!data_transport) {
+    return false;
+  }
+  bool is_sctp = (options.data_channel_type == DCT_SCTP);
+  std::vector<DataCodec> data_codecs(data_codecs_);
+  FilterDataCodecs(&data_codecs, is_sctp);
+
+  scoped_ptr<DataContentDescription> data_answer(
+      new DataContentDescription());
+  // Do not require or create SDES cryptos if DTLS is used.
+  cricket::SecurePolicy sdes_policy =
+      data_transport->secure() ? cricket::SEC_DISABLED : secure();
+  bool bundle_enabled =
+      offer->HasGroup(GROUP_TYPE_BUNDLE) && options.bundle_enabled;
+  if (!CreateMediaContentAnswer(
+          static_cast<const DataContentDescription*>(
+              data_content->description),
+          options,
+          data_codecs_,
+          sdes_policy,
+          GetCryptos(GetFirstDataContentDescription(current_description)),
+          RtpHeaderExtensions(),
+          current_streams,
+          add_legacy_,
+          bundle_enabled,
+          data_answer.get())) {
+    return false;  // Fails the session setup.
+  }
+
+  bool rejected = !options.has_data() || data_content->rejected ||
+      !IsMediaProtocolSupported(MEDIA_TYPE_DATA,
+                                data_answer->protocol(),
+                                data_transport->secure());
+  if (!rejected) {
+    data_answer->set_bandwidth(options.data_bandwidth);
+    if (!AddTransportAnswer(data_content->name, *(data_transport.get()),
+                            answer)) {
+      return false;
+    }
+  } else {
+    // RFC 3264
+    // The answer MUST contain the same number of m-lines as the offer.
+    LOG(LS_INFO) << "Data is not supported in the answer.";
+  }
+  answer->AddContent(data_content->name, data_content->type, rejected,
+                     data_answer.release());
   return true;
 }
 

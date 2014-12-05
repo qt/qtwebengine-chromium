@@ -44,69 +44,46 @@ SkRTree::~SkRTree() {
     this->clear();
 }
 
-void SkRTree::insert(void* data, const SkIRect& bounds, bool defer) {
+void SkRTree::insert(SkAutoTMalloc<SkRect>* boundsArray, int N) {
+    SkASSERT(this->isEmpty());
     this->validate();
-    if (bounds.isEmpty()) {
-        SkASSERT(false);
-        return;
-    }
-    Branch newBranch;
-    newBranch.fBounds = bounds;
-    newBranch.fChild.data = data;
-    if (this->isEmpty()) {
-        // since a bulk-load into an existing tree is as of yet unimplemented (and arguably not
-        // of vital importance right now), we only batch up inserts if the tree is empty.
-        if (defer) {
-            fDeferredInserts.push(newBranch);
-            return;
-        } else {
-            fRoot.fChild.subtree = allocateNode(0);
-            fRoot.fChild.subtree->fNumChildren = 0;
+
+    SkTDArray<Branch> deferred;
+    deferred.setReserve(N);
+
+    for (int i = 0; i < N; i++) {
+        SkIRect bounds;
+        (*boundsArray)[i].roundOut(&bounds);
+        if (bounds.isEmpty()) {
+            continue;
         }
+
+        Branch newBranch;
+        newBranch.fBounds = bounds;
+        newBranch.fChild.opIndex = i;
+
+        deferred.push(newBranch);
     }
 
-    Branch* newSibling = insert(fRoot.fChild.subtree, &newBranch);
-    fRoot.fBounds = this->computeBounds(fRoot.fChild.subtree);
-
-    if (NULL != newSibling) {
-        Node* oldRoot = fRoot.fChild.subtree;
-        Node* newRoot = this->allocateNode(oldRoot->fLevel + 1);
-        newRoot->fNumChildren = 2;
-        *newRoot->child(0) = fRoot;
-        *newRoot->child(1) = *newSibling;
-        fRoot.fChild.subtree = newRoot;
-        fRoot.fBounds = this->computeBounds(fRoot.fChild.subtree);
-    }
-
-    ++fCount;
-    this->validate();
-}
-
-void SkRTree::flushDeferredInserts() {
-    this->validate();
-    if (this->isEmpty() && fDeferredInserts.count() > 0) {
-        fCount = fDeferredInserts.count();
+    fCount = deferred.count();
+    if (fCount) {
         if (1 == fCount) {
-            fRoot.fChild.subtree = allocateNode(0);
+            fRoot.fChild.subtree = this->allocateNode(0);
             fRoot.fChild.subtree->fNumChildren = 0;
-            this->insert(fRoot.fChild.subtree, &fDeferredInserts[0]);
-            fRoot.fBounds = fDeferredInserts[0].fBounds;
+            this->insert(fRoot.fChild.subtree, &deferred[0]);
+            fRoot.fBounds = deferred[0].fBounds;
         } else {
-            fRoot = this->bulkLoad(&fDeferredInserts);
+            fRoot = this->bulkLoad(&deferred);
         }
-    } else {
-        // TODO: some algorithm for bulk loading into an already populated tree
-        SkASSERT(0 == fDeferredInserts.count());
     }
-    fDeferredInserts.rewind();
+
     this->validate();
 }
 
-void SkRTree::search(const SkIRect& query, SkTDArray<void*>* results) {
+void SkRTree::search(const SkRect& fquery, SkTDArray<unsigned>* results) const {
+    SkIRect query;
+    fquery.roundOut(&query);
     this->validate();
-    if (0 != fDeferredInserts.count()) {
-        this->flushDeferredInserts();
-    }
     if (!this->isEmpty() && SkIRect::IntersectsNoEmptyCheck(fRoot.fBounds, query)) {
         this->search(fRoot.fChild.subtree, query, results);
     }
@@ -116,7 +93,6 @@ void SkRTree::search(const SkIRect& query, SkTDArray<void*>* results) {
 void SkRTree::clear() {
     this->validate();
     fNodes.reset();
-    fDeferredInserts.rewind();
     fCount = 0;
     this->validate();
 }
@@ -136,7 +112,7 @@ SkRTree::Branch* SkRTree::insert(Node* root, Branch* branch, uint16_t level) {
         root->child(childIndex)->fBounds = this->computeBounds(
             root->child(childIndex)->fChild.subtree);
     }
-    if (NULL != toInsert) {
+    if (toInsert) {
         if (root->fNumChildren == fMaxChildren) {
             // handle overflow by splitting. TODO: opportunistic reinsertion
 
@@ -302,11 +278,11 @@ int SkRTree::distributeChildren(Branch* children) {
     return fMinChildren - 1 + k;
 }
 
-void SkRTree::search(Node* root, const SkIRect query, SkTDArray<void*>* results) const {
+void SkRTree::search(Node* root, const SkIRect query, SkTDArray<unsigned>* results) const {
     for (int i = 0; i < root->fNumChildren; ++i) {
         if (SkIRect::IntersectsNoEmptyCheck(root->child(i)->fBounds, query)) {
             if (root->isLeaf()) {
-                results->push(root->child(i)->fChild.data);
+                results->push(root->child(i)->fChild.opIndex);
             } else {
                 this->search(root->child(i)->fChild.subtree, query, results);
             }
@@ -399,7 +375,7 @@ SkRTree::Branch SkRTree::bulkLoad(SkTDArray<Branch>* branches, int level) {
     }
 }
 
-void SkRTree::validate() {
+void SkRTree::validate() const {
 #ifdef SK_DEBUG
     if (this->isEmpty()) {
         return;
@@ -408,7 +384,7 @@ void SkRTree::validate() {
 #endif
 }
 
-int SkRTree::validateSubtree(Node* root, SkIRect bounds, bool isRoot) {
+int SkRTree::validateSubtree(Node* root, SkIRect bounds, bool isRoot) const {
     // make sure the pointer is pointing to a valid place
     SkASSERT(fNodes.contains(static_cast<void*>(root)));
 
@@ -438,14 +414,6 @@ int SkRTree::validateSubtree(Node* root, SkIRect bounds, bool isRoot) {
                                                 root->child(i)->fBounds);
         }
         return childCount;
-    }
-}
-
-void SkRTree::rewindInserts() {
-    SkASSERT(this->isEmpty()); // Currently only supports deferred inserts
-    while (!fDeferredInserts.isEmpty() &&
-           fClient->shouldRewind(fDeferredInserts.top().fChild.data)) {
-        fDeferredInserts.pop();
     }
 }
 

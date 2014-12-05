@@ -35,13 +35,11 @@
 #include "core/dom/Node.h"
 #include "core/testing/LayerRect.h"
 
-namespace WebCore {
+namespace blink {
 
 LayerRectList::LayerRectList()
 {
 }
-
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(LayerRectList)
 
 unsigned LayerRectList::length() const
 {
@@ -66,4 +64,4 @@ void LayerRectList::trace(Visitor* visitor)
     visitor->trace(m_list);
 }
 
-} // namespace WebCore
+} // namespace blink

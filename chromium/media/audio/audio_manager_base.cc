@@ -62,8 +62,8 @@ class AudioManagerBase::CompareByParams {
     //    existing dispatcher are the same as the requested dispatcher.
     // 2) Unified IO is used, input_params and output_params of the existing
     //    dispatcher are the same as the request dispatcher.
-    return (dispatcher_->input_params == dispatcher_in->input_params &&
-            dispatcher_->output_params == dispatcher_in->output_params &&
+    return (dispatcher_->input_params.Equals(dispatcher_in->input_params) &&
+            dispatcher_->output_params.Equals(dispatcher_in->output_params) &&
             dispatcher_->output_device_id == dispatcher_in->output_device_id);
   }
 
@@ -398,6 +398,10 @@ int AudioManagerBase::GetUserBufferSize() {
 scoped_ptr<AudioLog> AudioManagerBase::CreateAudioLog(
     AudioLogFactory::AudioComponent component) {
   return audio_log_factory_->CreateAudioLog(component);
+}
+
+void AudioManagerBase::SetHasKeyboardMic() {
+  NOTREACHED();
 }
 
 }  // namespace media

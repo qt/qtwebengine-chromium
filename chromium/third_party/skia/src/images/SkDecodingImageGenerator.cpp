@@ -45,6 +45,8 @@ protected:
     virtual bool onGetPixels(const SkImageInfo& info,
                              void* pixels, size_t rowBytes,
                              SkPMColor ctable[], int* ctableCount) SK_OVERRIDE;
+    virtual bool onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3],
+                                 SkYUVColorSpace* colorSpace) SK_OVERRIDE;
 
 private:
     typedef SkImageGenerator INHERITED;
@@ -69,7 +71,7 @@ public:
     virtual bool allocPixelRef(SkBitmap* bm, SkColorTable* ct) {
         if (NULL == fTarget || !equal_modulo_alpha(fInfo, bm->info())) {
             // Call default allocator.
-            return bm->allocPixels(NULL, ct);
+            return bm->tryAllocPixels(NULL, ct);
         }
 
         // TODO(halcanary): verify that all callers of this function
@@ -132,21 +134,17 @@ DecodingImageGenerator::~DecodingImageGenerator() {
 SkData* DecodingImageGenerator::onRefEncodedData() {
     // This functionality is used in `gm --serialize`
     // Does not encode options.
-    if (fData != NULL) {
-        return SkSafeRef(fData);
+    if (NULL == fData) {
+        // TODO(halcanary): SkStreamRewindable needs a refData() function
+        // which returns a cheap copy of the underlying data.
+        if (!fStream->rewind()) {
+            return NULL;
+        }
+        size_t length = fStream->getLength();
+        if (length) {
+            fData = SkData::NewFromStream(fStream, length);
+        }
     }
-    // TODO(halcanary): SkStreamRewindable needs a refData() function
-    // which returns a cheap copy of the underlying data.
-    if (!fStream->rewind()) {
-        return NULL;
-    }
-    size_t length = fStream->getLength();
-    if (0 == length) {
-        return NULL;
-    }
-    void* buffer = sk_malloc_flags(length, 0);
-    SkCheckResult(fStream->read(buffer, length), length);
-    fData = SkData::NewFromMalloc(buffer, length);
     return SkSafeRef(fData);
 }
 
@@ -167,14 +165,13 @@ bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info,
     }
     decoder->setDitherImage(fDitherImage);
     decoder->setSampleSize(fSampleSize);
-    decoder->setRequireUnpremultipliedColors(
-            info.fAlphaType == kUnpremul_SkAlphaType);
+    decoder->setRequireUnpremultipliedColors(info.alphaType() == kUnpremul_SkAlphaType);
 
     SkBitmap bitmap;
     TargetAllocator allocator(fInfo, pixels, rowBytes);
     decoder->setAllocator(&allocator);
     bool success = decoder->decode(fStream, &bitmap, info.colorType(),
-                                   SkImageDecoder::kDecodePixels_Mode);
+                                   SkImageDecoder::kDecodePixels_Mode) != SkImageDecoder::kFailure;
     decoder->setAllocator(NULL);
     if (!success) {
         return false;
@@ -209,6 +206,20 @@ bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info,
     return true;
 }
 
+bool DecodingImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3],
+                                             size_t rowBytes[3], SkYUVColorSpace* colorSpace) {
+    if (!fStream->rewind()) {
+        return false;
+    }
+
+    SkAutoTDelete<SkImageDecoder> decoder(SkImageDecoder::Factory(fStream));
+    if (NULL == decoder.get()) {
+        return false;
+    }
+
+    return decoder->decodeYUV8Planes(fStream, sizes, planes, rowBytes, colorSpace);
+}
+
 // A contructor-type function that returns NULL on failure.  This
 // prevents the returned SkImageGenerator from ever being in a bad
 // state.  Called by both Create() functions
@@ -240,14 +251,20 @@ SkImageGenerator* CreateDecodingImageGenerator(
             SkASSERT(bitmap.colorType() != opts.fRequestedColorType);
             return NULL;  // Can not translate to needed config.
         }
-        info.fColorType = opts.fRequestedColorType;
+        info = info.makeColorType(opts.fRequestedColorType);
     }
 
-    if (opts.fRequireUnpremul && info.fAlphaType != kOpaque_SkAlphaType) {
-        info.fAlphaType = kUnpremul_SkAlphaType;
+    if (opts.fRequireUnpremul && info.alphaType() != kOpaque_SkAlphaType) {
+        info = info.makeAlphaType(kUnpremul_SkAlphaType);
     }
+
+    SkAlphaType newAlphaType = info.alphaType();
+    if (!SkColorTypeValidateAlphaType(info.colorType(), info.alphaType(), &newAlphaType)) {
+        return NULL;
+    }
+
     return SkNEW_ARGS(DecodingImageGenerator,
-                      (data, autoStream.detach(), info,
+                      (data, autoStream.detach(), info.makeAlphaType(newAlphaType),
                        opts.fSampleSize, opts.fDitherImage));
 }
 

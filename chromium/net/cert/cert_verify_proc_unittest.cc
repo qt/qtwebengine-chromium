@@ -8,6 +8,7 @@
 
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
@@ -19,6 +20,7 @@
 #include "net/cert/cert_verifier.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/cert/crl_set.h"
+#include "net/cert/crl_set_storage.h"
 #include "net/cert/test_root_certs.h"
 #include "net/cert/x509_certificate.h"
 #include "net/test/cert_test_util.h"
@@ -56,18 +58,18 @@ class WellKnownCaCertVerifyProc : public CertVerifyProc {
       : is_well_known_(is_well_known) {}
 
   // CertVerifyProc implementation:
-  virtual bool SupportsAdditionalTrustAnchors() const OVERRIDE { return false; }
+  bool SupportsAdditionalTrustAnchors() const override { return false; }
 
  protected:
-  virtual ~WellKnownCaCertVerifyProc() {}
+  ~WellKnownCaCertVerifyProc() override {}
 
  private:
-  virtual int VerifyInternal(X509Certificate* cert,
-                             const std::string& hostname,
-                             int flags,
-                             CRLSet* crl_set,
-                             const CertificateList& additional_trust_anchors,
-                             CertVerifyResult* verify_result) OVERRIDE;
+  int VerifyInternal(X509Certificate* cert,
+                     const std::string& hostname,
+                     int flags,
+                     CRLSet* crl_set,
+                     const CertificateList& additional_trust_anchors,
+                     CertVerifyResult* verify_result) override;
 
   const bool is_well_known_;
 
@@ -112,7 +114,7 @@ class CertVerifyProcTest : public testing::Test {
   CertVerifyProcTest()
       : verify_proc_(CertVerifyProc::CreateDefault()) {
   }
-  virtual ~CertVerifyProcTest() {}
+  ~CertVerifyProcTest() override {}
 
  protected:
   bool SupportsAdditionalTrustAnchors() {
@@ -197,7 +199,7 @@ TEST_F(CertVerifyProcTest, PaypalNullCertParsing) {
           reinterpret_cast<const char*>(paypal_null_der),
           sizeof(paypal_null_der)));
 
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), paypal_null_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), paypal_null_cert.get());
 
   const SHA1HashValue& fingerprint =
       paypal_null_cert->fingerprint();
@@ -282,11 +284,11 @@ TEST_F(CertVerifyProcTest, DISABLED_GlobalSignR3EVTest) {
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "2029_globalsign_com_cert.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert.get());
 
   scoped_refptr<X509Certificate> intermediate_cert =
       ImportCertFromFile(certs_dir, "globalsign_ev_sha256_ca_cert.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert.get());
 
   X509Certificate::OSCertHandles intermediates;
   intermediates.push_back(intermediate_cert->os_cert_handle());
@@ -366,7 +368,7 @@ TEST_F(CertVerifyProcTest, RejectWeakKeys) {
   // Add the root that signed the intermediates for this test.
   scoped_refptr<X509Certificate> root_cert =
       ImportCertFromFile(certs_dir, "2048-rsa-root.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
   ScopedTestRoot scoped_root(root_cert.get());
 
   // Now test each chain.
@@ -379,12 +381,12 @@ TEST_F(CertVerifyProcTest, RejectWeakKeys) {
       SCOPED_TRACE(basename);
       scoped_refptr<X509Certificate> ee_cert =
           ImportCertFromFile(certs_dir, basename);
-      ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_cert);
+      ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_cert.get());
 
       basename = *signer_type + "-intermediate.pem";
       scoped_refptr<X509Certificate> intermediate =
           ImportCertFromFile(certs_dir, basename);
-      ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate);
+      ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate.get());
 
       X509Certificate::OSCertHandles intermediates;
       intermediates.push_back(intermediate->os_cert_handle());
@@ -478,11 +480,11 @@ TEST_F(CertVerifyProcTest, GoogleDigiNotarTest) {
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "google_diginotar.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert.get());
 
   scoped_refptr<X509Certificate> intermediate_cert =
       ImportCertFromFile(certs_dir, "diginotar_public_ca_2025.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert.get());
 
   X509Certificate::OSCertHandles intermediates;
   intermediates.push_back(intermediate_cert->os_cert_handle());
@@ -553,10 +555,10 @@ TEST_F(CertVerifyProcTest, NameConstraintsOk) {
                                     "root_ca_cert.pem",
                                     X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, ca_cert_list.size());
-  ScopedTestRoot test_root(ca_cert_list[0]);
+  ScopedTestRoot test_root(ca_cert_list[0].get());
 
   CertificateList cert_list = CreateCertificateListFromFile(
-      GetTestCertsDirectory(), "name_constraint_ok.crt",
+      GetTestCertsDirectory(), "name_constraint_good.pem",
       X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, cert_list.size());
 
@@ -588,10 +590,10 @@ TEST_F(CertVerifyProcTest, NameConstraintsFailure) {
                                     "root_ca_cert.pem",
                                     X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, ca_cert_list.size());
-  ScopedTestRoot test_root(ca_cert_list[0]);
+  ScopedTestRoot test_root(ca_cert_list[0].get());
 
   CertificateList cert_list = CreateCertificateListFromFile(
-      GetTestCertsDirectory(), "name_constraint_bad.crt",
+      GetTestCertsDirectory(), "name_constraint_bad.pem",
       X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, cert_list.size());
 
@@ -642,7 +644,7 @@ TEST_F(CertVerifyProcTest, TestKnownRoot) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
   EXPECT_TRUE(verify_result.is_issued_by_known_root);
 }
 
@@ -676,7 +678,7 @@ TEST_F(CertVerifyProcTest, PublicKeyHashes) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
   ASSERT_LE(2U, verify_result.public_key_hashes.size());
 
   HashValueVector sha1_hashes;
@@ -714,7 +716,7 @@ TEST_F(CertVerifyProcTest, InvalidKeyUsage) {
 
   scoped_refptr<X509Certificate> server_cert =
       ImportCertFromFile(certs_dir, "invalid_key_usage_cert.der");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), server_cert.get());
 
   int flags = 0;
   CertVerifyResult verify_result;
@@ -768,11 +770,12 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
   scoped_refptr<X509Certificate> google_full_chain =
       X509Certificate::CreateFromHandle(certs[0]->os_cert_handle(),
                                         intermediates);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain.get());
   ASSERT_EQ(2U, google_full_chain->GetIntermediateCertificates().size());
 
   CertVerifyResult verify_result;
-  EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  EXPECT_EQ(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
   int error = Verify(google_full_chain.get(),
                      "127.0.0.1",
                      0,
@@ -780,7 +783,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainBasic) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
 
   EXPECT_NE(google_full_chain, verify_result.verified_cert);
   EXPECT_TRUE(X509Certificate::IsSameOSCert(
@@ -856,11 +860,12 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainProperlyOrdered) {
   scoped_refptr<X509Certificate> google_full_chain =
       X509Certificate::CreateFromHandle(certs[0]->os_cert_handle(),
                                         intermediates);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain.get());
   ASSERT_EQ(2U, google_full_chain->GetIntermediateCertificates().size());
 
   CertVerifyResult verify_result;
-  EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  EXPECT_EQ(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
   int error = Verify(google_full_chain.get(),
                      "127.0.0.1",
                      0,
@@ -868,7 +873,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainProperlyOrdered) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
 
   EXPECT_NE(google_full_chain, verify_result.verified_cert);
   EXPECT_TRUE(X509Certificate::IsSameOSCert(
@@ -902,8 +908,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
       ImportCertFromFile(certs_dir, "duplicate_cn_1.pem");
   scoped_refptr<X509Certificate> unrelated_certificate2 =
       ImportCertFromFile(certs_dir, "aia-cert.pem");
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), unrelated_certificate);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), unrelated_certificate2);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), unrelated_certificate.get());
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), unrelated_certificate2.get());
 
   // Interject unrelated certificates into the list of intermediates.
   X509Certificate::OSCertHandles intermediates;
@@ -915,11 +921,12 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
   scoped_refptr<X509Certificate> google_full_chain =
       X509Certificate::CreateFromHandle(certs[0]->os_cert_handle(),
                                         intermediates);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), google_full_chain.get());
   ASSERT_EQ(4U, google_full_chain->GetIntermediateCertificates().size());
 
   CertVerifyResult verify_result;
-  EXPECT_EQ(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  EXPECT_EQ(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
   int error = Verify(google_full_chain.get(),
                      "127.0.0.1",
                      0,
@@ -927,7 +934,8 @@ TEST_F(CertVerifyProcTest, VerifyReturnChainFiltersUnrelatedCerts) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), verify_result.verified_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL),
+            verify_result.verified_cert.get());
 
   EXPECT_NE(google_full_chain, verify_result.verified_cert);
   EXPECT_TRUE(X509Certificate::IsSameOSCert(
@@ -1068,7 +1076,7 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
 
   // Attempt to verify with the first known cross-certified intermediate
   // provided.
@@ -1091,7 +1099,7 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
                  empty_cert_list_,
                  &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
 
   // Attempt to verify with the second known cross-certified intermediate
   // provided.
@@ -1114,7 +1122,7 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
                  empty_cert_list_,
                  &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
 
   // Attempt to verify when both a cross-certified intermediate AND
   // the legacy GTE root are provided.
@@ -1134,7 +1142,7 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
                  empty_cert_list_,
                  &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
 
   TestRootCerts::GetInstance()->Clear();
   EXPECT_TRUE(TestRootCerts::GetInstance()->IsEmpty());
@@ -1142,53 +1150,6 @@ TEST_F(CertVerifyProcTest, CybertrustGTERoot) {
 #endif
 
 #if defined(USE_NSS) || defined(OS_IOS) || defined(OS_WIN) || defined(OS_MACOSX)
-static const uint8 kCRLSetLeafSPKIBlocked[] = {
-  0x8e, 0x00, 0x7b, 0x22, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0x3a,
-  0x30, 0x2c, 0x22, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x79, 0x70,
-  0x65, 0x22, 0x3a, 0x22, 0x43, 0x52, 0x4c, 0x53, 0x65, 0x74, 0x22, 0x2c, 0x22,
-  0x53, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x30, 0x2c, 0x22,
-  0x44, 0x65, 0x6c, 0x74, 0x61, 0x46, 0x72, 0x6f, 0x6d, 0x22, 0x3a, 0x30, 0x2c,
-  0x22, 0x4e, 0x75, 0x6d, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x73, 0x22, 0x3a,
-  0x30, 0x2c, 0x22, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x65, 0x64, 0x53, 0x50, 0x4b,
-  0x49, 0x73, 0x22, 0x3a, 0x5b, 0x22, 0x43, 0x38, 0x4d, 0x4a, 0x46, 0x55, 0x55,
-  0x5a, 0x38, 0x43, 0x79, 0x54, 0x2b, 0x4e, 0x57, 0x64, 0x68, 0x69, 0x7a, 0x51,
-  0x68, 0x54, 0x49, 0x65, 0x46, 0x49, 0x37, 0x76, 0x41, 0x77, 0x7a, 0x64, 0x54,
-  0x79, 0x52, 0x59, 0x45, 0x6e, 0x78, 0x6c, 0x33, 0x62, 0x67, 0x3d, 0x22, 0x5d,
-  0x7d,
-};
-
-static const uint8 kCRLSetLeafSerialBlocked[] = {
-  0x60, 0x00, 0x7b, 0x22, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0x3a,
-  0x30, 0x2c, 0x22, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x79, 0x70,
-  0x65, 0x22, 0x3a, 0x22, 0x43, 0x52, 0x4c, 0x53, 0x65, 0x74, 0x22, 0x2c, 0x22,
-  0x53, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x30, 0x2c, 0x22,
-  0x44, 0x65, 0x6c, 0x74, 0x61, 0x46, 0x72, 0x6f, 0x6d, 0x22, 0x3a, 0x30, 0x2c,
-  0x22, 0x4e, 0x75, 0x6d, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x73, 0x22, 0x3a,
-  0x31, 0x2c, 0x22, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x65, 0x64, 0x53, 0x50, 0x4b,
-  0x49, 0x73, 0x22, 0x3a, 0x5b, 0x5d, 0x7d, 0x0f, 0x87, 0xe4, 0xc7, 0x75, 0xea,
-  0x46, 0x7e, 0xf3, 0xfd, 0x82, 0xb7, 0x46, 0x7b, 0x10, 0xda, 0xc5, 0xbf, 0xd8,
-  0xd1, 0x29, 0xb2, 0xc6, 0xac, 0x7f, 0x51, 0x42, 0x15, 0x28, 0x51, 0x06, 0x7f,
-  0x01, 0x00, 0x00, 0x00,  // number of serials
-  0x01, 0xed,  // serial 0xed
-};
-
-static const uint8 kCRLSetQUICSerialBlocked[] = {
-  0x60, 0x00, 0x7b, 0x22, 0x56, 0x65, 0x72, 0x73, 0x69, 0x6f, 0x6e, 0x22, 0x3a,
-  0x30, 0x2c, 0x22, 0x43, 0x6f, 0x6e, 0x74, 0x65, 0x6e, 0x74, 0x54, 0x79, 0x70,
-  0x65, 0x22, 0x3a, 0x22, 0x43, 0x52, 0x4c, 0x53, 0x65, 0x74, 0x22, 0x2c, 0x22,
-  0x53, 0x65, 0x71, 0x75, 0x65, 0x6e, 0x63, 0x65, 0x22, 0x3a, 0x30, 0x2c, 0x22,
-  0x44, 0x65, 0x6c, 0x74, 0x61, 0x46, 0x72, 0x6f, 0x6d, 0x22, 0x3a, 0x30, 0x2c,
-  0x22, 0x4e, 0x75, 0x6d, 0x50, 0x61, 0x72, 0x65, 0x6e, 0x74, 0x73, 0x22, 0x3a,
-  0x31, 0x2c, 0x22, 0x42, 0x6c, 0x6f, 0x63, 0x6b, 0x65, 0x64, 0x53, 0x50, 0x4b,
-  0x49, 0x73, 0x22, 0x3a, 0x5b, 0x5d, 0x7d,
-  // Issuer SPKI SHA-256 hash:
-  0xe4, 0x3a, 0xa3, 0xdb, 0x98, 0x31, 0x61, 0x05, 0xdd, 0x57, 0x6d, 0xc6, 0x2f,
-  0x71, 0x26, 0xba, 0xdd, 0xf4, 0x98, 0x3e, 0x62, 0x22, 0xf8, 0xf9, 0xe4, 0x18,
-  0x62, 0x77, 0x79, 0xdb, 0x9b, 0x31,
-  0x01, 0x00, 0x00, 0x00,  // number of serials
-  0x01, 0x03,  // serial 3
-};
-
 // Test that CRLSets are effective in making a certificate appear to be
 // revoked.
 TEST_F(CertVerifyProcTest, CRLSet) {
@@ -1197,7 +1158,7 @@ TEST_F(CertVerifyProcTest, CRLSet) {
                                     "root_ca_cert.pem",
                                     X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, ca_cert_list.size());
-  ScopedTestRoot test_root(ca_cert_list[0]);
+  ScopedTestRoot test_root(ca_cert_list[0].get());
 
   CertificateList cert_list = CreateCertificateListFromFile(
       GetTestCertsDirectory(), "ok_cert.pem", X509Certificate::FORMAT_AUTO);
@@ -1211,12 +1172,14 @@ TEST_F(CertVerifyProcTest, CRLSet) {
   EXPECT_EQ(OK, error);
   EXPECT_EQ(0U, verify_result.cert_status);
 
-  // First test blocking by SPKI.
-  base::StringPiece crl_set_bytes(
-      reinterpret_cast<const char*>(kCRLSetLeafSPKIBlocked),
-      sizeof(kCRLSetLeafSPKIBlocked));
   scoped_refptr<CRLSet> crl_set;
-  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
+  std::string crl_set_bytes;
+
+  // First test blocking by SPKI.
+  EXPECT_TRUE(base::ReadFileToString(
+      GetTestCertsDirectory().AppendASCII("crlset_by_leaf_spki.raw"),
+      &crl_set_bytes));
+  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(cert.get(),
                  "127.0.0.1",
@@ -1228,10 +1191,11 @@ TEST_F(CertVerifyProcTest, CRLSet) {
 
   // Second, test revocation by serial number of a cert directly under the
   // root.
-  crl_set_bytes =
-      base::StringPiece(reinterpret_cast<const char*>(kCRLSetLeafSerialBlocked),
-                        sizeof(kCRLSetLeafSerialBlocked));
-  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
+  crl_set_bytes.clear();
+  EXPECT_TRUE(base::ReadFileToString(
+      GetTestCertsDirectory().AppendASCII("crlset_by_root_serial.raw"),
+      &crl_set_bytes));
+  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(cert.get(),
                  "127.0.0.1",
@@ -1248,7 +1212,7 @@ TEST_F(CertVerifyProcTest, CRLSetLeafSerial) {
                                     "quic_root.crt",
                                     X509Certificate::FORMAT_AUTO);
   ASSERT_EQ(1U, ca_cert_list.size());
-  ScopedTestRoot test_root(ca_cert_list[0]);
+  ScopedTestRoot test_root(ca_cert_list[0].get());
 
   CertificateList intermediate_cert_list =
       CreateCertificateListFromFile(GetTestCertsDirectory(),
@@ -1276,14 +1240,15 @@ TEST_F(CertVerifyProcTest, CRLSetLeafSerial) {
                      empty_cert_list_,
                      &verify_result);
   EXPECT_EQ(OK, error);
-  EXPECT_EQ(0U, verify_result.cert_status);
+  EXPECT_EQ(CERT_STATUS_SHA1_SIGNATURE_PRESENT, verify_result.cert_status);
 
   // Test revocation by serial number of a certificate not under the root.
   scoped_refptr<CRLSet> crl_set;
-  base::StringPiece crl_set_bytes =
-      base::StringPiece(reinterpret_cast<const char*>(kCRLSetQUICSerialBlocked),
-                        sizeof(kCRLSetQUICSerialBlocked));
-  ASSERT_TRUE(CRLSet::Parse(crl_set_bytes, &crl_set));
+  std::string crl_set_bytes;
+  ASSERT_TRUE(base::ReadFileToString(
+      GetTestCertsDirectory().AppendASCII("crlset_by_intermediate_serial.raw"),
+      &crl_set_bytes));
+  ASSERT_TRUE(CRLSetStorage::Parse(crl_set_bytes, &crl_set));
 
   error = Verify(leaf.get(),
                  "test.example.com",
@@ -1295,13 +1260,18 @@ TEST_F(CertVerifyProcTest, CRLSetLeafSerial) {
 }
 #endif
 
+enum ExpectedAlgorithms {
+  EXPECT_MD2 = 1 << 0,
+  EXPECT_MD4 = 1 << 1,
+  EXPECT_MD5 = 1 << 2,
+  EXPECT_SHA1 = 1 << 3
+};
+
 struct WeakDigestTestData {
   const char* root_cert_filename;
   const char* intermediate_cert_filename;
   const char* ee_cert_filename;
-  bool expected_has_md5;
-  bool expected_has_md4;
-  bool expected_has_md2;
+  int expected_algorithms;
 };
 
 // GTest 'magic' pretty-printer, so that if/when a test fails, it knows how
@@ -1331,16 +1301,16 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
   if (data.root_cert_filename) {
      scoped_refptr<X509Certificate> root_cert =
          ImportCertFromFile(certs_dir, data.root_cert_filename);
-     ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert);
+     ASSERT_NE(static_cast<X509Certificate*>(NULL), root_cert.get());
      test_root.Reset(root_cert.get());
   }
 
   scoped_refptr<X509Certificate> intermediate_cert =
       ImportCertFromFile(certs_dir, data.intermediate_cert_filename);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), intermediate_cert.get());
   scoped_refptr<X509Certificate> ee_cert =
       ImportCertFromFile(certs_dir, data.ee_cert_filename);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_cert);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_cert.get());
 
   X509Certificate::OSCertHandles intermediates;
   intermediates.push_back(intermediate_cert->os_cert_handle());
@@ -1348,7 +1318,7 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
   scoped_refptr<X509Certificate> ee_chain =
       X509Certificate::CreateFromHandle(ee_cert->os_cert_handle(),
                                         intermediates);
-  ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_chain);
+  ASSERT_NE(static_cast<X509Certificate*>(NULL), ee_chain.get());
 
   int flags = 0;
   CertVerifyResult verify_result;
@@ -1358,19 +1328,21 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
                   NULL,
                   empty_cert_list_,
                   &verify_result);
-  EXPECT_EQ(data.expected_has_md5, verify_result.has_md5);
-  EXPECT_EQ(data.expected_has_md4, verify_result.has_md4);
-  EXPECT_EQ(data.expected_has_md2, verify_result.has_md2);
+  EXPECT_EQ(!!(data.expected_algorithms & EXPECT_MD2), verify_result.has_md2);
+  EXPECT_EQ(!!(data.expected_algorithms & EXPECT_MD4), verify_result.has_md4);
+  EXPECT_EQ(!!(data.expected_algorithms & EXPECT_MD5), verify_result.has_md5);
+  EXPECT_EQ(!!(data.expected_algorithms & EXPECT_SHA1), verify_result.has_sha1);
+
   EXPECT_FALSE(verify_result.is_issued_by_additional_trust_anchor);
 
   // Ensure that MD4 and MD2 are tagged as invalid.
-  if (data.expected_has_md4 || data.expected_has_md2) {
+  if (data.expected_algorithms & (EXPECT_MD2 | EXPECT_MD4)) {
     EXPECT_EQ(CERT_STATUS_INVALID,
               verify_result.cert_status & CERT_STATUS_INVALID);
   }
 
   // Ensure that MD5 is flagged as weak.
-  if (data.expected_has_md5) {
+  if (data.expected_algorithms & EXPECT_MD5) {
     EXPECT_EQ(
         CERT_STATUS_WEAK_SIGNATURE_ALGORITHM,
         verify_result.cert_status & CERT_STATUS_WEAK_SIGNATURE_ALGORITHM);
@@ -1383,9 +1355,9 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
   // OpenSSL, CryptoAPI, Security.framework) and upon which weak algorithm
   // present (MD2, MD4, MD5).
   if (data.root_cert_filename) {
-    if (data.expected_has_md4 || data.expected_has_md2) {
+    if (data.expected_algorithms & (EXPECT_MD2 | EXPECT_MD4)) {
       EXPECT_EQ(ERR_CERT_INVALID, rv);
-    } else if (data.expected_has_md5) {
+    } else if (data.expected_algorithms & EXPECT_MD5) {
       EXPECT_EQ(ERR_CERT_WEAK_SIGNATURE_ALGORITHM, rv);
     } else {
       EXPECT_EQ(OK, rv);
@@ -1406,14 +1378,14 @@ TEST_P(CertVerifyProcWeakDigestTest, Verify) {
 // The signature algorithm of the root CA should not matter.
 const WeakDigestTestData kVerifyRootCATestData[] = {
   { "weak_digest_md5_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false },
+    "weak_digest_sha1_ee.pem", EXPECT_SHA1 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_md4_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false },
+    "weak_digest_sha1_ee.pem", EXPECT_SHA1 },
 #endif
   { "weak_digest_md2_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, false },
+    "weak_digest_sha1_ee.pem", EXPECT_SHA1 },
 };
 INSTANTIATE_TEST_CASE_P(VerifyRoot, CertVerifyProcWeakDigestTest,
                         testing::ValuesIn(kVerifyRootCATestData));
@@ -1421,14 +1393,14 @@ INSTANTIATE_TEST_CASE_P(VerifyRoot, CertVerifyProcWeakDigestTest,
 // The signature algorithm of intermediates should be properly detected.
 const WeakDigestTestData kVerifyIntermediateCATestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_md5_intermediate.pem",
-    "weak_digest_sha1_ee.pem", true, false, false },
+    "weak_digest_sha1_ee.pem", EXPECT_MD5 | EXPECT_SHA1 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_md4_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, true, false },
+    "weak_digest_sha1_ee.pem", EXPECT_MD4 | EXPECT_SHA1 },
 #endif
   { "weak_digest_sha1_root.pem", "weak_digest_md2_intermediate.pem",
-    "weak_digest_sha1_ee.pem", false, false, true },
+    "weak_digest_sha1_ee.pem", EXPECT_MD2 | EXPECT_SHA1 },
 };
 // Disabled on NSS - MD4 is not supported, and MD2 and MD5 are disabled.
 #if defined(USE_NSS) || defined(OS_IOS)
@@ -1444,14 +1416,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // The signature algorithm of end-entity should be properly detected.
 const WeakDigestTestData kVerifyEndEntityTestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md5_ee.pem", true, false, false },
+    "weak_digest_md5_ee.pem", EXPECT_MD5 | EXPECT_SHA1 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md4_ee.pem", false, true, false },
+    "weak_digest_md4_ee.pem", EXPECT_MD4 | EXPECT_SHA1 },
 #endif
   { "weak_digest_sha1_root.pem", "weak_digest_sha1_intermediate.pem",
-    "weak_digest_md2_ee.pem", false, false, true },
+    "weak_digest_md2_ee.pem", EXPECT_MD2 | EXPECT_SHA1 },
 };
 // Disabled on NSS - NSS caches chains/signatures in such a way that cannot
 // be cleared until NSS is cleanly shutdown, which is not presently supported
@@ -1468,14 +1440,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(MAYBE_VerifyEndEntity,
 // Incomplete chains should still report the status of the intermediate.
 const WeakDigestTestData kVerifyIncompleteIntermediateTestData[] = {
   { NULL, "weak_digest_md5_intermediate.pem", "weak_digest_sha1_ee.pem",
-    true, false, false },
+    EXPECT_MD5 | EXPECT_SHA1 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { NULL, "weak_digest_md4_intermediate.pem", "weak_digest_sha1_ee.pem",
-    false, true, false },
+    EXPECT_MD4 | EXPECT_SHA1 },
 #endif
   { NULL, "weak_digest_md2_intermediate.pem", "weak_digest_sha1_ee.pem",
-    false, false, true },
+    EXPECT_MD2 | EXPECT_SHA1 },
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
@@ -1493,14 +1465,14 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // Incomplete chains should still report the status of the end-entity.
 const WeakDigestTestData kVerifyIncompleteEETestData[] = {
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md5_ee.pem",
-    true, false, false },
+    EXPECT_MD5 | EXPECT_SHA1 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md4_ee.pem",
-    false, true, false },
+    EXPECT_MD4 | EXPECT_SHA1 },
 #endif
   { NULL, "weak_digest_sha1_intermediate.pem", "weak_digest_md2_ee.pem",
-    false, false, true },
+    EXPECT_MD2 | EXPECT_SHA1 },
 };
 // Disabled on NSS - libpkix does not return constructed chains on error,
 // preventing us from detecting/inspecting the verified chain.
@@ -1518,13 +1490,13 @@ WRAPPED_INSTANTIATE_TEST_CASE_P(
 // reported.
 const WeakDigestTestData kVerifyMixedTestData[] = {
   { "weak_digest_sha1_root.pem", "weak_digest_md5_intermediate.pem",
-    "weak_digest_md2_ee.pem", true, false, true },
+    "weak_digest_md2_ee.pem", EXPECT_MD2 | EXPECT_MD5 },
   { "weak_digest_sha1_root.pem", "weak_digest_md2_intermediate.pem",
-    "weak_digest_md5_ee.pem", true, false, true },
+    "weak_digest_md5_ee.pem", EXPECT_MD2 | EXPECT_MD5 },
 #if defined(USE_OPENSSL_CERTS) || defined(OS_WIN)
   // MD4 is not supported by OS X / NSS
   { "weak_digest_sha1_root.pem", "weak_digest_md4_intermediate.pem",
-    "weak_digest_md2_ee.pem", false, true, true },
+    "weak_digest_md2_ee.pem", EXPECT_MD2 | EXPECT_MD4 },
 #endif
 };
 // NSS does not support MD4 and does not enable MD2 by default, making all

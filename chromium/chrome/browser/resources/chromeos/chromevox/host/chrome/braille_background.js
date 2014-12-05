@@ -145,13 +145,13 @@ cvox.BrailleBackground.prototype.refreshTranslator = function() {
   var uncontractedTable = cvox.BrailleTable.getUncontracted(
       tables,
       table8Dot ? table8Dot : table);
-  this.liblouis_.getTranslator(table.fileName, goog.bind(
+  this.liblouis_.getTranslator(table.fileNames, goog.bind(
       function(translator) {
         if (uncontractedTable.id === table.id) {
           this.displayManager_.setTranslator(translator);
           this.inputHandler_.setTranslator(translator);
         } else {
-          this.liblouis_.getTranslator(uncontractedTable.fileName, goog.bind(
+          this.liblouis_.getTranslator(uncontractedTable.fileNames, goog.bind(
               function(uncontractedTranslator) {
                 this.displayManager_.setTranslator(
                     translator, uncontractedTranslator);
@@ -175,6 +175,15 @@ cvox.BrailleBackground.prototype.onBrailleMessage = function(msg) {
     this.displayManager_.setContent(
         this.lastContent_, this.inputHandler_.getExpansionType());
   }
+};
+
+
+/**
+ * @return {cvox.LibLouis} The liblouis instance used by this object, or null
+ * if not initialized yet.
+ */
+cvox.BrailleBackground.prototype.getLibLouisForTest = function() {
+  return this.liblouis_;
 };
 
 

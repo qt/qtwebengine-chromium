@@ -27,7 +27,6 @@
 #include "core/events/EventDispatcher.h"
 
 #include "core/dom/ContainerNode.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/MouseEvent.h"
 #include "core/events/ScopedEventQueue.h"
@@ -35,17 +34,16 @@
 #include "core/frame/FrameView.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "platform/TraceEvent.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
-
-static HashSet<Node*>* gNodesDispatchingSimulatedClicks = 0;
+namespace blink {
 
 bool EventDispatcher::dispatchEvent(Node* node, PassRefPtrWillBeRawPtr<EventDispatchMediator> mediator)
 {
-    TRACE_EVENT0("webkit", "EventDispatcher::dispatchEvent");
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    TRACE_EVENT0("blink", "EventDispatcher::dispatchEvent");
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     if (!mediator->event())
         return true;
     EventDispatcher dispatcher(node, mediator->event());
@@ -55,7 +53,7 @@ bool EventDispatcher::dispatchEvent(Node* node, PassRefPtrWillBeRawPtr<EventDisp
 EventDispatcher::EventDispatcher(Node* node, PassRefPtrWillBeRawPtr<Event> event)
     : m_node(node)
     , m_event(event)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_eventDispatched(false)
 #endif
 {
@@ -75,15 +73,18 @@ void EventDispatcher::dispatchScopedEvent(Node* node, PassRefPtrWillBeRawPtr<Eve
 
 void EventDispatcher::dispatchSimulatedClick(Node* node, Event* underlyingEvent, SimulatedClickMouseEventOptions mouseEventOptions)
 {
+    // This persistent vector doesn't cause leaks, because added Nodes are removed
+    // before dispatchSimulatedClick() returns. This vector is here just to prevent
+    // the code from running into an infinite recursion of dispatchSimulatedClick().
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapHashSet<RawPtrWillBeMember<Node>>>, nodesDispatchingSimulatedClicks, (adoptPtrWillBeNoop(new WillBeHeapHashSet<RawPtrWillBeMember<Node>>())));
+
     if (isDisabledFormControl(node))
         return;
 
-    if (!gNodesDispatchingSimulatedClicks)
-        gNodesDispatchingSimulatedClicks = new HashSet<Node*>;
-    else if (gNodesDispatchingSimulatedClicks->contains(node))
+    if (nodesDispatchingSimulatedClicks->contains(node))
         return;
 
-    gNodesDispatchingSimulatedClicks->add(node);
+    nodesDispatchingSimulatedClicks->add(node);
 
     if (mouseEventOptions == SendMouseOverUpDownEvents)
         EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::mouseover, node->document().domWindow(), underlyingEvent)).dispatch();
@@ -100,23 +101,23 @@ void EventDispatcher::dispatchSimulatedClick(Node* node, Event* underlyingEvent,
     // always send click
     EventDispatcher(node, SimulatedMouseEvent::create(EventTypeNames::click, node->document().domWindow(), underlyingEvent)).dispatch();
 
-    gNodesDispatchingSimulatedClicks->remove(node);
+    nodesDispatchingSimulatedClicks->remove(node);
 }
 
 bool EventDispatcher::dispatch()
 {
-    TRACE_EVENT0("webkit", "EventDispatcher::dispatch");
+    TRACE_EVENT0("blink", "EventDispatcher::dispatch");
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     ASSERT(!m_eventDispatched);
     m_eventDispatched = true;
 #endif
 
     m_event->setTarget(EventPath::eventTargetRespectingTargetRules(m_node.get()));
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
     ASSERT(m_event->target());
     WindowEventContext windowEventContext(m_event.get(), m_node.get(), topNodeEventContext());
-    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "type", m_event->type().ascii());
+    TRACE_EVENT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "EventDispatch", "data", InspectorEventDispatchEvent::data(*m_event));
     // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentationCookie cookie = InspectorInstrumentation::willDispatchEvent(&m_node->document(), *m_event, windowEventContext.window(), m_node.get(), m_event->eventPath());
 

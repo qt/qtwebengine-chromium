@@ -7,13 +7,12 @@
 
 #include "core/html/HTMLMediaElement.h"
 
-namespace WebCore {
+namespace blink {
 
 AudioTrack::AudioTrack(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool enabled)
     : TrackBase(TrackBase::AudioTrack, label, language, id)
     , m_enabled(enabled)
 {
-    ScriptWrappable::init(this);
     setKind(kind);
 }
 

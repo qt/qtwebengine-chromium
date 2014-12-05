@@ -11,7 +11,6 @@
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/metrics/histogram.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
@@ -157,15 +156,6 @@ PluginServiceImpl::PluginServiceImpl()
 }
 
 PluginServiceImpl::~PluginServiceImpl() {
-#if defined(OS_WIN)
-  // Release the events since they're owned by RegKey, not WaitableEvent.
-  hkcu_watcher_.StopWatching();
-  hklm_watcher_.StopWatching();
-  if (hkcu_event_)
-    hkcu_event_->Release();
-  if (hklm_event_)
-    hklm_event_->Release();
-#endif
   // Make sure no plugin channel requests have been leaked.
   DCHECK(pending_plugin_clients_.empty());
 }
@@ -178,7 +168,8 @@ void PluginServiceImpl::Init() {
   RegisterPepperPlugins();
 
   // Load any specified on the command line as well.
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   base::FilePath path =
       command_line->GetSwitchValuePath(switches::kLoadPlugin);
   if (!path.empty())
@@ -199,24 +190,18 @@ void PluginServiceImpl::StartWatchingPlugins() {
   if (hkcu_key_.Create(HKEY_CURRENT_USER,
                        kRegistryMozillaPlugins,
                        KEY_NOTIFY) == ERROR_SUCCESS) {
-    if (hkcu_key_.StartWatching() == ERROR_SUCCESS) {
-      hkcu_event_.reset(new base::WaitableEvent(hkcu_key_.watch_event()));
-      base::WaitableEventWatcher::EventCallback callback =
-            base::Bind(&PluginServiceImpl::OnWaitableEventSignaled,
-                       base::Unretained(this));
-      hkcu_watcher_.StartWatching(hkcu_event_.get(), callback);
-    }
+    base::win::RegKey::ChangeCallback callback =
+        base::Bind(&PluginServiceImpl::OnKeyChanged, base::Unretained(this),
+                   base::Unretained(&hkcu_key_));
+    hkcu_key_.StartWatching(callback);
   }
   if (hklm_key_.Create(HKEY_LOCAL_MACHINE,
                        kRegistryMozillaPlugins,
                        KEY_NOTIFY) == ERROR_SUCCESS) {
-    if (hklm_key_.StartWatching() == ERROR_SUCCESS) {
-      hklm_event_.reset(new base::WaitableEvent(hklm_key_.watch_event()));
-      base::WaitableEventWatcher::EventCallback callback =
-            base::Bind(&PluginServiceImpl::OnWaitableEventSignaled,
-                       base::Unretained(this));
-      hklm_watcher_.StartWatching(hklm_event_.get(), callback);
-    }
+    base::win::RegKey::ChangeCallback callback =
+        base::Bind(&PluginServiceImpl::OnKeyChanged, base::Unretained(this),
+                   base::Unretained(&hklm_key_));
+    hklm_key_.StartWatching(callback);
   }
 #endif
 #if defined(OS_POSIX) && !defined(OS_OPENBSD) && !defined(OS_ANDROID)
@@ -633,7 +618,7 @@ void PluginServiceImpl::GetPluginsOnIOThread(
   // If we switch back to loading plugins in process, then we need to make
   // sure g_thread_init() gets called since plugins may call glib at load.
 
-  if (!plugin_loader_)
+  if (!plugin_loader_.get())
     plugin_loader_ = new PluginLoaderPosix;
 
   plugin_loader_->GetPlugins(
@@ -641,22 +626,16 @@ void PluginServiceImpl::GetPluginsOnIOThread(
 }
 #endif
 
-void PluginServiceImpl::OnWaitableEventSignaled(
-    base::WaitableEvent* waitable_event) {
 #if defined(OS_WIN)
-  if (waitable_event == hkcu_event_) {
-    hkcu_key_.StartWatching();
-  } else {
-    hklm_key_.StartWatching();
-  }
+void PluginServiceImpl::OnKeyChanged(base::win::RegKey* key) {
+  key->StartWatching(base::Bind(&PluginServiceImpl::OnKeyChanged,
+                                base::Unretained(this),
+                                base::Unretained(key)));
 
   PluginList::Singleton()->RefreshPlugins();
   PurgePluginListCache(NULL, false);
-#else
-  // This event should only get signaled on a Windows machine.
-  NOTREACHED();
-#endif  // defined(OS_WIN)
 }
+#endif  // defined(OS_WIN)
 
 void PluginServiceImpl::RegisterPepperPlugins() {
   ComputePepperPluginList(&ppapi_plugins_);
@@ -840,10 +819,15 @@ bool PluginServiceImpl::GetPluginInfoFromWindow(
   if (!IsPluginWindow(window))
     return false;
 
-  GetPluginPropertyFromWindow(
-          window, kPluginNameAtomProperty, plugin_name);
-  GetPluginPropertyFromWindow(
-          window, kPluginVersionAtomProperty, plugin_version);
+
+  DWORD process_id = 0;
+  GetWindowThreadProcessId(window, &process_id);
+  WebPluginInfo info;
+  if (!PluginProcessHost::GetWebPluginInfoFromPluginPid(process_id, &info))
+    return false;
+
+  *plugin_name = info.name;
+  *plugin_version = info.version;
   return true;
 }
 

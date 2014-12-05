@@ -27,11 +27,10 @@
 #include "core/fileapi/FileList.h"
 
 
-namespace WebCore {
+namespace blink {
 
 FileList::FileList()
 {
-    ScriptWrappable::init(this);
 }
 
 File* FileList::item(unsigned index) const
@@ -41,11 +40,17 @@ File* FileList::item(unsigned index) const
     return m_files[index].get();
 }
 
-Vector<String> FileList::paths() const
+Vector<String> FileList::pathsForUserVisibleFiles() const
 {
     Vector<String> paths;
-    for (unsigned i = 0; i < m_files.size(); ++i)
-        paths.append(m_files[i]->path());
+    for (unsigned i = 0; i < m_files.size(); ++i) {
+        if (m_files[i]->userVisibility() == File::IsUserVisible) {
+            if (m_files[i]->hasBackingFile())
+                paths.append(m_files[i]->path());
+            else
+                paths.append(m_files[i]->name());
+        }
+    }
 
     return paths;
 }
@@ -55,4 +60,4 @@ void FileList::trace(Visitor* visitor)
     visitor->trace(m_files);
 }
 
-} // namespace WebCore
+} // namespace blink

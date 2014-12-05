@@ -30,19 +30,24 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
   # describe the presentation of Policy-Groups and Policies.
   _presentation_table_elem = None
 
-  def _AddString(self, parent, id, text):
-    ''' Adds an ADML "string" element to the passed parent. The following
+  def _AddString(self, id, text):
+    ''' Adds an ADML "string" element to _string_table_elem. The following
     ADML snippet contains an example:
 
     <string id="$(id)">$(text)</string>
 
     Args:
-      parent: Parent element to which the new "string" element is added.
       id: ID of the newly created "string" element.
       text: Value of the newly created "string" element.
     '''
-    string_elem = self.AddElement(parent, 'string', {'id': id})
-    string_elem.appendChild(self._doc.createTextNode(text))
+    id = id.replace('.', '_')
+    if id in self.strings_seen:
+      assert text == self.strings_seen[id]
+    else:
+      self.strings_seen[id] = text
+      string_elem = self.AddElement(
+          self._string_table_elem, 'string', {'id': id})
+      string_elem.appendChild(self._doc.createTextNode(text))
 
   def WritePolicy(self, policy):
     '''Generates the ADML elements for a Policy.
@@ -75,9 +80,8 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
     else:
       policy_label = policy_name
 
-    self._AddString(self._string_table_elem, policy_name, policy_caption)
-    self._AddString(self._string_table_elem, policy_name + '_Explain',
-                    policy_description)
+    self._AddString(policy_name, policy_caption)
+    self._AddString(policy_name + '_Explain', policy_description)
     presentation_elem = self.AddElement(
         self._presentation_table_elem, 'presentation', {'id': policy_name})
 
@@ -95,14 +99,12 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
       textbox_elem.appendChild(self._doc.createTextNode(policy_label + ':'))
     elif policy_type in ('int-enum', 'string-enum'):
       for item in policy['items']:
-        self._AddString(self._string_table_elem, item['name'], item['caption'])
+        self._AddString(item['name'], item['caption'])
       dropdownlist_elem = self.AddElement(presentation_elem, 'dropdownList',
                                           {'refId': policy_name})
       dropdownlist_elem.appendChild(self._doc.createTextNode(policy_label))
-    elif policy_type == 'list':
-      self._AddString(self._string_table_elem,
-                      policy_name + 'Desc',
-                      policy_caption)
+    elif policy_type in ('list', 'string-enum-list'):
+      self._AddString(policy_name + 'Desc', policy_caption)
       listbox_elem = self.AddElement(presentation_elem, 'listBox',
                                      {'refId': policy_name + 'Desc'})
       listbox_elem.appendChild(self._doc.createTextNode(policy_label))
@@ -128,39 +130,36 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
     # Add ADML "string" elements to the string-table that are required by a
     # Policy-Group.
-    self._AddString(self._string_table_elem, group['name'] + '_group',
-                    group['caption'])
+    self._AddString(group['name'] + '_group', group['caption'])
 
-  def _AddBaseStrings(self, string_table_elem, build):
+  def _AddBaseStrings(self, build):
     ''' Adds ADML "string" elements to the string-table that are referenced by
     the ADMX file but not related to any specific Policy-Group or Policy.
     '''
-    self._AddString(string_table_elem, self.config['win_supported_os'],
+    self._AddString(self.config['win_supported_os'],
                     self.messages['win_supported_winxpsp2']['text'])
     recommended_name = '%s - %s' % \
         (self.config['app_name'], self.messages['doc_recommended']['text'])
     if build == 'chrome':
-      self._AddString(string_table_elem,
-                      self.config['win_mandatory_category_path'][0],
+      self._AddString(self.config['win_mandatory_category_path'][0],
                       'Google')
-      self._AddString(string_table_elem,
-                      self.config['win_mandatory_category_path'][1],
+      self._AddString(self.config['win_mandatory_category_path'][1],
                       self.config['app_name'])
-      self._AddString(string_table_elem,
-                      self.config['win_recommended_category_path'][1],
+      self._AddString(self.config['win_recommended_category_path'][1],
                       recommended_name)
     elif build == 'chromium':
-      self._AddString(string_table_elem,
-                      self.config['win_mandatory_category_path'][0],
+      self._AddString(self.config['win_mandatory_category_path'][0],
                       self.config['app_name'])
-      self._AddString(string_table_elem,
-                      self.config['win_recommended_category_path'][0],
+      self._AddString(self.config['win_recommended_category_path'][0],
                       recommended_name)
 
   def BeginTemplate(self):
     dom_impl = minidom.getDOMImplementation('')
     self._doc = dom_impl.createDocument(None, 'policyDefinitionResources',
                                         None)
+    if self._GetChromiumVersionString() is not None:
+      self.AddComment(self._doc.documentElement, self.config['build'] + \
+          ' version: ' + self._GetChromiumVersionString())
     policy_definitions_resources_elem = self._doc.documentElement
     policy_definitions_resources_elem.attributes['revision'] = '1.0'
     policy_definitions_resources_elem.attributes['schemaVersion'] = '1.0'
@@ -170,9 +169,13 @@ class ADMLWriter(xml_formatted_writer.XMLFormattedWriter):
     resources_elem = self.AddElement(policy_definitions_resources_elem,
                                      'resources')
     self._string_table_elem = self.AddElement(resources_elem, 'stringTable')
-    self._AddBaseStrings(self._string_table_elem, self.config['build'])
+    self._AddBaseStrings(self.config['build'])
     self._presentation_table_elem = self.AddElement(resources_elem,
                                                    'presentationTable')
+
+  def Init(self):
+    # Map of all strings seen.
+    self.strings_seen = {}
 
   def GetTemplateText(self):
     # Using "toprettyxml()" confuses the Windows Group Policy Editor

@@ -10,7 +10,6 @@
 
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_scoped_ptr.h"
-#include "native_client/src/include/nacl_string.h"
 #include "native_client/src/shared/platform/nacl_threads.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 
@@ -48,7 +47,7 @@ class PnaclTranslateThread {
                     ErrorInfo* error_info,
                     PnaclResources* resources,
                     PP_PNaClOptions* pnacl_options,
-                    const nacl::string &architecture_attributes,
+                    const std::string &architecture_attributes,
                     PnaclCoordinator* coordinator,
                     Plugin* plugin);
 
@@ -61,9 +60,16 @@ class PnaclTranslateThread {
   void AbortSubprocesses();
 
   // Send bitcode bytes to the translator. Called from the main thread.
-  void PutBytes(std::vector<char>* data, int count);
+  void PutBytes(const void* data, int count);
+
+  // Notify the translator that the end of the bitcode stream has been reached.
+  // Called from the main thread.
+  void EndStream();
 
   int64_t GetCompileTime() const { return compile_time_; }
+
+  // Returns true if RunTranslate() has been called, false otherwise.
+  bool started() const { return plugin_ != NULL; }
 
  private:
   // Helper thread entry point for translation. Takes a pointer to
@@ -73,7 +79,7 @@ class PnaclTranslateThread {
   void DoTranslate() ;
   // Signal that Pnacl translation failed, from the translation thread only.
   void TranslateFailed(PP_NaClError err_code,
-                       const nacl::string& error_string);
+                       const std::string& error_string);
   // Run the LD subprocess, returning true on success.
   // On failure, it returns false and runs the callback.
   bool RunLdSubprocess();
@@ -117,7 +123,7 @@ class PnaclTranslateThread {
   ErrorInfo* coordinator_error_info_;
   PnaclResources* resources_;
   PP_PNaClOptions* pnacl_options_;
-  nacl::string architecture_attributes_;
+  std::string architecture_attributes_;
   PnaclCoordinator* coordinator_;
   Plugin* plugin_;
  private:

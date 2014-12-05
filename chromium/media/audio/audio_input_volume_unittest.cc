@@ -97,8 +97,9 @@ class AudioInputVolumeTest : public ::testing::Test {
 #endif
 };
 
-#if defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(ARCH_CPU_ARM_FAMILY)
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
 // Currently failing on linux ARM bot: http://crbug/238490
+// Also flaky on x86_64: http://crbug/236936
 #define MAYBE_InputVolumeTest DISABLED_InputVolumeTest
 #else
 #define MAYBE_InputVolumeTest InputVolumeTest
@@ -149,7 +150,7 @@ TEST_F(AudioInputVolumeTest, MAYBE_InputVolumeTest) {
     double current_volume = ais->GetVolume();
     EXPECT_EQ(max_volume, current_volume);
 
-    // Set the volume to the mininum level (=0).
+    // Set the volume to the minimum level (=0).
     double new_volume = 0.0;
     ais->SetVolume(new_volume);
 #if defined(OS_LINUX)

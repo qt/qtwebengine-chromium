@@ -38,7 +38,7 @@
 #include "wtf/Vector.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 class TestImageDecoder : public ImageDecoder {
 public:
@@ -47,8 +47,8 @@ public:
     {
     }
 
-    virtual String filenameExtension() const OVERRIDE { return ""; }
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE { return 0; }
+    virtual String filenameExtension() const override { return ""; }
+    virtual ImageFrame* frameBufferAtIndex(size_t) override { return 0; }
 
     Vector<ImageFrame, 1>& frameBufferCache()
     {

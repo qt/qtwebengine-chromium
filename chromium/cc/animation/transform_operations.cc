@@ -7,9 +7,9 @@
 #include <algorithm>
 
 #include "ui/gfx/animation/tween.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/vector3d_f.h"
 #include "ui/gfx/transform_util.h"
-#include "ui/gfx/vector3d_f.h"
 
 namespace cc {
 
@@ -68,8 +68,8 @@ bool TransformOperations::BlendedBoundsForBox(const gfx::BoxF& box,
   for (int i = num_operations - 1; i >= 0; --i) {
     gfx::BoxF bounds_for_operation;
     const TransformOperation* from_op =
-        from_identity ? NULL : &from.operations_[i];
-    const TransformOperation* to_op = to_identity ? NULL : &operations_[i];
+        from_identity ? nullptr : &from.operations_[i];
+    const TransformOperation* to_op = to_identity ? nullptr : &operations_[i];
     if (!TransformOperation::BlendedBoundsForBox(*bounds,
                                                  from_op,
                                                  to_op,
@@ -111,41 +111,6 @@ bool TransformOperations::IsTranslation() const {
         return false;
     }
   }
-  return true;
-}
-
-bool TransformOperations::MaximumScale(const TransformOperations& from,
-                                       SkMScalar min_progress,
-                                       SkMScalar max_progress,
-                                       float* max_scale) const {
-  if (!MatchesTypes(from))
-    return false;
-
-  gfx::Vector3dF from_scale;
-  gfx::Vector3dF to_scale;
-
-  if (!from.ScaleComponent(&from_scale) || !ScaleComponent(&to_scale))
-    return false;
-
-  gfx::Vector3dF scale_at_min_progress(
-      std::abs(gfx::Tween::FloatValueBetween(
-          min_progress, from_scale.x(), to_scale.x())),
-      std::abs(gfx::Tween::FloatValueBetween(
-          min_progress, from_scale.y(), to_scale.y())),
-      std::abs(gfx::Tween::FloatValueBetween(
-          min_progress, from_scale.z(), to_scale.z())));
-  gfx::Vector3dF scale_at_max_progress(
-      std::abs(gfx::Tween::FloatValueBetween(
-          max_progress, from_scale.x(), to_scale.x())),
-      std::abs(gfx::Tween::FloatValueBetween(
-          max_progress, from_scale.y(), to_scale.y())),
-      std::abs(gfx::Tween::FloatValueBetween(
-          max_progress, from_scale.z(), to_scale.z())));
-
-  gfx::Vector3dF max_scale_3d = scale_at_min_progress;
-  max_scale_3d.SetToMax(scale_at_max_progress);
-  *max_scale =
-      std::max(max_scale_3d.x(), std::max(max_scale_3d.y(), max_scale_3d.z()));
   return true;
 }
 

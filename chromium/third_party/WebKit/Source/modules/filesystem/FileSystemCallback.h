@@ -31,13 +31,16 @@
 #ifndef FileSystemCallback_h
 #define FileSystemCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class DOMFileSystem;
 
-class FileSystemCallback {
+class FileSystemCallback : public GarbageCollectedFinalized<FileSystemCallback> {
 public:
     virtual ~FileSystemCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(DOMFileSystem*) = 0;
 };
 

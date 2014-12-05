@@ -13,7 +13,6 @@
 #include "cc/output/renderer.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/task_graph_runner.h"
 
 namespace cc {
 
@@ -24,22 +23,22 @@ class ResourceProvider;
 // delegate rendering to another compositor.
 class CC_EXPORT DirectRenderer : public Renderer {
  public:
-  virtual ~DirectRenderer();
+  ~DirectRenderer() override;
 
-  virtual void DecideRenderPassAllocationsForFrame(
-      const RenderPassList& render_passes_in_draw_order) OVERRIDE;
-  virtual bool HasAllocatedResourcesForTesting(RenderPass::Id id) const
-      OVERRIDE;
-  virtual void DrawFrame(RenderPassList* render_passes_in_draw_order,
-                         float device_scale_factor,
-                         const gfx::Rect& device_viewport_rect,
-                         const gfx::Rect& device_clip_rect,
-                         bool disable_picture_quad_image_filtering) OVERRIDE;
+  void DecideRenderPassAllocationsForFrame(
+      const RenderPassList& render_passes_in_draw_order) override;
+  bool HasAllocatedResourcesForTesting(RenderPassId id) const override;
+  void DrawFrame(RenderPassList* render_passes_in_draw_order,
+                 float device_scale_factor,
+                 const gfx::Rect& device_viewport_rect,
+                 const gfx::Rect& device_clip_rect,
+                 bool disable_picture_quad_image_filtering) override;
 
   struct CC_EXPORT DrawingFrame {
     DrawingFrame();
     ~DrawingFrame();
 
+    const RenderPassList* render_passes_in_draw_order;
     const RenderPass* root_render_pass;
     const RenderPass* current_render_pass;
     const ScopedResource* current_texture;
@@ -72,7 +71,8 @@ class CC_EXPORT DirectRenderer : public Renderer {
                           const gfx::Rect& draw_rect,
                           const gfx::Rect& viewport_rect,
                           const gfx::Size& surface_size);
-  gfx::Rect MoveFromDrawToWindowSpace(const gfx::Rect& draw_rect) const;
+  gfx::Rect MoveFromDrawToWindowSpace(const DrawingFrame* frame,
+                                      const gfx::Rect& draw_rect) const;
 
   bool NeedDeviceClip(const DrawingFrame* frame) const;
   gfx::Rect DeviceClipRectInWindowSpace(const DrawingFrame* frame) const;
@@ -105,7 +105,7 @@ class CC_EXPORT DirectRenderer : public Renderer {
   virtual void BeginDrawingFrame(DrawingFrame* frame) = 0;
   virtual void FinishDrawingFrame(DrawingFrame* frame) = 0;
   virtual void FinishDrawingQuadList();
-  virtual bool FlippedFramebuffer() const = 0;
+  virtual bool FlippedFramebuffer(const DrawingFrame* frame) const = 0;
   virtual void EnsureScissorTestEnabled() = 0;
   virtual void EnsureScissorTestDisabled() = 0;
   virtual void DiscardBackbuffer() {}
@@ -115,7 +115,7 @@ class CC_EXPORT DirectRenderer : public Renderer {
       DrawingFrame* frame,
       scoped_ptr<CopyOutputRequest> request) = 0;
 
-  base::ScopedPtrHashMap<RenderPass::Id, ScopedResource> render_pass_textures_;
+  base::ScopedPtrHashMap<RenderPassId, ScopedResource> render_pass_textures_;
   OutputSurface* output_surface_;
   ResourceProvider* resource_provider_;
   scoped_ptr<OverlayProcessor> overlay_processor_;

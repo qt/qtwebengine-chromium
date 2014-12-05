@@ -29,11 +29,11 @@
 #include "config.h"
 #include "modules/webdatabase/SQLResultSet.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 SQLResultSet::SQLResultSet()
     : m_rows(SQLResultSetRowList::create())
@@ -42,7 +42,6 @@ SQLResultSet::SQLResultSet()
     , m_insertIdSet(false)
     , m_isValid(false)
 {
-    ScriptWrappable::init(this);
 }
 
 void SQLResultSet::trace(Visitor* visitor)

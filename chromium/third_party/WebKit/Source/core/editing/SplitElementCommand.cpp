@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/editing/SplitElementCommand.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Element.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 SplitElementCommand::SplitElementCommand(PassRefPtrWillBeRawPtr<Element> element, PassRefPtrWillBeRawPtr<Node> atChild)
     : SimpleEditCommand(element->document())
@@ -49,14 +49,14 @@ void SplitElementCommand::executeApply()
     if (m_atChild->parentNode() != m_element2)
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> children;
     for (Node* node = m_element2->firstChild(); node != m_atChild; node = node->nextSibling())
         children.append(node);
 
     TrackExceptionState exceptionState;
 
     ContainerNode* parent = m_element2->parentNode();
-    if (!parent || !parent->rendererIsEditable())
+    if (!parent || !parent->hasEditableStyle())
         return;
     parent->insertBefore(m_element1.get(), m_element2.get(), exceptionState);
     if (exceptionState.hadException())
@@ -65,9 +65,8 @@ void SplitElementCommand::executeApply()
     // Delete id attribute from the second element because the same id cannot be used for more than one element
     m_element2->removeAttribute(HTMLNames::idAttr);
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element1->appendChild(children[i], exceptionState);
+    for (const auto& child : children)
+        m_element1->appendChild(child, exceptionState);
 }
 
 void SplitElementCommand::doApply()
@@ -79,18 +78,16 @@ void SplitElementCommand::doApply()
 
 void SplitElementCommand::doUnapply()
 {
-    if (!m_element1 || !m_element1->rendererIsEditable() || !m_element2->rendererIsEditable())
+    if (!m_element1 || !m_element1->hasEditableStyle() || !m_element2->hasEditableStyle())
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
-    for (Node* node = m_element1->firstChild(); node; node = node->nextSibling())
-        children.append(node);
+    NodeVector children;
+    getChildNodes(*m_element1, children);
 
     RefPtrWillBeRawPtr<Node> refChild = m_element2->firstChild();
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element2->insertBefore(children[i].get(), refChild.get(), IGNORE_EXCEPTION);
+    for (const auto& child : children)
+        m_element2->insertBefore(child.get(), refChild.get(), IGNORE_EXCEPTION);
 
     // Recover the id attribute of the original element.
     const AtomicString& id = m_element1->getAttribute(HTMLNames::idAttr);
@@ -116,4 +113,4 @@ void SplitElementCommand::trace(Visitor* visitor)
     SimpleEditCommand::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

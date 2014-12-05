@@ -25,8 +25,8 @@
 #include "config.h"
 #include "core/html/HTMLTableElement.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
@@ -36,6 +36,7 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLTableCaptionElement.h"
 #include "core/html/HTMLTableCellElement.h"
@@ -47,7 +48,7 @@
 #include "platform/weborigin/Referrer.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -59,7 +60,6 @@ inline HTMLTableElement::HTMLTableElement(Document& document)
     , m_rulesAttr(UnsetRules)
     , m_padding(1)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLTableElement)
@@ -77,19 +77,15 @@ void HTMLTableElement::setCaption(PassRefPtrWillBeRawPtr<HTMLTableCaptionElement
 
 HTMLTableSectionElement* HTMLTableElement::tHead() const
 {
-    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSibling(*child)) {
-        if (child->hasTagName(theadTag))
-            return toHTMLTableSectionElement(child);
-    }
-    return 0;
+    return toHTMLTableSectionElement(Traversal<HTMLElement>::firstChild(*this, HasHTMLTagName(theadTag)));
 }
 
 void HTMLTableElement::setTHead(PassRefPtrWillBeRawPtr<HTMLTableSectionElement> newHead, ExceptionState& exceptionState)
 {
     deleteTHead();
 
-    Element* child;
-    for (child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSibling(*child)) {
+    HTMLElement* child;
+    for (child = Traversal<HTMLElement>::firstChild(*this); child; child = Traversal<HTMLElement>::nextSibling(*child)) {
         if (!child->hasTagName(captionTag) && !child->hasTagName(colgroupTag))
             break;
     }
@@ -99,19 +95,15 @@ void HTMLTableElement::setTHead(PassRefPtrWillBeRawPtr<HTMLTableSectionElement> 
 
 HTMLTableSectionElement* HTMLTableElement::tFoot() const
 {
-    for (Element* child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSibling(*child)) {
-        if (child->hasTagName(tfootTag))
-            return toHTMLTableSectionElement(child);
-    }
-    return 0;
+    return toHTMLTableSectionElement(Traversal<HTMLElement>::firstChild(*this, HasHTMLTagName(tfootTag)));
 }
 
 void HTMLTableElement::setTFoot(PassRefPtrWillBeRawPtr<HTMLTableSectionElement> newFoot, ExceptionState& exceptionState)
 {
     deleteTFoot();
 
-    Element* child;
-    for (child = ElementTraversal::firstWithin(*this); child; child = ElementTraversal::nextSibling(*child)) {
+    HTMLElement* child;
+    for (child = Traversal<HTMLElement>::firstChild(*this); child; child = Traversal<HTMLElement>::nextSibling(*child)) {
         if (!child->hasTagName(captionTag) && !child->hasTagName(colgroupTag) && !child->hasTagName(theadTag))
             break;
     }
@@ -172,17 +164,7 @@ void HTMLTableElement::deleteCaption()
 
 HTMLTableSectionElement* HTMLTableElement::lastBody() const
 {
-    for (Node* child = lastChild(); child; child = child->previousSibling()) {
-        if (child->hasTagName(tbodyTag))
-            return toHTMLTableSectionElement(child);
-    }
-    return 0;
-}
-
-PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableElement::insertRow(ExceptionState& exceptionState)
-{
-    // The default 'index' argument value is -1.
-    return insertRow(-1, exceptionState);
+    return toHTMLTableSectionElement(Traversal<HTMLElement>::lastChild(*this, HasHTMLTagName(tbodyTag)));
 }
 
 PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableElement::insertRow(int index, ExceptionState& exceptionState)
@@ -260,7 +242,7 @@ void HTMLTableElement::setNeedsTableStyleRecalc() const
 {
     Element* element = ElementTraversal::next(*this, this);
     while (element) {
-        element->setNeedsStyleRecalc(LocalStyleChange);
+        element->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::fromAttribute(rulesAttr));
         if (isHTMLTableCellElement(*element))
             element = ElementTraversal::nextSkippingChildren(*element, this);
         else
@@ -321,11 +303,11 @@ void HTMLTableElement::collectStyleForPresentationAttribute(const QualifiedName&
         if (!value.isEmpty())
             addHTMLLengthToStyle(style, CSSPropertyBorderSpacing, value);
     } else if (name == vspaceAttr) {
-        UseCounter::count(document(), UseCounter::HTMLTableElementVspace);
+        UseCounter::countDeprecation(document(), UseCounter::HTMLTableElementVspace);
         addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
         addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
     } else if (name == hspaceAttr) {
-        UseCounter::count(document(), UseCounter::HTMLTableElementHspace);
+        UseCounter::countDeprecation(document(), UseCounter::HTMLTableElementHspace);
         addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
         addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
     } else if (name == alignAttr) {
@@ -408,7 +390,7 @@ void HTMLTableElement::parseAttribute(const QualifiedName& name, const AtomicStr
     }
 }
 
-static PassRefPtr<StylePropertySet> createBorderStyle(CSSValueID value)
+static PassRefPtrWillBeRawPtr<StylePropertySet> createBorderStyle(CSSValueID value)
 {
     RefPtrWillBeRawPtr<MutableStylePropertySet> style = MutableStylePropertySet::create();
     style->setProperty(CSSPropertyBorderTopStyle, value);
@@ -421,23 +403,23 @@ static PassRefPtr<StylePropertySet> createBorderStyle(CSSValueID value)
 const StylePropertySet* HTMLTableElement::additionalPresentationAttributeStyle()
 {
     if (m_frameAttr)
-        return 0;
+        return nullptr;
 
     if (!m_borderAttr && !m_borderColorAttr) {
         // Setting the border to 'hidden' allows it to win over any border
         // set on the table's cells during border-conflict resolution.
         if (m_rulesAttr != UnsetRules) {
-            DEFINE_STATIC_REF(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueHidden)));
+            DEFINE_STATIC_REF_WILL_BE_PERSISTENT(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueHidden)));
             return solidBorderStyle;
         }
-        return 0;
+        return nullptr;
     }
 
     if (m_borderColorAttr) {
-        DEFINE_STATIC_REF(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueSolid)));
+        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(StylePropertySet, solidBorderStyle, (createBorderStyle(CSSValueSolid)));
         return solidBorderStyle;
     }
-    DEFINE_STATIC_REF(StylePropertySet, outsetBorderStyle, (createBorderStyle(CSSValueOutset)));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(StylePropertySet, outsetBorderStyle, (createBorderStyle(CSSValueOutset)));
     return outsetBorderStyle;
 }
 
@@ -531,13 +513,13 @@ static PassRefPtrWillBeRawPtr<StylePropertySet> createGroupBorderStyle(int rows)
 const StylePropertySet* HTMLTableElement::additionalGroupStyle(bool rows)
 {
     if (m_rulesAttr != GroupsRules)
-        return 0;
+        return nullptr;
 
     if (rows) {
-        DEFINE_STATIC_REF(StylePropertySet, rowBorderStyle, (createGroupBorderStyle(true)));
+        DEFINE_STATIC_REF_WILL_BE_PERSISTENT(StylePropertySet, rowBorderStyle, (createGroupBorderStyle(true)));
         return rowBorderStyle;
     }
-    DEFINE_STATIC_REF(StylePropertySet, columnBorderStyle, (createGroupBorderStyle(false)));
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(StylePropertySet, columnBorderStyle, (createGroupBorderStyle(false)));
     return columnBorderStyle;
 }
 
@@ -558,12 +540,12 @@ const QualifiedName& HTMLTableElement::subResourceAttributeName() const
 
 PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> HTMLTableElement::rows()
 {
-    return toHTMLTableRowsCollection(ensureCachedHTMLCollection(TableRows).get());
+    return ensureCachedCollection<HTMLTableRowsCollection>(TableRows);
 }
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableElement::tBodies()
 {
-    return ensureCachedHTMLCollection(TableTBodies);
+    return ensureCachedCollection<HTMLCollection>(TableTBodies);
 }
 
 const AtomicString& HTMLTableElement::rules() const

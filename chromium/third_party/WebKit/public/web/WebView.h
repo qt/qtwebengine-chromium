@@ -44,6 +44,7 @@ namespace blink {
 
 class WebAXObject;
 class WebAutofillClient;
+class WebCredentialManagerClient;
 class WebDevToolsAgent;
 class WebDevToolsAgentClient;
 class WebDragData;
@@ -95,6 +96,7 @@ public:
 
     // Initializes the various client interfaces.
     virtual void setAutofillClient(WebAutofillClient*) = 0;
+    virtual void setCredentialManagerClient(WebCredentialManagerClient*) = 0;
     virtual void setDevToolsAgentClient(WebDevToolsAgentClient*) = 0;
     virtual void setPrerendererClient(WebPrerendererClient*) = 0;
     virtual void setSpellCheckClient(WebSpellCheckClient*) = 0;
@@ -286,13 +288,9 @@ public:
     // Sets the ratio as computed by computePageScaleConstraints.
     virtual void setDeviceScaleFactor(float) = 0;
 
-
-    // Fixed Layout --------------------------------------------------------
-
-    // Locks main frame's layout size to specified size. Passing WebSize(0, 0)
-    // removes the lock.
-    virtual void setFixedLayoutSize(const WebSize&) = 0;
-
+    // Set and reset the device color profile.
+    virtual void setDeviceColorProfile(const WebVector<char>&) = 0;
+    virtual void resetDeviceColorProfile() = 0;
 
     // Auto-Resize -----------------------------------------------------------
 
@@ -355,7 +353,7 @@ public:
 
     // Retrieves a list of spelling markers.
     virtual void spellingMarkers(WebVector<uint32_t>* markers) = 0;
-
+    virtual void removeSpellingMarkersUnderWords(const WebVector<WebString>& words) = 0;
 
     // Support for resource loading initiated by plugins -------------------
 
@@ -370,14 +368,6 @@ public:
     // special case, meaning inspect the current page and not a specific
     // point.
     virtual void inspectElementAt(const WebPoint&) = 0;
-
-    // Settings used by the inspector.
-    virtual WebString inspectorSettings() const = 0;
-    virtual void setInspectorSettings(const WebString&) = 0;
-    virtual bool inspectorSetting(const WebString& key,
-                                  WebString* value) const = 0;
-    virtual void setInspectorSetting(const WebString& key,
-                                     const WebString& value) = 0;
 
     // Set an override of device scale factor passed from WebView to
     // compositor. Pass zero to cancel override. This is used to implement
@@ -408,8 +398,7 @@ public:
 
 
     // SmartClip support ---------------------------------------------------
-
-    virtual WebString getSmartClipData(WebRect) = 0;
+    virtual void extractSmartClipData(WebRect initRect, WebString& text, WebString& html, WebRect& resultRect) = 0;
 
 
     // Popup menu ----------------------------------------------------------

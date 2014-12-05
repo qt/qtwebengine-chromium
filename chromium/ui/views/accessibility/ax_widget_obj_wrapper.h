@@ -18,20 +18,19 @@ class AXWidgetObjWrapper : public AXAuraObjWrapper,
                            public WidgetRemovalsObserver {
  public:
   explicit AXWidgetObjWrapper(Widget* widget);
-  virtual ~AXWidgetObjWrapper();
+  ~AXWidgetObjWrapper() override;
 
   // AXAuraObjWrapper overrides.
-  virtual AXAuraObjWrapper* GetParent() OVERRIDE;
-  virtual void GetChildren(
-      std::vector<AXAuraObjWrapper*>* out_children) OVERRIDE;
-  virtual void Serialize(ui::AXNodeData* out_node_data) OVERRIDE;
-  virtual int32 GetID() OVERRIDE;
+  AXAuraObjWrapper* GetParent() override;
+  void GetChildren(std::vector<AXAuraObjWrapper*>* out_children) override;
+  void Serialize(ui::AXNodeData* out_node_data) override;
+  int32 GetID() override;
 
   // WidgetObserver overrides.
-  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
+  void OnWidgetDestroying(Widget* widget) override;
 
   // WidgetRemovalsObserver overrides.
-  virtual void OnWillRemoveView(Widget* widget, View* view) OVERRIDE;
+  void OnWillRemoveView(Widget* widget, View* view) override;
 
  private:
   Widget* widget_;

@@ -34,25 +34,26 @@
 #include "modules/filesystem/Entry.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMFileSystemBase;
 class FileCallback;
 class FileWriterCallback;
 
-class FileEntry FINAL : public Entry {
+class FileEntry final : public Entry {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static FileEntry* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
         return new FileEntry(fileSystem, fullPath);
     }
 
-    void createWriter(PassOwnPtr<FileWriterCallback>, PassOwnPtr<ErrorCallback> = nullptr);
-    void file(PassOwnPtr<FileCallback>, PassOwnPtr<ErrorCallback> = nullptr);
+    void createWriter(FileWriterCallback*, ErrorCallback* = nullptr);
+    void file(FileCallback*, ErrorCallback* = nullptr);
 
-    virtual bool isFile() const OVERRIDE { return true; }
+    virtual bool isFile() const override { return true; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     FileEntry(DOMFileSystemBase*, const String& fullPath);
@@ -60,6 +61,6 @@ private:
 
 DEFINE_TYPE_CASTS(FileEntry, Entry, entry, entry->isFile(), entry.isFile());
 
-} // namespace
+} // namespace blink
 
 #endif // FileEntry_h

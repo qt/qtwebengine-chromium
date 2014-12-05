@@ -6,6 +6,7 @@
 #define V8_IA32_MACRO_ASSEMBLER_IA32_H_
 
 #include "src/assembler.h"
+#include "src/bailout-reason.h"
 #include "src/frames.h"
 #include "src/globals.h"
 
@@ -30,7 +31,16 @@ enum RegisterValueType {
 };
 
 
-bool AreAliased(Register r1, Register r2, Register r3, Register r4);
+#ifdef DEBUG
+bool AreAliased(Register reg1,
+                Register reg2,
+                Register reg3 = no_reg,
+                Register reg4 = no_reg,
+                Register reg5 = no_reg,
+                Register reg6 = no_reg,
+                Register reg7 = no_reg,
+                Register reg8 = no_reg);
+#endif
 
 
 // MacroAssembler implements a collection of frequently used macros.
@@ -454,11 +464,9 @@ class MacroAssembler: public Assembler {
   void TruncateDoubleToI(Register result_reg, XMMRegister input_reg);
 
   void DoubleToI(Register result_reg, XMMRegister input_reg,
-      XMMRegister scratch, MinusZeroMode minus_zero_mode,
-      Label* conversion_failed, Label::Distance dst = Label::kFar);
-
-  void TaggedToI(Register result_reg, Register input_reg, XMMRegister temp,
-      MinusZeroMode minus_zero_mode, Label* lost_precision);
+                 XMMRegister scratch, MinusZeroMode minus_zero_mode,
+                 Label* lost_precision, Label* is_nan, Label* minus_zero,
+                 Label::Distance dst = Label::kFar);
 
   // Smi tagging support.
   void SmiTag(Register reg) {
@@ -478,7 +486,10 @@ class MacroAssembler: public Assembler {
     j(not_carry, is_smi);
   }
 
-  void LoadUint32(XMMRegister dst, Register src);
+  void LoadUint32(XMMRegister dst, Register src) {
+    LoadUint32(dst, Operand(src));
+  }
+  void LoadUint32(XMMRegister dst, const Operand& src);
 
   // Jump the register contains a smi.
   inline void JumpIfSmi(Register value,
@@ -638,7 +649,8 @@ class MacroAssembler: public Assembler {
   void AllocateHeapNumber(Register result,
                           Register scratch1,
                           Register scratch2,
-                          Label* gc_required);
+                          Label* gc_required,
+                          MutableMode mode = IMMUTABLE);
 
   // Allocate a sequential string. All the header fields of the string object
   // are initialized.
@@ -648,17 +660,11 @@ class MacroAssembler: public Assembler {
                              Register scratch2,
                              Register scratch3,
                              Label* gc_required);
-  void AllocateAsciiString(Register result,
-                           Register length,
-                           Register scratch1,
-                           Register scratch2,
-                           Register scratch3,
-                           Label* gc_required);
-  void AllocateAsciiString(Register result,
-                           int length,
-                           Register scratch1,
-                           Register scratch2,
-                           Label* gc_required);
+  void AllocateOneByteString(Register result, Register length,
+                             Register scratch1, Register scratch2,
+                             Register scratch3, Label* gc_required);
+  void AllocateOneByteString(Register result, int length, Register scratch1,
+                             Register scratch2, Label* gc_required);
 
   // Allocate a raw cons string object. Only the map field of the result is
   // initialized.
@@ -666,10 +672,8 @@ class MacroAssembler: public Assembler {
                           Register scratch1,
                           Register scratch2,
                           Label* gc_required);
-  void AllocateAsciiConsString(Register result,
-                               Register scratch1,
-                               Register scratch2,
-                               Label* gc_required);
+  void AllocateOneByteConsString(Register result, Register scratch1,
+                                 Register scratch2, Label* gc_required);
 
   // Allocate a raw sliced string object. Only the map field of the result is
   // initialized.
@@ -677,10 +681,8 @@ class MacroAssembler: public Assembler {
                             Register scratch1,
                             Register scratch2,
                             Label* gc_required);
-  void AllocateAsciiSlicedString(Register result,
-                                 Register scratch1,
-                                 Register scratch2,
-                                 Label* gc_required);
+  void AllocateOneByteSlicedString(Register result, Register scratch1,
+                                   Register scratch2, Label* gc_required);
 
   // Copy memory, byte-by-byte, from source to destination.  Not optimized for
   // long or aligned copies.
@@ -840,14 +842,16 @@ class MacroAssembler: public Assembler {
   void Move(const Operand& dst, const Immediate& x);
 
   // Move an immediate into an XMM register.
-  void Move(XMMRegister dst, double val);
+  void Move(XMMRegister dst, uint32_t src);
+  void Move(XMMRegister dst, uint64_t src);
+  void Move(XMMRegister dst, double src) { Move(dst, bit_cast<uint64_t>(src)); }
 
   // Push a handle value.
   void Push(Handle<Object> handle) { push(Immediate(handle)); }
   void Push(Smi* smi) { Push(Handle<Smi>(smi, isolate())); }
 
   Handle<Object> CodeObject() {
-    ASSERT(!code_object_.is_null());
+    DCHECK(!code_object_.is_null());
     return code_object_;
   }
 
@@ -904,29 +908,27 @@ class MacroAssembler: public Assembler {
                                Register scratch2,
                                Label* not_found);
 
-  // Check whether the instance type represents a flat ASCII string. Jump to the
-  // label if not. If the instance type can be scratched specify same register
-  // for both instance type and scratch.
-  void JumpIfInstanceTypeIsNotSequentialAscii(Register instance_type,
-                                              Register scratch,
-                                              Label* on_not_flat_ascii_string);
+  // Check whether the instance type represents a flat one-byte string. Jump to
+  // the label if not. If the instance type can be scratched specify same
+  // register for both instance type and scratch.
+  void JumpIfInstanceTypeIsNotSequentialOneByte(
+      Register instance_type, Register scratch,
+      Label* on_not_flat_one_byte_string);
 
-  // Checks if both objects are sequential ASCII strings, and jumps to label
+  // Checks if both objects are sequential one-byte strings, and jumps to label
   // if either is not.
-  void JumpIfNotBothSequentialAsciiStrings(Register object1,
-                                           Register object2,
-                                           Register scratch1,
-                                           Register scratch2,
-                                           Label* on_not_flat_ascii_strings);
+  void JumpIfNotBothSequentialOneByteStrings(
+      Register object1, Register object2, Register scratch1, Register scratch2,
+      Label* on_not_flat_one_byte_strings);
 
   // Checks if the given register or operand is a unique name
-  void JumpIfNotUniqueName(Register reg, Label* not_unique_name,
-                           Label::Distance distance = Label::kFar) {
-    JumpIfNotUniqueName(Operand(reg), not_unique_name, distance);
+  void JumpIfNotUniqueNameInstanceType(Register reg, Label* not_unique_name,
+                                       Label::Distance distance = Label::kFar) {
+    JumpIfNotUniqueNameInstanceType(Operand(reg), not_unique_name, distance);
   }
 
-  void JumpIfNotUniqueName(Operand operand, Label* not_unique_name,
-                           Label::Distance distance = Label::kFar);
+  void JumpIfNotUniqueNameInstanceType(Operand operand, Label* not_unique_name,
+                                       Label::Distance distance = Label::kFar);
 
   void EmitSeqStringSetCharCheck(Register string,
                                  Register index,
@@ -939,6 +941,7 @@ class MacroAssembler: public Assembler {
 
   // Activation support.
   void EnterFrame(StackFrame::Type type);
+  void EnterFrame(StackFrame::Type type, bool load_constant_pool_pointer_reg);
   void LeaveFrame(StackFrame::Type type);
 
   // Expects object in eax and returns map with validated enum cache

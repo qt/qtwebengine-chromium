@@ -21,10 +21,10 @@ class MediaInternalsProxy;
 class MediaInternalsMessageHandler : public WebUIMessageHandler {
  public:
   MediaInternalsMessageHandler();
-  virtual ~MediaInternalsMessageHandler();
+  ~MediaInternalsMessageHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // Javascript message handlers.
   void OnGetEverything(const base::ListValue* list);

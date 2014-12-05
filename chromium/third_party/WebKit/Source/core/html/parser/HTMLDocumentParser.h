@@ -49,19 +49,18 @@
 #include "wtf/WeakPtr.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class BackgroundHTMLParser;
 class CompactHTMLToken;
 class Document;
+class DocumentEncodingData;
 class DocumentFragment;
 class HTMLDocument;
 class HTMLParserScheduler;
 class HTMLScriptRunner;
 class HTMLTreeBuilder;
 class HTMLResourcePreloader;
-class ScriptController;
-class ScriptSourceCode;
 
 class PumpSession;
 
@@ -74,7 +73,7 @@ public:
         return adoptRefWillBeNoop(new HTMLDocumentParser(document, reportErrors));
     }
     virtual ~HTMLDocumentParser();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
     // Exposed for HTMLParserScheduler
     void resumeParsingAfterYield();
@@ -83,11 +82,11 @@ public:
 
     HTMLTokenizer* tokenizer() const { return m_tokenizer.get(); }
 
-    virtual TextPosition textPosition() const OVERRIDE FINAL;
-    virtual OrdinalNumber lineNumber() const OVERRIDE FINAL;
+    virtual TextPosition textPosition() const override final;
+    virtual OrdinalNumber lineNumber() const override final;
 
-    virtual void suspendScheduledTasks() OVERRIDE FINAL;
-    virtual void resumeScheduledTasks() OVERRIDE FINAL;
+    virtual void suspendScheduledTasks() override final;
+    virtual void resumeScheduledTasks() override final;
 
     struct ParsedChunk {
         OwnPtr<CompactHTMLTokenStream> tokens;
@@ -101,16 +100,16 @@ public:
     void didReceiveParsedChunkFromBackgroundParser(PassOwnPtr<ParsedChunk>);
     void didReceiveEncodingDataFromBackgroundParser(const DocumentEncodingData&);
 
-    virtual void appendBytes(const char* bytes, size_t length) OVERRIDE;
-    virtual void flush() OVERRIDE FINAL;
-    virtual void setDecoder(PassOwnPtr<TextResourceDecoder>) OVERRIDE FINAL;
+    virtual void appendBytes(const char* bytes, size_t length) override;
+    virtual void flush() override final;
+    virtual void setDecoder(PassOwnPtr<TextResourceDecoder>) override final;
 
     UseCounter* useCounter() { return UseCounter::getFrom(contextForParsingSession()); }
 
 protected:
-    virtual void insert(const SegmentedString&) OVERRIDE FINAL;
-    virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
-    virtual void finish() OVERRIDE FINAL;
+    virtual void insert(const SegmentedString&) override final;
+    virtual void append(PassRefPtr<StringImpl>) override;
+    virtual void finish() override final;
 
     HTMLDocumentParser(HTMLDocument&, bool reportErrors);
     HTMLDocumentParser(DocumentFragment*, Element* contextElement, ParserContentPolicy);
@@ -126,21 +125,21 @@ private:
     }
 
     // DocumentParser
-    virtual void pinToMainThread() OVERRIDE FINAL;
-    virtual void detach() OVERRIDE FINAL;
-    virtual bool hasInsertionPoint() OVERRIDE FINAL;
-    virtual bool processingData() const OVERRIDE FINAL;
-    virtual void prepareToStopParsing() OVERRIDE FINAL;
-    virtual void stopParsing() OVERRIDE FINAL;
-    virtual bool isWaitingForScripts() const OVERRIDE FINAL;
-    virtual bool isExecutingScript() const OVERRIDE FINAL;
-    virtual void executeScriptsWaitingForResources() OVERRIDE FINAL;
+    virtual void pinToMainThread() override final;
+    virtual void detach() override final;
+    virtual bool hasInsertionPoint() override final;
+    virtual bool processingData() const override final;
+    virtual void prepareToStopParsing() override final;
+    virtual void stopParsing() override final;
+    virtual bool isWaitingForScripts() const override final;
+    virtual bool isExecutingScript() const override final;
+    virtual void executeScriptsWaitingForResources() override final;
 
     // HTMLScriptRunnerHost
-    virtual void notifyScriptLoaded(Resource*) OVERRIDE FINAL;
-    virtual HTMLInputStream& inputStream() OVERRIDE FINAL { return m_input; }
-    virtual bool hasPreloadScanner() const OVERRIDE FINAL { return m_preloadScanner.get() && !shouldUseThreading(); }
-    virtual void appendCurrentInputStreamToPreloadScannerAndScan() OVERRIDE FINAL;
+    virtual void notifyScriptLoaded(Resource*) override final;
+    virtual HTMLInputStream& inputStream() override final { return m_input; }
+    virtual bool hasPreloadScanner() const override final { return m_preloadScanner.get() && !shouldUseThreading(); }
+    virtual void appendCurrentInputStreamToPreloadScannerAndScan() override final;
 
     void startBackgroundParser();
     void stopBackgroundParser();
@@ -151,14 +150,10 @@ private:
 
     Document* contextForParsingSession();
 
-    enum SynchronousMode {
-        AllowYield,
-        ForceSynchronous,
-    };
-    bool canTakeNextToken(SynchronousMode, PumpSession&);
-    void pumpTokenizer(SynchronousMode);
-    void pumpTokenizerIfPossible(SynchronousMode);
-    void constructTreeFromHTMLToken(HTMLToken&);
+    bool canTakeNextToken();
+    void pumpTokenizer();
+    void pumpTokenizerIfPossible();
+    void constructTreeFromHTMLToken();
     void constructTreeFromCompactHTMLToken(const CompactHTMLToken&);
 
     void runScriptsForPausedTreeBuilder();
@@ -169,7 +164,7 @@ private:
     void attemptToRunDeferredScriptsAndEnd();
     void end();
 
-    bool shouldUseThreading() const { return m_options.useThreading && !m_isPinnedToMainThread; }
+    bool shouldUseThreading() const { return !m_isPinnedToMainThread; }
 
     bool isParsingFragment() const;
     bool isScheduledForResume() const;
@@ -196,10 +191,10 @@ private:
     // FIXME: m_lastChunkBeforeScript, m_tokenizer, m_token, and m_input should be combined into a single state object
     // so they can be set and cleared together and passed between threads together.
     OwnPtr<ParsedChunk> m_lastChunkBeforeScript;
-    Deque<OwnPtr<ParsedChunk> > m_speculations;
+    Deque<OwnPtr<ParsedChunk>> m_speculations;
     WeakPtrFactory<HTMLDocumentParser> m_weakFactory;
     WeakPtr<BackgroundHTMLParser> m_backgroundParser;
-    OwnPtr<HTMLResourcePreloader> m_preloader;
+    OwnPtrWillBeMember<HTMLResourcePreloader> m_preloader;
 
     bool m_isPinnedToMainThread;
     bool m_endWasDelayed;

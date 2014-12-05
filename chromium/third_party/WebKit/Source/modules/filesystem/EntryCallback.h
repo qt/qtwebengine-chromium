@@ -31,13 +31,16 @@
 #ifndef EntryCallback_h
 #define EntryCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class Entry;
 
-class EntryCallback {
+class EntryCallback : public GarbageCollectedFinalized<EntryCallback> {
 public:
     virtual ~EntryCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(Entry*) = 0;
 };
 

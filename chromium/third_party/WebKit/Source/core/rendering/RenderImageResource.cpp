@@ -31,7 +31,7 @@
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderImageResource::RenderImageResource()
     : m_renderer(0)
@@ -86,8 +86,7 @@ void RenderImageResource::resetAnimation()
 
     image()->resetAnimation();
 
-    if (!m_renderer->needsLayout())
-        m_renderer->paintInvalidationForWholeRenderer();
+    m_renderer->setShouldDoFullPaintInvalidation();
 }
 
 void RenderImageResource::setContainerSizeForRenderer(const IntSize& imageContainerSize)
@@ -107,4 +106,4 @@ LayoutSize RenderImageResource::getImageSize(float multiplier, ImageResource::Si
     return size;
 }
 
-} // namespace WebCore
+} // namespace blink

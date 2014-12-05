@@ -135,9 +135,16 @@ FFmpegAudioDecoder::FFmpegAudioDecoder(
 }
 
 FFmpegAudioDecoder::~FFmpegAudioDecoder() {
-  DCHECK_EQ(state_, kUninitialized);
-  DCHECK(!codec_context_);
-  DCHECK(!av_frame_);
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  if (state_ != kUninitialized) {
+    ReleaseFFmpegResources();
+    ResetTimestampState();
+  }
+}
+
+std::string FFmpegAudioDecoder::GetDisplayName() const {
+  return "FFmpegAudioDecoder";
 }
 
 void FFmpegAudioDecoder::Initialize(const AudioDecoderConfig& config,
@@ -192,17 +199,6 @@ void FFmpegAudioDecoder::Reset(const base::Closure& closure) {
   task_runner_->PostTask(FROM_HERE, closure);
 }
 
-void FFmpegAudioDecoder::Stop() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  if (state_ == kUninitialized)
-    return;
-
-  ReleaseFFmpegResources();
-  ResetTimestampState();
-  state_ = kUninitialized;
-}
-
 void FFmpegAudioDecoder::DecodeBuffer(
     const scoped_refptr<DecoderBuffer>& buffer,
     const DecodeCB& decode_cb) {
@@ -210,8 +206,7 @@ void FFmpegAudioDecoder::DecodeBuffer(
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);
-
-  DCHECK(buffer);
+  DCHECK(buffer.get());
 
   // Make sure we are notified if http://crbug.com/49709 returns.  Issue also
   // occurs with some damaged files.
@@ -219,16 +214,6 @@ void FFmpegAudioDecoder::DecodeBuffer(
     DVLOG(1) << "Received a buffer without timestamps!";
     decode_cb.Run(kDecodeError);
     return;
-  }
-
-  if (!buffer->end_of_stream() && !discard_helper_->initialized() &&
-      codec_context_->codec_id == AV_CODEC_ID_VORBIS &&
-      buffer->timestamp() < base::TimeDelta()) {
-    // Dropping frames for negative timestamps as outlined in section A.2
-    // in the Vorbis spec. http://xiph.org/vorbis/doc/Vorbis_I_spec.html
-    const int discard_frames =
-        discard_helper_->TimeDeltaToFrames(-buffer->timestamp());
-    discard_helper_->Reset(discard_frames);
   }
 
   bool has_produced_frame;

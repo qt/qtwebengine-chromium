@@ -5,16 +5,17 @@
 #ifndef VideoTrack_h
 #define VideoTrack_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/track/TrackBase.h"
 
-namespace WebCore {
+namespace blink {
 
-class VideoTrack FINAL : public TrackBase, public ScriptWrappable {
+class VideoTrack final : public TrackBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<VideoTrack> create(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool selected)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new VideoTrack(id, kind, label, language, selected));
+        return adoptRefWillBeNoop(new VideoTrack(id, kind, label, language, selected));
     }
     virtual ~VideoTrack();
 
@@ -37,12 +38,14 @@ private:
     VideoTrack(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool selected);
 
     // TrackBase
-    virtual bool isValidKind(const AtomicString&) const OVERRIDE;
-    virtual AtomicString defaultKind() const OVERRIDE;
+    virtual bool isValidKind(const AtomicString&) const override;
+    virtual AtomicString defaultKind() const override;
 
     bool m_selected;
 };
 
-}
+DEFINE_TRACK_TYPE_CASTS(VideoTrack, TrackBase::VideoTrack);
 
-#endif
+} // namespace blink
+
+#endif // VideoTrack_h

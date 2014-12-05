@@ -26,15 +26,17 @@
 #ifndef RenderLayerCompositor_h
 #define RenderLayerCompositor_h
 
-#include "core/page/ChromeClient.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/compositing/CompositingReasonFinder.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
+class DocumentLifecycle;
 class GraphicsLayer;
+class GraphicsLayerFactory;
+class Page;
 class RenderPart;
 class ScrollingCoordinator;
 
@@ -60,7 +62,7 @@ enum CompositingStateTransitionType {
 //
 // There is one RenderLayerCompositor per RenderView.
 
-class RenderLayerCompositor FINAL : public GraphicsLayerClient {
+class RenderLayerCompositor final : public GraphicsLayerClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit RenderLayerCompositor(RenderView&);
@@ -81,7 +83,7 @@ public:
     bool hasAcceleratedCompositing() const { return m_hasAcceleratedCompositing; }
     bool layerSquashingEnabled() const;
 
-    bool acceleratedCompositingForOverflowScrollEnabled() const;
+    bool preferCompositingToLCDTextEnabled() const;
 
     bool rootShouldAlwaysComposite() const;
 
@@ -93,16 +95,6 @@ public:
 
     void didLayout();
 
-    enum UpdateLayerCompositingStateOptions {
-        Normal,
-        UseChickenEggHacks, // Use this to trigger temporary chicken-egg hacks. See crbug.com/339892.
-    };
-
-    // Update the compositing dirty bits, based on the compositing-impacting properties of the layer.
-    void updateLayerCompositingState(RenderLayer*, UpdateLayerCompositingStateOptions = Normal);
-
-    // Returns whether this layer is clipped by another layer that is not an ancestor of the given layer in the stacking context hierarchy.
-    bool clippedByNonAncestorInStackingTree(const RenderLayer*) const;
     // Whether layer's compositedLayerMapping needs a GraphicsLayer to clip z-order children of the given RenderLayer.
     bool clipsCompositingDescendants(const RenderLayer*) const;
 
@@ -114,11 +106,10 @@ public:
     GraphicsLayer* fixedRootBackgroundLayer() const;
     void setNeedsUpdateFixedBackground() { m_needsUpdateFixedBackground = true; }
 
-    // Repaint the appropriate layers when the given RenderLayer starts or stops being composited.
-    void repaintOnCompositingChange(RenderLayer*);
+    // Issue paint invalidations of the appropriate layers when the given RenderLayer starts or stops being composited.
+    void paintInvalidationOnCompositingChange(RenderLayer*);
 
-    void repaintInCompositedAncestor(RenderLayer*, const LayoutRect&);
-    void repaintCompositedLayers();
+    void fullyInvalidatePaint();
 
     RenderLayer* rootRenderLayer() const;
     GraphicsLayer* rootGraphicsLayer() const;
@@ -160,12 +151,13 @@ public:
     GraphicsLayer* layerForVerticalScrollbar() const { return m_layerForVerticalScrollbar.get(); }
     GraphicsLayer* layerForScrollCorner() const { return m_layerForScrollCorner.get(); }
 
-    void resetTrackedRepaintRects();
-    void setTracksRepaints(bool);
+    void resetTrackedPaintInvalidationRects();
+    void setTracksPaintInvalidations(bool);
 
-    virtual String debugName(const GraphicsLayer*) OVERRIDE;
+    virtual String debugName(const GraphicsLayer*) override;
+    DocumentLifecycle& lifecycle() const;
 
-    void updateStyleDeterminedCompositingReasons(RenderLayer*);
+    void updatePotentialCompositingReasonsFromStyle(RenderLayer*);
 
     // Whether the layer could ever be composited.
     bool canBeComposited(const RenderLayer*) const;
@@ -181,32 +173,17 @@ public:
     bool inOverlayFullscreenVideo() const { return m_inOverlayFullscreenVideo; }
 
 private:
-    class OverlapMap;
-
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void assertNoUnresolvedDirtyBits();
 #endif
 
-    // Make updates to the layer based on viewport-constrained properties such as position:fixed. This can in turn affect
-    // compositing.
-    bool updateLayerIfViewportConstrained(RenderLayer*);
-
     // GraphicsLayerClient implementation
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double) OVERRIDE { }
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) OVERRIDE;
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect&) override;
 
-    virtual bool isTrackingRepaints() const OVERRIDE;
+    virtual bool isTrackingPaintInvalidations() const override;
 
-    // Whether the given RL needs to paint into its own separate backing (and hence would need its own CompositedLayerMapping).
-    bool needsOwnBacking(const RenderLayer*) const;
-
+    void updateWithoutAcceleratedCompositing(CompositingUpdateType);
     void updateIfNeeded();
-
-    void recursiveRepaintLayer(RenderLayer*);
-
-    void computeCompositingRequirements(RenderLayer* ancestorLayer, RenderLayer*, OverlapMap&, struct CompositingRecursionData&, bool& descendantHas3DTransform, Vector<RenderLayer*>& unclippedDescendants, IntRect& absoluteDecendantBoundingBox);
-
-    bool hasAnyAdditionalCompositedLayers(const RenderLayer* rootLayer) const;
 
     void ensureRootLayer();
     void destroyRootLayer();
@@ -226,10 +203,6 @@ private:
     bool requiresHorizontalScrollbarLayer() const;
     bool requiresVerticalScrollbarLayer() const;
     bool requiresScrollCornerLayer() const;
-
-    void applyUpdateLayerCompositingStateChickenEggHacks(RenderLayer*, CompositingStateTransitionType compositedLayerUpdate);
-
-    DocumentLifecycle& lifecycle() const;
 
     void applyOverlayFullscreenVideoAdjustment();
 
@@ -253,7 +226,7 @@ private:
     // m_compositingDirty.
     bool m_rootShouldAlwaysCompositeDirty;
     bool m_needsUpdateFixedBackground;
-    bool m_isTrackingRepaints; // Used for testing.
+    bool m_isTrackingPaintInvalidations; // Used for testing.
 
     RootLayerAttachment m_rootLayerAttachment;
 
@@ -275,6 +248,6 @@ private:
     bool m_inOverlayFullscreenVideo;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderLayerCompositor_h

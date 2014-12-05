@@ -37,7 +37,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class EventDispatchMediator;
 
@@ -58,7 +58,7 @@ private:
     static void initialize();
     void dispatchEvent(PassRefPtrWillBeRawPtr<EventDispatchMediator>) const;
 
-    WillBePersistentHeapVector<RefPtrWillBeMember<EventDispatchMediator> > m_queuedEventDispatchMediators;
+    WillBePersistentHeapVector<RefPtrWillBeMember<EventDispatchMediator>> m_queuedEventDispatchMediators;
     unsigned m_scopingLevel;
 
     static ScopedEventQueue* s_instance;

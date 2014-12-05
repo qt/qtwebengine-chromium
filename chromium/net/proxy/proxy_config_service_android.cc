@@ -6,6 +6,7 @@
 
 #include <sys/system_properties.h>
 
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
@@ -159,11 +160,27 @@ std::string GetJavaProperty(const std::string& property) {
       std::string() : ConvertJavaStringToUTF8(env, result.obj());
 }
 
-void CreateStaticProxyConfig(const std::string& host, int port,
+void CreateStaticProxyConfig(const std::string& host,
+                             int port,
+                             const std::string& pac_url,
+                             const std::vector<std::string>& exclusion_list,
                              ProxyConfig* config) {
-  if (port != 0) {
+  if (!pac_url.empty()) {
+    config->set_pac_url(GURL(pac_url));
+    config->set_pac_mandatory(false);
+  } else if (port != 0) {
     std::string rules = base::StringPrintf("%s:%d", host.c_str(), port);
     config->proxy_rules().ParseFromString(rules);
+    config->proxy_rules().bypass_rules.Clear();
+
+    std::vector<std::string>::const_iterator it;
+    for (it = exclusion_list.begin(); it != exclusion_list.end(); ++it) {
+      std::string pattern;
+      base::TrimWhitespaceASCII(*it, base::TRIM_ALL, &pattern);
+      if (pattern.empty())
+          continue;
+      config->proxy_rules().bypass_rules.AddRuleForHostname("", pattern, -1);
+    }
   } else {
     *config = ProxyConfig::CreateDirect();
   }
@@ -174,13 +191,14 @@ void CreateStaticProxyConfig(const std::string& host, int port,
 class ProxyConfigServiceAndroid::Delegate
     : public base::RefCountedThreadSafe<Delegate> {
  public:
-  Delegate(base::SequencedTaskRunner* network_task_runner,
-           base::SequencedTaskRunner* jni_task_runner,
+  Delegate(const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
+           const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner,
            const GetPropertyCallback& get_property_callback)
       : jni_delegate_(this),
         network_task_runner_(network_task_runner),
         jni_task_runner_(jni_task_runner),
-        get_property_callback_(get_property_callback) {
+        get_property_callback_(get_property_callback),
+        exclude_pac_url_(false) {
   }
 
   void SetupJNI() {
@@ -248,14 +266,26 @@ class ProxyConfigServiceAndroid::Delegate
   }
 
   // Called on the JNI thread.
-  void ProxySettingsChangedTo(const std::string& host, int port) {
+  void ProxySettingsChangedTo(const std::string& host,
+                              int port,
+                              const std::string& pac_url,
+                              const std::vector<std::string>& exclusion_list) {
     DCHECK(OnJNIThread());
     ProxyConfig proxy_config;
-    CreateStaticProxyConfig(host, port, &proxy_config);
+    if (exclude_pac_url_) {
+      CreateStaticProxyConfig(host, port, "", exclusion_list, &proxy_config);
+    } else {
+      CreateStaticProxyConfig(host, port, pac_url, exclusion_list,
+          &proxy_config);
+    }
     network_task_runner_->PostTask(
         FROM_HERE,
         base::Bind(
             &Delegate::SetNewConfigOnNetworkThread, this, proxy_config));
+  }
+
+  void set_exclude_pac_url(bool enabled) {
+    exclude_pac_url_ = enabled;
   }
 
  private:
@@ -266,13 +296,23 @@ class ProxyConfigServiceAndroid::Delegate
     explicit JNIDelegateImpl(Delegate* delegate) : delegate_(delegate) {}
 
     // ProxyConfigServiceAndroid::JNIDelegate overrides.
-    virtual void ProxySettingsChangedTo(JNIEnv* env, jobject jself,
-                                      jstring jhost, jint jport) OVERRIDE {
+    virtual void ProxySettingsChangedTo(JNIEnv* env,
+                                        jobject jself,
+                                        jstring jhost,
+                                        jint jport,
+                                        jstring jpac_url,
+                                        jobjectArray jexclusion_list) override {
       std::string host = ConvertJavaStringToUTF8(env, jhost);
-      delegate_->ProxySettingsChangedTo(host, jport);
+      std::string pac_url;
+      if (jpac_url)
+        ConvertJavaStringToUTF8(env, jpac_url, &pac_url);
+      std::vector<std::string> exclusion_list;
+      base::android::AppendJavaStringArrayToStringVector(
+          env, jexclusion_list, &exclusion_list);
+      delegate_->ProxySettingsChangedTo(host, jport, pac_url, exclusion_list);
     }
 
-    virtual void ProxySettingsChanged(JNIEnv* env, jobject self) OVERRIDE {
+    virtual void ProxySettingsChanged(JNIEnv* env, jobject self) override {
       delegate_->ProxySettingsChanged();
     }
 
@@ -314,13 +354,14 @@ class ProxyConfigServiceAndroid::Delegate
   scoped_refptr<base::SequencedTaskRunner> jni_task_runner_;
   GetPropertyCallback get_property_callback_;
   ProxyConfig proxy_config_;
+  bool exclude_pac_url_;
 
   DISALLOW_COPY_AND_ASSIGN(Delegate);
 };
 
 ProxyConfigServiceAndroid::ProxyConfigServiceAndroid(
-    base::SequencedTaskRunner* network_task_runner,
-    base::SequencedTaskRunner* jni_task_runner)
+    const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner)
     : delegate_(new Delegate(
         network_task_runner, jni_task_runner, base::Bind(&GetJavaProperty))) {
   delegate_->SetupJNI();
@@ -334,6 +375,10 @@ ProxyConfigServiceAndroid::~ProxyConfigServiceAndroid() {
 // static
 bool ProxyConfigServiceAndroid::Register(JNIEnv* env) {
   return RegisterNativesImpl(env);
+}
+
+void ProxyConfigServiceAndroid::set_exclude_pac_url(bool enabled) {
+  delegate_->set_exclude_pac_url(enabled);
 }
 
 void ProxyConfigServiceAndroid::AddObserver(Observer* observer) {
@@ -350,8 +395,8 @@ ProxyConfigServiceAndroid::GetLatestProxyConfig(ProxyConfig* config) {
 }
 
 ProxyConfigServiceAndroid::ProxyConfigServiceAndroid(
-    base::SequencedTaskRunner* network_task_runner,
-    base::SequencedTaskRunner* jni_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& network_task_runner,
+    const scoped_refptr<base::SequencedTaskRunner>& jni_task_runner,
     GetPropertyCallback get_property_callback)
     : delegate_(new Delegate(
         network_task_runner, jni_task_runner, get_property_callback)) {

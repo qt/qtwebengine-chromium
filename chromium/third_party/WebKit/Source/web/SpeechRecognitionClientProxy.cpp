@@ -27,12 +27,15 @@
 #include "web/SpeechRecognitionClientProxy.h"
 
 #include "core/dom/ExecutionContext.h"
+#include "modules/mediastream/MediaStreamTrack.h"
 #include "modules/speech/SpeechGrammarList.h"
 #include "modules/speech/SpeechRecognition.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionResult.h"
 #include "modules/speech/SpeechRecognitionResultList.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebMediaStreamTrack.h"
 #include "public/web/WebSecurityOrigin.h"
 #include "public/web/WebSpeechGrammar.h"
 #include "public/web/WebSpeechRecognitionHandle.h"
@@ -40,8 +43,6 @@
 #include "public/web/WebSpeechRecognitionResult.h"
 #include "public/web/WebSpeechRecognizer.h"
 #include "wtf/PassRefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -54,24 +55,27 @@ PassOwnPtr<SpeechRecognitionClientProxy> SpeechRecognitionClientProxy::create(We
     return adoptPtr(new SpeechRecognitionClientProxy(recognizer));
 }
 
-void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives)
+void SpeechRecognitionClientProxy::start(SpeechRecognition* recognition, const SpeechGrammarList* grammarList, const String& lang, bool continuous, bool interimResults, unsigned long maxAlternatives, MediaStreamTrack* audioTrack)
 {
     WebVector<WebSpeechGrammar> webSpeechGrammars(static_cast<size_t>(grammarList->length()));
     for (unsigned long i = 0; i < grammarList->length(); ++i)
         webSpeechGrammars[i] = grammarList->item(i);
 
-    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, interimResults, maxAlternatives, WebSecurityOrigin(recognition->executionContext()->securityOrigin()));
-    m_recognizer->start(WebSpeechRecognitionHandle(recognition), params, this);
+    WebMediaStreamTrack track;
+    if (RuntimeEnabledFeatures::mediaStreamSpeechEnabled() && audioTrack)
+        track.assign(audioTrack->component());
+    WebSpeechRecognitionParams params(webSpeechGrammars, lang, continuous, interimResults, maxAlternatives, track, WebSecurityOrigin(recognition->executionContext()->securityOrigin()));
+    m_recognizer->start(recognition, params, this);
 }
 
 void SpeechRecognitionClientProxy::stop(SpeechRecognition* recognition)
 {
-    m_recognizer->stop(WebSpeechRecognitionHandle(recognition), this);
+    m_recognizer->stop(recognition, this);
 }
 
 void SpeechRecognitionClientProxy::abort(SpeechRecognition* recognition)
 {
-    m_recognizer->abort(WebSpeechRecognitionHandle(recognition), this);
+    m_recognizer->abort(recognition, this);
 }
 
 void SpeechRecognitionClientProxy::didStartAudio(const WebSpeechRecognitionHandle& handle)
@@ -106,11 +110,11 @@ void SpeechRecognitionClientProxy::didReceiveResults(const WebSpeechRecognitionH
 
     HeapVector<Member<SpeechRecognitionResult> > finalResultsVector(newFinalResults.size());
     for (size_t i = 0; i < newFinalResults.size(); ++i)
-        finalResultsVector[i] = static_cast<SpeechRecognitionResult*>(newFinalResults[i]);
+        finalResultsVector[i] = Member<SpeechRecognitionResult>(newFinalResults[i]);
 
     HeapVector<Member<SpeechRecognitionResult> > interimResultsVector(currentInterimResults.size());
     for (size_t i = 0; i < currentInterimResults.size(); ++i)
-        interimResultsVector[i] = static_cast<SpeechRecognitionResult*>(currentInterimResults[i]);
+        interimResultsVector[i] = Member<SpeechRecognitionResult>(currentInterimResults[i]);
 
     recognition->didReceiveResults(finalResultsVector, interimResultsVector);
 }

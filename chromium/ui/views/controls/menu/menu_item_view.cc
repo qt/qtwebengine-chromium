@@ -7,18 +7,17 @@
 #include "base/i18n/case_conversion.h"
 #include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/menu_model.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/text_utils.h"
 #include "ui/native_theme/common_theme.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/menu/menu_config.h"
@@ -49,8 +48,8 @@ class EmptyMenuMenuItem : public MenuItemView {
     SetEnabled(false);
   }
 
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE {
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override {
     // Empty menu items shouldn't have a tooltip.
     return false;
   }
@@ -411,6 +410,19 @@ gfx::Size MenuItemView::GetPreferredSize() const {
                    dimensions.height);
 }
 
+int MenuItemView::GetHeightForWidth(int width) const {
+  // If this isn't a container, we can just use the preferred size's height.
+  if (!IsContainer())
+    return GetPreferredSize().height();
+
+  int height = child_at(0)->GetHeightForWidth(width);
+  if (!icon_view_ && GetRootMenuItem()->has_icons())
+    height = std::max(height, GetMenuConfig().check_height);
+  height += GetBottomMargin() + GetTopMargin();
+
+  return height;
+}
+
 const MenuItemView::MenuItemDimensions& MenuItemView::GetDimensions() const {
   if (!is_dimensions_valid())
     dimensions_ = CalculateDimensions();
@@ -611,16 +623,11 @@ void MenuItemView::UpdateMenuPartSizes() {
   int padding = 0;
   if (config.always_use_icon_to_label_padding) {
     padding = config.icon_to_label_padding;
-  } else if (config.render_gutter) {
-    padding = config.item_left_margin;
   } else {
     padding = (has_icons_ || HasChecksOrRadioButtons()) ?
         config.icon_to_label_padding : 0;
   }
   label_start_ += padding;
-
-  if (config.render_gutter)
-    label_start_ += config.gutter_width + config.gutter_to_label;
 
   EmptyMenuMenuItem menu_item(this);
   menu_item.set_controller(GetMenuController());

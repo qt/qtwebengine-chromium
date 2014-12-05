@@ -34,8 +34,6 @@
 #include "platform/network/ResourceLoadTiming.h"
 #include "public/platform/WebString.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebURLLoadTiming::initialize()
@@ -121,6 +119,36 @@ double WebURLLoadTiming::connectEnd() const
 void WebURLLoadTiming::setConnectEnd(double end)
 {
     m_private->connectEnd = end;
+}
+
+double WebURLLoadTiming::serviceWorkerFetchStart() const
+{
+    return m_private->serviceWorkerFetchStart;
+}
+
+void WebURLLoadTiming::setServiceWorkerFetchStart(double start)
+{
+    m_private->serviceWorkerFetchStart = start;
+}
+
+double WebURLLoadTiming::serviceWorkerFetchReady() const
+{
+    return m_private->serviceWorkerFetchReady;
+}
+
+void WebURLLoadTiming::setServiceWorkerFetchReady(double time)
+{
+    m_private->serviceWorkerFetchReady = time;
+}
+
+double WebURLLoadTiming::serviceWorkerFetchEnd() const
+{
+    return m_private->serviceWorkerFetchEnd;
+}
+
+void WebURLLoadTiming::setServiceWorkerFetchEnd(double end)
+{
+    m_private->serviceWorkerFetchEnd = end;
 }
 
 double WebURLLoadTiming::sendStart() const

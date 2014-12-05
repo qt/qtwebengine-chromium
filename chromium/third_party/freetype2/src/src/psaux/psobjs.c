@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Auxiliary functions for PostScript fonts (body).                     */
 /*                                                                         */
-/*  Copyright 1996-2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009 by */
+/*  Copyright 1996-2012 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -185,13 +185,13 @@
     /* grow the base block if needed */
     if ( table->cursor + length > table->capacity )
     {
-      FT_Error   error;
-      FT_Offset  new_size = table->capacity;
-      FT_Long    in_offset;
+      FT_Error    error;
+      FT_Offset   new_size = table->capacity;
+      FT_PtrDist  in_offset;
 
 
-      in_offset = (FT_Long)((FT_Byte*)object - table->block);
-      if ( (FT_ULong)in_offset >= table->capacity )
+      in_offset = (FT_Byte*)object - table->block;
+      if ( in_offset < 0 || (FT_Offset)in_offset >= table->capacity )
         in_offset = -1;
 
       while ( new_size < table->cursor + length )
@@ -589,7 +589,7 @@
     }
 
   Exit:
-    if ( cur == parser->cursor )
+    if ( cur < limit && cur == parser->cursor )
     {
       FT_ERROR(( "ps_parser_skip_PS_token:"
                  " current token is `%c' which is self-delimiting\n"
@@ -1588,6 +1588,13 @@
     FT_Error     error;
 
 
+    /* this might happen in invalid fonts */
+    if ( !outline )
+    {
+      FT_ERROR(( "t1_builder_add_contour: no outline to add points to\n" ));
+      return PSaux_Err_Invalid_File_Format;
+    }
+
     if ( !builder->load_points )
     {
       outline->n_contours++;
@@ -1621,7 +1628,7 @@
 
     if ( builder->parse_state == T1_Parse_Have_Path )
       error = PSaux_Err_Ok;
-    else if ( builder->parse_state == T1_Parse_Have_Moveto )
+    else
     {
       builder->parse_state = T1_Parse_Have_Path;
       error = t1_builder_add_contour( builder );

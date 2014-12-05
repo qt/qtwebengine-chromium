@@ -136,6 +136,7 @@
           'type': '<(gtest_target_type)',
           'dependencies': [
             '<@(codecs)',
+            'neteq_unittest_tools',
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(webrtc_root)/test/test.gyp:test_support_main',
@@ -157,9 +158,7 @@
             'interface/audio_decoder.h',
           ],
           'conditions': [
-            # TODO(henrike): remove build_with_chromium==1 when the bots are
-            # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android"', {
+            ['OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -172,6 +171,7 @@
           'type': 'static_library',
           'dependencies': [
             'rtp_rtcp',
+            '<(webrtc_root)/test/test.gyp:rtp_test_utils',
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -186,12 +186,16 @@
             'tools/audio_loop.cc',
             'tools/audio_loop.h',
             'tools/audio_sink.h',
+            'tools/constant_pcm_packet_source.cc',
+            'tools/constant_pcm_packet_source.h',
             'tools/input_audio_file.cc',
             'tools/input_audio_file.h',
             'tools/output_audio_file.h',
             'tools/packet.cc',
             'tools/packet.h',
             'tools/packet_source.h',
+            'tools/resample_input_audio_file.cc',
+            'tools/resample_input_audio_file.h',
             'tools/rtp_file_source.cc',
             'tools/rtp_file_source.h',
             'tools/rtp_generator.cc',
@@ -200,9 +204,7 @@
         }, # neteq_unittest_tools
       ], # targets
       'conditions': [
-        # TODO(henrike): remove build_with_chromium==1 when the bots are using
-        # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'targets': [
             {
               'target_name': 'audio_decoder_unittests_apk_target',
@@ -223,7 +225,6 @@
               ],
               'includes': [
                 '../../../build/isolate.gypi',
-                'audio_decoder_unittests.isolate',
               ],
               'sources': [
                 'audio_decoder_unittests.isolate',

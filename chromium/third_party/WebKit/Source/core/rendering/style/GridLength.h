@@ -33,7 +33,7 @@
 
 #include "platform/Length.h"
 
-namespace WebCore {
+namespace blink {
 
 // This class wraps the <track-breadth> which can be either a <percentage>, <length>, min-content, max-content
 // or <flex>. This class avoids spreading the knowledge of <flex> throughout the rendering directory by adding
@@ -45,7 +45,6 @@ public:
         , m_flex(0)
         , m_type(LengthType)
     {
-        ASSERT(!length.isUndefined());
     }
 
     explicit GridLength(double flex)
@@ -60,6 +59,8 @@ public:
     const Length& length() const { ASSERT(isLength()); return m_length; }
 
     double flex() const { ASSERT(isFlex()); return m_flex; }
+
+    bool isPercentage() const { return m_type == LengthType && m_length.isPercent(); }
 
     bool operator==(const GridLength& o) const
     {
@@ -80,6 +81,6 @@ private:
     GridLengthType m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GridLength_h

@@ -7,6 +7,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
@@ -161,7 +162,7 @@ class HttpStreamParser::SeekableIOBuffer : public IOBuffer {
   int capacity() const { return capacity_; };
 
  private:
-  virtual ~SeekableIOBuffer() {
+  ~SeekableIOBuffer() override {
     // data_ will be deleted in IOBuffer::~IOBuffer().
     data_ = real_data_;
   }
@@ -357,11 +358,21 @@ int HttpStreamParser::ReadResponseBody(IOBuffer* buf, int buf_len,
 }
 
 void HttpStreamParser::OnIOComplete(int result) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/418183 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "418183 DidCompleteReadWrite => HttpStreamParser::OnIOComplete"));
+
   result = DoLoop(result);
 
   // The client callback can do anything, including destroying this class,
   // so any pending callback must be issued after everything else is done.
   if (result != ERR_IO_PENDING && !callback_.is_null()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/424359 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "424359 HttpStreamParser::OnIOComplete callback"));
+
     CompletionCallback c = callback_;
     callback_.Reset();
     c.Run(result);
@@ -369,6 +380,10 @@ void HttpStreamParser::OnIOComplete(int result) {
 }
 
 int HttpStreamParser::DoLoop(int result) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/424359 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION("424359 HttpStreamParser::DoLoop"));
+
   do {
     DCHECK_NE(ERR_IO_PENDING, result);
     DCHECK_NE(STATE_DONE, io_state_);

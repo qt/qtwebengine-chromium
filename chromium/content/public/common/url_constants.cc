@@ -14,6 +14,9 @@ const char kGuestScheme[] = "chrome-guest";
 const char kMetadataScheme[] = "metadata";
 const char kSwappedOutScheme[] = "swappedout";
 const char kViewSourceScheme[] = "view-source";
+#if defined(OS_CHROMEOS)
+const char kExternalFileScheme[] = "externalfile";
+#endif
 
 const char kAboutSrcDocURL[] = "about:srcdoc";
 
@@ -32,6 +35,7 @@ const char kChromeUITcmallocHost[] = "tcmalloc";
 const char kChromeUITracingHost[] = "tracing";
 const char kChromeUIWebRTCInternalsHost[] = "webrtc-internals";
 
+const char kChromeUIBrowserCrashURL[] = "chrome://inducebrowsercrashforrealz";
 const char kChromeUICrashURL[] = "chrome://crash";
 const char kChromeUIDumpURL[] = "chrome://crashdump";
 const char kChromeUIGpuCleanURL[] = "chrome://gpuclean";

@@ -37,11 +37,12 @@
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
+#include "wtf/RawPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/TypeTraits.h"
 
-namespace WebCore {
+namespace blink {
 
     class IntRect;
     class IntSize;
@@ -51,8 +52,6 @@ namespace WebCore {
     class ResourceResponse;
     struct CrossThreadResourceResponseData;
     struct CrossThreadResourceRequestData;
-    struct ThreadableLoaderOptions;
-    struct ResourceLoaderOptions;
 
     template<typename T> struct CrossThreadCopierPassThrough {
         typedef T Type;
@@ -70,12 +69,6 @@ namespace WebCore {
 
     // To allow a type to be passed across threads using its copy constructor, add a forward declaration of the type and
     // a CopyThreadCopierBase<false, false, TypeName> : public CrossThreadCopierPassThrough<TypeName> { }; to this file.
-    template<> struct CrossThreadCopierBase<false, false, false, ThreadableLoaderOptions> : public CrossThreadCopierPassThrough<ThreadableLoaderOptions> {
-    };
-
-    template<> struct CrossThreadCopierBase<false, false, false, ResourceLoaderOptions> : public CrossThreadCopierPassThrough<ResourceLoaderOptions> {
-    };
-
     template<> struct CrossThreadCopierBase<false, false, false, IntRect> : public CrossThreadCopierPassThrough<IntRect> {
     };
 
@@ -109,6 +102,14 @@ namespace WebCore {
         }
     };
 
+    template<typename T> struct CrossThreadCopierBase<false, false, false, WeakMember<T>*> {
+        typedef WeakMember<T>* Type;
+        static Type copy(Type ptr)
+        {
+            return ptr;
+        }
+    };
+
     template<> struct CrossThreadCopierBase<false, false, false, KURL> {
         typedef KURL Type;
         PLATFORM_EXPORT static Type copy(const KURL&);
@@ -136,8 +137,32 @@ namespace WebCore {
 
     template<typename T> struct CrossThreadCopierBase<false, false, true, T> {
         typedef typename WTF::RemovePointer<T>::Type TypeWithoutPointer;
-        typedef PassRefPtrWillBeRawPtr<TypeWithoutPointer> Type;
+        typedef RawPtr<TypeWithoutPointer> Type;
         static Type copy(const T& ptr)
+        {
+            return ptr;
+        }
+    };
+
+    template<typename T> struct CrossThreadCopierBase<false, false, true, RawPtr<T> > {
+        typedef RawPtr<T> Type;
+        static Type copy(const Type& ptr)
+        {
+            return ptr;
+        }
+    };
+
+    template<typename T> struct CrossThreadCopierBase<false, false, true, Member<T> > {
+        typedef RawPtr<T> Type;
+        static Type copy(const Member<T>& ptr)
+        {
+            return ptr;
+        }
+    };
+
+    template<typename T> struct CrossThreadCopierBase<false, false, true, WeakMember<T> > {
+        typedef RawPtr<T> Type;
+        static Type copy(const WeakMember<T>& ptr)
         {
             return ptr;
         }
@@ -147,15 +172,25 @@ namespace WebCore {
         WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, RefPtr>::Type, ThreadSafeRefCounted>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemovePointer<T>::Type, ThreadSafeRefCounted>::value
             || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, PassRefPtr>::Type, ThreadSafeRefCounted>::value,
-        WTF::IsSubclassOfTemplate<typename WTF::RemovePointer<T>::Type, GarbageCollected>::value,
+        WTF::IsSubclassOfTemplate<typename WTF::RemovePointer<T>::Type, GarbageCollected>::value
+            || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, RawPtr>::Type, GarbageCollected>::value
+            || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, Member>::Type, GarbageCollected>::value
+            || WTF::IsSubclassOfTemplate<typename WTF::RemoveTemplate<T, WeakMember>::Type, GarbageCollected>::value,
         T> {
     };
 
     template<typename T> struct AllowCrossThreadAccessWrapper {
+        STACK_ALLOCATED();
     public:
         explicit AllowCrossThreadAccessWrapper(T* value) : m_value(value) { }
         T* value() const { return m_value; }
     private:
+        // This raw pointer is safe since AllowCrossThreadAccessWrapper is
+        // always stack-allocated. Ideally this should be Member<T> if T is
+        // garbage-collected and T* otherwise, but we don't want to introduce
+        // another template magic just for distinguishing Member<T> from T*.
+        // From the perspective of GC, T* always works correctly.
+        GC_PLUGIN_IGNORE("")
         T* m_value;
     };
 
@@ -176,6 +211,12 @@ namespace WebCore {
         explicit AllowAccessLaterWrapper(T* value) : m_value(value) { }
         T* value() const { return m_value; }
     private:
+        // This raw pointer is safe since AllowAccessLaterWrapper is
+        // always stack-allocated. Ideally this should be Member<T> if T is
+        // garbage-collected and T* otherwise, but we don't want to introduce
+        // another template magic just for distinguishing Member<T> from T*.
+        // From the perspective of GC, T* always works correctly.
+        GC_PLUGIN_IGNORE("")
         T* m_value;
     };
 
@@ -190,6 +231,6 @@ namespace WebCore {
     }
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CrossThreadCopier_h

@@ -37,7 +37,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class SVGElement;
@@ -118,7 +118,7 @@ private:
 
     SVGSVGElement& m_ownerSVGElement;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_preventScheduledAnimationsChanges;
 #endif
 };

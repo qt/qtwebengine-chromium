@@ -28,30 +28,28 @@
 
 #include "modules/webaudio/AudioProcessingEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create()
 {
     return adoptRefWillBeNoop(new AudioProcessingEvent);
 }
 
-PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime)
+PassRefPtrWillBeRawPtr<AudioProcessingEvent> AudioProcessingEvent::create(AudioBuffer* inputBuffer, AudioBuffer* outputBuffer, double playbackTime)
 {
     return adoptRefWillBeNoop(new AudioProcessingEvent(inputBuffer, outputBuffer, playbackTime));
 }
 
 AudioProcessingEvent::AudioProcessingEvent()
 {
-    ScriptWrappable::init(this);
 }
 
-AudioProcessingEvent::AudioProcessingEvent(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime)
+AudioProcessingEvent::AudioProcessingEvent(AudioBuffer* inputBuffer, AudioBuffer* outputBuffer, double playbackTime)
     : Event(EventTypeNames::audioprocess, true, false)
     , m_inputBuffer(inputBuffer)
     , m_outputBuffer(outputBuffer)
     , m_playbackTime(playbackTime)
 {
-    ScriptWrappable::init(this);
 }
 
 AudioProcessingEvent::~AudioProcessingEvent()
@@ -70,6 +68,6 @@ void AudioProcessingEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

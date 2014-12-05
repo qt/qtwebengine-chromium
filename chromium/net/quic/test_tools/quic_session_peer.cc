@@ -22,6 +22,11 @@ void QuicSessionPeer::SetMaxOpenStreams(QuicSession* session,
 }
 
 // static
+QuicCryptoStream* QuicSessionPeer::GetCryptoStream(QuicSession* session) {
+  return session->GetCryptoStream();
+}
+
+// static
 QuicHeadersStream* QuicSessionPeer::GetHeadersStream(QuicSession* session) {
   return session->headers_stream_.get();
 }
@@ -43,6 +48,12 @@ QuicDataStream* QuicSessionPeer::GetIncomingDataStream(
     QuicSession* session,
     QuicStreamId stream_id) {
   return session->GetIncomingDataStream(stream_id);
+}
+
+// static
+map<QuicStreamId, QuicStreamOffset>&
+QuicSessionPeer::GetLocallyClosedStreamsHighestOffset(QuicSession* session) {
+  return session->locally_closed_streams_highest_offset_;
 }
 
 }  // namespace test

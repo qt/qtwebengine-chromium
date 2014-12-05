@@ -42,15 +42,15 @@ MIDIClientProxy::MIDIClientProxy(WebMIDIClient* client)
 {
 }
 
-void MIDIClientProxy::requestSysexPermission(WebCore::MIDIAccessInitializer* initializer)
+void MIDIClientProxy::requestSysexPermission(MIDIAccessInitializer* initializer)
 {
     if (m_client)
         m_client->requestSysexPermission(WebMIDIPermissionRequest(initializer));
     else
-        initializer->setSysexEnabled(false);
+        initializer->resolveSysexPermission(false);
 }
 
-void MIDIClientProxy::cancelSysexPermissionRequest(WebCore::MIDIAccessInitializer* initializer)
+void MIDIClientProxy::cancelSysexPermissionRequest(MIDIAccessInitializer* initializer)
 {
     if (m_client)
         m_client->cancelSysexPermissionRequest(WebMIDIPermissionRequest(initializer));

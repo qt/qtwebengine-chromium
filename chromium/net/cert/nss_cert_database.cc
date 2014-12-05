@@ -12,15 +12,12 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list_threadsafe.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
-#include "crypto/nss_util.h"
-#include "crypto/nss_util_internal.h"
 #include "crypto/scoped_nss_types.h"
 #include "net/base/crypto_module.h"
 #include "net/base/net_errors.h"
@@ -42,8 +39,35 @@ namespace net {
 
 namespace {
 
-base::LazyInstance<NSSCertDatabase>::Leaky
-    g_nss_cert_database = LAZY_INSTANCE_INITIALIZER;
+// TODO(pneubeck): Move this class out of NSSCertDatabase and to the caller of
+// the c'tor of NSSCertDatabase, see https://crbug.com/395983 .
+// Helper that observes events from the NSSCertDatabase and forwards them to
+// the given CertDatabase.
+class CertNotificationForwarder : public NSSCertDatabase::Observer {
+ public:
+  explicit CertNotificationForwarder(CertDatabase* cert_db)
+      : cert_db_(cert_db) {}
+
+  ~CertNotificationForwarder() override {}
+
+  // NSSCertDatabase::Observer implementation:
+  void OnCertAdded(const X509Certificate* cert) override {
+    cert_db_->NotifyObserversOfCertAdded(cert);
+  }
+
+  void OnCertRemoved(const X509Certificate* cert) override {
+    cert_db_->NotifyObserversOfCertRemoved(cert);
+  }
+
+  void OnCACertChanged(const X509Certificate* cert) override {
+    cert_db_->NotifyObserversOfCACertChanged(cert);
+  }
+
+ private:
+  CertDatabase* cert_db_;
+
+  DISALLOW_COPY_AND_ASSIGN(CertNotificationForwarder);
+};
 
 }  // namespace
 
@@ -54,22 +78,18 @@ NSSCertDatabase::ImportCertFailure::ImportCertFailure(
 
 NSSCertDatabase::ImportCertFailure::~ImportCertFailure() {}
 
-// static
-NSSCertDatabase* NSSCertDatabase::GetInstance() {
-  // TODO(mattm): Remove this ifdef guard once the linux impl of
-  // GetNSSCertDatabaseForResourceContext does not call GetInstance.
-#if defined(OS_CHROMEOS)
-  LOG(ERROR) << "NSSCertDatabase::GetInstance() is deprecated."
-             << "See http://crbug.com/329735.";
-#endif
-  return &g_nss_cert_database.Get();
-}
-
-NSSCertDatabase::NSSCertDatabase()
-    : observer_list_(new ObserverListThreadSafe<Observer>),
+NSSCertDatabase::NSSCertDatabase(crypto::ScopedPK11Slot public_slot,
+                                 crypto::ScopedPK11Slot private_slot)
+    : public_slot_(public_slot.Pass()),
+      private_slot_(private_slot.Pass()),
+      observer_list_(new ObserverListThreadSafe<Observer>),
       weak_factory_(this) {
+  CHECK(public_slot_);
+
   // This also makes sure that NSS has been initialized.
-  CertDatabase::GetInstance()->ObserveNSSCertDatabase(this);
+  CertDatabase* cert_db = CertDatabase::GetInstance();
+  cert_notification_forwarder_.reset(new CertNotificationForwarder(cert_db));
+  AddObserver(cert_notification_forwarder_.get());
 
   psm::EnsurePKCS12Init();
 }
@@ -109,12 +129,20 @@ void NSSCertDatabase::ListCertsInSlot(const ListCertsCallback& callback,
       base::Bind(callback, base::Passed(&certs)));
 }
 
+#if defined(OS_CHROMEOS)
+crypto::ScopedPK11Slot NSSCertDatabase::GetSystemSlot() const {
+  return crypto::ScopedPK11Slot();
+}
+#endif
+
 crypto::ScopedPK11Slot NSSCertDatabase::GetPublicSlot() const {
-  return crypto::ScopedPK11Slot(crypto::GetPublicNSSKeySlot());
+  return crypto::ScopedPK11Slot(PK11_ReferenceSlot(public_slot_.get()));
 }
 
 crypto::ScopedPK11Slot NSSCertDatabase::GetPrivateSlot() const {
-  return crypto::ScopedPK11Slot(crypto::GetPrivateNSSKeySlot());
+  if (!private_slot_)
+    return crypto::ScopedPK11Slot();
+  return crypto::ScopedPK11Slot(PK11_ReferenceSlot(private_slot_.get()));
 }
 
 CryptoModule* NSSCertDatabase::GetPublicModule() const {
@@ -395,7 +423,7 @@ void NSSCertDatabase::ListCertsImpl(crypto::ScopedPK11Slot slot,
 }
 
 scoped_refptr<base::TaskRunner> NSSCertDatabase::GetSlowTaskRunner() const {
-  if (slow_task_runner_for_test_)
+  if (slow_task_runner_for_test_.get())
     return slow_task_runner_for_test_;
   return base::WorkerPool::GetTaskRunner(true /*task is slow*/);
 }
@@ -405,7 +433,7 @@ void NSSCertDatabase::NotifyCertRemovalAndCallBack(
     const DeleteCertCallback& callback,
     bool success) {
   if (success)
-    NotifyObserversOfCertRemoved(cert);
+    NotifyObserversOfCertRemoved(cert.get());
   callback.Run(success);
 }
 

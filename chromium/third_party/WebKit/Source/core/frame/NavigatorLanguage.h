@@ -7,13 +7,13 @@
 
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class NavigatorLanguage {
 public:
     NavigatorLanguage();
 
-    AtomicString language(bool&);
+    AtomicString language();
     virtual Vector<String> languages() = 0;
     bool hasLanguagesChanged();
     void setLanguagesChanged();
@@ -22,6 +22,6 @@ private:
     bool m_languagesChanged;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorLanguage_h

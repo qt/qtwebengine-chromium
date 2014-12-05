@@ -20,7 +20,7 @@ namespace net {
 class URLRequestContextGetter;
 }
 
-namespace talk_base {
+namespace rtc {
 struct PacketOptions;
 }
 
@@ -33,20 +33,24 @@ namespace packet_processing_helpers {
 // called. It will try to do, 1. update absolute send time extension header
 // if present with current time and 2. update HMAC in RTP packet.
 // If abs_send_time is 0, ApplyPacketOption will get current time from system.
-CONTENT_EXPORT bool ApplyPacketOptions(char* data, int length,
-                                       const talk_base::PacketOptions& options,
+CONTENT_EXPORT bool ApplyPacketOptions(char* data,
+                                       size_t length,
+                                       const rtc::PacketOptions& options,
                                        uint32 abs_send_time);
 
 // Helper method which finds RTP ofset and length if the packet is encapsulated
 // in a TURN Channel Message or TURN Send Indication message.
-CONTENT_EXPORT bool GetRtpPacketStartPositionAndLength(const char* data,
-                                                       int length,
-                                                       int* rtp_start_pos,
-                                                       int* rtp_packet_length);
+CONTENT_EXPORT bool GetRtpPacketStartPositionAndLength(
+    const char* data,
+    size_t length,
+    size_t* rtp_start_pos,
+    size_t* rtp_packet_length);
+
 // Helper method which updates absoulute send time extension if present.
-CONTENT_EXPORT bool UpdateRtpAbsSendTimeExtn(char* rtp, int length,
-                                             int extension_id,
-                                             uint32 abs_send_time);
+CONTENT_EXPORT bool UpdateRtpAbsSendTimeExtension(char* rtp,
+                                                  size_t length,
+                                                  int extension_id,
+                                                  uint32 abs_send_time);
 
 }  // packet_processing_helpers
 
@@ -70,7 +74,7 @@ class CONTENT_EXPORT P2PSocketHost {
   // Sends |data| on the socket to |to|.
   virtual void Send(const net::IPEndPoint& to,
                     const std::vector<char>& data,
-                    const talk_base::PacketOptions& options,
+                    const rtc::PacketOptions& options,
                     uint64 packet_id) = 0;
 
   virtual P2PSocketHost* AcceptIncomingTcpConnection(
@@ -86,6 +90,9 @@ class CONTENT_EXPORT P2PSocketHost {
 
  protected:
   friend class P2PSocketHostTcpTestBase;
+
+  // This should match suffix IPProtocolType defined in histograms.xml.
+  enum ProtocolType { UDP = 0x1, TCP = 0x2 };
 
   // TODO(mallinath) - Remove this below enum and use one defined in
   // libjingle/souce/talk/p2p/base/stun.h
@@ -121,7 +128,9 @@ class CONTENT_EXPORT P2PSocketHost {
     STATE_ERROR,
   };
 
-  P2PSocketHost(IPC::Sender* message_sender, int socket_id);
+  P2PSocketHost(IPC::Sender* message_sender,
+                int socket_id,
+                ProtocolType protocol_type);
 
   // Verifies that the packet |data| has a valid STUN header. In case
   // of success stores type of the message in |type|.
@@ -138,6 +147,12 @@ class CONTENT_EXPORT P2PSocketHost {
                                size_t packet_length,
                                bool incoming);
 
+  // Used by subclasses to track the metrics of delayed bytes and packets.
+  void IncrementDelayedPackets();
+  void IncrementTotalSentPackets();
+  void IncrementDelayedBytes(uint32 size);
+  void DecrementDelayedBytes(uint32 size);
+
   IPC::Sender* message_sender_;
   int id_;
   State state_;
@@ -146,6 +161,19 @@ class CONTENT_EXPORT P2PSocketHost {
   RenderProcessHost::WebRtcRtpPacketCallback packet_dump_callback_;
 
   base::WeakPtrFactory<P2PSocketHost> weak_ptr_factory_;
+
+  ProtocolType protocol_type_;
+
+ private:
+  // Track total delayed packets for calculating how many packets are
+  // delayed by system at the end of call.
+  uint32 send_packets_delayed_total_;
+  uint32 send_packets_total_;
+
+  // Track the maximum of consecutive delayed bytes caused by system's
+  // EWOULDBLOCK.
+  int32 send_bytes_delayed_max_;
+  int32 send_bytes_delayed_cur_;
 
   DISALLOW_COPY_AND_ASSIGN(P2PSocketHost);
 };

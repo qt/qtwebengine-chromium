@@ -131,6 +131,14 @@
           }],
         ],  # conditions
       },
+      'Debug_x64': {
+        'inherit_from': ['Debug'],
+        'msvs_configuration_platform': 'x64',
+      },
+      'Release_x64': {
+        'inherit_from': ['Release'],
+        'msvs_configuration_platform': 'x64',
+      },
     },
     'defines!': [
       'DEBUG',
@@ -139,8 +147,10 @@
       '-Wall',
       '-W',
       '-Wno-unused-parameter',
-      '-pthread', '-fno-exceptions',
+      '-pthread',
+      '-fno-exceptions',
       '-fvisibility=hidden',
+      '-std=gnu++0x',
     ],
     'cflags_cc': [
       '-Wnon-virtual-dtor',
@@ -191,6 +201,7 @@
     },
     'xcode_settings': {
       'ALWAYS_SEARCH_USER_PATHS': 'NO',
+      'CLANG_CXX_LANGUAGE_STANDARD': 'gnu++11',
       'GCC_CW_ASM_SYNTAX': 'NO',                # No -fasm-blocks
       'GCC_DYNAMIC_NO_PIC': 'NO',               # No -mdynamic-no-pic
                                                 # (Equivalent to -fPIC)
@@ -224,6 +235,7 @@
     ['OS=="win"', {
       'target_defaults': {
         'defines': [
+          'NOMINMAX',
           '_CRT_SECURE_NO_DEPRECATE',
           '_CRT_NONSTDC_NO_DEPRECATE',
         ],

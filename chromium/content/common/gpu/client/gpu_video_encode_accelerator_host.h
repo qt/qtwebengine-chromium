@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
+#include "gpu/config/gpu_info.h"
 #include "ipc/ipc_listener.h"
 #include "media/video/video_encode_accelerator.h"
 
@@ -44,34 +45,34 @@ class GpuVideoEncodeAcceleratorHost
   GpuVideoEncodeAcceleratorHost(GpuChannelHost* channel,
                                 CommandBufferProxyImpl* impl);
 
-  // Static query for the supported profiles.  This query proxies to
-  // GpuVideoEncodeAccelerator::GetSupportedProfiles().
-  static std::vector<SupportedProfile> GetSupportedProfiles();
+  static std::vector<media::VideoEncodeAccelerator::SupportedProfile>
+  ConvertGpuToMediaProfiles(const std::vector<
+      gpu::VideoEncodeAcceleratorSupportedProfile>& gpu_profiles);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelError() override;
 
   // media::VideoEncodeAccelerator implementation.
-  virtual bool Initialize(media::VideoFrame::Format input_format,
-                          const gfx::Size& input_visible_size,
-                          media::VideoCodecProfile output_profile,
-                          uint32 initial_bitrate,
-                          Client* client) OVERRIDE;
-  virtual void Encode(const scoped_refptr<media::VideoFrame>& frame,
-                      bool force_keyframe) OVERRIDE;
-  virtual void UseOutputBitstreamBuffer(
-      const media::BitstreamBuffer& buffer) OVERRIDE;
-  virtual void RequestEncodingParametersChange(uint32 bitrate,
-                                               uint32 framerate_num) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
+  std::vector<SupportedProfile> GetSupportedProfiles() override;
+  bool Initialize(media::VideoFrame::Format input_format,
+                  const gfx::Size& input_visible_size,
+                  media::VideoCodecProfile output_profile,
+                  uint32 initial_bitrate,
+                  Client* client) override;
+  void Encode(const scoped_refptr<media::VideoFrame>& frame,
+              bool force_keyframe) override;
+  void UseOutputBitstreamBuffer(const media::BitstreamBuffer& buffer) override;
+  void RequestEncodingParametersChange(uint32 bitrate,
+                                       uint32 framerate_num) override;
+  void Destroy() override;
 
   // CommandBufferProxyImpl::DeletionObserver implemetnation.
-  virtual void OnWillDeleteImpl() OVERRIDE;
+  void OnWillDeleteImpl() override;
 
  private:
   // Only Destroy() should be deleting |this|.
-  virtual ~GpuVideoEncodeAcceleratorHost();
+  ~GpuVideoEncodeAcceleratorHost() override;
 
   // Notify |client_| of an error.  Posts a task to avoid re-entrancy.
   void PostNotifyError(Error);

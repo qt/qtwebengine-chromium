@@ -23,9 +23,10 @@ class WebCryptoImpl : public blink::WebCrypto {
  public:
   WebCryptoImpl();
 
-  virtual ~WebCryptoImpl();
+  // TODO(eroman): Once Blink and Chromium repositories are merged, use
+  //               "override" in place of virtual.
 
-  static void EnsureInit();
+  virtual ~WebCryptoImpl();
 
   virtual void encrypt(const blink::WebCryptoAlgorithm& algorithm,
                        const blink::WebCryptoKey& key,
@@ -43,14 +44,14 @@ class WebCryptoImpl : public blink::WebCrypto {
                       blink::WebCryptoResult result);
   virtual void generateKey(const blink::WebCryptoAlgorithm& algorithm,
                            bool extractable,
-                           blink::WebCryptoKeyUsageMask usage_mask,
+                           blink::WebCryptoKeyUsageMask usages,
                            blink::WebCryptoResult result);
   virtual void importKey(blink::WebCryptoKeyFormat format,
                          const unsigned char* key_data,
                          unsigned int key_data_size,
                          const blink::WebCryptoAlgorithm& algorithm,
                          bool extractable,
-                         blink::WebCryptoKeyUsageMask usage_mask,
+                         blink::WebCryptoKeyUsageMask usages,
                          blink::WebCryptoResult result);
   virtual void exportKey(blink::WebCryptoKeyFormat format,
                          const blink::WebCryptoKey& key,

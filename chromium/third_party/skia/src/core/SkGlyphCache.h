@@ -76,14 +76,6 @@ public:
     */
     unsigned getGlyphCount();
 
-#ifdef SK_BUILD_FOR_ANDROID
-    /** Returns the base glyph count for this strike.
-    */
-    unsigned getBaseGlyphCount(SkUnichar charCode) const {
-        return fScalerContext->getBaseGlyphCount(charCode);
-    }
-#endif
-
     /** Return the image associated with the glyph. If it has not been generated
         this will trigger that.
     */
@@ -128,12 +120,6 @@ public:
     void setAuxProc(void (*auxProc)(void*), void* auxData);
 
     SkScalerContext* getScalerContext() const { return fScalerContext; }
-
-    /** Call proc on all cache entries, stopping early if proc returns true.
-        The proc should not create or delete caches, since it could produce
-        deadlock.
-    */
-    static void VisitAllCaches(bool (*proc)(SkGlyphCache*, void*), void* ctx);
 
     /** Find a matching cache entry, and call proc() with it. If none is found
         create a new one. If the proc() returns true, detach the cache and

@@ -10,7 +10,6 @@
 
 #include "webrtc/video_engine/vie_base_impl.h"
 
-#include <sstream>
 #include <string>
 #include <utility>
 
@@ -121,37 +120,6 @@ int ViEBaseImpl::SetCpuOveruseOptions(int video_channel,
   return -1;
 }
 
-int ViEBaseImpl::CpuOveruseMeasures(int video_channel,
-                                    int* capture_jitter_ms,
-                                    int* avg_encode_time_ms,
-                                    int* encode_usage_percent,
-                                    int* capture_queue_delay_ms_per_s) {
-  ViEChannelManagerScoped cs(*(shared_data_.channel_manager()));
-  ViEChannel* vie_channel = cs.Channel(video_channel);
-  if (!vie_channel) {
-    shared_data_.SetLastError(kViEBaseInvalidChannelId);
-    return -1;
-  }
-  ViEEncoder* vie_encoder = cs.Encoder(video_channel);
-  assert(vie_encoder);
-
-  ViEInputManagerScoped is(*(shared_data_.input_manager()));
-  ViEFrameProviderBase* provider = is.FrameProvider(vie_encoder);
-  if (provider) {
-    ViECapturer* capturer = is.Capture(provider->Id());
-    if (capturer) {
-      CpuOveruseMetrics metrics;
-      capturer->GetCpuOveruseMetrics(&metrics);
-      *capture_jitter_ms = metrics.capture_jitter_ms;
-      *avg_encode_time_ms = metrics.avg_encode_time_ms;
-      *encode_usage_percent = metrics.encode_usage_percent;
-      *capture_queue_delay_ms_per_s = metrics.capture_queue_delay_ms_per_s;
-      return 0;
-    }
-  }
-  return -1;
-}
-
 int ViEBaseImpl::GetCpuOveruseMetrics(int video_channel,
                                       CpuOveruseMetrics* metrics) {
   ViEChannelManagerScoped cs(*(shared_data_.channel_manager()));
@@ -173,6 +141,14 @@ int ViEBaseImpl::GetCpuOveruseMetrics(int video_channel,
     }
   }
   return -1;
+}
+
+void ViEBaseImpl::RegisterSendSideDelayObserver(
+    int channel, SendSideDelayObserver* observer) {
+  ViEChannelManagerScoped cs(*(shared_data_.channel_manager()));
+  ViEChannel* vie_channel = cs.Channel(channel);
+  assert(vie_channel);
+  vie_channel->RegisterSendSideDelayObserver(observer);
 }
 
 int ViEBaseImpl::CreateChannel(int& video_channel) {  // NOLINT
@@ -352,23 +328,8 @@ int ViEBaseImpl::StopReceive(const int video_channel) {
 }
 
 int ViEBaseImpl::GetVersion(char version[1024]) {
-  assert(kViEVersionMaxMessageSize == 1024);
-  if (!version) {
-    shared_data_.SetLastError(kViEBaseInvalidArgument);
-    return -1;
-  }
-
-  // Add WebRTC Version.
-  std::stringstream version_stream;
-  version_stream << "VideoEngine 3.54.0" << std::endl;
-
-  // Add build info.
-  version_stream << "Build: " << BUILDINFO << std::endl;
-
-  int version_length = version_stream.tellp();
-  assert(version_length < 1024);
-  memcpy(version, version_stream.str().c_str(), version_length);
-  version[version_length] = '\0';
+  assert(version != NULL);
+  strcpy(version, "VideoEngine 39");
   return 0;
 }
 

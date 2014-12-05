@@ -24,6 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLAnchorElement.h"
 
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/dom/Attribute.h"
 #include "core/editing/FrameSelection.h"
 #include "core/events/KeyboardEvent.h"
@@ -50,61 +51,11 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "platform/weborigin/SecurityPolicy.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebPrescientNetworking.h"
 #include "public/platform/WebURL.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
-
-namespace {
-
-void preconnectToURL(const KURL& url, blink::WebPreconnectMotivation motivation)
-{
-    blink::WebPrescientNetworking* prescientNetworking = blink::Platform::current()->prescientNetworking();
-    if (!prescientNetworking)
-        return;
-
-    prescientNetworking->preconnect(url, motivation);
-}
-
-}
-
-class HTMLAnchorElement::PrefetchEventHandler FINAL : public NoBaseWillBeGarbageCollected<HTMLAnchorElement::PrefetchEventHandler> {
-public:
-    static PassOwnPtrWillBeRawPtr<PrefetchEventHandler> create(HTMLAnchorElement* anchorElement)
-    {
-        return adoptPtrWillBeNoop(new HTMLAnchorElement::PrefetchEventHandler(anchorElement));
-    }
-
-    void reset();
-
-    void handleEvent(Event* e);
-    void didChangeHREF() { m_hadHREFChanged = true; }
-    bool hasIssuedPreconnect() const { return m_hasIssuedPreconnect; }
-
-    void trace(Visitor* visitor) { visitor->trace(m_anchorElement); }
-
-private:
-    explicit PrefetchEventHandler(HTMLAnchorElement*);
-
-    void handleMouseOver(Event* event);
-    void handleMouseOut(Event* event);
-    void handleLeftMouseDown(Event* event);
-    void handleGestureTapUnconfirmed(Event*);
-    void handleGestureShowPress(Event*);
-    void handleClick(Event* event);
-
-    bool shouldPrefetch(const KURL&);
-    void prefetch(blink::WebPreconnectMotivation);
-
-    RawPtrWillBeMember<HTMLAnchorElement> m_anchorElement;
-    double m_mouseOverTimestamp;
-    double m_mouseDownTimestamp;
-    double m_tapDownTimestamp;
-    bool m_hadHREFChanged;
-    bool m_hadTapUnconfirmed;
-    bool m_hasIssuedPreconnect;
-};
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -112,8 +63,8 @@ HTMLAnchorElement::HTMLAnchorElement(const QualifiedName& tagName, Document& doc
     : HTMLElement(tagName, document)
     , m_linkRelations(0)
     , m_cachedVisitedLinkHash(0)
+    , m_wasFocusedByMouse(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLAnchorElement> HTMLAnchorElement::create(Document& document)
@@ -127,18 +78,28 @@ HTMLAnchorElement::~HTMLAnchorElement()
 
 bool HTMLAnchorElement::supportsFocus() const
 {
-    if (rendererIsEditable())
+    if (hasEditableStyle())
         return HTMLElement::supportsFocus();
     // If not a link we should still be able to focus the element if it has tabIndex.
     return isLink() || HTMLElement::supportsFocus();
 }
 
+bool HTMLAnchorElement::shouldHaveFocusAppearance() const
+{
+    return !m_wasFocusedByMouse || HTMLElement::supportsFocus();
+}
+
+void HTMLAnchorElement::dispatchFocusEvent(Element* oldFocusedElement, FocusType type)
+{
+    if (type != FocusTypePage)
+        m_wasFocusedByMouse = type == FocusTypeMouse;
+    HTMLElement::dispatchFocusEvent(oldFocusedElement, type);
+}
+
 bool HTMLAnchorElement::isMouseFocusable() const
 {
-    // Links are focusable by default, but only allow links with tabindex or contenteditable to be mouse focusable.
-    // https://bugs.webkit.org/show_bug.cgi?id=26856
     if (isLink())
-        return HTMLElement::supportsFocus();
+        return supportsFocus();
 
     return HTMLElement::isMouseFocusable();
 }
@@ -186,18 +147,18 @@ static void appendServerMapMousePosition(StringBuilder& url, Event* event)
 
 void HTMLAnchorElement::defaultEventHandler(Event* event)
 {
-    if (isLink()) {
-        if (focused() && isEnterKeyKeydownEvent(event) && isLiveLink()) {
+    if (isLiveLink()) {
+        ASSERT(event->target());
+        Node* target = event->target()->toNode();
+        ASSERT(target);
+        if ((focused() || target->focused()) && isEnterKeyKeypressEvent(event)) {
             event->setDefaultHandled();
             dispatchSimulatedClick(event);
             return;
         }
 
-        prefetchEventHandler()->handleEvent(event);
-
-        if (isLinkClick(event) && isLiveLink()) {
+        if (isLinkClick(event)) {
             handleClick(event);
-            prefetchEventHandler()->reset();
             return;
         }
     }
@@ -207,10 +168,26 @@ void HTMLAnchorElement::defaultEventHandler(Event* event)
 
 void HTMLAnchorElement::setActive(bool down)
 {
-    if (rendererIsEditable())
+    if (hasEditableStyle())
         return;
 
     ContainerNode::setActive(down);
+}
+
+void HTMLAnchorElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == hrefAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("a");
+            argv.append(hrefAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
 }
 
 void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -218,13 +195,14 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
     if (name == hrefAttr) {
         bool wasLink = isLink();
         setIsLink(!value.isNull());
-        if (wasLink != isLink()) {
-            didAffectSelector(AffectedSelectorLink | AffectedSelectorVisited | AffectedSelectorEnabled);
-            if (wasLink && treeScope().adjustedFocusedElement() == this) {
-                // We might want to call blur(), but it's dangerous to dispatch
-                // events here.
-                document().setNeedsFocusedElementCheck();
-            }
+        if (wasLink || isLink()) {
+            pseudoStateChanged(CSSSelector::PseudoLink);
+            pseudoStateChanged(CSSSelector::PseudoVisited);
+        }
+        if (wasLink && !isLink() && treeScope().adjustedFocusedElement() == this) {
+            // We might want to call blur(), but it's dangerous to dispatch
+            // events here.
+            document().setNeedsFocusedElementCheck();
         }
         if (isLink()) {
             String parsedURL = stripLeadingAndTrailingHTMLSpaces(value);
@@ -232,9 +210,6 @@ void HTMLAnchorElement::parseAttribute(const QualifiedName& name, const AtomicSt
                 if (protocolIs(parsedURL, "http") || protocolIs(parsedURL, "https") || parsedURL.startsWith("//"))
                     prefetchDNS(document().completeURL(parsedURL).host());
             }
-
-            if (wasLink)
-                prefetchEventHandler()->didChangeHREF();
         }
         invalidateCachedVisitedLinkHash();
     } else if (name == nameAttr || name == titleAttr) {
@@ -264,7 +239,7 @@ bool HTMLAnchorElement::canStartSelection() const
 {
     if (!isLink())
         return HTMLElement::canStartSelection();
-    return rendererIsEditable();
+    return hasEditableStyle();
 }
 
 bool HTMLAnchorElement::draggable() const
@@ -333,17 +308,12 @@ short HTMLAnchorElement::tabIndex() const
     return Element::tabIndex();
 }
 
-AtomicString HTMLAnchorElement::target() const
-{
-    return getAttribute(targetAttr);
-}
-
 bool HTMLAnchorElement::isLiveLink() const
 {
-    return isLink() && !rendererIsEditable();
+    return isLink() && !hasEditableStyle();
 }
 
-void HTMLAnchorElement::sendPings(const KURL& destinationURL)
+void HTMLAnchorElement::sendPings(const KURL& destinationURL) const
 {
     const AtomicString& pingValue = getAttribute(pingAttr);
     if (pingValue.isNull() || !document().settings() || !document().settings()->hyperlinkAuditingEnabled())
@@ -374,21 +344,15 @@ void HTMLAnchorElement::handleClick(Event* event)
     sendPings(completedURL);
 
     ResourceRequest request(completedURL);
-    if (prefetchEventHandler()->hasIssuedPreconnect())
-        frame->loader().client()->dispatchWillRequestAfterPreconnect(request);
     if (hasAttribute(downloadAttr)) {
-        if (!hasRel(RelationNoReferrer)) {
-            String referrer = SecurityPolicy::generateReferrerHeader(document().referrerPolicy(), completedURL, document().outgoingReferrer());
-            if (!referrer.isEmpty())
-                request.setHTTPReferrer(Referrer(referrer, document().referrerPolicy()));
-        }
-
+        request.setRequestContext(blink::WebURLRequest::RequestContextDownload);
         bool isSameOrigin = completedURL.protocolIsData() || document().securityOrigin()->canRequest(completedURL);
         const AtomicString& suggestedName = (isSameOrigin ? fastGetAttribute(downloadAttr) : nullAtom);
 
         frame->loader().client()->loadURLExternally(request, NavigationPolicyDownload, suggestedName);
     } else {
-        FrameLoadRequest frameRequest(&document(), request, target());
+        request.setRequestContext(blink::WebURLRequest::RequestContextHyperlink);
+        FrameLoadRequest frameRequest(&document(), request, getAttribute(targetAttr));
         frameRequest.setTriggeringEvent(event);
         if (hasRel(RelationNoReferrer))
             frameRequest.setShouldSendReferrer(NeverSendReferrer);
@@ -396,9 +360,9 @@ void HTMLAnchorElement::handleClick(Event* event)
     }
 }
 
-bool isEnterKeyKeydownEvent(Event* event)
+bool isEnterKeyKeypressEvent(Event* event)
 {
-    return event->type() == EventTypeNames::keydown && event->isKeyboardEvent() && toKeyboardEvent(event)->keyIdentifier() == "Enter";
+    return event->type() == EventTypeNames::keypress && event->isKeyboardEvent() && toKeyboardEvent(event)->keyIdentifier() == "Enter";
 }
 
 bool isLinkClick(Event* event)
@@ -411,182 +375,23 @@ bool HTMLAnchorElement::willRespondToMouseClickEvents()
     return isLink() || HTMLElement::willRespondToMouseClickEvents();
 }
 
-HTMLAnchorElement::PrefetchEventHandler* HTMLAnchorElement::prefetchEventHandler()
-{
-    if (!m_prefetchEventHandler)
-        m_prefetchEventHandler = PrefetchEventHandler::create(this);
-
-    return m_prefetchEventHandler.get();
-}
-
-HTMLAnchorElement::PrefetchEventHandler::PrefetchEventHandler(HTMLAnchorElement* anchorElement)
-    : m_anchorElement(anchorElement)
-{
-    ASSERT(m_anchorElement);
-
-    reset();
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::reset()
-{
-    m_hadHREFChanged = false;
-    m_mouseOverTimestamp = 0;
-    m_mouseDownTimestamp = 0;
-    m_hadTapUnconfirmed = false;
-    m_tapDownTimestamp = 0;
-    m_hasIssuedPreconnect = false;
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleEvent(Event* event)
-{
-    if (!shouldPrefetch(m_anchorElement->href()))
-        return;
-
-    if (event->type() == EventTypeNames::mouseover)
-        handleMouseOver(event);
-    else if (event->type() == EventTypeNames::mouseout)
-        handleMouseOut(event);
-    else if (event->type() == EventTypeNames::mousedown && event->isMouseEvent() && toMouseEvent(event)->button() == LeftButton)
-        handleLeftMouseDown(event);
-    else if (event->type() == EventTypeNames::gestureshowpress)
-        handleGestureShowPress(event);
-    else if (event->type() == EventTypeNames::gesturetapunconfirmed)
-        handleGestureTapUnconfirmed(event);
-    else if (isLinkClick(event))
-        handleClick(event);
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleMouseOver(Event* event)
-{
-    if (m_mouseOverTimestamp == 0.0) {
-        m_mouseOverTimestamp = event->timeStamp();
-
-        blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.MouseOvers", 0, 2);
-
-        prefetch(blink::WebPreconnectMotivationLinkMouseOver);
-    }
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleMouseOut(Event* event)
-{
-    if (m_mouseOverTimestamp > 0.0) {
-        double mouseOverDuration = convertDOMTimeStampToSeconds(event->timeStamp() - m_mouseOverTimestamp);
-        blink::Platform::current()->histogramCustomCounts("MouseEventPrefetch.MouseOverDuration_NoClick", mouseOverDuration * 1000, 0, 10000, 100);
-
-        m_mouseOverTimestamp = 0.0;
-    }
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleLeftMouseDown(Event* event)
-{
-    m_mouseDownTimestamp = event->timeStamp();
-
-    blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.MouseDowns", 0, 2);
-
-    prefetch(blink::WebPreconnectMotivationLinkMouseDown);
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleGestureTapUnconfirmed(Event* event)
-{
-    m_hadTapUnconfirmed = true;
-
-    blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.TapUnconfirmeds", 0, 2);
-
-    prefetch(blink::WebPreconnectMotivationLinkTapUnconfirmed);
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleGestureShowPress(Event* event)
-{
-    m_tapDownTimestamp = event->timeStamp();
-
-    blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.TapDowns", 0, 2);
-
-    prefetch(blink::WebPreconnectMotivationLinkTapDown);
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::handleClick(Event* event)
-{
-    bool capturedMouseOver = (m_mouseOverTimestamp > 0.0);
-    if (capturedMouseOver) {
-        double mouseOverDuration = convertDOMTimeStampToSeconds(event->timeStamp() - m_mouseOverTimestamp);
-
-        blink::Platform::current()->histogramCustomCounts("MouseEventPrefetch.MouseOverDuration_Click", mouseOverDuration * 1000, 0, 10000, 100);
-    }
-
-    bool capturedMouseDown = (m_mouseDownTimestamp > 0.0);
-    blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.MouseDownFollowedByClick", capturedMouseDown, 2);
-
-    if (capturedMouseDown) {
-        double mouseDownDuration = convertDOMTimeStampToSeconds(event->timeStamp() - m_mouseDownTimestamp);
-
-        blink::Platform::current()->histogramCustomCounts("MouseEventPrefetch.MouseDownDuration_Click", mouseDownDuration * 1000, 0, 10000, 100);
-    }
-
-    bool capturedTapDown = (m_tapDownTimestamp > 0.0);
-    if (capturedTapDown) {
-        double tapDownDuration = convertDOMTimeStampToSeconds(event->timeStamp() - m_tapDownTimestamp);
-
-        blink::Platform::current()->histogramCustomCounts("MouseEventPrefetch.TapDownDuration_Click", tapDownDuration * 1000, 0, 10000, 100);
-    }
-
-    int flags = (m_hadTapUnconfirmed ? 2 : 0) | (capturedTapDown ? 1 : 0);
-    blink::Platform::current()->histogramEnumeration("MouseEventPrefetch.PreTapEventsFollowedByClick", flags, 4);
-}
-
-bool HTMLAnchorElement::PrefetchEventHandler::shouldPrefetch(const KURL& url)
-{
-    if (m_hadHREFChanged)
-        return false;
-
-    if (m_anchorElement->hasEventListeners(EventTypeNames::click))
-        return false;
-
-    if (!url.protocolIsInHTTPFamily())
-        return false;
-
-    Document& document = m_anchorElement->document();
-
-    if (!document.securityOrigin()->canDisplay(url))
-        return false;
-
-    if (url.hasFragmentIdentifier() && equalIgnoringFragmentIdentifier(document.url(), url))
-        return false;
-
-    LocalFrame* frame = document.frame();
-    if (!frame)
-        return false;
-
-    // Links which create new window/tab are avoided because they may require user approval interaction.
-    if (!m_anchorElement->target().isEmpty())
-        return false;
-
-    return true;
-}
-
-void HTMLAnchorElement::PrefetchEventHandler::prefetch(blink::WebPreconnectMotivation motivation)
-{
-    const KURL& url = m_anchorElement->href();
-
-    if (!shouldPrefetch(url))
-        return;
-
-    // The precision of current MouseOver trigger is too low to actually trigger preconnects.
-    if (motivation == blink::WebPreconnectMotivationLinkMouseOver)
-        return;
-
-    preconnectToURL(url, motivation);
-    m_hasIssuedPreconnect = true;
-}
-
 bool HTMLAnchorElement::isInteractiveContent() const
 {
     return isLink();
 }
 
-void HTMLAnchorElement::trace(Visitor* visitor)
+Node::InsertionNotificationRequest HTMLAnchorElement::insertedInto(ContainerNode* insertionPoint)
 {
-    visitor->trace(m_prefetchEventHandler);
-    HTMLElement::trace(visitor);
+    if (insertionPoint->inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("a");
+            argv.append(fastGetAttribute(hrefAttr));
+            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
+        }
+    }
+    return HTMLElement::insertedInto(insertionPoint);
 }
 
 }

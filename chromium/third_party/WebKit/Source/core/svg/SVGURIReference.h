@@ -24,7 +24,7 @@
 #include "core/dom/Document.h"
 #include "core/svg/SVGAnimatedString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -50,7 +50,6 @@ public:
     }
 
     const String& hrefString() const { return m_href->currentValue()->value(); }
-    bool parseAttribute(const QualifiedName&, const AtomicString& value, SVGParsingError&);
 
     // JS API
     SVGAnimatedString* href() const { return m_href.get(); }
@@ -62,6 +61,6 @@ private:
     RefPtr<SVGAnimatedString> m_href;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGURIReference_h

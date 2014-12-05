@@ -43,23 +43,24 @@ class ServiceWorkerHandleTest : public testing::Test {
   ServiceWorkerHandleTest()
       : browser_thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     helper_.reset(new EmbeddedWorkerTestHelper(kRenderProcessId));
 
+    const GURL pattern("http://www.example.com/");
     registration_ = new ServiceWorkerRegistration(
-        GURL("http://www.example.com/*"),
-        GURL("http://www.example.com/service_worker.js"),
+        pattern,
         1L,
         helper_->context()->AsWeakPtr());
     version_ = new ServiceWorkerVersion(
-        registration_, 1L, helper_->context()->AsWeakPtr());
+        registration_.get(),
+        GURL("http://www.example.com/service_worker.js"),
+        1L,
+        helper_->context()->AsWeakPtr());
 
-    // Simulate adding one process to the worker.
-    int embedded_worker_id = version_->embedded_worker()->embedded_worker_id();
-    helper_->SimulateAddProcessToWorker(embedded_worker_id, kRenderProcessId);
+    helper_->SimulateAddProcessToPattern(pattern, kRenderProcessId);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     registration_ = NULL;
     version_ = NULL;
     helper_.reset();
@@ -71,6 +72,8 @@ class ServiceWorkerHandleTest : public testing::Test {
   scoped_ptr<EmbeddedWorkerTestHelper> helper_;
   scoped_refptr<ServiceWorkerRegistration> registration_;
   scoped_refptr<ServiceWorkerVersion> version_;
+
+ private:
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerHandleTest);
 };
 
@@ -79,7 +82,8 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
       ServiceWorkerHandle::Create(helper_->context()->AsWeakPtr(),
                                   helper_.get(),
                                   1 /* thread_id */,
-                                  version_);
+                                  33 /* provider_id */,
+                                  version_.get());
 
   // Start the worker, and then...
   ServiceWorkerStatusCode status = SERVICE_WORKER_ERROR_FAILED;
@@ -89,9 +93,12 @@ TEST_F(ServiceWorkerHandleTest, OnVersionStateChanged) {
 
   // ...dispatch install event.
   status = SERVICE_WORKER_ERROR_FAILED;
+  version_->SetStatus(ServiceWorkerVersion::INSTALLING);
   version_->DispatchInstallEvent(-1, CreateReceiverOnCurrentThread(&status));
   base::RunLoop().RunUntilIdle();
   EXPECT_EQ(SERVICE_WORKER_OK, status);
+
+  version_->SetStatus(ServiceWorkerVersion::INSTALLED);
 
   ASSERT_EQ(4UL, ipc_sink()->message_count());
 

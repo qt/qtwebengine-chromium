@@ -8,7 +8,7 @@
 #include "core/frame/RemoteFrame.h"
 #include "core/rendering/RenderPart.h"
 
-namespace WebCore {
+namespace blink {
 
 RemoteFrameView::RemoteFrameView(RemoteFrame* remoteFrame)
     : m_remoteFrame(remoteFrame)
@@ -20,9 +20,9 @@ RemoteFrameView::~RemoteFrameView()
 {
 }
 
-PassRefPtr<RemoteFrameView> RemoteFrameView::create(RemoteFrame* remoteFrame)
+PassRefPtrWillBeRawPtr<RemoteFrameView> RemoteFrameView::create(RemoteFrame* remoteFrame)
 {
-    RefPtr<RemoteFrameView> view = adoptRef(new RemoteFrameView(remoteFrame));
+    RefPtrWillBeRawPtr<RemoteFrameView> view = adoptRefWillBeNoop(new RemoteFrameView(remoteFrame));
     view->show();
     return view.release();
 }
@@ -56,4 +56,10 @@ void RemoteFrameView::frameRectsChanged()
     // FIXME: Notify embedder via WebLocalFrameClient when that is possible.
 }
 
-} // namespace WebCore
+void RemoteFrameView::trace(Visitor* visitor)
+{
+    visitor->trace(m_remoteFrame);
+    Widget::trace(visitor);
+}
+
+} // namespace blink

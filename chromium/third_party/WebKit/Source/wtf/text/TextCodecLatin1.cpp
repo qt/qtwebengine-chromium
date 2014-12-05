@@ -73,35 +73,24 @@ static const UChar table[256] = {
 
 void TextCodecLatin1::registerEncodingNames(EncodingNameRegistrar registrar)
 {
+    // Taken from the alias table at https://encoding.spec.whatwg.org/
     registrar("windows-1252", "windows-1252");
-    registrar("ISO-8859-1", "ISO-8859-1");
-    registrar("US-ASCII", "US-ASCII");
-
-    registrar("WinLatin1", "windows-1252");
-    registrar("ibm-1252", "windows-1252");
-    registrar("ibm-1252_P100-2000", "windows-1252");
-
-    registrar("CP819", "ISO-8859-1");
-    registrar("IBM819", "ISO-8859-1");
-    registrar("csISOLatin1", "ISO-8859-1");
-    registrar("iso-ir-100", "ISO-8859-1");
-    registrar("iso_8859-1:1987", "ISO-8859-1");
-    registrar("l1", "ISO-8859-1");
-    registrar("latin1", "ISO-8859-1");
-
-    registrar("ANSI_X3.4-1968", "US-ASCII");
-    registrar("ANSI_X3.4-1986", "US-ASCII");
-    registrar("ASCII", "US-ASCII");
-    registrar("IBM367", "US-ASCII");
-    registrar("ISO646-US", "US-ASCII");
-    registrar("ISO_646.irv:1991", "US-ASCII");
-    registrar("cp367", "US-ASCII");
-    registrar("csASCII", "US-ASCII");
-    registrar("ibm-367_P100-1995", "US-ASCII");
-    registrar("iso-ir-6", "US-ASCII");
-    registrar("iso-ir-6-us", "US-ASCII");
-    registrar("us", "US-ASCII");
-    registrar("x-ansi", "US-ASCII");
+    registrar("ANSI_X3.4-1968", "windows-1252");
+    registrar("ASCII", "windows-1252");
+    registrar("cp1252", "windows-1252");
+    registrar("cp819", "windows-1252");
+    registrar("csISOLatin1", "windows-1252");
+    registrar("IBM819", "windows-1252");
+    registrar("ISO-8859-1", "windows-1252");
+    registrar("iso-ir-100", "windows-1252");
+    registrar("iso8859-1", "windows-1252");
+    registrar("iso88591", "windows-1252");
+    registrar("iso_8859-1", "windows-1252");
+    registrar("iso_8859-1:1987", "windows-1252");
+    registrar("l1", "windows-1252");
+    registrar("latin1", "windows-1252");
+    registrar("US-ASCII", "windows-1252");
+    registrar("x-cp1252", "windows-1252");
 }
 
 static PassOwnPtr<TextCodec> newStreamingTextDecoderWindowsLatin1(const TextEncoding&, const void*)
@@ -154,7 +143,7 @@ useLookupTable:
             if (table[*source] > 0xff)
                 goto upConvertTo16Bit;
 
-            *destination = table[*source];
+            *destination = static_cast<LChar>(table[*source]);
         }
 
         ++source;
@@ -222,7 +211,7 @@ static CString encodeComplexWindowsLatin1(const CharType* characters, size_t len
     for (size_t i = 0; i < length; ) {
         UChar32 c;
         U16_NEXT(characters, i, length, c);
-        unsigned char b = c;
+        unsigned char b = static_cast<unsigned char>(c);
         // Do an efficient check to detect characters other than 00-7F and A0-FF.
         if (b != c || (c & 0xE0) == 0x80) {
             // Look for a way to encode this with Windows Latin-1.
@@ -256,7 +245,7 @@ CString TextCodecLatin1::encodeCommon(const CharType* characters, size_t length,
         UChar ored = 0;
         for (size_t i = 0; i < length; ++i) {
             UChar c = characters[i];
-            bytes[i] = c;
+            bytes[i] = static_cast<char>(c);
             ored |= c;
         }
 

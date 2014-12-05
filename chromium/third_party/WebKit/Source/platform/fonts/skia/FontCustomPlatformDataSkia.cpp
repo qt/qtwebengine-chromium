@@ -42,7 +42,7 @@
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 FontCustomPlatformData::FontCustomPlatformData(PassRefPtr<SkTypeface> typeface)
     : m_typeface(typeface)
@@ -114,4 +114,4 @@ bool FontCustomPlatformData::supportsFormat(const String& format)
     return equalIgnoringCase(format, "truetype") || equalIgnoringCase(format, "opentype") || OpenTypeSanitizer::supportsFormat(format);
 }
 
-}
+} // namespace blink

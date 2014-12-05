@@ -6,7 +6,8 @@
 // in js/cr/ui/notification.js .
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var LanguageList = options.LanguageList;
   /** @const */ var ThirdPartyImeConfirmOverlay =
       options.ThirdPartyImeConfirmOverlay;
@@ -71,26 +72,27 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of ChromeOS language options page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function LanguageOptions(model) {
-    OptionsPage.call(this, 'languages',
-                     loadTimeData.getString('languagePageTabTitle'),
-                     'languagePage');
+    Page.call(this, 'languages',
+              loadTimeData.getString('languagePageTabTitle'), 'languagePage');
   }
 
   cr.addSingletonGetter(LanguageOptions);
 
-  // Inherit LanguageOptions from OptionsPage.
+  // Inherit LanguageOptions from Page.
   LanguageOptions.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-    /* For recording the prospective language (the next locale after relaunch).
+    /**
+     * For recording the prospective language (the next locale after relaunch).
      * @type {?string}
      * @private
      */
     prospectiveUiLanguageCode_: null,
 
-    /*
+    /**
      * Map from language code to spell check dictionary download status for that
      * language.
      * @type {Array}
@@ -100,7 +102,7 @@ cr.define('options', function() {
 
     /**
      * Number of times a spell check dictionary download failed.
-     * @type {int}
+     * @type {number}
      * @private
      */
     spellcheckDictionaryDownloadFailures_: 0,
@@ -156,12 +158,9 @@ cr.define('options', function() {
      */
     enableTranslate_: false,
 
-    /**
-     * Initializes LanguageOptions page.
-     * Calls base class implementation to start preference initialization.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var languageOptionsList = $('language-options-list');
       LanguageList.decorate(languageOptionsList);
@@ -196,7 +195,7 @@ cr.define('options', function() {
           loadTimeData.getValue('translateSupportedLanguages');
 
       // Set up add button.
-      $('language-options-add-button').onclick = function(e) {
+      var onclick = function(e) {
         // Add the language without showing the overlay if it's specified in
         // the URL hash (ex. lang_add=ja).  Used for automated testing.
         var match = document.location.hash.match(/\blang_add=([\w-]+)/);
@@ -205,14 +204,15 @@ cr.define('options', function() {
           $('language-options-list').addLanguage(addLanguageCode);
           this.addBlockedLanguage_(addLanguageCode);
         } else {
-          OptionsPage.navigateToPage('addLanguage');
+          PageManager.showPageByName('addLanguage');
         }
-      }.bind(this);
+      };
+      $('language-options-add-button').onclick = onclick.bind(this);
 
       if (!cr.isMac) {
         // Set up the button for editing custom spelling dictionary.
         $('edit-dictionary-button').onclick = function(e) {
-          OptionsPage.navigateToPage('editDictionary');
+          PageManager.showPageByName('editDictionary');
         };
         $('dictionary-download-retry-button').onclick = function(e) {
           chrome.send('retryDictionaryDownload');
@@ -252,7 +252,12 @@ cr.define('options', function() {
       }
 
       $('language-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
+
+      // Public session users cannot change the locale.
+      if (cr.isChromeOS && UIAccountTweaks.loggedInAsPublicAccount())
+        $('language-options-ui-language-section').hidden = true;
+          PageManager.closeOverlay.bind(PageManager);
     },
 
     /**
@@ -378,7 +383,7 @@ cr.define('options', function() {
     },
 
     /**
-     * Handles OptionsPage's visible property change event.
+     * Handles Page's visible property change event.
      * @param {Event} e Property change event.
      * @private
      */
@@ -747,10 +752,9 @@ cr.define('options', function() {
 
     /**
      * Updates the language list in the add language overlay.
-     * @param {string} languageCode Language code (ex. "fr").
      * @private
      */
-    updateLanguageListInAddLanguageOverlay_: function(languageCode) {
+    updateLanguageListInAddLanguageOverlay_: function() {
       // Change the visibility of the language list in the add language
       // overlay. Languages that are already active will become invisible,
       // so that users don't add the same language twice.
@@ -824,7 +828,7 @@ cr.define('options', function() {
      * @private
      */
     handleCheckboxClick_: function(e) {
-      var checkbox = e.target;
+      var checkbox = assertInstanceof(e.target, Element);
 
       // Third party IMEs require additional confirmation prior to enabling due
       // to privacy risk.
@@ -887,7 +891,7 @@ cr.define('options', function() {
         var langCode = String(selection.value);
         $('language-options-list').addLanguage(langCode);
         this.addBlockedLanguage_(langCode);
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       }
     },
 
@@ -908,10 +912,10 @@ cr.define('options', function() {
      * @param {Event} e Change event.
      * @private
      */
-    updateEnableSpellCheck_: function() {
+    updateEnableSpellCheck_: function(e) {
        var value = !$('enable-spell-check').checked;
        $('language-options-spell-check-language-button').disabled = value;
-       if (!cr.IsMac)
+       if (!cr.isMac)
          $('edit-dictionary-button').hidden = value;
      },
 
@@ -1165,10 +1169,17 @@ cr.define('options', function() {
     // If this will go as final UI, refactor this to share the component with
     // new new tab page.
     /**
-     * Shows notification
      * @private
      */
     notificationTimeout_: null,
+
+    /**
+     * Shows notification.
+     * @param {string} text
+     * @param {string} actionText
+     * @param {number=} opt_delay
+     * @private
+     */
     showNotification_: function(text, actionText, opt_delay) {
       var notificationElement = $('notification');
       var actionLink = notificationElement.querySelector('.link-color');
@@ -1294,7 +1305,7 @@ cr.define('options', function() {
       }
     },
 
-    /*
+    /**
      * Converts the language code for Translation. There are some differences
      * between the language set for Translation and that for Accept-Language.
      * @param {string} languageCode The language code like 'fr'.
@@ -1327,7 +1338,7 @@ cr.define('options', function() {
 
   /**
    * Shows the node at |index| in |nodes|, hides all others.
-   * @param {Array<HTMLElement>} nodes The nodes to be shown or hidden.
+   * @param {Array.<HTMLElement>} nodes The nodes to be shown or hidden.
    * @param {number} index The index of |nodes| to show.
    */
   function showMutuallyExclusiveNodes(nodes, index) {
@@ -1352,10 +1363,6 @@ cr.define('options', function() {
 
   LanguageOptions.onDictionaryDownloadFailure = function(languageCode) {
     LanguageOptions.getInstance().onDictionaryDownloadFailure_(languageCode);
-  };
-
-  LanguageOptions.onComponentManagerInitialized = function(componentImes) {
-    LanguageOptions.getInstance().appendComponentExtensionIme_(componentImes);
   };
 
   // Export

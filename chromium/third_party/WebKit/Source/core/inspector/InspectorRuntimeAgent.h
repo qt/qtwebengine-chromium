@@ -36,11 +36,10 @@
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScript;
 class InjectedScriptManager;
-class InstrumentingAgents;
 class JSONArray;
 class ScriptState;
 class ScriptDebugServer;
@@ -51,10 +50,11 @@ class InspectorRuntimeAgent : public InspectorBaseAgent<InspectorRuntimeAgent>, 
     WTF_MAKE_NONCOPYABLE(InspectorRuntimeAgent);
 public:
     virtual ~InspectorRuntimeAgent();
+    virtual void trace(Visitor*) override;
 
     // Part of the protocol.
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE FINAL;
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override final;
     virtual void evaluate(ErrorString*,
         const String& expression,
         const String* objectGroup,
@@ -64,7 +64,8 @@ public:
         const bool* returnByValue,
         const bool* generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
-        TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
+        TypeBuilder::OptOutput<bool>* wasThrown,
+        RefPtr<TypeBuilder::Debugger::ExceptionDetails>&) override final;
     virtual void callFunctionOn(ErrorString*,
                         const String& objectId,
                         const String& expression,
@@ -73,16 +74,16 @@ public:
                         const bool* returnByValue,
                         const bool* generatePreview,
                         RefPtr<TypeBuilder::Runtime::RemoteObject>& result,
-                        TypeBuilder::OptOutput<bool>* wasThrown) OVERRIDE FINAL;
-    virtual void releaseObject(ErrorString*, const String& objectId) OVERRIDE FINAL;
-    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties) OVERRIDE FINAL;
-    virtual void releaseObjectGroup(ErrorString*, const String& objectGroup) OVERRIDE FINAL;
-    virtual void run(ErrorString*) OVERRIDE;
-    virtual void isRunRequired(ErrorString*, bool* out_result) OVERRIDE;
+                        TypeBuilder::OptOutput<bool>* wasThrown) override final;
+    virtual void releaseObject(ErrorString*, const String& objectId) override final;
+    virtual void getProperties(ErrorString*, const String& objectId, const bool* ownProperties, const bool* accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >& result, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >& internalProperties) override final;
+    virtual void releaseObjectGroup(ErrorString*, const String& objectGroup) override final;
+    virtual void run(ErrorString*) override;
+    virtual void isRunRequired(ErrorString*, bool* out_result) override;
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE FINAL;
-    virtual void clearFrontend() OVERRIDE FINAL;
-    virtual void restore() OVERRIDE FINAL;
+    virtual void setFrontend(InspectorFrontend*) override final;
+    virtual void clearFrontend() override final;
+    virtual void restore() override final;
 
 protected:
     InspectorRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*);
@@ -92,7 +93,7 @@ protected:
     virtual void unmuteConsole() = 0;
 
     InjectedScriptManager* injectedScriptManager() { return m_injectedScriptManager; }
-    void addExecutionContextToFrontend(ScriptState*, bool isPageContext, const String& name, const String& frameId);
+    void addExecutionContextToFrontend(ScriptState*, bool isPageContext, const String& origin, const String& frameId);
 
     bool m_enabled;
     InspectorFrontend::Runtime* m_frontend;
@@ -101,10 +102,10 @@ protected:
     ScriptStateToId m_scriptStateToId;
 
 private:
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     ScriptDebugServer* m_scriptDebugServer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InspectorRuntimeAgent_h

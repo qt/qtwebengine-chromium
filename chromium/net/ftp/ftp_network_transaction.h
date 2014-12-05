@@ -30,22 +30,23 @@ class NET_EXPORT_PRIVATE FtpNetworkTransaction : public FtpTransaction {
  public:
   FtpNetworkTransaction(FtpNetworkSession* session,
                         ClientSocketFactory* socket_factory);
-  virtual ~FtpNetworkTransaction();
+  ~FtpNetworkTransaction() override;
 
   virtual int Stop(int error);
   virtual int RestartIgnoringLastError(const CompletionCallback& callback);
 
   // FtpTransaction methods:
-  virtual int Start(const FtpRequestInfo* request_info,
-                    const CompletionCallback& callback,
-                    const BoundNetLog& net_log) OVERRIDE;
-  virtual int RestartWithAuth(const AuthCredentials& credentials,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual int Read(IOBuffer* buf, int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual const FtpResponseInfo* GetResponseInfo() const OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual uint64 GetUploadProgress() const OVERRIDE;
+  int Start(const FtpRequestInfo* request_info,
+            const CompletionCallback& callback,
+            const BoundNetLog& net_log) override;
+  int RestartWithAuth(const AuthCredentials& credentials,
+                      const CompletionCallback& callback) override;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  const FtpResponseInfo* GetResponseInfo() const override;
+  LoadState GetLoadState() const override;
+  uint64 GetUploadProgress() const override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(FtpNetworkTransactionTest,

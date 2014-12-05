@@ -636,7 +636,7 @@ class WebDriver(object):
            execute_async_script call before throwing an error.
 
         :Args:
-         - time_to_wait: The amount of time to wait
+         - time_to_wait: The amount of time to wait (in seconds)
 
         :Usage:
             driver.set_script_timeout(30)
@@ -803,3 +803,19 @@ class WebDriver(object):
     def application_cache(self):
         """ Returns a ApplicationCache Object to interact with the browser app cache"""
         return ApplicationCache(self)
+
+    def save_screenshot(self, filename):
+        """
+        Gets the screenshot of the current window. Returns False if there is
+        any IOError, else returns True. Use full paths in your filename.
+        """
+        png = self.execute(Command.SCREENSHOT)['value']
+        try:
+            f = open(filename, 'wb')
+            f.write(base64.decodestring(png))
+            f.close()
+        except IOError:
+            return False
+        finally:
+            del png
+        return True

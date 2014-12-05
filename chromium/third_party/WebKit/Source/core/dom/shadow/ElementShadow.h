@@ -36,9 +36,9 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class ElementShadow FINAL : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
+class ElementShadow final : public NoBaseWillBeGarbageCollectedFinalized<ElementShadow> {
     WTF_MAKE_NONCOPYABLE(ElementShadow);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -57,7 +57,7 @@ public:
     void attach(const Node::AttachContext&);
     void detach(const Node::AttachContext&);
 
-    void didAffectSelector(AffectedSelectorMask);
+    void distributedNodePseudoStateChanged(CSSSelector::PseudoType);
     void willAffectSelector();
     const SelectRuleFeatureSet& ensureSelectFeatureSet();
 

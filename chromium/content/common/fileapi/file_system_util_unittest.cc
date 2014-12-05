@@ -2,18 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 #include "base/files/file_path.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
-using fileapi::CrackIsolatedFileSystemName;
-using fileapi::GetExternalFileSystemRootURIString;
-using fileapi::GetIsolatedFileSystemName;
-using fileapi::GetIsolatedFileSystemRootURIString;
-using fileapi::ValidateIsolatedFileSystemId;
-using fileapi::VirtualPath;
+using storage::CrackIsolatedFileSystemName;
+using storage::GetExternalFileSystemRootURIString;
+using storage::GetIsolatedFileSystemName;
+using storage::GetIsolatedFileSystemRootURIString;
+using storage::ValidateIsolatedFileSystemId;
+using storage::VirtualPath;
 
 namespace content {
 namespace {
@@ -23,11 +23,11 @@ class FileSystemUtilTest : public testing::Test {};
 TEST_F(FileSystemUtilTest, ParseFileSystemSchemeURL) {
   GURL uri("filesystem:http://chromium.org/temporary/foo/bar");
   GURL origin_url;
-  fileapi::FileSystemType type;
+  storage::FileSystemType type;
   base::FilePath virtual_path;
   ParseFileSystemSchemeURL(uri, &origin_url, &type, &virtual_path);
   EXPECT_EQ(GURL("http://chromium.org"), origin_url);
-  EXPECT_EQ(fileapi::kFileSystemTypeTemporary, type);
+  EXPECT_EQ(storage::kFileSystemTypeTemporary, type);
 #if defined(FILE_PATH_USES_WIN_SEPARATORS)
   base::FilePath expected_path(FILE_PATH_LITERAL("foo\\bar"));
 #else
@@ -38,14 +38,14 @@ TEST_F(FileSystemUtilTest, ParseFileSystemSchemeURL) {
 
 TEST_F(FileSystemUtilTest, GetTempFileSystemRootURI) {
   GURL origin_url("http://chromium.org");
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   GURL uri = GURL("filesystem:http://chromium.org/temporary/");
   EXPECT_EQ(uri, GetFileSystemRootURI(origin_url, type));
 }
 
 TEST_F(FileSystemUtilTest, GetPersistentFileSystemRootURI) {
   GURL origin_url("http://chromium.org");
-  fileapi::FileSystemType type = fileapi::kFileSystemTypePersistent;
+  storage::FileSystemType type = storage::kFileSystemTypePersistent;
   GURL uri = GURL("filesystem:http://chromium.org/persistent/");
   EXPECT_EQ(uri, GetFileSystemRootURI(origin_url, type));
 }
@@ -69,7 +69,7 @@ TEST_F(FileSystemUtilTest, VirtualPathBaseName) {
     { FILE_PATH_LITERAL("////bar"), FILE_PATH_LITERAL("bar") },
     { FILE_PATH_LITERAL("bar"), FILE_PATH_LITERAL("bar") }
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     base::FilePath input = base::FilePath(test_cases[i].path);
     base::FilePath base_name = VirtualPath::BaseName(input);
     EXPECT_EQ(test_cases[i].base_name, base_name.value());
@@ -109,7 +109,7 @@ TEST_F(FileSystemUtilTest, VirtualPathDirName) {
     { FILE_PATH_LITERAL("\\\\\\\\bar"), FILE_PATH_LITERAL("\\") },
 #endif
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     base::FilePath input = base::FilePath(test_cases[i].path);
     base::FilePath dir_name = VirtualPath::DirName(input);
     EXPECT_EQ(test_cases[i].dir_name, dir_name.value());
@@ -129,7 +129,7 @@ TEST_F(FileSystemUtilTest, GetNormalizedFilePath) {
     { FILE_PATH_LITERAL("\\foo"), FILE_PATH_LITERAL("/foo") },
 #endif
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     base::FilePath input = base::FilePath(test_cases[i].path);
     base::FilePath::StringType normalized_path_string =
         VirtualPath::GetNormalizedFilePath(input);
@@ -194,7 +194,7 @@ TEST_F(FileSystemUtilTest, VirtualPathGetComponents) {
       { FILE_PATH_LITERAL("c:"), FILE_PATH_LITERAL("bar") } },
 #endif
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     base::FilePath input = base::FilePath(test_cases[i].path);
     std::vector<base::FilePath::StringType> components;
     VirtualPath::GetComponents(input, &components);
@@ -202,7 +202,7 @@ TEST_F(FileSystemUtilTest, VirtualPathGetComponents) {
     for (size_t j = 0; j < components.size(); ++j)
       EXPECT_EQ(test_cases[i].components[j], components[j]);
   }
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+  for (size_t i = 0; i < arraysize(test_cases); ++i) {
     base::FilePath input = base::FilePath(test_cases[i].path);
     std::vector<std::string> components;
     VirtualPath::GetComponentsUTF8Unsafe(input, &components);

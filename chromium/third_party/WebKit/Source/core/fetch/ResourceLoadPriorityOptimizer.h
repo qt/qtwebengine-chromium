@@ -39,7 +39,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ResourceLoadPriorityOptimizer {
 public:
@@ -68,7 +68,7 @@ private:
         int screenArea;
     };
 
-    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned> > ImageResourceMap;
+    typedef HashMap<unsigned long, OwnPtr<ResourceAndVisibility>, WTF::IntHash<unsigned>, WTF::UnsignedWithZeroKeyHashTraits<unsigned>> ImageResourceMap;
     ImageResourceMap m_imageResources;
 
     typedef HashSet<RenderObject*> RenderObjectSet;

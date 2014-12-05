@@ -24,27 +24,27 @@
 #include "config.h"
 #include "core/html/HTMLBodyElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
 #include "core/css/CSSImageValue.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Attribute.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFrameElementBase.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLBodyElement::HTMLBodyElement(Document& document)
     : HTMLElement(bodyTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLBodyElement)
@@ -81,8 +81,10 @@ void HTMLBodyElement::collectStyleForPresentationAttribute(const QualifiedName& 
     } else if (name == textAttr) {
         addHTMLColorToStyle(style, CSSPropertyColor, value);
     } else if (name == bgpropertiesAttr) {
-        if (equalIgnoringCase(value, "fixed"))
-           addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundAttachment, CSSValueFixed);
+        if (equalIgnoringCase(value, "fixed")) {
+            UseCounter::count(document(), UseCounter::BgPropertiesFixed);
+            addPropertyToPresentationAttributeStyle(style, CSSPropertyBackgroundAttachment, CSSValueFixed);
+        }
     } else
         HTMLElement::collectStyleForPresentationAttribute(name, value, style);
 }
@@ -99,7 +101,7 @@ void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicStri
                 document().textLinkColors().resetActiveLinkColor();
         } else {
             RGBA32 color;
-            if (BisonCSSParser::parseColor(color, value, !document().inQuirksMode())) {
+            if (CSSParser::parseColor(color, value, !document().inQuirksMode())) {
                 if (name == linkAttr)
                     document().textLinkColors().setLinkColor(color);
                 else if (name == vlinkAttr)
@@ -109,7 +111,7 @@ void HTMLBodyElement::parseAttribute(const QualifiedName& name, const AtomicStri
             }
         }
 
-        setNeedsStyleRecalc(SubtreeStyleChange);
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::LinkColorChange));
     } else if (name == onloadAttr)
         document().setWindowAttributeEventListener(EventTypeNames::load, createAttributeEventListener(document().frame(), name, value, eventParameterName()));
     else if (name == onbeforeunloadAttr)
@@ -163,7 +165,7 @@ void HTMLBodyElement::didNotifySubtreeInsertionsToDocument()
     // FIXME: It's surprising this is web compatible since it means a
     // marginwidth and marginheight attribute can magically appear on the <body>
     // of all documents embedded through <iframe> or <frame>.
-    Element* ownerElement = document().ownerElement();
+    HTMLFrameOwnerElement* ownerElement = document().ownerElement();
     if (!isHTMLFrameElementBase(ownerElement))
         return;
     HTMLFrameElementBase& ownerFrameElement = toHTMLFrameElementBase(*ownerElement);
@@ -194,7 +196,7 @@ bool HTMLBodyElement::supportsFocus() const
 {
     // This override is needed because the inherited method bails if the parent is editable.
     // The <body> should be focusable even if <html> is editable.
-    return rendererIsEditable() || HTMLElement::supportsFocus();
+    return hasEditableStyle() || HTMLElement::supportsFocus();
 }
 
 static int adjustForZoom(int value, Document* document)
@@ -220,7 +222,7 @@ static int adjustForZoom(int value, Document* document)
 // That said, Blink's {set}scroll{Top,Left} behaviors match Gecko's: even if there is a non-overflown
 // scrollable area, scrolling should not get propagated to the viewport in neither strict
 // or quirks modes.
-int HTMLBodyElement::scrollLeft()
+double HTMLBodyElement::scrollLeft()
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
@@ -230,19 +232,23 @@ int HTMLBodyElement::scrollLeft()
         if (!render)
             return 0;
         if (render->hasOverflowClip())
-            return adjustForAbsoluteZoom(render->scrollLeft(), render);
+            return adjustScrollForAbsoluteZoom(render->scrollLeft(), *render);
         if (!document.inQuirksMode())
             return 0;
     }
 
-    FrameView* view = document.view();
-    return view ? adjustForZoom(view->scrollX(), &document) : 0;
+    if (FrameView* view = document.view())
+        return adjustScrollForAbsoluteZoom(view->scrollX(), document.frame()->pageZoomFactor());
+    return 0;
 }
 
-void HTMLBodyElement::setScrollLeft(int scrollLeft)
+void HTMLBodyElement::setScrollLeft(double scrollLeft)
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
+
+    if (std::isnan(scrollLeft))
+        return;
 
     if (RuntimeEnabledFeatures::scrollTopLeftInteropEnabled()) {
         RenderBox* render = renderBox();
@@ -263,10 +269,10 @@ void HTMLBodyElement::setScrollLeft(int scrollLeft)
     FrameView* view = frame->view();
     if (!view)
         return;
-    view->setScrollPosition(IntPoint(static_cast<int>(scrollLeft * frame->pageZoomFactor()), view->scrollY()));
+    view->setScrollPosition(DoublePoint(scrollLeft * frame->pageZoomFactor(), view->scrollY()));
 }
 
-int HTMLBodyElement::scrollTop()
+double HTMLBodyElement::scrollTop()
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
@@ -276,19 +282,23 @@ int HTMLBodyElement::scrollTop()
         if (!render)
             return 0;
         if (render->hasOverflowClip())
-            return adjustForAbsoluteZoom(render->scrollTop(), render);
+            return adjustLayoutUnitForAbsoluteZoom(render->scrollTop(), *render);
         if (!document.inQuirksMode())
             return 0;
     }
 
-    FrameView* view = document.view();
-    return view ? adjustForZoom(view->scrollY(), &document) : 0;
+    if (FrameView* view = document.view())
+        return adjustScrollForAbsoluteZoom(view->scrollY(), document.frame()->pageZoomFactor());
+    return 0;
 }
 
-void HTMLBodyElement::setScrollTop(int scrollTop)
+void HTMLBodyElement::setScrollTop(double scrollTop)
 {
     Document& document = this->document();
     document.updateLayoutIgnorePendingStylesheets();
+
+    if (std::isnan(scrollTop))
+        return;
 
     if (RuntimeEnabledFeatures::scrollTopLeftInteropEnabled()) {
         RenderBox* render = renderBox();
@@ -309,7 +319,7 @@ void HTMLBodyElement::setScrollTop(int scrollTop)
     FrameView* view = frame->view();
     if (!view)
         return;
-    view->setScrollPosition(IntPoint(view->scrollX(), static_cast<int>(scrollTop * frame->pageZoomFactor())));
+    view->setScrollPosition(DoublePoint(view->scrollX(), scrollTop * frame->pageZoomFactor()));
 }
 
 int HTMLBodyElement::scrollHeight()
@@ -330,4 +340,4 @@ int HTMLBodyElement::scrollWidth()
     return view ? adjustForZoom(view->contentsWidth(), &document) : 0;
 }
 
-} // namespace WebCore
+} // namespace blink

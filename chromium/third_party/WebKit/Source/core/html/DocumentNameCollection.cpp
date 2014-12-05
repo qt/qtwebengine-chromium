@@ -9,14 +9,14 @@
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLObjectElement.h"
 
-namespace WebCore {
+namespace blink {
 
 DocumentNameCollection::DocumentNameCollection(ContainerNode& document, const AtomicString& name)
     : HTMLNameCollection(document, DocumentNamedItems, name)
 {
 }
 
-bool DocumentNameCollection::elementMatches(const Element& element) const
+bool DocumentNameCollection::elementMatches(const HTMLElement& element) const
 {
     // Match images, forms, applets, embeds, objects and iframes by name,
     // applets and object by id, and images by id but only if they have
@@ -30,4 +30,4 @@ bool DocumentNameCollection::elementMatches(const Element& element) const
     return false;
 }
 
-} // namespace WebCore
+} // namespace blink

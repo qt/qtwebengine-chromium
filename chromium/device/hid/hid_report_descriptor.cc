@@ -8,6 +8,12 @@
 
 namespace device {
 
+namespace {
+
+const int kBitsPerByte = 8;
+
+}  // namespace
+
 HidReportDescriptor::HidReportDescriptor(const uint8_t* bytes, size_t size) {
   size_t header_index = 0;
   HidReportDescriptorItem* item = NULL;
@@ -20,42 +26,134 @@ HidReportDescriptor::HidReportDescriptor(const uint8_t* bytes, size_t size) {
 
 HidReportDescriptor::~HidReportDescriptor() {}
 
-void HidReportDescriptor::GetTopLevelCollections(
-    std::vector<HidUsageAndPage>* topLevelCollections) {
-  DCHECK(topLevelCollections);
-  STLClearObject(topLevelCollections);
+void HidReportDescriptor::GetDetails(
+    std::vector<HidCollectionInfo>* top_level_collections,
+    bool* has_report_id,
+    size_t* max_input_report_size,
+    size_t* max_output_report_size,
+    size_t* max_feature_report_size) {
+  DCHECK(top_level_collections);
+  DCHECK(max_input_report_size);
+  DCHECK(max_output_report_size);
+  DCHECK(max_feature_report_size);
+  STLClearObject(top_level_collections);
+
+  *has_report_id = false;
+  *max_input_report_size = 0;
+  *max_output_report_size = 0;
+  *max_feature_report_size = 0;
+
+  // Global tags data:
+  HidUsageAndPage::Page current_usage_page = HidUsageAndPage::kPageUndefined;
+  size_t current_report_count = 0;
+  size_t cached_report_count = 0;
+  size_t current_report_size = 0;
+  size_t cached_report_size = 0;
+  size_t current_input_report_size = 0;
+  size_t current_output_report_size = 0;
+  size_t current_feature_report_size = 0;
+
+  // Local tags data:
+  uint32_t current_usage = 0;
 
   for (std::vector<linked_ptr<HidReportDescriptorItem> >::const_iterator
            items_iter = items().begin();
        items_iter != items().end();
        ++items_iter) {
-    linked_ptr<HidReportDescriptorItem> item = *items_iter;
+    linked_ptr<HidReportDescriptorItem> current_item = *items_iter;
 
-    bool isTopLevelCollection =
-        item->tag() == HidReportDescriptorItem::kTagCollection &&
-        item->parent() == NULL;
+    switch (current_item->tag()) {
+      // Main tags:
+      case HidReportDescriptorItem::kTagCollection:
+        if (!current_item->parent() &&
+            (current_usage <= std::numeric_limits<uint16_t>::max())) {
+          // This is a top-level collection.
+          HidCollectionInfo collection;
+          collection.usage = HidUsageAndPage(
+              static_cast<uint16_t>(current_usage), current_usage_page);
+          top_level_collections->push_back(collection);
+        }
+        break;
+      case HidReportDescriptorItem::kTagInput:
+        current_input_report_size += current_report_count * current_report_size;
+        break;
+      case HidReportDescriptorItem::kTagOutput:
+        current_output_report_size +=
+            current_report_count * current_report_size;
+        break;
+      case HidReportDescriptorItem::kTagFeature:
+        current_feature_report_size +=
+            current_report_count * current_report_size;
+        break;
 
-    if (isTopLevelCollection) {
-      uint16_t collection_usage = 0;
-      HidUsageAndPage::Page collection_usage_page =
-          HidUsageAndPage::kPageUndefined;
+      // Global tags:
+      case HidReportDescriptorItem::kTagUsagePage:
+        current_usage_page =
+            static_cast<HidUsageAndPage::Page>(current_item->GetShortData());
+        break;
+      case HidReportDescriptorItem::kTagReportId:
+        if (top_level_collections->size() > 0) {
+          // Store report ID.
+          top_level_collections->back().report_ids.insert(
+              current_item->GetShortData());
+          *has_report_id = true;
 
-      HidReportDescriptorItem* usage = item->previous();
-      if (usage && usage->tag() == HidReportDescriptorItem::kTagUsage) {
-        collection_usage = usage->GetShortData();
-      }
+          // Update max report sizes.
+          *max_input_report_size =
+              std::max(*max_input_report_size, current_input_report_size);
+          *max_output_report_size =
+              std::max(*max_output_report_size, current_output_report_size);
+          *max_feature_report_size =
+              std::max(*max_feature_report_size, current_feature_report_size);
 
-      HidReportDescriptorItem* usage_page = usage->previous();
-      if (usage_page &&
-          usage_page->tag() == HidReportDescriptorItem::kTagUsagePage) {
-        collection_usage_page =
-            (HidUsageAndPage::Page)usage_page->GetShortData();
-      }
+          // Reset the report sizes for the next report ID.
+          current_input_report_size = 0;
+          current_output_report_size = 0;
+          current_feature_report_size = 0;
+        }
+        break;
+      case HidReportDescriptorItem::kTagReportCount:
+        current_report_count = current_item->GetShortData();
+        break;
+      case HidReportDescriptorItem::kTagReportSize:
+        current_report_size = current_item->GetShortData();
+        break;
+      case HidReportDescriptorItem::kTagPush:
+        // Cache report count and size.
+        cached_report_count = current_report_count;
+        cached_report_size = current_report_size;
+        break;
+      case HidReportDescriptorItem::kTagPop:
+        // Restore cache.
+        current_report_count = cached_report_count;
+        current_report_size = cached_report_size;
+        // Reset cache.
+        cached_report_count = 0;
+        cached_report_size = 0;
+        break;
 
-      topLevelCollections->push_back(
-          HidUsageAndPage(collection_usage, collection_usage_page));
+      // Local tags:
+      case HidReportDescriptorItem::kTagUsage:
+        current_usage = current_item->GetShortData();
+        break;
+
+      default:
+        break;
     }
   }
+
+  // Update max report sizes
+  *max_input_report_size =
+      std::max(*max_input_report_size, current_input_report_size);
+  *max_output_report_size =
+      std::max(*max_output_report_size, current_output_report_size);
+  *max_feature_report_size =
+      std::max(*max_feature_report_size, current_feature_report_size);
+
+  // Convert bits into bytes
+  *max_input_report_size /= kBitsPerByte;
+  *max_output_report_size /= kBitsPerByte;
+  *max_feature_report_size /= kBitsPerByte;
 }
 
 }  // namespace device

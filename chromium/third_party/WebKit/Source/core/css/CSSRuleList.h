@@ -22,19 +22,21 @@
 #ifndef CSSRuleList_h
 #define CSSRuleList_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSRule;
 class CSSStyleSheet;
 
-class CSSRuleList : public NoBaseWillBeGarbageCollectedFinalized<CSSRuleList> {
-    WTF_MAKE_NONCOPYABLE(CSSRuleList);
+class CSSRuleList : public NoBaseWillBeGarbageCollectedFinalized<CSSRuleList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(CSSRuleList);
 public:
     virtual ~CSSRuleList();
 
@@ -51,10 +53,10 @@ public:
     virtual void trace(Visitor*) { }
 
 protected:
-    CSSRuleList();
+    CSSRuleList() { }
 };
 
-class StaticCSSRuleList FINAL : public CSSRuleList {
+class StaticCSSRuleList final : public CSSRuleList {
 public:
     static PassRefPtrWillBeRawPtr<StaticCSSRuleList> create()
     {
@@ -62,22 +64,22 @@ public:
     }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE { ++m_refCount; }
-    virtual void deref() OVERRIDE;
+    virtual void ref() override { ++m_refCount; }
+    virtual void deref() override;
 #endif
 
     WillBeHeapVector<RefPtrWillBeMember<CSSRule> >& rules() { return m_rules; }
 
-    virtual CSSStyleSheet* styleSheet() const OVERRIDE { return 0; }
+    virtual CSSStyleSheet* styleSheet() const override { return 0; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     StaticCSSRuleList();
     virtual ~StaticCSSRuleList();
 
-    virtual unsigned length() const OVERRIDE { return m_rules.size(); }
-    virtual CSSRule* item(unsigned index) const OVERRIDE { return index < m_rules.size() ? m_rules[index].get() : 0; }
+    virtual unsigned length() const override { return m_rules.size(); }
+    virtual CSSRule* item(unsigned index) const override { return index < m_rules.size() ? m_rules[index].get() : 0; }
 
     WillBeHeapVector<RefPtrWillBeMember<CSSRule> > m_rules;
 #if !ENABLE(OILPAN)
@@ -86,7 +88,7 @@ private:
 };
 
 template <class Rule>
-class LiveCSSRuleList FINAL : public CSSRuleList {
+class LiveCSSRuleList final : public CSSRuleList {
 public:
     static PassOwnPtrWillBeRawPtr<LiveCSSRuleList> create(Rule* rule)
     {
@@ -94,11 +96,11 @@ public:
     }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE { m_rule->ref(); }
-    virtual void deref() OVERRIDE { m_rule->deref(); }
+    virtual void ref() override { m_rule->ref(); }
+    virtual void deref() override { m_rule->deref(); }
 #endif
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         visitor->trace(m_rule);
         CSSRuleList::trace(visitor);
@@ -107,13 +109,13 @@ public:
 private:
     LiveCSSRuleList(Rule* rule) : m_rule(rule) { }
 
-    virtual unsigned length() const OVERRIDE { return m_rule->length(); }
-    virtual CSSRule* item(unsigned index) const OVERRIDE { return m_rule->item(index); }
-    virtual CSSStyleSheet* styleSheet() const OVERRIDE { return m_rule->parentStyleSheet(); }
+    virtual unsigned length() const override { return m_rule->length(); }
+    virtual CSSRule* item(unsigned index) const override { return m_rule->item(index); }
+    virtual CSSStyleSheet* styleSheet() const override { return m_rule->parentStyleSheet(); }
 
     RawPtrWillBeMember<Rule> m_rule;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSRuleList_h

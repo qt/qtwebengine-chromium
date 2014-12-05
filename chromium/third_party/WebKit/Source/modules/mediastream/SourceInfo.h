@@ -26,17 +26,16 @@
 #ifndef SourceInfo_h
 #define SourceInfo_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "public/platform/WebSourceInfo.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class SourceInfo : public RefCountedWillBeGarbageCollectedFinalized<SourceInfo>, public ScriptWrappable {
+class SourceInfo : public GarbageCollectedFinalized<SourceInfo>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SourceInfo> create(const blink::WebSourceInfo&);
+    static SourceInfo* create(const WebSourceInfo&);
 
     String id() const;
     String kind() const;
@@ -46,13 +45,13 @@ public:
     void trace(Visitor*) { }
 
 private:
-    explicit SourceInfo(const blink::WebSourceInfo&);
+    explicit SourceInfo(const WebSourceInfo&);
 
-    blink::WebSourceInfo m_webSourceInfo;
+    WebSourceInfo m_webSourceInfo;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<SourceInfo> > SourceInfoVector;
+typedef HeapVector<Member<SourceInfo> > SourceInfoVector;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SourceInfo_h

@@ -69,7 +69,11 @@ class SVN(SCM):
 
         executive = executive or Executive()
         svn_info_args = [cls.executable_name, 'info']
-        exit_code = executive.run_command(svn_info_args, cwd=path, return_exit_code=True)
+        try:
+            exit_code = executive.run_command(svn_info_args, cwd=path, return_exit_code=True)
+        except OSError, e:
+            # svn is not installed
+            return False
         return (exit_code == 0)
 
     def _find_uuid(self, path):
@@ -120,16 +124,21 @@ class SVN(SCM):
         field_count = 6 if self._svn_version() > "1.6" else 5
         return "^(?P<status>[%s]).{%s} (?P<filename>.+)$" % (expected_types, field_count)
 
-    def _add_parent_directories(self, path):
+    def _add_parent_directories(self, path, recurse):
         """Does 'svn add' to the path and its parents."""
         if self.in_working_directory(path):
             return
-        self.add(path)
+        self.add(path, recurse=recurse)
 
-    def add_list(self, paths, return_exit_code=False):
+    def add_list(self, paths, return_exit_code=False, recurse=True):
         for path in paths:
-            self._add_parent_directories(os.path.dirname(os.path.abspath(path)))
-        return self._run_svn(["add"] + paths, return_exit_code=return_exit_code)
+            self._add_parent_directories(os.path.dirname(os.path.abspath(path)),
+                                         recurse=False)
+        if recurse:
+            cmd = ["add"] + paths
+        else:
+            cmd = ["add", "--depth", "empty"] + paths
+        return self._run_svn(cmd, return_exit_code=return_exit_code)
 
     def _delete_parent_directories(self, path):
         if not self.in_working_directory(path):

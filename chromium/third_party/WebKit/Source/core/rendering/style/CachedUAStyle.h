@@ -24,7 +24,7 @@
 
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 // RenderTheme::adjustStyle wants the background and borders
 // as specified by the UA sheets, excluding any author rules.
@@ -37,26 +37,21 @@ public:
         return adoptPtr(new CachedUAStyle(style));
     }
 
-    bool hasAppearance;
     BorderData border;
     FillLayer backgroundLayers;
     StyleColor backgroundColor;
 
 private:
     explicit CachedUAStyle(const RenderStyle* style)
-        : hasAppearance(true)
-        , backgroundLayers(BackgroundFillLayer)
-        , backgroundColor(StyleColor::currentColor())
+        : border(style->border())
+        , backgroundLayers(style->backgroundLayers())
+        , backgroundColor(style->backgroundColor())
     {
-        ASSERT(style->hasAppearance());
-        border = style->border();
-        backgroundLayers = *style->backgroundLayers();
-        backgroundColor = style->backgroundColor();
     }
 };
 
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CachedUAStyle_h

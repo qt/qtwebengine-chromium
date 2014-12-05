@@ -29,21 +29,20 @@
  */
 
 #include "config.h"
-
 #include "modules/webdatabase/InspectorDatabaseResource.h"
 
 #include "modules/webdatabase/Database.h"
 
-namespace WebCore {
+namespace blink {
 
 static int nextUnusedId = 1;
 
-PassRefPtrWillBeRawPtr<InspectorDatabaseResource> InspectorDatabaseResource::create(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
+InspectorDatabaseResource* InspectorDatabaseResource::create(Database* database, const String& domain, const String& name, const String& version)
 {
-    return adoptRefWillBeNoop(new InspectorDatabaseResource(database, domain, name, version));
+    return new InspectorDatabaseResource(database, domain, name, version);
 }
 
-InspectorDatabaseResource::InspectorDatabaseResource(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
+InspectorDatabaseResource::InspectorDatabaseResource(Database* database, const String& domain, const String& name, const String& version)
     : m_database(database)
     , m_id(String::number(nextUnusedId++))
     , m_domain(domain)
@@ -67,4 +66,4 @@ void InspectorDatabaseResource::bind(InspectorFrontend::Database* frontend)
     frontend->addDatabase(jsonObject);
 }
 
-} // namespace WebCore
+} // namespace blink

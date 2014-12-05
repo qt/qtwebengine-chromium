@@ -32,7 +32,6 @@
     Custom=ToV8,
     ImplementedAs=LocalDOMWindow,
     PrimaryGlobal,
-    WillBeGarbageCollected,
 ] interface Window : EventTarget {
     // DOM Level 0
     readonly attribute Screen screen;
@@ -45,7 +44,7 @@
     [Replaceable, MeasureAs=BarPropToolbar] readonly attribute BarProp toolbar;
     [LogActivity=GetterOnly] readonly attribute Navigator navigator;
     [Replaceable] readonly attribute Navigator clientInformation;
-    [DoNotCheckSecurity, Unforgeable, Replaceable, LogActivity, PutForwards=href] readonly attribute Location location;
+    [DoNotCheckSecurity, Unforgeable, Replaceable, PutForwards=href] readonly attribute Location location;
     [Custom, MeasureAs=WindowEvent, NotEnumerable] attribute Event event;
 
     Selection getSelection();
@@ -69,9 +68,9 @@
 
     void alert();
     void alert(DOMString message);
-    boolean confirm(optional DOMString message = null);
-    [TreatReturnedNullStringAs=Null] DOMString prompt(optional DOMString message = null,
-                                                      optional DOMString defaultValue = null);
+    boolean confirm(optional DOMString message = "");
+    DOMString? prompt(optional DOMString message = "",
+                      optional DOMString defaultValue = "");
 
     boolean find([Default=Undefined] optional DOMString string,
                  [Default=Undefined] optional boolean caseSensitive,
@@ -91,19 +90,19 @@
     [Replaceable] readonly attribute long screenY;
     [Replaceable] readonly attribute long screenLeft;
     [Replaceable] readonly attribute long screenTop;
-    [Replaceable] readonly attribute long scrollX;
-    [Replaceable] readonly attribute long scrollY;
-    readonly attribute long pageXOffset;
-    readonly attribute long pageYOffset;
+    [Replaceable] readonly attribute double scrollX;
+    [Replaceable] readonly attribute double scrollY;
+    readonly attribute double pageXOffset;
+    readonly attribute double pageYOffset;
 
     // Overloading can be replaced by optional if RuntimeEnabled is removed, by
     // changing the third argument to *optional* Dictionary scrollOptions
-    void scrollBy(long x, long y);
-    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollBy(long x, long y, Dictionary scrollOptions);
-    void scrollTo(long x, long y);
-    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollTo(long x, long y, Dictionary scrollOptions);
-    void scroll(long x, long y);
-    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scroll(long x, long y, Dictionary scrollOptions);
+    void scrollBy(double x, double y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollBy(double x, double y, ScrollOptions scrollOptions);
+    void scrollTo(double x, double y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scrollTo(double x, double y, ScrollOptions scrollOptions);
+    void scroll(double x, double y);
+    [RuntimeEnabled=CSSOMSmoothScroll, RaisesException] void scroll(double x, double y, ScrollOptions scrollOptions);
     void moveBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void moveTo([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
     void resizeBy([Default=Undefined] optional float x, [Default=Undefined] optional float y); // FIXME: this should take longs not floats.
@@ -123,7 +122,7 @@
     // Self referential attributes
     [Replaceable, DoNotCheckSecurity] readonly attribute Window self;
     [DoNotCheckSecurity, Unforgeable] readonly attribute Window window;
-    [Replaceable, DoNotCheckSecurity] readonly attribute  Window frames;
+    [Replaceable, DoNotCheckSecurity] readonly attribute Window frames;
 
     [DoNotCheckSecurity, Custom=Setter] attribute Window opener;
     [Replaceable, DoNotCheckSecurity] readonly attribute Window parent;
@@ -140,18 +139,13 @@
 
     // DOM Level 2 Style Interface
     CSSStyleDeclaration getComputedStyle([Default=Undefined] optional Element element,
-                                                            [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString pseudoElement);
+                                         [TreatUndefinedAs=NullString, Default=Undefined] optional DOMString? pseudoElement);
 
     // WebKit extensions
     [MeasureAs=GetMatchedCSSRules] CSSRuleList getMatchedCSSRules([Default=Undefined] optional Element element,
-                                                                  [TreatNullAs=NullString, TreatUndefinedAs=NullString, Default=Undefined] optional DOMString pseudoElement);
+                                                                  [TreatUndefinedAs=NullString, Default=Undefined] optional DOMString? pseudoElement);
 
     [Replaceable] readonly attribute double devicePixelRatio;
-
-    [MeasureAs=PrefixedConvertPointFromPageToNode] WebKitPoint webkitConvertPointFromPageToNode([Default=Undefined] optional Node node,
-                                                                                                [Default=Undefined] optional WebKitPoint p);
-    [MeasureAs=PrefixedConvertPointFromNodeToPage] WebKitPoint webkitConvertPointFromNodeToPage([Default=Undefined] optional Node node,
-                                                                                                [Default=Undefined] optional WebKitPoint p);
 
     [RuntimeEnabled=ApplicationCache, LogActivity=GetterOnly] readonly attribute ApplicationCache applicationCache;
 
@@ -166,7 +160,7 @@
     [Replaceable] readonly attribute Console console;
 
     // cross-document messaging
-    [DoNotCheckSecurity, Custom, RaisesException] void postMessage(SerializedScriptValue message, DOMString targetOrigin, optional MessagePort[] messagePorts);
+    [DoNotCheckSecurity, Custom, RaisesException] void postMessage(SerializedScriptValue message, DOMString targetOrigin, optional sequence<Transferable> transfer);
 
     [Replaceable] readonly attribute Performance performance;
 
@@ -193,7 +187,7 @@
     attribute EventHandler onwebkitanimationiteration;
     attribute EventHandler onwebkitanimationstart;
     attribute EventHandler onwebkittransitionend;
-    [LogActivity=SetterOnly] attribute EventHandler onwheel;
+    attribute EventHandler onwheel;
 
     [MeasureAs=WindowCaptureEvents] void captureEvents();
     [MeasureAs=WindowReleaseEvents] void releaseEvents();
@@ -205,11 +199,26 @@
     [MeasureAs=PrefixedMutationObserverConstructor] attribute MutationObserverConstructor WebKitMutationObserver;
 
     // window.toString() requires special handling in V8
-    [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] DOMString toString();
+    [DoNotCheckSignature, DoNotCheckSecurity, Custom, NotEnumerable] stringifier;
 
     [NotEnumerable] getter Window (unsigned long index);
     [Custom, NotEnumerable] getter Window (DOMString name);
 };
+
+// http://www.whatwg.org/specs/web-apps/current-work/#transferable-objects
+//
+// Expressing the Transferable typedef in IDL depends on http://crbug.com/240176.
+// The postMessage() methods taking a Transferable array argument have custom
+// binding code that is able to handle the Transferables that we currently
+// recognize. To be able to declare a postMessage() signature that matches
+// the implementation, we provide a Transferable typedef but with an
+// incomplete type.
+//
+// FIXME: make this typedef accurate once enough of http://crbug.com/240176
+// is in place.
+// FIXME: consider putting this typedef in an .idl file containing spec-wide
+// utility type definitions.
+typedef MessagePort Transferable;
 
 Window implements GlobalEventHandlers;
 Window implements WindowBase64;

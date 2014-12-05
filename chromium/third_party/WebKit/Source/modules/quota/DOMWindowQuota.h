@@ -35,15 +35,15 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeprecatedStorageInfo;
 class LocalDOMWindow;
 
-class DOMWindowQuota FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowQuota>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+class DOMWindowQuota final : public NoBaseWillBeGarbageCollected<DOMWindowQuota>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowQuota);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowQuota);
 public:
-    virtual ~DOMWindowQuota();
     static DOMWindowQuota& from(LocalDOMWindow&);
     static DeprecatedStorageInfo* webkitStorageInfo(LocalDOMWindow&);
     DeprecatedStorageInfo* webkitStorageInfo() const;
@@ -57,6 +57,6 @@ private:
     mutable PersistentWillBeMember<DeprecatedStorageInfo> m_storageInfo;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowQuota_h

@@ -31,10 +31,9 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
-class ShadowRoot;
 
 // FIXME: Make some functions inline to optimise the performance.
 // https://bugs.webkit.org/show_bug.cgi?id=82702
@@ -75,7 +74,7 @@ private:
 
     void assertPrecondition() const
     {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         ASSERT(m_node);
         ASSERT(!m_node->isShadowRoot());
         ASSERT(!isActiveInsertionPoint(*m_node));
@@ -84,7 +83,7 @@ private:
 
     void assertPostcondition() const
     {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         if (m_node)
             assertPrecondition();
 #endif
@@ -116,7 +115,7 @@ private:
 inline ComposedTreeWalker::ComposedTreeWalker(const Node* node, StartPolicy startPolicy)
     : m_node(node)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (m_node && startPolicy == CannotStartFromShadowBoundary)
         assertPrecondition();
 #endif

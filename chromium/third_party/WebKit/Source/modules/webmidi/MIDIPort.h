@@ -31,19 +31,16 @@
 #ifndef MIDIPort_h
 #define MIDIPort_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "modules/EventTargetModules.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccess;
 
-class MIDIPort : public RefCountedWillBeRefCountedGarbageCollected<MIDIPort>, public ScriptWrappable, public EventTargetWithInlineData {
-    REFCOUNTED_EVENT_TARGET(MIDIPort);
+class MIDIPort : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MIDIPort>, public EventTargetWithInlineData {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MIDIPort>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIPort);
 public:
     enum MIDIPortTypeCode {
@@ -60,17 +57,19 @@ public:
     String version() const { return m_version; }
 
     MIDIAccess* midiAccess() const { return m_access; }
+    bool isActive() const { return m_isActive; }
+    void setActiveState(bool isActive) { m_isActive = isActive; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIPort; }
-    virtual ExecutionContext* executionContext() const OVERRIDE FINAL;
+    virtual const AtomicString& interfaceName() const override { return EventTargetNames::MIDIPort; }
+    virtual ExecutionContext* executionContext() const override final;
 
 protected:
-    MIDIPort(MIDIAccess*, const String& id, const String& manufacturer, const String& name, MIDIPortTypeCode, const String& version);
+    MIDIPort(MIDIAccess*, const String& id, const String& manufacturer, const String& name, MIDIPortTypeCode, const String& version, bool isActive);
 
 private:
     String m_id;
@@ -78,9 +77,10 @@ private:
     String m_name;
     MIDIPortTypeCode m_type;
     String m_version;
-    RawPtrWillBeMember<MIDIAccess> m_access;
+    Member<MIDIAccess> m_access;
+    bool m_isActive;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIPort_h

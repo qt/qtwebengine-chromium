@@ -31,21 +31,21 @@
 #include "config.h"
 #include "modules/webmidi/MIDIOutput.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/timing/Performance.h"
 #include "modules/webmidi/MIDIAccess.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
 double now(ExecutionContext* context)
 {
     LocalDOMWindow* window = context ? context->executingWindow() : 0;
-    Performance* performance = window ? &window->performance() : 0;
+    Performance* performance = window ? window->performance() : 0;
     return performance ? performance->now() : 0.0;
 }
 
@@ -173,21 +173,28 @@ private:
 
 } // namespace
 
-PassRefPtrWillBeRawPtr<MIDIOutput> MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIOutput* MIDIOutput::create(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
 {
     ASSERT(access);
-    return adoptRefWillBeRefCountedGarbageCollected(new MIDIOutput(access, portIndex, id, manufacturer, name, version));
+    return new MIDIOutput(access, portIndex, id, manufacturer, name, version, isActive);
 }
 
-MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version)
-    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeOutput, version)
+MIDIOutput::MIDIOutput(MIDIAccess* access, unsigned portIndex, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeOutput, version, isActive)
     , m_portIndex(portIndex)
 {
-    ScriptWrappable::init(this);
 }
 
 MIDIOutput::~MIDIOutput()
 {
+}
+
+void MIDIOutput::send(DOMUint8Array* array, double timestamp, ExceptionState& exceptionState)
+{
+    if (!array)
+        return;
+
+    send(array->view(), timestamp, exceptionState);
 }
 
 void MIDIOutput::send(Uint8Array* array, double timestamp, ExceptionState& exceptionState)
@@ -221,7 +228,7 @@ void MIDIOutput::send(Vector<unsigned> unsignedData, double timestamp, Exception
     send(array.get(), timestamp, exceptionState);
 }
 
-void MIDIOutput::send(Uint8Array* data, ExceptionState& exceptionState)
+void MIDIOutput::send(DOMUint8Array* data, ExceptionState& exceptionState)
 {
     send(data, 0.0, exceptionState);
 }
@@ -236,4 +243,4 @@ void MIDIOutput::trace(Visitor* visitor)
     MIDIPort::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

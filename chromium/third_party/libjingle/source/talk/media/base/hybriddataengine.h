@@ -31,10 +31,10 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/scoped_ptr.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/base/mediaengine.h"
+#include "webrtc/base/scoped_ptr.h"
 
 namespace cricket {
 
@@ -66,8 +66,8 @@ class HybridDataEngine : public DataEngineInterface {
   virtual const std::vector<DataCodec>& data_codecs() { return codecs_; }
 
  private:
-  talk_base::scoped_ptr<DataEngineInterface> first_;
-  talk_base::scoped_ptr<DataEngineInterface> second_;
+  rtc::scoped_ptr<DataEngineInterface> first_;
+  rtc::scoped_ptr<DataEngineInterface> second_;
   std::vector<DataCodec> codecs_;
 };
 

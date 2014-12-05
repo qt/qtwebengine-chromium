@@ -29,9 +29,8 @@
 #include "modules/webaudio/AudioNode.h"
 #include "modules/webaudio/AudioSummingJunction.h"
 #include "wtf/HashSet.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioNode;
 class AudioNodeOutput;
@@ -40,26 +39,26 @@ class AudioNodeOutput;
 // In the case of multiple connections, the input will act as a unity-gain summing junction, mixing all the outputs.
 // The number of channels of the input's bus is the maximum of the number of channels of all its connections.
 
-class AudioNodeInput FINAL : public AudioSummingJunction {
+class AudioNodeInput final : public AudioSummingJunction {
 public:
-    explicit AudioNodeInput(AudioNode*);
+    static AudioNodeInput* create(AudioNode&);
 
     // AudioSummingJunction
-    virtual bool canUpdateState() OVERRIDE { return !node()->isMarkedForDeletion(); }
-    virtual void didUpdate() OVERRIDE;
+    virtual void trace(Visitor*) override;
+    virtual void didUpdate() override;
 
     // Can be called from any thread.
-    AudioNode* node() const { return m_node; }
+    AudioNode& node() const { return *m_node; }
 
     // Must be called with the context's graph lock.
-    void connect(AudioNodeOutput*);
-    void disconnect(AudioNodeOutput*);
+    void connect(AudioNodeOutput&);
+    void disconnect(AudioNodeOutput&);
 
     // disable() will take the output out of the active connections list and set aside in a disabled list.
     // enable() will put the output back into the active connections list.
     // Must be called with the context's graph lock.
-    void enable(AudioNodeOutput*);
-    void disable(AudioNodeOutput*);
+    void enable(AudioNodeOutput&);
+    void disable(AudioNodeOutput&);
 
     // pull() processes all of the AudioNodes connected to us.
     // In the case of multiple connections it sums the result into an internal summing bus.
@@ -80,11 +79,16 @@ public:
     unsigned numberOfChannels() const;
 
 private:
-    AudioNode* m_node;
+    explicit AudioNodeInput(AudioNode&);
+
+    Member<AudioNode> m_node;
 
     // m_disabledOutputs contains the AudioNodeOutputs which are disabled (will not be processed) by the audio graph rendering.
     // But, from JavaScript's perspective, these outputs are still connected to us.
     // Generally, these represent disabled connections from "notes" which have finished playing but are not yet garbage collected.
+    // Oilpan: Since items are added to the hash set by the audio thread (not registered to Oilpan),
+    // we cannot use a HeapHashSet.
+    GC_PLUGIN_IGNORE("http://crbug.com/404527")
     HashSet<AudioNodeOutput*> m_disabledOutputs;
 
     // Called from context's audio thread.
@@ -94,6 +98,6 @@ private:
     RefPtr<AudioBus> m_internalSummingBus;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioNodeInput_h

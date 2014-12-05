@@ -28,7 +28,7 @@
 #include "core/HTMLNames.h"
 #include "core/rendering/RenderListItem.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -40,7 +40,6 @@ inline HTMLOListElement::HTMLOListElement(Document& document)
     , m_isReversed(false)
     , m_shouldRecalculateItemCount(false)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLOListElement)

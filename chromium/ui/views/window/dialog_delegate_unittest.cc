@@ -24,34 +24,32 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
         accepted_(false),
         closeable_(false),
         last_pressed_button_(NULL) {}
-  virtual ~TestDialog() {}
+  ~TestDialog() override {}
 
   // DialogDelegateView overrides:
-  virtual bool Cancel() OVERRIDE {
+  bool Cancel() override {
     canceled_ = true;
     return closeable_;
   }
-  virtual bool Accept() OVERRIDE {
+  bool Accept() override {
     accepted_ = true;
     return closeable_;
   }
 
   // DialogDelegateView overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
-    return gfx::Size(200, 200);
-  }
-  virtual base::string16 GetWindowTitle() const OVERRIDE { return title_; }
-  virtual bool UseNewStyleForThisDialog() const OVERRIDE { return true; }
+  gfx::Size GetPreferredSize() const override { return gfx::Size(200, 200); }
+  base::string16 GetWindowTitle() const override { return title_; }
+  bool UseNewStyleForThisDialog() const override { return true; }
 
   // ButtonListener override:
-  virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE {
+  void ButtonPressed(Button* sender, const ui::Event& event) override {
     last_pressed_button_ = sender;
   }
 
   Button* last_pressed_button() const { return last_pressed_button_; }
 
   void PressEnterAndCheckStates(Button* button) {
-    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0, false);
+    ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, ui::EF_NONE);
     GetFocusManager()->OnKeyEvent(key_event);
     const DialogClientView* client_view = GetDialogClientView();
     EXPECT_EQ(canceled_, client_view->cancel_button()->is_default());
@@ -92,15 +90,15 @@ class TestDialog : public DialogDelegateView, public ButtonListener {
 class DialogTest : public ViewsTestBase {
  public:
   DialogTest() : dialog_(NULL) {}
-  virtual ~DialogTest() {}
+  ~DialogTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ViewsTestBase::SetUp();
     dialog_ = new TestDialog();
     DialogDelegate::CreateDialogWidget(dialog_, GetContext(), NULL)->Show();
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     dialog_->TearDown();
     ViewsTestBase::TearDown();
   }
@@ -158,10 +156,12 @@ TEST_F(DialogTest, AcceptAndCancel) {
   LabelButton* cancel_button = client_view->cancel_button();
 
   // Check that return/escape accelerators accept/cancel dialogs.
-  const ui::KeyEvent return_key(ui::ET_KEY_PRESSED, ui::VKEY_RETURN, 0, false);
+  const ui::KeyEvent return_key(
+      ui::ET_KEY_PRESSED, ui::VKEY_RETURN, ui::EF_NONE);
   dialog()->GetFocusManager()->OnKeyEvent(return_key);
   dialog()->CheckAndResetStates(false, true, NULL);
-  const ui::KeyEvent escape_key(ui::ET_KEY_PRESSED, ui::VKEY_ESCAPE, 0, false);
+  const ui::KeyEvent escape_key(
+      ui::ET_KEY_PRESSED, ui::VKEY_ESCAPE, ui::EF_NONE);
   dialog()->GetFocusManager()->OnKeyEvent(escape_key);
   dialog()->CheckAndResetStates(true, false, NULL);
 
@@ -201,7 +201,7 @@ TEST_F(DialogTest, HitTest) {
     { 1000,        HTNOWHERE },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     gfx::Point point(cases[i].point, cases[i].point);
     EXPECT_EQ(cases[i].hit, frame->NonClientHitTest(point))
         << " with border: " << border << ", at point " << cases[i].point;

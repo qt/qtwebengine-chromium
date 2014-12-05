@@ -9,10 +9,10 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "base/time/time.h"
+#include "storage/browser/fileapi/timed_task_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/timed_task_helper.h"
 
-using fileapi::TimedTaskHelper;
+using storage::TimedTaskHelper;
 
 namespace content {
 

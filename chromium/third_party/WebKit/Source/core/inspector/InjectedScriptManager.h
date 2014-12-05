@@ -30,25 +30,33 @@
 #ifndef InjectedScriptManager_h
 #define InjectedScriptManager_h
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/text/WTFString.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class InjectedScript;
 class InjectedScriptHost;
 class ScriptValue;
 
-class InjectedScriptManager {
-    WTF_MAKE_NONCOPYABLE(InjectedScriptManager); WTF_MAKE_FAST_ALLOCATED;
+class InjectedScriptManager : public NoBaseWillBeGarbageCollectedFinalized<InjectedScriptManager> {
+    WTF_MAKE_NONCOPYABLE(InjectedScriptManager);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<InjectedScriptManager> createForPage();
-    static PassOwnPtr<InjectedScriptManager> createForWorker();
+    struct CallbackData {
+        ScopedPersistent<v8::Object> handle;
+        RefPtrWillBePersistent<InjectedScriptHost> host;
+        InjectedScriptManager* injectedScriptManager;
+    };
+
+    static PassOwnPtrWillBeRawPtr<InjectedScriptManager> createForPage();
+    static PassOwnPtrWillBeRawPtr<InjectedScriptManager> createForWorker();
     ~InjectedScriptManager();
+    void trace(Visitor*);
 
     void disconnect();
 
@@ -65,8 +73,10 @@ public:
     typedef bool (*InspectedStateAccessCheck)(ScriptState*);
     InspectedStateAccessCheck inspectedStateAccessCheck() const { return m_inspectedStateAccessCheck; }
 
-    struct CallbackData;
     static void setWeakCallback(const v8::WeakCallbackData<v8::Object, CallbackData>&);
+    CallbackData* createCallbackData(InjectedScriptManager*);
+    void removeCallbackData(CallbackData*);
+
 private:
     explicit InjectedScriptManager(InspectedStateAccessCheck);
 
@@ -79,12 +89,13 @@ private:
     int m_nextInjectedScriptId;
     typedef HashMap<int, InjectedScript> IdToInjectedScriptMap;
     IdToInjectedScriptMap m_idToInjectedScript;
-    RefPtr<InjectedScriptHost> m_injectedScriptHost;
+    RefPtrWillBeMember<InjectedScriptHost> m_injectedScriptHost;
     InspectedStateAccessCheck m_inspectedStateAccessCheck;
     typedef HashMap<RefPtr<ScriptState>, int> ScriptStateToId;
     ScriptStateToId m_scriptStateToId;
+    HashSet<OwnPtr<CallbackData> > m_callbackDataSet;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InjectedScriptManager_h)

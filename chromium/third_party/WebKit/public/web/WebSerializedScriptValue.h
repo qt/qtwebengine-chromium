@@ -34,14 +34,14 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebPrivatePtr.h"
 
-namespace WebCore { class SerializedScriptValue; }
-
 namespace v8 {
 class Value;
 template <class T> class Handle;
 }
 
 namespace blink {
+
+class SerializedScriptValue;
 class WebString;
 
 // FIXME: Should this class be in platform?
@@ -76,13 +76,13 @@ public:
     BLINK_EXPORT v8::Handle<v8::Value> deserialize();
 
 #if BLINK_IMPLEMENTATION
-    WebSerializedScriptValue(const WTF::PassRefPtr<WebCore::SerializedScriptValue>&);
-    WebSerializedScriptValue& operator=(const WTF::PassRefPtr<WebCore::SerializedScriptValue>&);
-    operator WTF::PassRefPtr<WebCore::SerializedScriptValue>() const;
+    WebSerializedScriptValue(const WTF::PassRefPtr<SerializedScriptValue>&);
+    WebSerializedScriptValue& operator=(const WTF::PassRefPtr<SerializedScriptValue>&);
+    operator WTF::PassRefPtr<SerializedScriptValue>() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::SerializedScriptValue> m_private;
+    WebPrivatePtr<SerializedScriptValue> m_private;
 };
 
 } // namespace blink

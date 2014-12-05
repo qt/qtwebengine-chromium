@@ -30,15 +30,12 @@
 #include "core/rendering/style/StyleTransformData.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleRareNonInheritedData::StyleRareNonInheritedData()
     : opacity(RenderStyle::initialOpacity())
-    , m_aspectRatioDenominator(RenderStyle::initialAspectRatioDenominator())
-    , m_aspectRatioNumerator(RenderStyle::initialAspectRatioNumerator())
     , m_perspective(RenderStyle::initialPerspective())
-    , m_perspectiveOriginX(RenderStyle::initialPerspectiveOriginX())
-    , m_perspectiveOriginY(RenderStyle::initialPerspectiveOriginY())
+    , m_perspectiveOrigin(RenderStyle::initialPerspectiveOrigin())
     , lineClamp(RenderStyle::initialLineClamp())
     , m_draggableRegionMode(DraggableRegionNone)
     , m_mask(MaskFillLayer, true)
@@ -66,12 +63,13 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_alignSelf(RenderStyle::initialAlignSelf())
     , m_alignSelfOverflowAlignment(RenderStyle::initialAlignSelfOverflowAlignment())
     , m_justifyContent(RenderStyle::initialJustifyContent())
+    , m_justifyContentDistribution(RenderStyle::initialJustifyContentDistribution())
+    , m_justifyContentOverflowAlignment(RenderStyle::initialJustifyContentOverflowAlignment())
     , userDrag(RenderStyle::initialUserDrag())
     , textOverflow(RenderStyle::initialTextOverflow())
     , marginBeforeCollapse(MCOLLAPSE)
     , marginAfterCollapse(MCOLLAPSE)
     , m_appearance(RenderStyle::initialAppearance())
-    , m_borderFit(RenderStyle::initialBorderFit())
     , m_textCombine(RenderStyle::initialTextCombine())
     , m_textDecorationStyle(RenderStyle::initialTextDecorationStyle())
     , m_wrapFlow(RenderStyle::initialWrapFlow())
@@ -82,15 +80,19 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
     , m_runningOpacityAnimationOnCompositor(false)
     , m_runningTransformAnimationOnCompositor(false)
     , m_runningFilterAnimationOnCompositor(false)
-    , m_hasAspectRatio(false)
     , m_effectiveBlendMode(RenderStyle::initialBlendMode())
     , m_touchAction(RenderStyle::initialTouchAction())
     , m_objectFit(RenderStyle::initialObjectFit())
     , m_isolation(RenderStyle::initialIsolation())
+    , m_justifyItems(RenderStyle::initialJustifyItems())
+    , m_justifyItemsOverflowAlignment(RenderStyle::initialJustifyItemsOverflowAlignment())
+    , m_justifyItemsPositionType(RenderStyle::initialJustifyItemsPositionType())
     , m_justifySelf(RenderStyle::initialJustifySelf())
     , m_justifySelfOverflowAlignment(RenderStyle::initialJustifySelfOverflowAlignment())
     , m_scrollBehavior(RenderStyle::initialScrollBehavior())
     , m_requiresAcceleratedCompositingForExternalReasons(false)
+    , m_hasInlineTransform(false)
+    , m_resize(RenderStyle::initialResize())
 {
     m_maskBoxImage.setMaskDefaults();
 }
@@ -98,16 +100,12 @@ StyleRareNonInheritedData::StyleRareNonInheritedData()
 StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInheritedData& o)
     : RefCounted<StyleRareNonInheritedData>()
     , opacity(o.opacity)
-    , m_aspectRatioDenominator(o.m_aspectRatioDenominator)
-    , m_aspectRatioNumerator(o.m_aspectRatioNumerator)
     , m_perspective(o.m_perspective)
-    , m_perspectiveOriginX(o.m_perspectiveOriginX)
-    , m_perspectiveOriginY(o.m_perspectiveOriginY)
+    , m_perspectiveOrigin(o.m_perspectiveOrigin)
     , lineClamp(o.lineClamp)
     , m_draggableRegionMode(o.m_draggableRegionMode)
     , m_deprecatedFlexibleBox(o.m_deprecatedFlexibleBox)
     , m_flexibleBox(o.m_flexibleBox)
-    , m_marquee(o.m_marquee)
     , m_multiCol(o.m_multiCol)
     , m_transform(o.m_transform)
     , m_willChange(o.m_willChange)
@@ -146,12 +144,13 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_alignSelf(o.m_alignSelf)
     , m_alignSelfOverflowAlignment(o.m_alignSelfOverflowAlignment)
     , m_justifyContent(o.m_justifyContent)
+    , m_justifyContentDistribution(o.m_justifyContentDistribution)
+    , m_justifyContentOverflowAlignment(o.m_justifyContentOverflowAlignment)
     , userDrag(o.userDrag)
     , textOverflow(o.textOverflow)
     , marginBeforeCollapse(o.marginBeforeCollapse)
     , marginAfterCollapse(o.marginAfterCollapse)
     , m_appearance(o.m_appearance)
-    , m_borderFit(o.m_borderFit)
     , m_textCombine(o.m_textCombine)
     , m_textDecorationStyle(o.m_textDecorationStyle)
     , m_wrapFlow(o.m_wrapFlow)
@@ -162,15 +161,19 @@ StyleRareNonInheritedData::StyleRareNonInheritedData(const StyleRareNonInherited
     , m_runningOpacityAnimationOnCompositor(o.m_runningOpacityAnimationOnCompositor)
     , m_runningTransformAnimationOnCompositor(o.m_runningTransformAnimationOnCompositor)
     , m_runningFilterAnimationOnCompositor(o.m_runningFilterAnimationOnCompositor)
-    , m_hasAspectRatio(o.m_hasAspectRatio)
     , m_effectiveBlendMode(o.m_effectiveBlendMode)
     , m_touchAction(o.m_touchAction)
     , m_objectFit(o.m_objectFit)
     , m_isolation(o.m_isolation)
+    , m_justifyItems(o.m_justifyItems)
+    , m_justifyItemsOverflowAlignment(o.m_justifyItemsOverflowAlignment)
+    , m_justifyItemsPositionType(o.m_justifyItemsPositionType)
     , m_justifySelf(o.m_justifySelf)
     , m_justifySelfOverflowAlignment(o.m_justifySelfOverflowAlignment)
     , m_scrollBehavior(o.m_scrollBehavior)
     , m_requiresAcceleratedCompositingForExternalReasons(o.m_requiresAcceleratedCompositingForExternalReasons)
+    , m_hasInlineTransform(o.m_hasInlineTransform)
+    , m_resize(o.m_resize)
 {
 }
 
@@ -184,16 +187,12 @@ StyleRareNonInheritedData::~StyleRareNonInheritedData()
 bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) const
 {
     return opacity == o.opacity
-        && m_aspectRatioDenominator == o.m_aspectRatioDenominator
-        && m_aspectRatioNumerator == o.m_aspectRatioNumerator
         && m_perspective == o.m_perspective
-        && m_perspectiveOriginX == o.m_perspectiveOriginX
-        && m_perspectiveOriginY == o.m_perspectiveOriginY
+        && m_perspectiveOrigin == o.m_perspectiveOrigin
         && lineClamp == o.lineClamp
         && m_draggableRegionMode == o.m_draggableRegionMode
         && m_deprecatedFlexibleBox == o.m_deprecatedFlexibleBox
         && m_flexibleBox == o.m_flexibleBox
-        && m_marquee == o.m_marquee
         && m_multiCol == o.m_multiCol
         && m_transform == o.m_transform
         && m_willChange == o.m_willChange
@@ -209,10 +208,10 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_mask == o.m_mask
         && m_maskBoxImage == o.m_maskBoxImage
         && m_pageSize == o.m_pageSize
-        && m_shapeOutside == o.m_shapeOutside
+        && shapeOutsideDataEquivalent(o)
         && m_shapeMargin == o.m_shapeMargin
         && m_shapeImageThreshold == o.m_shapeImageThreshold
-        && m_clipPath == o.m_clipPath
+        && clipPathDataEquivalent(o)
         && m_textDecorationColor == o.m_textDecorationColor
         && m_visitedLinkTextDecorationColor == o.m_visitedLinkTextDecorationColor
         && m_visitedLinkBackgroundColor == o.m_visitedLinkBackgroundColor
@@ -233,12 +232,13 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_alignSelf == o.m_alignSelf
         && m_alignSelfOverflowAlignment == o.m_alignSelfOverflowAlignment
         && m_justifyContent == o.m_justifyContent
+        && m_justifyContentDistribution == o.m_justifyContentDistribution
+        && m_justifyContentOverflowAlignment == o.m_justifyContentOverflowAlignment
         && userDrag == o.userDrag
         && textOverflow == o.textOverflow
         && marginBeforeCollapse == o.marginBeforeCollapse
         && marginAfterCollapse == o.marginAfterCollapse
         && m_appearance == o.m_appearance
-        && m_borderFit == o.m_borderFit
         && m_textCombine == o.m_textCombine
         && m_textDecorationStyle == o.m_textDecorationStyle
         && m_wrapFlow == o.m_wrapFlow
@@ -247,14 +247,18 @@ bool StyleRareNonInheritedData::operator==(const StyleRareNonInheritedData& o) c
         && m_hasCurrentTransformAnimation == o.m_hasCurrentTransformAnimation
         && m_hasCurrentFilterAnimation == o.m_hasCurrentFilterAnimation
         && m_effectiveBlendMode == o.m_effectiveBlendMode
-        && m_hasAspectRatio == o.m_hasAspectRatio
         && m_touchAction == o.m_touchAction
         && m_objectFit == o.m_objectFit
         && m_isolation == o.m_isolation
+        && m_justifyItems == o.m_justifyItems
+        && m_justifyItemsOverflowAlignment == o.m_justifyItemsOverflowAlignment
+        && m_justifyItemsPositionType == o.m_justifyItemsPositionType
         && m_justifySelf == o.m_justifySelf
         && m_justifySelfOverflowAlignment == o.m_justifySelfOverflowAlignment
         && m_scrollBehavior == o.m_scrollBehavior
-        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons;
+        && m_requiresAcceleratedCompositingForExternalReasons == o.m_requiresAcceleratedCompositingForExternalReasons
+        && m_hasInlineTransform == o.m_hasInlineTransform
+        && m_resize == o.m_resize;
 }
 
 bool StyleRareNonInheritedData::contentDataEquivalent(const StyleRareNonInheritedData& o) const
@@ -308,4 +312,14 @@ bool StyleRareNonInheritedData::hasFilters() const
     return m_filter.get() && !m_filter->m_operations.isEmpty();
 }
 
-} // namespace WebCore
+bool StyleRareNonInheritedData::shapeOutsideDataEquivalent(const StyleRareNonInheritedData& o) const
+{
+    return dataEquivalent(m_shapeOutside, o.m_shapeOutside);
+}
+
+bool StyleRareNonInheritedData::clipPathDataEquivalent(const StyleRareNonInheritedData& o) const
+{
+    return dataEquivalent(m_clipPath, o.m_clipPath);
+}
+
+} // namespace blink

@@ -5,21 +5,21 @@
 #ifndef FetchManager_h
 #define FetchManager_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
+class FetchRequestData;
 class ScriptState;
-class ResourceRequest;
 
 class FetchManager {
 public:
     FetchManager(ExecutionContext*);
     ~FetchManager();
-    ScriptPromise fetch(ScriptState*, PassOwnPtr<ResourceRequest>);
+    ScriptPromise fetch(ScriptState*, const FetchRequestData*);
 
 private:
     class Loader;
@@ -31,6 +31,6 @@ private:
     HashSet<OwnPtr<Loader> > m_loaders;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FetchManager_h

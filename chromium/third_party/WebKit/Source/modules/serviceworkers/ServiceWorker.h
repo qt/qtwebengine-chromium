@@ -31,9 +31,8 @@
 #ifndef ServiceWorker_h
 #define ServiceWorker_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptWrappable.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/workers/AbstractWorker.h"
 #include "public/platform/WebServiceWorker.h"
 #include "public/platform/WebServiceWorkerProxy.h"
@@ -42,37 +41,33 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptState;
-class ScriptPromiseResolverWithContext;
+class ScriptPromiseResolver;
 
-class ServiceWorker
-    : public AbstractWorker
-    , public ScriptWrappable
-    , public blink::WebServiceWorkerProxy {
+class ServiceWorker final : public AbstractWorker, public WebServiceWorkerProxy {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~ServiceWorker() { }
-
     // For CallbackPromiseAdapter
-    typedef blink::WebServiceWorker WebType;
-    static PassRefPtr<ServiceWorker> from(ScriptPromiseResolverWithContext*, WebType* worker);
+    typedef WebServiceWorker WebType;
+    static PassRefPtrWillBeRawPtr<ServiceWorker> take(ScriptPromiseResolver*, WebType* worker);
 
-    static PassRefPtr<ServiceWorker> from(ExecutionContext*, WebType*);
+    static PassRefPtrWillBeRawPtr<ServiceWorker> from(ExecutionContext*, WebType*);
+    static void dispose(WebType*);
 
-    void postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
+    void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray*, ExceptionState&);
+    void terminate(ExceptionState&);
 
-    String scope() const;
-    String url() const;
+    String scriptURL() const;
     const AtomicString& state() const;
     DEFINE_ATTRIBUTE_EVENT_LISTENER(statechange);
 
     // WebServiceWorkerProxy overrides.
-    virtual bool isReady() OVERRIDE;
-    virtual void dispatchStateChangeEvent() OVERRIDE;
+    virtual bool isReady() override;
+    virtual void dispatchStateChangeEvent() override;
 
     // AbstractWorker overrides.
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
 private:
     class ThenFunction;
@@ -84,20 +79,20 @@ private:
         ContextStopped
     };
 
-    static PassRefPtr<ServiceWorker> create(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
-    ServiceWorker(ExecutionContext*, PassOwnPtr<blink::WebServiceWorker>);
+    static PassRefPtrWillBeRawPtr<ServiceWorker> getOrCreate(ExecutionContext*, WebType*);
+    ServiceWorker(ExecutionContext*, PassOwnPtr<WebServiceWorker>);
     void setProxyState(ProxyState);
     void onPromiseResolved();
-    void waitOnPromise(ScriptPromise);
+    void waitOnPromise(ScriptPromiseResolver*);
 
     // ActiveDOMObject overrides.
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void stop() override;
 
-    OwnPtr<blink::WebServiceWorker> m_outerWorker;
+    OwnPtr<WebServiceWorker> m_outerWorker;
     ProxyState m_proxyState;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ServiceWorker_h

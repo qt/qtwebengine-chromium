@@ -4,9 +4,8 @@
 
 #include "net/test/cert_test_util.h"
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
-#include "base/path_service.h"
+#include "base/files/file_util.h"
 #include "net/cert/ev_root_ca_metadata.h"
 #include "net/cert/x509_certificate.h"
 #include "testing/gtest/include/gtest/gtest.h"

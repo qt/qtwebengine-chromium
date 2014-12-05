@@ -28,10 +28,10 @@
 #ifndef TALK_XMPP_SASLCOOKIEMECHANISM_H_
 #define TALK_XMPP_SASLCOOKIEMECHANISM_H_
 
-#include "talk/xmllite/qname.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/saslmechanism.h"
-#include "talk/xmpp/constants.h"
+#include "webrtc/libjingle/xmllite/qname.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/saslmechanism.h"
 
 namespace buzz {
 

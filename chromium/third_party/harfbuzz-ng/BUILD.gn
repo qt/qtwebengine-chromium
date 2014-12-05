@@ -9,7 +9,10 @@
 #
 # ChromeOS uses an up-to-date system one that we have control over, so we
 # don't want to bloat the binary more by including another copy.
-use_system_harfbuzz = is_chromeos
+
+declare_args() {
+  use_system_harfbuzz = is_chromeos
+}
 
 if (use_system_harfbuzz) {
   import("//build/config/linux/pkg_config.gni")
@@ -17,7 +20,7 @@ if (use_system_harfbuzz) {
     packages = [ "harfbuzz" ]
   }
   group("harfbuzz-ng") {
-    direct_dependent_configs = [ ":harfbuzz_pkgconfig" ]
+    public_configs = [ ":harfbuzz_pkgconfig" ]
   }
 
 } else {
@@ -126,7 +129,7 @@ if (use_system_harfbuzz) {
 
     configs -= [ "//build/config/compiler:chromium_code" ]
     configs += [ "//build/config/compiler:no_chromium_code" ]
-    direct_dependent_configs = [ ":harfbuzz-ng_config" ]
+    public_configs = [ ":harfbuzz-ng_config" ]
 
     deps = [
       "//third_party/icu:icuuc",

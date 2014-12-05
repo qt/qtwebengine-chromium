@@ -27,10 +27,11 @@
 #include "core/dom/DocumentParser.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/DocumentParserClient.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 DocumentParser::DocumentParser(Document* document)
     : m_state(ParsingState)
@@ -53,6 +54,9 @@ DocumentParser::~DocumentParser()
 void DocumentParser::trace(Visitor* visitor)
 {
     visitor->trace(m_document);
+#if ENABLE(OILPAN)
+    visitor->trace(m_clients);
+#endif
 }
 
 void DocumentParser::setDecoder(PassOwnPtr<TextResourceDecoder>)
@@ -62,12 +66,7 @@ void DocumentParser::setDecoder(PassOwnPtr<TextResourceDecoder>)
 
 TextResourceDecoder* DocumentParser::decoder()
 {
-    return 0;
-}
-
-void DocumentParser::startParsing()
-{
-    m_state = ParsingState;
+    return nullptr;
 }
 
 void DocumentParser::prepareToStopParsing()
@@ -79,6 +78,17 @@ void DocumentParser::prepareToStopParsing()
 void DocumentParser::stopParsing()
 {
     m_state = StoppedState;
+
+    // Clients may be removed while in the loop. Make a snapshot for iteration.
+    WillBeHeapVector<RawPtrWillBeMember<DocumentParserClient>> clientsSnapshot;
+    copyToVector(m_clients, clientsSnapshot);
+
+    for (DocumentParserClient* client : clientsSnapshot) {
+        if (!m_clients.contains(client))
+            continue;
+
+        client->notifyParserStopped();
+    }
 }
 
 void DocumentParser::detach()
@@ -93,6 +103,16 @@ void DocumentParser::suspendScheduledTasks()
 
 void DocumentParser::resumeScheduledTasks()
 {
+}
+
+void DocumentParser::addClient(DocumentParserClient* client)
+{
+    m_clients.add(client);
+}
+
+void DocumentParser::removeClient(DocumentParserClient* client)
+{
+    m_clients.remove(client);
 }
 
 };

@@ -26,15 +26,14 @@
 #include "config.h"
 #include "modules/indexeddb/IDBKeyPath.h"
 
-#include "bindings/v8/IDBBindingUtilities.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/modules/v8/IDBBindingUtilities.h"
 #include "modules/indexeddb/IDBKey.h"
 #include "wtf/Vector.h"
 
 #include <gtest/gtest.h>
 
-using namespace WebCore;
-
+namespace blink {
 namespace {
 
 void checkKeyPath(const String& keyPath, const Vector<String>& expected, int parserError)
@@ -126,3 +125,4 @@ TEST(IDBKeyPathTest, InvalidKeyPath5)
 }
 
 } // namespace
+} // namespace blink

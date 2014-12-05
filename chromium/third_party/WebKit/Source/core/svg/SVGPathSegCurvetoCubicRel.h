@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegCurvetoCubic.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegCurvetoCubicRel FINAL : public SVGPathSegCurvetoCubic {
+class SVGPathSegCurvetoCubicRel final : public SVGPathSegCurvetoCubic {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegCurvetoCubicRel> create(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1, float x2, float y2)
+    static PassRefPtr<SVGPathSegCurvetoCubicRel> create(SVGPathElement* element, float x, float y, float x1, float y1, float x2, float y2)
     {
-        return adoptRef(new SVGPathSegCurvetoCubicRel(element, role, x, y, x1, y1, x2, y2));
+        return adoptRef(new SVGPathSegCurvetoCubicRel(element, x, y, x1, y1, x2, y2));
     }
 
 private:
-    SVGPathSegCurvetoCubicRel(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1, float x2, float y2)
-        : SVGPathSegCurvetoCubic(element, role, x, y, x1, y1, x2, y2)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegCurvetoCubicRel(SVGPathElement* element, float x, float y, float x1, float y1, float x2, float y2)
+        : SVGPathSegCurvetoCubic(element, x, y, x1, y1, x2, y2) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_CURVETO_CUBIC_REL; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "c"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_CURVETO_CUBIC_REL; }
+    virtual String pathSegTypeAsLetter() const override { return "c"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegCurvetoCubicRel_h

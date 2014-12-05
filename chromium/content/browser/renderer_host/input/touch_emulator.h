@@ -10,6 +10,7 @@
 #include "content/common/input/input_event_ack_state.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
+#include "ui/gfx/size_f.h"
 
 namespace content {
 
@@ -17,29 +18,38 @@ namespace content {
 class CONTENT_EXPORT TouchEmulator : public ui::GestureProviderClient {
  public:
   explicit TouchEmulator(TouchEmulatorClient* client);
-  virtual ~TouchEmulator();
+  ~TouchEmulator() override;
 
-  void Enable(bool allow_pinch);
+  void Enable();
   void Disable();
 
-  // Returns |true| if the event was consumed.
+  // Note that TouchEmulator should always listen to touch events and their acks
+  // (even in disabled state) to track native stream presence.
+  bool enabled() const { return enabled_; }
+
+  // Returns |true| if the event was consumed. Consumed event should not
+  // propagate any further.
   // TODO(dgozman): maybe pass latency info together with events.
   bool HandleMouseEvent(const blink::WebMouseEvent& event);
   bool HandleMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   bool HandleKeyboardEvent(const blink::WebKeyboardEvent& event);
+  bool HandleTouchEvent(const blink::WebTouchEvent& event);
 
   // Returns |true| if the event ack was consumed. Consumed ack should not
   // propagate any further.
-  bool HandleTouchEventAck(InputEventAckState ack_result);
+  bool HandleTouchEventAck(const blink::WebTouchEvent& event,
+                           InputEventAckState ack_result);
 
   // Cancel any touches, for example, when focus is lost.
   void CancelTouch();
 
  private:
   // ui::GestureProviderClient implementation.
-  virtual void OnGestureEvent(const ui::GestureEventData& gesture) OVERRIDE;
+  void OnGestureEvent(const ui::GestureEventData& gesture) override;
 
-  void InitCursorFromResource(WebCursor* cursor, float scale, int resource_id);
+  // Returns cursor size in DIP.
+  gfx::SizeF InitCursorFromResource(
+      WebCursor* cursor, float scale, int resource_id);
   void ResetState();
   void UpdateCursor();
   bool UpdateShiftPressed(bool shift_pressed);
@@ -56,19 +66,21 @@ class CONTENT_EXPORT TouchEmulator : public ui::GestureProviderClient {
   void PinchEnd(const blink::WebGestureEvent& event);
   void ScrollEnd(const blink::WebGestureEvent& event);
 
+  void ForwardTouchEventToClient();
+
   TouchEmulatorClient* const client_;
   ui::FilteredGestureProvider gesture_provider_;
 
   // Disabled emulator does only process touch acks left from previous
   // emulation. It does not intercept any events.
   bool enabled_;
-  bool allow_pinch_;
 
   // While emulation is on, default cursor is touch. Pressing shift changes
   // cursor to the pinch one.
   WebCursor pointer_cursor_;
   WebCursor touch_cursor_;
   WebCursor pinch_cursor_;
+  gfx::SizeF cursor_size_;
 
   // These are used to drop extra mouse move events coming too quickly, so
   // we don't handle too much touches in gesture provider.
@@ -79,7 +91,8 @@ class CONTENT_EXPORT TouchEmulator : public ui::GestureProviderClient {
   bool shift_pressed_;
 
   blink::WebTouchEvent touch_event_;
-  bool touch_active_;
+  int emulated_stream_active_sequence_count_;
+  int native_stream_active_sequence_count_;
 
   // Whether we should suppress next fling cancel. This may happen when we
   // did not send fling start in pinch mode.

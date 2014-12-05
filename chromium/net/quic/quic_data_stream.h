@@ -54,16 +54,16 @@ class NET_EXPORT_PRIVATE QuicDataStream : public ReliableQuicStream {
 
   QuicDataStream(QuicStreamId id, QuicSession* session);
 
-  virtual ~QuicDataStream();
+  ~QuicDataStream() override;
 
   // ReliableQuicStream implementation
-  virtual void OnClose() OVERRIDE;
-  virtual uint32 ProcessRawData(const char* data, uint32 data_len) OVERRIDE;
+  void OnClose() override;
+  uint32 ProcessRawData(const char* data, uint32 data_len) override;
   // By default, this is the same as priority(), however it allows streams
   // to temporarily alter effective priority.   For example if a SPDY stream has
   // compressed but not written headers it can write the headers with a higher
   // priority.
-  virtual QuicPriority EffectivePriority() const OVERRIDE;
+  QuicPriority EffectivePriority() const override;
 
   // Overridden by subclasses to process data.  The headers will be delivered
   // via OnStreamHeaders, so only data will be delivered through this method.

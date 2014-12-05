@@ -13,6 +13,7 @@
 #include "base/base64.h"
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -31,6 +32,7 @@
 #include "net/http/http_status_code.h"
 #include "net/http/http_stream_parser.h"
 #include "net/socket/client_socket_handle.h"
+#include "net/socket/websocket_transport_client_socket_pool.h"
 #include "net/websockets/websocket_basic_stream.h"
 #include "net/websockets/websocket_deflate_predictor.h"
 #include "net/websockets/websocket_deflate_predictor_impl.h"
@@ -44,6 +46,35 @@
 #include "net/websockets/websocket_stream.h"
 
 namespace net {
+
+namespace {
+
+// TODO(yhirano): Remove these functions once http://crbug.com/399535 is fixed.
+NOINLINE void RunCallbackWithOk(const CompletionCallback& callback,
+                                int result) {
+  DCHECK_EQ(result, OK);
+  callback.Run(OK);
+}
+
+NOINLINE void RunCallbackWithInvalidResponseCausedByRedirect(
+    const CompletionCallback& callback,
+    int result) {
+  DCHECK_EQ(result, ERR_INVALID_RESPONSE);
+  callback.Run(ERR_INVALID_RESPONSE);
+}
+
+NOINLINE void RunCallbackWithInvalidResponse(
+    const CompletionCallback& callback,
+    int result) {
+  DCHECK_EQ(result, ERR_INVALID_RESPONSE);
+  callback.Run(ERR_INVALID_RESPONSE);
+}
+
+NOINLINE void RunCallback(const CompletionCallback& callback, int result) {
+  callback.Run(result);
+}
+
+}  // namespace
 
 // TODO(ricea): If more extensions are added, replace this with a more general
 // mechanism.
@@ -96,7 +127,7 @@ void AddVectorHeaderIfNonEmpty(const char* name,
 GetHeaderResult GetSingleHeaderValue(const HttpResponseHeaders* headers,
                                      const base::StringPiece& name,
                                      std::string* value) {
-  void* state = NULL;
+  void* state = nullptr;
   size_t num_values = 0;
   std::string temp_value;
   while (headers->EnumerateHeader(&state, name, &temp_value)) {
@@ -180,7 +211,7 @@ bool ValidateSubProtocol(
     const std::vector<std::string>& requested_sub_protocols,
     std::string* sub_protocol,
     std::string* failure_message) {
-  void* state = NULL;
+  void* state = nullptr;
   std::string value;
   base::hash_set<std::string> requested_set(requested_sub_protocols.begin(),
                                             requested_sub_protocols.end());
@@ -298,7 +329,7 @@ bool ValidateExtensions(const HttpResponseHeaders* headers,
                         std::string* extensions,
                         std::string* failure_message,
                         WebSocketExtensionParams* params) {
-  void* state = NULL;
+  void* state = nullptr;
   std::string value;
   std::vector<std::string> accepted_extensions;
   // TODO(ricea): If adding support for additional extensions, generalise this
@@ -349,7 +380,7 @@ WebSocketBasicHandshakeStream::WebSocketBasicHandshakeStream(
     std::string* failure_message)
     : state_(connection.release(), using_proxy),
       connect_delegate_(connect_delegate),
-      http_response_info_(NULL),
+      http_response_info_(nullptr),
       requested_sub_protocols_(requested_sub_protocols),
       requested_extensions_(requested_extensions),
       failure_message_(failure_message) {
@@ -429,7 +460,8 @@ int WebSocketBasicHandshakeStream::ReadResponseHeaders(
                  callback));
   if (rv == ERR_IO_PENDING)
     return rv;
-  return ValidateResponse(rv);
+  bool is_redirect = false;
+  return ValidateResponse(rv, &is_redirect);
 }
 
 int WebSocketBasicHandshakeStream::ReadResponseBody(
@@ -498,10 +530,20 @@ void WebSocketBasicHandshakeStream::SetPriority(RequestPriority priority) {
   // gone, then copy whatever has happened there over here.
 }
 
+UploadProgress WebSocketBasicHandshakeStream::GetUploadProgress() const {
+  return UploadProgress();
+}
+
+HttpStream* WebSocketBasicHandshakeStream::RenewStreamForAuth() {
+  // Return null because we don't support renewing the stream.
+  return nullptr;
+}
+
 scoped_ptr<WebSocketStream> WebSocketBasicHandshakeStream::Upgrade() {
   // The HttpStreamParser object has a pointer to our ClientSocketHandle. Make
   // sure it does not touch it again before it is destroyed.
   state_.DeleteParser();
+  WebSocketTransportClientSocketPool::UnlockEndpoint(state_.connection());
   scoped_ptr<WebSocketStream> basic_stream(
       new WebSocketBasicStream(state_.ReleaseConnection(),
                                state_.read_buf(),
@@ -533,34 +575,46 @@ void WebSocketBasicHandshakeStream::SetWebSocketKeyForTesting(
 void WebSocketBasicHandshakeStream::ReadResponseHeadersCallback(
     const CompletionCallback& callback,
     int result) {
-  callback.Run(ValidateResponse(result));
-}
+  bool is_redirect = false;
+  int rv = ValidateResponse(result, &is_redirect);
 
-void WebSocketBasicHandshakeStream::OnFinishOpeningHandshake() {
-  DCHECK(connect_delegate_);
-  DCHECK(http_response_info_);
-  scoped_refptr<HttpResponseHeaders> headers = http_response_info_->headers;
-  // If the headers are too large, HttpStreamParser will just not parse them at
-  // all.
-  if (headers) {
-    scoped_ptr<WebSocketHandshakeResponseInfo> response(
-        new WebSocketHandshakeResponseInfo(url_,
-                                           headers->response_code(),
-                                           headers->GetStatusText(),
-                                           headers,
-                                           http_response_info_->response_time));
-    connect_delegate_->OnFinishOpeningHandshake(response.Pass());
+  // TODO(yhirano): Simplify this statement once http://crbug.com/399535 is
+  // fixed.
+  switch (rv) {
+    case OK:
+      RunCallbackWithOk(callback, rv);
+      break;
+    case ERR_INVALID_RESPONSE:
+      if (is_redirect)
+        RunCallbackWithInvalidResponseCausedByRedirect(callback, rv);
+      else
+        RunCallbackWithInvalidResponse(callback, rv);
+      break;
+    default:
+      RunCallback(callback, rv);
+      break;
   }
 }
 
-int WebSocketBasicHandshakeStream::ValidateResponse(int rv) {
+void WebSocketBasicHandshakeStream::OnFinishOpeningHandshake() {
   DCHECK(http_response_info_);
+  WebSocketDispatchOnFinishOpeningHandshake(connect_delegate_,
+                                            url_,
+                                            http_response_info_->headers,
+                                            http_response_info_->response_time);
+}
+
+int WebSocketBasicHandshakeStream::ValidateResponse(int rv,
+                                                    bool* is_redirect) {
+  DCHECK(http_response_info_);
+  *is_redirect = false;
   // Most net errors happen during connection, so they are not seen by this
   // method. The histogram for error codes is created in
   // Delegate::OnResponseStarted in websocket_stream.cc instead.
   if (rv >= 0) {
     const HttpResponseHeaders* headers = http_response_info_->headers.get();
     const int response_code = headers->response_code();
+    *is_redirect = HttpResponseHeaders::IsRedirectResponseCode(response_code);
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.WebSocket.ResponseCode", response_code);
     switch (response_code) {
       case HTTP_SWITCHING_PROTOCOLS:

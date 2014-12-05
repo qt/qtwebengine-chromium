@@ -5,6 +5,7 @@
 {
   'targets': [
     # Test support files for the 'sync_core' target.
+    # GN version: //sync:test_support_sync_core
     {
       'target_name': 'test_support_sync_core',
       'type': 'static_library',
@@ -38,12 +39,16 @@
         'test/engine/fake_model_worker.h',
         'test/engine/fake_sync_scheduler.cc',
         'test/engine/fake_sync_scheduler.h',
+        'test/engine/injectable_sync_context_proxy.cc',
+        'test/engine/injectable_sync_context_proxy.h',
         'test/engine/mock_connection_manager.cc',
         'test/engine/mock_connection_manager.h',
-        'test/engine/mock_non_blocking_type_processor_core.cc',
-        'test/engine/mock_non_blocking_type_processor_core.h',
-        'test/engine/mock_non_blocking_type_processor.cc',
-        'test/engine/mock_non_blocking_type_processor.h',
+        'test/engine/mock_model_type_sync_proxy.cc',
+        'test/engine/mock_model_type_sync_proxy.h',
+        'test/engine/mock_model_type_sync_worker.cc',
+        'test/engine/mock_model_type_sync_worker.h',
+        'test/engine/mock_nudge_handler.cc',
+        'test/engine/mock_nudge_handler.h',
         'test/engine/mock_update_handler.cc',
         'test/engine/mock_update_handler.h',
         'test/engine/single_type_mock_server.cc',
@@ -53,12 +58,16 @@
         'test/engine/test_id_factory.h',
         'test/engine/test_syncable_utils.cc',
         'test/engine/test_syncable_utils.h',
-        'test/engine/injectable_sync_core_proxy.cc',
-        'test/engine/injectable_sync_core_proxy.h',
         'test/fake_encryptor.cc',
         'test/fake_encryptor.h',
         'test/fake_sync_encryption_handler.cc',
         'test/fake_sync_encryption_handler.h',
+        'test/mock_invalidation.cc',
+        'test/mock_invalidation.h',
+        'test/mock_invalidation_tracker.cc',
+        'test/mock_invalidation_tracker.h',
+        'test/trackable_mock_invalidation.cc',
+        'test/trackable_mock_invalidation.h',
         'test/null_directory_change_delegate.cc',
         'test/null_directory_change_delegate.h',
         'test/null_transaction_observer.cc',
@@ -76,6 +85,7 @@
     },
 
     # Test support files for the python sync test server.
+    # GN version: //sync:test_support_sync_testserver
     {
       'target_name': 'test_support_sync_testserver',
       'type': 'static_library',
@@ -101,6 +111,7 @@
     },
 
     # Test support files for the fake sync server.
+    # GN version: //sync:test_support_sync_fake_server
     {
       'target_name': 'test_support_sync_fake_server',
       'type': 'static_library',
@@ -146,35 +157,8 @@
       ],
     },
 
-    # Test support files for the 'sync_notifier' target.
-    {
-      'target_name': 'test_support_sync_notifier',
-      'type': 'static_library',
-      'include_dirs': [
-        '..',
-      ],
-      'defines': [
-        'SYNC_TEST'
-      ],
-      'dependencies': [
-        '../testing/gmock.gyp:gmock',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_proto_cpp',
-        'sync',
-      ],
-      'export_dependent_settings': [
-        '../testing/gmock.gyp:gmock',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation_proto_cpp',
-        'sync',
-      ],
-      'sources': [
-        'notifier/unacked_invalidation_set_test_util.cc',
-        'notifier/unacked_invalidation_set_test_util.h',
-        'internal_api/public/base/object_id_invalidation_map_test_util.h',
-        'internal_api/public/base/object_id_invalidation_map_test_util.cc',
-      ],
-    },
-
     # Test support files for the 'sync_internal_api' target.
+    # GN version: //sync:test_support_sync_internal_api
     {
       'target_name': 'test_support_sync_internal_api',
       'type': 'static_library',
@@ -197,16 +181,14 @@
         'test_support_sync_core',
       ],
       'sources': [
-        'internal_api/public/base/invalidation_test_util.cc',
-        'internal_api/public/base/invalidation_test_util.h',
         'internal_api/public/test/fake_sync_manager.h',
-        'internal_api/public/test/null_sync_core_proxy.h',
+        'internal_api/public/test/null_sync_context_proxy.h',
         'internal_api/public/test/sync_manager_factory_for_profile_sync_test.h',
         'internal_api/public/test/test_entry_factory.h',
         'internal_api/public/test/test_internal_components_factory.h',
         'internal_api/public/test/test_user_share.h',
         'internal_api/test/fake_sync_manager.cc',
-        'internal_api/test/null_sync_core_proxy.cc',
+        'internal_api/test/null_sync_context_proxy.cc',
         'internal_api/test/sync_manager_factory_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.cc',
         'internal_api/test/sync_manager_for_profile_sync_test.h',
@@ -217,6 +199,7 @@
     },
 
     # Test support files for the 'sync_api' target.
+    # GN version: //sync:test_support_sync_api
     {
       'target_name': 'test_support_sync_api',
       'type': 'static_library',
@@ -246,253 +229,8 @@
       ],
     },
 
-    # Unit tests for the 'sync_core' target.  This cannot be a static
-    # library because the unit test files have to be compiled directly
-    # into the executable, so we push the target files to the
-    # depending executable target via direct_dependent_settings.
-    {
-      'target_name': 'sync_core_tests',
-      'type': 'none',
-      # We only want unit test executables to include this target.
-      'suppress_wildcard': 1,
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../sql/sql.gyp:sql',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_core',
-      ],
-      'conditions': [
-        ['OS=="linux" and chromeos==1', {
-          # Required by get_session_name_unittest.cc on Chrome OS.
-          'dependencies': [
-            '../chromeos/chromeos.gyp:chromeos',
-          ],
-        }],
-      ],
-      # Propagate all dependencies since the actual compilation
-      # happens in the dependents.
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../sql/sql.gyp:sql',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_core',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-        'sources': [
-          'internal_api/public/base/cancelation_signal_unittest.cc',
-          'internal_api/public/base/enum_set_unittest.cc',
-          'internal_api/public/base/node_ordinal_unittest.cc',
-          'internal_api/public/base/ordinal_unittest.cc',
-          'internal_api/public/base/unique_position_unittest.cc',
-          'internal_api/public/engine/model_safe_worker_unittest.cc',
-          'internal_api/public/util/immutable_unittest.cc',
-          'internal_api/public/util/weak_handle_unittest.cc',
-          'engine/apply_control_data_updates_unittest.cc',
-          'engine/backoff_delay_provider_unittest.cc',
-          'engine/directory_commit_contribution_unittest.cc',
-          'engine/directory_update_handler_unittest.cc',
-          'engine/get_updates_processor_unittest.cc',
-          'engine/model_thread_sync_entity_unittest.cc',
-          'engine/non_blocking_type_processor_core_unittest.cc',
-          'engine/non_blocking_type_processor_unittest.cc',
-          'engine/sync_scheduler_unittest.cc',
-          'engine/sync_thread_sync_entity_unittest.cc',
-          'engine/syncer_proto_util_unittest.cc',
-          'engine/syncer_unittest.cc',
-          'engine/syncer_util_unittest.cc',
-          'js/js_event_details_unittest.cc',
-          'js/sync_js_controller_unittest.cc',
-          'protocol/proto_enum_conversions_unittest.cc',
-          'protocol/proto_value_conversions_unittest.cc',
-          'sessions/model_type_registry_unittest.cc',
-          'sessions/nudge_tracker_unittest.cc',
-          'sessions/status_controller_unittest.cc',
-          'syncable/directory_unittest.cc',
-          'syncable/directory_unittest.h',
-          'syncable/directory_backing_store_unittest.cc',
-          'syncable/entry_kernel_unittest.cc',
-          'syncable/model_type_unittest.cc',
-          'syncable/nigori_util_unittest.cc',
-          'syncable/parent_child_index_unittest.cc',
-          'syncable/syncable_enum_conversions_unittest.cc',
-          'syncable/syncable_id_unittest.cc',
-          'syncable/syncable_unittest.cc',
-          'syncable/syncable_util_unittest.cc',
-          'util/cryptographer_unittest.cc',
-          'util/data_type_histogram_unittest.cc',
-          'util/get_session_name_unittest.cc',
-          'util/nigori_unittest.cc',
-          'util/protobuf_unittest.cc',
-        ],
-      },
-    },
-
-    # Unit tests for the 'sync_notifier' target.  This cannot be a static
-    # library because the unit test files have to be compiled directly
-    # into the executable, so we push the target files to the
-    # depending executable target via direct_dependent_settings.
-    {
-      'target_name': 'sync_notifier_tests',
-      'type': 'none',
-      # We only want unit test executables to include this target.
-      'suppress_wildcard': 1,
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../google_apis/google_apis.gyp:google_apis',
-        '../jingle/jingle.gyp:notifier_test_util',
-        '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
-        '../third_party/libjingle/libjingle.gyp:libjingle',
-        'sync',
-        'test_support_sync_notifier',
-      ],
-      # Propagate all dependencies since the actual compilation
-      # happens in the dependents.
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../google_apis/google_apis.gyp:google_apis',
-        '../jingle/jingle.gyp:notifier_test_util',
-        '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        '../third_party/cacheinvalidation/cacheinvalidation.gyp:cacheinvalidation',
-        '../third_party/libjingle/libjingle.gyp:libjingle',
-        'sync',
-        'test_support_sync_notifier',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-        'conditions': [
-          ['OS != "android"', {
-            'sources': [
-              'notifier/object_id_invalidation_map_unittest.cc',
-              'notifier/registration_manager_unittest.cc',
-              'notifier/single_object_invalidation_set_unittest.cc',
-              'notifier/unacked_invalidation_set_unittest.cc',
-            ],
-          }],
-        ],
-      },
-    },
-
-    # Unit tests for the 'sync_internal_api' target.  This cannot be a static
-    # library because the unit test files have to be compiled directly
-    # into the executable, so we push the target files to the
-    # depending executable target via direct_dependent_settings.
-    {
-      'target_name': 'sync_internal_api_tests',
-      'type': 'none',
-      # We only want unit test executables to include this target.
-      'suppress_wildcard': 1,
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../google_apis/google_apis.gyp:google_apis_test_support',
-        '../net/net.gyp:net',
-        '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_internal_api',
-      ],
-      # Propagate all dependencies since the actual compilation
-      # happens in the dependents.
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../net/net.gyp:net',
-        '../net/net.gyp:net_test_support',
-        '../testing/gmock.gyp:gmock',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_internal_api',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-        'sources': [
-          'internal_api/attachments/attachment_downloader_impl_unittest.cc',
-          'internal_api/attachments/attachment_uploader_impl_unittest.cc',
-          'internal_api/attachments/fake_attachment_downloader_unittest.cc',
-          'internal_api/attachments/fake_attachment_store_unittest.cc',
-          'internal_api/attachments/fake_attachment_uploader_unittest.cc',
-          'internal_api/debug_info_event_listener_unittest.cc',
-          'internal_api/http_bridge_unittest.cc',
-          'internal_api/js_mutation_event_observer_unittest.cc',
-          'internal_api/js_sync_encryption_handler_observer_unittest.cc',
-          'internal_api/js_sync_manager_observer_unittest.cc',
-          'internal_api/protocol_event_buffer_unittest.cc',
-          'internal_api/public/change_record_unittest.cc',
-          'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
-          'internal_api/sync_backup_manager_unittest.cc',
-          'internal_api/sync_core_proxy_impl_unittest.cc',
-          'internal_api/sync_encryption_handler_impl_unittest.cc',
-          'internal_api/sync_manager_impl_unittest.cc',
-          'internal_api/sync_rollback_manager_base_unittest.cc',
-          'internal_api/sync_rollback_manager_unittest.cc',
-          'internal_api/syncapi_server_connection_manager_unittest.cc',
-        ],
-        'conditions': [
-          ['OS == "ios"', {
-            'sources!': [
-              'internal_api/http_bridge_unittest.cc',
-            ],
-          }],
-        ],
-      },
-    },
-
-    # Unit tests for the 'sync_api' target.  This cannot be a static
-    # library because the unit test files have to be compiled directly
-    # into the executable, so we push the target files to the
-    # depending executable target via direct_dependent_settings.
-    {
-      'target_name': 'sync_api_tests',
-      'type': 'none',
-      # We only want unit test executables to include this target.
-      'suppress_wildcard': 1,
-      'dependencies': [
-        '../base/base.gyp:base',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_internal_api',
-      ],
-      # Propagate all dependencies since the actual compilation
-      # happens in the dependents.
-      'export_dependent_settings': [
-        '../base/base.gyp:base',
-        '../testing/gtest.gyp:gtest',
-        'sync',
-        'test_support_sync_internal_api',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '..',
-        ],
-        'sources': [
-          'api/attachments/attachment_unittest.cc',
-          'api/attachments/attachment_id_unittest.cc',
-          'api/attachments/attachment_service_impl_unittest.cc',
-          'api/attachments/attachment_service_proxy_unittest.cc',
-          'api/sync_change_unittest.cc',
-          'api/sync_data_unittest.cc',
-          'api/sync_error_unittest.cc',
-          'api/sync_merge_result_unittest.cc',
-        ],
-      },
-    },
-
     # The unit test executable for sync tests.
+    # GN version: //sync:sync_unit_tests
     {
       'target_name': 'sync_unit_tests',
       'type': '<(gtest_target_type)',
@@ -502,11 +240,103 @@
         'SYNC_TEST',
       ],
       'dependencies': [
+        '../base/base.gyp:base',
         '../base/base.gyp:run_all_unittests',
-        'sync_api_tests',
-        'sync_core_tests',
-        'sync_internal_api_tests',
-        'sync_notifier_tests',
+        '../google_apis/google_apis.gyp:google_apis',
+        '../google_apis/google_apis.gyp:google_apis_test_support',
+        '../net/net.gyp:net',
+        '../net/net.gyp:net_test_support',
+        '../sql/sql.gyp:sql',
+        '../testing/gmock.gyp:gmock',
+        '../testing/gtest.gyp:gtest',
+        '../third_party/leveldatabase/leveldatabase.gyp:leveldatabase',
+        '../third_party/protobuf/protobuf.gyp:protobuf_lite',
+        'sync',
+        'test_support_sync_core',
+        'test_support_sync_internal_api',
+      ],
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+        'api/attachments/attachment_id_unittest.cc',
+        'api/attachments/attachment_unittest.cc',
+        'api/sync_change_unittest.cc',
+        'api/sync_data_unittest.cc',
+        'api/sync_error_unittest.cc',
+        'api/sync_merge_result_unittest.cc',
+        'engine/apply_control_data_updates_unittest.cc',
+        'engine/backoff_delay_provider_unittest.cc',
+        'engine/directory_commit_contribution_unittest.cc',
+        'engine/directory_update_handler_unittest.cc',
+        'engine/entity_tracker_unittest.cc',
+        'engine/get_updates_processor_unittest.cc',
+        'engine/model_type_entity_unittest.cc',
+        'engine/model_type_sync_proxy_impl_unittest.cc',
+        'engine/model_type_sync_worker_impl_unittest.cc',
+        'engine/sync_scheduler_unittest.cc',
+        'engine/syncer_proto_util_unittest.cc',
+        'engine/syncer_unittest.cc',
+        'engine/syncer_util_unittest.cc',
+        'internal_api/attachments/attachment_downloader_impl_unittest.cc',
+        'internal_api/attachments/attachment_service_impl_unittest.cc',
+        'internal_api/attachments/attachment_service_proxy_unittest.cc',
+        'internal_api/attachments/attachment_store_handle_unittest.cc',
+        'internal_api/attachments/attachment_store_test_template.h',
+        'internal_api/attachments/attachment_uploader_impl_unittest.cc',
+        'internal_api/attachments/fake_attachment_downloader_unittest.cc',
+        'internal_api/attachments/fake_attachment_uploader_unittest.cc',
+        'internal_api/attachments/in_memory_attachment_store_unittest.cc',
+        'internal_api/attachments/on_disk_attachment_store_unittest.cc',
+        'internal_api/attachments/task_queue_unittest.cc',
+        'internal_api/debug_info_event_listener_unittest.cc',
+        'internal_api/http_bridge_unittest.cc',
+        'internal_api/js_mutation_event_observer_unittest.cc',
+        'internal_api/js_sync_encryption_handler_observer_unittest.cc',
+        'internal_api/js_sync_manager_observer_unittest.cc',
+        'internal_api/protocol_event_buffer_unittest.cc',
+        'internal_api/public/base/attachment_id_proto_unittest.cc',
+        'internal_api/public/base/cancelation_signal_unittest.cc',
+        'internal_api/public/base/enum_set_unittest.cc',
+        'internal_api/public/base/node_ordinal_unittest.cc',
+        'internal_api/public/base/ordinal_unittest.cc',
+        'internal_api/public/base/unique_position_unittest.cc',
+        'internal_api/public/change_record_unittest.cc',
+        'internal_api/public/engine/model_safe_worker_unittest.cc',
+        'internal_api/public/sessions/sync_session_snapshot_unittest.cc',
+        'internal_api/public/util/immutable_unittest.cc',
+        'internal_api/public/util/weak_handle_unittest.cc',
+        'internal_api/sync_backup_manager_unittest.cc',
+        'internal_api/sync_context_proxy_impl_unittest.cc',
+        'internal_api/sync_encryption_handler_impl_unittest.cc',
+        'internal_api/sync_manager_impl_unittest.cc',
+        'internal_api/sync_rollback_manager_base_unittest.cc',
+        'internal_api/sync_rollback_manager_unittest.cc',
+        'internal_api/syncapi_server_connection_manager_unittest.cc',
+        'js/js_event_details_unittest.cc',
+        'js/sync_js_controller_unittest.cc',
+        'protocol/proto_enum_conversions_unittest.cc',
+        'protocol/proto_value_conversions_unittest.cc',
+        'sessions/model_type_registry_unittest.cc',
+        'sessions/nudge_tracker_unittest.cc',
+        'sessions/status_controller_unittest.cc',
+        'syncable/deferred_on_disk_directory_backing_store_unittest.cc',
+        'syncable/directory_backing_store_unittest.cc',
+        'syncable/directory_unittest.cc',
+        'syncable/directory_unittest.h',
+        'syncable/entry_kernel_unittest.cc',
+        'syncable/model_type_unittest.cc',
+        'syncable/nigori_util_unittest.cc',
+        'syncable/parent_child_index_unittest.cc',
+        'syncable/syncable_enum_conversions_unittest.cc',
+        'syncable/syncable_id_unittest.cc',
+        'syncable/syncable_unittest.cc',
+        'syncable/syncable_util_unittest.cc',
+        'util/cryptographer_unittest.cc',
+        'util/data_type_histogram_unittest.cc',
+        'util/get_session_name_unittest.cc',
+        'util/nigori_unittest.cc',
+        'util/protobuf_unittest.cc',
       ],
       'conditions': [
         # TODO(akalin): This is needed because histogram.cc uses
@@ -522,10 +352,22 @@
             '../testing/android/native_test.gyp:native_test_native_code',
           ],
         }],
+        ['OS=="linux" and chromeos==1', {
+          # Required by get_session_name_unittest.cc on Chrome OS.
+          'dependencies': [
+            '../chromeos/chromeos.gyp:chromeos',
+          ],
+        }],
+        ['OS == "ios"', {
+          'sources!': [
+            'internal_api/http_bridge_unittest.cc',
+          ],
+        }],
       ],
     },
 
     # Test support files for using the Test Accounts service.
+    # GN version: //sync:test_support_accounts_client
     {
       'target_name': 'test_support_accounts_client',
       'type': 'static_library',
@@ -547,6 +389,7 @@
     },
 
     # The Sync end-to-end (and associated infrastructure) tests.
+    # GN version: //sync:sync_endtoend_tests
     {
       'target_name': 'sync_endtoend_tests',
       'type': '<(gtest_target_type)',
@@ -586,6 +429,7 @@
     ['OS == "android"', {
       'targets': [
         {
+          # GN: //sync/android:sync_javatests
           'target_name': 'sync_javatests',
           'type': 'none',
           'variables': {
@@ -599,10 +443,10 @@
           'includes': [ '../build/java.gypi' ],
         },
         {
+          # GN: //sync:sync_java_test_support
           'target_name': 'sync_java_test_support',
           'type': 'none',
           'variables': {
-            'package_name': 'sync_java_test_support',
             'java_in_dir': '../sync/test/android/javatests',
           },
           'dependencies': [
@@ -610,11 +454,35 @@
           ],
           'includes': [ '../build/java.gypi' ],
         },
-      ],
-    }],
-    ['OS == "android"', {
-      'targets': [
         {
+          # GN: //sync:sync_fake_server_jni_headers
+          'target_name': 'sync_fake_server_jni_headers',
+          'type': 'none',
+          'sources': [
+            '../chrome/android/sync_shell/javatests/src/chromium/chrome/browser/sync/FakeServerHelper.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'sync/test/fake_server',
+            'jni_generator_ptr_type': 'long',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+        {
+          # GN: //sync:test_support_sync_fake_server_android
+          'target_name': 'test_support_sync_fake_server_android',
+          'type': 'static_library',
+          'dependencies': [
+            'sync_fake_server_jni_headers',
+            'test_support_sync_fake_server',
+            '../base/base.gyp:base',
+          ],
+          'sources': [
+            'test/fake_server/android/fake_server_helper_android.cc',
+            'test/fake_server/android/fake_server_helper_android.h',
+          ],
+        },
+        {
+          # GN: //sync:sync_unit_tests_apk
           'target_name': 'sync_unit_tests_apk',
           'type': 'none',
           'dependencies': [

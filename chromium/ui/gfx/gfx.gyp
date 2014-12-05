@@ -32,7 +32,6 @@
         'geometry/point.h',
         'geometry/point3_f.cc',
         'geometry/point3_f.h',
-        'geometry/point_base.h',
         'geometry/point_conversions.cc',
         'geometry/point_conversions.h',
         'geometry/point_f.cc',
@@ -41,8 +40,6 @@
         'geometry/quad_f.h',
         'geometry/rect.cc',
         'geometry/rect.h',
-        'geometry/rect_base.h',
-        'geometry/rect_base_impl.h',
         'geometry/rect_conversions.cc',
         'geometry/rect_conversions.h',
         'geometry/rect_f.cc',
@@ -51,9 +48,10 @@
         'geometry/r_tree_base.cc',
         'geometry/r_tree_base.h',
         'geometry/safe_integer_conversions.h',
+        'geometry/scroll_offset.cc',
+        'geometry/scroll_offset.h',
         'geometry/size.cc',
         'geometry/size.h',
-        'geometry/size_base.h',
         'geometry/size_conversions.cc',
         'geometry/size_conversions.h',
         'geometry/size_f.cc',
@@ -66,6 +64,9 @@
         'geometry/vector2d_f.h',
         'geometry/vector3d_f.cc',
         'geometry/vector3d_f.h',
+      ],
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
       ],
     },
     {
@@ -103,8 +104,6 @@
         'android/gfx_jni_registrar.h',
         'android/java_bitmap.cc',
         'android/java_bitmap.h',
-        'android/scroller.cc',
-        'android/scroller.h',
         'android/shared_device_display_info.cc',
         'android/shared_device_display_info.h',
         'android/view_configuration.cc',
@@ -131,7 +130,7 @@
         'break_list.h',
         'canvas.cc',
         'canvas.h',
-        'canvas_android.cc',
+        'canvas_notimplemented.cc',
         'canvas_paint_mac.h',
         'canvas_paint_mac.mm',
         'canvas_paint_win.cc',
@@ -152,23 +151,29 @@
         'color_utils.h',
         'display.cc',
         'display.h',
+        'display_change_notifier.cc',
+        'display_change_notifier.h',
         'display_observer.cc',
         'display_observer.h',
         'favicon_size.cc',
         'favicon_size.h',
         'font.cc',
         'font.h',
+        'font_fallback.h',
+        'font_fallback_linux.cc',
+        'font_fallback_mac.cc',
         'font_fallback_win.cc',
         'font_fallback_win.h',
         'font_list.cc',
         'font_list.h',
         'font_list_impl.cc',
         'font_list_impl.h',
+        'font_render_params.cc',
+        'font_render_params.h',
         'font_render_params_android.cc',
         'font_render_params_linux.cc',
-        'font_render_params_linux.h',
-        'font_smoothing_win.cc',
-        'font_smoothing_win.h',
+        'font_render_params_mac.cc',
+        'font_render_params_win.cc',
         'frame_time.h',
         'gfx_export.h',
         'gfx_paths.cc',
@@ -203,6 +208,8 @@
         'interpolated_transform.h',
         'linux_font_delegate.cc',
         'linux_font_delegate.h',
+        'mac/coordinate_conversion.h',
+        'mac/coordinate_conversion.mm',
         'mac/scoped_ns_disable_screen_updates.h',
         'native_widget_types.h',
         'nine_image_painter.cc',
@@ -289,6 +296,8 @@
         'utf16_indexing.cc',
         'utf16_indexing.h',
         'vsync_provider.h',
+        'win/direct_write.cc',
+        'win/direct_write.h',
         'win/dpi.cc',
         'win/dpi.h',
         'win/hwnd_util.cc',
@@ -299,8 +308,14 @@
         'win/window_impl.cc',
         'win/window_impl.h',
       ],
+      'includes': [
+        '../../build/android/increase_size_for_speed.gypi',
+      ],
       'conditions': [
         ['OS=="ios"', {
+          'dependencies': [
+            '<(DEPTH)/ui/ios/ui_ios.gyp:ui_ios',
+          ],
           # iOS only uses a subset of UI.
           'sources/': [
             ['exclude', '^codec/jpeg_codec\\.cc$'],
@@ -314,7 +329,7 @@
         #                  http://crbug.com/105550
         ['use_canvas_skia==1', {
           'sources!': [
-            'canvas_android.cc',
+            'canvas_notimplemented.cc',
           ],
         }, {  # use_canvas_skia!=1
           'sources!': [
@@ -336,7 +351,6 @@
         ['OS=="android"', {
           'sources!': [
             'animation/throb_animation.cc',
-            'display_observer.cc',
             'selection_model.cc',
           ],
           'dependencies': [
@@ -413,7 +427,14 @@
     },
     {
       'target_name': 'gfx_test_support',
+      'type': 'static_library',
       'sources': [
+        'image/image_unittest_util.cc',
+        'image/image_unittest_util.h',
+        'image/image_unittest_util_ios.mm',
+        'image/image_unittest_util_mac.mm',
+        'test/fontconfig_util_linux.cc',
+        'test/fontconfig_util_linux.h',
         'test/gfx_util.cc',
         'test/gfx_util.h',
         'test/ui_cocoa_test_helper.h',
@@ -432,18 +453,15 @@
             ],
           },
         }],
-        ['OS!="ios"', {
-          'type': 'static_library',
-        }, {  # OS=="ios"
-          # None of the sources in this target are built on iOS, resulting in
-          # link errors when building targets that depend on this target
-          # because the static library isn't found. If this target is changed
-          # to have sources that are built on iOS, the target should be changed
-          # to be of type static_library on all platforms.
-          'type': 'none',
+        ['OS=="ios"', {
           # The cocoa files don't apply to iOS.
           'sources/': [
             ['exclude', 'cocoa']
+          ],
+        }],
+        ['OS=="linux"', {
+          'dependencies': [
+            '../../build/linux/system.gyp:fontconfig',
           ],
         }],
       ],

@@ -31,9 +31,9 @@
 
 #include "core/accessibility/AXTableCell.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXARIAGridCell FINAL : public AXTableCell {
+class AXARIAGridCell final : public AXTableCell {
 
 private:
     explicit AXARIAGridCell(RenderObject*);
@@ -42,14 +42,14 @@ public:
     virtual ~AXARIAGridCell();
 
     // fills in the start location and row span of cell
-    virtual void rowIndexRange(pair<unsigned, unsigned>& rowRange) OVERRIDE;
+    virtual void rowIndexRange(pair<unsigned, unsigned>& rowRange) override;
     // fills in the start location and column span of cell
-    virtual void columnIndexRange(pair<unsigned, unsigned>& columnRange) OVERRIDE;
+    virtual void columnIndexRange(pair<unsigned, unsigned>& columnRange) override;
 
 protected:
-    virtual AXObject* parentTable() const OVERRIDE;
+    virtual AXObject* parentTable() const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXARIAGridCell_h

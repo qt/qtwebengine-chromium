@@ -41,10 +41,7 @@
 
 class SkShader;
 
-namespace WebCore {
-
-class FloatRect;
-class IntSize;
+namespace blink {
 
 class PLATFORM_EXPORT Gradient : public RefCounted<Gradient> {
 public:
@@ -145,6 +142,6 @@ private:
     RefPtr<SkShader> m_gradient;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

@@ -7,7 +7,7 @@
 
 #include <limits>
 
-#include "src/checks.h"
+#include "src/base/logging.h"
 #include "src/handles.h"
 #include "src/objects.h"
 #include "src/utils.h"
@@ -41,7 +41,8 @@ inline bool isBinaryDigit(int x) {
 
 // The fast double-to-(unsigned-)int conversion routine does not guarantee
 // rounding towards zero.
-// For NaN and values outside the int range, return INT_MIN or INT_MAX.
+// If x is NaN, the result is INT_MIN.  Otherwise the result is the argument x,
+// clamped to [INT_MIN, INT_MAX] and then rounded to an integer.
 inline int FastD2IChecked(double x) {
   if (!(x >= INT_MIN)) return INT_MIN;  // Negation to catch NaNs.
   if (x > INT_MAX) return INT_MAX;
@@ -74,6 +75,10 @@ inline double FastUI2D(unsigned x) {
   // any FPU pipeline stalls.
   return static_cast<double>(x);
 }
+
+
+// This function should match the exact semantics of ECMA-262 20.2.2.17.
+inline float DoubleToFloat32(double x);
 
 
 // This function should match the exact semantics of ECMA-262 9.4.
@@ -152,6 +157,12 @@ static inline bool IsMinusZero(double value) {
 }
 
 
+static inline bool IsSmiDouble(double value) {
+  return !IsMinusZero(value) && value >= Smi::kMinValue &&
+         value <= Smi::kMaxValue && value == FastI2D(FastD2I(value));
+}
+
+
 // Integer32 is an integer that can be represented as a signed 32-bit
 // integer. It has to be in the range [-2^31, 2^31 - 1].
 // We also have to check for negative 0 as it is not an Integer32.
@@ -187,10 +198,8 @@ inline uint32_t NumberToUint32(Object* number) {
 }
 
 
-double StringToDouble(UnicodeCache* unicode_cache,
-                      String* string,
-                      int flags,
-                      double empty_string_val = 0.0);
+double StringToDouble(UnicodeCache* unicode_cache, Handle<String> string,
+                      int flags, double empty_string_val = 0.0);
 
 
 inline bool TryNumberToSize(Isolate* isolate,
@@ -198,7 +207,7 @@ inline bool TryNumberToSize(Isolate* isolate,
   SealHandleScope shs(isolate);
   if (number->IsSmi()) {
     int value = Smi::cast(number)->value();
-    ASSERT(static_cast<unsigned>(Smi::kMaxValue)
+    DCHECK(static_cast<unsigned>(Smi::kMaxValue)
            <= std::numeric_limits<size_t>::max());
     if (value >= 0) {
       *result = static_cast<size_t>(value);
@@ -206,7 +215,7 @@ inline bool TryNumberToSize(Isolate* isolate,
     }
     return false;
   } else {
-    ASSERT(number->IsHeapNumber());
+    DCHECK(number->IsHeapNumber());
     double value = HeapNumber::cast(number)->value();
     if (value >= 0 &&
         value <= std::numeric_limits<size_t>::max()) {

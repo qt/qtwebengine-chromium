@@ -49,12 +49,12 @@ namespace internal {
 // (See https://code.google.com/p/googletest/issues/detail?id=442)
 //
 // Work around is to define this custom IsNullLiteralHelper.
-char(&IsNullLiteralHelper(const WebCore::CSSValue&))[2];
+char(&IsNullLiteralHelper(const blink::CSSValue&))[2];
 
 }
 }
 
-namespace WebCore {
+namespace blink {
 
 inline bool operator==(const CSSValue& a, const CSSValue& b)
 {
@@ -68,7 +68,7 @@ inline void PrintTo(const CSSValue& cssValue, ::std::ostream* os, const char* ty
 
 inline void PrintTo(const CSSPrimitiveValue& cssValue, ::std::ostream* os, const char* typeName = "CSSPrimitiveValue")
 {
-    PrintTo(*static_cast<const CSSValue*>(&cssValue), os, typeName);
+    PrintTo(static_cast<const CSSValue&>(cssValue), os, typeName);
 }
 
 }

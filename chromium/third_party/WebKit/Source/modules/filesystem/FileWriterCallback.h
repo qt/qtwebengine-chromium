@@ -31,13 +31,16 @@
 #ifndef FileWriterCallback_h
 #define FileWriterCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class FileWriter;
 
-class FileWriterCallback {
+class FileWriterCallback : public GarbageCollectedFinalized<FileWriterCallback> {
 public:
     virtual ~FileWriterCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(FileWriter*) = 0;
 };
 

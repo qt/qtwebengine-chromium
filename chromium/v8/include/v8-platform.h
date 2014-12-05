@@ -5,9 +5,9 @@
 #ifndef V8_V8_PLATFORM_H_
 #define V8_V8_PLATFORM_H_
 
-#include "v8.h"
-
 namespace v8 {
+
+class Isolate;
 
 /**
  * A Task represents a unit of work.
@@ -37,6 +37,8 @@ class Platform {
     kLongRunningTask
   };
 
+  virtual ~Platform() {}
+
   /**
    * Schedules a task to be invoked on a background thread. |expected_runtime|
    * indicates that the task will run a long time. The Platform implementation
@@ -54,8 +56,14 @@ class Platform {
    */
   virtual void CallOnForegroundThread(Isolate* isolate, Task* task) = 0;
 
- protected:
-  virtual ~Platform() {}
+  /**
+   * Monotonically increasing time in seconds from an arbitrary fixed point in
+   * the past. This function is expected to return at least
+   * millisecond-precision values. For this reason,
+   * it is recommended that the fixed point be no further in the past than
+   * the epoch.
+   **/
+  virtual double MonotonicallyIncreasingTime() = 0;
 };
 
 }  // namespace v8

@@ -35,7 +35,7 @@
 #include "platform/network/ResourceResponse.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ResourceTimingInfo : public RefCounted<ResourceTimingInfo> {
 public:
@@ -67,8 +67,8 @@ public:
     void clearLoadTimings()
     {
         m_finalResponse.setResourceLoadTiming(nullptr);
-        for (size_t i = 0; i < m_redirectChain.size(); ++i)
-            m_redirectChain[i].setResourceLoadTiming(nullptr);
+        for (ResourceResponse& redirect : m_redirectChain)
+            redirect.setResourceLoadTiming(nullptr);
     }
 
 private:
@@ -87,6 +87,6 @@ private:
     Vector<ResourceResponse> m_redirectChain;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

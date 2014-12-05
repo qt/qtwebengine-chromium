@@ -2,11 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module mojo.view_manager {
+module mojo;
 
 enum OrderDirection {
-  ORDER_ABOVE = 1,
-  ORDER_BELOW,
+  ABOVE = 1,
+  BELOW,
 };
-
-}

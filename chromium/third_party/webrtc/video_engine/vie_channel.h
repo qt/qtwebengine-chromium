@@ -16,6 +16,7 @@
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 #include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
 #include "webrtc/typedefs.h"
@@ -152,11 +153,11 @@ class ViEChannel
   // Sets the starting sequence number, must be called before StartSend.
   int32_t SetStartSequenceNumber(uint16_t sequence_number);
 
+  void SetRtpStateForSsrc(uint32_t ssrc, const RtpState& rtp_state);
+  RtpState GetRtpStateForSsrc(uint32_t ssrc);
+
   // Sets the CName for the outgoing stream on the channel.
   int32_t SetRTCPCName(const char rtcp_cname[]);
-
-  // Gets the CName for the outgoing stream on the channel.
-  int32_t GetRTCPCName(char rtcp_cname[]);
 
   // Gets the CName of the incoming stream.
   int32_t GetRemoteRTCPCName(char rtcp_cname[]);
@@ -211,7 +212,10 @@ class ViEChannel
                          uint32_t* video_bitrate_sent,
                          uint32_t* fec_bitrate_sent,
                          uint32_t* nackBitrateSent) const;
+  // TODO(holmer): Deprecated. We should use the SendSideDelayObserver instead
+  // to avoid deadlocks.
   bool GetSendSideDelay(int* avg_send_delay, int* max_send_delay) const;
+  void RegisterSendSideDelayObserver(SendSideDelayObserver* observer);
   void GetReceiveBandwidthEstimatorStats(
       ReceiveBandwidthEstimatorStats* output) const;
 
@@ -362,6 +366,11 @@ class ViEChannel
   void OnRttUpdate(uint32_t rtt);
 
  private:
+  void ReserveRtpRtcpModules(size_t total_modules)
+      EXCLUSIVE_LOCKS_REQUIRED(rtp_rtcp_cs_);
+  RtpRtcp* GetRtpRtcpModule(size_t simulcast_idx) const
+      EXCLUSIVE_LOCKS_REQUIRED(rtp_rtcp_cs_);
+  RtpRtcp* CreateRtpRtcpModule();
   // Assumed to be protected.
   int32_t StartDecodeThread();
   int32_t StopDecodeThread();
@@ -373,6 +382,70 @@ class ViEChannel
   // Compute NACK list parameters for the buffering mode.
   int GetRequiredNackListSize(int target_delay_ms);
   void SetRtxSendStatus(bool enable);
+
+  void UpdateHistograms();
+
+  // ViEChannel exposes methods that allow to modify observers and callbacks
+  // to be modified. Such an API-style is cumbersome to implement and maintain
+  // at all the levels when comparing to only setting them at construction. As
+  // so this class instantiates its children with a wrapper that can be modified
+  // at a later time.
+  template <class T>
+  class RegisterableCallback : public T {
+   public:
+    RegisterableCallback()
+        : critsect_(CriticalSectionWrapper::CreateCriticalSection()),
+          callback_(NULL) {}
+
+    void Set(T* callback) {
+      CriticalSectionScoped cs(critsect_.get());
+      callback_ = callback;
+    }
+
+   protected:
+    // Note: this should be implemented with a RW-lock to allow simultaneous
+    // calls into the callback. However that doesn't seem to be needed for the
+    // current type of callbacks covered by this class.
+    scoped_ptr<CriticalSectionWrapper> critsect_;
+    T* callback_ GUARDED_BY(critsect_);
+
+   private:
+    DISALLOW_COPY_AND_ASSIGN(RegisterableCallback);
+  };
+
+  class RegisterableBitrateStatisticsObserver:
+    public RegisterableCallback<BitrateStatisticsObserver> {
+    virtual void Notify(const BitrateStatistics& total_stats,
+                        const BitrateStatistics& retransmit_stats,
+                        uint32_t ssrc) {
+      CriticalSectionScoped cs(critsect_.get());
+      if (callback_)
+        callback_->Notify(total_stats, retransmit_stats, ssrc);
+    }
+  }
+  send_bitrate_observer_;
+
+  class RegisterableFrameCountObserver
+      : public RegisterableCallback<FrameCountObserver> {
+    virtual void FrameCountUpdated(FrameType frame_type,
+                                   uint32_t frame_count,
+                                   const unsigned int ssrc) {
+      CriticalSectionScoped cs(critsect_.get());
+      if (callback_)
+        callback_->FrameCountUpdated(frame_type, frame_count, ssrc);
+    }
+  } send_frame_count_observer_;
+
+  class RegisterableSendSideDelayObserver :
+      public RegisterableCallback<SendSideDelayObserver> {
+    virtual void SendSideDelayUpdated(int avg_delay_ms,
+                                      int max_delay_ms,
+                                      uint32_t ssrc) OVERRIDE {
+      CriticalSectionScoped cs(critsect_.get());
+      if (callback_)
+        callback_->SendSideDelayUpdated(avg_delay_ms, max_delay_ms, ssrc);
+    }
+  } send_side_delay_observer_;
 
   int32_t channel_id_;
   int32_t engine_id_;
@@ -430,6 +503,9 @@ class ViEChannel
   int nack_history_size_sender_;
   int max_nack_reordering_threshold_;
   I420FrameCallback* pre_render_callback_;
+  const int64_t start_ms_;
+
+  std::map<uint32_t, RTCPReportBlock> prev_report_blocks_;
 };
 
 }  // namespace webrtc

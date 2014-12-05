@@ -35,15 +35,9 @@
 #include "WebPrivatePtr.h"
 #include "WebStorageQuotaError.h"
 
-namespace WebCore {
-class StorageQuotaCallbacks;
-}
-
-namespace WTF { template <typename T> class PassOwnPtr; }
-
 namespace blink {
 
-class WebStorageQuotaCallbacksPrivate;
+class StorageQuotaCallbacks;
 
 class WebStorageQuotaCallbacks {
 public:
@@ -60,7 +54,7 @@ public:
     BLINK_PLATFORM_EXPORT void assign(const WebStorageQuotaCallbacks&);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebStorageQuotaCallbacks(const WTF::PassOwnPtr<WebCore::StorageQuotaCallbacks>&);
+    BLINK_PLATFORM_EXPORT WebStorageQuotaCallbacks(StorageQuotaCallbacks*);
 #endif
 
     // Callback for WebFrameClient::queryStorageUsageAndQuota.
@@ -73,7 +67,7 @@ public:
     BLINK_PLATFORM_EXPORT void didFail(WebStorageQuotaError);
 
 private:
-    WebPrivatePtr<WebStorageQuotaCallbacksPrivate> m_private;
+    WebPrivatePtr<StorageQuotaCallbacks> m_private;
 };
 
 } // namespace blink

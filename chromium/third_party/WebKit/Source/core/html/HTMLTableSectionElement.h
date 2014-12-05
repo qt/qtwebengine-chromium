@@ -28,15 +28,15 @@
 
 #include "core/html/HTMLTablePartElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class HTMLTableSectionElement FINAL : public HTMLTablePartElement {
+class HTMLTableSectionElement final : public HTMLTablePartElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableSectionElement);
 
-    PassRefPtrWillBeRawPtr<HTMLElement> insertRow(ExceptionState&);
     PassRefPtrWillBeRawPtr<HTMLElement> insertRow(int index, ExceptionState&);
     void deleteRow(int index, ExceptionState&);
 
@@ -47,21 +47,16 @@ public:
 private:
     HTMLTableSectionElement(const QualifiedName& tagName, Document&);
 
-    virtual const StylePropertySet* additionalPresentationAttributeStyle() OVERRIDE;
+    virtual const StylePropertySet* additionalPresentationAttributeStyle() override;
 };
 
-inline bool isHTMLTableSectionElement(const Element& element)
+inline bool isHTMLTableSectionElement(const HTMLElement& element)
 {
     return element.hasTagName(HTMLNames::tbodyTag) || element.hasTagName(HTMLNames::tfootTag) || element.hasTagName(HTMLNames::theadTag);
 }
 
-inline bool isHTMLTableSectionElement(const HTMLElement& element)
-{
-    return element.hasLocalName(HTMLNames::tbodyTag) || element.hasLocalName(HTMLNames::tfootTag) || element.hasLocalName(HTMLNames::theadTag);
-}
-
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLTableSectionElement);
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLTableSectionElement_h

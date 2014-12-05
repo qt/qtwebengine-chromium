@@ -33,44 +33,41 @@
 #include "platform/geometry/FloatSize.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/Color.h"
+#include "platform/graphics/ContentLayerDelegate.h"
 #include "platform/graphics/GraphicsLayerClient.h"
 #include "platform/graphics/GraphicsLayerDebugInfo.h"
-#include "platform/graphics/OpaqueRectTrackingContentLayerDelegate.h"
+#include "platform/graphics/PaintInvalidationReason.h"
 #include "platform/graphics/filters/FilterOperations.h"
 #include "platform/transforms/TransformationMatrix.h"
-#include "public/platform/WebAnimationDelegate.h"
+#include "public/platform/WebCompositorAnimationDelegate.h"
 #include "public/platform/WebContentLayer.h"
 #include "public/platform/WebImageLayer.h"
 #include "public/platform/WebLayerClient.h"
 #include "public/platform/WebLayerScrollClient.h"
 #include "public/platform/WebNinePatchLayer.h"
-#include "public/platform/WebSolidColorLayer.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
 namespace blink {
-class GraphicsLayerFactoryChromium;
-class WebAnimation;
-class WebLayer;
-}
-
-namespace WebCore {
 
 class FloatRect;
 class GraphicsContext;
 class GraphicsLayer;
 class GraphicsLayerFactory;
+class GraphicsLayerFactoryChromium;
 class Image;
+class JSONObject;
 class ScrollableArea;
-class TextStream;
+class WebCompositorAnimation;
+class WebLayer;
 
 // FIXME: find a better home for this declaration.
 class PLATFORM_EXPORT LinkHighlightClient {
 public:
     virtual void invalidate() = 0;
     virtual void clearCurrentGraphicsLayer() = 0;
-    virtual blink::WebLayer* layer() = 0;
+    virtual WebLayer* layer() = 0;
 
 protected:
     virtual ~LinkHighlightClient() { }
@@ -81,7 +78,7 @@ typedef Vector<GraphicsLayer*, 64> GraphicsLayerVector;
 // GraphicsLayer is an abstraction for a rendering surface with backing store,
 // which may have associated transformation and animations.
 
-class PLATFORM_EXPORT GraphicsLayer : public GraphicsContextPainter, public blink::WebAnimationDelegate, public blink::WebLayerScrollClient, public blink::WebLayerClient {
+class PLATFORM_EXPORT GraphicsLayer : public GraphicsContextPainter, public WebCompositorAnimationDelegate, public WebLayerScrollClient, public WebLayerClient {
     WTF_MAKE_NONCOPYABLE(GraphicsLayer); WTF_MAKE_FAST_ALLOCATED;
 public:
     static PassOwnPtr<GraphicsLayer> create(GraphicsLayerFactory*, GraphicsLayerClient*);
@@ -90,8 +87,8 @@ public:
 
     GraphicsLayerClient* client() const { return m_client; }
 
-    // blink::WebLayerClient implementation.
-    virtual blink::WebGraphicsLayerDebugInfo* takeDebugInfoFor(blink::WebLayer*) OVERRIDE;
+    // WebLayerClient implementation.
+    virtual WebGraphicsLayerDebugInfo* takeDebugInfoFor(WebLayer*) override;
 
     GraphicsLayerDebugInfo& debugInfo();
 
@@ -108,10 +105,7 @@ public:
 
     // Add child layers. If the child is already parented, it will be removed from its old parent.
     void addChild(GraphicsLayer*);
-    void addChildAtIndex(GraphicsLayer*, int index);
-    void addChildAbove(GraphicsLayer*, GraphicsLayer* sibling);
     void addChildBelow(GraphicsLayer*, GraphicsLayer* sibling);
-    bool replaceChild(GraphicsLayer* oldChild, GraphicsLayer* newChild);
 
     void removeAllChildren();
     void removeFromParent();
@@ -149,10 +143,6 @@ public:
     const FloatSize& size() const { return m_size; }
     void setSize(const FloatSize&);
 
-    // The boundOrigin affects the offset at which content is rendered, and sublayers are positioned.
-    const FloatPoint& boundsOrigin() const { return m_boundsOrigin; }
-    void setBoundsOrigin(const FloatPoint& origin) { m_boundsOrigin = origin; }
-
     const TransformationMatrix& transform() const { return m_transform; }
     void setTransform(const TransformationMatrix&);
     void setShouldFlattenTransform(bool);
@@ -165,8 +155,8 @@ public:
     bool contentsAreVisible() const { return m_contentsVisible; }
     void setContentsVisible(bool);
 
-    void setScrollParent(blink::WebLayer*);
-    void setClipParent(blink::WebLayer*);
+    void setScrollParent(WebLayer*);
+    void setClipParent(WebLayer*);
 
     // For special cases, e.g. drawing missing tiles on Android.
     // The compositor should never paint this color in normal cases because the RenderLayer
@@ -183,19 +173,17 @@ public:
     float opacity() const { return m_opacity; }
     void setOpacity(float);
 
-    void setBlendMode(blink::WebBlendMode);
+    void setBlendMode(WebBlendMode);
     void setIsRootForIsolatedGroup(bool);
 
-    // Returns true if filter can be rendered by the compositor
-    bool setFilters(const FilterOperations&);
-    void setBackgroundFilters(const FilterOperations&);
+    void setFilters(const FilterOperations&);
 
     // Some GraphicsLayers paint only the foreground or the background content
     void setPaintingPhase(GraphicsLayerPaintingPhase);
 
     void setNeedsDisplay();
-    // mark the given rect (in layer coords) as needing dispay. Never goes deep.
-    void setNeedsDisplayInRect(const FloatRect&);
+    // Mark the given rect (in layer coords) as needing display. Never goes deep.
+    void setNeedsDisplayInRect(const IntRect&, PaintInvalidationReason);
 
     void setContentsNeedsDisplay();
 
@@ -205,36 +193,30 @@ public:
     // Return true if the animation is handled by the compositing system. If this returns
     // false, the animation will be run by AnimationController.
     // These methods handle both transitions and keyframe animations.
-    bool addAnimation(PassOwnPtr<blink::WebAnimation>);
+    bool addAnimation(PassOwnPtr<WebCompositorAnimation>);
     void pauseAnimation(int animationId, double /*timeOffset*/);
     void removeAnimation(int animationId);
 
     // Layer contents
     void setContentsToImage(Image*);
     void setContentsToNinePatch(Image*, const IntRect& aperture);
-    void setContentsToPlatformLayer(blink::WebLayer* layer) { setContentsTo(layer); }
+    void setContentsToPlatformLayer(WebLayer* layer) { setContentsTo(layer); }
     bool hasContentsLayer() const { return m_contentsLayer; }
 
-    // Callback from the underlying graphics system to draw layer contents.
-    void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
-
     // For hosting this GraphicsLayer in a native layer hierarchy.
-    blink::WebLayer* platformLayer() const;
+    WebLayer* platformLayer() const;
 
     typedef HashMap<int, int> RenderingContextMap;
-    void dumpLayer(TextStream&, int indent, LayerTreeFlags, RenderingContextMap&) const;
+    PassRefPtr<JSONObject> layerTreeAsJSON(LayerTreeFlags, RenderingContextMap&) const;
 
     int paintCount() const { return m_paintCount; }
 
     // Return a string with a human readable form of the layer tree, If debug is true
     // pointers for the layers and timing data will be included in the returned string.
     String layerTreeAsText(LayerTreeFlags = LayerTreeNormal) const;
-    String debugName(blink::WebLayer*) const;
 
-    void resetTrackedRepaints();
+    void resetTrackedPaintInvalidations();
     void addRepaintRect(const FloatRect&);
-
-    void collectTrackedRepaintRects(Vector<FloatRect>&) const;
 
     void addLinkHighlight(LinkHighlightClient*);
     void removeLinkHighlight(LinkHighlightClient*);
@@ -242,61 +224,59 @@ public:
     unsigned numLinkHighlights() { return m_linkHighlights.size(); }
     LinkHighlightClient* linkHighlight(int i) { return m_linkHighlights[i]; }
 
-    void setScrollableArea(ScrollableArea*, bool isMainFrame);
+    void setScrollableArea(ScrollableArea*, bool isViewport);
     ScrollableArea* scrollableArea() const { return m_scrollableArea; }
 
-    blink::WebContentLayer* contentLayer() const { return m_layer.get(); }
+    WebContentLayer* contentLayer() const { return m_layer.get(); }
 
-    static void registerContentsLayer(blink::WebLayer*);
-    static void unregisterContentsLayer(blink::WebLayer*);
+    static void registerContentsLayer(WebLayer*);
+    static void unregisterContentsLayer(WebLayer*);
 
     // GraphicsContextPainter implementation.
-    virtual void paint(GraphicsContext&, const IntRect& clip) OVERRIDE;
+    virtual void paint(GraphicsContext&, const IntRect& clip) override;
 
-    // WebAnimationDelegate implementation.
-    virtual void notifyAnimationStarted(double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
-    virtual void notifyAnimationFinished(double monotonicTime, blink::WebAnimation::TargetProperty) OVERRIDE;
+    // WebCompositorAnimationDelegate implementation.
+    virtual void notifyAnimationStarted(double monotonicTime, int group) override;
+    virtual void notifyAnimationFinished(double monotonicTime, int group) override;
 
     // WebLayerScrollClient implementation.
-    virtual void didScroll() OVERRIDE;
+    virtual void didScroll() override;
 
 protected:
+    String debugName(WebLayer*) const;
+
     explicit GraphicsLayer(GraphicsLayerClient*);
     // GraphicsLayerFactoryChromium that wants to create a GraphicsLayer need to be friends.
-    friend class blink::GraphicsLayerFactoryChromium;
+    friend class GraphicsLayerFactoryChromium;
 
     // Exposed for tests.
-    virtual blink::WebLayer* contentsLayer() const { return m_contentsLayer; }
+    virtual WebLayer* contentsLayer() const { return m_contentsLayer; }
 
 private:
+    // Callback from the underlying graphics system to draw layer contents.
+    void paintGraphicsLayerContents(GraphicsContext&, const IntRect& clip);
+
     // Adds a child without calling updateChildList(), so that adding children
     // can be batched before updating.
     void addChildInternal(GraphicsLayer*);
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool hasAncestor(GraphicsLayer*) const;
 #endif
 
-    // This method is used by platform GraphicsLayer classes to clear the filters
-    // when compositing is not done in hardware. It is not virtual, so the caller
-    // needs to notifiy the change to the platform layer as needed.
-    void clearFilters() { m_filters.clear(); }
-
     void setReplicatedLayer(GraphicsLayer* layer) { m_replicatedLayer = layer; }
 
-    int incrementPaintCount() { return ++m_paintCount; }
-
-    void dumpProperties(TextStream&, int indent, LayerTreeFlags, RenderingContextMap&) const;
+    void incrementPaintCount() { ++m_paintCount; }
 
     // Helper functions used by settors to keep layer's the state consistent.
     void updateChildList();
     void updateLayerIsDrawable();
     void updateContentsRect();
 
-    void setContentsTo(blink::WebLayer*);
-    void setupContentsLayer(blink::WebLayer*);
+    void setContentsTo(WebLayer*);
+    void setupContentsLayer(WebLayer*);
     void clearContentsLayerIfUnregistered();
-    blink::WebLayer* contentsLayerIfRegistered();
+    WebLayer* contentsLayerIfRegistered();
 
     GraphicsLayerClient* m_client;
 
@@ -306,7 +286,6 @@ private:
     // Position is relative to the parent GraphicsLayer
     FloatPoint m_position;
     FloatSize m_size;
-    FloatPoint m_boundsOrigin;
 
     TransformationMatrix m_transform;
     FloatPoint3D m_transformOrigin;
@@ -314,9 +293,7 @@ private:
     Color m_backgroundColor;
     float m_opacity;
 
-    blink::WebBlendMode m_blendMode;
-
-    FilterOperations m_filters;
+    WebBlendMode m_blendMode;
 
     bool m_hasTransformOrigin : 1;
     bool m_contentsOpaque : 1;
@@ -347,10 +324,10 @@ private:
 
     int m_paintCount;
 
-    OwnPtr<blink::WebContentLayer> m_layer;
-    OwnPtr<blink::WebImageLayer> m_imageLayer;
-    OwnPtr<blink::WebNinePatchLayer> m_ninePatchLayer;
-    blink::WebLayer* m_contentsLayer;
+    OwnPtr<WebContentLayer> m_layer;
+    OwnPtr<WebImageLayer> m_imageLayer;
+    OwnPtr<WebNinePatchLayer> m_ninePatchLayer;
+    WebLayer* m_contentsLayer;
     // We don't have ownership of m_contentsLayer, but we do want to know if a given layer is the
     // same as our current layer in setContentsTo(). Since m_contentsLayer may be deleted at this point,
     // we stash an ID away when we know m_contentsLayer is alive and use that for comparisons from that point
@@ -359,18 +336,18 @@ private:
 
     Vector<LinkHighlightClient*> m_linkHighlights;
 
-    OwnPtr<OpaqueRectTrackingContentLayerDelegate> m_opaqueRectTrackingContentLayerDelegate;
+    OwnPtr<ContentLayerDelegate> m_contentLayerDelegate;
 
     ScrollableArea* m_scrollableArea;
     GraphicsLayerDebugInfo m_debugInfo;
     int m_3dRenderingContext;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
-// Outside the WebCore namespace for ease of invocation from gdb.
-void PLATFORM_EXPORT showGraphicsLayerTree(const WebCore::GraphicsLayer*);
+// Outside the blink namespace for ease of invocation from gdb.
+void PLATFORM_EXPORT showGraphicsLayerTree(const blink::GraphicsLayer*);
 #endif
 
 #endif // GraphicsLayer_h

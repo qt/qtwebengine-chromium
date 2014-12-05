@@ -5,8 +5,7 @@
   'conditions': [
     ['OS=="android" or OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
-        'isolate_dependency_untracked': [
-          'data/',
+        'files': [
           'test/data/',
         ],
       },
@@ -19,16 +18,24 @@
           '<(PRODUCT_DIR)/base_unittests<(EXECUTABLE_SUFFIX)',
           '--brave-new-test-launcher',
           '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--lsan=<(lsan)',
         ],
-        'isolate_dependency_tracked': [
+        'files': [
           '../testing/xvfb.py',
+        ],
+      },
+    }],
+    ['OS=="linux" and use_ozone==0', {
+      'variables': {
+        'files': [
           '<(PRODUCT_DIR)/xdisplaycheck<(EXECUTABLE_SUFFIX)',
         ],
       },
     }],
     ['OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
           '../testing/test_env.py',
           '<(PRODUCT_DIR)/base_unittests<(EXECUTABLE_SUFFIX)',
         ],
@@ -42,12 +49,15 @@
           '<(PRODUCT_DIR)/base_unittests<(EXECUTABLE_SUFFIX)',
           '--brave-new-test-launcher',
           '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--lsan=<(lsan)',
         ],
       },
     }],
-    ['OS=="win"', {
+    ['OS=="win" and (fastbuild==0 or fastbuild==1)', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
+          '<(PRODUCT_DIR)/base_unittests.exe.pdb',
         ],
       },
     }],

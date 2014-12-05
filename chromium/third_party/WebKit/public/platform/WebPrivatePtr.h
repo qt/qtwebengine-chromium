@@ -34,9 +34,6 @@
 #include "WebCommon.h"
 
 #if INSIDE_BLINK
-
-namespace WebCore { template<typename T> class TreeShared; }
-
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/TypeTraits.h"
@@ -53,8 +50,8 @@ enum LifetimeManagementType {
 
 template<typename T>
 class LifetimeOf {
-    static const bool isGarbageCollected = WTF::IsSubclassOfTemplate<T, WebCore::GarbageCollected>::value;
-    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<T, WebCore::RefCountedGarbageCollected>::value;
+    static const bool isGarbageCollected = WTF::IsSubclassOfTemplate<T, GarbageCollected>::value;
+    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<T, RefCountedGarbageCollected>::value;
 public:
     static const LifetimeManagementType value =
         !isGarbageCollected ? RefCountedLifetime :
@@ -79,8 +76,7 @@ public:
     {
         release();
         T* val = other.get();
-        if (val)
-            val->ref();
+        WTF::refIfNotNull(val);
         m_ptr = val;
     }
 
@@ -88,8 +84,7 @@ public:
 
     void release()
     {
-        if (m_ptr)
-            m_ptr->deref();
+        WTF::derefIfNotNull(m_ptr);
         m_ptr = 0;
     }
 
@@ -108,7 +103,7 @@ public:
         }
 
         if (!m_handle)
-            m_handle = new WebCore::Persistent<T>();
+            m_handle = new Persistent<T>();
 
         (*m_handle) = val;
     }
@@ -127,7 +122,7 @@ public:
     }
 
 private:
-    WebCore::Persistent<T>* m_handle;
+    Persistent<T>* m_handle;
 };
 
 template<typename T>
@@ -186,11 +181,11 @@ private:
 //        // Methods that are used only by other Blink classes should only be
 //        // declared when INSIDE_BLINK is set.
 //    #if INSIDE_BLINK
-//        WebFoo(const WTF::PassRefPtr<WebCore::Foo>&);
+//        WebFoo(const WTF::PassRefPtr<Foo>&);
 //    #endif
 //
 //    private:
-//        WebPrivatePtr<WebCore::Foo> m_private;
+//        WebPrivatePtr<Foo> m_private;
 //    };
 //
 //    // WebFoo.cpp

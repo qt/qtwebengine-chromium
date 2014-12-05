@@ -32,15 +32,14 @@
 #include "core/dom/ElementData.h"
 
 #include "core/css/StylePropertySet.h"
-#include "core/dom/Attr.h"
 #include "core/dom/QualifiedName.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-struct SameSizeAsElementData : public RefCounted<SameSizeAsElementData> {
+struct SameSizeAsElementData : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsElementData> {
     unsigned bitfield;
-    void* refPtrs[3];
+    void* pointers[3];
 };
 
 COMPILE_ASSERT(sizeof(ElementData) == sizeof(SameSizeAsElementData), element_attribute_data_should_stay_small);
@@ -70,7 +69,7 @@ ElementData::ElementData(unsigned arraySize)
 
 ElementData::ElementData(const ElementData& other, bool isUnique)
     : m_isUnique(isUnique)
-    , m_arraySize(isUnique ? 0 : other.attributeCount())
+    , m_arraySize(isUnique ? 0 : other.attributes().size())
     , m_presentationAttributeStyleIsDirty(other.m_presentationAttributeStyleIsDirty)
     , m_styleAttributeIsDirty(other.m_styleAttributeIsDirty)
     , m_animatedSVGAttributesAreDirty(other.m_animatedSVGAttributesAreDirty)
@@ -80,73 +79,61 @@ ElementData::ElementData(const ElementData& other, bool isUnique)
     // NOTE: The inline style is copied by the subclass copy constructor since we don't know what to do with it here.
 }
 
+#if ENABLE(OILPAN)
+void ElementData::finalizeGarbageCollectedObject()
+{
+    if (m_isUnique)
+        toUniqueElementData(this)->~UniqueElementData();
+    else
+        toShareableElementData(this)->~ShareableElementData();
+}
+#else
 void ElementData::destroy()
 {
     if (m_isUnique)
-        delete static_cast<UniqueElementData*>(this);
+        delete toUniqueElementData(this);
     else
-        delete static_cast<ShareableElementData*>(this);
+        delete toShareableElementData(this);
 }
+#endif
 
-PassRefPtr<UniqueElementData> ElementData::makeUniqueCopy() const
+PassRefPtrWillBeRawPtr<UniqueElementData> ElementData::makeUniqueCopy() const
 {
     if (isUnique())
-        return adoptRef(new UniqueElementData(static_cast<const UniqueElementData&>(*this)));
-    return adoptRef(new UniqueElementData(static_cast<const ShareableElementData&>(*this)));
+        return adoptRefWillBeNoop(new UniqueElementData(toUniqueElementData(*this)));
+    return adoptRefWillBeNoop(new UniqueElementData(toShareableElementData(*this)));
 }
 
 bool ElementData::isEquivalent(const ElementData* other) const
 {
-    if (!other)
-        return !hasAttributes();
-
     AttributeCollection attributes = this->attributes();
-    if (attributes.size() != other->attributeCount())
+    if (!other)
+        return attributes.isEmpty();
+
+    AttributeCollection otherAttributes = other->attributes();
+    if (attributes.size() != otherAttributes.size())
         return false;
 
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        const Attribute* otherAttr = other->findAttributeByName(it->name());
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+        const Attribute* otherAttr = otherAttributes.find(it->name());
         if (!otherAttr || it->value() != otherAttr->value())
             return false;
     }
     return true;
 }
 
-size_t ElementData::findAttrNodeIndex(Attr* attr) const
+void ElementData::trace(Visitor* visitor)
 {
-    // This relies on the fact that Attr's QualifiedName == the Attribute's name.
-    AttributeCollection attributes = this->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    unsigned index = 0;
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it, ++index) {
-        if (it->name() == attr->qualifiedName())
-            return index;
-    }
-    return kNotFound;
+    if (m_isUnique)
+        toUniqueElementData(this)->traceAfterDispatch(visitor);
+    else
+        toShareableElementData(this)->traceAfterDispatch(visitor);
 }
 
-size_t ElementData::findAttributeIndexByNameSlowCase(const AtomicString& name, bool shouldIgnoreAttributeCase) const
+void ElementData::traceAfterDispatch(Visitor* visitor)
 {
-    // Continue to checking case-insensitively and/or full namespaced names if necessary:
-    AttributeCollection attributes = this->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    unsigned index = 0;
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it, ++index) {
-        // FIXME: Why check the prefix? Namespace is all that should matter
-        // and all HTML/SVG attributes have a null namespace!
-        if (!it->name().hasPrefix()) {
-            if (shouldIgnoreAttributeCase && equalIgnoringCase(name, it->localName()))
-                return index;
-        } else {
-            // FIXME: Would be faster to do this comparison without calling toString, which
-            // generates a temporary string by concatenation. But this branch is only reached
-            // if the attribute name has a prefix, which is rare in HTML.
-            if (equalPossiblyIgnoringCase(name, it->name().toString(), shouldIgnoreAttributeCase))
-                return index;
-        }
-    }
-    return kNotFound;
+    visitor->trace(m_inlineStyle);
 }
 
 ShareableElementData::ShareableElementData(const Vector<Attribute>& attributes)
@@ -175,10 +162,14 @@ ShareableElementData::ShareableElementData(const UniqueElementData& other)
         new (&m_attributeArray[i]) Attribute(other.m_attributeVector.at(i));
 }
 
-PassRefPtr<ShareableElementData> ShareableElementData::createWithAttributes(const Vector<Attribute>& attributes)
+PassRefPtrWillBeRawPtr<ShareableElementData> ShareableElementData::createWithAttributes(const Vector<Attribute>& attributes)
 {
+#if ENABLE(OILPAN)
+    void* slot = Heap::allocate<ElementData>(sizeForShareableElementDataWithAttributeCount(attributes.size()));
+#else
     void* slot = WTF::fastMalloc(sizeForShareableElementDataWithAttributeCount(attributes.size()));
-    return adoptRef(new (slot) ShareableElementData(attributes));
+#endif
+    return adoptRefWillBeNoop(new (slot) ShareableElementData(attributes));
 }
 
 UniqueElementData::UniqueElementData()
@@ -200,31 +191,31 @@ UniqueElementData::UniqueElementData(const ShareableElementData& other)
     ASSERT(!other.m_inlineStyle || !other.m_inlineStyle->isMutable());
     m_inlineStyle = other.m_inlineStyle;
 
-    unsigned length = other.attributeCount();
+    unsigned length = other.attributes().size();
     m_attributeVector.reserveCapacity(length);
     for (unsigned i = 0; i < length; ++i)
         m_attributeVector.uncheckedAppend(other.m_attributeArray[i]);
 }
 
-PassRefPtr<UniqueElementData> UniqueElementData::create()
+PassRefPtrWillBeRawPtr<UniqueElementData> UniqueElementData::create()
 {
-    return adoptRef(new UniqueElementData);
+    return adoptRefWillBeNoop(new UniqueElementData);
 }
 
-PassRefPtr<ShareableElementData> UniqueElementData::makeShareableCopy() const
+PassRefPtrWillBeRawPtr<ShareableElementData> UniqueElementData::makeShareableCopy() const
 {
+#if ENABLE(OILPAN)
+    void* slot = Heap::allocate<ElementData>(sizeForShareableElementDataWithAttributeCount(m_attributeVector.size()));
+#else
     void* slot = WTF::fastMalloc(sizeForShareableElementDataWithAttributeCount(m_attributeVector.size()));
-    return adoptRef(new (slot) ShareableElementData(*this));
+#endif
+    return adoptRefWillBeNoop(new (slot) ShareableElementData(*this));
 }
 
-Attribute* UniqueElementData::findAttributeByName(const QualifiedName& name)
+void UniqueElementData::traceAfterDispatch(Visitor* visitor)
 {
-    unsigned length = m_attributeVector.size();
-    for (unsigned i = 0; i < length; ++i) {
-        if (m_attributeVector.at(i).name().matches(name))
-            return &m_attributeVector.at(i);
-    }
-    return 0;
+    visitor->trace(m_presentationAttributeStyle);
+    ElementData::traceAfterDispatch(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -8,8 +8,6 @@
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/stat.h>
-#include <sys/types.h>
 #include <sys/types.h>
 
 #include "base/basictypes.h"
@@ -17,7 +15,7 @@
 #include "base/logging.h"
 #include "build/build_config.h"
 #include "content/public/common/content_switches.h"
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf_policy.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 
 #if defined(USE_SECCOMP_BPF)
 
@@ -26,6 +24,7 @@
 #include "content/common/sandbox_linux/bpf_gpu_policy_linux.h"
 #include "content/common/sandbox_linux/bpf_ppapi_policy_linux.h"
 #include "content/common/sandbox_linux/bpf_renderer_policy_linux.h"
+#include "content/common/sandbox_linux/bpf_utility_policy_linux.h"
 #include "content/common/sandbox_linux/sandbox_bpf_base_policy_linux.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "sandbox/linux/seccomp-bpf-helpers/baseline_policy.h"
@@ -35,16 +34,23 @@
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/services/linux_syscalls.h"
 
+#if !defined(IN_NACL_HELPER)
+#include "ui/gl/gl_switches.h"
+#endif
+
 using sandbox::BaselinePolicy;
+using sandbox::SandboxBPF;
 using sandbox::SyscallSets;
+using sandbox::bpf_dsl::Allow;
+using sandbox::bpf_dsl::ResultExpr;
 
 #else
 
 // Make sure that seccomp-bpf does not get disabled by mistake. Also make sure
 // that we think twice about this when adding a new architecture.
-#if !defined(ARCH_CPU_MIPS_FAMILY) && !defined(ARCH_CPU_ARM64)
+#if !defined(ARCH_CPU_ARM64)
 #error "Seccomp-bpf disabled on supported architecture!"
-#endif  // !defined(ARCH_CPU_MIPS_FAMILY) && !defined(ARCH_CPU_ARM64)
+#endif  // !defined(ARCH_CPU_ARM64)
 
 #endif  //
 
@@ -53,7 +59,7 @@ namespace content {
 #if defined(USE_SECCOMP_BPF)
 namespace {
 
-void StartSandboxWithPolicy(sandbox::SandboxBPFPolicy* policy);
+void StartSandboxWithPolicy(sandbox::bpf_dsl::Policy* policy);
 
 inline bool IsChromeOS() {
 #if defined(OS_CHROMEOS)
@@ -74,34 +80,27 @@ inline bool IsArchitectureArm() {
 class BlacklistDebugAndNumaPolicy : public SandboxBPFBasePolicy {
  public:
   BlacklistDebugAndNumaPolicy() {}
-  virtual ~BlacklistDebugAndNumaPolicy() {}
+  ~BlacklistDebugAndNumaPolicy() override {}
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE;
+  ResultExpr EvaluateSyscall(int system_call_number) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BlacklistDebugAndNumaPolicy);
 };
 
-ErrorCode BlacklistDebugAndNumaPolicy::EvaluateSyscall(SandboxBPF* sandbox,
-                                                       int sysno) const {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // TODO(jln) we should not have to do that in a trivial policy.
-    return ErrorCode(ENOSYS);
-  }
+ResultExpr BlacklistDebugAndNumaPolicy::EvaluateSyscall(int sysno) const {
   if (SyscallSets::IsDebug(sysno) || SyscallSets::IsNuma(sysno))
-    return sandbox->Trap(sandbox::CrashSIGSYS_Handler, NULL);
+    return sandbox::CrashSIGSYS();
 
-  return ErrorCode(ErrorCode::ERR_ALLOWED);
+  return Allow();
 }
 
 class AllowAllPolicy : public SandboxBPFBasePolicy {
  public:
   AllowAllPolicy() {}
-  virtual ~AllowAllPolicy() {}
+  ~AllowAllPolicy() override {}
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE;
+  ResultExpr EvaluateSyscall(int system_call_number) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(AllowAllPolicy);
@@ -110,19 +109,13 @@ class AllowAllPolicy : public SandboxBPFBasePolicy {
 // Allow all syscalls.
 // This will still deny x32 or IA32 calls in 64 bits mode or
 // 64 bits system calls in compatibility mode.
-ErrorCode AllowAllPolicy::EvaluateSyscall(SandboxBPF*, int sysno) const {
-  if (!SandboxBPF::IsValidSyscallNumber(sysno)) {
-    // TODO(jln) we should not have to do that in a trivial policy.
-    return ErrorCode(ENOSYS);
-  } else {
-    return ErrorCode(ErrorCode::ERR_ALLOWED);
-  }
+ResultExpr AllowAllPolicy::EvaluateSyscall(int sysno) const {
+  return Allow();
 }
 
 // If a BPF policy is engaged for |process_type|, run a few sanity checks.
 void RunSandboxSanityChecks(const std::string& process_type) {
   if (process_type == switches::kRendererProcess ||
-      process_type == switches::kWorkerProcess ||
       process_type == switches::kGpuProcess ||
       process_type == switches::kPpapiPluginProcess) {
     int syscall_ret;
@@ -151,7 +144,7 @@ void RunSandboxSanityChecks(const std::string& process_type) {
 
 
 // This function takes ownership of |policy|.
-void StartSandboxWithPolicy(sandbox::SandboxBPFPolicy* policy) {
+void StartSandboxWithPolicy(sandbox::bpf_dsl::Policy* policy) {
   // Starting the sandbox is a one-way operation. The kernel doesn't allow
   // us to unload a sandbox policy after it has been started. Nonetheless,
   // in order to make the use of the "Sandbox" object easier, we allow for
@@ -166,7 +159,8 @@ void StartSandboxWithPolicy(sandbox::SandboxBPFPolicy* policy) {
 // in its dependencies. Make sure to not link things that are not needed.
 #if !defined(IN_NACL_HELPER)
 scoped_ptr<SandboxBPFBasePolicy> GetGpuProcessSandbox() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   bool allow_sysv_shm = false;
   if (command_line.HasSwitch(switches::kGpuSandboxAllowSysVShm)) {
     DCHECK(IsArchitectureArm());
@@ -177,24 +171,27 @@ scoped_ptr<SandboxBPFBasePolicy> GetGpuProcessSandbox() {
     return scoped_ptr<SandboxBPFBasePolicy>(
         new CrosArmGpuProcessPolicy(allow_sysv_shm));
   } else {
-    return scoped_ptr<SandboxBPFBasePolicy>(new GpuProcessPolicy);
+    bool allow_mincore = command_line.HasSwitch(switches::kUseGL) &&
+                         command_line.GetSwitchValueASCII(switches::kUseGL) ==
+                             gfx::kGLImplementationEGLName;
+    return scoped_ptr<SandboxBPFBasePolicy>(
+        new GpuProcessPolicy(allow_mincore));
   }
 }
 
 // Initialize the seccomp-bpf sandbox.
-bool StartBPFSandbox(const CommandLine& command_line,
+bool StartBPFSandbox(const base::CommandLine& command_line,
                      const std::string& process_type) {
   scoped_ptr<SandboxBPFBasePolicy> policy;
 
   if (process_type == switches::kGpuProcess) {
     policy.reset(GetGpuProcessSandbox().release());
-  } else if (process_type == switches::kRendererProcess ||
-             process_type == switches::kWorkerProcess) {
+  } else if (process_type == switches::kRendererProcess) {
     policy.reset(new RendererProcessPolicy);
   } else if (process_type == switches::kPpapiPluginProcess) {
     policy.reset(new PpapiProcessPolicy);
   } else if (process_type == switches::kUtilityProcess) {
-    policy.reset(new BlacklistDebugAndNumaPolicy);
+    policy.reset(new UtilityProcessPolicy);
   } else {
     NOTREACHED();
     policy.reset(new AllowAllPolicy);
@@ -207,7 +204,7 @@ bool StartBPFSandbox(const CommandLine& command_line,
   return true;
 }
 #else  // defined(IN_NACL_HELPER)
-bool StartBPFSandbox(const CommandLine& command_line,
+bool StartBPFSandbox(const base::CommandLine& command_line,
                      const std::string& process_type) {
   NOTREACHED();
   // Avoid -Wunused-function with no-op code.
@@ -224,7 +221,8 @@ bool StartBPFSandbox(const CommandLine& command_line,
 
 // Is seccomp BPF globally enabled?
 bool SandboxSeccompBPF::IsSeccompBPFDesired() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kNoSandbox) &&
       !command_line.HasSwitch(switches::kDisableSeccompFilterSandbox)) {
     return true;
@@ -236,7 +234,8 @@ bool SandboxSeccompBPF::IsSeccompBPFDesired() {
 bool SandboxSeccompBPF::ShouldEnableSeccompBPF(
     const std::string& process_type) {
 #if defined(USE_SECCOMP_BPF)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (process_type == switches::kGpuProcess)
     return !command_line.HasSwitch(switches::kDisableGpuSandbox);
 
@@ -264,7 +263,8 @@ bool SandboxSeccompBPF::SupportsSandbox() {
 
 bool SandboxSeccompBPF::StartSandbox(const std::string& process_type) {
 #if defined(USE_SECCOMP_BPF)
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
 
   if (IsSeccompBPFDesired() &&  // Global switches policy.
       ShouldEnableSeccompBPF(process_type) &&  // Process-specific policy.
@@ -280,7 +280,7 @@ bool SandboxSeccompBPF::StartSandbox(const std::string& process_type) {
 }
 
 bool SandboxSeccompBPF::StartSandboxWithExternalPolicy(
-    scoped_ptr<sandbox::SandboxBPFPolicy> policy) {
+    scoped_ptr<sandbox::bpf_dsl::Policy> policy) {
 #if defined(USE_SECCOMP_BPF)
   if (IsSeccompBPFDesired() && SupportsSandbox()) {
     CHECK(policy);
@@ -291,12 +291,11 @@ bool SandboxSeccompBPF::StartSandboxWithExternalPolicy(
   return false;
 }
 
-scoped_ptr<sandbox::SandboxBPFPolicy>
-SandboxSeccompBPF::GetBaselinePolicy() {
+scoped_ptr<sandbox::bpf_dsl::Policy> SandboxSeccompBPF::GetBaselinePolicy() {
 #if defined(USE_SECCOMP_BPF)
-  return scoped_ptr<sandbox::SandboxBPFPolicy>(new BaselinePolicy);
+  return scoped_ptr<sandbox::bpf_dsl::Policy>(new BaselinePolicy);
 #else
-  return scoped_ptr<sandbox::SandboxBPFPolicy>();
+  return scoped_ptr<sandbox::bpf_dsl::Policy>();
 #endif  // defined(USE_SECCOMP_BPF)
 }
 

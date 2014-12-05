@@ -29,7 +29,7 @@
         '<(webrtc_root)/modules/modules.gyp:audio_decoder_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -43,7 +43,7 @@
         '<(webrtc_root)/common_audio/common_audio.gyp:common_audio_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -57,7 +57,7 @@
         '<(webrtc_root)/common_video/common_video_unittests.gyp:common_video_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -71,7 +71,7 @@
         '<(webrtc_root)/modules/modules.gyp:modules_tests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -85,7 +85,7 @@
         '<(webrtc_root)/modules/modules.gyp:modules_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -99,7 +99,7 @@
         '<(webrtc_root)/system_wrappers/source/system_wrappers_tests.gyp:system_wrappers_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -113,7 +113,7 @@
         '<(webrtc_root)/test/test.gyp:test_support_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -127,7 +127,7 @@
         '<(webrtc_root)/tools/tools.gyp:tools_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -141,7 +141,7 @@
         '<(webrtc_root)/video_engine/video_engine.gyp:video_engine_core_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -155,7 +155,7 @@
         '<(webrtc_root)/webrtc.gyp:video_engine_tests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
      },
      {
@@ -169,7 +169,7 @@
         '<(webrtc_root)/voice_engine/voice_engine.gyp:voice_engine_unittests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -183,7 +183,7 @@
         '<(webrtc_root)/webrtc.gyp:webrtc_perf_tests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -197,7 +197,7 @@
         '<(webrtc_root)/modules/modules.gyp:audio_codec_speed_tests',
       ],
       'includes': [
-        '../../../build/apk_test.gypi',
+        '../../build/apk_test.gypi',
       ],
     },
     {
@@ -212,7 +212,7 @@
          'video_capture_java',
        ],
        'includes': [
-         '../../../build/apk_test.gypi',
+         '../../build/apk_test.gypi',
        ],
     },
     {
@@ -226,7 +226,7 @@
         'java_in_dir': '<(webrtc_root)/modules/video_capture/android/java',
       },
       'includes': [
-        '../../../build/java.gypi',
+        '../../build/java.gypi',
       ],
     },
   ],

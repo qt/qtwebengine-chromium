@@ -10,8 +10,8 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/gfx/geometry/matrix3_f.h"
 #include "ui/gfx/gfx_export.h"
-#include "ui/gfx/matrix3_f.h"
 
 class SkBitmap;
 
@@ -40,9 +40,9 @@ class GFX_EXPORT KMeanImageSampler {
 class GFX_EXPORT GridSampler : public KMeanImageSampler {
   public:
    GridSampler();
-   virtual ~GridSampler();
+   ~GridSampler() override;
 
-   virtual int GetSample(int width, int height) OVERRIDE;
+   int GetSample(int width, int height) override;
 
   private:
    // The number of times GetSample has been called.

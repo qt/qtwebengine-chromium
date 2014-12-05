@@ -26,8 +26,8 @@
 #include "config.h"
 #include "modules/indexeddb/IDBRequest.h"
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/dom/DOMError.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/testing/NullExecutionContext.h"
@@ -46,9 +46,7 @@
 #include <gtest/gtest.h>
 #include <v8.h>
 
-using blink::WebBlobInfo;
-using namespace WebCore;
-
+namespace blink {
 namespace {
 
 class IDBRequestTest : public testing::Test {
@@ -107,7 +105,7 @@ TEST_F(IDBRequestTest, AbortErrorAfterAbort)
     request->onError(DOMError::create(AbortError, "Description goes here."));
 }
 
-class MockWebIDBDatabase : public blink::WebIDBDatabase {
+class MockWebIDBDatabase : public WebIDBDatabase {
 public:
     static PassOwnPtr<MockWebIDBDatabase> create()
     {
@@ -118,11 +116,11 @@ public:
         EXPECT_TRUE(m_closeCalled);
     }
 
-    virtual void close() OVERRIDE
+    virtual void close() override
     {
         m_closeCalled = true;
     }
-    virtual void abort(long long transactionId) OVERRIDE { }
+    virtual void abort(long long transactionId) override { }
 
 private:
     MockWebIDBDatabase()
@@ -147,7 +145,7 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
         EXPECT_EQ(request->readyState(), "pending");
 
         executionContext()->stopActiveDOMObjects();
-        request->onUpgradeNeeded(oldVersion, backend.release(), metadata, blink::WebIDBDataLossNone, String());
+        request->onUpgradeNeeded(oldVersion, backend.release(), metadata, WebIDBDataLossNone, String());
     }
 
     {
@@ -161,3 +159,4 @@ TEST_F(IDBRequestTest, ConnectionsAfterStopping)
 }
 
 } // namespace
+} // namespace blink

@@ -18,6 +18,7 @@ goog.require('cvox.BrailleUtil');
 goog.require('cvox.DescriptionUtil');
 goog.require('cvox.DomUtil');
 goog.require('cvox.NavDescription');
+goog.require('cvox.QueueMode');
 goog.require('cvox.TraverseTable');
 
 /**
@@ -55,7 +56,7 @@ cvox.TableWalker.prototype.sync = function(sel) {
 /**
  * @override
  * @suppress {checkTypes} actual parameter 2 of
- * cvox.AbstractMsgs.prototype.getMsg does not match formal parameter
+ * cvox.Msgs.prototype.getMsg does not match formal parameter
  * found   : Array.<number>
  * required: (Array.<string>|null|undefined)
  */
@@ -204,7 +205,7 @@ cvox.TableWalker.prototype.nextCol = function(sel) {
  */
 cvox.TableWalker.prototype.announceHeaders = function(sel) {
   cvox.ChromeVox.tts.speak(this.getHeaderText_(sel),
-                           cvox.AbstractTts.QUEUE_MODE_FLUSH,
+                           cvox.QueueMode.FLUSH,
                            cvox.AbstractTts.PERSONALITY_ANNOTATION);
   return sel;
 };
@@ -217,7 +218,7 @@ cvox.TableWalker.prototype.announceHeaders = function(sel) {
 cvox.TableWalker.prototype.speakTableLocation = function(sel) {
   cvox.ChromeVox.navigationManager.speakDescriptionArray(
       this.getLocationDescription_(sel),
-      cvox.AbstractTts.QUEUE_MODE_FLUSH,
+      cvox.QueueMode.FLUSH,
       null);
   return sel;
 };
@@ -267,7 +268,7 @@ cvox.TableWalker.prototype.getHeaderText_ = function(sel) {
  * @param {!cvox.CursorSelection} sel A valid selection.
  * @return {Array.<cvox.NavDescription>} The location description.
  * @suppress {checkTypes} actual parameter 2 of
- * cvox.AbstractMsgs.prototype.getMsg does not match
+ * cvox.Msgs.prototype.getMsg does not match
  * formal parameter
  * found   : Array.<number>
  * required: (Array.<string>|null|undefined)

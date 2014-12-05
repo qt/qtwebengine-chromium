@@ -26,29 +26,21 @@
 #ifndef DatabaseManager_h
 #define DatabaseManager_h
 
-#include "modules/webdatabase/DatabaseBasicTypes.h"
+#include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/DatabaseError.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Assertions.h"
+#include "wtf/Forward.h"
 #include "wtf/HashMap.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/ThreadingPrimitives.h"
-#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class AbstractDatabaseServer;
 class Database;
-class DatabaseBackendBase;
 class DatabaseCallback;
 class DatabaseContext;
-class DatabaseSync;
-class TaskSynchronizer;
 class ExceptionState;
 class SecurityOrigin;
 class ExecutionContext;
-
-typedef int ExceptionCode;
 
 class DatabaseManager {
     WTF_MAKE_NONCOPYABLE(DatabaseManager); WTF_MAKE_FAST_ALLOCATED;
@@ -60,7 +52,7 @@ public:
     void registerDatabaseContext(DatabaseContext*);
     void unregisterDatabaseContext(DatabaseContext*);
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void didConstructDatabaseContext();
     void didDestructDatabaseContext();
 #else
@@ -70,14 +62,9 @@ public:
 
     static void throwExceptionForDatabaseError(DatabaseError, const String& errorMessage, ExceptionState&);
 
-    PassRefPtrWillBeRawPtr<Database> openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
-    PassRefPtrWillBeRawPtr<DatabaseSync> openDatabaseSync(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback>, DatabaseError&, String& errorMessage);
+    Database* openDatabase(ExecutionContext*, const String& name, const String& expectedVersion, const String& displayName, unsigned long estimatedSize, DatabaseCallback*, DatabaseError&, String& errorMessage);
 
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
-
-    void closeDatabasesImmediately(const String& originIdentifier, const String& name);
-
-    void interruptAllDatabasesForContext(DatabaseContext*);
 
 private:
     DatabaseManager();
@@ -90,29 +77,20 @@ private:
     // it already exist previously. Otherwise, it returns 0.
     DatabaseContext* existingDatabaseContextFor(ExecutionContext*);
 
-    PassRefPtrWillBeRawPtr<DatabaseBackendBase> openDatabaseBackend(ExecutionContext*,
-        DatabaseType, const String& name, const String& expectedVersion, const String& displayName,
+    Database* openDatabaseInternal(ExecutionContext*,
+        const String& name, const String& expectedVersion, const String& displayName,
         unsigned long estimatedSize, bool setVersionInNewDatabase, DatabaseError&, String& errorMessage);
 
     static void logErrorMessage(ExecutionContext*, const String& message);
 
-    AbstractDatabaseServer* m_server;
-
-    // Access to the following fields require locking m_contextMapLock:
-#if ENABLE(OILPAN)
-    // We can't use PersistentHeapHashMap because multiple threads update the map.
-    typedef HashMap<ExecutionContext*, OwnPtr<Persistent<DatabaseContext> > > ContextMap;
-#else
-    typedef HashMap<ExecutionContext*, RefPtr<DatabaseContext> > ContextMap;
-#endif
+    typedef PersistentHeapHashMap<ExecutionContext*, Member<DatabaseContext> > ContextMap;
     ContextMap m_contextMap;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     int m_databaseContextRegisteredCount;
     int m_databaseContextInstanceCount;
 #endif
-    Mutex m_contextMapLock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseManager_h

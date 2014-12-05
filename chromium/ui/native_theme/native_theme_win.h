@@ -106,20 +106,20 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
   // NativeTheme implementation:
   virtual gfx::Size GetPartSize(Part part,
                                 State state,
-                                const ExtraParams& extra) const OVERRIDE;
+                                const ExtraParams& extra) const override;
   virtual void Paint(SkCanvas* canvas,
                      Part part,
                      State state,
                      const gfx::Rect& rect,
-                     const ExtraParams& extra) const OVERRIDE;
-  virtual SkColor GetSystemColor(ColorId color_id) const OVERRIDE;
+                     const ExtraParams& extra) const override;
+  virtual SkColor GetSystemColor(ColorId color_id) const override;
 
  private:
   NativeThemeWin();
   ~NativeThemeWin();
 
   // gfx::SysColorChangeListener implementation:
-  virtual void OnSysColorChange() OVERRIDE;
+  virtual void OnSysColorChange() override;
 
   // Update the locally cached set of system colors.
   void UpdateSystemColors();
@@ -156,8 +156,7 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
                       RECT* rect) const;
 
   HRESULT PaintMenuSeparator(HDC hdc,
-                             const gfx::Rect& rect,
-                             const MenuSeparatorExtraParams& extra) const;
+                             const gfx::Rect& rect) const;
 
   HRESULT PaintMenuGutter(HDC hdc, const gfx::Rect& rect) const;
 

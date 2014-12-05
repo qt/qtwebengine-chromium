@@ -17,8 +17,8 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/indexed_db/indexed_db_factory.h"
 #include "content/public/browser/indexed_db_context.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/common/quota/quota_types.h"
 
 class GURL;
 
@@ -28,7 +28,7 @@ class FilePath;
 class SequencedTaskRunner;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManagerProxy;
 class SpecialStoragePolicy;
 }
@@ -40,29 +40,36 @@ class IndexedDBConnection;
 class CONTENT_EXPORT IndexedDBContextImpl
     : NON_EXPORTED_BASE(public IndexedDBContext) {
  public:
-  // If |data_path| is empty, nothing will be saved to disk.
-  IndexedDBContextImpl(const base::FilePath& data_path,
-                       quota::SpecialStoragePolicy* special_storage_policy,
-                       quota::QuotaManagerProxy* quota_manager_proxy,
-                       base::SequencedTaskRunner* task_runner);
-
-  IndexedDBFactory* GetIDBFactory();
+  // Recorded in histograms, so append only.
+  enum ForceCloseReason {
+    FORCE_CLOSE_DELETE_ORIGIN = 0,
+    FORCE_CLOSE_BACKING_STORE_FAILURE,
+    FORCE_CLOSE_INTERNALS_PAGE,
+    FORCE_CLOSE_REASON_MAX
+  };
 
   // The indexed db directory.
   static const base::FilePath::CharType kIndexedDBDirectory[];
+
+  // If |data_path| is empty, nothing will be saved to disk.
+  IndexedDBContextImpl(const base::FilePath& data_path,
+                       storage::SpecialStoragePolicy* special_storage_policy,
+                       storage::QuotaManagerProxy* quota_manager_proxy,
+                       base::SequencedTaskRunner* task_runner);
+
+  IndexedDBFactory* GetIDBFactory();
 
   // Disables the exit-time deletion of session-only data.
   void SetForceKeepSessionState() { force_keep_session_state_ = true; }
 
   // IndexedDBContext implementation:
-  virtual base::TaskRunner* TaskRunner() const OVERRIDE;
-  virtual std::vector<IndexedDBInfo> GetAllOriginsInfo() OVERRIDE;
-  virtual int64 GetOriginDiskUsage(const GURL& origin_url) OVERRIDE;
-  virtual void DeleteForOrigin(const GURL& origin_url) OVERRIDE;
-  virtual base::FilePath GetFilePathForTesting(
-      const std::string& origin_id) const OVERRIDE;
-  virtual void SetTaskRunnerForTesting(base::SequencedTaskRunner* task_runner)
-      OVERRIDE;
+  base::SequencedTaskRunner* TaskRunner() const override;
+  std::vector<IndexedDBInfo> GetAllOriginsInfo() override;
+  int64 GetOriginDiskUsage(const GURL& origin_url) override;
+  void DeleteForOrigin(const GURL& origin_url) override;
+  base::FilePath GetFilePathForTesting(
+      const std::string& origin_id) const override;
+  void SetTaskRunnerForTesting(base::SequencedTaskRunner* task_runner) override;
 
   // Methods called by IndexedDBDispatcherHost for quota support.
   void ConnectionOpened(const GURL& origin_url, IndexedDBConnection* db);
@@ -72,19 +79,11 @@ class CONTENT_EXPORT IndexedDBContextImpl
   bool WouldBeOverQuota(const GURL& origin_url, int64 additional_bytes);
   bool IsOverQuota(const GURL& origin_url);
 
-  quota::QuotaManagerProxy* quota_manager_proxy();
+  storage::QuotaManagerProxy* quota_manager_proxy();
 
   std::vector<GURL> GetAllOrigins();
   base::Time GetOriginLastModified(const GURL& origin_url);
   base::ListValue* GetAllOriginsDetails();
-
-  // Recorded in histograms, so append only.
-  enum ForceCloseReason {
-    FORCE_CLOSE_DELETE_ORIGIN = 0,
-    FORCE_CLOSE_BACKING_STORE_FAILURE,
-    FORCE_CLOSE_INTERNALS_PAGE,
-    FORCE_CLOSE_REASON_MAX
-  };
 
   // ForceClose takes a value rather than a reference since it may release the
   // owning object.
@@ -103,8 +102,10 @@ class CONTENT_EXPORT IndexedDBContextImpl
     data_path_ = data_path;
   }
 
+  bool is_incognito() const { return data_path_.empty(); }
+
  protected:
-  virtual ~IndexedDBContextImpl();
+  ~IndexedDBContextImpl() override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(IndexedDBTest, ClearLocalState);
@@ -121,7 +122,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void EnsureDiskUsageCacheInitialized(const GURL& origin_url);
   void QueryDiskAndUpdateQuotaUsage(const GURL& origin_url);
   void GotUsageAndQuota(const GURL& origin_url,
-                        quota::QuotaStatusCode,
+                        storage::QuotaStatusCode,
                         int64 usage,
                         int64 quota);
   void GotUpdatedQuota(const GURL& origin_url, int64 usage, int64 quota);
@@ -142,9 +143,9 @@ class CONTENT_EXPORT IndexedDBContextImpl
   base::FilePath data_path_;
   // If true, nothing (not even session-only data) should be deleted on exit.
   bool force_keep_session_state_;
-  scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
-  scoped_refptr<quota::QuotaManagerProxy> quota_manager_proxy_;
-  base::SequencedTaskRunner* task_runner_;
+  scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;
+  scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy_;
+  scoped_refptr<base::SequencedTaskRunner> task_runner_;
   scoped_ptr<std::set<GURL> > origin_set_;
   OriginToSizeMap origin_size_map_;
   OriginToSizeMap space_available_map_;

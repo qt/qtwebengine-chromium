@@ -421,8 +421,8 @@ TEST_F(GLES2ImplementationTest, FramebufferRenderbuffer) {
   Cmds expected;
   expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 4);
 
-  gl_->FramebufferRenderbuffer(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, 4);
+  gl_->FramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                               GL_RENDERBUFFER, 4);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -433,14 +433,14 @@ TEST_F(GLES2ImplementationTest, FramebufferTexture2D) {
   Cmds expected;
   expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4);
 
-  gl_->FramebufferTexture2D(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0);
+  gl_->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                            4, 0);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
 TEST_F(GLES2ImplementationTest, FramebufferTexture2DInvalidConstantArg4) {
-  gl_->FramebufferTexture2D(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 1);
+  gl_->FramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
+                            4, 1);
   EXPECT_TRUE(NoCommandsWritten());
   EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
@@ -602,18 +602,14 @@ TEST_F(GLES2ImplementationTest, GetFramebufferAttachmentParameteriv) {
   Result::Type result = 0;
   Cmds expected;
   ExpectedMemoryInfo result1 = GetExpectedResultMemory(4);
-  expected.cmd.Init(123,
-                    GL_COLOR_ATTACHMENT0,
-                    GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
-                    result1.id,
+  expected.cmd.Init(123, GL_COLOR_ATTACHMENT0,
+                    GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE, result1.id,
                     result1.offset);
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, SizedResultHelper<Result::Type>(1)))
       .RetiresOnSaturation();
   gl_->GetFramebufferAttachmentParameteriv(
-      123,
-      GL_COLOR_ATTACHMENT0,
-      GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
+      123, GL_COLOR_ATTACHMENT0, GL_FRAMEBUFFER_ATTACHMENT_OBJECT_TYPE,
       &result);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
   EXPECT_EQ(static_cast<Result::Type>(1), result);
@@ -735,8 +731,8 @@ TEST_F(GLES2ImplementationTest, GetVertexAttribfv) {
   Result::Type result = 0;
   Cmds expected;
   ExpectedMemoryInfo result1 = GetExpectedResultMemory(4);
-  expected.cmd.Init(
-      123, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, result1.id, result1.offset);
+  expected.cmd.Init(123, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, result1.id,
+                    result1.offset);
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, SizedResultHelper<Result::Type>(1)))
       .RetiresOnSaturation();
@@ -753,8 +749,8 @@ TEST_F(GLES2ImplementationTest, GetVertexAttribiv) {
   Result::Type result = 0;
   Cmds expected;
   ExpectedMemoryInfo result1 = GetExpectedResultMemory(4);
-  expected.cmd.Init(
-      123, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, result1.id, result1.offset);
+  expected.cmd.Init(123, GL_VERTEX_ATTRIB_ARRAY_NORMALIZED, result1.id,
+                    result1.offset);
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, SizedResultHelper<Result::Type>(1)))
       .RetiresOnSaturation();
@@ -1599,8 +1595,8 @@ TEST_F(GLES2ImplementationTest, RenderbufferStorageMultisampleCHROMIUM) {
   Cmds expected;
   expected.cmd.Init(GL_RENDERBUFFER, 2, GL_RGBA4, 4, 5);
 
-  gl_->RenderbufferStorageMultisampleCHROMIUM(
-      GL_RENDERBUFFER, 2, GL_RGBA4, 4, 5);
+  gl_->RenderbufferStorageMultisampleCHROMIUM(GL_RENDERBUFFER, 2, GL_RGBA4, 4,
+                                              5);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
@@ -1622,15 +1618,15 @@ TEST_F(GLES2ImplementationTest, FramebufferTexture2DMultisampleEXT) {
   Cmds expected;
   expected.cmd.Init(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 6);
 
-  gl_->FramebufferTexture2DMultisampleEXT(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 0, 6);
+  gl_->FramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                          GL_TEXTURE_2D, 4, 0, 6);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 
 TEST_F(GLES2ImplementationTest,
        FramebufferTexture2DMultisampleEXTInvalidConstantArg4) {
-  gl_->FramebufferTexture2DMultisampleEXT(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 4, 1, 6);
+  gl_->FramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                          GL_TEXTURE_2D, 4, 1, 6);
   EXPECT_TRUE(NoCommandsWritten());
   EXPECT_EQ(GL_INVALID_VALUE, CheckError());
 }
@@ -1742,9 +1738,6 @@ TEST_F(GLES2ImplementationTest, IsVertexArrayOES) {
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
   EXPECT_TRUE(result);
 }
-// TODO: Implement unit test for GenSharedIdsCHROMIUM
-// TODO: Implement unit test for DeleteSharedIdsCHROMIUM
-// TODO: Implement unit test for RegisterSharedIdsCHROMIUM
 // TODO: Implement unit test for EnableFeatureCHROMIUM
 
 TEST_F(GLES2ImplementationTest, ResizeCHROMIUM) {
@@ -1806,6 +1799,108 @@ TEST_F(GLES2ImplementationTest, VertexAttribDivisorANGLE) {
 }
 // TODO: Implement unit test for GenMailboxCHROMIUM
 // TODO: Implement unit test for BindUniformLocationCHROMIUM
+
+TEST_F(GLES2ImplementationTest, GenValuebuffersCHROMIUM) {
+  GLuint ids[2] = {
+      0,
+  };
+  struct Cmds {
+    cmds::GenValuebuffersCHROMIUMImmediate gen;
+    GLuint data[2];
+  };
+  Cmds expected;
+  expected.gen.Init(arraysize(ids), &ids[0]);
+  expected.data[0] = kValuebuffersStartId;
+  expected.data[1] = kValuebuffersStartId + 1;
+  gl_->GenValuebuffersCHROMIUM(arraysize(ids), &ids[0]);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  EXPECT_EQ(kValuebuffersStartId, ids[0]);
+  EXPECT_EQ(kValuebuffersStartId + 1, ids[1]);
+}
+
+TEST_F(GLES2ImplementationTest, DeleteValuebuffersCHROMIUM) {
+  GLuint ids[2] = {kValuebuffersStartId, kValuebuffersStartId + 1};
+  struct Cmds {
+    cmds::DeleteValuebuffersCHROMIUMImmediate del;
+    GLuint data[2];
+  };
+  Cmds expected;
+  expected.del.Init(arraysize(ids), &ids[0]);
+  expected.data[0] = kValuebuffersStartId;
+  expected.data[1] = kValuebuffersStartId + 1;
+  gl_->DeleteValuebuffersCHROMIUM(arraysize(ids), &ids[0]);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, IsValuebufferCHROMIUM) {
+  struct Cmds {
+    cmds::IsValuebufferCHROMIUM cmd;
+  };
+
+  Cmds expected;
+  ExpectedMemoryInfo result1 =
+      GetExpectedResultMemory(sizeof(cmds::IsValuebufferCHROMIUM::Result));
+  expected.cmd.Init(1, result1.id, result1.offset);
+
+  EXPECT_CALL(*command_buffer(), OnFlush())
+      .WillOnce(SetMemory(result1.ptr, uint32_t(1)))
+      .RetiresOnSaturation();
+
+  GLboolean result = gl_->IsValuebufferCHROMIUM(1);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  EXPECT_TRUE(result);
+}
+
+TEST_F(GLES2ImplementationTest, BindValuebufferCHROMIUM) {
+  struct Cmds {
+    cmds::BindValuebufferCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM, 2);
+
+  gl_->BindValuebufferCHROMIUM(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM, 2);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+  ClearCommands();
+  gl_->BindValuebufferCHROMIUM(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM, 2);
+  EXPECT_TRUE(NoCommandsWritten());
+}
+
+TEST_F(GLES2ImplementationTest, SubscribeValueCHROMIUM) {
+  struct Cmds {
+    cmds::SubscribeValueCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
+                    GL_MOUSE_POSITION_CHROMIUM);
+
+  gl_->SubscribeValueCHROMIUM(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
+                              GL_MOUSE_POSITION_CHROMIUM);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, PopulateSubscribedValuesCHROMIUM) {
+  struct Cmds {
+    cmds::PopulateSubscribedValuesCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM);
+
+  gl_->PopulateSubscribedValuesCHROMIUM(GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, UniformValuebufferCHROMIUM) {
+  struct Cmds {
+    cmds::UniformValuebufferCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init(1, GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
+                    GL_MOUSE_POSITION_CHROMIUM);
+
+  gl_->UniformValuebufferCHROMIUM(1, GL_SUBSCRIBED_VALUES_BUFFER_CHROMIUM,
+                                  GL_MOUSE_POSITION_CHROMIUM);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
 
 TEST_F(GLES2ImplementationTest, BindTexImage2DCHROMIUM) {
   struct Cmds {
@@ -1897,6 +1992,33 @@ TEST_F(GLES2ImplementationTest, DiscardBackbufferCHROMIUM) {
   expected.cmd.Init();
 
   gl_->DiscardBackbufferCHROMIUM();
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, MatrixLoadfCHROMIUM) {
+  GLfloat data[16] = {0};
+  struct Cmds {
+    cmds::MatrixLoadfCHROMIUMImmediate cmd;
+    GLfloat data[16];
+  };
+
+  for (int jj = 0; jj < 16; ++jj) {
+    data[jj] = static_cast<GLfloat>(jj);
+  }
+  Cmds expected;
+  expected.cmd.Init(GL_PATH_PROJECTION_CHROMIUM, &data[0]);
+  gl_->MatrixLoadfCHROMIUM(GL_PATH_PROJECTION_CHROMIUM, &data[0]);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, MatrixLoadIdentityCHROMIUM) {
+  struct Cmds {
+    cmds::MatrixLoadIdentityCHROMIUM cmd;
+  };
+  Cmds expected;
+  expected.cmd.Init(GL_PATH_PROJECTION_CHROMIUM);
+
+  gl_->MatrixLoadIdentityCHROMIUM(GL_PATH_PROJECTION_CHROMIUM);
   EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
 }
 #endif  // GPU_COMMAND_BUFFER_CLIENT_GLES2_IMPLEMENTATION_UNITTEST_AUTOGEN_H_

@@ -23,7 +23,7 @@
 #ifndef HitTestRequest_h
 #define HitTestRequest_h
 
-namespace WebCore {
+namespace blink {
 
 class HitTestRequest {
 public:
@@ -35,12 +35,9 @@ public:
         IgnoreClipping = 1 << 5,
         SVGClipContent = 1 << 6,
         TouchEvent = 1 << 7,
-        // Deprecated. Instead of this, callers should call HitTestResult::setToNodesInDocumentTreeScope() explicitly.
-        ConfusingAndOftenMisusedDisallowShadowContent = 1 << 8,
-        AllowFrameScrollbars = 1 << 9,
-        AllowChildFrameContent = 1 << 10,
-        ChildFrameHitTest = 1 << 11,
-        IgnorePointerEventsNone = 1 << 12,
+        AllowChildFrameContent = 1 << 8,
+        ChildFrameHitTest = 1 << 9,
+        IgnorePointerEventsNone = 1 << 10,
     };
 
     typedef unsigned HitTestRequestType;
@@ -57,16 +54,12 @@ public:
     bool ignoreClipping() const { return m_requestType & IgnoreClipping; }
     bool svgClipContent() const { return m_requestType & SVGClipContent; }
     bool touchEvent() const { return m_requestType & TouchEvent; }
-    bool mouseEvent() const { return !touchEvent(); }
-    bool disallowsShadowContent() const { return m_requestType & ConfusingAndOftenMisusedDisallowShadowContent; }
-    bool allowsFrameScrollbars() const { return m_requestType & AllowFrameScrollbars; }
     bool allowsChildFrameContent() const { return m_requestType & AllowChildFrameContent; }
     bool isChildFrameHitTest() const { return m_requestType & ChildFrameHitTest; }
     bool ignorePointerEventsNone() const { return m_requestType & IgnorePointerEventsNone; }
 
     // Convenience functions
     bool touchMove() const { return move() && touchEvent(); }
-    bool touchRelease() const { return release() && touchEvent(); }
 
     HitTestRequestType type() const { return m_requestType; }
 
@@ -74,6 +67,6 @@ private:
     HitTestRequestType m_requestType;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HitTestRequest_h

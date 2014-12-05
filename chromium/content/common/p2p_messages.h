@@ -10,7 +10,7 @@
 #include "content/common/p2p_socket_type.h"
 #include "ipc/ipc_message_macros.h"
 #include "net/base/net_util.h"
-#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
+#include "third_party/webrtc/base/asyncpacketsocket.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -20,24 +20,26 @@ IPC_ENUM_TRAITS_MAX_VALUE(content::P2PSocketType,
                           content::P2P_SOCKET_TYPE_LAST)
 IPC_ENUM_TRAITS_MAX_VALUE(content::P2PSocketOption,
                           content::P2P_SOCKET_OPT_MAX - 1)
-IPC_ENUM_TRAITS_MIN_MAX_VALUE(talk_base::DiffServCodePoint,
-                              talk_base::DSCP_NO_CHANGE,
-                              talk_base::DSCP_CS7)
+IPC_ENUM_TRAITS_MIN_MAX_VALUE(rtc::DiffServCodePoint,
+                              rtc::DSCP_NO_CHANGE,
+                              rtc::DSCP_CS7)
 
 IPC_STRUCT_TRAITS_BEGIN(net::NetworkInterface)
   IPC_STRUCT_TRAITS_MEMBER(name)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(address)
+  IPC_STRUCT_TRAITS_MEMBER(network_prefix)
+  IPC_STRUCT_TRAITS_MEMBER(ip_address_attributes)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(talk_base::PacketTimeUpdateParams)
+IPC_STRUCT_TRAITS_BEGIN(rtc::PacketTimeUpdateParams)
   IPC_STRUCT_TRAITS_MEMBER(rtp_sendtime_extension_id)
   IPC_STRUCT_TRAITS_MEMBER(srtp_auth_key)
   IPC_STRUCT_TRAITS_MEMBER(srtp_auth_tag_len)
   IPC_STRUCT_TRAITS_MEMBER(srtp_packet_index)
 IPC_STRUCT_TRAITS_END()
 
-IPC_STRUCT_TRAITS_BEGIN(talk_base::PacketOptions)
+IPC_STRUCT_TRAITS_BEGIN(rtc::PacketOptions)
   IPC_STRUCT_TRAITS_MEMBER(dscp)
   IPC_STRUCT_TRAITS_MEMBER(packet_time_params)
 IPC_STRUCT_TRAITS_END()
@@ -56,9 +58,10 @@ IPC_MESSAGE_CONTROL2(P2PMsg_GetHostAddressResult,
                      int32 /* request_id */,
                      net::IPAddressList /* address list*/)
 
-IPC_MESSAGE_CONTROL2(P2PMsg_OnSocketCreated,
+IPC_MESSAGE_CONTROL3(P2PMsg_OnSocketCreated,
                      int /* socket_id */,
-                     net::IPEndPoint /* socket_address */)
+                     net::IPEndPoint /* local_address */,
+                     net::IPEndPoint /* remote_address */)
 
 IPC_MESSAGE_CONTROL1(P2PMsg_OnSendComplete,
                      int /* socket_id */)
@@ -103,7 +106,7 @@ IPC_MESSAGE_CONTROL5(P2PHostMsg_Send,
                      int /* socket_id */,
                      net::IPEndPoint /* socket_address */,
                      std::vector<char> /* data */,
-                     talk_base::PacketOptions /* packet options */,
+                     rtc::PacketOptions /* packet options */,
                      uint64 /* packet_id */)
 
 IPC_MESSAGE_CONTROL1(P2PHostMsg_DestroySocket,

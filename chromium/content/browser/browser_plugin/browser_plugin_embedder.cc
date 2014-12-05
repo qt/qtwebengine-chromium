@@ -22,12 +22,14 @@
 #include "content/public/common/result_codes.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/escape.h"
+#include "third_party/WebKit/public/web/WebFindOptions.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 
 namespace content {
 
 BrowserPluginEmbedder::BrowserPluginEmbedder(WebContentsImpl* web_contents)
     : WebContentsObserver(web_contents),
+      guest_drag_ending_(false),
       weak_ptr_factory_(this) {
 }
 
@@ -54,6 +56,7 @@ void BrowserPluginEmbedder::DragLeftGuest(BrowserPluginGuest* guest) {
 
 void BrowserPluginEmbedder::StartDrag(BrowserPluginGuest* guest) {
   guest_started_drag_ = guest->AsWeakPtr();
+  guest_drag_ending_ = false;
 }
 
 WebContentsImpl* BrowserPluginEmbedder::GetWebContents() const {
@@ -63,6 +66,20 @@ WebContentsImpl* BrowserPluginEmbedder::GetWebContents() const {
 BrowserPluginGuestManager*
 BrowserPluginEmbedder::GetBrowserPluginGuestManager() const {
   return GetWebContents()->GetBrowserContext()->GetGuestManager();
+}
+
+void BrowserPluginEmbedder::ClearGuestDragStateIfApplicable() {
+  // The order at which we observe SystemDragEnded() and DragSourceEndedAt() is
+  // platform dependent.
+  // In OSX, we see SystemDragEnded() first, where in aura, we see
+  // DragSourceEndedAt() first. For this reason, we check if both methods were
+  // called before resetting |guest_started_drag_|.
+  if (guest_drag_ending_) {
+    if (guest_started_drag_)
+      guest_started_drag_.reset();
+  } else {
+    guest_drag_ending_ = true;
+  }
 }
 
 bool BrowserPluginEmbedder::DidSendScreenRectsCallback(
@@ -93,64 +110,93 @@ bool BrowserPluginEmbedder::OnMessageReceived(const IPC::Message& message) {
 
 void BrowserPluginEmbedder::DragSourceEndedAt(int client_x, int client_y,
     int screen_x, int screen_y, blink::WebDragOperation operation) {
-  if (guest_started_drag_.get()) {
+  if (guest_started_drag_) {
     gfx::Point guest_offset =
         guest_started_drag_->GetScreenCoordinates(gfx::Point());
     guest_started_drag_->DragSourceEndedAt(client_x - guest_offset.x(),
         client_y - guest_offset.y(), screen_x, screen_y, operation);
   }
+  ClearGuestDragStateIfApplicable();
 }
 
 void BrowserPluginEmbedder::SystemDragEnded() {
   // When the embedder's drag/drop operation ends, we need to pass the message
   // to the guest that initiated the drag/drop operation. This will ensure that
   // the guest's RVH state is reset properly.
-  if (guest_started_drag_.get())
+  if (guest_started_drag_)
     guest_started_drag_->EndSystemDrag();
-  guest_started_drag_.reset();
   guest_dragging_over_.reset();
+  ClearGuestDragStateIfApplicable();
 }
 
 void BrowserPluginEmbedder::OnUpdateDragCursor(bool* handled) {
   *handled = (guest_dragging_over_.get() != NULL);
 }
 
-void BrowserPluginEmbedder::OnGuestCallback(
-    int instance_id,
-    const BrowserPluginHostMsg_Attach_Params& params,
-    const base::DictionaryValue* extra_params,
-    WebContents* guest_web_contents) {
-  BrowserPluginGuest* guest = guest_web_contents ?
-      static_cast<WebContentsImpl*>(guest_web_contents)->
-          GetBrowserPluginGuest() : NULL;
-  if (!guest) {
-    scoped_ptr<base::DictionaryValue> copy_extra_params(
-        extra_params->DeepCopy());
-    guest_web_contents = GetBrowserPluginGuestManager()->CreateGuest(
-        GetWebContents()->GetSiteInstance(),
-        instance_id,
-        copy_extra_params.Pass());
-    guest = guest_web_contents
-                ? static_cast<WebContentsImpl*>(guest_web_contents)
-                      ->GetBrowserPluginGuest()
-                : NULL;
-  }
-
-  if (guest)
-    guest->Attach(GetWebContents(), params, *extra_params);
+void BrowserPluginEmbedder::OnAttach(
+    int browser_plugin_instance_id,
+    const BrowserPluginHostMsg_Attach_Params& params) {
+  WebContents* guest_web_contents =
+      GetBrowserPluginGuestManager()->GetGuestByInstanceID(
+          GetWebContents(), browser_plugin_instance_id);
+  if (!guest_web_contents)
+    return;
+  BrowserPluginGuest* guest = static_cast<WebContentsImpl*>(guest_web_contents)
+                                  ->GetBrowserPluginGuest();
+  guest->Attach(browser_plugin_instance_id, GetWebContents(), params);
 }
 
-void BrowserPluginEmbedder::OnAttach(
-    int instance_id,
-    const BrowserPluginHostMsg_Attach_Params& params,
-    const base::DictionaryValue& extra_params) {
-  GetBrowserPluginGuestManager()->MaybeGetGuestByInstanceIDOrKill(
-      instance_id, GetWebContents()->GetRenderProcessHost()->GetID(),
-      base::Bind(&BrowserPluginEmbedder::OnGuestCallback,
+bool BrowserPluginEmbedder::HandleKeyboardEvent(
+    const NativeWebKeyboardEvent& event) {
+  if ((event.windowsKeyCode != ui::VKEY_ESCAPE) ||
+      (event.modifiers & blink::WebInputEvent::InputModifiers)) {
+    return false;
+  }
+
+  bool event_consumed = false;
+  GetBrowserPluginGuestManager()->ForEachGuest(
+      GetWebContents(),
+      base::Bind(&BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback,
                  base::Unretained(this),
-                 instance_id,
-                 params,
-                 &extra_params));
+                 &event_consumed));
+
+  return event_consumed;
+}
+
+bool BrowserPluginEmbedder::Find(int request_id,
+                                 const base::string16& search_text,
+                                 const blink::WebFindOptions& options) {
+  return GetBrowserPluginGuestManager()->ForEachGuest(
+      GetWebContents(),
+      base::Bind(&BrowserPluginEmbedder::FindInGuest,
+                 base::Unretained(this),
+                 request_id,
+                 search_text,
+                 options));
+}
+
+bool BrowserPluginEmbedder::UnlockMouseIfNecessaryCallback(bool* mouse_unlocked,
+                                                           WebContents* guest) {
+  *mouse_unlocked |= static_cast<WebContentsImpl*>(guest)
+                         ->GetBrowserPluginGuest()
+                         ->mouse_locked();
+  guest->GotResponseToLockMouseRequest(false);
+
+  // Returns false to iterate over all guests.
+  return false;
+}
+
+bool BrowserPluginEmbedder::FindInGuest(int request_id,
+                                        const base::string16& search_text,
+                                        const blink::WebFindOptions& options,
+                                        WebContents* guest) {
+  if (static_cast<WebContentsImpl*>(guest)->GetBrowserPluginGuest()->Find(
+          request_id, search_text, options)) {
+    // There can only ever currently be one browser plugin that handles find so
+    // we can break the iteration at this point.
+    return true;
+  }
+  return false;
 }
 
 }  // namespace content

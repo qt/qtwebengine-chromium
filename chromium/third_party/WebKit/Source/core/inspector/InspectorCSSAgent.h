@@ -40,9 +40,8 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-struct CSSParserString;
 class CSSRule;
 class CSSRuleList;
 class CSSStyleRule;
@@ -51,19 +50,17 @@ class Document;
 class Element;
 class InspectorFrontend;
 class InspectorResourceAgent;
-class InstrumentingAgents;
 class MediaList;
 class Node;
-class PlatformFontUsage;
 class RenderText;
-class StyleResolver;
 
-class InspectorCSSAgent FINAL
+class InspectorCSSAgent final
     : public InspectorBaseAgent<InspectorCSSAgent>
     , public InspectorDOMAgent::DOMListener
     , public InspectorBackendDispatcher::CSSCommandHandler
     , public InspectorStyleSheetBase::Listener {
     WTF_MAKE_NONCOPYABLE(InspectorCSSAgent);
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InspectorCSSAgent);
 public:
     enum MediaListSource {
         MediaListSourceLinkedSheet,
@@ -96,24 +93,25 @@ public:
 
     static CSSStyleRule* asCSSStyleRule(CSSRule*);
 
-    static PassOwnPtr<InspectorCSSAgent> create(InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
+    static PassOwnPtrWillBeRawPtr<InspectorCSSAgent> create(InspectorDOMAgent* domAgent, InspectorPageAgent* pageAgent, InspectorResourceAgent* resourceAgent)
     {
-        return adoptPtr(new InspectorCSSAgent(domAgent, pageAgent, resourceAgent));
+        return adoptPtrWillBeNoop(new InspectorCSSAgent(domAgent, pageAgent, resourceAgent));
     }
 
-    static void collectAllDocumentStyleSheets(Document*, Vector<CSSStyleSheet*>&);
+    static void collectAllDocumentStyleSheets(Document*, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&);
 
     virtual ~InspectorCSSAgent();
+    virtual void trace(Visitor*) override;
 
     bool forcePseudoState(Element*, CSSSelector::PseudoType);
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void discardAgent() OVERRIDE;
-    virtual void didCommitLoadForMainFrame() OVERRIDE;
-    virtual void restore() OVERRIDE;
-    virtual void flushPendingFrontendMessages() OVERRIDE;
-    virtual void enable(ErrorString*, PassRefPtr<EnableCallback>) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
+    virtual void setFrontend(InspectorFrontend*) override;
+    virtual void clearFrontend() override;
+    virtual void discardAgent() override;
+    virtual void didCommitLoadForMainFrame() override;
+    virtual void restore() override;
+    virtual void flushPendingFrontendMessages() override;
+    virtual void enable(ErrorString*, PassRefPtrWillBeRawPtr<EnableCallback>) override;
+    virtual void disable(ErrorString*) override;
     void reset();
     void mediaQueryResultChanged();
     void willMutateRules();
@@ -124,21 +122,18 @@ public:
     void activeStyleSheetsUpdated(Document*);
     void documentDetached(Document*);
 
-    virtual void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty> >&) OVERRIDE;
-    virtual void getPlatformFontsForNode(ErrorString*, int nodeId, String* cssFamilyName, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage> >&) OVERRIDE;
-    virtual void getInlineStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributes) OVERRIDE;
-    virtual void getMatchedStylesForNode(ErrorString*, int nodeId, const bool* includePseudo, const bool* includeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> >& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches> >&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry> >& inheritedEntries) OVERRIDE;
-    virtual void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result) OVERRIDE;
-    virtual void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text) OVERRIDE;
-
-    virtual void setPropertyText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result) OVERRIDE;
-    virtual void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) OVERRIDE;
-    virtual void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) OVERRIDE;
-    virtual void addRule(ErrorString*, const String& styleSheetId, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) OVERRIDE;
-    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses) OVERRIDE;
-    virtual void getMediaQueries(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >& medias) OVERRIDE;
-
-
+    virtual void getComputedStyleForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSComputedStyleProperty> >&) override;
+    virtual void getPlatformFontsForNode(ErrorString*, int nodeId, String* cssFamilyName, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PlatformFontUsage> >&) override;
+    virtual void getInlineStylesForNode(ErrorString*, int nodeId, RefPtr<TypeBuilder::CSS::CSSStyle>& inlineStyle, RefPtr<TypeBuilder::CSS::CSSStyle>& attributes) override;
+    virtual void getMatchedStylesForNode(ErrorString*, int nodeId, const bool* excludePseudo, const bool* excludeInherited, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> >& matchedCSSRules, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::PseudoIdMatches> >&, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::InheritedStyleEntry> >& inheritedEntries) override;
+    virtual void getStyleSheetText(ErrorString*, const String& styleSheetId, String* result) override;
+    virtual void setStyleSheetText(ErrorString*, const String& styleSheetId, const String& text) override;
+    virtual void setPropertyText(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& text, RefPtr<TypeBuilder::CSS::CSSStyle>& result) override;
+    virtual void setRuleSelector(ErrorString*, const String& styleSheetId, const RefPtr<JSONObject>& range, const String& selector, RefPtr<TypeBuilder::CSS::CSSRule>& result) override;
+    virtual void createStyleSheet(ErrorString*, const String& frameId, TypeBuilder::CSS::StyleSheetId* outStyleSheetId) override;
+    virtual void addRule(ErrorString*, const String& styleSheetId, const String& ruleText, const RefPtr<JSONObject>& location, RefPtr<TypeBuilder::CSS::CSSRule>& result) override;
+    virtual void forcePseudoState(ErrorString*, int nodeId, const RefPtr<JSONArray>& forcedPseudoClasses) override;
+    virtual void getMediaQueries(ErrorString*, RefPtr<TypeBuilder::Array<TypeBuilder::CSS::CSSMedia> >& medias) override;
     bool collectMediaQueriesFromRule(CSSRule*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     bool collectMediaQueriesFromStyleSheet(CSSStyleSheet*, TypeBuilder::Array<TypeBuilder::CSS::CSSMedia>* mediaArray);
     PassRefPtr<TypeBuilder::CSS::CSSMedia> buildMediaObject(const MediaList*, MediaListSource, const String&, CSSStyleSheet*);
@@ -152,13 +147,13 @@ private:
     class AddRuleAction;
     class InspectorResourceContentLoaderCallback;
 
-    static void collectStyleSheets(CSSStyleSheet*, Vector<CSSStyleSheet*>&);
+    static void collectStyleSheets(CSSStyleSheet*, WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&);
 
     InspectorCSSAgent(InspectorDOMAgent*, InspectorPageAgent*, InspectorResourceAgent*);
 
-    typedef HashMap<String, RefPtr<InspectorStyleSheet> > IdToInspectorStyleSheet;
-    typedef HashMap<String, RefPtr<InspectorStyleSheetForInlineStyle> > IdToInspectorStyleSheetForInlineStyle;
-    typedef HashMap<Node*, RefPtr<InspectorStyleSheetForInlineStyle> > NodeToInspectorStyleSheet; // bogus "stylesheets" with elements' inline styles
+    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<InspectorStyleSheet> > IdToInspectorStyleSheet;
+    typedef WillBeHeapHashMap<String, RefPtrWillBeMember<InspectorStyleSheetForInlineStyle> > IdToInspectorStyleSheetForInlineStyle;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<Node>, RefPtrWillBeMember<InspectorStyleSheetForInlineStyle> > NodeToInspectorStyleSheet; // bogus "stylesheets" with elements' inline styles
     typedef HashMap<int, unsigned> NodeIdToForcedPseudoState;
 
     void wasEnabled();
@@ -167,7 +162,7 @@ private:
     Element* elementForId(ErrorString*, int nodeId);
 
     void updateActiveStyleSheets(Document*, StyleSheetsUpdateType);
-    void setActiveStyleSheets(Document*, const Vector<CSSStyleSheet*>&, StyleSheetsUpdateType);
+    void setActiveStyleSheets(Document*, const WillBeHeapVector<RawPtrWillBeMember<CSSStyleSheet> >&, StyleSheetsUpdateType);
 
     void collectPlatformFontsForRenderer(RenderText*, HashCountedSet<String>*);
 
@@ -180,38 +175,38 @@ private:
     bool styleSheetEditInProgress() const { return m_styleSheetsPendingMutation || m_styleDeclarationPendingMutation || m_isSettingStyleSheetText; }
 
     PassRefPtr<TypeBuilder::CSS::CSSRule> buildObjectForRule(CSSStyleRule*);
-    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > buildArrayForMatchedRuleList(CSSRuleList*, Element*);
+    PassRefPtr<TypeBuilder::Array<TypeBuilder::CSS::RuleMatch> > buildArrayForMatchedRuleList(CSSRuleList*, Element*, PseudoId);
     PassRefPtr<TypeBuilder::CSS::CSSStyle> buildObjectForAttributesStyle(Element*);
 
     // InspectorDOMAgent::DOMListener implementation
-    virtual void didRemoveDocument(Document*) OVERRIDE;
-    virtual void didRemoveDOMNode(Node*) OVERRIDE;
-    virtual void didModifyDOMAttr(Element*) OVERRIDE;
+    virtual void didRemoveDocument(Document*) override;
+    virtual void didRemoveDOMNode(Node*) override;
+    virtual void didModifyDOMAttr(Element*) override;
 
     // InspectorStyleSheet::Listener implementation
-    virtual void styleSheetChanged(InspectorStyleSheetBase*) OVERRIDE;
-    virtual void willReparseStyleSheet() OVERRIDE;
-    virtual void didReparseStyleSheet() OVERRIDE;
+    virtual void styleSheetChanged(InspectorStyleSheetBase*) override;
+    virtual void willReparseStyleSheet() override;
+    virtual void didReparseStyleSheet() override;
 
     void resetPseudoStates();
 
     InspectorFrontend::CSS* m_frontend;
-    InspectorDOMAgent* m_domAgent;
-    InspectorPageAgent* m_pageAgent;
-    InspectorResourceAgent* m_resourceAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
+    RawPtrWillBeMember<InspectorResourceAgent> m_resourceAgent;
 
     IdToInspectorStyleSheet m_idToInspectorStyleSheet;
     IdToInspectorStyleSheetForInlineStyle m_idToInspectorStyleSheetForInlineStyle;
-    HashMap<CSSStyleSheet*, RefPtr<InspectorStyleSheet> > m_cssStyleSheetToInspectorStyleSheet;
-    typedef HashMap<Document*, OwnPtr<HashSet<CSSStyleSheet*> > > DocumentStyleSheets;
+    WillBeHeapHashMap<RawPtrWillBeMember<CSSStyleSheet>, RefPtrWillBeMember<InspectorStyleSheet> > m_cssStyleSheetToInspectorStyleSheet;
+    typedef WillBeHeapHashMap<RawPtrWillBeMember<Document>, OwnPtrWillBeMember<WillBeHeapHashSet<RawPtrWillBeMember<CSSStyleSheet> > > > DocumentStyleSheets;
     DocumentStyleSheets m_documentToCSSStyleSheets;
-    HashSet<Document*> m_invalidatedDocuments;
+    WillBeHeapHashSet<RawPtrWillBeMember<Document> > m_invalidatedDocuments;
 
     NodeToInspectorStyleSheet m_nodeToInspectorStyleSheet;
-    WillBePersistentHeapHashMap<RefPtrWillBeMember<Document>, RefPtr<InspectorStyleSheet> > m_documentToViaInspectorStyleSheet; // "via inspector" stylesheets
+    WillBeHeapHashMap<RefPtrWillBeMember<Document>, RefPtrWillBeMember<InspectorStyleSheet> > m_documentToViaInspectorStyleSheet; // "via inspector" stylesheets
     NodeIdToForcedPseudoState m_nodeIdToForcedPseudoState;
 
-    RefPtrWillBePersistent<CSSStyleSheet> m_inspectorUserAgentStyleSheet;
+    RefPtrWillBeMember<CSSStyleSheet> m_inspectorUserAgentStyleSheet;
 
     int m_lastStyleSheetId;
     int m_styleSheetsPendingMutation;
@@ -224,6 +219,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorCSSAgent_h)

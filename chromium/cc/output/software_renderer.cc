@@ -20,59 +20,19 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
-#include "cc/resources/raster_worker_pool.h"
 #include "skia/ext/opacity_draw_filter.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkImageFilter.h"
 #include "third_party/skia/include/core/SkMatrix.h"
 #include "third_party/skia/include/core/SkShader.h"
 #include "third_party/skia/include/effects/SkLayerRasterizer.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
-
 namespace {
-
-class OnDemandRasterTaskImpl : public Task {
- public:
-  OnDemandRasterTaskImpl(PicturePileImpl* picture_pile,
-                         SkCanvas* canvas,
-                         gfx::Rect content_rect,
-                         float contents_scale)
-      : picture_pile_(picture_pile),
-        canvas_(canvas),
-        content_rect_(content_rect),
-        contents_scale_(contents_scale) {
-    DCHECK(picture_pile_);
-    DCHECK(canvas_);
-  }
-
-  // Overridden from Task:
-  virtual void RunOnWorkerThread() OVERRIDE {
-    TRACE_EVENT0("cc", "OnDemandRasterTaskImpl::RunOnWorkerThread");
-
-    PicturePileImpl* picture_pile = picture_pile_->GetCloneForDrawingOnThread(
-        RasterWorkerPool::GetPictureCloneIndexForCurrentThread());
-    DCHECK(picture_pile);
-
-    picture_pile->RasterDirect(canvas_, content_rect_, contents_scale_, NULL);
-  }
-
- protected:
-  virtual ~OnDemandRasterTaskImpl() {}
-
- private:
-  PicturePileImpl* picture_pile_;
-  SkCanvas* canvas_;
-  const gfx::Rect content_rect_;
-  const float contents_scale_;
-
-  DISALLOW_COPY_AND_ASSIGN(OnDemandRasterTaskImpl);
-};
 
 static inline bool IsScalarNearlyInteger(SkScalar scalar) {
   return SkScalarNearlyZero(scalar - SkScalarRoundToScalar(scalar));
@@ -128,7 +88,6 @@ SoftwareRenderer::SoftwareRenderer(RendererClient* client,
   capabilities_.allow_partial_texture_updates = true;
   capabilities_.using_partial_swap = true;
 
-  capabilities_.using_map_image = true;
   capabilities_.using_shared_memory_resources = true;
 
   capabilities_.allow_rasterize_on_demand = true;
@@ -148,7 +107,7 @@ void SoftwareRenderer::BeginDrawingFrame(DrawingFrame* frame) {
 
 void SoftwareRenderer::FinishDrawingFrame(DrawingFrame* frame) {
   TRACE_EVENT0("cc", "SoftwareRenderer::FinishDrawingFrame");
-  current_framebuffer_lock_.reset();
+  current_framebuffer_lock_ = nullptr;
   current_canvas_ = NULL;
   root_canvas_ = NULL;
 
@@ -168,7 +127,7 @@ void SoftwareRenderer::ReceiveSwapBuffersAck(const CompositorFrameAck& ack) {
   output_device_->ReclaimSoftwareFrame(ack.last_software_frame_id);
 }
 
-bool SoftwareRenderer::FlippedFramebuffer() const {
+bool SoftwareRenderer::FlippedFramebuffer(const DrawingFrame* frame) const {
   return false;
 }
 
@@ -191,7 +150,7 @@ void SoftwareRenderer::Finish() {}
 
 void SoftwareRenderer::BindFramebufferToOutputSurface(DrawingFrame* frame) {
   DCHECK(!output_surface_->HasExternalStencilTest());
-  current_framebuffer_lock_.reset();
+  current_framebuffer_lock_ = nullptr;
   current_canvas_ = root_canvas_;
 }
 
@@ -199,7 +158,6 @@ bool SoftwareRenderer::BindFramebufferToTexture(
     DrawingFrame* frame,
     const ScopedResource* texture,
     const gfx::Rect& target_rect) {
-  current_framebuffer_lock_.reset();
   current_framebuffer_lock_ = make_scoped_ptr(
       new ResourceProvider::ScopedWriteLockSoftware(
           resource_provider_, texture->id()));
@@ -281,21 +239,24 @@ void SoftwareRenderer::DoDrawQuad(DrawingFrame* frame, const DrawQuad* quad) {
   current_canvas_->setMatrix(sk_device_matrix);
 
   current_paint_.reset();
-  if (!IsScaleAndIntegerTranslate(sk_device_matrix)) {
+  if (settings_->force_antialiasing ||
+      !IsScaleAndIntegerTranslate(sk_device_matrix)) {
     // TODO(danakj): Until we can enable AA only on exterior edges of the
     // layer, disable AA if any interior edges are present. crbug.com/248175
     bool all_four_edges_are_exterior = quad->IsTopEdge() &&
                                        quad->IsLeftEdge() &&
                                        quad->IsBottomEdge() &&
                                        quad->IsRightEdge();
-    if (settings_->allow_antialiasing && all_four_edges_are_exterior)
+    if (settings_->allow_antialiasing &&
+        (settings_->force_antialiasing || all_four_edges_are_exterior))
       current_paint_.setAntiAlias(true);
     current_paint_.setFilterLevel(SkPaint::kLow_FilterLevel);
   }
 
-  if (quad->ShouldDrawWithBlending()) {
+  if (quad->ShouldDrawWithBlending() ||
+      quad->shared_quad_state->blend_mode != SkXfermode::kSrcOver_Mode) {
     current_paint_.setAlpha(quad->opacity() * 255);
-    current_paint_.setXfermodeMode(SkXfermode::kSrcOver_Mode);
+    current_paint_.setXfermodeMode(quad->shared_quad_state->blend_mode);
   } else {
     current_paint_.setXfermodeMode(SkXfermode::kSrc_Mode);
   }
@@ -389,13 +350,8 @@ void SoftwareRenderer::DrawPictureQuad(const DrawingFrame* frame,
   TRACE_EVENT0("cc",
                "SoftwareRenderer::DrawPictureQuad");
 
-  // Create and run on-demand raster task for tile.
-  scoped_refptr<Task> on_demand_raster_task(
-      new OnDemandRasterTaskImpl(quad->picture_pile,
-                                 current_canvas_,
-                                 quad->content_rect,
-                                 quad->contents_scale));
-  client_->RunOnDemandRasterTask(on_demand_raster_task.get());
+  quad->picture_pile->RasterDirect(current_canvas_, quad->content_rect,
+                                   quad->contents_scale);
 
   current_canvas_->setDrawFilter(NULL);
 }
@@ -472,7 +428,9 @@ void SoftwareRenderer::DrawTextureQuad(const DrawingFrame* frame,
 
 void SoftwareRenderer::DrawTileQuad(const DrawingFrame* frame,
                                     const TileDrawQuad* quad) {
-  DCHECK(!output_surface_->ForcedDrawToSoftwareDevice());
+  // |resource_provider_| can be NULL in resourceless software draws, which
+  // should never produce tile quads in the first place.
+  DCHECK(resource_provider_);
   DCHECK(IsSoftwareResource(quad->resource_id));
 
   ResourceProvider::ScopedReadLockSoftware lock(resource_provider_,
@@ -524,21 +482,19 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
   if (!quad->filters.IsEmpty()) {
     skia::RefPtr<SkImageFilter> filter = RenderSurfaceFilters::BuildImageFilter(
         quad->filters, content_texture->size());
-    // TODO(ajuma): In addition origin translation, the canvas should also be
-    // scaled to accomodate device pixel ratio and pinch zoom. See
-    // crbug.com/281516 and crbug.com/281518.
     // TODO(ajuma): Apply the filter in the same pass as the content where
     // possible (e.g. when there's no origin offset). See crbug.com/308201.
     if (filter) {
       SkImageInfo info = SkImageInfo::MakeN32Premul(
           content_texture->size().width(), content_texture->size().height());
-      if (filter_bitmap.allocPixels(info)) {
+      if (filter_bitmap.tryAllocPixels(info)) {
         SkCanvas canvas(filter_bitmap);
         SkPaint paint;
         paint.setImageFilter(filter.get());
         canvas.clear(SK_ColorTRANSPARENT);
         canvas.translate(SkIntToScalar(-quad->rect.origin().x()),
                          SkIntToScalar(-quad->rect.origin().y()));
+        canvas.scale(quad->filters_scale.x(), quad->filters_scale.y());
         canvas.drawSprite(*content, 0, 0, &paint);
       }
     }
@@ -564,11 +520,11 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
 
     const SkBitmap* mask = mask_lock.sk_bitmap();
 
-    SkRect mask_rect = SkRect::MakeXYWH(
-        quad->mask_uv_rect.x() * mask->width(),
-        quad->mask_uv_rect.y() * mask->height(),
-        quad->mask_uv_rect.width() * mask->width(),
-        quad->mask_uv_rect.height() * mask->height());
+    // Scale normalized uv rect into absolute texel coordinates.
+    SkRect mask_rect =
+        gfx::RectFToSkRect(gfx::ScaleRect(quad->MaskUVRect(),
+                                          quad->mask_texture_size.width(),
+                                          quad->mask_texture_size.height()));
 
     SkMatrix mask_mat;
     mask_mat.setRectToRect(mask_rect, dest_rect, SkMatrix::kFill_ScaleToFit);
@@ -589,7 +545,7 @@ void SoftwareRenderer::DrawRenderPassQuad(const DrawingFrame* frame,
     current_paint_.setRasterizer(mask_rasterizer.get());
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
   } else {
-    // TODO(skaslev): Apply background filters and blend with content
+    // TODO(skaslev): Apply background filters
     current_canvas_->drawRect(dest_visible_rect, current_paint_);
   }
 }
@@ -612,12 +568,11 @@ void SoftwareRenderer::CopyCurrentRenderPassToBitmap(
   gfx::Rect copy_rect = frame->current_render_pass->output_rect;
   if (request->has_area())
     copy_rect.Intersect(request->area());
-  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(copy_rect);
+  gfx::Rect window_copy_rect = MoveFromDrawToWindowSpace(frame, copy_rect);
 
   scoped_ptr<SkBitmap> bitmap(new SkBitmap);
-  bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                    window_copy_rect.width(),
-                    window_copy_rect.height());
+  bitmap->setInfo(SkImageInfo::MakeN32Premul(window_copy_rect.width(),
+                                             window_copy_rect.height()));
   current_canvas_->readPixels(
       bitmap.get(), window_copy_rect.x(), window_copy_rect.y());
 

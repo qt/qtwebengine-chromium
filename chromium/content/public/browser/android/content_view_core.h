@@ -11,6 +11,7 @@
 #include "base/callback.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/navigation_controller.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/gfx/rect.h"
 
 class SkBitmap;
@@ -47,7 +48,6 @@ class CONTENT_EXPORT ContentViewCore {
   virtual ui::ViewAndroid* GetViewAndroid() const = 0;
   virtual ui::WindowAndroid* GetWindowAndroid() const = 0;
   virtual scoped_refptr<cc::Layer> GetLayer() const = 0;
-  virtual void LoadUrl(NavigationController::LoadURLParams& params) = 0;
   virtual void ShowPastePopup(int x, int y) = 0;
 
   // Request a scaled content readback. The result is passed through the
@@ -55,11 +55,10 @@ class CONTENT_EXPORT ContentViewCore {
   // success or not. The content is passed through the SkBitmap parameter.
   virtual void GetScaledContentBitmap(
       float scale,
-      jobject bitmap_config,
+      SkColorType color_type,
       gfx::Rect src_rect,
       const base::Callback<void(bool, const SkBitmap&)>& result_callback) = 0;
   virtual float GetDpiScale() const = 0;
-  virtual void PauseVideo() = 0;
   virtual void PauseOrResumeGeolocation(bool should_pause) = 0;
 
   // Observer callback for frame metadata updates.

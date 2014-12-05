@@ -34,11 +34,12 @@
 #include "platform/network/ResourceLoadInfo.h"
 #include "platform/network/ResourceLoadTiming.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebServiceWorkerResponseType.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/CString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct CrossThreadResourceResponseData;
 
@@ -159,6 +160,15 @@ public:
     bool wasFetchedViaProxy() const { return m_wasFetchedViaProxy; }
     void setWasFetchedViaProxy(bool value) { m_wasFetchedViaProxy = value; }
 
+    bool wasFetchedViaServiceWorker() const { return m_wasFetchedViaServiceWorker; }
+    void setWasFetchedViaServiceWorker(bool value) { m_wasFetchedViaServiceWorker = value; }
+
+    bool wasFallbackRequiredByServiceWorker() const { return m_wasFallbackRequiredByServiceWorker; }
+    void setWasFallbackRequiredByServiceWorker(bool value) { m_wasFallbackRequiredByServiceWorker = value; }
+
+    WebServiceWorkerResponseType serviceWorkerResponseType() const { return m_serviceWorkerResponseType; }
+    void setServiceWorkerResponseType(WebServiceWorkerResponseType value) { m_serviceWorkerResponseType = value; }
+
     bool isMultipartPayload() const { return m_isMultipartPayload; }
     void setIsMultipartPayload(bool value) { m_isMultipartPayload = value; }
 
@@ -185,6 +195,7 @@ public:
         return 1280;
     }
 
+    // This method doesn't compare the all members.
     static bool compare(const ResourceResponse&, const ResourceResponse&);
 
 private:
@@ -251,6 +262,15 @@ private:
     // Was the resource fetched over an explicit proxy (HTTP, SOCKS, etc).
     bool m_wasFetchedViaProxy;
 
+    // Was the resource fetched over a ServiceWorker.
+    bool m_wasFetchedViaServiceWorker;
+
+    // Was the fallback request with skip service worker flag required.
+    bool m_wasFallbackRequiredByServiceWorker;
+
+    // The type of the response which was fetched by the ServiceWorker.
+    WebServiceWorkerResponseType m_serviceWorkerResponseType;
+
     // The time at which the response headers were received.  For cached
     // responses, this time could be "far" in the past.
     double m_responseTime;
@@ -298,6 +318,9 @@ public:
     bool m_wasNpnNegotiated;
     bool m_wasAlternateProtocolAvailable;
     bool m_wasFetchedViaProxy;
+    bool m_wasFetchedViaServiceWorker;
+    bool m_wasFallbackRequiredByServiceWorker;
+    WebServiceWorkerResponseType m_serviceWorkerResponseType;
     double m_responseTime;
     String m_remoteIPAddress;
     unsigned short m_remotePort;
@@ -305,6 +328,6 @@ public:
     RefPtr<BlobDataHandle> m_downloadedFileHandle;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ResourceResponse_h

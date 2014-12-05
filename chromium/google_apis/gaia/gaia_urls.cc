@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
+#include "base/strings/stringprintf.h"
 #include "google_apis/gaia/gaia_switches.h"
 #include "google_apis/google_api_keys.h"
 
@@ -31,6 +32,7 @@ const char kOAuthRevokeTokenUrlSuffix[] = "AuthSubRevokeToken";
 const char kListAccountsSuffix[] = "ListAccounts?json=standard";
 const char kEmbeddedSigninSuffix[] = "EmbeddedSignIn";
 const char kAddAccountSuffix[] = "AddSession";
+const char kGetCheckConnectionInfoSuffix[] = "GetCheckConnectionInfo";
 
 // API calls from accounts.google.com (LSO)
 const char kGetOAuthTokenUrlSuffix[] = "o/oauth/GetOAuthToken/";
@@ -104,6 +106,8 @@ GaiaUrls::GaiaUrls() {
   list_accounts_url_ = gaia_url_.Resolve(kListAccountsSuffix);
   embedded_signin_url_ = gaia_url_.Resolve(kEmbeddedSigninSuffix);
   add_account_url_ = gaia_url_.Resolve(kAddAccountSuffix);
+  get_check_connection_info_url_ =
+      gaia_url_.Resolve(kGetCheckConnectionInfoSuffix);
 
   // URLs from accounts.google.com (LSO).
   get_oauth_token_url_ = lso_origin_url_.Resolve(kGetOAuthTokenUrlSuffix);
@@ -191,10 +195,6 @@ const GURL& GaiaUrls::oauth1_login_url() const {
   return oauth1_login_url_;
 }
 
-const GURL& GaiaUrls::list_accounts_url() const {
-  return list_accounts_url_;
-}
-
 const GURL& GaiaUrls::embedded_signin_url() const {
   return embedded_signin_url_;
 }
@@ -237,4 +237,21 @@ const GURL& GaiaUrls::oauth2_revoke_url() const {
 
 const GURL& GaiaUrls::gaia_login_form_realm() const {
   return gaia_url_;
+}
+
+GURL GaiaUrls::ListAccountsURLWithSource(const std::string& source) {
+  if (source.empty()) {
+    return list_accounts_url_;
+  } else {
+    std::string query = list_accounts_url_.query();
+    return list_accounts_url_.Resolve(
+        base::StringPrintf("?source=%s&%s", source.c_str(), query.c_str()));
+  }
+}
+
+GURL GaiaUrls::GetCheckConnectionInfoURLWithSource(const std::string& source) {
+  return source.empty()
+      ? get_check_connection_info_url_
+      : get_check_connection_info_url_.Resolve(
+            base::StringPrintf("?source=%s", source.c_str()));
 }

@@ -35,10 +35,10 @@
 #include "platform/graphics/filters/FilterEffect.h"
 #include "platform/graphics/filters/SourceGraphic.h"
 
-namespace WebCore {
+namespace blink {
 
-ReferenceFilter::ReferenceFilter()
-    : Filter(AffineTransform())
+ReferenceFilter::ReferenceFilter(float scale)
+    : Filter(scale)
     , m_sourceGraphic(SourceGraphic::create(this))
 {
 }
@@ -52,4 +52,4 @@ ReferenceFilter::~ReferenceFilter()
 {
 }
 
-} // namespace WebCore
+} // namespace blink

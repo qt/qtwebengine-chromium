@@ -36,9 +36,9 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class CustomElementDefinition FINAL : public RefCounted<CustomElementDefinition> {
+class CustomElementDefinition final : public RefCounted<CustomElementDefinition> {
 public:
     static PassRefPtr<CustomElementDefinition> create(const CustomElementDescriptor&, PassRefPtr<CustomElementLifecycleCallbacks>);
 
@@ -52,6 +52,6 @@ private:
     RefPtr<CustomElementLifecycleCallbacks> m_callbacks;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementDefinition_h

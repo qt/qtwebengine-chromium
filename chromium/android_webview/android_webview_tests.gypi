@@ -7,26 +7,39 @@
       'target_name': 'android_webview_apk',
       'type': 'none',
       'dependencies': [
-        'libwebviewchromium',
+        'libstandalonelibwebviewchromium',
         'android_webview_java',
         'android_webview_pak',
+        'libdrawgl',
       ],
       'variables': {
         'apk_name': 'AndroidWebView',
         'java_in_dir': 'test/shell',
         'native_lib_target': 'libstandalonelibwebviewchromium',
         'resource_dir': 'test/shell/res',
+        'extensions_to_not_compress': 'pak',
+        'extra_native_libs': ['<(SHARED_LIB_DIR)/libdrawgl.>(android_product_extension)'],
         'additional_input_paths': [
-          '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
+          '<(PRODUCT_DIR)/android_webview_assets/webviewchromium.pak',
+          '<(PRODUCT_DIR)/android_webview_assets/en-US.pak',
           '<(PRODUCT_DIR)/android_webview_apk/assets/asset_file.html',
           '<(PRODUCT_DIR)/android_webview_apk/assets/cookie_test.html',
           '<(PRODUCT_DIR)/android_webview_apk/assets/asset_icon.png',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video.js',
           '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_test.html',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_inside_div_test.html',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/video.mp4',
         ],
         'conditions': [
           ['icu_use_data_file_flag==1', {
             'additional_input_paths': [
               '<(PRODUCT_DIR)/icudtl.dat',
+            ],
+          }],
+          ['v8_use_external_startup_data==1', {
+            'additional_input_paths': [
+              '<(PRODUCT_DIR)/natives_blob.bin',
+              '<(PRODUCT_DIR)/snapshot_blob.bin',
             ],
           }],
         ],
@@ -35,17 +48,28 @@
         {
           'destination': '<(PRODUCT_DIR)/android_webview_apk/assets',
           'files': [
+            '<(PRODUCT_DIR)/android_webview_assets/webviewchromium.pak',
+            '<(PRODUCT_DIR)/android_webview_assets/en-US.pak',
             '<(java_in_dir)/assets/asset_file.html',
             '<(java_in_dir)/assets/asset_icon.png',
             '<(java_in_dir)/assets/cookie_test.html',
+            '<(java_in_dir)/assets/full_screen_video.js',
             '<(java_in_dir)/assets/full_screen_video_test.html',
+            '<(java_in_dir)/assets/full_screen_video_inside_div_test.html',
+            '<(java_in_dir)/assets/video.mp4',
           ],
 	  'conditions': [
             ['icu_use_data_file_flag==1', {
               'files': [
                 '<(PRODUCT_DIR)/icudtl.dat',
               ],
-	    }],
+            }],
+            ['v8_use_external_startup_data==1', {
+              'files': [
+                '<(PRODUCT_DIR)/natives_blob.bin',
+                '<(PRODUCT_DIR)/snapshot_blob.bin',
+              ],
+            }],
           ],
         },
       ],
@@ -100,11 +124,11 @@
       'sources': [
         'browser/aw_static_cookie_policy_unittest.cc',
         'browser/aw_form_database_service_unittest.cc',
-        'browser/global_tile_manager_unittest.cc',
         'browser/net/android_stream_reader_url_request_job_unittest.cc',
         'browser/net/input_stream_reader_unittest.cc',
         'lib/main/webview_tests.cc',
         'native/aw_contents_client_bridge_unittest.cc',
+        'native/aw_media_url_interceptor_unittest.cc',
         'native/input_stream_unittest.cc',
         'native/permission/media_access_permission_request_unittest.cc',
         'native/permission/permission_request_handler_unittest.cc',
@@ -145,8 +169,37 @@
       ],
       'variables': {
         'test_suite_name': 'android_webview_unittests',
+        'additional_input_paths': [
+          '<(PRODUCT_DIR)/android_webview_unittests_apk/assets/asset_file.ogg',
+        ],
       },
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)/android_webview_unittests_apk/assets',
+          'files': [
+            'test/unittest/assets/asset_file.ogg',
+          ],
+        },
+      ],
       'includes': [ '../build/apk_test.gypi' ],
+    },
+    {
+      'target_name': 'libdrawgl',
+      'type': 'shared_library',
+      # Do not depend on any other component here, since this target
+      # builds a separate shared library!
+      'include_dirs': [
+        '..',
+      ],
+      'sources': [
+          '../android_webview/test/shell/src/draw_gl/draw_gl.cc',
+      ],
+    },
+    {
+      'target_name': 'libstandalonelibwebviewchromium',
+      'includes': [
+        'libwebviewchromium.gypi',
+      ],
     },
   ],
 }

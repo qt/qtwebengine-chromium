@@ -2,48 +2,10 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-body {
-  margin: 10px 10px 34px 10px;
-}
-
-.header {
-  clear: both;
-  overflow: auto;
-}
-
-.header .logo {
-  float: left;
-}
-
-html[dir='rtl'] .logo,
-html[dir='rtl'] .form {
-  float: right;
-}
-
-.header .form {
-  -webkit-margin-start: 12px;
-  float: left;
-  margin-top: 4px;
-}
-
-#downloads-summary {
-  background-color: rgb(235, 239, 249);
-  border-top: 1px solid rgb(156, 194, 239);
-  margin-bottom: 6px;
-  margin-top: 12px;
-  padding: 3px;
-}
+<include src="../search_header.css">
 
 #downloads-summary-text {
   font-weight: bold;
-}
-
-#downloads-actions {
-  float: right;
-}
-
-html[dir=rtl] #downloads-actions {
-  float: left;
 }
 
 .disabled-link {
@@ -64,16 +26,22 @@ html[dir=rtl] #downloads-actions {
   -webkit-margin-end: 16px;
 }
 
-#downloads-display {
+#downloads-display,
+#no-downloads-or-results {
   max-width: 740px;
+  padding: 0 10px 34px;
 }
 
 .download {
   -webkit-margin-start: 114px;
-  -webkit-padding-start: 56px;
+  -webkit-padding-start: 52px;
   margin-bottom: 15px;
-  margin-top: 6px;
   position: relative;
+}
+
+.download,
+#no-downloads-or-results {
+  margin-top: 6px;
 }
 
 .date-container {
@@ -148,6 +116,13 @@ html[dir=rtl] .progress {
   background-size: 48px;
 }
 
+.name,
+.src-url,
+.controls a {
+  -webkit-padding-end: 4px;
+  -webkit-padding-start: 4px;
+}
+
 .name {
   -webkit-padding-end: 16px;
   display: none;
@@ -177,7 +152,7 @@ html[dir=rtl] .progress {
 }
 
 .controls a {
-  -webkit-margin-end: 16px;
+  -webkit-margin-end: 12px;
   color: #777;
 }
 

@@ -11,7 +11,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "net/base/cache_type.h"
 #include "net/base/net_export.h"
@@ -40,13 +39,20 @@ struct SimpleEntryCreationResults;
 // disk cache. It proxies for the SimpleSynchronousEntry, which performs IO
 // on the worker thread.
 class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
-    public base::RefCounted<SimpleEntryImpl>,
-    public base::SupportsWeakPtr<SimpleEntryImpl> {
+    public base::RefCounted<SimpleEntryImpl> {
   friend class base::RefCounted<SimpleEntryImpl>;
  public:
   enum OperationsMode {
     NON_OPTIMISTIC_OPERATIONS,
     OPTIMISTIC_OPERATIONS,
+  };
+
+  // The Backend provides an |ActiveEntryProxy| instance to this entry when it
+  // is active, meaning it's the canonical entry for this |entry_hash_|. The
+  // entry can make itself inactive by deleting its proxy.
+  class ActiveEntryProxy {
+   public:
+    virtual ~ActiveEntryProxy() = 0;
   };
 
   SimpleEntryImpl(net::CacheType cache_type,
@@ -55,6 +61,9 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
                   OperationsMode operations_mode,
                   SimpleBackendImpl* backend,
                   net::NetLog* net_log);
+
+  void SetActiveEntryProxy(
+      scoped_ptr<ActiveEntryProxy> active_entry_proxy);
 
   // Adds another reader/writer to this entry, if possible, returning |this| to
   // |entry|.
@@ -71,38 +80,38 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   void SetKey(const std::string& key);
 
   // From Entry:
-  virtual void Doom() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual std::string GetKey() const OVERRIDE;
-  virtual base::Time GetLastUsed() const OVERRIDE;
-  virtual base::Time GetLastModified() const OVERRIDE;
-  virtual int32 GetDataSize(int index) const OVERRIDE;
-  virtual int ReadData(int stream_index,
-                       int offset,
-                       net::IOBuffer* buf,
-                       int buf_len,
-                       const CompletionCallback& callback) OVERRIDE;
-  virtual int WriteData(int stream_index,
-                        int offset,
-                        net::IOBuffer* buf,
-                        int buf_len,
-                        const CompletionCallback& callback,
-                        bool truncate) OVERRIDE;
-  virtual int ReadSparseData(int64 offset,
-                             net::IOBuffer* buf,
-                             int buf_len,
-                             const CompletionCallback& callback) OVERRIDE;
-  virtual int WriteSparseData(int64 offset,
-                              net::IOBuffer* buf,
-                              int buf_len,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual int GetAvailableRange(int64 offset,
-                                int len,
-                                int64* start,
-                                const CompletionCallback& callback) OVERRIDE;
-  virtual bool CouldBeSparse() const OVERRIDE;
-  virtual void CancelSparseIO() OVERRIDE;
-  virtual int ReadyForSparseIO(const CompletionCallback& callback) OVERRIDE;
+  void Doom() override;
+  void Close() override;
+  std::string GetKey() const override;
+  base::Time GetLastUsed() const override;
+  base::Time GetLastModified() const override;
+  int32 GetDataSize(int index) const override;
+  int ReadData(int stream_index,
+               int offset,
+               net::IOBuffer* buf,
+               int buf_len,
+               const CompletionCallback& callback) override;
+  int WriteData(int stream_index,
+                int offset,
+                net::IOBuffer* buf,
+                int buf_len,
+                const CompletionCallback& callback,
+                bool truncate) override;
+  int ReadSparseData(int64 offset,
+                     net::IOBuffer* buf,
+                     int buf_len,
+                     const CompletionCallback& callback) override;
+  int WriteSparseData(int64 offset,
+                      net::IOBuffer* buf,
+                      int buf_len,
+                      const CompletionCallback& callback) override;
+  int GetAvailableRange(int64 offset,
+                        int len,
+                        int64* start,
+                        const CompletionCallback& callback) override;
+  bool CouldBeSparse() const override;
+  void CancelSparseIO() override;
+  int ReadyForSparseIO(const CompletionCallback& callback) override;
 
  private:
   class ScopedOperationRunner;
@@ -135,7 +144,7 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
     CRC_CHECK_MAX = 4,
   };
 
-  virtual ~SimpleEntryImpl();
+  ~SimpleEntryImpl() override;
 
   // Must be used to invoke a client-provided completion callback for an
   // operation initiated through the backend (e.g. create, open) so that clients
@@ -149,10 +158,6 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
   // Return this entry to a user of the API in |out_entry|. Increments the user
   // count.
   void ReturnEntryToCaller(Entry** out_entry);
-
-  // Ensures that |this| is no longer referenced by our |backend_|, this
-  // guarantees that this entry cannot have OpenEntry/CreateEntry called again.
-  void RemoveSelfFromBackend();
 
   // An error occured, and the SimpleSynchronousEntry should have Doomed
   // us at this point. We need to remove |this| from the Backend and the
@@ -296,6 +301,8 @@ class NET_EXPORT_PRIVATE SimpleEntryImpl : public Entry,
                   int offset,
                   int length,
                   int stream_index);
+
+  scoped_ptr<ActiveEntryProxy> active_entry_proxy_;
 
   // All nonstatic SimpleEntryImpl methods should always be called on the IO
   // thread, in all cases. |io_thread_checker_| documents and enforces this.

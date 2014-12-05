@@ -23,26 +23,24 @@
 
 #include "core/svg/SVGPathSegWithContext.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegClosePath FINAL : public SVGPathSegWithContext {
+class SVGPathSegClosePath final : public SVGPathSegWithContext {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegClosePath> create(SVGPathElement* element, SVGPathSegRole role)
+    static PassRefPtr<SVGPathSegClosePath> create(SVGPathElement* element)
     {
-        return adoptRef(new SVGPathSegClosePath(element, role));
+        return adoptRef(new SVGPathSegClosePath(element));
     }
 
 private:
-    SVGPathSegClosePath(SVGPathElement* element, SVGPathSegRole role)
-        : SVGPathSegWithContext(element, role)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegClosePath(SVGPathElement* element)
+        : SVGPathSegWithContext(element) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_CLOSEPATH; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "Z"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_CLOSEPATH; }
+    virtual String pathSegTypeAsLetter() const override { return "Z"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegClosePath_h

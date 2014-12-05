@@ -27,6 +27,7 @@
 #define DeferredImageDecoder_h
 
 #include "SkBitmap.h"
+#include "SkPixelRef.h"
 #include "platform/PlatformExport.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/graphics/ImageFrameGenerator.h"
@@ -36,7 +37,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class ImageFrameGenerator;
 class SharedBuffer;
@@ -101,6 +102,6 @@ private:
     static bool s_enabled;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

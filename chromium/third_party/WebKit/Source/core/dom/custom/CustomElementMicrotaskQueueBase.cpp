@@ -5,9 +5,9 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementMicrotaskQueueBase.h"
 
-#include "core/dom/custom/CustomElementCallbackDispatcher.h"
+#include "core/dom/custom/CustomElementProcessingStack.h"
 
-namespace WebCore {
+namespace blink {
 
 void CustomElementMicrotaskQueueBase::dispatch()
 {
@@ -34,4 +34,4 @@ void CustomElementMicrotaskQueueBase::show(unsigned indent)
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

@@ -37,8 +37,6 @@
 #include "public/platform/WebHTTPHeaderVisitor.h"
 #include "public/platform/WebURL.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -171,10 +169,7 @@ void WebURLRequest::setHTTPHeaderField(const WebString& name, const WebString& v
 
 void WebURLRequest::setHTTPReferrer(const WebString& referrer, WebReferrerPolicy referrerPolicy)
 {
-    if (referrer.isEmpty())
-        m_private->m_resourceRequest->clearHTTPReferrer();
-    else
-        m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
+    m_private->m_resourceRequest->setHTTPReferrer(Referrer(referrer, static_cast<ReferrerPolicy>(referrerPolicy)));
 }
 
 void WebURLRequest::addHTTPHeaderField(const WebString& name, const WebString& value)
@@ -224,18 +219,24 @@ bool WebURLRequest::reportRawHeaders() const
     return m_private->m_resourceRequest->reportRawHeaders();
 }
 
-WebURLRequest::TargetType WebURLRequest::targetType() const
+WebURLRequest::RequestContext WebURLRequest::requestContext() const
 {
-    // FIXME: Temporary special case until downstream chromium.org knows of the new TargetTypes.
-    TargetType targetType = static_cast<TargetType>(m_private->m_resourceRequest->targetType());
-    if (targetType == TargetIsTextTrack || targetType == TargetIsUnspecified)
-        return TargetIsSubresource;
-    return targetType;
+    return m_private->m_resourceRequest->requestContext();
+}
+
+WebURLRequest::FrameType WebURLRequest::frameType() const
+{
+    return m_private->m_resourceRequest->frameType();
 }
 
 WebReferrerPolicy WebURLRequest::referrerPolicy() const
 {
     return static_cast<WebReferrerPolicy>(m_private->m_resourceRequest->referrerPolicy());
+}
+
+void WebURLRequest::addHTTPOriginIfNeeded(const WebString& origin)
+{
+    m_private->m_resourceRequest->addHTTPOriginIfNeeded(origin);
 }
 
 bool WebURLRequest::hasUserGesture() const
@@ -248,10 +249,14 @@ void WebURLRequest::setHasUserGesture(bool hasUserGesture)
     m_private->m_resourceRequest->setHasUserGesture(hasUserGesture);
 }
 
-void WebURLRequest::setTargetType(TargetType targetType)
+void WebURLRequest::setRequestContext(RequestContext requestContext)
 {
-    m_private->m_resourceRequest->setTargetType(
-        static_cast<ResourceRequest::TargetType>(targetType));
+    m_private->m_resourceRequest->setRequestContext(requestContext);
+}
+
+void WebURLRequest::setFrameType(FrameType frameType)
+{
+    m_private->m_resourceRequest->setFrameType(frameType);
 }
 
 int WebURLRequest::requestorID() const
@@ -292,6 +297,36 @@ bool WebURLRequest::downloadToFile() const
 void WebURLRequest::setDownloadToFile(bool downloadToFile)
 {
     m_private->m_resourceRequest->setDownloadToFile(downloadToFile);
+}
+
+bool WebURLRequest::skipServiceWorker() const
+{
+    return m_private->m_resourceRequest->skipServiceWorker();
+}
+
+void WebURLRequest::setSkipServiceWorker(bool skipServiceWorker)
+{
+    m_private->m_resourceRequest->setSkipServiceWorker(skipServiceWorker);
+}
+
+WebURLRequest::FetchRequestMode WebURLRequest::fetchRequestMode() const
+{
+    return m_private->m_resourceRequest->fetchRequestMode();
+}
+
+void WebURLRequest::setFetchRequestMode(WebURLRequest::FetchRequestMode mode)
+{
+    return m_private->m_resourceRequest->setFetchRequestMode(mode);
+}
+
+WebURLRequest::FetchCredentialsMode WebURLRequest::fetchCredentialsMode() const
+{
+    return m_private->m_resourceRequest->fetchCredentialsMode();
+}
+
+void WebURLRequest::setFetchCredentialsMode(WebURLRequest::FetchCredentialsMode mode)
+{
+    return m_private->m_resourceRequest->setFetchCredentialsMode(mode);
 }
 
 WebURLRequest::ExtraData* WebURLRequest::extraData() const

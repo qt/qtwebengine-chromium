@@ -30,7 +30,7 @@ fi
 "$THIS_DIR"/package.sh $@
 
 R=$("${LLVM_BIN_DIR}/clang" --version | \
-     sed -ne 's/clang version .*(trunk \([0-9]*\))/\1/p')
+     sed -ne 's/clang version .*(\([0-9]*\))/\1/p')
 PDIR=clang-$R
 
 if [ ! -f "$PDIR.tgz" ]; then
@@ -43,9 +43,9 @@ fi
 rm -rf $LLVM_BUILD_DIR
 "$THIS_DIR"/update.sh
 
-LIBNAME=$(grep LIBRARYNAME "$THIS_DIR"/../blink_gc_plugin/Makefile \
-          | cut -d ' ' -f 3)
-
+LIBNAME=\
+$(grep 'set(LIBRARYNAME' "$THIS_DIR"/../blink_gc_plugin/CMakeLists.txt \
+    | cut -d ' ' -f 2 | tr -d ')')
 LIBFILE=lib$LIBNAME.$SO_EXT
 
 # Check that we are actually creating the plugin at a new revision.
@@ -55,7 +55,11 @@ if [ -f "$LLVM_LIB_DIR/$LIBFILE" ]; then
 fi
 
 cp $PDIR/lib/$LIBFILE "$LLVM_LIB_DIR/"
-tar zcf ${PDIR}_repack.tgz -C "$LLVM_TAR_DIR" bin lib buildlog.txt
+if [ "$(uname -s)" = "Darwin" ]; then
+  tar zcf ${PDIR}_repack.tgz -C "$LLVM_TAR_DIR" bin include lib buildlog.txt
+else
+  tar zcf ${PDIR}_repack.tgz -C "$LLVM_TAR_DIR" bin lib buildlog.txt
+fi
 
 echo The clang package has been repackaged with $LIBNAME
 echo To upload, run:

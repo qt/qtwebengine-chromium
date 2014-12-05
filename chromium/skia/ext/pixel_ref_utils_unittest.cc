@@ -10,7 +10,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkFlattenableBuffers.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkPoint.h"
@@ -31,30 +30,22 @@ class TestDiscardableShader : public SkShader {
     CreateBitmap(gfx::Size(50, 50), "discardable", &bitmap_);
   }
 
-  TestDiscardableShader(SkFlattenableReadBuffer& flattenable_buffer) {
-    SkOrderedReadBuffer& buffer =
-        static_cast<SkOrderedReadBuffer&>(flattenable_buffer);
-    SkReader32* reader = buffer.getReader32();
-
-    reader->skip(-4);
-    uint32_t toSkip = reader->readU32();
-    reader->skip(toSkip);
-
+  TestDiscardableShader(SkReadBuffer& buffer) {
     CreateBitmap(gfx::Size(50, 50), "discardable", &bitmap_);
   }
 
-  virtual SkShader::BitmapType asABitmap(SkBitmap* bitmap,
-                                         SkMatrix* matrix,
-                                         TileMode xy[2]) const OVERRIDE {
+  SkShader::BitmapType asABitmap(SkBitmap* bitmap,
+                                 SkMatrix* matrix,
+                                 TileMode xy[2]) const override {
     if (bitmap)
       *bitmap = bitmap_;
     return SkShader::kDefault_BitmapType;
   }
 
   // not indended to return an actual context. Just need to supply this.
-  virtual size_t contextSize() const OVERRIDE {
-    return sizeof(SkShader::Context);
-  }
+  size_t contextSize() const override { return sizeof(SkShader::Context); }
+
+  void flatten(SkWriteBuffer&) const override {}
 
   SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(TestDiscardableShader);
 
@@ -62,12 +53,14 @@ class TestDiscardableShader : public SkShader {
   SkBitmap bitmap_;
 };
 
-void CreateBitmap(gfx::Size size, const char* uri, SkBitmap* bitmap) {
-  const SkImageInfo info = {
-    size.width(), size.height(), kPMColor_SkColorType, kPremul_SkAlphaType
-  };
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+SkFlattenable* TestDiscardableShader::CreateProc(SkReadBuffer&) {
+  return new TestDiscardableShader;
+}
+#endif
 
-  bitmap->allocPixels(info);
+void CreateBitmap(gfx::Size size, const char* uri, SkBitmap* bitmap) {
+  bitmap->allocN32Pixels(size.width(), size.height());
   bitmap->pixelRef()->setImmutable();
   bitmap->pixelRef()->setURI(uri);
 }

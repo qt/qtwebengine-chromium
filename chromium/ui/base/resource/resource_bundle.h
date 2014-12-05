@@ -9,7 +9,9 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
+#include "base/files/memory_mapped_file.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
@@ -60,6 +62,11 @@ class UI_BASE_EXPORT ResourceBundle {
     RTL_ENABLED,
     // Images are never flipped.
     RTL_DISABLED,
+  };
+
+  enum LoadResources {
+    LOAD_COMMON_RESOURCES,
+    DO_NOT_LOAD_COMMON_RESOURCES
   };
 
   // Delegate class that allows interception of pack file loading and resource
@@ -122,20 +129,19 @@ class UI_BASE_EXPORT ResourceBundle {
   // There is no way to specify which resource files are loaded, i.e. names of
   // the files are hardcoded in ResourceBundle. Fix it to allow to specify which
   // files are loaded (e.g. add a new method in Delegate).
+  // |load_resources| controls whether or not LoadCommonResources is called.
   static std::string InitSharedInstanceWithLocale(
-      const std::string& pref_locale, Delegate* delegate);
+      const std::string& pref_locale,
+      Delegate* delegate,
+      LoadResources load_resources);
 
-  // Same as InitSharedInstanceWithLocale(), but loads only localized resources,
-  // without default resource packs.
-  static std::string InitSharedInstanceLocaleOnly(
-      const std::string& pref_locale, Delegate* delegate);
-
-  // Initialize the ResourceBundle using given file. The second argument
-  // controls whether or not ResourceBundle::LoadCommonResources is called.
+  // Initialize the ResourceBundle using the given file region. If |region| is
+  // MemoryMappedFile::Region::kWholeFile, the entire |pak_file| is used.
   // This allows the use of this function in a sandbox without local file
   // access (as on Android).
-  static void InitSharedInstanceWithPakFile(base::File file,
-                                            bool should_load_common_resources);
+  static void InitSharedInstanceWithPakFileRegion(
+      base::File pak_file,
+      const base::MemoryMappedFile::Region& region);
 
   // Initialize the ResourceBundle using given data pack path for testing.
   static void InitSharedInstanceWithPakPath(const base::FilePath& path);
@@ -164,6 +170,11 @@ class UI_BASE_EXPORT ResourceBundle {
 
   // Same as above but using an already open file.
   void AddDataPackFromFile(base::File file, ScaleFactor scale_factor);
+
+  // Same as above but using only a region (offset + size) of the file.
+  void AddDataPackFromFileRegion(base::File file,
+                                 const base::MemoryMappedFile::Region& region,
+                                 ScaleFactor scale_factor);
 
   // Same as AddDataPackFromPath but does not log an error if the pack fails to
   // load.
@@ -245,6 +256,15 @@ class UI_BASE_EXPORT ResourceBundle {
   // loaded. Pass an empty path to undo.
   void OverrideLocalePakForTest(const base::FilePath& pak_path);
 
+  // Overrides a localized string resource with the given string. If no delegate
+  // is present, the |string| will be returned when getting the localized string
+  // |message_id|. If |ReloadLocaleResources| is called, all overrides are
+  // cleared. This is intended to be used in conjunction with field trials and
+  // the variations service to experiment with different UI strings. This method
+  // is not thread safe!
+  void OverrideLocaleStringResource(int message_id,
+                                    const base::string16& string);
+
   // Returns the full pathname of the locale file to load.  May return an empty
   // string if no locale data files are found and |test_file_exists| is true.
   // Used on Android to load the local file in the browser process and pass it
@@ -270,6 +290,8 @@ class UI_BASE_EXPORT ResourceBundle {
 
   class ResourceBundleImageSource;
   friend class ResourceBundleImageSource;
+
+  typedef base::hash_map<int, base::string16> IdToStringMap;
 
   // Ctor/dtor are private, since we're a singleton.
   explicit ResourceBundle(Delegate* delegate);
@@ -394,6 +416,8 @@ class UI_BASE_EXPORT ResourceBundle {
   scoped_ptr<gfx::FontList> web_font_list_;
 
   base::FilePath overridden_pak_path_;
+
+  IdToStringMap overridden_locale_strings_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceBundle);
 };

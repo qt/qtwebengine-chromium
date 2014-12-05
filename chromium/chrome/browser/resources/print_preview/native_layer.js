@@ -2,6 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('print_preview');
+
+/**
+ * @typedef {{selectSaveAsPdfDestination: boolean,
+ *            layoutSettings.portrait: boolean,
+ *            pageRange: string,
+ *            headersAndFooters: boolean,
+ *            backgroundColorsAndImages: boolean,
+ *            margins: number}}
+ * @see chrome/browser/printing/print_preview_pdf_generated_browsertest.cc
+ */
+print_preview.PreviewSettings;
+
 cr.define('print_preview', function() {
   'use strict';
 
@@ -14,38 +27,40 @@ cr.define('print_preview', function() {
     cr.EventTarget.call(this);
 
     // Bind global handlers
-    global['setInitialSettings'] = this.onSetInitialSettings_.bind(this);
-    global['setUseCloudPrint'] = this.onSetUseCloudPrint_.bind(this);
-    global['setPrinters'] = this.onSetPrinters_.bind(this);
-    global['updateWithPrinterCapabilities'] =
+    global.setInitialSettings = this.onSetInitialSettings_.bind(this);
+    global.setUseCloudPrint = this.onSetUseCloudPrint_.bind(this);
+    global.setPrinters = this.onSetPrinters_.bind(this);
+    global.updateWithPrinterCapabilities =
         this.onUpdateWithPrinterCapabilities_.bind(this);
-    global['failedToGetPrinterCapabilities'] =
+    global.failedToGetPrinterCapabilities =
         this.onFailedToGetPrinterCapabilities_.bind(this);
-    global['failedToGetPrivetPrinterCapabilities'] =
+    global.failedToGetPrivetPrinterCapabilities =
       this.onFailedToGetPrivetPrinterCapabilities_.bind(this);
-    global['reloadPrintersList'] = this.onReloadPrintersList_.bind(this);
-    global['printToCloud'] = this.onPrintToCloud_.bind(this);
-    global['fileSelectionCancelled'] =
+    global.reloadPrintersList = this.onReloadPrintersList_.bind(this);
+    global.printToCloud = this.onPrintToCloud_.bind(this);
+    global.fileSelectionCancelled =
         this.onFileSelectionCancelled_.bind(this);
-    global['fileSelectionCompleted'] =
+    global.fileSelectionCompleted =
         this.onFileSelectionCompleted_.bind(this);
-    global['printPreviewFailed'] = this.onPrintPreviewFailed_.bind(this);
-    global['invalidPrinterSettings'] =
+    global.printPreviewFailed = this.onPrintPreviewFailed_.bind(this);
+    global.invalidPrinterSettings =
         this.onInvalidPrinterSettings_.bind(this);
-    global['onDidGetDefaultPageLayout'] =
+    global.onDidGetDefaultPageLayout =
         this.onDidGetDefaultPageLayout_.bind(this);
-    global['onDidGetPreviewPageCount'] =
+    global.onDidGetPreviewPageCount =
         this.onDidGetPreviewPageCount_.bind(this);
-    global['onDidPreviewPage'] = this.onDidPreviewPage_.bind(this);
-    global['updatePrintPreview'] = this.onUpdatePrintPreview_.bind(this);
-    global['printScalingDisabledForSourcePDF'] =
+    global.onDidPreviewPage = this.onDidPreviewPage_.bind(this);
+    global.updatePrintPreview = this.onUpdatePrintPreview_.bind(this);
+    global.printScalingDisabledForSourcePDF =
         this.onPrintScalingDisabledForSourcePDF_.bind(this);
-    global['onDidGetAccessToken'] = this.onDidGetAccessToken_.bind(this);
-    global['autoCancelForTesting'] = this.autoCancelForTesting_.bind(this);
-    global['onPrivetPrinterChanged'] = this.onPrivetPrinterChanged_.bind(this);
-    global['onPrivetCapabilitiesSet'] =
+    global.onDidGetAccessToken = this.onDidGetAccessToken_.bind(this);
+    global.autoCancelForTesting = this.autoCancelForTesting_.bind(this);
+    global.onPrivetPrinterChanged = this.onPrivetPrinterChanged_.bind(this);
+    global.onPrivetCapabilitiesSet =
         this.onPrivetCapabilitiesSet_.bind(this);
-    global['onPrivetPrintFailed'] = this.onPrivetPrintFailed_.bind(this);
+    global.onPrivetPrintFailed = this.onPrivetPrintFailed_.bind(this);
+    global.onEnableManipulateSettingsForTest =
+        this.onEnableManipulateSettingsForTest_.bind(this);
   };
 
   /**
@@ -65,6 +80,8 @@ cr.define('print_preview', function() {
     GET_CAPABILITIES_FAIL: 'print_preview.NativeLayer.GET_CAPABILITIES_FAIL',
     INITIAL_SETTINGS_SET: 'print_preview.NativeLayer.INITIAL_SETTINGS_SET',
     LOCAL_DESTINATIONS_SET: 'print_preview.NativeLayer.LOCAL_DESTINATIONS_SET',
+    MANIPULATE_SETTINGS_FOR_TEST:
+        'print_preview.NativeLayer.MANIPULATE_SETTINGS_FOR_TEST',
     PAGE_COUNT_READY: 'print_preview.NativeLayer.PAGE_COUNT_READY',
     PAGE_LAYOUT_READY: 'print_preview.NativeLayer.PAGE_LAYOUT_READY',
     PAGE_PREVIEW_READY: 'print_preview.NativeLayer.PAGE_PREVIEW_READY',
@@ -77,7 +94,7 @@ cr.define('print_preview', function() {
     PRIVET_PRINTER_CHANGED: 'print_preview.NativeLayer.PRIVET_PRINTER_CHANGED',
     PRIVET_CAPABILITIES_SET:
         'print_preview.NativeLayer.PRIVET_CAPABILITIES_SET',
-    PRIVET_PRINT_FAILED: 'print_preview.NativeLayer.PRIVET_PRINT_FAILED'
+    PRIVET_PRINT_FAILED: 'print_preview.NativeLayer.PRIVET_PRINT_FAILED',
   };
 
   /**
@@ -176,7 +193,7 @@ cr.define('print_preview', function() {
     getNativeColorModel_: function(destination, color) {
       // For non-local printers native color model is ignored anyway.
       var option = destination.isLocal ? color.getSelectedOption() : null;
-      var nativeColorModel = parseInt(option ? option.vendor_id : null);
+      var nativeColorModel = parseInt(option ? option.vendor_id : null, 10);
       if (isNaN(nativeColorModel)) {
         return color.getValue() ?
             NativeLayer.ColorMode_.COLOR : NativeLayer.ColorMode_.GRAY;
@@ -196,7 +213,7 @@ cr.define('print_preview', function() {
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
      * @param {!print_preview.DocumentInfo} documentInfo Document data model.
-     * @param {number} ID of the preview request.
+     * @param {number} requestId ID of the preview request.
      */
     startGetPreview: function(
         destination, printTicketStore, documentInfo, requestId) {
@@ -227,8 +244,8 @@ cr.define('print_preview', function() {
         // preview, they still need to be included.
         'duplex': printTicketStore.duplex.getValue() ?
             NativeLayer.DuplexMode.LONG_EDGE : NativeLayer.DuplexMode.SIMPLEX,
-        'copies': printTicketStore.copies.getValueAsNumber(),
-        'collate': printTicketStore.collate.getValue(),
+        'copies': 1,
+        'collate': true,
         'shouldPrintBackgrounds': printTicketStore.cssBackground.getValue(),
         'shouldPrintSelectionOnly': printTicketStore.selectionOnly.getValue()
       };
@@ -264,16 +281,22 @@ cr.define('print_preview', function() {
      * @param {!print_preview.Destination} destination Destination to print to.
      * @param {!print_preview.PrintTicketStore} printTicketStore Used to get the
      *     state of the print ticket.
-     * @param {print_preview.CloudPrintInterface} cloudPrintInterface Interface
+     * @param {cloudprint.CloudPrintInterface} cloudPrintInterface Interface
      *     to Google Cloud Print.
      * @param {!print_preview.DocumentInfo} documentInfo Document data model.
      * @param {boolean=} opt_isOpenPdfInPreview Whether to open the PDF in the
      *     system's preview application.
+     * @param {boolean=} opt_showSystemDialog Whether to open system dialog for
+     *     advanced settings.
      */
     startPrint: function(destination, printTicketStore, cloudPrintInterface,
-                         documentInfo, opt_isOpenPdfInPreview) {
+                         documentInfo, opt_isOpenPdfInPreview,
+                         opt_showSystemDialog) {
       assert(printTicketStore.isTicketValid(),
              'Trying to print when ticket is not valid');
+
+      assert(!opt_showSystemDialog || (cr.isWindows && destination.isLocal),
+             'Implemented for Windows only');
 
       var ticket = {
         'pageRange': printTicketStore.pageRange.getDocumentPageRanges(),
@@ -300,7 +323,8 @@ cr.define('print_preview', function() {
         'requestID': -1,
         'fitToPageEnabled': printTicketStore.fitToPage.getValue(),
         'pageWidth': documentInfo.pageSize.width,
-        'pageHeight': documentInfo.pageSize.height
+        'pageHeight': documentInfo.pageSize.height,
+        'showSystemDialog': opt_showSystemDialog
       };
 
       if (!destination.isLocal) {
@@ -343,14 +367,8 @@ cr.define('print_preview', function() {
 
     /** Shows the system's native printing dialog. */
     startShowSystemDialog: function() {
+      assert(!cr.isWindows);
       chrome.send('showSystemDialog');
-    },
-
-    /** Shows Google Cloud Print's web-based print dialog.
-     * @param {number} pageCount Number of pages to print.
-     */
-    startShowCloudPrintDialog: function(pageCount) {
-      chrome.send('printWithCloudPrintDialog', [pageCount]);
     },
 
     /** Closes the print preview dialog. */
@@ -403,6 +421,7 @@ cr.define('print_preview', function() {
 
       var nativeInitialSettings = new print_preview.NativeInitialSettings(
           initialSettings['printAutomaticallyInKioskMode'] || false,
+          initialSettings['appKioskMode'] || false,
           initialSettings['hidePrintWithSystemDialogLink'] || false,
           numberFormatSymbols[0] || ',',
           numberFormatSymbols[1] || '.',
@@ -422,13 +441,15 @@ cr.define('print_preview', function() {
 
     /**
      * Turn on the integration of Cloud Print.
-     * @param {string} cloudPrintURL The URL to use for cloud print servers.
+     * @param {{cloudPrintURL: string, appKioskMode: string}} settings
+     *     cloudPrintUrl: The URL to use for cloud print servers.
      * @private
      */
-    onSetUseCloudPrint_: function(cloudPrintURL) {
+    onSetUseCloudPrint_: function(settings) {
       var cloudPrintEnableEvent = new Event(
           NativeLayer.EventType.CLOUD_PRINT_ENABLE);
-      cloudPrintEnableEvent.baseCloudPrintUrl = cloudPrintURL;
+      cloudPrintEnableEvent.baseCloudPrintUrl = settings['cloudPrintUrl'] || '';
+      cloudPrintEnableEvent.appKioskMode = settings['appKioskMode'] || false;
       this.dispatchEvent(cloudPrintEnableEvent);
     },
 
@@ -460,7 +481,7 @@ cr.define('print_preview', function() {
     /**
      * Called when native layer gets settings information for a requested local
      * destination.
-     * @param {string} printerId printer affected by error.
+     * @param {string} destinationId Printer affected by error.
      * @private
      */
     onFailedToGetPrinterCapabilities_: function(destinationId) {
@@ -475,7 +496,7 @@ cr.define('print_preview', function() {
     /**
      * Called when native layer gets settings information for a requested privet
      * destination.
-     * @param {string} printerId printer affected by error.
+     * @param {string} destinationId Printer affected by error.
      * @private
      */
     onFailedToGetPrivetPrinterCapabilities_: function(destinationId) {
@@ -688,6 +709,49 @@ cr.define('print_preview', function() {
             new Event(NativeLayer.EventType.PRIVET_PRINT_FAILED);
       privetPrintFailedEvent.httpError = http_error;
       this.dispatchEvent(privetPrintFailedEvent);
+    },
+
+    /**
+     * Allows for onManipulateSettings to be called
+     * from the native layer.
+     * @private
+     */
+    onEnableManipulateSettingsForTest_: function() {
+      global.onManipulateSettingsForTest =
+          this.onManipulateSettingsForTest_.bind(this);
+    },
+
+    /**
+     * Dispatches an event to print_preview.js to change
+     * a particular setting for print preview.
+     * @param {!print_preview.PreviewSettings} settings Object containing the
+     *     value to be changed and that value should be set to.
+     * @private
+     */
+    onManipulateSettingsForTest_: function(settings) {
+      var manipulateSettingsEvent =
+          new Event(NativeLayer.EventType.MANIPULATE_SETTINGS_FOR_TEST);
+      manipulateSettingsEvent.settings = settings;
+      this.dispatchEvent(manipulateSettingsEvent);
+    },
+
+    /**
+     * Sends a message to the test, letting it know that an
+     * option has been set to a particular value and that the change has
+     * finished modifying the preview area.
+     */
+    previewReadyForTest: function() {
+      if (global.onManipulateSettingsForTest)
+        chrome.send('UILoadedForTest');
+    },
+
+    /**
+     * Notifies the test that the option it tried to change
+     * had not been changed successfully.
+     */
+    previewFailedForTest: function() {
+      if (global.onManipulateSettingsForTest)
+        chrome.send('UIFailedLoadingForTest');
     }
   };
 
@@ -695,6 +759,8 @@ cr.define('print_preview', function() {
    * Initial settings retrieved from the native layer.
    * @param {boolean} isInKioskAutoPrintMode Whether the print preview should be
    *     in auto-print mode.
+   * @param {boolean} isInAppKioskMode Whether the print preview is in App Kiosk
+   *     mode.
    * @param {string} thousandsDelimeter Character delimeter of thousands digits.
    * @param {string} decimalDelimeter Character delimeter of the decimal point.
    * @param {!print_preview.MeasurementSystem.UnitType} unitType Unit type of
@@ -713,6 +779,7 @@ cr.define('print_preview', function() {
    */
   function NativeInitialSettings(
       isInKioskAutoPrintMode,
+      isInAppKioskMode,
       hidePrintWithSystemDialogLink,
       thousandsDelimeter,
       decimalDelimeter,
@@ -730,6 +797,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isInKioskAutoPrintMode_ = isInKioskAutoPrintMode;
+
+    /**
+     * Whether the print preview should switch to App Kiosk mode.
+     * @type {boolean}
+     * @private
+     */
+    this.isInAppKioskMode_ = isInAppKioskMode;
 
     /**
      * Whether we should hide the link which shows the system print dialog.
@@ -811,6 +885,14 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * @return {boolean} Whether the print preview should switch to App Kiosk
+     *     mode.
+     */
+    get isInAppKioskMode() {
+      return this.isInAppKioskMode_;
+    },
+
+    /**
      * @return {boolean} Whether we should hide the link which shows the
            system print dialog.
      */
@@ -846,12 +928,12 @@ cr.define('print_preview', function() {
       return this.documentTitle_;
     },
 
-    /** @return {bool} Whether the document has selection. */
+    /** @return {boolean} Whether the document has selection. */
     get documentHasSelection() {
       return this.documentHasSelection_;
     },
 
-    /** @return {bool} Whether selection only should be printed. */
+    /** @return {boolean} Whether selection only should be printed. */
     get selectionOnly() {
       return this.selectionOnly_;
     },

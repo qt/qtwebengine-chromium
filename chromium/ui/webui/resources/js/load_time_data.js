@@ -12,15 +12,22 @@
 
 var loadTimeData;
 
+// Expose this type globally as a temporary work around until
+// https://github.com/google/closure-compiler/issues/544 is fixed.
+/** @constructor */
+function LoadTimeData() {}
+
 (function() {
   'use strict';
-
-  function LoadTimeData() {
-  }
 
   LoadTimeData.prototype = {
     /**
      * Sets the backing object.
+     *
+     * Note that there is no getter for |data_| to discourage abuse of the form:
+     *
+     *     var value = loadTimeData.data()['key'];
+     *
      * @param {Object} value The de-serialized page data.
      */
     set data(value) {
@@ -29,6 +36,15 @@ var loadTimeData;
     },
 
     /**
+     * Returns a JsEvalContext for |data_|.
+     * @returns {JsEvalContext}
+     */
+    createJsEvalContext: function() {
+      return new JsEvalContext(this.data_);
+    },
+
+    /**
+     * @param {string} id An ID of a value that might exist.
      * @return {boolean} True if |id| is a key in the dictionary.
      */
     valueExists: function(id) {
@@ -55,20 +71,21 @@ var loadTimeData;
     getString: function(id) {
       var value = this.getValue(id);
       expectIsType(id, value, 'string');
-      return value;
+      return /** @type {string} */ (value);
     },
 
     /**
      * Returns a formatted localized string where $1 to $9 are replaced by the
      * second to the tenth argument.
      * @param {string} id The ID of the string we want.
-     * @param {...string} The extra values to include in the formatted output.
+     * @param {...string} var_args The extra values to include in the formatted
+     *     output.
      * @return {string} The formatted string.
      */
-    getStringF: function(id) {
+    getStringF: function(id, var_args) {
       var value = this.getString(id);
       if (!value)
-        return;
+        return '';
 
       var varArgs = arguments;
       return value.replace(/\$[$1-9]/g, function(m) {
@@ -84,7 +101,7 @@ var loadTimeData;
     getBoolean: function(id) {
       var value = this.getValue(id);
       expectIsType(id, value, 'boolean');
-      return value;
+      return /** @type {boolean} */ (value);
     },
 
     /**
@@ -96,7 +113,7 @@ var loadTimeData;
       var value = this.getValue(id);
       expectIsType(id, value, 'number');
       expect(value == Math.floor(value), 'Number isn\'t integer: ' + value);
-      return value;
+      return /** @type {number} */ (value);
     },
 
     /**
@@ -118,8 +135,10 @@ var loadTimeData;
    * @param {string} message The message to display if the check fails.
    */
   function expect(condition, message) {
-    if (!condition)
-      console.error(message);
+    if (!condition) {
+      console.error('Unexpected condition on ' + document.location.href + ': ' +
+                    message);
+    }
   }
 
   /**

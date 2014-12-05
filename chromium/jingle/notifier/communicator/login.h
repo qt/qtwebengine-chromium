@@ -17,7 +17,7 @@
 #include "jingle/notifier/communicator/login_settings.h"
 #include "jingle/notifier/communicator/single_login_attempt.h"
 #include "net/base/network_change_notifier.h"
-#include "talk/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
 
 namespace buzz {
 class XmppClient;
@@ -72,7 +72,7 @@ class Login : public net::NetworkChangeNotifier::IPAddressObserver,
         const ServerList& servers,
         bool try_ssltcp_first,
         const std::string& auth_mechanism);
-  virtual ~Login();
+  ~Login() override;
 
   // Starts connecting (or forces a reconnection if we're backed off).
   void StartConnection();
@@ -83,21 +83,21 @@ class Login : public net::NetworkChangeNotifier::IPAddressObserver,
   void UpdateXmppSettings(const buzz::XmppClientSettings& user_settings);
 
   // net::NetworkChangeNotifier::IPAddressObserver implementation.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // net::NetworkChangeNotifier::ConnectionTypeObserver implementation.
-  virtual void OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // net::NetworkChangeNotifier::DNSObserver implementation.
-  virtual void OnDNSChanged() OVERRIDE;
+  void OnDNSChanged() override;
 
   // SingleLoginAttempt::Delegate implementation.
-  virtual void OnConnect(
-      base::WeakPtr<buzz::XmppTaskParentInterface> base_task) OVERRIDE;
-  virtual void OnRedirect(const ServerInformation& redirect_server) OVERRIDE;
-  virtual void OnCredentialsRejected() OVERRIDE;
-  virtual void OnSettingsExhausted() OVERRIDE;
+  void OnConnect(
+      base::WeakPtr<buzz::XmppTaskParentInterface> base_task) override;
+  void OnRedirect(const ServerInformation& redirect_server) override;
+  void OnCredentialsRejected() override;
+  void OnSettingsExhausted() override;
 
  private:
   // Called by the various network notifications.

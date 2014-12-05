@@ -11,27 +11,28 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_default.h"
 #include "jingle/glue/mock_task.h"
 #include "jingle/glue/task_pump.h"
 #include "jingle/notifier/base/weak_xmpp_client.h"
 #include "net/cert/cert_verifier.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
-#include "talk/xmpp/prexmppauth.h"
-#include "talk/xmpp/xmppclientsettings.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/libjingle/xmpp/prexmppauth.h"
+#include "webrtc/libjingle/xmpp/xmppclientsettings.h"
 
 namespace buzz {
 class CaptchaChallenge;
 class Jid;
 }  // namespace buzz
 
-namespace talk_base {
+namespace rtc {
 class CryptString;
 class SocketAddress;
 class Task;
-}  // namespace talk_base
+}  // namespace rtc
 
 namespace notifier {
 
@@ -49,8 +50,8 @@ class MockPreXmppAuth : public buzz::PreXmppAuth {
                buzz::SaslMechanism*(const std::string&));
   MOCK_METHOD5(StartPreXmppAuth,
                void(const buzz::Jid&,
-                    const talk_base::SocketAddress&,
-                    const talk_base::CryptString&,
+                    const rtc::SocketAddress&,
+                    const rtc::CryptString&,
                     const std::string&,
                     const std::string&));
   MOCK_CONST_METHOD0(IsAuthDone, bool());
@@ -74,19 +75,23 @@ class MockXmppConnectionDelegate : public XmppConnection::Delegate {
 class XmppConnectionTest : public testing::Test {
  protected:
   XmppConnectionTest()
-      : mock_pre_xmpp_auth_(new MockPreXmppAuth()),
-        url_request_context_getter_(new net::TestURLRequestContextGetter(
-            message_loop_.message_loop_proxy())) {}
+      : mock_pre_xmpp_auth_(new MockPreXmppAuth()) {
+    scoped_ptr<base::MessagePump> pump(new base::MessagePumpDefault());
+    message_loop_.reset(new base::MessageLoop(pump.Pass()));
+
+    url_request_context_getter_ = new net::TestURLRequestContextGetter(
+        message_loop_->message_loop_proxy());
+  }
 
   virtual ~XmppConnectionTest() {}
 
   virtual void TearDown() {
     // Clear out any messages posted by XmppConnection's destructor.
-    message_loop_.RunUntilIdle();
+    message_loop_->RunUntilIdle();
   }
 
   // Needed by XmppConnection.
-  base::MessageLoop message_loop_;
+  scoped_ptr<base::MessageLoop> message_loop_;
   MockXmppConnectionDelegate mock_xmpp_connection_delegate_;
   scoped_ptr<MockPreXmppAuth> mock_pre_xmpp_auth_;
   scoped_refptr<net::TestURLRequestContextGetter> url_request_context_getter_;
@@ -112,7 +117,7 @@ TEST_F(XmppConnectionTest, ImmediateFailure) {
 
   // We need to do this *before* |xmpp_connection| gets destroyed or
   // our delegate won't be called.
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(XmppConnectionTest, PreAuthFailure) {
@@ -131,7 +136,7 @@ TEST_F(XmppConnectionTest, PreAuthFailure) {
 
   // We need to do this *before* |xmpp_connection| gets destroyed or
   // our delegate won't be called.
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(XmppConnectionTest, FailureAfterPreAuth) {
@@ -150,7 +155,7 @@ TEST_F(XmppConnectionTest, FailureAfterPreAuth) {
 
   // We need to do this *before* |xmpp_connection| gets destroyed or
   // our delegate won't be called.
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 TEST_F(XmppConnectionTest, RaisedError) {
@@ -167,7 +172,7 @@ TEST_F(XmppConnectionTest, RaisedError) {
 #endif
 
 TEST_F(XmppConnectionTest, Connect) {
-  base::WeakPtr<talk_base::Task> weak_ptr;
+  base::WeakPtr<rtc::Task> weak_ptr;
   EXPECT_CALL(mock_xmpp_connection_delegate_, OnConnect(_)).
       WillOnce(SaveArg<0>(&weak_ptr));
 
@@ -186,7 +191,7 @@ TEST_F(XmppConnectionTest, Connect) {
 
 TEST_F(XmppConnectionTest, MultipleConnect) {
   EXPECT_DEBUG_DEATH({
-    base::WeakPtr<talk_base::Task> weak_ptr;
+    base::WeakPtr<rtc::Task> weak_ptr;
     EXPECT_CALL(mock_xmpp_connection_delegate_, OnConnect(_)).
         WillOnce(SaveArg<0>(&weak_ptr));
 
@@ -207,7 +212,7 @@ TEST_F(XmppConnectionTest, MultipleConnect) {
 
 #if !defined(_MSC_VER) || _MSC_VER < 1700 // http://crbug.com/158570
 TEST_F(XmppConnectionTest, ConnectThenError) {
-  base::WeakPtr<talk_base::Task> weak_ptr;
+  base::WeakPtr<rtc::Task> weak_ptr;
   EXPECT_CALL(mock_xmpp_connection_delegate_, OnConnect(_)).
       WillOnce(SaveArg<0>(&weak_ptr));
   EXPECT_CALL(mock_xmpp_connection_delegate_,
@@ -238,7 +243,7 @@ TEST_F(XmppConnectionTest, TasksDontRunAfterXmppConnectionDestructor) {
     jingle_glue::MockTask* task =
         new jingle_glue::MockTask(xmpp_connection.task_pump_.get());
     // We have to do this since the state enum is protected in
-    // talk_base::Task.
+    // rtc::Task.
     const int TASK_STATE_ERROR = 3;
     ON_CALL(*task, ProcessStart())
         .WillByDefault(Return(TASK_STATE_ERROR));
@@ -247,7 +252,7 @@ TEST_F(XmppConnectionTest, TasksDontRunAfterXmppConnectionDestructor) {
   }
 
   // This should destroy |task_pump|, but |task| still shouldn't run.
-  message_loop_.RunUntilIdle();
+  message_loop_->RunUntilIdle();
 }
 
 }  // namespace notifier

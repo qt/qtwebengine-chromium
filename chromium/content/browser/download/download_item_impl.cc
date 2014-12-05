@@ -28,7 +28,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -93,7 +93,7 @@ static void DownloadFileCancel(scoped_ptr<DownloadFile> download_file) {
 }
 
 bool IsDownloadResumptionEnabled() {
-  return CommandLine::ForCurrentProcess()->HasSwitch(
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableDownloadResumption);
 }
 
@@ -133,7 +133,7 @@ DownloadItemImpl::DownloadItemImpl(DownloadItemImplDelegate* delegate,
       target_disposition_(TARGET_DISPOSITION_OVERWRITE),
       url_chain_(url_chain),
       referrer_url_(referrer_url),
-      transition_type_(PAGE_TRANSITION_LINK),
+      transition_type_(ui::PAGE_TRANSITION_LINK),
       has_user_gesture_(false),
       mime_type_(mime_type),
       original_mime_type_(original_mime_type),
@@ -242,7 +242,7 @@ DownloadItemImpl::DownloadItemImpl(
       target_disposition_(TARGET_DISPOSITION_OVERWRITE),
       url_chain_(1, url),
       referrer_url_(GURL()),
-      transition_type_(PAGE_TRANSITION_LINK),
+      transition_type_(ui::PAGE_TRANSITION_LINK),
       has_user_gesture_(false),
       mime_type_(mime_type),
       original_mime_type_(mime_type),
@@ -588,7 +588,7 @@ bool DownloadItemImpl::HasUserGesture() const {
   return has_user_gesture_;
 };
 
-PageTransition DownloadItemImpl::GetTransitionType() const {
+ui::PageTransition DownloadItemImpl::GetTransitionType() const {
   return transition_type_;
 };
 
@@ -927,6 +927,8 @@ DownloadItemImpl::ResumeMode DownloadItemImpl::GetResumeMode() const {
     case DOWNLOAD_INTERRUPT_REASON_USER_CANCELED:
     case DOWNLOAD_INTERRUPT_REASON_FILE_BLOCKED:
     case DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED:
+    case DOWNLOAD_INTERRUPT_REASON_SERVER_UNAUTHORIZED:
+    case DOWNLOAD_INTERRUPT_REASON_SERVER_CERT_PROBLEM:
       mode = RESUME_MODE_INVALID;
       break;
   }
@@ -1680,7 +1682,8 @@ void DownloadItemImpl::ResumeInterruptedDownload() {
 
   // If the flag for downloads resumption isn't enabled, ignore
   // this request.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (!command_line.HasSwitch(switches::kEnableDownloadResumption))
     return;
 

@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
@@ -33,7 +33,7 @@ class DataSerializer : public ImportantFileWriter::DataSerializer {
   explicit DataSerializer(const std::string& data) : data_(data) {
   }
 
-  virtual bool SerializeData(std::string* output) OVERRIDE {
+  bool SerializeData(std::string* output) override {
     output->assign(data_);
     return true;
   }

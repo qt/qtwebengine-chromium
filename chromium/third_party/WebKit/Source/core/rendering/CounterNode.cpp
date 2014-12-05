@@ -28,7 +28,7 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 CounterNode::CounterNode(RenderObject& o, bool hasResetType, int value)
     : m_hasResetType(hasResetType)
@@ -103,8 +103,8 @@ CounterNode* CounterNode::nextInPreOrderAfterChildren(const CounterNode* stayWit
         return 0;
 
     const CounterNode* current = this;
-    CounterNode* next;
-    while (!(next = current->m_nextSibling)) {
+    CounterNode* next = current->m_nextSibling;
+    for (; !next; next = current->m_nextSibling) {
         current = current->m_parent;
         if (!current || current == stayWithin)
             return 0;
@@ -374,11 +374,11 @@ static void showTreeAndMark(const CounterNode* node)
 
 #endif
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 
-void showCounterTree(const WebCore::CounterNode* counter)
+void showCounterTree(const blink::CounterNode* counter)
 {
     if (counter)
         showTreeAndMark(counter);

@@ -43,7 +43,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class KURL;
@@ -51,14 +51,16 @@ class ResourceRequest;
 class SecurityOrigin;
 class ThreadableLoaderClient;
 
-class DocumentThreadableLoader FINAL : public ThreadableLoader, private ResourceOwner<RawResource>  {
+class DocumentThreadableLoader final : public ThreadableLoader, private ResourceOwner<RawResource>  {
     WTF_MAKE_FAST_ALLOCATED;
     public:
         static void loadResourceSynchronously(Document&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         static PassRefPtr<DocumentThreadableLoader> create(Document&, ThreadableLoaderClient*, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
         virtual ~DocumentThreadableLoader();
 
-        virtual void cancel() OVERRIDE;
+        virtual void overrideTimeout(unsigned long timeout) override;
+
+        virtual void cancel() override;
         void setDefersLoading(bool);
 
     private:
@@ -69,24 +71,35 @@ class DocumentThreadableLoader FINAL : public ThreadableLoader, private Resource
 
         DocumentThreadableLoader(Document&, ThreadableLoaderClient*, BlockingBehavior, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
 
-        // RawResourceClient implementation
-        virtual void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-        virtual void responseReceived(Resource*, const ResourceResponse&) OVERRIDE;
-        virtual void dataReceived(Resource*, const char* data, int dataLength) OVERRIDE;
-        virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) OVERRIDE;
-        virtual void notifyFinished(Resource*) OVERRIDE;
-        virtual void dataDownloaded(Resource*, int) OVERRIDE;
+        // ResourceClient
+        void notifyFinished(Resource*) override;
+        // RawResourceClient
+        void dataSent(Resource*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+        void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+        void dataReceived(Resource*, const char* data, unsigned dataLength) override;
+        void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) override;
+        void dataDownloaded(Resource*, int) override;
 
         void cancelWithError(const ResourceError&);
 
+        // Notify Inspector and log to console about resource response. Use
+        // this method if response is not going to be finished normally.
+        void reportResponseReceived(unsigned long identifier, const ResourceResponse&);
+
         // Methods containing code to handle resource fetch results which is
         // common to both sync and async mode.
-        void handleResponse(unsigned long identifier, const ResourceResponse&);
-        void handleReceivedData(const char* data, int dataLength);
+        void handleResponse(unsigned long identifier, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>);
+        void handleReceivedData(const char* data, unsigned dataLength);
         void handleSuccessfulFinish(unsigned long identifier, double finishTime);
 
         void didTimeout(Timer<DocumentThreadableLoader>*);
+        // Calls the appropriate loading method according to policy and data
+        // about origin. Only for handling the initial load (including fallback
+        // after consulting ServiceWorker).
+        void dispatchInitialRequest(const ResourceRequest&);
         void makeCrossOriginAccessRequest(const ResourceRequest&);
+        // Loads m_fallbackRequestForServiceWorker.
+        void loadFallbackRequestForServiceWorker();
         // Loads m_actualRequest.
         void loadActualRequest();
         // Clears m_actualRequest and reports access control check failure to
@@ -94,11 +107,11 @@ class DocumentThreadableLoader FINAL : public ThreadableLoader, private Resource
         void handlePreflightFailure(const String& url, const String& errorDescription);
         // Investigates the response for the preflight request. If successful,
         // the actual request will be made later in handleSuccessfulFinish().
-        void handlePreflightResponse(unsigned long identifier, const ResourceResponse&);
+        void handlePreflightResponse(const ResourceResponse&);
 
         void loadRequest(const ResourceRequest&, ResourceLoaderOptions);
         bool isAllowedRedirect(const KURL&) const;
-        bool isAllowedByPolicy(const KURL&) const;
+        bool isAllowedByContentSecurityPolicy(const KURL&) const;
         // Returns DoNotAllowStoredCredentials
         // if m_forceDoNotAllowStoredCredentials is set. Otherwise, just
         // returns allowCredentials value of m_resourceLoaderOptions.
@@ -120,8 +133,12 @@ class DocumentThreadableLoader FINAL : public ThreadableLoader, private Resource
 
         bool m_sameOriginRequest;
         bool m_simpleRequest;
-        bool m_async;
 
+        const bool m_async;
+
+        // Holds the original request for fallback in case the Service Worker
+        // does not respond.
+        OwnPtr<ResourceRequest> m_fallbackRequestForServiceWorker;
         // Holds the original request and options for it during preflight
         // request handling phase.
         OwnPtr<ResourceRequest> m_actualRequest;
@@ -129,8 +146,9 @@ class DocumentThreadableLoader FINAL : public ThreadableLoader, private Resource
 
         HTTPHeaderMap m_simpleRequestHeaders; // stores simple request headers in case of a cross-origin redirect.
         Timer<DocumentThreadableLoader> m_timeoutTimer;
+        double m_requestStartedSeconds; // Time an asynchronous fetch request is started
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentThreadableLoader_h

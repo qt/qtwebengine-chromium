@@ -7,13 +7,11 @@
 #include <string>
 
 #include "base/debug/trace_event.h"
-#include "grit/ui_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_utils.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event.h"
@@ -23,6 +21,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/gfx/screen.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/focusable_border.h"
 #include "ui/views/controls/label.h"
@@ -70,6 +69,7 @@ int GetDragSelectionDelay() {
       case ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION: return 100;
       case ui::ScopedAnimationDurationScaleMode::FAST_DURATION:   return 25;
       case ui::ScopedAnimationDurationScaleMode::SLOW_DURATION:   return 400;
+      case ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION:   return 1;
       case ui::ScopedAnimationDurationScaleMode::ZERO_DURATION:   return 0;
     }
   return 100;
@@ -238,6 +238,7 @@ int GetViewsCommand(const ui::TextEditCommandAuraLinux& command, bool rtl) {
 
 // static
 const char Textfield::kViewClassName[] = "Textfield";
+const int Textfield::kTextPadding = 3;
 
 // static
 size_t Textfield::GetCaretBlinkMs() {
@@ -271,6 +272,8 @@ Textfield::Textfield()
       drop_cursor_visible_(false),
       initiating_drag_(false),
       aggregated_clicks_(0),
+      drag_start_display_offset_(0),
+      touch_handles_hidden_due_to_scroll_(false),
       weak_ptr_factory_(this) {
   set_context_menu_controller(this);
   set_drag_controller(this);
@@ -340,6 +343,12 @@ void Textfield::SelectAll(bool reversed) {
   UpdateAfterChange(false, true);
 }
 
+void Textfield::SelectWordAt(const gfx::Point& point) {
+  model_->MoveCursorTo(point, false);
+  model_->SelectWord();
+  UpdateAfterChange(false, true);
+}
+
 void Textfield::ClearSelection() {
   model_->ClearSelection();
   UpdateAfterChange(false, true);
@@ -406,6 +415,11 @@ void Textfield::SetSelectionTextColor(SkColor color) {
 void Textfield::UseDefaultSelectionTextColor() {
   use_default_selection_text_color_ = true;
   GetRenderText()->set_selection_color(GetSelectionTextColor());
+  SchedulePaint();
+}
+
+void Textfield::SetShadows(const gfx::ShadowValues& shadows) {
+  GetRenderText()->set_shadows(shadows);
   SchedulePaint();
 }
 
@@ -537,6 +551,12 @@ bool Textfield::HasTextBeingDragged() {
 ////////////////////////////////////////////////////////////////////////////////
 // Textfield, View overrides:
 
+gfx::Insets Textfield::GetInsets() const {
+  gfx::Insets insets = View::GetInsets();
+  insets += gfx::Insets(kTextPadding, kTextPadding, kTextPadding, kTextPadding);
+  return insets;
+}
+
 int Textfield::GetBaseline() const {
   return GetInsets().top() + GetRenderText()->GetBaseline();
 }
@@ -578,9 +598,7 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
             MoveCursorTo(event.location(), event.IsShiftDown());
           break;
         case 1:
-          model_->MoveCursorTo(event.location(), false);
-          model_->SelectWord();
-          UpdateAfterChange(false, true);
+          SelectWordAt(event.location());
           double_click_word_ = GetRenderText()->selection();
           break;
         case 2:
@@ -598,10 +616,9 @@ bool Textfield::OnMousePressed(const ui::MouseEvent& event) {
         OnBeforeUserAction();
         ClearSelection();
         ui::ScopedClipboardWriter(
-            ui::Clipboard::GetForCurrentThread(),
             ui::CLIPBOARD_TYPE_SELECTION).WriteText(base::string16());
         OnAfterUserAction();
-      } else if(!read_only()) {
+      } else if (!read_only()) {
         PasteSelectionClipboard(event);
       }
     }
@@ -647,7 +664,14 @@ void Textfield::OnMouseReleased(const ui::MouseEvent& event) {
 }
 
 bool Textfield::OnKeyPressed(const ui::KeyEvent& event) {
+  // Since HandleKeyEvent() might destroy |this|, get a weak pointer and verify
+  // it isn't null before proceeding.
+  base::WeakPtr<Textfield> textfield(weak_ptr_factory_.GetWeakPtr());
+
   bool handled = controller_ && controller_->HandleKeyEvent(this, event);
+
+  if (!textfield)
+    return handled;
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   ui::TextEditKeyBindingsDelegateAuraLinux* delegate =
@@ -681,79 +705,84 @@ ui::TextInputClient* Textfield::GetTextInputClient() {
 void Textfield::OnGestureEvent(ui::GestureEvent* event) {
   switch (event->type()) {
     case ui::ET_GESTURE_TAP_DOWN:
-      OnBeforeUserAction();
       RequestFocus();
       ShowImeIfNeeded();
-
-      // We don't deselect if the point is in the selection
-      // because TAP_DOWN may turn into a LONG_PRESS.
-      if (!GetRenderText()->IsPointInSelection(event->location()))
-        MoveCursorTo(event->location(), false);
-      OnAfterUserAction();
-      event->SetHandled();
-      break;
-    case ui::ET_GESTURE_SCROLL_UPDATE:
-      OnBeforeUserAction();
-      MoveCursorTo(event->location(), true);
-      OnAfterUserAction();
-      event->SetHandled();
-      break;
-    case ui::ET_GESTURE_SCROLL_END:
-    case ui::ET_SCROLL_FLING_START:
-      CreateTouchSelectionControllerAndNotifyIt();
       event->SetHandled();
       break;
     case ui::ET_GESTURE_TAP:
       if (event->details().tap_count() == 1) {
-        CreateTouchSelectionControllerAndNotifyIt();
+        if (!GetRenderText()->IsPointInSelection(event->location())) {
+          OnBeforeUserAction();
+          MoveCursorTo(event->location(), false);
+          OnAfterUserAction();
+        }
+      } else if (event->details().tap_count() == 2) {
+        OnBeforeUserAction();
+        SelectWordAt(event->location());
+        OnAfterUserAction();
       } else {
-        DestroyTouchSelection();
         OnBeforeUserAction();
         SelectAll(false);
         OnAfterUserAction();
-        event->SetHandled();
       }
+      CreateTouchSelectionControllerAndNotifyIt();
 #if defined(OS_WIN)
       if (!read_only())
         base::win::DisplayVirtualKeyboard();
 #endif
+      event->SetHandled();
       break;
     case ui::ET_GESTURE_LONG_PRESS:
-      // If long press happens outside selection, select word and show context
-      // menu (If touch selection is enabled, context menu is shown by the
-      // |touch_selection_controller_|, hence we mark the event handled.
-      // Otherwise, the regular context menu will be shown by views).
-      // If long press happens in selected text and touch drag drop is enabled,
-      // we will turn off touch selection (if one exists) and let views do drag
-      // drop.
       if (!GetRenderText()->IsPointInSelection(event->location())) {
+        // If long-press happens outside selection, select word and try to
+        // activate touch selection.
         OnBeforeUserAction();
-        model_->SelectWord();
-        touch_selection_controller_.reset(
-            ui::TouchSelectionController::create(this));
-        UpdateAfterChange(false, true);
+        SelectWordAt(event->location());
         OnAfterUserAction();
-        if (touch_selection_controller_)
-          event->SetHandled();
-      } else if (switches::IsTouchDragDropEnabled()) {
-        initiating_drag_ = true;
-        DestroyTouchSelection();
-      } else {
-        if (!touch_selection_controller_)
-          CreateTouchSelectionControllerAndNotifyIt();
-        if (touch_selection_controller_)
-          event->SetHandled();
-      }
-      return;
-    case ui::ET_GESTURE_LONG_TAP:
-      if (!touch_selection_controller_)
         CreateTouchSelectionControllerAndNotifyIt();
-
+        // If touch selection activated successfully, mark event as handled so
+        // that the regular context menu is not shown.
+        if (touch_selection_controller_)
+          event->SetHandled();
+      } else {
+        // If long-press happens on the selection, deactivate touch selection
+        // and try to initiate drag-drop. If drag-drop is not enabled, context
+        // menu will be shown. Event is not marked as handled to let Views
+        // handle drag-drop or context menu.
+        DestroyTouchSelection();
+        initiating_drag_ = switches::IsTouchDragDropEnabled();
+      }
+      break;
+    case ui::ET_GESTURE_LONG_TAP:
       // If touch selection is enabled, the context menu on long tap will be
       // shown by the |touch_selection_controller_|, hence we mark the event
-      // handled so views does not try to show context menu on it.
+      // handled so Views does not try to show context menu on it.
       if (touch_selection_controller_)
         event->SetHandled();
+      break;
+    case ui::ET_GESTURE_SCROLL_BEGIN:
+      touch_handles_hidden_due_to_scroll_ = touch_selection_controller_ != NULL;
+      DestroyTouchSelection();
+      drag_start_location_ = event->location();
+      drag_start_display_offset_ =
+          GetRenderText()->GetUpdatedDisplayOffset().x();
+      event->SetHandled();
+      break;
+    case ui::ET_GESTURE_SCROLL_UPDATE: {
+      int new_offset = drag_start_display_offset_ + event->location().x() -
+          drag_start_location_.x();
+      GetRenderText()->SetDisplayOffset(new_offset);
+      SchedulePaint();
+      event->SetHandled();
+      break;
+    }
+    case ui::ET_GESTURE_SCROLL_END:
+    case ui::ET_SCROLL_FLING_START:
+      if (touch_handles_hidden_due_to_scroll_) {
+        CreateTouchSelectionControllerAndNotifyIt();
+        touch_handles_hidden_due_to_scroll_ = false;
+      }
+      event->SetHandled();
       break;
     default:
       return;
@@ -896,8 +925,25 @@ void Textfield::GetAccessibleState(ui::AXViewState* state) {
 }
 
 void Textfield::OnBoundsChanged(const gfx::Rect& previous_bounds) {
-  GetRenderText()->SetDisplayRect(GetContentsBounds());
+  // Textfield insets include a reasonable amount of whitespace on all sides of
+  // the default font list. Fallback fonts with larger heights may paint over
+  // the vertical whitespace as needed. Alternate solutions involve undesirable
+  // behavior like changing the default font size, shrinking some fallback fonts
+  // beyond their legibility, or enlarging controls dynamically with content.
+  gfx::Rect bounds = GetContentsBounds();
+  // GetContentsBounds() does not actually use the local GetInsets() override.
+  bounds.Inset(gfx::Insets(0, kTextPadding, 0, kTextPadding));
+  GetRenderText()->SetDisplayRect(bounds);
   OnCaretBoundsChanged();
+}
+
+bool Textfield::GetNeedsNotificationWhenVisibleBoundsChange() const {
+  return true;
+}
+
+void Textfield::OnVisibleBoundsChanged() {
+  if (touch_selection_controller_)
+    touch_selection_controller_->SelectionChanged();
 }
 
 void Textfield::OnEnabledChanged() {
@@ -975,13 +1021,11 @@ void Textfield::ShowContextMenuForView(View* source,
                                        const gfx::Point& point,
                                        ui::MenuSourceType source_type) {
   UpdateContextMenu();
-  ignore_result(context_menu_runner_->RunMenuAt(
-      GetWidget(),
-      NULL,
-      gfx::Rect(point, gfx::Size()),
-      MENU_ANCHOR_TOPLEFT,
-      source_type,
-      MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));
+  ignore_result(context_menu_runner_->RunMenuAt(GetWidget(),
+                                                NULL,
+                                                gfx::Rect(point, gfx::Size()),
+                                                MENU_ANCHOR_TOPLEFT,
+                                                source_type));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -994,7 +1038,7 @@ void Textfield::WriteDragDataForView(View* sender,
   data->SetString(selected_text);
   Label label(selected_text, GetFontList());
   label.SetBackgroundColor(GetBackgroundColor());
-  label.set_subpixel_rendering_enabled(false);
+  label.SetSubpixelRenderingEnabled(false);
   gfx::Size size(label.GetPreferredSize());
   gfx::NativeView native_view = GetWidget()->GetNativeView();
   gfx::Display display = gfx::Screen::GetScreenFor(native_view)->
@@ -1372,6 +1416,10 @@ ui::TextInputMode Textfield::GetTextInputMode() const {
   return ui::TEXT_INPUT_MODE_DEFAULT;
 }
 
+int Textfield::GetTextInputFlags() const {
+  return 0;
+}
+
 bool Textfield::CanComposeInline() const {
   return true;
 }
@@ -1556,9 +1604,9 @@ void Textfield::UpdateAfterChange(bool text_changed, bool cursor_changed) {
     if (cursor_repaint_timer_.IsRunning())
       cursor_repaint_timer_.Reset();
     if (!text_changed) {
-      // TEXT_CHANGED implies SELECTION_CHANGED, so we only need to fire
+      // TEXT_CHANGED implies TEXT_SELECTION_CHANGED, so we only need to fire
       // this if only the selection changed.
-      NotifyAccessibilityEvent(ui::AX_EVENT_SELECTION_CHANGED, true);
+      NotifyAccessibilityEvent(ui::AX_EVENT_TEXT_SELECTION_CHANGED, true);
     }
   }
   if (text_changed || cursor_changed) {
@@ -1691,7 +1739,9 @@ void Textfield::UpdateContextMenu() {
     if (controller_)
       controller_->UpdateContextMenu(context_menu_contents_.get());
   }
-  context_menu_runner_.reset(new MenuRunner(context_menu_contents_.get()));
+  context_menu_runner_.reset(
+      new MenuRunner(context_menu_contents_.get(),
+                     MenuRunner::HAS_MNEMONICS | MenuRunner::CONTEXT_MENU));
 }
 
 void Textfield::TrackMouseClicks(const ui::MouseEvent& event) {
@@ -1729,6 +1779,9 @@ void Textfield::RevealPasswordChar(int index) {
 }
 
 void Textfield::CreateTouchSelectionControllerAndNotifyIt() {
+  if (!HasFocus())
+    return;
+
   if (!touch_selection_controller_) {
     touch_selection_controller_.reset(
         ui::TouchSelectionController::create(this));
@@ -1741,7 +1794,6 @@ void Textfield::UpdateSelectionClipboard() const {
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
   if (performing_user_action_ && HasSelection()) {
     ui::ScopedClipboardWriter(
-        ui::Clipboard::GetForCurrentThread(),
         ui::CLIPBOARD_TYPE_SELECTION).WriteText(GetSelectedText());
     if (controller_)
       controller_->OnAfterCutOrCopy(ui::CLIPBOARD_TYPE_SELECTION);

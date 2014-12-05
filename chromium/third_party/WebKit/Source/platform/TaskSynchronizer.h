@@ -34,7 +34,7 @@
 #include "wtf/Threading.h"
 #include "wtf/ThreadingPrimitives.h"
 
-namespace WebCore {
+namespace blink {
 
 // TaskSynchronizer can be used to wait for task completion.
 class PLATFORM_EXPORT TaskSynchronizer {
@@ -48,22 +48,14 @@ public:
     // Called from a thread that executes the task.
     void taskCompleted();
 
-#ifndef NDEBUG
-    bool hasCheckedForTermination() const { return m_hasCheckedForTermination; }
-    void setHasCheckedForTermination() { m_hasCheckedForTermination = true; }
-#endif
-
 private:
     void waitForTaskCompletionInternal();
 
     bool m_taskCompleted;
     Mutex m_synchronousMutex;
     ThreadCondition m_synchronousCondition;
-#ifndef NDEBUG
-    bool m_hasCheckedForTermination;
-#endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TaskSynchronizer_h

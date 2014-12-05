@@ -25,15 +25,15 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_EXAMPLES_LOGIN_JINGLEINFOTASK_H_
-#define TALK_EXAMPLES_LOGIN_JINGLEINFOTASK_H_
+#ifndef TALK_XMPP_JINGLEINFOTASK_H_
+#define TALK_XMPP_JINGLEINFOTASK_H_
 
 #include <vector>
 
-#include "talk/p2p/client/httpportallocator.h"
-#include "talk/xmpp/xmppengine.h"
-#include "talk/xmpp/xmpptask.h"
-#include "talk/base/sigslot.h"
+#include "webrtc/p2p/client/httpportallocator.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
+#include "webrtc/base/sigslot.h"
 
 namespace buzz {
 
@@ -47,7 +47,7 @@ class JingleInfoTask : public XmppTask {
 
   sigslot::signal3<const std::string &,
                    const std::vector<std::string> &,
-                   const std::vector<talk_base::SocketAddress> &>
+                   const std::vector<rtc::SocketAddress> &>
                        SignalJingleInfo;
 
  protected:
@@ -58,4 +58,4 @@ class JingleInfoTask : public XmppTask {
 };
 }
 
-#endif  // TALK_EXAMPLES_LOGIN_JINGLEINFOTASK_H_
+#endif  // TALK_XMPP_JINGLEINFOTASK_H_

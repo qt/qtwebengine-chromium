@@ -29,7 +29,7 @@
 
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 SpeechGrammarList* SpeechGrammarList::create()
 {
@@ -58,7 +58,6 @@ void SpeechGrammarList::addFromString(const String& string, double weight)
 
 SpeechGrammarList::SpeechGrammarList()
 {
-    ScriptWrappable::init(this);
 }
 
 void SpeechGrammarList::trace(Visitor* visitor)
@@ -66,4 +65,4 @@ void SpeechGrammarList::trace(Visitor* visitor)
     visitor->trace(m_grammars);
 }
 
-} // namespace WebCore
+} // namespace blink

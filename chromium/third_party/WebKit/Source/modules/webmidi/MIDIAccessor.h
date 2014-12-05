@@ -36,11 +36,11 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccessorClient;
 
-class MIDIAccessor FINAL : public blink::WebMIDIAccessorClient {
+class MIDIAccessor final : public WebMIDIAccessorClient {
 public:
     static PassOwnPtr<MIDIAccessor> create(MIDIAccessorClient*);
 
@@ -53,19 +53,21 @@ public:
     // once the initialization successfully finishes.
     void setClient(MIDIAccessorClient* client) { m_client = client; }
 
-    // blink::WebMIDIAccessorClient
-    virtual void didAddInputPort(const blink::WebString& id, const blink::WebString& manufacturer, const blink::WebString& name, const blink::WebString& version) OVERRIDE;
-    virtual void didAddOutputPort(const blink::WebString& id, const blink::WebString& manufacturer, const blink::WebString& name, const blink::WebString& version) OVERRIDE;
-    virtual void didStartSession(bool success, const blink::WebString& error, const blink::WebString& message) OVERRIDE;
-    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
+    // WebMIDIAccessorClient
+    virtual void didAddInputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version, bool isActive) override;
+    virtual void didAddOutputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version, bool isActive) override;
+    virtual void didSetInputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didSetOutputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didStartSession(bool success, const WebString& error, const WebString& message) override;
+    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) override;
 
 private:
     explicit MIDIAccessor(MIDIAccessorClient*);
 
     MIDIAccessorClient* m_client;
-    OwnPtr<blink::WebMIDIAccessor> m_accessor;
+    OwnPtr<WebMIDIAccessor> m_accessor;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIAccessor_h

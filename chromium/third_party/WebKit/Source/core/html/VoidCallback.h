@@ -26,14 +26,17 @@
 #ifndef VoidCallback_h
 #define VoidCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
 
-class VoidCallback {
+namespace blink {
+
+class VoidCallback : public GarbageCollectedFinalized<VoidCallback> {
 public:
     virtual ~VoidCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent() = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

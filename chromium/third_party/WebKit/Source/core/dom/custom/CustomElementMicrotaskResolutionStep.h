@@ -38,7 +38,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementRegistrationContext;
 class Element;
@@ -50,15 +50,15 @@ public:
 
     virtual ~CustomElementMicrotaskResolutionStep();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CustomElementMicrotaskResolutionStep(PassRefPtrWillBeRawPtr<CustomElementRegistrationContext>, PassRefPtrWillBeRawPtr<Element>, const CustomElementDescriptor&);
 
-    virtual Result process() OVERRIDE;
+    virtual Result process() override;
 
 #if !defined(NDEBUG)
-    virtual void show(unsigned indent) OVERRIDE;
+    virtual void show(unsigned indent) override;
 #endif
 
     RefPtrWillBeMember<CustomElementRegistrationContext> m_context;
@@ -66,6 +66,6 @@ private:
     CustomElementDescriptor m_descriptor;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementMicrotaskResolutionStep_h

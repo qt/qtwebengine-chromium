@@ -26,17 +26,18 @@
 #ifndef IDBKeyRange_h
 #define IDBKeyRange_h
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/indexeddb/IDBKey.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
+class ExecutionContext;
+class ScriptState;
+class ScriptValue;
 
-class IDBKeyRange : public GarbageCollectedFinalized<IDBKeyRange>, public ScriptWrappable {
+class IDBKeyRange final : public GarbageCollected<IDBKeyRange>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum LowerBoundType {
         LowerBoundOpen,
@@ -54,7 +55,6 @@ public:
     // Null if the script value is null or undefined, the range if it is one, otherwise tries to convert to a key and throws if it fails.
     static IDBKeyRange* fromScriptValue(ExecutionContext*, const ScriptValue&, ExceptionState&);
 
-    ~IDBKeyRange() { }
     void trace(Visitor*);
 
     // Implement the IDBKeyRange IDL
@@ -82,6 +82,6 @@ private:
     UpperBoundType m_upperType;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IDBKeyRange_h

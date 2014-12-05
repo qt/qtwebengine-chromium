@@ -12,13 +12,13 @@
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
-#include "base/time/time.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/point.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/ozone/platform/dri/crtc_controller.h"
 #include "ui/ozone/platform/dri/dri_buffer.h"
 #include "ui/ozone/platform/dri/dri_wrapper.h"
-#include "ui/ozone/platform/dri/scanout_surface.h"
+#include "ui/ozone/public/native_pixmap.h"
 
 namespace ui {
 
@@ -39,130 +39,180 @@ void HandlePageFlipEvent(int fd,
                          unsigned int seconds,
                          unsigned int useconds,
                          void* controller) {
-  TRACE_EVENT0("dri", "HandlePageFlipEvent");
-  static_cast<HardwareDisplayController*>(controller)
+  static_cast<CrtcController*>(controller)
       ->OnPageFlipEvent(frame, seconds, useconds);
 }
 
 }  // namespace
 
 HardwareDisplayController::HardwareDisplayController(
-    DriWrapper* drm,
-    uint32_t connector_id,
-    uint32_t crtc_id)
-    : drm_(drm),
-      connector_id_(connector_id),
-      crtc_id_(crtc_id),
-      surface_(),
-      time_of_last_flip_(0),
-      is_disabled_(true) {}
+    scoped_ptr<CrtcController> controller)
+    : is_disabled_(true) {
+  crtc_controllers_.push_back(controller.release());
+}
 
 HardwareDisplayController::~HardwareDisplayController() {
   // Reset the cursor.
   UnsetCursor();
-  UnbindSurfaceFromController();
 }
 
-bool
-HardwareDisplayController::BindSurfaceToController(
-    scoped_ptr<ScanoutSurface> surface, drmModeModeInfo mode) {
-  CHECK(surface);
+bool HardwareDisplayController::Modeset(const OverlayPlane& primary,
+                                        drmModeModeInfo mode) {
+  TRACE_EVENT0("dri", "HDC::Modeset");
+  DCHECK(primary.buffer.get());
+  bool status = true;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->Modeset(primary, mode);
 
-  if (!drm_->SetCrtc(crtc_id_,
-                     surface->GetFramebufferId(),
-                     &connector_id_,
-                     &mode)) {
-    LOG(ERROR) << "Failed to modeset: error='" << strerror(errno)
-               << "' crtc=" << crtc_id_ << " connector=" << connector_id_
-               << " framebuffer_id=" << surface->GetFramebufferId()
-               << " mode=" << mode.hdisplay << "x" << mode.vdisplay << "@"
-               << mode.vrefresh;
-    return false;
-  }
-
-  surface_.reset(surface.release());
-  mode_ = mode;
+  current_planes_ = std::vector<OverlayPlane>(1, primary);
+  pending_planes_.clear();
   is_disabled_ = false;
-  return true;
-}
-
-void HardwareDisplayController::UnbindSurfaceFromController() {
-  drm_->SetCrtc(crtc_id_, 0, 0, NULL);
-  surface_.reset();
-  memset(&mode_, 0, sizeof(mode_));
-  is_disabled_ = true;
+  mode_ = mode;
+  return status;
 }
 
 bool HardwareDisplayController::Enable() {
-  CHECK(surface_);
-  if (is_disabled_) {
-    scoped_ptr<ScanoutSurface> surface(surface_.release());
-    return BindSurfaceToController(surface.Pass(), mode_);
-  }
+  TRACE_EVENT0("dri", "HDC::Enable");
+  DCHECK(!current_planes_.empty());
+  OverlayPlane primary = OverlayPlane::GetPrimaryPlane(current_planes_);
+  DCHECK(primary.buffer.get());
+  bool status = true;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->Modeset(primary, mode_);
 
-  return true;
+  return status;
 }
 
 void HardwareDisplayController::Disable() {
-  drm_->SetCrtc(crtc_id_, 0, 0, NULL);
+  TRACE_EVENT0("dri", "HDC::Disable");
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    crtc_controllers_[i]->Disable();
+
   is_disabled_ = true;
 }
 
-bool HardwareDisplayController::SchedulePageFlip() {
-  CHECK(surface_);
-  if (!is_disabled_ && !drm_->PageFlip(crtc_id_,
-                                       surface_->GetFramebufferId(),
-                                       this)) {
-    LOG(ERROR) << "Cannot page flip: " << strerror(errno);
-    return false;
-  }
+void HardwareDisplayController::QueueOverlayPlane(const OverlayPlane& plane) {
+  pending_planes_.push_back(plane);
+}
 
-  return true;
+bool HardwareDisplayController::SchedulePageFlip() {
+  DCHECK(!pending_planes_.empty());
+
+  if (is_disabled_)
+    return true;
+
+  bool status = true;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->SchedulePageFlip(pending_planes_);
+
+  return status;
 }
 
 void HardwareDisplayController::WaitForPageFlipEvent() {
-  TRACE_EVENT0("dri", "WaitForPageFlipEvent");
-
-  if (is_disabled_)
-    return;
+  TRACE_EVENT0("dri", "HDC::WaitForPageFlipEvent");
 
   drmEventContext drm_event;
   drm_event.version = DRM_EVENT_CONTEXT_VERSION;
   drm_event.page_flip_handler = HandlePageFlipEvent;
   drm_event.vblank_handler = NULL;
 
-  // Wait for the page-flip to complete.
-  drm_->HandleEvent(drm_event);
+  bool has_pending_page_flips = false;
+  // Wait for the page-flips to complete.
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i) {
+    // In mirror mode the page flip callbacks can happen in different order than
+    // scheduled, so we need to make sure that the event for the current CRTC is
+    // processed before moving to the next CRTC.
+    while (crtc_controllers_[i]->page_flip_pending()) {
+      has_pending_page_flips = true;
+      crtc_controllers_[i]->drm()->HandleEvent(drm_event);
+    }
+  }
+
+  // In case there are no pending pageflips do not replace the current planes
+  // since they are still being used.
+  if (has_pending_page_flips)
+    current_planes_.swap(pending_planes_);
+
+  pending_planes_.clear();
 }
 
-void HardwareDisplayController::OnPageFlipEvent(unsigned int frame,
-                                                unsigned int seconds,
-                                                unsigned int useconds) {
-  time_of_last_flip_ =
-      static_cast<uint64_t>(seconds) * base::Time::kMicrosecondsPerSecond +
-      useconds;
+bool HardwareDisplayController::SetCursor(
+    const scoped_refptr<ScanoutBuffer>& buffer) {
+  bool status = true;
 
-  surface_->SwapBuffers();
-}
+  if (is_disabled_)
+    return true;
 
-bool HardwareDisplayController::SetCursor(ScanoutSurface* surface) {
-  bool ret = drm_->SetCursor(crtc_id_,
-                             surface->GetHandle(),
-                             surface->Size().width(),
-                             surface->Size().height());
-  surface->SwapBuffers();
-  return ret;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->SetCursor(buffer);
+
+  return status;
 }
 
 bool HardwareDisplayController::UnsetCursor() {
-  return drm_->SetCursor(crtc_id_, 0, 0, 0);
+  bool status = true;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->UnsetCursor();
+
+  return status;
 }
 
 bool HardwareDisplayController::MoveCursor(const gfx::Point& location) {
   if (is_disabled_)
     return true;
 
-  return drm_->MoveCursor(crtc_id_, location.x(), location.y());
+  bool status = true;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    status &= crtc_controllers_[i]->MoveCursor(location);
+
+  return status;
+}
+
+void HardwareDisplayController::AddCrtc(scoped_ptr<CrtcController> controller) {
+  crtc_controllers_.push_back(controller.release());
+}
+
+scoped_ptr<CrtcController> HardwareDisplayController::RemoveCrtc(
+    uint32_t crtc) {
+  for (ScopedVector<CrtcController>::iterator it = crtc_controllers_.begin();
+       it != crtc_controllers_.end(); ++it) {
+    if ((*it)->crtc() == crtc) {
+      scoped_ptr<CrtcController> controller(*it);
+      crtc_controllers_.weak_erase(it);
+      return controller.Pass();
+    }
+  }
+
+  return scoped_ptr<CrtcController>();
+}
+
+bool HardwareDisplayController::HasCrtc(uint32_t crtc) const {
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    if (crtc_controllers_[i]->crtc() == crtc)
+      return true;
+
+  return false;
+}
+
+bool HardwareDisplayController::IsMirrored() const {
+  return crtc_controllers_.size() > 1;
+}
+
+bool HardwareDisplayController::IsDisabled() const {
+  return is_disabled_;
+}
+
+gfx::Size HardwareDisplayController::GetModeSize() const {
+  return gfx::Size(mode_.hdisplay, mode_.vdisplay);
+}
+
+uint64_t HardwareDisplayController::GetTimeOfLastFlip() const {
+  uint64_t time = 0;
+  for (size_t i = 0; i < crtc_controllers_.size(); ++i)
+    if (time < crtc_controllers_[i]->time_of_last_flip())
+      time = crtc_controllers_[i]->time_of_last_flip();
+
+  return time;
 }
 
 }  // namespace ui

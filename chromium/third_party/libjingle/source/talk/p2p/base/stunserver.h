@@ -25,12 +25,12 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_STUNSERVER_H_
-#define TALK_P2P_BASE_STUNSERVER_H_
+#ifndef WEBRTC_P2P_BASE_STUNSERVER_H_
+#define WEBRTC_P2P_BASE_STUNSERVER_H_
 
-#include "talk/base/asyncudpsocket.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/p2p/base/stun.h"
+#include "webrtc/p2p/base/stun.h"
+#include "webrtc/base/asyncudpsocket.h"
+#include "webrtc/base/scoped_ptr.h"
 
 namespace cricket {
 
@@ -39,40 +39,45 @@ const int STUN_SERVER_PORT = 3478;
 class StunServer : public sigslot::has_slots<> {
  public:
   // Creates a STUN server, which will listen on the given socket.
-  explicit StunServer(talk_base::AsyncUDPSocket* socket);
+  explicit StunServer(rtc::AsyncUDPSocket* socket);
   // Removes the STUN server from the socket and deletes the socket.
   ~StunServer();
 
  protected:
   // Slot for AsyncSocket.PacketRead:
   void OnPacket(
-      talk_base::AsyncPacketSocket* socket, const char* buf, size_t size,
-      const talk_base::SocketAddress& remote_addr,
-      const talk_base::PacketTime& packet_time);
+      rtc::AsyncPacketSocket* socket, const char* buf, size_t size,
+      const rtc::SocketAddress& remote_addr,
+      const rtc::PacketTime& packet_time);
 
   // Handlers for the different types of STUN/TURN requests:
-  void OnBindingRequest(StunMessage* msg,
-      const talk_base::SocketAddress& addr);
+  virtual void OnBindingRequest(StunMessage* msg,
+      const rtc::SocketAddress& addr);
   void OnAllocateRequest(StunMessage* msg,
-      const talk_base::SocketAddress& addr);
+      const rtc::SocketAddress& addr);
   void OnSharedSecretRequest(StunMessage* msg,
-      const talk_base::SocketAddress& addr);
+      const rtc::SocketAddress& addr);
   void OnSendRequest(StunMessage* msg,
-      const talk_base::SocketAddress& addr);
+      const rtc::SocketAddress& addr);
 
   // Sends an error response to the given message back to the user.
   void SendErrorResponse(
-      const StunMessage& msg, const talk_base::SocketAddress& addr,
+      const StunMessage& msg, const rtc::SocketAddress& addr,
       int error_code, const char* error_desc);
 
   // Sends the given message to the appropriate destination.
   void SendResponse(const StunMessage& msg,
-       const talk_base::SocketAddress& addr);
+       const rtc::SocketAddress& addr);
+
+  // A helper method to compose a STUN binding response.
+  void GetStunBindReqponse(StunMessage* request,
+                           const rtc::SocketAddress& remote_addr,
+                           StunMessage* response) const;
 
  private:
-  talk_base::scoped_ptr<talk_base::AsyncUDPSocket> socket_;
+  rtc::scoped_ptr<rtc::AsyncUDPSocket> socket_;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_STUNSERVER_H_
+#endif  // WEBRTC_P2P_BASE_STUNSERVER_H_

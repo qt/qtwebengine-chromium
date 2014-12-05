@@ -10,9 +10,8 @@
 #include "base/command_line.h"
 #include "base/debug/profiler.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/hash.h"
-#include "base/metrics/field_trial.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/strings/string_util.h"
@@ -29,7 +28,7 @@
 #include "sandbox/win/src/sandbox.h"
 #include "sandbox/win/src/sandbox_nt_util.h"
 #include "sandbox/win/src/win_utils.h"
-#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/direct_write.h"
 
 static sandbox::BrokerServices* g_broker_services = NULL;
 static sandbox::TargetServices* g_target_services = NULL;
@@ -43,10 +42,10 @@ namespace {
 // For more information about how this list is generated, and how to get off
 // of it, see:
 // https://sites.google.com/a/chromium.org/dev/Home/third-party-developers
-// If the size of this list exceeds 64, change kTroublesomeDllsMaxCount.
 const wchar_t* const kTroublesomeDlls[] = {
   L"adialhk.dll",                 // Kaspersky Internet Security.
   L"acpiz.dll",                   // Unknown.
+  L"airfoilinject3.dll",          // Airfoil.
   L"akinsofthook32.dll",          // Akinsoft Software Engineering.
   L"assistant_x64.dll",           // Unknown.
   L"avcuf64.dll",                 // Bit Defender Internet Security x64.
@@ -83,6 +82,8 @@ const wchar_t* const kTroublesomeDlls[] = {
   L"pavshookwow.dll",             // Panda Antivirus.
   L"pctavhook.dll",               // PC Tools Antivirus.
   L"pctgmhk.dll",                 // PC Tools Spyware Doctor.
+  L"picrmi32.dll",                // PicRec.
+  L"picrmi64.dll",                // PicRec.
   L"prntrack.dll",                // Pharos Systems.
   L"protector.dll",               // Unknown (suspected malware).
   L"radhslib.dll",                // Radiant Naomi Internet Filter.
@@ -192,8 +193,8 @@ void BlacklistAddOneDll(const wchar_t* module_name,
     DCHECK_LE(3U, (name.size() - period));
     if (period <= 8)
       return;
-    for (int ix = 0; ix < 3; ++ix) {
-      const wchar_t suffix[] = {'~', ('1' + ix), 0};
+    for (wchar_t ix = '1'; ix <= '3'; ++ix) {
+      const wchar_t suffix[] = {'~', ix, 0};
       std::wstring alt_name = name.substr(0, 6) + suffix;
       alt_name += name.substr(period, name.size());
       if (check_in_browser) {
@@ -243,7 +244,7 @@ base::string16 PrependWindowsSessionPath(const base::char16* object) {
 }
 
 // Checks if the sandbox should be let to run without a job object assigned.
-bool ShouldSetJobLevel(const CommandLine& cmd_line) {
+bool ShouldSetJobLevel(const base::CommandLine& cmd_line) {
   if (!cmd_line.HasSwitch(switches::kAllowNoSandboxJob))
     return true;
 
@@ -349,7 +350,18 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
 
   // Win8+ adds a device DeviceApi that we don't need.
   if (base::win::GetVersion() > base::win::VERSION_WIN7)
-    policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+    result = policy->AddKernelObjectToClose(L"File", L"\\Device\\DeviceApi");
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
+  // Close the proxy settings on XP.
+  if (base::win::GetVersion() <= base::win::VERSION_SERVER_2003)
+    result = policy->AddKernelObjectToClose(L"Key",
+                 L"HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\" \
+                     L"CurrentVersion\\Internet Settings");
+  if (result != sandbox::SBOX_ALL_OK)
+    return false;
+
 
   sandbox::TokenLevel initial_token = sandbox::USER_UNPROTECTED;
   if (base::win::GetVersion() > base::win::VERSION_XP) {
@@ -361,6 +373,7 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
   policy->SetTokenLevel(initial_token, sandbox::USER_LOCKDOWN);
   // Prevents the renderers from manipulating low-integrity processes.
   policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_UNTRUSTED);
+  policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
 
   if (sandbox::SBOX_ALL_OK !=  policy->SetAlternateDesktop(true)) {
     DLOG(WARNING) << "Failed to apply desktop security to the renderer";
@@ -372,8 +385,9 @@ bool AddPolicyForSandboxedProcess(sandbox::TargetPolicy* policy) {
 // Updates the command line arguments with debug-related flags. If debug flags
 // have been used with this process, they will be filtered and added to
 // command_line as needed.
-void ProcessDebugFlags(CommandLine* command_line) {
-  const CommandLine& current_cmd_line = *CommandLine::ForCurrentProcess();
+void ProcessDebugFlags(base::CommandLine* command_line) {
+  const base::CommandLine& current_cmd_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string type = command_line->GetSwitchValueASCII(switches::kProcessType);
   if (current_cmd_line.HasSwitch(switches::kWaitForDebuggerChildren)) {
     // Look to pass-on the kWaitForDebugger flag.
@@ -430,8 +444,8 @@ void CheckDuplicateHandle(HANDLE handle) {
       kDuplicateHandleWarning;
 
   if (0 == _wcsicmp(type_info->Name.Buffer, L"Process")) {
-    const ACCESS_MASK kDangerousMask = ~(PROCESS_QUERY_LIMITED_INFORMATION |
-                                         SYNCHRONIZE);
+    const ACCESS_MASK kDangerousMask =
+        ~static_cast<DWORD>(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE);
     CHECK(!(basic_info.GrantedAccess & kDangerousMask)) <<
         kDuplicateHandleWarning;
   }
@@ -468,7 +482,7 @@ BOOL WINAPI DuplicateHandlePatch(HANDLE source_process_handle,
                                         PROCESS_QUERY_INFORMATION,
                                         FALSE, 0));
       base::win::ScopedHandle process(temp_handle);
-      CHECK(::IsProcessInJob(process, NULL, &is_in_job));
+      CHECK(::IsProcessInJob(process.Get(), NULL, &is_in_job));
     }
   }
 
@@ -484,7 +498,7 @@ BOOL WINAPI DuplicateHandlePatch(HANDLE source_process_handle,
     base::win::ScopedHandle handle(temp_handle);
 
     // Callers use CHECK macro to make sure we get the right stack.
-    CheckDuplicateHandle(handle);
+    CheckDuplicateHandle(handle.Get());
   }
 
   return TRUE;
@@ -493,7 +507,7 @@ BOOL WINAPI DuplicateHandlePatch(HANDLE source_process_handle,
 
 }  // namespace
 
-void SetJobLevel(const CommandLine& cmd_line,
+void SetJobLevel(const base::CommandLine& cmd_line,
                  sandbox::JobLevel job_level,
                  uint32 ui_exceptions,
                  sandbox::TargetPolicy* policy) {
@@ -563,42 +577,11 @@ bool InitTargetServices(sandbox::TargetServices* target_services) {
   return sandbox::SBOX_ALL_OK == result;
 }
 
-bool ShouldUseDirectWrite() {
-  // If the flag is currently on, and we're on Win7 or above, we enable
-  // DirectWrite. Skia does not require the additions to DirectWrite in QFE
-  // 2670838, but a simple 'better than XP' check is not enough.
-  if (base::win::GetVersion() < base::win::VERSION_WIN7)
-    return false;
-
-  base::win::OSInfo::VersionNumber os_version =
-      base::win::OSInfo::GetInstance()->version_number();
-  if ((os_version.major == 6) && (os_version.minor == 1)) {
-    // We can't use DirectWrite for pre-release versions of Windows 7.
-    if (os_version.build < 7600)
-      return false;
-  }
-
-  // If forced off, don't use it.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  if (command_line.HasSwitch(switches::kDisableDirectWrite))
-    return false;
-
-#if !defined(NACL_WIN64)
-  // Can't use GDI on HiDPI.
-  if (gfx::GetDPIScale() > 1.0f)
-    return true;
-#endif
-
-  // Otherwise, check the field trial.
-  const std::string group_name =
-      base::FieldTrialList::FindFullName("DirectWrite");
-  return group_name != "Disabled";
-}
-
 base::ProcessHandle StartSandboxedProcess(
     SandboxedProcessLauncherDelegate* delegate,
-    CommandLine* cmd_line) {
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+    base::CommandLine* cmd_line) {
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string type_str = cmd_line->GetSwitchValueASCII(switches::kProcessType);
 
   TRACE_EVENT_BEGIN_ETW("StartProcessWithAccess", 0, type_str);
@@ -665,13 +648,15 @@ base::ProcessHandle StartSandboxedProcess(
     return 0;
 
   if (type_str == switches::kRendererProcess) {
-    if (ShouldUseDirectWrite()) {
+#if !defined(NACL_WIN64)
+    if (gfx::win::ShouldUseDirectWrite()) {
       AddDirectory(base::DIR_WINDOWS_FONTS,
                   NULL,
                   true,
                   sandbox::TargetPolicy::FILES_ALLOW_READONLY,
                   policy);
     }
+#endif
   } else {
     // Hack for Google Desktop crash. Trick GD into not injecting its DLL into
     // this subprocess. See
@@ -737,7 +722,8 @@ base::ProcessHandle StartSandboxedProcess(
   if (delegate)
     delegate->PostSpawnTarget(target.process_handle());
 
-  ResumeThread(target.thread_handle());
+  CHECK(ResumeThread(target.thread_handle()) != -1);
+  TRACE_EVENT_END_ETW("StartProcessWithAccess", 0, type_str);
   return target.TakeProcessHandle();
 }
 
@@ -768,7 +754,7 @@ bool BrokerDuplicateHandle(HANDLE source_handle,
                                     target_process_id));
   if (target_process.IsValid()) {
     return !!::DuplicateHandle(::GetCurrentProcess(), source_handle,
-                                target_process, target_handle,
+                                target_process.Get(), target_handle,
                                 desired_access, FALSE, options);
   }
 

@@ -16,12 +16,11 @@ TEST(QuicProtocolTest, AdjustErrorForVersion) {
       << "Any additions to QuicRstStreamErrorCode require an addition to "
       << "AdjustErrorForVersion and this associated test.";
 
-  EXPECT_EQ(QUIC_STREAM_NO_ERROR,
-            AdjustErrorForVersion(QUIC_RST_FLOW_CONTROL_ACCOUNTING,
-                                  QUIC_VERSION_17));
-  EXPECT_EQ(QUIC_RST_FLOW_CONTROL_ACCOUNTING, AdjustErrorForVersion(
-      QUIC_RST_FLOW_CONTROL_ACCOUNTING,
-      static_cast<QuicVersion>(QUIC_VERSION_17 + 1)));
+  // If we ever add different RST codes, we should have a test akin to the
+  // following.
+  //  EXPECT_EQ(QUIC_RST_ACKNOWLEDGEMENT, AdjustErrorForVersion(
+  //      QUIC_RST_ACKNOWLEDGEMENT,
+  //      QUIC_VERSION_23));
 }
 
 TEST(QuicProtocolTest, MakeQuicTag) {
@@ -35,23 +34,23 @@ TEST(QuicProtocolTest, MakeQuicTag) {
 }
 
 TEST(QuicProtocolTest, IsAawaitingPacket) {
-  ReceivedPacketInfo received_info;
-  received_info.largest_observed = 10u;
-  EXPECT_TRUE(IsAwaitingPacket(received_info, 11u));
-  EXPECT_FALSE(IsAwaitingPacket(received_info, 1u));
+  QuicAckFrame ack_frame;
+  ack_frame.largest_observed = 10u;
+  EXPECT_TRUE(IsAwaitingPacket(ack_frame, 11u));
+  EXPECT_FALSE(IsAwaitingPacket(ack_frame, 1u));
 
-  received_info.missing_packets.insert(10);
-  EXPECT_TRUE(IsAwaitingPacket(received_info, 10u));
+  ack_frame.missing_packets.insert(10);
+  EXPECT_TRUE(IsAwaitingPacket(ack_frame, 10u));
 }
 
 TEST(QuicProtocolTest, InsertMissingPacketsBetween) {
-  ReceivedPacketInfo received_info;
-  InsertMissingPacketsBetween(&received_info, 4u, 10u);
-  EXPECT_EQ(6u, received_info.missing_packets.size());
+  QuicAckFrame ack_frame;
+  InsertMissingPacketsBetween(&ack_frame, 4u, 10u);
+  EXPECT_EQ(6u, ack_frame.missing_packets.size());
 
   QuicPacketSequenceNumber i = 4;
-  for (SequenceNumberSet::iterator it = received_info.missing_packets.begin();
-       it != received_info.missing_packets.end(); ++it, ++i) {
+  for (SequenceNumberSet::iterator it = ack_frame.missing_packets.begin();
+       it != ack_frame.missing_packets.end(); ++it, ++i) {
     EXPECT_EQ(i, *it);
   }
 }
@@ -69,8 +68,8 @@ TEST(QuicProtocolTest, QuicVersionToQuicTag) {
 #endif
 
   // Explicitly test a specific version.
-  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '6'),
-            QuicVersionToQuicTag(QUIC_VERSION_16));
+  EXPECT_EQ(MakeQuicTag('Q', '0', '1', '9'),
+            QuicVersionToQuicTag(QUIC_VERSION_19));
 
   // Loop over all supported versions and make sure that we never hit the
   // default case (i.e. all supported versions should be successfully converted
@@ -108,8 +107,8 @@ TEST(QuicProtocolTest, QuicTagToQuicVersion) {
 #endif
 
   // Explicitly test specific versions.
-  EXPECT_EQ(QUIC_VERSION_16,
-            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '6')));
+  EXPECT_EQ(QUIC_VERSION_19,
+            QuicTagToQuicVersion(MakeQuicTag('Q', '0', '1', '9')));
 
   for (size_t i = 0; i < arraysize(kSupportedQuicVersions); ++i) {
     QuicVersion version = kSupportedQuicVersions[i];
@@ -140,23 +139,23 @@ TEST(QuicProtocolTest, QuicTagToQuicVersionUnsupported) {
 }
 
 TEST(QuicProtocolTest, QuicVersionToString) {
-  EXPECT_EQ("QUIC_VERSION_16", QuicVersionToString(QUIC_VERSION_16));
+  EXPECT_EQ("QUIC_VERSION_19", QuicVersionToString(QUIC_VERSION_19));
   EXPECT_EQ("QUIC_VERSION_UNSUPPORTED",
             QuicVersionToString(QUIC_VERSION_UNSUPPORTED));
 
-  QuicVersion single_version[] = {QUIC_VERSION_16};
+  QuicVersion single_version[] = {QUIC_VERSION_19};
   QuicVersionVector versions_vector;
   for (size_t i = 0; i < arraysize(single_version); ++i) {
     versions_vector.push_back(single_version[i]);
   }
-  EXPECT_EQ("QUIC_VERSION_16", QuicVersionVectorToString(versions_vector));
+  EXPECT_EQ("QUIC_VERSION_19", QuicVersionVectorToString(versions_vector));
 
-  QuicVersion multiple_versions[] = {QUIC_VERSION_UNSUPPORTED, QUIC_VERSION_16};
+  QuicVersion multiple_versions[] = {QUIC_VERSION_UNSUPPORTED, QUIC_VERSION_19};
   versions_vector.clear();
   for (size_t i = 0; i < arraysize(multiple_versions); ++i) {
     versions_vector.push_back(multiple_versions[i]);
   }
-  EXPECT_EQ("QUIC_VERSION_UNSUPPORTED,QUIC_VERSION_16",
+  EXPECT_EQ("QUIC_VERSION_UNSUPPORTED,QUIC_VERSION_19",
             QuicVersionVectorToString(versions_vector));
 
   // Make sure that all supported versions are present in QuicVersionToString.

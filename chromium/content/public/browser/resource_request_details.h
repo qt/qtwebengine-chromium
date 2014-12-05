@@ -7,11 +7,11 @@
 
 #include <string>
 
+#include "content/public/common/resource_type.h"
 #include "net/base/host_port_pair.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/url_request/url_request_status.h"
 #include "url/gurl.h"
-#include "webkit/common/resource_type.h"
 
 namespace net {
 class URLRequest;
@@ -37,7 +37,7 @@ struct ResourceRequestDetails {
   net::URLRequestStatus status;
   int ssl_cert_id;
   net::CertStatus ssl_cert_status;
-  ResourceType::Type resource_type;
+  ResourceType resource_type;
   net::HostPortPair socket_address;
   int render_frame_id;
   // HTTP response code. See HttpResponseHeaders::response_code().
@@ -50,7 +50,7 @@ struct ResourceRedirectDetails : public ResourceRequestDetails {
   ResourceRedirectDetails(const net::URLRequest* request,
                           int cert_id,
                           const GURL& new_url);
-  virtual ~ResourceRedirectDetails();
+  ~ResourceRedirectDetails() override;
 
   // The URL to which we are being redirected.
   GURL new_url;

@@ -36,7 +36,7 @@
 #if INSIDE_BLINK
 #include "platform/geometry/FloatPoint.h"
 #else
-#include <ui/gfx/point_f.h>
+#include <ui/gfx/geometry/point_f.h>
 #endif
 
 namespace blink {
@@ -58,22 +58,22 @@ struct WebFloatPoint {
     }
 
 #if INSIDE_BLINK
-    WebFloatPoint(const WebCore::FloatPoint& p)
+    WebFloatPoint(const FloatPoint& p)
         : x(p.x())
         , y(p.y())
     {
     }
 
-    WebFloatPoint& operator=(const WebCore::FloatPoint& p)
+    WebFloatPoint& operator=(const FloatPoint& p)
     {
         x = p.x();
         y = p.y();
         return *this;
     }
 
-    operator WebCore::FloatPoint() const
+    operator FloatPoint() const
     {
-        return WebCore::FloatPoint(x, y);
+        return FloatPoint(x, y);
     }
 #else
     WebFloatPoint(const gfx::PointF& p)

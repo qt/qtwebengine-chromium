@@ -9,7 +9,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -20,11 +20,9 @@ class CC_EXPORT UIResourceLayer : public Layer {
  public:
   static scoped_refptr<UIResourceLayer> Create();
 
-  virtual bool DrawsContent() const OVERRIDE;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
 
   void SetBitmap(const SkBitmap& skbitmap);
 
@@ -49,7 +47,9 @@ class CC_EXPORT UIResourceLayer : public Layer {
 
  protected:
   UIResourceLayer();
-  virtual ~UIResourceLayer();
+  ~UIResourceLayer() override;
+
+  bool HasDrawableContent() const override;
 
   scoped_ptr<UIResourceHolder> ui_resource_holder_;
   SkBitmap bitmap_;
@@ -59,8 +59,7 @@ class CC_EXPORT UIResourceLayer : public Layer {
   float vertex_opacity_[4];
 
  private:
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
   void RecreateUIResourceHolder();
 
 

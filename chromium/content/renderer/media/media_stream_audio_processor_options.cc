@@ -4,13 +4,14 @@
 
 #include "content/renderer/media/media_stream_audio_processor_options.h"
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/path_service.h"
+#include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "content/common/media/media_stream_options.h"
 #include "content/renderer/media/media_stream_constraints_util.h"
 #include "content/renderer/media/media_stream_source.h"
@@ -49,11 +50,11 @@ struct {
 } const kDefaultAudioConstraints[] = {
   { MediaAudioConstraints::kEchoCancellation, true },
   { MediaAudioConstraints::kGoogEchoCancellation, true },
-#if defined(OS_CHROMEOS) || defined(OS_MACOSX)
-  // Enable the extended filter mode AEC on platforms with known echo issues.
-  { MediaAudioConstraints::kGoogExperimentalEchoCancellation, true },
-#else
+#if defined(OS_ANDROID) || defined(OS_IOS)
   { MediaAudioConstraints::kGoogExperimentalEchoCancellation, false },
+#else
+  // Enable the extended filter mode AEC on all non-mobile platforms.
+  { MediaAudioConstraints::kGoogExperimentalEchoCancellation, true },
 #endif
   { MediaAudioConstraints::kGoogAutoGainControl, true },
   { MediaAudioConstraints::kGoogExperimentalAutoGainControl, true },
@@ -73,12 +74,37 @@ bool IsAudioProcessingConstraint(const std::string& key) {
   return key != kMediaStreamAudioDucking;
 }
 
-} // namespace
+// Used to log echo quality based on delay estimates.
+enum DelayBasedEchoQuality {
+  DELAY_BASED_ECHO_QUALITY_GOOD = 0,
+  DELAY_BASED_ECHO_QUALITY_SPURIOUS,
+  DELAY_BASED_ECHO_QUALITY_BAD,
+  DELAY_BASED_ECHO_QUALITY_MAX
+};
+
+DelayBasedEchoQuality EchoDelayFrequencyToQuality(float delay_frequency) {
+  const float kEchoDelayFrequencyLowerLimit = 0.1f;
+  const float kEchoDelayFrequencyUpperLimit = 0.8f;
+  // DELAY_BASED_ECHO_QUALITY_GOOD
+  //   delay is out of bounds during at most 10 % of the time.
+  // DELAY_BASED_ECHO_QUALITY_SPURIOUS
+  //   delay is out of bounds 10-80 % of the time.
+  // DELAY_BASED_ECHO_QUALITY_BAD
+  //   delay is mostly out of bounds >= 80 % of the time.
+  if (delay_frequency <= kEchoDelayFrequencyLowerLimit)
+    return DELAY_BASED_ECHO_QUALITY_GOOD;
+  else if (delay_frequency < kEchoDelayFrequencyUpperLimit)
+    return DELAY_BASED_ECHO_QUALITY_SPURIOUS;
+  else
+    return DELAY_BASED_ECHO_QUALITY_BAD;
+}
+
+}  // namespace
 
 // TODO(xians): Remove this method after the APM in WebRtc is deprecated.
 void MediaAudioConstraints::ApplyFixedAudioConstraints(
     RTCMediaConstraints* constraints) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     bool already_set_value;
     if (!webrtc::FindConstraint(constraints, kDefaultAudioConstraints[i].key,
                                 &already_set_value, NULL)) {
@@ -119,7 +145,7 @@ bool MediaAudioConstraints::NeedsAudioProcessing() {
   if (GetEchoCancellationProperty())
     return true;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     // |kEchoCancellation| and |kGoogEchoCancellation| have been convered by
     // GetEchoCancellationProperty().
     if (kDefaultAudioConstraints[i].key != kEchoCancellation &&
@@ -169,7 +195,7 @@ bool MediaAudioConstraints::IsValid() {
     }
 
     bool valid = false;
-    for (size_t j = 0; j < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++j) {
+    for (size_t j = 0; j < arraysize(kDefaultAudioConstraints); ++j) {
       if (key == kDefaultAudioConstraints[j].key) {
         bool value = false;
         valid = GetMandatoryConstraintValueAsBoolean(constraints_, key, &value);
@@ -195,12 +221,61 @@ bool MediaAudioConstraints::GetDefaultValueForConstraint(
       IsAudioProcessingConstraint(key))
     return false;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kDefaultAudioConstraints); ++i) {
+  for (size_t i = 0; i < arraysize(kDefaultAudioConstraints); ++i) {
     if (kDefaultAudioConstraints[i].key == key)
       return kDefaultAudioConstraints[i].value;
   }
 
   return false;
+}
+
+EchoInformation::EchoInformation()
+    : echo_poor_delay_counts_(0),
+      echo_total_delay_counts_(0),
+      last_log_time_(base::TimeTicks::Now()) {}
+
+EchoInformation::~EchoInformation() {}
+
+void EchoInformation::UpdateAecDelayStats(int delay) {
+  // One way to get an indication of how well the echo cancellation performs is
+  // to compare the, by AEC, estimated delay with the AEC filter length.
+  // |kMaxAecFilterLengthMs| is the maximum delay we can allow before we
+  // consider the AEC to fail. This value should not be larger than the filter
+  // length used inside AEC. This is for now set to match the extended filter
+  // mode which is turned on for all platforms.
+  const int kMaxAecFilterLengthMs = 128;
+  if ((delay < -2) || (delay > kMaxAecFilterLengthMs)) {
+    // The |delay| is out of bounds which indicates that the echo cancellation
+    // filter can not handle the echo. Hence, we have a potential full echo
+    // case. |delay| values {-1, -2} are reserved for errors.
+    ++echo_poor_delay_counts_;
+  }
+  ++echo_total_delay_counts_;
+  LogAecDelayStats();
+}
+
+void EchoInformation::LogAecDelayStats() {
+  // We update the UMA statistics every 5 seconds.
+  const int kTimeBetweenLogsInSeconds = 5;
+  const base::TimeDelta time_since_last_log =
+      base::TimeTicks::Now() - last_log_time_;
+  if (time_since_last_log.InSeconds() < kTimeBetweenLogsInSeconds)
+    return;
+
+  // Calculate how frequent the AEC delay was out of bounds since last time we
+  // updated UMA histograms. Then store the result into one of three histogram
+  // buckets; see DelayBasedEchoQuality.
+  float poor_delay_frequency = 0.f;
+  if (echo_total_delay_counts_ > 0) {
+    poor_delay_frequency = static_cast<float>(echo_poor_delay_counts_) /
+        static_cast<float>(echo_total_delay_counts_);
+    UMA_HISTOGRAM_ENUMERATION("Media.AecDelayBasedQuality",
+                              EchoDelayFrequencyToQuality(poor_delay_frequency),
+                              DELAY_BASED_ECHO_QUALITY_MAX);
+  }
+  echo_poor_delay_counts_ = 0;
+  echo_total_delay_counts_ = 0;
+  last_log_time_ = base::TimeTicks::Now();
 }
 
 void EnableEchoCancellation(AudioProcessing* audio_processing) {
@@ -233,10 +308,6 @@ void EnableNoiseSuppression(AudioProcessing* audio_processing) {
   CHECK_EQ(err, 0);
 }
 
-void EnableExperimentalNoiseSuppression(AudioProcessing* audio_processing) {
-  CHECK_EQ(audio_processing->EnableExperimentalNs(true), 0);
-}
-
 void EnableHighPassFilter(AudioProcessing* audio_processing) {
   CHECK_EQ(audio_processing->high_pass_filter()->Enable(true), 0);
 }
@@ -250,12 +321,6 @@ void EnableTypingDetection(AudioProcessing* audio_processing,
 
   // Configure the update period to 1s (100 * 10ms) in the typing detector.
   typing_detector->SetParameters(0, 0, 0, 0, 0, 100);
-}
-
-void EnableExperimentalEchoCancellation(AudioProcessing* audio_processing) {
-  webrtc::Config config;
-  config.Set<webrtc::DelayCorrection>(new webrtc::DelayCorrection(true));
-  audio_processing->SetExtraOptions(config);
 }
 
 void StartEchoCancellationDump(AudioProcessing* audio_processing,

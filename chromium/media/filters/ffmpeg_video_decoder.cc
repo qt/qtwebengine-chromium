@@ -149,6 +149,10 @@ int FFmpegVideoDecoder::GetVideoBuffer(struct AVCodecContext* codec_context,
   return 0;
 }
 
+std::string FFmpegVideoDecoder::GetDisplayName() const {
+  return "FFmpegVideoDecoder";
+}
+
 void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                     bool low_delay,
                                     const PipelineStatusCB& status_cb,
@@ -177,7 +181,7 @@ void FFmpegVideoDecoder::Initialize(const VideoDecoderConfig& config,
 void FFmpegVideoDecoder::Decode(const scoped_refptr<DecoderBuffer>& buffer,
                                 const DecodeCB& decode_cb) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DCHECK(buffer);
+  DCHECK(buffer.get());
   DCHECK(!decode_cb.is_null());
   CHECK_NE(state_, kUninitialized);
 
@@ -241,20 +245,11 @@ void FFmpegVideoDecoder::Reset(const base::Closure& closure) {
   task_runner_->PostTask(FROM_HERE, closure);
 }
 
-void FFmpegVideoDecoder::Stop() {
+FFmpegVideoDecoder::~FFmpegVideoDecoder() {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
-  if (state_ == kUninitialized)
-    return;
-
-  ReleaseFFmpegResources();
-  state_ = kUninitialized;
-}
-
-FFmpegVideoDecoder::~FFmpegVideoDecoder() {
-  DCHECK_EQ(kUninitialized, state_);
-  DCHECK(!codec_context_);
-  DCHECK(!av_frame_);
+  if (state_ != kUninitialized)
+    ReleaseFFmpegResources();
 }
 
 bool FFmpegVideoDecoder::FFmpegDecode(

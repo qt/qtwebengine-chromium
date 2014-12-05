@@ -34,7 +34,9 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
+
+class Visitor;
 
 template <typename T>
 class LifecycleContext {
@@ -52,6 +54,8 @@ public:
 
     // Called from the destructor of observers.
     void wasUnobservedBy(Observer*);
+
+    virtual void trace(Visitor*) { }
 
 protected:
     Notifier& lifecycleNotifier();
@@ -90,6 +94,6 @@ inline PassOwnPtr<typename LifecycleContext<T>::Notifier> LifecycleContext<T>::c
     return LifecycleContext<T>::Notifier::create(static_cast<T*>(this));
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LifecycleContext_h

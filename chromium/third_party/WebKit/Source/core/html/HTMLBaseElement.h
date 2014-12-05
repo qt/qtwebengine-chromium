@@ -25,9 +25,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLBaseElement FINAL : public HTMLElement {
+class HTMLBaseElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLBaseElement);
 
@@ -37,12 +38,12 @@ public:
 private:
     explicit HTMLBaseElement(Document&);
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLBaseElement_h

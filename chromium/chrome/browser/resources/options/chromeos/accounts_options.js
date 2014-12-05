@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /////////////////////////////////////////////////////////////////////////////
   // AccountsOptions class:
@@ -11,11 +12,11 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of ChromeOS accounts options page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function AccountsOptions(model) {
-    OptionsPage.call(this, 'accounts',
-                     loadTimeData.getString('accountsPageTabTitle'),
-                     'accountsPage');
+    Page.call(this, 'accounts', loadTimeData.getString('accountsPageTabTitle'),
+              'accountsPage');
     // Whether to show the whitelist.
     this.showWhitelist_ = false;
   }
@@ -23,15 +24,12 @@ cr.define('options', function() {
   cr.addSingletonGetter(AccountsOptions);
 
   AccountsOptions.prototype = {
-    // Inherit AccountsOptions from OptionsPage.
-    __proto__: OptionsPage.prototype,
+    // Inherit AccountsOptions from Page.
+    __proto__: Page.prototype,
 
-    /**
-     * Initializes AccountsOptions page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to starts preference initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       // Set up accounts page.
       var userList = $('userList');
@@ -62,7 +60,7 @@ cr.define('options', function() {
           this.handleUseWhitelistPrefChange_.bind(this));
 
       $('accounts-options-overlay-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
     },
 
     /**
@@ -77,12 +75,13 @@ cr.define('options', function() {
     },
 
     /**
-     * Handler for OptionsPage's visible property change event.
+     * Handler for Page's visible property change event.
      * @private
      * @param {Event} e Property change event.
      */
     handleVisibleChange_: function(e) {
       if (this.visible) {
+        chrome.send('updateWhitelist');
         this.updateControls_();
         if (this.showWhitelist_)
           $('userList').redraw();
@@ -96,7 +95,7 @@ cr.define('options', function() {
     handleUseWhitelistCheckChange_: function(e) {
       // Whitelist existing users when guest login is being disabled.
       if ($('useWhitelistCheck').checked) {
-        chrome.send('whitelistExistingUsers');
+        chrome.send('updateWhitelist');
       }
 
       this.updateControls_();

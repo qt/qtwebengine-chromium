@@ -24,9 +24,9 @@
 #include "core/css/CSSFontFaceSource.h"
 #include "platform/fonts/CustomFontData.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSCustomFontData FINAL : public CustomFontData {
+class CSSCustomFontData final : public CustomFontData {
 public:
     enum FallbackVisibility { InvisibleFallback, VisibleFallback };
 
@@ -37,36 +37,38 @@ public:
 
     virtual ~CSSCustomFontData() { }
 
-    virtual bool shouldSkipDrawing() const OVERRIDE
+    virtual bool shouldSkipDrawing() const override
     {
         if (m_fontFaceSource)
             m_fontFaceSource->paintRequested();
-        return m_fallbackVisibility == InvisibleFallback && m_isUsed;
+        return m_fallbackVisibility == InvisibleFallback && m_isLoading;
     }
 
-    virtual void beginLoadIfNeeded() const OVERRIDE
+    virtual void beginLoadIfNeeded() const override
     {
-        if (!m_isUsed && m_fontFaceSource) {
-            m_isUsed = true;
+        if (!m_isLoading && m_fontFaceSource) {
+            m_isLoading = true;
             m_fontFaceSource->beginLoadIfNeeded();
         }
     }
 
-    virtual bool isLoading() const OVERRIDE { return m_isUsed; }
-    virtual bool isLoadingFallback() const OVERRIDE { return true; }
-    virtual void clearFontFaceSource() OVERRIDE { m_fontFaceSource = 0; }
+    virtual bool isLoading() const override { return m_isLoading; }
+    virtual bool isLoadingFallback() const override { return true; }
+    virtual void clearFontFaceSource() override { m_fontFaceSource = 0; }
 
 private:
     CSSCustomFontData(RemoteFontFaceSource* source, FallbackVisibility visibility)
         : m_fontFaceSource(source)
         , m_fallbackVisibility(visibility)
-        , m_isUsed(false)
+        , m_isLoading(false)
     {
+        if (source)
+            m_isLoading = source->isLoading();
     }
 
     RemoteFontFaceSource* m_fontFaceSource;
     FallbackVisibility m_fallbackVisibility;
-    mutable bool m_isUsed;
+    mutable bool m_isLoading;
 };
 
 }

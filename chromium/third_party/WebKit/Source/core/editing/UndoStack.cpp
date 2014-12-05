@@ -28,11 +28,11 @@
 #include "core/editing/UndoStack.h"
 
 #include "core/dom/ContainerNode.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/editing/UndoStep.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "wtf/TemporaryChange.h"
 
-namespace WebCore {
+namespace blink {
 
 // Arbitrary depth limit for the undo stack, to keep it from using
 // unbounded memory. This is the maximum number of distinct undoable
@@ -68,7 +68,7 @@ void UndoStack::registerRedoStep(PassRefPtrWillBeRawPtr<UndoStep> step)
 
 void UndoStack::didUnloadFrame(const LocalFrame& frame)
 {
-    NoEventDispatchAssertion assertNoEventDispatch;
+    EventDispatchForbiddenScope assertNoEventDispatch;
     filterOutUndoSteps(m_undoStack, frame);
     filterOutUndoSteps(m_redoStack, frame);
 }
@@ -126,4 +126,4 @@ void UndoStack::trace(Visitor* visitor)
     visitor->trace(m_redoStack);
 }
 
-} // namesace WebCore
+} // namespace blink

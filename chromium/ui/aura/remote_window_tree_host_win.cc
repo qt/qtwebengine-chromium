@@ -93,7 +93,7 @@ RemoteWindowTreeHostWin* RemoteWindowTreeHostWin::Instance() {
 RemoteWindowTreeHostWin::RemoteWindowTreeHostWin()
     : remote_window_(NULL),
       host_(NULL),
-      ignore_mouse_moves_until_set_cursor_ack_(false),
+      ignore_mouse_moves_until_set_cursor_ack_(0),
       event_flags_(0),
       window_size_(aura::WindowTreeHost::GetNativeScreenSize()) {
   CHECK(!g_instance);
@@ -262,21 +262,12 @@ void RemoteWindowTreeHostWin::MoveCursorToNative(const gfx::Point& location) {
   // this we invoke the SetCursor API in the viewer process and ignore
   // mouse messages until we received an ACK from the viewer indicating that
   // the SetCursor operation completed.
-  ignore_mouse_moves_until_set_cursor_ack_ = true;
+  ignore_mouse_moves_until_set_cursor_ack_++;
   VLOG(1) << "In MoveCursorTo. Sending IPC";
   host_->Send(new MetroViewerHostMsg_SetCursorPos(location.x(), location.y()));
 }
 
 void RemoteWindowTreeHostWin::OnCursorVisibilityChangedNative(bool show) {
-  NOTIMPLEMENTED();
-}
-
-void RemoteWindowTreeHostWin::PostNativeEvent(
-    const base::NativeEvent& native_event) {
-}
-
-void RemoteWindowTreeHostWin::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
   NOTIMPLEMENTED();
 }
 
@@ -382,19 +373,19 @@ void RemoteWindowTreeHostWin::OnChar(uint32 key_code,
                           scan_code, flags, true);
 }
 
-void RemoteWindowTreeHostWin::OnWindowActivated() {
+void RemoteWindowTreeHostWin::OnWindowActivated(bool repaint) {
   OnHostActivated();
+  if (repaint && compositor())
+    compositor()->ScheduleFullRedraw();
 }
 
 void RemoteWindowTreeHostWin::OnEdgeGesture() {
   ui::GestureEvent event(
-      ui::ET_GESTURE_WIN8_EDGE_SWIPE,
       0,
       0,
       0,
       ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_WIN8_EDGE_SWIPE, 0, 0),
-      0);
+      ui::GestureEventDetails(ui::ET_GESTURE_WIN8_EDGE_SWIPE));
   SendEventToProcessor(&event);
 }
 
@@ -435,8 +426,8 @@ void RemoteWindowTreeHostWin::OnTouchMoved(int32 x,
 }
 
 void RemoteWindowTreeHostWin::OnSetCursorPosAck() {
-  DCHECK(ignore_mouse_moves_until_set_cursor_ack_);
-  ignore_mouse_moves_until_set_cursor_ack_ = false;
+  DCHECK_GT(ignore_mouse_moves_until_set_cursor_ack_, 0);
+  ignore_mouse_moves_until_set_cursor_ack_--;
 }
 
 ui::RemoteInputMethodPrivateWin*
@@ -506,11 +497,15 @@ void RemoteWindowTreeHostWin::DispatchKeyboardMessage(ui::EventType type,
                         message,
                         vkey,
                         repeat_count | scan_code >> 15);
+  } else if (is_character) {
+    ui::KeyEvent event(static_cast<base::char16>(vkey),
+                       ui::KeyboardCodeForWindowsKeyCode(vkey),
+                       flags);
+    SendEventToProcessor(&event);
   } else {
     ui::KeyEvent event(type,
                        ui::KeyboardCodeForWindowsKeyCode(vkey),
-                       flags,
-                       is_character);
+                       flags);
     SendEventToProcessor(&event);
   }
 }

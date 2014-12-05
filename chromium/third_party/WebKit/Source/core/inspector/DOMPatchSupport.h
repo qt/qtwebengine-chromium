@@ -31,13 +31,14 @@
 #ifndef DOMPatchSupport_h
 #define DOMPatchSupport_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
 class DOMEditor;
@@ -45,7 +46,8 @@ class Document;
 class ExceptionState;
 class Node;
 
-class DOMPatchSupport FINAL {
+class DOMPatchSupport final {
+    STACK_ALLOCATED();
     WTF_MAKE_NONCOPYABLE(DOMPatchSupport);
 public:
     static void patchDocument(Document&, const String& markup);
@@ -70,14 +72,15 @@ private:
 #ifdef DEBUG_DOM_PATCH_SUPPORT
     void dumpMap(const ResultMap&, const String& name);
 #endif
+    Document& document() const { return *m_document; }
 
-    DOMEditor* m_domEditor;
-    Document& m_document;
+    RawPtrWillBeMember<DOMEditor> m_domEditor;
+    RawPtrWillBeMember<Document> m_document;
 
     UnusedNodesMap m_unusedNodesMap;
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(DOMPatchSupport_h)

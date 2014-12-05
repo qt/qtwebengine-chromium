@@ -6,7 +6,6 @@
 
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/rand_util.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/time/time.h"
 #include "base/values.h"
@@ -147,6 +146,7 @@ base::ListValue* ProxyList::ToValue() const {
 }
 
 bool ProxyList::Fallback(ProxyRetryInfoMap* proxy_retry_info,
+                         int net_error,
                          const BoundNetLog& net_log) {
 
   // TODO(eroman): It would be good if instead of removing failed proxies
@@ -167,8 +167,13 @@ bool ProxyList::Fallback(ProxyRetryInfoMap* proxy_retry_info,
     NOTREACHED();
     return false;
   }
-  UpdateRetryInfoOnFallback(proxy_retry_info, base::TimeDelta(), true,
-                            ProxyServer(), net_log);
+  // By default, proxies are not retried for 5 minutes.
+  UpdateRetryInfoOnFallback(proxy_retry_info,
+                            TimeDelta::FromMinutes(5),
+                            true,
+                            ProxyServer(),
+                            net_error,
+                            net_log);
 
   // Remove this proxy from our list.
   proxies_.erase(proxies_.begin());
@@ -179,6 +184,7 @@ void ProxyList::AddProxyToRetryList(ProxyRetryInfoMap* proxy_retry_info,
                                     base::TimeDelta retry_delay,
                                     bool try_while_bad,
                                     const ProxyServer& proxy_to_retry,
+                                    int net_error,
                                     const BoundNetLog& net_log) const {
   // Mark this proxy as bad.
   std::string proxy_key = proxy_to_retry.ToURI();
@@ -192,6 +198,7 @@ void ProxyList::AddProxyToRetryList(ProxyRetryInfoMap* proxy_retry_info,
     retry_info.current_delay = retry_delay;
     retry_info.bad_until = TimeTicks().Now() + retry_info.current_delay;
     retry_info.try_while_bad = try_while_bad;
+    retry_info.net_error = net_error;
     (*proxy_retry_info)[proxy_key] = retry_info;
   }
   net_log.AddEvent(NetLog::TYPE_PROXY_LIST_FALLBACK,
@@ -203,18 +210,9 @@ void ProxyList::UpdateRetryInfoOnFallback(
     base::TimeDelta retry_delay,
     bool reconsider,
     const ProxyServer& another_proxy_to_bypass,
+    int net_error,
     const BoundNetLog& net_log) const {
-  // Time to wait before retrying a bad proxy server.
-  if (retry_delay == base::TimeDelta()) {
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-    // Randomize the timeout over a range from one to five minutes.
-    retry_delay =
-        TimeDelta::FromMilliseconds(
-            base::RandInt(1 * 60 * 1000, 5 * 60 * 1000));
-#else
-    retry_delay = TimeDelta::FromMinutes(5);
-#endif
-  }
+  DCHECK(retry_delay != base::TimeDelta());
 
   if (proxies_.empty()) {
     NOTREACHED();
@@ -222,14 +220,22 @@ void ProxyList::UpdateRetryInfoOnFallback(
   }
 
   if (!proxies_[0].is_direct()) {
-    AddProxyToRetryList(proxy_retry_info, retry_delay, reconsider, proxies_[0],
+    AddProxyToRetryList(proxy_retry_info,
+                        retry_delay,
+                        reconsider,
+                        proxies_[0],
+                        net_error,
                         net_log);
 
     // If an additional proxy to bypass is specified, add it to the retry map
     // as well.
     if (another_proxy_to_bypass.is_valid()) {
-      AddProxyToRetryList(proxy_retry_info, retry_delay, reconsider,
-                          another_proxy_to_bypass, net_log);
+      AddProxyToRetryList(proxy_retry_info,
+                          retry_delay,
+                          reconsider,
+                          another_proxy_to_bypass,
+                          net_error,
+                          net_log);
     }
   }
 }

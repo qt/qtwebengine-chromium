@@ -24,8 +24,8 @@
 
 
 #include <assert.h>
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "src/v8.h"
@@ -33,9 +33,9 @@
 #if V8_TARGET_ARCH_ARM
 
 #include "src/arm/constants-arm.h"
+#include "src/base/platform/platform.h"
 #include "src/disasm.h"
 #include "src/macro-assembler.h"
-#include "src/platform.h"
 
 
 namespace v8 {
@@ -148,7 +148,7 @@ void Decoder::Print(const char* str) {
 
 // These condition names are defined in a way to match the native disassembler
 // formatting. See for example the command "objdump -d <binary file>".
-static const char* cond_names[kNumberOfConditions] = {
+static const char* const cond_names[kNumberOfConditions] = {
   "eq", "ne", "cs" , "cc" , "mi" , "pl" , "vs" , "vc" ,
   "hi", "ls", "ge", "lt", "gt", "le", "", "invalid",
 };
@@ -299,7 +299,7 @@ void Decoder::PrintSoftwareInterrupt(SoftwareInterruptCodes svc) {
 // Handle all register based formatting in this function to reduce the
 // complexity of FormatOption.
 int Decoder::FormatRegister(Instruction* instr, const char* format) {
-  ASSERT(format[0] == 'r');
+  DCHECK(format[0] == 'r');
   if (format[1] == 'n') {  // 'rn: Rn register
     int reg = instr->RnValue();
     PrintRegister(reg);
@@ -322,7 +322,7 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
     return 2;
   } else if (format[1] == 'l') {
     // 'rlist: register list for load and store multiple instructions
-    ASSERT(STRING_STARTS_WITH(format, "rlist"));
+    DCHECK(STRING_STARTS_WITH(format, "rlist"));
     int rlist = instr->RlistValue();
     int reg = 0;
     Print("{");
@@ -348,7 +348,7 @@ int Decoder::FormatRegister(Instruction* instr, const char* format) {
 // Handle all VFP register based formatting in this function to reduce the
 // complexity of FormatOption.
 int Decoder::FormatVFPRegister(Instruction* instr, const char* format) {
-  ASSERT((format[0] == 'S') || (format[0] == 'D'));
+  DCHECK((format[0] == 'S') || (format[0] == 'D'));
 
   VFPRegPrecision precision =
       format[0] == 'D' ? kDoublePrecision : kSinglePrecision;
@@ -462,7 +462,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       return 1;
     }
     case 'c': {  // 'cond: conditional execution
-      ASSERT(STRING_STARTS_WITH(format, "cond"));
+      DCHECK(STRING_STARTS_WITH(format, "cond"));
       PrintCondition(instr);
       return 4;
     }
@@ -478,9 +478,9 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
         // BFC/BFI:
         // Bits 20-16 represent most-significant bit. Covert to width.
         width -= lsbit;
-        ASSERT(width > 0);
+        DCHECK(width > 0);
       }
-      ASSERT((width + lsbit) <= 32);
+      DCHECK((width + lsbit) <= 32);
       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                   "#%d, #%d", lsbit, width);
       return 1;
@@ -498,9 +498,9 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       int width = (format[3] - '0') * 10 + (format[4] - '0');
       int lsb   = (format[6] - '0') * 10 + (format[7] - '0');
 
-      ASSERT((width >= 1) && (width <= 32));
-      ASSERT((lsb >= 0) && (lsb <= 31));
-      ASSERT((width + lsb) <= 32);
+      DCHECK((width >= 1) && (width <= 32));
+      DCHECK((lsb >= 0) && (lsb <= 31));
+      DCHECK((width + lsb) <= 32);
 
       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                   "%d",
@@ -520,7 +520,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
         return 2;
       }
       if (format[1] == 'e') {  // 'memop: load/store instructions.
-        ASSERT(STRING_STARTS_WITH(format, "memop"));
+        DCHECK(STRING_STARTS_WITH(format, "memop"));
         if (instr->HasL()) {
           Print("ldr");
         } else {
@@ -538,7 +538,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
         return 5;
       }
       // 'msg: for simulator break instructions
-      ASSERT(STRING_STARTS_WITH(format, "msg"));
+      DCHECK(STRING_STARTS_WITH(format, "msg"));
       byte* str =
           reinterpret_cast<byte*>(instr->InstructionBits() & 0x0fffffff);
       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
@@ -548,13 +548,13 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     case 'o': {
       if ((format[3] == '1') && (format[4] == '2')) {
         // 'off12: 12-bit offset for load and store instructions
-        ASSERT(STRING_STARTS_WITH(format, "off12"));
+        DCHECK(STRING_STARTS_WITH(format, "off12"));
         out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                     "%d", instr->Offset12Value());
         return 5;
       } else if (format[3] == '0') {
         // 'off0to3and8to19 16-bit immediate encoded in bits 19-8 and 3-0.
-        ASSERT(STRING_STARTS_WITH(format, "off0to3and8to19"));
+        DCHECK(STRING_STARTS_WITH(format, "off0to3and8to19"));
         out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                     "%d",
                                     (instr->Bits(19, 8) << 4) +
@@ -562,13 +562,13 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
         return 15;
       }
       // 'off8: 8-bit offset for extra load and store instructions
-      ASSERT(STRING_STARTS_WITH(format, "off8"));
+      DCHECK(STRING_STARTS_WITH(format, "off8"));
       int offs8 = (instr->ImmedHValue() << 4) | instr->ImmedLValue();
       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_, "%d", offs8);
       return 4;
     }
     case 'p': {  // 'pu: P and U bits for load and store instructions
-      ASSERT(STRING_STARTS_WITH(format, "pu"));
+      DCHECK(STRING_STARTS_WITH(format, "pu"));
       PrintPU(instr);
       return 2;
     }
@@ -578,29 +578,29 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
     case 's': {
       if (format[1] == 'h') {  // 'shift_op or 'shift_rm or 'shift_sat.
         if (format[6] == 'o') {  // 'shift_op
-          ASSERT(STRING_STARTS_WITH(format, "shift_op"));
+          DCHECK(STRING_STARTS_WITH(format, "shift_op"));
           if (instr->TypeValue() == 0) {
             PrintShiftRm(instr);
           } else {
-            ASSERT(instr->TypeValue() == 1);
+            DCHECK(instr->TypeValue() == 1);
             PrintShiftImm(instr);
           }
           return 8;
         } else if (format[6] == 's') {  // 'shift_sat.
-          ASSERT(STRING_STARTS_WITH(format, "shift_sat"));
+          DCHECK(STRING_STARTS_WITH(format, "shift_sat"));
           PrintShiftSat(instr);
           return 9;
         } else {  // 'shift_rm
-          ASSERT(STRING_STARTS_WITH(format, "shift_rm"));
+          DCHECK(STRING_STARTS_WITH(format, "shift_rm"));
           PrintShiftRm(instr);
           return 8;
         }
       } else if (format[1] == 'v') {  // 'svc
-        ASSERT(STRING_STARTS_WITH(format, "svc"));
+        DCHECK(STRING_STARTS_WITH(format, "svc"));
         PrintSoftwareInterrupt(instr->SvcValue());
         return 3;
       } else if (format[1] == 'i') {  // 'sign: signed extra loads and stores
-        ASSERT(STRING_STARTS_WITH(format, "sign"));
+        DCHECK(STRING_STARTS_WITH(format, "sign"));
         if (instr->HasSign()) {
           Print("s");
         }
@@ -613,7 +613,7 @@ int Decoder::FormatOption(Instruction* instr, const char* format) {
       return 1;
     }
     case 't': {  // 'target: target of branch instructions
-      ASSERT(STRING_STARTS_WITH(format, "target"));
+      DCHECK(STRING_STARTS_WITH(format, "target"));
       int off = (instr->SImmed24Value() << 2) + 8;
       out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                   "%+d -> %s",
@@ -1096,14 +1096,28 @@ void Decoder::DecodeType3(Instruction* instr) {
       break;
     }
     case db_x: {
+      if (instr->Bits(22, 20) == 0x5) {
+        if (instr->Bits(7, 4) == 0x1) {
+          if (instr->Bits(15, 12) == 0xF) {
+            Format(instr, "smmul'cond 'rn, 'rm, 'rs");
+          } else {
+            // SMMLA (in V8 notation matching ARM ISA format)
+            Format(instr, "smmla'cond 'rn, 'rm, 'rs, 'rd");
+          }
+          break;
+        }
+      }
       if (FLAG_enable_sudiv) {
-        if (!instr->HasW()) {
-          if (instr->Bits(5, 4) == 0x1) {
-            if ((instr->Bit(22) == 0x0) && (instr->Bit(20) == 0x1)) {
+        if (instr->Bits(5, 4) == 0x1) {
+          if ((instr->Bit(22) == 0x0) && (instr->Bit(20) == 0x1)) {
+            if (instr->Bit(21) == 0x1) {
+              // UDIV (in V8 notation matching ARM ISA format) rn = rm/rs
+              Format(instr, "udiv'cond'b 'rn, 'rm, 'rs");
+            } else {
               // SDIV (in V8 notation matching ARM ISA format) rn = rm/rs
               Format(instr, "sdiv'cond'b 'rn, 'rm, 'rs");
-              break;
             }
+            break;
           }
         }
       }
@@ -1260,6 +1274,14 @@ void Decoder::DecodeTypeVFP(Instruction* instr) {
       } else if (instr->Opc3Value() == 0x0) {
         if (instr->SzValue() == 0x1) {
           Format(instr, "vmov'cond.f64 'Dd, 'd");
+        } else {
+          Unknown(instr);  // Not used by V8.
+        }
+      } else if (((instr->Opc2Value() == 0x6)) && instr->Opc3Value() == 0x3) {
+        bool dp_operation = (instr->SzValue() == 1);
+        // vrintz - round towards zero (truncate)
+        if (dp_operation) {
+          Format(instr, "vrintz'cond.f64.f64 'Dd, 'Dm");
         } else {
           Unknown(instr);  // Not used by V8.
         }
@@ -1608,6 +1630,50 @@ void Decoder::DecodeSpecialCondition(Instruction* instr) {
         } else {
           out_buffer_pos_ += SNPrintF(out_buffer_ + out_buffer_pos_,
                                       "pld [r%d, #+%d]", Rn, offset);
+        }
+      } else {
+        Unknown(instr);
+      }
+      break;
+    case 0x1D:
+      if (instr->Opc1Value() == 0x7 && instr->Bits(19, 18) == 0x2 &&
+          instr->Bits(11, 9) == 0x5 && instr->Bits(7, 6) == 0x1 &&
+          instr->Bit(4) == 0x0) {
+        // VRINTA, VRINTN, VRINTP, VRINTM (floating-point)
+        bool dp_operation = (instr->SzValue() == 1);
+        int rounding_mode = instr->Bits(17, 16);
+        switch (rounding_mode) {
+          case 0x0:
+            if (dp_operation) {
+              Format(instr, "vrinta.f64.f64 'Dd, 'Dm");
+            } else {
+              Unknown(instr);
+            }
+            break;
+          case 0x1:
+            if (dp_operation) {
+              Format(instr, "vrintn.f64.f64 'Dd, 'Dm");
+            } else {
+              Unknown(instr);
+            }
+            break;
+          case 0x2:
+            if (dp_operation) {
+              Format(instr, "vrintp.f64.f64 'Dd, 'Dm");
+            } else {
+              Unknown(instr);
+            }
+            break;
+          case 0x3:
+            if (dp_operation) {
+              Format(instr, "vrintm.f64.f64 'Dd, 'Dm");
+            } else {
+              Unknown(instr);
+            }
+            break;
+          default:
+            UNREACHABLE();  // Case analysis is exhaustive.
+            break;
         }
       } else {
         Unknown(instr);

@@ -28,8 +28,8 @@
 
 #include <vector>
 
-#include "talk/base/stringutils.h"
 #include "talk/media/webrtc/webrtcvideocapturer.h"
+#include "webrtc/base/stringutils.h"
 
 // Fake class for mocking out webrtc::VideoCaptureModule::DeviceInfo.
 class FakeWebRtcDeviceInfo : public webrtc::VideoCaptureModule::DeviceInfo {
@@ -64,12 +64,12 @@ class FakeWebRtcDeviceInfo : public webrtc::VideoCaptureModule::DeviceInfo {
                                 uint32_t product_id_len) {
     Device* dev = GetDeviceByIndex(device_num);
     if (!dev) return -1;
-    talk_base::strcpyn(reinterpret_cast<char*>(device_name), device_name_len,
+    rtc::strcpyn(reinterpret_cast<char*>(device_name), device_name_len,
                        dev->name.c_str());
-    talk_base::strcpyn(reinterpret_cast<char*>(device_id), device_id_len,
+    rtc::strcpyn(reinterpret_cast<char*>(device_id), device_id_len,
                        dev->id.c_str());
     if (product_id) {
-      talk_base::strcpyn(reinterpret_cast<char*>(product_id), product_id_len,
+      rtc::strcpyn(reinterpret_cast<char*>(product_id), product_id_len,
                          dev->product.c_str());
     }
     return 0;

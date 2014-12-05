@@ -29,43 +29,36 @@
 #define DatabaseContext_h
 
 #include "core/dom/ActiveDOMObject.h"
-#include "core/workers/WorkerGlobalScope.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/ThreadSafeRefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class Database;
-class DatabaseBackendBase;
 class DatabaseContext;
 class TaskSynchronizer;
 class DatabaseThread;
 class ExecutionContext;
 class SecurityOrigin;
 
-class DatabaseContext FINAL
-    : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<DatabaseContext>
-    , public ActiveDOMObject
-    , private WorkerGlobalScope::TerminationObserver {
+class DatabaseContext final
+    : public GarbageCollectedFinalized<DatabaseContext>
+    , public ActiveDOMObject {
 public:
     friend class DatabaseManager;
 
-    static PassRefPtrWillBeRawPtr<DatabaseContext> create(ExecutionContext*);
+    static DatabaseContext* create(ExecutionContext*);
 
     virtual ~DatabaseContext();
     void trace(Visitor*);
 
     // For life-cycle management (inherited from ActiveDOMObject):
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void stop() override;
 
     DatabaseContext* backend();
     DatabaseThread* databaseThread();
+    bool databaseThreadAvailable();
 
     void setHasOpenDatabases() { m_hasOpenDatabases = true; }
-    void didOpenDatabase(DatabaseBackendBase&);
-    void didCloseDatabase(DatabaseBackendBase&);
     // Blocks the caller thread until cleanup tasks are completed.
     void stopDatabases();
 
@@ -77,29 +70,11 @@ public:
 private:
     explicit DatabaseContext(ExecutionContext*);
 
-    virtual void wasRequestedToTerminate() OVERRIDE;
-    void stopSyncDatabases();
-
-    RefPtrWillBeMember<DatabaseThread> m_databaseThread;
-#if ENABLE(OILPAN)
-    class DatabaseCloser {
-    public:
-        explicit DatabaseCloser(DatabaseBackendBase& database) : m_database(database) { }
-        ~DatabaseCloser();
-
-    private:
-        DatabaseBackendBase& m_database;
-    };
-    HeapHashMap<WeakMember<DatabaseBackendBase>, OwnPtr<DatabaseCloser> > m_openSyncDatabases;
-#else
-    // The contents of m_openSyncDatabases are raw pointers. It's safe because
-    // DatabaseBackendSync is always closed before destruction.
-    HashSet<DatabaseBackendBase*> m_openSyncDatabases;
-#endif
+    Member<DatabaseThread> m_databaseThread;
     bool m_hasOpenDatabases; // This never changes back to false, even after the database thread is closed.
     bool m_hasRequestedTermination;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseContext_h

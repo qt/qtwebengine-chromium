@@ -50,22 +50,22 @@ void FromV8ValueComplete(const ScopedPPVar& scoped_var,
 
 class MockResourceConverter : public content::ResourceConverter {
  public:
-  virtual ~MockResourceConverter() {}
-  virtual void Reset() OVERRIDE {}
-  virtual bool NeedsFlush() OVERRIDE { return false; }
-  virtual void Flush(const base::Callback<void(bool)>& callback) OVERRIDE {
+  ~MockResourceConverter() override {}
+  void Reset() override {}
+  bool NeedsFlush() override { return false; }
+  void Flush(const base::Callback<void(bool)>& callback) override {
     NOTREACHED();
   }
-  virtual bool FromV8Value(v8::Handle<v8::Object> val,
-                           v8::Handle<v8::Context> context,
-                           PP_Var* result,
-                           bool* was_resource) OVERRIDE {
+  bool FromV8Value(v8::Handle<v8::Object> val,
+                   v8::Handle<v8::Context> context,
+                   PP_Var* result,
+                   bool* was_resource) override {
     *was_resource = false;
     return true;
   }
-  virtual bool ToV8Value(const PP_Var& var,
-                         v8::Handle<v8::Context> context,
-                         v8::Handle<v8::Value>* result) OVERRIDE {
+  bool ToV8Value(const PP_Var& var,
+                 v8::Handle<v8::Context> context,
+                 v8::Handle<v8::Value>* result) override {
     return false;
   }
 };
@@ -169,16 +169,16 @@ class V8VarConverterTest : public testing::Test {
         dummy,
         scoped_ptr<ResourceConverter>(new MockResourceConverter).Pass()));
   }
-  virtual ~V8VarConverterTest() {}
+  ~V8VarConverterTest() override {}
 
   // testing::Test implementation.
-  virtual void SetUp() {
+  void SetUp() override {
     ProxyLock::Acquire();
     v8::HandleScope handle_scope(isolate_);
     v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate_);
     context_.Reset(isolate_, v8::Context::New(isolate_, NULL, global));
   }
-  virtual void TearDown() {
+  void TearDown() override {
     context_.Reset();
     ASSERT_TRUE(PpapiGlobals::Get()->GetVarTracker()->GetLiveVars().empty());
     ProxyLock::Release();

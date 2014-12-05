@@ -9,6 +9,7 @@
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
+#include "content/renderer/pepper/gfx_conversion.h"
 #include "content/renderer/pepper/ppb_graphics_3d_impl.h"
 #include "content/renderer/pepper/video_decoder_shim.h"
 #include "media/video/video_decode_accelerator.h"
@@ -53,10 +54,10 @@ media::VideoCodecProfile PepperToMediaVideoProfile(PP_VideoProfile profile) {
       return media::H264PROFILE_STEREOHIGH;
     case PP_VIDEOPROFILE_H264MULTIVIEWHIGH:
       return media::H264PROFILE_MULTIVIEWHIGH;
-    case PP_VIDEOPROFILE_VP8MAIN:
-      return media::VP8PROFILE_MAIN;
-    case PP_VIDEOPROFILE_VP9MAIN:
-      return media::VP9PROFILE_MAIN;
+    case PP_VIDEOPROFILE_VP8_ANY:
+      return media::VP8PROFILE_ANY;
+    case PP_VIDEOPROFILE_VP9_ANY:
+      return media::VP9PROFILE_ANY;
     // No default case, to catch unhandled PP_VideoProfile values.
   }
 
@@ -111,7 +112,7 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
     ppapi::host::HostMessageContext* context,
     const ppapi::HostResource& graphics_context,
     PP_VideoProfile profile,
-    bool allow_software_fallback) {
+    PP_HardwareAcceleration acceleration) {
   if (initialized_)
     return PP_ERROR_FAILED;
 
@@ -128,25 +129,30 @@ int32_t PepperVideoDecoderHost::OnHostMsgInitialize(
 
   media::VideoCodecProfile media_profile = PepperToMediaVideoProfile(profile);
 
-  // This is not synchronous, but subsequent IPC messages will be buffered, so
-  // it is okay to immediately send IPC messages through the returned channel.
-  GpuChannelHost* channel = graphics3d->channel();
-  DCHECK(channel);
-  decoder_ = channel->CreateVideoDecoder(command_buffer_route_id);
-  if (decoder_ && decoder_->Initialize(media_profile, this)) {
-    initialized_ = true;
-    return PP_OK;
+  if (acceleration != PP_HARDWAREACCELERATION_NONE) {
+    // This is not synchronous, but subsequent IPC messages will be buffered, so
+    // it is okay to immediately send IPC messages through the returned channel.
+    GpuChannelHost* channel = graphics3d->channel();
+    DCHECK(channel);
+    decoder_ = channel->CreateVideoDecoder(command_buffer_route_id);
+    if (decoder_ && decoder_->Initialize(media_profile, this)) {
+      initialized_ = true;
+      return PP_OK;
+    }
+    decoder_.reset();
+    if (acceleration == PP_HARDWAREACCELERATION_ONLY)
+      return PP_ERROR_NOTSUPPORTED;
   }
-  decoder_.reset();
 
-  if (!allow_software_fallback)
-    return PP_ERROR_NOTSUPPORTED;
-
+#if defined(OS_ANDROID)
+  return PP_ERROR_NOTSUPPORTED;
+#else
   decoder_.reset(new VideoDecoderShim(this));
   initialize_reply_context_ = context->MakeReplyMessageContext();
   decoder_->Initialize(media_profile, this);
 
   return PP_OK_COMPLETIONPENDING;
+#endif
 }
 
 int32_t PepperVideoDecoderHost::OnHostMsgGetShm(
@@ -309,10 +315,13 @@ void PepperVideoDecoderHost::ProvidePictureBuffers(
 }
 
 void PepperVideoDecoderHost::PictureReady(const media::Picture& picture) {
-  host()->SendUnsolicitedReply(
-      pp_resource(),
-      PpapiPluginMsg_VideoDecoder_PictureReady(picture.bitstream_buffer_id(),
-                                               picture.picture_buffer_id()));
+  // Don't bother validating the visible rect, since the plugin process is less
+  // trusted than the gpu process.
+  PP_Rect visible_rect = PP_FromGfxRect(picture.visible_rect());
+  host()->SendUnsolicitedReply(pp_resource(),
+                               PpapiPluginMsg_VideoDecoder_PictureReady(
+                                   picture.bitstream_buffer_id(),
+                                   picture.picture_buffer_id(), visible_rect));
 }
 
 void PepperVideoDecoderHost::DismissPictureBuffer(int32 picture_buffer_id) {

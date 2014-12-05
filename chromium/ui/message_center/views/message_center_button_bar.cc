@@ -4,9 +4,6 @@
 
 #include "ui/message_center/views/message_center_button_bar.h"
 
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -16,6 +13,8 @@
 #include "ui/message_center/message_center_tray.h"
 #include "ui/message_center/notifier_settings.h"
 #include "ui/message_center/views/message_center_view.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/button/label_button.h"
@@ -51,7 +50,7 @@ class NotificationCenterButton : public views::ToggleImageButton {
 
  protected:
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
 
  private:
   gfx::Size size_;

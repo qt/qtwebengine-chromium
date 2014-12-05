@@ -25,16 +25,18 @@
 #include "content/common/sandbox_linux/sandbox_seccomp_bpf_linux.h"
 #include "content/common/set_process_title.h"
 #include "content/public/common/content_switches.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+#include "sandbox/linux/seccomp-bpf-helpers/syscall_parameters_restrictions.h"
 #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
-#include "sandbox/linux/services/broker_process.h"
 #include "sandbox/linux/services/linux_syscalls.h"
+#include "sandbox/linux/syscall_broker/broker_process.h"
 
 using sandbox::BrokerProcess;
-using sandbox::ErrorCode;
-using sandbox::SandboxBPF;
 using sandbox::SyscallSets;
 using sandbox::arch_seccomp_data;
+using sandbox::bpf_dsl::Allow;
+using sandbox::bpf_dsl::ResultExpr;
+using sandbox::bpf_dsl::Trap;
 
 namespace content {
 
@@ -72,9 +74,16 @@ inline bool IsArchitectureArm() {
 #endif
 }
 
-bool IsAcceleratedVideoDecodeEnabled() {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode);
+bool IsAcceleratedVideoEnabled() {
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  bool accelerated_encode_enabled = false;
+#if defined(OS_CHROMEOS)
+  accelerated_encode_enabled =
+      !command_line.HasSwitch(switches::kDisableVaapiAcceleratedVideoEncode);
+#endif
+  return !command_line.HasSwitch(switches::kDisableAcceleratedVideoDecode) ||
+         accelerated_encode_enabled;
 }
 
 intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
@@ -110,13 +119,12 @@ intptr_t GpuSIGSYS_Handler(const struct arch_seccomp_data& args,
 
 class GpuBrokerProcessPolicy : public GpuProcessPolicy {
  public:
-  static sandbox::SandboxBPFPolicy* Create() {
+  static sandbox::bpf_dsl::Policy* Create() {
     return new GpuBrokerProcessPolicy();
   }
-  virtual ~GpuBrokerProcessPolicy() {}
+  ~GpuBrokerProcessPolicy() override {}
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE;
+  ResultExpr EvaluateSyscall(int system_call_number) const override;
 
  private:
   GpuBrokerProcessPolicy() {}
@@ -126,25 +134,25 @@ class GpuBrokerProcessPolicy : public GpuProcessPolicy {
 // x86_64/i386 or desktop ARM.
 // A GPU broker policy is the same as a GPU policy with open and
 // openat allowed.
-ErrorCode GpuBrokerProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
-                                                  int sysno) const {
+ResultExpr GpuBrokerProcessPolicy::EvaluateSyscall(int sysno) const {
   switch (sysno) {
     case __NR_access:
     case __NR_open:
     case __NR_openat:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
+      return Allow();
     default:
-      return GpuProcessPolicy::EvaluateSyscall(sandbox, sysno);
+      return GpuProcessPolicy::EvaluateSyscall(sysno);
   }
 }
 
 void UpdateProcessTypeToGpuBroker() {
-  CommandLine::StringVector exec = CommandLine::ForCurrentProcess()->GetArgs();
-  CommandLine::Reset();
-  CommandLine::Init(0, NULL);
-  CommandLine::ForCurrentProcess()->InitFromArgv(exec);
-  CommandLine::ForCurrentProcess()->AppendSwitchASCII(switches::kProcessType,
-                                                      "gpu-broker");
+  base::CommandLine::StringVector exec =
+      base::CommandLine::ForCurrentProcess()->GetArgs();
+  base::CommandLine::Reset();
+  base::CommandLine::Init(0, NULL);
+  base::CommandLine::ForCurrentProcess()->InitFromArgv(exec);
+  base::CommandLine::ForCurrentProcess()->AppendSwitchASCII(
+      switches::kProcessType, "gpu-broker");
 
   // Update the process title. The argv was already cached by the call to
   // SetProcessTitleFromCommandLine in content_main_runner.cc, so we can pass
@@ -153,7 +161,7 @@ void UpdateProcessTypeToGpuBroker() {
 }
 
 bool UpdateProcessTypeAndEnableSandbox(
-    sandbox::SandboxBPFPolicy* (*broker_sandboxer_allocator)(void)) {
+    sandbox::bpf_dsl::Policy* (*broker_sandboxer_allocator)(void)) {
   DCHECK(broker_sandboxer_allocator);
   UpdateProcessTypeToGpuBroker();
   return SandboxSeccompBPF::StartSandboxWithExternalPolicy(
@@ -162,16 +170,27 @@ bool UpdateProcessTypeAndEnableSandbox(
 
 }  // namespace
 
-GpuProcessPolicy::GpuProcessPolicy() : broker_process_(NULL) {}
+GpuProcessPolicy::GpuProcessPolicy() : GpuProcessPolicy(false) {
+}
+
+GpuProcessPolicy::GpuProcessPolicy(bool allow_mincore)
+    : broker_process_(NULL), allow_mincore_(allow_mincore) {
+}
 
 GpuProcessPolicy::~GpuProcessPolicy() {}
 
 // Main policy for x86_64/i386. Extended by CrosArmGpuProcessPolicy.
-ErrorCode GpuProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
-                                            int sysno) const {
+ResultExpr GpuProcessPolicy::EvaluateSyscall(int sysno) const {
   switch (sysno) {
     case __NR_ioctl:
-#if defined(__i386__) || defined(__x86_64__)
+      return Allow();
+    case __NR_mincore:
+      if (allow_mincore_) {
+        return Allow();
+      } else {
+        return SandboxBPFBasePolicy::EvaluateSyscall(sysno);
+      }
+#if defined(__i386__) || defined(__x86_64__) || defined(__mips__)
     // The Nvidia driver uses flags not in the baseline policy
     // (MAP_LOCKED | MAP_EXECUTABLE | MAP_32BIT)
     case __NR_mmap:
@@ -181,21 +200,23 @@ ErrorCode GpuProcessPolicy::EvaluateSyscall(SandboxBPF* sandbox,
     case __NR_mprotect:
     // TODO(jln): restrict prctl.
     case __NR_prctl:
-    case __NR_sched_getaffinity:
-    case __NR_sched_setaffinity:
-    case __NR_setpriority:
-      return ErrorCode(ErrorCode::ERR_ALLOWED);
+      return Allow();
     case __NR_access:
     case __NR_open:
     case __NR_openat:
       DCHECK(broker_process_);
-      return sandbox->Trap(GpuSIGSYS_Handler, broker_process_);
+      return Trap(GpuSIGSYS_Handler, broker_process_);
+    case __NR_setpriority:
+      return sandbox::RestrictGetSetpriority(GetPolicyPid());
+    case __NR_sched_getaffinity:
+    case __NR_sched_setaffinity:
+      return sandbox::RestrictSchedTarget(GetPolicyPid(), sysno);
     default:
       if (SyscallSets::IsEventFd(sysno))
-        return ErrorCode(ErrorCode::ERR_ALLOWED);
+        return Allow();
 
       // Default on the baseline policy.
-      return SandboxBPFBasePolicy::EvaluateSyscall(sandbox, sysno);
+      return SandboxBPFBasePolicy::EvaluateSyscall(sysno);
   }
 }
 
@@ -214,9 +235,9 @@ bool GpuProcessPolicy::PreSandboxHook() {
       std::vector<std::string>());
 
   if (IsArchitectureX86_64() || IsArchitectureI386()) {
-    // Accelerated video decode dlopen()'s some shared objects
+    // Accelerated video dlopen()'s some shared objects
     // inside the sandbox, so preload them now.
-    if (IsAcceleratedVideoDecodeEnabled()) {
+    if (IsAcceleratedVideoEnabled()) {
       const char* I965DrvVideoPath = NULL;
 
       if (IsArchitectureX86_64()) {
@@ -235,7 +256,7 @@ bool GpuProcessPolicy::PreSandboxHook() {
 }
 
 void GpuProcessPolicy::InitGpuBrokerProcess(
-    sandbox::SandboxBPFPolicy* (*broker_sandboxer_allocator)(void),
+    sandbox::bpf_dsl::Policy* (*broker_sandboxer_allocator)(void),
     const std::vector<std::string>& read_whitelist_extra,
     const std::vector<std::string>& write_whitelist_extra) {
   static const char kDriRcPath[] = "/etc/drirc";

@@ -4,7 +4,7 @@
 
 #include "ui/base/dragdrop/drag_utils.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -36,11 +36,10 @@ class FileDragImageSource : public gfx::CanvasImageSource {
         icon_(icon) {
   }
 
-  virtual ~FileDragImageSource() {
-  }
+  ~FileDragImageSource() override {}
 
   // Overridden from gfx::CanvasImageSource.
-  virtual void Draw(gfx::Canvas* canvas) OVERRIDE {
+  void Draw(gfx::Canvas* canvas) override {
     if (!icon_.isNull()) {
       // Paint the icon.
       canvas->DrawImageInt(icon_, (size().width() - icon_.width()) / 2, 0);

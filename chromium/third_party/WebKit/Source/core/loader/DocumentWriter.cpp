@@ -31,31 +31,32 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/ScriptableDocumentParser.h"
+#include "core/frame/FrameView.h"
+#include "core/frame/LocalDOMWindow.h"
+#include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderStateMachine.h"
-#include "core/frame/LocalDOMWindow.h"
-#include "core/frame/FrameView.h"
-#include "core/frame/LocalFrame.h"
-#include "core/frame/Settings.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<DocumentWriter> DocumentWriter::create(Document* document, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
+PassRefPtrWillBeRawPtr<DocumentWriter> DocumentWriter::create(Document* document, const AtomicString& mimeType, const AtomicString& encoding)
 {
-    return adoptRefWillBeNoop(new DocumentWriter(document, mimeType, encoding, encodingUserChoosen));
+    return adoptRefWillBeNoop(new DocumentWriter(document, mimeType, encoding));
 }
 
-DocumentWriter::DocumentWriter(Document* document, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen)
+DocumentWriter::DocumentWriter(Document* document, const AtomicString& mimeType, const AtomicString& encoding)
     : m_document(document)
-    , m_decoderBuilder(mimeType, encoding, encodingUserChoosen)
+    , m_decoderBuilder(mimeType, encoding)
     // We grab a reference to the parser so that we'll always send data to the
     // original parser, even if the document acquires a new parser (e.g., via
     // document.open).
     , m_parser(m_document->implicitOpen())
+    , m_forcedSynchronousParse(false)
 {
     if (m_document->frame()) {
         if (FrameView* view = m_document->frame()->view())
@@ -73,6 +74,15 @@ void DocumentWriter::trace(Visitor* visitor)
     visitor->trace(m_parser);
 }
 
+void DocumentWriter::forceSynchronousParse()
+{
+    ASSERT(!m_forcedSynchronousParse);
+
+    ASSERT(m_parser);
+    m_parser->pinToMainThread();
+    m_forcedSynchronousParse = true;
+}
+
 void DocumentWriter::appendReplacingData(const String& source)
 {
     m_document->setCompatibilityMode(Document::NoQuirksMode);
@@ -80,7 +90,8 @@ void DocumentWriter::appendReplacingData(const String& source)
     // FIXME: This should call DocumentParser::appendBytes instead of append
     // to support RawDataDocumentParsers.
     if (DocumentParser* parser = m_document->parser()) {
-        parser->pinToMainThread();
+        if (!m_forcedSynchronousParse)
+            forceSynchronousParse();
         // Because we're pinned to the main thread we don't need to worry about
         // passing ownership of the source string.
         parser->append(source.impl());
@@ -106,7 +117,7 @@ void DocumentWriter::end()
     // http://bugs.webkit.org/show_bug.cgi?id=10854
     // The frame's last ref may be removed and it can be deleted by checkCompleted(),
     // so we'll add a protective refcount
-    RefPtr<LocalFrame> protector(m_document->frame());
+    RefPtrWillBeRawPtr<LocalFrame> protect(m_document->frame());
 
     if (!m_parser)
         return;
@@ -115,13 +126,9 @@ void DocumentWriter::end()
         OwnPtr<TextResourceDecoder> decoder = m_decoderBuilder.buildFor(m_document);
         m_parser->setDecoder(decoder.release());
     }
-    // flush() can result replacing DocumentLoader::m_writer.
+
+    // finish() can result replacing DocumentLoader::m_writer.
     RefPtrWillBeRawPtr<DocumentWriter> protectingThis(this);
-    m_parser->flush();
-
-    if (!m_parser)
-        return;
-
     m_parser->finish();
     m_parser = nullptr;
     m_document = nullptr;
@@ -140,4 +147,4 @@ void DocumentWriter::setDocumentWasLoadedAsPartOfNavigation()
     m_parser->setDocumentWasLoadedAsPartOfNavigation();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -225,14 +225,14 @@ void TestTransactionConsumer::OnIOComplete(int result) {
 MockNetworkTransaction::MockNetworkTransaction(
     net::RequestPriority priority,
     MockNetworkLayer* factory)
-    : weak_factory_(this),
-      request_(NULL),
+    : request_(NULL),
       data_cursor_(0),
       priority_(priority),
       websocket_handshake_stream_create_helper_(NULL),
       transaction_factory_(factory->AsWeakPtr()),
       received_bytes_(0),
-      socket_log_id_(net::NetLog::Source::kInvalidId) {
+      socket_log_id_(net::NetLog::Source::kInvalidId),
+      weak_factory_(this) {
 }
 
 MockNetworkTransaction::~MockNetworkTransaction() {}
@@ -277,8 +277,13 @@ bool MockNetworkTransaction::IsReadyToRestartForAuth() {
   if (!request_)
     return false;
 
-  // Only mock auth when the test asks for it.
-  return request_->extra_headers.HasHeader("X-Require-Mock-Auth");
+  if (!request_->extra_headers.HasHeader("X-Require-Mock-Auth"))
+    return false;
+
+  // Allow the mock server to decide whether authentication is required or not.
+  std::string status_line = response_.headers->GetStatusLine();
+  return status_line.find(" 401 ") != std::string::npos ||
+      status_line.find(" 407 ") != std::string::npos;
 }
 
 int MockNetworkTransaction::Read(net::IOBuffer* buf, int buf_len,
@@ -422,6 +427,10 @@ int MockNetworkTransaction::StartInternal(
 
 void MockNetworkTransaction::SetBeforeNetworkStartCallback(
     const BeforeNetworkStartCallback& callback) {
+}
+
+void MockNetworkTransaction::SetBeforeProxyHeadersSentCallback(
+    const BeforeProxyHeadersSentCallback& callback) {
 }
 
 int MockNetworkTransaction::ResumeNetworkStart() {

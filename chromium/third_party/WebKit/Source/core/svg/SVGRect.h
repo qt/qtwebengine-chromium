@@ -20,14 +20,14 @@
 #ifndef SVGRect_h
 #define SVGRect_h
 
-#include "core/svg/properties/SVGProperty.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 #include "platform/geometry/FloatRect.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGRectTearOff;
 
-class SVGRect : public SVGPropertyBase {
+class SVGRect : public SVGPropertyHelper<SVGRect> {
 public:
     typedef SVGRectTearOff TearOffType;
 
@@ -49,7 +49,6 @@ public:
     }
 
     PassRefPtr<SVGRect> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
 
     const FloatRect& value() const { return m_value; }
     void setValue(const FloatRect& v) { m_value = v; }
@@ -63,15 +62,12 @@ public:
     void setWidth(float f) { m_value.setWidth(f); }
     void setHeight(float f) { m_value.setHeight(f); }
 
-    bool operator==(const SVGRect&) const;
-    bool operator!=(const SVGRect& other) const { return !operator==(other); }
-
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     bool isValid() const { return m_isValid; }
     void setInvalid();
@@ -97,6 +93,6 @@ inline PassRefPtr<SVGRect> toSVGRect(PassRefPtr<SVGPropertyBase> passBase)
     return static_pointer_cast<SVGRect>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRect_h

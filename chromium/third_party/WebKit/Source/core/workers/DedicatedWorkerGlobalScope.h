@@ -36,39 +36,40 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DedicatedWorkerThread;
 class WorkerThreadStartupData;
 
-class DedicatedWorkerGlobalScope FINAL : public WorkerGlobalScope {
+class DedicatedWorkerGlobalScope final : public WorkerGlobalScope {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     typedef WorkerGlobalScope Base;
     static PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> create(DedicatedWorkerThread*, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>, double timeOrigin);
     virtual ~DedicatedWorkerGlobalScope();
 
-    virtual bool isDedicatedWorkerGlobalScope() const OVERRIDE { return true; }
-    virtual void countFeature(UseCounter::Feature) const OVERRIDE;
-    virtual void countDeprecation(UseCounter::Feature) const OVERRIDE;
+    virtual bool isDedicatedWorkerGlobalScope() const override { return true; }
+    virtual void countFeature(UseCounter::Feature) const override;
+    virtual void countDeprecation(UseCounter::Feature) const override;
 
     // Overridden to allow us to check our pending activity after executing imported script.
-    virtual void importScripts(const Vector<String>& urls, ExceptionState&) OVERRIDE;
+    virtual void importScripts(const Vector<String>& urls, ExceptionState&) override;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    void postMessage(PassRefPtr<SerializedScriptValue>, const MessagePortArray*, ExceptionState&);
+    void postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue>, const MessagePortArray*, ExceptionState&);
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(message);
 
     DedicatedWorkerThread* thread() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    DedicatedWorkerGlobalScope(const KURL&, const String& userAgent, DedicatedWorkerThread*, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients>);
+    DedicatedWorkerGlobalScope(const KURL&, const String& userAgent, DedicatedWorkerThread*, double timeOrigin, const SecurityOrigin*, PassOwnPtrWillBeRawPtr<WorkerClients>);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DedicatedWorkerGlobalScope_h

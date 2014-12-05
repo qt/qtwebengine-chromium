@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/cancelable_callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_number_conversions.h"
@@ -487,7 +487,8 @@ void GDig::OnResolveComplete(unsigned entry_index,
          static_cast<int>(resolve_time.InMilliseconds()),
          replay_log_[entry_index].domain_name.c_str(), val);
   if (val != OK) {
-    printf("%s", ErrorToString(val));
+    std::string error_string = ErrorToString(val);
+    printf("%s", error_string.c_str());
   } else {
     for (size_t i = 0; i < address_list->size(); ++i) {
       if (i != 0)

@@ -12,7 +12,8 @@
         'compile_suid_client': 0,
         'compile_credentials': 0,
       }],
-      ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64")', {
+      ['OS=="linux" and (target_arch=="ia32" or target_arch=="x64" or '
+         'target_arch=="mipsel")', {
         'compile_seccomp_bpf_demo': 1,
       }, {
         'compile_seccomp_bpf_demo': 0,
@@ -117,6 +118,18 @@
       'target_name': 'seccomp_bpf',
       'type': '<(component)',
       'sources': [
+        'bpf_dsl/bpf_dsl.cc',
+        'bpf_dsl/bpf_dsl.h',
+        'bpf_dsl/bpf_dsl_forward.h',
+        'bpf_dsl/bpf_dsl_impl.h',
+        'bpf_dsl/cons.h',
+        'bpf_dsl/dump_bpf.cc',
+        'bpf_dsl/dump_bpf.h',
+        'bpf_dsl/policy.cc',
+        'bpf_dsl/policy.h',
+        'bpf_dsl/policy_compiler.cc',
+        'bpf_dsl/policy_compiler.h',
+        'bpf_dsl/trap_registry.h',
         'seccomp-bpf/basicblock.cc',
         'seccomp-bpf/basicblock.h',
         'seccomp-bpf/codegen.cc',
@@ -129,9 +142,6 @@
         'seccomp-bpf/linux_seccomp.h',
         'seccomp-bpf/sandbox_bpf.cc',
         'seccomp-bpf/sandbox_bpf.h',
-        'seccomp-bpf/sandbox_bpf_compatibility_policy.h',
-        'seccomp-bpf/sandbox_bpf_policy.cc',
-        'seccomp-bpf/sandbox_bpf_policy.h',
         'seccomp-bpf/syscall.cc',
         'seccomp-bpf/syscall.h',
         'seccomp-bpf/syscall_iterator.cc',
@@ -147,6 +157,11 @@
       ],
       'defines': [
         'SANDBOX_IMPLEMENTATION',
+      ],
+      'includes': [
+        # Disable LTO due to compiler bug
+        # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57703
+        '../../build/android/disable_lto.gypi',
       ],
       'include_dirs': [
         '../..',
@@ -177,34 +192,12 @@
       ],
     },
     {
-      # A demonstration program for the seccomp-bpf sandbox.
-      'target_name': 'seccomp_bpf_demo',
-      'conditions': [
-        ['compile_seccomp_bpf_demo==1', {
-          'type': 'executable',
-          'sources': [
-            'seccomp-bpf/demo.cc',
-          ],
-          'dependencies': [
-            'seccomp_bpf',
-          ],
-        }, {
-          'type': 'none',
-        }],
-      ],
-      'include_dirs': [
-        '../../',
-      ],
-    },
-    {
       # The setuid sandbox, for Linux
       'target_name': 'chrome_sandbox',
       'type': 'executable',
       'sources': [
         'suid/common/sandbox.h',
         'suid/common/suid_unsafe_environment_variables.h',
-        'suid/linux_util.c',
-        'suid/linux_util.h',
         'suid/process_util.h',
         'suid/process_util_linux.c',
         'suid/sandbox.c',
@@ -227,16 +220,23 @@
     { 'target_name': 'sandbox_services',
       'type': '<(component)',
       'sources': [
-        'services/broker_process.cc',
-        'services/broker_process.h',
         'services/init_process_reaper.cc',
         'services/init_process_reaper.h',
         'services/scoped_process.cc',
         'services/scoped_process.h',
         'services/thread_helpers.cc',
         'services/thread_helpers.h',
-        'services/yama.h',
         'services/yama.cc',
+        'services/yama.h',
+        'syscall_broker/broker_client.cc',
+        'syscall_broker/broker_client.h',
+        'syscall_broker/broker_common.h',
+        'syscall_broker/broker_host.cc',
+        'syscall_broker/broker_host.h',
+        'syscall_broker/broker_policy.cc',
+        'syscall_broker/broker_policy.h',
+        'syscall_broker/broker_process.cc',
+        'syscall_broker/broker_process.h',
       ],
       'dependencies': [
         '../base/base.gyp:base',
@@ -264,10 +264,14 @@
       'type': 'none',
       'sources': [
         'services/android_arm_ucontext.h',
+        'services/android_arm64_ucontext.h',
         'services/android_futex.h',
         'services/android_ucontext.h',
         'services/android_i386_ucontext.h',
+        'services/android_mips_ucontext.h',
         'services/arm_linux_syscalls.h',
+        'services/arm64_linux_syscalls.h',
+        'services/mips_linux_syscalls.h',
         'services/linux_syscalls.h',
         'services/x86_32_linux_syscalls.h',
         'services/x86_64_linux_syscalls.h',
@@ -316,7 +320,7 @@
   'conditions': [
     [ 'OS=="android"', {
       'targets': [
-        {
+      {
         'target_name': 'sandbox_linux_unittests_stripped',
         'type': 'none',
         'dependencies': [ 'sandbox_linux_unittests' ],
@@ -325,9 +329,26 @@
           'inputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests' ],
           'outputs': [ '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped' ],
           'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
-          }],
-        }
-      ],
+        }],
+      },
+      {
+        'target_name': 'sandbox_linux_unittests_deps',
+        'type': 'none',
+        'dependencies': [
+          'sandbox_linux_unittests_stripped',
+        ],
+        # For the component build, ensure dependent shared libraries are
+        # stripped and put alongside sandbox_linux_unittests to simplify pushing
+        # to the device.
+        'variables': {
+           'output_dir': '<(PRODUCT_DIR)/sandbox_linux_unittests_deps/',
+           'native_binary': '<(PRODUCT_DIR)/sandbox_linux_unittests_stripped',
+           'include_main_binary': 0,
+        },
+        'includes': [
+          '../../build/android/native_app_dependencies.gypi'
+        ],
+      }],
     }],
     [ 'OS=="android"', {
       'targets': [
@@ -354,7 +375,6 @@
           ],
           'includes': [
             '../../build/isolate.gypi',
-            '../sandbox_linux_unittests.isolate',
           ],
           'sources': [
             '../sandbox_linux_unittests.isolate',

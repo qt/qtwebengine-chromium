@@ -25,17 +25,18 @@
  *
  */
 
+// http://www.whatwg.org/specs/web-apps/current-work/#dedicated-workers-and-the-worker-interface
+
 [
     ActiveDOMObject,
     Constructor(DOMString scriptUrl),
     ConstructorCallWith=ExecutionContext,
     RaisesException=Constructor,
-    WillBeGarbageCollected,
 ] interface Worker : EventTarget {
 
     attribute EventHandler onmessage;
 
-    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional MessagePort[] messagePorts);
+    [Custom, RaisesException] void postMessage(SerializedScriptValue message, optional sequence<Transferable> transfer);
     void terminate();
 };
 

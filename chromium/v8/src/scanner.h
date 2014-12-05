@@ -8,19 +8,22 @@
 #define V8_SCANNER_H_
 
 #include "src/allocation.h"
+#include "src/base/logging.h"
 #include "src/char-predicates.h"
-#include "src/checks.h"
 #include "src/globals.h"
 #include "src/hashmap.h"
 #include "src/list.h"
 #include "src/token.h"
 #include "src/unicode-inl.h"
+#include "src/unicode-decoder.h"
 #include "src/utils.h"
 
 namespace v8 {
 namespace internal {
 
 
+class AstRawString;
+class AstValueFactory;
 class ParserRecorder;
 
 
@@ -150,7 +153,7 @@ class DuplicateFinder {
   int AddTwoByteSymbol(Vector<const uint16_t> key, int value);
   // Add a a number literal by converting it (if necessary)
   // to the string that ToString(ToNumber(literal)) would generate.
-  // and then adding that string with AddAsciiSymbol.
+  // and then adding that string with AddOneByteSymbol.
   // This string is the actual value used as key in an object literal,
   // and the one that must be different from the other keys.
   int AddNumber(Vector<const uint8_t> key, int value);
@@ -164,7 +167,7 @@ class DuplicateFinder {
   uint8_t* BackupKey(Vector<const uint8_t> key, bool is_one_byte);
 
   // Compare two encoded keys (both pointing into the backing store)
-  // for having the same base-127 encoded lengths and ASCII-ness,
+  // for having the same base-127 encoded lengths and representation.
   // and then having the same 'length' bytes following.
   static bool Match(void* first, void* second);
   // Creates a hash from a sequence of bytes.
@@ -209,34 +212,43 @@ class LiteralBuffer {
       }
       ConvertToTwoByte();
     }
-    ASSERT(code_unit < 0x10000u);
-    *reinterpret_cast<uint16_t*>(&backing_store_[position_]) = code_unit;
-    position_ += kUC16Size;
+    if (code_unit <= unibrow::Utf16::kMaxNonSurrogateCharCode) {
+      *reinterpret_cast<uint16_t*>(&backing_store_[position_]) = code_unit;
+      position_ += kUC16Size;
+    } else {
+      *reinterpret_cast<uint16_t*>(&backing_store_[position_]) =
+          unibrow::Utf16::LeadSurrogate(code_unit);
+      position_ += kUC16Size;
+      if (position_ >= backing_store_.length()) ExpandBuffer();
+      *reinterpret_cast<uint16_t*>(&backing_store_[position_]) =
+          unibrow::Utf16::TrailSurrogate(code_unit);
+      position_ += kUC16Size;
+    }
   }
 
-  bool is_one_byte() { return is_one_byte_; }
+  bool is_one_byte() const { return is_one_byte_; }
 
-  bool is_contextual_keyword(Vector<const char> keyword) {
+  bool is_contextual_keyword(Vector<const char> keyword) const {
     return is_one_byte() && keyword.length() == position_ &&
         (memcmp(keyword.start(), backing_store_.start(), position_) == 0);
   }
 
-  Vector<const uint16_t> two_byte_literal() {
-    ASSERT(!is_one_byte_);
-    ASSERT((position_ & 0x1) == 0);
+  Vector<const uint16_t> two_byte_literal() const {
+    DCHECK(!is_one_byte_);
+    DCHECK((position_ & 0x1) == 0);
     return Vector<const uint16_t>(
         reinterpret_cast<const uint16_t*>(backing_store_.start()),
         position_ >> 1);
   }
 
-  Vector<const uint8_t> one_byte_literal() {
-    ASSERT(is_one_byte_);
+  Vector<const uint8_t> one_byte_literal() const {
+    DCHECK(is_one_byte_);
     return Vector<const uint8_t>(
         reinterpret_cast<const uint8_t*>(backing_store_.start()),
         position_);
   }
 
-  int length() {
+  int length() const {
     return is_one_byte_ ? position_ : (position_ >> 1);
   }
 
@@ -244,6 +256,8 @@ class LiteralBuffer {
     position_ = 0;
     is_one_byte_ = true;
   }
+
+  Handle<String> Internalize(Isolate* isolate) const;
 
  private:
   static const int kInitialCapacity = 16;
@@ -264,7 +278,7 @@ class LiteralBuffer {
   }
 
   void ConvertToTwoByte() {
-    ASSERT(is_one_byte_);
+    DCHECK(is_one_byte_);
     Vector<byte> new_store;
     int new_content_size = position_ * kUC16Size;
     if (new_content_size >= backing_store_.length()) {
@@ -368,29 +382,32 @@ class Scanner {
     return current_.literal_chars->length() != source_length;
   }
   bool is_literal_contextual_keyword(Vector<const char> keyword) {
-    ASSERT_NOT_NULL(current_.literal_chars);
+    DCHECK_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->is_contextual_keyword(keyword);
   }
   bool is_next_contextual_keyword(Vector<const char> keyword) {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->is_contextual_keyword(keyword);
   }
 
-  Handle<String> AllocateNextLiteralString(Isolate* isolate,
-                                           PretenureFlag tenured);
-  Handle<String> AllocateInternalizedString(Isolate* isolate);
+  const AstRawString* CurrentSymbol(AstValueFactory* ast_value_factory);
+  const AstRawString* NextSymbol(AstValueFactory* ast_value_factory);
 
   double DoubleValue();
-  bool UnescapedLiteralMatches(const char* data, int length) {
+  bool LiteralMatches(const char* data, int length, bool allow_escapes = true) {
     if (is_literal_one_byte() &&
         literal_length() == length &&
-        !literal_contains_escapes()) {
+        (allow_escapes || !literal_contains_escapes())) {
       const char* token =
           reinterpret_cast<const char*>(literal_one_byte_string().start());
       return !strncmp(token, data, length);
     }
     return false;
   }
+  inline bool UnescapedLiteralMatches(const char* data, int length) {
+    return LiteralMatches(data, length, false);
+  }
+
   void IsGetOrSet(bool* is_get, bool* is_set) {
     if (is_literal_one_byte() &&
         literal_length() == 3 &&
@@ -435,6 +452,12 @@ class Scanner {
   void SetHarmonyNumericLiterals(bool numeric_literals) {
     harmony_numeric_literals_ = numeric_literals;
   }
+  bool HarmonyClasses() const {
+    return harmony_classes_;
+  }
+  void SetHarmonyClasses(bool classes) {
+    harmony_classes_ = classes;
+  }
 
   // Returns true if there was a line terminator before the peek'ed token,
   // possibly inside a multi-line comment.
@@ -449,6 +472,13 @@ class Scanner {
   // Returns true if regexp flags are scanned (always since flags can
   // be empty).
   bool ScanRegExpFlags();
+
+  const LiteralBuffer* source_url() const { return &source_url_; }
+  const LiteralBuffer* source_mapping_url() const {
+    return &source_mapping_url_;
+  }
+
+  bool IdentifierIsFutureStrictReserved(const AstRawString* string) const;
 
  private:
   // The current and look-ahead token.
@@ -481,7 +511,7 @@ class Scanner {
   }
 
   INLINE(void AddLiteralChar(uc32 c)) {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     next_.literal_chars->AddChar(c);
   }
 
@@ -502,9 +532,25 @@ class Scanner {
   }
 
   // Low-level scanning support.
-  void Advance() { c0_ = source_->Advance(); }
+  void Advance() {
+    c0_ = source_->Advance();
+    if (unibrow::Utf16::IsLeadSurrogate(c0_)) {
+      uc32 c1 = source_->Advance();
+      if (!unibrow::Utf16::IsTrailSurrogate(c1)) {
+        source_->PushBack(c1);
+      } else {
+        c0_ = unibrow::Utf16::CombineSurrogatePair(c0_, c1);
+      }
+    }
+  }
+
   void PushBack(uc32 ch) {
-    source_->PushBack(c0_);
+    if (ch > static_cast<uc32>(unibrow::Utf16::kMaxNonSurrogateCharCode)) {
+      source_->PushBack(unibrow::Utf16::TrailSurrogate(c0_));
+      source_->PushBack(unibrow::Utf16::LeadSurrogate(c0_));
+    } else {
+      source_->PushBack(c0_);
+    }
     c0_ = ch;
   }
 
@@ -530,37 +576,37 @@ class Scanner {
   // These functions only give the correct result if the literal
   // was scanned between calls to StartLiteral() and TerminateLiteral().
   Vector<const uint8_t> literal_one_byte_string() {
-    ASSERT_NOT_NULL(current_.literal_chars);
+    DCHECK_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->one_byte_literal();
   }
   Vector<const uint16_t> literal_two_byte_string() {
-    ASSERT_NOT_NULL(current_.literal_chars);
+    DCHECK_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->two_byte_literal();
   }
   bool is_literal_one_byte() {
-    ASSERT_NOT_NULL(current_.literal_chars);
+    DCHECK_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->is_one_byte();
   }
   int literal_length() const {
-    ASSERT_NOT_NULL(current_.literal_chars);
+    DCHECK_NOT_NULL(current_.literal_chars);
     return current_.literal_chars->length();
   }
   // Returns the literal string for the next token (the token that
   // would be returned if Next() were called).
   Vector<const uint8_t> next_literal_one_byte_string() {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->one_byte_literal();
   }
   Vector<const uint16_t> next_literal_two_byte_string() {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->two_byte_literal();
   }
   bool is_next_literal_one_byte() {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->is_one_byte();
   }
   int next_literal_length() const {
-    ASSERT_NOT_NULL(next_.literal_chars);
+    DCHECK_NOT_NULL(next_.literal_chars);
     return next_.literal_chars->length();
   }
 
@@ -571,6 +617,8 @@ class Scanner {
 
   bool SkipWhiteSpace();
   Token::Value SkipSingleLineComment();
+  Token::Value SkipSourceURLComment();
+  void TryToParseSourceURLComment();
   Token::Value SkipMultiLineComment();
   // Scans a possible HTML comment -- begins with '<!'.
   Token::Value ScanHtmlComment();
@@ -605,6 +653,10 @@ class Scanner {
   LiteralBuffer literal_buffer1_;
   LiteralBuffer literal_buffer2_;
 
+  // Values parsed from magic comments.
+  LiteralBuffer source_url_;
+  LiteralBuffer source_mapping_url_;
+
   TokenDesc current_;  // desc for current token (as returned by Next())
   TokenDesc next_;     // desc for next token (one token look-ahead)
 
@@ -631,6 +683,8 @@ class Scanner {
   bool harmony_modules_;
   // Whether we scan 0o777 and 0b111 as numbers.
   bool harmony_numeric_literals_;
+  // Whether we scan 'class', 'extends', 'static' and 'super' as keywords.
+  bool harmony_classes_;
 };
 
 } }  // namespace v8::internal

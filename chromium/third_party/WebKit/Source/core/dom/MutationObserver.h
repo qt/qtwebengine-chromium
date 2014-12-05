@@ -31,7 +31,7 @@
 #ifndef MutationObserver_h
 #define MutationObserver_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashSet.h"
 #include "wtf/PassOwnPtr.h"
@@ -40,12 +40,13 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
 class MutationCallback;
 class MutationObserver;
+class MutationObserverInit;
 class MutationObserverRegistration;
 class MutationRecord;
 class Node;
@@ -58,7 +59,8 @@ typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<MutationObserverRegistration> >
 typedef WillBeHeapVector<RefPtrWillBeMember<MutationObserver> > MutationObserverVector;
 typedef WillBeHeapVector<RefPtrWillBeMember<MutationRecord> > MutationRecordVector;
 
-class MutationObserver FINAL : public RefCountedWillBeGarbageCollectedFinalized<MutationObserver>, public ScriptWrappable {
+class MutationObserver final : public RefCountedWillBeGarbageCollectedFinalized<MutationObserver>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum MutationType {
         ChildList = 1 << 0,
@@ -84,16 +86,15 @@ public:
 
     ~MutationObserver();
 
-    void observe(Node*, const Dictionary&, ExceptionState&);
+    void observe(Node*, const MutationObserverInit&, ExceptionState&);
     WillBeHeapVector<RefPtrWillBeMember<MutationRecord> > takeRecords();
     void disconnect();
     void observationStarted(MutationObserverRegistration*);
     void observationEnded(MutationObserverRegistration*);
     void enqueueMutationRecord(PassRefPtrWillBeRawPtr<MutationRecord>);
     void setHasTransientRegistration();
-    bool canDeliver();
 
-    HashSet<Node*> getObservedNodes() const;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > getObservedNodes() const;
 
     void trace(Visitor*);
 
@@ -102,6 +103,7 @@ private:
 
     explicit MutationObserver(PassOwnPtr<MutationCallback>);
     void deliver();
+    bool shouldBeSuspended() const;
 
     OwnPtr<MutationCallback> m_callback;
     MutationRecordVector m_records;
@@ -109,6 +111,6 @@ private:
     unsigned m_priority;
 };
 
-}
+} // namespace blink
 
 #endif // MutationObserver_h

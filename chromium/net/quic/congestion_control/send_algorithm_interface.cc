@@ -4,13 +4,10 @@
 
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 
-#include "net/quic/congestion_control/fix_rate_sender.h"
 #include "net/quic/congestion_control/tcp_cubic_sender.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
-
-const bool kUseReno = false;
 
 class RttStats;
 
@@ -18,22 +15,22 @@ class RttStats;
 SendAlgorithmInterface* SendAlgorithmInterface::Create(
     const QuicClock* clock,
     const RttStats* rtt_stats,
-    CongestionFeedbackType type,
+    CongestionControlType congestion_control_type,
     QuicConnectionStats* stats) {
-  switch (type) {
-    case kTCP:
-      return new TcpCubicSender(clock, rtt_stats, kUseReno,
+  switch (congestion_control_type) {
+    case kCubic:
+      return new TcpCubicSender(clock, rtt_stats,
+                                false /* don't use Reno */,
                                 kMaxTcpCongestionWindow, stats);
-    case kInterArrival:
-      LOG(DFATAL) << "InterArrivalSendAlgorithm no longer supported.";
-      return NULL;
-    case kFixRate:
-      return new FixRateSender(rtt_stats);
-    case kTCPBBR:
+    case kReno:
+      return new TcpCubicSender(clock, rtt_stats,
+                                true /* use Reno */,
+                                kMaxTcpCongestionWindow, stats);
+    case kBBR:
       LOG(DFATAL) << "BbrTcpSender is not supported.";
-      return NULL;
+      return nullptr;
   }
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace net

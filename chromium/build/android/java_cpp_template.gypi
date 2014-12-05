@@ -6,6 +6,9 @@
 # to generate Java source files from templates that are processed
 # through the host C pre-processor.
 #
+# NOTE: For generating Java conterparts to enums prefer using the java_cpp_enum
+#       rule instead.
+#
 # To use this, create a gyp target with the following form:
 #  {
 #    'target_name': 'android_net_java_constants',
@@ -15,15 +18,15 @@
 #    ],
 #    'variables': {
 #      'package_name': 'org/chromium/net',
-#      'template_deps': ['net/base/certificate_mime_type_list.h'],
+#      'template_deps': ['base/net_error_list.h'],
 #    },
 #    'includes': [ '../build/android/java_cpp_template.gypi' ],
 #  },
 #
 # The 'sources' entry should only list template file. The template file
 # itself should use the 'ClassName.template' format, and will generate
-# 'gen/templates/<package-name>/ClassName.java. The files which template
-# dependents on and typically included by the template should be listed
+# 'gen/templates/<target-name>/<package-name>/ClassName.java. The files which
+# template dependents on and typically included by the template should be listed
 # in template_deps variables. Any change to them will force a rebuild of
 # the template, and hence of any source that depends on it.
 #
@@ -32,7 +35,7 @@
   # Location where all generated Java sources will be placed.
   'variables': {
     'include_path%': '<(DEPTH)',
-    'output_dir': '<(SHARED_INTERMEDIATE_DIR)/templates/<(package_name)',
+    'output_dir': '<(SHARED_INTERMEDIATE_DIR)/templates/<(_target_name)/<(package_name)',
   },
   'direct_dependent_settings': {
     'variables': {

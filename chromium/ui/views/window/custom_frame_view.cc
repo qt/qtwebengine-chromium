@@ -8,8 +8,6 @@
 #include <vector>
 
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -18,6 +16,8 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/rect.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/color_constants.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/views_delegate.h"
@@ -89,7 +89,6 @@ CustomFrameView::CustomFrameView()
       maximize_button_(NULL),
       restore_button_(NULL),
       close_button_(NULL),
-      should_show_maximize_button_(false),
       frame_background_(new FrameBackground()),
       minimum_title_bar_x_(0),
       maximum_title_bar_x_(-1) {
@@ -109,8 +108,6 @@ void CustomFrameView::Init(Widget* frame) {
       IDR_MAXIMIZE, IDR_MAXIMIZE_H, IDR_MAXIMIZE_P);
   restore_button_ = InitWindowCaptionButton(IDS_APP_ACCNAME_RESTORE,
       IDR_RESTORE, IDR_RESTORE_H, IDR_RESTORE_P);
-
-  should_show_maximize_button_ = frame_->widget_delegate()->CanMaximize();
 
   if (frame_->widget_delegate()->ShouldShowWindowIcon()) {
     window_icon_ = new ImageButton(this);
@@ -199,6 +196,11 @@ void CustomFrameView::UpdateWindowIcon() {
 void CustomFrameView::UpdateWindowTitle() {
   if (frame_->widget_delegate()->ShouldShowWindowTitle())
     SchedulePaintInRect(title_bounds_);
+}
+
+void CustomFrameView::SizeConstraintsChanged() {
+  ResetWindowControls();
+  LayoutWindowControls();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -401,7 +403,10 @@ void CustomFrameView::PaintTitleBar(gfx::Canvas* canvas) {
 
 void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   gfx::Rect client_area_bounds = frame_->client_view()->bounds();
-  int client_area_top = client_area_bounds.y();
+  // The shadows have a 1 pixel gap on the inside, so draw them 1 pixel inwards.
+  gfx::Rect shadowed_area_bounds = client_area_bounds;
+  shadowed_area_bounds.Inset(gfx::Insets(1, 1, 1, 1));
+  int shadowed_area_top = shadowed_area_bounds.y();
 
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
@@ -409,27 +414,27 @@ void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
   const gfx::ImageSkia* top_left = rb.GetImageSkiaNamed(IDR_APP_TOP_LEFT);
   const gfx::ImageSkia* top_center = rb.GetImageSkiaNamed(IDR_APP_TOP_CENTER);
   const gfx::ImageSkia* top_right = rb.GetImageSkiaNamed(IDR_APP_TOP_RIGHT);
-  int top_edge_y = client_area_top - top_center->height();
+  int top_edge_y = shadowed_area_top - top_center->height();
   canvas->DrawImageInt(*top_left,
-                       client_area_bounds.x() - top_left->width(),
+                       shadowed_area_bounds.x() - top_left->width(),
                        top_edge_y);
   canvas->TileImageInt(*top_center,
-                       client_area_bounds.x(),
+                       shadowed_area_bounds.x(),
                        top_edge_y,
-                       client_area_bounds.width(),
+                       shadowed_area_bounds.width(),
                        top_center->height());
-  canvas->DrawImageInt(*top_right, client_area_bounds.right(), top_edge_y);
+  canvas->DrawImageInt(*top_right, shadowed_area_bounds.right(), top_edge_y);
 
   // Right side.
   const gfx::ImageSkia* right = rb.GetImageSkiaNamed(IDR_CONTENT_RIGHT_SIDE);
-  int client_area_bottom =
-      std::max(client_area_top, client_area_bounds.bottom());
-  int client_area_height = client_area_bottom - client_area_top;
+  int shadowed_area_bottom =
+      std::max(shadowed_area_top, shadowed_area_bounds.bottom());
+  int shadowed_area_height = shadowed_area_bottom - shadowed_area_top;
   canvas->TileImageInt(*right,
-                       client_area_bounds.right(),
-                       client_area_top,
+                       shadowed_area_bounds.right(),
+                       shadowed_area_top,
                        right->width(),
-                       client_area_height);
+                       shadowed_area_height);
 
   // Bottom: left, center, right sides.
   const gfx::ImageSkia* bottom_left =
@@ -440,32 +445,25 @@ void CustomFrameView::PaintRestoredClientEdge(gfx::Canvas* canvas) {
       rb.GetImageSkiaNamed(IDR_CONTENT_BOTTOM_RIGHT_CORNER);
 
   canvas->DrawImageInt(*bottom_left,
-                       client_area_bounds.x() - bottom_left->width(),
-                       client_area_bottom);
+                       shadowed_area_bounds.x() - bottom_left->width(),
+                       shadowed_area_bottom);
 
   canvas->TileImageInt(*bottom_center,
-                       client_area_bounds.x(),
-                       client_area_bottom,
-                       client_area_bounds.width(),
+                       shadowed_area_bounds.x(),
+                       shadowed_area_bottom,
+                       shadowed_area_bounds.width(),
                        bottom_right->height());
 
   canvas->DrawImageInt(*bottom_right,
-                       client_area_bounds.right(),
-                       client_area_bottom);
+                       shadowed_area_bounds.right(),
+                       shadowed_area_bottom);
   // Left side.
   const gfx::ImageSkia* left = rb.GetImageSkiaNamed(IDR_CONTENT_LEFT_SIDE);
   canvas->TileImageInt(*left,
-                       client_area_bounds.x() - left->width(),
-                       client_area_top,
+                       shadowed_area_bounds.x() - left->width(),
+                       shadowed_area_top,
                        left->width(),
-                       client_area_height);
-
-  // Draw the color to fill in the edges.
-  canvas->FillRect(gfx::Rect(client_area_bounds.x() - 1,
-                             client_area_top - 1,
-                             client_area_bounds.width() + 1,
-                             client_area_bottom - client_area_top + 1),
-                   kClientEdgeColor);
+                       shadowed_area_height);
 }
 
 SkColor CustomFrameView::GetFrameColor() const {
@@ -601,18 +599,26 @@ ImageButton* CustomFrameView::GetImageButton(views::FrameButton frame_button) {
   switch (frame_button) {
     case views::FRAME_BUTTON_MINIMIZE: {
       button = minimize_button_;
+      // If we should not show the minimize button, then we return NULL as we
+      // don't want this button to become visible and to be laid out.
+      bool should_show = frame_->widget_delegate()->CanMinimize();
+      button->SetVisible(should_show);
+      if (!should_show)
+        return NULL;
+
       break;
     }
     case views::FRAME_BUTTON_MAXIMIZE: {
       bool is_restored = !frame_->IsMaximized() && !frame_->IsMinimized();
       button = is_restored ? maximize_button_ : restore_button_;
-      if (!should_show_maximize_button_) {
-        // If we should not show the maximize/restore button, then we return
-        // NULL as we don't want this button to become visible and to be laid
-        // out.
-        button->SetVisible(false);
+      // If we should not show the maximize/restore button, then we return
+      // NULL as we don't want this button to become visible and to be laid
+      // out.
+      bool should_show = frame_->widget_delegate()->CanMaximize();
+      button->SetVisible(should_show);
+      if (!should_show)
         return NULL;
-      }
+
       break;
     }
     case views::FRAME_BUTTON_CLOSE: {

@@ -6,7 +6,7 @@
 
 #include <limits>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -36,12 +36,11 @@ size_t MaxSharedMemorySize() {
     contents.erase(contents.length() - 1);
   }
 
-  int64 limit;
-  if (!base::StringToInt64(contents, &limit)) {
+  uint64 limit;
+  if (!base::StringToUint64(contents, &limit)) {
     limit = 0;
   }
-  if (limit < 0 ||
-      static_cast<uint64>(limit) > std::numeric_limits<size_t>::max()) {
+  if (limit > std::numeric_limits<size_t>::max()) {
     limit = 0;
   }
   DCHECK(limit > 0);

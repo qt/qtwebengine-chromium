@@ -262,6 +262,29 @@ class PolicyTemplateGeneratorUnittest(unittest.TestCase):
         self.tester.assertEquals(policy['items'][2]['caption'], 'string3')
     self.do_test(policy_data_mock, LocalMockWriter())
 
+  def testStringEnumTexts(self):
+    # Test that GUI messages are assigned correctly to string-enums
+    # (aka dropdown menus).
+    policy_data_mock = {
+      'policy_definitions': [{
+        'name': 'Policy1',
+        'type': 'string-enum-list',
+        'caption': '', 'desc': '',
+        'supported_on': [],
+        'items': [
+          {'name': 'item1', 'value': 'one', 'caption': 'string1', 'desc': ''},
+          {'name': 'item2', 'value': 'two', 'caption': 'string2', 'desc': ''},
+          {'name': 'item3', 'value': 'three', 'caption': 'string3', 'desc': ''},
+        ]
+      }]
+    }
+    class LocalMockWriter(mock_writer.MockWriter):
+      def WritePolicy(self, policy):
+        self.tester.assertEquals(policy['items'][0]['caption'], 'string1')
+        self.tester.assertEquals(policy['items'][1]['caption'], 'string2')
+        self.tester.assertEquals(policy['items'][2]['caption'], 'string3')
+    self.do_test(policy_data_mock, LocalMockWriter())
+
   def testPolicyFiltering(self):
     # Test that policies are filtered correctly based on their annotations.
     policy_data_mock = {

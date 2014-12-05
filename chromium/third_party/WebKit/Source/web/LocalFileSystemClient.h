@@ -36,14 +36,14 @@
 
 namespace blink {
 
-class LocalFileSystemClient FINAL : public WebCore::FileSystemClient {
+class LocalFileSystemClient final : public FileSystemClient {
 public:
     static PassOwnPtr<FileSystemClient> create();
 
     virtual ~LocalFileSystemClient();
 
-    virtual bool requestFileSystemAccessSync(WebCore::ExecutionContext*) OVERRIDE;
-    virtual void requestFileSystemAccessAsync(WebCore::ExecutionContext*, PassOwnPtr<WebCore::PermissionCallbacks>) OVERRIDE;
+    virtual bool requestFileSystemAccessSync(ExecutionContext*) override;
+    virtual void requestFileSystemAccessAsync(ExecutionContext*, PassOwnPtr<PermissionCallbacks>) override;
 
 private:
     LocalFileSystemClient();

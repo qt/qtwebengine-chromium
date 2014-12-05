@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/mg.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/mg.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/mg.xml
+ * ICU <specials> source: <path>/common/main/mg.xml
  */
 mg{
     Currencies{
@@ -16,19 +16,19 @@ mg{
             "Dirham",
         }
         AOA{
-            "Kz",
+            "AOA",
             "kwanza angoley",
         }
         AUD{
-            "AU$",
+            "A$",
             "Dolara aostralianina",
         }
         BHD{
-            "BD",
+            "BHD",
             "dinar bahreïni",
         }
         BIF{
-            "FBu",
+            "BIF",
             "Farantsa Borondi",
         }
         BWP{
@@ -52,15 +52,15 @@ mg{
             "Yoan sinoa Renminbi",
         }
         CVE{
-            "CV$",
+            "CVE",
             "Escudo",
         }
         DJF{
-            "Fdj",
+            "DJF",
             "Farantsa Djibotianina",
         }
         DZD{
-            "DA",
+            "DZD",
             "Dinara alzerianina",
         }
         EGP{
@@ -68,11 +68,11 @@ mg{
             "vola venty ejipsiana",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "Nakfà Eritreanina",
         }
         ETB{
-            "Br",
+            "ETB",
             "Bir etiopianina",
         }
         EUR{
@@ -83,20 +83,16 @@ mg{
             "£",
             "livre sterling",
         }
-        GHC{
-            "₵",
-            "cédi",
-        }
         GMD{
             "GMD",
             "Dalasi gambianina",
         }
         GNS{
-            "GNS" /** ===  */,
+            "GNS",
             "Farantsa Gineanina",
         }
         INR{
-            "Rs",
+            "₹",
             "Ropia Indianina",
         }
         JPY{
@@ -104,15 +100,15 @@ mg{
             "Yen Japoney",
         }
         KES{
-            "Ksh",
+            "KES",
             "Shilling kenianina",
         }
         KMF{
-            "CF",
+            "KMF",
             "Farantsa Komorianina",
         }
         LRD{
-            "L$",
+            "LRD",
             "Dôlara Liberianina",
         }
         LSL{
@@ -120,7 +116,7 @@ mg{
             "Loti",
         }
         LYD{
-            "LD",
+            "LYD",
             "Dinara Libyanina",
         }
         MAD{
@@ -128,31 +124,27 @@ mg{
             "Dirham marokianina",
         }
         MGA{
-            "MGA",
+            "Ar",
             "Ariary",
         }
         MRO{
-            "UM",
+            "MRO",
             "Ouguiya moritanianina",
         }
         MUR{
-            "MURs",
+            "MUR",
             "Ropia maorisianina",
         }
         MWK{
             "MWK",
             "kwacha malawite",
         }
-        MZM{
-            "Mt",
-            "Metikaly",
-        }
         NAD{
-            "N$",
+            "NAD",
             "Dolara namibianina",
         }
         NGN{
-            "₦",
+            "NGN",
             "Naira nigerianina",
         }
         RWF{
@@ -160,35 +152,31 @@ mg{
             "Farantsa Roande",
         }
         SAR{
-            "SR",
+            "SAR",
             "Rial saodianina",
         }
         SCR{
-            "SRe",
+            "SCR",
             "Ropia Seysheloà",
         }
         SDG{
             "SDG",
             "Dinara Sodaney",
         }
-        SDP{
-            "SDP" /** ===  */,
-            "livre soudanaise (1956–2007)",
-        }
         SHP{
-            "SH£",
+            "SHP",
             "livre de Sainte-Hélène",
         }
         SLL{
-            "Le",
+            "SLL",
             "Leone",
         }
         SOS{
-            "Ssh",
+            "SOS",
             "Shilling somalianina",
         }
         STD{
-            "Db",
+            "STD",
             "Dobra",
         }
         SZL{
@@ -196,15 +184,15 @@ mg{
             "Lilangeni",
         }
         TND{
-            "DT",
+            "TND",
             "Dinar tonizianina",
         }
         TZS{
-            "TSh",
+            "TZS",
             "Shilling tanzanianina",
         }
         UGX{
-            "USh",
+            "UGX",
             "Shilling ogandianina",
         }
         USD{
@@ -220,17 +208,13 @@ mg{
             "Farantsa CFA (BCEAO)",
         }
         ZAR{
-            "R",
+            "ZAR",
             "Rand afrikanina tatsimo",
         }
-        ZMK{
-            "ZK",
+        ZMW{
+            "ZMW",
             "Kwacha zambianina",
         }
-        ZWD{
-            "Z$",
-            "Dôlara Zimbaboeanina",
-        }
     }
-    Version{"2.0.47.63"}
+    Version{"2.0.92.87"}
 }

@@ -6,6 +6,7 @@
 
 #include "base/logging.h"
 #include "ui/events/event.h"
+#include "ui/gfx/canvas.h"
 #include "ui/native_theme/native_theme.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar.h"
@@ -23,7 +24,7 @@ class ScrollViewWithBorder : public views::ScrollView {
   ScrollViewWithBorder() {}
 
   // View overrides;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE {
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override {
     SetBorder(Border::CreateSolidBorder(
         1,
         theme->GetSystemColor(ui::NativeTheme::kColorId_UnfocusedBorderColor)));
@@ -31,6 +32,23 @@ class ScrollViewWithBorder : public views::ScrollView {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ScrollViewWithBorder);
+};
+
+class ScrollCornerView : public views::View {
+ public:
+  ScrollCornerView() {}
+
+  void OnPaint(gfx::Canvas* canvas) override {
+    ui::NativeTheme::ExtraParams ignored;
+    GetNativeTheme()->Paint(canvas->sk_canvas(),
+                            ui::NativeTheme::kScrollbarCorner,
+                            ui::NativeTheme::kNormal,
+                            GetLocalBounds(),
+                            ignored);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(ScrollCornerView);
 };
 
 // Returns the position for the view so that it isn't scrolled off the visible
@@ -76,13 +94,11 @@ int AdjustPosition(int current_position,
 class ScrollView::Viewport : public View {
  public:
   Viewport() {}
-  virtual ~Viewport() {}
+  ~Viewport() override {}
 
-  virtual const char* GetClassName() const OVERRIDE {
-    return "ScrollView::Viewport";
-  }
+  const char* GetClassName() const override { return "ScrollView::Viewport"; }
 
-  virtual void ScrollRectToVisible(const gfx::Rect& rect) OVERRIDE {
+  void ScrollRectToVisible(const gfx::Rect& rect) override {
     if (!has_children() || !parent())
       return;
 
@@ -93,7 +109,7 @@ class ScrollView::Viewport : public View {
         scroll_rect);
   }
 
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE {
+  void ChildPreferredSizeChanged(View* child) override {
     if (parent())
       parent()->Layout();
   }
@@ -109,7 +125,7 @@ ScrollView::ScrollView()
       header_viewport_(new Viewport()),
       horiz_sb_(new NativeScrollBar(true)),
       vert_sb_(new NativeScrollBar(false)),
-      resize_corner_(NULL),
+      corner_view_(new ScrollCornerView()),
       min_height_(-1),
       max_height_(-1),
       hide_horizontal_scrollbar_(false) {
@@ -124,8 +140,7 @@ ScrollView::ScrollView()
   horiz_sb_->set_controller(this);
   vert_sb_->SetVisible(false);
   vert_sb_->set_controller(this);
-  if (resize_corner_)
-    resize_corner_->SetVisible(false);
+  corner_view_->SetVisible(false);
 }
 
 ScrollView::~ScrollView() {
@@ -133,9 +148,7 @@ ScrollView::~ScrollView() {
   // deleted.
   delete horiz_sb_;
   delete vert_sb_;
-
-  if (resize_corner_ && !resize_corner_->parent())
-    delete resize_corner_;
+  delete corner_view_;
 }
 
 // static
@@ -268,12 +281,11 @@ void ScrollView::Layout() {
                                 &horiz_sb_required,
                                 &vert_sb_required);
   }
-  bool resize_corner_required = resize_corner_ && horiz_sb_required &&
-                                vert_sb_required;
+  bool corner_view_required = horiz_sb_required && vert_sb_required;
   // Take action.
   SetControlVisibility(horiz_sb_, horiz_sb_required);
   SetControlVisibility(vert_sb_, vert_sb_required);
-  SetControlVisibility(resize_corner_, resize_corner_required);
+  SetControlVisibility(corner_view_, corner_view_required);
 
   // Non-default.
   if (horiz_sb_required) {
@@ -301,12 +313,12 @@ void ScrollView::Layout() {
                         vert_sb_width + width_offset,
                         viewport_bounds.bottom());
   }
-  if (resize_corner_required) {
+  if (corner_view_required) {
     // Show the resize corner.
-    resize_corner_->SetBounds(viewport_bounds.right(),
-                              viewport_bounds.bottom(),
-                              vert_sb_width,
-                              horiz_sb_height);
+    corner_view_->SetBounds(viewport_bounds.right(),
+                            viewport_bounds.bottom(),
+                            vert_sb_width,
+                            horiz_sb_height);
   }
 
   // Update to the real client size with the visible scrollbars.
@@ -340,12 +352,12 @@ bool ScrollView::OnKeyPressed(const ui::KeyEvent& event) {
 
 bool ScrollView::OnMouseWheel(const ui::MouseWheelEvent& e) {
   bool processed = false;
-  // Give vertical scrollbar priority
+
   if (vert_sb_->visible())
     processed = vert_sb_->OnMouseWheel(e);
 
-  if (!processed && horiz_sb_->visible())
-    processed = horiz_sb_->OnMouseWheel(e);
+  if (horiz_sb_->visible())
+    processed = horiz_sb_->OnMouseWheel(e) || processed;
 
   return processed;
 }

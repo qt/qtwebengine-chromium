@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "content/common/frame_messages.h"
 #include "content/common/view_message_enums.h"
 #include "content/public/test/render_view_test.h"
-#include "content/renderer/accessibility/renderer_accessibility_complete.h"
+#include "content/renderer/accessibility/renderer_accessibility.h"
+#include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_view_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebSize.h"
@@ -20,14 +22,14 @@ using blink::WebDocument;
 
 namespace content {
 
-class TestRendererAccessibilityComplete : public RendererAccessibilityComplete {
+class TestRendererAccessibility : public RendererAccessibility {
  public:
-  explicit TestRendererAccessibilityComplete(RenderViewImpl* render_view)
-    : RendererAccessibilityComplete(render_view) {
+  explicit TestRendererAccessibility(RenderFrameImpl* render_frame)
+    : RendererAccessibility(render_frame) {
   }
 
   void SendPendingAccessibilityEvents() {
-    RendererAccessibilityComplete::SendPendingAccessibilityEvents();
+    RendererAccessibility::SendPendingAccessibilityEvents();
   }
 };
 
@@ -43,13 +45,13 @@ class RendererAccessibilityTest : public RenderViewTest {
     return static_cast<RenderFrameImpl*>(view()->GetMainRenderFrame());
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewTest::SetUp();
     sink_ = &render_thread_->sink();
   }
 
   void SetMode(AccessibilityMode mode) {
-    view()->OnSetAccessibilityMode(mode);
+    frame()->OnSetAccessibilityMode(mode);
   }
 
   void GetLastAccEvent(
@@ -57,7 +59,7 @@ class RendererAccessibilityTest : public RenderViewTest {
     const IPC::Message* message =
         sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
     ASSERT_TRUE(message);
-    Tuple1<std::vector<AccessibilityHostMsg_EventParams> > param;
+    Tuple2<std::vector<AccessibilityHostMsg_EventParams>, int> param;
     AccessibilityHostMsg_Events::Read(message, &param);
     ASSERT_GE(param.a.size(), 1U);
     *params = param.a[0];
@@ -76,152 +78,8 @@ class RendererAccessibilityTest : public RenderViewTest {
 
 };
 
-TEST_F(RendererAccessibilityTest, EditableTextModeFocusEvents) {
-  // This is not a test of true web accessibility, it's a test of
-  // a mode used on Windows 8 in Metro mode where an extremely simplified
-  // accessibility tree containing only the current focused node is
-  // generated.
-  SetMode(AccessibilityModeEditableTextOnly);
-
-  // Set a minimum size and give focus so simulated events work.
-  view()->webwidget()->resize(blink::WebSize(500, 500));
-  view()->webwidget()->setFocus(true);
-
-  std::string html =
-      "<body>"
-      "  <input>"
-      "  <textarea></textarea>"
-      "  <p contentEditable>Editable</p>"
-      "  <div tabindex=0 role=textbox>Textbox</div>"
-      "  <button>Button</button>"
-      "  <a href=#>Link</a>"
-      "</body>";
-
-  // Load the test page.
-  LoadHTML(html.c_str());
-
-  // We should have sent a message to the browser with the initial focus
-  // on the document.
-  {
-    SCOPED_TRACE("Initial focus on document");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.event_type,
-              ui::AX_EVENT_LAYOUT_COMPLETE);
-    EXPECT_EQ(event.id, 1);
-    EXPECT_EQ(event.update.nodes.size(), 2U);
-    EXPECT_EQ(event.update.nodes[0].id, 1);
-    EXPECT_EQ(event.update.nodes[0].role,
-              ui::AX_ROLE_ROOT_WEB_AREA);
-    EXPECT_EQ(event.update.nodes[0].state,
-              (1U << ui::AX_STATE_READ_ONLY) |
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED));
-    EXPECT_EQ(event.update.nodes[0].child_ids.size(), 1U);
-  }
-
-  // Now focus the input element, and check everything again.
-  {
-    SCOPED_TRACE("input");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('input').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.event_type,
-              ui::AX_EVENT_FOCUS);
-    EXPECT_EQ(event.id, 3);
-    EXPECT_EQ(event.update.nodes[0].id, 1);
-    EXPECT_EQ(event.update.nodes[0].role,
-              ui::AX_ROLE_ROOT_WEB_AREA);
-    EXPECT_EQ(event.update.nodes[0].state,
-              (1U << ui::AX_STATE_READ_ONLY) |
-              (1U << ui::AX_STATE_FOCUSABLE));
-    EXPECT_EQ(event.update.nodes[0].child_ids.size(), 1U);
-    EXPECT_EQ(event.update.nodes[1].id, 3);
-    EXPECT_EQ(event.update.nodes[1].role,
-              ui::AX_ROLE_GROUP);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED));
-  }
-
-  // Check other editable text nodes.
-  {
-    SCOPED_TRACE("textarea");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('textarea').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 4);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED));
-  }
-
-  {
-    SCOPED_TRACE("contentEditable");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('p').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 5);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED));
-  }
-
-  {
-    SCOPED_TRACE("role=textarea");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('div').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 6);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED));
-  }
-
-  // Try focusing things that aren't editable text.
-  {
-    SCOPED_TRACE("button");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('button').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 7);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED) |
-              (1U << ui::AX_STATE_READ_ONLY));
-  }
-
-  {
-    SCOPED_TRACE("link");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.querySelector('a').focus();");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 8);
-    EXPECT_EQ(event.update.nodes[1].state,
-              (1U << ui::AX_STATE_FOCUSABLE) |
-              (1U << ui::AX_STATE_FOCUSED) |
-              (1U << ui::AX_STATE_READ_ONLY));
-  }
-
-  // Clear focus.
-  {
-    SCOPED_TRACE("Back to document.");
-    sink_->ClearMessages();
-    ExecuteJavaScript("document.activeElement.blur()");
-    AccessibilityHostMsg_EventParams event;
-    GetLastAccEvent(&event);
-    EXPECT_EQ(event.id, 1);
-  }
-}
-
 TEST_F(RendererAccessibilityTest, SendFullAccessibilityTreeOnReload) {
-  // The job of RendererAccessibilityComplete is to serialize the
+  // The job of RendererAccessibility is to serialize the
   // accessibility tree built by WebKit and send it to the browser.
   // When the accessibility tree changes, it tries to send only
   // the nodes that actually changed or were reparented. This test
@@ -236,10 +94,9 @@ TEST_F(RendererAccessibilityTest, SendFullAccessibilityTreeOnReload) {
       "</body>";
   LoadHTML(html.c_str());
 
-  // Creating a RendererAccessibilityComplete should sent the tree
-  // to the browser.
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  // Creating a RendererAccessibility should sent the tree to the browser.
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(4, CountAccessibilityNodesSentToBrowser());
 
@@ -306,10 +163,9 @@ TEST_F(RendererAccessibilityTest,
   LoadHTML(html.c_str());
   static const int kProxyRoutingId = 13;
 
-  // Creating a RendererAccessibilityComplete should send the tree
-  // to the browser.
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  // Creating a RendererAccessibility should send the tree to the browser.
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(5, CountAccessibilityNodesSentToBrowser());
 
@@ -322,7 +178,7 @@ TEST_F(RendererAccessibilityTest,
   accessibility->HandleAXEvent(
       root_obj,
       ui::AX_EVENT_VALUE_CHANGED);
-  view()->main_render_frame()->OnSwapOut(kProxyRoutingId);
+  view()->GetMainRenderFrame()->OnSwapOut(kProxyRoutingId);
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_FALSE(sink_->GetUniqueMessageMatching(
       AccessibilityHostMsg_Events::ID));
@@ -333,13 +189,15 @@ TEST_F(RendererAccessibilityTest,
   // because the element it was referring to no longer exists,
   // so the event here is from loading this new page.
   FrameMsg_Navigate_Params nav_params;
-  nav_params.url = GURL("data:text/html,<p>Hello, again.</p>");
-  nav_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
-  nav_params.transition = PAGE_TRANSITION_TYPED;
+  nav_params.common_params.url = GURL("data:text/html,<p>Hello, again.</p>");
+  nav_params.common_params.navigation_type = FrameMsg_Navigate_Type::NORMAL;
+  nav_params.common_params.transition = ui::PAGE_TRANSITION_TYPED;
   nav_params.current_history_list_length = 1;
   nav_params.current_history_list_offset = 0;
   nav_params.pending_history_list_offset = 1;
   nav_params.page_id = -1;
+  nav_params.commit_params.browser_navigation_start =
+      base::TimeTicks::FromInternalValue(1);
   frame()->OnNavigate(nav_params);
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_TRUE(sink_->GetUniqueMessageMatching(
@@ -347,7 +205,7 @@ TEST_F(RendererAccessibilityTest,
 }
 
 TEST_F(RendererAccessibilityTest, HideAccessibilityObject) {
-  // Test RendererAccessibilityComplete and make sure it sends the
+  // Test RendererAccessibility and make sure it sends the
   // proper event to the browser when an object in the tree
   // is hidden, but its children are not.
   std::string html =
@@ -361,8 +219,8 @@ TEST_F(RendererAccessibilityTest, HideAccessibilityObject) {
       "</body>";
   LoadHTML(html.c_str());
 
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(4, CountAccessibilityNodesSentToBrowser());
 
@@ -389,7 +247,7 @@ TEST_F(RendererAccessibilityTest, HideAccessibilityObject) {
   GetLastAccEvent(&event);
   ASSERT_EQ(2U, event.update.nodes.size());
 
-  // RendererAccessibilityComplete notices that 'C' is being reparented,
+  // RendererAccessibility notices that 'C' is being reparented,
   // so it clears the subtree rooted at 'A', then updates 'A' and then 'C'.
   EXPECT_EQ(node_a.axID(), event.update.node_id_to_clear);
   EXPECT_EQ(node_a.axID(), event.update.nodes[0].id);
@@ -398,7 +256,7 @@ TEST_F(RendererAccessibilityTest, HideAccessibilityObject) {
 }
 
 TEST_F(RendererAccessibilityTest, ShowAccessibilityObject) {
-  // Test RendererAccessibilityComplete and make sure it sends the
+  // Test RendererAccessibility and make sure it sends the
   // proper event to the browser when an object in the tree
   // is shown, causing its own already-visible children to be
   // reparented to it.
@@ -413,8 +271,8 @@ TEST_F(RendererAccessibilityTest, ShowAccessibilityObject) {
       "</body>";
   LoadHTML(html.c_str());
 
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(3, CountAccessibilityNodesSentToBrowser());
 
@@ -447,7 +305,7 @@ TEST_F(RendererAccessibilityTest, ShowAccessibilityObject) {
 }
 
 TEST_F(RendererAccessibilityTest, DetachAccessibilityObject) {
-  // Test RendererAccessibilityComplete and make sure it sends the
+  // Test RendererAccessibility and make sure it sends the
   // proper event to the browser when an object in the tree
   // is detached, but its children are not. This can happen when
   // a layout occurs and an anonymous render block is no longer needed.
@@ -457,8 +315,8 @@ TEST_F(RendererAccessibilityTest, DetachAccessibilityObject) {
       "</body>";
   LoadHTML(html.c_str());
 
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(7, CountAccessibilityNodesSentToBrowser());
 
@@ -518,15 +376,15 @@ TEST_F(RendererAccessibilityTest, DetachAccessibilityObject) {
 }
 
 TEST_F(RendererAccessibilityTest, EventOnObjectNotInTree) {
-  // Test RendererAccessibilityComplete and make sure it doesn't send anything
+  // Test RendererAccessibility and make sure it doesn't send anything
   // if we get a notification from Blink for an object that isn't in the
   // tree, like the scroll area that's the parent of the main document,
   // which we don't expose.
   std::string html = "<body><input></body>";
   LoadHTML(html.c_str());
 
-  scoped_ptr<TestRendererAccessibilityComplete> accessibility(
-      new TestRendererAccessibilityComplete(view()));
+  scoped_ptr<TestRendererAccessibility> accessibility(
+      new TestRendererAccessibility(frame()));
   accessibility->SendPendingAccessibilityEvents();
   EXPECT_EQ(3, CountAccessibilityNodesSentToBrowser());
 
@@ -546,7 +404,7 @@ TEST_F(RendererAccessibilityTest, EventOnObjectNotInTree) {
   const IPC::Message* message =
       sink_->GetUniqueMessageMatching(AccessibilityHostMsg_Events::ID);
   ASSERT_TRUE(message);
-  Tuple1<std::vector<AccessibilityHostMsg_EventParams> > param;
+  Tuple2<std::vector<AccessibilityHostMsg_EventParams>, int> param;
   AccessibilityHostMsg_Events::Read(message, &param);
   ASSERT_EQ(0U, param.a.size());
 }

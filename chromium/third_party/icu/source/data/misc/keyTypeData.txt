@@ -1,9 +1,9 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/bcp47/*.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/bcp47/*.xml
 // *
 // ***************************************************************************
 keyTypeData:table(nofallback){
@@ -17,6 +17,7 @@ keyTypeData:table(nofallback){
         collation{"co"}
         colnormalization{"kk"}
         colnumeric{"kn"}
+        colreorder{"kr"}
         colstrength{"ks"}
         currency{"cu"}
         numbers{"nu"}
@@ -24,6 +25,9 @@ keyTypeData:table(nofallback){
         variabletop{"vt"}
     }
     typeAlias{
+        colstrength{
+            quarternary{"quaternary"}
+        }
         timezone:alias{"/ICUDATA/timezoneTypes/typeAlias/timezone"}
     }
     typeMap{
@@ -67,9 +71,12 @@ keyTypeData:table(nofallback){
         colstrength{
             identical{"identic"}
             primary{"level1"}
-            quarternary{"level4"}
+            quaternary{"level4"}
             secondary{"level2"}
             tertiary{"level3"}
+        }
+        numbers{
+            traditional{"traditio"}
         }
         timezone:alias{"/ICUDATA/timezoneTypes/typeMap/timezone"}
     }

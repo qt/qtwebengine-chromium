@@ -8,12 +8,12 @@
 #include "core/dom/DocumentSupplementable.h"
 #include "core/frame/DeviceSingleWindowEventController.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeviceOrientationData;
 class Event;
 
-class DeviceOrientationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<DeviceOrientationController>, public DeviceSingleWindowEventController, public DocumentSupplement {
+class DeviceOrientationController final : public DeviceSingleWindowEventController, public DocumentSupplement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeviceOrientationController);
 public:
     virtual ~DeviceOrientationController();
@@ -22,31 +22,31 @@ public:
     static DeviceOrientationController& from(Document&);
 
     // Inherited from DeviceSingleWindowEventController.
-    void didUpdateData() OVERRIDE;
+    void didUpdateData() override;
 
     void setOverride(DeviceOrientationData*);
     void clearOverride();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit DeviceOrientationController(Document&);
 
     // Inherited from DeviceEventControllerBase.
-    virtual void registerWithDispatcher() OVERRIDE;
-    virtual void unregisterWithDispatcher() OVERRIDE;
-    virtual bool hasLastData() OVERRIDE;
+    virtual void registerWithDispatcher() override;
+    virtual void unregisterWithDispatcher() override;
+    virtual bool hasLastData() override;
 
     // Inherited from DeviceSingleWindowEventController.
-    virtual PassRefPtrWillBeRawPtr<Event> lastEvent() const OVERRIDE;
-    virtual const AtomicString& eventTypeName() const OVERRIDE;
-    virtual bool isNullEvent(Event*) const OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Event> lastEvent() const override;
+    virtual const AtomicString& eventTypeName() const override;
+    virtual bool isNullEvent(Event*) const override;
 
     DeviceOrientationData* lastData() const;
 
-    RefPtrWillBeMember<DeviceOrientationData> m_overrideOrientationData;
+    PersistentWillBeMember<DeviceOrientationData> m_overrideOrientationData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceOrientationController_h

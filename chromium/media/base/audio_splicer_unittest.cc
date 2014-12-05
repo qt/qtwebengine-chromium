@@ -115,7 +115,7 @@ class AudioSplicerTest : public ::testing::Test {
       float cf_ratio = 0;
       const float cf_increment = 1.0f / frames;
       for (int i = 0; i < frames; ++i, cf_ratio += cf_increment) {
-        if (overlapped_buffer_2 && i >= second_overlap_index)
+        if (overlapped_buffer_2.get() && i >= second_overlap_index)
           overlapped_value = GetValue(overlapped_buffer_2);
         const float actual = bus->channel(ch)[i];
         const float expected =
@@ -718,6 +718,50 @@ TEST_F(AudioSplicerTest, IncorrectlyMarkedSpliceWithBadGap) {
   // |second_buffer| will complete the supposed splice.
   splicer_.SetSpliceTimestamp(kNoTimestamp());
   EXPECT_FALSE(AddInput(second_buffer));
+}
+
+// Ensure we don't crash when a splice frame is incorrectly marked such that the
+// splice timestamp has already passed when SetSpliceTimestamp() is called.
+// This can happen if the encoded timestamps are too far behind the decoded
+// timestamps.
+TEST_F(AudioSplicerTest, IncorrectlyMarkedPastSplice) {
+  const int kBufferSize = 200;
+
+  scoped_refptr<AudioBuffer> first_buffer =
+      GetNextInputBuffer(1.0f, kBufferSize);
+  EXPECT_TRUE(AddInput(first_buffer));
+  VerifyNextBuffer(first_buffer);
+
+  // Start the splice at a timestamp which has already occurred.
+  splicer_.SetSpliceTimestamp(base::TimeDelta());
+
+  scoped_refptr<AudioBuffer> second_buffer =
+      GetNextInputBuffer(0.5f, kBufferSize);
+  EXPECT_TRUE(AddInput(second_buffer));
+  EXPECT_FALSE(splicer_.HasNextBuffer());
+
+  // |third_buffer| will complete the supposed splice.  The buffer size is set
+  // such that unchecked the splicer would try to trim off a negative number of
+  // frames.
+  splicer_.SetSpliceTimestamp(kNoTimestamp());
+  scoped_refptr<AudioBuffer> third_buffer =
+      GetNextInputBuffer(0.0f, kBufferSize * 10);
+  third_buffer->set_timestamp(base::TimeDelta());
+  EXPECT_TRUE(AddInput(third_buffer));
+
+  // The second buffer should come through unmodified.
+  VerifyNextBuffer(second_buffer);
+
+  // The third buffer should be partially dropped since it overlaps the second.
+  ASSERT_TRUE(splicer_.HasNextBuffer());
+  const base::TimeDelta second_buffer_end_ts =
+      second_buffer->timestamp() + second_buffer->duration();
+  scoped_refptr<AudioBuffer> output = splicer_.GetNextBuffer();
+  EXPECT_EQ(second_buffer_end_ts, output->timestamp());
+  EXPECT_EQ(third_buffer->duration() -
+                (second_buffer_end_ts - third_buffer->timestamp()),
+            output->duration());
+  EXPECT_TRUE(VerifyData(output, GetValue(third_buffer)));
 }
 
 }  // namespace media

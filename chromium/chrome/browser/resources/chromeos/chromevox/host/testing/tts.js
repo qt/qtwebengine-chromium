@@ -37,7 +37,9 @@ cvox.TestTts.prototype.sentinelText_ = '@@@STOP@@@';
  * @override
  */
 cvox.TestTts.prototype.speak = function(text, queueMode, opt_properties) {
-  this.utterances_.push({text: text, queueMode: queueMode});
+  this.utterances_.push({text: text,
+                         queueMode: queueMode,
+                         properties: opt_properties});
   if (opt_properties && opt_properties['endCallback'] != undefined) {
     var len = this.utterances_.length;
     // 'After' is a sentinel value in the tests that tells TTS to stop and
@@ -82,6 +84,39 @@ cvox.TestTts.prototype.getUtterancesAsString = function() {
 };
 
 /**
+ * Processes the utterances spoken the same way the speech queue does,
+ * as if they were all generated one after another, with no delay between
+ * them, and returns a list of strings that would be output.
+ *
+ * For example, if two strings were spoken with a queue mode of FLUSH,
+ * only the second string will be returned.
+ * @return {Array.<string>} A list of strings representing the speech output.
+ */
+cvox.TestTts.prototype.getSpeechQueueOutput = function() {
+  var queue = [];
+  for (var i = 0; i < this.utterances_.length; i++) {
+    var utterance = this.utterances_[i];
+    switch (utterance.queueMode) {
+      case cvox.AbstractTts.QUEUE_MODE_FLUSH:
+        queue = [];
+        break;
+      case cvox.AbstractTts.QUEUE_MODE_QUEUE:
+        break;
+      case cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH:
+        queue = queue.filter(function(u) {
+          return (utterance.properties && utterance.properties.category) &&
+                 (!u.properties ||
+                      u.properties.category != utterance.properties.category);
+        });
+        break;
+    }
+    queue.push(utterance);
+  }
+
+  return queue.map(function(u) { return u.text; });
+};
+
+/**
  * Return a list of strings of what was spoken by tts.speak().
  * @return {Array.<string>} A list of all utterances spoken since
  *     initialization or the last call to clearUtterances.
@@ -96,7 +131,7 @@ cvox.TestTts.prototype.getUtteranceList = function() {
 
 /**
  * Return a list of strings of what was spoken by tts.speak().
- * @return {Array.<{text: string, queueMode: number}>}
+ * @return {Array.<{text: string, queueMode: cvox.QueueMode}>}
  *     A list of info about all utterances spoken since
  *     initialization or the last call to clearUtterances.
  */

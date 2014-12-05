@@ -27,6 +27,8 @@ namespace content {
 class VideoTrackAdapter
     : public base::RefCountedThreadSafe<VideoTrackAdapter> {
  public:
+  typedef base::Callback<void(bool mute_state)> OnMutedCallback;
+
   explicit VideoTrackAdapter(
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
 
@@ -34,11 +36,14 @@ class VideoTrackAdapter
   // a resolution within the boundaries of the arguments.
   // Must be called on the main render thread. |frame_callback| is guaranteed to
   // be released on the main render thread.
+  // |source_frame_rate| is used to calculate a prudent interval to check for
+  // passing frames and inform of the result via |on_muted_state_callback|.
   void AddTrack(const MediaStreamVideoTrack* track,
                 VideoCaptureDeliverFrameCB frame_callback,
                 int max_width, int max_height,
                 double min_aspect_ratio,
-                double max_aspect_ratio);
+                double max_aspect_ratio,
+                double max_frame_rate);
   void RemoveTrack(const MediaStreamVideoTrack* track);
 
   // Delivers |frame| to all tracks that have registered a callback.
@@ -53,6 +58,13 @@ class VideoTrackAdapter
     return io_message_loop_;
   }
 
+  // Start monitor that frames are delivered to this object. I.E, that
+  // |DeliverFrameOnIO| is called with a frame rate of |source_frame_rate|.
+  // |on_muted_callback| is triggered on the main render thread.
+  void StartFrameMonitoring(double source_frame_rate,
+                            const OnMutedCallback& on_muted_callback);
+  void StopFrameMonitoring();
+
  private:
   virtual ~VideoTrackAdapter();
   friend class base::RefCountedThreadSafe<VideoTrackAdapter>;
@@ -60,10 +72,21 @@ class VideoTrackAdapter
   void AddTrackOnIO(
       const MediaStreamVideoTrack* track,
       VideoCaptureDeliverFrameCB frame_callback,
-      int max_width, int max_height,
+      const gfx::Size& max_frame_size,
       double min_aspect_ratio,
-      double max_aspect_ratio);
+      double max_aspect_ratio,
+      double max_frame_rate);
   void RemoveTrackOnIO(const MediaStreamVideoTrack* track);
+
+  void StartFrameMonitoringOnIO(
+    const OnMutedCallback& on_muted_state_callback,
+    double source_frame_rate);
+  void StopFrameMonitoringOnIO();
+
+  // Compare |frame_counter_snapshot| with the current |frame_counter_|, and
+  // inform of the situation (muted, not muted) via |set_muted_state_callback|.
+  void CheckFramesReceivedOnIO(const OnMutedCallback& set_muted_state_callback,
+                               uint64 old_frame_counter_snapshot);
 
   // |thread_checker_| is bound to the main render thread.
   base::ThreadChecker thread_checker_;
@@ -81,6 +104,20 @@ class VideoTrackAdapter
   typedef std::vector<scoped_refptr<VideoFrameResolutionAdapter> >
       FrameAdapters;
   FrameAdapters adapters_;
+
+  // Set to true if frame monitoring has been started. It is only accessed on
+  // the IO-thread.
+  bool monitoring_frame_rate_;
+
+  // Keeps track of it frames have been received. It is only accessed on the
+  // IO-thread.
+  bool muted_state_;
+
+  // Running frame counter, accessed on the IO-thread.
+  uint64 frame_counter_;
+
+  // Frame rate configured on the video source, accessed on the IO-thread.
+  float source_frame_rate_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoTrackAdapter);
 };

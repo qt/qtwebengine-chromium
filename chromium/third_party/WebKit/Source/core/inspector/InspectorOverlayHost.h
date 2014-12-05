@@ -29,24 +29,26 @@
 #ifndef InspectorOverlayHost_h
 #define InspectorOverlayHost_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class InspectorOverlayHost : public RefCounted<InspectorOverlayHost>, public ScriptWrappable {
+class InspectorOverlayHost final : public RefCountedWillBeGarbageCollectedFinalized<InspectorOverlayHost>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<InspectorOverlayHost> create()
+    static PassRefPtrWillBeRawPtr<InspectorOverlayHost> create()
     {
-        return adoptRef(new InspectorOverlayHost());
+        return adoptRefWillBeNoop(new InspectorOverlayHost());
     }
     ~InspectorOverlayHost();
+    void trace(Visitor*);
 
     void resume();
     void stepOver();
 
-    class Listener {
+    class Listener : public WillBeGarbageCollectedMixin {
     public:
         virtual ~Listener() { }
         virtual void overlayResumed() = 0;
@@ -57,9 +59,9 @@ public:
 private:
     InspectorOverlayHost();
 
-    Listener* m_listener;
+    RawPtrWillBeMember<Listener> m_listener;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // !defined(InspectorOverlayHost_h)
+#endif // InspectorOverlayHost_h

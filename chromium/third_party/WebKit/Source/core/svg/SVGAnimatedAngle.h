@@ -34,11 +34,11 @@
 #include "core/svg/SVGAngleTearOff.h"
 #include "core/svg/SVGAnimatedEnumeration.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGMarkerElement;
 
-class SVGAnimatedAngle FINAL : public SVGAnimatedProperty<SVGAngle> {
+class SVGAnimatedAngle final : public SVGAnimatedProperty<SVGAngle> {
 public:
     static PassRefPtr<SVGAnimatedAngle> create(SVGMarkerElement* contextElement)
     {
@@ -51,10 +51,10 @@ public:
 
     // SVGAnimatedPropertyBase:
 
-    virtual void synchronizeAttribute() OVERRIDE;
+    virtual void synchronizeAttribute() override;
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) OVERRIDE;
-    virtual void animationEnded() OVERRIDE;
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) override;
+    virtual void animationEnded() override;
 
 protected:
     SVGAnimatedAngle(SVGMarkerElement* contextElement);
@@ -63,6 +63,6 @@ private:
     RefPtr<SVGAnimatedEnumeration<SVGMarkerOrientType> > m_orientType;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedAngle_h

@@ -8,23 +8,19 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
+#include "base/i18n/char_iterator.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/browser/accessibility/browser_accessibility_android.h"
 #include "content/common/accessibility_messages.h"
 #include "jni/BrowserAccessibilityManager_jni.h"
+#include "ui/accessibility/ax_text_utils.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ScopedJavaLocalRef;
 
 namespace {
-
-// These are enums from android.view.accessibility.AccessibilityEvent in Java:
-enum {
-  ANDROID_ACCESSIBILITY_EVENT_TYPE_VIEW_TEXT_CHANGED = 16,
-  ANDROID_ACCESSIBILITY_EVENT_TYPE_VIEW_TEXT_SELECTION_CHANGED = 8192
-};
 
 enum AndroidHtmlElementType {
   HTML_ELEMENT_TYPE_SECTION,
@@ -74,8 +70,9 @@ BrowserAccessibilityManagerAndroid::BrowserAccessibilityManagerAndroid(
     const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
-    : BrowserAccessibilityManager(initial_tree, delegate, factory) {
+    : BrowserAccessibilityManager(delegate, factory) {
   SetContentViewCore(content_view_core);
+  Initialize(initial_tree);
 }
 
 BrowserAccessibilityManagerAndroid::~BrowserAccessibilityManagerAndroid() {
@@ -119,7 +116,13 @@ void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
   if (obj.is_null())
     return;
 
+  BrowserAccessibilityAndroid* android_node =
+      static_cast<BrowserAccessibilityAndroid*>(node);
+
   if (event_type == ui::AX_EVENT_HIDE)
+    return;
+
+  if (event_type == ui::AX_EVENT_TREE_CHANGED)
     return;
 
   if (event_type == ui::AX_EVENT_HOVER) {
@@ -160,15 +163,13 @@ void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
     case ui::AX_EVENT_SHOW: {
       // This event is fired when an object appears in a live region.
       // Speak its text.
-      BrowserAccessibilityAndroid* android_node =
-          static_cast<BrowserAccessibilityAndroid*>(node);
       Java_BrowserAccessibilityManager_announceLiveRegionText(
           env, obj.obj(),
           base::android::ConvertUTF16ToJavaString(
               env, android_node->GetText()).obj());
       break;
     }
-    case ui::AX_EVENT_SELECTED_TEXT_CHANGED:
+    case ui::AX_EVENT_TEXT_SELECTION_CHANGED:
       Java_BrowserAccessibilityManager_handleTextSelectionChanged(
           env, obj.obj(), node->GetId());
       break;
@@ -177,6 +178,9 @@ void BrowserAccessibilityManagerAndroid::NotifyAccessibilityEvent(
     case ui::AX_EVENT_VALUE_CHANGED:
       if (node->IsEditableText()) {
         Java_BrowserAccessibilityManager_handleEditableTextChanged(
+            env, obj.obj(), node->GetId());
+      } else if (android_node->IsSlider()) {
+        Java_BrowserAccessibilityManager_handleSliderChanged(
             env, obj.obj(), node->GetId());
       }
       break;
@@ -202,6 +206,36 @@ void BrowserAccessibilityManagerAndroid::HitTest(
     delegate()->AccessibilityHitTest(gfx::Point(x, y));
 }
 
+jboolean BrowserAccessibilityManagerAndroid::IsEditableText(
+    JNIEnv* env, jobject obj, jint id) {
+  BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
+      GetFromID(id));
+  if (!node)
+    return false;
+
+  return node->IsEditableText();
+}
+
+jint BrowserAccessibilityManagerAndroid::GetEditableTextSelectionStart(
+    JNIEnv* env, jobject obj, jint id) {
+  BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
+      GetFromID(id));
+  if (!node)
+    return false;
+
+  return node->GetIntAttribute(ui::AX_ATTR_TEXT_SEL_START);
+}
+
+jint BrowserAccessibilityManagerAndroid::GetEditableTextSelectionEnd(
+    JNIEnv* env, jobject obj, jint id) {
+  BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
+      GetFromID(id));
+  if (!node)
+    return false;
+
+  return node->GetIntAttribute(ui::AX_ATTR_TEXT_SEL_END);
+}
+
 jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
     JNIEnv* env, jobject obj, jobject info, jint id) {
   BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
@@ -220,9 +254,12 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoBooleanAttributes(
       env, obj, info,
       id,
+      node->CanScrollForward(),
+      node->CanScrollBackward(),
       node->IsCheckable(),
       node->IsChecked(),
       node->IsClickable(),
+      node->IsEditableText(),
       node->IsEnabled(),
       node->IsFocusable(),
       node->IsFocused(),
@@ -233,10 +270,13 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoClassName(
       env, obj, info,
       base::android::ConvertUTF8ToJavaString(env, node->GetClassName()).obj());
-  Java_BrowserAccessibilityManager_setAccessibilityNodeInfoContentDescription(
-      env, obj, info,
-      base::android::ConvertUTF16ToJavaString(env, node->GetText()).obj(),
-      node->IsLink());
+  if (!node->IsPassword() ||
+      Java_BrowserAccessibilityManager_shouldExposePasswordText(env, obj)) {
+    Java_BrowserAccessibilityManager_setAccessibilityNodeInfoContentDescription(
+        env, obj, info,
+        base::android::ConvertUTF16ToJavaString(env, node->GetText()).obj(),
+        node->IsLink());
+  }
 
   gfx::Rect absolute_rect = node->GetLocalBoundsRect();
   gfx::Rect parent_relative_rect = absolute_rect;
@@ -247,6 +287,7 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityNodeInfo(
   bool is_root = node->GetParent() == NULL;
   Java_BrowserAccessibilityManager_setAccessibilityNodeInfoLocation(
       env, obj, info,
+      id,
       absolute_rect.x(), absolute_rect.y(),
       parent_relative_rect.x(), parent_relative_rect.y(),
       absolute_rect.width(), absolute_rect.height(),
@@ -317,24 +358,37 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityEvent(
       node->GetMaxScrollY());
 
   switch (event_type) {
-    case ANDROID_ACCESSIBILITY_EVENT_TYPE_VIEW_TEXT_CHANGED:
+    case ANDROID_ACCESSIBILITY_EVENT_TEXT_CHANGED: {
+      base::string16 before_text, text;
+      if (!node->IsPassword() ||
+          Java_BrowserAccessibilityManager_shouldExposePasswordText(env, obj)) {
+        before_text = node->GetTextChangeBeforeText();
+        text = node->GetText();
+      }
       Java_BrowserAccessibilityManager_setAccessibilityEventTextChangedAttrs(
           env, obj, event,
           node->GetTextChangeFromIndex(),
           node->GetTextChangeAddedCount(),
           node->GetTextChangeRemovedCount(),
           base::android::ConvertUTF16ToJavaString(
-              env, node->GetTextChangeBeforeText()).obj(),
-          base::android::ConvertUTF16ToJavaString(env, node->GetText()).obj());
+              env, before_text).obj(),
+          base::android::ConvertUTF16ToJavaString(env, text).obj());
       break;
-    case ANDROID_ACCESSIBILITY_EVENT_TYPE_VIEW_TEXT_SELECTION_CHANGED:
+    }
+    case ANDROID_ACCESSIBILITY_EVENT_TEXT_SELECTION_CHANGED: {
+      base::string16 text;
+      if (!node->IsPassword() ||
+          Java_BrowserAccessibilityManager_shouldExposePasswordText(env, obj)) {
+        text = node->GetText();
+      }
       Java_BrowserAccessibilityManager_setAccessibilityEventSelectionAttrs(
           env, obj, event,
           node->GetSelectionStart(),
           node->GetSelectionEnd(),
           node->GetEditableTextLength(),
-          base::android::ConvertUTF16ToJavaString(env, node->GetText()).obj());
+          base::android::ConvertUTF16ToJavaString(env, text).obj());
       break;
+    }
     default:
       break;
   }
@@ -355,14 +409,17 @@ jboolean BrowserAccessibilityManagerAndroid::PopulateAccessibilityEvent(
         node->ColumnCount(),
         node->IsHierarchical());
   }
-  if (node->IsCollectionItem() || node->IsHeading()) {
+  if (node->IsHeading()) {
+    Java_BrowserAccessibilityManager_setAccessibilityEventHeadingFlag(
+        env, obj, event, true);
+  }
+  if (node->IsCollectionItem()) {
     Java_BrowserAccessibilityManager_setAccessibilityEventCollectionItemInfo(
         env, obj, event,
         node->RowIndex(),
         node->RowSpan(),
         node->ColumnIndex(),
-        node->ColumnSpan(),
-        node->IsHeading());
+        node->ColumnSpan());
   }
   if (node->IsRangeType()) {
     Java_BrowserAccessibilityManager_setAccessibilityEventRangeInfo(
@@ -401,6 +458,54 @@ void BrowserAccessibilityManagerAndroid::ScrollToMakeNodeVisible(
     ScrollToMakeVisible(*node, gfx::Rect(node->GetLocation().size()));
 }
 
+void BrowserAccessibilityManagerAndroid::SetTextFieldValue(
+    JNIEnv* env, jobject obj, jint id, jstring value) {
+  BrowserAccessibility* node = GetFromID(id);
+  if (node) {
+    BrowserAccessibilityManager::SetValue(
+        *node, base::android::ConvertJavaStringToUTF16(env, value));
+  }
+}
+
+void BrowserAccessibilityManagerAndroid::SetSelection(
+    JNIEnv* env, jobject obj, jint id, jint start, jint end) {
+  BrowserAccessibility* node = GetFromID(id);
+  if (node)
+    SetTextSelection(*node, start, end);
+}
+
+jboolean BrowserAccessibilityManagerAndroid::AdjustSlider(
+    JNIEnv* env, jobject obj, jint id, jboolean increment) {
+  BrowserAccessibility* node = GetFromID(id);
+  if (!node)
+    return false;
+
+  BrowserAccessibilityAndroid* android_node =
+      static_cast<BrowserAccessibilityAndroid*>(node);
+
+  if (!android_node->IsSlider() || !android_node->IsEnabled())
+    return false;
+
+  float value = node->GetFloatAttribute(ui::AX_ATTR_VALUE_FOR_RANGE);
+  float min = node->GetFloatAttribute(ui::AX_ATTR_MIN_VALUE_FOR_RANGE);
+  float max = node->GetFloatAttribute(ui::AX_ATTR_MAX_VALUE_FOR_RANGE);
+  if (max <= min)
+    return false;
+
+  // To behave similarly to an Android SeekBar, move by an increment of
+  // approximately 20%.
+  float original_value = value;
+  float delta = (max - min) / 5.0f;
+  value += (increment ? delta : -delta);
+  value = std::max(std::min(value, max), min);
+  if (value != original_value) {
+    BrowserAccessibilityManager::SetValue(
+        *node, base::UTF8ToUTF16(base::DoubleToString(value)));
+    return true;
+  }
+  return false;
+}
+
 void BrowserAccessibilityManagerAndroid::HandleHoverEvent(
     BrowserAccessibility* node) {
   JNIEnv* env = AttachCurrentThread();
@@ -410,7 +515,7 @@ void BrowserAccessibilityManagerAndroid::HandleHoverEvent(
 
   BrowserAccessibilityAndroid* ancestor =
       static_cast<BrowserAccessibilityAndroid*>(node->GetParent());
-  while (ancestor) {
+  while (ancestor && ancestor != GetRoot()) {
     if (ancestor->PlatformIsLeaf() ||
         (ancestor->IsFocusable() && !ancestor->HasFocusableChild())) {
       node = ancestor;
@@ -479,6 +584,144 @@ jint BrowserAccessibilityManagerAndroid::FindElementType(
   }
 
   return 0;
+}
+
+jboolean BrowserAccessibilityManagerAndroid::NextAtGranularity(
+    JNIEnv* env, jobject obj, jint granularity, jboolean extend_selection,
+    jint id, jint cursor_index) {
+  BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
+      GetFromID(id));
+  if (!node)
+    return false;
+
+  jint start_index = -1;
+  int end_index = -1;
+  if (NextAtGranularity(granularity, cursor_index, node,
+                        &start_index, &end_index)) {
+    base::string16 text;
+    if (!node->IsPassword() ||
+        Java_BrowserAccessibilityManager_shouldExposePasswordText(env, obj)) {
+      text = node->GetText();
+    }
+    Java_BrowserAccessibilityManager_finishGranularityMove(
+        env, obj, base::android::ConvertUTF16ToJavaString(
+            env, text).obj(),
+        extend_selection, start_index, end_index, true);
+    return true;
+  }
+  return false;
+}
+
+jboolean BrowserAccessibilityManagerAndroid::PreviousAtGranularity(
+    JNIEnv* env, jobject obj, jint granularity, jboolean extend_selection,
+    jint id, jint cursor_index) {
+  BrowserAccessibilityAndroid* node = static_cast<BrowserAccessibilityAndroid*>(
+      GetFromID(id));
+  if (!node)
+    return false;
+
+  jint start_index = -1;
+  int end_index = -1;
+  if (PreviousAtGranularity(granularity, cursor_index, node,
+                            &start_index, &end_index)) {
+    Java_BrowserAccessibilityManager_finishGranularityMove(
+        env, obj, base::android::ConvertUTF16ToJavaString(
+            env, node->GetText()).obj(),
+        extend_selection, start_index, end_index, false);
+    return true;
+  }
+  return false;
+}
+
+bool BrowserAccessibilityManagerAndroid::NextAtGranularity(
+    int32 granularity, int32 cursor_index,
+    BrowserAccessibilityAndroid* node, int32* start_index, int32* end_index) {
+  switch (granularity) {
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_CHARACTER: {
+      base::string16 text = node->GetText();
+      if (cursor_index >= static_cast<int32>(text.length()))
+        return false;
+      base::i18n::UTF16CharIterator iter(text.data(), text.size());
+      while (!iter.end() && iter.array_pos() <= cursor_index)
+        iter.Advance();
+      *start_index = iter.array_pos();
+      *end_index = iter.array_pos();
+      break;
+    }
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_WORD:
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_LINE: {
+      std::vector<int32> starts;
+      std::vector<int32> ends;
+      node->GetGranularityBoundaries(granularity, &starts, &ends, 0);
+      if (starts.size() == 0)
+        return false;
+
+      size_t index = 0;
+      while (index < starts.size() - 1 && starts[index] < cursor_index)
+        index++;
+
+      if (starts[index] < cursor_index)
+        return false;
+
+      *start_index = starts[index];
+      *end_index = ends[index];
+      break;
+    }
+    default:
+      NOTREACHED();
+  }
+
+  return true;
+}
+
+bool BrowserAccessibilityManagerAndroid::PreviousAtGranularity(
+    int32 granularity, int32 cursor_index,
+    BrowserAccessibilityAndroid* node, int32* start_index, int32* end_index) {
+  switch (granularity) {
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_CHARACTER: {
+      if (cursor_index <= 0)
+        return false;
+      base::string16 text = node->GetText();
+      base::i18n::UTF16CharIterator iter(text.data(), text.size());
+      int previous_index = 0;
+      while (!iter.end() && iter.array_pos() < cursor_index) {
+        previous_index = iter.array_pos();
+        iter.Advance();
+      }
+      *start_index = previous_index;
+      *end_index = previous_index;
+      break;
+    }
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_WORD:
+    case ANDROID_ACCESSIBILITY_NODE_INFO_MOVEMENT_GRANULARITY_LINE: {
+      std::vector<int32> starts;
+      std::vector<int32> ends;
+      node->GetGranularityBoundaries(granularity, &starts, &ends, 0);
+      if (starts.size() == 0)
+        return false;
+
+      size_t index = starts.size() - 1;
+      while (index > 0 && starts[index] >= cursor_index)
+        index--;
+
+      if (starts[index] >= cursor_index)
+        return false;
+
+      *start_index = starts[index];
+      *end_index = ends[index];
+      break;
+    }
+    default:
+      NOTREACHED();
+  }
+
+  return true;
+}
+
+void BrowserAccessibilityManagerAndroid::SetAccessibilityFocus(
+    JNIEnv* env, jobject obj, jint id) {
+  if (delegate_)
+    delegate_->AccessibilitySetAccessibilityFocus(id);
 }
 
 void BrowserAccessibilityManagerAndroid::OnRootChanged(ui::AXNode* new_root) {

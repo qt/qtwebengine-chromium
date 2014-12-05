@@ -5,30 +5,30 @@
 #include "config.h"
 #include "InitModules.h"
 
-#include "EventModulesFactory.h"
-#include "EventModulesNames.h"
-#include "EventTargetModulesNames.h"
-#include "EventTypeNames.h"
+#include "bindings/modules/v8/ModuleBindingsInitializer.h"
+#include "core/EventTypeNames.h"
 #include "core/dom/Document.h"
+#include "modules/EventModulesFactory.h"
+#include "modules/EventModulesNames.h"
+#include "modules/EventTargetModulesNames.h"
+#include "modules/IndexedDBNames.h"
 
-namespace WebCore {
+namespace blink {
 
-void ModulesInitializer::initEventNames()
+void ModulesInitializer::init()
 {
-    EventNames::init();
+    ASSERT(!isInitialized());
+
+    // Strings must be initialized before calling CoreInitializer::init().
     EventNames::initModules();
-}
-
-void ModulesInitializer::initEventTargetNames()
-{
-    EventTargetNames::init();
     EventTargetNames::initModules();
-}
-
-void ModulesInitializer::registerEventFactory()
-{
-    CoreInitializer::registerEventFactory();
     Document::registerEventFactory(EventModulesFactory::create());
+    ModuleBindingsInitializer::init();
+    IndexedDBNames::init();
+
+    CoreInitializer::init();
+
+    ASSERT(isInitialized());
 }
 
-} // namespace WebCore
+} // namespace blink

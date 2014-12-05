@@ -29,7 +29,7 @@
 #include "core/rendering/RenderText.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 // This class is used to RenderInline subtrees, stepping by character within the
 // text children. InlineIterator will use bidiNext to find the next RenderText
@@ -143,7 +143,7 @@ static inline void notifyObserverEnteredObject(Observer* observer, RenderObject*
     }
     if (isIsolated(unicodeBidi)) {
         // Make sure that explicit embeddings are committed before we enter the isolated content.
-        observer->commitExplicitEmbedding();
+        observer->commitExplicitEmbedding(observer->runs());
         observer->enterIsolate();
         // Embedding/Override characters implied by dir= will be handled when
         // we process the isolated span, not when laying out the "parent" run.
@@ -283,7 +283,7 @@ static inline RenderObject* bidiNextIncludingEmptyInlines(RenderObject* root, Re
     return bidiNextShared(root, current, observer, IncludeEmptyInlines, endOfInlinePtr);
 }
 
-static inline RenderObject* bidiFirstSkippingEmptyInlines(RenderBlockFlow* root, InlineBidiResolver* resolver = 0)
+static inline RenderObject* bidiFirstSkippingEmptyInlines(RenderBlockFlow* root, BidiRunList<BidiRun>& runs, InlineBidiResolver* resolver = 0)
 {
     RenderObject* o = root->firstChild();
     if (!o)
@@ -296,7 +296,7 @@ static inline RenderObject* bidiFirstSkippingEmptyInlines(RenderBlockFlow* root,
         else {
             // Never skip empty inlines.
             if (resolver)
-                resolver->commitExplicitEmbedding();
+                resolver->commitExplicitEmbedding(runs);
             return o;
         }
     }
@@ -306,7 +306,7 @@ static inline RenderObject* bidiFirstSkippingEmptyInlines(RenderBlockFlow* root,
         o = bidiNextSkippingEmptyInlines(root, o, resolver);
 
     if (resolver)
-        resolver->commitExplicitEmbedding();
+        resolver->commitExplicitEmbedding(runs);
     return o;
 }
 
@@ -493,22 +493,22 @@ inline int InlineBidiResolver::findFirstTrailingSpaceAtRun(BidiRun* run)
 }
 
 template <>
-inline BidiRun* InlineBidiResolver::addTrailingRun(int start, int stop, BidiRun* run, BidiContext* context, TextDirection direction)
+inline BidiRun* InlineBidiResolver::addTrailingRun(BidiRunList<BidiRun>& runs, int start, int stop, BidiRun* run, BidiContext* context, TextDirection direction) const
 {
     BidiRun* newTrailingRun = new BidiRun(start, stop, run->m_object, context, WTF::Unicode::OtherNeutral);
     if (direction == LTR)
-        m_runs.addRun(newTrailingRun);
+        runs.addRun(newTrailingRun);
     else
-        m_runs.prependRun(newTrailingRun);
+        runs.prependRun(newTrailingRun);
 
     return newTrailingRun;
 }
 
 template <>
-inline bool InlineBidiResolver::needsToApplyL1Rule()
+inline bool InlineBidiResolver::needsToApplyL1Rule(BidiRunList<BidiRun>& runs)
 {
-    if (!m_runs.logicallyLastRun()->m_object->style()->breakOnlyAfterWhiteSpace()
-        || !m_runs.logicallyLastRun()->m_object->style()->autoWrap())
+    if (!runs.logicallyLastRun()->m_object->style()->breakOnlyAfterWhiteSpace()
+        || !runs.logicallyLastRun()->m_object->style()->autoWrap())
         return false;
     return true;
 }
@@ -571,9 +571,10 @@ enum AppendRunBehavior {
 
 class IsolateTracker {
 public:
-    explicit IsolateTracker(unsigned nestedIsolateCount)
+    explicit IsolateTracker(BidiRunList<BidiRun>& runs, unsigned nestedIsolateCount)
         : m_nestedIsolateCount(nestedIsolateCount)
         , m_haveAddedFakeRunForRootIsolate(false)
+        , m_runs(runs)
     {
     }
 
@@ -594,7 +595,8 @@ public:
 
     // We don't care if we encounter bidi directional overrides.
     void embed(WTF::Unicode::Direction, BidiEmbeddingSource) { }
-    void commitExplicitEmbedding() { }
+    void commitExplicitEmbedding(BidiRunList<BidiRun>&) { }
+    BidiRunList<BidiRun>& runs() { return m_runs; }
 
     void addFakeRunIfNecessary(RenderObject* obj, unsigned pos, unsigned end, InlineBidiResolver& resolver)
     {
@@ -617,6 +619,7 @@ private:
     unsigned m_nestedIsolateCount;
     bool m_haveAddedFakeRunForRootIsolate;
     LineMidpointState m_midpointStateForRootIsolate;
+    BidiRunList<BidiRun>& m_runs;
 };
 
 static void inline appendRunObjectIfNecessary(RenderObject* obj, unsigned start, unsigned end, InlineBidiResolver& resolver, AppendRunBehavior behavior, IsolateTracker& tracker)
@@ -676,13 +679,13 @@ static inline void addFakeRunIfNecessary(RenderObject* obj, unsigned start, unsi
 }
 
 template <>
-inline void InlineBidiResolver::appendRun()
+inline void InlineBidiResolver::appendRun(BidiRunList<BidiRun>& runs)
 {
     if (!m_emptyRun && !m_eor.atEnd() && !m_reachedEndOfLine) {
         // Keep track of when we enter/leave "unicode-bidi: isolate" inlines.
         // Initialize our state depending on if we're starting in the middle of such an inline.
         // FIXME: Could this initialize from this->inIsolate() instead of walking up the render tree?
-        IsolateTracker isolateTracker(numberOfIsolateAncestors(m_sor));
+        IsolateTracker isolateTracker(runs, numberOfIsolateAncestors(m_sor));
         int start = m_sor.offset();
         RenderObject* obj = m_sor.object();
         while (obj && obj != m_eor.object() && obj != m_endOfRunAtEndOfLine.object()) {

@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2010 Google, Inc. All Rights Reserved.
- * Copyright (C) 2011 Apple Inc. All rights reserved.
+ * Copyright (C) 2011, 2014 Apple Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/html/parser/HTMLTreeBuilder.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/MathMLNames.h"
 #include "core/SVGNames.h"
@@ -49,7 +49,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -69,7 +69,7 @@ static TextPosition uninitializedPositionValue1()
 
 static inline bool isAllWhitespace(const String& string)
 {
-    return string.isAllSpecialCharacters<isHTMLSpace<UChar> >();
+    return string.isAllSpecialCharacters<isHTMLSpace<UChar>>();
 }
 
 static inline bool isAllWhitespaceOrReplacementCharacters(const String& string)
@@ -175,17 +175,17 @@ public:
 
     void skipLeadingWhitespace()
     {
-        skipLeading<isHTMLSpace<UChar> >();
+        skipLeading<isHTMLSpace<UChar>>();
     }
 
     String takeLeadingWhitespace()
     {
-        return takeLeading<isHTMLSpace<UChar> >();
+        return takeLeading<isHTMLSpace<UChar>>();
     }
 
     void skipLeadingNonWhitespace()
     {
-        skipLeading<isNotHTMLSpace<UChar> >();
+        skipLeading<isNotHTMLSpace<UChar>>();
     }
 
     String takeRemaining()
@@ -265,7 +265,7 @@ private:
 
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, HTMLDocument* document, ParserContentPolicy parserContentPolicy, bool, const HTMLParserOptions& options)
     : m_framesetOk(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isAttached(true)
 #endif
     , m_tree(document, parserContentPolicy)
@@ -282,7 +282,7 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, HTMLDocument* docum
 // minimize code duplication between these constructors.
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser, DocumentFragment* fragment, Element* contextElement, ParserContentPolicy parserContentPolicy, const HTMLParserOptions& options)
     : m_framesetOk(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isAttached(true)
 #endif
     , m_fragmentContext(fragment, contextElement)
@@ -324,7 +324,7 @@ void HTMLTreeBuilder::trace(Visitor* visitor)
 
 void HTMLTreeBuilder::detach()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // This call makes little sense in fragment mode, but for consistency
     // DocumentParser expects detach() to always be called before it's destroyed.
     m_isAttached = false;
@@ -402,7 +402,7 @@ void HTMLTreeBuilder::processToken(AtomicHTMLToken* token)
 
     // Any non-character token needs to cause us to flush any pending text immediately.
     // NOTE: flush() can cause any queued tasks to execute, possibly re-entering the parser.
-    m_tree.flush();
+    m_tree.flush(FlushAlways);
     m_shouldSkipLeadingNewline = false;
 
     switch (token->type()) {
@@ -508,7 +508,8 @@ void HTMLTreeBuilder::processCloseWhenNestedTag(AtomicHTMLToken* token)
 
 typedef HashMap<AtomicString, QualifiedName> PrefixedNameToQualifiedNameMap;
 
-static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, const QualifiedName* const* names, size_t length)
+template <typename TableQualifiedName>
+static void mapLoweredLocalNameToName(PrefixedNameToQualifiedNameMap* map, const TableQualifiedName* const* names, size_t length)
 {
     for (size_t i = 0; i < length; ++i) {
         const QualifiedName& name = *names[i];
@@ -524,7 +525,7 @@ static void adjustSVGTagNameCase(AtomicHTMLToken* token)
     static PrefixedNameToQualifiedNameMap* caseMap = 0;
     if (!caseMap) {
         caseMap = new PrefixedNameToQualifiedNameMap;
-        OwnPtr<const QualifiedName*[]> svgTags = SVGNames::getSVGTags();
+        OwnPtr<const SVGQualifiedName*[]> svgTags = SVGNames::getSVGTags();
         mapLoweredLocalNameToName(caseMap, svgTags.get(), SVGNames::SVGTagsCount);
     }
 
@@ -799,7 +800,8 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
             m_framesetOk = false;
         return;
     }
-    if (token->name() == paramTag
+    if ((RuntimeEnabledFeatures::contextMenuEnabled() && token->name() == menuitemTag)
+        || token->name() == paramTag
         || token->name() == sourceTag
         || token->name() == trackTag) {
         m_tree.insertSelfClosingHTMLElement(token);
@@ -865,10 +867,19 @@ void HTMLTreeBuilder::processStartTagForInBody(AtomicHTMLToken* token)
         m_tree.insertHTMLElement(token);
         return;
     }
-    if (token->name() == rpTag || token->name() == rtTag) {
+    if (token->name() == rbTag || token->name() == rtcTag) {
         if (m_tree.openElements()->inScope(rubyTag.localName())) {
             m_tree.generateImpliedEndTags();
             if (!m_tree.currentStackItem()->hasTagName(rubyTag))
+                parseError(token);
+        }
+        m_tree.insertHTMLElement(token);
+        return;
+    }
+    if (token->name() == rtTag || token->name() == rpTag) {
+        if (m_tree.openElements()->inScope(rubyTag.localName())) {
+            m_tree.generateImpliedEndTagsWithExclusion(rtcTag.localName());
+            if (!m_tree.currentStackItem()->hasTagName(rubyTag) && !m_tree.currentStackItem()->hasTagName(rtcTag))
                 parseError(token);
         }
         m_tree.insertHTMLElement(token);
@@ -2102,7 +2113,6 @@ void HTMLTreeBuilder::processEndTag(AtomicHTMLToken* token)
             if (m_parser->tokenizer()) {
                 // We must set the tokenizer's state to
                 // DataState explicitly if the tokenizer didn't have a chance to.
-                ASSERT(m_parser->tokenizer()->state() == HTMLTokenizer::DataState || m_options.useThreading);
                 m_parser->tokenizer()->setState(HTMLTokenizer::DataState);
             }
             return;
@@ -2678,7 +2688,7 @@ void HTMLTreeBuilder::processTokenInForeignContent(AtomicHTMLToken* token)
         return;
     }
 
-    m_tree.flush();
+    m_tree.flush(FlushAlways);
     HTMLStackItem* adjustedCurrentNode = adjustedCurrentStackItem();
 
     switch (token->type()) {
@@ -2800,4 +2810,4 @@ void HTMLTreeBuilder::parseError(AtomicHTMLToken*)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

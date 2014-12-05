@@ -20,11 +20,10 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
-#include <wincrypt.h>
+#include "crypto/wincrypt_shim.h"
 #elif defined(OS_MACOSX)
 #include <CoreFoundation/CFArray.h>
 #include <Security/SecBase.h>
-
 #elif defined(USE_OPENSSL_CERTS)
 // Forward declaration; real one in <x509.h>
 typedef struct x509_st X509;
@@ -389,12 +388,44 @@ class NET_EXPORT X509Certificate
 
   // Calculates the SHA-1 fingerprint of the certificate.  Returns an empty
   // (all zero) fingerprint on failure.
+  //
+  // For calculating fingerprints, prefer SHA-1 for performance when indexing,
+  // but callers should use IsSameOSCert() before assuming two certificates are
+  // the same.
   static SHA1HashValue CalculateFingerprint(OSCertHandle cert_handle);
+
+  // Calculates the SHA-256 fingerprint of the certificate.  Returns an empty
+  // (all zero) fingerprint on failure.
+  static SHA256HashValue CalculateFingerprint256(OSCertHandle cert_handle);
 
   // Calculates the SHA-1 fingerprint of the intermediate CA certificates.
   // Returns an empty (all zero) fingerprint on failure.
+  //
+  // See SHA-1 caveat on CalculateFingerprint().
   static SHA1HashValue CalculateCAFingerprint(
       const OSCertHandles& intermediates);
+
+  // Calculates the SHA-256 fingerprint of the intermediate CA certificates.
+  // Returns an empty (all zero) fingerprint on failure.
+  //
+  // As part of the cross-platform implementation of this function, it currently
+  // copies the certificate bytes into local variables which makes it
+  // potentially slower than implementing it directly for each platform. For
+  // now, the expected consumers are not performance critical, but if
+  // performance is a concern going forward, it may warrant implementing this on
+  // a per-platform basis.
+  static SHA256HashValue CalculateCAFingerprint256(
+      const OSCertHandles& intermediates);
+
+  // Calculates the SHA-256 fingerprint for the complete chain, including the
+  // leaf certificate and all intermediate CA certificates. Returns an empty
+  // (all zero) fingerprint on failure.
+  static SHA256HashValue CalculateChainFingerprint256(
+      OSCertHandle leaf,
+      const OSCertHandles& intermediates);
+
+  // Returns true if the certificate is self-signed.
+  static bool IsSelfSigned(OSCertHandle cert_handle);
 
  private:
   friend class base::RefCountedThreadSafe<X509Certificate>;

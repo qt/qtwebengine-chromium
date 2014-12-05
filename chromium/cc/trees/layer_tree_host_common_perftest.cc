@@ -6,14 +6,20 @@
 
 #include <sstream>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "cc/base/scoped_ptr_deque.h"
+#include "cc/base/scoped_ptr_vector.h"
 #include "cc/debug/lap_timer.h"
 #include "cc/layers/layer.h"
+#include "cc/output/bsp_tree.h"
+#include "cc/quads/draw_polygon.h"
+#include "cc/quads/draw_quad.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/fake_layer_tree_host_client.h"
 #include "cc/test/layer_tree_json_parser.h"
@@ -44,7 +50,7 @@ class LayerTreeHostCommonPerfTest : public LayerTreeTest {
     ASSERT_TRUE(base::ReadFileToString(json_file, &json_));
   }
 
-  virtual void SetupTree() OVERRIDE {
+  void SetupTree() override {
     gfx::Size viewport = gfx::Size(720, 1038);
     layer_tree_host()->SetViewportSize(viewport);
     scoped_refptr<Layer> root =
@@ -55,7 +61,7 @@ class LayerTreeHostCommonPerfTest : public LayerTreeTest {
 
   void SetTestName(const std::string& name) { test_name_ = name; }
 
-  virtual void AfterTest() OVERRIDE {
+  void AfterTest() override {
     CHECK(!test_name_.empty()) << "Must SetTestName() before TearDown().";
     perf_test::PrintResult("calc_draw_props_time",
                            "",
@@ -78,7 +84,7 @@ class CalcDrawPropsMainTest : public LayerTreeHostCommonPerfTest {
     RunTest(false, false, false);
   }
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     timer_.Reset();
 
     do {
@@ -115,11 +121,9 @@ class CalcDrawPropsImplTest : public LayerTreeHostCommonPerfTest {
     RunTestWithImplSidePainting();
   }
 
-  virtual void BeginTest() OVERRIDE {
-    PostSetNeedsCommitToMainThread();
-  }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
     timer_.Reset();
     LayerTreeImpl* active_tree = host_impl->active_tree();
 
@@ -163,9 +167,9 @@ class LayerSorterMainTest : public CalcDrawPropsImplTest {
  public:
   void RunSortLayers() { RunTest(false, false, false); }
 
-  virtual void BeginTest() OVERRIDE { PostSetNeedsCommitToMainThread(); }
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
     LayerTreeImpl* active_tree = host_impl->active_tree();
     // First build the tree and then we'll start running tests on layersorter
     // itself
@@ -197,7 +201,7 @@ class LayerSorterMainTest : public CalcDrawPropsImplTest {
       list->push_back(layer);
     }
 
-    for (unsigned int i = 0; i < layer->children().size(); i++) {
+    for (size_t i = 0; i < layer->children().size(); i++) {
       BuildLayerImplList(layer->children()[i], list);
     }
   }
@@ -205,6 +209,61 @@ class LayerSorterMainTest : public CalcDrawPropsImplTest {
  private:
   LayerImplList base_list_;
   LayerSorter layer_sorter_;
+};
+
+class BspTreePerfTest : public LayerSorterMainTest {
+ public:
+  void RunSortLayers() { RunTest(false, false, false); }
+
+  void SetNumberOfDuplicates(int num_duplicates) {
+    num_duplicates_ = num_duplicates;
+  }
+
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void DrawLayersOnThread(LayerTreeHostImpl* host_impl) override {
+    LayerTreeImpl* active_tree = host_impl->active_tree();
+    // First build the tree and then we'll start running tests on layersorter
+    // itself
+    bool can_render_to_separate_surface = true;
+    int max_texture_size = 8096;
+    DoCalcDrawPropertiesImpl(can_render_to_separate_surface,
+                             max_texture_size,
+                             active_tree,
+                             host_impl);
+
+    LayerImplList base_list;
+    BuildLayerImplList(active_tree->root_layer(), &base_list);
+
+    int polygon_counter = 0;
+    ScopedPtrVector<DrawPolygon> polygon_list;
+    for (LayerImplList::iterator it = base_list.begin(); it != base_list.end();
+         ++it) {
+      DrawPolygon* draw_polygon =
+          new DrawPolygon(NULL,
+                          gfx::RectF((*it)->content_bounds()),
+                          (*it)->draw_transform(),
+                          polygon_counter++);
+      polygon_list.push_back(scoped_ptr<DrawPolygon>(draw_polygon));
+    }
+
+    timer_.Reset();
+    do {
+      ScopedPtrDeque<DrawPolygon> test_list;
+      for (int i = 0; i < num_duplicates_; i++) {
+        for (size_t i = 0; i < polygon_list.size(); i++) {
+          test_list.push_back(polygon_list[i]->CreateCopy());
+        }
+      }
+      BspTree bsp_tree(&test_list);
+      timer_.NextLap();
+    } while (!timer_.HasTimeLimitExpired());
+
+    EndTest();
+  }
+
+ private:
+  int num_duplicates_;
 };
 
 TEST_F(CalcDrawPropsMainTest, TenTen) {
@@ -264,6 +323,34 @@ TEST_F(LayerSorterMainTest, LayerSorterCubes) {
 TEST_F(LayerSorterMainTest, LayerSorterRubik) {
   SetTestName("layer_sort_rubik");
   ReadTestFile("layer_sort_rubik");
+  RunSortLayers();
+}
+
+TEST_F(BspTreePerfTest, BspTreeCubes) {
+  SetTestName("bsp_tree_cubes");
+  SetNumberOfDuplicates(1);
+  ReadTestFile("layer_sort_cubes");
+  RunSortLayers();
+}
+
+TEST_F(BspTreePerfTest, BspTreeRubik) {
+  SetTestName("bsp_tree_rubik");
+  SetNumberOfDuplicates(1);
+  ReadTestFile("layer_sort_rubik");
+  RunSortLayers();
+}
+
+TEST_F(BspTreePerfTest, BspTreeCubes_2) {
+  SetTestName("bsp_tree_cubes_2");
+  SetNumberOfDuplicates(2);
+  ReadTestFile("layer_sort_cubes");
+  RunSortLayers();
+}
+
+TEST_F(BspTreePerfTest, BspTreeCubes_4) {
+  SetTestName("bsp_tree_cubes_4");
+  SetNumberOfDuplicates(4);
+  ReadTestFile("layer_sort_cubes");
   RunSortLayers();
 }
 

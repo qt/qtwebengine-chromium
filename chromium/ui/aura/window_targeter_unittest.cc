@@ -17,13 +17,12 @@ class StaticWindowTargeter : public ui::EventTargeter {
  public:
   explicit StaticWindowTargeter(aura::Window* window)
       : window_(window) {}
-  virtual ~StaticWindowTargeter() {}
+  ~StaticWindowTargeter() override {}
 
  private:
   // ui::EventTargeter:
-  virtual ui::EventTarget* FindTargetForLocatedEvent(
-      ui::EventTarget* root,
-      ui::LocatedEvent* event) OVERRIDE {
+  ui::EventTarget* FindTargetForLocatedEvent(ui::EventTarget* root,
+                                             ui::LocatedEvent* event) override {
     return window_;
   }
 
@@ -35,7 +34,7 @@ class StaticWindowTargeter : public ui::EventTargeter {
 class WindowTargeterTest : public test::AuraTestBase {
  public:
   WindowTargeterTest() {}
-  virtual ~WindowTargeterTest() {}
+  ~WindowTargeterTest() override {}
 
   Window* root_window() { return AuraTestBase::root_window(); }
 };
@@ -116,6 +115,21 @@ TEST_F(WindowTargeterTest, ScopedWindowTargeter) {
                          ui::EF_NONE, ui::EF_NONE);
     EXPECT_EQ(child, targeter->FindTargetForEvent(root, &mouse));
   }
+}
+
+// Test that ScopedWindowTargeter does not crash if the window for which it
+// replaces the targeter gets destroyed before it does.
+TEST_F(WindowTargeterTest, ScopedWindowTargeterWindowDestroyed) {
+  test::TestWindowDelegate delegate;
+  scoped_ptr<Window> window(CreateNormalWindow(1, root_window(), &delegate));
+  scoped_ptr<ScopedWindowTargeter> scoped_targeter(
+      new ScopedWindowTargeter(window.get(), scoped_ptr<ui::EventTargeter>(
+          new StaticWindowTargeter(window.get()))));
+
+  window.reset();
+  scoped_targeter.reset();
+
+  // We did not crash!
 }
 
 TEST_F(WindowTargeterTest, TargetTransformedWindow) {

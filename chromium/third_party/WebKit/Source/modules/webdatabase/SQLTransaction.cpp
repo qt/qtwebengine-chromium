@@ -29,72 +29,75 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransaction.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/VoidCallback.h"
-#include "platform/Logging.h"
-#include "modules/webdatabase/AbstractSQLTransactionBackend.h"
+#include "core/inspector/InspectorInstrumentation.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/SQLError.h"
 #include "modules/webdatabase/SQLStatementCallback.h"
 #include "modules/webdatabase/SQLStatementErrorCallback.h"
+#include "modules/webdatabase/SQLTransactionBackend.h"
 #include "modules/webdatabase/SQLTransactionCallback.h"
 #include "modules/webdatabase/SQLTransactionClient.h" // FIXME: Should be used in the backend only.
 #include "modules/webdatabase/SQLTransactionErrorCallback.h"
+#include "platform/Logging.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<SQLTransaction> SQLTransaction::create(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
-    PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
-    bool readOnly)
+SQLTransaction* SQLTransaction::create(Database* db, SQLTransactionCallback* callback,
+    VoidCallback* successCallback, SQLTransactionErrorCallback* errorCallback, bool readOnly)
 {
-    return adoptRefWillBeNoop(new SQLTransaction(db, callback, successCallback, errorCallback, readOnly));
+    return new SQLTransaction(db, callback, successCallback, errorCallback, readOnly);
 }
 
-SQLTransaction::SQLTransaction(Database* db, PassOwnPtr<SQLTransactionCallback> callback,
-    PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback> errorCallback,
+SQLTransaction::SQLTransaction(Database* db, SQLTransactionCallback* callback,
+    VoidCallback* successCallback, SQLTransactionErrorCallback* errorCallback,
     bool readOnly)
     : m_database(db)
-    , m_callbackWrapper(callback, db->executionContext())
-    , m_successCallbackWrapper(successCallback, db->executionContext())
-    , m_errorCallbackWrapper(errorCallback, db->executionContext())
+    , m_callback(callback)
+    , m_successCallback(successCallback)
+    , m_errorCallback(errorCallback)
     , m_executeSqlAllowed(false)
     , m_readOnly(readOnly)
 {
     ASSERT(m_database);
-    ScriptWrappable::init(this);
+    m_asyncOperationId = InspectorInstrumentation::traceAsyncOperationStarting(db->executionContext(), "SQLTransaction");
+}
+
+SQLTransaction::~SQLTransaction()
+{
 }
 
 void SQLTransaction::trace(Visitor* visitor)
 {
     visitor->trace(m_database);
     visitor->trace(m_backend);
-    visitor->trace(m_callbackWrapper);
-    visitor->trace(m_successCallbackWrapper);
-    visitor->trace(m_errorCallbackWrapper);
-    AbstractSQLTransaction::trace(visitor);
+    visitor->trace(m_callback);
+    visitor->trace(m_successCallback);
+    visitor->trace(m_errorCallback);
 }
 
 bool SQLTransaction::hasCallback() const
 {
-    return m_callbackWrapper.hasCallback();
+    return m_callback;
 }
 
 bool SQLTransaction::hasSuccessCallback() const
 {
-    return m_successCallbackWrapper.hasCallback();
+    return m_successCallback;
 }
 
 bool SQLTransaction::hasErrorCallback() const
 {
-    return m_errorCallbackWrapper.hasCallback();
+    return m_errorCallback;
 }
 
-void SQLTransaction::setBackend(AbstractSQLTransactionBackend* backend)
+void SQLTransaction::setBackend(SQLTransactionBackend* backend)
 {
     ASSERT(!m_backend);
     m_backend = backend;
@@ -137,7 +140,7 @@ void SQLTransaction::requestTransitToState(SQLTransactionState nextState)
 SQLTransactionState SQLTransaction::nextStateForTransactionError()
 {
     ASSERT(m_transactionError);
-    if (m_errorCallbackWrapper.hasCallback())
+    if (hasErrorCallback())
         return SQLTransactionState::DeliverTransactionErrorCallback;
 
     // No error callback, so fast-forward to:
@@ -150,10 +153,11 @@ SQLTransactionState SQLTransaction::deliverTransactionCallback()
     bool shouldDeliverErrorCallback = false;
 
     // Spec 4.3.2 4: Invoke the transaction callback with the new SQLTransaction object
-    OwnPtr<SQLTransactionCallback> callback = m_callbackWrapper.unwrap();
-    if (callback) {
+    if (SQLTransactionCallback* callback = m_callback.release()) {
         m_executeSqlAllowed = true;
+        InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncCallbackStarting(m_database->executionContext(), m_asyncOperationId);
         shouldDeliverErrorCallback = !callback->handleEvent(this);
+        InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
         m_executeSqlAllowed = false;
     }
 
@@ -170,10 +174,11 @@ SQLTransactionState SQLTransaction::deliverTransactionCallback()
 
 SQLTransactionState SQLTransaction::deliverTransactionErrorCallback()
 {
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncOperationCompletedCallbackStarting(m_database->executionContext(), m_asyncOperationId);
+
     // Spec 4.3.2.10: If exists, invoke error callback with the last
     // error to have occurred in this transaction.
-    OwnPtr<SQLTransactionErrorCallback> errorCallback = m_errorCallbackWrapper.unwrap();
-    if (errorCallback) {
+    if (SQLTransactionErrorCallback* errorCallback = m_errorCallback.release()) {
         // If we get here with an empty m_transactionError, then the backend
         // must be waiting in the idle state waiting for this state to finish.
         // Hence, it's thread safe to fetch the backend transactionError without
@@ -183,13 +188,13 @@ SQLTransactionState SQLTransaction::deliverTransactionErrorCallback()
             m_transactionError = SQLErrorData::create(*m_backend->transactionError());
         }
         ASSERT(m_transactionError);
-        RefPtrWillBeRawPtr<SQLError> error = SQLError::create(*m_transactionError);
-        errorCallback->handleEvent(error.get());
+        errorCallback->handleEvent(SQLError::create(*m_transactionError));
 
         m_transactionError = nullptr;
     }
 
-    clearCallbackWrappers();
+    InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
+    clearCallbacks();
 
     // Spec 4.3.2.10: Rollback the transaction.
     return SQLTransactionState::CleanupAfterTransactionErrorCallback;
@@ -201,8 +206,7 @@ SQLTransactionState SQLTransaction::deliverStatementCallback()
     // Otherwise, continue to loop through the statement queue
     m_executeSqlAllowed = true;
 
-    AbstractSQLStatement* currentAbstractStatement = m_backend->currentStatement();
-    SQLStatement* currentStatement = static_cast<SQLStatement*>(currentAbstractStatement);
+    SQLStatement* currentStatement = m_backend->currentStatement();
     ASSERT(currentStatement);
 
     bool result = currentStatement->performCallback(this);
@@ -229,12 +233,14 @@ SQLTransactionState SQLTransaction::deliverQuotaIncreaseCallback()
 
 SQLTransactionState SQLTransaction::deliverSuccessCallback()
 {
+    InspectorInstrumentationCookie cookie = InspectorInstrumentation::traceAsyncOperationCompletedCallbackStarting(m_database->executionContext(), m_asyncOperationId);
+
     // Spec 4.3.2.8: Deliver success callback.
-    OwnPtr<VoidCallback> successCallback = m_successCallbackWrapper.unwrap();
-    if (successCallback)
+    if (VoidCallback* successCallback = m_successCallback.release())
         successCallback->handleEvent();
 
-    clearCallbackWrappers();
+    InspectorInstrumentation::traceAsyncCallbackCompleted(cookie);
+    clearCallbacks();
 
     // Schedule a "post-success callback" step to return control to the database thread in case there
     // are further transactions queued up for this Database
@@ -263,7 +269,7 @@ void SQLTransaction::performPendingCallback()
     runStateMachine();
 }
 
-void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, PassOwnPtr<SQLStatementCallback> callback, PassOwnPtr<SQLStatementErrorCallback> callbackError, ExceptionState& exceptionState)
+void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments, SQLStatementCallback* callback, SQLStatementErrorCallback* callbackError, ExceptionState& exceptionState)
 {
     if (!m_executeSqlAllowed) {
         exceptionState.throwDOMException(InvalidStateError, "SQL execution is disallowed.");
@@ -281,15 +287,15 @@ void SQLTransaction::executeSQL(const String& sqlStatement, const Vector<SQLValu
     else if (m_readOnly)
         permissions |= DatabaseAuthorizer::ReadOnlyMask;
 
-    OwnPtrWillBeRawPtr<SQLStatement> statement = SQLStatement::create(m_database.get(), callback, callbackError);
-    m_backend->executeSQL(statement.release(), sqlStatement, arguments, permissions);
+    SQLStatement* statement = SQLStatement::create(m_database.get(), callback, callbackError);
+    m_backend->executeSQL(statement, sqlStatement, arguments, permissions);
 }
 
 bool SQLTransaction::computeNextStateAndCleanupIfNeeded()
 {
     // Only honor the requested state transition if we're not supposed to be
     // cleaning up and shutting down:
-    if (m_database->opened() && !m_database->isInterrupted()) {
+    if (m_database->opened()) {
         setStateToRequestedState();
         ASSERT(m_nextState == SQLTransactionState::End
             || m_nextState == SQLTransactionState::DeliverTransactionCallback
@@ -302,23 +308,22 @@ bool SQLTransaction::computeNextStateAndCleanupIfNeeded()
         return false;
     }
 
-    clearCallbackWrappers();
+    clearCallbacks();
     m_nextState = SQLTransactionState::CleanupAndTerminate;
 
     return true;
 }
 
-void SQLTransaction::clearCallbackWrappers()
+void SQLTransaction::clearCallbacks()
 {
-    // Release the unneeded callbacks, to break reference cycles.
-    m_callbackWrapper.clear();
-    m_successCallbackWrapper.clear();
-    m_errorCallbackWrapper.clear();
+    m_callback.clear();
+    m_successCallback.clear();
+    m_errorCallback.clear();
 }
 
-PassOwnPtr<SQLTransactionErrorCallback> SQLTransaction::releaseErrorCallback()
+SQLTransactionErrorCallback* SQLTransaction::releaseErrorCallback()
 {
-    return m_errorCallbackWrapper.unwrap();
+    return m_errorCallback.release();
 }
 
-} // namespace WebCore
+} // namespace blink

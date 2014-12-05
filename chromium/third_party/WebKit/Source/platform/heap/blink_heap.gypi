@@ -32,6 +32,8 @@
   'variables': {
     'platform_heap_files': [
       'AddressSanitizer.h',
+      'CallbackStack.cpp',
+      'CallbackStack.h',
       'Handle.h',
       'Heap.cpp',
       'Heap.h',
@@ -57,6 +59,11 @@
       ['target_arch == "mipsel"', {
         'platform_heap_asm_files': [
           'asm/SaveRegisters_mips.S',
+        ],
+      }],
+      ['target_arch == "mips64el"', {
+        'platform_heap_asm_files': [
+          'asm/SaveRegisters_mips64.S',
         ],
       }],
       ['target_arch == "ia32" or target_arch == "x64"', {

@@ -26,14 +26,14 @@
 #ifndef ProgressTracker_h
 #define ProgressTracker_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class ResourceResponse;
@@ -42,12 +42,14 @@ struct ProgressItem;
 // FIXME: This is only used on Android. Android is the only Chrome
 // browser which shows a progress bar during loading.
 // We should find a better way for Android to get this data and remove this!
-class ProgressTracker {
-    WTF_MAKE_NONCOPYABLE(ProgressTracker); WTF_MAKE_FAST_ALLOCATED;
+class ProgressTracker final : public NoBaseWillBeGarbageCollectedFinalized<ProgressTracker> {
+    WTF_MAKE_NONCOPYABLE(ProgressTracker); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    ~ProgressTracker();
+    static PassOwnPtrWillBeRawPtr<ProgressTracker> create(LocalFrame*);
 
-    static PassOwnPtr<ProgressTracker> create(LocalFrame*);
+    ~ProgressTracker();
+    void trace(Visitor*);
+    void dispose();
 
     double estimatedProgress() const;
 
@@ -62,11 +64,11 @@ public:
     long long totalBytesReceived() const { return m_totalBytesReceived; }
 
 private:
-    ProgressTracker(LocalFrame*);
+    explicit ProgressTracker(LocalFrame*);
 
     void reset();
 
-    LocalFrame* m_frame;
+    RawPtrWillBeMember<LocalFrame> m_frame;
     bool m_inProgress;
     long long m_totalPageAndResourceBytesToLoad;
     long long m_totalBytesReceived;

@@ -35,9 +35,9 @@
 #include "core/dom/ExceptionCode.h"
 #include "modules/quota/StorageInfo.h"
 
-namespace WebCore {
+namespace blink {
 
-StorageQuotaCallbacksImpl::StorageQuotaCallbacksImpl(PassRefPtr<ScriptPromiseResolverWithContext> resolver)
+StorageQuotaCallbacksImpl::StorageQuotaCallbacksImpl(PassRefPtr<ScriptPromiseResolver> resolver)
     : m_resolver(resolver)
 {
 }
@@ -56,9 +56,9 @@ void StorageQuotaCallbacksImpl::didGrantStorageQuota(unsigned long long usageInB
     m_resolver->resolve(StorageInfo::create(usageInBytes, grantedQuotaInBytes));
 }
 
-void StorageQuotaCallbacksImpl::didFail(blink::WebStorageQuotaError error)
+void StorageQuotaCallbacksImpl::didFail(WebStorageQuotaError error)
 {
-    m_resolver->reject(DOMError::create(static_cast<ExceptionCode>(error)).get());
+    m_resolver->reject(DOMError::create(static_cast<ExceptionCode>(error)));
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -72,15 +72,15 @@ class MEDIA_EXPORT AlsaPcmOutputStream : public AudioOutputStream {
                       AlsaWrapper* wrapper,
                       AudioManagerBase* manager);
 
-  virtual ~AlsaPcmOutputStream();
+  ~AlsaPcmOutputStream() override;
 
   // Implementation of AudioOutputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
+  bool Open() override;
+  void Close() override;
+  void Start(AudioSourceCallback* callback) override;
+  void Stop() override;
+  void SetVolume(double volume) override;
+  void GetVolume(double* volume) override;
 
  private:
   friend class AlsaPcmOutputStreamTest;
@@ -154,7 +154,7 @@ class MEDIA_EXPORT AlsaPcmOutputStream : public AudioOutputStream {
   // is passed into the output stream, but ownership is not transfered which
   // requires a synchronization on access of the |source_callback_| to avoid
   // using a deleted callback.
-  int RunDataCallback(AudioBus* audio_bus, AudioBuffersState buffers_state);
+  int RunDataCallback(AudioBus* audio_bus, uint32 total_bytes_delay);
   void RunErrorCallback(int code);
 
   // Changes the AudioSourceCallback to proxy calls to.  Pass in NULL to

@@ -14,14 +14,16 @@ import fnmatch
 import os
 import re
 
+# Must fix up PYTHONPATH before importing from within Skia
+import rs_fixpypath  # pylint: disable=W0611
+
 # Imports from within Skia
-import fix_pythonpath  # must do this first
 import gm_json
 import imagepairset
 
 # Keys used to link an image to a particular GM test.
 # NOTE: Keep these in sync with static/constants.js
-VALUE__HEADER__SCHEMA_VERSION = 3
+VALUE__HEADER__SCHEMA_VERSION = 5
 KEY__EXPECTATIONS__BUGS = gm_json.JSONKEY_EXPECTEDRESULTS_BUGS
 KEY__EXPECTATIONS__IGNOREFAILURE = gm_json.JSONKEY_EXPECTEDRESULTS_IGNOREFAILURE
 KEY__EXPECTATIONS__REVIEWED = gm_json.JSONKEY_EXPECTEDRESULTS_REVIEWED
@@ -36,6 +38,8 @@ KEY__HEADER__IS_STILL_LOADING = 'resultsStillLoading'
 KEY__HEADER__RESULTS_ALL = 'all'
 KEY__HEADER__RESULTS_FAILURES = 'failures'
 KEY__HEADER__SCHEMA_VERSION = 'schemaVersion'
+KEY__HEADER__SET_A_DESCRIPTIONS = 'setA'
+KEY__HEADER__SET_B_DESCRIPTIONS = 'setB'
 KEY__HEADER__TIME_NEXT_UPDATE_AVAILABLE = 'timeNextUpdateAvailable'
 KEY__HEADER__TIME_UPDATED = 'timeUpdated'
 KEY__HEADER__TYPE = 'type'
@@ -43,6 +47,9 @@ KEY__RESULT_TYPE__FAILED = gm_json.JSONKEY_ACTUALRESULTS_FAILED
 KEY__RESULT_TYPE__FAILUREIGNORED = gm_json.JSONKEY_ACTUALRESULTS_FAILUREIGNORED
 KEY__RESULT_TYPE__NOCOMPARISON = gm_json.JSONKEY_ACTUALRESULTS_NOCOMPARISON
 KEY__RESULT_TYPE__SUCCEEDED = gm_json.JSONKEY_ACTUALRESULTS_SUCCEEDED
+KEY__SET_DESCRIPTIONS__DIR = 'dir'
+KEY__SET_DESCRIPTIONS__REPO_REVISION = 'repoRevision'
+KEY__SET_DESCRIPTIONS__SECTION = 'section'
 
 IMAGE_FILENAME_RE = re.compile(gm_json.IMAGE_FILENAME_PATTERN)
 IMAGE_FILENAME_FORMATTER = '%s_%s.png'  # pass in (testname, config)
@@ -65,6 +72,11 @@ DEFAULT_SKIP_BUILDERS_PATTERN_LIST = [
 class BaseComparisons(object):
   """Base class for generating summary of comparisons between two image sets.
   """
+
+  def __init__(self):
+    """Base constructor; most subclasses will override."""
+    self._setA_descriptions = None
+    self._setB_descriptions = None
 
   def get_results_of_type(self, results_type):
     """Return results of some/all tests (depending on 'results_type' parameter).
@@ -92,7 +104,7 @@ class BaseComparisons(object):
     """
     response_dict = self._results[results_type]
     time_updated = self.get_timestamp()
-    response_dict[imagepairset.KEY__ROOT__HEADER] = {
+    header_dict = {
         KEY__HEADER__SCHEMA_VERSION: (
             VALUE__HEADER__SCHEMA_VERSION),
 
@@ -117,6 +129,11 @@ class BaseComparisons(object):
         # Whether the service is accessible from other hosts.
         KEY__HEADER__IS_EXPORTED: is_exported,
     }
+    if self._setA_descriptions:
+      header_dict[KEY__HEADER__SET_A_DESCRIPTIONS] = self._setA_descriptions
+    if self._setB_descriptions:
+      header_dict[KEY__HEADER__SET_B_DESCRIPTIONS] = self._setB_descriptions
+    response_dict[imagepairset.KEY__ROOT__HEADER] = header_dict
     return response_dict
 
   def get_timestamp(self):
@@ -196,12 +213,12 @@ class BaseComparisons(object):
     Raises:
       IOError if root does not refer to an existing directory
     """
-    # I considered making this call _read_dicts_from_root(), but I decided
+    # I considered making this call read_dicts_from_root(), but I decided
     # it was better to prune out the ignored builders within the os.walk().
     if not os.path.isdir(root):
       raise IOError('no directory found at path %s' % root)
     meta_dict = {}
-    for dirpath, dirnames, filenames in os.walk(root):
+    for dirpath, _, filenames in os.walk(root):
       for matching_filename in fnmatch.filter(filenames, pattern):
         builder = os.path.basename(dirpath)
         if self._ignore_builder(builder):
@@ -210,8 +227,12 @@ class BaseComparisons(object):
         meta_dict[builder] = gm_json.LoadFromFile(full_path)
     return meta_dict
 
-  def _read_dicts_from_root(self, root, pattern='*.json'):
+  @staticmethod
+  def read_dicts_from_root(root, pattern='*.json'):
     """Read all JSON dictionaries within a directory tree.
+
+    TODO(stephana): Factor this out into a utility module, as a standalone
+    function (not part of a class).
 
     Args:
       root: path to root of directory tree
@@ -228,7 +249,7 @@ class BaseComparisons(object):
     if not os.path.isdir(root):
       raise IOError('no directory found at path %s' % root)
     meta_dict = {}
-    for abs_dirpath, dirnames, filenames in os.walk(root):
+    for abs_dirpath, _, filenames in os.walk(root):
       rel_dirpath = os.path.relpath(abs_dirpath, root)
       for matching_filename in fnmatch.filter(filenames, pattern):
         abs_path = os.path.join(abs_dirpath, matching_filename)
@@ -293,7 +314,7 @@ class BaseComparisons(object):
     If this would result in any repeated keys, it will raise an Exception.
     """
     output_dict = {}
-    for key, subdict in input_dict.iteritems():
+    for subdict in input_dict.values():
       for subdict_key, subdict_value in subdict.iteritems():
         if subdict_key in output_dict:
           raise Exception('duplicate key %s in combine_subdicts' % subdict_key)
@@ -301,11 +322,22 @@ class BaseComparisons(object):
     return output_dict
 
   @staticmethod
-  def get_multilevel(input_dict, *keys):
-    """ Returns input_dict[key1][key2][...], or None if any key is not found.
+  def get_default(input_dict, default_value, *keys):
+    """Returns input_dict[key1][key2][...], or default_value.
+
+    If input_dict is None, or any key is missing along the way, this returns
+    default_value.
+
+    Args:
+      input_dict: dictionary to look within
+      key: key indicating which value to return from input_dict
+      default_value: value to return if input_dict is None or any key cannot
+          be found along the way
     """
+    if input_dict == None:
+      return default_value
     for key in keys:
-      if input_dict == None:
-        return None
       input_dict = input_dict.get(key, None)
+      if input_dict == None:
+        return default_value
     return input_dict

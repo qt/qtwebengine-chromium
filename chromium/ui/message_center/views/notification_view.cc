@@ -8,12 +8,8 @@
 #include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/base/cursor/cursor.h"
-#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
@@ -29,6 +25,8 @@
 #include "ui/message_center/views/padded_button.h"
 #include "ui/message_center/views/proportional_image_view.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/image_button.h"
@@ -39,6 +37,7 @@
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/native_cursor.h"
 #include "ui/views/painter.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/widget.h"
 
 namespace {
@@ -113,10 +112,10 @@ bool HasAlpha(gfx::ImageSkia& image, views::Widget* widget) {
 class ItemView : public views::View {
  public:
   ItemView(const message_center::NotificationItem& item);
-  virtual ~ItemView();
+  ~ItemView() override;
 
   // Overridden from views::View:
-  virtual void SetVisible(bool visible) OVERRIDE;
+  void SetVisible(bool visible) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ItemView);
@@ -191,12 +190,12 @@ views::View* MakeNotificationImage(const gfx::Image& image, gfx::Size size) {
 class NotificationProgressBar : public views::ProgressBar {
  public:
   NotificationProgressBar();
-  virtual ~NotificationProgressBar();
+  ~NotificationProgressBar() override;
 
  private:
   // Overriden from View
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
   DISALLOW_COPY_AND_ASSIGN(NotificationProgressBar);
 };
@@ -289,6 +288,31 @@ NotificationView* NotificationView::Create(MessageCenterController* controller,
   return notification_view;
 }
 
+views::View* NotificationView::TargetForRect(views::View* root,
+                                             const gfx::Rect& rect) {
+  CHECK_EQ(root, this);
+
+  // TODO(tdanderson): Modify this function to support rect-based event
+  // targeting. Using the center point of |rect| preserves this function's
+  // expected behavior for the time being.
+  gfx::Point point = rect.CenterPoint();
+
+  // Want to return this for underlying views, otherwise GetCursor is not
+  // called. But buttons are exceptions, they'll have their own event handlings.
+  std::vector<views::View*> buttons(action_buttons_.begin(),
+                                    action_buttons_.end());
+  buttons.push_back(close_button());
+
+  for (size_t i = 0; i < buttons.size(); ++i) {
+    gfx::Point point_in_child = point;
+    ConvertPointToTarget(this, buttons[i], &point_in_child);
+    if (buttons[i]->HitTestPoint(point_in_child))
+      return buttons[i]->GetEventHandlerForPoint(point_in_child);
+  }
+
+  return root;
+}
+
 void NotificationView::CreateOrUpdateViews(const Notification& notification) {
   CreateOrUpdateTitleView(notification);
   CreateOrUpdateMessageView(notification);
@@ -355,6 +379,9 @@ NotificationView::NotificationView(MessageCenterController* controller,
   AddChildView(small_image());
   AddChildView(close_button());
   SetAccessibleName(notification);
+
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 }
 
 NotificationView::~NotificationView() {
@@ -441,28 +468,6 @@ void NotificationView::ScrollRectToVisible(const gfx::Rect& rect) {
   views::View::ScrollRectToVisible(GetLocalBounds());
 }
 
-views::View* NotificationView::GetEventHandlerForRect(const gfx::Rect& rect) {
-  // TODO(tdanderson): Modify this function to support rect-based event
-  // targeting. Using the center point of |rect| preserves this function's
-  // expected behavior for the time being.
-  gfx::Point point = rect.CenterPoint();
-
-  // Want to return this for underlying views, otherwise GetCursor is not
-  // called. But buttons are exceptions, they'll have their own event handlings.
-  std::vector<views::View*> buttons(action_buttons_.begin(),
-                                    action_buttons_.end());
-  buttons.push_back(close_button());
-
-  for (size_t i = 0; i < buttons.size(); ++i) {
-    gfx::Point point_in_child = point;
-    ConvertPointToTarget(this, buttons[i], &point_in_child);
-    if (buttons[i]->HitTestPoint(point_in_child))
-      return buttons[i]->GetEventHandlerForPoint(point_in_child);
-  }
-
-  return this;
-}
-
 gfx::NativeCursor NotificationView::GetCursor(const ui::MouseEvent& event) {
   if (!clickable_ || !controller_->HasClickedListener(notification_id()))
     return views::View::GetCursor(event);
@@ -528,12 +533,13 @@ void NotificationView::CreateOrUpdateTitleView(
   int title_character_limit =
       kNotificationWidth * kMaxTitleLines / kMinPixelsPerTitleCharacter;
 
+  base::string16 title = gfx::TruncateString(notification.title(),
+                                             title_character_limit,
+                                             gfx::WORD_BREAK);
   if (!title_view_) {
     int padding = kTitleLineHeight - font_list.GetHeight();
 
-    title_view_ = new BoundedLabel(
-        gfx::TruncateString(notification.title(), title_character_limit),
-        font_list);
+    title_view_ = new BoundedLabel(title, font_list);
     title_view_->SetLineHeight(kTitleLineHeight);
     title_view_->SetLineLimit(kMaxTitleLines);
     title_view_->SetColors(message_center::kRegularTextColor,
@@ -541,8 +547,7 @@ void NotificationView::CreateOrUpdateTitleView(
     title_view_->SetBorder(MakeTextBorder(padding, 3, 0));
     top_view_->AddChildView(title_view_);
   } else {
-    title_view_->SetText(
-        gfx::TruncateString(notification.title(), title_character_limit));
+    title_view_->SetText(title);
   }
 }
 
@@ -559,18 +564,19 @@ void NotificationView::CreateOrUpdateMessageView(
 
   DCHECK(top_view_ != NULL);
 
+  base::string16 text = gfx::TruncateString(notification.message(),
+                                            kMessageCharacterLimit,
+                                            gfx::WORD_BREAK);
   if (!message_view_) {
     int padding = kMessageLineHeight - views::Label().font_list().GetHeight();
-    message_view_ = new BoundedLabel(
-        gfx::TruncateString(notification.message(), kMessageCharacterLimit));
+    message_view_ = new BoundedLabel(text);
     message_view_->SetLineHeight(kMessageLineHeight);
     message_view_->SetColors(message_center::kRegularTextColor,
                              kDimTextBackgroundColor);
     message_view_->SetBorder(MakeTextBorder(padding, 4, 0));
     top_view_->AddChildView(message_view_);
   } else {
-    message_view_->SetText(
-        gfx::TruncateString(notification.message(), kMessageCharacterLimit));
+    message_view_->SetText(text);
   }
 
   message_view_->SetVisible(!notification.items().size());
@@ -589,10 +595,12 @@ void NotificationView::CreateOrUpdateContextMessageView(
 
   DCHECK(top_view_ != NULL);
 
+  base::string16 text = gfx::TruncateString(notification.context_message(),
+                                            kContextMessageCharacterLimit,
+                                            gfx::WORD_BREAK);
   if (!context_message_view_) {
     int padding = kMessageLineHeight - views::Label().font_list().GetHeight();
-    context_message_view_ = new BoundedLabel(gfx::TruncateString(
-        notification.context_message(), kContextMessageCharacterLimit));
+    context_message_view_ = new BoundedLabel(text);
     context_message_view_->SetLineLimit(
         message_center::kContextMessageLineLimit);
     context_message_view_->SetLineHeight(kMessageLineHeight);
@@ -601,8 +609,7 @@ void NotificationView::CreateOrUpdateContextMessageView(
     context_message_view_->SetBorder(MakeTextBorder(padding, 4, 0));
     top_view_->AddChildView(context_message_view_);
   } else {
-    context_message_view_->SetText(gfx::TruncateString(
-        notification.context_message(), kContextMessageCharacterLimit));
+    context_message_view_->SetText(text);
   }
 }
 

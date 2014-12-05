@@ -63,9 +63,9 @@ class LoadStopNotificationObserver : public WindowedNotificationObserver {
         session_index_(-1),
         controller_(NULL) {
   }
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE {
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override {
     if (type == NOTIFICATION_LOAD_STOP) {
       const Details<LoadNotificationDetails> load_details(details);
       url_ = load_details->url;
@@ -93,8 +93,8 @@ class NavigateOnCommitObserver : public WebContentsObserver {
   }
 
   // WebContentsObserver:
-  virtual void NavigationEntryCommitted(
-      const LoadCommittedDetails& load_details) OVERRIDE {
+  void NavigationEntryCommitted(
+      const LoadCommittedDetails& load_details) override {
     if (!done_) {
       done_ = true;
       shell_->Stop();
@@ -114,8 +114,7 @@ class RenderViewSizeDelegate : public WebContentsDelegate {
   }
 
   // WebContentsDelegate:
-  virtual gfx::Size GetSizeForNewRenderView(
-      WebContents* web_contents) const OVERRIDE {
+  gfx::Size GetSizeForNewRenderView(WebContents* web_contents) const override {
     gfx::Size size(web_contents->GetContainerBounds().size());
     size.Enlarge(size_insets_.width(), size_insets_.height());
     return size;
@@ -134,13 +133,13 @@ class RenderViewSizeObserver : public WebContentsObserver {
   }
 
   // WebContentsObserver:
-  virtual void RenderViewCreated(RenderViewHost* rvh) OVERRIDE {
+  void RenderViewCreated(RenderViewHost* rvh) override {
     rwhv_create_size_ = rvh->GetView()->GetViewBounds().size();
   }
 
-  virtual void DidStartNavigationToPendingEntry(
+  void DidStartNavigationToPendingEntry(
       const GURL& url,
-      NavigationController::ReloadType reload_type) OVERRIDE {
+      NavigationController::ReloadType reload_type) override {
     ResizeWebContentsView(shell_, wcv_new_size_, false);
   }
 
@@ -160,8 +159,8 @@ class LoadingStateChangedDelegate : public WebContentsDelegate {
   }
 
   // WebContentsDelegate:
-  virtual void LoadingStateChanged(WebContents* contents,
-                                   bool to_different_document) OVERRIDE {
+  void LoadingStateChanged(WebContents* contents,
+                           bool to_different_document) override {
       loadingStateChangedCount_++;
       if (to_different_document)
         loadingStateToDifferentDocumentCount_++;
@@ -259,9 +258,7 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
             shell()->web_contents()->GetVisibleURL());
 }
 
-// TODO(shrikant): enable this for Windows when issue with
-// force-compositing-mode is resolved (http://crbug.com/281726).
-// Also crashes under ThreadSanitizer, http://crbug.com/356758.
+// Crashes under ThreadSanitizer, http://crbug.com/356758.
 #if defined(OS_WIN) || defined(OS_ANDROID) \
     || defined(THREAD_SANITIZER)
 #define MAYBE_GetSizeForNewRenderView DISABLED_GetSizeForNewRenderView
@@ -341,18 +338,41 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
 }
 
 IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, OpenURLSubframe) {
+  // Navigate to a page with frames and grab a subframe's FrameTreeNode ID.
+  ASSERT_TRUE(test_server()->Start());
+  NavigateToURL(shell(),
+                test_server()->GetURL("files/frame_tree/top.html"));
+  WebContentsImpl* wc = static_cast<WebContentsImpl*>(shell()->web_contents());
+  FrameTreeNode* root = wc->GetFrameTree()->root();
+  ASSERT_EQ(3UL, root->child_count());
+  int64 frame_tree_node_id = root->child_at(0)->frame_tree_node_id();
+  EXPECT_NE(-1, frame_tree_node_id);
 
-  // Navigate with FrameTreeNode ID 4.
-  const GURL url("http://foo");
-  OpenURLParams params(url, Referrer(), 4, CURRENT_TAB, PAGE_TRANSITION_LINK,
-                       true);
+  // Navigate with the subframe's FrameTreeNode ID.
+  const GURL url(test_server()->GetURL("files/title1.html"));
+  OpenURLParams params(url, Referrer(), frame_tree_node_id, CURRENT_TAB,
+                       ui::PAGE_TRANSITION_LINK, true);
   shell()->web_contents()->OpenURL(params);
 
   // Make sure the NavigationEntry ends up with the FrameTreeNode ID.
   NavigationController* controller = &shell()->web_contents()->GetController();
   EXPECT_TRUE(controller->GetPendingEntry());
-  EXPECT_EQ(4, NavigationEntryImpl::FromNavigationEntry(
+  EXPECT_EQ(frame_tree_node_id,
+            NavigationEntryImpl::FromNavigationEntry(
                 controller->GetPendingEntry())->frame_tree_node_id());
+}
+
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       AppendingFrameInWebUIDoesNotCrash) {
+  const GURL kWebUIUrl("chrome://tracing");
+  const char kJSCodeForAppendingFrame[] =
+      "document.body.appendChild(document.createElement('iframe'));";
+
+  NavigateToURL(shell(), kWebUIUrl);
+
+  bool js_executed = content::ExecuteScript(shell()->web_contents(),
+                                            kJSCodeForAppendingFrame);
+  EXPECT_TRUE(js_executed);
 }
 
 // Observer class to track the creation of RenderFrameHost objects. It is used
@@ -364,7 +384,7 @@ class RenderFrameCreatedObserver : public WebContentsObserver {
         last_rfh_(NULL) {
   }
 
-  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE {
+  void RenderFrameCreated(RenderFrameHost* render_frame_host) override {
     last_rfh_ = render_frame_host;
   }
 
@@ -468,22 +488,21 @@ struct LoadProgressDelegateAndObserver : public WebContentsDelegate,
   }
 
   // WebContentsDelegate:
-  virtual void LoadProgressChanged(WebContents* source,
-                                   double progress) OVERRIDE {
+  void LoadProgressChanged(WebContents* source, double progress) override {
     EXPECT_TRUE(did_start_loading);
     EXPECT_FALSE(did_stop_loading);
     progresses.push_back(progress);
   }
 
   // WebContentsObserver:
-  virtual void DidStartLoading(RenderViewHost* render_view_host) OVERRIDE {
+  void DidStartLoading(RenderViewHost* render_view_host) override {
     EXPECT_FALSE(did_start_loading);
     EXPECT_EQ(0U, progresses.size());
     EXPECT_FALSE(did_stop_loading);
     did_start_loading = true;
   }
 
-  virtual void DidStopLoading(RenderViewHost* render_view_host) OVERRIDE {
+  void DidStopLoading(RenderViewHost* render_view_host) override {
     EXPECT_TRUE(did_start_loading);
     EXPECT_GE(progresses.size(), 1U);
     EXPECT_FALSE(did_stop_loading);
@@ -515,6 +534,47 @@ IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest, LoadProgress) {
   ASSERT_GE(progresses.size(), 1U)
       << "There should be at least one progress update";
   EXPECT_EQ(1.0, *progresses.rbegin());
+}
+
+struct FirstVisuallyNonEmptyPaintObserver : public WebContentsObserver {
+  FirstVisuallyNonEmptyPaintObserver(Shell* shell)
+      : WebContentsObserver(shell->web_contents()),
+        did_fist_visually_non_empty_paint_(false) {}
+
+  void DidFirstVisuallyNonEmptyPaint() override {
+    did_fist_visually_non_empty_paint_ = true;
+    on_did_first_visually_non_empty_paint_.Run();
+  }
+
+  void WaitForDidFirstVisuallyNonEmptyPaint() {
+    if (did_fist_visually_non_empty_paint_)
+      return;
+    base::RunLoop run_loop;
+    on_did_first_visually_non_empty_paint_ = run_loop.QuitClosure();
+    run_loop.Run();
+  }
+
+  base::Closure on_did_first_visually_non_empty_paint_;
+  bool did_fist_visually_non_empty_paint_;
+};
+
+// See: http://crbug.com/395664
+#if defined(OS_ANDROID)
+#define MAYBE_FirstVisuallyNonEmptyPaint DISABLED_FirstVisuallyNonEmptyPaint
+#else
+// http://crbug.com/398471
+#define MAYBE_FirstVisuallyNonEmptyPaint DISABLED_FirstVisuallyNonEmptyPaint
+#endif
+IN_PROC_BROWSER_TEST_F(WebContentsImplBrowserTest,
+                       MAYBE_FirstVisuallyNonEmptyPaint) {
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+  scoped_ptr<FirstVisuallyNonEmptyPaintObserver> observer(
+      new FirstVisuallyNonEmptyPaintObserver(shell()));
+
+  NavigateToURL(shell(), embedded_test_server()->GetURL("/title1.html"));
+
+  observer->WaitForDidFirstVisuallyNonEmptyPaint();
+  ASSERT_TRUE(observer->did_fist_visually_non_empty_paint_);
 }
 
 }  // namespace content

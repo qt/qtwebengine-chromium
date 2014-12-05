@@ -12,6 +12,7 @@
 
 #include <assert.h>
 
+#include "webrtc/base/platform_file.h"
 #include "webrtc/common_audio/include/audio_util.h"
 #include "webrtc/common_audio/signal_processing/include/signal_processing_library.h"
 #include "webrtc/modules/audio_processing/audio_buffer.h"
@@ -257,10 +258,9 @@ int AudioProcessingImpl::InitializeLocked(int input_sample_rate_hz,
     }
   }
 
-  // TODO(ajm): Enable this.
-  // Always downmix the reverse stream to mono for analysis.
-  //rev_proc_format_.set(rev_proc_rate, 1);
-  rev_proc_format_.set(rev_proc_rate, rev_in_format_.num_channels());
+  // Always downmix the reverse stream to mono for analysis. This has been
+  // demonstrated to work well for AEC in most practical scenarios.
+  rev_proc_format_.set(rev_proc_rate, 1);
 
   if (fwd_proc_format_.rate() == kSampleRate32kHz) {
     split_rate_ = kSampleRate16kHz;
@@ -301,10 +301,6 @@ void AudioProcessingImpl::SetExtraOptions(const Config& config) {
   std::list<ProcessingComponent*>::iterator it;
   for (it = component_list_.begin(); it != component_list_.end(); ++it)
     (*it)->SetExtraOptions(config);
-}
-
-int AudioProcessingImpl::EnableExperimentalNs(bool enable) {
-  return kNoError;
 }
 
 int AudioProcessingImpl::input_sample_rate_hz() const {
@@ -371,7 +367,8 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
   if (debug_file_->Open()) {
     event_msg_->set_type(audioproc::Event::STREAM);
     audioproc::Stream* msg = event_msg_->mutable_stream();
-    const size_t channel_size = sizeof(float) * samples_per_channel;
+    const size_t channel_size =
+        sizeof(float) * fwd_in_format_.samples_per_channel();
     for (int i = 0; i < fwd_in_format_.num_channels(); ++i)
       msg->add_input_channel(src[i], channel_size);
   }
@@ -388,7 +385,8 @@ int AudioProcessingImpl::ProcessStream(const float* const* src,
 #ifdef WEBRTC_AUDIOPROC_DEBUG_DUMP
   if (debug_file_->Open()) {
     audioproc::Stream* msg = event_msg_->mutable_stream();
-    const size_t channel_size = sizeof(float) * samples_per_channel;
+    const size_t channel_size =
+        sizeof(float) * fwd_out_format_.samples_per_channel();
     for (int i = 0; i < fwd_proc_format_.num_channels(); ++i)
       msg->add_output_channel(dest[i], channel_size);
     RETURN_ON_ERR(WriteMessageToDebugFile());
@@ -484,6 +482,7 @@ int AudioProcessingImpl::ProcessStreamLocked() {
 
   RETURN_ON_ERR(high_pass_filter_->ProcessCaptureAudio(ca));
   RETURN_ON_ERR(gain_control_->AnalyzeCaptureAudio(ca));
+  RETURN_ON_ERR(noise_suppression_->AnalyzeCaptureAudio(ca));
   RETURN_ON_ERR(echo_cancellation_->ProcessCaptureAudio(ca));
 
   if (echo_control_mobile_->is_enabled() && noise_suppression_->is_enabled()) {
@@ -537,7 +536,8 @@ int AudioProcessingImpl::AnalyzeReverseStream(const float* const* data,
   if (debug_file_->Open()) {
     event_msg_->set_type(audioproc::Event::REVERSE_STREAM);
     audioproc::ReverseStream* msg = event_msg_->mutable_reverse_stream();
-    const size_t channel_size = sizeof(float) * samples_per_channel;
+    const size_t channel_size =
+        sizeof(float) * rev_in_format_.samples_per_channel();
     for (int i = 0; i < num_channels; ++i)
       msg->add_channel(data[i], channel_size);
     RETURN_ON_ERR(WriteMessageToDebugFile());
@@ -715,6 +715,12 @@ int AudioProcessingImpl::StartDebugRecording(FILE* handle) {
 #else
   return kUnsupportedFunctionError;
 #endif  // WEBRTC_AUDIOPROC_DEBUG_DUMP
+}
+
+int AudioProcessingImpl::StartDebugRecordingForPlatformFile(
+    rtc::PlatformFile handle) {
+  FILE* stream = rtc::FdopenPlatformFileForWriting(handle);
+  return StartDebugRecording(stream);
 }
 
 int AudioProcessingImpl::StopDebugRecording() {

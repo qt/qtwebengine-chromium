@@ -11,11 +11,11 @@
 #include "net/base/upload_element_reader.h"
 #include "url/gurl.h"
 
-namespace webkit_blob {
+namespace storage {
 class FileStreamReader;
 }
 
-namespace fileapi {
+namespace storage {
 class FileSystemContext;
 }
 
@@ -26,32 +26,32 @@ class CONTENT_EXPORT UploadFileSystemFileElementReader :
     NON_EXPORTED_BASE(public net::UploadElementReader) {
  public:
   UploadFileSystemFileElementReader(
-      fileapi::FileSystemContext* file_system_context,
+      storage::FileSystemContext* file_system_context,
       const GURL& url,
       uint64 range_offset,
       uint64 range_length,
       const base::Time& expected_modification_time);
-  virtual ~UploadFileSystemFileElementReader();
+  ~UploadFileSystemFileElementReader() override;
 
   // UploadElementReader overrides:
-  virtual int Init(const net::CompletionCallback& callback) OVERRIDE;
-  virtual uint64 GetContentLength() const OVERRIDE;
-  virtual uint64 BytesRemaining() const OVERRIDE;
-  virtual int Read(net::IOBuffer* buf,
-                   int buf_length,
-                   const net::CompletionCallback& callback) OVERRIDE;
+  int Init(const net::CompletionCallback& callback) override;
+  uint64 GetContentLength() const override;
+  uint64 BytesRemaining() const override;
+  int Read(net::IOBuffer* buf,
+           int buf_length,
+           const net::CompletionCallback& callback) override;
 
  private:
   void OnGetLength(const net::CompletionCallback& callback, int64 result);
   void OnRead(const net::CompletionCallback& callback, int result);
 
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
   const GURL url_;
   const uint64 range_offset_;
   const uint64 range_length_;
   const base::Time expected_modification_time_;
 
-  scoped_ptr<webkit_blob::FileStreamReader> stream_reader_;
+  scoped_ptr<storage::FileStreamReader> stream_reader_;
 
   uint64 stream_length_;
   uint64 position_;

@@ -21,7 +21,10 @@
   {
     'target_name': 'core_global_objects',
     'variables': {
-      'idl_files': '<(core_idl_files)',
+      'idl_files': [
+        '<@(core_idl_files)',
+        '<@(core_idl_with_modules_dependency_files)',
+      ],
       'output_file': '<(bindings_core_output_dir)/GlobalObjectsCore.pickle',
     },
     'includes': ['../../bindings/scripts/global_objects.gypi'],
@@ -33,7 +36,10 @@
       'core_global_objects',
     ],
     'variables': {
-      'idl_files': '<(core_idl_files)',
+      'idl_files': [
+        '<@(core_idl_files)',
+        '<@(core_idl_with_modules_dependency_files)',
+      ],
       'global_objects_file':
         '<(bindings_core_output_dir)/GlobalObjectsCore.pickle',
       'global_names_idl_files': [
@@ -55,15 +61,18 @@
   {
     'target_name': 'interfaces_info_individual_core',
     'dependencies': [
+      '<(bindings_scripts_dir)/scripts.gyp:cached_lex_yacc_tables',
       '../../core/core_generated.gyp:generated_testing_idls',
       'core_global_constructors_idls',
     ],
     'variables': {
+      'cache_directory': '<(bindings_core_output_dir)/../scripts',
       'static_idl_files': '<(core_static_idl_files)',
       'generated_idl_files': '<(core_generated_idl_files)',
-      'component_dir': 'core',
-      'output_file':
+      'interfaces_info_file':
         '<(bindings_core_output_dir)/InterfacesInfoCoreIndividual.pickle',
+      'component_info_file':
+        '<(bindings_core_output_dir)/ComponentInfoCore.pickle',
     },
     'includes': ['../../bindings/scripts/interfaces_info_individual.gypi'],
   },

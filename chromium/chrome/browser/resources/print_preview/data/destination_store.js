@@ -12,11 +12,10 @@ cr.define('print_preview', function() {
    *     destinations.
    * @param {!print_preview.UserInfo} userInfo User information repository.
    * @param {!print_preview.AppState} appState Application state.
-   * @param {!print_preview.Metrics} metrics Metrics.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function DestinationStore(nativeLayer, userInfo, appState, metrics) {
+  function DestinationStore(nativeLayer, userInfo, appState) {
     cr.EventTarget.call(this);
 
     /**
@@ -42,10 +41,10 @@ cr.define('print_preview', function() {
 
     /**
      * Used to track metrics.
-     * @type {!print_preview.AppState}
+     * @type {!print_preview.DestinationSearchMetricsContext}
      * @private
      */
-    this.metrics_ = metrics;
+    this.metrics_ = new print_preview.DestinationSearchMetricsContext();
 
     /**
      * Internal backing store for the data store.
@@ -56,7 +55,7 @@ cr.define('print_preview', function() {
 
     /**
      * Cache used for constant lookup of destinations by origin and id.
-     * @type {object.<string, !print_preview.Destination>}
+     * @type {Object.<string, !print_preview.Destination>}
      * @private
      */
     this.destinationMap_ = {};
@@ -84,8 +83,16 @@ cr.define('print_preview', function() {
     this.tracker_ = new EventTracker();
 
     /**
+     * Whether PDF printer is enabled. It's disabled, for example, in App Kiosk
+     * mode.
+     * @type {boolean}
+     * @private
+     */
+    this.pdfPrinterEnabled_ = false;
+
+    /**
      * Used to fetch cloud-based print destinations.
-     * @type {print_preview.CloudPrintInterface}
+     * @type {cloudprint.CloudPrintInterface}
      * @private
      */
     this.cloudPrintInterface_ = null;
@@ -246,6 +253,12 @@ cr.define('print_preview', function() {
       return this.selectedDestination_;
     },
 
+    /** @return {boolean} Whether destination selection is pending or not. */
+    get isAutoSelectDestinationInProgress() {
+      return this.selectedDestination_ == null &&
+          this.autoSelectTimeout_ != null;
+    },
+
     /**
      * @return {boolean} Whether a search for local destinations is in progress.
      */
@@ -258,7 +271,7 @@ cr.define('print_preview', function() {
      * @return {boolean} Whether a search for cloud destinations is in progress.
      */
     get isCloudDestinationSearchInProgress() {
-      return this.cloudPrintInterface_ &&
+      return !!this.cloudPrintInterface_ &&
              this.cloudPrintInterface_.isCloudDestinationSearchInProgress;
     },
 
@@ -267,14 +280,18 @@ cr.define('print_preview', function() {
      * destination. If any inserted destinations match this ID, that destination
      * will be automatically selected. This method must be called after the
      * print_preview.AppState has been initialized.
-     * @private
+     * @param {boolean} isInAppKioskMode Whether the print preview is in App
+     *     Kiosk mode.
      */
-    init: function() {
+    init: function(isInAppKioskMode) {
+      this.pdfPrinterEnabled_ = !isInAppKioskMode;
       this.isInAutoSelectMode_ = true;
+      this.createLocalPdfPrintDestination_();
       if (!this.appState_.selectedDestinationId ||
           !this.appState_.selectedDestinationOrigin) {
-        this.onAutoSelectFailed_();
+        this.selectDefaultDestination_();
       } else {
+        assert(typeof this.appState_.selectedDestinationAccount == 'string');
         var key = this.getDestinationKey_(
             this.appState_.selectedDestinationOrigin,
             this.appState_.selectedDestinationId,
@@ -319,16 +336,15 @@ cr.define('print_preview', function() {
           cr.dispatchSimpleEvent(
             this,
             DestinationStore.EventType.CACHED_SELECTED_DESTINATION_INFO_READY);
-
         } else {
-          this.onAutoSelectFailed_();
+          this.selectDefaultDestination_();
         }
       }
     },
 
     /**
      * Sets the destination store's Google Cloud Print interface.
-     * @param {!print_preview.CloudPrintInterface} cloudPrintInterface Interface
+     * @param {!cloudprint.CloudPrintInterface} cloudPrintInterface Interface
      *     to set.
      */
     setCloudPrintInterface: function(cloudPrintInterface) {
@@ -349,6 +365,10 @@ cr.define('print_preview', function() {
           this.cloudPrintInterface_,
           cloudprint.CloudPrintInterface.EventType.PRINTER_FAILED,
           this.onCloudPrintPrinterFailed_.bind(this));
+      this.tracker_.add(
+          this.cloudPrintInterface_,
+          cloudprint.CloudPrintInterface.EventType.PROCESS_INVITE_DONE,
+          this.onCloudPrintProcessInviteDone_.bind(this));
     },
 
     /**
@@ -364,11 +384,17 @@ cr.define('print_preview', function() {
       });
     },
 
-    /** @param {!print_preview.Destination} Destination to select. */
+    /**
+     * @param {print_preview.Destination} destination Destination to select.
+     */
     selectDestination: function(destination) {
       this.isInAutoSelectMode_ = false;
-      this.cancelAutoSelectTimeout_();
-      if (destination == this.selectedDestination_) {
+      // When auto select expires, DESTINATION_SELECT event has to be dispatched
+      // anyway (see isAutoSelectDestinationInProgress() logic).
+      if (this.autoSelectTimeout_) {
+        clearTimeout(this.autoSelectTimeout_);
+        this.autoSelectTimeout_ = null;
+      } else if (destination == this.selectedDestination_) {
         return;
       }
       if (destination == null) {
@@ -394,15 +420,11 @@ cr.define('print_preview', function() {
             return otherDestination.cloudID == destination.cloudID &&
                 otherDestination != destination;
           })) {
-        if (destination.isPrivet) {
-          this.metrics_.incrementDestinationSearchBucket(
-              print_preview.Metrics.DestinationSearchBucket.
-                  PRIVET_DUPLICATE_SELECTED);
-        } else {
-          this.metrics_.incrementDestinationSearchBucket(
-              print_preview.Metrics.DestinationSearchBucket.
-                  CLOUD_DUPLICATE_SELECTED);
-        }
+        this.metrics_.record(destination.isPrivet ?
+            print_preview.Metrics.DestinationSearchBucket.
+                PRIVET_DUPLICATE_SELECTED :
+            print_preview.Metrics.DestinationSearchBucket.
+                CLOUD_DUPLICATE_SELECTED);
       }
       // Notify about selected destination change.
       cr.dispatchSimpleEvent(
@@ -434,12 +456,12 @@ cr.define('print_preview', function() {
      * @private
      */
     selectDefaultDestination_: function() {
-      var destination = this.destinationMap_[this.getDestinationKey_(
+      var saveToPdfKey = this.getDestinationKey_(
           print_preview.Destination.Origin.LOCAL,
           print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
-          '')] || null;
-      assert(destination != null, 'Save to PDF printer not found');
-      this.selectDestination(destination);
+          '');
+      this.selectDestination(
+          this.destinationMap_[saveToPdfKey] || this.destinations_[0] || null);
     },
 
     /** Initiates loading of local print destinations. */
@@ -494,6 +516,13 @@ cr.define('print_preview', function() {
         this.startLoadCloudDestinations(
             print_preview.Destination.Origin.COOKIES);
       }
+    },
+
+    /** Initiates loading of all known destination types. */
+    startLoadAllDestinations: function() {
+      this.startLoadCloudDestinations();
+      this.startLoadLocalDestinations();
+      this.startLoadPrivetDestinations();
     },
 
     /**
@@ -658,13 +687,17 @@ cr.define('print_preview', function() {
      * @private
      */
     createLocalPdfPrintDestination_: function() {
-      return new print_preview.Destination(
-          print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
-          print_preview.Destination.Type.LOCAL,
-          print_preview.Destination.Origin.LOCAL,
-          localStrings.getString('printToPDF'),
-          false /*isRecent*/,
-          print_preview.Destination.ConnectionStatus.ONLINE);
+      // TODO(alekseys): Create PDF printer in the native code and send its
+      // capabilities back with other local printers.
+      if (this.pdfPrinterEnabled_) {
+        this.insertDestination_(new print_preview.Destination(
+            print_preview.Destination.GooglePromotedId.SAVE_AS_PDF,
+            print_preview.Destination.Type.LOCAL,
+            print_preview.Destination.Origin.LOCAL,
+            loadTimeData.getString('printToPDF'),
+            false /*isRecent*/,
+            print_preview.Destination.ConnectionStatus.ONLINE));
+      }
     },
 
     /**
@@ -677,37 +710,16 @@ cr.define('print_preview', function() {
       this.selectDestination(null);
       this.loadedCloudOrigins_ = {};
       this.hasLoadedAllLocalDestinations_ = false;
-      // TODO(alekseys): Create PDF printer in the native code and send its
-      // capabilities back with other local printers.
-      this.insertDestination_(this.createLocalPdfPrintDestination_());
-      this.resetAutoSelectTimeout_();
-    },
 
-    /**
-     * Resets destination auto selection timeout.
-     * @private
-     */
-    resetAutoSelectTimeout_: function() {
-      this.cancelAutoSelectTimeout_();
-      this.autoSelectTimeout_ =
-          setTimeout(this.onAutoSelectFailed_.bind(this),
-                     DestinationStore.AUTO_SELECT_TIMEOUT_);
-    },
-
-    /**
-     * Cancels destination auto selection timeout.
-     * @private
-     */
-    cancelAutoSelectTimeout_: function() {
-      if (this.autoSelectTimeout_ != null) {
-        clearTimeout(this.autoSelectTimeout_);
-        this.autoSelectTimeout_ = null;
-      }
+      clearTimeout(this.autoSelectTimeout_);
+      this.autoSelectTimeout_ = setTimeout(
+          this.selectDefaultDestination_.bind(this),
+          DestinationStore.AUTO_SELECT_TIMEOUT_);
     },
 
     /**
      * Called when the local destinations have been got from the native layer.
-     * @param {Event} Contains the local destinations.
+     * @param {Event} event Contains the local destinations.
      * @private
      */
     onLocalDestinationsSet_: function(event) {
@@ -823,7 +835,7 @@ cr.define('print_preview', function() {
      * Called when the Google Cloud Print interface fails to lookup a
      * destination. Selects another destination if the failed destination was
      * the initial destination.
-     * @param {object} event Contains the ID of the destination that was failed
+     * @param {Object} event Contains the ID of the destination that was failed
      *     to be looked up.
      * @private
      */
@@ -838,8 +850,22 @@ cr.define('print_preview', function() {
     },
 
     /**
+     * Called when printer sharing invitation was processed successfully.
+     * @param {Event} event Contains detailed information about the invite and
+     *     newly accepted destination (if known).
+     * @private
+     */
+    onCloudPrintProcessInviteDone_: function(event) {
+      if (event.accept && event.printer) {
+        // Hint the destination list to promote this new destination.
+        event.printer.isRecent = true;
+        this.insertDestination_(event.printer);
+      }
+    },
+
+    /**
      * Called when a Privet printer is added to the local network.
-     * @param {object} event Contains information about the added printer.
+     * @param {Object} event Contains information about the added printer.
      * @private
      */
     onPrivetPrinterAdded_: function(event) {
@@ -855,7 +881,7 @@ cr.define('print_preview', function() {
 
     /**
      * Called when capabilities for a privet printer are set.
-     * @param {object} event Contains the capabilities and printer ID.
+     * @param {Object} event Contains the capabilities and printer ID.
      * @private
      */
     onPrivetCapabilitiesSet_: function(event) {
@@ -876,18 +902,8 @@ cr.define('print_preview', function() {
     onDestinationsReload_: function() {
       this.reset_();
       this.isInAutoSelectMode_ = true;
-      this.startLoadLocalDestinations();
-      this.startLoadCloudDestinations();
-      this.startLoadPrivetDestinations();
-    },
-
-    /**
-     * Called when auto-selection fails. Selects the first destination in store.
-     * @private
-     */
-    onAutoSelectFailed_: function() {
-      this.cancelAutoSelectTimeout_();
-      this.selectDefaultDestination_();
+      this.createLocalPdfPrintDestination_();
+      this.startLoadAllDestinations();
     },
 
     // TODO(vitalybuka): Remove three next functions replacing Destination.id
@@ -895,8 +911,8 @@ cr.define('print_preview', function() {
     /**
      * Returns key to be used with {@code destinationMap_}.
      * @param {!print_preview.Destination.Origin} origin Destination origin.
-     * @return {string} id Destination id.
-     * @return {string} account User account destination is registered for.
+     * @param {string} id Destination id.
+     * @param {string} account User account destination is registered for.
      * @private
      */
     getDestinationKey_: function(origin, id, account) {

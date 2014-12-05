@@ -31,23 +31,26 @@
 #ifndef AnimationEffect_h
 #define AnimationEffect_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/CSSPropertyNames.h"
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Interpolation;
 
-class AnimationEffect : public RefCountedWillBeGarbageCollectedFinalized<AnimationEffect> {
+class AnimationEffect : public RefCountedWillBeGarbageCollectedFinalized<AnimationEffect>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum CompositeOperation {
         CompositeReplace,
         CompositeAdd,
     };
 
+    AnimationEffect() { }
     virtual ~AnimationEffect() { }
     virtual PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample(int iteration, double fraction, double iterationDuration) const = 0;
 
@@ -57,6 +60,6 @@ public:
     virtual void trace(Visitor*) { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AnimationEffect_h

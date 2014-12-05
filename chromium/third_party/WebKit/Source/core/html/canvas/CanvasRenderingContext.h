@@ -34,12 +34,10 @@
 
 namespace blink { class WebLayer; }
 
-namespace WebCore {
+namespace blink {
 
 class CanvasImageSource;
 class HTMLCanvasElement;
-class KURL;
-class WebGLObject;
 
 class CanvasRenderingContext : public NoBaseWillBeGarbageCollectedFinalized<CanvasRenderingContext> {
     WTF_MAKE_NONCOPYABLE(CanvasRenderingContext);
@@ -58,10 +56,11 @@ public:
     virtual bool is3d() const { return false; }
     virtual bool isAccelerated() const { return false; }
     virtual bool hasAlpha() const { return true; }
+    virtual void setIsHidden(bool) = 0;
 
     virtual void paintRenderingResultsToCanvas() {}
 
-    virtual blink::WebLayer* platformLayer() const { return 0; }
+    virtual blink::WebLayer* platformLayer() const { return nullptr; }
 
     virtual void trace(Visitor* visitor) { visitor->trace(m_canvas); }
 
@@ -76,6 +75,6 @@ private:
     HashSet<String> m_dirtyURLs;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

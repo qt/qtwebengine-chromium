@@ -7,21 +7,45 @@
  */
 WebInspector.InplaceEditor = function()
 {
-};
+}
+
+/**
+ * @typedef {{cancel: function(), commit: function(), setWidth: function(number)}}
+ */
+WebInspector.InplaceEditor.Controller;
 
 /**
  * @param {!Element} element
  * @param {!WebInspector.InplaceEditor.Config=} config
- * @return {?{cancel: function(), commit: function(), setWidth: function(number)}}
+ * @return {?WebInspector.InplaceEditor.Controller}
  */
 WebInspector.InplaceEditor.startEditing = function(element, config)
 {
-    if (config.multiline)
-        return WebInspector.moduleManager.instance(WebInspector.InplaceEditor).startEditing(element, config);
-
     if (!WebInspector.InplaceEditor._defaultInstance)
         WebInspector.InplaceEditor._defaultInstance = new WebInspector.InplaceEditor();
     return WebInspector.InplaceEditor._defaultInstance.startEditing(element, config);
+}
+
+/**
+ * @param {!Element} element
+ * @param {!WebInspector.InplaceEditor.Config=} config
+ * @return {!Promise.<!WebInspector.InplaceEditor.Controller>}
+ */
+WebInspector.InplaceEditor.startMultilineEditing = function(element, config)
+{
+    return self.runtime.instancePromise(WebInspector.InplaceEditor).then(startEditing);
+
+    /**
+     * @param {!Object} inplaceEditor
+     * @return {!WebInspector.InplaceEditor.Controller|!Promise.<!WebInspector.InplaceEditor.Controller>}
+     */
+    function startEditing(inplaceEditor)
+    {
+        var controller = /** @type {!WebInspector.InplaceEditor} */ (inplaceEditor).startEditing(element, config);
+        if (!controller)
+            return Promise.rejectWithError("Editing is already in progress");
+        return controller;
+    }
 }
 
 WebInspector.InplaceEditor.prototype = {
@@ -77,7 +101,7 @@ WebInspector.InplaceEditor.prototype = {
     /**
      * @param {!Element} element
      * @param {!WebInspector.InplaceEditor.Config=} config
-     * @return {?{cancel: function(), commit: function()}}
+     * @return {?WebInspector.InplaceEditor.Controller}
      */
     startEditing: function(element, config)
     {
@@ -95,7 +119,7 @@ WebInspector.InplaceEditor.prototype = {
         var self = this;
 
         /**
-         * @param {?Event} e
+         * @param {!Event} e
          */
         function consumeCopy(e)
         {
@@ -107,9 +131,11 @@ WebInspector.InplaceEditor.prototype = {
         editingContext.oldText = isMultiline ? config.initialValue : this.editorContent(editingContext);
 
         /**
-         * @param {?Event=} e
+         * @param {!Event=} e
          */
         function blurEventListener(e) {
+            if (config.blurHandler && !config.blurHandler(element, e))
+                return;
             if (!isMultiline || !e || !e.relatedTarget || !e.relatedTarget.isSelfOrDescendant(element))
                 editingCommitted.call(element);
         }
@@ -191,7 +217,8 @@ WebInspector.InplaceEditor.prototype = {
 
         var handle = {
             cancel: editingCancelled.bind(element),
-            commit: editingCommitted.bind(element)
+            commit: editingCommitted.bind(element),
+            setWidth: function() {}
         };
         this.augmentEditingHandle(editingContext, handle);
         return handle;
@@ -203,13 +230,15 @@ WebInspector.InplaceEditor.prototype = {
  * @param {function(!Element,string,string,T,string)} commitHandler
  * @param {function(!Element,T)} cancelHandler
  * @param {T=} context
+ * @param {function(!Element,!Event):boolean=} blurHandler
  * @template T
  */
-WebInspector.InplaceEditor.Config = function(commitHandler, cancelHandler, context)
+WebInspector.InplaceEditor.Config = function(commitHandler, cancelHandler, context, blurHandler)
 {
     this.commitHandler = commitHandler;
     this.cancelHandler = cancelHandler
     this.context = context;
+    this.blurHandler = blurHandler;
 
     /**
      * Handles the "paste" event, return values are the same as those for customFinishHandler

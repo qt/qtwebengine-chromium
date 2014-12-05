@@ -23,15 +23,20 @@ class MockGamepadDataFetcher : public GamepadDataFetcher {
   // returned when the provider queries us.
   explicit MockGamepadDataFetcher(const blink::WebGamepads& test_data);
 
-  virtual ~MockGamepadDataFetcher();
+  ~MockGamepadDataFetcher() override;
 
   // GamepadDataFetcher.
-  virtual void GetGamepadData(blink::WebGamepads* pads,
-                              bool devices_changed_hint) OVERRIDE;
+  void GetGamepadData(blink::WebGamepads* pads,
+                      bool devices_changed_hint) override;
 
   // Blocks the current thread until the GamepadProvider reads from this
   // fetcher on the background thread.
   void WaitForDataRead();
+
+  // Blocks the current thread until the GamepadProvider reads from this
+  // fetcher on the background thread and issued all callbacks related to the
+  // read on the client's thread.
+  void WaitForDataReadAndCallbacksIssued();
 
   // Updates the test data.
   void SetTestData(const blink::WebGamepads& new_data);
@@ -64,7 +69,7 @@ class GamepadTestHelper {
 class GamepadServiceTestConstructor : public GamepadTestHelper {
  public:
   explicit GamepadServiceTestConstructor(const blink::WebGamepads& test_data);
-  virtual ~GamepadServiceTestConstructor();
+  ~GamepadServiceTestConstructor() override;
 
   GamepadService* gamepad_service() { return gamepad_service_; }
   MockGamepadDataFetcher* data_fetcher() { return data_fetcher_; }

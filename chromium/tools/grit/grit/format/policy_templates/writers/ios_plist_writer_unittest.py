@@ -55,11 +55,17 @@ class IOSPListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
                                         expected_output,
                                         parse,
                                         decode_and_parse):
+
+
+    _defines = { '_chromium': '1',
+                 'mac_bundle_id': 'com.example.Test',
+                 'version': '39.0.0.0' }
+
     # Generate the grit output for |templates|.
     output = self.GetOutput(
         self.PrepareTest(templates),
         'fr',
-        { '_chromium': '1', 'mac_bundle_id': 'com.example.Test' },
+        _defines,
         'ios_plist',
         'en')
 
@@ -124,6 +130,17 @@ class IOSPListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     expected = {}
     self._VerifyGeneratedOutput(templates, expected)
 
+  def testEmptyVersion(self):
+    templates = '''
+    {
+      'policy_definitions': [],
+      'placeholders': [],
+      'messages': {},
+    }
+    '''
+    expected = {}
+    self._VerifyGeneratedOutput(templates, expected)
+
   def testBoolean(self):
     templates = self._MakeTemplate('BooleanPolicy', 'main', 'True')
     expected = {
@@ -177,6 +194,21 @@ class IOSPListWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     templates = self._MakeTemplate('StringListPolicy', 'list', '["a", "b"]')
     expected = {
       'StringListPolicy': [ "a", "b" ],
+    }
+    self._VerifyGeneratedOutput(templates, expected)
+
+  def testStringEnumList(self):
+    templates = self._MakeTemplate('StringEnumListPolicy',
+                                   'string-enum-list', '["a", "b"]',
+        '''
+          'items': [
+            { 'name': 'Foo', 'value': 'a', 'caption': '' },
+            { 'name': 'Bar', 'value': 'b', 'caption': '' },
+          ],
+        ''')
+
+    expected = {
+      'StringEnumListPolicy': [ "a", "b" ],
     }
     self._VerifyGeneratedOutput(templates, expected)
 

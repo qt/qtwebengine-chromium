@@ -5,11 +5,13 @@
 #ifndef PPAPI_PROXY_TRUETYPE_FONT_RESOURCE_H_
 #define PPAPI_PROXY_TRUETYPE_FONT_RESOURCE_H_
 
+#include <queue>
 #include <string>
 
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_resource.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/proxy/serialized_structs.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/ppb_truetype_font_api.h"
 
@@ -30,29 +32,32 @@ class PPAPI_PROXY_EXPORT TrueTypeFontResource
                        const PP_TrueTypeFontDesc_Dev& desc);
   virtual ~TrueTypeFontResource();
 
-  // Resource overrides.
-  virtual thunk::PPB_TrueTypeFont_API* AsPPB_TrueTypeFont_API() OVERRIDE;
+  // Resource implementation.
+  virtual thunk::PPB_TrueTypeFont_API* AsPPB_TrueTypeFont_API() override;
 
   // PPB_TrueTypeFont_API implementation.
   virtual int32_t Describe(
       PP_TrueTypeFontDesc_Dev* desc,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
   virtual int32_t GetTableTags(
       const PP_ArrayOutput& output,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
   virtual int32_t GetTable(
       uint32_t table,
       int32_t offset,
       int32_t max_data_length,
       const PP_ArrayOutput& output,
-      scoped_refptr<TrackedCallback> callback) OVERRIDE;
+      scoped_refptr<TrackedCallback> callback) override;
+
+  // PluginResource implementation.
+  virtual void OnReplyReceived(const ResourceMessageReplyParams& params,
+                               const IPC::Message& msg) override;
 
  private:
-  void OnPluginMsgDescribeComplete(
-      scoped_refptr<TrackedCallback> callback,
-      PP_TrueTypeFontDesc_Dev* pp_desc,
+  void OnPluginMsgCreateComplete(
       const ResourceMessageReplyParams& params,
-      const ppapi::proxy::SerializedTrueTypeFontDesc& desc);
+      const ppapi::proxy::SerializedTrueTypeFontDesc& desc,
+      int32_t result);
   void OnPluginMsgGetTableTagsComplete(
       scoped_refptr<TrackedCallback> callback,
       PP_ArrayOutput array_output,
@@ -63,6 +68,14 @@ class PPAPI_PROXY_EXPORT TrueTypeFontResource
       PP_ArrayOutput array_output,
       const ResourceMessageReplyParams& params,
       const std::string& data);
+
+  int32_t create_result_;
+  // Valid only when create_result_ == PP_OK.
+  ppapi::proxy::SerializedTrueTypeFontDesc desc_;
+
+  // Params for pending Describe call.
+  PP_TrueTypeFontDesc_Dev* describe_desc_;
+  scoped_refptr<TrackedCallback> describe_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(TrueTypeFontResource);
 };

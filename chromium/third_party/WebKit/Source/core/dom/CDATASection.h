@@ -25,22 +25,23 @@
 
 #include "core/dom/Text.h"
 
-namespace WebCore {
+namespace blink {
 
-class CDATASection FINAL : public Text {
+class CDATASection final : public Text {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CDATASection> create(Document&, const String&);
 
 private:
     CDATASection(Document&, const String&);
 
-    virtual String nodeName() const OVERRIDE;
-    virtual NodeType nodeType() const OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&) OVERRIDE;
+    virtual String nodeName() const override;
+    virtual NodeType nodeType() const override;
+    virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&) override;
 };
 
 DEFINE_NODE_TYPE_CASTS(CDATASection, nodeType() == Node::CDATA_SECTION_NODE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CDATASection_h

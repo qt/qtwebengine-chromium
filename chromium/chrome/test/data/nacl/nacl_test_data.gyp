@@ -86,10 +86,11 @@
       'variables': {
         'nexe_target': 'extension_validation_cache',
         # The test currently only has the test expectations for the
-        # newlib case (# validation queries/settings), and has also
-        # hardcoded the newlib variant's directory path for the unpacked ext.
+        # newlib and glibc cases (# validation queries/settings), and has also
+        # hardcoded the newlib and glibc variants' directory path for the
+        # unpacked ext.
         'build_newlib': 1,
-        'build_glibc': 0,
+        'build_glibc': 1,
         'build_pnacl_newlib': 0,
         # Need a new directory to not clash with with other extension
         # tests's files (e.g., manifest.json).
@@ -497,125 +498,6 @@
       ],
     },
     {
-      'target_name': 'pm_redir_test',
-      'type': 'none',
-      'variables': {
-        'nexe_target': 'pm_redir_test',
-        'build_newlib': 1,
-        'build_glibc': 1,
-        'build_pnacl_newlib': 1,
-        'nexe_destination_dir': 'nacl_test_data',
-        'link_flags': [
-          '-lppapi',
-          '-lplatform',
-          '-lgio',
-        ],
-        'sources': [
-          'postmessage_redir/pm_redir_test.cc',
-        ],
-        'test_files': [
-          'postmessage_redir/pm_redir_test.html',
-        ],
-      },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
-        '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
-        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
-      ],
-    },
-    {
-      'target_name': 'pm_manifest_file',
-      'type': 'none',
-      'variables': {
-        'nexe_target': 'pm_manifest_file',
-        'build_newlib': 1,
-        'build_glibc': 1,
-        # TODO(ncbray) support file injection into PNaCl manifest.
-        'build_pnacl_newlib': 0,
-        'nexe_destination_dir': 'nacl_test_data',
-        'link_flags': [
-          '-lnacl_ppapi_util',
-          '-lppapi_cpp',
-          '-lppapi',
-          '-lsrpc',
-          '-lplatform',
-          '-lgio',
-          '-limc',
-          '-limc_syscalls',
-          '-lweak_ref',
-        ],
-        'sources': [
-          'manifest_file/pm_manifest_file_test.cc',
-        ],
-        'create_nmf_args_portable': [
-          '-xtest_file:test_file.txt',
-          '-xnmf says hello world:test_file.txt',
-        ],
-        'test_files': [
-          'manifest_file/pm_manifest_file_test.html',
-        ],
-      },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
-        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
-        '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
-        '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
-        '<(DEPTH)/native_client/src/shared/imc/imc.gyp:imc_lib',
-        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
-        '<(DEPTH)/native_client/src/trusted/weak_ref/weak_ref.gyp:weak_ref_lib',
-        'nacl_ppapi_util',
-      ],
-    },
-    {
-      'target_name': 'pm_pre_init_manifest_file',
-      'type': 'none',
-      'variables': {
-        'nexe_target': 'pm_pre_init_manifest_file',
-        'build_newlib': 1,
-        'build_glibc': 1,
-        # TODO(ncbray) support file injection into PNaCl manifest.
-        'build_pnacl_newlib': 0,
-        'nexe_destination_dir': 'nacl_test_data',
-        'link_flags': [
-          '-lnacl_ppapi_util',
-          '-lppapi_cpp',
-          '-lppapi',
-          '-lsrpc',
-          '-lplatform',
-          '-lgio',
-          '-limc',
-          '-limc_syscalls',
-          '-lweak_ref',
-        ],
-        'sources': [
-          'manifest_file/pm_pre_init_manifest_file_test.cc',
-        ],
-        'create_nmf_args_portable': [
-          '-xtest_file:test_file.txt',
-          '-xnmf says hello world:test_file.txt',
-        ],
-        'test_files': [
-          'manifest_file/pm_pre_init_manifest_file_test.html',
-        ],
-      },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
-        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
-        '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
-        '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
-        '<(DEPTH)/native_client/src/shared/imc/imc.gyp:imc_lib',
-        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
-        '<(DEPTH)/native_client/src/trusted/weak_ref/weak_ref.gyp:weak_ref_lib',
-        'nacl_ppapi_util',
-      ],
-    },
-    {
       'target_name': 'irt_manifest_file',
       'type': 'none',
       'variables': {
@@ -656,6 +538,7 @@
         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
@@ -677,6 +560,7 @@
             # We cannot disable building, as enable_XXX variables are also used
             # to build newlib linked nexes.
             'build_pnacl_newlib': 1,
+            'translate_pexe_with_build': 1,
             'enable_x86_32_nonsfi': 1,
           },
         }],
@@ -713,6 +597,7 @@
         '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
         '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_exception_lib',
         '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
+        '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
         '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
         'ppapi_test_lib',
       ],
@@ -721,48 +606,9 @@
           # Enable nonsfi testing only on ia32-linux environment.
           'variables': {
             'enable_x86_32_nonsfi': 1,
+            'translate_pexe_with_build': 1,
           },
         }],
-      ],
-    },
-    {
-      'target_name': 'pm_nameservice_test',
-      'type': 'none',
-      'variables': {
-        'nexe_target': 'pm_nameservice_test',
-        'build_newlib': 1,
-        'build_glibc': 1,
-        'build_pnacl_newlib': 1,
-        'nexe_destination_dir': 'nacl_test_data',
-        'link_flags': [
-          '-lnacl_ppapi_util',
-          '-lppapi_cpp',
-          '-lppapi',
-          '-lsrpc',
-          '-lplatform',
-          '-lgio',
-          '-limc',
-          '-limc_syscalls',
-          '-lweak_ref',
-        ],
-        'sources': [
-          'nameservice/pm_nameservice_test.cc',
-        ],
-        'test_files': [
-          'nameservice/pm_nameservice_test.html',
-        ],
-      },
-      'dependencies': [
-        '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
-        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
-        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
-        '<(DEPTH)/native_client/src/shared/srpc/srpc.gyp:srpc_lib',
-        '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform_lib',
-        '<(DEPTH)/native_client/src/shared/gio/gio.gyp:gio_lib',
-        '<(DEPTH)/native_client/src/shared/imc/imc.gyp:imc_lib',
-        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:imc_syscalls_lib',
-        '<(DEPTH)/native_client/src/trusted/weak_ref/weak_ref.gyp:weak_ref_lib',
-        'nacl_ppapi_util',
       ],
     },
     {
@@ -808,10 +654,6 @@
         'nexe_target': 'pnacl_debug_url',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate these AOT, when we just need the pexe.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'generate_nmf': 0,
         'sources': [
           'simple.cc',
@@ -833,10 +675,6 @@
       'variables': {
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate AOT.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         # Use prebuilt NMF files.
         'generate_nmf': 0,
         'test_files': [
@@ -859,10 +697,6 @@
         'build_glibc': 1,
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate AOT.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'test_files': [
           'pnacl_mime_type/pnacl_mime_type.html',
         ],
@@ -875,10 +709,6 @@
         'nexe_target': 'pnacl_options',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
-        # No need to translate these AOT, when we just need the pexe.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'generate_nmf': 0,
         'sources': [
           'simple.cc',
@@ -898,12 +728,6 @@
       'target_name': 'pnacl_dyncode_syscall_disabled_test',
       'type': 'none',
       'variables': {
-        # This tests that nexes produced by translation in the browser are not
-        # able to use the dyncode syscalls.  Pre-translated nexes are not
-        # subject to this constraint, so we do not test them.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
         'nexe_target': 'pnacl_dyncode_syscall_disabled',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
@@ -936,16 +760,10 @@
       ],
     },
     {
-      'target_name': 'pnacl_exception_handling_disabled_test',
+      'target_name': 'pnacl_hw_eh_disabled_test',
       'type': 'none',
       'variables': {
-        # This tests that nexes produced by translation in the browser are not
-        # able to use hardware exception handling.  Pre-translated nexes are
-        # not subject to this constraint, so we do not test them.
-        'enable_x86_32': 0,
-        'enable_x86_64': 0,
-        'enable_arm': 0,
-        'nexe_target': 'pnacl_exception_handling_disabled',
+        'nexe_target': 'pnacl_hw_eh_disabled',
         'build_pnacl_newlib': 1,
         'nexe_destination_dir': 'nacl_test_data',
         'link_flags': [
@@ -960,10 +778,10 @@
           '-lnacl_exception_private',
         ],
         'sources': [
-          'pnacl_exception_handling_disabled/pnacl_exception_handling_disabled.cc',
+          'pnacl_hw_eh_disabled/pnacl_hw_eh_disabled.cc',
         ],
         'test_files': [
-          'pnacl_exception_handling_disabled/pnacl_exception_handling_disabled.html',
+          'pnacl_hw_eh_disabled/pnacl_hw_eh_disabled.html',
         ],
       },
       'dependencies': [
@@ -1139,6 +957,11 @@
 
             # Stack-Smashing protector does not work with libc-free context.
             '-fno-stack-protector',
+            # Optimizers may translate the original code to code which
+            # requires builtin functions and/or relocations. Specifically,
+            # the LLVM's optimizer translates for-loop based zero
+            # clear to memset.
+            '-O0',
           ],
           'cflags!': [
             # We filter these out because release_extra_cflags or another
@@ -1148,14 +971,28 @@
             '-fstack-protector-all',
             '-fprofile-generate',
             '-finstrument-functions',
+            # ARM GCC emits symbols like __aeabi_unwind_cpp_pr0 in
+            # .exidx sections with this flag.
+            '-funwind-tables',
           ],
           'ldflags': [
             '-nostdlib',
             '-shared',
+            # This binary cannot relocate itself, so we should have no
+            # undefined references left.
+            '-Wl,--no-undefined',
           ],
           'ldflags!': [
             # Explicitly remove the -pthread flag to avoid a link time warning.
             '-pthread',
+          ],
+          # Do not use any sanitizers tools, which require a few symbols.
+          'cflags/': [
+            ['exclude', '-fsanitize'],
+            ['exclude', '^-O'],  # Strip -O2, -Os etc.
+          ],
+          'ldflags/': [
+            ['exclude', '-fsanitize'],
           ],
           'defines': [
             # The code depends on NaCl's headers. This is a macro for them.

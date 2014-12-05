@@ -33,7 +33,7 @@
 #include "core/rendering/RenderObject.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 bool PreloadRequest::isSafeToSendToAnotherThread() const
 {
@@ -61,6 +61,21 @@ FetchRequest PreloadRequest::resourceRequest(Document* document)
     return request;
 }
 
+inline HTMLResourcePreloader::HTMLResourcePreloader(Document& document)
+    : m_document(document)
+{
+}
+
+PassOwnPtrWillBeRawPtr<HTMLResourcePreloader> HTMLResourcePreloader::create(Document& document)
+{
+    return adoptPtrWillBeNoop(new HTMLResourcePreloader(document));
+}
+
+void HTMLResourcePreloader::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+}
+
 void HTMLResourcePreloader::takeAndPreload(PreloadRequestStream& r)
 {
     PreloadRequestStream requests;
@@ -73,6 +88,7 @@ void HTMLResourcePreloader::takeAndPreload(PreloadRequestStream& r)
 void HTMLResourcePreloader::preload(PassOwnPtr<PreloadRequest> preload)
 {
     FetchRequest request = preload->resourceRequest(m_document);
+    request.setDefer(preload->defer());
     blink::Platform::current()->histogramCustomCounts("WebCore.PreloadDelayMs", static_cast<int>(1000 * (monotonicallyIncreasingTime() - preload->discoveryTime())), 0, 2000, 20);
     m_document->fetcher()->preload(preload->resourceType(), request, preload->charset());
 }

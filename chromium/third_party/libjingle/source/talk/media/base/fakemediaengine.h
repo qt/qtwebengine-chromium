@@ -34,13 +34,13 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/buffer.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/base/audiorenderer.h"
 #include "talk/media/base/mediaengine.h"
 #include "talk/media/base/rtputils.h"
 #include "talk/media/base/streamparams.h"
-#include "talk/p2p/base/sessiondescription.h"
+#include "webrtc/p2p/base/sessiondescription.h"
+#include "webrtc/base/buffer.h"
+#include "webrtc/base/stringutils.h"
 
 namespace cricket {
 
@@ -73,11 +73,11 @@ template <class Base> class RtpHelper : public Base {
     if (!sending_) {
       return false;
     }
-    talk_base::Buffer packet(data, len, kMaxRtpPacketLen);
+    rtc::Buffer packet(data, len, kMaxRtpPacketLen);
     return Base::SendPacket(&packet);
   }
   bool SendRtcp(const void* data, int len) {
-    talk_base::Buffer packet(data, len, kMaxRtpPacketLen);
+    rtc::Buffer packet(data, len, kMaxRtpPacketLen);
     return Base::SendRtcp(&packet);
   }
 
@@ -191,12 +191,12 @@ template <class Base> class RtpHelper : public Base {
     return true;
   }
   void set_playout(bool playout) { playout_ = playout; }
-  virtual void OnPacketReceived(talk_base::Buffer* packet,
-                                const talk_base::PacketTime& packet_time) {
+  virtual void OnPacketReceived(rtc::Buffer* packet,
+                                const rtc::PacketTime& packet_time) {
     rtp_packets_.push_back(std::string(packet->data(), packet->length()));
   }
-  virtual void OnRtcpReceived(talk_base::Buffer* packet,
-                              const talk_base::PacketTime& packet_time) {
+  virtual void OnRtcpReceived(rtc::Buffer* packet,
+                              const rtc::PacketTime& packet_time) {
     rtcp_packets_.push_back(std::string(packet->data(), packet->length()));
   }
   virtual void OnReadyToSend(bool ready) {
@@ -281,7 +281,6 @@ class FakeVoiceMediaChannel : public RtpHelper<VoiceMediaChannel> {
     }
     return set_sending(flag != SEND_NOTHING);
   }
-  virtual bool SetStartSendBandwidth(int bps) { return true; }
   virtual bool SetMaxSendBandwidth(int bps) { return true; }
   virtual bool AddRecvStream(const StreamParams& sp) {
     if (!RtpHelper<VoiceMediaChannel>::AddRecvStream(sp))
@@ -477,8 +476,8 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
       : engine_(engine),
         sent_intra_frame_(false),
         requested_intra_frame_(false),
-        start_bps_(-1),
         max_bps_(-1) {}
+
   ~FakeVideoMediaChannel();
 
   const std::vector<VideoCodec>& recv_codecs() const { return recv_codecs_; }
@@ -489,7 +488,6 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
   const std::map<uint32, VideoRenderer*>& renderers() const {
     return renderers_;
   }
-  int start_bps() const { return start_bps_; }
   int max_bps() const { return max_bps_; }
   bool GetSendStreamFormat(uint32 ssrc, VideoFormat* format) {
     if (send_formats_.find(ssrc) == send_formats_.end()) {
@@ -568,10 +566,6 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
   bool HasCapturer(uint32 ssrc) const {
     return capturers_.find(ssrc) != capturers_.end();
   }
-  virtual bool SetStartSendBandwidth(int bps) {
-    start_bps_ = bps;
-    return true;
-  }
   virtual bool SetMaxSendBandwidth(int bps) {
     max_bps_ = bps;
     return true;
@@ -633,7 +627,6 @@ class FakeVideoMediaChannel : public RtpHelper<VideoMediaChannel> {
   bool sent_intra_frame_;
   bool requested_intra_frame_;
   VideoOptions options_;
-  int start_bps_;
   int max_bps_;
 };
 
@@ -673,7 +666,6 @@ class FakeDataMediaChannel : public RtpHelper<DataMediaChannel> {
     set_playout(receive);
     return true;
   }
-  virtual bool SetStartSendBandwidth(int bps) { return true; }
   virtual bool SetMaxSendBandwidth(int bps) {
     max_bps_ = bps;
     return true;
@@ -690,7 +682,7 @@ class FakeDataMediaChannel : public RtpHelper<DataMediaChannel> {
   }
 
   virtual bool SendData(const SendDataParams& params,
-                        const talk_base::Buffer& payload,
+                        const rtc::Buffer& payload,
                         SendDataResult* result) {
     if (send_blocked_) {
       *result = SDR_BLOCK;
@@ -724,7 +716,7 @@ class FakeBaseEngine {
       : loglevel_(-1),
         options_changed_(false),
         fail_create_channel_(false) {}
-  bool Init(talk_base::Thread* worker_thread) { return true; }
+  bool Init(rtc::Thread* worker_thread) { return true; }
   void Terminate() {}
 
   void SetLogging(int level, const char* filter) {
@@ -824,7 +816,7 @@ class FakeVoiceEngine : public FakeBaseEngine {
 
   bool SetLocalMonitor(bool enable) { return true; }
 
-  bool StartAecDump(talk_base::PlatformFile file) { return false; }
+  bool StartAecDump(rtc::PlatformFile file) { return false; }
 
   bool RegisterProcessor(uint32 ssrc, VoiceProcessor* voice_processor,
                          MediaProcessorDirection direction) {
@@ -868,7 +860,7 @@ class FakeVoiceEngine : public FakeBaseEngine {
 
 class FakeVideoEngine : public FakeBaseEngine {
  public:
-  FakeVideoEngine() : renderer_(NULL), capture_(false), processor_(NULL) {
+  FakeVideoEngine() : capture_(false), processor_(NULL) {
     // Add a fake video codec. Note that the name must not be "" as there are
     // sanity checks against that.
     codecs_.push_back(VideoCodec(0, "fake_video_codec", 0, 0, 0, 0));
@@ -887,19 +879,18 @@ class FakeVideoEngine : public FakeBaseEngine {
     default_encoder_config_ = config;
     return true;
   }
-  VideoEncoderConfig GetDefaultEncoderConfig() const {
-    return default_encoder_config_;
-  }
   const VideoEncoderConfig& default_encoder_config() const {
     return default_encoder_config_;
   }
 
-  VideoMediaChannel* CreateChannel(VoiceMediaChannel* channel) {
+  VideoMediaChannel* CreateChannel(const VideoOptions& options,
+                                   VoiceMediaChannel* channel) {
     if (fail_create_channel_) {
       return NULL;
     }
 
     FakeVideoMediaChannel* ch = new FakeVideoMediaChannel(this);
+    ch->SetOptions(options);
     channels_.push_back(ch);
     return ch;
   }
@@ -926,10 +917,6 @@ class FakeVideoEngine : public FakeBaseEngine {
     options_changed_ = true;
     return true;
   }
-  bool SetLocalRenderer(VideoRenderer* r) {
-    renderer_ = r;
-    return true;
-  }
   bool SetCapture(bool capture) {
     capture_ = capture;
     return true;
@@ -946,7 +933,6 @@ class FakeVideoEngine : public FakeBaseEngine {
   std::vector<VideoCodec> codecs_;
   VideoEncoderConfig default_encoder_config_;
   std::string in_device_;
-  VideoRenderer* renderer_;
   bool capture_;
   VideoProcessor* processor_;
   VideoOptions options_;
@@ -994,7 +980,6 @@ class FakeMediaEngine :
   }
   const std::string& audio_in_device() const { return voice_.in_device_; }
   const std::string& audio_out_device() const { return voice_.out_device_; }
-  VideoRenderer* local_renderer() { return video_.renderer_; }
   int voice_loglevel() const { return voice_.loglevel_; }
   const std::string& voice_logfilter() const { return voice_.logfilter_; }
   int video_loglevel() const { return video_.loglevel_; }

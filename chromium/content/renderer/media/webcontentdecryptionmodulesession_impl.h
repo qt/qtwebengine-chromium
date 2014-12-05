@@ -5,6 +5,7 @@
 #ifndef CONTENT_RENDERER_MEDIA_WEBCONTENTDECRYPTIONMODULESESSION_IMPL_H_
 #define CONTENT_RENDERER_MEDIA_WEBCONTENTDECRYPTIONMODULESESSION_IMPL_H_
 
+#include <map>
 #include <string>
 #include <vector>
 
@@ -27,29 +28,47 @@ class WebContentDecryptionModuleSessionImpl
     : public blink::WebContentDecryptionModuleSession {
  public:
   WebContentDecryptionModuleSessionImpl(
-      Client* client,
       const scoped_refptr<CdmSessionAdapter>& adapter);
   virtual ~WebContentDecryptionModuleSessionImpl();
 
   // blink::WebContentDecryptionModuleSession implementation.
+  virtual void setClientInterface(Client* client);
   virtual blink::WebString sessionId() const;
+  // TODO(jrummell): Remove the next 3 methods once blink updated.
   virtual void initializeNewSession(const blink::WebString& mime_type,
                                     const uint8* init_data,
                                     size_t init_data_length);
   virtual void update(const uint8* response, size_t response_length);
   virtual void release();
+  virtual void initializeNewSession(
+      const blink::WebString& init_data_type,
+      const uint8* init_data,
+      size_t init_data_length,
+      const blink::WebString& session_type,
+      blink::WebContentDecryptionModuleResult result);
+  virtual void load(const blink::WebString& session_id,
+                    blink::WebContentDecryptionModuleResult result);
+  virtual void update(const uint8* response,
+                      size_t response_length,
+                      blink::WebContentDecryptionModuleResult result);
+  virtual void close(blink::WebContentDecryptionModuleResult result);
+  virtual void remove(blink::WebContentDecryptionModuleResult result);
+  virtual void getUsableKeyIds(blink::WebContentDecryptionModuleResult result);
+
+  // TODO(jrummell): Remove the next method once blink updated.
+  virtual void release(blink::WebContentDecryptionModuleResult result);
 
   // Callbacks.
   void OnSessionMessage(const std::vector<uint8>& message,
                         const GURL& destination_url);
-  void OnSessionReady();
+  void OnSessionKeysChange(bool has_additional_usable_key);
+  void OnSessionExpirationUpdate(const base::Time& new_expiry_time);
   void OnSessionClosed();
-  void OnSessionError(media::MediaKeys::Exception exception_code,
-                      uint32 system_code,
-                      const std::string& error_message);
 
  private:
-  void SessionCreated(const std::string& web_session_id);
+  // Called when a new session is created.
+  blink::WebContentDecryptionModuleResult::SessionStatus OnSessionInitialized(
+      const std::string& web_session_id);
 
   scoped_refptr<CdmSessionAdapter> adapter_;
 

@@ -14,9 +14,10 @@ namespace net {
 class NET_EXPORT_PRIVATE QuicClientSessionBase : public QuicSession {
  public:
   QuicClientSessionBase(QuicConnection* connection,
-                        const QuicConfig& config);
+                        const QuicConfig& config,
+                        bool is_secure);
 
-  virtual ~QuicClientSessionBase();
+  ~QuicClientSessionBase() override;
 
   // Called when the proof in |cached| is marked valid.  If this is a secure
   // QUIC session, then this will happen only after the proof verifier
@@ -31,6 +32,9 @@ class NET_EXPORT_PRIVATE QuicClientSessionBase : public QuicSession {
   // will only be called for secure QUIC connections.
   virtual void OnProofVerifyDetailsAvailable(
       const ProofVerifyDetails& verify_details) = 0;
+
+  // Override base class to set FEC policy before any data is sent by client.
+  void OnCryptoHandshakeEvent(CryptoHandshakeEvent event) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicClientSessionBase);

@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/lg.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/lg.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/lg.xml
+ * ICU <specials> source: <path>/common/main/lg.xml
  */
 lg{
     Currencies{
@@ -16,19 +16,19 @@ lg{
             "Diraamu eya Emireeti",
         }
         AOA{
-            "Kz",
+            "AOA",
             "Kwanza ey'Angola",
         }
         AUD{
-            "AU$",
+            "A$",
             "Doola ey'Awusiturelya",
         }
         BHD{
-            "BD",
+            "BHD",
             "Dinaali ey'eBaareeni",
         }
         BIF{
-            "FBu",
+            "BIF",
             "Faranga ey'eburundi",
         }
         BWP{
@@ -52,15 +52,15 @@ lg{
             "Yuwani Reniminibi ey'eCayina",
         }
         CVE{
-            "CV$",
+            "CVE",
             "Esikudo ey'Keepu Veredi",
         }
         DJF{
-            "Fdj",
+            "DJF",
             "Faranga ey'eJjibuti",
         }
         DZD{
-            "DA",
+            "DZD",
             "Dinaali ey'Aligerya",
         }
         EGP{
@@ -68,11 +68,11 @@ lg{
             "Pawundi ey'eMisiri",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "Nakifa ey'Eritureya",
         }
         ETB{
-            "Br",
+            "ETB",
             "Biiru ey'Esyopya",
         }
         EUR{
@@ -83,20 +83,16 @@ lg{
             "£",
             "Pawundi ey'eBungereza",
         }
-        GHC{
-            "₵",
-            "Sedi ey'eGana",
-        }
         GMD{
             "GMD",
             "Dalasi ey'eGambya",
         }
         GNS{
-            "GNS" /** ===  */,
+            "GNS",
             "Faranga ey'eGini",
         }
         INR{
-            "Rs",
+            "₹",
             "Rupiya ey'eBuyindi",
         }
         JPY{
@@ -104,15 +100,15 @@ lg{
             "Yeni ey'eJapani",
         }
         KES{
-            "Ksh",
+            "KES",
             "Silingi ey'eKenya",
         }
         KMF{
-            "CF",
+            "KMF",
             "Faranga ey'eKomoro",
         }
         LRD{
-            "L$",
+            "LRD",
             "Doola ey'eLiberya",
         }
         LSL{
@@ -120,7 +116,7 @@ lg{
             "Loti ey'eLesoso",
         }
         LYD{
-            "LD",
+            "LYD",
             "Dinaali ey'eLibya",
         }
         MAD{
@@ -132,27 +128,23 @@ lg{
             "Faranga ey'eMalagase",
         }
         MRO{
-            "UM",
+            "MRO",
             "Wugwiya ey'eMawritenya",
         }
         MUR{
-            "MURs",
+            "MUR",
             "Rupiya ey'eMawurisyasi",
         }
         MWK{
             "MWK",
             "Kwaca ey'eMalawi",
         }
-        MZM{
-            "Mt",
-            "Metikaali ey'eMozambiiki",
-        }
         NAD{
-            "N$",
+            "NAD",
             "Doola ey'eNamibiya",
         }
         NGN{
-            "₦",
+            "NGN",
             "Nayira ey'eNayijerya",
         }
         RWF{
@@ -160,35 +152,31 @@ lg{
             "Faranga ey'eRwanda",
         }
         SAR{
-            "SR",
+            "SAR",
             "Riyaali ey'eBuwarabu",
         }
         SCR{
-            "SRe",
+            "SCR",
             "Rupiya ey'eSesere",
         }
         SDG{
             "SDG",
             "Dinaali ey'eSudaani",
         }
-        SDP{
-            "SDP" /** ===  */,
-            "Pawundi ey'eSudaani",
-        }
         SHP{
-            "SH£",
+            "SHP",
             "Pawundi ey'eSenti Herena",
         }
         SLL{
-            "Le",
+            "SLL",
             "Lewone",
         }
         SOS{
-            "Ssh",
+            "SOS",
             "Silingi ey'eSomaliya",
         }
         STD{
-            "Db",
+            "STD",
             "Dobura ey'eSantome ne Purincipe",
         }
         SZL{
@@ -196,11 +184,11 @@ lg{
             "Lilangeni",
         }
         TND{
-            "DT",
+            "TND",
             "Dinaali ey'eTunizya",
         }
         TZS{
-            "TSh",
+            "TZS",
             "Silingi ey'eTanzaniya",
         }
         UGX{
@@ -220,17 +208,13 @@ lg{
             "Faranga ey'omu Afirika ey'ebugwanjuba",
         }
         ZAR{
-            "R",
+            "ZAR",
             "Randi ey'eSawusafirika",
         }
-        ZMK{
-            "ZK",
+        ZMW{
+            "ZMW",
             "Kwaca ey'eZambya",
         }
-        ZWD{
-            "Z$",
-            "Doola ey'eZimbabwe",
-        }
     }
-    Version{"2.0.47.63"}
+    Version{"2.0.92.87"}
 }

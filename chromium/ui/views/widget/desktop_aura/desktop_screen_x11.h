@@ -5,9 +5,9 @@
 #ifndef UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_SCREEN_X11_H_
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_SCREEN_X11_H_
 
-#include "base/observer_list.h"
 #include "base/timer/timer.h"
 #include "ui/events/platform/platform_event_dispatcher.h"
+#include "ui/gfx/display_change_notifier.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/views_export.h"
 
@@ -28,33 +28,24 @@ class VIEWS_EXPORT DesktopScreenX11 : public gfx::Screen,
  public:
   DesktopScreenX11();
 
-  virtual ~DesktopScreenX11();
-
-  // Takes a set of displays and dispatches the screen change events to
-  // listeners. Exposed for testing.
-  void ProcessDisplayChange(const std::vector<gfx::Display>& displays);
+  ~DesktopScreenX11() override;
 
   // Overridden from gfx::Screen:
-  virtual bool IsDIPEnabled() OVERRIDE;
-  virtual gfx::Point GetCursorScreenPoint() OVERRIDE;
-  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE;
-  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
-      OVERRIDE;
-  virtual int GetNumDisplays() const OVERRIDE;
-  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE;
-  virtual gfx::Display GetDisplayNearestWindow(
-      gfx::NativeView window) const OVERRIDE;
-  virtual gfx::Display GetDisplayNearestPoint(
-      const gfx::Point& point) const OVERRIDE;
-  virtual gfx::Display GetDisplayMatching(
-      const gfx::Rect& match_rect) const OVERRIDE;
-  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE;
-  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE;
+  gfx::Point GetCursorScreenPoint() override;
+  gfx::NativeWindow GetWindowUnderCursor() override;
+  gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point) override;
+  int GetNumDisplays() const override;
+  std::vector<gfx::Display> GetAllDisplays() const override;
+  gfx::Display GetDisplayNearestWindow(gfx::NativeView window) const override;
+  gfx::Display GetDisplayNearestPoint(const gfx::Point& point) const override;
+  gfx::Display GetDisplayMatching(const gfx::Rect& match_rect) const override;
+  gfx::Display GetPrimaryDisplay() const override;
+  void AddObserver(gfx::DisplayObserver* observer) override;
+  void RemoveObserver(gfx::DisplayObserver* observer) override;
 
   // ui::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override;
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override;
 
  private:
   friend class DesktopScreenX11Test;
@@ -86,7 +77,7 @@ class VIEWS_EXPORT DesktopScreenX11 : public gfx::Screen,
   // Dispatch().
   scoped_ptr<base::OneShotTimer<DesktopScreenX11> > configure_timer_;
 
-  ObserverList<gfx::DisplayObserver> observer_list_;
+  gfx::DisplayChangeNotifier change_notifier_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopScreenX11);
 };

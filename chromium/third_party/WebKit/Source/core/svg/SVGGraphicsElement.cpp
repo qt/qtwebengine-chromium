@@ -24,12 +24,13 @@
 #include "core/svg/SVGGraphicsElement.h"
 
 #include "core/SVGNames.h"
+#include "core/css/resolver/StyleResolver.h"
 #include "core/rendering/svg/RenderSVGPath.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGPathData.h"
+#include "core/svg/SVGElementRareData.h"
 #include "platform/transforms/AffineTransform.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGGraphicsElement::SVGGraphicsElement(const QualifiedName& tagName, Document& document, ConstructionType constructionType)
     : SVGElement(tagName, document, constructionType)
@@ -121,7 +122,7 @@ PassRefPtr<SVGMatrixTearOff> SVGGraphicsElement::getScreenCTMFromJavascript()
     return SVGMatrixTearOff::create(getScreenCTM());
 }
 
-AffineTransform SVGGraphicsElement::animatedLocalTransform() const
+AffineTransform SVGGraphicsElement::calculateAnimatedLocalTransform() const
 {
     AffineTransform matrix;
     RenderStyle* style = renderer() ? renderer()->style() : 0;
@@ -131,22 +132,28 @@ AffineTransform SVGGraphicsElement::animatedLocalTransform() const
         TransformationMatrix transform;
         float zoom = style->effectiveZoom();
 
-        // CSS transforms operate with pre-scaled lengths. To make this work with SVG
-        // (which applies the zoom factor globally, at the root level) we
-        //
-        //   * pre-scale the bounding box (to bring it into the same space as the other CSS values)
-        //   * invert the zoom factor (to effectively compute the CSS transform under a 1.0 zoom)
-        //
-        // Note: objectBoundingBox is an emptyRect for elements like pattern or clipPath.
-        // See the "Object bounding box units" section of http://dev.w3.org/csswg/css3-transforms/
-        if (zoom != 1) {
-            FloatRect scaledBBox = renderer()->objectBoundingBox();
-            scaledBBox.scale(zoom);
-            transform.scale(1 / zoom);
-            style->applyTransform(transform, scaledBBox);
-            transform.scale(zoom);
+        // SVGTextElements need special handling for the text positioning code.
+        if (isSVGTextElement(this)) {
+            // Do not take into account SVG's zoom rules, transform-origin, or percentage values.
+            style->applyTransform(transform, IntSize(0, 0), RenderStyle::ExcludeTransformOrigin);
         } else {
-            style->applyTransform(transform, renderer()->objectBoundingBox());
+            // CSS transforms operate with pre-scaled lengths. To make this work with SVG
+            // (which applies the zoom factor globally, at the root level) we
+            //
+            //   * pre-scale the bounding box (to bring it into the same space as the other CSS values)
+            //   * invert the zoom factor (to effectively compute the CSS transform under a 1.0 zoom)
+            //
+            // Note: objectBoundingBox is an emptyRect for elements like pattern or clipPath.
+            // See the "Object bounding box units" section of http://dev.w3.org/csswg/css3-transforms/
+            if (zoom != 1) {
+                FloatRect scaledBBox = renderer()->objectBoundingBox();
+                scaledBBox.scale(zoom);
+                transform.scale(1 / zoom);
+                style->applyTransform(transform, scaledBBox);
+                transform.scale(zoom);
+            } else {
+                style->applyTransform(transform, renderer()->objectBoundingBox());
+            }
         }
 
         // Flatten any 3D transform.
@@ -155,16 +162,14 @@ AffineTransform SVGGraphicsElement::animatedLocalTransform() const
         m_transform->currentValue()->concatenate(matrix);
     }
 
-    if (m_supplementalTransform)
-        return *m_supplementalTransform * matrix;
+    if (hasSVGRareData())
+        return *svgRareData()->animateMotionTransform() * matrix;
     return matrix;
 }
 
-AffineTransform* SVGGraphicsElement::supplementalTransform()
+AffineTransform* SVGGraphicsElement::animateMotionTransform()
 {
-    if (!m_supplementalTransform)
-        m_supplementalTransform = adoptPtr(new AffineTransform);
-    return m_supplementalTransform.get();
+    return ensureSVGRareData()->animateMotionTransform();
 }
 
 bool SVGGraphicsElement::isSupportedAttribute(const QualifiedName& attrName)
@@ -179,21 +184,7 @@ bool SVGGraphicsElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGGraphicsElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::transformAttr)
-        m_transform->setBaseValueAsString(value, parseError);
-    else if (SVGTests::parseAttribute(name, value))
-        return;
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -217,7 +208,7 @@ void SVGGraphicsElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (attrName == SVGNames::transformAttr) {
         object->setNeedsTransformUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(object);
+        markForLayoutAndParentResourceInvalidation(object);
         return;
     }
 
@@ -269,8 +260,7 @@ RenderObject* SVGGraphicsElement::createRenderer(RenderStyle*)
 void SVGGraphicsElement::toClipPath(Path& path)
 {
     updatePathFromGraphicsElement(this, path);
-    // FIXME: How do we know the element has done a layout?
-    path.transform(animatedLocalTransform());
+    path.transform(calculateAnimatedLocalTransform());
 }
 
 }

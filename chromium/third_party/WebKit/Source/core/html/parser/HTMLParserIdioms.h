@@ -34,7 +34,7 @@ namespace WTF {
 class TextEncoding;
 }
 
-namespace WebCore {
+namespace blink {
 
 // Strip leading and trailing whitespace as defined by the HTML specification.
 String stripLeadingAndTrailingHTMLSpaces(const String&);
@@ -60,7 +60,7 @@ bool parseHTMLInteger(const String&, int&);
 // http://www.whatwg.org/specs/web-apps/current-work/#rules-for-parsing-non-negative-integers
 bool parseHTMLNonNegativeInteger(const String&, unsigned&);
 
-typedef Vector<pair<String, String> > HTMLAttributeList;
+typedef Vector<pair<String, String>> HTMLAttributeList;
 // The returned encoding might not be valid.
 WTF::TextEncoding encodingFromMetaAttributes(const HTMLAttributeList&);
 

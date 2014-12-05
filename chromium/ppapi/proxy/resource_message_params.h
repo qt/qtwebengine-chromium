@@ -84,7 +84,7 @@ class PPAPI_PROXY_EXPORT ResourceMessageParams {
   bool ReadHandles(const IPC::Message* msg, PickleIterator* iter);
 
  private:
-  class SerializedHandles
+  class PPAPI_PROXY_EXPORT SerializedHandles
       : public base::RefCountedThreadSafe<SerializedHandles> {
    public:
     SerializedHandles();
@@ -144,9 +144,9 @@ class PPAPI_PROXY_EXPORT ResourceMessageCallParams
   void set_has_callback() { has_callback_ = true; }
   bool has_callback() const { return has_callback_; }
 
-  virtual void Serialize(IPC::Message* msg) const OVERRIDE;
+  virtual void Serialize(IPC::Message* msg) const override;
   virtual bool Deserialize(const IPC::Message* msg,
-                           PickleIterator* iter) OVERRIDE;
+                           PickleIterator* iter) override;
 
  private:
   bool has_callback_;
@@ -163,9 +163,9 @@ class PPAPI_PROXY_EXPORT ResourceMessageReplyParams
   void set_result(int32_t r) { result_ = r; }
   int32_t result() const { return result_; }
 
-  virtual void Serialize(IPC::Message* msg) const OVERRIDE;
+  virtual void Serialize(IPC::Message* msg) const override;
   virtual bool Deserialize(const IPC::Message* msg,
-                           PickleIterator* iter) OVERRIDE;
+                           PickleIterator* iter) override;
 
   // Writes everything except the handles to |msg|.
   void WriteReplyHeader(IPC::Message* msg) const;

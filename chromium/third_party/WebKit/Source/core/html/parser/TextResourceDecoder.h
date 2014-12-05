@@ -26,9 +26,8 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
-class DocumentEncodingData;
 class HTMLMetaCharsetParser;
 
 class TextResourceDecoder {

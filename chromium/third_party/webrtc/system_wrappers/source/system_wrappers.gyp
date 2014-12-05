@@ -17,7 +17,7 @@
         '../interface',
       ],
       'dependencies': [
-        '../../base/base.gyp:webrtc_base',
+        '../../base/base.gyp:rtc_base_approved',
       ],
       'direct_dependent_settings': {
         'include_dirs': [
@@ -25,6 +25,7 @@
         ],
       },
       'sources': [
+        '../interface/aligned_array.h',
         '../interface/aligned_malloc.h',
         '../interface/atomic32.h',
         '../interface/clock.h',
@@ -43,6 +44,7 @@
         '../interface/fix_interlocked_exchange_pointer_win.h',
         '../interface/logcat_trace_context.h',
         '../interface/logging.h',
+        '../interface/metrics.h',
         '../interface/ref_count.h',
         '../interface/rtp_to_ntp.h',
         '../interface/rw_lock_wrapper.h',
@@ -54,7 +56,6 @@
         '../interface/static_instance.h',
         '../interface/stl_util.h',
         '../interface/stringize_macros.h',
-        '../interface/thread_annotations.h',
         '../interface/thread_wrapper.h',
         '../interface/tick_util.h',
         '../interface/timestamp_extrapolator.h',
@@ -203,6 +204,22 @@
       ],
       'dependencies': [
         'system_wrappers',
+      ]
+    }, {
+      'target_name': 'metrics_default',
+      'type': 'static_library',
+      'sources': [
+        'metrics_default.cc',
+      ],
+      'dependencies': [
+        'system_wrappers',
+      ]
+    }, {
+      'target_name': 'system_wrappers_default',
+      'type': 'static_library',
+      'dependencies': [
+        'field_trial_default',
+        'metrics_default',
       ]
     },
   ], # targets

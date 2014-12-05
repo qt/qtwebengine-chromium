@@ -23,13 +23,13 @@ class SkPictureContentLayerUpdater : public ContentLayerUpdater {
       scoped_ptr<LayerPainter> painter,
       RenderingStatsInstrumentation* stats_instrumentation,
       int layer_id);
-  virtual ~SkPictureContentLayerUpdater();
+  ~SkPictureContentLayerUpdater() override;
 
-  virtual void PrepareToUpdate(const gfx::Rect& content_rect,
-                               const gfx::Size& tile_size,
-                               float contents_width_scale,
-                               float contents_height_scale,
-                               gfx::Rect* resulting_opaque_rect) OVERRIDE;
+  void PrepareToUpdate(const gfx::Size& content_size,
+                       const gfx::Rect& paint_rect,
+                       const gfx::Size& tile_size,
+                       float contents_width_scale,
+                       float contents_height_scale) override;
   void DrawPicture(SkCanvas* canvas);
 
  private:

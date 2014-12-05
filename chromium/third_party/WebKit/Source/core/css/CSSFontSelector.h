@@ -35,17 +35,13 @@
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSFontFace;
-class CSSFontFaceRule;
 class CSSFontSelectorClient;
-class CSSSegmentedFontFace;
 class Document;
 class FontDescription;
-class StyleRuleFontFace;
 
-class CSSFontSelector FINAL : public FontSelector {
+class CSSFontSelector final : public FontSelector {
 public:
     static PassRefPtrWillBeRawPtr<CSSFontSelector> create(Document* document)
     {
@@ -53,10 +49,10 @@ public:
     }
     virtual ~CSSFontSelector();
 
-    virtual unsigned version() const OVERRIDE { return m_fontFaceCache.version(); }
+    virtual unsigned version() const override { return m_fontFaceCache.version(); }
 
-    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) OVERRIDE;
-    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) OVERRIDE;
+    virtual PassRefPtr<FontData> getFontData(const FontDescription&, const AtomicString&) override;
+    virtual void willUseFontData(const FontDescription&, const AtomicString& family, UChar32) override;
     bool isPlatformFontAvailable(const FontDescription&, const AtomicString& family);
 
 #if !ENABLE(OILPAN)
@@ -66,7 +62,7 @@ public:
     void fontFaceInvalidated();
 
     // FontCacheClient implementation
-    virtual void fontCacheInvalidated() OVERRIDE;
+    virtual void fontCacheInvalidated() override;
 
     void registerForInvalidationCallbacks(CSSFontSelectorClient*);
 #if !ENABLE(OILPAN)
@@ -99,6 +95,6 @@ private:
     GenericFontFamilySettings m_genericFontFamilySettings;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSFontSelector_h

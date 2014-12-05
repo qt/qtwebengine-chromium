@@ -34,13 +34,13 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class PagePopupClient;
 class PagePopupController;
 
-class DOMWindowPagePopup FINAL : public NoBaseWillBeGarbageCollected<DOMWindowPagePopup>, public WillBeHeapSupplement<LocalDOMWindow> {
+class DOMWindowPagePopup final : public NoBaseWillBeGarbageCollected<DOMWindowPagePopup>, public WillBeHeapSupplement<LocalDOMWindow> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowPagePopup);
 public:
     static PagePopupController* pagePopupController(LocalDOMWindow&);

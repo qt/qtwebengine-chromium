@@ -35,23 +35,21 @@
 #include <algorithm>
 #include "platform/scroll/ScrollableArea.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/PassOwnPtr.h"
+#include "wtf/PassRefPtr.h"
 
 #include "platform/TraceEvent.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const double kFrameRate = 60;
 const double kTickTime = 1 / kFrameRate;
 const double kMinimumTimerInterval = .001;
 
-PassOwnPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
+PassRefPtr<ScrollAnimator> ScrollAnimator::create(ScrollableArea* scrollableArea)
 {
     if (scrollableArea && scrollableArea->scrollAnimatorEnabled())
-        return adoptPtr(new ScrollAnimatorNone(scrollableArea));
-    return adoptPtr(new ScrollAnimator(scrollableArea));
+        return adoptRef(new ScrollAnimatorNone(scrollableArea));
+    return adoptRef(new ScrollAnimator(scrollableArea));
 }
 
 ScrollAnimatorNone::Parameters::Parameters()
@@ -146,12 +144,12 @@ double ScrollAnimatorNone::PerAxisData::curveIntegralAt(Curve curve, double t)
         const double kTimeBaseSquared = kTimeBase * kTimeBase;
         const double kTimeBaseSquaredOverThree = kTimeBaseSquared / 3;
         double area;
-        double t1 = min(t, 1 / kTimeBase);
+        double t1 = std::min(t, 1 / kTimeBase);
         area = kTimeBaseSquaredOverThree * t1 * t1 * t1;
         if (t < 1 / kTimeBase)
             return area;
 
-        t1 = min(t - 1 / kTimeBase, 1 / kTimeBase);
+        t1 = std::min(t - 1 / kTimeBase, 1 / kTimeBase);
         // The integral of kTimeBaseSquared * (t1 - .5 / kTimeBase) * (t1 - .5 / kTimeBase) + kParabolaAtEdge
         const double kSecondInnerOffset = kTimeBaseSquared * .5 / kTimeBase;
         double bounceArea = t1 * (t1 * (kTimeBaseSquaredOverThree * t1 - kSecondInnerOffset) + 1);
@@ -159,7 +157,7 @@ double ScrollAnimatorNone::PerAxisData::curveIntegralAt(Curve curve, double t)
         if (t < 2 / kTimeBase)
             return area;
 
-        t1 = min(t - 2 / kTimeBase, 0.5 / kTimeBase);
+        t1 = std::min(t - 2 / kTimeBase, 0.5 / kTimeBase);
         // The integral of kTimeBaseSquared * (t1 - .25 / kTimeBase) * (t1 - .25 / kTimeBase) + kParabolaAtEdge
         const double kThirdInnerOffset = kTimeBaseSquared * .25 / kTimeBase;
         bounceArea =  t1 * (t1 * (kTimeBaseSquaredOverThree * t1 - kThirdInnerOffset) + 1);
@@ -192,7 +190,7 @@ double ScrollAnimatorNone::PerAxisData::releaseArea(Curve curve, double startT, 
     return endValue - startValue;
 }
 
-ScrollAnimatorNone::PerAxisData::PerAxisData(ScrollAnimatorNone* parent, float* currentPosition, int visibleLength)
+ScrollAnimatorNone::PerAxisData::PerAxisData(float* currentPosition, int visibleLength)
     : m_currentPosition(currentPosition)
     , m_visibleLength(visibleLength)
 {
@@ -233,7 +231,7 @@ bool ScrollAnimatorNone::PerAxisData::updateDataFromParameters(float step, float
     float newPosition = m_desiredPosition + pixelDelta;
 
     if (newPosition < 0 || newPosition > scrollableSize)
-        newPosition = max(min(newPosition, scrollableSize), 0.0f);
+        newPosition = std::max(std::min(newPosition, scrollableSize), 0.0f);
 
     if (newPosition == m_desiredPosition)
         return false;
@@ -268,9 +266,9 @@ bool ScrollAnimatorNone::PerAxisData::updateDataFromParameters(float step, float
     double attackAreaLeft = 0;
 
     double deltaTime = m_lastAnimationTime - m_startTime;
-    double attackTimeLeft = max(0., m_attackTime - deltaTime);
+    double attackTimeLeft = std::max(0., m_attackTime - deltaTime);
     double timeLeft = m_animationTime - deltaTime;
-    double minTimeLeft = m_releaseTime + min(parameters->m_repeatMinimumSustainTime, m_animationTime - m_releaseTime - attackTimeLeft);
+    double minTimeLeft = m_releaseTime + std::min(parameters->m_repeatMinimumSustainTime, m_animationTime - m_releaseTime - attackTimeLeft);
     if (timeLeft < minTimeLeft) {
         m_animationTime = deltaTime + minTimeLeft;
         timeLeft = minTimeLeft;
@@ -283,14 +281,14 @@ bool ScrollAnimatorNone::PerAxisData::updateDataFromParameters(float step, float
 
         if (fabs(remainingDelta) > minCoastDelta) {
             double maxCoastDelta = parameters->m_maximumCoastTime * targetMaxCoastVelocity;
-            double coastFactor = min(1., (fabs(remainingDelta) - minCoastDelta) / (maxCoastDelta - minCoastDelta));
+            double coastFactor = std::min(1., (fabs(remainingDelta) - minCoastDelta) / (maxCoastDelta - minCoastDelta));
 
             // We could play with the curve here - linear seems a little soft. Initial testing makes me want to feed into the sustain time more aggressively.
-            double coastMinTimeLeft = min(parameters->m_maximumCoastTime, minTimeLeft + coastCurve(parameters->m_coastTimeCurve, coastFactor) * (parameters->m_maximumCoastTime - minTimeLeft));
+            double coastMinTimeLeft = std::min(parameters->m_maximumCoastTime, minTimeLeft + coastCurve(parameters->m_coastTimeCurve, coastFactor) * (parameters->m_maximumCoastTime - minTimeLeft));
 
-            double additionalTime = max(0., coastMinTimeLeft - minTimeLeft);
+            double additionalTime = std::max(0., coastMinTimeLeft - minTimeLeft);
             if (additionalTime) {
-                double additionalReleaseTime = min(additionalTime, parameters->m_releaseTime / (parameters->m_releaseTime + parameters->m_repeatMinimumSustainTime) * additionalTime);
+                double additionalReleaseTime = std::min(additionalTime, parameters->m_releaseTime / (parameters->m_releaseTime + parameters->m_repeatMinimumSustainTime) * additionalTime);
                 m_releaseTime = parameters->m_releaseTime + additionalReleaseTime;
                 m_animationTime = deltaTime + coastMinTimeLeft;
                 timeLeft = coastMinTimeLeft;
@@ -298,8 +296,8 @@ bool ScrollAnimatorNone::PerAxisData::updateDataFromParameters(float step, float
         }
     }
 
-    double releaseTimeLeft = min(timeLeft, m_releaseTime);
-    double sustainTimeLeft = max(0., timeLeft - releaseTimeLeft - attackTimeLeft);
+    double releaseTimeLeft = std::min(timeLeft, m_releaseTime);
+    double sustainTimeLeft = std::max(0., timeLeft - releaseTimeLeft - attackTimeLeft);
 
     if (attackTimeLeft) {
         double attackSpot = deltaTime / m_attackTime;
@@ -367,8 +365,8 @@ void ScrollAnimatorNone::PerAxisData::updateVisibleLength(int visibleLength)
 
 ScrollAnimatorNone::ScrollAnimatorNone(ScrollableArea* scrollableArea)
     : ScrollAnimator(scrollableArea)
-    , m_horizontalData(this, &m_currentPosX, scrollableArea->visibleWidth())
-    , m_verticalData(this, &m_currentPosY, scrollableArea->visibleHeight())
+    , m_horizontalData(&m_currentPosX, scrollableArea->visibleWidth())
+    , m_verticalData(&m_currentPosY, scrollableArea->visibleHeight())
     , m_startTime(0)
     , m_animationActive(false)
 {
@@ -401,7 +399,7 @@ bool ScrollAnimatorNone::scroll(ScrollbarOrientation orientation, ScrollGranular
     if (!m_scrollableArea->scrollAnimatorEnabled())
         return ScrollAnimator::scroll(orientation, granularity, step, delta);
 
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::scroll");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::scroll");
 
     // FIXME: get the type passed in. MouseWheel could also be by line, but should still have different
     // animation parameters than the keyboard.
@@ -485,7 +483,7 @@ void ScrollAnimatorNone::updateVisibleLengths()
 
 void ScrollAnimatorNone::animationTimerFired()
 {
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::animationTimerFired");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::animationTimerFired");
 
     double currentTime = WTF::monotonicallyIncreasingTime();
 
@@ -500,7 +498,7 @@ void ScrollAnimatorNone::animationTimerFired()
     else
         m_animationActive = false;
 
-    TRACE_EVENT0("webkit", "ScrollAnimatorNone::notifyPositionChanged");
+    TRACE_EVENT0("blink", "ScrollAnimatorNone::notifyPositionChanged");
     notifyPositionChanged();
 
     if (!continueAnimation)
@@ -524,4 +522,4 @@ void ScrollAnimatorNone::stopAnimationTimerIfNeeded()
         m_animationActive = false;
 }
 
-} // namespace WebCore
+} // namespace blink

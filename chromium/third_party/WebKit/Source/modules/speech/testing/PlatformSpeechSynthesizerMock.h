@@ -30,23 +30,23 @@
 #include "platform/heap/Handle.h"
 #include "platform/speech/PlatformSpeechSynthesizer.h"
 
-namespace WebCore {
+namespace blink {
 
-class PlatformSpeechSynthesizerMock FINAL : public PlatformSpeechSynthesizer {
+class PlatformSpeechSynthesizerMock final : public PlatformSpeechSynthesizer {
 public:
     static PlatformSpeechSynthesizerMock* create(PlatformSpeechSynthesizerClient*);
 
     virtual ~PlatformSpeechSynthesizerMock();
-    virtual void speak(PlatformSpeechSynthesisUtterance*) OVERRIDE;
-    virtual void pause() OVERRIDE;
-    virtual void resume() OVERRIDE;
-    virtual void cancel() OVERRIDE;
+    virtual void speak(PlatformSpeechSynthesisUtterance*) override;
+    virtual void pause() override;
+    virtual void resume() override;
+    virtual void cancel() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit PlatformSpeechSynthesizerMock(PlatformSpeechSynthesizerClient*);
-    virtual void initializeVoiceList() OVERRIDE;
+    virtual void initializeVoiceList() override;
     void speakingFinished(Timer<PlatformSpeechSynthesizerMock>*);
     void speakingErrorOccurred(Timer<PlatformSpeechSynthesizerMock>*);
 
@@ -55,6 +55,6 @@ private:
     Member<PlatformSpeechSynthesisUtterance> m_utterance;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformSpeechSynthesizer_h

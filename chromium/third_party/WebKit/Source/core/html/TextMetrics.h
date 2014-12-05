@@ -26,15 +26,17 @@
 #ifndef TextMetrics_h
 #define TextMetrics_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class TextMetrics : public RefCounted<TextMetrics>, public ScriptWrappable {
+class TextMetrics final : public RefCountedWillBeGarbageCollected<TextMetrics>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<TextMetrics> create() { return adoptRef(new TextMetrics); }
+    static PassRefPtrWillBeRawPtr<TextMetrics> create() { return adoptRefWillBeNoop(new TextMetrics); }
 
     float width() const { return m_width; }
     void setWidth(float w) { m_width = w; }
@@ -72,6 +74,8 @@ public:
     float ideographicBaseline() const { return m_ideographicBaseline; }
     void setIdeographicBaseline(float ideographicBaseline) { m_ideographicBaseline = ideographicBaseline; }
 
+    void trace(Visitor*) { }
+
 private:
     TextMetrics()
         : m_width(0)
@@ -85,10 +89,7 @@ private:
         , m_emHeightDescent(0)
         , m_hangingBaseline(0)
         , m_alphabeticBaseline(0)
-        , m_ideographicBaseline(0)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_ideographicBaseline(0) { }
 
     // x-direction
     float m_width;
@@ -107,6 +108,6 @@ private:
     float m_ideographicBaseline;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextMetrics_h

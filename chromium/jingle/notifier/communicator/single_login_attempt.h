@@ -10,7 +10,7 @@
 #include "jingle/notifier/base/xmpp_connection.h"
 #include "jingle/notifier/communicator/connection_settings.h"
 #include "jingle/notifier/communicator/login_settings.h"
-#include "talk/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
 
 namespace buzz {
 class XmppTaskParentInterface;
@@ -57,14 +57,13 @@ class SingleLoginAttempt : public XmppConnection::Delegate {
   // Does not take ownership of |delegate|, which must not be NULL.
   SingleLoginAttempt(const LoginSettings& login_settings, Delegate* delegate);
 
-  virtual ~SingleLoginAttempt();
+  ~SingleLoginAttempt() override;
 
   // XmppConnection::Delegate implementation.
-  virtual void OnConnect(
-      base::WeakPtr<buzz::XmppTaskParentInterface> parent) OVERRIDE;
-  virtual void OnError(buzz::XmppEngine::Error error,
-                       int error_subcode,
-                       const buzz::XmlElement* stream_error) OVERRIDE;
+  void OnConnect(base::WeakPtr<buzz::XmppTaskParentInterface> parent) override;
+  void OnError(buzz::XmppEngine::Error error,
+               int error_subcode,
+               const buzz::XmlElement* stream_error) override;
 
  private:
   void TryConnect(const ConnectionSettings& new_settings);

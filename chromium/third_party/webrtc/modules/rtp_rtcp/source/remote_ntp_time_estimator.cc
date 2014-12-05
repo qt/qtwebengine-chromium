@@ -10,46 +10,31 @@
 
 #include "webrtc/modules/rtp_rtcp/interface/remote_ntp_time_estimator.h"
 
-#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
 #include "webrtc/system_wrappers/interface/clock.h"
+#include "webrtc/system_wrappers/interface/logging.h"
 #include "webrtc/system_wrappers/interface/timestamp_extrapolator.h"
 
 namespace webrtc {
+
+static const int kTimingLogIntervalMs = 10000;
 
 // TODO(wu): Refactor this class so that it can be shared with
 // vie_sync_module.cc.
 RemoteNtpTimeEstimator::RemoteNtpTimeEstimator(Clock* clock)
     : clock_(clock),
-      ts_extrapolator_(
-          new TimestampExtrapolator(clock_->TimeInMilliseconds())) {
+      ts_extrapolator_(new TimestampExtrapolator(clock_->TimeInMilliseconds())),
+      last_timing_log_ms_(-1) {
 }
 
 RemoteNtpTimeEstimator::~RemoteNtpTimeEstimator() {}
 
-bool RemoteNtpTimeEstimator::UpdateRtcpTimestamp(uint32_t ssrc,
-                                                 RtpRtcp* rtp_rtcp) {
-  assert(rtp_rtcp);
-  uint16_t rtt = 0;
-  rtp_rtcp->RTT(ssrc, &rtt, NULL, NULL, NULL);
-  if (rtt == 0) {
-    // Waiting for valid rtt.
-    return true;
-  }
-  // Update RTCP list
-  uint32_t ntp_secs = 0;
-  uint32_t ntp_frac = 0;
-  uint32_t rtp_timestamp = 0;
-  if (0 != rtp_rtcp->RemoteNTP(&ntp_secs,
-                               &ntp_frac,
-                               NULL,
-                               NULL,
-                               &rtp_timestamp)) {
-    // Waiting for RTCP.
-    return true;
-  }
+bool RemoteNtpTimeEstimator::UpdateRtcpTimestamp(uint16_t rtt,
+                                                 uint32_t ntp_secs,
+                                                 uint32_t ntp_frac,
+                                                 uint32_t rtcp_timestamp) {
   bool new_rtcp_sr = false;
   if (!UpdateRtcpList(
-      ntp_secs, ntp_frac, rtp_timestamp, &rtcp_list_, &new_rtcp_sr)) {
+      ntp_secs, ntp_frac, rtcp_timestamp, &rtcp_list_, &new_rtcp_sr)) {
     return false;
   }
   if (!new_rtcp_sr) {
@@ -79,7 +64,16 @@ int64_t RemoteNtpTimeEstimator::Estimate(uint32_t rtp_timestamp) {
       ts_extrapolator_->ExtrapolateLocalTime(timestamp);
   int64_t ntp_offset =
       clock_->CurrentNtpInMilliseconds() - clock_->TimeInMilliseconds();
-  return receiver_capture_ms + ntp_offset;
+  int64_t receiver_capture_ntp_ms = receiver_capture_ms + ntp_offset;
+  int64_t now_ms = clock_->TimeInMilliseconds();
+  if (now_ms - last_timing_log_ms_ > kTimingLogIntervalMs) {
+    LOG(LS_INFO) << "RTP timestamp: " << rtp_timestamp
+                 << " in NTP clock: " << sender_capture_ntp_ms
+                 << " estimated time in receiver clock: " << receiver_capture_ms
+                 << " converted to NTP clock: " << receiver_capture_ntp_ms;
+    last_timing_log_ms_ = now_ms;
+  }
+  return receiver_capture_ntp_ms;
 }
 
 }  // namespace webrtc

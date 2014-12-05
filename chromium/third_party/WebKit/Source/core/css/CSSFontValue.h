@@ -25,7 +25,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSPrimitiveValue;
 class CSSValueList;
@@ -46,6 +46,7 @@ public:
     RefPtrWillBeMember<CSSPrimitiveValue> style;
     RefPtrWillBeMember<CSSPrimitiveValue> variant;
     RefPtrWillBeMember<CSSPrimitiveValue> weight;
+    RefPtrWillBeMember<CSSPrimitiveValue> stretch;
     RefPtrWillBeMember<CSSPrimitiveValue> size;
     RefPtrWillBeMember<CSSPrimitiveValue> lineHeight;
     RefPtrWillBeMember<CSSValueList> family;

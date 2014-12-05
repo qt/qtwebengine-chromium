@@ -23,22 +23,23 @@
 
 #include "core/svg/SVGElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGTitleElement FINAL : public SVGElement {
+class SVGTitleElement final : public SVGElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGTitleElement);
 
 private:
     explicit SVGTitleElement(Document&);
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGTitleElement_h

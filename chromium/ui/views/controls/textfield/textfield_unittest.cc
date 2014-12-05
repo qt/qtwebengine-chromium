@@ -12,7 +12,6 @@
 #include "base/pickle.h"
 #include "base/strings/string16.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_strings.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
@@ -23,6 +22,7 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/render_text.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/controls/textfield/textfield_model.h"
 #include "ui/views/controls/textfield/textfield_test_api.h"
@@ -41,6 +41,10 @@
 #include "ui/events/linux/text_edit_key_bindings_delegate_auralinux.h"
 #endif
 
+#if defined(USE_X11)
+#include "ui/events/event_utils.h"
+#endif
+
 using base::ASCIIToUTF16;
 using base::UTF8ToUTF16;
 using base::WideToUTF16;
@@ -54,15 +58,29 @@ const base::char16 kHebrewLetterSamekh = 0x05E1;
 // A Textfield wrapper to intercept OnKey[Pressed|Released]() ressults.
 class TestTextfield : public views::Textfield {
  public:
-  TestTextfield() : Textfield(), key_handled_(false), key_received_(false) {}
+  TestTextfield()
+     : Textfield(),
+       key_handled_(false),
+       key_received_(false),
+       weak_ptr_factory_(this) {}
 
-  virtual bool OnKeyPressed(const ui::KeyEvent& e) OVERRIDE {
+  bool OnKeyPressed(const ui::KeyEvent& e) override {
     key_received_ = true;
-    key_handled_ = views::Textfield::OnKeyPressed(e);
+
+    // Since OnKeyPressed() might destroy |this|, get a weak pointer and
+    // verify it isn't null before writing the bool value to key_handled_.
+    base::WeakPtr<TestTextfield> textfield(weak_ptr_factory_.GetWeakPtr());
+    bool key = views::Textfield::OnKeyPressed(e);
+
+    if (!textfield)
+      return key;
+
+    key_handled_ = key;
+
     return key_handled_;
   }
 
-  virtual bool OnKeyReleased(const ui::KeyEvent& e) OVERRIDE {
+  bool OnKeyReleased(const ui::KeyEvent& e) override {
     key_received_ = true;
     key_handled_ = views::Textfield::OnKeyReleased(e);
     return key_handled_;
@@ -77,20 +95,41 @@ class TestTextfield : public views::Textfield {
   bool key_handled_;
   bool key_received_;
 
+  base::WeakPtrFactory<TestTextfield> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(TestTextfield);
 };
 
 // Convenience to make constructing a GestureEvent simpler.
 class GestureEventForTest : public ui::GestureEvent {
  public:
-  GestureEventForTest(ui::EventType type, int x, int y, float delta_x,
-                      float delta_y)
-      : GestureEvent(type, x, y, 0, base::TimeDelta(),
-                     ui::GestureEventDetails(type, delta_x, delta_y), 0) {
-  }
+  GestureEventForTest(int x, int y, ui::GestureEventDetails details)
+      : GestureEvent(x, y, 0, base::TimeDelta(), details) {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GestureEventForTest);
+};
+
+// This controller will happily destroy the target textfield passed on
+// construction when a key event is triggered.
+class TextfieldDestroyerController : public views::TextfieldController {
+ public:
+  explicit TextfieldDestroyerController(views::Textfield* target)
+      : target_(target) {
+    target_->set_controller(this);
+  }
+
+  views::Textfield* target() { return target_.get(); }
+
+  // views::TextfieldController:
+  bool HandleKeyEvent(views::Textfield* sender,
+                      const ui::KeyEvent& key_event) override {
+    target_.reset();
+    return false;
+  }
+
+ private:
+  scoped_ptr<views::Textfield> target_;
 };
 
 base::string16 GetClipboardText(ui::ClipboardType type) {
@@ -100,8 +139,7 @@ base::string16 GetClipboardText(ui::ClipboardType type) {
 }
 
 void SetClipboardText(ui::ClipboardType type, const std::string& text) {
-  ui::ScopedClipboardWriter(ui::Clipboard::GetForCurrentThread(), type)
-      .WriteText(ASCIIToUTF16(text));
+  ui::ScopedClipboardWriter(type).WriteText(ASCIIToUTF16(text));
 }
 
 }  // namespace
@@ -121,11 +159,7 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
   }
 
   // ::testing::Test:
-  virtual void SetUp() {
-    ViewsTestBase::SetUp();
-  }
-
-  virtual void TearDown() {
+  void TearDown() override {
     if (widget_)
       widget_->Close();
     ViewsTestBase::TearDown();
@@ -138,23 +172,23 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
   }
 
   // TextfieldController:
-  virtual void ContentsChanged(Textfield* sender,
-                               const base::string16& new_contents) OVERRIDE {
+  void ContentsChanged(Textfield* sender,
+                       const base::string16& new_contents) override {
     // Paste calls TextfieldController::ContentsChanged() explicitly even if the
     // paste action did not change the content. So |new_contents| may match
     // |last_contents_|. For more info, see http://crbug.com/79002
     last_contents_ = new_contents;
   }
 
-  virtual void OnBeforeUserAction(Textfield* sender) OVERRIDE {
+  void OnBeforeUserAction(Textfield* sender) override {
     ++on_before_user_action_;
   }
 
-  virtual void OnAfterUserAction(Textfield* sender) OVERRIDE {
+  void OnAfterUserAction(Textfield* sender) override {
     ++on_after_user_action_;
   }
 
-  virtual void OnAfterCutOrCopy(ui::ClipboardType clipboard_type) OVERRIDE {
+  void OnAfterCutOrCopy(ui::ClipboardType clipboard_type) override {
     copied_to_clipboard_ = clipboard_type;
   }
 
@@ -209,7 +243,7 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
                 (shift ? ui::EF_SHIFT_DOWN : 0) |
                 (control ? ui::EF_CONTROL_DOWN : 0) |
                 (caps_lock ? ui::EF_CAPS_LOCK_DOWN : 0);
-    ui::KeyEvent event(ui::ET_KEY_PRESSED, key_code, flags, false);
+    ui::KeyEvent event(ui::ET_KEY_PRESSED, key_code, flags);
     input_method_->DispatchKeyEvent(event);
   }
 
@@ -228,8 +262,7 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
           static_cast<ui::KeyboardCode>(ui::VKEY_A + ch - 'a');
       SendKeyEvent(code);
     } else {
-      ui::KeyEvent event(ui::ET_KEY_PRESSED, ui::VKEY_UNKNOWN, 0, false);
-      event.set_character(ch);
+      ui::KeyEvent event(ch, ui::VKEY_UNKNOWN, ui::EF_NONE);
       input_method_->DispatchKeyEvent(event);
     }
   }
@@ -279,6 +312,32 @@ class TextfieldTest : public ViewsTestBase, public TextfieldController {
                            ui::EF_LEFT_MOUSE_BUTTON | ui::EF_IS_NON_CLIENT,
                            ui::EF_LEFT_MOUSE_BUTTON);
     textfield_->OnMouseReleased(release);
+  }
+
+  // Simulates a complete tap.
+  void Tap(const gfx::Point& point) {
+    GestureEventForTest begin(
+        point.x(), point.y(), ui::GestureEventDetails(ui::ET_GESTURE_BEGIN));
+    textfield_->OnGestureEvent(&begin);
+
+    GestureEventForTest tap_down(
+        point.x(), point.y(), ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN));
+    textfield_->OnGestureEvent(&tap_down);
+
+    GestureEventForTest show_press(
+        point.x(),
+        point.y(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SHOW_PRESS));
+    textfield_->OnGestureEvent(&show_press);
+
+    ui::GestureEventDetails tap_details(ui::ET_GESTURE_TAP);
+    tap_details.set_tap_count(1);
+    GestureEventForTest tap(point.x(), point.y(), tap_details);
+    textfield_->OnGestureEvent(&tap);
+
+    GestureEventForTest end(
+        point.x(), point.y(), ui::GestureEventDetails(ui::ET_GESTURE_END));
+    textfield_->OnGestureEvent(&end);
   }
 
   void VerifyTextfieldContextMenuContents(bool textfield_has_selection,
@@ -565,11 +624,11 @@ TEST_F(TextfieldTest, OnKeyPressBinding) {
   class TestDelegate : public ui::TextEditKeyBindingsDelegateAuraLinux {
    public:
     TestDelegate() {}
-    virtual ~TestDelegate() {}
+    ~TestDelegate() override {}
 
-    virtual bool MatchEvent(
+    bool MatchEvent(
         const ui::Event& event,
-        std::vector<ui::TextEditCommandAuraLinux>* commands) OVERRIDE {
+        std::vector<ui::TextEditCommandAuraLinux>* commands) override {
       return false;
     }
 
@@ -1657,43 +1716,31 @@ TEST_F(TextfieldTest, OverflowInRTLTest) {
 
 TEST_F(TextfieldTest, GetCompositionCharacterBoundsTest) {
   InitTextfield();
-
-  base::string16 str;
-  const uint32 char_count = 10UL;
   ui::CompositionText composition;
-  composition.text = UTF8ToUTF16("0123456789");
+  composition.text = UTF8ToUTF16("abc123");
+  const uint32 char_count = static_cast<uint32>(composition.text.length());
   ui::TextInputClient* client = textfield_->GetTextInputClient();
 
-  // Return false if there is no composition text.
-  gfx::Rect rect;
-  EXPECT_FALSE(client->GetCompositionCharacterBounds(0, &rect));
-
-  // Get each character boundary by cursor.
-  gfx::Rect char_rect_in_screen_coord[char_count];
-  gfx::Rect prev_cursor = GetCursorBounds();
+  // Compare the composition character bounds with surrounding cursor bounds.
   for (uint32 i = 0; i < char_count; ++i) {
-    composition.selection = gfx::Range(0, i+1);
+    composition.selection = gfx::Range(i);
     client->SetCompositionText(composition);
-    EXPECT_TRUE(client->HasCompositionText()) << " i=" << i;
-    gfx::Rect cursor_bounds = GetCursorBounds();
-    gfx::Point top_left(prev_cursor.x(), prev_cursor.y());
-    gfx::Point bottom_right(cursor_bounds.x(), prev_cursor.bottom());
-    views::View::ConvertPointToScreen(textfield_, &top_left);
-    views::View::ConvertPointToScreen(textfield_, &bottom_right);
-    char_rect_in_screen_coord[i].set_origin(top_left);
-    char_rect_in_screen_coord[i].set_width(bottom_right.x() - top_left.x());
-    char_rect_in_screen_coord[i].set_height(bottom_right.y() - top_left.y());
-    prev_cursor = cursor_bounds;
-  }
+    gfx::Point cursor_origin = GetCursorBounds().origin();
+    views::View::ConvertPointToScreen(textfield_, &cursor_origin);
 
-  for (uint32 i = 0; i < char_count; ++i) {
-    gfx::Rect actual_rect;
-    EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &actual_rect))
-        << " i=" << i;
-    EXPECT_EQ(char_rect_in_screen_coord[i], actual_rect) << " i=" << i;
+    composition.selection = gfx::Range(i + 1);
+    client->SetCompositionText(composition);
+    gfx::Point next_cursor_bottom_left = GetCursorBounds().bottom_left();
+    views::View::ConvertPointToScreen(textfield_, &next_cursor_bottom_left);
+
+    gfx::Rect character;
+    EXPECT_TRUE(client->GetCompositionCharacterBounds(i, &character));
+    EXPECT_EQ(character.origin(), cursor_origin) << " i=" << i;
+    EXPECT_EQ(character.bottom_right(), next_cursor_bottom_left) << " i=" << i;
   }
 
   // Return false if the index is out of range.
+  gfx::Rect rect;
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count, &rect));
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count + 1, &rect));
   EXPECT_FALSE(client->GetCompositionCharacterBounds(char_count + 100, &rect));
@@ -1764,7 +1811,8 @@ TEST_F(TextfieldTest, KeepInitiallySelectedWord) {
 }
 
 #if defined(OS_LINUX) && !defined(OS_CHROMEOS)
-TEST_F(TextfieldTest, SelectionClipboard) {
+// flaky: http://crbug.com/396477
+TEST_F(TextfieldTest, DISABLED_SelectionClipboard) {
   InitTextfield();
   textfield_->SetText(ASCIIToUTF16("0123"));
   gfx::Point point_1(GetCursorPositionX(1), 0);
@@ -1796,6 +1844,9 @@ TEST_F(TextfieldTest, SelectionClipboard) {
   ui::MouseEvent press_2(ui::ET_MOUSE_PRESSED, point_2, point_2,
                          ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
   press_2.set_flags(press_2.flags() | ui::EF_SHIFT_DOWN);
+#if defined(USE_X11)
+  ui::UpdateX11EventForFlags(&press_2);
+#endif
   textfield_->OnMousePressed(press_2);
   ui::MouseEvent release_2(ui::ET_MOUSE_RELEASED, point_2, point_2,
                            ui::EF_LEFT_MOUSE_BUTTON, ui::EF_LEFT_MOUSE_BUTTON);
@@ -1893,86 +1944,75 @@ TEST_F(TextfieldTest, TouchSelectionAndDraggingTest) {
   textfield_->SetText(ASCIIToUTF16("hello world"));
   EXPECT_FALSE(test_api_->touch_selection_controller());
   const int x = GetCursorPositionX(2);
-  GestureEventForTest tap(ui::ET_GESTURE_TAP, x, 0, 1.0f, 0.0f);
-  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, x, 0, 0.0f, 0.0f);
-  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS, x, 0, 0.0f, 0.0f);
   CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
 
   // Tapping on the textfield should turn on the TouchSelectionController.
+  ui::GestureEventDetails tap_details(ui::ET_GESTURE_TAP);
+  tap_details.set_tap_count(1);
+  GestureEventForTest tap(x, 0, tap_details);
   textfield_->OnGestureEvent(&tap);
   EXPECT_TRUE(test_api_->touch_selection_controller());
 
   // Un-focusing the textfield should reset the TouchSelectionController
   textfield_->GetFocusManager()->ClearFocus();
   EXPECT_FALSE(test_api_->touch_selection_controller());
+  textfield_->RequestFocus();
 
   // With touch editing enabled, long press should not show context menu.
   // Instead, select word and invoke TouchSelectionController.
-  textfield_->OnGestureEvent(&tap_down);
-  textfield_->OnGestureEvent(&long_press);
+  GestureEventForTest long_press_1(
+      x, 0, ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS));
+  textfield_->OnGestureEvent(&long_press_1);
   EXPECT_STR_EQ("hello", textfield_->GetSelectedText());
   EXPECT_TRUE(test_api_->touch_selection_controller());
+  EXPECT_TRUE(long_press_1.handled());
 
   // With touch drag drop enabled, long pressing in the selected region should
   // start a drag and remove TouchSelectionController.
   ASSERT_TRUE(switches::IsTouchDragDropEnabled());
-  textfield_->OnGestureEvent(&tap_down);
-  textfield_->OnGestureEvent(&long_press);
+  GestureEventForTest long_press_2(
+      x, 0, ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS));
+  textfield_->OnGestureEvent(&long_press_2);
   EXPECT_STR_EQ("hello", textfield_->GetSelectedText());
   EXPECT_FALSE(test_api_->touch_selection_controller());
+  EXPECT_FALSE(long_press_2.handled());
 
   // After disabling touch drag drop, long pressing again in the selection
   // region should not do anything.
   CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kDisableTouchDragDrop);
   ASSERT_FALSE(switches::IsTouchDragDropEnabled());
-  textfield_->OnGestureEvent(&tap_down);
-  textfield_->OnGestureEvent(&long_press);
+  GestureEventForTest long_press_3(
+      x, 0, ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS));
+  textfield_->OnGestureEvent(&long_press_3);
   EXPECT_STR_EQ("hello", textfield_->GetSelectedText());
-  EXPECT_TRUE(test_api_->touch_selection_controller());
-  EXPECT_TRUE(long_press.handled());
-}
-
-TEST_F(TextfieldTest, TouchScrubbingSelection) {
-  InitTextfield();
-  textfield_->SetText(ASCIIToUTF16("hello world"));
   EXPECT_FALSE(test_api_->touch_selection_controller());
-
-  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
-
-  // Simulate touch-scrubbing.
-  int scrubbing_start = GetCursorPositionX(1);
-  int scrubbing_end = GetCursorPositionX(6);
-
-  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, scrubbing_start, 0,
-                               0.0f, 0.0f);
-  textfield_->OnGestureEvent(&tap_down);
-
-  GestureEventForTest tap_cancel(ui::ET_GESTURE_TAP_CANCEL, scrubbing_start, 0,
-                                 0.0f, 0.0f);
-  textfield_->OnGestureEvent(&tap_cancel);
-
-  GestureEventForTest scroll_begin(ui::ET_GESTURE_SCROLL_BEGIN, scrubbing_start,
-                                   0, 0.0f, 0.0f);
-  textfield_->OnGestureEvent(&scroll_begin);
-
-  GestureEventForTest scroll_update(ui::ET_GESTURE_SCROLL_UPDATE, scrubbing_end,
-                                    0, scrubbing_end - scrubbing_start, 0.0f);
-  textfield_->OnGestureEvent(&scroll_update);
-
-  GestureEventForTest scroll_end(ui::ET_GESTURE_SCROLL_END, scrubbing_end, 0,
-                                 0.0f, 0.0f);
-  textfield_->OnGestureEvent(&scroll_end);
-
-  GestureEventForTest end(ui::ET_GESTURE_END, scrubbing_end, 0, 0.0f, 0.0f);
-  textfield_->OnGestureEvent(&end);
-
-  // In the end, part of text should have been selected and handles should have
-  // appeared.
-  EXPECT_STR_EQ("ello ", textfield_->GetSelectedText());
-  EXPECT_TRUE(test_api_->touch_selection_controller());
+  EXPECT_FALSE(long_press_3.handled());
 }
 #endif
+
+TEST_F(TextfieldTest, TouchSelectionInUnfocusableTextfield) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(switches::kEnableTouchEditing);
+
+  InitTextfield();
+  textfield_->SetText(ASCIIToUTF16("hello world"));
+  gfx::Point touch_point(GetCursorPositionX(2), 0);
+
+  // Disable textfield and tap on it. Touch text selection should not get
+  // activated.
+  textfield_->SetEnabled(false);
+  Tap(touch_point);
+  EXPECT_FALSE(test_api_->touch_selection_controller());
+  textfield_->SetEnabled(true);
+
+  // Make textfield unfocusable and tap on it. Touch text selection should not
+  // get activated.
+  textfield_->SetFocusable(false);
+  Tap(touch_point);
+  EXPECT_FALSE(textfield_->HasFocus());
+  EXPECT_FALSE(test_api_->touch_selection_controller());
+  textfield_->SetFocusable(true);
+}
 
 // Long_Press gesture in Textfield can initiate a drag and drop now.
 TEST_F(TextfieldTest, TestLongPressInitiatesDragDrop) {
@@ -1988,8 +2028,10 @@ TEST_F(TextfieldTest, TestLongPressInitiatesDragDrop) {
       switches::kEnableTouchDragDrop);
 
   // Create a long press event in the selected region should start a drag.
-  GestureEventForTest long_press(ui::ET_GESTURE_LONG_PRESS, kStringPoint.x(),
-                                 kStringPoint.y(), 0.0f, 0.0f);
+  GestureEventForTest long_press(
+      kStringPoint.x(),
+      kStringPoint.y(),
+      ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS));
   textfield_->OnGestureEvent(&long_press);
   EXPECT_TRUE(textfield_->CanStartDragForView(NULL, kStringPoint,
                                               kStringPoint));
@@ -2007,6 +2049,21 @@ TEST_F(TextfieldTest, GetTextfieldBaseline_FontFallbackTest) {
 
   // Regardless of the text, the baseline must be the same.
   EXPECT_EQ(new_baseline, old_baseline);
+}
+
+// Tests that a textfield view can be destroyed from OnKeyEvent() on its
+// controller and it does not crash.
+TEST_F(TextfieldTest, DestroyingTextfieldFromOnKeyEvent) {
+  InitTextfield();
+
+  // The controller assumes ownership of the textfield.
+  TextfieldDestroyerController controller(textfield_);
+  EXPECT_TRUE(controller.target());
+
+  // Send a key to trigger OnKeyEvent().
+  SendKeyEvent('X');
+
+  EXPECT_FALSE(controller.target());
 }
 
 }  // namespace views

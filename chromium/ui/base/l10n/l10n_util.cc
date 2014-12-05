@@ -11,13 +11,12 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/rtl.h"
 #include "base/i18n/string_compare.h"
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
@@ -33,6 +32,7 @@
 #include "ui/base/ui_base_paths.h"
 
 #if defined(OS_ANDROID)
+#include "base/android/locale_utils.h"
 #include "ui/base/l10n/l10n_util_android.h"
 #endif
 
@@ -188,6 +188,7 @@ static const char* const kAcceptLanguageList[] = {
 bool IsDuplicateName(const std::string& locale_name) {
   static const char* const kDuplicateNames[] = {
     "en",
+    "en_001",
     "pt",
     "zh",
     "zh_hans_cn",
@@ -225,7 +226,7 @@ bool IsLocalePartiallyPopulated(const std::string& locale_name) {
 bool IsLocaleAvailable(const std::string& locale) {
   // If locale has any illegal characters in it, we don't want to try to
   // load it because it may be pointing outside the locale data file directory.
-  if (!file_util::IsFilenameLegal(base::ASCIIToUTF16(locale)))
+  if (!base::i18n::IsFilenameLegal(base::ASCIIToUTF16(locale)))
     return false;
 
   // IsLocalePartiallyPopulated() can be called here for an early return w/o
@@ -311,6 +312,11 @@ std::string GetCanonicalLocale(const std::string& locale) {
   return base::i18n::GetCanonicalLocale(locale.c_str());
 }
 
+std::string GetLanguage(const std::string& locale) {
+  const std::string::size_type hyphen_pos = locale.find('-');
+  return std::string(locale, 0, hyphen_pos);
+}
+
 bool CheckAndResolveLocale(const std::string& locale,
                            std::string* resolved_locale) {
 #if defined(OS_MACOSX)
@@ -334,10 +340,9 @@ bool CheckAndResolveLocale(const std::string& locale,
   // does not support but available on Windows. We fall
   // back to en-US in GetApplicationLocale so that it's a not critical,
   // but we can do better.
-  std::string::size_type hyphen_pos = locale.find('-');
-  std::string lang(locale, 0, hyphen_pos);
-  if (hyphen_pos != std::string::npos && hyphen_pos > 0) {
-    std::string region(locale, hyphen_pos + 1);
+  const std::string lang(GetLanguage(locale));
+  if (lang.size() < locale.size()) {
+    std::string region(locale, lang.size() + 1);
     std::string tmp_locale(lang);
     // Map es-RR other than es-ES to es-419 (Chrome's Latin American
     // Spanish locale).
@@ -383,7 +388,7 @@ bool CheckAndResolveLocale(const std::string& locale,
       {"en", "en-US"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(alias_map); ++i) {
+  for (size_t i = 0; i < arraysize(alias_map); ++i) {
     if (LowerCaseEqualsASCII(lang, alias_map[i].source)) {
       std::string tmp_locale(alias_map[i].dest);
       if (IsLocaleAvailable(tmp_locale)) {
@@ -397,7 +402,7 @@ bool CheckAndResolveLocale(const std::string& locale,
 #endif
 }
 
-std::string GetApplicationLocale(const std::string& pref_locale) {
+std::string GetApplicationLocaleInternal(const std::string& pref_locale) {
 #if defined(OS_MACOSX)
 
   // Use any override (Cocoa for the browser), otherwise use the preference
@@ -411,12 +416,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   if (app_locale.empty())
     app_locale = "en-US";
 
-  // Windows/Linux call SetICUDefaultLocale after determining the actual locale
-  // with CheckAndResolveLocal to make ICU APIs work in that locale.
-  // Mac doesn't use a locale directory tree of resources (it uses Mac style
-  // resources), so mirror the Windows/Linux behavior of calling
-  // SetICUDefaultLocale.
-  base::i18n::SetICUDefaultLocale(app_locale);
   return app_locale;
 
 #else
@@ -449,7 +448,7 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
 #elif defined(OS_ANDROID)
 
   // On Android, query java.util.Locale for the default locale.
-  candidates.push_back(GetDefaultLocale());
+  candidates.push_back(base::android::GetDefaultLocale());
 
 #elif defined(USE_GLIB) && !defined(OS_CHROMEOS)
 
@@ -478,7 +477,6 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   std::vector<std::string>::const_iterator i = candidates.begin();
   for (; i != candidates.end(); ++i) {
     if (CheckAndResolveLocale(*i, &resolved_locale)) {
-      base::i18n::SetICUDefaultLocale(resolved_locale);
       return resolved_locale;
     }
   }
@@ -486,13 +484,24 @@ std::string GetApplicationLocale(const std::string& pref_locale) {
   // Fallback on en-US.
   const std::string fallback_locale("en-US");
   if (IsLocaleAvailable(fallback_locale)) {
-    base::i18n::SetICUDefaultLocale(fallback_locale);
     return fallback_locale;
   }
 
   return std::string();
 
 #endif
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale,
+                                 bool set_icu_locale) {
+  const std::string locale = GetApplicationLocaleInternal(pref_locale);
+  if (set_icu_locale && !locale.empty())
+    base::i18n::SetICUDefaultLocale(locale);
+  return locale;
+}
+
+std::string GetApplicationLocale(const std::string& pref_locale) {
+  return GetApplicationLocale(pref_locale, true /* set_icu_locale */);
 }
 
 bool IsLocaleNameTranslated(const char* locale,
@@ -515,24 +524,15 @@ base::string16 GetDisplayNameForLocale(const std::string& locale,
   std::string locale_code = locale;
   // Internally, we use the language code of zh-CN and zh-TW, but we want the
   // display names to be Chinese (Simplified) and Chinese (Traditional) instead
-  // of Chinese (China) and Chinese (Taiwan).  To do that, we pass zh-Hans
-  // and zh-Hant to ICU. Even with this mapping, we'd get
-  // 'Chinese (Simplified Han)' and 'Chinese (Traditional Han)' in English and
-  // even longer results in other languages. Arguably, they're better than
-  // the current results : Chinese (China) / Chinese (Taiwan).
-  // TODO(jungshik): Do one of the following:
-  // 1. Special-case Chinese by getting the custom-translation for them
-  // 2. Recycle IDS_ENCODING_{SIMP,TRAD}_CHINESE.
-  // 3. Get translations for two directly from the ICU resouce bundle
-  // because they're not accessible with other any API.
-  // 4. Patch ICU to special-case zh-Hans/zh-Hant for us.
-  // #1 and #2 wouldn't work if display_locale != current UI locale although
-  // we can think of additional hack to work around the problem.
-  // #3 can be potentially expensive.
+  // of Chinese (China) and Chinese (Taiwan).
+  // Translate uses "tl" (Tagalog) to mean "fil" (Filipino) until Google
+  // translate is changed to understand "fil". Make "tl" alias to "fil".
   if (locale_code == "zh-CN")
     locale_code = "zh-Hans";
   else if (locale_code == "zh-TW")
     locale_code = "zh-Hant";
+  else if (locale_code == "tl")
+    locale_code = "fil";
 
   base::string16 display_name;
 #if defined(OS_ANDROID)
@@ -825,18 +825,6 @@ base::string16 GetStringFUTF16Int(int message_id, int64 a) {
   return GetStringFUTF16(message_id, base::UTF8ToUTF16(base::Int64ToString(a)));
 }
 
-// Specialization of operator() method for base::string16 version.
-template <>
-bool StringComparator<base::string16>::operator()(const base::string16& lhs,
-                                                  const base::string16& rhs) {
-  // If we can not get collator instance for specified locale, just do simple
-  // string compare.
-  if (!collator_)
-    return lhs < rhs;
-  return base::i18n::CompareString16WithCollator(collator_, lhs, rhs) ==
-      UCOL_LESS;
-};
-
 base::string16 GetPluralStringFUTF16(const std::vector<int>& message_ids,
                                int number) {
   scoped_ptr<icu::PluralFormat> format = BuildPluralFormat(message_ids);
@@ -884,6 +872,14 @@ int GetLocalizedContentsWidthInPixels(int pixel_resource_id) {
   base::StringToInt(l10n_util::GetStringUTF8(pixel_resource_id), &width);
   DCHECK_GT(width, 0);
   return width;
+}
+
+const char* const* GetAcceptLanguageListForTesting() {
+  return kAcceptLanguageList;
+}
+
+size_t GetAcceptLanguageListSizeForTesting() {
+  return arraysize(kAcceptLanguageList);
 }
 
 }  // namespace l10n_util

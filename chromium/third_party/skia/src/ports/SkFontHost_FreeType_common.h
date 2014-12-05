@@ -12,6 +12,7 @@
 #include "SkGlyph.h"
 #include "SkScalerContext.h"
 #include "SkTypeface.h"
+#include "SkTypes.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -25,7 +26,6 @@
 #else
     #define SkASSERT_CONTINUE(pred)
 #endif
-
 
 class SkScalerContext_FreeType_Base : public SkScalerContext {
 protected:
@@ -45,8 +45,25 @@ private:
 };
 
 class SkTypeface_FreeType : public SkTypeface {
+public:
+    /** For SkFontMgrs to make use of our ability to extract
+     *  name and style from a stream, using FreeType's API.
+     */
+    class Scanner : ::SkNoncopyable {
+    public:
+        Scanner();
+        ~Scanner();
+        bool recognizedFont(SkStream* stream, int* numFonts) const;
+        bool scanFont(SkStream* stream, int ttcIndex,
+                      SkString* name, SkFontStyle* style, bool* isFixedPitch) const;
+    private:
+        FT_Face openFace(SkStream* stream, int ttcIndex, FT_Stream ftStream) const;
+        FT_Library fLibrary;
+        mutable SkMutex fLibraryMutex;
+    };
+
 protected:
-    SkTypeface_FreeType(Style style, SkFontID uniqueID, bool isFixedPitch)
+    SkTypeface_FreeType(const SkFontStyle& style, SkFontID uniqueID, bool isFixedPitch)
         : INHERITED(style, uniqueID, isFixedPitch)
         , fGlyphCount(-1)
     {}

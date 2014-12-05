@@ -28,6 +28,12 @@ namespace net {
 
 class HttpByteRange;
 
+enum ValidationType {
+  VALIDATION_NONE,          // The resource is fresh.
+  VALIDATION_ASYNCHRONOUS,  // The resource requires async revalidation.
+  VALIDATION_SYNCHRONOUS    // The resource requires sync revalidation.
+};
+
 // HttpResponseHeaders: parses and holds HTTP response headers.
 class NET_EXPORT HttpResponseHeaders
     : public base::RefCountedThreadSafe<HttpResponseHeaders> {
@@ -42,6 +48,14 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_NON_CACHEABLE = 1 << 3;
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
   static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
+
+  struct FreshnessLifetimes {
+    // How long the resource will be fresh for.
+    base::TimeDelta freshness;
+    // How long after becoming not fresh that the resource will be stale but
+    // usable (if async revalidation is enabled).
+    base::TimeDelta staleness;
+  };
 
   static const char kContentRange[];
 
@@ -201,19 +215,26 @@ class NET_EXPORT HttpResponseHeaders
   // redirect.
   static bool IsRedirectResponseCode(int response_code);
 
-  // Returns true if the response cannot be reused without validation.  The
-  // result is relative to the current_time parameter, which is a parameter to
-  // support unit testing.  The request_time parameter indicates the time at
-  // which the request was made that resulted in this response, which was
-  // received at response_time.
-  bool RequiresValidation(const base::Time& request_time,
-                          const base::Time& response_time,
-                          const base::Time& current_time) const;
+  // Returns VALIDATION_NONE if the response can be reused without
+  // validation. VALIDATION_ASYNCHRONOUS means the response can be re-used, but
+  // asynchronous revalidation must be performed. VALIDATION_SYNCHRONOUS means
+  // that the result cannot be reused without revalidation.
+  // The result is relative to the current_time parameter, which is
+  // a parameter to support unit testing.  The request_time parameter indicates
+  // the time at which the request was made that resulted in this response,
+  // which was received at response_time.
+  ValidationType RequiresValidation(const base::Time& request_time,
+                                    const base::Time& response_time,
+                                    const base::Time& current_time) const;
 
-  // Returns the amount of time the server claims the response is fresh from
+  // Calculates the amount of time the server claims the response is fresh from
   // the time the response was generated.  See section 13.2.4 of RFC 2616.  See
-  // RequiresValidation for a description of the response_time parameter.
-  base::TimeDelta GetFreshnessLifetime(const base::Time& response_time) const;
+  // RequiresValidation for a description of the response_time parameter.  See
+  // the definition of FreshnessLifetimes above for the meaning of the return
+  // value.  See RFC 5861 section 3 for the definition of
+  // stale-while-revalidate.
+  FreshnessLifetimes GetFreshnessLifetimes(
+      const base::Time& response_time) const;
 
   // Returns the age of the response.  See section 13.2.3 of RFC 2616.
   // See RequiresValidation for a description of this method's parameters.
@@ -229,6 +250,7 @@ class NET_EXPORT HttpResponseHeaders
   bool GetDateValue(base::Time* value) const;
   bool GetLastModifiedValue(base::Time* value) const;
   bool GetExpiresValue(base::Time* value) const;
+  bool GetStaleWhileRevalidateValue(base::TimeDelta* value) const;
 
   // Extracts the time value of a particular header.  This method looks for the
   // first matching header value and parses its value as a HTTP-date.
@@ -319,6 +341,12 @@ class NET_EXPORT HttpResponseHeaders
   // Find the header in our list (case-insensitive) starting with parsed_ at
   // index |from|.  Returns string::npos if not found.
   size_t FindHeader(size_t from, const base::StringPiece& name) const;
+
+  // Search the Cache-Control header for a directive matching |directive|. If
+  // present, treat its value as a time offset in seconds, write it to |result|,
+  // and return true.
+  bool GetCacheControlDirective(const base::StringPiece& directive,
+                                base::TimeDelta* result) const;
 
   // Add a header->value pair to our list.  If we already have header in our
   // list, append the value to it.

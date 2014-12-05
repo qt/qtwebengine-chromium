@@ -22,6 +22,11 @@ class GrGpuGL;
 
 class GrGLPath : public GrPath {
 public:
+    static void InitPathObject(GrGpuGL*,
+                               GrGLuint pathID,
+                               const SkPath&,
+                               const SkStrokeRec&);
+
     GrGLPath(GrGpuGL* gpu, const SkPath& path, const SkStrokeRec& stroke);
     virtual ~GrGLPath();
     GrGLuint pathID() const { return fPathID; }

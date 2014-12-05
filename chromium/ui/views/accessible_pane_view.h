@@ -24,7 +24,7 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
                                         public FocusTraversable {
  public:
   AccessiblePaneView();
-  virtual ~AccessiblePaneView();
+  ~AccessiblePaneView() override;
 
   // Set focus to the pane with complete keyboard access.
   // Focus will be restored to the last focused view if the user escapes.
@@ -40,23 +40,20 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   virtual bool SetPaneFocusAndFocusDefault();
 
   // Overridden from View:
-  virtual FocusTraversable* GetPaneFocusTraversable() OVERRIDE;
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator)
-      OVERRIDE;
-  virtual void SetVisible(bool flag) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void RequestFocus() OVERRIDE;
+  FocusTraversable* GetPaneFocusTraversable() override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void SetVisible(bool flag) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void RequestFocus() override;
 
   // Overridden from FocusChangeListener:
-  virtual void OnWillChangeFocus(View* focused_before,
-                                 View* focused_now) OVERRIDE;
-  virtual void OnDidChangeFocus(View* focused_before,
-                                View* focused_now) OVERRIDE;
+  void OnWillChangeFocus(View* focused_before, View* focused_now) override;
+  void OnDidChangeFocus(View* focused_before, View* focused_now) override;
 
   // Overridden from FocusTraversable:
-  virtual FocusSearch* GetFocusSearch() OVERRIDE;
-  virtual FocusTraversable* GetFocusTraversableParent() OVERRIDE;
-  virtual View* GetFocusTraversableParentView() OVERRIDE;
+  FocusSearch* GetFocusSearch() override;
+  FocusTraversable* GetFocusTraversableParent() override;
+  View* GetFocusTraversableParentView() override;
 
   // For testing only.
   const ui::Accelerator& home_key() const { return home_key_; }
@@ -101,8 +98,6 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   // is known where to return to.
   bool allow_deactivate_on_esc_;
 
-  base::WeakPtrFactory<AccessiblePaneView> method_factory_;
-
   // Save the focus manager rather than calling GetFocusManager(),
   // so that we can remove focus listeners in the destructor.
   FocusManager* focus_manager_;
@@ -123,6 +118,8 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   int last_focused_view_storage_id_;
 
   friend class AccessiblePaneViewFocusSearch;
+
+  base::WeakPtrFactory<AccessiblePaneView> method_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(AccessiblePaneView);
 };

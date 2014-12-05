@@ -26,20 +26,22 @@
 #ifndef FontFaceSetForEachCallback_h
 #define FontFaceSetForEachCallback_h
 
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontFace;
 class FontFaceSet;
 
-class FontFaceSetForEachCallback {
+class FontFaceSetForEachCallback : public GarbageCollectedFinalized<FontFaceSetForEachCallback> {
 public:
     virtual ~FontFaceSetForEachCallback() { }
+    virtual void trace(Visitor*) { }
     virtual bool handleItem(ScriptValue thisValue, FontFace*, FontFace*, FontFaceSet*) = 0;
     virtual bool handleItem(FontFace*, FontFace*, FontFaceSet*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FontFaceSetForEachCallback_h

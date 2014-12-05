@@ -33,7 +33,6 @@ namespace content {
 class InputAckHandler;
 class InputRouterClient;
 class OverscrollController;
-class RenderWidgetHostImpl;
 struct DidOverscrollParams;
 
 // A default implementation for browser input event routing.
@@ -54,52 +53,49 @@ class CONTENT_EXPORT InputRouterImpl
                   InputAckHandler* ack_handler,
                   int routing_id,
                   const Config& config);
-  virtual ~InputRouterImpl();
+  ~InputRouterImpl() override;
 
   // InputRouter
-  virtual void Flush() OVERRIDE;
-  virtual bool SendInput(scoped_ptr<IPC::Message> message) OVERRIDE;
-  virtual void SendMouseEvent(
-      const MouseEventWithLatencyInfo& mouse_event) OVERRIDE;
-  virtual void SendWheelEvent(
-      const MouseWheelEventWithLatencyInfo& wheel_event) OVERRIDE;
-  virtual void SendKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event,
-      const ui::LatencyInfo& latency_info,
-      bool is_keyboard_shortcut) OVERRIDE;
-  virtual void SendGestureEvent(
-      const GestureEventWithLatencyInfo& gesture_event) OVERRIDE;
-  virtual void SendTouchEvent(
-      const TouchEventWithLatencyInfo& touch_event) OVERRIDE;
-  virtual const NativeWebKeyboardEvent* GetLastKeyboardEvent() const OVERRIDE;
-  virtual bool ShouldForwardTouchEvent() const OVERRIDE;
-  virtual void OnViewUpdated(int view_flags) OVERRIDE;
-  virtual bool HasPendingEvents() const OVERRIDE;
+  void Flush() override;
+  bool SendInput(scoped_ptr<IPC::Message> message) override;
+  void SendMouseEvent(const MouseEventWithLatencyInfo& mouse_event) override;
+  void SendWheelEvent(
+      const MouseWheelEventWithLatencyInfo& wheel_event) override;
+  void SendKeyboardEvent(const NativeWebKeyboardEvent& key_event,
+                         const ui::LatencyInfo& latency_info,
+                         bool is_keyboard_shortcut) override;
+  void SendGestureEvent(
+      const GestureEventWithLatencyInfo& gesture_event) override;
+  void SendTouchEvent(const TouchEventWithLatencyInfo& touch_event) override;
+  const NativeWebKeyboardEvent* GetLastKeyboardEvent() const override;
+  bool ShouldForwardTouchEvent() const override;
+  void OnViewUpdated(int view_flags) override;
+  bool HasPendingEvents() const override;
 
   // IPC::Listener
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
 private:
   friend class InputRouterImplTest;
 
   // TouchpadTapSuppressionControllerClient
-  virtual void SendMouseEventImmediately(
-      const MouseEventWithLatencyInfo& mouse_event) OVERRIDE;
+  void SendMouseEventImmediately(
+      const MouseEventWithLatencyInfo& mouse_event) override;
 
   // TouchEventQueueClient
-  virtual void SendTouchEventImmediately(
-      const TouchEventWithLatencyInfo& touch_event) OVERRIDE;
-  virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE;
+  void SendTouchEventImmediately(
+      const TouchEventWithLatencyInfo& touch_event) override;
+  void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override;
 
   // GetureEventFilterClient
-  virtual void SendGestureEventImmediately(
-      const GestureEventWithLatencyInfo& gesture_event) OVERRIDE;
-  virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
-                                 InputEventAckState ack_result) OVERRIDE;
+  void SendGestureEventImmediately(
+      const GestureEventWithLatencyInfo& gesture_event) override;
+  void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckState ack_result) override;
 
   bool SendMoveCaret(scoped_ptr<IPC::Message> message);
-  bool SendSelectRange(scoped_ptr<IPC::Message> message);
+  bool SendSelectMessage(scoped_ptr<IPC::Message> message);
   bool Send(IPC::Message* message);
 
   // Filters and forwards |input_event| to the appropriate handler.
@@ -152,7 +148,7 @@ private:
   void OnInputEventAck(const InputHostMsg_HandleInputEvent_ACK_Params& ack);
   void OnDidOverscroll(const DidOverscrollParams& params);
   void OnMsgMoveCaretAck();
-  void OnSelectRangeAck();
+  void OnSelectMessageAck();
   void OnHasTouchEventHandlers(bool has_handlers);
   void OnSetTouchAction(TouchAction touch_action);
 
@@ -216,11 +212,13 @@ private:
   InputAckHandler* ack_handler_;
   int routing_id_;
 
-  // (Similar to |mouse_move_pending_|.) True while waiting for SelectRange_ACK.
-  bool select_range_pending_;
+  // (Similar to |mouse_move_pending_|.) True while waiting for SelectRange_ACK
+  // or MoveRangeSelectionExtent_ACK.
+  bool select_message_pending_;
 
-  // (Similar to |next_mouse_move_|.) The next SelectRange to send, if any.
-  scoped_ptr<IPC::Message> next_selection_range_;
+  // Queue of pending select messages to send after receving the next select
+  // message ack.
+  std::deque<IPC::Message*> pending_select_messages_;
 
   // (Similar to |mouse_move_pending_|.) True while waiting for MoveCaret_ACK.
   bool move_caret_pending_;

@@ -44,7 +44,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -139,10 +139,7 @@ private:
         blink::Platform::initialize(&m_proxyPlatform);
 
         // Save the global memory cache to restore it upon teardown.
-        m_globalMemoryCache = adoptPtr(memoryCache());
-        // Create the test memory cache instance and hook it in.
-        m_testingMemoryCache = adoptPtr(new MemoryCache());
-        setMemoryCacheForTesting(m_testingMemoryCache.leakPtr());
+        m_globalMemoryCache = replaceMemoryCacheForTesting(MemoryCache::create());
 
         // Create a ResourceFetcher that has a real DocumentLoader and Document, but is not attached to a LocalFrame.
         const KURL kDocumentURL(ParsedURLString, "http://document.com/");
@@ -156,12 +153,8 @@ private:
     {
         memoryCache()->evictResources();
 
-        // Regain the ownership of testing memory cache, so that it will be
-        // destroyed.
-        m_testingMemoryCache = adoptPtr(memoryCache());
-
         // Yield the ownership of the global memory cache back.
-        setMemoryCacheForTesting(m_globalMemoryCache.leakPtr());
+        replaceMemoryCacheForTesting(m_globalMemoryCache.release());
 
         blink::Platform::initialize(m_savedPlatform);
     }
@@ -169,8 +162,7 @@ private:
     blink::Platform* m_savedPlatform;
     ProxyPlatform m_proxyPlatform;
 
-    OwnPtr<MemoryCache> m_testingMemoryCache;
-    OwnPtr<MemoryCache> m_globalMemoryCache;
+    OwnPtrWillBePersistent<MemoryCache> m_globalMemoryCache;
 
     RefPtr<DocumentLoader> m_documentLoader;
 
@@ -403,7 +395,7 @@ TEST_F(CachingCorrectnessTest, FreshWithFreshRedirect)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh301Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh301Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -437,7 +429,7 @@ TEST_F(CachingCorrectnessTest, FreshWithStaleRedirect)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, stale301Response);
+    firstResource->willFollowRedirect(redirectRequest, stale301Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -489,7 +481,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectNotImplicitlyFresh)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -524,7 +516,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectExplicitlyFreshMaxAge)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;
@@ -559,7 +551,7 @@ TEST_F(CachingCorrectnessTest, 302RedirectExplicitlyFreshExpires)
 
     // Add the redirect to our request.
     ResourceRequest redirectRequest = ResourceRequest(redirectTargetUrl);
-    firstResource->willSendRequest(redirectRequest, fresh302Response);
+    firstResource->willFollowRedirect(redirectRequest, fresh302Response);
 
     // Add the final response to our request.
     ResourceResponse fresh200Response;

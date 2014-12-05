@@ -16,17 +16,20 @@
 #include "base/memory/scoped_vector.h"
 #include "base/values.h"
 #include "content/public/browser/certificate_request_result_type.h"
+#include "content/public/browser/desktop_notification_delegate.h"
+#include "content/public/browser/permission_type.h"
 #include "content/public/common/content_client.h"
+#include "content/public/common/media_stream_request.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/socket_permission_request.h"
 #include "content/public/common/window_container_type.h"
 #include "net/base/mime_util.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/url_request/url_request_interceptor.h"
 #include "net/url_request/url_request_job_factory.h"
-#include "third_party/WebKit/public/web/WebNotificationPresenter.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "third_party/WebKit/public/platform/WebNotificationPermission.h"
 #include "ui/base/window_open_disposition.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/resource_type.h"
 
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 #include "base/posix/global_descriptors.h"
@@ -37,7 +40,6 @@
 #endif
 
 class GURL;
-struct WebPreferences;
 
 namespace base {
 class CommandLine;
@@ -56,7 +58,6 @@ class ImageSkia;
 namespace net {
 class CookieOptions;
 class CookieStore;
-class HttpNetworkSession;
 class NetLog;
 class SSLCertRequestInfo;
 class SSLInfo;
@@ -74,7 +75,7 @@ namespace ui {
 class SelectFilePolicy;
 }
 
-namespace fileapi {
+namespace storage {
 class ExternalMountPoints;
 class FileSystemBackend;
 }
@@ -106,6 +107,7 @@ class WebContentsViewDelegate;
 struct MainFunctionParams;
 struct Referrer;
 struct ShowDesktopNotificationHostMsgParams;
+struct WebPreferences;
 
 // A mapping from the scheme name to the protocol handler that services its
 // content.
@@ -140,24 +142,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // own the delegate.
   virtual WebContentsViewDelegate* GetWebContentsViewDelegate(
       WebContents* web_contents);
-
-  // Notifies that a guest WebContents has been created. A guest WebContents
-  // represents a renderer that's hosted within a BrowserPlugin. Creation can
-  // occur an arbitrary length of time before attachment. If the new guest has
-  // an |opener_web_contents|, then it's a new window created by that opener.
-  // If the guest was created via navigation, then |extra_params| will be
-  // non-NULL. |extra_params| are parameters passed to the BrowserPlugin object
-  // element by the content embedder. These parameters may include the API to
-  // enable for the given guest. |guest_delegate| is a return parameter of
-  // the delegate in the content embedder that will service the guest in the
-  // content layer. The content layer takes ownership of the |guest_delegate|.
-  virtual void GuestWebContentsCreated(
-      int guest_instance_id,
-      SiteInstance* guest_site_instance,
-      WebContents* guest_web_contents,
-      WebContents* opener_web_contents,
-      BrowserPluginGuestDelegate** guest_delegate,
-      scoped_ptr<base::DictionaryValue> extra_params) {}
 
   // Notifies that a render process will be created. This is called before
   // the content layer adds its own BrowserMessageFilters, so that the
@@ -243,14 +227,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Called from a site instance's destructor.
   virtual void SiteInstanceDeleting(SiteInstance* site_instance) {}
 
-  // Called when a worker process is created.
-  virtual void WorkerProcessCreated(SiteInstance* site_instance,
-                                    int worker_process_id) {}
-
-  // Called when a worker process is terminated.
-  virtual void WorkerProcessTerminated(SiteInstance* site_instance,
-                                       int worker_process_id) {}
-
   // Returns true if for the navigation from |current_url| to |new_url|
   // in |site_instance|, a new SiteInstance and BrowsingInstance should be
   // created (even if we are in a process model that doesn't usually swap.)
@@ -298,6 +274,13 @@ class CONTENT_EXPORT ContentBrowserClient {
                              const GURL& first_party,
                              ResourceContext* context);
 
+  // Allow the embedder to control if a Service Worker can be associated
+  // with the given scope.
+  // This is called on the IO thread.
+  virtual bool AllowServiceWorker(const GURL& scope,
+                                  const GURL& first_party,
+                                  content::ResourceContext* context);
+
   // Allow the embedder to control if the given cookie can be read.
   // This is called on the IO thread.
   virtual bool AllowGetCookie(const GURL& url,
@@ -335,10 +318,11 @@ class CONTENT_EXPORT ContentBrowserClient {
   // Allow the embedder to control if access to file system by a shared worker
   // is allowed.
   // This is called on the IO thread.
-  virtual bool AllowWorkerFileSystem(
+  virtual void AllowWorkerFileSystem(
       const GURL& url,
       ResourceContext* context,
-      const std::vector<std::pair<int, int> >& render_frames);
+      const std::vector<std::pair<int, int> >& render_frames,
+      base::Callback<void(bool)> callback);
 
   // Allow the embedder to control if access to IndexedDB by a shared worker
   // is allowed.
@@ -400,26 +384,25 @@ class CONTENT_EXPORT ContentBrowserClient {
   // asynchronously. If |result| is not set to
   // CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE, the request will be cancelled
   // or denied immediately, and the callback won't be run.
-  virtual void AllowCertificateError(
-      int render_process_id,
-      int render_frame_id,
-      int cert_error,
-      const net::SSLInfo& ssl_info,
-      const GURL& request_url,
-      ResourceType::Type resource_type,
-      bool overridable,
-      bool strict_enforcement,
-      const base::Callback<void(bool)>& callback,
-      CertificateRequestResultType* result) {}
+  virtual void AllowCertificateError(int render_process_id,
+                                     int render_frame_id,
+                                     int cert_error,
+                                     const net::SSLInfo& ssl_info,
+                                     const GURL& request_url,
+                                     ResourceType resource_type,
+                                     bool overridable,
+                                     bool strict_enforcement,
+                                     bool expired_previous_decision,
+                                     const base::Callback<void(bool)>& callback,
+                                     CertificateRequestResultType* result) {}
 
   // Selects a SSL client certificate and returns it to the |callback|. If no
   // certificate was selected NULL is returned to the |callback|.
   virtual void SelectClientCertificate(
       int render_process_id,
       int render_frame_id,
-      const net::HttpNetworkSession* network_session,
       net::SSLCertRequestInfo* cert_request_info,
-      const base::Callback<void(net::X509Certificate*)>& callback) {}
+      const base::Callback<void(net::X509Certificate*)>& callback);
 
   // Adds a new installable certificate or private key.
   // Typically used to install an X.509 user certificate.
@@ -435,16 +418,9 @@ class CONTENT_EXPORT ContentBrowserClient {
   // return NULL if they're not interested.
   virtual MediaObserver* GetMediaObserver();
 
-  // Asks permission to show desktop notifications. |callback| needs to be run
-  // when the user approves the request.
-  virtual void RequestDesktopNotificationPermission(
-      const GURL& source_origin,
-      RenderFrameHost* render_frame_host,
-      const base::Closure& callback) {}
-
   // Checks if the given page has permission to show desktop notifications.
   // This is called on the IO thread.
-  virtual blink::WebNotificationPresenter::Permission
+  virtual blink::WebNotificationPermission
       CheckDesktopNotificationPermission(
           const GURL& source_url,
           ResourceContext* context,
@@ -454,42 +430,28 @@ class CONTENT_EXPORT ContentBrowserClient {
   // a callback which can be used to cancel the notification.
   virtual void ShowDesktopNotification(
       const ShowDesktopNotificationHostMsgParams& params,
-      RenderFrameHost* render_frame_host,
-      DesktopNotificationDelegate* delegate,
+      BrowserContext* browser_context,
+      int render_process_id,
+      scoped_ptr<DesktopNotificationDelegate> delegate,
       base::Closure* cancel_callback) {}
 
-  // The renderer is requesting permission to use Geolocation. When the answer
-  // to a permission request has been determined, |result_callback| should be
-  // called with the result. If |cancel_callback| is non-null, it's set to a
-  // callback which can be used to cancel the permission request.
-  virtual void RequestGeolocationPermission(
+  virtual void RequestPermission(
+      PermissionType permission,
       WebContents* web_contents,
       int bridge_id,
       const GURL& requesting_frame,
       bool user_gesture,
-      base::Callback<void(bool)> result_callback,
-      base::Closure* cancel_callback);
+      const base::Callback<void(bool)>& result_callback);
 
-  // Requests a permission to use system exclusive messages in MIDI events.
-  // |result_callback| will be invoked when the request is resolved. If
-  // |cancel_callback| is non-null, it's set to a callback which can be used to
-  // cancel the permission request.
-  virtual void RequestMidiSysExPermission(
-      WebContents* web_contents,
-      int bridge_id,
-      const GURL& requesting_frame,
-      bool user_gesture,
-      base::Callback<void(bool)> result_callback,
-      base::Closure* cancel_callback);
+  virtual void CancelPermissionRequest(PermissionType permission,
+                                       WebContents* web_contents,
+                                       int bridge_id,
+                                       const GURL& requesting_frame) {}
 
-  // Request permission to access protected media identifier. |result_callback
-  // will tell whether it's permitted. If |cancel_callback| is non-null, it's
-  // set to a callback which can be used to cancel the permission request.
-  virtual void RequestProtectedMediaIdentifierPermission(
-      WebContents* web_contents,
-      const GURL& origin,
-      base::Callback<void(bool)> result_callback,
-      base::Closure* cancel_callback);
+  virtual void RegisterPermissionUsage(PermissionType permission,
+                                       WebContents* web_contents,
+                                       const GURL& frame_url,
+                                       const GURL& main_frame_url) {}
 
   // Returns true if the given page is allowed to open a window of the given
   // type. If true is returned, |no_javascript_access| will indicate whether
@@ -509,12 +471,6 @@ class CONTENT_EXPORT ContentBrowserClient {
                                int render_process_id,
                                int opener_id,
                                bool* no_javascript_access);
-
-  // Returns a title string to use in the task manager for a process host with
-  // the given URL, or the empty string to fall back to the default logic.
-  // This is called on the IO thread.
-  virtual std::string GetWorkerProcessTitle(const GURL& url,
-                                            ResourceContext* context);
 
   // Notifies the embedder that the ResourceDispatcherHost has been created.
   // This is when it can optionally add a delegate.
@@ -540,11 +496,6 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void OverrideWebkitPrefs(RenderViewHost* render_view_host,
                                    const GURL& url,
                                    WebPreferences* prefs) {}
-
-  // Inspector setting was changed and should be persisted.
-  virtual void UpdateInspectorSetting(RenderViewHost* rvh,
-                                      const std::string& key,
-                                      const std::string& value) {}
 
   // Notifies that BrowserURLHandler has been created, so that the embedder can
   // optionally add their own handlers.
@@ -595,7 +546,7 @@ class CONTENT_EXPORT ContentBrowserClient {
 
   // Returns auto mount handlers for URL requests for FileSystem APIs.
   virtual void GetURLRequestAutoMountHandlers(
-      std::vector<fileapi::URLRequestAutoMountHandler>* handlers) {}
+      std::vector<storage::URLRequestAutoMountHandler>* handlers) {}
 
   // Returns additional file system backends for FileSystem API.
   // |browser_context| is needed in the additional FileSystemBackends.
@@ -604,7 +555,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GetAdditionalFileSystemBackends(
       BrowserContext* browser_context,
       const base::FilePath& storage_partition_path,
-      ScopedVector<fileapi::FileSystemBackend>* additional_backends) {}
+      ScopedVector<storage::FileSystemBackend>* additional_backends) {}
 
   // Allows an embedder to return its own LocationProvider implementation.
   // Return NULL to use the default one for the platform to be created.
@@ -647,7 +598,7 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual void GetAdditionalMappedFilesForChildProcess(
       const base::CommandLine& command_line,
       int child_process_id,
-      std::vector<FileDescriptorInfo>* mappings) {}
+      FileDescriptorInfo* mappings) {}
 #endif
 
 #if defined(OS_WIN)
@@ -667,6 +618,13 @@ class CONTENT_EXPORT ContentBrowserClient {
   virtual ExternalVideoSurfaceContainer*
   OverrideCreateExternalVideoSurfaceContainer(WebContents* web_contents);
 #endif
+
+// Checks if |security_origin| has permission to access the microphone or
+// camera. Note that this does not query the user. |type| must be
+// MEDIA_DEVICE_AUDIO_CAPTURE or MEDIA_DEVICE_VIDEO_CAPTURE.
+virtual bool CheckMediaAccessPermission(BrowserContext* browser_context,
+                                        const GURL& security_origin,
+                                        MediaStreamType type);
 };
 
 }  // namespace content

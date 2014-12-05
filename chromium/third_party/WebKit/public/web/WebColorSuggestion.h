@@ -34,19 +34,17 @@
 #include "public/platform/WebColor.h"
 #include "public/platform/WebString.h"
 
-namespace WebCore {
-struct ColorSuggestion;
-}
-
 namespace blink {
+
+struct ColorSuggestion;
 
 struct WebColorSuggestion {
     WebColor color;
     WebString label;
 
 #if BLINK_IMPLEMENTATION
-    WebColorSuggestion(const WebCore::ColorSuggestion&);
-    WebColorSuggestion& operator=(const WebCore::ColorSuggestion&);
+    WebColorSuggestion(const ColorSuggestion&);
+    WebColorSuggestion& operator=(const ColorSuggestion&);
 #endif
 };
 

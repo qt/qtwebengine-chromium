@@ -50,10 +50,10 @@ struct UTF8TestData {
 // to be a PlatformTest
 class FilePathTest : public PlatformTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     PlatformTest::SetUp();
   }
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     PlatformTest::TearDown();
   }
 };
@@ -765,21 +765,22 @@ TEST_F(FilePathTest, Extension2) {
     { FPL("/foo.tar.gz.gz"),         FPL(".gz.gz") },
     { FPL("/foo.1234.user.js"),      FPL(".user.js") },
     { FPL("foo.user.js"),            FPL(".user.js") },
+    { FPL("/foo.tar.bz"),            FPL(".tar.bz") },
   };
   for (unsigned int i = 0; i < arraysize(cases); ++i) {
     FilePath path(cases[i].input);
     FilePath::StringType extension = path.Extension();
     FilePath::StringType final_extension = path.FinalExtension();
-    EXPECT_STREQ(cases[i].expected, extension.c_str()) << "i: " << i <<
-        ", path: " << path.value();
-    EXPECT_STREQ(cases[i].expected, final_extension.c_str()) << "i: " << i <<
-        ", path: " << path.value();
+    EXPECT_STREQ(cases[i].expected, extension.c_str())
+        << "i: " << i << ", path: " << path.value();
+    EXPECT_STREQ(cases[i].expected, final_extension.c_str())
+        << "i: " << i << ", path: " << path.value();
   }
   for (unsigned int i = 0; i < arraysize(double_extension_cases); ++i) {
-    FilePath path(cases[i].input);
+    FilePath path(double_extension_cases[i].input);
     FilePath::StringType extension = path.Extension();
-    EXPECT_STREQ(cases[i].expected, extension.c_str()) << "i: " << i <<
-        ", path: " << path.value();
+    EXPECT_STREQ(double_extension_cases[i].expected, extension.c_str())
+        << "i: " << i << ", path: " << path.value();
   }
 }
 

@@ -12,7 +12,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -1453,10 +1453,12 @@ bool WebGLImageConversion::computeFormatAndTypeParameters(GLenum format, GLenum 
         *componentsPerPixel = 2;
         break;
     case GL_RGB:
+    case GL_SRGB_EXT: // GL_EXT_sRGB
         *componentsPerPixel = 3;
         break;
     case GL_RGBA:
     case GL_BGRA_EXT: // GL_EXT_texture_format_BGRA8888
+    case GL_SRGB_ALPHA_EXT: // GL_EXT_sRGB
         *componentsPerPixel = 4;
         break;
     default:
@@ -1565,7 +1567,7 @@ bool WebGLImageConversion::ImageExtractor::extractImage(bool premultiplyAlpha, b
         m_nativeImage = frame->asNewNativeImage();
         if (!m_nativeImage.get() || !m_nativeImage->isDataComplete() || !m_nativeImage->bitmap().width() || !m_nativeImage->bitmap().height())
             return false;
-        if (m_nativeImage->bitmap().colorType() != kPMColor_SkColorType)
+        if (m_nativeImage->bitmap().colorType() != kN32_SkColorType)
             return false;
         m_skiaImage = m_nativeImage.get();
         if (hasAlpha && premultiplyAlpha)
@@ -1610,6 +1612,8 @@ unsigned WebGLImageConversion::getClearBitsByFormat(GLenum format)
     case GL_RGBA:
     case GL_RGBA4:
     case GL_RGB5_A1:
+    case GL_SRGB_EXT:
+    case GL_SRGB_ALPHA_EXT:
         return GL_COLOR_BUFFER_BIT;
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH_COMPONENT:
@@ -1634,10 +1638,12 @@ unsigned WebGLImageConversion::getChannelBitsByFormat(GLenum format)
         return ChannelRGBA;
     case GL_RGB:
     case GL_RGB565:
+    case GL_SRGB_EXT:
         return ChannelRGB;
     case GL_RGBA:
     case GL_RGBA4:
     case GL_RGB5_A1:
+    case GL_SRGB_ALPHA_EXT:
         return ChannelRGBA;
     case GL_DEPTH_COMPONENT16:
     case GL_DEPTH_COMPONENT:
@@ -1776,4 +1782,4 @@ bool WebGLImageConversion::packPixels(
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

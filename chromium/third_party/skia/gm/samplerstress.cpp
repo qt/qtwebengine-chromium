@@ -8,12 +8,12 @@
 #include "gm.h"
 #include "SkCanvas.h"
 #include "SkShader.h"
-#include "SkStippleMaskFilter.h"
+#include "SkBlurMaskFilter.h"
 
 namespace skiagm {
 
 /**
- * Stress test the samplers by rendering a textured glyph with a mask and
+ * Stress test the GPU samplers by rendering a textured glyph with a mask and
  * an AA clip
  */
 class SamplerStressGM : public GM {
@@ -33,7 +33,7 @@ protected:
     }
 
     virtual SkString onShortName() {
-        return SkString("samplerstress");
+        return SkString("gpusamplerstress");
     }
 
     virtual SkISize onISize() {
@@ -71,7 +71,7 @@ protected:
     }
 
     void createShader() {
-        if (NULL != fShader.get()) {
+        if (fShader.get()) {
             return;
         }
 
@@ -83,11 +83,12 @@ protected:
     }
 
     void createMaskFilter() {
-        if (NULL != fMaskFilter.get()) {
+        if (fMaskFilter.get()) {
             return;
         }
 
-        fMaskFilter.reset(SkStippleMaskFilter::Create());
+        const SkScalar sigma = 1;
+        fMaskFilter.reset(SkBlurMaskFilter::Create(kNormal_SkBlurStyle, sigma));
     }
 
     virtual void onDraw(SkCanvas* canvas) {

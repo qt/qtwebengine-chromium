@@ -41,16 +41,15 @@
 #include "wtf/Threading.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
     class ResourceError;
     class ResourceRequest;
     class WorkerGlobalScope;
     class WorkerLoaderProxy;
-    struct CrossThreadResourceResponseData;
     struct CrossThreadResourceRequestData;
 
-    class WorkerThreadableLoader FINAL : public ThreadableLoader {
+    class WorkerThreadableLoader final : public ThreadableLoader {
         WTF_MAKE_FAST_ALLOCATED;
     public:
         static void loadResourceSynchronously(WorkerGlobalScope&, const ResourceRequest&, ThreadableLoaderClient&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&);
@@ -61,9 +60,9 @@ namespace WebCore {
 
         virtual ~WorkerThreadableLoader();
 
-        virtual void cancel() OVERRIDE;
+        virtual void overrideTimeout(unsigned long timeout) override;
 
-        bool done() const { return m_workerClientWrapper->done(); }
+        virtual void cancel() override;
 
     private:
         // Creates a loader on the main thread and bridges communication between
@@ -83,12 +82,13 @@ namespace WebCore {
         //    The ThreadableLoaderClientWrapper has the underlying client cleared, so no more calls
         //    go through it.  All tasks posted from the worker object's thread to the worker context's
         //    thread do "ThreadableLoaderClientWrapper::ref" (automatically inside of the cross thread copy
-        //    done in createCallbackTask), so the ThreadableLoaderClientWrapper instance is there until all
+        //    done in createCrossThreadTask), so the ThreadableLoaderClientWrapper instance is there until all
         //    tasks are executed.
-        class MainThreadBridge FINAL : public ThreadableLoaderClient {
+        class MainThreadBridge final : public ThreadableLoaderClient {
         public:
             // All executed on the worker context's thread.
             MainThreadBridge(PassRefPtr<ThreadableLoaderClientWrapper>, PassOwnPtr<ThreadableLoaderClient>, WorkerLoaderProxy&, const ResourceRequest&, const ThreadableLoaderOptions&, const ResourceLoaderOptions&, const String& outgoingReferrer);
+            void overrideTimeout(unsigned long timeoutMilliseconds);
             void cancel();
             void destroy();
 
@@ -101,16 +101,17 @@ namespace WebCore {
             virtual ~MainThreadBridge();
 
             static void mainThreadCreateLoader(ExecutionContext*, MainThreadBridge*, PassOwnPtr<CrossThreadResourceRequestData>, ThreadableLoaderOptions, ResourceLoaderOptions, const String& outgoingReferrer);
+            static void mainThreadOverrideTimeout(ExecutionContext*, MainThreadBridge*, unsigned long timeoutMilliseconds);
             static void mainThreadCancel(ExecutionContext*, MainThreadBridge*);
-            virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-            virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
-            virtual void didReceiveData(const char*, int dataLength) OVERRIDE;
-            virtual void didDownloadData(int dataLength) OVERRIDE;
-            virtual void didReceiveCachedMetadata(const char*, int dataLength) OVERRIDE;
-            virtual void didFinishLoading(unsigned long identifier, double finishTime) OVERRIDE;
-            virtual void didFail(const ResourceError&) OVERRIDE;
-            virtual void didFailAccessControlCheck(const ResourceError&) OVERRIDE;
-            virtual void didFailRedirectCheck() OVERRIDE;
+            virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+            virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+            virtual void didReceiveData(const char*, unsigned dataLength) override;
+            virtual void didDownloadData(int dataLength) override;
+            virtual void didReceiveCachedMetadata(const char*, int dataLength) override;
+            virtual void didFinishLoading(unsigned long identifier, double finishTime) override;
+            virtual void didFail(const ResourceError&) override;
+            virtual void didFailAccessControlCheck(const ResourceError&) override;
+            virtual void didFailRedirectCheck() override;
 
             // Only to be used on the main thread.
             RefPtr<ThreadableLoader> m_mainThreadLoader;
@@ -131,6 +132,6 @@ namespace WebCore {
         MainThreadBridge& m_bridge;
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerThreadableLoader_h

@@ -22,15 +22,14 @@
 #ifndef RenderSVGResourceGradient_h
 #define RenderSVGResourceGradient_h
 
-#include "core/rendering/svg/RenderSVGResourceContainer.h"
+#include "core/rendering/svg/RenderSVGResourcePaintServer.h"
 #include "core/svg/SVGGradientElement.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Gradient.h"
-#include "platform/graphics/ImageBuffer.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 struct GradientData {
     WTF_MAKE_FAST_ALLOCATED;
@@ -41,15 +40,16 @@ public:
 
 class GraphicsContext;
 
-class RenderSVGResourceGradient : public RenderSVGResourceContainer {
+class RenderSVGResourceGradient : public RenderSVGResourcePaintServer {
 public:
     explicit RenderSVGResourceGradient(SVGGradientElement*);
 
-    virtual void removeAllClientsFromCache(bool markForInvalidation = true) OVERRIDE FINAL;
-    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) OVERRIDE FINAL;
+    virtual void removeAllClientsFromCache(bool markForInvalidation = true) override final;
+    virtual void removeClientFromCache(RenderObject*, bool markForInvalidation = true) override final;
 
-    virtual bool applyResource(RenderObject*, RenderStyle*, GraphicsContext*&, unsigned short resourceMode) OVERRIDE FINAL;
-    virtual void postApplyResource(RenderObject*, GraphicsContext*&, unsigned short resourceMode, const Path*, const RenderSVGShape*) OVERRIDE FINAL;
+    virtual SVGPaintServer preparePaintServer(const RenderObject&) override final;
+
+    virtual bool isChildAllowed(RenderObject* child, RenderStyle*) const override final;
 
 protected:
     void addStops(GradientData*, const Vector<Gradient::ColorStop>&) const;
@@ -63,7 +63,7 @@ protected:
 
 private:
     bool m_shouldCollectGradientAttributes : 1;
-    HashMap<RenderObject*, OwnPtr<GradientData> > m_gradientMap;
+    HashMap<const RenderObject*, OwnPtr<GradientData> > m_gradientMap;
 };
 
 }

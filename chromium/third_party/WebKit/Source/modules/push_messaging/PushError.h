@@ -9,21 +9,22 @@
 #include "platform/heap/Handle.h"
 #include "public/platform/WebPushError.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptPromiseResolverWithContext;
+class ScriptPromiseResolver;
 
 class PushError {
     WTF_MAKE_NONCOPYABLE(PushError);
 public:
     // For CallbackPromiseAdapter.
-    typedef blink::WebPushError WebType;
-    static PassRefPtrWillBeRawPtr<DOMException> from(ScriptPromiseResolverWithContext*, WebType* webErrorRaw);
+    typedef WebPushError WebType;
+    static PassRefPtrWillBeRawPtr<DOMException> take(ScriptPromiseResolver*, WebType* webErrorRaw);
+    static void dispose(WebType* webErrorRaw);
 
 private:
     PushError() WTF_DELETED_FUNCTION;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PushError_h

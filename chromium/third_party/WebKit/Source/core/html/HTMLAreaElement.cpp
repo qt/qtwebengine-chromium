@@ -32,7 +32,7 @@
 #include "platform/graphics/Path.h"
 #include "platform/transforms/AffineTransform.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -41,7 +41,6 @@ inline HTMLAreaElement::HTMLAreaElement(Document& document)
     , m_lastSize(-1, -1)
     , m_shape(Unknown)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLAreaElement)
@@ -175,14 +174,9 @@ Path HTMLAreaElement::getRegion(const LayoutSize& size) const
 
 HTMLImageElement* HTMLAreaElement::imageElement() const
 {
-    Element* mapElement = parentElement();
-    while (mapElement && !isHTMLMapElement(*mapElement))
-        mapElement = mapElement->parentElement();
-
-    if (!mapElement)
-        return 0;
-
-    return toHTMLMapElement(*mapElement).imageElement();
+    if (HTMLMapElement* mapElement = Traversal<HTMLMapElement>::firstAncestor(*this))
+        return mapElement->imageElement();
+    return nullptr;
 }
 
 bool HTMLAreaElement::isKeyboardFocusable() const

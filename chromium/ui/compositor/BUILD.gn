@@ -6,9 +6,13 @@ import("//build/config/ui.gni")
 
 component("compositor") {
   sources = [
+    "closure_animation_observer.cc",
+    "closure_animation_observer.h",
     "compositor.cc",
     "compositor.h",
+    "compositor_animation_observer.h",
     "compositor_export.h",
+    "compositor_observer.cc",
     "compositor_observer.h",
     "compositor_vsync_manager.cc",
     "compositor_vsync_manager.h",
@@ -31,6 +35,8 @@ component("compositor") {
     "layer_animation_sequence.h",
     "layer_animator.cc",
     "layer_animator.h",
+    "layer_animator_collection.cc",
+    "layer_animator_collection.h",
     "layer_delegate.h",
     "layer_owner.cc",
     "layer_owner.h",
@@ -52,6 +58,7 @@ component("compositor") {
     "//base",
     "//base/third_party/dynamic_annotations",
     "//cc",
+    "//cc/surfaces",
     "//gpu/command_buffer/common",
     "//skia",
     "//ui/gfx",
@@ -71,6 +78,7 @@ component("compositor") {
 }
 
 source_set("test_support") {
+  testonly = true
   sources = [
     "test/context_factories_for_test.cc",
     "test/context_factories_for_test.h",
@@ -82,9 +90,7 @@ source_set("test_support") {
     "test/layer_animator_test_controller.h",
     "test/test_compositor_host.h",
     "test/test_compositor_host_mac.mm",
-    "test/test_compositor_host_ozone.cc",
     "test/test_compositor_host_win.cc",
-    "test/test_compositor_host_x11.cc",
     "test/test_layer_animation_delegate.cc",
     "test/test_layer_animation_delegate.h",
     "test/test_layer_animation_observer.cc",
@@ -97,24 +103,33 @@ source_set("test_support") {
     "test/test_utils.h",
   ]
 
-  deps = [
+  public_deps = [
     ":compositor",
-    "//base",
+  ]
+  deps = [
+    "//base/test:test_support",
     "//cc",
+    "//cc/surfaces",
     "//cc:test_support",
     "//skia",
     "//testing/gtest",
-    #"//third_party/WebKit/public:blink_minimal",  TODO(GYP)
+    "//third_party/WebKit/public:blink_minimal",
     "//ui/base",
     "//ui/gfx",
     "//ui/gfx/geometry",
     "//ui/gl",
-    #'<(DEPTH)/webkit/common/gpu/webkit_gpu.gyp:webkit_gpu',  TODO(GYP)
+    "//webkit/common/gpu",
   ]
 
   if (use_x11) {
     configs += [ "//build/config/linux:x11" ]
-    deps += [ "//ui/gfx:gfx_x11" ]
+    deps += [ "//ui/gfx/x" ]
+  }
+
+  if (use_ozone) {
+    sources += [ "test/test_compositor_host_ozone.cc" ]
+  } else if (use_x11) {
+    sources += [ "test/test_compositor_host_x11.cc" ]
   }
 }
 
@@ -148,6 +163,6 @@ source_set("test_support") {
 #  ]
 #
 #  if (is_linux) {
-#    #deps += [ "//third_party/mesa:osmesa" ]  # TODO(GYP)
+#    deps += [ "//third_party/mesa:osmesa" ]
 #  }
 #}

@@ -33,6 +33,7 @@ def GetConfigurationForBuild(defines):
       'win_recommended_category_path': ['chromium_recommended'],
       'admx_namespace': 'Chromium.Policies.Chromium',
       'admx_prefix': 'chromium',
+      'linux_policy_path': '/etc/chromium/policies/',
     }
   elif '_google_chrome' in defines:
     config = {
@@ -47,9 +48,12 @@ def GetConfigurationForBuild(defines):
       'win_recommended_category_path': ['google', 'googlechrome_recommended'],
       'admx_namespace': 'Google.Policies.Chrome',
       'admx_prefix': 'chrome',
+      'linux_policy_path': '/etc/opt/chrome/policies/',
     }
   else:
     raise Exception('Unknown build')
+  if 'version' in defines:
+    config['version'] = defines['version']
   config['win_group_policy_class'] = 'Both'
   config['win_supported_os'] = 'SUPPORTED_WINXPSP2'
   if 'mac_bundle_id' in defines:

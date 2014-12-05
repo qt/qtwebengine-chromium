@@ -15,17 +15,6 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/gpu_export.h"
 
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-template <>
-  struct hash<gpu::gles2::TextureRef*> {
-  size_t operator()(gpu::gles2::TextureRef* ptr) const {
-    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
-  }
-};
-}  // namespace BASE_HASH_NAMESPACE
-#endif  // COMPILER
-
 namespace gfx {
 class GLContext;
 }
@@ -56,7 +45,7 @@ class GPU_EXPORT AsyncPixelTransferManager
  public:
   static AsyncPixelTransferManager* Create(gfx::GLContext* context);
 
-  virtual ~AsyncPixelTransferManager();
+  ~AsyncPixelTransferManager() override;
 
   void Initialize(gles2::TextureManager* texture_manager);
 
@@ -93,9 +82,8 @@ class GPU_EXPORT AsyncPixelTransferManager
   bool AsyncTransferIsInProgress(gles2::TextureRef* ref);
 
   // gles2::TextureRef::DestructionObserver implementation:
-  virtual void OnTextureManagerDestroying(gles2::TextureManager* manager)
-      OVERRIDE;
-  virtual void OnTextureRefDestroying(gles2::TextureRef* texture) OVERRIDE;
+  void OnTextureManagerDestroying(gles2::TextureManager* manager) override;
+  void OnTextureRefDestroying(gles2::TextureRef* texture) override;
 
  protected:
   AsyncPixelTransferManager();

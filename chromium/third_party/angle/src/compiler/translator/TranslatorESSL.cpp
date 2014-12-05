@@ -7,20 +7,23 @@
 #include "compiler/translator/TranslatorESSL.h"
 
 #include "compiler/translator/OutputESSL.h"
+#include "angle_gl.h"
 
-TranslatorESSL::TranslatorESSL(ShShaderType type, ShShaderSpec spec)
+TranslatorESSL::TranslatorESSL(sh::GLenum type, ShShaderSpec spec)
     : TCompiler(type, spec, SH_ESSL_OUTPUT) {
 }
 
 void TranslatorESSL::translate(TIntermNode* root) {
     TInfoSinkBase& sink = getInfoSink().obj;
 
+    writePragma();
+
     // Write built-in extension behaviors.
     writeExtensionBehavior();
 
     // Write emulated built-in functions if needed.
     getBuiltInFunctionEmulator().OutputEmulatedFunctionDefinition(
-        sink, getShaderType() == SH_FRAGMENT_SHADER);
+        sink, getShaderType() == GL_FRAGMENT_SHADER);
 
     // Write array bounds clamping emulation if needed.
     getArrayBoundsClamper().OutputClampingFunctionDefinition(sink);
@@ -36,8 +39,13 @@ void TranslatorESSL::writeExtensionBehavior() {
     for (TExtensionBehavior::const_iterator iter = extensionBehavior.begin();
          iter != extensionBehavior.end(); ++iter) {
         if (iter->second != EBhUndefined) {
-            sink << "#extension " << iter->first << " : "
-                 << getBehaviorString(iter->second) << "\n";
+            if (getResources().NV_draw_buffers && iter->first == "GL_EXT_draw_buffers") {
+                sink << "#extension GL_NV_draw_buffers : "
+                     << getBehaviorString(iter->second) << "\n";
+            } else {
+                sink << "#extension " << iter->first << " : "
+                     << getBehaviorString(iter->second) << "\n";
+            }
         }
     }
 }

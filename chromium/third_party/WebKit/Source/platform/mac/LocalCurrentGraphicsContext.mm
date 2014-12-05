@@ -19,16 +19,19 @@
 
 #include "config.h"
 #include "platform/mac/LocalCurrentGraphicsContext.h"
+#include "platform/mac/ThemeMac.h"
 
 #include <AppKit/NSGraphicsContext.h>
 #include "platform/graphics/GraphicsContext.h"
 #include "platform_canvas.h"
 
-namespace WebCore {
+namespace blink {
 
-LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext)
+LocalCurrentGraphicsContext::LocalCurrentGraphicsContext(GraphicsContext* graphicsContext, IntRect dirtyRect)
     : m_didSetGraphicsContext(false)
-    , m_skiaBitLocker(graphicsContext->canvas())
+    , m_skiaBitLocker(graphicsContext->canvas(),
+                      ThemeMac::inflateRectForAA(dirtyRect),
+                      graphicsContext->deviceScaleFactor())
 {
     m_savedGraphicsContext = graphicsContext;
     graphicsContext->save();
@@ -62,11 +65,6 @@ CGContextRef LocalCurrentGraphicsContext::cgContext()
     CGContextRef cgContext = m_skiaBitLocker.cgContext();
 
     return cgContext;
-}
-
-ContextContainer::ContextContainer(GraphicsContext* graphicsContext) 
-    : m_skiaBitLocker(graphicsContext->canvas())
-{
 }
 
 }

@@ -36,14 +36,13 @@
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
-#include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderRegion.h"
+#include "core/rendering/RenderMultiColumnSet.h"
 #include "core/rendering/RenderView.h"
 #include "platform/PODIntervalTree.h"
 #include "platform/geometry/TransformState.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderFlowThread::RenderFlowThread()
     : RenderBlockFlow(0)
@@ -54,10 +53,10 @@ RenderFlowThread::RenderFlowThread()
     setFlowThreadState(InsideOutOfFlowThread);
 }
 
-void RenderFlowThread::removeRegionFromThread(RenderRegion* renderRegion)
+void RenderFlowThread::removeRegionFromThread(RenderMultiColumnSet* columnSet)
 {
-    ASSERT(renderRegion);
-    m_regionList.remove(renderRegion);
+    ASSERT(columnSet);
+    m_multiColumnSetList.remove(columnSet);
 }
 
 void RenderFlowThread::invalidateRegions()
@@ -67,7 +66,6 @@ void RenderFlowThread::invalidateRegions()
         return;
     }
 
-    m_regionRangeMap.clear();
     setNeedsLayoutAndFullPaintInvalidation();
 
     m_regionsInvalidated = true;
@@ -104,9 +102,9 @@ void RenderFlowThread::validateRegions()
             LayoutUnit previousRegionLogicalHeight = 0;
             bool firstRegionVisited = false;
 
-            for (RenderRegionList::iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-                RenderRegion* region = *iter;
-                LayoutUnit regionLogicalHeight = region->pageLogicalHeight();
+            for (RenderMultiColumnSetList::iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+                RenderMultiColumnSet* columnSet = *iter;
+                LayoutUnit regionLogicalHeight = columnSet->pageLogicalHeight();
 
                 if (!firstRegionVisited) {
                     firstRegionVisited = true;
@@ -120,7 +118,7 @@ void RenderFlowThread::validateRegions()
         }
     }
 
-    updateLogicalWidth(); // Called to get the maximum logical width for the region.
+    updateLogicalWidth(); // Called to get the maximum logical width for the columnSet.
     updateRegionsFlowThreadPortionRect();
 }
 
@@ -139,9 +137,9 @@ void RenderFlowThread::computeLogicalHeight(LayoutUnit, LayoutUnit logicalTop, L
     computedValues.m_position = logicalTop;
     computedValues.m_extent = 0;
 
-    for (RenderRegionList::const_iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
-        computedValues.m_extent += region->logicalHeightOfAllFlowThreadContent();
+    for (RenderMultiColumnSetList::const_iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+        RenderMultiColumnSet* columnSet = *iter;
+        computedValues.m_extent += columnSet->logicalHeightInFlowThread();
     }
 }
 
@@ -152,7 +150,7 @@ bool RenderFlowThread::nodeAtPoint(const HitTestRequest& request, HitTestResult&
     return RenderBlockFlow::nodeAtPoint(request, result, locationInContainer, accumulatedOffset, hitTestAction);
 }
 
-bool RenderFlowThread::shouldRepaint(const LayoutRect& r) const
+bool RenderFlowThread::shouldIssuePaintInvalidations(const LayoutRect& r) const
 {
     if (view()->document().printing() || r.isEmpty())
         return false;
@@ -160,146 +158,44 @@ bool RenderFlowThread::shouldRepaint(const LayoutRect& r) const
     return true;
 }
 
-void RenderFlowThread::repaintRectangleInRegions(const LayoutRect& repaintRect) const
+void RenderFlowThread::paintInvalidationRectangleInRegions(const LayoutRect& paintInvalidationRect) const
 {
-    if (!shouldRepaint(repaintRect) || !hasValidRegionInfo())
+    if (!shouldIssuePaintInvalidations(paintInvalidationRect) || !hasValidRegionInfo())
         return;
 
-    ForceHorriblySlowRectMapping slowRectMapping(*this); // We can't use layout state to repaint, since the regions are somewhere else.
-
     // We can't use currentFlowThread as it is possible to have interleaved flow threads and the wrong one could be used.
-    // Let each region figure out the proper enclosing flow thread.
+    // Let each columnSet figure out the proper enclosing flow thread.
     CurrentRenderFlowThreadDisabler disabler(view());
 
-    for (RenderRegionList::const_iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
+    for (RenderMultiColumnSetList::const_iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+        RenderMultiColumnSet* columnSet = *iter;
 
-        region->repaintFlowThreadContent(repaintRect);
+        columnSet->paintInvalidationForFlowThreadContent(paintInvalidationRect);
     }
-}
-
-RenderRegion* RenderFlowThread::regionAtBlockOffset(LayoutUnit offset) const
-{
-    ASSERT(!m_regionsInvalidated);
-
-    if (offset <= 0)
-        return m_regionList.isEmpty() ? 0 : m_regionList.first();
-
-    RegionSearchAdapter adapter(offset);
-    m_regionIntervalTree.allOverlapsWithAdapter<RegionSearchAdapter>(adapter);
-
-    // If no region was found, the offset is in the flow thread overflow.
-    if (!adapter.result() && !m_regionList.isEmpty())
-        return m_regionList.last();
-
-    return adapter.result();
-}
-
-LayoutPoint RenderFlowThread::adjustedPositionRelativeToOffsetParent(const RenderBoxModelObject& boxModelObject, const LayoutPoint& startPoint)
-{
-    LayoutPoint referencePoint = startPoint;
-
-    // FIXME: This needs to be adapted for different writing modes inside the flow thread.
-    RenderRegion* startRegion = regionAtBlockOffset(referencePoint.y());
-    if (startRegion) {
-        // Take into account the offset coordinates of the region.
-        RenderObject* currObject = startRegion;
-        RenderObject* currOffsetParentRenderer;
-        Element* currOffsetParentElement;
-        while ((currOffsetParentElement = currObject->offsetParent()) && (currOffsetParentRenderer = currOffsetParentElement->renderer())) {
-            if (currObject->isBoxModelObject())
-                referencePoint.move(toRenderBoxModelObject(currObject)->offsetLeft(), toRenderBoxModelObject(currObject)->offsetTop());
-
-            // Since we're looking for the offset relative to the body, we must also
-            // take into consideration the borders of the region's offsetParent.
-            if (currOffsetParentRenderer->isBox() && !currOffsetParentRenderer->isBody())
-                referencePoint.move(toRenderBox(currOffsetParentRenderer)->borderLeft(), toRenderBox(currOffsetParentRenderer)->borderTop());
-
-            currObject = currOffsetParentRenderer;
-        }
-
-        // We need to check if any of this box's containing blocks start in a different region
-        // and if so, drop the object's top position (which was computed relative to its containing block
-        // and is no longer valid) and recompute it using the region in which it flows as reference.
-        bool wasComputedRelativeToOtherRegion = false;
-        const RenderBlock* objContainingBlock = boxModelObject.containingBlock();
-        while (objContainingBlock) {
-            // Check if this object is in a different region.
-            RenderRegion* parentStartRegion = 0;
-            RenderRegion* parentEndRegion = 0;
-            getRegionRangeForBox(objContainingBlock, parentStartRegion, parentEndRegion);
-            if (parentStartRegion && parentStartRegion != startRegion) {
-                wasComputedRelativeToOtherRegion = true;
-                break;
-            }
-            objContainingBlock = objContainingBlock->containingBlock();
-        }
-
-        if (wasComputedRelativeToOtherRegion) {
-            // Get the logical top coordinate of the current object.
-            LayoutUnit top = 0;
-            if (boxModelObject.isRenderBlock()) {
-                top = toRenderBlock(&boxModelObject)->offsetFromLogicalTopOfFirstPage();
-            } else {
-                if (boxModelObject.containingBlock())
-                    top = boxModelObject.containingBlock()->offsetFromLogicalTopOfFirstPage();
-
-                if (boxModelObject.isBox())
-                    top += toRenderBox(&boxModelObject)->topLeftLocation().y();
-                else if (boxModelObject.isRenderInline())
-                    top -= toRenderInline(&boxModelObject)->borderTop();
-            }
-
-            // Get the logical top of the region this object starts in
-            // and compute the object's top, relative to the region's top.
-            LayoutUnit regionLogicalTop = startRegion->pageLogicalTopForOffset(top);
-            LayoutUnit topRelativeToRegion = top - regionLogicalTop;
-            referencePoint.setY(startRegion->offsetTop() + topRelativeToRegion);
-
-            // Since the top has been overriden, check if the
-            // relative/sticky positioning must be reconsidered.
-            if (boxModelObject.isRelPositioned())
-                referencePoint.move(0, boxModelObject.relativePositionOffset().height());
-            else if (boxModelObject.isStickyPositioned())
-                referencePoint.move(0, boxModelObject.stickyPositionOffset().height());
-        }
-
-        // Since we're looking for the offset relative to the body, we must also
-        // take into consideration the borders of the region.
-        referencePoint.move(startRegion->borderLeft(), startRegion->borderTop());
-    }
-
-    return referencePoint;
-}
-
-LayoutUnit RenderFlowThread::pageLogicalTopForOffset(LayoutUnit offset)
-{
-    RenderRegion* region = regionAtBlockOffset(offset);
-    return region ? region->pageLogicalTopForOffset(offset) : LayoutUnit();
 }
 
 LayoutUnit RenderFlowThread::pageLogicalHeightForOffset(LayoutUnit offset)
 {
-    RenderRegion* region = regionAtBlockOffset(offset);
-    if (!region)
+    RenderMultiColumnSet* columnSet = columnSetAtBlockOffset(offset);
+    if (!columnSet)
         return 0;
 
-    return region->pageLogicalHeight();
+    return columnSet->pageLogicalHeight();
 }
 
 LayoutUnit RenderFlowThread::pageRemainingLogicalHeightForOffset(LayoutUnit offset, PageBoundaryRule pageBoundaryRule)
 {
-    RenderRegion* region = regionAtBlockOffset(offset);
-    if (!region)
+    RenderMultiColumnSet* columnSet = columnSetAtBlockOffset(offset);
+    if (!columnSet)
         return 0;
 
-    LayoutUnit pageLogicalTop = region->pageLogicalTopForOffset(offset);
-    LayoutUnit pageLogicalHeight = region->pageLogicalHeight();
+    LayoutUnit pageLogicalTop = columnSet->pageLogicalTopForOffset(offset);
+    LayoutUnit pageLogicalHeight = columnSet->pageLogicalHeight();
     LayoutUnit pageLogicalBottom = pageLogicalTop + pageLogicalHeight;
     LayoutUnit remainingHeight = pageLogicalBottom - offset;
     if (pageBoundaryRule == IncludePageBoundary) {
         // If IncludePageBoundary is set, the line exactly on the top edge of a
-        // region will act as being part of the previous region.
+        // columnSet will act as being part of the previous columnSet.
         remainingHeight = intMod(remainingHeight, pageLogicalHeight);
     }
     return remainingHeight;
@@ -309,71 +205,35 @@ RenderRegion* RenderFlowThread::firstRegion() const
 {
     if (!hasValidRegionInfo())
         return 0;
-    return m_regionList.first();
+    return m_multiColumnSetList.first();
 }
 
 RenderRegion* RenderFlowThread::lastRegion() const
 {
     if (!hasValidRegionInfo())
         return 0;
-    return m_regionList.last();
-}
-
-void RenderFlowThread::setRegionRangeForBox(const RenderBox* box, LayoutUnit offsetFromLogicalTopOfFirstPage)
-{
-    if (!hasRegions())
-        return;
-
-    // FIXME: Not right for differing writing-modes.
-    RenderRegion* startRegion = regionAtBlockOffset(offsetFromLogicalTopOfFirstPage);
-    RenderRegion* endRegion = regionAtBlockOffset(offsetFromLogicalTopOfFirstPage + box->logicalHeight());
-    RenderRegionRangeMap::iterator it = m_regionRangeMap.find(box);
-    if (it == m_regionRangeMap.end()) {
-        m_regionRangeMap.set(box, RenderRegionRange(startRegion, endRegion));
-        return;
-    }
-
-    // If nothing changed, just bail.
-    RenderRegionRange& range = it->value;
-    if (range.startRegion() == startRegion && range.endRegion() == endRegion)
-        return;
-
-    range.setRange(startRegion, endRegion);
-}
-
-void RenderFlowThread::getRegionRangeForBox(const RenderBox* box, RenderRegion*& startRegion, RenderRegion*& endRegion) const
-{
-    startRegion = 0;
-    endRegion = 0;
-    RenderRegionRangeMap::const_iterator it = m_regionRangeMap.find(box);
-    if (it == m_regionRangeMap.end())
-        return;
-
-    const RenderRegionRange& range = it->value;
-    startRegion = range.startRegion();
-    endRegion = range.endRegion();
-    ASSERT(m_regionList.contains(startRegion) && m_regionList.contains(endRegion));
+    return m_multiColumnSetList.last();
 }
 
 void RenderFlowThread::updateRegionsFlowThreadPortionRect()
 {
     LayoutUnit logicalHeight = 0;
     // FIXME: Optimize not to clear the interval all the time. This implies manually managing the tree nodes lifecycle.
-    m_regionIntervalTree.clear();
-    m_regionIntervalTree.initIfNeeded();
-    for (RenderRegionList::iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
+    m_multiColumnSetIntervalTree.clear();
+    m_multiColumnSetIntervalTree.initIfNeeded();
+    for (RenderMultiColumnSetList::iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+        RenderMultiColumnSet* columnSet = *iter;
 
-        LayoutUnit regionLogicalWidth = region->pageLogicalWidth();
-        LayoutUnit regionLogicalHeight = std::min<LayoutUnit>(RenderFlowThread::maxLogicalHeight() - logicalHeight, region->logicalHeightOfAllFlowThreadContent());
+        LayoutUnit columnSetLogicalWidth = columnSet->pageLogicalWidth();
+        LayoutUnit columnSetLogicalHeight = std::min<LayoutUnit>(RenderFlowThread::maxLogicalHeight() - logicalHeight, columnSet->logicalHeightInFlowThread());
 
-        LayoutRect regionRect(style()->direction() == LTR ? LayoutUnit() : logicalWidth() - regionLogicalWidth, logicalHeight, regionLogicalWidth, regionLogicalHeight);
+        LayoutRect columnSetRect(style()->direction() == LTR ? LayoutUnit() : logicalWidth() - columnSetLogicalWidth, logicalHeight, columnSetLogicalWidth, columnSetLogicalHeight);
 
-        region->setFlowThreadPortionRect(isHorizontalWritingMode() ? regionRect : regionRect.transposedRect());
+        columnSet->setFlowThreadPortionRect(isHorizontalWritingMode() ? columnSetRect : columnSetRect.transposedRect());
 
-        m_regionIntervalTree.add(RegionIntervalTree::createInterval(logicalHeight, logicalHeight + regionLogicalHeight, region));
+        m_multiColumnSetIntervalTree.add(MultiColumnSetIntervalTree::createInterval(logicalHeight, logicalHeight + columnSetLogicalHeight, columnSet));
 
-        logicalHeight += regionLogicalHeight;
+        logicalHeight += columnSetLogicalHeight;
     }
 }
 
@@ -381,9 +241,9 @@ void RenderFlowThread::collectLayerFragments(LayerFragments& layerFragments, con
 {
     ASSERT(!m_regionsInvalidated);
 
-    for (RenderRegionList::const_iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
-        region->collectLayerFragments(layerFragments, layerBoundingBox, dirtyRect);
+    for (RenderMultiColumnSetList::const_iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+        RenderMultiColumnSet* columnSet = *iter;
+        columnSet->collectLayerFragments(layerFragments, layerBoundingBox, dirtyRect);
     }
 }
 
@@ -392,10 +252,10 @@ LayoutRect RenderFlowThread::fragmentsBoundingBox(const LayoutRect& layerBoundin
     ASSERT(!m_regionsInvalidated);
 
     LayoutRect result;
-    for (RenderRegionList::const_iterator iter = m_regionList.begin(); iter != m_regionList.end(); ++iter) {
-        RenderRegion* region = *iter;
+    for (RenderMultiColumnSetList::const_iterator iter = m_multiColumnSetList.begin(); iter != m_multiColumnSetList.end(); ++iter) {
+        RenderMultiColumnSet* columnSet = *iter;
         LayerFragments fragments;
-        region->collectLayerFragments(fragments, layerBoundingBox, PaintInfo::infiniteRect());
+        columnSet->collectLayerFragments(fragments, layerBoundingBox, PaintInfo::infiniteRect());
         for (size_t i = 0; i < fragments.size(); ++i) {
             const LayerFragment& fragment = fragments.at(i);
             LayoutRect fragmentRect(layerBoundingBox);
@@ -493,7 +353,7 @@ LayoutUnit RenderFlowThread::offsetFromLogicalTopOfFirstRegion(const RenderBlock
         if (containerBlock->style()->writingMode() != currentBlock->style()->writingMode()) {
             // We have to put the block rect in container coordinates
             // and we have to take into account both the container and current block flipping modes
-            if (containerBlock->style()->isFlippedBlocksWritingMode()) {
+            if (containerBlock->style()->slowIsFlippedBlocksWritingMode()) {
                 if (containerBlock->isHorizontalWritingMode())
                     blockRect.setY(currentBlock->height() - blockRect.maxY());
                 else
@@ -508,7 +368,7 @@ LayoutUnit RenderFlowThread::offsetFromLogicalTopOfFirstRegion(const RenderBlock
     return currentBlock->isHorizontalWritingMode() ? blockRect.y() : blockRect.x();
 }
 
-void RenderFlowThread::RegionSearchAdapter::collectIfNeeded(const RegionInterval& interval)
+void RenderFlowThread::RegionSearchAdapter::collectIfNeeded(const MultiColumnSetInterval& interval)
 {
     if (m_result)
         return;
@@ -537,4 +397,4 @@ CurrentRenderFlowThreadMaintainer::~CurrentRenderFlowThreadMaintainer()
 }
 
 
-} // namespace WebCore
+} // namespace blink

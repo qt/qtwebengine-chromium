@@ -25,10 +25,12 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <v8.h>
+#include <include/v8.h>
 
-#include <string>
+#include <include/libplatform/libplatform.h>
+
 #include <map>
+#include <string>
 
 #ifdef COMPRESS_STARTUP_DATA_BZ2
 #error Using compressed startup data is not supported for this sample
@@ -644,6 +646,9 @@ void PrintMap(map<string, string>* m) {
 
 int main(int argc, char* argv[]) {
   v8::V8::InitializeICU();
+  v8::Platform* platform = v8::platform::CreateDefaultPlatform();
+  v8::V8::InitializePlatform(platform);
+  v8::V8::Initialize();
   map<string, string> options;
   string file;
   ParseOptions(argc, argv, &options, &file);

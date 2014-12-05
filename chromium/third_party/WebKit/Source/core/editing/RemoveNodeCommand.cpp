@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/RemoveNodeCommand.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Node.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 RemoveNodeCommand::RemoveNodeCommand(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     : SimpleEditCommand(node->document())
@@ -59,7 +59,7 @@ void RemoveNodeCommand::doUnapply()
 {
     RefPtrWillBeRawPtr<ContainerNode> parent = m_parent.release();
     RefPtrWillBeRawPtr<Node> refChild = m_refChild.release();
-    if (!parent || !parent->rendererIsEditable())
+    if (!parent || !parent->hasEditableStyle())
         return;
 
     parent->insertBefore(m_node.get(), refChild.get(), IGNORE_EXCEPTION);

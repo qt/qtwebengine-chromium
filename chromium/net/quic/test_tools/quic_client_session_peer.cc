@@ -13,8 +13,13 @@ namespace test {
 void QuicClientSessionPeer::SetMaxOpenStreams(QuicClientSession* session,
                                               size_t max_streams,
                                               size_t default_streams) {
-  session->config()->set_max_streams_per_connection(max_streams,
-                                                    default_streams);
+  session->config()->SetMaxStreamsPerConnection(max_streams, default_streams);
+}
+
+// static
+void QuicClientSessionPeer::SetChannelIDSent(QuicClientSession* session,
+                                             bool channel_id_sent) {
+  session->crypto_stream_->channel_id_sent_ = channel_id_sent;
 }
 
 }  // namespace test

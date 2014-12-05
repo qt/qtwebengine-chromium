@@ -136,7 +136,7 @@ void GLContextCGL::Destroy() {
   }
 }
 
-bool GLContextCGL::MakeCurrent(GLSurface* surface) {
+bool GLContextCGL::ForceGpuSwitchIfNeeded() {
   DCHECK(context_);
 
   // The call to CGLSetVirtualScreen can hang on some AMD drivers
@@ -174,6 +174,14 @@ bool GLContextCGL::MakeCurrent(GLSurface* surface) {
       renderer_id_ = renderer_id;
     }
   }
+  return true;
+}
+
+bool GLContextCGL::MakeCurrent(GLSurface* surface) {
+  DCHECK(context_);
+
+  if (!ForceGpuSwitchIfNeeded())
+    return false;
 
   if (IsCurrent(surface))
     return true;
@@ -232,9 +240,7 @@ void* GLContextCGL::GetHandle() {
 
 void GLContextCGL::SetSwapInterval(int interval) {
   DCHECK(IsCurrent(NULL));
-  LOG(WARNING) << "GLContex: GLContextCGL::SetSwapInterval is ignored.";
 }
-
 
 bool GLContextCGL::GetTotalGpuMemory(size_t* bytes) {
   DCHECK(bytes);

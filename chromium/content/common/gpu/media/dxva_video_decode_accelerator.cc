@@ -18,6 +18,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/file_version_info.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
@@ -322,7 +323,7 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
 
   glBindTexture(GL_TEXTURE_2D, picture_buffer_.texture_id());
 
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
 
   base::win::ScopedComPtr<IDirect3DSurface9> d3d_surface;
   hr = decoding_texture_->GetSurfaceLevel(0, d3d_surface.Receive());
@@ -361,7 +362,7 @@ bool DXVAVideoDecodeAccelerator::DXVAPictureBuffer::
       egl_display,
       decoding_surface_,
       EGL_BACK_BUFFER);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
   glBindTexture(GL_TEXTURE_2D, current_texture);
   return true;
 }
@@ -455,10 +456,9 @@ bool DXVAVideoDecodeAccelerator::Initialize(media::VideoCodecProfile profile,
 
   // TODO(ananta)
   // H264PROFILE_HIGH video decoding is janky at times. Needs more
-  // investigation.
+  // investigation. http://crbug.com/426707
   if (profile != media::H264PROFILE_BASELINE &&
-      profile != media::H264PROFILE_MAIN &&
-      profile != media::H264PROFILE_HIGH) {
+      profile != media::H264PROFILE_MAIN) {
     RETURN_AND_NOTIFY_ON_FAILURE(false,
         "Unsupported h264 profile", PLATFORM_FAILURE, false);
   }
@@ -557,12 +557,25 @@ void DXVAVideoDecodeAccelerator::ReusePictureBuffer(
   RETURN_AND_NOTIFY_ON_FAILURE((state_ != kUninitialized),
       "Invalid state: " << state_, ILLEGAL_STATE,);
 
-  if (output_picture_buffers_.empty())
+  if (output_picture_buffers_.empty() && stale_output_picture_buffers_.empty())
     return;
 
   OutputBuffers::iterator it = output_picture_buffers_.find(picture_buffer_id);
-  RETURN_AND_NOTIFY_ON_FAILURE(it != output_picture_buffers_.end(),
-      "Invalid picture id: " << picture_buffer_id, INVALID_ARGUMENT,);
+  // If we didn't find the picture id in the |output_picture_buffers_| map we
+  // try the |stale_output_picture_buffers_| map, as this may have been an
+  // output picture buffer from before a resolution change, that at resolution
+  // change time had yet to be displayed. The client is calling us back to tell
+  // us that we can now recycle this picture buffer, so if we were waiting to
+  // dispose of it we now can.
+  if (it == output_picture_buffers_.end()) {
+    it = stale_output_picture_buffers_.find(picture_buffer_id);
+    RETURN_AND_NOTIFY_ON_FAILURE(it != stale_output_picture_buffers_.end(),
+        "Invalid picture id: " << picture_buffer_id, INVALID_ARGUMENT,);
+    base::MessageLoop::current()->PostTask(FROM_HERE,
+        base::Bind(&DXVAVideoDecodeAccelerator::DeferredDismissStaleBuffer,
+            weak_this_factory_.GetWeakPtr(), picture_buffer_id));
+    return;
+  }
 
   it->second->ReusePictureBuffer();
   ProcessPendingSamples();
@@ -636,6 +649,19 @@ bool DXVAVideoDecodeAccelerator::InitDecoder(media::VideoCodecProfile profile) {
   HMODULE decoder_dll = ::LoadLibrary(L"msmpeg2vdec.dll");
   RETURN_ON_FAILURE(decoder_dll,
                     "msmpeg2vdec.dll required for decoding is not loaded",
+                    false);
+
+  // Check version of DLL, version 6.7.7140 is blacklisted due to high crash
+  // rates in browsers loading that DLL. If that is the version installed we
+  // fall back to software decoding. See crbug/403440.
+  FileVersionInfo* version_info =
+      FileVersionInfo::CreateFileVersionInfoForModule(decoder_dll);
+  RETURN_ON_FAILURE(version_info,
+                    "unable to get version of msmpeg2vdec.dll",
+                    false);
+  base::string16 file_version = version_info->file_version();
+  RETURN_ON_FAILURE(file_version.find(L"6.1.7140") == base::string16::npos,
+                    "blacklisted version of msmpeg2vdec.dll 6.7.7140",
                     false);
 
   typedef HRESULT(WINAPI * GetClassObject)(
@@ -943,7 +969,8 @@ void DXVAVideoDecodeAccelerator::ProcessPendingSamples() {
           PLATFORM_FAILURE, );
 
       media::Picture output_picture(index->second->id(),
-                                    sample_info.input_buffer_id);
+                                    sample_info.input_buffer_id,
+                                    gfx::Rect(index->second->size()));
       base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&DXVAVideoDecodeAccelerator::NotifyPictureReady,
@@ -981,6 +1008,7 @@ void DXVAVideoDecodeAccelerator::Invalidate() {
     return;
   weak_this_factory_.InvalidateWeakPtrs();
   output_picture_buffers_.clear();
+  stale_output_picture_buffers_.clear();
   pending_output_samples_.clear();
   pending_input_buffers_.clear();
   decoder_.Release();
@@ -1157,8 +1185,7 @@ void DXVAVideoDecodeAccelerator::HandleResolutionChanged(int width,
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&DXVAVideoDecodeAccelerator::DismissStaleBuffers,
-                 weak_this_factory_.GetWeakPtr(),
-                 output_picture_buffers_));
+                 weak_this_factory_.GetWeakPtr()));
 
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
@@ -1166,20 +1193,35 @@ void DXVAVideoDecodeAccelerator::HandleResolutionChanged(int width,
                  weak_this_factory_.GetWeakPtr(),
                  width,
                  height));
+}
+
+void DXVAVideoDecodeAccelerator::DismissStaleBuffers() {
+  OutputBuffers::iterator index;
+
+  for (index = output_picture_buffers_.begin();
+       index != output_picture_buffers_.end();
+       ++index) {
+    if (index->second->available()) {
+      DVLOG(1) << "Dismissing picture id: " << index->second->id();
+      client_->DismissPictureBuffer(index->second->id());
+    } else {
+      // Move to |stale_output_picture_buffers_| for deferred deletion.
+      stale_output_picture_buffers_.insert(
+          std::make_pair(index->first, index->second));
+    }
+  }
 
   output_picture_buffers_.clear();
 }
 
-void DXVAVideoDecodeAccelerator::DismissStaleBuffers(
-    const OutputBuffers& picture_buffers) {
-  OutputBuffers::const_iterator index;
-
-  for (index = picture_buffers.begin();
-       index != picture_buffers.end();
-       ++index) {
-    DVLOG(1) << "Dismissing picture id: " << index->second->id();
-    client_->DismissPictureBuffer(index->second->id());
-  }
+void DXVAVideoDecodeAccelerator::DeferredDismissStaleBuffer(
+    int32 picture_buffer_id) {
+  OutputBuffers::iterator it = stale_output_picture_buffers_.find(
+      picture_buffer_id);
+  DCHECK(it != stale_output_picture_buffers_.end());
+  DVLOG(1) << "Dismissing picture id: " << it->second->id();
+  client_->DismissPictureBuffer(it->second->id());
+  stale_output_picture_buffers_.erase(it);
 }
 
 }  // namespace content

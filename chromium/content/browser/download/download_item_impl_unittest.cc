@@ -54,7 +54,7 @@ class MockDelegate : public DownloadItemImplDelegate {
   MOCK_METHOD1(CheckForFileRemoval, void(DownloadItemImpl*));
 
   virtual void ResumeInterruptedDownload(
-      scoped_ptr<DownloadUrlParameters> params, uint32 id) OVERRIDE {
+      scoped_ptr<DownloadUrlParameters> params, uint32 id) override {
     MockResumeInterruptedDownload(params.get(), id);
   }
   MOCK_METHOD2(MockResumeInterruptedDownload,
@@ -121,17 +121,17 @@ class DownloadItemTest : public testing::Test {
       item_->AddObserver(this);
     }
 
-    virtual ~MockObserver() {
+    ~MockObserver() override {
       if (item_) item_->RemoveObserver(this);
     }
 
-    virtual void OnDownloadRemoved(DownloadItem* download) OVERRIDE {
+    void OnDownloadRemoved(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       removed_ = true;
     }
 
-    virtual void OnDownloadUpdated(DownloadItem* download) OVERRIDE {
+    void OnDownloadUpdated(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       updated_ = true;
@@ -147,12 +147,12 @@ class DownloadItemTest : public testing::Test {
       last_state_ = new_state;
     }
 
-    virtual void OnDownloadOpened(DownloadItem* download) OVERRIDE {
+    void OnDownloadOpened(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
     }
 
-    virtual void OnDownloadDestroyed(DownloadItem* download) OVERRIDE {
+    void OnDownloadDestroyed(DownloadItem* download) override {
       DVLOG(20) << " " << __FUNCTION__
                 << " download = " << download->DebugString(false);
       destroyed_ = true;
@@ -409,7 +409,7 @@ TEST_F(DownloadItemTest, NotificationAfterDestroyed) {
 }
 
 TEST_F(DownloadItemTest, ContinueAfterInterrupted) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
 
   DownloadItemImpl* item = CreateDownloadItem();
@@ -437,7 +437,7 @@ TEST_F(DownloadItemTest, ContinueAfterInterrupted) {
 
 // Same as above, but with a non-continuable interrupt.
 TEST_F(DownloadItemTest, RestartAfterInterrupted) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
 
   DownloadItemImpl* item = CreateDownloadItem();
@@ -461,7 +461,7 @@ TEST_F(DownloadItemTest, RestartAfterInterrupted) {
 
 // Check we do correct cleanup for RESUME_MODE_INVALID interrupts.
 TEST_F(DownloadItemTest, UnresumableInterrupt) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
 
   DownloadItemImpl* item = CreateDownloadItem();
@@ -491,7 +491,7 @@ TEST_F(DownloadItemTest, UnresumableInterrupt) {
 }
 
 TEST_F(DownloadItemTest, LimitRestartsAfterInterrupted) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
 
   DownloadItemImpl* item = CreateDownloadItem();
@@ -813,7 +813,7 @@ TEST_F(DownloadItemTest, InterruptedBeforeIntermediateRename_Restart) {
 // intermediate path should be retained when the download is interrupted after
 // the intermediate rename succeeds.
 TEST_F(DownloadItemTest, InterruptedBeforeIntermediateRename_Continue) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   DownloadItemImpl* item = CreateDownloadItem();
   DownloadItemImplDelegate::DownloadTargetCallback callback;
@@ -848,7 +848,7 @@ TEST_F(DownloadItemTest, InterruptedBeforeIntermediateRename_Continue) {
 // As above. If the intermediate rename fails, then the interrupt reason should
 // be set to the destination error and the intermediate path should be empty.
 TEST_F(DownloadItemTest, InterruptedBeforeIntermediateRename_Failed) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   DownloadItemImpl* item = CreateDownloadItem();
   DownloadItemImplDelegate::DownloadTargetCallback callback;
@@ -1248,7 +1248,7 @@ TEST_F(DownloadItemTest, StealDangerousDownload) {
 }
 
 TEST_F(DownloadItemTest, StealInterruptedDangerousDownload) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   base::FilePath returned_path;
   DownloadItemImpl* item = CreateDownloadItem();
@@ -1274,7 +1274,7 @@ TEST_F(DownloadItemTest, StealInterruptedDangerousDownload) {
 }
 
 TEST_F(DownloadItemTest, StealInterruptedNonResumableDangerousDownload) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   base::FilePath returned_path;
   DownloadItemImpl* item = CreateDownloadItem();

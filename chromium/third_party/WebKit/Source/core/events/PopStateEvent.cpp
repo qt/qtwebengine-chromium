@@ -27,24 +27,22 @@
 #include "config.h"
 #include "core/events/PopStateEvent.h"
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/frame/History.h"
 
-namespace WebCore {
+namespace blink {
 
 PopStateEvent::PopStateEvent()
     : Event(EventTypeNames::popstate, false, true)
     , m_serializedState(nullptr)
     , m_history(nullptr)
 {
-    ScriptWrappable::init(this);
 }
 
 PopStateEvent::PopStateEvent(const AtomicString& type, const PopStateEventInit& initializer)
     : Event(type, initializer)
     , m_history(nullptr)
 {
-    ScriptWrappable::init(this);
 }
 
 PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, PassRefPtrWillBeRawPtr<History> history)
@@ -52,7 +50,6 @@ PopStateEvent::PopStateEvent(PassRefPtr<SerializedScriptValue> serializedState, 
     , m_serializedState(serializedState)
     , m_history(history)
 {
-    ScriptWrappable::init(this);
 }
 
 PopStateEvent::~PopStateEvent()
@@ -85,4 +82,4 @@ void PopStateEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

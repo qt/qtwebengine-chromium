@@ -30,7 +30,7 @@
 
 #include "modules/webaudio/WaveShaperDSPKernel.h"
 
-namespace WebCore {
+namespace blink {
 
 WaveShaperProcessor::WaveShaperProcessor(float sampleRate, size_t numberOfChannels)
     : AudioDSPKernelProcessor(sampleRate, numberOfChannels)
@@ -49,7 +49,7 @@ PassOwnPtr<AudioDSPKernel> WaveShaperProcessor::createKernel()
     return adoptPtr(new WaveShaperDSPKernel(this));
 }
 
-void WaveShaperProcessor::setCurve(Float32Array* curve)
+void WaveShaperProcessor::setCurve(DOMFloat32Array* curve)
 {
     // This synchronizes with process().
     MutexLocker processLocker(m_processLock);
@@ -96,6 +96,6 @@ void WaveShaperProcessor::process(const AudioBus* source, AudioBus* destination,
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

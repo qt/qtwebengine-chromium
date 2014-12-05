@@ -24,9 +24,10 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGComponentTransferFunctionElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEFuncGElement FINAL : public SVGComponentTransferFunctionElement {
+class SVGFEFuncGElement final : public SVGComponentTransferFunctionElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEFuncGElement);
 
@@ -34,6 +35,6 @@ private:
     explicit SVGFEFuncGElement(Document&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEFuncGElement_h

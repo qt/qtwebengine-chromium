@@ -20,11 +20,11 @@ class URLRequestThrottlerHeaderAdapter
     : public URLRequestThrottlerHeaderInterface {
  public:
   explicit URLRequestThrottlerHeaderAdapter(HttpResponseHeaders* headers);
-  virtual ~URLRequestThrottlerHeaderAdapter();
+  ~URLRequestThrottlerHeaderAdapter() override;
 
   // Implementation of URLRequestThrottlerHeaderInterface
-  virtual std::string GetNormalizedValue(const std::string& key) const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
+  std::string GetNormalizedValue(const std::string& key) const override;
+  int GetResponseCode() const override;
 
  private:
   const scoped_refptr<HttpResponseHeaders> response_header_;

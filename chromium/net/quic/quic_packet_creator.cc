@@ -20,6 +20,15 @@ using std::vector;
 
 namespace net {
 
+namespace {
+
+// Default max packets in an FEC group.
+static const size_t kDefaultMaxPacketsPerFecGroup = 10;
+// Lowest max packets in an FEC group.
+static const size_t kLowestMaxPacketsPerFecGroup = 2;
+
+}  // namespace
+
 // A QuicRandom wrapper that gets a bucket of entropy and distributes it
 // bit-by-bit. Replenishes the bucket as needed. Not thread-safe. Expose this
 // class if single bit randomness is needed elsewhere.
@@ -67,7 +76,7 @@ QuicPacketCreator::QuicPacketCreator(QuicConnectionId connection_id,
       fec_group_number_(0),
       send_version_in_packet_(!framer->is_server()),
       max_packet_length_(kDefaultMaxPacketSize),
-      max_packets_per_fec_group_(0),
+      max_packets_per_fec_group_(kDefaultMaxPacketsPerFecGroup),
       connection_id_length_(PACKET_8BYTE_CONNECTION_ID),
       next_sequence_number_length_(PACKET_1BYTE_SEQUENCE_NUMBER),
       sequence_number_length_(next_sequence_number_length_),
@@ -86,15 +95,22 @@ void QuicPacketCreator::OnBuiltFecProtectedPayload(
   }
 }
 
+void QuicPacketCreator::set_max_packets_per_fec_group(
+    size_t max_packets_per_fec_group) {
+  max_packets_per_fec_group_ = max(kLowestMaxPacketsPerFecGroup,
+                                   max_packets_per_fec_group);
+  DCHECK_LT(0u, max_packets_per_fec_group_);
+}
+
 bool QuicPacketCreator::ShouldSendFec(bool force_close) const {
   DCHECK(!HasPendingFrames());
-  return fec_group_.get() != NULL && fec_group_->NumReceivedPackets() > 0 &&
-      (force_close || fec_group_->NumReceivedPackets() >=
-                      max_packets_per_fec_group_);
+  return fec_group_.get() != nullptr && fec_group_->NumReceivedPackets() > 0 &&
+         (force_close ||
+          fec_group_->NumReceivedPackets() >= max_packets_per_fec_group_);
 }
 
 bool QuicPacketCreator::IsFecGroupOpen() const {
-  return ShouldSendFec(true);
+  return fec_group_.get() != nullptr;
 }
 
 void QuicPacketCreator::StartFecProtectingPackets() {
@@ -116,7 +132,7 @@ void QuicPacketCreator::StartFecProtectingPackets() {
 }
 
 void QuicPacketCreator::StopFecProtectingPackets() {
-  if (fec_group_.get() != NULL) {
+  if (fec_group_.get() != nullptr) {
     LOG(DFATAL) << "Cannot stop FEC protection with open FEC group.";
     return;
   }
@@ -134,14 +150,14 @@ bool QuicPacketCreator::IsFecEnabled() const {
 }
 
 InFecGroup QuicPacketCreator::MaybeUpdateLengthsAndStartFec() {
-  if (fec_group_.get() != NULL) {
+  if (fec_group_.get() != nullptr) {
     // Don't update any lengths when an FEC group is open, to ensure same
     // packet header size in all packets within a group.
     return IN_FEC_GROUP;
   }
   if (!queued_frames_.empty()) {
     // Don't change creator state if there are frames queued.
-    return fec_group_.get() == NULL ? NOT_IN_FEC_GROUP : IN_FEC_GROUP;
+    return fec_group_.get() == nullptr ? NOT_IN_FEC_GROUP : IN_FEC_GROUP;
   }
 
   // Update sequence number length only on packet and FEC group boundaries.
@@ -171,16 +187,14 @@ void QuicPacketCreator::StopSendingVersion() {
 
 void QuicPacketCreator::UpdateSequenceNumberLength(
       QuicPacketSequenceNumber least_packet_awaited_by_peer,
-      QuicByteCount congestion_window) {
+      QuicPacketCount max_packets_in_flight) {
   DCHECK_LE(least_packet_awaited_by_peer, sequence_number_ + 1);
   // Since the packet creator will not change sequence number length mid FEC
   // group, include the size of an FEC group to be safe.
   const QuicPacketSequenceNumber current_delta =
       max_packets_per_fec_group_ + sequence_number_ + 1
       - least_packet_awaited_by_peer;
-  const uint64 congestion_window_packets =
-      congestion_window / max_packet_length_;
-  const uint64 delta = max(current_delta, congestion_window_packets);
+  const uint64 delta = max(current_delta, max_packets_in_flight);
   next_sequence_number_length_ =
       QuicFramer::GetMinSequenceNumberLength(delta * 4);
 }
@@ -191,14 +205,13 @@ bool QuicPacketCreator::HasRoomForStreamFrame(QuicStreamId id,
   // is_in_fec_group a parameter. Same as with all public methods in
   // QuicPacketCreator.
   return BytesFree() >
-      QuicFramer::GetMinStreamFrameSize(framer_->version(), id, offset, true,
+      QuicFramer::GetMinStreamFrameSize(id, offset, true,
                                         should_fec_protect_ ? IN_FEC_GROUP :
                                                               NOT_IN_FEC_GROUP);
 }
 
 // static
 size_t QuicPacketCreator::StreamFramePacketOverhead(
-    QuicVersion version,
     QuicConnectionIdLength connection_id_length,
     bool include_version,
     QuicSequenceNumberLength sequence_number_length,
@@ -207,8 +220,7 @@ size_t QuicPacketCreator::StreamFramePacketOverhead(
   return GetPacketHeaderSize(connection_id_length, include_version,
                              sequence_number_length, is_in_fec_group) +
       // Assumes this is a stream with a single lone packet.
-      QuicFramer::GetMinStreamFrameSize(version, 1u, offset, true,
-                                        is_in_fec_group);
+      QuicFramer::GetMinStreamFrameSize(1u, offset, true, is_in_fec_group);
 }
 
 size_t QuicPacketCreator::CreateStreamFrame(QuicStreamId id,
@@ -217,7 +229,7 @@ size_t QuicPacketCreator::CreateStreamFrame(QuicStreamId id,
                                             bool fin,
                                             QuicFrame* frame) {
   DCHECK_GT(max_packet_length_, StreamFramePacketOverhead(
-                framer_->version(), PACKET_8BYTE_CONNECTION_ID, kIncludeVersion,
+                connection_id_length_, kIncludeVersion,
                 PACKET_6BYTE_SEQUENCE_NUMBER, offset, IN_FEC_GROUP));
 
   InFecGroup is_in_fec_group = MaybeUpdateLengthsAndStartFec();
@@ -225,8 +237,7 @@ size_t QuicPacketCreator::CreateStreamFrame(QuicStreamId id,
   LOG_IF(DFATAL, !HasRoomForStreamFrame(id, offset))
       << "No room for Stream frame, BytesFree: " << BytesFree()
       << " MinStreamFrameSize: "
-      << QuicFramer::GetMinStreamFrameSize(
-          framer_->version(), id, offset, true, is_in_fec_group);
+      << QuicFramer::GetMinStreamFrameSize(id, offset, true, is_in_fec_group);
 
   if (data.Empty()) {
     LOG_IF(DFATAL, !fin)
@@ -238,8 +249,7 @@ size_t QuicPacketCreator::CreateStreamFrame(QuicStreamId id,
 
   const size_t data_size = data.TotalBufferSize();
   size_t min_frame_size = QuicFramer::GetMinStreamFrameSize(
-      framer_->version(), id, offset, /*last_frame_in_packet=*/ true,
-      is_in_fec_group);
+      id, offset, /* last_frame_in_packet= */ true, is_in_fec_group);
   size_t bytes_consumed = min<size_t>(BytesFree() - min_frame_size, data_size);
 
   bool set_fin = fin && bytes_consumed == data_size;  // Last frame.
@@ -271,7 +281,7 @@ size_t QuicPacketCreator::CreateStreamFrameWithNotifier(
 SerializedPacket QuicPacketCreator::ReserializeAllFrames(
     const QuicFrames& frames,
     QuicSequenceNumberLength original_length) {
-  DCHECK(fec_group_.get() == NULL);
+  DCHECK(fec_group_.get() == nullptr);
   const QuicSequenceNumberLength saved_length = sequence_number_length_;
   const QuicSequenceNumberLength saved_next_length =
       next_sequence_number_length_;
@@ -304,7 +314,7 @@ SerializedPacket QuicPacketCreator::SerializeAllFrames(
     DCHECK(success);
   }
   SerializedPacket packet = SerializePacket();
-  DCHECK(packet.retransmittable_frames == NULL);
+  DCHECK(packet.retransmittable_frames == nullptr);
   return packet;
 }
 
@@ -313,8 +323,8 @@ bool QuicPacketCreator::HasPendingFrames() const {
 }
 
 bool QuicPacketCreator::HasPendingRetransmittableFrames() const {
-  return queued_retransmittable_frames_.get() != NULL &&
-      !queued_retransmittable_frames_->frames().empty();
+  return queued_retransmittable_frames_.get() != nullptr &&
+         !queued_retransmittable_frames_->frames().empty();
 }
 
 size_t QuicPacketCreator::ExpansionOnNewFrame() const {
@@ -341,7 +351,7 @@ size_t QuicPacketCreator::PacketSize() const {
   if (!queued_frames_.empty()) {
     return packet_size_;
   }
-  if (fec_group_.get() == NULL) {
+  if (fec_group_.get() == nullptr) {
     // Update sequence number length on packet and FEC boundary.
     sequence_number_length_ = next_sequence_number_length_;
   }
@@ -367,19 +377,20 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
   size_t max_plaintext_size =
       framer_->GetMaxPlaintextSize(max_packet_length_);
   DCHECK_GE(max_plaintext_size, packet_size_);
-  // ACK Frames will be truncated only if they're the only frame in the packet,
-  // and if packet_size_ was set to max_plaintext_size. If truncation occurred,
-  // then GetSerializedFrameLength will have returned all bytes free.
-  bool possibly_truncated = packet_size_ == max_plaintext_size &&
-                            queued_frames_.size() == 1 &&
-                            queued_frames_.back().type == ACK_FRAME;
+  // ACK Frames will be truncated due to length only if they're the only frame
+  // in the packet, and if packet_size_ was set to max_plaintext_size. If
+  // truncation due to length occurred, then GetSerializedFrameLength will have
+  // returned all bytes free.
+  bool possibly_truncated_by_length = packet_size_ == max_plaintext_size &&
+      queued_frames_.size() == 1 &&
+      queued_frames_.back().type == ACK_FRAME;
   SerializedPacket serialized =
       framer_->BuildDataPacket(header, queued_frames_, packet_size_);
   LOG_IF(DFATAL, !serialized.packet)
       << "Failed to serialize " << queued_frames_.size() << " frames.";
   // Because of possible truncation, we can't be confident that our
   // packet size calculation worked correctly.
-  if (!possibly_truncated) {
+  if (!possibly_truncated_by_length) {
     DCHECK_EQ(packet_size_, serialized.packet->length());
   }
   packet_size_ = 0;
@@ -389,10 +400,11 @@ SerializedPacket QuicPacketCreator::SerializePacket() {
 }
 
 SerializedPacket QuicPacketCreator::SerializeFec() {
-  if (fec_group_.get() == NULL || fec_group_->NumReceivedPackets() <= 0) {
+  if (fec_group_.get() == nullptr || fec_group_->NumReceivedPackets() <= 0) {
     LOG(DFATAL) << "SerializeFEC called but no group or zero packets in group.";
     // TODO(jri): Make this a public method of framer?
-    SerializedPacket kNoPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, NULL, 0, NULL);
+    SerializedPacket kNoPacket(0, PACKET_1BYTE_SEQUENCE_NUMBER, nullptr, 0,
+                               nullptr);
     return kNoPacket;
   }
   DCHECK_EQ(0u, queued_frames_.size());
@@ -402,7 +414,7 @@ SerializedPacket QuicPacketCreator::SerializeFec() {
   fec_data.fec_group = fec_group_->min_protected_packet();
   fec_data.redundancy = fec_group_->payload_parity();
   SerializedPacket serialized = framer_->BuildFecPacket(header, fec_data);
-  fec_group_.reset(NULL);
+  fec_group_.reset(nullptr);
   packet_size_ = 0;
   LOG_IF(DFATAL, !serialized.packet)
       << "Failed to serialize fec packet for group:" << fec_data.fec_group;
@@ -436,6 +448,7 @@ void QuicPacketCreator::FillPacketHeader(QuicFecGroupNumber fec_group,
                                          bool fec_flag,
                                          QuicPacketHeader* header) {
   header->public_header.connection_id = connection_id_;
+  header->public_header.connection_id_length = connection_id_length_;
   header->public_header.reset_flag = false;
   header->public_header.version_flag = send_version_in_packet_;
   header->fec_flag = fec_flag;
@@ -473,7 +486,7 @@ bool QuicPacketCreator::AddFrame(const QuicFrame& frame,
   packet_size_ += ExpansionOnNewFrame() + frame_len;
 
   if (save_retransmittable_frames && ShouldRetransmit(frame)) {
-    if (queued_retransmittable_frames_.get() == NULL) {
+    if (queued_retransmittable_frames_.get() == nullptr) {
       queued_retransmittable_frames_.reset(new RetransmittableFrames());
     }
     if (frame.type == STREAM_FRAME) {
@@ -495,12 +508,18 @@ void QuicPacketCreator::MaybeAddPadding() {
     return;
   }
 
+  // Since ReserializeAllFrames does not populate queued_retransmittable_frames_
+  // it's not sufficient to simply call
+  // queued_retransmittable_frames_->HasCryptoHandshake().
+  // TODO(rch): we should really make ReserializeAllFrames not be a special
+  // case!
+
   // If any of the frames in the current packet are on the crypto stream
   // then they contain handshake messagses, and we should pad them.
   bool is_handshake = false;
-  for (size_t i = 0; i < queued_frames_.size(); ++i) {
-    if (queued_frames_[i].type == STREAM_FRAME &&
-        queued_frames_[i].stream_frame->stream_id == kCryptoStreamId) {
+  for (const QuicFrame& frame : queued_frames_) {
+    if (frame.type == STREAM_FRAME &&
+        frame.stream_frame->stream_id == kCryptoStreamId) {
       is_handshake = true;
       break;
     }

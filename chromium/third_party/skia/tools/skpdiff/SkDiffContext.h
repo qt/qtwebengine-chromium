@@ -28,10 +28,47 @@ public:
     void setThreadCount(int threadCount) { fThreadCount = threadCount; }
 
     /**
-     * Creates the directory if it does not exist and uses it to store differences
-     * between images.
+     * Sets the directory within which to store alphaMasks (images that
+     * are transparent for each pixel that differs between baseline and test).
+     *
+     * If the directory does not exist yet, it will be created.
      */
-    void setDifferenceDir(const SkString& directory);
+    void setAlphaMaskDir(const SkString& directory);
+
+    /**
+     * Sets the directory within which to store rgbDiffs (images showing the
+     * per-channel difference between baseline and test at each pixel).
+     *
+     * If the directory does not exist yet, it will be created.
+     */
+    void setRgbDiffDir(const SkString& directory);
+
+    /**
+     * Sets the directory within which to store whiteDiffs (images showing white
+     * for each pixel that differs between baseline and test).
+     *
+     * If the directory does not exist yet, it will be created.
+     */
+    void setWhiteDiffDir(const SkString& directory);
+
+    /**
+     * Modify the pattern used to generate commonName (= the 
+     * basename of rgb/white diff files).
+     *
+     * - true: basename is a combination of the input file names.
+     * - false: basename is the common prefix of the input file names.
+     *
+     * For example, for:
+     *   baselinePath=/tmp/dir/image-before.png
+     *   testPath=/tmp/dir/image-after.png
+     * 
+     * If setLongNames(true), commonName would be:
+     *    image-before-png-vs-image-after-png.png
+     * 
+     * If setLongNames(false), commonName would be:
+     *   image-.png
+     */
+    void setLongNames(const bool useLongNames);
 
     /**
      * Sets the differs to be used in each diff. Already started diffs will not retroactively use
@@ -67,13 +104,22 @@ public:
      *
      * The format of the JSON document is one top level array named "records".
      * Each record in the array is an object with the following values:
-     *    "commonName"     : string containing the common prefix of the baselinePath
-     *                       and testPath filenames
+     *    "commonName"     : string containing the output filename (basename) 
+     *                       depending on the value of 'longNames'. 
+     *                       (see 'setLongNames' for an explanation and example).
      *    "baselinePath"   : string containing the path to the baseline image
      *    "testPath"       : string containing the path to the test image
      *    "differencePath" : (optional) string containing the path to an alpha
      *                       mask of the pixel difference between the baseline
      *                       and test images
+     *                       TODO(epoger): consider renaming this "alphaMaskPath"
+     *                       to distinguish from other difference types?
+     *    "rgbDiffPath"    : (optional) string containing the path to a bitmap
+     *                       showing per-channel differences between the
+     *                       baseline and test images at each pixel
+     *    "whiteDiffPath"  : (optional) string containing the path to a bitmap
+     *                       showing every pixel that differs between the
+     *                       baseline and test images as white
      *
      * They also have an array named "diffs" with each element being one diff record for the two
      * images indicated in the above field.
@@ -117,10 +163,21 @@ private:
     };
 
     struct DiffRecord {
+        // TODO(djsollen): Some of these fields are required, while others are optional
+        // (e.g., fRgbDiffPath is only filled in if SkDifferentPixelsMetric
+        // was run).  Figure out a way to note that.  See http://skbug.com/2712
+        // ('allow skpdiff to report different sets of result fields for
+        // different comparison algorithms')
         SkString           fCommonName;
-        SkString           fDifferencePath;
+        SkString           fAlphaMaskPath;
+        SkString           fRgbDiffPath;
+        SkString           fWhiteDiffPath;
         SkString           fBaselinePath;
         SkString               fTestPath;
+        SkISize                    fSize;
+        int                  fMaxRedDiff;
+        int                fMaxGreenDiff;
+        int                 fMaxBlueDiff;
         SkTArray<DiffData>        fDiffs;
     };
 
@@ -137,7 +194,10 @@ private:
     int fDifferCount;
     int fThreadCount;
 
-    SkString fDifferenceDir;
+    SkString fAlphaMaskDir;
+    SkString fRgbDiffDir;
+    SkString fWhiteDiffDir;
+    bool longNames;
 };
 
 #endif

@@ -31,18 +31,19 @@
 #ifndef DirectoryReader_h
 #define DirectoryReader_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/DirectoryReaderBase.h"
 #include "modules/filesystem/EntriesCallback.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ErrorCallback;
 
 class DirectoryReader : public DirectoryReaderBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static DirectoryReader* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
@@ -51,11 +52,11 @@ public:
 
     virtual ~DirectoryReader();
 
-    void readEntries(PassOwnPtr<EntriesCallback>, PassOwnPtr<ErrorCallback> = nullptr);
+    void readEntries(EntriesCallback*, ErrorCallback* = nullptr);
 
     DOMFileSystem* filesystem() const { return static_cast<DOMFileSystem*>(m_fileSystem.get()); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     class EntriesCallbackHelper;
@@ -69,11 +70,11 @@ private:
 
     bool m_isReading;
     EntryHeapVector m_entries;
-    RefPtrWillBeMember<FileError> m_error;
-    OwnPtr<EntriesCallback> m_entriesCallback;
-    OwnPtr<ErrorCallback> m_errorCallback;
+    Member<FileError> m_error;
+    Member<EntriesCallback> m_entriesCallback;
+    Member<ErrorCallback> m_errorCallback;
 };
 
-}
+} // namespace blink
 
 #endif // DirectoryReader_h

@@ -26,13 +26,21 @@
 #include "picture_utils.h"
 
 // Flags used by this file, alphabetically:
-DEFINE_int32(clone, 0, "Clone the picture n times before rendering.");
+DEFINE_bool(bench_record, false, "If true, drop into an infinite loop of recording the picture.");
 DECLARE_bool(deferImageDecoding);
+DEFINE_string(descriptions, "", "one or more key=value pairs to add to the descriptions section "
+              "of the JSON summary.");
+DEFINE_string(imageBaseGSUrl, "", "The Google Storage image base URL the images are stored in.");
 DEFINE_int32(maxComponentDiff, 256, "Maximum diff on a component, 0 - 256. Components that differ "
              "by more than this amount are considered errors, though all diffs are reported. "
              "Requires --validate.");
 DEFINE_string(mismatchPath, "", "Write images for tests that failed due to "
               "pixel mismatches into this directory.");
+#if GR_GPU_STATS
+DEFINE_bool(gpuStats, false, "Only meaningful with gpu configurations. "
+            "Report some GPU call statistics.");
+#endif
+DEFINE_bool(mpd, false, "If true, use MultiPictureDraw for rendering.");
 DEFINE_string(readJsonSummaryPath, "", "JSON file to read image expectations from.");
 DECLARE_string(readPath);
 DEFINE_bool(writeChecksumBasedFilenames, false,
@@ -47,10 +55,6 @@ DEFINE_bool(writeWholeImage, false, "In tile mode, write the entire rendered ima
 DEFINE_bool(validate, false, "Verify that the rendered image contains the same pixels as "
             "the picture rendered in simple mode. When used in conjunction with --bbh, results "
             "are validated against the picture rendered in the same mode, but without the bbh.");
-
-DEFINE_bool(bench_record, false, "If true, drop into an infinite loop of recording the picture.");
-
-DEFINE_bool(preprocess, false, "If true, perform device specific preprocessing before rendering.");
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -124,7 +128,7 @@ static bool write_image_to_file(const void* buffer, size_t size, SkBitmap* bitma
     SkString name = SkStringPrintf("%s_%d%s", gInputFileName.c_str(), gImageNo++,
                                    get_suffix_from_format(format));
     SkString dir(FLAGS_writePath[0]);
-    outPath = SkOSPath::SkPathJoin(dir.c_str(), name.c_str());
+    outPath = SkOSPath::Join(dir.c_str(), name.c_str());
     SkFILEWStream fileStream(outPath.c_str());
     if (!(fileStream.isValid() && fileStream.write(buffer, size))) {
         SkDebugf("Failed to write encoded data to \"%s\"\n", outPath.c_str());
@@ -143,13 +147,13 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
                                     const SkString* mismatchPath,
                                     sk_tools::PictureRenderer& renderer,
                                     SkBitmap** out) {
-    SkString inputFilename = SkOSPath::SkBasename(inputPath.c_str());
+    SkString inputFilename = SkOSPath::Basename(inputPath.c_str());
     SkString writePathString;
-    if (NULL != writePath && writePath->size() > 0 && !FLAGS_writeEncodedImages) {
+    if (writePath && writePath->size() > 0 && !FLAGS_writeEncodedImages) {
         writePathString.set(*writePath);
     }
     SkString mismatchPathString;
-    if (NULL != mismatchPath && mismatchPath->size() > 0) {
+    if (mismatchPath && mismatchPath->size() > 0) {
         mismatchPathString.set(*mismatchPath);
     }
 
@@ -173,7 +177,7 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
 
     SkDebugf("deserializing... %s\n", inputPath.c_str());
 
-    SkPicture* picture = SkPicture::CreateFromStream(&inputStream, proc);
+    SkAutoTUnref<SkPicture> picture(SkPicture::CreateFromStream(&inputStream, proc));
 
     if (NULL == picture) {
         SkDebugf("Could not read an SkPicture from %s\n", inputPath.c_str());
@@ -182,27 +186,19 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
 
     while (FLAGS_bench_record) {
         SkPictureRecorder recorder;
-        picture->draw(recorder.beginRecording(picture->width(), picture->height(), NULL, 0));
+        picture->playback(recorder.beginRecording(picture->cullRect().width(), 
+                                                  picture->cullRect().height(), 
+                                                  NULL, 0));
         SkAutoTUnref<SkPicture> other(recorder.endRecording());
     }
 
-    for (int i = 0; i < FLAGS_clone; ++i) {
-        SkPicture* clone = picture->clone();
-        SkDELETE(picture);
-        picture = clone;
-    }
-
-    SkDebugf("drawing... [%i %i] %s\n", picture->width(), picture->height(),
+    SkDebugf("drawing... [%f %f %f %f] %s\n", 
+             picture->cullRect().fLeft, picture->cullRect().fTop,
+             picture->cullRect().fRight, picture->cullRect().fBottom,
              inputPath.c_str());
 
     renderer.init(picture, &writePathString, &mismatchPathString, &inputFilename,
-                  FLAGS_writeChecksumBasedFilenames);
-
-    if (FLAGS_preprocess) {
-        if (NULL != renderer.getCanvas()) {
-            renderer.getCanvas()->EXPERIMENTAL_optimize(renderer.getPicture());
-        }
-    }
+                  FLAGS_writeChecksumBasedFilenames, FLAGS_mpd);
 
     renderer.setup();
     renderer.enableWrites();
@@ -214,7 +210,6 @@ static bool render_picture_internal(const SkString& inputPath, const SkString* w
 
     renderer.end();
 
-    SkDELETE(picture);
     return success;
 }
 
@@ -243,7 +238,7 @@ public:
     }
 
     ~AutoRestoreBbhType() {
-        if (NULL != fRenderer) {
+        if (fRenderer) {
             fRenderer->setBBoxHierarchyType(fSavedBbhType);
         }
     }
@@ -292,7 +287,12 @@ static bool render_picture(const SkString& inputPath, const SkString* writePath,
             referenceRenderer->ref();  // to match auto unref below
             arbbh.set(referenceRenderer, sk_tools::PictureRenderer::kNone_BBoxHierarchyType);
         } else {
+#if SK_SUPPORT_GPU
+            referenceRenderer = SkNEW_ARGS(sk_tools::SimplePictureRenderer,
+                                           (renderer.getGrContextOptions()));
+#else
             referenceRenderer = SkNEW(sk_tools::SimplePictureRenderer);
+#endif
         }
         SkAutoTUnref<sk_tools::PictureRenderer> aurReferenceRenderer(referenceRenderer);
 
@@ -352,22 +352,22 @@ static bool render_picture(const SkString& inputPath, const SkString* writePath,
     if (FLAGS_writeWholeImage) {
         sk_tools::force_all_opaque(*bitmap);
 
-        SkString inputFilename = SkOSPath::SkBasename(inputPath.c_str());
+        SkString inputFilename = SkOSPath::Basename(inputPath.c_str());
         SkString outputFilename(inputFilename);
         sk_tools::replace_char(&outputFilename, '.', '_');
         outputFilename.append(".png");
 
-        if (NULL != jsonSummaryPtr) {
+        if (jsonSummaryPtr) {
             sk_tools::ImageDigest imageDigest(*bitmap);
             jsonSummaryPtr->add(inputFilename.c_str(), outputFilename.c_str(), imageDigest);
-            if ((NULL != mismatchPath) && !mismatchPath->isEmpty() &&
-                !jsonSummaryPtr->matchesExpectation(inputFilename.c_str(), imageDigest)) {
+            if ((mismatchPath) && !mismatchPath->isEmpty() &&
+                !jsonSummaryPtr->getExpectation(inputFilename.c_str()).matches(imageDigest)) {
                 success &= sk_tools::write_bitmap_to_disk(*bitmap, *mismatchPath, NULL,
                                                           outputFilename);
             }
         }
 
-        if ((NULL != writePath) && !writePath->isEmpty()) {
+        if ((writePath) && !writePath->isEmpty()) {
             success &= sk_tools::write_bitmap_to_disk(*bitmap, *writePath, NULL, outputFilename);
         }
     }
@@ -386,7 +386,7 @@ static int process_input(const char* input, const SkString* writePath,
     SkDebugf("process_input, %s\n", input);
     if (iter.next(&inputFilename)) {
         do {
-            SkString inputPath = SkOSPath::SkPathJoin(input, inputFilename.c_str());
+            SkString inputPath = SkOSPath::Join(input, inputFilename.c_str());
             if (!render_picture(inputPath, writePath, mismatchPath, renderer, jsonSummaryPtr)) {
                 ++failures;
             }
@@ -421,11 +421,6 @@ int tool_main(int argc, char** argv) {
 
     if (FLAGS_maxComponentDiff != 256 && !FLAGS_validate) {
         SkDebugf("--maxComponentDiff requires --validate\n");
-        exit(-1);
-    }
-
-    if (FLAGS_clone < 0) {
-        SkDebugf("--clone must be >= 0. Was %i\n", FLAGS_clone);
         exit(-1);
     }
 
@@ -479,8 +474,7 @@ int tool_main(int argc, char** argv) {
         SkDebugf("Failed to render %i pictures.\n", failures);
         return 1;
     }
-#if SK_SUPPORT_GPU
-#if GR_CACHE_STATS
+#if GR_CACHE_STATS && SK_SUPPORT_GPU
     if (renderer->isUsingGpuDevice()) {
         GrContext* ctx = renderer->getGrContext();
         ctx->printCacheStats();
@@ -489,8 +483,26 @@ int tool_main(int argc, char** argv) {
 #endif
     }
 #endif
+
+#if GR_GPU_STATS && SK_SUPPORT_GPU
+    if (FLAGS_gpuStats && renderer->isUsingGpuDevice()) {
+        GrContext* ctx = renderer->getGrContext();
+        SkDebugf("RenderTarget Binds: %d\n", ctx->gpuStats()->renderTargetBinds());
+        SkDebugf("Shader Compilations: %d\n", ctx->gpuStats()->shaderCompilations());
+    }
 #endif
+
     if (FLAGS_writeJsonSummaryPath.count() == 1) {
+        // If there were any descriptions on the command line, insert them now.
+        for (int i=0; i<FLAGS_descriptions.count(); i++) {
+            SkTArray<SkString> tokens;
+            SkStrSplit(FLAGS_descriptions[i], "=", &tokens);
+            SkASSERT(tokens.count() == 2);
+            jsonSummary.addDescription(tokens[0].c_str(), tokens[1].c_str());
+        }
+        if (FLAGS_imageBaseGSUrl.count() == 1) {
+          jsonSummary.setImageBaseGSUrl(FLAGS_imageBaseGSUrl[0]);
+        }
         jsonSummary.writeToFile(FLAGS_writeJsonSummaryPath[0]);
     }
     return 0;

@@ -214,10 +214,8 @@ void AudioStreamSanitizer::AddOutputBuffer(
 
 int AudioStreamSanitizer::GetFrameCount() const {
   int frame_count = 0;
-  for (BufferQueue::const_iterator it = output_buffers_.begin();
-       it != output_buffers_.end(); ++it) {
-    frame_count += (*it)->frame_count();
-  }
+  for (const auto& buffer : output_buffers_)
+    frame_count += buffer->frame_count();
   return frame_count;
 }
 
@@ -302,8 +300,10 @@ bool AudioSplicer::AddInput(const scoped_refptr<AudioBuffer>& input) {
   // If a splice frame was incorrectly marked due to poor demuxed timestamps, we
   // may not actually have a splice.  Here we check if any frames exist before
   // the splice.  In this case, just transfer all data to the output sanitizer.
-  if (pre_splice_sanitizer_->GetFrameCount() <=
-      output_ts_helper.GetFramesToTarget(splice_timestamp_)) {
+  const int frames_before_splice =
+      output_ts_helper.GetFramesToTarget(splice_timestamp_);
+  if (frames_before_splice < 0 ||
+      pre_splice_sanitizer_->GetFrameCount() <= frames_before_splice) {
     CHECK(pre_splice_sanitizer_->DrainInto(output_sanitizer_.get()));
 
     // If the file contains incorrectly muxed timestamps, there may be huge gaps
@@ -438,7 +438,7 @@ scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
   // called if there is not enough data to crossfade.
   // TODO(dalecurtis): Convert to DCHECK() once http://crbug.com/356073 fixed.
   CHECK(output_bus);
-  CHECK(*crossfade_buffer);
+  CHECK(crossfade_buffer->get());
 
   // All necessary buffers have been processed, it's safe to reset.
   pre_splice_sanitizer_->Reset();
@@ -449,7 +449,7 @@ scoped_ptr<AudioBus> AudioSplicer::ExtractCrossfadeFromPreSplice(
 
 void AudioSplicer::CrossfadePostSplice(
     scoped_ptr<AudioBus> pre_splice_bus,
-    scoped_refptr<AudioBuffer> crossfade_buffer) {
+    const scoped_refptr<AudioBuffer>& crossfade_buffer) {
   // Use the calculated timestamp and duration to ensure there's no extra gaps
   // or overlaps to process when adding the buffer to |output_sanitizer_|.
   const AudioTimestampHelper& output_ts_helper =
@@ -475,7 +475,7 @@ void AudioSplicer::CrossfadePostSplice(
     // If only part of the buffer was consumed, save it for after we've added
     // the crossfade buffer
     if (frames_to_read < postroll->frame_count()) {
-      DCHECK(!remainder);
+      DCHECK(!remainder.get());
       remainder.swap(postroll);
       frames_to_trim = frames_to_read;
     }
@@ -493,7 +493,7 @@ void AudioSplicer::CrossfadePostSplice(
   CHECK(output_sanitizer_->AddInput(crossfade_buffer));
   DCHECK_EQ(crossfade_buffer->frame_count(), output_bus->frames());
 
-  if (remainder) {
+  if (remainder.get()) {
     // Trim off consumed frames.
     AccurateTrimStart(frames_to_trim, remainder, output_ts_helper);
     CHECK(output_sanitizer_->AddInput(remainder));

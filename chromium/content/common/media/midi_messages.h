@@ -34,11 +34,6 @@ IPC_MESSAGE_ROUTED3(MidiHostMsg_RequestSysExPermission,
                     GURL /* origin */,
                     bool /* user_gesture */)
 
-// Renderer request to browser for canceling a previous permission request.
-IPC_MESSAGE_ROUTED2(MidiHostMsg_CancelSysExPermissionRequest,
-                     int /* bridge_id */,
-                     GURL /* GURL of the frame */)
-
 // Messages sent from the browser to the renderer.
 
 IPC_MESSAGE_ROUTED2(MidiMsg_SysExPermissionApproved,
@@ -48,21 +43,25 @@ IPC_MESSAGE_ROUTED2(MidiMsg_SysExPermissionApproved,
 // Messages for IPC between MidiMessageFilter and MidiHost.
 
 // Renderer request to browser for access to MIDI services.
-IPC_MESSAGE_CONTROL1(MidiHostMsg_StartSession,
-                     int /* client id */)
+IPC_MESSAGE_CONTROL0(MidiHostMsg_StartSession)
 
 IPC_MESSAGE_CONTROL3(MidiHostMsg_SendData,
                      uint32 /* port */,
                      std::vector<uint8> /* data */,
                      double /* timestamp */)
 
+IPC_MESSAGE_CONTROL0(MidiHostMsg_EndSession)
+
 // Messages sent from the browser to the renderer.
 
-IPC_MESSAGE_CONTROL4(MidiMsg_SessionStarted,
-                     int /* client id */,
-                     media::MidiResult /* result */,
-                     media::MidiPortInfoList /* input ports */,
-                     media::MidiPortInfoList /* output ports */)
+IPC_MESSAGE_CONTROL1(MidiMsg_AddInputPort,
+                     media::MidiPortInfo /* input port */)
+
+IPC_MESSAGE_CONTROL1(MidiMsg_AddOutputPort,
+                     media::MidiPortInfo /* output port */)
+
+IPC_MESSAGE_CONTROL1(MidiMsg_SessionStarted,
+                     media::MidiResult /* result */)
 
 IPC_MESSAGE_CONTROL3(MidiMsg_DataReceived,
                      uint32 /* port */,

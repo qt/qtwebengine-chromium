@@ -33,21 +33,20 @@
 
 #include "modules/EventModules.h"
 
-namespace WebCore {
+namespace blink {
 
 struct CloseEventInit : public EventInit {
     CloseEventInit()
         : wasClean(false)
-        , code(0)
-    {
-    };
+        , code(0) { }
 
     bool wasClean;
     unsigned short code;
     String reason;
 };
 
-class CloseEvent FINAL : public Event {
+class CloseEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CloseEvent> create()
     {
@@ -69,42 +68,33 @@ public:
     String reason() const { return m_reason; }
 
     // Event function.
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::CloseEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::CloseEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
 
 private:
     CloseEvent()
         : Event(EventTypeNames::close, false, false)
         , m_wasClean(false)
-        , m_code(0)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_code(0) { }
 
     CloseEvent(bool wasClean, int code, const String& reason)
         : Event(EventTypeNames::close, false, false)
         , m_wasClean(wasClean)
         , m_code(code)
-        , m_reason(reason)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_reason(reason) { }
 
     CloseEvent(const AtomicString& type, const CloseEventInit& initializer)
         : Event(type, initializer)
         , m_wasClean(initializer.wasClean)
         , m_code(initializer.code)
-        , m_reason(initializer.reason)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_reason(initializer.reason) { }
 
     bool m_wasClean;
     unsigned short m_code;
     String m_reason;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CloseEvent_h

@@ -17,9 +17,12 @@
 IPC_ENUM_TRAITS_MAX_VALUE(content::VideoCaptureState,
                           content::VIDEO_CAPTURE_STATE_LAST)
 
+IPC_ENUM_TRAITS_MAX_VALUE(media::ResolutionChangePolicy,
+                          media::RESOLUTION_POLICY_LAST)
+
 IPC_STRUCT_TRAITS_BEGIN(media::VideoCaptureParams)
   IPC_STRUCT_TRAITS_MEMBER(requested_format)
-  IPC_STRUCT_TRAITS_MEMBER(allow_resolution_change)
+  IPC_STRUCT_TRAITS_MEMBER(resolution_change_policy)
 IPC_STRUCT_TRAITS_END()
 
 // TODO(nick): device_id in these messages is basically just a route_id. We
@@ -45,10 +48,11 @@ IPC_MESSAGE_CONTROL2(VideoCaptureMsg_FreeBuffer,
                      int /* buffer_id */)
 
 // Tell the renderer process that a buffer is available from video capture.
-IPC_MESSAGE_CONTROL4(VideoCaptureMsg_BufferReady,
+IPC_MESSAGE_CONTROL5(VideoCaptureMsg_BufferReady,
                      int /* device id */,
                      int /* buffer_id */,
                      media::VideoCaptureFormat /* format */,
+                     gfx::Rect /* visible_rect */,
                      base::TimeTicks /* timestamp */)
 
 // Tell the renderer process that a texture mailbox buffer is available from
@@ -83,6 +87,13 @@ IPC_MESSAGE_CONTROL3(VideoCaptureHostMsg_Start,
 IPC_MESSAGE_CONTROL1(VideoCaptureHostMsg_Pause,
                      int /* device_id */)
 
+// Resume the video capture specified by |device_id|, |session_id| and
+// |params|.
+IPC_MESSAGE_CONTROL3(VideoCaptureHostMsg_Resume,
+                     int, /* device_id */
+                     media::VideoCaptureSessionId, /* session_id */
+                     media::VideoCaptureParams /* params */)
+
 // Close the video capture specified by |device_id|.
 IPC_MESSAGE_CONTROL1(VideoCaptureHostMsg_Stop,
                      int /* device_id */)
@@ -92,7 +103,7 @@ IPC_MESSAGE_CONTROL1(VideoCaptureHostMsg_Stop,
 IPC_MESSAGE_CONTROL3(VideoCaptureHostMsg_BufferReady,
                      int /* device_id */,
                      int /* buffer_id */,
-                     std::vector<uint32> /* syncpoints */)
+                     uint32 /* syncpoint */)
 
 // Get the formats supported by a device referenced by |capture_session_id|.
 IPC_MESSAGE_CONTROL2(VideoCaptureHostMsg_GetDeviceSupportedFormats,

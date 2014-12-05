@@ -12,11 +12,11 @@
 #include "content/child/child_thread.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/fileapi/webblob_messages.h"
+#include "storage/common/blob/blob_data.h"
 #include "third_party/WebKit/public/platform/WebBlobData.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebThreadSafeData.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
-#include "webkit/common/blob/blob_data.h"
 
 using blink::WebBlobData;
 using blink::WebString;
@@ -56,7 +56,7 @@ void WebBlobRegistryImpl::registerBlobData(
       }
       case WebBlobData::Item::TypeFile:
         if (data_item.length) {
-          webkit_blob::BlobData::Item item;
+          storage::BlobData::Item item;
           item.SetToFilePathRange(
               base::FilePath::FromUTF16Unsafe(data_item.filePath),
               static_cast<uint64>(data_item.offset),
@@ -68,7 +68,7 @@ void WebBlobRegistryImpl::registerBlobData(
         break;
       case WebBlobData::Item::TypeBlob:
         if (data_item.length) {
-          webkit_blob::BlobData::Item item;
+          storage::BlobData::Item item;
           item.SetToBlobRange(
               data_item.blobUUID.utf8(),
               static_cast<uint64>(data_item.offset),
@@ -81,7 +81,7 @@ void WebBlobRegistryImpl::registerBlobData(
         if (data_item.length) {
           // We only support filesystem URL as of now.
           DCHECK(GURL(data_item.fileSystemURL).SchemeIsFileSystem());
-          webkit_blob::BlobData::Item item;
+          storage::BlobData::Item item;
           item.SetToFileSystemUrlRange(
               data_item.fileSystemURL,
               static_cast<uint64>(data_item.offset),
@@ -122,7 +122,7 @@ void WebBlobRegistryImpl::SendDataForBlob(const std::string& uuid_str,
   if (data.size() == 0)
     return;
   if (data.size() < kLargeThresholdBytes) {
-    webkit_blob::BlobData::Item item;
+    storage::BlobData::Item item;
     item.SetToBytes(data.data(), data.size());
     sender_->Send(new BlobHostMsg_AppendBlobDataItem(uuid_str, item));
   } else {
@@ -163,33 +163,33 @@ void WebBlobRegistryImpl::registerStreamURL(
 }
 
 void WebBlobRegistryImpl::addDataToStream(const WebURL& url,
-                                          WebThreadSafeData& data) {
+                                          const char* data, size_t length) {
   DCHECK(ChildThread::current());
-  if (data.size() == 0)
+  if (length == 0)
     return;
-  if (data.size() < kLargeThresholdBytes) {
-    webkit_blob::BlobData::Item item;
-    item.SetToBytes(data.data(), data.size());
+  if (length < kLargeThresholdBytes) {
+    storage::BlobData::Item item;
+    item.SetToBytes(data, length);
     sender_->Send(new StreamHostMsg_AppendBlobDataItem(url, item));
   } else {
     // We handle larger amounts of data via SharedMemory instead of
     // writing it directly to the IPC channel.
     size_t shared_memory_size = std::min(
-        data.size(), kMaxSharedMemoryBytes);
+        length, kMaxSharedMemoryBytes);
     scoped_ptr<base::SharedMemory> shared_memory(
         ChildThread::AllocateSharedMemory(shared_memory_size,
                                           sender_.get()));
     CHECK(shared_memory.get());
 
-    size_t data_size = data.size();
-    const char* data_ptr = data.data();
-    while (data_size) {
-      size_t chunk_size = std::min(data_size, shared_memory_size);
-      memcpy(shared_memory->memory(), data_ptr, chunk_size);
+    size_t remaining_bytes = length;
+    const char* current_ptr = data;
+    while (remaining_bytes) {
+      size_t chunk_size = std::min(remaining_bytes, shared_memory_size);
+      memcpy(shared_memory->memory(), current_ptr, chunk_size);
       sender_->Send(new StreamHostMsg_SyncAppendSharedMemory(
           url, shared_memory->handle(), chunk_size));
-      data_size -= chunk_size;
-      data_ptr += chunk_size;
+      remaining_bytes -= chunk_size;
+      current_ptr += chunk_size;
     }
   }
 }

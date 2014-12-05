@@ -38,8 +38,6 @@
 #include "web/WebTextCheckingCompletionImpl.h"
 #include "web/WebViewImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 SpellCheckerClientImpl::SpellCheckerClientImpl(WebViewImpl* webview)
@@ -56,9 +54,9 @@ bool SpellCheckerClientImpl::shouldSpellcheckByDefault()
 {
     // Spellcheck should be enabled for all editable areas (such as textareas,
     // contentEditable regions, designMode docs and inputs).
-    if (!m_webView->focusedWebCoreFrame()->isLocalFrame())
+    if (!m_webView->focusedCoreFrame()->isLocalFrame())
         return false;
-    const LocalFrame* frame = toLocalFrame(m_webView->focusedWebCoreFrame());
+    const LocalFrame* frame = toLocalFrame(m_webView->focusedCoreFrame());
     if (!frame)
         return false;
     if (frame->spellChecker().isSpellCheckingEnabledInFocusedNode())
@@ -104,8 +102,8 @@ void SpellCheckerClientImpl::toggleContinuousSpellChecking()
         }
     } else {
         m_spellCheckThisFieldStatus = SpellCheckForcedOn;
-        if (m_webView->focusedWebCoreFrame()->isLocalFrame()) {
-            if (LocalFrame* frame = toLocalFrame(m_webView->focusedWebCoreFrame())) {
+        if (m_webView->focusedCoreFrame()->isLocalFrame()) {
+            if (LocalFrame* frame = toLocalFrame(m_webView->focusedCoreFrame())) {
                 VisibleSelection frameSelection = frame->selection().selection();
                 // If a selection is in an editable element spell check its content.
                 if (Element* rootEditableElement = frameSelection.rootEditableElement()) {
@@ -118,13 +116,13 @@ void SpellCheckerClientImpl::toggleContinuousSpellChecking()
 
 bool SpellCheckerClientImpl::isGrammarCheckingEnabled()
 {
-    const LocalFrame* frame = toLocalFrame(m_webView->focusedWebCoreFrame());
+    const LocalFrame* frame = toLocalFrame(m_webView->focusedCoreFrame());
     return frame && frame->settings() && (frame->settings()->asynchronousSpellCheckingEnabled() || frame->settings()->unifiedTextCheckerEnabled());
 }
 
 bool SpellCheckerClientImpl::shouldEraseMarkersAfterChangeSelection(TextCheckingType type) const
 {
-    const Frame* frame = m_webView->focusedWebCoreFrame();
+    const Frame* frame = m_webView->focusedCoreFrame();
     return !frame || !frame->settings() || (!frame->settings()->asynchronousSpellCheckingEnabled() && !frame->settings()->unifiedTextCheckerEnabled());
 }
 
@@ -151,7 +149,7 @@ void SpellCheckerClientImpl::checkSpellingOfString(const String& text, int* miss
         *misspellingLength = spellLength;
 }
 
-void SpellCheckerClientImpl::requestCheckingOfString(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
+void SpellCheckerClientImpl::requestCheckingOfString(PassRefPtrWillBeRawPtr<TextCheckingRequest> request)
 {
     if (m_webView->spellCheckClient()) {
         const String& text = request->data().text();
@@ -232,4 +230,4 @@ bool SpellCheckerClientImpl::spellingUIIsShowing()
     return false;
 }
 
-} // namesace WebKit
+} // namespace blink

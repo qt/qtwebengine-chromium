@@ -7,13 +7,13 @@
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "ui/aura/env.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/events/event.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gl/gl_surface.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/view.h"
@@ -30,15 +30,14 @@ namespace views {
 class DesktopCaptureControllerTest : public ViewsTestBase {
  public:
   DesktopCaptureControllerTest() {}
-  virtual ~DesktopCaptureControllerTest() {}
+  ~DesktopCaptureControllerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     gfx::GLSurface::InitializeOneOffForTests();
-    base::FilePath pak_dir;
-    PathService::Get(base::DIR_MODULE, &pak_dir);
-    base::FilePath pak_file;
-    pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
-    ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
+    ui::RegisterPathProvider();
+    base::FilePath ui_test_pak_path;
+    ASSERT_TRUE(PathService::Get(ui::UI_TEST_PAK, &ui_test_pak_path));
+    ui::ResourceBundle::InitSharedInstanceWithPakPath(ui_test_pak_path);
 
     ViewsTestBase::SetUp();
   }
@@ -51,7 +50,7 @@ class DesktopViewInputTest : public View {
   DesktopViewInputTest()
       : received_gesture_event_(false) {}
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     received_gesture_event_ = true;
     return View::OnGestureEvent(event);
   }
@@ -88,7 +87,7 @@ views::Widget* CreateWidget() {
 TEST_F(DesktopCaptureControllerTest, ResetMouseHandlers) {
   scoped_ptr<Widget> w1(CreateWidget());
   scoped_ptr<Widget> w2(CreateWidget());
-  aura::test::EventGenerator generator1(w1->GetNativeView()->GetRootWindow());
+  ui::test::EventGenerator generator1(w1->GetNativeView()->GetRootWindow());
   generator1.MoveMouseToCenterOf(w1->GetNativeView());
   generator1.PressLeftButton();
   EXPECT_FALSE(w1->HasCapture());
@@ -168,10 +167,11 @@ TEST_F(DesktopCaptureControllerTest, CaptureWindowInputEventTest) {
   EXPECT_FALSE(widget2->GetNativeView()->HasCapture());
   EXPECT_EQ(capture_client->GetCaptureWindow(), widget1->GetNativeView());
 
-  ui::GestureEvent g1(ui::ET_GESTURE_LONG_PRESS, 80, 80, 0,
+  ui::GestureEvent g1(80,
+                      80,
+                      0,
                       base::TimeDelta(),
-                      ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS,
-                                              0.0f, 0.0f), 0);
+                      ui::GestureEventDetails(ui::ET_GESTURE_LONG_PRESS));
   details = root1->OnEventFromSource(&g1);
   EXPECT_FALSE(details.dispatcher_destroyed);
   EXPECT_FALSE(details.target_destroyed);

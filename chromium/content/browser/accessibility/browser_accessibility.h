@@ -11,6 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "base/strings/string_split.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "third_party/WebKit/public/web/WebAXEnums.h"
@@ -31,12 +32,13 @@ class BrowserAccessibilityWin;
 //
 // BrowserAccessibility
 //
-// Class implementing the cross platform interface for the Browser-Renderer
-// communication of accessibility information, providing accessibility
-// to be used by screen readers and other assistive technology (AT).
+// A BrowserAccessibility object represents one node in the accessibility
+// tree on the browser side. It exactly corresponds to one WebAXObject from
+// Blink. It's owned by a BrowserAccessibilityManager.
 //
-// An implementation for each platform handles platform specific accessibility
-// APIs.
+// There are subclasses of BrowserAccessibility for each platform where
+// we implement native accessibility APIs. This base class is used occasionally
+// for tests.
 //
 ////////////////////////////////////////////////////////////////////////////////
 class CONTENT_EXPORT BrowserAccessibility {
@@ -65,7 +67,7 @@ class CONTENT_EXPORT BrowserAccessibility {
   virtual bool IsNative() const;
 
   // Called when the location changed.
-  virtual void OnLocationChanged() const {}
+  virtual void OnLocationChanged() {}
 
   // Return true if this object is equal to or a descendant of |ancestor|.
   bool IsDescendantOf(BrowserAccessibility* ancestor);
@@ -159,7 +161,7 @@ class CONTENT_EXPORT BrowserAccessibility {
   int32 GetRole() const;
   int32 GetState() const;
 
-  typedef std::vector<std::pair<std::string, std::string> > HtmlAttributes;
+  typedef base::StringPairs HtmlAttributes;
   const HtmlAttributes& GetHtmlAttributes() const;
 
 #if defined(OS_MACOSX) && __OBJC__
@@ -262,7 +264,6 @@ class CONTENT_EXPORT BrowserAccessibility {
   std::string name_;
   std::string value_;
 
- private:
   DISALLOW_COPY_AND_ASSIGN(BrowserAccessibility);
 };
 

@@ -25,15 +25,15 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/constants.h"
 
 #include <string>
 
-#include "talk/base/basicdefs.h"
-#include "talk/xmllite/xmlconstants.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmllite/qname.h"
-#include "talk/xmpp/jid.h"
+#include "webrtc/libjingle/xmllite/qname.h"
+#include "webrtc/libjingle/xmllite/xmlconstants.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/jid.h"
+#include "webrtc/base/basicdefs.h"
 
 namespace buzz {
 

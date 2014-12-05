@@ -30,12 +30,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.NetworkManager = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.NetworkManager, target);
     this._dispatcher = new WebInspector.NetworkDispatcher(this);
     this._target = target;
     this._networkAgent = target.networkAgent();
@@ -81,6 +81,7 @@ WebInspector.NetworkManager._MIMETypes = {
     "font/opentype":               {"font": true},
     "application/octet-stream":    {"font": true, "image": true},
     "application/font-woff":       {"font": true},
+    "application/font-woff2":      {"font": true},
     "application/x-font-woff":     {"font": true},
     "application/x-font-type1":    {"font": true},
     "application/x-font-ttf":      {"font": true},
@@ -130,7 +131,12 @@ WebInspector.NetworkManager.prototype = {
         this._networkAgent.setCacheDisabled(enabled);
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    dispose: function()
+    {
+        WebInspector.settings.cacheDisabled.removeChangeListener(this._cacheDisabledSettingChanged, this)
+    },
+
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -193,20 +199,22 @@ WebInspector.NetworkDispatcher.prototype = {
         }
 
         networkRequest.connectionReused = response.connectionReused;
-        networkRequest.connectionId = response.connectionId;
+        networkRequest.connectionId = String(response.connectionId);
         if (response.remoteIPAddress)
             networkRequest.setRemoteAddress(response.remoteIPAddress, response.remotePort || -1);
 
+        if (response.fromServiceWorker)
+            networkRequest.fetchedViaServiceWorker = true;
+
         if (response.fromDiskCache)
-            networkRequest.cached = true;
-        else
-            networkRequest.timing = response.timing;
+            networkRequest.setFromDiskCache();
+        networkRequest.timing = response.timing;
 
         if (!this._mimeTypeIsConsistentWithType(networkRequest)) {
             var consoleModel = this._manager._target.consoleModel;
             consoleModel.addMessage(new WebInspector.ConsoleMessage(consoleModel.target(), WebInspector.ConsoleMessage.MessageSource.Network,
                 WebInspector.ConsoleMessage.MessageLevel.Log,
-                WebInspector.UIString("Resource interpreted as %s but transferred with MIME type %s: \"%s\".", networkRequest.type.title(), networkRequest.mimeType, networkRequest.url),
+                WebInspector.UIString("Resource interpreted as %s but transferred with MIME type %s: \"%s\".", networkRequest.resourceType().title(), networkRequest.mimeType, networkRequest.url),
                 WebInspector.ConsoleMessage.MessageType.Log,
                 "",
                 0,
@@ -230,18 +238,19 @@ WebInspector.NetworkDispatcher.prototype = {
         if (networkRequest.hasErrorStatusCode() || networkRequest.statusCode === 304 || networkRequest.statusCode === 204)
             return true;
 
-        if (typeof networkRequest.type === "undefined"
-            || networkRequest.type === WebInspector.resourceTypes.Other
-            || networkRequest.type === WebInspector.resourceTypes.Media
-            || networkRequest.type === WebInspector.resourceTypes.XHR
-            || networkRequest.type === WebInspector.resourceTypes.WebSocket)
+        var resourceType = networkRequest.resourceType();
+        if (resourceType === undefined
+            || resourceType === WebInspector.resourceTypes.Other
+            || resourceType === WebInspector.resourceTypes.Media
+            || resourceType === WebInspector.resourceTypes.XHR
+            || resourceType === WebInspector.resourceTypes.WebSocket)
             return true;
 
         if (!networkRequest.mimeType)
             return true; // Might be not known for cached resources with null responses.
 
         if (networkRequest.mimeType in WebInspector.NetworkManager._MIMETypes)
-            return networkRequest.type.name() in WebInspector.NetworkManager._MIMETypes[networkRequest.mimeType];
+            return resourceType.name() in WebInspector.NetworkManager._MIMETypes[networkRequest.mimeType];
 
         return false;
     },
@@ -255,8 +264,9 @@ WebInspector.NetworkDispatcher.prototype = {
      * @param {!NetworkAgent.Timestamp} time
      * @param {!NetworkAgent.Initiator} initiator
      * @param {!NetworkAgent.Response=} redirectResponse
+     * @param {!PageAgent.ResourceType=} resourceType
      */
-    requestWillBeSent: function(requestId, frameId, loaderId, documentURL, request, time, initiator, redirectResponse)
+    requestWillBeSent: function(requestId, frameId, loaderId, documentURL, request, time, initiator, redirectResponse, resourceType)
     {
         var networkRequest = this._inflightRequestsById[requestId];
         if (networkRequest) {
@@ -270,6 +280,7 @@ WebInspector.NetworkDispatcher.prototype = {
         networkRequest.hasNetworkData = true;
         this._updateNetworkRequestWithRequest(networkRequest, request);
         networkRequest.startTime = time;
+        networkRequest.setResourceType(WebInspector.resourceTypes[resourceType]);
 
         this._startNetworkRequest(networkRequest);
     },
@@ -283,7 +294,7 @@ WebInspector.NetworkDispatcher.prototype = {
         if (!networkRequest)
             return;
 
-        networkRequest.cached = true;
+        networkRequest.setFromMemoryCache();
     },
 
     /**
@@ -310,7 +321,7 @@ WebInspector.NetworkDispatcher.prototype = {
         }
 
         networkRequest.responseReceivedTime = time;
-        networkRequest.type = WebInspector.resourceTypes[resourceType];
+        networkRequest.setResourceType(WebInspector.resourceTypes[resourceType]);
 
         this._updateNetworkRequestWithResponse(networkRequest, response);
 
@@ -364,7 +375,7 @@ WebInspector.NetworkDispatcher.prototype = {
             return;
 
         networkRequest.failed = true;
-        networkRequest.type = WebInspector.resourceTypes[resourceType];
+        networkRequest.setResourceType(WebInspector.resourceTypes[resourceType]);
         networkRequest.canceled = canceled;
         networkRequest.localizedFailDescription = localizedDescription;
         this._finishNetworkRequest(networkRequest, time, -1);
@@ -376,8 +387,9 @@ WebInspector.NetworkDispatcher.prototype = {
      */
     webSocketCreated: function(requestId, requestURL)
     {
-        var networkRequest = new WebInspector.NetworkRequest(this._manager._target, requestId, requestURL, "", "", "");
-        networkRequest.type = WebInspector.resourceTypes.WebSocket;
+        // FIXME: WebSocket MUST have initiator info.
+        var networkRequest = new WebInspector.NetworkRequest(this._manager._target, requestId, requestURL, "", "", "", null);
+        networkRequest.setResourceType(WebInspector.resourceTypes.WebSocket);
         this._startNetworkRequest(networkRequest);
     },
 
@@ -496,13 +508,13 @@ WebInspector.NetworkDispatcher.prototype = {
     {
         var originalNetworkRequest = this._inflightRequestsById[requestId];
         var previousRedirects = originalNetworkRequest.redirects || [];
-        originalNetworkRequest.requestId = "redirected:" + requestId + "." + previousRedirects.length;
+        originalNetworkRequest.requestId = requestId + ":redirected." + previousRedirects.length;
         delete originalNetworkRequest.redirects;
         if (previousRedirects.length > 0)
             originalNetworkRequest.redirectSource = previousRedirects[previousRedirects.length - 1];
         this._finishNetworkRequest(originalNetworkRequest, time, -1);
         var newNetworkRequest = this._createNetworkRequest(requestId, originalNetworkRequest.frameId, originalNetworkRequest.loaderId,
-             redirectURL, originalNetworkRequest.documentURL, originalNetworkRequest.initiator);
+             redirectURL, originalNetworkRequest.documentURL, originalNetworkRequest.initiator());
         newNetworkRequest.redirects = previousRedirects.concat(originalNetworkRequest);
         return newNetworkRequest;
     },
@@ -556,17 +568,10 @@ WebInspector.NetworkDispatcher.prototype = {
      * @param {!NetworkAgent.LoaderId} loaderId
      * @param {string} url
      * @param {string} documentURL
-     * @param {!NetworkAgent.Initiator} initiator
+     * @param {?NetworkAgent.Initiator} initiator
      */
     _createNetworkRequest: function(requestId, frameId, loaderId, url, documentURL, initiator)
     {
-        var networkRequest = new WebInspector.NetworkRequest(this._manager._target, requestId, url, documentURL, frameId, loaderId);
-        networkRequest.initiator = initiator;
-        return networkRequest;
+        return new WebInspector.NetworkRequest(this._manager._target, requestId, url, documentURL, frameId, loaderId, initiator);
     }
 }
-
-/**
- * @type {!WebInspector.NetworkManager}
- */
-WebInspector.networkManager;

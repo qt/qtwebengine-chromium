@@ -26,10 +26,9 @@
 #include "config.h"
 #include "core/accessibility/AXMockObject.h"
 
-namespace WebCore {
+namespace blink {
 
 AXMockObject::AXMockObject()
-    : m_parent(0)
 {
 }
 

@@ -22,27 +22,27 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderTable;
 
-class RenderTableCaption FINAL : public RenderBlockFlow {
+class RenderTableCaption final : public RenderBlockFlow {
 public:
     explicit RenderTableCaption(Element*);
     virtual ~RenderTableCaption();
-    virtual LayoutUnit containingBlockLogicalWidthForContent() const OVERRIDE;
+    virtual LayoutUnit containingBlockLogicalWidthForContent() const override;
 
 private:
-    virtual bool isTableCaption() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectTableCaption || RenderBlockFlow::isOfType(type); }
 
-    virtual void insertedIntoTree() OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
+    virtual void insertedIntoTree() override;
+    virtual void willBeRemovedFromTree() override;
 
     RenderTable* table() const;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTableCaption, isTableCaption());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTableCaption_h

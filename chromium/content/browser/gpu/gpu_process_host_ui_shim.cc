@@ -11,18 +11,24 @@
 #include "base/id_map.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/browser/gpu/gpu_surface_tracker.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
+#include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/public/browser/browser_thread.h"
 
+#if defined(OS_MACOSX)
+#include "content/browser/compositor/browser_compositor_ca_layer_tree_mac.h"
+#endif
+
 #if defined(USE_OZONE)
-#include "ui/ozone/ozone_platform.h"
 #include "ui/ozone/public/gpu_platform_support_host.h"
+#include "ui/ozone/public/ozone_platform.h"
 #endif
 
 namespace content {
@@ -198,46 +204,19 @@ bool GpuProcessHostUIShim::OnControlMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(GpuProcessHostUIShim, message)
     IPC_MESSAGE_HANDLER(GpuHostMsg_OnLogMessage,
                         OnLogMessage)
-
     IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceInitialized,
                         OnAcceleratedSurfaceInitialized)
     IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
                         OnAcceleratedSurfaceBuffersSwapped)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfacePostSubBuffer,
-                        OnAcceleratedSurfacePostSubBuffer)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceSuspend,
-                        OnAcceleratedSurfaceSuspend)
     IPC_MESSAGE_HANDLER(GpuHostMsg_GraphicsInfoCollected,
                         OnGraphicsInfoCollected)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceRelease,
-                        OnAcceleratedSurfaceRelease)
     IPC_MESSAGE_HANDLER(GpuHostMsg_VideoMemoryUsageStats,
                         OnVideoMemoryUsageStatsReceived);
-    IPC_MESSAGE_HANDLER(GpuHostMsg_UpdateVSyncParameters,
-                        OnUpdateVSyncParameters)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_FrameDrawn, OnFrameDrawn)
 
     IPC_MESSAGE_UNHANDLED_ERROR()
   IPC_END_MESSAGE_MAP()
 
   return true;
-}
-
-void GpuProcessHostUIShim::OnUpdateVSyncParameters(int surface_id,
-                                                   base::TimeTicks timebase,
-                                                   base::TimeDelta interval) {
-
-  int render_process_id = 0;
-  int render_widget_id = 0;
-  if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
-      surface_id, &render_process_id, &render_widget_id)) {
-    return;
-  }
-  RenderWidgetHost* rwh =
-      RenderWidgetHost::FromID(render_process_id, render_widget_id);
-  if (!rwh)
-    return;
-  RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
 }
 
 void GpuProcessHostUIShim::OnLogMessage(
@@ -263,104 +242,38 @@ void GpuProcessHostUIShim::OnAcceleratedSurfaceInitialized(int32 surface_id,
       GetRenderWidgetHostViewFromSurfaceID(surface_id);
   if (!view)
     return;
-  view->AcceleratedSurfaceInitialized(host_id_, route_id);
+  view->AcceleratedSurfaceInitialized(route_id);
 }
 
 void GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
+#if defined(OS_MACOSX)
   TRACE_EVENT0("renderer",
       "GpuProcessHostUIShim::OnAcceleratedSurfaceBuffersSwapped");
   if (!ui::LatencyInfo::Verify(params.latency_info,
-                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
+                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped")) {
     return;
+  }
+
+  // On Mac with delegated rendering, accelerated surfaces are not necessarily
+  // associated with a RenderWidgetHostViewBase.
   AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox = params.mailbox;
-  ack_params.sync_point = 0;
-  ScopedSendOnIOThread delayed_send(
-      host_id_,
-      new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
-                                                ack_params));
-
-  RenderWidgetHostViewBase* view = GetRenderWidgetHostViewFromSurfaceID(
-      params.surface_id);
-  if (!view)
-    return;
-
-  delayed_send.Cancel();
-
-  GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params view_params = params;
-
-  RenderWidgetHostImpl* impl =
-      RenderWidgetHostImpl::From(view->GetRenderWidgetHost());
-  for (size_t i = 0; i < view_params.latency_info.size(); i++)
-    impl->AddLatencyInfoComponentIds(&view_params.latency_info[i]);
-
-  // View must send ACK message after next composite.
-  view->AcceleratedSurfaceBuffersSwapped(view_params, host_id_);
-  view->DidReceiveRendererFrame();
-}
-
-void GpuProcessHostUIShim::OnFrameDrawn(
-    const std::vector<ui::LatencyInfo>& latency_info) {
-  if (!ui::LatencyInfo::Verify(latency_info,
-                               "GpuProcessHostUIShim::OnFrameDrawn"))
-    return;
-  RenderWidgetHostImpl::CompositorFrameDrawn(latency_info);
-}
-
-void GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params) {
-  TRACE_EVENT0("renderer",
-      "GpuProcessHostUIShim::OnAcceleratedSurfacePostSubBuffer");
-  if (!ui::LatencyInfo::Verify(params.latency_info,
-                               "GpuHostMsg_AcceleratedSurfacePostSubBuffer"))
-    return;
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox = params.mailbox;
-  ack_params.sync_point = 0;
-  ScopedSendOnIOThread delayed_send(
-      host_id_,
-      new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
-                                                ack_params));
-
-  RenderWidgetHostViewBase* view =
-      GetRenderWidgetHostViewFromSurfaceID(params.surface_id);
-  if (!view)
-    return;
-
-  delayed_send.Cancel();
-
-  GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params view_params = params;
-
-  RenderWidgetHostImpl* impl =
-      RenderWidgetHostImpl::From(view->GetRenderWidgetHost());
-  for (size_t i = 0; i < view_params.latency_info.size(); i++)
-    impl->AddLatencyInfoComponentIds(&view_params.latency_info[i]);
-
-  // View must send ACK message after next composite.
-  view->AcceleratedSurfacePostSubBuffer(view_params, host_id_);
-  view->DidReceiveRendererFrame();
-}
-
-void GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend(int32 surface_id) {
-  TRACE_EVENT0("renderer",
-      "GpuProcessHostUIShim::OnAcceleratedSurfaceSuspend");
-
-  RenderWidgetHostViewBase* view =
-      GetRenderWidgetHostViewFromSurfaceID(surface_id);
-  if (!view)
-    return;
-
-  view->AcceleratedSurfaceSuspend();
-}
-
-void GpuProcessHostUIShim::OnAcceleratedSurfaceRelease(
-    const GpuHostMsg_AcceleratedSurfaceRelease_Params& params) {
-  RenderWidgetHostViewBase* view = GetRenderWidgetHostViewFromSurfaceID(
-      params.surface_id);
-  if (!view)
-    return;
-  view->AcceleratedSurfaceRelease();
+  DCHECK(IsDelegatedRendererEnabled());
+  gfx::AcceleratedWidget native_widget =
+      content::GpuSurfaceTracker::Get()->AcquireNativeWidget(params.surface_id);
+  BrowserCompositorCALayerTreeMacGotAcceleratedFrame(
+      native_widget,
+      params.surface_handle,
+      params.surface_id,
+      params.latency_info,
+      params.size,
+      params.scale_factor,
+      &ack_params.disable_throttling,
+      &ack_params.renderer_id);
+  Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id, ack_params));
+#else
+  NOTREACHED();
+#endif
 }
 
 void GpuProcessHostUIShim::OnVideoMemoryUsageStatsReceived(

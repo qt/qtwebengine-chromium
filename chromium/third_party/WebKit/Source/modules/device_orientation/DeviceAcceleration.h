@@ -26,18 +26,18 @@
 #ifndef DeviceAcceleration_h
 #define DeviceAcceleration_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class DeviceAcceleration : public RefCountedWillBeGarbageCollectedFinalized<DeviceAcceleration>, public ScriptWrappable {
+class DeviceAcceleration final : public GarbageCollected<DeviceAcceleration>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DeviceAcceleration> create(PassRefPtrWillBeRawPtr<DeviceMotionData::Acceleration> acceleration)
+    static DeviceAcceleration* create(DeviceMotionData::Acceleration* acceleration)
     {
-        return adoptRefWillBeNoop(new DeviceAcceleration(acceleration));
+        return new DeviceAcceleration(acceleration);
     }
     void trace(Visitor*);
 
@@ -46,11 +46,11 @@ public:
     double z(bool& isNull) const;
 
 private:
-    DeviceAcceleration(PassRefPtrWillBeRawPtr<DeviceMotionData::Acceleration>);
+    explicit DeviceAcceleration(DeviceMotionData::Acceleration*);
 
-    RefPtrWillBeMember<DeviceMotionData::Acceleration> m_acceleration;
+    Member<DeviceMotionData::Acceleration> m_acceleration;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceAcceleration_h

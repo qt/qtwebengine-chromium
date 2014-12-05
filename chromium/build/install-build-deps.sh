@@ -12,7 +12,6 @@ usage() {
   echo "Usage: $0 [--options]"
   echo "Options:"
   echo "--[no-]syms: enable or disable installation of debugging symbols"
-  echo "--[no-]lib32: enable or disable installation of 32 bit libraries"
   echo "--[no-]arm: enable or disable installation of arm cross toolchain"
   echo "--[no-]chromeos-fonts: enable or disable installation of Chrome OS"\
        "fonts"
@@ -45,6 +44,7 @@ do
   case "$1" in
   --syms)                   do_inst_syms=1;;
   --no-syms)                do_inst_syms=0;;
+  # TODO(phajdan.jr): Remove the lib32 flags when nothing else refers to them.
   --lib32)                  do_inst_lib32=1;;
   --no-lib32)               do_inst_lib32=0;;
   --arm)                    do_inst_arm=1;;
@@ -91,27 +91,27 @@ if [ "x$(id -u)" != x0 ] && [ 0 -eq "${do_quick_check-0}" ]; then
 fi
 
 # Packages needed for chromeos only
-chromeos_dev_list="libbluetooth-dev"
+chromeos_dev_list="libbluetooth-dev libxkbcommon-dev"
 
 # Packages needed for development
-dev_list="apache2.2-bin bison curl dpkg-dev elfutils devscripts fakeroot flex
-          fonts-thai-tlwg g++ git-core gperf language-pack-da language-pack-fr
-          language-pack-he language-pack-zh-hant libapache2-mod-php5
-          libasound2-dev libbrlapi-dev libbz2-dev libcairo2-dev libcap-dev
-          libcups2-dev libcurl4-gnutls-dev libdrm-dev libelf-dev libexif-dev
-          libgconf2-dev libgl1-mesa-dev libglib2.0-dev libglu1-mesa-dev
-          libgnome-keyring-dev libgtk2.0-dev libkrb5-dev libnspr4-dev
-          libnss3-dev libpam0g-dev libpci-dev libpulse-dev libsctp-dev
-          libspeechd-dev libsqlite3-dev libssl-dev libudev-dev libwww-perl
-          libxslt1-dev libxss-dev libxt-dev libxtst-dev mesa-common-dev openbox
-          patch perl php5-cgi pkg-config python python-cherrypy3 python-dev
+dev_list="apache2.2-bin bison cdbs curl dpkg-dev elfutils devscripts fakeroot
+          flex fonts-thai-tlwg g++ git-core git-svn gperf language-pack-da
+          language-pack-fr language-pack-he language-pack-zh-hant
+          libapache2-mod-php5 libasound2-dev libbrlapi-dev libav-tools
+          libbz2-dev libcairo2-dev libcap-dev libcups2-dev libcurl4-gnutls-dev
+          libdrm-dev libelf-dev libexif-dev libgconf2-dev libgl1-mesa-dev
+          libglib2.0-dev libglu1-mesa-dev libgnome-keyring-dev libgtk2.0-dev
+          libkrb5-dev libnspr4-dev libnss3-dev libpam0g-dev libpci-dev
+          libpulse-dev libsctp-dev libspeechd-dev libsqlite3-dev libssl-dev
+          libudev-dev libwww-perl libxslt1-dev libxss-dev libxt-dev libxtst-dev
+          mesa-common-dev openbox patch perl php5-cgi pkg-config python
+          python-cherrypy3 python-crypto python-dev python-opencv python-openssl
           python-psutil rpm ruby subversion ttf-dejavu-core ttf-indic-fonts
           ttf-kochi-gothic ttf-kochi-mincho wdiff xfonts-mathml zip
           $chromeos_dev_list"
 
 # 64-bit systems need a minimum set of 32-bit compat packages for the pre-built
-# NaCl binaries. These are always needed, regardless of whether or not we want
-# the full 32-bit "cross-compile" support (--lib32).
+# NaCl binaries.
 if file /sbin/init | grep -q 'ELF 64-bit'; then
   dev_list="${dev_list} libc6-i386 lib32gcc1 lib32stdc++6"
 fi
@@ -140,28 +140,33 @@ dbg_list="libatk1.0-dbg libc6-dbg libcairo2-dbg libfontconfig1-dbg
 # arm cross toolchain packages needed to build chrome on armhf
 arm_list="libc6-dev-armhf-cross
           linux-libc-dev-armhf-cross
-          g++-arm-linux-gnueabihf"
+          g++-arm-linux-gnueabihf
+          linux-libc-dev:i386"
 
 # Packages to build NaCl, its toolchains, and its ports.
-nacl_list="autoconf bison cmake g++-mingw-w64-i686 gawk lib32z1-dev
+naclports_list="ant autoconf bison cmake gawk intltool xutils-dev xsltproc"
+nacl_list="g++-mingw-w64-i686 lib32z1-dev
            libasound2:i386 libcap2:i386 libelf-dev:i386 libexif12:i386
            libfontconfig1:i386 libgconf-2-4:i386 libglib2.0-0:i386 libgpm2:i386
-           libgtk2.0-0:i386 libncurses5:i386 libnss3:i386 libpango1.0-0:i386
+           libgtk2.0-0:i386 libncurses5:i386 lib32ncurses5-dev
+           libnss3:i386 libpango1.0-0:i386
            libssl0.9.8:i386 libtinfo-dev libtinfo-dev:i386 libtool
            libxcomposite1:i386 libxcursor1:i386 libxdamage1:i386 libxi6:i386
-           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb"
+           libxrandr2:i386 libxss1:i386 libxtst6:i386 texinfo xvfb
+           ${naclports_list}"
 
 # Find the proper version of libgbm-dev. We can't just install libgbm-dev as
 # it depends on mesa, and only one version of mesa can exists on the system.
 # Hence we must match the same version or this entire script will fail.
 mesa_variant=""
-for variant in "-lts-quantal" "-lts-raring" "-lts-saucy"; do
-  if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} | \
+for variant in "-lts-quantal" "-lts-raring" "-lts-saucy" "-lts-trusty"; do
+  if $(dpkg-query -Wf'${Status}' libgl1-mesa-glx${variant} 2>/dev/null | \
        grep -q " ok installed"); then
     mesa_variant="${variant}"
   fi
 done
-dev_list="${dev_list} libgbm-dev${mesa_variant}"
+dev_list="${dev_list} libgbm-dev${mesa_variant}
+          libgles2-mesa-dev${mesa_variant}"
 nacl_list="${nacl_list} libgl1-mesa-glx${mesa_variant}:i386"
 
 # Some package names have changed over time
@@ -402,217 +407,4 @@ if test "$do_inst_nacl" = "1"; then
   fi
 else
   echo "Skipping symbolic links for NaCl."
-fi
-
-# Install 32bit backwards compatibility support for 64bit systems
-if file /sbin/init | grep -q 'ELF 64-bit'; then
-  if test "$do_inst_lib32" != "1"
-  then
-    echo "NOTE: If you were expecting the option to install 32bit libs,"
-    echo "please run with the --lib32 flag."
-    echo
-    echo "Installation complete."
-    exit 0
-  else
-    # This conditional statement has been added to deprecate and eventually
-    # remove support for 32bit libraries on 64bit systems. But for the time
-    # being, we still have to support a few legacy systems (e.g. bots), where
-    # this feature is needed.
-    # We only even give the user the option to install these libraries, if
-    # they explicitly requested doing so by setting the --lib32 command line
-    # flag.
-    # And even then, we interactively ask them one more time whether they are
-    # absolutely sure.
-    # In order for that to work, we must reset the ${do_inst_lib32} variable.
-    # There are other ways to achieve the same goal. But resetting the
-    # variable is the best way to document the intended behavior -- and to
-    # allow us to gradually deprecate and then remove the obsolete code.
-    if test "${do_default-0}" -ne 1; then
-      do_inst_lib32=
-    fi
-  fi
-
-  echo "WARNING"
-  echo
-  echo "We no longer recommend that you use this script to install"
-  echo "32bit libraries on a 64bit system. Instead, consider using the"
-  echo "install-chroot.sh script to help you set up a 32bit environment"
-  echo "for building and testing 32bit versions of Chrome."
-  echo
-  echo "The code for installing 32bit libraries on a 64bit system is"
-  echo "unmaintained and might not work with modern versions of Ubuntu"
-  echo "or Debian."
-  if test "$do_inst_lib32" != "" ; then
-    echo
-    echo -n "Are you sure you want to proceed (y/N) "
-    if yes_no 1; then
-      do_inst_lib32=1
-    fi
-  fi
-  if test "$do_inst_lib32" != "1"
-  then
-    exit 0
-  fi
-
-  # Standard 32bit compatibility libraries
-  echo "First, installing the limited existing 32-bit support..."
-  cmp_list="ia32-libs lib32asound2-dev lib32stdc++6 lib32z1
-            lib32z1-dev libc6-dev-i386 libc6-i386 g++-multilib"
-  if [ -n "`apt-cache search lib32readline-gplv2-dev 2>/dev/null`" ]; then
-    cmp_list="${cmp_list} lib32readline-gplv2-dev"
-  else
-    cmp_list="${cmp_list} lib32readline5-dev"
-  fi
-  sudo apt-get install ${do_quietly-} $cmp_list
-
-  tmp=/tmp/install-32bit.$$
-  trap 'rm -rf "${tmp}"' EXIT INT TERM QUIT
-  mkdir -p "${tmp}/apt/lists/partial" "${tmp}/cache" "${tmp}/partial"
-  touch "${tmp}/status"
-
-  [ -r /etc/apt/apt.conf ] && cp /etc/apt/apt.conf "${tmp}/apt/"
-  cat >>"${tmp}/apt/apt.conf" <<EOF
-        Apt::Architecture "i386";
-        Dir::Cache "${tmp}/cache";
-        Dir::Cache::Archives "${tmp}/";
-        Dir::State::Lists "${tmp}/apt/lists/";
-        Dir::State::status "${tmp}/status";
-EOF
-
-  # Download 32bit packages
-  echo "Computing list of available 32bit packages..."
-  sudo apt-get -c="${tmp}/apt/apt.conf" update
-
-  echo "Downloading available 32bit packages..."
-  sudo apt-get -c="${tmp}/apt/apt.conf" \
-          --yes --download-only --force-yes --reinstall install \
-          ${lib_list} ${dbg_list}
-
-  # Open packages, remove everything that is not a library, move the
-  # library to a lib32 directory and package everything as a *.deb file.
-  echo "Repackaging and installing 32bit packages for use on 64bit systems..."
-  for i in ${lib_list} ${dbg_list}; do
-    orig="$(echo "${tmp}/${i}"_*_i386.deb)"
-    compat="$(echo "${orig}" |
-              sed -e 's,\(_[^_/]*_\)i386\(.deb\),-ia32\1amd64\2,')"
-    rm -rf "${tmp}/staging"
-    msg="$(fakeroot -u sh -exc '
-      # Unpack 32bit Debian archive
-      umask 022
-      mkdir -p "'"${tmp}"'/staging/dpkg/DEBIAN"
-      cd "'"${tmp}"'/staging"
-      ar x "'${orig}'"
-      tar Cfx dpkg data.tar*
-      tar zCfx dpkg/DEBIAN control.tar.gz
-
-      # Create a posix extended regular expression fragment that will
-      # recognize the includes which have changed. Should be rare,
-      # will almost always be empty.
-      includes=`sed -n -e "s/^[0-9a-z]*  //g" \
-                       -e "\,usr/include/,p" dpkg/DEBIAN/md5sums |
-                  xargs -n 1 -I FILE /bin/sh -c \
-                    "cmp -s dpkg/FILE /FILE || echo FILE" |
-                  tr "\n" "|" |
-                  sed -e "s,|$,,"`
-
-      # If empty, set it to not match anything.
-      test -z "$includes" && includes="^//"
-
-      # Turn the conflicts into an extended RE for removal from the
-      # Provides line.
-      conflicts=`sed -n -e "/Conflicts/s/Conflicts: *//;T;s/, */|/g;p" \
-                   dpkg/DEBIAN/control`
-
-      # Rename package, change architecture, remove conflicts and dependencies
-      sed -r -i                              \
-          -e "/Package/s/$/-ia32/"           \
-          -e "/Architecture/s/:.*$/: amd64/" \
-          -e "/Depends/s/:.*/: ia32-libs/"   \
-          -e "/Provides/s/($conflicts)(, *)?//g;T1;s/, *$//;:1"   \
-          -e "/Recommends/d"                 \
-          -e "/Conflicts/d"                  \
-        dpkg/DEBIAN/control
-
-      # Only keep files that live in "lib" directories or the includes
-      # that have changed.
-      sed -r -i                                                               \
-          -e "/\/lib64\//d" -e "/\/.?bin\//d"                                 \
-          -e "\,$includes,s,[ /]include/,&32/,g;s,include/32/,include32/,g"   \
-          -e "s, lib/, lib32/,g"                                              \
-          -e "s,/lib/,/lib32/,g"                                              \
-          -e "t;d"                                                            \
-          -e "\,^/usr/lib32/debug\(.*/lib32\),s,^/usr/lib32/debug,/usr/lib/debug," \
-        dpkg/DEBIAN/md5sums
-
-      # Re-run ldconfig after installation/removal
-      { echo "#!/bin/sh"; echo "[ \"x\$1\" = xconfigure ]&&ldconfig||:"; } \
-        >dpkg/DEBIAN/postinst
-      { echo "#!/bin/sh"; echo "[ \"x\$1\" = xremove ]&&ldconfig||:"; } \
-        >dpkg/DEBIAN/postrm
-      chmod 755 dpkg/DEBIAN/postinst dpkg/DEBIAN/postrm
-
-      # Remove any other control files
-      find dpkg/DEBIAN -mindepth 1 "(" -name control -o -name md5sums -o \
-                       -name postinst -o -name postrm ")" -o -print |
-        xargs -r rm -rf
-
-      # Remove any files/dirs that live outside of "lib" directories,
-      # or are not in our list of changed includes.
-      find dpkg -mindepth 1 -regextype posix-extended \
-          "(" -name DEBIAN -o -name lib -o -regex "dpkg/($includes)" ")" \
-          -prune -o -print | tac |
-        xargs -r -n 1 sh -c "rm \$0 2>/dev/null || rmdir \$0 2>/dev/null || : "
-      find dpkg -name lib64 -o -name bin -o -name "?bin" |
-        tac | xargs -r rm -rf
-
-      # Remove any symbolic links that were broken by the above steps.
-      find -L dpkg -type l -print | tac | xargs -r rm -rf
-
-      # Rename lib to lib32, but keep debug symbols in /usr/lib/debug/usr/lib32
-      # That is where gdb looks for them.
-      find dpkg -type d -o -path "*/lib/*" -print |
-        xargs -r -n 1 sh -c "
-          i=\$(echo \"\${0}\" |
-               sed -e s,/lib/,/lib32/,g \
-               -e s,/usr/lib32/debug\\\\\(.*/lib32\\\\\),/usr/lib/debug\\\\1,);
-          mkdir -p \"\${i%/*}\";
-          mv \"\${0}\" \"\${i}\""
-
-      # Rename include to include32.
-      [ -d "dpkg/usr/include" ] && mv "dpkg/usr/include" "dpkg/usr/include32"
-
-      # Prune any empty directories
-      find dpkg -type d | tac | xargs -r -n 1 rmdir 2>/dev/null || :
-
-      # Create our own Debian package
-      cd ..
-      dpkg --build staging/dpkg .' 2>&1)"
-    compat="$(eval echo $(echo "${compat}" |
-                          sed -e 's,_[^_/]*_amd64.deb,_*_amd64.deb,'))"
-    [ -r "${compat}" ] || {
-      echo "${msg}" >&2
-      echo "Failed to build new Debian archive!" >&2
-      exit 1
-    }
-
-    msg="$(sudo dpkg -i "${compat}" 2>&1)" && {
-        echo "Installed ${compat##*/}"
-      } || {
-        # echo "${msg}" >&2
-        echo "Skipped ${compat##*/}"
-      }
-  done
-
-  # Add symbolic links for developing 32bit code
-  echo "Adding missing symbolic links, enabling 32bit code development..."
-  for i in $(find /lib32 /usr/lib32 -maxdepth 1 -name \*.so.\* |
-             sed -e 's/[.]so[.][0-9].*/.so/' |
-             sort -u); do
-    [ "x${i##*/}" = "xld-linux.so" ] && continue
-    [ -r "$i" ] && continue
-    j="$(ls "$i."* | sed -e 's/.*[.]so[.]\([^.]*\)$/\1/;t;d' |
-         sort -n | tail -n 1)"
-    [ -r "$i.$j" ] || continue
-    sudo ln -s "${i##*/}.$j" "$i"
-  done
 fi

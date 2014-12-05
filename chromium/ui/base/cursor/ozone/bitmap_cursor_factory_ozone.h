@@ -20,18 +20,25 @@ namespace ui {
 class UI_BASE_EXPORT BitmapCursorOzone
     : public base::RefCounted<BitmapCursorOzone> {
  public:
-  BitmapCursorOzone(const SkBitmap& bitmap, const gfx::Point& hotspot)
-      : bitmap_(bitmap), hotspot_(hotspot) {}
+  BitmapCursorOzone(const SkBitmap& bitmap, const gfx::Point& hotspot);
+  BitmapCursorOzone(const std::vector<SkBitmap>& bitmaps,
+                    const gfx::Point& hotspot,
+                    int frame_delay_ms);
 
-  const gfx::Point& hotspot() { return hotspot_; }
-  const SkBitmap& bitmap() { return bitmap_; }
+  const gfx::Point& hotspot();
+  const SkBitmap& bitmap();
+
+  // For animated cursors.
+  const std::vector<SkBitmap>& bitmaps();
+  int frame_delay_ms();
 
  private:
   friend class base::RefCounted<BitmapCursorOzone>;
-  ~BitmapCursorOzone() {}
+  ~BitmapCursorOzone();
 
-  SkBitmap bitmap_;
+  std::vector<SkBitmap> bitmaps_;
   gfx::Point hotspot_;
+  int frame_delay_ms_;
 
   DISALLOW_COPY_AND_ASSIGN(BitmapCursorOzone);
 };
@@ -48,21 +55,25 @@ class UI_BASE_EXPORT BitmapCursorFactoryOzone : public CursorFactoryOzone {
   BitmapCursorFactoryOzone();
   virtual ~BitmapCursorFactoryOzone();
 
-  // CursorFactoryOzone:
-  virtual PlatformCursor GetDefaultCursor(int type) OVERRIDE;
-  virtual PlatformCursor CreateImageCursor(const SkBitmap& bitmap,
-                                           const gfx::Point& hotspot) OVERRIDE;
-  virtual void RefImageCursor(PlatformCursor cursor) OVERRIDE;
-  virtual void UnrefImageCursor(PlatformCursor cursor) OVERRIDE;
-  virtual void SetCursor(gfx::AcceleratedWidget widget,
-                         PlatformCursor cursor) OVERRIDE;
+  // Convert PlatformCursor to BitmapCursorOzone.
+  static scoped_refptr<BitmapCursorOzone> GetBitmapCursor(
+      PlatformCursor platform_cursor);
 
-  // Set a bitmap cursor for the given window. This must be overridden by
-  // subclasses. If the cursor is hidden (kCursorNone) then cursor is NULL.
-  virtual void SetBitmapCursor(gfx::AcceleratedWidget window,
-                               scoped_refptr<BitmapCursorOzone> cursor);
+  // CursorFactoryOzone:
+  virtual PlatformCursor GetDefaultCursor(int type) override;
+  virtual PlatformCursor CreateImageCursor(const SkBitmap& bitmap,
+                                           const gfx::Point& hotspot) override;
+  virtual PlatformCursor CreateAnimatedCursor(
+      const std::vector<SkBitmap>& bitmaps,
+      const gfx::Point& hotspot,
+      int frame_delay_ms) override;
+  virtual void RefImageCursor(PlatformCursor cursor) override;
+  virtual void UnrefImageCursor(PlatformCursor cursor) override;
 
  private:
+  // Get cached BitmapCursorOzone for a default cursor.
+  scoped_refptr<BitmapCursorOzone> GetDefaultCursorInternal(int type);
+
   // Default cursors are cached & owned by the factory.
   typedef std::map<int, scoped_refptr<BitmapCursorOzone> > DefaultCursorMap;
   DefaultCursorMap default_cursors_;

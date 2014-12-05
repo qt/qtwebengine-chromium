@@ -29,9 +29,9 @@
 #include "core/html/HTMLDivElement.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class ClearButtonElement FINAL : public HTMLDivElement {
+class ClearButtonElement final : public HTMLDivElement {
 public:
     class ClearButtonOwner : public WillBeGarbageCollectedMixin {
     public:
@@ -42,20 +42,18 @@ public:
     };
 
     static PassRefPtrWillBeRawPtr<ClearButtonElement> create(Document&, ClearButtonOwner&);
-    void releaseCapture();
     void removeClearButtonOwner() { m_clearButtonOwner = nullptr; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     ClearButtonElement(Document&, ClearButtonOwner&);
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool isMouseFocusable() const OVERRIDE { return false; }
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual bool isClearButtonElement() const OVERRIDE;
+    virtual void detach(const AttachContext& = AttachContext()) override;
+    virtual bool isMouseFocusable() const override { return false; }
+    virtual void defaultEventHandler(Event*) override;
+    virtual bool isClearButtonElement() const override;
 
     RawPtrWillBeMember<ClearButtonOwner> m_clearButtonOwner;
-    bool m_capturing;
 };
 
 DEFINE_TYPE_CASTS(ClearButtonElement, Element, element, element->isClearButtonElement(), element.isClearButtonElement());

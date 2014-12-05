@@ -28,11 +28,12 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class EditingStyle;
+class HTMLTableRowElement;
 
-class DeleteSelectionCommand FINAL : public CompositeEditCommand {
+class DeleteSelectionCommand final : public CompositeEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<DeleteSelectionCommand> create(Document& document, bool smartDelete = false, bool mergeBlocksAfterDelete = true, bool expandForSpecialElements = false, bool sanitizeMarkup = true)
     {
@@ -43,16 +44,16 @@ public:
         return adoptRefWillBeNoop(new DeleteSelectionCommand(selection, smartDelete, mergeBlocksAfterDelete, expandForSpecialElements, sanitizeMarkup));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     DeleteSelectionCommand(Document&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool santizeMarkup);
     DeleteSelectionCommand(const VisibleSelection&, bool smartDelete, bool mergeBlocksAfterDelete, bool expandForSpecialElements, bool sanitizeMarkup);
 
-    virtual void doApply() OVERRIDE;
-    virtual EditAction editingAction() const OVERRIDE;
+    virtual void doApply() override;
+    virtual EditAction editingAction() const override;
 
-    virtual bool preservesTypingStyle() const OVERRIDE;
+    virtual bool preservesTypingStyle() const override;
 
     void initializeStartEnd(Position&, Position&);
     void setStartingSelectionOnSmartDelete(const Position&, const Position&);
@@ -66,8 +67,8 @@ private:
     void calculateTypingStyleAfterDelete();
     void clearTransientState();
     void makeStylingElementsDirectChildrenOfEditableRootToPreventStyleLoss();
-    virtual void removeNode(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable) OVERRIDE;
-    virtual void deleteTextFromNode(PassRefPtrWillBeRawPtr<Text>, unsigned, unsigned) OVERRIDE;
+    virtual void removeNode(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable = DoNotAssumeContentIsAlwaysEditable) override;
+    virtual void deleteTextFromNode(PassRefPtrWillBeRawPtr<Text>, unsigned, unsigned) override;
     void removeRedundantBlocks();
 
     bool m_hasSelectionToDelete;
@@ -92,13 +93,13 @@ private:
     RefPtrWillBeMember<Node> m_endBlock;
     RefPtrWillBeMember<EditingStyle> m_typingStyle;
     RefPtrWillBeMember<EditingStyle> m_deleteIntoBlockquoteStyle;
-    RefPtrWillBeMember<Node> m_startRoot;
-    RefPtrWillBeMember<Node> m_endRoot;
-    RefPtrWillBeMember<Node> m_startTableRow;
-    RefPtrWillBeMember<Node> m_endTableRow;
+    RefPtrWillBeMember<Element> m_startRoot;
+    RefPtrWillBeMember<Element> m_endRoot;
+    RefPtrWillBeMember<HTMLTableRowElement> m_startTableRow;
+    RefPtrWillBeMember<HTMLTableRowElement> m_endTableRow;
     RefPtrWillBeMember<Node> m_temporaryPlaceholder;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeleteSelectionCommand_h

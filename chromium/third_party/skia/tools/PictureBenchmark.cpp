@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "BenchTimer.h"
+#include "Timer.h"
 #include "PictureBenchmark.h"
 #include "SkCanvas.h"
 #include "SkPicture.h"
@@ -15,15 +15,14 @@
 namespace sk_tools {
 
 PictureBenchmark::PictureBenchmark()
-: fRepeats(1)
-, fRenderer(NULL)
-, fTimerResult(TimerData::kAvg_Result)
-, fTimerTypes(0)
-, fTimeIndividualTiles(false)
-, fPurgeDecodedTex(false)
-, fPreprocess(false)
-, fWriter(NULL)
-{}
+    : fRepeats(1)
+    , fRenderer(NULL)
+    , fTimerResult(TimerData::kAvg_Result)
+    , fTimerTypes(0)
+    , fTimeIndividualTiles(false)
+    , fPurgeDecodedTex(false)
+    , fWriter(NULL) {
+}
 
 PictureBenchmark::~PictureBenchmark() {
     SkSafeUnref(fRenderer);
@@ -42,13 +41,13 @@ void PictureBenchmark::setTimersToShow(bool wall,
     fTimerTypes |= gpu ? TimerData::kGpu_Flag : 0;
 }
 
-BenchTimer* PictureBenchmark::setupTimer(bool useGLTimer) {
+Timer* PictureBenchmark::setupTimer(bool useGLTimer) {
 #if SK_SUPPORT_GPU
     if (useGLTimer && fRenderer != NULL && fRenderer->isUsingGpuDevice()) {
-        return SkNEW_ARGS(BenchTimer, (fRenderer->getGLContext()));
+        return SkNEW_ARGS(Timer, (fRenderer->getGLContext()));
     }
 #endif
-    return SkNEW_ARGS(BenchTimer, (NULL));
+    return SkNEW_ARGS(Timer, (NULL));
 }
 
 PictureRenderer* PictureBenchmark::setRenderer(sk_tools::PictureRenderer* renderer) {
@@ -56,7 +55,7 @@ PictureRenderer* PictureBenchmark::setRenderer(sk_tools::PictureRenderer* render
     return renderer;
 }
 
-void PictureBenchmark::run(SkPicture* pict) {
+void PictureBenchmark::run(SkPicture* pict, bool useMultiPictureDraw) {
     SkASSERT(pict);
     if (NULL == pict) {
         return;
@@ -67,25 +66,13 @@ void PictureBenchmark::run(SkPicture* pict) {
         return;
     }
 
-    fRenderer->init(pict, NULL, NULL, NULL, false);
+    fRenderer->init(pict, NULL, NULL, NULL, false, useMultiPictureDraw);
 
     // We throw this away to remove first time effects (such as paging in this program)
     fRenderer->setup();
 
-    if (fPreprocess) {
-        if (NULL != fRenderer->getCanvas()) {
-            fRenderer->getCanvas()->EXPERIMENTAL_optimize(pict);
-        }
-    }
-
     fRenderer->render(NULL);
     fRenderer->resetState(true);   // flush, swapBuffers and Finish
-
-    if (fPreprocess) {
-        if (NULL != fRenderer->getCanvas()) {
-            fRenderer->getCanvas()->EXPERIMENTAL_purge(pict);
-        }
-    }
 
     if (fPurgeDecodedTex) {
         fRenderer->purgeTextures();
@@ -147,11 +134,11 @@ void PictureBenchmark::run(SkPicture* pict) {
             // seems to cause problems (i.e., INVALID_OPERATIONs) on several
             // platforms. To work around this, we disable the gpu timer on the
             // long running timer.
-            SkAutoTDelete<BenchTimer> longRunningTimer(this->setupTimer());
+            SkAutoTDelete<Timer> longRunningTimer(this->setupTimer());
             TimerData longRunningTimerData(numOuterLoops);
 
             for (int outer = 0; outer < numOuterLoops; ++outer) {
-                SkAutoTDelete<BenchTimer> perTileTimer(this->setupTimer(false));
+                SkAutoTDelete<Timer> perTileTimer(this->setupTimer(false));
                 TimerData perTileTimerData(numInnerLoops);
 
                 longRunningTimer->start();
@@ -173,7 +160,7 @@ void PictureBenchmark::run(SkPicture* pict) {
                 SkAssertResult(longRunningTimerData.appendTimes(longRunningTimer.get()));
             }
 
-            fWriter->tileConfig(tiledRenderer->getConfigName());
+            fWriter->logRenderer(tiledRenderer);
             fWriter->tileMeta(x, y, xTiles, yTiles);
 
             // TODO(borenet): Turn off per-iteration tile time reporting for now.
@@ -201,11 +188,11 @@ void PictureBenchmark::run(SkPicture* pict) {
                 numInnerLoops);
         }
     } else {
-        SkAutoTDelete<BenchTimer> longRunningTimer(this->setupTimer());
+        SkAutoTDelete<Timer> longRunningTimer(this->setupTimer());
         TimerData longRunningTimerData(numOuterLoops);
 
         for (int outer = 0; outer < numOuterLoops; ++outer) {
-            SkAutoTDelete<BenchTimer> perRunTimer(this->setupTimer(false));
+            SkAutoTDelete<Timer> perRunTimer(this->setupTimer(false));
             TimerData perRunTimerData(numInnerLoops);
 
             longRunningTimer->start();
@@ -220,12 +207,6 @@ void PictureBenchmark::run(SkPicture* pict) {
 
                 SkAssertResult(perRunTimerData.appendTimes(perRunTimer.get()));
 
-                if (fPreprocess) {
-                    if (NULL != fRenderer->getCanvas()) {
-                        fRenderer->getCanvas()->EXPERIMENTAL_purge(pict);
-                    }
-                }
-
                 if (fPurgeDecodedTex) {
                     fRenderer->purgeTextures();
                 }
@@ -236,7 +217,7 @@ void PictureBenchmark::run(SkPicture* pict) {
             SkAssertResult(longRunningTimerData.appendTimes(longRunningTimer.get()));
         }
 
-        fWriter->tileConfig(fRenderer->getConfigName());
+        fWriter->logRenderer(fRenderer);
         if (fPurgeDecodedTex) {
             fWriter->addTileFlag(PictureResultsWriter::kPurging);
         }

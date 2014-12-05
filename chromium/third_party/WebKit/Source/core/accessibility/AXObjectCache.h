@@ -27,138 +27,26 @@
 #define AXObjectCache_h
 
 #include "core/accessibility/AXObject.h"
-#include "core/rendering/RenderText.h"
-#include "platform/Timer.h"
-#include "wtf/Forward.h"
-#include "wtf/HashMap.h"
-#include "wtf/HashSet.h"
-#include "wtf/RefPtr.h"
+#include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractInlineTextBox;
-class Document;
-class HTMLAreaElement;
-class Node;
+class FrameView;
 class Page;
-class RenderObject;
-class ScrollView;
-class VisiblePosition;
+class RenderMenuList;
 class Widget;
 
-struct TextMarkerData {
-    AXID axID;
-    Node* node;
-    int offset;
-    EAffinity affinity;
-};
-
-class AXComputedObjectAttributeCache {
-public:
-    static PassOwnPtr<AXComputedObjectAttributeCache> create() { return adoptPtr(new AXComputedObjectAttributeCache()); }
-
-    AXObjectInclusion getIgnored(AXID) const;
-    void setIgnored(AXID, AXObjectInclusion);
-
-    void clear();
-
-private:
-    AXComputedObjectAttributeCache() { }
-
-    struct CachedAXObjectAttributes {
-        CachedAXObjectAttributes() : ignored(DefaultBehavior) { }
-
-        AXObjectInclusion ignored;
-    };
-
-    HashMap<AXID, CachedAXObjectAttributes> m_idMapping;
-};
-
-enum PostType { PostSynchronously, PostAsynchronously };
-
+// Code outside of the accessibility directory should only use the AXObjectCache
+// interface, never AXObjectCacheImpl.
 class AXObjectCache {
     WTF_MAKE_NONCOPYABLE(AXObjectCache); WTF_MAKE_FAST_ALLOCATED;
 public:
-    explicit AXObjectCache(Document&);
-    ~AXObjectCache();
+    static AXObjectCache* create(Document&);
 
     static AXObject* focusedUIElementForPage(const Page*);
 
-    // Returns the root object for the entire document.
-    AXObject* rootObject();
-
-    // For AX objects with elements that back them.
-    AXObject* getOrCreate(RenderObject*);
-    AXObject* getOrCreate(Widget*);
-    AXObject* getOrCreate(Node*);
-    AXObject* getOrCreate(AbstractInlineTextBox*);
-
-    // used for objects without backing elements
-    AXObject* getOrCreate(AccessibilityRole);
-
-    // will only return the AXObject if it already exists
-    AXObject* get(RenderObject*);
-    AXObject* get(Widget*);
-    AXObject* get(Node*);
-    AXObject* get(AbstractInlineTextBox*);
-
-    void remove(RenderObject*);
-    void remove(Node*);
-    void remove(Widget*);
-    void remove(AbstractInlineTextBox*);
-    void remove(AXID);
-
-    void clearWeakMembers(Visitor*);
-
-    void detachWrapper(AXObject*);
-    void attachWrapper(AXObject*);
-    void childrenChanged(Node*);
-    void childrenChanged(RenderObject*);
-    void childrenChanged(AXObject*);
-    void checkedStateChanged(Node*);
-    void selectedChildrenChanged(Node*);
-    void selectedChildrenChanged(RenderObject*);
-    void selectionChanged(Node*);
-    // Called by a node when text or a text equivalent (e.g. alt) attribute is changed.
-    void textChanged(Node*);
-    void textChanged(RenderObject*);
-    // Called when a node has just been attached, so we can make sure we have the right subclass of AXObject.
-    void updateCacheAfterNodeIsAttached(Node*);
-
-    void handleActiveDescendantChanged(Node*);
-    void handleAriaRoleChanged(Node*);
-    void handleFocusedUIElementChanged(Node* oldFocusedNode, Node* newFocusedNode);
-    void handleScrolledToAnchor(const Node* anchorNode);
-    void handleAriaExpandedChange(Node*);
-
-    // Called when scroll bars are added / removed (as the view resizes).
-    void handleScrollbarUpdate(ScrollView*);
-
-    void handleLayoutComplete(RenderObject*);
-
-    // Called when the scroll offset changes.
-    void handleScrollPositionChanged(ScrollView*);
-    void handleScrollPositionChanged(RenderObject*);
-
-    void handleAttributeChanged(const QualifiedName& attrName, Element*);
-    void recomputeIsIgnored(RenderObject* renderer);
-
-    void inlineTextBoxesUpdated(RenderObject* renderer);
-
-    static void enableAccessibility() { gAccessibilityEnabled = true; }
-    static bool accessibilityEnabled() { return gAccessibilityEnabled; }
-    static void setInlineTextBoxAccessibility(bool flag) { gInlineTextBoxAccessibility = flag; }
-    static bool inlineTextBoxAccessibility() { return gInlineTextBoxAccessibility; }
-
-    void removeAXID(AXObject*);
-    bool isIDinUse(AXID id) const { return m_idsInUse.contains(id); }
-
-    Element* rootAXEditableElement(Node*);
-    const Element* rootAXEditableElement(const Node*);
-    bool nodeIsTextControl(const Node*);
-
-    AXID platformGenerateAXID() const;
-    AXObject* objectFromAXID(AXID id) const { return m_objects.get(id); }
+    virtual ~AXObjectCache();
 
     enum AXNotification {
         AXActiveDescendantChanged,
@@ -191,50 +79,63 @@ public:
         AXValueChanged
     };
 
-    void postNotification(RenderObject*, AXNotification, bool postToElement, PostType = PostAsynchronously);
-    void postNotification(Node*, AXNotification, bool postToElement, PostType = PostAsynchronously);
-    void postNotification(AXObject*, Document*, AXNotification, bool postToElement, PostType = PostAsynchronously);
+    virtual AXObject* objectFromAXID(AXID) const = 0;
 
-    bool nodeHasRole(Node*, const AtomicString& role);
+    virtual AXObject* root() = 0;
+    virtual AXObject* getOrCreateAXObjectFromRenderView(RenderView*) = 0;
 
-    AXComputedObjectAttributeCache* computedObjectAttributeCache() { return m_computedObjectAttributeCache.get(); }
+    // will only return the AXObject if it already exists
+    virtual AXObject* get(Node*) = 0;
+
+    virtual void selectionChanged(Node*) = 0;
+    virtual void childrenChanged(Node*) = 0;
+    virtual void childrenChanged(RenderObject*) = 0;
+    virtual void childrenChanged(Widget*) = 0;
+    virtual void checkedStateChanged(Node*) = 0;
+    virtual void selectedChildrenChanged(Node*) = 0;
+
+    virtual void remove(RenderObject*) = 0;
+    virtual void remove(Node*) = 0;
+    virtual void remove(Widget*) = 0;
+    virtual void remove(AbstractInlineTextBox*) = 0;
+
+    virtual const Element* rootAXEditableElement(const Node*) = 0;
+    virtual bool nodeIsTextControl(const Node*) = 0;
+
+    // Called by a node when text or a text equivalent (e.g. alt) attribute is changed.
+    virtual void textChanged(Node*) = 0;
+    virtual void textChanged(RenderObject*) = 0;
+    // Called when a node has just been attached, so we can make sure we have the right subclass of AXObject.
+    virtual void updateCacheAfterNodeIsAttached(Node*) = 0;
+
+    virtual void handleAttributeChanged(const QualifiedName& attrName, Element*) = 0;
+    virtual void handleFocusedUIElementChanged(Node* oldFocusedNode, Node* newFocusedNode) = 0;
+    virtual void handleInitialFocus() = 0;
+    virtual void handleEditableTextContentChanged(Node*) = 0;
+    virtual void handleTextFormControlChanged(Node*) = 0;
+    virtual void handleValueChanged(Node*) = 0;
+    virtual void handleUpdateActiveMenuOption(RenderMenuList*, int optionIndex) = 0;
+    virtual void handleLoadComplete(Document*) = 0;
+    virtual void handleLayoutComplete(Document*) = 0;
+
+    virtual void setCanvasObjectBounds(Element*, const LayoutRect&) = 0;
+
+    virtual void clearWeakMembers(Visitor*) = 0;
+
+    virtual void inlineTextBoxesUpdated(RenderObject* renderer) = 0;
+
+    // Called when the scroll offset changes.
+    virtual void handleScrollPositionChanged(FrameView*) = 0;
+    virtual void handleScrollPositionChanged(RenderObject*) = 0;
+
+    // Called when scroll bars are added / removed (as the view resizes).
+    virtual void handleScrollbarUpdate(FrameView*) = 0;
+    virtual void handleLayoutComplete(RenderObject*) = 0;
+    virtual void handleScrolledToAnchor(const Node* anchorNode) = 0;
 
 protected:
-    void postPlatformNotification(AXObject*, AXNotification);
-    void textChanged(AXObject*);
-    void labelChanged(Element*);
-
-    // This is a weak reference cache for knowing if Nodes used by TextMarkers are valid.
-    void setNodeInUse(Node* n) { m_textMarkerNodes.add(n); }
-    void removeNodeForUse(Node* n) { m_textMarkerNodes.remove(n); }
-    bool isNodeInUse(Node* n) { return m_textMarkerNodes.contains(n); }
-
-private:
-    Document& m_document;
-    HashMap<AXID, RefPtr<AXObject> > m_objects;
-    HashMap<RenderObject*, AXID> m_renderObjectMapping;
-    HashMap<Widget*, AXID> m_widgetObjectMapping;
-    HashMap<Node*, AXID> m_nodeObjectMapping;
-    HashMap<AbstractInlineTextBox*, AXID> m_inlineTextBoxObjectMapping;
-    HashSet<Node*> m_textMarkerNodes;
-    OwnPtr<AXComputedObjectAttributeCache> m_computedObjectAttributeCache;
-    static bool gAccessibilityEnabled;
-    static bool gInlineTextBoxAccessibility;
-
-    HashSet<AXID> m_idsInUse;
-
-    Timer<AXObjectCache> m_notificationPostTimer;
-    Vector<pair<RefPtr<AXObject>, AXNotification> > m_notificationsToPost;
-    void notificationPostTimerFired(Timer<AXObjectCache>*);
-
-    static AXObject* focusedImageMapUIElement(HTMLAreaElement*);
-
-    AXID getAXID(AXObject*);
+    AXObjectCache();
 };
-
-bool nodeHasRole(Node*, const String& role);
-// This will let you know if aria-hidden was explicitly set to false.
-bool isNodeAriaVisible(Node*);
 
 }
 

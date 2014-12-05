@@ -36,10 +36,14 @@ class OcclusionTrackerPerfTest : public testing::Test {
   void CreateHost() {
     LayerTreeSettings settings;
     shared_bitmap_manager_.reset(new TestSharedBitmapManager());
-    host_impl_ = LayerTreeHostImpl::Create(
-        settings, &client_, &proxy_, &stats_, shared_bitmap_manager_.get(), 1);
-    host_impl_->InitializeRenderer(
-        FakeOutputSurface::Create3d().PassAs<OutputSurface>());
+    host_impl_ = LayerTreeHostImpl::Create(settings,
+                                           &client_,
+                                           &proxy_,
+                                           &stats_,
+                                           shared_bitmap_manager_.get(),
+                                           NULL,
+                                           1);
+    host_impl_->InitializeRenderer(FakeOutputSurface::Create3d());
 
     scoped_ptr<LayerImpl> root_layer = LayerImpl::Create(active_tree(), 1);
     active_tree()->SetRootLayer(root_layer.Pass());
@@ -86,7 +90,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   opaque_layer->SetDrawsContent(true);
   opaque_layer->SetBounds(viewport_rect.size());
   opaque_layer->SetContentBounds(viewport_rect.size());
-  active_tree()->root_layer()->AddChild(opaque_layer.PassAs<LayerImpl>());
+  active_tree()->root_layer()->AddChild(opaque_layer.Pass());
 
   active_tree()->UpdateDrawProperties();
   const LayerImplList& rsll = active_tree()->RenderSurfaceLayerList();
@@ -106,11 +110,13 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_FullyOccluded) {
   transform_to_target.Translate(0, 96);
 
   do {
+    Occlusion occlusion =
+        tracker.GetCurrentOcclusionForLayer(transform_to_target);
     for (int x = 0; x < viewport_rect.width(); x += 256) {
       for (int y = 0; y < viewport_rect.height(); y += 256) {
         gfx::Rect query_content_rect(x, y, 256, 256);
-        gfx::Rect unoccluded = tracker.UnoccludedContentRect(
-            query_content_rect, transform_to_target);
+        gfx::Rect unoccluded =
+            occlusion.GetUnoccludedContentRect(query_content_rect);
         // Sanity test that we're not hitting early outs.
         bool expect_empty =
             query_content_rect.right() <= viewport_rect.width() &&
@@ -154,7 +160,7 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
     opaque_layer->SetContentBounds(
         gfx::Size(viewport_rect.width() / 2, viewport_rect.height() / 2));
     opaque_layer->SetPosition(gfx::Point(i, i));
-    active_tree()->root_layer()->AddChild(opaque_layer.PassAs<LayerImpl>());
+    active_tree()->root_layer()->AddChild(opaque_layer.Pass());
   }
 
   active_tree()->UpdateDrawProperties();
@@ -181,11 +187,13 @@ TEST_F(OcclusionTrackerPerfTest, UnoccludedContentRect_10OpaqueLayers) {
   transform_to_target.Translate(0, 96);
 
   do {
+    Occlusion occlusion =
+        tracker.GetCurrentOcclusionForLayer(transform_to_target);
     for (int x = 0; x < viewport_rect.width(); x += 256) {
       for (int y = 0; y < viewport_rect.height(); y += 256) {
         gfx::Rect query_content_rect(x, y, 256, 256);
-        gfx::Rect unoccluded = tracker.UnoccludedContentRect(
-            query_content_rect, transform_to_target);
+        gfx::Rect unoccluded =
+            occlusion.GetUnoccludedContentRect(query_content_rect);
       }
     }
 

@@ -5,6 +5,7 @@
 #ifndef V8_LIST_H_
 #define V8_LIST_H_
 
+#include "src/checks.h"
 #include "src/utils.h"
 
 namespace v8 {
@@ -61,8 +62,8 @@ class List {
   // not safe to use after operations that can change the list's
   // backing store (e.g. Add).
   inline T& operator[](int i) const {
-    ASSERT(0 <= i);
-    SLOW_ASSERT(i < length_);
+    DCHECK(0 <= i);
+    SLOW_DCHECK(i < length_);
     return data_[i];
   }
   inline T& at(int i) const { return operator[](i); }
@@ -79,7 +80,9 @@ class List {
 
   Vector<T> ToVector() const { return Vector<T>(data_, length_); }
 
-  Vector<const T> ToConstVector() { return Vector<const T>(data_, length_); }
+  Vector<const T> ToConstVector() const {
+    return Vector<const T>(data_, length_);
+  }
 
   // Adds a copy of the given 'element' to the end of the list,
   // expanding the list if necessary.

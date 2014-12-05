@@ -17,6 +17,7 @@
 #include "base/i18n/char_iterator.h"
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
@@ -24,6 +25,8 @@
 #include "third_party/icu/source/common/unicode/rbbi.h"
 #include "third_party/icu/source/common/unicode/uloc.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/render_text.h"
 #include "ui/gfx/text_utils.h"
 
 using base::ASCIIToUTF16;
@@ -34,16 +37,13 @@ namespace gfx {
 
 namespace {
 
-// Elides a well-formed email address (e.g. username@domain.com) to fit into
-// |available_pixel_width| using the specified |font_list|.
-// This function guarantees that the string returned will contain at least one
-// character, other than the ellipses, on either side of the '@'. If it is
-// impossible to achieve these requirements: only an ellipsis will be returned.
-// If possible: this elides only the username portion of the |email|. Otherwise,
-// the domain is elided in the middle so that it splits the available width
-// equally with the elided username (should the username be short enough that it
-// doesn't need half the available width: the elided domain will occupy that
-// extra width).
+#if defined(OS_ANDROID) || defined(OS_IOS)
+// The returned string will have at least one character besides the ellipsis
+// on either side of '@'; if that's impossible, a single ellipsis is returned.
+// If possible, only the username is elided. Otherwise, the domain is elided
+// in the middle, splitting available width equally with the elided username.
+// If the username is short enough that it doesn't need half the available
+// width, the elided domain will occupy that extra width.
 base::string16 ElideEmail(const base::string16& email,
                           const FontList& font_list,
                           float available_pixel_width) {
@@ -51,10 +51,8 @@ base::string16 ElideEmail(const base::string16& email,
     return email;
 
   // Split the email into its local-part (username) and domain-part. The email
-  // spec technically allows for @ symbols in the local-part (username) of the
-  // email under some special requirements. It is guaranteed that there is no @
-  // symbol in the domain part of the email however so splitting at the last @
-  // symbol is safe.
+  // spec allows for @ symbols in the username under some special requirements,
+  // but not in the domain part, so splitting at the last @ symbol is safe.
   const size_t split_index = email.find_last_of('@');
   DCHECK_NE(split_index, base::string16::npos);
   base::string16 username = email.substr(0, split_index);
@@ -99,6 +97,7 @@ base::string16 ElideEmail(const base::string16& email,
   username = ElideText(username, font_list, available_pixel_width, ELIDE_TAIL);
   return username + kAtSignUTF16 + domain;
 }
+#endif
 
 }  // namespace
 
@@ -148,9 +147,13 @@ size_t StringSlicer::FindValidBoundaryBefore(size_t index) const {
 
 size_t StringSlicer::FindValidBoundaryAfter(size_t index) const {
   DCHECK_LE(index, text_.length());
-  if (index != text_.length())
-    U16_SET_CP_LIMIT(text_.data(), 0, index, text_.length());
-  return index;
+  if (index == text_.length())
+    return index;
+
+  int32_t text_index = base::checked_cast<int32_t>(index);
+  int32_t text_length = base::checked_cast<int32_t>(text_.length());
+  U16_SET_CP_LIMIT(text_.data(), 0, text_index, text_length);
+  return static_cast<size_t>(text_index);
 }
 
 base::string16 ElideFilename(const base::FilePath& filename,
@@ -205,35 +208,34 @@ base::string16 ElideText(const base::string16& text,
                          const FontList& font_list,
                          float available_pixel_width,
                          ElideBehavior behavior) {
+#if !defined(OS_ANDROID) && !defined(OS_IOS)
   DCHECK_NE(behavior, FADE_TAIL);
-  if (text.empty() || behavior == FADE_TAIL)
+  scoped_ptr<RenderText> render_text(RenderText::CreateInstance());
+  render_text->SetCursorEnabled(false);
+  // Do not bother accurately sizing strings over 5000 characters here, for
+  // performance purposes. This matches the behavior of Canvas::SizeStringFloat.
+  render_text->set_truncate_length(5000);
+  render_text->SetFontList(font_list);
+  available_pixel_width = std::ceil(available_pixel_width);
+  render_text->SetDisplayRect(
+      gfx::ToEnclosingRect(gfx::RectF(gfx::SizeF(available_pixel_width, 1))));
+  render_text->SetElideBehavior(behavior);
+  render_text->SetText(text);
+  return render_text->layout_text();
+#else
+  DCHECK_NE(behavior, FADE_TAIL);
+  if (text.empty() || behavior == FADE_TAIL || behavior == NO_ELIDE ||
+      GetStringWidthF(text, font_list) <= available_pixel_width) {
     return text;
+  }
   if (behavior == ELIDE_EMAIL)
     return ElideEmail(text, font_list, available_pixel_width);
 
-  const float current_text_pixel_width = GetStringWidthF(text, font_list);
   const bool elide_in_middle = (behavior == ELIDE_MIDDLE);
   const bool elide_at_beginning = (behavior == ELIDE_HEAD);
   const bool insert_ellipsis = (behavior != TRUNCATE);
   const base::string16 ellipsis = base::string16(kEllipsisUTF16);
   StringSlicer slicer(text, ellipsis, elide_in_middle, elide_at_beginning);
-
-  // Pango will return 0 width for absurdly long strings. Cut the string in
-  // half and try again.
-  // This is caused by an int overflow in Pango (specifically, in
-  // pango_glyph_string_extents_range). It's actually more subtle than just
-  // returning 0, since on super absurdly long strings, the int can wrap and
-  // return positive numbers again. Detecting that is probably not worth it
-  // (eliding way too much from a ridiculous string is probably still
-  // ridiculous), but we should check other widths for bogus values as well.
-  if (current_text_pixel_width <= 0) {
-    const base::string16 cut =
-      slicer.CutString(text.length() / 2, insert_ellipsis);
-    return ElideText(cut, font_list, available_pixel_width, behavior);
-  }
-
-  if (current_text_pixel_width <= available_pixel_width)
-    return text;
 
   if (insert_ellipsis &&
       GetStringWidthF(ellipsis, font_list) > available_pixel_width)
@@ -254,8 +256,7 @@ base::string16 ElideText(const base::string16& text,
       break;
     if (guess_width > available_pixel_width) {
       hi = guess - 1;
-      // Move back if we are on loop terminating condition, and guess is wider
-      // than available.
+      // Move back on the loop terminating condition when the guess is too wide.
       if (hi < lo)
         lo = hi;
     } else {
@@ -264,6 +265,7 @@ base::string16 ElideText(const base::string16& text,
   }
 
   return slicer.CutString(guess, insert_ellipsis);
+#endif
 }
 
 bool ElideString(const base::string16& input,
@@ -760,7 +762,11 @@ int ElideRectangleText(const base::string16& input,
   return rect.Finalize();
 }
 
-base::string16 TruncateString(const base::string16& string, size_t length) {
+base::string16 TruncateString(const base::string16& string,
+                              size_t length,
+                              BreakType break_type) {
+  DCHECK(break_type == CHARACTER_BREAK || break_type == WORD_BREAK);
+
   if (string.size() <= length)
     // String fits, return it.
     return string;
@@ -778,47 +784,47 @@ base::string16 TruncateString(const base::string16& string, size_t length) {
     // Just enough room for the elide string.
     return kElideString;
 
-  // Use a line iterator to find the first boundary.
-  UErrorCode status = U_ZERO_ERROR;
-  scoped_ptr<icu::RuleBasedBreakIterator> bi(
-      static_cast<icu::RuleBasedBreakIterator*>(
-          icu::RuleBasedBreakIterator::createLineInstance(
-              icu::Locale::getDefault(), status)));
-  if (U_FAILURE(status))
-    return string.substr(0, max) + kElideString;
-  bi->setText(string.c_str());
-  int32_t index = bi->preceding(static_cast<int32_t>(max));
-  if (index == icu::BreakIterator::DONE) {
-    index = static_cast<int32_t>(max);
-  } else {
-    // Found a valid break (may be the beginning of the string). Now use
-    // a character iterator to find the previous non-whitespace character.
-    icu::StringCharacterIterator char_iterator(string.c_str());
-    if (index == 0) {
-      // No valid line breaks. Start at the end again. This ensures we break
-      // on a valid character boundary.
+  int32_t index = static_cast<int32_t>(max);
+  if (break_type == WORD_BREAK) {
+    // Use a line iterator to find the first boundary.
+    UErrorCode status = U_ZERO_ERROR;
+    scoped_ptr<icu::BreakIterator> bi(
+        icu::RuleBasedBreakIterator::createLineInstance(
+            icu::Locale::getDefault(), status));
+    if (U_FAILURE(status))
+      return string.substr(0, max) + kElideString;
+    bi->setText(string.c_str());
+    index = bi->preceding(index);
+    if (index == icu::BreakIterator::DONE || index == 0) {
+      // We either found no valid line break at all, or one right at the
+      // beginning of the string. Go back to the end; we'll have to break in the
+      // middle of a word.
       index = static_cast<int32_t>(max);
     }
-    char_iterator.setIndex(index);
-    while (char_iterator.hasPrevious()) {
-      char_iterator.previous();
-      if (!(u_isspace(char_iterator.current()) ||
-            u_charType(char_iterator.current()) == U_CONTROL_CHAR ||
-            u_charType(char_iterator.current()) == U_NON_SPACING_MARK)) {
-        // Not a whitespace character. Advance the iterator so that we
-        // include the current character in the truncated string.
-        char_iterator.next();
-        break;
-      }
-    }
-    if (char_iterator.hasPrevious()) {
-      // Found a valid break point.
-      index = char_iterator.getIndex();
-    } else {
-      // String has leading whitespace, return the elide string.
-      return kElideString;
+  }
+
+  // Use a character iterator to find the previous non-whitespace character.
+  icu::StringCharacterIterator char_iterator(string.c_str());
+  char_iterator.setIndex(index);
+  while (char_iterator.hasPrevious()) {
+    char_iterator.previous();
+    if (!(u_isspace(char_iterator.current()) ||
+          u_charType(char_iterator.current()) == U_CONTROL_CHAR ||
+          u_charType(char_iterator.current()) == U_NON_SPACING_MARK)) {
+      // Not a whitespace character. Advance the iterator so that we
+      // include the current character in the truncated string.
+      char_iterator.next();
+      break;
     }
   }
+  if (char_iterator.hasPrevious()) {
+    // Found a valid break point.
+    index = char_iterator.getIndex();
+  } else {
+    // String has leading whitespace, return the elide string.
+    return kElideString;
+  }
+
   return string.substr(0, index) + kElideString;
 }
 

@@ -29,10 +29,10 @@ class GPU_EXPORT ShaderTranslatorCache
   ShaderTranslatorCache();
 
   // ShaderTranslator::DestructionObserver implementation
-  virtual void OnDestruct(ShaderTranslator* translator) OVERRIDE;
+  void OnDestruct(ShaderTranslator* translator) override;
 
   scoped_refptr<ShaderTranslator> GetTranslator(
-      ShShaderType shader_type,
+      sh::GLenum shader_type,
       ShShaderSpec shader_spec,
       const ShBuiltInResources* resources,
       ShaderTranslatorInterface::GlslImplementationType
@@ -41,11 +41,11 @@ class GPU_EXPORT ShaderTranslatorCache
 
  private:
   friend class base::RefCounted<ShaderTranslatorCache>;
-  virtual ~ShaderTranslatorCache();
+  ~ShaderTranslatorCache() override;
 
   // Parameters passed into ShaderTranslator::Init
   struct ShaderTranslatorInitParams {
-    ShShaderType shader_type;
+    sh::GLenum shader_type;
     ShShaderSpec shader_spec;
     ShBuiltInResources resources;
     ShaderTranslatorInterface::GlslImplementationType
@@ -53,7 +53,7 @@ class GPU_EXPORT ShaderTranslatorCache
     ShCompileOptions driver_bug_workarounds;
 
     ShaderTranslatorInitParams(
-        ShShaderType shader_type,
+        sh::GLenum shader_type,
         ShShaderSpec shader_spec,
         const ShBuiltInResources& resources,
         ShaderTranslatorInterface::GlslImplementationType

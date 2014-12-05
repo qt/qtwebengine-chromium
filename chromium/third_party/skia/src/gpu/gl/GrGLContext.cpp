@@ -47,6 +47,16 @@ bool GrGLContextInfo::initialize(const GrGLInterface* interface) {
 
             fVendor = GrGLGetVendor(interface);
 
+            /*
+             * Qualcomm drivers have a horrendous bug with some drivers. Though they claim to
+             * support GLES 3.00, some perfectly valid GLSL300 shaders will only compile with
+             * #version 100, and will fail to compile with #version 300 es.  In the long term, we
+             * need to lock this down to a specific driver version.
+             */
+            if (kQualcomm_GrGLVendor == fVendor) {
+                fGLSLGeneration = k110_GrGLSLGeneration;
+            }
+
             fRenderer = GrGLGetRendererFromString(renderer);
 
             fIsMesa = GrGLIsMesaFromVersionString(ver);
@@ -62,9 +72,7 @@ bool GrGLContextInfo::initialize(const GrGLInterface* interface) {
     return false;
 }
 
-bool GrGLContextInfo::isInitialized() const {
-    return NULL != fInterface.get();
-}
+bool GrGLContextInfo::isInitialized() const { return SkToBool(fInterface.get()); }
 
 void GrGLContextInfo::reset() {
     fInterface.reset(NULL);

@@ -5,6 +5,8 @@
 #ifndef MEDIA_AUDIO_AUDIO_PARAMETERS_H_
 #define MEDIA_AUDIO_AUDIO_PARAMETERS_H_
 
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/time/time.h"
 #include "media/base/channel_layout.h"
@@ -58,22 +60,23 @@ class MEDIA_EXPORT AudioParameters {
                   int sample_rate, int bits_per_sample,
                   int frames_per_buffer);
   AudioParameters(Format format, ChannelLayout channel_layout,
-                  int input_channels,
                   int sample_rate, int bits_per_sample,
                   int frames_per_buffer, int effects);
   AudioParameters(Format format, ChannelLayout channel_layout,
-                  int channels, int input_channels,
-                  int sample_rate, int bits_per_sample,
+                  int channels, int sample_rate, int bits_per_sample,
                   int frames_per_buffer, int effects);
 
   void Reset(Format format, ChannelLayout channel_layout,
-             int channels, int input_channels,
-             int sample_rate, int bits_per_sample,
+             int channels, int sample_rate, int bits_per_sample,
              int frames_per_buffer);
 
   // Checks that all values are in the expected range. All limits are specified
   // in media::Limits.
   bool IsValid() const;
+
+  // Returns a human-readable string describing |*this|.  For debugging & test
+  // output only.
+  std::string AsHumanReadableString() const;
 
   // Returns size of audio buffer in bytes.
   int GetBytesPerBuffer() const;
@@ -88,26 +91,16 @@ class MEDIA_EXPORT AudioParameters {
   // and sample_rate().
   base::TimeDelta GetBufferDuration() const;
 
+  // Comparison with other AudioParams.
+  bool Equals(const AudioParameters& other) const;
+
   Format format() const { return format_; }
   ChannelLayout channel_layout() const { return channel_layout_; }
   int sample_rate() const { return sample_rate_; }
   int bits_per_sample() const { return bits_per_sample_; }
   int frames_per_buffer() const { return frames_per_buffer_; }
   int channels() const { return channels_; }
-  int input_channels() const { return input_channels_; }
   int effects() const { return effects_; }
-
-  // Comparison with other AudioParams.
-  bool operator==(const AudioParameters& other) const {
-    return format_ == other.format() &&
-           sample_rate_ == other.sample_rate() &&
-           channel_layout_ == other.channel_layout() &&
-           channels_ == other.channels() &&
-           input_channels_ == other.input_channels() &&
-           bits_per_sample_ == other.bits_per_sample() &&
-           frames_per_buffer_ == other.frames_per_buffer() &&
-           effects_ == other.effects();
-  }
 
  private:
   // These members are mutable to support entire struct assignment. They should
@@ -120,9 +113,6 @@ class MEDIA_EXPORT AudioParameters {
 
   int channels_;                  // Number of channels. Value set based on
                                   // |channel_layout|.
-  int input_channels_;            // Optional number of input channels.
-                                  // Normally 0, but can be set to specify
-                                  // synchronized I/O.
   int effects_;                   // Bitmask using PlatformEffectsMask.
 };
 
@@ -132,8 +122,6 @@ inline bool operator<(const AudioParameters& a, const AudioParameters& b) {
     return a.format() < b.format();
   if (a.channels() != b.channels())
     return a.channels() < b.channels();
-  if (a.input_channels() != b.input_channels())
-    return a.input_channels() < b.input_channels();
   if (a.sample_rate() != b.sample_rate())
     return a.sample_rate() < b.sample_rate();
   if (a.bits_per_sample() != b.bits_per_sample())

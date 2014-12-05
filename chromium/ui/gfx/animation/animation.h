@@ -28,7 +28,7 @@ class AnimationDelegate;
 class GFX_EXPORT Animation : public AnimationContainerElement {
  public:
   explicit Animation(base::TimeDelta timer_interval);
-  virtual ~Animation();
+  ~Animation() override;
 
   // Starts the animation. Does nothing if the animation is already running.
   void Start();
@@ -81,9 +81,9 @@ class GFX_EXPORT Animation : public AnimationContainerElement {
   AnimationDelegate* delegate() { return delegate_; }
 
   // AnimationContainer::Element overrides
-  virtual void SetStartTime(base::TimeTicks start_time) OVERRIDE;
-  virtual void Step(base::TimeTicks time_now) = 0;
-  virtual base::TimeDelta GetTimerInterval() const OVERRIDE;
+  void SetStartTime(base::TimeTicks start_time) override;
+  virtual void Step(base::TimeTicks time_now) override = 0;
+  base::TimeDelta GetTimerInterval() const override;
 
  private:
   // Interval for the animation.

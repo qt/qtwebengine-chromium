@@ -21,15 +21,15 @@
 #ifndef SVGPreserveAspectRatio_h
 #define SVGPreserveAspectRatio_h
 
-#include "core/svg/properties/SVGProperty.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class FloatRect;
 class SVGPreserveAspectRatioTearOff;
 
-class SVGPreserveAspectRatio : public SVGPropertyBase {
+class SVGPreserveAspectRatio : public SVGPropertyHelper<SVGPreserveAspectRatio> {
 public:
     enum SVGPreserveAspectRatioType {
         SVG_PRESERVEASPECTRATIO_UNKNOWN = 0,
@@ -59,7 +59,6 @@ public:
     }
 
     virtual PassRefPtr<SVGPreserveAspectRatio> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
 
     bool operator==(const SVGPreserveAspectRatio&) const;
     bool operator!=(const SVGPreserveAspectRatio& other) const { return !operator==(other); }
@@ -76,14 +75,14 @@ public:
                            float logicWidth, float logicHeight,
                            float physWidth, float physHeight) const;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     virtual void setValueAsString(const String&, ExceptionState&);
     bool parse(const UChar*& ptr, const UChar* end, bool validate);
     bool parse(const LChar*& ptr, const LChar* end, bool validate);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedPreserveAspectRatio; }
 
@@ -105,6 +104,6 @@ inline PassRefPtr<SVGPreserveAspectRatio> toSVGPreserveAspectRatio(PassRefPtr<SV
     return static_pointer_cast<SVGPreserveAspectRatio>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGPreserveAspectRatio_h

@@ -34,12 +34,9 @@
 #include "core/html/forms/BaseTextInputType.h"
 #include "platform/Timer.h"
 
-namespace WebCore {
+namespace blink {
 
-class SearchFieldCancelButtonElement;
-class SearchFieldDecorationElement;
-
-class SearchInputType FINAL : public BaseTextInputType {
+class SearchInputType final : public BaseTextInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
@@ -47,17 +44,16 @@ public:
 
 private:
     SearchInputType(HTMLInputElement&);
-    virtual void countUsage() OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool shouldRespectSpeechAttribute() OVERRIDE;
-    virtual bool isSearchField() const OVERRIDE;
-    virtual bool needsContainer() const OVERRIDE;
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    virtual void didSetValueByUserEdit(ValueChangeState) OVERRIDE;
-    virtual bool supportsInputModeAttribute() const OVERRIDE;
-    virtual void updateView() OVERRIDE;
+    virtual void countUsage() override;
+    virtual RenderObject* createRenderer(RenderStyle*) const override;
+    virtual const AtomicString& formControlType() const override;
+    virtual bool shouldRespectSpeechAttribute() override;
+    virtual bool needsContainer() const override;
+    virtual void createShadowSubtree() override;
+    virtual void handleKeydownEvent(KeyboardEvent*) override;
+    virtual void didSetValueByUserEdit(ValueChangeState) override;
+    virtual bool supportsInputModeAttribute() const override;
+    virtual void updateView() override;
 
     void searchEventTimerFired(Timer<SearchInputType>*);
     bool searchEventsShouldBeDispatched() const;
@@ -67,6 +63,6 @@ private:
     Timer<SearchInputType> m_searchEventTimer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SearchInputType_h

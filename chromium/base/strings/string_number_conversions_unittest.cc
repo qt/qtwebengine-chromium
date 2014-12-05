@@ -73,7 +73,30 @@ TEST(StringNumberConversionsTest, Uint64ToString) {
     {kuint64max, "18446744073709551615"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i)
+  for (size_t i = 0; i < arraysize(cases); ++i)
+    EXPECT_EQ(cases[i].output, Uint64ToString(cases[i].input));
+}
+
+TEST(StringNumberConversionsTest, SizeTToString) {
+  size_t size_t_max = std::numeric_limits<size_t>::max();
+  std::string size_t_max_string = StringPrintf("%" PRIuS, size_t_max);
+
+  static const struct {
+    size_t input;
+    std::string output;
+  } cases[] = {
+    {0, "0"},
+    {9, "9"},
+    {42, "42"},
+    {INT_MAX, "2147483647"},
+    {2147483648U, "2147483648"},
+#if SIZE_MAX > 4294967295U
+    {99999999999U, "99999999999"},
+#endif
+    {size_t_max, size_t_max_string},
+  };
+
+  for (size_t i = 0; i < arraysize(cases); ++i)
     EXPECT_EQ(cases[i].output, Uint64ToString(cases[i].input));
 }
 
@@ -109,7 +132,7 @@ TEST(StringNumberConversionsTest, StringToInt) {
     {"99999999999", INT_MAX, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     int output = 0;
     EXPECT_EQ(cases[i].success, StringToInt(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -173,7 +196,7 @@ TEST(StringNumberConversionsTest, StringToUint) {
     {"99999999999", UINT_MAX, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     unsigned output = 0;
     EXPECT_EQ(cases[i].success, StringToUint(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -243,7 +266,7 @@ TEST(StringNumberConversionsTest, StringToInt64) {
     {"99999999999999999999", kint64max, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     int64 output = 0;
     EXPECT_EQ(cases[i].success, StringToInt64(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -310,7 +333,7 @@ TEST(StringNumberConversionsTest, StringToUint64) {
     {"18446744073709551616", kuint64max, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     uint64 output = 0;
     EXPECT_EQ(cases[i].success, StringToUint64(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -337,7 +360,6 @@ TEST(StringNumberConversionsTest, StringToUint64) {
 }
 
 TEST(StringNumberConversionsTest, StringToSizeT) {
-
   size_t size_t_max = std::numeric_limits<size_t>::max();
   std::string size_t_max_string = StringPrintf("%" PRIuS, size_t_max);
 
@@ -380,7 +402,7 @@ TEST(StringNumberConversionsTest, StringToSizeT) {
     {size_t_max_string, size_t_max, true},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     size_t output = 0;
     EXPECT_EQ(cases[i].success, StringToSizeT(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -443,7 +465,7 @@ TEST(StringNumberConversionsTest, HexStringToInt) {
     {"0x", 0, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     int output = 0;
     EXPECT_EQ(cases[i].success, HexStringToInt(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -451,7 +473,7 @@ TEST(StringNumberConversionsTest, HexStringToInt) {
   // One additional test to verify that conversion of numbers in strings with
   // embedded NUL characters.  The NUL and extra data after it should be
   // interpreted as junk after the number.
-  const char input[] = "0xc0ffee\09";
+  const char input[] = "0xc0ffee\0" "9";
   std::string input_string(input, arraysize(input) - 1);
   int output;
   EXPECT_FALSE(HexStringToInt(input_string, &output));
@@ -503,7 +525,7 @@ TEST(StringNumberConversionsTest, HexStringToUInt) {
     {"0x", 0, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     uint32 output = 0;
     EXPECT_EQ(cases[i].success, HexStringToUInt(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -511,7 +533,7 @@ TEST(StringNumberConversionsTest, HexStringToUInt) {
   // One additional test to verify that conversion of numbers in strings with
   // embedded NUL characters.  The NUL and extra data after it should be
   // interpreted as junk after the number.
-  const char input[] = "0xc0ffee\09";
+  const char input[] = "0xc0ffee\0" "9";
   std::string input_string(input, arraysize(input) - 1);
   uint32 output;
   EXPECT_FALSE(HexStringToUInt(input_string, &output));
@@ -560,7 +582,7 @@ TEST(StringNumberConversionsTest, HexStringToInt64) {
     {"0x", 0, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     int64 output = 0;
     EXPECT_EQ(cases[i].success, HexStringToInt64(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -568,7 +590,7 @@ TEST(StringNumberConversionsTest, HexStringToInt64) {
   // One additional test to verify that conversion of numbers in strings with
   // embedded NUL characters.  The NUL and extra data after it should be
   // interpreted as junk after the number.
-  const char input[] = "0xc0ffee\09";
+  const char input[] = "0xc0ffee\0" "9";
   std::string input_string(input, arraysize(input) - 1);
   int64 output;
   EXPECT_FALSE(HexStringToInt64(input_string, &output));
@@ -622,7 +644,7 @@ TEST(StringNumberConversionsTest, HexStringToUInt64) {
     {"0x", 0, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     uint64 output = 0;
     EXPECT_EQ(cases[i].success, HexStringToUInt64(cases[i].input, &output));
     EXPECT_EQ(cases[i].output, output);
@@ -630,7 +652,7 @@ TEST(StringNumberConversionsTest, HexStringToUInt64) {
   // One additional test to verify that conversion of numbers in strings with
   // embedded NUL characters.  The NUL and extra data after it should be
   // interpreted as junk after the number.
-  const char input[] = "0xc0ffee\09";
+  const char input[] = "0xc0ffee\0" "9";
   std::string input_string(input, arraysize(input) - 1);
   uint64 output;
   EXPECT_FALSE(HexStringToUInt64(input_string, &output));
@@ -664,7 +686,7 @@ TEST(StringNumberConversionsTest, HexStringToBytes) {
   };
 
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     std::vector<uint8> output;
     std::vector<uint8> compare;
     EXPECT_EQ(cases[i].success, HexStringToBytes(cases[i].input, &output)) <<
@@ -713,7 +735,7 @@ TEST(StringNumberConversionsTest, StringToDouble) {
     {"", 0.0, false},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     double output;
     errno = 1;
     EXPECT_EQ(cases[i].success, StringToDouble(cases[i].input, &output));
@@ -725,7 +747,7 @@ TEST(StringNumberConversionsTest, StringToDouble) {
   // One additional test to verify that conversion of numbers in strings with
   // embedded NUL characters.  The NUL and extra data after it should be
   // interpreted as junk after the number.
-  const char input[] = "3.14\0159";
+  const char input[] = "3.14\0" "159";
   std::string input_string(input, arraysize(input) - 1);
   double output;
   EXPECT_FALSE(StringToDouble(input_string, &output));
@@ -746,7 +768,7 @@ TEST(StringNumberConversionsTest, DoubleToString) {
     {1.33503e+009, "1335030000"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     EXPECT_EQ(cases[i].expected, DoubleToString(cases[i].input));
   }
 

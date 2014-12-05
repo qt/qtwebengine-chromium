@@ -32,11 +32,11 @@
 #include "wtf/TemporaryChange.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 
-class DOMWindowLifecycleNotifier FINAL : public LifecycleNotifier<LocalDOMWindow> {
+class DOMWindowLifecycleNotifier final : public LifecycleNotifier<LocalDOMWindow> {
 public:
     static PassOwnPtr<DOMWindowLifecycleNotifier> create(LocalDOMWindow*);
 
@@ -44,8 +44,8 @@ public:
     void notifyRemoveEventListener(LocalDOMWindow*, const AtomicString& eventType);
     void notifyRemoveAllEventListeners(LocalDOMWindow*);
 
-    virtual void addObserver(Observer*) OVERRIDE;
-    virtual void removeObserver(Observer*) OVERRIDE;
+    virtual void addObserver(Observer*) override;
+    virtual void removeObserver(Observer*) override;
 
 private:
     explicit DOMWindowLifecycleNotifier(LocalDOMWindow*);
@@ -54,6 +54,6 @@ private:
     DOMWindowObserverSet m_windowObservers;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowLifecycleNotifier_h

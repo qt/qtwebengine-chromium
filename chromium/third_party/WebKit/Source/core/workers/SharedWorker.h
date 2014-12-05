@@ -36,11 +36,12 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class SharedWorker FINAL : public AbstractWorker, public ScriptWrappable, public WillBeHeapSupplementable<SharedWorker> {
+class SharedWorker final : public AbstractWorker, public WillBeHeapSupplementable<SharedWorker> {
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SharedWorker);
 public:
     static PassRefPtrWillBeRawPtr<SharedWorker> create(ExecutionContext*, const String& url, const String& name, ExceptionState&);
@@ -48,21 +49,21 @@ public:
 
     MessagePort* port() const { return m_port.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    // Prevents this SharedWorker + JS wrapper from being garbage collected.
-    void setPreventGC();
-    // Allows this SharedWorker + JS wrapper to be garbage collected.
-    void unsetPreventGC();
+    void setIsBeingConnected(bool b) { m_isBeingConnected = b; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     explicit SharedWorker(ExecutionContext*);
 
-    RefPtr<MessagePort> m_port;
+    RefPtrWillBeMember<MessagePort> m_port;
+    bool m_isBeingConnected;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SharedWorker_h

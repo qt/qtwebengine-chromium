@@ -31,17 +31,17 @@
 #ifndef VideoPlaybackQuality_h
 #define VideoPlaybackQuality_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
-class VideoPlaybackQuality : public RefCountedWillBeGarbageCollected<VideoPlaybackQuality> {
+class VideoPlaybackQuality : public GarbageCollected<VideoPlaybackQuality>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<VideoPlaybackQuality> create(const Document&, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames);
+    static VideoPlaybackQuality* create(const Document&, unsigned totalVideoFrames, unsigned droppedVideoFrames, unsigned corruptedVideoFrames);
 
     double creationTime() const { return m_creationTime; }
     unsigned totalVideoFrames() const { return m_totalVideoFrames; }
@@ -59,6 +59,6 @@ private:
     unsigned m_corruptedVideoFrames;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // VideoPlaybackQuality_h

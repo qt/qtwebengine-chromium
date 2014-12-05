@@ -49,11 +49,20 @@ const SpdyStreamId kSessionFlowControlStreamId = 0;
 // Initial window size for a Spdy stream in bytes.
 const int32 kSpdyStreamInitialWindowSize = 64 * 1024;  // 64 KBytes
 
+// The maxmium possible control frame size allowed by the spec.
+const int32 kSpdyMaxControlFrameSize = (1 << 24) - 1;
+
+// The maximum control frame size we accept.
+const int32 kControlFrameSizeLimit = 1 << 14;
+
 // Initial window size for a Spdy session in bytes.
 const int32 kSpdySessionInitialWindowSize = 64 * 1024;  // 64 KBytes
 
 // Maximum window size for a Spdy stream or session.
 const int32 kSpdyMaximumWindowSize = 0x7FFFFFFF;  // Max signed 32bit int
+
+// Maximum padding size in octets for one DATA or HEADERS or PUSH_PROMISE frame.
+const int32 kPaddingSizePerFrame = 256;
 
 // SPDY 2 dictionary.
 // This is just a hacked dictionary to use for shrinking HTTP-like headers.
@@ -270,26 +279,26 @@ const char kHttp2ConnectionHeaderPrefix[] = {
 const int kHttp2ConnectionHeaderPrefixSize =
     arraysize(kHttp2ConnectionHeaderPrefix);
 
+const char kHttp2VersionString[] = "HTTP/1.1";
+
 // Types of SPDY frames.
 enum SpdyFrameType {
-  DATA = 0,
-  SYN_STREAM = 1,
-  FIRST_CONTROL_TYPE = SYN_STREAM,
+  DATA,
+  SYN_STREAM,
   SYN_REPLY,
   RST_STREAM,
   SETTINGS,
-  NOOP,  // Because it is valid in SPDY/2, kept for identifiability/enum order.
   PING,
   GOAWAY,
   HEADERS,
   WINDOW_UPDATE,
-  CREDENTIAL,  // No longer valid.  Kept for identifiability/enum order.
-  BLOCKED,
+  CREDENTIAL = 10,  // No longer valid.  Kept for identifiability.
   PUSH_PROMISE,
   CONTINUATION,
-  ALTSVC,
   PRIORITY,
-  LAST_CONTROL_TYPE = PRIORITY
+  // BLOCKED and ALTSVC are recognized extensions.
+  BLOCKED,
+  ALTSVC,
 };
 
 // Flags on data packets.
@@ -297,8 +306,7 @@ enum SpdyDataFlags {
   DATA_FLAG_NONE = 0x00,
   DATA_FLAG_FIN = 0x01,
   DATA_FLAG_END_SEGMENT = 0x02,
-  DATA_FLAG_PAD_LOW = 0x08,
-  DATA_FLAG_PAD_HIGH = 0x10,
+  DATA_FLAG_PADDED = 0x08,
   DATA_FLAG_COMPRESSED = 0x20,
 };
 
@@ -317,13 +325,13 @@ enum SpdyPingFlags {
 enum SpdyHeadersFlags {
   HEADERS_FLAG_END_SEGMENT = 0x02,
   HEADERS_FLAG_END_HEADERS = 0x04,
-  HEADERS_FLAG_PAD_LOW = 0x08,
-  HEADERS_FLAG_PAD_HIGH = 0x10,
+  HEADERS_FLAG_PADDED = 0x08,
   HEADERS_FLAG_PRIORITY = 0x20,
 };
 
 enum SpdyPushPromiseFlags {
   PUSH_PROMISE_FLAG_END_PUSH_PROMISE = 0x04,
+  PUSH_PROMISE_FLAG_PADDED = 0x08,
 };
 
 // Flags on the SETTINGS control frame.
@@ -361,8 +369,10 @@ enum SpdySettingsIds {
   SETTINGS_HEADER_TABLE_SIZE = 0x8,
   // Whether or not server push (PUSH_PROMISE) is enabled.
   SETTINGS_ENABLE_PUSH = 0x9,
-  // Whether or not to enable GZip compression of DATA frames.
-  SETTINGS_COMPRESS_DATA = 0xa,
+  // The size of the largest frame payload that a receiver is willing to accept.
+  SETTINGS_MAX_FRAME_SIZE = 0xa,
+  // The maximum size of header list that the sender is prepared to accept.
+  SETTINGS_MAX_HEADER_LIST_SIZE = 0xb,
 };
 
 // Status codes for RST_STREAM frames.
@@ -440,6 +450,10 @@ class NET_EXPORT_PRIVATE SpdyConstants {
   static int SerializeFrameType(SpdyMajorVersion version,
                                 SpdyFrameType frame_type);
 
+  // Returns the frame type for non-control (i.e. data) frames
+  // in the given SPDY version.
+  static int DataFrameType(SpdyMajorVersion version);
+
   // Returns true if a given on-the-wire enumeration of a setting id is valid
   // for a given protocol version, false otherwise.
   static bool IsValidSettingId(SpdyMajorVersion version, int setting_id_field);
@@ -497,7 +511,7 @@ class NET_EXPORT_PRIVATE SpdyConstants {
   // Size, in bytes, of the data frame header. Future versions of SPDY
   // will likely vary this, so we allow for the flexibility of a function call
   // for this value as opposed to a constant.
-  static size_t GetDataFrameMinimumSize();
+  static size_t GetDataFrameMinimumSize(SpdyMajorVersion version);
 
   // Size, in bytes, of the control frame header.
   static size_t GetControlFrameHeaderSize(SpdyMajorVersion version);
@@ -509,6 +523,9 @@ class NET_EXPORT_PRIVATE SpdyConstants {
   // Returns the size of a header block size field. Valid only for SPDY
   // versions <= 3.
   static size_t GetSizeOfSizeField(SpdyMajorVersion version);
+
+  // Returns the size (in bytes) of a wire setting ID and value.
+  static size_t GetSettingSize(SpdyMajorVersion version);
 
   static SpdyMajorVersion ParseMajorVersion(int version_number);
 
@@ -542,7 +559,7 @@ class NET_EXPORT_PRIVATE SpdyFrameIR {
 // to them.
 class NET_EXPORT_PRIVATE SpdyFrameWithStreamIdIR : public SpdyFrameIR {
  public:
-  virtual ~SpdyFrameWithStreamIdIR() {}
+  ~SpdyFrameWithStreamIdIR() override {}
   SpdyStreamId stream_id() const { return stream_id_; }
   void set_stream_id(SpdyStreamId stream_id) {
     DCHECK_EQ(0u, stream_id & ~kStreamIdMask);
@@ -564,7 +581,7 @@ class NET_EXPORT_PRIVATE SpdyFrameWithStreamIdIR : public SpdyFrameIR {
 // flag. Implies SpdyFrameWithStreamIdIR.
 class NET_EXPORT_PRIVATE SpdyFrameWithFinIR : public SpdyFrameWithStreamIdIR {
  public:
-  virtual ~SpdyFrameWithFinIR() {}
+  ~SpdyFrameWithFinIR() override {}
   bool fin() const { return fin_; }
   void set_fin(bool fin) { fin_ = fin; }
 
@@ -601,7 +618,7 @@ class NET_EXPORT_PRIVATE SpdyFrameWithNameValueBlockIR
 
  protected:
   explicit SpdyFrameWithNameValueBlockIR(SpdyStreamId stream_id);
-  virtual ~SpdyFrameWithNameValueBlockIR();
+  ~SpdyFrameWithNameValueBlockIR() override;
 
  private:
   SpdyNameValueBlock name_value_block_;
@@ -618,31 +635,20 @@ class NET_EXPORT_PRIVATE SpdyDataIR
   // Use in conjunction with SetDataShallow() for shallow-copy on data.
   explicit SpdyDataIR(SpdyStreamId stream_id);
 
-  virtual ~SpdyDataIR();
+  ~SpdyDataIR() override;
 
   base::StringPiece data() const { return data_; }
 
-  bool pad_low() const { return pad_low_; }
-
-  bool pad_high() const { return pad_high_; }
+  bool padded() const { return padded_; }
 
   int padding_payload_len() const { return padding_payload_len_; }
 
   void set_padding_len(int padding_len) {
-    // The padding_len should be in (0, 65535 + 2].
-    // Note that SpdyFramer::GetDataFrameMaximumPayload() enforces the overall
-    // payload size later so we actually can't pad more than 16375 bytes.
     DCHECK_GT(padding_len, 0);
-    DCHECK_LT(padding_len, 65537);
-
-    if (padding_len <= 256) {
-      pad_low_ = true;
-      --padding_len;
-    } else {
-      pad_low_ = pad_high_ = true;
-      padding_len -= 2;
-    }
-    padding_payload_len_ = padding_len;
+    DCHECK_LE(padding_len, kPaddingSizePerFrame);
+    padded_ = true;
+    // The pad field takes one octet on the wire.
+    padding_payload_len_ = padding_len - 1;
   }
 
   // Deep-copy of data (keep private copy).
@@ -657,15 +663,14 @@ class NET_EXPORT_PRIVATE SpdyDataIR
     data_ = data;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   // Used to store data that this SpdyDataIR should own.
   scoped_ptr<std::string> data_store_;
   base::StringPiece data_;
 
-  bool pad_low_;
-  bool pad_high_;
+  bool padded_;
   // padding_payload_len_ = desired padding length - len(padding length field).
   int padding_payload_len_;
 
@@ -693,7 +698,7 @@ class NET_EXPORT_PRIVATE SpdySynStreamIR
     unidirectional_ = unidirectional;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   SpdyStreamId associated_to_stream_id_;
@@ -708,7 +713,7 @@ class NET_EXPORT_PRIVATE SpdySynReplyIR : public SpdyFrameWithNameValueBlockIR {
   explicit SpdySynReplyIR(SpdyStreamId stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id) {}
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SpdySynReplyIR);
@@ -719,7 +724,7 @@ class NET_EXPORT_PRIVATE SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
   SpdyRstStreamIR(SpdyStreamId stream_id, SpdyRstStreamStatus status,
                   base::StringPiece description);
 
-  virtual ~SpdyRstStreamIR();
+  ~SpdyRstStreamIR() override;
 
   SpdyRstStreamStatus status() const {
     return status_;
@@ -734,7 +739,7 @@ class NET_EXPORT_PRIVATE SpdyRstStreamIR : public SpdyFrameWithStreamIdIR {
     description_ = description;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   SpdyRstStreamStatus status_;
@@ -758,7 +763,7 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
 
   SpdySettingsIR();
 
-  virtual ~SpdySettingsIR();
+  ~SpdySettingsIR() override;
 
   // Overwrites as appropriate.
   const ValueMap& values() const { return values_; }
@@ -780,7 +785,7 @@ class NET_EXPORT_PRIVATE SpdySettingsIR : public SpdyFrameIR {
     is_ack_ = is_ack;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   ValueMap values_;
@@ -799,7 +804,7 @@ class NET_EXPORT_PRIVATE SpdyPingIR : public SpdyFrameIR {
   bool is_ack() const { return is_ack_; }
   void set_is_ack(bool is_ack) { is_ack_ = is_ack; }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   SpdyPingId id_;
@@ -812,7 +817,7 @@ class NET_EXPORT_PRIVATE SpdyGoAwayIR : public SpdyFrameIR {
  public:
   SpdyGoAwayIR(SpdyStreamId last_good_stream_id, SpdyGoAwayStatus status,
                const base::StringPiece& description);
-  virtual ~SpdyGoAwayIR();
+  ~SpdyGoAwayIR() override;
   SpdyStreamId last_good_stream_id() const { return last_good_stream_id_; }
   void set_last_good_stream_id(SpdyStreamId last_good_stream_id) {
     DCHECK_LE(0u, last_good_stream_id);
@@ -827,7 +832,7 @@ class NET_EXPORT_PRIVATE SpdyGoAwayIR : public SpdyFrameIR {
 
   const base::StringPiece& description() const;
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   SpdyStreamId last_good_stream_id_;
@@ -840,21 +845,37 @@ class NET_EXPORT_PRIVATE SpdyGoAwayIR : public SpdyFrameIR {
 class NET_EXPORT_PRIVATE SpdyHeadersIR : public SpdyFrameWithNameValueBlockIR {
  public:
   explicit SpdyHeadersIR(SpdyStreamId stream_id)
-    : SpdyFrameWithNameValueBlockIR(stream_id),
-      has_priority_(false),
-      priority_(0) {}
+      : SpdyFrameWithNameValueBlockIR(stream_id),
+        has_priority_(false),
+        priority_(0),
+        padded_(false),
+        padding_payload_len_(0) {}
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
   bool has_priority() const { return has_priority_; }
   void set_has_priority(bool has_priority) { has_priority_ = has_priority; }
   uint32 priority() const { return priority_; }
   void set_priority(SpdyPriority priority) { priority_ = priority; }
 
+  bool padded() const { return padded_; }
+  int padding_payload_len() const { return padding_payload_len_; }
+  void set_padding_len(int padding_len) {
+    DCHECK_GT(padding_len, 0);
+    DCHECK_LE(padding_len, kPaddingSizePerFrame);
+    padded_ = true;
+    // The pad field takes one octet on the wire.
+    padding_payload_len_ = padding_len - 1;
+  }
+
  private:
   bool has_priority_;
   // 31-bit priority.
   uint32 priority_;
+
+  bool padded_;
+  int padding_payload_len_;
+
   DISALLOW_COPY_AND_ASSIGN(SpdyHeadersIR);
 };
 
@@ -871,7 +892,7 @@ class NET_EXPORT_PRIVATE SpdyWindowUpdateIR : public SpdyFrameWithStreamIdIR {
     delta_ = delta;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   int32 delta_;
@@ -885,7 +906,7 @@ class NET_EXPORT_PRIVATE SpdyBlockedIR
   explicit SpdyBlockedIR(SpdyStreamId stream_id)
       : SpdyFrameWithStreamIdIR(stream_id) {}
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SpdyBlockedIR);
@@ -896,14 +917,30 @@ class NET_EXPORT_PRIVATE SpdyPushPromiseIR
  public:
   SpdyPushPromiseIR(SpdyStreamId stream_id, SpdyStreamId promised_stream_id)
       : SpdyFrameWithNameValueBlockIR(stream_id),
-        promised_stream_id_(promised_stream_id) {}
+        promised_stream_id_(promised_stream_id),
+        padded_(false),
+        padding_payload_len_(0) {}
   SpdyStreamId promised_stream_id() const { return promised_stream_id_; }
   void set_promised_stream_id(SpdyStreamId id) { promised_stream_id_ = id; }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
+
+  bool padded() const { return padded_; }
+  int padding_payload_len() const { return padding_payload_len_; }
+  void set_padding_len(int padding_len) {
+    DCHECK_GT(padding_len, 0);
+    DCHECK_LE(padding_len, kPaddingSizePerFrame);
+    padded_ = true;
+    // The pad field takes one octet on the wire.
+    padding_payload_len_ = padding_len - 1;
+  }
 
  private:
   SpdyStreamId promised_stream_id_;
+
+  bool padded_;
+  int padding_payload_len_;
+
   DISALLOW_COPY_AND_ASSIGN(SpdyPushPromiseIR);
 };
 
@@ -916,7 +953,7 @@ class NET_EXPORT_PRIVATE SpdyContinuationIR
       : SpdyFrameWithNameValueBlockIR(stream_id),
         end_headers_(false) {}
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
   bool end_headers() const { return end_headers_; }
   void set_end_headers(bool end_headers) {end_headers_ = end_headers;}
@@ -950,7 +987,7 @@ class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
     origin_ = origin;
   }
 
-  virtual void Visit(SpdyFrameVisitor* visitor) const OVERRIDE;
+  void Visit(SpdyFrameVisitor* visitor) const override;
 
  private:
   uint32 max_age_;
@@ -959,6 +996,29 @@ class NET_EXPORT_PRIVATE SpdyAltSvcIR : public SpdyFrameWithStreamIdIR {
   std::string host_;
   std::string origin_;
   DISALLOW_COPY_AND_ASSIGN(SpdyAltSvcIR);
+};
+
+class NET_EXPORT_PRIVATE SpdyPriorityIR : public SpdyFrameWithStreamIdIR {
+ public:
+  explicit SpdyPriorityIR(SpdyStreamId stream_id);
+  explicit SpdyPriorityIR(SpdyStreamId stream_id,
+                          SpdyStreamId parent_stream_id,
+                          uint8 weight,
+                          bool exclusive);
+  SpdyStreamId parent_stream_id() const { return parent_stream_id_; }
+  void set_parent_stream_id(SpdyStreamId id) { parent_stream_id_ = id; }
+  uint8 weight() const { return weight_; }
+  void set_weight(uint8 weight) { weight_ = weight; }
+  bool exclusive() const { return exclusive_; }
+  void set_exclusive(bool exclusive) { exclusive_ = exclusive; }
+
+  void Visit(SpdyFrameVisitor* visitor) const override;
+
+ private:
+  SpdyStreamId parent_stream_id_;
+  uint8 weight_;
+  bool exclusive_;
+  DISALLOW_COPY_AND_ASSIGN(SpdyPriorityIR);
 };
 
 // -------------------------------------------------------------------------
@@ -1022,6 +1082,7 @@ class SpdyFrameVisitor {
   virtual void VisitPushPromise(const SpdyPushPromiseIR& push_promise) = 0;
   virtual void VisitContinuation(const SpdyContinuationIR& continuation) = 0;
   virtual void VisitAltSvc(const SpdyAltSvcIR& altsvc) = 0;
+  virtual void VisitPriority(const SpdyPriorityIR& priority) = 0;
   virtual void VisitData(const SpdyDataIR& data) = 0;
 
  protected:

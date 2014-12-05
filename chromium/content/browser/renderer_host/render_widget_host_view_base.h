@@ -22,6 +22,7 @@
 #include "content/common/input/input_event_ack_state.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "ipc/ipc_listener.h"
+#include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/WebKit/public/web/WebTextDirection.h"
 #include "ui/base/ime/text_input_mode.h"
@@ -35,10 +36,7 @@
 class SkBitmap;
 
 struct AccessibilityHostMsg_EventParams;
-struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 struct ViewHostMsg_SelectionBounds_Params;
-struct ViewHostMsg_TextInputState_Params;
 
 namespace media {
 class VideoFrame;
@@ -49,6 +47,7 @@ struct WebScreenInfo;
 }
 
 namespace content {
+class BrowserAccessibilityDelegate;
 class BrowserAccessibilityManager;
 class SyntheticGesture;
 class SyntheticGestureTarget;
@@ -57,28 +56,35 @@ struct DidOverscrollParams;
 struct NativeWebKeyboardEvent;
 struct WebPluginGeometry;
 
+// TODO(Sikugu): Though we have the return status of the result here,
+// we should add the reason for failure as a new parameter to handle cases
+// efficiently.
+typedef const base::Callback<void(bool, const SkBitmap&)>
+    CopyFromCompositingSurfaceCallback;
+
 // Basic implementation shared by concrete RenderWidgetHostView subclasses.
 class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
                                                 public IPC::Listener {
  public:
-  virtual ~RenderWidgetHostViewBase();
+  ~RenderWidgetHostViewBase() override;
 
   // RenderWidgetHostView implementation.
-  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
-  virtual bool GetBackgroundOpaque() OVERRIDE;
-  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
-  virtual bool IsShowingContextMenu() const OVERRIDE;
-  virtual void SetShowingContextMenu(bool showing_menu) OVERRIDE;
-  virtual base::string16 GetSelectedText() const OVERRIDE;
-  virtual bool IsMouseLocked() OVERRIDE;
-  virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
-  virtual void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
-  virtual void EndFrameSubscription() OVERRIDE;
+  void SetBackgroundColor(SkColor color) override;
+  void SetBackgroundColorToDefault() final;
+  bool GetBackgroundOpaque() override;
+  ui::TextInputClient* GetTextInputClient() override;
+  bool IsShowingContextMenu() const override;
+  void SetShowingContextMenu(bool showing_menu) override;
+  base::string16 GetSelectedText() const override;
+  bool IsMouseLocked() override;
+  gfx::Size GetVisibleViewportSize() const override;
+  void SetInsets(const gfx::Insets& insets) override;
+  void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
+  void EndFrameSubscription() override;
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Called by the host when the input flush has completed.
   void OnDidFlushInput();
@@ -86,11 +92,6 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   void SetPopupType(blink::WebPopupType popup_type);
 
   blink::WebPopupType GetPopupType();
-
-  // Get the BrowserAccessibilityManager if it exists, may return NULL.
-  BrowserAccessibilityManager* GetBrowserAccessibilityManager() const;
-
-  void SetBrowserAccessibilityManager(BrowserAccessibilityManager* manager);
 
   // Return a value that is incremented each time the renderer swaps a new frame
   // to the view.
@@ -107,6 +108,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // changed since the last time.
   bool HasDisplayPropertyChanged(gfx::NativeView view);
 
+  base::WeakPtr<RenderWidgetHostViewBase> GetWeakPtr();
+
   //----------------------------------------------------------------------------
   // The following methods can be overridden by derived classes.
 
@@ -122,9 +125,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // The size of the view's backing surface in non-DPI-adjusted pixels.
   virtual gfx::Size GetPhysicalBackingSize() const;
 
-  // The height of the physical backing surface that is overdrawn opaquely in
-  // the browser, for example by an on-screen-keyboard (in DPI-adjusted pixels).
-  virtual float GetOverdrawBottomHeight() const;
+  // The amount that the viewport size given to Blink is shrunk by the URL-bar.
+  virtual float GetTopControlsLayoutHeight() const;
 
   // Called prior to forwarding input event messages to the renderer, giving
   // the view a chance to perform in-process event filtering or processing.
@@ -150,16 +152,16 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Return true if frame subscription is supported on this platform.
   virtual bool CanSubscribeFrame() const;
 
-  // Create a BrowserAccessibilityManager for this view if it's possible to
-  // create one and if one doesn't exist already. Some ports may not create
-  // one depending on the current state.
-  virtual void CreateBrowserAccessibilityManagerIfNeeded();
+  // Create a BrowserAccessibilityManager for this view.
+  virtual BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate);
 
-  virtual void OnAccessibilitySetFocus(int acc_obj_id);
-  virtual void AccessibilityShowMenu(int acc_obj_id);
+  virtual void AccessibilityShowMenu(const gfx::Point& point);
   virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds);
+  virtual gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget();
+  virtual gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible();
 
-  virtual SkBitmap::Config PreferredReadbackFormat();
+  virtual SkColorType PreferredReadbackFormat();
 
   // Informs that the focused DOM node has changed.
   virtual void FocusedNodeChanged(bool is_editable_node) {}
@@ -219,8 +221,10 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void SetIsLoading(bool is_loading) = 0;
 
   // Updates the type of the input method attached to the view.
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) = 0;
+  virtual void TextInputTypeChanged(ui::TextInputType type,
+                                    ui::TextInputMode mode,
+                                    bool can_compose_inline,
+                                    int flags) = 0;
 
   // Cancel the ongoing composition of the input method attached to the view.
   virtual void ImeCancelComposition() = 0;
@@ -228,6 +232,13 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // Notifies the View that the renderer has ceased to exist.
   virtual void RenderProcessGone(base::TerminationStatus status,
                                  int error_code) = 0;
+
+  // Notifies the View that the renderer's host has ceased to exist.
+  // The default implementation of this is a no-op. This hack exists to fix
+  // a crash on the branch.
+  // TODO(ccameron): Clean this up.
+  // http://crbug.com/404828
+  virtual void RenderWidgetHostGone() {}
 
   // Tells the View to destroy itself.
   virtual void Destroy() = 0;
@@ -243,30 +254,27 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   virtual void SelectionBoundsChanged(
       const ViewHostMsg_SelectionBounds_Params& params) = 0;
 
-  // Notifies the view that the scroll offset has changed.
-  virtual void ScrollOffsetChanged() = 0;
-
-  // Copies the contents of the compositing surface into the given
-  // (uninitialized) PlatformCanvas if any.
-  // The rectangle region specified with |src_subrect| is copied from the
-  // contents, scaled to |dst_size|, and written to |output|.
-  // |callback| is invoked with true on success, false otherwise. |output| can
-  // be initialized even on failure.
-  // A smaller region than |src_subrect| may be copied if the underlying surface
-  // is smaller than |src_subrect|.
-  // NOTE: |callback| is called asynchronously.
+  // Copies the contents of the compositing surface, providing a new SkBitmap
+  // result via an asynchronously-run |callback|. |src_subrect| is specified in
+  // layer space coordinates for the current platform (e.g., DIP for Aura/Mac,
+  // physical for Android), and is the region to be copied from this view. The
+  // copy is then scaled to a SkBitmap of size |dst_size|. |callback| is run
+  // with true on success, false otherwise. A smaller region than |src_subrect|
+  // may be copied if the underlying surface is smaller than |src_subrect|.
   virtual void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) = 0;
+      CopyFromCompositingSurfaceCallback& callback,
+      const SkColorType color_type) = 0;
 
-  // Copies a given subset of the compositing surface's content into a YV12
-  // VideoFrame, and invokes a callback with a success/fail parameter. |target|
-  // must contain an allocated, YV12 video frame of the intended size. If the
-  // copy rectangle does not match |target|'s size, the copied content will be
-  // scaled and letterboxed with black borders. The copy will happen
-  // asynchronously. This operation will fail if there is no available
+  // Copies the contents of the compositing surface, populating the given
+  // |target| with YV12 image data. |src_subrect| is specified in layer space
+  // coordinates for the current platform (e.g., DIP for Aura/Mac, physical for
+  // Android), and is the region to be copied from this view. The copy is then
+  // scaled and letterboxed with black borders to fit |target|. Finally,
+  // |callback| is asynchronously run with true/false for
+  // success/failure. |target| must point to an allocated, YV12 video frame of
+  // the intended size. This operation will fail if there is no available
   // compositing surface.
   virtual void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
@@ -281,32 +289,21 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // IsSurfaceAvailableForCopy() and HasAcceleratedSurface().
   virtual bool CanCopyToVideoFrame() const = 0;
 
-  // Called when an accelerated compositing surface is initialized.
-  virtual void AcceleratedSurfaceInitialized(int host_id, int route_id) = 0;
-  // |params.window| and |params.surface_id| indicate which accelerated
-  // surface's buffers swapped. |params.renderer_id| and |params.route_id|
-  // are used to formulate a reply to the GPU process to prevent it from getting
-  // too far ahead. They may all be zero, in which case no flow control is
-  // enforced; this case is currently used for accelerated plugins.
-  virtual void AcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params_in_pixel,
-      int gpu_host_id) = 0;
-  // Similar to above, except |params.(x|y|width|height)| define the region
-  // of the surface that changed.
-  virtual void AcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params_in_pixel,
-      int gpu_host_id) = 0;
-
-  // Release the accelerated surface temporarily. It will be recreated on the
-  // next swap buffers or post sub buffer.
-  virtual void AcceleratedSurfaceSuspend() = 0;
-
-  virtual void AcceleratedSurfaceRelease() = 0;
+  // DEPRECATED. Called when an accelerated compositing surface is initialized.
+  virtual void AcceleratedSurfaceInitialized(int route_id) {}
 
   // Return true if the view has an accelerated surface that contains the last
   // presented frame for the view. If |desired_size| is non-empty, true is
   // returned only if the accelerated surface size matches.
   virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) = 0;
+
+  // Compute the orientation type of the display assuming it is a mobile device.
+  static blink::WebScreenOrientationType GetOrientationTypeForMobile(
+      const gfx::Display& display);
+
+  // Compute the orientation type of the display assuming it is a desktop.
+  static blink::WebScreenOrientationType GetOrientationTypeForDesktop(
+      const gfx::Display& display);
 
   virtual void GetScreenInfo(blink::WebScreenInfo* results) = 0;
 
@@ -315,14 +312,18 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
 
   virtual gfx::GLSurfaceHandle GetCompositingSurface() = 0;
 
+  // Called by the RenderFrameHost when it receives an IPC response to a
+  // TextSurroundingSelectionRequest.
   virtual void OnTextSurroundingSelectionResponse(const base::string16& content,
                                                   size_t start_offset,
-                                                  size_t end_offset) {};
+                                                  size_t end_offset);
+
+  // Called by the RenderWidgetHost when an ambiguous gesture is detected to
+  // show the disambiguation popup bubble.
+  virtual void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
+                                       const SkBitmap& zoomed_bitmap);
 
 #if defined(OS_ANDROID)
-  virtual void ShowDisambiguationPopup(const gfx::Rect& target_rect,
-                                       const SkBitmap& zoomed_bitmap) = 0;
-
   // Instructs the view to not drop the surface even when the view is hidden.
   virtual void LockCompositingSurface() = 0;
   virtual void UnlockCompositingSurface() = 0;
@@ -337,7 +338,7 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
       const NativeWebKeyboardEvent& event) = 0;
 #endif
 
-#if defined(OS_MACOSX) || defined(USE_AURA)
+#if defined(OS_MACOSX) || defined(USE_AURA) || defined(OS_ANDROID)
   // Updates the range of the marked text in an IME composition.
   virtual void ImeCompositionRangeChanged(
       const gfx::Range& range,
@@ -380,8 +381,8 @@ class CONTENT_EXPORT RenderWidgetHostViewBase : public RenderWidgetHostView,
   // autofill...).
   blink::WebPopupType popup_type_;
 
-  // When false, the background of the web content is not fully opaque.
-  bool background_opaque_;
+  // The background color of the web content.
+  SkColor background_color_;
 
   // While the mouse is locked, the cursor is hidden from the user. Mouse events
   // are still generated. However, the position they report is the last known
@@ -417,14 +418,13 @@ protected:
  private:
   void FlushInput();
 
-  // Manager of the tree representation of the WebKit render tree.
-  scoped_ptr<BrowserAccessibilityManager> browser_accessibility_manager_;
-
   gfx::Rect current_display_area_;
 
   uint32 renderer_frame_number_;
 
   base::OneShotTimer<RenderWidgetHostViewBase> flush_input_timer_;
+
+  base::WeakPtrFactory<RenderWidgetHostViewBase> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewBase);
 };

@@ -7,45 +7,98 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "content/common/gpu/gpu_channel.h"
+#include "content/common/gpu/gpu_memory_buffer_factory.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/sync_point_manager.h"
 #include "content/common/message_router.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
 #include "gpu/command_buffer/service/shader_translator_cache.h"
+#include "ipc/message_filter.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_share_group.h"
 
 namespace content {
 
-GpuChannelManager::ImageOperation::ImageOperation(
-    int32 sync_point, base::Closure callback)
-    : sync_point(sync_point),
-      callback(callback) {
-}
+namespace {
 
-GpuChannelManager::ImageOperation::~ImageOperation() {
-}
+class GpuChannelManagerMessageFilter : public IPC::MessageFilter {
+ public:
+  GpuChannelManagerMessageFilter(
+      GpuMemoryBufferFactory* gpu_memory_buffer_factory)
+      : sender_(NULL), gpu_memory_buffer_factory_(gpu_memory_buffer_factory) {}
+
+  void OnFilterAdded(IPC::Sender* sender) override {
+    DCHECK(!sender_);
+    sender_ = sender;
+  }
+
+  void OnFilterRemoved() override {
+    DCHECK(sender_);
+    sender_ = NULL;
+  }
+
+  bool OnMessageReceived(const IPC::Message& message) override {
+    DCHECK(sender_);
+    bool handled = true;
+    IPC_BEGIN_MESSAGE_MAP(GpuChannelManagerMessageFilter, message)
+      IPC_MESSAGE_HANDLER(GpuMsg_CreateGpuMemoryBuffer, OnCreateGpuMemoryBuffer)
+      IPC_MESSAGE_UNHANDLED(handled = false)
+    IPC_END_MESSAGE_MAP()
+    return handled;
+  }
+
+ protected:
+  ~GpuChannelManagerMessageFilter() override {}
+
+  void OnCreateGpuMemoryBuffer(
+      const GpuMsg_CreateGpuMemoryBuffer_Params& params) {
+    TRACE_EVENT2("gpu",
+                 "GpuChannelManagerMessageFilter::OnCreateGpuMemoryBuffer",
+                 "id",
+                 params.id,
+                 "client_id",
+                 params.client_id);
+    sender_->Send(new GpuHostMsg_GpuMemoryBufferCreated(
+        gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(params.type,
+                                                          params.id,
+                                                          params.size,
+                                                          params.format,
+                                                          params.usage,
+                                                          params.client_id)));
+  }
+
+  IPC::Sender* sender_;
+  GpuMemoryBufferFactory* gpu_memory_buffer_factory_;
+};
+
+}  // namespace
 
 GpuChannelManager::GpuChannelManager(MessageRouter* router,
                                      GpuWatchdog* watchdog,
                                      base::MessageLoopProxy* io_message_loop,
-                                     base::WaitableEvent* shutdown_event)
-    : weak_factory_(this),
-      io_message_loop_(io_message_loop),
+                                     base::WaitableEvent* shutdown_event,
+                                     IPC::SyncChannel* channel)
+    : io_message_loop_(io_message_loop),
       shutdown_event_(shutdown_event),
       router_(router),
       gpu_memory_manager_(
           this,
           GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
       watchdog_(watchdog),
-      sync_point_manager_(new SyncPointManager) {
+      sync_point_manager_(new SyncPointManager),
+      gpu_memory_buffer_factory_(GpuMemoryBufferFactory::Create()),
+      channel_(channel),
+      filter_(new GpuChannelManagerMessageFilter(
+          gpu_memory_buffer_factory_.get())),
+      weak_factory_(this) {
   DCHECK(router_);
   DCHECK(io_message_loop);
   DCHECK(shutdown_event);
+  channel_->AddFilter(filter_.get());
 }
 
 GpuChannelManager::~GpuChannelManager() {
@@ -54,7 +107,6 @@ GpuChannelManager::~GpuChannelManager() {
     default_offscreen_surface_->Destroy();
     default_offscreen_surface_ = NULL;
   }
-  DCHECK(image_operations_.empty());
 }
 
 gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
@@ -108,9 +160,6 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(GpuMsg_CloseChannel, OnCloseChannel)
     IPC_MESSAGE_HANDLER(GpuMsg_CreateViewCommandBuffer,
                         OnCreateViewCommandBuffer)
-    IPC_MESSAGE_HANDLER(GpuMsg_CreateImage, OnCreateImage)
-    IPC_MESSAGE_HANDLER(GpuMsg_DeleteImage, OnDeleteImage)
-    IPC_MESSAGE_HANDLER(GpuMsg_CreateGpuMemoryBuffer, OnCreateGpuMemoryBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_DestroyGpuMemoryBuffer, OnDestroyGpuMemoryBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_LoadedShader, OnLoadedShader)
     IPC_MESSAGE_UNHANDLED(handled = false)
@@ -120,7 +169,9 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
 
 bool GpuChannelManager::Send(IPC::Message* msg) { return router_->Send(msg); }
 
-void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
+void GpuChannelManager::OnEstablishChannel(int client_id,
+                                           bool share_context,
+                                           bool allow_future_sync_points) {
   IPC::ChannelHandle channel_handle;
 
   gfx::GLShareGroup* share_group = NULL;
@@ -129,23 +180,28 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
     if (!share_group_.get()) {
       share_group_ = new gfx::GLShareGroup;
       DCHECK(!mailbox_manager_.get());
-      mailbox_manager_ = new gpu::gles2::MailboxManager;
+      mailbox_manager_ = new gpu::gles2::MailboxManagerImpl;
     }
     share_group = share_group_.get();
     mailbox_manager = mailbox_manager_.get();
   }
 
-  scoped_ptr<GpuChannel> channel(new GpuChannel(
-      this, watchdog_, share_group, mailbox_manager, client_id, false));
+  scoped_ptr<GpuChannel> channel(new GpuChannel(this,
+                                                watchdog_,
+                                                share_group,
+                                                mailbox_manager,
+                                                client_id,
+                                                false,
+                                                allow_future_sync_points));
   channel->Init(io_message_loop_.get(), shutdown_event_);
   channel_handle.name = channel->GetChannelName();
 
 #if defined(OS_POSIX)
   // On POSIX, pass the renderer-side FD. Also mark it as auto-close so
   // that it gets closed after it has been sent.
-  int renderer_fd = channel->TakeRendererFileDescriptor();
-  DCHECK_NE(-1, renderer_fd);
-  channel_handle.socket = base::FileDescriptor(renderer_fd, true);
+  base::ScopedFD renderer_fd = channel->TakeRendererFileDescriptor();
+  DCHECK(renderer_fd.is_valid());
+  channel_handle.socket = base::FileDescriptor(renderer_fd.Pass());
 #endif
 
   gpu_channels_.set(client_id, channel.Pass());
@@ -182,92 +238,42 @@ void GpuChannelManager::OnCreateViewCommandBuffer(
   Send(new GpuHostMsg_CommandBufferCreated(result));
 }
 
-void GpuChannelManager::CreateImage(
-    gfx::PluginWindowHandle window, int32 client_id, int32 image_id) {
-  gfx::Size size;
-
-  GpuChannelMap::const_iterator iter = gpu_channels_.find(client_id);
-  if (iter != gpu_channels_.end()) {
-    iter->second->CreateImage(window, image_id, &size);
-  }
-
-  Send(new GpuHostMsg_ImageCreated(size));
+void GpuChannelManager::DestroyGpuMemoryBuffer(
+    gfx::GpuMemoryBufferType type,
+    gfx::GpuMemoryBufferId id,
+    int client_id) {
+  io_message_loop_->PostTask(
+      FROM_HERE,
+      base::Bind(&GpuChannelManager::DestroyGpuMemoryBufferOnIO,
+                 base::Unretained(this),
+                 type,
+                 id,
+                 client_id));
 }
 
-void GpuChannelManager::OnCreateImage(
-    gfx::PluginWindowHandle window, int32 client_id, int32 image_id) {
-  DCHECK(image_id);
-
-  if (image_operations_.empty()) {
-    CreateImage(window, client_id, image_id);
-  } else {
-    image_operations_.push_back(
-        new ImageOperation(0, base::Bind(&GpuChannelManager::CreateImage,
-                                         base::Unretained(this),
-                                         window,
-                                         client_id,
-                                         image_id)));
-  }
-}
-
-void GpuChannelManager::DeleteImage(int32 client_id, int32 image_id) {
-  GpuChannelMap::const_iterator iter = gpu_channels_.find(client_id);
-  if (iter != gpu_channels_.end()) {
-    iter->second->DeleteImage(image_id);
-  }
-}
-
-void GpuChannelManager::OnDeleteImage(
-    int32 client_id, int32 image_id, int32 sync_point) {
-  DCHECK(image_id);
-
-  if (!sync_point && image_operations_.empty()) {
-    DeleteImage(client_id, image_id);
-  } else {
-    image_operations_.push_back(
-        new ImageOperation(sync_point,
-                           base::Bind(&GpuChannelManager::DeleteImage,
-                                      base::Unretained(this),
-                                      client_id,
-                                      image_id)));
-    if (sync_point) {
-      sync_point_manager()->AddSyncPointCallback(
-          sync_point,
-          base::Bind(&GpuChannelManager::OnDeleteImageSyncPointRetired,
-                     base::Unretained(this),
-                     image_operations_.back()));
-    }
-  }
-}
-
-void GpuChannelManager::OnDeleteImageSyncPointRetired(
-    ImageOperation* image_operation) {
-  // Mark operation as no longer having a pending sync point.
-  image_operation->sync_point = 0;
-
-  // De-queue operations until we reach a pending sync point.
-  while (!image_operations_.empty()) {
-    // Check if operation has a pending sync point.
-    if (image_operations_.front()->sync_point)
-      return;
-
-    image_operations_.front()->callback.Run();
-    delete image_operations_.front();
-    image_operations_.pop_front();
-  }
-}
-
-void GpuChannelManager::OnCreateGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferHandle& handle,
-    const gfx::Size& size,
-    unsigned internalformat,
-    unsigned usage) {
-  Send(new GpuHostMsg_GpuMemoryBufferCreated(gfx::GpuMemoryBufferHandle()));
+void GpuChannelManager::DestroyGpuMemoryBufferOnIO(
+    gfx::GpuMemoryBufferType type,
+    gfx::GpuMemoryBufferId id,
+    int client_id) {
+  gpu_memory_buffer_factory_->DestroyGpuMemoryBuffer(type, id, client_id);
 }
 
 void GpuChannelManager::OnDestroyGpuMemoryBuffer(
-    const gfx::GpuMemoryBufferHandle& handle,
+    gfx::GpuMemoryBufferType type,
+    gfx::GpuMemoryBufferId id,
+    int client_id,
     int32 sync_point) {
+  if (!sync_point) {
+    DestroyGpuMemoryBuffer(type, id, client_id);
+  } else {
+    sync_point_manager()->AddSyncPointCallback(
+        sync_point,
+        base::Bind(&GpuChannelManager::DestroyGpuMemoryBuffer,
+                   base::Unretained(this),
+                   type,
+                   id,
+                   client_id));
+  }
 }
 
 void GpuChannelManager::OnLoadedShader(std::string program_proto) {

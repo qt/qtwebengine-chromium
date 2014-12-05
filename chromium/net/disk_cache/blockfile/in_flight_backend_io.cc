@@ -8,6 +8,8 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
 #include "net/base/net_errors.h"
 #include "net/disk_cache/blockfile/backend_impl.h"
 #include "net/disk_cache/blockfile/entry_impl.h"
@@ -25,8 +27,7 @@ BackendIO::BackendIO(InFlightIO* controller, BackendImpl* backend,
       callback_(callback),
       operation_(OP_NONE),
       entry_ptr_(NULL),
-      iter_ptr_(NULL),
-      iter_(NULL),
+      iterator_(NULL),
       entry_(NULL),
       index_(0),
       offset_(0),
@@ -64,8 +65,14 @@ void BackendIO::OnDone(bool cancel) {
 
   if (result() == net::OK) {
     static_cast<EntryImpl*>(*entry_ptr_)->OnEntryCreated(backend_);
-    if (cancel)
+    if (cancel) {
+      // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is
+      // fixed.
+      tracked_objects::ScopedTracker tracking_profile(
+          FROM_HERE_WITH_EXPLICIT_FUNCTION("422516 BackendIO::OnDone"));
+
       (*entry_ptr_)->Close();
+    }
   }
 }
 
@@ -115,21 +122,16 @@ void BackendIO::DoomEntriesSince(const base::Time initial_time) {
   initial_time_ = initial_time;
 }
 
-void BackendIO::OpenNextEntry(void** iter, Entry** next_entry) {
+void BackendIO::OpenNextEntry(Rankings::Iterator* iterator,
+                              Entry** next_entry) {
   operation_ = OP_OPEN_NEXT;
-  iter_ptr_ = iter;
+  iterator_ = iterator;
   entry_ptr_ = next_entry;
 }
 
-void BackendIO::OpenPrevEntry(void** iter, Entry** prev_entry) {
-  operation_ = OP_OPEN_PREV;
-  iter_ptr_ = iter;
-  entry_ptr_ = prev_entry;
-}
-
-void BackendIO::EndEnumeration(void* iterator) {
+void BackendIO::EndEnumeration(scoped_ptr<Rankings::Iterator> iterator) {
   operation_ = OP_END_ENUMERATION;
-  iter_ = iterator;
+  scoped_iterator_ = iterator.Pass();
 }
 
 void BackendIO::OnExternalCacheHit(const std::string& key) {
@@ -217,8 +219,8 @@ void BackendIO::ReadyForSparseIO(EntryImpl* entry) {
 BackendIO::~BackendIO() {}
 
 bool BackendIO::ReturnsEntry() {
-  return (operation_ == OP_OPEN || operation_ == OP_CREATE ||
-          operation_ == OP_OPEN_NEXT || operation_ == OP_OPEN_PREV);
+  return operation_ == OP_OPEN || operation_ == OP_CREATE ||
+      operation_ == OP_OPEN_NEXT;
 }
 
 base::TimeDelta BackendIO::ElapsedTime() const {
@@ -250,13 +252,10 @@ void BackendIO::ExecuteBackendOperation() {
       result_ = backend_->SyncDoomEntriesSince(initial_time_);
       break;
     case OP_OPEN_NEXT:
-      result_ = backend_->SyncOpenNextEntry(iter_ptr_, entry_ptr_);
-      break;
-    case OP_OPEN_PREV:
-      result_ = backend_->SyncOpenPrevEntry(iter_ptr_, entry_ptr_);
+      result_ = backend_->SyncOpenNextEntry(iterator_, entry_ptr_);
       break;
     case OP_END_ENUMERATION:
-      backend_->SyncEndEnumeration(iter_);
+      backend_->SyncEndEnumeration(scoped_iterator_.Pass());
       result_ = net::OK;
       break;
     case OP_ON_EXTERNAL_CACHE_HIT:
@@ -330,8 +329,9 @@ void BackendIO::ExecuteEntryOperation() {
     NotifyController();
 }
 
-InFlightBackendIO::InFlightBackendIO(BackendImpl* backend,
-                    base::MessageLoopProxy* background_thread)
+InFlightBackendIO::InFlightBackendIO(
+    BackendImpl* backend,
+    const scoped_refptr<base::SingleThreadTaskRunner>& background_thread)
     : backend_(backend),
       background_thread_(background_thread),
       ptr_factory_(this) {
@@ -389,24 +389,19 @@ void InFlightBackendIO::DoomEntriesSince(
   PostOperation(operation.get());
 }
 
-void InFlightBackendIO::OpenNextEntry(void** iter, Entry** next_entry,
+void InFlightBackendIO::OpenNextEntry(Rankings::Iterator* iterator,
+                                      Entry** next_entry,
                                       const net::CompletionCallback& callback) {
   scoped_refptr<BackendIO> operation(new BackendIO(this, backend_, callback));
-  operation->OpenNextEntry(iter, next_entry);
+  operation->OpenNextEntry(iterator, next_entry);
   PostOperation(operation.get());
 }
 
-void InFlightBackendIO::OpenPrevEntry(void** iter, Entry** prev_entry,
-                                      const net::CompletionCallback& callback) {
-  scoped_refptr<BackendIO> operation(new BackendIO(this, backend_, callback));
-  operation->OpenPrevEntry(iter, prev_entry);
-  PostOperation(operation.get());
-}
-
-void InFlightBackendIO::EndEnumeration(void* iterator) {
+void InFlightBackendIO::EndEnumeration(
+    scoped_ptr<Rankings::Iterator> iterator) {
   scoped_refptr<BackendIO> operation(
       new BackendIO(this, backend_, net::CompletionCallback()));
-  operation->EndEnumeration(iterator);
+  operation->EndEnumeration(iterator.Pass());
   PostOperation(operation.get());
 }
 
@@ -508,13 +503,19 @@ void InFlightBackendIO::OnOperationComplete(BackgroundIO* operation,
   BackendIO* op = static_cast<BackendIO*>(operation);
   op->OnDone(cancel);
 
-  if (!op->callback().is_null() && (!cancel || op->IsEntryOperation()))
+  if (!op->callback().is_null() && (!cancel || op->IsEntryOperation())) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "422516 InFlightBackendIO::OnOperationComplete"));
+
     op->callback().Run(op->result());
+  }
 }
 
 void InFlightBackendIO::PostOperation(BackendIO* operation) {
-  background_thread_->PostTask(FROM_HERE,
-      base::Bind(&BackendIO::ExecuteOperation, operation));
+  background_thread_->PostTask(
+      FROM_HERE, base::Bind(&BackendIO::ExecuteOperation, operation));
   OnOperationPosted(operation);
 }
 

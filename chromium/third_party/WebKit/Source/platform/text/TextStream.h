@@ -32,11 +32,10 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/Unicode.h"
 
-namespace WebCore {
+namespace blink {
 
 class IntPoint;
 class IntRect;
-class LayoutPoint;
 class FloatPoint;
 class FloatRect;
 class FloatSize;

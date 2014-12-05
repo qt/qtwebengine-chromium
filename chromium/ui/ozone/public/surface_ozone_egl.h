@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "ui/gfx/overlay_transform.h"
 #include "ui/ozone/ozone_base_export.h"
 
 namespace gfx {
@@ -15,6 +16,7 @@ class VSyncProvider;
 }
 
 namespace ui {
+class NativePixmap;
 
 // The platform-specific part of an EGL surface.
 //

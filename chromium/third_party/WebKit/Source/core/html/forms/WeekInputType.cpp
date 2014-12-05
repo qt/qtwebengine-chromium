@@ -40,7 +40,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -83,11 +83,6 @@ bool WeekInputType::setMillisecondToDateComponents(double value, DateComponents*
     return date->setMillisecondsSinceEpochForWeek(value);
 }
 
-bool WeekInputType::isWeekField() const
-{
-    return true;
-}
-
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 String WeekInputType::formatDateTimeFieldsState(const DateTimeFieldsState& dateTimeFieldsState) const
@@ -114,4 +109,4 @@ bool WeekInputType::isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, boo
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

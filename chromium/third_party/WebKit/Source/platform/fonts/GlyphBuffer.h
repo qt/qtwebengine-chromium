@@ -32,50 +32,57 @@
 
 #include "platform/fonts/Glyph.h"
 #include "platform/geometry/FloatSize.h"
+#include "platform/heap/Heap.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class SimpleFontData;
 
 class GlyphBuffer {
+    STACK_ALLOCATED();
 public:
     bool isEmpty() const { return m_fontData.isEmpty(); }
+    bool hasOffsets() const { return !m_offsets.isEmpty(); }
     unsigned size() const { return m_fontData.size(); }
 
-    void clear()
-    {
-        m_fontData.clear();
-        m_glyphs.clear();
-        m_advances.clear();
-    }
-
-    Glyph* glyphs(unsigned from) { return m_glyphs.data() + from; }
-    FloatSize* advances(unsigned from) { return m_advances.data() + from; }
     const Glyph* glyphs(unsigned from) const { return m_glyphs.data() + from; }
-    const FloatSize* advances(unsigned from) const { return m_advances.data() + from; }
+    const float* advances(unsigned from) const { return m_advances.data() + from; }
+    const FloatSize* offsets(unsigned from) const { return m_offsets.data() + from; }
 
-    const SimpleFontData* fontDataAt(unsigned index) const { return m_fontData[index]; }
+    const SimpleFontData* fontDataAt(unsigned index) const
+    {
+        return m_fontData[index];
+    }
 
     Glyph glyphAt(unsigned index) const
     {
         return m_glyphs[index];
     }
 
-    FloatSize advanceAt(unsigned index) const
+    float advanceAt(unsigned index) const
     {
         return m_advances[index];
     }
 
     void add(Glyph glyph, const SimpleFontData* font, float width)
     {
-        add(glyph, font, FloatSize(width, 0));
-    }
+        // should not mix offset/advance-only glyphs
+        ASSERT(!hasOffsets());
 
-    void add(Glyph glyph, const SimpleFontData* font, const FloatSize& advance)
-    {
         m_fontData.append(font);
         m_glyphs.append(glyph);
+        m_advances.append(width);
+    }
+
+    void add(Glyph glyph, const SimpleFontData* font, const FloatSize& offset, float advance)
+    {
+        // should not mix offset/advance-only glyphs
+        ASSERT(size() == m_offsets.size());
+
+        m_fontData.append(font);
+        m_glyphs.append(glyph);
+        m_offsets.append(offset);
         m_advances.append(advance);
     }
 
@@ -89,15 +96,17 @@ public:
     void expandLastAdvance(float width)
     {
         ASSERT(!isEmpty());
-        FloatSize& lastAdvance = m_advances.last();
-        lastAdvance.setWidth(lastAdvance.width() + width);
+        float& lastAdvance = m_advances.last();
+        lastAdvance += width;
     }
 
-private:
+protected:
     Vector<const SimpleFontData*, 2048> m_fontData;
     Vector<Glyph, 2048> m_glyphs;
-    Vector<FloatSize, 2048> m_advances;
+    Vector<float, 2048> m_advances;
+    Vector<FloatSize, 1024> m_offsets;
 };
 
-}
+} // namespace blink
+
 #endif

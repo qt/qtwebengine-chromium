@@ -35,6 +35,7 @@
 #include "net/base/dns_reloader.h"
 #include "net/base/dns_util.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
@@ -182,7 +183,7 @@ bool IsGloballyReachable(const IPAddressNumber& dest,
   rv = socket->GetLocalAddress(&endpoint);
   if (rv != OK)
     return false;
-  DCHECK(endpoint.GetFamily() == ADDRESS_FAMILY_IPV6);
+  DCHECK_EQ(ADDRESS_FAMILY_IPV6, endpoint.GetFamily());
   const IPAddressNumber& address = endpoint.address();
   bool is_link_local = (address[0] == 0xFE) && ((address[1] & 0xC0) == 0x80);
   if (is_link_local)
@@ -766,7 +767,7 @@ class HostResolverImpl::ProcTask
                                    const int error,
                                    const int os_error) const {
     DCHECK(origin_loop_->BelongsToCurrentThread());
-    enum Category {  // Used in HISTOGRAM_ENUMERATION.
+    enum Category {  // Used in UMA_HISTOGRAM_ENUMERATION.
       RESOLVE_SUCCESS,
       RESOLVE_FAIL,
       RESOLVE_SPECULATIVE_SUCCESS,
@@ -1220,7 +1221,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
                    &key_.hostname));
   }
 
-  virtual ~Job() {
+  ~Job() override {
     if (is_running()) {
       // |resolver_| was destroyed with this Job still in flight.
       // Clean-up, record in the log, but don't run any callbacks.
@@ -1423,7 +1424,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
   }
 
   // PriorityDispatch::Job:
-  virtual void Start() OVERRIDE {
+  void Start() override {
     DCHECK_LE(num_occupied_job_slots_, 1u);
 
     handle_.Reset();
@@ -1586,10 +1587,10 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
 
   // HostResolverImpl::DnsTask::Delegate implementation:
 
-  virtual void OnDnsTaskComplete(base::TimeTicks start_time,
-                                 int net_error,
-                                 const AddressList& addr_list,
-                                 base::TimeDelta ttl) OVERRIDE {
+  void OnDnsTaskComplete(base::TimeTicks start_time,
+                         int net_error,
+                         const AddressList& addr_list,
+                         base::TimeDelta ttl) override {
     DCHECK(is_dns_running());
 
     base::TimeDelta duration = base::TimeTicks::Now() - start_time;
@@ -1624,7 +1625,7 @@ class HostResolverImpl::Job : public PrioritizedDispatcher::Job,
         bounded_ttl);
   }
 
-  virtual void OnFirstDnsTransactionComplete() OVERRIDE {
+  void OnFirstDnsTransactionComplete() override {
     DCHECK(dns_task_->needs_two_transactions());
     DCHECK_EQ(dns_task_->needs_another_transaction(), is_queued());
     // No longer need to occupy two dispatcher slots.
@@ -2032,10 +2033,18 @@ bool HostResolverImpl::ResolveAsIP(const Key& key,
       ~(HOST_RESOLVER_CANONNAME | HOST_RESOLVER_LOOPBACK_ONLY |
         HOST_RESOLVER_DEFAULT_FAMILY_SET_DUE_TO_NO_IPV6),
             0) << " Unhandled flag";
-  bool ipv6_disabled = (default_address_family_ == ADDRESS_FAMILY_IPV4) &&
-      !probe_ipv6_support_;
+
   *net_error = OK;
-  if ((ip_number.size() == kIPv6AddressSize) && ipv6_disabled) {
+  AddressFamily family = GetAddressFamily(ip_number);
+  if (family == ADDRESS_FAMILY_IPV6 &&
+      !probe_ipv6_support_ &&
+      default_address_family_ == ADDRESS_FAMILY_IPV4) {
+    // Don't return IPv6 addresses if default address family is set to IPv4,
+    // and probes are disabled.
+    *net_error = ERR_NAME_NOT_RESOLVED;
+  } else if (key.address_family != ADDRESS_FAMILY_UNSPECIFIED &&
+             key.address_family != family) {
+    // Don't return IPv6 addresses for IPv4 queries, and vice versa.
     *net_error = ERR_NAME_NOT_RESOLVED;
   } else {
     *addresses = AddressList::CreateFromIPAddress(ip_number, info.port());
@@ -2077,7 +2086,7 @@ bool HostResolverImpl::ServeFromHosts(const Key& key,
   addresses->clear();
 
   // HOSTS lookups are case-insensitive.
-  std::string hostname = StringToLowerASCII(key.hostname);
+  std::string hostname = base::StringToLowerASCII(key.hostname);
 
   const DnsHosts& hosts = dns_client_->GetConfig()->hosts;
 

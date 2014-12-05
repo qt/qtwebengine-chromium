@@ -31,15 +31,13 @@
 #include "config.h"
 #include "core/animation/KeyframeEffectModel.h"
 
-#include "core/animation/AnimatableLength.h"
-#include "core/animation/AnimatableUnknown.h"
-#include "core/animation/interpolation/LegacyStyleInterpolation.h"
+#include "core/animation/LegacyStyleInterpolation.h"
+#include "core/animation/animatable/AnimatableLength.h"
+#include "core/animation/animatable/AnimatableUnknown.h"
 #include "core/css/CSSPrimitiveValue.h"
-#include "core/css/parser/BisonCSSParser.h"
-#include "core/css/resolver/CSSToStyleMap.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -141,9 +139,8 @@ TEST(AnimationKeyframeEffectModel, DISABLED_CompositeAdd)
 TEST(AnimationKeyframeEffectModel, CompositeEaseIn)
 {
     AnimatableValueKeyframeVector keyframes = keyframesAtZeroAndOne(pixelAnimatableValue(3.0), pixelAnimatableValue(5.0));
-    RefPtrWillBeRawPtr<CSSValue> timingFunction = BisonCSSParser::parseAnimationTimingFunctionValue("ease-in");
     keyframes[0]->setComposite(AnimationEffect::CompositeReplace);
-    keyframes[0]->setEasing(CSSToStyleMap::mapAnimationTimingFunction(timingFunction.get(), true));
+    keyframes[0]->setEasing(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseIn));
     keyframes[1]->setComposite(AnimationEffect::CompositeReplace);
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(keyframes);
     expectDoubleValue(3.8579516, effect->sample(0, 0.6, duration)->at(0));
@@ -153,9 +150,8 @@ TEST(AnimationKeyframeEffectModel, CompositeEaseIn)
 TEST(AnimationKeyframeEffectModel, CompositeCubicBezier)
 {
     AnimatableValueKeyframeVector keyframes = keyframesAtZeroAndOne(pixelAnimatableValue(3.0), pixelAnimatableValue(5.0));
-    RefPtrWillBeRawPtr<CSSValue> timingFunction = BisonCSSParser::parseAnimationTimingFunctionValue("cubic-bezier(0.42, 0, 0.58, 1)");
     keyframes[0]->setComposite(AnimationEffect::CompositeReplace);
-    keyframes[0]->setEasing(CSSToStyleMap::mapAnimationTimingFunction(timingFunction.get(), true));
+    keyframes[0]->setEasing(CubicBezierTimingFunction::create(0.42, 0, 0.58, 1));
     keyframes[1]->setComposite(AnimationEffect::CompositeReplace);
     RefPtrWillBeRawPtr<AnimatableValueKeyframeEffectModel> effect = AnimatableValueKeyframeEffectModel::create(keyframes);
     expectDoubleValue(4.3363357, effect->sample(0, 0.6, duration)->at(0));
@@ -428,7 +424,7 @@ TEST(AnimationKeyframeEffectModel, ToKeyframeEffectModel)
 
 } // namespace
 
-namespace WebCore {
+namespace blink {
 
 class KeyframeEffectModelTest : public ::testing::Test {
 public:
@@ -437,49 +433,6 @@ public:
         return KeyframeEffectModelBase::normalizedKeyframes(keyframes);
     }
 };
-
-TEST_F(KeyframeEffectModelTest, NotLooselySorted)
-{
-    KeyframeVector keyframes(4);
-    keyframes[0] = AnimatableValueKeyframe::create();
-    keyframes[1] = AnimatableValueKeyframe::create();
-    keyframes[1]->setOffset(9);
-    keyframes[2] = AnimatableValueKeyframe::create();
-    keyframes[3] = AnimatableValueKeyframe::create();
-    keyframes[3]->setOffset(1);
-
-    const KeyframeVector result = normalizedKeyframes(keyframes);
-    EXPECT_EQ(0U, result.size());
-}
-
-TEST_F(KeyframeEffectModelTest, LastOne)
-{
-    KeyframeVector keyframes(3);
-    keyframes[0] = AnimatableValueKeyframe::create();
-    keyframes[0]->setOffset(-1);
-    keyframes[1] = AnimatableValueKeyframe::create();
-    keyframes[2] = AnimatableValueKeyframe::create();
-    keyframes[2]->setOffset(2);
-
-    const KeyframeVector result = normalizedKeyframes(keyframes);
-    EXPECT_EQ(1U, result.size());
-    EXPECT_DOUBLE_EQ(1.0, result[0]->offset());
-}
-
-TEST_F(KeyframeEffectModelTest, FirstZero)
-{
-    KeyframeVector keyframes(3);
-    keyframes[0] = AnimatableValueKeyframe::create();
-    keyframes[0]->setOffset(-1);
-    keyframes[1] = AnimatableValueKeyframe::create();
-    keyframes[2] = AnimatableValueKeyframe::create();
-    keyframes[2]->setOffset(0.25);
-
-    const KeyframeVector result = normalizedKeyframes(keyframes);
-    EXPECT_EQ(2U, result.size());
-    EXPECT_DOUBLE_EQ(0.0, result[0]->offset());
-    EXPECT_DOUBLE_EQ(0.25, result[1]->offset());
-}
 
 TEST_F(KeyframeEffectModelTest, EvenlyDistributed1)
 {
@@ -503,18 +456,14 @@ TEST_F(KeyframeEffectModelTest, EvenlyDistributed1)
 
 TEST_F(KeyframeEffectModelTest, EvenlyDistributed2)
 {
-    KeyframeVector keyframes(8);
+    KeyframeVector keyframes(6);
     keyframes[0] = AnimatableValueKeyframe::create();
-    keyframes[0]->setOffset(-0.1);
     keyframes[1] = AnimatableValueKeyframe::create();
     keyframes[2] = AnimatableValueKeyframe::create();
     keyframes[3] = AnimatableValueKeyframe::create();
+    keyframes[3]->setOffset(0.75);
     keyframes[4] = AnimatableValueKeyframe::create();
-    keyframes[4]->setOffset(0.75);
     keyframes[5] = AnimatableValueKeyframe::create();
-    keyframes[6] = AnimatableValueKeyframe::create();
-    keyframes[7] = AnimatableValueKeyframe::create();
-    keyframes[7]->setOffset(1.1);
 
     const KeyframeVector result = normalizedKeyframes(keyframes);
     EXPECT_EQ(6U, result.size());
@@ -561,4 +510,4 @@ TEST_F(KeyframeEffectModelTest, EvenlyDistributed3)
     EXPECT_DOUBLE_EQ(1.0, result[11]->offset());
 }
 
-} // namespace WebCore
+} // namespace blink

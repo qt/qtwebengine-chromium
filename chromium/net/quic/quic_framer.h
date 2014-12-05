@@ -45,6 +45,8 @@ const size_t kQuicEntropyHashSize = 1;
 // Size in bytes reserved for the delta time of the largest observed
 // sequence number in ack frames.
 const size_t kQuicDeltaTimeLargestObservedSize = 2;
+// Size in bytes reserved for the number of received packets with timestamps.
+const size_t kQuicNumTimestampsSize = 1;
 // Size in bytes reserved for the number of missing packets in ack frames.
 const size_t kNumberOfNackRangesSize = 1;
 // Maximum number of missing packet ranges that can fit within an ack frame.
@@ -255,21 +257,19 @@ class NET_EXPORT_PRIVATE QuicFramer {
                             base::StringPiece payload);
 
   // Largest size in bytes of all stream frame fields without the payload.
-  static size_t GetMinStreamFrameSize(QuicVersion version,
-                                      QuicStreamId stream_id,
+  static size_t GetMinStreamFrameSize(QuicStreamId stream_id,
                                       QuicStreamOffset offset,
                                       bool last_frame_in_packet,
                                       InFecGroup is_in_fec_group);
   // Size in bytes of all ack frame fields without the missing packets.
   static size_t GetMinAckFrameSize(
-      QuicVersion version,
       QuicSequenceNumberLength sequence_number_length,
       QuicSequenceNumberLength largest_observed_length);
   // Size in bytes of a stop waiting frame.
   static size_t GetStopWaitingFrameSize(
       QuicSequenceNumberLength sequence_number_length);
   // Size in bytes of all reset stream frame without the error details.
-  static size_t GetMinRstStreamFrameSize(QuicVersion quic_version);
+  static size_t GetMinRstStreamFrameSize();
   // Size in bytes of all connection close frame fields without the error
   // details and the missing packets from the enclosed ack frame.
   static size_t GetMinConnectionCloseFrameSize();
@@ -306,15 +306,15 @@ class NET_EXPORT_PRIVATE QuicFramer {
       QuicSequenceNumberLength sequence_number_length);
 
   // Returns a SerializedPacket whose |packet| member is owned by the caller,
-  // is created from the first |num_frames| frames, or is NULL if the packet
+  // is created from the first |num_frames| frames, or is nullptr if the packet
   // could not be created.  The packet must be of size |packet_size|.
   SerializedPacket BuildDataPacket(const QuicPacketHeader& header,
                                    const QuicFrames& frames,
                                    size_t packet_size);
 
   // Returns a SerializedPacket whose |packet| member is owned by the caller,
-  // and is populated with the fields in |header| and |fec|, or is NULL if the
-  // packet could not be created.
+  // and is populated with the fields in |header| and |fec|, or is nullptr if
+  // the packet could not be created.
   SerializedPacket BuildFecPacket(const QuicPacketHeader& header,
                                   const QuicFecData& fec);
 
@@ -410,13 +410,11 @@ class NET_EXPORT_PRIVATE QuicFramer {
       QuicPacketSequenceNumber* sequence_number);
   bool ProcessFrameData(const QuicPacketHeader& header);
   bool ProcessStreamFrame(uint8 frame_type, QuicStreamFrame* frame);
-  bool ProcessAckFrame(const QuicPacketHeader& header,
-                       uint8 frame_type,
-                       QuicAckFrame* frame);
-  bool ProcessReceivedInfo(uint8 frame_type, ReceivedPacketInfo* received_info);
+  bool ProcessAckFrame(uint8 frame_type, QuicAckFrame* frame);
+  bool ProcessTimestampsInAckFrame(QuicAckFrame* frame);
   bool ProcessStopWaitingFrame(const QuicPacketHeader& public_header,
                                QuicStopWaitingFrame* stop_waiting);
-  bool ProcessQuicCongestionFeedbackFrame(
+  bool ProcessCongestionFeedbackFrame(
       QuicCongestionFeedbackFrame* congestion_feedback);
   bool ProcessRstStreamFrame(QuicRstStreamFrame* frame);
   bool ProcessConnectionCloseFrame(QuicConnectionCloseFrame* frame);
@@ -432,6 +430,10 @@ class NET_EXPORT_PRIVATE QuicFramer {
   QuicPacketSequenceNumber CalculatePacketSequenceNumberFromWire(
       QuicSequenceNumberLength sequence_number_length,
       QuicPacketSequenceNumber packet_sequence_number) const;
+
+  // Returns the QuicTime::Delta corresponding to the time from when the framer
+  // was created.
+  const QuicTime::Delta CalculateTimestampFromWire(uint32 time_delta_us);
 
   // Computes the wire size in bytes of the |ack| frame, assuming no truncation.
   size_t GetAckFrameSize(const QuicAckFrame& ack,
@@ -468,6 +470,8 @@ class NET_EXPORT_PRIVATE QuicFramer {
                                  QuicDataWriter* builder);
   bool AppendCongestionFeedbackFrame(const QuicCongestionFeedbackFrame& frame,
                                      QuicDataWriter* builder);
+  bool AppendTimestampToAckFrame(const QuicAckFrame& frame,
+                                 QuicDataWriter* builder);
   bool AppendStopWaitingFrame(const QuicPacketHeader& header,
                               const QuicStopWaitingFrame& frame,
                               QuicDataWriter* builder);
@@ -529,9 +533,12 @@ class NET_EXPORT_PRIVATE QuicFramer {
   bool is_server_;
   // If false, skip validation that the public flags are set to legal values.
   bool validate_flags_;
-  // The time this frames was created.  Time written to the wire will be
+  // The time this framer was created.  Time written to the wire will be
   // written as a delta from this value.
   QuicTime creation_time_;
+  // The time delta computed for the last timestamp frame. This is relative to
+  // the creation_time.
+  QuicTime::Delta last_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicFramer);
 };

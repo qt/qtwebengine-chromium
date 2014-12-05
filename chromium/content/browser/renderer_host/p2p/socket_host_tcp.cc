@@ -18,7 +18,7 @@
 #include "net/socket/tcp_client_socket.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
+#include "third_party/webrtc/base/asyncpacketsocket.h"
 
 namespace {
 
@@ -49,7 +49,7 @@ P2PSocketHostTcpBase::P2PSocketHostTcpBase(
     int socket_id,
     P2PSocketType type,
     net::URLRequestContextGetter* url_context)
-    : P2PSocketHost(message_sender, socket_id),
+    : P2PSocketHost(message_sender, socket_id, P2PSocketHost::TCP),
       write_pending_(false),
       connected_(false),
       type_(type),
@@ -83,8 +83,18 @@ bool P2PSocketHostTcpBase::Init(const net::IPEndPoint& local_address,
   remote_address_ = remote_address;
   state_ = STATE_CONNECTING;
 
-  net::HostPortPair dest_host_port_pair =
-      net::HostPortPair::FromIPEndPoint(remote_address.ip_address);
+  net::HostPortPair dest_host_port_pair;
+  // If there is no resolved address, let's try with domain name, assuming
+  // socket layer will do the DNS resolve.
+  if (remote_address.ip_address.address().empty()) {
+    DCHECK(!remote_address.hostname.empty());
+    dest_host_port_pair = net::HostPortPair(remote_address.hostname,
+                                            remote_address.ip_address.port());
+  } else {
+    dest_host_port_pair = net::HostPortPair::FromIPEndPoint(
+        remote_address.ip_address);
+  }
+
   // TODO(mallinath) - We are ignoring local_address altogether. We should
   // find a way to inject this into ProxyResolvingClientSocket. This could be
   // a problem on multi-homed host.
@@ -175,8 +185,15 @@ void P2PSocketHostTcpBase::StartTls() {
 
   // Default ssl config.
   const net::SSLConfig ssl_config;
-  net::HostPortPair dest_host_port_pair =
+  net::HostPortPair dest_host_port_pair;
+
+  // Calling net::HostPortPair::FromIPEndPoint will crash if the IP address is
+  // empty.
+  if (!remote_address_.ip_address.address().empty()) {
       net::HostPortPair::FromIPEndPoint(remote_address_.ip_address);
+  } else {
+    dest_host_port_pair.set_port(remote_address_.ip_address.port());
+  }
   if (!remote_address_.hostname.empty())
     dest_host_port_pair.set_host(remote_address_.hostname);
 
@@ -217,29 +234,48 @@ void P2PSocketHostTcpBase::OnOpen() {
                  << kSendSocketBufferSize;
   }
 
-  DoSendSocketCreateMsg();
+  if (!DoSendSocketCreateMsg())
+    return;
+
+  DCHECK_EQ(state_, STATE_OPEN);
   DoRead();
 }
 
-void P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
+bool P2PSocketHostTcpBase::DoSendSocketCreateMsg() {
   DCHECK(socket_.get());
 
-  net::IPEndPoint address;
-  int result = socket_->GetLocalAddress(&address);
+  net::IPEndPoint local_address;
+  int result = socket_->GetLocalAddress(&local_address);
   if (result < 0) {
     LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get local"
                << " address: " << result;
     OnError();
-    return;
+    return false;
   }
 
-  VLOG(1) << "Local address: " << address.ToString();
+  VLOG(1) << "Local address: " << local_address.ToString();
+
+  net::IPEndPoint remote_address;
+  result = socket_->GetPeerAddress(&remote_address);
+  if (result < 0) {
+    LOG(ERROR) << "P2PSocketHostTcpBase::OnConnected: unable to get peer"
+               << " address: " << result;
+    OnError();
+    return false;
+  }
+  VLOG(1) << "Remote address: " << remote_address.ToString();
+  if (remote_address_.ip_address.address().empty()) {
+    // Save |remote_address| if address is empty.
+    remote_address_.ip_address = remote_address;
+  }
 
   // If we are not doing TLS, we are ready to send data now.
   // In case of TLS SignalConnect will be sent only after TLS handshake is
   // successfull. So no buffering will be done at socket handlers if any
   // packets sent before that by the application.
-  message_sender_->Send(new P2PMsg_OnSocketCreated(id_, address));
+  message_sender_->Send(new P2PMsg_OnSocketCreated(
+      id_, local_address, remote_address));
+  return true;
 }
 
 void P2PSocketHostTcpBase::DoRead() {
@@ -298,7 +334,7 @@ void P2PSocketHostTcpBase::OnPacket(const std::vector<char>& data) {
 // but may be honored in the future.
 void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
                                 const std::vector<char>& data,
-                                const talk_base::PacketOptions& options,
+                                const rtc::PacketOptions& options,
                                 uint64 packet_id) {
   if (!socket_) {
     // The Send message may be sent after the an OnError message was
@@ -329,8 +365,11 @@ void P2PSocketHostTcpBase::Send(const net::IPEndPoint& to,
 
 void P2PSocketHostTcpBase::WriteOrQueue(
     scoped_refptr<net::DrainableIOBuffer>& buffer) {
+  IncrementTotalSentPackets();
   if (write_buffer_.get()) {
     write_queue_.push(buffer);
+    IncrementDelayedPackets();
+    IncrementDelayedBytes(buffer->size());
     return;
   }
 
@@ -368,6 +407,8 @@ void P2PSocketHostTcpBase::HandleWriteResult(int result) {
       } else {
         write_buffer_ = write_queue_.front();
         write_queue_.pop();
+        // Update how many bytes are still waiting to be sent.
+        DecrementDelayedBytes(write_buffer_->size());
       }
     }
   } else if (result == net::ERR_IO_PENDING) {
@@ -458,7 +499,7 @@ int P2PSocketHostTcp::ProcessInput(char* input, int input_len) {
 
 void P2PSocketHostTcp::DoSend(const net::IPEndPoint& to,
                               const std::vector<char>& data,
-                              const talk_base::PacketOptions& options) {
+                              const rtc::PacketOptions& options) {
   int size = kPacketHeaderSize + data.size();
   scoped_refptr<net::DrainableIOBuffer> buffer =
       new net::DrainableIOBuffer(new net::IOBuffer(size), size);
@@ -511,7 +552,7 @@ int P2PSocketHostStunTcp::ProcessInput(char* input, int input_len) {
 
 void P2PSocketHostStunTcp::DoSend(const net::IPEndPoint& to,
                                   const std::vector<char>& data,
-                                  const talk_base::PacketOptions& options) {
+                                  const rtc::PacketOptions& options) {
   // Each packet is expected to have header (STUN/TURN ChannelData), where
   // header contains message type and and length of message.
   if (data.size() < kPacketHeaderSize + kPacketLengthOffset) {

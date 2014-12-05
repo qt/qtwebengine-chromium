@@ -20,25 +20,146 @@
 #include "ui/base/ime/input_method_initializer.h"
 
 #if defined(OS_WIN)
+#include <dwrite.h>
+#include "base/win/win_util.h"
 #include "base/win/windows_version.h"
+#include "net/cert/sha256_legacy_support_win.h"
+#include "sandbox/win/src/sidestep/preamble_patcher.h"
+#include "skia/ext/fontmgr_default_win.h"
+#include "third_party/skia/include/ports/SkFontMgr.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
 #include "ui/base/win/scoped_ole_initializer.h"
+#include "ui/gfx/platform_font_win.h"
+#include "ui/gfx/switches.h"
+#include "ui/gfx/win/direct_write.h"
 #endif
 
 bool g_exited_main_message_loop = false;
 
 namespace content {
 
+#if defined(OS_WIN)
+namespace {
+
+// Pointer to the original CryptVerifyCertificateSignatureEx function.
+net::sha256_interception::CryptVerifyCertificateSignatureExFunc
+    g_real_crypt_verify_signature_stub = NULL;
+
+// Stub function that is called whenever the Crypt32 function
+// CryptVerifyCertificateSignatureEx is called. It just defers to net to perform
+// the actual verification.
+BOOL WINAPI CryptVerifyCertificateSignatureExStub(
+    HCRYPTPROV_LEGACY provider,
+    DWORD encoding_type,
+    DWORD subject_type,
+    void* subject_data,
+    DWORD issuer_type,
+    void* issuer_data,
+    DWORD flags,
+    void* extra) {
+  return net::sha256_interception::CryptVerifyCertificateSignatureExHook(
+      g_real_crypt_verify_signature_stub, provider, encoding_type, subject_type,
+      subject_data, issuer_type, issuer_data, flags, extra);
+}
+
+// If necessary, install an interception
+void InstallSha256LegacyHooks() {
+#if defined(_WIN64)
+  // Interception on x64 is not supported.
+  return;
+#else
+  if (base::win::MaybeHasSHA256Support())
+    return;
+
+  net::sha256_interception::CryptVerifyCertificateSignatureExFunc
+      cert_verify_signature_ptr = reinterpret_cast<
+          net::sha256_interception::CryptVerifyCertificateSignatureExFunc>(
+              ::GetProcAddress(::GetModuleHandle(L"crypt32.dll"),
+                               "CryptVerifyCertificateSignatureEx"));
+  CHECK(cert_verify_signature_ptr);
+
+  DWORD old_protect = 0;
+  if (!::VirtualProtect(cert_verify_signature_ptr, 5, PAGE_EXECUTE_READWRITE,
+                        &old_protect)) {
+    return;
+  }
+
+  g_real_crypt_verify_signature_stub =
+      reinterpret_cast<
+          net::sha256_interception::CryptVerifyCertificateSignatureExFunc>(
+              VirtualAllocEx(::GetCurrentProcess(), NULL,
+                             sidestep::kMaxPreambleStubSize, MEM_COMMIT,
+                             PAGE_EXECUTE_READWRITE));
+  if (g_real_crypt_verify_signature_stub == NULL) {
+    CHECK(::VirtualProtect(cert_verify_signature_ptr, 5, old_protect,
+                           &old_protect));
+    return;
+  }
+
+  sidestep::SideStepError patch_result =
+      sidestep::PreamblePatcher::Patch(
+          cert_verify_signature_ptr, CryptVerifyCertificateSignatureExStub,
+          g_real_crypt_verify_signature_stub, sidestep::kMaxPreambleStubSize);
+  if (patch_result != sidestep::SIDESTEP_SUCCESS) {
+    CHECK(::VirtualFreeEx(::GetCurrentProcess(),
+                          g_real_crypt_verify_signature_stub, 0,
+                          MEM_RELEASE));
+    CHECK(::VirtualProtect(cert_verify_signature_ptr, 5, old_protect,
+                           &old_protect));
+    return;
+  }
+
+  DWORD dummy = 0;
+  CHECK(::VirtualProtect(cert_verify_signature_ptr, 5, old_protect, &dummy));
+  CHECK(::VirtualProtect(g_real_crypt_verify_signature_stub,
+                         sidestep::kMaxPreambleStubSize, old_protect,
+                         &old_protect));
+#endif  // _WIN64
+}
+
+void MaybeEnableDirectWriteFontRendering() {
+  if (gfx::win::ShouldUseDirectWrite() &&
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kEnableDirectWriteForUI) &&
+      !CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableHarfBuzzRenderText)) {
+    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
+    HMODULE dwrite_dll = LoadLibraryW(L"dwrite.dll");
+    if (!dwrite_dll)
+      return;
+
+    DWriteCreateFactoryProc dwrite_create_factory_proc =
+        reinterpret_cast<DWriteCreateFactoryProc>(
+            GetProcAddress(dwrite_dll, "DWriteCreateFactory"));
+    // Not finding the DWriteCreateFactory function indicates a corrupt dll.
+    CHECK(dwrite_create_factory_proc);
+
+    IDWriteFactory* factory = NULL;
+
+    CHECK(SUCCEEDED(
+        dwrite_create_factory_proc(DWRITE_FACTORY_TYPE_SHARED,
+                                   __uuidof(IDWriteFactory),
+                                   reinterpret_cast<IUnknown**>(&factory))));
+    SetDefaultSkiaFactory(SkFontMgr_New_DirectWrite(factory));
+    gfx::PlatformFontWin::set_use_skia_for_font_metrics(true);
+  }
+}
+
+}  // namespace
+
+#endif  // OS_WIN
+
 class BrowserMainRunnerImpl : public BrowserMainRunner {
  public:
   BrowserMainRunnerImpl()
       : initialization_started_(false), is_shutdown_(false) {}
 
-  virtual ~BrowserMainRunnerImpl() {
+  ~BrowserMainRunnerImpl() override {
     if (initialization_started_ && !is_shutdown_)
       Shutdown();
   }
 
-  virtual int Initialize(const MainFunctionParams& parameters) OVERRIDE {
+  int Initialize(const MainFunctionParams& parameters) override {
     TRACE_EVENT0("startup", "BrowserMainRunnerImpl::Initialize");
     // On Android we normally initialize the browser in a series of UI thread
     // tasks. While this is happening a second request can come from the OS or
@@ -64,6 +185,7 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
         // Win32 API here directly.
         ImmDisableTextFrameService(static_cast<DWORD>(-1));
       }
+      InstallSha256LegacyHooks();
 #endif  // OS_WIN
 
       base::StatisticsRecorder::Initialize();
@@ -75,6 +197,8 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
       // (Text Services Framework) module can interact with the message pump
       // on Windows 8 Metro mode.
       ole_initializer_.reset(new ui::ScopedOleInitializer);
+      // Enable DirectWrite font rendering if needed.
+      MaybeEnableDirectWriteFontRendering();
 #endif  // OS_WIN
 
       main_loop_.reset(new BrowserMainLoop(parameters));
@@ -112,14 +236,14 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
     return -1;
   }
 
-  virtual int Run() OVERRIDE {
+  int Run() override {
     DCHECK(initialization_started_);
     DCHECK(!is_shutdown_);
     main_loop_->RunMainMessageLoopParts();
     return main_loop_->GetResultCode();
   }
 
-  virtual void Shutdown() OVERRIDE {
+  void Shutdown() override {
     DCHECK(initialization_started_);
     DCHECK(!is_shutdown_);
 #ifdef LEAK_SANITIZER
@@ -130,13 +254,29 @@ class BrowserMainRunnerImpl : public BrowserMainRunner {
     // If leaks are found, the process will exit here.
     __lsan_do_leak_check();
 #endif
+    // If startup tracing has not been finished yet, replace it's dumper
+    // with special version, which would save trace file on exit (i.e.
+    // startup tracing becomes a version of shutdown tracing).
+    scoped_ptr<BrowserShutdownProfileDumper> startup_profiler;
+    if (main_loop_->is_tracing_startup()) {
+      main_loop_->StopStartupTracingTimer();
+      if (main_loop_->startup_trace_file() !=
+          base::FilePath().AppendASCII("none")) {
+        startup_profiler.reset(
+            new BrowserShutdownProfileDumper(main_loop_->startup_trace_file()));
+      }
+    }
+
     // The shutdown tracing got enabled in AttemptUserExit earlier, but someone
     // needs to write the result to disc. For that a dumper needs to get created
     // which will dump the traces to disc when it gets destroyed.
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
-    scoped_ptr<BrowserShutdownProfileDumper> profiler;
-    if (command_line.HasSwitch(switches::kTraceShutdown))
-      profiler.reset(new BrowserShutdownProfileDumper());
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
+    scoped_ptr<BrowserShutdownProfileDumper> shutdown_profiler;
+    if (command_line.HasSwitch(switches::kTraceShutdown)) {
+      shutdown_profiler.reset(new BrowserShutdownProfileDumper(
+          BrowserShutdownProfileDumper::GetShutdownProfileFileName()));
+    }
 
     {
       // The trace event has to stay between profiler creation and destruction.

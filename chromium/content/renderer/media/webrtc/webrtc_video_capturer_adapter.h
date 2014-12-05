@@ -29,7 +29,7 @@ class CONTENT_EXPORT WebRtcVideoCapturerAdapter
     : NON_EXPORTED_BASE(public cricket::VideoCapturer) {
  public:
   explicit WebRtcVideoCapturerAdapter(bool is_screencast);
-  virtual ~WebRtcVideoCapturerAdapter();
+  ~WebRtcVideoCapturerAdapter() override;
 
   // OnFrameCaptured delivers video frames to libjingle. It must be called on
   // libjingles worker thread.
@@ -39,16 +39,14 @@ class CONTENT_EXPORT WebRtcVideoCapturerAdapter
  private:
   // cricket::VideoCapturer implementation.
   // These methods are accessed from a libJingle worker thread.
-  virtual cricket::CaptureState Start(
-      const cricket::VideoFormat& capture_format) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual bool IsRunning() OVERRIDE;
-  virtual bool GetPreferredFourccs(std::vector<uint32>* fourccs) OVERRIDE;
-  virtual bool GetBestCaptureFormat(const cricket::VideoFormat& desired,
-                                    cricket::VideoFormat* best_format) OVERRIDE;
-  virtual bool IsScreencast() const OVERRIDE;
-
-  void UpdateI420Buffer(const scoped_refptr<media::VideoFrame>& src);
+  cricket::CaptureState Start(
+      const cricket::VideoFormat& capture_format) override;
+  void Stop() override;
+  bool IsRunning() override;
+  bool GetPreferredFourccs(std::vector<uint32>* fourccs) override;
+  bool GetBestCaptureFormat(const cricket::VideoFormat& desired,
+                            cricket::VideoFormat* best_format) override;
+  bool IsScreencast() const override;
 
   // |thread_checker_| is bound to the libjingle worker thread.
   base::ThreadChecker thread_checker_;
@@ -56,12 +54,11 @@ class CONTENT_EXPORT WebRtcVideoCapturerAdapter
   const bool is_screencast_;
   bool running_;
   base::TimeDelta first_frame_timestamp_;
-  // |buffer_| used if cropping is needed. It is created only if needed and
-  // owned by WebRtcVideoCapturerAdapter. If its created, it exists until
-  // WebRtcVideoCapturerAdapter is destroyed.
-  uint8* buffer_;
-  size_t buffer_size_;
-  scoped_ptr<cricket::CapturedFrame> captured_frame_;
+
+  // This is an alias to the frame_factory_ in the base class
+  // cricket::VideoCapturer.
+  class MediaVideoFrameFactory;
+  MediaVideoFrameFactory* frame_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcVideoCapturerAdapter);
 };

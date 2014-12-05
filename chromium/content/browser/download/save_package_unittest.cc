@@ -6,25 +6,23 @@
 
 #include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/browser/download/save_package.h"
-#include "content/test/net/url_request_mock_http_job.h"
+#include "content/public/common/url_constants.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
+#include "net/test/url_request/url_request_mock_http_job.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 namespace content {
 
 #define FPL FILE_PATH_LITERAL
-#if defined(OS_WIN)
-#define HTML_EXTENSION ".htm"
-// This second define is needed because MSVC is broken.
-#define FPL_HTML_EXTENSION L".htm"
-#else
 #define HTML_EXTENSION ".html"
+#if defined(OS_WIN)
+#define FPL_HTML_EXTENSION L".html"
+#else
 #define FPL_HTML_EXTENSION ".html"
 #endif
 
@@ -95,7 +93,7 @@ class SavePackageTest : public RenderViewHostImplTestHarness {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     RenderViewHostImplTestHarness::SetUp();
 
     // Do the initialization in SetUp so contents() is initialized by
@@ -176,7 +174,7 @@ static const struct {
 };
 
 TEST_F(SavePackageTest, TestSuccessfullyGenerateSavePackageFilename) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGeneratedFiles); ++i) {
+  for (size_t i = 0; i < arraysize(kGeneratedFiles); ++i) {
     base::FilePath::StringType file_name;
     bool ok = GetGeneratedFilename(true,
                                    kGeneratedFiles[i].disposition,
@@ -189,7 +187,7 @@ TEST_F(SavePackageTest, TestSuccessfullyGenerateSavePackageFilename) {
 }
 
 TEST_F(SavePackageTest, TestUnSuccessfullyGenerateSavePackageFilename) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kGeneratedFiles); ++i) {
+  for (size_t i = 0; i < arraysize(kGeneratedFiles); ++i) {
     base::FilePath::StringType file_name;
     bool ok = GetGeneratedFilename(false,
                                    kGeneratedFiles[i].disposition,
@@ -244,7 +242,7 @@ TEST_F(SavePackageTest, MAYBE_TestLongSafePureFilename) {
   const base::FilePath::StringType ext(FPL_HTML_EXTENSION);
   base::FilePath::StringType filename =
 #if defined(OS_WIN)
-      base::ASCIIToWide(long_file_name);
+      base::ASCIIToUTF16(long_file_name);
 #else
       long_file_name;
 #endif
@@ -282,7 +280,7 @@ static const struct {
 #define MAYBE_TestEnsureHtmlExtension TestEnsureHtmlExtension
 #endif
 TEST_F(SavePackageTest, MAYBE_TestEnsureHtmlExtension) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kExtensionTestCases); ++i) {
+  for (size_t i = 0; i < arraysize(kExtensionTestCases); ++i) {
     base::FilePath original = base::FilePath(kExtensionTestCases[i].page_title);
     base::FilePath expected =
         base::FilePath(kExtensionTestCases[i].expected_name);
@@ -327,7 +325,7 @@ TEST_F(SavePackageTest, MAYBE_TestEnsureMimeExtension) {
     { FPL("filename.abc"), FPL("filename.abc"), "unknown/unknown" },
     { FPL("filename"), FPL("filename"), "unknown/unknown" },
   };
-  for (uint32 i = 0; i < ARRAYSIZE_UNSAFE(kExtensionTests); ++i) {
+  for (uint32 i = 0; i < arraysize(kExtensionTests); ++i) {
     base::FilePath original = base::FilePath(kExtensionTests[i].page_title);
     base::FilePath expected = base::FilePath(kExtensionTests[i].expected_name);
     std::string mime_type(kExtensionTests[i].contents_mime_type);
@@ -416,8 +414,8 @@ static const base::FilePath::CharType* kTestDir =
 // GetUrlToBeSaved method should return correct url to be saved.
 TEST_F(SavePackageTest, TestGetUrlToBeSaved) {
   base::FilePath file_name(FILE_PATH_LITERAL("a.htm"));
-  GURL url = URLRequestMockHTTPJob::GetMockUrl(
-                 base::FilePath(kTestDir).Append(file_name));
+  GURL url = net::URLRequestMockHTTPJob::GetMockUrl(
+      base::FilePath(kTestDir).Append(file_name));
   NavigateAndCommit(url);
   EXPECT_EQ(url, GetUrlToBeSaved());
 }
@@ -428,10 +426,12 @@ TEST_F(SavePackageTest, TestGetUrlToBeSaved) {
 // when user types view-source:http://www.google.com
 TEST_F(SavePackageTest, TestGetUrlToBeSavedViewSource) {
   base::FilePath file_name(FILE_PATH_LITERAL("a.htm"));
-  GURL view_source_url = URLRequestMockHTTPJob::GetMockViewSourceUrl(
-                             base::FilePath(kTestDir).Append(file_name));
-  GURL actual_url = URLRequestMockHTTPJob::GetMockUrl(
-                        base::FilePath(kTestDir).Append(file_name));
+  GURL mock_url = net::URLRequestMockHTTPJob::GetMockUrl(
+      base::FilePath(kTestDir).Append(file_name));
+  GURL view_source_url =
+      GURL(kViewSourceScheme + std::string(":") + mock_url.spec());
+  GURL actual_url = net::URLRequestMockHTTPJob::GetMockUrl(
+      base::FilePath(kTestDir).Append(file_name));
   NavigateAndCommit(view_source_url);
   EXPECT_EQ(actual_url, GetUrlToBeSaved());
   EXPECT_EQ(view_source_url, contents()->GetLastCommittedURL());

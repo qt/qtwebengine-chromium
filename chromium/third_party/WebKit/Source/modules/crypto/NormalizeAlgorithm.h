@@ -37,13 +37,13 @@
 #include "wtf/Assertions.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 
 struct AlgorithmError {
-    blink::WebCryptoErrorType errorType;
-    blink::WebString errorDetails;
+    WebCryptoErrorType errorType;
+    WebString errorDetails;
 };
 
 // Converts a javascript Dictionary to a WebCryptoAlgorithm object.
@@ -57,8 +57,8 @@ struct AlgorithmError {
 // a error type and a (non-localized) debug string.
 //
 // [1] http://www.w3.org/TR/WebCryptoAPI/#algorithm-normalizing-rules
-bool normalizeAlgorithm(const Dictionary&, blink::WebCryptoOperation, blink::WebCryptoAlgorithm&, AlgorithmError*) WARN_UNUSED_RETURN;
+bool normalizeAlgorithm(const Dictionary&, WebCryptoOperation, WebCryptoAlgorithm&, AlgorithmError*) WARN_UNUSED_RETURN;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

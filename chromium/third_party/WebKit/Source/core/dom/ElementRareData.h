@@ -36,7 +36,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLElement;
 
@@ -51,8 +51,6 @@ public:
 
     void setPseudoElement(PseudoId, PassRefPtrWillBeRawPtr<PseudoElement>);
     PseudoElement* pseudoElement(PseudoId) const;
-
-    void resetStyleState();
 
     short tabIndex() const { return m_tabindex; }
 
@@ -225,11 +223,6 @@ inline PseudoElement* ElementRareData::pseudoElement(PseudoId pseudoId) const
     default:
         return 0;
     }
-}
-
-inline void ElementRareData::resetStyleState()
-{
-    clearElementFlag(StyleAffectedByEmpty);
 }
 
 } // namespace

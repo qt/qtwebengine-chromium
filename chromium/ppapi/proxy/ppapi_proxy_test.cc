@@ -10,8 +10,10 @@
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
+#include "base/process/process_handle.h"
 #include "base/run_loop.h"
 #include "ipc/ipc_sync_channel.h"
+#include "ipc/message_filter.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/private/ppb_proxy_private.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -180,7 +182,7 @@ void PluginProxyTestHarness::SetUpHarness() {
   // browser. In this case we just use the |plugin_dispatcher_| as the channel
   // for test purposes.
   plugin_delegate_mock_.set_browser_sender(plugin_dispatcher_.get());
-  PluginGlobals::Get()->set_plugin_proxy_delegate(&plugin_delegate_mock_);
+  PluginGlobals::Get()->SetPluginProxyDelegate(&plugin_delegate_mock_);
   plugin_dispatcher_->DidCreateInstance(pp_instance());
 }
 
@@ -206,7 +208,7 @@ void PluginProxyTestHarness::SetUpHarnessWithChannel(
                                             channel_handle,
                                             is_client);
   plugin_delegate_mock_.set_browser_sender(plugin_dispatcher_.get());
-  PluginGlobals::Get()->set_plugin_proxy_delegate(&plugin_delegate_mock_);
+  PluginGlobals::Get()->SetPluginProxyDelegate(&plugin_delegate_mock_);
   plugin_dispatcher_->DidCreateInstance(pp_instance());
 }
 
@@ -252,7 +254,7 @@ PluginProxyTestHarness::PluginDelegateMock::ShareHandleWithRemote(
     base::ProcessId /* remote_pid */,
     bool should_close_source) {
   return IPC::GetFileHandleForProcess(handle,
-                                      base::Process::Current().handle(),
+                                      base::GetCurrentProcessHandle(),
                                       should_close_source);
 }
 
@@ -322,7 +324,7 @@ void PluginProxyMultiThreadTest::RunTest() {
   main_thread_message_loop_proxy_ =
       PpapiGlobals::Get()->GetMainThreadMessageLoop();
   ASSERT_EQ(main_thread_message_loop_proxy_.get(),
-            base::MessageLoopProxy::current());
+            base::MessageLoopProxy::current().get());
   nested_main_thread_message_loop_.reset(new base::RunLoop());
 
   secondary_thread_.reset(new base::DelegateSimpleThread(
@@ -407,16 +409,8 @@ void PluginProxyMultiThreadTest::InternalSetUpTestOnSecondaryThread(
 
 // HostProxyTestHarness --------------------------------------------------------
 
-class HostProxyTestHarness::MockSyncMessageStatusReceiver
-    : public HostDispatcher::SyncMessageStatusReceiver {
- public:
-  virtual void BeginBlockOnSyncMessage() OVERRIDE {}
-  virtual void EndBlockOnSyncMessage() OVERRIDE {}
-};
-
 HostProxyTestHarness::HostProxyTestHarness(GlobalsConfiguration globals_config)
-    : globals_config_(globals_config),
-      status_receiver_(new MockSyncMessageStatusReceiver) {
+    : globals_config_(globals_config) {
 }
 
 HostProxyTestHarness::~HostProxyTestHarness() {
@@ -437,7 +431,6 @@ void HostProxyTestHarness::SetUpHarness() {
   host_dispatcher_.reset(new HostDispatcher(
       pp_module(),
       &MockGetInterface,
-      status_receiver_.release(),
       PpapiPermissions::AllPermissions()));
   host_dispatcher_->InitWithTestSink(&sink());
   HostDispatcher::SetForInstance(pp_instance(), host_dispatcher_.get());
@@ -456,7 +449,6 @@ void HostProxyTestHarness::SetUpHarnessWithChannel(
   host_dispatcher_.reset(new HostDispatcher(
       pp_module(),
       &MockGetInterface,
-      status_receiver_.release(),
       PpapiPermissions::AllPermissions()));
   ppapi::Preferences preferences;
   host_dispatcher_->InitHostWithChannel(&delegate_mock_,
@@ -498,7 +490,7 @@ HostProxyTestHarness::DelegateMock::ShareHandleWithRemote(
     base::ProcessId /* remote_pid */,
     bool should_close_source) {
   return IPC::GetFileHandleForProcess(handle,
-                                      base::Process::Current().handle(),
+                                      base::GetCurrentProcessHandle(),
                                       should_close_source);
 }
 

@@ -45,38 +45,38 @@ namespace blink {
 
 class WebPluginLoadObserver;
 
-class WebDataSourceImpl FINAL : public WebCore::DocumentLoader, public WebDataSource {
+class WebDataSourceImpl final : public DocumentLoader, public WebDataSource {
 public:
-    static PassRefPtr<WebDataSourceImpl> create(WebCore::LocalFrame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
+    static PassRefPtr<WebDataSourceImpl> create(LocalFrame*, const ResourceRequest&, const SubstituteData&);
 
-    static WebDataSourceImpl* fromDocumentLoader(WebCore::DocumentLoader* loader)
+    static WebDataSourceImpl* fromDocumentLoader(DocumentLoader* loader)
     {
         return static_cast<WebDataSourceImpl*>(loader);
     }
 
     // WebDataSource methods:
-    virtual const WebURLRequest& originalRequest() const OVERRIDE;
-    virtual const WebURLRequest& request() const OVERRIDE;
-    virtual const WebURLResponse& response() const OVERRIDE;
-    virtual bool hasUnreachableURL() const OVERRIDE;
-    virtual WebURL unreachableURL() const OVERRIDE;
-    virtual void appendRedirect(const WebURL&) OVERRIDE;
-    virtual void redirectChain(WebVector<WebURL>&) const OVERRIDE;
-    virtual bool isClientRedirect() const OVERRIDE;
-    virtual bool replacesCurrentHistoryItem() const OVERRIDE;
-    virtual WebNavigationType navigationType() const OVERRIDE;
-    virtual double triggeringEventTime() const OVERRIDE;
-    virtual ExtraData* extraData() const OVERRIDE;
-    virtual void setExtraData(ExtraData*) OVERRIDE;
-    virtual void setNavigationStartTime(double) OVERRIDE;
+    virtual const WebURLRequest& originalRequest() const override;
+    virtual const WebURLRequest& request() const override;
+    virtual const WebURLResponse& response() const override;
+    virtual bool hasUnreachableURL() const override;
+    virtual WebURL unreachableURL() const override;
+    virtual void appendRedirect(const WebURL&) override;
+    virtual void redirectChain(WebVector<WebURL>&) const override;
+    virtual bool isClientRedirect() const override;
+    virtual bool replacesCurrentHistoryItem() const override;
+    virtual WebNavigationType navigationType() const override;
+    virtual double triggeringEventTime() const override;
+    virtual ExtraData* extraData() const override;
+    virtual void setExtraData(ExtraData*) override;
+    virtual void setNavigationStartTime(double) override;
 
-    static WebNavigationType toWebNavigationType(WebCore::NavigationType type);
+    static WebNavigationType toWebNavigationType(NavigationType);
 
     PassOwnPtr<WebPluginLoadObserver> releasePluginLoadObserver() { return m_pluginLoadObserver.release(); }
     static void setNextPluginLoadObserver(PassOwnPtr<WebPluginLoadObserver>);
 
 private:
-    WebDataSourceImpl(WebCore::LocalFrame*, const WebCore::ResourceRequest&, const WebCore::SubstituteData&);
+    WebDataSourceImpl(LocalFrame*, const ResourceRequest&, const SubstituteData&);
     virtual ~WebDataSourceImpl();
 
     // Mutable because the const getters will magically sync these to the

@@ -14,15 +14,17 @@ size_t GetSerializedSize_(const String& input) {
   return internal::Align(sizeof(internal::String_Data) + input.size());
 }
 
-void Serialize_(const String& input, internal::Buffer* buf,
+void Serialize_(const String& input,
+                internal::Buffer* buf,
                 internal::String_Data** output) {
   if (input) {
     internal::String_Data* result =
         internal::String_Data::New(input.size(), buf);
-    memcpy(result->storage(), input.data(), input.size());
+    if (result)
+      memcpy(result->storage(), input.data(), input.size());
     *output = result;
   } else {
-    *output = NULL;
+    *output = nullptr;
   }
 }
 

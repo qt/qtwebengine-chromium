@@ -26,23 +26,23 @@ class SyntheticGestureTargetAura : public SyntheticGestureTargetBase {
   explicit SyntheticGestureTargetAura(RenderWidgetHostImpl* host);
 
   // SyntheticGestureTargetBase:
-  virtual void DispatchWebTouchEventToPlatform(
+  void DispatchWebTouchEventToPlatform(
       const blink::WebTouchEvent& web_touch,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void DispatchWebMouseWheelEventToPlatform(
+      const ui::LatencyInfo& latency_info) override;
+  void DispatchWebMouseWheelEventToPlatform(
       const blink::WebMouseWheelEvent& web_wheel,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
-  virtual void DispatchWebMouseEventToPlatform(
+      const ui::LatencyInfo& latency_info) override;
+  void DispatchWebMouseEventToPlatform(
       const blink::WebMouseEvent& web_mouse,
-      const ui::LatencyInfo& latency_info) OVERRIDE;
+      const ui::LatencyInfo& latency_info) override;
 
   // SyntheticGestureTarget:
-  virtual SyntheticGestureParams::GestureSourceType
-      GetDefaultSyntheticGestureSourceType() const OVERRIDE;
+  SyntheticGestureParams::GestureSourceType
+  GetDefaultSyntheticGestureSourceType() const override;
 
-  virtual float GetTouchSlopInDips() const OVERRIDE;
+  float GetTouchSlopInDips() const override;
 
-  virtual float GetMinScalingSpanInDips() const OVERRIDE;
+  float GetMinScalingSpanInDips() const override;
 
  private:
   aura::Window* GetWindow() const;

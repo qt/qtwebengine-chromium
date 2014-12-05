@@ -29,12 +29,12 @@
 #ifndef InspectorFrontendHost_h
 #define InspectorFrontendHost_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContextMenuItem;
 class Event;
@@ -42,14 +42,16 @@ class FrontendMenuProvider;
 class InspectorFrontendClient;
 class Page;
 
-class InspectorFrontendHost : public RefCounted<InspectorFrontendHost>, public ScriptWrappable {
+class InspectorFrontendHost : public RefCountedWillBeGarbageCollectedFinalized<InspectorFrontendHost>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<InspectorFrontendHost> create(InspectorFrontendClient* client, Page* frontendPage)
+    static PassRefPtrWillBeRawPtr<InspectorFrontendHost> create(InspectorFrontendClient* client, Page* frontendPage)
     {
-        return adoptRef(new InspectorFrontendHost(client, frontendPage));
+        return adoptRefWillBeNoop(new InspectorFrontendHost(client, frontendPage));
     }
 
     ~InspectorFrontendHost();
+    void trace(Visitor*);
     void disconnectClient();
 
     void setZoomFactor(float);
@@ -61,6 +63,7 @@ public:
 
     // Called from [Custom] implementations.
     void showContextMenu(Event*, const Vector<ContextMenuItem>& items);
+    void showContextMenu(Page*, float x, float y, const Vector<ContextMenuItem>& items);
     void sendMessageToBackend(const String& message);
     void sendMessageToEmbedder(const String& message);
 
@@ -68,18 +71,20 @@ public:
     String getSelectionForegroundColor();
 
     bool isUnderTest();
+    bool isHostedMode();
 
     Page* frontendPage() { return m_frontendPage; }
 
+    void clearMenuProvider() { m_menuProvider = nullptr; }
+
 private:
-    friend class FrontendMenuProvider;
     InspectorFrontendHost(InspectorFrontendClient* client, Page* frontendPage);
 
     InspectorFrontendClient* m_client;
-    Page* m_frontendPage;
-    FrontendMenuProvider* m_menuProvider;
+    RawPtrWillBeMember<Page> m_frontendPage;
+    RawPtrWillBeMember<FrontendMenuProvider> m_menuProvider;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // !defined(InspectorFrontendHost_h)
+#endif // InspectorFrontendHost_h

@@ -28,22 +28,21 @@ class ViewHttpCacheJob : public net::URLRequestJob {
                    net::NetworkDelegate* network_delegate)
       : net::URLRequestJob(request, network_delegate),
         core_(new Core),
-        weak_factory_(this),
         callback_(base::Bind(&ViewHttpCacheJob::OnStartCompleted,
-                             base::Unretained(this))) {
+                             base::Unretained(this))),
+        weak_factory_(this) {
   }
 
   // net::URLRequestJob implementation.
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE{
+  void Start() override;
+  void Kill() override;
+  bool GetMimeType(std::string* mime_type) const override {
     return core_->GetMimeType(mime_type);
   }
-  virtual bool GetCharset(std::string* charset) OVERRIDE{
+  bool GetCharset(std::string* charset) override {
     return core_->GetCharset(charset);
   }
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size, int *bytes_read) OVERRIDE{
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override {
     return core_->ReadRawData(buf, buf_size, bytes_read);
   }
 
@@ -83,14 +82,15 @@ class ViewHttpCacheJob : public net::URLRequestJob {
     DISALLOW_COPY_AND_ASSIGN(Core);
   };
 
-  virtual ~ViewHttpCacheJob() {}
+  ~ViewHttpCacheJob() override {}
 
   void StartAsync();
   void OnStartCompleted();
 
   scoped_refptr<Core> core_;
-  base::WeakPtrFactory<ViewHttpCacheJob> weak_factory_;
   base::Closure callback_;
+
+  base::WeakPtrFactory<ViewHttpCacheJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ViewHttpCacheJob);
 };

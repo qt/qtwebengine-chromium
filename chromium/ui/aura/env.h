@@ -42,7 +42,7 @@ class AURA_EXPORT Env : public ui::EventTarget, public base::SupportsUserData {
   void AddObserver(EnvObserver* observer);
   void RemoveObserver(EnvObserver* observer);
 
-  const int mouse_button_flags() const { return mouse_button_flags_; }
+  int mouse_button_flags() const { return mouse_button_flags_; }
   void set_mouse_button_flags(int mouse_button_flags) {
     mouse_button_flags_ = mouse_button_flags;
   }
@@ -72,7 +72,7 @@ class AURA_EXPORT Env : public ui::EventTarget, public base::SupportsUserData {
   friend class WindowTreeHost;
 
   Env();
-  virtual ~Env();
+  ~Env() override;
 
   // See description of CreateInstance() for deatils of |create_event_source|.
   void Init(bool create_event_source);
@@ -87,10 +87,10 @@ class AURA_EXPORT Env : public ui::EventTarget, public base::SupportsUserData {
   void NotifyHostActivated(WindowTreeHost* host);
 
   // Overridden from ui::EventTarget:
-  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
-  virtual ui::EventTarget* GetParentTarget() OVERRIDE;
-  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
-  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
+  bool CanAcceptEvent(const ui::Event& event) override;
+  ui::EventTarget* GetParentTarget() override;
+  scoped_ptr<ui::EventTargetIterator> GetChildIterator() const override;
+  ui::EventTargeter* GetEventTargeter() override;
 
   ObserverList<EnvObserver> observers_;
 

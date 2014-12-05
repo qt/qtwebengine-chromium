@@ -10,7 +10,7 @@
 #include "cc/layers/layer.h"
 #include "cc/layers/ui_resource_layer.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -21,7 +21,7 @@ class CC_EXPORT NinePatchLayer : public UIResourceLayer {
  public:
   static scoped_refptr<NinePatchLayer> Create();
 
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
   // |border| is the space around the center rectangular region in layer space
   // (known as aperture in image space).  |border.x()| and |border.y()| are the
@@ -41,9 +41,8 @@ class CC_EXPORT NinePatchLayer : public UIResourceLayer {
 
  private:
   NinePatchLayer();
-  virtual ~NinePatchLayer();
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  ~NinePatchLayer() override;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   gfx::Rect border_;
   bool fill_center_;

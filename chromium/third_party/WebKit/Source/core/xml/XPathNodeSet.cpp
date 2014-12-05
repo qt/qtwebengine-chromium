@@ -31,7 +31,7 @@
 #include "core/dom/Element.h"
 #include "core/dom/NodeTraversal.h"
 
-namespace WebCore {
+namespace blink {
 namespace XPath {
 
 // When a node set is large, sorting it by traversing the whole document is
@@ -144,7 +144,7 @@ static void sortBlock(unsigned from, unsigned to, WillBeHeapVector<NodeSetVector
 
             ASSERT(previousGroupEnd != groupEnd);
             previousGroupEnd = groupEnd;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
             parentNodes.remove(n);
 #endif
         }
@@ -181,7 +181,7 @@ void NodeSet::sort() const
             parentsVector.append(n);
             containsAttributeNodes = true;
         }
-        while ((n = n->parentNode()))
+        for (n = n->parentNode(); n; n = n->parentNode())
             parentsVector.append(n);
     }
     sortBlock(0, nodeCount, parentMatrix, containsAttributeNodes);
@@ -226,20 +226,17 @@ void NodeSet::traversalSort() const
     WillBeHeapVector<RefPtrWillBeMember<Node> > sortedNodes;
     sortedNodes.reserveInitialCapacity(nodeCount);
 
-    for (Node* n = findRootNode(m_nodes.first().get()); n; n = NodeTraversal::next(*n)) {
-        if (nodes.contains(n))
-            sortedNodes.append(n);
+    for (Node& n : NodeTraversal::startsAt(findRootNode(m_nodes.first().get()))) {
+        if (nodes.contains(&n))
+            sortedNodes.append(&n);
 
-        if (!containsAttributeNodes || !n->isElementNode())
+        if (!containsAttributeNodes || !n.isElementNode())
             continue;
 
-        Element* element = toElement(n);
-        if (!element->hasAttributes())
-            continue;
-
+        Element* element = toElement(&n);
         AttributeCollection attributes = element->attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+        AttributeCollection::iterator end = attributes.end();
+        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
             RefPtrWillBeRawPtr<Attr> attr = element->attrIfExists(it->name());
             if (attr && nodes.contains(attr.get()))
                 sortedNodes.append(attr);

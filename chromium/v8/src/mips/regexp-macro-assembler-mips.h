@@ -6,10 +6,9 @@
 #ifndef V8_MIPS_REGEXP_MACRO_ASSEMBLER_MIPS_H_
 #define V8_MIPS_REGEXP_MACRO_ASSEMBLER_MIPS_H_
 
-#include "src/mips/assembler-mips.h"
-#include "src/mips/assembler-mips-inl.h"
 #include "src/macro-assembler.h"
-#include "src/code.h"
+#include "src/mips/assembler-mips-inl.h"
+#include "src/mips/assembler-mips.h"
 #include "src/mips/macro-assembler-mips.h"
 
 namespace v8 {
@@ -198,7 +197,7 @@ class RegExpMacroAssemblerMIPS: public NativeRegExpMacroAssembler {
 
   MacroAssembler* masm_;
 
-  // Which mode to generate code for (ASCII or UC16).
+  // Which mode to generate code for (Latin1 or UC16).
   Mode mode_;
 
   // One greater than maximal register index actually used.

@@ -292,6 +292,11 @@ class GritNode(base.Node):
     """
     return self.attrs['base_dir']
 
+  def SetShouldOutputAllResourceDefines(self, value):
+    """Overrides the value of output_all_resource_defines found in the grd file.
+    """
+    self.attrs['output_all_resource_defines'] = 'true' if value else 'false'
+
   def ShouldOutputAllResourceDefines(self):
     """Returns true if all resource defines should be output, false if
     defines for resources not emitted to resource files should be

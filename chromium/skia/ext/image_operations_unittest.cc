@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "skia/ext/image_operations.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -535,7 +535,7 @@ TEST(ImageOperations, ResizeShouldAverageColors) {
 
   // For each method, downscale by 16 in each dimension,
   // and check each tested pixel against the expected average color.
-  bool all_methods_ok ALLOW_UNUSED = true;
+  bool all_methods_ok = true;
 
   for (size_t method_index = 0;
        method_index < arraysize(tested_methods);
@@ -550,11 +550,11 @@ TEST(ImageOperations, ResizeShouldAverageColors) {
     }
   }
 
-#if DEBUG_BITMAP_GENERATION
   if (!all_methods_ok) {
+#if DEBUG_BITMAP_GENERATION
     SaveBitmapToPNG(src, "/tmp/ResizeShouldAverageColors_src.png");
-  }
 #endif  // #if DEBUG_BITMAP_GENERATION
+  }
 }
 
 

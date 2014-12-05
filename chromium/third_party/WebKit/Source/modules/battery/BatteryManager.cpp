@@ -5,27 +5,31 @@
 #include "config.h"
 #include "modules/battery/BatteryManager.h"
 
+#include "core/dom/Document.h"
+#include "core/events/Event.h"
 #include "modules/battery/BatteryDispatcher.h"
 #include "modules/battery/BatteryStatus.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<BatteryManager> BatteryManager::create(ExecutionContext* context)
+BatteryManager* BatteryManager::create(ExecutionContext* context)
 {
-    RefPtrWillBeRawPtr<BatteryManager> batteryManager(adoptRefWillBeRefCountedGarbageCollected(new BatteryManager(context)));
+    BatteryManager* batteryManager = new BatteryManager(context);
     batteryManager->suspendIfNeeded();
-    return batteryManager.release();
+    return batteryManager;
 }
 
 BatteryManager::~BatteryManager()
 {
+#if !ENABLE(OILPAN)
     stopUpdating();
+#endif
 }
 
 BatteryManager::BatteryManager(ExecutionContext* context)
     : ActiveDOMObject(context)
-    , DeviceEventControllerBase(toDocument(context)->page())
+    , PlatformEventController(toDocument(context)->page())
     , m_batteryStatus(BatteryStatus::create())
     , m_state(NotStarted)
 {
@@ -36,11 +40,14 @@ ScriptPromise BatteryManager::startRequest(ScriptState* scriptState)
     if (m_state == Pending)
         return m_resolver->promise();
 
-    m_resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    m_resolver = ScriptPromiseResolver::create(scriptState);
     ScriptPromise promise = m_resolver->promise();
 
-    if (m_state == Resolved) {
+    ASSERT(executionContext());
+    // If the context is in a stopped state already, do not start updating.
+    if (m_state == Resolved || executionContext()->activeDOMObjectsAreStopped()) {
         // FIXME: Consider returning the same promise in this case. See crbug.com/385025.
+        m_state = Resolved;
         m_resolver->resolve(this);
     } else if (m_state == NotStarted) {
         m_state = Pending;
@@ -76,13 +83,8 @@ void BatteryManager::didUpdateData()
     ASSERT(RuntimeEnabledFeatures::batteryStatusEnabled());
     ASSERT(m_state != NotStarted);
 
-    RefPtrWillBeRawPtr<BatteryStatus> oldStatus = m_batteryStatus;
+    BatteryStatus* oldStatus = m_batteryStatus;
     m_batteryStatus = BatteryDispatcher::instance().latestData();
-
-#if !ENABLE(OILPAN)
-    // BatteryDispatcher also holds a reference to m_batteryStatus.
-    ASSERT(m_batteryStatus->refCount() > 1);
-#endif
 
     if (m_state == Pending) {
         ASSERT(m_resolver);
@@ -92,6 +94,7 @@ void BatteryManager::didUpdateData()
     }
 
     Document* document = toDocument(executionContext());
+    ASSERT(document);
     if (document->activeDOMObjectsAreSuspended() || document->activeDOMObjectsAreStopped())
         return;
 
@@ -137,13 +140,22 @@ void BatteryManager::resume()
 void BatteryManager::stop()
 {
     m_hasEventListener = false;
+    m_state = NotStarted;
     stopUpdating();
+}
+
+bool BatteryManager::hasPendingActivity() const
+{
+    // Prevent V8 from garbage collecting the wrapper object if there are
+    // event listeners attached to it.
+    return m_state == Resolved && hasEventListeners();
 }
 
 void BatteryManager::trace(Visitor* visitor)
 {
     visitor->trace(m_batteryStatus);
+    PlatformEventController::trace(visitor);
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

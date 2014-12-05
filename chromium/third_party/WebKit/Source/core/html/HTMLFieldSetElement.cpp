@@ -27,6 +27,7 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFormControlsCollection.h"
 #include "core/html/HTMLLegendElement.h"
@@ -34,7 +35,7 @@
 #include "core/rendering/RenderFieldset.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -42,7 +43,6 @@ inline HTMLFieldSetElement::HTMLFieldSetElement(Document& document, HTMLFormElem
     : HTMLFormControlElement(fieldsetTag, document, form)
     , m_documentVersion(0)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLFieldSetElement> HTMLFieldSetElement::create(Document& document, HTMLFormElement* form)
@@ -58,12 +58,37 @@ void HTMLFieldSetElement::trace(Visitor* visitor)
     HTMLFormControlElement::trace(visitor);
 }
 
+bool HTMLFieldSetElement::matchesValidityPseudoClasses() const
+{
+    return true;
+}
+
+bool HTMLFieldSetElement::isValidElement()
+{
+    const FormAssociatedElement::List& elements = associatedElements();
+    for (unsigned i = 0; i < elements.size(); ++i) {
+        if (elements[i]->isFormControlElement()) {
+            HTMLFormControlElement* control = toHTMLFormControlElement(elements[i].get());
+            if (!control->checkValidity(0, CheckValidityDispatchNoEvent))
+                return false;
+        }
+    }
+    return true;
+}
+
+void HTMLFieldSetElement::setNeedsValidityCheck()
+{
+    // For now unconditionally order style recalculation, which triggers
+    // validity recalculation. In the near future, consider implement validity
+    // cache and recalculate style only if it changed.
+    pseudoStateChanged(CSSSelector::PseudoValid);
+    pseudoStateChanged(CSSSelector::PseudoInvalid);
+}
+
 void HTMLFieldSetElement::invalidateDisabledStateUnder(Element& base)
 {
-    for (Element* element = ElementTraversal::firstWithin(base); element; element = ElementTraversal::next(*element, &base)) {
-        if (element->isFormControlElement())
-            toHTMLFormControlElement(element)->ancestorDisabledStateWasChanged();
-    }
+    for (HTMLFormControlElement& element : Traversal<HTMLFormControlElement>::descendantsOf(base))
+        element.ancestorDisabledStateWasChanged();
 }
 
 void HTMLFieldSetElement::disabledAttributeChanged()
@@ -73,11 +98,11 @@ void HTMLFieldSetElement::disabledAttributeChanged()
     invalidateDisabledStateUnder(*this);
 }
 
-void HTMLFieldSetElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLFieldSetElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLFormControlElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    for (HTMLLegendElement* legend = Traversal<HTMLLegendElement>::firstChild(*this); legend; legend = Traversal<HTMLLegendElement>::nextSibling(*legend))
-        invalidateDisabledStateUnder(*legend);
+    HTMLFormControlElement::childrenChanged(change);
+    for (HTMLLegendElement& legend : Traversal<HTMLLegendElement>::childrenOf(*this))
+        invalidateDisabledStateUnder(legend);
 }
 
 bool HTMLFieldSetElement::supportsFocus() const
@@ -103,7 +128,7 @@ HTMLLegendElement* HTMLFieldSetElement::legend() const
 
 PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> HTMLFieldSetElement::elements()
 {
-    return toHTMLFormControlsCollection(ensureCachedHTMLCollection(FormControls).get());
+    return ensureCachedCollection<HTMLFormControlsCollection>(FormControls);
 }
 
 void HTMLFieldSetElement::refreshElementsIfNeeded() const
@@ -116,16 +141,16 @@ void HTMLFieldSetElement::refreshElementsIfNeeded() const
 
     m_associatedElements.clear();
 
-    for (HTMLElement* element = Traversal<HTMLElement>::firstWithin(*this); element; element = Traversal<HTMLElement>::next(*element, this)) {
-        if (isHTMLObjectElement(*element)) {
-            m_associatedElements.append(toHTMLObjectElement(element));
+    for (HTMLElement& element : Traversal<HTMLElement>::descendantsOf(*this)) {
+        if (isHTMLObjectElement(element)) {
+            m_associatedElements.append(toHTMLObjectElement(&element));
             continue;
         }
 
-        if (!element->isFormControlElement())
+        if (!element.isFormControlElement())
             continue;
 
-        m_associatedElements.append(toHTMLFormControlElement(element));
+        m_associatedElements.append(toHTMLFormControlElement(&element));
     }
 }
 

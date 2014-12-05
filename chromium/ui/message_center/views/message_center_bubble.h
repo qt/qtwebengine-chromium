@@ -24,21 +24,21 @@ class MESSAGE_CENTER_EXPORT MessageCenterBubble
                       MessageCenterTray* tray,
                       bool first_item_has_no_margin);
 
-  virtual ~MessageCenterBubble();
+  ~MessageCenterBubble() override;
 
   void SetSettingsVisible();
 
   // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  void OnWidgetClosing(views::Widget* widget) override;
 
   // Overridden from MessageBubbleBase:
-  virtual views::TrayBubbleView::InitParams GetInitParams(
-      views::TrayBubbleView::AnchorAlignment anchor_alignment) OVERRIDE;
-  virtual void InitializeContents(views::TrayBubbleView* bubble_view) OVERRIDE;
-  virtual void OnBubbleViewDestroyed() OVERRIDE;
-  virtual void UpdateBubbleView() OVERRIDE;
-  virtual void OnMouseEnteredView() OVERRIDE;
-  virtual void OnMouseExitedView() OVERRIDE;
+  views::TrayBubbleView::InitParams GetInitParams(
+      views::TrayBubbleView::AnchorAlignment anchor_alignment) override;
+  void InitializeContents(views::TrayBubbleView* bubble_view) override;
+  void OnBubbleViewDestroyed() override;
+  void UpdateBubbleView() override;
+  void OnMouseEnteredView() override;
+  void OnMouseExitedView() override;
 
   size_t NumMessageViewsForTest() const;
 

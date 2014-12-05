@@ -7,41 +7,46 @@
 
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
-// This class represents the difference between two computed styles (RenderStyle).
-// The difference can be combination of 3 types according to the actions needed:
-// - Difference needing layout
-// - Difference needing repaint
-// - Difference needing recompositing layers
 class StyleDifference {
 public:
+    enum PropertyDifference {
+        TransformChanged = 1 << 0,
+        OpacityChanged = 1 << 1,
+        ZIndexChanged = 1 << 2,
+        FilterChanged = 1 << 3,
+        // The object needs to issue paint invalidations if it contains text or properties dependent on color (e.g., border or outline).
+        TextOrColorChanged = 1 << 4,
+    };
+
     StyleDifference()
-        : m_needsRecompositeLayer(false)
-        , m_repaintType(NoRepaint)
-        , m_layoutType(NoLayout) { }
+        : m_paintInvalidationType(NoPaintInvalidation)
+        , m_layoutType(NoLayout)
+        , m_propertySpecificDifferences(0)
+    { }
 
-    // The two styles are identical.
-    bool hasNoChange() const { return !m_needsRecompositeLayer && !m_repaintType && !m_layoutType; }
+    bool hasDifference() const { return m_paintInvalidationType || m_layoutType || m_propertySpecificDifferences; }
 
-    // The layer needs its position and transform updated. Implied by other repaint and layout flags.
-    bool needsRecompositeLayer() const { return m_needsRecompositeLayer || needsRepaint() || needsLayout(); }
-    void setNeedsRecompositeLayer() { m_needsRecompositeLayer = true; }
-
-    bool needsRepaint() const { return m_repaintType != NoRepaint; }
-    void clearNeedsRepaint() { m_repaintType = NoRepaint; }
-
-    // The object just needs to be repainted.
-    bool needsRepaintObject() const { return m_repaintType == RepaintObject; }
-    void setNeedsRepaintObject()
+    bool hasAtMostPropertySpecificDifferences(unsigned propertyDifferences) const
     {
-        ASSERT(!needsRepaintLayer());
-        m_repaintType = RepaintObject;
+        return !m_paintInvalidationType && !m_layoutType && !(m_propertySpecificDifferences & ~propertyDifferences);
     }
 
-    // The layer and its descendant layers need to be repainted.
-    bool needsRepaintLayer() const { return m_repaintType == RepaintLayer; }
-    void setNeedsRepaintLayer() { m_repaintType = RepaintLayer; }
+    bool needsPaintInvalidation() const { return m_paintInvalidationType != NoPaintInvalidation; }
+    void clearNeedsPaintInvalidation() { m_paintInvalidationType = NoPaintInvalidation; }
+
+    // The object just needs to issue paint invalidations.
+    bool needsPaintInvalidationObject() const { return m_paintInvalidationType == PaintInvalidationObject; }
+    void setNeedsPaintInvalidationObject()
+    {
+        ASSERT(!needsPaintInvalidationLayer());
+        m_paintInvalidationType = PaintInvalidationObject;
+    }
+
+    // The layer and its descendant layers need to issue paint invalidations.
+    bool needsPaintInvalidationLayer() const { return m_paintInvalidationType == PaintInvalidationLayer; }
+    void setNeedsPaintInvalidationLayer() { m_paintInvalidationType = PaintInvalidationLayer; }
 
     bool needsLayout() const { return m_layoutType != NoLayout; }
     void clearNeedsLayout() { m_layoutType = NoLayout; }
@@ -57,15 +62,28 @@ public:
     bool needsFullLayout() const { return m_layoutType == FullLayout; }
     void setNeedsFullLayout() { m_layoutType = FullLayout; }
 
-private:
-    unsigned m_needsRecompositeLayer : 1;
+    bool transformChanged() const { return m_propertySpecificDifferences & TransformChanged; }
+    void setTransformChanged() { m_propertySpecificDifferences |= TransformChanged; }
 
-    enum RepaintType {
-        NoRepaint = 0,
-        RepaintObject,
-        RepaintLayer
+    bool opacityChanged() const { return m_propertySpecificDifferences & OpacityChanged; }
+    void setOpacityChanged() { m_propertySpecificDifferences |= OpacityChanged; }
+
+    bool zIndexChanged() const { return m_propertySpecificDifferences & ZIndexChanged; }
+    void setZIndexChanged() { m_propertySpecificDifferences |= ZIndexChanged; }
+
+    bool filterChanged() const { return m_propertySpecificDifferences & FilterChanged; }
+    void setFilterChanged() { m_propertySpecificDifferences |= FilterChanged; }
+
+    bool textOrColorChanged() const { return m_propertySpecificDifferences & TextOrColorChanged; }
+    void setTextOrColorChanged() { m_propertySpecificDifferences |= TextOrColorChanged; }
+
+private:
+    enum PaintInvalidationType {
+        NoPaintInvalidation = 0,
+        PaintInvalidationObject,
+        PaintInvalidationLayer
     };
-    unsigned m_repaintType : 2;
+    unsigned m_paintInvalidationType : 2;
 
     enum LayoutType {
         NoLayout = 0,
@@ -73,8 +91,10 @@ private:
         FullLayout
     };
     unsigned m_layoutType : 2;
+
+    unsigned m_propertySpecificDifferences : 5;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StyleDifference_h

@@ -32,22 +32,36 @@
 #include "core/inspector/PageConsoleAgent.h"
 
 #include "core/dom/Node.h"
+#include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/FrameConsole.h"
+#include "core/frame/FrameHost.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorDOMAgent.h"
+#include "core/page/Page.h"
 
-namespace WebCore {
+namespace blink {
 
-PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent)
+PageConsoleAgent::PageConsoleAgent(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent, Page* page)
     : InspectorConsoleAgent(timelineAgent, injectedScriptManager)
     , m_inspectorDOMAgent(domAgent)
+    , m_page(page)
 {
 }
 
 PageConsoleAgent::~PageConsoleAgent()
 {
-    m_inspectorDOMAgent = 0;
+#if !ENABLE(OILPAN)
+    m_inspectorDOMAgent = nullptr;
+#endif
+}
+
+void PageConsoleAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inspectorDOMAgent);
+    visitor->trace(m_page);
+    InspectorConsoleAgent::trace(visitor);
 }
 
 void PageConsoleAgent::clearMessages(ErrorString* errorString)
@@ -56,10 +70,15 @@ void PageConsoleAgent::clearMessages(ErrorString* errorString)
     InspectorConsoleAgent::clearMessages(errorString);
 }
 
-class InspectableNode FINAL : public InjectedScriptHost::InspectableObject {
+ConsoleMessageStorage* PageConsoleAgent::messageStorage()
+{
+    return &m_page->frameHost().consoleMessageStorage();
+}
+
+class InspectableNode final : public InjectedScriptHost::InspectableObject {
 public:
     explicit InspectableNode(Node* node) : m_node(node) { }
-    virtual ScriptValue get(ScriptState* state) OVERRIDE
+    virtual ScriptValue get(ScriptState* state) override
     {
         return InjectedScriptHost::nodeAsScriptValue(state, m_node);
     }
@@ -75,7 +94,7 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
         return;
     }
     while (node->isInShadowTree()) {
-        Node& ancestor = node->highestAncestorOrSelf();
+        Node& ancestor = NodeTraversal::highestAncestorOrSelf(*node);
         if (!ancestor.isShadowRoot() || toShadowRoot(ancestor).type() == ShadowRoot::AuthorShadowRoot)
             break;
         // User agent shadow root, keep climbing up.
@@ -84,4 +103,4 @@ void PageConsoleAgent::addInspectedNode(ErrorString* errorString, int nodeId)
     m_injectedScriptManager->injectedScriptHost()->addInspectedObject(adoptPtr(new InspectableNode(node)));
 }
 
-} // namespace WebCore
+} // namespace blink

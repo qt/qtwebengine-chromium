@@ -30,7 +30,6 @@
 #include "core/svg/graphics/SVGImage.h"
 
 #include "core/animation/AnimationTimeline.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/shadow/ComposedTreeWalker.h"
 #include "core/frame/FrameView.h"
@@ -46,15 +45,17 @@
 #include "core/svg/SVGSVGElement.h"
 #include "core/svg/animation/SMILTimeContainer.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
+#include "platform/EventDispatchForbiddenScope.h"
 #include "platform/LengthFunctions.h"
 #include "platform/TraceEvent.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/graphics/DisplayList.h"
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/graphics/ImageBuffer.h"
 #include "platform/graphics/ImageObserver.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGImage::SVGImage(ImageObserver* observer)
     : Image(observer)
@@ -219,38 +220,42 @@ PassRefPtr<NativeImageSkia> SVGImage::nativeImageForCurrentFrame()
     return buffer->copyImage(CopyBackingStore)->nativeImageForCurrentFrame();
 }
 
-void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize, float zoom, const FloatRect& srcRect,
-    const FloatSize& scale, const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
+void SVGImage::drawPatternForContainer(GraphicsContext* context, const FloatSize containerSize,
+    float zoom, const FloatRect& srcRect, const FloatSize& tileScale, const FloatPoint& phase,
+    CompositeOperator compositeOp, const FloatRect& dstRect, blink::WebBlendMode blendMode,
+    const IntSize& repeatSpacing)
 {
-    FloatRect zoomedContainerRect = FloatRect(FloatPoint(), containerSize);
-    zoomedContainerRect.scale(zoom);
+    // Tile adjusted for scaling/stretch.
+    FloatRect tile(srcRect);
+    tile.scale(tileScale.width(), tileScale.height());
 
-    // The ImageBuffer size needs to be scaled to match the final resolution.
-    // FIXME: No need to get the full CTM here, we just need the scale.
-    // FIXME: See crbug.com/382491. This scale does not reflect compositor applied
-    // scale factors, such a High DPI or device zoom.
-    AffineTransform transform = context->getCTM();
-    FloatSize imageBufferScale = FloatSize(transform.xScale(), transform.yScale());
-    ASSERT(imageBufferScale.width());
-    ASSERT(imageBufferScale.height());
+    // Expand the tile to account for repeat spacing.
+    FloatRect spacedTile(tile);
+    spacedTile.expand(repeatSpacing);
 
-    FloatSize scaleWithoutCTM(scale.width() / imageBufferScale.width(), scale.height() / imageBufferScale.height());
+    // Record using a dedicated GC, to avoid inheriting unwanted state (pending color filters
+    // for example must be applied atomically during the final fill/composite phase).
+    GraphicsContext recordingContext(0);
+    recordingContext.beginRecording(spacedTile);
+    // When generating an expanded tile, make sure we don't draw into the spacing area.
+    if (tile != spacedTile)
+        recordingContext.clipRect(tile);
+    drawForContainer(&recordingContext, containerSize, zoom, tile, srcRect, CompositeSourceOver,
+        blink::WebBlendModeNormal);
+    RefPtr<DisplayList> tileDisplayList = recordingContext.endRecording();
 
-    FloatRect imageBufferSize = zoomedContainerRect;
-    imageBufferSize.scale(imageBufferScale.width(), imageBufferScale.height());
+    SkMatrix patternTransform;
+    patternTransform.setTranslate(phase.x() + tile.x(), phase.y() + tile.y());
+    SkRect tileRect = SkRect::MakeWH(spacedTile.width(), spacedTile.height());
+    RefPtr<SkShader> patternShader = adoptRef(SkShader::CreatePictureShader(
+        tileDisplayList->picture().get(), SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode,
+        &patternTransform, &tileRect));
 
-    OwnPtr<ImageBuffer> buffer = ImageBuffer::create(expandedIntSize(imageBufferSize.size()));
-    if (!buffer) // Failed to allocate buffer.
-        return;
-
-    drawForContainer(buffer->context(), containerSize, zoom, imageBufferSize, zoomedContainerRect, CompositeSourceOver, blink::WebBlendModeNormal);
-    RefPtr<Image> image = buffer->copyImage(DontCopyBackingStore, Unscaled);
-
-    // Adjust the source rect and transform due to the image buffer's scaling.
-    FloatRect scaledSrcRect = srcRect;
-    scaledSrcRect.scale(imageBufferScale.width(), imageBufferScale.height());
-
-    image->drawPattern(context, scaledSrcRect, scaleWithoutCTM, phase, compositeOp, dstRect, blendMode, repeatSpacing);
+    SkPaint paint;
+    paint.setShader(patternShader.get());
+    paint.setXfermodeMode(WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    paint.setColorFilter(context->colorFilter());
+    context->drawRect(dstRect, paint);
 }
 
 void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
@@ -287,9 +292,7 @@ void SVGImage::draw(GraphicsContext* context, const FloatRect& dstRect, const Fl
     if (!m_url.isEmpty())
         view->scrollToFragment(m_url);
 
-    if (view->needsLayout())
-        view->layout();
-
+    view->updateLayoutAndStyleForPainting();
     view->paint(context, enclosingIntRect(srcRect));
     ASSERT(!view->needsLayout());
 
@@ -375,7 +378,7 @@ bool SVGImage::hasAnimations() const
 
 bool SVGImage::dataChanged(bool allDataReceived)
 {
-    TRACE_EVENT0("webkit", "SVGImage::dataChanged");
+    TRACE_EVENT0("blink", "SVGImage::dataChanged");
 
     // Don't do anything if is an empty image.
     if (!data()->size())
@@ -386,7 +389,7 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // actually allow script to run so it's fine to call into it. We allow this
         // since it means an SVG data url can synchronously load like other image
         // types.
-        NoEventDispatchAssertion::AllowSVGImageEvents allowSVGImageEvents;
+        EventDispatchForbiddenScope::AllowUserAgentEvents allowUserAgentEvents;
 
         static FrameLoaderClient* dummyFrameLoaderClient = new EmptyFrameLoaderClient;
 
@@ -401,14 +404,23 @@ bool SVGImage::dataChanged(bool allDataReceived)
         // This will become an issue when SVGImage will be able to load other
         // SVGImage objects, but we're safe now, because SVGImage can only be
         // loaded by a top-level document.
-        OwnPtrWillBeRawPtr<Page> page = adoptPtrWillBeNoop(new Page(pageClients));
-        page->settings().setScriptEnabled(false);
-        page->settings().setPluginsEnabled(false);
-        page->settings().setAcceleratedCompositingEnabled(false);
+        OwnPtrWillBeRawPtr<Page> page;
+        {
+            TRACE_EVENT0("blink", "SVGImage::dataChanged::createPage");
+            page = adoptPtrWillBeNoop(new Page(pageClients));
+            page->settings().setScriptEnabled(false);
+            page->settings().setPluginsEnabled(false);
+            page->settings().setAcceleratedCompositingEnabled(false);
+        }
 
-        RefPtr<LocalFrame> frame = LocalFrame::create(dummyFrameLoaderClient, &page->frameHost(), 0);
-        frame->setView(FrameView::create(frame.get()));
-        frame->init();
+        RefPtrWillBeRawPtr<LocalFrame> frame = nullptr;
+        {
+            TRACE_EVENT0("blink", "SVGImage::dataChanged::createFrame");
+            frame = LocalFrame::create(dummyFrameLoaderClient, &page->frameHost(), 0);
+            frame->setView(FrameView::create(frame.get()));
+            frame->init();
+        }
+
         FrameLoader& loader = frame->loader();
         loader.forceSandboxFlags(SandboxAll);
 
@@ -418,7 +430,9 @@ bool SVGImage::dataChanged(bool allDataReceived)
 
         m_page = page.release();
 
-        loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), "image/svg+xml", "UTF-8", KURL(), ForceSynchronousLoad)));
+        TRACE_EVENT0("blink", "SVGImage::dataChanged::load");
+        loader.load(FrameLoadRequest(0, blankURL(), SubstituteData(data(), AtomicString("image/svg+xml", AtomicString::ConstructFromLiteral),
+            AtomicString("UTF-8", AtomicString::ConstructFromLiteral), KURL(), ForceSynchronousLoad)));
         // Set the intrinsic size before a container size is available.
         m_intrinsicSize = containerSize();
     }

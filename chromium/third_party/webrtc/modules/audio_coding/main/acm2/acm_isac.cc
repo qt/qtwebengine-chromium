@@ -93,8 +93,6 @@ int16_t ACMISAC::InternalCreateEncoder() { return -1; }
 
 void ACMISAC::DestructEncoderSafe() { return; }
 
-void ACMISAC::InternalDestructEncoderInst(void* /* ptr_inst */) { return; }
-
 int16_t ACMISAC::Transcode(uint8_t* /* bitstream */,
                            int16_t* /* bitstream_len_byte */,
                            int16_t /* q_bwe */,
@@ -213,7 +211,7 @@ static int16_t ACMISACFixGetNewBitstream(ACM_ISAC_STRUCT* inst,
                                          int16_t bwe_index,
                                          int16_t /* jitter_index */,
                                          int32_t rate,
-                                         int16_t* bitstream,
+                                         uint8_t* bitstream,
                                          bool is_red) {
   if (is_red) {
     // RED not supported with iSACFIX
@@ -264,8 +262,7 @@ static uint16_t ACMISACFixGetDecSampRate(ACM_ISAC_STRUCT* /* inst */) {
 #endif
 
 ACMISAC::ACMISAC(int16_t codec_id)
-    : AudioDecoder(ACMCodecDB::neteq_decoders_[codec_id]),
-      codec_inst_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
+    : codec_inst_crit_sect_(CriticalSectionWrapper::CreateCriticalSection()),
       is_enc_initialized_(false),
       isac_coding_mode_(CHANNEL_INDEPENDENT),
       enforce_frame_size_(false),
@@ -280,7 +277,6 @@ ACMISAC::ACMISAC(int16_t codec_id)
     return;
   }
   codec_inst_ptr_->inst = NULL;
-  state_ = codec_inst_ptr_;
 }
 
 ACMISAC::~ACMISAC() {
@@ -349,8 +345,9 @@ int16_t ACMISAC::InternalEncode(uint8_t* bitstream,
       return -1;
     }
     *bitstream_len_byte = ACM_ISAC_ENCODE(
-        codec_inst_ptr_->inst, &in_audio_[in_audio_ix_read_],
-        reinterpret_cast<int16_t*>(bitstream));
+        codec_inst_ptr_->inst,
+        &in_audio_[in_audio_ix_read_],
+        bitstream);
     // increment the read index this tell the caller that how far
     // we have gone forward in reading the audio buffer
     in_audio_ix_read_ += samples_in_10ms_audio_;
@@ -438,7 +435,7 @@ int16_t ACMISAC::Transcode(uint8_t* bitstream,
 
   *bitstream_len_byte = ACM_ISAC_GETNEWBITSTREAM(
       codec_inst_ptr_->inst, q_bwe, jitter_info, rate,
-      reinterpret_cast<int16_t*>(bitstream), (is_red) ? 1 : 0);
+      bitstream, (is_red) ? 1 : 0);
 
   if (*bitstream_len_byte < 0) {
     // error happened
@@ -458,13 +455,6 @@ void ACMISAC::UpdateFrameLen() {
 void ACMISAC::DestructEncoderSafe() {
   // codec with shared instance cannot delete.
   encoder_initialized_ = false;
-  return;
-}
-
-void ACMISAC::InternalDestructEncoderInst(void* ptr_inst) {
-  if (ptr_inst != NULL) {
-    ACM_ISAC_FREE(static_cast<ACM_ISAC_STRUCT *>(ptr_inst));
-  }
   return;
 }
 
@@ -599,9 +589,7 @@ int32_t ACMISAC::GetRedPayloadSafe(
 #else
     uint8_t* red_payload, int16_t* payload_bytes) {
   CriticalSectionScoped lock(codec_inst_crit_sect_.get());
-  int16_t bytes =
-      WebRtcIsac_GetRedPayload(
-          codec_inst_ptr_->inst, reinterpret_cast<int16_t*>(red_payload));
+  int16_t bytes = WebRtcIsac_GetRedPayload(codec_inst_ptr_->inst, red_payload);
   if (bytes < 0) {
     return -1;
   }
@@ -694,7 +682,10 @@ int32_t ACMISAC::ConfigISACBandwidthEstimator(
                  "Couldn't config iSAC BWE.");
     return -1;
   }
-  UpdateFrameLen();
+  {
+    WriteLockScoped wl(codec_wrapper_lock_);
+    UpdateFrameLen();
+  }
   CriticalSectionScoped lock(codec_inst_crit_sect_.get());
   ACM_ISAC_GETSENDBITRATE(codec_inst_ptr_->inst, &isac_current_bn_);
   return 0;
@@ -733,11 +724,11 @@ int ACMISAC::Decode(const uint8_t* encoded,
                     size_t encoded_len,
                     int16_t* decoded,
                     SpeechType* speech_type) {
-  int16_t temp_type;
+  int16_t temp_type = 1;  // Default is speech.
   CriticalSectionScoped lock(codec_inst_crit_sect_.get());
   int ret =
       ACM_ISAC_DECODE_B(static_cast<ACM_ISAC_STRUCT*>(codec_inst_ptr_->inst),
-                        reinterpret_cast<const uint16_t*>(encoded),
+                        encoded,
                         static_cast<int16_t>(encoded_len),
                         decoded,
                         &temp_type);
@@ -761,7 +752,7 @@ int ACMISAC::IncomingPacket(const uint8_t* payload,
   CriticalSectionScoped lock(codec_inst_crit_sect_.get());
   return ACM_ISAC_DECODE_BWE(
       static_cast<ACM_ISAC_STRUCT*>(codec_inst_ptr_->inst),
-      reinterpret_cast<const uint16_t*>(payload),
+      payload,
       static_cast<uint32_t>(payload_len),
       rtp_sequence_number,
       rtp_timestamp,
@@ -776,7 +767,7 @@ int ACMISAC::DecodeRedundant(const uint8_t* encoded,
   CriticalSectionScoped lock(codec_inst_crit_sect_.get());
   int16_t ret =
       ACM_ISAC_DECODERCU(static_cast<ACM_ISAC_STRUCT*>(codec_inst_ptr_->inst),
-                         reinterpret_cast<const uint16_t*>(encoded),
+                         encoded,
                          static_cast<int16_t>(encoded_len),
                          decoded,
                          &temp_type);
@@ -792,6 +783,7 @@ int ACMISAC::ErrorCode() {
 
 AudioDecoder* ACMISAC::Decoder(int codec_id) {
   // Create iSAC instance if it does not exist.
+  WriteLockScoped wl(codec_wrapper_lock_);
   if (!encoder_exist_) {
     CriticalSectionScoped lock(codec_inst_crit_sect_.get());
     assert(codec_inst_ptr_->inst == NULL);

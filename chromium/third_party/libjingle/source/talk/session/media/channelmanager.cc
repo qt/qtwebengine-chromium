@@ -33,12 +33,6 @@
 
 #include <algorithm>
 
-#include "talk/base/bind.h"
-#include "talk/base/common.h"
-#include "talk/base/logging.h"
-#include "talk/base/sigslotrepeater.h"
-#include "talk/base/stringencode.h"
-#include "talk/base/stringutils.h"
 #include "talk/media/base/capturemanager.h"
 #include "talk/media/base/hybriddataengine.h"
 #include "talk/media/base/rtpdataengine.h"
@@ -49,6 +43,12 @@
 #endif
 #include "talk/session/media/soundclip.h"
 #include "talk/session/media/srtpfilter.h"
+#include "webrtc/base/bind.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/sigslotrepeater.h"
+#include "webrtc/base/stringencode.h"
+#include "webrtc/base/stringutils.h"
 
 namespace cricket {
 
@@ -56,11 +56,11 @@ enum {
   MSG_VIDEOCAPTURESTATE = 1,
 };
 
-using talk_base::Bind;
+using rtc::Bind;
 
 static const int kNotSetOutputVolume = -1;
 
-struct CaptureStateParams : public talk_base::MessageData {
+struct CaptureStateParams : public rtc::MessageData {
   CaptureStateParams(cricket::VideoCapturer* c, cricket::CaptureState s)
       : capturer(c),
         state(s) {}
@@ -77,7 +77,7 @@ static DataEngineInterface* ConstructDataEngine() {
 }
 
 #if !defined(DISABLE_MEDIA_ENGINE_FACTORY)
-ChannelManager::ChannelManager(talk_base::Thread* worker_thread) {
+ChannelManager::ChannelManager(rtc::Thread* worker_thread) {
   Construct(MediaEngineFactory::Create(),
             ConstructDataEngine(),
             cricket::DeviceManagerFactory::Create(),
@@ -90,13 +90,13 @@ ChannelManager::ChannelManager(MediaEngineInterface* me,
                                DataEngineInterface* dme,
                                DeviceManagerInterface* dm,
                                CaptureManager* cm,
-                               talk_base::Thread* worker_thread) {
+                               rtc::Thread* worker_thread) {
   Construct(me, dme, dm, cm, worker_thread);
 }
 
 ChannelManager::ChannelManager(MediaEngineInterface* me,
                                DeviceManagerInterface* dm,
-                               talk_base::Thread* worker_thread) {
+                               rtc::Thread* worker_thread) {
   Construct(me,
             ConstructDataEngine(),
             dm,
@@ -108,19 +108,19 @@ void ChannelManager::Construct(MediaEngineInterface* me,
                                DataEngineInterface* dme,
                                DeviceManagerInterface* dm,
                                CaptureManager* cm,
-                               talk_base::Thread* worker_thread) {
+                               rtc::Thread* worker_thread) {
   media_engine_.reset(me);
   data_media_engine_.reset(dme);
   device_manager_.reset(dm);
   capture_manager_.reset(cm);
   initialized_ = false;
-  main_thread_ = talk_base::Thread::Current();
+  main_thread_ = rtc::Thread::Current();
   worker_thread_ = worker_thread;
   // Get the default audio options from the media engine.
   audio_options_ = media_engine_->GetAudioOptions();
   audio_in_device_ = DeviceManagerInterface::kDefaultDeviceName;
   audio_out_device_ = DeviceManagerInterface::kDefaultDeviceName;
-  audio_delay_offset_ = MediaEngineInterface::kDefaultAudioDelayOffset;
+  audio_delay_offset_ = kDefaultAudioDelayOffset;
   audio_output_volume_ = kNotSetOutputVolume;
   local_renderer_ = NULL;
   capturing_ = false;
@@ -217,11 +217,13 @@ bool ChannelManager::Init() {
   }
 
   ASSERT(worker_thread_ != NULL);
-  ASSERT(worker_thread_->RunningForChannelManager());
-  // TODO(fischman): remove the if below (and
-  // Thread::RunningForChannelManager()) once the ASSERT above has stuck for a
-  // month (2014/06/22).
-  if (worker_thread_ && worker_thread_->RunningForChannelManager()) {
+  if (worker_thread_) {
+    if (worker_thread_ != rtc::Thread::Current()) {
+      // Do not allow invoking calls to other threads on the worker thread.
+      worker_thread_->Invoke<bool>(rtc::Bind(
+          &rtc::Thread::SetAllowBlockingCalls, worker_thread_, false));
+    }
+
     if (media_engine_->Init(worker_thread_)) {
       initialized_ = true;
 
@@ -281,10 +283,6 @@ bool ChannelManager::Init() {
       if (default_video_encoder_config_.max_codec.id != 0) {
         SetDefaultVideoEncoderConfig(default_video_encoder_config_);
       }
-      // And the local renderer.
-      if (local_renderer_) {
-        SetLocalRenderer(local_renderer_);
-      }
     }
   }
   return initialized_;
@@ -301,7 +299,7 @@ void ChannelManager::Terminate() {
 }
 
 void ChannelManager::Terminate_w() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   // Need to destroy the voice/video channels
   while (!video_channels_.empty()) {
     DestroyVideoChannel_w(video_channels_.back());
@@ -364,22 +362,48 @@ void ChannelManager::DestroyVoiceChannel_w(VoiceChannel* voice_channel) {
 }
 
 VideoChannel* ChannelManager::CreateVideoChannel(
-    BaseSession* session, const std::string& content_name, bool rtcp,
+    BaseSession* session,
+    const std::string& content_name,
+    bool rtcp,
     VoiceChannel* voice_channel) {
   return worker_thread_->Invoke<VideoChannel*>(
-      Bind(&ChannelManager::CreateVideoChannel_w, this, session,
-           content_name, rtcp, voice_channel));
+      Bind(&ChannelManager::CreateVideoChannel_w,
+           this,
+           session,
+           content_name,
+           rtcp,
+           VideoOptions(),
+           voice_channel));
+}
+
+VideoChannel* ChannelManager::CreateVideoChannel(
+    BaseSession* session,
+    const std::string& content_name,
+    bool rtcp,
+    const VideoOptions& options,
+    VoiceChannel* voice_channel) {
+  return worker_thread_->Invoke<VideoChannel*>(
+      Bind(&ChannelManager::CreateVideoChannel_w,
+           this,
+           session,
+           content_name,
+           rtcp,
+           options,
+           voice_channel));
 }
 
 VideoChannel* ChannelManager::CreateVideoChannel_w(
-    BaseSession* session, const std::string& content_name, bool rtcp,
+    BaseSession* session,
+    const std::string& content_name,
+    bool rtcp,
+    const VideoOptions& options,
     VoiceChannel* voice_channel) {
   // This is ok to alloc from a thread other than the worker thread
   ASSERT(initialized_);
   VideoMediaChannel* media_channel =
       // voice_channel can be NULL in case of NullVoiceEngine.
-      media_engine_->CreateVideoChannel(voice_channel ?
-          voice_channel->media_channel() : NULL);
+      media_engine_->CreateVideoChannel(
+          options, voice_channel ? voice_channel->media_channel() : NULL);
   if (media_channel == NULL)
     return NULL;
 
@@ -474,7 +498,7 @@ Soundclip* ChannelManager::CreateSoundclip() {
 
 Soundclip* ChannelManager::CreateSoundclip_w() {
   ASSERT(initialized_);
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
 
   SoundclipMedia* soundclip_media = media_engine_->CreateSoundclip();
   if (!soundclip_media) {
@@ -560,7 +584,7 @@ bool ChannelManager::SetAudioOptions(const std::string& in_name,
 bool ChannelManager::SetAudioOptions_w(
     const AudioOptions& options, int delay_offset,
     const Device* in_dev, const Device* out_dev) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   ASSERT(initialized_);
 
   // Set audio options
@@ -595,7 +619,7 @@ bool ChannelManager::SetEngineAudioOptions(const AudioOptions& options) {
 }
 
 bool ChannelManager::SetEngineAudioOptions_w(const AudioOptions& options) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   ASSERT(initialized_);
 
   return media_engine_->SetAudioOptions(options);
@@ -714,8 +738,13 @@ VideoCapturer* ChannelManager::CreateVideoCapturer() {
   return capturer;
 }
 
+VideoCapturer* ChannelManager::CreateScreenCapturer(
+    const ScreencastId& screenid) {
+  return device_manager_->CreateScreenCapturer(screenid);
+}
+
 bool ChannelManager::SetCaptureDevice_w(const Device* cam_device) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   ASSERT(initialized_);
 
   if (!cam_device) {
@@ -745,19 +774,6 @@ bool ChannelManager::SetLocalMonitor(bool enable) {
            media_engine_.get(), enable));
   if (ret) {
     monitoring_ = enable;
-  }
-  return ret;
-}
-
-bool ChannelManager::SetLocalRenderer(VideoRenderer* renderer) {
-  bool ret = true;
-  if (initialized_) {
-    ret = worker_thread_->Invoke<bool>(
-        Bind(&MediaEngineInterface::SetLocalRenderer,
-             media_engine_.get(), renderer));
-  }
-  if (ret) {
-    local_renderer_ = renderer;
   }
   return ret;
 }
@@ -904,7 +920,7 @@ void ChannelManager::OnVideoCaptureStateChange(VideoCapturer* capturer,
                      new CaptureStateParams(capturer, result));
 }
 
-void ChannelManager::OnMessage(talk_base::Message* message) {
+void ChannelManager::OnMessage(rtc::Message* message) {
   switch (message->message_id) {
     case MSG_VIDEOCAPTURESTATE: {
       CaptureStateParams* data =
@@ -966,7 +982,7 @@ VideoFormat ChannelManager::GetStartCaptureFormat() {
       Bind(&MediaEngineInterface::GetStartCaptureFormat, media_engine_.get()));
 }
 
-bool ChannelManager::StartAecDump(talk_base::PlatformFile file) {
+bool ChannelManager::StartAecDump(rtc::PlatformFile file) {
   return worker_thread_->Invoke<bool>(
       Bind(&MediaEngineInterface::StartAecDump, media_engine_.get(), file));
 }

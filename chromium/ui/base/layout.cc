@@ -28,10 +28,6 @@ namespace ui {
 
 namespace {
 
-bool ScaleFactorComparator(const ScaleFactor& lhs, const ScaleFactor& rhs){
-  return GetScaleForScaleFactor(lhs) < GetScaleForScaleFactor(rhs);
-}
-
 std::vector<ScaleFactor>* g_supported_scale_factors = NULL;
 
 const float kScaleFactorScales[] = {1.0f, 1.0f, 1.25f, 1.33f, 1.4f, 1.5f, 1.8f,
@@ -49,7 +45,9 @@ void SetSupportedScaleFactors(
   g_supported_scale_factors = new std::vector<ScaleFactor>(scale_factors);
   std::sort(g_supported_scale_factors->begin(),
             g_supported_scale_factors->end(),
-            ScaleFactorComparator);
+            [](ScaleFactor lhs, ScaleFactor rhs) {
+    return GetScaleForScaleFactor(lhs) < GetScaleForScaleFactor(rhs);
+  });
 
   // Set ImageSkia's supported scales.
   std::vector<float> scales;
@@ -84,10 +82,10 @@ ScaleFactor GetSupportedScaleFactor(float scale) {
 
 float GetImageScale(ScaleFactor scale_factor) {
 #if defined(OS_WIN)
-  if (gfx::IsHighDPIEnabled())
-    return gfx::win::GetDeviceScaleFactor();
-#endif
+  return gfx::GetDPIScale();
+#else
   return GetScaleForScaleFactor(scale_factor);
+#endif
 }
 
 float GetScaleForScaleFactor(ScaleFactor scale_factor) {
@@ -122,11 +120,8 @@ ScopedSetSupportedScaleFactors::~ScopedSetSupportedScaleFactors() {
 #if !defined(OS_MACOSX)
 float GetScaleFactorForNativeView(gfx::NativeView view) {
   gfx::Screen* screen = gfx::Screen::GetScreenFor(view);
-  if (screen->IsDIPEnabled()) {
-    gfx::Display display = screen->GetDisplayNearestWindow(view);
-    return display.device_scale_factor();
-  }
-  return 1.0f;
+  gfx::Display display = screen->GetDisplayNearestWindow(view);
+  return display.device_scale_factor();
 }
 #endif  // !defined(OS_MACOSX)
 

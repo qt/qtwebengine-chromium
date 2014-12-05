@@ -39,8 +39,11 @@ namespace blink {
 class WebLeakDetectorClient {
 public:
     struct Result {
-        unsigned numberOfLiveNodes;
+        unsigned numberOfLiveAudioNodes;
         unsigned numberOfLiveDocuments;
+        unsigned numberOfLiveNodes;
+        unsigned numberOfLiveRenderObjects;
+        unsigned numberOfLiveResources;
     };
 
     virtual void onLeakDetectionComplete(const Result&) = 0;
@@ -55,9 +58,6 @@ public:
     // Cleans up the DOM objects and counts them. |WebLeakDetectorClient::onLeakDetectionComplete()| is called when done.
     // This is supposed to be used for detecting DOM-object leaks.
     virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) = 0;
-
-    // FIXME: old API to be removed.
-    static void collectGarbargeAndGetDOMCounts(WebLocalFrame*, unsigned*, unsigned*) { }
 };
 
 } // namespace blink

@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/p2p/base/constants.h"
+#include "webrtc/p2p/base/constants.h"
 
 #include <string>
 
-#include "talk/xmllite/qname.h"
+#include "webrtc/libjingle/xmllite/qname.h"
 
 namespace cricket {
 

@@ -25,64 +25,60 @@
 #ifndef WebPluginScrollbarImpl_h
 #define WebPluginScrollbarImpl_h
 
+#include "platform/heap/Handle.h"
 #include "public/web/WebPluginScrollbar.h"
-
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
+
 class IntPoint;
 class IntRect;
 class Scrollbar;
-}
-
-namespace blink {
-
 class ScrollbarGroup;
 
-class WebPluginScrollbarImpl FINAL : public WebPluginScrollbar {
+class WebPluginScrollbarImpl final : public WebPluginScrollbar {
 public:
     WebPluginScrollbarImpl(Orientation, ScrollbarGroup*, WebPluginScrollbarClient*);
     virtual ~WebPluginScrollbarImpl();
 
     void setScrollOffset(int);
-    void invalidateScrollbarRect(const WebCore::IntRect&);
+    void invalidateScrollbarRect(const IntRect&);
     // FIXME: Combine this with the other getTickmarks method
-    void getTickmarks(Vector<WebCore::IntRect>&) const;
-    WebCore::IntPoint convertFromContainingViewToScrollbar(const WebCore::IntPoint& parentPoint) const;
+    void getTickmarks(Vector<IntRect>&) const;
+    IntPoint convertFromContainingViewToScrollbar(const IntPoint& parentPoint) const;
     void scrollbarStyleChanged();
 
     int scrollOffset() { return m_scrollOffset; }
-    WebCore::Scrollbar* scrollbar() { return m_scrollbar.get(); }
+    Scrollbar* scrollbar() { return m_scrollbar.get(); }
 
-    // blink::WebScrollbar methods
-    virtual bool isOverlay() const OVERRIDE;
-    virtual int value() const OVERRIDE;
-    virtual WebPoint location() const OVERRIDE;
-    virtual WebSize size() const OVERRIDE;
-    virtual bool enabled() const OVERRIDE;
-    virtual int maximum() const OVERRIDE;
-    virtual int totalSize() const OVERRIDE;
-    virtual bool isScrollViewScrollbar() const OVERRIDE;
-    virtual bool isScrollableAreaActive() const OVERRIDE;
-    virtual void getTickmarks(WebVector<WebRect>& tickmarks) const OVERRIDE;
-    virtual WebScrollbar::ScrollbarControlSize controlSize() const OVERRIDE;
-    virtual WebScrollbar::ScrollbarPart pressedPart() const OVERRIDE;
-    virtual WebScrollbar::ScrollbarPart hoveredPart() const OVERRIDE;
-    virtual WebScrollbar::ScrollbarOverlayStyle scrollbarOverlayStyle() const OVERRIDE;
-    virtual WebScrollbar::Orientation orientation() const OVERRIDE;
-    virtual bool isLeftSideVerticalScrollbar() const OVERRIDE;
-    virtual bool isCustomScrollbar() const OVERRIDE;
+    // WebScrollbar methods
+    virtual bool isOverlay() const override;
+    virtual int value() const override;
+    virtual WebPoint location() const override;
+    virtual WebSize size() const override;
+    virtual bool enabled() const override;
+    virtual int maximum() const override;
+    virtual int totalSize() const override;
+    virtual bool isScrollableAreaActive() const override;
+    virtual void getTickmarks(WebVector<WebRect>& tickmarks) const override;
+    virtual WebScrollbar::ScrollbarControlSize controlSize() const override;
+    virtual WebScrollbar::ScrollbarPart pressedPart() const override;
+    virtual WebScrollbar::ScrollbarPart hoveredPart() const override;
+    virtual WebScrollbar::ScrollbarOverlayStyle scrollbarOverlayStyle() const override;
+    virtual WebScrollbar::Orientation orientation() const override;
+    virtual bool isLeftSideVerticalScrollbar() const override;
+    virtual bool isCustomScrollbar() const override;
 
-    // blink::WebPluginScrollbar methods
-    virtual void setLocation(const WebRect&) OVERRIDE;
-    virtual void setValue(int position) OVERRIDE;
-    virtual void setDocumentSize(int) OVERRIDE;
-    virtual void scroll(ScrollDirection, ScrollGranularity, float multiplier) OVERRIDE;
-    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE;
-    virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE;
-    virtual bool isAlphaLocked() const OVERRIDE;
-    virtual void setIsAlphaLocked(bool) OVERRIDE;
+    // WebPluginScrollbar methods
+    virtual void setLocation(const WebRect&) override;
+    virtual void setValue(int position) override;
+    virtual void setDocumentSize(int) override;
+    virtual void scroll(ScrollDirection, ScrollGranularity, float multiplier) override;
+    virtual void paint(WebCanvas*, const WebRect&) override;
+    virtual bool handleInputEvent(const WebInputEvent&) override;
+    virtual bool isAlphaLocked() const override;
+    virtual void setIsAlphaLocked(bool) override;
 
 private:
     bool onMouseDown(const WebInputEvent&);
@@ -96,7 +92,7 @@ private:
     WebPluginScrollbarClient* m_client;
 
     int m_scrollOffset;
-    RefPtr<WebCore::Scrollbar> m_scrollbar;
+    RefPtrWillBePersistent<Scrollbar> m_scrollbar;
 };
 
 } // namespace blink

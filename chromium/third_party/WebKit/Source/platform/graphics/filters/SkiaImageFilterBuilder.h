@@ -33,11 +33,12 @@
 
 class SkImageFilter;
 
-namespace WebCore {
+namespace blink {
 class AffineTransform;
 class FilterEffect;
 class FilterOperations;
 class GraphicsContext;
+class SourceGraphic;
 
 class PLATFORM_EXPORT SkiaImageFilterBuilder {
 public:
@@ -46,7 +47,7 @@ public:
     ~SkiaImageFilterBuilder();
 
     PassRefPtr<SkImageFilter> build(FilterEffect*, ColorSpace, bool requiresPMColorValidation = true);
-    bool buildFilterOperations(const FilterOperations&, blink::WebFilterOperations*);
+    void buildFilterOperations(const FilterOperations&, WebFilterOperations*);
     PassRefPtr<SkImageFilter> buildTransform(const AffineTransform&, SkImageFilter* input);
 
     PassRefPtr<SkImageFilter> transformColorSpace(
@@ -54,13 +55,18 @@ public:
 
     void setCropOffset(const FloatSize& cropOffset) { m_cropOffset = cropOffset; };
     FloatSize cropOffset() { return m_cropOffset; }
+
+    void setSourceGraphic(SourceGraphic* sourceGraphic) { m_sourceGraphic = sourceGraphic; }
+    SourceGraphic* sourceGraphic() { return m_sourceGraphic; }
+
     GraphicsContext* context() { return m_context; }
 
 private:
     FloatSize m_cropOffset;
     GraphicsContext* m_context;
+    SourceGraphic* m_sourceGraphic;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

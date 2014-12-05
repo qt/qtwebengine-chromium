@@ -15,6 +15,7 @@
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "cc/trees/layer_tree_settings.h"
+#include "content/common/content_export.h"
 #include "third_party/WebKit/public/platform/WebLayerTreeView.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/rect.h"
@@ -24,6 +25,7 @@ struct LatencyInfo;
 }
 
 namespace cc {
+class CopyOutputRequest;
 class InputHandler;
 class Layer;
 class LayerTreeHost;
@@ -32,9 +34,10 @@ class LayerTreeHost;
 namespace content {
 class RenderWidget;
 
-class RenderWidgetCompositor : public blink::WebLayerTreeView,
-                               public cc::LayerTreeHostClient,
-                               public cc::LayerTreeHostSingleThreadClient {
+class CONTENT_EXPORT RenderWidgetCompositor
+    : NON_EXPORTED_BASE(public blink::WebLayerTreeView),
+      NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
   // Attempt to construct and initialize a compositor instance for the widget
   // with the given settings. Returns NULL if initialization fails.
@@ -44,15 +47,13 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual ~RenderWidgetCompositor();
 
   const base::WeakPtr<cc::InputHandler>& GetInputHandler();
-  void SetSuppressScheduleComposite(bool suppress);
   bool BeginMainFrameRequested() const;
-  void UpdateAnimations(base::TimeTicks time);
   void SetNeedsDisplayOnAllLayers();
   void SetRasterizeOnlyVisibleContent();
   void UpdateTopControlsState(cc::TopControlsState constraints,
                               cc::TopControlsState current,
                               bool animate);
-  void SetOverdrawBottomHeight(float overdraw_bottom_height);
+  void SetTopControlsLayoutHeight(float height);
   void SetNeedsRedrawRect(gfx::Rect damage_rect);
   // Like setNeedsRedraw but forces the frame to be drawn, without early-outs.
   // Redraw will be forced after the next commit
@@ -68,6 +69,8 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   // LayerTreeHost.
   void QueueSwapPromise(scoped_ptr<cc::SwapPromise> swap_promise);
   int GetLayerTreeId() const;
+  int GetSourceFrameNumber() const;
+  void SetNeedsCommit();
   void NotifyInputThrottledUntilCommit();
   const cc::Layer* GetRootLayer() const;
   int ScheduleMicroBenchmark(
@@ -113,35 +116,42 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   virtual void registerViewportLayers(
       const blink::WebLayer* pageScaleLayer,
       const blink::WebLayer* innerViewportScrollLayer,
-      const blink::WebLayer* outerViewportScrollLayer) OVERRIDE;
-  virtual void clearViewportLayers() OVERRIDE;
+      const blink::WebLayer* outerViewportScrollLayer) override;
+  virtual void clearViewportLayers() override;
+  virtual void registerSelection(const blink::WebSelectionBound& start,
+                                 const blink::WebSelectionBound& end) override;
+  virtual void clearSelection() override;
   virtual void setShowFPSCounter(bool show);
   virtual void setShowPaintRects(bool show);
   virtual void setShowDebugBorders(bool show);
   virtual void setContinuousPaintingEnabled(bool enabled);
   virtual void setShowScrollBottleneckRects(bool show);
+  virtual void setTopControlsContentOffset(float);
 
   // cc::LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame(int frame_id) OVERRIDE;
-  virtual void DidBeginMainFrame() OVERRIDE;
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) OVERRIDE;
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
-      OVERRIDE;
-  virtual void DidInitializeOutputSurface() OVERRIDE;
-  virtual void WillCommit() OVERRIDE;
-  virtual void DidCommit() OVERRIDE;
-  virtual void DidCommitAndDrawFrame() OVERRIDE;
-  virtual void DidCompleteSwapBuffers() OVERRIDE;
-  virtual void RateLimitSharedMainThreadContext() OVERRIDE;
+  void WillBeginMainFrame(int frame_id) override;
+  void DidBeginMainFrame() override;
+  void BeginMainFrame(const cc::BeginFrameArgs& args) override;
+  void Layout() override;
+  void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
+                           const gfx::Vector2d& outer_delta,
+                           float page_scale,
+                           float top_controls_delta) override;
+  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                           float page_scale,
+                           float top_controls_delta) override;
+  void RequestNewOutputSurface(bool fallback) override;
+  void DidInitializeOutputSurface() override;
+  void WillCommit() override;
+  void DidCommit() override;
+  void DidCommitAndDrawFrame() override;
+  void DidCompleteSwapBuffers() override;
+  void RateLimitSharedMainThreadContext() override;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
-  virtual void ScheduleComposite() OVERRIDE;
-  virtual void ScheduleAnimation() OVERRIDE;
-  virtual void DidPostSwapBuffers() OVERRIDE;
-  virtual void DidAbortSwapBuffers() OVERRIDE;
+  void ScheduleAnimation() override;
+  void DidPostSwapBuffers() override;
+  void DidAbortSwapBuffers() override;
 
  private:
   RenderWidgetCompositor(RenderWidget* widget, bool threaded);
@@ -149,9 +159,15 @@ class RenderWidgetCompositor : public blink::WebLayerTreeView,
   void Initialize(cc::LayerTreeSettings settings);
 
   bool threaded_;
-  bool suppress_schedule_composite_;
   RenderWidget* widget_;
   scoped_ptr<cc::LayerTreeHost> layer_tree_host_;
+
+  scoped_ptr<cc::CopyOutputRequest> temporary_copy_output_request_;
+
+  bool send_v8_idle_notification_after_commit_;
+  base::TimeTicks begin_main_frame_time_;
+  // The time interval between BeginMainFrame calls, provided by the scheduler.
+  base::TimeDelta begin_main_frame_interval_;
 };
 
 }  // namespace content

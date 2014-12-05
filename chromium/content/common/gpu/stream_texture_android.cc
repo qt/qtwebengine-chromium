@@ -53,7 +53,7 @@ bool StreamTexture::Create(
                                   GL_UNSIGNED_BYTE,
                                   true);
     texture_manager->SetLevelImage(
-        texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image);
+        texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image.get());
     return true;
   }
 
@@ -95,7 +95,7 @@ void StreamTexture::OnWillDestroyStub() {
   surface_texture_ = NULL;
 }
 
-void StreamTexture::Destroy() {
+void StreamTexture::Destroy(bool have_context) {
   NOTREACHED();
 }
 
@@ -131,7 +131,7 @@ void StreamTexture::WillUseTexImage() {
       const gpu::gles2::TextureUnit& active_unit =
           state->texture_units[state->active_texture_unit];
       glBindTexture(GL_TEXTURE_EXTERNAL_OES,
-                    active_unit.bound_texture_external_oes
+                    active_unit.bound_texture_external_oes.get()
                         ? active_unit.bound_texture_external_oes->service_id()
                         : 0);
     }
@@ -200,6 +200,19 @@ bool StreamTexture::BindTexImage(unsigned target) {
 
 void StreamTexture::ReleaseTexImage(unsigned target) {
   NOTREACHED();
+}
+
+bool StreamTexture::CopyTexImage(unsigned target) {
+  return false;
+}
+
+bool StreamTexture::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                         int z_order,
+                                         gfx::OverlayTransform transform,
+                                         const gfx::Rect& bounds_rect,
+                                         const gfx::RectF& crop_rect) {
+  NOTREACHED();
+  return false;
 }
 
 }  // namespace content

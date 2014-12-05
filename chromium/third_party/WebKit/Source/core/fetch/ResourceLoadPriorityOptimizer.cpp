@@ -35,7 +35,7 @@
 
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 ResourceLoadPriorityOptimizer* ResourceLoadPriorityOptimizer::resourceLoadPriorityOptimizer()
 {
@@ -78,16 +78,14 @@ void ResourceLoadPriorityOptimizer::removeRenderObject(RenderObject* renderer)
 
 void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
 {
-    TRACE_EVENT0("webkit", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
+    TRACE_EVENT0("blink", "ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities");
 
     m_imageResources.clear();
 
     Vector<RenderObject*> objectsToRemove;
-    for (RenderObjectSet::iterator it = m_objects.begin(); it != m_objects.end(); ++it) {
-        RenderObject* obj = *it;
-        if (!obj->updateImageLoadingPriorities()) {
-            objectsToRemove.append(obj);
-        }
+    for (const auto& renderObject : m_objects) {
+        if (!renderObject->updateImageLoadingPriorities())
+            objectsToRemove.append(renderObject);
     }
     m_objects.removeAll(objectsToRemove);
 
@@ -96,13 +94,13 @@ void ResourceLoadPriorityOptimizer::updateAllImageResourcePriorities()
 
 void ResourceLoadPriorityOptimizer::updateImageResourcesWithLoadPriority()
 {
-    for (ImageResourceMap::iterator it = m_imageResources.begin(); it != m_imageResources.end(); ++it) {
-        ResourceLoadPriority priority = it->value->status == Visible ?
+    for (const auto& resource : m_imageResources) {
+        ResourceLoadPriority priority = resource.value->status == Visible ?
             ResourceLoadPriorityLow : ResourceLoadPriorityVeryLow;
 
-        if (priority != it->value->imageResource->resourceRequest().priority()) {
-            it->value->imageResource->resourceRequest().setPriority(priority, it->value->screenArea);
-            it->value->imageResource->didChangePriority(priority, it->value->screenArea);
+        if (priority != resource.value->imageResource->resourceRequest().priority()) {
+            resource.value->imageResource->mutableResourceRequest().setPriority(priority, resource.value->screenArea);
+            resource.value->imageResource->didChangePriority(priority, resource.value->screenArea);
         }
     }
     m_imageResources.clear();
@@ -119,8 +117,8 @@ void ResourceLoadPriorityOptimizer::notifyImageResourceVisibility(ImageResource*
 
     ImageResourceMap::AddResult result = m_imageResources.add(img->identifier(), adoptPtr(new ResourceAndVisibility(img, status, screenArea)));
     if (!result.isNewEntry && status == Visible) {
-        result.storedValue->value->status = status;
-        result.storedValue->value->screenArea = status;
+        result.storedValue->value->status = Visible;
+        result.storedValue->value->screenArea += screenArea;
     }
 }
 

@@ -9,7 +9,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
@@ -40,10 +40,10 @@ const base::FilePath::CharType kCookieFilename[] = FILE_PATH_LITERAL("Cookies");
 class CookieCryptor : public content::CookieCryptoDelegate {
  public:
   CookieCryptor();
-  virtual bool EncryptString(const std::string& plaintext,
-                             std::string* ciphertext) OVERRIDE;
-  virtual bool DecryptString(const std::string& ciphertext,
-                             std::string* plaintext) OVERRIDE;
+  bool EncryptString(const std::string& plaintext,
+                     std::string* ciphertext) override;
+  bool DecryptString(const std::string& ciphertext,
+                     std::string* plaintext) override;
 
  private:
   scoped_ptr<crypto::SymmetricKey> key_;
@@ -173,11 +173,9 @@ class SQLitePersistentCookieStoreTest : public testing::Test {
     return contents;
   }
 
-  virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-  }
+  void SetUp() override { ASSERT_TRUE(temp_dir_.CreateUniqueTempDir()); }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     DestroyStore();
     pool_owner_->pool()->Shutdown();
   }

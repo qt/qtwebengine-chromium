@@ -33,9 +33,9 @@
 
 #include "modules/mediastream/UserMediaRequest.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/SpaceSplitString.h"
@@ -45,11 +45,11 @@
 #include "platform/mediastream/MediaStreamCenter.h"
 #include "platform/mediastream/MediaStreamDescriptor.h"
 
-namespace WebCore {
+namespace blink {
 
-static blink::WebMediaConstraints parseOptions(const Dictionary& options, const String& mediaType, ExceptionState& exceptionState)
+static WebMediaConstraints parseOptions(const Dictionary& options, const String& mediaType, ExceptionState& exceptionState)
 {
-    blink::WebMediaConstraints constraints;
+    WebMediaConstraints constraints;
 
     Dictionary constraintsDictionary;
     bool ok = options.get(mediaType, constraintsDictionary);
@@ -57,7 +57,7 @@ static blink::WebMediaConstraints parseOptions(const Dictionary& options, const 
         constraints = MediaConstraintsImpl::create(constraintsDictionary, exceptionState);
     else {
         bool mediaRequested = false;
-        options.get(mediaType, mediaRequested);
+        DictionaryHelper::get(options, mediaType, mediaRequested);
         if (mediaRequested)
             constraints = MediaConstraintsImpl::create();
     }
@@ -65,13 +65,13 @@ static blink::WebMediaConstraints parseOptions(const Dictionary& options, const 
     return constraints;
 }
 
-PassRefPtrWillBeRawPtr<UserMediaRequest> UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const Dictionary& options, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback, ExceptionState& exceptionState)
+UserMediaRequest* UserMediaRequest::create(ExecutionContext* context, UserMediaController* controller, const Dictionary& options, NavigatorUserMediaSuccessCallback* successCallback, NavigatorUserMediaErrorCallback* errorCallback, ExceptionState& exceptionState)
 {
-    blink::WebMediaConstraints audio = parseOptions(options, "audio", exceptionState);
+    WebMediaConstraints audio = parseOptions(options, "audio", exceptionState);
     if (exceptionState.hadException())
         return nullptr;
 
-    blink::WebMediaConstraints video = parseOptions(options, "video", exceptionState);
+    WebMediaConstraints video = parseOptions(options, "video", exceptionState);
     if (exceptionState.hadException())
         return nullptr;
 
@@ -80,10 +80,10 @@ PassRefPtrWillBeRawPtr<UserMediaRequest> UserMediaRequest::create(ExecutionConte
         return nullptr;
     }
 
-    return adoptRefWillBeNoop(new UserMediaRequest(context, controller, audio, video, successCallback, errorCallback));
+    return new UserMediaRequest(context, controller, audio, video, successCallback, errorCallback);
 }
 
-UserMediaRequest::UserMediaRequest(ExecutionContext* context, UserMediaController* controller, blink::WebMediaConstraints audio, blink::WebMediaConstraints video, PassOwnPtr<NavigatorUserMediaSuccessCallback> successCallback, PassOwnPtr<NavigatorUserMediaErrorCallback> errorCallback)
+UserMediaRequest::UserMediaRequest(ExecutionContext* context, UserMediaController* controller, WebMediaConstraints audio, WebMediaConstraints video, NavigatorUserMediaSuccessCallback* successCallback, NavigatorUserMediaErrorCallback* errorCallback)
     : ContextLifecycleObserver(context)
     , m_audio(audio)
     , m_video(video)
@@ -107,12 +107,12 @@ bool UserMediaRequest::video() const
     return !m_video.isNull();
 }
 
-blink::WebMediaConstraints UserMediaRequest::audioConstraints() const
+WebMediaConstraints UserMediaRequest::audioConstraints() const
 {
     return m_audio;
 }
 
-blink::WebMediaConstraints UserMediaRequest::videoConstraints() const
+WebMediaConstraints UserMediaRequest::videoConstraints() const
 {
     return m_video;
 }
@@ -156,9 +156,7 @@ void UserMediaRequest::failPermissionDenied(const String& message)
 {
     if (!executionContext())
         return;
-
-    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NamePermissionDenied, message, String());
-    m_errorCallback->handleEvent(error.get());
+    m_errorCallback->handleEvent(NavigatorUserMediaError::create(NavigatorUserMediaError::NamePermissionDenied, message, String()));
 }
 
 void UserMediaRequest::failConstraint(const String& constraintName, const String& message)
@@ -166,9 +164,7 @@ void UserMediaRequest::failConstraint(const String& constraintName, const String
     ASSERT(!constraintName.isEmpty());
     if (!executionContext())
         return;
-
-    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(NavigatorUserMediaError::NameConstraintNotSatisfied, message, constraintName);
-    m_errorCallback->handleEvent(error.get());
+    m_errorCallback->handleEvent(NavigatorUserMediaError::create(NavigatorUserMediaError::NameConstraintNotSatisfied, message, constraintName));
 }
 
 void UserMediaRequest::failUASpecific(const String& name, const String& message, const String& constraintName)
@@ -176,15 +172,11 @@ void UserMediaRequest::failUASpecific(const String& name, const String& message,
     ASSERT(!name.isEmpty());
     if (!executionContext())
         return;
-
-    RefPtrWillBeRawPtr<NavigatorUserMediaError> error = NavigatorUserMediaError::create(name, message, constraintName);
-    m_errorCallback->handleEvent(error.get());
+    m_errorCallback->handleEvent(NavigatorUserMediaError::create(name, message, constraintName));
 }
 
 void UserMediaRequest::contextDestroyed()
 {
-    RefPtrWillBeRawPtr<UserMediaRequest> protect(this);
-
     if (m_controller) {
         m_controller->cancelUserMediaRequest(this);
         m_controller = 0;
@@ -193,4 +185,10 @@ void UserMediaRequest::contextDestroyed()
     ContextLifecycleObserver::contextDestroyed();
 }
 
-} // namespace WebCore
+void UserMediaRequest::trace(Visitor* visitor)
+{
+    visitor->trace(m_successCallback);
+    visitor->trace(m_errorCallback);
+}
+
+} // namespace blink

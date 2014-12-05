@@ -12,25 +12,24 @@
 #include "SkWriteBuffer.h"
 #include "SkValidationUtils.h"
 
-SkPictureImageFilter::SkPictureImageFilter(SkPicture* picture)
-  : INHERITED(0, 0),
-    fPicture(picture),
-    fCropRect(SkRect::MakeWH(picture ? SkIntToScalar(picture->width()) : 0,
-                             picture ? SkIntToScalar(picture->height()) : 0)) {
-    SkSafeRef(fPicture);
+SkPictureImageFilter::SkPictureImageFilter(const SkPicture* picture, uint32_t uniqueID)
+    : INHERITED(0, 0, NULL, uniqueID)
+    , fPicture(SkSafeRef(picture))
+    , fCropRect(picture ? picture->cullRect() : SkRect::MakeEmpty()) {
 }
 
-SkPictureImageFilter::SkPictureImageFilter(SkPicture* picture, const SkRect& cropRect)
-  : INHERITED(0, 0),
-    fPicture(picture),
-    fCropRect(cropRect) {
-    SkSafeRef(fPicture);
+SkPictureImageFilter::SkPictureImageFilter(const SkPicture* picture, const SkRect& cropRect,
+                                           uint32_t uniqueID)
+    : INHERITED(0, 0, NULL, uniqueID)
+    , fPicture(SkSafeRef(picture))
+    , fCropRect(cropRect) {
 }
 
 SkPictureImageFilter::~SkPictureImageFilter() {
     SkSafeUnref(fPicture);
 }
 
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkPictureImageFilter::SkPictureImageFilter(SkReadBuffer& buffer)
   : INHERITED(0, buffer),
     fPicture(NULL) {
@@ -43,9 +42,25 @@ SkPictureImageFilter::SkPictureImageFilter(SkReadBuffer& buffer)
     }
     buffer.readRect(&fCropRect);
 }
+#endif
+
+SkFlattenable* SkPictureImageFilter::CreateProc(SkReadBuffer& buffer) {
+    SkAutoTUnref<SkPicture> picture;
+    SkRect cropRect;
+
+    if (!buffer.isCrossProcess()) {
+        if (buffer.readBool()) {
+            picture.reset(SkPicture::CreateFromBuffer(buffer));
+        }
+    } else {
+        buffer.validate(!buffer.readBool());
+    }
+    buffer.readRect(&cropRect);
+
+    return Create(picture, cropRect);
+}
 
 void SkPictureImageFilter::flatten(SkWriteBuffer& buffer) const {
-    this->INHERITED::flatten(buffer);
     if (!buffer.isCrossProcess()) {
         bool hasPicture = (fPicture != NULL);
         buffer.writeBool(hasPicture);
@@ -69,6 +84,9 @@ bool SkPictureImageFilter::onFilterImage(Proxy* proxy, const SkBitmap&, const Co
     SkIRect bounds;
     ctx.ctm().mapRect(&floatBounds, fCropRect);
     floatBounds.roundOut(&bounds);
+    if (!bounds.intersect(ctx.clipBounds())) {
+        return false;
+    }
 
     if (bounds.isEmpty()) {
         offset->fX = offset->fY = 0;
@@ -92,10 +110,3 @@ bool SkPictureImageFilter::onFilterImage(Proxy* proxy, const SkBitmap&, const Co
     offset->fY = bounds.fTop;
     return true;
 }
-
-bool SkPictureImageFilter::onFilterBounds(const SkIRect& src, const SkMatrix& ctm,
-                                          SkIRect* dst) const {
-    *dst = src;
-    return true;
-}
-

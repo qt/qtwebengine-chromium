@@ -20,8 +20,8 @@ class MockMediaStreamVideoSink : public MediaStreamVideoSink {
   virtual ~MockMediaStreamVideoSink();
 
   virtual void OnReadyStateChanged(
-      blink::WebMediaStreamSource::ReadyState state) OVERRIDE;
-  virtual void OnEnabledChanged(bool enabled) OVERRIDE;
+      blink::WebMediaStreamSource::ReadyState state) override;
+  virtual void OnEnabledChanged(bool enabled) override;
 
   // Triggered when OnVideoFrame(const scoped_refptr<media::VideoFrame>& frame)
   // is called.
@@ -32,6 +32,7 @@ class MockMediaStreamVideoSink : public MediaStreamVideoSink {
   int number_of_frames() const { return number_of_frames_; }
   media::VideoFrame::Format format() const { return format_; }
   gfx::Size frame_size() const { return frame_size_; }
+  scoped_refptr<media::VideoFrame> last_frame() const { return last_frame_; };
 
   bool enabled() const { return enabled_; }
   blink::WebMediaStreamSource::ReadyState state() const { return state_; }
@@ -47,6 +48,7 @@ class MockMediaStreamVideoSink : public MediaStreamVideoSink {
   media::VideoFrame::Format format_;
   blink::WebMediaStreamSource::ReadyState state_;
   gfx::Size frame_size_;
+  scoped_refptr<media::VideoFrame> last_frame_;
   base::WeakPtrFactory<MockMediaStreamVideoSink> weak_factory_;
 };
 

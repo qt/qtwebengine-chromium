@@ -15,7 +15,7 @@
 #include "SkPaint.h"
 
 static void setTypeface(SkPaint* paint, const char name[], SkTypeface::Style style) {
-    SkSafeUnref(paint->setTypeface(SkTypeface::CreateFromName(name, style)));
+    sk_tool_utils::set_portable_typeface(paint, name, style);
 }
 
 class DownsampleBitmapGM : public skiagm::GM {
@@ -41,10 +41,7 @@ public:
 
 protected:
     virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        if (SkPaint::kHigh_FilterLevel != fFilterLevel) {
-            return kSkipTiled_Flag;
-        }
-        return 0;
+        return kSkipTiled_Flag;
     }
 
     virtual SkString onShortName() SK_OVERRIDE {
@@ -53,7 +50,7 @@ protected:
 
     virtual SkISize onISize() SK_OVERRIDE {
         make_bitmap_wrapper();
-        return SkISize::Make(4 * fBM.width(), fBM.height());
+        return SkISize::Make(fBM.width(), 4 * fBM.height());
     }
 
     void make_bitmap_wrapper() {
@@ -68,8 +65,8 @@ protected:
     virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
         make_bitmap_wrapper();
 
-        int curX = 0;
-        int curWidth;
+        int curY = 0;
+        int curHeight;
         float curScale = 1;
         do {
 
@@ -80,14 +77,14 @@ protected:
             paint.setFilterLevel(fFilterLevel);
 
             canvas->save();
-            canvas->translate( (SkScalar) curX, 0.f );
+            canvas->translate(0, (SkScalar)curY);
             canvas->drawBitmapMatrix( fBM, matrix, &paint );
             canvas->restore();
 
-            curWidth = (int) (fBM.width() * curScale + 2);
-            curX += curWidth;
+            curHeight = (int) (fBM.height() * curScale + 2);
+            curY += curHeight;
             curScale *= 0.75f;
-        } while (curWidth >= 2 && curX < 4*fBM.width());
+        } while (curHeight >= 2 && curY < 4*fBM.height());
     }
 
 private:
@@ -172,11 +169,8 @@ class DownsampleBitmapImageGM: public DownsampleBitmapGM {
       int fSize;
 
       virtual void make_bitmap() SK_OVERRIDE {
-          SkString resourcePath = GetResourcePath();
-          resourcePath.append("/");
-          resourcePath.append(fFilename);
-
           SkImageDecoder* codec = NULL;
+          SkString resourcePath = GetResourcePath(fFilename.c_str());
           SkFILEStream stream(resourcePath.c_str());
           if (stream.isValid()) {
               codec = SkImageDecoder::Factory(&stream);
@@ -200,15 +194,23 @@ class DownsampleBitmapImageGM: public DownsampleBitmapGM {
 DEF_GM( return new DownsampleBitmapTextGM(72, SkPaint::kHigh_FilterLevel); )
 DEF_GM( return new DownsampleBitmapCheckerboardGM(512,256, SkPaint::kHigh_FilterLevel); )
 DEF_GM( return new DownsampleBitmapImageGM("mandrill_512.png", SkPaint::kHigh_FilterLevel); )
+DEF_GM( return new DownsampleBitmapImageGM("mandrill_132x132_12x12.astc",
+                                            SkPaint::kHigh_FilterLevel); )
 
 DEF_GM( return new DownsampleBitmapTextGM(72, SkPaint::kMedium_FilterLevel); )
 DEF_GM( return new DownsampleBitmapCheckerboardGM(512,256, SkPaint::kMedium_FilterLevel); )
 DEF_GM( return new DownsampleBitmapImageGM("mandrill_512.png", SkPaint::kMedium_FilterLevel); )
+DEF_GM( return new DownsampleBitmapImageGM("mandrill_132x132_12x12.astc",
+                                           SkPaint::kMedium_FilterLevel); )
 
 DEF_GM( return new DownsampleBitmapTextGM(72, SkPaint::kLow_FilterLevel); )
 DEF_GM( return new DownsampleBitmapCheckerboardGM(512,256, SkPaint::kLow_FilterLevel); )
 DEF_GM( return new DownsampleBitmapImageGM("mandrill_512.png", SkPaint::kLow_FilterLevel); )
+DEF_GM( return new DownsampleBitmapImageGM("mandrill_132x132_12x12.astc",
+                                           SkPaint::kLow_FilterLevel); )
 
 DEF_GM( return new DownsampleBitmapTextGM(72, SkPaint::kNone_FilterLevel); )
 DEF_GM( return new DownsampleBitmapCheckerboardGM(512,256, SkPaint::kNone_FilterLevel); )
 DEF_GM( return new DownsampleBitmapImageGM("mandrill_512.png", SkPaint::kNone_FilterLevel); )
+DEF_GM( return new DownsampleBitmapImageGM("mandrill_132x132_12x12.astc",
+                                           SkPaint::kNone_FilterLevel); )

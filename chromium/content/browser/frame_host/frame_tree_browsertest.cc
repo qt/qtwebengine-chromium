@@ -2,12 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "content/browser/frame_host/frame_tree.h"
 #include "content/browser/frame_host/frame_tree_node.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
@@ -15,6 +17,7 @@
 #include "content/public/test/test_navigation_observer.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
+#include "content/test/content_browser_test_utils_internal.h"
 #include "net/dns/mock_host_resolver.h"
 
 namespace content {
@@ -102,6 +105,13 @@ IN_PROC_BROWSER_TEST_F(FrameTreeBrowserTest, FrameTreeAfterCrash) {
   NavigateToURL(shell(),
                 test_server()->GetURL("files/frame_tree/top.html"));
 
+  // Ensure the view and frame are live.
+  RenderViewHost* rvh = shell()->web_contents()->GetRenderViewHost();
+  RenderFrameHostImpl* rfh =
+      static_cast<RenderFrameHostImpl*>(rvh->GetMainFrame());
+  EXPECT_TRUE(rvh->IsRenderViewLive());
+  EXPECT_TRUE(rfh->IsRenderFrameLive());
+
   // Crash the renderer so that it doesn't send any FrameDetached messages.
   RenderProcessHostWatcher crash_observer(
       shell()->web_contents(),
@@ -114,11 +124,19 @@ IN_PROC_BROWSER_TEST_F(FrameTreeBrowserTest, FrameTreeAfterCrash) {
   FrameTreeNode* root = wc->GetFrameTree()->root();
   EXPECT_EQ(0UL, root->child_count());
 
+  // Ensure the view and frame aren't live anymore.
+  EXPECT_FALSE(rvh->IsRenderViewLive());
+  EXPECT_FALSE(rfh->IsRenderFrameLive());
+
   // Navigate to a new URL.
   GURL url(test_server()->GetURL("files/title1.html"));
   NavigateToURL(shell(), url);
   EXPECT_EQ(0UL, root->child_count());
   EXPECT_EQ(url, root->current_url());
+
+  // Ensure the view and frame are live again.
+  EXPECT_TRUE(rvh->IsRenderViewLive());
+  EXPECT_TRUE(rfh->IsRenderFrameLive());
 }
 
 // Test that we can navigate away if the previous renderer doesn't clean up its
@@ -153,6 +171,110 @@ IN_PROC_BROWSER_TEST_F(FrameTreeBrowserTest, NavigateWithLeftoverFrames) {
 
   // The frame tree should now be cleared.
   EXPECT_EQ(0UL, root->child_count());
+}
+
+// Ensure that IsRenderFrameLive is true for main frames and same-site iframes.
+IN_PROC_BROWSER_TEST_F(FrameTreeBrowserTest, IsRenderFrameLive) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+  GURL main_url(test_server()->GetURL("files/frame_tree/top.html"));
+  NavigateToURL(shell(), main_url);
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()->root();
+
+  // The root and subframe should each have a live RenderFrame.
+  EXPECT_TRUE(
+      root->current_frame_host()->render_view_host()->IsRenderViewLive());
+  EXPECT_TRUE(root->current_frame_host()->IsRenderFrameLive());
+  EXPECT_TRUE(root->child_at(0)->current_frame_host()->IsRenderFrameLive());
+
+  // Load a same-site page into iframe and it should still be live.
+  GURL http_url(test_server()->GetURL("files/title1.html"));
+  NavigateFrameToURL(root->child_at(0), http_url);
+  EXPECT_TRUE(
+      root->current_frame_host()->render_view_host()->IsRenderViewLive());
+  EXPECT_TRUE(root->current_frame_host()->IsRenderFrameLive());
+  EXPECT_TRUE(root->child_at(0)->current_frame_host()->IsRenderFrameLive());
+}
+
+class CrossProcessFrameTreeBrowserTest : public ContentBrowserTest {
+ public:
+  CrossProcessFrameTreeBrowserTest() {}
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    command_line->AppendSwitch(switches::kSitePerProcess);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(CrossProcessFrameTreeBrowserTest);
+};
+
+// Ensure that we can complete a cross-process subframe navigation.
+#if defined(OS_ANDROID)
+#define MAYBE_CreateCrossProcessSubframeProxies DISABLED_CreateCrossProcessSubframeProxies
+#else
+#define MAYBE_CreateCrossProcessSubframeProxies CreateCrossProcessSubframeProxies
+#endif
+IN_PROC_BROWSER_TEST_F(CrossProcessFrameTreeBrowserTest,
+                       MAYBE_CreateCrossProcessSubframeProxies) {
+  host_resolver()->AddRule("*", "127.0.0.1");
+  ASSERT_TRUE(test_server()->Start());
+  GURL main_url(test_server()->GetURL("files/site_per_process_main.html"));
+  NavigateToURL(shell(), main_url);
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetFrameTree()->root();
+
+  // There should not be a proxy for the root's own SiteInstance.
+  SiteInstance* root_instance = root->current_frame_host()->GetSiteInstance();
+  EXPECT_FALSE(root->render_manager()->GetRenderFrameProxyHost(root_instance));
+
+  // Load same-site page into iframe.
+  GURL http_url(test_server()->GetURL("files/title1.html"));
+  NavigateFrameToURL(root->child_at(0), http_url);
+
+  // These must stay in scope with replace_host.
+  GURL::Replacements replace_host;
+  std::string foo_com("foo.com");
+
+  // Load cross-site page into iframe.
+  GURL cross_site_url(test_server()->GetURL("files/title2.html"));
+  replace_host.SetHostStr(foo_com);
+  cross_site_url = cross_site_url.ReplaceComponents(replace_host);
+  NavigateFrameToURL(root->child_at(0), cross_site_url);
+
+  // Ensure that we have created a new process for the subframe.
+  ASSERT_EQ(2U, root->child_count());
+  FrameTreeNode* child = root->child_at(0);
+  SiteInstance* child_instance = child->current_frame_host()->GetSiteInstance();
+  RenderViewHost* rvh = child->current_frame_host()->render_view_host();
+  RenderProcessHost* rph = child->current_frame_host()->GetProcess();
+
+  EXPECT_NE(shell()->web_contents()->GetRenderViewHost(), rvh);
+  EXPECT_NE(shell()->web_contents()->GetSiteInstance(), child_instance);
+  EXPECT_NE(shell()->web_contents()->GetRenderProcessHost(), rph);
+
+  // Ensure that the root node has a proxy for the child node's SiteInstance.
+  EXPECT_TRUE(root->render_manager()->GetRenderFrameProxyHost(child_instance));
+
+  // Also ensure that the child has a proxy for the root node's SiteInstance.
+  EXPECT_TRUE(child->render_manager()->GetRenderFrameProxyHost(root_instance));
+
+  // The nodes should not have proxies for their own SiteInstance.
+  EXPECT_FALSE(root->render_manager()->GetRenderFrameProxyHost(root_instance));
+  EXPECT_FALSE(
+      child->render_manager()->GetRenderFrameProxyHost(child_instance));
+
+  // Ensure that the RenderViews and RenderFrames are all live.
+  EXPECT_TRUE(
+      root->current_frame_host()->render_view_host()->IsRenderViewLive());
+  EXPECT_TRUE(
+      child->current_frame_host()->render_view_host()->IsRenderViewLive());
+  EXPECT_TRUE(root->current_frame_host()->IsRenderFrameLive());
+  EXPECT_TRUE(root->child_at(0)->current_frame_host()->IsRenderFrameLive());
 }
 
 }  // namespace content

@@ -15,15 +15,16 @@ class VertexArrayObjectManagerTest : public testing::Test {
   static const GLuint kMaxAttribs = 4;
   static const GLuint kClientSideArrayBuffer = 0x1234;
   static const GLuint kClientSideElementArrayBuffer = 0x1235;
+  static const bool kSupportClientSideArrays = true;
 
-  virtual void SetUp() {
+  void SetUp() override {
     manager_.reset(new VertexArrayObjectManager(
         kMaxAttribs,
         kClientSideArrayBuffer,
-        kClientSideElementArrayBuffer));
+        kClientSideElementArrayBuffer,
+        kSupportClientSideArrays));
   }
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
   scoped_ptr<VertexArrayObjectManager> manager_;
 };

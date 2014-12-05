@@ -29,15 +29,19 @@
         'open-vcdiff/src/encodetable.h',
         'open-vcdiff/src/google/output_string.h',
         'open-vcdiff/src/google/vcdecoder.h',
+        'open-vcdiff/src/google/vcencoder.h',
         'open-vcdiff/src/headerparser.cc',
         'open-vcdiff/src/headerparser.h',
         'open-vcdiff/src/instruction_map.cc',
         'open-vcdiff/src/instruction_map.h',
+        'open-vcdiff/src/jsonwriter.h',
+        'open-vcdiff/src/jsonwriter.cc',
         'open-vcdiff/src/rolling_hash.h',
         'open-vcdiff/src/testing.h',
         'open-vcdiff/src/varint_bigendian.cc',
         'open-vcdiff/src/varint_bigendian.h',
         'open-vcdiff/src/vcdecoder.cc',
+        'open-vcdiff/src/vcencoder.cc',
         'open-vcdiff/src/vcdiff_defs.h',
         'open-vcdiff/src/vcdiffengine.cc',
         'open-vcdiff/src/vcdiffengine.h',
@@ -83,13 +87,9 @@
       # ForcedIncludeFiles is relative to include_dirs, cflags relative to the
       # build directory.
       'xcode_settings': { 'GCC_PREFIX_HEADER': '<(logging_path)' },
-      'msvs_system_include_dirs': [
-        '<(DEPTH)/build',
-      ],
       'msvs_settings': {
         'VCCLCompilerTool': {
           'ForcedIncludeFiles': [
-            'intsafe_workaround.h',  # http://crbug.com/308740
             'sdch/<(logging_path)',
           ]
         }

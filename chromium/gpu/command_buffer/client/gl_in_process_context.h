@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "gl_in_process_context_export.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/in_process_command_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_surface.h"
@@ -29,20 +30,14 @@ namespace gles2 {
 class GLES2Implementation;
 }
 
-// The default uninitialized value is -1.
-struct GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContextAttribs {
-  GLInProcessContextAttribs();
+struct GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContextSharedMemoryLimits {
+  GLInProcessContextSharedMemoryLimits();
 
-  int32 alpha_size;
-  int32 blue_size;
-  int32 green_size;
-  int32 red_size;
-  int32 depth_size;
-  int32 stencil_size;
-  int32 samples;
-  int32 sample_buffers;
-  int32 fail_if_major_perf_caveat;
-  int32 lose_context_when_out_of_memory;
+  int32 command_buffer_size;
+  unsigned int start_transfer_buffer_size;
+  unsigned int min_transfer_buffer_size;
+  unsigned int max_transfer_buffer_size;
+  unsigned int mapped_memory_reclaim_limit;
 };
 
 class GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContext {
@@ -52,15 +47,6 @@ class GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContext {
   // Create a GLInProcessContext, if |is_offscreen| is true, renders to an
   // offscreen context. |attrib_list| must be NULL or a NONE-terminated list
   // of attribute/value pairs.
-  // TODO(boliu): Fix all callsites to use Create and remove this.
-  static GLInProcessContext* CreateContext(
-      bool is_offscreen,
-      gfx::AcceleratedWidget window,
-      const gfx::Size& size,
-      bool share_resources,
-      const GLInProcessContextAttribs& attribs,
-      gfx::GpuPreference gpu_preference);
-
   // If |surface| is not NULL, then it must match |is_offscreen| and |size|,
   // |window| must be gfx::kNullAcceleratedWidget, and the command buffer
   // service must run on the same thread as this client because GLSurface is
@@ -76,14 +62,19 @@ class GL_IN_PROCESS_CONTEXT_EXPORT GLInProcessContext {
       const gfx::Size& size,
       GLInProcessContext* share_context,
       bool use_global_share_group,
-      const GLInProcessContextAttribs& attribs,
-      gfx::GpuPreference gpu_preference);
+      const gpu::gles2::ContextCreationAttribHelper& attribs,
+      gfx::GpuPreference gpu_preference,
+      const GLInProcessContextSharedMemoryLimits& memory_limits,
+      GpuMemoryBufferManager* gpu_memory_buffer_manager,
+      ImageFactory* image_factory);
 
   virtual void SetContextLostCallback(const base::Closure& callback) = 0;
 
   // Allows direct access to the GLES2 implementation so a GLInProcessContext
   // can be used without making it current.
   virtual gles2::GLES2Implementation* GetImplementation() = 0;
+
+  virtual size_t GetMappedMemoryLimit() = 0;
 
 #if defined(OS_ANDROID)
   virtual scoped_refptr<gfx::SurfaceTexture> GetSurfaceTexture(

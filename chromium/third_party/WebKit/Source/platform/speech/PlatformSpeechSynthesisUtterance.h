@@ -31,7 +31,7 @@
 #include "platform/speech/PlatformSpeechSynthesisVoice.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PlatformSpeechSynthesisUtteranceClient : public GarbageCollectedMixin {
 public:
@@ -40,7 +40,7 @@ protected:
     virtual ~PlatformSpeechSynthesisUtteranceClient() { }
 };
 
-class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance FINAL : public GarbageCollectedFinalized<PlatformSpeechSynthesisUtterance> {
+class PLATFORM_EXPORT PlatformSpeechSynthesisUtterance final : public GarbageCollectedFinalized<PlatformSpeechSynthesisUtterance> {
 public:
     static PlatformSpeechSynthesisUtterance* create(PlatformSpeechSynthesisUtteranceClient*);
 
@@ -85,6 +85,6 @@ private:
     double m_startTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformSpeechSynthesisUtterance_h

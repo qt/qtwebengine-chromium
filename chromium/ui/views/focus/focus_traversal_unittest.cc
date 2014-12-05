@@ -20,7 +20,7 @@
 #include "ui/views/controls/scroll_view.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/focus/focus_manager_test.h"
+#include "ui/views/test/focus_manager_test.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 
@@ -89,8 +89,8 @@ const int kThumbnailSuperStarID = count++;
 class DummyComboboxModel : public ui::ComboboxModel {
  public:
   // Overridden from ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE { return 10; }
-  virtual base::string16 GetItemAt(int index) OVERRIDE {
+  int GetItemCount() const override { return 10; }
+  base::string16 GetItemAt(int index) override {
     return ASCIIToUTF16("Item ") + base::IntToString16(index);
   }
 };
@@ -108,7 +108,7 @@ class PaneView : public View, public FocusTraversable {
   }
 
   // Overridden from View:
-  virtual FocusTraversable* GetPaneFocusTraversable() OVERRIDE {
+  FocusTraversable* GetPaneFocusTraversable() override {
     if (focus_search_)
       return this;
     else
@@ -116,15 +116,9 @@ class PaneView : public View, public FocusTraversable {
   }
 
   // Overridden from FocusTraversable:
-  virtual views::FocusSearch* GetFocusSearch() OVERRIDE {
-    return focus_search_;
-  }
-  virtual FocusTraversable* GetFocusTraversableParent() OVERRIDE {
-    return NULL;
-  }
-  virtual View* GetFocusTraversableParentView() OVERRIDE {
-    return NULL;
-  }
+  views::FocusSearch* GetFocusSearch() override { return focus_search_; }
+  FocusTraversable* GetFocusTraversableParent() override { return NULL; }
+  View* GetFocusTraversableParentView() override { return NULL; }
 
  private:
   FocusSearch* focus_search_;
@@ -140,18 +134,18 @@ class BorderView : public NativeViewHost {
     SetFocusable(false);
   }
 
-  virtual ~BorderView() {}
+  ~BorderView() override {}
 
   virtual internal::RootView* GetContentsRootView() {
     return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
-  virtual FocusTraversable* GetFocusTraversable() OVERRIDE {
+  FocusTraversable* GetFocusTraversable() override {
     return static_cast<internal::RootView*>(widget_->GetRootView());
   }
 
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     NativeViewHost::ViewHierarchyChanged(details);
 
     if (details.child == this && details.is_add) {
@@ -183,9 +177,9 @@ class BorderView : public NativeViewHost {
 
 class FocusTraversalTest : public FocusManagerTest {
  public:
-  virtual ~FocusTraversalTest();
+  ~FocusTraversalTest() override;
 
-  virtual void InitContentView() OVERRIDE;
+  void InitContentView() override;
 
  protected:
   FocusTraversalTest();

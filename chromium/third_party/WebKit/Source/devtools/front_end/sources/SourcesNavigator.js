@@ -39,9 +39,9 @@ WebInspector.SourcesNavigator = function(workspace)
     this._tabbedPane = new WebInspector.TabbedPane();
     this._tabbedPane.shrinkableTabs = true;
     this._tabbedPane.element.classList.add("navigator-tabbed-pane");
-    new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "navigator-view", this._navigatorViewCreated.bind(this));
-    /** @type {!StringMap.<?WebInspector.NavigatorView>} */
-    this._navigatorViews = new StringMap();
+    this._tabbedPaneController = new WebInspector.ExtensibleTabbedPaneController(this._tabbedPane, "navigator-view", this._navigatorViewCreated.bind(this));
+    /** @type {!Map.<string, ?WebInspector.NavigatorView>} */
+    this._navigatorViews = new Map();
 }
 
 WebInspector.SourcesNavigator.Events = {
@@ -59,7 +59,7 @@ WebInspector.SourcesNavigator.prototype = {
         var navigatorView = /** @type {!WebInspector.NavigatorView} */ (view);
         navigatorView.addEventListener(WebInspector.NavigatorView.Events.ItemSelected, this._sourceSelected, this);
         navigatorView.addEventListener(WebInspector.NavigatorView.Events.ItemRenamed, this._sourceRenamed, this);
-        this._navigatorViews.put(id, navigatorView);
+        this._navigatorViews.set(id, navigatorView);
         navigatorView.setWorkspace(this._workspace);
     },
 
@@ -73,32 +73,29 @@ WebInspector.SourcesNavigator.prototype = {
 
     /**
      * @param {!WebInspector.UISourceCode} uiSourceCode
-     * @return {string|null}
-     */
-    _navigatorViewIdForUISourceCode: function(uiSourceCode)
-    {
-        var ids = this._navigatorViews.keys();
-        for (var i = 0; i < ids.length; ++i) {
-            var id = ids[i]
-            var navigatorView = this._navigatorViews.get(id);
-            if (navigatorView.accept(uiSourceCode))
-                return id;
-        }
-        return null;
-    },
-
-    /**
-     * @param {!WebInspector.UISourceCode} uiSourceCode
      */
     revealUISourceCode: function(uiSourceCode)
     {
-        var id = this._navigatorViewIdForUISourceCode(uiSourceCode);
-        if (!id)
-            return;
-        var navigatorView = this._navigatorViews.get(id);
-        console.assert(navigatorView);
-        navigatorView.revealUISourceCode(uiSourceCode, true);
-        this._tabbedPane.selectTab(id);
+        var ids = this._tabbedPaneController.viewIds();
+        var promises = [];
+        for (var i = 0; i < ids.length; ++i)
+            promises.push(this._tabbedPaneController.viewForId(ids[i]));
+        Promise.all(promises).then(filterNavigators.bind(this)).done();
+
+        /**
+         * @param {!Array.<!Object>} objects
+         * @this {WebInspector.SourcesNavigator}
+         */
+        function filterNavigators(objects)
+        {
+            for (var i = 0; i < objects.length; ++i) {
+                var navigatorView = /** @type {!WebInspector.NavigatorView} */ (objects[i]);
+                if (navigatorView.accept(uiSourceCode)) {
+                    this._tabbedPane.selectTab(ids[i]);
+                    navigatorView.revealUISourceCode(uiSourceCode, true);
+                }
+            }
+        }
     },
 
     /**

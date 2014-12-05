@@ -33,13 +33,11 @@
 
 #include "WebCommon.h"
 #include "WebPrivateOwnPtr.h"
-
-#if INSIDE_BLINK
-namespace WebCore { class ResourceResponse; }
-#endif
+#include "WebServiceWorkerResponseType.h"
 
 namespace blink {
 
+class ResourceResponse;
 class WebCString;
 class WebHTTPHeaderVisitor;
 class WebHTTPLoadInfo;
@@ -139,8 +137,8 @@ public:
     BLINK_PLATFORM_EXPORT void setSecurityInfo(const WebCString&);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebCore::ResourceResponse& toMutableResourceResponse();
-    BLINK_PLATFORM_EXPORT const WebCore::ResourceResponse& toResourceResponse() const;
+    BLINK_PLATFORM_EXPORT ResourceResponse& toMutableResourceResponse();
+    BLINK_PLATFORM_EXPORT const ResourceResponse& toResourceResponse() const;
 #endif
 
     // Flag whether this request was served from the disk cache entry.
@@ -165,6 +163,19 @@ public:
     // Flag whether this request was loaded via an explicit proxy (HTTP, SOCKS, etc).
     BLINK_PLATFORM_EXPORT bool wasFetchedViaProxy() const;
     BLINK_PLATFORM_EXPORT void setWasFetchedViaProxy(bool);
+
+    // Flag whether this request was loaded via a ServiceWorker.
+    BLINK_PLATFORM_EXPORT bool wasFetchedViaServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setWasFetchedViaServiceWorker(bool);
+
+    // Flag whether the fallback request with skip service worker flag was
+    // required.
+    BLINK_PLATFORM_EXPORT bool wasFallbackRequiredByServiceWorker() const;
+    BLINK_PLATFORM_EXPORT void setWasFallbackRequiredByServiceWorker(bool);
+
+    // The type of the response which was fetched by the ServiceWorker.
+    BLINK_PLATFORM_EXPORT WebServiceWorkerResponseType serviceWorkerResponseType() const;
+    BLINK_PLATFORM_EXPORT void setServiceWorkerResponseType(WebServiceWorkerResponseType);
 
     // Flag whether this request is part of a multipart response.
     BLINK_PLATFORM_EXPORT bool isMultipartPayload() const;

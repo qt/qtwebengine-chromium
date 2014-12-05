@@ -29,7 +29,7 @@
 #include "config.h"
 #include "core/frame/Console.h"
 
-#include "bindings/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
@@ -44,36 +44,36 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 Console::Console(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
-    ScriptWrappable::init(this);
 }
 
 Console::~Console()
 {
 }
 
-ExecutionContext* Console::context()
+void Console::trace(Visitor* visitor)
 {
-    if (!m_frame)
-        return 0;
-    return m_frame->document();
+    ConsoleBase::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-void Console::reportMessageToClient(MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
+ExecutionContext* Console::context()
 {
-    if (!m_frame || !m_frame->host() || !callStack.get())
+    if (!frame())
+        return 0;
+    return frame()->document();
+}
+
+void Console::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
+{
+    if (!frame())
         return;
 
-    String stackTrace;
-    if (m_frame->chromeClient().shouldReportDetailedMessageForSource(callStack->at(0).sourceURL())) {
-        RefPtrWillBeRawPtr<ScriptCallStack> fullStack = createScriptCallStack(ScriptCallStack::maxCallStackSizeToCapture);
-        stackTrace = FrameConsole::formatStackTraceString(message, fullStack);
-    }
-    m_frame->chromeClient().addMessageToConsole(m_frame, ConsoleAPIMessageSource, level, message, callStack->at(0).lineNumber(), callStack->at(0).sourceURL(), stackTrace);
+    frame()->console().addMessage(consoleMessage);
 }
 
 PassRefPtrWillBeRawPtr<MemoryInfo> Console::memory() const
@@ -83,4 +83,4 @@ PassRefPtrWillBeRawPtr<MemoryInfo> Console::memory() const
     return MemoryInfo::create();
 }
 
-} // namespace WebCore
+} // namespace blink

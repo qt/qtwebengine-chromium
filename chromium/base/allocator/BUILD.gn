@@ -184,7 +184,7 @@ if (!is_android) {
         "//build/config/win:nominmax",
       ]
 
-      direct_dependent_configs = [ ":nocmt" ]
+      public_configs = [ ":nocmt" ]
 
       deps += [
         ":prep_libc",
@@ -240,9 +240,13 @@ if (!is_android) {
 }  # !is_android
 
 source_set("allocator_extension_thunks") {
-  visibility = "//base/*"
+  visibility = [ "//base/*" ]
   sources = [
     "allocator_extension_thunks.cc",
     "allocator_extension_thunks.h",
   ]
+  if (is_android && !is_debug) {
+    configs -= [ "//build/config/compiler:optimize" ]
+    configs += [ "//build/config/compiler:optimize_max" ]
+  }
 }

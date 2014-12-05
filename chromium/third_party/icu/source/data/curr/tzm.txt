@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/tzm.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/tzm.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/tzm.xml
+ * ICU <specials> source: <path>/common/main/tzm.xml
  */
 tzm{
     Currencies{
@@ -16,19 +16,19 @@ tzm{
             "Derhem Uymarati",
         }
         AOA{
-            "Kz",
+            "AOA",
             "Kwanza Unguli",
         }
         AUD{
-            "AU$",
+            "A$",
             "Ḍular Usṭrali",
         }
         BHD{
-            "BD",
+            "BHD",
             "Ḍinar Ubaḥrayni",
         }
         BIF{
-            "FBu",
+            "BIF",
             "Frank Uburundi",
         }
         BWP{
@@ -52,15 +52,15 @@ tzm{
             "Ywan Renminbi Ucinwi",
         }
         CVE{
-            "CV$",
+            "CVE",
             "Iskudu Ukabuvirdyani",
         }
         DJF{
-            "Fdj",
+            "DJF",
             "Frank Uğibuti",
         }
         DZD{
-            "DA",
+            "DZD",
             "Ḍinar Udzayri",
         }
         EGP{
@@ -68,11 +68,11 @@ tzm{
             "Junih Umiṣṛi",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "Nakfa Uyritri",
         }
         ETB{
-            "Br",
+            "ETB",
             "Birr Uyityuppi",
         }
         EUR{
@@ -83,20 +83,16 @@ tzm{
             "£",
             "Junih Usterlini Ubriṭani",
         }
-        GHC{
-            "₵",
-            "Sidi Uɣani",
-        }
         GMD{
             "GMD",
             "Dalasi Agambi",
         }
         GNS{
-            "GNS" /** ===  */,
+            "GNS",
             "Frank Uɣini",
         }
         INR{
-            "Rs",
+            "₹",
             "Rupi Uḥindi",
         }
         JPY{
@@ -104,15 +100,15 @@ tzm{
             "Yann Ujappuni",
         }
         KES{
-            "Ksh",
+            "KES",
             "Cillin Ukini",
         }
         KMF{
-            "CF",
+            "KMF",
             "Frank Uqumuri",
         }
         LRD{
-            "L$",
+            "LRD",
             "Ḍular Ulibiri",
         }
         LSL{
@@ -120,7 +116,7 @@ tzm{
             "Luti Ulusuṭi",
         }
         LYD{
-            "LD",
+            "LYD",
             "Ḍinar Ulibi",
         }
         MAD{
@@ -132,27 +128,23 @@ tzm{
             "Aryari Umalɣaci",
         }
         MRO{
-            "UM",
+            "MRO",
             "Uqiyya Umuritani",
         }
         MUR{
-            "MURs",
+            "MUR",
             "Rupi Umurisi",
         }
         MWK{
             "MWK",
             "Kwača Umalawi",
         }
-        MZM{
-            "Mt",
-            "Mitikal Umuzambiqi",
-        }
         NAD{
-            "N$",
+            "NAD",
             "Ḍular Unamibi",
         }
         NGN{
-            "₦",
+            "NGN",
             "Nayra Unijiri",
         }
         RWF{
@@ -160,35 +152,31 @@ tzm{
             "Frank Urwandi",
         }
         SAR{
-            "SR",
+            "SAR",
             "Ryal Usaεudi",
         }
         SCR{
-            "SRe",
+            "SCR",
             "Rupi Usicili",
         }
         SDG{
             "SDG",
             "Junih Usudani",
         }
-        SDP{
-            "SDP" /** ===  */,
-            "Junih Usudani (1956–2007)",
-        }
         SHP{
-            "SH£",
+            "SHP",
             "Junih Usantehilini",
         }
         SLL{
-            "Le",
+            "SLL",
             "Lyun Usirralyuni",
         }
         SOS{
-            "Ssh",
+            "SOS",
             "Cilin Uṣumali",
         }
         STD{
-            "Db",
+            "STD",
             "Dubra Usawṭumi",
         }
         SZL{
@@ -196,16 +184,16 @@ tzm{
             "Lilanjini Uswazi",
         }
         TND{
-            "DT",
+            "TND",
             "Ḍinar Utunsi",
         }
         TZS{
-            "TSh",
+            "TZS",
             "Cilin Uṭanzani",
         }
         UGX{
-            "USh",
-            "Cilin Uɣandi (1966-1987)",
+            "UGX",
+            "Cilin Uɣandi (1966–1987)",
         }
         USD{
             "US$",
@@ -220,17 +208,13 @@ tzm{
             "Frank CFA (BCEAO)",
         }
         ZAR{
-            "R",
+            "ZAR",
             "Rand Ufriki Unzul",
         }
-        ZMK{
-            "ZK",
+        ZMW{
+            "ZMW",
             "Kwača Uzambi",
         }
-        ZWD{
-            "Z$",
-            "Ḍular Uzimbabwi",
-        }
     }
-    Version{"2.0.46.85"}
+    Version{"2.0.92.87"}
 }

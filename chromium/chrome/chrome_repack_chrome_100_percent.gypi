@@ -2,11 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 {
+  # GN version: //chrome:repack_chrome_100_percent
   'action_name': 'repack_chrome_resources_100_percent',
   'variables': {
     'pak_inputs': [
-      '<(SHARED_INTERMEDIATE_DIR)/components/component_resources_100_percent.pak',
-      '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
+      '<(SHARED_INTERMEDIATE_DIR)/components/components_resources_100_percent.pak',
+      '<(SHARED_INTERMEDIATE_DIR)/ui/resources/ui_resources_100_percent.pak',
       '<(grit_out_dir)/renderer_resources_100_percent.pak',
       '<(grit_out_dir)/theme_resources_100_percent.pak',
     ],
@@ -14,12 +15,27 @@
     'conditions': [
       ['OS != "ios"', {
         'pak_inputs': [
-          '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
+          '<(SHARED_INTERMEDIATE_DIR)/content/app/resources/content_resources_100_percent.pak',
         ],
       }],
       ['use_ash==1', {
         'pak_inputs': [
           '<(SHARED_INTERMEDIATE_DIR)/ash/resources/ash_resources_100_percent.pak',
+        ],
+      }],
+      ['use_athena==1', {
+        'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/athena/resources/athena_resources_100_percent.pak',
+        ],
+      }],
+      ['chromeos==1', {
+        'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/ui/chromeos/resources/ui_chromeos_resources_100_percent.pak',
+        ],
+      }],
+      ['enable_extensions==1', {
+        'pak_inputs': [
+          '<(SHARED_INTERMEDIATE_DIR)/extensions/extensions_browser_resources_100_percent.pak',
         ],
       }],
     ],

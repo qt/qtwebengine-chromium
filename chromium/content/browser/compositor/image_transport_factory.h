@@ -9,8 +9,13 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "cc/surfaces/surface_id_allocator.h"
 #include "content/common/content_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+namespace cc {
+class SurfaceManager;
+}
 
 namespace gfx {
 class Size;
@@ -55,8 +60,7 @@ class CONTENT_EXPORT ImageTransportFactory {
 
   // Initializes the global transport factory for unit tests using the provided
   // context factory.
-  static void InitializeForUnitTests(
-      scoped_ptr<ui::ContextFactory> test_factory);
+  static void InitializeForUnitTests(scoped_ptr<ImageTransportFactory> factory);
 
   // Terminates the global transport factory.
   static void Terminate();
@@ -68,6 +72,7 @@ class CONTENT_EXPORT ImageTransportFactory {
   virtual ui::ContextFactory* GetContextFactory() = 0;
 
   virtual gfx::GLSurfaceHandle GetSharedSurfaceHandle() = 0;
+  virtual cc::SurfaceManager* GetSurfaceManager() = 0;
 
   // Gets a GLHelper instance, associated with the shared context. This
   // GLHelper will get destroyed whenever the shared context is lost

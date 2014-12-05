@@ -117,7 +117,7 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t pos = avio_tell(s->pb);
     AMRContext *amr = s->priv_data;
 
-    if (url_feof(s->pb)) {
+    if (avio_feof(s->pb)) {
         return AVERROR(EIO);
     }
 
@@ -184,5 +184,6 @@ AVOutputFormat ff_amr_muxer = {
     .video_codec       = AV_CODEC_ID_NONE,
     .write_header      = amr_write_header,
     .write_packet      = amr_write_packet,
+    .flags             = AVFMT_NOTIMESTAMPS,
 };
 #endif

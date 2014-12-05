@@ -45,9 +45,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/StringHash.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 typedef LCID (WINAPI* LocaleNameToLCIDPtr)(LPCWSTR, DWORD);
 typedef HashMap<String, LCID> NameToLCIDMap;
@@ -150,7 +148,7 @@ static LCID LCIDFromLocale(const String& locale, bool defaultsForLocale)
 PassOwnPtr<Locale> Locale::create(const String& locale)
 {
     // Whether the default settings for the locale should be used, ignoring user overrides.
-    bool defaultsForLocale = isRunningLayoutTest();
+    bool defaultsForLocale = LayoutTestSupport::isRunningLayoutTest();
     return LocaleWin::create(LCIDFromLocale(locale, defaultsForLocale), defaultsForLocale);
 }
 
@@ -304,9 +302,9 @@ static String convertWindowsDateTimeFormat(const String& format)
                 if (count <= 2)
                     converted.append(format, symbolStart, count);
                 else if (count == 3)
-                    converted.append("EEE");
+                    converted.appendLiteral("EEE");
                 else
-                    converted.append("EEEE");
+                    converted.appendLiteral("EEEE");
             } else if (ch == 'g') {
                 if (count == 1) {
                     converted.append('G');
@@ -452,7 +450,7 @@ String LocaleWin::shortTimeFormat()
         format = getLocaleInfoString(LOCALE_STIMEFORMAT);
         StringBuilder builder;
         builder.append(getLocaleInfoString(LOCALE_STIME));
-        builder.append("ss");
+        builder.appendLiteral("ss");
         size_t pos = format.reverseFind(builder.toString());
         if (pos != kNotFound)
             format.remove(pos, builder.length());

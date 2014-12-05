@@ -27,13 +27,11 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
-#include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/html/CollectionType.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 enum NodeListRootType {
     NodeListIsRootedAtNode,
@@ -81,20 +79,12 @@ protected:
 
     ALWAYS_INLINE NodeListRootType rootType() const { return static_cast<NodeListRootType>(m_rootType); }
 
-    template <class NodeListType>
-    static Element* firstMatchingElement(const NodeListType&);
-    template <class NodeListType>
-    static Element* lastMatchingElement(const NodeListType&);
-    template <class NodeListType>
-    static Element* nextMatchingElement(const NodeListType&, Element& current);
-    template <class NodeListType>
-    static Element* previousMatchingElement(const NodeListType&, Element& current);
-    template <class NodeListType>
-    static Element* traverseMatchingElementsForwardToOffset(const NodeListType&, unsigned offset, Element& currentElement, unsigned& currentOffset);
-    template <class NodeListType>
-    static Element* traverseMatchingElementsBackwardToOffset(const NodeListType&, unsigned offset, Element& currentElement, unsigned& currentOffset);
+    template <typename MatchFunc>
+    static Element* traverseMatchingElementsForwardToOffset(Element& currentElement, const ContainerNode* stayWithin, unsigned offset, unsigned& currentOffset, MatchFunc);
+    template <typename MatchFunc>
+    static Element* traverseMatchingElementsBackwardToOffset(Element& currentElement, const ContainerNode* stayWithin, unsigned offset, unsigned& currentOffset, MatchFunc);
 
-    void trace(Visitor* visitor) { visitor->trace(m_ownerNode); }
+    virtual void trace(Visitor* visitor) { visitor->trace(m_ownerNode); }
 
 private:
     RefPtrWillBeMember<ContainerNode> m_ownerNode; // Cannot be null.
@@ -127,72 +117,28 @@ ALWAYS_INLINE bool LiveNodeListBase::shouldInvalidateTypeOnAttributeChange(NodeL
     return false;
 }
 
-template <typename NodeListType>
-Element* LiveNodeListBase::lastMatchingElement(const NodeListType& nodeList)
-{
-    ContainerNode& root = nodeList.rootNode();
-    Element* element = ElementTraversal::lastWithin(root);
-    while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::previous(*element, &root);
-    return element;
-}
-
-template <class NodeListType>
-Element* LiveNodeListBase::firstMatchingElement(const NodeListType& nodeList)
-{
-    ContainerNode& root = nodeList.rootNode();
-    Element* element = ElementTraversal::firstWithin(root);
-    while (element && !isMatchingElement(nodeList, *element))
-        element = ElementTraversal::next(*element, &root);
-    return element;
-}
-
-template <class NodeListType>
-Element* LiveNodeListBase::nextMatchingElement(const NodeListType& nodeList, Element& current)
-{
-    ContainerNode& root = nodeList.rootNode();
-    Element* next = &current;
-    do {
-        next = ElementTraversal::next(*next, &root);
-    } while (next && !isMatchingElement(nodeList, *next));
-    return next;
-}
-
-template <class NodeListType>
-Element* LiveNodeListBase::previousMatchingElement(const NodeListType& nodeList, Element& current)
-{
-    ContainerNode& root = nodeList.rootNode();
-    Element* previous = &current;
-    do {
-        previous = ElementTraversal::previous(*previous, &root);
-    } while (previous && !isMatchingElement(nodeList, *previous));
-    return previous;
-}
-
-template <class NodeListType>
-Element* LiveNodeListBase::traverseMatchingElementsForwardToOffset(const NodeListType& nodeList, unsigned offset, Element& currentElement, unsigned& currentOffset)
+template <typename MatchFunc>
+Element* LiveNodeListBase::traverseMatchingElementsForwardToOffset(Element& currentElement, const ContainerNode* stayWithin, unsigned offset, unsigned& currentOffset, MatchFunc isMatch)
 {
     ASSERT(currentOffset < offset);
-    Element* next = &currentElement;
-    while ((next = nextMatchingElement(nodeList, *next))) {
+    for (Element* next = ElementTraversal::next(currentElement, stayWithin, isMatch); next; next = ElementTraversal::next(*next, stayWithin, isMatch)) {
         if (++currentOffset == offset)
             return next;
     }
     return 0;
 }
 
-template <class NodeListType>
-Element* LiveNodeListBase::traverseMatchingElementsBackwardToOffset(const NodeListType& nodeList, unsigned offset, Element& currentElement, unsigned& currentOffset)
+template <typename MatchFunc>
+Element* LiveNodeListBase::traverseMatchingElementsBackwardToOffset(Element& currentElement, const ContainerNode* stayWithin, unsigned offset, unsigned& currentOffset, MatchFunc isMatch)
 {
     ASSERT(currentOffset > offset);
-    Element* previous = &currentElement;
-    while ((previous = previousMatchingElement(nodeList, *previous))) {
+    for (Element* previous = ElementTraversal::previous(currentElement, stayWithin, isMatch); previous; previous = ElementTraversal::previous(*previous, stayWithin, isMatch)) {
         if (--currentOffset == offset)
             return previous;
     }
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LiveNodeListBase_h

@@ -6,9 +6,9 @@
 
 #include "content/browser/loader/global_routing_id.h"
 #include "content/browser/loader/resource_message_filter.h"
-#include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/net/url_request_user_data.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/common/process_type.h"
 #include "net/url_request/url_request.h"
 
 namespace content {
@@ -23,14 +23,13 @@ const ResourceRequestInfo* ResourceRequestInfo::ForRequest(
 }
 
 // static
-void ResourceRequestInfo::AllocateForTesting(
-    net::URLRequest* request,
-    ResourceType::Type resource_type,
-    ResourceContext* context,
-    int render_process_id,
-    int render_view_id,
-    int render_frame_id,
-    bool is_async) {
+void ResourceRequestInfo::AllocateForTesting(net::URLRequest* request,
+                                             ResourceType resource_type,
+                                             ResourceContext* context,
+                                             int render_process_id,
+                                             int render_view_id,
+                                             int render_frame_id,
+                                             bool is_async) {
   ResourceRequestInfoImpl* info =
       new ResourceRequestInfoImpl(
           PROCESS_TYPE_RENDERER,             // process_type
@@ -39,16 +38,18 @@ void ResourceRequestInfo::AllocateForTesting(
           0,                                 // origin_pid
           0,                                 // request_id
           render_frame_id,                   // render_frame_id
-          resource_type == ResourceType::MAIN_FRAME,  // is_main_frame
+          resource_type == RESOURCE_TYPE_MAIN_FRAME,  // is_main_frame
           false,                             // parent_is_main_frame
           0,                                 // parent_render_frame_id
           resource_type,                     // resource_type
-          PAGE_TRANSITION_LINK,              // transition_type
+          ui::PAGE_TRANSITION_LINK,          // transition_type
           false,                             // should_replace_current_entry
           false,                             // is_download
           false,                             // is_stream
           true,                              // allow_download
           false,                             // has_user_gesture
+          false,                             // enable load timing
+          false,                             // enable upload progress
           blink::WebReferrerPolicyDefault,   // referrer_policy
           blink::WebPageVisibilityStateVisible,  // visibility_state
           context,                           // context
@@ -96,13 +97,15 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
     bool is_main_frame,
     bool parent_is_main_frame,
     int parent_render_frame_id,
-    ResourceType::Type resource_type,
-    PageTransition transition_type,
+    ResourceType resource_type,
+    ui::PageTransition transition_type,
     bool should_replace_current_entry,
     bool is_download,
     bool is_stream,
     bool allow_download,
     bool has_user_gesture,
+    bool enable_load_timing,
+    bool enable_upload_progress,
     blink::WebReferrerPolicy referrer_policy,
     blink::WebPageVisibilityState visibility_state,
     ResourceContext* context,
@@ -124,7 +127,10 @@ ResourceRequestInfoImpl::ResourceRequestInfoImpl(
       is_stream_(is_stream),
       allow_download_(allow_download),
       has_user_gesture_(has_user_gesture),
+      enable_load_timing_(enable_load_timing),
+      enable_upload_progress_(enable_upload_progress),
       was_ignored_by_handler_(false),
+      counted_as_in_flight_request_(false),
       resource_type_(resource_type),
       transition_type_(transition_type),
       memory_cost_(0),
@@ -174,7 +180,7 @@ int ResourceRequestInfoImpl::GetParentRenderFrameID() const {
   return parent_render_frame_id_;
 }
 
-ResourceType::Type ResourceRequestInfoImpl::GetResourceType() const {
+ResourceType ResourceRequestInfoImpl::GetResourceType() const {
   return resource_type_;
 }
 
@@ -191,7 +197,7 @@ ResourceRequestInfoImpl::GetVisibilityState() const {
   return visibility_state_;
 }
 
-PageTransition ResourceRequestInfoImpl::GetPageTransition() const {
+ui::PageTransition ResourceRequestInfoImpl::GetPageTransition() const {
   return transition_type_;
 }
 
@@ -206,18 +212,7 @@ bool ResourceRequestInfoImpl::WasIgnoredByHandler() const {
 bool ResourceRequestInfoImpl::GetAssociatedRenderFrame(
     int* render_process_id,
     int* render_frame_id) const {
-  // If the request is from the worker process, find a content that owns the
-  // worker.
-  if (process_type_ == PROCESS_TYPE_WORKER) {
-    // Need to display some related UI for this network request - pick an
-    // arbitrary parent to do so.
-    if (!WorkerServiceImpl::GetInstance()->GetRendererForWorker(
-            child_id_, render_process_id, render_frame_id)) {
-      *render_process_id = -1;
-      *render_frame_id = -1;
-      return false;
-    }
-  } else if (process_type_ == PROCESS_TYPE_PLUGIN) {
+  if (process_type_ == PROCESS_TYPE_PLUGIN) {
     *render_process_id = origin_pid_;
     *render_frame_id = render_frame_id_;
   } else {

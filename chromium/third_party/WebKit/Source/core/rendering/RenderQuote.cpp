@@ -29,14 +29,14 @@
 
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 RenderQuote::RenderQuote(Document* node, QuoteType quote)
     : RenderInline(0)
     , m_type(quote)
     , m_depth(0)
-    , m_next(0)
-    , m_previous(0)
+    , m_next(nullptr)
+    , m_previous(nullptr)
     , m_attached(false)
 {
     setDocumentForAnonymous(node);
@@ -46,6 +46,13 @@ RenderQuote::~RenderQuote()
 {
     ASSERT(!m_attached);
     ASSERT(!m_next && !m_previous);
+}
+
+void RenderQuote::trace(Visitor* visitor)
+{
+    visitor->trace(m_next);
+    visitor->trace(m_previous);
+    RenderInline::trace(visitor);
 }
 
 void RenderQuote::willBeDestroyed()
@@ -236,7 +243,7 @@ const QuotesData* quotesDataForLanguage(const AtomicString& lang)
 
     // This could be just a hash table, but doing that adds 200k to RenderQuote.o
     Language* languagesEnd = languages + WTF_ARRAY_LENGTH(languages);
-    CString lowercaseLang = lang.string().lower().utf8();
+    CString lowercaseLang = lang.lower().utf8();
     Language key = { lowercaseLang.data(), 0, 0, 0, 0, 0 };
     Language* match = std::lower_bound(languages, languagesEnd, key);
     if (match == languagesEnd || strcmp(match->lang, key.lang))
@@ -263,12 +270,27 @@ void RenderQuote::updateText()
 
     m_text = text;
 
-    while (RenderObject* child = lastChild())
-        child->destroy();
+    RenderTextFragment* fragment = findFragmentChild();
+    if (fragment) {
+        fragment->setStyle(style());
+        fragment->setContentString(m_text.impl());
+    } else {
+        fragment = new RenderTextFragment(&document(), m_text.impl());
+        fragment->setStyle(style());
+        addChild(fragment);
+    }
+}
 
-    RenderTextFragment* fragment = new RenderTextFragment(&document(), m_text.impl());
-    fragment->setStyle(style());
-    addChild(fragment);
+RenderTextFragment* RenderQuote::findFragmentChild() const
+{
+    // We walk from the end of the child list because, if we've had a first-letter
+    // renderer inserted then the remaining text will be at the end.
+    while (RenderObject* child = lastChild()) {
+        if (child->isText() && toRenderText(child)->isTextFragment())
+            return toRenderTextFragment(child);
+    }
+
+    return nullptr;
 }
 
 String RenderQuote::computeText() const
@@ -357,8 +379,8 @@ void RenderQuote::detachQuote()
             quote->updateDepth();
     }
     m_attached = false;
-    m_next = 0;
-    m_previous = 0;
+    m_next = nullptr;
+    m_previous = nullptr;
     m_depth = 0;
 }
 
@@ -385,4 +407,4 @@ void RenderQuote::updateDepth()
         updateText();
 }
 
-} // namespace WebCore
+} // namespace blink

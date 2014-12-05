@@ -26,6 +26,7 @@
 #include "core/css/MediaList.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/Document.h"
+#include "core/dom/IncrementLoadEventDelayCount.h"
 #include "core/dom/StyleEngine.h"
 #include "core/fetch/CSSStyleSheetResource.h"
 #include "core/fetch/FetchRequest.h"
@@ -34,7 +35,7 @@
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/parser/XMLDocumentParser.h" // for parseAttributes()
 
-namespace WebCore {
+namespace blink {
 
 inline ProcessingInstruction::ProcessingInstruction(Document& document, const String& target, const String& data)
     : CharacterData(document, data, CreateOther)
@@ -45,7 +46,6 @@ inline ProcessingInstruction::ProcessingInstruction(Document& document, const St
     , m_isCSS(false)
     , m_isXSL(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<ProcessingInstruction> ProcessingInstruction::create(Document& document, const String& target, const String& data)
@@ -57,7 +57,7 @@ ProcessingInstruction::~ProcessingInstruction()
 {
 #if !ENABLE(OILPAN)
     if (m_sheet)
-        m_sheet->clearOwnerNode();
+        clearSheet();
 
     // FIXME: ProcessingInstruction should not be in document here.
     // However, if we add ASSERT(!inDocument()), fast/xsl/xslt-entity.xml
@@ -90,8 +90,9 @@ PassRefPtrWillBeRawPtr<Node> ProcessingInstruction::cloneNode(bool /*deep*/)
 
 void ProcessingInstruction::didAttributeChanged()
 {
-    ASSERT(!m_sheet);
-    ASSERT(!isLoading());
+    if (m_sheet)
+        clearSheet();
+
     String href;
     String charset;
     if (!checkStyleSheet(href, charset))
@@ -211,8 +212,15 @@ void ProcessingInstruction::setCSSStyleSheet(const String& href, const KURL& bas
 
 void ProcessingInstruction::setXSLStyleSheet(const String& href, const KURL& baseURL, const String& sheet)
 {
+    if (!inDocument()) {
+        ASSERT(!m_sheet);
+        return;
+    }
+
     ASSERT(m_isXSL);
     m_sheet = XSLStyleSheet::create(this, href, baseURL);
+    RefPtrWillBeRawPtr<Document> protect(&document());
+    OwnPtr<IncrementLoadEventDelayCount> delay = IncrementLoadEventDelayCount::create(document());
     parseStyleSheet(sheet);
 }
 
@@ -274,13 +282,20 @@ void ProcessingInstruction::removedFrom(ContainerNode* insertionPoint)
 
     if (m_sheet) {
         ASSERT(m_sheet->ownerNode() == this);
-        m_sheet->clearOwnerNode();
-        m_sheet = nullptr;
+        clearSheet();
     }
 
     // If we're in document teardown, then we don't need to do any notification of our sheet's removal.
     if (document().isActive())
         document().removedStyleSheet(removedSheet.get());
+}
+
+void ProcessingInstruction::clearSheet()
+{
+    ASSERT(m_sheet);
+    if (m_sheet->isLoading())
+        document().styleEngine()->removePendingSheet(this);
+    m_sheet.release()->clearOwnerNode();
 }
 
 void ProcessingInstruction::trace(Visitor* visitor)

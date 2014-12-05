@@ -14,6 +14,7 @@
 #include <string>
 #include <vector>
 
+#include "base/files/scoped_file.h"
 #include "base/message_loop/message_loop.h"
 #include "base/process/process.h"
 #include "ipc/file_descriptor_set_posix.h"
@@ -55,15 +56,16 @@ class IPC_EXPORT ChannelPosix : public Channel,
  public:
   ChannelPosix(const IPC::ChannelHandle& channel_handle, Mode mode,
                Listener* listener);
-  virtual ~ChannelPosix();
+  ~ChannelPosix() override;
 
   // Channel implementation
-  virtual bool Connect() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual bool Send(Message* message) OVERRIDE;
-  virtual base::ProcessId GetPeerPID() const OVERRIDE;
-  virtual int GetClientFileDescriptor() const OVERRIDE;
-  virtual int TakeClientFileDescriptor() OVERRIDE;
+  bool Connect() override;
+  void Close() override;
+  bool Send(Message* message) override;
+  base::ProcessId GetPeerPID() const override;
+  base::ProcessId GetSelfPID() const override;
+  int GetClientFileDescriptor() const override;
+  base::ScopedFD TakeClientFileDescriptor() override;
 
   // Returns true if the channel supports listening for connections.
   bool AcceptsConnections() const;
@@ -94,18 +96,16 @@ class IPC_EXPORT ChannelPosix : public Channel,
 
   bool AcceptConnection();
   void ClosePipeOnError();
-  int GetHelloMessageProcId();
+  int GetHelloMessageProcId() const;
   void QueueHelloMessage();
   void CloseFileDescriptors(Message* msg);
   void QueueCloseFDMessage(int fd, int hops);
 
   // ChannelReader implementation.
-  virtual ReadState ReadData(char* buffer,
-                             int buffer_len,
-                             int* bytes_read) OVERRIDE;
-  virtual bool WillDispatchInputMessage(Message* msg) OVERRIDE;
-  virtual bool DidEmptyInputBuffers() OVERRIDE;
-  virtual void HandleInternalMessage(const Message& msg) OVERRIDE;
+  ReadState ReadData(char* buffer, int buffer_len, int* bytes_read) override;
+  bool WillDispatchInputMessage(Message* msg) override;
+  bool DidEmptyInputBuffers() override;
+  void HandleInternalMessage(const Message& msg) override;
 
 #if defined(IPC_USES_READWRITE)
   // Reads the next message from the fd_pipe_ and appends them to the
@@ -127,8 +127,8 @@ class IPC_EXPORT ChannelPosix : public Channel,
   void ClearInputFDs();
 
   // MessageLoopForIO::Watcher implementation.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
   Mode mode_;
 
@@ -151,20 +151,20 @@ class IPC_EXPORT ChannelPosix : public Channel,
 
   // File descriptor we're listening on for new connections if we listen
   // for connections.
-  int server_listen_pipe_;
+  base::ScopedFD server_listen_pipe_;
 
   // The pipe used for communication.
-  int pipe_;
+  base::ScopedFD pipe_;
 
   // For a server, the client end of our socketpair() -- the other end of our
   // pipe_ that is passed to the client.
-  int client_pipe_;
+  base::ScopedFD client_pipe_;
   mutable base::Lock client_pipe_lock_;  // Lock that protects |client_pipe_|.
 
 #if defined(IPC_USES_READWRITE)
   // Linux/BSD use a dedicated socketpair() for passing file descriptors.
-  int fd_pipe_;
-  int remote_fd_pipe_;
+  base::ScopedFD fd_pipe_;
+  base::ScopedFD remote_fd_pipe_;
 #endif
 
   // The "name" of our pipe.  On Windows this is the global identifier for

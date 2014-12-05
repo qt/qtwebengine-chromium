@@ -4,7 +4,7 @@
 
 #include "content/browser/download/base_file.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 
 namespace content {
@@ -27,8 +27,6 @@ DownloadInterruptReason BaseFile::MoveFileAndAdjustPermissions(
   if (!stat_succeeded)
     LogSystemError("stat", errno);
 
-  // TODO(estade): Move() falls back to copying and deleting when a simple
-  // rename fails. Copying sucks for large downloads. crbug.com/8737
   if (!base::Move(full_path_, new_path))
     return LogSystemError("Move", errno);
 

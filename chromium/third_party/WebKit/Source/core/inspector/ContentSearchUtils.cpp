@@ -30,10 +30,11 @@
 
 #include "core/inspector/ContentSearchUtils.h"
 
-#include "bindings/v8/ScriptRegexp.h"
+#include "bindings/core/v8/ScriptRegexp.h"
+#include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 namespace ContentSearchUtils {
 
 namespace {
@@ -48,7 +49,7 @@ static String createSearchRegexSource(const String& text)
 
     for (unsigned i = 0; i < text.length(); i++) {
         if (specials.find(text[i]) != kNotFound)
-            result.append("\\");
+            result.append('\\');
         result.append(text[i]);
     }
 
@@ -183,5 +184,5 @@ String findSourceMapURL(const String& content, MagicCommentType commentType, boo
 }
 
 } // namespace ContentSearchUtils
-} // namespace WebCore
+} // namespace blink
 

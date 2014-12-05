@@ -40,7 +40,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 const int InvalidPort = 0;
 const int MaxAllowedPort = 65535;
@@ -376,10 +376,14 @@ bool SecurityOrigin::canDisplay(const KURL& url) const
     return true;
 }
 
-bool SecurityOrigin::canAccessFeatureRequiringSecureOrigin() const
+bool SecurityOrigin::canAccessFeatureRequiringSecureOrigin(String& errorMessage) const
 {
     ASSERT(m_protocol != "data");
-    return SchemeRegistry::shouldTreatURLSchemeAsSecure(m_protocol) || isLocal() || isLocalhost();
+    if (SchemeRegistry::shouldTreatURLSchemeAsSecure(m_protocol) || isLocal() || isLocalhost())
+        return true;
+
+    errorMessage = "Only secure origins are allowed. http://goo.gl/lq4gCo";
+    return false;
 }
 
 SecurityOrigin::Policy SecurityOrigin::canShowNotifications() const
@@ -527,4 +531,11 @@ const String& SecurityOrigin::urlWithUniqueSecurityOrigin()
     return uniqueSecurityOriginURL;
 }
 
-} // namespace WebCore
+void SecurityOrigin::transferPrivilegesFrom(const SecurityOrigin& origin)
+{
+    m_universalAccess = origin.m_universalAccess;
+    m_canLoadLocalResources = origin.m_canLoadLocalResources;
+    m_enforceFilePathSeparation = origin.m_enforceFilePathSeparation;
+}
+
+} // namespace blink

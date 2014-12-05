@@ -53,37 +53,32 @@
 #include "core/workers/WorkerThread.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-class PageInspectorProxy FINAL : public InspectorFrontendChannel {
+class PageInspectorProxy final : public InspectorFrontendChannel {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     explicit PageInspectorProxy(WorkerGlobalScope* workerGlobalScope) : m_workerGlobalScope(workerGlobalScope) { }
     virtual ~PageInspectorProxy() { }
 private:
-    virtual void sendMessageToFrontend(PassRefPtr<JSONObject> message) OVERRIDE
+    virtual void sendMessageToFrontend(PassRefPtr<JSONObject> message) override
     {
         m_workerGlobalScope->thread()->workerReportingProxy().postMessageToPageInspector(message->toJSONString());
     }
-    virtual void flush() OVERRIDE { }
+    virtual void flush() override { }
     WorkerGlobalScope* m_workerGlobalScope;
 };
 
-class WorkerStateClient FINAL : public InspectorStateClient {
+class WorkerStateClient final : public InspectorStateClient {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    WorkerStateClient(WorkerGlobalScope* context) : m_workerGlobalScope(context) { }
+    WorkerStateClient(WorkerGlobalScope* context) { }
     virtual ~WorkerStateClient() { }
 
 private:
-    virtual void updateInspectorStateCookie(const String& cookie) OVERRIDE
-    {
-        m_workerGlobalScope->thread()->workerReportingProxy().updateInspectorStateCookie(cookie);
-    }
-
-    WorkerGlobalScope* m_workerGlobalScope;
+    virtual void updateInspectorStateCookie(const String& cookie) override { }
 };
 
 }
@@ -91,7 +86,7 @@ private:
 WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGlobalScope)
     : m_workerGlobalScope(workerGlobalScope)
     , m_stateClient(adoptPtr(new WorkerStateClient(workerGlobalScope)))
-    , m_state(adoptPtr(new InspectorCompositeState(m_stateClient.get())))
+    , m_state(adoptPtrWillBeNoop(new InspectorCompositeState(m_stateClient.get())))
     , m_instrumentingAgents(InstrumentingAgents::create())
     , m_injectedScriptManager(InjectedScriptManager::createForWorker())
     , m_debugServer(adoptPtr(new WorkerScriptDebugServer(workerGlobalScope)))
@@ -99,12 +94,14 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
 {
     m_agents.append(WorkerRuntimeAgent::create(m_injectedScriptManager.get(), m_debugServer.get(), workerGlobalScope));
 
-    OwnPtr<InspectorTimelineAgent> timelineAgent = InspectorTimelineAgent::create(0, 0, 0, InspectorTimelineAgent::WorkerInspector, 0);
-    m_agents.append(WorkerDebuggerAgent::create(m_debugServer.get(), workerGlobalScope, m_injectedScriptManager.get()));
+    OwnPtrWillBeRawPtr<InspectorTimelineAgent> timelineAgent = InspectorTimelineAgent::create(0, 0, 0, InspectorTimelineAgent::WorkerInspector, 0);
+    OwnPtrWillBeRawPtr<WorkerDebuggerAgent> workerDebuggerAgent = WorkerDebuggerAgent::create(m_debugServer.get(), workerGlobalScope, m_injectedScriptManager.get());
+    m_workerDebuggerAgent = workerDebuggerAgent.get();
+    m_agents.append(workerDebuggerAgent.release());
 
     m_agents.append(InspectorProfilerAgent::create(m_injectedScriptManager.get(), 0));
     m_agents.append(InspectorHeapProfilerAgent::create(m_injectedScriptManager.get()));
-    m_agents.append(WorkerConsoleAgent::create(timelineAgent.get(), m_injectedScriptManager.get()));
+    m_agents.append(WorkerConsoleAgent::create(timelineAgent.get(), m_injectedScriptManager.get(), workerGlobalScope));
     m_agents.append(timelineAgent.release());
 
     m_injectedScriptManager->injectedScriptHost()->init(m_instrumentingAgents.get(), m_debugServer.get());
@@ -112,8 +109,6 @@ WorkerInspectorController::WorkerInspectorController(WorkerGlobalScope* workerGl
 
 WorkerInspectorController::~WorkerInspectorController()
 {
-    m_instrumentingAgents->reset();
-    disconnectFrontend();
 }
 
 void WorkerInspectorController::connectFrontend()
@@ -164,6 +159,28 @@ void WorkerInspectorController::resume()
         ErrorString unused;
         runtimeAgent->run(&unused);
     }
+}
+
+void WorkerInspectorController::dispose()
+{
+    m_instrumentingAgents->reset();
+    disconnectFrontend();
+}
+
+void WorkerInspectorController::interruptAndDispatchInspectorCommands()
+{
+    m_workerDebuggerAgent->interruptAndDispatchInspectorCommands();
+}
+
+void WorkerInspectorController::trace(Visitor* visitor)
+{
+    visitor->trace(m_workerGlobalScope);
+    visitor->trace(m_state);
+    visitor->trace(m_instrumentingAgents);
+    visitor->trace(m_injectedScriptManager);
+    visitor->trace(m_backendDispatcher);
+    visitor->trace(m_agents);
+    visitor->trace(m_workerDebuggerAgent);
 }
 
 }

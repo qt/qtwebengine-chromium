@@ -5,79 +5,132 @@
 #ifndef CONTENT_RENDERER_ACCESSIBILITY_RENDERER_ACCESSIBILITY_H_
 #define CONTENT_RENDERER_ACCESSIBILITY_RENDERER_ACCESSIBILITY_H_
 
+#include <vector>
+
+#include "base/containers/hash_tables.h"
+#include "base/memory/weak_ptr.h"
 #include "content/common/accessibility_messages.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
+#include "content/renderer/accessibility/blink_ax_tree_source.h"
 #include "third_party/WebKit/public/web/WebAXObject.h"
+#include "ui/accessibility/ax_tree_serializer.h"
 
 namespace blink {
 class WebDocument;
+class WebNode;
 };
 
 namespace content {
-class RenderViewImpl;
+class RenderFrameImpl;
 
-enum RendererAccessibilityType {
-  // Turns on Blink accessibility and provides a full accessibility
-  // implementation for when assistive technology is running.
-  RendererAccessibilityTypeComplete,
-
-  // Does not turn on Blink accessibility. Only sends a minimal accessible tree
-  // to the browser whenever focus changes. This mode is currently used to
-  // support opening the on-screen keyboard in response to touch events on
-  // Windows 8 in Metro mode.
-  RendererAccessibilityTypeFocusOnly
-};
-
-// The browser process implement native accessibility APIs, allowing
+// The browser process implements native accessibility APIs, allowing
 // assistive technology (e.g., screen readers, magnifiers) to access and
 // control the web contents with high-level APIs. These APIs are also used
 // by automation tools, and Windows 8 uses them to determine when the
 // on-screen keyboard should be shown.
 //
-// An instance of this class (or rather, a subclass) belongs to RenderViewImpl.
-// Accessibility is initialized based on the AccessibilityMode of
-// RenderViewImpl; it lazily starts as Off or EditableTextOnly depending on
-// the operating system, and switches to Complete if assistive technology is
-// detected or a flag is set.
+// An instance of this class belongs to RenderFrameImpl. Accessibility is
+// initialized based on the AccessibilityMode of RenderFrameImpl; it lazily
+// starts as Off or EditableTextOnly depending on the operating system, and
+// switches to Complete if assistive technology is detected or a flag is set.
 //
 // A tree of accessible objects is built here and sent to the browser process;
 // the browser process maintains this as a tree of platform-native
 // accessible objects that can be used to respond to accessibility requests
 // from other processes.
 //
-// This base class just contains common code and will not do anything by itself.
-// The two subclasses are:
-//
-//   RendererAccessibilityComplete - turns on Blink accessibility and
-//       provides a full accessibility implementation for when
-//       assistive technology is running.
-//
-//   RendererAccessibilityFocusOnly - does not turn on Blink
-//       accessibility. Only sends a minimal accessible tree to the
-//       browser whenever focus changes. This mode is currently used
-//       to support opening the on-screen keyboard in response to
-//       touch events on Windows 8 in Metro mode.
-//
-class CONTENT_EXPORT RendererAccessibility : public RenderViewObserver {
+// This class implements complete accessibility support for assistive
+// technology. It turns on Blink's accessibility code and sends a serialized
+// representation of that tree whenever it changes. It also handles requests
+// from the browser to perform accessibility actions on nodes in the tree
+// (e.g., change focus, or click on a button).
+class CONTENT_EXPORT RendererAccessibility : public RenderFrameObserver {
  public:
-  explicit RendererAccessibility(RenderViewImpl* render_view);
-  virtual ~RendererAccessibility();
+  explicit RendererAccessibility(RenderFrameImpl* render_frame);
+  ~RendererAccessibility() override;
+
+  // RenderFrameObserver implementation.
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Called when an accessibility notification occurs in Blink.
-  virtual void HandleWebAccessibilityEvent(
-      const blink::WebAXObject& obj, blink::WebAXEvent event) = 0;
+  void HandleWebAccessibilityEvent(const blink::WebAXObject& obj,
+                                   blink::WebAXEvent event);
 
-  // Gets the type of this RendererAccessibility object. Primarily intended for
-  // testing.
-  virtual RendererAccessibilityType GetType() = 0;
+  // Called when a new find in page result is highlighted.
+  void HandleAccessibilityFindInPageResult(
+      int identifier,
+      int match_index,
+      const blink::WebAXObject& start_object,
+      int start_offset,
+      const blink::WebAXObject& end_object,
+      int end_offset);
+
+  void FocusedNodeChanged(const blink::WebNode& node);
+
+  // This can be called before deleting a RendererAccessibility instance due
+  // to the accessibility mode changing, as opposed to during frame destruction
+  // (when there'd be no point).
+  void DisableAccessibility();
+
+  void HandleAXEvent(const blink::WebAXObject& obj, ui::AXEvent event);
 
  protected:
   // Returns the main top-level document for this page, or NULL if there's
   // no view or frame.
   blink::WebDocument GetMainDocument();
 
-  // The RenderViewImpl that owns us.
-  RenderViewImpl* render_view_;
+  // Send queued events from the renderer to the browser.
+  void SendPendingAccessibilityEvents();
+
+  // Check the entire accessibility tree to see if any nodes have
+  // changed location, by comparing their locations to the cached
+  // versions. If any have moved, send an IPC with the new locations.
+  void SendLocationChanges();
+
+  // The RenderFrameImpl that owns us.
+  RenderFrameImpl* render_frame_;
+
+ private:
+  // Handlers for messages from the browser to the renderer.
+  void OnDoDefaultAction(int acc_obj_id);
+  void OnEventsAck();
+  void OnFatalError();
+  void OnHitTest(gfx::Point point);
+  void OnSetAccessibilityFocus(int acc_obj_id);
+  void OnReset(int reset_token);
+  void OnScrollToMakeVisible(int acc_obj_id, gfx::Rect subfocus);
+  void OnScrollToPoint(int acc_obj_id, gfx::Point point);
+  void OnSetFocus(int acc_obj_id);
+  void OnSetTextSelection(int acc_obj_id, int start_offset, int end_offset);
+  void OnSetValue(int acc_obj_id, base::string16 value);
+
+  // Events from Blink are collected until they are ready to be
+  // sent to the browser.
+  std::vector<AccessibilityHostMsg_EventParams> pending_events_;
+
+  // The adapter that exposes Blink's accessibility tree to AXTreeSerializer.
+  BlinkAXTreeSource tree_source_;
+
+  // The serializer that sends accessibility messages to the browser process.
+  ui::AXTreeSerializer<blink::WebAXObject> serializer_;
+
+  // Current location of every object, so we can detect when it moves.
+  base::hash_map<int, gfx::Rect> locations_;
+
+  // The most recently observed scroll offset of the root document element.
+  // TODO(dmazzoni): remove once https://bugs.webkit.org/show_bug.cgi?id=73460
+  // is fixed.
+  gfx::Size last_scroll_offset_;
+
+  // Set if we are waiting for an accessibility event ack.
+  bool ack_pending_;
+
+  // Nonzero if the browser requested we reset the accessibility state.
+  // We need to return this token in the next IPC.
+  int reset_token_;
+
+  // So we can queue up tasks to be executed later.
+  base::WeakPtrFactory<RendererAccessibility> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererAccessibility);
 };

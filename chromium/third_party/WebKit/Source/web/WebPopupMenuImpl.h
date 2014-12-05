@@ -31,23 +31,13 @@
 #ifndef WebPopupMenuImpl_h
 #define WebPopupMenuImpl_h
 
-#include "platform/scroll/FramelessScrollViewClient.h"
 #include "public/platform/WebContentLayerClient.h"
 #include "public/platform/WebPoint.h"
 #include "public/platform/WebSize.h"
 #include "public/web/WebPopupMenu.h"
+#include "web/PopupContainerClient.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/RefCounted.h"
-
-namespace WebCore {
-class LocalFrame;
-class FramelessScrollView;
-class KeyboardEvent;
-class Page;
-class PlatformKeyboardEvent;
-class Range;
-class Widget;
-}
 
 namespace blink {
 class WebContentLayer;
@@ -56,46 +46,44 @@ class WebKeyboardEvent;
 class WebLayerTreeView;
 class WebMouseEvent;
 class WebMouseWheelEvent;
-class WebRange;
-struct WebRect;
 class WebTouchEvent;
+struct WebRect;
 
-class WebPopupMenuImpl : public WebPopupMenu, public WebCore::FramelessScrollViewClient, public WebContentLayerClient, public RefCounted<WebPopupMenuImpl> {
+class WebPopupMenuImpl : public WebPopupMenu, public PopupContainerClient, public WebContentLayerClient, public RefCounted<WebPopupMenuImpl> {
     WTF_MAKE_FAST_ALLOCATED;
 public:
     // WebWidget functions:
-    virtual void close() OVERRIDE FINAL;
-    virtual WebSize size() OVERRIDE FINAL { return m_size; }
-    virtual void willStartLiveResize() OVERRIDE FINAL;
-    virtual void resize(const WebSize&) OVERRIDE FINAL;
-    virtual void willEndLiveResize() OVERRIDE FINAL;
-    virtual void animate(double frameBeginTime) OVERRIDE FINAL;
-    virtual void layout() OVERRIDE FINAL;
-    virtual void paint(WebCanvas*, const WebRect&) OVERRIDE FINAL;
-    virtual void themeChanged() OVERRIDE FINAL;
-    virtual bool handleInputEvent(const WebInputEvent&) OVERRIDE FINAL;
-    virtual void mouseCaptureLost() OVERRIDE FINAL;
-    virtual void setFocus(bool enable) OVERRIDE FINAL;
+    virtual void close() override final;
+    virtual WebSize size() override final { return m_size; }
+    virtual void willStartLiveResize() override final;
+    virtual void resize(const WebSize&) override final;
+    virtual void willEndLiveResize() override final;
+    virtual void beginFrame(const WebBeginFrameArgs&) override final;
+    virtual void layout() override final;
+    virtual void paint(WebCanvas*, const WebRect&) override final;
+    virtual void themeChanged() override final;
+    virtual bool handleInputEvent(const WebInputEvent&) override final;
+    virtual void mouseCaptureLost() override final;
+    virtual void setFocus(bool enable) override final;
     virtual bool setComposition(
         const WebString& text,
         const WebVector<WebCompositionUnderline>& underlines,
-        int selectionStart, int selectionEnd) OVERRIDE FINAL;
-    virtual bool confirmComposition() OVERRIDE FINAL;
-    virtual bool confirmComposition(ConfirmCompositionBehavior selectionBehavior) OVERRIDE FINAL;
-    virtual bool confirmComposition(const WebString& text) OVERRIDE FINAL;
-    virtual bool compositionRange(size_t* location, size_t* length) OVERRIDE FINAL;
-    virtual bool caretOrSelectionRange(size_t* location, size_t* length) OVERRIDE FINAL;
-    virtual void setTextDirection(WebTextDirection) OVERRIDE FINAL;
-    virtual bool isAcceleratedCompositingActive() const OVERRIDE FINAL { return false; }
-    virtual bool isPopupMenu() const OVERRIDE FINAL { return true; }
-    virtual void willCloseLayerTreeView() OVERRIDE FINAL;
+        int selectionStart, int selectionEnd) override final;
+    virtual bool confirmComposition() override final;
+    virtual bool confirmComposition(ConfirmCompositionBehavior selectionBehavior) override final;
+    virtual bool confirmComposition(const WebString& text) override final;
+    virtual bool compositionRange(size_t* location, size_t* length) override final;
+    virtual bool caretOrSelectionRange(size_t* location, size_t* length) override final;
+    virtual void setTextDirection(WebTextDirection) override final;
+    virtual bool isAcceleratedCompositingActive() const override final { return false; }
+    virtual bool isPopupMenu() const override final { return true; }
+    virtual void willCloseLayerTreeView() override final;
 
     // WebContentLayerClient
-    virtual void paintContents(WebCanvas*, const WebRect& clip, bool canPaintLCDTest, WebFloatRect& opaque,
-        WebContentLayerClient::GraphicsContextStatus = GraphicsContextEnabled) OVERRIDE FINAL;
+    virtual void paintContents(WebCanvas*, const WebRect& clip, bool canPaintLCDTest, WebContentLayerClient::GraphicsContextStatus = GraphicsContextEnabled) override final;
 
     // WebPopupMenuImpl
-    void initialize(WebCore::FramelessScrollView* widget, const WebRect& bounds);
+    void initialize(PopupContainer* widget, const WebRect& bounds);
 
     WebWidgetClient* client() { return m_client; }
 
@@ -113,21 +101,18 @@ public:
     friend class WebPopupMenu; // For WebPopupMenu::create.
     friend class WTF::RefCounted<WebPopupMenuImpl>;
 
-    WebPopupMenuImpl(WebWidgetClient*);
+    explicit WebPopupMenuImpl(WebWidgetClient*);
     ~WebPopupMenuImpl();
 
-    // WebCore::HostWindow methods:
-    virtual void invalidateContentsAndRootView(const WebCore::IntRect&) OVERRIDE FINAL;
-    virtual void invalidateContentsForSlowScroll(const WebCore::IntRect&) OVERRIDE FINAL;
-    virtual void scheduleAnimation() OVERRIDE FINAL;
-    virtual void scroll(
-        const WebCore::IntSize& scrollDelta, const WebCore::IntRect& scrollRect,
-        const WebCore::IntRect& clipRect) OVERRIDE FINAL;
-    virtual WebCore::IntRect rootViewToScreen(const WebCore::IntRect&) const OVERRIDE FINAL;
-    virtual WebScreenInfo screenInfo() const OVERRIDE FINAL;
+    // HostWindow methods:
+    virtual void invalidateContentsAndRootView(const IntRect&) override final;
+    virtual void invalidateContentsForSlowScroll(const IntRect&) override final;
+    virtual void scheduleAnimation() override final;
+    virtual IntRect rootViewToScreen(const IntRect&) const override final;
+    virtual WebScreenInfo screenInfo() const override final;
 
-    // WebCore::FramelessScrollViewClient methods:
-    virtual void popupClosed(WebCore::FramelessScrollView*) OVERRIDE FINAL;
+    // PopupContainerClient methods:
+    virtual void popupClosed(PopupContainer*) override final;
 
     WebWidgetClient* m_client;
     WebSize m_size;
@@ -139,13 +124,13 @@ public:
 
     // This is a non-owning ref. The popup will notify us via popupClosed()
     // before it is destroyed.
-    WebCore::FramelessScrollView* m_widget;
+    PopupContainer* m_widget;
 };
 
 DEFINE_TYPE_CASTS(WebPopupMenuImpl, WebWidget, widget, widget->isPopupMenu(), widget.isPopupMenu());
-// WebPopupMenuImpl is the only implementation of FramelessScrollViewClient, so
+// WebPopupMenuImpl is the only implementation of PopupContainerClient, so
 // no need for further checking.
-DEFINE_TYPE_CASTS(WebPopupMenuImpl, WebCore::FramelessScrollViewClient, client, true, true);
+DEFINE_TYPE_CASTS(WebPopupMenuImpl, PopupContainerClient, client, true, true);
 
 } // namespace blink
 

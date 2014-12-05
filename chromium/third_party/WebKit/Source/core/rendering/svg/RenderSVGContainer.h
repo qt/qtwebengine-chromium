@@ -25,7 +25,7 @@
 
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
@@ -33,65 +33,66 @@ class RenderSVGContainer : public RenderSVGModelObject {
 public:
     explicit RenderSVGContainer(SVGElement*);
     virtual ~RenderSVGContainer();
-
-    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
-    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
+    virtual void trace(Visitor*) override;
 
     // If you have a RenderSVGContainer, use firstChild or lastChild instead.
     void slowFirstChild() const WTF_DELETED_FUNCTION;
     void slowLastChild() const WTF_DELETED_FUNCTION;
 
-    const RenderObjectChildList* children() const { return &m_children; }
-    RenderObjectChildList* children() { return &m_children; }
+    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
+    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual void setNeedsBoundariesUpdate() OVERRIDE FINAL { m_needsBoundariesUpdate = true; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void setNeedsBoundariesUpdate() override final { m_needsBoundariesUpdate = true; }
     virtual bool didTransformToRootUpdate() { return false; }
     bool isObjectBoundingBoxValid() const { return m_objectBoundingBoxValid; }
 
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const override final { return m_paintInvalidationBoundingBox; }
+    bool selfWillPaint();
+
 protected:
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
+    virtual RenderObjectChildList* virtualChildren() override final { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const override final { return children(); }
 
-    virtual bool isSVGContainer() const OVERRIDE FINAL { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGContainer"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGContainer || RenderSVGModelObject::isOfType(type); }
+    virtual const char* renderName() const override { return "RenderSVGContainer"; }
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE FINAL;
-    virtual void removeChild(RenderObject*) OVERRIDE FINAL;
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE FINAL;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override final;
+    virtual void removeChild(RenderObject*) override final;
+    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer) const override final;
 
-    virtual FloatRect objectBoundingBox() const OVERRIDE FINAL { return m_objectBoundingBox; }
-    virtual FloatRect strokeBoundingBox() const OVERRIDE FINAL { return m_strokeBoundingBox; }
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE FINAL { return m_repaintBoundingBox; }
+    virtual FloatRect objectBoundingBox() const override final { return m_objectBoundingBox; }
+    virtual FloatRect strokeBoundingBox() const override final { return m_strokeBoundingBox; }
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE;
+    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
 
-    // Allow RenderSVGTransformableContainer to hook in at the right time in layout()
+    // Allow RenderSVGTransformableContainer to hook in at the right time in layout().
     virtual bool calculateLocalTransform() { return false; }
 
-    // Allow RenderSVGViewportContainer to hook in at the right times in layout(), paint() and nodeAtFloatPoint()
+    // Allow RenderSVGViewportContainer to hook in at the right times in layout() and nodeAtFloatPoint().
     virtual void calcViewport() { }
-    virtual void applyViewportClip(PaintInfo&) { }
     virtual bool pointIsInsideViewportClip(const FloatPoint& /*pointInParent*/) { return true; }
 
     virtual void determineIfLayoutSizeChanged() { }
 
-    bool selfWillPaint();
     void updateCachedBoundaries();
 
 private:
+    const RenderObjectChildList* children() const { return &m_children; }
+    RenderObjectChildList* children() { return &m_children; }
+
     RenderObjectChildList m_children;
     FloatRect m_objectBoundingBox;
     bool m_objectBoundingBoxValid;
     FloatRect m_strokeBoundingBox;
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     bool m_needsBoundariesUpdate : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGContainer, isSVGContainer());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderSVGContainer_h

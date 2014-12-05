@@ -18,6 +18,40 @@
 
 namespace net {
 
+namespace {
+
+// Disambiguate various types of responses that trigger a meta-refresh,
+// failure, or fallback to pass-through.
+enum ResponseCorruptionDetectionCause {
+  RESPONSE_NONE,
+
+  // 404 Http Response Code
+  RESPONSE_404 = 1,
+
+  // Not a 200 Http Response Code
+  RESPONSE_NOT_200 = 2,
+
+  // Cached before dictionary retrieved.
+  RESPONSE_OLD_UNENCODED = 3,
+
+  // Speculative but incorrect SDCH filtering was added added.
+  RESPONSE_TENTATIVE_SDCH = 4,
+
+  // Missing correct dict for decoding.
+  RESPONSE_NO_DICTIONARY = 5,
+
+  // Not an SDCH response but should be.
+  RESPONSE_CORRUPT_SDCH = 6,
+
+  // No dictionary was advertised with the request, the server claims
+  // to have encoded with SDCH anyway, but it isn't an SDCH response.
+  RESPONSE_ENCODING_LIE = 7,
+
+  RESPONSE_MAX,
+};
+
+}  // namespace
+
 SdchFilter::SdchFilter(const FilterContext& filter_context)
     : filter_context_(filter_context),
       decoding_status_(DECODING_UNINITIALIZED),
@@ -55,7 +89,7 @@ SdchFilter::~SdchFilter() {
       // Note this will "wear off" quickly enough, and is just meant to assure
       // in some rare case that the user is not stuck.
       url_request_context_->sdch_manager()->BlacklistDomain(
-          url_);
+          url_, SdchManager::INCOMPLETE_SDCH_CONTENT);
       UMA_HISTOGRAM_COUNTS("Sdch3.PartialBytesIn",
            static_cast<int>(filter_context_.GetByteReadCount()));
       UMA_HISTOGRAM_COUNTS("Sdch3.PartialVcdiffIn", source_bytes_);
@@ -171,20 +205,24 @@ Filter::FilterStatus SdchFilter::ReadFilteredData(char* dest_buffer,
       // Watch out for an error page inserted by the proxy as part of a 40x
       // error response.  When we see such content molestation, we certainly
       // need to fall into the meta-refresh case.
+      ResponseCorruptionDetectionCause cause = RESPONSE_NONE;
       if (filter_context_.GetResponseCode() == 404) {
         // We could be more generous, but for now, only a "NOT FOUND" code will
         // cause a pass through.  All other bad codes will fall into a
         // meta-refresh.
         SdchManager::SdchErrorRecovery(SdchManager::PASS_THROUGH_404_CODE);
+        cause = RESPONSE_404;
         decoding_status_ = PASS_THROUGH;
       } else if (filter_context_.GetResponseCode() != 200) {
         // We need to meta-refresh, with SDCH disabled.
+        cause = RESPONSE_NOT_200;
       } else if (filter_context_.IsCachedContent()
                  && !dictionary_hash_is_plausible_) {
         // We must have hit the back button, and gotten content that was fetched
         // before we *really* advertised SDCH and a dictionary.
         SdchManager::SdchErrorRecovery(SdchManager::PASS_THROUGH_OLD_CACHED);
         decoding_status_ = PASS_THROUGH;
+        cause = RESPONSE_OLD_UNENCODED;
       } else if (possible_pass_through_) {
         // This is the potentially most graceful response. There really was no
         // error. We were just overly cautious when we added a TENTATIVE_SDCH.
@@ -193,21 +231,24 @@ Filter::FilterStatus SdchFilter::ReadFilteredData(char* dest_buffer,
         // not to use sdch, even though there is a dictionary.  To be
         // conservative, we locally added the tentative sdch (fearing that a
         // proxy stripped it!) and we must now recant (pass through).
-        SdchManager::SdchErrorRecovery(SdchManager::DISCARD_TENTATIVE_SDCH);
+        //
         // However.... just to be sure we don't get burned by proxies that
         // re-compress with gzip or other system, we can sniff to see if this
         // is compressed data etc.  For now, we do nothing, which gets us into
         // the meta-refresh result.
         // TODO(jar): Improve robustness by sniffing for valid text that we can
         // actual use re: decoding_status_ = PASS_THROUGH;
+        cause = RESPONSE_TENTATIVE_SDCH;
       } else if (dictionary_hash_is_plausible_) {
         // We need a meta-refresh since we don't have the dictionary.
         // The common cause is a restart of the browser, where we try to render
         // cached content that was saved when we had a dictionary.
-      } else if (filter_context_.IsSdchResponse()) {
+        cause = RESPONSE_NO_DICTIONARY;
+      } else if (filter_context_.SdchResponseExpected()) {
         // This is a very corrupt SDCH request response.  We can't decode it.
         // We'll use a meta-refresh, and get content without asking for SDCH.
         // This will also progressively disable SDCH for this domain.
+        cause = RESPONSE_CORRUPT_SDCH;
       } else {
         // One of the first 9 bytes precluded consideration as a hash.
         // This can't be an SDCH payload, even though the server said it was.
@@ -218,7 +259,20 @@ Filter::FilterStatus SdchFilter::ReadFilteredData(char* dest_buffer,
         SdchManager::SdchErrorRecovery(SdchManager::PASSING_THROUGH_NON_SDCH);
         decoding_status_ = PASS_THROUGH;
         // ... but further back-off on advertising SDCH support.
-        url_request_context_->sdch_manager()->BlacklistDomain(url_);
+        url_request_context_->sdch_manager()->BlacklistDomain(
+            url_, SdchManager::PASSING_THROUGH_NON_SDCH);
+        cause = RESPONSE_ENCODING_LIE;
+      }
+      DCHECK_NE(RESPONSE_NONE, cause);
+
+      // Use if statement rather than ?: because UMA_HISTOGRAM_ENUMERATION
+      // caches the histogram name based on the call site.
+      if (filter_context_.IsCachedContent()) {
+        UMA_HISTOGRAM_ENUMERATION(
+            "Sdch3.ResponseCorruptionDetection.Cached", cause, RESPONSE_MAX);
+      } else {
+        UMA_HISTOGRAM_ENUMERATION(
+            "Sdch3.ResponseCorruptionDetection.Uncached", cause, RESPONSE_MAX);
       }
 
       if (decoding_status_ == PASS_THROUGH) {
@@ -228,13 +282,13 @@ Filter::FilterStatus SdchFilter::ReadFilteredData(char* dest_buffer,
         if (std::string::npos == mime_type_.find("text/html")) {
           // Since we can't do a meta-refresh (along with an exponential
           // backoff), we'll just make sure this NEVER happens again.
-          url_request_context_->sdch_manager()->BlacklistDomainForever(url_);
-          if (filter_context_.IsCachedContent())
-            SdchManager::SdchErrorRecovery(
-                SdchManager::CACHED_META_REFRESH_UNSUPPORTED);
-          else
-            SdchManager::SdchErrorRecovery(
-                SdchManager::META_REFRESH_UNSUPPORTED);
+          SdchManager::ProblemCodes problem =
+              (filter_context_.IsCachedContent() ?
+               SdchManager::CACHED_META_REFRESH_UNSUPPORTED :
+               SdchManager::META_REFRESH_UNSUPPORTED);
+          url_request_context_->sdch_manager()->BlacklistDomainForever(
+              url_, problem);
+          SdchManager::SdchErrorRecovery(problem);
           return FILTER_ERROR;
         }
         // HTML content means we can issue a meta-refresh, and get the content
@@ -247,7 +301,8 @@ Filter::FilterStatus SdchFilter::ReadFilteredData(char* dest_buffer,
         } else {
           // Since it wasn't in the cache, we definately need at least some
           // period of blacklisting to get the correct content.
-          url_request_context_->sdch_manager()->BlacklistDomain(url_);
+          url_request_context_->sdch_manager()->BlacklistDomain(
+              url_, SdchManager::META_REFRESH_RECOVERY);
           SdchManager::SdchErrorRecovery(SdchManager::META_REFRESH_RECOVERY);
         }
         decoding_status_ = META_REFRESH_RECOVERY;
@@ -336,7 +391,7 @@ Filter::FilterStatus SdchFilter::InitializeDictionary() {
   else
     next_stream_data_ = NULL;
 
-  DCHECK(!dictionary_);
+  DCHECK(!dictionary_.get());
   dictionary_hash_is_plausible_ = true;  // Assume plausible, but check.
 
   if ('\0' == dictionary_hash_[kServerIdLength - 1]) {
@@ -348,7 +403,7 @@ Filter::FilterStatus SdchFilter::InitializeDictionary() {
     dictionary_hash_is_plausible_ = false;
   }
 
-  if (!dictionary_) {
+  if (!dictionary_.get()) {
     DCHECK(dictionary_hash_.size() == kServerIdLength);
     // Since dictionary was not found, check to see if hash was even plausible.
     for (size_t i = 0; i < kServerIdLength - 1; ++i) {

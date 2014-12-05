@@ -30,12 +30,12 @@
 #include "config.h"
 #include "core/css/DOMWindowCSS.h"
 
-#include "core/css/parser/BisonCSSParser.h"
-#include "core/css/RuntimeCSSEnabled.h"
+#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DOMWindowCSS> DOMWindowCSS::create()
 {
@@ -61,11 +61,9 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
     CSSPropertyID propertyID = cssPropertyID(property.stripWhiteSpace());
     if (propertyID == CSSPropertyInvalid)
         return false;
+    ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID));
 
-    if (!RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID))
-        return false;
-
-    // BisonCSSParser::parseValue() won't work correctly if !important is present,
+    // CSSParser::parseValue() won't work correctly if !important is present,
     // so just get rid of it. It doesn't matter to supports() if it's actually
     // there or not, provided how it's specified in the value is correct.
     String normalizedValue = value.stripWhiteSpace().simplifyWhiteSpace();
@@ -75,14 +73,12 @@ bool DOMWindowCSS::supports(const String& property, const String& value) const
         return false;
 
     RefPtrWillBeRawPtr<MutableStylePropertySet> dummyStyle = MutableStylePropertySet::create();
-    return BisonCSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
+    return CSSParser::parseValue(dummyStyle.get(), propertyID, normalizedValue, false, HTMLStandardMode, 0);
 }
 
 bool DOMWindowCSS::supports(const String& conditionText) const
 {
-    CSSParserContext context(HTMLStandardMode, 0);
-    BisonCSSParser parser(context);
-    return parser.parseSupportsCondition(conditionText);
+    return CSSParser::parseSupportsCondition(conditionText);
 }
 
 }

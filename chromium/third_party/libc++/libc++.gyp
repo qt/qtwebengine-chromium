@@ -86,25 +86,15 @@
         '../libc++abi/trunk/include',
       ],
       'cflags': [
-        '-g', '-Os', '-fPIC',
-        '-std=c++11',
         '-fstrict-aliasing',
-        '-Wall',
-        '-Wextra',
-        '-Wshadow',
-        '-Wconversion',
-        '-Wnewline-eof',
-        '-Wpadded',
-        '-Wmissing-prototypes',
-        '-Wstrict-aliasing=2',
-        '-Wstrict-overflow=4',
         '-nostdinc++',
+        '-std=c++11',
       ],
       'cflags_cc!': [
+        '-fno-exceptions',
         '-fno-rtti',
       ],
       'cflags!': [
-        '-fno-exceptions',
         '-fvisibility=hidden',
       ],
       'ldflags': [

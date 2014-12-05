@@ -49,12 +49,13 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
 
     // If a buffer is currently held aside pending duration calculation, returns
     // its decode timestamp. Otherwise, returns kInfiniteDuration().
-    base::TimeDelta GetReadyUpperBound();
+    DecodeTimestamp GetReadyUpperBound();
 
     // Prepares |ready_buffers_| for retrieval. Prior to calling,
-    // |ready_buffers_| must be empty. Moves all |buffers_| with timestamp
-    // before |before_timestamp| to |ready_buffers_|, preserving their order.
-    void ExtractReadyBuffers(const base::TimeDelta before_timestamp);
+    // |ready_buffers_| must be empty. Moves all |buffers_| with decode
+    // timestamp before |before_timestamp| to |ready_buffers_|, preserving their
+    // order.
+    void ExtractReadyBuffers(const DecodeTimestamp before_timestamp);
 
     const BufferQueue& ready_buffers() const { return ready_buffers_; }
 
@@ -143,7 +144,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
                     const std::string& audio_encryption_key_id,
                     const std::string& video_encryption_key_id,
                     const LogCB& log_cb);
-  virtual ~WebMClusterParser();
+  ~WebMClusterParser() override;
 
   // Resets the parser state so it can accept a new cluster.
   void Reset();
@@ -190,10 +191,10 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
 
  private:
   // WebMParserClient methods.
-  virtual WebMParserClient* OnListStart(int id) OVERRIDE;
-  virtual bool OnListEnd(int id) OVERRIDE;
-  virtual bool OnUInt(int id, int64 val) OVERRIDE;
-  virtual bool OnBinary(int id, const uint8* data, int size) OVERRIDE;
+  WebMParserClient* OnListStart(int id) override;
+  bool OnListEnd(int id) override;
+  bool OnUInt(int id, int64 val) override;
+  bool OnBinary(int id, const uint8* data, int size) override;
 
   bool ParseBlock(bool is_simple_block, const uint8* buf, int size,
                   const uint8* additional, int additional_size, int duration,
@@ -219,7 +220,7 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   // bound.)
   // Parse() or Reset() must be called between calls to UpdateReadyBuffers() to
   // clear each track's ready buffers and to reset |ready_buffer_upper_bound_|
-  // to kNoTimestamp().
+  // to kNoDecodeTimestamp().
   void UpdateReadyBuffers();
 
   // Search for the indicated track_num among the text tracks.  Returns NULL
@@ -258,12 +259,12 @@ class MEDIA_EXPORT WebMClusterParser : public WebMParserClient {
   TextBufferQueueMap text_buffers_map_;
 
   // Limits the range of buffers returned by Get{Audio,Video,Text}Buffers() to
-  // this exclusive upper bound. Set to kNoTimestamp(), meaning not yet
-  // calculated, by Reset() and Parse(). If kNoTimestamp(), then
+  // this exclusive upper bound. Set to kNoDecodeTimestamp(), meaning not yet
+  // calculated, by Reset() and Parse(). If kNoDecodeTimestamp(), then
   // Get{Audio,Video,Text}Buffers() will calculate it to be the minimum (decode)
   // timestamp across all tracks' |last_buffer_missing_duration_|, or
   // kInfiniteDuration() if no buffers are currently missing duration.
-  base::TimeDelta ready_buffer_upper_bound_;
+  DecodeTimestamp ready_buffer_upper_bound_;
 
   LogCB log_cb_;
 

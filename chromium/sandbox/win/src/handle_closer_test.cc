@@ -29,9 +29,9 @@ HANDLE GetMarkerFile(const wchar_t *extension) {
                                  OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL));
   CHECK(module.IsValid());
   FILETIME timestamp;
-  CHECK(::GetFileTime(module, &timestamp, NULL, NULL));
+  CHECK(::GetFileTime(module.Get(), &timestamp, NULL, NULL));
   marker_path += base::StringPrintf(L"%08x%08x%08x",
-                                    ::GetFileSize(module, NULL),
+                                    ::GetFileSize(module.Get(), NULL),
                                     timestamp.dwLowDateTime,
                                     timestamp.dwHighDateTime);
   marker_path += extension;
@@ -108,14 +108,13 @@ TEST(HandleCloserTest, CheckForMarkerFiles) {
   TestRunner runner;
   runner.SetTimeout(2000);
   runner.SetTestState(EVERY_STATE);
-  sandbox::TargetPolicy* policy = runner.GetPolicy();
 
   base::string16 command = base::string16(L"CheckForFileHandles Y");
   for (int i = 0; i < arraysize(kFileExtensions); ++i) {
     base::string16 handle_name;
     base::win::ScopedHandle marker(GetMarkerFile(kFileExtensions[i]));
     CHECK(marker.IsValid());
-    CHECK(sandbox::GetHandleName(marker, &handle_name));
+    CHECK(sandbox::GetHandleName(marker.Get(), &handle_name));
     command += (L" ");
     command += handle_name;
   }
@@ -135,7 +134,7 @@ TEST(HandleCloserTest, CloseMarkerFiles) {
     base::string16 handle_name;
     base::win::ScopedHandle marker(GetMarkerFile(kFileExtensions[i]));
     CHECK(marker.IsValid());
-    CHECK(sandbox::GetHandleName(marker, &handle_name));
+    CHECK(sandbox::GetHandleName(marker.Get(), &handle_name));
     CHECK_EQ(policy->AddKernelObjectToClose(L"File", handle_name.c_str()),
               SBOX_ALL_OK);
     command += (L" ");
@@ -157,7 +156,8 @@ void WINAPI ThreadPoolTask(void* event, BOOLEAN timeout) {
 // Run a thread pool inside a sandbox without a CSRSS connection.
 SBOX_TESTS_COMMAND int RunThreadPool(int argc, wchar_t **argv) {
   HANDLE wait_list[20];
-  CHECK(finish_event = ::CreateEvent(NULL, TRUE, FALSE, NULL));
+  finish_event = ::CreateEvent(NULL, TRUE, FALSE, NULL);
+  CHECK(finish_event);
 
   // Set up a bunch of waiters.
   HANDLE pool = NULL;

@@ -33,11 +33,9 @@
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 // Time intervals are all in seconds.
-
-class TimerHeapElement;
 
 class PLATFORM_EXPORT TimerBase {
     WTF_MAKE_NONCOPYABLE(TimerBase); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
@@ -106,7 +104,7 @@ private:
     Vector<TimerBase*>* m_cachedThreadGlobalTimerHeap;
     TraceLocation m_location;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     ThreadIdentifier m_thread;
 #endif
 
@@ -116,7 +114,7 @@ private:
 };
 
 template <typename TimerFiredClass>
-class Timer FINAL : public TimerBase {
+class Timer final : public TimerBase {
 public:
     typedef void (TimerFiredClass::*TimerFiredFunction)(Timer*);
 
@@ -124,7 +122,7 @@ public:
         : m_object(o), m_function(f) { }
 
 private:
-    virtual void fired() OVERRIDE { (m_object->*m_function)(this); }
+    virtual void fired() override { (m_object->*m_function)(this); }
 
     // FIXME: oilpan: TimerBase should be moved to the heap and m_object should be traced.
     // This raw pointer is safe as long as Timer<X> is held by the X itself (That's the case
@@ -141,7 +139,7 @@ inline bool TimerBase::isActive() const
 }
 
 template <typename TimerFiredClass>
-class DeferrableOneShotTimer FINAL : private TimerBase {
+class DeferrableOneShotTimer final : private TimerBase {
 public:
     typedef void (TimerFiredClass::*TimerFiredFunction)(DeferrableOneShotTimer*);
 
@@ -170,7 +168,7 @@ public:
     using TimerBase::isActive;
 
 private:
-    virtual void fired() OVERRIDE
+    virtual void fired() override
     {
         if (m_shouldRestartWhenTimerFires) {
             m_shouldRestartWhenTimerFires = false;

@@ -27,6 +27,7 @@
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
 class ClientSocketFactory;
 class HostResolver;
 class HttpServerProperties;
@@ -38,6 +39,7 @@ class QuicRandom;
 class QuicServerInfoFactory;
 class QuicServerId;
 class QuicStreamFactory;
+class TransportSecurityState;
 
 namespace test {
 class QuicStreamFactoryPeer;
@@ -51,7 +53,7 @@ class NET_EXPORT_PRIVATE QuicStreamRequest {
   explicit QuicStreamRequest(QuicStreamFactory* factory);
   ~QuicStreamRequest();
 
-  // For http, |is_https| is false and |cert_verifier| can be null.
+  // For http, |is_https| is false.
   int Request(const HostPortPair& host_port_pair,
               bool is_https,
               PrivacyMode privacy_mode,
@@ -91,6 +93,8 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       ClientSocketFactory* client_socket_factory,
       base::WeakPtr<HttpServerProperties> http_server_properties,
       CertVerifier* cert_verifier,
+      ChannelIDService* channel_id_service,
+      TransportSecurityState* transport_security_state,
       QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory,
       QuicRandom* random_generator,
       QuicClock* clock,
@@ -98,17 +102,17 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
       const std::string& user_agent_id,
       const QuicVersionVector& supported_versions,
       bool enable_port_selection,
-      bool enable_pacing,
-      bool enable_time_based_loss_detection);
-  virtual ~QuicStreamFactory();
+      bool always_require_handshake_confirmation,
+      bool disable_connection_pooling,
+      int load_server_info_timeout,
+      const QuicTagVector& connection_options);
+  ~QuicStreamFactory() override;
 
   // Creates a new QuicHttpStream to |host_port_pair| which will be
   // owned by |request|. |is_https| specifies if the protocol is https or not.
-  // |cert_verifier| is used by ProofVerifier for verifying the certificate
-  // chain and signature. For http, this can be null. If a matching session
-  // already exists, this method will return OK.  If no matching session exists,
-  // this will return ERR_IO_PENDING and will invoke OnRequestComplete
-  // asynchronously.
+  // If a matching session already exists, this method will return OK.  If no
+  // matching session exists, this will return ERR_IO_PENDING and will invoke
+  // OnRequestComplete asynchronously.
   int Create(const HostPortPair& host_port_pair,
              bool is_https,
              PrivacyMode privacy_mode,
@@ -144,19 +148,19 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
 
   // Until the servers support roaming, close all connections when the local
   // IP address changes.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // CertDatabase::Observer methods:
 
   // We close all sessions when certificate database is changed.
-  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE;
-  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE;
+  void OnCertAdded(const X509Certificate* cert) override;
+  void OnCACertChanged(const X509Certificate* cert) override;
 
-  bool require_confirmation() const { return require_confirmation_; }
-
-  void set_require_confirmation(bool require_confirmation) {
-    require_confirmation_ = require_confirmation;
+  bool require_confirmation() const {
+    return require_confirmation_;
   }
+
+  void set_require_confirmation(bool require_confirmation);
 
   QuicConnectionHelper* helper() { return helper_.get(); }
 
@@ -235,7 +239,7 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   HostResolver* host_resolver_;
   ClientSocketFactory* client_socket_factory_;
   base::WeakPtr<HttpServerProperties> http_server_properties_;
-  CertVerifier* cert_verifier_;
+  TransportSecurityState* transport_security_state_;
   QuicServerInfoFactory* quic_server_info_factory_;
   QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory_;
   QuicRandom* random_generator_;
@@ -272,6 +276,18 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // connection.
   bool enable_port_selection_;
 
+  // Set if we always require handshake confirmation. If true, this will
+  // introduce at least one RTT for the handshake before the client sends data.
+  bool always_require_handshake_confirmation_;
+
+  // Set if we do not want connection pooling.
+  bool disable_connection_pooling_;
+
+  // Specifies the timeout in milliseconds to wait for loading of QUIC server
+  // information. If we don't want to timeout, set
+  // |load_server_info_timeout_ms_| to 0.
+  int load_server_info_timeout_ms_;
+
   // Each profile will (probably) have a unique port_seed_ value.  This value is
   // used to help seed a pseudo-random number generator (PortSuggester) so that
   // we consistently (within this profile) suggest the same ephemeral port when
@@ -279,6 +295,13 @@ class NET_EXPORT_PRIVATE QuicStreamFactory
   // (probablistically) prevent two profiles from colliding in their ephemeral
   // port requests.
   uint64 port_seed_;
+
+  // Local address of socket that was created in CreateSession.
+  IPEndPoint local_address_;
+  bool check_persisted_supports_quic_;
+  std::set<HostPortPair> quic_supported_servers_at_startup_;
+
+  base::TaskRunner* task_runner_;
 
   base::WeakPtrFactory<QuicStreamFactory> weak_factory_;
 

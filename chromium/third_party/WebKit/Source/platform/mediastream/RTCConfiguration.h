@@ -31,24 +31,26 @@
 #ifndef RTCConfiguration_h
 #define RTCConfiguration_h
 
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCIceServer FINAL : public RefCounted<RTCIceServer> {
+class RTCIceServer final : public GarbageCollectedFinalized<RTCIceServer> {
 public:
-    static PassRefPtr<RTCIceServer> create(const KURL& uri, const String& username, const String& credential)
+    static RTCIceServer* create(const KURL& uri, const String& username, const String& credential)
     {
-        return adoptRef(new RTCIceServer(uri, username, credential));
+        return new RTCIceServer(uri, username, credential);
     }
 
     const KURL& uri() { return m_uri; }
     const String& username() { return m_username; }
     const String& credential() { return m_credential; }
+
+    void trace(Visitor*) { }
 
 private:
     RTCIceServer(const KURL& uri, const String& username, const String& credential)
@@ -63,20 +65,31 @@ private:
     String m_credential;
 };
 
-class RTCConfiguration FINAL : public RefCounted<RTCConfiguration> {
-public:
-    static PassRefPtr<RTCConfiguration> create() { return adoptRef(new RTCConfiguration()); }
-
-    void appendServer(PassRefPtr<RTCIceServer> server) { m_servers.append(server); }
-    size_t numberOfServers() { return m_servers.size(); }
-    RTCIceServer* server(size_t index) { return m_servers[index].get(); }
-
-private:
-    RTCConfiguration() { }
-
-    Vector<RefPtr<RTCIceServer> > m_servers;
+enum RTCIceTransports {
+    RTCIceTransportsNone,
+    RTCIceTransportsRelay,
+    RTCIceTransportsAll
 };
 
-} // namespace WebCore
+class RTCConfiguration final : public GarbageCollected<RTCConfiguration> {
+public:
+    static RTCConfiguration* create() { return new RTCConfiguration(); }
+
+    void appendServer(RTCIceServer* server) { m_servers.append(server); }
+    size_t numberOfServers() { return m_servers.size(); }
+    RTCIceServer* server(size_t index) { return m_servers[index].get(); }
+    void setIceTransports(RTCIceTransports iceTransports) { m_iceTransports = iceTransports; }
+    RTCIceTransports iceTransports() { return m_iceTransports; }
+
+    void trace(Visitor* visitor) { visitor->trace(m_servers); }
+
+private:
+    RTCConfiguration() : m_iceTransports(RTCIceTransportsAll) { }
+
+    HeapVector<Member<RTCIceServer> > m_servers;
+    RTCIceTransports m_iceTransports;
+};
+
+} // namespace blink
 
 #endif // RTCConfiguration_h

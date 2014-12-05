@@ -8,39 +8,44 @@
 #include "modules/EventModules.h"
 #include "modules/serviceworkers/Request.h"
 #include "modules/serviceworkers/RespondWithObserver.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class ExecutionContext;
+class ExceptionState;
 class Request;
 class RespondWithObserver;
 
 // A fetch event is dispatched by the client to a service worker's script
 // context. RespondWithObserver can be used to notify the client about the
 // service worker's response.
-class FetchEvent FINAL : public Event {
+class FetchEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<FetchEvent> create();
-    static PassRefPtrWillBeRawPtr<FetchEvent> create(PassRefPtr<RespondWithObserver>, PassRefPtr<Request>);
-    virtual ~FetchEvent() { }
+    static PassRefPtrWillBeRawPtr<FetchEvent> create(RespondWithObserver*, Request*);
 
     Request* request() const;
+    bool isReload() const;
 
-    void respondWith(ScriptState*, const ScriptValue&);
+    void respondWith(ScriptState*, const ScriptValue&, ExceptionState&);
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    void setIsReload(bool);
+
+    virtual void trace(Visitor*) override;
 
 protected:
     FetchEvent();
-    FetchEvent(PassRefPtr<RespondWithObserver>, PassRefPtr<Request>);
+    FetchEvent(RespondWithObserver*, Request*);
 
 private:
-    RefPtr<RespondWithObserver> m_observer;
-    RefPtr<Request> m_request;
+    PersistentWillBeMember<RespondWithObserver> m_observer;
+    PersistentWillBeMember<Request> m_request;
+    bool m_isReload;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FetchEvent_h

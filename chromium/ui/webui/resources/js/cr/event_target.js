@@ -7,23 +7,28 @@
  * as defined by DOM Level 2 Events.
  */
 
+/**
+ * @typedef {EventListener|function(!Event):*}
+ */
+var EventListenerType;
+
 cr.define('cr', function() {
 
   /**
    * Creates a new EventTarget. This class implements the DOM level 2
    * EventTarget interface and can be used wherever those are used.
    * @constructor
+   * @implements {EventTarget}
    */
   function EventTarget() {
   }
 
   EventTarget.prototype = {
-
     /**
      * Adds an event listener to the target.
      * @param {string} type The name of the event.
-     * @param {!Function|{handleEvent:Function}} handler The handler for the
-     *     event. This is called when the event is dispatched.
+     * @param {EventListenerType} handler The handler for the event. This is
+     *     called when the event is dispatched.
      */
     addEventListener: function(type, handler) {
       if (!this.listeners_)
@@ -40,8 +45,7 @@ cr.define('cr', function() {
     /**
      * Removes an event listener from the target.
      * @param {string} type The name of the event.
-     * @param {!Function|{handleEvent:Function}} handler The handler for the
-     *     event.
+     * @param {EventListenerType} handler The handler for the event.
      */
     removeEventListener: function(type, handler) {
       if (!this.listeners_)
@@ -62,7 +66,7 @@ cr.define('cr', function() {
     /**
      * Dispatches an event and calls all the listeners that are listening to
      * the type of the event.
-     * @param {!cr.event.Event} event The event to dispatch.
+     * @param {!Event} event The event to dispatch.
      * @return {boolean} Whether the default action was prevented. If someone
      *     calls preventDefault on the event object then this returns false.
      */

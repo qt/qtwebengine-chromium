@@ -49,8 +49,10 @@ VideoDecoderResource::Texture::Texture(uint32_t texture_target,
 VideoDecoderResource::Texture::~Texture() {
 }
 
-VideoDecoderResource::Picture::Picture(int32_t decode_id, uint32_t texture_id)
-    : decode_id(decode_id), texture_id(texture_id) {
+VideoDecoderResource::Picture::Picture(int32_t decode_id,
+                                       uint32_t texture_id,
+                                       const PP_Rect& visible_rect)
+    : decode_id(decode_id), texture_id(texture_id), visible_rect(visible_rect) {
 }
 
 VideoDecoderResource::Picture::~Picture() {
@@ -61,6 +63,7 @@ VideoDecoderResource::VideoDecoderResource(Connection connection,
     : PluginResource(connection, instance),
       num_decodes_(0),
       get_picture_(NULL),
+      get_picture_0_1_(NULL),
       gles2_impl_(NULL),
       initialized_(false),
       testing_(false),
@@ -85,16 +88,29 @@ PPB_VideoDecoder_API* VideoDecoderResource::AsPPB_VideoDecoder_API() {
   return this;
 }
 
-int32_t VideoDecoderResource::Initialize(
+int32_t VideoDecoderResource::Initialize0_1(
     PP_Resource graphics_context,
     PP_VideoProfile profile,
     PP_Bool allow_software_fallback,
+    scoped_refptr<TrackedCallback> callback) {
+  return Initialize(graphics_context,
+                    profile,
+                    allow_software_fallback
+                        ? PP_HARDWAREACCELERATION_WITHFALLBACK
+                        : PP_HARDWAREACCELERATION_ONLY,
+                    callback);
+}
+
+int32_t VideoDecoderResource::Initialize(
+    PP_Resource graphics_context,
+    PP_VideoProfile profile,
+    PP_HardwareAcceleration acceleration,
     scoped_refptr<TrackedCallback> callback) {
   if (initialized_)
     return PP_ERROR_FAILED;
   if (profile < 0 || profile > PP_VIDEOPROFILE_MAX)
     return PP_ERROR_BADARGUMENT;
-  if (initialize_callback_)
+  if (initialize_callback_.get())
     return PP_ERROR_INPROGRESS;
   if (!graphics_context)
     return PP_ERROR_BADRESOURCE;
@@ -128,7 +144,7 @@ int32_t VideoDecoderResource::Initialize(
   Call<PpapiPluginMsg_VideoDecoder_InitializeReply>(
       RENDERER,
       PpapiHostMsg_VideoDecoder_Initialize(
-          host_resource, profile, PP_ToBool(allow_software_fallback)),
+          host_resource, profile, acceleration),
       base::Bind(&VideoDecoderResource::OnPluginMsgInitializeComplete, this));
 
   return PP_OK_COMPLETIONPENDING;
@@ -140,9 +156,9 @@ int32_t VideoDecoderResource::Decode(uint32_t decode_id,
                                      scoped_refptr<TrackedCallback> callback) {
   if (decoder_last_error_)
     return decoder_last_error_;
-  if (flush_callback_ || reset_callback_)
+  if (flush_callback_.get() || reset_callback_.get())
     return PP_ERROR_FAILED;
-  if (decode_callback_)
+  if (decode_callback_.get())
     return PP_ERROR_INPROGRESS;
   if (size > kMaximumBitstreamBufferSize)
     return PP_ERROR_NOMEMORY;
@@ -236,24 +252,33 @@ int32_t VideoDecoderResource::Decode(uint32_t decode_id,
   return PP_OK_COMPLETIONPENDING;
 }
 
+int32_t VideoDecoderResource::GetPicture0_1(
+    PP_VideoPicture_0_1* picture,
+    scoped_refptr<TrackedCallback> callback) {
+  get_picture_0_1_ = picture;
+  return GetPicture(NULL, callback);
+}
+
 int32_t VideoDecoderResource::GetPicture(
     PP_VideoPicture* picture,
     scoped_refptr<TrackedCallback> callback) {
   if (decoder_last_error_)
     return decoder_last_error_;
-  if (reset_callback_)
+  if (reset_callback_.get())
     return PP_ERROR_FAILED;
-  if (get_picture_callback_)
+  if (get_picture_callback_.get())
     return PP_ERROR_INPROGRESS;
+
+  get_picture_ = picture;
 
   // If the next picture is ready, return it synchronously.
   if (!received_pictures_.empty()) {
-    WriteNextPicture(picture);
+    WriteNextPicture();
     return PP_OK;
   }
 
   get_picture_callback_ = callback;
-  get_picture_ = picture;
+
   return PP_OK_COMPLETIONPENDING;
 }
 
@@ -267,9 +292,9 @@ void VideoDecoderResource::RecyclePicture(const PP_VideoPicture* picture) {
 int32_t VideoDecoderResource::Flush(scoped_refptr<TrackedCallback> callback) {
   if (decoder_last_error_)
     return decoder_last_error_;
-  if (reset_callback_)
+  if (reset_callback_.get())
     return PP_ERROR_FAILED;
-  if (flush_callback_)
+  if (flush_callback_.get())
     return PP_ERROR_INPROGRESS;
   flush_callback_ = callback;
 
@@ -284,9 +309,9 @@ int32_t VideoDecoderResource::Flush(scoped_refptr<TrackedCallback> callback) {
 int32_t VideoDecoderResource::Reset(scoped_refptr<TrackedCallback> callback) {
   if (decoder_last_error_)
     return decoder_last_error_;
-  if (flush_callback_)
+  if (flush_callback_.get())
     return PP_ERROR_FAILED;
-  if (reset_callback_)
+  if (reset_callback_.get())
     return PP_ERROR_INPROGRESS;
   reset_callback_ = callback;
 
@@ -386,16 +411,15 @@ void VideoDecoderResource::OnPluginMsgRequestTextures(
 void VideoDecoderResource::OnPluginMsgPictureReady(
     const ResourceMessageReplyParams& params,
     int32_t decode_id,
-    uint32_t texture_id) {
-  received_pictures_.push(Picture(decode_id, texture_id));
+    uint32_t texture_id,
+    const PP_Rect& visible_rect) {
+  received_pictures_.push(Picture(decode_id, texture_id, visible_rect));
 
   if (TrackedCallback::IsPending(get_picture_callback_)) {
     // The plugin may call GetPicture in its callback.
     scoped_refptr<TrackedCallback> callback;
     callback.swap(get_picture_callback_);
-    PP_VideoPicture* picture = get_picture_;
-    get_picture_ = NULL;
-    WriteNextPicture(picture);
+    WriteNextPicture();
     callback->Run(PP_OK);
   }
 }
@@ -442,7 +466,7 @@ void VideoDecoderResource::OnPluginMsgDecodeComplete(
   // Make the shm buffer available.
   available_shm_buffers_.push_back(shm_buffers_[shm_id]);
   // If the plugin is waiting, let it call Decode again.
-  if (decode_callback_) {
+  if (decode_callback_.get()) {
     scoped_refptr<TrackedCallback> callback;
     callback.swap(decode_callback_);
     callback->Run(PP_OK);
@@ -454,7 +478,7 @@ void VideoDecoderResource::OnPluginMsgFlushComplete(
   // All shm buffers should have been made available by now.
   DCHECK_EQ(shm_buffers_.size(), available_shm_buffers_.size());
 
-  if (get_picture_callback_) {
+  if (get_picture_callback_.get()) {
     scoped_refptr<TrackedCallback> callback;
     callback.swap(get_picture_callback_);
     callback->Abort();
@@ -497,20 +521,41 @@ void VideoDecoderResource::DeleteGLTexture(uint32_t id) {
   }
 }
 
-void VideoDecoderResource::WriteNextPicture(PP_VideoPicture* pp_picture) {
+void VideoDecoderResource::WriteNextPicture() {
   DCHECK(!received_pictures_.empty());
   Picture& picture = received_pictures_.front();
+
   // Internally, we identify decodes by a unique id, which the host returns
   // to us in the picture. Use this to get the plugin's decode_id.
-  pp_picture->decode_id = decode_ids_[picture.decode_id % kMaximumPictureDelay];
-  pp_picture->texture_id = picture.texture_id;
+  uint32_t decode_id = decode_ids_[picture.decode_id % kMaximumPictureDelay];
+  uint32_t texture_id = picture.texture_id;
+  uint32_t texture_target = 0;
+  PP_Size texture_size = PP_MakeSize(0, 0);
   TextureMap::iterator it = textures_.find(picture.texture_id);
   if (it != textures_.end()) {
-    pp_picture->texture_target = it->second.texture_target;
-    pp_picture->texture_size = it->second.size;
+    texture_target = it->second.texture_target;
+    texture_size = it->second.size;
   } else {
     NOTREACHED();
   }
+
+  if (get_picture_) {
+    DCHECK(!get_picture_0_1_);
+    get_picture_->decode_id = decode_id;
+    get_picture_->texture_id = texture_id;
+    get_picture_->texture_target = texture_target;
+    get_picture_->texture_size = texture_size;
+    get_picture_->visible_rect = picture.visible_rect;
+    get_picture_ = NULL;
+  } else {
+    DCHECK(get_picture_0_1_);
+    get_picture_0_1_->decode_id = decode_id;
+    get_picture_0_1_->texture_id = texture_id;
+    get_picture_0_1_->texture_target = texture_target;
+    get_picture_0_1_->texture_size = texture_size;
+    get_picture_0_1_ = NULL;
+  }
+
   received_pictures_.pop();
 }
 

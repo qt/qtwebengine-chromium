@@ -69,17 +69,6 @@ public:
         COMPILE_ASSERT((charactersCount - 1 <= ((unsigned(~0) - sizeof(StringImpl)) / sizeof(LChar))), AtomicStringFromLiteralCannotOverflow);
     }
 
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-    // We have to declare the copy constructor and copy assignment operator as well, otherwise
-    // they'll be implicitly deleted by adding the move constructor and move assignment operator.
-    // FIXME: Instead of explicitly casting to String&& here, we should use std::move, but that requires us to
-    // have a standard library that supports move semantics.
-    AtomicString(const AtomicString& other) : m_string(other.m_string) { }
-    AtomicString(AtomicString&& other) : m_string(static_cast<String&&>(other.m_string)) { }
-    AtomicString& operator=(const AtomicString& other) { m_string = other.m_string; return *this; }
-    AtomicString& operator=(AtomicString&& other) { m_string = static_cast<String&&>(other.m_string); return *this; }
-#endif
-
     // Hash table deleted values, which are only constructed and never copied or destroyed.
     AtomicString(WTF::HashTableDeletedValueType) : m_string(WTF::HashTableDeletedValue) { }
     bool isHashTableDeletedValue() const { return m_string.isHashTableDeletedValue(); }
@@ -132,7 +121,6 @@ public:
     int toInt(bool* ok = 0) const { return m_string.toInt(ok); }
     double toDouble(bool* ok = 0) const { return m_string.toDouble(ok); }
     float toFloat(bool* ok = 0) const { return m_string.toFloat(ok); }
-    bool percentage(int& p) const { return m_string.percentage(p); }
 
     static AtomicString number(int);
     static AtomicString number(unsigned);
@@ -222,13 +210,12 @@ inline bool equalIgnoringCase(const String& a, const AtomicString& b) { return e
 
 // Define external global variables for the commonly used atomic strings.
 // These are only usable from the main thread.
-#ifndef ATOMICSTRING_HIDE_GLOBALS
-WTF_EXPORT extern const AtomicString nullAtom;
-WTF_EXPORT extern const AtomicString emptyAtom;
-WTF_EXPORT extern const AtomicString starAtom;
-WTF_EXPORT extern const AtomicString xmlAtom;
-WTF_EXPORT extern const AtomicString xmlnsAtom;
-WTF_EXPORT extern const AtomicString xlinkAtom;
+WTF_EXPORT extern const AtomicString& nullAtom;
+WTF_EXPORT extern const AtomicString& emptyAtom;
+WTF_EXPORT extern const AtomicString& starAtom;
+WTF_EXPORT extern const AtomicString& xmlAtom;
+WTF_EXPORT extern const AtomicString& xmlnsAtom;
+WTF_EXPORT extern const AtomicString& xlinkAtom;
 
 inline AtomicString AtomicString::fromUTF8(const char* characters, size_t length)
 {
@@ -247,7 +234,6 @@ inline AtomicString AtomicString::fromUTF8(const char* characters)
         return emptyAtom;
     return fromUTF8Internal(characters, 0);
 }
-#endif
 
 // AtomicStringHash is the default hash for AtomicString
 template<typename T> struct DefaultHash;
@@ -259,7 +245,6 @@ template<> struct DefaultHash<AtomicString> {
 
 WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(AtomicString);
 
-#ifndef ATOMICSTRING_HIDE_GLOBALS
 using WTF::AtomicString;
 using WTF::nullAtom;
 using WTF::emptyAtom;
@@ -267,7 +252,6 @@ using WTF::starAtom;
 using WTF::xmlAtom;
 using WTF::xmlnsAtom;
 using WTF::xlinkAtom;
-#endif
 
 #include "wtf/text/StringConcatenate.h"
 #endif // AtomicString_h

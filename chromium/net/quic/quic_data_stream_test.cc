@@ -6,7 +6,6 @@
 
 #include "net/quic/quic_ack_notifier.h"
 #include "net/quic/quic_connection.h"
-#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/quic_write_blocked_list.h"
 #include "net/quic/spdy_utils.h"
@@ -41,7 +40,7 @@ class TestStream : public QuicDataStream {
       : QuicDataStream(id, session),
         should_process_data_(should_process_data) {}
 
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE {
+  uint32 ProcessData(const char* data, uint32 data_len) override {
     EXPECT_NE(0u, data_len);
     DVLOG(1) << "ProcessData data_len: " << data_len;
     data_ += string(data, data_len);
@@ -282,11 +281,6 @@ TEST_P(QuicDataStreamTest, ProcessHeadersUsingReadvWithMultipleIovecs) {
 TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   // Tests that we send a BLOCKED frame to the peer when we attempt to write,
   // but are flow control blocked.
-  if (GetParam() < QUIC_VERSION_17) {
-    return;
-  }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-
   Initialize(kShouldProcessData);
 
   // Set a small flow control limit.
@@ -305,7 +299,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlBlocked) {
   EXPECT_CALL(*connection_, SendBlocked(kClientDataStreamId1));
   EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(kWindow, true)));
-  stream_->WriteOrBufferData(body, false, NULL);
+  stream_->WriteOrBufferData(body, false, nullptr);
 
   // Should have sent as much as possible, resulting in no send window left.
   EXPECT_EQ(0u,
@@ -321,10 +315,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlNoWindowUpdateIfNotConsumed) {
   // sequencer, whether they are consumed immediately or buffered. However we
   // only send WINDOW_UPDATE frames based on increasing number of bytes
   // consumed.
-  if (GetParam() < QUIC_VERSION_17) {
-    return;
-  }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   // Don't process data - it will be buffered instead.
   Initialize(!kShouldProcessData);
@@ -369,11 +359,6 @@ TEST_P(QuicDataStreamTest, StreamFlowControlWindowUpdate) {
   // Tests that on receipt of data, the stream updates its receive window offset
   // appropriately, and sends WINDOW_UPDATE frames when its receive window drops
   // too low.
-  if (GetParam() < QUIC_VERSION_17) {
-    return;
-  }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-
   Initialize(kShouldProcessData);
 
   // Set a small flow control limit.
@@ -418,13 +403,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
   // Tests that on receipt of data, the connection updates its receive window
   // offset appropriately, and sends WINDOW_UPDATE frames when its receive
   // window drops too low.
-  if (GetParam() < QUIC_VERSION_19) {
-    return;
-  }
-  ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
-                              true);
-
   Initialize(kShouldProcessData);
 
   // Set a small flow control limit for streams and connection.
@@ -475,10 +453,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlWindowUpdate) {
 TEST_P(QuicDataStreamTest, StreamFlowControlViolation) {
   // Tests that on if the peer sends too much data (i.e. violates the flow
   // control protocol), then we terminate the connection.
-  if (GetParam() < QUIC_VERSION_17) {
-    return;
-  }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -507,12 +481,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
   // Tests that on if the peer sends too much data (i.e. violates the flow
   // control protocol), at the connection level (rather than the stream level)
   // then we terminate the connection.
-  if (GetParam() < QUIC_VERSION_19) {
-    return;
-  }
-  ValueRestore<bool> old_flag2(&FLAGS_enable_quic_stream_flow_control_2, true);
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_connection_flow_control_2,
-                              true);
 
   // Stream should not process data, so that data gets buffered in the
   // sequencer, triggering flow control limits.
@@ -545,10 +513,6 @@ TEST_P(QuicDataStreamTest, ConnectionFlowControlViolation) {
 TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   // An attempt to write a FIN with no data should not be flow control blocked,
   // even if the send window is 0.
-  if (GetParam() < QUIC_VERSION_17) {
-    return;
-  }
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
 
   Initialize(kShouldProcessData);
 
@@ -565,7 +529,7 @@ TEST_P(QuicDataStreamTest, StreamFlowControlFinNotBlocked) {
   EXPECT_CALL(*session_, WritevData(kClientDataStreamId1, _, _, _, _, _))
       .WillOnce(Return(QuicConsumedData(0, fin)));
 
-  stream_->WriteOrBufferData(body, fin, NULL);
+  stream_->WriteOrBufferData(body, fin, nullptr);
 }
 
 }  // namespace

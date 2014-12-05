@@ -31,7 +31,7 @@
 #include "core/page/Page.h"
 #include "modules/indexeddb/IDBFactory.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(LocalDOMWindow& window)
     : DOMWindowProperty(window.frame())
@@ -39,14 +39,13 @@ DOMWindowIndexedDatabase::DOMWindowIndexedDatabase(LocalDOMWindow& window)
 {
 }
 
-DOMWindowIndexedDatabase::~DOMWindowIndexedDatabase()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowIndexedDatabase);
 
 void DOMWindowIndexedDatabase::trace(Visitor* visitor)
 {
     visitor->trace(m_idbFactory);
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
 const char* DOMWindowIndexedDatabase::supplementName()
@@ -99,4 +98,4 @@ IDBFactory* DOMWindowIndexedDatabase::indexedDB()
     return m_idbFactory.get();
 }
 
-} // namespace WebCore
+} // namespace blink

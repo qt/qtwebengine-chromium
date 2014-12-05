@@ -25,23 +25,20 @@ extern "C" {
 
 #define MI_MASK (MI_BLOCK_SIZE - 1)
 
-// Bitstream profiles indicated by 2 bits in the uncompressed header.
-// 00: Profile 0. 4:2:0 only.
-// 10: Profile 1. adds 4:4:4, 4:2:2, alpha.
-// 01: Profile 2. Supports 10-bit and 12-bit color only.
-// 11: Undefined profile.
+// Bitstream profiles indicated by 2-3 bits in the uncompressed header.
+// 00: Profile 0.  8-bit 4:2:0 only.
+// 10: Profile 1.  8-bit 4:4:4, 4:2:2, and 4:4:0.
+// 01: Profile 2.  10-bit and 12-bit color only, with 4:2:0 sampling.
+// 110: Profile 3. 10-bit and 12-bit color only, with 4:2:2/4:4:4/4:4:0
+//                 sampling.
+// 111: Undefined profile.
 typedef enum BITSTREAM_PROFILE {
   PROFILE_0,
   PROFILE_1,
   PROFILE_2,
+  PROFILE_3,
   MAX_PROFILES
 } BITSTREAM_PROFILE;
-
-typedef enum BIT_DEPTH {
-  BITS_8,
-  BITS_10,
-  BITS_12
-} BIT_DEPTH;
 
 typedef enum BLOCK_SIZE {
   BLOCK_4X4,
@@ -70,6 +67,7 @@ typedef enum PARTITION_TYPE {
   PARTITION_INVALID = PARTITION_TYPES
 } PARTITION_TYPE;
 
+typedef char PARTITION_CONTEXT;
 #define PARTITION_PLOFFSET   4  // number of probability models per block size
 #define PARTITION_CONTEXTS (4 * PARTITION_PLOFFSET)
 

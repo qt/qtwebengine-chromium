@@ -25,16 +25,12 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/base/flags.h"
 #include "talk/media/base/videoframe_unittest.h"
 #include "talk/media/webrtc/webrtcvideoframe.h"
-
-extern int FLAG_yuvconverter_repeat;  // From lmivideoframe_unittest.cc.
 
 class WebRtcVideoFrameTest : public VideoFrameTest<cricket::WebRtcVideoFrame> {
  public:
   WebRtcVideoFrameTest() {
-    repeat_ = FLAG_yuvconverter_repeat;
   }
 
   void TestInit(int cropped_width, int cropped_height) {
@@ -53,7 +49,7 @@ class WebRtcVideoFrameTest : public VideoFrameTest<cricket::WebRtcVideoFrame> {
     captured_frame.height = frame_height;
     captured_frame.data_size = (frame_width * frame_height) +
         ((frame_width + 1) / 2) * ((frame_height + 1) / 2) * 2;
-    talk_base::scoped_ptr<uint8[]> captured_frame_buffer(
+    rtc::scoped_ptr<uint8[]> captured_frame_buffer(
         new uint8[captured_frame.data_size]);
     captured_frame.data = captured_frame_buffer.get();
 
@@ -136,7 +132,7 @@ TEST_WEBRTCVIDEOFRAME(ConstructI420CropVertical)
 TEST_WEBRTCVIDEOFRAME(ConstructBlack)
 // TODO(fbarchard): Implement Jpeg
 // TEST_WEBRTCVIDEOFRAME(ConstructMjpgI420)
-// TEST_WEBRTCVIDEOFRAME(ConstructMjpgI422)
+TEST_WEBRTCVIDEOFRAME(ConstructMjpgI422)
 // TEST_WEBRTCVIDEOFRAME(ConstructMjpgI444)
 // TEST_WEBRTCVIDEOFRAME(ConstructMjpgI411)
 // TEST_WEBRTCVIDEOFRAME(ConstructMjpgI400)

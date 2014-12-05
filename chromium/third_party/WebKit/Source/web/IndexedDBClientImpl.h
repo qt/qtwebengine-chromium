@@ -31,17 +31,15 @@
 
 #include "modules/indexeddb/IndexedDBClient.h"
 
-namespace WebCore {
-class ExecutionContext;
-}
-
 namespace blink {
 
-class IndexedDBClientImpl FINAL : public WebCore::IndexedDBClient {
-public:
-    static WebCore::IndexedDBClient* create();
+class ExecutionContext;
 
-    virtual bool allowIndexedDB(WebCore::ExecutionContext*, const String& name) OVERRIDE;
+class IndexedDBClientImpl final : public IndexedDBClient {
+public:
+    static IndexedDBClient* create();
+
+    virtual bool allowIndexedDB(ExecutionContext*, const String& name) override;
 
 private:
     IndexedDBClientImpl() { }

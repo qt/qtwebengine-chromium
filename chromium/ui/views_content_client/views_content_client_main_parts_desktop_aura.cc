@@ -19,10 +19,10 @@ class ViewsContentClientMainPartsDesktopAura
   ViewsContentClientMainPartsDesktopAura(
       const content::MainFunctionParams& content_params,
       ViewsContentClient* views_content_client);
-  virtual ~ViewsContentClientMainPartsDesktopAura() {}
+  ~ViewsContentClientMainPartsDesktopAura() override {}
 
   // content::BrowserMainParts:
-  virtual void PreMainMessageLoopRun() OVERRIDE;
+  void PreMainMessageLoopRun() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ViewsContentClientMainPartsDesktopAura);

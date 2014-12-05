@@ -39,7 +39,7 @@
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 class BitmapImageTest : public ::testing::Test {
 public:
@@ -51,9 +51,9 @@ public:
         {
             m_lastDecodedSizeChangedDelta = delta;
         }
-        virtual void didDraw(const Image*) OVERRIDE { }
-        virtual bool shouldPauseAnimation(const Image*) OVERRIDE { return false; }
-        virtual void animationAdvanced(const Image*) OVERRIDE { }
+        virtual void didDraw(const Image*) override { }
+        virtual bool shouldPauseAnimation(const Image*) override { return false; }
+        virtual void animationAdvanced(const Image*) override { }
         virtual void changedInRect(const Image*, const IntRect&) { }
 
         int m_lastDecodedSizeChangedDelta;
@@ -61,9 +61,9 @@ public:
 
     static PassRefPtr<SharedBuffer> readFile(const char* fileName)
     {
-        String filePath = blink::Platform::current()->unitTestSupport()->webKitRootDir();
+        String filePath = Platform::current()->unitTestSupport()->webKitRootDir();
         filePath.append(fileName);
-        return blink::Platform::current()->unitTestSupport()->readFromFile(filePath);
+        return Platform::current()->unitTestSupport()->readFromFile(filePath);
     }
 
     // Accessors to BitmapImage's protected methods.
@@ -72,6 +72,7 @@ public:
     void setCurrentFrame(size_t frame) { m_image->m_currentFrame = frame; }
     size_t frameDecodedSize(size_t frame) { return m_image->m_frames[frame].m_frameBytes; }
     size_t decodedFramesCount() const { return m_image->m_frames.size(); }
+    void resetDecoder() { return m_image->resetDecoder(); }
 
     void loadImage(const char* fileName)
     {
@@ -105,8 +106,13 @@ public:
         m_image->advanceAnimation(0);
     }
 
+    PassRefPtr<Image> imageForDefaultFrame()
+    {
+        return m_image->imageForDefaultFrame();
+    }
+
 protected:
-    virtual void SetUp() OVERRIDE
+    virtual void SetUp() override
     {
         DeferredImageDecoder::setEnabled(false);
         m_image = BitmapImage::create(&m_imageObserver);
@@ -185,23 +191,57 @@ TEST_F(BitmapImageTest, jpegHasColorProfile)
 {
     loadImage("/LayoutTests/fast/images/resources/icc-v2-gbr.jpg");
     EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(227700u, decodedSize());
     EXPECT_TRUE(m_image->hasColorProfile());
+
+    resetDecoder();
+    destroyDecodedData(true);
+
+    loadImage("/LayoutTests/fast/images/resources/green.jpg");
+    EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(1024u, decodedSize());
+    EXPECT_FALSE(m_image->hasColorProfile());
 }
 
 TEST_F(BitmapImageTest, pngHasColorProfile)
 {
     loadImage("/LayoutTests/fast/images/resources/palatted-color-png-gamma-one-color-profile.png");
     EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(65536u, decodedSize());
     EXPECT_TRUE(m_image->hasColorProfile());
+
+    resetDecoder();
+    destroyDecodedData(true);
+
+    loadImage("/LayoutTests/fast/images/resources/green.jpg");
+    EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(1024u, decodedSize());
+    EXPECT_FALSE(m_image->hasColorProfile());
 }
 
 TEST_F(BitmapImageTest, webpHasColorProfile)
 {
     loadImage("/LayoutTests/fast/images/resources/webp-color-profile-lossy.webp");
     EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(2560000u, decodedSize());
     EXPECT_TRUE(m_image->hasColorProfile());
+
+    destroyDecodedData(true);
+    resetDecoder();
+
+    loadImage("/LayoutTests/fast/images/resources/test.webp");
+    EXPECT_EQ(1u, decodedFramesCount());
+    EXPECT_EQ(65536u, decodedSize());
+    EXPECT_FALSE(m_image->hasColorProfile());
+}
+
+TEST_F(BitmapImageTest, icoHasWrongFrameDimensions)
+{
+    loadImage("/LayoutTests/fast/images/resources/wrong-frame-dimensions.ico");
+    // This call would cause crash without fix for 408026
+    imageForDefaultFrame();
 }
 
 #endif // USE(QCMSLIB)
 
-} // namespace
+} // namespace blink

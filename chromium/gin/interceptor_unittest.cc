@@ -13,6 +13,7 @@
 #include "gin/try_catch.h"
 #include "gin/wrappable.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "v8/include/v8-util.h"
 
 namespace gin {
 
@@ -30,28 +31,27 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
   void set_value(int value) { value_ = value; }
 
   // gin::NamedPropertyInterceptor
-  virtual v8::Local<v8::Value> GetNamedProperty(v8::Isolate* isolate,
-                                                const std::string& property)
-      OVERRIDE {
+  v8::Local<v8::Value> GetNamedProperty(v8::Isolate* isolate,
+                                        const std::string& property) override {
     if (property == "value") {
       return ConvertToV8(isolate, value_);
     } else if (property == "func") {
-      return CreateFunctionTemplate(isolate,
-                                    base::Bind(&MyInterceptor::Call),
-                                    HolderIsFirstArgument)->GetFunction();
+      return GetFunctionTemplate(isolate, "func")->GetFunction();
     } else {
       return v8::Local<v8::Value>();
     }
   }
-  virtual void SetNamedProperty(v8::Isolate* isolate,
-                                const std::string& property,
-                                v8::Local<v8::Value> value) OVERRIDE {
-    if (property != "value")
-      return;
-    ConvertFromV8(isolate, value, &value_);
+  bool SetNamedProperty(v8::Isolate* isolate,
+                        const std::string& property,
+                        v8::Local<v8::Value> value) override {
+    if (property == "value") {
+      ConvertFromV8(isolate, value, &value_);
+      return true;
+    }
+    return false;
   }
-  virtual std::vector<std::string> EnumerateNamedProperties(
-      v8::Isolate* isolate) OVERRIDE {
+  std::vector<std::string> EnumerateNamedProperties(
+      v8::Isolate* isolate) override {
     std::vector<std::string> result;
     result.push_back("func");
     result.push_back("value");
@@ -59,21 +59,24 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
   }
 
   // gin::IndexedPropertyInterceptor
-  virtual v8::Local<v8::Value> GetIndexedProperty(v8::Isolate* isolate,
-                                                  uint32_t index) OVERRIDE {
+  v8::Local<v8::Value> GetIndexedProperty(v8::Isolate* isolate,
+                                          uint32_t index) override {
     if (index == 0)
       return ConvertToV8(isolate, value_);
     return v8::Local<v8::Value>();
   }
-  virtual void SetIndexedProperty(v8::Isolate* isolate,
-                                  uint32_t index,
-                                  v8::Local<v8::Value> value) OVERRIDE {
-    if (index != 0)
-      return;
-    ConvertFromV8(isolate, value, &value_);
+  bool SetIndexedProperty(v8::Isolate* isolate,
+                          uint32_t index,
+                          v8::Local<v8::Value> value) override {
+    if (index == 0) {
+      ConvertFromV8(isolate, value, &value_);
+      return true;
+    }
+    // Don't allow bypassing the interceptor.
+    return true;
   }
-  virtual std::vector<uint32_t> EnumerateIndexedProperties(v8::Isolate* isolate)
-      OVERRIDE {
+  std::vector<uint32_t> EnumerateIndexedProperties(
+      v8::Isolate* isolate) override {
     std::vector<uint32_t> result;
     result.push_back(0);
     return result;
@@ -83,12 +86,13 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
   explicit MyInterceptor(v8::Isolate* isolate)
       : NamedPropertyInterceptor(isolate, this),
         IndexedPropertyInterceptor(isolate, this),
-        value_(0) {}
-  virtual ~MyInterceptor() {}
+        value_(0),
+        template_cache_(isolate) {}
+  ~MyInterceptor() override {}
 
   // gin::Wrappable
-  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate)
-      OVERRIDE {
+  ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override {
     return Wrappable<MyInterceptor>::GetObjectTemplateBuilder(isolate)
         .AddNamedPropertyInterceptor()
         .AddIndexedPropertyInterceptor();
@@ -100,7 +104,23 @@ class MyInterceptor : public Wrappable<MyInterceptor>,
     return tmp;
   }
 
+  v8::Local<v8::FunctionTemplate> GetFunctionTemplate(v8::Isolate* isolate,
+                                                      const std::string& name) {
+    v8::Local<v8::FunctionTemplate> function_template =
+        template_cache_.Get(name);
+    if (!function_template.IsEmpty())
+      return function_template;
+    function_template = CreateFunctionTemplate(
+        isolate, base::Bind(&MyInterceptor::Call), HolderIsFirstArgument);
+    template_cache_.Set(name, function_template);
+    return function_template;
+  }
+
   int value_;
+
+  v8::StdPersistentValueMap<std::string, v8::FunctionTemplate> template_cache_;
+
+  DISALLOW_COPY_AND_ASSIGN(MyInterceptor);
 };
 
 WrapperInfo MyInterceptor::kWrapperInfo = {kEmbedderNativeGin};
@@ -154,6 +174,22 @@ TEST_F(InterceptorTest, IndexedInterceptor) {
       "(function (obj) {"
       "   if (obj[0] !== 42) throw 'FAIL';"
       "   else obj[0] = 191; })");
+}
+
+TEST_F(InterceptorTest, BypassInterceptorAllowed) {
+  RunInterceptorTest(
+      "(function (obj) {"
+      "   obj.value = 191 /* make test happy */;"
+      "   obj.foo = 23;"
+      "   if (obj.foo !== 23) throw 'FAIL'; })");
+}
+
+TEST_F(InterceptorTest, BypassInterceptorForbidden) {
+  RunInterceptorTest(
+      "(function (obj) {"
+      "   obj.value = 191 /* make test happy */;"
+      "   obj[1] = 23;"
+      "   if (obj[1] === 23) throw 'FAIL'; })");
 }
 
 }  // namespace gin

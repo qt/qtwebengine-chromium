@@ -25,30 +25,52 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TESTTURNSERVER_H_
-#define TALK_P2P_BASE_TESTTURNSERVER_H_
+#ifndef WEBRTC_P2P_BASE_TESTTURNSERVER_H_
+#define WEBRTC_P2P_BASE_TESTTURNSERVER_H_
 
 #include <string>
+#include <vector>
 
-#include "talk/base/asyncudpsocket.h"
-#include "talk/base/thread.h"
-#include "talk/p2p/base/basicpacketsocketfactory.h"
-#include "talk/p2p/base/stun.h"
-#include "talk/p2p/base/turnserver.h"
+#include "webrtc/p2p/base/basicpacketsocketfactory.h"
+#include "webrtc/p2p/base/stun.h"
+#include "webrtc/p2p/base/turnserver.h"
+#include "webrtc/base/asyncudpsocket.h"
+#include "webrtc/base/thread.h"
 
 namespace cricket {
 
 static const char kTestRealm[] = "example.org";
 static const char kTestSoftware[] = "TestTurnServer";
 
+class TestTurnRedirector : public TurnRedirectInterface {
+ public:
+  explicit TestTurnRedirector(const std::vector<rtc::SocketAddress>& addresses)
+      : alternate_server_addresses_(addresses),
+        iter_(alternate_server_addresses_.begin()) {
+  }
+
+  virtual bool ShouldRedirect(const rtc::SocketAddress&,
+                              rtc::SocketAddress* out) {
+    if (!out || iter_ == alternate_server_addresses_.end()) {
+      return false;
+    }
+    *out = *iter_++;
+    return true;
+  }
+
+ private:
+  const std::vector<rtc::SocketAddress>& alternate_server_addresses_;
+  std::vector<rtc::SocketAddress>::const_iterator iter_;
+};
+
 class TestTurnServer : public TurnAuthInterface {
  public:
-  TestTurnServer(talk_base::Thread* thread,
-                 const talk_base::SocketAddress& udp_int_addr,
-                 const talk_base::SocketAddress& udp_ext_addr)
+  TestTurnServer(rtc::Thread* thread,
+                 const rtc::SocketAddress& udp_int_addr,
+                 const rtc::SocketAddress& udp_ext_addr)
       : server_(thread) {
     AddInternalSocket(udp_int_addr, cricket::PROTO_UDP);
-    server_.SetExternalSocketFactory(new talk_base::BasicPacketSocketFactory(),
+    server_.SetExternalSocketFactory(new rtc::BasicPacketSocketFactory(),
         udp_ext_addr);
     server_.set_realm(kTestRealm);
     server_.set_software(kTestSoftware);
@@ -61,16 +83,20 @@ class TestTurnServer : public TurnAuthInterface {
 
   TurnServer* server() { return &server_; }
 
-  void AddInternalSocket(const talk_base::SocketAddress& int_addr,
+  void set_redirect_hook(TurnRedirectInterface* redirect_hook) {
+    server_.set_redirect_hook(redirect_hook);
+  }
+
+  void AddInternalSocket(const rtc::SocketAddress& int_addr,
                          ProtocolType proto) {
-    talk_base::Thread* thread = talk_base::Thread::Current();
+    rtc::Thread* thread = rtc::Thread::Current();
     if (proto == cricket::PROTO_UDP) {
-      server_.AddInternalSocket(talk_base::AsyncUDPSocket::Create(
+      server_.AddInternalSocket(rtc::AsyncUDPSocket::Create(
           thread->socketserver(), int_addr), proto);
     } else if (proto == cricket::PROTO_TCP) {
       // For TCP we need to create a server socket which can listen for incoming
       // new connections.
-      talk_base::AsyncSocket* socket =
+      rtc::AsyncSocket* socket =
           thread->socketserver()->CreateAsyncSocket(SOCK_STREAM);
       socket->Bind(int_addr);
       socket->Listen(5);
@@ -91,4 +117,4 @@ class TestTurnServer : public TurnAuthInterface {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TESTTURNSERVER_H_
+#endif  // WEBRTC_P2P_BASE_TESTTURNSERVER_H_

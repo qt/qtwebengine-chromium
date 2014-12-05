@@ -16,11 +16,21 @@ class {{struct.name}} {
 
   template <typename U>
   static {{struct.name}}Ptr From(const U& u) {
-    return mojo::TypeConverter<{{struct.name}}Ptr, U>::ConvertFrom(u);
+    return mojo::TypeConverter<{{struct.name}}Ptr, U>::Convert(u);
+  }
+
+  template <typename U>
+  U To() const {
+    return mojo::TypeConverter<U, {{struct.name}}>::Convert(*this);
   }
 
   {{struct.name}}();
   ~{{struct.name}}();
+
+{%  if struct|is_cloneable_kind %}
+  {{struct.name}}Ptr Clone() const;
+{%- endif %}
+  bool Equals(const {{struct.name}}& other) const;
 
 {#--- Getters #}
 {%  for field in struct.fields %}

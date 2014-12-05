@@ -30,15 +30,14 @@ class GCM_EXPORT ConnectionHandlerImpl : public ConnectionHandler {
       const ProtoReceivedCallback& read_callback,
       const ProtoSentCallback& write_callback,
       const ConnectionChangedCallback& connection_callback);
-  virtual ~ConnectionHandlerImpl();
+  ~ConnectionHandlerImpl() override;
 
   // ConnectionHandler implementation.
-  virtual void Init(const mcs_proto::LoginRequest& login_request,
-                    net::StreamSocket* socket) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual bool CanSendMessage() const OVERRIDE;
-  virtual void SendMessage(const google::protobuf::MessageLite& message)
-      OVERRIDE;
+  void Init(const mcs_proto::LoginRequest& login_request,
+            net::StreamSocket* socket) override;
+  void Reset() override;
+  bool CanSendMessage() const override;
+  void SendMessage(const google::protobuf::MessageLite& message) override;
 
  private:
   // State machine for handling incoming data. See WaitForData(..) for usage.

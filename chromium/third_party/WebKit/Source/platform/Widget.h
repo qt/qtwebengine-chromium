@@ -31,24 +31,22 @@
 #include "platform/PlatformExport.h"
 #include "platform/geometry/FloatPoint.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class GraphicsContext;
 class HostWindow;
 
-// The Widget class serves as a base class for three kinds of objects:
-// (1) Scrollable areas (ScrollView)
-// (2) Scrollbars (Scrollbar)
-// (3) Plugins (PluginView)
+// The Widget class serves as a base class for FrameView, Scrollbar, and PluginView.
 //
 // Widgets are connected in a hierarchy, with the restriction that plugins and
-// scrollbars are always leaves of the tree. Only ScrollViews can have children
+// scrollbars are always leaves of the tree. Only FrameView can have children
 // (and therefore the Widget class has no concept of children).
-class PLATFORM_EXPORT Widget : public RefCounted<Widget> {
+class PLATFORM_EXPORT Widget : public RefCountedWillBeGarbageCollectedFinalized<Widget> {
 public:
     Widget();
     virtual ~Widget();
@@ -89,7 +87,6 @@ public:
     virtual bool isPluginContainer() const { return false; }
     virtual bool pluginShouldPersist() const { return false; }
     virtual bool isScrollbar() const { return false; }
-    virtual bool isScrollView() const { return false; }
 
     virtual HostWindow* hostWindow() const { ASSERT_NOT_REACHED(); return 0; }
     virtual void setParent(Widget*);
@@ -97,12 +94,6 @@ public:
     Widget* root() const;
 
     virtual void handleEvent(Event*) { }
-
-    IntRect convertToRootView(const IntRect&) const;
-    IntRect convertFromRootView(const IntRect&) const;
-
-    IntPoint convertToRootView(const IntPoint&) const;
-    IntPoint convertFromRootView(const IntPoint&) const;
 
     // It is important for cross-platform code to realize that Mac has flipped coordinates. Therefore any code
     // that tries to convert the location of a rect using the point-based convertFromContainingWindow will end
@@ -120,7 +111,7 @@ public:
     // Notifies this widget that other widgets on the page have been repositioned.
     virtual void widgetPositionsUpdated() { }
 
-    // Virtual methods to convert points to/from the containing ScrollView
+    // Virtual methods to convert points to/from the containing Widget
     virtual IntRect convertToContainingView(const IntRect&) const;
     virtual IntRect convertFromContainingView(const IntRect&) const;
     virtual IntPoint convertToContainingView(const IntPoint&) const;
@@ -133,13 +124,16 @@ public:
     // Notifies this widget that it will no longer be receiving events.
     virtual void eventListenersRemoved() { }
 
+    virtual void trace(Visitor*);
+    virtual void dispose() { }
+
 private:
-    Widget* m_parent;
+    RawPtrWillBeMember<Widget> m_parent;
     IntRect m_frame;
     bool m_selfVisible;
     bool m_parentVisible;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Widget_h

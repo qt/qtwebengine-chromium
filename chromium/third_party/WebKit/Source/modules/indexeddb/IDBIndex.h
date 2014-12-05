@@ -26,7 +26,7 @@
 #ifndef IDBIndex_h
 #define IDBIndex_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/indexeddb/IDBCursor.h"
 #include "modules/indexeddb/IDBKeyPath.h"
 #include "modules/indexeddb/IDBKeyRange.h"
@@ -38,12 +38,13 @@
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class IDBObjectStore;
 
 class IDBIndex : public GarbageCollectedFinalized<IDBIndex>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static IDBIndex* create(const IDBIndexMetadata& metadata, IDBObjectStore* objectStore, IDBTransaction* transaction)
     {
@@ -69,9 +70,9 @@ public:
     bool isDeleted() const;
 
     // Used internally and by InspectorIndexedDBAgent:
-    IDBRequest* openCursor(ScriptState*, IDBKeyRange*, blink::WebIDBCursorDirection);
+    IDBRequest* openCursor(ScriptState*, IDBKeyRange*, WebIDBCursorDirection);
 
-    blink::WebIDBDatabase* backendDB() const;
+    WebIDBDatabase* backendDB() const;
 
 private:
     IDBIndex(const IDBIndexMetadata&, IDBObjectStore*, IDBTransaction*);
@@ -84,6 +85,6 @@ private:
     bool m_deleted;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IDBIndex_h

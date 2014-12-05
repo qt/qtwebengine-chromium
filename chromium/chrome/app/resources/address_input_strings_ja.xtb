@@ -12,6 +12,7 @@
 <translation id="3885155851504623709">教区</translation>
 <translation id="8184169487503545976">郵便番号の形式が正しくありません。</translation>
 <translation id="7602447984296396718">この郵便番号は、住所と一致しないようです。</translation>
+<translation id="6247152910634872706">組織</translation>
 <translation id="2053553514270667976">郵便番号</translation>
 <translation id="7087282848513945231">郡</translation>
 <translation id="2096368010154057602">県</translation>
@@ -28,6 +29,7 @@
 <translation id="43113324827158664">入力必須項目です。</translation>
 <translation id="3050787670591910834">郵便番号を入力してください（例: <ph name="EXAMPLE"/>）。</translation>
 <translation id="6282194474023008486">郵便番号</translation>
+<translation id="5937097533660449554">州</translation>
 <translation id="4376888869070172068">郵便番号の形式が正しくありません。</translation>
 <translation id="8446364922515257065">道/市</translation>
 <translation id="4518701284698680367">郵便番号を入力してください（例: <ph name="EXAMPLE"/>）。郵便番号がわからない場合は<ph name="BEGIN_LINK"/>こちら<ph name="END_LINK"/>でお調べください。</translation>

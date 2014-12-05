@@ -39,9 +39,7 @@
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/StringHash.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const unsigned HRTFElevation::AzimuthSpacing = 15;
 const unsigned HRTFElevation::NumberOfRawAzimuths = 360 / AzimuthSpacing;
@@ -59,6 +57,15 @@ const size_t ResponseFrameSize = 256;
 const float ResponseSampleRate = 44100;
 
 #if USE(CONCATENATED_IMPULSE_RESPONSES)
+
+// This table maps the index into the elevation table with the corresponding angle. See
+// https://bugs.webkit.org/show_bug.cgi?id=98294#c9 for the elevation angles and their order in the
+// concatenated response.
+const int ElevationIndexTableSize = 10;
+const int ElevationIndexTable[ElevationIndexTableSize] = {
+    0, 15, 30, 45, 60, 75, 90, 315, 330, 345
+};
+
 // Lazily load a concatenated HRTF database for given subject and store it in a
 // local hash table to ensure quick efficient future retrievals.
 static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const String& subjectName)
@@ -94,33 +101,6 @@ static PassRefPtr<AudioBus> getConcatenatedImpulseResponsesForSubject(const Stri
 }
 #endif
 
-// Takes advantage of the symmetry and creates a composite version of the two measured versions.  For example, we have both azimuth 30 and -30 degrees
-// where the roles of left and right ears are reversed with respect to each other.
-bool HRTFElevation::calculateSymmetricKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
-                                                                 RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR)
-{
-    RefPtr<HRTFKernel> kernelL1;
-    RefPtr<HRTFKernel> kernelR1;
-    bool success = calculateKernelsForAzimuthElevation(azimuth, elevation, sampleRate, subjectName, kernelL1, kernelR1);
-    if (!success)
-        return false;
-
-    // And symmetric version
-    int symmetricAzimuth = !azimuth ? 0 : 360 - azimuth;
-
-    RefPtr<HRTFKernel> kernelL2;
-    RefPtr<HRTFKernel> kernelR2;
-    success = calculateKernelsForAzimuthElevation(symmetricAzimuth, elevation, sampleRate, subjectName, kernelL2, kernelR2);
-    if (!success)
-        return false;
-
-    // Notice L/R reversal in symmetric version.
-    kernelL = HRTFKernel::createInterpolatedKernel(kernelL1.get(), kernelR2.get(), 0.5f);
-    kernelR = HRTFKernel::createInterpolatedKernel(kernelR1.get(), kernelL2.get(), 0.5f);
-
-    return true;
-}
-
 bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
                                                         RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR)
 {
@@ -149,9 +129,20 @@ bool HRTFElevation::calculateKernelsForAzimuthElevation(int azimuth, int elevati
     if (!bus)
         return false;
 
-    int elevationIndex = positiveElevation / AzimuthSpacing;
-    if (positiveElevation > 90)
-        elevationIndex -= AzimuthSpacing;
+    // Just sequentially search the table to find the correct index.
+    int elevationIndex = -1;
+
+    for (int k = 0; k < ElevationIndexTableSize; ++k) {
+        if (ElevationIndexTable[k] == positiveElevation) {
+            elevationIndex = k;
+            break;
+        }
+    }
+
+    bool isElevationIndexGood = (elevationIndex >= 0) && (elevationIndex < ElevationIndexTableSize);
+    ASSERT(isElevationIndexGood);
+    if (!isElevationIndexGood)
+        return false;
 
     // The concatenated impulse response is a bus containing all
     // the elevations per azimuth, for all azimuths by increasing
@@ -249,7 +240,7 @@ PassOwnPtr<HRTFElevation> HRTFElevation::createForSubject(const String& subjectN
     for (unsigned rawIndex = 0; rawIndex < NumberOfRawAzimuths; ++rawIndex) {
         // Don't let elevation exceed maximum for this azimuth.
         int maxElevation = maxElevations[rawIndex];
-        int actualElevation = min(elevation, maxElevation);
+        int actualElevation = std::min(elevation, maxElevation);
 
         bool success = calculateKernelsForAzimuthElevation(rawIndex * AzimuthSpacing, actualElevation, sampleRate, subjectName, kernelListL->at(interpolatedIndex), kernelListR->at(interpolatedIndex));
         if (!success)
@@ -337,6 +328,6 @@ void HRTFElevation::getKernelsFromAzimuth(double azimuthBlend, unsigned azimuthI
     frameDelayR = (1.0 - azimuthBlend) * frameDelayR + azimuthBlend * frameDelay2R;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

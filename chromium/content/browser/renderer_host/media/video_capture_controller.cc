@@ -12,14 +12,22 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/stl_util.h"
+#include "base/strings/stringprintf.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "content/public/browser/browser_thread.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
 #include "media/base/yuv_convert.h"
 #include "third_party/libyuv/include/libyuv.h"
+
+#if defined(OS_ANDROID)
+#include "content/browser/renderer_host/image_transport_factory_android.h"
+#else
+#include "content/browser/compositor/image_transport_factory.h"
+#endif
 
 using media::VideoCaptureFormat;
 
@@ -34,9 +42,6 @@ static const int kInfiniteRatio = 99999;
         name, \
         (height) ? ((width) * 100) / (height) : kInfiniteRatio);
 
-// The number of buffers that VideoCaptureBufferPool should allocate.
-const int kNoOfBuffers = 3;
-
 class PoolBuffer : public media::VideoCaptureDevice::Client::Buffer {
  public:
   PoolBuffer(const scoped_refptr<VideoCaptureBufferPool>& pool,
@@ -44,14 +49,44 @@ class PoolBuffer : public media::VideoCaptureDevice::Client::Buffer {
              void* data,
              size_t size)
       : Buffer(buffer_id, data, size), pool_(pool) {
-    DCHECK(pool_);
+    DCHECK(pool_.get());
   }
 
  private:
-  virtual ~PoolBuffer() { pool_->RelinquishProducerReservation(id()); }
+  ~PoolBuffer() override { pool_->RelinquishProducerReservation(id()); }
 
   const scoped_refptr<VideoCaptureBufferPool> pool_;
 };
+
+class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
+ public:
+  explicit SyncPointClientImpl(GLHelper* gl_helper) : gl_helper_(gl_helper) {}
+  ~SyncPointClientImpl() override {}
+  uint32 InsertSyncPoint() override { return gl_helper_->InsertSyncPoint(); }
+  void WaitSyncPoint(uint32 sync_point) override {
+    gl_helper_->WaitSyncPoint(sync_point);
+  }
+
+ private:
+  GLHelper* gl_helper_;
+};
+
+void ReturnVideoFrame(const scoped_refptr<media::VideoFrame>& video_frame,
+                      uint32 sync_point) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+#if defined(OS_ANDROID)
+  GLHelper* gl_helper =
+      ImageTransportFactoryAndroid::GetInstance()->GetGLHelper();
+#else
+  GLHelper* gl_helper = ImageTransportFactory::GetInstance()->GetGLHelper();
+#endif
+  DCHECK(gl_helper);
+  // UpdateReleaseSyncPoint() creates a new sync_point using |gl_helper|, so
+  // wait the given |sync_point| using |gl_helper|.
+  gl_helper->WaitSyncPoint(sync_point);
+  SyncPointClientImpl client(gl_helper);
+  video_frame->UpdateReleaseSyncPoint(&client);
+}
 
 }  // anonymous namespace
 
@@ -66,7 +101,8 @@ struct VideoCaptureController::ControllerClient {
         render_process_handle(render_process),
         session_id(session_id),
         parameters(params),
-        session_closed(false) {}
+        session_closed(false),
+        paused(false) {}
 
   ~ControllerClient() {}
 
@@ -98,6 +134,10 @@ struct VideoCaptureController::ControllerClient {
   // implicitly), we could avoid tracking this state here in the Controller, and
   // simplify the code in both places.
   bool session_closed;
+
+  // Indicates whether the client is paused, if true, VideoCaptureController
+  // stops updating its buffer.
+  bool paused;
 };
 
 // Receives events from the VideoCaptureDevice and posts them to a
@@ -114,24 +154,23 @@ class VideoCaptureController::VideoCaptureDeviceClient
   explicit VideoCaptureDeviceClient(
       const base::WeakPtr<VideoCaptureController>& controller,
       const scoped_refptr<VideoCaptureBufferPool>& buffer_pool);
-  virtual ~VideoCaptureDeviceClient();
+  ~VideoCaptureDeviceClient() override;
 
   // VideoCaptureDevice::Client implementation.
-  virtual scoped_refptr<Buffer> ReserveOutputBuffer(
-      media::VideoFrame::Format format,
-      const gfx::Size& size) OVERRIDE;
-  virtual void OnIncomingCapturedData(const uint8* data,
-                                      int length,
-                                      const VideoCaptureFormat& frame_format,
-                                      int rotation,
-                                      base::TimeTicks timestamp) OVERRIDE;
-  virtual void OnIncomingCapturedVideoFrame(
+  scoped_refptr<Buffer> ReserveOutputBuffer(media::VideoFrame::Format format,
+                                            const gfx::Size& size) override;
+  void OnIncomingCapturedData(const uint8* data,
+                              int length,
+                              const VideoCaptureFormat& frame_format,
+                              int rotation,
+                              base::TimeTicks timestamp) override;
+  void OnIncomingCapturedVideoFrame(
       const scoped_refptr<Buffer>& buffer,
       const VideoCaptureFormat& buffer_format,
       const scoped_refptr<media::VideoFrame>& frame,
-      base::TimeTicks timestamp) OVERRIDE;
-  virtual void OnError(const std::string& reason) OVERRIDE;
-  virtual void OnLog(const std::string& message) OVERRIDE;
+      base::TimeTicks timestamp) override;
+  void OnError(const std::string& reason) override;
+  void OnLog(const std::string& message) override;
 
  private:
   scoped_refptr<Buffer> DoReserveOutputBuffer(media::VideoFrame::Format format,
@@ -142,20 +181,19 @@ class VideoCaptureController::VideoCaptureDeviceClient
 
   // The pool of shared-memory buffers used for capturing.
   const scoped_refptr<VideoCaptureBufferPool> buffer_pool_;
-
-  bool first_frame_;
 };
 
-VideoCaptureController::VideoCaptureController()
-    : buffer_pool_(new VideoCaptureBufferPool(kNoOfBuffers)),
+VideoCaptureController::VideoCaptureController(int max_buffers)
+    : buffer_pool_(new VideoCaptureBufferPool(max_buffers)),
       state_(VIDEO_CAPTURE_STATE_STARTED),
+      has_received_frames_(false),
       weak_ptr_factory_(this) {
 }
 
 VideoCaptureController::VideoCaptureDeviceClient::VideoCaptureDeviceClient(
     const base::WeakPtr<VideoCaptureController>& controller,
     const scoped_refptr<VideoCaptureBufferPool>& buffer_pool)
-    : controller_(controller), buffer_pool_(buffer_pool), first_frame_(true) {}
+    : controller_(controller), buffer_pool_(buffer_pool) {}
 
 VideoCaptureController::VideoCaptureDeviceClient::~VideoCaptureDeviceClient() {}
 
@@ -233,6 +271,22 @@ int VideoCaptureController::RemoveClient(
   return session_id;
 }
 
+void VideoCaptureController::PauseOrResumeClient(
+    const VideoCaptureControllerID& id,
+    VideoCaptureControllerEventHandler* event_handler,
+    bool pause) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DVLOG(1) << "VideoCaptureController::PauseOrResumeClient, id "
+           << id.device_id << ", " << pause;
+
+  ControllerClient* client = FindClient(id, event_handler, controller_clients_);
+  if (!client)
+    return;
+
+  DCHECK(client->paused != pause);
+  client->paused = pause;
+}
+
 void VideoCaptureController::StopSession(int session_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureController::StopSession, id " << session_id;
@@ -249,7 +303,7 @@ void VideoCaptureController::ReturnBuffer(
     const VideoCaptureControllerID& id,
     VideoCaptureControllerEventHandler* event_handler,
     int buffer_id,
-    const std::vector<uint32>& sync_points) {
+    uint32 sync_point) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   ControllerClient* client = FindClient(id, event_handler, controller_clients_);
@@ -264,13 +318,12 @@ void VideoCaptureController::ReturnBuffer(
   }
   scoped_refptr<media::VideoFrame> frame = iter->second;
   client->active_buffers.erase(iter);
-
-  if (frame->format() == media::VideoFrame::NATIVE_TEXTURE) {
-    for (size_t i = 0; i < sync_points.size(); i++)
-      frame->AppendReleaseSyncPoint(sync_points[i]);
-  }
-
   buffer_pool_->RelinquishConsumerHold(buffer_id, 1);
+
+  if (sync_point)
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(&ReturnVideoFrame, frame, sync_point));
 }
 
 const media::VideoCaptureFormat&
@@ -330,7 +383,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
   scoped_refptr<Buffer> buffer =
       DoReserveOutputBuffer(media::VideoFrame::I420, dimensions);
 
-  if (!buffer)
+  if (!buffer.get())
     return;
   uint8* yplane = NULL;
   bool flip = false;
@@ -429,7 +482,7 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
           base::SharedMemory::NULLHandle(),
           base::TimeDelta(),
           base::Closure());
-  DCHECK(frame);
+  DCHECK(frame.get());
 
   VideoCaptureFormat format(
       dimensions, frame_format.frame_rate, media::PIXEL_FORMAT_I420);
@@ -443,22 +496,6 @@ void VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedData(
           format,
           frame,
           timestamp));
-
-  if (first_frame_) {
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Width",
-                         frame_format.frame_size.width());
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Height",
-                         frame_format.frame_size.height());
-    UMA_HISTOGRAM_ASPECT_RATIO("Media.VideoCapture.AspectRatio",
-                               frame_format.frame_size.width(),
-                               frame_format.frame_size.height());
-    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.FrameRate",
-                         frame_format.frame_rate);
-    UMA_HISTOGRAM_ENUMERATION("Media.VideoCapture.PixelFormat",
-                              frame_format.pixel_format,
-                              media::PIXEL_FORMAT_MAX);
-    first_frame_ = false;
-  }
 }
 
 void
@@ -481,8 +518,13 @@ VideoCaptureController::VideoCaptureDeviceClient::OnIncomingCapturedVideoFrame(
 
 void VideoCaptureController::VideoCaptureDeviceClient::OnError(
     const std::string& reason) {
-  MediaStreamManager::SendMessageToNativeLog(
-      "Error on video capture: " + reason);
+  const std::string log_message = base::StringPrintf(
+      "Error on video capture: %s, OS message: %s",
+      reason.c_str(),
+      logging::SystemErrorCodeToString(
+          logging::GetLastSystemErrorCode()).c_str());
+  DLOG(ERROR) << log_message;
+  MediaStreamManager::SendMessageToNativeLog(log_message);
   BrowserThread::PostTask(BrowserThread::IO,
       FROM_HERE,
       base::Bind(&VideoCaptureController::DoErrorOnIOThread, controller_));
@@ -548,7 +590,7 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
     for (ControllerClients::iterator client_it = controller_clients_.begin();
          client_it != controller_clients_.end(); ++client_it) {
       ControllerClient* client = *client_it;
-      if (client->session_closed)
+      if (client->session_closed || client->paused)
         continue;
 
       if (frame->format() == media::VideoFrame::NATIVE_TEXTURE) {
@@ -569,7 +611,8 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
         }
 
         client->event_handler->OnBufferReady(
-            client->controller_id, buffer->id(), buffer_format, timestamp);
+            client->controller_id, buffer->id(), buffer_format,
+            frame->visible_rect(), timestamp);
       }
 
       bool inserted =
@@ -578,6 +621,19 @@ void VideoCaptureController::DoIncomingCapturedVideoFrameOnIOThread(
       DCHECK(inserted) << "Unexpected duplicate buffer: " << buffer->id();
       count++;
     }
+  }
+
+  if (!has_received_frames_) {
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Width",
+                         buffer_format.frame_size.width());
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.Height",
+                         buffer_format.frame_size.height());
+    UMA_HISTOGRAM_ASPECT_RATIO("Media.VideoCapture.AspectRatio",
+                               buffer_format.frame_size.width(),
+                               buffer_format.frame_size.height());
+    UMA_HISTOGRAM_COUNTS("Media.VideoCapture.FrameRate",
+                         buffer_format.frame_rate);
+    has_received_frames_ = true;
   }
 
   buffer_pool_->HoldForConsumers(buffer->id(), count);
@@ -642,9 +698,19 @@ VideoCaptureController::FindClient(
   return NULL;
 }
 
-int VideoCaptureController::GetClientCount() {
+int VideoCaptureController::GetClientCount() const {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   return controller_clients_.size();
+}
+
+int VideoCaptureController::GetActiveClientCount() const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  int active_client_count = 0;
+  for (ControllerClient* client : controller_clients_) {
+    if (!client->paused)
+      ++active_client_count;
+  }
+  return active_client_count;
 }
 
 }  // namespace content

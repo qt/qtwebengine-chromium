@@ -28,15 +28,20 @@
 #include "core/rendering/RenderImageResource.h"
 #include "core/rendering/RenderReplaced.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLAreaElement;
 class HTMLMapElement;
 
 class RenderImage : public RenderReplaced {
 public:
+    // These are the paddings to use when displaying either alt text or an image.
+    static const unsigned short paddingWidth = 4;
+    static const unsigned short paddingHeight = 4;
+
     RenderImage(Element*);
     virtual ~RenderImage();
+    virtual void destroy() override;
 
     static RenderImage* createAnonymous(Document*);
 
@@ -53,8 +58,6 @@ public:
     HTMLMapElement* imageMap() const;
     void areaElementFocusChanged(HTMLAreaElement*);
 
-    void highQualityRepaintTimerFired(Timer<RenderImage>*);
-
     void setIsGeneratedContent(bool generated = true) { m_isGeneratedContent = generated; }
 
     bool isGeneratedContent() const { return m_isGeneratedContent; }
@@ -64,49 +67,49 @@ public:
     inline void setImageDevicePixelRatio(float factor) { m_imageDevicePixelRatio = factor; }
     float imageDevicePixelRatio() const { return m_imageDevicePixelRatio; }
 
-protected:
-    virtual bool needsPreferredWidthsRecalculation() const OVERRIDE FINAL;
-    virtual RenderBox* embeddedContentBox() const OVERRIDE FINAL;
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE FINAL;
-
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
-
-    void paintIntoRect(GraphicsContext*, const LayoutRect&);
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void layout() OVERRIDE;
-    virtual bool updateImageLoadingPriorities() OVERRIDE FINAL;
-
-    virtual void intrinsicSizeChanged() OVERRIDE
+    virtual void intrinsicSizeChanged() override
     {
         if (m_imageResource)
             imageChanged(m_imageResource->imagePtr());
     }
 
+protected:
+    virtual bool needsPreferredWidthsRecalculation() const override final;
+    virtual RenderBox* embeddedContentBox() const override final;
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override final;
+
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
+
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) override final;
+
+    virtual void layout() override;
+    virtual bool updateImageLoadingPriorities() override final;
+
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderImage || RenderReplaced::isOfType(type); }
+
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderImage"; }
+    virtual const char* renderName() const override { return "RenderImage"; }
 
-    virtual bool isImage() const OVERRIDE { return true; }
-    virtual bool isRenderImage() const OVERRIDE FINAL { return true; }
+    virtual bool isImage() const override { return true; }
 
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) override;
 
-    virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const OVERRIDE FINAL;
-    virtual bool computeBackgroundIsKnownToBeObscured() OVERRIDE FINAL;
+    virtual bool foregroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect, unsigned maxDepthToTest) const override final;
+    virtual bool computeBackgroundIsKnownToBeObscured() override final;
 
-    virtual LayoutUnit minimumReplacedHeight() const OVERRIDE;
+    virtual LayoutUnit minimumReplacedHeight() const override;
 
-    virtual void notifyFinished(Resource*) OVERRIDE FINAL;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE FINAL;
+    virtual void notifyFinished(Resource*) override final;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override final;
 
-    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const OVERRIDE FINAL;
+    virtual bool boxShadowShouldBeAppliedToBackground(BackgroundBleedAvoidance, InlineFlowBox*) const override final;
 
     IntSize imageSizeForError(ImageResource*) const;
-    void repaintOrMarkForLayout(bool imageSizeChanged, const IntRect* = 0);
+    void paintInvalidationOrMarkForLayout(bool imageSizeChanged, const IntRect* = 0);
     void updateIntrinsicSizeIfNeeded(const LayoutSize&);
     // Update the size of the image to be rendered. Object-fit may cause this to be different from the CSS box's content rect.
     void updateInnerContentRect();
-
-    void paintAreaElementFocusRing(PaintInfo&);
 
     // Text to display as long as the image isn't available.
     String m_altText;
@@ -120,6 +123,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderImage, isRenderImage());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderImage_h

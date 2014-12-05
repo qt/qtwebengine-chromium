@@ -11,27 +11,22 @@ cr.define('cr.ui.table', function() {
 
   /**
    * A table column that wraps column ids and settings.
-   * @param {!Array} columnIds Array of column ids.
+   * @param {string} id
+   * @param {string} name
+   * @param {number} width
+   * @param {boolean=} opt_endAlign
    * @constructor
-   * @extends {EventTarget}
+   * @extends {cr.EventTarget}
    */
-  function TableColumn(id, name, width, endAlign) {
+  function TableColumn(id, name, width, opt_endAlign) {
     this.id_ = id;
     this.name_ = name;
     this.width_ = width;
-    this.endAlign_ = endAlign;
+    this.endAlign_ = !!opt_endAlign;
   }
 
   TableColumn.prototype = {
     __proto__: EventTarget.prototype,
-
-    id_: null,
-
-    name_: null,
-
-    width_: null,
-
-    endAlign_: false,
 
     defaultOrder_: 'asc',
 
@@ -56,7 +51,8 @@ cr.define('cr.ui.table', function() {
      * @return {HTMLElement} Rendered element.
      */
     renderFunction_: function(dataItem, columnId, table) {
-      var div = table.ownerDocument.createElement('div');
+      var div = /** @type {HTMLElement} */
+          (table.ownerDocument.createElement('div'));
       div.textContent = dataItem[columnId];
       return div;
     },
@@ -64,7 +60,7 @@ cr.define('cr.ui.table', function() {
     /**
      * Renders table header. This is the default render function.
      * @param {cr.ui.Table} table The table.
-     * @return {HTMLElement} Rendered element.
+     * @return {Text} Rendered text node.
      */
     headerRenderFunction_: function(table) {
       return table.ownerDocument.createTextNode(this.name);
@@ -97,13 +93,13 @@ cr.define('cr.ui.table', function() {
 
   /**
    * The column render function.
-   * @type {Function(*, string, cr.ui.Table): HTMLElement}
+   * @type {function(*, string, cr.ui.Table): HTMLElement}
    */
   cr.defineProperty(TableColumn, 'renderFunction');
 
   /**
    * The column header render function.
-   * @type {Function(cr.ui.Table): HTMLElement}
+   * @type {function(cr.ui.Table): Text}
    */
   cr.defineProperty(TableColumn, 'headerRenderFunction');
 

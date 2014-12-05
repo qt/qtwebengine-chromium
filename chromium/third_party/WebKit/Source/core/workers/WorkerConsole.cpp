@@ -31,34 +31,38 @@
 
 #include "core/workers/WorkerConsole.h"
 
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThread.h"
 
 
-namespace WebCore {
+namespace blink {
 
 WorkerConsole::WorkerConsole(WorkerGlobalScope* scope)
     : m_scope(scope)
 {
-    ScriptWrappable::init(this);
 }
 
 WorkerConsole::~WorkerConsole()
 {
 }
 
-void WorkerConsole::reportMessageToClient(MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
+void WorkerConsole::reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
-    const ScriptCallFrame& lastCaller = callStack->at(0);
-    m_scope->thread()->workerReportingProxy().reportConsoleMessage(ConsoleAPIMessageSource, level, message, lastCaller.lineNumber(), lastCaller.sourceURL());
+    if (RefPtrWillBeRawPtr<ScriptCallStack> callStack = consoleMessage->callStack()) {
+        const ScriptCallFrame& lastCaller = callStack->at(0);
+        consoleMessage->setURL(lastCaller.sourceURL());
+        consoleMessage->setLineNumber(lastCaller.lineNumber());
+    }
+    m_scope->addConsoleMessage(consoleMessage);
 }
 
 ExecutionContext* WorkerConsole::context()
 {
     if (!m_scope)
-        return 0;
+        return nullptr;
     return m_scope->executionContext();
 }
 
@@ -70,4 +74,4 @@ void WorkerConsole::trace(Visitor* visitor)
 
 // FIXME: add memory getter
 
-} // namespace WebCore
+} // namespace blink

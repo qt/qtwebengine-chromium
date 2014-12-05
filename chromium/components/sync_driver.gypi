@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/sync_driver
       'target_name': 'sync_driver',
       'type': 'static_library',
       'dependencies': [
@@ -16,6 +17,7 @@
         '..',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'sync_driver/backend_data_type_configurer.cc',
         'sync_driver/backend_data_type_configurer.h',
         'sync_driver/change_processor.cc',
@@ -30,12 +32,20 @@
         'sync_driver/data_type_manager_impl.cc',
         'sync_driver/data_type_manager_impl.h',
         'sync_driver/data_type_manager_observer.h',
-        'sync_driver/failed_data_types_handler.cc',
-        'sync_driver/failed_data_types_handler.h',
+        'sync_driver/data_type_status_table.cc',
+        'sync_driver/data_type_status_table.h',
+        'sync_driver/device_info.cc',
+        'sync_driver/device_info.h',
+        'sync_driver/device_info_data_type_controller.cc',
+        'sync_driver/device_info_data_type_controller.h',
+        'sync_driver/device_info_sync_service.cc',
+        'sync_driver/device_info_sync_service.h',
+        'sync_driver/device_info_tracker.h',
         'sync_driver/generic_change_processor.cc',
         'sync_driver/generic_change_processor.h',
         'sync_driver/generic_change_processor_factory.cc',
         'sync_driver/generic_change_processor_factory.h',
+        'sync_driver/local_device_info_provider.h',
         'sync_driver/model_association_manager.cc',
         'sync_driver/model_association_manager.h',
         'sync_driver/model_associator.h',
@@ -92,6 +102,8 @@
         'sync_driver/fake_data_type_controller.h',
         'sync_driver/fake_generic_change_processor.cc',
         'sync_driver/fake_generic_change_processor.h',
+        'sync_driver/local_device_info_provider_mock.cc',
+        'sync_driver/local_device_info_provider_mock.h',
         'sync_driver/model_associator_mock.cc',
         'sync_driver/model_associator_mock.h',
         'sync_driver/non_ui_data_type_controller_mock.cc',

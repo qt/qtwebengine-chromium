@@ -16,14 +16,16 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "content/browser/indexed_db/indexed_db_class_factory.h"
 #include "content/browser/indexed_db/leveldb/leveldb_comparator.h"
-#include "content/browser/indexed_db/leveldb/leveldb_iterator.h"
+#include "content/browser/indexed_db/leveldb/leveldb_iterator_impl.h"
 #include "content/browser/indexed_db/leveldb/leveldb_write_batch.h"
 #include "third_party/leveldatabase/env_chromium.h"
 #include "third_party/leveldatabase/env_idb.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
+#include "third_party/leveldatabase/src/include/leveldb/filter_policy.h"
 #include "third_party/leveldatabase/src/include/leveldb/slice.h"
 
 using base::StringPiece;
@@ -89,14 +91,18 @@ LevelDBDatabase::~LevelDBDatabase() {
   env_.reset();
 }
 
-static leveldb::Status OpenDB(leveldb::Comparator* comparator,
-                              leveldb::Env* env,
-                              const base::FilePath& path,
-                              leveldb::DB** db) {
+static leveldb::Status OpenDB(
+    leveldb::Comparator* comparator,
+    leveldb::Env* env,
+    const base::FilePath& path,
+    leveldb::DB** db,
+    scoped_ptr<const leveldb::FilterPolicy>* filter_policy) {
+  filter_policy->reset(leveldb::NewBloomFilterPolicy(10));
   leveldb::Options options;
   options.comparator = comparator;
   options.create_if_missing = true;
   options.paranoid_checks = true;
+  options.filter_policy = filter_policy->get();
   options.compression = leveldb::kSnappyCompression;
 
   // For info about the troubles we've run into with this parameter, see:
@@ -105,7 +111,9 @@ static leveldb::Status OpenDB(leveldb::Comparator* comparator,
   options.env = env;
 
   // ChromiumEnv assumes UTF8, converts back to FilePath before using.
-  return leveldb::DB::Open(options, path.AsUTF8Unsafe(), db);
+  leveldb::Status s = leveldb::DB::Open(options, path.AsUTF8Unsafe(), db);
+
+  return s;
 }
 
 leveldb::Status LevelDBDatabase::Destroy(const base::FilePath& file_name) {
@@ -120,7 +128,8 @@ class LockImpl : public LevelDBLock {
  public:
   explicit LockImpl(leveldb::Env* env, leveldb::FileLock* lock)
       : env_(env), lock_(lock) {}
-  virtual ~LockImpl() { env_->UnlockFile(lock_); }
+  ~LockImpl() override { env_->UnlockFile(lock_); }
+
  private:
   leveldb::Env* env_;
   leveldb::FileLock* lock_;
@@ -263,12 +272,18 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
                                       const LevelDBComparator* comparator,
                                       scoped_ptr<LevelDBDatabase>* result,
                                       bool* is_disk_full) {
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+
   scoped_ptr<ComparatorAdapter> comparator_adapter(
       new ComparatorAdapter(comparator));
 
   leveldb::DB* db;
-  const leveldb::Status s =
-      OpenDB(comparator_adapter.get(), leveldb::IDBEnv(), file_name, &db);
+  scoped_ptr<const leveldb::FilterPolicy> filter_policy;
+  const leveldb::Status s = OpenDB(comparator_adapter.get(),
+                                   leveldb::IDBEnv(),
+                                   file_name,
+                                   &db,
+                                   &filter_policy);
 
   if (!s.ok()) {
     HistogramLevelDBError("WebCore.IndexedDB.LevelDBOpenErrors", s);
@@ -283,12 +298,16 @@ leveldb::Status LevelDBDatabase::Open(const base::FilePath& file_name,
     return s;
   }
 
+  UMA_HISTOGRAM_MEDIUM_TIMES("WebCore.IndexedDB.LevelDB.OpenTime",
+                             base::TimeTicks::Now() - begin_time);
+
   CheckFreeSpace("Success", file_name);
 
   (*result).reset(new LevelDBDatabase);
   (*result)->db_ = make_scoped_ptr(db);
   (*result)->comparator_adapter_ = comparator_adapter.Pass();
   (*result)->comparator_ = comparator;
+  (*result)->filter_policy_ = filter_policy.Pass();
 
   return s;
 }
@@ -300,8 +319,12 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   scoped_ptr<leveldb::Env> in_memory_env(leveldb::NewMemEnv(leveldb::IDBEnv()));
 
   leveldb::DB* db;
-  const leveldb::Status s = OpenDB(
-      comparator_adapter.get(), in_memory_env.get(), base::FilePath(), &db);
+  scoped_ptr<const leveldb::FilterPolicy> filter_policy;
+  const leveldb::Status s = OpenDB(comparator_adapter.get(),
+                                   in_memory_env.get(),
+                                   base::FilePath(),
+                                   &db,
+                                   &filter_policy);
 
   if (!s.ok()) {
     LOG(ERROR) << "Failed to open in-memory LevelDB database: " << s.ToString();
@@ -313,12 +336,15 @@ scoped_ptr<LevelDBDatabase> LevelDBDatabase::OpenInMemory(
   result->db_ = make_scoped_ptr(db);
   result->comparator_adapter_ = comparator_adapter.Pass();
   result->comparator_ = comparator;
+  result->filter_policy_ = filter_policy.Pass();
 
   return result.Pass();
 }
 
 leveldb::Status LevelDBDatabase::Put(const StringPiece& key,
                                      std::string* value) {
+  base::TimeTicks begin_time = base::TimeTicks::Now();
+
   leveldb::WriteOptions write_options;
   write_options.sync = kSyncWrites;
 
@@ -326,6 +352,9 @@ leveldb::Status LevelDBDatabase::Put(const StringPiece& key,
       db_->Put(write_options, MakeSlice(key), MakeSlice(*value));
   if (!s.ok())
     LOG(ERROR) << "LevelDB put failed: " << s.ToString();
+  else
+    UMA_HISTOGRAM_TIMES("WebCore.IndexedDB.LevelDB.PutTime",
+                        base::TimeTicks::Now() - begin_time);
   return s;
 }
 
@@ -362,6 +391,7 @@ leveldb::Status LevelDBDatabase::Get(const StringPiece& key,
 }
 
 leveldb::Status LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
+  base::TimeTicks begin_time = base::TimeTicks::Now();
   leveldb::WriteOptions write_options;
   write_options.sync = kSyncWrites;
 
@@ -370,79 +400,11 @@ leveldb::Status LevelDBDatabase::Write(const LevelDBWriteBatch& write_batch) {
   if (!s.ok()) {
     HistogramLevelDBError("WebCore.IndexedDB.LevelDBWriteErrors", s);
     LOG(ERROR) << "LevelDB write failed: " << s.ToString();
+  } else {
+    UMA_HISTOGRAM_TIMES("WebCore.IndexedDB.LevelDB.WriteTime",
+                        base::TimeTicks::Now() - begin_time);
   }
   return s;
-}
-
-namespace {
-class IteratorImpl : public LevelDBIterator {
- public:
-  virtual ~IteratorImpl() {}
-
-  virtual bool IsValid() const OVERRIDE;
-  virtual leveldb::Status SeekToLast() OVERRIDE;
-  virtual leveldb::Status Seek(const StringPiece& target) OVERRIDE;
-  virtual leveldb::Status Next() OVERRIDE;
-  virtual leveldb::Status Prev() OVERRIDE;
-  virtual StringPiece Key() const OVERRIDE;
-  virtual StringPiece Value() const OVERRIDE;
-
- private:
-  friend class content::LevelDBDatabase;
-  explicit IteratorImpl(scoped_ptr<leveldb::Iterator> iterator);
-  void CheckStatus();
-
-  scoped_ptr<leveldb::Iterator> iterator_;
-
-  DISALLOW_COPY_AND_ASSIGN(IteratorImpl);
-};
-}  // namespace
-
-IteratorImpl::IteratorImpl(scoped_ptr<leveldb::Iterator> it)
-    : iterator_(it.Pass()) {}
-
-void IteratorImpl::CheckStatus() {
-  const leveldb::Status& s = iterator_->status();
-  if (!s.ok())
-    LOG(ERROR) << "LevelDB iterator error: " << s.ToString();
-}
-
-bool IteratorImpl::IsValid() const { return iterator_->Valid(); }
-
-leveldb::Status IteratorImpl::SeekToLast() {
-  iterator_->SeekToLast();
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Seek(const StringPiece& target) {
-  iterator_->Seek(MakeSlice(target));
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Next() {
-  DCHECK(IsValid());
-  iterator_->Next();
-  CheckStatus();
-  return iterator_->status();
-}
-
-leveldb::Status IteratorImpl::Prev() {
-  DCHECK(IsValid());
-  iterator_->Prev();
-  CheckStatus();
-  return iterator_->status();
-}
-
-StringPiece IteratorImpl::Key() const {
-  DCHECK(IsValid());
-  return MakeStringPiece(iterator_->key());
-}
-
-StringPiece IteratorImpl::Value() const {
-  DCHECK(IsValid());
-  return MakeStringPiece(iterator_->value());
 }
 
 scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
@@ -453,7 +415,8 @@ scoped_ptr<LevelDBIterator> LevelDBDatabase::CreateIterator(
   read_options.snapshot = snapshot ? snapshot->snapshot_ : 0;
 
   scoped_ptr<leveldb::Iterator> i(db_->NewIterator(read_options));
-  return scoped_ptr<LevelDBIterator>(new IteratorImpl(i.Pass()));
+  return scoped_ptr<LevelDBIterator>(
+      IndexedDBClassFactory::Get()->CreateIteratorImpl(i.Pass()));
 }
 
 const LevelDBComparator* LevelDBDatabase::Comparator() const {
@@ -464,6 +427,8 @@ void LevelDBDatabase::Compact(const base::StringPiece& start,
                               const base::StringPiece& stop) {
   const leveldb::Slice start_slice = MakeSlice(start);
   const leveldb::Slice stop_slice = MakeSlice(stop);
+  // NULL batch means just wait for earlier writes to be done
+  db_->Write(leveldb::WriteOptions(), NULL);
   db_->CompactRange(&start_slice, &stop_slice);
 }
 

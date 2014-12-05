@@ -4,9 +4,6 @@
 
 #include "net/cert/test_root_certs.h"
 
-#include <windows.h>
-#include <wincrypt.h>
-
 #include "base/basictypes.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
@@ -160,8 +157,10 @@ bool TestRootCerts::Add(X509Certificate* certificate) {
 void TestRootCerts::Clear() {
   empty_ = true;
 
-  PCCERT_CONTEXT prev_cert = NULL;
-  while (prev_cert = CertEnumCertificatesInStore(temporary_roots_, NULL))
+  for (PCCERT_CONTEXT prev_cert =
+           CertEnumCertificatesInStore(temporary_roots_, NULL);
+       prev_cert;
+       prev_cert = CertEnumCertificatesInStore(temporary_roots_, NULL))
     CertDeleteCertificateFromStore(prev_cert);
 }
 

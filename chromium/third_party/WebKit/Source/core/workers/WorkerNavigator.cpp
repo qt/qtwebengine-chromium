@@ -28,12 +28,11 @@
 
 #include "core/workers/WorkerNavigator.h"
 
-namespace WebCore {
+namespace blink {
 
 WorkerNavigator::WorkerNavigator(const String& userAgent)
     : m_userAgent(userAgent)
 {
-    ScriptWrappable::init(this);
 }
 
 WorkerNavigator::~WorkerNavigator()
@@ -47,7 +46,9 @@ String WorkerNavigator::userAgent() const
 
 void WorkerNavigator::trace(Visitor* visitor)
 {
-    WillBeHeapSupplementable<WorkerNavigator>::trace(visitor);
+#if ENABLE(OILPAN)
+    HeapSupplementable<WorkerNavigator>::trace(visitor);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

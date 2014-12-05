@@ -17,6 +17,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 #include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 
 namespace content {
 
@@ -26,10 +27,8 @@ static const std::string kUnknownStreamUrl = "unknown_stream_url";
 
 class FakeFrameReader : public FrameReaderInterface {
  public:
-  virtual bool GotFrame(
-      const scoped_refptr<media::VideoFrame>& frame) OVERRIDE {
+  void GotFrame(const scoped_refptr<media::VideoFrame>& frame) override {
     last_frame_ = frame;
-    return true;
   }
 
   const media::VideoFrame* last_frame() {
@@ -44,17 +43,23 @@ class VideoSourceHandlerTest : public ::testing::Test {
  public:
   VideoSourceHandlerTest()
        : child_process_(new ChildProcess()),
-         registry_() {
-    handler_.reset(new VideoSourceHandler(&registry_));
-    registry_.Init(kTestStreamUrl);
-    registry_.AddVideoTrack(kTestVideoTrackId);
+         registry_(new MockMediaStreamRegistry()) {
+    handler_.reset(new VideoSourceHandler(registry_.get()));
+    registry_->Init(kTestStreamUrl);
+    registry_->AddVideoTrack(kTestVideoTrackId);
+  }
+
+  void TearDown() override {
+    registry_.reset();
+    handler_.reset();
+    blink::WebHeap::collectAllGarbageForTesting();
   }
 
  protected:
   base::MessageLoop message_loop_;
   scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<VideoSourceHandler> handler_;
-  MockMediaStreamRegistry registry_;
+  scoped_ptr<MockMediaStreamRegistry> registry_;
 };
 
 TEST_F(VideoSourceHandlerTest, OpenClose) {

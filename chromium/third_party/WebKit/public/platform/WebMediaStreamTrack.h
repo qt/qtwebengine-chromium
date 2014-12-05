@@ -29,11 +29,9 @@
 #include "WebNonCopyable.h"
 #include "WebPrivatePtr.h"
 
-namespace WebCore {
-class MediaStreamComponent;
-}
-
 namespace blink {
+
+class MediaStreamComponent;
 class WebAudioSourceProvider;
 class WebMediaStream;
 class WebMediaStreamSource;
@@ -49,11 +47,11 @@ public:
         BLINK_PLATFORM_EXPORT WebMediaStreamTrack owner();
 
 #if INSIDE_BLINK
-        BLINK_PLATFORM_EXPORT void setOwner(WebCore::MediaStreamComponent*);
+        BLINK_PLATFORM_EXPORT void setOwner(MediaStreamComponent*);
 #endif
 
     private:
-        WebCore::MediaStreamComponent* m_owner;
+        MediaStreamComponent* m_owner;
     };
 
     WebMediaStreamTrack() { }
@@ -77,6 +75,7 @@ public:
 
     BLINK_PLATFORM_EXPORT WebMediaStreamSource source() const;
     BLINK_PLATFORM_EXPORT bool isEnabled() const;
+    BLINK_PLATFORM_EXPORT bool isMuted() const;
 
     // Extra data associated with this WebMediaStream.
     // If non-null, the extra data pointer will be deleted when the object is destroyed.
@@ -91,15 +90,15 @@ public:
     BLINK_PLATFORM_EXPORT void setSourceProvider(WebAudioSourceProvider*);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebMediaStreamTrack(PassRefPtr<WebCore::MediaStreamComponent>);
-    BLINK_PLATFORM_EXPORT WebMediaStreamTrack(WebCore::MediaStreamComponent*);
-    BLINK_PLATFORM_EXPORT WebMediaStreamTrack& operator=(WebCore::MediaStreamComponent*);
-    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<WebCore::MediaStreamComponent>() const;
-    BLINK_PLATFORM_EXPORT operator WebCore::MediaStreamComponent*() const;
+    BLINK_PLATFORM_EXPORT WebMediaStreamTrack(PassRefPtr<MediaStreamComponent>);
+    BLINK_PLATFORM_EXPORT WebMediaStreamTrack(MediaStreamComponent*);
+    BLINK_PLATFORM_EXPORT WebMediaStreamTrack& operator=(MediaStreamComponent*);
+    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<MediaStreamComponent>() const;
+    BLINK_PLATFORM_EXPORT operator MediaStreamComponent*() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::MediaStreamComponent> m_private;
+    WebPrivatePtr<MediaStreamComponent> m_private;
 };
 
 } // namespace blink

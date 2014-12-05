@@ -36,8 +36,10 @@ class EntropyTrackerPeer {
   static bool IsTrackingPacket(
       const QuicReceivedPacketManager::EntropyTracker& tracker,
       QuicPacketSequenceNumber sequence_number) {
-    return tracker.packets_entropy_.find(sequence_number) !=
-        tracker.packets_entropy_.end();
+    return sequence_number >= tracker.first_gap_ &&
+        sequence_number <
+            (tracker.first_gap_ + tracker.packets_entropy_.size()) &&
+        tracker.packets_entropy_[sequence_number - tracker.first_gap_].second;
   }
 };
 
@@ -71,7 +73,7 @@ TEST(EntropyTrackerTest, FillGaps) {
 
   EXPECT_EQ(1u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(4, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(9, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(5, tracker.EntropyHash(2));
   EXPECT_EQ(5 ^ 17, tracker.EntropyHash(5));
@@ -89,7 +91,7 @@ TEST(EntropyTrackerTest, FillGaps) {
 
   EXPECT_EQ(3u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(3, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(7, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(2 ^ 5 ^ 17, tracker.EntropyHash(5));
   EXPECT_EQ(2 ^ 5 ^ 17 ^ 23, tracker.EntropyHash(6));
@@ -106,7 +108,7 @@ TEST(EntropyTrackerTest, FillGaps) {
 
   EXPECT_EQ(3u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(4, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(7, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(5, tracker.EntropyHash(4));
   EXPECT_EQ(5 ^ 17, tracker.EntropyHash(5));
@@ -124,7 +126,7 @@ TEST(EntropyTrackerTest, FillGaps) {
 
   EXPECT_EQ(7u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(1, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(3, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(2 ^ 5 ^ 17 ^ 23 ^ 42, tracker.EntropyHash(9));
 
@@ -155,13 +157,13 @@ TEST(EntropyTrackerTest, SetCumulativeEntropyUpTo) {
 
   EXPECT_EQ(1u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(4, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(9, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   // Inform the tracker about value of the hash at a gap.
   tracker.SetCumulativeEntropyUpTo(3, 7);
   EXPECT_EQ(3u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(3, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(7, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(7 ^ 17, tracker.EntropyHash(5));
   EXPECT_EQ(7 ^ 17 ^ 23, tracker.EntropyHash(6));
@@ -171,7 +173,7 @@ TEST(EntropyTrackerTest, SetCumulativeEntropyUpTo) {
   tracker.SetCumulativeEntropyUpTo(6, 1);
   EXPECT_EQ(7u, EntropyTrackerPeer::first_gap(tracker));
   EXPECT_EQ(9u, EntropyTrackerPeer::largest_observed(tracker));
-  EXPECT_EQ(1, EntropyTrackerPeer::packets_entropy_size(tracker));
+  EXPECT_EQ(3, EntropyTrackerPeer::packets_entropy_size(tracker));
 
   EXPECT_EQ(1 ^ 23 ^ 42, tracker.EntropyHash(9));
 
@@ -186,7 +188,7 @@ TEST(EntropyTrackerTest, SetCumulativeEntropyUpTo) {
 
 class QuicReceivedPacketManagerTest : public ::testing::Test {
  protected:
-  QuicReceivedPacketManagerTest() : received_manager_(kTCP, &stats_) {}
+  QuicReceivedPacketManagerTest() : received_manager_(&stats_) {}
 
   void RecordPacketReceipt(QuicPacketSequenceNumber sequence_number,
                            QuicPacketEntropyHash entropy_hash) {
@@ -200,6 +202,10 @@ class QuicReceivedPacketManagerTest : public ::testing::Test {
     header.packet_sequence_number = sequence_number;
     header.entropy_hash = entropy_hash;
     received_manager_.RecordPacketReceived(0u, header, receipt_time);
+  }
+
+  void RecordPacketRevived(QuicPacketSequenceNumber sequence_number) {
+    received_manager_.RecordPacketRevived(sequence_number);
   }
 
   QuicConnectionStats stats_;
@@ -232,7 +238,7 @@ TEST_F(QuicReceivedPacketManagerTest, ReceivedPacketEntropyHash) {
   }
   // Reorder by 5 when 2 is received after 7.
   EXPECT_EQ(5u, stats_.max_sequence_reordering);
-  EXPECT_EQ(0u, stats_.max_time_reordering_us);
+  EXPECT_EQ(0, stats_.max_time_reordering_us);
   EXPECT_EQ(2u, stats_.packets_reordered);
 }
 
@@ -279,7 +285,7 @@ TEST_F(QuicReceivedPacketManagerTest, SetCumulativeEntropyUpTo) {
 
   // No reordering.
   EXPECT_EQ(0u, stats_.max_sequence_reordering);
-  EXPECT_EQ(0u, stats_.max_time_reordering_us);
+  EXPECT_EQ(0, stats_.max_time_reordering_us);
   EXPECT_EQ(0u, stats_.packets_reordered);
 }
 
@@ -303,18 +309,19 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedPacketInfo) {
   QuicTime two_ms = QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(2));
   received_manager_.RecordPacketReceived(0u, header, two_ms);
 
-  ReceivedPacketInfo info;
-  received_manager_.UpdateReceivedPacketInfo(&info, QuicTime::Zero());
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
   // When UpdateReceivedPacketInfo with a time earlier than the time of the
   // largest observed packet, make sure that the delta is 0, not negative.
-  EXPECT_EQ(QuicTime::Delta::Zero(), info.delta_time_largest_observed);
+  EXPECT_EQ(QuicTime::Delta::Zero(), ack.delta_time_largest_observed);
+  EXPECT_FALSE(ack.received_packet_times.empty());
 
   QuicTime four_ms = QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(4));
-  received_manager_.UpdateReceivedPacketInfo(&info, four_ms);
+  received_manager_.UpdateReceivedPacketInfo(&ack, four_ms);
   // When UpdateReceivedPacketInfo after not having received a new packet,
   // the delta should still be accurate.
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(2),
-            info.delta_time_largest_observed);
+            ack.delta_time_largest_observed);
 }
 
 TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedConnectionStats) {
@@ -324,9 +331,35 @@ TEST_F(QuicReceivedPacketManagerTest, UpdateReceivedConnectionStats) {
       2, 0, QuicTime::Zero().Add(QuicTime::Delta::FromMilliseconds(1)));
 
   EXPECT_EQ(4u, stats_.max_sequence_reordering);
-  EXPECT_EQ(1000u, stats_.max_time_reordering_us);
+  EXPECT_EQ(1000, stats_.max_time_reordering_us);
   EXPECT_EQ(1u, stats_.packets_reordered);
 }
+
+TEST_F(QuicReceivedPacketManagerTest, RevivedPacket) {
+  RecordPacketReceipt(1, 0);
+  RecordPacketReceipt(3, 0);
+  RecordPacketRevived(2);
+
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
+  EXPECT_EQ(1u, ack.missing_packets.size());
+  EXPECT_EQ(2u, *ack.missing_packets.begin());
+  EXPECT_EQ(1u, ack.revived_packets.size());
+  EXPECT_EQ(2u, *ack.missing_packets.begin());
+}
+
+TEST_F(QuicReceivedPacketManagerTest, PacketRevivedThenReceived) {
+  RecordPacketReceipt(1, 0);
+  RecordPacketReceipt(3, 0);
+  RecordPacketRevived(2);
+  RecordPacketReceipt(2, 0);
+
+  QuicAckFrame ack;
+  received_manager_.UpdateReceivedPacketInfo(&ack, QuicTime::Zero());
+  EXPECT_TRUE(ack.missing_packets.empty());
+  EXPECT_TRUE(ack.revived_packets.empty());
+}
+
 
 }  // namespace
 }  // namespace test

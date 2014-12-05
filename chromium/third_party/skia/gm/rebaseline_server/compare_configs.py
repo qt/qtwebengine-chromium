@@ -11,15 +11,14 @@ Compare GM results for two configs, across all builders.
 
 # System-level imports
 import argparse
-import fnmatch
-import json
 import logging
-import re
 import time
 
+# Must fix up PYTHONPATH before importing from within Skia
+import rs_fixpypath  # pylint: disable=W0611
+
 # Imports from within Skia
-import fix_pythonpath  # must do this first
-from pyutils import url_utils
+from py.utils import url_utils
 import gm_json
 import imagediffdb
 import imagepair
@@ -49,6 +48,7 @@ class ConfigComparisons(results.BaseComparisons):
       builder_regex_list: List of regular expressions specifying which builders
           we will process. If None, process all builders.
     """
+    super(ConfigComparisons, self).__init__()
     time_start = int(time.time())
     if builder_regex_list != None:
       self.set_match_builders_pattern_list(builder_regex_list)
@@ -112,7 +112,7 @@ class ConfigComparisons(results.BaseComparisons):
 
         tests_found = set()
         for image_name in sorted(results_of_this_type.keys()):
-          (test, config) = results.IMAGE_FILENAME_RE.match(image_name).groups()
+          (test, _) = results.IMAGE_FILENAME_RE.match(image_name).groups()
           tests_found.add(test)
 
         for test in tests_found:
@@ -151,7 +151,8 @@ class ConfigComparisons(results.BaseComparisons):
             try:
               image_pair = imagepair.ImagePair(
                   image_diff_db=self._image_diff_db,
-                  base_url=gm_json.GM_ACTUALS_ROOT_HTTP_URL,
+                  imageA_base_url=gm_json.GM_ACTUALS_ROOT_HTTP_URL,
+                  imageB_base_url=gm_json.GM_ACTUALS_ROOT_HTTP_URL,
                   imageA_relative_url=configA_image_relative_url,
                   imageB_relative_url=configB_image_relative_url,
                   extra_columns=extra_columns_dict)
@@ -160,9 +161,10 @@ class ConfigComparisons(results.BaseComparisons):
                 failing_image_pairs.add_image_pair(image_pair)
             except (KeyError, TypeError):
               logging.exception(
-                  'got exception while creating ImagePair for image_name '
-                  '"%s", builder "%s"' % (image_name, builder))
+                  'got exception while creating ImagePair for test '
+                  '"%s", builder "%s"' % (test, builder))
 
+    # pylint: disable=W0201
     self._results = {
       results.KEY__HEADER__RESULTS_ALL: all_image_pairs.as_dict(),
       results.KEY__HEADER__RESULTS_FAILURES: failing_image_pairs.as_dict(),

@@ -29,17 +29,10 @@
 #include "core/dom/Document.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/frame/FrameView.h"
+#include "platform/scheduler/Scheduler.h"
+#include "wtf/CurrentTime.h"
 
-namespace WebCore {
-
-// parserChunkSize is used to define how many tokens the parser will
-// process before checking against parserTimeLimit and possibly yielding.
-// This is a performance optimization to prevent checking after every token.
-const int HTMLParserScheduler::parserChunkSize = 4096;
-
-// parserTimeLimit is the seconds the parser will run in one write() call
-// before yielding. Inline <script> execution can cause it to exceed the limit.
-const double HTMLParserScheduler::parserTimeLimit = 0.2;
+namespace blink {
 
 ActiveParserSession::ActiveParserSession(Document* document)
     : m_document(document)
@@ -59,18 +52,26 @@ ActiveParserSession::~ActiveParserSession()
 PumpSession::PumpSession(unsigned& nestingLevel, Document* document)
     : NestingLevelIncrementer(nestingLevel)
     , ActiveParserSession(document)
-    // Setting processedTokens to INT_MAX causes us to check for yields
-    // after any token during any parse where yielding is allowed.
-    // At that time we'll initialize startTime.
-    , processedTokens(INT_MAX)
-    , startTime(0)
-    , needsYield(false)
-    , didSeeScript(false)
 {
 }
 
 PumpSession::~PumpSession()
 {
+}
+
+SpeculationsPumpSession::SpeculationsPumpSession(Document* document)
+    : ActiveParserSession(document)
+    , m_startTime(currentTime())
+{
+}
+
+SpeculationsPumpSession::~SpeculationsPumpSession()
+{
+}
+
+inline double SpeculationsPumpSession::elapsedTime() const
+{
+    return currentTime() - m_startTime;
 }
 
 HTMLParserScheduler::HTMLParserScheduler(HTMLDocumentParser* parser)
@@ -112,6 +113,28 @@ void HTMLParserScheduler::resume()
         return;
     m_isSuspendedWithActiveTimer = false;
     m_continueNextChunkTimer.startOneShot(0, FROM_HERE);
+}
+
+inline bool HTMLParserScheduler::shouldYield(const SpeculationsPumpSession& session) const
+{
+    if (Scheduler::shared()->shouldYieldForHighPriorityWork())
+        return true;
+
+    const double parserTimeLimit = 0.5;
+    if (session.elapsedTime() > parserTimeLimit)
+        return true;
+
+    return false;
+}
+
+bool HTMLParserScheduler::yieldIfNeeded(const SpeculationsPumpSession& session)
+{
+    if (shouldYield(session)) {
+        scheduleForResume();
+        return true;
+    }
+
+    return false;
 }
 
 }

@@ -49,7 +49,7 @@ var WeekDay = {
 var global = {
     picker: null,
     params: {
-        locale: "en_US",
+        locale: "en-US",
         weekStartDay: WeekDay.Sunday,
         dayLabels: ["S", "M", "T", "W", "T", "F", "S"],
         shortMonthLabels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sept", "Oct", "Nov", "Dec"],
@@ -75,7 +75,7 @@ function hasInaccuratePointingDevice() {
  * @return {!string} lowercase locale name. e.g. "en-us"
  */
 function getLocale() {
-    return (global.params.locale || "en-us").toLowerCase();
+    return global.params.locale || "en-us";
 }
 
 /**
@@ -347,6 +347,18 @@ Day.prototype.toString = function() {
     if (yearString.length < 4)
         yearString = ("000" + yearString).substr(-4, 4);
     return yearString + "-" + ("0" + (this.month + 1)).substr(-2, 2) + "-" + ("0" + this.date).substr(-2, 2);
+};
+
+/**
+ * @return {!string}
+ */
+Day.prototype.format = function() {
+    if (!Day.formatter) {
+        Day.formatter = new Intl.DateTimeFormat(getLocale(), {
+            weekday: "long", year: "numeric", month: "long", day: "numeric", timeZone: "UTC"
+        });
+    }
+    return Day.formatter.format(this.startDate());
 };
 
 // See WebCore/platform/DateComponents.h.
@@ -1659,6 +1671,7 @@ ListCell.prototype.setSelected = function(selected) {
 function ListView() {
     View.call(this, createElement("div", ListView.ClassNameListView));
     this.element.tabIndex = 0;
+    this.element.setAttribute("role", "grid");
 
     /**
      * @type {!number}
@@ -2142,9 +2155,11 @@ function YearListCell(shortMonthLabels) {
     var monthChooserElement = createElement("div", YearListCell.ClassNameMonthChooser);
     for (var r = 0; r < YearListCell.ButtonRows; ++r) {
         var buttonsRow = createElement("div", YearListCell.ClassNameMonthButtonsRow);
+        buttonsRow.setAttribute("role", "row");
         for (var c = 0; c < YearListCell.ButtonColumns; ++c) {
             var month = c + r * YearListCell.ButtonColumns;
-            var button = createElement("button", YearListCell.ClassNameMonthButton, shortMonthLabels[month]);
+            var button = createElement("div", YearListCell.ClassNameMonthButton, shortMonthLabels[month]);
+            button.setAttribute("role", "gridcell");
             button.dataset.month = month;
             buttonsRow.appendChild(button);
             this.monthButtons.push(button);
@@ -2407,7 +2422,7 @@ YearListView.prototype.onClick = function(event) {
         this.scrollView.scrollTo(this.selectedRow * YearListCell.Height, true);
     } else {
         var monthButton = enclosingNodeOrSelfWithClass(event.target, YearListCell.ClassNameMonthButton);
-        if (!monthButton)
+        if (!monthButton || monthButton.getAttribute("aria-disabled") == "true")
             return;
         var month = parseInt(monthButton.dataset.month, 10);
         this.dispatchEvent(YearListView.EventTypeYearListViewDidSelectMonth, this, new Month(year, month));
@@ -2473,12 +2488,21 @@ YearListView.prototype.prepareNewCell = function(row) {
     var cell = YearListCell._recycleBin.pop() || new YearListCell(global.params.shortMonthLabels);
     cell.reset(row);
     cell.setSelected(this.selectedRow === row);
-    if (this.highlightedMonth && row === this.highlightedMonth.year - 1) {
-        cell.monthButtons[this.highlightedMonth.month].classList.add(YearListCell.ClassNameHighlighted);
-    }
     for (var i = 0; i < cell.monthButtons.length; ++i) {
         var month = new Month(row + 1, i);
-        cell.monthButtons[i].disabled = this._minimumMonth > month || this._maximumMonth < month;
+        cell.monthButtons[i].id = month.toString();
+        cell.monthButtons[i].setAttribute("aria-disabled", this._minimumMonth > month || this._maximumMonth < month ? "true" : "false");
+        cell.monthButtons[i].setAttribute("aria-label", month.toLocaleString());
+    }
+    if (this.highlightedMonth && row === this.highlightedMonth.year - 1) {
+        var monthButton = cell.monthButtons[this.highlightedMonth.month];
+        monthButton.classList.add(YearListCell.ClassNameHighlighted);
+        // aira-activedescendant assumes both elements have renderers, and
+        // |monthButton| might have no renderer yet.
+        var element = this.element;
+        setTimeout(function() {
+            element.setAttribute("aria-activedescendant", monthButton.id);
+        }, 0);
     }
     var animator = this._runningAnimators[row];
     if (animator)
@@ -2584,7 +2608,7 @@ YearListView.prototype.selectWithoutAnimating = function(row) {
 
 /**
  * @param {!Month} month
- * @return {?HTMLButtonElement}
+ * @return {?HTMLDivElement}
  */
 YearListView.prototype.buttonForMonth = function(month) {
     if (!month)
@@ -2604,6 +2628,7 @@ YearListView.prototype.dehighlightMonth = function() {
         monthButton.classList.remove(YearListCell.ClassNameHighlighted);
     }
     this.highlightedMonth = null;
+    this.element.removeAttribute("aria-activedescendant");
 };
 
 /**
@@ -2619,6 +2644,7 @@ YearListView.prototype.highlightMonth = function(month) {
     var monthButton = this.buttonForMonth(this.highlightedMonth);
     if (monthButton) {
         monthButton.classList.add(YearListCell.ClassNameHighlighted);
+        this.element.setAttribute("aria-activedescendant", monthButton.id);
     }
 };
 
@@ -2761,6 +2787,7 @@ MonthPopupView.prototype.onClick = function(event) {
  */
 function MonthPopupButton(maxWidth) {
     View.call(this, createElement("button", MonthPopupButton.ClassNameMonthPopupButton));
+    this.element.setAttribute("aria-label", global.params.axShowMonthSelector);
 
     /**
      * @type {!Element}
@@ -2949,6 +2976,7 @@ function CalendarHeaderView(calendarPicker) {
     this._previousMonthButton.attachTo(this);
     this._previousMonthButton.on(CalendarNavigationButton.EventTypeButtonClick, this.onNavigationButtonClick);
     this._previousMonthButton.on(CalendarNavigationButton.EventTypeRepeatingButtonClick, this.onNavigationButtonClick);
+    this._previousMonthButton.element.setAttribute("aria-label", global.params.axShowPreviousMonth);
 
     /**
      * @type {!CalendarNavigationButton}
@@ -2960,6 +2988,7 @@ function CalendarHeaderView(calendarPicker) {
     this._todayButton.element.classList.add(CalendarHeaderView.ClassNameTodayButton);
     var monthContainingToday = Month.createFromToday();
     this._todayButton.setDisabled(monthContainingToday < this.calendarPicker.minimumMonth || monthContainingToday > this.calendarPicker.maximumMonth);
+    this._todayButton.element.setAttribute("aria-label", global.params.todayLabel);
 
     /**
      * @type {!CalendarNavigationButton}
@@ -2969,6 +2998,7 @@ function CalendarHeaderView(calendarPicker) {
     this._nextMonthButton.attachTo(this);
     this._nextMonthButton.on(CalendarNavigationButton.EventTypeButtonClick, this.onNavigationButtonClick);
     this._nextMonthButton.on(CalendarNavigationButton.EventTypeRepeatingButtonClick, this.onNavigationButtonClick);
+    this._nextMonthButton.element.setAttribute("aria-label", global.params.axShowNextMonth);
 
     if (global.params.isLocaleRTL) {
         this._nextMonthButton.element.innerHTML = CalendarHeaderView._BackwardTriangle;
@@ -3026,6 +3056,7 @@ function DayCell() {
     this.element.style.width = DayCell.Width + "px";
     this.element.style.height = DayCell.Height + "px";
     this.element.style.lineHeight = (DayCell.Height - DayCell.PaddingSize * 2) + "px";
+    this.element.setAttribute("role", "gridcell");
     /**
      * @type {?Day}
      */
@@ -3069,10 +3100,13 @@ DayCell.prototype.throwAway = function() {
  * @param {!boolean} highlighted
  */
 DayCell.prototype.setHighlighted = function(highlighted) {
-    if (highlighted)
+    if (highlighted) {
         this.element.classList.add(DayCell.ClassNameHighlighted);
-    else
+        this.element.setAttribute("aria-selected", "true");
+    } else {
         this.element.classList.remove(DayCell.ClassNameHighlighted);
+        this.element.setAttribute("aria-selected", "false");
+    }
 };
 
 /**
@@ -3111,6 +3145,8 @@ DayCell.prototype.setIsToday = function(selected) {
 DayCell.prototype.reset = function(day) {
     this.day = day;
     this.element.textContent = localizeNumber(this.day.date.toString());
+    this.element.setAttribute("aria-label", this.day.format());
+    this.element.id = this.day.toString();
     this.show();
 };
 
@@ -3162,6 +3198,9 @@ WeekNumberCell.recycleOrCreate = function() {
  */
 WeekNumberCell.prototype.reset = function(week) {
     this.week = week;
+    this.element.id = week.toString();
+    this.element.setAttribute("role", "gridcell");
+    this.element.setAttribute("aria-label", window.pagePopupController.formatWeek(week.year, week.week, week.firstDay().format()));
     this.element.textContent = localizeNumber(this.week.week.toString());
     this.show();
 };
@@ -3175,10 +3214,13 @@ WeekNumberCell.prototype.throwAway = function() {
 };
 
 WeekNumberCell.prototype.setHighlighted = function(highlighted) {
-    if (highlighted)
+    if (highlighted) {
         this.element.classList.add(WeekNumberCell.ClassNameHighlighted);
-    else
+        this.element.setAttribute("aria-selected", "true");
+    } else {
         this.element.classList.remove(WeekNumberCell.ClassNameHighlighted);
+        this.element.setAttribute("aria-selected", "false");
+    }
 };
 
 WeekNumberCell.prototype.setDisabled = function(disabled) {
@@ -3226,6 +3268,7 @@ function CalendarRowCell() {
     ListCell.call(this);
     this.element.classList.add(CalendarRowCell.ClassNameCalendarRowCell);
     this.element.style.height = CalendarRowCell.Height + "px";
+    this.element.setAttribute("role", "row");
 
     /**
      * @type {!Array}
@@ -3506,12 +3549,20 @@ CalendarTableView.prototype.updateCells = function() {
     var currentMonth = this.calendarPicker.currentMonth();
     var firstDayInCurrentMonth = currentMonth.firstDay().valueOf();
     var lastDayInCurrentMonth = currentMonth.lastDay().valueOf();
+    var activeCell = null;
     for (var dayString in this._dayCells) {
         var dayCell = this._dayCells[dayString];
         var day = dayCell.day;
         dayCell.setIsToday(Day.createFromToday().equals(day));
         dayCell.setSelected(day >= firstDayInSelection && day <= lastDayInSelection);
-        dayCell.setHighlighted(day >= firstDayInHighlight && day <= lastDayInHighlight);
+        var isHighlighted = day >= firstDayInHighlight && day <= lastDayInHighlight;
+        dayCell.setHighlighted(isHighlighted);
+        if (isHighlighted) {
+            if (firstDayInHighlight == lastDayInHighlight)
+                activeCell = dayCell;
+            else if (this.calendarPicker.type == "month" && day == firstDayInHighlight)
+                activeCell = dayCell;
+        }
         dayCell.setIsInCurrentMonth(day >= firstDayInCurrentMonth && day <= lastDayInCurrentMonth);
         dayCell.setDisabled(!this.calendarPicker.isValidDay(day));
     }
@@ -3519,10 +3570,20 @@ CalendarTableView.prototype.updateCells = function() {
         for (var weekString in this._weekNumberCells) {
             var weekNumberCell = this._weekNumberCells[weekString];
             var week = weekNumberCell.week;
+            var isWeekHighlighted = highlight && highlight.equals(week);
             weekNumberCell.setSelected(selection && selection.equals(week));
-            weekNumberCell.setHighlighted(highlight && highlight.equals(week));
+            weekNumberCell.setHighlighted(isWeekHighlighted);
+            if (isWeekHighlighted)
+                activeCell = weekNumberCell;
             weekNumberCell.setDisabled(!this.calendarPicker.isValid(week));
         }
+    }
+    if (activeCell) {
+        // Ensure a renderer because an element with no renderer doesn't post
+        // activedescendant events. This shouldn't run in the above |for| loop
+        // to avoid CSS transition.
+        activeCell.element.offsetLeft;
+        this.element.setAttribute("aria-activedescendant", activeCell.element.id);
     }
 };
 
@@ -3533,6 +3594,8 @@ CalendarTableView.prototype.updateCells = function() {
 CalendarTableView.prototype.prepareNewDayCell = function(day) {
     var dayCell = DayCell.recycleOrCreate();
     dayCell.reset(day);
+    if (this.calendarPicker.type == "month")
+        dayCell.element.setAttribute("aria-label", Month.createFromDay(day).toLocaleString());
     this._dayCells[dayCell.day.toString()] = dayCell;
     return dayCell;
 };

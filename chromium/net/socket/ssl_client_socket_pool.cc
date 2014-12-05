@@ -9,6 +9,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/sparse_histogram.h"
+#include "base/stl_util.h"
 #include "base/values.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
@@ -45,15 +46,15 @@ SSLSocketParams::SSLSocketParams(
       force_spdy_over_ssl_(force_spdy_over_ssl),
       want_spdy_over_npn_(want_spdy_over_npn),
       ignore_limits_(false) {
-  if (direct_params_) {
-    DCHECK(!socks_proxy_params_);
-    DCHECK(!http_proxy_params_);
+  if (direct_params_.get()) {
+    DCHECK(!socks_proxy_params_.get());
+    DCHECK(!http_proxy_params_.get());
     ignore_limits_ = direct_params_->ignore_limits();
-  } else if (socks_proxy_params_) {
-    DCHECK(!http_proxy_params_);
+  } else if (socks_proxy_params_.get()) {
+    DCHECK(!http_proxy_params_.get());
     ignore_limits_ = socks_proxy_params_->ignore_limits();
   } else {
-    DCHECK(http_proxy_params_);
+    DCHECK(http_proxy_params_.get());
     ignore_limits_ = http_proxy_params_->ignore_limits();
   }
 }
@@ -61,18 +62,18 @@ SSLSocketParams::SSLSocketParams(
 SSLSocketParams::~SSLSocketParams() {}
 
 SSLSocketParams::ConnectionType SSLSocketParams::GetConnectionType() const {
-  if (direct_params_) {
-    DCHECK(!socks_proxy_params_);
-    DCHECK(!http_proxy_params_);
+  if (direct_params_.get()) {
+    DCHECK(!socks_proxy_params_.get());
+    DCHECK(!http_proxy_params_.get());
     return DIRECT;
   }
 
-  if (socks_proxy_params_) {
-    DCHECK(!http_proxy_params_);
+  if (socks_proxy_params_.get()) {
+    DCHECK(!http_proxy_params_.get());
     return SOCKS_PROXY;
   }
 
-  DCHECK(http_proxy_params_);
+  DCHECK(http_proxy_params_.get());
   return HTTP_PROXY;
 }
 
@@ -94,6 +95,77 @@ SSLSocketParams::GetHttpProxyConnectionParams() const {
   return http_proxy_params_;
 }
 
+SSLConnectJobMessenger::SocketAndCallback::SocketAndCallback(
+    SSLClientSocket* ssl_socket,
+    const base::Closure& job_resumption_callback)
+    : socket(ssl_socket), callback(job_resumption_callback) {
+}
+
+SSLConnectJobMessenger::SocketAndCallback::~SocketAndCallback() {
+}
+
+SSLConnectJobMessenger::SSLConnectJobMessenger(
+    const base::Closure& messenger_finished_callback)
+    : messenger_finished_callback_(messenger_finished_callback),
+      weak_factory_(this) {
+}
+
+SSLConnectJobMessenger::~SSLConnectJobMessenger() {
+}
+
+void SSLConnectJobMessenger::RemovePendingSocket(SSLClientSocket* ssl_socket) {
+  // Sockets do not need to be removed from connecting_sockets_ because
+  // OnSSLHandshakeCompleted will do this.
+  for (SSLPendingSocketsAndCallbacks::iterator it =
+           pending_sockets_and_callbacks_.begin();
+       it != pending_sockets_and_callbacks_.end();
+       ++it) {
+    if (it->socket == ssl_socket) {
+      pending_sockets_and_callbacks_.erase(it);
+      return;
+    }
+  }
+}
+
+bool SSLConnectJobMessenger::CanProceed(SSLClientSocket* ssl_socket) {
+  // If there are no connecting sockets, allow the connection to proceed.
+  return connecting_sockets_.empty();
+}
+
+void SSLConnectJobMessenger::MonitorConnectionResult(
+    SSLClientSocket* ssl_socket) {
+  connecting_sockets_.push_back(ssl_socket);
+  ssl_socket->SetHandshakeCompletionCallback(
+      base::Bind(&SSLConnectJobMessenger::OnSSLHandshakeCompleted,
+                 weak_factory_.GetWeakPtr()));
+}
+
+void SSLConnectJobMessenger::AddPendingSocket(SSLClientSocket* ssl_socket,
+                                              const base::Closure& callback) {
+  DCHECK(!connecting_sockets_.empty());
+  pending_sockets_and_callbacks_.push_back(
+      SocketAndCallback(ssl_socket, callback));
+}
+
+void SSLConnectJobMessenger::OnSSLHandshakeCompleted() {
+  connecting_sockets_.clear();
+  SSLPendingSocketsAndCallbacks temp_list;
+  temp_list.swap(pending_sockets_and_callbacks_);
+  base::Closure messenger_finished_callback = messenger_finished_callback_;
+  messenger_finished_callback.Run();
+  RunAllCallbacks(temp_list);
+}
+
+void SSLConnectJobMessenger::RunAllCallbacks(
+    const SSLPendingSocketsAndCallbacks& pending_sockets_and_callbacks) {
+  for (std::vector<SocketAndCallback>::const_iterator it =
+           pending_sockets_and_callbacks.begin();
+       it != pending_sockets_and_callbacks.end();
+       ++it) {
+    it->callback.Run();
+  }
+}
+
 // Timeout for the SSL handshake portion of the connect.
 static const int kSSLHandshakeTimeoutInSeconds = 30;
 
@@ -107,6 +179,7 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
                              ClientSocketFactory* client_socket_factory,
                              HostResolver* host_resolver,
                              const SSLClientSocketContext& context,
+                             const GetMessengerCallback& get_messenger_callback,
                              Delegate* delegate,
                              NetLog* net_log)
     : ConnectJob(group_name,
@@ -121,16 +194,23 @@ SSLConnectJob::SSLConnectJob(const std::string& group_name,
       client_socket_factory_(client_socket_factory),
       host_resolver_(host_resolver),
       context_(context.cert_verifier,
-               context.server_bound_cert_service,
+               context.channel_id_service,
                context.transport_security_state,
                context.cert_transparency_verifier,
                (params->privacy_mode() == PRIVACY_MODE_ENABLED
                     ? "pm/" + context.ssl_session_cache_shard
                     : context.ssl_session_cache_shard)),
-      callback_(base::Bind(&SSLConnectJob::OnIOComplete,
-                           base::Unretained(this))) {}
+      io_callback_(
+          base::Bind(&SSLConnectJob::OnIOComplete, base::Unretained(this))),
+      messenger_(NULL),
+      get_messenger_callback_(get_messenger_callback),
+      weak_factory_(this) {
+}
 
-SSLConnectJob::~SSLConnectJob() {}
+SSLConnectJob::~SSLConnectJob() {
+  if (ssl_socket_.get() && messenger_)
+    messenger_->RemovePendingSocket(ssl_socket_.get());
+}
 
 LoadState SSLConnectJob::GetLoadState() const {
   switch (next_state_) {
@@ -144,6 +224,8 @@ LoadState SSLConnectJob::GetLoadState() const {
     case STATE_SOCKS_CONNECT_COMPLETE:
     case STATE_TUNNEL_CONNECT:
       return transport_socket_handle_->GetLoadState();
+    case STATE_CREATE_SSL_SOCKET:
+    case STATE_CHECK_FOR_RESUME:
     case STATE_SSL_CONNECT:
     case STATE_SSL_CONNECT_COMPLETE:
       return LOAD_STATE_SSL_HANDSHAKE;
@@ -200,6 +282,12 @@ int SSLConnectJob::DoLoop(int result) {
       case STATE_TUNNEL_CONNECT_COMPLETE:
         rv = DoTunnelConnectComplete(rv);
         break;
+      case STATE_CREATE_SSL_SOCKET:
+        rv = DoCreateSSLSocket();
+        break;
+      case STATE_CHECK_FOR_RESUME:
+        rv = DoCheckForResume();
+        break;
       case STATE_SSL_CONNECT:
         DCHECK_EQ(OK, rv);
         rv = DoSSLConnect();
@@ -227,14 +315,14 @@ int SSLConnectJob::DoTransportConnect() {
   return transport_socket_handle_->Init(group_name(),
                                         direct_params,
                                         priority(),
-                                        callback_,
+                                        io_callback_,
                                         transport_pool_,
                                         net_log());
 }
 
 int SSLConnectJob::DoTransportConnectComplete(int result) {
   if (result == OK)
-    next_state_ = STATE_SSL_CONNECT;
+    next_state_ = STATE_CREATE_SSL_SOCKET;
 
   return result;
 }
@@ -248,14 +336,14 @@ int SSLConnectJob::DoSOCKSConnect() {
   return transport_socket_handle_->Init(group_name(),
                                         socks_proxy_params,
                                         priority(),
-                                        callback_,
+                                        io_callback_,
                                         socks_pool_,
                                         net_log());
 }
 
 int SSLConnectJob::DoSOCKSConnectComplete(int result) {
   if (result == OK)
-    next_state_ = STATE_SSL_CONNECT;
+    next_state_ = STATE_CREATE_SSL_SOCKET;
 
   return result;
 }
@@ -270,7 +358,7 @@ int SSLConnectJob::DoTunnelConnect() {
   return transport_socket_handle_->Init(group_name(),
                                         http_proxy_params,
                                         priority(),
-                                        callback_,
+                                        io_callback_,
                                         http_proxy_pool_,
                                         net_log());
 }
@@ -290,13 +378,13 @@ int SSLConnectJob::DoTunnelConnectComplete(int result) {
   }
   if (result < 0)
     return result;
-
-  next_state_ = STATE_SSL_CONNECT;
+  next_state_ = STATE_CREATE_SSL_SOCKET;
   return result;
 }
 
-int SSLConnectJob::DoSSLConnect() {
-  next_state_ = STATE_SSL_CONNECT_COMPLETE;
+int SSLConnectJob::DoCreateSSLSocket() {
+  next_state_ = STATE_CHECK_FOR_RESUME;
+
   // Reset the timeout to just the time allowed for the SSL handshake.
   ResetTimer(base::TimeDelta::FromSeconds(kSSLHandshakeTimeoutInSeconds));
 
@@ -314,14 +402,45 @@ int SSLConnectJob::DoSSLConnect() {
     connect_timing_.dns_end = socket_connect_timing.dns_end;
   }
 
-  connect_timing_.ssl_start = base::TimeTicks::Now();
-
   ssl_socket_ = client_socket_factory_->CreateSSLClientSocket(
       transport_socket_handle_.Pass(),
       params_->host_and_port(),
       params_->ssl_config(),
       context_);
-  return ssl_socket_->Connect(callback_);
+
+  if (!ssl_socket_->InSessionCache())
+    messenger_ = get_messenger_callback_.Run(ssl_socket_->GetSessionCacheKey());
+
+  return OK;
+}
+
+int SSLConnectJob::DoCheckForResume() {
+  next_state_ = STATE_SSL_CONNECT;
+
+  if (!messenger_)
+    return OK;
+
+  if (messenger_->CanProceed(ssl_socket_.get())) {
+    messenger_->MonitorConnectionResult(ssl_socket_.get());
+    // The SSLConnectJob no longer needs access to the messenger after this
+    // point.
+    messenger_ = NULL;
+    return OK;
+  }
+
+  messenger_->AddPendingSocket(ssl_socket_.get(),
+                               base::Bind(&SSLConnectJob::ResumeSSLConnection,
+                                          weak_factory_.GetWeakPtr()));
+
+  return ERR_IO_PENDING;
+}
+
+int SSLConnectJob::DoSSLConnect() {
+  next_state_ = STATE_SSL_CONNECT_COMPLETE;
+
+  connect_timing_.ssl_start = base::TimeTicks::Now();
+
+  return ssl_socket_->Connect(io_callback_);
 }
 
 int SSLConnectJob::DoSSLConnectComplete(int result) {
@@ -330,12 +449,13 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   SSLClientSocket::NextProtoStatus status =
       SSLClientSocket::kNextProtoUnsupported;
   std::string proto;
-  std::string server_protos;
   // GetNextProto will fail and and trigger a NOTREACHED if we pass in a socket
   // that hasn't had SSL_ImportFD called on it. If we get a certificate error
   // here, then we know that we called SSL_ImportFD.
-  if (result == OK || IsCertificateError(result))
-    status = ssl_socket_->GetNextProto(&proto, &server_protos);
+  if (result == OK || IsCertificateError(result)) {
+    status = ssl_socket_->GetNextProto(&proto);
+    ssl_socket_->RecordNegotiationExtension();
+  }
 
   // If we want spdy over npn, make sure it succeeded.
   if (status == SSLClientSocket::kNextProtoNegotiated) {
@@ -370,18 +490,6 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
                                  base::TimeDelta::FromMinutes(1),
                                  100);
     }
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-    bool using_data_reduction_proxy = params_->host_and_port().Equals(
-        HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
-    if (using_data_reduction_proxy) {
-      UMA_HISTOGRAM_CUSTOM_TIMES(
-          "Net.SSL_Connection_Latency_DataReductionProxy",
-          connect_duration,
-          base::TimeDelta::FromMilliseconds(1),
-          base::TimeDelta::FromMinutes(1),
-          100);
-    }
-#endif
 
     UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_2",
                                connect_duration,
@@ -395,6 +503,11 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     UMA_HISTOGRAM_SPARSE_SLOWLY("Net.SSL_CipherSuite",
                                 SSLConnectionStatusToCipherSuite(
                                     ssl_info.connection_status));
+
+    UMA_HISTOGRAM_BOOLEAN(
+        "Net.RenegotiationExtensionSupported",
+        (ssl_info.connection_status &
+         SSL_CONNECTION_NO_RENEGOTIATION_EXTENSION) == 0);
 
     if (ssl_info.handshake_type == SSLInfo::HANDSHAKE_RESUME) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Resume_Handshake",
@@ -411,9 +524,9 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
     }
 
     const std::string& host = params_->host_and_port().host();
-    bool is_google = host == "google.com" ||
-                     (host.size() > 11 &&
-                      host.rfind(".google.com") == host.size() - 11);
+    bool is_google =
+        host == "google.com" ||
+        (host.size() > 11 && host.rfind(".google.com") == host.size() - 11);
     if (is_google) {
       UMA_HISTOGRAM_CUSTOM_TIMES("Net.SSL_Connection_Latency_Google2",
                                  connect_duration,
@@ -439,7 +552,7 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   }
 
   if (result == OK || IsCertificateError(result)) {
-    SetSocket(ssl_socket_.PassAs<StreamSocket>());
+    SetSocket(ssl_socket_.Pass());
   } else if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED) {
     error_response_info_.cert_request_info = new SSLCertRequestInfo;
     ssl_socket_->GetSSLCertRequestInfo(
@@ -447,6 +560,12 @@ int SSLConnectJob::DoSSLConnectComplete(int result) {
   }
 
   return result;
+}
+
+void SSLConnectJob::ResumeSSLConnection() {
+  DCHECK_EQ(next_state_, STATE_SSL_CONNECT);
+  messenger_ = NULL;
+  OnIOComplete(OK);
 }
 
 SSLConnectJob::State SSLConnectJob::GetInitialState(
@@ -475,6 +594,7 @@ SSLClientSocketPool::SSLConnectJobFactory::SSLConnectJobFactory(
     ClientSocketFactory* client_socket_factory,
     HostResolver* host_resolver,
     const SSLClientSocketContext& context,
+    const SSLConnectJob::GetMessengerCallback& get_messenger_callback,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       socks_pool_(socks_pool),
@@ -482,6 +602,7 @@ SSLClientSocketPool::SSLConnectJobFactory::SSLConnectJobFactory(
       client_socket_factory_(client_socket_factory),
       host_resolver_(host_resolver),
       context_(context),
+      get_messenger_callback_(get_messenger_callback),
       net_log_(net_log) {
   base::TimeDelta max_transport_timeout = base::TimeDelta();
   base::TimeDelta pool_timeout;
@@ -501,13 +622,16 @@ SSLClientSocketPool::SSLConnectJobFactory::SSLConnectJobFactory(
       base::TimeDelta::FromSeconds(kSSLHandshakeTimeoutInSeconds);
 }
 
+SSLClientSocketPool::SSLConnectJobFactory::~SSLConnectJobFactory() {
+}
+
 SSLClientSocketPool::SSLClientSocketPool(
     int max_sockets,
     int max_sockets_per_group,
     ClientSocketPoolHistograms* histograms,
     HostResolver* host_resolver,
     CertVerifier* cert_verifier,
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
     TransportSecurityState* transport_security_state,
     CTVerifier* cert_transparency_verifier,
     const std::string& ssl_session_cache_shard,
@@ -516,26 +640,34 @@ SSLClientSocketPool::SSLClientSocketPool(
     SOCKSClientSocketPool* socks_pool,
     HttpProxyClientSocketPool* http_proxy_pool,
     SSLConfigService* ssl_config_service,
+    bool enable_ssl_connect_job_waiting,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       socks_pool_(socks_pool),
       http_proxy_pool_(http_proxy_pool),
-      base_(this, max_sockets, max_sockets_per_group, histograms,
+      base_(this,
+            max_sockets,
+            max_sockets_per_group,
+            histograms,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
-            new SSLConnectJobFactory(transport_pool,
-                                     socks_pool,
-                                     http_proxy_pool,
-                                     client_socket_factory,
-                                     host_resolver,
-                                     SSLClientSocketContext(
-                                         cert_verifier,
-                                         server_bound_cert_service,
-                                         transport_security_state,
-                                         cert_transparency_verifier,
-                                         ssl_session_cache_shard),
-                                     net_log)),
-      ssl_config_service_(ssl_config_service) {
+            new SSLConnectJobFactory(
+                transport_pool,
+                socks_pool,
+                http_proxy_pool,
+                client_socket_factory,
+                host_resolver,
+                SSLClientSocketContext(cert_verifier,
+                                       channel_id_service,
+                                       transport_security_state,
+                                       cert_transparency_verifier,
+                                       ssl_session_cache_shard),
+                base::Bind(
+                    &SSLClientSocketPool::GetOrCreateSSLConnectJobMessenger,
+                    base::Unretained(this)),
+                net_log)),
+      ssl_config_service_(ssl_config_service),
+      enable_ssl_connect_job_waiting_(enable_ssl_connect_job_waiting) {
   if (ssl_config_service_.get())
     ssl_config_service_->AddObserver(this);
   if (transport_pool_)
@@ -547,24 +679,33 @@ SSLClientSocketPool::SSLClientSocketPool(
 }
 
 SSLClientSocketPool::~SSLClientSocketPool() {
+  STLDeleteContainerPairSecondPointers(messenger_map_.begin(),
+                                       messenger_map_.end());
   if (ssl_config_service_.get())
     ssl_config_service_->RemoveObserver(this);
 }
 
-scoped_ptr<ConnectJob>
-SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
+scoped_ptr<ConnectJob> SSLClientSocketPool::SSLConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return scoped_ptr<ConnectJob>(
-      new SSLConnectJob(group_name, request.priority(), request.params(),
-                        ConnectionTimeout(), transport_pool_, socks_pool_,
-                        http_proxy_pool_, client_socket_factory_,
-                        host_resolver_, context_, delegate, net_log_));
+  return scoped_ptr<ConnectJob>(new SSLConnectJob(group_name,
+                                                  request.priority(),
+                                                  request.params(),
+                                                  ConnectionTimeout(),
+                                                  transport_pool_,
+                                                  socks_pool_,
+                                                  http_proxy_pool_,
+                                                  client_socket_factory_,
+                                                  host_resolver_,
+                                                  context_,
+                                                  get_messenger_callback_,
+                                                  delegate,
+                                                  net_log_));
 }
 
-base::TimeDelta
-SSLClientSocketPool::SSLConnectJobFactory::ConnectionTimeout() const {
+base::TimeDelta SSLClientSocketPool::SSLConnectJobFactory::ConnectionTimeout()
+    const {
   return timeout_;
 }
 
@@ -677,6 +818,32 @@ bool SSLClientSocketPool::CloseOneIdleConnection() {
   if (base_.CloseOneIdleSocket())
     return true;
   return base_.CloseOneIdleConnectionInHigherLayeredPool();
+}
+
+SSLConnectJobMessenger* SSLClientSocketPool::GetOrCreateSSLConnectJobMessenger(
+    const std::string& cache_key) {
+  if (!enable_ssl_connect_job_waiting_)
+    return NULL;
+  MessengerMap::const_iterator it = messenger_map_.find(cache_key);
+  if (it == messenger_map_.end()) {
+    std::pair<MessengerMap::iterator, bool> iter =
+        messenger_map_.insert(MessengerMap::value_type(
+            cache_key,
+            new SSLConnectJobMessenger(
+                base::Bind(&SSLClientSocketPool::DeleteSSLConnectJobMessenger,
+                           base::Unretained(this),
+                           cache_key))));
+    it = iter.first;
+  }
+  return it->second;
+}
+
+void SSLClientSocketPool::DeleteSSLConnectJobMessenger(
+    const std::string& cache_key) {
+  MessengerMap::iterator it = messenger_map_.find(cache_key);
+  CHECK(it != messenger_map_.end());
+  delete it->second;
+  messenger_map_.erase(it);
 }
 
 void SSLClientSocketPool::OnSSLConfigChanged() {

@@ -39,35 +39,36 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class DeprecatedStorageQuotaCallbacksImpl FINAL : public StorageQuotaCallbacks {
+class DeprecatedStorageQuotaCallbacksImpl final : public StorageQuotaCallbacks {
 public:
-    static PassOwnPtr<DeprecatedStorageQuotaCallbacksImpl> create(PassOwnPtr<StorageUsageCallback> success, PassOwnPtr<StorageErrorCallback> error)
+    static DeprecatedStorageQuotaCallbacksImpl* create(StorageUsageCallback* success, StorageErrorCallback* error)
     {
-        return adoptPtr(new DeprecatedStorageQuotaCallbacksImpl(success, error));
+        return new DeprecatedStorageQuotaCallbacksImpl(success, error);
     }
 
-    static PassOwnPtr<DeprecatedStorageQuotaCallbacksImpl> create(PassOwnPtr<StorageQuotaCallback> success, PassOwnPtr<StorageErrorCallback> error)
+    static DeprecatedStorageQuotaCallbacksImpl* create(StorageQuotaCallback* success, StorageErrorCallback* error)
     {
-        return adoptPtr(new DeprecatedStorageQuotaCallbacksImpl(success, error));
+        return new DeprecatedStorageQuotaCallbacksImpl(success, error);
     }
 
     virtual ~DeprecatedStorageQuotaCallbacksImpl();
+    virtual void trace(Visitor*) override;
 
-    virtual void didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes) OVERRIDE;
-    virtual void didGrantStorageQuota(unsigned long long usageInBytes, unsigned long long grantedQuotaInBytes) OVERRIDE;
-    virtual void didFail(blink::WebStorageQuotaError) OVERRIDE;
+    virtual void didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes) override;
+    virtual void didGrantStorageQuota(unsigned long long usageInBytes, unsigned long long grantedQuotaInBytes) override;
+    virtual void didFail(WebStorageQuotaError) override;
 
 private:
-    DeprecatedStorageQuotaCallbacksImpl(PassOwnPtr<StorageUsageCallback>, PassOwnPtr<StorageErrorCallback>);
-    DeprecatedStorageQuotaCallbacksImpl(PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
+    DeprecatedStorageQuotaCallbacksImpl(StorageUsageCallback*, StorageErrorCallback*);
+    DeprecatedStorageQuotaCallbacksImpl(StorageQuotaCallback*, StorageErrorCallback*);
 
-    OwnPtr<StorageUsageCallback> m_usageCallback;
-    OwnPtr<StorageQuotaCallback> m_quotaCallback;
-    OwnPtr<StorageErrorCallback> m_errorCallback;
+    Member<StorageUsageCallback> m_usageCallback;
+    Member<StorageQuotaCallback> m_quotaCallback;
+    Member<StorageErrorCallback> m_errorCallback;
 };
 
-} // namespace
+} // namespace blink
 
 #endif // DeprecatedStorageQuotaCallbacksImpl_h

@@ -34,6 +34,11 @@ namespace disk_cache {
 // files.
 // See http://www.chromium.org/developers/design-documents/network-stack/disk-cache/very-simple-backend
 //
+// The SimpleBackendImpl provides safe iteration; mutating entries during
+// iteration cannot cause a crash. It is undefined whether entries created or
+// destroyed during the iteration will be included in any pre-existing
+// iterations.
+//
 // The non-static functions below must be called on the IO thread unless
 // otherwise stated.
 
@@ -44,12 +49,14 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
     public SimpleIndexDelegate,
     public base::SupportsWeakPtr<SimpleBackendImpl> {
  public:
-  SimpleBackendImpl(const base::FilePath& path, int max_bytes,
-                    net::CacheType cache_type,
-                    base::SingleThreadTaskRunner* cache_thread,
-                    net::NetLog* net_log);
+  SimpleBackendImpl(
+      const base::FilePath& path,
+      int max_bytes,
+      net::CacheType cache_type,
+      const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+      net::NetLog* net_log);
 
-  virtual ~SimpleBackendImpl();
+  ~SimpleBackendImpl() override;
 
   net::CacheType cache_type() const { return cache_type_; }
   SimpleIndex* index() { return index_.get(); }
@@ -64,10 +71,6 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   // Returns the maximum file size permitted in this backend.
   int GetMaxFileSize() const;
 
-  // Removes |entry| from the |active_entries_| set, forcing future Open/Create
-  // operations to construct a new object.
-  void OnDeactivated(const SimpleEntryImpl* entry);
-
   // Flush our SequencedWorkerPool.
   static void FlushWorkerPoolForTesting();
 
@@ -81,36 +84,42 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   void OnDoomComplete(uint64 entry_hash);
 
   // SimpleIndexDelegate:
-  virtual void DoomEntries(std::vector<uint64>* entry_hashes,
-                           const CompletionCallback& callback) OVERRIDE;
+  void DoomEntries(std::vector<uint64>* entry_hashes,
+                   const CompletionCallback& callback) override;
 
   // Backend:
-  virtual net::CacheType GetCacheType() const OVERRIDE;
-  virtual int32 GetEntryCount() const OVERRIDE;
-  virtual int OpenEntry(const std::string& key, Entry** entry,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int CreateEntry(const std::string& key, Entry** entry,
-                          const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntry(const std::string& key,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomAllEntries(const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesBetween(base::Time initial_time,
-                                 base::Time end_time,
-                                 const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesSince(base::Time initial_time,
-                               const CompletionCallback& callback) OVERRIDE;
-  virtual int OpenNextEntry(void** iter, Entry** next_entry,
-                            const CompletionCallback& callback) OVERRIDE;
-  virtual void EndEnumeration(void** iter) OVERRIDE;
-  virtual void GetStats(
-      std::vector<std::pair<std::string, std::string> >* stats) OVERRIDE;
-  virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
+  net::CacheType GetCacheType() const override;
+  int32 GetEntryCount() const override;
+  int OpenEntry(const std::string& key,
+                Entry** entry,
+                const CompletionCallback& callback) override;
+  int CreateEntry(const std::string& key,
+                  Entry** entry,
+                  const CompletionCallback& callback) override;
+  int DoomEntry(const std::string& key,
+                const CompletionCallback& callback) override;
+  int DoomAllEntries(const CompletionCallback& callback) override;
+  int DoomEntriesBetween(base::Time initial_time,
+                         base::Time end_time,
+                         const CompletionCallback& callback) override;
+  int DoomEntriesSince(base::Time initial_time,
+                       const CompletionCallback& callback) override;
+  scoped_ptr<Iterator> CreateIterator() override;
+  void GetStats(
+      std::vector<std::pair<std::string, std::string>>* stats) override;
+  void OnExternalCacheHit(const std::string& key) override;
 
  private:
-  typedef base::hash_map<uint64, base::WeakPtr<SimpleEntryImpl> > EntryMap;
+  class SimpleIterator;
+  friend class SimpleIterator;
+
+  typedef base::hash_map<uint64, SimpleEntryImpl*> EntryMap;
 
   typedef base::Callback<void(base::Time mtime, uint64 max_size, int result)>
       InitializeIndexCallback;
+
+  class ActiveEntryProxy;
+  friend class ActiveEntryProxy;
 
   // Return value of InitCacheStructureOnDisk().
   struct DiskStatResult {
@@ -154,21 +163,13 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   // which is very important to prevent races in DoomEntries() above.
   int DoomEntryFromHash(uint64 entry_hash, const CompletionCallback & callback);
 
-  // Called when the index is initilized to find the next entry in the iterator
-  // |iter|. If there are no more hashes in the iterator list, net::ERR_FAILED
-  // is returned. Otherwise, calls OpenEntryFromHash.
-  void GetNextEntryInIterator(void** iter,
-                              Entry** next_entry,
-                              const CompletionCallback& callback,
-                              int error_code);
-
   // Called when we tried to open an entry with hash alone. When a blank entry
   // has been created and filled in with information from the disk - based on a
   // hash alone - this checks that a duplicate active entry was not created
   // using a key in the meantime.
   void OnEntryOpenedFromHash(uint64 hash,
                              Entry** entry,
-                             scoped_refptr<SimpleEntryImpl> simple_entry,
+                             const scoped_refptr<SimpleEntryImpl>& simple_entry,
                              const CompletionCallback& callback,
                              int error_code);
 
@@ -176,17 +177,9 @@ class NET_EXPORT_PRIVATE SimpleBackendImpl : public Backend,
   // opened, a check for key mismatch is performed.
   void OnEntryOpenedFromKey(const std::string key,
                             Entry** entry,
-                            scoped_refptr<SimpleEntryImpl> simple_entry,
+                            const scoped_refptr<SimpleEntryImpl>& simple_entry,
                             const CompletionCallback& callback,
                             int error_code);
-
-  // Called at the end of the asynchronous operation triggered by
-  // OpenEntryFromHash. Makes sure to continue iterating if the open entry was
-  // not a success.
-  void CheckIterationReturnValue(void** iter,
-                                 Entry** entry,
-                                 const CompletionCallback& callback,
-                                 int error_code);
 
   // A callback thunk used by DoomEntries to clear the |entries_pending_doom_|
   // after a mass doom.

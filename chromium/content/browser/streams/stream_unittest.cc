@@ -16,9 +16,7 @@ class StreamTest : public testing::Test {
  public:
   StreamTest() : producing_seed_key_(0) {}
 
-  virtual void SetUp() OVERRIDE {
-    registry_.reset(new StreamRegistry());
-  }
+  void SetUp() override { registry_.reset(new StreamRegistry()); }
 
   // Create a new IO buffer of the given |buffer_size| and fill it with random
   // data.
@@ -43,7 +41,7 @@ class TestStreamReader : public StreamReadObserver {
  public:
   TestStreamReader() : buffer_(new net::GrowableIOBuffer()), completed_(false) {
   }
-  virtual ~TestStreamReader() {}
+  ~TestStreamReader() override {}
 
   void Read(Stream* stream) {
     const size_t kBufferSize = 32768;
@@ -76,9 +74,7 @@ class TestStreamReader : public StreamReadObserver {
     }
   }
 
-  virtual void OnDataAvailable(Stream* stream) OVERRIDE {
-    Read(stream);
-  }
+  void OnDataAvailable(Stream* stream) override { Read(stream); }
 
   scoped_refptr<net::GrowableIOBuffer> buffer() { return buffer_; }
 
@@ -94,7 +90,7 @@ class TestStreamReader : public StreamReadObserver {
 class TestStreamWriter : public StreamWriteObserver {
  public:
   TestStreamWriter() {}
-  virtual ~TestStreamWriter() {}
+  ~TestStreamWriter() override {}
 
   void Write(Stream* stream,
              scoped_refptr<net::IOBuffer> buffer,
@@ -102,11 +98,9 @@ class TestStreamWriter : public StreamWriteObserver {
     stream->AddData(buffer, buffer_size);
   }
 
-  virtual void OnSpaceAvailable(Stream* stream) OVERRIDE {
-  }
+  void OnSpaceAvailable(Stream* stream) override {}
 
-  virtual void OnClose(Stream* stream) OVERRIDE {
-  }
+  void OnClose(Stream* stream) override {}
 };
 
 TEST_F(StreamTest, SetReadObserver) {

@@ -6,7 +6,7 @@
  */
 
 #include "BenchLogger.h"
-#include "BenchTimer.h"
+#include "Timer.h"
 #include "CopyTilesRenderer.h"
 #include "CrashHandler.h"
 #include "LazyDecodeBitmap.h"
@@ -42,7 +42,6 @@ DEFINE_string(logFile, "", "Destination for writing log output, in addition to s
 DEFINE_bool(logPerIter, false, "Log each repeat timer instead of mean.");
 DEFINE_string(jsonLog, "", "Destination for writing JSON data.");
 DEFINE_bool(min, false, "Print the minimum times (instead of average).");
-DECLARE_int32(multi);
 DECLARE_string(readPath);
 DEFINE_int32(repeat, 1, "Set the number of times to repeat each test.");
 DEFINE_bool(timeIndividualTiles, false, "Report times for drawing individual tiles, rather than "
@@ -55,7 +54,20 @@ DEFINE_bool(trackDeferredCaching, false, "Only meaningful with --deferImageDecod
             "SK_LAZY_CACHE_STATS set to true. Report percentage of cache hits when using "
             "deferred image decoding.");
 
-DEFINE_bool(preprocess, false, "If true, perform device specific preprocessing before timing.");
+#if GR_GPU_STATS
+DEFINE_bool(gpuStats, false, "Only meaningful with gpu configurations. "
+            "Report some GPU call statistics.");
+#endif
+
+DEFINE_bool(mpd, false, "If true, use MultiPictureDraw to render.");
+
+// Buildbot-specific parameters
+DEFINE_string(builderName, "", "Name of the builder this is running on.");
+DEFINE_int32(buildNumber, -1, "Build number of the build this test is running on");
+DEFINE_int32(timestamp, 0, "Timestamp of the revision of Skia being tested.");
+DEFINE_string(gitHash, "", "Commit hash of the revision of Skia being run.");
+DEFINE_int32(gitNumber, -1, "Git number of the revision of Skia being run.");
+
 
 static char const * const gFilterTypes[] = {
     "paint",
@@ -190,11 +202,13 @@ static bool run_single_benchmark(const SkString& inputPath,
         return false;
     }
 
-    SkString filename = SkOSPath::SkBasename(inputPath.c_str());
+    SkString filename = SkOSPath::Basename(inputPath.c_str());
 
-    gWriter.bench(filename.c_str(), picture->width(), picture->height());
+    gWriter.bench(filename.c_str(), 
+                  SkScalarCeilToInt(picture->cullRect().width()), 
+                  SkScalarCeilToInt(picture->cullRect().height()));
 
-    benchmark.run(picture);
+    benchmark.run(picture, FLAGS_mpd);
 
 #if SK_LAZY_CACHE_STATS
     if (FLAGS_trackDeferredCaching) {
@@ -328,10 +342,6 @@ static void setup_benchmark(sk_tools::PictureBenchmark* benchmark) {
     }
 
     if (FLAGS_timeIndividualTiles) {
-        if (FLAGS_multi > 1) {
-            gLogger.logError("Cannot time individual tiles with more than one thread.\n");
-            exit(-1);
-        }
         sk_tools::TiledPictureRenderer* tiledRenderer = renderer->getTiledRenderer();
         if (NULL == tiledRenderer) {
             gLogger.logError("--timeIndividualTiles requires tiled rendering.\n");
@@ -345,7 +355,6 @@ static void setup_benchmark(sk_tools::PictureBenchmark* benchmark) {
     }
 
     benchmark->setPurgeDecodedTex(FLAGS_purgeDecodedTex);
-    benchmark->setPreprocess(FLAGS_preprocess);
 
     if (FLAGS_readPath.count() < 1) {
         gLogger.logError(".skp files or directories are required.\n");
@@ -373,7 +382,7 @@ static int process_input(const char* input,
     int failures = 0;
     if (iter.next(&inputFilename)) {
         do {
-            SkString inputPath = SkOSPath::SkPathJoin(input, inputFilename.c_str());
+            SkString inputPath = SkOSPath::Join(input, inputFilename.c_str());
             if (!run_single_benchmark(inputPath, benchmark)) {
                 ++failures;
             }
@@ -421,7 +430,14 @@ int tool_main(int argc, char** argv) {
 
     SkAutoTDelete<PictureJSONResultsWriter> jsonWriter;
     if (FLAGS_jsonLog.count() == 1) {
-        jsonWriter.reset(SkNEW(PictureJSONResultsWriter(FLAGS_jsonLog[0])));
+        SkASSERT(FLAGS_builderName.count() == 1 && FLAGS_gitHash.count() == 1);
+        jsonWriter.reset(SkNEW(PictureJSONResultsWriter(
+                        FLAGS_jsonLog[0],
+                        FLAGS_builderName[0],
+                        FLAGS_buildNumber,
+                        FLAGS_timestamp,
+                        FLAGS_gitHash[0],
+                        FLAGS_gitNumber)));
         gWriter.add(jsonWriter.get());
     }
 
@@ -454,6 +470,15 @@ int tool_main(int argc, char** argv) {
                  (double) gTotalCacheHits / (gTotalCacheHits + gTotalCacheMisses));
     }
 #endif
+
+#if GR_GPU_STATS && SK_SUPPORT_GPU
+    if (FLAGS_gpuStats && benchmark.renderer()->isUsingGpuDevice()) {
+        GrContext* ctx = benchmark.renderer()->getGrContext();
+        SkDebugf("RenderTarget Binds: %d\n", ctx->gpuStats()->renderTargetBinds());
+        SkDebugf("Shader Compilations: %d\n", ctx->gpuStats()->shaderCompilations());
+    }
+#endif
+
     gWriter.end();
     return 0;
 }

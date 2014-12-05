@@ -28,16 +28,16 @@
 #ifndef TALK_APP_WEBRTC_DATACHANNEL_H_
 #define TALK_APP_WEBRTC_DATACHANNEL_H_
 
+#include <deque>
 #include <string>
-#include <queue>
 
 #include "talk/app/webrtc/datachannelinterface.h"
 #include "talk/app/webrtc/proxy.h"
-#include "talk/base/messagehandler.h"
-#include "talk/base/scoped_ref_ptr.h"
-#include "talk/base/sigslot.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/session/media/channel.h"
+#include "webrtc/base/messagehandler.h"
+#include "webrtc/base/scoped_ref_ptr.h"
+#include "webrtc/base/sigslot.h"
 
 namespace webrtc {
 
@@ -47,7 +47,7 @@ class DataChannelProviderInterface {
  public:
   // Sends the data to the transport.
   virtual bool SendData(const cricket::SendDataParams& params,
-                        const talk_base::Buffer& payload,
+                        const rtc::Buffer& payload,
                         cricket::SendDataResult* result) = 0;
   // Connects to the transport signals.
   virtual bool ConnectDataChannel(DataChannel* data_channel) = 0;
@@ -100,9 +100,9 @@ struct InternalDataChannelInit : public DataChannelInit {
 //          SSRC==0.
 class DataChannel : public DataChannelInterface,
                     public sigslot::has_slots<>,
-                    public talk_base::MessageHandler {
+                    public rtc::MessageHandler {
  public:
-  static talk_base::scoped_refptr<DataChannel> Create(
+  static rtc::scoped_refptr<DataChannel> Create(
       DataChannelProviderInterface* provider,
       cricket::DataChannelType dct,
       const std::string& label,
@@ -128,8 +128,8 @@ class DataChannel : public DataChannelInterface,
   virtual DataState state() const { return state_; }
   virtual bool Send(const DataBuffer& buffer);
 
-  // talk_base::MessageHandler override.
-  virtual void OnMessage(talk_base::Message* msg);
+  // rtc::MessageHandler override.
+  virtual void OnMessage(rtc::Message* msg);
 
   // Called if the underlying data engine is closing.
   void OnDataEngineClose();
@@ -142,14 +142,15 @@ class DataChannel : public DataChannelInterface,
   // Sigslots from cricket::DataChannel
   void OnDataReceived(cricket::DataChannel* channel,
                       const cricket::ReceiveDataParams& params,
-                      const talk_base::Buffer& payload);
+                      const rtc::Buffer& payload);
 
   // The remote peer request that this channel should be closed.
   void RemotePeerRequestClose();
 
   // The following methods are for SCTP only.
 
-  // Sets the SCTP sid and adds to transport layer if not set yet.
+  // Sets the SCTP sid and adds to transport layer if not set yet. Should only
+  // be called once.
   void SetSctpSid(int sid);
   // Called when the transport channel is created.
   void OnTransportChannelCreated();
@@ -175,23 +176,49 @@ class DataChannel : public DataChannelInterface,
   virtual ~DataChannel();
 
  private:
+  // A packet queue which tracks the total queued bytes. Queued packets are
+  // owned by this class.
+  class PacketQueue {
+   public:
+    PacketQueue();
+    ~PacketQueue();
+
+    size_t byte_count() const {
+      return byte_count_;
+    }
+
+    bool Empty() const;
+
+    DataBuffer* Front();
+
+    void Pop();
+
+    void Push(DataBuffer* packet);
+
+    void Clear();
+
+    void Swap(PacketQueue* other);
+
+   private:
+    std::deque<DataBuffer*> packets_;
+    size_t byte_count_;
+  };
+
   bool Init(const InternalDataChannelInit& config);
   void DoClose();
   void UpdateState();
   void SetState(DataState state);
   void DisconnectFromTransport();
-  void DeliverQueuedControlData();
-  void QueueControl(const talk_base::Buffer* buffer);
-  void ClearQueuedControlData();
+
   void DeliverQueuedReceivedData();
-  void ClearQueuedReceivedData();
-  void DeliverQueuedSendData();
-  void ClearQueuedSendData();
-  bool InternalSendWithoutQueueing(const DataBuffer& buffer,
-                                   cricket::SendDataResult* send_result);
-  bool QueueSendData(const DataBuffer& buffer);
-  bool SendOpenMessage(const talk_base::Buffer* buffer);
-  bool SendOpenAckMessage(const talk_base::Buffer* buffer);
+
+  void SendQueuedDataMessages();
+  bool SendDataMessage(const DataBuffer& buffer);
+  bool QueueSendDataMessage(const DataBuffer& buffer);
+
+  void SendQueuedControlMessages();
+  void QueueControlMessage(const rtc::Buffer& buffer);
+  bool SendControlMessage(const rtc::Buffer& buffer);
 
   std::string label_;
   InternalDataChannelInit config_;
@@ -208,14 +235,14 @@ class DataChannel : public DataChannelInterface,
   uint32 receive_ssrc_;
   // Control messages that always have to get sent out before any queued
   // data.
-  std::queue<const talk_base::Buffer*> queued_control_data_;
-  std::queue<DataBuffer*> queued_received_data_;
-  std::deque<DataBuffer*> queued_send_data_;
+  PacketQueue queued_control_data_;
+  PacketQueue queued_received_data_;
+  PacketQueue queued_send_data_;
 };
 
 class DataChannelFactory {
  public:
-  virtual talk_base::scoped_refptr<DataChannel> CreateDataChannel(
+  virtual rtc::scoped_refptr<DataChannel> CreateDataChannel(
       const std::string& label,
       const InternalDataChannelInit* config) = 0;
 

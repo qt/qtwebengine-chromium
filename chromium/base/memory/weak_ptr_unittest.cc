@@ -62,9 +62,7 @@ class BackgroundThread : public Thread {
  public:
   BackgroundThread() : Thread("owner_thread") {}
 
-  virtual ~BackgroundThread() {
-    Stop();
-  }
+  ~BackgroundThread() override { Stop(); }
 
   void CreateArrowFromTarget(Arrow** arrow, Target* target) {
     WaitableEvent completion(true, false);
@@ -276,6 +274,16 @@ TEST(WeakPtrTest, InvalidateWeakPtrs) {
   EXPECT_TRUE(factory.HasWeakPtrs());
   factory.InvalidateWeakPtrs();
   EXPECT_EQ(NULL, ptr.get());
+  EXPECT_FALSE(factory.HasWeakPtrs());
+
+  // Test that the factory can create new weak pointers after a
+  // InvalidateWeakPtrs call, and they remain valid until the next
+  // InvalidateWeakPtrs call.
+  WeakPtr<int> ptr2 = factory.GetWeakPtr();
+  EXPECT_EQ(&data, ptr2.get());
+  EXPECT_TRUE(factory.HasWeakPtrs());
+  factory.InvalidateWeakPtrs();
+  EXPECT_EQ(NULL, ptr2.get());
   EXPECT_FALSE(factory.HasWeakPtrs());
 }
 

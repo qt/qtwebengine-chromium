@@ -23,6 +23,7 @@ class WaitableEvent;
 namespace IPC {
 
 class SyncMessage;
+class ChannelFactory;
 
 // This is similar to ChannelProxy, with the added feature of supporting sending
 // synchronous messages.
@@ -71,7 +72,14 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
       const IPC::ChannelHandle& channel_handle,
       IPC::Channel::Mode mode,
       Listener* listener,
-      base::SingleThreadTaskRunner* ipc_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+      bool create_pipe_now,
+      base::WaitableEvent* shutdown_event);
+
+  static scoped_ptr<SyncChannel> Create(
+      scoped_ptr<ChannelFactory> factory,
+      Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
       bool create_pipe_now,
       base::WaitableEvent* shutdown_event);
 
@@ -80,12 +88,12 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   // added before any messages are sent or received.
   static scoped_ptr<SyncChannel> Create(
       Listener* listener,
-      base::SingleThreadTaskRunner* ipc_task_runner,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
       base::WaitableEvent* shutdown_event);
 
-  virtual ~SyncChannel();
+  ~SyncChannel() override;
 
-  virtual bool Send(Message* message) OVERRIDE;
+  bool Send(Message* message) override;
 
   // Sets the dispatch group for this channel, to only allow re-entrant dispatch
   // of messages to other channels in the same group.
@@ -113,9 +121,10 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   // ChannelProxy::Context for more information.
   class SyncContext : public Context {
    public:
-    SyncContext(Listener* listener,
-                base::SingleThreadTaskRunner* ipc_task_runner,
-                base::WaitableEvent* shutdown_event);
+    SyncContext(
+        Listener* listener,
+        const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+        base::WaitableEvent* shutdown_event);
 
     // Adds information about an outgoing sync message to the context so that
     // we know how to deserialize the reply.
@@ -161,17 +170,17 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
     base::WaitableEventWatcher::EventCallback MakeWaitableEventCallback();
 
    private:
-    virtual ~SyncContext();
+    ~SyncContext() override;
     // ChannelProxy methods that we override.
 
     // Called on the listener thread.
-    virtual void Clear() OVERRIDE;
+    void Clear() override;
 
     // Called on the IPC thread.
-    virtual bool OnMessageReceived(const Message& msg) OVERRIDE;
-    virtual void OnChannelError() OVERRIDE;
-    virtual void OnChannelOpened() OVERRIDE;
-    virtual void OnChannelClosed() OVERRIDE;
+    bool OnMessageReceived(const Message& msg) override;
+    void OnChannelError() override;
+    void OnChannelOpened() override;
+    void OnChannelClosed() override;
 
     // Cancels all pending Send calls.
     void CancelPendingSends();
@@ -191,9 +200,10 @@ class IPC_EXPORT SyncChannel : public ChannelProxy {
   };
 
  private:
-  SyncChannel(Listener* listener,
-              base::SingleThreadTaskRunner* ipc_task_runner,
-              base::WaitableEvent* shutdown_event);
+  SyncChannel(
+      Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+      base::WaitableEvent* shutdown_event);
 
   void OnWaitableEventSignaled(base::WaitableEvent* arg);
 

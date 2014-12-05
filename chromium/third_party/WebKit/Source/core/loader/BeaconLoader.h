@@ -13,7 +13,7 @@ namespace WTF {
 class ArrayBufferView;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class DOMFormData;
@@ -22,15 +22,15 @@ class LocalFrame;
 
 // Issue asynchronous beacon transmission loads independent of LocalFrame
 // staying alive. PingLoader providing the service.
-class BeaconLoader FINAL : public PingLoader {
+class BeaconLoader final : public PingLoader {
     WTF_MAKE_NONCOPYABLE(BeaconLoader);
     WTF_MAKE_FAST_ALLOCATED;
 public:
     virtual ~BeaconLoader() { }
 
     static bool sendBeacon(LocalFrame*, int, const KURL&, const String&, int&);
-    static bool sendBeacon(LocalFrame*, int, const KURL&, PassRefPtr<WTF::ArrayBufferView>&, int&);
-    static bool sendBeacon(LocalFrame*, int, const KURL&, PassRefPtrWillBeRawPtr<Blob>&, int&);
+    static bool sendBeacon(LocalFrame*, int, const KURL&, PassRefPtr<WTF::ArrayBufferView>, int&);
+    static bool sendBeacon(LocalFrame*, int, const KURL&, Blob*, int&);
     static bool sendBeacon(LocalFrame*, int, const KURL&, PassRefPtrWillBeRawPtr<DOMFormData>&, int&);
 
 private:
@@ -38,6 +38,6 @@ private:
     static void issueRequest(LocalFrame*, ResourceRequest&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BeaconLoader_h

@@ -51,6 +51,12 @@ class BASE_EXPORT SysInfo {
   // Returns system uptime in milliseconds.
   static int64 Uptime();
 
+  // Returns a descriptive string for the current machine model or an empty
+  // string if machime model is unknown or an error occured.
+  // e.g. MacPro1,1 on Mac.
+  // Only implemented on OS X, will return an empty string on other platforms.
+  static std::string HardwareModelName();
+
   // Returns the name of the host operating system.
   static std::string OperatingSystemName();
 
@@ -129,6 +135,11 @@ class BASE_EXPORT SysInfo {
   static int DalvikHeapSizeMB();
   static int DalvikHeapGrowthLimitMB();
 #endif  // defined(OS_ANDROID)
+
+  // Returns true if this is a low-end device.
+  // Low-end device refers to devices having less than 512M memory in the
+  // current implementation.
+  static bool IsLowEndDevice();
 };
 
 }  // namespace base

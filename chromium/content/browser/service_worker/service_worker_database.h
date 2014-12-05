@@ -48,20 +48,24 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
     STATUS_ERROR_FAILED,
     STATUS_ERROR_MAX,
   };
+  static const char* StatusToString(Status status);
 
   struct CONTENT_EXPORT RegistrationData {
     // These values are immutable for the life of a registration.
     int64 registration_id;
     GURL scope;
-    GURL script;
 
     // Versions are first stored once they successfully install and become
     // the waiting version. Then transition to the active version. The stored
-    // version may be in the ACTIVE state or in the INSTALLED state.
+    // version may be in the ACTIVATED state or in the INSTALLED state.
+    GURL script;
     int64 version_id;
     bool is_active;
     bool has_fetch_handler;
     base::Time last_update_check;
+
+    // Not populated until ServiceWorkerStorage::StoreRegistration is called.
+    int64_t resources_total_size_bytes;
 
     RegistrationData();
     ~RegistrationData();
@@ -70,9 +74,13 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   struct ResourceRecord {
     int64 resource_id;
     GURL url;
+    // Signed so we can store -1 to specify an unknown or error state.  When
+    // stored to the database, this value should always be >= 0.
+    int64 size_bytes;
 
-    ResourceRecord() {}
-    ResourceRecord(int64 id, GURL url) : resource_id(id), url(url) {}
+    ResourceRecord() : resource_id(-1), size_bytes(0) {}
+    ResourceRecord(int64 id, GURL url, int64 size_bytes)
+        : resource_id(id), url(url), size_bytes(size_bytes) {}
   };
 
   // Reads next available ids from the database. Returns OK if they are
@@ -114,14 +122,17 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
 
   // Writes |registration| and |resources| into the database and does following
   // things:
-  //   - Deletes an old version of the registration if exists.
+  //   - If an old version of the registration exists, deletes it and sets
+  //   |deleted_version| to the old version registration data object
+  //   |newly_purgeable_resources| to its resources. Otherwise, sets
+  //   |deleted_version->version_id| to -1.
   //   - Bumps the next registration id and the next version id if needed.
   //   - Removes |resources| from the uncommitted list if exist.
   // Returns OK they are successfully written. Otherwise, returns an error.
-  Status WriteRegistration(
-      const RegistrationData& registration,
-      const std::vector<ResourceRecord>& resources,
-      std::vector<int64>* newly_purgeable_resources);
+  Status WriteRegistration(const RegistrationData& registration,
+                           const std::vector<ResourceRecord>& resources,
+                           RegistrationData* deleted_version,
+                           std::vector<int64>* newly_purgeable_resources);
 
   // Updates a registration for |registration_id| to an active state. Returns OK
   // if it's successfully updated. Otherwise, returns an error.
@@ -137,12 +148,15 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
       const base::Time& time);
 
   // Deletes a registration for |registration_id| and moves resource records
-  // associated with it into the purgeable list. Returns OK if it's successfully
-  // deleted or not found in the database. Otherwise, returns an error.
-  Status DeleteRegistration(
-      int64 registration_id,
-      const GURL& origin,
-      std::vector<int64>* newly_purgeable_resources);
+  // associated with it into the purgeable list. If deletion occurred, sets
+  // |version_id| to the id of the version that was deleted and
+  // |newly_purgeable_resources| to its resources; otherwise, sets |version_id|
+  // to -1. Returns OK if it's successfully deleted or not found in the
+  // database. Otherwise, returns an error.
+  Status DeleteRegistration(int64 registration_id,
+                            const GURL& origin,
+                            RegistrationData* deleted_version,
+                            std::vector<int64>* newly_purgeable_resources);
 
   // As new resources are put into the diskcache, they go into an uncommitted
   // list. When a registration is saved that refers to those ids, they're
@@ -179,13 +193,12 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Returns OK on success. Otherwise deletes nothing and returns an error.
   Status PurgeUncommittedResourceIds(const std::set<int64>& ids);
 
-  // Deletes all data for |origin|, namely, unique origin, registrations and
+  // Deletes all data for |origins|, namely, unique origin, registrations and
   // resource records. Resources are moved to the purgeable list. Returns OK if
   // they are successfully deleted or not found in the database. Otherwise,
   // returns an error.
-  Status DeleteAllDataForOrigin(
-      const GURL& origin,
-      std::vector<int64>* newly_purgeable_resources);
+  Status DeleteAllDataForOrigins(const std::set<GURL>& origins,
+                                 std::vector<int64>* newly_purgeable_resources);
 
   // Completely deletes the contents of the database.
   // Be careful using this function.
@@ -272,6 +285,9 @@ class CONTENT_EXPORT ServiceWorkerDatabase {
   // Bumps the next available id if |used_id| is greater than or equal to the
   // cached one.
   void BumpNextRegistrationIdIfNeeded(
+      int64 used_id,
+      leveldb::WriteBatch* batch);
+  void BumpNextResourceIdIfNeeded(
       int64 used_id,
       leveldb::WriteBatch* batch);
   void BumpNextVersionIdIfNeeded(

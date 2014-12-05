@@ -25,20 +25,20 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/xmpp/xmpplogintask.h"
+#include "webrtc/libjingle/xmpp/xmpplogintask.h"
 
 #include <string>
 #include <vector>
 
-#include "talk/base/base64.h"
-#include "talk/base/common.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/jid.h"
-#include "talk/xmpp/saslmechanism.h"
-#include "talk/xmpp/xmppengineimpl.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/jid.h"
+#include "webrtc/libjingle/xmpp/saslmechanism.h"
+#include "webrtc/libjingle/xmpp/xmppengineimpl.h"
+#include "webrtc/base/base64.h"
+#include "webrtc/base/common.h"
 
-using talk_base::ConstantLabel;
+using rtc::ConstantLabel;
 
 namespace buzz {
 
@@ -103,7 +103,7 @@ XmppLoginTask::Advance() {
 
 #if _DEBUG
     LOG(LS_VERBOSE) << "XmppLoginTask::Advance - "
-      << talk_base::ErrorName(state_, LOGINTASK_STATES);
+      << rtc::ErrorName(state_, LOGINTASK_STATES);
 #endif  // _DEBUG
 
     switch (state_) {

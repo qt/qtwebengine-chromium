@@ -4,13 +4,15 @@
 
 #include "config.h"
 #include "core/dom/Element.h"
+#include "core/dom/StyleEngine.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLElement.h"
+#include "core/rendering/RenderObject.h"
 #include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -20,8 +22,8 @@ TEST(DragUpdateTest, AffectedByDragUpdate)
     // single element style recalc.
 
     OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
-    HTMLDocument* document = toHTMLDocument(&dummyPageHolder->document());
-    document->documentElement()->setInnerHTML("<style>div {width:100px;height:100px} div:-webkit-drag { background-color: green }</style>"
+    HTMLDocument& document = toHTMLDocument(dummyPageHolder->document());
+    document.documentElement()->setInnerHTML("<style>div {width:100px;height:100px} div:-webkit-drag { background-color: green }</style>"
         "<div>"
         "<span></span>"
         "<span></span>"
@@ -29,13 +31,13 @@ TEST(DragUpdateTest, AffectedByDragUpdate)
         "<span></span>"
         "</div>", ASSERT_NO_EXCEPTION);
 
-    document->view()->updateLayoutAndStyleIfNeededRecursive();
-    unsigned startCount = document->styleEngine()->resolverAccessCount();
+    document.view()->updateLayoutAndStyleIfNeededRecursive();
+    unsigned startCount = document.styleEngine()->resolverAccessCount();
 
-    document->documentElement()->renderer()->updateDragState(true);
-    document->view()->updateLayoutAndStyleIfNeededRecursive();
+    document.documentElement()->renderer()->updateDragState(true);
+    document.view()->updateLayoutAndStyleIfNeededRecursive();
 
-    unsigned accessCount = document->styleEngine()->resolverAccessCount() - startCount;
+    unsigned accessCount = document.styleEngine()->resolverAccessCount() - startCount;
 
     ASSERT_EQ(1U, accessCount);
 }
@@ -46,8 +48,8 @@ TEST(DragUpdateTest, ChildrenOrSiblingsAffectedByDragUpdate)
     // full subtree style recalc.
 
     OwnPtr<DummyPageHolder> dummyPageHolder = DummyPageHolder::create(IntSize(800, 600));
-    HTMLDocument* document = toHTMLDocument(&dummyPageHolder->document());
-    document->documentElement()->setInnerHTML("<style>div {width:100px;height:100px} div:-webkit-drag span { background-color: green }</style>"
+    HTMLDocument& document = toHTMLDocument(dummyPageHolder->document());
+    document.documentElement()->setInnerHTML("<style>div {width:100px;height:100px} div:-webkit-drag span { background-color: green }</style>"
         "<div>"
         "<span></span>"
         "<span></span>"
@@ -55,13 +57,13 @@ TEST(DragUpdateTest, ChildrenOrSiblingsAffectedByDragUpdate)
         "<span></span>"
         "</div>", ASSERT_NO_EXCEPTION);
 
-    document->updateLayout();
-    unsigned startCount = document->styleEngine()->resolverAccessCount();
+    document.updateLayout();
+    unsigned startCount = document.styleEngine()->resolverAccessCount();
 
-    document->documentElement()->renderer()->updateDragState(true);
-    document->updateLayout();
+    document.documentElement()->renderer()->updateDragState(true);
+    document.updateLayout();
 
-    unsigned accessCount = document->styleEngine()->resolverAccessCount() - startCount;
+    unsigned accessCount = document.styleEngine()->resolverAccessCount() - startCount;
 
     ASSERT_EQ(5U, accessCount);
 }

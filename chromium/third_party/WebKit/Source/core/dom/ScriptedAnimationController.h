@@ -31,13 +31,15 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
+#include "wtf/text/AtomicString.h"
 #include "wtf/text/StringImpl.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Event;
 class EventTarget;
+class MediaQueryListListener;
 class RequestAnimationFrameCallback;
 
 class ScriptedAnimationController : public RefCountedWillBeGarbageCollectedFinalized<ScriptedAnimationController> {
@@ -52,25 +54,28 @@ public:
 
     typedef int CallbackId;
 
-    int registerCallback(PassOwnPtr<RequestAnimationFrameCallback>);
+    int registerCallback(RequestAnimationFrameCallback*);
     void cancelCallback(CallbackId);
     void serviceScriptedAnimations(double monotonicTimeNow);
 
     void enqueueEvent(PassRefPtrWillBeRawPtr<Event>);
     void enqueuePerFrameEvent(PassRefPtrWillBeRawPtr<Event>);
+    void enqueueMediaQueryChangeListeners(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >&);
 
     void suspend();
     void resume();
 
+    void dispatchEventsAndCallbacksForPrinting();
 private:
     explicit ScriptedAnimationController(Document*);
 
     void scheduleAnimationIfNeeded();
 
-    void dispatchEvents();
+    void dispatchEvents(const AtomicString& eventInterfaceFilter = AtomicString());
     void executeCallbacks(double monotonicTimeNow);
+    void callMediaQueryListListeners();
 
-    typedef Vector<OwnPtr<RequestAnimationFrameCallback> > CallbackList;
+    typedef PersistentHeapVectorWillBeHeapVector<Member<RequestAnimationFrameCallback> > CallbackList;
     CallbackList m_callbacks;
     CallbackList m_callbacksToInvoke; // only non-empty while inside executeCallbacks
 
@@ -79,6 +84,8 @@ private:
     int m_suspendCount;
     WillBeHeapVector<RefPtrWillBeMember<Event> > m_eventQueue;
     WillBeHeapListHashSet<std::pair<RawPtrWillBeMember<const EventTarget>, const StringImpl*> > m_perFrameEvents;
+    typedef WillBeHeapListHashSet<RefPtrWillBeMember<MediaQueryListListener> > MediaQueryListListeners;
+    MediaQueryListListeners m_mediaQueryListListeners;
 };
 
 }

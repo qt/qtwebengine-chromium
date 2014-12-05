@@ -17,8 +17,10 @@
 #include "cc/base/scoped_ptr_vector.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/layer_client.h"
+#include "cc/layers/surface_layer.h"
 #include "cc/layers/texture_layer_client.h"
 #include "cc/resources/texture_mailbox.h"
+#include "cc/surfaces/surface_id.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/compositor/compositor.h"
@@ -36,8 +38,10 @@ class CopyOutputRequest;
 class DelegatedFrameProvider;
 class DelegatedRendererLayer;
 class Layer;
+class NinePatchLayer;
 class ResourceUpdateQueue;
 class SolidColorLayer;
+class SurfaceLayer;
 class TextureLayer;
 struct ReturnedResource;
 typedef std::vector<ReturnedResource> ReturnedResourceArray;
@@ -68,13 +72,17 @@ class COMPOSITOR_EXPORT Layer
  public:
   Layer();
   explicit Layer(LayerType type);
-  virtual ~Layer();
+  ~Layer() override;
 
   static bool UsingPictureLayer();
 
   // Retrieves the Layer's compositor. The Layer will walk up its parent chain
   // to locate it. Returns NULL if the Layer is not attached to a compositor.
-  Compositor* GetCompositor();
+  Compositor* GetCompositor() {
+    return const_cast<Compositor*>(
+        const_cast<const Layer*>(this)->GetCompositor());
+  }
+  const Compositor* GetCompositor() const;
 
   // Called by the compositor when the Layer is set as its root Layer. This can
   // only ever be called on the root layer.
@@ -142,6 +150,9 @@ class COMPOSITOR_EXPORT Layer
   // The offset from our parent (stored in bounds.origin()) is an integer but we
   // may need to be at a fractional pixel offset to align properly on screen.
   void SetSubpixelPositionOffset(const gfx::Vector2dF offset);
+  const gfx::Vector2dF& subpixel_position_offset() const {
+    return subpixel_position_offset_;
+  }
 
   // Return the target bounds if animator is running, or the current bounds
   // otherwise.
@@ -197,6 +208,7 @@ class COMPOSITOR_EXPORT Layer
   void SetBackgroundZoom(float zoom, int inset);
 
   // Set the shape of this layer.
+  SkRegion* alpha_shape() const { return alpha_shape_.get(); }
   void SetAlphaShape(scoped_ptr<SkRegion> region);
 
   // Invert the layer.
@@ -267,14 +279,29 @@ class COMPOSITOR_EXPORT Layer
   void SetShowDelegatedContent(cc::DelegatedFrameProvider* frame_provider,
                                gfx::Size frame_size_in_dip);
 
+  // Begins showing content from a surface with a particular id.
+  void SetShowSurface(cc::SurfaceId surface_id,
+                      const cc::SurfaceLayer::SatisfyCallback& satisfy_callback,
+                      const cc::SurfaceLayer::RequireCallback& require_callback,
+                      gfx::Size surface_size,
+                      gfx::Size frame_size_in_dip);
+
   bool has_external_content() {
-    return texture_layer_.get() || delegated_renderer_layer_.get();
+    return texture_layer_.get() || delegated_renderer_layer_.get() ||
+           surface_layer_.get();
   }
 
-  void SetShowPaintedContent();
+  // Show a solid color instead of delegated or surface contents.
+  void SetShowSolidColorContent();
 
   // Sets the layer's fill color.  May only be called for LAYER_SOLID_COLOR.
   void SetColor(SkColor color);
+
+  // Updates the nine patch layer's bitmap, aperture and border. May only be
+  // called for LAYER_NINE_PATCH.
+  void UpdateNinePatchLayerBitmap(const SkBitmap& bitmap);
+  void UpdateNinePatchLayerAperture(const gfx::Rect& aperture);
+  void UpdateNinePatchLayerBorder(const gfx::Rect& border);
 
   // Adds |invalid_rect| to the Layer's pending invalid rect and calls
   // ScheduleDraw(). Returns false if the paint request is ignored.
@@ -299,25 +326,28 @@ class COMPOSITOR_EXPORT Layer
   // Notifies the layer that the device scale factor has changed.
   void OnDeviceScaleFactorChanged(float device_scale_factor);
 
+  // Notifies the layer that one of its children has received a new
+  // delegated frame.
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip);
+
   // Requets a copy of the layer's output as a texture or bitmap.
   void RequestCopyOfOutput(scoped_ptr<cc::CopyOutputRequest> request);
 
   // ContentLayerClient
-  virtual void PaintContents(
+  void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      gfx::RectF* opaque,
-      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE;
-  virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
-  virtual bool FillsBoundsCompletely() const OVERRIDE;
+      ContentLayerClient::GraphicsContextStatus gc_status) override;
+  void DidChangeLayerCanUseLCDText() override {}
+  bool FillsBoundsCompletely() const override;
 
   cc::Layer* cc_layer() { return cc_layer_; }
 
   // TextureLayerClient
-  virtual bool PrepareTextureMailbox(
+  bool PrepareTextureMailbox(
       cc::TextureMailbox* mailbox,
       scoped_ptr<cc::SingleReleaseCallback>* release_callback,
-      bool use_shared_memory) OVERRIDE;
+      bool use_shared_memory) override;
 
   float device_scale_factor() const { return device_scale_factor_; }
 
@@ -327,11 +357,10 @@ class COMPOSITOR_EXPORT Layer
   bool force_render_surface() const { return force_render_surface_; }
 
   // LayerClient
-  virtual scoped_refptr<base::debug::ConvertableToTraceFormat>
-      TakeDebugInfo() OVERRIDE;
+  scoped_refptr<base::debug::ConvertableToTraceFormat> TakeDebugInfo() override;
 
   // LayerAnimationEventObserver
-  virtual void OnAnimationStarted(const cc::AnimationEvent& event) OVERRIDE;
+  void OnAnimationStarted(const cc::AnimationEvent& event) override;
 
   // Whether this layer has animations waiting to get sent to its cc::Layer.
   bool HasPendingThreadedAnimations() {
@@ -354,30 +383,28 @@ class COMPOSITOR_EXPORT Layer
   bool ConvertPointFromAncestor(const Layer* ancestor, gfx::Point* point) const;
 
   // Implementation of LayerAnimatorDelegate
-  virtual void SetBoundsFromAnimation(const gfx::Rect& bounds) OVERRIDE;
-  virtual void SetTransformFromAnimation(
-      const gfx::Transform& transform) OVERRIDE;
-  virtual void SetOpacityFromAnimation(float opacity) OVERRIDE;
-  virtual void SetVisibilityFromAnimation(bool visibility) OVERRIDE;
-  virtual void SetBrightnessFromAnimation(float brightness) OVERRIDE;
-  virtual void SetGrayscaleFromAnimation(float grayscale) OVERRIDE;
-  virtual void SetColorFromAnimation(SkColor color) OVERRIDE;
-  virtual void ScheduleDrawForAnimation() OVERRIDE;
-  virtual const gfx::Rect& GetBoundsForAnimation() const OVERRIDE;
-  virtual gfx::Transform GetTransformForAnimation() const OVERRIDE;
-  virtual float GetOpacityForAnimation() const OVERRIDE;
-  virtual bool GetVisibilityForAnimation() const OVERRIDE;
-  virtual float GetBrightnessForAnimation() const OVERRIDE;
-  virtual float GetGrayscaleForAnimation() const OVERRIDE;
-  virtual SkColor GetColorForAnimation() const OVERRIDE;
-  virtual float GetDeviceScaleFactor() const OVERRIDE;
-  virtual void AddThreadedAnimation(
-      scoped_ptr<cc::Animation> animation) OVERRIDE;
-  virtual void RemoveThreadedAnimation(int animation_id) OVERRIDE;
-  virtual LayerAnimatorCollection* GetLayerAnimatorCollection() OVERRIDE;
+  void SetBoundsFromAnimation(const gfx::Rect& bounds) override;
+  void SetTransformFromAnimation(const gfx::Transform& transform) override;
+  void SetOpacityFromAnimation(float opacity) override;
+  void SetVisibilityFromAnimation(bool visibility) override;
+  void SetBrightnessFromAnimation(float brightness) override;
+  void SetGrayscaleFromAnimation(float grayscale) override;
+  void SetColorFromAnimation(SkColor color) override;
+  void ScheduleDrawForAnimation() override;
+  const gfx::Rect& GetBoundsForAnimation() const override;
+  gfx::Transform GetTransformForAnimation() const override;
+  float GetOpacityForAnimation() const override;
+  bool GetVisibilityForAnimation() const override;
+  float GetBrightnessForAnimation() const override;
+  float GetGrayscaleForAnimation() const override;
+  SkColor GetColorForAnimation() const override;
+  float GetDeviceScaleFactor() const override;
+  void AddThreadedAnimation(scoped_ptr<cc::Animation> animation) override;
+  void RemoveThreadedAnimation(int animation_id) override;
+  LayerAnimatorCollection* GetLayerAnimatorCollection() override;
 
   // Creates a corresponding composited layer for |type_|.
-  void CreateWebLayer();
+  void CreateCcLayer();
 
   // Recomputes and sets to |cc_layer_|.
   void RecomputeDrawsContentAndUVRect();
@@ -469,9 +496,11 @@ class COMPOSITOR_EXPORT Layer
   // Ownership of the layer is held through one of the strongly typed layer
   // pointers, depending on which sort of layer this is.
   scoped_refptr<cc::Layer> content_layer_;
+  scoped_refptr<cc::NinePatchLayer> nine_patch_layer_;
   scoped_refptr<cc::TextureLayer> texture_layer_;
   scoped_refptr<cc::SolidColorLayer> solid_color_layer_;
   scoped_refptr<cc::DelegatedRendererLayer> delegated_renderer_layer_;
+  scoped_refptr<cc::SurfaceLayer> surface_layer_;
   cc::Layer* cc_layer_;
 
   // A cached copy of |Compositor::device_scale_factor()|.

@@ -18,6 +18,7 @@
 #include "webrtc/base/socket_unittest.h"
 #include "webrtc/base/testutils.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 
@@ -130,9 +131,15 @@ TEST_F(PhysicalSocketTest, TestUdpIPv6) {
   SocketTest::TestUdpIPv6();
 }
 
+// Disable for TSan v2, see
+// https://code.google.com/p/webrtc/issues/detail?id=3498 for details.
+#if !defined(THREAD_SANITIZER)
+
 TEST_F(PhysicalSocketTest, TestUdpReadyToSendIPv4) {
   SocketTest::TestUdpReadyToSendIPv4();
 }
+
+#endif // if !defined(THREAD_SANITIZER)
 
 TEST_F(PhysicalSocketTest, TestUdpReadyToSendIPv6) {
   SocketTest::TestUdpReadyToSendIPv6();

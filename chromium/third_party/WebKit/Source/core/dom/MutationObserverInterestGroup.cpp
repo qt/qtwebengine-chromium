@@ -34,7 +34,7 @@
 
 #include "core/dom/MutationRecord.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<MutationObserverInterestGroup> MutationObserverInterestGroup::createIfNeeded(Node& target, MutationObserver::MutationType type, MutationRecordDeliveryOptions oldValueFlag, const QualifiedName* attributeName)
 {
@@ -85,7 +85,9 @@ void MutationObserverInterestGroup::enqueueMutationRecord(PassRefPtrWillBeRawPtr
 
 void MutationObserverInterestGroup::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_observers);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

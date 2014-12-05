@@ -14,8 +14,10 @@
 #include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
-#include "ui/gfx/font_render_params_linux.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/pango_util.h"
+#include "ui/gfx/platform_font_pango.h"
 #include "ui/gfx/utf16_indexing.h"
 
 namespace gfx {
@@ -53,11 +55,20 @@ void SetPangoUnderlineMetrics(PangoFontDescription *desc,
   // Pango returns the position "above the baseline". Change its sign to convert
   // it to a vertical offset from the baseline.
   int position = -pango_font_metrics_get_underline_position(metrics);
-  pango_quantize_line_geometry(&thickness, &position);
+
   // Note: pango_quantize_line_geometry() guarantees pixel boundaries, so
   //       PANGO_PIXELS() is safe to use.
-  renderer->SetUnderlineMetrics(PANGO_PIXELS(thickness),
-                                PANGO_PIXELS(position));
+  pango_quantize_line_geometry(&thickness, &position);
+  int thickness_pixels = PANGO_PIXELS(thickness);
+  int position_pixels = PANGO_PIXELS(position);
+
+  // Ugly hack: make sure that underlines don't get clipped. See
+  // http://crbug.com/393117.
+  int descent_pixels = PANGO_PIXELS(pango_font_metrics_get_descent(metrics));
+  position_pixels = std::min(position_pixels,
+                             descent_pixels - thickness_pixels);
+
+  renderer->SetUnderlineMetrics(thickness_pixels, position_pixels);
 }
 
 }  // namespace
@@ -82,6 +93,15 @@ Size RenderTextPango::GetStringSize() {
   EnsureLayout();
   int width = 0, height = 0;
   pango_layout_get_pixel_size(layout_, &width, &height);
+
+  // Pango returns 0 widths for very long strings (of 0x40000 chars or more).
+  // This is caused by an int overflow in pango_glyph_string_extents_range.
+  // Absurdly long strings may even report non-zero garbage values for width;
+  // while detecting that isn't worthwhile, this handles the 0 width cases.
+  const long kAbsurdLength = 100000;
+  if (width == 0 && g_utf8_strlen(layout_text_, -1) > kAbsurdLength)
+    width = font_list().GetExpectedTextWidth(g_utf8_strlen(layout_text_, -1));
+
   // Keep a consistent height between this particular string's PangoLayout and
   // potentially larger text supported by the FontList.
   // For example, if a text field contains a Japanese character, which is
@@ -307,12 +327,8 @@ void RenderTextPango::EnsureLayout() {
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
 
-    SetupPangoLayoutWithFontDescription(layout_,
-                                        GetLayoutText(),
-                                        font_list().GetFontDescriptionString(),
-                                        0,
-                                        GetTextDirection(),
-                                        Canvas::DefaultCanvasTextAlignment());
+    SetUpPangoLayout(layout_, GetLayoutText(), font_list(), GetTextDirection(),
+                     Canvas::DefaultCanvasTextAlignment());
 
     // No width set so that the x-axis position is relative to the start of the
     // text. ToViewPoint and ToTextPoint take care of the position conversion
@@ -348,9 +364,11 @@ void RenderTextPango::SetupPangoAttributes(PangoLayout* layout) {
     const size_t italic_end = styles()[ITALIC].GetRange(italic).end();
     const size_t style_end = std::min(bold_end, italic_end);
     if (style != font_list().GetFontStyle()) {
+      // TODO(derat): Don't interpret gfx::FontList font descriptions as Pango
+      // font descriptions: http://crbug.com/393067
       FontList derived_font_list = font_list().DeriveWithStyle(style);
-      ScopedPangoFontDescription desc(pango_font_description_from_string(
-          derived_font_list.GetFontDescriptionString().c_str()));
+      ScopedPangoFontDescription desc(
+          derived_font_list.GetFontDescriptionString());
 
       PangoAttribute* pango_attr = pango_attr_font_desc_new(desc.get());
       pango_attr->start_index =
@@ -383,48 +401,26 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
   internal::SkiaTextRenderer renderer(canvas);
   ApplyFadeEffects(&renderer);
   ApplyTextShadows(&renderer);
-
-  // TODO(derat): Use font-specific params: http://crbug.com/125235
-  const FontRenderParams& render_params = GetDefaultFontRenderParams();
-  const bool use_subpixel_rendering =
-      render_params.subpixel_rendering !=
-          FontRenderParams::SUBPIXEL_RENDERING_NONE;
-  renderer.SetFontSmoothingSettings(
-      render_params.antialiasing,
-      use_subpixel_rendering && !background_is_transparent(),
-      render_params.subpixel_positioning);
-
-  SkPaint::Hinting skia_hinting = SkPaint::kNormal_Hinting;
-  switch (render_params.hinting) {
-    case FontRenderParams::HINTING_NONE:
-      skia_hinting = SkPaint::kNo_Hinting;
-      break;
-    case FontRenderParams::HINTING_SLIGHT:
-      skia_hinting = SkPaint::kSlight_Hinting;
-      break;
-    case FontRenderParams::HINTING_MEDIUM:
-      skia_hinting = SkPaint::kNormal_Hinting;
-      break;
-    case FontRenderParams::HINTING_FULL:
-      skia_hinting = SkPaint::kFull_Hinting;
-      break;
-  }
-  renderer.SetFontHinting(skia_hinting);
+  renderer.SetFontRenderParams(
+      font_list().GetPrimaryFont().GetFontRenderParams(),
+      background_is_transparent());
 
   // Temporarily apply composition underlines and selection colors.
   ApplyCompositionAndSelectionStyles();
 
   internal::StyleIterator style(colors(), styles());
   for (GSList* it = current_line_->runs; it; it = it->next) {
+    // Skip painting runs outside the display area.
+    if (SkScalarTruncToInt(x) >= display_rect().right())
+      break;
+
     PangoLayoutRun* run = reinterpret_cast<PangoLayoutRun*>(it->data);
     int glyph_count = run->glyphs->num_glyphs;
-    // TODO(msw): Skip painting runs outside the display rect area, like Win.
     if (glyph_count == 0)
       continue;
 
     ScopedPangoFontDescription desc(
         pango_font_describe(run->item->analysis.font));
-
     const std::string family_name =
         pango_font_description_get_family(desc.get());
     renderer.SetTextSize(GetPangoFontSizeInPixels(desc.get()));
@@ -453,9 +449,13 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
       x += pango_units_to_double(glyph.geometry.width);
 
       ++glyph_index;
+      // If this is the last glyph of the range or the last glyph inside the
+      // display area (which would cause early termination of the loop), paint
+      // the range.
       const size_t glyph_text_index = (glyph_index == glyph_count) ?
           style_range.end() : GetGlyphTextIndex(run, glyph_index);
-      if (!IndexInRange(style_range, glyph_text_index)) {
+      if (!IndexInRange(style_range, glyph_text_index) ||
+          SkScalarTruncToInt(x) >= display_rect().right()) {
         // TODO(asvitkine): For cases like "fi", where "fi" is a single glyph
         //                  but can span multiple styles, Pango splits the
         //                  styles evenly over the glyph. We can do this too by
@@ -477,7 +477,10 @@ void RenderTextPango::DrawVisualText(Canvas* canvas) {
         style_start_glyph_index = glyph_index;
         style_start_x = x;
       }
-    } while (glyph_index < glyph_count);
+      // Terminates loop when the end of the range has been reached or the next
+      // glyph falls outside the display area.
+    } while (glyph_index < glyph_count &&
+             SkScalarTruncToInt(x) < display_rect().right());
   }
 
   renderer.EndDiagonalStrike();

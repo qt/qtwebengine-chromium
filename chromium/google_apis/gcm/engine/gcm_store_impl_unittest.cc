@@ -45,8 +45,6 @@ class GCMStoreImplTest : public testing::Test {
   GCMStoreImplTest();
   virtual ~GCMStoreImplTest();
 
-  virtual void SetUp() OVERRIDE;
-
   scoped_ptr<GCMStore> BuildGCMStore();
 
   std::string GetNextPersistentId();
@@ -73,10 +71,6 @@ GCMStoreImplTest::GCMStoreImplTest()
 }
 
 GCMStoreImplTest::~GCMStoreImplTest() {}
-
-void GCMStoreImplTest::SetUp() {
-  testing::Test::SetUp();
-}
 
 scoped_ptr<GCMStore> GCMStoreImplTest::BuildGCMStore() {
   return scoped_ptr<GCMStore>(new GCMStoreImpl(
@@ -142,7 +136,7 @@ TEST_F(GCMStoreImplTest, DeviceCredentials) {
   ASSERT_EQ(kDeviceToken, load_result->device_security_token);
 }
 
-TEST_F(GCMStoreImplTest, LastCheckinTime) {
+TEST_F(GCMStoreImplTest, LastCheckinInfo) {
   scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
   scoped_ptr<GCMStore::LoadResult> load_result;
   gcm_store->Load(base::Bind(
@@ -150,9 +144,13 @@ TEST_F(GCMStoreImplTest, LastCheckinTime) {
   PumpLoop();
 
   base::Time last_checkin_time = base::Time::Now();
+  std::set<std::string> accounts;
+  accounts.insert("test_user1@gmail.com");
+  accounts.insert("test_user2@gmail.com");
 
-  gcm_store->SetLastCheckinTime(
+  gcm_store->SetLastCheckinInfo(
       last_checkin_time,
+      accounts,
       base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
   PumpLoop();
 
@@ -161,6 +159,7 @@ TEST_F(GCMStoreImplTest, LastCheckinTime) {
       &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
   PumpLoop();
   ASSERT_EQ(last_checkin_time, load_result->last_checkin_time);
+  ASSERT_EQ(accounts, load_result->last_checkin_accounts);
 }
 
 TEST_F(GCMStoreImplTest, GServicesSettings_ProtocolV2) {
@@ -261,6 +260,25 @@ TEST_F(GCMStoreImplTest, Registrations) {
             load_result->registrations["app2"]->sender_ids[0]);
   EXPECT_EQ(registration2->sender_ids[1],
             load_result->registrations["app2"]->sender_ids[1]);
+
+  gcm_store->RemoveRegistration(
+      "app2",
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  ASSERT_EQ(1u, load_result->registrations.size());
+  ASSERT_TRUE(load_result->registrations.find("app1") !=
+              load_result->registrations.end());
+  EXPECT_EQ(registration1->registration_id,
+            load_result->registrations["app1"]->registration_id);
+  ASSERT_EQ(1u, load_result->registrations["app1"]->sender_ids.size());
+  EXPECT_EQ(registration1->sender_ids[0],
+            load_result->registrations["app1"]->sender_ids[0]);
 }
 
 // Verify saving some incoming messages, reopening the directory, and then
@@ -501,6 +519,84 @@ TEST_F(GCMStoreImplTest, PerAppMessageLimits) {
   }
 }
 
+TEST_F(GCMStoreImplTest, AccountMapping) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+
+  // Add account mappings.
+  AccountMapping account_mapping1;
+  account_mapping1.account_id = "account_id_1";
+  account_mapping1.email = "account_id_1@gmail.com";
+  account_mapping1.access_token = "account_token1";
+  account_mapping1.status = AccountMapping::ADDING;
+  account_mapping1.status_change_timestamp = base::Time();
+  account_mapping1.last_message_id = "message_1";
+
+  AccountMapping account_mapping2;
+  account_mapping2.account_id = "account_id_2";
+  account_mapping2.email = "account_id_2@gmail.com";
+  account_mapping2.access_token = "account_token1";
+  account_mapping2.status = AccountMapping::REMOVING;
+  account_mapping2.status_change_timestamp =
+      base::Time::FromInternalValue(1305734521259935LL);
+  account_mapping2.last_message_id = "message_2";
+
+  gcm_store->AddAccountMapping(
+      account_mapping1,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+  gcm_store->AddAccountMapping(
+      account_mapping2,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  EXPECT_EQ(2UL, load_result->account_mappings.size());
+  GCMStore::AccountMappings::iterator iter =
+      load_result->account_mappings.begin();
+  EXPECT_EQ(account_mapping1.account_id, iter->account_id);
+  EXPECT_EQ(account_mapping1.email, iter->email);
+  EXPECT_TRUE(iter->access_token.empty());
+  EXPECT_EQ(AccountMapping::ADDING, iter->status);
+  EXPECT_EQ(account_mapping1.status_change_timestamp,
+            iter->status_change_timestamp);
+  EXPECT_EQ(account_mapping1.last_message_id, iter->last_message_id);
+  ++iter;
+  EXPECT_EQ(account_mapping2.account_id, iter->account_id);
+  EXPECT_EQ(account_mapping2.email, iter->email);
+  EXPECT_TRUE(iter->access_token.empty());
+  EXPECT_EQ(AccountMapping::REMOVING, iter->status);
+  EXPECT_EQ(account_mapping2.status_change_timestamp,
+            iter->status_change_timestamp);
+  EXPECT_EQ(account_mapping2.last_message_id, iter->last_message_id);
+
+  gcm_store->RemoveAccountMapping(
+      account_mapping1.account_id,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+
+  EXPECT_EQ(1UL, load_result->account_mappings.size());
+  iter = load_result->account_mappings.begin();
+  EXPECT_EQ(account_mapping2.account_id, iter->account_id);
+  EXPECT_EQ(account_mapping2.email, iter->email);
+  EXPECT_TRUE(iter->access_token.empty());
+  EXPECT_EQ(AccountMapping::REMOVING, iter->status);
+  EXPECT_EQ(account_mapping2.status_change_timestamp,
+            iter->status_change_timestamp);
+  EXPECT_EQ(account_mapping2.last_message_id, iter->last_message_id);
+}
+
 // When the database is destroyed, all database updates should fail. At the
 // same time, they per-app message counts should not go up, as failures should
 // result in decrementing the counts.
@@ -545,6 +641,27 @@ TEST_F(GCMStoreImplTest, ReloadAfterClose) {
                              base::Unretained(this),
                              &load_result));
   PumpLoop();
+}
+
+TEST_F(GCMStoreImplTest, LastTokenFetchTime) {
+  scoped_ptr<GCMStore> gcm_store(BuildGCMStore());
+  scoped_ptr<GCMStore::LoadResult> load_result;
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+  EXPECT_EQ(base::Time(), load_result->last_token_fetch_time);
+
+  base::Time last_token_fetch_time = base::Time::Now();
+  gcm_store->SetLastTokenFetchTime(
+      last_token_fetch_time,
+      base::Bind(&GCMStoreImplTest::UpdateCallback, base::Unretained(this)));
+  PumpLoop();
+
+  gcm_store = BuildGCMStore().Pass();
+  gcm_store->Load(base::Bind(
+      &GCMStoreImplTest::LoadCallback, base::Unretained(this), &load_result));
+  PumpLoop();
+  EXPECT_EQ(last_token_fetch_time, load_result->last_token_fetch_time);
 }
 
 }  // namespace

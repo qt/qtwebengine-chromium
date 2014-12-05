@@ -26,41 +26,30 @@
 #ifndef IDBPendingTransactionMonitor_h
 #define IDBPendingTransactionMonitor_h
 
-#include "platform/Supplementable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/PassOwnPtr.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class ExecutionContext;
 class IDBTransaction;
 
 // This class keeps track of the transactions created during the current
 // Javascript execution context. Transactions have an internal |active| flag
 // which is set to true on creation, but must be set to false when control
 // returns to the event loop.
-
-class IDBPendingTransactionMonitor : public Supplement<ExecutionContext> {
+class IDBPendingTransactionMonitor {
     WTF_MAKE_NONCOPYABLE(IDBPendingTransactionMonitor);
 
 public:
-    static IDBPendingTransactionMonitor& from(Supplementable<ExecutionContext>&);
-    virtual ~IDBPendingTransactionMonitor();
-    // The trace functino doesn't work until ExecutionContext is moved to Oilpan
-    // heap.
-    virtual void trace(Visitor* visitor) OVERRIDE { Supplement<ExecutionContext>::trace(visitor); }
+    IDBPendingTransactionMonitor();
+
     void addNewTransaction(IDBTransaction&);
     void deactivateNewTransactions();
 
 private:
-    IDBPendingTransactionMonitor();
-    static const char* supplementName();
-
-    typedef PersistentHeapVector<Member<IDBTransaction> > TransactionList;
-    TransactionList m_transactions;
+    PersistentHeapVector<Member<IDBTransaction> > m_transactions;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IDBPendingTransactionMonitor_h

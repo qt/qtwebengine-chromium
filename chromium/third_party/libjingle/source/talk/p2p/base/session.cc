@@ -25,28 +25,28 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/p2p/base/session.h"
+#include "webrtc/p2p/base/session.h"
 
-#include "talk/base/bind.h"
-#include "talk/base/common.h"
-#include "talk/base/logging.h"
-#include "talk/base/helpers.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/sslstreamadapter.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/jid.h"
-#include "talk/p2p/base/dtlstransport.h"
-#include "talk/p2p/base/p2ptransport.h"
-#include "talk/p2p/base/sessionclient.h"
-#include "talk/p2p/base/transport.h"
-#include "talk/p2p/base/transportchannelproxy.h"
-#include "talk/p2p/base/transportinfo.h"
+#include "webrtc/p2p/base/dtlstransport.h"
+#include "webrtc/p2p/base/p2ptransport.h"
+#include "webrtc/p2p/base/sessionclient.h"
+#include "webrtc/p2p/base/transport.h"
+#include "webrtc/p2p/base/transportchannelproxy.h"
+#include "webrtc/p2p/base/transportinfo.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/jid.h"
+#include "webrtc/base/bind.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/sslstreamadapter.h"
 
-#include "talk/p2p/base/constants.h"
+#include "webrtc/p2p/base/constants.h"
 
 namespace cricket {
 
-using talk_base::Bind;
+using rtc::Bind;
 
 bool BadMessage(const buzz::QName type,
                 const std::string& text,
@@ -64,18 +64,18 @@ TransportProxy::~TransportProxy() {
   }
 }
 
-std::string TransportProxy::type() const {
+const std::string& TransportProxy::type() const {
   return transport_->get()->type();
 }
 
 TransportChannel* TransportProxy::GetChannel(int component) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   return GetChannelProxy(component);
 }
 
 TransportChannel* TransportProxy::CreateChannel(
     const std::string& name, int component) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(GetChannel(component) == NULL);
   ASSERT(!transport_->get()->HasChannel(component));
 
@@ -99,7 +99,7 @@ bool TransportProxy::HasChannel(int component) {
 }
 
 void TransportProxy::DestroyChannel(int component) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   TransportChannel* channel = GetChannel(component);
   if (channel) {
     // If the state of TransportProxy is not NEGOTIATED
@@ -204,7 +204,7 @@ TransportChannelImpl* TransportProxy::GetOrCreateChannelProxyImpl(
 
 TransportChannelImpl* TransportProxy::GetOrCreateChannelProxyImpl_w(
     int component) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   TransportChannelImpl* impl = transport_->get()->GetChannel(component);
   if (impl == NULL) {
     impl = transport_->get()->CreateChannel(component);
@@ -220,7 +220,7 @@ void TransportProxy::SetupChannelProxy(
 
 void TransportProxy::SetupChannelProxy_w(
     int component, TransportChannelProxy* transproxy) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   TransportChannelImpl* impl = GetOrCreateChannelProxyImpl(component);
   ASSERT(impl != NULL);
   transproxy->SetImplementation(impl);
@@ -234,7 +234,7 @@ void TransportProxy::ReplaceChannelProxyImpl(TransportChannelProxy* proxy,
 
 void TransportProxy::ReplaceChannelProxyImpl_w(TransportChannelProxy* proxy,
                                                TransportChannelImpl* impl) {
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
+  ASSERT(rtc::Thread::Current() == worker_thread_);
   ASSERT(proxy != NULL);
   proxy->SetImplementation(impl);
 }
@@ -336,7 +336,7 @@ bool TransportProxy::OnRemoteCandidates(const Candidates& candidates,
 }
 
 void TransportProxy::SetIdentity(
-    talk_base::SSLIdentity* identity) {
+    rtc::SSLIdentity* identity) {
   transport_->get()->SetIdentity(identity);
 }
 
@@ -377,11 +377,11 @@ std::string BaseSession::StateToString(State state) {
     default:
       break;
   }
-  return "STATE_" + talk_base::ToString(state);
+  return "STATE_" + rtc::ToString(state);
 }
 
-BaseSession::BaseSession(talk_base::Thread* signaling_thread,
-                         talk_base::Thread* worker_thread,
+BaseSession::BaseSession(rtc::Thread* signaling_thread,
+                         rtc::Thread* worker_thread,
                          PortAllocator* port_allocator,
                          const std::string& sid,
                          const std::string& content_type,
@@ -396,9 +396,7 @@ BaseSession::BaseSession(talk_base::Thread* signaling_thread,
       transport_type_(NS_GINGLE_P2P),
       initiator_(initiator),
       identity_(NULL),
-      local_description_(NULL),
-      remote_description_(NULL),
-      ice_tiebreaker_(talk_base::CreateRandomId64()),
+      ice_tiebreaker_(rtc::CreateRandomId64()),
       role_switch_(false) {
   ASSERT(signaling_thread->IsCurrent());
 }
@@ -415,12 +413,41 @@ BaseSession::~BaseSession() {
        iter != transports_.end(); ++iter) {
     delete iter->second;
   }
-
-  delete remote_description_;
-  delete local_description_;
 }
 
-bool BaseSession::SetIdentity(talk_base::SSLIdentity* identity) {
+const SessionDescription* BaseSession::local_description() const {
+  // TODO(tommi): Assert on thread correctness.
+  return local_description_.get();
+}
+
+const SessionDescription* BaseSession::remote_description() const {
+  // TODO(tommi): Assert on thread correctness.
+  return remote_description_.get();
+}
+
+SessionDescription* BaseSession::remote_description() {
+  // TODO(tommi): Assert on thread correctness.
+  return remote_description_.get();
+}
+
+void BaseSession::set_local_description(const SessionDescription* sdesc) {
+  // TODO(tommi): Assert on thread correctness.
+  if (sdesc != local_description_.get())
+    local_description_.reset(sdesc);
+}
+
+void BaseSession::set_remote_description(SessionDescription* sdesc) {
+  // TODO(tommi): Assert on thread correctness.
+  if (sdesc != remote_description_)
+    remote_description_.reset(sdesc);
+}
+
+const SessionDescription* BaseSession::initiator_description() const {
+  // TODO(tommi): Assert on thread correctness.
+  return initiator_ ? local_description_.get() : remote_description_.get();
+}
+
+bool BaseSession::SetIdentity(rtc::SSLIdentity* identity) {
   if (identity_)
     return false;
   identity_ = identity;
@@ -435,11 +462,11 @@ bool BaseSession::PushdownTransportDescription(ContentSource source,
                                                ContentAction action,
                                                std::string* error_desc) {
   if (source == CS_LOCAL) {
-    return PushdownLocalTransportDescription(local_description_,
+    return PushdownLocalTransportDescription(local_description(),
                                              action,
                                              error_desc);
   }
-  return PushdownRemoteTransportDescription(remote_description_,
+  return PushdownRemoteTransportDescription(remote_description(),
                                             action,
                                             error_desc);
 }
@@ -509,8 +536,8 @@ TransportChannel* BaseSession::GetChannel(const std::string& content_name,
   TransportProxy* transproxy = GetTransportProxy(content_name);
   if (transproxy == NULL)
     return NULL;
-  else
-    return transproxy->GetChannel(component);
+
+  return transproxy->GetChannel(component);
 }
 
 void BaseSession::DestroyChannel(const std::string& content_name,
@@ -819,6 +846,7 @@ void BaseSession::LogState(State old_state, State new_state) {
                << " Transport:" << transport_type();
 }
 
+// static
 bool BaseSession::GetTransportDescription(const SessionDescription* description,
                                           const std::string& content_name,
                                           TransportDescription* tdesc) {
@@ -882,7 +910,7 @@ bool BaseSession::GetContentAction(ContentAction* action,
   return true;
 }
 
-void BaseSession::OnMessage(talk_base::Message *pmsg) {
+void BaseSession::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
   case MSG_TIMEOUT:
     // Session timeout has occured.
@@ -928,7 +956,7 @@ Session::~Session() {
   delete transport_parser_;
 }
 
-bool Session::Initiate(const std::string &to,
+bool Session::Initiate(const std::string& to,
                        const SessionDescription* sdesc) {
   ASSERT(signaling_thread()->IsCurrent());
   SessionError error;
@@ -1260,10 +1288,10 @@ void Session::OnIncomingResponse(const buzz::XmlElement* orig_stanza,
 }
 
 void Session::OnInitiateAcked() {
-    // TODO: This is to work around server re-ordering
-    // messages.  We send the candidates once the session-initiate
-    // is acked.  Once we have fixed the server to guarantee message
-    // order, we can remove this case.
+  // TODO: This is to work around server re-ordering
+  // messages.  We send the candidates once the session-initiate
+  // is acked.  Once we have fixed the server to guarantee message
+  // order, we can remove this case.
   if (!initiate_acked_) {
     initiate_acked_ = true;
     SessionError error;
@@ -1534,7 +1562,7 @@ void Session::SetError(Error error, const std::string& error_desc) {
     signaling_thread()->Post(this, MSG_ERROR);
 }
 
-void Session::OnMessage(talk_base::Message* pmsg) {
+void Session::OnMessage(rtc::Message* pmsg) {
   // preserve this because BaseSession::OnMessage may modify it
   State orig_state = state();
 
@@ -1682,7 +1710,7 @@ bool Session::SendMessage(ActionType type, const XmlElements& action_elems,
 
 bool Session::SendMessage(ActionType type, const XmlElements& action_elems,
                           const std::string& remote_name, SessionError* error) {
-  talk_base::scoped_ptr<buzz::XmlElement> stanza(
+  rtc::scoped_ptr<buzz::XmlElement> stanza(
       new buzz::XmlElement(buzz::QN_IQ));
 
   SessionMessage msg(current_protocol_, type, id(), initiator_name());
@@ -1696,7 +1724,7 @@ bool Session::SendMessage(ActionType type, const XmlElements& action_elems,
 template <typename Action>
 bool Session::SendMessage(ActionType type, const Action& action,
                           SessionError* error) {
-  talk_base::scoped_ptr<buzz::XmlElement> stanza(
+  rtc::scoped_ptr<buzz::XmlElement> stanza(
       new buzz::XmlElement(buzz::QN_IQ));
   if (!WriteActionMessage(type, action, stanza.get(), error))
     return false;
@@ -1737,7 +1765,7 @@ bool Session::WriteActionMessage(SignalingProtocol protocol,
 }
 
 void Session::SendAcknowledgementMessage(const buzz::XmlElement* stanza) {
-  talk_base::scoped_ptr<buzz::XmlElement> ack(
+  rtc::scoped_ptr<buzz::XmlElement> ack(
       new buzz::XmlElement(buzz::QN_IQ));
   ack->SetAttr(buzz::QN_TO, remote_name());
   ack->SetAttr(buzz::QN_ID, stanza->Attr(buzz::QN_ID));

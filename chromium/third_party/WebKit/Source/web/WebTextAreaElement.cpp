@@ -36,8 +36,6 @@
 #include "public/platform/WebString.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebTextAreaElement::WebTextAreaElement(const PassRefPtrWillBeRawPtr<HTMLTextAreaElement>& element)

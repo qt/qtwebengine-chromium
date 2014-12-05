@@ -32,18 +32,18 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderTextTrackContainerElement FINAL : public RenderBlockFlow {
+class RenderTextTrackContainerElement final : public RenderBlockFlow {
 public:
     RenderTextTrackContainerElement(Element*);
 
 private:
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderMediaControlElements_h
 

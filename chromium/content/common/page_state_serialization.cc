@@ -193,12 +193,13 @@ struct SerializeObject {
 //         which is no longer used.
 // 20: Add pinch viewport scroll offset, the offset of the pinched zoomed
 //     viewport within the unzoomed main frame.
+// 21: Add frame sequence number
 //
 // NOTE: If the version is -1, then the pickle contains only a URL string.
 // See ReadPageState.
 //
 const int kMinVersion = 11;
-const int kCurrentVersion = 20;
+const int kCurrentVersion = 21;
 
 // A bunch of convenience functions to read/write to SerializeObjects.  The
 // de-serializers assume the input data will be in the correct format and fall
@@ -231,10 +232,6 @@ int ReadInteger(SerializeObject* obj) {
   return 0;
 }
 
-void ConsumeInteger(SerializeObject* obj) {
-  int unused ALLOW_UNUSED = ReadInteger(obj);
-}
-
 void WriteInteger64(int64 data, SerializeObject* obj) {
   obj->pickle.WriteInt64(data);
 }
@@ -245,10 +242,6 @@ int64 ReadInteger64(SerializeObject* obj) {
     return tmp;
   obj->parse_error = true;
   return 0;
-}
-
-void ConsumeInteger64(SerializeObject* obj) {
-  int64 unused ALLOW_UNUSED = ReadInteger64(obj);
 }
 
 void WriteReal(double data, SerializeObject* obj) {
@@ -269,10 +262,6 @@ double ReadReal(SerializeObject* obj) {
   return value;
 }
 
-void ConsumeReal(SerializeObject* obj) {
-  double unused ALLOW_UNUSED = ReadReal(obj);
-}
-
 void WriteBoolean(bool data, SerializeObject* obj) {
   obj->pickle.WriteInt(data ? 1 : 0);
 }
@@ -283,10 +272,6 @@ bool ReadBoolean(SerializeObject* obj) {
     return tmp;
   obj->parse_error = true;
   return false;
-}
-
-void ConsumeBoolean(SerializeObject* obj) {
-  bool unused ALLOW_UNUSED = ReadBoolean(obj);
 }
 
 void WriteGURL(const GURL& url, SerializeObject* obj) {
@@ -359,10 +344,6 @@ base::NullableString16 ReadString(SerializeObject* obj) {
   return chars ?
       base::NullableString16(base::string16(chars, num_chars), false) :
       base::NullableString16();
-}
-
-void ConsumeString(SerializeObject* obj) {
-  const base::char16* unused ALLOW_UNUSED = ReadStringNoCopy(obj, NULL);
 }
 
 template <typename T>
@@ -511,6 +492,7 @@ void WriteFrameState(
   WriteReal(state.page_scale_factor, obj);
   WriteInteger64(state.item_sequence_number, obj);
   WriteInteger64(state.document_sequence_number, obj);
+  WriteInteger64(state.frame_sequence_number, obj);
   WriteInteger(state.referrer_policy, obj);
   WriteReal(state.pinch_viewport_scroll_offset.x(), obj);
   WriteReal(state.pinch_viewport_scroll_offset.y(), obj);
@@ -537,19 +519,19 @@ void WriteFrameState(
 void ReadFrameState(SerializeObject* obj, bool is_top,
                     ExplodedFrameState* state) {
   if (obj->version < 14 && !is_top)
-    ConsumeInteger(obj);  // Skip over redundant version field.
+    ReadInteger(obj);  // Skip over redundant version field.
 
   state->url_string = ReadString(obj);
 
   if (obj->version < 19)
-    ConsumeString(obj);  // Skip obsolete original url string field.
+    ReadString(obj);  // Skip obsolete original url string field.
 
   state->target = ReadString(obj);
   if (obj->version < 15) {
-    ConsumeString(obj);  // Skip obsolete parent field.
-    ConsumeString(obj);  // Skip obsolete title field.
-    ConsumeString(obj);  // Skip obsolete alternate title field.
-    ConsumeReal(obj);    // Skip obsolete visited time field.
+    ReadString(obj);  // Skip obsolete parent field.
+    ReadString(obj);  // Skip obsolete title field.
+    ReadString(obj);  // Skip obsolete alternate title field.
+    ReadReal(obj);    // Skip obsolete visited time field.
   }
 
   int x = ReadInteger(obj);
@@ -557,8 +539,8 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->scroll_offset = gfx::Point(x, y);
 
   if (obj->version < 15) {
-    ConsumeBoolean(obj);  // Skip obsolete target item flag.
-    ConsumeInteger(obj);  // Skip obsolete visit count field.
+    ReadBoolean(obj);  // Skip obsolete target item flag.
+    ReadInteger(obj);  // Skip obsolete visit count field.
   }
   state->referrer = ReadString(obj);
 
@@ -567,9 +549,11 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->page_scale_factor = ReadReal(obj);
   state->item_sequence_number = ReadInteger64(obj);
   state->document_sequence_number = ReadInteger64(obj);
+  if (obj->version >= 21)
+    state->frame_sequence_number = ReadInteger64(obj);
 
   if (obj->version >= 17 && obj->version < 19)
-    ConsumeInteger64(obj); // Skip obsolete target frame id number.
+    ReadInteger64(obj); // Skip obsolete target frame id number.
 
   if (obj->version >= 18) {
     state->referrer_policy =
@@ -596,7 +580,7 @@ void ReadFrameState(SerializeObject* obj, bool is_top,
   state->http_body.http_content_type = ReadString(obj);
 
   if (obj->version < 14)
-    ConsumeString(obj);  // Skip unused referrer string.
+    ReadString(obj);  // Skip unused referrer string.
 
 #if defined(OS_ANDROID)
   if (obj->version == 11) {
@@ -692,11 +676,38 @@ ExplodedHttpBody::~ExplodedHttpBody() {
 ExplodedFrameState::ExplodedFrameState()
     : item_sequence_number(0),
       document_sequence_number(0),
+      frame_sequence_number(0),
       page_scale_factor(0.0),
       referrer_policy(blink::WebReferrerPolicyDefault) {
 }
 
+ExplodedFrameState::ExplodedFrameState(const ExplodedFrameState& other) {
+  assign(other);
+}
+
 ExplodedFrameState::~ExplodedFrameState() {
+}
+
+void ExplodedFrameState::operator=(const ExplodedFrameState& other) {
+  if (&other != this)
+    assign(other);
+}
+
+void ExplodedFrameState::assign(const ExplodedFrameState& other) {
+  url_string = other.url_string;
+  referrer = other.referrer;
+  target = other.target;
+  state_object = other.state_object;
+  document_state = other.document_state;
+  pinch_viewport_scroll_offset = other.pinch_viewport_scroll_offset;
+  scroll_offset = other.scroll_offset;
+  item_sequence_number = other.item_sequence_number;
+  document_sequence_number = other.document_sequence_number;
+  frame_sequence_number = other.frame_sequence_number;
+  page_scale_factor = other.page_scale_factor;
+  referrer_policy = other.referrer_policy;
+  http_body = other.http_body;
+  children = other.children;
 }
 
 ExplodedPageState::ExplodedPageState() {

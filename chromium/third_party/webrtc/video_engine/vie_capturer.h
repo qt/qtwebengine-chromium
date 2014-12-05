@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/engine_configurations.h"
 #include "webrtc/modules/video_capture/include/video_capture.h"
@@ -20,7 +21,6 @@
 #include "webrtc/modules/video_coding/main/interface/video_coding.h"
 #include "webrtc/modules/video_processing/main/interface/video_processing.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/typedefs.h"
 #include "webrtc/video_engine/include/vie_base.h"
 #include "webrtc/video_engine/include/vie_capture.h"
@@ -94,7 +94,6 @@ class ViECapturer
 
   // Effect filter.
   int32_t RegisterEffectFilter(ViEEffectFilter* effect_filter);
-  int32_t EnableDenoising(bool enable);
   int32_t EnableDeflickering(bool enable);
   int32_t EnableBrightnessAlarm(bool enable);
 
@@ -180,7 +179,6 @@ class ViECapturer
   VideoProcessingModule::FrameStats* brightness_frame_stats_;
   Brightness current_brightness_level_;
   Brightness reported_brightness_level_;
-  bool denoising_enabled_;
 
   // Statistics observer.
   scoped_ptr<CriticalSectionWrapper> observer_cs_;

@@ -7,55 +7,23 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/aura/window.h"
+#include "ui/views/controls/native/native_view_host_test_base.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
 
-class NativeViewHostTest : public ViewsTestBase {
+class NativeViewHostTest : public test::NativeViewHostTestBase {
  public:
   NativeViewHostTest() {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ViewsTestBase::SetUp();
-
-    // Create the top level widget.
-    toplevel_.reset(new Widget);
-    Widget::InitParams toplevel_params =
-        CreateParams(Widget::InitParams::TYPE_WINDOW);
-    toplevel_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    toplevel_->Init(toplevel_params);
-  }
-
-  // Create a child widget whose native parent is |native_parent_view|, uses
-  // |contents_view|, and is attached to |host| which is added as a child to
-  // |parent_view|.
-  Widget* CreateChildForHost(gfx::NativeView native_parent_view,
-                             View* parent_view,
-                             View* contents_view,
-                             NativeViewHost* host) {
-    Widget* child = new Widget;
-    Widget::InitParams child_params(Widget::InitParams::TYPE_CONTROL);
-    child_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-    child_params.parent = native_parent_view;
-    child->Init(child_params);
-    child->SetContentsView(contents_view);
-
-    // Owned by |parent_view|.
-    parent_view->AddChildView(host);
-    host->Attach(child->GetNativeView());
-
-    return child;
-  }
-
-  Widget* toplevel() {
-    return toplevel_.get();
+    CreateTopLevel();
   }
 
  private:
-  scoped_ptr<Widget> toplevel_;
-
   DISALLOW_COPY_AND_ASSIGN(NativeViewHostTest);
 };
 
@@ -75,7 +43,7 @@ class NativeViewHierarchyChangedTestView : public View {
   int notification_count() const { return notification_count_; }
 
   // Overriden from View:
-  virtual void NativeViewHierarchyChanged() OVERRIDE {
+  void NativeViewHierarchyChanged() override {
     ++notification_count_;
     View::NativeViewHierarchyChanged();
   }
@@ -105,8 +73,8 @@ class ViewHierarchyChangedTestHost : public NativeViewHost {
   }
 
   // Overriden from NativeViewHost:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE {
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override {
     gfx::NativeView parent_before = native_view() ?
         GetNativeParent(native_view()) : NULL;
     NativeViewHost::ViewHierarchyChanged(details);
@@ -134,14 +102,26 @@ TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
                                               toplevel()->GetRootView(),
                                               test_view,
                                               host));
-
+#if defined(USE_AURA)
+  // Two notifications are generated from inserting the native view into the
+  // clipping window and then inserting the clipping window into the root
+  // window.
+  EXPECT_EQ(2, test_view->notification_count());
+#else
   EXPECT_EQ(0, test_view->notification_count());
+#endif
   test_view->ResetCount();
 
   // Detaching should send a NativeViewHierarchyChanged() notification and
   // change the parent.
   host->Detach();
+#if defined(USE_AURA)
+  // Two notifications are generated from removing the native view from the
+  // clipping window and then reparenting it to the root window.
+  EXPECT_EQ(2, test_view->notification_count());
+#else
   EXPECT_EQ(1, test_view->notification_count());
+#endif
   EXPECT_NE(toplevel()->GetNativeView(),
             GetNativeParent(child->GetNativeView()));
   test_view->ResetCount();
@@ -149,9 +129,17 @@ TEST_F(NativeViewHostTest, NativeViewHierarchyChanged) {
   // Attaching should send a NativeViewHierarchyChanged() notification and
   // reset the parent.
   host->Attach(child->GetNativeView());
+#if defined(USE_AURA)
+  // There is a clipping window inserted above the native view that needs to be
+  // accounted for when looking at the relationship between the native views.
+  EXPECT_EQ(2, test_view->notification_count());
+  EXPECT_EQ(toplevel()->GetNativeView(),
+            GetNativeParent(GetNativeParent(child->GetNativeView())));
+#else
   EXPECT_EQ(1, test_view->notification_count());
   EXPECT_EQ(toplevel()->GetNativeView(),
             GetNativeParent(child->GetNativeView()));
+#endif
 }
 
 // Verifies ViewHierarchyChanged handles NativeViewHost remove, add and move

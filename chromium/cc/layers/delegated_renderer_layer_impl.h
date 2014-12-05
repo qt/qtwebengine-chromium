@@ -21,22 +21,22 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
       LayerTreeImpl* tree_impl, int id) {
     return make_scoped_ptr(new DelegatedRendererLayerImpl(tree_impl, id));
   }
-  virtual ~DelegatedRendererLayerImpl();
+  ~DelegatedRendererLayerImpl() override;
 
   // LayerImpl overrides.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual bool HasDelegatedContent() const OVERRIDE;
-  virtual bool HasContributingDelegatedRenderPasses() const OVERRIDE;
-  virtual RenderPass::Id FirstContributingRenderPassId() const OVERRIDE;
-  virtual RenderPass::Id NextContributingRenderPassId(
-      RenderPass::Id previous) const OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  bool HasDelegatedContent() const override;
+  bool HasContributingDelegatedRenderPasses() const override;
+  RenderPassId FirstContributingRenderPassId() const override;
+  RenderPassId NextContributingRenderPassId(
+      RenderPassId previous) const override;
+  void ReleaseResources() override;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
   void AppendContributingRenderPasses(RenderPassSink* render_pass_sink);
 
@@ -56,7 +56,7 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
   DelegatedRendererLayerImpl(LayerTreeImpl* tree_impl, int id);
 
   int ChildIdForTesting() const { return child_id_; }
-  const ScopedPtrVector<RenderPass>& RenderPassesInDrawOrderForTesting() const {
+  const RenderPassList& RenderPassesInDrawOrderForTesting() const {
     return render_passes_in_draw_order_;
   }
   const ResourceProvider::ResourceIdArray& ResourcesForTesting() const {
@@ -66,32 +66,30 @@ class CC_EXPORT DelegatedRendererLayerImpl : public LayerImpl {
  private:
   void ClearChildId();
 
-  void AppendRainbowDebugBorder(QuadSink* quad_sink,
+  void AppendRainbowDebugBorder(RenderPass* render_pass,
                                 AppendQuadsData* append_quads_data);
 
-  void SetRenderPasses(
-      ScopedPtrVector<RenderPass>* render_passes_in_draw_order);
+  void SetRenderPasses(RenderPassList* render_passes_in_draw_order);
   void ClearRenderPasses();
 
   // Returns |true| if the delegated_render_pass_id is part of the current
   // frame and can be converted.
-  bool ConvertDelegatedRenderPassId(
-      RenderPass::Id delegated_render_pass_id,
-      RenderPass::Id* output_render_pass_id) const;
+  bool ConvertDelegatedRenderPassId(RenderPassId delegated_render_pass_id,
+                                    RenderPassId* output_render_pass_id) const;
 
-  void AppendRenderPassQuads(
-      QuadSink* quad_sink,
-      AppendQuadsData* append_quads_data,
-      const RenderPass* delegated_render_pass,
-      const gfx::Size& frame_size) const;
+  void AppendRenderPassQuads(RenderPass* render_pass,
+                             const Occlusion& occlusion_in_content_space,
+                             AppendQuadsData* append_quads_data,
+                             const RenderPass* delegated_render_pass,
+                             const gfx::Size& frame_size) const;
 
   // LayerImpl overrides.
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   bool have_render_passes_to_push_;
   float inverse_device_scale_factor_;
-  ScopedPtrVector<RenderPass> render_passes_in_draw_order_;
-  base::hash_map<RenderPass::Id, int> render_passes_index_by_id_;
+  RenderPassList render_passes_in_draw_order_;
+  base::hash_map<RenderPassId, int> render_passes_index_by_id_;
   ResourceProvider::ResourceIdArray resources_;
 
   int child_id_;

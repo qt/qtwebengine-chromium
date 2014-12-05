@@ -33,9 +33,11 @@ class TestContentLayer : public Layer {
     SetIsDrawable(true);
   }
 
-  virtual Region VisibleContentOpaqueRegion() const OVERRIDE {
-    if (override_opaque_contents_rect_)
-      return gfx::IntersectRects(opaque_contents_rect_, visible_content_rect());
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override {
+    if (override_opaque_contents_rect_) {
+      return SimpleEnclosedRegion(
+          gfx::IntersectRects(opaque_contents_rect_, visible_content_rect()));
+    }
     return Layer::VisibleContentOpaqueRegion();
   }
   void SetOpaqueContentsRect(const gfx::Rect& opaque_contents_rect) {
@@ -44,7 +46,7 @@ class TestContentLayer : public Layer {
   }
 
  private:
-  virtual ~TestContentLayer() {}
+  ~TestContentLayer() override {}
 
   bool override_opaque_contents_rect_;
   gfx::Rect opaque_contents_rect_;
@@ -57,9 +59,11 @@ class TestContentLayerImpl : public LayerImpl {
     SetDrawsContent(true);
   }
 
-  virtual Region VisibleContentOpaqueRegion() const OVERRIDE {
-    if (override_opaque_contents_rect_)
-      return gfx::IntersectRects(opaque_contents_rect_, visible_content_rect());
+  SimpleEnclosedRegion VisibleContentOpaqueRegion() const override {
+    if (override_opaque_contents_rect_) {
+      return SimpleEnclosedRegion(
+          gfx::IntersectRects(opaque_contents_rect_, visible_content_rect()));
+    }
     return LayerImpl::VisibleContentOpaqueRegion();
   }
   void SetOpaqueContentsRect(const gfx::Rect& opaque_contents_rect) {
@@ -81,27 +85,24 @@ class TestOcclusionTrackerWithClip : public TestOcclusionTracker<LayerType> {
   bool OccludedLayer(const LayerType* layer,
                      const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
-    return this->Occluded(
-        layer->render_target(), content_rect, layer->draw_transform());
+    return this->GetCurrentOcclusionForLayer(layer->draw_transform())
+        .IsOccluded(content_rect);
   }
 
   // Gives an unoccluded sub-rect of |content_rect| in the content space of the
-  // layer. Simple wrapper around UnoccludedContentRect.
+  // layer. Simple wrapper around GetUnoccludedContentRect.
   gfx::Rect UnoccludedLayerContentRect(const LayerType* layer,
                                        const gfx::Rect& content_rect) const {
     DCHECK(layer->visible_content_rect().Contains(content_rect));
-    return this->UnoccludedContentRect(content_rect, layer->draw_transform());
+    return this->GetCurrentOcclusionForLayer(layer->draw_transform())
+        .GetUnoccludedContentRect(content_rect);
   }
 
   gfx::Rect UnoccludedSurfaceContentRect(const LayerType* layer,
-                                         bool for_replica,
                                          const gfx::Rect& content_rect) const {
     typename LayerType::RenderSurfaceType* surface = layer->render_surface();
-    gfx::Transform draw_transform = for_replica
-                                        ? surface->replica_draw_transform()
-                                        : surface->draw_transform();
-    return this->UnoccludedContributingSurfaceContentRect(content_rect,
-                                                          draw_transform);
+    return this->UnoccludedContributingSurfaceContentRect(
+        content_rect, surface->draw_transform());
   }
 };
 
@@ -120,19 +121,16 @@ struct OcclusionTrackerTestMainThreadTypes {
     return make_scoped_refptr(new ContentLayerType());
   }
 
-  static LayerPtrType PassLayerPtr(ContentLayerPtrType* layer) {
-    LayerPtrType ref(*layer);
-    *layer = NULL;
-    return ref;
-  }
-
-  static LayerPtrType PassLayerPtr(LayerPtrType* layer) {
+  template <typename T>
+  static LayerPtrType PassLayerPtr(T* layer) {
     LayerPtrType ref(*layer);
     *layer = NULL;
     return ref;
   }
 
   static void DestroyLayer(LayerPtrType* layer) { *layer = NULL; }
+
+  static void RecursiveUpdateNumChildren(LayerType* layerType) {}
 };
 
 struct OcclusionTrackerTestImplThreadTypes {
@@ -153,15 +151,16 @@ struct OcclusionTrackerTestImplThreadTypes {
   }
   static int next_layer_impl_id;
 
-  static LayerPtrType PassLayerPtr(LayerPtrType* layer) {
+  template <typename T>
+  static LayerPtrType PassLayerPtr(T* layer) {
     return layer->Pass();
   }
 
-  static LayerPtrType PassLayerPtr(ContentLayerPtrType* layer) {
-    return layer->PassAs<LayerType>();
-  }
-
   static void DestroyLayer(LayerPtrType* layer) { layer->reset(); }
+
+  static void RecursiveUpdateNumChildren(LayerType* layer) {
+    FakeLayerTreeHostImpl::RecursiveUpdateNumChildren(layer);
+  }
 };
 
 int OcclusionTrackerTestImplThreadTypes::next_layer_impl_id = 1;
@@ -169,17 +168,13 @@ int OcclusionTrackerTestImplThreadTypes::next_layer_impl_id = 1;
 template <typename Types> class OcclusionTrackerTest : public testing::Test {
  protected:
   explicit OcclusionTrackerTest(bool opaque_layers)
-      : opaque_layers_(opaque_layers), host_(FakeLayerTreeHost::Create()) {}
+      : opaque_layers_(opaque_layers),
+        client_(FakeLayerTreeHostClient::DIRECT_3D),
+        host_(FakeLayerTreeHost::Create(&client_)) {}
 
   virtual void RunMyTest() = 0;
 
-  virtual void TearDown() {
-    Types::DestroyLayer(&root_);
-    render_surface_layer_list_.reset();
-    render_surface_layer_list_impl_.clear();
-    replica_layers_.clear();
-    mask_layers_.clear();
-  }
+  virtual void TearDown() { DestroyLayers(); }
 
   typename Types::HostType* GetHost();
 
@@ -281,6 +276,14 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
     return layer;
   }
 
+  void DestroyLayers() {
+    Types::DestroyLayer(&root_);
+    render_surface_layer_list_ = nullptr;
+    render_surface_layer_list_impl_.clear();
+    replica_layers_.clear();
+    mask_layers_.clear();
+    ResetLayerIterator();
+  }
 
   void CopyOutputCallback(scoped_ptr<CopyOutputResult> result) {}
 
@@ -304,6 +307,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
     DCHECK(root == root_.get());
     DCHECK(!root->render_surface());
 
+    Types::RecursiveUpdateNumChildren(root);
     LayerTreeHostCommon::CalcDrawPropsImplInputsForTesting inputs(
         root, root->bounds(), &render_surface_layer_list_impl_);
     inputs.can_adjust_raster_scales = true;
@@ -329,14 +333,14 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
 
   void EnterLayer(typename Types::LayerType* layer,
                   typename Types::OcclusionTrackerType* occlusion) {
-    ASSERT_EQ(layer, *layer_iterator_);
+    ASSERT_EQ(*layer_iterator_, layer);
     ASSERT_TRUE(layer_iterator_.represents_itself());
     occlusion->EnterLayer(layer_iterator_);
   }
 
   void LeaveLayer(typename Types::LayerType* layer,
                   typename Types::OcclusionTrackerType* occlusion) {
-    ASSERT_EQ(layer, *layer_iterator_);
+    ASSERT_EQ(*layer_iterator_, layer);
     ASSERT_TRUE(layer_iterator_.represents_itself());
     occlusion->LeaveLayer(layer_iterator_);
     ++layer_iterator_;
@@ -351,7 +355,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   void EnterContributingSurface(
       typename Types::LayerType* layer,
       typename Types::OcclusionTrackerType* occlusion) {
-    ASSERT_EQ(layer, *layer_iterator_);
+    ASSERT_EQ(*layer_iterator_, layer);
     ASSERT_TRUE(layer_iterator_.represents_target_render_surface());
     occlusion->EnterLayer(layer_iterator_);
     occlusion->LeaveLayer(layer_iterator_);
@@ -363,7 +367,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   void LeaveContributingSurface(
       typename Types::LayerType* layer,
       typename Types::OcclusionTrackerType* occlusion) {
-    ASSERT_EQ(layer, *layer_iterator_);
+    ASSERT_EQ(*layer_iterator_, layer);
     ASSERT_TRUE(layer_iterator_.represents_contributing_render_surface());
     occlusion->LeaveLayer(layer_iterator_);
     ++layer_iterator_;
@@ -431,6 +435,7 @@ template <typename Types> class OcclusionTrackerTest : public testing::Test {
   }
 
   bool opaque_layers_;
+  FakeLayerTreeHostClient client_;
   scoped_ptr<FakeLayerTreeHost> host_;
   // These hold ownership of the layers for the duration of the test.
   typename Types::LayerPtrType root_;
@@ -536,92 +541,10 @@ class OcclusionTrackerTestIdentityTransforms
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(30, 30, 70, 70).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 30, 70, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 30, 70, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 29, 70, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(31, 30, 69, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 31, 70, 69)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 30, 70, 70)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(29, 30, 1, 70),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 30, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(29, 29, 70, 70),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 29, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(30, 29, 70, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 29, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(31, 29, 69, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 29, 69, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 30, 69, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 31, 69, 69)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 31, 70, 69)));
-    EXPECT_RECT_EQ(gfx::Rect(29, 31, 1, 69),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 31, 70, 69)));
   }
 };
 
 ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestIdentityTransforms);
-
-template <class Types>
-class OcclusionTrackerTestQuadsMismatchLayer
-    : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestQuadsMismatchLayer(bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    gfx::Transform layer_transform;
-    layer_transform.Translate(10.0, 10.0);
-
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::Point(0, 0), gfx::Size(100, 100));
-    typename Types::ContentLayerType* layer1 = this->CreateDrawingLayer(
-        parent, layer_transform, gfx::PointF(), gfx::Size(90, 90), true);
-    typename Types::ContentLayerType* layer2 = this->CreateDrawingLayer(
-        layer1, layer_transform, gfx::PointF(), gfx::Size(50, 50), true);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-
-    this->VisitLayer(layer2, &occlusion);
-    this->EnterLayer(layer1, &occlusion);
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(20, 20, 50, 50).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    // This checks cases where the quads don't match their "containing"
-    // layers, e.g. in terms of transforms or clip rect. This is typical for
-    // DelegatedRendererLayer.
-
-    gfx::Transform quad_transform;
-    quad_transform.Translate(30.0, 30.0);
-
-    EXPECT_TRUE(occlusion.UnoccludedContentRect(gfx::Rect(0, 0, 10, 10),
-                                                quad_transform).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(40, 40, 10, 10),
-                   occlusion.UnoccludedContentRect(gfx::Rect(40, 40, 10, 10),
-                                                   quad_transform));
-    EXPECT_RECT_EQ(gfx::Rect(40, 30, 5, 10),
-                   occlusion.UnoccludedContentRect(gfx::Rect(35, 30, 10, 10),
-                                                   quad_transform));
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestQuadsMismatchLayer);
 
 template <class Types>
 class OcclusionTrackerTestRotatedChild : public OcclusionTrackerTest<Types> {
@@ -657,39 +580,6 @@ class OcclusionTrackerTestRotatedChild : public OcclusionTrackerTest<Types> {
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(30, 30, 70, 70).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 30, 70, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 30, 70, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 29, 70, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(31, 30, 69, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 31, 70, 69)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 30, 70, 70)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(29, 30, 1, 70),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 30, 69, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(29, 29, 70, 70),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 29, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(30, 29, 70, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 29, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(31, 29, 69, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 29, 69, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 30, 69, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 31, 69, 69)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 31, 70, 69)));
-    EXPECT_RECT_EQ(gfx::Rect(29, 31, 1, 69),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 31, 70, 69)));
   }
 };
 
@@ -727,36 +617,6 @@ class OcclusionTrackerTestTranslatedChild : public OcclusionTrackerTest<Types> {
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(50, 50, 50, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(50, 50, 50, 50)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(49, 50, 50, 50)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(50, 49, 50, 50)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(51, 50, 49, 50)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(50, 51, 50, 49)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(50, 50, 50, 50)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(49, 50, 1, 50),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(49, 50, 50, 50)));
-    EXPECT_RECT_EQ(gfx::Rect(49, 49, 50, 50),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(49, 49, 50, 50)));
-    EXPECT_RECT_EQ(gfx::Rect(50, 49, 50, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(50, 49, 50, 50)));
-    EXPECT_RECT_EQ(gfx::Rect(51, 49, 49, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(51, 49, 49, 50)));
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(51, 50, 49, 50)).IsEmpty());
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(51, 51, 49, 49)).IsEmpty());
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(50, 51, 50, 49)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(49, 51, 1, 49),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(49, 51, 50, 49)));
   }
 };
 
@@ -806,12 +666,6 @@ class OcclusionTrackerTestChildInRotatedChild
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(30, 40, 70, 60).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 39, 70, 60)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(31, 40, 69, 60)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 41, 70, 59)));
 
     /* Justification for the above occlusion from |layer|:
                   100
@@ -904,18 +758,6 @@ class OcclusionTrackerTestScaledRenderSurface
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_RECT_EQ(
-        gfx::Rect(0, 0, 25, 25),
-        occlusion.UnoccludedLayerContentRect(layer2, gfx::Rect(0, 0, 25, 25)));
-    EXPECT_RECT_EQ(gfx::Rect(10, 25, 15, 25),
-                   occlusion.UnoccludedLayerContentRect(
-                       layer2, gfx::Rect(10, 25, 25, 25)));
-    EXPECT_RECT_EQ(gfx::Rect(25, 10, 25, 15),
-                   occlusion.UnoccludedLayerContentRect(
-                       layer2, gfx::Rect(25, 10, 25, 25)));
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        layer2, gfx::Rect(25, 25, 25, 25)).IsEmpty());
   }
 };
 
@@ -928,171 +770,60 @@ class OcclusionTrackerTestVisitTargetTwoTimes
   explicit OcclusionTrackerTestVisitTargetTwoTimes(bool opaque_layers)
       : OcclusionTrackerTest<Types>(opaque_layers) {}
   void RunMyTest() {
-    gfx::Transform child_transform;
-    child_transform.Translate(250.0, 250.0);
-    child_transform.Rotate(90.0);
-    child_transform.Translate(-250.0, -250.0);
-
     typename Types::ContentLayerType* root = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(200, 200));
-    typename Types::ContentLayerType* parent = this->CreateDrawingLayer(
-        root, this->identity_matrix, gfx::PointF(), gfx::Size(100, 100), true);
-    parent->SetMasksToBounds(true);
-    typename Types::LayerType* child = this->CreateSurface(
-        parent, child_transform, gfx::PointF(30.f, 30.f), gfx::Size(500, 500));
-    child->SetMasksToBounds(true);
-    typename Types::ContentLayerType* layer =
-        this->CreateDrawingLayer(child,
+    typename Types::LayerType* surface = this->CreateSurface(
+        root, this->identity_matrix, gfx::PointF(30.f, 30.f), gfx::Size());
+    typename Types::ContentLayerType* surface_child =
+        this->CreateDrawingLayer(surface,
                                  this->identity_matrix,
                                  gfx::PointF(10.f, 10.f),
-                                 gfx::Size(500, 500),
+                                 gfx::Size(50, 50),
                                  true);
-    // |child2| makes |parent|'s surface get considered by OcclusionTracker
-    // first, instead of |child|'s. This exercises different code in
-    // LeaveToRenderTarget, as the target surface has already been seen.
-    typename Types::ContentLayerType* child2 =
-        this->CreateDrawingLayer(parent,
+    // |top_layer| makes |root|'s surface get considered by OcclusionTracker
+    // first, instead of |surface|'s. This exercises different code in
+    // LeaveToRenderTarget, as the target surface has already been seen when
+    // leaving |surface| later.
+    typename Types::ContentLayerType* top_layer =
+        this->CreateDrawingLayer(root,
                                  this->identity_matrix,
-                                 gfx::PointF(30.f, 30.f),
-                                 gfx::Size(60, 20),
+                                 gfx::PointF(40.f, 90.f),
+                                 gfx::Size(50, 20),
                                  true);
     this->CalcDrawEtc(root);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
         gfx::Rect(0, 0, 1000, 1000));
 
-    this->VisitLayer(child2, &occlusion);
+    this->VisitLayer(top_layer, &occlusion);
 
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(30, 30, 60, 20).ToString(),
+    EXPECT_EQ(gfx::Rect(40, 90, 50, 20).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
 
-    this->VisitLayer(layer, &occlusion);
+    this->VisitLayer(surface_child, &occlusion);
 
-    EXPECT_EQ(gfx::Rect(0, 440, 20, 60).ToString(),
+    EXPECT_EQ(gfx::Rect(10, 60, 50, 20).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(10, 430, 60, 70).ToString(),
+    EXPECT_EQ(gfx::Rect(10, 10, 50, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
 
-    this->EnterContributingSurface(child, &occlusion);
+    this->EnterContributingSurface(surface, &occlusion);
 
-    EXPECT_EQ(gfx::Rect(0, 440, 20, 60).ToString(),
+    EXPECT_EQ(gfx::Rect(10, 60, 50, 20).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(10, 430, 60, 70).ToString(),
+    EXPECT_EQ(gfx::Rect(10, 10, 50, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
 
-    // Occlusion in |child2| should get merged with the |child| surface we are
-    // leaving now.
-    this->LeaveContributingSurface(child, &occlusion);
-    this->EnterLayer(parent, &occlusion);
+    // Occlusion from |top_layer| already in the root target should get merged
+    // with the occlusion from the |surface| we are leaving now.
+    this->LeaveContributingSurface(surface, &occlusion);
+    this->EnterLayer(root, &occlusion);
 
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(UnionRegions(gfx::Rect(30, 30, 60, 10), gfx::Rect(30, 40, 70, 60))
-                  .ToString(),
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+    EXPECT_EQ(gfx::Rect(40, 40, 50, 70).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 30, 70, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(90, 30, 10, 10),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 30, 70, 70)));
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 30, 60, 10)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 30, 60, 10)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 29, 60, 10)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(31, 30, 60, 10)));
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 31, 60, 10)));
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 39, 70, 60)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 30, 60, 10)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(29, 30, 1, 10),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 30, 60, 10)));
-    EXPECT_RECT_EQ(gfx::Rect(30, 29, 60, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 29, 60, 10)));
-    EXPECT_RECT_EQ(gfx::Rect(90, 30, 1, 10),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 30, 60, 10)));
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 31, 60, 10)).IsEmpty());
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 40, 70, 60)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(29, 40, 1, 60),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 40, 70, 60)));
-    // This rect is mostly occluded by |child2|.
-    EXPECT_RECT_EQ(gfx::Rect(90, 39, 10, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 39, 70, 60)));
-    // This rect extends past top/right ends of |child2|.
-    EXPECT_RECT_EQ(gfx::Rect(30, 29, 70, 11),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 29, 70, 70)));
-    // This rect extends past left/right ends of |child2|.
-    EXPECT_RECT_EQ(gfx::Rect(20, 39, 80, 60),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(20, 39, 80, 60)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 40, 69, 60)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 41, 70, 59)));
-
-    /* Justification for the above occlusion from |layer|:
-               100
-      +---------------------+
-      |                     |
-      |    30               |           rotate(90)
-      | 30 + ------------+--------------------+
-  100 |    |  10         |  |                 |            ==>
-      |    |10+----------|----------------------+
-      |    + ------------+  |                 | |
-      |    |  |             |                 | |
-      |    |  |             |                 | |
-      +----|--|-------------+                 | |
-           |  |                               | |
-           |  |                               | |
-           |  |                               | |500
-           |  |                               | |
-           |  |                               | |
-           |  |                               | |
-           |  |                               | |
-           +--|-------------------------------+ |
-              |                                 |
-              +---------------------------------+
-                             500
-
-
-       +---------------------+
-       |                     |30  Visible region of |layer|: /////
-       |     30   60         |    |child2|: \\\\\
-       |  30 +------------+--------------------+
-       |     |\\\\\\\\\\\\|  |10               |
-       |  +--|\\\\\\\\\\\\|-----------------+  |
-       |  |  +------------+//|     420      |  |
-       |  |  |///////////////|60            |  |
-       |  |  |///////////////|              |  |
-       +--|--|---------------+              |  |
-        20|10|     70                       |  |
-          |  |                              |  |
-          |  |                              |  |
-          |  |                              |  |
-          |  |                              |  |
-          |  |                              |  |
-          |  |                              |10|
-          |  +------------------------------|--+
-          |                 490             |
-          +---------------------------------+
-                         500
-     */
   }
 };
 
@@ -1145,11 +876,6 @@ class OcclusionTrackerTestSurfaceRotatedOffAxis
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(75, 55, 1, 1)));
-    EXPECT_RECT_EQ(
-        gfx::Rect(75, 55, 1, 1),
-        occlusion.UnoccludedLayerContentRect(parent, gfx::Rect(75, 55, 1, 1)));
   }
 };
 
@@ -1206,23 +932,6 @@ class OcclusionTrackerTestSurfaceWithTwoOpaqueChildren
     EXPECT_EQ(gfx::Rect(10, 430, 60, 70).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
 
-    EXPECT_TRUE(occlusion.OccludedLayer(child, gfx::Rect(10, 430, 60, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(child, gfx::Rect(9, 430, 60, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(child, gfx::Rect(11, 430, 59, 70)));
-    EXPECT_TRUE(occlusion.OccludedLayer(child, gfx::Rect(10, 431, 60, 69)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        child, gfx::Rect(10, 430, 60, 70)).IsEmpty());
-    EXPECT_RECT_EQ(
-        gfx::Rect(9, 430, 1, 70),
-        occlusion.UnoccludedLayerContentRect(child, gfx::Rect(9, 430, 60, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       child, gfx::Rect(11, 430, 59, 70)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       child, gfx::Rect(10, 431, 60, 69)));
-
     this->LeaveContributingSurface(child, &occlusion);
     this->EnterLayer(parent, &occlusion);
 
@@ -1230,25 +939,6 @@ class OcclusionTrackerTestSurfaceWithTwoOpaqueChildren
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(30, 40, 70, 60).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 40, 70, 60)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 39, 70, 60)));
-
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        parent, gfx::Rect(30, 40, 70, 60)).IsEmpty());
-    EXPECT_RECT_EQ(gfx::Rect(29, 40, 1, 60),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(29, 40, 70, 60)));
-    EXPECT_RECT_EQ(gfx::Rect(30, 39, 70, 1),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 39, 70, 60)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(31, 40, 69, 60)));
-    EXPECT_RECT_EQ(gfx::Rect(),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(30, 41, 70, 59)));
 
     /* Justification for the above occlusion from |layer1| and |layer2|:
 
@@ -1286,29 +976,20 @@ class OcclusionTrackerTestOverlappingSurfaceSiblings
   explicit OcclusionTrackerTestOverlappingSurfaceSiblings(bool opaque_layers)
       : OcclusionTrackerTest<Types>(opaque_layers) {}
   void RunMyTest() {
-    gfx::Transform child_transform;
-    child_transform.Translate(250.0, 250.0);
-    child_transform.Rotate(90.0);
-    child_transform.Translate(-250.0, -250.0);
-
     typename Types::ContentLayerType* parent = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(100, 100));
     parent->SetMasksToBounds(true);
     typename Types::LayerType* child1 = this->CreateSurface(
-        parent, child_transform, gfx::PointF(30.f, 30.f), gfx::Size(10, 10));
+        parent, this->identity_matrix, gfx::PointF(10.f, 0.f), gfx::Size());
     typename Types::LayerType* child2 = this->CreateSurface(
-        parent, child_transform, gfx::PointF(20.f, 40.f), gfx::Size(10, 10));
-    typename Types::ContentLayerType* layer1 =
-        this->CreateDrawingLayer(child1,
-                                 this->identity_matrix,
-                                 gfx::PointF(-10.f, -10.f),
-                                 gfx::Size(510, 510),
-                                 true);
+        parent, this->identity_matrix, gfx::PointF(30.f, 0.f), gfx::Size());
+    typename Types::ContentLayerType* layer1 = this->CreateDrawingLayer(
+        child1, this->identity_matrix, gfx::PointF(), gfx::Size(40, 50), true);
     typename Types::ContentLayerType* layer2 =
         this->CreateDrawingLayer(child2,
                                  this->identity_matrix,
-                                 gfx::PointF(-10.f, -10.f),
-                                 gfx::Size(510, 510),
+                                 gfx::PointF(10.f, 0.f),
+                                 gfx::Size(40, 50),
                                  true);
     this->CalcDrawEtc(parent);
 
@@ -1318,72 +999,30 @@ class OcclusionTrackerTestOverlappingSurfaceSiblings
     this->VisitLayer(layer2, &occlusion);
     this->EnterContributingSurface(child2, &occlusion);
 
+    // layer2's occlusion.
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(-10, 420, 70, 80).ToString(),
+    EXPECT_EQ(gfx::Rect(10, 0, 40, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    // There is nothing above child2's surface in the z-order.
-    EXPECT_RECT_EQ(gfx::Rect(-10, 420, 70, 80),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       child2, false, gfx::Rect(-10, 420, 70, 80)));
 
     this->LeaveContributingSurface(child2, &occlusion);
     this->VisitLayer(layer1, &occlusion);
     this->EnterContributingSurface(child1, &occlusion);
 
-    EXPECT_EQ(gfx::Rect(0, 430, 70, 80).ToString(),
+    // layer2's occlusion in the target space of layer1.
+    EXPECT_EQ(gfx::Rect(30, 0, 40, 50).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(-10, 430, 80, 70).ToString(),
+    // layer1's occlusion.
+    EXPECT_EQ(gfx::Rect(0, 0, 40, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    // child2's contents will occlude child1 below it.
-    EXPECT_RECT_EQ(gfx::Rect(-10, 430, 10, 70),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       child1, false, gfx::Rect(-10, 430, 80, 70)));
 
     this->LeaveContributingSurface(child1, &occlusion);
     this->EnterLayer(parent, &occlusion);
 
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(UnionRegions(gfx::Rect(30, 20, 70, 10), gfx::Rect(20, 30, 80, 70))
-                  .ToString(),
+    // The occlusion from from layer1 and layer2 is merged.
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+    EXPECT_EQ(gfx::Rect(10, 0, 70, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(20, 20, 80, 80)));
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(30, 20, 70, 80)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(29, 20, 70, 80)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(30, 19, 70, 80)));
-
-    EXPECT_TRUE(occlusion.OccludedLayer(parent, gfx::Rect(20, 30, 80, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(19, 30, 80, 70)));
-    EXPECT_FALSE(occlusion.OccludedLayer(parent, gfx::Rect(20, 29, 80, 70)));
-
-    /* Justification for the above occlusion:
-               100
-      +---------------------+
-      |    20               |       layer1
-      |  30+ ---------------------------------+
-  100 |  30|                |     layer2      |
-      |20+----------------------------------+ |
-      |  | |                |               | |
-      |  | |                |               | |
-      |  | |                |               | |
-      +--|-|----------------+               | |
-         | |                                | | 510
-         | |                                | |
-         | |                                | |
-         | |                                | |
-         | |                                | |
-         | |                                | |
-         | |                                | |
-         | +--------------------------------|-+
-         |                                  |
-         +----------------------------------+
-                         510
-     */
   }
 };
 
@@ -1446,10 +1085,10 @@ class OcclusionTrackerTestOverlappingSurfaceSiblingsWithTwoTransforms
     this->LeaveLayer(child2, &occlusion);
     this->EnterContributingSurface(child2, &occlusion);
 
-    // There is nothing above child2's surface in the z-order.
-    EXPECT_RECT_EQ(gfx::Rect(-10, 420, 70, 80),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       child2, false, gfx::Rect(-10, 420, 70, 80)));
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_from_outside_target().ToString());
+    EXPECT_EQ(gfx::Rect(-10, 420, 70, 80).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
 
     this->LeaveContributingSurface(child2, &occlusion);
     this->VisitLayer(layer1, &occlusion);
@@ -1459,14 +1098,6 @@ class OcclusionTrackerTestOverlappingSurfaceSiblingsWithTwoTransforms
               occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(420, -20, 80, 90).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    // child2's contents will occlude child1 below it.
-    EXPECT_EQ(gfx::Rect(20, 30, 80, 70).ToString(),
-              occlusion.occlusion_on_contributing_surface_from_inside_target()
-                  .ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_on_contributing_surface_from_outside_target()
-                  .ToString());
 
     this->LeaveContributingSurface(child1, &occlusion);
     this->EnterLayer(parent, &occlusion);
@@ -1613,14 +1244,10 @@ class OcclusionTrackerTestReplicaDoesOcclude
   void RunMyTest() {
     typename Types::ContentLayerType* parent = this->CreateRoot(
         this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    typename Types::LayerType* surface =
-        this->CreateDrawingSurface(parent,
-                                   this->identity_matrix,
-                                   gfx::PointF(0.f, 100.f),
-                                   gfx::Size(50, 50),
-                                   true);
+    typename Types::LayerType* surface = this->CreateDrawingSurface(
+        parent, this->identity_matrix, gfx::PointF(), gfx::Size(50, 50), true);
     this->CreateReplicaLayer(
-        surface, this->identity_matrix, gfx::PointF(50.f, 50.f), gfx::Size());
+        surface, this->identity_matrix, gfx::PointF(0.f, 50.f), gfx::Size());
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -1635,10 +1262,8 @@ class OcclusionTrackerTestReplicaDoesOcclude
     this->EnterLayer(parent, &occlusion);
 
     // The surface and replica should both be occluding the parent.
-    EXPECT_EQ(
-        UnionRegions(gfx::Rect(0, 100, 50, 50),
-                     gfx::Rect(50, 150, 50, 50)).ToString(),
-        occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_EQ(gfx::Rect(50, 100).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
   }
 };
 
@@ -1661,7 +1286,7 @@ class OcclusionTrackerTestReplicaWithClipping
                                    gfx::Size(50, 50),
                                    true);
     this->CreateReplicaLayer(
-        surface, this->identity_matrix, gfx::PointF(50.f, 50.f), gfx::Size());
+        surface, this->identity_matrix, gfx::PointF(0.f, 50.f), gfx::Size());
     this->CalcDrawEtc(parent);
 
     TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -1669,17 +1294,19 @@ class OcclusionTrackerTestReplicaWithClipping
 
     this->VisitLayer(surface, &occlusion);
 
+    // The surface layer's occlusion in its own space.
     EXPECT_EQ(gfx::Rect(0, 0, 50, 50).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
     this->VisitContributingSurface(surface, &occlusion);
     this->EnterLayer(parent, &occlusion);
 
-    // The surface and replica should both be occluding the parent.
-    EXPECT_EQ(
-        UnionRegions(gfx::Rect(0, 100, 50, 50),
-                     gfx::Rect(50, 150, 50, 20)).ToString(),
-        occlusion.occlusion_from_inside_target().ToString());
+    // The surface and replica should both be occluding the parent, the
+    // replica's occlusion is clipped by the parent.
+    EXPECT_EQ(gfx::Rect(0, 100, 50, 70).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
   }
 };
 
@@ -1745,16 +1372,15 @@ class OcclusionTrackerTestOpaqueContentsRegionEmpty
         gfx::Rect(0, 0, 1000, 1000));
     this->EnterLayer(layer, &occlusion);
 
-    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 100, 100)));
-    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(100, 0, 100, 100)));
-    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 100, 100, 100)));
-    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(100, 100, 100, 100)));
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+    EXPECT_TRUE(occlusion.occlusion_from_inside_target().IsEmpty());
 
     this->LeaveLayer(layer, &occlusion);
     this->VisitContributingSurface(layer, &occlusion);
     this->EnterLayer(parent, &occlusion);
 
     EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+    EXPECT_TRUE(occlusion.occlusion_from_inside_target().IsEmpty());
   }
 };
 
@@ -1787,13 +1413,6 @@ class OcclusionTrackerTestOpaqueContentsRegionNonEmpty
 
       EXPECT_EQ(gfx::Rect(100, 100, 100, 100).ToString(),
                 occlusion.occlusion_from_inside_target().ToString());
-
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(0, 100, 100, 100)));
-      EXPECT_TRUE(
-          occlusion.OccludedLayer(parent, gfx::Rect(100, 100, 100, 100)));
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(200, 200, 100, 100)));
     }
     {
       TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -1806,13 +1425,6 @@ class OcclusionTrackerTestOpaqueContentsRegionNonEmpty
 
       EXPECT_EQ(gfx::Rect(120, 120, 180, 180).ToString(),
                 occlusion.occlusion_from_inside_target().ToString());
-
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(0, 100, 100, 100)));
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(100, 100, 100, 100)));
-      EXPECT_TRUE(
-          occlusion.OccludedLayer(parent, gfx::Rect(200, 200, 100, 100)));
     }
     {
       TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
@@ -1825,53 +1437,11 @@ class OcclusionTrackerTestOpaqueContentsRegionNonEmpty
 
       EXPECT_EQ(gfx::Rect(250, 250, 50, 50).ToString(),
                 occlusion.occlusion_from_inside_target().ToString());
-
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(0, 100, 100, 100)));
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(100, 100, 100, 100)));
-      EXPECT_FALSE(
-          occlusion.OccludedLayer(parent, gfx::Rect(200, 200, 100, 100)));
     }
   }
 };
 
 MAIN_AND_IMPL_THREAD_TEST(OcclusionTrackerTestOpaqueContentsRegionNonEmpty);
-
-template <class Types>
-class OcclusionTrackerTest3dTransform : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTest3dTransform(bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    gfx::Transform transform;
-    transform.RotateAboutYAxis(30.0);
-
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(300, 300));
-    typename Types::LayerType* container = this->CreateLayer(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(300, 300));
-    typename Types::ContentLayerType* layer =
-        this->CreateDrawingLayer(container,
-                                 transform,
-                                 gfx::PointF(100.f, 100.f),
-                                 gfx::Size(200, 200),
-                                 true);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-    this->EnterLayer(layer, &occlusion);
-
-    // The layer is rotated in 3d but without preserving 3d, so it only gets
-    // resized.
-    EXPECT_RECT_EQ(
-        gfx::Rect(0, 0, 200, 200),
-        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 200, 200)));
-  }
-};
-
-MAIN_AND_IMPL_THREAD_TEST(OcclusionTrackerTest3dTransform);
 
 template <class Types>
 class OcclusionTrackerTestUnsorted3dLayers
@@ -1924,99 +1494,6 @@ class OcclusionTrackerTestUnsorted3dLayers
 // This test will have different layer ordering on the impl thread; the test
 // will only work on the main thread.
 MAIN_THREAD_TEST(OcclusionTrackerTestUnsorted3dLayers);
-
-template <class Types>
-class OcclusionTrackerTestPerspectiveTransform
-    : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestPerspectiveTransform(bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    gfx::Transform transform;
-    transform.Translate(150.0, 150.0);
-    transform.ApplyPerspectiveDepth(400.0);
-    transform.RotateAboutXAxis(-30.0);
-    transform.Translate(-150.0, -150.0);
-
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(300, 300));
-    typename Types::LayerType* container = this->CreateLayer(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(300, 300));
-    typename Types::ContentLayerType* layer =
-        this->CreateDrawingLayer(container,
-                                 transform,
-                                 gfx::PointF(100.f, 100.f),
-                                 gfx::Size(200, 200),
-                                 true);
-    container->SetShouldFlattenTransform(false);
-    container->Set3dSortingContextId(1);
-    layer->Set3dSortingContextId(1);
-    layer->SetShouldFlattenTransform(false);
-
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-    this->EnterLayer(layer, &occlusion);
-
-    EXPECT_RECT_EQ(
-        gfx::Rect(0, 0, 200, 200),
-        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 200, 200)));
-  }
-};
-
-// This test requires accumulating occlusion of 3d layers, which are skipped by
-// the occlusion tracker on the main thread. So this test should run on the impl
-// thread.
-IMPL_THREAD_TEST(OcclusionTrackerTestPerspectiveTransform);
-template <class Types>
-class OcclusionTrackerTestPerspectiveTransformBehindCamera
-    : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestPerspectiveTransformBehindCamera(
-      bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    // This test is based on the platform/chromium/compositing/3d-corners.html
-    // layout test.
-    gfx::Transform transform;
-    transform.Translate(250.0, 50.0);
-    transform.ApplyPerspectiveDepth(10.0);
-    transform.Translate(-250.0, -50.0);
-    transform.Translate(250.0, 50.0);
-    transform.RotateAboutXAxis(-167.0);
-    transform.Translate(-250.0, -50.0);
-
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(500, 100));
-    typename Types::LayerType* container = this->CreateLayer(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(500, 500));
-    typename Types::ContentLayerType* layer = this->CreateDrawingLayer(
-        container, transform, gfx::PointF(), gfx::Size(500, 500), true);
-    container->SetShouldFlattenTransform(false);
-    container->Set3dSortingContextId(1);
-    layer->SetShouldFlattenTransform(false);
-    layer->Set3dSortingContextId(1);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-    this->EnterLayer(layer, &occlusion);
-
-    // The bottom 11 pixel rows of this layer remain visible inside the
-    // container, after translation to the target surface. When translated back,
-    // this will include many more pixels but must include at least the bottom
-    // 11 rows.
-    EXPECT_TRUE(occlusion.UnoccludedLayerContentRect(
-        layer, gfx::Rect(0, 26, 500, 474)).
-            Contains(gfx::Rect(0, 489, 500, 11)));
-  }
-};
-
-// This test requires accumulating occlusion of 3d layers, which are skipped by
-// the occlusion tracker on the main thread. So this test should run on the impl
-// thread.
-IMPL_THREAD_TEST(OcclusionTrackerTestPerspectiveTransformBehindCamera);
 
 template <class Types>
 class OcclusionTrackerTestLayerBehindCameraDoesNotOcclude
@@ -2172,47 +1649,37 @@ class OcclusionTrackerTestAnimationOpacity1OnMainThread
 
     this->VisitLayer(topmost, &occlusion);
     this->EnterLayer(parent2, &occlusion);
+
     // This occlusion will affect all surfaces.
-    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 250, 300).ToString(),
-              occlusion.UnoccludedLayerContentRect(
-                  parent2, gfx::Rect(0, 0, 300, 300)).ToString());
-    this->LeaveLayer(parent2, &occlusion);
+    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
 
+    this->LeaveLayer(parent2, &occlusion);
     this->VisitLayer(surface_child2, &occlusion);
     this->EnterLayer(surface_child, &occlusion);
+    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
+              occlusion.occlusion_from_outside_target().ToString());
     EXPECT_EQ(gfx::Rect(0, 0, 100, 300).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(100, 0, 100, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       surface_child, gfx::Rect(0, 0, 200, 300)));
+
     this->LeaveLayer(surface_child, &occlusion);
     this->EnterLayer(surface, &occlusion);
-    EXPECT_EQ(gfx::Rect(0, 0, 200, 300).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(200, 0, 50, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       surface, gfx::Rect(0, 0, 300, 300)));
-    this->LeaveLayer(surface, &occlusion);
+    EXPECT_EQ(gfx::Rect(0, 0, 200, 300).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
 
+    this->LeaveLayer(surface, &occlusion);
     this->EnterContributingSurface(surface, &occlusion);
     // Occlusion within the surface is lost when leaving the animating surface.
     EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 250, 300),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 300, 300)));
-    this->LeaveContributingSurface(surface, &occlusion);
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
 
+    this->LeaveContributingSurface(surface, &occlusion);
     // Occlusion from outside the animating surface still exists.
     EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
@@ -2223,9 +1690,10 @@ class OcclusionTrackerTestAnimationOpacity1OnMainThread
     this->EnterLayer(parent, &occlusion);
 
     // Occlusion is not added for the animating |layer|.
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 250, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(0, 0, 300, 300)));
+    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_from_outside_target().ToString());
   }
 };
 
@@ -2297,42 +1765,31 @@ class OcclusionTrackerTestAnimationOpacity0OnMainThread
               occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 250, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(0, 0, 300, 300)));
-    this->LeaveLayer(parent2, &occlusion);
 
+    this->LeaveLayer(parent2, &occlusion);
     this->VisitLayer(surface_child2, &occlusion);
     this->EnterLayer(surface_child, &occlusion);
     EXPECT_EQ(gfx::Rect(0, 0, 100, 300).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(100, 0, 100, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       surface_child, gfx::Rect(0, 0, 200, 300)));
+
     this->LeaveLayer(surface_child, &occlusion);
     this->EnterLayer(surface, &occlusion);
     EXPECT_EQ(gfx::Rect(0, 0, 200, 300).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(200, 0, 50, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       surface, gfx::Rect(0, 0, 300, 300)));
-    this->LeaveLayer(surface, &occlusion);
 
+    this->LeaveLayer(surface, &occlusion);
     this->EnterContributingSurface(surface, &occlusion);
     // Occlusion within the surface is lost when leaving the animating surface.
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_inside_target().ToString());
     EXPECT_EQ(gfx::Rect().ToString(),
               occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 250, 300),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 300, 300)));
-    this->LeaveContributingSurface(surface, &occlusion);
 
+    this->LeaveContributingSurface(surface, &occlusion);
     // Occlusion from outside the animating surface still exists.
     EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
               occlusion.occlusion_from_inside_target().ToString());
@@ -2343,9 +1800,10 @@ class OcclusionTrackerTestAnimationOpacity0OnMainThread
     this->EnterLayer(parent, &occlusion);
 
     // Occlusion is not added for the animating |layer|.
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 250, 300),
-                   occlusion.UnoccludedLayerContentRect(
-                       parent, gfx::Rect(0, 0, 300, 300)));
+    EXPECT_EQ(gfx::Rect(250, 0, 50, 300).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_from_outside_target().ToString());
   }
 };
 
@@ -2520,8 +1978,8 @@ class OcclusionTrackerTestSurfaceOcclusionTranslatesToParent
               occlusion.occlusion_from_inside_target().ToString());
 
     // Clear any stored occlusion.
-    occlusion.set_occlusion_from_outside_target(Region());
-    occlusion.set_occlusion_from_inside_target(Region());
+    occlusion.set_occlusion_from_outside_target(SimpleEnclosedRegion());
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
 
     this->VisitLayer(surface, &occlusion);
     this->VisitContributingSurface(surface, &occlusion);
@@ -2573,62 +2031,6 @@ MAIN_AND_IMPL_THREAD_TEST(
     OcclusionTrackerTestSurfaceOcclusionTranslatesWithClipping);
 
 template <class Types>
-class OcclusionTrackerTestReplicaOccluded : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestReplicaOccluded(bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    typename Types::LayerType* surface =
-        this->CreateDrawingSurface(parent,
-                                   this->identity_matrix,
-                                   gfx::PointF(),
-                                   gfx::Size(100, 100),
-                                   true);
-    this->CreateReplicaLayer(surface,
-                             this->identity_matrix,
-                             gfx::PointF(0.f, 100.f),
-                             gfx::Size(100, 100));
-    typename Types::LayerType* topmost =
-        this->CreateDrawingLayer(parent,
-                                 this->identity_matrix,
-                                 gfx::PointF(0.f, 100.f),
-                                 gfx::Size(100, 100),
-                                 true);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-
-    // |topmost| occludes the replica, but not the surface itself.
-    this->VisitLayer(topmost, &occlusion);
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 100, 100, 100).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->VisitLayer(surface, &occlusion);
-
-    // Render target with replica ignores occlusion from outside.
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 100, 100).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->EnterContributingSurface(surface, &occlusion);
-
-    // Surface is not occluded so it shouldn't think it is.
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 100, 100),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 100, 100)));
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestReplicaOccluded);
-
-template <class Types>
 class OcclusionTrackerTestSurfaceWithReplicaUnoccluded
     : public OcclusionTrackerTest<Types> {
  protected:
@@ -2676,84 +2078,17 @@ class OcclusionTrackerTestSurfaceWithReplicaUnoccluded
 
     this->EnterContributingSurface(surface, &occlusion);
 
-    // Surface is occluded, but only the top 10px of the replica.
-    EXPECT_RECT_EQ(gfx::Rect(0, 0, 0, 0),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 100, 100)));
-    EXPECT_RECT_EQ(gfx::Rect(0, 10, 100, 90),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, true, gfx::Rect(0, 0, 100, 100)));
+    // Only occlusion from outside the surface occludes the surface/replica.
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_on_contributing_surface_from_outside_target()
+                  .ToString());
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 110).ToString(),
+              occlusion.occlusion_on_contributing_surface_from_inside_target()
+                  .ToString());
   }
 };
 
 ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestSurfaceWithReplicaUnoccluded);
-
-template <class Types>
-class OcclusionTrackerTestSurfaceAndReplicaOccludedDifferently
-    : public OcclusionTrackerTest<Types> {
- protected:
-  explicit OcclusionTrackerTestSurfaceAndReplicaOccludedDifferently(
-      bool opaque_layers)
-      : OcclusionTrackerTest<Types>(opaque_layers) {}
-  void RunMyTest() {
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(100, 200));
-    typename Types::LayerType* surface =
-        this->CreateDrawingSurface(parent,
-                                   this->identity_matrix,
-                                   gfx::PointF(),
-                                   gfx::Size(100, 100),
-                                   true);
-    this->CreateReplicaLayer(surface,
-                             this->identity_matrix,
-                             gfx::PointF(0.f, 100.f),
-                             gfx::Size(100, 100));
-    typename Types::LayerType* over_surface = this->CreateDrawingLayer(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(40, 100), true);
-    typename Types::LayerType* over_replica =
-        this->CreateDrawingLayer(parent,
-                                 this->identity_matrix,
-                                 gfx::PointF(0.f, 100.f),
-                                 gfx::Size(50, 100),
-                                 true);
-    this->CalcDrawEtc(parent);
-
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
-
-    // These occlude the surface and replica differently, so we can test each
-    // one.
-    this->VisitLayer(over_replica, &occlusion);
-    this->VisitLayer(over_surface, &occlusion);
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(UnionRegions(gfx::Rect(0, 0, 40, 100), gfx::Rect(0, 100, 50, 100))
-                  .ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->VisitLayer(surface, &occlusion);
-
-    // Render target with replica ignores occlusion from outside.
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect(0, 0, 100, 100).ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-
-    this->EnterContributingSurface(surface, &occlusion);
-
-    // Surface and replica are occluded different amounts.
-    EXPECT_RECT_EQ(gfx::Rect(40, 0, 60, 100),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 100, 100)));
-    EXPECT_RECT_EQ(gfx::Rect(50, 0, 50, 100),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, true, gfx::Rect(0, 0, 100, 100)));
-  }
-};
-
-ALL_OCCLUSIONTRACKER_TEST(
-    OcclusionTrackerTestSurfaceAndReplicaOccludedDifferently);
 
 template <class Types>
 class OcclusionTrackerTestSurfaceChildOfSurface
@@ -2772,7 +2107,7 @@ class OcclusionTrackerTestSurfaceChildOfSurface
                                    this->identity_matrix,
                                    gfx::PointF(),
                                    gfx::Size(100, 100),
-                                   true);
+                                   false);
     typename Types::LayerType* surface_child =
         this->CreateDrawingSurface(surface,
                                    this->identity_matrix,
@@ -2811,16 +2146,18 @@ class OcclusionTrackerTestSurfaceChildOfSurface
     // have a clip rect.
 
     this->EnterContributingSurface(surface_child, &occlusion);
-    // The surface_child's parent does not have a clip rect as it owns a render
-    // surface. Make sure the unoccluded rect does not get clipped away
-    // inappropriately.
-    EXPECT_RECT_EQ(gfx::Rect(0, 40, 100, 10),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface_child, false, gfx::Rect(0, 0, 100, 50)));
+    // The |surface_child| can't occlude its own surface, but occlusion from
+    // |topmost| can.
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_on_contributing_surface_from_outside_target()
+                  .ToString());
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 50).ToString(),
+              occlusion.occlusion_on_contributing_surface_from_inside_target()
+                  .ToString());
     this->LeaveContributingSurface(surface_child, &occlusion);
 
     // When the surface_child's occlusion is transformed up to its parent, make
-    // sure it is not clipped away inappropriately also.
+    // sure it is not clipped away inappropriately.
     this->EnterLayer(surface, &occlusion);
     EXPECT_EQ(gfx::Rect(0, 0, 100, 50).ToString(),
               occlusion.occlusion_from_outside_target().ToString());
@@ -2829,10 +2166,22 @@ class OcclusionTrackerTestSurfaceChildOfSurface
     this->LeaveLayer(surface, &occlusion);
 
     this->EnterContributingSurface(surface, &occlusion);
-    // The surface's parent does have a clip rect as it is the root layer.
-    EXPECT_RECT_EQ(gfx::Rect(0, 50, 100, 50),
-                   occlusion.UnoccludedSurfaceContentRect(
-                       surface, false, gfx::Rect(0, 0, 100, 100)));
+    // The occlusion from inside |surface| can't affect the surface, but
+    // |topmost| can.
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_on_contributing_surface_from_outside_target()
+                  .ToString());
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 50).ToString(),
+              occlusion.occlusion_on_contributing_surface_from_inside_target()
+                  .ToString());
+
+    this->LeaveContributingSurface(surface, &occlusion);
+    this->EnterLayer(parent, &occlusion);
+    // The occlusion in |surface| and without are merged into the parent.
+    EXPECT_EQ(gfx::Rect().ToString(),
+              occlusion.occlusion_from_outside_target().ToString());
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 60).ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
   }
 };
 
@@ -2849,146 +2198,113 @@ class OcclusionTrackerTestDontOccludePixelsNeededForBackgroundFilter
     gfx::Transform scale_by_half;
     scale_by_half.Scale(0.5, 0.5);
 
-    // Make a 50x50 filtered surface that is completely surrounded by opaque
-    // layers which are above it in the z-order.  The surface is scaled to test
-    // that the pixel moving is done in the target space, where the background
-    // filter is applied.
-    typename Types::ContentLayerType* parent = this->CreateRoot(
-        this->identity_matrix, gfx::PointF(), gfx::Size(200, 150));
-    typename Types::LayerType* filtered_surface =
-        this->CreateDrawingLayer(parent,
-                                 scale_by_half,
-                                 gfx::PointF(50.f, 50.f),
-                                 gfx::Size(100, 100),
-                                 false);
-    typename Types::LayerType* occluding_layer1 = this->CreateDrawingLayer(
-        parent, this->identity_matrix, gfx::PointF(), gfx::Size(200, 50), true);
-    typename Types::LayerType* occluding_layer2 =
-        this->CreateDrawingLayer(parent,
-                                 this->identity_matrix,
-                                 gfx::PointF(0.f, 100.f),
-                                 gfx::Size(200, 50),
-                                 true);
-    typename Types::LayerType* occluding_layer3 =
-        this->CreateDrawingLayer(parent,
-                                 this->identity_matrix,
-                                 gfx::PointF(0.f, 50.f),
-                                 gfx::Size(50, 50),
-                                 true);
-    typename Types::LayerType* occluding_layer4 =
-        this->CreateDrawingLayer(parent,
-                                 this->identity_matrix,
-                                 gfx::PointF(100.f, 50.f),
-                                 gfx::Size(100, 50),
-                                 true);
-
-    // Filters make the layer own a surface.
     FilterOperations filters;
     filters.Append(FilterOperation::CreateBlurFilter(10.f));
-    filtered_surface->SetBackgroundFilters(filters);
 
     // Save the distance of influence for the blur effect.
     int outset_top, outset_right, outset_bottom, outset_left;
     filters.GetOutsets(
         &outset_top, &outset_right, &outset_bottom, &outset_left);
 
-    this->CalcDrawEtc(parent);
+    enum Direction {
+      LEFT,
+      RIGHT,
+      TOP,
+      BOTTOM,
+      LAST_DIRECTION = BOTTOM,
+    };
 
-    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
-        gfx::Rect(0, 0, 1000, 1000));
+    for (int i = 0; i <= LAST_DIRECTION; ++i) {
+      SCOPED_TRACE(i);
 
-    // These layers occlude pixels directly beside the filtered_surface. Because
-    // filtered surface blends pixels in a radius, it will need to see some of
-    // the pixels (up to radius far) underneath the occluding layers.
-    this->VisitLayer(occluding_layer4, &occlusion);
-    this->VisitLayer(occluding_layer3, &occlusion);
-    this->VisitLayer(occluding_layer2, &occlusion);
-    this->VisitLayer(occluding_layer1, &occlusion);
+      // Make a 50x50 filtered surface that is adjacent to occluding layers
+      // which are above it in the z-order in various configurations. The
+      // surface is scaled to test that the pixel moving is done in the target
+      // space, where the background filter is applied.
+      typename Types::ContentLayerType* parent = this->CreateRoot(
+          this->identity_matrix, gfx::PointF(), gfx::Size(200, 200));
+      typename Types::LayerType* filtered_surface =
+          this->CreateDrawingLayer(parent,
+                                   scale_by_half,
+                                   gfx::PointF(50.f, 50.f),
+                                   gfx::Size(100, 100),
+                                   false);
+      filtered_surface->SetBackgroundFilters(filters);
 
-    Region expected_occlusion;
-    expected_occlusion.Union(gfx::Rect(0, 0, 200, 50));
-    expected_occlusion.Union(gfx::Rect(0, 50, 50, 50));
-    expected_occlusion.Union(gfx::Rect(100, 50, 100, 50));
-    expected_occlusion.Union(gfx::Rect(0, 100, 200, 50));
+      gfx::Rect occlusion_rect;
+      switch (i) {
+        case LEFT:
+          occlusion_rect = gfx::Rect(0, 0, 50, 200);
+          break;
+        case RIGHT:
+          occlusion_rect = gfx::Rect(100, 0, 50, 200);
+          break;
+        case TOP:
+          occlusion_rect = gfx::Rect(0, 0, 200, 50);
+          break;
+        case BOTTOM:
+          occlusion_rect = gfx::Rect(0, 100, 200, 50);
+          break;
+      }
 
-    EXPECT_EQ(expected_occlusion.ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
+      typename Types::LayerType* occluding_layer =
+          this->CreateDrawingLayer(parent,
+                                   this->identity_matrix,
+                                   occlusion_rect.origin(),
+                                   occlusion_rect.size(),
+                                   true);
+      this->CalcDrawEtc(parent);
 
-    this->VisitLayer(filtered_surface, &occlusion);
+      TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
+          gfx::Rect(0, 0, 200, 200));
 
-    // The filtered layer does not occlude.
-    Region expected_occlusion_outside_surface;
-    expected_occlusion_outside_surface.Union(gfx::Rect(-50, -50, 200, 50));
-    expected_occlusion_outside_surface.Union(gfx::Rect(-50, 0, 50, 50));
-    expected_occlusion_outside_surface.Union(gfx::Rect(50, 0, 100, 50));
-    expected_occlusion_outside_surface.Union(gfx::Rect(-50, 50, 200, 50));
+      // This layer occludes pixels directly beside the filtered_surface.
+      // Because filtered surface blends pixels in a radius, it will need to see
+      // some of the pixels (up to radius far) underneath the occluding layers.
+      this->VisitLayer(occluding_layer, &occlusion);
 
-    EXPECT_EQ(expected_occlusion_outside_surface.ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
+      EXPECT_EQ(occlusion_rect.ToString(),
+                occlusion.occlusion_from_inside_target().ToString());
+      EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
-    // The surface has a background blur, so it needs pixels that are currently
-    // considered occluded in order to be drawn. So the pixels it needs should
-    // be removed some the occluded area so that when we get to the parent they
-    // are drawn.
-    this->VisitContributingSurface(filtered_surface, &occlusion);
+      this->VisitLayer(filtered_surface, &occlusion);
 
-    this->EnterLayer(parent, &occlusion);
+      // The occlusion is used fully inside the surface.
+      gfx::Rect occlusion_inside_surface =
+          occlusion_rect - gfx::Vector2d(50, 50);
+      EXPECT_TRUE(occlusion.occlusion_from_inside_target().IsEmpty());
+      EXPECT_EQ(occlusion_inside_surface.ToString(),
+                occlusion.occlusion_from_outside_target().ToString());
 
-    Region expected_blurred_occlusion;
-    expected_blurred_occlusion.Union(gfx::Rect(0, 0, 200, 50 - outset_top));
-    expected_blurred_occlusion.Union(gfx::Rect(
-        0, 50 - outset_top, 50 - outset_left, 50 + outset_top + outset_bottom));
-    expected_blurred_occlusion.Union(
-        gfx::Rect(100 + outset_right,
-                  50 - outset_top,
-                  100 - outset_right,
-                  50 + outset_top + outset_bottom));
-    expected_blurred_occlusion.Union(
-        gfx::Rect(0, 100 + outset_bottom, 200, 50 - outset_bottom));
+      // The surface has a background blur, so it needs pixels that are
+      // currently considered occluded in order to be drawn. So the pixels it
+      // needs should be removed some the occluded area so that when we get to
+      // the parent they are drawn.
+      this->VisitContributingSurface(filtered_surface, &occlusion);
+      this->EnterLayer(parent, &occlusion);
 
-    EXPECT_EQ(expected_blurred_occlusion.ToString(),
-              occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
+      gfx::Rect expected_occlusion = occlusion_rect;
+      switch (i) {
+        case LEFT:
+          expected_occlusion.Inset(0, 0, outset_right, 0);
+          break;
+        case RIGHT:
+          expected_occlusion.Inset(outset_right, 0, 0, 0);
+          break;
+        case TOP:
+          expected_occlusion.Inset(0, 0, 0, outset_right);
+          break;
+        case BOTTOM:
+          expected_occlusion.Inset(0, outset_right, 0, 0);
+          break;
+      }
 
-    gfx::Rect outset_rect;
-    gfx::Rect test_rect;
+      EXPECT_EQ(expected_occlusion.ToString(),
+                occlusion.occlusion_from_inside_target().ToString());
+      EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
-    // Nothing in the blur outsets for the filtered_surface is occluded.
-    outset_rect = gfx::Rect(50 - outset_left,
-                            50 - outset_top,
-                            50 + outset_left + outset_right,
-                            50 + outset_top + outset_bottom);
-    test_rect = outset_rect;
-    EXPECT_EQ(
-        outset_rect.ToString(),
-        occlusion.UnoccludedLayerContentRect(parent, test_rect).ToString());
-
-    // Stuff outside the blur outsets is still occluded though.
-    test_rect = outset_rect;
-    test_rect.Inset(0, 0, -1, 0);
-    EXPECT_EQ(
-        outset_rect.ToString(),
-        occlusion.UnoccludedLayerContentRect(parent, test_rect).ToString());
-    test_rect = outset_rect;
-    test_rect.Inset(0, 0, 0, -1);
-    EXPECT_EQ(
-        outset_rect.ToString(),
-        occlusion.UnoccludedLayerContentRect(parent, test_rect).ToString());
-    test_rect = outset_rect;
-    test_rect.Inset(-1, 0, 0, 0);
-    EXPECT_EQ(
-        outset_rect.ToString(),
-        occlusion.UnoccludedLayerContentRect(parent, test_rect).ToString());
-    test_rect = outset_rect;
-    test_rect.Inset(0, -1, 0, 0);
-    EXPECT_EQ(
-        outset_rect.ToString(),
-        occlusion.UnoccludedLayerContentRect(parent, test_rect).ToString());
+      this->DestroyLayers();
+    }
   }
 };
 
@@ -3126,21 +2442,28 @@ class OcclusionTrackerTestDontReduceOcclusionBelowBackgroundFilter
     this->VisitContributingSurface(filtered_surface, &occlusion);
 
     this->VisitLayer(behind_replica_layer, &occlusion);
+
+    // The layers behind the surface are not blurred, and their occlusion does
+    // not change, until we leave the surface.  So it should not be modified by
+    // the filter here.
+    gfx::Rect occlusion_behind_replica = gfx::Rect(210, 60, 30, 30);
+    EXPECT_EQ(occlusion_behind_replica.ToString(),
+              occlusion.occlusion_from_inside_target().ToString());
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
+
+    // Clear the occlusion so the |behind_surface_layer| can add its occlusion
+    // without existing occlusion interfering.
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
+
     this->VisitLayer(behind_surface_layer, &occlusion);
 
     // The layers behind the surface are not blurred, and their occlusion does
     // not change, until we leave the surface.  So it should not be modified by
     // the filter here.
     gfx::Rect occlusion_behind_surface = gfx::Rect(60, 60, 30, 30);
-    gfx::Rect occlusion_behind_replica = gfx::Rect(210, 60, 30, 30);
-
-    Region expected_opaque_bounds =
-        UnionRegions(occlusion_behind_surface, occlusion_behind_replica);
-    EXPECT_EQ(expected_opaque_bounds.ToString(),
+    EXPECT_EQ(occlusion_behind_surface.ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
   }
 };
 
@@ -3311,24 +2634,21 @@ class OcclusionTrackerTestReduceOcclusionWhenBackgroundFilterIsPartiallyOccluded
     gfx::Rect occlusion_beside_surface = gfx::Rect(90, 40, 10, 10);
     gfx::Rect occlusion_beside_replica = gfx::Rect(200, 40, 10, 10);
 
-    Region expected_occlusion;
-    expected_occlusion.Union(occlusion_above_surface);
-    expected_occlusion.Union(occlusion_above_replica);
-    expected_occlusion.Union(occlusion_beside_surface);
+    SimpleEnclosedRegion expected_occlusion;
     expected_occlusion.Union(occlusion_beside_replica);
+    expected_occlusion.Union(occlusion_beside_surface);
+    expected_occlusion.Union(occlusion_above_replica);
+    expected_occlusion.Union(occlusion_above_surface);
 
-    ASSERT_EQ(expected_occlusion.ToString(),
+    EXPECT_EQ(expected_occlusion.ToString(),
               occlusion.occlusion_from_inside_target().ToString());
-    EXPECT_EQ(gfx::Rect().ToString(),
-              occlusion.occlusion_from_outside_target().ToString());
+    EXPECT_TRUE(occlusion.occlusion_from_outside_target().IsEmpty());
 
-    Region::Iterator expected_rects(expected_occlusion);
-    Region::Iterator target_surface_rects(
-        occlusion.occlusion_from_inside_target());
-    for (; expected_rects.has_rect();
-         expected_rects.next(), target_surface_rects.next()) {
-      ASSERT_TRUE(target_surface_rects.has_rect());
-      EXPECT_EQ(expected_rects.rect(), target_surface_rects.rect());
+    const SimpleEnclosedRegion& actual_occlusion =
+        occlusion.occlusion_from_inside_target();
+    for (size_t i = 0; i < expected_occlusion.GetRegionComplexity(); ++i) {
+      ASSERT_LT(i, actual_occlusion.GetRegionComplexity());
+      EXPECT_EQ(expected_occlusion.GetRect(i), actual_occlusion.GetRect(i));
     }
   }
 };
@@ -3553,6 +2873,438 @@ class OcclusionTrackerTestHiddenCopyRequestDoesNotOcclude
 };
 
 ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestHiddenCopyRequestDoesNotOcclude)
+
+template <class Types>
+class OcclusionTrackerTestOccludedLayer : public OcclusionTrackerTest<Types> {
+ protected:
+  explicit OcclusionTrackerTestOccludedLayer(bool opaque_layers)
+      : OcclusionTrackerTest<Types>(opaque_layers) {}
+  void RunMyTest() {
+    gfx::Transform translate;
+    translate.Translate(10.0, 20.0);
+    typename Types::ContentLayerType* root = this->CreateRoot(
+        this->identity_matrix, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* surface = this->CreateSurface(
+        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* layer = this->CreateDrawingLayer(
+        surface, translate, gfx::Point(), gfx::Size(200, 200), false);
+    typename Types::ContentLayerType* outside_layer = this->CreateDrawingLayer(
+        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200), false);
+    this->CalcDrawEtc(root);
+
+    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
+        gfx::Rect(0, 0, 200, 200));
+    this->VisitLayer(outside_layer, &occlusion);
+    this->EnterLayer(layer, &occlusion);
+
+    // No occlusion, is not occluded.
+    occlusion.set_occlusion_from_outside_target(SimpleEnclosedRegion());
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(100, 100)));
+
+    // Partial occlusion from outside, is not occluded.
+    occlusion.set_occlusion_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from outside, is occluded.
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from inside, is not occluded.
+    occlusion.set_occlusion_from_outside_target(SimpleEnclosedRegion());
+    occlusion.set_occlusion_from_inside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from inside, is occluded.
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from both, is not occluded.
+    occlusion.set_occlusion_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 50));
+    occlusion.set_occlusion_from_inside_target(
+        SimpleEnclosedRegion(50, 100, 100, 50));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_FALSE(occlusion.OccludedLayer(layer, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from both, is occluded.
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_TRUE(occlusion.OccludedLayer(layer, gfx::Rect(80, 70, 50, 50)));
+  }
+};
+
+ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestOccludedLayer)
+
+template <class Types>
+class OcclusionTrackerTestUnoccludedLayerQuery
+    : public OcclusionTrackerTest<Types> {
+ protected:
+  explicit OcclusionTrackerTestUnoccludedLayerQuery(bool opaque_layers)
+      : OcclusionTrackerTest<Types>(opaque_layers) {}
+  void RunMyTest() {
+    gfx::Transform translate;
+    translate.Translate(10.0, 20.0);
+    typename Types::ContentLayerType* root = this->CreateRoot(
+        this->identity_matrix, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* surface = this->CreateSurface(
+        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* layer = this->CreateDrawingLayer(
+        surface, translate, gfx::Point(), gfx::Size(200, 200), false);
+    typename Types::ContentLayerType* outside_layer = this->CreateDrawingLayer(
+        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200), false);
+    this->CalcDrawEtc(root);
+
+    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
+        gfx::Rect(0, 0, 200, 200));
+    this->VisitLayer(outside_layer, &occlusion);
+    this->EnterLayer(layer, &occlusion);
+
+    // No occlusion, is not occluded.
+    occlusion.set_occlusion_from_outside_target(SimpleEnclosedRegion());
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
+    EXPECT_EQ(gfx::Rect(100, 100),
+              occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(100, 100)));
+
+    // Partial occlusion from outside.
+    occlusion.set_occlusion_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    occlusion.set_occlusion_from_inside_target(SimpleEnclosedRegion());
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 100, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(140, 30, 50, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 80, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from outside, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from inside, is not occluded.
+    occlusion.set_occlusion_from_outside_target(SimpleEnclosedRegion());
+    occlusion.set_occlusion_from_inside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 100, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(140, 30, 50, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 80, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from inside, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from both, is not occluded.
+    occlusion.set_occlusion_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 50));
+    occlusion.set_occlusion_from_inside_target(
+        SimpleEnclosedRegion(50, 100, 100, 50));
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 100, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 100, 100)));
+    // This could be (140, 30, 50, 100). But because we do a lossy subtract,
+    // it's larger.
+    EXPECT_EQ(gfx::Rect(90, 30, 100, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(0, 0, 80, 100),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedLayerContentRect(layer,
+                                                   gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from both, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedLayerContentRect(
+                  layer, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(
+        gfx::Rect(),
+        occlusion.UnoccludedLayerContentRect(layer, gfx::Rect(80, 70, 50, 50)));
+  }
+};
+
+ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestUnoccludedLayerQuery)
+
+template <class Types>
+class OcclusionTrackerTestUnoccludedSurfaceQuery
+    : public OcclusionTrackerTest<Types> {
+ protected:
+  explicit OcclusionTrackerTestUnoccludedSurfaceQuery(bool opaque_layers)
+      : OcclusionTrackerTest<Types>(opaque_layers) {}
+  void RunMyTest() {
+    gfx::Transform translate;
+    translate.Translate(10.0, 20.0);
+    typename Types::ContentLayerType* root = this->CreateRoot(
+        this->identity_matrix, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* surface =
+        this->CreateSurface(root, translate, gfx::Point(), gfx::Size(200, 200));
+    typename Types::LayerType* layer =
+        this->CreateDrawingLayer(surface,
+                                 this->identity_matrix,
+                                 gfx::Point(),
+                                 gfx::Size(200, 200),
+                                 false);
+    typename Types::ContentLayerType* outside_layer = this->CreateDrawingLayer(
+        root, this->identity_matrix, gfx::Point(), gfx::Size(200, 200), false);
+    this->CalcDrawEtc(root);
+
+    TestOcclusionTrackerWithClip<typename Types::LayerType> occlusion(
+        gfx::Rect(0, 0, 200, 200));
+    this->VisitLayer(outside_layer, &occlusion);
+    this->VisitLayer(layer, &occlusion);
+    this->EnterContributingSurface(surface, &occlusion);
+
+    // No occlusion, is not occluded.
+    occlusion.set_occlusion_on_contributing_surface_from_outside_target(
+        SimpleEnclosedRegion());
+    occlusion.set_occlusion_on_contributing_surface_from_inside_target(
+        SimpleEnclosedRegion());
+    EXPECT_EQ(
+        gfx::Rect(100, 100),
+        occlusion.UnoccludedSurfaceContentRect(surface, gfx::Rect(100, 100)));
+
+    // Partial occlusion from outside.
+    occlusion.set_occlusion_on_contributing_surface_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    occlusion.set_occlusion_on_contributing_surface_from_inside_target(
+        SimpleEnclosedRegion());
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(140, 30, 50, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 0, 80, 100),
+              occlusion.UnoccludedSurfaceContentRect(surface,
+                                                     gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from outside, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from inside, is not occluded.
+    occlusion.set_occlusion_on_contributing_surface_from_outside_target(
+        SimpleEnclosedRegion());
+    occlusion.set_occlusion_on_contributing_surface_from_inside_target(
+        SimpleEnclosedRegion(50, 50, 100, 100));
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(140, 30, 50, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 0, 80, 100),
+              occlusion.UnoccludedSurfaceContentRect(surface,
+                                                     gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from inside, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(80, 70, 50, 50)));
+
+    // Partial occlusion from both, is not occluded.
+    occlusion.set_occlusion_on_contributing_surface_from_outside_target(
+        SimpleEnclosedRegion(50, 50, 100, 50));
+    occlusion.set_occlusion_on_contributing_surface_from_inside_target(
+        SimpleEnclosedRegion(50, 100, 100, 50));
+    EXPECT_EQ(gfx::Rect(0, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 0, 100, 100)));
+    // This could be (140, 30, 50, 100). But because we do a lossy subtract,
+    // it's larger.
+    EXPECT_EQ(gfx::Rect(90, 30, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 0, 100, 30),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 0, 100, 100)));
+    EXPECT_EQ(gfx::Rect(40, 130, 100, 50),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 0, 80, 100),
+              occlusion.UnoccludedSurfaceContentRect(surface,
+                                                     gfx::Rect(0, 0, 80, 100)));
+    EXPECT_EQ(gfx::Rect(90, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(0, 80, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(0, 80, 100, 100)));
+    EXPECT_EQ(gfx::Rect(90, 0, 100, 100),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(90, 0, 100, 100)));
+
+    // Full occlusion from both, is occluded.
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 100, 100)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(40, 30, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(130, 120, 10, 10)));
+    EXPECT_EQ(gfx::Rect(),
+              occlusion.UnoccludedSurfaceContentRect(
+                  surface, gfx::Rect(80, 70, 50, 50)));
+  }
+};
+
+ALL_OCCLUSIONTRACKER_TEST(OcclusionTrackerTestUnoccludedSurfaceQuery)
 
 }  // namespace
 }  // namespace cc

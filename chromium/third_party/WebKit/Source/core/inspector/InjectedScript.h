@@ -31,7 +31,7 @@
 #ifndef InjectedScript_h
 #define InjectedScript_h
 
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "core/InspectorTypeBuilder.h"
 #include "core/inspector/InjectedScriptBase.h"
 #include "core/inspector/InjectedScriptManager.h"
@@ -39,13 +39,12 @@
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScriptModule;
 class Node;
-class SerializedScriptValue;
 
-class InjectedScript FINAL : public InjectedScriptBase {
+class InjectedScript final : public InjectedScriptBase {
 public:
     InjectedScript();
     virtual ~InjectedScript() { }
@@ -58,7 +57,8 @@ public:
         bool returnByValue,
         bool generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>* result,
-        TypeBuilder::OptOutput<bool>* wasThrown);
+        TypeBuilder::OptOutput<bool>* wasThrown,
+        RefPtr<TypeBuilder::Debugger::ExceptionDetails>*);
     void callFunctionOn(
         ErrorString*,
         const String& objectId,
@@ -79,11 +79,13 @@ public:
         bool returnByValue,
         bool generatePreview,
         RefPtr<TypeBuilder::Runtime::RemoteObject>* result,
-        TypeBuilder::OptOutput<bool>* wasThrown);
+        TypeBuilder::OptOutput<bool>* wasThrown,
+        RefPtr<TypeBuilder::Debugger::ExceptionDetails>*);
     void restartFrame(ErrorString*, const ScriptValue& callFrames, const String& callFrameId, RefPtr<JSONObject>* result);
     void getStepInPositions(ErrorString*, const ScriptValue& callFrames, const String& callFrameId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::Location> >& positions);
     void setVariableValue(ErrorString*, const ScriptValue& callFrames, const String* callFrameIdOpt, const String* functionObjectIdOpt, int scopeNumber, const String& variableName, const String& newValueStr);
     void getFunctionDetails(ErrorString*, const String& functionId, RefPtr<TypeBuilder::Debugger::FunctionDetails>* result);
+    void getCollectionEntries(ErrorString*, const String& objectId, RefPtr<TypeBuilder::Array<TypeBuilder::Debugger::CollectionEntry> >* result);
     void getProperties(ErrorString*, const String& objectId, bool ownProperties, bool accessorPropertiesOnly, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::PropertyDescriptor> >* result);
     void getInternalProperties(ErrorString*, const String& objectId, RefPtr<TypeBuilder::Array<TypeBuilder::Runtime::InternalPropertyDescriptor> >* result);
     Node* nodeForObjectId(const String& objectId);
@@ -99,6 +101,8 @@ public:
     void inspectNode(Node*);
     void releaseObjectGroup(const String&);
 
+    void setLastEvaluationResult(const String& objectId);
+
 private:
     friend class InjectedScriptModule;
     friend InjectedScript InjectedScriptManager::injectedScriptFor(ScriptState*);
@@ -108,6 +112,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

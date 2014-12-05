@@ -27,43 +27,40 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "platform/scroll/ScrollTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLFrameElementBase : public HTMLFrameOwnerElement {
 public:
-    virtual ScrollbarMode scrollingMode() const OVERRIDE FINAL { return m_scrolling; }
+    virtual ScrollbarMode scrollingMode() const override final { return m_scrolling; }
 
     int marginWidth() const { return m_marginWidth; }
     int marginHeight() const { return m_marginHeight; }
 
-    int width();
-    int height();
-
-    virtual bool canContainRangeEndPoint() const OVERRIDE FINAL { return false; }
+    virtual bool canContainRangeEndPoint() const override final { return false; }
 
 protected:
     HTMLFrameElementBase(const QualifiedName&, Document&);
 
     bool isURLAllowed() const;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE FINAL;
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override final;
+    virtual void attach(const AttachContext& = AttachContext()) override;
 
     // FIXME: Remove this method once we have input routing in the browser
     // process. See http://crbug.com/339659.
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
 private:
-    virtual bool supportsFocus() const OVERRIDE FINAL;
-    virtual void setFocus(bool) OVERRIDE FINAL;
+    virtual bool supportsFocus() const override final;
+    virtual void setFocus(bool) override final;
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE FINAL;
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE FINAL;
-    virtual bool isHTMLContentAttribute(const Attribute&) const OVERRIDE FINAL;
+    virtual bool isURLAttribute(const Attribute&) const override final;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override final;
+    virtual bool isHTMLContentAttribute(const Attribute&) const override final;
 
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE FINAL { return false; }
+    virtual bool areAuthorShadowsAllowed() const override final { return false; }
 
     void setLocation(const String&);
     void setNameAndOpenURL();
@@ -78,11 +75,6 @@ private:
     int m_marginHeight;
 };
 
-inline bool isHTMLFrameElementBase(const Element& element)
-{
-    return isHTMLFrameElement(element) || isHTMLIFrameElement(element);
-}
-
 inline bool isHTMLFrameElementBase(const HTMLElement& element)
 {
     return isHTMLFrameElement(element) || isHTMLIFrameElement(element);
@@ -90,6 +82,6 @@ inline bool isHTMLFrameElementBase(const HTMLElement& element)
 
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(HTMLFrameElementBase);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLFrameElementBase_h

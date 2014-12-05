@@ -5,7 +5,7 @@
 #ifndef V8_ELEMENTS_KIND_H_
 #define V8_ELEMENTS_KIND_H_
 
-#include "src/v8checks.h"
+#include "src/checks.h"
 
 namespace v8 {
 namespace internal {
@@ -74,9 +74,8 @@ const int kFastElementsKindPackedToHoley =
 int ElementsKindToShiftSize(ElementsKind elements_kind);
 int GetDefaultHeaderSizeForElementsKind(ElementsKind elements_kind);
 const char* ElementsKindToString(ElementsKind kind);
-void PrintElementsKind(FILE* out, ElementsKind kind);
 
-ElementsKind GetInitialFastElementsKind();
+inline ElementsKind GetInitialFastElementsKind() { return FAST_SMI_ELEMENTS; }
 
 ElementsKind GetFastElementsKindFromSequenceIndex(int sequence_number);
 int GetSequenceIndexFromFastElementsKind(ElementsKind elements_kind);
@@ -85,6 +84,11 @@ ElementsKind GetNextTransitionElementsKind(ElementsKind elements_kind);
 
 inline bool IsDictionaryElementsKind(ElementsKind kind) {
   return kind == DICTIONARY_ELEMENTS;
+}
+
+
+inline bool IsSloppyArgumentsElements(ElementsKind kind) {
+  return kind == SLOPPY_ARGUMENTS_ELEMENTS;
 }
 
 
@@ -107,7 +111,7 @@ inline bool IsFixedTypedArrayElementsKind(ElementsKind kind) {
 
 
 inline bool IsFastElementsKind(ElementsKind kind) {
-  ASSERT(FIRST_FAST_ELEMENTS_KIND == 0);
+  DCHECK(FIRST_FAST_ELEMENTS_KIND == 0);
   return kind <= FAST_HOLEY_DOUBLE_ELEMENTS;
 }
 
@@ -210,7 +214,7 @@ inline ElementsKind GetHoleyElementsKind(ElementsKind packed_kind) {
 
 
 inline ElementsKind FastSmiToObjectElementsKind(ElementsKind from_kind) {
-  ASSERT(IsFastSmiElementsKind(from_kind));
+  DCHECK(IsFastSmiElementsKind(from_kind));
   return (from_kind == FAST_SMI_ELEMENTS)
       ? FAST_ELEMENTS
       : FAST_HOLEY_ELEMENTS;

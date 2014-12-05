@@ -31,10 +31,11 @@
 #include "config.h"
 #include "core/html/track/vtt/VTTRegion.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ClientRect.h"
 #include "core/dom/DOMTokenList.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/track/vtt/VTTParser.h"
 #include "core/html/track/vtt/VTTScanner.h"
@@ -44,7 +45,7 @@
 #include "wtf/MathExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 // The following values default values are defined within the WebVTT Regions Spec.
 // https://dvcs.w3.org/hg/text-tracks/raw-file/default/608toVTT/region.html
@@ -371,9 +372,10 @@ void VTTRegion::displayLastVTTCueBox()
     float regionBottom = m_regionDisplayTree->getBoundingClientRect()->bottom();
 
     // Find first cue that is not entirely displayed and scroll it upwards.
-    for (Element* child = ElementTraversal::firstWithin(*m_cueContainer); child && !m_scrollTimer.isActive(); child = ElementTraversal::nextSibling(*child)) {
-        float childTop = toHTMLDivElement(child)->getBoundingClientRect()->top();
-        float childBottom = toHTMLDivElement(child)->getBoundingClientRect()->bottom();
+    for (Element* child = ElementTraversal::firstChild(*m_cueContainer); child && !m_scrollTimer.isActive(); child = ElementTraversal::nextSibling(*child)) {
+        RefPtrWillBeRawPtr<ClientRect> clientRect = child->getBoundingClientRect();
+        float childTop = clientRect->top();
+        float childBottom = clientRect->bottom();
 
         if (regionBottom >= childBottom)
             continue;
@@ -474,4 +476,4 @@ void VTTRegion::trace(Visitor* visitor)
     visitor->trace(m_track);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -39,11 +39,13 @@ from blink_idl_parser import BlinkIDLParser
 from idl_definitions import IdlDefinitions
 from idl_validator import EXTENDED_ATTRIBUTES_RELATIVE_PATH, IDLInvalidExtendedAttributeError, IDLExtendedAttributeValidator
 from interface_dependency_resolver import InterfaceDependencyResolver
+from utilities import idl_filename_to_component
 
 
 class IdlReader(object):
     def __init__(self, interfaces_info=None, outputdir=''):
         self.extended_attribute_validator = IDLExtendedAttributeValidator()
+        self.interfaces_info = interfaces_info
 
         if interfaces_info:
             self.interface_dependency_resolver = InterfaceDependencyResolver(interfaces_info, self)
@@ -53,12 +55,19 @@ class IdlReader(object):
         self.parser = BlinkIDLParser(outputdir=outputdir)
 
     def read_idl_definitions(self, idl_filename):
-        """Returns an IdlDefinitions object for an IDL file, including all dependencies."""
+        """Returns a dictionary whose key is component and value is an IdlDefinitions object for an IDL file, including all dependencies."""
         definitions = self.read_idl_file(idl_filename)
+        component = idl_filename_to_component(idl_filename)
+
         if not self.interface_dependency_resolver:
-            return definitions
-        self.interface_dependency_resolver.resolve_dependencies(definitions)
-        return definitions
+            return {component: definitions}
+
+        # This definitions should have a dictionary. No need to resolve any
+        # dependencies.
+        if not definitions.interfaces:
+            return {component: definitions}
+
+        return self.interface_dependency_resolver.resolve_dependencies(definitions, component)
 
     def read_idl_file(self, idl_filename):
         """Returns an IdlDefinitions object for an IDL file, without any dependencies.
@@ -69,25 +78,27 @@ class IdlReader(object):
         ast = blink_idl_parser.parse_file(self.parser, idl_filename)
         if not ast:
             raise Exception('Failed to parse %s' % idl_filename)
-        definitions = IdlDefinitions(ast)
+        idl_file_basename, _ = os.path.splitext(os.path.basename(idl_filename))
+        definitions = IdlDefinitions(idl_file_basename, ast)
 
         # Validate file contents with filename convention
         # The Blink IDL filenaming convention is that the file
-        # <interface_name>.idl MUST contain exactly 1 interface (or exception),
-        # and the interface name must agree with the file's basename,
-        # unless it is a partial interface.
+        # <definition_name>.idl MUST contain exactly 1 definition
+        # (interface, dictionary or exception), and the definition name must
+        # agree with the file's basename, unless it is a partial definition.
         # (e.g., 'partial interface Foo' can be in FooBar.idl).
-        number_of_interfaces = len(definitions.interfaces)
-        if number_of_interfaces != 1:
+        targets = (definitions.interfaces.values() +
+                   definitions.dictionaries.values())
+        number_of_targets = len(targets)
+        if number_of_targets != 1:
             raise Exception(
-                'Expected exactly 1 interface in file {0}, but found {1}'
-                .format(idl_filename, number_of_interfaces))
-        interface = next(definitions.interfaces.itervalues())
-        idl_file_basename, _ = os.path.splitext(os.path.basename(idl_filename))
-        if not interface.is_partial and interface.name != idl_file_basename:
+                'Expected exactly 1 definition in file {0}, but found {1}'
+                .format(idl_filename, number_of_targets))
+        target = targets[0]
+        if not target.is_partial and target.name != idl_file_basename:
             raise Exception(
-                'Interface name "{0}" disagrees with IDL file basename "{1}".'
-                .format(interface.name, idl_file_basename))
+                'Definition name "{0}" disagrees with IDL file basename "{1}".'
+                .format(target.name, idl_file_basename))
 
         # Validate extended attributes
         if not self.extended_attribute_validator:

@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderPart.h"
 
-namespace WebCore {
+namespace blink {
 
 class TextRun;
 
@@ -43,28 +43,24 @@ public:
     void setPluginUnavailabilityReason(PluginUnavailabilityReason);
     bool showsUnavailablePluginIndicator() const;
 
-protected:
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-
-protected:
-    virtual void layout() OVERRIDE FINAL;
-
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderEmbeddedObject"; }
-    virtual bool isEmbeddedObject() const OVERRIDE FINAL { return true; }
-    virtual RenderBox* embeddedContentBox() const OVERRIDE FINAL;
+    virtual void paintContents(PaintInfo&, const LayoutPoint&) override final;
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) override final;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final;
 
-    void paintSnapshotImage(PaintInfo&, const LayoutPoint&, Image*);
-    virtual void paintContents(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
+    virtual void layout() override final;
 
-    virtual LayerType layerTypeRequired() const OVERRIDE FINAL;
+    virtual const char* renderName() const override { return "RenderEmbeddedObject"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectEmbeddedObject || RenderPart::isOfType(type); }
+    virtual RenderBox* embeddedContentBox() const override final;
 
-    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier) OVERRIDE FINAL;
+    virtual LayerType layerTypeRequired() const override final;
+
+    virtual bool scroll(ScrollDirection, ScrollGranularity, float multiplier) override final;
 
     bool getReplacementTextGeometry(const LayoutPoint& accumulatedOffset, FloatRect& contentRect, Path&, FloatRect& replacementTextRect, Font&, TextRun&, float& textWidth) const;
 
-    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
+    virtual CompositingReasons additionalCompositingReasons() const override;
 
     bool m_showsUnavailablePluginIndicator;
     PluginUnavailabilityReason m_pluginUnavailabilityReason;
@@ -73,6 +69,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderEmbeddedObject, isEmbeddedObject());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderEmbeddedObject_h

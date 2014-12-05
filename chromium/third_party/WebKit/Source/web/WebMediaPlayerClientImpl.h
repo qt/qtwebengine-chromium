@@ -35,120 +35,80 @@
 #include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebAudioSourceProviderClient.h"
 #include "public/platform/WebMediaPlayerClient.h"
-#include "third_party/khronos/GLES2/gl2.h"
-#if OS(ANDROID)
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkRefCnt.h"
-#include "third_party/skia/include/gpu/GrTexture.h"
-#endif
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 
-namespace WebCore {
-class AudioSourceProviderClient;
-class HTMLMediaElement;
-}
-
 namespace blink {
 
+class AudioSourceProviderClient;
+class HTMLMediaElement;
 class WebAudioSourceProvider;
-class WebContentDecryptionModule;
 class WebMediaPlayer;
-class WebGraphicsContext3D;
 
-// This class serves as a bridge between WebCore::MediaPlayer and
-// blink::WebMediaPlayer.
-class WebMediaPlayerClientImpl FINAL : public WebCore::MediaPlayer, public WebMediaPlayerClient {
+// This class serves as a bridge between MediaPlayer and
+// WebMediaPlayer.
+class WebMediaPlayerClientImpl final : public MediaPlayer, public WebMediaPlayerClient {
 
 public:
-    static PassOwnPtr<WebCore::MediaPlayer> create(WebCore::MediaPlayerClient*);
+    static PassOwnPtr<MediaPlayer> create(MediaPlayerClient*);
 
     virtual ~WebMediaPlayerClientImpl();
 
     // WebMediaPlayerClient methods:
-    virtual void networkStateChanged() OVERRIDE;
-    virtual void readyStateChanged() OVERRIDE;
-    virtual void timeChanged() OVERRIDE;
-    virtual void repaint() OVERRIDE;
-    virtual void durationChanged() OVERRIDE;
-    virtual void sizeChanged() OVERRIDE;
-    virtual double volume() const OVERRIDE;
-    virtual void playbackStateChanged() OVERRIDE;
-    virtual WebMediaPlayer::Preload preload() const OVERRIDE;
+    virtual void networkStateChanged() override;
+    virtual void readyStateChanged() override;
+    virtual void timeChanged() override;
+    virtual void repaint() override;
+    virtual void durationChanged() override;
+    virtual void sizeChanged() override;
+    virtual void playbackStateChanged() override;
 
     // WebEncryptedMediaPlayerClient methods:
-    virtual void keyAdded(const WebString& keySystem, const WebString& sessionId) OVERRIDE;
-    virtual void keyError(const WebString& keySystem, const WebString& sessionId, MediaKeyErrorCode, unsigned short systemCode) OVERRIDE;
-    virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL) OVERRIDE;
-    virtual void keyNeeded(const WebString& contentType, const unsigned char* initData, unsigned initDataLength) OVERRIDE;
+    virtual void keyAdded(const WebString& keySystem, const WebString& sessionId) override;
+    virtual void keyError(const WebString& keySystem, const WebString& sessionId, MediaKeyErrorCode, unsigned short systemCode) override;
+    virtual void keyMessage(const WebString& keySystem, const WebString& sessionId, const unsigned char* message, unsigned messageLength, const WebURL& defaultURL) override;
+    virtual void encrypted(const WebString& initDataType, const unsigned char* initData, unsigned initDataLength) override;
 
-    virtual void setWebLayer(WebLayer*) OVERRIDE;
-    virtual WebMediaPlayer::TrackId addAudioTrack(const WebString& id, AudioTrackKind, const WebString& label, const WebString& language, bool enabled) OVERRIDE;
-    virtual void removeAudioTrack(WebMediaPlayer::TrackId) OVERRIDE;
-    virtual WebMediaPlayer::TrackId addVideoTrack(const WebString& id, VideoTrackKind, const WebString& label, const WebString& language, bool selected) OVERRIDE;
-    virtual void removeVideoTrack(WebMediaPlayer::TrackId) OVERRIDE;
-    virtual void addTextTrack(WebInbandTextTrack*) OVERRIDE;
-    virtual void removeTextTrack(WebInbandTextTrack*) OVERRIDE;
-    virtual void mediaSourceOpened(WebMediaSource*) OVERRIDE;
-    virtual void requestFullscreen() OVERRIDE;
-    virtual void requestSeek(double) OVERRIDE;
+    virtual void setWebLayer(WebLayer*) override;
+    virtual WebMediaPlayer::TrackId addAudioTrack(const WebString& id, AudioTrackKind, const WebString& label, const WebString& language, bool enabled) override;
+    virtual void removeAudioTrack(WebMediaPlayer::TrackId) override;
+    virtual WebMediaPlayer::TrackId addVideoTrack(const WebString& id, VideoTrackKind, const WebString& label, const WebString& language, bool selected) override;
+    virtual void removeVideoTrack(WebMediaPlayer::TrackId) override;
+    virtual void addTextTrack(WebInbandTextTrack*) override;
+    virtual void removeTextTrack(WebInbandTextTrack*) override;
+    virtual void mediaSourceOpened(WebMediaSource*) override;
+    virtual void requestFullscreen() override;
+    virtual void requestSeek(double) override;
+    virtual void remoteRouteAvailabilityChanged(bool) override;
+    virtual void connectedToRemoteDevice() override;
+    virtual void disconnectedFromRemoteDevice() override;
 
     // MediaPlayer methods:
-    virtual WebMediaPlayer* webMediaPlayer() const OVERRIDE;
-    virtual void load(WebMediaPlayer::LoadType, const WTF::String& url, WebMediaPlayer::CORSMode) OVERRIDE;
-    virtual void play() OVERRIDE;
-    virtual void pause() OVERRIDE;
-    virtual bool supportsSave() const OVERRIDE;
-    virtual double duration() const OVERRIDE;
-    virtual double currentTime() const OVERRIDE;
-    virtual void seek(double time) OVERRIDE;
-    virtual bool seeking() const OVERRIDE;
-    virtual double rate() const OVERRIDE;
-    virtual void setRate(double) OVERRIDE;
-    virtual bool paused() const OVERRIDE;
-    virtual void setPoster(const WebCore::KURL&) OVERRIDE;
-    virtual WebCore::MediaPlayer::NetworkState networkState() const OVERRIDE;
-    virtual double maxTimeSeekable() const OVERRIDE;
-    virtual WTF::PassRefPtr<WebCore::TimeRanges> buffered() const OVERRIDE;
-    virtual bool didLoadingProgress() const OVERRIDE;
-    virtual void paint(WebCore::GraphicsContext*, const WebCore::IntRect&) OVERRIDE;
-    virtual bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, Platform3DObject texture, GLint level, GLenum type, GLenum internalFormat, bool premultiplyAlpha, bool flipY) OVERRIDE;
-    virtual void setPreload(WebCore::MediaPlayer::Preload) OVERRIDE;
-    virtual bool hasSingleSecurityOrigin() const OVERRIDE;
-    virtual double mediaTimeForTimeValue(double timeValue) const OVERRIDE;
+    virtual WebMediaPlayer* webMediaPlayer() const override;
+    virtual void load(WebMediaPlayer::LoadType, const WTF::String& url, WebMediaPlayer::CORSMode) override;
+    virtual void setPreload(MediaPlayer::Preload) override;
 
 #if ENABLE(WEB_AUDIO)
-    virtual WebCore::AudioSourceProvider* audioSourceProvider() OVERRIDE;
+    virtual AudioSourceProvider* audioSourceProvider() override;
 #endif
 
 private:
-    explicit WebMediaPlayerClientImpl(WebCore::MediaPlayerClient*);
+    explicit WebMediaPlayerClientImpl(MediaPlayerClient*);
 
-    WebCore::HTMLMediaElement& mediaElement() const;
+    HTMLMediaElement& mediaElement() const;
 
-    WebCore::MediaPlayerClient* m_client;
+    MediaPlayerClient* m_client;
     OwnPtr<WebMediaPlayer> m_webMediaPlayer;
-    WebCore::MediaPlayer::Preload m_preload;
-    double m_rate;
-
-#if OS(ANDROID)
-    // FIXME: This path "only works" on Android. It is a workaround for the problem that Skia could not handle Android's GL_TEXTURE_EXTERNAL_OES
-    // texture internally. It should be removed and replaced by the normal paint path.
-    // https://code.google.com/p/skia/issues/detail?id=1189
-    void paintOnAndroid(WebCore::GraphicsContext*, const WebCore::IntRect&, uint8_t alpha);
-    SkBitmap m_bitmap;
-    bool m_usePaintOnAndroid;
-#endif
 
 #if ENABLE(WEB_AUDIO)
     // AudioClientImpl wraps an AudioSourceProviderClient.
     // When the audio format is known, Chromium calls setFormat() which then dispatches into WebCore.
 
-    class AudioClientImpl FINAL : public blink::WebAudioSourceProviderClient {
+    class AudioClientImpl final : public GarbageCollectedFinalized<AudioClientImpl>, public WebAudioSourceProviderClient {
     public:
-        AudioClientImpl(WebCore::AudioSourceProviderClient* client)
+        explicit AudioClientImpl(AudioSourceProviderClient* client)
             : m_client(client)
         {
         }
@@ -156,16 +116,18 @@ private:
         virtual ~AudioClientImpl() { }
 
         // WebAudioSourceProviderClient
-        virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
+        virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
+
+        void trace(Visitor*);
 
     private:
-        WebCore::AudioSourceProviderClient* m_client;
+        Member<AudioSourceProviderClient> m_client;
     };
 
     // AudioSourceProviderImpl wraps a WebAudioSourceProvider.
     // provideInput() calls into Chromium to get a rendered audio stream.
 
-    class AudioSourceProviderImpl FINAL : public WebCore::AudioSourceProvider {
+    class AudioSourceProviderImpl final : public AudioSourceProvider {
     public:
         AudioSourceProviderImpl()
             : m_webAudioSourceProvider(0)
@@ -177,13 +139,13 @@ private:
         // Wraps the given WebAudioSourceProvider.
         void wrap(WebAudioSourceProvider*);
 
-        // WebCore::AudioSourceProvider
-        virtual void setClient(WebCore::AudioSourceProviderClient*) OVERRIDE;
-        virtual void provideInput(WebCore::AudioBus*, size_t framesToProcess) OVERRIDE;
+        // AudioSourceProvider
+        virtual void setClient(AudioSourceProviderClient*) override;
+        virtual void provideInput(AudioBus*, size_t framesToProcess) override;
 
     private:
         WebAudioSourceProvider* m_webAudioSourceProvider;
-        OwnPtr<AudioClientImpl> m_client;
+        Persistent<AudioClientImpl> m_client;
         Mutex provideInputLock;
     };
 

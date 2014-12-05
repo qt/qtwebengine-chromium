@@ -29,10 +29,11 @@
 #include "core/dom/Text.h"
 #include "core/editing/htmlediting.h"
 #include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderText.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 String convertHTMLTextToInterchangeFormat(const String& in, const Text& node)
 {
@@ -96,4 +97,4 @@ String convertHTMLTextToInterchangeFormat(const String& in, const Text& node)
     return s.toString();
 }
 
-} // namespace WebCore
+} // namespace blink

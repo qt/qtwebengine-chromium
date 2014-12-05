@@ -12,7 +12,6 @@
 #include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "net/base/ip_endpoint.h"
-#include "net/base/linked_hash_map.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_crypto_stream.h"
 #include "net/quic/quic_data_stream.h"
@@ -53,27 +52,28 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
     HANDSHAKE_CONFIRMED,
   };
 
-  QuicSession(QuicConnection* connection, const QuicConfig& config);
+  QuicSession(QuicConnection* connection,
+              const QuicConfig& config,
+              bool is_secure);
+  void InitializeSession();
 
-  virtual ~QuicSession();
+  ~QuicSession() override;
 
   // QuicConnectionVisitorInterface methods:
-  virtual void OnStreamFrames(
-      const std::vector<QuicStreamFrame>& frames) OVERRIDE;
-  virtual void OnRstStream(const QuicRstStreamFrame& frame) OVERRIDE;
-  virtual void OnGoAway(const QuicGoAwayFrame& frame) OVERRIDE;
-  virtual void OnWindowUpdateFrames(
-      const std::vector<QuicWindowUpdateFrame>& frames) OVERRIDE;
-  virtual void OnBlockedFrames(
-      const std::vector<QuicBlockedFrame>& frames) OVERRIDE;
-  virtual void OnConnectionClosed(QuicErrorCode error, bool from_peer) OVERRIDE;
-  virtual void OnWriteBlocked() OVERRIDE {}
-  virtual void OnSuccessfulVersionNegotiation(
-      const QuicVersion& version) OVERRIDE;
-  virtual void OnCanWrite() OVERRIDE;
-  virtual bool WillingAndAbleToWrite() const OVERRIDE;
-  virtual bool HasPendingHandshake() const OVERRIDE;
-  virtual bool HasOpenDataStreams() const OVERRIDE;
+  void OnStreamFrames(const std::vector<QuicStreamFrame>& frames) override;
+  void OnRstStream(const QuicRstStreamFrame& frame) override;
+  void OnGoAway(const QuicGoAwayFrame& frame) override;
+  void OnWindowUpdateFrames(
+      const std::vector<QuicWindowUpdateFrame>& frames) override;
+  void OnBlockedFrames(const std::vector<QuicBlockedFrame>& frames) override;
+  void OnConnectionClosed(QuicErrorCode error, bool from_peer) override;
+  void OnWriteBlocked() override {}
+  void OnSuccessfulVersionNegotiation(const QuicVersion& version) override;
+  void OnCanWrite() override;
+  void OnCongestionWindowChange(QuicTime now) override {}
+  bool WillingAndAbleToWrite() const override;
+  bool HasPendingHandshake() const override;
+  bool HasOpenDataStreams() const override;
 
   // Called by the headers stream when headers have been received for a stream.
   virtual void OnStreamHeaders(QuicStreamId stream_id,
@@ -205,16 +205,29 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   QuicFlowController* flow_controller() { return flow_controller_.get(); }
 
+  // Returns true if connection is flow controller blocked.
+  bool IsConnectionFlowControlBlocked() const;
+
+  // Returns true if any stream is flow controller blocked.
+  bool IsStreamFlowControlBlocked();
+
+  // Returns true if this is a secure QUIC session.
+  bool is_secure() const {
+    return is_secure_;
+  }
+
+  size_t get_max_open_streams() const { return max_open_streams_; }
+
  protected:
   typedef base::hash_map<QuicStreamId, QuicDataStream*> DataStreamMap;
 
   // Creates a new stream, owned by the caller, to handle a peer-initiated
-  // stream.  Returns NULL and does error handling if the stream can not be
+  // stream.  Returns nullptr and does error handling if the stream can not be
   // created.
   virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) = 0;
 
   // Create a new stream, owned by the caller, to handle a locally-initiated
-  // stream.  Returns NULL if max streams have already been opened.
+  // stream.  Returns nullptr if max streams have already been opened.
   virtual QuicDataStream* CreateOutgoingDataStream() = 0;
 
   // Return the reserved crypto stream.
@@ -248,9 +261,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   std::vector<QuicDataStream*>* closed_streams() { return &closed_streams_; }
 
-  size_t get_max_open_streams() const {
-    return max_open_streams_;
-  }
+  void set_max_open_streams(size_t max_open_streams);
+
+  scoped_ptr<QuicHeadersStream> headers_stream_;
 
  private:
   friend class test::QuicSessionPeer;
@@ -281,8 +294,6 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
       locally_closed_streams_highest_offset_;
 
   scoped_ptr<QuicConnection> connection_;
-
-  scoped_ptr<QuicHeadersStream> headers_stream_;
 
   // A shim to stand between the connection and the session, to handle stream
   // deletions.
@@ -321,6 +332,9 @@ class NET_EXPORT_PRIVATE QuicSession : public QuicConnectionVisitorInterface {
 
   // Used for session level flow control.
   scoped_ptr<QuicFlowController> flow_controller_;
+
+  // True if this is a secure (HTTPS) QUIC session.
+  bool is_secure_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicSession);
 };

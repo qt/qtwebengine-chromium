@@ -25,14 +25,15 @@
 #include "core/rendering/RenderText.h"
 #include "core/rendering/style/CounterContent.h"
 
-namespace WebCore {
+namespace blink {
 
 class CounterNode;
 
-class RenderCounter FINAL : public RenderText {
+class RenderCounter final : public RenderText {
 public:
     RenderCounter(Document*, const CounterContent&);
     virtual ~RenderCounter();
+    virtual void destroy() override;
 
     static void destroyCounterNodes(RenderObject&);
     static void destroyCounterNode(RenderObject&, const AtomicString& identifier);
@@ -43,12 +44,12 @@ public:
     void updateCounter();
 
 protected:
-    virtual void willBeDestroyed() OVERRIDE;
+    virtual void willBeDestroyed() override;
 
 private:
-    virtual const char* renderName() const OVERRIDE;
-    virtual bool isCounter() const OVERRIDE;
-    virtual PassRefPtr<StringImpl> originalText() const OVERRIDE;
+    virtual const char* renderName() const override;
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectCounter || RenderText::isOfType(type); }
+    virtual PassRefPtr<StringImpl> originalText() const override;
 
     // Removes the reference to the CounterNode associated with this renderer.
     // This is used to cause a counter display update when the CounterNode tree changes.
@@ -62,11 +63,11 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderCounter, isCounter());
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showCounterRendererTree(const WebCore::RenderObject*, const char* counterName = 0);
+void showCounterRendererTree(const blink::RenderObject*, const char* counterName = 0);
 #endif
 
 #endif // RenderCounter_h

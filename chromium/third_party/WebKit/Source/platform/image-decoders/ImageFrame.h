@@ -33,7 +33,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 // ImageFrame represents the decoded image data.  This buffer is what all
 // decoders write a single frame into.
@@ -70,7 +70,12 @@ public:
 
     ImageFrame();
 
-    ImageFrame(const ImageFrame& other) { operator=(other); }
+    // The assignment operator reads m_hasAlpha (inside setStatus()) before it
+    // sets it (in setHasAlpha()).  This doesn't cause any problems, since the
+    // setHasAlpha() call ensures all state is set correctly, but it means we
+    // need to initialize m_hasAlpha to some value before calling the operator
+    // lest any tools complain about using an uninitialized value.
+    ImageFrame(const ImageFrame& other) : m_hasAlpha(false) { operator=(other); }
 
     // For backends which refcount their data, this operator doesn't need to
     // create a new copy of the image data, only increase the ref count.
@@ -128,7 +133,7 @@ public:
         ASSERT(m_requiredPreviousFrameIndexValid);
         return m_requiredPreviousFrameIndex;
     }
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool requiredPreviousFrameIndexValid() const { return m_requiredPreviousFrameIndexValid; }
 #endif
     void setHasAlpha(bool alpha);
@@ -147,7 +152,7 @@ public:
     void setRequiredPreviousFrameIndex(size_t previousFrameIndex)
     {
         m_requiredPreviousFrameIndex = previousFrameIndex;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
         m_requiredPreviousFrameIndexValid = true;
 #endif
     }
@@ -234,11 +239,11 @@ private:
     // This is used by ImageDecoder::clearCacheExceptFrame(), and will never
     // be read for image formats that do not have multiple frames.
     size_t m_requiredPreviousFrameIndex;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool m_requiredPreviousFrameIndexValid;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

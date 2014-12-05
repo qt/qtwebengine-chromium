@@ -36,8 +36,6 @@
 #include "public/platform/WebURL.h"
 #include "wtf/PassRefPtr.h"
 
-using WebCore::Notification;
-
 namespace blink {
 
 void WebNotification::reset()
@@ -67,9 +65,7 @@ WebString WebNotification::title() const
 
 WebTextDirection WebNotification::direction() const
 {
-    return (m_private->direction() == WebCore::RTL) ?
-        WebTextDirectionRightToLeft :
-        WebTextDirectionLeftToRight;
+    return toWebTextDirection(m_private->direction());
 }
 
 WebString WebNotification::lang() const

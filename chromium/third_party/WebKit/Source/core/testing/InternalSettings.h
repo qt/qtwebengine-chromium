@@ -35,7 +35,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExceptionState;
@@ -44,20 +44,21 @@ class Page;
 class Settings;
 
 #if ENABLE(OILPAN)
-class InternalSettings FINAL : public InternalSettingsGenerated, public HeapSupplement<Page> {
+class InternalSettings final : public InternalSettingsGenerated, public HeapSupplement<Page> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InternalSettings);
 #else
-class InternalSettings FINAL : public InternalSettingsGenerated {
+class InternalSettings final : public InternalSettingsGenerated {
 #endif
+    DEFINE_WRAPPERTYPEINFO();
 public:
     class Backup {
     public:
         explicit Backup(Settings*);
         void restoreTo(Settings*);
 
-        bool m_originalCSSExclusionsEnabled;
         bool m_originalAuthorShadowDOMForAnyElementEnabled;
         bool m_originalCSP;
+        bool m_originalLaxMixedContentCheckingEnabled;
         bool m_originalOverlayScrollbarsEnabled;
         EditingBehaviorType m_originalEditingBehavior;
         bool m_originalTextAutosizingEnabled;
@@ -65,11 +66,13 @@ public:
         float m_originalAccessibilityFontScaleFactor;
         String m_originalMediaTypeOverride;
         bool m_originalMockScrollbarsEnabled;
+        bool m_originalMockGestureTapHighlightsEnabled;
         bool m_langAttributeAwareFormControlUIEnabled;
         bool m_imagesEnabled;
         String m_defaultVideoPosterURL;
         bool m_originalLayerSquashingEnabled;
         bool m_originalPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled;
+        bool m_originalImageColorProfilesEnabled;
     };
 
     static PassRefPtrWillBeRawPtr<InternalSettings> create(Page& page)
@@ -98,6 +101,7 @@ public:
     void setImagesEnabled(bool, ExceptionState&);
     void setMediaTypeOverride(const String& mediaType, ExceptionState&);
     void setMockScrollbarsEnabled(bool, ExceptionState&);
+    void setMockGestureTapHighlightsEnabled(bool, ExceptionState&);
     void setTextAutosizingEnabled(bool, ExceptionState&);
     void setAccessibilityFontScaleFactor(float fontScaleFactor, ExceptionState&);
     void setTextAutosizingWindowSizeOverride(int width, int height, ExceptionState&);
@@ -111,13 +115,19 @@ public:
     // cannot be changed after process start. These setters should
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(bool);
-    void setCSSExclusionsEnabled(bool);
     void setLangAttributeAwareFormControlUIEnabled(bool);
     void setOverlayScrollbarsEnabled(bool);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(bool);
+    void setLaxMixedContentCheckingEnabled(bool);
     void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(bool);
+    void setImageColorProfilesEnabled(bool);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
+
+    void setAvailablePointerTypes(const String&, ExceptionState&);
+    void setPrimaryPointerType(const String&, ExceptionState&);
+    void setAvailableHoverTypes(const String&, ExceptionState&);
+    void setPrimaryHoverType(const String&, ExceptionState&);
 
 private:
     explicit InternalSettings(Page&);
@@ -130,6 +140,6 @@ private:
     Backup m_backup;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // InternalSettings_h

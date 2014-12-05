@@ -102,6 +102,8 @@ enum KeyEventFlags {
                                     // (Linux X11 only)
   EF_IS_REPEAT          = 1 << 18,
   EF_FUNCTION_KEY       = 1 << 19,  // Key originates from function key row
+  EF_FINAL              = 1 << 20,  // Do not remap; the event was created with
+                                    // the desired final values.
 };
 
 // Flags specific to mouse events
@@ -132,6 +134,11 @@ enum EventPhase {
   EP_TARGET,
   EP_POSTTARGET,
   EP_POSTDISPATCH
+};
+
+// Device ID for Touch and Key Events.
+enum EventDeviceId {
+  ED_UNKNOWN_DEVICE = -1
 };
 
 }  // namespace ui

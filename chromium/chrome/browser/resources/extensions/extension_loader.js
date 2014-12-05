@@ -9,11 +9,33 @@ cr.define('extensions', function() {
    * Construct an ExtensionLoadError around the given |div|.
    * @param {HTMLDivElement} div The HTML div for the extension load error.
    * @constructor
+   * @extends {HTMLDivElement}
    */
   function ExtensionLoadError(div) {
     div.__proto__ = ExtensionLoadError.prototype;
     div.init();
     return div;
+  }
+
+  /**
+   * Construct a Failure.
+   * @param {string} filePath The path to the unpacked extension.
+   * @param {string} error The reason the extension failed to load.
+   * @param {ExtensionHighlight} manifest Three 'highlight' strings in
+   *     |manifest| represent three portions of the file's content to display -
+   *     the portion which is most relevant and should be emphasized
+   *     (highlight), and the parts both before and after this portion. These
+   *     may be empty.
+   * @param {HTMLLIElement} listElement The HTML element used for displaying the
+   *     failure path for the additional failures UI.
+   * @constructor
+   * @extends {HTMLDivElement}
+   */
+  function Failure(filePath, error, manifest, listElement) {
+    this.path = filePath;
+    this.error = error;
+    this.manifest = manifest;
+    this.listElement = listElement;
   }
 
   ExtensionLoadError.prototype = {
@@ -25,62 +47,123 @@ cr.define('extensions', function() {
     init: function() {
       /**
        * The element which displays the path of the extension.
-       * @type {HTMLSpanElement}
+       * @type {HTMLElement}
        * @private
        */
-      this.path_ = this.querySelector('#extension-load-error-path');
+      this.path_ = /** @type {HTMLElement} */(
+          this.querySelector('#extension-load-error-path'));
 
       /**
        * The element which displays the reason the extension failed to load.
-       * @type {HTMLSpanElement}
+       * @type {HTMLElement}
        * @private
        */
-      this.reason_ = this.querySelector('#extension-load-error-reason');
+      this.reason_ = /** @type {HTMLElement} */(
+          this.querySelector('#extension-load-error-reason'));
 
       /**
        * The element which displays the manifest code.
-       * @type {ExtensionCode}
+       * @type {extensions.ExtensionCode}
        * @private
        */
       this.manifest_ = new extensions.ExtensionCode(
           this.querySelector('#extension-load-error-manifest'));
 
+      /**
+       * The element which displays information about additional errors.
+       * @type {HTMLElement}
+       * @private
+       */
+      this.additional_ = /** @type {HTMLUListElement} */(
+          this.querySelector('#extension-load-error-additional'));
+      this.additional_.list = this.additional_.getElementsByTagName('ul')[0];
+
+      /**
+       * An array of Failures for keeping track of multiple active failures.
+       * @type {Array.<Failure>}
+       * @private
+       */
+      this.failures_ = [];
+
       this.querySelector('#extension-load-error-retry-button').addEventListener(
           'click', function(e) {
         chrome.send('extensionLoaderRetry');
-        this.hide_();
+        this.remove_();
       }.bind(this));
 
       this.querySelector('#extension-load-error-give-up-button').
           addEventListener('click', function(e) {
-        this.hide_();
+        chrome.send('extensionLoaderIgnoreFailure');
+        this.remove_();
       }.bind(this));
+
+      chrome.send('extensionLoaderDisplayFailures');
     },
 
     /**
-     * Display the load error to the user.
-     * @param {string} path The path from which the extension was loaded.
-     * @param {string} reason The reason the extension failed to load.
-     * @param {string} manifest The manifest object, with highlighted regions.
+     * Add a failure to failures_ array. If there is already a displayed
+     * failure, display the additional failures element.
+     * @param {Array.<Object>} failures Array of failures containing paths,
+     *     errors, and manifests.
+     * @private
      */
-    show: function(path, reason, manifest) {
-      this.path_.textContent = path;
-      this.reason_.textContent = reason;
+    add_: function(failures) {
+      // If a failure is already being displayed, unhide the last item.
+      if (this.failures_.length > 0)
+        this.failures_[this.failures_.length - 1].listElement.hidden = false;
+      failures.forEach(function(failure) {
+        var listItem = /** @type {HTMLLIElement} */(
+            document.createElement('li'));
+        listItem.textContent = failure.path;
+        this.additional_.list.appendChild(listItem);
+        this.failures_.push(new Failure(failure.path,
+                                        failure.error,
+                                        failure.manifest,
+                                        listItem));
+      }.bind(this));
+      // Hide the last item because the UI is displaying its information.
+      this.failures_[this.failures_.length - 1].listElement.hidden = true;
+      this.show_();
+    },
 
-      manifest.message = reason;
+    /**
+     * Remove a failure from |failures_| array. If this was the last failure,
+     * hide the error UI.  If this was the last additional failure, hide
+     * the additional failures UI.
+     * @private
+     */
+    remove_: function() {
+      this.additional_.list.removeChild(
+          this.failures_[this.failures_.length - 1].listElement);
+      this.failures_.pop();
+      if (this.failures_.length > 0) {
+        this.failures_[this.failures_.length - 1].listElement.hidden = true;
+        this.show_();
+      } else {
+        this.hidden = true;
+      }
+    },
+
+    /**
+     * Display the load error to the user. The last failure gets its manifest
+     * and error displayed, while additional failures have their path names
+     * displayed in the additional failures element.
+     * @private
+     */
+    show_: function() {
+      assert(this.failures_.length >= 1);
+      var failure = this.failures_[this.failures_.length - 1];
+      this.path_.textContent = failure.path;
+      this.reason_.textContent = failure.error;
+
+      failure.manifest.message = failure.error;
       this.manifest_.populate(
-          manifest,
+          failure.manifest,
           loadTimeData.getString('extensionLoadCouldNotLoadManifest'));
       this.hidden = false;
       this.manifest_.scrollToError();
-    },
 
-    /**
-     * Hide the extension load error.
-     * @private
-     */
-    hide_: function() {
-      this.hidden = true;
+      this.additional_.hidden = this.failures_.length == 1;
     }
   };
 
@@ -95,7 +178,8 @@ cr.define('extensions', function() {
      * @type {ExtensionLoadError}
      * @private
      */
-    this.loadError_ = new ExtensionLoadError($('extension-load-error'));
+    this.loadError_ = new ExtensionLoadError(
+        /** @type {HTMLDivElement} */($('extension-load-error')));
   }
 
   cr.addSingletonGetter(ExtensionLoader);
@@ -111,29 +195,23 @@ cr.define('extensions', function() {
 
     /**
      * Notify the ExtensionLoader that loading an unpacked extension failed.
-     * Show the ExtensionLoadError.
-     * @param {string} filePath The path to the unpacked extension.
-     * @param {string} reason The reason the extension failed to load.
-     * @param {Object} manifest An object with three strings: beforeHighlight,
-     *     afterHighlight, and highlight. These represent three portions of the
-     *     file's content to display - the portion which is most relevant and
-     *     should be emphasized (highlight), and the parts both before and after
-     *     this portion. These may be empty.
+     * Add the failure to failures_ and show the ExtensionLoadError.
+     * @param {Array.<Object>} failures Array of failures containing paths,
+     *     errors, and manifests.
      */
-    notifyFailed: function(filePath, reason, manifest) {
-      this.loadError_.show(filePath, reason, manifest);
-    }
+    notifyFailed: function(failures) {
+      this.loadError_.add_(failures);
+    },
   };
 
-  /*
+  /**
    * A static forwarding function for ExtensionLoader.notifyFailed.
-   * @param {string} filePath The path to the unpacked extension.
-   * @param {string} reason The reason the extension failed to load.
-   * @param {Object} manifest The manifest of the failed extension.
+   * @param {Array.<Object>} failures Array of failures containing paths,
+   *     errors, and manifests.
    * @see ExtensionLoader.notifyFailed
    */
-  ExtensionLoader.notifyLoadFailed = function(filePath, reason, manifest) {
-    ExtensionLoader.getInstance().notifyFailed(filePath, reason, manifest);
+  ExtensionLoader.notifyLoadFailed = function(failures) {
+    ExtensionLoader.getInstance().notifyFailed(failures);
   };
 
   return {

@@ -35,12 +35,11 @@
 #include "modules/gamepad/GamepadEvent.h"
 #include "modules/gamepad/GamepadList.h"
 #include "modules/gamepad/WebKitGamepadList.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 template<typename T>
-static void sampleGamepad(unsigned index, T& gamepad, const blink::WebGamepad& webGamepad)
+static void sampleGamepad(unsigned index, T& gamepad, const WebGamepad& webGamepad)
 {
     gamepad.setId(webGamepad.id);
     gamepad.setIndex(index);
@@ -54,12 +53,12 @@ static void sampleGamepad(unsigned index, T& gamepad, const blink::WebGamepad& w
 template<typename GamepadType, typename ListType>
 static void sampleGamepads(ListType* into)
 {
-    blink::WebGamepads gamepads;
+    WebGamepads gamepads;
 
     GamepadDispatcher::instance().sampleGamepads(gamepads);
 
-    for (unsigned i = 0; i < blink::WebGamepads::itemsLengthCap; ++i) {
-        blink::WebGamepad& webGamepad = gamepads.items[i];
+    for (unsigned i = 0; i < WebGamepads::itemsLengthCap; ++i) {
+        WebGamepad& webGamepad = gamepads.items[i];
         if (i < gamepads.length && webGamepad.connected) {
             GamepadType* gamepad = into->item(i);
             if (!gamepad)
@@ -76,7 +75,7 @@ NavigatorGamepad* NavigatorGamepad::from(Document& document)
 {
     if (!document.frame() || !document.frame()->domWindow())
         return 0;
-    Navigator& navigator = document.frame()->domWindow()->navigator();
+    Navigator& navigator = *document.frame()->domWindow()->navigator();
     return &from(navigator);
 }
 
@@ -126,7 +125,10 @@ void NavigatorGamepad::trace(Visitor* visitor)
 {
     visitor->trace(m_gamepads);
     visitor->trace(m_webkitGamepads);
+    visitor->trace(m_pendingEvents);
     WillBeHeapSupplement<Navigator>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
+    PlatformEventController::trace(visitor);
 }
 
 void NavigatorGamepad::didUpdateData()
@@ -152,14 +154,28 @@ void NavigatorGamepad::didUpdateData()
     sampleGamepad(change.index, *gamepad, change.pad);
     m_gamepads->set(change.index, gamepad);
 
-    const AtomicString& eventName = change.pad.connected ? EventTypeNames::gamepadconnected : EventTypeNames::gamepaddisconnected;
+    m_pendingEvents.append(gamepad);
+    m_dispatchOneEventRunner.runAsync();
+}
+
+void NavigatorGamepad::dispatchOneEvent()
+{
+    ASSERT(window());
+    ASSERT(!m_pendingEvents.isEmpty());
+
+    Gamepad* gamepad = m_pendingEvents.takeFirst();
+    const AtomicString& eventName = gamepad->connected() ? EventTypeNames::gamepadconnected : EventTypeNames::gamepaddisconnected;
     window()->dispatchEvent(GamepadEvent::create(eventName, false, true, gamepad));
+
+    if (!m_pendingEvents.isEmpty())
+        m_dispatchOneEventRunner.runAsync();
 }
 
 NavigatorGamepad::NavigatorGamepad(LocalFrame* frame)
     : DOMWindowProperty(frame)
-    , DeviceEventControllerBase(frame ? frame->page() : 0)
+    , PlatformEventController(frame ? frame->page() : 0)
     , DOMWindowLifecycleObserver(frame ? frame->domWindow() : 0)
+    , m_dispatchOneEventRunner(this, &NavigatorGamepad::dispatchOneEvent)
 {
 }
 
@@ -187,10 +203,12 @@ void NavigatorGamepad::willDetachGlobalObjectFromFrame()
 void NavigatorGamepad::registerWithDispatcher()
 {
     GamepadDispatcher::instance().addController(this);
+    m_dispatchOneEventRunner.resume();
 }
 
 void NavigatorGamepad::unregisterWithDispatcher()
 {
+    m_dispatchOneEventRunner.suspend();
     GamepadDispatcher::instance().removeController(this);
 }
 
@@ -207,7 +225,7 @@ static bool isGamepadEvent(const AtomicString& eventType)
 
 void NavigatorGamepad::didAddEventListener(LocalDOMWindow*, const AtomicString& eventType)
 {
-    if (RuntimeEnabledFeatures::gamepadEnabled() && isGamepadEvent(eventType)) {
+    if (isGamepadEvent(eventType)) {
         if (page() && page()->visibilityState() == PageVisibilityStateVisible)
             startUpdating();
         m_hasEventListener = true;
@@ -219,13 +237,58 @@ void NavigatorGamepad::didRemoveEventListener(LocalDOMWindow* window, const Atom
     if (isGamepadEvent(eventType)
         && !window->hasEventListeners(EventTypeNames::gamepadconnected)
         && !window->hasEventListeners(EventTypeNames::gamepaddisconnected)) {
-        m_hasEventListener = false;
+        didRemoveGamepadEventListeners();
     }
 }
 
 void NavigatorGamepad::didRemoveAllEventListeners(LocalDOMWindow*)
 {
-    m_hasEventListener = false;
+    didRemoveGamepadEventListeners();
 }
 
-} // namespace WebCore
+void NavigatorGamepad::didRemoveGamepadEventListeners()
+{
+    m_hasEventListener = false;
+    m_dispatchOneEventRunner.stop();
+    m_pendingEvents.clear();
+}
+
+void NavigatorGamepad::pageVisibilityChanged()
+{
+    // Inform the embedder whether it needs to provide gamepad data for us.
+    bool visible = page()->visibilityState() == PageVisibilityStateVisible;
+    if (visible && (m_hasEventListener || m_gamepads || m_webkitGamepads))
+        startUpdating();
+    else
+        stopUpdating();
+
+    if (!visible || !m_hasEventListener)
+        return;
+
+    // Tell the page what has changed. m_gamepads contains the state before we became hidden.
+    // We create a new snapshot and compare them.
+    GamepadList* oldGamepads = m_gamepads.release();
+    gamepads();
+    GamepadList* newGamepads = m_gamepads.get();
+    ASSERT(newGamepads);
+
+    for (unsigned i = 0; i < WebGamepads::itemsLengthCap; ++i) {
+        Gamepad* oldGamepad = oldGamepads ? oldGamepads->item(i) : 0;
+        Gamepad* newGamepad = newGamepads->item(i);
+        bool oldWasConnected = oldGamepad && oldGamepad->connected();
+        bool newIsConnected = newGamepad && newGamepad->connected();
+        bool connectedGamepadChanged = oldWasConnected && newIsConnected && oldGamepad->id() != newGamepad->id();
+        if (connectedGamepadChanged || (oldWasConnected && !newIsConnected)) {
+            oldGamepad->setConnected(false);
+            m_pendingEvents.append(oldGamepad);
+        }
+        if (connectedGamepadChanged || (!oldWasConnected && newIsConnected)) {
+            m_pendingEvents.append(newGamepad);
+        }
+    }
+
+    if (!m_pendingEvents.isEmpty())
+        m_dispatchOneEventRunner.runAsync();
+}
+
+} // namespace blink

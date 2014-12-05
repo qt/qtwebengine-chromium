@@ -41,8 +41,6 @@
 #include "public/web/WebInputElement.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 bool WebFormElement::autoComplete() const

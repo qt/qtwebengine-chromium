@@ -7,6 +7,10 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
+#include "base/profiler/scoped_tracker.h"
+#include "base/single_thread_task_runner.h"
+#include "base/task_runner.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_restrictions.h"
 
 namespace disk_cache {
@@ -34,8 +38,9 @@ BackgroundIO::~BackgroundIO() {
 // ---------------------------------------------------------------------------
 
 InFlightIO::InFlightIO()
-    : callback_thread_(base::MessageLoopProxy::current()),
-      running_(false), single_thread_(false) {
+    : callback_task_runner_(base::ThreadTaskRunnerHandle::Get()),
+      running_(false),
+      single_thread_(false) {
 }
 
 InFlightIO::~InFlightIO() {
@@ -69,21 +74,24 @@ void InFlightIO::DropPendingIO() {
 // Runs on a background thread.
 void InFlightIO::OnIOComplete(BackgroundIO* operation) {
 #ifndef NDEBUG
-  if (callback_thread_->BelongsToCurrentThread()) {
+  if (callback_task_runner_->RunsTasksOnCurrentThread()) {
     DCHECK(single_thread_ || !running_);
     single_thread_ = true;
   }
 #endif
 
-  callback_thread_->PostTask(FROM_HERE,
-                             base::Bind(&BackgroundIO::OnIOSignalled,
-                                        operation));
+  callback_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&BackgroundIO::OnIOSignalled, operation));
   operation->io_completed()->Signal();
 }
 
 // Runs on the primary thread.
 void InFlightIO::InvokeCallback(BackgroundIO* operation, bool cancel_task) {
   {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION("422516 InFlightIO::InvokeCallback"));
+
     // http://crbug.com/74623
     base::ThreadRestrictions::ScopedAllowWait allow_wait;
     operation->io_completed()->Wait();
@@ -103,7 +111,7 @@ void InFlightIO::InvokeCallback(BackgroundIO* operation, bool cancel_task) {
 
 // Runs on the primary thread.
 void InFlightIO::OnOperationPosted(BackgroundIO* operation) {
-  DCHECK(callback_thread_->BelongsToCurrentThread());
+  DCHECK(callback_task_runner_->RunsTasksOnCurrentThread());
   io_list_.insert(make_scoped_refptr(operation));
 }
 

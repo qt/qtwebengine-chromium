@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <vector>
 #include <algorithm>
-#include "talk/base/common.h"
-#include "talk/xmpp/xmppengineimpl.h"
-#include "talk/xmpp/constants.h"
+#include <vector>
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/xmppengineimpl.h"
+#include "webrtc/base/common.h"
 
 namespace buzz {
 

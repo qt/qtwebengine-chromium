@@ -31,14 +31,14 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementRegistry.h"
 
-#include "bindings/v8/CustomElementConstructorBuilder.h"
+#include "bindings/core/v8/CustomElementConstructorBuilder.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/dom/DocumentLifecycleObserver.h"
 #include "core/dom/custom/CustomElementException.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class RegistrationContextObserver : public DocumentLifecycleObserver {
 public:
@@ -53,9 +53,9 @@ public:
 private:
 #if ENABLE(OILPAN)
     // In oilpan we don't have the disposed phase for context lifecycle observer.
-    virtual void documentWasDetached() OVERRIDE { m_wentAway = true; }
+    virtual void documentWasDetached() override { m_wentAway = true; }
 #else
-    virtual void documentWasDisposed() OVERRIDE { m_wentAway = true; }
+    virtual void documentWasDisposed() override { m_wentAway = true; }
 #endif
 
     bool m_wentAway;
@@ -81,17 +81,16 @@ CustomElementDefinition* CustomElementRegistry::registerElement(Document* docume
         return 0;
     }
 
+    if (m_registeredTypeNames.contains(type)) {
+        CustomElementException::throwException(CustomElementException::TypeAlreadyRegistered, type, exceptionState);
+        return 0;
+    }
+
     QualifiedName tagName = QualifiedName::null();
     if (!constructorBuilder->validateOptions(type, tagName, exceptionState))
         return 0;
 
     ASSERT(tagName.namespaceURI() == HTMLNames::xhtmlNamespaceURI || tagName.namespaceURI() == SVGNames::svgNamespaceURI);
-
-    // FIXME: This should be done earlier in validateOptions.
-    if (m_registeredTypeNames.contains(type)) {
-        CustomElementException::throwException(CustomElementException::TypeAlreadyRegistered, type, exceptionState);
-        return 0;
-    }
 
     ASSERT(!observer.registrationContextWentAway());
 
@@ -126,4 +125,4 @@ CustomElementDefinition* CustomElementRegistry::find(const CustomElementDescript
     return m_definitions.get(descriptor);
 }
 
-} // namespace WebCore
+} // namespace blink

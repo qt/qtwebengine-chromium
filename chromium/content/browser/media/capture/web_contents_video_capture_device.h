@@ -16,36 +16,32 @@ namespace content {
 class ContentVideoCaptureDeviceCore;
 
 // A virtualized VideoCaptureDevice that mirrors the displayed contents of a
-// tab (accessed via its associated WebContents instance), producing a stream of
-// video frames.
+// WebContents (i.e., the composition of an entire render frame tree), producing
+// a stream of video frames.
 //
-// An instance is created by providing a device_id.  The device_id contains the
-// routing ID for a RenderViewHost, and from the RenderViewHost instance, a
-// reference to its associated WebContents instance is acquired.  From then on,
-// WebContentsVideoCaptureDevice will capture from whatever render view is
-// currently associated with that WebContents instance.  This allows the
-// underlying render view to be swapped out (e.g., due to navigation or
-// crashes/reloads), without any interruption in capturing.
+// An instance is created by providing a device_id.  The device_id contains
+// information necessary for finding a WebContents instance.  From then on,
+// WebContentsVideoCaptureDevice will capture from the RenderWidgetHost that
+// encompasses the currently active RenderFrameHost tree for that that
+// WebContents instance.  As the RenderFrameHost tree mutates (e.g., due to page
+// navigations, or crashes/reloads), capture will continue without interruption.
 class CONTENT_EXPORT WebContentsVideoCaptureDevice
     : public media::VideoCaptureDevice {
  public:
-  // Construct from a |device_id| string of the form:
-  //   "virtual-media-stream://render_process_id:render_view_id", where
-  // |render_process_id| and |render_view_id| are decimal integers.
-  // |destroy_cb| is invoked on an outside thread once all outstanding objects
-  // are completely destroyed -- this will be some time after the
-  // WebContentsVideoCaptureDevice is itself deleted.
+  // Create a WebContentsVideoCaptureDevice instance from the given
+  // |device_id|.  Returns NULL if |device_id| is invalid.
   static media::VideoCaptureDevice* Create(const std::string& device_id);
 
-  virtual ~WebContentsVideoCaptureDevice();
+  ~WebContentsVideoCaptureDevice() override;
 
   // VideoCaptureDevice implementation.
-  virtual void AllocateAndStart(const media::VideoCaptureParams& params,
-                                scoped_ptr<Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+  void AllocateAndStart(const media::VideoCaptureParams& params,
+                        scoped_ptr<Client> client) override;
+  void StopAndDeAllocate() override;
 
  private:
-  WebContentsVideoCaptureDevice(int render_process_id, int render_view_id);
+  WebContentsVideoCaptureDevice(
+      int render_process_id, int main_render_frame_id);
 
   const scoped_ptr<ContentVideoCaptureDeviceCore> core_;
 

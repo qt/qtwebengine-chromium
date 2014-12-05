@@ -20,18 +20,18 @@ class CC_EXPORT PictureRecordBenchmark : public MicroBenchmark {
  public:
   explicit PictureRecordBenchmark(scoped_ptr<base::Value> value,
                                   const MicroBenchmark::DoneCallback& callback);
-  virtual ~PictureRecordBenchmark();
+  ~PictureRecordBenchmark() override;
 
   // Implements MicroBenchmark interface.
-  virtual void DidUpdateLayers(LayerTreeHost* host) OVERRIDE;
-  virtual void RunOnLayer(PictureLayer* layer) OVERRIDE;
+  void DidUpdateLayers(LayerTreeHost* host) override;
+  void RunOnLayer(PictureLayer* layer) override;
 
  private:
   void Run(Layer* layer);
 
   typedef std::pair<base::TimeDelta, unsigned> TotalTime;
   std::map<std::pair<int, int>, TotalTime> times_;
-  std::vector<std::pair<int, int> > dimensions_;
+  std::vector<std::pair<int, int>> dimensions_;
 };
 
 }  // namespace cc

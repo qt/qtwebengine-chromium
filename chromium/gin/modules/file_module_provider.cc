@@ -5,7 +5,7 @@
 #include "gin/modules/file_module_provider.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string_split.h"
 #include "gin/converter.h"
@@ -40,6 +40,7 @@ void AttempToLoadModule(const base::WeakPtr<Runner>& runner,
     runner->Run(source, id);
     return;
   }
+  LOG(ERROR) << "Failed to load module from disk: " << id;
 }
 
 }  // namespace

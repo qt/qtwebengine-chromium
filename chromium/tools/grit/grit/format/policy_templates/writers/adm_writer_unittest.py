@@ -76,6 +76,42 @@ chromium="Chromium"
 chromium_recommended="Chromium - Recommended"''')
     self.CompareOutputs(output, expected_output)
 
+  def testVersionAnnotation(self):
+    # Test PListWriter in case of empty polices.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least "Windows 3.11', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        }
+      }''')
+    output = self.GetOutput(
+        grd, 'fr', {'_chromium': '1', 'version':'39.0.0.0'}, 'adm', 'en')
+    expected_output = '; chromium version: 39.0.0.0\n' + \
+        self.ConstructOutput(['MACHINE', 'USER'], '''
+  CATEGORY !!chromium
+    KEYNAME "Software\\Policies\\Chromium"
+
+  END CATEGORY
+
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least "Windows 3.11"
+chromium="Chromium"
+chromium_recommended="Chromium - Recommended"''')
+    self.CompareOutputs(output, expected_output)
+
   def testMainPolicy(self):
     # Tests a policy group with a single policy of type 'main'.
     grd = self.PrepareTest('''
@@ -147,6 +183,70 @@ MainPolicy_Policy="Caption of main."
 MainPolicy_Explain="Description of main."''')
     self.CompareOutputs(output, expected_output)
 
+  def testMainPolicyRecommendedOnly(self):
+    # Tests a policy group with a single policy of type 'main'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'MainPolicy',
+            'type': 'main',
+            'supported_on': ['chrome.win:8-'],
+            'features': {
+              'can_be_recommended': True,
+              'can_be_mandatory': False
+            },
+            'caption': 'Caption of main.',
+            'desc': 'Description of main.',
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.12', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        }
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_google_chrome' : '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!google
+    CATEGORY !!googlechrome
+      KEYNAME "Software\\Policies\\Google\\Chrome"
+
+    END CATEGORY
+  END CATEGORY
+
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+      POLICY !!MainPolicy_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!MainPolicy_Explain
+        VALUENAME "MainPolicy"
+        VALUEON NUMERIC 1
+        VALUEOFF NUMERIC 0
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.12"
+google="Google"
+googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome - Recommended"
+MainPolicy_Policy="Caption of main."
+MainPolicy_Explain="Description of main."''')
+    self.CompareOutputs(output, expected_output)
+
   def testStringPolicy(self):
     # Tests a policy group with a single policy of type 'string'.
     grd = self.PrepareTest('''
@@ -186,6 +286,7 @@ With a newline.""",
 
       PART !!StringPolicy_Part  EDITTEXT
         VALUENAME "StringPolicy"
+        MAXLEN 1000000
       END PART
     END POLICY
 
@@ -202,6 +303,7 @@ With a newline.""",
 
       PART !!StringPolicy_Part  EDITTEXT
         VALUENAME "StringPolicy"
+        MAXLEN 1000000
       END PART
     END POLICY
 
@@ -552,6 +654,86 @@ ListPolicy_Part="Label of list policy."
 ''')
     self.CompareOutputs(output, expected_output)
 
+  def testStringEnumListPolicy(self):
+    # Tests a policy group with a single policy of type 'string-enum-list'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'ListPolicy',
+            'type': 'string-enum-list',
+            'supported_on': ['chrome.win:8-'],
+            'features': { 'can_be_recommended': True },
+            'desc': """Description of list policy.
+With a newline.""",
+            'items': [
+              {'name': 'ProxyServerDisabled', 'value': 'one',
+               'caption': 'Option1'},
+              {'name': 'ProxyServerAutoDetect', 'value': 'two',
+               'caption': 'Option2'},
+            ],
+            'caption': 'Caption of list policy.',
+            'label': 'Label of list policy.'
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.15', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        },
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_chromium' : '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!chromium
+    KEYNAME "Software\\Policies\\Chromium"
+
+    POLICY !!ListPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!ListPolicy_Explain
+
+      PART !!ListPolicy_Part  LISTBOX
+        KEYNAME "Software\\Policies\\Chromium\\ListPolicy"
+        VALUEPREFIX ""
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+  CATEGORY !!chromium_recommended
+    KEYNAME "Software\\Policies\\Chromium\\Recommended"
+
+    POLICY !!ListPolicy_Policy
+      #if version >= 4
+        SUPPORTED !!SUPPORTED_WINXPSP2
+      #endif
+      EXPLAIN !!ListPolicy_Explain
+
+      PART !!ListPolicy_Part  LISTBOX
+        KEYNAME "Software\\Policies\\Chromium\\Recommended\\ListPolicy"
+        VALUEPREFIX ""
+      END PART
+    END POLICY
+
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.15"
+chromium="Chromium"
+chromium_recommended="Chromium - Recommended"
+ListPolicy_Policy="Caption of list policy."
+ListPolicy_Explain="Description of list policy.\\nWith a newline."
+ListPolicy_Part="Label of list policy."
+''')
+    self.CompareOutputs(output, expected_output)
+
   def testDictionaryPolicy(self):
     # Tests a policy group with a single policy of type 'dict'.
     grd = self.PrepareTest('''
@@ -590,6 +772,7 @@ ListPolicy_Part="Label of list policy."
 
       PART !!DictionaryPolicy_Part  EDITTEXT
         VALUENAME "DictionaryPolicy"
+        MAXLEN 1000000
       END PART
     END POLICY
 
@@ -606,6 +789,7 @@ ListPolicy_Part="Label of list policy."
 
       PART !!DictionaryPolicy_Part  EDITTEXT
         VALUENAME "DictionaryPolicy"
+        MAXLEN 1000000
       END PART
     END POLICY
 
@@ -798,6 +982,7 @@ With a newline."""
 
         PART !!Policy2_Part  EDITTEXT
           VALUENAME "Policy2"
+          MAXLEN 1000000
         END PART
       END POLICY
 
@@ -837,6 +1022,104 @@ Policy1_Part="Caption of policy1."
 Policy2_Policy="Caption of policy2."
 Policy2_Explain="Description of policy2.\\nWith a newline."
 Policy2_Part="Caption of policy2."
+''')
+    self.CompareOutputs(output, expected_output)
+
+  def testDuplicatedStringEnumPolicy(self):
+    # Verifies that duplicated enum constants get merged, and that
+    # string constants get escaped.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'EnumPolicy.A',
+            'type': 'string-enum',
+            'caption': 'Caption of policy A.',
+            'desc': 'Description of policy A.',
+            'items': [
+              {'name': 'tls1.2', 'value': 'tls1.2', 'caption': 'tls1.2' },
+            ],
+            'supported_on': ['chrome.win:39-'],
+          },
+          {
+            'name': 'EnumPolicy.B',
+            'type': 'string-enum',
+            'caption': 'Caption of policy B.',
+            'desc': 'Description of policy B.',
+            'items': [
+              {'name': 'tls1.2', 'value': 'tls1.2', 'caption': 'tls1.2' },
+            ],
+            'supported_on': ['chrome.win:39-'],
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'win_supported_winxpsp2': {
+            'text': 'At least Windows 3.14', 'desc': 'blah'
+          },
+          'doc_recommended': {
+            'text': 'Recommended', 'desc': 'bleh'
+          }
+        }
+      }''')
+    output = self.GetOutput(grd, 'fr', {'_google_chrome': '1'}, 'adm', 'en')
+    expected_output = self.ConstructOutput(
+        ['MACHINE', 'USER'], '''
+  CATEGORY !!google
+    CATEGORY !!googlechrome
+      KEYNAME "Software\\Policies\\Google\\Chrome"
+
+      POLICY !!EnumPolicy_A_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!EnumPolicy_A_Explain
+
+        PART !!EnumPolicy_A_Part  DROPDOWNLIST
+          VALUENAME "EnumPolicy.A"
+          ITEMLIST
+            NAME !!tls1_2_DropDown VALUE "tls1.2"
+          END ITEMLIST
+        END PART
+      END POLICY
+
+      POLICY !!EnumPolicy_B_Policy
+        #if version >= 4
+          SUPPORTED !!SUPPORTED_WINXPSP2
+        #endif
+        EXPLAIN !!EnumPolicy_B_Explain
+
+        PART !!EnumPolicy_B_Part  DROPDOWNLIST
+          VALUENAME "EnumPolicy.B"
+          ITEMLIST
+            NAME !!tls1_2_DropDown VALUE "tls1.2"
+          END ITEMLIST
+        END PART
+      END POLICY
+
+    END CATEGORY
+  END CATEGORY
+
+  CATEGORY !!google
+    CATEGORY !!googlechrome_recommended
+      KEYNAME "Software\\Policies\\Google\\Chrome\\Recommended"
+
+    END CATEGORY
+  END CATEGORY
+
+
+''', '''[Strings]
+SUPPORTED_WINXPSP2="At least Windows 3.14"
+google="Google"
+googlechrome="Google Chrome"
+googlechrome_recommended="Google Chrome - Recommended"
+EnumPolicy_A_Policy="Caption of policy A."
+EnumPolicy_A_Explain="Description of policy A."
+EnumPolicy_A_Part="Caption of policy A."
+tls1_2_DropDown="tls1.2"
+EnumPolicy_B_Policy="Caption of policy B."
+EnumPolicy_B_Explain="Description of policy B."
+EnumPolicy_B_Part="Caption of policy B."
 ''')
     self.CompareOutputs(output, expected_output)
 

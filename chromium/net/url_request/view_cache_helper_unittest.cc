@@ -20,7 +20,8 @@ namespace {
 class TestURLRequestContext : public URLRequestContext {
  public:
   TestURLRequestContext();
-  virtual ~TestURLRequestContext() {}
+
+  ~TestURLRequestContext() override { AssertNoURLRequests(); }
 
   // Gets a pointer to the cache backend.
   disk_cache::Backend* GetBackend();

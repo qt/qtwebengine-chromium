@@ -34,7 +34,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -43,14 +43,14 @@ public:
     virtual ~CustomElementLifecycleCallbacks() { }
 
     enum CallbackType {
-        None             = 0,
-        Created          = 1 << 0,
-        Attached         = 1 << 1,
-        Detached         = 1 << 2,
-        AttributeChanged = 1 << 3
+        None                     = 0,
+        CreatedCallback          = 1 << 0,
+        AttachedCallback         = 1 << 1,
+        DetachedCallback         = 1 << 2,
+        AttributeChangedCallback = 1 << 3
     };
 
-    bool hasCallback(CallbackType type) const { return m_which & type; }
+    bool hasCallback(CallbackType type) const { return m_callbackType & type; }
 
     virtual void created(Element*) = 0;
     virtual void attached(Element*) = 0;
@@ -58,12 +58,12 @@ public:
     virtual void attributeChanged(Element*, const AtomicString& name, const AtomicString& oldValue, const AtomicString& newValue) = 0;
 
 protected:
-    CustomElementLifecycleCallbacks(CallbackType which) : m_which(which) { }
+    CustomElementLifecycleCallbacks(CallbackType type) : m_callbackType(type) { }
 
 private:
-    CallbackType m_which;
+    CallbackType m_callbackType;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementLifecycleCallbacks_h

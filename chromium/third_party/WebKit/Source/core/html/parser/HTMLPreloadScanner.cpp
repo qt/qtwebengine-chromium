@@ -42,7 +42,7 @@
 #include "platform/TraceEvent.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -68,7 +68,7 @@ static const StringImpl* tagImplFor(const HTMLToken::DataVector& data)
     const StringImpl* result = tagName.impl();
     if (result->isStatic())
         return result;
-    return 0;
+    return nullptr;
 }
 
 static const StringImpl* tagImplFor(const String& tagName)
@@ -76,7 +76,7 @@ static const StringImpl* tagImplFor(const String& tagName)
     const StringImpl* result = tagName.impl();
     if (result->isStatic())
         return result;
-    return 0;
+    return nullptr;
 }
 
 static String initiatorFor(const StringImpl* tagImpl)
@@ -97,7 +97,7 @@ static String initiatorFor(const StringImpl* tagImpl)
 static bool mediaAttributeMatches(const MediaValues& mediaValues, const String& attributeValue)
 {
     RefPtrWillBeRawPtr<MediaQuerySet> mediaQueries = MediaQuerySet::createOffMainThread(attributeValue);
-    MediaQueryEvaluator mediaQueryEvaluator("screen", mediaValues);
+    MediaQueryEvaluator mediaQueryEvaluator(mediaValues);
     return mediaQueryEvaluator.eval(mediaQueries.get());
 }
 
@@ -111,13 +111,14 @@ public:
         , m_sourceSize(0)
         , m_sourceSizeSet(false)
         , m_isCORSEnabled(false)
+        , m_defer(FetchRequest::NoDefer)
         , m_allowCredentials(DoNotAllowStoredCredentials)
         , m_mediaValues(mediaValues)
     {
         if (match(m_tagImpl, imgTag)
             || match(m_tagImpl, sourceTag)) {
             if (RuntimeEnabledFeatures::pictureSizesEnabled())
-                m_sourceSize = SizesAttributeParser::findEffectiveSize(String(), m_mediaValues);
+                m_sourceSize = SizesAttributeParser(m_mediaValues, String()).length();
             return;
         }
         if ( !match(m_tagImpl, inputTag)
@@ -136,9 +137,9 @@ public:
         ASSERT(isMainThread());
         if (!m_tagImpl)
             return;
-        for (HTMLToken::AttributeList::const_iterator iter = attributes.begin(); iter != attributes.end(); ++iter) {
-            AtomicString attributeName(iter->name);
-            String attributeValue = StringImpl::create8BitIfPossible(iter->value);
+        for (const HTMLToken::Attribute& htmlTokenAttribute : attributes) {
+            AtomicString attributeName(htmlTokenAttribute.name);
+            String attributeValue = StringImpl::create8BitIfPossible(htmlTokenAttribute.value);
             processAttribute(attributeName, attributeValue);
         }
     }
@@ -147,8 +148,8 @@ public:
     {
         if (!m_tagImpl)
             return;
-        for (Vector<CompactHTMLToken::Attribute>::const_iterator iter = attributes.begin(); iter != attributes.end(); ++iter)
-            processAttribute(iter->name, iter->value);
+        for (const CompactHTMLToken::Attribute& htmlTokenAttribute : attributes)
+            processAttribute(htmlTokenAttribute.name, htmlTokenAttribute.value);
     }
 
     void handlePictureSourceURL(String& sourceURL)
@@ -170,6 +171,7 @@ public:
         if (isCORSEnabled())
             request->setCrossOriginEnabled(allowStoredCredentials());
         request->setCharset(charset());
+        request->setDefer(m_defer);
         return request.release();
     }
 
@@ -182,6 +184,10 @@ private:
             setUrlToLoad(attributeValue, DisallowURLReplacement);
         else if (match(attributeName, crossoriginAttr))
             setCrossOriginAllowed(attributeValue);
+        else if (match(attributeName, asyncAttr))
+            setDefer(FetchRequest::LazyLoad);
+        else if (match(attributeName, deferAttr))
+            setDefer(FetchRequest::LazyLoad);
     }
 
     template<typename NameType>
@@ -197,7 +203,7 @@ private:
             m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
             setUrlToLoad(bestFitSourceForImageAttributes(m_mediaValues->devicePixelRatio(), m_sourceSize, m_imgSrcUrl, m_srcsetImageCandidate), AllowURLReplacement);
         } else if (RuntimeEnabledFeatures::pictureSizesEnabled() && match(attributeName, sizesAttr) && !m_sourceSizeSet) {
-            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSize = SizesAttributeParser(m_mediaValues, attributeValue).length();
             m_sourceSizeSet = true;
             if (!m_srcsetImageCandidate.isEmpty()) {
                 m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
@@ -239,7 +245,7 @@ private:
             m_srcsetAttributeValue = attributeValue;
             m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, attributeValue);
         } else if (match(attributeName, sizesAttr) && !m_sourceSizeSet) {
-            m_sourceSize = SizesAttributeParser::findEffectiveSize(attributeValue, m_mediaValues);
+            m_sourceSize = SizesAttributeParser(m_mediaValues, attributeValue).length();
             m_sourceSizeSet = true;
             if (!m_srcsetImageCandidate.isEmpty()) {
                 m_srcsetImageCandidate = bestFitSourceForSrcsetAttribute(m_mediaValues->devicePixelRatio(), m_sourceSize, m_srcsetAttributeValue);
@@ -337,6 +343,16 @@ private:
             m_allowCredentials = DoNotAllowStoredCredentials;
     }
 
+    void setDefer(FetchRequest::DeferOption defer)
+    {
+        m_defer = defer;
+    }
+
+    bool defer() const
+    {
+        return m_defer;
+    }
+
     const StringImpl* m_tagImpl;
     String m_urlToLoad;
     ImageCandidate m_srcsetImageCandidate;
@@ -349,6 +365,7 @@ private:
     unsigned m_sourceSize;
     bool m_sourceSizeSet;
     bool m_isCORSEnabled;
+    FetchRequest::DeferOption m_defer;
     StoredCredentials m_allowCredentials;
     RefPtr<MediaValues> m_mediaValues;
 };
@@ -488,7 +505,7 @@ void HTMLPreloadScanner::scan(HTMLResourcePreloader* preloader, const KURL& star
 {
     ASSERT(isMainThread()); // HTMLTokenizer::updateStateFor only works on the main thread.
 
-    TRACE_EVENT1("webkit", "HTMLPreloadScanner::scan", "source_length", m_source.length());
+    TRACE_EVENT1("blink", "HTMLPreloadScanner::scan", "source_length", m_source.length());
 
     // When we start scanning, our best prediction of the baseElementURL is the real one!
     if (!startingBaseElementURL.isEmpty())

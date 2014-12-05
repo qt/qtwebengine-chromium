@@ -9,8 +9,8 @@
 #include "base/at_exit.h"
 #include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -63,8 +63,11 @@ bool RunGLES2ConformTest(const char* path) {
   base::FilePath program(test_path.Append(FILE_PATH_LITERAL(
       "gles2_conform_test_windowless")));
 
+  CommandLine* currentCmdLine = CommandLine::ForCurrentProcess();
   CommandLine cmdline(program);
-  cmdline.AppendSwitch(std::string("-run=") + path);
+  cmdline.AppendArguments(*currentCmdLine, false);
+  cmdline.AppendSwitch(std::string("--"));
+  cmdline.AppendArg(std::string("-run=") + path);
 
   std::string output;
   bool success = base::GetAppOutput(cmdline, &output);
@@ -82,6 +85,7 @@ bool RunGLES2ConformTest(const char* path) {
 
 int main(int argc, char** argv) {
   base::AtExitManager exit_manager;
+  CommandLine::Init(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;
 #endif

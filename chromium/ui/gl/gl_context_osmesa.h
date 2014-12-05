@@ -22,17 +22,17 @@ class GLContextOSMesa : public GLContextReal {
   explicit GLContextOSMesa(GLShareGroup* share_group);
 
   // Implement GLContext.
-  virtual bool Initialize(GLSurface* compatible_surface,
-                          GpuPreference gpu_preference) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
-  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
-  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
-  virtual void* GetHandle() OVERRIDE;
-  virtual void SetSwapInterval(int interval) OVERRIDE;
+  bool Initialize(GLSurface* compatible_surface,
+                  GpuPreference gpu_preference) override;
+  void Destroy() override;
+  bool MakeCurrent(GLSurface* surface) override;
+  void ReleaseCurrent(GLSurface* surface) override;
+  bool IsCurrent(GLSurface* surface) override;
+  void* GetHandle() override;
+  void SetSwapInterval(int interval) override;
 
  protected:
-  virtual ~GLContextOSMesa();
+  ~GLContextOSMesa() override;
 
  private:
   OSMesaContext context_;

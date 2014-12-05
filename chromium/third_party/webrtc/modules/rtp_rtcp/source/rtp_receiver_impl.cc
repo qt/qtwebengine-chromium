@@ -22,10 +22,9 @@
 
 namespace webrtc {
 
-using ModuleRTPUtility::GetCurrentRTP;
-using ModuleRTPUtility::Payload;
-using ModuleRTPUtility::RTPPayloadParser;
-using ModuleRTPUtility::StringCompare;
+using RtpUtility::GetCurrentRTP;
+using RtpUtility::Payload;
+using RtpUtility::StringCompare;
 
 RtpReceiver* RtpReceiver::CreateVideoReceiver(
     int id, Clock* clock,
@@ -94,16 +93,6 @@ RtpReceiverImpl::~RtpReceiverImpl() {
     cb_rtp_feedback_->OnIncomingCSRCChanged(id_, current_remote_csrc_[i],
                                             false);
   }
-}
-
-RTPReceiverStrategy* RtpReceiverImpl::GetMediaReceiver() const {
-  return rtp_media_receiver_.get();
-}
-
-RtpVideoCodecTypes RtpReceiverImpl::VideoCodecType() const {
-  PayloadUnion media_specific;
-  rtp_media_receiver_->GetLastMediaSpecificPayload(&media_specific);
-  return media_specific.Video.videoCodecType;
 }
 
 int32_t RtpReceiverImpl::RegisterReceivePayload(

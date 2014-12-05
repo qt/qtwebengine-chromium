@@ -27,13 +27,13 @@
 
 #include "talk/xmllite/xmlnsstack.h"
 
-#include <string>
-#include <sstream>
 #include <iostream>
+#include <sstream>
+#include <string>
 
-#include "talk/base/common.h"
-#include "talk/base/gunit.h"
 #include "talk/xmllite/xmlconstants.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/gunit.h"
 
 using buzz::NS_XML;
 using buzz::NS_XMLNS;

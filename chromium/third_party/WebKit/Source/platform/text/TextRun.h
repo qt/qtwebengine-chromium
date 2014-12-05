@@ -27,20 +27,15 @@
 #include "platform/PlatformExport.h"
 #include "platform/fonts/Glyph.h"
 #include "platform/geometry/FloatRect.h"
+#include "platform/heap/Heap.h"
 #include "platform/text/TextDirection.h"
 #include "platform/text/TextPath.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+class SkTextBlob;
 
-class FloatPoint;
-class Font;
-class GraphicsContext;
-class GlyphBuffer;
-class SimpleFontData;
-struct GlyphData;
-struct WidthIterator;
+namespace blink {
 
 class PLATFORM_EXPORT TextRun {
     WTF_MAKE_FAST_ALLOCATED;
@@ -54,15 +49,7 @@ public:
 
     typedef unsigned ExpansionBehavior;
 
-    enum RoundingHackFlags {
-        NoRounding = 0,
-        RunRounding = 1 << 0,
-        WordRounding = 1 << 1,
-    };
-
-    typedef unsigned RoundingHacks;
-
-    TextRun(const LChar* c, unsigned len, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, RoundingHacks roundingHacks = RunRounding | WordRounding)
+    TextRun(const LChar* c, unsigned len, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true)
         : m_charactersLength(len)
         , m_len(len)
         , m_xpos(xpos)
@@ -74,15 +61,15 @@ public:
         , m_direction(direction)
         , m_directionalOverride(directionalOverride)
         , m_characterScanForCodePath(characterScanForCodePath)
-        , m_applyRunRounding((roundingHacks & RunRounding) && s_allowsRoundingHacks)
-        , m_applyWordRounding((roundingHacks & WordRounding) && s_allowsRoundingHacks)
+        , m_useComplexCodePath(false)
         , m_disableSpacing(false)
         , m_tabSize(0)
+        , m_normalizeSpace(false)
     {
         m_data.characters8 = c;
     }
 
-    TextRun(const UChar* c, unsigned len, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, RoundingHacks roundingHacks = RunRounding | WordRounding)
+    TextRun(const UChar* c, unsigned len, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true)
         : m_charactersLength(len)
         , m_len(len)
         , m_xpos(xpos)
@@ -94,15 +81,15 @@ public:
         , m_direction(direction)
         , m_directionalOverride(directionalOverride)
         , m_characterScanForCodePath(characterScanForCodePath)
-        , m_applyRunRounding((roundingHacks & RunRounding) && s_allowsRoundingHacks)
-        , m_applyWordRounding((roundingHacks & WordRounding) && s_allowsRoundingHacks)
+        , m_useComplexCodePath(false)
         , m_disableSpacing(false)
         , m_tabSize(0)
+        , m_normalizeSpace(false)
     {
         m_data.characters16 = c;
     }
 
-    TextRun(const String& string, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, RoundingHacks roundingHacks = RunRounding | WordRounding)
+    TextRun(const String& string, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, bool normalizeSpace = false)
         : m_charactersLength(string.length())
         , m_len(string.length())
         , m_xpos(xpos)
@@ -113,10 +100,10 @@ public:
         , m_direction(direction)
         , m_directionalOverride(directionalOverride)
         , m_characterScanForCodePath(characterScanForCodePath)
-        , m_applyRunRounding((roundingHacks & RunRounding) && s_allowsRoundingHacks)
-        , m_applyWordRounding((roundingHacks & WordRounding) && s_allowsRoundingHacks)
+        , m_useComplexCodePath(false)
         , m_disableSpacing(false)
         , m_tabSize(0)
+        , m_normalizeSpace(normalizeSpace)
     {
         if (!m_charactersLength) {
             m_is8Bit = true;
@@ -130,7 +117,7 @@ public:
         }
     }
 
-    TextRun(const StringView& string, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, RoundingHacks roundingHacks = RunRounding | WordRounding)
+    TextRun(const StringView& string, float xpos = 0, float expansion = 0, ExpansionBehavior expansionBehavior = AllowTrailingExpansion | ForbidLeadingExpansion, TextDirection direction = LTR, bool directionalOverride = false, bool characterScanForCodePath = true, bool normalizeSpace = false)
         : m_charactersLength(string.length())
         , m_len(string.length())
         , m_xpos(xpos)
@@ -141,10 +128,10 @@ public:
         , m_direction(direction)
         , m_directionalOverride(directionalOverride)
         , m_characterScanForCodePath(characterScanForCodePath)
-        , m_applyRunRounding((roundingHacks & RunRounding) && s_allowsRoundingHacks)
-        , m_applyWordRounding((roundingHacks & WordRounding) && s_allowsRoundingHacks)
+        , m_useComplexCodePath(false)
         , m_disableSpacing(false)
         , m_tabSize(0)
+        , m_normalizeSpace(normalizeSpace)
     {
         if (!m_charactersLength) {
             m_is8Bit = true;
@@ -183,6 +170,9 @@ public:
     int length() const { return m_len; }
     int charactersLength() const { return m_charactersLength; }
 
+    bool normalizeSpace() const { return m_normalizeSpace; }
+    void setNormalizeSpace(bool normalizeSpace) { m_normalizeSpace = normalizeSpace; }
+
     void setText(const LChar* c, unsigned len) { m_data.characters8 = c; m_len = len; m_is8Bit = true;}
     void setText(const UChar* c, unsigned len) { m_data.characters16 = c; m_len = len; m_is8Bit = false;}
     void setText(const String&);
@@ -205,34 +195,24 @@ public:
     bool ltr() const { return m_direction == LTR; }
     bool directionalOverride() const { return m_directionalOverride; }
     bool characterScanForCodePath() const { return m_characterScanForCodePath; }
-    bool applyRunRounding() const { return m_applyRunRounding; }
-    bool applyWordRounding() const { return m_applyWordRounding; }
+    bool useComplexCodePath() const { return m_useComplexCodePath; }
     bool spacingDisabled() const { return m_disableSpacing; }
 
     void disableSpacing() { m_disableSpacing = true; }
-    void disableRoundingHacks() { m_applyRunRounding = m_applyWordRounding = false; }
     void setDirection(TextDirection direction) { m_direction = direction; }
     void setDirectionalOverride(bool override) { m_directionalOverride = override; }
     void setCharacterScanForCodePath(bool scan) { m_characterScanForCodePath = scan; }
+    void setUseComplexCodePath(bool useComplex) { m_useComplexCodePath = useComplex; }
 
     class RenderingContext : public RefCounted<RenderingContext> {
     public:
         virtual ~RenderingContext() { }
-
-        virtual GlyphData glyphDataForCharacter(const Font&, const TextRun&, WidthIterator&, UChar32 character, bool mirror, int currentCharacter, unsigned& advanceLength) = 0;
-        virtual void drawSVGGlyphs(GraphicsContext*, const TextRun&, const SimpleFontData*, const GlyphBuffer&, int from, int to, const FloatPoint&) const = 0;
-        virtual float floatWidthUsingSVGFont(const Font&, const TextRun&, int& charsConsumed, Glyph& glyphId) const = 0;
     };
 
     RenderingContext* renderingContext() const { return m_renderingContext.get(); }
     void setRenderingContext(PassRefPtr<RenderingContext> context) { m_renderingContext = context; }
 
-    static void setAllowsRoundingHacks(bool);
-    static bool allowsRoundingHacks();
-
 private:
-    static bool s_allowsRoundingHacks;
-
     union {
         const LChar* characters8;
         const UChar* characters16;
@@ -253,10 +233,10 @@ private:
     unsigned m_direction : 1;
     unsigned m_directionalOverride : 1; // Was this direction set by an override character.
     unsigned m_characterScanForCodePath : 1;
-    unsigned m_applyRunRounding : 1;
-    unsigned m_applyWordRounding : 1;
+    unsigned m_useComplexCodePath : 1;
     unsigned m_disableSpacing : 1;
     unsigned m_tabSize;
+    bool m_normalizeSpace;
     RefPtr<RenderingContext> m_renderingContext;
 };
 
@@ -268,10 +248,13 @@ inline void TextRun::setTabSize(bool allow, unsigned size)
 
 // Container for parameters needed to paint TextRun.
 struct TextRunPaintInfo {
+    STACK_ALLOCATED();
+public:
     explicit TextRunPaintInfo(const TextRun& r)
         : run(r)
         , from(0)
         , to(r.length())
+        , cachedTextBlob(nullptr)
     {
     }
 
@@ -279,6 +262,7 @@ struct TextRunPaintInfo {
     int from;
     int to;
     FloatRect bounds;
+    RefPtr<const SkTextBlob>* cachedTextBlob;
 };
 
 }

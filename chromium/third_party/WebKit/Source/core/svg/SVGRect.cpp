@@ -23,30 +23,27 @@
 
 #include "core/svg/SVGRect.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 #include "core/svg/SVGParserUtilities.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGRect::SVGRect()
-    : SVGPropertyBase(classType())
-    , m_isValid(true)
+    : m_isValid(true)
 {
 }
 
 SVGRect::SVGRect(InvalidSVGRectTag)
-    : SVGPropertyBase(classType())
 {
     setInvalid();
 }
 
 SVGRect::SVGRect(const FloatRect& rect)
-    : SVGPropertyBase(classType())
-    , m_isValid(true)
+    : m_isValid(true)
     , m_value(rect)
 {
 }
@@ -54,13 +51,6 @@ SVGRect::SVGRect(const FloatRect& rect)
 PassRefPtr<SVGRect> SVGRect::clone() const
 {
     return SVGRect::create(m_value);
-}
-
-PassRefPtr<SVGPropertyBase> SVGRect::cloneForAnimation(const String& value) const
-{
-    RefPtr<SVGRect> rect = SVGRect::create();
-    rect->setValueAsString(value, IGNORE_EXCEPTION);
-    return rect.release();
 }
 
 template<typename CharType>
@@ -120,13 +110,13 @@ void SVGRect::setValueAsString(const String& string, ExceptionState& exceptionSt
 String SVGRect::valueAsString() const
 {
     StringBuilder builder;
-    builder.append(String::number(x()));
+    builder.appendNumber(x());
     builder.append(' ');
-    builder.append(String::number(y()));
+    builder.appendNumber(y());
     builder.append(' ');
-    builder.append(String::number(width()));
+    builder.appendNumber(width());
     builder.append(' ');
-    builder.append(String::number(height()));
+    builder.appendNumber(height());
     return builder.toString();
 }
 

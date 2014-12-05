@@ -14,18 +14,18 @@ namespace ui {
 class UI_BASE_EXPORT InputMethodMinimal : public InputMethodBase {
  public:
   explicit InputMethodMinimal(internal::InputMethodDelegate* delegate);
-  virtual ~InputMethodMinimal();
+  ~InputMethodMinimal() override;
 
   // Overriden from InputMethod.
-  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
-                                        NativeEventResult* result) OVERRIDE;
-  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
-  virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
-  virtual void OnInputLocaleChanged() OVERRIDE;
-  virtual std::string GetInputLocale() OVERRIDE;
-  virtual bool IsActive() OVERRIDE;
-  virtual bool IsCandidatePopupOpen() const OVERRIDE;
+  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                NativeEventResult* result) override;
+  bool DispatchKeyEvent(const ui::KeyEvent& event) override;
+  void OnCaretBoundsChanged(const TextInputClient* client) override;
+  void CancelComposition(const TextInputClient* client) override;
+  void OnInputLocaleChanged() override;
+  std::string GetInputLocale() override;
+  bool IsActive() override;
+  bool IsCandidatePopupOpen() const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InputMethodMinimal);

@@ -41,6 +41,9 @@ public:
     SkTDArray<SkString*>* Info() {return &fInfo; };
     virtual void execute(SkCanvas* canvas) = 0;
     virtual void vizExecute(SkCanvas* canvas) { };
+
+    virtual void setUserMatrix(const SkMatrix& userMtx) { };
+
     /** Does nothing by default, but used by save() and restore()-type
         subclasses to track unresolved save() calls. */
     virtual void trackSaveState(int* state) { };
@@ -343,12 +346,16 @@ private:
 
 class SkDrawPictureCommand : public SkDrawCommand {
 public:
-    SkDrawPictureCommand(const SkPicture* picture);
+    SkDrawPictureCommand(const SkPicture* picture, const SkMatrix* matrix, const SkPaint* paint);
     virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
     virtual bool render(SkCanvas* canvas) const SK_OVERRIDE;
 
 private:
     SkAutoTUnref<const SkPicture> fPicture;
+    SkMatrix                      fMatrix;
+    SkMatrix*                     fMatrixPtr;
+    SkPaint                       fPaint;
+    SkPaint*                      fPaintPtr;
 
     typedef SkDrawCommand INHERITED;
 };
@@ -428,6 +435,22 @@ private:
     size_t    fByteLength;
     SkScalar  fConstY;
     SkPaint   fPaint;
+
+    typedef SkDrawCommand INHERITED;
+};
+
+class SkDrawTextBlobCommand : public SkDrawCommand {
+public:
+    SkDrawTextBlobCommand(const SkTextBlob* blob, SkScalar x, SkScalar y, const SkPaint& paint);
+
+    virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
+    virtual bool render(SkCanvas* canvas) const SK_OVERRIDE;
+
+private:
+    SkAutoTUnref<const SkTextBlob> fBlob;
+    SkScalar                       fXPos;
+    SkScalar                       fYPos;
+    SkPaint                        fPaint;
 
     typedef SkDrawCommand INHERITED;
 };
@@ -522,13 +545,11 @@ private:
 
 class SkSaveCommand : public SkDrawCommand {
 public:
-    SkSaveCommand(SkCanvas::SaveFlags flags);
+    SkSaveCommand();
     virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
     virtual void trackSaveState(int* state) SK_OVERRIDE;
     virtual Action action() const SK_OVERRIDE { return kPushLayer_Action; }
 private:
-    SkCanvas::SaveFlags fFlags;
-
     typedef SkDrawCommand INHERITED;
 };
 
@@ -574,8 +595,10 @@ private:
 class SkSetMatrixCommand : public SkDrawCommand {
 public:
     SkSetMatrixCommand(const SkMatrix& matrix);
+    virtual void setUserMatrix(const SkMatrix&) SK_OVERRIDE;
     virtual void execute(SkCanvas* canvas) SK_OVERRIDE;
 private:
+    SkMatrix fUserMatrix;
     SkMatrix fMatrix;
 
     typedef SkDrawCommand INHERITED;

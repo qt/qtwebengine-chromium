@@ -25,11 +25,13 @@
 #include "config.h"
 #include "core/dom/NodeIteratorBase.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeFilter.h"
 
-namespace WebCore {
+namespace blink {
+
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NodeIteratorBase);
 
 NodeIteratorBase::NodeIteratorBase(PassRefPtrWillBeRawPtr<Node> rootNode, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter> nodeFilter)
     : m_root(rootNode)
@@ -55,4 +57,4 @@ void NodeIteratorBase::trace(Visitor* visitor)
     visitor->trace(m_filter);
 }
 
-} // namespace WebCore
+} // namespace blink

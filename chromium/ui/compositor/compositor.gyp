@@ -14,6 +14,7 @@
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '<(DEPTH)/cc/cc.gyp:cc',
+        '<(DEPTH)/cc/cc.gyp:cc_surfaces',
         '<(DEPTH)/gpu/gpu.gyp:command_buffer_common',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
@@ -24,9 +25,13 @@
         'COMPOSITOR_IMPLEMENTATION',
       ],
       'sources': [
+        'closure_animation_observer.cc',
+        'closure_animation_observer.h',
         'compositor.cc',
         'compositor.h',
+        'compositor_animation_observer.h',
         'compositor_export.h',
+        'compositor_observer.cc',
         'compositor_observer.h',
         'compositor_vsync_manager.cc',
         'compositor_vsync_manager.h',
@@ -71,8 +76,8 @@
           # IDR_BITMAP_BRUSH_IMAGE.
           'dependencies': [
             '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-            '<(angle_path)/src/build_angle.gyp:libEGL',
-            '<(angle_path)/src/build_angle.gyp:libGLESv2',
+            '<(angle_path)/src/angle.gyp:libEGL',
+            '<(angle_path)/src/angle.gyp:libGLESv2',
           ],
         }],
       ],
@@ -83,6 +88,7 @@
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
         '<(DEPTH)/cc/cc.gyp:cc',
+        '<(DEPTH)/cc/cc.gyp:cc_surfaces',
         '<(DEPTH)/cc/cc_tests.gyp:cc_test_support',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/testing/gtest.gyp:gtest',

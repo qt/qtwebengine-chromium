@@ -23,9 +23,7 @@
  */
 
 #include "config.h"
-
 #if ENABLE(WEB_AUDIO)
-
 #include "modules/webaudio/MediaStreamAudioDestinationNode.h"
 
 #include "modules/webaudio/AudioContext.h"
@@ -35,21 +33,20 @@
 #include "public/platform/WebRTCPeerConnectionHandler.h"
 #include "wtf/Locker.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MediaStreamAudioDestinationNode> MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
+MediaStreamAudioDestinationNode* MediaStreamAudioDestinationNode::create(AudioContext* context, size_t numberOfChannels)
 {
-    return adoptRefWillBeNoop(new MediaStreamAudioDestinationNode(context, numberOfChannels));
+    return new MediaStreamAudioDestinationNode(context, numberOfChannels);
 }
 
 MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* context, size_t numberOfChannels)
     : AudioBasicInspectorNode(context, context->sampleRate(), numberOfChannels)
     , m_mixBus(AudioBus::create(numberOfChannels, ProcessingSizeInFrames))
 {
-    ScriptWrappable::init(this);
     setNodeType(NodeTypeMediaStreamAudioDestination);
 
-    m_source = MediaStreamSource::create("WebAudio-" + createCanonicalUUIDString(), MediaStreamSource::TypeAudio, "MediaStreamAudioDestinationNode", MediaStreamSource::ReadyStateLive, true);
+    m_source = MediaStreamSource::create("WebAudio-" + createCanonicalUUIDString(), MediaStreamSource::TypeAudio, "MediaStreamAudioDestinationNode", false, true, MediaStreamSource::ReadyStateLive, true);
     MediaStreamSourceVector audioSources;
     audioSources.append(m_source);
     MediaStreamSourceVector videoSources;
@@ -63,7 +60,19 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(AudioContext* c
 
 MediaStreamAudioDestinationNode::~MediaStreamAudioDestinationNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void MediaStreamAudioDestinationNode::dispose()
+{
     uninitialize();
+    AudioBasicInspectorNode::dispose();
+}
+
+void MediaStreamAudioDestinationNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_stream);
+    AudioBasicInspectorNode::trace(visitor);
 }
 
 void MediaStreamAudioDestinationNode::process(size_t numberOfFrames)
@@ -72,6 +81,6 @@ void MediaStreamAudioDestinationNode::process(size_t numberOfFrames)
     m_source->consumeAudio(m_mixBus.get(), numberOfFrames);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

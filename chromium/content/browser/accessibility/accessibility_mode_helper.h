@@ -5,10 +5,13 @@
 #ifndef CONTENT_BROWSER_ACCESSIBILITY_ACCESSIBILITY_MODE_HELPER_H_
 #define CONTENT_BROWSER_ACCESSIBILITY_ACCESSIBILITY_MODE_HELPER_H_
 
+#include "content/common/accessibility_mode_enums.h"
 #include "content/common/content_export.h"
-#include "content/common/view_message_enums.h"
 
 namespace content {
+
+// Returns base accessibility mode constant, depends on OS version.
+CONTENT_EXPORT AccessibilityMode GetBaseAccessibilityMode();
 
 // Adds the given accessibility mode constant to the given accessibility mode
 // bitmap.

@@ -9,7 +9,7 @@
 #include <map>
 #include <string>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/strings/string_number_conversions.h"
@@ -26,8 +26,8 @@ namespace content {
 class SessionStorageDatabaseTest : public testing::Test {
  public:
   SessionStorageDatabaseTest();
-  virtual ~SessionStorageDatabaseTest();
-  virtual void SetUp() OVERRIDE;
+  ~SessionStorageDatabaseTest() override;
+  void SetUp() override;
 
  protected:
   typedef std::map<std::string, std::string> DataMap;

@@ -117,7 +117,6 @@ class CONTENT_EXPORT SavePackage
   SavePageType save_type() const { return save_type_; }
   int contents_id() const { return contents_id_; }
   int id() const { return unique_id_; }
-  WebContents* web_contents() const;
 
   void GetSaveInfo();
 
@@ -136,7 +135,7 @@ class CONTENT_EXPORT SavePackage
               const base::FilePath& file_full_path,
               const base::FilePath& directory_full_path);
 
-  virtual ~SavePackage();
+  ~SavePackage() override;
 
   // Notes from Init() above applies here as well.
   void InternalInit();
@@ -147,10 +146,10 @@ class CONTENT_EXPORT SavePackage
   void DoSavingProcess();
 
   // WebContentsObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // DownloadItem::Observer implementation.
-  virtual void OnDownloadDestroyed(DownloadItem* download) OVERRIDE;
+  void OnDownloadDestroyed(DownloadItem* download) override;
 
   // Update the download history of this item upon completion.
   void FinalizeDownloadEntry();

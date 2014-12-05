@@ -34,7 +34,7 @@
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 SubtreeLayoutScope::SubtreeLayoutScope(RenderObject& root)
     : m_root(root)
@@ -46,7 +46,7 @@ SubtreeLayoutScope::~SubtreeLayoutScope()
 {
     RELEASE_ASSERT(!m_root.needsLayout());
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     for (HashSet<RenderObject*>::iterator it = m_renderersToLayout.begin(); it != m_renderersToLayout.end(); ++it)
         (*it)->assertRendererLaidOut();
 #endif
@@ -66,7 +66,7 @@ void SubtreeLayoutScope::setChildNeedsLayout(RenderObject* descendant)
 
 void SubtreeLayoutScope::addRendererToLayout(RenderObject* renderer)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_renderersToLayout.add(renderer);
 #endif
 }

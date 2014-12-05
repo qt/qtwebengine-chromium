@@ -30,14 +30,13 @@
 #include "core/css/resolver/FilterOperationResolver.h"
 
 #include "core/css/CSSFilterValue.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/CSSShadowValue.h"
 #include "core/css/resolver/TransformBuilder.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 #include "core/svg/SVGURIReference.h"
 
-namespace WebCore {
+namespace blink {
 
 static FilterOperation::OperationType filterOperationForType(CSSFilterValue::FilterOperationType type)
 {
@@ -86,11 +85,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
     if (!inValue->isValueList())
         return false;
 
-#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
-    float zoomFactor = unadjustedConversionData.zoom() * state.elementStyleResources().deviceScaleFactor();
-#else
     float zoomFactor = unadjustedConversionData.zoom();
-#endif
     const CSSToLengthConversionData& conversionData = unadjustedConversionData.copyWithAdjustedZoom(zoomFactor);
     FilterOperations operations;
     for (CSSValueListIterator i = inValue; i.hasMore(); i.advance()) {
@@ -104,7 +99,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
         if (operationType == FilterOperation::REFERENCE) {
             if (filterValue->length() != 1)
                 continue;
-            CSSValue* argument = filterValue->itemWithoutBoundsCheck(0);
+            CSSValue* argument = filterValue->item(0);
 
             if (!argument->isSVGDocumentValue())
                 continue;
@@ -128,7 +123,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
         if (operationType != FilterOperation::DROP_SHADOW) {
             bool haveNonPrimitiveValue = false;
             for (unsigned j = 0; j < filterValue->length(); ++j) {
-                if (!filterValue->itemWithoutBoundsCheck(j)->isPrimitiveValue()) {
+                if (!filterValue->item(j)->isPrimitiveValue()) {
                     haveNonPrimitiveValue = true;
                     break;
                 }
@@ -137,7 +132,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
                 continue;
         }
 
-        CSSPrimitiveValue* firstValue = filterValue->length() && filterValue->itemWithoutBoundsCheck(0)->isPrimitiveValue() ? toCSSPrimitiveValue(filterValue->itemWithoutBoundsCheck(0)) : 0;
+        CSSPrimitiveValue* firstValue = filterValue->length() && filterValue->item(0)->isPrimitiveValue() ? toCSSPrimitiveValue(filterValue->item(0)) : 0;
         switch (filterValue->operationType()) {
         case CSSFilterValue::GrayscaleFilterOperation:
         case CSSFilterValue::SepiaFilterOperation:
@@ -185,7 +180,7 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
             if (filterValue->length() != 1)
                 return false;
 
-            CSSValue* cssValue = filterValue->itemWithoutBoundsCheck(0);
+            CSSValue* cssValue = filterValue->item(0);
             if (!cssValue->isShadowValue())
                 continue;
 
@@ -210,4 +205,4 @@ bool FilterOperationResolver::createFilterOperations(CSSValue* inValue, const CS
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

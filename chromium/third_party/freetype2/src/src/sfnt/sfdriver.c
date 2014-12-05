@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    High-level SFNT driver interface (body).                             */
 /*                                                                         */
-/*  Copyright 1996-2001, 2002, 2003, 2004, 2005, 2006, 2007, 2009 by       */
+/*  Copyright 1996-2007, 2009-2011 by                                      */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -117,15 +117,20 @@
                    FT_ULong  *offset,
                    FT_ULong  *length )
   {
-    if ( !tag || !offset || !length )
+    if ( !offset || !length )
       return SFNT_Err_Invalid_Argument;
 
-    if ( idx >= face->num_tables )
-      return SFNT_Err_Table_Missing;
+    if ( !tag )
+      *length = face->num_tables;
+    else
+    {
+      if ( idx >= face->num_tables )
+        return SFNT_Err_Table_Missing;
 
-    *tag    = face->dir_tables[idx].Tag;
-    *offset = face->dir_tables[idx].Offset;
-    *length = face->dir_tables[idx].Length;
+      *tag    = face->dir_tables[idx].Tag;
+      *offset = face->dir_tables[idx].Offset;
+      *length = face->dir_tables[idx].Length;
+    }
 
     return SFNT_Err_Ok;
   }
@@ -362,7 +367,7 @@
           *acharset_registry = registry.u.atom;
         }
         else
-          error = FT_Err_Invalid_Argument;
+          error = SFNT_Err_Invalid_Argument;
       }
     }
 
@@ -417,8 +422,6 @@
   sfnt_get_interface( FT_Module    module,
                       const char*  module_interface )
   {
-    FT_Library           library = module->library;
-    FT_UNUSED(library);
     FT_UNUSED( module );
 
     return ft_service_list_lookup( FT_SFNT_SERVICES_GET, module_interface );
@@ -438,7 +441,7 @@
     FT_UNUSED( face_index );
     FT_UNUSED( header );
 
-    return FT_Err_Unimplemented_Feature;
+    return SFNT_Err_Unimplemented_Feature;
   }
 
 
@@ -451,7 +454,7 @@
     FT_UNUSED( stream );
     FT_UNUSED( header );
 
-    return FT_Err_Unimplemented_Feature;
+    return SFNT_Err_Unimplemented_Feature;
   }
 
 
@@ -462,7 +465,7 @@
     FT_UNUSED( face );
     FT_UNUSED( stream );
 
-    return FT_Err_Unimplemented_Feature;
+    return SFNT_Err_Unimplemented_Feature;
   }
 
 
@@ -515,7 +518,7 @@
      *  is only there for some rogue clients which would want to call it
      *  directly (which doesn't make much sense).
      */
-    return FT_Err_Unimplemented_Feature;
+    return SFNT_Err_Unimplemented_Feature;
   }
 
 
@@ -536,7 +539,7 @@
     FT_UNUSED( cmap );
     FT_UNUSED( input );
 
-    return FT_Err_Unimplemented_Feature;
+    return SFNT_Err_Unimplemented_Feature;
   }
 
 
@@ -547,7 +550,7 @@
     FT_UNUSED( face );
     FT_UNUSED( cmap );
 
-    return 0;
+    return SFNT_Err_Ok;
   }
 
 #endif /* FT_CONFIG_OPTION_OLD_INTERNALS */

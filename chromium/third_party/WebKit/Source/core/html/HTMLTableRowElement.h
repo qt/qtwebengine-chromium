@@ -28,11 +28,12 @@
 
 #include "core/html/HTMLTablePartElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class HTMLTableRowElement FINAL : public HTMLTablePartElement {
+class HTMLTableRowElement final : public HTMLTablePartElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLTableRowElement);
 
@@ -40,7 +41,6 @@ public:
 
     int sectionRowIndex() const;
 
-    PassRefPtrWillBeRawPtr<HTMLElement> insertCell(ExceptionState&);
     PassRefPtrWillBeRawPtr<HTMLElement> insertCell(int index, ExceptionState&);
     void deleteCell(int index, ExceptionState&);
 
@@ -49,10 +49,10 @@ public:
 private:
     explicit HTMLTableRowElement(Document&);
 
-    virtual bool hasLegalLinkAttribute(const QualifiedName&) const OVERRIDE;
-    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
+    virtual bool hasLegalLinkAttribute(const QualifiedName&) const override;
+    virtual const QualifiedName& subResourceAttributeName() const override;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLTableRowElement_h

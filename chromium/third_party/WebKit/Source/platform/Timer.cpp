@@ -35,9 +35,7 @@
 #include <math.h>
 #include <limits>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 class TimerHeapReference;
 
@@ -106,7 +104,7 @@ inline void swap(TimerHeapReference a, TimerHeapReference b)
 
 // Class to represent iterators in the heap when calling the standard library heap algorithms.
 // Uses a custom pointer and reference type that update indices for pointers in the heap.
-class TimerHeapIterator : public iterator<random_access_iterator_tag, TimerBase*, ptrdiff_t, TimerHeapPointer, TimerHeapReference> {
+class TimerHeapIterator : public std::iterator<std::random_access_iterator_tag, TimerBase*, ptrdiff_t, TimerHeapPointer, TimerHeapReference> {
 public:
     explicit TimerHeapIterator(TimerBase** pointer) : m_pointer(pointer) { checkConsistency(); }
 
@@ -180,7 +178,7 @@ inline bool TimerHeapLessThanFunction::operator()(const TimerBase* a, const Time
     // We need to look at the difference of the insertion orders instead of comparing the two
     // outright in case of overflow.
     unsigned difference = a->m_heapInsertionOrder - b->m_heapInsertionOrder;
-    return difference < numeric_limits<unsigned>::max() / 2;
+    return difference < std::numeric_limits<unsigned>::max() / 2;
 }
 
 // ----------------
@@ -191,7 +189,7 @@ TimerBase::TimerBase()
     , m_repeatInterval(0)
     , m_heapIndex(-1)
     , m_cachedThreadGlobalTimerHeap(0)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_thread(currentThread())
 #endif
 {
@@ -294,7 +292,7 @@ inline void TimerBase::heapPop()
 {
     // Temporarily force this timer to have the minimum key so we can pop it.
     double fireTime = m_nextFireTime;
-    m_nextFireTime = -numeric_limits<double>::infinity();
+    m_nextFireTime = -std::numeric_limits<double>::infinity();
     heapDecreaseKey();
     heapPopMin();
     m_nextFireTime = fireTime;
@@ -348,7 +346,7 @@ void TimerBase::updateHeapIfNeeded(double oldTime)
 {
     if (m_nextFireTime && hasValidHeapPosition())
         return;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     int oldHeapIndex = m_heapIndex;
 #endif
     if (!oldTime)
@@ -409,8 +407,8 @@ void TimerBase::didChangeAlignmentInterval()
 double TimerBase::nextUnalignedFireInterval() const
 {
     ASSERT(isActive());
-    return max(m_unalignedNextFireTime - monotonicallyIncreasingTime(), 0.0);
+    return std::max(m_unalignedNextFireTime - monotonicallyIncreasingTime(), 0.0);
 }
 
-} // namespace WebCore
+} // namespace blink
 

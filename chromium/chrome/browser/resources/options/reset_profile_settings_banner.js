@@ -5,13 +5,14 @@
 // Note: the native-side handler for this is ResetProfileSettingsHandler.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var SettingsBannerBase = options.SettingsBannerBase;
 
   /**
    * ResetProfileSettingsBanner class
    * Provides encapsulated handling of the Reset Profile Settings banner.
    * @constructor
+   * @extends {options.SettingsBannerBase}
    */
   function ResetProfileSettingsBanner() {}
 
@@ -22,14 +23,17 @@ cr.define('options', function() {
 
     /**
      * Initializes the banner's event handlers.
+     * @suppress {checkTypes}
+     * TODO(vitalyp): remove the suppression. See the explanation in
+     * chrome/browser/resources/options/automatic_settings_reset_banner.js.
      */
     initialize: function() {
-      this.showMetricName_ = 'AutomaticReset_WebUIBanner_BannerShown';
+      this.showMetricName = 'AutomaticReset_WebUIBanner_BannerShown';
 
-      this.dismissNativeCallbackName_ =
+      this.dismissNativeCallbackName =
           'onDismissedResetProfileSettingsBanner';
 
-      this.setVisibilibyDomElement_ = $('reset-profile-settings-banner');
+      this.visibilityDomElement = $('reset-profile-settings-banner');
 
       $('reset-profile-settings-banner-close').onclick = function(event) {
         chrome.send('metricsHandler:recordAction',
@@ -39,19 +43,19 @@ cr.define('options', function() {
       $('reset-profile-settings-banner-activate').onclick = function(event) {
         chrome.send('metricsHandler:recordAction',
             ['AutomaticReset_WebUIBanner_ResetClicked']);
-        OptionsPage.navigateToPage('resetProfileSettings');
+        PageManager.showPageByName('resetProfileSettings');
       };
     },
   };
 
-  // Forward public APIs to private implementations.
+  // Forward public APIs to protected implementations.
   [
     'show',
     'dismiss',
   ].forEach(function(name) {
     ResetProfileSettingsBanner[name] = function() {
       var instance = ResetProfileSettingsBanner.getInstance();
-      return instance[name + '_'].apply(instance, arguments);
+      return instance[name].apply(instance, arguments);
     };
   });
 

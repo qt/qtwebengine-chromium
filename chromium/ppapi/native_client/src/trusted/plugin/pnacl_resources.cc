@@ -17,69 +17,64 @@ namespace {
 
 static const char kPnaclBaseUrl[] = "chrome://pnacl-translator/";
 
-nacl::string GetFullUrl(const nacl::string& partial_url) {
-  return nacl::string(kPnaclBaseUrl) + GetNaClInterface()->GetSandboxArch() +
+std::string GetFullUrl(const std::string& partial_url) {
+  return std::string(kPnaclBaseUrl) + GetNaClInterface()->GetSandboxArch() +
          "/" + partial_url;
 }
 
 }  // namespace
 
-PnaclResources::~PnaclResources() {
-  if (llc_file_handle_ != PP_kInvalidFileHandle)
-    CloseFileHandle(llc_file_handle_);
-  if (ld_file_handle_ != PP_kInvalidFileHandle)
-    CloseFileHandle(ld_file_handle_);
+PnaclResources::PnaclResources(Plugin* plugin)
+    : plugin_(plugin) {
+  llc_file_info_ = kInvalidNaClFileInfo;
+  ld_file_info_ = kInvalidNaClFileInfo;
 }
 
-void PnaclResources::ReadResourceInfo(
-    const pp::CompletionCallback& resource_info_read_cb) {
+PnaclResources::~PnaclResources() {
+  if (llc_file_info_.handle != PP_kInvalidFileHandle)
+    CloseFileHandle(llc_file_info_.handle);
+  if (ld_file_info_.handle != PP_kInvalidFileHandle)
+    CloseFileHandle(ld_file_info_.handle);
+}
+
+bool PnaclResources::ReadResourceInfo() {
   PP_Var pp_llc_tool_name_var;
   PP_Var pp_ld_tool_name_var;
   if (!plugin_->nacl_interface()->GetPnaclResourceInfo(
           plugin_->pp_instance(),
-          "chrome://pnacl-translator/pnacl.json",
           &pp_llc_tool_name_var,
           &pp_ld_tool_name_var)) {
-    pp::Module::Get()->core()->CallOnMainThread(0,
-                                                resource_info_read_cb,
-                                                PP_ERROR_FAILED);
-    return;
+    return false;
   }
   pp::Var llc_tool_name(pp::PASS_REF, pp_llc_tool_name_var);
   pp::Var ld_tool_name(pp::PASS_REF, pp_ld_tool_name_var);
   llc_tool_name_ = GetFullUrl(llc_tool_name.AsString());
   ld_tool_name_ = GetFullUrl(ld_tool_name.AsString());
-  pp::Module::Get()->core()->CallOnMainThread(0, resource_info_read_cb, PP_OK);
+  return true;
 }
 
-PP_FileHandle PnaclResources::TakeLlcFileHandle() {
-  PP_FileHandle to_return = llc_file_handle_;
-  llc_file_handle_ = PP_kInvalidFileHandle;
+PP_NaClFileInfo PnaclResources::TakeLlcFileInfo() {
+  PP_NaClFileInfo to_return = llc_file_info_;
+  llc_file_info_ = kInvalidNaClFileInfo;
   return to_return;
 }
 
-PP_FileHandle PnaclResources::TakeLdFileHandle() {
-  PP_FileHandle to_return = ld_file_handle_;
-  ld_file_handle_ = PP_kInvalidFileHandle;
+PP_NaClFileInfo PnaclResources::TakeLdFileInfo() {
+  PP_NaClFileInfo to_return = ld_file_info_;
+  ld_file_info_ = kInvalidNaClFileInfo;
   return to_return;
 }
 
-void PnaclResources::StartLoad(
-    const pp::CompletionCallback& all_loaded_callback) {
+bool PnaclResources::StartLoad() {
   PLUGIN_PRINTF(("PnaclResources::StartLoad\n"));
 
   // Do a blocking load of each of the resources.
-  llc_file_handle_ =
-      plugin_->nacl_interface()->GetReadonlyPnaclFd(llc_tool_name_.c_str());
-  ld_file_handle_ =
-      plugin_->nacl_interface()->GetReadonlyPnaclFd(ld_tool_name_.c_str());
-
-  int32_t result = PP_OK;
-  if (llc_file_handle_ == PP_kInvalidFileHandle ||
-      ld_file_handle_ == PP_kInvalidFileHandle) {
-    result = PP_ERROR_FILENOTFOUND;
-  }
-  pp::Module::Get()->core()->CallOnMainThread(0, all_loaded_callback, result);
+  plugin_->nacl_interface()->GetReadExecPnaclFd(llc_tool_name_.c_str(),
+                                                &llc_file_info_);
+  plugin_->nacl_interface()->GetReadExecPnaclFd(ld_tool_name_.c_str(),
+                                                &ld_file_info_);
+  return (llc_file_info_.handle != PP_kInvalidFileHandle &&
+          ld_file_info_.handle != PP_kInvalidFileHandle);
 }
 
 }  // namespace plugin

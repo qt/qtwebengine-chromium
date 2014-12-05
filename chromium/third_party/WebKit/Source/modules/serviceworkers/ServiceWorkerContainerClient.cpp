@@ -12,9 +12,9 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 
-namespace WebCore {
+namespace blink {
 
-PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> ServiceWorkerContainerClient::create(PassOwnPtr<blink::WebServiceWorkerProvider> provider)
+PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> ServiceWorkerContainerClient::create(PassOwnPtr<WebServiceWorkerProvider> provider)
 {
     return adoptPtrWillBeNoop(new ServiceWorkerContainerClient(provider));
 }
@@ -48,14 +48,14 @@ ServiceWorkerContainerClient* ServiceWorkerContainerClient::from(ExecutionContex
     return static_cast<ServiceWorkerContainerClient*>(WillBeHeapSupplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
 }
 
-ServiceWorkerContainerClient::ServiceWorkerContainerClient(PassOwnPtr<blink::WebServiceWorkerProvider> provider)
+ServiceWorkerContainerClient::ServiceWorkerContainerClient(PassOwnPtr<WebServiceWorkerProvider> provider)
     : m_provider(provider)
 {
 }
 
-void provideServiceWorkerContainerClientToWorker(WorkerClients* clients, PassOwnPtr<blink::WebServiceWorkerProvider> provider)
+void provideServiceWorkerContainerClientToWorker(WorkerClients* clients, PassOwnPtr<WebServiceWorkerProvider> provider)
 {
     clients->provideSupplement(ServiceWorkerContainerClient::supplementName(), ServiceWorkerContainerClient::create(provider));
 }
 
-} // namespace WebCore
+} // namespace blink

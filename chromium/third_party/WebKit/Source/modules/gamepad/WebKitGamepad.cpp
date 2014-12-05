@@ -5,22 +5,21 @@
 #include "config.h"
 #include "modules/gamepad/WebKitGamepad.h"
 
-namespace WebCore {
+namespace blink {
 
 WebKitGamepad::WebKitGamepad()
 {
-    ScriptWrappable::init(this);
 }
 
 WebKitGamepad::~WebKitGamepad()
 {
 }
 
-void WebKitGamepad::setButtons(unsigned count, const blink::WebGamepadButton* data)
+void WebKitGamepad::setButtons(unsigned count, const WebGamepadButton* data)
 {
     m_buttons.resize(count);
     for (unsigned i = 0; i < count; ++i)
         m_buttons[i] = data[i].value;
 }
 
-} // namespace WebCore
+} // namespace blink

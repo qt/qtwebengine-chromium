@@ -28,6 +28,8 @@
 
 import cgi
 import logging
+import threading
+import Queue
 
 from webkitpy.common.webkit_finder import WebKitFinder
 from webkitpy.layout_tests.breakpad.dump_reader import DumpReader
@@ -117,7 +119,7 @@ class DumpReaderMultipart(DumpReader):
         return self._host.filesystem.join(self._build_dir, "minidump_stackwalk")
 
     def _path_to_generate_breakpad_symbols(self):
-        return self._webkit_finder.path_from_chromium_base("components", "breakpad", "tools", "generate_breakpad_symbols.py")
+        return self._webkit_finder.path_from_chromium_base("components", "crash", "tools", "generate_breakpad_symbols.py")
 
     def _symbols_dir(self):
         return self._host.filesystem.join(self._build_dir, 'content_shell.syms')
@@ -128,24 +130,43 @@ class DumpReaderMultipart(DumpReader):
         self._generated_symbols = True
 
         _log.debug("Generating breakpad symbols")
-        for binary in self._binaries_to_symbolize():
-            full_path = self._host.filesystem.join(self._build_dir, binary)
-            cmd = [
-                self._path_to_generate_breakpad_symbols(),
-                '--binary=%s' % full_path,
-                '--symbols-dir=%s' % self._symbols_dir(),
-                '--build-dir=%s' % self._build_dir,
-            ]
-            try:
-                self._host.executive.run_command(cmd)
-            except:
-                _log.error('Failed to execute "%s"' % ' '.join(cmd))
+        queue = Queue.Queue()
+        thread = threading.Thread(target=_symbolize_keepalive, args=(queue,))
+        thread.start()
+        try:
+            for binary in self._binaries_to_symbolize():
+                _log.debug('  Symbolizing %s' % binary)
+                full_path = self._host.filesystem.join(self._build_dir, binary)
+                cmd = [
+                    self._path_to_generate_breakpad_symbols(),
+                    '--binary=%s' % full_path,
+                    '--symbols-dir=%s' % self._symbols_dir(),
+                    '--build-dir=%s' % self._build_dir,
+                ]
+                try:
+                    self._host.executive.run_command(cmd)
+                except:
+                    _log.error('Failed to execute "%s"' % ' '.join(cmd))
+        finally:
+            queue.put(None)
+            thread.join()
+        _log.debug("Done generating breakpad symbols")
 
     def _binaries_to_symbolize(self):
         """This routine must be implemented by subclasses.
 
         Returns an array of binaries that need to be symbolized."""
         raise NotImplementedError()
+
+
+def _symbolize_keepalive(queue):
+    while True:
+        _log.debug("waiting for symbolize to complete")
+        try:
+            msg = queue.get(block=True, timeout=60)
+            return
+        except Queue.Empty:
+            pass
 
 
 class DumpReaderLinux(DumpReaderMultipart):

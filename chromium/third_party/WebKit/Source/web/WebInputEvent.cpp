@@ -36,8 +36,6 @@
 #include "wtf/StringExtras.h"
 #include <ctype.h>
 
-using namespace WebCore;
-
 namespace blink {
 
 struct SameSizeAsWebInputEvent {
@@ -61,8 +59,8 @@ struct SameSizeAsWebGestureEvent : public SameSizeAsWebInputEvent {
 };
 
 struct SameSizeAsWebTouchEvent : public SameSizeAsWebInputEvent {
-    WebTouchPoint touchPoints[3 * WebTouchEvent::touchesLengthCap];
-    int touchData[4];
+    WebTouchPoint touchPoints[WebTouchEvent::touchesLengthCap];
+    int touchData[2];
 };
 
 COMPILE_ASSERT(sizeof(WebInputEvent) == sizeof(SameSizeAsWebInputEvent), WebInputEvent_has_gaps);
@@ -92,6 +90,7 @@ static const char* staticKeyIdentifiers(unsigned short keyCode)
         return "Down";
     case VKEY_END:
         return "End";
+    case 0x0A: // Carriage return
     case VKEY_RETURN:
         return "Enter";
     case VKEY_EXECUTE:

@@ -16,22 +16,10 @@
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/priority_calculator.h"
 #include "cc/resources/resource.h"
-#include "cc/trees/proxy.h"
-#include "ui/gfx/size.h"
-
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-template <> struct hash<cc::PrioritizedResource*> {
-  size_t operator()(cc::PrioritizedResource* ptr) const {
-    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
-  }
-};
-}  // namespace BASE_HASH_NAMESPACE
-#endif  // COMPILER
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
-class PriorityCalculator;
 class Proxy;
 
 class CC_EXPORT PrioritizedResourceManager {

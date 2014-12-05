@@ -2,19 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_FILEAPI_WEBBLOBREGISTRY_IMPL_H_
-#define CONTENT_CHILD_FILEAPI_WEBBLOBREGISTRY_IMPL_H_
+#ifndef CONTENT_CHILD_WEBBLOBREGISTRY_IMPL_H_
+#define CONTENT_CHILD_WEBBLOBREGISTRY_IMPL_H_
+
+#include <string>
 
 #include "base/memory/ref_counted.h"
 #include "third_party/WebKit/public/platform/WebBlobRegistry.h"
-#include "webkit/common/blob/blob_data.h"
 
 namespace blink {
-class WebBlobData;
-class WebString;
 class WebThreadSafeData;
-class WebURL;
-}
+}  // namespace blink
 
 namespace content {
 class ThreadSafeSender;
@@ -38,7 +36,7 @@ class WebBlobRegistryImpl : public blink::WebBlobRegistry {
   virtual void registerStreamURL(const blink::WebURL& url,
                                  const blink::WebURL& src_url);
   virtual void addDataToStream(const blink::WebURL& url,
-                               blink::WebThreadSafeData& data);
+                               const char* data, size_t length);
   virtual void finalizeStream(const blink::WebURL& url);
   virtual void abortStream(const blink::WebURL& url);
   virtual void unregisterStreamURL(const blink::WebURL& url);

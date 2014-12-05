@@ -34,7 +34,7 @@
 #include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsFontDescription {
     FontFamily familyList;
@@ -52,9 +52,9 @@ TypesettingFeatures FontDescription::s_defaultTypesettingFeatures = 0;
 
 bool FontDescription::s_useSubpixelTextPositioning = false;
 
-FontWeight FontDescription::lighterWeight(void) const
+FontWeight FontDescription::lighterWeight(FontWeight weight)
 {
-    switch (m_weight) {
+    switch (weight) {
         case FontWeight100:
         case FontWeight200:
         case FontWeight300:
@@ -74,9 +74,9 @@ FontWeight FontDescription::lighterWeight(void) const
     return FontWeightNormal;
 }
 
-FontWeight FontDescription::bolderWeight(void) const
+FontWeight FontDescription::bolderWeight(FontWeight weight)
 {
-    switch (m_weight) {
+    switch (weight) {
         case FontWeight100:
         case FontWeight200:
         case FontWeight300:
@@ -96,9 +96,31 @@ FontWeight FontDescription::bolderWeight(void) const
     return FontWeightNormal;
 }
 
+FontDescription::Size FontDescription::largerSize(const Size& size)
+{
+    return Size(0, size.value * 1.2, size.isAbsolute);
+}
+
+FontDescription::Size FontDescription::smallerSize(const Size& size)
+{
+    return Size(0, size.value / 1.2, size.isAbsolute);
+}
+
 FontTraits FontDescription::traits() const
 {
     return FontTraits(style(), variant(), weight(), stretch());
+}
+
+FontDescription::VariantLigatures FontDescription::variantLigatures() const
+{
+    VariantLigatures ligatures;
+
+    ligatures.common = commonLigaturesState();
+    ligatures.discretionary = discretionaryLigaturesState();
+    ligatures.historical = historicalLigaturesState();
+    ligatures.contextual = contextualLigaturesState();
+
+    return ligatures;
 }
 
 void FontDescription::setTraits(FontTraits traits)
@@ -109,11 +131,14 @@ void FontDescription::setTraits(FontTraits traits)
     setStretch(traits.stretch());
 }
 
-FontDescription FontDescription::makeNormalFeatureSettings() const
+void FontDescription::setVariantLigatures(const VariantLigatures& ligatures)
 {
-    FontDescription normalDescription(*this);
-    normalDescription.setFeatureSettings(nullptr);
-    return normalDescription;
+    m_commonLigaturesState = ligatures.common;
+    m_discretionaryLigaturesState = ligatures.discretionary;
+    m_historicalLigaturesState = ligatures.historical;
+    m_contextualLigaturesState = ligatures.contextual;
+
+    updateTypesettingFeatures();
 }
 
 float FontDescription::effectiveFontSize() const
@@ -127,11 +152,9 @@ float FontDescription::effectiveFontSize() const
     return floorf(size * FontCacheKey::precisionMultiplier()) / FontCacheKey::precisionMultiplier();
 }
 
-FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTraits desiredTraits) const
+FontCacheKey FontDescription::cacheKey(const FontFaceCreationParams& creationParams, FontTraits desiredTraits) const
 {
-    FontTraits fontTraits = desiredTraits.mask()
-        ? desiredTraits
-        : traits();
+    FontTraits fontTraits = desiredTraits.bitfield() ? desiredTraits : traits();
 
     unsigned options =
         static_cast<unsigned>(m_syntheticItalic) << 7 | // bit 8
@@ -141,7 +164,7 @@ FontCacheKey FontDescription::cacheKey(const AtomicString& familyName, FontTrait
         static_cast<unsigned>(m_orientation) << 1 | // bit 2
         static_cast<unsigned>(m_subpixelTextPosition); // bit 1
 
-    return FontCacheKey(familyName, effectiveFontSize(), options | fontTraits.mask() << 8);
+    return FontCacheKey(creationParams, effectiveFontSize(), options | fontTraits.bitfield() << 8);
 }
 
 
@@ -163,20 +186,20 @@ void FontDescription::updateTypesettingFeatures() const
     case AutoTextRendering:
         break;
     case OptimizeSpeed:
-        m_typesettingFeatures &= ~(WebCore::Kerning | Ligatures);
+        m_typesettingFeatures &= ~(blink::Kerning | Ligatures);
         break;
     case GeometricPrecision:
     case OptimizeLegibility:
-        m_typesettingFeatures |= WebCore::Kerning | Ligatures;
+        m_typesettingFeatures |= blink::Kerning | Ligatures;
         break;
     }
 
     switch (kerning()) {
     case FontDescription::NoneKerning:
-        m_typesettingFeatures &= ~WebCore::Kerning;
+        m_typesettingFeatures &= ~blink::Kerning;
         break;
     case FontDescription::NormalKerning:
-        m_typesettingFeatures |= WebCore::Kerning;
+        m_typesettingFeatures |= blink::Kerning;
         break;
     case FontDescription::AutoKerning:
         break;
@@ -201,9 +224,9 @@ void FontDescription::updateTypesettingFeatures() const
         if (discretionaryLigaturesState() == FontDescription::EnabledLigaturesState
             || historicalLigaturesState() == FontDescription::EnabledLigaturesState
             || contextualLigaturesState() == FontDescription::EnabledLigaturesState) {
-            m_typesettingFeatures |= WebCore::Ligatures;
+            m_typesettingFeatures |= blink::Ligatures;
         }
     }
 }
 
-} // namespace WebCore
+} // namespace blink

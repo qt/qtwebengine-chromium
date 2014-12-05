@@ -428,6 +428,16 @@ cpulist_read_from(CpuList* list, const char* filename)
 
     cpulist_parse(list, file, filelen);
 }
+#if defined(__aarch64__)
+// see <uapi/asm/hwcap.h> kernel header
+#define HWCAP_FP                (1 << 0)
+#define HWCAP_ASIMD             (1 << 1)
+#define HWCAP_AES               (1 << 3)
+#define HWCAP_PMULL             (1 << 4)
+#define HWCAP_SHA1              (1 << 5)
+#define HWCAP_SHA2              (1 << 6)
+#define HWCAP_CRC32             (1 << 7)
+#endif
 
 #if defined(__arm__)
 
@@ -441,6 +451,13 @@ cpulist_read_from(CpuList* list, const char* filename)
 #define HWCAP_IDIVA     (1 << 17)
 #define HWCAP_IDIVT     (1 << 18)
 
+// see <uapi/asm/hwcap.h> kernel header
+#define HWCAP2_AES     (1 << 0)
+#define HWCAP2_PMULL   (1 << 1)
+#define HWCAP2_SHA1    (1 << 2)
+#define HWCAP2_SHA2    (1 << 3)
+#define HWCAP2_CRC32   (1 << 4)
+
 // This is the list of 32-bit ARMv7 optional features that are _always_
 // supported by ARMv8 CPUs, as mandated by the ARM Architecture Reference
 // Manual.
@@ -451,8 +468,12 @@ cpulist_read_from(CpuList* list, const char* filename)
     HWCAP_VFPv4 | \
     HWCAP_IDIVA | \
     HWCAP_IDIVT )
+#endif
+
+#if defined(__arm__) || defined(__aarch64__)
 
 #define AT_HWCAP 16
+#define AT_HWCAP2 26
 
 // Probe the system's C library for a 'getauxval' function and call it if
 // it exits, or return 0 for failure. This function is available since API
@@ -469,7 +490,7 @@ cpulist_read_from(CpuList* list, const char* filename)
 // on values  that are passed by the kernel at process-init time to the
 // C runtime initialization layer.
 static uint32_t
-get_elf_hwcap_from_getauxval(void) {
+get_elf_hwcap_from_getauxval(int hwcap_type) {
     typedef unsigned long getauxval_func_t(unsigned long);
 
     dlerror();
@@ -486,12 +507,14 @@ get_elf_hwcap_from_getauxval(void) {
         D("Could not find getauxval() in C library\n");
     } else {
         // Note: getauxval() returns 0 on failure. Doesn't touch errno.
-        ret = (uint32_t)(*func)(AT_HWCAP);
+        ret = (uint32_t)(*func)(hwcap_type);
     }
     dlclose(libc_handle);
     return ret;
 }
+#endif
 
+#if defined(__arm__)
 // Parse /proc/self/auxv to extract the ELF HW capabilities bitmap for the
 // current CPU. Note that this file is not accessible from regular
 // application processes on some Android platform releases.
@@ -576,6 +599,21 @@ get_elf_hwcap_from_proc_cpuinfo(const char* cpuinfo, int cpuinfo_len) {
         free(cpuFeatures);
     }
     return hwcaps;
+}
+
+/* Check Houdini Binary Translator is installed on the system.
+ *
+ * If this function returns 1, get_elf_hwcap_from_getauxval() function
+ * will causes SIGSEGV while calling getauxval() function.
+ */
+static int
+has_houdini_binary_translator(void) {
+    int found = 0;
+    if (access("/system/lib/libhoudini.so", F_OK) != -1) {
+        D("Found Houdini binary translator\n");
+        found = 1;
+    }
+    return found;
 }
 #endif  /* __arm__ */
 
@@ -724,9 +762,14 @@ android_cpuInit(void)
             free(cpuArch);
         }
 
+        /* Check Houdini binary translator is installed */
+        int has_houdini = has_houdini_binary_translator();
+
         /* Extract the list of CPU features from ELF hwcaps */
         uint32_t hwcaps = 0;
-        hwcaps = get_elf_hwcap_from_getauxval();
+        if (!has_houdini) {
+            hwcaps = get_elf_hwcap_from_getauxval(AT_HWCAP);
+        }
         if (!hwcaps) {
             D("Parsing /proc/self/auxv to extract ELF hwcaps!\n");
             hwcaps = get_elf_hwcap_from_proc_self_auxv();
@@ -798,6 +841,29 @@ android_cpuInit(void)
                 g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_iWMMXt;
         }
 
+        /* Extract the list of CPU features from ELF hwcaps2 */
+        uint32_t hwcaps2 = 0;
+        if (!has_houdini) {
+            hwcaps2 = get_elf_hwcap_from_getauxval(AT_HWCAP2);
+        }
+        if (hwcaps2 != 0) {
+            int has_aes     = (hwcaps2 & HWCAP2_AES);
+            int has_pmull   = (hwcaps2 & HWCAP2_PMULL);
+            int has_sha1    = (hwcaps2 & HWCAP2_SHA1);
+            int has_sha2    = (hwcaps2 & HWCAP2_SHA2);
+            int has_crc32   = (hwcaps2 & HWCAP2_CRC32);
+
+            if (has_aes)
+                g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_AES;
+            if (has_pmull)
+                g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_PMULL;
+            if (has_sha1)
+                g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_SHA1;
+            if (has_sha2)
+                g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_SHA2;
+            if (has_crc32)
+                g_cpuFeatures |= ANDROID_CPU_ARM_FEATURE_CRC32;
+        }
         /* Extract the cpuid value from various fields */
         // The CPUID value is broken up in several entries in /proc/cpuinfo.
         // This table is used to rebuild it from the entries.
@@ -885,6 +951,44 @@ android_cpuInit(void)
         }
     }
 #endif /* __arm__ */
+#ifdef __aarch64__
+    {
+        /* Extract the list of CPU features from ELF hwcaps */
+        uint32_t hwcaps = 0;
+        hwcaps = get_elf_hwcap_from_getauxval(AT_HWCAP);
+        if (hwcaps != 0) {
+            int has_fp      = (hwcaps & HWCAP_FP);
+            int has_asimd   = (hwcaps & HWCAP_ASIMD);
+            int has_aes     = (hwcaps & HWCAP_AES);
+            int has_pmull   = (hwcaps & HWCAP_PMULL);
+            int has_sha1    = (hwcaps & HWCAP_SHA1);
+            int has_sha2    = (hwcaps & HWCAP_SHA2);
+            int has_crc32   = (hwcaps & HWCAP_CRC32);
+
+            if(has_fp == 0) {
+                D("ERROR: Floating-point unit missing, but is required by Android on AArch64 CPUs\n");
+            }
+            if(has_asimd == 0) {
+                D("ERROR: ASIMD unit missing, but is required by Android on AArch64 CPUs\n");
+            }
+
+            if (has_fp)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_FP;
+            if (has_asimd)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_ASIMD;
+            if (has_aes)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_AES;
+            if (has_pmull)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_PMULL;
+            if (has_sha1)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_SHA1;
+            if (has_sha2)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_SHA2;
+            if (has_crc32)
+                g_cpuFeatures |= ANDROID_CPU_ARM64_FEATURE_CRC32;
+        }
+    }
+#endif /* __aarch64__ */
 
 #ifdef __i386__
     int regs[4];

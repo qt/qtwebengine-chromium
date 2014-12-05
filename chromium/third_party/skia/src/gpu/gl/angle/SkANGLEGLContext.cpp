@@ -8,52 +8,10 @@
 
 #include "gl/SkANGLEGLContext.h"
 
-SkANGLEGLContext::AutoContextRestore::AutoContextRestore() {
-    fOldEGLContext = eglGetCurrentContext();
-    fOldDisplay = eglGetCurrentDisplay();
-    fOldSurface = eglGetCurrentSurface(EGL_DRAW);
-
-}
-
-SkANGLEGLContext::AutoContextRestore::~AutoContextRestore() {
-    if (NULL != fOldDisplay) {
-        eglMakeCurrent(fOldDisplay, fOldSurface, fOldSurface, fOldEGLContext);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 SkANGLEGLContext::SkANGLEGLContext()
     : fContext(EGL_NO_CONTEXT)
     , fDisplay(EGL_NO_DISPLAY)
     , fSurface(EGL_NO_SURFACE) {
-}
-
-SkANGLEGLContext::~SkANGLEGLContext() {
-    this->destroyGLContext();
-}
-
-void SkANGLEGLContext::destroyGLContext() {
-    if (fDisplay) {
-        eglMakeCurrent(fDisplay, 0, 0, 0);
-
-        if (fContext) {
-            eglDestroyContext(fDisplay, fContext);
-            fContext = EGL_NO_CONTEXT;
-        }
-
-        if (fSurface) {
-            eglDestroySurface(fDisplay, fSurface);
-            fSurface = EGL_NO_SURFACE;
-        }
-
-        //TODO should we close the display?
-        fDisplay = EGL_NO_DISPLAY;
-    }
-}
-
-const GrGLInterface* SkANGLEGLContext::createGLContext() {
-
     fDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
 
     EGLint majorVersion;
@@ -90,14 +48,41 @@ const GrGLInterface* SkANGLEGLContext::createGLContext() {
 
     eglMakeCurrent(fDisplay, fSurface, fSurface, fContext);
 
-    const GrGLInterface* interface = GrGLCreateANGLEInterface();
-    if (NULL == interface) {
+    fGL.reset(GrGLCreateANGLEInterface());
+    if (NULL == fGL.get()) {
         SkDebugf("Could not create ANGLE GL interface!\n");
         this->destroyGLContext();
-        return NULL;
+        return;
     }
+    if (!fGL->validate()) {
+        SkDebugf("Could not validate ANGLE GL interface!\n");
+        this->destroyGLContext();
+        return;
+    }
+}
 
-    return interface;
+SkANGLEGLContext::~SkANGLEGLContext() {
+    this->destroyGLContext();
+}
+
+void SkANGLEGLContext::destroyGLContext() {
+    fGL.reset(NULL);
+    if (fDisplay) {
+        eglMakeCurrent(fDisplay, 0, 0, 0);
+
+        if (fContext) {
+            eglDestroyContext(fDisplay, fContext);
+            fContext = EGL_NO_CONTEXT;
+        }
+
+        if (fSurface) {
+            eglDestroySurface(fDisplay, fSurface);
+            fSurface = EGL_NO_SURFACE;
+        }
+
+        //TODO should we close the display?
+        fDisplay = EGL_NO_DISPLAY;
+    }
 }
 
 void SkANGLEGLContext::makeCurrent() const {

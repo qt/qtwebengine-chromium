@@ -29,7 +29,7 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
                                    public MenuDelegate {
  public:
   BaseScrollBar(bool horizontal, BaseScrollBarThumb* thumb);
-  virtual ~BaseScrollBar();
+  ~BaseScrollBar() override;
 
   // Get the bounds of the "track" area that the thumb is free to slide within.
   virtual gfx::Rect GetTrackBounds() const = 0;
@@ -64,42 +64,42 @@ class VIEWS_EXPORT BaseScrollBar : public ScrollBar,
                            CustomButton::ButtonState new_state);
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE = 0;
-  virtual void Layout() OVERRIDE = 0;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
+  virtual gfx::Size GetPreferredSize() const override = 0;
+  virtual void Layout() override = 0;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  void OnMouseCaptureLost() override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnMouseWheel(const ui::MouseWheelEvent& event) override;
 
   // ui::EventHandler overrides:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // ScrollBar overrides:
-  virtual void Update(int viewport_size,
-                      int content_size,
-                      int contents_scroll_offset) OVERRIDE;
-  virtual int GetLayoutSize() const OVERRIDE = 0;
-  virtual int GetPosition() const OVERRIDE;
+  void Update(int viewport_size,
+              int content_size,
+              int contents_scroll_offset) override;
+  virtual int GetLayoutSize() const override = 0;
+  int GetPosition() const override;
 
   // ScrollDelegate overrides:
-  virtual bool OnScroll(float dx, float dy) OVERRIDE;
+  bool OnScroll(float dx, float dy) override;
 
   // ContextMenuController overrides:
-  virtual void ShowContextMenuForView(View* source,
-                                      const gfx::Point& point,
-                                      ui::MenuSourceType source_type) OVERRIDE;
+  void ShowContextMenuForView(View* source,
+                              const gfx::Point& point,
+                              ui::MenuSourceType source_type) override;
 
   // Menu::Delegate overrides:
-  virtual base::string16 GetLabel(int id) const OVERRIDE;
-  virtual bool IsCommandEnabled(int id) const OVERRIDE;
-  virtual void ExecuteCommand(int id) OVERRIDE;
+  base::string16 GetLabel(int id) const override;
+  bool IsCommandEnabled(int id) const override;
+  void ExecuteCommand(int id) override;
 
  protected:
   // View overrides:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE = 0;
+  virtual void OnPaint(gfx::Canvas* canvas) override = 0;
 
   BaseScrollBarThumb* GetThumb() const;
   CustomButton::ButtonState GetThumbTrackState() const;

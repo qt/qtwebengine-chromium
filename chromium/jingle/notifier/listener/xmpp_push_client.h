@@ -22,7 +22,7 @@
 #include "jingle/notifier/listener/push_notifications_listen_task.h"
 #include "jingle/notifier/listener/push_notifications_subscribe_task.h"
 #include "jingle/notifier/listener/send_ping_task.h"
-#include "talk/xmpp/xmppclientsettings.h"
+#include "webrtc/libjingle/xmpp/xmppclientsettings.h"
 
 namespace buzz {
 class XmppTaskParentInterface;
@@ -41,34 +41,32 @@ class XmppPushClient :
       public SendPingTaskDelegate {
  public:
   explicit XmppPushClient(const NotifierOptions& notifier_options);
-  virtual ~XmppPushClient();
+  ~XmppPushClient() override;
 
   // PushClient implementation.
-  virtual void AddObserver(PushClientObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(PushClientObserver* observer) OVERRIDE;
-  virtual void UpdateSubscriptions(
-      const SubscriptionList& subscriptions) OVERRIDE;
-  virtual void UpdateCredentials(
-      const std::string& email, const std::string& token) OVERRIDE;
-  virtual void SendNotification(const Notification& notification) OVERRIDE;
-  virtual void SendPing() OVERRIDE;
+  void AddObserver(PushClientObserver* observer) override;
+  void RemoveObserver(PushClientObserver* observer) override;
+  void UpdateSubscriptions(const SubscriptionList& subscriptions) override;
+  void UpdateCredentials(const std::string& email,
+                         const std::string& token) override;
+  void SendNotification(const Notification& notification) override;
+  void SendPing() override;
 
   // Login::Delegate implementation.
-  virtual void OnConnect(
-      base::WeakPtr<buzz::XmppTaskParentInterface> base_task) OVERRIDE;
-  virtual void OnTransientDisconnection() OVERRIDE;
-  virtual void OnCredentialsRejected() OVERRIDE;
+  void OnConnect(
+      base::WeakPtr<buzz::XmppTaskParentInterface> base_task) override;
+  void OnTransientDisconnection() override;
+  void OnCredentialsRejected() override;
 
   // PushNotificationsListenTaskDelegate implementation.
-  virtual void OnNotificationReceived(
-      const Notification& notification) OVERRIDE;
+  void OnNotificationReceived(const Notification& notification) override;
 
   // PushNotificationsSubscribeTaskDelegate implementation.
-  virtual void OnSubscribed() OVERRIDE;
-  virtual void OnSubscriptionError() OVERRIDE;
+  void OnSubscribed() override;
+  void OnSubscriptionError() override;
 
   // SendPingTaskDelegate implementation.
-  virtual void OnPingResponseReceived() OVERRIDE;
+  void OnPingResponseReceived() override;
 
  private:
   base::ThreadChecker thread_checker_;

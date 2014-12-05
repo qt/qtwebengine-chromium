@@ -7,7 +7,6 @@
 #include <algorithm>
 
 #include "base/debug/trace_event.h"
-#include "base/stl_util.h"
 #include "cc/resources/prioritized_resource.h"
 #include "cc/resources/priority_calculator.h"
 #include "cc/trees/proxy.h"
@@ -455,7 +454,7 @@ PrioritizedResource::Backing* PrioritizedResourceManager::CreateBacking(
           size,
           GL_TEXTURE_2D,
           GL_CLAMP_TO_EDGE,
-          ResourceProvider::TextureUsageAny,
+          ResourceProvider::TextureHintImmutable,
           format);
   PrioritizedResource::Backing* backing = new PrioritizedResource::Backing(
       resource_id, resource_provider, size, format);

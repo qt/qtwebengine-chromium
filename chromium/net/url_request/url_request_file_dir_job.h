@@ -27,21 +27,18 @@ class URLRequestFileDirJob
   virtual void StartAsync();
 
   // Overridden from URLRequestJob:
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual bool ReadRawData(IOBuffer* buf,
-                           int buf_size,
-                           int* bytes_read) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
+  void Start() override;
+  void Kill() override;
+  bool ReadRawData(IOBuffer* buf, int buf_size, int* bytes_read) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  bool GetCharset(std::string* charset) override;
 
   // Overridden from DirectoryLister::DirectoryListerDelegate:
-  virtual void OnListFile(
-      const DirectoryLister::DirectoryListerData& data) OVERRIDE;
-  virtual void OnListDone(int error) OVERRIDE;
+  void OnListFile(const DirectoryLister::DirectoryListerData& data) override;
+  void OnListDone(int error) override;
 
  private:
-  virtual ~URLRequestFileDirJob();
+  ~URLRequestFileDirJob() override;
 
   void CloseLister();
 

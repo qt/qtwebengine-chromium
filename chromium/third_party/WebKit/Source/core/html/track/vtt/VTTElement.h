@@ -23,9 +23,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifndef VTTElement_h
+#define VTTElement_h
+
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 enum VTTNodeType {
     VTTNodeTypeNone = 0,
@@ -39,13 +42,13 @@ enum VTTNodeType {
     VTTNodeTypeVoice
 };
 
-class VTTElement FINAL : public Element {
+class VTTElement final : public Element {
 public:
     static PassRefPtrWillBeRawPtr<VTTElement> create(const VTTNodeType, Document*);
     static PassRefPtrWillBeRawPtr<VTTElement> create(const QualifiedName&, Document*);
     PassRefPtrWillBeRawPtr<HTMLElement> createEquivalentHTMLElement(Document&);
 
-    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Element> cloneElementWithoutAttributesAndChildren() override;
 
     void setVTTNodeType(VTTNodeType type) { m_webVTTNodeType = static_cast<unsigned>(type); }
     VTTNodeType webVTTNodeType() const { return static_cast<VTTNodeType>(m_webVTTNodeType); }
@@ -53,7 +56,7 @@ public:
     bool isPastNode() const { return m_isPastNode; }
     void setIsPastNode(bool value) { m_isPastNode = value; }
 
-    virtual bool isVTTElement() const OVERRIDE { return true; }
+    virtual bool isVTTElement() const override { return true; }
     AtomicString language() const { return m_language; }
     void setLanguage(AtomicString value) { m_language = value; }
 
@@ -81,5 +84,6 @@ private:
 
 DEFINE_ELEMENT_TYPE_CASTS(VTTElement, isVTTElement());
 
-} // namespace WebCore
+} // namespace blink
 
+#endif // VTTElement_h

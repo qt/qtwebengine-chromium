@@ -25,7 +25,7 @@ void CreateVideoEncodeAccelerator(
   scoped_refptr<base::SingleThreadTaskRunner> encode_task_runner =
       gpu_factories->GetTaskRunner();
   base::PostTaskAndReplyWithResult(
-      encode_task_runner,
+      encode_task_runner.get(),
       FROM_HERE,
       base::Bind(
           &media::GpuVideoAcceleratorFactories::CreateVideoEncodeAccelerator,
@@ -35,7 +35,11 @@ void CreateVideoEncodeAccelerator(
 
 std::vector<media::VideoEncodeAccelerator::SupportedProfile>
 GetSupportedVideoEncodeAcceleratorProfiles() {
-  return GpuVideoEncodeAcceleratorHost::GetSupportedProfiles();
+  scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories =
+      RenderThreadImpl::current()->GetGpuFactories();
+  if (!gpu_factories.get())
+    return std::vector<media::VideoEncodeAccelerator::SupportedProfile>();
+  return gpu_factories->GetVideoEncodeAcceleratorSupportedProfiles();
 }
 
 }  // namespace content

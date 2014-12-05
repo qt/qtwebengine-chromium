@@ -29,23 +29,26 @@
 #include "modules/webaudio/AudioParam.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class DynamicsCompressor;
 
-class DynamicsCompressorNode FINAL : public AudioNode {
+class DynamicsCompressorNode final : public AudioNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DynamicsCompressorNode> create(AudioContext* context, float sampleRate)
+    static DynamicsCompressorNode* create(AudioContext* context, float sampleRate)
     {
-        return adoptRefWillBeNoop(new DynamicsCompressorNode(context, sampleRate));
+        return new DynamicsCompressorNode(context, sampleRate);
     }
 
     virtual ~DynamicsCompressorNode();
 
     // AudioNode
-    virtual void process(size_t framesToProcess) OVERRIDE;
-    virtual void initialize() OVERRIDE;
-    virtual void uninitialize() OVERRIDE;
+    virtual void dispose() override;
+    virtual void process(size_t framesToProcess) override;
+    virtual void initialize() override;
+    virtual void uninitialize() override;
+    virtual void clearInternalStateWhenDisabled() override;
 
     // Static compression curve parameters.
     AudioParam* threshold() { return m_threshold.get(); }
@@ -57,23 +60,23 @@ public:
     // Amount by which the compressor is currently compressing the signal in decibels.
     AudioParam* reduction() { return m_reduction.get(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    virtual double tailTime() const OVERRIDE;
-    virtual double latencyTime() const OVERRIDE;
+    virtual double tailTime() const override;
+    virtual double latencyTime() const override;
 
     DynamicsCompressorNode(AudioContext*, float sampleRate);
 
     OwnPtr<DynamicsCompressor> m_dynamicsCompressor;
-    RefPtrWillBeMember<AudioParam> m_threshold;
-    RefPtrWillBeMember<AudioParam> m_knee;
-    RefPtrWillBeMember<AudioParam> m_ratio;
-    RefPtrWillBeMember<AudioParam> m_reduction;
-    RefPtrWillBeMember<AudioParam> m_attack;
-    RefPtrWillBeMember<AudioParam> m_release;
+    Member<AudioParam> m_threshold;
+    Member<AudioParam> m_knee;
+    Member<AudioParam> m_ratio;
+    Member<AudioParam> m_reduction;
+    Member<AudioParam> m_attack;
+    Member<AudioParam> m_release;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DynamicsCompressorNode_h

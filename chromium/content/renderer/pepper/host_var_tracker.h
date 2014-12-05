@@ -18,82 +18,82 @@
 #include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/resource_tracker.h"
 #include "ppapi/shared_impl/var_tracker.h"
-
-typedef struct NPObject NPObject;
+#include "v8/include/v8.h"
 
 namespace ppapi {
 class ArrayBufferVar;
-class NPObjectVar;
+class V8ObjectVar;
 class Var;
 }
 
 namespace content {
 
-// Adds NPObject var tracking to the standard PPAPI VarTracker for use in the
-// renderer.
 class HostVarTracker : public ppapi::VarTracker {
  public:
   HostVarTracker();
-  virtual ~HostVarTracker();
+  ~HostVarTracker() override;
 
-  // Tracks all live NPObjectVar. This is so we can map between instance +
-  // NPObject and get the NPObjectVar corresponding to it. This Add/Remove
-  // function is called by the NPObjectVar when it is created and
-  // destroyed.
-  void AddNPObjectVar(ppapi::NPObjectVar* object_var);
-  void RemoveNPObjectVar(ppapi::NPObjectVar* object_var);
-
-  // Looks up a previously registered NPObjectVar for the given NPObject and
-  // instance. Returns NULL if there is no NPObjectVar corresponding to the
-  // given NPObject for the given instance. See AddNPObjectVar above.
-  ppapi::NPObjectVar* NPObjectVarForNPObject(PP_Instance instance,
-                                             NPObject* np_object);
-
-  // Returns the number of NPObjectVar's associated with the given instance.
+  // Tracks all live V8ObjectVar. This is so we can map between instance +
+  // V8Object and get the V8ObjectVar corresponding to it. This Add/Remove
+  // function is called by the V8ObjectVar when it is created and destroyed.
+  void AddV8ObjectVar(ppapi::V8ObjectVar* object_var);
+  void RemoveV8ObjectVar(ppapi::V8ObjectVar* object_var);
+  // Creates or retrieves a V8ObjectVar.
+  PP_Var V8ObjectVarForV8Object(PP_Instance instance,
+                                v8::Handle<v8::Object> object);
+  // Returns the number of V8ObjectVars associated with the given instance.
   // Returns 0 if the instance isn't known.
-  CONTENT_EXPORT int GetLiveNPObjectVarsForInstance(PP_Instance instance) const;
+  CONTENT_EXPORT int GetLiveV8ObjectVarsForTest(PP_Instance instance);
 
   // VarTracker public implementation.
-  virtual PP_Var MakeResourcePPVarFromMessage(
-      PP_Instance instance,
-      const IPC::Message& creation_message,
-      int pending_renderer_id,
-      int pending_browser_id) OVERRIDE;
-  virtual ppapi::ResourceVar* MakeResourceVar(PP_Resource pp_resource) OVERRIDE;
-  virtual void DidDeleteInstance(PP_Instance instance) OVERRIDE;
+  PP_Var MakeResourcePPVarFromMessage(PP_Instance instance,
+                                      const IPC::Message& creation_message,
+                                      int pending_renderer_id,
+                                      int pending_browser_id) override;
+  ppapi::ResourceVar* MakeResourceVar(PP_Resource pp_resource) override;
+  void DidDeleteInstance(PP_Instance pp_instance) override;
 
-  virtual int TrackSharedMemoryHandle(PP_Instance instance,
-                                      base::SharedMemoryHandle file,
-                                      uint32 size_in_bytes) OVERRIDE;
-  virtual bool StopTrackingSharedMemoryHandle(int id,
-                                              PP_Instance instance,
-                                              base::SharedMemoryHandle* handle,
-                                              uint32* size_in_bytes) OVERRIDE;
+  int TrackSharedMemoryHandle(PP_Instance instance,
+                              base::SharedMemoryHandle file,
+                              uint32 size_in_bytes) override;
+  bool StopTrackingSharedMemoryHandle(int id,
+                                      PP_Instance instance,
+                                      base::SharedMemoryHandle* handle,
+                                      uint32* size_in_bytes) override;
 
  private:
   // VarTracker private implementation.
-  virtual ppapi::ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes)
-      OVERRIDE;
-  virtual ppapi::ArrayBufferVar* CreateShmArrayBuffer(
+  ppapi::ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes) override;
+  ppapi::ArrayBufferVar* CreateShmArrayBuffer(
       uint32 size_in_bytes,
-      base::SharedMemoryHandle handle) OVERRIDE;
+      base::SharedMemoryHandle handle) override;
 
   // Clear the reference count of the given object and remove it from
   // live_vars_.
-  void ForceReleaseNPObject(ppapi::NPObjectVar* object_var);
+  void ForceReleaseV8Object(ppapi::V8ObjectVar* object_var);
 
-  typedef std::map<NPObject*, ppapi::NPObjectVar*> NPObjectToNPObjectVarMap;
+  // A non-unique, ordered key for a V8ObjectVar. Contains the hash of the v8
+  // and the instance it is associated with.
+  struct V8ObjectVarKey {
+    explicit V8ObjectVarKey(ppapi::V8ObjectVar* object_var);
+    V8ObjectVarKey(PP_Instance i, v8::Handle<v8::Object> object);
+    ~V8ObjectVarKey();
 
-  // Lists all known NPObjects, first indexed by the corresponding instance,
-  // then by the NPObject*. This allows us to look up an NPObjectVar given
-  // these two pieces of information.
-  //
-  // The instance map is lazily managed, so we'll add the
-  // NPObjectToNPObjectVarMap lazily when the first NPObject var is created,
-  // and delete it when it's empty.
-  typedef std::map<PP_Instance, linked_ptr<NPObjectToNPObjectVarMap> >
-      InstanceMap;
-  InstanceMap instance_map_;
+    bool operator<(const V8ObjectVarKey& other) const;
+
+    PP_Instance instance;
+    int hash;
+  };
+  typedef std::multimap<V8ObjectVarKey, ppapi::V8ObjectVar*> ObjectMap;
+
+  // Returns an iterator into |object_map| which points to V8Object which
+  // is associated with the given instance and object.
+  ObjectMap::iterator GetForV8Object(PP_Instance instance,
+                                     v8::Handle<v8::Object> object);
+
+
+  // A multimap of V8ObjectVarKey -> ObjectMap.
+  ObjectMap object_map_;
 
   // Tracks all shared memory handles used for transmitting array buffers.
   struct SharedMemoryMapEntry {

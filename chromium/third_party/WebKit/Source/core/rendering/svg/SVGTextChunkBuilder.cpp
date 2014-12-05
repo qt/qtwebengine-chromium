@@ -25,21 +25,15 @@
 #include "core/rendering/svg/SVGInlineTextBox.h"
 #include "core/svg/SVGLengthContext.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGTextChunkBuilder::SVGTextChunkBuilder()
 {
 }
 
-void SVGTextChunkBuilder::transformationForTextBox(SVGInlineTextBox* textBox, AffineTransform& transform) const
+AffineTransform SVGTextChunkBuilder::transformationForTextBox(SVGInlineTextBox* textBox) const
 {
-    DEFINE_STATIC_LOCAL(const AffineTransform, s_identityTransform, ());
-    if (!m_textBoxTransformations.contains(textBox)) {
-        transform = s_identityTransform;
-        return;
-    }
-
-    transform = m_textBoxTransformations.get(textBox);
+    return m_textBoxTransformations.get(textBox);
 }
 
 void SVGTextChunkBuilder::buildTextChunks(Vector<SVGInlineTextBox*>& lineLayoutBoxes)
@@ -91,13 +85,12 @@ void SVGTextChunkBuilder::addTextChunk(Vector<SVGInlineTextBox*>& lineLayoutBoxe
     SVGInlineTextBox* textBox = lineLayoutBoxes[boxStart];
     ASSERT(textBox);
 
-    RenderSVGInlineText& textRenderer = toRenderSVGInlineText(textBox->textRenderer());
+    RenderSVGInlineText& textRenderer = toRenderSVGInlineText(textBox->renderer());
 
-    const RenderStyle* style = toRenderSVGInlineText(textBox->textRenderer()).style();
+    const RenderStyle* style = toRenderSVGInlineText(textBox->renderer()).style();
     ASSERT(style);
 
-    const SVGRenderStyle* svgStyle = style->svgStyle();
-    ASSERT(svgStyle);
+    const SVGRenderStyle& svgStyle = style->svgStyle();
 
     // Build chunk style flags.
     unsigned chunkStyle = SVGTextChunk::DefaultStyle;
@@ -107,11 +100,11 @@ void SVGTextChunkBuilder::addTextChunk(Vector<SVGInlineTextBox*>& lineLayoutBoxe
         chunkStyle |= SVGTextChunk::RightToLeftText;
 
     // Handle 'writing-mode' property.
-    if (svgStyle->isVerticalWritingMode())
+    if (svgStyle.isVerticalWritingMode())
         chunkStyle |= SVGTextChunk::VerticalText;
 
     // Handle 'text-anchor' property.
-    switch (svgStyle->textAnchor()) {
+    switch (svgStyle.textAnchor()) {
     case TA_START:
         break;
     case TA_MIDDLE:
@@ -150,6 +143,18 @@ void SVGTextChunkBuilder::addTextChunk(Vector<SVGInlineTextBox*>& lineLayoutBoxe
         boxes.append(lineLayoutBoxes[i]);
 
     m_textChunks.append(chunk);
+}
+
+static void buildSpacingAndGlyphsTransform(bool isVerticalText, float scale, const SVGTextFragment& fragment, AffineTransform& spacingAndGlyphsTransform)
+{
+    spacingAndGlyphsTransform.translate(fragment.x, fragment.y);
+
+    if (isVerticalText)
+        spacingAndGlyphsTransform.scaleNonUniform(1, scale);
+    else
+        spacingAndGlyphsTransform.scaleNonUniform(scale, 1);
+
+    spacingAndGlyphsTransform.translate(-fragment.x, -fragment.y);
 }
 
 void SVGTextChunkBuilder::processTextChunk(const SVGTextChunk& chunk)
@@ -247,18 +252,6 @@ void SVGTextChunkBuilder::processTextAnchorCorrection(bool isVerticalText, float
         else
             fragment.x += textAnchorShift;
     }
-}
-
-void SVGTextChunkBuilder::buildSpacingAndGlyphsTransform(bool isVerticalText, float scale, const SVGTextFragment& fragment, AffineTransform& spacingAndGlyphsTransform)
-{
-    spacingAndGlyphsTransform.translate(fragment.x, fragment.y);
-
-    if (isVerticalText)
-        spacingAndGlyphsTransform.scaleNonUniform(1, scale);
-    else
-        spacingAndGlyphsTransform.scaleNonUniform(scale, 1);
-
-    spacingAndGlyphsTransform.translate(-fragment.x, -fragment.y);
 }
 
 }

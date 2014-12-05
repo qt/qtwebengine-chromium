@@ -30,6 +30,8 @@
 
 #include "libavutil/attributes.h"
 #include "libavutil/internal.h"
+
+#include "audiodsp.h"
 #include "internal.h"
 #include "ac3enc.h"
 #include "eac3enc.h"
@@ -40,7 +42,8 @@ static void scale_coefficients(AC3EncodeContext *s);
 
 static int normalize_samples(AC3EncodeContext *s);
 
-static void clip_coefficients(DSPContext *dsp, CoefType *coef, unsigned int len);
+static void clip_coefficients(AudioDSPContext *adsp, CoefType *coef,
+                              unsigned int len);
 
 static CoefType calc_cpl_coord(CoefSumType energy_ch, CoefSumType energy_cpl);
 
@@ -54,7 +57,7 @@ int AC3_NAME(allocate_sample_buffers)(AC3EncodeContext *s)
 
     FF_ALLOC_OR_GOTO(s->avctx, s->windowed_samples, AC3_WINDOW_SIZE *
                      sizeof(*s->windowed_samples), alloc_fail);
-    FF_ALLOC_OR_GOTO(s->avctx, s->planar_samples, s->channels * sizeof(*s->planar_samples),
+    FF_ALLOC_ARRAY_OR_GOTO(s->avctx, s->planar_samples, s->channels, sizeof(*s->planar_samples),
                      alloc_fail);
     for (ch = 0; ch < s->channels; ch++) {
         FF_ALLOCZ_OR_GOTO(s->avctx, s->planar_samples[ch],
@@ -164,7 +167,7 @@ static void apply_channel_coupling(AC3EncodeContext *s)
         }
 
         /* coefficients must be clipped in order to be encoded */
-        clip_coefficients(&s->dsp, cpl_coef, num_cpl_coefs);
+        clip_coefficients(&s->adsp, cpl_coef, num_cpl_coefs);
     }
 
     /* calculate energy in each band in coupling channel and each fbw channel */
@@ -407,7 +410,7 @@ int AC3_NAME(encode_frame)(AVCodecContext *avctx, AVPacket *avpkt,
     if (s->fixed_point)
         scale_coefficients(s);
 
-    clip_coefficients(&s->dsp, s->blocks[0].mdct_coef[1],
+    clip_coefficients(&s->adsp, s->blocks[0].mdct_coef[1],
                       AC3_MAX_COEFS * s->num_blocks * s->channels);
 
     s->cpl_on = s->cpl_enabled;

@@ -22,7 +22,7 @@ class MockDeviceMotionListener : public blink::WebDeviceMotionListener {
   virtual ~MockDeviceMotionListener() { }
 
   virtual void didChangeDeviceMotion(
-      const blink::WebDeviceMotionData& data) OVERRIDE {
+      const blink::WebDeviceMotionData& data) override {
     memcpy(&data_, &data, sizeof(data));
     did_change_device_motion_ = true;
   }
@@ -43,15 +43,16 @@ class MockDeviceMotionListener : public blink::WebDeviceMotionListener {
 
 class DeviceMotionEventPumpForTesting : public DeviceMotionEventPump {
  public:
-  DeviceMotionEventPumpForTesting() { }
-  virtual ~DeviceMotionEventPumpForTesting() { }
+  DeviceMotionEventPumpForTesting()
+      : DeviceMotionEventPump(0) { }
+  ~DeviceMotionEventPumpForTesting() override {}
 
   void OnDidStart(base::SharedMemoryHandle renderer_handle) {
     DeviceMotionEventPump::OnDidStart(renderer_handle);
   }
-  virtual bool SendStartMessage() OVERRIDE { return true; }
-  virtual bool SendStopMessage() OVERRIDE { return true; }
-  virtual void FireEvent() OVERRIDE {
+  void SendStartMessage() override {}
+  void SendStopMessage() override {}
+  void FireEvent() override {
     DeviceMotionEventPump::FireEvent();
     Stop();
     base::MessageLoop::current()->QuitWhenIdle();
@@ -69,7 +70,7 @@ class DeviceMotionEventPumpTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     const DeviceMotionHardwareBuffer* null_buffer = NULL;
     listener_.reset(new MockDeviceMotionListener);
     motion_pump_.reset(new DeviceMotionEventPumpForTesting);
@@ -110,7 +111,7 @@ TEST_F(DeviceMotionEventPumpTest, DidStartPolling) {
 
   InitBuffer(true);
 
-  motion_pump()->SetListener(listener());
+  motion_pump()->Start(listener());
   motion_pump()->OnDidStart(handle());
 
   base::MessageLoop::current()->Run();
@@ -137,7 +138,7 @@ TEST_F(DeviceMotionEventPumpTest, DidStartPollingNotAllSensorsActive) {
 
   InitBuffer(false);
 
-  motion_pump()->SetListener(listener());
+  motion_pump()->Start(listener());
   motion_pump()->OnDidStart(handle());
 
   base::MessageLoop::current()->Run();

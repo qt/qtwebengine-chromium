@@ -28,9 +28,9 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
-class InsertLineBreakCommand FINAL : public CompositeEditCommand {
+class InsertLineBreakCommand final : public CompositeEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<InsertLineBreakCommand> create(Document& document)
     {
@@ -40,13 +40,13 @@ public:
 private:
     explicit InsertLineBreakCommand(Document&);
 
-    virtual void doApply() OVERRIDE;
+    virtual void doApply() override;
 
-    virtual bool preservesTypingStyle() const OVERRIDE;
+    virtual bool preservesTypingStyle() const override;
 
     bool shouldUseBreakElement(const Position&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertLineBreakCommand_h

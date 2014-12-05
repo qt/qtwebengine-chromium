@@ -10,18 +10,10 @@
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
-#include "content/renderer/media/crypto/content_decryption_module_factory.h"
-#include "media/base/cdm_promise.h"
+#include "media/base/cdm_callback_promise.h"
+#include "media/base/cdm_factory.h"
 #include "media/cdm/json_web_key.h"
 #include "media/cdm/key_system_names.h"
-
-#if defined(ENABLE_PEPPER_CDMS)
-#include "content/renderer/media/crypto/pepper_cdm_wrapper.h"
-#endif  // defined(ENABLE_PEPPER_CDMS)
-
-#if defined(ENABLE_BROWSER_CDMS)
-#include "content/renderer/media/crypto/renderer_cdm_manager.h"
-#endif  // defined(ENABLE_BROWSER_CDMS)
 
 namespace content {
 
@@ -30,30 +22,14 @@ namespace content {
 // EME API.
 const int kSessionClosedSystemCode = 29127;
 
-ProxyDecryptor::ProxyDecryptor(
-#if defined(ENABLE_PEPPER_CDMS)
-    const CreatePepperCdmCB& create_pepper_cdm_cb,
-#elif defined(ENABLE_BROWSER_CDMS)
-    RendererCdmManager* manager,
-#endif  // defined(ENABLE_PEPPER_CDMS)
-    const KeyAddedCB& key_added_cb,
-    const KeyErrorCB& key_error_cb,
-    const KeyMessageCB& key_message_cb)
-    :
-#if defined(ENABLE_PEPPER_CDMS)
-      create_pepper_cdm_cb_(create_pepper_cdm_cb),
-#elif defined(ENABLE_BROWSER_CDMS)
-      manager_(manager),
-      cdm_id_(RendererCdmManager::kInvalidCdmId),
-#endif  // defined(ENABLE_PEPPER_CDMS)
-      key_added_cb_(key_added_cb),
+ProxyDecryptor::ProxyDecryptor(const KeyAddedCB& key_added_cb,
+                               const KeyErrorCB& key_error_cb,
+                               const KeyMessageCB& key_message_cb)
+    : key_added_cb_(key_added_cb),
       key_error_cb_(key_error_cb),
       key_message_cb_(key_message_cb),
       is_clear_key_(false),
       weak_ptr_factory_(this) {
-#if defined(ENABLE_PEPPER_CDMS)
-  DCHECK(!create_pepper_cdm_cb_.is_null());
-#endif  // defined(ENABLE_PEPPER_CDMS)
   DCHECK(!key_added_cb_.is_null());
   DCHECK(!key_error_cb_.is_null());
   DCHECK(!key_message_cb_.is_null());
@@ -70,16 +46,17 @@ media::Decryptor* ProxyDecryptor::GetDecryptor() {
 
 #if defined(ENABLE_BROWSER_CDMS)
 int ProxyDecryptor::GetCdmId() {
-  return cdm_id_;
+  return media_keys_->GetCdmId();
 }
 #endif
 
-bool ProxyDecryptor::InitializeCDM(const std::string& key_system,
+bool ProxyDecryptor::InitializeCDM(media::CdmFactory* cdm_factory,
+                                   const std::string& key_system,
                                    const GURL& security_origin) {
   DVLOG(1) << "InitializeCDM: key_system = " << key_system;
 
   DCHECK(!media_keys_);
-  media_keys_ = CreateMediaKeys(key_system, security_origin);
+  media_keys_ = CreateMediaKeys(cdm_factory, key_system, security_origin);
   if (!media_keys_)
     return false;
 
@@ -95,41 +72,59 @@ bool HasHeader(const uint8* data, int data_length, const std::string& header) {
          std::equal(data, data + header.size(), header.begin());
 }
 
-bool ProxyDecryptor::GenerateKeyRequest(const std::string& content_type,
+// Removes the first |length| items from |data|.
+void StripHeader(std::vector<uint8>& data, size_t length) {
+  data.erase(data.begin(), data.begin() + length);
+}
+
+bool ProxyDecryptor::GenerateKeyRequest(const std::string& init_data_type,
                                         const uint8* init_data,
                                         int init_data_length) {
   DVLOG(1) << "GenerateKeyRequest()";
   const char kPrefixedApiPersistentSessionHeader[] = "PERSISTENT|";
   const char kPrefixedApiLoadSessionHeader[] = "LOAD_SESSION|";
 
-  bool loadSession =
-      HasHeader(init_data, init_data_length, kPrefixedApiLoadSessionHeader);
-  bool persistent = HasHeader(
-      init_data, init_data_length, kPrefixedApiPersistentSessionHeader);
+  SessionCreationType session_creation_type = TemporarySession;
+  std::vector<uint8> init_data_vector(init_data, init_data + init_data_length);
+  if (HasHeader(init_data, init_data_length, kPrefixedApiLoadSessionHeader)) {
+    session_creation_type = LoadSession;
+    StripHeader(init_data_vector, strlen(kPrefixedApiLoadSessionHeader));
+  } else if (HasHeader(init_data,
+                       init_data_length,
+                       kPrefixedApiPersistentSessionHeader)) {
+    session_creation_type = PersistentSession;
+    StripHeader(init_data_vector, strlen(kPrefixedApiPersistentSessionHeader));
+  }
 
   scoped_ptr<media::NewSessionCdmPromise> promise(
-      new media::NewSessionCdmPromise(
+      new media::CdmCallbackPromise<std::string>(
           base::Bind(&ProxyDecryptor::SetSessionId,
                      weak_ptr_factory_.GetWeakPtr(),
-                     persistent || loadSession),
+                     session_creation_type),
           base::Bind(&ProxyDecryptor::OnSessionError,
                      weak_ptr_factory_.GetWeakPtr(),
                      std::string())));  // No session id until created.
+  uint8* init_data_vector_data =
+      (init_data_vector.size() > 0) ? &init_data_vector[0] : nullptr;
 
-  if (loadSession) {
+  if (session_creation_type == LoadSession) {
     media_keys_->LoadSession(
-        std::string(reinterpret_cast<const char*>(
-                        init_data + strlen(kPrefixedApiLoadSessionHeader)),
-                    init_data_length - strlen(kPrefixedApiLoadSessionHeader)),
+        std::string(reinterpret_cast<const char*>(init_data_vector_data),
+                    init_data_vector.size()),
         promise.Pass());
     return true;
   }
 
   media::MediaKeys::SessionType session_type =
-      persistent ? media::MediaKeys::PERSISTENT_SESSION
-                 : media::MediaKeys::TEMPORARY_SESSION;
-  media_keys_->CreateSession(
-      content_type, init_data, init_data_length, session_type, promise.Pass());
+      session_creation_type == PersistentSession
+          ? media::MediaKeys::PERSISTENT_SESSION
+          : media::MediaKeys::TEMPORARY_SESSION;
+
+  media_keys_->CreateSession(init_data_type,
+                             init_data_vector_data,
+                             init_data_vector.size(),
+                             session_type,
+                             promise.Pass());
   return true;
 }
 
@@ -157,13 +152,13 @@ void ProxyDecryptor::AddKey(const uint8* key,
     }
   }
 
-  scoped_ptr<media::SimpleCdmPromise> promise(
-      new media::SimpleCdmPromise(base::Bind(&ProxyDecryptor::OnSessionReady,
-                                             weak_ptr_factory_.GetWeakPtr(),
-                                             web_session_id),
-                                  base::Bind(&ProxyDecryptor::OnSessionError,
-                                             weak_ptr_factory_.GetWeakPtr(),
-                                             web_session_id)));
+  scoped_ptr<media::SimpleCdmPromise> promise(new media::CdmCallbackPromise<>(
+      base::Bind(&ProxyDecryptor::OnSessionReady,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 web_session_id),
+      base::Bind(&ProxyDecryptor::OnSessionError,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 web_session_id)));
 
   // EME WD spec only supports a single array passed to the CDM. For
   // Clear Key using v0.1b, both arrays are used (|init_data| is key_id).
@@ -194,43 +189,59 @@ void ProxyDecryptor::AddKey(const uint8* key,
 void ProxyDecryptor::CancelKeyRequest(const std::string& web_session_id) {
   DVLOG(1) << "CancelKeyRequest()";
 
-  scoped_ptr<media::SimpleCdmPromise> promise(
-      new media::SimpleCdmPromise(base::Bind(&ProxyDecryptor::OnSessionClosed,
-                                             weak_ptr_factory_.GetWeakPtr(),
-                                             web_session_id),
-                                  base::Bind(&ProxyDecryptor::OnSessionError,
-                                             weak_ptr_factory_.GetWeakPtr(),
-                                             web_session_id)));
-  media_keys_->ReleaseSession(web_session_id, promise.Pass());
+  scoped_ptr<media::SimpleCdmPromise> promise(new media::CdmCallbackPromise<>(
+      base::Bind(&ProxyDecryptor::OnSessionClosed,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 web_session_id),
+      base::Bind(&ProxyDecryptor::OnSessionError,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 web_session_id)));
+  media_keys_->RemoveSession(web_session_id, promise.Pass());
 }
 
 scoped_ptr<media::MediaKeys> ProxyDecryptor::CreateMediaKeys(
+    media::CdmFactory* cdm_factory,
     const std::string& key_system,
     const GURL& security_origin) {
-  return ContentDecryptionModuleFactory::Create(
+  base::WeakPtr<ProxyDecryptor> weak_this = weak_ptr_factory_.GetWeakPtr();
+  return cdm_factory->Create(
       key_system,
       security_origin,
-#if defined(ENABLE_PEPPER_CDMS)
-      create_pepper_cdm_cb_,
-#elif defined(ENABLE_BROWSER_CDMS)
-      manager_,
-      &cdm_id_,
-#endif  // defined(ENABLE_PEPPER_CDMS)
-      base::Bind(&ProxyDecryptor::OnSessionMessage,
-                 weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&ProxyDecryptor::OnSessionReady,
-                 weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&ProxyDecryptor::OnSessionClosed,
-                 weak_ptr_factory_.GetWeakPtr()),
-      base::Bind(&ProxyDecryptor::OnSessionError,
-                 weak_ptr_factory_.GetWeakPtr()));
+      base::Bind(&ProxyDecryptor::OnSessionMessage, weak_this),
+      base::Bind(&ProxyDecryptor::OnSessionReady, weak_this),
+      base::Bind(&ProxyDecryptor::OnSessionClosed, weak_this),
+      base::Bind(&ProxyDecryptor::OnSessionError, weak_this),
+      base::Bind(&ProxyDecryptor::OnSessionKeysChange, weak_this),
+      base::Bind(&ProxyDecryptor::OnSessionExpirationUpdate, weak_this));
 }
 
 void ProxyDecryptor::OnSessionMessage(const std::string& web_session_id,
                                       const std::vector<uint8>& message,
                                       const GURL& destination_url) {
   // Assumes that OnSessionCreated() has been called before this.
+
+  // For ClearKey, convert the message from JSON into just passing the key
+  // as the message. If unable to extract the key, return the message unchanged.
+  if (is_clear_key_) {
+    std::vector<uint8> key;
+    if (media::ExtractFirstKeyIdFromLicenseRequest(message, &key)) {
+      key_message_cb_.Run(web_session_id, key, destination_url);
+      return;
+    }
+  }
+
   key_message_cb_.Run(web_session_id, message, destination_url);
+}
+
+void ProxyDecryptor::OnSessionKeysChange(const std::string& web_session_id,
+                                         bool has_additional_usable_key) {
+  // EME v0.1b doesn't support this event.
+}
+
+void ProxyDecryptor::OnSessionExpirationUpdate(
+    const std::string& web_session_id,
+    const base::Time& new_expiry_time) {
+  // EME v0.1b doesn't support this event.
 }
 
 void ProxyDecryptor::OnSessionReady(const std::string& web_session_id) {
@@ -286,9 +297,16 @@ void ProxyDecryptor::OnSessionError(const std::string& web_session_id,
   key_error_cb_.Run(web_session_id, error_code, system_code);
 }
 
-void ProxyDecryptor::SetSessionId(bool persistent,
+void ProxyDecryptor::SetSessionId(SessionCreationType session_type,
                                   const std::string& web_session_id) {
-  active_sessions_.insert(std::make_pair(web_session_id, persistent));
+  // Loaded sessions are considered persistent.
+  bool is_persistent =
+      session_type == PersistentSession || session_type == LoadSession;
+  active_sessions_.insert(std::make_pair(web_session_id, is_persistent));
+
+  // For LoadSession(), generate the SessionReady event.
+  if (session_type == LoadSession)
+    OnSessionReady(web_session_id);
 }
 
 }  // namespace content

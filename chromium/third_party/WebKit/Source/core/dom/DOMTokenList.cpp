@@ -25,12 +25,12 @@
 #include "config.h"
 #include "core/dom/DOMTokenList.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 bool DOMTokenList::validateToken(const String& token, ExceptionState& exceptionState)
 {
@@ -39,12 +39,9 @@ bool DOMTokenList::validateToken(const String& token, ExceptionState& exceptionS
         return false;
     }
 
-    unsigned length = token.length();
-    for (unsigned i = 0; i < length; ++i) {
-        if (isHTMLSpace<UChar>(token[i])) {
-            exceptionState.throwDOMException(InvalidCharacterError, "The token provided ('" + token + "') contains HTML space characters, which are not valid in tokens.");
-            return false;
-        }
+    if (token.find(isHTMLSpace) != kNotFound) {
+        exceptionState.throwDOMException(InvalidCharacterError, "The token provided ('" + token + "') contains HTML space characters, which are not valid in tokens.");
+        return false;
     }
 
     return true;
@@ -249,4 +246,4 @@ AtomicString DOMTokenList::removeTokens(const AtomicString& input, const Vector<
     return output.toAtomicString();
 }
 
-} // namespace WebCore
+} // namespace blink

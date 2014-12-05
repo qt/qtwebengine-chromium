@@ -27,10 +27,11 @@
 #if ENABLE(WEB_AUDIO)
 
 #include "platform/audio/AudioUtilities.h"
+
 #include "wtf/Assertions.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace AudioUtilities {
 
@@ -59,8 +60,25 @@ size_t timeToSampleFrame(double time, double sampleRate)
 {
     return static_cast<size_t>(round(time * sampleRate));
 }
+
+bool isValidAudioBufferSampleRate(float sampleRate)
+{
+    return sampleRate >= minAudioBufferSampleRate() && sampleRate <= maxAudioBufferSampleRate();
+}
+
+float minAudioBufferSampleRate()
+{
+    // crbug.com/344375
+    return 3000;
+}
+
+float maxAudioBufferSampleRate()
+{
+    // Windows can support audio sampling rates this high, so allow AudioBuffer rates this high as well.
+    return 192000;
+}
 } // AudioUtilites
 
-} // WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

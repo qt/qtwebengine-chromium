@@ -57,4 +57,8 @@ void InputHandlerWrapper::DidStopFlinging() {
   input_handler_manager_->DidStopFlinging(routing_id_);
 }
 
+void InputHandlerWrapper::DidReceiveInputEvent() {
+  // TODO(skyostil): Hook this up into the renderer scheduler.
+}
+
 }  // namespace content

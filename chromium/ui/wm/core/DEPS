@@ -1,5 +1,5 @@
 include_rules = [
-  "+grit/ui_resources.h",
+  "+third_party/skia",
   "+ui/aura",
   "+ui/base/accelerators",
   "+ui/base/cursor",
@@ -7,10 +7,11 @@ include_rules = [
   "+ui/base/ime",
   "+ui/base/resource",
   "+ui/base/ui_base_switches_util.h",
+  "+ui/base/ui_base_paths.h",
   "+ui/base/ui_base_types.h",
   "+ui/compositor",
   "+ui/events",
   "+ui/gfx",
+  "+ui/resources/grit/ui_resources.h",
   "+ui/views/views_export.h",
-  "+third_party/skia",
 ]

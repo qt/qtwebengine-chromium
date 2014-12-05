@@ -23,12 +23,11 @@
 #include "core/SVGNames.h"
 #include "platform/graphics/filters/DistantLightSource.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEDistantLightElement::SVGFEDistantLightElement(Document& document)
     : SVGFELightElement(SVGNames::feDistantLightTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGFEDistantLightElement)

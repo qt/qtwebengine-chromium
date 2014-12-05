@@ -34,16 +34,15 @@
 #include "core/fetch/CachePolicy.h"
 #include "core/fetch/FetchInitiatorInfo.h"
 #include "core/fetch/Resource.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class DocumentLoader;
-class LocalFrame;
 class KURL;
-class Page;
 class ResourceError;
 class ResourceLoader;
 class ResourceResponse;
@@ -54,13 +53,14 @@ enum FetchResourceType {
     FetchSubresource
 };
 
-class FetchContext {
+class FetchContext : public NoBaseWillBeGarbageCollectedFinalized<FetchContext> {
     WTF_MAKE_NONCOPYABLE(FetchContext);
 public:
     static FetchContext& nullInstance();
 
     FetchContext() { }
     virtual ~FetchContext() { }
+    virtual void trace(Visitor*) { }
 
     virtual void reportLocalLoadFailed(const KURL&);
     virtual void addAdditionalRequestHeaders(Document*, ResourceRequest&, FetchResourceType);
@@ -74,7 +74,7 @@ public:
     virtual void dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength);
     virtual void dispatchDidDownloadData(DocumentLoader*, unsigned long identifier, int dataLength, int encodedDataLength);
     virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier, double finishTime, int64_t encodedDataLength);
-    virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&);
+    virtual void dispatchDidFail(DocumentLoader*, unsigned long identifier, const ResourceError&, bool isInternalRequest);
     virtual void sendRemainingDelegateMessages(DocumentLoader*, unsigned long identifier, const ResourceResponse&, int dataLength);
 };
 

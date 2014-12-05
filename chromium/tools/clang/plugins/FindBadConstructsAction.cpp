@@ -15,10 +15,10 @@ namespace chrome_checker {
 FindBadConstructsAction::FindBadConstructsAction() {
 }
 
-ASTConsumer* FindBadConstructsAction::CreateASTConsumer(
+std::unique_ptr<ASTConsumer> FindBadConstructsAction::CreateASTConsumer(
     CompilerInstance& instance,
     llvm::StringRef ref) {
-  return new FindBadConstructsConsumer(instance, options_);
+  return llvm::make_unique<FindBadConstructsConsumer>(instance, options_);
 }
 
 bool FindBadConstructsAction::ParseArgs(const CompilerInstance& instance,
@@ -26,10 +26,7 @@ bool FindBadConstructsAction::ParseArgs(const CompilerInstance& instance,
   bool parsed = true;
 
   for (size_t i = 0; i < args.size() && parsed; ++i) {
-    if (args[i] == "skip-virtuals-in-implementations") {
-      // TODO(rsleevi): Remove this once http://crbug.com/115047 is fixed.
-      options_.check_virtuals_in_implementations = false;
-    } else if (args[i] == "check-base-classes") {
+    if (args[i] == "check-base-classes") {
       // TODO(rsleevi): Remove this once http://crbug.com/123295 is fixed.
       options_.check_base_classes = true;
     } else if (args[i] == "check-weak-ptr-factory-order") {
@@ -39,6 +36,8 @@ bool FindBadConstructsAction::ParseArgs(const CompilerInstance& instance,
       // TODO(tsepez): Enable this by default once http://crbug.com/356815
       // and http://crbug.com/356816 are fixed.
       options_.check_enum_last_value = true;
+    } else if (args[i] == "strict-virtual-specifiers") {
+      options_.strict_virtual_specifiers = true;
     } else {
       parsed = false;
       llvm::errs() << "Unknown clang plugin argument: " << args[i] << "\n";

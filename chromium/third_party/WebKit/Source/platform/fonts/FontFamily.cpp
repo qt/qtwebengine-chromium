@@ -26,7 +26,7 @@
 #include "config.h"
 #include "platform/fonts/FontFamily.h"
 
-namespace WebCore {
+namespace blink {
 
 bool operator==(const FontFamily& a, const FontFamily& b)
 {
@@ -43,4 +43,4 @@ bool operator==(const FontFamily& a, const FontFamily& b)
     return true;
 }
 
-}
+} // namespace blink

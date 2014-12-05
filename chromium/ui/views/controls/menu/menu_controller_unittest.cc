@@ -19,6 +19,7 @@
 #include <X11/Xlib.h>
 #undef Bool
 #undef None
+#include "ui/events/devices/x11/device_data_manager_x11.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #elif defined(USE_OZONE)
 #include "ui/events/event.h"
@@ -31,7 +32,7 @@ namespace {
 class TestMenuItemView : public MenuItemView {
  public:
   TestMenuItemView() : MenuItemView(NULL) {}
-  virtual ~TestMenuItemView() {}
+  ~TestMenuItemView() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestMenuItemView);
@@ -39,8 +40,12 @@ class TestMenuItemView : public MenuItemView {
 
 class TestPlatformEventSource : public ui::PlatformEventSource {
  public:
-  TestPlatformEventSource() {}
-  virtual ~TestPlatformEventSource() {}
+  TestPlatformEventSource() {
+#if defined(USE_X11)
+    ui::DeviceDataManagerX11::CreateInstance();
+#endif
+  }
+  ~TestPlatformEventSource() override {}
 
   uint32_t Dispatch(const ui::PlatformEvent& event) {
     return DispatchEvent(event);
@@ -53,10 +58,10 @@ class TestPlatformEventSource : public ui::PlatformEventSource {
 class TestNullTargeter : public ui::EventTargeter {
  public:
   TestNullTargeter() {}
-  virtual ~TestNullTargeter() {}
+  ~TestNullTargeter() override {}
 
-  virtual ui::EventTarget* FindTargetForEvent(ui::EventTarget* root,
-                                              ui::Event* event) OVERRIDE {
+  ui::EventTarget* FindTargetForEvent(ui::EventTarget* root,
+                                      ui::Event* event) override {
     return NULL;
   }
 
@@ -67,17 +72,16 @@ class TestNullTargeter : public ui::EventTargeter {
 class TestDispatcherClient : public aura::client::DispatcherClient {
  public:
   TestDispatcherClient() : dispatcher_(NULL) {}
-  virtual ~TestDispatcherClient() {}
+  ~TestDispatcherClient() override {}
 
   base::MessagePumpDispatcher* dispatcher() {
     return dispatcher_;
   }
 
   // aura::client::DispatcherClient:
-  virtual void PrepareNestedLoopClosures(
-      base::MessagePumpDispatcher* dispatcher,
-      base::Closure* run_closure,
-      base::Closure* quit_closure) OVERRIDE {
+  void PrepareNestedLoopClosures(base::MessagePumpDispatcher* dispatcher,
+                                 base::Closure* run_closure,
+                                 base::Closure* quit_closure) override {
     scoped_ptr<base::RunLoop> run_loop(new base::RunLoop());
     *quit_closure = run_loop->QuitClosure();
     *run_closure = base::Bind(&TestDispatcherClient::RunNestedDispatcher,
@@ -106,9 +110,7 @@ class TestDispatcherClient : public aura::client::DispatcherClient {
 class MenuControllerTest : public ViewsTestBase {
  public:
   MenuControllerTest() : controller_(NULL) {}
-  virtual ~MenuControllerTest() {
-    ResetMenuController();
-  }
+  ~MenuControllerTest() override { ResetMenuController(); }
 
   // Dispatches |count| number of items, each in a separate iteration of the
   // message-loop, by posting a task.
@@ -196,8 +198,8 @@ class MenuControllerTest : public ViewsTestBase {
     memset(&msg, 0, sizeof(MSG));
     dispatcher_client_.dispatcher()->Dispatch(msg);
 #elif defined(USE_OZONE)
-    ui::KeyEvent event(ui::ET_KEY_PRESSED, ui::VKEY_SPACE, 0, true);
-    dispatcher_client_.dispatcher()->Dispatch(&event);
+    ui::KeyEvent event(' ', ui::VKEY_SPACE, ui::EF_NONE);
+    event_source_.Dispatch(&event);
 #else
 #error Unsupported platform
 #endif

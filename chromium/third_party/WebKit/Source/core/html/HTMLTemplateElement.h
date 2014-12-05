@@ -33,28 +33,29 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentFragment;
 class TemplateContentDocumentFragment;
 
-class HTMLTemplateElement FINAL : public HTMLElement {
+class HTMLTemplateElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLTemplateElement);
     virtual ~HTMLTemplateElement();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
     DocumentFragment* content() const;
 
 private:
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
 
     explicit HTMLTemplateElement(Document&);
 
     mutable RefPtrWillBeMember<TemplateContentDocumentFragment> m_content;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLTemplateElement_h

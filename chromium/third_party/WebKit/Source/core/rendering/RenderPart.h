@@ -23,34 +23,65 @@
 #ifndef RenderPart_h
 #define RenderPart_h
 
-#include "core/rendering/RenderWidget.h"
+#include "core/rendering/RenderReplaced.h"
+#include "platform/Widget.h"
 
-namespace WebCore {
+namespace blink {
 
 // Renderer for frames via RenderFrame and RenderIFrame, and plug-ins via RenderEmbeddedObject.
-class RenderPart : public RenderWidget {
+class RenderPart : public RenderReplaced {
 public:
     explicit RenderPart(Element*);
     virtual ~RenderPart();
 
     bool requiresAcceleratedCompositing() const;
 
-    virtual bool needsPreferredWidthsRecalculation() const OVERRIDE FINAL;
+    virtual bool needsPreferredWidthsRecalculation() const override final;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
+
+#if !ENABLE(OILPAN)
+    void ref() { ++m_refCount; }
+    void deref();
+#endif
+
+    Widget* widget() const;
+
+    void updateOnWidgetChange();
+    void updateWidgetPosition();
+    void widgetPositionsUpdated();
+    bool updateWidgetGeometry();
+
+    virtual bool isRenderPart() const override final { return true; }
 
 protected:
-    virtual LayerType layerTypeRequired() const OVERRIDE;
+    virtual LayerType layerTypeRequired() const override;
+
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override final;
+    virtual void layout() override;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void paintContents(PaintInfo&, const LayoutPoint&);
+    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const override final;
 
 private:
-    virtual bool isRenderPart() const OVERRIDE FINAL { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderPart"; }
+    virtual const char* renderName() const override { return "RenderPart"; }
 
-    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
+    virtual CompositingReasons additionalCompositingReasons() const override;
+
+    virtual void willBeDestroyed() override final;
+    virtual void destroy() override final;
+
+    bool setWidgetGeometry(const LayoutRect&);
+
+    bool nodeAtPointOverWidget(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction);
+
+#if !ENABLE(OILPAN)
+    int m_refCount;
+#endif
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderPart, isRenderPart());
 
-}
+} // namespace blink
 
-#endif
+#endif // RenderPart_h

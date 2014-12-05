@@ -40,7 +40,7 @@ WebInspector.HeapSnapshotWorkerProxy = function(eventHandler)
     this._nextCallId = 1;
     this._callbacks = [];
     this._previousCallbacks = [];
-    this._worker = new Worker("profiler/heap_snapshot_worker/HeapSnapshotWorker.js");
+    this._worker = Runtime.startWorker("heap_snapshot_worker");
     this._worker.onmessage = this._messageReceived.bind(this);
 }
 
@@ -159,8 +159,8 @@ WebInspector.HeapSnapshotWorkerProxy.prototype = {
         }
         if (data.error) {
             if (data.errorMethodName)
-                WebInspector.messageSink.addMessage(WebInspector.UIString("An error occurred when a call to method '%s' was requested", data.errorMethodName));
-            WebInspector.messageSink.addMessage(data["errorCallStack"]);
+                WebInspector.console.error(WebInspector.UIString("An error occurred when a call to method '%s' was requested", data.errorMethodName));
+            WebInspector.console.error(data["errorCallStack"]);
             delete this._callbacks[data.callId];
             return;
         }
@@ -336,11 +336,6 @@ WebInspector.HeapSnapshotProxy.prototype = {
         this.callMethod(callback, "nodeClassName", snapshotObjectId);
     },
 
-    dominatorIdsForNode: function(nodeIndex, callback)
-    {
-        this.callMethod(callback, "dominatorIdsForNode", nodeIndex);
-    },
-
     /**
      * @param {number} nodeIndex
      * @return {!WebInspector.HeapSnapshotProviderProxy}
@@ -395,15 +390,6 @@ WebInspector.HeapSnapshotProxy.prototype = {
     createNodesProviderForClass: function(className, nodeFilter)
     {
         return this.callFactoryMethod(null, "createNodesProviderForClass", WebInspector.HeapSnapshotProviderProxy, className, nodeFilter);
-    },
-
-    /**
-     * @param {number} nodeIndex
-     * @return {?WebInspector.HeapSnapshotProviderProxy}
-     */
-    createNodesProviderForDominator: function(nodeIndex)
-    {
-        return this.callFactoryMethod(null, "createNodesProviderForDominator", WebInspector.HeapSnapshotProviderProxy, nodeIndex);
     },
 
     allocationTracesTops: function(callback)

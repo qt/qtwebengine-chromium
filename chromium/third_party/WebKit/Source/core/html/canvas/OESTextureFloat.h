@@ -26,25 +26,26 @@
 #ifndef OESTextureFloat_h
 #define OESTextureFloat_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class OESTextureFloat FINAL : public WebGLExtension, public ScriptWrappable {
+class OESTextureFloat final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<OESTextureFloat> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<OESTextureFloat> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~OESTextureFloat();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
-    OESTextureFloat(WebGLRenderingContextBase*);
+    explicit OESTextureFloat(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OESTextureFloat_h

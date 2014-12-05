@@ -17,13 +17,10 @@
 #include "base/strings/string16.h"
 #include "content/public/common/child_process_host.h"
 #include "ipc/ipc_listener.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 
 namespace base {
 class FilePath;
-}
-
-namespace gfx {
-struct GpuMemoryBufferHandle;
 }
 
 namespace IPC {
@@ -39,7 +36,7 @@ class ChildProcessHostDelegate;
 class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
                                             public IPC::Listener {
  public:
-  virtual ~ChildProcessHostImpl();
+  ~ChildProcessHostImpl() override;
 
   // Public and static for reuse by RenderMessageFilter.
   static void AllocateSharedMemory(
@@ -58,13 +55,13 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   static int GenerateChildProcessUniqueId();
 
   // ChildProcessHost implementation
-  virtual bool Send(IPC::Message* message) OVERRIDE;
-  virtual void ForceShutdown() OVERRIDE;
-  virtual std::string CreateChannel() OVERRIDE;
-  virtual bool IsChannelOpening() OVERRIDE;
-  virtual void AddFilter(IPC::MessageFilter* filter) OVERRIDE;
+  bool Send(IPC::Message* message) override;
+  void ForceShutdown() override;
+  std::string CreateChannel() override;
+  bool IsChannelOpening() override;
+  void AddFilter(IPC::MessageFilter* filter) override;
 #if defined(OS_POSIX)
-  virtual int TakeClientFileDescriptor() OVERRIDE;
+  base::ScopedFD TakeClientFileDescriptor() override;
 #endif
 
  private:
@@ -73,10 +70,10 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
   explicit ChildProcessHostImpl(ChildProcessHostDelegate* delegate);
 
   // IPC::Listener methods:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
-  virtual void OnBadMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
+  void OnBadMessageReceived(const IPC::Message& message) override;
 
   // Message handlers:
   void OnShutdownRequest();
@@ -84,9 +81,14 @@ class CONTENT_EXPORT ChildProcessHostImpl : public ChildProcessHost,
                               base::SharedMemoryHandle* handle);
   void OnAllocateGpuMemoryBuffer(uint32 width,
                                  uint32 height,
-                                 uint32 internalformat,
-                                 uint32 usage,
-                                 gfx::GpuMemoryBufferHandle* handle);
+                                 gfx::GpuMemoryBuffer::Format format,
+                                 gfx::GpuMemoryBuffer::Usage usage,
+                                 IPC::Message* reply);
+  void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                uint32 sync_point);
+
+  void GpuMemoryBufferAllocated(IPC::Message* reply,
+                                const gfx::GpuMemoryBufferHandle& handle);
 
   ChildProcessHostDelegate* delegate_;
   base::ProcessHandle peer_handle_;

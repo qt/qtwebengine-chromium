@@ -31,30 +31,35 @@ class GCM_EXPORT ConnectionFactoryImpl :
     public ConnectionFactory,
     public net::NetworkChangeNotifier::NetworkChangeObserver {
  public:
+  // |http_network_session| is an optional network session to use as a source
+  // for proxy auth credentials (via its HttpAuthCache). |gcm_network_session|
+  // is the network session through which GCM connections should be made, and
+  // must not be the same as |http_network_session|.
   ConnectionFactoryImpl(
       const std::vector<GURL>& mcs_endpoints,
       const net::BackoffEntry::Policy& backoff_policy,
-      scoped_refptr<net::HttpNetworkSession> network_session,
+      const scoped_refptr<net::HttpNetworkSession>& gcm_network_session,
+      const scoped_refptr<net::HttpNetworkSession>& http_network_session,
       net::NetLog* net_log,
       GCMStatsRecorder* recorder);
-  virtual ~ConnectionFactoryImpl();
+  ~ConnectionFactoryImpl() override;
 
   // ConnectionFactory implementation.
-  virtual void Initialize(
+  void Initialize(
       const BuildLoginRequestCallback& request_builder,
       const ConnectionHandler::ProtoReceivedCallback& read_callback,
-      const ConnectionHandler::ProtoSentCallback& write_callback) OVERRIDE;
-  virtual ConnectionHandler* GetConnectionHandler() const OVERRIDE;
-  virtual void Connect() OVERRIDE;
-  virtual bool IsEndpointReachable() const OVERRIDE;
-  virtual std::string GetConnectionStateString() const OVERRIDE;
-  virtual base::TimeTicks NextRetryAttempt() const OVERRIDE;
-  virtual void SignalConnectionReset(ConnectionResetReason reason) OVERRIDE;
-  virtual void SetConnectionListener(ConnectionListener* listener) OVERRIDE;
+      const ConnectionHandler::ProtoSentCallback& write_callback) override;
+  ConnectionHandler* GetConnectionHandler() const override;
+  void Connect() override;
+  bool IsEndpointReachable() const override;
+  std::string GetConnectionStateString() const override;
+  base::TimeTicks NextRetryAttempt() const override;
+  void SignalConnectionReset(ConnectionResetReason reason) override;
+  void SetConnectionListener(ConnectionListener* listener) override;
 
   // NetworkChangeObserver implementation.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
   // Returns the server to which the factory is currently connected, or if
   // a connection is currently pending, the server to which the next connection
@@ -110,7 +115,12 @@ class GCM_EXPORT ConnectionFactoryImpl :
   int ReconsiderProxyAfterError(int error);
   void ReportSuccessfulProxyConnection();
 
+  // Closes the local socket if one is present, and resets connection handler.
   void CloseSocket();
+
+  // Updates the GCM Network Session's HttpAuthCache with the HTTP Network
+  // Session's cache, if available.
+  void RebuildNetworkSessionAuthCache();
 
   // The MCS endpoints to make connections to, sorted in order of priority.
   const std::vector<GURL> mcs_endpoints_;
@@ -123,8 +133,11 @@ class GCM_EXPORT ConnectionFactoryImpl :
   const net::BackoffEntry::Policy backoff_policy_;
 
   // ---- net:: components for establishing connections. ----
-  // Network session for creating new connections.
-  const scoped_refptr<net::HttpNetworkSession> network_session_;
+  // Network session for creating new GCM connections.
+  const scoped_refptr<net::HttpNetworkSession> gcm_network_session_;
+  // HTTP Network session. If set, is used for extracting proxy auth
+  // credentials. If not set, is ignored.
+  const scoped_refptr<net::HttpNetworkSession> http_network_session_;
   // Net log to use in connection attempts.
   net::BoundNetLog bound_net_log_;
   // The current PAC request, if one exists. Owned by the proxy service.

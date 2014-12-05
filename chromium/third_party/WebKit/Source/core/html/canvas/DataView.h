@@ -26,20 +26,19 @@
 #ifndef DataView_h
 #define DataView_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "wtf/ArrayBufferView.h"
-#include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class DataView FINAL : public ArrayBufferView, public ScriptWrappable {
+class DataView final : public ArrayBufferView {
 public:
     static PassRefPtr<DataView> create(unsigned length);
     static PassRefPtr<DataView> create(PassRefPtr<ArrayBuffer>, unsigned byteOffset, unsigned byteLength);
 
-    virtual unsigned byteLength() const OVERRIDE { return m_byteLength; }
+    virtual unsigned byteLength() const override { return m_byteLength; }
+    virtual ViewType type() const override { return TypeDataView; }
 
     int8_t getInt8(unsigned byteOffset, ExceptionState&);
     uint8_t getUint8(unsigned byteOffset, ExceptionState&);
@@ -71,19 +70,14 @@ public:
     void setFloat64(unsigned byteOffset, double value, ExceptionState& ec) { setFloat64(byteOffset, value, false, ec); }
     void setFloat64(unsigned byteOffset, double value, bool littleEndian, ExceptionState&);
 
-    virtual ViewType type() const OVERRIDE
-    {
-        return TypeDataView;
-    }
-
 protected:
-    virtual void neuter() OVERRIDE;
+    virtual void neuter() override;
 
 private:
     DataView(PassRefPtr<ArrayBuffer>, unsigned byteOffset, unsigned byteLength);
 
     template<typename T>
-    inline bool beyondRange(unsigned byteOffset) const { return byteOffset >= m_byteLength || byteOffset + sizeof(T) > m_byteLength; }
+    bool beyondRange(unsigned byteOffset) const { return byteOffset >= m_byteLength || byteOffset + sizeof(T) > m_byteLength; }
 
     template<typename T>
     T getData(unsigned byteOffset, bool littleEndian, ExceptionState&) const;
@@ -94,7 +88,6 @@ private:
     unsigned m_byteLength;
 };
 
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // DataView_h

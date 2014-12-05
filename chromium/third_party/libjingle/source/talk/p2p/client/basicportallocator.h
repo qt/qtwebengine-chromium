@@ -25,18 +25,18 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_CLIENT_BASICPORTALLOCATOR_H_
-#define TALK_P2P_CLIENT_BASICPORTALLOCATOR_H_
+#ifndef WEBRTC_P2P_CLIENT_BASICPORTALLOCATOR_H_
+#define WEBRTC_P2P_CLIENT_BASICPORTALLOCATOR_H_
 
 #include <string>
 #include <vector>
 
-#include "talk/base/messagequeue.h"
-#include "talk/base/network.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/thread.h"
-#include "talk/p2p/base/port.h"
-#include "talk/p2p/base/portallocator.h"
+#include "webrtc/p2p/base/port.h"
+#include "webrtc/p2p/base/portallocator.h"
+#include "webrtc/base/messagequeue.h"
+#include "webrtc/base/network.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/thread.h"
 
 namespace cricket {
 
@@ -54,36 +54,37 @@ struct RelayCredentials {
 
 typedef std::vector<ProtocolAddress> PortList;
 struct RelayServerConfig {
-  RelayServerConfig(RelayType type) : type(type) {}
+  RelayServerConfig(RelayType type) : type(type), priority(0) {}
 
   RelayType type;
   PortList ports;
   RelayCredentials credentials;
+  int priority;
 };
 
 class BasicPortAllocator : public PortAllocator {
  public:
-  BasicPortAllocator(talk_base::NetworkManager* network_manager,
-                     talk_base::PacketSocketFactory* socket_factory);
-  explicit BasicPortAllocator(talk_base::NetworkManager* network_manager);
-  BasicPortAllocator(talk_base::NetworkManager* network_manager,
-                     talk_base::PacketSocketFactory* socket_factory,
-                     const talk_base::SocketAddress& stun_server);
-  BasicPortAllocator(talk_base::NetworkManager* network_manager,
-                     const talk_base::SocketAddress& stun_server,
-                     const talk_base::SocketAddress& relay_server_udp,
-                     const talk_base::SocketAddress& relay_server_tcp,
-                     const talk_base::SocketAddress& relay_server_ssl);
+  BasicPortAllocator(rtc::NetworkManager* network_manager,
+                     rtc::PacketSocketFactory* socket_factory);
+  explicit BasicPortAllocator(rtc::NetworkManager* network_manager);
+  BasicPortAllocator(rtc::NetworkManager* network_manager,
+                     rtc::PacketSocketFactory* socket_factory,
+                     const ServerAddresses& stun_servers);
+  BasicPortAllocator(rtc::NetworkManager* network_manager,
+                     const ServerAddresses& stun_servers,
+                     const rtc::SocketAddress& relay_server_udp,
+                     const rtc::SocketAddress& relay_server_tcp,
+                     const rtc::SocketAddress& relay_server_ssl);
   virtual ~BasicPortAllocator();
 
-  talk_base::NetworkManager* network_manager() { return network_manager_; }
+  rtc::NetworkManager* network_manager() { return network_manager_; }
 
   // If socket_factory() is set to NULL each PortAllocatorSession
   // creates its own socket factory.
-  talk_base::PacketSocketFactory* socket_factory() { return socket_factory_; }
+  rtc::PacketSocketFactory* socket_factory() { return socket_factory_; }
 
-  const talk_base::SocketAddress& stun_address() const {
-    return stun_address_;
+  const ServerAddresses& stun_servers() const {
+    return stun_servers_;
   }
 
   const std::vector<RelayServerConfig>& relays() const {
@@ -102,9 +103,9 @@ class BasicPortAllocator : public PortAllocator {
  private:
   void Construct();
 
-  talk_base::NetworkManager* network_manager_;
-  talk_base::PacketSocketFactory* socket_factory_;
-  const talk_base::SocketAddress stun_address_;
+  rtc::NetworkManager* network_manager_;
+  rtc::PacketSocketFactory* socket_factory_;
+  const ServerAddresses stun_servers_;
   std::vector<RelayServerConfig> relays_;
   bool allow_tcp_listen_;
 };
@@ -113,7 +114,7 @@ struct PortConfiguration;
 class AllocationSequence;
 
 class BasicPortAllocatorSession : public PortAllocatorSession,
-                                  public talk_base::MessageHandler {
+                                  public rtc::MessageHandler {
  public:
   BasicPortAllocatorSession(BasicPortAllocator* allocator,
                             const std::string& content_name,
@@ -123,8 +124,8 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   ~BasicPortAllocatorSession();
 
   virtual BasicPortAllocator* allocator() { return allocator_; }
-  talk_base::Thread* network_thread() { return network_thread_; }
-  talk_base::PacketSocketFactory* socket_factory() { return socket_factory_; }
+  rtc::Thread* network_thread() { return network_thread_; }
+  rtc::PacketSocketFactory* socket_factory() { return socket_factory_; }
 
   virtual void StartGettingPorts();
   virtual void StopGettingPorts();
@@ -139,7 +140,7 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   virtual void ConfigReady(PortConfiguration* config);
 
   // MessageHandler.  Can be overriden if message IDs do not conflict.
-  virtual void OnMessage(talk_base::Message *message);
+  virtual void OnMessage(rtc::Message *message);
 
  private:
   class PortData {
@@ -159,7 +160,6 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
 
     void set_ready() { ASSERT(state_ == STATE_INIT); state_ = STATE_READY; }
     void set_complete() {
-      ASSERT(state_ == STATE_READY);
       state_ = STATE_COMPLETE;
     }
     void set_error() {
@@ -186,7 +186,7 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   void DoAllocate();
   void OnNetworksChanged();
   void OnAllocationSequenceObjectsCreated();
-  void DisableEquivalentPhases(talk_base::Network* network,
+  void DisableEquivalentPhases(rtc::Network* network,
                                PortConfiguration* config, uint32* flags);
   void AddAllocatedPort(Port* port, AllocationSequence* seq,
                         bool prepare_address);
@@ -200,10 +200,12 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
   void OnPortAllocationComplete(AllocationSequence* seq);
   PortData* FindPort(Port* port);
 
+  bool CheckCandidateFilter(const Candidate& c);
+
   BasicPortAllocator* allocator_;
-  talk_base::Thread* network_thread_;
-  talk_base::scoped_ptr<talk_base::PacketSocketFactory> owned_socket_factory_;
-  talk_base::PacketSocketFactory* socket_factory_;
+  rtc::Thread* network_thread_;
+  rtc::scoped_ptr<rtc::PacketSocketFactory> owned_socket_factory_;
+  rtc::PacketSocketFactory* socket_factory_;
   bool allocation_started_;
   bool network_manager_started_;
   bool running_;  // set when StartGetAllPorts is called
@@ -216,17 +218,27 @@ class BasicPortAllocatorSession : public PortAllocatorSession,
 };
 
 // Records configuration information useful in creating ports.
-struct PortConfiguration : public talk_base::MessageData {
-  talk_base::SocketAddress stun_address;
+struct PortConfiguration : public rtc::MessageData {
+  // TODO(jiayl): remove |stun_address| when Chrome is updated.
+  rtc::SocketAddress stun_address;
+  ServerAddresses stun_servers;
   std::string username;
   std::string password;
 
   typedef std::vector<RelayServerConfig> RelayList;
   RelayList relays;
 
-  PortConfiguration(const talk_base::SocketAddress& stun_address,
+  // TODO(jiayl): remove this ctor when Chrome is updated.
+  PortConfiguration(const rtc::SocketAddress& stun_address,
                     const std::string& username,
                     const std::string& password);
+
+  PortConfiguration(const ServerAddresses& stun_servers,
+                    const std::string& username,
+                    const std::string& password);
+
+  // TODO(jiayl): remove when |stun_address| is removed.
+  ServerAddresses StunServers();
 
   // Adds another relay server, with the given ports and modifier, to the list.
   void AddRelay(const RelayServerConfig& config);
@@ -235,12 +247,12 @@ struct PortConfiguration : public talk_base::MessageData {
   bool SupportsProtocol(const RelayServerConfig& relay,
                         ProtocolType type) const;
   bool SupportsProtocol(RelayType turn_type, ProtocolType type) const;
-  // Helper method returns the first server address for the matching
-  // RelayType and Protocol type.
-  talk_base::SocketAddress GetFirstRelayServerAddress(
+  // Helper method returns the server addresses for the matching RelayType and
+  // Protocol type.
+  ServerAddresses GetRelayServerAddresses(
       RelayType turn_type, ProtocolType type) const;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_CLIENT_BASICPORTALLOCATOR_H_
+#endif  // WEBRTC_P2P_CLIENT_BASICPORTALLOCATOR_H_

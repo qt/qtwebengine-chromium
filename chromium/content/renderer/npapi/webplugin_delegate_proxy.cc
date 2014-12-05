@@ -9,7 +9,7 @@
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -101,8 +101,7 @@ class ResourceClientProxy : public WebPluginResourceClient {
       multibyte_response_expected_(false) {
   }
 
-  virtual ~ResourceClientProxy() {
-  }
+  ~ResourceClientProxy() override {}
 
   void Initialize(unsigned long resource_id, const GURL& url, int notify_id) {
     resource_id_ = resource_id;
@@ -119,17 +118,17 @@ class ResourceClientProxy : public WebPluginResourceClient {
   }
 
   // PluginResourceClient implementation:
-  virtual void WillSendRequest(const GURL& url, int http_status_code) OVERRIDE {
+  void WillSendRequest(const GURL& url, int http_status_code) override {
     DCHECK(channel_.get() != NULL);
     channel_->Send(new PluginMsg_WillSendRequest(
         instance_id_, resource_id_, url, http_status_code));
   }
 
-  virtual void DidReceiveResponse(const std::string& mime_type,
-                                  const std::string& headers,
-                                  uint32 expected_length,
-                                  uint32 last_modified,
-                                  bool request_is_seekable) OVERRIDE {
+  void DidReceiveResponse(const std::string& mime_type,
+                          const std::string& headers,
+                          uint32 expected_length,
+                          uint32 last_modified,
+                          bool request_is_seekable) override {
     DCHECK(channel_.get() != NULL);
     PluginMsg_DidReceiveResponseParams params;
     params.id = resource_id_;
@@ -144,9 +143,9 @@ class ResourceClientProxy : public WebPluginResourceClient {
     channel_->Send(new PluginMsg_DidReceiveResponse(instance_id_, params));
   }
 
-  virtual void DidReceiveData(const char* buffer,
-                              int length,
-                              int data_offset) OVERRIDE {
+  void DidReceiveData(const char* buffer,
+                      int length,
+                      int data_offset) override {
     DCHECK(channel_.get() != NULL);
     DCHECK_GT(length, 0);
     std::vector<char> data;
@@ -159,7 +158,7 @@ class ResourceClientProxy : public WebPluginResourceClient {
                                                 data, data_offset));
   }
 
-  virtual void DidFinishLoading(unsigned long resource_id) OVERRIDE {
+  void DidFinishLoading(unsigned long resource_id) override {
     DCHECK(channel_.get() != NULL);
     DCHECK_EQ(resource_id, resource_id_);
     channel_->Send(new PluginMsg_DidFinishLoading(instance_id_, resource_id_));
@@ -167,7 +166,7 @@ class ResourceClientProxy : public WebPluginResourceClient {
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
-  virtual void DidFail(unsigned long resource_id) OVERRIDE {
+  void DidFail(unsigned long resource_id) override {
     DCHECK(channel_.get() != NULL);
     DCHECK_EQ(resource_id, resource_id_);
     channel_->Send(new PluginMsg_DidFail(instance_id_, resource_id_));
@@ -175,13 +174,11 @@ class ResourceClientProxy : public WebPluginResourceClient {
     base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
 
-  virtual bool IsMultiByteResponseExpected() OVERRIDE {
+  bool IsMultiByteResponseExpected() override {
     return multibyte_response_expected_;
   }
 
-  virtual int ResourceId() OVERRIDE {
-    return resource_id_;
-  }
+  int ResourceId() override { return resource_id_; }
 
  private:
   scoped_refptr<PluginChannelHost> channel_;
@@ -313,7 +310,7 @@ bool WebPluginDelegateProxy::Initialize(
       // shouldn't happen, since if we got here the plugin should exist) or the
       // plugin crashed on initialization.
       if (!info_.path.empty()) {
-        render_view_->main_render_frame()->PluginCrashed(
+        render_view_->GetMainRenderFrame()->PluginCrashed(
             info_.path, base::kNullProcessId);
         LOG(ERROR) << "Plug-in crashed on start";
 
@@ -486,8 +483,8 @@ void WebPluginDelegateProxy::OnChannelError() {
     }
     plugin_->Invalidate();
   }
-  if (!channel_host_->expecting_shutdown()) {
-    render_view_->main_render_frame()->PluginCrashed(
+  if (channel_host_.get() && !channel_host_->expecting_shutdown()) {
+    render_view_->GetMainRenderFrame()->PluginCrashed(
         info_.path, channel_host_->peer_pid());
   }
 
@@ -525,6 +522,9 @@ static void CopyTransportDIBHandleForMessage(
 
 void WebPluginDelegateProxy::SendUpdateGeometry(
     bool bitmaps_changed) {
+  if (!channel_host_.get())
+    return;
+
   PluginMsg_UpdateGeometry_Param param;
   param.window_rect = plugin_rect_;
   param.clip_rect = clip_rect_;
@@ -730,6 +730,9 @@ NPObject* WebPluginDelegateProxy::GetPluginScriptableObject() {
   if (npobject_)
     return WebBindings::retainObject(npobject_);
 
+  if (!channel_host_.get())
+    return NULL;
+
   int route_id = MSG_ROUTING_NONE;
   Send(new PluginMsg_GetPluginScriptableObject(instance_id_, &route_id));
   if (route_id == MSG_ROUTING_NONE)
@@ -769,7 +772,7 @@ void WebPluginDelegateProxy::SetFocus(bool focused) {
 bool WebPluginDelegateProxy::HandleInputEvent(
     const WebInputEvent& event,
     WebCursor::CursorInfo* cursor_info) {
-  bool handled;
+  bool handled = false;
   WebCursor cursor;
   // A windowless plugin can enter a modal loop in the context of a
   // NPP_HandleEvent call, in which case we need to pump messages to
@@ -917,13 +920,11 @@ void WebPluginDelegateProxy::OnNotifyIMEStatus(int input_type,
   if (!render_view_)
     return;
 
-  ViewHostMsg_TextInputState_Params p;
-  p.type = static_cast<ui::TextInputType>(input_type);
-  p.mode = ui::TEXT_INPUT_MODE_DEFAULT;
-  p.can_compose_inline = true;
-
-  render_view_->Send(new ViewHostMsg_TextInputStateChanged(
-      render_view_->routing_id(), p));
+  render_view_->Send(new ViewHostMsg_TextInputTypeChanged(
+      render_view_->routing_id(),
+      static_cast<ui::TextInputType>(input_type),
+      ui::TEXT_INPUT_MODE_DEFAULT,
+      true, 0));
 
   ViewHostMsg_SelectionBounds_Params bounds_params;
   bounds_params.anchor_rect = bounds_params.focus_rect = caret_rect;

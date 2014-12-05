@@ -47,17 +47,11 @@ class WebIDBDatabase {
 public:
     virtual ~WebIDBDatabase() { }
 
-    // FIXME: Remove once Chromium is updated to use the new enums.
-    typedef WebIDBTransactionMode TransactionMode;
-    static const WebIDBTransactionMode TransactionReadOnly = WebIDBTransactionModeReadOnly;
-    static const WebIDBTransactionMode TransactionReadWrite = WebIDBTransactionModeReadWrite;
-    static const WebIDBTransactionMode TransactionVersionChange = WebIDBTransactionModeVersionChange;
-
     virtual void createObjectStore(long long transactionId, long long objectStoreId, const WebString& name, const WebIDBKeyPath&, bool autoIncrement) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void deleteObjectStore(long long transactionId, long long objectStoreId) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void createTransaction(long long id, WebIDBDatabaseCallbacks*, const WebVector<long long>& scope, blink::WebIDBTransactionMode) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void createTransaction(long long id, WebIDBDatabaseCallbacks*, const WebVector<long long>& scope, WebIDBTransactionMode) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void close() { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void forceClose() { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void versionChangeIgnored() { BLINK_ASSERT_NOT_REACHED(); }
 
     virtual void abort(long long transactionId) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void commit(long long transactionId) { BLINK_ASSERT_NOT_REACHED(); }
@@ -65,28 +59,15 @@ public:
     virtual void createIndex(long long transactionId, long long objectStoreId, long long indexId, const WebString& name, const WebIDBKeyPath&, bool unique, bool multiEntry) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void deleteIndex(long long transactionId, long long objectStoreId, long long indexId) { BLINK_ASSERT_NOT_REACHED(); }
 
-    // FIXME: Remove once Chromium is updated to use the new enums.
-    typedef WebIDBTaskType TaskType;
-    static const WebIDBTaskType NormalTask = WebIDBTaskTypeNormal;
-    static const WebIDBTaskType PreemptiveTask = WebIDBTaskTypePreemptive;
-    static const WebIDBTaskType TaskTypeLast = WebIDBTaskTypeLast;
-
-    // FIXME: Remove once Chromium is updated to use the new enums.
-    typedef WebIDBPutMode PutMode;
-    static const WebIDBPutMode AddOrUpdate = WebIDBPutModeAddOrUpdate;
-    static const WebIDBPutMode AddOnly = WebIDBPutModeAddOnly;
-    static const WebIDBPutMode CursorUpdate = WebIDBPutModeCursorUpdate;
-    static const WebIDBPutMode PutModeLast = WebIDBPutModeLast;
-
     static const long long minimumIndexId = 30;
 
     typedef WebVector<WebIDBKey> WebIndexKeys;
 
     virtual void get(long long transactionId, long long objectStoreId, long long indexId, const WebIDBKeyRange&, bool keyOnly, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void put(long long transactionId, long long objectStoreId, const WebData& value, const WebVector<WebBlobInfo>&, const WebIDBKey&, blink::WebIDBPutMode, WebIDBCallbacks*, const WebVector<long long>& indexIds, const WebVector<WebIndexKeys>&) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void put(long long transactionId, long long objectStoreId, const WebData& value, const WebVector<WebBlobInfo>&, const WebIDBKey&, WebIDBPutMode, WebIDBCallbacks*, const WebVector<long long>& indexIds, const WebVector<WebIndexKeys>&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void setIndexKeys(long long transactionId, long long objectStoreId, const WebIDBKey&, const WebVector<long long>& indexIds, const WebVector<WebIndexKeys>&) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void setIndexesReady(long long transactionId, long long objectStoreId, const WebVector<long long>& indexIds) { BLINK_ASSERT_NOT_REACHED(); }
-    virtual void openCursor(long long transactionId, long long objectStoreId, long long indexId, const WebIDBKeyRange&, blink::WebIDBCursorDirection, bool keyOnly, blink::WebIDBTaskType, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void openCursor(long long transactionId, long long objectStoreId, long long indexId, const WebIDBKeyRange&, WebIDBCursorDirection, bool keyOnly, WebIDBTaskType, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void count(long long transactionId, long long objectStoreId, long long indexId, const WebIDBKeyRange&, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void deleteRange(long long transactionId, long long objectStoreId, const WebIDBKeyRange&, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }
     virtual void clear(long long transactionId, long long objectStoreId, WebIDBCallbacks*) { BLINK_ASSERT_NOT_REACHED(); }

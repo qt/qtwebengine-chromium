@@ -13,12 +13,12 @@
 // base::DiscardableMemory.
 class SK_API SkDiscardableMemoryChrome : public SkDiscardableMemory {
 public:
-  virtual ~SkDiscardableMemoryChrome();
+ ~SkDiscardableMemoryChrome() override;
 
   // SkDiscardableMemory:
-  virtual bool lock() OVERRIDE;
-  virtual void* data() OVERRIDE;
-  virtual void unlock() OVERRIDE;
+ bool lock() override;
+ void* data() override;
+ void unlock() override;
 
 private:
   friend class SkDiscardableMemory;

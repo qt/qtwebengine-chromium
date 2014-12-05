@@ -103,8 +103,8 @@ class TestList(object):
 #
 # These numbers may need to be updated whenever we add or delete tests. This includes virtual tests.
 #
-TOTAL_TESTS = 117
-TOTAL_SKIPS = 30
+TOTAL_TESTS = 113
+TOTAL_SKIPS = 29
 
 UNEXPECTED_PASSES = 1
 UNEXPECTED_FAILURES = 26
@@ -145,14 +145,6 @@ def unit_test_list():
               expected_text="foo\n\n", actual_text="foo\n")
     tests.add('failures/expected/newlines_with_excess_CR.html',
               expected_text="foo\r\r\r\n", actual_text="foo\n")
-    tests.add('failures/expected/testharness.html',
-            actual_text='This is a testharness.js-based test.\nFAIL: assert fired\n.Harness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
-    tests.add('failures/expected/testharness.html',
-            actual_text='RANDOM TEXT.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
     tests.add('failures/expected/text.html', actual_text='text_fail-png')
     tests.add('failures/expected/crash_then_text.html')
     tests.add('failures/expected/skip_text.html', actual_text='text diff')
@@ -203,22 +195,6 @@ layer at (0,0) size 800x34
     tests.add('passes/checksum_in_image.html',
               expected_image='tEXtchecksum\x00checksum_in_image-checksum')
     tests.add('passes/skipped/skip.html')
-    tests.add('passes/testharness.html',
-            actual_text='CONSOLE LOG: error.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
-    tests.add('passes/testharness.html',
-            actual_text='CONSOLE ERROR: error.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
-    tests.add('passes/testharness.html',
-            actual_text='  This is a testharness.js-based test.\nPASS: assert is fine\nHarness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
-    tests.add('passes/testharness.html',
-            actual_text='This is a testharness.js-based test.\nPASS: assert is fine\nHarness: the test ran to completion.\n\n', expected_text=None,
-              actual_image=None, expected_image=None,
-              actual_checksum=None)
 
     # Note that here the checksums don't match but the images do, so this test passes "unexpectedly".
     # See https://bugs.webkit.org/show_bug.cgi?id=69444 .
@@ -233,7 +209,7 @@ layer at (0,0) size 800x34
     tests.add_reftest('passes/reftest.html', 'passes/reftest-expected.html', same_image=True)
 
     # This adds a different virtual reference to ensure that that also works.
-    tests.add('virtual/passes/reftest-expected.html', actual_checksum='xxx', actual_image='XXX', is_reftest=True)
+    tests.add('virtual/virtual_passes/passes/reftest-expected.html', actual_checksum='xxx', actual_image='XXX', is_reftest=True)
 
     tests.add_reftest('passes/mismatch.html', 'passes/mismatch-expected-mismatch.html', same_image=False)
     tests.add_reftest('passes/svgreftest.svg', 'passes/svgreftest-expected.svg', same_image=True)
@@ -286,7 +262,7 @@ layer at (0,0) size 800x34
     # For testing that virtual test suites don't expand names containing themselves
     # See webkit.org/b/97925 and base_unittest.PortTest.test_tests().
     tests.add('passes/test-virtual-passes.html')
-    tests.add('passes/passes/test-virtual-passes.html')
+    tests.add('passes/virtual_passes/test-virtual-passes.html')
 
     return tests
 
@@ -324,7 +300,6 @@ Bug(test) failures/expected/newlines_trailing.html [ Failure ]
 Bug(test) failures/expected/newlines_with_excess_CR.html [ Failure ]
 Bug(test) failures/expected/reftest.html [ ImageOnlyFailure ]
 Bug(test) failures/expected/text.html [ Failure ]
-Bug(test) failures/expected/testharness.html [ Failure ]
 Bug(test) failures/expected/timeout.html [ Timeout ]
 Bug(test) failures/expected/keyboard.html [ WontFix ]
 Bug(test) failures/expected/exception.html [ WontFix ]
@@ -378,7 +353,7 @@ Bug(test) passes/text.html [ Pass ]
         add_file(test, '-expected.txt', test.expected_text)
         add_file(test, '-expected.png', test.expected_image)
 
-    filesystem.write_text_file(filesystem.join(LAYOUT_TEST_DIR, 'virtual', 'passes', 'args-expected.txt'), 'args-txt --virtual-arg')
+    filesystem.write_text_file(filesystem.join(LAYOUT_TEST_DIR, 'virtual', 'virtual_passes', 'passes', 'args-expected.txt'), 'args-txt --virtual-arg')
     # Clear the list of written files so that we can watch what happens during testing.
     filesystem.clear_written_files()
 
@@ -490,7 +465,7 @@ class TestPort(Port):
     def _skipped_tests_for_unsupported_features(self, test_list):
         return set(['failures/expected/skip_text.html',
                     'failures/unexpected/skip_pass.html',
-                    'virtual/skipped'])
+                    'virtual/skipped/failures/expected'])
 
     def name(self):
         return self._name
@@ -527,15 +502,6 @@ class TestPort(Port):
 
     def release_http_lock(self):
         pass
-
-    def path_to_lighttpd(self):
-        return "/usr/sbin/lighttpd"
-
-    def path_to_lighttpd_modules(self):
-        return "/usr/lib/lighttpd"
-
-    def path_to_lighttpd_php(self):
-        return "/usr/bin/php-cgi"
 
     def path_to_apache(self):
         return "/usr/sbin/httpd"
@@ -582,8 +548,8 @@ class TestPort(Port):
 
     def virtual_test_suites(self):
         return [
-            VirtualTestSuite('passes', 'passes', ['--virtual-arg'], use_legacy_naming=True),
-            VirtualTestSuite('skipped', 'failures/expected', ['--virtual-arg2'], use_legacy_naming=True),
+            VirtualTestSuite(prefix='virtual_passes', base='passes', args=['--virtual-arg']),
+            VirtualTestSuite(prefix='skipped', base='failures/expected', args=['--virtual-arg2']),
         ]
 
 

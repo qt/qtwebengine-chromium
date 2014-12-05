@@ -31,7 +31,6 @@
 #ifndef InputMethodContext_h
 #define InputMethodContext_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/editing/CompositionUnderline.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLElement.h"
@@ -40,13 +39,13 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class InputMethodController;
-class Node;
 
-class InputMethodContext FINAL : public NoBaseWillBeRefCountedGarbageCollected<InputMethodContext>, public ScriptWrappable, public EventTargetWithInlineData {
+class InputMethodContext final : public NoBaseWillBeGarbageCollectedFinalized<InputMethodContext>, public EventTargetWithInlineData {
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(InputMethodContext);
 public:
     static PassOwnPtrWillBeRawPtr<InputMethodContext> create(HTMLElement*);
@@ -68,8 +67,8 @@ public:
     int selectionEnd() const;
     const Vector<unsigned>& segments();
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(candidatewindowshow);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(candidatewindowupdate);
@@ -79,7 +78,7 @@ public:
     void dispatchCandidateWindowUpdateEvent();
     void dispatchCandidateWindowHideEvent();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     InputMethodContext(HTMLElement*);
@@ -88,14 +87,14 @@ private:
     InputMethodController& inputMethodController() const;
 
 #if !ENABLE(OILPAN)
-    virtual void refEventTarget() OVERRIDE { ref(); }
-    virtual void derefEventTarget() OVERRIDE { deref(); }
+    virtual void refEventTarget() override { ref(); }
+    virtual void derefEventTarget() override { deref(); }
 #endif
 
     RawPtrWillBeMember<HTMLElement> m_element;
     Vector<unsigned> m_segments;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InputMethodContext_h

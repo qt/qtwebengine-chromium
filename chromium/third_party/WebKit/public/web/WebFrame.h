@@ -45,10 +45,6 @@
 
 struct NPObject;
 
-#if BLINK_IMPLEMENTATION
-namespace WebCore { class Frame; }
-#endif
-
 namespace v8 {
 class Context;
 class Function;
@@ -60,7 +56,9 @@ template <class T> class Local;
 
 namespace blink {
 
+class Frame;
 class OpenedFrameTracker;
+class Visitor;
 class WebData;
 class WebDataSource;
 class WebDocument;
@@ -118,11 +116,16 @@ public:
     virtual bool isWebRemoteFrame() const = 0;
     virtual WebRemoteFrame* toWebRemoteFrame() = 0;
 
-    BLINK_EXPORT void swap(WebFrame*);
+    BLINK_EXPORT bool swap(WebFrame*);
 
-    // This method closes and deletes the WebFrame.
+    // This method closes and deletes the WebFrame. This is typically called by
+    // the embedder in response to a frame detached callback to the WebFrame
+    // client.
     virtual void close() = 0;
 
+    // Called by the embedder when it needs to detach the subtree rooted at this
+    // frame.
+    BLINK_EXPORT void detach();
 
     // Basic properties ---------------------------------------------------
 
@@ -143,19 +146,14 @@ public:
     // URLs
     virtual WebVector<WebIconURL> iconURLs(int iconTypesMask) const = 0;
 
-    // Notify the WebFrame as to whether its frame will be rendered in a
-    // separate renderer process.
-    virtual void setIsRemote(bool) = 0;
-
     // For a WebFrame with contents being rendered in another process, this
     // sets a layer for use by the in-process compositor. WebLayer should be
     // null if the content is being rendered in the current process.
-    virtual void setRemoteWebLayer(blink::WebLayer*) = 0;
+    virtual void setRemoteWebLayer(WebLayer*) = 0;
 
     // Initializes the various client interfaces.
     virtual void setPermissionClient(WebPermissionClient*) = 0;
     virtual void setSharedWorkerRepositoryClient(WebSharedWorkerRepositoryClient*) = 0;
-
 
     // Geometry -----------------------------------------------------------
 
@@ -184,7 +182,6 @@ public:
 
     virtual bool hasHorizontalScrollbar() const = 0;
     virtual bool hasVerticalScrollbar() const = 0;
-
 
     // Hierarchy ----------------------------------------------------------
 
@@ -302,11 +299,13 @@ public:
 
     // Executes script in the context of the current page and returns the value
     // that the script evaluated to.
+    // DEPRECATED: Use WebLocalFrame::requestExecuteScriptAndReturnValue.
     virtual v8::Handle<v8::Value> executeScriptAndReturnValue(
         const WebScriptSource&) = 0;
 
     // worldID must be > 0 (as 0 represents the main world).
     // worldID must be < EmbedderWorldIdLimit, high number used internally.
+    // DEPRECATED: Use WebLocalFrame::requestExecuteScriptInIsolatedWorld.
     virtual void executeScriptInIsolatedWorld(
         int worldID, const WebScriptSource* sourcesIn, unsigned numSources,
         int extensionGroup, WebVector<v8::Local<v8::Value> >* results) = 0;
@@ -365,9 +364,6 @@ public:
                                 const WebURL& baseURL,
                                 const WebURL& unreachableURL = WebURL(),
                                 bool replace = false) = 0;
-
-    // Returns true if the current frame is busy loading content.
-    virtual bool isLoading() const = 0;
 
     // Stops any pending loads on the frame and its children.
     virtual void stopLoading() = 0;
@@ -500,6 +496,9 @@ public:
     // return true, otherwise return false.
     virtual bool isPrintScalingDisabledForPlugin(const WebNode& = WebNode()) = 0;
 
+    // Returns the number of copies to be printed.
+    virtual int getPrintCopiesForPlugin(const WebNode& = WebNode()) = 0;
+
     // CSS3 Paged Media ----------------------------------------------------
 
     // Returns true if page box (margin boxes and page borders) is visible.
@@ -609,21 +608,6 @@ public:
     // default behavior will be restored.
     virtual void setTickmarks(const WebVector<WebRect>&) = 0;
 
-    // OrientationChange event ---------------------------------------------
-
-    // Notify the frame that the screen orientation has changed.
-    virtual void sendOrientationChangeEvent() = 0;
-
-    // FIXME: this is only there for backward compatibility, it will be removed.
-    // Orientation is the interface orientation in degrees.
-    // Some examples are:
-    //  0 is straight up; -90 is when the device is rotated 90 clockwise;
-    //  90 is when rotated counter clockwise.
-    void sendOrientationChangeEvent(int orientation)
-    {
-        sendOrientationChangeEvent();
-    }
-
     // Events --------------------------------------------------------------
 
     // Dispatches a message event on the current DOMWindow in this WebFrame.
@@ -674,15 +658,32 @@ public:
     virtual WebString layerTreeAsText(bool showDebugInfo = false) const = 0;
 
 #if BLINK_IMPLEMENTATION
-    static WebFrame* fromFrame(WebCore::Frame*);
+    static WebFrame* fromFrame(Frame*);
+#if ENABLE(OILPAN)
+    static void traceFrames(Visitor*, WebFrame*);
+    void clearWeakFrames(Visitor*);
+#endif
 #endif
 
 protected:
-    explicit WebFrame();
+    WebFrame();
     virtual ~WebFrame();
+
+    // Sets the parent WITHOUT fulling adding it to the frame tree.
+    // Used to lie to a local frame that is replacing a remote frame,
+    // so it can properly start a navigation but wait to swap until
+    // commit-time.
+    void setParent(WebFrame*);
 
 private:
     friend class OpenedFrameTracker;
+
+#if BLINK_IMPLEMENTATION
+#if ENABLE(OILPAN)
+    static void traceFrame(Visitor*, WebFrame*);
+    static bool isFrameAlive(Visitor*, const WebFrame*);
+#endif
+#endif
 
     WebFrame* m_parent;
     WebFrame* m_previousSibling;
@@ -695,7 +696,7 @@ private:
 };
 
 #if BLINK_IMPLEMENTATION
-WebCore::Frame* toWebCoreFrame(const WebFrame*);
+Frame* toCoreFrame(const WebFrame*);
 #endif
 
 } // namespace blink

@@ -7,6 +7,10 @@
 # be found in the AUTHORS file in the root of the source tree.
 
 {
+  'variables': {
+    'libyuv_disable_jpeg%': 0,
+    'libyuv_enable_svn%': 0,
+  },
   'targets': [
     {
       'target_name': 'libyuv_unittest',
@@ -18,7 +22,6 @@
         'testing/gtest.gyp:gtest_main',
       ],
       'defines': [
-        'LIBYUV_SVNREVISION="<!(svnversion -n)"',
         # Enable the following 3 macros to turn off assembly for specified CPU.
         # 'LIBYUV_DISABLE_X86',
         # 'LIBYUV_DISABLE_NEON',
@@ -46,6 +49,11 @@
         'unit_test/version_test.cc',
       ],
       'conditions': [
+        [ 'libyuv_enable_svn == 1', {
+          'defines': [
+            'LIBYUV_SVNREVISION="<!(svnversion -n)"',
+          ],
+        }],
         ['OS=="linux"', {
           'cflags': [
             '-fexceptions',
@@ -56,7 +64,13 @@
             'LIBYUV_DISABLE_NEON'
           ],
         }],
-        [ 'OS != "ios"', {
+        [ 'OS == "ios"', {
+          'xcode_settings': {
+            'DEBUGGING_SYMBOLS': 'YES',
+            'DEBUG_INFORMATION_FORMAT' : 'dwarf-with-dsym',
+          },
+        }],
+        [ 'OS != "ios" and libyuv_disable_jpeg != 1', {
           'defines': [
             'HAVE_JPEG',
           ],
@@ -110,14 +124,24 @@
         'util/psnr.cc',
         'util/ssim.cc',
       ],
+      'dependencies': [
+        'libyuv.gyp:libyuv',
+      ],
       'conditions': [
         [ 'OS == "ios" and target_subarch == 64', {
           'defines': [
             'LIBYUV_DISABLE_NEON'
           ],
         }],
+
+        [ 'OS != "ios" and libyuv_disable_jpeg != 1', {
+          'defines': [
+            'HAVE_JPEG',
+          ],
+        }],
       ], # conditions
     },
+
     {
       'target_name': 'cpuid',
       'type': 'executable',

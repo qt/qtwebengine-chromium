@@ -25,15 +25,14 @@ class CONTENT_EXPORT BrowserCompositorOutputSurface
       public ui::CompositorVSyncManager::Observer,
       public base::NonThreadSafe {
  public:
-  virtual ~BrowserCompositorOutputSurface();
+  ~BrowserCompositorOutputSurface() override;
 
   // cc::OutputSurface implementation.
-  virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
-  virtual void OnSwapBuffersComplete() OVERRIDE;
+  bool BindToClient(cc::OutputSurfaceClient* client) override;
 
   // ui::CompositorOutputSurface::Observer implementation.
-  virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval) override;
 
   void OnUpdateVSyncParametersFromGpu(base::TimeTicks tiembase,
                                       base::TimeDelta interval);
@@ -41,7 +40,7 @@ class CONTENT_EXPORT BrowserCompositorOutputSurface
   void SetReflector(ReflectorImpl* reflector);
 
 #if defined(OS_MACOSX)
-  void OnSurfaceDisplayed();
+  virtual void OnSurfaceDisplayed() = 0;
 #endif
 
  protected:

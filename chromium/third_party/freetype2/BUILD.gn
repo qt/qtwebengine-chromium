@@ -26,6 +26,7 @@ shared_library("freetype2") {
     "src/src/base/ftgxval.c",
     "src/src/base/ftinit.c",
     "src/src/base/ftlcdfil.c",
+    "src/src/base/ftmm.c",
     "src/src/base/ftpfr.c",
     "src/src/base/ftstroke.c",
     "src/src/base/ftsynth.c",
@@ -58,14 +59,13 @@ shared_library("freetype2") {
 
     "FT_CONFIG_CONFIG_H=<ftconfig.h>",  # See comments in README.chromium.
     "FT_CONFIG_MODULES_H=<ftmodule.h>",  # See comments in README.chromium.
-    "FT_CONFIG_OPTIONS_H=<ftoption.h>",  # See comments in README.chromium.
   ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
   configs += [ ":freetype2_config" ]
  
-  direct_dependent_configs = [ ":freetype2_config" ]
+  public_configs = [ ":freetype2_config" ]
 
   libs = [ "z" ]
 }

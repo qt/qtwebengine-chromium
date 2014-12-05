@@ -6,18 +6,13 @@
 
 #include "base/logging.h"
 #include "base/memory/discardable_memory_emulated.h"
-#include "base/memory/discardable_memory_malloc.h"
+#include "base/memory/discardable_memory_shmem.h"
 
 namespace base {
 
 // static
-void DiscardableMemory::RegisterMemoryPressureListeners() {
-  internal::DiscardableMemoryEmulated::RegisterMemoryPressureListeners();
-}
-
-// static
-void DiscardableMemory::UnregisterMemoryPressureListeners() {
-  internal::DiscardableMemoryEmulated::UnregisterMemoryPressureListeners();
+void DiscardableMemory::ReleaseFreeMemory() {
+  internal::DiscardableMemoryShmem::ReleaseFreeMemory();
 }
 
 // static
@@ -30,7 +25,7 @@ void DiscardableMemory::GetSupportedTypes(
     std::vector<DiscardableMemoryType>* types) {
   const DiscardableMemoryType supported_types[] = {
     DISCARDABLE_MEMORY_TYPE_EMULATED,
-    DISCARDABLE_MEMORY_TYPE_MALLOC
+    DISCARDABLE_MEMORY_TYPE_SHMEM
   };
   types->assign(supported_types, supported_types + arraysize(supported_types));
 }
@@ -39,35 +34,37 @@ void DiscardableMemory::GetSupportedTypes(
 scoped_ptr<DiscardableMemory> DiscardableMemory::CreateLockedMemoryWithType(
     DiscardableMemoryType type, size_t size) {
   switch (type) {
-    case DISCARDABLE_MEMORY_TYPE_NONE:
-    case DISCARDABLE_MEMORY_TYPE_ASHMEM:
-    case DISCARDABLE_MEMORY_TYPE_MAC:
-      return scoped_ptr<DiscardableMemory>();
     case DISCARDABLE_MEMORY_TYPE_EMULATED: {
       scoped_ptr<internal::DiscardableMemoryEmulated> memory(
           new internal::DiscardableMemoryEmulated(size));
       if (!memory->Initialize())
-        return scoped_ptr<DiscardableMemory>();
+        return nullptr;
 
-      return memory.PassAs<DiscardableMemory>();
+      return memory.Pass();
     }
-    case DISCARDABLE_MEMORY_TYPE_MALLOC: {
-      scoped_ptr<internal::DiscardableMemoryMalloc> memory(
-          new internal::DiscardableMemoryMalloc(size));
+    case DISCARDABLE_MEMORY_TYPE_SHMEM: {
+      scoped_ptr<internal::DiscardableMemoryShmem> memory(
+          new internal::DiscardableMemoryShmem(size));
       if (!memory->Initialize())
-        return scoped_ptr<DiscardableMemory>();
+        return nullptr;
 
-      return memory.PassAs<DiscardableMemory>();
+      return memory.Pass();
     }
+    case DISCARDABLE_MEMORY_TYPE_NONE:
+    case DISCARDABLE_MEMORY_TYPE_ASHMEM:
+    case DISCARDABLE_MEMORY_TYPE_MACH:
+      NOTREACHED();
+      return nullptr;
   }
 
   NOTREACHED();
-  return scoped_ptr<DiscardableMemory>();
+  return nullptr;
 }
 
 // static
 void DiscardableMemory::PurgeForTesting() {
   internal::DiscardableMemoryEmulated::PurgeForTesting();
+  internal::DiscardableMemoryShmem::PurgeForTesting();
 }
 
 }  // namespace base

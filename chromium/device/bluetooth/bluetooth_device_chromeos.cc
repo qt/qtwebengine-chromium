@@ -153,22 +153,11 @@ BluetoothDeviceChromeOS::~BluetoothDeviceChromeOS() {
   gatt_services_.clear();
   for (GattServiceMap::iterator iter = gatt_services.begin();
        iter != gatt_services.end(); ++iter) {
-    FOR_EACH_OBSERVER(BluetoothDevice::Observer, observers_,
-                      GattServiceRemoved(this, iter->second));
+    DCHECK(adapter_);
+    adapter_->NotifyGattServiceRemoved(
+        static_cast<BluetoothRemoteGattServiceChromeOS*>(iter->second));
     delete iter->second;
   }
-}
-
-void BluetoothDeviceChromeOS::AddObserver(
-    device::BluetoothDevice::Observer* observer) {
-  DCHECK(observer);
-  observers_.AddObserver(observer);
-}
-
-void BluetoothDeviceChromeOS::RemoveObserver(
-    device::BluetoothDevice::Observer* observer) {
-  DCHECK(observer);
-  observers_.RemoveObserver(observer);
 }
 
 uint32 BluetoothDeviceChromeOS::GetBluetoothClass() const {
@@ -442,13 +431,22 @@ void BluetoothDeviceChromeOS::ConnectToService(
           << uuid.canonical_value();
   scoped_refptr<BluetoothSocketChromeOS> socket =
       BluetoothSocketChromeOS::CreateBluetoothSocket(
-          ui_task_runner_,
-          socket_thread_,
-          NULL,
-          net::NetLog::Source());
-  socket->Connect(this, uuid,
-                  base::Bind(callback, socket),
-                  error_callback);
+          ui_task_runner_, socket_thread_);
+  socket->Connect(this, uuid, BluetoothSocketChromeOS::SECURITY_LEVEL_MEDIUM,
+                  base::Bind(callback, socket), error_callback);
+}
+
+void BluetoothDeviceChromeOS::ConnectToServiceInsecurely(
+    const BluetoothUUID& uuid,
+    const ConnectToServiceCallback& callback,
+    const ConnectToServiceErrorCallback& error_callback) {
+  VLOG(1) << object_path_.value() << ": Connecting insecurely to service: "
+          << uuid.canonical_value();
+  scoped_refptr<BluetoothSocketChromeOS> socket =
+      BluetoothSocketChromeOS::CreateBluetoothSocket(
+          ui_task_runner_, socket_thread_);
+  socket->Connect(this, uuid, BluetoothSocketChromeOS::SECURITY_LEVEL_LOW,
+                  base::Bind(callback, socket), error_callback);
 }
 
 void BluetoothDeviceChromeOS::CreateGattConnection(
@@ -515,15 +513,15 @@ void BluetoothDeviceChromeOS::GattServiceAdded(
   DCHECK(service->object_path() == object_path);
   DCHECK(service->GetUUID().IsValid());
 
-  FOR_EACH_OBSERVER(device::BluetoothDevice::Observer, observers_,
-                    GattServiceAdded(this, service));
+  DCHECK(adapter_);
+  adapter_->NotifyGattServiceAdded(service);
 }
 
 void BluetoothDeviceChromeOS::GattServiceRemoved(
     const dbus::ObjectPath& object_path) {
   GattServiceMap::iterator iter = gatt_services_.find(object_path.value());
   if (iter == gatt_services_.end()) {
-    VLOG(2) << "Unknown GATT service removed: " << object_path.value();
+    VLOG(3) << "Unknown GATT service removed: " << object_path.value();
     return;
   }
 
@@ -533,8 +531,10 @@ void BluetoothDeviceChromeOS::GattServiceRemoved(
       static_cast<BluetoothRemoteGattServiceChromeOS*>(iter->second);
   DCHECK(service->object_path() == object_path);
   gatt_services_.erase(iter);
-  FOR_EACH_OBSERVER(device::BluetoothDevice::Observer, observers_,
-                    GattServiceRemoved(this, service));
+
+  DCHECK(adapter_);
+  adapter_->NotifyGattServiceRemoved(service);
+
   delete service;
 }
 

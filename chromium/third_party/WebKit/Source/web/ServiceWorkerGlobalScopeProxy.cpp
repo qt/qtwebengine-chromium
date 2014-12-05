@@ -31,30 +31,35 @@
 #include "config.h"
 #include "web/ServiceWorkerGlobalScopeProxy.h"
 
-#include "bindings/v8/WorkerScriptController.h"
+#include "bindings/core/v8/WorkerScriptController.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessagePort.h"
 #include "core/events/MessageEvent.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerGlobalScope.h"
+#include "modules/geofencing/CircularGeofencingRegion.h"
+#include "modules/geofencing/GeofencingEvent.h"
 #include "modules/push_messaging/PushEvent.h"
+#include "modules/serviceworkers/ExtendableEvent.h"
 #include "modules/serviceworkers/FetchEvent.h"
 #include "modules/serviceworkers/InstallEvent.h"
-#include "modules/serviceworkers/InstallPhaseEvent.h"
+#include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
 #include "modules/serviceworkers/WaitUntilObserver.h"
-#include "platform/NotImplemented.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "public/platform/WebServiceWorkerRequest.h"
 #include "public/web/WebSerializedScriptValue.h"
 #include "public/web/WebServiceWorkerContextClient.h"
 #include "web/WebEmbeddedWorkerImpl.h"
 #include "wtf/Functional.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
-PassOwnPtr<ServiceWorkerGlobalScopeProxy> ServiceWorkerGlobalScopeProxy::create(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, WebServiceWorkerContextClient& client)
+PassOwnPtr<ServiceWorkerGlobalScopeProxy> ServiceWorkerGlobalScopeProxy::create(WebEmbeddedWorkerImpl& embeddedWorker, Document& document, WebServiceWorkerContextClient& client)
 {
-    return adoptPtr(new ServiceWorkerGlobalScopeProxy(embeddedWorker, executionContext, client));
+    return adoptPtr(new ServiceWorkerGlobalScopeProxy(embeddedWorker, document, client));
 }
 
 ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
@@ -64,35 +69,47 @@ ServiceWorkerGlobalScopeProxy::~ServiceWorkerGlobalScopeProxy()
 void ServiceWorkerGlobalScopeProxy::dispatchInstallEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
-    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Install, eventID);
-    observer->willDispatchEvent();
-    m_workerGlobalScope->dispatchEvent(InstallEvent::create(EventTypeNames::install, EventInit(), observer));
-    observer->didDispatchEvent();
+    WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Install, eventID);
+    RefPtrWillBeRawPtr<Event> event(InstallEvent::create(EventTypeNames::install, EventInit(), observer));
+    m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchActivateEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
-    RefPtr<WaitUntilObserver> observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Activate, eventID);
-    observer->willDispatchEvent();
-    m_workerGlobalScope->dispatchEvent(InstallPhaseEvent::create(EventTypeNames::activate, EventInit(), observer));
-    observer->didDispatchEvent();
+    WaitUntilObserver* observer = WaitUntilObserver::create(m_workerGlobalScope, WaitUntilObserver::Activate, eventID);
+    RefPtrWillBeRawPtr<Event> event(ExtendableEvent::create(EventTypeNames::activate, EventInit(), observer));
+    m_workerGlobalScope->dispatchExtendableEvent(event.release(), observer);
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchFetchEvent(int eventID, const WebServiceWorkerRequest& webRequest)
 {
     ASSERT(m_workerGlobalScope);
-    RefPtr<RespondWithObserver> observer = RespondWithObserver::create(m_workerGlobalScope, eventID);
-    RefPtr<Request> request = Request::create(webRequest);
-    m_workerGlobalScope->dispatchEvent(FetchEvent::create(observer, request));
+    RespondWithObserver* observer = RespondWithObserver::create(m_workerGlobalScope, eventID, webRequest.mode(), webRequest.frameType());
+    if (!RuntimeEnabledFeatures::serviceWorkerOnFetchEnabled()) {
+        observer->didDispatchEvent();
+        return;
+    }
+
+    Request* request = Request::create(m_workerGlobalScope, webRequest);
+    RefPtrWillBeRawPtr<FetchEvent> fetchEvent(FetchEvent::create(observer, request));
+    fetchEvent->setIsReload(webRequest.isReload());
+    m_workerGlobalScope->dispatchEvent(fetchEvent.release());
     observer->didDispatchEvent();
+}
+
+void ServiceWorkerGlobalScopeProxy::dispatchGeofencingEvent(int eventID, WebGeofencingEventType eventType, const WebString& regionID, const WebCircularGeofencingRegion& region)
+{
+    ASSERT(m_workerGlobalScope);
+    const AtomicString& type = eventType == WebGeofencingEventTypeEnter ? EventTypeNames::geofenceenter : EventTypeNames::geofenceleave;
+    m_workerGlobalScope->dispatchEvent(GeofencingEvent::create(type, regionID, CircularGeofencingRegion::create(regionID, region)));
 }
 
 void ServiceWorkerGlobalScopeProxy::dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray& webChannels)
 {
     ASSERT(m_workerGlobalScope);
 
-    OwnPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
+    OwnPtrWillBeRawPtr<MessagePortArray> ports = MessagePort::toMessagePortArray(m_workerGlobalScope, webChannels);
     WebSerializedScriptValue value = WebSerializedScriptValue::fromString(message);
     m_workerGlobalScope->dispatchEvent(MessageEvent::create(ports.release(), value));
 }
@@ -106,7 +123,8 @@ void ServiceWorkerGlobalScopeProxy::dispatchPushEvent(int eventID, const WebStri
 void ServiceWorkerGlobalScopeProxy::dispatchSyncEvent(int eventID)
 {
     ASSERT(m_workerGlobalScope);
-    m_workerGlobalScope->dispatchEvent(Event::create(EventTypeNames::sync));
+    if (RuntimeEnabledFeatures::backgroundSyncEnabled())
+        m_workerGlobalScope->dispatchEvent(Event::create(EventTypeNames::sync));
     ServiceWorkerGlobalScopeClient::from(m_workerGlobalScope)->didHandleSyncEvent(eventID);
 }
 
@@ -115,31 +133,31 @@ void ServiceWorkerGlobalScopeProxy::reportException(const String& errorMessage, 
     m_client.reportException(errorMessage, lineNumber, columnNumber, sourceURL);
 }
 
-void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
+void ServiceWorkerGlobalScopeProxy::reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
-    m_client.reportConsoleMessage(source, level, message, lineNumber, sourceURL);
+    m_client.reportConsoleMessage(consoleMessage->source(), consoleMessage->level(), consoleMessage->message(), consoleMessage->lineNumber(), consoleMessage->url());
 }
 
 void ServiceWorkerGlobalScopeProxy::postMessageToPageInspector(const String& message)
 {
-    m_client.dispatchDevToolsMessage(message);
+    m_document.postInspectorTask(createCrossThreadTask(&WebEmbeddedWorkerImpl::postMessageToPageInspector, &m_embeddedWorker, message));
 }
 
-void ServiceWorkerGlobalScopeProxy::updateInspectorStateCookie(const String& message)
+void ServiceWorkerGlobalScopeProxy::didEvaluateWorkerScript(bool success)
 {
-    m_client.saveDevToolsAgentState(message);
+    m_client.didEvaluateWorkerScript(success);
 }
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeStarted(WorkerGlobalScope* workerGlobalScope)
 {
     ASSERT(!m_workerGlobalScope);
-    m_workerGlobalScope = workerGlobalScope;
+    m_workerGlobalScope = static_cast<ServiceWorkerGlobalScope*>(workerGlobalScope);
     m_client.workerContextStarted(this);
 }
 
 void ServiceWorkerGlobalScopeProxy::workerGlobalScopeClosed()
 {
-    m_executionContext.postTask(bind(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
+    m_document.postTask(createCrossThreadTask(&WebEmbeddedWorkerImpl::terminateWorkerContext, &m_embeddedWorker));
 }
 
 void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
@@ -148,14 +166,14 @@ void ServiceWorkerGlobalScopeProxy::willDestroyWorkerGlobalScope()
     m_client.willDestroyWorkerContext();
 }
 
-void ServiceWorkerGlobalScopeProxy::workerGlobalScopeDestroyed()
+void ServiceWorkerGlobalScopeProxy::workerThreadTerminated()
 {
     m_client.workerContextDestroyed();
 }
 
-ServiceWorkerGlobalScopeProxy::ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl& embeddedWorker, ExecutionContext& executionContext, WebServiceWorkerContextClient& client)
+ServiceWorkerGlobalScopeProxy::ServiceWorkerGlobalScopeProxy(WebEmbeddedWorkerImpl& embeddedWorker, Document& document, WebServiceWorkerContextClient& client)
     : m_embeddedWorker(embeddedWorker)
-    , m_executionContext(executionContext)
+    , m_document(document)
     , m_client(client)
     , m_workerGlobalScope(0)
 {

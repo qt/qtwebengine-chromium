@@ -1,257 +1,352 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/id.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/id.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/id.xml
+ * ICU <specials> source: <path>/common/main/id.xml
  */
 id{
     Languages{
-        aa{"Afar"}
-        ab{"Abkhaz"}
-        ace{"Aceh"}
-        ach{"Acholi"}
-        ady{"Adygei"}
-        ae{"Avestan"}
+        ach{"Acoli"}
         af{"Afrikaans"}
-        afa{"Afro-Asiatik (Lainnya)"}
         ak{"Akan"}
-        akk{"Akkadien"}
-        alg{"Bahasa Algonquia"}
         am{"Amharik"}
-        ang{"Inggris Kuno (kl.450-1100)"}
-        apa{"Bahasa-bahasa Apache"}
         ar{"Arab"}
-        arc{"Aram"}
-        arn{"Araucan"}
-        art{"Buatan (Lainnya)"}
-        as{"Assam"}
-        ast{"Astur"}
-        ath{"Bahasa-bahasa Athapaska"}
-        aus{"Bahasa-bahasa Australia"}
-        av{"Avarik"}
-        ay{"Aymara"}
+        ar_001{"Arab Standar Modern"}
         az{"Azerbaijan"}
-        ba{"Bashkir"}
-        bai{"Bahasa-bahasa Bamileke"}
-        ban{"Balin"}
-        bat{"Baltik (Lainnya)"}
+        ban{"Bali"}
         be{"Belarusia"}
-        bg{"Bulgaria"}
+        bem{"Bemba"}
+        bg{"Bulgar"}
         bh{"Bihari"}
-        bho{"Bhojpur"}
-        bi{"Bislama"}
-        bm{"Bambara"}
-        bn{"Bengal"}
-        bo{"Tibet"}
+        bn{"Bengali"}
         br{"Breton"}
         bs{"Bosnia"}
-        bug{"Bugis"}
         ca{"Katalan"}
-        cad{"Kado"}
-        cai{"India Amerika Tengah (Lainnnya)"}
-        car{"Karib"}
-        cau{"Kaukasia (Lainnya)"}
-        ce{"Chechen"}
-        cel{"Celtic (Lainnya)"}
-        ch{"Chamorro"}
-        chk{"Chuuke"}
+        ceb{"Sebuano"}
+        chr{"Cherokee"}
+        ckb{"Kurdi Sorani"}
         co{"Korsika"}
-        cop{"Koptik"}
-        cr{"Cree"}
         cs{"Cheska"}
-        cv{"Chuvash"}
         cy{"Welsh"}
         da{"Dansk"}
         de{"Jerman"}
-        dv{"Divehi"}
-        dz{"Dzongkha"}
+        de_AT{"Jerman Austria"}
+        de_CH{"Jerman Tinggi Swiss"}
         ee{"Ewe"}
-        egy{"Mesir Kuno"}
         el{"Yunani"}
         en{"Inggris"}
-        enm{"Inggris, Abad Pertengahan (1100-1500)"}
+        en_AU{"Inggris Australia"}
+        en_CA{"Inggris Kanada"}
+        en_GB{"Inggris Inggris"}
+        en_US{"Inggris Amerika"}
         eo{"Esperanto"}
         es{"Spanyol"}
-        et{"Estonian"}
-        eu{"Basque"}
+        es_419{"Spanyol Amerika Latin"}
+        es_ES{"Spanyol Eropa"}
+        es_MX{"Spanyol Meksiko"}
+        et{"Esti"}
+        eu{"Bask"}
         fa{"Persia"}
-        ff{"Fulah"}
         fi{"Suomi"}
-        fj{"Fiji"}
+        fil{"Filipino"}
         fo{"Faro"}
-        fr{"Perancis"}
-        frm{"Perancis, Abad Pertengahan (kl.1400-1600)"}
-        fro{"Perancis Kuno (842-kl.1400)"}
-        fur{"Friuli"}
-        fy{"Frisi"}
+        fr{"Prancis"}
+        fr_CA{"Prancis Kanada"}
+        fr_CH{"Prancis Swiss"}
+        fy{"Frisia Barat"}
         ga{"Irlandia"}
+        gaa{"Ga"}
         gd{"Gaelik Skotlandia"}
-        gem{"Jermanik (Lainnya)"}
-        gil{"Gilbert"}
-        gl{"Gallegan"}
-        gmh{"Jerman, Abad Pertengahan (kl.1050-1500)"}
+        gl{"Galisia"}
         gn{"Guarani"}
-        goh{"Jerman Kuno (kl.750-1050)"}
-        got{"Gothik"}
-        grc{"Yunani Kuno (sd 1453)"}
         gu{"Gujarati"}
-        gv{"Manx"}
         ha{"Hausa"}
         haw{"Hawaii"}
         he{"Ibrani"}
         hi{"Hindi"}
-        ho{"Hiri Motu"}
-        hr{"Kroat"}
-        hu{"Magyar"}
+        hr{"Kroasia"}
+        ht{"Haiti"}
+        hu{"Hungaria"}
         hy{"Armenia"}
-        hz{"Herero"}
         ia{"Interlingua"}
         id{"Bahasa Indonesia"}
-        ie{"Interlingue"}
         ig{"Igbo"}
-        ii{"Sichuan Yi"}
-        ik{"Inupiaq"}
-        io{"Ido"}
-        is{"Icelandic"}
+        is{"Islandia"}
         it{"Italia"}
         ja{"Jepang"}
-        jpr{"Judeo-Persia"}
-        jrb{"Judeo-Arab"}
-        jv{"Jawa"}
-        ka{"Georgian"}
+        ka{"Georgia"}
         kg{"Kongo"}
-        ki{"Kikuyu"}
-        kj{"Kuanyama"}
         kk{"Kazakh"}
-        kl{"Kalaallisut"}
         km{"Khmer"}
         kn{"Kannada"}
         ko{"Korea"}
-        kok{"Konkani"}
-        kos{"Kosrae"}
-        kr{"Kanuri"}
-        ks{"Kashmir"}
         ku{"Kurdi"}
-        kv{"Komi"}
-        kw{"Cornish"}
-        ky{"Kirghiz"}
+        ky{"Kirgiz"}
         la{"Latin"}
-        lb{"Luxembourg"}
-        lez{"Lezghia"}
         lg{"Ganda"}
-        li{"Limburg"}
         ln{"Lingala"}
         lo{"Lao"}
-        lt{"Lithuania"}
-        lu{"Luba-Katanga"}
+        loz{"Lozi"}
+        lt{"Lituavi"}
+        lua{"Luba-Lulua"}
         lv{"Latvi"}
-        mad{"Madura"}
-        mak{"Makassar"}
-        map{"Austronesia"}
+        mfe{"Morisien"}
         mg{"Malagasi"}
-        mga{"Irlandia Abad Pertengahan (900-1200)"}
-        mh{"Marshall"}
         mi{"Maori"}
-        mis{"Bahasa Lain-lain"}
-        mk{"Macedonian"}
-        mkh{"Mon-Khmer (Lainnya)"}
+        mk{"Makedonia"}
         ml{"Malayalam"}
-        mn{"Mongolian"}
-        mo{"Moldavian"}
+        mn{"Mongolia"}
+        mo{"Moldavia"}
         mr{"Marathi"}
-        ms{"Malay"}
-        mt{"Maltese"}
+        ms{"Melayu"}
+        mt{"Malta"}
         my{"Burma"}
-        myv{"Erza"}
-        na{"Nauru"}
-        nb{"Norwegian Bokmål"}
-        ne{"Nepal"}
-        ng{"Ndonga"}
+        nb{"Bokmål Norwegia"}
+        ne{"Nepali"}
         nl{"Belanda"}
-        nn{"Norwegian Nynorsk"}
-        no{"Norwegian"}
-        nv{"Navajo"}
-        ny{"Nyanja; Chichewa; Chewa"}
-        oj{"Ojibwa"}
+        nl_BE{"Flemish"}
+        nn{"Nynorsk Norwegia"}
+        no{"Norwegia"}
+        nso{"Sotho Utara"}
+        ny{"Nyanja"}
+        nyn{"Nyankole"}
+        oc{"Ositania"}
         om{"Oromo"}
         or{"Oriya"}
-        os{"Ossetic"}
         pa{"Punjabi"}
-        paa{"Papuan (Lainnya)"}
-        peo{"Persia Kuno (kl.600-400 SM.)"}
-        phi{"Filipina (Lainnya)"}
-        pi{"Pali"}
-        pl{"Polish"}
-        ps{"Pashto (Pushto)"}
+        pl{"Polski"}
+        ps{"Pashto"}
         pt{"Portugis"}
+        pt_BR{"Portugis Brasil"}
+        pt_PT{"Portugis Eropa"}
         qu{"Quechua"}
-        rm{"Rhaeto-Romance"}
+        rm{"Reto-Roman"}
         rn{"Rundi"}
-        ro{"Romanian"}
+        ro{"Rumania"}
         ru{"Rusia"}
         rw{"Kinyarwanda"}
-        sa{"Sanskrit"}
-        sc{"Sardinian"}
         sd{"Sindhi"}
-        se{"Northern Sami"}
-        sg{"Sango"}
-        sh{"Serbo-Croatian"}
-        si{"Sinhalese"}
+        sh{"Serbo-Kroasia"}
+        si{"Sinhala"}
         sk{"Slovak"}
         sl{"Sloven"}
-        sm{"Samoan"}
         sn{"Shona"}
         so{"Somali"}
-        sq{"Albanian"}
+        sq{"Albania"}
         sr{"Serb"}
-        ss{"Swati"}
-        su{"Sundan"}
-        sux{"Sumeria"}
-        sv{"Swensk"}
+        st{"Sotho Selatan"}
+        su{"Sunda"}
+        sv{"Swedia"}
         sw{"Swahili"}
-        swb{"Komoria"}
-        syr{"Syria"}
         ta{"Tamil"}
         te{"Telugu"}
         tg{"Tajik"}
         th{"Thai"}
         ti{"Tigrinya"}
         tk{"Turkmen"}
-        tl{"Tagalog"}
         tn{"Tswana"}
+        to{"Tonga"}
         tr{"Turki"}
-        ts{"Tsonga"}
         tt{"Tatar"}
-        tut{"Altai"}
+        tum{"Tumbuka"}
         tw{"Twi"}
-        ty{"Tahitian"}
-        ug{"Uighur"}
+        ug{"Uyghur"}
         uk{"Ukraina"}
         ur{"Urdu"}
         uz{"Uzbek"}
-        ve{"Venda"}
-        vi{"Vietnamese"}
-        vo{"Volapük"}
-        wa{"Walloon"}
+        vi{"Vietnam"}
         wo{"Wolof"}
         xh{"Xhosa"}
         yi{"Yiddish"}
         yo{"Yoruba"}
-        yue{"Kanton"}
-        za{"Zhuang"}
-        zh{"Mandarin"}
-        zh_Hans{"Mandarin (aksara sederhana)"}
-        zh_Hant{"Mandarin (aksara tradisional)"}
+        zh{"China"}
+        zh_Hans{"China (Aksara Sederhana)"}
+        zh_Hant{"China (Aksara Tradisional)"}
         zu{"Zulu"}
     }
-    Variants{
-        PINYIN{"Pinyin Latin"}
-        WADEGILE{"Wade-Giles Latin"}
+    LanguagesShort{
+        az{"Azeri"}
+        en_GB{"Inggris U.K."}
+        en_US{"Inggris A.S."}
     }
-    Version{"2.0.50.96"}
+    Scripts{
+        Afak{"Afaka"}
+        Arab{"Arab"}
+        Armi{"Aram Imperial"}
+        Armn{"Armenia"}
+        Avst{"Avesta"}
+        Bali{"Bali"}
+        Bamu{"Bamum"}
+        Bass{"Bassa Vah"}
+        Batk{"Batak"}
+        Beng{"Bengali"}
+        Blis{"Blissymbol"}
+        Bopo{"Bopomofo"}
+        Brah{"Brahmi"}
+        Brai{"Braille"}
+        Bugi{"Bugis"}
+        Buhd{"Buhid"}
+        Cakm{"Chakma"}
+        Cans{"Simbol Aborigin Kanada Kesatuan"}
+        Cari{"Karia"}
+        Cham{"Cham"}
+        Cher{"Cherokee"}
+        Cirt{"Cirth"}
+        Copt{"Koptik"}
+        Cprt{"Siprus"}
+        Cyrl{"Sirilik"}
+        Cyrs{"Gereja Slavonia Sirilik Lama"}
+        Deva{"Devanagari"}
+        Dsrt{"Deseret"}
+        Dupl{"Stenografi Duployan"}
+        Egyd{"Demotik Mesir"}
+        Egyh{"Hieratik Mesir"}
+        Egyp{"Hieroglip Mesir"}
+        Ethi{"Etiopia"}
+        Geok{"Georgian Khutsuri"}
+        Geor{"Georgia"}
+        Glag{"Glagolitic"}
+        Goth{"Gothic"}
+        Gran{"Grantha"}
+        Grek{"Yunani"}
+        Gujr{"Gujarati"}
+        Guru{"Gurmukhi"}
+        Hang{"Hangul"}
+        Hani{"Han"}
+        Hano{"Hanunoo"}
+        Hans{"Sederhana"}
+        Hant{"Tradisional"}
+        Hebr{"Ibrani"}
+        Hira{"Hiragana"}
+        Hluw{"Hieroglif Anatolia"}
+        Hmng{"Pahawh Hmong"}
+        Hrkt{"Katakana atau Hiragana"}
+        Hung{"Hungaria Kuno"}
+        Inds{"Indus"}
+        Ital{"Italia Lama"}
+        Java{"Jawa"}
+        Jpan{"Jepang"}
+        Jurc{"Jurchen"}
+        Kali{"Kayah Li"}
+        Kana{"Katakana"}
+        Khar{"Kharoshthi"}
+        Khmr{"Khmer"}
+        Khoj{"Khojki"}
+        Knda{"Kannada"}
+        Kore{"Korea"}
+        Kpel{"Kpelle"}
+        Kthi{"Kaithi"}
+        Lana{"Lanna"}
+        Laoo{"Laos"}
+        Latf{"Latin Fraktur"}
+        Latg{"Latin Gaelik"}
+        Latn{"Latin"}
+        Lepc{"Lepcha"}
+        Limb{"Limbu"}
+        Lina{"Linear A"}
+        Linb{"Linear B"}
+        Lisu{"Lisu"}
+        Loma{"Loma"}
+        Lyci{"Lycia"}
+        Lydi{"Lydia"}
+        Mand{"Mandae"}
+        Mani{"Manikhei"}
+        Maya{"Hieroglip Maya"}
+        Mend{"Mende"}
+        Merc{"Kursif Meroitik"}
+        Mero{"Meroitik"}
+        Mlym{"Malayalam"}
+        Mong{"Mongolia"}
+        Moon{"Moon"}
+        Mroo{"Mro"}
+        Mtei{"Meitei Mayek"}
+        Mymr{"Myanmar"}
+        Narb{"Arab Utara Kuno"}
+        Nbat{"Nabataea"}
+        Nkgb{"Naxi Geba"}
+        Nkoo{"N'Ko"}
+        Nshu{"Nushu"}
+        Ogam{"Ogham"}
+        Olck{"Chiki Lama"}
+        Orkh{"Orkhon"}
+        Orya{"Oriya"}
+        Osma{"Osmanya"}
+        Palm{"Palmira"}
+        Perm{"Permik Kuno"}
+        Phag{"Phags-pa"}
+        Phli{"Pahlevi"}
+        Phlp{"Mazmur Pahlevi"}
+        Phlv{"Kitab Pahlevi"}
+        Phnx{"Phoenix"}
+        Plrd{"Fonetik Pollard"}
+        Prti{"Prasasti Parthia"}
+        Rjng{"Rejang"}
+        Roro{"Rongorongo"}
+        Runr{"Runik"}
+        Samr{"Samaria"}
+        Sara{"Sarati"}
+        Sarb{"Arab Selatan Kuno"}
+        Saur{"Saurashtra"}
+        Sgnw{"Tulisan Isyarat"}
+        Shaw{"Shavia"}
+        Shrd{"Sharada"}
+        Sind{"Khudawadi"}
+        Sinh{"Sinhala"}
+        Sora{"Sora Sompeng"}
+        Sund{"Sunda"}
+        Sylo{"Syloti Nagri"}
+        Syrc{"Suriah"}
+        Syre{"Suriah Estrangelo"}
+        Syrj{"Suriah Barat"}
+        Syrn{"Suriah Timur"}
+        Tagb{"Tagbanwa"}
+        Takr{"Takri"}
+        Tale{"Tai Le"}
+        Talu{"Tai Lue Baru"}
+        Taml{"Tamil"}
+        Tang{"Tangut"}
+        Tavt{"Tai Viet"}
+        Telu{"Telugu"}
+        Teng{"Tenghwar"}
+        Tfng{"Tifinagh"}
+        Tglg{"Tagalog"}
+        Thaa{"Thaana"}
+        Thai{"Thai"}
+        Tibt{"Tibet"}
+        Tirh{"Tirhuta"}
+        Ugar{"Ugaritik"}
+        Vaii{"Vai"}
+        Visp{"Ucapan Terlihat"}
+        Wara{"Varang Kshiti"}
+        Wole{"Woleai"}
+        Xpeo{"Persia Kuno"}
+        Xsux{"Cuneiform Sumero-Akkadia"}
+        Yiii{"Yi"}
+        Zinh{"Warisan"}
+        Zmth{"Notasi Matematika"}
+        Zsym{"Simbol"}
+        Zxxx{"Tidak Tertulis"}
+        Zyyy{"Umum"}
+        Zzzz{"Skrip Tak Dikenal"}
+    }
+    Scripts%stand-alone{
+        Hans{"Han Sederhana"}
+        Hant{"Han Tradisional"}
+    }
+    Version{"2.0.93.8"}
+    codePatterns{
+        language{"Bahasa: {0}"}
+        script{"Skrip: {0}"}
+        territory{"Wilayah: {0}"}
+    }
+    localeDisplayPattern{
+        keyTypePattern{"{0}: {1}"}
+        pattern{"{0} ({1})"}
+        separator{"{0}, {1}"}
+    }
 }

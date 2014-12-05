@@ -30,6 +30,12 @@
 
 // WebKit Web Facing API
 
+/**
+ * @param {!Object} object
+ * @param {!Function} callback
+ */
+Object.observe = function(object, callback) {}
+
 /** @type {boolean} */
 Event.prototype.isMetaOrCtrlForTest;
 
@@ -37,17 +43,6 @@ Event.prototype.isMetaOrCtrlForTest;
  * @type {number}
  */
 KeyboardEvent.DOM_KEY_LOCATION_NUMPAD;
-
-// FIXME: Remove after the Closure compiler roll.
-/** @param {*} message */
-function postMessage(message) {}
-
-/**
- * @param {string} eventName
- * @param {!Function} listener
- * @param {boolean=} capturing
- */
-function addEventListener(eventName, listener, capturing) {}
 
 /**
  * @param {!T} value
@@ -184,82 +179,11 @@ function DOMFileSystem() {}
  */
 DOMFileSystem.prototype.root = null;
 
-/** @interface */
-function InspectorFrontendHostAPI() {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.addFileSystem = function(callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.append = function(url, content, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.indexPath = function(requestId, fileSystemPath, callback) {}
-/** @return {string} */
-InspectorFrontendHostAPI.prototype.getSelectionBackgroundColor = function() {}
-/** @return {string} */
-InspectorFrontendHostAPI.prototype.getSelectionForegroundColor = function() {}
-/** @return {boolean} */
-InspectorFrontendHost.isUnderTest = function() {}
-/**
- * Requests inspected page to be placed atop of the inspector frontend with specified bounds.
- * @param {{x: number, y: number, width: number, height: number}} bounds
- */
-InspectorFrontendHostAPI.prototype.setInspectedPageBounds = function(bounds) {}
-/**
- * Requests inspected page to be placed atop of the inspector frontend
- * with passed insets from the frontend sides, respecting minimum size passed.
- * @param {{top: number, left: number, right: number, bottom: number}} insets
- * @param {{width: number, height: number}} minSize
- */
-InspectorFrontendHostAPI.prototype.setContentsResizingStrategy = function(insets, minSize) {}
-/** @param {string} shortcuts */
-InspectorFrontendHostAPI.prototype.setWhitelistedShortcuts = function(shortcuts) {}
-InspectorFrontendHostAPI.prototype.inspectElementCompleted = function() {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.moveWindowBy = function(x, y, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.openInNewTab = function(url, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.removeFileSystem = function(fileSystemPath, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.requestFileSystems = function(callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.save = function(url, content, forceSaveAs, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.searchInPath = function(requestId, fileSystemPath, query, callback) {}
-/** @param {!Function=} callback */
-InspectorFrontendHostAPI.prototype.stopIndexing = function(requestId, callback) {}
-
-InspectorFrontendHostAPI.prototype.bringToFront = function() {}
-InspectorFrontendHostAPI.prototype.openUrlOnRemoteDeviceAndInspect = function(browserId, url) {}
-InspectorFrontendHostAPI.prototype.closeWindow = function() {}
-InspectorFrontendHostAPI.prototype.copyText = function(text) {}
-InspectorFrontendHostAPI.prototype.inspectedURLChanged = function(url) {}
-InspectorFrontendHostAPI.prototype.isolatedFileSystem = function(fileSystemId, registeredName) {}
-InspectorFrontendHostAPI.prototype.upgradeDraggedFileSystemPermissions = function(DOMFileSystem) {}
-InspectorFrontendHostAPI.prototype.platform = function() {}
-InspectorFrontendHostAPI.prototype.port = function() {}
-InspectorFrontendHostAPI.prototype.recordActionTaken = function(actionCode) {}
-InspectorFrontendHostAPI.prototype.recordPanelShown = function(panelCode) {}
-InspectorFrontendHostAPI.prototype.sendMessageToBackend = function(message) {}
-InspectorFrontendHostAPI.prototype.sendMessageToEmbedder = function(message) {}
-InspectorFrontendHostAPI.prototype.setInjectedScriptForOrigin = function(origin, script) {}
-InspectorFrontendHostAPI.prototype.setIsDocked = function(isDocked, callback) {}
-InspectorFrontendHostAPI.prototype.setZoomFactor = function(zoom) {}
-InspectorFrontendHostAPI.prototype.subscribe = function(eventType) {}
-InspectorFrontendHostAPI.prototype.unsubscribe = function(eventType) {}
-InspectorFrontendHostAPI.prototype.zoomFactor = function() {}
-InspectorFrontendHostAPI.prototype.zoomIn = function() {}
-InspectorFrontendHostAPI.prototype.zoomOut = function() {}
-InspectorFrontendHostAPI.prototype.resetZoom = function() {}
-/** @type {InspectorFrontendHostAPI} */
-var InspectorFrontendHost;
-InspectorFrontendHost.embedderMessageAck = function(id, error) {}
-
 // FIXME: remove everything below.
 var FormatterWorker = {}
 var WebInspector = {}
 
 WebInspector.panels = {};
-WebInspector.inspectorFrontendEventSink = {};
 
 WebInspector.reload = function() { }
 
@@ -355,7 +279,12 @@ CodeMirror.prototype = {
     execCommand: function(cmd) { },
     extendSelection: function(from, to) { },
     findMarksAt: function(pos) { },
-    findMatchingBracket: function() { },
+    /**
+     * @param {!CodeMirror.Pos} from
+     * @param {boolean=} strict
+     * @param {Object=} config
+     */
+    findMatchingBracket: function(from, strict, config) { },
     findPosH: function(from, amount, unit, visually) { },
     findPosV: function(from, amount, unit, goalColumn) { },
     firstLine: function() { },
@@ -424,7 +353,15 @@ CodeMirror.prototype = {
     removeOverlay: function(spec) { },
     /** @param {*=} origin */
     replaceRange: function(code, from, to, origin) { },
-    replaceSelection: function(code, collapse, origin) { },
+    /**
+     * @param {string} replacement
+     * @param {string=} select
+     */
+    replaceSelection: function(replacement, select) { },
+    /**
+     * @param {!Array.<string>} textPerSelection
+     */
+    replaceSelections: function(textPerSelection) { },
     /** @param {*=} margin */
     scrollIntoView: function(pos, margin) { },
     scrollTo: function(x, y) { },
@@ -468,6 +405,13 @@ CodeMirror.Pos.prototype.line;
 /** @type {number} */
 CodeMirror.Pos.prototype.ch;
 
+/**
+ * @param {!CodeMirror.Pos} pos1
+ * @param {!CodeMirror.Pos} pos2
+ * @return {number}
+ */
+CodeMirror.cmpPos = function(pos1, pos2) { };
+
 /** @constructor */
 CodeMirror.StringStream = function(line)
 {
@@ -502,14 +446,121 @@ CodeMirror.keyMap;
 /** @type {{scrollLeft: number, scrollTop: number}} */
 CodeMirror.doc;
 
-/**
- * @constructor
- * @extends {Event}
- */
-function ErrorEvent() {}
-
-/** @type {string} */
-ErrorEvent.prototype.message;
-
 /** @type {boolean} */
 window.dispatchStandaloneTestRunnerMessages;
+
+// FIXME: Remove once ES6 is supported natively by JS compiler.
+
+/** @typedef {string} */
+var symbol;
+
+/**
+ * @param {string} description
+ * @return {symbol}
+ */
+function Symbol(description) {}
+
+/**
+ * @interface
+ * @template T
+ */
+var Iterator = function() { }
+
+Iterator.prototype = {
+    /**
+     * @return {{done: boolean, value: (T|undefined)}}
+     */
+    next: function() { }
+}
+
+/**
+ * @constructor
+ * @template K, V
+ */
+var Map = function() { }
+
+Map.prototype = {
+    /**
+     * @param {K} key
+     * @param {V} value
+     */
+    set: function(key, value) { },
+
+    /**
+     * @param {K} key
+     * @return {boolean}
+     */
+    delete: function(key) { },
+
+    /**
+     * @return {!Iterator.<K>}
+     */
+    keys: function() { },
+
+    /**
+     * @return {!Iterator.<V>}
+     */
+    values: function() { },
+
+    /**
+     * @param {K} key
+     * @return {V}
+     */
+    get: function(key) { },
+
+    /**
+     * @param {K} key
+     * @return {boolean}
+     */
+    has: function(key) { },
+
+    clear: function() { },
+
+    /**
+     * @return {number}
+     */
+    get size() { }
+}
+
+// FIXME: $jscomp.Iterable hack below should be removed once transpilation is not required for closure compiler ES6
+/**
+ * @constructor
+ * @implements $jscomp.Iterable.<V>
+ * @param {!Array.<V>|!Iterator.<V>=} iterable
+ * @template V
+ */
+var Set = function(iterable) { }
+
+Set.prototype = {
+    /**
+     * @param {V} value
+     */
+    add: function(value) { },
+
+    /**
+     * @param {V} value
+     * @return {boolean}
+     */
+    delete: function(value) { },
+
+    /**
+     * @return {!Iterator.<V>}
+     */
+    values: function() { },
+
+    /**
+     * @param {V} value
+     * @return {boolean}
+     */
+    has: function(value) { },
+
+    clear: function() { },
+
+    /**
+     * @return {number}
+     */
+    get size() { },
+
+    // FIXME: This should be removed once transpilation is not required for closure compiler ES6
+    $$iterator: function() { }
+}

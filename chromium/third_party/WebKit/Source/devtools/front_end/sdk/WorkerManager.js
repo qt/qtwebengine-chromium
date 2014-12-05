@@ -39,8 +39,8 @@ WebInspector.WorkerManager = function(target, isMainFrontend)
     this._reset();
     target.registerWorkerDispatcher(new WebInspector.WorkerDispatcher(this));
     if (isMainFrontend) {
-        WorkerAgent.enable();
-        WebInspector.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
+        target.workerAgent().enable();
+        target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.MainFrameNavigated, this._mainFrameNavigated, this);
     }
 }
 
@@ -168,42 +168,3 @@ WebInspector.WorkerDispatcher.prototype = {
  * @type {!WebInspector.WorkerManager}
  */
 WebInspector.workerManager;
-
-/**
- * @constructor
- * @extends {InspectorBackendClass.Connection}
- * @param {string} workerId
- * @param {function(!InspectorBackendClass.Connection)} onConnectionReady
- */
-WebInspector.ExternalWorkerConnection = function(workerId, onConnectionReady)
-{
-    InspectorBackendClass.Connection.call(this);
-    this._workerId = workerId;
-    window.addEventListener("message", this._processMessage.bind(this), true);
-    onConnectionReady(this);
-}
-
-WebInspector.ExternalWorkerConnection.prototype = {
-
-    /**
-     * @param {?Event} event
-     */
-    _processMessage: function(event)
-    {
-        if (!event)
-            return;
-
-        var message = event.data;
-        this.dispatch(message);
-    },
-
-    /**
-     * @param {!Object} messageObject
-     */
-    sendMessage: function(messageObject)
-    {
-        window.opener.postMessage({workerId: this._workerId, command: "sendMessageToBackend", message: messageObject}, "*");
-    },
-
-    __proto__: InspectorBackendClass.Connection.prototype
-}

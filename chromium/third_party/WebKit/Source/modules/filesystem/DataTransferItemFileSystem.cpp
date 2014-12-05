@@ -31,8 +31,8 @@
 #include "config.h"
 #include "modules/filesystem/DataTransferItemFileSystem.h"
 
-#include "core/clipboard/Clipboard.h"
 #include "core/clipboard/DataObject.h"
+#include "core/clipboard/DataTransfer.h"
 #include "core/clipboard/DataTransferItem.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/File.h"
@@ -45,7 +45,7 @@
 #include "platform/AsyncFileSystemCallbacks.h"
 #include "platform/FileMetadata.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
 Entry* DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionContext, DataTransferItem& item)
@@ -54,13 +54,13 @@ Entry* DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionC
         return 0;
 
     // For dragged files getAsFile must be pretty lightweight.
-    Blob* file = item.getAsFile().get();
+    Blob* file = item.getAsFile();
     // The clipboard may not be in a readable state.
     if (!file)
         return 0;
     ASSERT(file->isFile());
 
-    DOMFileSystem* domFileSystem = DraggedIsolatedFileSystem::getDOMFileSystem(item.clipboard()->dataObject().get(), executionContext);
+    DOMFileSystem* domFileSystem = DraggedIsolatedFileSystem::getDOMFileSystem(item.dataTransfer()->dataObject().get(), executionContext);
     if (!domFileSystem) {
         // IsolatedFileSystem may not be enabled.
         return 0;
@@ -79,4 +79,4 @@ Entry* DataTransferItemFileSystem::webkitGetAsEntry(ExecutionContext* executionC
     return FileEntry::create(domFileSystem, virtualPath);
 }
 
-} // namespace WebCore
+} // namespace blink

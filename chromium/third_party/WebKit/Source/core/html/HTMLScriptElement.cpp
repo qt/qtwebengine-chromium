@@ -23,16 +23,19 @@
 #include "config.h"
 #include "core/html/HTMLScriptElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptEventListener.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/dom/ScriptLoader.h"
+#include "core/dom/ScriptRunner.h"
 #include "core/dom/Text.h"
 #include "core/events/Event.h"
+#include "core/frame/UseCounter.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -40,7 +43,6 @@ inline HTMLScriptElement::HTMLScriptElement(Document& document, bool wasInserted
     : HTMLElement(scriptTag, document)
     , m_loader(ScriptLoader::create(this, wasInsertedByParser, alreadyStarted))
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLScriptElement> HTMLScriptElement::create(Document& document, bool wasInsertedByParser, bool alreadyStarted)
@@ -63,10 +65,17 @@ const QualifiedName& HTMLScriptElement::subResourceAttributeName() const
     return srcAttr;
 }
 
-void HTMLScriptElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLScriptElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLElement::childrenChanged(change);
     m_loader->childrenChanged();
+}
+
+void HTMLScriptElement::didMoveToNewDocument(Document& oldDocument)
+{
+    if (RefPtrWillBeRawPtr<Document> contextDocument = document().contextDocument().get())
+        oldDocument.scriptRunner()->movePendingAsyncScript(contextDocument->scriptRunner(), m_loader.get());
+    HTMLElement::didMoveToNewDocument(oldDocument);
 }
 
 void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -79,8 +88,36 @@ void HTMLScriptElement::parseAttribute(const QualifiedName& name, const AtomicSt
         HTMLElement::parseAttribute(name, value);
 }
 
+void HTMLScriptElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
+{
+    if (name == srcAttr && inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("script");
+            argv.append(srcAttr.toString());
+            argv.append(oldValue);
+            argv.append(newValue);
+            activityLogger->logEvent("blinkSetAttribute", argv.size(), argv.data());
+        }
+    }
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
+}
+
 Node::InsertionNotificationRequest HTMLScriptElement::insertedInto(ContainerNode* insertionPoint)
 {
+    if (insertionPoint->inDocument()) {
+        V8DOMActivityLogger* activityLogger = V8DOMActivityLogger::currentActivityLoggerIfIsolatedWorld();
+        if (activityLogger) {
+            Vector<String> argv;
+            argv.append("script");
+            argv.append(fastGetAttribute(srcAttr));
+            activityLogger->logEvent("blinkAddElement", argv.size(), argv.data());
+        }
+
+        if (hasSourceAttribute() && !loader()->isScriptTypeSupported(ScriptLoader::DisallowLegacyTypeInTypeAttribute))
+            UseCounter::count(document(), UseCounter::ScriptElementWithInvalidTypeHasSrc);
+    }
     HTMLElement::insertedInto(insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
@@ -173,6 +210,12 @@ void HTMLScriptElement::dispatchLoadEvent()
 PassRefPtrWillBeRawPtr<Element> HTMLScriptElement::cloneElementWithoutAttributesAndChildren()
 {
     return adoptRefWillBeNoop(new HTMLScriptElement(document(), false, m_loader->alreadyStarted()));
+}
+
+void HTMLScriptElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_loader);
+    HTMLElement::trace(visitor);
 }
 
 }

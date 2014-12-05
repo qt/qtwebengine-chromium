@@ -30,13 +30,13 @@
 
 #include "modules/webaudio/DelayDSPKernel.h"
 
-namespace WebCore {
+namespace blink {
 
 DelayProcessor::DelayProcessor(AudioContext* context, float sampleRate, unsigned numberOfChannels, double maxDelayTime)
     : AudioDSPKernelProcessor(sampleRate, numberOfChannels)
     , m_maxDelayTime(maxDelayTime)
 {
-    m_delayTime = AudioParam::create(context, "delayTime", 0.0, 0.0, maxDelayTime);
+    m_delayTime = AudioParam::create(context, 0.0);
 }
 
 DelayProcessor::~DelayProcessor()
@@ -45,11 +45,17 @@ DelayProcessor::~DelayProcessor()
         uninitialize();
 }
 
+void DelayProcessor::trace(Visitor* visitor)
+{
+    visitor->trace(m_delayTime);
+    AudioDSPKernelProcessor::trace(visitor);
+}
+
 PassOwnPtr<AudioDSPKernel> DelayProcessor::createKernel()
 {
     return adoptPtr(new DelayDSPKernel(this));
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

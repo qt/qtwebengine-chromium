@@ -39,8 +39,6 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebMediaStream WebMediaStreamRegistry::lookupMediaStreamDescriptor(const WebURL& url)

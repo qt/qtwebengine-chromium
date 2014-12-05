@@ -10,14 +10,9 @@
 namespace net {
 
 namespace {
-
-// TCP retransmits after 3 nacks.
-static const size_t kNumberOfNacksBeforeRetransmission = 3;
-
 // How many RTTs the algorithm waits before determining a packet is lost due
 // to early retransmission.
 static const double kEarlyRetransmitLossDelayMultiplier = 1.25;
-
 }
 
 TCPLossAlgorithm::TCPLossAlgorithm()
@@ -36,34 +31,37 @@ SequenceNumberSet TCPLossAlgorithm::DetectLostPackets(
   SequenceNumberSet lost_packets;
   loss_detection_timeout_ = QuicTime::Zero();
   QuicTime::Delta loss_delay =
-      rtt_stats.SmoothedRtt().Multiply(kEarlyRetransmitLossDelayMultiplier);
-
+      rtt_stats.smoothed_rtt().Multiply(kEarlyRetransmitLossDelayMultiplier);
+  QuicPacketSequenceNumber sequence_number = unacked_packets.GetLeastUnacked();
   for (QuicUnackedPacketMap::const_iterator it = unacked_packets.begin();
-       it != unacked_packets.end() && it->first <= largest_observed; ++it) {
-    if (!it->second.in_flight) {
+       it != unacked_packets.end() && sequence_number <= largest_observed;
+       ++it, ++sequence_number) {
+    if (!it->in_flight) {
       continue;
     }
 
-    LOG_IF(DFATAL, it->second.nack_count == 0)
-        << "All packets less than largest observed should have been nacked.";
-    if (it->second.nack_count >= kNumberOfNacksBeforeRetransmission) {
-      lost_packets.insert(it->first);
+    LOG_IF(DFATAL, it->nack_count == 0)
+        << "All packets less than largest observed should have been nacked."
+        << "sequence_number:" << sequence_number
+        << " largest_observed:" << largest_observed;
+    if (it->nack_count >= kNumberOfNacksBeforeRetransmission) {
+      lost_packets.insert(sequence_number);
       continue;
     }
 
     // Only early retransmit(RFC5827) when the last packet gets acked and
     // there are retransmittable packets in flight.
     // This also implements a timer-protected variant of FACK.
-    if (it->second.retransmittable_frames &&
+    if (it->retransmittable_frames &&
         unacked_packets.largest_sent_packet() == largest_observed) {
       // Early retransmit marks the packet as lost once 1.25RTTs have passed
       // since the packet was sent and otherwise sets an alarm.
-      if (time >= it->second.sent_time.Add(loss_delay)) {
-        lost_packets.insert(it->first);
+      if (time >= it->sent_time.Add(loss_delay)) {
+        lost_packets.insert(sequence_number);
       } else {
         // Set the timeout for the earliest retransmittable packet where early
         // retransmit applies.
-        loss_detection_timeout_ = it->second.sent_time.Add(loss_delay);
+        loss_detection_timeout_ = it->sent_time.Add(loss_delay);
         break;
       }
     }

@@ -7,6 +7,7 @@
       'target_name': 'pull_in_all',
       'type': 'none',
       'dependencies': [
+        '../src/nonsfi/loader/loader.gyp:*',
         '../src/shared/gio/gio.gyp:*',
         '../src/shared/imc/imc.gyp:*',
         '../src/shared/platform/platform.gyp:*',
@@ -41,8 +42,6 @@
           'dependencies': [
             '../src/trusted/validator/driver/ncval.gyp:*',
             '../src/trusted/validator_arm/ncval.gyp:*',
-            '../src/trusted/validator_x86/ncval.gyp:*',
-            '../src/trusted/validator_x86/validator_x86.gyp:*',
           ],
         }],
         ['target_arch=="mipsel"', {

@@ -38,8 +38,6 @@
 #include "public/platform/WebURL.h"
 #include "wtf/PassRefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 class WebSecurityOriginPrivate : public SecurityOrigin {
@@ -110,6 +108,15 @@ bool WebSecurityOrigin::canRequest(const WebURL& url) const
     return m_private->canRequest(url);
 }
 
+bool WebSecurityOrigin::canAccessFeatureRequiringSecureOrigin(WebString& errorMessage) const
+{
+    ASSERT(m_private);
+    WTF::String message(errorMessage);
+    bool result = m_private->canAccessFeatureRequiringSecureOrigin(message);
+    errorMessage = message;
+    return result;
+}
+
 WebString WebSecurityOrigin::toString() const
 {
     ASSERT(m_private);
@@ -128,18 +135,18 @@ bool WebSecurityOrigin::canAccessPasswordManager() const
     return m_private->canAccessPasswordManager();
 }
 
-WebSecurityOrigin::WebSecurityOrigin(const WTF::PassRefPtr<WebCore::SecurityOrigin>& origin)
+WebSecurityOrigin::WebSecurityOrigin(const WTF::PassRefPtr<SecurityOrigin>& origin)
     : m_private(static_cast<WebSecurityOriginPrivate*>(origin.leakRef()))
 {
 }
 
-WebSecurityOrigin& WebSecurityOrigin::operator=(const WTF::PassRefPtr<WebCore::SecurityOrigin>& origin)
+WebSecurityOrigin& WebSecurityOrigin::operator=(const WTF::PassRefPtr<SecurityOrigin>& origin)
 {
     assign(static_cast<WebSecurityOriginPrivate*>(origin.leakRef()));
     return *this;
 }
 
-WebSecurityOrigin::operator WTF::PassRefPtr<WebCore::SecurityOrigin>() const
+WebSecurityOrigin::operator WTF::PassRefPtr<SecurityOrigin>() const
 {
     return PassRefPtr<SecurityOrigin>(const_cast<WebSecurityOriginPrivate*>(m_private));
 }

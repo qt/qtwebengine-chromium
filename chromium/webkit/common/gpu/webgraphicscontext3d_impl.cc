@@ -10,6 +10,7 @@
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/skia_bindings/gl_bindings_skia_cmd_buffer.h"
 
 #include "third_party/khronos/GLES2/gl2.h"
@@ -41,7 +42,7 @@ class WebGraphicsContext3DErrorMessageCallback
       : graphics_context_(context) {
   }
 
-  virtual void OnErrorMessage(const char* msg, int id) OVERRIDE;
+  virtual void OnErrorMessage(const char* msg, int id) override;
 
  private:
   WebGraphicsContext3DImpl* graphics_context_;
@@ -845,6 +846,47 @@ DELEGATE_TO_GL_2R(createAndConsumeTextureCHROMIUM,
                   CreateAndConsumeTextureCHROMIUM,
                   WGC3Denum, const WGC3Dbyte*, WebGLId)
 
+DELEGATE_TO_GL_2(genValuebuffersCHROMIUM,
+                 GenValuebuffersCHROMIUM,
+                 WGC3Dsizei,
+                 WebGLId*);
+
+WebGLId WebGraphicsContext3DImpl::createValuebufferCHROMIUM() {
+  GLuint o;
+  gl_->GenValuebuffersCHROMIUM(1, &o);
+  return o;
+}
+
+DELEGATE_TO_GL_2(deleteValuebuffersCHROMIUM,
+                 DeleteValuebuffersCHROMIUM,
+                 WGC3Dsizei,
+                 WebGLId*);
+
+void WebGraphicsContext3DImpl::deleteValuebufferCHROMIUM(WebGLId valuebuffer) {
+  gl_->DeleteValuebuffersCHROMIUM(1, &valuebuffer);
+}
+
+DELEGATE_TO_GL_1RB(isValuebufferCHROMIUM,
+                   IsValuebufferCHROMIUM,
+                   WebGLId,
+                   WGC3Dboolean)
+DELEGATE_TO_GL_2(bindValuebufferCHROMIUM,
+                 BindValuebufferCHROMIUM,
+                 WGC3Denum,
+                 WebGLId)
+DELEGATE_TO_GL_2(subscribeValueCHROMIUM,
+                 SubscribeValueCHROMIUM,
+                 WGC3Denum,
+                 WGC3Denum);
+DELEGATE_TO_GL_1(populateSubscribedValuesCHROMIUM,
+                 PopulateSubscribedValuesCHROMIUM,
+                 WGC3Denum);
+DELEGATE_TO_GL_3(uniformValuebufferCHROMIUM,
+                 UniformValuebufferCHROMIUM,
+                 WGC3Dint,
+                 WGC3Denum,
+                 WGC3Denum);
+
 void WebGraphicsContext3DImpl::insertEventMarkerEXT(
     const WGC3Dchar* marker) {
   gl_->InsertEventMarkerEXT(0, marker);
@@ -910,8 +952,8 @@ void WebGraphicsContext3DImpl::drawElementsInstancedANGLE(
 DELEGATE_TO_GL_2(vertexAttribDivisorANGLE, VertexAttribDivisorANGLE, WGC3Duint,
                  WGC3Duint)
 
-DELEGATE_TO_GL_4R(createImageCHROMIUM,
-                  CreateImageCHROMIUM,
+DELEGATE_TO_GL_4R(createGpuMemoryBufferImageCHROMIUM,
+                  CreateGpuMemoryBufferImageCHROMIUM,
                   WGC3Dsizei,
                   WGC3Dsizei,
                   WGC3Denum,
@@ -919,13 +961,6 @@ DELEGATE_TO_GL_4R(createImageCHROMIUM,
                   WGC3Duint);
 
 DELEGATE_TO_GL_1(destroyImageCHROMIUM, DestroyImageCHROMIUM, WGC3Duint);
-
-DELEGATE_TO_GL_3(getImageParameterivCHROMIUM, GetImageParameterivCHROMIUM,
-                 WGC3Duint, WGC3Denum, GLint*);
-
-DELEGATE_TO_GL_1R(mapImageCHROMIUM, MapImageCHROMIUM, WGC3Duint, void*);
-
-DELEGATE_TO_GL_1(unmapImageCHROMIUM, UnmapImageCHROMIUM, WGC3Duint);
 
 DELEGATE_TO_GL_6(framebufferTexture2DMultisampleEXT,
                  FramebufferTexture2DMultisampleEXT,
@@ -936,7 +971,6 @@ DELEGATE_TO_GL_5(renderbufferStorageMultisampleEXT,
                  WGC3Denum, WGC3Dsizei, WGC3Dsizei)
 
 GrGLInterface* WebGraphicsContext3DImpl::createGrGLInterface() {
-  makeContextCurrent();
   return skia_bindings::CreateCommandBufferSkiaGLBinding();
 }
 
@@ -978,6 +1012,20 @@ void WebGraphicsContext3DImpl::copyTextureToParentTextureCHROMIUM(
 }
 
 void WebGraphicsContext3DImpl::releaseShaderCompiler() {
+}
+
+// static
+void WebGraphicsContext3DImpl::ConvertAttributes(
+    const blink::WebGraphicsContext3D::Attributes& attributes,
+    ::gpu::gles2::ContextCreationAttribHelper* output_attribs) {
+  output_attribs->alpha_size = attributes.alpha ? 8 : 0;
+  output_attribs->depth_size = attributes.depth ? 24 : 0;
+  output_attribs->stencil_size = attributes.stencil ? 8 : 0;
+  output_attribs->samples = attributes.antialias ? 4 : 0;
+  output_attribs->sample_buffers = attributes.antialias ? 1 : 0;
+  output_attribs->fail_if_major_perf_caveat =
+      attributes.failIfMajorPerformanceCaveat;
+  output_attribs->bind_generates_resource = false;
 }
 
 }  // namespace gpu

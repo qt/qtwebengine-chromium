@@ -5,29 +5,26 @@
 //
 
 #include "SampleApplication.h"
-
-#ifdef _WIN32
-#include "win32/Win32Timer.h"
-#include "win32/Win32Window.h"
-#else
-#error unsupported OS.
-#endif
+#include "EGLWindow.h"
 
 SampleApplication::SampleApplication(const std::string& name, size_t width, size_t height,
-                                     EGLint glesMajorVersion, RendererType requestedRenderer)
-    : mSurface(EGL_NO_SURFACE),
-      mContext(EGL_NO_CONTEXT),
-      mClientVersion(glesMajorVersion),
-      mRequestedRenderer(requestedRenderer),
-      mWidth(width),
-      mHeight(height),
-      mName(name),
-      mRunning(false),
-#ifdef _WIN32
-      mTimer(new Win32Timer()),
-      mWindow(new Win32Window())
-#endif
+                                     EGLint glesMajorVersion, EGLint requestedRenderer)
+    : mName(name),
+      mRunning(false)
 {
+    mEGLWindow.reset(new EGLWindow(width, height, glesMajorVersion, requestedRenderer));
+    mTimer.reset(CreateTimer());
+    mOSWindow.reset(CreateOSWindow());
+
+    mEGLWindow->setConfigRedBits(8);
+    mEGLWindow->setConfigGreenBits(8);
+    mEGLWindow->setConfigBlueBits(8);
+    mEGLWindow->setConfigAlphaBits(8);
+    mEGLWindow->setConfigDepthBits(24);
+    mEGLWindow->setConfigStencilBits(8);
+
+    // Disable vsync
+    mEGLWindow->setSwapInterval(0);
 }
 
 SampleApplication::~SampleApplication()
@@ -53,37 +50,44 @@ void SampleApplication::draw()
 
 void SampleApplication::swap()
 {
-    eglSwapBuffers(mWindow->getDisplay(), mSurface);
+    mEGLWindow->swap();
 }
 
-Window *SampleApplication::getWindow() const
+OSWindow *SampleApplication::getWindow() const
 {
-    return mWindow.get();
+    return mOSWindow.get();
 }
 
 EGLConfig SampleApplication::getConfig() const
 {
-    return mConfig;
+    return mEGLWindow->getConfig();
+}
+
+EGLDisplay SampleApplication::getDisplay() const
+{
+    return mEGLWindow->getDisplay();
 }
 
 EGLSurface SampleApplication::getSurface() const
 {
-    return mSurface;
+    return mEGLWindow->getSurface();
 }
 
 EGLContext SampleApplication::getContext() const
 {
-    return mContext;
+    return mEGLWindow->getContext();
 }
 
 int SampleApplication::run()
 {
-    if (!mWindow->initialize(mName, mWidth, mHeight, mRequestedRenderer))
+    if (!mOSWindow->initialize(mName, mEGLWindow->getWidth(), mEGLWindow->getHeight()))
     {
         return -1;
     }
 
-    if (!initializeGL())
+    mOSWindow->setVisible(true);
+
+    if (!mEGLWindow->initializeGL(mOSWindow.get()))
     {
         return -1;
     }
@@ -126,14 +130,14 @@ int SampleApplication::run()
         draw();
         swap();
 
-        mWindow->messageLoop();
+        mOSWindow->messageLoop();
 
         prevTime = elapsedTime;
     }
 
     destroy();
-    destroyGL();
-    mWindow->destroy();
+    mEGLWindow->destroyGL();
+    mOSWindow->destroy();
 
     return result;
 }
@@ -145,79 +149,5 @@ void SampleApplication::exit()
 
 bool SampleApplication::popEvent(Event *event)
 {
-    return mWindow->popEvent(event);
-}
-
-bool SampleApplication::initializeGL()
-{
-    const EGLint configAttributes[] =
-    {
-        EGL_RED_SIZE,       8,
-        EGL_GREEN_SIZE,     8,
-        EGL_BLUE_SIZE,      8,
-        EGL_ALPHA_SIZE,     8,
-        EGL_DEPTH_SIZE,     24,
-        EGL_STENCIL_SIZE,   8,
-        EGL_SAMPLE_BUFFERS, EGL_DONT_CARE,
-        EGL_NONE
-    };
-
-    EGLint configCount;
-    if (!eglChooseConfig(mWindow->getDisplay(), configAttributes, &mConfig, 1, &configCount) || (configCount != 1))
-    {
-        destroyGL();
-        return false;
-    }
-
-    const EGLint surfaceAttributes[] =
-    {
-        EGL_POST_SUB_BUFFER_SUPPORTED_NV, EGL_TRUE,
-        EGL_NONE, EGL_NONE,
-    };
-
-    mSurface = eglCreateWindowSurface(mWindow->getDisplay(), mConfig, mWindow->getNativeWindow(), surfaceAttributes);
-    if (mSurface == EGL_NO_SURFACE)
-    {
-        eglGetError(); // Clear error and try again
-        mSurface = eglCreateWindowSurface(mWindow->getDisplay(), mConfig, NULL, NULL);
-    }
-
-    if (eglGetError() != EGL_SUCCESS)
-    {
-        destroyGL();
-        return false;
-    }
-
-    EGLint contextAttibutes[] =
-    {
-        EGL_CONTEXT_CLIENT_VERSION, mClientVersion,
-        EGL_NONE
-    };
-    mContext = eglCreateContext(mWindow->getDisplay(), mConfig, NULL, contextAttibutes);
-    if (eglGetError() != EGL_SUCCESS)
-    {
-        destroyGL();
-        return false;
-    }
-
-    eglMakeCurrent(mWindow->getDisplay(), mSurface, mSurface, mContext);
-    if (eglGetError() != EGL_SUCCESS)
-    {
-        destroyGL();
-        return false;
-    }
-
-    // Turn off vsync
-    eglSwapInterval(mWindow->getDisplay(), 0);
-
-    return true;
-}
-
-void SampleApplication::destroyGL()
-{
-    eglDestroySurface(mWindow->getDisplay(), mSurface);
-    mSurface = 0;
-
-    eglDestroyContext(mWindow->getDisplay(), mContext);
-    mContext = 0;
+    return mOSWindow->popEvent(event);
 }

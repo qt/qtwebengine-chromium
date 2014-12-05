@@ -14,36 +14,36 @@ namespace ui {
 // A ui::InputMethod implementation for Aura on Linux platforms. The
 // implementation details are separated to ui::LinuxInputMethodContext
 // interface.
-class InputMethodAuraLinux : public InputMethodBase,
-                             public LinuxInputMethodContextDelegate {
+class UI_BASE_EXPORT InputMethodAuraLinux
+    : public InputMethodBase,
+      public LinuxInputMethodContextDelegate {
  public:
   explicit InputMethodAuraLinux(internal::InputMethodDelegate* delegate);
-  virtual ~InputMethodAuraLinux();
+  ~InputMethodAuraLinux() override;
 
   // Overriden from InputMethod.
-  virtual void Init(bool focused) OVERRIDE;
-  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
-                                        NativeEventResult* result) OVERRIDE;
-  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
-  virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
-  virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
-  virtual void OnInputLocaleChanged() OVERRIDE;
-  virtual std::string GetInputLocale() OVERRIDE;
-  virtual bool IsActive() OVERRIDE;
-  virtual bool IsCandidatePopupOpen() const OVERRIDE;
+  void Init(bool focused) override;
+  bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                NativeEventResult* result) override;
+  bool DispatchKeyEvent(const ui::KeyEvent& event) override;
+  void OnTextInputTypeChanged(const TextInputClient* client) override;
+  void OnCaretBoundsChanged(const TextInputClient* client) override;
+  void CancelComposition(const TextInputClient* client) override;
+  void OnInputLocaleChanged() override;
+  std::string GetInputLocale() override;
+  bool IsActive() override;
+  bool IsCandidatePopupOpen() const override;
 
   // Overriden from ui::LinuxInputMethodContextDelegate
-  virtual void OnCommit(const base::string16& text) OVERRIDE;
-  virtual void OnPreeditChanged(const CompositionText& composition_text)
-      OVERRIDE;
-  virtual void OnPreeditEnd() OVERRIDE;
-  virtual void OnPreeditStart() OVERRIDE;
+  void OnCommit(const base::string16& text) override;
+  void OnPreeditChanged(const CompositionText& composition_text) override;
+  void OnPreeditEnd() override;
+  void OnPreeditStart() override;
 
  protected:
   // Overridden from InputMethodBase.
-  virtual void OnDidChangeFocusedClient(TextInputClient* focused_before,
-                                        TextInputClient* focused) OVERRIDE;
+  void OnDidChangeFocusedClient(TextInputClient* focused_before,
+                                TextInputClient* focused) override;
 
  private:
   // Allows to fire a VKEY_PROCESSKEY key event.

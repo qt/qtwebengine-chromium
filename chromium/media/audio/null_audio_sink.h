@@ -25,13 +25,13 @@ class MEDIA_EXPORT NullAudioSink
   NullAudioSink(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   // AudioRendererSink implementation.
-  virtual void Initialize(const AudioParameters& params,
-                          RenderCallback* callback) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Pause() OVERRIDE;
-  virtual void Play() OVERRIDE;
-  virtual bool SetVolume(double volume) OVERRIDE;
+  void Initialize(const AudioParameters& params,
+                  RenderCallback* callback) override;
+  void Start() override;
+  void Stop() override;
+  void Pause() override;
+  void Play() override;
+  bool SetVolume(double volume) override;
 
   // Enables audio frame hashing.  Must be called prior to Initialize().
   void StartAudioHashForTesting();
@@ -40,7 +40,7 @@ class MEDIA_EXPORT NullAudioSink
   std::string GetAudioHashForTesting();
 
  protected:
-  virtual ~NullAudioSink();
+  ~NullAudioSink() override;
 
  private:
   // Task that periodically calls Render() to consume audio data.

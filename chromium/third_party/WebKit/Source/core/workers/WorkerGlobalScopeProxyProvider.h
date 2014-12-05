@@ -31,14 +31,13 @@
 #ifndef WorkerGlobalScopeProxyProvider_h
 #define WorkerGlobalScopeProxyProvider_h
 
-#include "core/page/Page.h"
 #include "platform/Supplementable.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
+namespace blink {
 
-namespace WebCore {
-
+class Page;
 class WorkerGlobalScopeProxy;
 class Worker;
 
@@ -56,6 +55,6 @@ public:
 
 void provideWorkerGlobalScopeProxyProviderTo(Page&, PassOwnPtrWillBeRawPtr<WorkerGlobalScopeProxyProvider>);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerGlobalScopeProxyProvider_h

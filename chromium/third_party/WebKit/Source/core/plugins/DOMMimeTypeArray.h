@@ -21,40 +21,40 @@
 #ifndef DOMMimeTypeArray_h
 #define DOMMimeTypeArray_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/plugins/DOMMimeType.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class PluginData;
 
-class DOMMimeTypeArray FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMMimeTypeArray>, public ScriptWrappable, public DOMWindowProperty {
+class DOMMimeTypeArray final : public RefCountedWillBeGarbageCollected<DOMMimeTypeArray>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMMimeTypeArray);
 public:
     static PassRefPtrWillBeRawPtr<DOMMimeTypeArray> create(LocalFrame* frame)
     {
         return adoptRefWillBeNoop(new DOMMimeTypeArray(frame));
     }
-    virtual ~DOMMimeTypeArray();
 
     unsigned length() const;
     PassRefPtrWillBeRawPtr<DOMMimeType> item(unsigned index);
     bool canGetItemsForName(const AtomicString& propertyName);
     PassRefPtrWillBeRawPtr<DOMMimeType> namedItem(const AtomicString& propertyName);
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit DOMMimeTypeArray(LocalFrame*);
     PluginData* getPluginData() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MimeTypeArray_h

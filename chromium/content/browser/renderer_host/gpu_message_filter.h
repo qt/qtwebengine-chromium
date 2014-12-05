@@ -37,7 +37,7 @@ class GpuMessageFilter : public BrowserMessageFilter {
                    RenderWidgetHelper* render_widget_helper);
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // This set of API is used to subscribe to frame presentation events.
   // See RenderWidgetHostViewFrameSubscriber for more details.
@@ -52,7 +52,7 @@ class GpuMessageFilter : public BrowserMessageFilter {
   struct CreateViewCommandBufferRequest;
   struct FrameSubscription;
 
-  virtual ~GpuMessageFilter();
+  ~GpuMessageFilter() override;
 
   // Message handlers called on the browser IO thread:
   void OnEstablishGpuChannel(CauseForGpuLaunch,
@@ -81,10 +81,10 @@ class GpuMessageFilter : public BrowserMessageFilter {
 
   scoped_refptr<RenderWidgetHelper> render_widget_helper_;
 
-  base::WeakPtrFactory<GpuMessageFilter> weak_ptr_factory_;
-
   typedef std::vector<linked_ptr<FrameSubscription> > FrameSubscriptionList;
   FrameSubscriptionList frame_subscription_list_;
+
+  base::WeakPtrFactory<GpuMessageFilter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMessageFilter);
 };

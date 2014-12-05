@@ -26,14 +26,13 @@
 
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLHeadElement::HTMLHeadElement(Document& document)
     : HTMLElement(headTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLHeadElement)

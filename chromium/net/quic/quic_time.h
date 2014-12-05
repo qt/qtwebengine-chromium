@@ -18,6 +18,8 @@
 namespace net {
 
 static const uint64 kNumMicrosPerSecond = base::Time::kMicrosecondsPerSecond;
+static const uint64 kNumMicrosPerMilli =
+    base::Time::kMicrosecondsPerMillisecond;
 
 // A QuicTime is a purely relative time. QuicTime values from different clocks
 // cannot be compared to each other. If you need an absolute time, see
@@ -80,6 +82,9 @@ class NET_EXPORT_PRIVATE QuicTime {
   // Creates a new QuicTime with an internal value of 0.  IsInitialized()
   // will return false for these times.
   static QuicTime Zero();
+
+  // Creates a new QuicTime with an infinite time.
+  static QuicTime Infinite();
 
   // Returns the later time of time1 and time2.
   static QuicTime Max(QuicTime time1, QuicTime time2);

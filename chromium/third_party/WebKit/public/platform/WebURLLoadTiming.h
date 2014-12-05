@@ -34,9 +34,9 @@
 #include "WebCommon.h"
 #include "WebPrivatePtr.h"
 
-namespace WebCore { class ResourceLoadTiming; }
-
 namespace blink {
+
+class ResourceLoadTiming;
 class WebString;
 
 class WebURLLoadTiming {
@@ -78,6 +78,15 @@ public:
     BLINK_PLATFORM_EXPORT double connectEnd() const;
     BLINK_PLATFORM_EXPORT void setConnectEnd(double);
 
+    BLINK_PLATFORM_EXPORT double serviceWorkerFetchStart() const;
+    BLINK_PLATFORM_EXPORT void setServiceWorkerFetchStart(double);
+
+    BLINK_PLATFORM_EXPORT double serviceWorkerFetchReady() const;
+    BLINK_PLATFORM_EXPORT void setServiceWorkerFetchReady(double);
+
+    BLINK_PLATFORM_EXPORT double serviceWorkerFetchEnd() const;
+    BLINK_PLATFORM_EXPORT void setServiceWorkerFetchEnd(double);
+
     BLINK_PLATFORM_EXPORT double sendStart() const;
     BLINK_PLATFORM_EXPORT void setSendStart(double);
 
@@ -94,13 +103,13 @@ public:
     BLINK_PLATFORM_EXPORT void setSSLEnd(double);
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebURLLoadTiming(const WTF::PassRefPtr<WebCore::ResourceLoadTiming>&);
-    BLINK_PLATFORM_EXPORT WebURLLoadTiming& operator=(const WTF::PassRefPtr<WebCore::ResourceLoadTiming>&);
-    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<WebCore::ResourceLoadTiming>() const;
+    BLINK_PLATFORM_EXPORT WebURLLoadTiming(const WTF::PassRefPtr<ResourceLoadTiming>&);
+    BLINK_PLATFORM_EXPORT WebURLLoadTiming& operator=(const WTF::PassRefPtr<ResourceLoadTiming>&);
+    BLINK_PLATFORM_EXPORT operator WTF::PassRefPtr<ResourceLoadTiming>() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::ResourceLoadTiming> m_private;
+    WebPrivatePtr<ResourceLoadTiming> m_private;
 };
 
 } // namespace blink

@@ -2,8 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="../../../../third_party/polymer/platform/platform.js">
-<include src="../../../../third_party/polymer/polymer/polymer.js">
+<include src="../../../../third_party/polymer_legacy/platform/platform.js">
+<include src="../../../../third_party/polymer_legacy/polymer/polymer.js">
+
+/**
+ * Formats size to a human readable form.
+ * @param {number} size Size in bytes.
+ * @return {string} Output string in a human-readable format.
+ */
+function formatSizeCommon(size) {
+  if (size < 1024)
+    return size + ' B';
+  if (size < 1024 * 1024)
+    return Math.round(size / 1024) + ' KB';
+  return Math.round(size / 1024 / 1024) + ' MB';
+}
 
 // Defines the file-systems element.
 Polymer('file-systems', {
@@ -60,6 +73,15 @@ Polymer('request-events', {
   },
 
   /**
+   * Formats size to a human readable form.
+   * @param {number} size Size in bytes.
+   * @return {string} Output string in a human-readable format.
+   */
+  formatSize: function(size) {
+    return formatSizeCommon(size);
+  },
+
+  /**
    * Formats a boolean value to human-readable form.
    * @param {boolean=} opt_hasMore Input value.
    * @return {string} Output string in a human-readable format.
@@ -69,6 +91,18 @@ Polymer('request-events', {
       return '';
 
     return opt_hasMore ? 'HAS_MORE' : 'LAST';
+  },
+
+  /**
+   * Formats execution time to human-readable form.
+   * @param {boolean=} opt_executionTime Input value.
+   * @return {string} Output string in a human-readable format.
+   */
+  formatExecutionTime: function(opt_executionTime) {
+    if (opt_executionTime == undefined)
+      return '';
+
+    return opt_executionTime + ' ms';
   },
 
   /**
@@ -115,6 +149,15 @@ Polymer('request-timeline', {
   },
 
   /**
+   * Formats size to a human readable form.
+   * @param {number} size Size in bytes.
+   * @return {string} Output string in a human-readable format.
+   */
+  formatSize: function(size) {
+    return formatSizeCommon(size);
+  },
+
+  /**
    * Zooms in the timeline.
    * @param {Event} event Event.
    * @param {number} detail Detail.
@@ -132,6 +175,31 @@ Polymer('request-timeline', {
    */
   zoomOutClicked: function(event, detail, sender) {
     this.scale /= this.SCALE_STEP;
+  },
+
+  /**
+   * Selects or deselects an element on the timeline.
+   * @param {Event} event Event.
+   * @param {number} detail Detail.
+   * @param {HTMLElement} sender Sender.
+   */
+  elementClicked: function(event, detail, sender) {
+    if (sender.dataset.id in this.selected) {
+      delete this.selected[sender.dataset.id];
+      sender.classList.remove('selected');
+    } else {
+      this.selected[sender.dataset.id] = true;
+      sender.classList.add('selected');
+    }
+
+    var requestEventsNode = document.querySelector('#request-events');
+    requestEventsNode.hidden = false;
+
+    requestEventsNode.model = [];
+    for (var i = 0; i < this.model.length; i++) {
+      if (this.model[i].id in this.selected)
+        requestEventsNode.model.push(this.model[i]);
+    }
   },
 
   /**
@@ -159,6 +227,7 @@ Polymer('request-timeline', {
       this.timeStart = null;
       this.idleStart = null;
       this.idleTotal = 0;
+      this.selected = [];
       return;
     }
 
@@ -194,6 +263,8 @@ Polymer('request-timeline', {
                 index: this.chart.length,
                 id: event.id,
                 time: event.time,
+                executionTime: 0,
+                length: 0,
                 requestType: event.requestType,
                 left: event.time - this.timeStart - this.idleTotal,
                 row: rowIndex,
@@ -220,6 +291,8 @@ Polymer('request-timeline', {
             return;
           var chartIndex = this.active[event.id];
           this.chart[chartIndex].state = event.eventType;
+          this.chart[chartIndex].executionTime = event.executionTime;
+          this.chart[chartIndex].valueSize = event.valueSize;
           this.chart[chartIndex].modelIndexes.push(i);
           break;
 
@@ -242,6 +315,12 @@ Polymer('request-timeline', {
       }
     }
   },
+
+  /**
+   * Map of selected requests.
+   * @type {Object.<number, boolean>}
+   */
+  selected: {},
 
   /**
    * Map of requests which has started, but are not completed yet, from
@@ -310,15 +389,18 @@ function updateFileSystems(fileSystems) {
  */
 function onRequestEvent(event) {
   event.time = new Date(event.time);  // Convert to a real Date object.
-
   var requestTimelineNode = document.querySelector('#request-timeline');
   requestTimelineNode.model.push(event);
-
-  var requestEventsNode = document.querySelector('#request-events');
-  requestEventsNode.model.push(event);
 }
 
 document.addEventListener('DOMContentLoaded', function() {
+  var context = document.getCSSCanvasContext('2d', 'dashedPattern', 4, 4);
+  context.beginPath();
+  context.strokeStyle = '#ffffff';
+  context.moveTo(0, 0);
+  context.lineTo(4, 4);
+  context.stroke();
+
   chrome.send('updateFileSystems');
 
   // Refresh periodically.

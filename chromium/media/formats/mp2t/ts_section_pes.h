@@ -15,17 +15,19 @@ namespace media {
 namespace mp2t {
 
 class EsParser;
+class TimestampUnroller;
 
 class TsSectionPes : public TsSection {
  public:
-  explicit TsSectionPes(scoped_ptr<EsParser> es_parser);
+  TsSectionPes(scoped_ptr<EsParser> es_parser,
+               TimestampUnroller* timestamp_unroller);
   virtual ~TsSectionPes();
 
   // TsSection implementation.
   virtual bool Parse(bool payload_unit_start_indicator,
-                     const uint8* buf, int size) OVERRIDE;
-  virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
+                     const uint8* buf, int size) override;
+  virtual void Flush() override;
+  virtual void Reset() override;
 
  private:
   // Emit a reassembled PES packet.
@@ -49,10 +51,7 @@ class TsSectionPes : public TsSection {
   bool wait_for_pusi_;
 
   // Used to unroll PTS and DTS.
-  bool previous_pts_valid_;
-  int64 previous_pts_;
-  bool previous_dts_valid_;
-  int64 previous_dts_;
+  TimestampUnroller* const timestamp_unroller_;
 
   DISALLOW_COPY_AND_ASSIGN(TsSectionPes);
 };

@@ -12,19 +12,19 @@
 #include "{{filename}}"
 {% endfor %}
 
-namespace WebCore {
+namespace blink {
 
-class {{v8_class}} FINAL : public {{cpp_class}}, public ActiveDOMCallback {
+class {{v8_class}} final : public {{cpp_class}}, public ActiveDOMCallback {
 public:
-    static PassOwnPtr<{{v8_class}}> create(v8::Handle<v8::Function> callback, ScriptState* scriptState)
+    static {{v8_class}}* create(v8::Handle<v8::Function> callback, ScriptState* scriptState)
     {
-        return adoptPtr(new {{v8_class}}(callback, scriptState));
+        return new {{v8_class}}(callback, scriptState);
     }
 
     virtual ~{{v8_class}}();
 
 {% for method in methods %}
-    virtual {{method.cpp_type}} {{method.name}}({{method.argument_declarations | join(', ')}}) OVERRIDE;
+    virtual {{method.cpp_type}} {{method.name}}({{method.argument_declarations | join(', ')}}) override;
 {% endfor %}
 private:
     {{v8_class}}(v8::Handle<v8::Function>, ScriptState*);

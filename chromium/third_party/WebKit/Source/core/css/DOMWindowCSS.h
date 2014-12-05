@@ -30,14 +30,16 @@
 #ifndef DOMWindowCSS_h
 #define DOMWindowCSS_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class DOMWindowCSS : public RefCountedWillBeGarbageCollected<DOMWindowCSS> {
+class DOMWindowCSS : public RefCountedWillBeGarbageCollected<DOMWindowCSS>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DOMWindowCSS> create();
 
@@ -47,11 +49,9 @@ public:
     void trace(Visitor*) { }
 
 private:
-    DOMWindowCSS()
-    {
-    }
+    DOMWindowCSS() { }
 };
 
-}
+} // namespace blink
 
 #endif

@@ -21,6 +21,7 @@
 #include <vector>
 
 #include "base/base_export.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 
 namespace base {
@@ -31,7 +32,7 @@ class BASE_EXPORT CommandLine {
  public:
 #if defined(OS_WIN)
   // The native command line string type.
-  typedef std::wstring StringType;
+  typedef base::string16 StringType;
 #elif defined(OS_POSIX)
   typedef std::string StringType;
 #endif
@@ -87,7 +88,7 @@ class BASE_EXPORT CommandLine {
   static bool InitializedForCurrentProcess();
 
 #if defined(OS_WIN)
-  static CommandLine FromString(const std::wstring& command_line);
+  static CommandLine FromString(const base::string16& command_line);
 #endif
 
   // Initialize from an argv vector.
@@ -97,12 +98,41 @@ class BASE_EXPORT CommandLine {
   // Constructs and returns the represented command line string.
   // CAUTION! This should be avoided on POSIX because quoting behavior is
   // unclear.
-  StringType GetCommandLineString() const;
+  StringType GetCommandLineString() const {
+    return GetCommandLineStringInternal(false);
+  }
+
+#if defined(OS_WIN)
+  // Constructs and returns the represented command line string. Assumes the
+  // command line contains placeholders (eg, %1) and quotes any program or
+  // argument with a '%' in it. This should be avoided unless the placeholder is
+  // required by an external interface (eg, the Windows registry), because it is
+  // not generally safe to replace it with an arbitrary string. If possible,
+  // placeholders should be replaced *before* converting the command line to a
+  // string.
+  StringType GetCommandLineStringWithPlaceholders() const {
+    return GetCommandLineStringInternal(true);
+  }
+#endif
 
   // Constructs and returns the represented arguments string.
   // CAUTION! This should be avoided on POSIX because quoting behavior is
   // unclear.
-  StringType GetArgumentsString() const;
+  StringType GetArgumentsString() const {
+    return GetArgumentsStringInternal(false);
+  }
+
+#if defined(OS_WIN)
+  // Constructs and returns the represented arguments string. Assumes the
+  // command line contains placeholders (eg, %1) and quotes any argument with a
+  // '%' in it. This should be avoided unless the placeholder is required by an
+  // external interface (eg, the Windows registry), because it is not generally
+  // safe to replace it with an arbitrary string. If possible, placeholders
+  // should be replaced *before* converting the arguments to a string.
+  StringType GetArgumentsStringWithPlaceholders() const {
+    return GetArgumentsStringInternal(true);
+  }
+#endif
 
   // Returns the original command line string as a vector of strings.
   const StringVector& argv() const { return argv_; }
@@ -162,7 +192,7 @@ class BASE_EXPORT CommandLine {
 #if defined(OS_WIN)
   // Initialize by parsing the given command line string.
   // The program name is assumed to be the first item in the string.
-  void ParseFromString(const std::wstring& command_line);
+  void ParseFromString(const base::string16& command_line);
 #endif
 
  private:
@@ -172,6 +202,14 @@ class BASE_EXPORT CommandLine {
   // process's command line and then add some flags to it. For example:
   //   CommandLine cl(*CommandLine::ForCurrentProcess());
   //   cl.AppendSwitch(...);
+
+  // Internal version of GetCommandLineString. If |quote_placeholders| is true,
+  // also quotes parts with '%' in them.
+  StringType GetCommandLineStringInternal(bool quote_placeholders) const;
+
+  // Internal version of GetArgumentsString. If |quote_placeholders| is true,
+  // also quotes parts with '%' in them.
+  StringType GetArgumentsStringInternal(bool quote_placeholders) const;
 
   // The singleton CommandLine representing the current process's command line.
   static CommandLine* current_process_commandline_;

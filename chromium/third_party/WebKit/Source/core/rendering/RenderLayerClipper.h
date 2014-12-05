@@ -45,83 +45,105 @@
 #ifndef RenderLayerClipper_h
 #define RenderLayerClipper_h
 
-#include "core/rendering/ClipRect.h"
-#include "core/rendering/RenderBox.h" // For OverlayScrollbarSizeRelevancy.
+#include "core/rendering/ClipRectsCache.h"
+#include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 
-struct ClipRectsContext {
-    ClipRectsContext(const RenderLayer* inRootLayer, ClipRectsType inClipRectsType, OverlayScrollbarSizeRelevancy inOverlayScrollbarSizeRelevancy = IgnoreOverlayScrollbarSize, ShouldRespectOverflowClip inRespectOverflowClip = RespectOverflowClip, const LayoutSize& inSubPixelAccumulation = LayoutSize())
-        : rootLayer(inRootLayer)
-        , clipRectsType(inClipRectsType)
-        , overlayScrollbarSizeRelevancy(inOverlayScrollbarSizeRelevancy)
-        , respectOverflowClip(inRespectOverflowClip)
-        , subPixelAccumulation(inSubPixelAccumulation)
-    { }
-    const RenderLayer* rootLayer;
-    ClipRectsType clipRectsType;
-    OverlayScrollbarSizeRelevancy overlayScrollbarSizeRelevancy;
-    ShouldRespectOverflowClip respectOverflowClip;
-    LayoutSize subPixelAccumulation;
+enum ShouldRespectOverflowClip {
+    IgnoreOverflowClip,
+    RespectOverflowClip
 };
 
-class RenderLayerClipper FINAL {
+class ClipRectsContext {
+public:
+    ClipRectsContext(const RenderLayer* root, ClipRectsCacheSlot slot, OverlayScrollbarSizeRelevancy relevancy = IgnoreOverlayScrollbarSize, const LayoutSize& accumulation = LayoutSize())
+        : rootLayer(root)
+        , scrollbarRelevancy(relevancy)
+        , cacheSlot(slot)
+        , subPixelAccumulation(accumulation)
+        , respectOverflowClip(slot == PaintingClipRectsIgnoringOverflowClip ? IgnoreOverflowClip : RespectOverflowClip)
+    {
+    }
+
+    void setIgnoreOverflowClip()
+    {
+        ASSERT(!usesCache() || cacheSlot == PaintingClipRects);
+        ASSERT(respectOverflowClip == RespectOverflowClip);
+        if (usesCache())
+            cacheSlot = PaintingClipRectsIgnoringOverflowClip;
+        respectOverflowClip = IgnoreOverflowClip;
+    }
+
+    bool usesCache() const
+    {
+        return cacheSlot != UncachedClipRects;
+    }
+
+    const RenderLayer* const rootLayer;
+    const OverlayScrollbarSizeRelevancy scrollbarRelevancy;
+
+private:
+    friend class RenderLayerClipper;
+
+    ClipRectsCacheSlot cacheSlot;
+    LayoutSize subPixelAccumulation;
+    ShouldRespectOverflowClip respectOverflowClip;
+};
+
+class RenderLayerClipper {
     WTF_MAKE_NONCOPYABLE(RenderLayerClipper);
 public:
-    explicit RenderLayerClipper(RenderLayerModelObject& renderer)
-        : m_renderer(renderer)
-        , m_compositingClipRectsDirty(false)
-    {
-    }
+    explicit RenderLayerClipper(RenderLayerModelObject&);
 
-    ClipRects* clipRects(const ClipRectsContext& context) const
-    {
-        ASSERT(context.clipRectsType < NumCachedClipRectsTypes);
-        return m_clipRectsCache ? m_clipRectsCache->getClipRects(context.clipRectsType, context.respectOverflowClip).get() : 0;
-    }
-
-    // Compute and cache clip rects computed with the given layer as the root
-    void updateClipRects(const ClipRectsContext&);
-
-    void clearClipRectsIncludingDescendants(ClipRectsType typeToClear = AllClipRectTypes);
-    void clearClipRects(ClipRectsType typeToClear = AllClipRectTypes);
-
-    void setCompositingClipRectsDirty();
+    void clearClipRectsIncludingDescendants();
+    void clearClipRectsIncludingDescendants(ClipRectsCacheSlot);
 
     LayoutRect childrenClipRect() const; // Returns the foreground clip rect of the layer in the document's coordinate space.
     LayoutRect localClipRect() const; // Returns the background clip rect of the layer in the local coordinate space.
 
+    ClipRects* getClipRects(const ClipRectsContext&) const;
+
     ClipRect backgroundClipRect(const ClipRectsContext&) const;
 
-    // FIXME: The following functions should be private.
-
     // This method figures out our layerBounds in coordinates relative to
-    // |rootLayer}. It also computes our background and foreground clip rects
+    // |rootLayer|. It also computes our background and foreground clip rects
     // for painting/event handling.
     // Pass offsetFromRoot if known.
     void calculateRects(const ClipRectsContext&, const LayoutRect& paintDirtyRect, LayoutRect& layerBounds,
         ClipRect& backgroundRect, ClipRect& foregroundRect, ClipRect& outlineRect, const LayoutPoint* offsetFromRoot = 0) const;
 
-    // Compute and return the clip rects. If useCached is true, will used previously computed clip rects on ancestors
-    // (rather than computing them all from scratch up the parent chain).
+private:
     void calculateClipRects(const ClipRectsContext&, ClipRects&) const;
 
-private:
-    void parentClipRects(const ClipRectsContext&, ClipRects&) const;
+    ClipRects* clipRectsIfCached(const ClipRectsContext&) const;
+    ClipRects* storeClipRectsInCache(const ClipRectsContext&, ClipRects* parentClipRects, const ClipRects&) const;
 
-    // The layer relative to which clipping rects for this layer are computed.
+    // cachedClipRects looks buggy: It doesn't check whether context.rootLayer and entry.root match.
+    // FIXME: Move callers to clipRectsIfCached, which does the proper checks.
+    ClipRects* cachedClipRects(const ClipRectsContext& context) const
+    {
+        return m_cache ? m_cache->get(context.cacheSlot).clipRects.get() : 0;
+    }
+
+    void getOrCalculateClipRects(const ClipRectsContext&, ClipRects&) const;
+
     RenderLayer* clippingRootForPainting() const;
 
-    bool isClippingRootForContext(const ClipRectsContext&) const;
+    ClipRectsCache& cache() const
+    {
+        if (!m_cache)
+            m_cache = adoptPtr(new ClipRectsCache);
+        return *m_cache;
+    }
 
     // FIXME: Could this be a RenderBox?
     RenderLayerModelObject& m_renderer;
-    OwnPtr<ClipRectsCache> m_clipRectsCache;
-    unsigned m_compositingClipRectsDirty : 1;
+    mutable OwnPtr<ClipRectsCache> m_cache;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderLayerClipper_h

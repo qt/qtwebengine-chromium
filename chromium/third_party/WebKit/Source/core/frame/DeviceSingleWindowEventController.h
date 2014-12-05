@@ -6,27 +6,30 @@
 #define DeviceSingleWindowEventController_h
 
 #include "core/frame/DOMWindowLifecycleObserver.h"
-#include "core/frame/DeviceEventControllerBase.h"
+#include "core/frame/PlatformEventController.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Event;
 
-class DeviceSingleWindowEventController : public DeviceEventControllerBase, public DOMWindowLifecycleObserver {
+class DeviceSingleWindowEventController : public NoBaseWillBeGarbageCollectedFinalized<DeviceSingleWindowEventController>, public PlatformEventController, public DOMWindowLifecycleObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DeviceSingleWindowEventController);
 public:
+    virtual ~DeviceSingleWindowEventController();
+
     // Inherited from DeviceEventControllerBase.
-    virtual void didUpdateData() OVERRIDE;
+    virtual void didUpdateData() override;
+    virtual void trace(Visitor*);
 
     // Inherited from DOMWindowLifecycleObserver.
-    virtual void didAddEventListener(LocalDOMWindow*, const AtomicString&) OVERRIDE;
-    virtual void didRemoveEventListener(LocalDOMWindow*, const AtomicString&) OVERRIDE;
-    virtual void didRemoveAllEventListeners(LocalDOMWindow*) OVERRIDE;
+    virtual void didAddEventListener(LocalDOMWindow*, const AtomicString&) override;
+    virtual void didRemoveEventListener(LocalDOMWindow*, const AtomicString&) override;
+    virtual void didRemoveAllEventListeners(LocalDOMWindow*) override;
 
 protected:
     explicit DeviceSingleWindowEventController(Document&);
-    virtual ~DeviceSingleWindowEventController();
 
     void dispatchDeviceEvent(const PassRefPtrWillBeRawPtr<Event>);
 
@@ -35,10 +38,12 @@ protected:
     virtual bool isNullEvent(Event*) const = 0;
 
 private:
+    Document& document() const { return *m_document; }
+
     bool m_needsCheckingNullEvents;
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceSingleWindowEventController_h

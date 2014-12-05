@@ -27,8 +27,8 @@
 
 #include "talk/media/devices/deviceinfo.h"
 
-#include "talk/base/common.h"  // for ASSERT
 #include "talk/media/devices/libudevsymboltable.h"
+#include "webrtc/base/common.h"  // for ASSERT
 
 namespace cricket {
 
@@ -94,7 +94,7 @@ class ScopedUdevEnumerate {
 
 bool GetUsbProperty(const Device& device, const char* property_name,
                     std::string* property) {
-  talk_base::scoped_ptr<ScopedLibUdev> libudev_context(ScopedLibUdev::Create());
+  rtc::scoped_ptr<ScopedLibUdev> libudev_context(ScopedLibUdev::Create());
   if (!libudev_context) {
     return false;
   }

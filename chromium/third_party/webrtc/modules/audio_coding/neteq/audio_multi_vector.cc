@@ -57,10 +57,10 @@ void AudioMultiVector::Zeros(size_t length) {
   }
 }
 
-void AudioMultiVector::CopyFrom(AudioMultiVector* copy_to) const {
+void AudioMultiVector::CopyTo(AudioMultiVector* copy_to) const {
   if (copy_to) {
     for (size_t i = 0; i < num_channels_; ++i) {
-      channels_[i]->CopyFrom(&(*copy_to)[i]);
+      channels_[i]->CopyTo(&(*copy_to)[i]);
     }
   }
 }
@@ -200,6 +200,12 @@ void AudioMultiVector::AssertSize(size_t required_size) {
 bool AudioMultiVector::Empty() const {
   assert(channels_[0]);
   return channels_[0]->Empty();
+}
+
+void AudioMultiVector::CopyChannel(size_t from_channel, size_t to_channel) {
+  assert(from_channel < num_channels_);
+  assert(to_channel < num_channels_);
+  channels_[from_channel]->CopyTo(channels_[to_channel]);
 }
 
 const AudioVector& AudioMultiVector::operator[](size_t index) const {

@@ -23,7 +23,6 @@
 namespace webrtc {
 
 class PushSincResampler;
-class SplitChannelBuffer;
 class IFChannelBuffer;
 
 struct SplitFilterStates {
@@ -56,21 +55,37 @@ class AudioBuffer {
   int samples_per_split_channel() const;
   int samples_per_keyboard_channel() const;
 
+  // Sample array accessors. Channels are guaranteed to be stored contiguously
+  // in memory. Prefer to use the const variants of each accessor when
+  // possible, since they incur less float<->int16 conversion overhead.
   int16_t* data(int channel);
   const int16_t* data(int channel) const;
   int16_t* low_pass_split_data(int channel);
   const int16_t* low_pass_split_data(int channel) const;
   int16_t* high_pass_split_data(int channel);
-  const int16_t* high_pass_split_data(int channel) const;
-  const int16_t* mixed_data(int channel) const;
-  const int16_t* mixed_low_pass_data(int channel) const;
+  const int16_t* high_pass_split_data(int channel) const;\
+  // Returns a pointer to the low-pass data downmixed to mono. If this data
+  // isn't already available it re-calculates it.
+  const int16_t* mixed_low_pass_data();
   const int16_t* low_pass_reference(int channel) const;
 
   // Float versions of the accessors, with automatic conversion back and forth
   // as necessary. The range of the numbers are the same as for int16_t.
   float* data_f(int channel);
+  const float* data_f(int channel) const;
+
+  float* const* channels_f();
+  const float* const* channels_f() const;
+
   float* low_pass_split_data_f(int channel);
+  const float* low_pass_split_data_f(int channel) const;
   float* high_pass_split_data_f(int channel);
+  const float* high_pass_split_data_f(int channel) const;
+
+  float* const* low_pass_split_channels_f();
+  const float* const* low_pass_split_channels_f() const;
+  float* const* high_pass_split_channels_f();
+  const float* const* high_pass_split_channels_f() const;
 
   const float* keyboard_data() const;
 
@@ -81,7 +96,6 @@ class AudioBuffer {
 
   // Use for int16 interleaved data.
   void DeinterleaveFrom(AudioFrame* audioFrame);
-  void InterleaveTo(AudioFrame* audioFrame) const;
   // If |data_changed| is false, only the non-audio data members will be copied
   // to |frame|.
   void InterleaveTo(AudioFrame* frame, bool data_changed) const;
@@ -93,9 +107,6 @@ class AudioBuffer {
   void CopyTo(int samples_per_channel,
               AudioProcessing::ChannelLayout layout,
               float* const* data);
-
-  void CopyAndMix(int num_mixed_channels);
-  void CopyAndMixLowPass(int num_mixed_channels);
   void CopyLowPassToReference();
 
  private:
@@ -108,16 +119,15 @@ class AudioBuffer {
   const int num_proc_channels_;
   const int output_samples_per_channel_;
   int samples_per_split_channel_;
-  int num_mixed_channels_;
-  int num_mixed_low_pass_channels_;
+  bool mixed_low_pass_valid_;
   bool reference_copied_;
   AudioFrame::VADActivity activity_;
 
   const float* keyboard_data_;
   scoped_ptr<IFChannelBuffer> channels_;
-  scoped_ptr<SplitChannelBuffer> split_channels_;
+  scoped_ptr<IFChannelBuffer> split_channels_low_;
+  scoped_ptr<IFChannelBuffer> split_channels_high_;
   scoped_ptr<SplitFilterStates[]> filter_states_;
-  scoped_ptr<ChannelBuffer<int16_t> > mixed_channels_;
   scoped_ptr<ChannelBuffer<int16_t> > mixed_low_pass_channels_;
   scoped_ptr<ChannelBuffer<int16_t> > low_pass_reference_channels_;
   scoped_ptr<ChannelBuffer<float> > input_buffer_;

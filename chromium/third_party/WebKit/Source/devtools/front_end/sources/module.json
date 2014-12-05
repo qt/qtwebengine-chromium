@@ -1,11 +1,18 @@
 {
     "extensions": [
         {
-            "type": "@WebInspector.Panel",
+            "type": "@WebInspector.PanelFactory",
             "name": "sources",
             "title": "Sources",
             "order": 2,
-            "className": "WebInspector.SourcesPanel"
+            "className": "WebInspector.SourcesPanelFactory"
+        },
+        {
+            "type": "drawer-view",
+            "name": "sources.search",
+            "title": "Search",
+            "order": "1",
+            "className": "WebInspector.AdvancedSearchView"
         },
         {
             "type": "@WebInspector.ContextMenu.Provider",
@@ -29,12 +36,19 @@
             ]
         },
         {
-            "type": "@WebInspector.SearchScope",
-            "className": "WebInspector.SourcesSearchScope"
-        },
-        {
-            "type": "@WebInspector.DrawerEditor",
-            "className": "WebInspector.SourcesPanel.DrawerEditor"
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "sources.search.toggle",
+            "className": "WebInspector.AdvancedSearchView.ToggleDrawerViewActionDelegate",
+            "bindings": [
+                {
+                    "platform": "mac",
+                    "shortcut": "Meta+Alt+F"
+                },
+                {
+                    "platform": "windows,linux",
+                    "shortcut": "Ctrl+Shift+F"
+                }
+            ]
         },
         {
             "type": "@WebInspector.Revealer",
@@ -45,6 +59,11 @@
             "type": "@WebInspector.Revealer",
             "contextTypes": ["WebInspector.UISourceCode"],
             "className": "WebInspector.SourcesPanel.UISourceCodeRevealer"
+        },
+        {
+            "type": "@WebInspector.Revealer",
+            "contextTypes": ["WebInspector.DebuggerPausedDetails"],
+            "className": "WebInspector.SourcesPanel.DebuggerPausedDetailsRevealer"
         },
         {
             "type": "@WebInspector.SourcesView.EditorAction",
@@ -87,6 +106,17 @@
                 {
                     "platform": "windows,linux",
                     "shortcut": "Ctrl+O Ctrl+P"
+                }
+            ]
+        },
+        {
+            "type": "@WebInspector.ActionDelegate",
+            "actionId": "sources.switch-file",
+            "className": "WebInspector.SourcesView.SwitchFileActionDelegate",
+            "contextTypes": ["WebInspector.SourcesView"],
+            "bindings": [
+                {
+                    "shortcut": "Alt+O"
                 }
             ]
         },
@@ -151,23 +181,51 @@
             "parentSettingName": "cssSourceMapsEnabled",
             "settingName": "cssReloadEnabled",
             "settingType": "checkbox"
-        },
-        {
-            "type": "ui-setting",
-            "section": "Sources",
-            "experiment": "frameworksDebuggingSupport",
-            "title": "Skip stepping through sources with particular names",
-            "settingName": "skipStackFramesSwitch",
-            "settingType": "checkbox"
-        },
-        {
-            "type": "ui-setting",
-            "experiment": "frameworksDebuggingSupport",
-            "parentSettingName": "skipStackFramesSwitch",
-            "settingType": "custom",
-            "className": "WebInspector.SourcesPanel.SkipStackFramePatternSettingDelegate"
         }
     ],
-    "dependencies": [ "source_frame" ],
-    "scripts": [ "SourcesPanel.js" ]
+    "dependencies": [
+        "source_frame",
+        "extensions"
+    ],
+    "scripts": [
+        "jsdifflib.js",
+        "Placard.js",
+        "AddSourceMapURLDialog.js",
+        "BreakpointsSidebarPane.js",
+        "CallStackSidebarPane.js",
+        "SimpleHistoryManager.js",
+        "EditingLocationHistoryManager.js",
+        "FilePathScoreFunction.js",
+        "FilteredItemSelectionDialog.js",
+        "UISourceCodeFrame.js",
+        "JavaScriptSourceFrame.js",
+        "CSSSourceFrame.js",
+        "NavigatorView.js",
+        "RevisionHistoryView.js",
+        "ScopeChainSidebarPane.js",
+        "SourcesNavigator.js",
+        "StyleSheetOutlineDialog.js",
+        "TabbedEditorContainer.js",
+        "WatchExpressionsSidebarPane.js",
+        "ThreadsSidebarPane.js",
+        "ScriptFormatterEditorAction.js",
+        "InplaceFormatterEditorAction.js",
+        "ScriptFormatter.js",
+        "SourcesView.js",
+        "AdvancedSearchView.js",
+        "FileBasedSearchResultsPane.js",
+        "SourcesSearchScope.js",
+        "SourcesPanel.js",
+        "WorkspaceMappingTip.js"
+    ],
+    "skip_compilation": [
+        "jsdifflib.js"
+    ],
+    "stylesheets": [
+        "filteredItemSelectionDialog.css",
+        "navigatorView.css",
+        "revisionHistory.css",
+        "sourcesPanel.css",
+        "sourcesView.css"
+    ]
 }

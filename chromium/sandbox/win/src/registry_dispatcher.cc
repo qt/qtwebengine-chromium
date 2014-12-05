@@ -42,13 +42,13 @@ namespace sandbox {
 RegistryDispatcher::RegistryDispatcher(PolicyBase* policy_base)
     : policy_base_(policy_base) {
   static const IPCCall create_params = {
-    {IPC_NTCREATEKEY_TAG, WCHAR_TYPE, ULONG_TYPE, VOIDPTR_TYPE, ULONG_TYPE,
-     ULONG_TYPE, ULONG_TYPE},
+    {IPC_NTCREATEKEY_TAG, WCHAR_TYPE, UINT32_TYPE, VOIDPTR_TYPE, UINT32_TYPE,
+     UINT32_TYPE, UINT32_TYPE},
     reinterpret_cast<CallbackGeneric>(&RegistryDispatcher::NtCreateKey)
   };
 
   static const IPCCall open_params = {
-    {IPC_NTOPENKEY_TAG, WCHAR_TYPE, ULONG_TYPE, VOIDPTR_TYPE, ULONG_TYPE},
+    {IPC_NTOPENKEY_TAG, WCHAR_TYPE, UINT32_TYPE, VOIDPTR_TYPE, UINT32_TYPE},
     reinterpret_cast<CallbackGeneric>(&RegistryDispatcher::NtOpenKey)
   };
 
@@ -63,7 +63,10 @@ bool RegistryDispatcher::SetupService(InterceptionManager* manager,
 
   if (IPC_NTOPENKEY_TAG == service) {
     bool result = INTERCEPT_NT(manager, NtOpenKey, OPEN_KEY_ID, 16);
-    if (base::win::GetVersion() >= base::win::VERSION_WIN7)
+    if (base::win::GetVersion() >= base::win::VERSION_WIN7 ||
+        (base::win::GetVersion() == base::win::VERSION_VISTA &&
+         base::win::OSInfo::GetInstance()->version_type() ==
+             base::win::SUITE_SERVER))
       result &= INTERCEPT_NT(manager, NtOpenKeyEx, OPEN_KEY_EX_ID, 20);
     return result;
   }
@@ -71,9 +74,13 @@ bool RegistryDispatcher::SetupService(InterceptionManager* manager,
   return false;
 }
 
-bool RegistryDispatcher::NtCreateKey(
-    IPCInfo* ipc, base::string16* name, DWORD attributes, HANDLE root,
-    DWORD desired_access, DWORD title_index, DWORD create_options) {
+bool RegistryDispatcher::NtCreateKey(IPCInfo* ipc,
+                                     base::string16* name,
+                                     uint32 attributes,
+                                     HANDLE root,
+                                     uint32 desired_access,
+                                     uint32 title_index,
+                                     uint32 create_options) {
   base::win::ScopedHandle root_handle;
   base::string16 real_path = *name;
 
@@ -117,9 +124,11 @@ bool RegistryDispatcher::NtCreateKey(
   return true;
 }
 
-bool RegistryDispatcher::NtOpenKey(IPCInfo* ipc, base::string16* name,
-                                   DWORD attributes, HANDLE root,
-                                   DWORD desired_access) {
+bool RegistryDispatcher::NtOpenKey(IPCInfo* ipc,
+                                   base::string16* name,
+                                   uint32 attributes,
+                                   HANDLE root,
+                                   uint32 desired_access) {
   base::win::ScopedHandle root_handle;
   base::string16 real_path = *name;
 

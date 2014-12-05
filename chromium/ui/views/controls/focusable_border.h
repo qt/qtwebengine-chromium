@@ -21,6 +21,7 @@ namespace views {
 class VIEWS_EXPORT FocusableBorder : public Border {
  public:
   FocusableBorder();
+  ~FocusableBorder() override;
 
   // Sets the insets of the border.
   void SetInsets(int top, int left, int bottom, int right);
@@ -31,9 +32,9 @@ class VIEWS_EXPORT FocusableBorder : public Border {
   void UseDefaultColor();
 
   // Overridden from Border:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  void Paint(const View& view, gfx::Canvas* canvas) override;
+  gfx::Insets GetInsets() const override;
+  gfx::Size GetMinimumSize() const override;
 
  private:
   gfx::Insets insets_;

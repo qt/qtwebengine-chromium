@@ -33,17 +33,14 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
-class ScriptResource;
 class Document;
 class Element;
-class LocalFrame;
 class HTMLScriptRunnerHost;
-class ScriptSourceCode;
 
-class HTMLScriptRunner FINAL : public NoBaseWillBeGarbageCollectedFinalized<HTMLScriptRunner>, private ResourceClient {
+class HTMLScriptRunner final : public NoBaseWillBeGarbageCollectedFinalized<HTMLScriptRunner>, private ScriptResourceClient {
     WTF_MAKE_NONCOPYABLE(HTMLScriptRunner); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<HTMLScriptRunner> create(Document* document, HTMLScriptRunnerHost* host)
@@ -66,22 +63,15 @@ public:
     bool isExecutingScript() const { return !!m_scriptNestingLevel; }
 
     // ResourceClient
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void notifyFinished(Resource*) override;
 
     void trace(Visitor*);
 
 private:
     HTMLScriptRunner(Document*, HTMLScriptRunnerHost*);
 
-    LocalFrame* frame() const;
-
-    enum PendingScriptType {
-        PendingScriptBlockingParser,
-        PendingScriptDeferred
-    };
-
     void executeParsingBlockingScript();
-    void executePendingScriptAndDispatchEvent(PendingScript&, PendingScriptType);
+    void executePendingScriptAndDispatchEvent(PendingScript&, PendingScript::Type);
     void executeParsingBlockingScripts();
 
     void requestParsingBlockingScript(Element*);
@@ -90,11 +80,7 @@ private:
 
     void runScript(Element*, const TextPosition& scriptStartPosition);
 
-    // Helpers for dealing with HTMLScriptRunnerHost
-    void watchForLoad(PendingScript&);
-    void stopWatchingForLoad(PendingScript&);
     bool isPendingScriptReady(const PendingScript&);
-    ScriptSourceCode sourceFromPendingScript(const PendingScript&, bool& errorOccurred) const;
 
     RawPtrWillBeMember<Document> m_document;
     RawPtrWillBeMember<HTMLScriptRunnerHost> m_host;
@@ -107,6 +93,11 @@ private:
     // cause nested script execution when parsing <style> tags since </style>
     // tags can cause Document to call executeScriptsWaitingForResources.
     bool m_hasScriptsWaitingForResources;
+
+    // For tracking the times between script load and compilation, we need to
+    // know whether a parser blocking script was loaded previously, or whether
+    // it's really loaded when requested.
+    bool m_parserBlockingScriptAlreadyLoaded;
 };
 
 }

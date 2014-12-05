@@ -4,10 +4,11 @@
 
 #include "ui/wm/core/shadow.h"
 
-#include "grit/ui_resources.h"
+#include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
-#include "ui/wm/core/image_grid.h"
+#include "ui/resources/grit/ui_resources.h"
 
 namespace {
 
@@ -16,10 +17,17 @@ const float kActiveShadowOpacity = 1.0f;
 const float kInactiveShadowOpacity = 0.2f;
 const float kSmallShadowOpacity = 1.0f;
 
+// Shadow aperture for different styles.
+// Note that this may be greater than interior inset to allow shadows with
+// curved corners that extend inwards beyond a window's borders.
+const int kActiveInteriorAperture = 134;
+const int kInactiveInteriorAperture = 134;
+const int kSmallInteriorAperture = 9;
+
 // Interior inset for different styles.
-const int kActiveInteriorInset = 0;
-const int kInactiveInteriorInset = 0;
-const int kSmallInteriorInset = 5;
+const int kActiveInteriorInset = 64;
+const int kInactiveInteriorInset = 64;
+const int kSmallInteriorInset = 4;
 
 // Duration for opacity animation in milliseconds.
 const int kShadowAnimationDurationMs = 100;
@@ -34,6 +42,18 @@ float GetOpacityForStyle(wm::Shadow::Style style) {
       return kSmallShadowOpacity;
   }
   return 1.0f;
+}
+
+int GetShadowApertureForStyle(wm::Shadow::Style style) {
+  switch (style) {
+    case wm::Shadow::STYLE_ACTIVE:
+      return kActiveInteriorAperture;
+    case wm::Shadow::STYLE_INACTIVE:
+      return kInactiveInteriorAperture;
+    case wm::Shadow::STYLE_SMALL:
+      return kSmallInteriorAperture;
+  }
+  return 0;
 }
 
 int GetInteriorInsetForStyle(wm::Shadow::Style style) {
@@ -60,19 +80,21 @@ Shadow::~Shadow() {
 
 void Shadow::Init(Style style) {
   style_ = style;
-  image_grid_.reset(new ImageGrid);
+
+  layer_.reset(new ui::Layer(ui::LAYER_NOT_DRAWN));
+  shadow_layer_.reset(new ui::Layer(ui::LAYER_NINE_PATCH));
+  layer()->Add(shadow_layer_.get());
+
   UpdateImagesForStyle();
-  image_grid_->layer()->set_name("Shadow");
-  image_grid_->layer()->SetOpacity(GetOpacityForStyle(style_));
+  shadow_layer_->set_name("Shadow");
+  shadow_layer_->SetVisible(true);
+  shadow_layer_->SetFillsBoundsOpaquely(false);
+  shadow_layer_->SetOpacity(GetOpacityForStyle(style_));
 }
 
 void Shadow::SetContentBounds(const gfx::Rect& content_bounds) {
   content_bounds_ = content_bounds;
-  UpdateImageGridBounds();
-}
-
-ui::Layer* Shadow::layer() const {
-  return image_grid_->layer();
+  UpdateLayerBounds();
 }
 
 void Shadow::SetStyle(Style style) {
@@ -89,7 +111,7 @@ void Shadow::SetStyle(Style style) {
   // animations.
   if (style == STYLE_SMALL || old_style == STYLE_SMALL) {
     UpdateImagesForStyle();
-    image_grid_->layer()->SetOpacity(GetOpacityForStyle(style));
+    shadow_layer_->SetOpacity(GetOpacityForStyle(style));
     return;
   }
 
@@ -99,21 +121,21 @@ void Shadow::SetStyle(Style style) {
   if (style == STYLE_ACTIVE) {
     UpdateImagesForStyle();
     // Opacity was baked into inactive image, start opacity low to match.
-    image_grid_->layer()->SetOpacity(kInactiveShadowOpacity);
+    shadow_layer_->SetOpacity(kInactiveShadowOpacity);
   }
 
   {
     // Property sets within this scope will be implicitly animated.
-    ui::ScopedLayerAnimationSettings settings(layer()->GetAnimator());
+    ui::ScopedLayerAnimationSettings settings(shadow_layer_->GetAnimator());
     settings.AddObserver(this);
     settings.SetTransitionDuration(
         base::TimeDelta::FromMilliseconds(kShadowAnimationDurationMs));
     switch (style_) {
       case STYLE_ACTIVE:
-        image_grid_->layer()->SetOpacity(kActiveShadowOpacity);
+        shadow_layer_->SetOpacity(kActiveShadowOpacity);
         break;
       case STYLE_INACTIVE:
-        image_grid_->layer()->SetOpacity(kInactiveShadowOpacity);
+        shadow_layer_->SetOpacity(kInactiveShadowOpacity);
         break;
       default:
         NOTREACHED() << "Unhandled style " << style_;
@@ -128,66 +150,54 @@ void Shadow::OnImplicitAnimationsCompleted() {
   if (style_ == STYLE_INACTIVE) {
     UpdateImagesForStyle();
     // Opacity is baked into inactive image, so set fully opaque.
-    image_grid_->layer()->SetOpacity(1.0f);
+    shadow_layer_->SetOpacity(1.0f);
   }
 }
 
 void Shadow::UpdateImagesForStyle() {
   ResourceBundle& res = ResourceBundle::GetSharedInstance();
+  gfx::Image image;
   switch (style_) {
     case STYLE_ACTIVE:
-      image_grid_->SetImages(
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_TOP_LEFT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_TOP),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_TOP_RIGHT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_LEFT),
-          NULL,
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_RIGHT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_BOTTOM_LEFT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_BOTTOM),
-          &res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE_BOTTOM_RIGHT));
+      image = res.GetImageNamed(IDR_AURA_SHADOW_ACTIVE);
       break;
     case STYLE_INACTIVE:
-      image_grid_->SetImages(
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_TOP_LEFT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_TOP),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_TOP_RIGHT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_LEFT),
-          NULL,
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_RIGHT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_BOTTOM_LEFT),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_BOTTOM),
-          &res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE_BOTTOM_RIGHT));
+      image = res.GetImageNamed(IDR_AURA_SHADOW_INACTIVE);
       break;
     case STYLE_SMALL:
-      image_grid_->SetImages(
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_TOP_LEFT),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_TOP),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_TOP_RIGHT),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_LEFT),
-          NULL,
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_RIGHT),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM_LEFT),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM),
-          &res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM_RIGHT));
+      image = res.GetImageNamed(IDR_WINDOW_BUBBLE_SHADOW_SMALL);
       break;
     default:
       NOTREACHED() << "Unhandled style " << style_;
       break;
   }
 
-  // Update interior inset for style.
+  shadow_layer_->UpdateNinePatchLayerBitmap(image.AsBitmap());
+  image_size_ = image.Size();
   interior_inset_ = GetInteriorInsetForStyle(style_);
 
   // Image sizes may have changed.
-  UpdateImageGridBounds();
+  UpdateLayerBounds();
 }
 
-void Shadow::UpdateImageGridBounds() {
-  // Update bounds based on content bounds and image sizes.
-  gfx::Rect image_grid_bounds = content_bounds_;
-  image_grid_bounds.Inset(interior_inset_, interior_inset_);
-  image_grid_->SetContentBounds(image_grid_bounds);
+void Shadow::UpdateLayerBounds() {
+  // Update bounds based on content bounds and interior inset.
+  gfx::Rect layer_bounds = content_bounds_;
+  layer_bounds.Inset(-interior_inset_, -interior_inset_);
+  layer()->SetBounds(layer_bounds);
+  shadow_layer_->SetBounds(gfx::Rect(layer_bounds.size()));
+
+  // Update the shadow aperture and border for style. Note that border is in
+  // layer space and it cannot exceed the bounds of the layer.
+  int aperture = GetShadowApertureForStyle(style_);
+  int aperture_x = std::min(aperture, layer_bounds.width() / 2);
+  int aperture_y = std::min(aperture, layer_bounds.height() / 2);
+  shadow_layer_->UpdateNinePatchLayerAperture(
+      gfx::Rect(aperture_x, aperture_y,
+                image_size_.width() - aperture_x * 2,
+                image_size_.height() - aperture_y * 2));
+  shadow_layer_->UpdateNinePatchLayerBorder(
+      gfx::Rect(aperture_x, aperture_y, aperture_x * 2, aperture_y * 2));
 }
 
 }  // namespace wm

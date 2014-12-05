@@ -31,13 +31,14 @@
 #include "config.h"
 #include "core/editing/ReplaceNodeWithSpanCommand.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/editing/htmlediting.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/HTMLSpanElement.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -48,21 +49,21 @@ ReplaceNodeWithSpanCommand::ReplaceNodeWithSpanCommand(PassRefPtrWillBeRawPtr<HT
     ASSERT(m_elementToReplace);
 }
 
-static void swapInNodePreservingAttributesAndChildren(HTMLElement* newNode, HTMLElement& nodeToReplace)
+static void swapInNodePreservingAttributesAndChildren(HTMLElement* newElement, HTMLElement& elementToReplace)
 {
-    ASSERT(nodeToReplace.inDocument());
-    RefPtrWillBeRawPtr<ContainerNode> parentNode = nodeToReplace.parentNode();
-    parentNode->insertBefore(newNode, &nodeToReplace);
+    ASSERT(elementToReplace.inDocument());
+    RefPtrWillBeRawPtr<ContainerNode> parentNode = elementToReplace.parentNode();
+    parentNode->insertBefore(newElement, &elementToReplace);
 
     NodeVector children;
-    getChildNodes(nodeToReplace, children);
-    for (size_t i = 0; i < children.size(); ++i)
-        newNode->appendChild(children[i]);
+    getChildNodes(elementToReplace, children);
+    for (const auto& child : children)
+        newElement->appendChild(child);
 
     // FIXME: Fix this to send the proper MutationRecords when MutationObservers are present.
-    newNode->cloneDataFromElement(nodeToReplace);
+    newElement->cloneDataFromElement(elementToReplace);
 
-    parentNode->removeChild(&nodeToReplace, ASSERT_NO_EXCEPTION);
+    parentNode->removeChild(&elementToReplace, ASSERT_NO_EXCEPTION);
 }
 
 void ReplaceNodeWithSpanCommand::doApply()
@@ -70,7 +71,7 @@ void ReplaceNodeWithSpanCommand::doApply()
     if (!m_elementToReplace->inDocument())
         return;
     if (!m_spanElement)
-        m_spanElement = createHTMLElement(m_elementToReplace->document(), spanTag);
+        m_spanElement = toHTMLSpanElement(createHTMLElement(m_elementToReplace->document(), spanTag).get());
     swapInNodePreservingAttributesAndChildren(m_spanElement.get(), *m_elementToReplace);
 }
 
@@ -88,4 +89,4 @@ void ReplaceNodeWithSpanCommand::trace(Visitor* visitor)
     SimpleEditCommand::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

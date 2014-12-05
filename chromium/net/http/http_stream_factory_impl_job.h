@@ -60,7 +60,7 @@ class HttpStreamFactoryImpl::Job {
   // we fail to connect.  |alternate| specifies the alternate protocol to use
   // and alternate port to connect to.
   void MarkAsAlternate(const GURL& original_url,
-                       PortAlternateProtocolPair alternate);
+                       AlternateProtocolInfo alternate);
 
   // Tells |this| to wait for |job| to resume it.
   void WaitFor(Job* job);
@@ -176,6 +176,10 @@ class HttpStreamFactoryImpl::Job {
   int DoCreateStreamComplete(int result);
   int DoRestartTunnelAuth();
   int DoRestartTunnelAuthComplete(int result);
+
+  // Creates a SpdyHttpStream from the given values and sets to |stream_|. Does
+  // nothing if |stream_factory_| is for WebSockets.
+  int SetSpdyHttpStream(base::WeakPtr<SpdySession> session, bool direct);
 
   // Returns to STATE_INIT_CONNECTION and resets some state.
   void ReturnToStateInitConnection(bool close_connection);

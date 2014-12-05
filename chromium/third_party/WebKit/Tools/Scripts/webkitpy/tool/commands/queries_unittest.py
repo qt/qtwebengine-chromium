@@ -27,13 +27,10 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.outputcapture import OutputCapture
-from webkitpy.common.system.outputcapture import OutputCapture
-from webkitpy.thirdparty.mock import Mock
 from webkitpy.layout_tests.port.test import TestPort
-from webkitpy.tool.commands.commandtest import CommandsTest
 from webkitpy.tool.commands.queries import *
 from webkitpy.tool.mocktool import MockTool, MockOptions
 

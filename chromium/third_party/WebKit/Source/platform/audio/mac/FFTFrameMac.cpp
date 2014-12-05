@@ -38,7 +38,7 @@
 
 #include "platform/audio/VectorMath.h"
 
-namespace WebCore {
+namespace blink {
 
 const int kMaxFFTPow2Size = 24;
 
@@ -80,9 +80,9 @@ FFTFrame::FFTFrame()
 FFTFrame::FFTFrame(const FFTFrame& frame)
     : m_FFTSize(frame.m_FFTSize)
     , m_log2FFTSize(frame.m_log2FFTSize)
-    , m_FFTSetup(frame.m_FFTSetup)
     , m_realData(frame.m_FFTSize)
     , m_imagData(frame.m_FFTSize)
+    , m_FFTSetup(frame.m_FFTSetup)
 {
     // Setup frame data
     m_frame.realp = m_realData.data();
@@ -117,7 +117,7 @@ void FFTFrame::doInverseFFT(float* data)
 
     // Do final scaling so that x == IFFT(FFT(x))
     float scale = 1.0f / m_FFTSize;
-    vDSP_vsmul(data, 1, &scale, data, 1, m_FFTSize);
+    VectorMath::vsmul(data, 1, &scale, data, 1, m_FFTSize);
 }
 
 FFTSetup FFTFrame::fftSetupForSize(unsigned fftSize)
@@ -153,17 +153,7 @@ void FFTFrame::cleanup()
     fftSetups = 0;
 }
 
-float* FFTFrame::realData() const
-{
-    return m_frame.realp;
-}
-
-float* FFTFrame::imagData() const
-{
-    return m_frame.imagp;
-}
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // #if OS(MACOSX)
 

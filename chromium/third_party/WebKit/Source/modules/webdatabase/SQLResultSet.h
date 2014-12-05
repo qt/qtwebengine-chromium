@@ -29,18 +29,18 @@
 #ifndef SQLResultSet_h
 #define SQLResultSet_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/DatabaseBasicTypes.h"
 #include "modules/webdatabase/SQLResultSetRowList.h"
-#include "wtf/ThreadSafeRefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class SQLResultSet : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<SQLResultSet>, public ScriptWrappable {
+class SQLResultSet final : public GarbageCollected<SQLResultSet>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLResultSet> create() { return adoptRefWillBeNoop(new SQLResultSet); }
+    static SQLResultSet* create() { return new SQLResultSet; }
     void trace(Visitor*);
 
     SQLResultSetRowList* rows() const;
@@ -56,13 +56,13 @@ public:
 private:
     SQLResultSet();
 
-    RefPtrWillBeMember<SQLResultSetRowList> m_rows;
+    Member<SQLResultSetRowList> m_rows;
     int64_t m_insertId;
     int m_rowsAffected;
     bool m_insertIdSet;
     bool m_isValid;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLResultSet_h

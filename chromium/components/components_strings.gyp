@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/strings
       'target_name': 'components_strings',
       'type': 'none',
       'variables': {
@@ -20,7 +21,6 @@
         },
       ],
       'includes': [ '../build/grit_target.gypi' ],
-      'hard_dependency': 1,
     },
   ],
 }

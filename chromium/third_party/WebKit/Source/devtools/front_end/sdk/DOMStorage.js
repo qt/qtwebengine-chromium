@@ -108,12 +108,12 @@ WebInspector.DOMStorage.prototype = {
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.DOMStorageModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.DOMStorageModel, target);
 
     /** @type {!Object.<string, !WebInspector.DOMStorage>} */
     this._storages = {};
@@ -257,7 +257,7 @@ WebInspector.DOMStorageModel.prototype = {
         return result;
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**

@@ -21,13 +21,13 @@
 #ifndef SVGLength_h
 #define SVGLength_h
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/properties/SVGProperty.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSPrimitiveValue;
 class ExceptionState;
@@ -40,7 +40,7 @@ enum SVGLengthNegativeValuesMode {
 
 class SVGLengthTearOff;
 
-class SVGLength FINAL : public SVGPropertyBase {
+class SVGLength final : public SVGPropertyBase {
 public:
     typedef SVGLengthTearOff TearOffType;
 
@@ -50,7 +50,7 @@ public:
     }
 
     PassRefPtr<SVGLength> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
+    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
     SVGLengthType unitType() const { return static_cast<SVGLengthType>(m_unitType); }
     void setUnitType(SVGLengthType);
@@ -71,7 +71,7 @@ public:
 
     float valueAsPercentage() const;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
     void newValueSpecifiedUnits(SVGLengthType, float valueInSpecifiedUnits);
@@ -96,9 +96,9 @@ public:
 
     PassRefPtr<SVGLength> blend(PassRefPtr<SVGLength> from, float progress) const;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedLength; }
 
@@ -118,6 +118,6 @@ inline PassRefPtr<SVGLength> toSVGLength(PassRefPtr<SVGPropertyBase> passBase)
     return static_pointer_cast<SVGLength>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGLength_h

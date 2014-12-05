@@ -20,6 +20,7 @@ AudioFileReader::AudioFileReader(FFmpegURLProtocol* protocol)
       protocol_(protocol),
       channels_(0),
       sample_rate_(0),
+      end_padding_(0),
       av_sample_format_(0) {
 }
 
@@ -28,6 +29,12 @@ AudioFileReader::~AudioFileReader() {
 }
 
 bool AudioFileReader::Open() {
+  if (!OpenDemuxer())
+    return false;
+  return OpenDecoder();
+}
+
+bool AudioFileReader::OpenDemuxer() {
   glue_.reset(new FFmpegGlue(protocol_));
   AVFormatContext* format_context = glue_->format_context();
 
@@ -52,20 +59,32 @@ bool AudioFileReader::Open() {
   if (!codec_context_)
     return false;
 
-  int result = avformat_find_stream_info(format_context, NULL);
+  const int result = avformat_find_stream_info(format_context, NULL);
   if (result < 0) {
     DLOG(WARNING)
         << "AudioFileReader::Open() : error in avformat_find_stream_info()";
     return false;
   }
 
+  // Attempt to extract end padding for mp3 files.
+  if (strcmp(format_context->iformat->name, "mp3") == 0 &&
+      (av_opt_get_int(format_context->priv_data, "end_pad", 0, &end_padding_) <
+           0 ||
+       end_padding_ < 0)) {
+    end_padding_ = 0;
+  }
+  return true;
+}
+
+bool AudioFileReader::OpenDecoder() {
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
   if (codec) {
     // MP3 decodes to S16P which we don't support, tell it to use S16 instead.
     if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
       codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
 
-    if ((result = avcodec_open2(codec_context_, codec, NULL)) < 0) {
+    const int result = avcodec_open2(codec_context_, codec, NULL);
+    if (result < 0) {
       DLOG(WARNING) << "AudioFileReader::Open() : could not open codec -"
                     << " result: " << result;
       return false;
@@ -79,8 +98,7 @@ bool AudioFileReader::Open() {
       return false;
     }
   } else {
-    DLOG(WARNING) << "AudioFileReader::Open() : could not find codec -"
-                  << " result: " << result;
+    DLOG(WARNING) << "AudioFileReader::Open() : could not find codec.";
     return false;
   }
 
@@ -96,7 +114,6 @@ bool AudioFileReader::Open() {
   channels_ = codec_context_->channels;
   sample_rate_ = codec_context_->sample_rate;
   av_sample_format_ = codec_context_->sample_fmt;
-
   return true;
 }
 
@@ -216,6 +233,12 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
     av_free_packet(&packet);
   }
 
+  // If decoding completed successfully try to strip end padding.
+  if (continue_decoding && end_padding_ <= current_frame) {
+    DCHECK_GE(end_padding_, 0);
+    current_frame -= end_padding_;
+  }
+
   // Zero any remaining frames.
   audio_bus->ZeroFramesPartial(
       current_frame, audio_bus->frames() - current_frame);
@@ -240,6 +263,10 @@ int AudioFileReader::GetNumberOfFrames() const {
   return static_cast<int>(ceil(GetDuration().InSecondsF() * sample_rate()));
 }
 
+bool AudioFileReader::OpenDemuxerForTesting() {
+  return OpenDemuxer();
+}
+
 bool AudioFileReader::ReadPacketForTesting(AVPacket* output_packet) {
   return ReadPacket(output_packet);
 }
@@ -255,6 +282,17 @@ bool AudioFileReader::ReadPacket(AVPacket* output_packet) {
     return true;
   }
   return false;
+}
+
+bool AudioFileReader::SeekForTesting(base::TimeDelta seek_time) {
+  return av_seek_frame(glue_->format_context(),
+                       stream_index_,
+                       ConvertToTimeBase(codec_context_->time_base, seek_time),
+                       AVSEEK_FLAG_BACKWARD) >= 0;
+}
+
+const AVStream* AudioFileReader::GetAVStreamForTesting() const {
+  return glue_->format_context()->streams[stream_index_];
 }
 
 }  // namespace media

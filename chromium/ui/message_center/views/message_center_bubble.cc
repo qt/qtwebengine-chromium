@@ -4,10 +4,10 @@
 
 #include "ui/message_center/views/message_center_bubble.h"
 
-#include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/views/message_center_view.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/widget/widget.h"
 
@@ -19,14 +19,14 @@ namespace message_center {
 class ContentsView : public views::View {
  public:
   explicit ContentsView(MessageCenterBubble* bubble, views::View* contents);
-  virtual ~ContentsView();
+  ~ContentsView() override;
 
   // Overridden from views::View:
-  virtual int GetHeightForWidth(int width) const OVERRIDE;
+  int GetHeightForWidth(int width) const override;
 
  protected:
   // Overridden from views::View:
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
+  void ChildPreferredSizeChanged(View* child) override;
 
  private:
   base::WeakPtr<MessageCenterBubble> bubble_;

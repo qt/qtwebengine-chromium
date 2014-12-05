@@ -19,17 +19,19 @@
 #include "media/base/audio_hardware_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/decryptor.h"
-#include "media/base/filter_collection.h"
 #include "media/base/media.h"
 #include "media/base/media_log.h"
 #include "media/base/media_switches.h"
 #include "media/base/pipeline.h"
+#include "media/base/text_track.h"
+#include "media/base/text_track_config.h"
 #include "media/base/video_frame.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/ffmpeg_audio_decoder.h"
 #include "media/filters/ffmpeg_demuxer.h"
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/file_data_source.h"
+#include "media/filters/renderer_impl.h"
 #include "media/filters/video_renderer_impl.h"
 #include "media/tools/player_x11/data_source_logger.h"
 
@@ -38,6 +40,7 @@
 // in media::DemuxerStream & media::AudioDecoder.
 #include <X11/XKBlib.h>
 #include <X11/Xlib.h>
+
 #include "media/tools/player_x11/gl_video_renderer.h"
 #include "media/tools/player_x11/x11_video_renderer.h"
 
@@ -86,6 +89,12 @@ static void OnStatus(media::PipelineStatus status) {}
 
 static void OnMetadata(media::PipelineMetadata metadata) {}
 
+static void OnBufferingStateChanged(media::BufferingState buffering_state) {}
+
+static void OnAddTextTrack(const media::TextTrackConfig& config,
+                           const media::AddTextTrackDoneCB& done_cb) {
+}
+
 static void NeedKey(const std::string& type,
                     const std::vector<uint8>& init_data) {
   std::cout << "File is encrypted." << std::endl;
@@ -105,20 +114,15 @@ void InitPipeline(
     media::Demuxer* demuxer,
     const media::VideoRendererImpl::PaintCB& paint_cb,
     bool /* enable_audio */) {
-  // Create our filter factories.
-  scoped_ptr<media::FilterCollection> collection(
-      new media::FilterCollection());
-  collection->SetDemuxer(demuxer);
-
   ScopedVector<media::VideoDecoder> video_decoders;
   video_decoders.push_back(new media::FFmpegVideoDecoder(task_runner));
-  scoped_ptr<media::VideoRenderer> video_renderer(new media::VideoRendererImpl(
-      task_runner,
-      video_decoders.Pass(),
-      media::SetDecryptorReadyCB(),
-      paint_cb,
-      true));
-  collection->SetVideoRenderer(video_renderer.Pass());
+  scoped_ptr<media::VideoRenderer> video_renderer(
+      new media::VideoRendererImpl(task_runner,
+                                   video_decoders.Pass(),
+                                   media::SetDecryptorReadyCB(),
+                                   paint_cb,
+                                   true,
+                                   new media::MediaLog()));
 
   ScopedVector<media::AudioDecoder> audio_decoders;
   audio_decoders.push_back(new media::FFmpegAudioDecoder(task_runner,
@@ -136,18 +140,24 @@ void InitPipeline(
                                    new media::NullAudioSink(task_runner),
                                    audio_decoders.Pass(),
                                    media::SetDecryptorReadyCB(),
-                                   &hardware_config));
+                                   hardware_config,
+                                   new media::MediaLog()));
 
-  collection->SetAudioRenderer(audio_renderer.Pass());
+  scoped_ptr<media::Renderer> renderer(new media::RendererImpl(
+      task_runner, audio_renderer.Pass(), video_renderer.Pass()));
 
   base::WaitableEvent event(true, false);
   media::PipelineStatus status;
 
-  pipeline->Start(
-      collection.Pass(), base::Bind(&DoNothing), base::Bind(&OnStatus),
-      base::Bind(&SaveStatusAndSignal, &event, &status),
-      base::Bind(&OnMetadata), base::Bind(&DoNothing),
-      base::Bind(&DoNothing));
+  pipeline->Start(demuxer,
+                  renderer.Pass(),
+                  base::Bind(&DoNothing),
+                  base::Bind(&OnStatus),
+                  base::Bind(&SaveStatusAndSignal, &event, &status),
+                  base::Bind(&OnMetadata),
+                  base::Bind(&OnBufferingStateChanged),
+                  base::Bind(&DoNothing),
+                  base::Bind(&OnAddTextTrack));
 
   // Wait until the pipeline is fully initialized.
   event.Wait();

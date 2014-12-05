@@ -38,35 +38,34 @@ class MEDIA_EXPORT GpuVideoDecoder
       public VideoDecodeAccelerator::Client {
  public:
   explicit GpuVideoDecoder(
-      const scoped_refptr<GpuVideoAcceleratorFactories>& factories,
-      const scoped_refptr<MediaLog>& media_log);
+      const scoped_refptr<GpuVideoAcceleratorFactories>& factories);
 
   // VideoDecoder implementation.
-  virtual void Initialize(const VideoDecoderConfig& config,
-                          bool low_delay,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual bool NeedsBitstreamConversion() const OVERRIDE;
-  virtual bool CanReadWithoutStalling() const OVERRIDE;
-  virtual int GetMaxDecodeRequests() const OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const VideoDecoderConfig& config,
+                  bool low_delay,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
+  bool NeedsBitstreamConversion() const override;
+  bool CanReadWithoutStalling() const override;
+  int GetMaxDecodeRequests() const override;
 
   // VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 count,
-                                     const gfx::Size& size,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  void ProvidePictureBuffers(uint32 count,
+                             const gfx::Size& size,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyEndOfBitstreamBuffer(int32 id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
 
  protected:
-  virtual ~GpuVideoDecoder();
+  ~GpuVideoDecoder() override;
 
  private:
   enum State {
@@ -105,7 +104,7 @@ class MEDIA_EXPORT GpuVideoDecoder
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& factories,
       int64 picture_buffer_id,
       uint32 texture_id,
-      const std::vector<uint32>& release_sync_points);
+      uint32 release_sync_point);
   // Indicate the picture buffer can be reused by the decoder.
   void ReusePictureBuffer(int64 picture_buffer_id);
 
@@ -152,8 +151,6 @@ class MEDIA_EXPORT GpuVideoDecoder
   // round-trip to the browser process, we keep allocation out of the
   // steady-state of the decoder.
   std::vector<SHMBuffer*> available_shm_segments_;
-
-  scoped_refptr<MediaLog> media_log_;
 
   std::map<int32, PendingDecoderBuffer> bitstream_buffers_in_decoder_;
   PictureBufferMap assigned_picture_buffers_;

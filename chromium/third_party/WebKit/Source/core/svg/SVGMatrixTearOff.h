@@ -31,19 +31,20 @@
 #ifndef SVGMatrixTearOff_h
 #define SVGMatrixTearOff_h
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGTransformTearOff;
 
 // SVGMatrixTearOff wraps a AffineTransform for Javascript.
 // Its instance can either hold a static value, or this can be teared off from |SVGTransform.matrix|.
 // This does not derive from SVGPropertyTearOff, as its instances are never tied to an animated property nor an XML attribute.
-class SVGMatrixTearOff FINAL : public RefCounted<SVGMatrixTearOff>, public ScriptWrappable {
+class SVGMatrixTearOff final : public RefCounted<SVGMatrixTearOff>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtr<SVGMatrixTearOff> create(const AffineTransform& value)
     {
@@ -100,6 +101,6 @@ private:
     SVGTransformTearOff* m_contextTransform;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGMatrixTearOff_h_
+#endif // SVGMatrixTearOff_h

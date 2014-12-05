@@ -30,10 +30,9 @@
 #include "wtf/NotFound.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
-class Node;
 class Range;
 
 class PlainTextRange {
@@ -52,7 +51,7 @@ public:
     PassRefPtrWillBeRawPtr<Range> createRange(const ContainerNode& scope) const;
     PassRefPtrWillBeRawPtr<Range> createRangeForSelection(const ContainerNode& scope) const;
 
-    static PlainTextRange create(const Node& scope, const Range&);
+    static PlainTextRange create(const ContainerNode& scope, const Range&);
 
 private:
     PlainTextRange& operator=(const PlainTextRange&)  WTF_DELETED_FUNCTION;
@@ -64,6 +63,6 @@ private:
     const size_t m_end;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlainTextRange_h

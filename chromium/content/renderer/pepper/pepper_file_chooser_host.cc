@@ -94,11 +94,7 @@ void PepperFileChooserHost::StoreChosenFiles(
   std::vector<base::FilePath> file_paths;
   std::vector<std::string> display_names;
   for (size_t i = 0; i < files.size(); i++) {
-#if defined(OS_WIN)
-    base::FilePath file_path(base::UTF8ToWide(files[i].path));
-#else
-    base::FilePath file_path(files[i].path);
-#endif
+    base::FilePath file_path = base::FilePath::FromUTF8Unsafe(files[i].path);
     file_paths.push_back(file_path);
     create_msgs.push_back(PpapiHostMsg_FileRef_CreateForRawFS(file_path));
     display_names.push_back(files[i].display_name);
@@ -145,13 +141,14 @@ int32_t PepperFileChooserHost::OnShow(
   } else {
     params.multiSelect = open_multiple;
   }
-  std::vector<blink::WebString> mine_types(accept_mime_types.size());
+  std::vector<blink::WebString> mime_types(accept_mime_types.size());
   for (size_t i = 0; i < accept_mime_types.size(); i++) {
-    mine_types[i] = blink::WebString::fromUTF8(accept_mime_types[i].data(),
+    mime_types[i] = blink::WebString::fromUTF8(accept_mime_types[i].data(),
                                                accept_mime_types[i].size());
   }
-  params.acceptTypes = mine_types;
+  params.acceptTypes = mime_types;
   params.directory = false;
+  params.needLocalPath = true;
 
   handler_ = new CompletionHandler(AsWeakPtr());
   RenderViewImpl* render_view = static_cast<RenderViewImpl*>(

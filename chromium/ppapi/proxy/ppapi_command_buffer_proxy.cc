@@ -15,9 +15,15 @@ namespace proxy {
 
 PpapiCommandBufferProxy::PpapiCommandBufferProxy(
     const ppapi::HostResource& resource,
-    ProxyChannel* channel)
-    : resource_(resource),
+    ProxyChannel* channel,
+    const gpu::Capabilities& capabilities,
+    const SerializedHandle& shared_state)
+    : capabilities_(capabilities),
+      resource_(resource),
       channel_(channel) {
+  shared_state_shm_.reset(
+      new base::SharedMemory(shared_state.shmem(), false));
+  shared_state_shm_->Map(shared_state.size());
 }
 
 PpapiCommandBufferProxy::~PpapiCommandBufferProxy() {
@@ -36,6 +42,7 @@ gpu::CommandBuffer::State PpapiCommandBufferProxy::GetLastState() {
 
 int32 PpapiCommandBufferProxy::GetLastToken() {
   ppapi::ProxyLock::AssertAcquiredDebugOnly();
+  TryUpdateState();
   return last_state_.token;
 }
 
@@ -54,35 +61,41 @@ void PpapiCommandBufferProxy::Flush(int32 put_offset) {
 }
 
 void PpapiCommandBufferProxy::WaitForTokenInRange(int32 start, int32 end) {
-  if (last_state_.error != gpu::error::kNoError)
-    return;
-
-  bool success;
-  gpu::CommandBuffer::State state;
-  if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForTokenInRange(
-          ppapi::API_ID_PPB_GRAPHICS_3D,
-          resource_,
-          start,
-          end,
-          &state,
-          &success)))
-    UpdateState(state, success);
+  TryUpdateState();
+  if (!InRange(start, end, last_state_.token) &&
+      last_state_.error == gpu::error::kNoError) {
+    bool success = false;
+    gpu::CommandBuffer::State state;
+    if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForTokenInRange(
+             ppapi::API_ID_PPB_GRAPHICS_3D,
+             resource_,
+             start,
+             end,
+             &state,
+             &success)))
+      UpdateState(state, success);
+  }
+  DCHECK(InRange(start, end, last_state_.token) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void PpapiCommandBufferProxy::WaitForGetOffsetInRange(int32 start, int32 end) {
-  if (last_state_.error != gpu::error::kNoError)
-    return;
-
-  bool success;
-  gpu::CommandBuffer::State state;
-  if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForGetOffsetInRange(
-          ppapi::API_ID_PPB_GRAPHICS_3D,
-          resource_,
-          start,
-          end,
-          &state,
-          &success)))
-    UpdateState(state, success);
+  TryUpdateState();
+  if (!InRange(start, end, last_state_.get_offset) &&
+      last_state_.error == gpu::error::kNoError) {
+    bool success = false;
+    gpu::CommandBuffer::State state;
+    if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForGetOffsetInRange(
+             ppapi::API_ID_PPB_GRAPHICS_3D,
+             resource_,
+             start,
+             end,
+             &state,
+             &success)))
+      UpdateState(state, success);
+  }
+  DCHECK(InRange(start, end, last_state_.get_offset) ||
+         last_state_.error != gpu::error::kNoError);
 }
 
 void PpapiCommandBufferProxy::SetGetBuffer(int32 transfer_buffer_id) {
@@ -134,10 +147,6 @@ void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
       ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id));
 }
 
-void PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
-  NOTREACHED();
-}
-
 uint32 PpapiCommandBufferProxy::CreateStreamTexture(uint32 texture_id) {
   NOTREACHED();
   return 0;
@@ -150,6 +159,22 @@ uint32 PpapiCommandBufferProxy::InsertSyncPoint() {
          ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
   }
   return sync_point;
+}
+
+uint32 PpapiCommandBufferProxy::InsertFutureSyncPoint() {
+  uint32 sync_point = 0;
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_InsertFutureSyncPoint(
+        ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
+  }
+  return sync_point;
+}
+
+void PpapiCommandBufferProxy::RetireSyncPoint(uint32 sync_point) {
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_RetireSyncPoint(
+        ppapi::API_ID_PPB_GRAPHICS_3D, resource_, sync_point));
+  }
 }
 
 void PpapiCommandBufferProxy::SignalSyncPoint(uint32 sync_point,
@@ -167,23 +192,28 @@ void PpapiCommandBufferProxy::SetSurfaceVisible(bool visible) {
 }
 
 gpu::Capabilities PpapiCommandBufferProxy::GetCapabilities() {
-  // TODO(boliu): Need to implement this to use cc in Pepper. Tracked in
-  // crbug.com/325391.
-  return gpu::Capabilities();
+  return capabilities_;
 }
 
-gfx::GpuMemoryBuffer* PpapiCommandBufferProxy::CreateGpuMemoryBuffer(
+int32 PpapiCommandBufferProxy::CreateImage(ClientBuffer buffer,
+                                           size_t width,
+                                           size_t height,
+                                           unsigned internalformat) {
+  NOTREACHED();
+  return -1;
+}
+
+void PpapiCommandBufferProxy::DestroyImage(int32 id) {
+  NOTREACHED();
+}
+
+int32 PpapiCommandBufferProxy::CreateGpuMemoryBufferImage(
     size_t width,
     size_t height,
     unsigned internalformat,
-    unsigned usage,
-    int32* id) {
+    unsigned usage) {
   NOTREACHED();
-  return NULL;
-}
-
-void PpapiCommandBufferProxy::DestroyGpuMemoryBuffer(int32 id) {
-  NOTREACHED();
+  return -1;
 }
 
 bool PpapiCommandBufferProxy::Send(IPC::Message* msg) {
@@ -209,6 +239,16 @@ void PpapiCommandBufferProxy::UpdateState(
     last_state_.error = gpu::error::kLostContext;
     ++last_state_.generation;
   }
+}
+
+void PpapiCommandBufferProxy::TryUpdateState() {
+  if (last_state_.error == gpu::error::kNoError)
+    shared_state()->Read(&last_state_);
+}
+
+gpu::CommandBufferSharedState* PpapiCommandBufferProxy::shared_state() const {
+  return reinterpret_cast<gpu::CommandBufferSharedState*>(
+      shared_state_shm_->memory());
 }
 
 }  // namespace proxy

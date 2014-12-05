@@ -47,7 +47,6 @@ extern const char kRtxCodecName[];
 extern const char kRedCodecName[];
 extern const char kUlpfecCodecName[];
 
-
 // Codec parameters
 extern const int kWildcardPayloadType;
 extern const char kCodecParamAssociatedPayloadType[];
@@ -63,6 +62,7 @@ extern const char kCodecParamSPropStereo[];
 extern const char kCodecParamStereo[];
 extern const char kCodecParamUseInbandFec[];
 extern const char kCodecParamMaxAverageBitrate[];
+extern const char kCodecParamMaxPlaybackRate[];
 extern const char kCodecParamSctpProtocol[];
 extern const char kCodecParamSctpStreams[];
 
@@ -80,6 +80,8 @@ extern const int kOpusDefaultMinPTime;
 extern const int kOpusDefaultSPropStereo;
 extern const int kOpusDefaultStereo;
 extern const int kOpusDefaultUseInbandFec;
+extern const int kOpusDefaultMaxPlaybackRate;
+
 // Prefered values in this code base. Note that they may differ from the default
 // values in http://tools.ietf.org/html/draft-spittka-payload-rtp-opus-03
 // Only frames larger or equal to 10 ms are currently supported in this code

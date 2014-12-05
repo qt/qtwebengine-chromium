@@ -24,33 +24,32 @@ namespace {
 
 class TestClientSocketFactory : public ClientSocketFactory {
  public:
-  virtual ~TestClientSocketFactory();
+  ~TestClientSocketFactory() override;
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       net::NetLog* net_log,
-      const net::NetLog::Source& source) OVERRIDE;
+      const net::NetLog::Source& source) override;
 
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+  scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
-      NetLog*, const NetLog::Source&) OVERRIDE {
+      NetLog*,
+      const NetLog::Source&) override {
     NOTIMPLEMENTED();
     return scoped_ptr<StreamSocket>();
   }
 
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      const SSLClientSocketContext& context) OVERRIDE {
+      const SSLClientSocketContext& context) override {
     NOTIMPLEMENTED();
     return scoped_ptr<SSLClientSocket>();
   }
 
-  virtual void ClearSSLSessionCache() OVERRIDE {
-    NOTIMPLEMENTED();
-  }
+  void ClearSSLSessionCache() override { NOTIMPLEMENTED(); }
 
  private:
   std::list<SocketDataProvider*> data_providers_;
@@ -88,23 +87,21 @@ class MockDnsSocketPool : public DnsSocketPool {
   MockDnsSocketPool(ClientSocketFactory* factory, DnsSessionTest* test)
      : DnsSocketPool(factory), test_(test) { }
 
-  virtual ~MockDnsSocketPool() { }
+  ~MockDnsSocketPool() override {}
 
-  virtual void Initialize(
-      const std::vector<IPEndPoint>* nameservers,
-      NetLog* net_log) OVERRIDE {
+  void Initialize(const std::vector<IPEndPoint>* nameservers,
+                  NetLog* net_log) override {
     InitializeInternal(nameservers, net_log);
   }
 
-  virtual scoped_ptr<DatagramClientSocket> AllocateSocket(
-      unsigned server_index) OVERRIDE {
+  scoped_ptr<DatagramClientSocket> AllocateSocket(
+      unsigned server_index) override {
     test_->OnSocketAllocated(server_index);
     return CreateConnectedSocket(server_index);
   }
 
-  virtual void FreeSocket(
-      unsigned server_index,
-      scoped_ptr<DatagramClientSocket> socket) OVERRIDE {
+  void FreeSocket(unsigned server_index,
+                  scoped_ptr<DatagramClientSocket> socket) override {
     test_->OnSocketFreed(server_index);
   }
 
@@ -194,7 +191,7 @@ TestClientSocketFactory::CreateDatagramClientSocket(
   scoped_ptr<MockUDPClientSocket> socket(
       new MockUDPClientSocket(data_provider, net_log));
   data_provider->set_socket(socket.get());
-  return socket.PassAs<DatagramClientSocket>();
+  return socket.Pass();
 }
 
 TestClientSocketFactory::~TestClientSocketFactory() {

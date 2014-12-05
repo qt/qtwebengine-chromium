@@ -16,6 +16,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread_checker.h"
+#include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_socket.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 
@@ -48,40 +49,43 @@ class BluetoothSocketMac : public BluetoothSocket {
                const ErrorCompletionCallback& error_callback);
 
   // Listens for incoming RFCOMM connections using this socket: Publishes an
-  // RFCOMM service on the |adapter| as UUID |uuid| with Channel |channel_id|.
-  // |success_callback| will be called if the service is successfully
-  // registered, |error_callback| on failure with a message explaining the
-  // cause.
+  // RFCOMM service on the |adapter| as UUID |uuid| with Channel
+  // |options.channel|, or an automatically allocated Channel if
+  // |options.channel| is left null. The service is published with English name
+  // |options.name| if that is non-null. |success_callback| will be called if
+  // the service is successfully registered, |error_callback| on failure with a
+  // message explaining the cause.
   void ListenUsingRfcomm(scoped_refptr<BluetoothAdapterMac> adapter,
                          const BluetoothUUID& uuid,
-                         int channel_id,
+                         const BluetoothAdapter::ServiceOptions& options,
                          const base::Closure& success_callback,
                          const ErrorCompletionCallback& error_callback);
 
   // Listens for incoming L2CAP connections using this socket: Publishes an
-  // L2CAP service on the |adapter| as UUID |uuid| with PSM |psm|.
+  // L2CAP service on the |adapter| as UUID |uuid| with PSM |options.psm|, or an
+  // automatically allocated PSM if |options.psm| is left null. The service is
+  // published with English name |options.name| if that is non-null.
   // |success_callback| will be called if the service is successfully
   // registered, |error_callback| on failure with a message explaining the
   // cause.
   void ListenUsingL2cap(scoped_refptr<BluetoothAdapterMac> adapter,
                         const BluetoothUUID& uuid,
-                        int psm,
+                        const BluetoothAdapter::ServiceOptions& options,
                         const base::Closure& success_callback,
                         const ErrorCompletionCallback& error_callback);
 
   // BluetoothSocket:
-  virtual void Close() OVERRIDE;
-  virtual void Disconnect(const base::Closure& callback) OVERRIDE;
-  virtual void Receive(
-      int /* buffer_size */,
-      const ReceiveCompletionCallback& success_callback,
-      const ReceiveErrorCompletionCallback& error_callback) OVERRIDE;
-  virtual void Send(scoped_refptr<net::IOBuffer> buffer,
-                    int buffer_size,
-                    const SendCompletionCallback& success_callback,
-                    const ErrorCompletionCallback& error_callback) OVERRIDE;
-  virtual void Accept(const AcceptCompletionCallback& success_callback,
-                      const ErrorCompletionCallback& error_callback) OVERRIDE;
+  void Close() override;
+  void Disconnect(const base::Closure& callback) override;
+  void Receive(int /* buffer_size */,
+               const ReceiveCompletionCallback& success_callback,
+               const ReceiveErrorCompletionCallback& error_callback) override;
+  void Send(scoped_refptr<net::IOBuffer> buffer,
+            int buffer_size,
+            const SendCompletionCallback& success_callback,
+            const ErrorCompletionCallback& error_callback) override;
+  void Accept(const AcceptCompletionCallback& success_callback,
+              const ErrorCompletionCallback& error_callback) override;
 
   // Callback that is invoked when the OS completes an SDP query.
   // |status| is the returned status from the SDP query, |device| is the
@@ -140,7 +144,7 @@ class BluetoothSocketMac : public BluetoothSocket {
   };
 
   BluetoothSocketMac();
-  virtual ~BluetoothSocketMac();
+  ~BluetoothSocketMac() override;
 
   // Accepts a single incoming connection.
   void AcceptConnectionRequest();

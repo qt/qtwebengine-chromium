@@ -73,7 +73,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   typedef std::vector<Window*> Windows;
 
   explicit Window(WindowDelegate* delegate);
-  virtual ~Window();
+  ~Window() override;
 
   // Initializes the window. This creates the window's layer.
   void Init(WindowLayerType layer_type);
@@ -96,7 +96,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   void SetName(const std::string& name);
 
   const base::string16 title() const { return title_; }
-  void set_title(const base::string16& title) { title_ = title; }
+  void SetTitle(const base::string16& title);
 
   bool transparent() const { return transparent_; }
   void SetTransparent(bool transparent);
@@ -312,7 +312,7 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   typedef void (*PropertyDeallocator)(int64 value);
 
   // Overridden from ui::LayerDelegate:
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
 
 #if !defined(NDEBUG)
   // These methods are useful when debugging.
@@ -445,28 +445,30 @@ class AURA_EXPORT Window : public ui::LayerDelegate,
   // Notifies this window and its parent hierarchy.
   void NotifyWindowVisibilityChangedUp(aura::Window* target, bool visible);
 
+  // Notifies this window and its child hierarchy of a transform applied to
+  // |source|.
+  void NotifyAncestorWindowTransformed(Window* source);
+
   // Invoked when the bounds of the window changes. This may be invoked directly
   // by us, or from the closure returned by PrepareForLayerBoundsChange() after
   // the bounds of the layer has changed. |old_bounds| is the previous bounds.
   void OnWindowBoundsChanged(const gfx::Rect& old_bounds);
 
   // Overridden from ui::LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
+  void OnPaintLayer(gfx::Canvas* canvas) override;
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
+  base::Closure PrepareForLayerBoundsChange() override;
 
   // Overridden from ui::EventTarget:
-  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
-  virtual EventTarget* GetParentTarget() OVERRIDE;
-  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
-  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
-  virtual void ConvertEventToTarget(ui::EventTarget* target,
-                                    ui::LocatedEvent* event) OVERRIDE;
+  bool CanAcceptEvent(const ui::Event& event) override;
+  EventTarget* GetParentTarget() override;
+  scoped_ptr<ui::EventTargetIterator> GetChildIterator() const override;
+  ui::EventTargeter* GetEventTargeter() override;
+  void ConvertEventToTarget(ui::EventTarget* target,
+                            ui::LocatedEvent* event) override;
 
   // Updates the layer name based on the window's name and id.
   void UpdateLayerName();
-
-  // Returns true if the mouse is currently within our bounds.
-  bool ContainsMouse();
 
   // Returns the first ancestor (starting at |this|) with a layer. |offset| is
   // set to the offset from |this| to the first ancestor with a layer. |offset|

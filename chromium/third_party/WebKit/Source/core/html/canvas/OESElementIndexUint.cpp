@@ -27,12 +27,11 @@
 
 #include "core/html/canvas/OESElementIndexUint.h"
 
-namespace WebCore {
+namespace blink {
 
 OESElementIndexUint::OESElementIndexUint(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     context->extensionsUtil()->ensureExtensionEnabled("GL_OES_element_index_uint");
 }
 
@@ -45,9 +44,9 @@ WebGLExtensionName OESElementIndexUint::name() const
     return OESElementIndexUintName;
 }
 
-PassRefPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<OESElementIndexUint> OESElementIndexUint::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new OESElementIndexUint(context));
+    return adoptRefWillBeNoop(new OESElementIndexUint(context));
 }
 
 bool OESElementIndexUint::supported(WebGLRenderingContextBase* context)
@@ -60,4 +59,4 @@ const char* OESElementIndexUint::extensionName()
     return "OES_element_index_uint";
 }
 
-} // namespace WebCore
+} // namespace blink

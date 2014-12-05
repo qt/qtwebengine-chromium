@@ -9,7 +9,7 @@
 #include "content/renderer/pepper/pepper_platform_video_capture.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/renderer_ppapi_host_impl.h"
-#include "content/renderer/render_view_impl.h"
+#include "content/renderer/render_frame_impl.h"
 #include "media/base/limits.h"
 #include "media/base/video_frame.h"
 #include "ppapi/host/dispatch_host_message.h"
@@ -42,8 +42,8 @@ PepperVideoCaptureHost::PepperVideoCaptureHost(RendererPpapiHostImpl* host,
       buffer_count_hint_(0),
       status_(PP_VIDEO_CAPTURE_STATUS_STOPPED),
       enumeration_helper_(this,
-                          PepperMediaDeviceManager::GetForRenderView(
-                              host->GetRenderViewForInstance(pp_instance())),
+                          PepperMediaDeviceManager::GetForRenderFrame(
+                              host->GetRenderFrameForInstance(pp_instance())),
                           PP_DEVICETYPE_DEV_VIDEOCAPTURE,
                           host->GetDocumentURL(instance)) {
 }
@@ -114,7 +114,9 @@ void PepperVideoCaptureHost::PostErrorReply() {
   // the capture.
   SetStatus(PP_VIDEO_CAPTURE_STATUS_STOPPED, true);
   host()->SendUnsolicitedReply(
-      pp_resource(), PpapiPluginMsg_VideoCapture_OnError(PP_ERROR_FAILED));
+      pp_resource(),
+      PpapiPluginMsg_VideoCapture_OnError(
+          static_cast<uint32_t>(PP_ERROR_FAILED)));
 }
 
 void PepperVideoCaptureHost::OnFrameReady(
@@ -259,11 +261,12 @@ int32_t PepperVideoCaptureHost::OnOpen(
   if (!document_url.is_valid())
     return PP_ERROR_FAILED;
 
-  RenderViewImpl* render_view = static_cast<RenderViewImpl*>(
-      renderer_ppapi_host_->GetRenderViewForInstance(pp_instance()));
-
   platform_video_capture_.reset(new PepperPlatformVideoCapture(
-      render_view->AsWeakPtr(), device_id, document_url, this));
+      renderer_ppapi_host_->GetRenderFrameForInstance(pp_instance())->
+          GetRoutingID(),
+      device_id,
+      document_url,
+      this));
 
   open_reply_context_ = context->MakeReplyMessageContext();
 
@@ -354,7 +357,6 @@ void PepperVideoCaptureHost::SetRequestedInfo(
       gfx::Size(device_info.width, device_info.height),
       frames_per_second,
       media::PIXEL_FORMAT_I420);
-  video_capture_params_.allow_resolution_change = false;
 }
 
 void PepperVideoCaptureHost::DetachPlatformVideoCapture() {

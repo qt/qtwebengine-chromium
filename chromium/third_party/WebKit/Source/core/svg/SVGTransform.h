@@ -26,7 +26,7 @@
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatSize;
 class SVGTransformTearOff;
@@ -68,7 +68,7 @@ public:
     virtual ~SVGTransform();
 
     PassRefPtr<SVGTransform> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
+    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
     SVGTransformType transformType() const { return m_transformType; }
 
@@ -92,11 +92,11 @@ public:
     FloatPoint translate() const;
     FloatSize scale() const;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedTransform; }
 
@@ -106,24 +106,12 @@ private:
     explicit SVGTransform(const AffineTransform&);
     SVGTransform(SVGTransformType, float, const FloatPoint&, const AffineTransform&);
 
-    friend bool operator==(const SVGTransform& a, const SVGTransform& b);
-
     SVGTransformType m_transformType;
     float m_angle;
     FloatPoint m_center;
     AffineTransform m_matrix;
 };
 
-inline bool operator==(const SVGTransform& a, const SVGTransform& b)
-{
-    return a.m_transformType == b.m_transformType && a.m_angle == b.m_angle && a.m_matrix == b.m_matrix;
-}
-
-inline bool operator!=(const SVGTransform& a, const SVGTransform& b)
-{
-    return !(a == b);
-}
-
-} // namespace WebCore
+} // namespace blink
 
 #endif

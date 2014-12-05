@@ -28,24 +28,18 @@
 #include "core/loader/NavigationPolicy.h"
 #include "core/frame/ConsoleTypes.h"
 #include "core/page/FocusType.h"
-#include "core/rendering/RenderEmbeddedObject.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "platform/Cursor.h"
 #include "platform/HostWindow.h"
 #include "platform/PopupMenu.h"
 #include "platform/PopupMenuClient.h"
+#include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-
-#ifndef __OBJC__
-class NSMenu;
-class NSResponder;
-#endif
-
-namespace WebCore {
+namespace blink {
 
 class AXObject;
 class ColorChooser;
@@ -66,13 +60,10 @@ class IntRect;
 class LocalFrame;
 class Node;
 class Page;
-class PagePopup;
-class PagePopupClient;
 class PagePopupDriver;
 class PopupMenuClient;
-class SecurityOrigin;
-class Widget;
 
+struct CompositedSelectionBound;
 struct DateTimeChooserParameters;
 struct FrameLoadRequest;
 struct GraphicsDeviceAdapter;
@@ -144,7 +135,6 @@ public:
     // Methods used by HostWindow.
     virtual void invalidateContentsAndRootView(const IntRect&) = 0;
     virtual void invalidateContentsForSlowScroll(const IntRect&) = 0;
-    virtual void scroll(const IntSize&, const IntRect&, const IntRect&) = 0;
     virtual IntRect rootViewToScreen(const IntRect&) const = 0;
     virtual blink::WebScreenInfo screenInfo() const = 0;
     virtual void setCursor(const Cursor&) = 0;
@@ -167,7 +157,7 @@ public:
 
     virtual bool paintCustomOverhangArea(GraphicsContext*, const IntRect&, const IntRect&, const IntRect&) = 0;
 
-    virtual PassOwnPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
+    virtual PassOwnPtrWillBeRawPtr<ColorChooser> createColorChooser(LocalFrame*, ColorChooserClient*, const Color&) = 0;
 
     // This function is used for:
     //  - Mandatory date/time choosers if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -175,7 +165,7 @@ public:
     //    returns true, if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     //  - <datalist> UI for date/time input types regardless of
     //    ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-    virtual PassRefPtrWillBeRawPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
+    virtual PassRefPtr<DateTimeChooser> openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&) = 0;
 
     virtual void openTextDataListChooser(HTMLInputElement&) = 0;
 
@@ -185,7 +175,7 @@ public:
     virtual void enumerateChosenDirectory(FileChooser*) = 0;
 
     // Allows ports to customize the type of graphics layers created by this page.
-    virtual GraphicsLayerFactory* graphicsLayerFactory() const { return 0; }
+    virtual GraphicsLayerFactory* graphicsLayerFactory() const { return nullptr; }
 
     // Pass 0 as the GraphicsLayer to detatch the root layer.
     virtual void attachRootGraphicsLayer(GraphicsLayer*) = 0;
@@ -193,16 +183,20 @@ public:
     virtual void enterFullScreenForElement(Element*) { }
     virtual void exitFullScreenForElement(Element*) { }
 
+    virtual void clearCompositedSelectionBounds() { }
+    virtual void updateCompositedSelectionBounds(const CompositedSelectionBound& anchor, const CompositedSelectionBound& focus) { }
+
     virtual void needTouchEvents(bool) = 0;
 
     virtual void setTouchAction(TouchAction) = 0;
 
     // Checks if there is an opened popup, called by RenderMenuList::showPopup().
     virtual bool hasOpenedPopup() const = 0;
-    virtual PassRefPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const = 0;
+    virtual PassRefPtrWillBeRawPtr<PopupMenu> createPopupMenu(LocalFrame&, PopupMenuClient*) const = 0;
     // For testing.
     virtual void setPagePopupDriver(PagePopupDriver*) = 0;
     virtual void resetPagePopupDriver() = 0;
+    virtual PagePopupDriver* pagePopupDriver() const = 0;
 
     virtual void postAccessibilityNotification(AXObject*, AXObjectCache::AXNotification) { }
     virtual String acceptLanguages() = 0;
@@ -220,27 +214,25 @@ public:
     virtual bool requestPointerLock() { return false; }
     virtual void requestPointerUnlock() { }
 
-    virtual FloatSize minimumWindowSize() const { return FloatSize(100, 100); };
+    virtual FloatSize minimumWindowSize() const { return FloatSize(100, 100); }
 
     virtual bool isChromeClientImpl() const { return false; }
 
-    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element> >&) { };
+    virtual void didAssociateFormControls(const WillBeHeapVector<RefPtrWillBeMember<Element>>&) { }
     virtual void didChangeValueInTextField(HTMLFormControlElement&) { }
     virtual void didEndEditingOnTextField(HTMLInputElement&) { }
     virtual void handleKeyboardEventOnTextField(HTMLInputElement&, KeyboardEvent&) { }
-
-    // FIXME: Remove this method once we have input routing in the browser
-    // process. See http://crbug.com/339659.
-    virtual void forwardInputEvent(WebCore::Frame*, WebCore::Event*) { }
 
     // Input mehtod editor related functions.
     virtual void didCancelCompositionOnSelectionChange() { }
     virtual void willSetInputMethodState() { }
     virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
+    virtual void showImeIfNeeded() { }
 
 protected:
     virtual ~ChromeClient() { }
 };
 
-}
+} // namespace blink
+
 #endif // ChromeClient_h

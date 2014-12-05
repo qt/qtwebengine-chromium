@@ -16,10 +16,11 @@
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
 #include "content/common/content_export.h"
+#include "content/public/common/resource_type.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
 #include "net/base/request_priority.h"
-#include "webkit/common/resource_type.h"
+#include "url/gurl.h"
 
 struct ResourceMsg_RequestCompleteData;
 
@@ -27,13 +28,14 @@ namespace blink {
 class WebThreadedDataReceiver;
 }
 
-namespace webkit_glue {
-class ResourceLoaderBridge;
+namespace net {
+struct RedirectInfo;
 }
 
 namespace content {
 class RequestPeer;
 class ResourceDispatcherDelegate;
+class ResourceLoaderBridge;
 class ThreadedDataProvider;
 struct ResourceResponseInfo;
 struct RequestInfo;
@@ -46,21 +48,20 @@ struct SiteIsolationResponseMetaData;
 class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
  public:
   explicit ResourceDispatcher(IPC::Sender* sender);
-  virtual ~ResourceDispatcher();
+  ~ResourceDispatcher() override;
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Creates a ResourceLoaderBridge for this type of dispatcher, this is so
   // this can be tested regardless of the ResourceLoaderBridge::Create
-  // implementation.
-  webkit_glue::ResourceLoaderBridge* CreateBridge(
-      const RequestInfo& request_info);
+  // implementation.  Virtual for tests.
+  virtual ResourceLoaderBridge* CreateBridge(const RequestInfo& request_info);
 
   // Adds a request from the |pending_requests_| list, returning the new
   // requests' ID.
   int AddPendingRequest(RequestPeer* callback,
-                        ResourceType::Type resource_type,
+                        ResourceType resource_type,
                         int origin_pid,
                         const GURL& frame_origin,
                         const GURL& request_url,
@@ -108,7 +109,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
     PendingRequestInfo();
 
     PendingRequestInfo(RequestPeer* peer,
-                       ResourceType::Type resource_type,
+                       ResourceType resource_type,
                        int origin_pid,
                        const GURL& frame_origin,
                        const GURL& request_url,
@@ -118,7 +119,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
 
     RequestPeer* peer;
     ThreadedDataProvider* threaded_data_provider;
-    ResourceType::Type resource_type;
+    ResourceType resource_type;
     // The PID of the original process which issued this request. This gets
     // non-zero only for a request proxied by another renderer, particularly
     // requests from plugins.
@@ -155,8 +156,7 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   void OnReceivedResponse(int request_id, const ResourceResponseHead&);
   void OnReceivedCachedMetadata(int request_id, const std::vector<char>& data);
   void OnReceivedRedirect(int request_id,
-                          const GURL& new_url,
-                          const GURL& new_first_party_for_cookies,
+                          const net::RedirectInfo& redirect_info,
                           const ResourceResponseHead& response_head);
   void OnSetDataBuffer(int request_id,
                        base::SharedMemoryHandle shm_handle,
@@ -210,12 +210,12 @@ class CONTENT_EXPORT ResourceDispatcher : public IPC::Listener {
   // All pending requests issued to the host
   PendingRequestList pending_requests_;
 
-  base::WeakPtrFactory<ResourceDispatcher> weak_factory_;
-
   ResourceDispatcherDelegate* delegate_;
 
   // IO thread timestamp for ongoing IPC message.
   base::TimeTicks io_timestamp_;
+
+  base::WeakPtrFactory<ResourceDispatcher> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceDispatcher);
 };

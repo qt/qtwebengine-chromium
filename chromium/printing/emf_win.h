@@ -12,6 +12,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "printing/metafile.h"
 
 namespace base {
@@ -42,75 +43,63 @@ class PRINTING_EXPORT Emf : public Metafile {
   Emf();
   virtual ~Emf();
 
+  // Closes metafile.
+  void Close();
+
   // Generates a new metafile that will record every GDI command, and will
   // be saved to |metafile_path|.
-  virtual bool InitToFile(const base::FilePath& metafile_path);
+  bool InitToFile(const base::FilePath& metafile_path);
 
   // Initializes the Emf with the data in |metafile_path|.
-  virtual bool InitFromFile(const base::FilePath& metafile_path);
+  bool InitFromFile(const base::FilePath& metafile_path);
 
   // Metafile methods.
-  virtual bool Init() OVERRIDE;
+  virtual bool Init() override;
   virtual bool InitFromData(const void* src_buffer,
-                            uint32 src_buffer_size) OVERRIDE;
+                            uint32 src_buffer_size) override;
 
-  virtual SkBaseDevice* StartPageForVectorCanvas(
-      const gfx::Size& page_size, const gfx::Rect& content_area,
-      const float& scale_factor) OVERRIDE;
   // Inserts a custom GDICOMMENT records indicating StartPage/EndPage calls
   // (since StartPage and EndPage do not work in a metafile DC). Only valid
   // when hdc_ is non-NULL. |page_size|, |content_area|, and |scale_factor| are
   // ignored.
   virtual bool StartPage(const gfx::Size& page_size,
                          const gfx::Rect& content_area,
-                         const float& scale_factor) OVERRIDE;
-  virtual bool FinishPage() OVERRIDE;
-  virtual bool FinishDocument() OVERRIDE;
+                         const float& scale_factor) override;
+  virtual bool FinishPage() override;
+  virtual bool FinishDocument() override;
 
-  virtual uint32 GetDataSize() const OVERRIDE;
-  virtual bool GetData(void* buffer, uint32 size) const OVERRIDE;
-
-  // Saves the EMF data to a file as-is. It is recommended to use the .emf file
-  // extension but it is not enforced. This function synchronously writes to the
-  // file. For testing only.
-  virtual bool SaveTo(const base::FilePath& file_path) const OVERRIDE;
+  virtual uint32 GetDataSize() const override;
+  virtual bool GetData(void* buffer, uint32 size) const override;
 
   // Should be passed to Playback to keep the exact same size.
-  virtual gfx::Rect GetPageBounds(unsigned int page_number) const OVERRIDE;
+  virtual gfx::Rect GetPageBounds(unsigned int page_number) const override;
 
-  virtual unsigned int GetPageCount() const OVERRIDE {
-    return page_count_;
-  }
+  virtual unsigned int GetPageCount() const override { return 1; }
 
-  virtual HDC context() const OVERRIDE {
+  virtual HDC context() const override {
     return hdc_;
   }
 
-  virtual bool Playback(HDC hdc, const RECT* rect) const OVERRIDE;
-  virtual bool SafePlayback(HDC hdc) const OVERRIDE;
+  virtual bool Playback(HDC hdc, const RECT* rect) const override;
+  virtual bool SafePlayback(HDC hdc) const override;
 
-  virtual HENHMETAFILE emf() const OVERRIDE {
-    return emf_;
-  }
+  HENHMETAFILE emf() const { return emf_; }
 
   // Returns true if metafile contains alpha blend.
   bool IsAlphaBlendUsed() const;
 
   // Returns new metafile with only bitmap created by playback of the current
   // metafile. Returns NULL if fails.
-  Emf* RasterizeMetafile(int raster_area_in_pixels) const;
+  scoped_ptr<Emf> RasterizeMetafile(int raster_area_in_pixels) const;
 
   // Returns new metafile where AlphaBlend replaced by bitmaps. Returns NULL
   // if fails.
-  Emf* RasterizeAlphaBlend() const;
+  scoped_ptr<Emf> RasterizeAlphaBlend() const;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(EmfTest, DC);
   FRIEND_TEST_ALL_PREFIXES(EmfPrintingTest, PageBreak);
   FRIEND_TEST_ALL_PREFIXES(EmfTest, FileBackedEmf);
-
-  // Retrieves the underlying data stream. It is a helper function.
-  bool GetDataAsVector(std::vector<uint8>* buffer) const;
 
   // Playbacks safely one EMF record.
   static int CALLBACK SafePlaybackProc(HDC hdc,
@@ -124,8 +113,6 @@ class PRINTING_EXPORT Emf : public Metafile {
 
   // Valid when generating EMF data through a virtual HDC.
   HDC hdc_;
-
-  int page_count_;
 
   DISALLOW_COPY_AND_ASSIGN(Emf);
 };

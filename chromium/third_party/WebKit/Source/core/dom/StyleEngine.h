@@ -41,22 +41,18 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSFontSelector;
 class CSSStyleSheet;
-class FontSelector;
 class Node;
 class RuleFeatureSet;
 class ShadowTreeStyleSheetCollection;
-class StyleResolver;
 class StyleRuleFontFace;
 class StyleSheet;
-class StyleSheetCollection;
 class StyleSheetContents;
-class StyleSheetList;
 
-class StyleEngine FINAL : public CSSFontSelectorClient  {
+class StyleEngine final : public CSSFontSelectorClient  {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
 
@@ -89,7 +85,7 @@ public:
     void modifiedStyleSheet(StyleSheet*);
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
     void removeStyleSheetCandidateNode(Node*);
-    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode, TreeScope&);
+    void removeStyleSheetCandidateNode(Node*, TreeScope&);
     void modifiedStyleSheetCandidateNode(Node*);
     void enableExitTransitionStylesheets();
     void addXSLStyleSheet(ProcessingInstruction*, bool createdByParser);
@@ -97,6 +93,8 @@ public:
 
     void invalidateInjectedStyleSheetCache();
     void updateInjectedStyleSheetCache() const;
+
+    void compatibilityModeChanged();
 
     void addAuthorSheet(PassRefPtrWillBeRawPtr<StyleSheetContents> authorSheet);
 
@@ -130,7 +128,6 @@ public:
     void setUsesFirstLetterRules(bool b) { m_usesFirstLetterRules = b; }
     bool usesRemUnits() const { return m_usesRemUnits; }
     void setUsesRemUnit(bool b) { m_usesRemUnits = b; }
-    bool hasScopedStyleSheet() { return documentStyleSheetCollection()->scopingNodesForStyleScoped(); }
 
     void combineCSSFeatureFlags(const RuleFeatureSet&);
     void resetCSSFeatureFlags(const RuleFeatureSet&);
@@ -173,11 +170,16 @@ public:
     PassRefPtrWillBeRawPtr<CSSStyleSheet> createSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
     void removeSheet(StyleSheetContents*);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    void addScopedStyleResolver(const ScopedStyleResolver* resolver) { m_scopedStyleResolvers.add(resolver); }
+    void removeScopedStyleResolver(const ScopedStyleResolver* resolver) { m_scopedStyleResolvers.remove(resolver); }
+    bool hasOnlyScopedResolverForDocument() const { return m_scopedStyleResolvers.size() == 1; }
+    void collectScopedStyleFeaturesTo(RuleFeatureSet&) const;
+
+    virtual void trace(Visitor*) override;
 
 private:
     // CSSFontSelectorClient implementation.
-    virtual void fontsNeedUpdate(CSSFontSelector*) OVERRIDE;
+    virtual void fontsNeedUpdate(CSSFontSelector*) override;
 
 private:
     StyleEngine(Document&);
@@ -202,23 +204,14 @@ private:
 
     static PassRefPtrWillBeRawPtr<CSSStyleSheet> parseSheet(Element*, const String& text, TextPosition startPosition, bool createdByParser);
 
-    // FIXME: Oilpan: clean this const madness up once oilpan ships.
     const DocumentStyleSheetCollection* documentStyleSheetCollection() const
     {
-#if ENABLE(OILPAN)
-        return m_documentStyleSheetCollection;
-#else
-        return &m_documentStyleSheetCollection;
-#endif
+        return m_documentStyleSheetCollection.get();
     }
 
     DocumentStyleSheetCollection* documentStyleSheetCollection()
     {
-#if ENABLE(OILPAN)
-        return m_documentStyleSheetCollection;
-#else
-        return &m_documentStyleSheetCollection;
-#endif
+        return m_documentStyleSheetCollection.get();
     }
 
     RawPtrWillBeMember<Document> m_document;
@@ -235,13 +228,12 @@ private:
 
     WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> > m_authorStyleSheets;
 
-#if ENABLE(OILPAN)
-    Member<DocumentStyleSheetCollection> m_documentStyleSheetCollection;
-#else
-    DocumentStyleSheetCollection m_documentStyleSheetCollection;
-#endif
+    OwnPtrWillBeMember<DocumentStyleSheetCollection> m_documentStyleSheetCollection;
+
     typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<TreeScope>, OwnPtrWillBeMember<ShadowTreeStyleSheetCollection> > StyleSheetCollectionMap;
     StyleSheetCollectionMap m_styleSheetCollectionMap;
+    typedef WillBeHeapHashSet<RawPtrWillBeMember<const ScopedStyleResolver> > ScopedStyleResolverSet;
+    ScopedStyleResolverSet m_scopedStyleResolvers;
 
     bool m_documentScopeDirty;
     TreeScopeSet m_dirtyTreeScopes;

@@ -42,9 +42,9 @@ extern "C" {
 
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 const int kMaxFFTPow2Size = 24;
 #endif
 
@@ -52,11 +52,11 @@ const int kMaxFFTPow2Size = 24;
 FFTFrame::FFTFrame(unsigned fftSize)
     : m_FFTSize(fftSize)
     , m_log2FFTSize(static_cast<unsigned>(log2(fftSize)))
+    , m_realData(fftSize / 2)
+    , m_imagData(fftSize / 2)
     , m_forwardContext(0)
     , m_inverseContext(0)
     , m_complexData(fftSize)
-    , m_realData(fftSize / 2)
-    , m_imagData(fftSize / 2)
 {
     // We only allow power of two.
     ASSERT(1UL << m_log2FFTSize == m_FFTSize);
@@ -78,11 +78,11 @@ FFTFrame::FFTFrame()
 FFTFrame::FFTFrame(const FFTFrame& frame)
     : m_FFTSize(frame.m_FFTSize)
     , m_log2FFTSize(frame.m_log2FFTSize)
+    , m_realData(frame.m_FFTSize / 2)
+    , m_imagData(frame.m_FFTSize / 2)
     , m_forwardContext(0)
     , m_inverseContext(0)
     , m_complexData(frame.m_FFTSize)
-    , m_realData(frame.m_FFTSize / 2)
-    , m_imagData(frame.m_FFTSize / 2)
 {
     m_forwardContext = contextForSize(m_FFTSize, DFT_R2C);
     m_inverseContext = contextForSize(m_FFTSize, IDFT_C2R);
@@ -145,16 +145,6 @@ void FFTFrame::doInverseFFT(float* data)
     VectorMath::vsmul(interleavedData, 1, &scale, data, 1, m_FFTSize);
 }
 
-float* FFTFrame::realData() const
-{
-    return const_cast<float*>(m_realData.data());
-}
-
-float* FFTFrame::imagData() const
-{
-    return const_cast<float*>(m_imagData.data());
-}
-
 float* FFTFrame::getUpToDateComplexData()
 {
     // FIXME: if we can't completely get rid of this method, SSE
@@ -184,7 +174,7 @@ RDFTContext* FFTFrame::contextForSize(unsigned fftSize, int trans)
     return context;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // USE(WEBAUDIO_FFMPEG)
 

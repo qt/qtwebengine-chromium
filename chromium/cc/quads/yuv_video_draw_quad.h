@@ -21,9 +21,9 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
     COLOR_SPACE_LAST = REC_601_JPEG
   };
 
-  virtual ~YUVVideoDrawQuad();
+  ~YUVVideoDrawQuad() override;
 
-  static scoped_ptr<YUVVideoDrawQuad> Create();
+  YUVVideoDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -55,14 +55,12 @@ class CC_EXPORT YUVVideoDrawQuad : public DrawQuad {
   unsigned a_plane_resource_id;
   ColorSpace color_space;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const YUVVideoDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  YUVVideoDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

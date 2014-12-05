@@ -33,10 +33,10 @@
 
 #include "core/svg/SVGPathElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimatedPath::SVGAnimatedPath(SVGPathElement* contextElement, const QualifiedName& attributeName)
-    : SVGAnimatedProperty<SVGPathSegList>(contextElement, attributeName, SVGPathSegList::create(contextElement, PathSegUnalteredRole))
+    : SVGAnimatedProperty<SVGPathSegList>(contextElement, attributeName, SVGPathSegList::create(contextElement))
 {
 }
 

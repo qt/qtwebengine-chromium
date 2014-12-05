@@ -33,16 +33,27 @@
 #include "wtf/HashMap.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class ContainerNode;
 class LayoutPoint;
 class LayoutRect;
 class Node;
+class Position;
 class Range;
 class RenderedDocumentMarker;
+class Text;
+class TextIterator;
 
-class DocumentMarkerController FINAL : public NoBaseWillBeGarbageCollected<DocumentMarkerController> {
+class MarkerRemoverPredicate final {
+public:
+    explicit MarkerRemoverPredicate(const Vector<String>& words);
+    bool operator()(const DocumentMarker&, const Text&) const;
+
+private:
+    Vector<String> m_words;
+};
+
+class DocumentMarkerController final : public NoBaseWillBeGarbageCollected<DocumentMarkerController> {
     WTF_MAKE_NONCOPYABLE(DocumentMarkerController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DocumentMarkerController);
 public:
@@ -50,9 +61,8 @@ public:
     DocumentMarkerController();
 
     void clear();
-    void addMarker(Range*, DocumentMarker::MarkerType);
-    void addMarker(Range*, DocumentMarker::MarkerType, const String& description);
-    void addMarker(Range*, DocumentMarker::MarkerType, const String& description, uint32_t hash);
+    void addMarker(Range*, DocumentMarker::MarkerType, const String& description = emptyString(), uint32_t hash = 0);
+    void addMarker(const Position& start, const Position& end, DocumentMarker::MarkerType, const String& description = emptyString(), uint32_t hash = 0);
     void addTextMatchMarker(const Range*, bool activeMatch);
 
     void copyMarkers(Node* srcNode, unsigned startOffset, int length, Node* dstNode, int delta);
@@ -64,10 +74,12 @@ public:
     // the portion that is outside of the range.
     enum RemovePartiallyOverlappingMarkerOrNot { DoNotRemovePartiallyOverlappingMarker, RemovePartiallyOverlappingMarker };
     void removeMarkers(Range*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers(), RemovePartiallyOverlappingMarkerOrNot = DoNotRemovePartiallyOverlappingMarker);
+    void removeMarkers(const Position& start, const Position& end, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers(), RemovePartiallyOverlappingMarkerOrNot = DoNotRemovePartiallyOverlappingMarker);
     void removeMarkers(Node*, unsigned startOffset, int length, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers(),  RemovePartiallyOverlappingMarkerOrNot = DoNotRemovePartiallyOverlappingMarker);
 
     void removeMarkers(DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
     void removeMarkers(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
+    void removeMarkers(const MarkerRemoverPredicate& shouldRemoveMarker);
     void repaintMarkers(DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
     void invalidateRenderedRectsForMarkersInRect(const LayoutRect&);
     void shiftMarkers(Node*, unsigned startOffset, int delta);
@@ -75,9 +87,9 @@ public:
     void setMarkersActive(Node*, unsigned startOffset, unsigned endOffset, bool);
 
     DocumentMarker* markerContainingPoint(const LayoutPoint&, DocumentMarker::MarkerType);
-    WillBeHeapVector<DocumentMarker*> markersFor(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
-    WillBeHeapVector<DocumentMarker*> markersInRange(Range*, DocumentMarker::MarkerTypes);
-    WillBeHeapVector<DocumentMarker*> markers();
+    DocumentMarkerVector markersFor(Node*, DocumentMarker::MarkerTypes = DocumentMarker::AllMarkers());
+    DocumentMarkerVector markersInRange(Range*, DocumentMarker::MarkerTypes);
+    DocumentMarkerVector markers();
     Vector<IntRect> renderedRectsForMarkers(DocumentMarker::MarkerType);
 
     void trace(Visitor*);
@@ -89,22 +101,23 @@ public:
 private:
     void addMarker(Node*, const DocumentMarker&);
 
-    typedef WillBeHeapVector<RenderedDocumentMarker> MarkerList;
-    typedef WillBeHeapVector<OwnPtrWillBeMember<MarkerList>, DocumentMarker::MarkerTypeIndexesCount> MarkerLists;
-    typedef WillBeHeapHashMap<RawPtrWillBeWeakMember<const Node>, OwnPtrWillBeMember<MarkerLists> > MarkerMap;
+    using MarkerList = WillBeHeapVector<OwnPtrWillBeMember<RenderedDocumentMarker>>;
+    using MarkerLists = WillBeHeapVector<OwnPtrWillBeMember<MarkerList>, DocumentMarker::MarkerTypeIndexesCount>;
+    using MarkerMap = WillBeHeapHashMap<RawPtrWillBeWeakMember<const Node>, OwnPtrWillBeMember<MarkerLists>>;
     void mergeOverlapping(MarkerList*, DocumentMarker&);
     bool possiblyHasMarkers(DocumentMarker::MarkerTypes);
     void removeMarkersFromList(MarkerMap::iterator, DocumentMarker::MarkerTypes);
+    void removeMarkers(TextIterator&, DocumentMarker::MarkerTypes, RemovePartiallyOverlappingMarkerOrNot);
 
     MarkerMap m_markers;
     // Provide a quick way to determine whether a particular marker type is absent without going through the map.
     DocumentMarker::MarkerTypes m_possiblyExistingMarkerTypes;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
-void showDocumentMarkers(const WebCore::DocumentMarkerController*);
+void showDocumentMarkers(const blink::DocumentMarkerController*);
 #endif
 
 #endif // DocumentMarkerController_h

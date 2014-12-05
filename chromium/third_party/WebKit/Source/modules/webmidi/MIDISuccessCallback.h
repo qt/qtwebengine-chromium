@@ -32,17 +32,19 @@
 #define MIDISuccessCallback_h
 
 #include "modules/webmidi/MIDIOptions.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccess;
 
-class MIDISuccessCallback {
+class MIDISuccessCallback : public GarbageCollectedFinalized<MIDISuccessCallback> {
 public:
     virtual ~MIDISuccessCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(MIDIAccess*, bool) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDISuccessCallback_h

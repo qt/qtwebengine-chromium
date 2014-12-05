@@ -7,7 +7,7 @@
 #include <cups/ppd.h>
 
 #include "base/base_paths.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
@@ -38,7 +38,6 @@ const char kPageSize[] = "PageSize";
 
 const double kMicronsPerPoint = 10.0f * kHundrethsMMPerInch / kPointsPerInch;
 
-#if !defined(OS_MACOSX)
 void ParseLpOptions(const base::FilePath& filepath,
                     const std::string& printer_name,
                     int* num_options, cups_option_t** options) {
@@ -98,7 +97,6 @@ void ParseLpOptions(const base::FilePath& filepath,
 void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
   cups_option_t* options = NULL;
   int num_options = 0;
-  ppdMarkDefaults(*ppd);
 
   const char kSystemLpOptionPath[] = "/etc/cups/lpoptions";
   const char kUserLpOptionPath[] = ".cups/lpoptions";
@@ -120,7 +118,6 @@ void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
     }
   }
 }
-#endif  // !defined(OS_MACOSX)
 
 bool GetBasicColorModelSettings(ppd_file_t* ppd,
                                 ColorModel* color_model_for_black,
@@ -369,11 +366,10 @@ bool ParsePpdCapabilities(
                << line << ", " << ppdErrorString(ppd_status);
     return false;
   }
+  ppdMarkDefaults(ppd);
+  MarkLpOptions(printer_name, &ppd);
 
   printing::PrinterSemanticCapsAndDefaults caps;
-#if !defined(OS_MACOSX)
-  MarkLpOptions(printer_name, &ppd);
-#endif
   caps.collate_capable = true;
   caps.collate_default = true;
   caps.copies_capable = true;

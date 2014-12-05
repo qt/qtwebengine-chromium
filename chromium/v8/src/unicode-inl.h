@@ -6,7 +6,7 @@
 #define V8_UNICODE_INL_H_
 
 #include "src/unicode.h"
-#include "src/checks.h"
+#include "src/base/logging.h"
 #include "src/utils.h"
 
 namespace unibrow {
@@ -54,22 +54,6 @@ template <class T, int s> int Mapping<T, s>::CalculateValue(uchar c, uchar n,
   } else {
     return length;
   }
-}
-
-
-uint16_t Latin1::ConvertNonLatin1ToLatin1(uint16_t c) {
-  ASSERT(c > Latin1::kMaxChar);
-  switch (c) {
-    // This are equivalent characters in unicode.
-    case 0x39c:
-    case 0x3bc:
-      return 0xb5;
-    // This is an uppercase of a Latin-1 character
-    // outside of Latin-1.
-    case 0x178:
-      return 0xff;
-  }
-  return 0;
 }
 
 
@@ -151,53 +135,6 @@ unsigned Utf8::Length(uchar c, int previous) {
   } else {
     return 4;
   }
-}
-
-Utf8DecoderBase::Utf8DecoderBase()
-  : unbuffered_start_(NULL),
-    utf16_length_(0),
-    last_byte_of_buffer_unused_(false) {}
-
-Utf8DecoderBase::Utf8DecoderBase(uint16_t* buffer,
-                                 unsigned buffer_length,
-                                 const uint8_t* stream,
-                                 unsigned stream_length) {
-  Reset(buffer, buffer_length, stream, stream_length);
-}
-
-template<unsigned kBufferSize>
-Utf8Decoder<kBufferSize>::Utf8Decoder(const char* stream, unsigned length)
-  : Utf8DecoderBase(buffer_,
-                    kBufferSize,
-                    reinterpret_cast<const uint8_t*>(stream),
-                    length) {
-}
-
-template<unsigned kBufferSize>
-void Utf8Decoder<kBufferSize>::Reset(const char* stream, unsigned length) {
-  Utf8DecoderBase::Reset(buffer_,
-                         kBufferSize,
-                         reinterpret_cast<const uint8_t*>(stream),
-                         length);
-}
-
-template <unsigned kBufferSize>
-unsigned Utf8Decoder<kBufferSize>::WriteUtf16(uint16_t* data,
-                                              unsigned length) const {
-  ASSERT(length > 0);
-  if (length > utf16_length_) length = utf16_length_;
-  // memcpy everything in buffer.
-  unsigned buffer_length =
-      last_byte_of_buffer_unused_ ? kBufferSize - 1 : kBufferSize;
-  unsigned memcpy_length = length <= buffer_length ? length : buffer_length;
-  v8::internal::MemCopy(data, buffer_, memcpy_length * sizeof(uint16_t));
-  if (length <= buffer_length) return length;
-  ASSERT(unbuffered_start_ != NULL);
-  // Copy the rest the slow way.
-  WriteUtf16Slow(unbuffered_start_,
-                 data + buffer_length,
-                 length - buffer_length);
-  return length;
 }
 
 }  // namespace unibrow

@@ -15,8 +15,8 @@
 class SkLocalMatrixShader : public SkShader {
 public:
     SkLocalMatrixShader(SkShader* proxy, const SkMatrix& localMatrix)
-    : fProxyShader(SkRef(proxy))
-    , fProxyLocalMatrix(localMatrix)
+    : INHERITED(&localMatrix)
+    , fProxyShader(SkRef(proxy))
     {}
 
     virtual size_t contextSize() const SK_OVERRIDE {
@@ -34,19 +34,20 @@ public:
 
 #if SK_SUPPORT_GPU
     
-    virtual bool asNewEffect(GrContext* context, const SkPaint& paint, const SkMatrix* localMatrix,
-                             GrColor* grColor, GrEffectRef** grEffect) const SK_OVERRIDE {
-        SkMatrix tmp = fProxyLocalMatrix;
+    virtual bool asFragmentProcessor(GrContext* context, const SkPaint& paint,
+                                     const SkMatrix* localMatrix, GrColor* grColor,
+                                     GrFragmentProcessor** fp) const SK_OVERRIDE {
+        SkMatrix tmp = this->getLocalMatrix();
         if (localMatrix) {
             tmp.preConcat(*localMatrix);
         }
-        return fProxyShader->asNewEffect(context, paint, &tmp, grColor, grEffect);
+        return fProxyShader->asFragmentProcessor(context, paint, &tmp, grColor, fp);
     }
     
 #else 
     
-    virtual bool asNewEffect(GrContext* context, const SkPaint& paint, const SkMatrix* localMatrix,
-                             GrColor* grColor, GrEffectRef** grEffect) const SK_OVERRIDE {
+    virtual bool asFragmentProcessor(GrContext*, const SkPaint&, const SkMatrix*, GrColor*,
+                                     GrFragmentProcessor**) const SK_OVERRIDE {
         SkDEBUGFAIL("Should not call in GPU-less build");
         return false;
     }
@@ -55,7 +56,7 @@ public:
     
     virtual SkShader* refAsALocalMatrixShader(SkMatrix* localMatrix) const SK_OVERRIDE {
         if (localMatrix) {
-            *localMatrix = fProxyLocalMatrix;
+            *localMatrix = this->getLocalMatrix();
         }
         return SkRef(fProxyShader.get());
     }
@@ -64,13 +65,14 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkLocalMatrixShader)
 
 protected:
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
     SkLocalMatrixShader(SkReadBuffer&);
+#endif
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
     virtual Context* onCreateContext(const ContextRec&, void*) const SK_OVERRIDE;
 
 private:
     SkAutoTUnref<SkShader> fProxyShader;
-    SkMatrix  fProxyLocalMatrix;
 
     typedef SkShader INHERITED;
 };

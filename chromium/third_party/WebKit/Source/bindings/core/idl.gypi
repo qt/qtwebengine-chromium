@@ -11,17 +11,33 @@
   ],
 
   'variables': {
+    'core_definition_idl_files': [
+      '<@(core_dictionary_idl_files)',
+      '<@(core_idl_files)',
+      '<@(core_idl_with_modules_dependency_files)',
+    ],
+    'core_testing_definition_idl_files': [
+      '<@(core_testing_dictionary_idl_files)',
+      '<@(webcore_testing_idl_files)',
+      '<@(webcore_testing_idl_with_modules_dependency_files)',
+    ],
+
     # IDL file lists; see: http://www.chromium.org/developers/web-idl-interfaces
     # Interface IDL files: generate individual bindings (includes testing)
     'core_interface_idl_files': [
-      '<@(core_idl_files)',
-      '<@(webcore_testing_idl_files)',
+      '<@(core_definition_idl_files)',
+      '<@(core_testing_definition_idl_files)',
       '<@(generated_webcore_testing_idl_files)',
     ],
 
     # Write lists of main IDL files to a file, so that the command lines don't
     # exceed OS length limits.
-    'core_idl_files_list': '<|(core_idl_files_list.tmp <@(core_idl_files))',
+    'core_idl_files_list': '<|(core_idl_files_list.tmp <@(core_definition_idl_files))',
+    'core_dictionary_idl_files_list': '<|(core_dictionary_idl_files_list.tmp <@(core_dictionary_idl_files) <@(core_testing_dictionary_idl_files))',
+
+    # Write a list of core IDL files which have dependency IDL files in
+    #  modules.
+    'core_idl_with_modules_dependency_files_list': '<|(core_idl_with_modules_dependency_files_list.tmp <@(core_idl_with_modules_dependency_files))',
 
     # Dependency IDL files: don't generate individual bindings, but do process
     # in IDL dependency computation, and count as build dependencies
@@ -52,11 +68,12 @@
 
     # Static IDL files
     'core_static_interface_idl_files': [
-      '<@(core_idl_files)',
-      '<@(webcore_testing_idl_files)',
+      '<@(core_definition_idl_files)',
+      '<@(core_testing_definition_idl_files)',
     ],
     'core_static_dependency_idl_files': [
       '<@(core_dependency_idl_files)',
+      '<@(webcore_testing_dependency_idl_files)',
     ],
 
     # Generated IDL files

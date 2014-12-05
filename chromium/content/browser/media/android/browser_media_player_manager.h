@@ -16,6 +16,7 @@
 #include "ipc/ipc_message.h"
 #include "media/base/android/media_player_android.h"
 #include "media/base/android/media_player_manager.h"
+#include "media/base/android/media_url_interceptor.h"
 #include "ui/gfx/rect_f.h"
 #include "url/gurl.h"
 
@@ -44,6 +45,10 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   typedef BrowserMediaPlayerManager* (*Factory)(RenderFrameHost*);
   static void RegisterFactory(Factory factory);
 
+  // Permits embedders to handle custom urls.
+  static void RegisterMediaUrlInterceptor(
+      media::MediaUrlInterceptor* media_url_interceptor);
+
   // Returns a new instance using the registered factory if available.
   static BrowserMediaPlayerManager* Create(RenderFrameHost* rfh);
 
@@ -62,33 +67,36 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // Any actual seek started by renderer will be handled by browser in OnSeek().
   void OnSeekRequest(int player_id, const base::TimeDelta& time_to_seek);
 
-  // Pauses all video players manages by this class.
-  void PauseVideo();
+  // Stops and releases every media managed by this class.
+  void ReleaseAllMediaPlayers();
 
   // media::MediaPlayerManager overrides.
   virtual void OnTimeUpdate(
-      int player_id, base::TimeDelta current_time) OVERRIDE;
+      int player_id,
+      base::TimeDelta current_timestamp,
+      base::TimeTicks current_time_ticks) override;
   virtual void OnMediaMetadataChanged(
       int player_id,
       base::TimeDelta duration,
       int width,
       int height,
-      bool success) OVERRIDE;
-  virtual void OnPlaybackComplete(int player_id) OVERRIDE;
-  virtual void OnMediaInterrupted(int player_id) OVERRIDE;
-  virtual void OnBufferingUpdate(int player_id, int percentage) OVERRIDE;
+      bool success) override;
+  virtual void OnPlaybackComplete(int player_id) override;
+  virtual void OnMediaInterrupted(int player_id) override;
+  virtual void OnBufferingUpdate(int player_id, int percentage) override;
   virtual void OnSeekComplete(
       int player_id,
-      const base::TimeDelta& current_time) OVERRIDE;
-  virtual void OnError(int player_id, int error) OVERRIDE;
+      const base::TimeDelta& current_time) override;
+  virtual void OnError(int player_id, int error) override;
   virtual void OnVideoSizeChanged(
-      int player_id, int width, int height) OVERRIDE;
-  virtual media::MediaResourceGetter* GetMediaResourceGetter() OVERRIDE;
-  virtual media::MediaPlayerAndroid* GetFullscreenPlayer() OVERRIDE;
-  virtual media::MediaPlayerAndroid* GetPlayer(int player_id) OVERRIDE;
-  virtual void RequestFullScreen(int player_id) OVERRIDE;
+      int player_id, int width, int height) override;
+  virtual media::MediaResourceGetter* GetMediaResourceGetter() override;
+  virtual media::MediaUrlInterceptor* GetMediaUrlInterceptor() override;
+  virtual media::MediaPlayerAndroid* GetFullscreenPlayer() override;
+  virtual media::MediaPlayerAndroid* GetPlayer(int player_id) override;
+  virtual void RequestFullScreen(int player_id) override;
 #if defined(VIDEO_HOLE)
-  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() OVERRIDE;
+  virtual bool ShouldUseVideoOverlayForEmbeddedEncryptedVideo() override;
 
   void AttachExternalVideoSurface(int player_id, jobject surface);
   void DetachExternalVideoSurface(int player_id);
@@ -107,6 +115,8 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   virtual void OnSetPoster(int player_id, const GURL& poster);
   virtual void OnReleaseResources(int player_id);
   virtual void OnDestroyPlayer(int player_id);
+  virtual void OnRequestRemotePlayback(int player_id);
+  virtual void OnRequestRemotePlaybackControl(int player_id);
   virtual void ReleaseFullscreenPlayer(media::MediaPlayerAndroid* player);
 #if defined(VIDEO_HOLE)
   void OnNotifyExternalSurface(
@@ -152,9 +162,11 @@ class CONTENT_EXPORT BrowserMediaPlayerManager
   // constrained by hardware and memory limits.
   virtual void OnMediaResourcesRequested(int player_id);
 
-  // Similar to the above call, MediaPlayerAndroid must call this method when
-  // releasing all the decoding resources.
-  virtual void OnMediaResourcesReleased(int player_id);
+  // Called when a player releases all decoding resources.
+  void ReleaseMediaResources(int player_id);
+
+  // Releases the player. However, don't remove it from |players_|.
+  void ReleasePlayer(media::MediaPlayerAndroid* player);
 
 #if defined(VIDEO_HOLE)
   void OnRequestExternalSurface(int player_id, const gfx::RectF& rect);

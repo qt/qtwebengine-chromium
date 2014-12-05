@@ -8,7 +8,6 @@
 #include "base/strings/string_number_conversions.h"
 #include "gpu/command_buffer/common/gles2_cmd_format.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager.h"
 #include "gpu/command_buffer/service/async_pixel_transfer_manager_mock.h"
@@ -58,7 +57,7 @@ class GLES2DecoderGeometryInstancingTest : public GLES2DecoderWithShaderTest {
  public:
   GLES2DecoderGeometryInstancingTest() : GLES2DecoderWithShaderTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     InitState init;
     init.extensions = "GL_ANGLE_instanced_arrays";
     init.gl_version = "opengl es 2.0";
@@ -315,7 +314,12 @@ TEST_P(GLES2DecoderRGBBackbufferTest, RGBBackbufferColorMaskFBO) {
   const GLsizei kWidth = 1;
   const GLsizei kHeight = 1;
   const GLenum kFormat = GL_RGB;
-  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
+  // Use a different texture for framebuffer to avoid drawing feedback loops.
+  EXPECT_CALL(*gl_, GenTextures(_, _))
+      .WillOnce(SetArgumentPointee<1>(kNewServiceId))
+      .RetiresOnSaturation();
+  GenHelper<cmds::GenTexturesImmediate>(kNewClientId);
+  DoBindTexture(GL_TEXTURE_2D, kNewClientId, kNewServiceId);
   // Pass some data so the texture will be marked as cleared.
   DoTexImage2D(GL_TEXTURE_2D,
                0,
@@ -332,10 +336,11 @@ TEST_P(GLES2DecoderRGBBackbufferTest, RGBBackbufferColorMaskFBO) {
   DoFramebufferTexture2D(GL_FRAMEBUFFER,
                          GL_COLOR_ATTACHMENT0,
                          GL_TEXTURE_2D,
-                         client_texture_id_,
-                         kServiceTextureId,
+                         kNewClientId,
+                         kNewServiceId,
                          0,
                          GL_NO_ERROR);
+  DoBindTexture(GL_TEXTURE_2D, client_texture_id_, kServiceTextureId);
   EXPECT_CALL(*gl_, CheckFramebufferStatusEXT(GL_FRAMEBUFFER))
       .WillOnce(Return(GL_FRAMEBUFFER_COMPLETE))
       .RetiresOnSaturation();
@@ -505,15 +510,16 @@ TEST_P(GLES2DecoderManualInitTest, StencilEnableWithStencil) {
   SetupDefaultProgram();
   SetupTexture();
   AddExpectationsForSimulatedAttrib0(kNumVertices, 0);
-  SetupExpectationsForApplyingDirtyState(true,    // Framebuffer is RGB
-                                         false,   // Framebuffer has depth
-                                         true,    // Framebuffer has stencil
-                                         0x1110,  // color bits
-                                         false,   // depth mask
-                                         false,   // depth enabled
-                                         -1,      // front stencil mask
-                                         -1,      // back stencil mask
-                                         true);   // stencil enabled
+  SetupExpectationsForApplyingDirtyState(
+      true,                               // Framebuffer is RGB
+      false,                              // Framebuffer has depth
+      true,                               // Framebuffer has stencil
+      0x1110,                             // color bits
+      false,                              // depth mask
+      false,                              // depth enabled
+      GLES2Decoder::kDefaultStencilMask,  // front stencil mask
+      GLES2Decoder::kDefaultStencilMask,  // back stencil mask
+      true);                              // stencil enabled
 
   EXPECT_CALL(*gl_, DrawArrays(GL_TRIANGLES, 0, kNumVertices))
       .Times(1)
@@ -1117,6 +1123,30 @@ TEST_P(GLES2DecoderGeometryInstancingTest,
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
+// Regular drawArrays takes the divisor into account
+TEST_P(GLES2DecoderGeometryInstancingTest,
+       DrawArraysWithDivisorSucceeds) {
+  SetupTexture();
+  SetupVertexBuffer();
+  SetupExpectationsForApplyingDefaultDirtyState();
+  DoVertexAttribPointer(1, 2, GL_FLOAT, 0, 0);
+
+  DoEnableVertexAttribArray(0);
+  // Access the data right at the end of the buffer.
+  DoVertexAttribPointer(
+      0, 2, GL_FLOAT, 0, (kNumVertices - 1) * 2 * sizeof(GLfloat));
+  DoVertexAttribDivisorANGLE(0, 1);
+  EXPECT_CALL(
+      *gl_,
+      DrawArrays(GL_TRIANGLES, 0, kNumVertices))
+      .Times(1)
+      .RetiresOnSaturation();
+  DrawArrays cmd;
+  cmd.Init(GL_TRIANGLES, 0, kNumVertices);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
 // Per-instance data is twice as large, but divisor is twice
 TEST_P(GLES2DecoderGeometryInstancingTest,
        DrawArraysInstancedANGLELargeDivisorSucceeds) {
@@ -1202,6 +1232,26 @@ TEST_P(GLES2DecoderGeometryInstancingTest,
       .RetiresOnSaturation();
   DrawArraysInstancedANGLE cmd;
   cmd.Init(GL_TRIANGLES, 0, kNumVertices, 1);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_P(GLES2DecoderGeometryInstancingTest,
+       DrawArraysNoDivisor0Fails) {
+  SetupTexture();
+  SetupVertexBuffer();
+  DoVertexAttribPointer(1, 2, GL_FLOAT, 0, 0);
+
+  DoEnableVertexAttribArray(0);
+  DoVertexAttribPointer(0, 2, GL_FLOAT, 0, 0);
+  DoVertexAttribDivisorANGLE(0, 1);
+  DoVertexAttribDivisorANGLE(1, 1);
+  EXPECT_CALL(*gl_, DrawArrays(_, _, _))
+      .Times(0)
+      .RetiresOnSaturation();
+  DrawArrays cmd;
+  cmd.Init(GL_TRIANGLES, 0, kNumVertices);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
@@ -1588,6 +1638,43 @@ TEST_P(GLES2DecoderGeometryInstancingTest,
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
 }
 
+// Regular drawElements takes the divisor into account
+TEST_P(GLES2DecoderGeometryInstancingTest,
+       DrawElementsWithDivisorSucceeds) {
+  SetupTexture();
+  SetupIndexBuffer();
+  SetupVertexBuffer();
+  SetupExpectationsForApplyingDefaultDirtyState();
+  // Add offset so we're sure we're accessing data near the end of the buffer.
+  DoVertexAttribPointer(
+      1,
+      2,
+      GL_FLOAT,
+      0,
+      (kNumVertices - kMaxValidIndex - 1) * 2 * sizeof(GLfloat));
+
+  DoEnableVertexAttribArray(0);
+  // Access the data right at the end of the buffer.
+  DoVertexAttribPointer(
+      0, 2, GL_FLOAT, 0, (kNumVertices - 1) * 2 * sizeof(GLfloat));
+  DoVertexAttribDivisorANGLE(0, 1);
+  EXPECT_CALL(
+      *gl_,
+      DrawElements(GL_TRIANGLES,
+                   kValidIndexRangeCount,
+                   GL_UNSIGNED_SHORT,
+                   BufferOffset(kValidIndexRangeStart * 2)))
+      .Times(1)
+      .RetiresOnSaturation();
+  DrawElements cmd;
+  cmd.Init(GL_TRIANGLES,
+           kValidIndexRangeCount,
+           GL_UNSIGNED_SHORT,
+           kValidIndexRangeStart * 2);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
 // Per-instance data is twice as large, but divisor is twice
 TEST_P(GLES2DecoderGeometryInstancingTest,
        DrawElementsInstancedANGLELargeDivisorSucceeds) {
@@ -1730,6 +1817,30 @@ TEST_P(GLES2DecoderGeometryInstancingTest,
            GL_UNSIGNED_SHORT,
            kValidIndexRangeStart * 2,
            kNumVertices);
+  EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
+  EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
+  EXPECT_EQ(GL_NO_ERROR, GetGLError());
+}
+
+TEST_P(GLES2DecoderGeometryInstancingTest,
+       DrawElementsNoDivisor0Fails) {
+  SetupTexture();
+  SetupIndexBuffer();
+  SetupVertexBuffer();
+  DoVertexAttribPointer(1, 2, GL_FLOAT, 0, 0);
+
+  DoEnableVertexAttribArray(0);
+  DoVertexAttribPointer(0, 2, GL_FLOAT, 0, 0);
+  DoVertexAttribDivisorANGLE(0, 1);
+  DoVertexAttribDivisorANGLE(1, 1);
+  EXPECT_CALL(*gl_, DrawElements(_, _, _, _))
+      .Times(0)
+      .RetiresOnSaturation();
+  DrawElements cmd;
+  cmd.Init(GL_TRIANGLES,
+           kValidIndexRangeCount,
+           GL_UNSIGNED_SHORT,
+           kValidIndexRangeStart * 2);
   EXPECT_EQ(error::kNoError, ExecuteCmd(cmd));
   EXPECT_EQ(GL_INVALID_OPERATION, GetGLError());
   EXPECT_EQ(GL_NO_ERROR, GetGLError());
@@ -2256,7 +2367,8 @@ TEST_P(GLES2DecoderManualInitTest, DrawClearsDepthTexture) {
       .RetiresOnSaturation();
 
   EXPECT_CALL(*gl_, ClearStencil(0)).Times(1).RetiresOnSaturation();
-  SetupExpectationsForStencilMask(-1, -1);
+  SetupExpectationsForStencilMask(GLES2Decoder::kDefaultStencilMask,
+                                  GLES2Decoder::kDefaultStencilMask);
   EXPECT_CALL(*gl_, ClearDepth(1.0f)).Times(1).RetiresOnSaturation();
   SetupExpectationsForDepthMask(true);
   SetupExpectationsForEnableDisable(GL_SCISSOR_TEST, false);

@@ -28,11 +28,11 @@ class SkiaBenchmarking : public gin::Wrappable<SkiaBenchmarking> {
 
  private:
   SkiaBenchmarking();
-  virtual ~SkiaBenchmarking();
+  ~SkiaBenchmarking() override;
 
   // gin::Wrappable.
-  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
+  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override;
 
   // Rasterizes a Picture JSON-encoded by cc::Picture::AsValue().
   //

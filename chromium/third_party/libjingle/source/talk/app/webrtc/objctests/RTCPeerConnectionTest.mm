@@ -39,12 +39,22 @@
 #import "RTCVideoRenderer.h"
 #import "RTCVideoTrack.h"
 
-#include "talk/base/gunit.h"
-#include "talk/base/ssladapter.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/ssladapter.h"
 
 #if !defined(__has_feature) || !__has_feature(objc_arc)
 #error "This file requires ARC support."
 #endif
+
+@interface RTCFakeRenderer : NSObject <RTCVideoRenderer>
+@end
+
+@implementation RTCFakeRenderer
+
+- (void)setSize:(CGSize)size {}
+- (void)renderFrame:(RTCI420Frame*)frame {}
+
+@end
 
 @interface RTCPeerConnectionTest : NSObject
 
@@ -80,8 +90,7 @@
   RTCMediaStream* localMediaStream = [factory mediaStreamWithLabel:streamLabel];
   RTCVideoTrack* videoTrack =
       [factory videoTrackWithID:videoTrackID source:videoSource];
-  RTCVideoRenderer* videoRenderer =
-      [[RTCVideoRenderer alloc] initWithDelegate:nil];
+  RTCFakeRenderer* videoRenderer = [[RTCFakeRenderer alloc] init];
   [videoTrack addRenderer:videoRenderer];
   [localMediaStream addVideoTrack:videoTrack];
   // Test that removal/re-add works.
@@ -89,8 +98,7 @@
   [localMediaStream addVideoTrack:videoTrack];
   RTCAudioTrack* audioTrack = [factory audioTrackWithID:audioTrackID];
   [localMediaStream addAudioTrack:audioTrack];
-  RTCMediaConstraints* constraints = [[RTCMediaConstraints alloc] init];
-  [pc addStream:localMediaStream constraints:constraints];
+  [pc addStream:localMediaStream];
   return localMediaStream;
 }
 
@@ -299,7 +307,7 @@
 // a TestBase since it's not.
 TEST(RTCPeerConnectionTest, SessionTest) {
   @autoreleasepool {
-    talk_base::InitializeSSL();
+    rtc::InitializeSSL();
     // Since |factory| will own the signaling & worker threads, it's important
     // that it outlive the created PeerConnections since they self-delete on the
     // signaling thread, and if |factory| is freed first then a last refcount on
@@ -312,6 +320,6 @@ TEST(RTCPeerConnectionTest, SessionTest) {
       RTCPeerConnectionTest* pcTest = [[RTCPeerConnectionTest alloc] init];
       [pcTest testCompleteSessionWithFactory:factory];
     }
-    talk_base::CleanupSSL();
+    rtc::CleanupSSL();
   }
 }

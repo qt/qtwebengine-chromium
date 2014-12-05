@@ -38,15 +38,15 @@ struct ChannelHandle;
 
 namespace content {
 
-class PpapiWebKitPlatformSupportImpl;
+class PpapiBlinkPlatformImpl;
 
 class PpapiThread : public ChildThread,
                     public ppapi::proxy::PluginDispatcher::PluginDelegate,
                     public ppapi::proxy::PluginProxyDelegate {
  public:
   PpapiThread(const base::CommandLine& command_line, bool is_broker);
-  virtual ~PpapiThread();
-  virtual void Shutdown() OVERRIDE;
+  ~PpapiThread() override;
+  void Shutdown() override;
 
  private:
   // Make sure the enum list in tools/histogram/histograms.xml is updated with
@@ -62,34 +62,32 @@ class PpapiThread : public ChildThread,
   };
 
   // ChildThread overrides.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
+  bool OnControlMessageReceived(const IPC::Message& msg) override;
+  void OnChannelConnected(int32 peer_pid) override;
 
   // PluginDispatcher::PluginDelegate implementation.
-  virtual std::set<PP_Instance>* GetGloballySeenInstanceIDSet() OVERRIDE;
-  virtual base::MessageLoopProxy* GetIPCMessageLoop() OVERRIDE;
-  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
-  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+  std::set<PP_Instance>* GetGloballySeenInstanceIDSet() override;
+  base::MessageLoopProxy* GetIPCMessageLoop() override;
+  base::WaitableEvent* GetShutdownEvent() override;
+  IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
       base::ProcessId peer_pid,
-      bool should_close_source) OVERRIDE;
-  virtual uint32 Register(
-      ppapi::proxy::PluginDispatcher* plugin_dispatcher) OVERRIDE;
-  virtual void Unregister(uint32 plugin_dispatcher_id) OVERRIDE;
+      bool should_close_source) override;
+  uint32 Register(ppapi::proxy::PluginDispatcher* plugin_dispatcher) override;
+  void Unregister(uint32 plugin_dispatcher_id) override;
 
   // PluginProxyDelegate.
   // SendToBrowser() is intended to be safe to use on another thread so
   // long as the main PpapiThread outlives it.
-  virtual IPC::Sender* GetBrowserSender() OVERRIDE;
-  virtual std::string GetUILanguage() OVERRIDE;
-  virtual void PreCacheFont(const void* logfontw) OVERRIDE;
-  virtual void SetActiveURL(const std::string& url) OVERRIDE;
-  virtual PP_Resource CreateBrowserFont(
-      ppapi::proxy::Connection connection,
-      PP_Instance instance,
-      const PP_BrowserFont_Trusted_Description& desc,
-      const ppapi::Preferences& prefs) OVERRIDE;
+  IPC::Sender* GetBrowserSender() override;
+  std::string GetUILanguage() override;
+  void PreCacheFont(const void* logfontw) override;
+  void SetActiveURL(const std::string& url) override;
+  PP_Resource CreateBrowserFont(ppapi::proxy::Connection connection,
+                                PP_Instance instance,
+                                const PP_BrowserFont_Trusted_Description& desc,
+                                const ppapi::Preferences& prefs) override;
 
   // Message handlers.
   void OnLoadPlugin(const base::FilePath& path,
@@ -149,8 +147,8 @@ class PpapiThread : public ChildThread,
   std::map<uint32, ppapi::proxy::PluginDispatcher*> plugin_dispatchers_;
   uint32 next_plugin_dispatcher_id_;
 
-  // The WebKitPlatformSupport implementation.
-  scoped_ptr<PpapiWebKitPlatformSupportImpl> webkit_platform_support_;
+  // The BlinkPlatformImpl implementation.
+  scoped_ptr<PpapiBlinkPlatformImpl> blink_platform_impl_;
 
 #if defined(OS_WIN)
   // Caches the handle to the peer process if this is a broker.

@@ -46,9 +46,40 @@
       }],
     ],
   },
+  'includes': [
+    '../../../build/util/version.gypi',
+  ],
+
   # Always provide a target, so we can put the logic about whether there's
   # anything to be done in this file (instead of a higher-level .gyp file).
   'targets': [
+    {
+      'target_name': 'widevinecdmadapter_resources',
+      'type': 'none',
+      'conditions': [
+        ['branding == "Chrome"', {
+          'variables': {
+            'branding_path': '../../../chrome/app/theme/google_chrome/BRANDING',
+          },
+        }, { # else branding!="Chrome"
+          'variables': {
+            'branding_path': '../../../chrome/app/theme/chromium/BRANDING',
+          },
+        }],
+      ],
+      'variables': {
+        'output_dir': '.',
+        'template_input_path': '../../../chrome/app/chrome_version.rc.version',
+        'extra_variable_files_arguments': [ '-f', 'BRANDING' ],
+        'extra_variable_files': [ 'BRANDING' ], # NOTE: matches that above
+      },
+      'sources': [
+        'widevinecdmadapter.ver',
+      ],
+      'includes': [
+        '../../../chrome/version_resource_rules.gypi',
+      ],
+    },
     {
       # GN version: //third_party/widevine/cdm:adapter
       'target_name': 'widevinecdmadapter',
@@ -60,6 +91,10 @@
             '<(DEPTH)/media/media_cdm_adapter.gyp:cdmadapter',
             'widevine_cdm_version_h',
             'widevine_cdm_binaries',
+            'widevinecdmadapter_resources',
+          ],
+          'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/widevinecdmadapter_version.rc',
           ],
           'conditions': [
             [ 'os_posix == 1 and OS != "mac"', {

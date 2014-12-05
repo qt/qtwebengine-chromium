@@ -14,7 +14,7 @@ namespace cc {
 
 class CC_EXPORT SurfaceDrawQuad : public DrawQuad {
  public:
-  static scoped_ptr<SurfaceDrawQuad> Create();
+  SurfaceDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -30,14 +30,12 @@ class CC_EXPORT SurfaceDrawQuad : public DrawQuad {
 
   SurfaceId surface_id;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const SurfaceDrawQuad* MaterialCast(const DrawQuad* quad);
 
  private:
-  SurfaceDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

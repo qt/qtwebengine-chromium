@@ -5,9 +5,9 @@
 #ifndef V8_X87_REGEXP_MACRO_ASSEMBLER_X87_H_
 #define V8_X87_REGEXP_MACRO_ASSEMBLER_X87_H_
 
-#include "src/x87/assembler-x87.h"
-#include "src/x87/assembler-x87-inl.h"
 #include "src/macro-assembler.h"
+#include "src/x87/assembler-x87-inl.h"
+#include "src/x87/assembler-x87.h"
 
 namespace v8 {
 namespace internal {
@@ -174,7 +174,7 @@ class RegExpMacroAssemblerX87: public NativeRegExpMacroAssembler {
 
   MacroAssembler* masm_;
 
-  // Which mode to generate code for (ASCII or UC16).
+  // Which mode to generate code for (LATIN1 or UC16).
   Mode mode_;
 
   // One greater than maximal register index actually used.

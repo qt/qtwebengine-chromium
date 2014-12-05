@@ -10,6 +10,7 @@
 #include "base/event_types.h"
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/gesture_event_details.h"
@@ -28,6 +29,8 @@ class EventTarget;
 
 class EVENTS_EXPORT Event {
  public:
+  static scoped_ptr<Event> Clone(const Event& event);
+
   virtual ~Event();
 
   class DispatcherApi {
@@ -58,7 +61,7 @@ class EVENTS_EXPORT Event {
   int flags() const { return flags_; }
 
   // This is only intended to be used externally by classes that are modifying
-  // events in EventFilter::PreHandleKeyEvent().
+  // events in an EventRewriter.
   void set_flags(int flags) { flags_ = flags; }
 
   EventTarget* target() const { return target_; }
@@ -68,6 +71,9 @@ class EVENTS_EXPORT Event {
   LatencyInfo* latency() { return &latency_; }
   const LatencyInfo* latency() const { return &latency_; }
   void set_latency(const LatencyInfo& latency) { latency_ = latency; }
+
+  int source_device_id() const { return source_device_id_; }
+  void set_source_device_id(int id) { source_device_id_ = id; }
 
   // By default, events are "cancelable", this means any default processing that
   // the containing abstraction layer may perform can be prevented by calling
@@ -82,6 +88,7 @@ class EVENTS_EXPORT Event {
   bool IsCapsLockDown() const { return (flags_ & EF_CAPS_LOCK_DOWN) != 0; }
   bool IsAltDown() const { return (flags_ & EF_ALT_DOWN) != 0; }
   bool IsAltGrDown() const { return (flags_ & EF_ALTGR_DOWN) != 0; }
+  bool IsCommandDown() const { return (flags_ & EF_COMMAND_DOWN) != 0; }
   bool IsRepeat() const { return (flags_ & EF_IS_REPEAT) != 0; }
 
   bool IsKeyEvent() const {
@@ -183,6 +190,16 @@ class EVENTS_EXPORT Event {
     return type_ == ET_MOUSEWHEEL;
   }
 
+  bool IsLocatedEvent() const {
+    return IsMouseEvent() || IsScrollEvent() || IsTouchEvent() ||
+           IsGestureEvent();
+  }
+
+  // Convenience methods to cast |this| to a GestureEvent. IsGestureEvent()
+  // must be true as a precondition to calling these methods.
+  GestureEvent* AsGestureEvent();
+  const GestureEvent* AsGestureEvent() const;
+
   // Returns true if the event has a valid |native_event_|.
   bool HasNativeEvent() const;
 
@@ -231,17 +248,21 @@ class EVENTS_EXPORT Event {
   EventTarget* target_;
   EventPhase phase_;
   EventResult result_;
+
+  // The device id the event came from, or ED_UNKNOWN_DEVICE if the information
+  // is not available.
+  int source_device_id_;
 };
 
 class EVENTS_EXPORT CancelModeEvent : public Event {
  public:
   CancelModeEvent();
-  virtual ~CancelModeEvent();
+  ~CancelModeEvent() override;
 };
 
 class EVENTS_EXPORT LocatedEvent : public Event {
  public:
-  virtual ~LocatedEvent();
+  ~LocatedEvent() override;
 
   float x() const { return location_.x(); }
   float y() const { return location_.y(); }
@@ -390,6 +411,9 @@ class EVENTS_EXPORT MouseEvent : public LocatedEvent {
   // flags. Use this to determine the button that was pressed or released.
   int changed_button_flags() const { return changed_button_flags_; }
 
+  // Updates the button that changed.
+  void set_changed_button_flags(int flags) { changed_button_flags_ = flags; }
+
  private:
   FRIEND_TEST_ALL_PREFIXES(EventTest, DoubleClickRequiresRelease);
   FRIEND_TEST_ALL_PREFIXES(EventTest, SingleClickRightLeft);
@@ -432,6 +456,13 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
         offset_(model.x_offset(), model.y_offset()) {
   }
 
+  // Used for synthetic events in testing and by the gesture recognizer.
+  MouseWheelEvent(const gfx::Vector2d& offset,
+                  const gfx::PointF& location,
+                  const gfx::PointF& root_location,
+                  int flags,
+                  int changed_button_flags);
+
   // The amount to scroll. This is in multiples of kWheelDelta.
   // Note: x_offset() > 0/y_offset() > 0 means scroll left/up.
   int x_offset() const { return offset_.x(); }
@@ -439,8 +470,8 @@ class EVENTS_EXPORT MouseWheelEvent : public MouseEvent {
   const gfx::Vector2d& offset() const { return offset_; }
 
   // Overridden from LocatedEvent.
-  virtual void UpdateForRootTransform(
-      const gfx::Transform& inverted_root_transform) OVERRIDE;
+  void UpdateForRootTransform(
+      const gfx::Transform& inverted_root_transform) override;
 
  private:
   gfx::Vector2d offset_;
@@ -460,8 +491,7 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
         radius_x_(model.radius_x_),
         radius_y_(model.radius_y_),
         rotation_angle_(model.rotation_angle_),
-        force_(model.force_),
-        source_device_id_(model.source_device_id_) {
+        force_(model.force_) {
   }
 
   TouchEvent(EventType type,
@@ -479,25 +509,21 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
              float angle,
              float force);
 
-  virtual ~TouchEvent();
+  ~TouchEvent() override;
 
   int touch_id() const { return touch_id_; }
   float radius_x() const { return radius_x_; }
   float radius_y() const { return radius_y_; }
   float rotation_angle() const { return rotation_angle_; }
   float force() const { return force_; }
-  int source_device_id() const { return source_device_id_; }
 
   // Used for unit tests.
   void set_radius_x(const float r) { radius_x_ = r; }
   void set_radius_y(const float r) { radius_y_ = r; }
-  void set_source_device_id(int source_device_id) {
-    source_device_id_ = source_device_id;
-  }
 
   // Overridden from LocatedEvent.
-  virtual void UpdateForRootTransform(
-      const gfx::Transform& inverted_root_transform) OVERRIDE;
+  void UpdateForRootTransform(
+      const gfx::Transform& inverted_root_transform) override;
 
  protected:
   void set_radius(float radius_x, float radius_y) {
@@ -527,41 +553,129 @@ class EVENTS_EXPORT TouchEvent : public LocatedEvent {
 
   // Force (pressure) of the touch. Normalized to be [0, 1]. Default to be 0.0.
   float force_;
-
-  // The device id of the screen the event came from. Default to be -1.
-  int source_device_id_;
 };
 
+// An interface that individual platforms can use to store additional data on
+// KeyEvent.
+//
+// Currently only used in mojo.
+class EVENTS_EXPORT ExtendedKeyEventData {
+ public:
+  virtual ~ExtendedKeyEventData() {}
+
+  virtual ExtendedKeyEventData* Clone() const = 0;
+};
+
+// A KeyEvent is really two distinct classes, melded together due to the
+// DOM legacy of Windows key events: a keystroke event (is_char_ == false),
+// or a character event (is_char_ == true).
+//
+// For a keystroke event,
+// -- is_char_ is false.
+// -- type() can be any one of ET_KEY_PRESSED, ET_KEY_RELEASED,
+//    ET_TRANSLATED_KEY_PRESS, or ET_TRANSLATED_KEY_RELEASE.
+// -- character_ functions as a bypass or cache for GetCharacter().
+// -- key_code_ is a VKEY_ value associated with the key. For printable
+//    characters, this may or may not be a mapped value, imitating MS Windows:
+//    if the mapped key generates a character that has an associated VKEY_
+//    code, then key_code_ is that code; if not, then key_code_ is the unmapped
+//    VKEY_ code. For example, US, Greek, Cyrillic, Japanese, etc. all use
+//    VKEY_Q for the key beside Tab, while French uses VKEY_A.
+// -- code_ is in one-to-one correspondence with a physical keyboard
+//    location, and does not vary depending on key layout.
+//
+// For a character event,
+// -- is_char_ is true.
+// -- type() is ET_KEY_PRESSED.
+// -- character_ is a UTF-16 character value.
+// -- key_code_ is conflated with character_ by some code, because both
+//    arrive in the wParam field of a Windows event.
+// -- code_ is the empty string.
+//
 class EVENTS_EXPORT KeyEvent : public Event {
  public:
-  KeyEvent(const base::NativeEvent& native_event, bool is_char);
+  // Create a KeyEvent from a NativeEvent. For Windows this native event can
+  // be either a keystroke message (WM_KEYUP/WM_KEYDOWN) or a character message
+  // (WM_CHAR). Other systems have only keystroke events.
+  explicit KeyEvent(const base::NativeEvent& native_event);
 
-  // Used for synthetic events.
-  KeyEvent(EventType type, KeyboardCode key_code, int flags, bool is_char);
+  // Create a keystroke event.
+  KeyEvent(EventType type, KeyboardCode key_code, int flags);
+
+  // Create a character event.
+  KeyEvent(base::char16 character, KeyboardCode key_code, int flags);
 
   // Used for synthetic events with code of DOM KeyboardEvent (e.g. 'KeyA')
   // See also: ui/events/keycodes/dom4/keycode_converter_data.h
-  KeyEvent(EventType type, KeyboardCode key_code, const std::string& code,
-           int flags, bool is_char);
+  KeyEvent(EventType type,
+           KeyboardCode key_code,
+           const std::string& code,
+           int flags);
 
-  // This allows an I18N virtual keyboard to fabricate a keyboard event that
+  KeyEvent(const KeyEvent& rhs);
+
+  KeyEvent& operator=(const KeyEvent& rhs);
+
+  ~KeyEvent() override;
+
+  // TODO(erg): While we transition to mojo, we have to hack around a mismatch
+  // in our event types. Our ui::Events don't really have all the data we need
+  // to process key events, and we instead do per-platform conversions with
+  // native HWNDs or XEvents. And we can't reliably send those native data
+  // types across mojo types in a cross-platform way. So instead, we set the
+  // resulting data when read across IPC boundaries.
+  void SetExtendedKeyEventData(scoped_ptr<ExtendedKeyEventData> data);
+  const ExtendedKeyEventData* extended_key_event_data() const {
+    return extended_key_event_data_.get();
+  }
+
+  // This bypasses the normal mapping from keystroke events to characters,
+  // which allows an I18N virtual keyboard to fabricate a keyboard event that
   // does not have a corresponding KeyboardCode (example: U+00E1 Latin small
   // letter A with acute, U+0410 Cyrillic capital letter A).
-  void set_character(uint16 character) { character_ = character; }
+  void set_character(base::char16 character) { character_ = character; }
 
   // Gets the character generated by this key event. It only supports Unicode
   // BMP characters.
-  uint16 GetCharacter() const;
+  base::char16 GetCharacter() const;
+
+  // If this is a keystroke event with key_code_ VKEY_RETURN, returns '\r';
+  // otherwise returns the same as GetCharacter().
+  base::char16 GetUnmodifiedText() const;
+
+  // If the Control key is down in the event, returns a layout-independent
+  // character (corresponding to US layout); otherwise returns the same
+  // as GetUnmodifiedText().
+  base::char16 GetText() const;
 
   // Gets the platform key code. For XKB, this is the xksym value.
+  void set_platform_keycode(uint32 keycode) { platform_keycode_ = keycode; }
   uint32 platform_keycode() const { return platform_keycode_; }
+
+  // Gets the associated (Windows-based) KeyboardCode for this key event.
+  // Historically, this has also been used to obtain the character associated
+  // with a character event, because both use the Window message 'wParam' field.
+  // This should be avoided; if necessary for backwards compatibility, use
+  // GetConflatedWindowsKeyCode().
   KeyboardCode key_code() const { return key_code_; }
+
+  // True if this is a character event, false if this is a keystroke event.
   bool is_char() const { return is_char_; }
 
   // This is only intended to be used externally by classes that are modifying
-  // events in EventFilter::PreHandleKeyEvent().  set_character() should also be
-  // called.
+  // events in an EventRewriter.
   void set_key_code(KeyboardCode key_code) { key_code_ = key_code; }
+
+  // Returns the same value as key_code(), except that located codes are
+  // returned in place of non-located ones (e.g. VKEY_LSHIFT or VKEY_RSHIFT
+  // instead of VKEY_SHIFT). This is a hybrid of semantic and physical
+  // for legacy DOM reasons.
+  KeyboardCode GetLocatedWindowsKeyboardCode() const;
+
+  // For a keystroke event, returns the same value as key_code().
+  // For a character event, returns the same value as GetCharacter().
+  // This exists for backwards compatibility with Windows key events.
+  uint16 GetConflatedWindowsKeyCode() const;
 
   // Returns true for [Alt]+<num-pad digit> Unicode alt key codes used by Win.
   // TODO(msw): Additional work may be needed for analogues on other platforms.
@@ -569,9 +683,8 @@ class EVENTS_EXPORT KeyEvent : public Event {
 
   std::string code() const { return code_; }
 
-  // Normalizes flags_ to make it Windows/Mac compatible. Since the way
-  // of setting modifier mask on X is very different than Windows/Mac as shown
-  // in http://crbug.com/127142#c8, the normalization is necessary.
+  // Normalizes flags_ so that it describes the state after the event.
+  // (Native X11 event flags describe the state before the event.)
   void NormalizeFlags();
 
   // Returns true if the key event has already been processed by an input method
@@ -581,10 +694,15 @@ class EVENTS_EXPORT KeyEvent : public Event {
   void SetTranslated(bool translated);
 
  protected:
+  friend class KeyEventTestApi;
+
   // This allows a subclass TranslatedKeyEvent to be a non character event.
   void set_is_char(bool is_char) { is_char_ = is_char; }
 
  private:
+  // True if the key press originated from a 'right' key (VKEY_RSHIFT, etc.).
+  bool IsRightSideKey() const;
+
   KeyboardCode key_code_;
 
   // String of 'code' defined in DOM KeyboardEvent (e.g. 'KeyA', 'Space')
@@ -594,8 +712,7 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // converted from / to keyboard scan code like XKB.
   std::string code_;
 
-  // True if this is a translated character event (vs. a raw key down). Both
-  // share the same type: ET_KEY_PRESSED.
+  // True if this is a character event, false if this is a keystroke event.
   bool is_char_;
 
   // The platform related keycode value. For XKB, it's keysym value.
@@ -608,7 +725,13 @@ class EVENTS_EXPORT KeyEvent : public Event {
   // This value represents the text that the key event will insert to input
   // field. For key with modifier key, it may have specifial text.
   // e.g. CTRL+A has '\x01'.
-  uint16 character_;
+  mutable base::char16 character_;
+
+  // Parts of our event handling require raw native events (see both the
+  // windows and linux implementations of web_input_event in content/). Because
+  // mojo instead serializes and deserializes events in potentially different
+  // processes, we need to have a mechanism to keep track of this data.
+  scoped_ptr<ExtendedKeyEventData> extended_key_event_data_;
 
   static bool IsRepeated(const KeyEvent& event);
 
@@ -665,13 +788,11 @@ class EVENTS_EXPORT ScrollEvent : public MouseEvent {
 
 class EVENTS_EXPORT GestureEvent : public LocatedEvent {
  public:
-  GestureEvent(EventType type,
-               float x,
+  GestureEvent(float x,
                float y,
                int flags,
                base::TimeDelta time_stamp,
-               const GestureEventDetails& details,
-               unsigned int touch_ids_bitfield);
+               const GestureEventDetails& details);
 
   // Create a new GestureEvent which is identical to the provided model.
   // If source / target windows are provided, the model location will be
@@ -679,26 +800,15 @@ class EVENTS_EXPORT GestureEvent : public LocatedEvent {
   template <typename T>
   GestureEvent(const GestureEvent& model, T* source, T* target)
       : LocatedEvent(model, source, target),
-        details_(model.details_),
-        touch_ids_bitfield_(model.touch_ids_bitfield_) {
+        details_(model.details_) {
   }
 
-  virtual ~GestureEvent();
+  ~GestureEvent() override;
 
   const GestureEventDetails& details() const { return details_; }
 
-  // Returns the lowest touch-id of any of the touches which make up this
-  // gesture. If there are no touches associated with this gesture, returns -1.
-  int GetLowestTouchId() const;
-
  private:
   GestureEventDetails details_;
-
-  // The set of indices of ones in the binary representation of
-  // touch_ids_bitfield_ is the set of touch_ids associate with this gesture.
-  // This value is stored as a bitfield because the number of touch ids varies,
-  // but we currently don't need more than 32 touches at a time.
-  const unsigned int touch_ids_bitfield_;
 };
 
 }  // namespace ui

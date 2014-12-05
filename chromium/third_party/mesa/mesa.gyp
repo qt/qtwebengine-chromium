@@ -74,6 +74,14 @@
           '-fPIC',
         ],
       }],
+      ['ubsan_vptr == 1', {
+        'cflags!': [
+          # UBsan's vptr is not compatible with -fno-rtti,
+          # which is used by gallium/auxiliary/Makefile.
+          '-fsanitize=null',
+          '-fsanitize=vptr',
+        ],
+      }],
     ],
   },
   'targets': [
@@ -119,8 +127,18 @@
       # TODO(scottmg): http://crbug.com/143877 These should be removed if
       # Mesa is ever rolled and the warnings are fixed.
       'msvs_disabled_warnings': [
-          4005, 4018, 4065, 4090, 4099, 4273, 4291, 4345, 4267,
+          4005, 4018, 4065, 4090, 4099, 4291, 4345, 4267,
       ],
+      'variables': {
+        'clang_warning_flags': [
+          '-Wno-tautological-constant-out-of-range-compare',
+          '-Wno-mismatched-tags',  # Fixed upstream.
+        ],
+        'clang_warning_flags_unset': [
+          # Don't warn about string->bool used in asserts.
+          '-Wstring-conversion',
+        ],
+      },
       'sources': [
         '<(generated_src_dir)/mesa/main/dispatch.h',
         'src/src/glsl/ast_expr.cpp',
@@ -215,29 +233,12 @@
         'src/src/glsl/ralloc.h',
         'src/src/glsl/s_expression.cpp',
         'src/src/glsl/s_expression.h',
-        'src/src/glsl/standalone_scaffolding.cpp',
-        'src/src/glsl/standalone_scaffolding.h',
+        # This file is not needed and has duplicate symbols (although it
+        # happens to link because of static library link ordering).
+        #'src/src/glsl/standalone_scaffolding.cpp',
+        #'src/src/glsl/standalone_scaffolding.h',
         'src/src/glsl/strtod.c',
         'src/src/glsl/strtod.h',
-      ],
-      'conditions': [
-        ['clang == 1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              '-Wno-tautological-constant-out-of-range-compare',
-            ],
-            'WARNING_CFLAGS!': [
-              # Don't warn about string->bool used in asserts.
-              '-Wstring-conversion',
-            ],
-          },
-          'cflags': [
-            '-Wno-tautological-constant-out-of-range-compare',
-          ],
-          'cflags!': [
-            '-Wstring-conversion',
-          ],
-        }],
       ],
     },
     {
@@ -264,15 +265,24 @@
       # TODO(scottmg): http://crbug.com/143877 These should be removed if
       # Mesa is ever rolled and the warnings are fixed.
       'msvs_disabled_warnings': [
-          4005, 4018, 4090, 4099, 4146, 4273, 4291, 4305, 4334, 4748, 4267,
+          4005, 4018, 4090, 4099, 4146, 4291, 4305, 4334, 4748, 4267,
       ],
+      'variables': {
+        'clang_warning_flags': [
+          '-Wno-tautological-constant-out-of-range-compare',
+          '-Wno-absolute-value',  # Fires on st_atom_array.c, might be a bug
+          '-Wno-mismatched-tags',  # Fixed upstream.
+        ],
+        'clang_warning_flags_unset': [
+          # Don't warn about string->bool used in asserts.
+          '-Wstring-conversion',
+        ],
+      },
       'sources': [
         '<(generated_src_dir)/mesa/builtin_function.cpp',
         '<(generated_src_dir)/mesa/glapi_mapi_tmp_shared.h',
         'src/src/mapi/mapi/entry.c',
         'src/src/mapi/mapi/entry.h',
-        'src/src/mapi/mapi/mapi.c',
-        'src/src/mapi/mapi/mapi.h',
         'src/src/mapi/mapi/mapi_glapi.c',
         'src/src/mapi/mapi/stub.c',
         'src/src/mapi/mapi/stub.h',
@@ -288,7 +298,6 @@
         'src/src/mesa/main/api_arrayelt.h',
         'src/src/mesa/main/api_exec.c',
         'src/src/mesa/main/api_exec.h',
-        '<(generated_src_dir)/mesa/api_exec_es1.c',
         'src/src/mesa/main/api_loopback.c',
         'src/src/mesa/main/api_loopback.h',
         'src/src/mesa/main/api_validate.c',
@@ -337,8 +346,6 @@
         'src/src/mesa/main/enums.h',
         'src/src/mesa/main/errors.c',
         'src/src/mesa/main/errors.h',
-        'src/src/mesa/main/es1_conversion.c',
-        'src/src/mesa/main/es1_conversion.h',
         'src/src/mesa/main/eval.c',
         'src/src/mesa/main/eval.h',
         'src/src/mesa/main/execmem.c',
@@ -404,7 +411,6 @@
         'src/src/mesa/main/points.h',
         'src/src/mesa/main/polygon.c',
         'src/src/mesa/main/polygon.h',
-        'src/src/mesa/main/querymatrix.c',
         'src/src/mesa/main/queryobj.c',
         'src/src/mesa/main/queryobj.h',
         'src/src/mesa/main/rastpos.c',
@@ -536,90 +542,6 @@
         'src/src/mesa/program/string_to_uint_map.cpp',
         'src/src/mesa/program/symbol_table.c',
         'src/src/mesa/program/symbol_table.h',
-        'src/src/mesa/state_tracker/st_atom.c',
-        'src/src/mesa/state_tracker/st_atom.h',
-        'src/src/mesa/state_tracker/st_atom_array.c',
-        'src/src/mesa/state_tracker/st_atom_blend.c',
-        'src/src/mesa/state_tracker/st_atom_clip.c',
-        'src/src/mesa/state_tracker/st_atom_constbuf.c',
-        'src/src/mesa/state_tracker/st_atom_constbuf.h',
-        'src/src/mesa/state_tracker/st_atom_depth.c',
-        'src/src/mesa/state_tracker/st_atom_framebuffer.c',
-        'src/src/mesa/state_tracker/st_atom_msaa.c',
-        'src/src/mesa/state_tracker/st_atom_pixeltransfer.c',
-        'src/src/mesa/state_tracker/st_atom_rasterizer.c',
-        'src/src/mesa/state_tracker/st_atom_sampler.c',
-        'src/src/mesa/state_tracker/st_atom_scissor.c',
-        'src/src/mesa/state_tracker/st_atom_shader.c',
-        'src/src/mesa/state_tracker/st_atom_shader.h',
-        'src/src/mesa/state_tracker/st_atom_stipple.c',
-        'src/src/mesa/state_tracker/st_atom_texture.c',
-        'src/src/mesa/state_tracker/st_atom_viewport.c',
-        'src/src/mesa/state_tracker/st_cb_bitmap.c',
-        'src/src/mesa/state_tracker/st_cb_bitmap.h',
-        'src/src/mesa/state_tracker/st_cb_blit.c',
-        'src/src/mesa/state_tracker/st_cb_blit.h',
-        'src/src/mesa/state_tracker/st_cb_bufferobjects.c',
-        'src/src/mesa/state_tracker/st_cb_bufferobjects.h',
-        'src/src/mesa/state_tracker/st_cb_clear.c',
-        'src/src/mesa/state_tracker/st_cb_clear.h',
-        'src/src/mesa/state_tracker/st_cb_condrender.c',
-        'src/src/mesa/state_tracker/st_cb_condrender.h',
-        'src/src/mesa/state_tracker/st_cb_drawpixels.c',
-        'src/src/mesa/state_tracker/st_cb_drawpixels.h',
-        'src/src/mesa/state_tracker/st_cb_drawtex.c',
-        'src/src/mesa/state_tracker/st_cb_drawtex.h',
-        'src/src/mesa/state_tracker/st_cb_eglimage.c',
-        'src/src/mesa/state_tracker/st_cb_eglimage.h',
-        'src/src/mesa/state_tracker/st_cb_fbo.c',
-        'src/src/mesa/state_tracker/st_cb_fbo.h',
-        'src/src/mesa/state_tracker/st_cb_feedback.c',
-        'src/src/mesa/state_tracker/st_cb_feedback.h',
-        'src/src/mesa/state_tracker/st_cb_flush.c',
-        'src/src/mesa/state_tracker/st_cb_flush.h',
-        'src/src/mesa/state_tracker/st_cb_program.c',
-        'src/src/mesa/state_tracker/st_cb_program.h',
-        'src/src/mesa/state_tracker/st_cb_queryobj.c',
-        'src/src/mesa/state_tracker/st_cb_queryobj.h',
-        'src/src/mesa/state_tracker/st_cb_rasterpos.c',
-        'src/src/mesa/state_tracker/st_cb_rasterpos.h',
-        'src/src/mesa/state_tracker/st_cb_readpixels.c',
-        'src/src/mesa/state_tracker/st_cb_readpixels.h',
-        'src/src/mesa/state_tracker/st_cb_strings.c',
-        'src/src/mesa/state_tracker/st_cb_strings.h',
-        'src/src/mesa/state_tracker/st_cb_syncobj.c',
-        'src/src/mesa/state_tracker/st_cb_syncobj.h',
-        'src/src/mesa/state_tracker/st_cb_texture.c',
-        'src/src/mesa/state_tracker/st_cb_texture.h',
-        'src/src/mesa/state_tracker/st_cb_texturebarrier.c',
-        'src/src/mesa/state_tracker/st_cb_texturebarrier.h',
-        'src/src/mesa/state_tracker/st_cb_viewport.c',
-        'src/src/mesa/state_tracker/st_cb_viewport.h',
-        'src/src/mesa/state_tracker/st_cb_xformfb.c',
-        'src/src/mesa/state_tracker/st_cb_xformfb.h',
-        'src/src/mesa/state_tracker/st_context.c',
-        'src/src/mesa/state_tracker/st_context.h',
-        'src/src/mesa/state_tracker/st_debug.c',
-        'src/src/mesa/state_tracker/st_debug.h',
-        'src/src/mesa/state_tracker/st_draw.c',
-        'src/src/mesa/state_tracker/st_draw.h',
-        'src/src/mesa/state_tracker/st_draw_feedback.c',
-        'src/src/mesa/state_tracker/st_extensions.c',
-        'src/src/mesa/state_tracker/st_extensions.h',
-        'src/src/mesa/state_tracker/st_format.c',
-        'src/src/mesa/state_tracker/st_format.h',
-        'src/src/mesa/state_tracker/st_gen_mipmap.c',
-        'src/src/mesa/state_tracker/st_gen_mipmap.h',
-        'src/src/mesa/state_tracker/st_glsl_to_tgsi.cpp',
-        'src/src/mesa/state_tracker/st_glsl_to_tgsi.h',
-        'src/src/mesa/state_tracker/st_manager.c',
-        'src/src/mesa/state_tracker/st_manager.h',
-        'src/src/mesa/state_tracker/st_mesa_to_tgsi.c',
-        'src/src/mesa/state_tracker/st_mesa_to_tgsi.h',
-        'src/src/mesa/state_tracker/st_program.c',
-        'src/src/mesa/state_tracker/st_program.h',
-        'src/src/mesa/state_tracker/st_texture.c',
-        'src/src/mesa/state_tracker/st_texture.h',
         'src/src/mesa/swrast/s_aaline.c',
         'src/src/mesa/swrast/s_aaline.h',
         'src/src/mesa/swrast/s_aatriangle.c',
@@ -721,25 +643,6 @@
         'src/src/mesa/x86-64/x86-64.h',
       ],
       'conditions': [
-        ['clang == 1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              '-Wno-tautological-constant-out-of-range-compare',
-              '-Wno-absolute-value',  # Fires on st_atom_array.c, might be a bug
-            ],
-            'WARNING_CFLAGS!': [
-              # Don't warn about string->bool used in asserts.
-              '-Wstring-conversion',
-            ],
-          },
-          'cflags': [
-            '-Wno-tautological-constant-out-of-range-compare',
-            '-Wno-absolute-value',
-          ],
-          'cflags!': [
-            '-Wstring-conversion',
-          ],
-        }],
         ['OS=="android" and clang==0', {
           # Disable sincos() optimization to avoid a linker error
           # since Android's math library doesn't have sincos().
@@ -752,6 +655,14 @@
           'defines': [
             # Because we're building as a static library
             '_GLAPI_NO_EXPORTS',
+          ],
+        }],
+        ['ubsan==1', {
+          # Due to a bug in LLVM (http://llvm.org/bugs/show_bug.cgi?id=21349),
+          # compilation hangs for some Mesa source files. Disable -O2
+          # temporarily until http://crbug.com/426271 is fixed.
+          'cflags!': [
+            '-O2',
           ],
         }],
       ],
@@ -787,7 +698,7 @@
         '<(generated_src_dir)/mesa',
       ],
       'msvs_disabled_warnings': [
-          4005, 4018, 4065, 4090, 4099, 4273, 4291, 4345, 4267,
+          4005, 4018, 4065, 4090, 4099, 4291, 4345, 4267,
       ],
       'sources': [
         'src/src/mesa/drivers/common/driverfuncs.c',

@@ -36,11 +36,11 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class InspectorHistory FINAL : public NoBaseWillBeGarbageCollected<InspectorHistory> {
+class InspectorHistory final : public NoBaseWillBeGarbageCollected<InspectorHistory> {
     WTF_MAKE_NONCOPYABLE(InspectorHistory);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -81,6 +81,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorHistory_h)

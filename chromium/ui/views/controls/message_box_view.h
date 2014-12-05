@@ -10,14 +10,9 @@
 #include "base/strings/string16.h"
 #include "ui/views/view.h"
 
-namespace gfx {
-class ImageSkia;
-}
-
 namespace views {
 
 class Checkbox;
-class ImageView;
 class Label;
 class Link;
 class LinkListener;
@@ -54,7 +49,7 @@ class VIEWS_EXPORT MessageBoxView : public View {
 
   explicit MessageBoxView(const InitParams& params);
 
-  virtual ~MessageBoxView();
+  ~MessageBoxView() override;
 
   // Returns the text box.
   views::Textfield* text_box() { return prompt_field_; }
@@ -65,10 +60,6 @@ class VIEWS_EXPORT MessageBoxView : public View {
   // Returns true if a checkbox is selected, false otherwise. (And false if
   // the message box has no checkbox.)
   bool IsCheckBoxSelected();
-
-  // Adds |icon| to the upper left of the message box or replaces the current
-  // icon. To start out, the message box has no icon.
-  void SetIcon(const gfx::ImageSkia& icon);
 
   // Adds a checkbox with the specified label to the message box if this is the
   // first call. Otherwise, it changes the label of the current checkbox. To
@@ -83,14 +74,14 @@ class VIEWS_EXPORT MessageBoxView : public View {
   void SetLink(const base::string16& text, LinkListener* listener);
 
   // View:
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  protected:
   // View:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
   // Handles Ctrl-C and writes the message in the system clipboard.
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
  private:
   // Sets up the layout manager and initializes the message labels and prompt
@@ -106,9 +97,6 @@ class VIEWS_EXPORT MessageBoxView : public View {
 
   // Input text field for the message box.
   Textfield* prompt_field_;
-
-  // Icon displayed in the upper left corner of the message box.
-  ImageView* icon_;
 
   // Checkbox for the message box.
   Checkbox* checkbox_;

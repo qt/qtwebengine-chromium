@@ -7,13 +7,14 @@
 #include "core/dom/Element.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/NodeRenderStyle.h"
+#include "core/dom/StyleEngine.h"
 #include "core/frame/FrameView.h"
 #include "core/html/HTMLDocument.h"
 #include "core/html/HTMLElement.h"
 #include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 using namespace HTMLNames;
 
 namespace {
@@ -23,12 +24,12 @@ class AffectedByFocusTest : public ::testing::Test {
 protected:
 
     struct ElementResult {
-        const WebCore::QualifiedName tag;
+        const blink::HTMLQualifiedName tag;
         bool affectedBy;
         bool childrenOrSiblingsAffectedBy;
     };
 
-    virtual void SetUp() OVERRIDE;
+    virtual void SetUp() override;
 
     HTMLDocument& document() const { return *m_document; }
 
@@ -58,16 +59,16 @@ void AffectedByFocusTest::setHtmlInnerHTML(const char* htmlContent)
 void AffectedByFocusTest::checkElements(ElementResult expected[], unsigned expectedCount) const
 {
     unsigned i = 0;
-    Element* elm = document().body();
+    HTMLElement* element = document().body();
 
-    for (; elm && i < expectedCount; elm = ElementTraversal::next(*elm), ++i) {
-        ASSERT_TRUE(elm->hasTagName(expected[i].tag));
-        ASSERT(elm->renderStyle());
-        ASSERT_EQ(expected[i].affectedBy, elm->renderStyle()->affectedByFocus());
-        ASSERT_EQ(expected[i].childrenOrSiblingsAffectedBy, elm->childrenOrSiblingsAffectedByFocus());
+    for (; element && i < expectedCount; element = Traversal<HTMLElement>::next(*element), ++i) {
+        ASSERT_TRUE(element->hasTagName(expected[i].tag));
+        ASSERT(element->renderStyle());
+        ASSERT_EQ(expected[i].affectedBy, element->renderStyle()->affectedByFocus());
+        ASSERT_EQ(expected[i].childrenOrSiblingsAffectedBy, element->childrenOrSiblingsAffectedByFocus());
     }
 
-    ASSERT(!elm && i == expectedCount);
+    ASSERT(!element && i == expectedCount);
 }
 
 // A global :focus rule in html.css currently causes every single element to be

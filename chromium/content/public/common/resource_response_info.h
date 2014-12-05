@@ -15,11 +15,15 @@
 #include "content/public/common/resource_devtools_info.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/load_timing_info.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
+#include "third_party/WebKit/public/platform/WebServiceWorkerResponseType.h"
 #include "url/gurl.h"
 
 namespace content {
 
+// Note: when modifying this structure, also update ResourceResponse::DeepCopy
+// in resource_response.cc.
 struct ResourceResponseInfo {
   CONTENT_EXPORT ResourceResponseInfo();
   CONTENT_EXPORT ~ResourceResponseInfo();
@@ -89,14 +93,38 @@ struct ResourceResponseInfo {
 
   // True if the response was fetched via an explicit proxy (as opposed to a
   // transparent proxy). The proxy could be any type of proxy, HTTP or SOCKS.
-  // Note: we cannot tell if a transparent proxy may have been involved.
+  // Note: we cannot tell if a transparent proxy may have been involved. If
+  // true, |proxy_server| contains the name of the proxy server that was used.
   bool was_fetched_via_proxy;
+  net::HostPortPair proxy_server;
 
   // NPN protocol negotiated with the server.
   std::string npn_negotiated_protocol;
 
   // Remote address of the socket which fetched this resource.
   net::HostPortPair socket_address;
+
+  // True if the response was fetched by a ServiceWorker.
+  bool was_fetched_via_service_worker;
+
+  // True when the request whoes mode is |CORS| or |CORS-with-forced-preflight|
+  // is sent to a ServiceWorker but FetchEvent.respondWith is not called. So the
+  // renderer have to resend the request with skip service worker flag
+  // considering the CORS preflight logic.
+  bool was_fallback_required_by_service_worker;
+
+  // The original URL of the response which was fetched by the ServiceWorker.
+  // This may be empty if the response was created inside the ServiceWorker.
+  GURL original_url_via_service_worker;
+
+  // The type of the response which was fetched by the ServiceWorker.
+  blink::WebServiceWorkerResponseType response_type_via_service_worker;
+
+  // ServiceWorker Timing Information. These will be set if the response is
+  // provided by the ServiceWorker, or kept empty.
+  base::TimeTicks service_worker_fetch_start;
+  base::TimeTicks service_worker_fetch_ready;
+  base::TimeTicks service_worker_fetch_end;
 };
 
 }  // namespace content

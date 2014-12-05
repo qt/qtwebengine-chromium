@@ -20,7 +20,7 @@
 #include "cc/quads/solid_color_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
-#include "ui/gfx/quad_f.h"
+#include "ui/gfx/geometry/quad_f.h"
 
 class SkBitmap;
 
@@ -55,17 +55,17 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       TextureMailboxDeleter* texture_mailbox_deleter,
       int highp_threshold_min);
 
-  virtual ~GLRenderer();
+  ~GLRenderer() override;
 
-  virtual const RendererCapabilitiesImpl& Capabilities() const OVERRIDE;
+  const RendererCapabilitiesImpl& Capabilities() const override;
 
   // Waits for rendering to finish.
-  virtual void Finish() OVERRIDE;
+  void Finish() override;
 
-  virtual void DoNoOp() OVERRIDE;
-  virtual void SwapBuffers(const CompositorFrameMetadata& metadata) OVERRIDE;
+  void DoNoOp() override;
+  void SwapBuffers(const CompositorFrameMetadata& metadata) override;
 
-  virtual bool IsContextLost() OVERRIDE;
+  virtual bool IsContextLost();
 
   static void DebugGLCall(gpu::gles2::GLES2Interface* gl,
                           const char* command,
@@ -80,7 +80,7 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
              TextureMailboxDeleter* texture_mailbox_deleter,
              int highp_threshold_min);
 
-  virtual void DidChangeVisibility() OVERRIDE;
+  void DidChangeVisibility() override;
 
   bool IsBackbufferDiscarded() const { return is_backbuffer_discarded_; }
 
@@ -89,7 +89,8 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
     return shared_geometry_.get();
   }
 
-  void GetFramebufferPixelsAsync(const gfx::Rect& rect,
+  void GetFramebufferPixelsAsync(const DrawingFrame* frame,
+                                 const gfx::Rect& rect,
                                  scoped_ptr<CopyOutputRequest> request);
   void GetFramebufferTexture(unsigned texture_id,
                              ResourceFormat texture_format,
@@ -101,34 +102,37 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void SetBlendEnabled(bool enabled);
   bool blend_enabled() const { return blend_shadow_; }
 
-  virtual void BindFramebufferToOutputSurface(DrawingFrame* frame) OVERRIDE;
-  virtual bool BindFramebufferToTexture(DrawingFrame* frame,
-                                        const ScopedResource* resource,
-                                        const gfx::Rect& target_rect) OVERRIDE;
-  virtual void SetDrawViewport(const gfx::Rect& window_space_viewport) OVERRIDE;
-  virtual void SetScissorTestRect(const gfx::Rect& scissor_rect) OVERRIDE;
-  virtual void DiscardPixels(bool has_external_stencil_test,
-                             bool draw_rect_covers_full_surface) OVERRIDE;
-  virtual void ClearFramebuffer(DrawingFrame* frame,
-                                bool has_external_stencil_test) OVERRIDE;
-  virtual void DoDrawQuad(DrawingFrame* frame, const class DrawQuad*) OVERRIDE;
-  virtual void BeginDrawingFrame(DrawingFrame* frame) OVERRIDE;
-  virtual void FinishDrawingFrame(DrawingFrame* frame) OVERRIDE;
-  virtual bool FlippedFramebuffer() const OVERRIDE;
-  virtual void EnsureScissorTestEnabled() OVERRIDE;
-  virtual void EnsureScissorTestDisabled() OVERRIDE;
-  virtual void CopyCurrentRenderPassToBitmap(
+  void BindFramebufferToOutputSurface(DrawingFrame* frame) override;
+  bool BindFramebufferToTexture(DrawingFrame* frame,
+                                const ScopedResource* resource,
+                                const gfx::Rect& target_rect) override;
+  void SetDrawViewport(const gfx::Rect& window_space_viewport) override;
+  void SetScissorTestRect(const gfx::Rect& scissor_rect) override;
+  void DiscardPixels(bool has_external_stencil_test,
+                     bool draw_rect_covers_full_surface) override;
+  void ClearFramebuffer(DrawingFrame* frame,
+                        bool has_external_stencil_test) override;
+  void DoDrawQuad(DrawingFrame* frame, const class DrawQuad*) override;
+  void BeginDrawingFrame(DrawingFrame* frame) override;
+  void FinishDrawingFrame(DrawingFrame* frame) override;
+  bool FlippedFramebuffer(const DrawingFrame* frame) const override;
+  bool FlippedRootFramebuffer() const;
+  void EnsureScissorTestEnabled() override;
+  void EnsureScissorTestDisabled() override;
+  void CopyCurrentRenderPassToBitmap(
       DrawingFrame* frame,
-      scoped_ptr<CopyOutputRequest> request) OVERRIDE;
-  virtual void FinishDrawingQuadList() OVERRIDE;
+      scoped_ptr<CopyOutputRequest> request) override;
+  void FinishDrawingQuadList() override;
 
-  // Check if quad needs antialiasing and if so, inflate the quad and
-  // fill edge array for fragment shader.  local_quad is set to
-  // inflated quad if antialiasing is required, otherwise it is left
-  // unchanged.  edge array is filled with inflated quad's edge data
-  // if antialiasing is required, otherwise it is left unchanged.
   // Returns true if quad requires antialiasing and false otherwise.
-  static bool SetupQuadForAntialiasing(const gfx::Transform& device_transform,
+  static bool ShouldAntialiasQuad(const gfx::Transform& device_transform,
+                                  const DrawQuad* quad,
+                                  bool force_antialiasing);
+
+  // Inflate the quad and fill edge array for fragment shader.
+  // |local_quad| is set to inflated quad. |edge| array is filled with
+  // inflated quad's edge data.
+  static void SetupQuadForAntialiasing(const gfx::Transform& device_transform,
                                        const DrawQuad* quad,
                                        gfx::QuadF* local_quad,
                                        float edge[24]);
@@ -143,12 +147,33 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
                             const CheckerboardDrawQuad* quad);
   void DrawDebugBorderQuad(const DrawingFrame* frame,
                            const DebugBorderDrawQuad* quad);
-  scoped_ptr<ScopedResource> GetBackgroundWithFilters(
+  static bool IsDefaultBlendMode(SkXfermode::Mode blend_mode) {
+    return blend_mode == SkXfermode::kSrcOver_Mode;
+  }
+  bool CanApplyBlendModeUsingBlendFunc(SkXfermode::Mode blend_mode);
+  void ApplyBlendModeUsingBlendFunc(SkXfermode::Mode blend_mode);
+  void RestoreBlendFuncToDefault(SkXfermode::Mode blend_mode);
+
+  gfx::Rect GetBackdropBoundingBoxForRenderPassQuad(
       DrawingFrame* frame,
       const RenderPassDrawQuad* quad,
       const gfx::Transform& contents_device_transform,
-      const gfx::Transform& contents_device_transformInverse,
-      bool* background_changed);
+      bool use_aa);
+  scoped_ptr<ScopedResource> GetBackdropTexture(const gfx::Rect& bounding_rect);
+
+  static bool ShouldApplyBackgroundFilters(DrawingFrame* frame,
+                                           const RenderPassDrawQuad* quad);
+  skia::RefPtr<SkImage> ApplyBackgroundFilters(
+      DrawingFrame* frame,
+      const RenderPassDrawQuad* quad,
+      ScopedResource* background_texture);
+  scoped_ptr<ScopedResource> ApplyInverseTransformForBackgroundFilters(
+      DrawingFrame* frame,
+      const RenderPassDrawQuad* quad,
+      const gfx::Transform& contents_device_transform,
+      skia::RefPtr<SkImage> backdrop_bitmap,
+      const gfx::Rect& backdrop_bounding_rect);
+
   void DrawRenderPassQuad(DrawingFrame* frame, const RenderPassDrawQuad* quad);
   void DrawSolidColorQuad(const DrawingFrame* frame,
                           const SolidColorDrawQuad* quad);
@@ -163,6 +188,13 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void DrawContentQuad(const DrawingFrame* frame,
                        const ContentDrawQuadBase* quad,
                        ResourceProvider::ResourceId resource_id);
+  void DrawContentQuadAA(const DrawingFrame* frame,
+                         const ContentDrawQuadBase* quad,
+                         ResourceProvider::ResourceId resource_id,
+                         const gfx::Transform& device_transform);
+  void DrawContentQuadNoAA(const DrawingFrame* frame,
+                           const ContentDrawQuadBase* quad,
+                           ResourceProvider::ResourceId resource_id);
   void DrawYUVVideoQuad(const DrawingFrame* frame,
                         const YUVVideoDrawQuad* quad);
   void DrawPictureQuad(const DrawingFrame* frame,
@@ -202,8 +234,8 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   void RestoreGLState();
   void RestoreFramebuffer(DrawingFrame* frame);
 
-  virtual void DiscardBackbuffer() OVERRIDE;
-  virtual void EnsureBackbuffer() OVERRIDE;
+  void DiscardBackbuffer() override;
+  void EnsureBackbuffer() override;
   void EnforceMemoryPolicy();
 
   void ScheduleOverlays(DrawingFrame* frame);
@@ -307,22 +339,32 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   const TileCheckerboardProgram* GetTileCheckerboardProgram();
 
-  const RenderPassProgram* GetRenderPassProgram(
-      TexCoordPrecision precision);
-  const RenderPassProgramAA* GetRenderPassProgramAA(
-      TexCoordPrecision precision);
+  const RenderPassProgram* GetRenderPassProgram(TexCoordPrecision precision,
+                                                BlendMode blend_mode);
+  const RenderPassProgramAA* GetRenderPassProgramAA(TexCoordPrecision precision,
+                                                    BlendMode blend_mode);
   const RenderPassMaskProgram* GetRenderPassMaskProgram(
-      TexCoordPrecision precision);
+      TexCoordPrecision precision,
+      SamplerType sampler,
+      BlendMode blend_mode);
   const RenderPassMaskProgramAA* GetRenderPassMaskProgramAA(
-      TexCoordPrecision precision);
+      TexCoordPrecision precision,
+      SamplerType sampler,
+      BlendMode blend_mode);
   const RenderPassColorMatrixProgram* GetRenderPassColorMatrixProgram(
-      TexCoordPrecision precision);
+      TexCoordPrecision precision,
+      BlendMode blend_mode);
   const RenderPassColorMatrixProgramAA* GetRenderPassColorMatrixProgramAA(
-      TexCoordPrecision precision);
+      TexCoordPrecision precision,
+      BlendMode blend_mode);
   const RenderPassMaskColorMatrixProgram* GetRenderPassMaskColorMatrixProgram(
-      TexCoordPrecision precision);
+      TexCoordPrecision precision,
+      SamplerType sampler,
+      BlendMode blend_mode);
   const RenderPassMaskColorMatrixProgramAA*
-      GetRenderPassMaskColorMatrixProgramAA(TexCoordPrecision precision);
+  GetRenderPassMaskColorMatrixProgramAA(TexCoordPrecision precision,
+                                        SamplerType sampler,
+                                        BlendMode blend_mode);
 
   const TextureProgram* GetTextureProgram(
       TexCoordPrecision precision);
@@ -367,18 +409,21 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
       nonpremultiplied_texture_background_program_[NumTexCoordPrecisions];
   TextureProgram texture_io_surface_program_[NumTexCoordPrecisions];
 
-  RenderPassProgram render_pass_program_[NumTexCoordPrecisions];
-  RenderPassProgramAA render_pass_program_aa_[NumTexCoordPrecisions];
-  RenderPassMaskProgram render_pass_mask_program_[NumTexCoordPrecisions];
-  RenderPassMaskProgramAA render_pass_mask_program_aa_[NumTexCoordPrecisions];
+  RenderPassProgram render_pass_program_[NumTexCoordPrecisions][NumBlendModes];
+  RenderPassProgramAA
+      render_pass_program_aa_[NumTexCoordPrecisions][NumBlendModes];
+  RenderPassMaskProgram render_pass_mask_program_
+      [NumTexCoordPrecisions][NumSamplerTypes][NumBlendModes];
+  RenderPassMaskProgramAA render_pass_mask_program_aa_
+      [NumTexCoordPrecisions][NumSamplerTypes][NumBlendModes];
   RenderPassColorMatrixProgram
-      render_pass_color_matrix_program_[NumTexCoordPrecisions];
-  RenderPassColorMatrixProgramAA
-      render_pass_color_matrix_program_aa_[NumTexCoordPrecisions];
-  RenderPassMaskColorMatrixProgram
-      render_pass_mask_color_matrix_program_[NumTexCoordPrecisions];
-  RenderPassMaskColorMatrixProgramAA
-      render_pass_mask_color_matrix_program_aa_[NumTexCoordPrecisions];
+      render_pass_color_matrix_program_[NumTexCoordPrecisions][NumBlendModes];
+  RenderPassColorMatrixProgramAA render_pass_color_matrix_program_aa_
+      [NumTexCoordPrecisions][NumBlendModes];
+  RenderPassMaskColorMatrixProgram render_pass_mask_color_matrix_program_
+      [NumTexCoordPrecisions][NumSamplerTypes][NumBlendModes];
+  RenderPassMaskColorMatrixProgramAA render_pass_mask_color_matrix_program_aa_
+      [NumTexCoordPrecisions][NumSamplerTypes][NumBlendModes];
 
   VideoYUVProgram video_yuv_program_[NumTexCoordPrecisions];
   VideoYUVAProgram video_yuva_program_[NumTexCoordPrecisions];
@@ -391,9 +436,6 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
 
   gpu::gles2::GLES2Interface* gl_;
   gpu::ContextSupport* context_support_;
-
-  skia::RefPtr<GrContext> gr_context_;
-  skia::RefPtr<SkCanvas> sk_canvas_;
 
   TextureMailboxDeleter* texture_mailbox_deleter_;
 
@@ -421,6 +463,8 @@ class CC_EXPORT GLRenderer : public DirectRenderer {
   ScopedPtrDeque<SyncQuery> available_sync_queries_;
   scoped_ptr<SyncQuery> current_sync_query_;
   bool use_sync_query_;
+  bool use_blend_equation_advanced_;
+  bool use_blend_equation_advanced_coherent_;
 
   SkBitmap on_demand_tile_raster_bitmap_;
   ResourceProvider::ResourceId on_demand_tile_raster_resource_id_;

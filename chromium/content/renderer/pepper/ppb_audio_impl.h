@@ -33,25 +33,24 @@ class PPB_Audio_Impl : public ppapi::Resource,
   explicit PPB_Audio_Impl(PP_Instance instance);
 
   // Resource overrides.
-  virtual ppapi::thunk::PPB_Audio_API* AsPPB_Audio_API() OVERRIDE;
+  ppapi::thunk::PPB_Audio_API* AsPPB_Audio_API() override;
 
   // PPB_Audio_API implementation.
-  virtual PP_Resource GetCurrentConfig() OVERRIDE;
-  virtual PP_Bool StartPlayback() OVERRIDE;
-  virtual PP_Bool StopPlayback() OVERRIDE;
-  virtual int32_t Open(PP_Resource config_id,
-                       scoped_refptr<ppapi::TrackedCallback> create_callback)
-      OVERRIDE;
-  virtual int32_t GetSyncSocket(int* sync_socket) OVERRIDE;
-  virtual int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) OVERRIDE;
+  PP_Resource GetCurrentConfig() override;
+  PP_Bool StartPlayback() override;
+  PP_Bool StopPlayback() override;
+  int32_t Open(PP_Resource config_id,
+               scoped_refptr<ppapi::TrackedCallback> create_callback) override;
+  int32_t GetSyncSocket(int* sync_socket) override;
+  int32_t GetSharedMemory(int* shm_handle, uint32_t* shm_size) override;
 
  private:
-  virtual ~PPB_Audio_Impl();
+  ~PPB_Audio_Impl() override;
 
   // AudioHelper implementation.
-  virtual void OnSetStreamInfo(base::SharedMemoryHandle shared_memory_handle,
-                               size_t shared_memory_size_,
-                               base::SyncSocket::Handle socket) OVERRIDE;
+  void OnSetStreamInfo(base::SharedMemoryHandle shared_memory_handle,
+                       size_t shared_memory_size_,
+                       base::SyncSocket::Handle socket) override;
 
   // AudioConfig used for creating this Audio object. We own a ref.
   ppapi::ScopedPPResource config_;

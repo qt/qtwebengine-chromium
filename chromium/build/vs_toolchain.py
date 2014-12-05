@@ -30,6 +30,8 @@ def SetEnvironmentAndGetRuntimeDllDirs():
   depot_tools_win_toolchain = \
       bool(int(os.environ.get('DEPOT_TOOLS_WIN_TOOLCHAIN', '1')))
   if sys.platform in ('win32', 'cygwin') and depot_tools_win_toolchain:
+    if not os.path.exists(json_data_file):
+      Update()
     with open(json_data_file, 'r') as tempf:
       toolchain_data = json.load(tempf)
 
@@ -71,6 +73,18 @@ def CopyVsRuntimeDlls(output_dir, runtime_dirs):
   """
   assert sys.platform.startswith(('win32', 'cygwin'))
 
+  def copy_runtime_impl(target, source):
+    """Copy |source| to |target| if it doesn't already exist or if it need to be
+    updated.
+    """
+    if (os.path.isdir(os.path.dirname(target)) and
+        (not os.path.isfile(target) or
+          os.stat(target).st_mtime != os.stat(source).st_mtime)):
+      print 'Copying %s to %s...' % (source, target)
+      if os.path.exists(target):
+        os.unlink(target)
+      shutil.copy2(source, target)
+
   def copy_runtime(target_dir, source_dir, dll_pattern):
     """Copy both the msvcr and msvcp runtime DLLs, only if the target doesn't
     exist, but the target directory does exist."""
@@ -78,15 +92,7 @@ def CopyVsRuntimeDlls(output_dir, runtime_dirs):
       dll = dll_pattern % which
       target = os.path.join(target_dir, dll)
       source = os.path.join(source_dir, dll)
-      # If gyp generated to that output dir, and the runtime isn't already
-      # there, then copy it over.
-      if (os.path.isdir(target_dir) and
-          (not os.path.isfile(target) or
-            os.stat(target).st_mtime != os.stat(source).st_mtime)):
-        print 'Copying %s to %s...' % (source, target)
-        if os.path.exists(target):
-          os.unlink(target)
-        shutil.copy2(source, target)
+      copy_runtime_impl(target, source)
 
   x86, x64 = runtime_dirs
   out_debug = os.path.join(output_dir, 'Debug')
@@ -107,11 +113,26 @@ def CopyVsRuntimeDlls(output_dir, runtime_dirs):
   copy_runtime(out_debug_nacl64,   x64, 'msvc%s120d.dll')
   copy_runtime(out_release_nacl64, x64, 'msvc%s120.dll')
 
+  # Copy the PGO runtime library to the release directories.
+  if os.environ.get('GYP_MSVS_OVERRIDE_PATH'):
+    pgo_x86_runtime_dir = os.path.join(os.environ.get('GYP_MSVS_OVERRIDE_PATH'),
+                                       'VC', 'bin')
+    pgo_x64_runtime_dir = os.path.join(pgo_x86_runtime_dir, 'amd64')
+    pgo_runtime_dll = 'pgort120.dll'
+    source_x86 = os.path.join(pgo_x86_runtime_dir, pgo_runtime_dll)
+    if os.path.exists(source_x86):
+      copy_runtime_impl(os.path.join(out_release, pgo_runtime_dll), source_x86)
+    source_x64 = os.path.join(pgo_x64_runtime_dir, pgo_runtime_dll)
+    if os.path.exists(source_x64):
+      copy_runtime_impl(os.path.join(out_release_x64, pgo_runtime_dll),
+                        source_x64)
+
 
 def _GetDesiredVsToolchainHashes():
   """Load a list of SHA1s corresponding to the toolchains that we want installed
   to build with."""
-  sha1path = os.path.join(script_dir, 'toolchain_vs2013.hash')
+  sha1path = os.path.join(script_dir,
+                          '..', 'buildtools', 'toolchain_vs2013.hash')
   with open(sha1path, 'rb') as f:
     return f.read().strip().splitlines()
 
@@ -143,6 +164,13 @@ def GetToolchainDir():
   """Gets location information about the current toolchain (must have been
   previously updated by 'update'). This is used for the GN build."""
   SetEnvironmentAndGetRuntimeDllDirs()
+
+  # If WINDOWSSDKDIR is not set, search the default SDK path and set it.
+  if not 'WINDOWSSDKDIR' in os.environ:
+    default_sdk_path = 'C:\\Program Files (x86)\\Windows Kits\\8.0'
+    if os.path.isdir(default_sdk_path):
+      os.environ['WINDOWSSDKDIR'] = default_sdk_path
+
   print '''vs_path = "%s"
 sdk_path = "%s"
 vs_version = "%s"
@@ -151,7 +179,7 @@ wdk_dir = "%s"
       os.environ['GYP_MSVS_OVERRIDE_PATH'],
       os.environ['WINDOWSSDKDIR'],
       os.environ['GYP_MSVS_VERSION'],
-      os.environ['WDK_DIR'])
+      os.environ.get('WDK_DIR', ''))
 
 
 def main():

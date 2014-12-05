@@ -28,7 +28,7 @@ class CONTENT_EXPORT TouchEditableImplAura
     : public ui::TouchEditable,
       public NON_EXPORTED_BASE(RenderWidgetHostViewAura::TouchEditingClient) {
  public:
-  virtual ~TouchEditableImplAura();
+  ~TouchEditableImplAura() override;
 
   static TouchEditableImplAura* Create();
 
@@ -42,39 +42,42 @@ class CONTENT_EXPORT TouchEditableImplAura
   void OverscrollCompleted();
 
   // Overridden from RenderWidgetHostViewAura::TouchEditingClient.
-  virtual void StartTouchEditing() OVERRIDE;
-  virtual void EndTouchEditing(bool quick) OVERRIDE;
-  virtual void OnSelectionOrCursorChanged(const gfx::Rect& anchor,
-                                          const gfx::Rect& focus) OVERRIDE;
-  virtual void OnTextInputTypeChanged(ui::TextInputType type) OVERRIDE;
-  virtual bool HandleInputEvent(const ui::Event* event) OVERRIDE;
-  virtual void GestureEventAck(int gesture_event_type) OVERRIDE;
-  virtual void OnViewDestroyed() OVERRIDE;
+  void StartTouchEditing() override;
+  void EndTouchEditing(bool quick) override;
+  void OnSelectionOrCursorChanged(const gfx::Rect& anchor,
+                                  const gfx::Rect& focus) override;
+  void OnTextInputTypeChanged(ui::TextInputType type) override;
+  bool HandleInputEvent(const ui::Event* event) override;
+  void GestureEventAck(int gesture_event_type) override;
+  void DidStopFlinging() override;
+  void OnViewDestroyed() override;
 
   // Overridden from ui::TouchEditable:
-  virtual void SelectRect(const gfx::Point& start,
-                          const gfx::Point& end) OVERRIDE;
-  virtual void MoveCaretTo(const gfx::Point& point) OVERRIDE;
-  virtual void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) OVERRIDE;
-  virtual gfx::Rect GetBounds() OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE;
-  virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE;
-  virtual bool DrawsHandles() OVERRIDE;
-  virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE;
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
-  virtual void DestroyTouchSelection() OVERRIDE;
+  void SelectRect(const gfx::Point& start, const gfx::Point& end) override;
+  void MoveCaretTo(const gfx::Point& point) override;
+  void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) override;
+  gfx::Rect GetBounds() override;
+  gfx::NativeView GetNativeView() const override;
+  void ConvertPointToScreen(gfx::Point* point) override;
+  void ConvertPointFromScreen(gfx::Point* point) override;
+  bool DrawsHandles() override;
+  void OpenContextMenu(const gfx::Point& anchor) override;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
+  void DestroyTouchSelection() override;
 
  protected:
   TouchEditableImplAura();
 
  private:
   friend class TouchEditableImplAuraTest;
+
+  // A convenience function that is called after scroll/fling/overscroll ends to
+  // re-activate touch selection if necessary.
+  void ScrollEnded();
 
   void Cleanup();
 
@@ -96,11 +99,8 @@ class CONTENT_EXPORT TouchEditableImplAura
   // whether to re-show handles after a scrolling session.
   bool handles_hidden_due_to_scroll_;
 
-  // Keeps track of when the user is scrolling.
-  bool scroll_in_progress_;
-
-  // Set to true when the page starts an overscroll.
-  bool overscroll_in_progress_;
+  // Keeps track of number of scrolls/flings/overscrolls in progress.
+  int scrolls_in_progress_;
 
   // Used to track if a textfield was focused when the current tap gesture
   // happened.

@@ -63,11 +63,6 @@ public:
 
     // Checks the permission level for the given origin.
     virtual Permission checkPermission(const WebSecurityOrigin&) = 0;
-
-    // Requests permission for a given origin.  This operation is asynchronous and the callback provided
-    // will be invoked when the permission decision is made.  Callback pointer must remain
-    // valid until called.
-    virtual void requestPermission(const WebSecurityOrigin&, WebNotificationPermissionCallback*) = 0;
 };
 
 } // namespace blink

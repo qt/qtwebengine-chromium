@@ -4,16 +4,14 @@
 
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
-#include "content/public/browser/stream_handle.h"
+#include "content/public/browser/stream_info.h"
 
 namespace content {
 
 bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
-    int child_id,
-    int route_id,
     const std::string& method,
     const GURL& url,
-    ResourceType::Type resource_type,
+    ResourceType resource_type,
     ResourceContext* resource_context) {
   return true;
 }
@@ -21,10 +19,8 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
 void ResourceDispatcherHostDelegate::RequestBeginning(
     net::URLRequest* request,
     ResourceContext* resource_context,
-    appcache::AppCacheService* appcache_service,
-    ResourceType::Type resource_type,
-    int child_id,
-    int route_id,
+    AppCacheService* appcache_service,
+    ResourceType resource_type,
     ScopedVector<ResourceThrottle>* throttles) {
 }
 
@@ -68,7 +64,7 @@ bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
 
 void ResourceDispatcherHostDelegate::OnStreamCreated(
     net::URLRequest* request,
-    scoped_ptr<content::StreamHandle> stream) {
+    scoped_ptr<content::StreamInfo> stream) {
 }
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(

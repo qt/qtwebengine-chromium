@@ -30,15 +30,16 @@
 #include "modules/navigatorcontentutils/NavigatorContentUtilsClient.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
+#include "wtf/OwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Navigator;
 class Page;
 
-class NavigatorContentUtils FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorContentUtils>, public WillBeHeapSupplement<Page> {
+class NavigatorContentUtils final : public NoBaseWillBeGarbageCollectedFinalized<NavigatorContentUtils>, public WillBeHeapSupplement<Page> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorContentUtils);
 public:
     virtual ~NavigatorContentUtils();
@@ -52,7 +53,7 @@ public:
 
     static PassOwnPtrWillBeRawPtr<NavigatorContentUtils> create(PassOwnPtr<NavigatorContentUtilsClient>);
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<Page>::trace(visitor); }
 
     void setClientForTest(PassOwnPtr<NavigatorContentUtilsClient> client) { m_client = client; }
 
@@ -66,6 +67,6 @@ private:
     OwnPtr<NavigatorContentUtilsClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorContentUtils_h

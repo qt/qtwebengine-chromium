@@ -29,10 +29,10 @@
 #include "config.h"
 #include "core/accessibility/AXImageMapLink.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/accessibility/AXRenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -58,7 +58,7 @@ PassRefPtr<AXImageMapLink> AXImageMapLink::create()
     return adoptRef(new AXImageMapLink());
 }
 
-AXObject* AXImageMapLink::parentObject() const
+AXObject* AXImageMapLink::computeParent() const
 {
     if (m_parent)
         return m_parent;
@@ -66,7 +66,7 @@ AXObject* AXImageMapLink::parentObject() const
     if (!m_mapElement.get() || !m_mapElement->renderer())
         return 0;
 
-    return m_mapElement->document().axObjectCache()->getOrCreate(m_mapElement->renderer());
+    return toAXObjectCacheImpl(m_mapElement->document().axObjectCache())->getOrCreate(m_mapElement->renderer());
 }
 
 AccessibilityRole AXImageMapLink::roleValue() const
@@ -140,4 +140,4 @@ LayoutRect AXImageMapLink::elementRect() const
     return m_areaElement->computeRect(renderer);
 }
 
-} // namespace WebCore
+} // namespace blink

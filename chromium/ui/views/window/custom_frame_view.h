@@ -34,30 +34,30 @@ class VIEWS_EXPORT CustomFrameView : public NonClientFrameView,
                                      public ButtonListener {
  public:
   CustomFrameView();
-  virtual ~CustomFrameView();
+  ~CustomFrameView() override;
 
   void Init(Widget* frame);
 
   // Overridden from NonClientFrameView:
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE;
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE;
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE;
-  virtual void GetWindowMask(const gfx::Size& size,
-                             gfx::Path* window_mask) OVERRIDE;
-  virtual void ResetWindowControls() OVERRIDE;
-  virtual void UpdateWindowIcon() OVERRIDE;
-  virtual void UpdateWindowTitle() OVERRIDE;
+  gfx::Rect GetBoundsForClientView() const override;
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override;
+  int NonClientHitTest(const gfx::Point& point) override;
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override;
+  void ResetWindowControls() override;
+  void UpdateWindowIcon() override;
+  void UpdateWindowTitle() override;
+  void SizeConstraintsChanged() override;
 
   // Overridden from View:
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
 
   // Overridden from ButtonListener:
-  virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
+  void ButtonPressed(Button* sender, const ui::Event& event) override;
 
  private:
   friend class CustomFrameViewTest;
@@ -145,9 +145,6 @@ class VIEWS_EXPORT CustomFrameView : public NonClientFrameView,
   ImageButton* maximize_button_;
   ImageButton* restore_button_;
   ImageButton* close_button_;
-
-  // Should maximize button be shown?
-  bool should_show_maximize_button_;
 
   // Background painter for the window frame.
   scoped_ptr<FrameBackground> frame_background_;

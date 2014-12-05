@@ -16,11 +16,11 @@ class BrowserOnlineStateObserver
     : public net::NetworkChangeNotifier::ConnectionTypeObserver {
  public:
   BrowserOnlineStateObserver();
-  virtual ~BrowserOnlineStateObserver();
+  ~BrowserOnlineStateObserver() override;
 
   // ConnectionTypeObserver implementation.
-  virtual void OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BrowserOnlineStateObserver);

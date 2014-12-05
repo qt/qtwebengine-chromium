@@ -31,22 +31,20 @@
 #ifndef RTCIceCandidate_h
 #define RTCIceCandidate_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
-#include "wtf/text/WTFString.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "public/platform/WebRTCICECandidate.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
 
-class RTCIceCandidate FINAL : public RefCountedWillBeGarbageCollectedFinalized<RTCIceCandidate>, public ScriptWrappable {
+class RTCIceCandidate final : public GarbageCollectedFinalized<RTCIceCandidate>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<RTCIceCandidate> create(const Dictionary&, ExceptionState&);
-    static PassRefPtrWillBeRawPtr<RTCIceCandidate> create(blink::WebRTCICECandidate);
+    static RTCIceCandidate* create(const Dictionary&, ExceptionState&);
+    static RTCIceCandidate* create(WebRTCICECandidate);
 
     String candidate() const;
     void setCandidate(String);
@@ -55,16 +53,16 @@ public:
     unsigned short sdpMLineIndex() const;
     void setSdpMLineIndex(unsigned short);
 
-    blink::WebRTCICECandidate webCandidate() const;
+    WebRTCICECandidate webCandidate() const;
 
     void trace(Visitor*) { }
 
 private:
-    explicit RTCIceCandidate(blink::WebRTCICECandidate);
+    explicit RTCIceCandidate(WebRTCICECandidate);
 
-    blink::WebRTCICECandidate m_webCandidate;
+    WebRTCICECandidate m_webCandidate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCIceCandidate_h

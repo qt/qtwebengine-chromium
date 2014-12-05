@@ -5,13 +5,7 @@
   'conditions': [
     ['OS=="android" or OS=="linux" or OS=="mac" or OS=="win"', {
       'variables': {
-        'isolate_dependency_tracked': [
-          '../chrome/test/data/animate1.gif',
-          '../chrome/test/data/server-unavailable.html',
-          '../chrome/test/data/server-unavailable.html.mock-http-headers',
-          '../chrome/test/data/simple.html',
-        ],
-        'isolate_dependency_untracked': [
+        'files': [
           'data/',
         ],
       },
@@ -23,23 +17,31 @@
           '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
           '--brave-new-test-launcher',
           '--test-launcher-bot-mode',
+          '--asan=<(asan)',
+          '--lsan=<(lsan)',
         ],
-        'isolate_dependency_tracked': [
+        'files': [
           '../testing/test_env.py',
-          '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
-        ],
-        'isolate_dependency_untracked': [
           '../third_party/pyftpdlib/',
           '../third_party/pywebsocket/',
           '../third_party/tlslite/',
+          '<(PRODUCT_DIR)/net_unittests<(EXECUTABLE_SUFFIX)',
           '<(PRODUCT_DIR)/pyproto/',
           'tools/testserver/',
         ],
         'read_only': 1,
       },
     }],
+    ['OS=="win" and (fastbuild==0 or fastbuild==1)', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/net_unittests.exe.pdb',
+        ],
+      },
+    }],
   ],
   'includes': [
     '../base/base.isolate',
+    '../gin/v8.isolate',
   ],
 }

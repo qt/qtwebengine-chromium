@@ -27,11 +27,12 @@
 
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class AudioSourceProviderClient : public WillBeGarbageCollectedMixin {
+class AudioSourceProviderClient : public GarbageCollectedMixin {
 public:
     virtual void setFormat(size_t numberOfChannels, float sampleRate) = 0;
+    // Oilpan: Callers should keep this object alive during lock() and unlock().
     virtual void lock() { }
     virtual void unlock() { }
     virtual void trace(Visitor*) { }
@@ -39,6 +40,6 @@ protected:
     virtual ~AudioSourceProviderClient() { }
 };
 
-} // WebCore
+} // namespace blink
 
 #endif // AudioSourceProviderClient_h

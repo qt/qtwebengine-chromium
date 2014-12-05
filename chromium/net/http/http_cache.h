@@ -15,6 +15,7 @@
 #define NET_HTTP_HTTP_CACHE_H_
 
 #include <list>
+#include <map>
 #include <set>
 #include <string>
 
@@ -23,7 +24,6 @@
 #include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
@@ -36,14 +36,20 @@
 
 class GURL;
 
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
+
 namespace disk_cache {
 class Backend;
 class Entry;
-}
+}  // namespace disk_cache
 
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
+class DiskBasedCertCache;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class HttpNetworkSession;
@@ -52,7 +58,6 @@ class HttpServerProperties;
 class IOBuffer;
 class NetLog;
 class NetworkDelegate;
-class ServerBoundCertService;
 class ProxyService;
 class SSLConfigService;
 class TransportSecurityState;
@@ -96,27 +101,29 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   class NET_EXPORT DefaultBackend : public BackendFactory {
    public:
     // |path| is the destination for any files used by the backend, and
-    // |cache_thread| is the thread where disk operations should take place. If
+    // |thread| is the thread where disk operations should take place. If
     // |max_bytes| is  zero, a default value will be calculated automatically.
-    DefaultBackend(CacheType type, BackendType backend_type,
-                   const base::FilePath& path, int max_bytes,
-                   base::MessageLoopProxy* thread);
-    virtual ~DefaultBackend();
+    DefaultBackend(CacheType type,
+                   BackendType backend_type,
+                   const base::FilePath& path,
+                   int max_bytes,
+                   const scoped_refptr<base::SingleThreadTaskRunner>& thread);
+    ~DefaultBackend() override;
 
     // Returns a factory for an in-memory cache.
     static BackendFactory* InMemory(int max_bytes);
 
     // BackendFactory implementation.
-    virtual int CreateBackend(NetLog* net_log,
-                              scoped_ptr<disk_cache::Backend>* backend,
-                              const CompletionCallback& callback) OVERRIDE;
+    int CreateBackend(NetLog* net_log,
+                      scoped_ptr<disk_cache::Backend>* backend,
+                      const CompletionCallback& callback) override;
 
    private:
     CacheType type_;
     BackendType backend_type_;
     const base::FilePath path_;
     int max_bytes_;
-    scoped_refptr<base::MessageLoopProxy> thread_;
+    scoped_refptr<base::SingleThreadTaskRunner> thread_;
   };
 
   // The disk cache is initialized lazily (by CreateTransaction) in this case.
@@ -138,9 +145,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
             NetLog* net_log,
             BackendFactory* backend_factory);
 
-  virtual ~HttpCache();
+  ~HttpCache() override;
 
   HttpTransactionFactory* network_layer() { return network_layer_.get(); }
+
+  DiskBasedCertCache* cert_cache() const { return cert_cache_.get(); }
 
   // Retrieves the cache backend for this HttpCache instance. If the backend
   // is not initialized yet, this method will initialize it. The return value is
@@ -187,11 +196,27 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Initializes the Infinite Cache, if selected by the field trial.
   void InitializeInfiniteCache(const base::FilePath& path);
 
+  // Causes all transactions created after this point to effectively bypass
+  // the cache lock whenever there is lock contention.
+  void BypassLockForTest() {
+    bypass_lock_for_test_ = true;
+  }
+
+  bool use_stale_while_revalidate() const {
+    return use_stale_while_revalidate_;
+  }
+
+  // Enable stale_while_revalidate functionality for testing purposes.
+  void set_use_stale_while_revalidate_for_testing(
+      bool use_stale_while_revalidate) {
+    use_stale_while_revalidate_ = use_stale_while_revalidate;
+  }
+
   // HttpTransactionFactory implementation:
-  virtual int CreateTransaction(RequestPriority priority,
-                                scoped_ptr<HttpTransaction>* trans) OVERRIDE;
-  virtual HttpCache* GetCache() OVERRIDE;
-  virtual HttpNetworkSession* GetSession() OVERRIDE;
+  int CreateTransaction(RequestPriority priority,
+                        scoped_ptr<HttpTransaction>* trans) override;
+  HttpCache* GetCache() override;
+  HttpNetworkSession* GetSession() override;
 
   base::WeakPtr<HttpCache> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
 
@@ -223,9 +248,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   friend class Transaction;
   friend class ViewCacheHelper;
   struct PendingOp;  // Info for an entry under construction.
+  class AsyncValidation;  // Encapsulates a single async revalidation.
 
   typedef std::list<Transaction*> TransactionList;
   typedef std::list<WorkItem*> WorkItemList;
+  typedef std::map<std::string, AsyncValidation*> AsyncValidationMap;
 
   struct ActiveEntry {
     explicit ActiveEntry(disk_cache::Entry* entry);
@@ -360,6 +387,15 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Resumes processing the pending list of |entry|.
   void ProcessPendingQueue(ActiveEntry* entry);
 
+  // Called by Transaction to perform an asynchronous revalidation. Creates a
+  // new independent transaction as a copy of the original.
+  void PerformAsyncValidation(const HttpRequestInfo& original_request,
+                              const BoundNetLog& net_log);
+
+  // Remove the AsyncValidation with url |url| from the |async_validations_| set
+  // and delete it.
+  void DeleteAsyncValidation(const std::string& url);
+
   // Events (called via PostTask) ---------------------------------------------
 
   void OnProcessPendingQueue(ActiveEntry* entry);
@@ -389,6 +425,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // Used when lazily constructing the disk_cache_.
   scoped_ptr<BackendFactory> backend_factory_;
   bool building_backend_;
+  bool bypass_lock_for_test_;
+
+  // true if the implementation of Cache-Control: stale-while-revalidate
+  // directive is enabled (either via command-line flag or experiment).
+  bool use_stale_while_revalidate_;
 
   Mode mode_;
 
@@ -397,6 +438,8 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   scoped_ptr<HttpTransactionFactory> network_layer_;
 
   scoped_ptr<disk_cache::Backend> disk_cache_;
+
+  scoped_ptr<DiskBasedCertCache> cert_cache_;
 
   // The set of active entries indexed by cache key.
   ActiveEntriesMap active_entries_;
@@ -408,6 +451,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   PendingOpsMap pending_ops_;
 
   scoped_ptr<PlaybackCacheMap> playback_cache_map_;
+
+  // The async validations currently in progress, keyed by URL.
+  AsyncValidationMap async_validations_;
 
   base::WeakPtrFactory<HttpCache> weak_factory_;
 

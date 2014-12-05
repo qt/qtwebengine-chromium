@@ -36,9 +36,7 @@
 #include "core/rendering/RenderRubyText.h"
 #include "core/rendering/RenderText.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderRubyRun::RenderRubyRun()
     : RenderBlockFlow(0)
@@ -90,15 +88,6 @@ RenderRubyBase* RenderRubyRun::rubyBaseSafe()
     return base;
 }
 
-RenderBlock* RenderRubyRun::firstLineBlock() const
-{
-    return 0;
-}
-
-void RenderRubyRun::updateFirstLetter()
-{
-}
-
 bool RenderRubyRun::isChildAllowed(RenderObject* child, RenderStyle*) const
 {
     return child->isRubyText() || child->isInline();
@@ -142,9 +131,13 @@ void RenderRubyRun::addChild(RenderObject* child, RenderObject* beforeChild)
     } else {
         // child is not a text -> insert it into the base
         // (append it instead if beforeChild is the ruby text)
+        RenderRubyBase* base = rubyBaseSafe();
+        if (beforeChild == base)
+            beforeChild = base->firstChild();
         if (beforeChild && beforeChild->isRubyText())
             beforeChild = 0;
-        rubyBaseSafe()->addChild(child, beforeChild);
+        ASSERT(!beforeChild || beforeChild->isDescendantOf(base));
+        base->addChild(child, beforeChild);
     }
 }
 
@@ -283,11 +276,11 @@ void RenderRubyRun::getOverhang(bool firstLine, RenderObject* startRenderer, Ren
         return;
 
     int logicalWidth = this->logicalWidth();
-    int logicalLeftOverhang = numeric_limits<int>::max();
-    int logicalRightOverhang = numeric_limits<int>::max();
+    int logicalLeftOverhang = std::numeric_limits<int>::max();
+    int logicalRightOverhang = std::numeric_limits<int>::max();
     for (RootInlineBox* rootInlineBox = rubyBase->firstRootBox(); rootInlineBox; rootInlineBox = rootInlineBox->nextRootBox()) {
-        logicalLeftOverhang = min<int>(logicalLeftOverhang, rootInlineBox->logicalLeft());
-        logicalRightOverhang = min<int>(logicalRightOverhang, logicalWidth - rootInlineBox->logicalRight());
+        logicalLeftOverhang = std::min<int>(logicalLeftOverhang, rootInlineBox->logicalLeft());
+        logicalRightOverhang = std::min<int>(logicalRightOverhang, logicalWidth - rootInlineBox->logicalRight());
     }
 
     startOverhang = style()->isLeftToRightDirection() ? logicalLeftOverhang : logicalRightOverhang;
@@ -304,9 +297,9 @@ void RenderRubyRun::getOverhang(bool firstLine, RenderObject* startRenderer, Ren
     // and no more than half the font size.
     int halfWidthOfFontSize = rubyText->style(firstLine)->fontSize() / 2;
     if (startOverhang)
-        startOverhang = min<int>(startOverhang, min<int>(toRenderText(startRenderer)->minLogicalWidth(), halfWidthOfFontSize));
+        startOverhang = std::min<int>(startOverhang, std::min<int>(toRenderText(startRenderer)->minLogicalWidth(), halfWidthOfFontSize));
     if (endOverhang)
-        endOverhang = min<int>(endOverhang, min<int>(toRenderText(endRenderer)->minLogicalWidth(), halfWidthOfFontSize));
+        endOverhang = std::min<int>(endOverhang, std::min<int>(toRenderText(endRenderer)->minLogicalWidth(), halfWidthOfFontSize));
 }
 
-} // namespace WebCore
+} // namespace blink

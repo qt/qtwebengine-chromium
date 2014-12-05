@@ -38,7 +38,7 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   };
 
   explicit ImageButton(ButtonListener* listener);
-  virtual ~ImageButton();
+  ~ImageButton() override;
 
   // Returns the image for a given |state|.
   virtual const gfx::ImageSkia& GetImage(ButtonState state) const;
@@ -57,11 +57,11 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
 
   void SetFocusPainter(scoped_ptr<Painter> focus_painter);
 
-  // Sets preferred size, so it could be correctly positioned in layout even if
-  // it is NULL.
-  void SetPreferredSize(const gfx::Size& preferred_size) {
-    preferred_size_ = preferred_size;
-  }
+  // The minimum size of the contents (not including the border). The contents
+  // will be at least this size, but may be larger if the image itself is
+  // larger.
+  const gfx::Size& minimum_image_size() const { return minimum_image_size_; }
+  void SetMinimumImageSize(const gfx::Size& size);
 
   // Whether we should draw our images resources horizontally flipped.
   void SetDrawImageMirrored(bool mirrored) {
@@ -69,14 +69,14 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   }
 
   // Overridden from View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  const char* GetClassName() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
  protected:
   // Overridden from View:
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void OnFocus() override;
+  void OnBlur() override;
 
   // Returns the image to paint. This is invoked from paint and returns a value
   // from images.
@@ -104,7 +104,7 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
   // Image alignment.
   HorizontalAlignment h_alignment_;
   VerticalAlignment v_alignment_;
-  gfx::Size preferred_size_;
+  gfx::Size minimum_image_size_;
 
   // Whether we draw our resources horizontally flipped. This can happen in the
   // linux titlebar, where image resources were designed to be flipped so a
@@ -127,7 +127,7 @@ class VIEWS_EXPORT ImageButton : public CustomButton {
 class VIEWS_EXPORT ToggleImageButton : public ImageButton {
  public:
   explicit ToggleImageButton(ButtonListener* listener);
-  virtual ~ToggleImageButton();
+  ~ToggleImageButton() override;
 
   // Change the toggled state.
   void SetToggled(bool toggled);
@@ -141,14 +141,13 @@ class VIEWS_EXPORT ToggleImageButton : public ImageButton {
   void SetToggledTooltipText(const base::string16& tooltip);
 
   // Overridden from ImageButton:
-  virtual const gfx::ImageSkia& GetImage(ButtonState state) const OVERRIDE;
-  virtual void SetImage(ButtonState state,
-                        const gfx::ImageSkia* image) OVERRIDE;
+  const gfx::ImageSkia& GetImage(ButtonState state) const override;
+  void SetImage(ButtonState state, const gfx::ImageSkia* image) override;
 
   // Overridden from View:
-  virtual bool GetTooltipText(const gfx::Point& p,
-                              base::string16* tooltip) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  bool GetTooltipText(const gfx::Point& p,
+                      base::string16* tooltip) const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  private:
   // The parent class's images_ member is used for the current images,

@@ -31,9 +31,9 @@
 #include "config.h"
 #include "public/web/WebKit.h"
 
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8GCController.h"
-#include "bindings/v8/V8Initializer.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8GCController.h"
+#include "bindings/core/v8/V8Initializer.h"
 #include "core/Init.h"
 #include "core/animation/AnimationClock.h"
 #include "core/dom/Microtask.h"
@@ -50,6 +50,7 @@
 #include "platform/heap/Heap.h"
 #include "platform/heap/glue/MessageLoopInterruptor.h"
 #include "platform/heap/glue/PendingGCRunner.h"
+#include "platform/scheduler/Scheduler.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrerenderingSupport.h"
 #include "public/platform/WebThread.h"
@@ -69,14 +70,15 @@ namespace {
 
 class EndOfTaskRunner : public WebThread::TaskObserver {
 public:
-    virtual void willProcessTask() OVERRIDE
+    virtual void willProcessTask() override
     {
-        WebCore::AnimationClock::notifyTaskStart();
+        AnimationClock::notifyTaskStart();
     }
-    virtual void didProcessTask() OVERRIDE
+    virtual void didProcessTask() override
     {
-        WebCore::Microtask::performCheckpoint();
-        WebCore::V8GCController::reportDOMMemoryUsageToV8(mainThreadIsolate());
+        Microtask::performCheckpoint();
+        V8GCController::reportDOMMemoryUsageToV8(mainThreadIsolate());
+        V8Initializer::reportRejectedPromises();
     }
 };
 
@@ -84,37 +86,22 @@ public:
 
 static WebThread::TaskObserver* s_endOfTaskRunner = 0;
 static WebThread::TaskObserver* s_pendingGCRunner = 0;
-static WebCore::ThreadState::Interruptor* s_messageLoopInterruptor = 0;
-static WebCore::ThreadState::Interruptor* s_isolateInterruptor = 0;
+static ThreadState::Interruptor* s_messageLoopInterruptor = 0;
+static ThreadState::Interruptor* s_isolateInterruptor = 0;
 
 // Make sure we are not re-initialized in the same address space.
 // Doing so may cause hard to reproduce crashes.
 static bool s_webKitInitialized = false;
 
-static bool generateEntropy(unsigned char* buffer, size_t length)
-{
-    if (Platform::current()) {
-        Platform::current()->cryptographicallyRandomValues(buffer, length);
-        return true;
-    }
-    return false;
-}
-
 void initialize(Platform* platform)
 {
     initializeWithoutV8(platform);
 
-    v8::V8::InitializePlatform(gin::V8Platform::Get());
-    v8::Isolate* isolate = v8::Isolate::New();
-    isolate->Enter();
-    WebCore::V8Initializer::initializeMainThreadIfNeeded(isolate);
-    v8::V8::SetEntropySource(&generateEntropy);
-    v8::V8::SetArrayBufferAllocator(WebCore::v8ArrayBufferAllocator());
-    v8::V8::Initialize();
-    WebCore::V8PerIsolateData::ensureInitialized(isolate);
+    V8Initializer::initializeMainThreadIfNeeded();
 
-    s_isolateInterruptor = new WebCore::V8IsolateInterruptor(v8::Isolate::GetCurrent());
-    WebCore::ThreadState::current()->addInterruptor(s_isolateInterruptor);
+    s_isolateInterruptor = new V8IsolateInterruptor(V8PerIsolateData::mainThreadIsolate());
+    ThreadState::current()->addInterruptor(s_isolateInterruptor);
+    ThreadState::current()->registerTraceDOMWrappers(V8PerIsolateData::mainThreadIsolate(), V8GCController::traceDOMWrappers);
 
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = platform->currentThread()) {
@@ -126,7 +113,7 @@ void initialize(Platform* platform)
 
 v8::Isolate* mainThreadIsolate()
 {
-    return WebCore::V8PerIsolateData::mainThreadIsolate();
+    return V8PerIsolateData::mainThreadIsolate();
 }
 
 static double currentTimeFunction()
@@ -160,21 +147,21 @@ void initializeWithoutV8(Platform* platform)
     WTF::setRandomSource(cryptographicallyRandomValues);
     WTF::initialize(currentTimeFunction, monotonicallyIncreasingTimeFunction);
     WTF::initializeMainThread(callOnMainThreadFunction);
-    WebCore::Heap::init();
+    Heap::init();
 
-    WebCore::ThreadState::attachMainThread();
+    ThreadState::attachMainThread();
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (WebThread* currentThread = platform->currentThread()) {
         ASSERT(!s_pendingGCRunner);
-        s_pendingGCRunner = new WebCore::PendingGCRunner;
+        s_pendingGCRunner = new PendingGCRunner;
         currentThread->addTaskObserver(s_pendingGCRunner);
 
         ASSERT(!s_messageLoopInterruptor);
-        s_messageLoopInterruptor = new WebCore::MessageLoopInterruptor(currentThread);
-        WebCore::ThreadState::current()->addInterruptor(s_messageLoopInterruptor);
+        s_messageLoopInterruptor = new MessageLoopInterruptor(currentThread);
+        ThreadState::current()->addInterruptor(s_messageLoopInterruptor);
     }
 
-    DEFINE_STATIC_LOCAL(WebCore::ModulesInitializer, initializer, ());
+    DEFINE_STATIC_LOCAL(ModulesInitializer, initializer, ());
     initializer.init();
 
     // There are some code paths (for example, running WebKit in the browser
@@ -186,23 +173,24 @@ void initializeWithoutV8(Platform* platform)
     // this, initializing this lazily probably doesn't buy us much.
     WTF::UTF8Encoding();
 
-    WebCore::setIndexedDBClientCreateFunction(blink::IndexedDBClientImpl::create);
+    setIndexedDBClientCreateFunction(IndexedDBClientImpl::create);
 
-    WebCore::MediaPlayer::setMediaEngineCreateFunction(blink::WebMediaPlayerClientImpl::create);
+    MediaPlayer::setMediaEngineCreateFunction(WebMediaPlayerClientImpl::create);
 }
 
 void shutdown()
 {
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (Platform::current()->currentThread()) {
-        ASSERT(s_endOfTaskRunner);
-        Platform::current()->currentThread()->removeTaskObserver(s_endOfTaskRunner);
+        // We don't need to (cannot) remove s_endOfTaskRunner from the current
+        // message loop, because the message loop is already destructed before
+        // the shutdown() is called.
         delete s_endOfTaskRunner;
         s_endOfTaskRunner = 0;
     }
 
     ASSERT(s_isolateInterruptor);
-    WebCore::ThreadState::current()->removeInterruptor(s_isolateInterruptor);
+    ThreadState::current()->removeInterruptor(s_isolateInterruptor);
 
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (Platform::current()->currentThread()) {
@@ -211,19 +199,24 @@ void shutdown()
         s_pendingGCRunner = 0;
 
         ASSERT(s_messageLoopInterruptor);
-        WebCore::ThreadState::current()->removeInterruptor(s_messageLoopInterruptor);
+        ThreadState::current()->removeInterruptor(s_messageLoopInterruptor);
         delete s_messageLoopInterruptor;
         s_messageLoopInterruptor = 0;
     }
 
+    v8::Isolate* isolate = V8PerIsolateData::mainThreadIsolate();
+    V8PerIsolateData::willBeDestroyed(isolate);
+
+    // Make sure we stop WorkerThreads before the main thread's ThreadState
+    // and later shutdown steps starts freeing up resources needed during
+    // worker termination.
+    WorkerThread::terminateAndWaitForAllWorkers();
+
     // Detach the main thread before starting the shutdown sequence
     // so that the main thread won't get involved in a GC during the shutdown.
-    WebCore::ThreadState::detachMainThread();
+    ThreadState::detachMainThread();
 
-    v8::Isolate* isolate = WebCore::V8PerIsolateData::mainThreadIsolate();
-    WebCore::V8PerIsolateData::dispose(isolate);
-    isolate->Exit();
-    isolate->Dispose();
+    V8PerIsolateData::destroy(isolate);
 
     shutdownWithoutV8();
 }
@@ -231,8 +224,9 @@ void shutdown()
 void shutdownWithoutV8()
 {
     ASSERT(!s_endOfTaskRunner);
-    WebCore::shutdown();
-    WebCore::Heap::shutdown();
+    CoreInitializer::shutdown();
+    Scheduler::shutdown();
+    Heap::shutdown();
     WTF::shutdown();
     Platform::shutdown();
     WebPrerenderingSupport::shutdown();
@@ -240,28 +234,28 @@ void shutdownWithoutV8()
 
 void setLayoutTestMode(bool value)
 {
-    WebCore::setIsRunningLayoutTest(value);
+    LayoutTestSupport::setIsRunningLayoutTest(value);
 }
 
 bool layoutTestMode()
 {
-    return WebCore::isRunningLayoutTest();
+    return LayoutTestSupport::isRunningLayoutTest();
 }
 
 void setFontAntialiasingEnabledForTest(bool value)
 {
-    WebCore::setFontAntialiasingEnabledForTest(value);
+    LayoutTestSupport::setFontAntialiasingEnabledForTest(value);
 }
 
 bool fontAntialiasingEnabledForTest()
 {
-    return WebCore::isFontAntialiasingEnabledForTest();
+    return LayoutTestSupport::isFontAntialiasingEnabledForTest();
 }
 
 void enableLogChannel(const char* name)
 {
 #if !LOG_DISABLED
-    WTFLogChannel* channel = WebCore::getChannelFromName(name);
+    WTFLogChannel* channel = getChannelFromName(name);
     if (channel)
         channel->state = WTFLogChannelOn;
 #endif // !LOG_DISABLED
@@ -269,7 +263,7 @@ void enableLogChannel(const char* name)
 
 void resetPluginCache(bool reloadPages)
 {
-    WebCore::Page::refreshPlugins(reloadPages);
+    Page::refreshPlugins(reloadPages);
 }
 
 } // namespace blink

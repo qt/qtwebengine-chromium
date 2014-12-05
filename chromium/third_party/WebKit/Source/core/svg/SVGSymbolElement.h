@@ -25,23 +25,23 @@
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFitToViewBox.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGSymbolElement FINAL : public SVGElement,
+class SVGSymbolElement final : public SVGElement,
                                public SVGFitToViewBox {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGSymbolElement);
 
 private:
     explicit SVGSymbolElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGSymbolElement_h

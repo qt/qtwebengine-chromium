@@ -106,7 +106,7 @@ protected:
         }
 
         // Name, size of the file, and whether or not it is premultiplied.
-        SkString header(SkOSPath::SkBasename(fCurrFile.c_str()));
+        SkString header(SkOSPath::Basename(fCurrFile.c_str()));
         header.appendf("     [%dx%d]     %s", fBitmap.width(), fBitmap.height(),
                        (fPremul ? "premultiplied" : "unpremultiplied"));
         canvas->drawText(header.c_str(), header.size(), 0, height, paint);
@@ -128,11 +128,7 @@ protected:
             // Copy it to a bitmap which can be drawn, converting
             // to premultiplied:
             SkBitmap bm;
-            if (!bm.allocN32Pixels(fBitmap.width(), fBitmap.height())) {
-                SkString errMsg("allocPixels failed");
-                canvas->drawText(errMsg.c_str(), errMsg.size(), 0, height, paint);
-                return;
-            }
+            bm.allocN32Pixels(fBitmap.width(), fBitmap.height());
             for (int i = 0; i < fBitmap.width(); ++i) {
                 for (int j = 0; j < fBitmap.height(); ++j) {
                     *bm.getAddr32(i, j) = premultiply_unpmcolor(*fBitmap.getAddr32(i, j));
@@ -167,7 +163,7 @@ private:
                 return;
             }
         }
-        fCurrFile = SkOSPath::SkPathJoin(fResPath.c_str(), basename.c_str());
+        fCurrFile = SkOSPath::Join(fResPath.c_str(), basename.c_str());
         this->decodeCurrFile();
     }
 
@@ -186,7 +182,7 @@ private:
             decoder->setRequireUnpremultipliedColors(true);
         }
         fDecodeSucceeded = decoder->decode(&stream, &fBitmap, kN32_SkColorType,
-                                           SkImageDecoder::kDecodePixels_Mode);
+                SkImageDecoder::kDecodePixels_Mode) != SkImageDecoder::kFailure;
         this->inval(NULL);
     }
 

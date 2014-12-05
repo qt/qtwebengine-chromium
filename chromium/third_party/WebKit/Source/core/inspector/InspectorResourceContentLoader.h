@@ -10,20 +10,21 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSStyleSheetResource;
 class Page;
 class Resource;
 class VoidCallback;
 
-class InspectorResourceContentLoader FINAL {
+class InspectorResourceContentLoader final : public NoBaseWillBeGarbageCollectedFinalized<InspectorResourceContentLoader> {
     WTF_MAKE_NONCOPYABLE(InspectorResourceContentLoader);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    InspectorResourceContentLoader(Page*);
-    void addListener(PassOwnPtr<VoidCallback>);
+    explicit InspectorResourceContentLoader(Page*);
+    void ensureResourcesContentLoaded(VoidCallback*);
     ~InspectorResourceContentLoader();
+    void trace(Visitor*);
+    void dispose();
     bool hasFinished();
     void stop();
 
@@ -32,16 +33,19 @@ private:
 
     void resourceFinished(ResourceClient*);
     void checkDone();
+    void start();
 
-    Vector<OwnPtr<VoidCallback> > m_callbacks;
+    PersistentHeapVectorWillBeHeapVector<Member<VoidCallback> > m_callbacks;
     bool m_allRequestsStarted;
+    bool m_started;
+    RawPtrWillBeMember<Page> m_page;
     HashSet<ResourceClient*> m_pendingResourceClients;
     Vector<ResourcePtr<Resource> > m_resources;
 
     friend class ResourceClient;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorResourceContentLoader_h)

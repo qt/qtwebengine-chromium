@@ -30,31 +30,33 @@
 #include "platform/audio/HRTFDatabaseLoader.h"
 #include "platform/audio/Panner.h"
 
-namespace WebCore {
+namespace blink {
 
-class PLATFORM_EXPORT HRTFPanner : public Panner {
+class PLATFORM_EXPORT HRTFPanner final : public Panner {
 public:
     HRTFPanner(float sampleRate, HRTFDatabaseLoader*);
     virtual ~HRTFPanner();
 
     // Panner
-    virtual void pan(double azimuth, double elevation, const AudioBus* inputBus, AudioBus* outputBus, size_t framesToProcess) OVERRIDE;
-    virtual void reset() OVERRIDE;
+    virtual void pan(double azimuth, double elevation, const AudioBus* inputBus, AudioBus* outputBus, size_t framesToProcess) override;
+    virtual void reset() override;
 
     size_t fftSize() const { return fftSizeForSampleRate(m_sampleRate); }
     static size_t fftSizeForSampleRate(float sampleRate);
 
     float sampleRate() const { return m_sampleRate; }
 
-    virtual double tailTime() const OVERRIDE;
-    virtual double latencyTime() const OVERRIDE;
+    virtual double tailTime() const override;
+    virtual double latencyTime() const override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     // Given an azimuth angle in the range -180 -> +180, returns the corresponding azimuth index for the database,
     // and azimuthBlend which is an interpolation value from 0 -> 1.
     int calculateDesiredAzimuthIndexAndBlend(double azimuth, double& azimuthBlend);
 
-    RefPtr<HRTFDatabaseLoader> m_databaseLoader;
+    Member<HRTFDatabaseLoader> m_databaseLoader;
 
     float m_sampleRate;
 
@@ -104,6 +106,6 @@ private:
     AudioFloatArray m_tempR2;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HRTFPanner_h

@@ -23,31 +23,77 @@
 #include "core/svg/SVGFEBlendElement.h"
 
 #include "core/SVGNames.h"
+#include "platform/graphics/filters/FEBlend.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
-template<> const SVGEnumerationStringEntries& getStaticStringEntries<BlendModeType>()
+static WebBlendMode toWebBlendMode(SVGFEBlendElement::Mode mode)
+{
+#define MAP_BLEND_MODE(MODENAME)            \
+    case SVGFEBlendElement::Mode##MODENAME: \
+        return WebBlendMode##MODENAME
+
+    switch (mode) {
+        MAP_BLEND_MODE(Normal);
+        MAP_BLEND_MODE(Multiply);
+        MAP_BLEND_MODE(Screen);
+        MAP_BLEND_MODE(Darken);
+        MAP_BLEND_MODE(Lighten);
+        MAP_BLEND_MODE(Overlay);
+        MAP_BLEND_MODE(ColorDodge);
+        MAP_BLEND_MODE(ColorBurn);
+        MAP_BLEND_MODE(HardLight);
+        MAP_BLEND_MODE(SoftLight);
+        MAP_BLEND_MODE(Difference);
+        MAP_BLEND_MODE(Exclusion);
+        MAP_BLEND_MODE(Hue);
+        MAP_BLEND_MODE(Saturation);
+        MAP_BLEND_MODE(Color);
+        MAP_BLEND_MODE(Luminosity);
+    default:
+        ASSERT_NOT_REACHED();
+        return WebBlendModeNormal;
+    }
+#undef MAP_BLEND_MODE
+}
+
+template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGFEBlendElement::Mode>()
 {
     DEFINE_STATIC_LOCAL(SVGEnumerationStringEntries, entries, ());
     if (entries.isEmpty()) {
-        entries.append(std::make_pair(FEBLEND_MODE_NORMAL, "normal"));
-        entries.append(std::make_pair(FEBLEND_MODE_MULTIPLY, "multiply"));
-        entries.append(std::make_pair(FEBLEND_MODE_SCREEN, "screen"));
-        entries.append(std::make_pair(FEBLEND_MODE_DARKEN, "darken"));
-        entries.append(std::make_pair(FEBLEND_MODE_LIGHTEN, "lighten"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeNormal, "normal"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeMultiply, "multiply"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeScreen, "screen"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeDarken, "darken"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeLighten, "lighten"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeOverlay, "overlay"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeColorDodge, "color-dodge"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeColorBurn, "color-burn"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeHardLight, "hard-light"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeSoftLight, "soft-light"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeDifference, "difference"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeExclusion, "exclusion"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeHue, "hue"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeSaturation, "saturation"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeColor, "color"));
+        entries.append(std::make_pair(SVGFEBlendElement::ModeLuminosity, "luminosity"));
     }
     return entries;
+}
+
+template<> unsigned short getMaxExposedEnumValue<SVGFEBlendElement::Mode>()
+{
+    return SVGFEBlendElement::ModeLighten;
 }
 
 inline SVGFEBlendElement::SVGFEBlendElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feBlendTag, document)
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
     , m_in2(SVGAnimatedString::create(this, SVGNames::in2Attr, SVGString::create()))
-    , m_mode(SVGAnimatedEnumeration<BlendModeType>::create(this, SVGNames::modeAttr, FEBLEND_MODE_NORMAL))
+    , m_mode(SVGAnimatedEnumeration<Mode>::create(this, SVGNames::modeAttr, SVGFEBlendElement::ModeNormal))
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_in1);
     addToPropertyMap(m_in2);
     addToPropertyMap(m_mode);
@@ -68,30 +114,14 @@ bool SVGFEBlendElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFEBlendElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::in2Attr)
-        m_in2->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::modeAttr)
-        m_mode->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFEBlendElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
 {
     FEBlend* blend = static_cast<FEBlend*>(effect);
     if (attrName == SVGNames::modeAttr)
-        return blend->setBlendMode(m_mode->currentValue()->enumValue());
+        return blend->setBlendMode(toWebBlendMode(m_mode->currentValue()->enumValue()));
 
     ASSERT_NOT_REACHED();
     return false;
@@ -127,7 +157,7 @@ PassRefPtr<FilterEffect> SVGFEBlendElement::build(SVGFilterBuilder* filterBuilde
     if (!input1 || !input2)
         return nullptr;
 
-    RefPtr<FilterEffect> effect = FEBlend::create(filter, m_mode->currentValue()->enumValue());
+    RefPtr<FilterEffect> effect = FEBlend::create(filter, toWebBlendMode(m_mode->currentValue()->enumValue()));
     FilterEffectVector& inputEffects = effect->inputEffects();
     inputEffects.reserveCapacity(2);
     inputEffects.append(input1);

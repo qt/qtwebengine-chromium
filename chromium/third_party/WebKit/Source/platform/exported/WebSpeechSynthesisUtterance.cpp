@@ -31,16 +31,14 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
-WebSpeechSynthesisUtterance::WebSpeechSynthesisUtterance(WebCore::PlatformSpeechSynthesisUtterance* utterance)
+WebSpeechSynthesisUtterance::WebSpeechSynthesisUtterance(PlatformSpeechSynthesisUtterance* utterance)
     : m_private(utterance)
 {
 }
 
-WebSpeechSynthesisUtterance& WebSpeechSynthesisUtterance::operator=(WebCore::PlatformSpeechSynthesisUtterance* utterance)
+WebSpeechSynthesisUtterance& WebSpeechSynthesisUtterance::operator=(PlatformSpeechSynthesisUtterance* utterance)
 {
     m_private = utterance;
     return *this;

@@ -33,7 +33,10 @@ class MessageLoop;
 
 namespace content {
 class FlingCurveConfiguration;
+class NotificationDispatcher;
+class ThreadSafeSender;
 class WebCryptoImpl;
+class WebGeofencingProviderImpl;
 
 class CONTENT_EXPORT BlinkPlatformImpl
     : NON_EXPORTED_BASE(public blink::Platform) {
@@ -63,26 +66,29 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual size_t numberOfProcessors();
 
   virtual void startHeapProfiling(const blink::WebString& prefix);
-  virtual void stopHeapProfiling() OVERRIDE;
+  virtual void stopHeapProfiling();
   virtual void dumpHeapProfiling(const blink::WebString& reason);
-  virtual blink::WebString getHeapProfile() OVERRIDE;
+  virtual blink::WebString getHeapProfile();
 
   virtual bool processMemorySizesInBytes(size_t* private_bytes,
                                          size_t* shared_bytes);
   virtual bool memoryAllocatorWasteInBytes(size_t* size);
   virtual blink::WebDiscardableMemory* allocateAndLockDiscardableMemory(
       size_t bytes);
-  virtual size_t maxDecodedImageBytes() OVERRIDE;
+  virtual size_t maxDecodedImageBytes();
   virtual blink::WebURLLoader* createURLLoader();
-  virtual blink::WebSocketStreamHandle* createSocketStreamHandle();
-  virtual blink::WebSocketHandle* createWebSocketHandle() OVERRIDE;
+  virtual blink::WebSocketHandle* createWebSocketHandle();
   virtual blink::WebString userAgent();
   virtual blink::WebData parseDataURL(
       const blink::WebURL& url, blink::WebString& mimetype,
       blink::WebString& charset);
   virtual blink::WebURLError cancelledError(const blink::WebURL& url) const;
+  virtual bool isReservedIPAddress(
+      const blink::WebSecurityOrigin&) const;
+  virtual bool isReservedIPAddress(const blink::WebURL&) const;
   virtual blink::WebThread* createThread(const char* name);
   virtual blink::WebThread* currentThread();
+  virtual void yieldCurrentThread();
   virtual blink::WebWaitableEvent* createWaitableEvent();
   virtual blink::WebWaitableEvent* waitMultipleEvents(
       const blink::WebVector<blink::WebWaitableEvent*>& events);
@@ -143,15 +149,14 @@ class CONTENT_EXPORT BlinkPlatformImpl
   virtual blink::WebGestureCurve* createFlingAnimationCurve(
       blink::WebGestureDevice device_source,
       const blink::WebFloatPoint& velocity,
-      const blink::WebSize& cumulative_scroll) OVERRIDE;
+      const blink::WebSize& cumulative_scroll);
   virtual void didStartWorkerRunLoop(
-      const blink::WebWorkerRunLoop& runLoop) OVERRIDE;
+      const blink::WebWorkerRunLoop& runLoop);
   virtual void didStopWorkerRunLoop(
-      const blink::WebWorkerRunLoop& runLoop) OVERRIDE;
-  virtual blink::WebCrypto* crypto() OVERRIDE;
-
-  void SetFlingCurveParameters(const std::vector<float>& new_touchpad,
-                               const std::vector<float>& new_touchscreen);
+      const blink::WebWorkerRunLoop& runLoop);
+  virtual blink::WebCrypto* crypto();
+  virtual blink::WebGeofencingProvider* geofencingProvider();
+  virtual blink::WebNotificationManager* notificationManager();
 
   void SuspendSharedTimer();
   void ResumeSharedTimer();
@@ -173,9 +178,12 @@ class CONTENT_EXPORT BlinkPlatformImpl
   double shared_timer_fire_time_;
   bool shared_timer_fire_time_was_set_while_suspended_;
   int shared_timer_suspended_;  // counter
-  scoped_ptr<FlingCurveConfiguration> fling_curve_configuration_;
   base::ThreadLocalStorage::Slot current_thread_slot_;
   WebCryptoImpl web_crypto_;
+  scoped_ptr<WebGeofencingProviderImpl> geofencing_provider_;
+
+  scoped_refptr<ThreadSafeSender> thread_safe_sender_;
+  scoped_refptr<NotificationDispatcher> notification_dispatcher_;
 };
 
 }  // namespace content

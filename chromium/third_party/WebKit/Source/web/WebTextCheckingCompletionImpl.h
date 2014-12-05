@@ -31,28 +31,27 @@
 #ifndef WebTextCheckingCompletionImpl_h
 #define WebTextCheckingCompletionImpl_h
 
+#include "platform/heap/Handle.h"
 #include "platform/text/TextChecking.h"
 #include "public/web/WebTextCheckingCompletion.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
 
-class EditorClientImpl;
-
-class WebTextCheckingCompletionImpl FINAL : public WebTextCheckingCompletion {
+class WebTextCheckingCompletionImpl final : public WebTextCheckingCompletion {
 public:
-    explicit WebTextCheckingCompletionImpl(WTF::PassRefPtr<WebCore::TextCheckingRequest> request)
+    explicit WebTextCheckingCompletionImpl(PassRefPtrWillBeRawPtr<TextCheckingRequest> request)
         : m_request(request)
     {
     }
 
-    virtual void didFinishCheckingText(const WebVector<WebTextCheckingResult>&) OVERRIDE;
-    virtual void didCancelCheckingText() OVERRIDE;
+    virtual void didFinishCheckingText(const WebVector<WebTextCheckingResult>&) override;
+    virtual void didCancelCheckingText() override;
 
 private:
     virtual ~WebTextCheckingCompletionImpl() { }
 
-    WTF::RefPtr<WebCore::TextCheckingRequest> m_request;
+    RefPtrWillBePersistent<TextCheckingRequest> m_request;
 };
 
 } // namespace blink

@@ -28,9 +28,9 @@
 
 #include "core/html/HTMLDocument.h"
 
-namespace WebCore {
+namespace blink {
 
-class SinkDocument FINAL : public HTMLDocument {
+class SinkDocument final : public HTMLDocument {
 public:
     static PassRefPtrWillBeRawPtr<SinkDocument> create(const DocumentInit& initializer = DocumentInit())
     {
@@ -40,10 +40,10 @@ public:
 private:
     SinkDocument(const DocumentInit&);
 
-    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<DocumentParser> createParser() override;
 };
 
 
-}; // namespace WebCore
+}; // namespace blink
 
 #endif // SinkDocument_h

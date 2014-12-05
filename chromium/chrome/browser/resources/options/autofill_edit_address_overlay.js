@@ -3,24 +3,26 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
    * AutofillEditAddressOverlay class
    * Encapsulated handling of the 'Add Page' overlay page.
-   * @class
+   * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function AutofillEditAddressOverlay() {
-    OptionsPage.call(this, 'autofillEditAddress',
-                     loadTimeData.getString('autofillEditAddressTitle'),
-                     'autofill-edit-address-overlay');
+    Page.call(this, 'autofillEditAddress',
+              loadTimeData.getString('autofillEditAddressTitle'),
+              'autofill-edit-address-overlay');
   }
 
   cr.addSingletonGetter(AutofillEditAddressOverlay);
 
   AutofillEditAddressOverlay.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The GUID of the loaded address.
@@ -44,11 +46,9 @@ cr.define('options', function() {
      */
     savedFieldValues_: {},
 
-    /**
-     * Initializes the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.createMultiValueLists_();
 
@@ -154,7 +154,7 @@ cr.define('options', function() {
       this.guid_ = '';
       this.languageCode_ = '';
       this.savedInputFields_ = {};
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
     },
 
     /**
@@ -207,7 +207,7 @@ cr.define('options', function() {
 
     /**
      * Sets the value of each input field according to |address|.
-     * @param {object} address The object with values to use.
+     * @param {Object} address The object with values to use.
      * @private
      */
     setInputFields_: function(address) {
@@ -234,17 +234,17 @@ cr.define('options', function() {
       var inputFields = this.getInputFields_();
       var address = [
         this.guid_,
-        inputFields.fullName || [],
-        inputFields.companyName || '',
-        inputFields.addrLines || '',
-        inputFields.dependentLocality || '',
-        inputFields.city || '',
-        inputFields.state || '',
-        inputFields.postalCode || '',
-        inputFields.sortingCode || '',
-        inputFields.country || '',
-        inputFields.phone || [],
-        inputFields.email || [],
+        inputFields['fullName'] || [],
+        inputFields['companyName'] || '',
+        inputFields['addrLines'] || '',
+        inputFields['dependentLocality'] || '',
+        inputFields['city'] || '',
+        inputFields['state'] || '',
+        inputFields['postalCode'] || '',
+        inputFields['sortingCode'] || '',
+        inputFields['country'] || '',
+        inputFields['phone'] || [],
+        inputFields['email'] || [],
         this.languageCode_,
       ];
       chrome.send('setAddress', address);
@@ -323,6 +323,15 @@ cr.define('options', function() {
         option.disabled = countryList[i].value == 'separator';
         countrySelect.appendChild(option);
       }
+    },
+
+    /**
+     * Called to prepare the overlay when a new address is being added.
+     * @private
+     */
+    prepForNewAddress_: function() {
+      // Focus the first element.
+      this.pageDiv.querySelector('input').focus();
     },
 
     /**
@@ -408,6 +417,10 @@ cr.define('options', function() {
     },
   };
 
+  AutofillEditAddressOverlay.prepForNewAddress = function() {
+    AutofillEditAddressOverlay.getInstance().prepForNewAddress_();
+  };
+
   AutofillEditAddressOverlay.loadAddress = function(address) {
     AutofillEditAddressOverlay.getInstance().loadAddress_(address);
   };
@@ -423,7 +436,8 @@ cr.define('options', function() {
   AutofillEditAddressOverlay.setValidatedPhoneNumbers = function(numbers) {
     var instance = AutofillEditAddressOverlay.getInstance();
     var phoneList = instance.pageDiv.querySelector('[field=phone]');
-    instance.setMultiValueList_(phoneList, numbers);
+    instance.setMultiValueList_(assertInstanceof(phoneList, cr.ui.List),
+                                numbers);
     phoneList.didReceiveValidationResult();
   };
 

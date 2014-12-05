@@ -11,6 +11,7 @@
 #include <openssl/sha.h>
 
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 
 using base::StringPiece;
 
@@ -33,14 +34,13 @@ bool ChannelIDVerifier::VerifyRaw(StringPiece key,
     return false;
   }
 
-  crypto::ScopedOpenSSL<EC_GROUP, EC_GROUP_free> p256(
+  crypto::ScopedOpenSSL<EC_GROUP, EC_GROUP_free>::Type p256(
       EC_GROUP_new_by_curve_name(NID_X9_62_prime256v1));
-  if (p256.get() == NULL) {
+  if (p256.get() == nullptr) {
     return false;
   }
 
-  crypto::ScopedOpenSSL<BIGNUM, BN_free> x(BN_new()), y(BN_new()),
-                                         r(BN_new()), s(BN_new());
+  crypto::ScopedBIGNUM x(BN_new()), y(BN_new()), r(BN_new()), s(BN_new());
 
   ECDSA_SIG sig;
   sig.r = r.get();
@@ -50,23 +50,23 @@ bool ChannelIDVerifier::VerifyRaw(StringPiece key,
   const uint8* signature_bytes =
       reinterpret_cast<const uint8*>(signature.data());
 
-  if (BN_bin2bn(key_bytes       +  0, 32, x.get()) == NULL ||
-      BN_bin2bn(key_bytes       + 32, 32, y.get()) == NULL ||
-      BN_bin2bn(signature_bytes +  0, 32, sig.r) == NULL ||
-      BN_bin2bn(signature_bytes + 32, 32, sig.s) == NULL) {
+  if (BN_bin2bn(key_bytes       +  0, 32, x.get()) == nullptr ||
+      BN_bin2bn(key_bytes       + 32, 32, y.get()) == nullptr ||
+      BN_bin2bn(signature_bytes +  0, 32, sig.r) == nullptr ||
+      BN_bin2bn(signature_bytes + 32, 32, sig.s) == nullptr) {
     return false;
   }
 
-  crypto::ScopedOpenSSL<EC_POINT, EC_POINT_free> point(
+  crypto::ScopedOpenSSL<EC_POINT, EC_POINT_free>::Type point(
       EC_POINT_new(p256.get()));
-  if (point.get() == NULL ||
+  if (point.get() == nullptr ||
       !EC_POINT_set_affine_coordinates_GFp(p256.get(), point.get(), x.get(),
-                                           y.get(), NULL)) {
+                                           y.get(), nullptr)) {
     return false;
   }
 
-  crypto::ScopedOpenSSL<EC_KEY, EC_KEY_free> ecdsa_key(EC_KEY_new());
-  if (ecdsa_key.get() == NULL ||
+  crypto::ScopedEC_KEY ecdsa_key(EC_KEY_new());
+  if (ecdsa_key.get() == nullptr ||
       !EC_KEY_set_group(ecdsa_key.get(), p256.get()) ||
       !EC_KEY_set_public_key(ecdsa_key.get(), point.get())) {
     return false;

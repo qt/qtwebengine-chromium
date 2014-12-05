@@ -4,6 +4,11 @@
 
 // This file defines the names used by GC infrastructure.
 
+// TODO: Restructure the name determination to use fully qualified names (ala,
+// blink::Foo) so that the plugin can be enabled for all of chromium. Doing so
+// would allow us to catch errors with structures outside of blink that might
+// have unsafe pointers to GC allocated blink structures.
+
 #ifndef TOOLS_BLINK_GC_PLUGIN_CONFIG_H_
 #define TOOLS_BLINK_GC_PLUGIN_CONFIG_H_
 
@@ -17,6 +22,7 @@ const char kFinalizeName[] = "finalizeGarbageCollectedObject";
 const char kTraceAfterDispatchName[] = "traceAfterDispatch";
 const char kRegisterWeakMembersName[] = "registerWeakMembers";
 const char kHeapAllocatorName[] = "HeapAllocator";
+const char kTraceIfNeededName[] = "TraceIfNeeded";
 
 class Config {
  public:
@@ -91,9 +97,26 @@ class Config {
            name == "PersistentHeapHashMap";
   }
 
+  // Following http://crrev.com/369633033 (Blink r177436),
+  // ignore blink::ScriptWrappable's destructor.
+  // TODO: remove when its non-Oilpan destructor is removed.
+  static bool HasIgnorableDestructor(const std::string& ns,
+                                     const std::string& name) {
+    return ns == "blink" && name == "ScriptWrappable";
+  }
+
   // Assumes name is a valid collection name.
   static size_t CollectionDimension(const std::string& name) {
     return (IsHashMap(name) || name == "pair") ? 2 : 1;
+  }
+
+  static bool IsDummyBase(const std::string& name) {
+    return name == "DummyBase";
+  }
+
+  static bool IsRefCountedBase(const std::string& name) {
+    return name == "RefCounted" ||
+           name == "ThreadSafeRefCounted";
   }
 
   static bool IsGCMixinBase(const std::string& name) {
@@ -102,13 +125,20 @@ class Config {
 
   static bool IsGCFinalizedBase(const std::string& name) {
     return name == "GarbageCollectedFinalized" ||
-           name == "RefCountedGarbageCollected";
+           name == "RefCountedGarbageCollected" ||
+           name == "ThreadSafeRefCountedGarbageCollected";
   }
 
   static bool IsGCBase(const std::string& name) {
     return name == "GarbageCollected" ||
            IsGCFinalizedBase(name) ||
            IsGCMixinBase(name);
+  }
+
+  // Returns true of the base classes that do not need a vtable entry for trace
+  // because they cannot possibly initiate a GC during construction.
+  static bool IsSafePolymorphicBase(const std::string& name) {
+    return IsGCBase(name) || IsDummyBase(name) || IsRefCountedBase(name);
   }
 
   static bool IsAnnotated(clang::Decl* decl, const std::string& anno) {
@@ -131,7 +161,7 @@ class Config {
 
   static bool IsVisitor(const std::string& name) { return name == "Visitor"; }
 
-  static bool IsTraceMethod(clang::CXXMethodDecl* method,
+  static bool IsTraceMethod(clang::FunctionDecl* method,
                             bool* isTraceAfterDispatch = 0) {
     if (method->getNumParams() != 1)
       return false;

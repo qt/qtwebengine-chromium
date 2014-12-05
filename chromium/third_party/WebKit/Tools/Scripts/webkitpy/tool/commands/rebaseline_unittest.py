@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.checkout.baselineoptimizer import BaselineOptimizer
 from webkitpy.common.checkout.scm.scm_mock import MockSCM
@@ -36,7 +36,6 @@ from webkitpy.common.net.layouttestresults import LayoutTestResults
 from webkitpy.common.system.executive_mock import MockExecutive
 from webkitpy.common.system.executive_mock import MockExecutive2
 from webkitpy.common.system.outputcapture import OutputCapture
-from webkitpy.thirdparty.mock import Mock
 from webkitpy.tool.commands.rebaseline import *
 from webkitpy.tool.mocktool import MockTool, MockOptions
 
@@ -53,6 +52,8 @@ class _BaseTestCase(unittest.TestCase):
         self.command.bind_to_tool(self.tool)
         self.lion_port = self.tool.port_factory.get_from_builder_name("WebKit Mac10.7")
         self.lion_expectations_path = self.lion_port.path_to_generic_test_expectations_file()
+        self.tool.filesystem.write_text_file(self.tool.filesystem.join(self.lion_port.layout_tests_dir(), "VirtualTestSuites"),
+                                             '[]')
 
         # FIXME: crbug.com/279494. We should override builders._exact_matches
         # here to point to a set of test ports and restore the value in
@@ -369,7 +370,7 @@ class TestRebaselineJson(_BaseTestCase):
 
         # Note that we have one run_in_parallel() call followed by a run_command()
         self.assertEqual(self.tool.executive.calls,
-            [[['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'userscripts/first-test.html', '--verbose']]])
+            [[['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'userscripts/first-test.html', '--verbose']]])
 
     def test_rebaseline_all(self):
         self._setup_mock_builder_data()
@@ -380,9 +381,9 @@ class TestRebaselineJson(_BaseTestCase):
 
         # Note that we have one run_in_parallel() call followed by a run_command()
         self.assertEqual(self.tool.executive.calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'userscripts/first-test.html', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'userscripts/first-test.html', '--verbose']]])
 
     def test_rebaseline_debug(self):
         self._setup_mock_builder_data()
@@ -393,9 +394,9 @@ class TestRebaselineJson(_BaseTestCase):
 
         # Note that we have one run_in_parallel() call followed by a run_command()
         self.assertEqual(self.tool.executive.calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'userscripts/first-test.html', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'userscripts/first-test.html', '--verbose']]])
 
     def test_no_optimize(self):
         self._setup_mock_builder_data()
@@ -406,8 +407,8 @@ class TestRebaselineJson(_BaseTestCase):
 
         # Note that we have only one run_in_parallel() call
         self.assertEqual(self.tool.executive.calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder (Debug)', '--test', 'userscripts/first-test.html', '--verbose']]])
 
     def test_results_directory(self):
         self._setup_mock_builder_data()
@@ -418,8 +419,8 @@ class TestRebaselineJson(_BaseTestCase):
 
         # Note that we have only one run_in_parallel() call
         self.assertEqual(self.tool.executive.calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--results-directory', '/tmp', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--results-directory', '/tmp', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--results-directory', '/tmp', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--results-directory', '/tmp', '--verbose']]])
 
 class TestRebaselineJsonUpdatesExpectationsFiles(_BaseTestCase):
     command_constructor = RebaselineJson
@@ -542,8 +543,8 @@ class TestRebaseline(_BaseTestCase):
 
         calls = filter(lambda x: x != ['qmake', '-v'] and x[0] != 'perl', self.tool.executive.calls)
         self.assertEqual(calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose']]])
 
     def test_rebaseline_directory(self):
         self.command._builders_to_pull_from = lambda: [MockBuilder('MOCK builder')]
@@ -564,10 +565,10 @@ class TestRebaseline(_BaseTestCase):
 
         calls = filter(lambda x: x != ['qmake', '-v'] and x[0] != 'perl', self.tool.executive.calls)
         self.assertEqual(calls,
-            [[['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose'],
-              ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/second-test.html', '--verbose']],
-             [['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose'],
-              ['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/second-test.html', '--verbose']]])
+            [[['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose'],
+              ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/second-test.html', '--verbose']],
+             [['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/first-test.html', '--verbose'],
+              ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK builder', '--test', 'userscripts/second-test.html', '--verbose']]])
 
 
 class MockLineRemovingExecutive(MockExecutive):
@@ -579,7 +580,7 @@ class MockLineRemovingExecutive(MockExecutive):
         for cmd_line, cwd in commands:
             out = self.run_command(cmd_line, cwd=cwd)
             if 'rebaseline-test-internal' in cmd_line:
-                out = '{"add": [], "remove-lines": [{"test": "%s", "builder": "%s"}], "delete": []}\n' % (cmd_line[7], cmd_line[5])
+                out = '{"add": [], "remove-lines": [{"test": "%s", "builder": "%s"}], "delete": []}\n' % (cmd_line[8], cmd_line[6])
             command_outputs.append([0, out, ''])
 
         new_calls = self.calls[num_previous_calls:]
@@ -659,17 +660,17 @@ class TestRebaselineExpectations(_BaseTestCase):
         calls = filter(lambda x: x != ['qmake', '-v'], self.tool.executive.calls)
         self.assertEqual(self.tool.executive.calls, [
             [
-                ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'userscripts/another-test.html'],
-                ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/another-test.html'],
-                ['echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK Leopard', '--test', 'userscripts/images.svg'],
-                ['echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/images.svg']
+                ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'userscripts/another-test.html'],
+                ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/another-test.html'],
+                ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK Leopard', '--test', 'userscripts/images.svg'],
+                ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/images.svg'],
             ],
             [
-                ['echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'userscripts/another-test.html'],
-                ['echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/another-test.html'],
-                ['echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK Leopard', '--test', 'userscripts/images.svg'],
-                ['echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/images.svg']
-            ]
+                ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'userscripts/another-test.html'],
+                ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/another-test.html'],
+                ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK Leopard', '--test', 'userscripts/images.svg'],
+                ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'userscripts/images.svg'],
+            ],
         ])
 
     def test_rebaseline_expectations_noop(self):
@@ -770,12 +771,12 @@ class TestOptimizeBaselines(_BaseTestCase):
     def setUp(self):
         super(TestOptimizeBaselines, self).setUp()
 
-    def test_modify_scm(self):
         # FIXME: This is a hack to get the unittest and the BaselineOptimize to both use /mock-checkout
         # instead of one using /mock-checkout and one using /test-checkout.
         default_port = self.tool.port_factory.get()
         self.tool.port_factory.get = lambda port_name=None: default_port
 
+    def test_modify_scm(self):
         test_port = self.tool.port_factory.get('test')
         self._write_test_file(test_port, 'another/test.html', "Dummy test contents")
         self._write_test_file(test_port, 'platform/mac-snowleopard/another/test-expected.txt', "result A")
@@ -798,11 +799,6 @@ class TestOptimizeBaselines(_BaseTestCase):
         self.assertTrue(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'another/test-expected.txt')))
 
     def test_no_modify_scm(self):
-        # FIXME: This is a hack to get the unittest and the BaselineOptimize to both use /mock-checkout
-        # instead of one using /mock-checkout and one using /test-checkout.
-        default_port = self.tool.port_factory.get()
-        self.tool.port_factory.get = lambda port_name=None: default_port
-
         test_port = self.tool.port_factory.get('test')
         self._write_test_file(test_port, 'another/test.html', "Dummy test contents")
         self._write_test_file(test_port, 'platform/mac-snowleopard/another/test-expected.txt', "result A")
@@ -823,6 +819,34 @@ class TestOptimizeBaselines(_BaseTestCase):
 
         self.assertFalse(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'platform/mac/another/test-expected.txt')))
         self.assertTrue(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'another/test-expected.txt')))
+
+    def test_optimize_all_suffixes_by_default(self):
+        test_port = self.tool.port_factory.get('test')
+        self._write_test_file(test_port, 'another/test.html', "Dummy test contents")
+        self._write_test_file(test_port, 'platform/mac-snowleopard/another/test-expected.txt', "result A")
+        self._write_test_file(test_port, 'platform/mac-snowleopard/another/test-expected.png', "result A png")
+        self._write_test_file(test_port, 'another/test-expected.txt', "result A")
+        self._write_test_file(test_port, 'another/test-expected.png', "result A png")
+
+        old_exact_matches = builders._exact_matches
+        try:
+            builders._exact_matches = {
+                "MOCK Leopard Debug": {"port_name": "test-mac-snowleopard", "specifiers": set(["mock-specifier"])},
+            }
+            oc = OutputCapture()
+            oc.capture_output()
+            self.command.execute(MockOptions(suffixes='txt,wav,png', no_modify_scm=True, platform='test-mac-snowleopard'),
+                                 ['another/test.html'],
+                                 self.tool)
+        finally:
+            out, err, logs = oc.restore_output()
+            builders._exact_matches = old_exact_matches
+
+        self.assertEquals(out, '{"add": [], "remove-lines": [], "delete": ["/mock-checkout/third_party/WebKit/LayoutTests/platform/mac-snowleopard/another/test-expected.txt", "/mock-checkout/third_party/WebKit/LayoutTests/platform/mac-snowleopard/another/test-expected.png"]}\n')
+        self.assertFalse(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'platform/mac/another/test-expected.txt')))
+        self.assertFalse(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'platform/mac/another/test-expected.png')))
+        self.assertTrue(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'another/test-expected.txt')))
+        self.assertTrue(self.tool.filesystem.exists(self.tool.filesystem.join(test_port.layout_tests_dir(), 'another/test-expected.png')))
 
 
 class TestAnalyzeBaselines(_BaseTestCase):
@@ -1039,21 +1063,21 @@ crbug.com/24182 path/to/locally-changed-lined.html [ NeedsRebaseline ]
 
             self.assertEqual(self.tool.executive.calls, [
                 [
-                    ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-chocolate.html'],
-                    ['echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-strawberry.html'],
-                    ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-taco.html'],
-                    ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt,png', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-chocolate.html'],
+                    ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-strawberry.html'],
+                    ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
                 ],
                 [
-                    ['echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-chocolate.html'],
-                    ['echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-strawberry.html'],
-                    ['echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-taco.html'],
-                    ['echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt,png', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-chocolate.html'],
+                    ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'png', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-strawberry.html'],
+                    ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK Leopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
                 ],
                 [
-                    ['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'fast/dom/prototype-chocolate.html'],
-                    ['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'png', 'fast/dom/prototype-strawberry.html'],
-                    ['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt,png', 'fast/dom/prototype-chocolate.html'],
+                    ['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'png', 'fast/dom/prototype-strawberry.html'],
+                    ['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt', 'fast/dom/prototype-taco.html'],
                 ],
                 ['git', 'cl', 'upload', '-f'],
                 ['git', 'pull'],
@@ -1122,14 +1146,13 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
 
             self.assertEqual(self.tool.executive.calls, [
                 [
-                    ['echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'copy-existing-baselines-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
                 ],
                 [
-                    ['echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
+                    ['python', 'echo', 'rebaseline-test-internal', '--suffixes', 'txt', '--builder', 'MOCK SnowLeopard', '--test', 'fast/dom/prototype-taco.html'],
                 ],
-                [['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt', 'fast/dom/prototype-taco.html']],
+                [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', 'txt', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
-                ['git', 'cl', 'set_close'],
             ])
         finally:
             builders._exact_matches = old_exact_matches
@@ -1181,7 +1204,7 @@ Bug(foo) fast/dom/prototype-taco.html [ NeedsRebaseline ]
             self.command.tree_status = lambda: 'open'
             self.command.execute(MockOptions(optimize=True, verbose=False, move_overwritten_baselines=False, results_directory=False), [], self.tool)
             self.assertEqual(self.tool.executive.calls, [
-                [['echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
+                [['python', 'echo', 'optimize-baselines', '--no-modify-scm', '--suffixes', '', 'fast/dom/prototype-taco.html']],
                 ['git', 'cl', 'upload', '-f'],
                 ['git', 'pull'],
                 ['git', 'cl', 'dcommit', '-f'],
@@ -1203,19 +1226,19 @@ class TestRebaselineOMatic(_BaseTestCase):
         super(TestRebaselineOMatic, self).setUp()
         self._logs = []
 
-    def _mock_log_to_server(self, log='', is_new_entry=False):
-        self._logs.append({'log': log, 'newentry': is_new_entry})
+    def _mock_log_to_server(self, log=''):
+        self._logs.append(log)
 
     def test_run_logged_command(self):
         self.command._verbose = False
-        self.command._log_to_server = self._mock_log_to_server
+        self.command._post_log_to_server = self._mock_log_to_server
         self.command._run_logged_command(['echo', 'foo'])
         self.assertEqual(self.tool.executive.calls, [['echo', 'foo']])
-        self.assertEqual(self._logs, [{'log': 'MOCK STDOUT', 'newentry': False}])
+        self.assertEqual(self._logs, ['MOCK STDOUT'])
 
     def test_do_one_rebaseline(self):
         self.command._verbose = False
-        self.command._log_to_server = self._mock_log_to_server
+        self.command._post_log_to_server = self._mock_log_to_server
 
         oc = OutputCapture()
         oc.capture_output()
@@ -1227,14 +1250,11 @@ class TestRebaselineOMatic(_BaseTestCase):
             ['git', 'pull'],
             ['/mock-checkout/third_party/WebKit/Tools/Scripts/webkit-patch', 'auto-rebaseline'],
         ])
-        self.assertEqual(self._logs, [
-            {'log': '', 'newentry': True},
-            {'log': 'MOCK STDOUT', 'newentry': False},
-        ])
+        self.assertEqual(self._logs, ['MOCK STDOUT'])
 
     def test_do_one_rebaseline_verbose(self):
         self.command._verbose = True
-        self.command._log_to_server = self._mock_log_to_server
+        self.command._post_log_to_server = self._mock_log_to_server
 
         oc = OutputCapture()
         oc.capture_output()
@@ -1246,7 +1266,4 @@ class TestRebaselineOMatic(_BaseTestCase):
             ['git', 'pull'],
             ['/mock-checkout/third_party/WebKit/Tools/Scripts/webkit-patch', 'auto-rebaseline', '--verbose'],
         ])
-        self.assertEqual(self._logs, [
-            {'log': '', 'newentry': True},
-            {'log': 'MOCK STDOUT', 'newentry': False},
-        ])
+        self.assertEqual(self._logs, ['MOCK STDOUT'])

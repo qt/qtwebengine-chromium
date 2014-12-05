@@ -1,6 +1,6 @@
 /*
 *******************************************************************************
-*   Copyright (C) 1996-2011, International Business Machines
+*   Copyright (C) 1996-2013, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *******************************************************************************
 *   file name:  ucol.cpp
@@ -20,10 +20,12 @@
 
 #if !UCONFIG_NO_COLLATION
 
+#include "unicode/bytestream.h"
 #include "unicode/coleitr.h"
 #include "unicode/unorm.h"
 #include "unicode/udata.h"
 #include "unicode/ustring.h"
+#include "unicode/utf8.h"
 
 #include "ucol_imp.h"
 #include "bocsu.h"
@@ -37,6 +39,7 @@
 #include "utracimp.h"
 #include "putilimp.h"
 #include "uassert.h"
+#include "unicode/coll.h"
 
 #ifdef UCOL_DEBUG
 #include <stdio.h>
@@ -51,13 +54,12 @@ U_NAMESPACE_USE
 
 #define ZERO_CC_LIMIT_            0xC0
 
-// this is static pointer to the normalizer fcdTrieIndex
-// it is always the same between calls to u_cleanup
+// These are static pointers to the NFC/NFD implementation instance.
+// Each of them is always the same between calls to u_cleanup
 // and therefore writing to it is not synchronized.
-// It is cleaned in ucol_cleanup
-static const uint16_t *fcdTrieIndex=NULL;
-// Code points at fcdHighStart and above have a zero FCD value.
-static UChar32 fcdHighStart = 0;
+// They are cleaned in ucol_cleanup
+static const Normalizer2 *g_nfd = NULL;
+static const Normalizer2Impl *g_nfcImpl = NULL;
 
 // These are values from UCA required for
 // implicit generation and supressing sort key compression
@@ -71,7 +73,8 @@ U_CDECL_BEGIN
 static UBool U_CALLCONV
 ucol_cleanup(void)
 {
-    fcdTrieIndex = NULL;
+    g_nfd = NULL;
+    g_nfcImpl = NULL;
     return TRUE;
 }
 
@@ -82,14 +85,28 @@ _getFoldingOffset(uint32_t data) {
 
 U_CDECL_END
 
-// init FCD data
 static inline
-UBool initializeFCD(UErrorCode *status) {
-    if (fcdTrieIndex != NULL) {
+UBool initializeNFD(UErrorCode *status) {
+    if (g_nfd != NULL) {
         return TRUE;
     } else {
         // The result is constant, until the library is reloaded.
-        fcdTrieIndex = unorm_getFCDTrieIndex(fcdHighStart, status);
+        g_nfd = Normalizer2Factory::getNFDInstance(*status);
+        ucln_i18n_registerCleanup(UCLN_I18N_UCOL, ucol_cleanup);
+        return U_SUCCESS(*status);
+    }
+}
+
+// init FCD data
+static inline
+UBool initializeFCD(UErrorCode *status) {
+    if (g_nfcImpl != NULL) {
+        return TRUE;
+    } else {
+        // The result is constant, until the library is reloaded.
+        g_nfcImpl = Normalizer2Factory::getNFCImpl(*status);
+        // Note: Alternatively, we could also store this pointer in each collIterate struct,
+        // same as Normalizer2Factory::getImpl(collIterate->nfd).
         ucln_i18n_registerCleanup(UCLN_I18N_UCOL, ucol_cleanup);
         return U_SUCCESS(*status);
     }
@@ -119,7 +136,11 @@ inline void IInit_collIterate(const UCollator *collator, const UChar *sourceStri
     (s)->offsetReturn = (s)->offsetStore = NULL;
     (s)->offsetRepeatCount = (s)->offsetRepeatValue = 0;
     (s)->coll = (collator);
-    (s)->nfd = Normalizer2Factory::getNFDInstance(*status);
+    if (initializeNFD(status)) {
+        (s)->nfd = g_nfd;
+    } else {
+        return;
+    }
     (s)->fcdPosition = 0;
     if(collator->normalizationMode == UCOL_ON) {
         (s)->flags |= UCOL_ITER_NORM;
@@ -300,9 +321,10 @@ void collIterate::appendOffset(int32_t offset, UErrorCode &errorCode) {
         return;
     }
     int32_t length = offsetStore == NULL ? 0 : (int32_t)(offsetStore - offsetBuffer);
+    U_ASSERT(length >= offsetBufferSize || offsetStore != NULL);
     if(length >= offsetBufferSize) {
         int32_t newCapacity = 2 * offsetBufferSize + UCOL_EXPAND_CE_BUFFER_SIZE;
-        int32_t *newBuffer = reinterpret_cast<int32_t *>(uprv_malloc(newCapacity * 4));
+        int32_t *newBuffer = static_cast<int32_t *>(uprv_malloc(newCapacity * 4));
         if(newBuffer == NULL) {
             errorCode = U_MEMORY_ALLOCATION_ERROR;
             return;
@@ -534,68 +556,70 @@ ucol_cloneBinary(const UCollator *coll,
 }
 
 U_CAPI UCollator* U_EXPORT2
-ucol_safeClone(const UCollator *coll, void *stackBuffer, int32_t * pBufferSize, UErrorCode *status)
+ucol_safeClone(const UCollator *coll, void * /*stackBuffer*/, int32_t * pBufferSize, UErrorCode *status)
 {
     UCollator * localCollator;
     int32_t bufferSizeNeeded = (int32_t)sizeof(UCollator);
-    char *stackBufferChars = (char *)stackBuffer;
     int32_t imageSize = 0;
     int32_t rulesSize = 0;
     int32_t rulesPadding = 0;
+    int32_t defaultReorderCodesSize = 0;
+    int32_t reorderCodesSize = 0;
     uint8_t *image;
     UChar *rules;
-    UBool colAllocated = FALSE;
+    int32_t* defaultReorderCodes;
+    int32_t* reorderCodes;
+    uint8_t* leadBytePermutationTable;
     UBool imageAllocated = FALSE;
 
     if (status == NULL || U_FAILURE(*status)){
-        return 0;
+        return NULL;
     }
-    if ((stackBuffer && !pBufferSize) || !coll){
+    if (coll == NULL) {
        *status = U_ILLEGAL_ARGUMENT_ERROR;
-        return 0;
+        return NULL;
     }
+
     if (coll->rules && coll->freeRulesOnClose) {
         rulesSize = (int32_t)(coll->rulesLength + 1)*sizeof(UChar);
         rulesPadding = (int32_t)(bufferSizeNeeded % sizeof(UChar));
         bufferSizeNeeded += rulesSize + rulesPadding;
     }
-
-    if (stackBuffer && *pBufferSize <= 0){ /* 'preflighting' request - set needed size into *pBufferSize */
-        *pBufferSize =  bufferSizeNeeded;
-        return 0;
+    // no padding for alignment needed from here since the next two are 4 byte quantities
+    if (coll->defaultReorderCodes) {
+        defaultReorderCodesSize = coll->defaultReorderCodesLength * sizeof(int32_t);
+        bufferSizeNeeded += defaultReorderCodesSize;
+    }
+    if (coll->reorderCodes) {
+        reorderCodesSize = coll->reorderCodesLength * sizeof(int32_t);
+        bufferSizeNeeded += reorderCodesSize;
+    }
+    if (coll->leadBytePermutationTable) {
+        bufferSizeNeeded += 256 * sizeof(uint8_t);
     }
 
-    /* Pointers on 64-bit platforms need to be aligned
-     * on a 64-bit boundry in memory.
-     */
-    if (U_ALIGNMENT_OFFSET(stackBuffer) != 0) {
-        int32_t offsetUp = (int32_t)U_ALIGNMENT_OFFSET_UP(stackBufferChars);
-        if (*pBufferSize > offsetUp) {
-            *pBufferSize -= offsetUp;
-            stackBufferChars += offsetUp;
-        }
-        else {
-            /* prevent using the stack buffer but keep the size > 0 so that we do not just preflight */
-            *pBufferSize = 1;
+    if (pBufferSize != NULL) {
+        int32_t inputSize = *pBufferSize;
+        *pBufferSize = 1;
+        if (inputSize == 0) {
+            return NULL;  // preflighting for deprecated functionality
         }
     }
-    stackBuffer = (void *)stackBufferChars;
 
-    if (stackBuffer == NULL || *pBufferSize < bufferSizeNeeded) {
-        /* allocate one here...*/
-        stackBufferChars = (char *)uprv_malloc(bufferSizeNeeded);
-        // Null pointer check.
-        if (stackBufferChars == NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            return NULL;
-        }
-        colAllocated = TRUE;
-        if (U_SUCCESS(*status)) {
-            *status = U_SAFECLONE_ALLOCATED_WARNING;
-        }
+    char *stackBufferChars = (char *)uprv_malloc(bufferSizeNeeded);
+    // Null pointer check.
+    if (stackBufferChars == NULL) {
+        *status = U_MEMORY_ALLOCATION_ERROR;
+        return NULL;
     }
+    *status = U_SAFECLONE_ALLOCATED_WARNING;
+
     localCollator = (UCollator *)stackBufferChars;
     rules = (UChar *)(stackBufferChars + sizeof(UCollator) + rulesPadding);
+    defaultReorderCodes = (int32_t*)((uint8_t*)rules + rulesSize);
+    reorderCodes = (int32_t*)((uint8_t*)defaultReorderCodes + defaultReorderCodesSize);
+    leadBytePermutationTable = (uint8_t*)reorderCodes + reorderCodesSize;
+
     {
         UErrorCode tempStatus = U_ZERO_ERROR;
         imageSize = ucol_cloneBinary(coll, NULL, 0, &tempStatus);
@@ -629,6 +653,25 @@ ucol_safeClone(const UCollator *coll, void *stackBuffer, int32_t * pBufferSize, 
         localCollator->freeRulesOnClose = FALSE;
         localCollator->rulesLength = coll->rulesLength;
     }
+    
+    // collator reordering
+    if (coll->defaultReorderCodes) {
+        localCollator->defaultReorderCodes = 
+            (int32_t*) uprv_memcpy(defaultReorderCodes, coll->defaultReorderCodes, coll->defaultReorderCodesLength * sizeof(int32_t));
+        localCollator->defaultReorderCodesLength = coll->defaultReorderCodesLength;
+        localCollator->freeDefaultReorderCodesOnClose = FALSE;
+    }
+    if (coll->reorderCodes) {
+        localCollator->reorderCodes = 
+            (int32_t*)uprv_memcpy(reorderCodes, coll->reorderCodes, coll->reorderCodesLength * sizeof(int32_t));
+        localCollator->reorderCodesLength = coll->reorderCodesLength;
+        localCollator->freeReorderCodesOnClose = FALSE;
+    }
+    if (coll->leadBytePermutationTable) {
+        localCollator->leadBytePermutationTable = 
+            (uint8_t*) uprv_memcpy(leadBytePermutationTable, coll->leadBytePermutationTable, 256);
+        localCollator->freeLeadBytePermutationTableOnClose = FALSE;
+    }
 
     int32_t i;
     for(i = 0; i < UCOL_ATTRIBUTE_COUNT; i++) {
@@ -639,7 +682,7 @@ ucol_safeClone(const UCollator *coll, void *stackBuffer, int32_t * pBufferSize, 
     localCollator->validLocale = NULL;
     localCollator->requestedLocale = NULL;
     localCollator->ucaRules = coll->ucaRules; // There should only be one copy here.
-    localCollator->freeOnClose = colAllocated;
+    localCollator->freeOnClose = TRUE;
     localCollator->freeImageOnClose = imageAllocated;
     return localCollator;
 }
@@ -673,11 +716,19 @@ ucol_close(UCollator *coll)
         if(coll->image != NULL && coll->freeImageOnClose) {
             uprv_free((UCATableHeader *)coll->image);
         }
-        if(coll->leadBytePermutationTable != NULL) {
+
+        if(coll->leadBytePermutationTable != NULL && coll->freeLeadBytePermutationTableOnClose == TRUE) {
             uprv_free(coll->leadBytePermutationTable);
         }
-        if(coll->reorderCodes != NULL) {
+        if(coll->defaultReorderCodes != NULL && coll->freeDefaultReorderCodesOnClose == TRUE) {
+            uprv_free(coll->defaultReorderCodes);
+        }
+        if(coll->reorderCodes != NULL && coll->freeReorderCodesOnClose == TRUE) {
             uprv_free(coll->reorderCodes);
+        }
+
+        if(coll->delegate != NULL) {
+          delete (Collator*)coll->delegate;
         }
 
         /* Here, it would be advisable to close: */
@@ -691,68 +742,6 @@ ucol_close(UCollator *coll)
         }
     }
     UTRACE_EXIT();
-}
-
-/* This one is currently used by genrb & tests. After constructing from rules (tailoring),*/
-/* you should be able to get the binary chunk to write out...  Doesn't look very full now */
-U_CFUNC uint8_t* U_EXPORT2
-ucol_cloneRuleData(const UCollator *coll, int32_t *length, UErrorCode *status)
-{
-    uint8_t *result = NULL;
-    if(U_FAILURE(*status)) {
-        return NULL;
-    }
-    if(coll->hasRealData == TRUE) {
-        *length = coll->image->size;
-        result = (uint8_t *)uprv_malloc(*length);
-        /* test for NULL */
-        if (result == NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            return NULL;
-        }
-        uprv_memcpy(result, coll->image, *length);
-    } else {
-        *length = (int32_t)(paddedsize(sizeof(UCATableHeader))+paddedsize(sizeof(UColOptionSet)));
-        result = (uint8_t *)uprv_malloc(*length);
-        /* test for NULL */
-        if (result == NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            return NULL;
-        }
-
-        /* build the UCATableHeader with minimal entries */
-        /* do not copy the header from the UCA file because its values are wrong! */
-        /* uprv_memcpy(result, UCA->image, sizeof(UCATableHeader)); */
-
-        /* reset everything */
-        uprv_memset(result, 0, *length);
-
-        /* set the tailoring-specific values */
-        UCATableHeader *myData = (UCATableHeader *)result;
-        myData->size = *length;
-
-        /* offset for the options, the only part of the data that is present after the header */
-        myData->options = sizeof(UCATableHeader);
-
-        /* need to always set the expansion value for an upper bound of the options */
-        myData->expansion = myData->options + sizeof(UColOptionSet);
-
-        myData->magic = UCOL_HEADER_MAGIC;
-        myData->isBigEndian = U_IS_BIG_ENDIAN;
-        myData->charSetFamily = U_CHARSET_FAMILY;
-
-        /* copy UCA's version; genrb will override all but the builder version with tailoring data */
-        uprv_memcpy(myData->version, coll->image->version, sizeof(UVersionInfo));
-
-        uprv_memcpy(myData->UCAVersion, coll->image->UCAVersion, sizeof(UVersionInfo));
-        uprv_memcpy(myData->UCDVersion, coll->image->UCDVersion, sizeof(UVersionInfo));
-        uprv_memcpy(myData->formatVersion, coll->image->formatVersion, sizeof(UVersionInfo));
-        myData->jamoSpecial = coll->image->jamoSpecial;
-
-        /* copy the collator options */
-        uprv_memcpy(result+paddedsize(sizeof(UCATableHeader)), coll->options, sizeof(UColOptionSet));
-    }
-    return result;
 }
 
 void ucol_setOptionsFromHeader(UCollator* result, UColOptionSet * opts, UErrorCode *status) {
@@ -847,6 +836,8 @@ UCollator* ucol_initCollator(const UCATableHeader *image, UCollator *fillIn, con
         result->freeOnClose = FALSE;
     }
 
+    result->delegate = NULL;
+
     result->image = image;
     result->mapping.getFoldingOffset = _getFoldingOffset;
     const uint8_t *mapping = (uint8_t*)result->image+result->image->mappingPosition;
@@ -866,9 +857,14 @@ UCollator* ucol_initCollator(const UCATableHeader *image, UCollator *fillIn, con
     result->rules = NULL;
     result->rulesLength = 0;
     result->freeRulesOnClose = FALSE;
+    result->defaultReorderCodes = NULL;
+    result->defaultReorderCodesLength = 0;
+    result->freeDefaultReorderCodesOnClose = FALSE;
     result->reorderCodes = NULL;
     result->reorderCodesLength = 0;
+    result->freeReorderCodesOnClose = FALSE;
     result->leadBytePermutationTable = NULL;
+    result->freeLeadBytePermutationTableOnClose = FALSE;
 
     /* get the version info from UCATableHeader and populate the Collator struct*/
     result->dataVersion[0] = result->image->version[0]; /* UCA Builder version*/
@@ -996,9 +992,9 @@ static int32_t
 
 static const UChar32
     // 4E00;<CJK Ideograph, First>;Lo;0;L;;;;;N;;;;;
-    // 9FCB;<CJK Ideograph, Last>;Lo;0;L;;;;;N;;;;;
+    // 9FCC;<CJK Ideograph, Last>;Lo;0;L;;;;;N;;;;;  (Unicode 6.1)
     CJK_BASE = 0x4E00,
-    CJK_LIMIT = 0x9FCB+1,
+    CJK_LIMIT = 0x9FCC+1,
     // Unified CJK ideographs in the compatibility ideographs block.
     CJK_COMPAT_USED_BASE = 0xFA0E,
     CJK_COMPAT_USED_LIMIT = 0xFA2F+1,
@@ -1381,10 +1377,8 @@ inline UBool collIterFCD(collIterate *collationSource) {
         endP = NULL;
     }
 
-    // Get the trailing combining class of the current character.  If it's zero,
-    //   we are OK.
-    /* trie access */
-    fcd = unorm_nextFCD16(fcdTrieIndex, fcdHighStart, srcP, endP);
+    // Get the trailing combining class of the current character. If it's zero, we are OK.
+    fcd = g_nfcImpl->nextFCD16(srcP, endP);
     if (fcd != 0) {
         prevTrailingCC = (uint8_t)(fcd & LAST_BYTE_MASK_);
 
@@ -1395,8 +1389,7 @@ inline UBool collIterFCD(collIterate *collationSource) {
             {
                 const UChar *savedSrcP = srcP;
 
-                /* trie access */
-                fcd = unorm_nextFCD16(fcdTrieIndex, fcdHighStart, srcP, endP);
+                fcd = g_nfcImpl->nextFCD16(srcP, endP);
                 leadingCC = (uint8_t)(fcd >> SECOND_LAST_BYTE_SHIFT_);
                 if (leadingCC == 0) {
                     srcP = savedSrcP;      // Hit char that is not part of combining sequence.
@@ -1757,7 +1750,7 @@ inline UBool collPrevIterFCD(collIterate *data)
     src = data->pos + 1;
 
     /* Get the trailing combining class of the current character. */
-    fcd = unorm_prevFCD16(fcdTrieIndex, fcdHighStart, start, src);
+    fcd = g_nfcImpl->previousFCD16(start, src);
 
     leadingCC = (uint8_t)(fcd >> SECOND_LAST_BYTE_SHIFT_);
 
@@ -1773,7 +1766,7 @@ inline UBool collPrevIterFCD(collIterate *data)
                 return result;
             }
 
-            fcd = unorm_prevFCD16(fcdTrieIndex, fcdHighStart, start, src);
+            fcd = g_nfcImpl->previousFCD16(start, src);
 
             trailingCC = (uint8_t)(fcd & LAST_BYTE_MASK_);
 
@@ -1895,7 +1888,7 @@ inline UBool isAtStartPrevIterate(collIterate *data) {
     }
     //return (collIter_bos(data)) ||
     return (data->pos == data->string) ||
-              ((data->flags & UCOL_ITER_INNORMBUF) &&
+              ((data->flags & UCOL_ITER_INNORMBUF) && (data->pos != NULL) &&
               *(data->pos - 1) == 0 && data->fcdPosition == NULL);
 }
 
@@ -3521,7 +3514,7 @@ uint32_t ucol_prv_getSpecialPrevCE(const UCollator *coll, UChar ch, uint32_t CE,
 
             IInit_collIterate(coll, UCharOffset, noChars, &temp, status);
             if(U_FAILURE(*status)) {
-                return UCOL_NULLORDER;
+                return (uint32_t)UCOL_NULLORDER;
             }
             temp.flags &= ~UCOL_ITER_NORM;
             temp.flags |= source->flags & UCOL_FORCE_HAN_IMPLICIT;
@@ -3898,7 +3891,7 @@ uint32_t ucol_prv_getSpecialPrevCE(const UCollator *coll, UChar ch, uint32_t CE,
                     // The total size for our collation key is half of endIndex, rounded up.
                     int32_t size = (endIndex+1)/2;
                     if(!ensureCEsCapacity(source, size)) {
-                        return UCOL_NULLORDER;
+                        return (uint32_t)UCOL_NULLORDER;
                     }
                     *(source->CEpos++) = (((numTempBuf[0] << 8) | numTempBuf[1]) << UCOL_PRIMARYORDERSHIFT) | //Primary weight
                         (UCOL_BYTE_COMMON << UCOL_SECONDARYORDERSHIFT) | // Secondary weight
@@ -3998,8 +3991,8 @@ uint32_t ucol_prv_getSpecialPrevCE(const UCollator *coll, UChar ch, uint32_t CE,
                         source->fcdPosition       = source->pos-1;
                     }
                     
-					// Append offsets for the additional chars
-					// (not the 0, and not the L whose offsets match the original Hangul)
+                    // Append offsets for the additional chars
+                    // (not the 0, and not the L whose offsets match the original Hangul)
                     int32_t jamoRemaining = tempbufferLength - 2;
                     jamoOffset++; // appended offsets should match end of original Hangul
                     while (jamoRemaining-- > 0) {
@@ -4085,38 +4078,6 @@ uint32_t ucol_prv_getSpecialPrevCE(const UCollator *coll, UChar ch, uint32_t CE,
     return CE;
 }
 
-/* This should really be a macro        */
-/* However, it is used only when stack buffers are not sufficiently big, and then we're messed up performance wise */
-/* anyway */
-static
-uint8_t *reallocateBuffer(uint8_t **secondaries, uint8_t *secStart, uint8_t *second, uint32_t *secSize, uint32_t newSize, UErrorCode *status) {
-#ifdef UCOL_DEBUG
-    fprintf(stderr, ".");
-#endif
-    uint8_t *newStart = NULL;
-    uint32_t offset = (uint32_t)(*secondaries-secStart);
-
-    if(secStart==second) {
-        newStart=(uint8_t*)uprv_malloc(newSize);
-        if(newStart==NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            return NULL;
-        }
-        uprv_memcpy(newStart, secStart, *secondaries-secStart);
-    } else {
-        newStart=(uint8_t*)uprv_realloc(secStart, newSize);
-        if(newStart==NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            /* Since we're reallocating, return original reference so we don't loose it. */
-            return secStart;
-        }
-    }
-    *secondaries=newStart+offset;
-    *secSize=newSize;
-    return newStart;
-}
-
-
 /* This should really be a macro                                                                      */
 /* This function is used to reverse parts of a buffer. We need this operation when doing continuation */
 /* secondaries in French                                                                              */
@@ -4145,43 +4106,13 @@ while((start)<(end)) { \
 /*                                                                          */
 /****************************************************************************/
 
-/**
- * Merge two sort keys.
- * This is useful, for example, to combine sort keys from first and last names
- * to sort such pairs.
- * Merged sort keys consider on each collation level the first part first entirely,
- * then the second one.
- * It is possible to merge multiple sort keys by consecutively merging
- * another one with the intermediate result.
- *
- * The length of the merge result is the sum of the lengths of the input sort keys
- * minus 1.
- *
- * @param src1 the first sort key
- * @param src1Length the length of the first sort key, including the zero byte at the end;
- *        can be -1 if the function is to find the length
- * @param src2 the second sort key
- * @param src2Length the length of the second sort key, including the zero byte at the end;
- *        can be -1 if the function is to find the length
- * @param dest the buffer where the merged sort key is written,
- *        can be NULL if destCapacity==0
- * @param destCapacity the number of bytes in the dest buffer
- * @return the length of the merged sort key, src1Length+src2Length-1;
- *         can be larger than destCapacity, or 0 if an error occurs (only for illegal arguments),
- *         in which cases the contents of dest is undefined
- *
- * @draft
- */
 U_CAPI int32_t U_EXPORT2
 ucol_mergeSortkeys(const uint8_t *src1, int32_t src1Length,
                    const uint8_t *src2, int32_t src2Length,
                    uint8_t *dest, int32_t destCapacity) {
-    int32_t destLength;
-    uint8_t b;
-
     /* check arguments */
-    if( src1==NULL || src1Length<-2 || src1Length==0 || (src1Length>0 && src1[src1Length-1]!=0) ||
-        src2==NULL || src2Length<-2 || src2Length==0 || (src2Length>0 && src2[src2Length-1]!=0) ||
+    if( src1==NULL || src1Length<-1 || src1Length==0 || (src1Length>0 && src1[src1Length-1]!=0) ||
+        src2==NULL || src2Length<-1 || src2Length==0 || (src2Length>0 && src2[src2Length-1]!=0) ||
         destCapacity<0 || (destCapacity>0 && dest==NULL)
     ) {
         /* error, attempt to write a zero byte and return 0 */
@@ -4199,34 +4130,38 @@ ucol_mergeSortkeys(const uint8_t *src1, int32_t src1Length,
         src2Length=(int32_t)uprv_strlen((const char *)src2)+1;
     }
 
-    destLength=src1Length+src2Length-1;
+    int32_t destLength=src1Length+src2Length;
     if(destLength>destCapacity) {
         /* the merged sort key does not fit into the destination */
         return destLength;
     }
 
     /* merge the sort keys with the same number of levels */
-    while(*src1!=0 && *src2!=0) { /* while both have another level */
+    uint8_t *p=dest;
+    for(;;) {
         /* copy level from src1 not including 00 or 01 */
+        uint8_t b;
         while((b=*src1)>=2) {
             ++src1;
-            *dest++=b;
+            *p++=b;
         }
 
         /* add a 02 merge separator */
-        *dest++=2;
+        *p++=2;
 
         /* copy level from src2 not including 00 or 01 */
         while((b=*src2)>=2) {
             ++src2;
-            *dest++=b;
+            *p++=b;
         }
 
         /* if both sort keys have another level, then add a 01 level separator and continue */
         if(*src1==1 && *src2==1) {
             ++src1;
             ++src2;
-            *dest++=1;
+            *p++=1;
+        } else {
+            break;
         }
     }
 
@@ -4240,11 +4175,259 @@ ucol_mergeSortkeys(const uint8_t *src1, int32_t src1Length,
         src2=src1;
     }
     /* append src2, "the other, unfinished sort key" */
-    uprv_strcpy((char *)dest, (const char *)src2);
+    while((*p++=*src2++)!=0) {}
 
-    /* trust that neither sort key contained illegally embedded zero bytes */
-    return destLength;
+    /* the actual length might be less than destLength if either sort key contained illegally embedded zero bytes */
+    return (int32_t)(p-dest);
 }
+
+U_NAMESPACE_BEGIN
+
+class SortKeyByteSink : public ByteSink {
+public:
+    SortKeyByteSink(char *dest, int32_t destCapacity)
+            : buffer_(dest), capacity_(destCapacity),
+              appended_(0) {
+        if (buffer_ == NULL) {
+            capacity_ = 0;
+        } else if(capacity_ < 0) {
+            buffer_ = NULL;
+            capacity_ = 0;
+        }
+    }
+    virtual ~SortKeyByteSink();
+
+    virtual void Append(const char *bytes, int32_t n);
+    void Append(uint32_t b) {
+        if (appended_ < capacity_ || Resize(1, appended_)) {
+            buffer_[appended_] = (char)b;
+        }
+        ++appended_;
+    }
+    void Append(uint32_t b1, uint32_t b2) {
+        int32_t a2 = appended_ + 2;
+        if (a2 <= capacity_ || Resize(2, appended_)) {
+            buffer_[appended_] = (char)b1;
+            buffer_[appended_ + 1] = (char)b2;
+        } else if(appended_ < capacity_) {
+            buffer_[appended_] = (char)b1;
+        }
+        appended_ = a2;
+    }
+    virtual char *GetAppendBuffer(int32_t min_capacity,
+                                  int32_t desired_capacity_hint,
+                                  char *scratch, int32_t scratch_capacity,
+                                  int32_t *result_capacity);
+    int32_t NumberOfBytesAppended() const { return appended_; }
+    /** @return FALSE if memory allocation failed */
+    UBool IsOk() const { return buffer_ != NULL; }
+
+protected:
+    virtual void AppendBeyondCapacity(const char *bytes, int32_t n, int32_t length) = 0;
+    virtual UBool Resize(int32_t appendCapacity, int32_t length) = 0;
+
+    void SetNotOk() {
+        buffer_ = NULL;
+        capacity_ = 0;
+    }
+
+    char *buffer_;
+    int32_t capacity_;
+    int32_t appended_;
+
+private:
+    SortKeyByteSink(const SortKeyByteSink &); // copy constructor not implemented
+    SortKeyByteSink &operator=(const SortKeyByteSink &); // assignment operator not implemented
+};
+
+SortKeyByteSink::~SortKeyByteSink() {}
+
+void
+SortKeyByteSink::Append(const char *bytes, int32_t n) {
+    if (n <= 0 || bytes == NULL) {
+        return;
+    }
+    int32_t length = appended_;
+    appended_ += n;
+    if ((buffer_ + length) == bytes) {
+        return;  // the caller used GetAppendBuffer() and wrote the bytes already
+    }
+    int32_t available = capacity_ - length;
+    if (n <= available) {
+        uprv_memcpy(buffer_ + length, bytes, n);
+    } else {
+        AppendBeyondCapacity(bytes, n, length);
+    }
+}
+
+char *
+SortKeyByteSink::GetAppendBuffer(int32_t min_capacity,
+                                 int32_t desired_capacity_hint,
+                                 char *scratch,
+                                 int32_t scratch_capacity,
+                                 int32_t *result_capacity) {
+    if (min_capacity < 1 || scratch_capacity < min_capacity) {
+        *result_capacity = 0;
+        return NULL;
+    }
+    int32_t available = capacity_ - appended_;
+    if (available >= min_capacity) {
+        *result_capacity = available;
+        return buffer_ + appended_;
+    } else if (Resize(desired_capacity_hint, appended_)) {
+        *result_capacity = capacity_ - appended_;
+        return buffer_ + appended_;
+    } else {
+        *result_capacity = scratch_capacity;
+        return scratch;
+    }
+}
+
+class FixedSortKeyByteSink : public SortKeyByteSink {
+public:
+    FixedSortKeyByteSink(char *dest, int32_t destCapacity)
+            : SortKeyByteSink(dest, destCapacity) {}
+    virtual ~FixedSortKeyByteSink();
+
+private:
+    virtual void AppendBeyondCapacity(const char *bytes, int32_t n, int32_t length);
+    virtual UBool Resize(int32_t appendCapacity, int32_t length);
+};
+
+FixedSortKeyByteSink::~FixedSortKeyByteSink() {}
+
+void
+FixedSortKeyByteSink::AppendBeyondCapacity(const char *bytes, int32_t /*n*/, int32_t length) {
+    // buffer_ != NULL && bytes != NULL && n > 0 && appended_ > capacity_
+    // Fill the buffer completely.
+    int32_t available = capacity_ - length;
+    if (available > 0) {
+        uprv_memcpy(buffer_ + length, bytes, available);
+    }
+}
+
+UBool
+FixedSortKeyByteSink::Resize(int32_t /*appendCapacity*/, int32_t /*length*/) {
+    return FALSE;
+}
+
+class CollationKeyByteSink : public SortKeyByteSink {
+public:
+    CollationKeyByteSink(CollationKey &key)
+            : SortKeyByteSink(reinterpret_cast<char *>(key.getBytes()), key.getCapacity()),
+              key_(key) {}
+    virtual ~CollationKeyByteSink();
+
+private:
+    virtual void AppendBeyondCapacity(const char *bytes, int32_t n, int32_t length);
+    virtual UBool Resize(int32_t appendCapacity, int32_t length);
+
+    CollationKey &key_;
+};
+
+CollationKeyByteSink::~CollationKeyByteSink() {}
+
+void
+CollationKeyByteSink::AppendBeyondCapacity(const char *bytes, int32_t n, int32_t length) {
+    // buffer_ != NULL && bytes != NULL && n > 0 && appended_ > capacity_
+    if (Resize(n, length)) {
+        uprv_memcpy(buffer_ + length, bytes, n);
+    }
+}
+
+UBool
+CollationKeyByteSink::Resize(int32_t appendCapacity, int32_t length) {
+    if (buffer_ == NULL) {
+        return FALSE;  // allocation failed before already
+    }
+    int32_t newCapacity = 2 * capacity_;
+    int32_t altCapacity = length + 2 * appendCapacity;
+    if (newCapacity < altCapacity) {
+        newCapacity = altCapacity;
+    }
+    if (newCapacity < 200) {
+        newCapacity = 200;
+    }
+    uint8_t *newBuffer = key_.reallocate(newCapacity, length);
+    if (newBuffer == NULL) {
+        SetNotOk();
+        return FALSE;
+    }
+    buffer_ = reinterpret_cast<char *>(newBuffer);
+    capacity_ = newCapacity;
+    return TRUE;
+}
+
+/**
+ * uint8_t byte buffer, similar to CharString but simpler.
+ */
+class SortKeyLevel : public UMemory {
+public:
+    SortKeyLevel() : len(0), ok(TRUE) {}
+    ~SortKeyLevel() {}
+
+    /** @return FALSE if memory allocation failed */
+    UBool isOk() const { return ok; }
+    UBool isEmpty() const { return len == 0; }
+    int32_t length() const { return len; }
+    const uint8_t *data() const { return buffer.getAlias(); }
+    uint8_t operator[](int32_t index) const { return buffer[index]; }
+
+    void appendByte(uint32_t b);
+
+    void appendTo(ByteSink &sink) const {
+        sink.Append(reinterpret_cast<const char *>(buffer.getAlias()), len);
+    }
+
+    uint8_t &lastByte() {
+        U_ASSERT(len > 0);
+        return buffer[len - 1];
+    }
+
+    uint8_t *getLastFewBytes(int32_t n) {
+        if (ok && len >= n) {
+            return buffer.getAlias() + len - n;
+        } else {
+            return NULL;
+        }
+    }
+
+private:
+    MaybeStackArray<uint8_t, 40> buffer;
+    int32_t len;
+    UBool ok;
+
+    UBool ensureCapacity(int32_t appendCapacity);
+
+    SortKeyLevel(const SortKeyLevel &other); // forbid copying of this class
+    SortKeyLevel &operator=(const SortKeyLevel &other); // forbid copying of this class
+};
+
+void SortKeyLevel::appendByte(uint32_t b) {
+    if(len < buffer.getCapacity() || ensureCapacity(1)) {
+        buffer[len++] = (uint8_t)b;
+    }
+}
+
+UBool SortKeyLevel::ensureCapacity(int32_t appendCapacity) {
+    if(!ok) {
+        return FALSE;
+    }
+    int32_t newCapacity = 2 * buffer.getCapacity();
+    int32_t altCapacity = len + 2 * appendCapacity;
+    if (newCapacity < altCapacity) {
+        newCapacity = altCapacity;
+    }
+    if (newCapacity < 200) {
+        newCapacity = 200;
+    }
+    if(buffer.resize(newCapacity, len)==NULL) {
+        return ok = FALSE;
+    }
+    return TRUE;
+}
+
+U_NAMESPACE_END
 
 /* sortkey API */
 U_CAPI int32_t U_EXPORT2
@@ -4260,6 +4443,10 @@ ucol_getSortKey(const    UCollator    *coll,
             ((sourceLength==-1 && source!=NULL) ? u_strlen(source) : sourceLength));
     }
 
+    if(coll->delegate != NULL) {
+      return ((const Collator*)coll->delegate)->getSortKey(source, sourceLength, result, resultLength);
+    }
+
     UErrorCode status = U_ZERO_ERROR;
     int32_t keySize   = 0;
 
@@ -4273,32 +4460,32 @@ ucol_getSortKey(const    UCollator    *coll,
         /*ucol_calcSortKey(...);*/
         /*ucol_calcSortKeySimpleTertiary(...);*/
 
-        keySize = coll->sortKeyGen(coll, source, sourceLength, &result, resultLength, FALSE, &status);
-        //if (U_FAILURE(status) && status != U_BUFFER_OVERFLOW_ERROR && result && resultLength > 0) {
-            // That's not good. Something unusual happened.
-            // We don't know how much we initialized before we failed.
-            // NULL terminate for safety.
-            // We have no way say that we have generated a partial sort key.
-            //result[0] = 0;
-            //keySize = 0;
-        //}
+        uint8_t noDest[1] = { 0 };
+        if(result == NULL) {
+            // Distinguish pure preflighting from an allocation error.
+            result = noDest;
+            resultLength = 0;
+        }
+        FixedSortKeyByteSink sink(reinterpret_cast<char *>(result), resultLength);
+        coll->sortKeyGen(coll, source, sourceLength, sink, &status);
+        if(U_SUCCESS(status)) {
+            keySize = sink.NumberOfBytesAppended();
+        }
     }
     UTRACE_DATA2(UTRACE_VERBOSE, "Sort Key = %vb", result, keySize);
     UTRACE_EXIT_STATUS(status);
     return keySize;
 }
 
-/* this function is called by the C++ API for sortkey generation */
 U_CFUNC int32_t
-ucol_getSortKeyWithAllocation(const UCollator *coll,
-                              const UChar *source, int32_t sourceLength,
-                              uint8_t **pResult,
-                              UErrorCode *pErrorCode) {
-    *pResult = 0;
-    return coll->sortKeyGen(coll, source, sourceLength, pResult, 0, TRUE, pErrorCode);
+ucol_getCollationKey(const UCollator *coll,
+                     const UChar *source, int32_t sourceLength,
+                     CollationKey &key,
+                     UErrorCode &errorCode) {
+    CollationKeyByteSink sink(key);
+    coll->sortKeyGen(coll, source, sourceLength, sink, &errorCode);
+    return sink.NumberOfBytesAppended();
 }
-
-#define UCOL_FSEC_BUF_SIZE 256
 
 // Is this primary weight compressible?
 // Returns false for multi-lead-byte scripts (digits, Latin, Han, implicit).
@@ -4308,312 +4495,23 @@ isCompressible(const UCollator * /*coll*/, uint8_t primary1) {
     return UCOL_BYTE_FIRST_NON_LATIN_PRIMARY <= primary1 && primary1 <= maxRegularPrimary;
 }
 
-/* This function tries to get the size of a sortkey. It will be invoked if the size of resulting buffer is 0  */
-/* or if we run out of space while making a sortkey and want to return ASAP                                   */
-int32_t ucol_getSortKeySize(const UCollator *coll, collIterate *s, int32_t currentSize, UColAttributeValue strength, int32_t len) {
-    UErrorCode status = U_ZERO_ERROR;
-    //const UCAConstants *UCAconsts = (UCAConstants *)((uint8_t *)coll->UCA->image + coll->image->UCAConsts);
-    uint8_t compareSec   = (uint8_t)((strength >= UCOL_SECONDARY)?0:0xFF);
-    uint8_t compareTer   = (uint8_t)((strength >= UCOL_TERTIARY)?0:0xFF);
-    uint8_t compareQuad  = (uint8_t)((strength >= UCOL_QUATERNARY)?0:0xFF);
-    UBool  compareIdent = (strength == UCOL_IDENTICAL);
-    UBool  doCase = (coll->caseLevel == UCOL_ON);
-    UBool  shifted = (coll->alternateHandling == UCOL_SHIFTED);
-    //UBool  qShifted = shifted  && (compareQuad == 0);
-    UBool  doHiragana = (coll->hiraganaQ == UCOL_ON) && (compareQuad == 0);
-    UBool  isFrenchSec = (coll->frenchCollation == UCOL_ON) && (compareSec == 0);
-    uint8_t fSecsBuff[UCOL_FSEC_BUF_SIZE];
-    uint8_t *fSecs = fSecsBuff;
-    uint32_t fSecsLen = 0, fSecsMaxLen = UCOL_FSEC_BUF_SIZE;
-    uint8_t *frenchStartPtr = NULL, *frenchEndPtr = NULL;
-
-    uint32_t variableTopValue = coll->variableTopValue;
-    uint8_t UCOL_COMMON_BOT4 = (uint8_t)((coll->variableTopValue>>8)+1);
-    if(doHiragana) {
-        UCOL_COMMON_BOT4++;
-        /* allocate one more space for hiragana */
-    }
-    uint8_t UCOL_BOT_COUNT4 = (uint8_t)(0xFF - UCOL_COMMON_BOT4);
-
-    uint32_t order = UCOL_NO_MORE_CES;
-    uint8_t primary1 = 0;
-    uint8_t primary2 = 0;
-    uint8_t secondary = 0;
-    uint8_t tertiary = 0;
-    int32_t caseShift = 0;
-    uint32_t c2 = 0, c3 = 0, c4 = 0; /* variables for compression */
-
-    uint8_t caseSwitch = coll->caseSwitch;
-    uint8_t tertiaryMask = coll->tertiaryMask;
-    uint8_t tertiaryCommon = coll->tertiaryCommon;
-
-    UBool wasShifted = FALSE;
-    UBool notIsContinuation = FALSE;
-    uint8_t leadPrimary = 0;
-
-
-    for(;;) {
-        order = ucol_IGetNextCE(coll, s, &status);
-        if(order == UCOL_NO_MORE_CES) {
-            break;
-        }
-
-        if(order == 0) {
-            continue;
-        }
-
-        notIsContinuation = !isContinuation(order);
-
-
-        if(notIsContinuation) {
-            tertiary = (uint8_t)((order & UCOL_BYTE_SIZE_MASK));
-        } else {
-            tertiary = (uint8_t)((order & UCOL_REMOVE_CONTINUATION));
-        }
-        secondary = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-        primary2 = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-        primary1 = (uint8_t)(order >> 8);
-
-        /* no need to permute since the actual code values don't matter
-        if (coll->leadBytePermutationTable != NULL && notIsContinuation) {
-            primary1 = coll->leadBytePermutationTable[primary1];
-        }
-        */
-
-        if((shifted && ((notIsContinuation && order <= variableTopValue && primary1 > 0)
-                      || (!notIsContinuation && wasShifted)))
-            || (wasShifted && primary1 == 0)) { /* amendment to the UCA says that primary ignorables */
-                /* and other ignorables should be removed if following a shifted code point */
-                if(primary1 == 0) { /* if we were shifted and we got an ignorable code point */
-                    /* we should just completely ignore it */
-                    continue;
-                }
-                if(compareQuad == 0) {
-                    if(c4 > 0) {
-                        currentSize += (c2/UCOL_BOT_COUNT4)+1;
-                        c4 = 0;
-                    }
-                    currentSize++;
-                    if(primary2 != 0) {
-                        currentSize++;
-                    }
-                }
-                wasShifted = TRUE;
-        } else {
-            wasShifted = FALSE;
-            /* Note: This code assumes that the table is well built i.e. not having 0 bytes where they are not supposed to be. */
-            /* Usually, we'll have non-zero primary1 & primary2, except in cases of a-z and friends, when primary2 will   */
-            /* calculate sortkey size */
-            if(primary1 != UCOL_IGNORABLE) {
-                if(notIsContinuation) {
-                    if(leadPrimary == primary1) {
-                        currentSize++;
-                    } else {
-                        if(leadPrimary != 0) {
-                            currentSize++;
-                        }
-                        if(primary2 == UCOL_IGNORABLE) {
-                            /* one byter, not compressed */
-                            currentSize++;
-                            leadPrimary = 0;
-                        } else if(isCompressible(coll, primary1)) {
-                            /* compress */
-                            leadPrimary = primary1;
-                            currentSize+=2;
-                        } else {
-                            leadPrimary = 0;
-                            currentSize+=2;
-                        }
-                    }
-                } else { /* we are in continuation, so we're gonna add primary to the key don't care about compression */
-                    currentSize++;
-                    if(primary2 != UCOL_IGNORABLE) {
-                        currentSize++;
-                    }
-                }
-            }
-
-            if(secondary > compareSec) { /* I think that != 0 test should be != IGNORABLE */
-                if(!isFrenchSec){
-                    if (secondary == UCOL_COMMON2 && notIsContinuation) {
-                        c2++;
-                    } else {
-                        if(c2 > 0) {
-                            if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
-                                currentSize += (c2/(uint32_t)UCOL_TOP_COUNT2)+1;
-                            } else {
-                                currentSize += (c2/(uint32_t)UCOL_BOT_COUNT2)+1;
-                            }
-                            c2 = 0;
-                        }
-                        currentSize++;
-                    }
-                } else {
-                    fSecs[fSecsLen++] = secondary;
-                    if(fSecsLen == fSecsMaxLen) {
-                        uint8_t *fSecsTemp;
-                        if(fSecs == fSecsBuff) {
-                            fSecsTemp = (uint8_t *)uprv_malloc(2*fSecsLen);
-                        } else {
-                            fSecsTemp = (uint8_t *)uprv_realloc(fSecs, 2*fSecsLen);
-                        }
-                        if(fSecsTemp == NULL) {
-                            status = U_MEMORY_ALLOCATION_ERROR;
-                            return 0;
-                        }
-                        fSecs = fSecsTemp;
-                        fSecsMaxLen *= 2;
-                    }
-                    if(notIsContinuation) {
-                        if (frenchStartPtr != NULL) {
-                            /* reverse secondaries from frenchStartPtr up to frenchEndPtr */
-                            uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
-                            frenchStartPtr = NULL;
-                        }
-                    } else {
-                        if (frenchStartPtr == NULL) {
-                            frenchStartPtr = fSecs+fSecsLen-2;
-                        }
-                        frenchEndPtr = fSecs+fSecsLen-1;
-                    }
-                }
-            }
-
-            if(doCase && (primary1 > 0 || strength >= UCOL_SECONDARY)) {
-                // do the case level if we need to do it. We don't want to calculate
-                // case level for primary ignorables if we have only primary strength and case level
-                // otherwise we would break well formedness of CEs
-                if (caseShift  == 0) {
-                    currentSize++;
-                    caseShift = UCOL_CASE_SHIFT_START;
-                }
-                if((tertiary&0x3F) > 0 && notIsContinuation) {
-                    caseShift--;
-                    if((tertiary &0xC0) != 0) {
-                        if (caseShift  == 0) {
-                            currentSize++;
-                            caseShift = UCOL_CASE_SHIFT_START;
-                        }
-                        caseShift--;
-                    }
-                }
-            } else {
-                if(notIsContinuation) {
-                    tertiary ^= caseSwitch;
-                }
-            }
-
-            tertiary &= tertiaryMask;
-            if(tertiary > compareTer) { /* I think that != 0 test should be != IGNORABLE */
-                if (tertiary == tertiaryCommon && notIsContinuation) {
-                    c3++;
-                } else {
-                    if(c3 > 0) {
-                        if((tertiary > tertiaryCommon && tertiaryCommon == UCOL_COMMON3_NORMAL)
-                            || (tertiary <= tertiaryCommon && tertiaryCommon == UCOL_COMMON3_UPPERFIRST)) {
-                                currentSize += (c3/(uint32_t)coll->tertiaryTopCount)+1;
-                        } else {
-                            currentSize += (c3/(uint32_t)coll->tertiaryBottomCount)+1;
-                        }
-                        c3 = 0;
-                    }
-                    currentSize++;
-                }
-            }
-
-            if(/*qShifted*/(compareQuad==0)  && notIsContinuation) {
-                if(s->flags & UCOL_WAS_HIRAGANA) { // This was Hiragana and we need to note it
-                    if(c4>0) { // Close this part
-                        currentSize += (c4/UCOL_BOT_COUNT4)+1;
-                        c4 = 0;
-                    }
-                    currentSize++; // Add the Hiragana
-                } else { // This wasn't Hiragana, so we can continue adding stuff
-                    c4++;
-                }
-            }
-        }
-    }
-
-    if(!isFrenchSec){
-        if(c2 > 0) {
-            currentSize += (c2/(uint32_t)UCOL_BOT_COUNT2)+((c2%(uint32_t)UCOL_BOT_COUNT2 != 0)?1:0);
-        }
-    } else {
-        uint32_t i = 0;
-        if(frenchStartPtr != NULL) {
-            uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
-        }
-        for(i = 0; i<fSecsLen; i++) {
-            secondary = *(fSecs+fSecsLen-i-1);
-            /* This is compression code. */
-            if (secondary == UCOL_COMMON2) {
-                ++c2;
-            } else {
-                if(c2 > 0) {
-                    if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
-                        currentSize += (c2/(uint32_t)UCOL_TOP_COUNT2)+((c2%(uint32_t)UCOL_TOP_COUNT2 != 0)?1:0);
-                    } else {
-                        currentSize += (c2/(uint32_t)UCOL_BOT_COUNT2)+((c2%(uint32_t)UCOL_BOT_COUNT2 != 0)?1:0);
-                    }
-                    c2 = 0;
-                }
-                currentSize++;
-            }
-        }
-        if(c2 > 0) {
-            currentSize += (c2/(uint32_t)UCOL_BOT_COUNT2)+((c2%(uint32_t)UCOL_BOT_COUNT2 != 0)?1:0);
-        }
-        if(fSecs != fSecsBuff) {
-            uprv_free(fSecs);
-        }
-    }
-
-    if(c3 > 0) {
-        currentSize += (c3/(uint32_t)coll->tertiaryBottomCount) + ((c3%(uint32_t)coll->tertiaryBottomCount != 0)?1:0);
-    }
-
-    if(c4 > 0  && compareQuad == 0) {
-        currentSize += (c4/(uint32_t)UCOL_BOT_COUNT4)+((c4%(uint32_t)UCOL_BOT_COUNT4 != 0)?1:0);
-    }
-
-    if(compareIdent) {
-        currentSize += u_lengthOfIdenticalLevelRun(s->string, len);
-    }
-    return currentSize;
-}
-
 static
-inline void doCaseShift(uint8_t **cases, uint32_t &caseShift) {
+inline void doCaseShift(SortKeyLevel &cases, uint32_t &caseShift) {
     if (caseShift  == 0) {
-        *(*cases)++ = UCOL_CASE_BYTE_START;
+        cases.appendByte(UCOL_CASE_BYTE_START);
         caseShift = UCOL_CASE_SHIFT_START;
     }
 }
 
-// Adds a value to the buffer if it's safe to add. Increments the number of added values, so that we
-// know how many values we wanted to add, even if we didn't add them all
-static
-inline void addWithIncrement(uint8_t *&primaries, uint8_t *limit, uint32_t &size, const uint8_t value) {
-    size++;
-    if(primaries < limit) {
-        *(primaries)++ = value;
-    }
-}
-
-// Packs the secondary buffer when processing French locale. Adds the terminator.
-static
-inline uint8_t *packFrench(uint8_t *primaries, uint8_t *primEnd, uint8_t *secondaries, uint32_t *secsize, uint8_t *frenchStartPtr, uint8_t *frenchEndPtr) {
+// Packs the secondary buffer when processing French locale.
+static void
+packFrench(const uint8_t *secondaries, int32_t secsize, SortKeyByteSink &result) {
+    secondaries += secsize;  // We read the secondary-level bytes back to front.
     uint8_t secondary;
     int32_t count2 = 0;
-    uint32_t i = 0, size = 0;
+    int32_t i = 0;
     // we use i here since the key size already accounts for terminators, so we'll discard the increment
-    addWithIncrement(primaries, primEnd, i, UCOL_LEVELTERMINATOR);
-    /* If there are any unresolved continuation secondaries, reverse them here so that we can reverse the whole secondary thing */
-    if(frenchStartPtr != NULL) {
-        uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
-    }
-    for(i = 0; i<*secsize; i++) {
+    for(i = 0; i<secsize; i++) {
         secondary = *(secondaries-i-1);
         /* This is compression code. */
         if (secondary == UCOL_COMMON2) {
@@ -4622,67 +4520,50 @@ inline uint8_t *packFrench(uint8_t *primaries, uint8_t *primEnd, uint8_t *second
             if (count2 > 0) {
                 if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
                     while (count2 > UCOL_TOP_COUNT2) {
-                        addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2));
+                        result.Append(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2);
                         count2 -= (uint32_t)UCOL_TOP_COUNT2;
                     }
-                    addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_TOP2 - (count2-1)));
+                    result.Append(UCOL_COMMON_TOP2 - (count2-1));
                 } else {
                     while (count2 > UCOL_BOT_COUNT2) {
-                        addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2));
+                        result.Append(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
                         count2 -= (uint32_t)UCOL_BOT_COUNT2;
                     }
-                    addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_BOT2 + (count2-1)));
+                    result.Append(UCOL_COMMON_BOT2 + (count2-1));
                 }
                 count2 = 0;
             }
-            addWithIncrement(primaries, primEnd, size, secondary);
+            result.Append(secondary);
         }
     }
     if (count2 > 0) {
         while (count2 > UCOL_BOT_COUNT2) {
-            addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2));
+            result.Append(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
             count2 -= (uint32_t)UCOL_BOT_COUNT2;
         }
-        addWithIncrement(primaries, primEnd, size, (uint8_t)(UCOL_COMMON_BOT2 + (count2-1)));
+        result.Append(UCOL_COMMON_BOT2 + (count2-1));
     }
-    *secsize = size;
-    return primaries;
 }
 
 #define DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY 0
 
 /* This is the sortkey work horse function */
-U_CFUNC int32_t U_CALLCONV
+U_CFUNC void U_CALLCONV
 ucol_calcSortKey(const    UCollator    *coll,
         const    UChar        *source,
         int32_t        sourceLength,
-        uint8_t        **result,
-        uint32_t        resultLength,
-        UBool allocateSKBuffer,
+        SortKeyByteSink &result,
         UErrorCode *status)
 {
-    //const UCAConstants *UCAconsts = (UCAConstants *)((uint8_t *)coll->UCA->image + coll->image->UCAConsts);
-
-    uint32_t i = 0; /* general purpose counter */
-
-    /* Stack allocated buffers for buffers we use */
-    uint8_t prim[UCOL_PRIMARY_MAX_BUFFER], second[UCOL_SECONDARY_MAX_BUFFER], tert[UCOL_TERTIARY_MAX_BUFFER], caseB[UCOL_CASE_MAX_BUFFER], quad[UCOL_QUAD_MAX_BUFFER];
-
-    uint8_t *primaries = *result, *secondaries = second, *tertiaries = tert, *cases = caseB, *quads = quad;
-
     if(U_FAILURE(*status)) {
-        return 0;
+        return;
     }
 
-    if(primaries == NULL && allocateSKBuffer == TRUE) {
-        primaries = *result = prim;
-        resultLength = UCOL_PRIMARY_MAX_BUFFER;
-    }
-
-    uint32_t secSize = UCOL_SECONDARY_MAX_BUFFER, terSize = UCOL_TERTIARY_MAX_BUFFER,
-      caseSize = UCOL_CASE_MAX_BUFFER, quadSize = UCOL_QUAD_MAX_BUFFER;
-
-    uint32_t sortKeySize = 1; /* it is always \0 terminated */
+    SortKeyByteSink &primaries = result;
+    SortKeyLevel secondaries;
+    SortKeyLevel tertiaries;
+    SortKeyLevel cases;
+    SortKeyLevel quads;
 
     UnicodeString normSource;
 
@@ -4712,11 +4593,8 @@ ucol_calcSortKey(const    UCollator    *coll,
     uint8_t UCOL_BOT_COUNT4 = (uint8_t)(0xFF - UCOL_COMMON_BOT4);
 
     /* support for special features like caselevel and funky secondaries */
-    uint8_t *frenchStartPtr = NULL;
-    uint8_t *frenchEndPtr = NULL;
+    int32_t lastSecondaryLength = 0;
     uint32_t caseShift = 0;
-
-    sortKeySize += ((compareSec?0:1) + (compareTer?0:1) + (doCase?1:0) + /*(qShifted?1:0)*/(compareQuad?0:1) + (compareIdent?1:0));
 
     /* If we need to normalize, we'll do it all at once at the beginning! */
     const Normalizer2 *norm2;
@@ -4741,25 +4619,9 @@ ucol_calcSortKey(const    UCollator    *coll,
     collIterate s;
     IInit_collIterate(coll, source, len, &s, status);
     if(U_FAILURE(*status)) {
-        return 0;
+        return;
     }
     s.flags &= ~UCOL_ITER_NORM;  // source passed the FCD test or else was normalized.
-
-    if(resultLength == 0 || primaries == NULL) {
-        return ucol_getSortKeySize(coll, &s, sortKeySize, strength, len);
-    }
-    uint8_t *primarySafeEnd = primaries + resultLength - 1;
-    if(strength > UCOL_PRIMARY) {
-        primarySafeEnd--;
-    }
-
-    uint32_t minBufferSize = UCOL_MAX_BUFFER;
-
-    uint8_t *primStart = primaries;
-    uint8_t *secStart = secondaries;
-    uint8_t *terStart = tertiaries;
-    uint8_t *caseStart = cases;
-    uint8_t *quadStart = quads;
 
     uint32_t order = 0;
 
@@ -4775,551 +4637,337 @@ ucol_calcSortKey(const    UCollator    *coll,
     uint8_t tertiaryCommon = coll->tertiaryCommon;
     uint8_t caseBits = 0;
 
-    UBool finished = FALSE;
     UBool wasShifted = FALSE;
     UBool notIsContinuation = FALSE;
-
-    uint32_t prevBuffSize = 0;
 
     uint32_t count2 = 0, count3 = 0, count4 = 0;
     uint8_t leadPrimary = 0;
 
     for(;;) {
-        for(i=prevBuffSize; i<minBufferSize; ++i) {
+        order = ucol_IGetNextCE(coll, &s, status);
+        if(order == UCOL_NO_MORE_CES) {
+            break;
+        }
 
-            order = ucol_IGetNextCE(coll, &s, status);
-            if(order == UCOL_NO_MORE_CES) {
-                finished = TRUE;
-                break;
-            }
+        if(order == 0) {
+            continue;
+        }
 
-            if(order == 0) {
+        notIsContinuation = !isContinuation(order);
+
+        if(notIsContinuation) {
+            tertiary = (uint8_t)(order & UCOL_BYTE_SIZE_MASK);
+        } else {
+            tertiary = (uint8_t)((order & UCOL_REMOVE_CONTINUATION));
+        }
+
+        secondary = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
+        primary2 = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
+        primary1 = (uint8_t)(order >> 8);
+
+        uint8_t originalPrimary1 = primary1;
+        if(notIsContinuation && coll->leadBytePermutationTable != NULL) {
+            primary1 = coll->leadBytePermutationTable[primary1];
+        }
+
+        if((shifted && ((notIsContinuation && order <= variableTopValue && primary1 > 0)
+                        || (!notIsContinuation && wasShifted)))
+            || (wasShifted && primary1 == 0)) /* amendment to the UCA says that primary ignorables */
+        {
+            /* and other ignorables should be removed if following a shifted code point */
+            if(primary1 == 0) { /* if we were shifted and we got an ignorable code point */
+                /* we should just completely ignore it */
                 continue;
             }
-
-            notIsContinuation = !isContinuation(order);
-
-            if(notIsContinuation) {
-                tertiary = (uint8_t)(order & UCOL_BYTE_SIZE_MASK);
-            } else {
-                tertiary = (uint8_t)((order & UCOL_REMOVE_CONTINUATION));
+            if(compareQuad == 0) {
+                if(count4 > 0) {
+                    while (count4 > UCOL_BOT_COUNT4) {
+                        quads.appendByte(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
+                        count4 -= UCOL_BOT_COUNT4;
+                    }
+                    quads.appendByte(UCOL_COMMON_BOT4 + (count4-1));
+                    count4 = 0;
+                }
+                /* We are dealing with a variable and we're treating them as shifted */
+                /* This is a shifted ignorable */
+                if(primary1 != 0) { /* we need to check this since we could be in continuation */
+                    quads.appendByte(primary1);
+                }
+                if(primary2 != 0) {
+                    quads.appendByte(primary2);
+                }
             }
-
-            secondary = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-            primary2 = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-            primary1 = (uint8_t)(order >> 8);
-
-            uint8_t originalPrimary1 = primary1;
-            if(notIsContinuation && coll->leadBytePermutationTable != NULL) {
-                primary1 = coll->leadBytePermutationTable[primary1];
-            }
-
-            if((shifted && ((notIsContinuation && order <= variableTopValue && primary1 > 0)
-                           || (!notIsContinuation && wasShifted)))
-                || (wasShifted && primary1 == 0)) /* amendment to the UCA says that primary ignorables */
-            {
-                /* and other ignorables should be removed if following a shifted code point */
-                if(primary1 == 0) { /* if we were shifted and we got an ignorable code point */
-                    /* we should just completely ignore it */
-                    continue;
-                }
-                if(compareQuad == 0) {
-                    if(count4 > 0) {
-                        while (count4 > UCOL_BOT_COUNT4) {
-                            *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
-                            count4 -= UCOL_BOT_COUNT4;
-                        }
-                        *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + (count4-1));
-                        count4 = 0;
-                    }
-                    /* We are dealing with a variable and we're treating them as shifted */
-                    /* This is a shifted ignorable */
-                    if(primary1 != 0) { /* we need to check this since we could be in continuation */
-                        *quads++ = primary1;
-                    }
-                    if(primary2 != 0) {
-                        *quads++ = primary2;
-                    }
-                }
-                wasShifted = TRUE;
-            } else {
-                wasShifted = FALSE;
-                /* Note: This code assumes that the table is well built i.e. not having 0 bytes where they are not supposed to be. */
-                /* Usually, we'll have non-zero primary1 & primary2, except in cases of a-z and friends, when primary2 will   */
-                /* regular and simple sortkey calc */
-                if(primary1 != UCOL_IGNORABLE) {
-                    if(notIsContinuation) {
-                        if(leadPrimary == primary1) {
-                            *primaries++ = primary2;
-                        } else {
-                            if(leadPrimary != 0) {
-                                *primaries++ = (uint8_t)((primary1 > leadPrimary) ? UCOL_BYTE_UNSHIFTED_MAX : UCOL_BYTE_UNSHIFTED_MIN);
-                            }
-                            if(primary2 == UCOL_IGNORABLE) {
-                                /* one byter, not compressed */
-                                *primaries++ = primary1;
-                                leadPrimary = 0;
-                            } else if(isCompressible(coll, originalPrimary1)) {
-                                /* compress */
-                                *primaries++ = leadPrimary = primary1;
-                                if(primaries <= primarySafeEnd) {
-                                    *primaries++ = primary2;
-                                }
-                            } else {
-                                leadPrimary = 0;
-                                *primaries++ = primary1;
-                                if(primaries <= primarySafeEnd) {
-                                    *primaries++ = primary2;
-                                }
-                            }
-                        }
-                    } else { /* we are in continuation, so we're gonna add primary to the key don't care about compression */
-                        *primaries++ = primary1;
-                        if((primary2 != UCOL_IGNORABLE) && (primaries <= primarySafeEnd)) {
-                                *primaries++ = primary2; /* second part */
-                        }
-                    }
-                }
-
-                if(secondary > compareSec) {
-                    if(!isFrenchSec) {
-                        /* This is compression code. */
-                        if (secondary == UCOL_COMMON2 && notIsContinuation) {
-                            ++count2;
-                        } else {
-                            if (count2 > 0) {
-                                if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
-                                    while (count2 > UCOL_TOP_COUNT2) {
-                                        *secondaries++ = (uint8_t)(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2);
-                                        count2 -= (uint32_t)UCOL_TOP_COUNT2;
-                                    }
-                                    *secondaries++ = (uint8_t)(UCOL_COMMON_TOP2 - (count2-1));
-                                } else {
-                                    while (count2 > UCOL_BOT_COUNT2) {
-                                        *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
-                                        count2 -= (uint32_t)UCOL_BOT_COUNT2;
-                                    }
-                                    *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + (count2-1));
-                                }
-                                count2 = 0;
-                            }
-                            *secondaries++ = secondary;
-                        }
+            wasShifted = TRUE;
+        } else {
+            wasShifted = FALSE;
+            /* Note: This code assumes that the table is well built i.e. not having 0 bytes where they are not supposed to be. */
+            /* Usually, we'll have non-zero primary1 & primary2, except in cases of a-z and friends, when primary2 will   */
+            /* regular and simple sortkey calc */
+            if(primary1 != UCOL_IGNORABLE) {
+                if(notIsContinuation) {
+                    if(leadPrimary == primary1) {
+                        primaries.Append(primary2);
                     } else {
-                        *secondaries++ = secondary;
-                        /* Do the special handling for French secondaries */
-                        /* We need to get continuation elements and do intermediate restore */
-                        /* abc1c2c3de with french secondaries need to be edc1c2c3ba NOT edc3c2c1ba */
-                        if(notIsContinuation) {
-                            if (frenchStartPtr != NULL) {
-                                /* reverse secondaries from frenchStartPtr up to frenchEndPtr */
-                                uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
-                                frenchStartPtr = NULL;
-                            }
+                        if(leadPrimary != 0) {
+                            primaries.Append((primary1 > leadPrimary) ? UCOL_BYTE_UNSHIFTED_MAX : UCOL_BYTE_UNSHIFTED_MIN);
+                        }
+                        if(primary2 == UCOL_IGNORABLE) {
+                            /* one byter, not compressed */
+                            primaries.Append(primary1);
+                            leadPrimary = 0;
+                        } else if(isCompressible(coll, originalPrimary1)) {
+                            /* compress */
+                            primaries.Append(leadPrimary = primary1, primary2);
                         } else {
-                            if (frenchStartPtr == NULL) {
-                                frenchStartPtr = secondaries - 2;
-                            }
-                            frenchEndPtr = secondaries-1;
+                            leadPrimary = 0;
+                            primaries.Append(primary1, primary2);
                         }
                     }
+                } else { /* we are in continuation, so we're gonna add primary to the key don't care about compression */
+                    if(primary2 == UCOL_IGNORABLE) {
+                        primaries.Append(primary1);
+                    } else {
+                        primaries.Append(primary1, primary2);
+                    }
                 }
+            }
 
-                if(doCase && (primary1 > 0 || strength >= UCOL_SECONDARY)) {
-                    // do the case level if we need to do it. We don't want to calculate
-                    // case level for primary ignorables if we have only primary strength and case level
-                    // otherwise we would break well formedness of CEs
-                    doCaseShift(&cases, caseShift);
-                    if(notIsContinuation) {
-                        caseBits = (uint8_t)(tertiary & 0xC0);
-
-                        if(tertiary != 0) {
-                            if(coll->caseFirst == UCOL_UPPER_FIRST) {
-                                if((caseBits & 0xC0) == 0) {
-                                    *(cases-1) |= 1 << (--caseShift);
-                                } else {
-                                    *(cases-1) |= 0 << (--caseShift);
-                                    /* second bit */
-                                    doCaseShift(&cases, caseShift);
-                                    *(cases-1) |= ((caseBits>>6)&1) << (--caseShift);
+            if(secondary > compareSec) {
+                if(!isFrenchSec) {
+                    /* This is compression code. */
+                    if (secondary == UCOL_COMMON2 && notIsContinuation) {
+                        ++count2;
+                    } else {
+                        if (count2 > 0) {
+                            if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
+                                while (count2 > UCOL_TOP_COUNT2) {
+                                    secondaries.appendByte(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2);
+                                    count2 -= (uint32_t)UCOL_TOP_COUNT2;
                                 }
+                                secondaries.appendByte(UCOL_COMMON_TOP2 - (count2-1));
                             } else {
-                                if((caseBits & 0xC0) == 0) {
-                                    *(cases-1) |= 0 << (--caseShift);
-                                } else {
-                                    *(cases-1) |= 1 << (--caseShift);
-                                    /* second bit */
-                                    doCaseShift(&cases, caseShift);
-                                    *(cases-1) |= ((caseBits>>7)&1) << (--caseShift);
+                                while (count2 > UCOL_BOT_COUNT2) {
+                                    secondaries.appendByte(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
+                                    count2 -= (uint32_t)UCOL_BOT_COUNT2;
                                 }
+                                secondaries.appendByte(UCOL_COMMON_BOT2 + (count2-1));
                             }
+                            count2 = 0;
                         }
-
+                        secondaries.appendByte(secondary);
                     }
                 } else {
+                    /* Do the special handling for French secondaries */
+                    /* We need to get continuation elements and do intermediate restore */
+                    /* abc1c2c3de with french secondaries need to be edc1c2c3ba NOT edc3c2c1ba */
                     if(notIsContinuation) {
-                        tertiary ^= caseSwitch;
-                    }
-                }
-
-                tertiary &= tertiaryMask;
-                if(tertiary > compareTer) {
-                    /* This is compression code. */
-                    /* sequence size check is included in the if clause */
-                    if (tertiary == tertiaryCommon && notIsContinuation) {
-                        ++count3;
-                    } else {
-                        if(tertiary > tertiaryCommon && tertiaryCommon == UCOL_COMMON3_NORMAL) {
-                            tertiary += tertiaryAddition;
-                        } else if(tertiary <= tertiaryCommon && tertiaryCommon == UCOL_COMMON3_UPPERFIRST) {
-                            tertiary -= tertiaryAddition;
+                        if (lastSecondaryLength > 1) {
+                            uint8_t *frenchStartPtr = secondaries.getLastFewBytes(lastSecondaryLength);
+                            if (frenchStartPtr != NULL) {
+                                /* reverse secondaries from frenchStartPtr up to frenchEndPtr */
+                                uint8_t *frenchEndPtr = frenchStartPtr + lastSecondaryLength - 1;
+                                uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
+                            }
                         }
-                        if (count3 > 0) {
-                            if ((tertiary > tertiaryCommon)) {
-                                while (count3 > coll->tertiaryTopCount) {
-                                    *tertiaries++ = (uint8_t)(tertiaryTop - coll->tertiaryTopCount);
-                                    count3 -= (uint32_t)coll->tertiaryTopCount;
-                                }
-                                *tertiaries++ = (uint8_t)(tertiaryTop - (count3-1));
+                        lastSecondaryLength = 1;
+                    } else {
+                        ++lastSecondaryLength;
+                    }
+                    secondaries.appendByte(secondary);
+                }
+            }
+
+            if(doCase && (primary1 > 0 || strength >= UCOL_SECONDARY)) {
+                // do the case level if we need to do it. We don't want to calculate
+                // case level for primary ignorables if we have only primary strength and case level
+                // otherwise we would break well formedness of CEs
+                doCaseShift(cases, caseShift);
+                if(notIsContinuation) {
+                    caseBits = (uint8_t)(tertiary & 0xC0);
+
+                    if(tertiary != 0) {
+                        if(coll->caseFirst == UCOL_UPPER_FIRST) {
+                            if((caseBits & 0xC0) == 0) {
+                                cases.lastByte() |= 1 << (--caseShift);
                             } else {
-                                while (count3 > coll->tertiaryBottomCount) {
-                                    *tertiaries++ = (uint8_t)(tertiaryBottom + coll->tertiaryBottomCount);
-                                    count3 -= (uint32_t)coll->tertiaryBottomCount;
-                                }
-                                *tertiaries++ = (uint8_t)(tertiaryBottom + (count3-1));
+                                cases.lastByte() |= 0 << (--caseShift);
+                                /* second bit */
+                                doCaseShift(cases, caseShift);
+                                cases.lastByte() |= ((caseBits>>6)&1) << (--caseShift);
                             }
-                            count3 = 0;
-                        }
-                        *tertiaries++ = tertiary;
-                    }
-                }
-
-                if(/*qShifted*/(compareQuad==0)  && notIsContinuation) {
-                    if(s.flags & UCOL_WAS_HIRAGANA) { // This was Hiragana and we need to note it
-                        if(count4>0) { // Close this part
-                            while (count4 > UCOL_BOT_COUNT4) {
-                                *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
-                                count4 -= UCOL_BOT_COUNT4;
+                        } else {
+                            if((caseBits & 0xC0) == 0) {
+                                cases.lastByte() |= 0 << (--caseShift);
+                            } else {
+                                cases.lastByte() |= 1 << (--caseShift);
+                                /* second bit */
+                                doCaseShift(cases, caseShift);
+                                cases.lastByte() |= ((caseBits>>7)&1) << (--caseShift);
                             }
-                            *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + (count4-1));
-                            count4 = 0;
                         }
-                        *quads++ = UCOL_HIRAGANA_QUAD; // Add the Hiragana
-                    } else { // This wasn't Hiragana, so we can continue adding stuff
-                        count4++;
                     }
+                }
+            } else {
+                if(notIsContinuation) {
+                    tertiary ^= caseSwitch;
                 }
             }
 
-            if(primaries > primarySafeEnd) { /* We have stepped over the primary buffer */
-                if(allocateSKBuffer == FALSE) { /* need to save our butts if we cannot reallocate */
-                    IInit_collIterate(coll, (UChar *)source, len, &s, status);
-                    if(U_FAILURE(*status)) {
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        finished = TRUE;
-                        break;
+            tertiary &= tertiaryMask;
+            if(tertiary > compareTer) {
+                /* This is compression code. */
+                /* sequence size check is included in the if clause */
+                if (tertiary == tertiaryCommon && notIsContinuation) {
+                    ++count3;
+                } else {
+                    if(tertiary > tertiaryCommon && tertiaryCommon == UCOL_COMMON3_NORMAL) {
+                        tertiary += tertiaryAddition;
+                    } else if(tertiary <= tertiaryCommon && tertiaryCommon == UCOL_COMMON3_UPPERFIRST) {
+                        tertiary -= tertiaryAddition;
                     }
-                    s.flags &= ~UCOL_ITER_NORM;
-                    sortKeySize = ucol_getSortKeySize(coll, &s, sortKeySize, strength, len);
-                    *status = U_BUFFER_OVERFLOW_ERROR;
-                    finished = TRUE;
-                    break;
-                } else { /* It's much nicer if we can actually reallocate */
-                    int32_t sks = sortKeySize+(int32_t)((primaries - primStart)+(secondaries - secStart)+(tertiaries - terStart)+(cases-caseStart)+(quads-quadStart));
-                    primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sks, status);
-                    if(U_SUCCESS(*status)) {
-                        *result = primStart;
-                        primarySafeEnd = primStart + resultLength - 1;
-                        if(strength > UCOL_PRIMARY) {
-                            primarySafeEnd--;
+                    if (count3 > 0) {
+                        if ((tertiary > tertiaryCommon)) {
+                            while (count3 > coll->tertiaryTopCount) {
+                                tertiaries.appendByte(tertiaryTop - coll->tertiaryTopCount);
+                                count3 -= (uint32_t)coll->tertiaryTopCount;
+                            }
+                            tertiaries.appendByte(tertiaryTop - (count3-1));
+                        } else {
+                            while (count3 > coll->tertiaryBottomCount) {
+                                tertiaries.appendByte(tertiaryBottom + coll->tertiaryBottomCount);
+                                count3 -= (uint32_t)coll->tertiaryBottomCount;
+                            }
+                            tertiaries.appendByte(tertiaryBottom + (count3-1));
                         }
-                    } else {
-                        /* We ran out of memory!? We can't recover. */
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        finished = TRUE;
-                        break;
+                        count3 = 0;
                     }
+                    tertiaries.appendByte(tertiary);
                 }
             }
-        }
-        if(finished) {
-            break;
-        } else {
-            prevBuffSize = minBufferSize;
 
-            uint32_t frenchStartOffset = 0, frenchEndOffset = 0;
-            if (frenchStartPtr != NULL) {
-                frenchStartOffset = (uint32_t)(frenchStartPtr - secStart);
-                frenchEndOffset = (uint32_t)(frenchEndPtr - secStart);
+            if(/*qShifted*/(compareQuad==0)  && notIsContinuation) {
+                if(s.flags & UCOL_WAS_HIRAGANA) { // This was Hiragana and we need to note it
+                    if(count4>0) { // Close this part
+                        while (count4 > UCOL_BOT_COUNT4) {
+                            quads.appendByte(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
+                            count4 -= UCOL_BOT_COUNT4;
+                        }
+                        quads.appendByte(UCOL_COMMON_BOT4 + (count4-1));
+                        count4 = 0;
+                    }
+                    quads.appendByte(UCOL_HIRAGANA_QUAD); // Add the Hiragana
+                } else { // This wasn't Hiragana, so we can continue adding stuff
+                    count4++;
+                }
             }
-            secStart = reallocateBuffer(&secondaries, secStart, second, &secSize, 2*secSize, status);
-            terStart = reallocateBuffer(&tertiaries, terStart, tert, &terSize, 2*terSize, status);
-            caseStart = reallocateBuffer(&cases, caseStart, caseB, &caseSize, 2*caseSize, status);
-            quadStart = reallocateBuffer(&quads, quadStart, quad, &quadSize, 2*quadSize, status);
-            if(U_FAILURE(*status)) {
-                /* We ran out of memory!? We can't recover. */
-                sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                break;
-            }
-            if (frenchStartPtr != NULL) {
-                frenchStartPtr = secStart + frenchStartOffset;
-                frenchEndPtr = secStart + frenchEndOffset;
-            }
-            minBufferSize *= 2;
         }
     }
 
     /* Here, we are generally done with processing */
     /* bailing out would not be too productive */
 
+    UBool ok = TRUE;
     if(U_SUCCESS(*status)) {
-        sortKeySize += (uint32_t)(primaries - primStart);
         /* we have done all the CE's, now let's put them together to form a key */
         if(compareSec == 0) {
             if (count2 > 0) {
                 while (count2 > UCOL_BOT_COUNT2) {
-                    *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
+                    secondaries.appendByte(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
                     count2 -= (uint32_t)UCOL_BOT_COUNT2;
                 }
-                *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + (count2-1));
+                secondaries.appendByte(UCOL_COMMON_BOT2 + (count2-1));
             }
-            uint32_t secsize = (uint32_t)(secondaries-secStart);
-            if(!isFrenchSec) { // Regular situation, we know the length of secondaries
-                sortKeySize += secsize;
-                if(sortKeySize <= resultLength) {
-                    *(primaries++) = UCOL_LEVELTERMINATOR;
-                    uprv_memcpy(primaries, secStart, secsize);
-                    primaries += secsize;
-                } else {
-                    if(allocateSKBuffer == TRUE) { /* need to save our butts if we cannot reallocate */
-                        primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                        if(U_SUCCESS(*status)) {
-                            *result = primStart;
-                            *(primaries++) = UCOL_LEVELTERMINATOR;
-                            uprv_memcpy(primaries, secStart, secsize);
-                            primaries += secsize;
-                        }
-                        else {
-                            /* We ran out of memory!? We can't recover. */
-                            sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                            goto cleanup;
-                        }
-                    } else {
-                        *status = U_BUFFER_OVERFLOW_ERROR;
+            result.Append(UCOL_LEVELTERMINATOR);
+            if(!secondaries.isOk()) {
+                ok = FALSE;
+            } else if(!isFrenchSec) {
+                secondaries.appendTo(result);
+            } else {
+                // If there are any unresolved continuation secondaries,
+                // reverse them here so that we can reverse the whole secondary thing.
+                if (lastSecondaryLength > 1) {
+                    uint8_t *frenchStartPtr = secondaries.getLastFewBytes(lastSecondaryLength);
+                    if (frenchStartPtr != NULL) {
+                        /* reverse secondaries from frenchStartPtr up to frenchEndPtr */
+                        uint8_t *frenchEndPtr = frenchStartPtr + lastSecondaryLength - 1;
+                        uprv_ucol_reverse_buffer(uint8_t, frenchStartPtr, frenchEndPtr);
                     }
                 }
-            } else { // French secondary is on. We will need to pack French. packFrench will add the level terminator
-                uint8_t *newPrim = packFrench(primaries, primStart+resultLength, secondaries, &secsize, frenchStartPtr, frenchEndPtr);
-                sortKeySize += secsize;
-                if(sortKeySize <= resultLength) { // if we managed to pack fine
-                    primaries = newPrim; // update the primary pointer
-                } else { // overflow, need to reallocate and redo
-                    if(allocateSKBuffer == TRUE) { /* need to save our butts if we cannot reallocate */
-                        primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                        if(U_SUCCESS(*status)) {
-                            primaries = packFrench(primaries, primStart+resultLength, secondaries, &secsize, frenchStartPtr, frenchEndPtr);
-                        }
-                        else {
-                            /* We ran out of memory!? We can't recover. */
-                            sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                            goto cleanup;
-                        }
-                    } else {
-                        *status = U_BUFFER_OVERFLOW_ERROR;
-                    }
-                }
+                packFrench(secondaries.data(), secondaries.length(), result);
             }
         }
 
         if(doCase) {
-            uint32_t casesize = (uint32_t)(cases - caseStart);
-            sortKeySize += casesize;
-            if(sortKeySize <= resultLength) {
-                *(primaries++) = UCOL_LEVELTERMINATOR;
-                uprv_memcpy(primaries, caseStart, casesize);
-                primaries += casesize;
-            } else {
-                if(allocateSKBuffer == TRUE) {
-                    primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                    if(U_SUCCESS(*status)) {
-                        *result = primStart;
-                        *(primaries++) = UCOL_LEVELTERMINATOR;
-                        uprv_memcpy(primaries, caseStart, casesize);
-                    }
-                    else {
-                        /* We ran out of memory!? We can't recover. */
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        goto cleanup;
-                    }
-                } else {
-                    *status = U_BUFFER_OVERFLOW_ERROR;
-                }
-            }
+            ok &= cases.isOk();
+            result.Append(UCOL_LEVELTERMINATOR);
+            cases.appendTo(result);
         }
 
         if(compareTer == 0) {
             if (count3 > 0) {
                 if (coll->tertiaryCommon != UCOL_COMMON_BOT3) {
                     while (count3 >= coll->tertiaryTopCount) {
-                        *tertiaries++ = (uint8_t)(tertiaryTop - coll->tertiaryTopCount);
+                        tertiaries.appendByte(tertiaryTop - coll->tertiaryTopCount);
                         count3 -= (uint32_t)coll->tertiaryTopCount;
                     }
-                    *tertiaries++ = (uint8_t)(tertiaryTop - count3);
+                    tertiaries.appendByte(tertiaryTop - count3);
                 } else {
                     while (count3 > coll->tertiaryBottomCount) {
-                        *tertiaries++ = (uint8_t)(tertiaryBottom + coll->tertiaryBottomCount);
+                        tertiaries.appendByte(tertiaryBottom + coll->tertiaryBottomCount);
                         count3 -= (uint32_t)coll->tertiaryBottomCount;
                     }
-                    *tertiaries++ = (uint8_t)(tertiaryBottom + (count3-1));
+                    tertiaries.appendByte(tertiaryBottom + (count3-1));
                 }
             }
-            uint32_t tersize = (uint32_t)(tertiaries - terStart);
-            sortKeySize += tersize;
-            if(sortKeySize <= resultLength) {
-                *(primaries++) = UCOL_LEVELTERMINATOR;
-                uprv_memcpy(primaries, terStart, tersize);
-                primaries += tersize;
-            } else {
-                if(allocateSKBuffer == TRUE) {
-                    primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                    if(U_SUCCESS(*status)) {
-                        *result = primStart;
-                        *(primaries++) = UCOL_LEVELTERMINATOR;
-                        uprv_memcpy(primaries, terStart, tersize);
-                    }
-                    else {
-                        /* We ran out of memory!? We can't recover. */
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        goto cleanup;
-                    }
-                } else {
-                    *status = U_BUFFER_OVERFLOW_ERROR;
-                }
-            }
+            ok &= tertiaries.isOk();
+            result.Append(UCOL_LEVELTERMINATOR);
+            tertiaries.appendTo(result);
 
             if(compareQuad == 0/*qShifted == TRUE*/) {
                 if(count4 > 0) {
                     while (count4 > UCOL_BOT_COUNT4) {
-                        *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
+                        quads.appendByte(UCOL_COMMON_BOT4 + UCOL_BOT_COUNT4);
                         count4 -= UCOL_BOT_COUNT4;
                     }
-                    *quads++ = (uint8_t)(UCOL_COMMON_BOT4 + (count4-1));
+                    quads.appendByte(UCOL_COMMON_BOT4 + (count4-1));
                 }
-                uint32_t quadsize = (uint32_t)(quads - quadStart);
-                sortKeySize += quadsize;
-                if(sortKeySize <= resultLength) {
-                    *(primaries++) = UCOL_LEVELTERMINATOR;
-                    uprv_memcpy(primaries, quadStart, quadsize);
-                    primaries += quadsize;
-                } else {
-                    if(allocateSKBuffer == TRUE) {
-                        primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                        if(U_SUCCESS(*status)) {
-                            *result = primStart;
-                            *(primaries++) = UCOL_LEVELTERMINATOR;
-                            uprv_memcpy(primaries, quadStart, quadsize);
-                        }
-                        else {
-                            /* We ran out of memory!? We can't recover. */
-                            sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                            goto cleanup;
-                        }
-                    } else {
-                        *status = U_BUFFER_OVERFLOW_ERROR;
-                    }
-                }
+                ok &= quads.isOk();
+                result.Append(UCOL_LEVELTERMINATOR);
+                quads.appendTo(result);
             }
 
             if(compareIdent) {
-                sortKeySize += u_lengthOfIdenticalLevelRun(s.string, len);
-                if(sortKeySize <= resultLength) {
-                    *(primaries++) = UCOL_LEVELTERMINATOR;
-                    primaries += u_writeIdenticalLevelRun(s.string, len, primaries);
-                } else {
-                    if(allocateSKBuffer == TRUE) {
-                        primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, sortKeySize, status);
-                        if(U_SUCCESS(*status)) {
-                            *result = primStart;
-                            *(primaries++) = UCOL_LEVELTERMINATOR;
-                            u_writeIdenticalLevelRun(s.string, len, primaries);
-                        }
-                        else {
-                            /* We ran out of memory!? We can't recover. */
-                            sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                            goto cleanup;
-                        }
-                    } else {
-                        *status = U_BUFFER_OVERFLOW_ERROR;
-                    }
-                }
+                result.Append(UCOL_LEVELTERMINATOR);
+                u_writeIdenticalLevelRun(s.string, len, result);
             }
         }
-        *(primaries++) = '\0';
+        result.Append(0);
     }
 
-    if(allocateSKBuffer == TRUE) {
-        *result = (uint8_t*)uprv_malloc(sortKeySize);
-        /* test for NULL */
-        if (*result == NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            goto cleanup;
-        }
-        uprv_memcpy(*result, primStart, sortKeySize);
-        if(primStart != prim) {
-            uprv_free(primStart);
-        }
-    }
-
-cleanup:
-    if (allocateSKBuffer == FALSE && resultLength > 0 && U_FAILURE(*status) && *status != U_BUFFER_OVERFLOW_ERROR) {
-        /* NULL terminate for safety */
-        **result = 0;
-    }
-    if(terStart != tert) {
-        uprv_free(terStart);
-        uprv_free(secStart);
-        uprv_free(caseStart);
-        uprv_free(quadStart);
-    }
-    
     /* To avoid memory leak, free the offset buffer if necessary. */
     ucol_freeOffsetBuffer(&s);
 
-    return sortKeySize;
+    ok &= result.IsOk();
+    if(!ok && U_SUCCESS(*status)) { *status = U_MEMORY_ALLOCATION_ERROR; }
 }
 
 
-U_CFUNC int32_t U_CALLCONV
+U_CFUNC void U_CALLCONV
 ucol_calcSortKeySimpleTertiary(const    UCollator    *coll,
         const    UChar        *source,
         int32_t        sourceLength,
-        uint8_t        **result,
-        uint32_t        resultLength,
-        UBool allocateSKBuffer,
+        SortKeyByteSink &result,
         UErrorCode *status)
 {
     U_ALIGN_CODE(16);
 
-    //const UCAConstants *UCAconsts = (UCAConstants *)((uint8_t *)coll->UCA->image + coll->image->UCAConsts);
-    uint32_t i = 0; /* general purpose counter */
-
-    /* Stack allocated buffers for buffers we use */
-    uint8_t prim[UCOL_PRIMARY_MAX_BUFFER], second[UCOL_SECONDARY_MAX_BUFFER], tert[UCOL_TERTIARY_MAX_BUFFER];
-
-    uint8_t *primaries = *result, *secondaries = second, *tertiaries = tert;
-
     if(U_FAILURE(*status)) {
-        return 0;
+        return;
     }
 
-    if(primaries == NULL && allocateSKBuffer == TRUE) {
-        primaries = *result = prim;
-        resultLength = UCOL_PRIMARY_MAX_BUFFER;
-    }
-
-    uint32_t secSize = UCOL_SECONDARY_MAX_BUFFER, terSize = UCOL_TERTIARY_MAX_BUFFER;
-
-    uint32_t sortKeySize = 3; /* it is always \0 terminated plus separators for secondary and tertiary */
+    SortKeyByteSink &primaries = result;
+    SortKeyLevel secondaries;
+    SortKeyLevel tertiaries;
 
     UnicodeString normSource;
 
@@ -5341,21 +4989,9 @@ ucol_calcSortKeySimpleTertiary(const    UCollator    *coll,
     collIterate s;
     IInit_collIterate(coll, (UChar *)source, len, &s, status);
     if(U_FAILURE(*status)) {
-        return 0;
+        return;
     }
     s.flags &= ~UCOL_ITER_NORM;  // source passed the FCD test or else was normalized.
-
-    if(resultLength == 0 || primaries == NULL) {
-        return ucol_getSortKeySize(coll, &s, sortKeySize, coll->strength, len);
-    }
-
-    uint8_t *primarySafeEnd = primaries + resultLength - 2;
-
-    uint32_t minBufferSize = UCOL_MAX_BUFFER;
-
-    uint8_t *primStart = primaries;
-    uint8_t *secStart = secondaries;
-    uint8_t *terStart = tertiaries;
 
     uint32_t order = 0;
 
@@ -5370,285 +5006,174 @@ ucol_calcSortKeySimpleTertiary(const    UCollator    *coll,
     uint8_t tertiaryBottom = coll->tertiaryBottom;
     uint8_t tertiaryCommon = coll->tertiaryCommon;
 
-    uint32_t prevBuffSize = 0;
-
-    UBool finished = FALSE;
     UBool notIsContinuation = FALSE;
 
     uint32_t count2 = 0, count3 = 0;
     uint8_t leadPrimary = 0;
 
     for(;;) {
-        for(i=prevBuffSize; i<minBufferSize; ++i) {
+        order = ucol_IGetNextCE(coll, &s, status);
 
-            order = ucol_IGetNextCE(coll, &s, status);
+        if(order == 0) {
+            continue;
+        }
 
-            if(order == 0) {
-                continue;
-            }
+        if(order == UCOL_NO_MORE_CES) {
+            break;
+        }
 
-            if(order == UCOL_NO_MORE_CES) {
-                finished = TRUE;
-                break;
-            }
+        notIsContinuation = !isContinuation(order);
 
-            notIsContinuation = !isContinuation(order);
+        if(notIsContinuation) {
+            tertiary = (uint8_t)((order & tertiaryMask));
+        } else {
+            tertiary = (uint8_t)((order & UCOL_REMOVE_CONTINUATION));
+        }
 
+        secondary = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
+        primary2 = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
+        primary1 = (uint8_t)(order >> 8);
+
+        uint8_t originalPrimary1 = primary1;
+        if (coll->leadBytePermutationTable != NULL && notIsContinuation) {
+            primary1 = coll->leadBytePermutationTable[primary1];
+        }
+
+        /* Note: This code assumes that the table is well built i.e. not having 0 bytes where they are not supposed to be. */
+        /* Usually, we'll have non-zero primary1 & primary2, except in cases of a-z and friends, when primary2 will   */
+        /* be zero with non zero primary1. primary3 is different than 0 only for long primaries - see above.               */
+        /* regular and simple sortkey calc */
+        if(primary1 != UCOL_IGNORABLE) {
             if(notIsContinuation) {
-                tertiary = (uint8_t)((order & tertiaryMask));
-            } else {
-                tertiary = (uint8_t)((order & UCOL_REMOVE_CONTINUATION));
-            }
-
-            secondary = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-            primary2 = (uint8_t)((order >>= 8) & UCOL_BYTE_SIZE_MASK);
-            primary1 = (uint8_t)(order >> 8);
-
-            uint8_t originalPrimary1 = primary1;
-            if (coll->leadBytePermutationTable != NULL && notIsContinuation) {
-                primary1 = coll->leadBytePermutationTable[primary1];
-            }
-
-            /* Note: This code assumes that the table is well built i.e. not having 0 bytes where they are not supposed to be. */
-            /* Usually, we'll have non-zero primary1 & primary2, except in cases of a-z and friends, when primary2 will   */
-            /* be zero with non zero primary1. primary3 is different than 0 only for long primaries - see above.               */
-            /* regular and simple sortkey calc */
-            if(primary1 != UCOL_IGNORABLE) {
-                if(notIsContinuation) {
-                    if(leadPrimary == primary1) {
-                        *primaries++ = primary2;
-                    } else {
-                        if(leadPrimary != 0) {
-                            *primaries++ = (uint8_t)((primary1 > leadPrimary) ? UCOL_BYTE_UNSHIFTED_MAX : UCOL_BYTE_UNSHIFTED_MIN);
-                        }
-                        if(primary2 == UCOL_IGNORABLE) {
-                            /* one byter, not compressed */
-                            *primaries++ = primary1;
-                            leadPrimary = 0;
-                        } else if(isCompressible(coll, originalPrimary1)) {
-                            /* compress */
-                            *primaries++ = leadPrimary = primary1;
-                            *primaries++ = primary2;
-                        } else {
-                            leadPrimary = 0;
-                            *primaries++ = primary1;
-                            *primaries++ = primary2;
-                        }
-                    }
-                } else { /* we are in continuation, so we're gonna add primary to the key don't care about compression */
-                    *primaries++ = primary1;
-                    if(primary2 != UCOL_IGNORABLE) {
-                        *primaries++ = primary2; /* second part */
-                    }
-                }
-            }
-
-            if(secondary > 0) { /* I think that != 0 test should be != IGNORABLE */
-                /* This is compression code. */
-                if (secondary == UCOL_COMMON2 && notIsContinuation) {
-                    ++count2;
+                if(leadPrimary == primary1) {
+                    primaries.Append(primary2);
                 } else {
-                    if (count2 > 0) {
-                        if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
-                            while (count2 > UCOL_TOP_COUNT2) {
-                                *secondaries++ = (uint8_t)(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2);
-                                count2 -= (uint32_t)UCOL_TOP_COUNT2;
-                            }
-                            *secondaries++ = (uint8_t)(UCOL_COMMON_TOP2 - (count2-1));
-                        } else {
-                            while (count2 > UCOL_BOT_COUNT2) {
-                                *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
-                                count2 -= (uint32_t)UCOL_BOT_COUNT2;
-                            }
-                            *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + (count2-1));
-                        }
-                        count2 = 0;
+                    if(leadPrimary != 0) {
+                        primaries.Append((primary1 > leadPrimary) ? UCOL_BYTE_UNSHIFTED_MAX : UCOL_BYTE_UNSHIFTED_MIN);
                     }
-                    *secondaries++ = secondary;
-                }
-            }
-
-            if(notIsContinuation) {
-                tertiary ^= caseSwitch;
-            }
-
-            if(tertiary > 0) {
-                /* This is compression code. */
-                /* sequence size check is included in the if clause */
-                if (tertiary == tertiaryCommon && notIsContinuation) {
-                    ++count3;
-                } else {
-                    if(tertiary > tertiaryCommon && tertiaryCommon == UCOL_COMMON3_NORMAL) {
-                        tertiary += tertiaryAddition;
-                    } else if (tertiary <= tertiaryCommon && tertiaryCommon == UCOL_COMMON3_UPPERFIRST) {
-                        tertiary -= tertiaryAddition;
-                    }
-                    if (count3 > 0) {
-                        if ((tertiary > tertiaryCommon)) {
-                            while (count3 > coll->tertiaryTopCount) {
-                                *tertiaries++ = (uint8_t)(tertiaryTop - coll->tertiaryTopCount);
-                                count3 -= (uint32_t)coll->tertiaryTopCount;
-                            }
-                            *tertiaries++ = (uint8_t)(tertiaryTop - (count3-1));
-                        } else {
-                            while (count3 > coll->tertiaryBottomCount) {
-                                *tertiaries++ = (uint8_t)(tertiaryBottom + coll->tertiaryBottomCount);
-                                count3 -= (uint32_t)coll->tertiaryBottomCount;
-                            }
-                            *tertiaries++ = (uint8_t)(tertiaryBottom + (count3-1));
-                        }
-                        count3 = 0;
-                    }
-                    *tertiaries++ = tertiary;
-                }
-            }
-
-            if(primaries > primarySafeEnd) { /* We have stepped over the primary buffer */
-                if(allocateSKBuffer == FALSE) { /* need to save our butts if we cannot reallocate */
-                    IInit_collIterate(coll, (UChar *)source, len, &s, status);
-                    if(U_FAILURE(*status)) {
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        finished = TRUE;
-                        break;
-                    }
-                    s.flags &= ~UCOL_ITER_NORM;
-                    sortKeySize = ucol_getSortKeySize(coll, &s, sortKeySize, coll->strength, len);
-                    *status = U_BUFFER_OVERFLOW_ERROR;
-                    finished = TRUE;
-                    break;
-                } else { /* It's much nicer if we can actually reallocate */
-                    int32_t sks = sortKeySize+(int32_t)((primaries - primStart)+(secondaries - secStart)+(tertiaries - terStart));
-                    primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sks, status);
-                    if(U_SUCCESS(*status)) {
-                        *result = primStart;
-                        primarySafeEnd = primStart + resultLength - 2;
+                    if(primary2 == UCOL_IGNORABLE) {
+                        /* one byter, not compressed */
+                        primaries.Append(primary1);
+                        leadPrimary = 0;
+                    } else if(isCompressible(coll, originalPrimary1)) {
+                        /* compress */
+                        primaries.Append(leadPrimary = primary1, primary2);
                     } else {
-                        /* We ran out of memory!? We can't recover. */
-                        sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                        finished = TRUE;
-                        break;
+                        leadPrimary = 0;
+                        primaries.Append(primary1, primary2);
                     }
+                }
+            } else { /* we are in continuation, so we're gonna add primary to the key don't care about compression */
+                if(primary2 == UCOL_IGNORABLE) {
+                    primaries.Append(primary1);
+                } else {
+                    primaries.Append(primary1, primary2);
                 }
             }
         }
-        if(finished) {
-            break;
-        } else {
-            prevBuffSize = minBufferSize;
-            secStart = reallocateBuffer(&secondaries, secStart, second, &secSize, 2*secSize, status);
-            terStart = reallocateBuffer(&tertiaries, terStart, tert, &terSize, 2*terSize, status);
-            minBufferSize *= 2;
-            if(U_FAILURE(*status)) { // if we cannot reallocate buffers, we can at least give the sortkey size
-                /* We ran out of memory!? We can't recover. */
-                sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                break;
+
+        if(secondary > 0) { /* I think that != 0 test should be != IGNORABLE */
+            /* This is compression code. */
+            if (secondary == UCOL_COMMON2 && notIsContinuation) {
+                ++count2;
+            } else {
+                if (count2 > 0) {
+                    if (secondary > UCOL_COMMON2) { // not necessary for 4th level.
+                        while (count2 > UCOL_TOP_COUNT2) {
+                            secondaries.appendByte(UCOL_COMMON_TOP2 - UCOL_TOP_COUNT2);
+                            count2 -= (uint32_t)UCOL_TOP_COUNT2;
+                        }
+                        secondaries.appendByte(UCOL_COMMON_TOP2 - (count2-1));
+                    } else {
+                        while (count2 > UCOL_BOT_COUNT2) {
+                            secondaries.appendByte(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
+                            count2 -= (uint32_t)UCOL_BOT_COUNT2;
+                        }
+                        secondaries.appendByte(UCOL_COMMON_BOT2 + (count2-1));
+                    }
+                    count2 = 0;
+                }
+                secondaries.appendByte(secondary);
+            }
+        }
+
+        if(notIsContinuation) {
+            tertiary ^= caseSwitch;
+        }
+
+        if(tertiary > 0) {
+            /* This is compression code. */
+            /* sequence size check is included in the if clause */
+            if (tertiary == tertiaryCommon && notIsContinuation) {
+                ++count3;
+            } else {
+                if(tertiary > tertiaryCommon && tertiaryCommon == UCOL_COMMON3_NORMAL) {
+                    tertiary += tertiaryAddition;
+                } else if (tertiary <= tertiaryCommon && tertiaryCommon == UCOL_COMMON3_UPPERFIRST) {
+                    tertiary -= tertiaryAddition;
+                }
+                if (count3 > 0) {
+                    if ((tertiary > tertiaryCommon)) {
+                        while (count3 > coll->tertiaryTopCount) {
+                            tertiaries.appendByte(tertiaryTop - coll->tertiaryTopCount);
+                            count3 -= (uint32_t)coll->tertiaryTopCount;
+                        }
+                        tertiaries.appendByte(tertiaryTop - (count3-1));
+                    } else {
+                        while (count3 > coll->tertiaryBottomCount) {
+                            tertiaries.appendByte(tertiaryBottom + coll->tertiaryBottomCount);
+                            count3 -= (uint32_t)coll->tertiaryBottomCount;
+                        }
+                        tertiaries.appendByte(tertiaryBottom + (count3-1));
+                    }
+                    count3 = 0;
+                }
+                tertiaries.appendByte(tertiary);
             }
         }
     }
 
+    UBool ok = TRUE;
     if(U_SUCCESS(*status)) {
-        sortKeySize += (uint32_t)(primaries - primStart);
         /* we have done all the CE's, now let's put them together to form a key */
         if (count2 > 0) {
             while (count2 > UCOL_BOT_COUNT2) {
-                *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
+                secondaries.appendByte(UCOL_COMMON_BOT2 + UCOL_BOT_COUNT2);
                 count2 -= (uint32_t)UCOL_BOT_COUNT2;
             }
-            *secondaries++ = (uint8_t)(UCOL_COMMON_BOT2 + (count2-1));
+            secondaries.appendByte(UCOL_COMMON_BOT2 + (count2-1));
         }
-        uint32_t secsize = (uint32_t)(secondaries-secStart);
-        sortKeySize += secsize;
-        if(sortKeySize <= resultLength) {
-            *(primaries++) = UCOL_LEVELTERMINATOR;
-            uprv_memcpy(primaries, secStart, secsize);
-            primaries += secsize;
-        } else {
-            if(allocateSKBuffer == TRUE) {
-                primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                if(U_SUCCESS(*status)) {
-                    *(primaries++) = UCOL_LEVELTERMINATOR;
-                    *result = primStart;
-                    uprv_memcpy(primaries, secStart, secsize);
-                }
-                else {
-                    /* We ran out of memory!? We can't recover. */
-                    sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                    goto cleanup;
-                }
-            } else {
-                *status = U_BUFFER_OVERFLOW_ERROR;
-            }
-        }
+        ok &= secondaries.isOk();
+        result.Append(UCOL_LEVELTERMINATOR);
+        secondaries.appendTo(result);
 
         if (count3 > 0) {
             if (coll->tertiaryCommon != UCOL_COMMON3_NORMAL) {
                 while (count3 >= coll->tertiaryTopCount) {
-                    *tertiaries++ = (uint8_t)(tertiaryTop - coll->tertiaryTopCount);
+                    tertiaries.appendByte(tertiaryTop - coll->tertiaryTopCount);
                     count3 -= (uint32_t)coll->tertiaryTopCount;
                 }
-                *tertiaries++ = (uint8_t)(tertiaryTop - count3);
+                tertiaries.appendByte(tertiaryTop - count3);
             } else {
                 while (count3 > coll->tertiaryBottomCount) {
-                    *tertiaries++ = (uint8_t)(tertiaryBottom + coll->tertiaryBottomCount);
+                    tertiaries.appendByte(tertiaryBottom + coll->tertiaryBottomCount);
                     count3 -= (uint32_t)coll->tertiaryBottomCount;
                 }
-                *tertiaries++ = (uint8_t)(tertiaryBottom + (count3-1));
+                tertiaries.appendByte(tertiaryBottom + (count3-1));
             }
         }
-        uint32_t tersize = (uint32_t)(tertiaries - terStart);
-        sortKeySize += tersize;
-        if(sortKeySize <= resultLength) {
-            *(primaries++) = UCOL_LEVELTERMINATOR;
-            uprv_memcpy(primaries, terStart, tersize);
-            primaries += tersize;
-        } else {
-            if(allocateSKBuffer == TRUE) {
-                primStart = reallocateBuffer(&primaries, *result, prim, &resultLength, 2*sortKeySize, status);
-                if(U_SUCCESS(*status)) {
-                    *result = primStart;
-                    *(primaries++) = UCOL_LEVELTERMINATOR;
-                    uprv_memcpy(primaries, terStart, tersize);
-                }
-                else {
-                    /* We ran out of memory!? We can't recover. */
-                    sortKeySize = DEFAULT_ERROR_SIZE_FOR_CALCSORTKEY;
-                    goto cleanup;
-                }
-            } else {
-                *status = U_BUFFER_OVERFLOW_ERROR;
-            }
-        }
+        ok &= tertiaries.isOk();
+        result.Append(UCOL_LEVELTERMINATOR);
+        tertiaries.appendTo(result);
 
-        *(primaries++) = '\0';
+        result.Append(0);
     }
 
-    if(allocateSKBuffer == TRUE) {
-        *result = (uint8_t*)uprv_malloc(sortKeySize);
-        /* test for NULL */
-        if (*result == NULL) {
-            *status = U_MEMORY_ALLOCATION_ERROR;
-            goto cleanup;
-        }
-        uprv_memcpy(*result, primStart, sortKeySize);
-        if(primStart != prim) {
-            uprv_free(primStart);
-        }
-    }
-
-cleanup:
-    if (allocateSKBuffer == FALSE && resultLength > 0 && U_FAILURE(*status) && *status != U_BUFFER_OVERFLOW_ERROR) {
-        /* NULL terminate for safety */
-        **result = 0;
-    }
-    if(terStart != tert) {
-        uprv_free(terStart);
-        uprv_free(secStart);
-    }
-    
     /* To avoid memory leak, free the offset buffer if necessary. */
     ucol_freeOffsetBuffer(&s);
-    
-    return sortKeySize;
+
+    ok &= result.IsOk();
+    if(!ok && U_SUCCESS(*status)) { *status = U_MEMORY_ALLOCATION_ERROR; }
 }
 
 static inline
@@ -6490,7 +6015,7 @@ saveState:
 
     // If we are doing French, we need to store whether we have just finished the French level
     if(level == UCOL_PSK_SECONDARY && doingFrench) {
-        state[1] |= (((state[0] == 0) & UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_MASK) << UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_SHIFT);
+        state[1] |= (((int32_t)(state[0] == 0) & UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_MASK) << UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_SHIFT);
     } else {
         state[1] |= ((byteCountOrFrenchDone & UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_MASK) << UCOL_PSK_BYTE_COUNT_OR_FRENCH_DONE_SHIFT);
     }
@@ -6690,6 +6215,7 @@ ucol_setUpLatinOne(UCollator *coll, UErrorCode *status) {
     UCollationElements *it = ucol_openElements(coll, &ch, 1, status);
     // Check for null pointer 
     if (U_FAILURE(*status)) {
+        ucol_closeElements(it);
         return FALSE;
     }
     uprv_memset(coll->latinOneCEs, 0, sizeof(uint32_t)*coll->latinOneTableLen*3);
@@ -6860,7 +6386,7 @@ void ucol_updateInternalState(UCollator *coll, UErrorCode *status) {
         }
 
         /* Set the compression values */
-        uint8_t tertiaryTotal = (uint8_t)(coll->tertiaryTop - UCOL_COMMON_BOT3-1);
+        uint8_t tertiaryTotal = (uint8_t)(coll->tertiaryTop - coll->tertiaryBottom - 1);
         coll->tertiaryTopCount = (uint8_t)(UCOL_PROPORTION3*tertiaryTotal); /* we multilply double with int, but need only int */
         coll->tertiaryBottomCount = (uint8_t)(tertiaryTotal - coll->tertiaryTopCount);
 
@@ -6906,6 +6432,11 @@ ucol_setVariableTop(UCollator *coll, const UChar *varTop, int32_t len, UErrorCod
         return 0;
     }
 
+    if(coll->delegate!=NULL) {
+      return ((Collator*)coll->delegate)->setVariableTop(varTop, len, *status);
+    }
+
+
     collIterate s;
     IInit_collIterate(coll, varTop, len, &s, status);
     if(U_FAILURE(*status)) {
@@ -6943,6 +6474,9 @@ U_CAPI uint32_t U_EXPORT2 ucol_getVariableTop(const UCollator *coll, UErrorCode 
     if(U_FAILURE(*status) || coll == NULL) {
         return 0;
     }
+    if(coll->delegate!=NULL) {
+      return ((const Collator*)coll->delegate)->getVariableTop(*status);
+    }
     return coll->variableTopValue<<16;
 }
 
@@ -6963,6 +6497,12 @@ ucol_setAttribute(UCollator *coll, UColAttribute attr, UColAttributeValue value,
     if(U_FAILURE(*status) || coll == NULL) {
       return;
     }
+
+    if(coll->delegate != NULL) {
+      ((Collator*)coll->delegate)->setAttribute(attr,value,*status);
+      return;
+    }
+
     UColAttributeValue oldFrench = coll->frenchCollation;
     UColAttributeValue oldCaseFirst = coll->caseFirst;
     switch(attr) {
@@ -6981,15 +6521,11 @@ ucol_setAttribute(UCollator *coll, UColAttribute attr, UColAttributeValue value,
         }
         break;
     case UCOL_HIRAGANA_QUATERNARY_MODE: /* special quaternary values for Hiragana */
-        if(value == UCOL_ON) {
-            coll->hiraganaQ = UCOL_ON;
-            coll->hiraganaQisDefault = FALSE;
-        } else if (value == UCOL_OFF) {
-            coll->hiraganaQ = UCOL_OFF;
-            coll->hiraganaQisDefault = FALSE;
-        } else if (value == UCOL_DEFAULT) {
-            coll->hiraganaQisDefault = TRUE;
-            coll->hiraganaQ = (UColAttributeValue)coll->options->hiraganaQ;
+        if(value == UCOL_ON || value == UCOL_OFF || value == UCOL_DEFAULT) {
+            // This attribute is an implementation detail of the CLDR Japanese tailoring.
+            // The implementation might change to use a different mechanism
+            // to achieve the same Japanese sort order.
+            // Since ICU 50, this attribute is not settable any more via API functions.
         } else {
             *status = U_ILLEGAL_ARGUMENT_ERROR;
         }
@@ -7100,6 +6636,11 @@ ucol_getAttribute(const UCollator *coll, UColAttribute attr, UErrorCode *status)
     if(U_FAILURE(*status) || coll == NULL) {
       return UCOL_DEFAULT;
     }
+
+    if(coll->delegate != NULL) {
+      return ((Collator*)coll->delegate)->getAttribute(attr,*status);
+    }
+
     switch(attr) {
     case UCOL_NUMERIC_COLLATION:
       return coll->numericCollation;
@@ -7140,22 +6681,31 @@ ucol_getStrength(const UCollator *coll)
     return ucol_getAttribute(coll, UCOL_STRENGTH, &status);
 }
 
-U_INTERNAL int32_t U_EXPORT2 
+U_CAPI int32_t U_EXPORT2 
 ucol_getReorderCodes(const UCollator *coll,
                     int32_t *dest,
                     int32_t destCapacity,
-                    UErrorCode *pErrorCode) {
-    if (U_FAILURE(*pErrorCode)) {
+                    UErrorCode *status) {
+    if (U_FAILURE(*status)) {
         return 0;
     }
-    
+
+    if(coll->delegate!=NULL) {
+      return ((const Collator*)coll->delegate)->getReorderCodes(dest, destCapacity, *status);
+    }
+
     if (destCapacity < 0 || (destCapacity > 0 && dest == NULL)) {
-        *pErrorCode = U_ILLEGAL_ARGUMENT_ERROR;
+        *status = U_ILLEGAL_ARGUMENT_ERROR;
         return 0;
     }
-    
+
+#ifdef UCOL_DEBUG
+    printf("coll->reorderCodesLength = %d\n", coll->reorderCodesLength);
+    printf("coll->defaultReorderCodesLength = %d\n", coll->defaultReorderCodesLength);
+#endif
+
     if (coll->reorderCodesLength > destCapacity) {
-        *pErrorCode = U_BUFFER_OVERFLOW_ERROR;
+        *status = U_BUFFER_OVERFLOW_ERROR;
         return coll->reorderCodesLength;
     }
     for (int32_t i = 0; i < coll->reorderCodesLength; i++) {
@@ -7164,43 +6714,112 @@ ucol_getReorderCodes(const UCollator *coll,
     return coll->reorderCodesLength;
 }
 
-U_INTERNAL void U_EXPORT2 
-ucol_setReorderCodes(UCollator *coll,
-                    const int32_t *reorderCodes,
+U_CAPI void U_EXPORT2 
+ucol_setReorderCodes(UCollator* coll,
+                    const int32_t* reorderCodes,
                     int32_t reorderCodesLength,
-                    UErrorCode *pErrorCode) {
-    if (U_FAILURE(*pErrorCode)) {
+                    UErrorCode *status) {
+    if (U_FAILURE(*status)) {
         return;
     }
 
     if (reorderCodesLength < 0 || (reorderCodesLength > 0 && reorderCodes == NULL)) {
-        *pErrorCode = U_ILLEGAL_ARGUMENT_ERROR;
+        *status = U_ILLEGAL_ARGUMENT_ERROR;
         return;
     }
+
+    if(coll->delegate!=NULL) {
+      ((Collator*)coll->delegate)->setReorderCodes(reorderCodes, reorderCodesLength, *status);
+      return;
+    }
     
-    uprv_free(coll->reorderCodes);
+    if (coll->reorderCodes != NULL && coll->freeReorderCodesOnClose == TRUE) {
+        uprv_free(coll->reorderCodes);
+    }
     coll->reorderCodes = NULL;
+    coll->freeReorderCodesOnClose = FALSE;
     coll->reorderCodesLength = 0;
     if (reorderCodesLength == 0) {
-        uprv_free(coll->leadBytePermutationTable);
+        if (coll->leadBytePermutationTable != NULL && coll->freeLeadBytePermutationTableOnClose == TRUE) {
+            uprv_free(coll->leadBytePermutationTable);
+        }
         coll->leadBytePermutationTable = NULL;
+        coll->freeLeadBytePermutationTableOnClose = FALSE;
         return;
     }
     coll->reorderCodes = (int32_t*) uprv_malloc(reorderCodesLength * sizeof(int32_t));
     if (coll->reorderCodes == NULL) {
-        *pErrorCode = U_MEMORY_ALLOCATION_ERROR;
+        *status = U_MEMORY_ALLOCATION_ERROR;
         return;
     }
+    coll->freeReorderCodesOnClose = TRUE;
     for (int32_t i = 0; i < reorderCodesLength; i++) {
         coll->reorderCodes[i] = reorderCodes[i];
     }
     coll->reorderCodesLength = reorderCodesLength;
-    ucol_buildPermutationTable(coll, pErrorCode);
+    ucol_buildPermutationTable(coll, status);
+}
+
+U_CAPI int32_t U_EXPORT2 
+ucol_getEquivalentReorderCodes(int32_t reorderCode,
+                    int32_t* dest,
+                    int32_t destCapacity,
+                    UErrorCode *pErrorCode) {
+    bool equivalentCodesSet[USCRIPT_CODE_LIMIT];
+    uint16_t leadBytes[256];
+    int leadBytesCount;
+    int leadByteIndex;
+    int16_t reorderCodesForLeadByte[USCRIPT_CODE_LIMIT];
+    int reorderCodesForLeadByteCount;
+    int reorderCodeIndex;
+    
+    int32_t equivalentCodesCount = 0;
+    int setIndex;
+    
     if (U_FAILURE(*pErrorCode)) {
-        uprv_free(coll->reorderCodes);
-        coll->reorderCodes = NULL;
-        coll->reorderCodesLength = 0;
-    }    
+        return 0;
+    }
+
+    if (destCapacity < 0 || (destCapacity > 0 && dest == NULL)) {
+        *pErrorCode = U_ILLEGAL_ARGUMENT_ERROR;
+        return 0;
+    }
+
+    uprv_memset(equivalentCodesSet, 0, USCRIPT_CODE_LIMIT * sizeof(bool));
+
+    const UCollator* uca = ucol_initUCA(pErrorCode);
+    if (U_FAILURE(*pErrorCode)) {
+	return 0;
+    }
+    leadBytesCount = ucol_getLeadBytesForReorderCode(uca, reorderCode, leadBytes, 256);
+    for (leadByteIndex = 0; leadByteIndex < leadBytesCount; leadByteIndex++) {
+        reorderCodesForLeadByteCount = ucol_getReorderCodesForLeadByte(
+            uca, leadBytes[leadByteIndex], reorderCodesForLeadByte, USCRIPT_CODE_LIMIT);
+        for (reorderCodeIndex = 0; reorderCodeIndex < reorderCodesForLeadByteCount; reorderCodeIndex++) {
+            equivalentCodesSet[reorderCodesForLeadByte[reorderCodeIndex]] = true;
+        }
+    }
+    
+    for (setIndex = 0; setIndex < USCRIPT_CODE_LIMIT; setIndex++) {
+        if (equivalentCodesSet[setIndex] == true) {
+            equivalentCodesCount++;
+        }
+    }
+    
+    if (destCapacity == 0) {
+        return equivalentCodesCount;
+    }
+    
+    equivalentCodesCount = 0;
+    for (setIndex = 0; setIndex < USCRIPT_CODE_LIMIT; setIndex++) {
+        if (equivalentCodesSet[setIndex] == true) {
+            dest[equivalentCodesCount++] = setIndex;
+            if (equivalentCodesCount >= destCapacity) {
+                break;
+            }
+        }        
+    }
+    return equivalentCodesCount;
 }
 
 
@@ -7213,6 +6832,10 @@ U_CAPI void U_EXPORT2
 ucol_getVersion(const UCollator* coll,
                 UVersionInfo versionInfo)
 {
+    if(coll->delegate!=NULL) {
+      ((const Collator*)coll->delegate)->getVersion(versionInfo);
+      return;
+    }
     /* RunTime version  */
     uint8_t rtVersion = UCOL_RUNTIME_VERSION;
     /* Builder version*/
@@ -7520,28 +7143,29 @@ ucol_strcollRegular(collIterate *sColl, collIterate *tColl, UErrorCode *status)
     // Non shifted primary processing is quite simple
     if(!shifted) {
         for(;;) {
-
             // We fetch CEs until we hit a non ignorable primary or end.
+            uint32_t sPrimary;
             do {
                 // We get the next CE
                 sOrder = ucol_IGetNextCE(coll, sColl, status);
                 // Stuff it in the buffer
                 UCOL_CEBUF_PUT(&sCEs, sOrder, sColl, status);
                 // And keep just the primary part.
-                sOrder &= UCOL_PRIMARYMASK;
-            } while(sOrder == 0);
+                sPrimary = sOrder & UCOL_PRIMARYMASK;
+            } while(sPrimary == 0);
 
             // see the comments on the above block
+            uint32_t tPrimary;
             do {
                 tOrder = ucol_IGetNextCE(coll, tColl, status);
                 UCOL_CEBUF_PUT(&tCEs, tOrder, tColl, status);
-                tOrder &= UCOL_PRIMARYMASK;
-            } while(tOrder == 0);
+                tPrimary = tOrder & UCOL_PRIMARYMASK;
+            } while(tPrimary == 0);
 
             // if both primaries are the same
-            if(sOrder == tOrder) {
+            if(sPrimary == tPrimary) {
                 // and there are no more CEs, we advance to the next level
-                if(sOrder == UCOL_NO_MORE_CES_PRIMARY) {
+                if(sPrimary == UCOL_NO_MORE_CES_PRIMARY) {
                     break;
                 }
                 if(doHiragana && hirResult == UCOL_EQUAL) {
@@ -7554,11 +7178,11 @@ ucol_strcollRegular(collIterate *sColl, collIterate *tColl, UErrorCode *status)
                 // only need to check one for continuation
                 // if one is then the other must be or the preceding CE would be a prefix of the other
                 if (coll->leadBytePermutationTable != NULL && !isContinuation(sOrder)) {
-                    sOrder = (coll->leadBytePermutationTable[sOrder>>24] << 24) | (sOrder & 0x00FFFFFF);
-                    tOrder = (coll->leadBytePermutationTable[tOrder>>24] << 24) | (tOrder & 0x00FFFFFF);
+                    sPrimary = (coll->leadBytePermutationTable[sPrimary>>24] << 24) | (sPrimary & 0x00FFFFFF);
+                    tPrimary = (coll->leadBytePermutationTable[tPrimary>>24] << 24) | (tPrimary & 0x00FFFFFF);
                 }
                 // if two primaries are different, we are done
-                result = (sOrder < tOrder) ?  UCOL_LESS: UCOL_GREATER;
+                result = (sPrimary < tPrimary) ?  UCOL_LESS: UCOL_GREATER;
                 goto commonReturn;
             }
         } // no primary difference... do the rest from the buffers
@@ -7567,7 +7191,7 @@ ucol_strcollRegular(collIterate *sColl, collIterate *tColl, UErrorCode *status)
             UBool sInShifted = FALSE;
             UBool tInShifted = FALSE;
             // This version of code can be refactored. However, it seems easier to understand this way.
-            // Source loop. Sam as the target loop.
+            // Source loop. Same as the target loop.
             for(;;) {
                 sOrder = ucol_IGetNextCE(coll, sColl, status);
                 if(sOrder == UCOL_NO_MORE_CES) {
@@ -7850,8 +7474,9 @@ ucol_strcollRegular(collIterate *sColl, collIterate *tColl, UErrorCode *status)
         tCE = tCEs.buf;
         for(;;) {
             while((secS & UCOL_REMOVE_CASE) == 0) {
-                secS = *(sCE++) & tertiaryMask;
-                if(!isContinuation(secS)) {
+                sOrder = *sCE++;
+                secS = sOrder & tertiaryMask;
+                if(!isContinuation(sOrder)) {
                     secS ^= caseSwitch;
                 } else {
                     secS &= UCOL_REMOVE_CASE;
@@ -7859,8 +7484,9 @@ ucol_strcollRegular(collIterate *sColl, collIterate *tColl, UErrorCode *status)
             }
 
             while((secT & UCOL_REMOVE_CASE)  == 0) {
-                secT = *(tCE++) & tertiaryMask;
-                if(!isContinuation(secT)) {
+                tOrder = *tCE++;
+                secT = tOrder & tertiaryMask;
+                if(!isContinuation(tOrder)) {
                     secT ^= caseSwitch;
                 } else {
                     secT &= UCOL_REMOVE_CASE;
@@ -8334,6 +7960,398 @@ endOfSecLoop:
     return UCOL_EQUAL;
 }
 
+/*
+  Note: ucol_strcollUTF8 supports null terminated input. Calculating length of
+  null terminated input string takes extra amount of CPU cycles.
+*/
+static UCollationResult
+ucol_strcollRegularUTF8(
+                    const UCollator *coll,
+                    const char      *source,
+                    int32_t         sourceLength,
+                    const char      *target,
+                    int32_t         targetLength,
+                    UErrorCode      *status)
+{
+    UCharIterator src;
+    UCharIterator tgt;
+
+    uiter_setUTF8(&src, source, sourceLength);
+    uiter_setUTF8(&tgt, target, targetLength);
+
+    // Preparing the context objects for iterating over strings
+    collIterate sColl, tColl;
+    IInit_collIterate(coll, NULL, -1, &sColl, status);
+    IInit_collIterate(coll, NULL, -1, &tColl, status);
+    if(U_FAILURE(*status)) {
+        UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status)
+        return UCOL_EQUAL;
+    }
+    // The division for the array length may truncate the array size to
+    // a little less than UNORM_ITER_SIZE, but that size is dimensioned too high
+    // for all platforms anyway.
+    UAlignedMemory stackNormIter1[UNORM_ITER_SIZE/sizeof(UAlignedMemory)];
+    UAlignedMemory stackNormIter2[UNORM_ITER_SIZE/sizeof(UAlignedMemory)];
+    UNormIterator *sNormIter = NULL, *tNormIter = NULL;
+
+    sColl.iterator = &src;
+    sColl.flags |= UCOL_USE_ITERATOR;
+    tColl.flags |= UCOL_USE_ITERATOR;
+    tColl.iterator = &tgt;
+
+    if(ucol_getAttribute(coll, UCOL_NORMALIZATION_MODE, status) == UCOL_ON) {
+        sNormIter = unorm_openIter(stackNormIter1, sizeof(stackNormIter1), status);
+        sColl.iterator = unorm_setIter(sNormIter, &src, UNORM_FCD, status);
+        sColl.flags &= ~UCOL_ITER_NORM;
+
+        tNormIter = unorm_openIter(stackNormIter2, sizeof(stackNormIter2), status);
+        tColl.iterator = unorm_setIter(tNormIter, &tgt, UNORM_FCD, status);
+        tColl.flags &= ~UCOL_ITER_NORM;
+    }
+
+    return ucol_strcollRegular(&sColl, &tColl, status);
+}
+
+static inline uint32_t
+ucol_getLatinOneContractionUTF8(const UCollator *coll, int32_t strength,
+                          uint32_t CE, const char *s, int32_t *index, int32_t len)
+{
+    const UChar *UCharOffset = (UChar *)coll->image+getContractOffset(CE&0xFFF);
+    int32_t latinOneOffset = (CE & 0x00FFF000) >> 12;
+    int32_t offset = 1;
+    UChar32 schar = 0, tchar = 0;
+
+    for(;;) {
+        if (*index == len) {
+            return(coll->latinOneCEs[strength*coll->latinOneTableLen+latinOneOffset]);
+        }
+        U8_GET_OR_FFFD((const uint8_t*)s, 0, *index, len, schar);
+        if (len < 0 && schar == 0) {
+            return(coll->latinOneCEs[strength*coll->latinOneTableLen+latinOneOffset]);
+        }
+
+        while(schar > (tchar = *(UCharOffset+offset))) { /* since the contraction codepoints should be ordered, we skip all that are smaller */
+            offset++;
+        }
+
+        if (schar == tchar) {
+            U8_FWD_1(s, *index, len);
+            return(coll->latinOneCEs[strength*coll->latinOneTableLen+latinOneOffset+offset]);
+        }
+        else
+        {
+            if(schar & 0xFF00 /*> UCOL_ENDOFLATIN1RANGE*/) {
+                return UCOL_BAIL_OUT_CE;
+            }
+            // skip completely ignorables
+            uint32_t isZeroCE = UTRIE_GET32_FROM_LEAD(&coll->mapping, schar);
+            if(isZeroCE == 0) { // we have to ignore completely ignorables
+                U8_FWD_1(s, *index, len);
+                continue;
+            }
+
+            return(coll->latinOneCEs[strength*coll->latinOneTableLen+latinOneOffset]);
+        }
+    }
+}
+
+static inline UCollationResult
+ucol_strcollUseLatin1UTF8(
+                const UCollator *coll,
+                const char      *source,
+                int32_t         sLen,
+                const char      *target,
+                int32_t         tLen,
+                UErrorCode      *status)
+{
+    U_ALIGN_CODE(16);
+    int32_t strength = coll->strength;
+
+    int32_t sIndex = 0, tIndex = 0;
+    UChar32 sChar = 0, tChar = 0;
+    uint32_t sOrder=0, tOrder=0;
+
+    UBool endOfSource = FALSE;
+
+    uint32_t *elements = coll->latinOneCEs;
+
+    UBool haveContractions = FALSE; // if we have contractions in our string
+                                    // we cannot do French secondary
+
+    // Do the primary level
+    for(;;) {
+        while(sOrder==0) { // this loop skips primary ignorables
+            // sOrder=getNextlatinOneCE(source);
+            if (sIndex == sLen) {
+                endOfSource = TRUE;
+                break;
+            }
+            U8_NEXT_OR_FFFD(source, sIndex, sLen ,sChar);
+            if (sLen < 0 && sChar == 0) {
+                endOfSource = TRUE;
+                sLen = sIndex;
+                break;
+            }
+            if(sChar&0xFFFFFF00) { // if we encounter non-latin-1, we bail out (sChar > 0xFF, but this is faster on win32)
+                //fprintf(stderr, "R");
+                return ucol_strcollRegularUTF8(coll, source, sLen, target, tLen, status);
+            }
+            sOrder = elements[sChar];
+            if(sOrder >= UCOL_NOT_FOUND) { // if we got a special
+                // specials can basically be either contractions or bail-out signs. If we get anything
+                // else, we'll bail out anywasy
+                if(getCETag(sOrder) == CONTRACTION_TAG) {
+                    sOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_PRIMARY, sOrder, source, &sIndex, sLen);
+                    haveContractions = TRUE; // if there are contractions, we cannot do French secondary
+                    // However, if there are contractions in the table, but we always use just one char,
+                    // we might be able to do French. This should be checked out.
+                }
+                if(sOrder >= UCOL_NOT_FOUND /*== UCOL_BAIL_OUT_CE*/) {
+                    //fprintf(stderr, "S");
+                    return ucol_strcollRegularUTF8(coll, source, sLen, target, tLen, status);
+                }
+            }
+        }
+
+        while(tOrder==0) {  // this loop skips primary ignorables
+            // tOrder=getNextlatinOneCE(target);
+            if (tIndex == tLen) {
+                if(endOfSource) {
+                    goto endOfPrimLoopU8;
+                } else {
+                    return UCOL_GREATER;
+                }
+            }
+            U8_NEXT_OR_FFFD(target, tIndex, tLen, tChar);
+            if (tLen < 0 && tChar == 0) {
+                if(endOfSource) {
+                    tLen = tIndex;
+                    goto endOfPrimLoopU8;
+                } else {
+                    return UCOL_GREATER;
+                }
+            }
+            if(tChar&0xFFFFFF00) { // if we encounter non-latin-1, we bail out (sChar > 0xFF, but this is faster on win32)
+                //fprintf(stderr, "R");
+                return ucol_strcollRegularUTF8(coll, source, sLen, target, tLen, status);
+            }
+            tOrder = elements[tChar];
+            if(tOrder >= UCOL_NOT_FOUND) {
+                // Handling specials, see the comments for source
+                if(getCETag(tOrder) == CONTRACTION_TAG) {
+                    tOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_PRIMARY, tOrder, target, &tIndex, tLen);
+                    haveContractions = TRUE;
+                }
+                if(tOrder >= UCOL_NOT_FOUND /*== UCOL_BAIL_OUT_CE*/) {
+                    //fprintf(stderr, "S");
+                    return ucol_strcollRegularUTF8(coll, source, sLen, target, tLen, status);
+                }
+            }
+        }
+        if(endOfSource) { // source is finished, but target is not, say the result.
+            return UCOL_LESS;
+        }
+
+        if(sOrder == tOrder) { // if we have same CEs, we continue the loop
+            sOrder = 0; tOrder = 0;
+            continue;
+        } else {
+            // compare current top bytes
+            if(((sOrder^tOrder)&0xFF000000)!=0) {
+                // top bytes differ, return difference
+                if(sOrder < tOrder) {
+                    return UCOL_LESS;
+                } else if(sOrder > tOrder) {
+                    return UCOL_GREATER;
+                }
+                // instead of return (int32_t)(sOrder>>24)-(int32_t)(tOrder>>24);
+                // since we must return enum value
+            }
+
+            // top bytes match, continue with following bytes
+            sOrder<<=8;
+            tOrder<<=8;
+        }
+    }
+
+endOfPrimLoopU8:
+    // after primary loop, we definitely know the sizes of strings,
+    // so we set it and use simpler loop for secondaries and tertiaries
+    sLen = sIndex; tLen = tIndex;
+    if(strength >= UCOL_SECONDARY) {
+        // adjust the table beggining
+        elements += coll->latinOneTableLen;
+        endOfSource = FALSE;
+
+        if(coll->frenchCollation == UCOL_OFF) { // non French
+            // This loop is a simplified copy of primary loop
+            // at this point we know that whole strings are latin-1, so we don't
+            // check for that. We also know that we only have contractions as
+            // specials.
+            sIndex = 0; tIndex = 0;
+            for(;;) {
+                while(sOrder==0) {
+                    if(sIndex==sLen) {
+                        endOfSource = TRUE;
+                        break;
+                    }
+                    U_ASSERT(sLen >= 0);
+                    U8_NEXT_OR_FFFD(source, sIndex, sLen, sChar);
+                    U_ASSERT(sChar >= 0 && sChar <= 0xFF);
+                    sOrder = elements[sChar];
+                    if(sOrder > UCOL_NOT_FOUND) {
+                        sOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_SECONDARY, sOrder, source, &sIndex, sLen);
+                    }
+                }
+
+                while(tOrder==0) {
+                    if(tIndex==tLen) {
+                        if(endOfSource) {
+                            goto endOfSecLoopU8;
+                        } else {
+                            return UCOL_GREATER;
+                        }
+                    }
+                    U_ASSERT(tLen >= 0);
+                    U8_NEXT_OR_FFFD(target, tIndex, tLen, tChar);
+                    U_ASSERT(tChar >= 0 && tChar <= 0xFF);
+                    tOrder = elements[tChar];
+                    if(tOrder > UCOL_NOT_FOUND) {
+                        tOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_SECONDARY, tOrder, target, &tIndex, tLen);
+                    }
+                }
+                if(endOfSource) {
+                    return UCOL_LESS;
+                }
+
+                if(sOrder == tOrder) {
+                    sOrder = 0; tOrder = 0;
+                    continue;
+                } else {
+                    // see primary loop for comments on this
+                    if(((sOrder^tOrder)&0xFF000000)!=0) {
+                        if(sOrder < tOrder) {
+                            return UCOL_LESS;
+                        } else if(sOrder > tOrder) {
+                            return UCOL_GREATER;
+                        }
+                    }
+                    sOrder<<=8;
+                    tOrder<<=8;
+                }
+            }
+        } else { // French
+            if(haveContractions) { // if we have contractions, we have to bail out
+                // since we don't really know how to handle them here
+                return ucol_strcollRegularUTF8(coll, source, sLen, target, tLen, status);
+            }
+            // For French, we go backwards
+            sIndex = sLen; tIndex = tLen;
+            for(;;) {
+                while(sOrder==0) {
+                    if(sIndex==0) {
+                        endOfSource = TRUE;
+                        break;
+                    }
+                    U8_PREV_OR_FFFD(source, 0, sIndex, sChar);
+                    U_ASSERT(sChar >= 0 && sChar <= 0xFF);
+                    sOrder = elements[sChar];
+                    // don't even look for contractions
+                }
+
+                while(tOrder==0) {
+                    if(tIndex==0) {
+                        if(endOfSource) {
+                            goto endOfSecLoopU8;
+                        } else {
+                            return UCOL_GREATER;
+                        }
+                    }
+                    U8_PREV_OR_FFFD(target, 0, tIndex, tChar);
+                    U_ASSERT(tChar >= 0 && tChar <= 0xFF);
+                    tOrder = elements[tChar];
+                    // don't even look for contractions
+                }
+                if(endOfSource) {
+                    return UCOL_LESS;
+                }
+
+                if(sOrder == tOrder) {
+                    sOrder = 0; tOrder = 0;
+                    continue;
+                } else {
+                    // see the primary loop for comments
+                    if(((sOrder^tOrder)&0xFF000000)!=0) {
+                        if(sOrder < tOrder) {
+                            return UCOL_LESS;
+                        } else if(sOrder > tOrder) {
+                            return UCOL_GREATER;
+                        }
+                    }
+                    sOrder<<=8;
+                    tOrder<<=8;
+                }
+            }
+        }
+    }
+
+endOfSecLoopU8:
+    if(strength >= UCOL_TERTIARY) {
+        // tertiary loop is the same as secondary (except no French)
+        elements += coll->latinOneTableLen;
+        sIndex = 0; tIndex = 0;
+        endOfSource = FALSE;
+        for(;;) {
+            while(sOrder==0) {
+                if(sIndex==sLen) {
+                    endOfSource = TRUE;
+                    break;
+                }
+                U_ASSERT(sLen >= 0);
+                U8_NEXT_OR_FFFD(source, sIndex, sLen, sChar);
+                U_ASSERT(sChar >= 0 && sChar <= 0xFF);
+                sOrder = elements[sChar];
+                if(sOrder > UCOL_NOT_FOUND) {
+                    sOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_TERTIARY, sOrder, source, &sIndex, sLen);
+                }
+            }
+            while(tOrder==0) {
+                if(tIndex==tLen) {
+                    if(endOfSource) {
+                        return UCOL_EQUAL; // if both strings are at the end, they are equal
+                    } else {
+                        return UCOL_GREATER;
+                    }
+                }
+                U_ASSERT(tLen >= 0);
+                U8_NEXT_OR_FFFD(target, tIndex, tLen, tChar);
+                U_ASSERT(tChar >= 0 && tChar <= 0xFF);
+                tOrder = elements[tChar];
+                if(tOrder > UCOL_NOT_FOUND) {
+                    tOrder = ucol_getLatinOneContractionUTF8(coll, UCOL_TERTIARY, tOrder, target, &tIndex, tLen);
+                }
+            }
+            if(endOfSource) {
+                return UCOL_LESS;
+            }
+            if(sOrder == tOrder) {
+                sOrder = 0; tOrder = 0;
+                continue;
+            } else {
+                if(((sOrder^tOrder)&0xff000000)!=0) {
+                    if(sOrder < tOrder) {
+                        return UCOL_LESS;
+                    } else if(sOrder > tOrder) {
+                        return UCOL_GREATER;
+                    }
+                }
+                sOrder<<=8;
+                tOrder<<=8;
+            }
+        }
+    }
+    return UCOL_EQUAL;
+}
 
 U_CAPI UCollationResult U_EXPORT2
 ucol_strcollIter( const UCollator    *coll,
@@ -8459,7 +8477,7 @@ ucol_strcoll( const UCollator    *coll,
         UTRACE_DATA2(UTRACE_VERBOSE, "target string = %vh ", target, targetLength);
     }
 
-    if(source == NULL || target == NULL) {
+    if((source == NULL && sourceLength != 0) || (target == NULL && targetLength != 0)) {
         // do not crash, but return. Should have
         // status argument to return error.
         UTRACE_EXIT_VALUE(UCOL_EQUAL);
@@ -8471,6 +8489,11 @@ ucol_strcoll( const UCollator    *coll,
     if (source==target && sourceLength==targetLength) {
         UTRACE_EXIT_VALUE(UCOL_EQUAL);
         return UCOL_EQUAL;
+    }
+
+    if(coll->delegate != NULL) {
+      UErrorCode status = U_ZERO_ERROR;
+      return ((const Collator*)coll->delegate)->compare(source,sourceLength,target,targetLength, status);
     }
 
     /* Scan the strings.  Find:                                                             */
@@ -8565,6 +8588,180 @@ ucol_strcoll( const UCollator    *coll,
     UTRACE_EXIT_VALUE(returnVal);
     return returnVal;
 }
+
+U_CAPI UCollationResult U_EXPORT2
+ucol_strcollUTF8(
+        const UCollator *coll,
+        const char      *source,
+        int32_t         sourceLength,
+        const char      *target,
+        int32_t         targetLength,
+        UErrorCode      *status)
+{
+    U_ALIGN_CODE(16);
+
+    UTRACE_ENTRY(UTRACE_UCOL_STRCOLLUTF8);
+    if (UTRACE_LEVEL(UTRACE_VERBOSE)) {
+        UTRACE_DATA3(UTRACE_VERBOSE, "coll=%p, source=%p, target=%p", coll, source, target);
+        UTRACE_DATA2(UTRACE_VERBOSE, "source string = %vb ", source, sourceLength);
+        UTRACE_DATA2(UTRACE_VERBOSE, "target string = %vb ", target, targetLength);
+    }
+
+    if (U_FAILURE(*status)) {
+        /* do nothing */
+        UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status);
+        return UCOL_EQUAL;
+    }
+
+    if((source == NULL && sourceLength != 0) || (target == NULL && targetLength != 0)) {
+        *status = U_ILLEGAL_ARGUMENT_ERROR;
+        UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status);
+        return UCOL_EQUAL;
+    }
+
+    /* Quick check if source and target are same strings. */
+    /* They should either both be NULL terminated or the explicit length should be set on both. */
+    if (source==target && sourceLength==targetLength) {
+        UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status);
+        return UCOL_EQUAL;
+    }
+
+    if(coll->delegate != NULL) {
+        return ((const Collator*)coll->delegate)->compareUTF8(
+            StringPiece(source, (sourceLength < 0) ? uprv_strlen(source) : sourceLength),
+            StringPiece(target, (targetLength < 0) ? uprv_strlen(target) : targetLength),
+            *status);
+    }
+
+    /* Scan the strings.  Find:                                                             */
+    /*    The length of any leading portion that is equal                                   */
+    /*    Whether they are exactly equal.  (in which case we just return)                   */
+    const char  *pSrc = source;
+    const char  *pTarg = target;
+    UBool       bSrcLimit = FALSE;
+    UBool       bTargLimit = FALSE;
+
+    if (sourceLength == -1 && targetLength == -1) {
+        // Both strings are null terminated.
+        //    Scan through any leading equal portion.
+        while (*pSrc == *pTarg && *pSrc != 0) {
+            pSrc++;
+            pTarg++;
+        }
+        if (*pSrc == 0 && *pTarg == 0) {
+            UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status);
+            return UCOL_EQUAL;
+        }
+        bSrcLimit = (*pSrc == 0);
+        bTargLimit = (*pTarg == 0);
+    }
+    else
+    {
+        // One or both strings has an explicit length.
+        const char *pSrcEnd = source + sourceLength;
+        const char *pTargEnd = target + targetLength;
+
+        // Scan while the strings are bitwise ==, or until one is exhausted.
+        for (;;) {
+            if (pSrc == pSrcEnd || pTarg == pTargEnd) {
+                break;
+            }
+            if ((*pSrc == 0 && sourceLength == -1) || (*pTarg == 0 && targetLength == -1)) {
+                break;
+            }
+            if (*pSrc != *pTarg) {
+                break;
+            }
+            pSrc++;
+            pTarg++;
+        }
+        bSrcLimit = (pSrc ==pSrcEnd  || (pSrcEnd <pSrc  && *pSrc==0));
+        bTargLimit = (pTarg==pTargEnd || (pTargEnd<pTarg && *pTarg==0));
+
+        // If we made it all the way through both strings, we are done.  They are ==
+        if (bSrcLimit &&    /* At end of src string, however it was specified. */
+            bTargLimit)     /* and also at end of dest string                  */
+        {
+            UTRACE_EXIT_VALUE_STATUS(UCOL_EQUAL, *status);
+            return UCOL_EQUAL;
+        }
+    }
+
+    U_ASSERT(!(bSrcLimit && bTargLimit));
+
+    int32_t    equalLength = pSrc - source;
+    UBool       bSawNonLatin1 = FALSE;
+
+    if (equalLength > 0) {
+        // Align position to the start of UTF-8 code point.
+        if (bTargLimit) {
+            U8_SET_CP_START((const uint8_t*)source, 0, equalLength);
+        } else {
+            U8_SET_CP_START((const uint8_t*)target, 0, equalLength);
+        }
+        pSrc = source + equalLength;
+        pTarg = target + equalLength;
+    }
+
+    if (equalLength > 0) {
+        /* There is an identical portion at the beginning of the two strings.        */
+        /*   If the identical portion ends within a contraction or a comibining      */
+        /*   character sequence, back up to the start of that sequence.              */
+        UBool bUnsafeCP = FALSE;
+        UChar32 uc32 = -1;
+
+        if (!bSrcLimit) {
+            U8_GET_OR_FFFD((const uint8_t*)source, 0, equalLength, sourceLength, uc32);
+            if (uc32 >= 0x10000 || ucol_unsafeCP((UChar)uc32, coll)) {
+                bUnsafeCP = TRUE;
+            }
+            bSawNonLatin1 |= (uc32 > 0xff);
+        }
+        if (!bTargLimit) {
+            U8_GET_OR_FFFD((const uint8_t*)target, 0, equalLength, targetLength, uc32);
+            if (uc32 >= 0x10000 || ucol_unsafeCP((UChar)uc32, coll)) {
+                bUnsafeCP = TRUE;
+            }
+            bSawNonLatin1 |= (uc32 > 0xff);
+        }
+
+        if (bUnsafeCP) {
+            while (equalLength > 0) {
+                // We are stopped in the middle of a contraction.
+                // Scan backwards through the == part of the string looking for the start of the contraction.
+                //   It doesn't matter which string we scan, since they are the same in this region.
+                U8_PREV_OR_FFFD((uint8_t*)source, 0, equalLength, uc32);
+                bSawNonLatin1 |= (uc32 > 0xff);
+                if (uc32 < 0x10000 && !ucol_unsafeCP((UChar)uc32, coll)) {
+                    break;
+                }
+            }
+        }
+        source += equalLength;
+        target += equalLength;
+        if (sourceLength > 0) {
+            sourceLength -= equalLength;
+        }
+        if (targetLength > 0) {
+            targetLength -= equalLength;
+        }
+    } else {
+        // Lead byte of Latin 1 character is 0x00 - 0xC3
+        bSawNonLatin1 = (source && (sourceLength != 0) && (uint8_t)*source > 0xc3);
+        bSawNonLatin1 |= (target && (targetLength != 0) && (uint8_t)*target > 0xc3);
+    }
+
+    UCollationResult returnVal;
+
+    if(!coll->latinOneUse || bSawNonLatin1) {
+        returnVal = ucol_strcollRegularUTF8(coll, source, sourceLength, target, targetLength, status);
+    } else {
+        returnVal = ucol_strcollUseLatin1UTF8(coll, source, sourceLength, target, targetLength, status);
+    }
+    UTRACE_EXIT_VALUE_STATUS(returnVal, *status);
+    return returnVal;
+}
+
 
 /* convenience function for comparing strings */
 U_CAPI UBool U_EXPORT2

@@ -43,6 +43,11 @@ GFX_EXPORT bool IsWithinHSLRange(const HSL& hsl,
                                  const HSL& lower_bound,
                                  const HSL& upper_bound);
 
+// Makes |hsl| valid input for HSLShift(). Sets values of hue, saturation
+// and luminosity which are outside of the valid range [0, 1] to -1.
+// -1 is a special value which indicates 'no change'.
+GFX_EXPORT void MakeHSLShiftValid(HSL* hsl);
+
 // HSL-Shift an SkColor. The shift values are in the range of 0-1, with the
 // option to specify -1 for 'no change'. The shift values are defined as:
 // hsl_shift[0] (hue): The absolute hue value - 0 and 1 map

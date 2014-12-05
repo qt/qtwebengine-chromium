@@ -51,16 +51,15 @@ Design doc: http://www.chromium.org/developers/design-documents/idl-build
 import errno
 import os
 import re
-import subprocess
 import sys
 
-from utilities import idl_filename_to_interface_name
+from utilities import idl_filename_to_component, idl_filename_to_interface_name, read_idl_files_list_from_file
 
 # A regexp for finding Conditional attributes in interface definitions.
 CONDITIONAL_PATTERN = re.compile(
     r'\['
     r'[^\]]*'
-    r'Conditional=([\_0-9a-zA-Z&|]*)'
+    r'Conditional=([\_0-9a-zA-Z]*)'
     r'[^\]]*'
     r'\]\s*'
     r'((callback|partial)\s+)?'
@@ -101,16 +100,6 @@ COPYRIGHT_TEMPLATE = """/*
 """
 
 
-def format_conditional(conditional):
-    """Wraps conditional with ENABLE() and replace '&','|' with '&&','||' if
-    more than one conditional is specified."""
-    def wrap_with_enable(s):
-        if s in ['|', '&']:
-            return s * 2
-        return 'ENABLE(' + s + ')'
-    return ' '.join(map(wrap_with_enable, conditional))
-
-
 def extract_conditional(idl_file_path):
     """Find [Conditional] interface extended attribute."""
     with open(idl_file_path) as idl_file:
@@ -119,8 +108,7 @@ def extract_conditional(idl_file_path):
     match = CONDITIONAL_PATTERN.search(idl_contents)
     if not match:
         return None
-    conditional = match.group(1)
-    return re.split('([|&])', conditional)
+    return match.group(1)
 
 
 def extract_meta_data(file_paths):
@@ -147,7 +135,7 @@ def extract_meta_data(file_paths):
     return meta_data_list
 
 
-def generate_content(component_dir, files_meta_data_this_partition):
+def generate_content(component_dir, aggregate_partial_interfaces, files_meta_data_this_partition):
     # Add fixed content.
     output = [COPYRIGHT_TEMPLATE,
               '#define NO_IMPLICIT_ATOMICSTRING\n\n']
@@ -161,11 +149,16 @@ def generate_content(component_dir, files_meta_data_this_partition):
             if prev_conditional:
                 output.append('#endif\n')
             if conditional:
-                output.append('\n#if %s\n' % format_conditional(conditional))
+                output.append('\n#if ENABLE(%s)\n' % conditional)
         prev_conditional = conditional
 
-        output.append('#include "bindings/%s/v8/V8%s.cpp"\n' %
-                      (component_dir, meta_data['name']))
+        if aggregate_partial_interfaces:
+            cpp_filename = 'V8%sPartial.cpp' % meta_data['name']
+        else:
+            cpp_filename = 'V8%s.cpp' % meta_data['name']
+
+        output.append('#include "bindings/%s/v8/%s"\n' %
+                      (component_dir, cpp_filename))
 
     if prev_conditional:
         output.append('#endif\n')
@@ -182,21 +175,6 @@ def write_content(content, output_file_name):
         f.write(content)
 
 
-def resolve_cygpath(cygdrive_names):
-    if not cygdrive_names:
-        return []
-    cmd = ['cygpath', '-f', '-', '-wa']
-    process = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    idl_file_names = []
-    for file_name in cygdrive_names:
-        process.stdin.write('%s\n' % file_name)
-        process.stdin.flush()
-        idl_file_names.append(process.stdout.readline().rstrip())
-    process.stdin.close()
-    process.wait()
-    return idl_file_names
-
-
 def main(args):
     if len(args) <= 4:
         raise Exception('Expected at least 5 arguments.')
@@ -205,14 +183,12 @@ def main(args):
     in_out_break_index = args.index('--')
     output_file_names = args[in_out_break_index + 1:]
 
-    with open(input_file_name) as input_file:
-        file_names = sorted([os.path.realpath(line.rstrip('\n'))
-                             for line in input_file])
-        idl_file_names = [file_name for file_name in file_names
-                          if not file_name.startswith('/cygdrive')]
-        cygdrive_names = [file_name for file_name in file_names
-                          if file_name.startswith('/cygdrive')]
-        idl_file_names.extend(resolve_cygpath(cygdrive_names))
+    idl_file_names = read_idl_files_list_from_file(input_file_name)
+    components = set([idl_filename_to_component(filename)
+                      for filename in idl_file_names])
+    if len(components) != 1:
+        raise Exception('Cannot aggregate generated codes in different components')
+    aggregate_partial_interfaces = component_dir not in components
 
     files_meta_data = extract_meta_data(idl_file_names)
     total_partitions = len(output_file_names)
@@ -221,6 +197,7 @@ def main(args):
                 meta_data for meta_data in files_meta_data
                 if hash(meta_data['name']) % total_partitions == partition]
         file_contents = generate_content(component_dir,
+                                         aggregate_partial_interfaces,
                                          files_meta_data_this_partition)
         write_content(file_contents, file_name)
 

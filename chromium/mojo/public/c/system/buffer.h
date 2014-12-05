@@ -35,16 +35,16 @@ const MojoCreateSharedBufferOptionsFlags
     MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE = 0;
 #else
 #define MOJO_CREATE_SHARED_BUFFER_OPTIONS_FLAG_NONE \
-    ((MojoCreateSharedBufferOptionsFlags) 0)
+  ((MojoCreateSharedBufferOptionsFlags)0)
 #endif
 
-MOJO_COMPILE_ASSERT(MOJO_ALIGNOF(int64_t) == 8, int64_t_has_weird_alignment);
+MOJO_STATIC_ASSERT(MOJO_ALIGNOF(int64_t) == 8, "int64_t has weird alignment");
 struct MOJO_ALIGNAS(8) MojoCreateSharedBufferOptions {
   uint32_t struct_size;
   MojoCreateSharedBufferOptionsFlags flags;
 };
-MOJO_COMPILE_ASSERT(sizeof(MojoCreateSharedBufferOptions) == 8,
-                    MojoCreateSharedBufferOptions_has_wrong_size);
+MOJO_STATIC_ASSERT(sizeof(MojoCreateSharedBufferOptions) == 8,
+                   "MojoCreateSharedBufferOptions has wrong size");
 
 // |MojoDuplicateBufferHandleOptions|: Used to specify parameters in duplicating
 // access to a shared buffer to |MojoDuplicateBufferHandle()|.
@@ -64,15 +64,15 @@ const MojoDuplicateBufferHandleOptionsFlags
     MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_NONE = 0;
 #else
 #define MOJO_DUPLICATE_BUFFER_HANDLE_OPTIONS_FLAG_NONE \
-    ((MojoDuplicateBufferHandleOptionsFlags) 0)
+  ((MojoDuplicateBufferHandleOptionsFlags)0)
 #endif
 
 struct MojoDuplicateBufferHandleOptions {
   uint32_t struct_size;
   MojoDuplicateBufferHandleOptionsFlags flags;
 };
-MOJO_COMPILE_ASSERT(sizeof(MojoDuplicateBufferHandleOptions) == 8,
-                    MojoDuplicateBufferHandleOptions_has_wrong_size);
+MOJO_STATIC_ASSERT(sizeof(MojoDuplicateBufferHandleOptions) == 8,
+                   "MojoDuplicateBufferHandleOptions has wrong size");
 
 // |MojoMapBufferFlags|: Used to specify different modes to |MojoMapBuffer()|.
 //   |MOJO_MAP_BUFFER_FLAG_NONE| - No flags; default mode.
@@ -82,7 +82,7 @@ typedef uint32_t MojoMapBufferFlags;
 #ifdef __cplusplus
 const MojoMapBufferFlags MOJO_MAP_BUFFER_FLAG_NONE = 0;
 #else
-#define MOJO_MAP_BUFFER_FLAG_NONE ((MojoMapBufferFlags) 0)
+#define MOJO_MAP_BUFFER_FLAG_NONE ((MojoMapBufferFlags)0)
 #endif
 
 #ifdef __cplusplus
@@ -108,16 +108,16 @@ extern "C" {
 //
 // Returns:
 //   |MOJO_RESULT_OK| on success.
-//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g., if
-//       |*options| is invalid or |shared_buffer_handle| looks invalid).
+//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g.,
+//       |*options| is invalid).
 //   |MOJO_RESULT_RESOURCE_EXHAUSTED| if a process/system/quota/etc. limit has
 //       been reached (e.g., if the requested size was too large, or if the
 //       maximum number of handles was exceeded).
 //   |MOJO_RESULT_UNIMPLEMENTED| if an unsupported flag was set in |*options|.
 MOJO_SYSTEM_EXPORT MojoResult MojoCreateSharedBuffer(
     const struct MojoCreateSharedBufferOptions* options,  // Optional.
-    uint64_t num_bytes,  // In.
-    MojoHandle* shared_buffer_handle);  // Out.
+    uint64_t num_bytes,                                   // In.
+    MojoHandle* shared_buffer_handle);                    // Out.
 
 // Duplicates the handle |buffer_handle| to a buffer. This creates another
 // handle (returned in |*new_buffer_handle| on success), which can then be sent
@@ -132,14 +132,13 @@ MOJO_SYSTEM_EXPORT MojoResult MojoCreateSharedBuffer(
 //
 // Returns:
 //   |MOJO_RESULT_OK| on success.
-//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g., if
-//       |buffer_handle| is not a valid buffer handle, |*options| is invalid, or
-//       |new_buffer_handle| looks invalid).
+//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g.,
+//       |buffer_handle| is not a valid buffer handle or |*options| is invalid).
 //   |MOJO_RESULT_UNIMPLEMENTED| if an unsupported flag was set in |*options|.
 MOJO_SYSTEM_EXPORT MojoResult MojoDuplicateBufferHandle(
     MojoHandle buffer_handle,
     const struct MojoDuplicateBufferHandleOptions* options,  // Optional.
-    MojoHandle* new_buffer_handle);  // Out.
+    MojoHandle* new_buffer_handle);                          // Out.
 
 // Maps the part (at offset |offset| of length |num_bytes|) of the buffer given
 // by |buffer_handle| into memory, with options specified by |flags|. |offset +
@@ -158,9 +157,9 @@ MOJO_SYSTEM_EXPORT MojoResult MojoDuplicateBufferHandle(
 //
 // Returns:
 //   |MOJO_RESULT_OK| on success.
-//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g., if
-//       |buffer_handle| is not a valid buffer handle, the range specified by
-//       |offset| and |num_bytes| is not valid, or |buffer| looks invalid).
+//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g.,
+//       |buffer_handle| is not a valid buffer handle or the range specified by
+//       |offset| and |num_bytes| is not valid).
 //   |MOJO_RESULT_RESOURCE_EXHAUSTED| if the mapping operation itself failed
 //       (e.g., due to not having appropriate address space available).
 MOJO_SYSTEM_EXPORT MojoResult MojoMapBuffer(MojoHandle buffer_handle,
@@ -176,8 +175,8 @@ MOJO_SYSTEM_EXPORT MojoResult MojoMapBuffer(MojoHandle buffer_handle,
 //
 // Returns:
 //   |MOJO_RESULT_OK| on success.
-//   |MOJO_RESULT_INVALID_ARGUMENT| if |buffer| is invalid (e.g., if it is not
-//       the result of |MojoMapBuffer()| or it has already been unmapped).
+//   |MOJO_RESULT_INVALID_ARGUMENT| if |buffer| is invalid (e.g., is not the
+//       result of |MojoMapBuffer()| or has already been unmapped).
 MOJO_SYSTEM_EXPORT MojoResult MojoUnmapBuffer(void* buffer);  // In.
 
 #ifdef __cplusplus

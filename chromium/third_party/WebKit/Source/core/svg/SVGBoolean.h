@@ -31,11 +31,11 @@
 #ifndef SVGBoolean_h
 #define SVGBoolean_h
 
-#include "core/svg/properties/SVGProperty.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGBoolean : public SVGPropertyBase {
+class SVGBoolean : public SVGPropertyHelper<SVGBoolean> {
 public:
     // SVGBoolean does not have a tear-off type.
     typedef void TearOffType;
@@ -47,17 +47,13 @@ public:
     }
 
     PassRefPtr<SVGBoolean> clone() const { return create(m_value); }
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) OVERRIDE;
-
-    bool operator==(const SVGBoolean& other) const { return m_value == other.m_value; }
-    bool operator!=(const SVGBoolean& other) const { return !operator==(other); }
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) override;
 
     bool value() const { return m_value; }
     void setValue(bool value) { m_value = value; }
@@ -66,8 +62,7 @@ public:
 
 private:
     SVGBoolean(bool value)
-        : SVGPropertyBase(classType())
-        , m_value(value)
+        : m_value(value)
     {
     }
 
@@ -81,6 +76,6 @@ inline PassRefPtr<SVGBoolean> toSVGBoolean(PassRefPtr<SVGPropertyBase> passBase)
     return static_pointer_cast<SVGBoolean>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGBoolean_h

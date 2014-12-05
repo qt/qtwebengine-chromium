@@ -30,12 +30,12 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.ResourceTreeModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.ResourceTreeModel, target);
 
     target.networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestFinished, this._onRequestFinished, this);
     target.networkManager.addEventListener(WebInspector.NetworkManager.EventTypes.RequestUpdateDropped, this._onRequestUpdateDropped, this);
@@ -71,7 +71,9 @@ WebInspector.ResourceTreeModel.EventTypes = {
     SecurityOriginAdded: "SecurityOriginAdded",
     SecurityOriginRemoved: "SecurityOriginRemoved",
     ScreencastFrame: "ScreencastFrame",
-    ScreencastVisibilityChanged: "ScreencastVisibilityChanged"
+    ScreencastVisibilityChanged: "ScreencastVisibilityChanged",
+    ViewportChanged: "ViewportChanged",
+    ColorPicked: "ColorPicked"
 }
 
 WebInspector.ResourceTreeModel.prototype = {
@@ -86,7 +88,9 @@ WebInspector.ResourceTreeModel.prototype = {
     _processCachedResources: function(error, mainFramePayload)
     {
         if (error) {
-            console.error(JSON.stringify(error));
+            //FIXME: remove resourceTreeModel from worker
+            if (!this.target().isWorkerTarget())
+                console.error(JSON.stringify(error));
             return;
         }
 
@@ -94,8 +98,8 @@ WebInspector.ResourceTreeModel.prototype = {
         this._inspectedPageURL = mainFramePayload.frame.url;
         this._addFramesRecursively(null, mainFramePayload);
         this._dispatchInspectedURLChanged();
-        this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded);
         this._cachedResourcesProcessed = true;
+        this.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.CachedResourcesLoaded);
     },
 
     /**
@@ -195,7 +199,7 @@ WebInspector.ResourceTreeModel.prototype = {
             if (!frame.isMainFrame())
                 this._removeSecurityOrigin(frame.securityOrigin);
         }
-        removeOriginForFrame.call(this, WebInspector.resourceTreeModel.mainFrame);
+        removeOriginForFrame.call(this, mainFrame);
     },
 
     /**
@@ -288,7 +292,7 @@ WebInspector.ResourceTreeModel.prototype = {
             return;
 
         var request = /** @type {!WebInspector.NetworkRequest} */ (event.data);
-        if (request.failed || request.type === WebInspector.resourceTypes.XHR)
+        if (request.failed || request.resourceType() === WebInspector.resourceTypes.XHR)
             return;
 
         var frame = this._frames[request.frameId];
@@ -315,7 +319,7 @@ WebInspector.ResourceTreeModel.prototype = {
         if (frame._resourcesMap[url])
             return;
 
-        var resource = new WebInspector.Resource(null, url, frame.url, frameId, event.data.loaderId, WebInspector.resourceTypes[event.data.resourceType], event.data.mimeType);
+        var resource = new WebInspector.Resource(this.target(), null, url, frame.url, frameId, event.data.loaderId, WebInspector.resourceTypes[event.data.resourceType], event.data.mimeType);
         frame.addResource(resource);
     },
 
@@ -436,7 +440,10 @@ WebInspector.ResourceTreeModel.prototype = {
         var frameResource = this._createResourceFromFramePayload(framePayload, framePayload.url, WebInspector.resourceTypes.Document, framePayload.mimeType);
         if (frame.isMainFrame())
             this._inspectedPageURL = frameResource.url;
-        frame.addResource(frameResource);
+        // FIXME(413891): This check could be removed once we stop to send frame tree for service/shared workers.
+        // This makes sure that the shadow page document resource does not hide the worker script resource (they have the same url).
+        if (!WebInspector.isWorkerFrontend())
+            frame.addResource(frameResource);
 
         for (var i = 0; frameTreePayload.childFrames && i < frameTreePayload.childFrames.length; ++i)
             this._addFramesRecursively(frame, frameTreePayload.childFrames[i]);
@@ -457,7 +464,7 @@ WebInspector.ResourceTreeModel.prototype = {
      */
     _createResourceFromFramePayload: function(frame, url, type, mimeType)
     {
-        return new WebInspector.Resource(null, url, frame.url, frame.id, frame.loaderId, type, mimeType);
+        return new WebInspector.Resource(this.target(), null, url, frame.url, frame.id, frame.loaderId, type, mimeType);
     },
 
     /**
@@ -471,7 +478,7 @@ WebInspector.ResourceTreeModel.prototype = {
         this._agent.reload(ignoreCache, scriptToEvaluateOnLoad, scriptPreprocessor);
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -657,7 +664,7 @@ WebInspector.ResourceTreeFrame.prototype = {
             // Already in the tree, we just got an extra update.
             return resource;
         }
-        resource = new WebInspector.Resource(request, request.url, request.documentURL, request.frameId, request.loaderId, request.type, request.mimeType);
+        resource = new WebInspector.Resource(this.target(), request, request.url, request.documentURL, request.frameId, request.loaderId, request.resourceType(), request.mimeType);
         this._resourcesMap[resource.url] = resource;
         this._model.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ResourceAdded, resource);
         return resource;
@@ -737,11 +744,19 @@ WebInspector.PageDispatcher = function(resourceTreeModel)
 }
 
 WebInspector.PageDispatcher.prototype = {
+    /**
+     * @override
+     * @param {number} time
+     */
     domContentEventFired: function(time)
     {
         this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.DOMContentLoaded, time);
     },
 
+    /**
+     * @override
+     * @param {number} time
+     */
     loadEventFired: function(time)
     {
         this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.Load, time);
@@ -811,6 +826,32 @@ WebInspector.PageDispatcher.prototype = {
     screencastVisibilityChanged: function(visible)
     {
         this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ScreencastVisibilityChanged, {visible:visible});
+    },
+
+    /**
+     * @param {!PageAgent.Viewport=} viewport
+     */
+    viewportChanged: function(viewport)
+    {
+        this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ViewportChanged, viewport);
+    },
+
+    /**
+     * @param {!DOMAgent.RGBA} color
+     */
+    colorPicked: function(color)
+    {
+        this._resourceTreeModel.dispatchEventToListeners(WebInspector.ResourceTreeModel.EventTypes.ColorPicked, color);
+    },
+
+    interstitialShown: function()
+    {
+        // Frontend is not interested in interstitials.
+    },
+
+    interstitialHidden: function()
+    {
+        // Frontend is not interested in interstitials.
     }
 }
 

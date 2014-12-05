@@ -20,21 +20,22 @@ class InputHandlerWrapper : public InputHandlerProxyClient {
                       const scoped_refptr<base::MessageLoopProxy>& main_loop,
                       const base::WeakPtr<cc::InputHandler>& input_handler,
                       const base::WeakPtr<RenderViewImpl>& render_view_impl);
-  virtual ~InputHandlerWrapper();
+  ~InputHandlerWrapper() override;
 
   int routing_id() const { return routing_id_; }
   InputHandlerProxy* input_handler_proxy() { return &input_handler_proxy_; }
 
   // InputHandlerProxyClient implementation.
-  virtual void WillShutdown() OVERRIDE;
-  virtual void TransferActiveWheelFlingAnimation(
-      const blink::WebActiveWheelFlingParameters& params) OVERRIDE;
-  virtual blink::WebGestureCurve* CreateFlingAnimationCurve(
+  void WillShutdown() override;
+  void TransferActiveWheelFlingAnimation(
+      const blink::WebActiveWheelFlingParameters& params) override;
+  blink::WebGestureCurve* CreateFlingAnimationCurve(
       blink::WebGestureDevice deviceSource,
       const blink::WebFloatPoint& velocity,
-      const blink::WebSize& cumulativeScroll) OVERRIDE;
-  virtual void DidOverscroll(const DidOverscrollParams& params) OVERRIDE;
-  virtual void DidStopFlinging() OVERRIDE;
+      const blink::WebSize& cumulativeScroll) override;
+  void DidOverscroll(const DidOverscrollParams& params) override;
+  void DidStopFlinging() override;
+  void DidReceiveInputEvent() override;
 
  private:
   InputHandlerManager* input_handler_manager_;

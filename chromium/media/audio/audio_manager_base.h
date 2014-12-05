@@ -46,32 +46,29 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
   // stream, otherwise stream initialization may fail.
   static const char kLoopbackInputDeviceId[];
 
-  virtual ~AudioManagerBase();
+  ~AudioManagerBase() override;
 
-  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() OVERRIDE;
-  virtual scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner()
-      OVERRIDE;
+  scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() override;
+  scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner() override;
 
-  virtual base::string16 GetAudioInputDeviceModel() OVERRIDE;
+  base::string16 GetAudioInputDeviceModel() override;
 
-  virtual void ShowAudioInputSettings() OVERRIDE;
+  void ShowAudioInputSettings() override;
 
-  virtual void GetAudioInputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
+  void GetAudioInputDeviceNames(AudioDeviceNames* device_names) override;
 
-  virtual void GetAudioOutputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
+  void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) override;
 
-  virtual AudioOutputStream* MakeAudioOutputStream(
+  AudioOutputStream* MakeAudioOutputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
+      const std::string& device_id) override;
 
-  virtual AudioInputStream* MakeAudioInputStream(
-      const AudioParameters& params, const std::string& device_id) OVERRIDE;
+  AudioInputStream* MakeAudioInputStream(const AudioParameters& params,
+                                         const std::string& device_id) override;
 
-  virtual AudioOutputStream* MakeAudioOutputStreamProxy(
+  AudioOutputStream* MakeAudioOutputStreamProxy(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
+      const std::string& device_id) override;
 
   // Called internally by the audio stream when it has been closed.
   virtual void ReleaseOutputStream(AudioOutputStream* stream);
@@ -97,23 +94,23 @@ class MEDIA_EXPORT AudioManagerBase : public AudioManager {
       const AudioParameters& params, const std::string& device_id) = 0;
 
   // Listeners will be notified on the GetTaskRunner() task runner.
-  virtual void AddOutputDeviceChangeListener(
-      AudioDeviceListener* listener) OVERRIDE;
-  virtual void RemoveOutputDeviceChangeListener(
-      AudioDeviceListener* listener) OVERRIDE;
+  void AddOutputDeviceChangeListener(AudioDeviceListener* listener) override;
+  void RemoveOutputDeviceChangeListener(AudioDeviceListener* listener) override;
 
-  virtual AudioParameters GetDefaultOutputStreamParameters() OVERRIDE;
-  virtual AudioParameters GetOutputStreamParameters(
-      const std::string& device_id) OVERRIDE;
+  AudioParameters GetDefaultOutputStreamParameters() override;
+  AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) override;
 
-  virtual AudioParameters GetInputStreamParameters(
-      const std::string& device_id) OVERRIDE;
+  AudioParameters GetInputStreamParameters(
+      const std::string& device_id) override;
 
-  virtual std::string GetAssociatedOutputDeviceID(
-      const std::string& input_device_id) OVERRIDE;
+  std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) override;
 
-  virtual scoped_ptr<AudioLog> CreateAudioLog(
-      AudioLogFactory::AudioComponent component) OVERRIDE;
+  scoped_ptr<AudioLog> CreateAudioLog(
+      AudioLogFactory::AudioComponent component) override;
+
+  void SetHasKeyboardMic() override;
 
   // Get number of input or output streams.
   int input_stream_count() const { return num_input_streams_; }

@@ -2,27 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import "../../../gles2/command_buffer.mojom"
-import "../geometry/geometry.mojom"
-import "../input_events/input_events.mojom"
+module mojo;
 
-module mojo {
+import "mojo/services/public/interfaces/geometry/geometry.mojom";
+import "mojo/services/public/interfaces/gpu/command_buffer.mojom";
+import "mojo/services/public/interfaces/input_events/input_events.mojom";
+import "mojo/services/public/interfaces/surfaces/surface_id.mojom";
 
 [Client=NativeViewportClient]
 interface NativeViewport {
-  Create(Rect bounds);
+  // TODO(sky): having a create function is awkward. Should there be a factory
+  // to create the NativeViewport that takes the size?
+  Create(Size size) => (uint64 native_viewport_id);
   Show();
   Hide();
   Close();
-  SetBounds(Rect bounds);
-  CreateGLES2Context(CommandBuffer& gles2_client);
+  SetSize(Size size);
+  SubmittedFrame(SurfaceId surface_id);
+  SetEventDispatcher(NativeViewportEventDispatcher dispatcher);
 };
 
-interface NativeViewportClient {
-  OnCreated();
-  OnBoundsChanged(Rect bounds);
-  OnDestroyed();
+interface NativeViewportEventDispatcher {
   OnEvent(Event event) => ();
 };
 
-}
+interface NativeViewportClient {
+  // OnSizeChanged() is sent at least once after the callback from Create() is
+  // called.
+  OnSizeChanged(Size size);
+  OnDestroyed();
+};

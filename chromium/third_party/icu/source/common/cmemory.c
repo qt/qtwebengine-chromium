@@ -1,7 +1,7 @@
 /*
 ******************************************************************************
 *
-*   Copyright (C) 2002-2003, International Business Machines
+*   Copyright (C) 2002-2012, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 ******************************************************************************
@@ -20,9 +20,11 @@
 */
 #include "unicode/uclean.h"
 #include "cmemory.h"
+#include "putilimp.h"
+#include "uassert.h"
 #include <stdlib.h>
 
-/* uprv_malloc(0) returns a pointer to this read-only data. */                
+/* uprv_malloc(0) returns a pointer to this read-only data. */
 static const int32_t zeroMem[] = {0, 0, 0, 0, 0, 0};
 
 /* Function Pointers for user-supplied heap functions  */
@@ -35,14 +37,52 @@ static UMemFreeFn     *pFree;
  *   Used to prevent changing out the heap functions after allocations have been made */
 static UBool   gHeapInUse;
 
+#if U_DEBUG && defined(UPRV_MALLOC_COUNT)
+#include <stdio.h>
+static int n=0;
+static long b=0; 
+#endif
+
+#if U_DEBUG
+
+static char gValidMemorySink = 0;
+
+U_CAPI void uprv_checkValidMemory(const void *p, size_t n) {
+    /*
+     * Access the memory to ensure that it's all valid.
+     * Load and save a computed value to try to ensure that the compiler
+     * does not throw away the whole loop.
+     * A thread analyzer might complain about un-mutexed access to gValidMemorySink
+     * which is true but harmless because no one ever uses the value in gValidMemorySink.
+     */
+    const char *s = (const char *)p;
+    char c = gValidMemorySink;
+    size_t i;
+    U_ASSERT(p != NULL);
+    for(i = 0; i < n; ++i) {
+        c ^= s[i];
+    }
+    gValidMemorySink = c;
+}
+
+#endif  /* U_DEBUG */
+
 U_CAPI void * U_EXPORT2
 uprv_malloc(size_t s) {
+#if U_DEBUG && defined(UPRV_MALLOC_COUNT)
+#if 1
+  putchar('>');
+  fflush(stdout);
+#else
+  fprintf(stderr,"MALLOC\t#%d\t%ul bytes\t%ul total\n", ++n,s,(b+=s)); fflush(stderr);
+#endif
+#endif
     if (s > 0) {
         gHeapInUse = TRUE;
         if (pAlloc) {
             return (*pAlloc)(pContext, s);
         } else {
-            return malloc(s);
+            return uprv_default_malloc(s);
         }
     } else {
         return (void *)zeroMem;
@@ -51,13 +91,17 @@ uprv_malloc(size_t s) {
 
 U_CAPI void * U_EXPORT2
 uprv_realloc(void * buffer, size_t size) {
+#if U_DEBUG && defined(UPRV_MALLOC_COUNT)
+  putchar('~');
+  fflush(stdout);
+#endif
     if (buffer == zeroMem) {
         return uprv_malloc(size);
     } else if (size == 0) {
         if (pFree) {
             (*pFree)(pContext, buffer);
         } else {
-            free(buffer);
+            uprv_default_free(buffer);
         }
         return (void *)zeroMem;
     } else {
@@ -65,20 +109,35 @@ uprv_realloc(void * buffer, size_t size) {
         if (pRealloc) {
             return (*pRealloc)(pContext, buffer, size);
         } else {
-            return realloc(buffer, size);
+            return uprv_default_realloc(buffer, size);
         }
     }
 }
 
 U_CAPI void U_EXPORT2
 uprv_free(void *buffer) {
+#if U_DEBUG && defined(UPRV_MALLOC_COUNT)
+  putchar('<');
+  fflush(stdout);
+#endif
     if (buffer != zeroMem) {
         if (pFree) {
             (*pFree)(pContext, buffer);
         } else {
-            free(buffer);
+            uprv_default_free(buffer);
         }
     }
+}
+
+U_CAPI void * U_EXPORT2
+uprv_calloc(size_t num, size_t size) {
+    void *mem = NULL;
+    size *= num;
+    mem = uprv_malloc(size);
+    if (mem) {
+        uprv_memset(mem, 0, size);
+    }
+    return mem;
 }
 
 U_CAPI void U_EXPORT2

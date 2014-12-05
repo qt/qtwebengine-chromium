@@ -7,8 +7,9 @@
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/windows_version.h"
-#include "content/browser/accessibility/browser_accessibility_manager_win.h"
-#include "content/browser/accessibility/browser_accessibility_win.h"
+#include "content/browser/renderer_host/legacy_render_widget_host_win_delegate.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_aura.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/common/content_switches.h"
 #include "ui/base/touch/touch_enabled.h"
@@ -20,38 +21,44 @@
 
 namespace content {
 
+namespace {
+
 // A custom MSAA object id used to determine if a screen reader or some
 // other client is listening on MSAA events - if so, we enable full web
 // accessibility support.
 const int kIdScreenReaderHoneyPot = 1;
 
+}  // namespace
+
 LegacyRenderWidgetHostHWND::~LegacyRenderWidgetHostHWND() {
-  ::DestroyWindow(hwnd());
+  if (::IsWindow(hwnd()))
+    ::DestroyWindow(hwnd());
 }
 
 // static
-scoped_ptr<LegacyRenderWidgetHostHWND> LegacyRenderWidgetHostHWND::Create(
-    HWND parent) {
-  // content_unittests passes in the desktop window as the parent. We allow
-  // the LegacyRenderWidgetHostHWND instance to be created in this case for
-  // these tests to pass.
+LegacyRenderWidgetHostHWND* LegacyRenderWidgetHostHWND::Create(
+    HWND parent,
+    LegacyRenderWidgetHostHWNDDelegate* delegate) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableLegacyIntermediateWindow) ||
-      (!GetWindowEventTarget(parent) && parent != ::GetDesktopWindow()))
-    return scoped_ptr<LegacyRenderWidgetHostHWND>();
+          switches::kDisableLegacyIntermediateWindow)) {
+    return nullptr;
+  }
 
-  scoped_ptr<LegacyRenderWidgetHostHWND> legacy_window_instance;
-  legacy_window_instance.reset(new LegacyRenderWidgetHostHWND(parent));
-  // If we failed to create the child, or if the switch to disable the legacy
-  // window is passed in, then return NULL.
-  if (!::IsWindow(legacy_window_instance->hwnd()))
-    return scoped_ptr<LegacyRenderWidgetHostHWND>();
-
+  LegacyRenderWidgetHostHWND* legacy_window_instance =
+      new LegacyRenderWidgetHostHWND(parent, delegate);
+  // If we failed to create the child, return NULL.
+  if (!::IsWindow(legacy_window_instance->hwnd())) {
+    delete legacy_window_instance;
+    return nullptr;
+  }
   legacy_window_instance->Init();
-  return legacy_window_instance.Pass();
+  return legacy_window_instance;
 }
 
 void LegacyRenderWidgetHostHWND::UpdateParent(HWND parent) {
+  if (!::IsWindow(hwnd()))
+    return;
+
   ::SetParent(hwnd(), parent);
   // If the new parent is the desktop Window, then we disable the child window
   // to ensure that it does not receive any input events. It should not because
@@ -64,35 +71,38 @@ void LegacyRenderWidgetHostHWND::UpdateParent(HWND parent) {
 }
 
 HWND LegacyRenderWidgetHostHWND::GetParent() {
+  if (!::IsWindow(hwnd()))
+    return NULL;
+
   return ::GetParent(hwnd());
 }
 
-void LegacyRenderWidgetHostHWND::OnManagerDeleted() {
-  manager_ = NULL;
-}
-
 void LegacyRenderWidgetHostHWND::Show() {
-  ::ShowWindow(hwnd(), SW_SHOW);
+  if (::IsWindow(hwnd()))
+    ::ShowWindow(hwnd(), SW_SHOW);
 }
 
 void LegacyRenderWidgetHostHWND::Hide() {
-  ::ShowWindow(hwnd(), SW_HIDE);
+  if (::IsWindow(hwnd()))
+    ::ShowWindow(hwnd(), SW_HIDE);
 }
 
 void LegacyRenderWidgetHostHWND::SetBounds(const gfx::Rect& bounds) {
+  if (!::IsWindow(hwnd()))
+    return;
+
   gfx::Rect bounds_in_pixel = gfx::win::DIPToScreenRect(bounds);
   ::SetWindowPos(hwnd(), NULL, bounds_in_pixel.x(), bounds_in_pixel.y(),
-                 bounds_in_pixel.width(), bounds_in_pixel.height(), 0);
+                 bounds_in_pixel.width(), bounds_in_pixel.height(),
+                 SWP_NOREDRAW);
 }
 
-void LegacyRenderWidgetHostHWND::OnFinalMessage(HWND hwnd) {
-  if (manager_)
-    manager_->OnAccessibleHwndDeleted();
-}
-
-LegacyRenderWidgetHostHWND::LegacyRenderWidgetHostHWND(HWND parent)
-    : manager_(NULL),
-      mouse_tracking_enabled_(false) {
+LegacyRenderWidgetHostHWND::LegacyRenderWidgetHostHWND(
+    HWND parent,
+    LegacyRenderWidgetHostHWNDDelegate* delegate)
+    : mouse_tracking_enabled_(false),
+      delegate_(delegate) {
+  DCHECK(delegate_);
   RECT rect = {0};
   Base::Create(parent, rect, L"Chrome Legacy Window",
                WS_CHILDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
@@ -101,8 +111,9 @@ LegacyRenderWidgetHostHWND::LegacyRenderWidgetHostHWND(HWND parent)
 
 bool LegacyRenderWidgetHostHWND::Init() {
   if (base::win::GetVersion() >= base::win::VERSION_WIN7 &&
-      ui::AreTouchEventsEnabled())
+      ui::AreTouchEventsEnabled()) {
     RegisterTouchWindow(hwnd(), TWF_WANTPALM);
+  }
 
   HRESULT hr = ::CreateStdAccessibleObject(
       hwnd(), OBJID_WINDOW, IID_IAccessible,
@@ -146,13 +157,16 @@ LRESULT LegacyRenderWidgetHostHWND::OnGetObject(UINT message,
     return static_cast<LRESULT>(0L);
   }
 
-  if (OBJID_CLIENT != obj_id || !manager_)
+  if (OBJID_CLIENT != obj_id)
     return static_cast<LRESULT>(0L);
 
-  base::win::ScopedComPtr<IAccessible> root(
-      manager_->GetRoot()->ToBrowserAccessibilityWin());
+  base::win::ScopedComPtr<IAccessible> native_accessible(
+      delegate_->GetNativeViewAccessible());
+  if (!native_accessible)
+    return static_cast<LRESULT>(0L);
+
   return LresultFromObject(IID_IAccessible, w_param,
-      static_cast<IAccessible*>(root.Detach()));
+      static_cast<IAccessible*>(native_accessible.Detach()));
 }
 
 // We send keyboard/mouse/touch messages to the parent window via SendMessage.
@@ -167,11 +181,14 @@ LRESULT LegacyRenderWidgetHostHWND::OnKeyboardRange(UINT message,
                                                     WPARAM w_param,
                                                     LPARAM l_param,
                                                     BOOL& handled) {
+  LRESULT ret = 0;
   if (GetWindowEventTarget(GetParent())) {
-    return GetWindowEventTarget(GetParent())->HandleKeyboardMessage(
-        message, w_param, l_param);
+    bool msg_handled = false;
+    ret = GetWindowEventTarget(GetParent())->HandleKeyboardMessage(
+        message, w_param, l_param, &msg_handled);
+    handled = msg_handled;
   }
-  return 0;
+  return ret;
 }
 
 LRESULT LegacyRenderWidgetHostHWND::OnMouseRange(UINT message,
@@ -200,28 +217,45 @@ LRESULT LegacyRenderWidgetHostHWND::OnMouseRange(UINT message,
     ::MapWindowPoints(hwnd(), GetParent(), &mouse_coords, 1);
     l_param = MAKELPARAM(mouse_coords.x, mouse_coords.y);
   }
+
+  LRESULT ret = 0;
+
   if (GetWindowEventTarget(GetParent())) {
-    return GetWindowEventTarget(GetParent())->HandleMouseMessage(
-        message, w_param, l_param);
+    bool msg_handled = false;
+    ret = GetWindowEventTarget(GetParent())->HandleMouseMessage(
+        message, w_param, l_param, &msg_handled);
+    handled = msg_handled;
+    // If the parent did not handle non client mouse messages, we call
+    // DefWindowProc on the message with the parent window handle. This
+    // ensures that WM_SYSCOMMAND is generated for the parent and we are
+    // out of the picture.
+    if (!handled &&
+         (message >= WM_NCMOUSEMOVE && message <= WM_NCXBUTTONDBLCLK)) {
+      ret = ::DefWindowProc(GetParent(), message, w_param, l_param);
+      handled = TRUE;
+    }
   }
-  return 0;
+  return ret;
 }
 
 LRESULT LegacyRenderWidgetHostHWND::OnMouseLeave(UINT message,
                                                  WPARAM w_param,
                                                  LPARAM l_param) {
   mouse_tracking_enabled_ = false;
+  LRESULT ret = 0;
   if ((::GetCapture() != GetParent()) && GetWindowEventTarget(GetParent())) {
     // We should send a WM_MOUSELEAVE to the parent window only if the mouse
     // has moved outside the bounds of the parent.
     POINT cursor_pos;
     ::GetCursorPos(&cursor_pos);
     if (::WindowFromPoint(cursor_pos) != GetParent()) {
-      return GetWindowEventTarget(GetParent())->HandleMouseMessage(
-          message, w_param, l_param);
+      bool msg_handled = false;
+      ret = GetWindowEventTarget(GetParent())->HandleMouseMessage(
+          message, w_param, l_param, &msg_handled);
+      SetMsgHandled(msg_handled);
     }
   }
-  return 0;
+  return ret;
 }
 
 LRESULT LegacyRenderWidgetHostHWND::OnMouseActivate(UINT message,
@@ -254,29 +288,37 @@ LRESULT LegacyRenderWidgetHostHWND::OnMouseActivate(UINT message,
 LRESULT LegacyRenderWidgetHostHWND::OnTouch(UINT message,
                                             WPARAM w_param,
                                             LPARAM l_param) {
+  LRESULT ret = 0;
   if (GetWindowEventTarget(GetParent())) {
-    return GetWindowEventTarget(GetParent())->HandleTouchMessage(
-        message, w_param, l_param);
+    bool msg_handled = false;
+    ret = GetWindowEventTarget(GetParent())->HandleTouchMessage(
+        message, w_param, l_param, &msg_handled);
+    SetMsgHandled(msg_handled);
   }
-  return 0;
+  return ret;
 }
 
 LRESULT LegacyRenderWidgetHostHWND::OnScroll(UINT message,
                                              WPARAM w_param,
                                              LPARAM l_param) {
+  LRESULT ret = 0;
   if (GetWindowEventTarget(GetParent())) {
-    return GetWindowEventTarget(GetParent())->HandleScrollMessage(
-        message, w_param, l_param);
+    bool msg_handled = false;
+    ret = GetWindowEventTarget(GetParent())->HandleScrollMessage(
+        message, w_param, l_param, &msg_handled);
+    SetMsgHandled(msg_handled);
   }
-  return 0;
+  return ret;
 }
 
 LRESULT LegacyRenderWidgetHostHWND::OnNCHitTest(UINT message,
                                                 WPARAM w_param,
                                                 LPARAM l_param) {
   if (GetWindowEventTarget(GetParent())) {
+    bool msg_handled = false;
     LRESULT hit_test = GetWindowEventTarget(
-        GetParent())->HandleNcHitTestMessage(message, w_param, l_param);
+        GetParent())->HandleNcHitTestMessage(message, w_param, l_param,
+                                             &msg_handled);
     // If the parent returns HTNOWHERE which can happen for popup windows, etc
     // we return HTCLIENT.
     if (hit_test == HTNOWHERE)

@@ -29,7 +29,6 @@
 #include "SkBlurImageFilter.h"
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
-#include "SkDropShadowImageFilter.h"
 #include "SkMatrixImageFilter.h"
 #include "SkTableColorFilter.h"
 #include "platform/graphics/ImageBuffer.h"
@@ -39,15 +38,17 @@
 #include "platform/graphics/skia/SkiaUtils.h"
 #include "public/platform/WebPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 SkiaImageFilterBuilder::SkiaImageFilterBuilder()
     : m_context(0)
+    , m_sourceGraphic(0)
 {
 }
 
 SkiaImageFilterBuilder::SkiaImageFilterBuilder(GraphicsContext* context)
     : m_context(context)
+    , m_sourceGraphic(0)
 {
 }
 
@@ -84,11 +85,8 @@ PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::transformColorSpace(
     return adoptRef(SkColorFilterImageFilter::Create(colorFilter.get(), input));
 }
 
-bool SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& operations, blink::WebFilterOperations* filters)
+void SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& operations, WebFilterOperations* filters)
 {
-    if (!filters)
-        return false;
-
     ColorSpace currentColorSpace = ColorSpaceDeviceRGB;
     SkImageFilter* const nullFilter = 0;
 
@@ -173,7 +171,7 @@ bool SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& opera
         }
         case FilterOperation::DROP_SHADOW: {
             const DropShadowFilterOperation& drop = toDropShadowFilterOperation(op);
-            filters->appendDropShadowFilter(blink::WebPoint(drop.x(), drop.y()), drop.stdDeviation(), drop.color().rgb());
+            filters->appendDropShadowFilter(WebPoint(drop.x(), drop.y()), drop.stdDeviation(), drop.color().rgb());
             break;
         }
         case FilterOperation::NONE:
@@ -185,7 +183,6 @@ bool SkiaImageFilterBuilder::buildFilterOperations(const FilterOperations& opera
         RefPtr<SkImageFilter> filter = transformColorSpace(nullFilter, currentColorSpace, ColorSpaceDeviceRGB);
         filters->appendReferenceFilter(filter.get());
     }
-    return true;
 }
 
 PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::buildTransform(const AffineTransform& transform, SkImageFilter* input)
@@ -193,4 +190,4 @@ PassRefPtr<SkImageFilter> SkiaImageFilterBuilder::buildTransform(const AffineTra
     return adoptRef(SkMatrixImageFilter::Create(affineTransformToSkMatrix(transform), SkPaint::kHigh_FilterLevel, input));
 }
 
-};
+} // namespace blink

@@ -26,7 +26,7 @@
 
 #include "core/rendering/InlineIterator.h"
 
-namespace WebCore {
+namespace blink {
 
 void TrailingObjects::updateMidpointsForTrailingObjects(LineMidpointState& lineMidpointState, const InlineIterator& lBreak, CollapseFirstSpaceOrNot collapseFirstSpace)
 {
@@ -57,7 +57,6 @@ void TrailingObjects::updateMidpointsForTrailingObjects(LineMidpointState& lineM
             currentMidpoint += 2;
         }
     } else if (!lBreak.object()) {
-        ASSERT(m_whitespace->isText());
         ASSERT(collapseFirstSpace == CollapseFirstSpace);
         // Add a new end midpoint that stops right at the very end.
         unsigned length = m_whitespace->textLength();

@@ -28,9 +28,9 @@
 
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
-class InsertNodeBeforeCommand FINAL : public SimpleEditCommand {
+class InsertNodeBeforeCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<InsertNodeBeforeCommand> create(PassRefPtrWillBeRawPtr<Node> childToInsert, PassRefPtrWillBeRawPtr<Node> childToInsertBefore,
         ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
@@ -38,19 +38,19 @@ public:
         return adoptRefWillBeNoop(new InsertNodeBeforeCommand(childToInsert, childToInsertBefore, shouldAssumeContentIsAlwaysEditable));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     InsertNodeBeforeCommand(PassRefPtrWillBeRawPtr<Node> childToInsert, PassRefPtrWillBeRawPtr<Node> childToInsertBefore, ShouldAssumeContentIsAlwaysEditable);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     RefPtrWillBeMember<Node> m_insertChild;
     RefPtrWillBeMember<Node> m_refChild;
     ShouldAssumeContentIsAlwaysEditable m_shouldAssumeContentIsAlwaysEditable;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertNodeBeforeCommand_h

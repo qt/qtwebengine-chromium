@@ -34,19 +34,19 @@
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/editing/InputMethodController.h"
+#include "core/events/Event.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<InputMethodContext> InputMethodContext::create(HTMLElement* element)
 {
-    return adoptPtrWillBeRefCountedGarbageCollected(new InputMethodContext(element));
+    return adoptPtrWillBeNoop(new InputMethodContext(element));
 }
 
 InputMethodContext::InputMethodContext(HTMLElement* element)
     : m_element(element)
 {
-    ScriptWrappable::init(this);
 }
 
 InputMethodContext::~InputMethodContext()
@@ -192,4 +192,4 @@ void InputMethodContext::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -38,7 +38,7 @@
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT GraphicsContextSnapshot : public RefCounted<GraphicsContextSnapshot> {
 WTF_MAKE_NONCOPYABLE(GraphicsContextSnapshot);
@@ -47,18 +47,17 @@ public:
 
     static PassRefPtr<GraphicsContextSnapshot> load(const char*, size_t);
 
-    PassOwnPtr<ImageBuffer> replay(unsigned fromStep = 0, unsigned toStep = 0) const;
+    PassOwnPtr<Vector<char> > replay(unsigned fromStep = 0, unsigned toStep = 0, double scale = 1.0) const;
     PassOwnPtr<Timings> profile(unsigned minIterations, double minDuration) const;
     PassRefPtr<JSONArray> snapshotCommandLog() const;
 
 private:
     friend class GraphicsContextRecorder;
-    GraphicsContextSnapshot(PassRefPtr<SkPicture>, bool isCerteainlyOpaque);
+    GraphicsContextSnapshot(PassRefPtr<SkPicture>);
 
-    PassOwnPtr<ImageBuffer> createImageBuffer() const;
+    PassOwnPtr<SkBitmap> createBitmap() const;
 
     RefPtr<SkPicture> m_picture;
-    bool m_isCertainlyOpaque;
 };
 
 class PLATFORM_EXPORT GraphicsContextRecorder {
@@ -75,6 +74,6 @@ private:
     bool m_isCertainlyOpaque;
 };
 
-}
+} // namespace blink
 
 #endif // GraphicsContextRecorder_h

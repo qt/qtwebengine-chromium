@@ -5,15 +5,16 @@
 #include "config.h"
 #include "core/animation/StringKeyframe.h"
 
+#include "core/animation/DefaultStyleInterpolation.h"
+#include "core/animation/DeferredLegacyStyleInterpolation.h"
+#include "core/animation/LegacyStyleInterpolation.h"
+#include "core/animation/LengthStyleInterpolation.h"
 #include "core/animation/css/CSSAnimations.h"
-#include "core/animation/interpolation/DefaultStyleInterpolation.h"
-#include "core/animation/interpolation/DeferredLegacyStyleInterpolation.h"
-#include "core/animation/interpolation/LegacyStyleInterpolation.h"
-#include "core/animation/interpolation/LengthStyleInterpolation.h"
+#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 StringKeyframe::StringKeyframe(const StringKeyframe& copyFrom)
     : Keyframe(copyFrom.m_offset, copyFrom.m_composite, copyFrom.m_easing)
@@ -44,7 +45,7 @@ PassRefPtrWillBeRawPtr<Keyframe> StringKeyframe::clone() const
 }
 PassOwnPtrWillBeRawPtr<Keyframe::PropertySpecificKeyframe> StringKeyframe::createPropertySpecificKeyframe(CSSPropertyID property) const
 {
-    return adoptPtrWillBeNoop(new PropertySpecificKeyframe(offset(), easing(), propertyValue(property), composite()));
+    return adoptPtrWillBeNoop(new PropertySpecificKeyframe(offset(), &easing(), propertyValue(property), composite()));
 }
 
 void StringKeyframe::trace(Visitor* visitor)
@@ -71,7 +72,7 @@ PassRefPtrWillBeRawPtr<Interpolation> StringKeyframe::PropertySpecificKeyframe::
     CSSValue* toCSSValue = toStringPropertySpecificKeyframe(end)->value();
     ValueRange range = ValueRangeAll;
 
-    if (!CSSAnimations::isAnimatableProperty(property))
+    if (!CSSPropertyMetadata::isAnimatableProperty(property))
         return DefaultStyleInterpolation::create(fromCSSValue, toCSSValue, property);
 
     switch (property) {

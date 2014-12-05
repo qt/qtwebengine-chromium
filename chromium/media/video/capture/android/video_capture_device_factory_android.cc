@@ -58,26 +58,25 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceNames(
 
   JNIEnv* env = AttachCurrentThread();
 
-  int num_cameras = Java_ChromiumCameraInfo_getNumberOfCameras(
+  int num_cameras = Java_VideoCaptureFactory_getNumberOfCameras(
       env, base::android::GetApplicationContext());
   DVLOG(1) << "VideoCaptureDevice::GetDeviceNames: num_cameras=" << num_cameras;
   if (num_cameras <= 0)
     return;
 
   for (int camera_id = num_cameras - 1; camera_id >= 0; --camera_id) {
-    ScopedJavaLocalRef<jobject> ci =
-        Java_ChromiumCameraInfo_getAt(env, camera_id);
+    base::android::ScopedJavaLocalRef<jstring> device_name =
+        Java_VideoCaptureFactory_getDeviceName(env, camera_id);
+    if (device_name.obj() == NULL)
+      continue;
 
     VideoCaptureDevice::Name name(
-        base::android::ConvertJavaStringToUTF8(
-            Java_ChromiumCameraInfo_getDeviceName(env, ci.obj())),
-        base::StringPrintf("%d", Java_ChromiumCameraInfo_getId(env, ci.obj())));
+        base::android::ConvertJavaStringToUTF8(device_name),
+        base::IntToString(camera_id));
     device_names->push_back(name);
 
-    DVLOG(1) << "VideoCaptureDeviceFactoryAndroid::GetDeviceNames: camera"
-             << "device_name=" << name.name() << ", unique_id=" << name.id()
-             << ", orientation "
-             << Java_ChromiumCameraInfo_getOrientation(env, ci.obj());
+    DVLOG(1) << "VideoCaptureDeviceFactoryAndroid::GetDeviceNames: camera "
+             << "device_name=" << name.name() << ", unique_id=" << name.id();
   }
 }
 
@@ -102,10 +101,10 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
     VideoPixelFormat pixel_format = media::PIXEL_FORMAT_UNKNOWN;
     switch (media::Java_VideoCaptureFactory_getCaptureFormatPixelFormat(
         env, format.obj())) {
-      case ANDROID_IMAGEFORMAT_YV12:
+      case VideoCaptureDeviceAndroid::ANDROID_IMAGE_FORMAT_YV12:
         pixel_format = media::PIXEL_FORMAT_YV12;
         break;
-      case ANDROID_IMAGEFORMAT_NV21:
+      case VideoCaptureDeviceAndroid::ANDROID_IMAGE_FORMAT_NV21:
         pixel_format = media::PIXEL_FORMAT_NV21;
         break;
       default:
@@ -120,10 +119,7 @@ void VideoCaptureDeviceFactoryAndroid::GetDeviceSupportedFormats(
                                                                   format.obj()),
         pixel_format);
     capture_formats->push_back(capture_format);
-    DVLOG(1) << device.name() << " resolution: "
-        << capture_format.frame_size.ToString() << ", fps: "
-        << capture_format.frame_rate << ", pixel format: "
-        << capture_format.pixel_format;
+    DVLOG(1) << device.name() << " " << capture_format.ToString();
   }
 }
 

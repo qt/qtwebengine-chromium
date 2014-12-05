@@ -24,15 +24,16 @@
 #ifndef ValidityState_h
 #define ValidityState_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/FormAssociatedElement.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ValidityState : public NoBaseWillBeGarbageCollectedFinalized<ValidityState>, public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(ValidityState);
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(ValidityState);
 public:
     static PassOwnPtrWillBeRawPtr<ValidityState> create(FormAssociatedElement* control)
     {
@@ -53,6 +54,7 @@ public:
     bool typeMismatch() const;
     bool patternMismatch() const;
     bool tooLong() const;
+    bool tooShort() const;
     bool rangeUnderflow() const;
     bool rangeOverflow() const;
     bool stepMismatch() const;
@@ -61,14 +63,12 @@ public:
     bool valid() const;
 
 private:
-    explicit ValidityState(FormAssociatedElement* control) : m_control(control)
-    {
-        ScriptWrappable::init(this);
-    }
+    explicit ValidityState(FormAssociatedElement* control)
+        : m_control(control) { }
 
     RawPtrWillBeMember<FormAssociatedElement> m_control;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ValidityState_h

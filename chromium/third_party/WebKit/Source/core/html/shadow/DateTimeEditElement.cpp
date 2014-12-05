@@ -27,7 +27,7 @@
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/shadow/DateTimeEditElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
@@ -42,7 +42,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "wtf/DateMath.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 using namespace WTF::Unicode;
@@ -69,8 +69,8 @@ private:
     DateTimeNumericFieldElement::Step createStep(double msPerFieldUnit, double msPerFieldSize) const;
 
     // DateTimeFormat::TokenHandler functions.
-    virtual void visitField(DateTimeFormat::FieldType, int) OVERRIDE FINAL;
-    virtual void visitLiteral(const String&) OVERRIDE FINAL;
+    virtual void visitField(DateTimeFormat::FieldType, int) override final;
+    virtual void visitLiteral(const String&) override final;
 
     DateTimeEditElement& m_editElement;
     const DateComponents m_dateValue;
@@ -662,7 +662,7 @@ bool DateTimeEditElement::isReadOnly() const
 void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const DateComponents& dateValue)
 {
     DEFINE_STATIC_LOCAL(AtomicString, fieldsWrapperPseudoId, ("-webkit-datetime-edit-fields-wrapper", AtomicString::ConstructFromLiteral));
-    if (!firstChild()) {
+    if (!hasChildren()) {
         RefPtrWillBeRawPtr<HTMLDivElement> element = HTMLDivElement::create(document());
         element->setShadowPseudoId(fieldsWrapperPseudoId);
         appendChild(element.get());
@@ -697,7 +697,7 @@ void DateTimeEditElement::layout(const LayoutParameters& layoutParameters, const
             if (childNode == lastChildToBeRemoved)
                 break;
         }
-        setNeedsStyleRecalc(SubtreeStyleChange);
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Control));
     }
 }
 
@@ -812,6 +812,6 @@ DateTimeFieldsState DateTimeEditElement::valueAsDateTimeFieldsState() const
     return dateTimeFieldsState;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

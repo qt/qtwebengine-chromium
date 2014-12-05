@@ -6,8 +6,8 @@
 
 #include <sstream>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/strings/string_piece.h"
 #include "base/time/time.h"
@@ -16,6 +16,7 @@
 #include "cc/layers/nine_patch_layer.h"
 #include "cc/layers/solid_color_layer.h"
 #include "cc/layers/texture_layer.h"
+#include "cc/resources/single_release_callback.h"
 #include "cc/resources/texture_mailbox.h"
 #include "cc/test/fake_content_layer_client.h"
 #include "cc/test/layer_tree_json_parser.h"
@@ -39,39 +40,38 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
                     kTimeCheckInterval),
         commit_timer_(0, base::TimeDelta(), 1),
         full_damage_each_frame_(false),
-        animation_driven_drawing_(false),
+        begin_frame_driven_drawing_(false),
         measure_commit_cost_(false) {
-    fake_content_layer_client_.set_paint_all_opaque(true);
   }
 
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+  void InitializeSettings(LayerTreeSettings* settings) override {
     settings->throttle_frame_production = false;
   }
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     BuildTree();
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void Animate(base::TimeTicks monotonic_time) OVERRIDE {
-    if (animation_driven_drawing_ && !TestEnded()) {
+  void BeginMainFrame(const BeginFrameArgs& args) override {
+    if (begin_frame_driven_drawing_ && !TestEnded()) {
       layer_tree_host()->SetNeedsAnimate();
       layer_tree_host()->SetNextCommitForcesRedraw();
     }
   }
 
-  virtual void BeginCommitOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void BeginCommitOnThread(LayerTreeHostImpl* host_impl) override {
     if (measure_commit_cost_)
       commit_timer_.Start();
   }
 
-  virtual void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void CommitCompleteOnThread(LayerTreeHostImpl* host_impl) override {
     if (measure_commit_cost_ && draw_timer_.IsWarmedUp()) {
       commit_timer_.NextLap();
     }
   }
 
-  virtual void DrawLayersOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
     if (TestEnded() || CleanUpStarted())
       return;
     draw_timer_.NextLap();
@@ -79,7 +79,7 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
       CleanUpAndEndTest(impl);
       return;
     }
-    if (!animation_driven_drawing_)
+    if (!begin_frame_driven_drawing_)
       impl->SetNeedsRedraw();
     if (full_damage_each_frame_)
       impl->SetFullRootLayerDamage();
@@ -91,7 +91,7 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
 
   virtual void BuildTree() {}
 
-  virtual void AfterTest() OVERRIDE {
+  void AfterTest() override {
     CHECK(!test_name_.empty()) << "Must SetTestName() before AfterTest().";
     perf_test::PrintResult("layer_tree_host_frame_time", "", test_name_,
                            1000 * draw_timer_.MsPerLap(), "us", true);
@@ -108,7 +108,7 @@ class LayerTreeHostPerfTest : public LayerTreeTest {
   std::string test_name_;
   FakeContentLayerClient fake_content_layer_client_;
   bool full_damage_each_frame_;
-  bool animation_driven_drawing_;
+  bool begin_frame_driven_drawing_;
 
   bool measure_commit_cost_;
 };
@@ -131,7 +131,7 @@ class LayerTreeHostPerfTestJsonReader : public LayerTreeHostPerfTest {
     ASSERT_TRUE(base::ReadFileToString(json_file, &json_));
   }
 
-  virtual void BuildTree() OVERRIDE {
+  void BuildTree() override {
     gfx::Size viewport = gfx::Size(720, 1038);
     layer_tree_host()->SetViewportSize(viewport);
     scoped_refptr<Layer> root = ParseTreeFromJson(json_,
@@ -178,22 +178,22 @@ TEST_F(LayerTreeHostPerfTestJsonReader,
 class LayerTreeHostPerfTestLeafInvalidates
     : public LayerTreeHostPerfTestJsonReader {
  public:
-  virtual void BuildTree() OVERRIDE {
+  void BuildTree() override {
     LayerTreeHostPerfTestJsonReader::BuildTree();
 
     // Find a leaf layer.
     for (layer_to_invalidate_ = layer_tree_host()->root_layer();
          layer_to_invalidate_->children().size();
-         layer_to_invalidate_ = layer_to_invalidate_->children()[0]) {}
+         layer_to_invalidate_ = layer_to_invalidate_->children()[0].get()) {
+    }
   }
 
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
+  void DidCommitAndDrawFrame() override {
     if (TestEnded())
       return;
 
-    static bool flip = true;
-    layer_to_invalidate_->SetOpacity(flip ? 1.f : 0.5f);
-    flip = !flip;
+    layer_to_invalidate_->SetOpacity(
+        layer_to_invalidate_->opacity() != 1.f ? 1.f : 0.5f);
   }
 
  protected:
@@ -221,15 +221,18 @@ class ScrollingLayerTreePerfTest : public LayerTreeHostPerfTestJsonReader {
       : LayerTreeHostPerfTestJsonReader() {
   }
 
-  virtual void BuildTree() OVERRIDE {
+  void BuildTree() override {
     LayerTreeHostPerfTestJsonReader::BuildTree();
     scrollable_ = layer_tree_host()->root_layer()->children()[1];
     ASSERT_TRUE(scrollable_.get());
   }
 
-  virtual void Layout() OVERRIDE {
+  void Layout() override {
+    if (TestEnded())
+      return;
     static const gfx::Vector2d delta = gfx::Vector2d(0, 10);
-    scrollable_->SetScrollOffset(scrollable_->scroll_offset() + delta);
+    scrollable_->SetScrollOffset(
+        gfx::ScrollOffsetWithDelta(scrollable_->scroll_offset(), delta));
   }
 
  private:
@@ -259,7 +262,7 @@ class BrowserCompositorInvalidateLayerTreePerfTest
         next_sync_point_(1),
         clean_up_started_(false) {}
 
-  virtual void BuildTree() OVERRIDE {
+  void BuildTree() override {
     LayerTreeHostPerfTestJsonReader::BuildTree();
     tab_contents_ =
         static_cast<TextureLayer*>(
@@ -270,7 +273,7 @@ class BrowserCompositorInvalidateLayerTreePerfTest
     ASSERT_TRUE(tab_contents_.get());
   }
 
-  virtual void WillCommit() OVERRIDE {
+  void WillCommit() override {
     if (CleanUpStarted())
       return;
     gpu::Mailbox gpu_mailbox;
@@ -286,13 +289,13 @@ class BrowserCompositorInvalidateLayerTreePerfTest
     tab_contents_->SetTextureMailbox(mailbox, callback.Pass());
   }
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     if (CleanUpStarted())
       return;
     layer_tree_host()->SetNeedsCommit();
   }
 
-  virtual void CleanUpAndEndTest(LayerTreeHostImpl* host_impl) OVERRIDE {
+  void CleanUpAndEndTest(LayerTreeHostImpl* host_impl) override {
     clean_up_started_ = true;
     MainThreadTaskRunner()->PostTask(
         FROM_HERE,
@@ -302,12 +305,11 @@ class BrowserCompositorInvalidateLayerTreePerfTest
   }
 
   void CleanUpAndEndTestOnMainThread() {
-    tab_contents_->SetTextureMailbox(TextureMailbox(),
-                                     scoped_ptr<SingleReleaseCallback>());
+    tab_contents_->SetTextureMailbox(TextureMailbox(), nullptr);
     EndTest();
   }
 
-  virtual bool CleanUpStarted() OVERRIDE { return clean_up_started_; }
+  bool CleanUpStarted() override { return clean_up_started_; }
 
  private:
   scoped_refptr<TextureLayer> tab_contents_;
@@ -324,7 +326,7 @@ TEST_F(BrowserCompositorInvalidateLayerTreePerfTest, DenseBrowserUI) {
 
 // Simulates a page with several large, transformed and animated layers.
 TEST_F(LayerTreeHostPerfTestJsonReader, HeavyPageThreadedImplSide) {
-  animation_driven_drawing_ = true;
+  begin_frame_driven_drawing_ = true;
   measure_commit_cost_ = true;
   SetTestName("heavy_page");
   ReadTestFile("heavy_layer_tree");

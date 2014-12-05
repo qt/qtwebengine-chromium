@@ -26,13 +26,13 @@
 #include "config.h"
 #include "core/editing/InsertIntoTextNodeCommand.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Text.h"
 #include "core/frame/Settings.h"
 #include "core/rendering/RenderText.h"
 
-namespace WebCore {
+namespace blink {
 
 InsertIntoTextNodeCommand::InsertIntoTextNodeCommand(PassRefPtrWillBeRawPtr<Text> node, unsigned offset, const String& text)
     : SimpleEditCommand(node->document())
@@ -51,11 +51,11 @@ void InsertIntoTextNodeCommand::doApply()
     if (passwordEchoEnabled)
         document().updateLayoutIgnorePendingStylesheets();
 
-    if (!m_node->rendererIsEditable())
+    if (!m_node->hasEditableStyle())
         return;
 
     if (passwordEchoEnabled) {
-        RenderText* renderText = toRenderText(m_node->renderer());
+        RenderText* renderText = m_node->renderer();
         if (renderText && renderText->isSecure())
             renderText->momentarilyRevealLastTypedCharacter(m_offset + m_text.length() - 1);
     }
@@ -65,7 +65,7 @@ void InsertIntoTextNodeCommand::doApply()
 
 void InsertIntoTextNodeCommand::doUnapply()
 {
-    if (!m_node->rendererIsEditable())
+    if (!m_node->hasEditableStyle())
         return;
 
     m_node->deleteData(m_offset, m_text.length(), IGNORE_EXCEPTION, CharacterData::DeprecatedRecalcStyleImmediatlelyForEditing);
@@ -77,4 +77,4 @@ void InsertIntoTextNodeCommand::trace(Visitor* visitor)
     SimpleEditCommand::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

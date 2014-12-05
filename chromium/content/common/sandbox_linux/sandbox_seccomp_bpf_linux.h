@@ -11,7 +11,9 @@
 #include "base/memory/scoped_ptr.h"
 
 namespace sandbox {
-class SandboxBPFPolicy;
+namespace bpf_dsl {
+class Policy;
+}
 }
 
 namespace content {
@@ -39,9 +41,9 @@ class SandboxSeccompBPF {
   // This is the API to enable a seccomp-bpf sandbox by using an
   // external policy.
   static bool StartSandboxWithExternalPolicy(
-      scoped_ptr<sandbox::SandboxBPFPolicy> policy);
+      scoped_ptr<sandbox::bpf_dsl::Policy> policy);
   // The "baseline" policy can be a useful base to build a sandbox policy.
-  static scoped_ptr<sandbox::SandboxBPFPolicy> GetBaselinePolicy();
+  static scoped_ptr<sandbox::bpf_dsl::Policy> GetBaselinePolicy();
 
  private:
   DISALLOW_IMPLICIT_CONSTRUCTORS(SandboxSeccompBPF);
@@ -50,4 +52,3 @@ class SandboxSeccompBPF {
 }  // namespace content
 
 #endif  // CONTENT_COMMON_SANDBOX_LINUX_SANDBOX_SECCOMP_BPF_LINUX_H_
-

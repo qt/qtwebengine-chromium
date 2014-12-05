@@ -27,7 +27,7 @@
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGPointTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
@@ -39,6 +39,7 @@ enum SVGLengthAdjustType {
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAdjustType>();
 
 class SVGTextContentElement : public SVGGraphicsElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -67,28 +68,28 @@ protected:
     SVGTextContentElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE FINAL;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE FINAL;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override final;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override final;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
 private:
-    virtual bool isTextContent() const OVERRIDE FINAL { return true; }
+    virtual bool isTextContent() const override final { return true; }
 
     RefPtr<SVGAnimatedLength> m_textLength;
     bool m_textLengthIsSpecifiedByUser;
     RefPtr<SVGAnimatedEnumeration<SVGLengthAdjustType> > m_lengthAdjust;
 };
 
-inline bool isSVGTextContentElement(const Node& node)
+inline bool isSVGTextContentElement(const SVGElement& element)
 {
-    return node.isSVGElement() && toSVGElement(node).isTextContent();
+    return element.isTextContent();
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextContentElement);
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGTextContentElement_h

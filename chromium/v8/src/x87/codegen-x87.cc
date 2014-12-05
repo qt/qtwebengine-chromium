@@ -7,7 +7,7 @@
 #if V8_TARGET_ARCH_X87
 
 #include "src/codegen.h"
-#include "src/heap.h"
+#include "src/heap/heap.h"
 #include "src/macro-assembler.h"
 
 namespace v8 {
@@ -19,14 +19,14 @@ namespace internal {
 
 void StubRuntimeCallHelper::BeforeCall(MacroAssembler* masm) const {
   masm->EnterFrame(StackFrame::INTERNAL);
-  ASSERT(!masm->has_frame());
+  DCHECK(!masm->has_frame());
   masm->set_has_frame(true);
 }
 
 
 void StubRuntimeCallHelper::AfterCall(MacroAssembler* masm) const {
   masm->LeaveFrame(StackFrame::INTERNAL);
-  ASSERT(masm->has_frame());
+  DCHECK(masm->has_frame());
   masm->set_has_frame(false);
 }
 
@@ -79,7 +79,8 @@ class LabelConverter {
 MemMoveFunction CreateMemMoveFunction() {
   size_t actual_size;
   // Allocate buffer in executable space.
-  byte* buffer = static_cast<byte*>(OS::Allocate(1 * KB, &actual_size, true));
+  byte* buffer =
+      static_cast<byte*>(base::OS::Allocate(1 * KB, &actual_size, true));
   if (buffer == NULL) return NULL;
   MacroAssembler masm(NULL, buffer, static_cast<int>(actual_size));
   LabelConverter conv(buffer);
@@ -180,9 +181,9 @@ MemMoveFunction CreateMemMoveFunction() {
 
   CodeDesc desc;
   masm.GetCode(&desc);
-  ASSERT(!RelocInfo::RequiresRelocation(desc));
-  CPU::FlushICache(buffer, actual_size);
-  OS::ProtectCode(buffer, actual_size);
+  DCHECK(!RelocInfo::RequiresRelocation(desc));
+  CpuFeatures::FlushICache(buffer, actual_size);
+  base::OS::ProtectCode(buffer, actual_size);
   // TODO(jkummerow): It would be nice to register this code creation event
   // with the PROFILE / GDBJIT system.
   return FUNCTION_CAST<MemMoveFunction>(buffer);
@@ -198,40 +199,43 @@ MemMoveFunction CreateMemMoveFunction() {
 
 
 void ElementsTransitionGenerator::GenerateMapChangeElementsTransition(
-    MacroAssembler* masm, AllocationSiteMode mode,
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
     Label* allocation_memento_found) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+  Register scratch = edi;
+  DCHECK(!AreAliased(receiver, key, value, target_map, scratch));
+
   if (mode == TRACK_ALLOCATION_SITE) {
-    ASSERT(allocation_memento_found != NULL);
-    __ JumpIfJSArrayHasAllocationMemento(edx, edi, allocation_memento_found);
+    DCHECK(allocation_memento_found != NULL);
+    __ JumpIfJSArrayHasAllocationMemento(
+        receiver, scratch, allocation_memento_found);
   }
 
   // Set transitioned map.
-  __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
-  __ RecordWriteField(edx,
-                      HeapObject::kMapOffset,
-                      ebx,
-                      edi,
-                      EMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ mov(FieldOperand(receiver, HeapObject::kMapOffset), target_map);
+  __ RecordWriteField(receiver, HeapObject::kMapOffset, target_map, scratch,
+                      kDontSaveFPRegs, EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 }
 
 
 void ElementsTransitionGenerator::GenerateSmiToDouble(
-    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
+    Label* fail) {
+  // Return address is on the stack.
+  DCHECK(receiver.is(edx));
+  DCHECK(key.is(ecx));
+  DCHECK(value.is(eax));
+  DCHECK(target_map.is(ebx));
+
   Label loop, entry, convert_hole, gc_required, only_change_map;
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -267,12 +271,8 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // Replace receiver's backing store with newly created FixedDoubleArray.
   __ mov(FieldOperand(edx, JSObject::kElementsOffset), eax);
   __ mov(ebx, eax);
-  __ RecordWriteField(edx,
-                      JSObject::kElementsOffset,
-                      ebx,
-                      edi,
-                      EMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ RecordWriteField(edx, JSObject::kElementsOffset, ebx, edi, kDontSaveFPRegs,
+                      EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
   __ mov(edi, FieldOperand(esi, FixedArray::kLengthOffset));
 
@@ -331,24 +331,25 @@ void ElementsTransitionGenerator::GenerateSmiToDouble(
   // ebx: target map
   // Set transitioned map.
   __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
-  __ RecordWriteField(edx,
-                      HeapObject::kMapOffset,
-                      ebx,
-                      edi,
-                      OMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ RecordWriteField(edx, HeapObject::kMapOffset, ebx, edi, kDontSaveFPRegs,
+                      OMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 }
 
 
 void ElementsTransitionGenerator::GenerateDoubleToObject(
-    MacroAssembler* masm, AllocationSiteMode mode, Label* fail) {
-  // ----------- S t a t e -------------
-  //  -- eax    : value
-  //  -- ebx    : target map
-  //  -- ecx    : key
-  //  -- edx    : receiver
-  //  -- esp[0] : return address
-  // -----------------------------------
+    MacroAssembler* masm,
+    Register receiver,
+    Register key,
+    Register value,
+    Register target_map,
+    AllocationSiteMode mode,
+    Label* fail) {
+  // Return address is on the stack.
+  DCHECK(receiver.is(edx));
+  DCHECK(key.is(ecx));
+  DCHECK(value.is(eax));
+  DCHECK(target_map.is(ebx));
+
   Label loop, entry, convert_hole, gc_required, only_change_map, success;
 
   if (mode == TRACK_ALLOCATION_SITE) {
@@ -379,6 +380,19 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ mov(FieldOperand(eax, FixedArray::kLengthOffset), ebx);
   __ mov(edi, FieldOperand(edx, JSObject::kElementsOffset));
 
+  // Allocating heap numbers in the loop below can fail and cause a jump to
+  // gc_required. We can't leave a partly initialized FixedArray behind,
+  // so pessimistically fill it with holes now.
+  Label initialization_loop, initialization_loop_entry;
+  __ jmp(&initialization_loop_entry, Label::kNear);
+  __ bind(&initialization_loop);
+  __ mov(FieldOperand(eax, ebx, times_2, FixedArray::kHeaderSize),
+         masm->isolate()->factory()->the_hole_value());
+  __ bind(&initialization_loop_entry);
+  __ sub(ebx, Immediate(Smi::FromInt(1)));
+  __ j(not_sign, &initialization_loop);
+
+  __ mov(ebx, FieldOperand(edi, FixedDoubleArray::kLengthOffset));
   __ jmp(&entry);
 
   // ebx: target map
@@ -386,12 +400,8 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // Set transitioned map.
   __ bind(&only_change_map);
   __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
-  __ RecordWriteField(edx,
-                      HeapObject::kMapOffset,
-                      ebx,
-                      edi,
-                      OMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ RecordWriteField(edx, HeapObject::kMapOffset, ebx, edi, kDontSaveFPRegs,
+                      OMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
   __ jmp(&success);
 
   // Call into runtime if GC is required.
@@ -420,10 +430,7 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   __ mov(FieldOperand(edx, HeapNumber::kValueOffset + kPointerSize), esi);
   __ mov(FieldOperand(eax, ebx, times_2, FixedArray::kHeaderSize), edx);
   __ mov(esi, ebx);
-  __ RecordWriteArray(eax,
-                      edx,
-                      esi,
-                      EMIT_REMEMBERED_SET,
+  __ RecordWriteArray(eax, edx, esi, kDontSaveFPRegs, EMIT_REMEMBERED_SET,
                       OMIT_SMI_CHECK);
   __ jmp(&entry, Label::kNear);
 
@@ -442,20 +449,12 @@ void ElementsTransitionGenerator::GenerateDoubleToObject(
   // edx: receiver
   // Set transitioned map.
   __ mov(FieldOperand(edx, HeapObject::kMapOffset), ebx);
-  __ RecordWriteField(edx,
-                      HeapObject::kMapOffset,
-                      ebx,
-                      edi,
-                      OMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ RecordWriteField(edx, HeapObject::kMapOffset, ebx, edi, kDontSaveFPRegs,
+                      OMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
   // Replace receiver's backing store with newly created and filled FixedArray.
   __ mov(FieldOperand(edx, JSObject::kElementsOffset), eax);
-  __ RecordWriteField(edx,
-                      JSObject::kElementsOffset,
-                      eax,
-                      edi,
-                      EMIT_REMEMBERED_SET,
-                      OMIT_SMI_CHECK);
+  __ RecordWriteField(edx, JSObject::kElementsOffset, eax, edi, kDontSaveFPRegs,
+                      EMIT_REMEMBERED_SET, OMIT_SMI_CHECK);
 
   // Restore registers.
   __ pop(eax);
@@ -518,7 +517,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   __ j(zero, &seq_string, Label::kNear);
 
   // Handle external strings.
-  Label ascii_external, done;
+  Label one_byte_external, done;
   if (FLAG_debug_code) {
     // Assert that we do not have a cons or slice (indirect strings) here.
     // Sequential strings have already been ruled out.
@@ -533,22 +532,22 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
   STATIC_ASSERT(kTwoByteStringTag == 0);
   __ test_b(result, kStringEncodingMask);
   __ mov(result, FieldOperand(string, ExternalString::kResourceDataOffset));
-  __ j(not_equal, &ascii_external, Label::kNear);
+  __ j(not_equal, &one_byte_external, Label::kNear);
   // Two-byte string.
   __ movzx_w(result, Operand(result, index, times_2, 0));
   __ jmp(&done, Label::kNear);
-  __ bind(&ascii_external);
-  // Ascii string.
+  __ bind(&one_byte_external);
+  // One-byte string.
   __ movzx_b(result, Operand(result, index, times_1, 0));
   __ jmp(&done, Label::kNear);
 
-  // Dispatch on the encoding: ASCII or two-byte.
-  Label ascii;
+  // Dispatch on the encoding: one-byte or two-byte.
+  Label one_byte;
   __ bind(&seq_string);
   STATIC_ASSERT((kStringEncodingMask & kOneByteStringTag) != 0);
   STATIC_ASSERT((kStringEncodingMask & kTwoByteStringTag) == 0);
   __ test(result, Immediate(kStringEncodingMask));
-  __ j(not_zero, &ascii, Label::kNear);
+  __ j(not_zero, &one_byte, Label::kNear);
 
   // Two-byte string.
   // Load the two-byte character code into the result register.
@@ -558,9 +557,9 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
                                   SeqTwoByteString::kHeaderSize));
   __ jmp(&done, Label::kNear);
 
-  // Ascii string.
+  // One-byte string.
   // Load the byte into the result register.
-  __ bind(&ascii);
+  __ bind(&one_byte);
   __ movzx_b(result, FieldOperand(string,
                                   index,
                                   times_1,
@@ -573,7 +572,7 @@ void StringCharLoadGenerator::Generate(MacroAssembler* masm,
 
 
 CodeAgingHelper::CodeAgingHelper() {
-  ASSERT(young_sequence_.length() == kNoCodeAgeSequenceLength);
+  DCHECK(young_sequence_.length() == kNoCodeAgeSequenceLength);
   CodePatcher patcher(young_sequence_.start(), young_sequence_.length());
   patcher.masm()->push(ebp);
   patcher.masm()->mov(ebp, esp);
@@ -591,7 +590,7 @@ bool CodeAgingHelper::IsOld(byte* candidate) const {
 
 bool Code::IsYoungSequence(Isolate* isolate, byte* sequence) {
   bool result = isolate->code_aging_helper()->IsYoung(sequence);
-  ASSERT(result || isolate->code_aging_helper()->IsOld(sequence));
+  DCHECK(result || isolate->code_aging_helper()->IsOld(sequence));
   return result;
 }
 
@@ -618,7 +617,7 @@ void Code::PatchPlatformCodeAge(Isolate* isolate,
   uint32_t young_length = isolate->code_aging_helper()->young_sequence_length();
   if (age == kNoAgeCodeAge) {
     isolate->code_aging_helper()->CopyYoungSequenceTo(sequence);
-    CPU::FlushICache(sequence, young_length);
+    CpuFeatures::FlushICache(sequence, young_length);
   } else {
     Code* stub = GetCodeAgeStub(isolate, age, parity);
     CodePatcher patcher(sequence, young_length);

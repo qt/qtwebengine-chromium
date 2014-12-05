@@ -26,7 +26,7 @@
 
 #include "core/svg/SVGUseElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
@@ -35,14 +35,13 @@
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGTransformableContainer.h"
 #include "core/svg/SVGGElement.h"
 #include "core/svg/SVGLengthContext.h"
 #include "core/svg/SVGSVGElement.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGUseElement::SVGUseElement(Document& document)
     : SVGGraphicsElement(SVGNames::useTag, document)
@@ -56,7 +55,6 @@ inline SVGUseElement::SVGUseElement(Document& document)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
     ASSERT(hasCustomStyleCallbacks());
-    ScriptWrappable::init(this);
 
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
@@ -95,27 +93,10 @@ bool SVGUseElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGUseElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
-    } else if (name == SVGNames::xAttr) {
-        m_x->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::yAttr) {
-        m_y->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::widthAttr) {
-        m_width->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::heightAttr) {
-        m_height->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 static inline bool isWellFormedDocument(Document* document)
 {
     if (document->isXMLDocument())
@@ -166,14 +147,15 @@ Document* SVGUseElement::externalDocument() const
 
 void transferUseWidthAndHeightIfNeeded(const SVGUseElement& use, SVGElement* shadowElement, const SVGElement& originalElement)
 {
+    DEFINE_STATIC_LOCAL(const AtomicString, hundredPercentString, ("100%", AtomicString::ConstructFromLiteral));
     ASSERT(shadowElement);
     if (isSVGSymbolElement(*shadowElement)) {
         // Spec (<use> on <symbol>): This generated 'svg' will always have explicit values for attributes width and height.
         // If attributes width and/or height are provided on the 'use' element, then these attributes
         // will be transferred to the generated 'svg'. If attributes width and/or height are not specified,
         // the generated 'svg' element will use values of 100% for these attributes.
-        shadowElement->setAttribute(SVGNames::widthAttr, use.width()->isSpecified() ? AtomicString(use.width()->currentValue()->valueAsString()) : "100%");
-        shadowElement->setAttribute(SVGNames::heightAttr, use.height()->isSpecified() ? AtomicString(use.height()->currentValue()->valueAsString()) : "100%");
+        shadowElement->setAttribute(SVGNames::widthAttr, use.width()->isSpecified() ? AtomicString(use.width()->currentValue()->valueAsString()) : hundredPercentString);
+        shadowElement->setAttribute(SVGNames::heightAttr, use.height()->isSpecified() ? AtomicString(use.height()->currentValue()->valueAsString()) : hundredPercentString);
     } else if (isSVGSVGElement(*shadowElement)) {
         // Spec (<use> on <svg>): If attributes width and/or height are provided on the 'use' element, then these
         // values will override the corresponding attributes on the 'svg' in the generated tree.
@@ -208,7 +190,7 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
             transferUseWidthAndHeightIfNeeded(*this, m_targetElementInstance.get(), *m_targetElementInstance->correspondingElement());
         }
         if (renderer)
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+            markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
@@ -217,7 +199,7 @@ void SVGUseElement::svgAttributeChanged(const QualifiedName& attrName)
         if (isExternalReference) {
             KURL url = document().completeURL(hrefString());
             if (url.hasFragmentIdentifier()) {
-                FetchRequest request(ResourceRequest(url.string()), localName());
+                FetchRequest request(ResourceRequest(url), localName());
                 setDocumentResource(document().fetcher()->fetchSVGDocument(request));
             }
         } else {
@@ -309,7 +291,7 @@ void SVGUseElement::clearResourceReferences()
     m_needsShadowTreeRecreation = false;
     document().unscheduleUseShadowTreeUpdate(*this);
 
-    document().accessSVGExtensions().removeAllTargetReferencesForElement(this);
+    removeAllOutgoingReferences();
 }
 
 void SVGUseElement::buildPendingResource()
@@ -423,15 +405,15 @@ RenderObject* SVGUseElement::createRenderer(RenderStyle*)
     return new RenderSVGTransformableContainer(this);
 }
 
-static bool isDirectReference(const Node& node)
+static bool isDirectReference(const SVGElement& element)
 {
-    return isSVGPathElement(node)
-        || isSVGRectElement(node)
-        || isSVGCircleElement(node)
-        || isSVGEllipseElement(node)
-        || isSVGPolygonElement(node)
-        || isSVGPolylineElement(node)
-        || isSVGTextElement(node);
+    return isSVGPathElement(element)
+        || isSVGRectElement(element)
+        || isSVGCircleElement(element)
+        || isSVGEllipseElement(element)
+        || isSVGPolygonElement(element)
+        || isSVGPolylineElement(element)
+        || isSVGTextElement(element);
 }
 
 void SVGUseElement::toClipPath(Path& path)
@@ -439,19 +421,20 @@ void SVGUseElement::toClipPath(Path& path)
     ASSERT(path.isEmpty());
 
     Node* n = userAgentShadowRoot()->firstChild();
-    if (!n)
+    if (!n || !n->isSVGElement())
         return;
+    SVGElement& element = toSVGElement(*n);
 
-    if (n->isSVGElement() && toSVGElement(n)->isSVGGraphicsElement()) {
-        if (!isDirectReference(*n)) {
+    if (element.isSVGGraphicsElement()) {
+        if (!isDirectReference(element)) {
             // Spec: Indirect references are an error (14.3.5)
             document().accessSVGExtensions().reportError("Not allowed to use indirect reference in <clip-path>");
         } else {
-            toSVGGraphicsElement(n)->toClipPath(path);
+            toSVGGraphicsElement(element).toClipPath(path);
             // FIXME: Avoid manual resolution of x/y here. Its potentially harmful.
             SVGLengthContext lengthContext(this);
             path.translate(FloatSize(m_x->currentValue()->value(lengthContext), m_y->currentValue()->value(lengthContext)));
-            path.transform(animatedLocalTransform());
+            path.transform(calculateAnimatedLocalTransform());
         }
     }
 }
@@ -459,8 +442,8 @@ void SVGUseElement::toClipPath(Path& path)
 RenderObject* SVGUseElement::rendererClipChild() const
 {
     if (Node* n = userAgentShadowRoot()->firstChild()) {
-        if (n->isSVGElement() && isDirectReference(*n))
-            return toSVGElement(n)->renderer();
+        if (n->isSVGElement() && isDirectReference(toSVGElement(*n)))
+            return n->renderer();
     }
 
     return 0;
@@ -476,8 +459,8 @@ bool SVGUseElement::buildShadowTree(SVGElement* target, SVGElement* targetInstan
     if (isSVGUseElement(*target)) {
         // We only need to track first degree <use> dependencies. Indirect references are handled
         // as the invalidation bubbles up the dependency chain.
-        if (!foundUse) {
-            document().accessSVGExtensions().addElementReferencingTarget(this, target);
+        if (!foundUse && !isStructurallyExternal()) {
+            addReferenceTo(target);
             foundUse = true;
         }
     } else if (isDisallowedElement(target)) {

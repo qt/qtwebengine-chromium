@@ -21,9 +21,9 @@
 #include "config.h"
 #include "core/svg/SVGTextContentElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/SVGNames.h"
@@ -31,10 +31,9 @@
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
 #include "core/rendering/RenderObject.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/SVGTextQuery.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAdjustType>()
 {
@@ -48,14 +47,14 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGLengthAd
 
 // SVGTextContentElement's 'textLength' attribute needs special handling.
 // It should return getComputedTextLength() when textLength is not specified manually.
-class SVGAnimatedTextLength FINAL : public SVGAnimatedLength {
+class SVGAnimatedTextLength final : public SVGAnimatedLength {
 public:
     static PassRefPtr<SVGAnimatedTextLength> create(SVGTextContentElement* contextElement)
     {
         return adoptRef(new SVGAnimatedTextLength(contextElement));
     }
 
-    virtual SVGLengthTearOff* baseVal() OVERRIDE
+    virtual SVGLengthTearOff* baseVal() override
     {
         SVGTextContentElement* textContentElement = toSVGTextContentElement(contextElement());
         if (!textContentElement->textLengthIsSpecifiedByUser())
@@ -227,19 +226,7 @@ void SVGTextContentElement::collectStyleForPresentationAttribute(const Qualified
 
 void SVGTextContentElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGGraphicsElement::parseAttribute(name, value);
-    else if (name == SVGNames::lengthAdjustAttr) {
-        m_lengthAdjust->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::textLengthAttr) {
-        m_textLength->setBaseValueAsString(value, parseError);
-    } else if (name.matches(XMLNames::spaceAttr)) {
-    } else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGTextContentElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -255,7 +242,7 @@ void SVGTextContentElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGElement::InvalidationGuard invalidationGuard(this);
 
     if (RenderObject* renderer = this->renderer())
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        markForLayoutAndParentResourceInvalidation(renderer);
 }
 
 bool SVGTextContentElement::selfHasRelativeLengths() const

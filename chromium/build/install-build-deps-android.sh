@@ -19,7 +19,7 @@ fi
 
 # Install first the default Linux build deps.
 "$(dirname "${BASH_SOURCE[0]}")/install-build-deps.sh" \
-    --no-syms --no-arm --no-chromeos-fonts --no-nacl --no-prompt
+    --no-syms --no-arm --no-chromeos-fonts --no-nacl --no-prompt "$@"
 
 # The temporary directory used to store output of update-java-alternatives
 TEMPDIR=$(mktemp -d)
@@ -42,10 +42,15 @@ sudo apt-get -f install
 # be installed manually on late-model versions.
 
 # common
-sudo apt-get -y install checkstyle lighttpd python-pexpect xvfb x11-utils
+sudo apt-get -y install lighttpd python-pexpect xvfb x11-utils
 
 # Few binaries in the Android SDK require 32-bit libraries on the host.
 sudo apt-get -y install lib32z1 g++-multilib
+
+# On Trusty-based systems you can't compile V8's mksnapshot without this one.
+# It is compiled for the host, using the -m32 flag, so it needs some 32 bit
+# development support. It seems harmless on older Linux releases.
+sudo apt-get -y install linux-libc-dev:i386
 
 sudo apt-get -y install ant
 

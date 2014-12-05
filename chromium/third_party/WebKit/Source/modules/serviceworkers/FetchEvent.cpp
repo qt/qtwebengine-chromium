@@ -9,26 +9,31 @@
 #include "modules/serviceworkers/ServiceWorkerGlobalScope.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create()
 {
     return adoptRefWillBeNoop(new FetchEvent());
 }
 
-PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create(PassRefPtr<RespondWithObserver> observer, PassRefPtr<Request> request)
+PassRefPtrWillBeRawPtr<FetchEvent> FetchEvent::create(RespondWithObserver* observer, Request* request)
 {
     return adoptRefWillBeNoop(new FetchEvent(observer, request));
 }
 
 Request* FetchEvent::request() const
 {
-    return m_request.get();
+    return m_request;
 }
 
-void FetchEvent::respondWith(ScriptState* scriptState, const ScriptValue& value)
+bool FetchEvent::isReload() const
 {
-    m_observer->respondWith(scriptState, value);
+    return m_isReload;
+}
+
+void FetchEvent::respondWith(ScriptState* scriptState, const ScriptValue& value, ExceptionState& exceptionState)
+{
+    m_observer->respondWith(scriptState, value, exceptionState);
 }
 
 const AtomicString& FetchEvent::interfaceName() const
@@ -36,22 +41,29 @@ const AtomicString& FetchEvent::interfaceName() const
     return EventNames::FetchEvent;
 }
 
-FetchEvent::FetchEvent()
+void FetchEvent::setIsReload(bool isReload)
 {
-    ScriptWrappable::init(this);
+    m_isReload = isReload;
 }
 
-FetchEvent::FetchEvent(PassRefPtr<RespondWithObserver> observer, PassRefPtr<Request> request)
+FetchEvent::FetchEvent()
+    : m_isReload(false)
+{
+}
+
+FetchEvent::FetchEvent(RespondWithObserver* observer, Request* request)
     : Event(EventTypeNames::fetch, /*canBubble=*/false, /*cancelable=*/true)
     , m_observer(observer)
     , m_request(request)
+    , m_isReload(false)
 {
-    ScriptWrappable::init(this);
 }
 
 void FetchEvent::trace(Visitor* visitor)
 {
+    visitor->trace(m_request);
+    visitor->trace(m_observer);
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

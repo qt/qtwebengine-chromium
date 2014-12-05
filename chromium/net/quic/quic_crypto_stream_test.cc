@@ -10,9 +10,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/quic/crypto/crypto_handshake.h"
 #include "net/quic/crypto/crypto_protocol.h"
-#include "net/quic/quic_flags.h"
 #include "net/quic/test_tools/crypto_test_utils.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -29,8 +29,7 @@ class MockQuicCryptoStream : public QuicCryptoStream {
       : QuicCryptoStream(session) {
   }
 
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE {
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override {
     messages_.push_back(message);
   }
 
@@ -102,9 +101,14 @@ TEST_F(QuicCryptoStreamTest, ProcessBadData) {
   EXPECT_EQ(0u, stream_.ProcessRawData(bad.data(), bad.length()));
 }
 
-TEST_F(QuicCryptoStreamTest, NoFlowControl) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-  EXPECT_FALSE(stream_.flow_controller()->IsEnabled());
+TEST_F(QuicCryptoStreamTest, NoConnectionLevelFlowControl) {
+  if (connection_->version() < QUIC_VERSION_21) {
+    EXPECT_FALSE(stream_.flow_controller()->IsEnabled());
+  } else {
+    EXPECT_TRUE(stream_.flow_controller()->IsEnabled());
+  }
+  EXPECT_FALSE(ReliableQuicStreamPeer::StreamContributesToConnectionFlowControl(
+      &stream_));
 }
 
 }  // namespace

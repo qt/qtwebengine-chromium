@@ -30,6 +30,10 @@ DecryptingVideoDecoder::DecryptingVideoDecoder(
       trace_id_(0),
       weak_factory_(this) {}
 
+std::string DecryptingVideoDecoder::GetDisplayName() const {
+  return "DecryptingVideoDecoder";
+}
+
 void DecryptingVideoDecoder::Initialize(const VideoDecoderConfig& config,
                                         bool /* low_delay */,
                                         const PipelineStatusCB& status_cb,
@@ -125,18 +129,12 @@ void DecryptingVideoDecoder::Reset(const base::Closure& closure) {
   DoReset();
 }
 
-void DecryptingVideoDecoder::Stop() {
+DecryptingVideoDecoder::~DecryptingVideoDecoder() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DVLOG(2) << "Stop() - state: " << state_;
 
-  // Invalidate all weak pointers so that pending callbacks won't be fired into
-  // this object.
-  weak_factory_.InvalidateWeakPtrs();
+  if (state_ == kUninitialized)
+    return;
 
-  // At this point the render thread is likely paused (in WebMediaPlayerImpl's
-  // Destroy()), so running |closure| can't wait for anything that requires the
-  // render thread to be processing messages to complete (such as PPAPI
-  // callbacks).
   if (decryptor_) {
     decryptor_->DeinitializeDecoder(Decryptor::kVideo);
     decryptor_ = NULL;
@@ -150,15 +148,11 @@ void DecryptingVideoDecoder::Stop() {
     base::ResetAndReturn(&decode_cb_).Run(kAborted);
   if (!reset_cb_.is_null())
     base::ResetAndReturn(&reset_cb_).Run();
-
-  state_ = kStopped;
 }
 
-DecryptingVideoDecoder::~DecryptingVideoDecoder() {
-  DCHECK(state_ == kUninitialized || state_ == kStopped) << state_;
-}
-
-void DecryptingVideoDecoder::SetDecryptor(Decryptor* decryptor) {
+void DecryptingVideoDecoder::SetDecryptor(
+    Decryptor* decryptor,
+    const DecryptorAttachedCB& decryptor_attached_cb) {
   DVLOG(2) << "SetDecryptor()";
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kDecryptorRequested) << state_;
@@ -168,7 +162,8 @@ void DecryptingVideoDecoder::SetDecryptor(Decryptor* decryptor) {
 
   if (!decryptor) {
     base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
-    state_ = kStopped;
+    state_ = kError;
+    decryptor_attached_cb.Run(false);
     return;
   }
 
@@ -179,6 +174,7 @@ void DecryptingVideoDecoder::SetDecryptor(Decryptor* decryptor) {
       config_,
       BindToCurrentLoop(base::Bind(
           &DecryptingVideoDecoder::FinishInitialization, weak_this_)));
+  decryptor_attached_cb.Run(true);
 }
 
 void DecryptingVideoDecoder::FinishInitialization(bool success) {
@@ -191,7 +187,8 @@ void DecryptingVideoDecoder::FinishInitialization(bool success) {
 
   if (!success) {
     base::ResetAndReturn(&init_cb_).Run(DECODER_ERROR_NOT_SUPPORTED);
-    state_ = kStopped;
+    decryptor_ = NULL;
+    state_ = kError;
     return;
   }
 

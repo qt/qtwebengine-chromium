@@ -29,10 +29,11 @@
 #include "core/css/CSSValueList.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSTransformValue : public CSSValueList {
 public:
+    // FIXME: Can we just use the CSSValueID enum?
     // NOTE: these have to match the values in the IDL
     enum TransformOperationType {
         UnknownTransformOperation,
@@ -82,6 +83,6 @@ private:
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSTransformValue, isTransformValue());
 
-}
+} // namespace blink
 
 #endif

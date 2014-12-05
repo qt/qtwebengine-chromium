@@ -31,7 +31,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class SecurityOrigin;
 class ContentSecurityPolicy;
@@ -40,7 +40,7 @@ class KURL;
 class SecurityContext {
 public:
     SecurityOrigin* securityOrigin() const { return m_securityOrigin.get(); }
-    ContentSecurityPolicy* contentSecurityPolicy() { return m_contentSecurityPolicy.get(); }
+    ContentSecurityPolicy* contentSecurityPolicy() const { return m_contentSecurityPolicy.get(); }
 
     bool isSecureTransitionTo(const KURL&) const;
 
@@ -64,6 +64,6 @@ private:
     RefPtr<ContentSecurityPolicy> m_contentSecurityPolicy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SecurityContext_h

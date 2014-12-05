@@ -2,8 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/**
+ * @typedef {{
+ *   creditCardNumber: string,
+ *   expirationMonth: string,
+ *   expirationYear: string,
+ *   guid: string,
+ *   nameOnCard: string
+ * }}
+ * @see chrome/browser/ui/webui/options/autofill_options_handler.cc
+ */
+var CreditCardData;
+
 cr.define('options', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /////////////////////////////////////////////////////////////////////////////
@@ -12,35 +25,36 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of Autofill options page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function AutofillOptions() {
-    OptionsPage.call(this,
-                     'autofill',
-                     loadTimeData.getString('autofillOptionsPageTabTitle'),
-                     'autofill-options');
+    Page.call(this, 'autofill',
+              loadTimeData.getString('autofillOptionsPageTabTitle'),
+              'autofill-options');
   }
 
   cr.addSingletonGetter(AutofillOptions);
 
   AutofillOptions.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The address list.
-     * @type {DeletableItemList}
+     * @type {options.DeletableItemList}
      * @private
      */
     addressList_: null,
 
     /**
      * The credit card list.
-     * @type {DeletableItemList}
+     * @type {options.DeletableItemList}
      * @private
      */
     creditCardList_: null,
 
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.createAddressList_();
       this.createCreditCardList_();
@@ -53,7 +67,7 @@ cr.define('options', function() {
         self.showAddCreditCardOverlay_();
       };
       $('autofill-options-confirm').onclick = function(event) {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
 <if expr="is_macosx">
       $('autofill-use-mac-address-book-checkbox').onchange = function(event) {
@@ -78,8 +92,10 @@ cr.define('options', function() {
      * @private
      */
     createAddressList_: function() {
-      this.addressList_ = $('address-list');
-      options.autofillOptions.AutofillAddressList.decorate(this.addressList_);
+      var addressList = $('address-list');
+      options.autofillOptions.AutofillAddressList.decorate(addressList);
+      this.addressList_ = assertInstanceof(addressList,
+                                           options.DeletableItemList);
       this.addressList_.autoExpands = true;
     },
 
@@ -88,9 +104,10 @@ cr.define('options', function() {
      * @private
      */
     createCreditCardList_: function() {
-      this.creditCardList_ = $('creditcard-list');
-      options.autofillOptions.AutofillCreditCardList.decorate(
-          this.creditCardList_);
+      var creditCardList = $('creditcard-list');
+      options.autofillOptions.AutofillCreditCardList.decorate(creditCardList);
+      this.creditCardList_ = assertInstanceof(creditCardList,
+                                              options.DeletableItemList);
       this.creditCardList_.autoExpands = true;
     },
 
@@ -102,7 +119,8 @@ cr.define('options', function() {
     showAddAddressOverlay_: function() {
       var title = loadTimeData.getString('addAddressTitle');
       AutofillEditAddressOverlay.setTitle(title);
-      OptionsPage.navigateToPage('autofillEditAddress');
+      PageManager.showPageByName('autofillEditAddress');
+      AutofillEditAddressOverlay.prepForNewAddress();
     },
 
     /**
@@ -113,13 +131,14 @@ cr.define('options', function() {
     showAddCreditCardOverlay_: function() {
       var title = loadTimeData.getString('addCreditCardTitle');
       AutofillEditCreditCardOverlay.setTitle(title);
-      OptionsPage.navigateToPage('autofillEditCreditCard');
+      PageManager.showPageByName('autofillEditCreditCard');
+      AutofillEditCreditCardOverlay.prepForNewCard();
     },
 
     /**
      * Updates the data model for the address list with the values from
      * |entries|.
-     * @param {Array} entries The list of addresses.
+     * @param {!Array} entries The list of addresses.
      */
     setAddressList_: function(entries) {
       this.addressList_.dataModel = new ArrayDataModel(entries);
@@ -128,7 +147,7 @@ cr.define('options', function() {
     /**
      * Updates the data model for the credit card list with the values from
      * |entries|.
-     * @param {Array} entries The list of credit cards.
+     * @param {!Array} entries The list of credit cards.
      */
     setCreditCardList_: function(entries) {
       this.creditCardList_.dataModel = new ArrayDataModel(entries);
@@ -175,20 +194,21 @@ cr.define('options', function() {
       var title = loadTimeData.getString('editAddressTitle');
       AutofillEditAddressOverlay.setTitle(title);
       AutofillEditAddressOverlay.loadAddress(address);
-      OptionsPage.navigateToPage('autofillEditAddress');
+      PageManager.showPageByName('autofillEditAddress');
     },
 
     /**
      * Shows the 'Edit credit card' overlay, using the data in |credit_card| to
-     * fill the input fields. |address| is a list with one item, an associative
-     * array that contains the credit card data.
+     * fill the input fields. |creditCard| is a list with one item, an
+     * associative array that contains the credit card data.
+     * @param {CreditCardData} creditCard
      * @private
      */
     showEditCreditCardOverlay_: function(creditCard) {
       var title = loadTimeData.getString('editCreditCardTitle');
       AutofillEditCreditCardOverlay.setTitle(title);
       AutofillEditCreditCardOverlay.loadCreditCard(creditCard);
-      OptionsPage.navigateToPage('autofillEditCreditCard');
+      PageManager.showPageByName('autofillEditCreditCard');
     },
   };
 
@@ -216,6 +236,9 @@ cr.define('options', function() {
     AutofillOptions.getInstance().showEditAddressOverlay_(address);
   };
 
+  /**
+   * @param {CreditCardData} creditCard
+   */
   AutofillOptions.editCreditCard = function(creditCard) {
     AutofillOptions.getInstance().showEditCreditCardOverlay_(creditCard);
   };

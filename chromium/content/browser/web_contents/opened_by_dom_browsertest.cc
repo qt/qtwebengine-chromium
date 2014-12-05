@@ -28,7 +28,7 @@ class CloseTrackingDelegate : public WebContentsDelegate {
 
   bool close_contents_called() const { return close_contents_called_; }
 
-  virtual void CloseContents(WebContents* source) OVERRIDE {
+  void CloseContents(WebContents* source) override {
     close_contents_called_ = true;
   }
 
@@ -42,7 +42,7 @@ class CloseTrackingDelegate : public WebContentsDelegate {
 
 class OpenedByDOMTest : public ContentBrowserTest {
  protected:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     // Use --site-per-process to force process swaps on cross-site navigations.
     command_line->AppendSwitch(switches::kSitePerProcess);
   }
@@ -114,7 +114,8 @@ IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, Popup) {
 
 // Tests that window.close() works in a popup window that has navigated a few
 // times and swapped processes.
-IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, CrossProcessPopup) {
+// Crashes on all platforms. http://crbug.com/399709
+IN_PROC_BROWSER_TEST_F(OpenedByDOMTest, DISABLED_CrossProcessPopup) {
   host_resolver()->AddRule("*", "127.0.0.1");
   ASSERT_TRUE(test_server()->Start());
 

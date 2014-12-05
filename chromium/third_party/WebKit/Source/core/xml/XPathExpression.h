@@ -27,13 +27,13 @@
 #ifndef XPathExpression_h
 #define XPathExpression_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Node;
@@ -44,13 +44,14 @@ namespace XPath {
 class Expression;
 }
 
-class XPathExpression : public RefCountedWillBeGarbageCollectedFinalized<XPathExpression>, public ScriptWrappable {
+class XPathExpression : public RefCountedWillBeGarbageCollected<XPathExpression>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(XPathExpression);
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<XPathExpression> create()
     {
         return adoptRefWillBeNoop(new XPathExpression);
     }
-    ~XPathExpression();
 
     static PassRefPtrWillBeRawPtr<XPathExpression> createExpression(const String& expression, PassRefPtrWillBeRawPtr<XPathNSResolver>, ExceptionState&);
     PassRefPtrWillBeRawPtr<XPathResult> evaluate(Node* contextNode, unsigned short type, XPathResult*, ExceptionState&);
@@ -63,6 +64,6 @@ private:
     OwnPtrWillBeMember<XPath::Expression> m_topExpression;
 };
 
-}
+} // namespace blink
 
 #endif // XPathExpression_h

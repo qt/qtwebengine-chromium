@@ -143,8 +143,8 @@ diff -r c3565a90b8c4 lib/freebl/chacha20/chacha20.c
 +    input[2] = U8TO32_LITTLE(sigma + 8);
 +    input[3] = U8TO32_LITTLE(sigma + 12);
 +
-+    input[12] = counter;
-+    input[13] = counter >> 32;
++    input[12] = (PRUint32)counter;
++    input[13] = (PRUint32)(counter >> 32);
 +    input[14] = U8TO32_LITTLE(nonce + 0);
 +    input[15] = U8TO32_LITTLE(nonce + 4);
 +
@@ -1554,10 +1554,10 @@ diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.c
 +	f2 = ((state->h2 >> 12) | (state->h3 << 14)) + (uint64_t)U8TO32_LE(&state->key[8]);
 +	f3 = ((state->h3 >> 18) | (state->h4 <<  8)) + (uint64_t)U8TO32_LE(&state->key[12]);
 +
-+	U32TO8_LE(&mac[ 0], f0); f1 += (f0 >> 32);
-+	U32TO8_LE(&mac[ 4], f1); f2 += (f1 >> 32);
-+	U32TO8_LE(&mac[ 8], f2); f3 += (f2 >> 32);
-+	U32TO8_LE(&mac[12], f3);
++	U32TO8_LE(&mac[ 0], (uint32_t)f0); f1 += (f0 >> 32);
++	U32TO8_LE(&mac[ 4], (uint32_t)f1); f2 += (f1 >> 32);
++	U32TO8_LE(&mac[ 8], (uint32_t)f2); f3 += (f2 >> 32);
++	U32TO8_LE(&mac[12], (uint32_t)f3);
 +}
 diff -r c3565a90b8c4 lib/freebl/poly1305/poly1305.h
 --- /dev/null	Thu Jan 01 00:00:00 1970 +0000

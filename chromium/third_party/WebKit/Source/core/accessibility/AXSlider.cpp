@@ -29,13 +29,13 @@
 #include "config.h"
 #include "core/accessibility/AXSlider.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -83,7 +83,7 @@ void AXSlider::addChildren()
 
     m_haveChildren = true;
 
-    AXObjectCache* cache = m_renderer->document().axObjectCache();
+    AXObjectCacheImpl* cache = toAXObjectCacheImpl(m_renderer->document().axObjectCache());
 
     AXSliderThumb* thumb = static_cast<AXSliderThumb*>(cache->getOrCreate(SliderThumbRole));
     thumb->setParent(this);
@@ -156,4 +156,4 @@ bool AXSliderThumb::computeAccessibilityIsIgnored() const
     return accessibilityIsIgnoredByDefault();
 }
 
-} // namespace WebCore
+} // namespace blink

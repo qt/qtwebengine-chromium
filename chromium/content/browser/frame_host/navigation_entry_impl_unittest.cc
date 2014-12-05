@@ -20,7 +20,7 @@ class NavigationEntryTest : public testing::Test {
   NavigationEntryTest() : instance_(NULL) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     entry1_.reset(new NavigationEntryImpl);
 
 #if !defined(OS_IOS)
@@ -31,12 +31,11 @@ class NavigationEntryTest : public testing::Test {
           GURL("test:url"),
           Referrer(GURL("from"), blink::WebReferrerPolicyDefault),
           ASCIIToUTF16("title"),
-          PAGE_TRANSITION_TYPED,
+          ui::PAGE_TRANSITION_TYPED,
           false));
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  protected:
   scoped_ptr<NavigationEntryImpl> entry1_;
@@ -156,10 +155,10 @@ TEST_F(NavigationEntryTest, NavigationEntryAccessors) {
   EXPECT_EQ(2, entry2_->GetPageID());
 
   // Transition type
-  EXPECT_EQ(PAGE_TRANSITION_LINK, entry1_->GetTransitionType());
-  EXPECT_EQ(PAGE_TRANSITION_TYPED, entry2_->GetTransitionType());
-  entry2_->SetTransitionType(PAGE_TRANSITION_RELOAD);
-  EXPECT_EQ(PAGE_TRANSITION_RELOAD, entry2_->GetTransitionType());
+  EXPECT_EQ(ui::PAGE_TRANSITION_LINK, entry1_->GetTransitionType());
+  EXPECT_EQ(ui::PAGE_TRANSITION_TYPED, entry2_->GetTransitionType());
+  entry2_->SetTransitionType(ui::PAGE_TRANSITION_RELOAD);
+  EXPECT_EQ(ui::PAGE_TRANSITION_RELOAD, entry2_->GetTransitionType());
 
   // Is renderer initiated
   EXPECT_FALSE(entry1_->is_renderer_initiated());

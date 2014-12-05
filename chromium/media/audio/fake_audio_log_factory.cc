@@ -9,15 +9,15 @@ namespace media {
 class FakeAudioLogImpl : public AudioLog {
  public:
   FakeAudioLogImpl() {}
-  virtual ~FakeAudioLogImpl() {}
-  virtual void OnCreated(int component_id,
-                         const media::AudioParameters& params,
-                         const std::string& device_id) OVERRIDE {}
-  virtual void OnStarted(int component_id) OVERRIDE {}
-  virtual void OnStopped(int component_id) OVERRIDE {}
-  virtual void OnClosed(int component_id) OVERRIDE {}
-  virtual void OnError(int component_id) OVERRIDE {}
-  virtual void OnSetVolume(int component_id, double volume) OVERRIDE {}
+  ~FakeAudioLogImpl() override {}
+  void OnCreated(int component_id,
+                 const media::AudioParameters& params,
+                 const std::string& device_id) override {}
+  void OnStarted(int component_id) override {}
+  void OnStopped(int component_id) override {}
+  void OnClosed(int component_id) override {}
+  void OnError(int component_id) override {}
+  void OnSetVolume(int component_id, double volume) override {}
 };
 
 FakeAudioLogFactory::FakeAudioLogFactory() {}

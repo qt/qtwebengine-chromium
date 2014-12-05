@@ -31,6 +31,7 @@
 #include "core/dom/AddConsoleMessageTask.h"
 #include "core/dom/ContextLifecycleNotifier.h"
 #include "core/dom/ExecutionContextTask.h"
+#include "core/events/ErrorEvent.h"
 #include "core/events/EventTarget.h"
 #include "core/html/PublicURLManager.h"
 #include "core/inspector/InspectorInstrumentation.h"
@@ -39,15 +40,16 @@
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext::PendingException : public NoBaseWillBeGarbageCollectedFinalized<ExecutionContext::PendingException> {
     WTF_MAKE_NONCOPYABLE(PendingException);
 public:
-    PendingException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
+    PendingException(const String& errorMessage, int lineNumber, int columnNumber, int scriptId, const String& sourceURL, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
         : m_errorMessage(errorMessage)
         , m_lineNumber(lineNumber)
         , m_columnNumber(columnNumber)
+        , m_scriptId(scriptId)
         , m_sourceURL(sourceURL)
         , m_callStack(callStack)
     {
@@ -59,13 +61,13 @@ public:
     String m_errorMessage;
     int m_lineNumber;
     int m_columnNumber;
+    int m_scriptId;
     String m_sourceURL;
     RefPtrWillBeMember<ScriptCallStack> m_callStack;
 };
 
 ExecutionContext::ExecutionContext()
-    : m_client(0)
-    , m_sandboxFlags(SandboxNone)
+    : m_sandboxFlags(SandboxNone)
     , m_circularSequentialID(0)
     , m_inDispatchErrorEvent(false)
     , m_activeDOMObjectsAreSuspended(false)
@@ -108,15 +110,13 @@ unsigned ExecutionContext::activeDOMObjectCount()
 void ExecutionContext::suspendScheduledTasks()
 {
     suspendActiveDOMObjects();
-    if (m_client)
-        m_client->tasksWereSuspended();
+    tasksWereSuspended();
 }
 
 void ExecutionContext::resumeScheduledTasks()
 {
     resumeActiveDOMObjects();
-    if (m_client)
-        m_client->tasksWereResumed();
+    tasksWereResumed();
 }
 
 void ExecutionContext::suspendActiveDOMObjectIfNeeded(ActiveDOMObject* object)
@@ -132,50 +132,33 @@ bool ExecutionContext::shouldSanitizeScriptError(const String& sourceURL, Access
     return !(securityOrigin()->canRequest(completeURL(sourceURL)) || corsStatus == SharableCrossOrigin);
 }
 
-void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, AccessControlStatus corsStatus)
+void ExecutionContext::reportException(PassRefPtrWillBeRawPtr<ErrorEvent> event, int scriptId, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, AccessControlStatus corsStatus)
 {
     RefPtrWillBeRawPtr<ErrorEvent> errorEvent = event;
     if (m_inDispatchErrorEvent) {
         if (!m_pendingExceptions)
             m_pendingExceptions = adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<PendingException> >());
-        m_pendingExceptions->append(adoptPtrWillBeNoop(new PendingException(errorEvent->messageForConsole(), errorEvent->lineno(), errorEvent->colno(), errorEvent->filename(), callStack)));
+        m_pendingExceptions->append(adoptPtrWillBeNoop(new PendingException(errorEvent->messageForConsole(), errorEvent->lineno(), errorEvent->colno(), scriptId, errorEvent->filename(), callStack)));
         return;
     }
 
     // First report the original exception and only then all the nested ones.
-    if (!dispatchErrorEvent(errorEvent, corsStatus) && m_client)
-        m_client->logExceptionToConsole(errorEvent->messageForConsole(), errorEvent->filename(), errorEvent->lineno(), errorEvent->colno(), callStack);
+    if (!dispatchErrorEvent(errorEvent, corsStatus))
+        logExceptionToConsole(errorEvent->messageForConsole(), scriptId, errorEvent->filename(), errorEvent->lineno(), errorEvent->colno(), callStack);
 
     if (!m_pendingExceptions)
         return;
 
     for (size_t i = 0; i < m_pendingExceptions->size(); i++) {
         PendingException* e = m_pendingExceptions->at(i).get();
-        if (m_client)
-            m_client->logExceptionToConsole(e->m_errorMessage, e->m_sourceURL, e->m_lineNumber, e->m_columnNumber, e->m_callStack);
+        logExceptionToConsole(e->m_errorMessage, e->m_scriptId, e->m_sourceURL, e->m_lineNumber, e->m_columnNumber, e->m_callStack);
     }
     m_pendingExceptions.clear();
 }
 
-void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, const String& sourceURL, unsigned lineNumber)
-{
-    if (!m_client)
-        return;
-    m_client->addMessage(source, level, message, sourceURL, lineNumber, 0);
-}
-
-void ExecutionContext::addConsoleMessage(MessageSource source, MessageLevel level, const String& message, ScriptState* scriptState)
-{
-    if (!m_client)
-        return;
-    m_client->addMessage(source, level, message, String(), 0, scriptState);
-}
-
 bool ExecutionContext::dispatchErrorEvent(PassRefPtrWillBeRawPtr<ErrorEvent> event, AccessControlStatus corsStatus)
 {
-    if (!m_client)
-        return false;
-    EventTarget* target = m_client->errorEventTarget();
+    EventTarget* target = errorEventTarget();
     if (!target)
         return false;
 
@@ -235,78 +218,24 @@ void ExecutionContext::didChangeTimerAlignmentInterval()
         iter->value->didChangeAlignmentInterval();
 }
 
-SecurityOrigin* ExecutionContext::securityOrigin() const
+SecurityOrigin* ExecutionContext::securityOrigin()
 {
-    RELEASE_ASSERT(m_client);
-    return m_client->securityContext().securityOrigin();
+    return securityContext().securityOrigin();
 }
 
-ContentSecurityPolicy* ExecutionContext::contentSecurityPolicy() const
+ContentSecurityPolicy* ExecutionContext::contentSecurityPolicy()
 {
-    RELEASE_ASSERT(m_client);
-    return m_client->securityContext().contentSecurityPolicy();
+    return securityContext().contentSecurityPolicy();
 }
 
 const KURL& ExecutionContext::url() const
 {
-    if (!m_client) {
-        DEFINE_STATIC_LOCAL(KURL, emptyURL, ());
-        return emptyURL;
-    }
-
     return virtualURL();
 }
 
 KURL ExecutionContext::completeURL(const String& url) const
 {
-
-    if (!m_client) {
-        DEFINE_STATIC_LOCAL(KURL, emptyURL, ());
-        return emptyURL;
-    }
-
     return virtualCompleteURL(url);
-}
-
-void ExecutionContext::disableEval(const String& errorMessage)
-{
-    if (!m_client)
-        return;
-    return m_client->disableEval(errorMessage);
-}
-
-LocalDOMWindow* ExecutionContext::executingWindow() const
-{
-    RELEASE_ASSERT(m_client);
-    return m_client->executingWindow();
-}
-
-String ExecutionContext::userAgent(const KURL& url) const
-{
-    if (!m_client)
-        return String();
-    return m_client->userAgent(url);
-}
-
-double ExecutionContext::timerAlignmentInterval() const
-{
-    if (!m_client)
-        return DOMTimer::visiblePageAlignmentInterval();
-    return m_client->timerAlignmentInterval();
-}
-
-void ExecutionContext::postTask(PassOwnPtr<ExecutionContextTask> task)
-{
-    if (!m_client)
-        return;
-    m_client->postTask(task);
-}
-
-void ExecutionContext::postTask(const Closure& closure)
-{
-    if (!m_client)
-        return;
-    m_client->postTask(CallClosureTask::create(closure));
 }
 
 PassOwnPtr<LifecycleNotifier<ExecutionContext> > ExecutionContext::createLifecycleNotifier()
@@ -328,11 +257,10 @@ void ExecutionContext::enforceSandboxFlags(SandboxFlags mask)
 {
     m_sandboxFlags |= mask;
 
-    RELEASE_ASSERT(m_client);
     // The SandboxOrigin is stored redundantly in the security origin.
-    if (isSandboxed(SandboxOrigin) && m_client->securityContext().securityOrigin() && !m_client->securityContext().securityOrigin()->isUnique()) {
-        m_client->securityContext().setSecurityOrigin(SecurityOrigin::createUnique());
-        m_client->didUpdateSecurityOrigin();
+    if (isSandboxed(SandboxOrigin) && securityContext().securityOrigin() && !securityContext().securityOrigin()->isUnique()) {
+        securityContext().setSecurityOrigin(SecurityOrigin::createUnique());
+        didUpdateSecurityOrigin();
     }
 }
 
@@ -340,8 +268,9 @@ void ExecutionContext::trace(Visitor* visitor)
 {
 #if ENABLE(OILPAN)
     visitor->trace(m_pendingExceptions);
+    HeapSupplementable<ExecutionContext>::trace(visitor);
 #endif
-    Supplementable<WebCore::ExecutionContext>::trace(visitor);
+    LifecycleContext<ExecutionContext>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

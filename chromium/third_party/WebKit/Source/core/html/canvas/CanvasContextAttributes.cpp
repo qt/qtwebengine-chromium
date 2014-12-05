@@ -28,14 +28,12 @@
 
 #include "core/html/canvas/CanvasContextAttributes.h"
 
-namespace WebCore {
+namespace blink {
 
 CanvasContextAttributes::CanvasContextAttributes()
 {
 }
 
-CanvasContextAttributes::~CanvasContextAttributes()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CanvasContextAttributes);
 
-} // namespace WebCore
+} // namespace blink

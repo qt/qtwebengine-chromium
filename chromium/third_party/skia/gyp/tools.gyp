@@ -15,8 +15,6 @@
       'dependencies': [
         'bbh_shootout',
         'bench_pictures',
-        'bench_record',
-        'bench_playback',
         'dump_record',
         'filter',
         'gpuveto',
@@ -41,6 +39,105 @@
             ],
           },
         ],
+      ],
+    },
+    {  # This would go in gm.gyp, but it's also used by skimage below.
+      'target_name': 'gm_expectations',
+      'type': 'static_library',
+      'include_dirs' : [ '../src/utils/' ],
+      'sources': [
+        '../gm/gm_expectations.cpp',
+      ],
+      'dependencies': [
+        'jsoncpp.gyp:jsoncpp',
+        'sk_tool_utils',
+        'skia_lib.gyp:skia_lib',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [ '../gm/' ],
+      },
+    },
+    {
+      'target_name': 'crash_handler',
+        'type': 'static_library',
+        'sources': [ '../tools/CrashHandler.cpp' ],
+        'dependencies': [ 'skia_lib.gyp:skia_lib' ],
+        'direct_dependent_settings': {
+          'include_dirs': [ '../tools' ],
+        },
+        'all_dependent_settings': {
+          'msvs_settings': {
+            'VCLinkerTool': {
+              'AdditionalDependencies': [ 'Dbghelp.lib' ],
+            }
+          },
+        }
+    },
+    {
+      'target_name': 'resources',
+      'type': 'static_library',
+      'sources': [ '../tools/Resources.cpp' ],
+      'dependencies': [
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [ '../tools', ],
+      },
+    },
+    {
+      'target_name': 'sk_tool_utils',
+      'type': 'static_library',
+      'sources': [
+        '../tools/sk_tool_utils.cpp',
+        '../tools/sk_tool_utils_font.cpp',
+      ],
+      'include_dirs': [
+        '../src/fonts',
+      ],
+      'dependencies': [
+        'resources',
+        'flags.gyp:flags',
+        'skia_lib.gyp:skia_lib',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [ '../tools', ],
+      },
+    },
+    {
+      'target_name' : 'timer',
+      'type': 'static_library',
+      'sources': [
+        '../tools/timer/Timer.cpp',
+        '../tools/timer/TimerData.cpp',
+      ],
+      'include_dirs': [
+        '../src/core',
+        '../src/gpu',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': ['../tools/timer'],
+      },
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+        'jsoncpp.gyp:jsoncpp',
+      ],
+      'conditions': [
+        ['skia_gpu == 1', {
+          'sources': [ '../tools/timer/GpuTimer.cpp' ],
+        }],
+        [ 'skia_os in ["mac", "ios"]', {
+          'sources': [ '../tools/timer/SysTimer_mach.cpp' ],
+        }],
+        [ 'skia_os == "win"', {
+          'sources': [ '../tools/timer/SysTimer_windows.cpp' ],
+        }],
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "android", "chromeos"]', {
+          'sources': [ '../tools/timer/SysTimer_posix.cpp' ],
+        }],
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
+          'link_settings': { 'libraries': [ '-lrt' ] },
+        }],
       ],
     },
     {
@@ -68,14 +165,15 @@
         '../tools/skpdiff/SkImageDiffer.cpp',
         '../tools/skpdiff/SkPMetric.cpp',
         '../tools/skpdiff/skpdiff_util.cpp',
-        '../tools/flags/SkCommandLineFlags.cpp',
       ],
       'include_dirs': [
-        '../tools/flags',
         '../src/core/', # needed for SkTLList.h
+        '../tools/',    # needed for picture_utils::replace_char
       ],
       'dependencies': [
+        'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
+        'tools.gyp:picture_utils',
       ],
       'cflags': [
         '-O3',
@@ -176,10 +274,11 @@
       'include_dirs': [
         # For SkBitmapHasher.h
         '../src/utils/',
+        '../tools/',
       ],
       'dependencies': [
+        'gm_expectations',
         'flags.gyp:flags',
-        'gm.gyp:gm_expectations',
         'jsoncpp.gyp:jsoncpp',
         'skia_lib.gyp:skia_lib',
       ],
@@ -191,7 +290,6 @@
         '../tools/skpinfo.cpp',
       ],
       'include_dirs': [
-        '../tools/flags',
         '../src/core/',
       ],
       'dependencies': [
@@ -210,7 +308,6 @@
         '../src/core/',
         '../src/images',
         '../src/lazy',
-        '../tools/flags',
       ],
       'dependencies': [
         'flags.gyp:flags',
@@ -288,7 +385,6 @@
       'sources': [
         '../bench/BenchLogger.cpp',
         '../bench/BenchLogger.h',
-        '../bench/ResultsWriter.cpp',
         '../tools/PictureBenchmark.cpp',
         '../tools/PictureResultsWriter.h',
         '../tools/bench_pictures_main.cpp',
@@ -299,48 +395,18 @@
         '../src/lazy/',
       ],
       'dependencies': [
-        'bench.gyp:bench_timer',
-        'crash_handler.gyp:CrashHandler',
+        'timer',
+        'crash_handler',
         'flags.gyp:flags',
         'jsoncpp.gyp:jsoncpp',
         'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_renderer',
         'tools.gyp:picture_utils',
-        'tools.gyp:timer_data',
       ],
-    },
-    {
-      'target_name': 'bench_record',
-      'type': 'executable',
-      'sources': [
-        '../tools/bench_record.cpp',
-        '../tools/LazyDecodeBitmap.cpp',
-      ],
-      'include_dirs': [
-        '../src/core/',
-        '../src/images',
-        '../src/lazy',
-      ],
-      'dependencies': [
-        'bench.gyp:bench_timer',
-        'flags.gyp:flags',
-        'skia_lib.gyp:skia_lib',
-      ],
-    },
-    {
-      'target_name': 'bench_playback',
-      'type': 'executable',
-      'sources': [
-        '../tools/bench_playback.cpp',
-      ],
-      'include_dirs': [
-        '../src/core/',
-        '../src/images',
-      ],
-      'dependencies': [
-        'bench.gyp:bench_timer',
-        'flags.gyp:flags',
-        'skia_lib.gyp:skia_lib',
+      'conditions': [
+        ['skia_android_framework == 1', {
+          'libraries': [ '-lskia' ],
+        }],
       ],
     },
     {
@@ -357,7 +423,7 @@
         '../src/lazy',
       ],
       'dependencies': [
-        'bench.gyp:bench_timer',
+        'timer',
         'flags.gyp:flags',
         'skia_lib.gyp:skia_lib',
       ],
@@ -416,17 +482,18 @@
       'type': 'executable',
       'sources': [
         '../tools/render_pdfs_main.cpp',
-        '../tools/PdfRenderer.cpp',
-        '../tools/PdfRenderer.h',
       ],
       'include_dirs': [
+        '../src/core',
         '../src/pipe/utils/',
         '../src/utils/',
       ],
       'dependencies': [
+        'flags.gyp:flags',
         'pdf.gyp:pdf',
         'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_utils',
+        'tools.gyp:proc_stats',
       ],
       'conditions': [
         ['skia_win_debuggers_path and skia_os == "win"',
@@ -505,9 +572,8 @@
         # Bench code:
       ],
       'dependencies': [
-        'bench.gyp:bench_timer',
+        'timer',
         'flags.gyp:flags',
-        'tools.gyp:timer_data',
         'skia_lib.gyp:skia_lib',
         'tools.gyp:picture_renderer',
         'tools.gyp:picture_utils',
@@ -545,16 +611,16 @@
       ],
     },
     {
-      'target_name': 'timer_data',
+      'target_name': 'proc_stats',
       'type': 'static_library',
       'sources': [
-        '../bench/TimerData.cpp',
+        '../tools/ProcStats.h',
+        '../tools/ProcStats.cpp',
       ],
-      'dependencies': [
-        'skia_lib.gyp:skia_lib',
-        'jsoncpp.gyp:jsoncpp'
-      ]
-    }
+      'direct_dependent_settings': {
+        'include_dirs': [ '../tools', ],
+      },
+    },
   ],
   'conditions': [
     ['skia_shared_lib',
@@ -619,6 +685,27 @@
             'type': 'executable',
             'sources': [
               '../tools/win_lcid.cpp',
+            ],
+          },
+        ],
+      },
+    ],
+    ['skia_os == "mac"',
+      {
+        'targets': [
+          {
+            'target_name': 'create_test_font',
+            'type': 'executable',
+            'sources': [
+              '../tools/create_test_font.cpp',
+            ],
+            'include_dirs': [
+              '../src/core',
+            ],
+            'dependencies': [
+              'flags.gyp:flags',
+              'skia_lib.gyp:skia_lib',
+              'resources',
             ],
           },
         ],

@@ -27,10 +27,9 @@
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/UIEventWithKeyState.h"
 
-namespace WebCore {
+namespace blink {
 
 class EventDispatcher;
-class Node;
 class PlatformKeyboardEvent;
 
 struct KeyboardEventInit : public UIEventInit {
@@ -45,7 +44,8 @@ struct KeyboardEventInit : public UIEventInit {
     bool repeat;
 };
 
-class KeyboardEvent FINAL : public UIEventWithKeyState {
+class KeyboardEvent final : public UIEventWithKeyState {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum KeyLocationCode {
         DOM_KEY_LOCATION_STANDARD   = 0x00,
@@ -71,36 +71,34 @@ public:
 
     static PassRefPtrWillBeRawPtr<KeyboardEvent> create(const AtomicString& type, bool canBubble, bool cancelable, AbstractView* view,
         const String& keyIdentifier, unsigned location,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey)
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
     {
         return adoptRefWillBeNoop(new KeyboardEvent(type, canBubble, cancelable, view, keyIdentifier, location,
-        ctrlKey, altKey, shiftKey, metaKey, altGraphKey));
+        ctrlKey, altKey, shiftKey, metaKey));
     }
 
     virtual ~KeyboardEvent();
 
     void initKeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
         const String& keyIdentifier, unsigned location,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey = false);
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
     const String& keyIdentifier() const { return m_keyIdentifier; }
     unsigned location() const { return m_location; }
 
     bool getModifierState(const String& keyIdentifier) const;
 
-    bool altGraphKey() const { return m_altGraphKey; }
-
     const PlatformKeyboardEvent* keyEvent() const { return m_keyEvent.get(); }
 
-    virtual int keyCode() const OVERRIDE; // key code for keydown and keyup, character for keypress
-    virtual int charCode() const OVERRIDE; // character code for keypress, 0 for keydown and keyup
+    virtual int keyCode() const override; // key code for keydown and keyup, character for keypress
+    virtual int charCode() const override; // character code for keypress, 0 for keydown and keyup
     bool repeat() const { return m_isAutoRepeat; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual bool isKeyboardEvent() const OVERRIDE;
-    virtual int which() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual bool isKeyboardEvent() const override;
+    virtual int which() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     KeyboardEvent();
@@ -108,12 +106,11 @@ private:
     KeyboardEvent(const AtomicString&, const KeyboardEventInit&);
     KeyboardEvent(const AtomicString& type, bool canBubble, bool cancelable, AbstractView*,
         const String& keyIdentifier, unsigned location,
-        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool altGraphKey);
+        bool ctrlKey, bool altKey, bool shiftKey, bool metaKey);
 
     OwnPtr<PlatformKeyboardEvent> m_keyEvent;
     String m_keyIdentifier;
     unsigned m_location;
-    bool m_altGraphKey : 1;
     bool m_isAutoRepeat : 1;
 };
 
@@ -122,11 +119,11 @@ public:
     static PassRefPtrWillBeRawPtr<KeyboardEventDispatchMediator> create(PassRefPtrWillBeRawPtr<KeyboardEvent>);
 private:
     explicit KeyboardEventDispatchMediator(PassRefPtrWillBeRawPtr<KeyboardEvent>);
-    virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
+    virtual bool dispatchEvent(EventDispatcher*) const override;
 };
 
 DEFINE_EVENT_TYPE_CASTS(KeyboardEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // KeyboardEvent_h

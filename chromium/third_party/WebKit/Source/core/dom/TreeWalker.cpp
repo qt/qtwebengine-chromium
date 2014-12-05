@@ -25,19 +25,18 @@
 #include "config.h"
 #include "core/dom/TreeWalker.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 
-namespace WebCore {
+namespace blink {
 
 TreeWalker::TreeWalker(PassRefPtrWillBeRawPtr<Node> rootNode, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter> filter)
     : NodeIteratorBase(rootNode, whatToShow, filter)
     , m_current(root())
 {
-    ScriptWrappable::init(this);
 }
 
 void TreeWalker::setCurrentNode(PassRefPtrWillBeRawPtr<Node> node, ExceptionState& exceptionState)
@@ -82,7 +81,7 @@ Node* TreeWalker::firstChild(ExceptionState& exceptionState)
                 m_current = node.release();
                 return m_current.get();
             case NodeFilter::FILTER_SKIP:
-                if (node->firstChild()) {
+                if (node->hasChildren()) {
                     node = node->firstChild();
                     continue;
                 }
@@ -189,7 +188,7 @@ Node* TreeWalker::nextSibling(ExceptionState& exceptionState)
                     m_current = sibling.release();
                     return m_current.get();
                 case NodeFilter::FILTER_SKIP:
-                    if (sibling->firstChild()) {
+                    if (sibling->hasChildren()) {
                         sibling = sibling->firstChild();
                         node = sibling;
                         continue;
@@ -283,4 +282,4 @@ void TreeWalker::trace(Visitor* visitor)
     NodeIteratorBase::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

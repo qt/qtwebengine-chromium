@@ -7,36 +7,47 @@
 
 #include "platform/Widget.h"
 #include "platform/geometry/IntRect.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class RemoteFrame;
 
-class RemoteFrameView : public Widget {
+class RemoteFrameView final : public Widget {
 public:
-    static PassRefPtr<RemoteFrameView> create(RemoteFrame*);
+    static PassRefPtrWillBeRawPtr<RemoteFrameView> create(RemoteFrame*);
 
     virtual ~RemoteFrameView();
 
-    virtual bool isRemoteFrameView() const OVERRIDE { return true; }
+    virtual bool isRemoteFrameView() const override { return true; }
 
-    RemoteFrame& frame() const { return *m_remoteFrame; }
+    RemoteFrame& frame() const
+    {
+        ASSERT(m_remoteFrame);
+        return *m_remoteFrame;
+    }
 
     // Override to notify remote frame that its viewport size has changed.
-    virtual void frameRectsChanged() OVERRIDE;
+    virtual void frameRectsChanged() override;
 
-    virtual void invalidateRect(const IntRect&) OVERRIDE;
+    virtual void invalidateRect(const IntRect&) override;
 
-    virtual void setFrameRect(const IntRect&) OVERRIDE;
+    virtual void setFrameRect(const IntRect&) override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     explicit RemoteFrameView(RemoteFrame*);
 
-    RefPtr<RemoteFrame> m_remoteFrame;
+    // The properties and handling of the cycle between RemoteFrame
+    // and its RemoteFrameView corresponds to that between LocalFrame
+    // and FrameView. Please see the FrameView::m_frame comment for
+    // details.
+    RefPtrWillBeMember<RemoteFrame> m_remoteFrame;
 };
 
 DEFINE_TYPE_CASTS(RemoteFrameView, Widget, widget, widget->isRemoteFrameView(), widget.isRemoteFrameView());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RemoteFrameView_h

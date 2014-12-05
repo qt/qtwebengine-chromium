@@ -34,11 +34,11 @@
 #include <set>
 #include <string>
 
-#include "talk/examples/peerconnection/client/main_wnd.h"
-#include "talk/examples/peerconnection/client/peer_connection_client.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
 #include "talk/app/webrtc/peerconnectioninterface.h"
-#include "talk/base/scoped_ptr.h"
+#include "talk/examples/peerconnection/client/main_wnd.h"
+#include "talk/examples/peerconnection/client/peer_connection_client.h"
+#include "webrtc/base/scoped_ptr.h"
 
 namespace webrtc {
 class VideoCaptureModule;
@@ -58,7 +58,6 @@ class Conductor
     MEDIA_CHANNELS_INITIALIZED = 1,
     PEER_CONNECTION_CLOSED,
     SEND_MESSAGE_TO_PEER,
-    PEER_CONNECTION_ERROR,
     NEW_STREAM_ADDED,
     STREAM_REMOVED,
   };
@@ -80,11 +79,11 @@ class Conductor
   //
   // PeerConnectionObserver implementation.
   //
-  virtual void OnError();
   virtual void OnStateChange(
       webrtc::PeerConnectionObserver::StateType state_changed) {}
   virtual void OnAddStream(webrtc::MediaStreamInterface* stream);
   virtual void OnRemoveStream(webrtc::MediaStreamInterface* stream);
+  virtual void OnDataChannel(webrtc::DataChannelInterface* channel) {}
   virtual void OnRenegotiationNeeded() {}
   virtual void OnIceChange() {}
   virtual void OnIceCandidate(const webrtc::IceCandidateInterface* candidate);
@@ -130,13 +129,13 @@ class Conductor
   void SendMessage(const std::string& json_object);
 
   int peer_id_;
-  talk_base::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
-  talk_base::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
+  rtc::scoped_refptr<webrtc::PeerConnectionInterface> peer_connection_;
+  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
       peer_connection_factory_;
   PeerConnectionClient* client_;
   MainWindow* main_wnd_;
   std::deque<std::string*> pending_messages_;
-  std::map<std::string, talk_base::scoped_refptr<webrtc::MediaStreamInterface> >
+  std::map<std::string, rtc::scoped_refptr<webrtc::MediaStreamInterface> >
       active_streams_;
   std::string server_;
 };

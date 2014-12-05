@@ -8,6 +8,7 @@
 
 #include "base/strings/string_piece.h"
 #include "net/quic/crypto/crypto_handshake.h"
+#include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/quic_connection.h"
 #include "net/quic/quic_session.h"
 #include "net/quic/quic_utils.h"
@@ -17,12 +18,20 @@ using base::StringPiece;
 
 namespace net {
 
+#define ENDPOINT (session()->is_server() ? "Server: " : " Client: ")
+
 QuicCryptoStream::QuicCryptoStream(QuicSession* session)
     : ReliableQuicStream(kCryptoStreamId, session),
       encryption_established_(false),
       handshake_confirmed_(false) {
   crypto_framer_.set_visitor(this);
-  DisableFlowControl();
+  if (version() < QUIC_VERSION_21) {
+    // Prior to QUIC_VERSION_21 the crypto stream is not subject to any flow
+    // control.
+    DisableFlowControl();
+  }
+  // The crypto stream is exempt from connection level flow control.
+  DisableConnectionFlowControlForThisStream();
 }
 
 void QuicCryptoStream::OnError(CryptoFramer* framer) {
@@ -32,16 +41,12 @@ void QuicCryptoStream::OnError(CryptoFramer* framer) {
 
 void QuicCryptoStream::OnHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  DVLOG(1) << ENDPOINT << "Received " << message.DebugString();
   session()->OnCryptoHandshakeMessageReceived(message);
 }
 
 uint32 QuicCryptoStream::ProcessRawData(const char* data,
                                         uint32 data_len) {
-  // Do not process handshake messages after the handshake is confirmed.
-  if (handshake_confirmed()) {
-    CloseConnection(QUIC_CRYPTO_MESSAGE_AFTER_HANDSHAKE_COMPLETE);
-    return 0;
-  }
   if (!crypto_framer_.ProcessInput(StringPiece(data, data_len))) {
     CloseConnection(crypto_framer_.error());
     return 0;
@@ -55,10 +60,35 @@ QuicPriority QuicCryptoStream::EffectivePriority() const {
 
 void QuicCryptoStream::SendHandshakeMessage(
     const CryptoHandshakeMessage& message) {
+  SendHandshakeMessage(message, nullptr);
+}
+
+void QuicCryptoStream::SendHandshakeMessage(
+    const CryptoHandshakeMessage& message,
+    QuicAckNotifier::DelegateInterface* delegate) {
+  DVLOG(1) << ENDPOINT << "Sending " << message.DebugString();
   session()->OnCryptoHandshakeMessageSent(message);
   const QuicData& data = message.GetSerialized();
   // TODO(wtc): check the return value.
-  WriteOrBufferData(string(data.data(), data.length()), false, NULL);
+  WriteOrBufferData(string(data.data(), data.length()), false, delegate);
+}
+
+bool QuicCryptoStream::ExportKeyingMaterial(
+    StringPiece label,
+    StringPiece context,
+    size_t result_len,
+    string* result) const {
+  if (!handshake_confirmed()) {
+    DLOG(ERROR) << "ExportKeyingMaterial was called before forward-secure"
+                << "encryption was established.";
+    return false;
+  }
+  return CryptoUtils::ExportKeyingMaterial(
+      crypto_negotiated_params_.subkey_secret,
+      label,
+      context,
+      result_len,
+      result);
 }
 
 const QuicCryptoNegotiatedParameters&

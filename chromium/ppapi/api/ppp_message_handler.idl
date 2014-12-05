@@ -11,7 +11,7 @@
  */
 
 label Chrome {
-  [channel=none] M37 = 0.1
+  M39 = 0.2
 };
 
 /**
@@ -32,29 +32,36 @@ interface PPP_MessageHandler {
    * @param[in] instance A <code>PP_Instance</code> identifying one instance
    * of a module.
    * @param[in] user_data is the same pointer which was provided by a call to
-   * RegisterMessageHandler.
+   * RegisterMessageHandler().
    * @param[in] message A copy of the parameter that JavaScript provided to
    * postMessage().
    */
   void HandleMessage([in] PP_Instance instance,
                      [inout] mem_t user_data,
-                     [in] PP_Var message);
+                     [constptr_in] PP_Var message);
   /**
    * Invoked as a result of JavaScript invoking postMessageAndAwaitResponse()
    * on the plugin's DOM element.
    *
+   * NOTE: JavaScript execution is blocked during the duration of this call.
+   * Hence, the plugin should respond as quickly as possible. For this reason,
+   * blocking completion callbacks are disallowed while handling a blocking
+   * message.
+   *
    * @param[in] instance A <code>PP_Instance</code> identifying one instance
    * of a module.
    * @param[in] user_data is the same pointer which was provided by a call to
-   * RegisterMessageHandler.
+   * RegisterMessageHandler().
    * @param[in] message is a copy of the parameter that JavaScript provided
-   * to postMessageAndAwaitResponse.
-   * @return will be copied to a JavaScript object which is returned as
-   * the result of postMessageAndAwaitResponse to the invoking JavaScript.
+   * to postMessageAndAwaitResponse().
+   * @param[out] response will be copied to a JavaScript object which is
+   * returned as the result of postMessageAndAwaitResponse() to the invoking
+     JavaScript.
    */
-  PP_Var HandleBlockingMessage([in] PP_Instance instance,
-                               [inout] mem_t user_data,
-                               [in] PP_Var message);
+  void HandleBlockingMessage([in] PP_Instance instance,
+                             [inout] mem_t user_data,
+                             [constptr_in] PP_Var message,
+                             [out] PP_Var response);
   /**
    * Invoked when the handler object is no longer needed. After this, no more
    * calls will be made which pass this same value for <code>instance</code>

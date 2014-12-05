@@ -31,7 +31,7 @@
 #include "wtf/text/StringBuilder.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 class DateTimeFormatTest : public ::testing::Test {
 public:
@@ -193,12 +193,12 @@ private:
         Tokens tokens() const { return Tokens(m_tokens); }
 
     private:
-        virtual void visitField(FieldType fieldType, int count) OVERRIDE
+        virtual void visitField(FieldType fieldType, int count) override
         {
             m_tokens.append(Token(fieldType, count));
         }
 
-        virtual void visitLiteral(const String& string) OVERRIDE
+        virtual void visitLiteral(const String& string) override
         {
             m_tokens.append(Token(string));
         }

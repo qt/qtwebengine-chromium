@@ -7,7 +7,7 @@
 
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class ElementShadow;
 class HTMLFrameOwnerElement;
@@ -32,11 +32,12 @@ private:
     void collectFrameOwners(Node&);
     void collectFrameOwners(ElementShadow&);
     void disconnectCollectedFrameOwners();
+    Node& root() const { return *m_root; }
 
     WillBeHeapVector<RefPtrWillBeMember<HTMLFrameOwnerElement>, 10> m_frameOwners;
-    Node& m_root;
+    RawPtrWillBeMember<Node> m_root;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ChildFrameDisconnector_h

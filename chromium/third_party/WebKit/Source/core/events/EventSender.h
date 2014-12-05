@@ -30,7 +30,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 template<typename T> class EventSender {
     WTF_MAKE_NONCOPYABLE(EventSender); WTF_MAKE_FAST_ALLOCATED;
@@ -42,7 +42,7 @@ public:
     void cancelEvent(T*);
     void dispatchPendingEvents();
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool hasPendingEvents(T* sender) const
     {
         return m_dispatchSoonList.find(sender) != kNotFound || m_dispatchingList.find(sender) != kNotFound;
@@ -50,12 +50,12 @@ public:
 #endif
 
 private:
-    void timerFired(Timer<EventSender<T> >*) { dispatchPendingEvents(); }
+    void timerFired(Timer<EventSender<T>>*) { dispatchPendingEvents(); }
 
     AtomicString m_eventType;
-    Timer<EventSender<T> > m_timer;
-    WillBePersistentHeapVector<RawPtrWillBeMember<T> > m_dispatchSoonList;
-    WillBePersistentHeapVector<RawPtrWillBeMember<T> > m_dispatchingList;
+    Timer<EventSender<T>> m_timer;
+    WillBePersistentHeapVector<RawPtrWillBeMember<T>> m_dispatchSoonList;
+    WillBePersistentHeapVector<RawPtrWillBeMember<T>> m_dispatchingList;
 };
 
 template<typename T> EventSender<T>::EventSender(const AtomicString& eventType)
@@ -108,6 +108,6 @@ template<typename T> void EventSender<T>::dispatchPendingEvents()
     m_dispatchingList.clear();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventSender_h

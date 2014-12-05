@@ -28,11 +28,11 @@
 
 """Unit tests for printing.py."""
 
-import optparse
 import StringIO
+import optparse
 import sys
 import time
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.host_mock import MockHost
 
@@ -133,6 +133,7 @@ class  Testprinter(unittest.TestCase):
         self.assertIn("Using port 'test-mac-leopard'", err.getvalue())
         self.assertIn('Test configuration: <leopard, x86, release>', err.getvalue())
         self.assertIn('View the test results at file:///tmp', err.getvalue())
+        self.assertIn('View the archived results dashboard at file:///tmp', err.getvalue())
         self.assertIn('Baseline search path: test-mac-leopard -> test-mac-snowleopard -> generic', err.getvalue())
         self.assertIn('Using Release build', err.getvalue())
         self.assertIn('Pixel tests enabled', err.getvalue())

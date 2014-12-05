@@ -31,7 +31,6 @@
 #ifndef FileWriter_h
 #define FileWriter_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/FileError.h"
@@ -41,14 +40,15 @@
 #include "public/platform/WebFileWriterClient.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class ExceptionState;
 class ExecutionContext;
 
-class FileWriter FINAL : public FileWriterBase, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public blink::WebFileWriterClient {
-    DEFINE_EVENT_TARGET_REFCOUNTING(RefCountedGarbageCollected<FileWriterBase>);
+class FileWriter final : public FileWriterBase, public ActiveDOMObject, public EventTargetWithInlineData, public WebFileWriterClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<FileWriterBase>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FileWriter);
 public:
     static FileWriter* create(ExecutionContext*);
@@ -67,16 +67,17 @@ public:
     FileError* error() const { return m_error.get(); }
 
     // WebFileWriterClient
-    virtual void didWrite(long long bytes, bool complete) OVERRIDE;
-    virtual void didTruncate() OVERRIDE;
-    virtual void didFail(blink::WebFileError) OVERRIDE;
+    virtual void didWrite(long long bytes, bool complete) override;
+    virtual void didTruncate() override;
+    virtual void didFail(WebFileError) override;
 
     // ActiveDOMObject
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
+    virtual bool hasPendingActivity() const override;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override { return ActiveDOMObject::executionContext(); }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(writestart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(progress);
@@ -85,7 +86,7 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(error);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(writeend);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     enum Operation {
@@ -109,7 +110,7 @@ private:
 
     void setError(FileError::ErrorCode, ExceptionState&);
 
-    RefPtrWillBeMember<FileError> m_error;
+    Member<FileError> m_error;
     ReadyState m_readyState;
     Operation m_operationInProgress;
     Operation m_queuedOperation;
@@ -119,9 +120,10 @@ private:
     long long m_numAborts;
     long long m_recursionDepth;
     double m_lastProgressNotificationTimeMS;
-    RefPtrWillBeMember<Blob> m_blobBeingWritten;
+    Member<Blob> m_blobBeingWritten;
+    int m_asyncOperationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FileWriter_h

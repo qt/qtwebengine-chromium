@@ -9,6 +9,7 @@
 #include "content/browser/loader/resource_request_info_impl.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_status.h"
 
 namespace {
@@ -69,8 +70,12 @@ void DetachableResourceHandler::Detach() {
   // Resume if necessary. The request may have been deferred, say, waiting on a
   // full buffer in AsyncResourceHandler. Now that it has been detached, resume
   // and drain it.
-  if (is_deferred_)
+  if (is_deferred_) {
+    // The nested ResourceHandler may have logged that it's blocking the
+    // request.  Log it as no longer doing so, to avoid a DCHECK on resume.
+    request()->LogUnblocked();
     Resume();
+  }
 }
 
 void DetachableResourceHandler::SetController(ResourceController* controller) {
@@ -89,15 +94,17 @@ bool DetachableResourceHandler::OnUploadProgress(uint64 position, uint64 size) {
   return next_handler_->OnUploadProgress(position, size);
 }
 
-bool DetachableResourceHandler::OnRequestRedirected(const GURL& url,
-                                                    ResourceResponse* response,
-                                                    bool* defer) {
+bool DetachableResourceHandler::OnRequestRedirected(
+    const net::RedirectInfo& redirect_info,
+    ResourceResponse* response,
+    bool* defer) {
   DCHECK(!is_deferred_);
 
   if (!next_handler_)
     return true;
 
-  bool ret = next_handler_->OnRequestRedirected(url, response, &is_deferred_);
+  bool ret = next_handler_->OnRequestRedirected(
+      redirect_info, response, &is_deferred_);
   *defer = is_deferred_;
   return ret;
 }
@@ -144,7 +151,7 @@ bool DetachableResourceHandler::OnWillRead(scoped_refptr<net::IOBuffer>* buf,
                                            int min_size) {
   if (!next_handler_) {
     DCHECK_EQ(-1, min_size);
-    if (!read_buffer_)
+    if (!read_buffer_.get())
       read_buffer_ = new net::IOBuffer(kReadBufSize);
     *buf = read_buffer_;
     *buf_size = kReadBufSize;

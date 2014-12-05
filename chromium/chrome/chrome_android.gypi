@@ -4,99 +4,21 @@
 {
   'variables': {
     'chromium_code': 1,
-    'package_name': 'chrome_shell_apk',
+    'conditions': [
+      ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64" and profiling_full_stack_frames != 1', {
+        # Only enable the chromium linker on regular builds, since the
+        # component build crashes on Android 4.4. See b/11379966
+        'use_chromium_linker': '1',
+      }],
+    ],
   },
   'includes': [
     'chrome_android_paks.gypi', # Included for the list of pak resources.
+    'chrome_shell.gypi', # Built atop chrome_android_core (defined here)
   ],
   'targets': [
     {
-      'target_name': 'libchromeshell',
-      'type': 'shared_library',
-      'dependencies': [
-        '../base/base.gyp:base',
-        'chrome_android_core',
-        'chrome.gyp:browser_ui',
-        '../content/content.gyp:content_app_browser',
-      ],
-      'sources': [
-        # This file must always be included in the shared_library step to ensure
-        # JNI_OnLoad is exported.
-        'app/android/chrome_jni_onload.cc',
-        'android/shell/chrome_main_delegate_chrome_shell_android.cc',
-        'android/shell/chrome_main_delegate_chrome_shell_android.h',
-        "android/shell/chrome_shell_google_location_settings_helper.cc",
-        "android/shell/chrome_shell_google_location_settings_helper.h",
-      ],
-      'include_dirs': [
-        '../skia/config',
-      ],
-      'conditions': [
-        [ 'order_profiling!=0', {
-          'conditions': [
-            [ 'OS=="android"', {
-              'dependencies': [ '../tools/cygprofile/cygprofile.gyp:cygprofile', ],
-            }],
-          ],
-        }],
-        [ 'use_allocator!="none"', {
-          'dependencies': [
-            '../base/allocator/allocator.gyp:allocator', ],
-        }],
-        ['OS=="android"', {
-          'ldflags': [
-            # Some android targets still depend on --gc-sections to link.
-            # TODO: remove --gc-sections for Debug builds (crbug.com/159847).
-            '-Wl,--gc-sections',
-          ],
-        }],
-      ],
-    },
-    {
-      'target_name': 'chrome_shell_apk',
-      'type': 'none',
-      'dependencies': [
-        'chrome_java',
-        'chrome_shell_paks',
-        'libchromeshell',
-        '../media/media.gyp:media_java',
-      ],
-      'variables': {
-        'apk_name': 'ChromeShell',
-        'manifest_package_name': 'org.chromium.chrome.shell',
-        'java_in_dir': 'android/shell/java',
-        'resource_dir': 'android/shell/res',
-        'asset_location': '<(PRODUCT_DIR)/../assets/<(package_name)',
-        'native_lib_target': 'libchromeshell',
-        'native_lib_version_name': '<(version_full)',
-        'additional_input_paths': [
-          '<@(chrome_android_pak_output_resources)',
-        ],
-        'conditions': [
-          ['component != "shared_library" and target_arch != "arm64" and target_arch != "x64"', {
-            # Only enable the chromium linker on regular builds, since the
-            # component build crashes on Android 4.4. See b/11379966
-            'use_chromium_linker': '1',
-          }],
-        ],
-      },
-      'includes': [ '../build/java_apk.gypi', ],
-    },
-    {
-      # chrome_shell_apk creates a .jar as a side effect. Any java targets
-      # that need that .jar in their classpath should depend on this target,
-      # chrome_shell_apk_java. Dependents of chrome_shell_apk receive its
-      # jar path in the variable 'apk_output_jar_path'.
-      # This target should only be used by targets which instrument
-      # chrome_shell_apk.
-      'target_name': 'chrome_shell_apk_java',
-      'type': 'none',
-      'dependencies': [
-        'chrome_shell_apk',
-      ],
-      'includes': [ '../build/apk_fake_jar.gypi' ],
-    },
-    {
+      # GN: //chrome:chrome_android_core
       'target_name': 'chrome_android_core',
       'type': 'static_library',
       'dependencies': [
@@ -131,19 +53,58 @@
       },
     },
     {
-      'target_name': 'chrome_shell_paks',
+      # GYP: //chrome/android:chrome_version_java
+      'target_name': 'chrome_version_java',
       'type': 'none',
-      'dependencies': [
-        '<(DEPTH)/chrome/chrome_resources.gyp:packed_resources',
-        '<(DEPTH)/chrome/chrome_resources.gyp:packed_extra_resources',
-      ],
-      'copies': [
-        {
-          'destination': '<(chrome_android_pak_output_folder)',
-          'files': [
-            '<@(chrome_android_pak_input_resources)',
+      'variables': {
+        'template_input_path': 'android/java/ChromeVersionConstants.java.version',
+        'version_path': 'VERSION',
+        'version_py_path': '<(DEPTH)/build/util/version.py',
+        'output_path': '<(SHARED_INTERMEDIATE_DIR)/templates/<(_target_name)/org/chromium/chrome/browser/ChromeVersionConstants.java',
+
+        'conditions': [
+          ['branding == "Chrome"', {
+            'branding_path': 'app/theme/google_chrome/BRANDING',
+          }, {
+            'branding_path': 'app/theme/chromium/BRANDING',
+          }],
+        ],
+      },
+      'direct_dependent_settings': {
+        'variables': {
+          # Ensure that the output directory is used in the class path
+          # when building targets that depend on this one.
+          'generated_src_dirs': [
+            '<(SHARED_INTERMEDIATE_DIR)/templates/<(_target_name)',
           ],
-        }
+          # Ensure dependents are rebuilt when the generated Java file changes.
+          'additional_input_paths': [
+            '<(output_path)',
+          ],
+        },
+      },
+      'actions': [
+        {
+          'action_name': 'chrome_version_java_template',
+          'inputs': [
+            '<(template_input_path)',
+            '<(version_path)',
+            '<(branding_path)',
+            '<(version_py_path)',
+          ],
+          'outputs': [
+            '<(output_path)',
+          ],
+          'action': [
+            'python',
+            '<(version_py_path)',
+            '-f', '<(version_path)',
+            '-f', '<(branding_path)',
+            '-e', 'CHANNEL=str.upper("<(android_channel)")',
+            '<(template_input_path)',
+            '<(output_path)',
+          ],
+        },
       ],
     },
   ],

@@ -29,9 +29,7 @@
 #include "core/css/CSSValue.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
-
-class CSSPrimitiveValue;
+namespace blink {
 
 enum LineBoxContainFlags { LineBoxContainNone = 0x0, LineBoxContainBlock = 0x1, LineBoxContainInline = 0x2, LineBoxContainFont = 0x4, LineBoxContainGlyphs = 0x8,
                            LineBoxContainReplaced = 0x10, LineBoxContainInlineBox = 0x20 };

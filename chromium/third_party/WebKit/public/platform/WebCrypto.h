@@ -38,17 +38,13 @@
 #include "WebString.h"
 #include "WebVector.h"
 
-namespace WebCore { class CryptoResult; }
-
 #if INSIDE_BLINK
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
-// FIXME: Remove once chromium side rolls.
-#define WEBCRYPTO_RESULT_HAS_CANCELLED 1
-
 namespace blink {
 
+class CryptoResult;
 class WebArrayBuffer;
 class WebString;
 
@@ -103,14 +99,14 @@ public:
     BLINK_PLATFORM_EXPORT bool cancelled() const;
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT explicit WebCryptoResult(const WTF::PassRefPtr<WebCore::CryptoResult>&);
+    BLINK_PLATFORM_EXPORT explicit WebCryptoResult(const WTF::PassRefPtr<CryptoResult>&);
 #endif
 
 private:
     BLINK_PLATFORM_EXPORT void reset();
     BLINK_PLATFORM_EXPORT void assign(const WebCryptoResult&);
 
-    WebPrivatePtr<WebCore::CryptoResult> m_impl;
+    WebPrivatePtr<CryptoResult> m_impl;
 };
 
 class WebCryptoDigestor {

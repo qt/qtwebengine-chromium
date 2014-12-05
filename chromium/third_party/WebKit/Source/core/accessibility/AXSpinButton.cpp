@@ -26,10 +26,10 @@
 #include "config.h"
 #include "core/accessibility/AXSpinButton.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<AXSpinButton> AXSpinButton::create()
 {
@@ -52,22 +52,19 @@ LayoutRect AXSpinButton::elementRect() const
     if (!m_spinButtonElement || !m_spinButtonElement->renderer())
         return LayoutRect();
 
-    Vector<FloatQuad> quads;
-    m_spinButtonElement->renderer()->absoluteFocusRingQuads(quads);
-
-    return boundingBoxForQuads(m_spinButtonElement->renderer(), quads);
+    return m_spinButtonElement->renderer()->absoluteFocusRingBoundingBoxRect();
 }
 
 void AXSpinButton::addChildren()
 {
     m_haveChildren = true;
 
-    AXSpinButtonPart* incrementor = static_cast<AXSpinButtonPart*>(axObjectCache()->getOrCreate(SpinButtonPartRole));
+    AXSpinButtonPart* incrementor = toAXSpinButtonPart(axObjectCache()->getOrCreate(SpinButtonPartRole));
     incrementor->setIsIncrementor(true);
     incrementor->setParent(this);
     m_children.append(incrementor);
 
-    AXSpinButtonPart* decrementor = static_cast<AXSpinButtonPart*>(axObjectCache()->getOrCreate(SpinButtonPartRole));
+    AXSpinButtonPart* decrementor = toAXSpinButtonPart(axObjectCache()->getOrCreate(SpinButtonPartRole));
     decrementor->setIsIncrementor(false);
     decrementor->setParent(this);
     m_children.append(decrementor);
@@ -124,4 +121,4 @@ bool AXSpinButtonPart::press() const
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

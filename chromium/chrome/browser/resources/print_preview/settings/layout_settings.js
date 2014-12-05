@@ -11,10 +11,10 @@ cr.define('print_preview', function() {
    * @param {!print_preview.ticket_items.Landscape} landscapeTicketItem Used to
    *     get the layout written to the print ticket.
    * @constructor
-   * @extends {print_preview.Component}
+   * @extends {print_preview.SettingsSection}
    */
   function LayoutSettings(landscapeTicketItem) {
-    print_preview.Component.call(this);
+    print_preview.SettingsSection.call(this);
 
     /**
      * Used to get the layout written to the print ticket.
@@ -24,37 +24,29 @@ cr.define('print_preview', function() {
     this.landscapeTicketItem_ = landscapeTicketItem;
   };
 
-  /**
-   * CSS classes used by the layout settings.
-   * @enum {string}
-   * @private
-   */
-  LayoutSettings.Classes_ = {
-    LANDSCAPE_RADIO: 'layout-settings-landscape-radio',
-    PORTRAIT_RADIO: 'layout-settings-portrait-radio'
-  };
-
   LayoutSettings.prototype = {
-    __proto__: print_preview.Component.prototype,
+    __proto__: print_preview.SettingsSection.prototype,
 
-    /** @param {boolean} isEnabled Whether this component is enabled. */
+    /** @override */
+    isAvailable: function() {
+      return this.landscapeTicketItem_.isCapabilityAvailable();
+    },
+
+    /** @override */
+    hasCollapsibleContent: function() {
+      return false;
+    },
+
+    /** @override */
     set isEnabled(isEnabled) {
-      this.landscapeRadioButton_.disabled = !isEnabled;
-      this.portraitRadioButton_.disabled = !isEnabled;
+      this.select_.disabled = !isEnabled;
     },
 
     /** @override */
     enterDocument: function() {
-      print_preview.Component.prototype.enterDocument.call(this);
-      fadeOutOption(this.getElement(), true);
+      print_preview.SettingsSection.prototype.enterDocument.call(this);
       this.tracker.add(
-          this.portraitRadioButton_,
-          'click',
-          this.onLayoutButtonClick_.bind(this));
-      this.tracker.add(
-          this.landscapeRadioButton_,
-          'click',
-          this.onLayoutButtonClick_.bind(this));
+          this.select_, 'change', this.onSelectChange_.bind(this));
       this.tracker.add(
           this.landscapeTicketItem_,
           print_preview.ticket_items.TicketItem.EventType.CHANGE,
@@ -62,30 +54,23 @@ cr.define('print_preview', function() {
     },
 
     /**
-     * @return {HTMLInputElement} The portrait orientation radio button.
+     * Called when the select element is changed. Updates the print ticket
+     * layout selection.
      * @private
      */
-    get portraitRadioButton_() {
-      return this.getElement().getElementsByClassName(
-          LayoutSettings.Classes_.PORTRAIT_RADIO)[0];
+    onSelectChange_: function() {
+      var select = this.select_;
+      var isLandscape =
+          select.options[select.selectedIndex].value == 'landscape';
+      this.landscapeTicketItem_.updateValue(isLandscape);
     },
 
     /**
-     * @return {HTMLInputElement} The landscape orientation radio button.
+     * @return {HTMLSelectElement} Select element containing the layout options.
      * @private
      */
-    get landscapeRadioButton_() {
-      return this.getElement().getElementsByClassName(
-          LayoutSettings.Classes_.LANDSCAPE_RADIO)[0];
-    },
-
-    /**
-     * Called when one of the radio buttons is clicked. Updates the print ticket
-     * store.
-     * @private
-     */
-    onLayoutButtonClick_: function() {
-      this.landscapeTicketItem_.updateValue(this.landscapeRadioButton_.checked);
+    get select_() {
+      return this.getChildElement('.layout-settings-select');
     },
 
     /**
@@ -94,14 +79,18 @@ cr.define('print_preview', function() {
      * @private
      */
     onLandscapeTicketItemChange_: function() {
-      if (this.landscapeTicketItem_.isCapabilityAvailable()) {
-        var isLandscapeEnabled = this.landscapeTicketItem_.getValue();
-        this.portraitRadioButton_.checked = !isLandscapeEnabled;
-        this.landscapeRadioButton_.checked = isLandscapeEnabled;
-        fadeInOption(this.getElement());
-      } else {
-        fadeOutOption(this.getElement());
+      if (this.isAvailable()) {
+        var select = this.select_;
+        var valueToSelect =
+            this.landscapeTicketItem_.getValue() ? 'landscape' : 'portrait';
+        for (var i = 0; i < select.options.length; i++) {
+          if (select.options[i].value == valueToSelect) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
       }
+      this.updateUiStateInternal();
     }
   };
 

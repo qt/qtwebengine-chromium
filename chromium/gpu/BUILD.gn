@@ -19,9 +19,6 @@
 #
 #  gpu.gyp:gles2_implementation =>
 #      //gpu/command_buffer/client:gles2_implementation
-
-#  gpu.gyp:gles2_implementation_client_side_arrays =>
-#      //gpu/command_buffer/client:gles2_implementation_client_side_arrays
 #
 #  gpu.gyp:gpu_config => //gpu/config
 #
@@ -33,19 +30,22 @@
 #     //gpu/command_buffer/common
 #     (Merged in to here because the separate file exists in GYP only to break
 #     a .gyp file dependency cycle which GN doesn't have.)
+#
+# gpu/skia_bindings/skia_bindings.gyp:gpu_skia_bindings => //gpu/skia_bindings
 
 component("gpu") {
-  deps = [
+  public_deps = [
     "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:gles2_cmd_helper_sources",
     "//gpu/command_buffer/common",
     "//gpu/command_buffer/service",
-    "//gpu/command_buffer/client:gles2_cmd_helper",
     "//gpu/config",
     "//gpu/ipc",
   ]
 }
 
-source_set("gpu_unittest_utils") {
+source_set("test_support") {
+  testonly = true
   sources = [
     "command_buffer/service/gles2_cmd_decoder_mock.cc",
     "command_buffer/service/error_state_mock.cc",
@@ -53,10 +53,11 @@ source_set("gpu_unittest_utils") {
     "command_buffer/client/gles2_interface_stub.h",
   ]
 
-  configs += [ "//third_party/khronos:khronos_headers" ]
-
-  deps = [
+  public_deps = [
     ":gpu",
+    "//gpu/command_buffer/client:gles2_interface",
+  ]
+  deps = [
     "//testing/gmock",
     "//testing/gtest",
     "//ui/gl:gl_unittest_utils",
@@ -68,6 +69,7 @@ test("gl_tests") {
     "command_buffer/tests/compressed_texture_test.cc",
     "command_buffer/tests/gl_bind_uniform_location_unittest.cc",
     "command_buffer/tests/gl_chromium_framebuffer_multisample_unittest.cc",
+    "command_buffer/tests/gl_chromium_path_rendering_unittest.cc",
     "command_buffer/tests/gl_copy_texture_CHROMIUM_unittest.cc",
     "command_buffer/tests/gl_depth_texture_unittest.cc",
     "command_buffer/tests/gl_gpu_memory_buffer_unittest.cc",
@@ -97,29 +99,30 @@ test("gl_tests") {
 
   deps = [
     ":gpu",
-    ":gpu_unittest_utils",
+    ":test_support",
     "//base",
     "//base/third_party/dynamic_annotations",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/angle:translator",
     "//ui/gfx",
+    "//ui/gfx:test_support",
     "//ui/gfx/geometry",
     "//ui/gl",
-    #"//gpu/command_buffer/client",  # These are all part of //gpu, needed?
-    #"//gpu/command_buffer/common",
-    #"//gpu/command_buffer/service",
-    #"//gpu/command_buffer/client:gles2_cmd_helper",
+    "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
-    "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
+    "//gpu/command_buffer/client:gles2_implementation",
   ]
 
+  libs = []
+
+  if (is_android) {
+    deps += [
+      "//testing/android:native_test_native_code",
+    ]
+    libs += [ "android" ]
+  }
   # TODO(GYP)
-  #     ['OS == "android"', {
-  #       'dependencies': [
-  #         '../testing/android/native_test.gyp:native_test_native_code',
-  #       ],
-  #     }],
   #     ['OS == "win"', {
   #       'dependencies': [
   #         '../third_party/angle/src/build_angle.gyp:libEGL',
@@ -178,10 +181,12 @@ test("gpu_unittests") {
     "command_buffer/service/gles2_cmd_decoder_unittest_base.h",
     "command_buffer/service/gles2_cmd_decoder_unittest_context_state.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_drawing.cc",
+    "command_buffer/service/gles2_cmd_decoder_unittest_extensions.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_framebuffers.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_programs.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_textures.cc",
     "command_buffer/service/gles2_cmd_decoder_unittest_attribs.cc",
+    "command_buffer/service/gles2_cmd_decoder_unittest_valuebuffer.cc",
     "command_buffer/service/gl_surface_mock.cc",
     "command_buffer/service/gl_surface_mock.h",
     "command_buffer/service/gpu_scheduler_unittest.cc",
@@ -193,6 +198,7 @@ test("gpu_unittests") {
     "command_buffer/service/mocks.cc",
     "command_buffer/service/mocks.h",
     "command_buffer/service/program_manager_unittest.cc",
+    "command_buffer/service/valuebuffer_manager_unittest.cc",
     "command_buffer/service/query_manager_unittest.cc",
     "command_buffer/service/renderbuffer_manager_unittest.cc",
     "command_buffer/service/program_cache_unittest.cc",
@@ -209,7 +215,6 @@ test("gpu_unittests") {
     "config/gpu_control_list_entry_unittest.cc",
     "config/gpu_control_list_number_info_unittest.cc",
     "config/gpu_control_list_os_info_unittest.cc",
-    "config/gpu_control_list_string_info_unittest.cc",
     "config/gpu_control_list_unittest.cc",
     "config/gpu_control_list_version_info_unittest.cc",
     "config/gpu_driver_bug_list_unittest.cc",
@@ -222,7 +227,7 @@ test("gpu_unittests") {
 
   deps = [
     ":gpu",
-    ":gpu_unittest_utils",
+    ":test_support",
     "//base",
     "//base/test:test_support",
     "//base/third_party/dynamic_annotations",
@@ -230,9 +235,25 @@ test("gpu_unittests") {
     "//testing/gtest",
     "//third_party/angle:translator",
     "//ui/gfx",
+    "//ui/gfx:test_support",
     "//ui/gfx/geometry",
     "//ui/gl",
+    "//gpu/command_buffer/common:gles2_utils",
     "//gpu/command_buffer/client:gles2_c_lib",
-    "//gpu/command_buffer/client:gles2_implementation_client_side_arrays",
+    "//gpu/command_buffer/client:gles2_implementation",
+  ]
+}
+
+test("angle_unittests") {
+  sources = [
+    "angle_unittest_main.cc",
+  ]
+
+  deps = [
+    "//base",
+    "//base/third_party/dynamic_annotations",
+    "//testing/gmock",
+    "//testing/gtest",
+    "//third_party/angle:translator_static",
   ]
 }

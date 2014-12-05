@@ -26,7 +26,9 @@
 [
     ImplementedAs=SVGPointListTearOff,
     SetWrapperReferenceTo(SVGElement contextElement),
-    TypeChecking=Interface|Nullable,
+    TypeChecking=Interface,
+    RuntimeEnabled=SVG1DOM,
+    MeasureAs=SVG1DOM,
 ] interface SVGPointList {
     readonly attribute unsigned long length;
     [ImplementedAs=length] readonly attribute unsigned long numberOfItems;

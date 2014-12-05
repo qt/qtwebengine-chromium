@@ -24,10 +24,9 @@
 #define FEFlood_h
 
 #include "platform/graphics/Color.h"
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT FEFlood : public FilterEffect {
 public:
@@ -41,22 +40,20 @@ public:
 
     // feFlood does not perform color interpolation of any kind, so the result is always in the current
     // color space regardless of the value of color-interpolation-filters.
-    virtual void setOperatingColorSpace(ColorSpace) OVERRIDE { }
-    virtual void setResultColorSpace(ColorSpace) OVERRIDE { }
+    virtual void setOperatingColorSpace(ColorSpace) override { }
+    virtual void setResultColorSpace(ColorSpace) override { }
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FEFlood(Filter*, const Color&, float);
-
-    virtual void applySoftware() OVERRIDE;
 
     Color m_floodColor;
     float m_floodOpacity;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FEFlood_h

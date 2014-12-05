@@ -48,14 +48,14 @@
 #include "core/rendering/PaintInfo.h"
 #include "platform/geometry/LayoutRect.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 
 enum PaintLayerFlag {
     PaintLayerHaveTransparency = 1,
     PaintLayerAppliedTransform = 1 << 1,
-    PaintLayerTemporaryClipRects = 1 << 2,
+    PaintLayerUncachedClipRects = 1 << 2,
     PaintLayerPaintingReflection = 1 << 3,
     PaintLayerPaintingOverlayScrollbars = 1 << 4,
     PaintLayerPaintingCompositingBackgroundPhase = 1 << 5,
@@ -74,13 +74,11 @@ typedef unsigned PaintLayerFlags;
 struct LayerPaintingInfo {
     LayerPaintingInfo(RenderLayer* inRootLayer, const LayoutRect& inDirtyRect,
         PaintBehavior inPaintBehavior, const LayoutSize& inSubPixelAccumulation,
-        RenderObject* inPaintingRoot = 0,
-        OverlapTestRequestMap* inOverlapTestRequests = 0)
+        RenderObject* inPaintingRoot = 0)
         : rootLayer(inRootLayer)
         , paintingRoot(inPaintingRoot)
         , paintDirtyRect(inDirtyRect)
         , subPixelAccumulation(inSubPixelAccumulation)
-        , overlapTestRequests(inOverlapTestRequests)
         , paintBehavior(inPaintBehavior)
         , clipToDirtyRect(true)
     { }
@@ -88,11 +86,10 @@ struct LayerPaintingInfo {
     RenderObject* paintingRoot; // only paint descendants of this object
     LayoutRect paintDirtyRect; // relative to rootLayer;
     LayoutSize subPixelAccumulation;
-    OverlapTestRequestMap* overlapTestRequests; // May be null.
     PaintBehavior paintBehavior;
     bool clipToDirtyRect;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LayerPaintingInfo_h

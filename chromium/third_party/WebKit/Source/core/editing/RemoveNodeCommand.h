@@ -28,22 +28,22 @@
 
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
-class RemoveNodeCommand FINAL : public SimpleEditCommand {
+class RemoveNodeCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<RemoveNodeCommand> create(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     {
         return adoptRefWillBeNoop(new RemoveNodeCommand(node, shouldAssumeContentIsAlwaysEditable));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit RemoveNodeCommand(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     RefPtrWillBeMember<Node> m_node;
     RefPtrWillBeMember<ContainerNode> m_parent;
@@ -51,6 +51,6 @@ private:
     ShouldAssumeContentIsAlwaysEditable m_shouldAssumeContentIsAlwaysEditable;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RemoveNodeCommand_h

@@ -29,6 +29,7 @@
 #include "config.h"
 #include "core/rendering/RenderLineBoxList.h"
 
+#include "core/paint/InlinePainter.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/PaintInfo.h"
@@ -36,11 +37,9 @@
 #include "core/rendering/RenderView.h"
 #include "core/rendering/RootInlineBox.h"
 
-using namespace std;
+namespace blink {
 
-namespace WebCore {
-
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 RenderLineBoxList::~RenderLineBoxList()
 {
     ASSERT(!m_firstLineBox);
@@ -155,7 +154,7 @@ bool RenderLineBoxList::rangeIntersectsRect(RenderBoxModelObject* renderer, Layo
     LayoutUnit physicalStart = block->flipForWritingMode(logicalTop);
     LayoutUnit physicalEnd = block->flipForWritingMode(logicalBottom);
     LayoutUnit physicalExtent = absoluteValue(physicalEnd - physicalStart);
-    physicalStart = min(physicalStart, physicalEnd);
+    physicalStart = std::min(physicalStart, physicalEnd);
 
     if (renderer->style()->isHorizontalWritingMode()) {
         physicalStart += offset.y();
@@ -187,51 +186,10 @@ bool RenderLineBoxList::anyLineIntersectsRect(RenderBoxModelObject* renderer, co
 bool RenderLineBoxList::lineIntersectsDirtyRect(RenderBoxModelObject* renderer, InlineFlowBox* box, const PaintInfo& paintInfo, const LayoutPoint& offset) const
 {
     RootInlineBox& root = box->root();
-    LayoutUnit logicalTop = min<LayoutUnit>(box->logicalTopVisualOverflow(root.lineTop()), root.selectionTop());
+    LayoutUnit logicalTop = std::min<LayoutUnit>(box->logicalTopVisualOverflow(root.lineTop()), root.selectionTop());
     LayoutUnit logicalBottom = box->logicalBottomVisualOverflow(root.lineBottom());
 
     return rangeIntersectsRect(renderer, logicalTop, logicalBottom, paintInfo.rect, offset);
-}
-
-void RenderLineBoxList::paint(RenderBoxModelObject* renderer, PaintInfo& paintInfo, const LayoutPoint& paintOffset) const
-{
-    // Only paint during the foreground/selection phases.
-    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection && paintInfo.phase != PaintPhaseOutline
-        && paintInfo.phase != PaintPhaseSelfOutline && paintInfo.phase != PaintPhaseChildOutlines && paintInfo.phase != PaintPhaseTextClip
-        && paintInfo.phase != PaintPhaseMask)
-        return;
-
-    ASSERT(renderer->isRenderBlock() || (renderer->isRenderInline() && renderer->hasLayer())); // The only way an inline could paint like this is if it has a layer.
-
-    // If we have no lines then we have no work to do.
-    if (!firstLineBox())
-        return;
-
-    if (!anyLineIntersectsRect(renderer, paintInfo.rect, paintOffset))
-        return;
-
-    PaintInfo info(paintInfo);
-    ListHashSet<RenderInline*> outlineObjects;
-    info.setOutlineObjects(&outlineObjects);
-
-    // See if our root lines intersect with the dirty rect.  If so, then we paint
-    // them.  Note that boxes can easily overlap, so we can't make any assumptions
-    // based off positions of our first line box or our last line box.
-    for (InlineFlowBox* curr = firstLineBox(); curr; curr = curr->nextLineBox()) {
-        if (lineIntersectsDirtyRect(renderer, curr, info, paintOffset)) {
-            RootInlineBox& root = curr->root();
-            curr->paint(info, paintOffset, root.lineTop(), root.lineBottom());
-        }
-    }
-
-    if (info.phase == PaintPhaseOutline || info.phase == PaintPhaseSelfOutline || info.phase == PaintPhaseChildOutlines) {
-        ListHashSet<RenderInline*>::iterator end = info.outlineObjects()->end();
-        for (ListHashSet<RenderInline*>::iterator it = info.outlineObjects()->begin(); it != end; ++it) {
-            RenderInline* flow = *it;
-            flow->paintOutline(info, paintOffset);
-        }
-        info.outlineObjects()->clear();
-    }
 }
 
 bool RenderLineBoxList::hitTest(RenderBoxModelObject* renderer, const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction hitTestAction) const
@@ -294,7 +252,11 @@ void RenderLineBoxList::dirtyLinesFromChangedChild(RenderObject* container, Rend
     // parent's first line box.
     RootInlineBox* box = 0;
     RenderObject* curr = 0;
+    ListHashSet<RenderObject*, 16> potentialLineBreakObjects;
+    potentialLineBreakObjects.add(child);
     for (curr = child->previousSibling(); curr; curr = curr->previousSibling()) {
+        potentialLineBreakObjects.add(curr);
+
         if (curr->isFloatingOrOutOfFlowPositioned())
             continue;
 
@@ -347,18 +309,14 @@ void RenderLineBoxList::dirtyLinesFromChangedChild(RenderObject* container, Rend
         if (adjacentBox)
             adjacentBox->markDirty();
         adjacentBox = box->nextRootBox();
-        // If |child| has been inserted before the first element in the linebox, but after collapsed leading
-        // space, the search for |child|'s linebox will go past the leading space to the previous linebox and select that
-        // one as |box|. If we hit that situation here, dirty the |box| actually containing the child too.
-        bool insertedAfterLeadingSpace = box->lineBreakObj() == child->previousSibling();
-        if (adjacentBox && (adjacentBox->lineBreakObj() == child || child->isBR() || (curr && curr->isBR())
-            || insertedAfterLeadingSpace || isIsolated(container->style()->unicodeBidi()))) {
+        // If |child| or any of its immediately previous siblings with culled lineboxes is the object after a line-break in |box| or the linebox after it
+        // then that means |child| actually sits on the linebox after |box| (or is its line-break object) and so we need to dirty it as well.
+        if (adjacentBox && (potentialLineBreakObjects.contains(box->lineBreakObj()) || potentialLineBreakObjects.contains(adjacentBox->lineBreakObj()) || child->isBR() || isIsolated(container->style()->unicodeBidi())))
             adjacentBox->markDirty();
-        }
     }
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 
 void RenderLineBoxList::checkConsistency() const
 {

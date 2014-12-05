@@ -53,7 +53,7 @@
 #include "config.h"
 #include "core/html/HTMLDocument.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/HTMLNames.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/FrameView.h"
@@ -64,14 +64,13 @@
 #include "core/page/Page.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 HTMLDocument::HTMLDocument(const DocumentInit& initializer, DocumentClassFlags extendedDocumentClasses)
     : Document(initializer, HTMLDocumentClass | extendedDocumentClasses)
 {
-    ScriptWrappable::init(this);
     clearXMLVersion();
     if (isSrcdocDocument() || initializer.importsController()) {
         ASSERT(inNoQuirksMode());
@@ -276,8 +275,8 @@ void HTMLDocument::write(LocalDOMWindow* callingWindow, const Vector<String>& te
 {
     ASSERT(callingWindow);
     StringBuilder builder;
-    for (size_t i = 0; i < text.size(); ++i)
-        builder.append(text[i]);
+    for (const String& string : text)
+        builder.append(string);
     write(builder.toString(), callingWindow->document(), exceptionState);
 }
 
@@ -285,8 +284,8 @@ void HTMLDocument::writeln(LocalDOMWindow* callingWindow, const Vector<String>& 
 {
     ASSERT(callingWindow);
     StringBuilder builder;
-    for (size_t i = 0; i < text.size(); ++i)
-        builder.append(text[i]);
+    for (const String& string : text)
+        builder.append(string);
     writeln(builder.toString(), callingWindow->document(), exceptionState);
 }
 

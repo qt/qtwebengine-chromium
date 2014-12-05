@@ -29,14 +29,13 @@
 #include "core/css/CSSValuePool.h"
 #include "core/css/StylePropertySet.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLHRElement::HTMLHRElement(Document& document)
     : HTMLElement(hrTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLHRElement)

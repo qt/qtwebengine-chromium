@@ -4,7 +4,7 @@
 
 {
   'includes': [
-    '../native_client/build/untrusted.gypi',
+    '../build/common_untrusted.gypi',
   ],
   'target_defaults': {
     # We need to override the variables in untrusted.gypi outside of a
@@ -41,6 +41,7 @@
     },
     'dependencies': [
        '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
+       '<(DEPTH)/native_client/src/untrusted/pthread/pthread.gyp:pthread_lib',
        '<(DEPTH)/ppapi/ppapi_nacl.gyp:ppapi_cpp_lib',
        '<(DEPTH)/ppapi/native_client/native_client.gyp:ppapi_lib',
     ],

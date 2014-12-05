@@ -57,6 +57,10 @@ class IMkvWriter {
 
 // Writes out the EBML header for a WebM file. This function must be called
 // before any other libwebm writing functions are called.
+bool WriteEbmlHeader(IMkvWriter* writer, uint64 doc_type_version);
+
+// Deprecated. Writes out EBML header with doc_type_version as
+// kDefaultDocTypeVersion. Exists for backward compatibility.
 bool WriteEbmlHeader(IMkvWriter* writer);
 
 // Copies in Chunk from source to destination between the given byte positions
@@ -1010,6 +1014,7 @@ class Segment {
     kBeforeClusters = 0x1  // Position Cues before Clusters
   };
 
+  const static uint32 kDefaultDocTypeVersion = 2;
   const static uint64 kDefaultMaxClusterDuration = 30000000000ULL;
 
   Segment();
@@ -1191,6 +1196,9 @@ class Segment {
   // Cues elements.
   bool CheckHeaderInfo();
 
+  // Sets |doc_type_version_| based on the current element requirements.
+  void UpdateDocTypeVersion();
+
   // Sets |name| according to how many chunks have been written. |ext| is the
   // file extension. |name| must be deleted by the calling app. Returns true
   // on success.
@@ -1351,11 +1359,22 @@ class Segment {
   // Flag whether or not the muxer should output a Cues element.
   bool output_cues_;
 
+  // The size of the EBML header, used to validate the header if
+  // WriteEbmlHeader() is called more than once.
+  int32 ebml_header_size_;
+
   // The file position of the segment's payload.
   int64 payload_pos_;
 
   // The file position of the element's size.
   int64 size_position_;
+
+  // Current DocTypeVersion (|doc_type_version_|) and that written in
+  // WriteSegmentHeader().
+  // WriteEbmlHeader() will be called from Finalize() if |doc_type_version_|
+  // differs from |doc_type_version_written_|.
+  uint32 doc_type_version_;
+  uint32 doc_type_version_written_;
 
   // Pointer to the writer objects. Not owned by this class.
   IMkvWriter* writer_cluster_;

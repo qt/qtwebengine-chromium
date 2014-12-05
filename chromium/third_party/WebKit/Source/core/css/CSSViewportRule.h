@@ -34,13 +34,13 @@
 #include "core/css/CSSRule.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleDeclaration;
 class StyleRuleViewport;
 class StyleRuleCSSStyleDeclaration;
 
-class CSSViewportRule FINAL: public CSSRule {
+class CSSViewportRule final: public CSSRule {
 public:
     static PassRefPtrWillBeRawPtr<CSSViewportRule> create(StyleRuleViewport* viewportRule, CSSStyleSheet* sheet)
     {
@@ -48,13 +48,13 @@ public:
     }
     virtual ~CSSViewportRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return VIEWPORT_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual CSSRule::Type type() const override { return VIEWPORT_RULE; }
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     CSSStyleDeclaration* style() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CSSViewportRule(StyleRuleViewport*, CSSStyleSheet*);
@@ -65,6 +65,6 @@ private:
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSViewportRule, VIEWPORT_RULE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSViewportRule_h

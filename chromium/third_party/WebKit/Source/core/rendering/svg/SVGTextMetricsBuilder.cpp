@@ -26,7 +26,7 @@
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/SVGTextMetrics.h"
 #include "platform/fonts/GlyphBuffer.h"
-#include "platform/fonts/WidthIterator.h"
+#include "platform/fonts/shaping/SimpleShaper.h"
 #include "platform/text/BidiCharacterRun.h"
 #include "platform/text/BidiResolver.h"
 #include "platform/text/TextDirection.h"
@@ -35,7 +35,7 @@
 #include "platform/text/TextRunIterator.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGTextMetricsCalculator {
 public:
@@ -68,7 +68,7 @@ private:
     TextDirection m_textDirection;
 
     // Simple text only.
-    OwnPtr<WidthIterator> m_simpleWidthIterator;
+    OwnPtr<SimpleShaper> m_simpleShaper;
 };
 
 SVGTextMetricsCalculator::SVGTextMetricsCalculator(RenderSVGInlineText* text)
@@ -79,12 +79,13 @@ SVGTextMetricsCalculator::SVGTextMetricsCalculator(RenderSVGInlineText* text)
     , m_totalWidth(0)
 {
     const Font& scaledFont = text->scaledFont();
-    CodePath codePath = scaledFont.codePath(m_run);
+    CodePath codePath = scaledFont.codePath(TextRunPaintInfo(m_run));
     m_isComplexText = codePath == ComplexPath;
     m_run.setCharacterScanForCodePath(!m_isComplexText);
+    m_run.setUseComplexCodePath(m_isComplexText);
 
     if (!m_isComplexText)
-        m_simpleWidthIterator = adoptPtr(new WidthIterator(&scaledFont, m_run));
+        m_simpleShaper = adoptPtr(new SimpleShaper(&scaledFont, m_run));
     else
         setupBidiRuns();
 }
@@ -116,15 +117,14 @@ void SVGTextMetricsCalculator::setupBidiRuns()
 SVGTextMetrics SVGTextMetricsCalculator::computeMetricsForCharacterSimple(unsigned textPosition)
 {
     GlyphBuffer glyphBuffer;
-    unsigned metricsLength = m_simpleWidthIterator->advance(textPosition + 1, &glyphBuffer);
+    unsigned metricsLength = m_simpleShaper->advance(textPosition + 1, &glyphBuffer);
     if (!metricsLength)
         return SVGTextMetrics();
 
-    float currentWidth = m_simpleWidthIterator->runWidthSoFar() - m_totalWidth;
-    m_totalWidth = m_simpleWidthIterator->runWidthSoFar();
+    float currentWidth = m_simpleShaper->runWidthSoFar() - m_totalWidth;
+    m_totalWidth = m_simpleShaper->runWidthSoFar();
 
-    Glyph glyphId = glyphBuffer.glyphAt(0);
-    return SVGTextMetrics(m_text, textPosition, metricsLength, currentWidth, glyphId);
+    return SVGTextMetrics(m_text, textPosition, metricsLength, currentWidth);
 }
 
 SVGTextMetrics SVGTextMetricsCalculator::computeMetricsForCharacterComplex(unsigned textPosition)

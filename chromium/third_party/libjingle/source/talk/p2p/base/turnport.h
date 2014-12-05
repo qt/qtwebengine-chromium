@@ -25,18 +25,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TURNPORT_H_
-#define TALK_P2P_BASE_TURNPORT_H_
+#ifndef WEBRTC_P2P_BASE_TURNPORT_H_
+#define WEBRTC_P2P_BASE_TURNPORT_H_
 
 #include <stdio.h>
-#include <string>
 #include <list>
+#include <set>
+#include <string>
 
-#include "talk/base/asyncpacketsocket.h"
-#include "talk/p2p/base/port.h"
-#include "talk/p2p/client/basicportallocator.h"
+#include "webrtc/p2p/base/port.h"
+#include "webrtc/p2p/client/basicportallocator.h"
+#include "webrtc/base/asyncpacketsocket.h"
 
-namespace talk_base {
+namespace rtc {
 class AsyncResolver;
 class SignalThread;
 }
@@ -49,29 +50,33 @@ class TurnEntry;
 
 class TurnPort : public Port {
  public:
-  static TurnPort* Create(talk_base::Thread* thread,
-                          talk_base::PacketSocketFactory* factory,
-                          talk_base::Network* network,
-                          talk_base::AsyncPacketSocket* socket,
+  static TurnPort* Create(rtc::Thread* thread,
+                          rtc::PacketSocketFactory* factory,
+                          rtc::Network* network,
+                          rtc::AsyncPacketSocket* socket,
                           const std::string& username,  // ice username.
                           const std::string& password,  // ice password.
                           const ProtocolAddress& server_address,
-                          const RelayCredentials& credentials) {
+                          const RelayCredentials& credentials,
+                          int server_priority) {
     return new TurnPort(thread, factory, network, socket,
-                    username, password, server_address, credentials);
+                        username, password, server_address,
+                        credentials, server_priority);
   }
 
-  static TurnPort* Create(talk_base::Thread* thread,
-                          talk_base::PacketSocketFactory* factory,
-                          talk_base::Network* network,
-                          const talk_base::IPAddress& ip,
+  static TurnPort* Create(rtc::Thread* thread,
+                          rtc::PacketSocketFactory* factory,
+                          rtc::Network* network,
+                          const rtc::IPAddress& ip,
                           int min_port, int max_port,
                           const std::string& username,  // ice username.
                           const std::string& password,  // ice password.
                           const ProtocolAddress& server_address,
-                          const RelayCredentials& credentials) {
+                          const RelayCredentials& credentials,
+                          int server_priority) {
     return new TurnPort(thread, factory, network, ip, min_port, max_port,
-                        username, password, server_address, credentials);
+                        username, password, server_address, credentials,
+                        server_priority);
   }
 
   virtual ~TurnPort();
@@ -85,72 +90,88 @@ class TurnPort : public Port {
   virtual Connection* CreateConnection(
       const Candidate& c, PortInterface::CandidateOrigin origin);
   virtual int SendTo(const void* data, size_t size,
-                     const talk_base::SocketAddress& addr,
-                     const talk_base::PacketOptions& options,
+                     const rtc::SocketAddress& addr,
+                     const rtc::PacketOptions& options,
                      bool payload);
-  virtual int SetOption(talk_base::Socket::Option opt, int value);
-  virtual int GetOption(talk_base::Socket::Option opt, int* value);
+  virtual int SetOption(rtc::Socket::Option opt, int value);
+  virtual int GetOption(rtc::Socket::Option opt, int* value);
   virtual int GetError();
 
   virtual bool HandleIncomingPacket(
-      talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
-      const talk_base::SocketAddress& remote_addr,
-      const talk_base::PacketTime& packet_time) {
+      rtc::AsyncPacketSocket* socket, const char* data, size_t size,
+      const rtc::SocketAddress& remote_addr,
+      const rtc::PacketTime& packet_time) {
     OnReadPacket(socket, data, size, remote_addr, packet_time);
     return true;
   }
-  virtual void OnReadPacket(talk_base::AsyncPacketSocket* socket,
+  virtual void OnReadPacket(rtc::AsyncPacketSocket* socket,
                             const char* data, size_t size,
-                            const talk_base::SocketAddress& remote_addr,
-                            const talk_base::PacketTime& packet_time);
+                            const rtc::SocketAddress& remote_addr,
+                            const rtc::PacketTime& packet_time);
 
-  virtual void OnReadyToSend(talk_base::AsyncPacketSocket* socket);
+  virtual void OnReadyToSend(rtc::AsyncPacketSocket* socket);
 
-  void OnSocketConnect(talk_base::AsyncPacketSocket* socket);
-  void OnSocketClose(talk_base::AsyncPacketSocket* socket, int error);
+  void OnSocketConnect(rtc::AsyncPacketSocket* socket);
+  void OnSocketClose(rtc::AsyncPacketSocket* socket, int error);
 
 
   const std::string& hash() const { return hash_; }
   const std::string& nonce() const { return nonce_; }
 
+  int error() const { return error_; }
+
+  void OnAllocateMismatch();
+
+  rtc::AsyncPacketSocket* socket() const {
+    return socket_;
+  }
+
   // Signal with resolved server address.
   // Parameters are port, server address and resolved server address.
   // This signal will be sent only if server address is resolved successfully.
   sigslot::signal3<TurnPort*,
-                   const talk_base::SocketAddress&,
-                   const talk_base::SocketAddress&> SignalResolvedServerAddress;
+                   const rtc::SocketAddress&,
+                   const rtc::SocketAddress&> SignalResolvedServerAddress;
 
   // This signal is only for testing purpose.
-  sigslot::signal3<TurnPort*, const talk_base::SocketAddress&, int>
+  sigslot::signal3<TurnPort*, const rtc::SocketAddress&, int>
       SignalCreatePermissionResult;
 
  protected:
-  TurnPort(talk_base::Thread* thread,
-           talk_base::PacketSocketFactory* factory,
-           talk_base::Network* network,
-           talk_base::AsyncPacketSocket* socket,
+  TurnPort(rtc::Thread* thread,
+           rtc::PacketSocketFactory* factory,
+           rtc::Network* network,
+           rtc::AsyncPacketSocket* socket,
            const std::string& username,
            const std::string& password,
            const ProtocolAddress& server_address,
-           const RelayCredentials& credentials);
+           const RelayCredentials& credentials,
+           int server_priority);
 
-  TurnPort(talk_base::Thread* thread,
-           talk_base::PacketSocketFactory* factory,
-           talk_base::Network* network,
-           const talk_base::IPAddress& ip,
+  TurnPort(rtc::Thread* thread,
+           rtc::PacketSocketFactory* factory,
+           rtc::Network* network,
+           const rtc::IPAddress& ip,
            int min_port, int max_port,
            const std::string& username,
            const std::string& password,
            const ProtocolAddress& server_address,
-           const RelayCredentials& credentials);
+           const RelayCredentials& credentials,
+           int server_priority);
 
  private:
-  enum { MSG_ERROR = MSG_FIRST_AVAILABLE };
+  enum {
+    MSG_ERROR = MSG_FIRST_AVAILABLE,
+    MSG_ALLOCATE_MISMATCH
+  };
 
   typedef std::list<TurnEntry*> EntryList;
-  typedef std::map<talk_base::Socket::Option, int> SocketOptionsMap;
+  typedef std::map<rtc::Socket::Option, int> SocketOptionsMap;
+  typedef std::set<rtc::SocketAddress> AttemptedServerSet;
 
-  virtual void OnMessage(talk_base::Message* pmsg);
+  virtual void OnMessage(rtc::Message* pmsg);
+
+  bool CreateTurnClientSocket();
 
   void set_nonce(const std::string& nonce) { nonce_ = nonce; }
   void set_realm(const std::string& realm) {
@@ -160,47 +181,49 @@ class TurnPort : public Port {
     }
   }
 
-  void ResolveTurnAddress(const talk_base::SocketAddress& address);
-  void OnResolveResult(talk_base::AsyncResolverInterface* resolver);
+  bool SetAlternateServer(const rtc::SocketAddress& address);
+  void ResolveTurnAddress(const rtc::SocketAddress& address);
+  void OnResolveResult(rtc::AsyncResolverInterface* resolver);
 
   void AddRequestAuthInfo(StunMessage* msg);
   void OnSendStunPacket(const void* data, size_t size, StunRequest* request);
   // Stun address from allocate success response.
   // Currently used only for testing.
-  void OnStunAddress(const talk_base::SocketAddress& address);
-  void OnAllocateSuccess(const talk_base::SocketAddress& address,
-                         const talk_base::SocketAddress& stun_address);
+  void OnStunAddress(const rtc::SocketAddress& address);
+  void OnAllocateSuccess(const rtc::SocketAddress& address,
+                         const rtc::SocketAddress& stun_address);
   void OnAllocateError();
   void OnAllocateRequestTimeout();
 
   void HandleDataIndication(const char* data, size_t size,
-                            const talk_base::PacketTime& packet_time);
+                            const rtc::PacketTime& packet_time);
   void HandleChannelData(int channel_id, const char* data, size_t size,
-                         const talk_base::PacketTime& packet_time);
+                         const rtc::PacketTime& packet_time);
   void DispatchPacket(const char* data, size_t size,
-      const talk_base::SocketAddress& remote_addr,
-      ProtocolType proto, const talk_base::PacketTime& packet_time);
+      const rtc::SocketAddress& remote_addr,
+      ProtocolType proto, const rtc::PacketTime& packet_time);
 
   bool ScheduleRefresh(int lifetime);
   void SendRequest(StunRequest* request, int delay);
   int Send(const void* data, size_t size,
-           const talk_base::PacketOptions& options);
+           const rtc::PacketOptions& options);
   void UpdateHash();
   bool UpdateNonce(StunMessage* response);
 
-  bool HasPermission(const talk_base::IPAddress& ipaddr) const;
-  TurnEntry* FindEntry(const talk_base::SocketAddress& address) const;
+  bool HasPermission(const rtc::IPAddress& ipaddr) const;
+  TurnEntry* FindEntry(const rtc::SocketAddress& address) const;
   TurnEntry* FindEntry(int channel_id) const;
-  TurnEntry* CreateEntry(const talk_base::SocketAddress& address);
-  void DestroyEntry(const talk_base::SocketAddress& address);
+  TurnEntry* CreateEntry(const rtc::SocketAddress& address);
+  void DestroyEntry(const rtc::SocketAddress& address);
   void OnConnectionDestroyed(Connection* conn);
 
   ProtocolAddress server_address_;
   RelayCredentials credentials_;
+  AttemptedServerSet attempted_server_addresses_;
 
-  talk_base::AsyncPacketSocket* socket_;
+  rtc::AsyncPacketSocket* socket_;
   SocketOptionsMap socket_options_;
-  talk_base::AsyncResolverInterface* resolver_;
+  rtc::AsyncResolverInterface* resolver_;
   int error_;
 
   StunRequestManager request_manager_;
@@ -212,6 +235,12 @@ class TurnPort : public Port {
   EntryList entries_;
 
   bool connected_;
+  // By default the value will be set to 0. This value will be used in
+  // calculating the candidate priority.
+  int server_priority_;
+
+  // The number of retries made due to allocate mismatch error.
+  size_t allocate_mismatch_retries_;
 
   friend class TurnEntry;
   friend class TurnAllocateRequest;
@@ -222,4 +251,4 @@ class TurnPort : public Port {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TURNPORT_H_
+#endif  // WEBRTC_P2P_BASE_TURNPORT_H_

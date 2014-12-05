@@ -29,11 +29,10 @@
 #ifndef SQLError_h
 #define SQLError_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "wtf/ThreadSafeRefCounted.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class SQLErrorData {
 public:
@@ -52,6 +51,8 @@ public:
         return create(data.code(), data.message());
     }
 
+    SQLErrorData(const SQLErrorData& data) : m_code(data.m_code), m_message(data.m_message.isolatedCopy()) { }
+
     unsigned code() const { return m_code; }
     String message() const { return m_message.isolatedCopy(); }
 
@@ -62,9 +63,10 @@ private:
     String m_message;
 };
 
-class SQLError : public ThreadSafeRefCountedWillBeGarbageCollectedFinalized<SQLError>, public ScriptWrappable {
+class SQLError : public GarbageCollectedFinalized<SQLError>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLError> create(const SQLErrorData& data) { return adoptRefWillBeNoop(new SQLError(data)); }
+    static SQLError* create(const SQLErrorData& data) { return new SQLError(data); }
     void trace(Visitor*) { }
 
     unsigned code() const { return m_data.code(); }
@@ -86,14 +88,12 @@ public:
     static const char versionErrorMessage[];
 
 private:
-    explicit SQLError(const SQLErrorData& data) : m_data(data)
-    {
-        ScriptWrappable::init(this);
-    }
+    explicit SQLError(const SQLErrorData& data)
+        : m_data(data) { }
 
     const SQLErrorData m_data;
 };
 
-}
+} // namespace blink
 
 #endif // SQLError_h

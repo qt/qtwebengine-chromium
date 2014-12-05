@@ -4,14 +4,20 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/strings/sys_string_conversions.h"
 #include "content/common/sandbox_mac.h"
 #include "content/common/sandbox_mac_unittest_helper.h"
-#include "crypto/nss_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(USE_OPENSSL)
+#include <openssl/rand.h>
+#include "crypto/openssl_util.h"
+#else
+#include "crypto/nss_util.h"
+#endif
 
 namespace content {
 
@@ -20,11 +26,12 @@ namespace content {
 class MacSandboxedClipboardTestCase : public MacSandboxTestCase {
  public:
   MacSandboxedClipboardTestCase();
-  virtual ~MacSandboxedClipboardTestCase();
+  ~MacSandboxedClipboardTestCase() override;
 
-  virtual bool SandboxedTest() OVERRIDE;
+  bool SandboxedTest() override;
 
-  virtual void SetTestData(const char* test_data) OVERRIDE;
+  void SetTestData(const char* test_data) override;
+
  private:
   NSString* clipboard_name_;
 };
@@ -81,7 +88,7 @@ TEST_F(MacSandboxTest, ClipboardAccess) {
 // Test case for checking sandboxing of filesystem apis.
 class MacSandboxedFileAccessTestCase : public MacSandboxTestCase {
  public:
-  virtual bool SandboxedTest() OVERRIDE;
+  bool SandboxedTest() override;
 };
 
 REGISTER_SANDBOX_TEST_CASE(MacSandboxedFileAccessTestCase);
@@ -99,7 +106,7 @@ TEST_F(MacSandboxTest, FileAccess) {
 // /dev/urandom is available to any sandboxed process.
 class MacSandboxedUrandomTestCase : public MacSandboxTestCase {
  public:
-  virtual bool SandboxedTest() OVERRIDE;
+  bool SandboxedTest() override;
 };
 
 REGISTER_SANDBOX_TEST_CASE(MacSandboxedUrandomTestCase);
@@ -120,11 +127,36 @@ TEST_F(MacSandboxTest, UrandomAccess) {
   EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedUrandomTestCase", NULL));
 }
 
+#if defined(USE_OPENSSL)
+
+//--------------------- OpenSSL Sandboxing ----------------------
+// Test case for checking sandboxing of OpenSSL initialization.
+class MacSandboxedOpenSSLTestCase : public MacSandboxTestCase {
+ public:
+  bool SandboxedTest() override;
+};
+
+REGISTER_SANDBOX_TEST_CASE(MacSandboxedOpenSSLTestCase);
+
+bool MacSandboxedOpenSSLTestCase::SandboxedTest() {
+  crypto::EnsureOpenSSLInit();
+
+  // Ensure that RAND_bytes is functional within the sandbox.
+  uint8_t byte;
+  return RAND_bytes(&byte, 1) == 1;
+}
+
+TEST_F(MacSandboxTest, OpenSSLAccess) {
+  EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedOpenSSLTestCase", NULL));
+}
+
+#else  // !defined(USE_OPENSSL)
+
 //--------------------- NSS Sandboxing ----------------------
 // Test case for checking sandboxing of NSS initialization.
 class MacSandboxedNSSTestCase : public MacSandboxTestCase {
  public:
-  virtual bool SandboxedTest() OVERRIDE;
+  virtual bool SandboxedTest() override;
 };
 
 REGISTER_SANDBOX_TEST_CASE(MacSandboxedNSSTestCase);
@@ -140,5 +172,7 @@ bool MacSandboxedNSSTestCase::SandboxedTest() {
 TEST_F(MacSandboxTest, NSSAccess) {
   EXPECT_TRUE(RunTestInAllSandboxTypes("MacSandboxedNSSTestCase", NULL));
 }
+
+#endif  // defined(USE_OPENSSL)
 
 }  // namespace content

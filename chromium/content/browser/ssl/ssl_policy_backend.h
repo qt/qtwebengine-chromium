@@ -10,12 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/strings/string16.h"
+#include "content/public/browser/ssl_host_state_delegate.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/x509_certificate.h"
 
 namespace content {
 class NavigationControllerImpl;
-class SSLHostState;
 
 class SSLPolicyBackend {
  public:
@@ -27,26 +27,24 @@ class SSLPolicyBackend {
   // Returns whether the specified host ran insecure content.
   bool DidHostRunInsecureContent(const std::string& host, int pid) const;
 
-  // Records that |cert| is not permitted to be used for |host| in the future,
-  // for a specific error type.
-  void DenyCertForHost(net::X509Certificate* cert,
-                       const std::string& host,
-                       net::CertStatus error);
-
   // Records that |cert| is permitted to be used for |host| in the future, for
   // a specific error type.
-  void AllowCertForHost(net::X509Certificate* cert,
+  void AllowCertForHost(const net::X509Certificate& cert,
                         const std::string& host,
                         net::CertStatus error);
 
-  // Queries whether |cert| is allowed or denied for |host|.
-  net::CertPolicy::Judgment QueryPolicy(net::X509Certificate* cert,
-                                        const std::string& host,
-                                        net::CertStatus error);
+  // Queries whether |cert| is allowed for |host|. Returns true in
+  // |expired_previous_decision| if a user decision had been made previously but
+  // that decision has expired, otherwise false.
+  SSLHostStateDelegate::CertJudgment QueryPolicy(
+      const net::X509Certificate& cert,
+      const std::string& host,
+      net::CertStatus error,
+      bool* expired_previous_decision);
 
  private:
-  // SSL state specific for each host.
-  SSLHostState* ssl_host_state_;
+  // SSL state delegate specific for each host.
+  SSLHostStateDelegate* ssl_host_state_delegate_;
 
   NavigationControllerImpl* controller_;
 

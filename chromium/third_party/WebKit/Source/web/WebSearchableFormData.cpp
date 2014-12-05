@@ -32,6 +32,7 @@
 #include "public/web/WebSearchableFormData.h"
 
 #include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/Document.h"
 #include "core/html/FormDataList.h"
 #include "core/html/HTMLFormControlElement.h"
@@ -44,7 +45,8 @@
 #include "public/web/WebInputElement.h"
 #include "wtf/text/TextEncoding.h"
 
-using namespace WebCore;
+namespace blink {
+
 using namespace HTMLNames;
 
 namespace {
@@ -102,7 +104,7 @@ bool IsSelectInDefaultState(HTMLSelectElement* select)
     const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems = select->listItems();
     if (select->multiple() || select->size() > 1) {
         for (WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
-            if (!(*i)->hasLocalName(HTMLNames::optionTag))
+            if (!isHTMLOptionElement(*i))
                 continue;
             HTMLOptionElement* optionElement = toHTMLOptionElement(*i);
             if (optionElement->selected() != optionElement->hasAttribute(selectedAttr))
@@ -115,7 +117,7 @@ bool IsSelectInDefaultState(HTMLSelectElement* select)
     // least one item is selected, determine which one.
     HTMLOptionElement* initialSelected = 0;
     for (WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >::const_iterator i(listItems.begin()); i != listItems.end(); ++i) {
-        if (!(*i)->hasLocalName(HTMLNames::optionTag))
+        if (!isHTMLOptionElement(*i))
             continue;
         HTMLOptionElement* optionElement = toHTMLOptionElement(*i);
         if (optionElement->hasAttribute(selectedAttr)) {
@@ -138,7 +140,7 @@ bool IsInDefaultState(HTMLFormControlElement* formElement)
     ASSERT(formElement);
     if (isHTMLInputElement(*formElement)) {
         const HTMLInputElement& inputElement = toHTMLInputElement(*formElement);
-        if (inputElement.isCheckbox() || inputElement.isRadioButton())
+        if (inputElement.type() == InputTypeNames::checkbox || inputElement.type() == InputTypeNames::radio)
             return inputElement.checked() == inputElement.hasAttribute(checkedAttr);
     } else if (isHTMLSelectElement(*formElement)) {
         return IsSelectInDefaultState(toHTMLSelectElement(formElement));
@@ -172,7 +174,7 @@ HTMLInputElement* findSuitableSearchInputElement(const HTMLFormElement* form)
             const HTMLInputElement& input = toHTMLInputElement(*control);
 
             // Return nothing if a file upload field or a password field are found.
-            if (input.isFileUpload() || input.isPasswordField())
+            if (input.type() == InputTypeNames::file || input.type() == InputTypeNames::password)
                 return 0;
 
             if (input.isTextField()) {
@@ -208,13 +210,12 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
         if (control->isDisabledFormControl() || control->name().isNull())
             continue;
 
-        FormDataList dataList(*encoding);
-        if (!control->appendFormData(dataList, false))
+        RefPtrWillBeRawPtr<FormDataList> dataList = FormDataList::create(*encoding);
+        if (!control->appendFormData(*dataList, false))
             continue;
 
-        const WillBeHeapVector<FormDataList::Item>& items = dataList.items();
-
-        for (WillBeHeapVector<FormDataList::Item>::const_iterator j(items.begin()); j != items.end(); ++j) {
+        const FormDataList::FormDataListItems& items = dataList->items();
+        for (FormDataList::FormDataListItems::const_iterator j(items.begin()); j != items.end(); ++j) {
             if (!encodedString->isEmpty())
                 encodedString->append('&');
             FormDataBuilder::encodeStringAsFormData(*encodedString, j->data());
@@ -230,8 +231,6 @@ bool buildSearchString(const HTMLFormElement* form, Vector<char>* encodedString,
     return isElementFound;
 }
 } // namespace
-
-namespace blink {
 
 WebSearchableFormData::WebSearchableFormData(const WebFormElement& form, const WebInputElement& selectedInputElement)
 {

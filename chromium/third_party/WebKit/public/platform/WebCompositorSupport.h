@@ -26,15 +26,19 @@
 #ifndef WebCompositorSupport_h
 #define WebCompositorSupport_h
 
-#include "WebAnimation.h"
+#define WEB_COMPOSITOR_SUPPORT_CREATE_ANIMATION_SUPPORTS_GROUP 1
+
 #include "WebCommon.h"
+#include "WebCompositorAnimation.h"
+#include "WebCompositorAnimationCurve.h"
+#include "WebFloatPoint.h"
 #include "WebLayerTreeView.h"
 #include "WebScrollbar.h"
 #include "WebScrollbarThemePainter.h"
 
 namespace blink {
 
-class WebAnimationCurve;
+class WebCompositorAnimationCurve;
 class WebCompositorOutputSurface;
 class WebContentLayer;
 class WebContentLayerClient;
@@ -49,15 +53,14 @@ class WebNinePatchLayer;
 class WebLayer;
 class WebScrollbarLayer;
 class WebScrollbarThemeGeometry;
-class WebSolidColorLayer;
-class WebThread;
+class WebScrollOffsetAnimationCurve;
 class WebTransformAnimationCurve;
 class WebTransformOperations;
 
 class WebCompositorSupport {
 public:
     // Creates an output surface for the compositor backed by a 3d context.
-    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(blink::WebGraphicsContext3D*) { return 0; }
+    virtual WebCompositorOutputSurface* createOutputSurfaceFor3D(WebGraphicsContext3D*) { return 0; }
 
     // Creates an output surface for the compositor backed by a software device.
     virtual WebCompositorOutputSurface* createOutputSurfaceForSoftware() { return 0; }
@@ -74,9 +77,6 @@ public:
 
     virtual WebNinePatchLayer* createNinePatchLayer() { return 0; }
 
-    // TODO(dshwang): This isn't used anymore.
-    virtual WebSolidColorLayer* createSolidColorLayer() { return 0; }
-
     // The ownership of the WebScrollbarThemeGeometry pointer is passed to Chromium.
     virtual WebScrollbarLayer* createScrollbarLayer(WebScrollbar*, WebScrollbarThemePainter, WebScrollbarThemeGeometry*) { return 0; }
 
@@ -84,11 +84,13 @@ public:
 
     // Animation ----------------------------------------------------
 
-    virtual WebAnimation* createAnimation(const WebAnimationCurve&, WebAnimation::TargetProperty, int animationId = 0) { return 0; }
+    virtual WebCompositorAnimation* createAnimation(const WebCompositorAnimationCurve&, WebCompositorAnimation::TargetProperty, int groupId = 0, int animationId = 0) { return 0; }
 
     virtual WebFilterAnimationCurve* createFilterAnimationCurve() { return 0; }
 
     virtual WebFloatAnimationCurve* createFloatAnimationCurve() { return 0; }
+
+    virtual WebScrollOffsetAnimationCurve* createScrollOffsetAnimationCurve(WebFloatPoint targetValue, WebCompositorAnimationCurve::TimingFunctionType) { return 0; }
 
     virtual WebTransformAnimationCurve* createTransformAnimationCurve() { return 0; }
 

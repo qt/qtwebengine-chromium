@@ -91,7 +91,7 @@ class SyncWaiter : public WaitableEvent::Waiter {
         cv_(&lock_) {
   }
 
-  virtual bool Fire(WaitableEvent* signaling_event) OVERRIDE {
+  bool Fire(WaitableEvent* signaling_event) override {
     base::AutoLock locked(lock_);
 
     if (fired_)
@@ -117,9 +117,7 @@ class SyncWaiter : public WaitableEvent::Waiter {
   // These waiters are always stack allocated and don't delete themselves. Thus
   // there's no problem and the ABA tag is the same as the object pointer.
   // ---------------------------------------------------------------------------
-  virtual bool Compare(void* tag) OVERRIDE {
-    return this == tag;
-  }
+  bool Compare(void* tag) override { return this == tag; }
 
   // ---------------------------------------------------------------------------
   // Called with lock held.
@@ -197,6 +195,11 @@ bool WaitableEvent::TimedWait(const TimeDelta& max_time) {
       sw.Disable();
       sw.lock()->Release();
 
+      // This is a bug that has been enshrined in the interface of
+      // WaitableEvent now: |Dequeue| is called even when |sw.fired()| is true,
+      // even though it'll always return false in that case. However, taking
+      // the lock ensures that |Signal| has completed before we return and
+      // means that a WaitableEvent can synchronise its own destruction.
       kernel_->lock_.Acquire();
       kernel_->Dequeue(&sw, &sw);
       kernel_->lock_.Release();
@@ -290,6 +293,11 @@ size_t WaitableEvent::WaitMany(WaitableEvent** raw_waitables,
         raw_waitables[i]->kernel_->Dequeue(&sw, &sw);
       raw_waitables[i]->kernel_->lock_.Release();
     } else {
+      // By taking this lock here we ensure that |Signal| has completed by the
+      // time we return, because |Signal| holds this lock. This matches the
+      // behaviour of |Wait| and |TimedWait|.
+      raw_waitables[i]->kernel_->lock_.Acquire();
+      raw_waitables[i]->kernel_->lock_.Release();
       signaled_index = i;
     }
   }

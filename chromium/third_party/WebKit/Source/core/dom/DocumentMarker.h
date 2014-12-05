@@ -23,10 +23,11 @@
 #ifndef DocumentMarker_h
 #define DocumentMarker_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/VectorTraits.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentMarkerDetails;
 
@@ -34,7 +35,7 @@ class DocumentMarkerDetails;
 // It optionally includes a description that could be displayed in the user interface.
 // It also optionally includes a flag specifying whether the match is active, which is ignored
 // for all types other than type TextMatch.
-class DocumentMarker {
+class DocumentMarker : public NoBaseWillBeGarbageCollected<DocumentMarker> {
 public:
     enum MarkerTypeIndex {
         SpellingMarkerIndex = 0,
@@ -92,11 +93,10 @@ public:
     };
 
     DocumentMarker();
-    DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset);
-    DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, const String& description);
     DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, const String& description, uint32_t hash);
     DocumentMarker(unsigned startOffset, unsigned endOffset, bool activeMatch);
-    DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, PassRefPtr<DocumentMarkerDetails>);
+    DocumentMarker(MarkerType, unsigned startOffset, unsigned endOffset, PassRefPtrWillBeRawPtr<DocumentMarkerDetails>);
+    DocumentMarker(const DocumentMarker&);
 
     MarkerType type() const { return m_type; }
     unsigned startOffset() const { return m_startOffset; }
@@ -126,35 +126,34 @@ public:
         return !(*this == o);
     }
 
+    void trace(Visitor*);
+
 private:
     MarkerType m_type;
     unsigned m_startOffset;
     unsigned m_endOffset;
-    RefPtr<DocumentMarkerDetails> m_details;
+    RefPtrWillBeMember<DocumentMarkerDetails> m_details;
     uint32_t m_hash;
 };
+
+using DocumentMarkerVector = WillBeHeapVector<RawPtrWillBeMember<DocumentMarker>>;
 
 inline DocumentMarkerDetails* DocumentMarker::details() const
 {
     return m_details.get();
 }
 
-class DocumentMarkerDetails : public RefCounted<DocumentMarkerDetails>
+class DocumentMarkerDetails : public RefCountedWillBeGarbageCollectedFinalized<DocumentMarkerDetails>
 {
 public:
     DocumentMarkerDetails() { }
     virtual ~DocumentMarkerDetails();
     virtual bool isDescription() const { return false; }
     virtual bool isTextMatch() const { return false; }
+
+    virtual void trace(Visitor*) { }
 };
 
-} // namespace WebCore
-
-namespace WTF {
-
-template<>
-struct VectorTraits<WebCore::DocumentMarker> : SimpleClassVectorTraits<WebCore::DocumentMarker> { };
-
-} // namespace WTF
+} // namespace blink
 
 #endif // DocumentMarker_h

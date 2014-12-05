@@ -22,7 +22,7 @@ class MockDeviceOrientationListener
   virtual ~MockDeviceOrientationListener() { }
 
   virtual void didChangeDeviceOrientation(
-      const blink::WebDeviceOrientationData& data) OVERRIDE {
+      const blink::WebDeviceOrientationData& data) override {
     memcpy(&data_, &data, sizeof(data));
     did_change_device_orientation_ = true;
   }
@@ -46,15 +46,16 @@ class MockDeviceOrientationListener
 
 class DeviceOrientationEventPumpForTesting : public DeviceOrientationEventPump {
  public:
-  DeviceOrientationEventPumpForTesting() { }
-  virtual ~DeviceOrientationEventPumpForTesting() { }
+  DeviceOrientationEventPumpForTesting()
+      : DeviceOrientationEventPump(0) { }
+  ~DeviceOrientationEventPumpForTesting() override {}
 
   void OnDidStart(base::SharedMemoryHandle renderer_handle) {
     DeviceOrientationEventPump::OnDidStart(renderer_handle);
   }
-  virtual bool SendStartMessage() OVERRIDE { return true; }
-  virtual bool SendStopMessage() OVERRIDE { return true; }
-  virtual void FireEvent() OVERRIDE {
+  void SendStartMessage() override {}
+  void SendStopMessage() override {}
+  void FireEvent() override {
     DeviceOrientationEventPump::FireEvent();
     Stop();
     base::MessageLoop::current()->QuitWhenIdle();
@@ -72,13 +73,16 @@ class DeviceOrientationEventPumpTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
+    const DeviceOrientationHardwareBuffer* null_buffer = NULL;
     listener_.reset(new MockDeviceOrientationListener);
     orientation_pump_.reset(new DeviceOrientationEventPumpForTesting);
     buffer_ = static_cast<DeviceOrientationHardwareBuffer*>(
         shared_memory_.memory());
+    ASSERT_NE(null_buffer, buffer_);
     memset(buffer_, 0, sizeof(DeviceOrientationHardwareBuffer));
-    shared_memory_.ShareToProcess(base::kNullProcessHandle, &handle_);
+    ASSERT_TRUE(shared_memory_.ShareToProcess(base::GetCurrentProcessHandle(),
+        &handle_));
   }
 
   void InitBuffer() {
@@ -114,17 +118,11 @@ class DeviceOrientationEventPumpTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(DeviceOrientationEventPumpTest);
 };
 
-// Always failing in the win try bot. See http://crbug.com/256782.
-#if defined(OS_WIN)
-#define MAYBE_DidStartPolling DISABLED_DidStartPolling
-#else
-#define MAYBE_DidStartPolling DidStartPolling
-#endif
-TEST_F(DeviceOrientationEventPumpTest, MAYBE_DidStartPolling) {
+TEST_F(DeviceOrientationEventPumpTest, DidStartPolling) {
   base::MessageLoop loop;
 
   InitBuffer();
-  orientation_pump()->SetListener(listener());
+  orientation_pump()->Start(listener());
   orientation_pump()->OnDidStart(handle());
 
   base::MessageLoop::current()->Run();
@@ -140,17 +138,11 @@ TEST_F(DeviceOrientationEventPumpTest, MAYBE_DidStartPolling) {
   EXPECT_TRUE(received_data.hasGamma);
 }
 
-// Always failing in the win try bot. See http://crbug.com/256782.
-#if defined(OS_WIN)
-#define MAYBE_FireAllNullEvent DISABLED_FireAllNullEvent
-#else
-#define MAYBE_FireAllNullEvent FireAllNullEvent
-#endif
-TEST_F(DeviceOrientationEventPumpTest, MAYBE_FireAllNullEvent) {
+TEST_F(DeviceOrientationEventPumpTest, FireAllNullEvent) {
   base::MessageLoop loop;
 
   InitBufferNoData();
-  orientation_pump()->SetListener(listener());
+  orientation_pump()->Start(listener());
   orientation_pump()->OnDidStart(handle());
 
   base::MessageLoop::current()->Run();
@@ -163,20 +155,11 @@ TEST_F(DeviceOrientationEventPumpTest, MAYBE_FireAllNullEvent) {
   EXPECT_FALSE(received_data.hasGamma);
 }
 
-// Always failing in the win try bot. See http://crbug.com/256782.
-#if defined(OS_WIN)
-#define MAYBE_UpdateRespectsOrientationThreshold \
-    DISABLED_UpdateRespectsOrientationThreshold
-#else
-#define MAYBE_UpdateRespectsOrientationThreshold \
-    UpdateRespectsOrientationThreshold
-#endif
-TEST_F(DeviceOrientationEventPumpTest,
-    MAYBE_UpdateRespectsOrientationThreshold) {
+TEST_F(DeviceOrientationEventPumpTest, UpdateRespectsOrientationThreshold) {
   base::MessageLoop loop;
 
   InitBuffer();
-  orientation_pump()->SetListener(listener());
+  orientation_pump()->Start(listener());
   orientation_pump()->OnDidStart(handle());
 
   base::MessageLoop::current()->Run();
@@ -195,6 +178,9 @@ TEST_F(DeviceOrientationEventPumpTest,
       1 + DeviceOrientationEventPump::kOrientationThreshold / 2.0;
   listener()->set_did_change_device_orientation(false);
 
+  // Reset the pump's listener.
+  orientation_pump()->Start(listener());
+
   base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&DeviceOrientationEventPumpForTesting::FireEvent,
                  base::Unretained(orientation_pump())));
@@ -212,6 +198,9 @@ TEST_F(DeviceOrientationEventPumpTest,
   buffer()->data.alpha =
       1 + DeviceOrientationEventPump::kOrientationThreshold;
   listener()->set_did_change_device_orientation(false);
+
+  // Reset the pump's listener.
+  orientation_pump()->Start(listener());
 
   base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&DeviceOrientationEventPumpForTesting::FireEvent,

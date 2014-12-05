@@ -33,7 +33,6 @@
 #include "core/dom/DocumentType.h"
 #include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
-#include "core/frame/FrameDestructionObserver.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLFrameElementBase.h"
@@ -45,68 +44,63 @@
 #include "core/page/EventHandler.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderPart.h"
+#include "platform/graphics/GraphicsLayer.h"
 #include "public/platform/WebLayer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCountedLeakCounter.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, frameCounter, ("Frame"));
 
-Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
-    : m_treeNode(this)
-    , m_host(host)
-    , m_owner(owner)
-    , m_client(client)
-    , m_remotePlatformLayer(0)
-{
-    ASSERT(page());
-
-#ifndef NDEBUG
-    frameCounter.increment();
-#endif
-
-    if (m_owner) {
-        page()->incrementSubframeCount();
-        if (m_owner->isLocal())
-            toHTMLFrameOwnerElement(m_owner)->setContentFrame(*this);
-    } else {
-        page()->setMainFrame(this);
-    }
-}
-
 Frame::~Frame()
 {
-    disconnectOwnerElement();
-    setDOMWindow(nullptr);
-
-    // FIXME: We should not be doing all this work inside the destructor
-
+    ASSERT(!m_owner);
 #ifndef NDEBUG
     frameCounter.decrement();
 #endif
-
-    HashSet<FrameDestructionObserver*>::iterator stop = m_destructionObservers.end();
-    for (HashSet<FrameDestructionObserver*>::iterator it = m_destructionObservers.begin(); it != stop; ++it)
-        (*it)->frameDestroyed();
 }
 
-void Frame::addDestructionObserver(FrameDestructionObserver* observer)
+void Frame::trace(Visitor* visitor)
 {
-    m_destructionObservers.add(observer);
+    visitor->trace(m_treeNode);
+    visitor->trace(m_host);
+    visitor->trace(m_owner);
 }
 
-void Frame::removeDestructionObserver(FrameDestructionObserver* observer)
+void Frame::detach()
 {
-    m_destructionObservers.remove(observer);
+    ASSERT(m_client);
+    disconnectOwnerElement();
+    // After this, we must no longer talk to the client since this clears
+    // its owning reference back to our owning LocalFrame.
+    m_client->detached();
+    m_client = nullptr;
+    m_host = nullptr;
 }
 
-FrameHost* Frame::host() const
+void Frame::detachChildren()
 {
-    return m_host;
+    typedef WillBeHeapVector<RefPtrWillBeMember<Frame> > FrameVector;
+    FrameVector childrenToDetach;
+    childrenToDetach.reserveCapacity(tree().childCount());
+    for (Frame* child = tree().firstChild(); child; child = child->tree().nextSibling())
+        childrenToDetach.append(child);
+    for (const auto& child : childrenToDetach)
+        child->detach();
+}
+
+void Frame::disconnectOwnerElement()
+{
+    if (m_owner) {
+        if (m_owner->isLocal())
+            toHTMLFrameOwnerElement(m_owner)->clearContentFrame();
+    }
+    m_owner = nullptr;
 }
 
 Page* Frame::page() const
@@ -116,18 +110,31 @@ Page* Frame::page() const
     return 0;
 }
 
-Settings* Frame::settings() const
+FrameHost* Frame::host() const
 {
-    if (m_host)
-        return &m_host->settings();
-    return 0;
+    return m_host;
 }
 
-void Frame::setDOMWindow(PassRefPtrWillBeRawPtr<LocalDOMWindow> domWindow)
+bool Frame::isMainFrame() const
 {
-    if (m_domWindow)
-        m_domWindow->reset();
-    m_domWindow = domWindow;
+    Page* page = this->page();
+    return page && this == page->mainFrame();
+}
+
+bool Frame::isLocalRoot() const
+{
+    if (isRemoteFrame())
+        return false;
+
+    if (!tree().parent())
+        return true;
+
+    return tree().parent()->isRemoteFrame();
+}
+
+HTMLFrameOwnerElement* Frame::deprecatedLocalOwner() const
+{
+    return m_owner && m_owner->isLocal() ? toHTMLFrameOwnerElement(m_owner) : 0;
 }
 
 static ChromeClient& emptyChromeClient()
@@ -159,45 +166,46 @@ RenderPart* Frame::ownerRenderer() const
     return toRenderPart(object);
 }
 
-
-void Frame::willDetachFrameHost()
+void Frame::setRemotePlatformLayer(WebLayer* layer)
 {
-    HashSet<FrameDestructionObserver*>::iterator stop = m_destructionObservers.end();
-    for (HashSet<FrameDestructionObserver*>::iterator it = m_destructionObservers.begin(); it != stop; ++it)
-        (*it)->willDetachFrameHost();
+    if (m_remotePlatformLayer)
+        GraphicsLayer::unregisterContentsLayer(m_remotePlatformLayer);
+    m_remotePlatformLayer = layer;
+    if (m_remotePlatformLayer)
+        GraphicsLayer::registerContentsLayer(layer);
 
-    // FIXME: Page should take care of updating focus/scrolling instead of Frame.
-    // FIXME: It's unclear as to why this is called more than once, but it is,
-    // so page() could be null.
-    if (page() && page()->focusController().focusedFrame() == this)
-        page()->focusController().setFocusedFrame(nullptr);
+    ASSERT(owner());
+    toHTMLFrameOwnerElement(owner())->setNeedsCompositingUpdate();
+    if (RenderPart* renderer = ownerRenderer())
+        renderer->layer()->updateSelfPaintingLayer();
 }
 
-void Frame::detachFromFrameHost()
+Settings* Frame::settings() const
 {
-    m_host = 0;
+    if (m_host)
+        return &m_host->settings();
+    return 0;
 }
 
-bool Frame::isMainFrame() const
+Frame::Frame(FrameClient* client, FrameHost* host, FrameOwner* owner)
+    : m_treeNode(this)
+    , m_host(host)
+    , m_owner(owner)
+    , m_client(client)
+    , m_remotePlatformLayer(0)
 {
-    Page* page = this->page();
-    return page && this == page->mainFrame();
-}
+    ASSERT(page());
 
-void Frame::disconnectOwnerElement()
-{
+#ifndef NDEBUG
+    frameCounter.increment();
+#endif
+
     if (m_owner) {
         if (m_owner->isLocal())
-            toHTMLFrameOwnerElement(m_owner)->clearContentFrame();
-        if (page())
-            page()->decrementSubframeCount();
+            toHTMLFrameOwnerElement(m_owner)->setContentFrame(*this);
+    } else {
+        page()->setMainFrame(this);
     }
-    m_owner = 0;
 }
 
-HTMLFrameOwnerElement* Frame::deprecatedLocalOwner() const
-{
-    return m_owner && m_owner->isLocal() ? toHTMLFrameOwnerElement(m_owner) : 0;
-}
-
-} // namespace WebCore
+} // namespace blink

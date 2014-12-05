@@ -33,7 +33,7 @@
 
 #include "core/svg/SVGAnimatedNumber.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGNumberOptionalNumber : public SVGPropertyBase {
 public:
@@ -47,14 +47,14 @@ public:
     }
 
     PassRefPtr<SVGNumberOptionalNumber> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
+    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const override;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedNumberOptionalNumber; }
 
@@ -75,6 +75,6 @@ inline PassRefPtr<SVGNumberOptionalNumber> toSVGNumberOptionalNumber(PassRefPtr<
     return static_pointer_cast<SVGNumberOptionalNumber>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGNumberOptionalNumber_h

@@ -6,14 +6,15 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "content/browser/appcache/appcache_interceptor.h"
 #include "content/browser/appcache/chrome_appcache_service.h"
 #include "content/browser/fileapi/browser_file_system_helper.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
@@ -35,14 +36,13 @@
 #include "crypto/sha2.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job_factory.h"
-#include "webkit/browser/fileapi/file_system_url_request_job_factory.h"
-#include "webkit/common/blob/blob_data.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job_factory.h"
+#include "storage/browser/fileapi/file_system_url_request_job_factory.h"
+#include "storage/common/blob/blob_data.h"
 
-using appcache::AppCacheServiceImpl;
-using fileapi::FileSystemContext;
-using webkit_blob::BlobStorageContext;
+using storage::FileSystemContext;
+using storage::BlobStorageContext;
 
 namespace content {
 
@@ -53,18 +53,16 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  public:
   BlobProtocolHandler(ChromeBlobStorageContext* blob_storage_context,
                       StreamContext* stream_context,
-                      fileapi::FileSystemContext* file_system_context)
+                      storage::FileSystemContext* file_system_context)
       : blob_storage_context_(blob_storage_context),
         stream_context_(stream_context),
-        file_system_context_(file_system_context) {
-  }
+        file_system_context_(file_system_context) {}
 
-  virtual ~BlobProtocolHandler() {
-  }
+  ~BlobProtocolHandler() override {}
 
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     scoped_refptr<Stream> stream =
         stream_context_->registry()->GetStream(request->url());
     if (stream.get())
@@ -74,12 +72,11 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
       // Construction is deferred because 'this' is constructed on
       // the main thread but we want blob_protocol_handler_ constructed
       // on the IO thread.
-      blob_protocol_handler_.reset(
-          new webkit_blob::BlobProtocolHandler(
-              blob_storage_context_->context(),
-              file_system_context_,
-              BrowserThread::GetMessageLoopProxyForThread(
-                  BrowserThread::FILE).get()));
+      blob_protocol_handler_.reset(new storage::BlobProtocolHandler(
+          blob_storage_context_->context(),
+          file_system_context_.get(),
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+              .get()));
     }
     return blob_protocol_handler_->MaybeCreateJob(request, network_delegate);
   }
@@ -87,8 +84,8 @@ class BlobProtocolHandler : public net::URLRequestJobFactory::ProtocolHandler {
  private:
   const scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
   const scoped_refptr<StreamContext> stream_context_;
-  const scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-  mutable scoped_ptr<webkit_blob::BlobProtocolHandler> blob_protocol_handler_;
+  const scoped_refptr<storage::FileSystemContext> file_system_context_;
+  mutable scoped_ptr<storage::BlobProtocolHandler> blob_protocol_handler_;
   DISALLOW_COPY_AND_ASSIGN(BlobProtocolHandler);
 };
 
@@ -438,7 +435,10 @@ StoragePartitionImpl* StoragePartitionImplMap::Get(
 
   URLRequestInterceptorScopedVector request_interceptors;
   request_interceptors.push_back(
-      ServiceWorkerRequestHandler::CreateInterceptor().release());
+      ServiceWorkerRequestHandler::CreateInterceptor(
+          browser_context_->GetResourceContext()).release());
+  request_interceptors.push_back(
+      AppCacheInterceptor::CreateStartInterceptor().release());
 
   // These calls must happen after StoragePartitionImpl::Create().
   if (partition_domain.empty()) {
@@ -495,8 +495,7 @@ void StoragePartitionImplMap::AsyncObliterate(
     if (config.partition_domain == partition_domain) {
       it->second->ClearData(
           // All except shader cache.
-          StoragePartition::REMOVE_DATA_MASK_ALL &
-            (~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE),
+          ~StoragePartition::REMOVE_DATA_MASK_SHADER_CACHE,
           StoragePartition::QUOTA_MANAGED_STORAGE_MASK_ALL,
           GURL(),
           StoragePartition::OriginMatcherFunction(),
@@ -581,6 +580,15 @@ void StoragePartitionImplMap::PostCreateInitialization(
                    make_scoped_refptr(partition->GetURLRequestContext()),
                    make_scoped_refptr(
                        browser_context_->GetSpecialStoragePolicy())));
+
+    BrowserThread::PostTask(
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(&ServiceWorkerContextWrapper::SetBlobParametersForCache,
+                   partition->GetServiceWorkerContext(),
+                   make_scoped_refptr(partition->GetURLRequestContext()),
+                   make_scoped_refptr(
+                       ChromeBlobStorageContext::GetFor(browser_context_))));
 
     // We do not call InitializeURLRequestContext() for media contexts because,
     // other than the HTTP cache, the media contexts share the same backing

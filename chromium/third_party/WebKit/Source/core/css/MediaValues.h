@@ -6,10 +6,11 @@
 #define MediaValues_h
 
 #include "core/css/CSSPrimitiveValue.h"
+#include "core/css/PointerProperties.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class CSSPrimitiveValue;
@@ -21,13 +22,6 @@ public:
     enum MediaValuesMode {
         CachingMode,
         DynamicMode
-    };
-
-    enum PointerDeviceType {
-        TouchPointer,
-        MousePointer,
-        NoPointer,
-        UnknownPointer
     };
 
     virtual ~MediaValues() { }
@@ -43,7 +37,7 @@ public:
         double tempResult;
         if (!computeLengthImpl(value, type, defaultFontSize, viewportWidth, viewportHeight, tempResult))
             return false;
-        result = roundForImpreciseConversion<T>(tempResult);
+        result = clampTo<T>(tempResult);
         return true;
     }
     virtual bool computeLength(double value, CSSPrimitiveValue::UnitType, int& result) const = 0;
@@ -56,11 +50,12 @@ public:
     virtual float devicePixelRatio() const = 0;
     virtual int colorBitsPerComponent() const = 0;
     virtual int monochromeBitsPerComponent() const = 0;
-    virtual PointerDeviceType pointer() const = 0;
+    virtual PointerType primaryPointerType() const = 0;
+    virtual int availablePointerTypes() const = 0;
+    virtual HoverType primaryHoverType() const = 0;
+    virtual int availableHoverTypes() const = 0;
     virtual bool threeDEnabled() const = 0;
-    virtual bool scanMediaType() const = 0;
-    virtual bool screenMediaType() const = 0;
-    virtual bool printMediaType() const = 0;
+    virtual const String mediaType() const = 0;
     virtual bool strictMode() const = 0;
     virtual Document* document() const = 0;
     virtual bool hasValues() const = 0;
@@ -75,11 +70,13 @@ protected:
     int calculateColorBitsPerComponent(LocalFrame*) const;
     int calculateMonochromeBitsPerComponent(LocalFrame*) const;
     int calculateDefaultFontSize(LocalFrame*) const;
-    bool calculateScanMediaType(LocalFrame*) const;
-    bool calculateScreenMediaType(LocalFrame*) const;
-    bool calculatePrintMediaType(LocalFrame*) const;
+    const String calculateMediaType(LocalFrame*) const;
     bool calculateThreeDEnabled(LocalFrame*) const;
-    MediaValues::PointerDeviceType calculateLeastCapablePrimaryPointerDeviceType(LocalFrame*) const;
+    PointerType calculatePrimaryPointerType(LocalFrame*) const;
+    int calculateAvailablePointerTypes(LocalFrame*) const;
+    HoverType calculatePrimaryHoverType(LocalFrame*) const;
+    int calculateAvailableHoverTypes(LocalFrame*) const;
+    static LocalFrame* frameFrom(Document&);
 
 };
 

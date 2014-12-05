@@ -33,7 +33,7 @@
 #include <string>
 #include <vector>
 
-#include "talk/xmpp/xmpptask.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace buzz {
 
@@ -42,7 +42,7 @@ class XmlElement;
 class FakeXmppClient : public XmppTaskParentInterface,
                        public XmppClientInterface {
  public:
-  explicit FakeXmppClient(talk_base::TaskParent* parent)
+  explicit FakeXmppClient(rtc::TaskParent* parent)
       : XmppTaskParentInterface(parent) {
   }
 

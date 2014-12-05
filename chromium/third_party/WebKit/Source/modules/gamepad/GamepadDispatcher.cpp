@@ -9,17 +9,17 @@
 #include "public/platform/Platform.h"
 #include "wtf/TemporaryChange.h"
 
-namespace WebCore {
+namespace blink {
 
 GamepadDispatcher& GamepadDispatcher::instance()
 {
-    DEFINE_STATIC_LOCAL(GamepadDispatcher, gamepadDispatcher, ());
-    return gamepadDispatcher;
+    DEFINE_STATIC_LOCAL(Persistent<GamepadDispatcher>, gamepadDispatcher, (new GamepadDispatcher()));
+    return *gamepadDispatcher;
 }
 
-void GamepadDispatcher::sampleGamepads(blink::WebGamepads& gamepads)
+void GamepadDispatcher::sampleGamepads(WebGamepads& gamepads)
 {
-    blink::Platform::current()->sampleGamepads(gamepads);
+    Platform::current()->sampleGamepads(gamepads);
 }
 
 GamepadDispatcher::GamepadDispatcher()
@@ -30,19 +30,24 @@ GamepadDispatcher::~GamepadDispatcher()
 {
 }
 
-void GamepadDispatcher::didConnectGamepad(unsigned index, const blink::WebGamepad& gamepad)
+void GamepadDispatcher::trace(Visitor* visitor)
+{
+    PlatformEventDispatcher::trace(visitor);
+}
+
+void GamepadDispatcher::didConnectGamepad(unsigned index, const WebGamepad& gamepad)
 {
     dispatchDidConnectOrDisconnectGamepad(index, gamepad, true);
 }
 
-void GamepadDispatcher::didDisconnectGamepad(unsigned index, const blink::WebGamepad& gamepad)
+void GamepadDispatcher::didDisconnectGamepad(unsigned index, const WebGamepad& gamepad)
 {
     dispatchDidConnectOrDisconnectGamepad(index, gamepad, false);
 }
 
-void GamepadDispatcher::dispatchDidConnectOrDisconnectGamepad(unsigned index, const blink::WebGamepad& gamepad, bool connected)
+void GamepadDispatcher::dispatchDidConnectOrDisconnectGamepad(unsigned index, const WebGamepad& gamepad, bool connected)
 {
-    ASSERT(index < blink::WebGamepads::itemsLengthCap);
+    ASSERT(index < WebGamepads::itemsLengthCap);
     ASSERT(connected == gamepad.connected);
 
     m_latestChange.pad = gamepad;
@@ -52,12 +57,12 @@ void GamepadDispatcher::dispatchDidConnectOrDisconnectGamepad(unsigned index, co
 
 void GamepadDispatcher::startListening()
 {
-    blink::Platform::current()->setGamepadListener(this);
+    Platform::current()->startListening(WebPlatformEventGamepad, this);
 }
 
 void GamepadDispatcher::stopListening()
 {
-    blink::Platform::current()->setGamepadListener(0);
+    Platform::current()->stopListening(WebPlatformEventGamepad);
 }
 
-} // namespace WebCore
+} // namespace blink

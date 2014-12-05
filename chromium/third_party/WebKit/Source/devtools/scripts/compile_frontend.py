@@ -27,314 +27,385 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from modular_build import read_file, write_file
 import os
 import os.path as path
+import generate_injected_script_externs
 import generate_protocol_externs
+import modular_build
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 try:
-    import json
-except ImportError:
     import simplejson as json
+except ImportError:
+    import json
+
+is_cygwin = sys.platform == 'cygwin'
+
+
+def run_in_shell(command_line):
+    return subprocess.Popen(command_line, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+
+
+def to_platform_path(filepath):
+    if not is_cygwin:
+        return filepath
+    return re.sub(r'^/cygdrive/(\w)', '\\1:', filepath)
+
+
+def to_platform_path_exact(filepath):
+    if not is_cygwin:
+        return filepath
+    output, _ = run_in_shell('cygpath -w %s' % filepath).communicate()
+    # pylint: disable=E1103
+    return output.strip().replace('\\', '\\\\')
 
 scripts_path = path.dirname(path.abspath(__file__))
 devtools_path = path.dirname(scripts_path)
-inspector_path = path.join(path.dirname(devtools_path), "core", "inspector")
-devtools_frontend_path = path.join(devtools_path, "front_end")
-global_externs_file = path.join(devtools_frontend_path, "externs.js")
-protocol_externs_file = path.join(devtools_frontend_path, "protocol_externs.js")
-webgl_rendering_context_idl_path = path.join(path.dirname(devtools_path), "core", "html", "canvas", "WebGLRenderingContextBase.idl")
-injected_script_source_name = path.join(inspector_path, "InjectedScriptSource.js")
-canvas_injected_script_source_name = path.join(inspector_path, "InjectedScriptCanvasModuleSource.js")
-closure_compiler_jar = path.join(scripts_path, "closure", "compiler.jar")
-closure_runner_jar = path.join(scripts_path, "compiler-runner", "closure-runner.jar")
-jsdoc_validator_jar = path.join(scripts_path, "jsdoc-validator", "jsdoc-validator.jar")
-java_exec = "java -Xms1024m -server -XX:+TieredCompilation"
-
-generate_protocol_externs.generate_protocol_externs(protocol_externs_file, path.join(devtools_path, "protocol.json"))
-
-jsmodule_name_prefix = "jsmodule_"
-js_modules_name = "frontend_modules.json"
-
-try:
-    with open(path.join(scripts_path, js_modules_name), "rt") as js_modules_file:
-        modules = json.loads(js_modules_file.read())
-except:
-    print "ERROR: Failed to read %s" % js_modules_name
-    raise
-
-# `importScript` function must not be used in any files
-# except module headers. Refer to devtools.gyp file for
-# the module header list.
-allowed_import_statements_files = [
-    "search/AdvancedSearchView.js",
-    "console/ConsolePanel.js",
-    "elements/ElementsPanel.js",
-    "resources/ResourcesPanel.js",
-    "network/NetworkPanel.js",
-    "settings/SettingsScreen.js",
-    "sources/SourcesPanel.js",
-    "timeline/TimelinePanel.js",
-    "profiler/ProfilesPanel.js",
-    "audits/AuditsPanel.js",
-    "layers/LayersPanel.js",
-    "extensions/ExtensionServer.js",
-    "source_frame/SourceFrame.js",
+inspector_path = path.join(path.dirname(devtools_path), 'core', 'inspector')
+devtools_frontend_path = path.join(devtools_path, 'front_end')
+global_externs_file = to_platform_path(path.join(devtools_frontend_path, 'externs.js'))
+protocol_externs_file = path.join(devtools_frontend_path, 'protocol_externs.js')
+webgl_rendering_context_idl_path = path.join(path.dirname(devtools_path), 'core', 'html', 'canvas', 'WebGLRenderingContextBase.idl')
+injected_script_source_name = path.join(inspector_path, 'InjectedScriptSource.js')
+canvas_injected_script_source_name = path.join(inspector_path, 'InjectedScriptCanvasModuleSource.js')
+injected_script_externs_idl_names = [
+    path.join(inspector_path, 'InjectedScriptHost.idl'),
+    path.join(inspector_path, 'JavaScriptCallFrame.idl'),
 ]
 
-type_checked_jsdoc_tags_list = ["param", "return", "type", "enum"]
+jsmodule_name_prefix = 'jsmodule_'
+runtime_module_name = '_runtime'
 
-type_checked_jsdoc_tags_or = "|".join(type_checked_jsdoc_tags_list)
+type_checked_jsdoc_tags_list = ['param', 'return', 'type', 'enum']
+type_checked_jsdoc_tags_or = '|'.join(type_checked_jsdoc_tags_list)
 
 # Basic regex for invalid JsDoc types: an object type name ([A-Z][A-Za-z0-9.]+[A-Za-z0-9]) not preceded by '!', '?', ':' (this, new), or '.' (object property).
-invalid_type_regex = re.compile(r"@(?:" + type_checked_jsdoc_tags_or + r")\s*\{.*(?<![!?:.A-Za-z0-9])([A-Z][A-Za-z0-9.]+[A-Za-z0-9])[^/]*\}")
+invalid_type_regex = re.compile(r'@(?:' + type_checked_jsdoc_tags_or + r')\s*\{.*(?<![!?:.A-Za-z0-9])([A-Z][A-Za-z0-9.]+[A-Za-z0-9])[^/]*\}')
+invalid_type_designator_regex = re.compile(r'@(?:' + type_checked_jsdoc_tags_or + r')\s*.*(?<![{: ])([?!])=?\}')
+error_warning_regex = re.compile(r'WARNING|ERROR')
+loaded_css_regex = re.compile(r'(?:registerRequiredCSS|WebInspector\.View\.createStyleElement)\s*\(\s*"(.+)"\s*\)')
 
-invalid_type_designator_regex = re.compile(r"@(?:" + type_checked_jsdoc_tags_or + r")\s*.*(?<![{: ])([?!])=?\}")
-
-importscript_regex = re.compile(r"importScript\(\s*[\"']")
-error_warning_regex = re.compile(r"(?:WARNING|ERROR)")
-
+java_build_regex = re.compile(r'(Runtime Environment)?.+build\s+(\d+).(\d+).(\d+)')
 errors_found = False
+
+generate_protocol_externs.generate_protocol_externs(protocol_externs_file, path.join(devtools_path, 'protocol.json'))
+
+
+# Based on http://stackoverflow.com/questions/377017/test-if-executable-exists-in-python.
+def which(program):
+    def is_exe(fpath):
+        return path.isfile(fpath) and os.access(fpath, os.X_OK)
+
+    fpath, fname = path.split(program)
+    if fpath:
+        if is_exe(program):
+            return program
+    else:
+        for part in os.environ["PATH"].split(os.pathsep):
+            part = part.strip('"')
+            exe_file = path.join(part, program)
+            if is_exe(exe_file):
+                return exe_file
+
+    return None
+
+
+def log_error(message):
+    print 'ERROR: ' + message
+
+def error_excepthook(exctype, value, traceback):
+    print 'ERROR:'
+    sys.__excepthook__(exctype, value, traceback)
+sys.excepthook = error_excepthook
+
+application_descriptors = ['devtools.json', 'toolbox.json']
+loader = modular_build.DescriptorLoader(devtools_frontend_path)
+descriptors = loader.load_applications(application_descriptors)
+modules_by_name = descriptors.modules
 
 
 def hasErrors(output):
     return re.search(error_warning_regex, output) != None
 
 
-def verify_importScript_usage():
+def verify_jsdoc_extra(additional_files):
+    files = [to_platform_path(file) for file in descriptors.all_compiled_files() + additional_files]
+    file_list = tempfile.NamedTemporaryFile(mode='wt', delete=False)
+    try:
+        file_list.write('\n'.join(files))
+    finally:
+        file_list.close()
+    return run_in_shell('%s -jar %s --files-list-name %s' % (java_exec, jsdoc_validator_jar, to_platform_path_exact(file_list.name))), file_list
+
+
+def verify_jsdoc(additional_files):
+    def file_list():
+        return descriptors.all_compiled_files() + additional_files
+
     errors_found = False
-    for module in modules:
-        for file_name in module['sources']:
-            if file_name in allowed_import_statements_files:
-                continue
-            try:
-                with open(path.join(devtools_frontend_path, file_name), "r") as sourceFile:
-                    source = sourceFile.read()
-                    if re.search(importscript_regex, source):
-                        print "ERROR: importScript function call is allowed in module header files only (found in %s)" % file_name
-                        errors_found = True
-            except:
-                print "ERROR: Failed to access %s" % file_name
-                raise
-    return errors_found
-
-
-def dump_all_checked_files():
-    files = {}
-    for module in modules:
-        for source in module["sources"]:
-            files[path.join(devtools_frontend_path, source)] = True
-    return " ".join(files.keys())
-
-
-def verify_jsdoc_extra():
-    return subprocess.Popen("%s -jar %s %s" % (java_exec, jsdoc_validator_jar, dump_all_checked_files()), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
-
-
-def verify_jsdoc():
-    errors_found = False
-    for module in modules:
-        for file_name in module["sources"]:
-            lineIndex = 0
-            full_file_name = path.join(devtools_frontend_path, file_name)
-            with open(full_file_name, "r") as sourceFile:
-                for line in sourceFile:
-                    line = line.rstrip()
-                    lineIndex += 1
-                    if not line:
-                        continue
-                    if verify_jsdoc_line(full_file_name, lineIndex, line):
-                        errors_found = True
+    for full_file_name in file_list():
+        lineIndex = 0
+        with open(full_file_name, 'r') as sourceFile:
+            for line in sourceFile:
+                line = line.rstrip()
+                lineIndex += 1
+                if not line:
+                    continue
+                if verify_jsdoc_line(full_file_name, lineIndex, line):
+                    errors_found = True
     return errors_found
 
 
 def verify_jsdoc_line(fileName, lineIndex, line):
     def print_error(message, errorPosition):
-        print "%s:%s: ERROR - %s\n%s\n%s\n" % (fileName, lineIndex, message, line, " " * errorPosition + "^")
+        print '%s:%s: ERROR - %s%s%s%s%s%s' % (fileName, lineIndex, message, os.linesep, line, os.linesep, ' ' * errorPosition + '^', os.linesep)
 
+    known_css = {}
     errors_found = False
     match = re.search(invalid_type_regex, line)
     if match:
-        print_error("Type '%s' nullability not marked explicitly with '?' (nullable) or '!' (non-nullable)" % match.group(1), match.start(1))
+        print_error('Type "%s" nullability not marked explicitly with "?" (nullable) or "!" (non-nullable)' % match.group(1), match.start(1))
         errors_found = True
 
     match = re.search(invalid_type_designator_regex, line)
-    if (match):
-        print_error("Type nullability indicator misplaced, should precede type", match.start(1))
+    if match:
+        print_error('Type nullability indicator misplaced, should precede type', match.start(1))
         errors_found = True
+
+    match = re.search(loaded_css_regex, line)
+    if match:
+        file = path.join(devtools_frontend_path, match.group(1))
+        exists = known_css.get(file)
+        if exists is None:
+            exists = path.isfile(file)
+            known_css[file] = exists
+        if not exists:
+            print_error('Dynamically loaded CSS stylesheet is missing in the source tree', match.start(1))
+            errors_found = True
     return errors_found
 
 
-def check_java_path():
-    proc = subprocess.Popen("which java", stdout=subprocess.PIPE, shell=True)
-    (javaPath, _) = proc.communicate()
+def find_java():
+    required_major = 1
+    required_minor = 7
+    exec_command = None
+    has_server_jvm = True
+    java_path = which('java')
+    if not java_path:
+        java_path = which('java.exe')
 
-    if proc.returncode != 0:
-        print "Cannot find java ('which java' return code = %d, should be 0)" % proc.returncode
+    if not java_path:
+        print 'NOTE: No Java executable found in $PATH.'
         sys.exit(1)
-    print "Java executable: " + re.sub(r"\n$", "", javaPath)
 
-check_java_path()
+    is_ok = False
+    java_version_out, _ = run_in_shell('%s -version' % java_path).communicate()
+    # pylint: disable=E1103
+    for line in java_version_out.splitlines():
+        match = re.search(java_build_regex, line)
+        if match:
+            major = int(match.group(2))
+            minor = int(match.group(3))
+            is_ok = major >= required_major and minor >= required_minor
+            if match.group(1):
+                break
+    if is_ok:
+        exec_command = '%s -Xms1024m -server -XX:+TieredCompilation' % java_path
+        check_server_proc = run_in_shell('%s -version' % exec_command)
+        check_server_proc.communicate()
+        if check_server_proc.returncode != 0:
+            # Not all Java installs have server JVMs.
+            exec_command = exec_command.replace('-server ', '')
+            has_server_jvm = False
 
-print "Verifying 'importScript' function usage..."
-errors_found |= verify_importScript_usage()
+    if not is_ok:
+        print 'NOTE: Java executable version %d.%d or above not found in $PATH.' % (required_major, required_minor)
+        sys.exit(1)
+    print 'Java executable: %s%s' % (java_path, '' if has_server_jvm else ' (no server JVM)')
+    return exec_command
 
-print "Verifying JSDoc comments..."
-errors_found |= verify_jsdoc()
-jsdocValidatorProc = verify_jsdoc_extra()
+java_exec = find_java()
+
+closure_compiler_jar = to_platform_path(path.join(scripts_path, 'closure', 'compiler.jar'))
+closure_runner_jar = to_platform_path(path.join(scripts_path, 'compiler-runner', 'closure-runner.jar'))
+jsdoc_validator_jar = to_platform_path(path.join(scripts_path, 'jsdoc-validator', 'jsdoc-validator.jar'))
 
 modules_dir = tempfile.mkdtemp()
-common_closure_args = " --summary_detail_level 3 --compilation_level SIMPLE_OPTIMIZATIONS --warning_level VERBOSE --language_in ECMASCRIPT5 --accept_const_keyword --module_output_path_prefix %s/" % modules_dir
+common_closure_args = ' --summary_detail_level 3 --jscomp_error visibility --compilation_level SIMPLE_OPTIMIZATIONS --warning_level VERBOSE --language_in=ES6_STRICT --language_out=ES5_STRICT --accept_const_keyword --module_output_path_prefix %s' % to_platform_path_exact(modules_dir + path.sep)
 
-spawned_compiler_command = "%s -jar %s %s \\\n" % (java_exec, closure_compiler_jar, common_closure_args)
-
-modules_by_name = {}
-standalone_modules_by_name = {}
+worker_modules_by_name = {}
 dependents_by_module_name = {}
 
-for module in modules:
-    name = module["name"]
-    modules_by_name[name] = module
-    if "standalone" in module:
-        standalone_modules_by_name[name] = module
-    for dep in module["dependencies"]:
+for module_name in descriptors.application:
+    module = descriptors.modules[module_name]
+    if descriptors.application[module_name].get('type', None) == 'worker':
+        worker_modules_by_name[module_name] = module
+    for dep in module.get('dependencies', []):
         list = dependents_by_module_name.get(dep)
         if not list:
             list = []
             dependents_by_module_name[dep] = list
-        list.append(name)
+        list.append(module_name)
 
 
-def verify_standalone_modules():
-    for module in modules:
-        for dependency in module["dependencies"]:
-            if dependency in standalone_modules_by_name:
-                print "ERROR: Standalone module %s may not be present among the dependencies of %s" % (dependency, module["name"])
+def verify_worker_modules():
+    for name in modules_by_name:
+        for dependency in modules_by_name[name].get('dependencies', []):
+            if dependency in worker_modules_by_name:
+                log_error('Module "%s" may not depend on the worker module "%s"' % (name, dependency))
                 errors_found = True
 
-verify_standalone_modules()
+verify_worker_modules()
 
 
 def check_duplicate_files():
 
     def check_module(module, seen_files, seen_modules):
-        name = module["name"]
+        name = module['name']
         seen_modules[name] = True
-        for dep_name in module["dependencies"]:
+        for dep_name in module.get('dependencies', []):
             if not dep_name in seen_modules:
                 check_module(modules_by_name[dep_name], seen_files, seen_modules)
-        for source in module["sources"]:
+        for source in module.get('scripts', []):
             referencing_module = seen_files.get(source)
             if referencing_module:
-                print "ERROR: Duplicate use of %s in '%s' (previously seen in '%s')" % (source, name, referencing_module)
+                log_error('Duplicate use of %s in "%s" (previously seen in "%s")' % (source, name, referencing_module))
             seen_files[source] = name
 
-    for module_name in standalone_modules_by_name:
-        check_module(standalone_modules_by_name[module_name], {}, {})
+    for module_name in worker_modules_by_name:
+        check_module(worker_modules_by_name[module_name], {}, {})
 
-print "Checking duplicate files across modules..."
+print 'Checking duplicate files across modules...'
 check_duplicate_files()
+
+
+def module_arg(module_name):
+    return ' --module ' + jsmodule_name_prefix + module_name
 
 
 def dump_module(name, recursively, processed_modules):
     if name in processed_modules:
-        return ""
+        return ''
     processed_modules[name] = True
     module = modules_by_name[name]
-    command = ""
+    skipped_scripts = set(module.get('skip_compilation', []))
+
+    command = ''
+    dependencies = module.get('dependencies', [])
     if recursively:
-        for dependency in module["dependencies"]:
+        for dependency in dependencies:
             command += dump_module(dependency, recursively, processed_modules)
-    command += " --module " + jsmodule_name_prefix + module["name"] + ":"
-    command += str(len(module["sources"]))
+    command += module_arg(name) + ':'
+    filtered_scripts = descriptors.module_compiled_files(name)
+    command += str(len(filtered_scripts))
     firstDependency = True
-    for dependency in module["dependencies"]:
+    for dependency in dependencies + [runtime_module_name]:
         if firstDependency:
-            command += ":"
+            command += ':'
         else:
-            command += ","
+            command += ','
         firstDependency = False
         command += jsmodule_name_prefix + dependency
-    for script in module["sources"]:
-        command += " --js " + path.join(devtools_frontend_path, script)
+    for script in filtered_scripts:
+        command += ' --js ' + to_platform_path(path.join(devtools_frontend_path, name, script))
     return command
 
-print "Compiling frontend..."
+print 'Compiling frontend...'
 
 compiler_args_file = tempfile.NamedTemporaryFile(mode='wt', delete=False)
-closure_runner_command = "%s -jar %s --compiler-args-file %s" % (java_exec, closure_runner_jar, compiler_args_file.name)
+try:
+    platform_protocol_externs_file = to_platform_path(protocol_externs_file)
+    runtime_js_path = to_platform_path(path.join(devtools_frontend_path, 'Runtime.js'))
+    for name in descriptors.sorted_modules():
+        closure_args = common_closure_args
+        closure_args += ' --externs ' + to_platform_path(global_externs_file)
+        closure_args += ' --externs ' + platform_protocol_externs_file
+        runtime_module = module_arg(runtime_module_name) + ':1 --js ' + runtime_js_path
+        closure_args += runtime_module + dump_module(name, True, {})
+        compiler_args_file.write('%s %s%s' % (name, closure_args, os.linesep))
+finally:
+    compiler_args_file.close()
 
-for module in modules:
-    closure_args = common_closure_args
-    closure_args += " --externs " + global_externs_file
-    closure_args += " --externs " + protocol_externs_file
-    closure_args += dump_module(module["name"], True, {})
-    compiler_args_file.write("%s %s\n" % (module["name"], closure_args))
-
-compiler_args_file.close()
-modular_compiler_proc = subprocess.Popen(closure_runner_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+closure_runner_command = '%s -jar %s --compiler-args-file %s' % (java_exec, closure_runner_jar, to_platform_path_exact(compiler_args_file.name))
+modular_compiler_proc = run_in_shell(closure_runner_command)
 
 
 def unclosure_injected_script(sourceFileName, outFileName):
-    with open(sourceFileName, "r") as sourceFile:
-        source = sourceFile.read()
+
+    source = read_file(sourceFileName)
 
     def replace_function(matchobj):
-        return re.sub(r"@param", "param", matchobj.group(1) or "") + "\n//" + matchobj.group(2)
+        return re.sub(r'@param', 'param', matchobj.group(1) or '') + '\n//' + matchobj.group(2)
 
     # Comment out the closure function and its jsdocs
-    source = re.sub(r"(/\*\*(?:[\s\n]*\*\s*@param[^\n]+\n)+\s*\*/\s*)?\n(\(function)", replace_function, source, count=1)
+    source = re.sub(r'(/\*\*(?:[\s\n]*\*\s*@param[^\n]+\n)+\s*\*/\s*)?\n(\(function)', replace_function, source, count=1)
 
     # Comment out its return statement
-    source = re.sub(r"\n(\s*return\s+[^;]+;\s*\n\}\)\s*)$", "\n/*\\1*/", source)
+    source = re.sub(r'\n(\s*return\s+[^;]+;\s*\n\}\)\s*)$', '\n/*\\1*/', source)
 
     # Replace the "var Object" override with a "self.Object" one
-    source = re.sub(r"\nvar Object =", "\nself.Object =", source, count=1)
+    source = re.sub(r'\nvar Object =', '\nself.Object =', source, count=1)
 
-    with open(outFileName, "w") as outFileName:
-        outFileName.write(source)
+    write_file(outFileName, source)
 
-injectedScriptSourceTmpFile = path.join(inspector_path, "InjectedScriptSourceTmp.js")
-injectedScriptCanvasModuleSourceTmpFile = path.join(inspector_path, "InjectedScriptCanvasModuleSourceTmp.js")
+injectedScriptSourceTmpFile = to_platform_path(path.join(inspector_path, 'InjectedScriptSourceTmp.js'))
+injectedScriptCanvasModuleSourceTmpFile = path.join(inspector_path, 'InjectedScriptCanvasModuleSourceTmp.js')
 
 unclosure_injected_script(injected_script_source_name, injectedScriptSourceTmpFile)
 unclosure_injected_script(canvas_injected_script_source_name, injectedScriptCanvasModuleSourceTmpFile)
 
-print "Compiling InjectedScriptSource.js and InjectedScriptCanvasModuleSource.js..."
+print 'Compiling InjectedScriptSource.js and InjectedScriptCanvasModuleSource.js...'
+injected_script_externs_file = tempfile.NamedTemporaryFile(mode='wt', delete=False)
+try:
+    generate_injected_script_externs.generate_injected_script_externs(injected_script_externs_idl_names, injected_script_externs_file)
+finally:
+    injected_script_externs_file.close()
+
+spawned_compiler_command = '%s -jar %s %s' % (java_exec, closure_compiler_jar, common_closure_args)
+
 command = spawned_compiler_command
-command += "    --externs " + path.join(inspector_path, "InjectedScriptExterns.js") + " \\\n"
-command += "    --externs " + protocol_externs_file + " \\\n"
-command += "    --module " + jsmodule_name_prefix + "injected_script" + ":1" + " \\\n"
-command += "        --js " + injectedScriptSourceTmpFile + " \\\n"
-command += "    --module " + jsmodule_name_prefix + "injected_canvas_script" + ":1:" + jsmodule_name_prefix + "injected_script" + " \\\n"
-command += "        --js " + injectedScriptCanvasModuleSourceTmpFile + " \\\n"
-command += "\n"
+command += '    --externs ' + to_platform_path_exact(injected_script_externs_file.name)
+command += '    --externs ' + to_platform_path(protocol_externs_file)
+command += '    --module ' + jsmodule_name_prefix + 'injected_script' + ':1'
+command += '        --js ' + to_platform_path(injectedScriptSourceTmpFile)
+command += '    --module ' + jsmodule_name_prefix + 'injected_canvas_script' + ':1:' + jsmodule_name_prefix + 'injected_script'
+command += '        --js ' + to_platform_path(injectedScriptCanvasModuleSourceTmpFile)
 
-injectedScriptCompileProc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+injectedScriptCompileProc = run_in_shell(command)
 
-print "Checking generated code in InjectedScriptCanvasModuleSource.js..."
-check_injected_webgl_calls_command = "%s/check_injected_webgl_calls_info.py %s %s" % (scripts_path, webgl_rendering_context_idl_path, canvas_injected_script_source_name)
-canvasModuleCompileProc = subprocess.Popen(check_injected_webgl_calls_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+print 'Verifying JSDoc comments...'
+additional_jsdoc_check_files = [injectedScriptSourceTmpFile, injectedScriptCanvasModuleSourceTmpFile]
+errors_found |= verify_jsdoc(additional_jsdoc_check_files)
+jsdocValidatorProc, jsdocValidatorFileList = verify_jsdoc_extra(additional_jsdoc_check_files)
 
-print "Validating InjectedScriptSource.js..."
-check_injected_script_command = "%s/check_injected_script_source.py %s" % (scripts_path, injected_script_source_name)
-validateInjectedScriptProc = subprocess.Popen(check_injected_script_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+print 'Checking generated code in InjectedScriptCanvasModuleSource.js...'
+webgl_check_script_path = path.join(scripts_path, "check_injected_webgl_calls_info.py")
+check_injected_webgl_calls_command = '%s %s %s' % (webgl_check_script_path, webgl_rendering_context_idl_path, canvas_injected_script_source_name)
+canvasModuleCompileProc = run_in_shell(check_injected_webgl_calls_command)
+
+print 'Validating InjectedScriptSource.js...'
+injectedscript_check_script_path = path.join(scripts_path, "check_injected_script_source.py")
+check_injected_script_command = '%s %s' % (injectedscript_check_script_path, injected_script_source_name)
+validateInjectedScriptProc = run_in_shell(check_injected_script_command)
 
 print
 
 (jsdocValidatorOut, _) = jsdocValidatorProc.communicate()
 if jsdocValidatorOut:
-    print ("JSDoc validator output:\n%s" % jsdocValidatorOut)
+    print ('JSDoc validator output:%s%s' % (os.linesep, jsdocValidatorOut))
     errors_found = True
 
-(moduleCompileOut, _) = modular_compiler_proc.communicate()
-print "Modular compilation output:"
+os.remove(jsdocValidatorFileList.name)
 
-start_module_regex = re.compile(r"^@@ START_MODULE:(.+) @@$")
-end_module_regex = re.compile(r"^@@ END_MODULE @@$")
+(moduleCompileOut, _) = modular_compiler_proc.communicate()
+print 'Modular compilation output:'
+
+start_module_regex = re.compile(r'^@@ START_MODULE:(.+) @@$')
+end_module_regex = re.compile(r'^@@ END_MODULE @@$')
 
 in_module = False
 skipped_modules = {}
@@ -370,34 +441,35 @@ for line in moduleCompileOut.splitlines():
 
         in_module = False
         if skip_module:
-            print "Skipping module %s..." % module_name
+            print 'Skipping module %s...' % module_name
         elif not module_error_count:
-            print "Module %s compiled successfully: %s" % (module_name, module_output[0])
+            print 'Module %s compiled successfully: %s' % (module_name, module_output[0])
         else:
-            print "Module %s compile failed: %s errors\n" % (module_name, module_error_count)
+            print 'Module %s compile failed: %s errors%s' % (module_name, module_error_count, os.linesep)
             print os.linesep.join(module_output)
 
 if error_count:
-    print "Total Closure errors: %d\n" % error_count
+    print 'Total Closure errors: %d%s' % (error_count, os.linesep)
     errors_found = True
 
 (injectedScriptCompileOut, _) = injectedScriptCompileProc.communicate()
-print "InjectedScriptSource.js and InjectedScriptCanvasModuleSource.js compilation output:\n", injectedScriptCompileOut
+print 'InjectedScriptSource.js and InjectedScriptCanvasModuleSource.js compilation output:%s' % os.linesep, injectedScriptCompileOut
 errors_found |= hasErrors(injectedScriptCompileOut)
 
 (canvasModuleCompileOut, _) = canvasModuleCompileProc.communicate()
-print "InjectedScriptCanvasModuleSource.js generated code check output:\n", canvasModuleCompileOut
+print 'InjectedScriptCanvasModuleSource.js generated code check output:%s' % os.linesep, canvasModuleCompileOut
 errors_found |= hasErrors(canvasModuleCompileOut)
 
 (validateInjectedScriptOut, _) = validateInjectedScriptProc.communicate()
-print "Validate InjectedScriptSource.js output:\n", (validateInjectedScriptOut if validateInjectedScriptOut else "<empty>")
+print 'Validate InjectedScriptSource.js output:%s' % os.linesep, (validateInjectedScriptOut if validateInjectedScriptOut else '<empty>')
 errors_found |= hasErrors(validateInjectedScriptOut)
 
 if errors_found:
-    print "ERRORS DETECTED"
+    print 'ERRORS DETECTED'
 
 os.remove(injectedScriptSourceTmpFile)
 os.remove(injectedScriptCanvasModuleSourceTmpFile)
 os.remove(compiler_args_file.name)
+os.remove(injected_script_externs_file.name)
 os.remove(protocol_externs_file)
 shutil.rmtree(modules_dir, True)

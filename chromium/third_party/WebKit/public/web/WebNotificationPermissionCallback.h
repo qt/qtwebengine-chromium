@@ -31,19 +31,18 @@
 #ifndef WebNotificationPermissionCallback_h
 #define WebNotificationPermissionCallback_h
 
+#include "../platform/WebNotificationPermission.h"
+
 namespace blink {
 
-// Callback object used with WebNotificationPresenter.
+// Callback object used for Web Notification permission requests.
 class WebNotificationPermissionCallback {
 public:
-    // Method to be invoked when the async permission request involving
-    // this object has been completed.
-    virtual void permissionRequestComplete() = 0;
+    virtual ~WebNotificationPermissionCallback() { }
 
-protected:
-    // This object is to be destroyed after the callback is invoked;
-    // it should not be directly destroyed.
-    ~WebNotificationPermissionCallback() {}
+    // Method to be invoked when the asynchronous permission request for the
+    // ability to display Web Notifications has been completed.
+    virtual void permissionRequestComplete(WebNotificationPermission) = 0;
 };
 
 } // namespace blink

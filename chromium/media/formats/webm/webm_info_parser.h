@@ -16,7 +16,7 @@ namespace media {
 class MEDIA_EXPORT WebMInfoParser : public WebMParserClient {
  public:
   WebMInfoParser();
-  virtual ~WebMInfoParser();
+  ~WebMInfoParser() override;
 
   // Parses a WebM Info element in |buf|.
   //
@@ -31,12 +31,12 @@ class MEDIA_EXPORT WebMInfoParser : public WebMParserClient {
 
  private:
   // WebMParserClient methods
-  virtual WebMParserClient* OnListStart(int id) OVERRIDE;
-  virtual bool OnListEnd(int id) OVERRIDE;
-  virtual bool OnUInt(int id, int64 val) OVERRIDE;
-  virtual bool OnFloat(int id, double val) OVERRIDE;
-  virtual bool OnBinary(int id, const uint8* data, int size) OVERRIDE;
-  virtual bool OnString(int id, const std::string& str) OVERRIDE;
+  WebMParserClient* OnListStart(int id) override;
+  bool OnListEnd(int id) override;
+  bool OnUInt(int id, int64 val) override;
+  bool OnFloat(int id, double val) override;
+  bool OnBinary(int id, const uint8* data, int size) override;
+  bool OnString(int id, const std::string& str) override;
 
   int64 timecode_scale_;
   double duration_;

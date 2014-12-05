@@ -441,10 +441,11 @@
       root->num_fixed_sizes = 0;
       root->available_sizes = 0;
 
-      root->bbox.xMin =   type1->font_bbox.xMin             >> 16;
-      root->bbox.yMin =   type1->font_bbox.yMin             >> 16;
-      root->bbox.xMax = ( type1->font_bbox.xMax + 0xFFFFU ) >> 16;
-      root->bbox.yMax = ( type1->font_bbox.yMax + 0xFFFFU ) >> 16;
+      root->bbox.xMin =   type1->font_bbox.xMin            >> 16;
+      root->bbox.yMin =   type1->font_bbox.yMin            >> 16;
+      /* no `U' suffix here to 0xFFFF! */
+      root->bbox.xMax = ( type1->font_bbox.xMax + 0xFFFF ) >> 16;
+      root->bbox.yMax = ( type1->font_bbox.yMax + 0xFFFF ) >> 16;
 
       /* Set units_per_EM if we didn't set it in parse_font_matrix. */
       if ( !root->units_per_EM )
@@ -493,14 +494,17 @@
         charmap.face = root;
 
         /* first of all, try to synthesize a Unicode charmap */
-        charmap.platform_id = 3;
-        charmap.encoding_id = 1;
+        charmap.platform_id = TT_PLATFORM_MICROSOFT;
+        charmap.encoding_id = TT_MS_ID_UNICODE_CS;
         charmap.encoding    = FT_ENCODING_UNICODE;
 
-        FT_CMap_New( cmap_classes->unicode, NULL, &charmap, NULL );
+        error = FT_CMap_New( cmap_classes->unicode, NULL, &charmap, NULL );
+        if ( error && FT_Err_No_Unicode_Glyph_Name != error )
+          goto Exit;
+        error = FT_Err_Ok;
 
         /* now, generate an Adobe Standard encoding when appropriate */
-        charmap.platform_id = 7;
+        charmap.platform_id = TT_PLATFORM_ADOBE;
         clazz               = NULL;
 
         switch ( type1->encoding_type )
@@ -534,7 +538,7 @@
         }
 
         if ( clazz )
-          FT_CMap_New( clazz, NULL, &charmap, NULL );
+          error = FT_CMap_New( clazz, NULL, &charmap, NULL );
 
 #if 0
         /* Select default charmap */

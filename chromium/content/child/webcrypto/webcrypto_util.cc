@@ -4,7 +4,8 @@
 
 #include "content/child/webcrypto/webcrypto_util.h"
 
-#include "base/base64.h"
+#include <set>
+
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "content/child/webcrypto/status.h"
@@ -16,47 +17,29 @@ namespace content {
 
 namespace webcrypto {
 
-const uint8* Uint8VectorStart(const std::vector<uint8>& data) {
-  if (data.empty())
-    return NULL;
-  return &data[0];
+namespace {
+
+// Converts a (big-endian) WebCrypto BigInteger, with or without leading zeros,
+// to unsigned int.
+bool BigIntegerToUint(const uint8_t* data,
+                      unsigned int data_size,
+                      unsigned int* result) {
+  if (data_size == 0)
+    return false;
+
+  *result = 0;
+  for (size_t i = 0; i < data_size; ++i) {
+    size_t reverse_i = data_size - i - 1;
+
+    if (reverse_i >= sizeof(*result) && data[i])
+      return false;  // Too large for a uint.
+
+    *result |= data[i] << 8 * reverse_i;
+  }
+  return true;
 }
 
-uint8* Uint8VectorStart(std::vector<uint8>* data) {
-  if (data->empty())
-    return NULL;
-  return &(*data)[0];
-}
-
-// This function decodes unpadded 'base64url' encoded data, as described in
-// RFC4648 (http://www.ietf.org/rfc/rfc4648.txt) Section 5. To do this, first
-// change the incoming data to 'base64' encoding by applying the appropriate
-// transformation including adding padding if required, and then call a base64
-// decoder.
-bool Base64DecodeUrlSafe(const std::string& input, std::string* output) {
-  std::string base64EncodedText(input);
-  std::replace(base64EncodedText.begin(), base64EncodedText.end(), '-', '+');
-  std::replace(base64EncodedText.begin(), base64EncodedText.end(), '_', '/');
-  base64EncodedText.append((4 - base64EncodedText.size() % 4) % 4, '=');
-  return base::Base64Decode(base64EncodedText, output);
-}
-
-// Returns an unpadded 'base64url' encoding of the input data, using the
-// inverse of the process above.
-std::string Base64EncodeUrlSafe(const base::StringPiece& input) {
-  std::string output;
-  base::Base64Encode(input, &output);
-  std::replace(output.begin(), output.end(), '+', '-');
-  std::replace(output.begin(), output.end(), '/', '_');
-  output.erase(std::remove(output.begin(), output.end(), '='), output.end());
-  return output;
-}
-
-std::string Base64EncodeUrlSafe(const std::vector<uint8>& input) {
-  const base::StringPiece string_piece(
-      reinterpret_cast<const char*>(Uint8VectorStart(input)), input.size());
-  return Base64EncodeUrlSafe(string_piece);
-}
+}  // namespace
 
 struct JwkToWebCryptoUsage {
   const char* const jwk_key_op;
@@ -80,12 +63,11 @@ const JwkToWebCryptoUsage kJwkWebCryptoUsageMap[] = {
     {"wrapKey", blink::WebCryptoKeyUsageWrapKey},
     {"unwrapKey", blink::WebCryptoKeyUsageUnwrapKey}};
 
-// Modifies the input usage_mask by according to the key_op value.
 bool JwkKeyOpToWebCryptoUsage(const std::string& key_op,
-                              blink::WebCryptoKeyUsageMask* usage_mask) {
+                              blink::WebCryptoKeyUsage* usage) {
   for (size_t i = 0; i < arraysize(kJwkWebCryptoUsageMap); ++i) {
     if (kJwkWebCryptoUsageMap[i].jwk_key_op == key_op) {
-      *usage_mask |= kJwkWebCryptoUsageMap[i].webcrypto_usage;
+      *usage = kJwkWebCryptoUsageMap[i].webcrypto_usage;
       return true;
     }
   }
@@ -93,18 +75,32 @@ bool JwkKeyOpToWebCryptoUsage(const std::string& key_op,
 }
 
 // Composes a Web Crypto usage mask from an array of JWK key_ops values.
-Status GetWebCryptoUsagesFromJwkKeyOps(
-    const base::ListValue* jwk_key_ops_value,
-    blink::WebCryptoKeyUsageMask* usage_mask) {
-  *usage_mask = 0;
-  for (size_t i = 0; i < jwk_key_ops_value->GetSize(); ++i) {
+Status GetWebCryptoUsagesFromJwkKeyOps(const base::ListValue* key_ops,
+                                       blink::WebCryptoKeyUsageMask* usages) {
+  // This set keeps track of all unrecognized key_ops values.
+  std::set<std::string> unrecognized_usages;
+
+  *usages = 0;
+  for (size_t i = 0; i < key_ops->GetSize(); ++i) {
     std::string key_op;
-    if (!jwk_key_ops_value->GetString(i, &key_op)) {
+    if (!key_ops->GetString(i, &key_op)) {
       return Status::ErrorJwkPropertyWrongType(
           base::StringPrintf("key_ops[%d]", static_cast<int>(i)), "string");
     }
-    // Unrecognized key_ops are silently skipped.
-    ignore_result(JwkKeyOpToWebCryptoUsage(key_op, usage_mask));
+
+    blink::WebCryptoKeyUsage usage;
+    if (JwkKeyOpToWebCryptoUsage(key_op, &usage)) {
+      // Ensure there are no duplicate usages.
+      if (*usages & usage)
+        return Status::ErrorJwkDuplicateKeyOps();
+      *usages |= usage;
+    }
+
+    // Reaching here means the usage was unrecognized. Such usages are skipped
+    // over, however they are kept track of in a set to ensure there were no
+    // duplicates.
+    if (!unrecognized_usages.insert(key_op).second)
+      return Status::ErrorJwkDuplicateKeyOps();
   }
   return Status::Success();
 }
@@ -112,30 +108,13 @@ Status GetWebCryptoUsagesFromJwkKeyOps(
 // Composes a JWK key_ops List from a Web Crypto usage mask.
 // Note: Caller must assume ownership of returned instance.
 base::ListValue* CreateJwkKeyOpsFromWebCryptoUsages(
-    blink::WebCryptoKeyUsageMask usage_mask) {
+    blink::WebCryptoKeyUsageMask usages) {
   base::ListValue* jwk_key_ops = new base::ListValue();
   for (size_t i = 0; i < arraysize(kJwkWebCryptoUsageMap); ++i) {
-    if (usage_mask & kJwkWebCryptoUsageMap[i].webcrypto_usage)
+    if (usages & kJwkWebCryptoUsageMap[i].webcrypto_usage)
       jwk_key_ops->AppendString(kJwkWebCryptoUsageMap[i].jwk_key_op);
   }
   return jwk_key_ops;
-}
-
-blink::WebCryptoAlgorithm GetInnerHashAlgorithm(
-    const blink::WebCryptoAlgorithm& algorithm) {
-  DCHECK(!algorithm.isNull());
-  switch (algorithm.paramsType()) {
-    case blink::WebCryptoAlgorithmParamsTypeHmacImportParams:
-      return algorithm.hmacImportParams()->hash();
-    case blink::WebCryptoAlgorithmParamsTypeHmacKeyGenParams:
-      return algorithm.hmacKeyGenParams()->hash();
-    case blink::WebCryptoAlgorithmParamsTypeRsaHashedImportParams:
-      return algorithm.rsaHashedImportParams()->hash();
-    case blink::WebCryptoAlgorithmParamsTypeRsaHashedKeyGenParams:
-      return algorithm.rsaHashedKeyGenParams()->hash();
-    default:
-      return blink::WebCryptoAlgorithm::createNull();
-  }
 }
 
 blink::WebCryptoAlgorithm CreateAlgorithm(blink::WebCryptoAlgorithmId id) {
@@ -154,36 +133,8 @@ blink::WebCryptoAlgorithm CreateRsaHashedImportAlgorithm(
     blink::WebCryptoAlgorithmId id,
     blink::WebCryptoAlgorithmId hash_id) {
   DCHECK(blink::WebCryptoAlgorithm::isHash(hash_id));
-  DCHECK(id == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5 ||
-         id == blink::WebCryptoAlgorithmIdRsaOaep);
   return blink::WebCryptoAlgorithm::adoptParamsAndCreate(
       id, new blink::WebCryptoRsaHashedImportParams(CreateAlgorithm(hash_id)));
-}
-
-bool CreateSecretKeyAlgorithm(const blink::WebCryptoAlgorithm& algorithm,
-                              unsigned int keylen_bytes,
-                              blink::WebCryptoKeyAlgorithm* key_algorithm) {
-  switch (algorithm.id()) {
-    case blink::WebCryptoAlgorithmIdHmac: {
-      blink::WebCryptoAlgorithm hash = GetInnerHashAlgorithm(algorithm);
-      if (hash.isNull())
-        return false;
-      if (keylen_bytes > UINT_MAX / 8)
-        return false;
-      *key_algorithm =
-          blink::WebCryptoKeyAlgorithm::createHmac(hash.id(), keylen_bytes * 8);
-      return true;
-    }
-    case blink::WebCryptoAlgorithmIdAesKw:
-    case blink::WebCryptoAlgorithmIdAesCbc:
-    case blink::WebCryptoAlgorithmIdAesCtr:
-    case blink::WebCryptoAlgorithmIdAesGcm:
-      *key_algorithm = blink::WebCryptoKeyAlgorithm::createAes(
-          algorithm.id(), keylen_bytes * 8);
-      return true;
-    default:
-      return false;
-  }
 }
 
 bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
@@ -191,15 +142,116 @@ bool ContainsKeyUsages(blink::WebCryptoKeyUsageMask a,
   return (a & b) == b;
 }
 
-bool IsAlgorithmRsa(blink::WebCryptoAlgorithmId alg_id) {
-  return alg_id == blink::WebCryptoAlgorithmIdRsaOaep ||
-         alg_id == blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5;
+// TODO(eroman): Move this helper to WebCryptoKey.
+bool KeyUsageAllows(const blink::WebCryptoKey& key,
+                    const blink::WebCryptoKeyUsage usage) {
+  return ((key.usages() & usage) != 0);
 }
 
-bool IsAlgorithmAsymmetric(blink::WebCryptoAlgorithmId alg_id) {
-  // TODO(padolph): include all other asymmetric algorithms once they are
-  // defined, e.g. EC and DH.
-  return IsAlgorithmRsa(alg_id);
+// The WebCrypto spec defines the default value for the tag length, as well as
+// the allowed values for tag length.
+Status GetAesGcmTagLengthInBits(const blink::WebCryptoAesGcmParams* params,
+                                unsigned int* tag_length_bits) {
+  *tag_length_bits = 128;
+  if (params->hasTagLengthBits())
+    *tag_length_bits = params->optionalTagLengthBits();
+
+  if (*tag_length_bits != 32 && *tag_length_bits != 64 &&
+      *tag_length_bits != 96 && *tag_length_bits != 104 &&
+      *tag_length_bits != 112 && *tag_length_bits != 120 &&
+      *tag_length_bits != 128)
+    return Status::ErrorInvalidAesGcmTagLength();
+
+  return Status::Success();
+}
+
+Status GetAesKeyGenLengthInBits(const blink::WebCryptoAesKeyGenParams* params,
+                                unsigned int* keylen_bits) {
+  *keylen_bits = params->lengthBits();
+
+  if (*keylen_bits == 128 || *keylen_bits == 256)
+    return Status::Success();
+
+  // BoringSSL does not support 192-bit AES.
+  if (*keylen_bits == 192)
+    return Status::ErrorAes192BitUnsupported();
+
+  return Status::ErrorGenerateKeyLength();
+}
+
+Status GetHmacKeyGenLengthInBits(const blink::WebCryptoHmacKeyGenParams* params,
+                                 unsigned int* keylen_bits) {
+  if (!params->hasLengthBits()) {
+    switch (params->hash().id()) {
+      case blink::WebCryptoAlgorithmIdSha1:
+      case blink::WebCryptoAlgorithmIdSha256:
+        *keylen_bits = 512;
+        return Status::Success();
+      case blink::WebCryptoAlgorithmIdSha384:
+      case blink::WebCryptoAlgorithmIdSha512:
+        *keylen_bits = 1024;
+        return Status::Success();
+      default:
+        return Status::ErrorUnsupported();
+    }
+  }
+
+  if (params->optionalLengthBits() % 8)
+    return Status::ErrorGenerateKeyLength();
+
+  *keylen_bits = params->optionalLengthBits();
+
+  // TODO(eroman): NSS fails when generating a zero-length secret key.
+  if (*keylen_bits == 0)
+    return Status::ErrorGenerateKeyLength();
+
+  return Status::Success();
+}
+
+Status VerifyAesKeyLengthForImport(unsigned int keylen_bytes) {
+  if (keylen_bytes == 16 || keylen_bytes == 32)
+    return Status::Success();
+
+  // BoringSSL does not support 192-bit AES.
+  if (keylen_bytes == 24)
+    return Status::ErrorAes192BitUnsupported();
+
+  return Status::ErrorImportAesKeyLength();
+}
+
+Status CheckKeyCreationUsages(blink::WebCryptoKeyUsageMask all_possible_usages,
+                              blink::WebCryptoKeyUsageMask actual_usages) {
+  if (!ContainsKeyUsages(all_possible_usages, actual_usages))
+    return Status::ErrorCreateKeyBadUsages();
+  return Status::Success();
+}
+
+Status GetRsaKeyGenParameters(
+    const blink::WebCryptoRsaHashedKeyGenParams* params,
+    unsigned int* public_exponent,
+    unsigned int* modulus_length_bits) {
+  *modulus_length_bits = params->modulusLengthBits();
+
+  // Limit key sizes to those supported by NSS:
+  //   * Multiple of 8 bits
+  //   * 256 bits to 16K bits
+  if (*modulus_length_bits < 256 || *modulus_length_bits > 16384 ||
+      (*modulus_length_bits % 8) != 0) {
+    return Status::ErrorGenerateRsaUnsupportedModulus();
+  }
+
+  if (!BigIntegerToUint(params->publicExponent().data(),
+                        params->publicExponent().size(),
+                        public_exponent)) {
+    return Status::ErrorGenerateKeyPublicExponent();
+  }
+
+  // OpenSSL hangs when given bad public exponents, whereas NSS simply fails. To
+  // avoid feeding OpenSSL data that will hang use a whitelist.
+  if (*public_exponent != 3 && *public_exponent != 65537)
+    return Status::ErrorGenerateKeyPublicExponent();
+
+  return Status::Success();
 }
 
 }  // namespace webcrypto

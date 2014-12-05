@@ -34,9 +34,7 @@
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/StringHasher.h"
 
-namespace WebCore {
-
-struct GlyphOverflow;
+namespace blink {
 
 struct WidthCacheEntry {
     WidthCacheEntry()
@@ -210,6 +208,6 @@ inline bool operator==(const WidthCache::SmallStringKey& a, const WidthCache::Sm
     return WTF::equal(a.characters(), b.characters(), a.length());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WidthCache_h

@@ -32,21 +32,24 @@
 #define InspectorBaseAgent_h
 
 #include "core/InspectorBackendDispatcher.h"
+#include "core/inspector/InstrumentingAgents.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorFrontend;
 class InspectorCompositeState;
 class InspectorState;
 class InstrumentingAgents;
 
-class InspectorAgent {
+class InspectorAgent : public NoBaseWillBeGarbageCollectedFinalized<InspectorAgent> {
 public:
     explicit InspectorAgent(const String&);
     virtual ~InspectorAgent();
+    virtual void trace(Visitor*);
 
     virtual void init() { }
     virtual void setFrontend(InspectorFrontend*) { }
@@ -61,17 +64,18 @@ public:
     void appended(InstrumentingAgents*, InspectorState*);
 
 protected:
-    InstrumentingAgents* m_instrumentingAgents;
-    InspectorState* m_state;
+    RawPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
+    RawPtrWillBeMember<InspectorState> m_state;
 
 private:
     String m_name;
 };
 
-class InspectorAgentRegistry {
+class InspectorAgentRegistry final {
+    DISALLOW_ALLOCATION();
 public:
     InspectorAgentRegistry(InstrumentingAgents*, InspectorCompositeState*);
-    void append(PassOwnPtr<InspectorAgent>);
+    void append(PassOwnPtrWillBeRawPtr<InspectorAgent>);
 
     void setFrontend(InspectorFrontend*);
     void clearFrontend();
@@ -79,11 +83,14 @@ public:
     void registerInDispatcher(InspectorBackendDispatcher*);
     void discardAgents();
     void flushPendingFrontendMessages();
+    void didCommitLoadForMainFrame();
+
+    void trace(Visitor*);
 
 private:
-    InstrumentingAgents* m_instrumentingAgents;
-    InspectorCompositeState* m_inspectorState;
-    Vector<OwnPtr<InspectorAgent> > m_agents;
+    RawPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
+    RawPtrWillBeMember<InspectorCompositeState> m_inspectorState;
+    WillBeHeapVector<OwnPtrWillBeMember<InspectorAgent> > m_agents;
 };
 
 template<typename T>
@@ -91,17 +98,22 @@ class InspectorBaseAgent : public InspectorAgent {
 public:
     virtual ~InspectorBaseAgent() { }
 
-    virtual void registerInDispatcher(InspectorBackendDispatcher* dispatcher) OVERRIDE FINAL
+    virtual void registerInDispatcher(InspectorBackendDispatcher* dispatcher) override final
     {
         dispatcher->registerAgent(static_cast<T*>(this));
     }
 
 protected:
-    InspectorBaseAgent(const String& name) : InspectorAgent(name)
+    explicit InspectorBaseAgent(const String& name) : InspectorAgent(name)
     {
     }
 };
 
-} // namespace WebCore
+inline bool asBool(const bool* const b)
+{
+    return b ? *b : false;
+}
+
+} // namespace blink
 
 #endif // !defined(InspectorBaseAgent_h)

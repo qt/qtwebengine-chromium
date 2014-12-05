@@ -22,15 +22,15 @@
 #include "config.h"
 #include "core/css/CSSStyleRule.h"
 
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
+#include "core/css/parser/CSSParser.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashMap<const CSSStyleRule*, String> SelectorTextCache;
 static SelectorTextCache& selectorTextCache()
@@ -70,7 +70,7 @@ String CSSStyleRule::generateSelectorText() const
     StringBuilder builder;
     for (const CSSSelector* selector = m_styleRule->selectorList().first(); selector; selector = CSSSelectorList::next(*selector)) {
         if (selector != m_styleRule->selectorList().first())
-            builder.append(", ");
+            builder.appendLiteral(", ");
         builder.append(selector->selectorText());
     }
     return builder.toString();
@@ -93,7 +93,7 @@ String CSSStyleRule::selectorText() const
 void CSSStyleRule::setSelectorText(const String& selectorText)
 {
     CSSParserContext context(parserContext(), 0);
-    BisonCSSParser p(context);
+    CSSParser p(context);
     CSSSelectorList selectorList;
     p.parseSelector(selectorText, selectorList);
     if (!selectorList.isValid())
@@ -137,4 +137,4 @@ void CSSStyleRule::trace(Visitor* visitor)
     CSSRule::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

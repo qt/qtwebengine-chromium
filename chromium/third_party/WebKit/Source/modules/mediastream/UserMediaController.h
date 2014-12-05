@@ -29,29 +29,31 @@
 #include "modules/mediastream/UserMediaClient.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class MediaDevicesRequest;
 class UserMediaRequest;
 
-class UserMediaController FINAL : public NoBaseWillBeGarbageCollected<UserMediaController>, public WillBeHeapSupplement<LocalFrame> {
+class UserMediaController final : public NoBaseWillBeGarbageCollected<UserMediaController>, public WillBeHeapSupplement<LocalFrame> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(UserMediaController);
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(UserMediaController);
 public:
 
     UserMediaClient* client() const { return m_client; }
 
-    void requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest>);
+    void requestUserMedia(UserMediaRequest*);
     void cancelUserMediaRequest(UserMediaRequest*);
 
-    void requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest>);
+    void requestMediaDevices(MediaDevicesRequest*);
     void cancelMediaDevicesRequest(MediaDevicesRequest*);
+
+    void requestSources(MediaStreamTrackSourcesRequest*);
 
     static PassOwnPtrWillBeRawPtr<UserMediaController> create(UserMediaClient*);
     static const char* supplementName();
     static UserMediaController* from(LocalFrame* frame) { return static_cast<UserMediaController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 protected:
     explicit UserMediaController(UserMediaClient*);
@@ -60,7 +62,7 @@ private:
     UserMediaClient* m_client;
 };
 
-inline void UserMediaController::requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest> request)
+inline void UserMediaController::requestUserMedia(UserMediaRequest* request)
 {
     m_client->requestUserMedia(request);
 }
@@ -70,7 +72,7 @@ inline void UserMediaController::cancelUserMediaRequest(UserMediaRequest* reques
     m_client->cancelUserMediaRequest(request);
 }
 
-inline void UserMediaController::requestMediaDevices(PassRefPtrWillBeRawPtr<MediaDevicesRequest> request)
+inline void UserMediaController::requestMediaDevices(MediaDevicesRequest* request)
 {
     m_client->requestMediaDevices(request);
 }
@@ -80,6 +82,11 @@ inline void UserMediaController::cancelMediaDevicesRequest(MediaDevicesRequest* 
     m_client->cancelMediaDevicesRequest(request);
 }
 
-} // namespace WebCore
+inline void UserMediaController::requestSources(MediaStreamTrackSourcesRequest* request)
+{
+    m_client->requestSources(request);
+}
+
+} // namespace blink
 
 #endif // UserMediaController_h

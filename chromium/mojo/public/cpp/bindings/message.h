@@ -5,11 +5,10 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_MESSAGE_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_MESSAGE_H_
 
-#include <assert.h>
-
 #include <vector>
 
 #include "mojo/public/cpp/bindings/lib/message_internal.h"
+#include "mojo/public/cpp/environment/logging.h"
 
 namespace mojo {
 
@@ -32,8 +31,8 @@ class Message {
   uint32_t data_num_bytes() const { return data_num_bytes_; }
 
   // Access the raw bytes of the message.
-  const uint8_t* data() const { return
-    reinterpret_cast<const uint8_t*>(data_);
+  const uint8_t* data() const {
+    return reinterpret_cast<const uint8_t*>(data_);
   }
   uint8_t* mutable_data() { return reinterpret_cast<uint8_t*>(data_); }
 
@@ -46,14 +45,14 @@ class Message {
   // Access the request_id field (if present).
   bool has_request_id() const { return data_->header.num_fields >= 3; }
   uint64_t request_id() const {
-    assert(has_request_id());
+    MOJO_DCHECK(has_request_id());
     return static_cast<const internal::MessageHeaderWithRequestID*>(
-        &data_->header)->request_id;
+               &data_->header)->request_id;
   }
   void set_request_id(uint64_t request_id) {
-    assert(has_request_id());
-    static_cast<internal::MessageHeaderWithRequestID*>(&data_->header)->
-        request_id = request_id;
+    MOJO_DCHECK(has_request_id());
+    static_cast<internal::MessageHeaderWithRequestID*>(&data_->header)
+        ->request_id = request_id;
   }
 
   // Access the payload.
@@ -64,7 +63,7 @@ class Message {
     return reinterpret_cast<uint8_t*>(data_) + data_->header.num_bytes;
   }
   uint32_t payload_num_bytes() const {
-    assert(data_num_bytes_ >= data_->header.num_bytes);
+    MOJO_DCHECK(data_num_bytes_ >= data_->header.num_bytes);
     return data_num_bytes_ - data_->header.num_bytes;
   }
 
@@ -92,7 +91,7 @@ class MessageReceiver {
 
 class MessageReceiverWithResponder : public MessageReceiver {
  public:
-  virtual ~MessageReceiverWithResponder() {}
+  ~MessageReceiverWithResponder() override {}
 
   // A variant on Accept that registers a MessageReceiver (known as the
   // responder) to handle the response message generated from the given
@@ -103,8 +102,8 @@ class MessageReceiverWithResponder : public MessageReceiver {
   // |responder| and will delete it after calling |responder->Accept| or upon
   // its own destruction.
   //
-  virtual bool AcceptWithResponder(
-      Message* message, MessageReceiver* responder) MOJO_WARN_UNUSED_RESULT = 0;
+  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
+      MOJO_WARN_UNUSED_RESULT = 0;
 };
 
 // Read a single message from the pipe and dispatch to the given receiver.  The

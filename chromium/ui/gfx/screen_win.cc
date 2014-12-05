@@ -24,13 +24,38 @@ MONITORINFOEX GetMonitorInfoForMonitor(HMONITOR monitor) {
 }
 
 gfx::Display GetDisplay(MONITORINFOEX& monitor_info) {
-  // TODO(oshima): Implement Observer.
   int64 id = static_cast<int64>(
       base::Hash(base::WideToUTF8(monitor_info.szDevice)));
   gfx::Rect bounds = gfx::Rect(monitor_info.rcMonitor);
   gfx::Display display(id, bounds);
   display.set_work_area(gfx::Rect(monitor_info.rcWork));
-  display.SetScaleAndBounds(gfx::win::GetDeviceScaleFactor(), bounds);
+  display.SetScaleAndBounds(gfx::GetDPIScale(), bounds);
+
+  DEVMODE mode;
+  memset(&mode, 0, sizeof(DEVMODE));
+  mode.dmSize = sizeof(DEVMODE);
+  mode.dmDriverExtra = 0;
+  if (EnumDisplaySettings(monitor_info.szDevice,
+                          ENUM_CURRENT_SETTINGS,
+                          &mode)) {
+    switch (mode.dmDisplayOrientation) {
+    case DMDO_DEFAULT:
+      display.set_rotation(gfx::Display::ROTATE_0);
+      break;
+    case DMDO_90:
+      display.set_rotation(gfx::Display::ROTATE_90);
+      break;
+    case DMDO_180:
+      display.set_rotation(gfx::Display::ROTATE_180);
+      break;
+    case DMDO_270:
+      display.set_rotation(gfx::Display::ROTATE_270);
+      break;
+    default:
+      NOTREACHED();
+    }
+  }
+
   return display;
 }
 
@@ -48,18 +73,24 @@ BOOL CALLBACK EnumMonitorCallback(HMONITOR monitor,
   return TRUE;
 }
 
+std::vector<gfx::Display> GetDisplays() {
+  std::vector<gfx::Display> displays;
+  EnumDisplayMonitors(NULL, NULL, EnumMonitorCallback,
+                      reinterpret_cast<LPARAM>(&displays));
+  return displays;
+}
+
 }  // namespace
 
 namespace gfx {
 
-ScreenWin::ScreenWin() {
+ScreenWin::ScreenWin()
+    : displays_(GetDisplays()) {
+  SingletonHwnd::GetInstance()->AddObserver(this);
 }
 
 ScreenWin::~ScreenWin() {
-}
-
-bool ScreenWin::IsDIPEnabled() {
-  return IsInHighDPIMode();
+  SingletonHwnd::GetInstance()->RemoveObserver(this);
 }
 
 gfx::Point ScreenWin::GetCursorScreenPoint() {
@@ -85,10 +116,7 @@ int ScreenWin::GetNumDisplays() const {
 }
 
 std::vector<gfx::Display> ScreenWin::GetAllDisplays() const {
-  std::vector<gfx::Display> all_displays;
-  EnumDisplayMonitors(NULL, NULL, EnumMonitorCallback,
-                      reinterpret_cast<LPARAM>(&all_displays));
-  return all_displays;
+  return displays_;
 }
 
 gfx::Display ScreenWin::GetDisplayNearestWindow(gfx::NativeView window) const {
@@ -132,7 +160,7 @@ gfx::Display ScreenWin::GetPrimaryDisplay() const {
   gfx::Display display = GetDisplay(mi);
   // TODO(kevers|girard): Test if these checks can be reintroduced for high-DIP
   // once more of the app is DIP-aware.
-  if (!(IsInHighDPIMode() || IsHighDPIEnabled())) {
+  if (GetDPIScale() == 1.0) {
     DCHECK_EQ(GetSystemMetrics(SM_CXSCREEN), display.size().width());
     DCHECK_EQ(GetSystemMetrics(SM_CYSCREEN), display.size().height());
   }
@@ -140,11 +168,24 @@ gfx::Display ScreenWin::GetPrimaryDisplay() const {
 }
 
 void ScreenWin::AddObserver(DisplayObserver* observer) {
-  // TODO(oshima): crbug.com/122863.
+  change_notifier_.AddObserver(observer);
 }
 
 void ScreenWin::RemoveObserver(DisplayObserver* observer) {
-  // TODO(oshima): crbug.com/122863.
+  change_notifier_.RemoveObserver(observer);
+}
+
+void ScreenWin::OnWndProc(HWND hwnd,
+                          UINT message,
+                          WPARAM wparam,
+                          LPARAM lparam) {
+  if (message != WM_DISPLAYCHANGE)
+    return;
+
+  std::vector<gfx::Display> old_displays = displays_;
+  displays_ = GetDisplays();
+
+  change_notifier_.NotifyDisplaysChanged(old_displays, displays_);
 }
 
 HWND ScreenWin::GetHWNDFromNativeView(NativeView window) const {

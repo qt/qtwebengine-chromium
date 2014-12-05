@@ -21,6 +21,8 @@
 #include "core/rendering/RootInlineBox.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/StyleEngine.h"
+#include "core/paint/RootInlineBoxPainter.h"
 #include "core/rendering/EllipsisBox.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/InlineTextBox.h"
@@ -33,13 +35,12 @@
 #include "platform/text/BidiResolver.h"
 #include "wtf/unicode/Unicode.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsRootInlineBox : public InlineFlowBox {
-    unsigned variables[5];
+    unsigned unsignedVariable;
     void* pointers[4];
+    LayoutUnit layoutVariables[5];
 };
 
 COMPILE_ASSERT(sizeof(RootInlineBox) == sizeof(SameSizeAsRootInlineBox), RootInlineBox_should_stay_small);
@@ -55,6 +56,7 @@ RootInlineBox::RootInlineBox(RenderBlockFlow& block)
     , m_lineBottom(0)
     , m_lineTopWithLeading(0)
     , m_lineBottomWithLeading(0)
+    , m_selectionBottom(0)
 {
     setIsHorizontal(block.isHorizontalWritingMode());
 }
@@ -87,18 +89,6 @@ void RootInlineBox::clearTruncation()
         detachEllipsisBox();
         InlineFlowBox::clearTruncation();
     }
-}
-
-bool RootInlineBox::isHyphenated() const
-{
-    for (InlineBox* box = firstLeafChild(); box; box = box->nextLeafChild()) {
-        if (box->isInlineTextBox()) {
-            if (toInlineTextBox(box)->hasHyphen())
-                return true;
-        }
-    }
-
-    return false;
 }
 
 int RootInlineBox::baselinePosition(FontBaseline baselineType) const
@@ -162,17 +152,9 @@ float RootInlineBox::placeEllipsisBox(bool ltr, float blockLeftEdge, float block
     return result;
 }
 
-void RootInlineBox::paintEllipsisBox(PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom) const
-{
-    if (hasEllipsisBox() && paintInfo.shouldPaintWithinRoot(&renderer()) && renderer().style()->visibility() == VISIBLE
-            && paintInfo.phase == PaintPhaseForeground)
-        ellipsisBox()->paint(paintInfo, paintOffset, lineTop, lineBottom);
-}
-
 void RootInlineBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
 {
-    InlineFlowBox::paint(paintInfo, paintOffset, lineTop, lineBottom);
-    paintEllipsisBox(paintInfo, paintOffset, lineTop, lineBottom);
+    RootInlineBoxPainter(*this).paint(paintInfo, paintOffset, lineTop, lineBottom);
 }
 
 bool RootInlineBox::nodeAtPoint(const HitTestRequest& request, HitTestResult& result, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom)
@@ -194,6 +176,7 @@ void RootInlineBox::adjustPosition(float dx, float dy)
     m_lineBottom += blockDirectionDelta;
     m_lineTopWithLeading += blockDirectionDelta;
     m_lineBottomWithLeading += blockDirectionDelta;
+    m_selectionBottom += blockDirectionDelta;
     if (hasEllipsisBox())
         ellipsisBox()->adjustPosition(dx, dy);
 }
@@ -230,7 +213,7 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
     computeLogicalBoxHeights(this, maxPositionTop, maxPositionBottom, maxAscent, maxDescent, setMaxAscent, setMaxDescent, noQuirksMode,
                              textBoxDataMap, baselineType(), verticalPositionCache);
 
-    if (maxAscent + maxDescent < max(maxPositionTop, maxPositionBottom))
+    if (maxAscent + maxDescent < std::max(maxPositionTop, maxPositionBottom))
         adjustMaxAscentAndDescent(maxAscent, maxDescent, maxPositionTop, maxPositionBottom);
 
     LayoutUnit maxHeight = maxAscent + maxDescent;
@@ -238,17 +221,18 @@ LayoutUnit RootInlineBox::alignBoxesInBlockDirection(LayoutUnit heightOfBlock, G
     LayoutUnit lineBottom = heightOfBlock;
     LayoutUnit lineTopIncludingMargins = heightOfBlock;
     LayoutUnit lineBottomIncludingMargins = heightOfBlock;
+    LayoutUnit selectionBottom = heightOfBlock;
     bool setLineTop = false;
     bool hasAnnotationsBefore = false;
     bool hasAnnotationsAfter = false;
-    placeBoxesInBlockDirection(heightOfBlock, maxHeight, maxAscent, noQuirksMode, lineTop, lineBottom, setLineTop,
+    placeBoxesInBlockDirection(heightOfBlock, maxHeight, maxAscent, noQuirksMode, lineTop, lineBottom, selectionBottom, setLineTop,
                                lineTopIncludingMargins, lineBottomIncludingMargins, hasAnnotationsBefore, hasAnnotationsAfter, baselineType());
     m_hasAnnotationsBefore = hasAnnotationsBefore;
     m_hasAnnotationsAfter = hasAnnotationsAfter;
 
-    maxHeight = max<LayoutUnit>(0, maxHeight); // FIXME: Is this really necessary?
+    maxHeight = std::max<LayoutUnit>(0, maxHeight); // FIXME: Is this really necessary?
 
-    setLineTopBottomPositions(lineTop, lineBottom, heightOfBlock, heightOfBlock + maxHeight);
+    setLineTopBottomPositions(lineTop, lineBottom, heightOfBlock, heightOfBlock + maxHeight, selectionBottom);
     if (block().view()->layoutState()->isPaginated())
         setPaginatedLineWidth(block().availableLogicalWidthForContent());
 
@@ -283,7 +267,7 @@ LayoutUnit RootInlineBox::beforeAnnotationsAdjustment() const
             return result;
 
         // Annotations over this line may push us further down.
-        LayoutUnit highestAllowedPosition = prevRootBox() ? min(prevRootBox()->lineBottom(), lineTop()) + result : static_cast<LayoutUnit>(block().borderBefore());
+        LayoutUnit highestAllowedPosition = prevRootBox() ? std::min(prevRootBox()->lineBottom(), lineTop()) + result : static_cast<LayoutUnit>(block().borderBefore());
         result = computeOverAnnotationAdjustment(highestAllowedPosition);
     } else {
         // Annotations under this line may push us up.
@@ -294,15 +278,15 @@ LayoutUnit RootInlineBox::beforeAnnotationsAdjustment() const
             return result;
 
         // We have to compute the expansion for annotations over the previous line to see how much we should move.
-        LayoutUnit lowestAllowedPosition = max(prevRootBox()->lineBottom(), lineTop()) - result;
+        LayoutUnit lowestAllowedPosition = std::max(prevRootBox()->lineBottom(), lineTop()) - result;
         result = prevRootBox()->computeOverAnnotationAdjustment(lowestAllowedPosition);
     }
 
     return result;
 }
 
-GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-                                         LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo* paintInfo)
+GapRects RootInlineBox::lineSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
+                                         LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo* paintInfo) const
 {
     RenderObject::SelectionState lineState = selectionState();
 
@@ -355,7 +339,7 @@ GapRects RootInlineBox::lineSelectionGap(RenderBlock* rootBlock, const LayoutPoi
     return result;
 }
 
-RenderObject::SelectionState RootInlineBox::selectionState()
+RenderObject::SelectionState RootInlineBox::selectionState() const
 {
     // Walk over all of the selected boxes.
     RenderObject::SelectionState state = RenderObject::SelectionNone;
@@ -379,7 +363,7 @@ RenderObject::SelectionState RootInlineBox::selectionState()
     return state;
 }
 
-InlineBox* RootInlineBox::firstSelectedBox()
+InlineBox* RootInlineBox::firstSelectedBox() const
 {
     for (InlineBox* box = firstLeafChild(); box; box = box->nextLeafChild()) {
         if (box->selectionState() != RenderObject::SelectionNone)
@@ -389,7 +373,7 @@ InlineBox* RootInlineBox::firstSelectedBox()
     return 0;
 }
 
-InlineBox* RootInlineBox::lastSelectedBox()
+InlineBox* RootInlineBox::lastSelectedBox() const
 {
     for (InlineBox* box = lastLeafChild(); box; box = box->prevLeafChild()) {
         if (box->selectionState() != RenderObject::SelectionNone)
@@ -435,13 +419,15 @@ LayoutUnit RootInlineBox::selectionTopAdjustedForPrecedingBlock() const
 
     LayoutSize offsetToBlockBefore;
     if (RenderBlock* block = root().block().blockBeforeWithinSelectionRoot(offsetToBlockBefore)) {
-        if (RootInlineBox* lastLine = block->lastRootBox()) {
-            RenderObject::SelectionState lastLineSelectionState = lastLine->selectionState();
-            if (lastLineSelectionState != RenderObject::SelectionInside && lastLineSelectionState != RenderObject::SelectionStart)
-                return top;
+        if (block->isRenderBlockFlow()) {
+            if (RootInlineBox* lastLine = toRenderBlockFlow(block)->lastRootBox()) {
+                RenderObject::SelectionState lastLineSelectionState = lastLine->selectionState();
+                if (lastLineSelectionState != RenderObject::SelectionInside && lastLineSelectionState != RenderObject::SelectionStart)
+                    return top;
 
-            LayoutUnit lastLineSelectionBottom = lastLine->selectionBottom() + offsetToBlockBefore.height();
-            top = max(top, lastLineSelectionBottom);
+                LayoutUnit lastLineSelectionBottom = lastLine->selectionBottom() + offsetToBlockBefore.height();
+                top = std::max(top, lastLineSelectionBottom);
+            }
         }
     }
 
@@ -450,7 +436,7 @@ LayoutUnit RootInlineBox::selectionTopAdjustedForPrecedingBlock() const
 
 LayoutUnit RootInlineBox::selectionBottom() const
 {
-    LayoutUnit selectionBottom = m_lineBottom;
+    LayoutUnit selectionBottom = m_selectionBottom;
 
     if (m_hasAnnotationsAfter)
         selectionBottom += !renderer().style()->isFlippedLinesWritingMode() ? computeUnderAnnotationAdjustment(m_lineBottom) : computeOverAnnotationAdjustment(m_lineBottom);
@@ -476,7 +462,7 @@ LayoutUnit RootInlineBox::selectionBottom() const
 
 int RootInlineBox::blockDirectionPointInLine() const
 {
-    return !block().style()->isFlippedBlocksWritingMode() ? max(lineTop(), selectionTop()) : min(lineBottom(), selectionBottom());
+    return !block().style()->slowIsFlippedBlocksWritingMode() ? std::max(lineTop(), selectionTop()) : std::min(lineBottom(), selectionBottom());
 }
 
 RenderBlockFlow& RootInlineBox::block() const
@@ -486,7 +472,7 @@ RenderBlockFlow& RootInlineBox::block() const
 
 static bool isEditableLeaf(InlineBox* leaf)
 {
-    return leaf && leaf->renderer().node() && leaf->renderer().node()->rendererIsEditable();
+    return leaf && leaf->renderer().node() && leaf->renderer().node()->hasEditableStyle();
 }
 
 InlineBox* RootInlineBox::closestLeafChildForPoint(const IntPoint& pointInContents, bool onlyEditableLeaves)
@@ -586,14 +572,14 @@ LayoutRect RootInlineBox::paddedLayoutOverflowRect(LayoutUnit endPadding) const
 
     if (isHorizontal()) {
         if (isLeftToRightDirection())
-            lineLayoutOverflow.shiftMaxXEdgeTo(max<LayoutUnit>(lineLayoutOverflow.maxX(), logicalRight() + endPadding));
+            lineLayoutOverflow.shiftMaxXEdgeTo(std::max<LayoutUnit>(lineLayoutOverflow.maxX(), logicalRight() + endPadding));
         else
-            lineLayoutOverflow.shiftXEdgeTo(min<LayoutUnit>(lineLayoutOverflow.x(), logicalLeft() - endPadding));
+            lineLayoutOverflow.shiftXEdgeTo(std::min<LayoutUnit>(lineLayoutOverflow.x(), logicalLeft() - endPadding));
     } else {
         if (isLeftToRightDirection())
-            lineLayoutOverflow.shiftMaxYEdgeTo(max<LayoutUnit>(lineLayoutOverflow.maxY(), logicalRight() + endPadding));
+            lineLayoutOverflow.shiftMaxYEdgeTo(std::max<LayoutUnit>(lineLayoutOverflow.maxY(), logicalRight() + endPadding));
         else
-            lineLayoutOverflow.shiftYEdgeTo(min<LayoutUnit>(lineLayoutOverflow.y(), logicalLeft() - endPadding));
+            lineLayoutOverflow.shiftYEdgeTo(std::min<LayoutUnit>(lineLayoutOverflow.y(), logicalLeft() - endPadding));
     }
 
     return lineLayoutOverflow;
@@ -606,8 +592,8 @@ static void setAscentAndDescent(int& ascent, int& descent, int newAscent, int ne
         ascent = newAscent;
         descent = newDescent;
     } else {
-        ascent = max(ascent, newAscent);
-        descent = max(descent, newDescent);
+        ascent = std::max(ascent, newAscent);
+        descent = std::max(descent, newDescent);
     }
 }
 
@@ -694,8 +680,8 @@ void RootInlineBox::ascentAndDescentForBox(InlineBox* box, GlyphOverflowAndFallb
         setAscentAndDescent(ascent, descent, glyphOverflow->top, glyphOverflow->bottom, ascentDescentSet);
         affectsAscent = glyphOverflow->top - box->logicalTop() > 0;
         affectsDescent = glyphOverflow->bottom + box->logicalTop() > 0;
-        glyphOverflow->top = min(glyphOverflow->top, max(0, glyphOverflow->top - box->renderer().style(isFirstLineStyle())->fontMetrics().ascent(baselineType())));
-        glyphOverflow->bottom = min(glyphOverflow->bottom, max(0, glyphOverflow->bottom - box->renderer().style(isFirstLineStyle())->fontMetrics().descent(baselineType())));
+        glyphOverflow->top = std::min(glyphOverflow->top, std::max(0, glyphOverflow->top - box->renderer().style(isFirstLineStyle())->fontMetrics().ascent(baselineType())));
+        glyphOverflow->bottom = std::min(glyphOverflow->bottom, std::max(0, glyphOverflow->bottom - box->renderer().style(isFirstLineStyle())->fontMetrics().descent(baselineType())));
     }
 
     if (includeMarginForBox(box)) {
@@ -848,9 +834,9 @@ Node* RootInlineBox::getLogicalStartBoxWithNode(InlineBox*& startBox) const
     Vector<InlineBox*> leafBoxesInLogicalOrder;
     collectLeafBoxesInLogicalOrder(leafBoxesInLogicalOrder);
     for (size_t i = 0; i < leafBoxesInLogicalOrder.size(); ++i) {
-        if (leafBoxesInLogicalOrder[i]->renderer().node()) {
+        if (leafBoxesInLogicalOrder[i]->renderer().nonPseudoNode()) {
             startBox = leafBoxesInLogicalOrder[i];
-            return startBox->renderer().node();
+            return startBox->renderer().nonPseudoNode();
         }
     }
     startBox = 0;
@@ -862,9 +848,9 @@ Node* RootInlineBox::getLogicalEndBoxWithNode(InlineBox*& endBox) const
     Vector<InlineBox*> leafBoxesInLogicalOrder;
     collectLeafBoxesInLogicalOrder(leafBoxesInLogicalOrder);
     for (size_t i = leafBoxesInLogicalOrder.size(); i > 0; --i) {
-        if (leafBoxesInLogicalOrder[i - 1]->renderer().node()) {
+        if (leafBoxesInLogicalOrder[i - 1]->renderer().nonPseudoNode()) {
             endBox = leafBoxesInLogicalOrder[i - 1];
-            return endBox->renderer().node();
+            return endBox->renderer().nonPseudoNode();
         }
     }
     endBox = 0;
@@ -878,4 +864,4 @@ const char* RootInlineBox::boxName() const
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

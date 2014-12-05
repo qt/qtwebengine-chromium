@@ -33,35 +33,20 @@
 #include "core/fetch/FetchRequest.h"
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
-#include "core/svg/SVGFontFaceElement.h"
+#include "platform/fonts/FontCache.h"
 #include "platform/fonts/FontCustomPlatformData.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
-
-#if ENABLE(SVG_FONTS)
-bool CSSFontFaceSrcValue::isSVGFontFaceSrc() const
-{
-    return equalIgnoringCase(m_format, "svg");
-}
-#endif
+namespace blink {
 
 bool CSSFontFaceSrcValue::isSupportedFormat() const
 {
     // Normally we would just check the format, but in order to avoid conflicts with the old WinIE style of font-face,
     // we will also check to see if the URL ends with .eot.  If so, we'll go ahead and assume that we shouldn't load it.
-    if (m_format.isEmpty()) {
-        // Check for .eot.
-        if (!m_resource.startsWith("data:", false) && m_resource.endsWith(".eot", false))
-            return false;
-        return true;
-    }
+    if (m_format.isEmpty())
+        return m_resource.startsWith("data:", false) || !m_resource.endsWith(".eot", false);
 
-    return FontCustomPlatformData::supportsFormat(m_format)
-#if ENABLE(SVG_FONTS)
-           || isSVGFontFaceSrc()
-#endif
-           ;
+    return FontCustomPlatformData::supportsFormat(m_format);
 }
 
 String CSSFontFaceSrcValue::customCSSText() const
@@ -83,9 +68,7 @@ String CSSFontFaceSrcValue::customCSSText() const
 
 bool CSSFontFaceSrcValue::hasFailedOrCanceledSubresources() const
 {
-    if (!m_fetched)
-        return false;
-    return m_fetched->loadFailedOrCanceled();
+    return m_fetched && m_fetched->loadFailedOrCanceled();
 }
 
 bool CSSFontFaceSrcValue::shouldSetCrossOriginAccessControl(const KURL& resource, SecurityOrigin* securityOrigin)
@@ -123,6 +106,7 @@ void CSSFontFaceSrcValue::restoreCachedResourceIfNeeded(Document* document)
         return;
 
     FetchRequest request(ResourceRequest(resourceURL), FetchInitiatorTypeNames::css);
+    document->fetcher()->maybeNotifyInsecureContent(m_fetched.get());
     document->fetcher()->requestLoadStarted(m_fetched.get(), request, ResourceFetcher::ResourceLoadingFromCache);
 }
 

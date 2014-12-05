@@ -35,7 +35,7 @@
 #include <libxml/uri.h>
 #include <libxslt/xsltutils.h>
 
-namespace WebCore {
+namespace blink {
 
 XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalURL, const KURL& finalURL)
     : m_ownerNode(nullptr)
@@ -50,6 +50,7 @@ XSLStyleSheet::XSLStyleSheet(XSLImportRule* parentRule, const String& originalUR
     , m_stylesheetDocTaken(false)
     , m_compilationFailed(false)
     , m_parentStyleSheet(parentRule ? parentRule->parentStyleSheet() : 0)
+    , m_ownerDocument(nullptr)
 {
 }
 
@@ -64,6 +65,22 @@ XSLStyleSheet::XSLStyleSheet(Node* parentNode, const String& originalURL, const 
     , m_stylesheetDocTaken(false)
     , m_compilationFailed(false)
     , m_parentStyleSheet(nullptr)
+    , m_ownerDocument(nullptr)
+{
+}
+
+XSLStyleSheet::XSLStyleSheet(Document* ownerDocument, Node* styleSheetRootNode, const String& originalURL, const KURL& finalURL,  bool embedded)
+    : m_ownerNode(styleSheetRootNode)
+    , m_originalURL(originalURL)
+    , m_finalURL(finalURL)
+    , m_isDisabled(false)
+    , m_embedded(embedded)
+    , m_processed(true) // The root sheet starts off processed.
+    , m_stylesheetDoc(0)
+    , m_stylesheetDocTaken(false)
+    , m_compilationFailed(false)
+    , m_parentStyleSheet(nullptr)
+    , m_ownerDocument(ownerDocument)
 {
 }
 
@@ -254,6 +271,8 @@ void XSLStyleSheet::setParentStyleSheet(XSLStyleSheet* parent)
 Document* XSLStyleSheet::ownerDocument()
 {
     for (XSLStyleSheet* styleSheet = this; styleSheet; styleSheet = styleSheet->parentStyleSheet()) {
+        if (styleSheet->m_ownerDocument)
+            return styleSheet->m_ownerDocument.get();
         Node* node = styleSheet->ownerNode();
         if (node)
             return &node->document();
@@ -310,7 +329,8 @@ void XSLStyleSheet::trace(Visitor* visitor)
     visitor->trace(m_ownerNode);
     visitor->trace(m_children);
     visitor->trace(m_parentStyleSheet);
+    visitor->trace(m_ownerDocument);
     StyleSheet::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

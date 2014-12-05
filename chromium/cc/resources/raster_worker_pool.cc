@@ -6,27 +6,18 @@
 
 #include <algorithm>
 
-#include "base/atomic_sequence_num.h"
-#include "base/debug/trace_event_synthetic_delay.h"
+#include "base/debug/trace_event.h"
 #include "base/lazy_instance.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/simple_thread.h"
-#include "base/threading/thread_local.h"
 #include "cc/base/scoped_ptr_deque.h"
+#include "cc/resources/raster_source.h"
+#include "skia/ext/refptr.h"
+#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkSurface.h"
 
 namespace cc {
 namespace {
-
-// Synthetic delay for raster tasks that are required for activation. Global to
-// avoid static initializer on critical path.
-struct RasterRequiredForActivationSyntheticDelayInitializer {
-  RasterRequiredForActivationSyntheticDelayInitializer()
-      : delay(base::debug::TraceEventSyntheticDelay::Lookup(
-            "cc.RasterRequiredForActivation")) {}
-  base::debug::TraceEventSyntheticDelay* delay;
-};
-static base::LazyInstance<RasterRequiredForActivationSyntheticDelayInitializer>
-    g_raster_required_for_activation_delay = LAZY_INSTANCE_INITIALIZER;
 
 class RasterTaskGraphRunner : public TaskGraphRunner,
                               public base::DelegateSimpleThread::Delegate {
@@ -48,36 +39,13 @@ class RasterTaskGraphRunner : public TaskGraphRunner,
     }
   }
 
-  virtual ~RasterTaskGraphRunner() { NOTREACHED(); }
-
-  size_t GetPictureCloneIndexForCurrentThread() {
-    // Use index 0 if called on non-raster thread.
-    ThreadLocalState* thread_local_state = current_tls_.Get();
-    return thread_local_state ? current_tls_.Get()->picture_clone_index : 0;
-  }
+  ~RasterTaskGraphRunner() override { NOTREACHED(); }
 
  private:
-  struct ThreadLocalState {
-    explicit ThreadLocalState(size_t picture_clone_index)
-        : picture_clone_index(picture_clone_index) {}
-
-    size_t picture_clone_index;
-  };
-
   // Overridden from base::DelegateSimpleThread::Delegate:
-  virtual void Run() OVERRIDE {
-    // Use picture clone index 0..num_threads.
-    int picture_clone_index = picture_clone_index_sequence_.GetNext();
-    DCHECK_LE(0, picture_clone_index);
-    DCHECK_GT(RasterWorkerPool::GetNumRasterThreads(), picture_clone_index);
-    current_tls_.Set(new ThreadLocalState(picture_clone_index));
-
-    TaskGraphRunner::Run();
-  }
+  void Run() override { TaskGraphRunner::Run(); }
 
   ScopedPtrDeque<base::DelegateSimpleThread> workers_;
-  base::AtomicSequenceNumber picture_clone_index_sequence_;
-  base::ThreadLocalPointer<ThreadLocalState> current_tls_;
 };
 
 base::LazyInstance<RasterTaskGraphRunner>::Leaky g_task_graph_runner =
@@ -96,18 +64,18 @@ class RasterFinishedTaskImpl : public RasterizerTask {
         on_raster_finished_callback_(on_raster_finished_callback) {}
 
   // Overridden from Task:
-  virtual void RunOnWorkerThread() OVERRIDE {
+  void RunOnWorkerThread() override {
     TRACE_EVENT0("cc", "RasterFinishedTaskImpl::RunOnWorkerThread");
     RasterFinished();
   }
 
   // Overridden from RasterizerTask:
-  virtual void ScheduleOnOriginThread(RasterizerTaskClient* client) OVERRIDE {}
-  virtual void CompleteOnOriginThread(RasterizerTaskClient* client) OVERRIDE {}
-  virtual void RunReplyOnOriginThread() OVERRIDE {}
+  void ScheduleOnOriginThread(RasterizerTaskClient* client) override {}
+  void CompleteOnOriginThread(RasterizerTaskClient* client) override {}
+  void RunReplyOnOriginThread() override {}
 
  protected:
-  virtual ~RasterFinishedTaskImpl() {}
+  ~RasterFinishedTaskImpl() override {}
 
   void RasterFinished() {
     task_runner_->PostTask(FROM_HERE, on_raster_finished_callback_);
@@ -120,57 +88,15 @@ class RasterFinishedTaskImpl : public RasterizerTask {
   DISALLOW_COPY_AND_ASSIGN(RasterFinishedTaskImpl);
 };
 
-class RasterRequiredForActivationFinishedTaskImpl
-    : public RasterFinishedTaskImpl {
- public:
-  RasterRequiredForActivationFinishedTaskImpl(
-      base::SequencedTaskRunner* task_runner,
-      const base::Closure& on_raster_finished_callback,
-      size_t tasks_required_for_activation_count)
-      : RasterFinishedTaskImpl(task_runner, on_raster_finished_callback),
-        tasks_required_for_activation_count_(
-            tasks_required_for_activation_count) {
-    if (tasks_required_for_activation_count_) {
-      g_raster_required_for_activation_delay.Get().delay->BeginParallel(
-          &activation_delay_end_time_);
-    }
-  }
-
-  // Overridden from Task:
-  virtual void RunOnWorkerThread() OVERRIDE {
-    TRACE_EVENT0(
-        "cc", "RasterRequiredForActivationFinishedTaskImpl::RunOnWorkerThread");
-
-    if (tasks_required_for_activation_count_) {
-      g_raster_required_for_activation_delay.Get().delay->EndParallel(
-          activation_delay_end_time_);
-    }
-    RasterFinished();
-  }
-
- private:
-  virtual ~RasterRequiredForActivationFinishedTaskImpl() {}
-
-  base::TimeTicks activation_delay_end_time_;
-  const size_t tasks_required_for_activation_count_;
-
-  DISALLOW_COPY_AND_ASSIGN(RasterRequiredForActivationFinishedTaskImpl);
-};
-
 }  // namespace
 
-// This allows an external rasterize on-demand system to run raster tasks
-// with highest priority using the same task graph runner instance.
-unsigned RasterWorkerPool::kOnDemandRasterTaskPriority = 0u;
 // This allows a micro benchmark system to run tasks with highest priority,
 // since it should finish as quickly as possible.
 unsigned RasterWorkerPool::kBenchmarkRasterTaskPriority = 0u;
 // Task priorities that make sure raster finished tasks run before any
 // remaining raster tasks.
-unsigned RasterWorkerPool::kRasterFinishedTaskPriority = 2u;
-unsigned RasterWorkerPool::kRasterRequiredForActivationFinishedTaskPriority =
-    1u;
-unsigned RasterWorkerPool::kRasterTaskPriorityBase = 3u;
+unsigned RasterWorkerPool::kRasterFinishedTaskPriority = 1u;
+unsigned RasterWorkerPool::kRasterTaskPriorityBase = 2u;
 
 RasterWorkerPool::RasterWorkerPool() {}
 
@@ -198,28 +124,11 @@ TaskGraphRunner* RasterWorkerPool::GetTaskGraphRunner() {
 }
 
 // static
-size_t RasterWorkerPool::GetPictureCloneIndexForCurrentThread() {
-  return g_task_graph_runner.Pointer()->GetPictureCloneIndexForCurrentThread();
-}
-
-// static
 scoped_refptr<RasterizerTask> RasterWorkerPool::CreateRasterFinishedTask(
     base::SequencedTaskRunner* task_runner,
     const base::Closure& on_raster_finished_callback) {
   return make_scoped_refptr(
       new RasterFinishedTaskImpl(task_runner, on_raster_finished_callback));
-}
-
-// static
-scoped_refptr<RasterizerTask>
-RasterWorkerPool::CreateRasterRequiredForActivationFinishedTask(
-    size_t tasks_required_for_activation_count,
-    base::SequencedTaskRunner* task_runner,
-    const base::Closure& on_raster_finished_callback) {
-  return make_scoped_refptr(new RasterRequiredForActivationFinishedTaskImpl(
-      task_runner,
-      on_raster_finished_callback,
-      tasks_required_for_activation_count));
 }
 
 // static
@@ -285,6 +194,74 @@ void RasterWorkerPool::InsertNodesForRasterTask(
   }
 
   InsertNodeForTask(graph, raster_task, priority, dependencies);
+}
+
+static bool IsSupportedPlaybackToMemoryFormat(ResourceFormat format) {
+  switch (format) {
+    case RGBA_4444:
+    case RGBA_8888:
+    case BGRA_8888:
+      return true;
+    case ALPHA_8:
+    case LUMINANCE_8:
+    case RGB_565:
+    case ETC1:
+      return false;
+  }
+  NOTREACHED();
+  return false;
+}
+
+// static
+void RasterWorkerPool::PlaybackToMemory(void* memory,
+                                        ResourceFormat format,
+                                        const gfx::Size& size,
+                                        int stride,
+                                        const RasterSource* raster_source,
+                                        const gfx::Rect& rect,
+                                        float scale) {
+  DCHECK(IsSupportedPlaybackToMemoryFormat(format)) << format;
+
+  // Uses kPremul_SkAlphaType since the result is not known to be opaque.
+  SkImageInfo info =
+      SkImageInfo::MakeN32(size.width(), size.height(), kPremul_SkAlphaType);
+  SkColorType buffer_color_type = ResourceFormatToSkColorType(format);
+  bool needs_copy = buffer_color_type != info.colorType();
+
+  // TODO(danakj): Make a SkSurfaceProps with an SkPixelGeometry to enable or
+  // disable LCD text.
+  // TODO(danakj): Disable LCD text on Mac during layout tests:
+  // https://cs.chromium.org#chromium/src/third_party/WebKit/Source/platform/fonts/mac/FontPlatformDataMac.mm&l=55
+  // TODO(danakj): On Windows when LCD text is disabled, ask skia to draw LCD
+  // text offscreen and downsample it to AA text.
+  // https://cs.chromium.org#chromium/src/third_party/WebKit/Source/platform/fonts/win/FontPlatformDataWin.cpp&l=86
+  SkSurfaceProps* surface_props = nullptr;
+
+  if (!stride)
+    stride = info.minRowBytes();
+
+  if (!needs_copy) {
+    skia::RefPtr<SkSurface> surface = skia::AdoptRef(
+        SkSurface::NewRasterDirect(info, memory, stride, surface_props));
+    skia::RefPtr<SkCanvas> canvas = skia::SharePtr(surface->getCanvas());
+    raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
+    return;
+  }
+
+  skia::RefPtr<SkSurface> surface =
+      skia::AdoptRef(SkSurface::NewRaster(info, surface_props));
+  skia::RefPtr<SkCanvas> canvas = skia::SharePtr(surface->getCanvas());
+  raster_source->PlaybackToCanvas(canvas.get(), rect, scale);
+
+  SkImageInfo dst_info = info;
+  dst_info.fColorType = buffer_color_type;
+  // TODO(kaanb): The GL pipeline assumes a 4-byte alignment for the
+  // bitmap data. There will be no need to call SkAlign4 once crbug.com/293728
+  // is fixed.
+  const size_t dst_row_bytes = SkAlign4(dst_info.minRowBytes());
+  DCHECK_EQ(0u, dst_row_bytes % 4);
+  bool success = canvas->readPixels(dst_info, memory, dst_row_bytes, 0, 0);
+  DCHECK_EQ(true, success);
 }
 
 }  // namespace cc

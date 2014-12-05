@@ -35,22 +35,6 @@ static const int kMsgHaveWork = WM_USER + 1;
 //-----------------------------------------------------------------------------
 // MessagePumpWin public:
 
-void MessagePumpWin::AddObserver(MessagePumpObserver* observer) {
-  observers_.AddObserver(observer);
-}
-
-void MessagePumpWin::RemoveObserver(MessagePumpObserver* observer) {
-  observers_.RemoveObserver(observer);
-}
-
-void MessagePumpWin::WillProcessMessage(const MSG& msg) {
-  FOR_EACH_OBSERVER(MessagePumpObserver, observers_, WillProcessEvent(msg));
-}
-
-void MessagePumpWin::DidProcessMessage(const MSG& msg) {
-  FOR_EACH_OBSERVER(MessagePumpObserver, observers_, DidProcessEvent(msg));
-}
-
 void MessagePumpWin::RunWithDispatcher(
     Delegate* delegate, MessagePumpDispatcher* dispatcher) {
   RunState s;
@@ -369,8 +353,6 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
   if (CallMsgFilter(const_cast<MSG*>(&msg), kMessageFilterCode))
     return true;
 
-  WillProcessMessage(msg);
-
   uint32_t action = MessagePumpDispatcher::POST_DISPATCH_PERFORM_DEFAULT;
   if (state_->dispatcher)
     action = state_->dispatcher->Dispatch(msg);
@@ -381,7 +363,6 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
     DispatchMessage(&msg);
   }
 
-  DidProcessMessage(msg);
   return true;
 }
 
@@ -440,7 +421,7 @@ void MessagePumpForIO::ScheduleWork() {
     return;  // Someone else continued the pumping.
 
   // Make sure the MessagePump does some work for us.
-  BOOL ret = PostQueuedCompletionStatus(port_, 0,
+  BOOL ret = PostQueuedCompletionStatus(port_.Get(), 0,
                                         reinterpret_cast<ULONG_PTR>(this),
                                         reinterpret_cast<OVERLAPPED*>(this));
   if (ret)
@@ -462,7 +443,7 @@ void MessagePumpForIO::ScheduleDelayedWork(const TimeTicks& delayed_work_time) {
 void MessagePumpForIO::RegisterIOHandler(HANDLE file_handle,
                                          IOHandler* handler) {
   ULONG_PTR key = HandlerToKey(handler, true);
-  HANDLE port = CreateIoCompletionPort(file_handle, port_, key, 1);
+  HANDLE port = CreateIoCompletionPort(file_handle, port_.Get(), key, 1);
   DPCHECK(port);
 }
 
@@ -474,7 +455,7 @@ bool MessagePumpForIO::RegisterJobObject(HANDLE job_handle,
   ULONG_PTR key = HandlerToKey(handler, false);
   JOBOBJECT_ASSOCIATE_COMPLETION_PORT info;
   info.CompletionKey = reinterpret_cast<void*>(key);
-  info.CompletionPort = port_;
+  info.CompletionPort = port_.Get();
   return SetInformationJobObject(job_handle,
                                  JobObjectAssociateCompletionPortInformation,
                                  &info,

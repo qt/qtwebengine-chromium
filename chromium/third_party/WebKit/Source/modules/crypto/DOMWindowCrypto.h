@@ -35,15 +35,15 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Crypto;
 class LocalDOMWindow;
 
-class DOMWindowCrypto FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowCrypto>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+class DOMWindowCrypto final : public NoBaseWillBeGarbageCollected<DOMWindowCrypto>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowCrypto);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowCrypto);
 public:
-    virtual ~DOMWindowCrypto();
     static DOMWindowCrypto& from(LocalDOMWindow&);
     static Crypto* crypto(LocalDOMWindow&);
     Crypto* crypto() const;
@@ -57,6 +57,6 @@ private:
     mutable PersistentWillBeMember<Crypto> m_crypto;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowCrypto_h

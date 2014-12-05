@@ -48,7 +48,7 @@
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 // These response headers are not copied from a revalidated response to the
 // cached response headers. For compatibility, this list is based on Chromium's
@@ -93,6 +93,7 @@ static inline bool shouldUpdateHeaderAfterRevalidation(const AtomicString& heade
 }
 
 DEFINE_DEBUG_ONLY_GLOBAL(RefCountedLeakCounter, cachedResourceLeakCounter, ("Resource"));
+unsigned Resource::s_instanceCount = 0;
 
 Resource::Resource(const ResourceRequest& request, Type type)
     : m_resourceRequest(request)
@@ -105,6 +106,7 @@ Resource::Resource(const ResourceRequest& request, Type type)
     , m_handleCount(0)
     , m_preloadCount(0)
     , m_protectorCount(0)
+    , m_cacheIdentifier(MemoryCache::defaultCacheIdentifier())
     , m_preloadResult(PreloadNotReferenced)
     , m_requestedFromNetworkingLayer(false)
     , m_loading(false)
@@ -116,13 +118,15 @@ Resource::Resource(const ResourceRequest& request, Type type)
 #ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
     , m_deleted(false)
 #endif
-    , m_resourceToRevalidate(0)
-    , m_proxyResource(0)
+    , m_resourceToRevalidate(nullptr)
+    , m_proxyResource(nullptr)
 {
     ASSERT(m_type == unsigned(type)); // m_type is a bitfield, so this tests careless updates of the enum.
+    ++s_instanceCount;
 #ifndef NDEBUG
     cachedResourceLeakCounter.increment();
 #endif
+    memoryCache()->registerLiveResource(*this);
 
     if (!m_resourceRequest.url().hasFragmentIdentifier())
         return;
@@ -139,7 +143,6 @@ Resource::~Resource()
     ASSERT(canDelete());
     RELEASE_ASSERT(!memoryCache()->contains(this));
     RELEASE_ASSERT(!ResourceCallback::callbackHandler()->isScheduled(this));
-    ASSERT(url().isNull() || memoryCache()->resourceForURL(KURL(ParsedURLString, url())) != this);
     assertAlive();
 
 #ifdef ENABLE_RESOURCE_IS_DELETED_CHECK
@@ -148,6 +151,18 @@ Resource::~Resource()
 #ifndef NDEBUG
     cachedResourceLeakCounter.decrement();
 #endif
+    --s_instanceCount;
+}
+
+void Resource::dispose()
+{
+}
+
+void Resource::trace(Visitor* visitor)
+{
+    visitor->trace(m_loader);
+    visitor->trace(m_resourceToRevalidate);
+    visitor->trace(m_proxyResource);
 }
 
 void Resource::failBeforeStarting()
@@ -198,9 +213,9 @@ void Resource::checkNotify()
         c->notifyFinished(this);
 }
 
-void Resource::appendData(const char* data, int length)
+void Resource::appendData(const char* data, unsigned length)
 {
-    TRACE_EVENT0("webkit", "Resource::appendData");
+    TRACE_EVENT0("blink", "Resource::appendData");
     ASSERT(!m_resourceToRevalidate);
     ASSERT(!errorOccurred());
     if (m_options.dataBufferingPolicy == DoNotBufferData)
@@ -250,11 +265,10 @@ void Resource::finishOnePart()
     checkNotify();
 }
 
-void Resource::finish(double finishTime)
+void Resource::finish()
 {
     ASSERT(!m_resourceToRevalidate);
     ASSERT(!errorOccurred());
-    m_loadFinishTime = finishTime;
     finishOnePart();
     if (!errorOccurred())
         m_status = Cached;
@@ -268,7 +282,7 @@ bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin)
 
 bool Resource::passesAccessControlCheck(SecurityOrigin* securityOrigin, String& errorDescription)
 {
-    return WebCore::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
+    return blink::passesAccessControlCheck(m_response, resourceRequest().allowStoredCredentials() ? AllowStoredCredentials : DoNotAllowStoredCredentials, securityOrigin, errorDescription);
 }
 
 static double currentAge(const ResourceResponse& response, double responseTimestamp)
@@ -338,16 +352,16 @@ static bool canUseResponse(ResourceResponse& response, double responseTimestamp)
     return currentAge(response, responseTimestamp) <= freshnessLifetime(response, responseTimestamp);
 }
 
-const ResourceRequest& Resource::lastResourceRequest()
+const ResourceRequest& Resource::lastResourceRequest() const
 {
     if (!m_redirectChain.size())
         return m_resourceRequest;
     return m_redirectChain.last().m_request;
 }
 
-void Resource::willSendRequest(ResourceRequest& request, const ResourceResponse& response)
+void Resource::willFollowRedirect(ResourceRequest& newRequest, const ResourceResponse& redirectResponse)
 {
-    m_redirectChain.append(RedirectPair(request, response));
+    m_redirectChain.append(RedirectPair(newRequest, redirectResponse));
     m_requestedFromNetworkingLayer = true;
 }
 
@@ -371,7 +385,7 @@ bool Resource::hasRightHandleCountApartFromCache(unsigned targetCount) const
     return m_handleCount == targetCount + (memoryCache()->contains(this) ? 1 : 0);
 }
 
-void Resource::responseReceived(const ResourceResponse& response)
+void Resource::responseReceived(const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle>)
 {
     setResponse(response);
     m_responseTimestamp = currentTime();
@@ -398,7 +412,7 @@ void Resource::setSerializedCachedMetadata(const char* data, size_t size)
     m_cachedMetadata = CachedMetadata::deserialize(data, size);
 }
 
-void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size)
+void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t size, MetadataCacheType cacheType)
 {
     // Currently, only one type of cached metadata per resource is supported.
     // If the need arises for multiple types of metadata per resource this could
@@ -406,8 +420,16 @@ void Resource::setCachedMetadata(unsigned dataTypeID, const char* data, size_t s
     ASSERT(!m_cachedMetadata);
 
     m_cachedMetadata = CachedMetadata::create(dataTypeID, data, size);
-    const Vector<char>& serializedData = m_cachedMetadata->serialize();
-    blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
+
+    if (cacheType == SendToPlatform) {
+        const Vector<char>& serializedData = m_cachedMetadata->serialize();
+        blink::Platform::current()->cacheMetadata(m_response.url(), m_response.responseTime(), serializedData.data(), serializedData.size());
+    }
+}
+
+void Resource::clearCachedMetadata()
+{
+    m_cachedMetadata.clear();
 }
 
 bool Resource::canDelete() const
@@ -424,7 +446,7 @@ bool Resource::hasOneHandle() const
 CachedMetadata* Resource::cachedMetadata(unsigned dataTypeID) const
 {
     if (!m_cachedMetadata || m_cachedMetadata->dataTypeID() != dataTypeID)
-        return 0;
+        return nullptr;
     return m_cachedMetadata.get();
 }
 
@@ -551,7 +573,11 @@ bool Resource::deleteIfPossible()
 {
     if (canDelete() && !memoryCache()->contains(this)) {
         InspectorInstrumentation::willDestroyResource(this);
+        dispose();
+        memoryCache()->unregisterLiveResource(*this);
+#if !ENABLE(OILPAN)
         delete this;
+#endif
         return true;
     }
     return false;
@@ -596,9 +622,7 @@ void Resource::finishPendingClients()
     Vector<ResourceClient*> clientsToNotify;
     copyToVector(m_clientsAwaitingCallback, clientsToNotify);
 
-    for (size_t i = 0; i < clientsToNotify.size(); ++i) {
-        ResourceClient* client = clientsToNotify[i];
-
+    for (const auto& client : clientsToNotify) {
         // Handle case (2) to skip removed clients.
         if (!m_clientsAwaitingCallback.remove(client))
             continue;
@@ -649,11 +673,11 @@ void Resource::clearResourceToRevalidate()
 
     // A resource may start revalidation before this method has been called, so check that this resource is still the proxy resource before clearing it out.
     if (m_resourceToRevalidate->m_proxyResource == this) {
-        m_resourceToRevalidate->m_proxyResource = 0;
+        m_resourceToRevalidate->m_proxyResource = nullptr;
         m_resourceToRevalidate->deleteIfPossible();
     }
     m_handlesToRevalidate.clear();
-    m_resourceToRevalidate = 0;
+    m_resourceToRevalidate = nullptr;
     deleteIfPossible();
 }
 
@@ -663,14 +687,12 @@ void Resource::switchClientsToRevalidatedResource()
     ASSERT(memoryCache()->contains(m_resourceToRevalidate));
     ASSERT(!memoryCache()->contains(this));
 
-    WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate);
+    WTF_LOG(ResourceLoading, "Resource %p switchClientsToRevalidatedResource %p", this, m_resourceToRevalidate.get());
 
     m_resourceToRevalidate->m_identifier = m_identifier;
 
     m_switchingClientsToRevalidatedResource = true;
-    HashSet<ResourcePtrBase*>::iterator end = m_handlesToRevalidate.end();
-    for (HashSet<ResourcePtrBase*>::iterator it = m_handlesToRevalidate.begin(); it != end; ++it) {
-        ResourcePtrBase* handle = *it;
+    for (ResourcePtrBase* handle : m_handlesToRevalidate) {
         handle->m_resource = m_resourceToRevalidate;
         m_resourceToRevalidate->registerHandle(handle);
         --m_handleCount;
@@ -679,14 +701,10 @@ void Resource::switchClientsToRevalidatedResource()
     m_handlesToRevalidate.clear();
 
     Vector<ResourceClient*> clientsToMove;
-    HashCountedSet<ResourceClient*>::iterator end2 = m_clients.end();
-    for (HashCountedSet<ResourceClient*>::iterator it = m_clients.begin(); it != end2; ++it) {
-        ResourceClient* client = it->key;
-        unsigned count = it->value;
-        while (count) {
-            clientsToMove.append(client);
-            --count;
-        }
+    for (const auto& clientHashEntry : m_clients) {
+        unsigned count = clientHashEntry.value;
+        while (count--)
+            clientsToMove.append(clientHashEntry.key);
     }
 
     unsigned moveCount = clientsToMove.size();
@@ -714,16 +732,15 @@ void Resource::updateResponseAfterRevalidation(const ResourceResponse& validatin
     // RFC2616 10.3.5
     // Update cached headers from the 304 response
     const HTTPHeaderMap& newHeaders = validatingResponse.httpHeaderFields();
-    HTTPHeaderMap::const_iterator end = newHeaders.end();
-    for (HTTPHeaderMap::const_iterator it = newHeaders.begin(); it != end; ++it) {
+    for (const auto& header : newHeaders) {
         // Entity headers should not be sent by servers when generating a 304
         // response; misconfigured servers send them anyway. We shouldn't allow
         // such headers to update the original request. We'll base this on the
         // list defined by RFC2616 7.1, with a few additions for extension headers
         // we care about.
-        if (!shouldUpdateHeaderAfterRevalidation(it->key))
+        if (!shouldUpdateHeaderAfterRevalidation(header.key))
             continue;
-        m_response.setHTTPHeaderField(it->key, it->value);
+        m_response.setHTTPHeaderField(header.key, header.value);
     }
 }
 
@@ -785,10 +802,10 @@ void Resource::unregisterHandle(ResourcePtrBase* h)
 
 bool Resource::canReuseRedirectChain()
 {
-    for (size_t i = 0; i < m_redirectChain.size(); ++i) {
-        if (!canUseResponse(m_redirectChain[i].m_redirectResponse, m_responseTimestamp))
+    for (auto& redirect : m_redirectChain) {
+        if (!canUseResponse(redirect.m_redirectResponse, m_responseTimestamp))
             return false;
-        if (m_redirectChain[i].m_request.cacheControlContainsNoCache() || m_redirectChain[i].m_request.cacheControlContainsNoStore())
+        if (redirect.m_request.cacheControlContainsNoCache() || redirect.m_request.cacheControlContainsNoStore())
             return false;
     }
     return true;
@@ -886,20 +903,19 @@ bool Resource::ResourceCallback::isScheduled(Resource* resource) const
 
 void Resource::ResourceCallback::timerFired(Timer<ResourceCallback>*)
 {
-    HashSet<Resource*>::iterator end = m_resourcesWithPendingClients.end();
-    Vector<ResourcePtr<Resource> > resources;
-    for (HashSet<Resource*>::iterator it = m_resourcesWithPendingClients.begin(); it != end; ++it)
-        resources.append(*it);
+    Vector<ResourcePtr<Resource>> resources;
+    for (Resource* resource : m_resourcesWithPendingClients)
+        resources.append(resource);
     m_resourcesWithPendingClients.clear();
 
-    for (size_t i = 0; i < resources.size(); i++) {
-        resources[i]->assertAlive();
-        resources[i]->finishPendingClients();
-        resources[i]->assertAlive();
+    for (const auto& resource : resources) {
+        resource->assertAlive();
+        resource->finishPendingClients();
+        resource->assertAlive();
     }
 
-    for (size_t i = 0; i < resources.size(); i++)
-        resources[i]->assertAlive();
+    for (const auto& resource : resources)
+        resource->assertAlive();
 }
 
 static const char* initatorTypeNameToString(const AtomicString& initiatorTypeName)

@@ -36,21 +36,12 @@
 WebInspector.RequestView = function(request)
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("resourceView.css");
 
-    this.element.classList.add("resource-view");
+    this.element.classList.add("request-view");
     this.request = request;
 }
 
 WebInspector.RequestView.prototype = {
-    /**
-     * @return {boolean}
-     */
-    hasContent: function()
-    {
-        return false;
-    },
-
     __proto__: WebInspector.VBox.prototype
 }
 
@@ -60,9 +51,9 @@ WebInspector.RequestView.prototype = {
  */
 WebInspector.RequestView.hasTextContent = function(request)
 {
-    if (request.type.isTextType())
+    if (request.resourceType().isTextType())
         return true;
-    if (request.type === WebInspector.resourceTypes.Other || request.hasErrorStatusCode())
+    if (request.resourceType() === WebInspector.resourceTypes.Other || request.hasErrorStatusCode())
         return !!request.content && !request.contentEncoded;
     return false;
 }
@@ -73,11 +64,11 @@ WebInspector.RequestView.hasTextContent = function(request)
  */
 WebInspector.RequestView.nonSourceViewForRequest = function(request)
 {
-    switch (request.type) {
+    switch (request.resourceType()) {
     case WebInspector.resourceTypes.Image:
-        return new WebInspector.ImageView(request);
+        return new WebInspector.ImageView(request.url, request.mimeType, request);
     case WebInspector.resourceTypes.Font:
-        return new WebInspector.FontView(request);
+        return new WebInspector.FontView(request.url);
     default:
         return new WebInspector.RequestView(request);
     }

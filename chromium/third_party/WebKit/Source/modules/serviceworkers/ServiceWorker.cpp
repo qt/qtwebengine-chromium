@@ -31,40 +31,47 @@
 #include "config.h"
 #include "ServiceWorker.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/dom/MessagePort.h"
+#include "core/events/Event.h"
 #include "modules/EventTargetModules.h"
-#include "platform/NotImplemented.h"
 #include "public/platform/WebMessagePortChannel.h"
 #include "public/platform/WebServiceWorkerState.h"
 #include "public/platform/WebString.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
-class ServiceWorker::ThenFunction FINAL : public ScriptFunction {
+class ServiceWorker::ThenFunction final : public ScriptFunction {
 public:
-    static PassOwnPtr<ScriptFunction> create(PassRefPtr<ServiceWorker> observer)
+    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ServiceWorker> observer)
     {
-        ExecutionContext* executionContext = observer->executionContext();
-        return adoptPtr(new ThenFunction(toIsolate(executionContext), observer));
+        ThenFunction* self = new ThenFunction(scriptState, observer);
+        return self->bindToV8Function();
     }
+
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_observer);
+        ScriptFunction::trace(visitor);
+    }
+
 private:
-    ThenFunction(v8::Isolate* isolate, PassRefPtr<ServiceWorker> observer)
-        : ScriptFunction(isolate)
+    ThenFunction(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ServiceWorker> observer)
+        : ScriptFunction(scriptState)
         , m_observer(observer)
     {
     }
 
-    virtual ScriptValue call(ScriptValue value) OVERRIDE
+    virtual ScriptValue call(ScriptValue value) override
     {
         m_observer->onPromiseResolved();
         return value;
     }
 
-    RefPtr<ServiceWorker> m_observer;
+    RefPtrWillBeMember<ServiceWorker> m_observer;
 };
 
 const AtomicString& ServiceWorker::interfaceName() const
@@ -72,16 +79,25 @@ const AtomicString& ServiceWorker::interfaceName() const
     return EventTargetNames::ServiceWorker;
 }
 
-void ServiceWorker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void ServiceWorker::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
     OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
     if (exceptionState.hadException())
         return;
+    if (m_outerWorker->state() == WebServiceWorkerStateRedundant) {
+        exceptionState.throwDOMException(InvalidStateError, "ServiceWorker is in redundant state.");
+        return;
+    }
 
-    blink::WebString messageString = message->toWireString();
-    OwnPtr<blink::WebMessagePortChannelArray> webChannels = MessagePort::toWebMessagePortChannelArray(channels.release());
+    WebString messageString = message->toWireString();
+    OwnPtr<WebMessagePortChannelArray> webChannels = MessagePort::toWebMessagePortChannelArray(channels.release());
     m_outerWorker->postMessage(messageString, webChannels.leakPtr());
+}
+
+void ServiceWorker::terminate(ExceptionState& exceptionState)
+{
+    exceptionState.throwDOMException(InvalidAccessError, "Not supported.");
 }
 
 bool ServiceWorker::isReady()
@@ -95,12 +111,7 @@ void ServiceWorker::dispatchStateChangeEvent()
     this->dispatchEvent(Event::create(EventTypeNames::statechange));
 }
 
-String ServiceWorker::scope() const
-{
-    return m_outerWorker->scope().string();
-}
-
-String ServiceWorker::url() const
+String ServiceWorker::scriptURL() const
 {
     return m_outerWorker->url().string();
 }
@@ -108,57 +119,60 @@ String ServiceWorker::url() const
 const AtomicString& ServiceWorker::state() const
 {
     DEFINE_STATIC_LOCAL(AtomicString, unknown, ("unknown", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, parsed, ("parsed", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, installing, ("installing", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, installed, ("installed", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(AtomicString, activating, ("activating", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, active, ("active", AtomicString::ConstructFromLiteral));
-    DEFINE_STATIC_LOCAL(AtomicString, deactivated, ("deactivated", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, activated, ("activated", AtomicString::ConstructFromLiteral));
+    DEFINE_STATIC_LOCAL(AtomicString, redundant, ("redundant", AtomicString::ConstructFromLiteral));
 
     switch (m_outerWorker->state()) {
-    case blink::WebServiceWorkerStateUnknown:
+    case WebServiceWorkerStateUnknown:
         // The web platform should never see this internal state
         ASSERT_NOT_REACHED();
         return unknown;
-    case blink::WebServiceWorkerStateParsed:
-        return parsed;
-    case blink::WebServiceWorkerStateInstalling:
+    case WebServiceWorkerStateInstalling:
         return installing;
-    case blink::WebServiceWorkerStateInstalled:
+    case WebServiceWorkerStateInstalled:
         return installed;
-    case blink::WebServiceWorkerStateActivating:
+    case WebServiceWorkerStateActivating:
         return activating;
-    case blink::WebServiceWorkerStateActive:
-        return active;
-    case blink::WebServiceWorkerStateDeactivated:
-        return deactivated;
+    case WebServiceWorkerStateActivated:
+        return activated;
+    case WebServiceWorkerStateRedundant:
+        return redundant;
     default:
         ASSERT_NOT_REACHED();
         return nullAtom;
     }
 }
 
-PassRefPtr<ServiceWorker> ServiceWorker::from(ExecutionContext* executionContext, WebType* worker)
+PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::from(ExecutionContext* executionContext, WebType* worker)
 {
     if (!worker)
-        return PassRefPtr<ServiceWorker>();
+        return nullptr;
 
-    blink::WebServiceWorkerProxy* proxy = worker->proxy();
-    ServiceWorker* existingServiceWorker = proxy ? proxy->unwrap() : 0;
-    if (existingServiceWorker) {
-        ASSERT(existingServiceWorker->executionContext() == executionContext);
-        return existingServiceWorker;
-    }
-
-    return create(executionContext, adoptPtr(worker));
+    RefPtrWillBeRawPtr<ServiceWorker> serviceWorker = getOrCreate(executionContext, worker);
+    if (serviceWorker->m_proxyState == Initial)
+        serviceWorker->setProxyState(Ready);
+    return serviceWorker.release();
 }
 
-PassRefPtr<ServiceWorker> ServiceWorker::from(ScriptPromiseResolverWithContext* resolver, WebType* worker)
+PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::take(ScriptPromiseResolver* resolver, WebType* worker)
 {
-    RefPtr<ServiceWorker> serviceWorker = ServiceWorker::from(resolver->scriptState()->executionContext(), worker);
+    if (!worker)
+        return nullptr;
+
+    RefPtrWillBeRawPtr<ServiceWorker> serviceWorker = getOrCreate(resolver->scriptState()->executionContext(), worker);
     ScriptState::Scope scope(resolver->scriptState());
-    serviceWorker->waitOnPromise(resolver->promise());
+    if (serviceWorker->m_proxyState == Initial)
+        serviceWorker->waitOnPromise(resolver);
     return serviceWorker;
+}
+
+void ServiceWorker::dispose(WebType* worker)
+{
+    if (worker && !worker->proxy())
+        delete worker;
 }
 
 void ServiceWorker::setProxyState(ProxyState state)
@@ -167,7 +181,7 @@ void ServiceWorker::setProxyState(ProxyState state)
         return;
     switch (m_proxyState) {
     case Initial:
-        ASSERT(state == RegisterPromisePending || state == ContextStopped);
+        ASSERT(state == RegisterPromisePending || state == Ready || state == ContextStopped);
         break;
     case RegisterPromisePending:
         ASSERT(state == Ready || state == ContextStopped);
@@ -193,16 +207,16 @@ void ServiceWorker::onPromiseResolved()
     setProxyState(Ready);
 }
 
-void ServiceWorker::waitOnPromise(ScriptPromise promise)
+void ServiceWorker::waitOnPromise(ScriptPromiseResolver* resolver)
 {
-    if (promise.isEmpty()) {
+    if (resolver->promise().isEmpty()) {
         // The document was detached during registration. The state doesn't really
         // matter since this ServiceWorker will immediately die.
         setProxyState(ContextStopped);
         return;
     }
     setProxyState(RegisterPromisePending);
-    promise.then(ThenFunction::create(this));
+    resolver->promise().then(ThenFunction::createFunction(resolver->scriptState(), this));
 }
 
 bool ServiceWorker::hasPendingActivity() const
@@ -211,7 +225,7 @@ bool ServiceWorker::hasPendingActivity() const
         return true;
     if (m_proxyState == ContextStopped)
         return false;
-    return m_outerWorker->state() != blink::WebServiceWorkerStateDeactivated;
+    return m_outerWorker->state() != WebServiceWorkerStateRedundant;
 }
 
 void ServiceWorker::stop()
@@ -219,22 +233,29 @@ void ServiceWorker::stop()
     setProxyState(ContextStopped);
 }
 
-PassRefPtr<ServiceWorker> ServiceWorker::create(ExecutionContext* executionContext, PassOwnPtr<blink::WebServiceWorker> outerWorker)
+PassRefPtrWillBeRawPtr<ServiceWorker> ServiceWorker::getOrCreate(ExecutionContext* executionContext, WebType* outerWorker)
 {
-    RefPtr<ServiceWorker> worker = adoptRef(new ServiceWorker(executionContext, outerWorker));
+    if (!outerWorker)
+        return nullptr;
+
+    ServiceWorker* existingServiceWorker = static_cast<ServiceWorker*>(outerWorker->proxy());
+    if (existingServiceWorker) {
+        ASSERT(existingServiceWorker->executionContext() == executionContext);
+        return existingServiceWorker;
+    }
+
+    RefPtrWillBeRawPtr<ServiceWorker> worker = adoptRefWillBeNoop(new ServiceWorker(executionContext, adoptPtr(outerWorker)));
     worker->suspendIfNeeded();
     return worker.release();
 }
 
-ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<blink::WebServiceWorker> worker)
+ServiceWorker::ServiceWorker(ExecutionContext* executionContext, PassOwnPtr<WebServiceWorker> worker)
     : AbstractWorker(executionContext)
-    , WebServiceWorkerProxy(this)
     , m_outerWorker(worker)
     , m_proxyState(Initial)
 {
-    ScriptWrappable::init(this);
     ASSERT(m_outerWorker);
     m_outerWorker->setProxy(this);
 }
 
-} // namespace WebCore
+} // namespace blink

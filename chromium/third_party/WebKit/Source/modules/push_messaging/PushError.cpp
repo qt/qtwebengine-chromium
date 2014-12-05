@@ -8,19 +8,24 @@
 #include "core/dom/ExceptionCode.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<DOMException> PushError::from(ScriptPromiseResolverWithContext*, WebType* webErrorRaw)
+PassRefPtrWillBeRawPtr<DOMException> PushError::take(ScriptPromiseResolver*, WebType* webErrorRaw)
 {
     OwnPtr<WebType> webError = adoptPtr(webErrorRaw);
     switch (webError->errorType) {
-    case blink::WebPushError::ErrorTypeAbort:
-        return DOMException::create(AbortError, "Registration failed.");
-    case blink::WebPushError::ErrorTypeUnknown:
+    case WebPushError::ErrorTypeAbort:
+        return DOMException::create(AbortError, webError->message);
+    case WebPushError::ErrorTypeUnknown:
         return DOMException::create(UnknownError);
     }
     ASSERT_NOT_REACHED();
     return DOMException::create(UnknownError);
 }
 
-} // namespace WebCore
+void PushError::dispose(WebType* webErrorRaw)
+{
+    delete webErrorRaw;
+}
+
+} // namespace blink

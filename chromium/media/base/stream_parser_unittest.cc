@@ -53,7 +53,7 @@ static void GenerateBuffers(const int* decode_timestamps,
         StreamParserBuffer::CopyFrom(kFakeData, sizeof(kFakeData),
                                      true, type, track_id);
     buffer->SetDecodeTimestamp(
-        base::TimeDelta::FromMicroseconds(decode_timestamps[i]));
+        DecodeTimestamp::FromMicroseconds(decode_timestamps[i]));
     queue->push_back(buffer);
   }
 }
@@ -129,7 +129,7 @@ class StreamParserTest : public testing::Test {
          ++itr) {
       if (itr != merged_buffers_.begin())
         results_stream << " ";
-      const StreamParserBuffer& buffer = *(*itr);
+      const StreamParserBuffer& buffer = *(itr->get());
       if (include_type_and_text_track) {
         switch (buffer.type()) {
           case DemuxerStream::AUDIO:
@@ -379,4 +379,3 @@ TEST_F(StreamParserTest, MergeBufferQueues_InvalidAppendToExistingMerge) {
 }
 
 }  // namespace media
-

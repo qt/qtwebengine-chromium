@@ -32,17 +32,19 @@
 #include "platform/mediastream/MediaStreamSource.h"
 
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<MediaStreamSource> MediaStreamSource::create(const String& id, Type type, const String& name, ReadyState readyState, bool requiresConsumer)
+PassRefPtr<MediaStreamSource> MediaStreamSource::create(const String& id, Type type, const String& name, bool remote, bool readonly, ReadyState readyState, bool requiresConsumer)
 {
-    return adoptRef(new MediaStreamSource(id, type, name, readyState, requiresConsumer));
+    return adoptRef(new MediaStreamSource(id, type, name, remote, readonly, readyState, requiresConsumer));
 }
 
-MediaStreamSource::MediaStreamSource(const String& id, Type type, const String& name, ReadyState readyState, bool requiresConsumer)
+MediaStreamSource::MediaStreamSource(const String& id, Type type, const String& name, bool remote, bool readonly, ReadyState readyState, bool requiresConsumer)
     : m_id(id)
     , m_type(type)
     , m_name(name)
+    , m_remote(remote)
+    , m_readonly(readonly)
     , m_readyState(readyState)
     , m_requiresConsumer(requiresConsumer)
 {
@@ -69,30 +71,29 @@ void MediaStreamSource::removeObserver(MediaStreamSource::Observer* observer)
         m_observers.remove(pos);
 }
 
-void MediaStreamSource::addAudioConsumer(PassRefPtr<AudioDestinationConsumer> consumer)
+void MediaStreamSource::addAudioConsumer(AudioDestinationConsumer* consumer)
 {
     ASSERT(m_requiresConsumer);
     MutexLocker locker(m_audioConsumersLock);
-    m_audioConsumers.append(consumer);
+    m_audioConsumers.add(consumer);
 }
 
 bool MediaStreamSource::removeAudioConsumer(AudioDestinationConsumer* consumer)
 {
     ASSERT(m_requiresConsumer);
     MutexLocker locker(m_audioConsumersLock);
-    size_t pos = m_audioConsumers.find(consumer);
-    if (pos != kNotFound) {
-        m_audioConsumers.remove(pos);
-        return true;
-    }
-    return false;
+    HeapHashSet<Member<AudioDestinationConsumer> >::iterator it = m_audioConsumers.find(consumer);
+    if (it == m_audioConsumers.end())
+        return false;
+    m_audioConsumers.remove(it);
+    return true;
 }
 
 void MediaStreamSource::setAudioFormat(size_t numberOfChannels, float sampleRate)
 {
     ASSERT(m_requiresConsumer);
     MutexLocker locker(m_audioConsumersLock);
-    for (Vector<RefPtr<AudioDestinationConsumer> >::iterator it = m_audioConsumers.begin(); it != m_audioConsumers.end(); ++it)
+    for (HeapHashSet<Member<AudioDestinationConsumer> >::iterator it = m_audioConsumers.begin(); it != m_audioConsumers.end(); ++it)
         (*it)->setFormat(numberOfChannels, sampleRate);
 }
 
@@ -100,8 +101,8 @@ void MediaStreamSource::consumeAudio(AudioBus* bus, size_t numberOfFrames)
 {
     ASSERT(m_requiresConsumer);
     MutexLocker locker(m_audioConsumersLock);
-    for (Vector<RefPtr<AudioDestinationConsumer> >::iterator it = m_audioConsumers.begin(); it != m_audioConsumers.end(); ++it)
+    for (HeapHashSet<Member<AudioDestinationConsumer> >::iterator it = m_audioConsumers.begin(); it != m_audioConsumers.end(); ++it)
         (*it)->consumeAudio(bus, numberOfFrames);
 }
 
-} // namespace WebCore
+} // namespace blink

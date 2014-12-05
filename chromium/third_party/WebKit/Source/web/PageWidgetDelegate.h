@@ -31,18 +31,14 @@
 #ifndef PageWidgetDelegate_h
 #define PageWidgetDelegate_h
 
-#include "core/page/Page.h"
 #include "public/platform/WebCanvas.h"
 #include "public/web/WebWidget.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
-class LocalFrame;
-class Page;
-}
-
 namespace blink {
 
+class LocalFrame;
+class Page;
 class PageOverlayList;
 class WebGestureEvent;
 class WebInputEvent;
@@ -53,15 +49,15 @@ class WebTouchEvent;
 
 class PageWidgetEventHandler {
 public:
-    virtual void handleMouseMove(WebCore::LocalFrame& mainFrame, const WebMouseEvent&);
-    virtual void handleMouseLeave(WebCore::LocalFrame& mainFrame, const WebMouseEvent&);
-    virtual void handleMouseDown(WebCore::LocalFrame& mainFrame, const WebMouseEvent&);
-    virtual void handleMouseUp(WebCore::LocalFrame& mainFrame, const WebMouseEvent&);
-    virtual bool handleMouseWheel(WebCore::LocalFrame& mainFrame, const WebMouseWheelEvent&);
+    virtual void handleMouseMove(LocalFrame& mainFrame, const WebMouseEvent&);
+    virtual void handleMouseLeave(LocalFrame& mainFrame, const WebMouseEvent&);
+    virtual void handleMouseDown(LocalFrame& mainFrame, const WebMouseEvent&);
+    virtual void handleMouseUp(LocalFrame& mainFrame, const WebMouseEvent&);
+    virtual bool handleMouseWheel(LocalFrame& mainFrame, const WebMouseWheelEvent&);
     virtual bool handleKeyEvent(const WebKeyboardEvent&) = 0;
     virtual bool handleCharEvent(const WebKeyboardEvent&) = 0;
     virtual bool handleGestureEvent(const WebGestureEvent&) = 0;
-    virtual bool handleTouchEvent(WebCore::LocalFrame& mainFrame, const WebTouchEvent&);
+    virtual bool handleTouchEvent(LocalFrame& mainFrame, const WebTouchEvent&);
     virtual ~PageWidgetEventHandler() { }
 };
 
@@ -73,10 +69,13 @@ public:
         Opaque,
         Translucent,
     };
-    static void animate(WebCore::Page*, double monotonicFrameBeginTime);
-    static void layout(WebCore::Page*);
-    static void paint(WebCore::Page*, PageOverlayList*, WebCanvas*, const WebRect&, CanvasBackground);
-    static bool handleInputEvent(WebCore::Page*, PageWidgetEventHandler&, const WebInputEvent&);
+    // rootFrame arguments indicate a root localFrame from which to start performing the
+    // specified operation. If rootFrame is 0, these methods will attempt to use the
+    // Page's mainFrame(), if it is a LocalFrame.
+    static void animate(Page&, double monotonicFrameBeginTime, LocalFrame& root);
+    static void layout(Page&, LocalFrame& root);
+    static void paint(Page&, PageOverlayList*, WebCanvas*, const WebRect&, CanvasBackground, LocalFrame& root);
+    static bool handleInputEvent(PageWidgetEventHandler&, const WebInputEvent&, LocalFrame* root);
 
 private:
     PageWidgetDelegate() { }

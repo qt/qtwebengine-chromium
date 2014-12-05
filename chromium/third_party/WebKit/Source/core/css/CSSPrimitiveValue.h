@@ -30,7 +30,7 @@
 #include "wtf/MathExtras.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSBasicShape;
 class CSSCalcValue;
@@ -110,13 +110,8 @@ public:
         CSS_PAIR = 100, // We envision this being exposed as a means of getting computed style values for pairs (border-spacing/radius, background-position, etc.)
         CSS_UNICODE_RANGE = 102,
 
-        // These next types are just used internally to allow us to translate back and forth from CSSPrimitiveValues to CSSParserValues.
-        CSS_PARSER_OPERATOR = 103,
-        CSS_PARSER_INTEGER = 104,
+        // FIXME: This is only used in CSSParserValue, so it's probably better as part of the enum there
         CSS_PARSER_HEXCOLOR = 105,
-
-        // This is used internally for unknown identifiers
-        CSS_PARSER_IDENTIFIER = 106,
 
         // These are from CSS3 Values and Units, but that isn't a finished standard yet
         CSS_TURN = 107,
@@ -226,10 +221,6 @@ public:
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(propertyID));
     }
-    static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createParserOperator(int parserOperator)
-    {
-        return adoptRefWillBeNoop(new CSSPrimitiveValue(parserOperator, CSS_PARSER_OPERATOR));
-    }
     static PassRefPtrWillBeRawPtr<CSSPrimitiveValue> createColor(unsigned rgbValue)
     {
         return adoptRefWillBeNoop(new CSSPrimitiveValue(rgbValue, CSS_RGBCOLOR));
@@ -273,21 +264,7 @@ public:
     UnitType primitiveType() const;
 
     double computeDegrees();
-
-    enum TimeUnit { Seconds, Milliseconds };
-    template <typename T, TimeUnit timeUnit> T computeTime()
-    {
-        if (timeUnit == Seconds && m_primitiveUnitType == CSS_S)
-            return getValue<T>();
-        if (timeUnit == Seconds && m_primitiveUnitType == CSS_MS)
-            return getValue<T>() / 1000;
-        if (timeUnit == Milliseconds && m_primitiveUnitType == CSS_MS)
-            return getValue<T>();
-        if (timeUnit == Milliseconds && m_primitiveUnitType == CSS_S)
-            return getValue<T>() * 1000;
-        ASSERT_NOT_REACHED();
-        return 0;
-    }
+    double computeSeconds();
 
     /*
      * Computes a length in pixels out of the given CSSValue
@@ -429,6 +406,6 @@ typedef CSSPrimitiveValue::CSSLengthArray CSSLengthArray;
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSPrimitiveValue, isPrimitiveValue());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSPrimitiveValue_h

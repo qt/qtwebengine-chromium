@@ -35,19 +35,23 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "platform/scroll/ScrollTypes.h"
+#include "wtf/HashSet.h"
 
-namespace WebCore {
+namespace blink {
 
     class Color;
     class Document;
     class DragImage;
     class Editor;
+    class Element;
     class EventHandler;
     class FetchContext;
     class FloatSize;
     class FrameConsole;
+    class FrameDestructionObserver;
     class FrameSelection;
     class FrameView;
+    class HTMLPlugInElement;
     class InputMethodController;
     class IntPoint;
     class IntSize;
@@ -60,28 +64,36 @@ namespace WebCore {
     class TreeScope;
     class VisiblePosition;
 
-    class LocalFrame : public Frame, public WillBePersistentHeapSupplementable<LocalFrame>  {
+    class LocalFrame : public Frame, public WillBeHeapSupplementable<LocalFrame> {
+        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFrame);
     public:
-        static PassRefPtr<LocalFrame> create(FrameLoaderClient*, FrameHost*, FrameOwner*);
-
-        virtual bool isLocalFrame() const OVERRIDE { return true; }
+        static PassRefPtrWillBeRawPtr<LocalFrame> create(FrameLoaderClient*, FrameHost*, FrameOwner*);
 
         void init();
-        void setView(PassRefPtr<FrameView>);
+        void setView(PassRefPtrWillBeRawPtr<FrameView>);
         void createView(const IntSize&, const Color&, bool,
             ScrollbarMode = ScrollbarAuto, bool horizontalLock = false,
             ScrollbarMode = ScrollbarAuto, bool verticalLock = false);
 
+        // Frame overrides:
         virtual ~LocalFrame();
+        virtual void trace(Visitor*) override;
+        virtual bool isLocalFrame() const override { return true; }
+        virtual LocalDOMWindow* domWindow() const override;
+        virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
+        virtual void detach() override;
+        virtual void disconnectOwnerElement() override;
 
-        virtual void willDetachFrameHost() OVERRIDE;
-        virtual void detachFromFrameHost() OVERRIDE;
+        void addDestructionObserver(FrameDestructionObserver*);
+        void removeDestructionObserver(FrameDestructionObserver*);
 
-        virtual void disconnectOwnerElement() OVERRIDE;
+        void willDetachFrameHost();
 
-        virtual void setDOMWindow(PassRefPtrWillBeRawPtr<LocalDOMWindow>) OVERRIDE;
+        void setDOMWindow(PassRefPtrWillBeRawPtr<LocalDOMWindow>);
         FrameView* view() const;
         Document* document() const;
+        void setPagePopupOwner(Element&);
+        Element* pagePopupOwner() const { return m_pagePopupOwner.get(); }
 
         RenderView* contentRenderer() const; // Root of the render tree for the document contained in this frame.
 
@@ -92,15 +104,16 @@ namespace WebCore {
         FrameSelection& selection() const;
         InputMethodController& inputMethodController() const;
         FetchContext& fetchContext() const { return loader().fetchContext(); }
-        ScriptController& script();
+        ScriptController& script() const;
         SpellChecker& spellChecker() const;
         FrameConsole& console() const;
 
         void didChangeVisibilityState();
 
-        // FIXME: This method is only used by EventHandler to get the highest level
-        // LocalFrame in this frame's in-process subtree. When user gesture tokens
-        // are synchronized across processes this method should be removed.
+        // This method is used to get the highest level LocalFrame in this
+        // frame's in-process subtree.
+        // FIXME: This is a temporary hack to support RemoteFrames, and callers
+        // should be updated to avoid storing things on the main frame.
         LocalFrame* localFrameRoot();
 
     // ======== All public functions below this point are candidates to move out of LocalFrame into another class. ========
@@ -111,7 +124,6 @@ namespace WebCore {
 
         // See GraphicsLayerClient.h for accepted flags.
         String layerTreeAsText(unsigned flags = 0) const;
-        String trackedRepaintRectsAsText() const;
 
         void setPrinting(bool printing, const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkRatio);
         bool shouldUsePrintingLayout() const;
@@ -129,8 +141,6 @@ namespace WebCore {
         void deviceOrPageScaleFactorChanged();
         double devicePixelRatio() const;
 
-        void sendOrientationChangeEvent();
-
         String documentTypeString() const;
 
         PassOwnPtr<DragImage> nodeImage(Node&);
@@ -144,6 +154,14 @@ namespace WebCore {
         PassRefPtrWillBeRawPtr<Range> rangeForPoint(const IntPoint& framePoint);
 
         bool isURLAllowed(const KURL&) const;
+        bool shouldReuseDefaultView(const KURL&) const;
+        void removeSpellingMarkersUnderWords(const Vector<String>& words);
+
+#if ENABLE(OILPAN)
+        void registerPluginElement(HTMLPlugInElement*);
+        void unregisterPluginElement(HTMLPlugInElement*);
+        void clearWeakMembers(Visitor*);
+#endif
 
     // ========
 
@@ -152,18 +170,41 @@ namespace WebCore {
 
         String localLayerTreeAsText(unsigned flags) const;
 
+        void detachView();
+
+        WillBeHeapHashSet<RawPtrWillBeWeakMember<FrameDestructionObserver> > m_destructionObservers;
         mutable FrameLoader m_loader;
         mutable NavigationScheduler m_navigationScheduler;
 
-        RefPtr<FrameView> m_view;
+        RefPtrWillBeMember<FrameView> m_view;
+        RefPtrWillBeMember<LocalDOMWindow> m_domWindow;
+        // Usually 0. Non-null if this is the top frame of PagePopup.
+        RefPtrWillBeMember<Element> m_pagePopupOwner;
 
-        OwnPtr<ScriptController> m_script;
-        const OwnPtrWillBePersistent<Editor> m_editor;
-        const OwnPtr<SpellChecker> m_spellChecker;
-        const OwnPtrWillBePersistent<FrameSelection> m_selection;
-        const OwnPtrWillBePersistent<EventHandler> m_eventHandler;
-        const OwnPtr<FrameConsole> m_console;
-        OwnPtr<InputMethodController> m_inputMethodController;
+        const OwnPtrWillBeMember<ScriptController> m_script;
+        const OwnPtrWillBeMember<Editor> m_editor;
+        const OwnPtrWillBeMember<SpellChecker> m_spellChecker;
+        const OwnPtrWillBeMember<FrameSelection> m_selection;
+        const OwnPtrWillBeMember<EventHandler> m_eventHandler;
+        const OwnPtrWillBeMember<FrameConsole> m_console;
+        const OwnPtrWillBeMember<InputMethodController> m_inputMethodController;
+
+#if ENABLE(OILPAN)
+        // Oilpan: in order to reliably finalize plugin elements with
+        // renderer-less plugins, the frame keeps track of them. When
+        // the frame is detached and disposed, these will be disposed
+        // of in the process. This is needed as the plugin element
+        // might not itself be attached to a DOM tree and be
+        // explicitly detached&disposed of.
+        //
+        // A weak reference is all wanted; the plugin element must
+        // otherwise be referenced and kept alive. So as to be able
+        // to process the set of weak references during the LocalFrame's
+        // weak callback, the set itself is not on the heap and the
+        // references are bare pointers (rather than WeakMembers.)
+        // See LocalFrame::clearWeakMembers().
+        HashSet<HTMLPlugInElement*> m_pluginElements;
+#endif
 
         float m_pageZoomFactor;
         float m_textZoomFactor;
@@ -191,7 +232,7 @@ namespace WebCore {
         return m_view.get();
     }
 
-    inline ScriptController& LocalFrame::script()
+    inline ScriptController& LocalFrame::script() const
     {
         return *m_script;
     }
@@ -239,7 +280,7 @@ namespace WebCore {
 
     DEFINE_TYPE_CASTS(LocalFrame, Frame, localFrame, localFrame->isLocalFrame(), localFrame.isLocalFrame());
 
-} // namespace WebCore
+} // namespace blink
 
 // During refactoring, there are some places where we need to do type conversions that
 // will not be needed once all instances of LocalFrame and RemoteFrame are sorted out.

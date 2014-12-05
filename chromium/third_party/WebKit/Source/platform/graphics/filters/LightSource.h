@@ -29,7 +29,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 enum LightType {
     LS_DISTANT,
@@ -77,12 +77,8 @@ public:
 
     virtual bool setAzimuth(float) { return false; }
     virtual bool setElevation(float) { return false; }
-    virtual bool setX(float) { return false; }
-    virtual bool setY(float) { return false; }
-    virtual bool setZ(float) { return false; }
-    virtual bool setPointsAtX(float) { return false; }
-    virtual bool setPointsAtY(float) { return false; }
-    virtual bool setPointsAtZ(float) { return false; }
+    virtual bool setPosition(const FloatPoint3D&) { return false; }
+    virtual bool setPointsAt(const FloatPoint3D&) { return false; }
     virtual bool setSpecularExponent(float) { return false; }
     virtual bool setLimitingConeAngle(float) { return false; }
 
@@ -90,6 +86,6 @@ private:
     LightType m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LightSource_h

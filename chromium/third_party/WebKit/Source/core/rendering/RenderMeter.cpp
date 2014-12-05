@@ -25,9 +25,7 @@
 #include "core/html/HTMLMeterElement.h"
 #include "core/rendering/RenderTheme.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -72,14 +70,9 @@ void RenderMeter::computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logi
     computedValues.m_extent = isHorizontalWritingMode() ? frameSize.height() : frameSize.width();
 }
 
-double RenderMeter::valueRatio() const
-{
-    return meterElement()->valueRatio();
-}
-
 void RenderMeter::updateFromElement()
 {
-    paintInvalidationForWholeRenderer();
+    setShouldDoFullPaintInvalidation();
 }
 
-} // namespace WebCore
+} // namespace blink

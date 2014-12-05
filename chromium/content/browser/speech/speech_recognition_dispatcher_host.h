@@ -34,33 +34,34 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
   base::WeakPtr<SpeechRecognitionDispatcherHost> AsWeakPtr();
 
   // SpeechRecognitionEventListener methods.
-  virtual void OnRecognitionStart(int session_id) OVERRIDE;
-  virtual void OnAudioStart(int session_id) OVERRIDE;
-  virtual void OnEnvironmentEstimationComplete(int session_id) OVERRIDE;
-  virtual void OnSoundStart(int session_id) OVERRIDE;
-  virtual void OnSoundEnd(int session_id) OVERRIDE;
-  virtual void OnAudioEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionEnd(int session_id) OVERRIDE;
-  virtual void OnRecognitionResults(
-      int session_id,
-      const SpeechRecognitionResults& results) OVERRIDE;
-  virtual void OnRecognitionError(
-      int session_id,
-      const SpeechRecognitionError& error) OVERRIDE;
-  virtual void OnAudioLevelsChange(int session_id,
-                                   float volume,
-                                   float noise_volume) OVERRIDE;
+  void OnRecognitionStart(int session_id) override;
+  void OnAudioStart(int session_id) override;
+  void OnEnvironmentEstimationComplete(int session_id) override;
+  void OnSoundStart(int session_id) override;
+  void OnSoundEnd(int session_id) override;
+  void OnAudioEnd(int session_id) override;
+  void OnRecognitionEnd(int session_id) override;
+  void OnRecognitionResults(int session_id,
+                            const SpeechRecognitionResults& results) override;
+  void OnRecognitionError(int session_id,
+                          const SpeechRecognitionError& error) override;
+  void OnAudioLevelsChange(int session_id,
+                           float volume,
+                           float noise_volume) override;
 
   // BrowserMessageFilter implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OverrideThreadForMessage(
-      const IPC::Message& message,
-      BrowserThread::ID* thread) OVERRIDE;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                BrowserThread::ID* thread) override;
 
-  virtual void OnChannelClosing() OVERRIDE;
+  void OnChannelClosing() override;
 
  private:
-  virtual ~SpeechRecognitionDispatcherHost();
+  friend class base::DeleteHelper<SpeechRecognitionDispatcherHost>;
+  friend class BrowserThread;
+
+  ~SpeechRecognitionDispatcherHost() override;
 
   void OnStartRequest(
       const SpeechRecognitionHostMsg_StartRequest_Params& params);
@@ -68,6 +69,7 @@ class CONTENT_EXPORT SpeechRecognitionDispatcherHost
       int embedder_render_process_id,
       int embedder_render_view_id,
       const SpeechRecognitionHostMsg_StartRequest_Params& params,
+      int params_render_frame_id,
       bool filter_profanities);
   void OnAbortRequest(int render_view_id, int request_id);
   void OnStopCaptureRequest(int render_view_id, int request_id);

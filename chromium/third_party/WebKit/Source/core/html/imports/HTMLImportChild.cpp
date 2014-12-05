@@ -33,7 +33,6 @@
 
 #include "core/dom/Document.h"
 #include "core/dom/custom/CustomElement.h"
-#include "core/dom/custom/CustomElementMicrotaskDispatcher.h"
 #include "core/dom/custom/CustomElementMicrotaskImportStep.h"
 #include "core/dom/custom/CustomElementSyncMicrotaskQueue.h"
 #include "core/html/imports/HTMLImportChildClient.h"
@@ -41,7 +40,7 @@
 #include "core/html/imports/HTMLImportTreeRoot.h"
 #include "core/html/imports/HTMLImportsController.h"
 
-namespace WebCore {
+namespace blink {
 
 HTMLImportChild::HTMLImportChild(const KURL& url, HTMLImportLoader* loader, SyncMode sync)
     : HTMLImport(sync)
@@ -92,8 +91,7 @@ void HTMLImportChild::didFinish()
 void HTMLImportChild::didFinishLoading()
 {
     stateWillChange();
-    if (m_customElementMicrotaskStep)
-        CustomElementMicrotaskDispatcher::instance().importDidFinish(m_customElementMicrotaskStep.get());
+    CustomElement::didFinishLoadingImport(*(root()->document()));
 }
 
 void HTMLImportChild::didFinishUpgradingCustomElements()
@@ -133,19 +131,17 @@ void HTMLImportChild::stateDidChange()
         didFinish();
 }
 
+void HTMLImportChild::invalidateCustomElementMicrotaskStep()
+{
+    if (!m_customElementMicrotaskStep)
+        return;
+    m_customElementMicrotaskStep->invalidate();
+    m_customElementMicrotaskStep.clear();
+}
+
 void HTMLImportChild::createCustomElementMicrotaskStepIfNeeded()
 {
-    // HTMLImportChild::normalize(), which is called from HTMLImportLoader::addImport(),
-    // can move import children to new parents. So their microtask steps should be updated as well,
-    // to let the steps be in the new parent queues.This method handles such migration.
-    // For implementation simplicity, outdated step objects that are owned by moved children
-    // aren't removed from the (now wrong) queues. Instead, each step invalidates its content so that
-    // it is removed from the wrong queue during the next traversal. See parentWasChanged() for the detail.
-
-    if (m_customElementMicrotaskStep) {
-        m_customElementMicrotaskStep->parentWasChanged();
-        m_customElementMicrotaskStep.clear();
-    }
+    ASSERT(!m_customElementMicrotaskStep);
 
     if (!isDone() && !formsCycle()) {
 #if ENABLE(OILPAN)
@@ -154,9 +150,6 @@ void HTMLImportChild::createCustomElementMicrotaskStepIfNeeded()
         m_customElementMicrotaskStep = CustomElement::didCreateImport(this)->weakPtr();
 #endif
     }
-
-    for (HTMLImport* child = firstChild(); child; child = child->next())
-        toHTMLImportChild(child)->createCustomElementMicrotaskStepIfNeeded();
 }
 
 bool HTMLImportChild::isDone() const
@@ -192,7 +185,7 @@ void HTMLImportChild::clearClient()
 HTMLLinkElement* HTMLImportChild::link() const
 {
     if (!m_client)
-        return 0;
+        return nullptr;
     return m_client->link();
 }
 
@@ -207,8 +200,11 @@ void HTMLImportChild::normalize()
         takeChildrenFrom(oldFirst);
     }
 
-    for (HTMLImport* child = firstChild(); child; child = child->next())
-        toHTMLImportChild(child)->normalize();
+    for (HTMLImportChild* child = toHTMLImportChild(firstChild()); child; child = toHTMLImportChild(child->next())) {
+        if (child->formsCycle())
+            child->invalidateCustomElementMicrotaskStep();
+        child->normalize();
+    }
 }
 
 #if !defined(NDEBUG)
@@ -233,4 +229,4 @@ void HTMLImportChild::trace(Visitor* visitor)
     HTMLImport::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

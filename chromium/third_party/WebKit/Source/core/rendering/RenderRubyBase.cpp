@@ -33,9 +33,7 @@
 #include "core/rendering/RenderRubyBase.h"
 #include "core/rendering/RenderRubyRun.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderRubyBase::RenderRubyBase()
     : RenderBlockFlow(0)
@@ -148,4 +146,4 @@ void RenderRubyBase::adjustInlineDirectionLineBounds(unsigned expansionOpportuni
     logicalWidth -= inset;
 }
 
-} // namespace WebCore
+} // namespace blink

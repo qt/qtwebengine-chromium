@@ -25,7 +25,9 @@
  */
 
 [
-    TypeChecking=Interface|Nullable,
+    TypeChecking=Interface,
+    RuntimeEnabled=SVG1DOM,
+    MeasureAs=SVGPathSegDOM,
 ] interface SVGPathSegLinetoVerticalAbs : SVGPathSeg {
     attribute float y;
 };

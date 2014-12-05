@@ -40,10 +40,6 @@
 #include "WebSecurityOrigin.h"
 
 #if BLINK_IMPLEMENTATION
-namespace WebCore {
-class Document;
-class DocumentType;
-}
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
@@ -53,6 +49,9 @@ template <class T> class Handle;
 }
 
 namespace blink {
+
+class Document;
+class DocumentType;
 class WebAXObject;
 class WebDocumentType;
 class WebElement;
@@ -83,8 +82,6 @@ public:
     BLINK_EXPORT WebString contentLanguage() const;
     BLINK_EXPORT WebString referrer() const;
     BLINK_EXPORT WebColor themeColor() const;
-    // TODO: Remove when chromium is changed to themeColor().
-    BLINK_EXPORT WebColor brandColor() const { return 0; }
     // The url of the OpenSearch Desription Document (if any).
     BLINK_EXPORT WebURL openSearchDescriptionURL() const;
 
@@ -116,6 +113,14 @@ public:
     BLINK_EXPORT WebDOMEvent createEvent(const WebString& eventType);
     BLINK_EXPORT WebReferrerPolicy referrerPolicy() const;
     BLINK_EXPORT WebElement createElement(const WebString& tagName);
+    // Shorthand of frame()->scrollOffset().
+    BLINK_EXPORT WebSize scrollOffset() const;
+    // Shorthand of frame()->minimumScrollOffset().
+    BLINK_EXPORT WebSize minimumScrollOffset() const;
+    // Shorthand of frame()->maximumScrollOffset().
+    BLINK_EXPORT WebSize maximumScrollOffset() const;
+    BLINK_EXPORT void setIsTransitionDocument();
+    BLINK_EXPORT void beginExitTransition(const WebString& cssSelector);
 
     // Accessibility support. These methods should only be called on the
     // top-level document, because one accessibility cache spans all of
@@ -138,10 +143,12 @@ public:
 
     BLINK_EXPORT v8::Handle<v8::Value> registerEmbedderCustomElement(const WebString& name, v8::Handle<v8::Value> options, WebExceptionCode&);
 
+    BLINK_EXPORT WebURL manifestURL() const;
+
 #if BLINK_IMPLEMENTATION
-    WebDocument(const PassRefPtrWillBeRawPtr<WebCore::Document>&);
-    WebDocument& operator=(const PassRefPtrWillBeRawPtr<WebCore::Document>&);
-    operator PassRefPtrWillBeRawPtr<WebCore::Document>() const;
+    WebDocument(const PassRefPtrWillBeRawPtr<Document>&);
+    WebDocument& operator=(const PassRefPtrWillBeRawPtr<Document>&);
+    operator PassRefPtrWillBeRawPtr<Document>() const;
 #endif
 };
 

@@ -38,8 +38,8 @@
 #else
 #include <algorithm>
 #include <cmath>
-#include <ui/gfx/size.h>
-#include <ui/gfx/vector2d.h>
+#include <ui/gfx/geometry/size.h>
+#include <ui/gfx/geometry/vector2d.h>
 #endif
 
 namespace blink {
@@ -63,22 +63,22 @@ struct WebSize {
     }
 
 #if INSIDE_BLINK
-    WebSize(const WebCore::IntSize& s)
+    WebSize(const IntSize& s)
         : width(s.width())
         , height(s.height())
     {
     }
 
-    WebSize& operator=(const WebCore::IntSize& s)
+    WebSize& operator=(const IntSize& s)
     {
         width = s.width();
         height = s.height();
         return *this;
     }
 
-    operator WebCore::IntSize() const
+    operator IntSize() const
     {
-        return WebCore::IntSize(width, height);
+        return IntSize(width, height);
     }
 #else
     WebSize(const gfx::Size& s)

@@ -31,28 +31,27 @@
 #ifndef AesKeyAlgorithm_h
 #define AesKeyAlgorithm_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/crypto/KeyAlgorithm.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class AesKeyAlgorithm : public KeyAlgorithm {
 public:
-    static AesKeyAlgorithm* create(const blink::WebCryptoKeyAlgorithm&);
+    static AesKeyAlgorithm* create(const WebCryptoKeyAlgorithm&);
 
     unsigned short length();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    explicit AesKeyAlgorithm(const blink::WebCryptoKeyAlgorithm&);
+    explicit AesKeyAlgorithm(const WebCryptoKeyAlgorithm&);
 };
 
 DEFINE_KEY_ALGORITHM_TYPE_CASTS(AesKeyAlgorithm);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

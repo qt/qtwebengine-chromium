@@ -78,7 +78,6 @@
             '../base/base.gyp:base',
             '../base/base.gyp:base_static',
             '../ipc/ipc.gyp:ipc',
-            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:ppGoogleNaClPluginChrome',
             '../ppapi/ppapi_internal.gyp:ppapi_shared',
             '../ppapi/ppapi_internal.gyp:ppapi_ipc',
             '../native_client/src/trusted/service_runtime/service_runtime.gyp:sel_main_chrome',
@@ -167,14 +166,14 @@
             'nacl/renderer/json_manifest.h',
             'nacl/renderer/nexe_load_manager.cc',
             'nacl/renderer/nexe_load_manager.h',
+            'nacl/renderer/platform_info.cc',
+            'nacl/renderer/platform_info.h',
             'nacl/renderer/pnacl_translation_resource_host.cc',
             'nacl/renderer/pnacl_translation_resource_host.h',
             'nacl/renderer/ppb_nacl_private_impl.cc',
             'nacl/renderer/ppb_nacl_private_impl.h',
             'nacl/renderer/progress_event.cc',
             'nacl/renderer/progress_event.h',
-            'nacl/renderer/sandbox_arch.cc',
-            'nacl/renderer/sandbox_arch.h',
             'nacl/renderer/trusted_plugin_channel.cc',
             'nacl/renderer/trusted_plugin_channel.h',
           ],
@@ -182,10 +181,11 @@
             '..',
           ],
           'dependencies': [
+            'nacl_common',
             '../content/content.gyp:content_renderer',
+            '../ppapi/native_client/src/trusted/plugin/plugin.gyp:nacl_trusted_plugin',
             '../third_party/jsoncpp/jsoncpp.gyp:jsoncpp',
             '../third_party/WebKit/public/blink.gyp:blink',
-            '../webkit/common/webkit_common.gyp:webkit_common',
           ],
           'defines': [
             '<@(nacl_defines)',
@@ -246,8 +246,8 @@
               'cflags': ['-fPIE'],
               'ldflags!': [
                 # Do not pick the default ASan options from
-                # base/debug/sanitizer_options.cc to avoid a conflict with those
-                # in nacl/nacl_helper_linux.cc.
+                # build/sanitizers/sanitizer_options.cc to avoid a conflict with
+                # those in nacl/nacl_helper_linux.cc.
                 '-Wl,-u_sanitizer_options_link_helper',
               ],
               'link_settings': {
@@ -284,6 +284,8 @@
                 'nacl/loader/nonsfi/irt_resource_open.cc',
                 'nacl/loader/nonsfi/irt_thread.cc',
                 'nacl/loader/nonsfi/irt_util.h',
+                'nacl/loader/nonsfi/nonsfi_listener.cc',
+                'nacl/loader/nonsfi/nonsfi_listener.h',
                 'nacl/loader/nonsfi/nonsfi_main.cc',
                 'nacl/loader/nonsfi/nonsfi_main.h',
                 'nacl/loader/nonsfi/nonsfi_sandbox.cc',
@@ -405,10 +407,16 @@
               'sources': [
                 'nacl/common/nacl_cmd_line.cc',
                 'nacl/common/nacl_cmd_line.h',
+                'nacl/common/nacl_constants.cc',
+                'nacl/common/nacl_constants.h',
                 'nacl/common/nacl_messages.cc',
                 'nacl/common/nacl_messages.h',
+                'nacl/common/nacl_renderer_messages.h',
+                'nacl/common/nacl_renderer_messages.cc',
                 'nacl/common/nacl_types.cc',
                 'nacl/common/nacl_types.h',
+                'nacl/common/nacl_types_param_traits.cc',
+                'nacl/common/nacl_types_param_traits.h',
               ],
               'include_dirs': [
                 '..',
@@ -447,6 +455,23 @@
         }],
       ],
     }],
+    ['disable_nacl!=1 and test_isolation_mode!="noop"', {
+      'targets': [
+        {
+          'target_name': 'nacl_loader_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'nacl_loader_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+          ],
+          'sources': [
+            'nacl_loader_unittests.isolate',
+          ],
+        },
+      ],
+    }],
   ],
   'targets': [
     {
@@ -466,6 +491,8 @@
       'sources': [
         'nacl/common/nacl_cmd_line.cc',
         'nacl/common/nacl_cmd_line.h',
+        'nacl/common/nacl_constants.cc',
+        'nacl/common/nacl_constants.h',
         'nacl/common/nacl_host_messages.h',
         'nacl/common/nacl_host_messages.cc',
         'nacl/common/nacl_messages.cc',
@@ -473,9 +500,13 @@
         'nacl/common/nacl_nonsfi_util.cc',
         'nacl/common/nacl_nonsfi_util.h',
         'nacl/common/nacl_process_type.h',
+        'nacl/common/nacl_renderer_messages.h',
+        'nacl/common/nacl_renderer_messages.cc',
         'nacl/common/nacl_sandbox_type_mac.h',
         'nacl/common/nacl_types.cc',
         'nacl/common/nacl_types.h',
+        'nacl/common/nacl_types_param_traits.cc',
+        'nacl/common/nacl_types_param_traits.h',
         'nacl/common/pnacl_types.cc',
         'nacl/common/pnacl_types.h',
       ],

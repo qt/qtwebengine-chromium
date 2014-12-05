@@ -99,8 +99,7 @@ class AudioOutputControllerTest : public testing::Test {
         pause_event_(false, false) {
   }
 
-  virtual ~AudioOutputControllerTest() {
-  }
+  ~AudioOutputControllerTest() override {}
 
  protected:
   void Create(int samples_per_packet) {
@@ -192,7 +191,7 @@ class AudioOutputControllerTest : public testing::Test {
     scoped_ptr<AudioBus> dest = AudioBus::Create(params_);
     ASSERT_TRUE(!!mock_stream_.callback());
     const int frames_read =
-        mock_stream_.callback()->OnMoreData(dest.get(), AudioBuffersState());
+        mock_stream_.callback()->OnMoreData(dest.get(), 0);
     EXPECT_LT(0, frames_read);
     EXPECT_EQ(kBufferNonZeroData, dest->channel(0)[0]);
   }

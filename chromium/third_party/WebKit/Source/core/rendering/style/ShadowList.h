@@ -33,10 +33,12 @@
 
 #include "core/rendering/style/ShadowData.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/DrawLooperBuilder.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class FloatRect;
 class LayoutRect;
@@ -58,8 +60,10 @@ public:
 
     static PassRefPtr<ShadowList> blend(const ShadowList* from, const ShadowList* to, double progress);
 
-    void adjustRectForShadow(LayoutRect&, float additionalOutlineSize = 0) const;
-    void adjustRectForShadow(FloatRect&, float additionalOutlineSize = 0) const;
+    void adjustRectForShadow(LayoutRect&) const;
+    void adjustRectForShadow(FloatRect&) const;
+
+    PassOwnPtr<DrawLooperBuilder> createDrawLooper(DrawLooperBuilder::ShadowAlphaMode, bool isHorizontal = true) const;
 
 private:
     ShadowList(ShadowDataVector& shadows)
@@ -72,6 +76,6 @@ private:
     ShadowDataVector m_shadows;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ShadowList_h

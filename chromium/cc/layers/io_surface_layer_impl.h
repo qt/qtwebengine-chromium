@@ -9,7 +9,7 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer_impl.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
@@ -19,27 +19,27 @@ class CC_EXPORT IOSurfaceLayerImpl : public LayerImpl {
                                                int id) {
     return make_scoped_ptr(new IOSurfaceLayerImpl(tree_impl, id));
   }
-  virtual ~IOSurfaceLayerImpl();
+  ~IOSurfaceLayerImpl() override;
 
   void SetIOSurfaceProperties(unsigned io_surface_id, const gfx::Size& size);
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer_tree_impl) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer_tree_impl) override;
 
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void ReleaseResources() override;
 
  private:
   IOSurfaceLayerImpl(LayerTreeImpl* tree_impl, int id);
 
   void DestroyResource();
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   unsigned io_surface_id_;
   gfx::Size io_surface_size_;

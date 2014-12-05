@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/workers/SharedWorker.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/MessageChannel.h"
@@ -46,12 +46,12 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SharedWorker::SharedWorker(ExecutionContext* context)
     : AbstractWorker(context)
+    , m_isBeingConnected(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<SharedWorker> SharedWorker::create(ExecutionContext* context, const String& url, const String& name, ExceptionState& exceptionState)
@@ -61,7 +61,7 @@ PassRefPtrWillBeRawPtr<SharedWorker> SharedWorker::create(ExecutionContext* cont
 
     UseCounter::count(context, UseCounter::SharedWorkerStart);
 
-    RefPtrWillBeRawPtr<SharedWorker> worker = adoptRefWillBeRefCountedGarbageCollected(new SharedWorker(context));
+    RefPtrWillBeRawPtr<SharedWorker> worker = adoptRefWillBeNoop(new SharedWorker(context));
 
     RefPtrWillBeRawPtr<MessageChannel> channel = MessageChannel::create(context);
     worker->m_port = channel->port1();
@@ -96,20 +96,18 @@ const AtomicString& SharedWorker::interfaceName() const
     return EventTargetNames::SharedWorker;
 }
 
-void SharedWorker::setPreventGC()
+bool SharedWorker::hasPendingActivity() const
 {
-    setPendingActivity(this);
-}
-
-void SharedWorker::unsetPreventGC()
-{
-    unsetPendingActivity(this);
+    return m_isBeingConnected;
 }
 
 void SharedWorker::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
+    visitor->trace(m_port);
+    HeapSupplementable<SharedWorker>::trace(visitor);
+#endif
     AbstractWorker::trace(visitor);
-    WillBeHeapSupplementable<SharedWorker>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

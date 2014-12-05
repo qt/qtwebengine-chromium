@@ -21,10 +21,10 @@
 #include "config.h"
 #include "core/css/CSSValueList.h"
 
-#include "core/css/CSSParserValues.h"
+#include "core/css/CSSPrimitiveValue.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSValueList::CSSValueList(ClassType classType, ValueListSeparator listSeparator)
     : CSSValue(classType)
@@ -36,17 +36,6 @@ CSSValueList::CSSValueList(ValueListSeparator listSeparator)
     : CSSValue(ValueListClass)
 {
     m_valueListSeparator = listSeparator;
-}
-
-CSSValueList::CSSValueList(CSSParserValueList* parserValues)
-    : CSSValue(ValueListClass)
-{
-    m_valueListSeparator = SpaceSeparator;
-    if (parserValues) {
-        m_values.reserveInitialCapacity(parserValues->size());
-        for (unsigned i = 0; i < parserValues->size(); ++i)
-            m_values.uncheckedAppend(parserValues->valueAt(i)->createCSSValue());
-    }
 }
 
 bool CSSValueList::removeAll(CSSValue* val)
@@ -168,4 +157,4 @@ void CSSValueList::traceAfterDispatch(Visitor* visitor)
     CSSValue::traceAfterDispatch(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,29 +26,30 @@
 #ifndef WebGLDrawBuffers_h
 #define WebGLDrawBuffers_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLDrawBuffers FINAL : public WebGLExtension, public ScriptWrappable {
+class WebGLDrawBuffers final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<WebGLDrawBuffers> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLDrawBuffers> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~WebGLDrawBuffers();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
     void drawBuffersWEBGL(const Vector<GLenum>& buffers);
 
 private:
-    WebGLDrawBuffers(WebGLRenderingContextBase*);
+    explicit WebGLDrawBuffers(WebGLRenderingContextBase*);
 
     static bool satisfiesWebGLRequirements(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLDrawBuffers_h

@@ -56,23 +56,24 @@ class WebPluginDelegateProxy
                          RenderFrameImpl* render_frame);
 
   // WebPluginDelegate implementation:
-  virtual void PluginDestroyed() OVERRIDE;
-  virtual bool Initialize(const GURL& url,
-                          const std::vector<std::string>& arg_names,
-                          const std::vector<std::string>& arg_values,
-                          bool load_manually) OVERRIDE;
-  virtual void UpdateGeometry(const gfx::Rect& window_rect,
-                              const gfx::Rect& clip_rect) OVERRIDE;
-  virtual void Paint(SkCanvas* canvas, const gfx::Rect& rect) OVERRIDE;
-  virtual NPObject* GetPluginScriptableObject() OVERRIDE;
-  virtual struct _NPP* GetPluginNPP() OVERRIDE;
-  virtual bool GetFormValue(base::string16* value) OVERRIDE;
-  virtual void DidFinishLoadWithReason(const GURL& url, NPReason reason,
-                                       int notify_id) OVERRIDE;
-  virtual void SetFocus(bool focused) OVERRIDE;
-  virtual bool HandleInputEvent(const blink::WebInputEvent& event,
-                                WebCursor::CursorInfo* cursor) OVERRIDE;
-  virtual int GetProcessId() OVERRIDE;
+  void PluginDestroyed() override;
+  bool Initialize(const GURL& url,
+                  const std::vector<std::string>& arg_names,
+                  const std::vector<std::string>& arg_values,
+                  bool load_manually) override;
+  void UpdateGeometry(const gfx::Rect& window_rect,
+                      const gfx::Rect& clip_rect) override;
+  void Paint(SkCanvas* canvas, const gfx::Rect& rect) override;
+  NPObject* GetPluginScriptableObject() override;
+  struct _NPP* GetPluginNPP() override;
+  bool GetFormValue(base::string16* value) override;
+  void DidFinishLoadWithReason(const GURL& url,
+                               NPReason reason,
+                               int notify_id) override;
+  void SetFocus(bool focused) override;
+  bool HandleInputEvent(const blink::WebInputEvent& event,
+                        WebCursor::CursorInfo* cursor) override;
+  int GetProcessId() override;
 
   // Informs the plugin that its containing content view has gained or lost
   // first responder status.
@@ -104,48 +105,50 @@ class WebPluginDelegateProxy
 #endif
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnChannelError() override;
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
-  virtual void SendJavaScriptStream(const GURL& url,
-                                    const std::string& result,
-                                    bool success,
-                                    int notify_id) OVERRIDE;
+  void SendJavaScriptStream(const GURL& url,
+                            const std::string& result,
+                            bool success,
+                            int notify_id) override;
 
-  virtual void DidReceiveManualResponse(const GURL& url,
-                                        const std::string& mime_type,
-                                        const std::string& headers,
-                                        uint32 expected_length,
-                                        uint32 last_modified) OVERRIDE;
-  virtual void DidReceiveManualData(const char* buffer, int length) OVERRIDE;
-  virtual void DidFinishManualLoading() OVERRIDE;
-  virtual void DidManualLoadFail() OVERRIDE;
-  virtual WebPluginResourceClient* CreateResourceClient(
-      unsigned long resource_id, const GURL& url, int notify_id) OVERRIDE;
-  virtual WebPluginResourceClient* CreateSeekableResourceClient(
-      unsigned long resource_id, int range_request_id) OVERRIDE;
-  virtual void FetchURL(unsigned long resource_id,
-                        int notify_id,
-                        const GURL& url,
-                        const GURL& first_party_for_cookies,
-                        const std::string& method,
-                        const char* buf,
-                        unsigned int len,
-                        const GURL& referrer,
-                        bool notify_redirects,
-                        bool is_plugin_src_load,
-                        int origin_pid,
-                        int render_frame_id,
-                        int render_view_id) OVERRIDE;
+  void DidReceiveManualResponse(const GURL& url,
+                                const std::string& mime_type,
+                                const std::string& headers,
+                                uint32 expected_length,
+                                uint32 last_modified) override;
+  void DidReceiveManualData(const char* buffer, int length) override;
+  void DidFinishManualLoading() override;
+  void DidManualLoadFail() override;
+  WebPluginResourceClient* CreateResourceClient(unsigned long resource_id,
+                                                const GURL& url,
+                                                int notify_id) override;
+  WebPluginResourceClient* CreateSeekableResourceClient(
+      unsigned long resource_id,
+      int range_request_id) override;
+  void FetchURL(unsigned long resource_id,
+                int notify_id,
+                const GURL& url,
+                const GURL& first_party_for_cookies,
+                const std::string& method,
+                const char* buf,
+                unsigned int len,
+                const GURL& referrer,
+                bool notify_redirects,
+                bool is_plugin_src_load,
+                int origin_pid,
+                int render_frame_id,
+                int render_view_id) override;
 
   gfx::PluginWindowHandle GetPluginWindowHandle();
 
  protected:
   friend class base::DeleteHelper<WebPluginDelegateProxy>;
-  virtual ~WebPluginDelegateProxy();
+  ~WebPluginDelegateProxy() override;
 
  private:
   struct SharedBitmap {

@@ -12,37 +12,44 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorClient;
+class InspectorWorkerAgent;
 
-class InspectorTracingAgent FINAL
+class InspectorTracingAgent final
     : public InspectorBaseAgent<InspectorTracingAgent>
     , public InspectorBackendDispatcher::TracingCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorTracingAgent);
 public:
-    static PassOwnPtr<InspectorTracingAgent> create(InspectorClient* client)
+    static PassOwnPtrWillBeRawPtr<InspectorTracingAgent> create(InspectorClient* client, InspectorWorkerAgent* workerAgent)
     {
-        return adoptPtr(new InspectorTracingAgent(client));
+        return adoptPtrWillBeNoop(new InspectorTracingAgent(client, workerAgent));
     }
 
     // Base agent methods.
-    virtual void restore() OVERRIDE;
+    virtual void restore() override;
+    virtual void setFrontend(InspectorFrontend*) override;
+    virtual void clearFrontend() override;
 
     // Protocol method implementations.
-    virtual void start(ErrorString*, const String& categoryFilter, const String&, const double*, String* sessionId) OVERRIDE;
+    virtual void start(ErrorString*, const String* categoryFilter, const String*, const double*, PassRefPtrWillBeRawPtr<StartCallback>) override;
+    virtual void end(ErrorString*, PassRefPtrWillBeRawPtr<EndCallback>);
 
     // Methods for other agents to use.
     void setLayerTreeId(int);
 
 private:
-    explicit InspectorTracingAgent(InspectorClient*);
+    InspectorTracingAgent(InspectorClient*, InspectorWorkerAgent*);
 
     void emitMetadataEvents();
+    void resetSessionId();
     String sessionId();
 
     int m_layerTreeId;
     InspectorClient* m_client;
+    InspectorFrontend::Tracing* m_frontend;
+    InspectorWorkerAgent* m_workerAgent;
 };
 
 }

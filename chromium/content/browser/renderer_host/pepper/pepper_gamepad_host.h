@@ -37,19 +37,17 @@ class CONTENT_EXPORT PepperGamepadHost :
                     PP_Instance instance,
                     PP_Resource resource);
 
-  virtual ~PepperGamepadHost();
+  ~PepperGamepadHost() override;
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // GamepadConsumer implementation.
-  virtual void OnGamepadConnected(
-      unsigned index,
-      const blink::WebGamepad& gamepad) OVERRIDE {}
-  virtual void OnGamepadDisconnected(
-      unsigned index,
-      const blink::WebGamepad& gamepad) OVERRIDE {}
+  void OnGamepadConnected(unsigned index,
+                          const blink::WebGamepad& gamepad) override {}
+  void OnGamepadDisconnected(unsigned index,
+                             const blink::WebGamepad& gamepad) override {}
 
  private:
   int32_t OnRequestMemory(ppapi::host::HostMessageContext* context);

@@ -31,16 +31,17 @@
 #include "config.h"
 #include "public/web/WebScopedMicrotaskSuppression.h"
 
-#include "bindings/v8/V8RecursionScope.h"
+#include "bindings/core/v8/V8RecursionScope.h"
+#include "wtf/Assertions.h"
 #include "wtf/OwnPtr.h"
 
 namespace blink {
 
-#ifndef NDEBUG
-class WebScopedMicrotaskSuppression::Impl : public WebCore::V8RecursionScope::MicrotaskSuppression {
+#if ENABLE(ASSERT)
+class WebScopedMicrotaskSuppression::Impl : public V8RecursionScope::MicrotaskSuppression {
 public:
     Impl(v8::Isolate* isolate)
-        : WebCore::V8RecursionScope::MicrotaskSuppression(isolate)
+        : V8RecursionScope::MicrotaskSuppression(isolate)
     {
     }
 };
@@ -48,14 +49,14 @@ public:
 
 void WebScopedMicrotaskSuppression::initialize()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_impl.reset(new Impl(v8::Isolate::GetCurrent()));
 #endif
 }
 
 void WebScopedMicrotaskSuppression::reset()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_impl.reset(0);
 #endif
 }

@@ -28,16 +28,14 @@
 #include "core/frame/Navigator.h"
 #include "modules/geolocation/Geolocation.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorGeolocation::NavigatorGeolocation(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
 
-NavigatorGeolocation::~NavigatorGeolocation()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorGeolocation);
 
 const char* NavigatorGeolocation::supplementName()
 {
@@ -59,7 +57,7 @@ Geolocation* NavigatorGeolocation::geolocation(Navigator& navigator)
     return NavigatorGeolocation::from(navigator).geolocation();
 }
 
-Geolocation* NavigatorGeolocation::geolocation() const
+Geolocation* NavigatorGeolocation::geolocation()
 {
     if (!m_geolocation && frame())
         m_geolocation = Geolocation::create(frame()->document());
@@ -70,6 +68,7 @@ void NavigatorGeolocation::trace(Visitor* visitor)
 {
     visitor->trace(m_geolocation);
     WillBeHeapSupplement<Navigator>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

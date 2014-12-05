@@ -12,6 +12,7 @@
 <translation id="3885155851504623709">Parroquia</translation>
 <translation id="8184169487503545976">No se reconoce este formato de código postal.</translation>
 <translation id="7602447984296396718">El código postal parece no coincidir con el resto de esta dirección.</translation>
+<translation id="6247152910634872706">Organización</translation>
 <translation id="2053553514270667976">Código ZIP</translation>
 <translation id="7087282848513945231">Condado</translation>
 <translation id="2096368010154057602">Departamento</translation>
@@ -28,6 +29,7 @@
 <translation id="43113324827158664">Este campo no puede quedar en blanco.</translation>
 <translation id="3050787670591910834">Debes proporcionar un código postal, por ejemplo <ph name="EXAMPLE"/>.</translation>
 <translation id="6282194474023008486">Código postal</translation>
+<translation id="5937097533660449554">Óblast</translation>
 <translation id="4376888869070172068">No se reconoce este formato de código postal.</translation>
 <translation id="8446364922515257065">Circuito</translation>
 <translation id="4518701284698680367">Debes proporcionar un código ZIP, por ejemplo <ph name="EXAMPLE"/>. ¿No sabes tu código ZIP? Averígualo <ph name="BEGIN_LINK"/>aquí<ph name="END_LINK"/>.</translation>

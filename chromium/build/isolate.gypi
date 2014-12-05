@@ -17,7 +17,6 @@
 #         ],
 #         'includes': [
 #           '../build/isolate.gypi',
-#           'foo_test.isolate',
 #         ],
 #         'sources': [
 #           'foo_test.isolate',
@@ -50,27 +49,13 @@
         '<(DEPTH)/tools/isolate_driver.py',
         '<(DEPTH)/tools/swarming_client/isolate.py',
         '<(DEPTH)/tools/swarming_client/run_isolated.py',
-
-        # Disable file tracking by the build driver for now. This means the
-        # project must have the proper build-time dependency for their runtime
-        # dependency. This improves the runtime of the build driver since it
-        # doesn't have to stat() all these files.
-        #
-        # More importantly, it means that even if a isolate_dependency_tracked
-        # file is missing, for example if a file was deleted and the .isolate
-        # file was not updated, that won't break the build, especially in the
-        # case where foo_tests_run is not built! This should be reenabled once
-        # the switch-over to running tests on Swarm is completed.
-        #'<@(isolate_dependency_tracked)',
       ],
-      'outputs': [
-        '<(PRODUCT_DIR)/<(RULE_INPUT_ROOT).isolated',
-      ],
+      'outputs': [],
       'action': [
         'python',
         '<(DEPTH)/tools/isolate_driver.py',
         '<(test_isolation_mode)',
-        '--isolated', '<@(_outputs)',
+        '--isolated', '<(PRODUCT_DIR)/<(RULE_INPUT_ROOT).isolated',
         '--isolate', '<(RULE_INPUT_PATH)',
 
         # Variables should use the -V FOO=<(FOO) form so frequent values,
@@ -90,15 +75,23 @@
         '--extra-variable', 'version_full=<(version_full)',
 
         '--config-variable', 'OS=<(OS)',
+        '--config-variable', 'CONFIGURATION_NAME=<(CONFIGURATION_NAME)',
+        '--config-variable', 'asan=<(asan)',
         '--config-variable', 'chromeos=<(chromeos)',
         '--config-variable', 'component=<(component)',
+        '--config-variable', 'fastbuild=<(fastbuild)',
         # TODO(kbr): move this to chrome_tests.gypi:gles2_conform_tests_run
         # once support for user-defined config variables is added.
         '--config-variable',
           'internal_gles2_conform_tests=<(internal_gles2_conform_tests)',
         '--config-variable', 'icu_use_data_file_flag=<(icu_use_data_file_flag)',
+        '--config-variable', 'v8_use_external_startup_data=<(v8_use_external_startup_data)',
+        '--config-variable', 'lsan=<(lsan)',
         '--config-variable', 'libpeer_target_type=<(libpeer_target_type)',
         '--config-variable', 'use_openssl=<(use_openssl)',
+        '--config-variable', 'target_arch=<(target_arch)',
+        '--config-variable', 'use_ozone=<(use_ozone)',
+        '--config-variable', 'disable_nacl=<(disable_nacl)',
       ],
       'conditions': [
         # Note: When gyp merges lists, it appends them to the old value.
@@ -114,6 +107,15 @@
         }],
         ['test_isolation_fail_on_missing == 0', {
           'action': ['--ignore_broken_items'],
+        }],
+        ["test_isolation_mode == 'prepare'", {
+          'outputs': [
+            '<(PRODUCT_DIR)/<(RULE_INPUT_ROOT).isolated.gen.json',
+          ],
+        }, {
+          'outputs': [
+            '<(PRODUCT_DIR)/<(RULE_INPUT_ROOT).isolated',
+          ],
         }],
       ],
     },

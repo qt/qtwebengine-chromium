@@ -29,8 +29,13 @@ INT_DIR = None
 # The target platform. If it is not defined, sys.platform will be used.
 OS = None
 
+# Note that OS is normally set to 'linux' when building for chromeos.
+CHROMEOS = False
+
 USE_ASH = False
+USE_ATHENA = False
 ENABLE_AUTOFILL_DIALOG = False
+ENABLE_EXTENSIONS = False
 
 WHITELIST = None
 
@@ -84,23 +89,42 @@ def calc_inputs(locale):
     inputs.append(os.path.join(SHARE_INT_DIR, 'ash', 'strings',
                   'ash_strings_%s.pak' % locale))
 
-  if OS != 'ios':
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_da.pak'
-    inputs.append(os.path.join(SHARE_INT_DIR, 'webkit',
-                  'webkit_strings_%s.pak' % locale))
+  if USE_ATHENA:
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/athena/strings/athena_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'athena', 'strings',
+                  'athena_strings_%s.pak' % locale))
 
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/ui_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'ui_strings',
+  if CHROMEOS:
+    inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'chromeos', 'strings',
+                  'ui_chromeos_strings_%s.pak' % locale))
+    inputs.append(os.path.join(SHARE_INT_DIR, 'remoting', 'resources',
+                  '%s.pak' % locale))
+
+  if OS != 'ios':
+    #e.g.
+    # '<(SHARED_INTERMEDIATE_DIR)/content/app/strings/content_strings_da.pak'
+    inputs.append(os.path.join(SHARE_INT_DIR, 'content', 'app', 'strings',
+                  'content_strings_%s.pak' % locale))
+
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/strings/ui_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'strings',
                   'ui_strings_%s.pak' % locale))
 
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/strings/app_locale_settings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'strings',
+                  'app_locale_settings_%s.pak' % locale))
+
+  if ENABLE_AUTOFILL_DIALOG and OS != 'ios' and OS != 'android':
+    #e.g. '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/
+    # address_input_strings_da.pak',
+    inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
+                               'address_input_strings_%s.pak' % locale))
+
+  if ENABLE_EXTENSIONS:
     #e.g. '<(SHARED_INTERMEDIATE_DIR)/device/bluetooth/strings/
     # device_bluetooth_strings_da.pak',
     inputs.append(os.path.join(SHARE_INT_DIR, 'device', 'bluetooth', 'strings',
                   'device_bluetooth_strings_%s.pak' % locale))
-
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/ui/app_locale_settings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'ui', 'app_locale_settings',
-                  'app_locale_settings_%s.pak' % locale))
 
     # For example:
     # '<(SHARED_INTERMEDIATE_DIR)/extensions/strings/extensions_strings_da.pak
@@ -108,17 +132,6 @@ def calc_inputs(locale):
     # to the OS != 'ios' and OS != 'android' section below.
     inputs.append(os.path.join(SHARE_INT_DIR, 'extensions', 'strings',
                   'extensions_strings_%s.pak' % locale))
-
-  if ENABLE_AUTOFILL_DIALOG and OS != 'ios' and OS != 'android':
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/
-    # libaddressinput_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'third_party', 'libaddressinput',
-                               'libaddressinput_strings_%s.pak' % locale))
-
-    #e.g. '<(SHARED_INTERMEDIATE_DIR)/grit/libaddressinput/
-    # address_input_strings_da.pak',
-    inputs.append(os.path.join(SHARE_INT_DIR, 'grit', 'libaddressinput',
-                               'address_input_strings_%s.pak' % locale))
 
   #e.g. '<(grit_out_dir)/google_chrome_strings_da.pak'
   #     or
@@ -176,9 +189,12 @@ def DoMain(argv):
   global SHARE_INT_DIR
   global INT_DIR
   global OS
+  global CHROMEOS
   global USE_ASH
+  global USE_ATHENA
   global WHITELIST
   global ENABLE_AUTOFILL_DIALOG
+  global ENABLE_EXTENSIONS
   global EXTRA_INPUT_FILES
 
   parser = optparse.OptionParser("usage: %prog [options] locales")
@@ -201,11 +217,18 @@ def DoMain(argv):
                     help="The target OS. (e.g. mac, linux, win, etc.)")
   parser.add_option("--use-ash", action="store", dest="use_ash",
                     help="Whether to include ash strings")
+  parser.add_option("--use-athena", action="store", dest="use_athena",
+                    help="Whether to include athena strings")
+  parser.add_option("--chromeos", action="store",
+                    help="Whether building for Chrome OS")
   parser.add_option("--whitelist", action="store", help="Full path to the "
                     "whitelist used to filter output pak file resource IDs")
   parser.add_option("--enable-autofill-dialog", action="store",
                     dest="enable_autofill_dialog",
                     help="Whether to include strings for autofill dialog")
+  parser.add_option("--enable-extensions", action="store",
+                    dest="enable_extensions",
+                    help="Whether to include strings for extensions")
   options, locales = parser.parse_args(argv)
 
   if not locales:
@@ -219,9 +242,12 @@ def DoMain(argv):
   BRANDING = options.branding
   EXTRA_INPUT_FILES = options.extra_input
   OS = options.os
+  CHROMEOS = options.chromeos == '1'
   USE_ASH = options.use_ash == '1'
+  USE_ATHENA = options.use_athena == '1'
   WHITELIST = options.whitelist
   ENABLE_AUTOFILL_DIALOG = options.enable_autofill_dialog == '1'
+  ENABLE_EXTENSIONS = options.enable_extensions == '1'
 
   if not OS:
     if sys.platform == 'darwin':

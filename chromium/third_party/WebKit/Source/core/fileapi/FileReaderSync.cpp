@@ -31,22 +31,21 @@
 #include "config.h"
 #include "core/fileapi/FileReaderSync.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "core/dom/DOMArrayBuffer.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileError.h"
 #include "core/fileapi/FileReaderLoader.h"
-#include "wtf/ArrayBuffer.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 FileReaderSync::FileReaderSync()
 {
-    ScriptWrappable::init(this);
 }
 
-PassRefPtr<ArrayBuffer> FileReaderSync::readAsArrayBuffer(ExecutionContext* executionContext, Blob* blob, ExceptionState& exceptionState)
+PassRefPtr<DOMArrayBuffer> FileReaderSync::readAsArrayBuffer(ExecutionContext* executionContext, Blob* blob, ExceptionState& exceptionState)
 {
     if (!blob) {
         exceptionState.throwDOMException(NotFoundError, FileError::notFoundErrorMessage);
@@ -56,7 +55,7 @@ PassRefPtr<ArrayBuffer> FileReaderSync::readAsArrayBuffer(ExecutionContext* exec
     FileReaderLoader loader(FileReaderLoader::ReadAsArrayBuffer, 0);
     startLoading(executionContext, loader, *blob, exceptionState);
 
-    return loader.arrayBufferResult();
+    return DOMArrayBuffer::create(loader.arrayBufferResult());
 }
 
 String FileReaderSync::readAsBinaryString(ExecutionContext* executionContext, Blob* blob, ExceptionState& exceptionState)
@@ -104,4 +103,4 @@ void FileReaderSync::startLoading(ExecutionContext* executionContext, FileReader
         FileError::throwDOMException(exceptionState, loader.errorCode());
 }
 
-} // namespace WebCore
+} // namespace blink

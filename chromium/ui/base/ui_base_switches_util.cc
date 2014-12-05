@@ -9,6 +9,18 @@
 
 namespace switches {
 
+bool IsLinkDisambiguationPopupEnabled() {
+#if defined(OS_ANDROID)
+  return true;
+#else
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kEnableLinkDisambiguationPopup)) {
+    return true;
+  }
+  return false;
+#endif
+}
+
 bool IsTextInputFocusManagerEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTextInputFocusManager);
@@ -32,6 +44,12 @@ bool IsTouchEditingEnabled() {
   return CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kEnableTouchEditing);
 #endif
+}
+
+bool IsTouchFeedbackEnabled() {
+  static bool touch_feedback_enabled = CommandLine::ForCurrentProcess()->
+      HasSwitch(switches::kEnableTouchFeedback);
+  return touch_feedback_enabled;
 }
 
 }  // namespace switches

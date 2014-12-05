@@ -25,19 +25,26 @@ class GURL;
 
 namespace base {
 class FilePath;
-class MessageLoopProxy;
 class SequencedTaskRunner;
+class SingleThreadTaskRunner;
 }
 
-namespace quota {
+namespace net {
+class URLRequestContext;
+}
+
+namespace storage {
 class QuotaManagerProxy;
+class SpecialStoragePolicy;
 }
 
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerCacheStorageManager;
 class ServiceWorkerContextObserver;
 class ServiceWorkerContextWrapper;
+class ServiceWorkerDatabaseTaskManager;
 class ServiceWorkerHandle;
 class ServiceWorkerJobCoordinator;
 class ServiceWorkerProviderHost;
@@ -50,15 +57,18 @@ class ServiceWorkerStorage;
 // is the root of the containment hierarchy for service worker data
 // associated with a particular partition.
 class CONTENT_EXPORT ServiceWorkerContextCore
-    : public ServiceWorkerVersion::Listener {
+    : NON_EXPORTED_BASE(public ServiceWorkerVersion::Listener) {
  public:
+  typedef base::Callback<void(ServiceWorkerStatusCode status)> StatusCallback;
   typedef base::Callback<void(ServiceWorkerStatusCode status,
-                              int64 registration_id,
-                              int64 version_id)> RegistrationCallback;
+                              int64 registration_id)> RegistrationCallback;
   typedef base::Callback<
       void(ServiceWorkerStatusCode status)> UnregistrationCallback;
   typedef IDMap<ServiceWorkerProviderHost, IDMapOwnPointer> ProviderMap;
   typedef IDMap<ProviderMap, IDMapOwnPointer> ProcessToProviderMap;
+
+  // Directory for ServiceWorkerStorage and ServiceWorkerCacheManager.
+  static const base::FilePath::CharType kServiceWorkerDirectory[];
 
   // Iterates over ServiceWorkerProviderHost objects in a ProcessToProviderMap.
   class ProviderHostIterator {
@@ -74,7 +84,7 @@ class CONTENT_EXPORT ServiceWorkerContextCore
     void Initialize();
 
     ProcessToProviderMap* map_;
-    scoped_ptr<ProcessToProviderMap::iterator> provider_iterator_;
+    scoped_ptr<ProcessToProviderMap::iterator> process_iterator_;
     scoped_ptr<ProviderMap::iterator> provider_host_iterator_;
 
     DISALLOW_COPY_AND_ASSIGN(ProviderHostIterator);
@@ -88,30 +98,38 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   // be called on the thread which called AddObserver() of |observer_list|.
   ServiceWorkerContextCore(
       const base::FilePath& user_data_directory,
-      base::SequencedTaskRunner* database_task_runner,
-      base::MessageLoopProxy* disk_cache_thread,
-      quota::QuotaManagerProxy* quota_manager_proxy,
+      const scoped_refptr<base::SequencedTaskRunner>& cache_task_runner,
+      scoped_ptr<ServiceWorkerDatabaseTaskManager> database_task_runner_manager,
+      const scoped_refptr<base::SingleThreadTaskRunner>& disk_cache_thread,
+      storage::QuotaManagerProxy* quota_manager_proxy,
+      storage::SpecialStoragePolicy* special_storage_policy,
       ObserverListThreadSafe<ServiceWorkerContextObserver>* observer_list,
       ServiceWorkerContextWrapper* wrapper);
-  virtual ~ServiceWorkerContextCore();
+  ServiceWorkerContextCore(
+      ServiceWorkerContextCore* old_context,
+      ServiceWorkerContextWrapper* wrapper);
+  ~ServiceWorkerContextCore() override;
 
   // ServiceWorkerVersion::Listener overrides.
-  virtual void OnWorkerStarted(ServiceWorkerVersion* version) OVERRIDE;
-  virtual void OnWorkerStopped(ServiceWorkerVersion* version) OVERRIDE;
-  virtual void OnVersionStateChanged(ServiceWorkerVersion* version) OVERRIDE;
-  virtual void OnErrorReported(ServiceWorkerVersion* version,
-                               const base::string16& error_message,
-                               int line_number,
-                               int column_number,
-                               const GURL& source_url) OVERRIDE;
-  virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
-                                      int source_identifier,
-                                      int message_level,
-                                      const base::string16& message,
-                                      int line_number,
-                                      const GURL& source_url) OVERRIDE;
+  void OnWorkerStarted(ServiceWorkerVersion* version) override;
+  void OnWorkerStopped(ServiceWorkerVersion* version) override;
+  void OnVersionStateChanged(ServiceWorkerVersion* version) override;
+  void OnErrorReported(ServiceWorkerVersion* version,
+                       const base::string16& error_message,
+                       int line_number,
+                       int column_number,
+                       const GURL& source_url) override;
+  void OnReportConsoleMessage(ServiceWorkerVersion* version,
+                              int source_identifier,
+                              int message_level,
+                              const base::string16& message,
+                              int line_number,
+                              const GURL& source_url) override;
 
   ServiceWorkerStorage* storage() { return storage_.get(); }
+  ServiceWorkerCacheStorageManager* cache_manager() {
+    return cache_manager_.get();
+  }
   ServiceWorkerProcessManager* process_manager();
   EmbeddedWorkerRegistry* embedded_worker_registry() {
     return embedded_worker_registry_.get();
@@ -127,20 +145,21 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   void RemoveAllProviderHostsForProcess(int process_id);
   scoped_ptr<ProviderHostIterator> GetProviderHostIterator();
 
-  // The callback will be called on the IO thread.
   // A child process of |source_process_id| may be used to run the created
   // worker for initial installation.
-  // Non-null |provider_host| must be given if this is called from a document,
-  // whose process_id() must match with |source_process_id|.
+  // Non-null |provider_host| must be given if this is called from a document.
   void RegisterServiceWorker(const GURL& pattern,
                              const GURL& script_url,
-                             int source_process_id,
                              ServiceWorkerProviderHost* provider_host,
                              const RegistrationCallback& callback);
-
-  // The callback will be called on the IO thread.
   void UnregisterServiceWorker(const GURL& pattern,
                                const UnregistrationCallback& callback);
+  // Callback is called issued after all unregistrations occur.  The Status
+  // is populated as SERVICE_WORKER_OK if all succeed, or SERVICE_WORKER_FAILED
+  // if any did not succeed.
+  void UnregisterServiceWorkers(const GURL& origin,
+                                const UnregistrationCallback& callback);
+  void UpdateServiceWorker(ServiceWorkerRegistration* registration);
 
   // This class maintains collections of live instances, this class
   // does not own these object or influence their lifetime.
@@ -154,8 +173,19 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   std::vector<ServiceWorkerRegistrationInfo> GetAllLiveRegistrationInfo();
   std::vector<ServiceWorkerVersionInfo> GetAllLiveVersionInfo();
 
-  // Returns new context-local unique ID for ServiceWorkerHandle.
+  // Returns new context-local unique ID.
   int GetNewServiceWorkerHandleId();
+  int GetNewRegistrationHandleId();
+
+  void ScheduleDeleteAndStartOver() const;
+
+  // Deletes all files on disk and restarts the system. This leaves the system
+  // in a disabled state until it's done.
+  void DeleteAndStartOver(const StatusCallback& callback);
+
+  void SetBlobParametersForCache(
+      net::URLRequestContext* request_context,
+      base::WeakPtr<storage::BlobStorageContext> blob_storage_context);
 
   base::WeakPtr<ServiceWorkerContextCore> AsWeakPtr() {
     return weak_factory_.GetWeakPtr();
@@ -166,31 +196,37 @@ class CONTENT_EXPORT ServiceWorkerContextCore
   typedef std::map<int64, ServiceWorkerVersion*> VersionMap;
 
   ProviderMap* GetProviderMapForProcess(int process_id) {
-    return providers_.Lookup(process_id);
+    return providers_->Lookup(process_id);
   }
 
   void RegistrationComplete(const GURL& pattern,
                             const RegistrationCallback& callback,
                             ServiceWorkerStatusCode status,
-                            ServiceWorkerRegistration* registration,
-                            ServiceWorkerVersion* version);
+                            ServiceWorkerRegistration* registration);
 
   void UnregistrationComplete(const GURL& pattern,
                               const UnregistrationCallback& callback,
                               ServiceWorkerStatusCode status);
+
+  void DidGetAllRegistrationsForUnregisterForOrigin(
+      const UnregistrationCallback& result,
+      const GURL& origin,
+      const std::vector<ServiceWorkerRegistrationInfo>& registrations);
 
   base::WeakPtrFactory<ServiceWorkerContextCore> weak_factory_;
   // It's safe to store a raw pointer instead of a scoped_refptr to |wrapper_|
   // because the Wrapper::Shutdown call that hops threads to destroy |this| uses
   // Bind() to hold a reference to |wrapper_| until |this| is fully destroyed.
   ServiceWorkerContextWrapper* wrapper_;
-  ProcessToProviderMap providers_;
+  scoped_ptr<ProcessToProviderMap> providers_;
   scoped_ptr<ServiceWorkerStorage> storage_;
+  scoped_ptr<ServiceWorkerCacheStorageManager> cache_manager_;
   scoped_refptr<EmbeddedWorkerRegistry> embedded_worker_registry_;
   scoped_ptr<ServiceWorkerJobCoordinator> job_coordinator_;
   std::map<int64, ServiceWorkerRegistration*> live_registrations_;
   std::map<int64, ServiceWorkerVersion*> live_versions_;
   int next_handle_id_;
+  int next_registration_handle_id_;
   scoped_refptr<ObserverListThreadSafe<ServiceWorkerContextObserver> >
       observer_list_;
 

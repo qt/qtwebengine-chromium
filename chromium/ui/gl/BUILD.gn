@@ -4,6 +4,7 @@
 
 import("//build/config/ui.gni")
 if (is_android) {
+  import("//build/config/android/config.gni")
   import("//build/config/android/rules.gni")
 }
 
@@ -31,8 +32,6 @@ component("gl") {
     "android/surface_texture.h",
     "android/surface_texture_listener.cc",
     "android/surface_texture_listener.h",
-    "android/surface_texture_tracker.cc",
-    "android/surface_texture_tracker.h",
     "gl_bindings.h",
     "gl_bindings_skia_in_process.cc",
     "gl_bindings_skia_in_process.h",
@@ -50,17 +49,21 @@ component("gl") {
     "gl_export.h",
     "gl_fence.cc",
     "gl_fence.h",
+    "gl_fence_arb.cc",
+    "gl_fence_arb.h",
+    "gl_fence_nv.cc",
+    "gl_fence_nv.h",
     "gl_gl_api_implementation.cc",
     "gl_gl_api_implementation.h",
-    "gl_image.cc",
     "gl_image.h",
-    "gl_image_android.cc",
-    "gl_image_mac.cc",
-    "gl_image_shm.cc",
-    "gl_image_shm.h",
+    "gl_image_memory.cc",
+    "gl_image_memory.h",
+    "gl_image_ref_counted_memory.cc",
+    "gl_image_ref_counted_memory.h",
+    "gl_image_shared_memory.cc",
+    "gl_image_shared_memory.h",
     "gl_image_stub.cc",
     "gl_image_stub.h",
-    "gl_image_win.cc",
     "gl_implementation.cc",
     "gl_implementation.h",
     "gl_implementation_android.cc",
@@ -112,18 +115,17 @@ component("gl") {
 
   deps = [
     ":generate_gl_bindings",
-    "//base",
     "//base/third_party/dynamic_annotations",
     "//gpu/command_buffer/common",
-    "//third_party/mesa:mesa_headers",
     "//skia",
+  ]
+  public_deps = [
+    "//base",
+    "//third_party/mesa:mesa_headers",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
   ]
-
-  # TODO(GYP) hook up once this is converted.
-  forward_dependent_configs_from = [ "//third_party/mesa:mesa_headers" ]
 
   if (is_win || is_android || is_linux) {
     sources += [
@@ -131,6 +133,8 @@ component("gl") {
       "egl_util.h",
       "gl_context_egl.cc",
       "gl_context_egl.h",
+      "gl_fence_egl.cc",
+      "gl_fence_egl.h",
       "gl_image_egl.cc",
       "gl_image_egl.h",
       "gl_surface_egl.cc",
@@ -145,6 +149,13 @@ component("gl") {
       "gl_implementation_osmesa.h",
     ]
   }
+  if (is_linux) {
+    deps += [ "//third_party/libevent" ]
+    sources += [
+      "gl_image_linux_dma_buffer.cc",
+      "gl_image_linux_dma_buffer.h",
+    ]
+  }
   if (use_x11) {
     sources += [
       "gl_context_glx.cc",
@@ -152,9 +163,6 @@ component("gl") {
       "gl_context_x11.cc",
       "gl_glx_api_implementation.cc",
       "gl_glx_api_implementation.h",
-      "gl_image_glx.cc",
-      "gl_image_glx.h",
-      "gl_image_x11.cc",
       "gl_implementation_x11.cc",
       "gl_surface_glx.cc",
       "gl_surface_glx.h",
@@ -172,7 +180,7 @@ component("gl") {
     ]
 
     deps += [
-      "//ui/gfx:gfx_x11",
+      "//ui/gfx/x",
     ]
   }
   if (is_win) {
@@ -211,8 +219,6 @@ component("gl") {
     sources += [
       "gl_egl_api_implementation.cc",
       "gl_egl_api_implementation.h",
-      "gl_image_android_native_buffer.cc",
-      "gl_image_android_native_buffer.h",
       "gl_image_surface_texture.cc",
       "gl_image_surface_texture.h",
     ]
@@ -231,24 +237,24 @@ component("gl") {
   if (use_ozone) {
     sources += [
       "gl_context_ozone.cc",
-      "gl_image_ozone.cc",
+      "gl_egl_api_implementation.cc",
+      "gl_egl_api_implementation.h",
       "gl_implementation_ozone.cc",
       "gl_surface_ozone.cc",
     ]
     deps += [
-      "//ui/gfx/ozone",
       "//ui/ozone",
+      "//ui/ozone:ozone_base",
     ]
   }
 
-  # TODO(GYP) enable this dependency once its written.
-  #if (is_android && !android_webview_build) {
-  #  deps += [ "//ui/android:ui_java" ]
-  #}
+  if (is_android && !is_android_webview_build) {
+    deps += [ "//ui/android:ui_java" ]
+  }
 }
 
 action("generate_gl_bindings") {
-  visibility = ":*"  # Only targets in this file can see this.
+  visibility = [ ":*" ]  # Only targets in this file can see this.
 
   script = "generate_bindings.py"
 
@@ -257,7 +263,7 @@ action("generate_gl_bindings") {
   # should generate a .d file, which we should declare here. That will
   # eliminate the need bot both hardcoding the list here or calling the script
   # during GN-time.
-  source_prereqs = [
+  inputs = [
     "EGL/eglextchromium.h",
     "GL/glextchromium.h",
     "//third_party/mesa/src/include/GL/glext.h",
@@ -306,6 +312,7 @@ config("gl_unittest_utils_config") {
 }
 
 source_set("gl_unittest_utils") {
+  testonly = true
   sources = [
     "gl_mock.h",
     "gl_mock.cc",
@@ -315,7 +322,7 @@ source_set("gl_unittest_utils") {
   ]
 
   configs += [ "//third_party/khronos:khronos_headers" ]
-  direct_dependent_configs = [ ":gl_unittest_utils_config" ]
+  public_configs = [ ":gl_unittest_utils_config" ]
 
   deps = [
     ":gl",
@@ -331,7 +338,6 @@ if (is_android) {
 
   generate_jni("gl_jni_headers") {
     deps = [ ":surface_jni_headers" ]
-    forward_dependent_configs_from = [ ":surface_jni_headers" ]
     sources = [
       "../android/java/src/org/chromium/ui/gl/SurfaceTextureListener.java",
       "../android/java/src/org/chromium/ui/gl/SurfaceTexturePlatformWrapper.java",

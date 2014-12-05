@@ -12,7 +12,6 @@
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/browser/render_widget_host_view_frame_subscriber.h"
-#include "third_party/WebKit/public/platform/WebScreenInfo.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/size_conversions.h"
@@ -367,7 +366,7 @@ const int kFlushInputRateInUs = 16666;
 
 RenderWidgetHostViewBase::RenderWidgetHostViewBase()
     : popup_type_(blink::WebPopupTypeNone),
-      background_opaque_(true),
+      background_color_(SK_ColorWHITE),
       mouse_locked_(false),
       showing_context_menu_(false),
       selection_text_offset_(0),
@@ -375,7 +374,8 @@ RenderWidgetHostViewBase::RenderWidgetHostViewBase()
       current_device_scale_factor_(0),
       current_display_rotation_(gfx::Display::ROTATE_0),
       pinch_zoom_enabled_(content::IsPinchToZoomEnabled()),
-      renderer_frame_number_(0) {
+      renderer_frame_number_(0),
+      weak_factory_(this) {
 }
 
 RenderWidgetHostViewBase::~RenderWidgetHostViewBase() {
@@ -386,12 +386,16 @@ bool RenderWidgetHostViewBase::OnMessageReceived(const IPC::Message& msg){
   return false;
 }
 
-void RenderWidgetHostViewBase::SetBackgroundOpaque(bool opaque) {
-  background_opaque_ = opaque;
+void RenderWidgetHostViewBase::SetBackgroundColor(SkColor color) {
+  background_color_ = color;
+}
+
+void RenderWidgetHostViewBase::SetBackgroundColorToDefault() {
+  SetBackgroundColor(SK_ColorWHITE);
 }
 
 bool RenderWidgetHostViewBase::GetBackgroundOpaque() {
-  return background_opaque_;
+  return SkColorGetA(background_color_) == SK_AlphaOPAQUE;
 }
 
 gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
@@ -402,7 +406,7 @@ gfx::Size RenderWidgetHostViewBase::GetPhysicalBackingSize() const {
                                           display.device_scale_factor()));
 }
 
-float RenderWidgetHostViewBase::GetOverdrawBottomHeight() const {
+float RenderWidgetHostViewBase::GetTopControlsLayoutHeight() const {
   return 0.f;
 }
 
@@ -485,27 +489,28 @@ blink::WebPopupType RenderWidgetHostViewBase::GetPopupType() {
 }
 
 BrowserAccessibilityManager*
-    RenderWidgetHostViewBase::GetBrowserAccessibilityManager() const {
-  return browser_accessibility_manager_.get();
+RenderWidgetHostViewBase::CreateBrowserAccessibilityManager(
+    BrowserAccessibilityDelegate* delegate) {
+  NOTREACHED();
+  return NULL;
 }
 
-void RenderWidgetHostViewBase::CreateBrowserAccessibilityManagerIfNeeded() {
-}
-
-void RenderWidgetHostViewBase::SetBrowserAccessibilityManager(
-    BrowserAccessibilityManager* manager) {
-  browser_accessibility_manager_.reset(manager);
-}
-
-void RenderWidgetHostViewBase::OnAccessibilitySetFocus(int acc_obj_id) {
-}
-
-void RenderWidgetHostViewBase::AccessibilityShowMenu(int acc_obj_id) {
+void RenderWidgetHostViewBase::AccessibilityShowMenu(const gfx::Point& point) {
 }
 
 gfx::Point RenderWidgetHostViewBase::AccessibilityOriginInScreen(
     const gfx::Rect& bounds) {
   return bounds.origin();
+}
+
+gfx::AcceleratedWidget
+    RenderWidgetHostViewBase::AccessibilityGetAcceleratedWidget() {
+  return gfx::kNullAcceleratedWidget;
+}
+
+gfx::NativeViewAccessible
+    RenderWidgetHostViewBase::AccessibilityGetNativeViewAccessible() {
+  return NULL;
 }
 
 void RenderWidgetHostViewBase::UpdateScreenInfo(gfx::NativeView view) {
@@ -533,6 +538,10 @@ bool RenderWidgetHostViewBase::HasDisplayPropertyChanged(gfx::NativeView view) {
   current_device_scale_factor_ = display.device_scale_factor();
   current_display_rotation_ = display.rotation();
   return true;
+}
+
+base::WeakPtr<RenderWidgetHostViewBase> RenderWidgetHostViewBase::GetWeakPtr() {
+  return weak_factory_.GetWeakPtr();
 }
 
 scoped_ptr<SyntheticGestureTarget>
@@ -596,8 +605,21 @@ void RenderWidgetHostViewBase::FlushInput() {
   impl->FlushInput();
 }
 
-SkBitmap::Config RenderWidgetHostViewBase::PreferredReadbackFormat() {
-  return SkBitmap::kARGB_8888_Config;
+SkColorType RenderWidgetHostViewBase::PreferredReadbackFormat() {
+  return kN32_SkColorType;
+}
+
+void RenderWidgetHostViewBase::OnTextSurroundingSelectionResponse(
+    const base::string16& content,
+    size_t start_offset,
+    size_t end_offset) {
+  NOTIMPLEMENTED();
+}
+
+void RenderWidgetHostViewBase::ShowDisambiguationPopup(
+    const gfx::Rect& rect_pixels,
+    const SkBitmap& zoomed_bitmap) {
+  NOTIMPLEMENTED();
 }
 
 gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
@@ -606,6 +628,67 @@ gfx::Size RenderWidgetHostViewBase::GetVisibleViewportSize() const {
 
 void RenderWidgetHostViewBase::SetInsets(const gfx::Insets& insets) {
   NOTIMPLEMENTED();
+}
+
+// static
+blink::WebScreenOrientationType
+RenderWidgetHostViewBase::GetOrientationTypeForMobile(
+    const gfx::Display& display) {
+  int angle = display.RotationAsDegree();
+  const gfx::Rect& bounds = display.bounds();
+
+  // Whether the device's natural orientation is portrait.
+  bool natural_portrait = false;
+  if (angle == 0 || angle == 180) // The device is in its natural orientation.
+    natural_portrait = bounds.height() >= bounds.width();
+  else
+    natural_portrait = bounds.height() <= bounds.width();
+
+  switch (angle) {
+  case 0:
+    return natural_portrait ? blink::WebScreenOrientationPortraitPrimary
+                           : blink::WebScreenOrientationLandscapePrimary;
+  case 90:
+    return natural_portrait ? blink::WebScreenOrientationLandscapePrimary
+                           : blink::WebScreenOrientationPortraitSecondary;
+  case 180:
+    return natural_portrait ? blink::WebScreenOrientationPortraitSecondary
+                           : blink::WebScreenOrientationLandscapeSecondary;
+  case 270:
+    return natural_portrait ? blink::WebScreenOrientationLandscapeSecondary
+                           : blink::WebScreenOrientationPortraitPrimary;
+  default:
+    NOTREACHED();
+    return blink::WebScreenOrientationPortraitPrimary;
+  }
+}
+
+// static
+blink::WebScreenOrientationType
+RenderWidgetHostViewBase::GetOrientationTypeForDesktop(
+    const gfx::Display& display) {
+  static int primary_landscape_angle = -1;
+  static int primary_portrait_angle = -1;
+
+  int angle = display.RotationAsDegree();
+  const gfx::Rect& bounds = display.bounds();
+  bool is_portrait = bounds.height() >= bounds.width();
+
+  if (is_portrait && primary_portrait_angle == -1)
+    primary_portrait_angle = angle;
+
+  if (!is_portrait && primary_landscape_angle == -1)
+    primary_landscape_angle = angle;
+
+  if (is_portrait) {
+    return primary_portrait_angle == angle
+        ? blink::WebScreenOrientationPortraitPrimary
+        : blink::WebScreenOrientationPortraitSecondary;
+  }
+
+  return primary_landscape_angle == angle
+      ? blink::WebScreenOrientationLandscapePrimary
+      : blink::WebScreenOrientationLandscapeSecondary;
 }
 
 }  // namespace content

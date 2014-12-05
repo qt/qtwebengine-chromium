@@ -5,14 +5,14 @@
 #include "config.h"
 #include "modules/screen_orientation/LockOrientationCallback.h"
 
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/screen_orientation/ScreenOrientation.h"
 
-namespace WebCore {
+namespace blink {
 
-LockOrientationCallback::LockOrientationCallback(PassRefPtr<ScriptPromiseResolverWithContext> resolver)
+LockOrientationCallback::LockOrientationCallback(PassRefPtr<ScriptPromiseResolver> resolver)
     : m_resolver(resolver)
 {
 }
@@ -21,29 +21,26 @@ LockOrientationCallback::~LockOrientationCallback()
 {
 }
 
-void LockOrientationCallback::onSuccess(unsigned angle, blink::WebScreenOrientationType type)
+void LockOrientationCallback::onSuccess()
 {
-    // FIXME: for the moment, we do nothing with the angle, we should use it and
-    // convert it to the appropriate type if the type == 'undefined' when the
-    // method will be implemented in ScreenOrientationController.
-    m_resolver->resolve(ScreenOrientation::orientationTypeToString(type));
+    m_resolver->resolve();
 }
 
-void LockOrientationCallback::onError(ErrorType error)
+void LockOrientationCallback::onError(WebLockOrientationError error)
 {
     ExceptionCode code = 0;
     String msg = "";
 
     switch (error) {
-    case ErrorTypeNotAvailable:
+    case WebLockOrientationErrorNotAvailable:
         code = NotSupportedError;
         msg = "lockOrientation() is not available on this device.";
         break;
-    case ErrorTypeFullScreenRequired:
+    case WebLockOrientationErrorFullScreenRequired:
         code = SecurityError;
         msg = "The page needs to be fullscreen in order to call lockOrientation().";
         break;
-    case ErrorTypeCanceled:
+    case WebLockOrientationErrorCanceled:
         code = AbortError;
         msg = "A call to lockOrientation() or unlockOrientation() canceled this call.";
         break;
@@ -52,27 +49,4 @@ void LockOrientationCallback::onError(ErrorType error)
     m_resolver->reject(DOMException::create(code, msg));
 }
 
-void LockOrientationCallback::onError(blink::WebLockOrientationError error)
-{
-    ExceptionCode code = 0;
-    String msg = "";
-
-    switch (error) {
-    case blink::WebLockOrientationErrorNotAvailable:
-        code = NotSupportedError;
-        msg = "lockOrientation() is not available on this device.";
-        break;
-    case blink::WebLockOrientationErrorFullScreenRequired:
-        code = SecurityError;
-        msg = "The page needs to be fullscreen in order to call lockOrientation().";
-        break;
-    case blink::WebLockOrientationErrorCanceled:
-        code = AbortError;
-        msg = "A call to lockOrientation() or unlockOrientation() canceled this call.";
-        break;
-    }
-
-    m_resolver->reject(DOMException::create(code, msg));
-}
-
-} // namespace WebCore
+} // namespace blink

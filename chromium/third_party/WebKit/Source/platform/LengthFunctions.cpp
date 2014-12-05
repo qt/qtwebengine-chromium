@@ -27,7 +27,7 @@
 #include "platform/LayoutUnit.h"
 #include "platform/LengthSize.h"
 
-namespace WebCore {
+namespace blink {
 
 int intValueForLength(const Length& length, LayoutUnit maximumValue)
 {
@@ -54,7 +54,7 @@ float floatValueForLength(const Length& length, float maximumValue)
     case ExtendToZoom:
     case DeviceWidth:
     case DeviceHeight:
-    case Undefined:
+    case MaxSizeNone:
         ASSERT_NOT_REACHED();
         return 0;
     }
@@ -83,7 +83,7 @@ LayoutUnit minimumValueForLength(const Length& length, LayoutUnit maximumValue)
     case ExtendToZoom:
     case DeviceWidth:
     case DeviceHeight:
-    case Undefined:
+    case MaxSizeNone:
         ASSERT_NOT_REACHED();
         return 0;
     }
@@ -116,7 +116,7 @@ LayoutUnit valueForLength(const Length& length, LayoutUnit maximumValue)
     case ExtendToZoom:
     case DeviceWidth:
     case DeviceHeight:
-    case Undefined:
+    case MaxSizeNone:
         ASSERT_NOT_REACHED();
         return 0;
     }
@@ -129,4 +129,4 @@ FloatSize floatSizeForLengthSize(const LengthSize& lengthSize, const FloatSize& 
     return FloatSize(floatValueForLength(lengthSize.width(), boxSize.width()), floatValueForLength(lengthSize.height(), boxSize.height()));
 }
 
-} // namespace WebCore
+} // namespace blink

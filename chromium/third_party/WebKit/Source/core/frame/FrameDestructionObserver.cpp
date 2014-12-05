@@ -28,19 +28,20 @@
 
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 FrameDestructionObserver::FrameDestructionObserver(LocalFrame* frame)
-    : m_frame(0)
+    : m_frame(nullptr)
 {
     observeFrame(frame);
 }
 
+#if !ENABLE(OILPAN)
 FrameDestructionObserver::~FrameDestructionObserver()
 {
-    observeFrame(0);
-
+    observeFrame(nullptr);
 }
+#endif
 
 void FrameDestructionObserver::observeFrame(LocalFrame* frame)
 {
@@ -53,14 +54,21 @@ void FrameDestructionObserver::observeFrame(LocalFrame* frame)
         m_frame->addDestructionObserver(this);
 }
 
+#if !ENABLE(OILPAN)
 void FrameDestructionObserver::frameDestroyed()
 {
-    m_frame = 0;
+    m_frame = nullptr;
 }
+#endif
 
 void FrameDestructionObserver::willDetachFrameHost()
 {
     // Subclasses should override this function to handle this notification.
+}
+
+void FrameDestructionObserver::trace(Visitor* visitor)
+{
+    visitor->trace(m_frame);
 }
 
 }

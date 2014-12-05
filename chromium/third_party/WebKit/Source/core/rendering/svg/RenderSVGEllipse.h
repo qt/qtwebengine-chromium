@@ -29,22 +29,22 @@
 
 #include "core/rendering/svg/RenderSVGShape.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderSVGEllipse FINAL : public RenderSVGShape {
+class RenderSVGEllipse final : public RenderSVGShape {
 public:
     explicit RenderSVGEllipse(SVGGraphicsElement*);
     virtual ~RenderSVGEllipse();
 
-private:
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGEllipse"; }
+    virtual ShapeGeometryCodePath geometryCodePath() const override { return m_usePathFallback ? PathGeometry : EllipseGeometryFastPath; }
 
-    virtual void updateShapeFromElement() OVERRIDE;
-    virtual bool isShapeEmpty() const OVERRIDE { return m_usePathFallback ? RenderSVGShape::isShapeEmpty() : m_fillBoundingBox.isEmpty(); }
-    virtual void fillShape(GraphicsContext*) const OVERRIDE;
-    virtual void strokeShape(GraphicsContext*) const OVERRIDE;
-    virtual bool shapeDependentStrokeContains(const FloatPoint&) OVERRIDE;
-    virtual bool shapeDependentFillContains(const FloatPoint&, const WindRule) const OVERRIDE;
+private:
+    virtual const char* renderName() const override { return "RenderSVGEllipse"; }
+
+    virtual void updateShapeFromElement() override;
+    virtual bool isShapeEmpty() const override { return m_usePathFallback ? RenderSVGShape::isShapeEmpty() : m_fillBoundingBox.isEmpty(); }
+    virtual bool shapeDependentStrokeContains(const FloatPoint&) override;
+    virtual bool shapeDependentFillContains(const FloatPoint&, const WindRule) const override;
     void calculateRadiiAndCenter();
 
 private:

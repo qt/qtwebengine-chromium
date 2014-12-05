@@ -23,18 +23,19 @@
 
 #include "core/svg/SVGElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGDescElement FINAL : public SVGElement {
+class SVGDescElement final : public SVGElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGDescElement);
 
 private:
     explicit SVGDescElement(Document&);
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGDescElement_h

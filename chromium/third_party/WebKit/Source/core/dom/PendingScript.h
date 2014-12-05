@@ -26,6 +26,7 @@
 #ifndef PendingScript_h
 #define PendingScript_h
 
+#include "core/dom/Element.h"
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourceOwner.h"
 #include "core/fetch/ScriptResource.h"
@@ -34,61 +35,37 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
-class Element;
-class ScriptResource;
+class ScriptSourceCode;
+class ScriptStreamer;
 
 // A container for an external script which may be loaded and executed.
 //
 // A ResourcePtr alone does not prevent the underlying Resource
 // from purging its data buffer. This class holds a dummy client open for its
 // lifetime in order to guarantee that the data buffer will not be purged.
-class PendingScript FINAL : public ResourceOwner<ScriptResource> {
+class PendingScript final : public ResourceOwner<ScriptResource> {
     ALLOW_ONLY_INLINE_ALLOCATION();
 public:
-    PendingScript()
-        : m_watchingForLoad(false)
-        , m_startingPosition(TextPosition::belowRangePosition())
-    {
-    }
+    enum Type {
+        ParsingBlocking,
+        Deferred,
+        Async
+    };
 
-    PendingScript(Element* element, ScriptResource* resource)
-        : m_watchingForLoad(false)
-        , m_element(element)
-    {
-        setScriptResource(resource);
-    }
-
-    PendingScript(const PendingScript& other)
-        : ResourceOwner(other)
-        , m_watchingForLoad(other.m_watchingForLoad)
-        , m_element(other.m_element)
-        , m_startingPosition(other.m_startingPosition)
-    {
-        setScriptResource(other.resource());
-    }
-
+    PendingScript();
+    PendingScript(Element*, ScriptResource*);
+    PendingScript(const PendingScript&);
     ~PendingScript();
 
-    PendingScript& operator=(const PendingScript& other)
-    {
-        if (this == &other)
-            return *this;
-
-        m_watchingForLoad = other.m_watchingForLoad;
-        m_element = other.m_element;
-        m_startingPosition = other.m_startingPosition;
-        this->ResourceOwner<ScriptResource, ResourceClient>::operator=(other);
-
-        return *this;
-    }
+    PendingScript& operator=(const PendingScript&);
 
     TextPosition startingPosition() const { return m_startingPosition; }
     void setStartingPosition(const TextPosition& position) { m_startingPosition = position; }
 
-    bool watchingForLoad() const { return m_watchingForLoad; }
-    void setWatchingForLoad(bool b) { m_watchingForLoad = b; }
+    void watchForLoad(ScriptResourceClient*);
+    void stopWatchingForLoad(ScriptResourceClient*);
 
     Element* element() const { return m_element.get(); }
     void setElement(Element* element) { m_element = element; }
@@ -97,15 +74,24 @@ public:
     void setScriptResource(ScriptResource*);
 
     virtual void notifyFinished(Resource*);
+    virtual void notifyAppendData(ScriptResource*);
 
     void trace(Visitor*);
+
+    ScriptSourceCode getSource(const KURL& documentURL, bool& errorOccurred) const;
+
+    void setStreamer(PassRefPtr<ScriptStreamer>);
+
+    bool isReady() const;
 
 private:
     bool m_watchingForLoad;
     RefPtrWillBeMember<Element> m_element;
     TextPosition m_startingPosition; // Only used for inline script tags.
+
+    RefPtr<ScriptStreamer> m_streamer;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // PendingScript_h

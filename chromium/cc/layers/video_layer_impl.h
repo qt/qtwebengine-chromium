@@ -9,8 +9,9 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/layers/layer_impl.h"
-#include "cc/resources/release_callback.h"
+#include "cc/resources/release_callback_impl.h"
 #include "cc/resources/video_resource_updater.h"
+#include "media/base/video_rotation.h"
 
 namespace media {
 class VideoFrame;
@@ -24,34 +25,41 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
  public:
   static scoped_ptr<VideoLayerImpl> Create(LayerTreeImpl* tree_impl,
                                            int id,
-                                           VideoFrameProvider* provider);
-  virtual ~VideoLayerImpl();
+                                           VideoFrameProvider* provider,
+                                           media::VideoRotation video_rotation);
+  ~VideoLayerImpl() override;
 
   // LayerImpl implementation.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
-  virtual void DidDraw(ResourceProvider* resource_provider) OVERRIDE;
-  virtual void DidBecomeActive() OVERRIDE;
-  virtual void ReleaseResources() OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
+  void DidDraw(ResourceProvider* resource_provider) override;
+  void DidBecomeActive() override;
+  void ReleaseResources() override;
 
   void SetNeedsRedraw();
 
   void SetProviderClientImpl(
       scoped_refptr<VideoFrameProviderClientImpl> provider_client_impl);
 
- private:
-  VideoLayerImpl(LayerTreeImpl* tree_impl, int id);
+  media::VideoRotation video_rotation() const { return video_rotation_; }
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+ private:
+  VideoLayerImpl(LayerTreeImpl* tree_impl,
+                 int id,
+                 media::VideoRotation video_rotation);
+
+  const char* LayerTypeAsString() const override;
 
   scoped_refptr<VideoFrameProviderClientImpl> provider_client_impl_;
 
   scoped_refptr<media::VideoFrame> frame_;
+
+  media::VideoRotation video_rotation_;
 
   scoped_ptr<VideoResourceUpdater> updater_;
   VideoFrameExternalResources::ResourceType frame_resource_type_;
@@ -61,7 +69,7 @@ class CC_EXPORT VideoLayerImpl : public LayerImpl {
   // ExternalResource (aka TextureMailbox) classes.
   std::vector<unsigned> software_resources_;
   // Called once for each software resource.
-  ReleaseCallback software_release_callback_;
+  ReleaseCallbackImpl software_release_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoLayerImpl);
 };

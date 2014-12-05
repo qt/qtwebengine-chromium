@@ -8,7 +8,7 @@
 /*  parse compressed PCF fonts, as found with many X11 server              */
 /*  distributions.                                                         */
 /*                                                                         */
-/*  Copyright 2002, 2003, 2004, 2005, 2006, 2009 by                        */
+/*  Copyright 2002-2006, 2009-2011 by                                      */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -107,7 +107,7 @@
   {
     FT_ULong    sz = (FT_ULong)size * items;
     FT_Error    error;
-    FT_Pointer  p;
+    FT_Pointer  p  = NULL;
 
 
     (void)FT_ALLOC( p, sz );
@@ -390,7 +390,7 @@
   ft_gzip_file_fill_output( FT_GZipFile  zip )
   {
     z_stream*  zstream = &zip->zstream;
-    FT_Error   error   = 0;
+    FT_Error   error   = Gzip_Err_Ok;
 
 
     zip->cursor        = zip->buffer;
@@ -571,7 +571,7 @@
     old_pos = stream->pos;
     if ( !FT_Stream_Seek( stream, stream->size - 4 ) )
     {
-      result = (FT_ULong)FT_Stream_ReadLong( stream, &error );
+      result = FT_Stream_ReadULong( stream, &error );
       if ( error )
         result = 0;
 
@@ -588,7 +588,7 @@
   {
     FT_Error     error;
     FT_Memory    memory = source->memory;
-    FT_GZipFile  zip;
+    FT_GZipFile  zip = NULL;
 
 
     /*
@@ -628,7 +628,7 @@
 
       if ( zip_size != 0 && zip_size < 40 * 1024 )
       {
-        FT_Byte*  zip_buff;
+        FT_Byte*  zip_buff = NULL;
 
 
         if ( !FT_ALLOC( zip_buff, zip_size ) )
@@ -656,7 +656,7 @@
           ft_gzip_file_io( zip, 0, NULL, 0 );
           FT_FREE( zip_buff );
         }
-        error = 0;
+        error = Gzip_Err_Ok;
       }
     }
 

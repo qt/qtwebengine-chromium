@@ -69,7 +69,26 @@
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
           ],
         }],
-        ['enable_printing!=0', {
+        ['OS=="win" and clang==1', {
+          # service_controller.h uses DECLARE_REGISTRY_APPID_RESOURCEID, which
+          # in msvs2013 returns string literals via a non-const pointer. So
+          # disable this warning for now.
+          # TODO(thakis): Remove this once we're on 2014,
+          # https://connect.microsoft.com/VisualStudio/feedback/details/806376/atl-hindrances-to-adopting-new-strictstrings-conformance-option-in-vs2013
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'AdditionalOptions': ['-Wno-writable-strings'],
+            },
+          },
+          'direct_dependent_settings': {
+            'msvs_settings': {
+              'VCCLCompilerTool': {
+                'AdditionalOptions': ['-Wno-writable-strings'],
+              },
+            },
+          },
+        }],
+        ['enable_basic_printing==1 or enable_print_preview==1', {
           'dependencies': [
             '<(DEPTH)/printing/printing.gyp:printing',
           ],
@@ -150,6 +169,16 @@
               'secur32.lib',
           ],
         },
+        'conditions': [
+          ['clang==1', {
+            # atlapp.h contains a global "using namespace WTL;".
+            # TODO: Remove once cloud_print_service_config.cc no longer depends
+            # on atlapp.h, http://crbug.com/5027
+            'VCCLCompilerTool': {
+              'AdditionalOptions': ['-Wno-header-hygiene'],
+            },
+          }],
+        ],
       },
     },
     {

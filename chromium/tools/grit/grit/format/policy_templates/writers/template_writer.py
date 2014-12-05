@@ -87,6 +87,10 @@ class TemplateWriter(object):
     '''Checks if the given policy can be recommended.'''
     return policy.get('features', {}).get('can_be_recommended', False)
 
+  def CanBeMandatory(self, policy):
+    '''Checks if the given policy can be mandatory.'''
+    return policy.get('features', {}).get('can_be_mandatory', True)
+
   def IsPolicySupportedOnPlatform(self, policy, platform):
     '''Checks if |policy| is supported on |platform|.
 
@@ -97,6 +101,15 @@ class TemplateWriter(object):
     '''
     is_supported = lambda x: platform in x['platforms']
     return any(filter(is_supported, policy['supported_on']))
+
+  def _GetChromiumVersionString(self):
+    '''Returns the Chromium version string stored in the environment variable
+    version (if it is set).
+
+    Returns: The Chromium version string or None if it has not been set.'''
+
+    if 'version' in self.config:
+      return self.config['version']
 
   def _GetPoliciesForWriter(self, group):
     '''Filters the list of policies in the passed group that are supported by
@@ -184,6 +197,13 @@ class TemplateWriter(object):
 
     Args:
       policy: The policy as it is found in the JSON file.
+    '''
+    raise NotImplementedError()
+
+  def WriteComment(self, comment):
+    '''Appends the comment to the internal buffer.
+
+      comment: The comment to be added.
     '''
     raise NotImplementedError()
 

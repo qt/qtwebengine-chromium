@@ -25,22 +25,15 @@
 #include "config.h"
 #include "core/rendering/RenderListMarker.h"
 
-#include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
-#include "core/rendering/GraphicsContextAnnotator.h"
+#include "core/paint/ListMarkerPainter.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListItem.h"
-#include "core/rendering/RenderView.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "platform/fonts/Font.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "wtf/text/StringBuilder.h"
-#include "wtf/unicode/CharacterNames.h"
 
-using namespace std;
-using namespace WTF;
-using namespace Unicode;
-
-namespace WebCore {
+namespace blink {
 
 const int cMarkerPadding = 7;
 
@@ -504,7 +497,7 @@ static EListStyleType effectiveListMarkerType(EListStyleType type, int value)
     return type;
 }
 
-static UChar listMarkerSuffix(EListStyleType type, int value)
+UChar RenderListMarker::listMarkerSuffix(EListStyleType type, int value)
 {
     // If the list-style-type cannot represent |value| because it's outside its
     // ordinal range then we fall back to some list style that can represent |value|.
@@ -1065,8 +1058,19 @@ RenderListMarker::RenderListMarker(RenderListItem* item)
 
 RenderListMarker::~RenderListMarker()
 {
+}
+
+void RenderListMarker::destroy()
+{
     if (m_image)
         m_image->removeClient(this);
+    RenderBox::destroy();
+}
+
+void RenderListMarker::trace(Visitor* visitor)
+{
+    visitor->trace(m_listItem);
+    RenderBox::trace(visitor);
 }
 
 RenderListMarker* RenderListMarker::createAnonymous(RenderListItem* item)
@@ -1116,7 +1120,7 @@ LayoutRect RenderListMarker::localSelectionRect()
     if (!box)
         return LayoutRect(LayoutPoint(), size());
     RootInlineBox& root = inlineBoxWrapper()->root();
-    LayoutUnit newLogicalTop = root.block().style()->isFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
+    LayoutUnit newLogicalTop = root.block().style()->slowIsFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
     if (root.block().style()->isHorizontalWritingMode())
         return LayoutRect(0, newLogicalTop, width(), root.selectionHeight());
     return LayoutRect(newLogicalTop, 0, root.selectionHeight(), height());
@@ -1124,197 +1128,7 @@ LayoutRect RenderListMarker::localSelectionRect()
 
 void RenderListMarker::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
-
-    if (paintInfo.phase != PaintPhaseForeground)
-        return;
-
-    if (style()->visibility() != VISIBLE)
-        return;
-
-    LayoutPoint boxOrigin(paintOffset + location());
-    LayoutRect overflowRect(visualOverflowRect());
-    overflowRect.moveBy(boxOrigin);
-
-    if (!paintInfo.rect.intersects(pixelSnappedIntRect(overflowRect)))
-        return;
-
-    LayoutRect box(boxOrigin, size());
-
-    IntRect marker = getRelativeMarkerRect();
-    marker.moveBy(roundedIntPoint(boxOrigin));
-
-    GraphicsContext* context = paintInfo.context;
-
-    if (isImage()) {
-        context->drawImage(m_image->image(this, marker.size()).get(), marker);
-        if (selectionState() != SelectionNone) {
-            LayoutRect selRect = localSelectionRect();
-            selRect.moveBy(boxOrigin);
-            context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor());
-        }
-        return;
-    }
-
-    if (selectionState() != SelectionNone) {
-        LayoutRect selRect = localSelectionRect();
-        selRect.moveBy(boxOrigin);
-        context->fillRect(pixelSnappedIntRect(selRect), selectionBackgroundColor());
-    }
-
-    const Color color(resolveColor(CSSPropertyColor));
-    context->setStrokeColor(color);
-    context->setStrokeStyle(SolidStroke);
-    context->setStrokeThickness(1.0f);
-    context->setFillColor(color);
-
-    EListStyleType type = style()->listStyleType();
-    switch (type) {
-        case Disc:
-            context->fillEllipse(marker);
-            return;
-        case Circle:
-            context->strokeEllipse(marker);
-            return;
-        case Square:
-            context->fillRect(marker);
-            return;
-        case NoneListStyle:
-            return;
-        case Afar:
-        case Amharic:
-        case AmharicAbegede:
-        case ArabicIndic:
-        case Armenian:
-        case BinaryListStyle:
-        case Bengali:
-        case Cambodian:
-        case CJKIdeographic:
-        case CjkEarthlyBranch:
-        case CjkHeavenlyStem:
-        case DecimalLeadingZero:
-        case DecimalListStyle:
-        case Devanagari:
-        case Ethiopic:
-        case EthiopicAbegede:
-        case EthiopicAbegedeAmEt:
-        case EthiopicAbegedeGez:
-        case EthiopicAbegedeTiEr:
-        case EthiopicAbegedeTiEt:
-        case EthiopicHalehameAaEr:
-        case EthiopicHalehameAaEt:
-        case EthiopicHalehameAmEt:
-        case EthiopicHalehameGez:
-        case EthiopicHalehameOmEt:
-        case EthiopicHalehameSidEt:
-        case EthiopicHalehameSoEt:
-        case EthiopicHalehameTiEr:
-        case EthiopicHalehameTiEt:
-        case EthiopicHalehameTig:
-        case Georgian:
-        case Gujarati:
-        case Gurmukhi:
-        case Hangul:
-        case HangulConsonant:
-        case Hebrew:
-        case Hiragana:
-        case HiraganaIroha:
-        case Kannada:
-        case Katakana:
-        case KatakanaIroha:
-        case Khmer:
-        case Lao:
-        case LowerAlpha:
-        case LowerArmenian:
-        case LowerGreek:
-        case LowerHexadecimal:
-        case LowerLatin:
-        case LowerNorwegian:
-        case LowerRoman:
-        case Malayalam:
-        case Mongolian:
-        case Myanmar:
-        case Octal:
-        case Oriya:
-        case Oromo:
-        case Persian:
-        case Sidama:
-        case Somali:
-        case Telugu:
-        case Thai:
-        case Tibetan:
-        case Tigre:
-        case TigrinyaEr:
-        case TigrinyaErAbegede:
-        case TigrinyaEt:
-        case TigrinyaEtAbegede:
-        case UpperAlpha:
-        case UpperArmenian:
-        case UpperGreek:
-        case UpperHexadecimal:
-        case UpperLatin:
-        case UpperNorwegian:
-        case UpperRoman:
-        case Urdu:
-        case Asterisks:
-        case Footnotes:
-            break;
-    }
-    if (m_text.isEmpty())
-        return;
-
-    const Font& font = style()->font();
-    TextRun textRun = RenderBlockFlow::constructTextRun(this, font, m_text, style());
-
-    GraphicsContextStateSaver stateSaver(*context, false);
-    if (!style()->isHorizontalWritingMode()) {
-        marker.moveBy(roundedIntPoint(-boxOrigin));
-        marker = marker.transposedRect();
-        marker.moveBy(IntPoint(roundToInt(box.x()), roundToInt(box.y() - logicalHeight())));
-        stateSaver.save();
-        context->translate(marker.x(), marker.maxY());
-        context->rotate(static_cast<float>(deg2rad(90.)));
-        context->translate(-marker.x(), -marker.maxY());
-    }
-
-    TextRunPaintInfo textRunPaintInfo(textRun);
-    textRunPaintInfo.bounds = marker;
-    IntPoint textOrigin = IntPoint(marker.x(), marker.y() + style()->fontMetrics().ascent());
-
-    if (type == Asterisks || type == Footnotes) {
-        context->drawText(font, textRunPaintInfo, textOrigin);
-    }
-    else {
-        // Text is not arbitrary. We can judge whether it's RTL from the first character,
-        // and we only need to handle the direction RightToLeft for now.
-        bool textNeedsReversing = direction(m_text[0]) == RightToLeft;
-        StringBuilder reversedText;
-        if (textNeedsReversing) {
-            int length = m_text.length();
-            reversedText.reserveCapacity(length);
-            for (int i = length - 1; i >= 0; --i)
-                reversedText.append(m_text[i]);
-            ASSERT(reversedText.length() == reversedText.capacity());
-            textRun.setText(reversedText.toString());
-        }
-
-        const UChar suffix = listMarkerSuffix(type, m_listItem->value());
-        UChar suffixStr[2] = {
-            style()->isLeftToRightDirection() ? suffix : ' ',
-            style()->isLeftToRightDirection() ? ' ' : suffix
-        };
-        TextRun suffixRun = RenderBlockFlow::constructTextRun(this, font, suffixStr, 2, style(), style()->direction());
-        TextRunPaintInfo suffixRunInfo(suffixRun);
-        suffixRunInfo.bounds = marker;
-
-        if (style()->isLeftToRightDirection()) {
-            context->drawText(font, textRunPaintInfo, textOrigin);
-            context->drawText(font, suffixRunInfo, textOrigin + IntSize(font.width(textRun), 0));
-        } else {
-            context->drawText(font, suffixRunInfo, textOrigin);
-            context->drawText(font, textRunPaintInfo, textOrigin + IntSize(font.width(suffixRun), 0));
-        }
-    }
+    ListMarkerPainter(*this).paint(paintInfo, paintOffset);
 }
 
 void RenderListMarker::layout()
@@ -1352,7 +1166,7 @@ void RenderListMarker::imageChanged(WrappedImagePtr o, const IntRect*)
     if (width() != m_image->imageSize(this, style()->effectiveZoom()).width() || height() != m_image->imageSize(this, style()->effectiveZoom()).height() || m_image->errorOccurred())
         setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
     else
-        paintInvalidationForWholeRenderer();
+        setShouldDoFullPaintInvalidation();
 }
 
 void RenderListMarker::updateMarginsAndContent()
@@ -1580,7 +1394,7 @@ void RenderListMarker::computePreferredLogicalWidths()
             else {
                 LayoutUnit itemWidth = font.width(m_text);
                 UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-                LayoutUnit suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+                LayoutUnit suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
                 logicalWidth = itemWidth + suffixSpaceWidth;
             }
             break;
@@ -1672,27 +1486,6 @@ int RenderListMarker::baselinePosition(FontBaseline baselineType, bool firstLine
     if (!isImage())
         return m_listItem->baselinePosition(baselineType, firstLine, direction, PositionOfInteriorLineBoxes);
     return RenderBox::baselinePosition(baselineType, firstLine, direction, linePositionMode);
-}
-
-String RenderListMarker::suffix() const
-{
-    EListStyleType type = style()->listStyleType();
-    const UChar suffix = listMarkerSuffix(type, m_listItem->value());
-
-    if (suffix == ' ')
-        return String(" ");
-
-    // If the suffix is not ' ', an extra space is needed
-    UChar data[2];
-    if (style()->isLeftToRightDirection()) {
-        data[0] = suffix;
-        data[1] = ' ';
-    } else {
-        data[0] = ' ';
-        data[1] = suffix;
-    }
-
-    return String(data, 2);
 }
 
 bool RenderListMarker::isInside() const
@@ -1806,7 +1599,7 @@ IntRect RenderListMarker::getRelativeMarkerRect()
             const Font& font = style()->font();
             int itemWidth = font.width(m_text);
             UChar suffixSpace[2] = { listMarkerSuffix(type, m_listItem->value()), ' ' };
-            int suffixSpaceWidth = font.width(RenderBlockFlow::constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
+            int suffixSpaceWidth = font.width(constructTextRun(this, font, suffixSpace, 2, style(), style()->direction()));
             relativeRect = IntRect(0, 0, itemWidth + suffixSpaceWidth, font.fontMetrics().height());
     }
 
@@ -1827,7 +1620,7 @@ void RenderListMarker::setSelectionState(SelectionState state)
         inlineBoxWrapper()->root().setHasSelectedChildren(state != SelectionNone);
 }
 
-LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent)
+LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
     ASSERT(!needsLayout());
 
@@ -1836,13 +1629,23 @@ LayoutRect RenderListMarker::selectionRectForPaintInvalidation(const RenderLayer
 
     RootInlineBox& root = inlineBoxWrapper()->root();
     LayoutRect rect(0, root.selectionTop() - y(), width(), root.selectionHeight());
-
-    if (clipToVisibleContent)
-        mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect);
-    else
-        rect = localToContainerQuad(FloatRect(rect), paintInvalidationContainer).enclosingBoundingBox();
-
+    mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     return rect;
 }
 
-} // namespace WebCore
+void RenderListMarker::listItemStyleDidChange()
+{
+    RefPtr<RenderStyle> newStyle = RenderStyle::create();
+    // The marker always inherits from the list item, regardless of where it might end
+    // up (e.g., in some deeply nested line box). See CSS3 spec.
+    newStyle->inheritFrom(m_listItem->style());
+    if (style()) {
+        // Reuse the current margins. Otherwise resetting the margins to initial values
+        // would trigger unnecessary layout.
+        newStyle->setMarginStart(style()->marginStart());
+        newStyle->setMarginEnd(style()->marginRight());
+    }
+    setStyle(newStyle.release());
+}
+
+} // namespace blink

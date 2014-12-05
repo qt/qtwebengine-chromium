@@ -30,7 +30,7 @@
 
 static const float gOneOverThree = 1 / 3.f;
 
-namespace WebCore {
+namespace blink {
 
 SVGPathParser::SVGPathParser()
     : m_consumer(0)
@@ -295,7 +295,7 @@ bool SVGPathParser::parsePathDataFromSource(PathParsingMode pathParsingMode, boo
 
     // Skip any leading spaces.
     if (!m_source->moveToNextToken())
-        return false;
+        return true;
 
     SVGPathSegType command;
     m_source->parseSVGSegmentType(command);

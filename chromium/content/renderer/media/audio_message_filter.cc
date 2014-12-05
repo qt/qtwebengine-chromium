@@ -24,16 +24,16 @@ class AudioMessageFilter::AudioOutputIPCImpl
   AudioOutputIPCImpl(const scoped_refptr<AudioMessageFilter>& filter,
                      int render_view_id,
                      int render_frame_id);
-  virtual ~AudioOutputIPCImpl();
+  ~AudioOutputIPCImpl() override;
 
   // media::AudioOutputIPC implementation.
-  virtual void CreateStream(media::AudioOutputIPCDelegate* delegate,
-                            const media::AudioParameters& params,
-                            int session_id) OVERRIDE;
-  virtual void PlayStream() OVERRIDE;
-  virtual void PauseStream() OVERRIDE;
-  virtual void CloseStream() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
+  void CreateStream(media::AudioOutputIPCDelegate* delegate,
+                    const media::AudioParameters& params,
+                    int session_id) override;
+  void PlayStream() override;
+  void PauseStream() override;
+  void CloseStream() override;
+  void SetVolume(double volume) override;
 
  private:
   const scoped_refptr<AudioMessageFilter> filter_;
@@ -168,11 +168,7 @@ void AudioMessageFilter::OnChannelClosing() {
 void AudioMessageFilter::OnStreamCreated(
     int stream_id,
     base::SharedMemoryHandle handle,
-#if defined(OS_WIN)
-    base::SyncSocket::Handle socket_handle,
-#else
-    base::FileDescriptor socket_descriptor,
-#endif
+    base::SyncSocket::TransitDescriptor socket_descriptor,
     uint32 length) {
   DCHECK(io_message_loop_->BelongsToCurrentThread());
 
@@ -180,9 +176,8 @@ void AudioMessageFilter::OnStreamCreated(
       "AMF::OnStreamCreated. stream_id=%d",
       stream_id));
 
-#if !defined(OS_WIN)
-  base::SyncSocket::Handle socket_handle = socket_descriptor.fd;
-#endif
+  base::SyncSocket::Handle socket_handle =
+      base::SyncSocket::UnwrapHandle(socket_descriptor);
 
   media::AudioOutputIPCDelegate* delegate = delegates_.Lookup(stream_id);
   if (!delegate) {
@@ -234,7 +229,6 @@ void AudioMessageFilter::OnOutputDeviceChanged(int stream_id,
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
       channel_layout,
       channels,
-      0,
       new_sample_rate,
       16,
       new_buffer_size);

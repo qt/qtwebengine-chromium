@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/testing/MockPagePopupDriver.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
 #include "core/frame/LocalFrame.h"
@@ -37,7 +37,7 @@
 #include "core/page/PagePopupController.h"
 #include "platform/Timer.h"
 
-namespace WebCore {
+namespace blink {
 
 class MockPagePopup : public PagePopup, public RefCounted<MockPagePopup> {
 public:
@@ -49,6 +49,7 @@ public:
 private:
     MockPagePopup(PagePopupClient*, const IntRect& originBoundsInRootView, LocalFrame*);
     void close(Timer<MockPagePopup>*);
+    virtual AXObject* rootAXObject() override { return 0; }
 
     PagePopupClient* m_popupClient;
     RefPtrWillBePersistent<HTMLIFrameElement> m_iframe;

@@ -152,9 +152,6 @@
       ],
       'conditions': [
         ['disable_nacl!=1', {
-          'files': [
-            '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
-          ],
           'conditions': [
             ['target_arch=="x64"', {
               'files': [
@@ -208,7 +205,7 @@
       ],
     },
     {
-      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/resources',
+      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Resources',
       'files': [
         # Loader bundle for platform apps.
         '<(PRODUCT_DIR)/app_mode_loader.app',

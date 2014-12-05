@@ -16,6 +16,7 @@ namespace ui {
 struct EVENTS_BASE_EXPORT GestureEventDetails {
  public:
   GestureEventDetails();
+  explicit GestureEventDetails(EventType type);
   GestureEventDetails(EventType type, float delta_x, float delta_y);
 
   EventType type() const { return type_; }
@@ -24,6 +25,12 @@ struct EVENTS_BASE_EXPORT GestureEventDetails {
   void set_touch_points(int touch_points) {
     DCHECK_GT(touch_points, 0);
     touch_points_ = touch_points;
+  }
+
+  int oldest_touch_id() const { return oldest_touch_id_; }
+  void set_oldest_touch_id(int oldest_touch_id) {
+    DCHECK_GE(oldest_touch_id, 0);
+    oldest_touch_id_ = oldest_touch_id;
   }
 
   // TODO(tdresser): Return RectF. See crbug.com/337824.
@@ -117,6 +124,12 @@ struct EVENTS_BASE_EXPORT GestureEventDetails {
     data.tap_count = tap_count;
   }
 
+  void set_scale(float scale) {
+    DCHECK_GE(scale, 0.0f);
+    DCHECK_EQ(type_, ET_GESTURE_PINCH_UPDATE);
+    data.scale = scale;
+  }
+
  private:
   EventType type_;
   union Details {
@@ -164,6 +177,9 @@ struct EVENTS_BASE_EXPORT GestureEventDetails {
   // Bounding box is an axis-aligned rectangle that contains all the
   // enclosing rectangles of the touch-points in the gesture.
   gfx::RectF bounding_box_;
+
+  // The touch id of the oldest touch contributing to the gesture.
+  int oldest_touch_id_;
 };
 
 }  // namespace ui

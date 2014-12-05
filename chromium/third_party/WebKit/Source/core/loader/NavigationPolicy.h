@@ -31,12 +31,11 @@
 #ifndef NavigationPolicy_h
 #define NavigationPolicy_h
 
-namespace WebCore {
+namespace blink {
 
 enum NavigationPolicy {
     NavigationPolicyIgnore,
     NavigationPolicyDownload,
-    NavigationPolicyDownloadTo,
     NavigationPolicyCurrentTab,
     NavigationPolicyNewBackgroundTab,
     NavigationPolicyNewForegroundTab,
@@ -46,6 +45,6 @@ enum NavigationPolicy {
 
 bool navigationPolicyFromMouseEvent(unsigned short button, bool ctrl, bool shift, bool alt, bool meta, NavigationPolicy*);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

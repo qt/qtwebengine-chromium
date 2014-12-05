@@ -70,7 +70,7 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   // |address_length| is a ptr to the length of the |address| buffer.  This
   //   is an input parameter containing the maximum size |address| can hold
   //   and also an output parameter for the size of |address| upon completion.
-  // |callback| the callback on completion of the Recv.
+  // |callback| is the callback on completion of the RecvFrom.
   // Returns a net error code, or ERR_IO_PENDING if the IO is in progress.
   // If ERR_IO_PENDING is returned, the caller must keep |buf|, |address|,
   // and |address_length| alive until the callback is called.
@@ -179,9 +179,9 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
 
     // MessageLoopForIO::Watcher methods
 
-    virtual void OnFileCanReadWithoutBlocking(int /* fd */) OVERRIDE;
+    void OnFileCanReadWithoutBlocking(int /* fd */) override;
 
-    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) OVERRIDE {}
+    void OnFileCanWriteWithoutBlocking(int /* fd */) override {}
 
    private:
     UDPSocketLibevent* const socket_;
@@ -195,9 +195,9 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
 
     // MessageLoopForIO::Watcher methods
 
-    virtual void OnFileCanReadWithoutBlocking(int /* fd */) OVERRIDE {}
+    void OnFileCanReadWithoutBlocking(int /* fd */) override {}
 
-    virtual void OnFileCanWriteWithoutBlocking(int /* fd */) OVERRIDE;
+    void OnFileCanWriteWithoutBlocking(int /* fd */) override;
 
    private:
     UDPSocketLibevent* const socket_;

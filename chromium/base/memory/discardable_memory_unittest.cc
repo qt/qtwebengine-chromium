@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/run_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_ANDROID)
@@ -19,12 +18,8 @@ namespace {
 class DiscardableMemoryTest
     : public testing::TestWithParam<DiscardableMemoryType> {
  public:
-  DiscardableMemoryTest() : message_loop_(MessageLoop::TYPE_IO) {
-    // Register memory pressure listeners now that we have a message loop.
-    DiscardableMemory::RegisterMemoryPressureListeners();
-  }
+  DiscardableMemoryTest() {}
   virtual ~DiscardableMemoryTest() {
-    DiscardableMemory::UnregisterMemoryPressureListeners();
   }
 
  protected:
@@ -32,9 +27,6 @@ class DiscardableMemoryTest
     return DiscardableMemory::CreateLockedMemoryWithType(
         GetParam(), size).Pass();
   }
-
- private:
-  MessageLoop message_loop_;
 };
 
 const size_t kSize = 1024;
@@ -46,9 +38,8 @@ TEST_P(DiscardableMemoryTest, IsNamed) {
 }
 
 bool IsNativeType(DiscardableMemoryType type) {
-  return
-      type == DISCARDABLE_MEMORY_TYPE_ASHMEM ||
-      type == DISCARDABLE_MEMORY_TYPE_MAC;
+  return type == DISCARDABLE_MEMORY_TYPE_ASHMEM ||
+         type == DISCARDABLE_MEMORY_TYPE_MACH;
 }
 
 TEST_P(DiscardableMemoryTest, SupportedNatively) {
@@ -74,13 +65,13 @@ TEST_P(DiscardableMemoryTest, LockAndUnLock) {
   const scoped_ptr<DiscardableMemory> memory(CreateLockedMemory(kSize));
   ASSERT_TRUE(memory);
   void* addr = memory->Memory();
-  ASSERT_NE(static_cast<void*>(NULL), addr);
+  ASSERT_NE(nullptr, addr);
 
   memory->Unlock();
 
   EXPECT_NE(DISCARDABLE_MEMORY_LOCK_STATUS_FAILED, memory->Lock());
   addr = memory->Memory();
-  ASSERT_NE(static_cast<void*>(NULL), addr);
+  ASSERT_NE(nullptr, addr);
 
   memory->Unlock();
 }
@@ -111,6 +102,22 @@ TEST_P(DiscardableMemoryTest, UnlockedMemoryAccessCrashesInDebugMode) {
       { *static_cast<int*>(memory->Memory()) = 0xdeadbeef; }, ".*");
 }
 #endif
+
+// Test behavior when creating enough instances that could use up a 32-bit
+// address space.
+TEST_P(DiscardableMemoryTest, AddressSpace) {
+  const size_t kLargeSize = 4 * 1024 * 1024;  // 4MiB.
+  const size_t kNumberOfInstances = 1024 + 1;  // >4GiB total.
+
+  scoped_ptr<DiscardableMemory> instances[kNumberOfInstances];
+  for (auto& memory : instances) {
+    memory = CreateLockedMemory(kLargeSize);
+    ASSERT_TRUE(memory);
+    void* addr = memory->Memory();
+    ASSERT_NE(nullptr, addr);
+    memory->Unlock();
+  }
+}
 
 std::vector<DiscardableMemoryType> GetSupportedDiscardableMemoryTypes() {
   std::vector<DiscardableMemoryType> supported_types;

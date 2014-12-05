@@ -10,11 +10,11 @@
 // Tries to open a file and outputs the result.
 // "path" can contain environment variables.
 // "output" is the stream for the logging.
-void TryOpenFile(wchar_t *path, FILE *output) {
+void TryOpenFile(const wchar_t *path, FILE *output) {
   wchar_t path_expanded[MAX_PATH] = {0};
   DWORD size = ::ExpandEnvironmentStrings(path, path_expanded, MAX_PATH - 1);
   if (!size) {
-    fprintf(output, "[ERROR] Cannot expand \"%S\". Error %d.\r\n", path,
+    fprintf(output, "[ERROR] Cannot expand \"%S\". Error %ld.\r\n", path,
             ::GetLastError());
   }
 
@@ -32,7 +32,7 @@ void TryOpenFile(wchar_t *path, FILE *output) {
             file);
     ::CloseHandle(file);
   } else {
-    fprintf(output, "[BLOCKED] Opening file \"%S\". Error %d.\r\n", path,
+    fprintf(output, "[BLOCKED] Opening file \"%S\". Error %ld.\r\n", path,
             ::GetLastError());
   }
 }

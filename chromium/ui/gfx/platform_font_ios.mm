@@ -6,10 +6,14 @@
 
 #import <UIKit/UIKit.h>
 
+#include <cmath>
+
 #include "base/basictypes.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/font_render_params.h"
+#include "ui/ios/NSString+CrStringDrawing.h"
 
 namespace gfx {
 
@@ -75,6 +79,12 @@ int PlatformFontIOS::GetFontSize() const {
   return font_size_;
 }
 
+const FontRenderParams& PlatformFontIOS::GetFontRenderParams() const {
+  NOTIMPLEMENTED();
+  static FontRenderParams params;
+  return params;
+}
+
 NativeFont PlatformFontIOS::GetNativeFont() const {
   return [UIFont fontWithName:base::SysUTF8ToNSString(font_name_)
                          size:font_size_];
@@ -103,7 +113,7 @@ void PlatformFontIOS::CalculateMetrics() {
   height_ = font.lineHeight;
   ascent_ = font.ascender;
   cap_height_ = font.capHeight;
-  average_width_ = [@"x" sizeWithFont:font].width;
+  average_width_ = [@"x" cr_sizeWithFont:font].width;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

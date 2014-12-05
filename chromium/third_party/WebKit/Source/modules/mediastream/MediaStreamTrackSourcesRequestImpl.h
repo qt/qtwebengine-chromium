@@ -27,42 +27,35 @@
 #define MediaStreamTrackSourcesRequestImpl_h
 
 #include "modules/mediastream/SourceInfo.h"
-#include "platform/Timer.h"
 #include "platform/mediastream/MediaStreamTrackSourcesRequest.h"
-#include "public/platform/WebVector.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/text/WTFString.h"
 
 namespace blink {
-class WebSourceInfo;
-}
 
-namespace WebCore {
-
+class ExecutionContext;
 class MediaStreamTrackSourcesCallback;
+class WebSourceInfo;
+template<typename T> class WebVector;
 
-class MediaStreamTrackSourcesRequestImpl FINAL : public MediaStreamTrackSourcesRequest {
+class MediaStreamTrackSourcesRequestImpl final : public MediaStreamTrackSourcesRequest {
 public:
-    static PassRefPtrWillBeRawPtr<MediaStreamTrackSourcesRequestImpl> create(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
+    static MediaStreamTrackSourcesRequestImpl* create(ExecutionContext&, MediaStreamTrackSourcesCallback*);
     ~MediaStreamTrackSourcesRequestImpl();
 
-    virtual String origin() { return m_origin; }
-    virtual void requestSucceeded(const blink::WebVector<blink::WebSourceInfo>&);
+    virtual String origin() override;
+    virtual void requestSucceeded(const WebVector<WebSourceInfo>&) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    MediaStreamTrackSourcesRequestImpl(const String&, PassOwnPtr<MediaStreamTrackSourcesCallback>);
+    MediaStreamTrackSourcesRequestImpl(ExecutionContext&, MediaStreamTrackSourcesCallback*);
 
-    void scheduledEventTimerFired(Timer<MediaStreamTrackSourcesRequestImpl>*);
+    void performCallback();
 
-    OwnPtr<MediaStreamTrackSourcesCallback> m_callback;
-    String m_origin;
-    Timer<MediaStreamTrackSourcesRequestImpl> m_scheduledEventTimer;
+    Member<MediaStreamTrackSourcesCallback> m_callback;
+    RefPtrWillBeMember<ExecutionContext> m_executionContext;
     SourceInfoVector m_sourceInfos;
-    RefPtrWillBeMember<MediaStreamTrackSourcesRequest> m_protect;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaStreamTrackSourcesRequestImpl_h

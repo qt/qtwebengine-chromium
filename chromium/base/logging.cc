@@ -444,8 +444,6 @@ LogMessageHandlerFunction GetLogMessageHandler() {
   return log_message_handler;
 }
 
-// MSVC doesn't like complex extern templates and DLLs.
-#if !defined(COMPILER_MSVC)
 // Explicit instantiations for commonly used comparisons.
 template std::string* MakeCheckOpString<int, int>(
     const int&, const int&, const char* names);
@@ -457,7 +455,6 @@ template std::string* MakeCheckOpString<unsigned int, unsigned long>(
     const unsigned int&, const unsigned long&, const char* names);
 template std::string* MakeCheckOpString<std::string, std::string>(
     const std::string&, const std::string&, const char* name);
-#endif
 
 #if !defined(NDEBUG)
 // Displays a message box to the user with the error message in it.
@@ -687,7 +684,7 @@ void LogMessage::Init(const char* file, int line) {
 
   stream_ << ":" << filename << "(" << line << ")] ";
 
-  message_start_ = stream_.tellp();
+  message_start_ = stream_.str().length();
 }
 
 #if defined(OS_WIN)
@@ -810,6 +807,6 @@ std::wstring GetLogFileFullPath() {
 
 }  // namespace logging
 
-std::ostream& operator<<(std::ostream& out, const wchar_t* wstr) {
+std::ostream& std::operator<<(std::ostream& out, const wchar_t* wstr) {
   return out << base::WideToUTF8(std::wstring(wstr));
 }

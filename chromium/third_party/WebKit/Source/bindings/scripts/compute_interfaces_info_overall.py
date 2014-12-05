@@ -68,6 +68,11 @@ Current keys are:
     'include_path': path for use in C++ #include directives
     'dependencies_full_paths': paths to dependencies (for merging into main)
     'dependencies_include_paths': paths for use in C++ #include directives
+    'dependencies_other_component_full_paths':
+        paths to dependencies (cannot merge because of other component)
+    'dependencies_other_component_include_paths':
+        paths for use in C++ #include directives because of dependencies in
+        other component
 
 Note that all of these are stable information, unlikely to change without
 moving or deleting files (hence requiring a full rebuild anyway) or significant
@@ -81,12 +86,13 @@ import cPickle as pickle
 import optparse
 import sys
 
-from utilities import read_pickle_files, write_pickle_file
+from utilities import idl_filename_to_component, read_pickle_files, write_pickle_file
 
 INHERITED_EXTENDED_ATTRIBUTES = set([
     'ActiveDOMObject',
     'DependentLifetime',
     'GarbageCollected',
+    'NotScriptWrappable',
     'WillBeGarbageCollected',
 ])
 
@@ -159,6 +165,42 @@ def compute_inheritance_info(interface_name):
     })
 
 
+def compute_global_type_info():
+    ancestors = {}
+    dictionaries = {}
+    component_dirs = {}
+    implemented_as_interfaces = {}
+    will_be_garbage_collected_interfaces = set()
+    garbage_collected_interfaces = set()
+    callback_interfaces = set()
+
+    for interface_name, interface_info in interfaces_info.iteritems():
+        component_dirs[interface_name] = idl_filename_to_component(interface_info['full_path'])
+
+        if interface_info['ancestors']:
+            ancestors[interface_name] = interface_info['ancestors']
+        if interface_info['is_callback_interface']:
+            callback_interfaces.add(interface_name)
+        if interface_info['is_dictionary']:
+            dictionaries[interface_name] = interface_info['is_dictionary']
+        if interface_info['implemented_as']:
+            implemented_as_interfaces[interface_name] = interface_info['implemented_as']
+
+        inherited_extended_attributes = interface_info['inherited_extended_attributes']
+        if 'WillBeGarbageCollected' in inherited_extended_attributes:
+            will_be_garbage_collected_interfaces.add(interface_name)
+        if 'GarbageCollected' in inherited_extended_attributes:
+            garbage_collected_interfaces.add(interface_name)
+
+    interfaces_info['ancestors'] = ancestors
+    interfaces_info['callback_interfaces'] = callback_interfaces
+    interfaces_info['dictionaries'] = dictionaries
+    interfaces_info['implemented_as_interfaces'] = implemented_as_interfaces
+    interfaces_info['garbage_collected_interfaces'] = garbage_collected_interfaces
+    interfaces_info['will_be_garbage_collected_interfaces'] = will_be_garbage_collected_interfaces
+    interfaces_info['component_dirs'] = component_dirs
+
+
 def compute_interfaces_info_overall(info_individuals):
     """Compute information about IDL files.
 
@@ -227,23 +269,56 @@ def compute_interfaces_info_overall(info_individuals):
         # However, they are needed for legacy implemented interfaces that
         # are being treated as partial interfaces, until we remove these.
         # http://crbug.com/360435
-        implemented_interfaces_include_paths = [
-            implemented_interface_info['include_path']
-            for implemented_interface_info in implemented_interfaces_info
-            if implemented_interface_info['is_legacy_treat_as_partial_interface']]
+        implemented_interfaces_include_paths = []
+        for implemented_interface_info in implemented_interfaces_info:
+            if (implemented_interface_info['is_legacy_treat_as_partial_interface'] and
+                implemented_interface_info['include_path']):
+                implemented_interfaces_include_paths.append(
+                    implemented_interface_info['include_path'])
+
+        dependencies_full_paths = implemented_interfaces_full_paths
+        dependencies_include_paths = implemented_interfaces_include_paths
+        dependencies_other_component_full_paths = []
+        dependencies_other_component_include_paths = []
+
+        component = idl_filename_to_component(interface_info['full_path'])
+        for full_path in partial_interfaces_full_paths:
+            partial_interface_component = idl_filename_to_component(full_path)
+            if component == partial_interface_component:
+                dependencies_full_paths.append(full_path)
+            else:
+                dependencies_other_component_full_paths.append(full_path)
+
+        for include_path in partial_interfaces_include_paths:
+            partial_interface_component = idl_filename_to_component(include_path)
+            if component == partial_interface_component:
+                dependencies_include_paths.append(include_path)
+            else:
+                dependencies_other_component_include_paths.append(include_path)
+
+        if interface_info['has_union_types']:
+            dependencies_include_paths.append(
+                'bindings/%s/v8/UnionTypes%s.h' % (component, component.capitalize()))
 
         interface_info.update({
-            'dependencies_full_paths': (partial_interfaces_full_paths +
-                                        implemented_interfaces_full_paths),
-            'dependencies_include_paths': (partial_interfaces_include_paths +
-                                           implemented_interfaces_include_paths),
+            'dependencies_full_paths': dependencies_full_paths,
+            'dependencies_include_paths': dependencies_include_paths,
+            'dependencies_other_component_full_paths':
+                dependencies_other_component_full_paths,
+            'dependencies_other_component_include_paths':
+                dependencies_other_component_include_paths,
         })
 
     # Clean up temporary private information
     for interface_info in interfaces_info.itervalues():
         del interface_info['extended_attributes']
+        del interface_info['has_union_types']
         del interface_info['is_legacy_treat_as_partial_interface']
         del interface_info['parent']
+
+    # Compute global_type_info to interfaces_info so that idl_compiler does
+    # not need to always calculate the info in __init__.
+    compute_global_type_info()
 
 
 ################################################################################

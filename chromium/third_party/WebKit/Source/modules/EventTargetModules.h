@@ -5,27 +5,15 @@
 #ifndef EventTargetModules_h
 #define EventTargetModules_h
 
-#include "EventModulesNames.h"
-#include "EventTargetModulesInterfaces.h"
-#include "EventTargetModulesNames.h"
 #include "core/events/EventTarget.h"
+#include "modules/EventModulesNames.h"
+#include "modules/EventTargetModulesNames.h"
 
-namespace WebCore {
+namespace blink {
 
-class AudioContext;
-class FileWriter;
-class IDBDatabase;
 class IDBRequest;
-class IDBTransaction;
-class MIDIAccess;
-class MIDIInput;
-class MIDIPort;
 class MediaStream;
-class Notification;
-class ExecutionContext;
-class ScriptProcessorNode;
-class WebSocket;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventTargetModules_h

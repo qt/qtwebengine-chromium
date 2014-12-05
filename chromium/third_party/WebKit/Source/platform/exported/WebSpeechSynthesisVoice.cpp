@@ -28,12 +28,11 @@
 
 #include "platform/speech/PlatformSpeechSynthesisVoice.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/Vector.h"
 
 namespace blink {
 
 WebSpeechSynthesisVoice::WebSpeechSynthesisVoice()
-    : m_private(WebCore::PlatformSpeechSynthesisVoice::create())
+    : m_private(PlatformSpeechSynthesisVoice::create())
 {
 }
 
@@ -72,7 +71,7 @@ void WebSpeechSynthesisVoice::setIsDefault(bool isDefault)
     m_private->setIsDefault(isDefault);
 }
 
-WebSpeechSynthesisVoice::operator WebCore::PlatformSpeechSynthesisVoice*() const
+WebSpeechSynthesisVoice::operator PlatformSpeechSynthesisVoice*() const
 {
     return m_private.get();
 }

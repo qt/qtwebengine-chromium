@@ -60,7 +60,6 @@
         '../include/ports/SkFontConfigInterface.h',
         '../include/ports/SkFontMgr.h',
         '../include/ports/SkFontMgr_indirect.h',
-        '../include/ports/SkFontStyle.h',
         '../include/ports/SkRemotableFontMgr.h',
       ],
       'conditions': [
@@ -92,7 +91,7 @@
                 ],
               },
               'sources': [
-                '../src/fonts/SkFontMgr_fontconfig.cpp',
+                '../src/ports/SkFontMgr_fontconfig.cpp',
                 '../src/ports/SkFontHost_fontconfig.cpp',
                 '../src/ports/SkFontConfigInterface_direct.cpp',
               ],
@@ -149,13 +148,13 @@
           ],
           'conditions': [
             #    when we build for win, we only want one of these default files
-            [ 'skia_directwrite', {
-              'sources!': [
-                '../src/ports/SkFontMgr_default_gdi.cpp',
-              ],
-            }, { # else gdi
+            [ 'skia_gdi', {
               'sources!': [
                 '../src/ports/SkFontMgr_default_dw.cpp',
+              ],
+            }, { # normally default to direct write
+              'sources!': [
+                '../src/ports/SkFontMgr_default_gdi.cpp',
               ],
             }],
           ],
@@ -182,9 +181,8 @@
           ],
           'sources': [
             '../src/ports/SkDebug_android.cpp',
-            '../src/ports/SkFontConfigInterface_android.cpp',
             '../src/ports/SkFontConfigParser_android.cpp',
-            '../src/ports/SkFontHost_fontconfig.cpp',
+            '../src/ports/SkFontMgr_android.cpp',
           ],
           'dependencies': [
              'android_deps.gyp:expat',

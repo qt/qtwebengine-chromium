@@ -39,7 +39,7 @@ typedef struct CGPoint CGPoint;
 #endif
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT IntPoint {
 public:
@@ -159,13 +159,8 @@ inline int IntPoint::distanceSquaredToPoint(const IntPoint& point) const
     return ((*this) - point).diagonalLengthSquared();
 }
 
-} // namespace WebCore
+} // namespace blink
 
-namespace WTF {
-
-template<>
-struct VectorTraits<WebCore::IntPoint> : SimpleClassVectorTraits<WebCore::IntPoint> { };
-
-} // namespace WTF
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::IntPoint);
 
 #endif // IntPoint_h

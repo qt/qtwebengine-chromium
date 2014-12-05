@@ -31,47 +31,12 @@
 #include "config.h"
 #include "public/web/WebDatabase.h"
 
-#include "modules/webdatabase/DatabaseBackendBase.h"
-#include "modules/webdatabase/DatabaseManager.h"
+#include "modules/webdatabase/DatabaseTracker.h"
 #include "modules/webdatabase/QuotaTracker.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "public/platform/WebString.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
-
-WebString WebDatabase::name() const
-{
-    ASSERT(m_database);
-    return m_database->stringIdentifier();
-}
-
-WebString WebDatabase::displayName() const
-{
-    ASSERT(m_database);
-    return m_database->displayName();
-}
-
-unsigned long WebDatabase::estimatedSize() const
-{
-    ASSERT(m_database);
-    return m_database->estimatedSize();
-}
-
-WebSecurityOrigin WebDatabase::securityOrigin() const
-{
-    ASSERT(m_database);
-    return WebSecurityOrigin(m_database->securityOrigin());
-}
-
-bool WebDatabase::isSyncDatabase() const
-{
-    ASSERT(m_database);
-    return m_database->isSyncDatabase();
-}
 
 void WebDatabase::updateDatabaseSize(const WebString& originIdentifier, const WebString& name, long long size)
 {
@@ -90,12 +55,7 @@ void WebDatabase::resetSpaceAvailable(const WebString& originIdentifier)
 
 void WebDatabase::closeDatabaseImmediately(const WebString& originIdentifier, const WebString& databaseName)
 {
-    DatabaseManager::manager().closeDatabasesImmediately(originIdentifier, databaseName);
-}
-
-WebDatabase::WebDatabase(const DatabaseBackendBase* database)
-    : m_database(database)
-{
+    DatabaseTracker::tracker().closeDatabasesImmediately(originIdentifier, databaseName);
 }
 
 } // namespace blink

@@ -46,7 +46,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -63,16 +63,16 @@ public:
         , m_size(size)
     {
         SkBitmap bitmap;
-        EXPECT_TRUE(bitmap.allocN32Pixels(size.width(), size.height()));
+        bitmap.allocN32Pixels(size.width(), size.height());
         m_nativeImage = NativeImageSkia::create(bitmap);
     }
 
-    virtual IntSize size() const OVERRIDE
+    virtual IntSize size() const override
     {
         return m_size;
     }
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() override
     {
         if (m_size.isZero())
             return nullptr;
@@ -81,16 +81,16 @@ public:
     }
 
     // Stub implementations of pure virtual Image functions.
-    virtual void destroyDecodedData(bool) OVERRIDE
+    virtual void destroyDecodedData(bool) override
     {
     }
 
-    virtual bool currentFrameKnownToBeOpaque() OVERRIDE
+    virtual bool currentFrameKnownToBeOpaque() override
     {
         return false;
     }
 
-    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, blink::WebBlendMode) OVERRIDE
+    virtual void draw(GraphicsContext*, const FloatRect&, const FloatRect&, CompositeOperator, WebBlendMode) override
     {
     }
 

@@ -61,20 +61,23 @@ SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap) : fBitmap(bitmap) {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), NULL));
 }
 
+#if 0
 SkBitmapDevice::SkBitmapDevice(const SkBitmap& bitmap, const SkDeviceProperties& deviceProperties)
     : SkBaseDevice(deviceProperties)
     , fBitmap(bitmap)
 {
     SkASSERT(valid_for_bitmap_device(bitmap.info(), NULL));
 }
+#endif
 
 SkBitmapDevice* SkBitmapDevice::Create(const SkImageInfo& origInfo,
                                        const SkDeviceProperties* props) {
-    SkImageInfo info = origInfo;
-    if (!valid_for_bitmap_device(info, &info.fAlphaType)) {
+    SkAlphaType newAT = origInfo.alphaType();
+    if (!valid_for_bitmap_device(origInfo, &newAT)) {
         return NULL;
     }
 
+    const SkImageInfo info = origInfo.makeAlphaType(newAT);
     SkBitmap bitmap;
 
     if (kUnknown_SkColorType == info.colorType()) {
@@ -82,7 +85,7 @@ SkBitmapDevice* SkBitmapDevice::Create(const SkImageInfo& origInfo,
             return NULL;
         }
     } else {
-        if (!bitmap.allocPixels(info)) {
+        if (!bitmap.tryAllocPixels(info)) {
             return NULL;
         }
         if (!bitmap.info().isOpaque()) {
@@ -90,8 +93,8 @@ SkBitmapDevice* SkBitmapDevice::Create(const SkImageInfo& origInfo,
         }
     }
 
-    if (props) {
-        return SkNEW_ARGS(SkBitmapDevice, (bitmap, *props));
+    if (props && false) {
+//        return SkNEW_ARGS(SkBitmapDevice, (bitmap, *props));
     } else {
         return SkNEW_ARGS(SkBitmapDevice, (bitmap));
     }
@@ -109,7 +112,7 @@ void SkBitmapDevice::replaceBitmapBackendForRasterSurface(const SkBitmap& bm) {
 }
 
 SkBaseDevice* SkBitmapDevice::onCreateDevice(const SkImageInfo& info, Usage usage) {
-    return SkBitmapDevice::Create(info, &this->getDeviceProperties());
+    return SkBitmapDevice::Create(info);// &this->getDeviceProperties());
 }
 
 void SkBitmapDevice::lockPixels() {
@@ -132,20 +135,6 @@ const SkBitmap& SkBitmapDevice::onAccessBitmap() {
     return fBitmap;
 }
 
-bool SkBitmapDevice::canHandleImageFilter(const SkImageFilter*) {
-    return false;
-}
-
-bool SkBitmapDevice::filterImage(const SkImageFilter* filter, const SkBitmap& src,
-                                 const SkImageFilter::Context& ctx, SkBitmap* result,
-                                 SkIPoint* offset) {
-    return false;
-}
-
-bool SkBitmapDevice::allowImageFilter(const SkImageFilter*) {
-    return true;
-}
-
 void* SkBitmapDevice::onAccessPixels(SkImageInfo* info, size_t* rowBytes) {
     if (fBitmap.getPixels()) {
         *info = fBitmap.info();
@@ -155,58 +144,8 @@ void* SkBitmapDevice::onAccessPixels(SkImageInfo* info, size_t* rowBytes) {
     return NULL;
 }
 
-static void rect_memcpy(void* dst, size_t dstRB, const void* src, size_t srcRB, size_t bytesPerRow,
-                        int rowCount) {
-    SkASSERT(bytesPerRow <= srcRB);
-    SkASSERT(bytesPerRow <= dstRB);
-    for (int i = 0; i < rowCount; ++i) {
-        memcpy(dst, src, bytesPerRow);
-        dst = (char*)dst + dstRB;
-        src = (const char*)src + srcRB;
-    }
-}
-
 #include "SkConfig8888.h"
-
-static bool copy_pixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                        const SkImageInfo& srcInfo, const void* srcPixels, size_t srcRowBytes) {
-    if (srcInfo.dimensions() != dstInfo.dimensions()) {
-        return false;
-    }
-    if (4 == srcInfo.bytesPerPixel() && 4 == dstInfo.bytesPerPixel()) {
-        SkDstPixelInfo dstPI;
-        dstPI.fColorType = dstInfo.colorType();
-        dstPI.fAlphaType = dstInfo.alphaType();
-        dstPI.fPixels = dstPixels;
-        dstPI.fRowBytes = dstRowBytes;
-
-        SkSrcPixelInfo srcPI;
-        srcPI.fColorType = srcInfo.colorType();
-        srcPI.fAlphaType = srcInfo.alphaType();
-        srcPI.fPixels = srcPixels;
-        srcPI.fRowBytes = srcRowBytes;
-
-        return srcPI.convertPixelsTo(&dstPI, srcInfo.width(), srcInfo.height());
-    }
-    if (srcInfo.colorType() == dstInfo.colorType()) {
-        switch (srcInfo.colorType()) {
-            case kRGB_565_SkColorType:
-            case kAlpha_8_SkColorType:
-                break;
-            case kARGB_4444_SkColorType:
-                if (srcInfo.alphaType() != dstInfo.alphaType()) {
-                    return false;
-                }
-                break;
-            default:
-                return false;
-        }
-        rect_memcpy(dstPixels, dstRowBytes, srcPixels, srcRowBytes,
-                    srcInfo.width() * srcInfo.bytesPerPixel(), srcInfo.height());
-    }
-    // TODO: add support for more conversions as needed
-    return false;
-}
+#include "SkPixelRef.h"
 
 bool SkBitmapDevice::onWritePixels(const SkImageInfo& srcInfo, const void* srcPixels,
                                    size_t srcRowBytes, int x, int y) {
@@ -215,14 +154,12 @@ bool SkBitmapDevice::onWritePixels(const SkImageInfo& srcInfo, const void* srcPi
         return false;
     }
 
-    SkImageInfo dstInfo = fBitmap.info();
-    dstInfo.fWidth = srcInfo.width();
-    dstInfo.fHeight = srcInfo.height();
+    const SkImageInfo dstInfo = fBitmap.info().makeWH(srcInfo.width(), srcInfo.height());
 
     void* dstPixels = fBitmap.getAddr(x, y);
     size_t dstRowBytes = fBitmap.rowBytes();
 
-    if (copy_pixels(dstInfo, dstPixels, dstRowBytes, srcInfo, srcPixels, srcRowBytes)) {
+    if (SkPixelInfo::CopyPixels(dstInfo, dstPixels, dstRowBytes, srcInfo, srcPixels, srcRowBytes)) {
         fBitmap.notifyPixelsChanged();
         return true;
     }
@@ -231,28 +168,7 @@ bool SkBitmapDevice::onWritePixels(const SkImageInfo& srcInfo, const void* srcPi
 
 bool SkBitmapDevice::onReadPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
                                   int x, int y) {
-    // since we don't stop creating un-pixeled devices yet, check for no pixels here
-    if (NULL == fBitmap.getPixels()) {
-        return false;
-    }
-
-    SkImageInfo srcInfo = fBitmap.info();
-
-    // perhaps can relax these in the future
-    if (4 != dstInfo.bytesPerPixel()) {
-        return false;
-    }
-    if (4 != srcInfo.bytesPerPixel()) {
-        return false;
-    }
-
-    srcInfo.fWidth = dstInfo.width();
-    srcInfo.fHeight = dstInfo.height();
-
-    const void* srcPixels = fBitmap.getAddr(x, y);
-    const size_t srcRowBytes = fBitmap.rowBytes();
-
-    return copy_pixels(dstInfo, dstPixels, dstRowBytes, srcInfo, srcPixels, srcRowBytes);
+    return fBitmap.readPixels(dstInfo, dstPixels, dstRowBytes, x, y);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -346,8 +262,14 @@ void SkBitmapDevice::drawBitmapRect(const SkDraw& draw, const SkBitmap& bitmap,
         // the bitmap, we extract a subset.
         SkIRect srcIR;
         tmpSrc.roundOut(&srcIR);
-        if (!bitmap.extractSubset(&tmpBitmap, srcIR)) {
-            return;
+        if(bitmap.pixelRef()->getTexture()) {
+            // Accelerated source canvas, don't use extractSubset but readPixels to get the subset.
+            // This way, the pixels are copied in CPU memory instead of GPU memory.
+            bitmap.pixelRef()->readPixels(&tmpBitmap, &srcIR);
+        } else {
+            if (!bitmap.extractSubset(&tmpBitmap, srcIR)) {
+                return;
+            }
         }
         bitmapPtr = &tmpBitmap;
 
@@ -407,9 +329,9 @@ void SkBitmapDevice::drawText(const SkDraw& draw, const void* text, size_t len,
 }
 
 void SkBitmapDevice::drawPosText(const SkDraw& draw, const void* text, size_t len,
-                                 const SkScalar xpos[], SkScalar y,
-                                 int scalarsPerPos, const SkPaint& paint) {
-    draw.drawPosText((const char*)text, len, xpos, y, scalarsPerPos, paint);
+                                 const SkScalar xpos[], int scalarsPerPos,
+                                 const SkPoint& offset, const SkPaint& paint) {
+    draw.drawPosText((const char*)text, len, xpos, scalarsPerPos, offset, paint);
 }
 
 void SkBitmapDevice::drawTextOnPath(const SkDraw& draw, const void* text,
@@ -435,8 +357,8 @@ void SkBitmapDevice::drawDevice(const SkDraw& draw, SkBaseDevice* device,
     draw.drawSprite(src, x, y, paint);
 }
 
-SkSurface* SkBitmapDevice::newSurface(const SkImageInfo& info) {
-    return SkSurface::NewRaster(info);
+SkSurface* SkBitmapDevice::newSurface(const SkImageInfo& info, const SkSurfaceProps& props) {
+    return SkSurface::NewRaster(info, &props);
 }
 
 const void* SkBitmapDevice::peekPixels(SkImageInfo* info, size_t* rowBytes) {
@@ -453,6 +375,12 @@ const void* SkBitmapDevice::peekPixels(SkImageInfo* info, size_t* rowBytes) {
     return NULL;
 }
 
+SkImageFilter::Cache* SkBitmapDevice::getImageFilterCache() {
+    SkImageFilter::Cache* cache = SkImageFilter::Cache::Get();
+    cache->ref();
+    return cache;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 bool SkBitmapDevice::filterTextFlags(const SkPaint& paint, TextFlags* flags) {
@@ -467,9 +395,9 @@ bool SkBitmapDevice::filterTextFlags(const SkPaint& paint, TextFlags* flags) {
         paint.isFakeBoldText() ||
         paint.getStyle() != SkPaint::kFill_Style ||
         !SkXfermode::IsMode(paint.getXfermode(), SkXfermode::kSrcOver_Mode)) {
-        // turn off lcd
+        // turn off lcd, but turn on kGenA8
         flags->fFlags = paint.getFlags() & ~SkPaint::kLCDRenderText_Flag;
-        flags->fHinting = paint.getHinting();
+        flags->fFlags |= SkPaint::kGenA8FromLCD_Flag;
         return true;
     }
     // we're cool with the paint as is

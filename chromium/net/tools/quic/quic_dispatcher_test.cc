@@ -48,6 +48,7 @@ class TestDispatcher : public QuicDispatcher {
       : QuicDispatcher(config,
                        crypto_config,
                        QuicSupportedVersions(),
+                       new QuicDispatcher::DefaultPacketWriterFactory(),
                        eps) {
   }
 
@@ -55,7 +56,6 @@ class TestDispatcher : public QuicDispatcher {
       QuicConnectionId connection_id,
       const IPEndPoint& server_address,
       const IPEndPoint& client_address));
-  using QuicDispatcher::write_blocked_list;
 
   using QuicDispatcher::current_server_address;
   using QuicDispatcher::current_client_address;
@@ -102,12 +102,12 @@ class QuicDispatcherTest : public ::testing::Test {
       : crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance()),
         dispatcher_(config_, crypto_config_, &eps_),
-        session1_(NULL),
-        session2_(NULL) {
+        session1_(nullptr),
+        session2_(nullptr) {
     dispatcher_.Initialize(1);
   }
 
-  virtual ~QuicDispatcherTest() {}
+  ~QuicDispatcherTest() override {}
 
   MockConnection* connection1() {
     return reinterpret_cast<MockConnection*>(session1_->connection());
@@ -260,66 +260,22 @@ TEST_F(QuicDispatcherTest, StrayPacketToTimeWaitListManager) {
   ProcessPacket(client_address, connection_id, false, "foo");
 }
 
-TEST(QuicDispatcherFlowControlTest, NoNewVersion17ConnectionsIfFlagDisabled) {
-  // If FLAGS_enable_quic_stream_flow_control_2 is disabled
-  // then the dispatcher should stop creating connections that support
-  // QUIC_VERSION_17 (existing connections will stay alive).
-  // TODO(rjshade): Remove once
-  // FLAGS_enable_quic_stream_flow_control_2 is removed.
-
-  EpollServer eps;
-  QuicConfig config;
-  QuicCryptoServerConfig server_config(QuicCryptoServerConfig::TESTING,
-                                       QuicRandom::GetInstance());
-  IPEndPoint client(net::test::Loopback4(), 1);
-  IPEndPoint server(net::test::Loopback4(), 1);
-  QuicConnectionId kCID = 1234;
-
-  QuicVersion kTestQuicVersions[] = {QUIC_VERSION_17,
-                                     QUIC_VERSION_16,
-                                     QUIC_VERSION_15};
-  QuicVersionVector kTestVersions;
-  for (size_t i = 0; i < arraysize(kTestQuicVersions); ++i) {
-    kTestVersions.push_back(kTestQuicVersions[i]);
-  }
-
-  QuicDispatcher dispatcher(config, server_config, kTestVersions, &eps);
-  dispatcher.Initialize(0);
-
-  // When flag is enabled, new connections should support QUIC_VERSION_17.
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-  scoped_ptr<QuicConnection> connection_1(
-      QuicDispatcherPeer::CreateQuicConnection(&dispatcher, kCID, client,
-                                               server));
-  EXPECT_EQ(QUIC_VERSION_17, connection_1->version());
-
-
-  // When flag is disabled, new connections should not support QUIC_VERSION_17.
-  FLAGS_enable_quic_stream_flow_control_2 = false;
-  scoped_ptr<QuicConnection> connection_2(
-      QuicDispatcherPeer::CreateQuicConnection(&dispatcher, kCID, client,
-                                               server));
-  EXPECT_EQ(QUIC_VERSION_16, connection_2->version());
-}
-
 class BlockingWriter : public QuicPacketWriterWrapper {
  public:
   BlockingWriter() : write_blocked_(false) {}
 
-  virtual bool IsWriteBlocked() const OVERRIDE { return write_blocked_; }
-  virtual void SetWritable() OVERRIDE { write_blocked_ = false; }
+  bool IsWriteBlocked() const override { return write_blocked_; }
+  void SetWritable() override { write_blocked_ = false; }
 
-  virtual WriteResult WritePacket(
-      const char* buffer,
-      size_t buf_len,
-      const IPAddressNumber& self_client_address,
-      const IPEndPoint& peer_client_address) OVERRIDE {
-    if (write_blocked_) {
-      return WriteResult(WRITE_STATUS_BLOCKED, EAGAIN);
-    } else {
-      return QuicPacketWriterWrapper::WritePacket(
-          buffer, buf_len, self_client_address, peer_client_address);
-    }
+  WriteResult WritePacket(const char* buffer,
+                          size_t buf_len,
+                          const IPAddressNumber& self_client_address,
+                          const IPEndPoint& peer_client_address) override {
+    // It would be quite possible to actually implement this method here with
+    // the fake blocked status, but it would be significantly more work in
+    // Chromium, and since it's not called anyway, don't bother.
+    LOG(DFATAL) << "Not supported";
+    return WriteResult();
   }
 
   bool write_blocked_;
@@ -327,8 +283,10 @@ class BlockingWriter : public QuicPacketWriterWrapper {
 
 class QuicDispatcherWriteBlockedListTest : public QuicDispatcherTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     writer_ = new BlockingWriter;
+    QuicDispatcherPeer::SetPacketWriterFactory(&dispatcher_,
+                                               new TestWriterFactory());
     QuicDispatcherPeer::UseWriter(&dispatcher_, writer_);
 
     IPEndPoint client_address(net::test::Loopback4(), 1);
@@ -343,10 +301,10 @@ class QuicDispatcherWriteBlockedListTest : public QuicDispatcherTest {
                       &dispatcher_, 2, client_address, &session2_)));
     ProcessPacket(client_address, 2, true, "bar");
 
-    blocked_list_ = dispatcher_.write_blocked_list();
+    blocked_list_ = QuicDispatcherPeer::GetWriteBlockedList(&dispatcher_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     EXPECT_CALL(*connection1(), SendConnectionClose(QUIC_PEER_GOING_AWAY));
     EXPECT_CALL(*connection2(), SendConnectionClose(QUIC_PEER_GOING_AWAY));
     dispatcher_.Shutdown();

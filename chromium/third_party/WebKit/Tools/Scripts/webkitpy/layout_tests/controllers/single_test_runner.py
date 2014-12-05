@@ -37,6 +37,7 @@ from webkitpy.layout_tests.port.driver import DeviceFailure, DriverInput, Driver
 from webkitpy.layout_tests.models import test_expectations
 from webkitpy.layout_tests.models import test_failures
 from webkitpy.layout_tests.models.test_results import TestResult
+from webkitpy.layout_tests.models import testharness_results
 
 
 _log = logging.getLogger(__name__)
@@ -131,9 +132,13 @@ class SingleTestRunner(object):
         # indicate problems found by a sanitizer (ASAN, LSAN, etc.), but we will report
         # on other crashes and timeouts as well in order to detect at least *some* basic failures.
         driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
+        expected_driver_output = self._expected_driver_output()
         failures = self._handle_error(driver_output)
-        return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
-                          pid=driver_output.pid)
+        test_result = TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
+                                 pid=driver_output.pid)
+        test_result_writer.write_test_result(self._filesystem, self._port, self._results_directory, self._test_name, driver_output, expected_driver_output, test_result.failures)
+        return test_result
+
 
     def _run_compare_test(self):
         driver_output = self._driver.run_test(self._driver_input(), self._stop_when_done)
@@ -228,7 +233,8 @@ class SingleTestRunner(object):
         if driver_output.crash:
             failures.append(test_failures.FailureCrash(bool(reference_filename),
                                                        driver_output.crashed_process_name,
-                                                       driver_output.crashed_pid))
+                                                       driver_output.crashed_pid,
+                                                       bool('No crash log found' not in driver_output.crash_log)))
             if driver_output.error:
                 _log.debug("%s %s crashed, (stderr lines):" % (self._worker_name, testname))
             else:
@@ -261,9 +267,10 @@ class SingleTestRunner(object):
             failures.extend(self._compare_audio(expected_driver_output.audio, driver_output.audio))
             if self._should_run_pixel_test:
                 failures.extend(self._compare_image(expected_driver_output, driver_output))
+        has_repaint_overlay = (repaint_overlay.result_contains_repaint_rects(expected_driver_output.text) or
+                               repaint_overlay.result_contains_repaint_rects(driver_output.text))
         return TestResult(self._test_name, failures, driver_output.test_time, driver_output.has_stderr(),
-                          pid=driver_output.pid,
-                          has_repaint_overlay=repaint_overlay.result_contains_repaint_rects(expected_driver_output.text))
+                          pid=driver_output.pid, has_repaint_overlay=has_repaint_overlay)
 
     def _compare_testharness_test(self, driver_output, expected_driver_output):
         if expected_driver_output.image or expected_driver_output.audio or expected_driver_output.text:
@@ -272,29 +279,11 @@ class SingleTestRunner(object):
         if driver_output.image or driver_output.audio or self._is_render_tree(driver_output.text):
             return False, []
 
-        failures = []
-        found_a_pass = False
         text = driver_output.text or ''
-        lines = text.strip().splitlines()
-        lines = [line.strip() for line in lines]
-        header = 'This is a testharness.js-based test.'
-        footer = 'Harness: the test ran to completion.'
-        if not lines or not header in lines:
+
+        if not testharness_results.is_testharness_output(text):
             return False, []
-        if not footer in lines:
-            return True, [test_failures.FailureTestHarnessAssertion()]
-
-        for line in lines:
-            if line == header or line == footer or line.startswith('PASS'):
-                continue
-            # CONSOLE output can happen during tests and shouldn't break them.
-            if line.startswith('CONSOLE'):
-                continue
-
-            if line.startswith('FAIL') or line.startswith('TIMEOUT'):
-                return True, [test_failures.FailureTestHarnessAssertion()]
-
-            # Fail the test if there is any unrecognized output.
+        if not testharness_results.is_testharness_output_passing(text):
             return True, [test_failures.FailureTestHarnessAssertion()]
         return True, []
 

@@ -43,9 +43,9 @@ extern const ConstantLabel SECURITY_ERRORS[];
 bool find_string(size_t& index, const std::string& needle,
                  const char* const haystack[], size_t max_index) {
   for (index=0; index<max_index; ++index) {
-	if (_stricmp(needle.c_str(), haystack[index]) == 0) {
-	  return true;
-	}
+    if (_stricmp(needle.c_str(), haystack[index]) == 0) {
+      return true;
+    }
   }
   return false;
 }
@@ -57,11 +57,11 @@ struct Enum {
 
   static inline const char* Name(E val) { return Names[val]; }
   static inline bool Parse(E& val, const std::string& name) {
-	size_t index;
-	if (!find_string(index, name, Names, Size))
-	  return false;
-	val = static_cast<E>(index);
-	return true;
+    size_t index;
+    if (!find_string(index, name, Names, Size))
+      return false;
+    val = static_cast<E>(index);
+    return true;
   }
 
   E val;
@@ -364,7 +364,7 @@ bool HttpDateToSeconds(const std::string& date, time_t* seconds) {
   case 'C': tval.tm_mon = 11; break;
   }
   tval.tm_year -= 1900;
-  size_t gmt, non_gmt = mktime(&tval);
+  time_t gmt, non_gmt = mktime(&tval);
   if ((zone[0] == '+') || (zone[0] == '-')) {
     if (!isdigit(zone[1]) || !isdigit(zone[2])
         || !isdigit(zone[3]) || !isdigit(zone[4])) {
@@ -383,7 +383,7 @@ bool HttpDateToSeconds(const std::string& date, time_t* seconds) {
   }
   // TODO: Android should support timezone, see b/2441195
 #if defined(WEBRTC_MAC) && !defined(WEBRTC_IOS) || defined(WEBRTC_ANDROID) || defined(BSD)
-  tm *tm_for_timezone = localtime((time_t *)&gmt);
+  tm *tm_for_timezone = localtime(&gmt);
   *seconds = gmt + tm_for_timezone->tm_gmtoff;
 #else
   *seconds = gmt - timezone;
@@ -434,9 +434,9 @@ HttpData::changeHeader(const std::string& name, const std::string& value,
       if (combine == HC_YES) {
         it->second.append(",");
         it->second.append(value);
-	  }
+      }
       return;
-	}
+    }
   }
   headers_.insert(HeaderMap::value_type(name, value));
 }
@@ -731,7 +731,7 @@ struct NegotiateAuthContext : public HttpAuthContext {
     FreeCredentialsHandle(&cred);
   }
 };
-#endif // WEBRTC_WIN 
+#endif // WEBRTC_WIN
 
 HttpAuthResult HttpAuthenticate(
   const char * challenge, size_t len,
@@ -990,7 +990,9 @@ HttpAuthResult HttpAuthenticate(
       }
 
       CredHandle cred;
-      ret = AcquireCredentialsHandleA(0, want_negotiate ? NEGOSSP_NAME_A : NTLMSP_NAME_A, SECPKG_CRED_OUTBOUND, 0, pauth_id, 0, 0, &cred, &lifetime);
+      ret = AcquireCredentialsHandleA(
+          0, const_cast<char*>(want_negotiate ? NEGOSSP_NAME_A : NTLMSP_NAME_A),
+          SECPKG_CRED_OUTBOUND, 0, pauth_id, 0, 0, &cred, &lifetime);
       //LOG(INFO) << "$$$ AcquireCredentialsHandle @ " << TimeSince(now);
       if (ret != SEC_E_OK) {
         LOG(LS_ERROR) << "AcquireCredentialsHandle error: "
@@ -1035,7 +1037,7 @@ HttpAuthResult HttpAuthenticate(
     return HAR_RESPONSE;
   }
 #endif
-#endif // WEBRTC_WIN 
+#endif // WEBRTC_WIN
 
   return HAR_IGNORE;
 }

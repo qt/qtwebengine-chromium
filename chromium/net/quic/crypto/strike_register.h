@@ -15,6 +15,26 @@
 
 namespace net {
 
+// InsertStatus enum values cannot be changed, they need to be stable.
+enum InsertStatus {
+  NONCE_OK = 0,
+  // The default error value for nonce verification failures from strike
+  // register (covers old strike registers and unknown failures).
+  NONCE_UNKNOWN_FAILURE = 1,
+  // Decrypted nonce had incorrect length.
+  NONCE_INVALID_FAILURE = 2,
+  // Nonce is not unique.
+  NONCE_NOT_UNIQUE_FAILURE = 3,
+  // Nonce's orbit is invalid or incorrect.
+  NONCE_INVALID_ORBIT_FAILURE = 4,
+  // Nonce's timestamp is not in the strike register's valid time range.
+  NONCE_INVALID_TIME_FAILURE = 5,
+  // Strike register's RPC call timed out, nonce couldn't be verified.
+  STRIKE_REGISTER_TIMEOUT = 6,
+  // Strike register is down, nonce couldn't be verified.
+  STRIKE_REGISTER_FAILURE = 7,
+};
+
 // A StrikeRegister is critbit tree which stores a set of observed nonces.
 // We use a critbit tree because:
 //   1) It's immune to algorithmic complexity attacks. If we had used a hash
@@ -107,20 +127,24 @@ class NET_EXPORT_PRIVATE StrikeRegister {
   //   b) before the current horizon
   //   c) outside of the valid time window
   //   d) already in the set of observed nonces
-  // and returns false if any of these are true. It is also free to return
-  // false for other reasons as it's always safe to reject an nonce.
+  // and returns the failure reason if any of these are true. It is also free to
+  // return failure reason for other reasons as it's always safe to reject an
+  // nonce.
   //
   // nonces are:
   //   4 bytes of timestamp (UNIX epoch seconds)
   //   8 bytes of orbit value (a cluster id)
   //   20 bytes of random data
   //
-  // Otherwise, it inserts |nonce| into the observed set and returns true.
-  bool Insert(const uint8 nonce[32], const uint32 current_time);
+  // Otherwise, it inserts |nonce| into the observed set and returns NONCE_OK.
+  InsertStatus Insert(const uint8 nonce[32], uint32 current_time);
 
   // orbit returns a pointer to the 8-byte orbit value for this
   // strike-register.
   const uint8* orbit() const;
+
+  // Time window for which the strike register has complete information.
+  uint32 GetCurrentValidWindowSecs(uint32 current_time_external) const;
 
   // This is a debugging aid which checks the tree for sanity.
   void Validate();
@@ -131,9 +155,15 @@ class NET_EXPORT_PRIVATE StrikeRegister {
   // TimeFromBytes returns a big-endian uint32 from |d|.
   static uint32 TimeFromBytes(const uint8 d[4]);
 
+  // Range of internal times for which the strike register has
+  // complete information.  A nonce is within the valid range of the
+  // strike register if:
+  //   valid_range.first <= nonce_time_internal <= valid_range.second
+  std::pair<uint32, uint32> GetValidRange(uint32 current_time_internal) const;
+
   // ExternalTimeToInternal converts an external time value into an internal
   // time value using |internal_epoch_|.
-  uint32 ExternalTimeToInternal(uint32 external_time);
+  uint32 ExternalTimeToInternal(uint32 external_time) const;
 
   // BestMatch returns either kNil, or an external node index which could
   // possibly match |v|.
@@ -149,9 +179,9 @@ class NET_EXPORT_PRIVATE StrikeRegister {
 
   uint32 GetFreeInternalNode();
 
-  // DropNode removes the oldest node in the tree and updates |horizon_|
+  // DropOldestNode removes the oldest node in the tree and updates |horizon_|
   // accordingly.
-  void DropNode();
+  void DropOldestNode();
 
   void FreeExternalNode(uint32 index);
 
@@ -171,8 +201,8 @@ class NET_EXPORT_PRIVATE StrikeRegister {
   // time.
   const uint32 internal_epoch_;
   uint8 orbit_[8];
+  // The strike register will reject nonces with internal times < |horizon_| .
   uint32 horizon_;
-  bool horizon_valid_;
 
   uint32 internal_node_free_head_;
   uint32 external_node_free_head_;

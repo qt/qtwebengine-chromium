@@ -32,8 +32,9 @@
 #define AudioProcessor_h
 
 #include "platform/PlatformExport.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 
@@ -41,7 +42,7 @@ class AudioBus;
 // where the number of input channels equals the number of output channels.  It can be used as one part of a complex DSP algorithm,
 // or as the processor for a basic (one input - one output) AudioNode.
 
-class PLATFORM_EXPORT AudioProcessor {
+class PLATFORM_EXPORT AudioProcessor : public GarbageCollectedFinalized<AudioProcessor> {
 public:
     AudioProcessor(float sampleRate, unsigned numberOfChannels)
         : m_initialized(false)
@@ -51,6 +52,7 @@ public:
     }
 
     virtual ~AudioProcessor();
+    virtual void trace(Visitor*);
 
     // Full initialization can be done here instead of in the constructor.
     virtual void initialize() = 0;
@@ -78,6 +80,6 @@ protected:
     float m_sampleRate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioProcessor_h

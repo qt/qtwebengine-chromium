@@ -23,7 +23,11 @@
     if (([device hasMediaType:AVFoundationGlue::AVMediaTypeVideo()] ||
          [device hasMediaType:AVFoundationGlue::AVMediaTypeMuxed()]) &&
         ![device isSuspended]) {
-      [deviceNames setObject:[device localizedName]
+      DeviceNameAndTransportType* nameAndTransportType =
+          [[[DeviceNameAndTransportType alloc]
+                 initWithName:[device localizedName]
+                transportType:[device transportType]] autorelease];
+      [deviceNames setObject:nameAndTransportType
                       forKey:[device uniqueID]];
     }
   }
@@ -66,21 +70,18 @@
         break;
     }
 
-  CoreMediaGlue::CMVideoDimensions dimensions =
+    CoreMediaGlue::CMVideoDimensions dimensions =
         CoreMediaGlue::CMVideoFormatDescriptionGetDimensions(
             [format formatDescription]);
 
-  for (CrAVFrameRateRange* frameRate in
+    for (CrAVFrameRateRange* frameRate in
            [format videoSupportedFrameRateRanges]) {
       media::VideoCaptureFormat format(
           gfx::Size(dimensions.width, dimensions.height),
-          static_cast<int>(frameRate.maxFrameRate),
+          frameRate.maxFrameRate,
           pixelFormat);
       formats->push_back(format);
-      DVLOG(2) << name.name() << " resolution: "
-               << format.frame_size.ToString() << ", fps: "
-               << format.frame_rate << ", pixel format: "
-               << format.pixel_format;
+      DVLOG(2) << name.name() << " " << format.ToString();
     }
   }
 
@@ -159,6 +160,7 @@
         stringWithUTF8String:"Could not create video data output."]];
     return NO;
   }
+  [captureVideoDataOutput_ setAlwaysDiscardsLateVideoFrames:true];
   [captureVideoDataOutput_
       setSampleBufferDelegate:self
                         queue:dispatch_get_global_queue(
@@ -167,7 +169,9 @@
   return YES;
 }
 
-- (BOOL)setCaptureHeight:(int)height width:(int)width frameRate:(int)frameRate {
+- (BOOL)setCaptureHeight:(int)height
+                   width:(int)width
+               frameRate:(float)frameRate {
   // Check if either of VideoCaptureDeviceMac::AllocateAndStart() or
   // VideoCaptureDeviceMac::ReceiveFrame() is calling here, depending on the
   // running state. VCDM::ReceiveFrame() calls here to change aspect ratio.
@@ -204,14 +208,14 @@
       [captureConnection isVideoMinFrameDurationSupported]) {
     [captureConnection setVideoMinFrameDuration:
         CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
-                                  frameRate * media::kFrameRatePrecision)];
+            (int)(frameRate * media::kFrameRatePrecision))];
   }
   if ([captureConnection
            respondsToSelector:@selector(isVideoMaxFrameDurationSupported)] &&
       [captureConnection isVideoMaxFrameDurationSupported]) {
     [captureConnection setVideoMaxFrameDuration:
         CoreMediaGlue::CMTimeMake(media::kFrameRatePrecision,
-                                  frameRate * media::kFrameRatePrecision)];
+            (int)(frameRate * media::kFrameRatePrecision))];
   }
   return YES;
 }

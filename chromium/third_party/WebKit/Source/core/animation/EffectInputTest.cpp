@@ -5,7 +5,7 @@
 #include "config.h"
 #include "core/animation/EffectInput.h"
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 #include "core/animation/AnimationTestHelper.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/dom/Document.h"
@@ -13,7 +13,7 @@
 #include <gtest/gtest.h>
 #include <v8.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
@@ -70,10 +70,9 @@ TEST_F(AnimationEffectInputTest, UnsortedOffsets)
     jsKeyframes.append(Dictionary(keyframe1, m_isolate));
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
-    EXPECT_FALSE(exceptionState.hadException());
-    const KeyframeEffectModelBase& keyframeEffect = *toKeyframeEffectModelBase(animationEffect.get());
-    EXPECT_EQ(1.0, keyframeEffect.getFrames()[1]->offset());
+    EffectInput::convert(element.get(), jsKeyframes, exceptionState);
+    EXPECT_TRUE(exceptionState.hadException());
+    EXPECT_EQ(InvalidModificationError, exceptionState.code());
 }
 
 TEST_F(AnimationEffectInputTest, LooslySorted)
@@ -99,6 +98,31 @@ TEST_F(AnimationEffectInputTest, LooslySorted)
     EXPECT_EQ(1, keyframeEffect.getFrames()[2]->offset());
 }
 
+TEST_F(AnimationEffectInputTest, OutOfOrderWithNullOffsets)
+{
+    Vector<Dictionary> jsKeyframes;
+    v8::Handle<v8::Object> keyframe1 = v8::Object::New(m_isolate);
+    v8::Handle<v8::Object> keyframe2 = v8::Object::New(m_isolate);
+    v8::Handle<v8::Object> keyframe3 = v8::Object::New(m_isolate);
+    v8::Handle<v8::Object> keyframe4 = v8::Object::New(m_isolate);
+
+    setV8ObjectPropertyAsString(keyframe1, "height", "100px");
+    setV8ObjectPropertyAsString(keyframe1, "offset", "0.5");
+    setV8ObjectPropertyAsString(keyframe2, "height", "150px");
+    setV8ObjectPropertyAsString(keyframe3, "height", "200px");
+    setV8ObjectPropertyAsString(keyframe3, "offset", "0");
+    setV8ObjectPropertyAsString(keyframe4, "height", "300px");
+    setV8ObjectPropertyAsString(keyframe4, "offset", "1");
+
+    jsKeyframes.append(Dictionary(keyframe1, m_isolate));
+    jsKeyframes.append(Dictionary(keyframe2, m_isolate));
+    jsKeyframes.append(Dictionary(keyframe3, m_isolate));
+    jsKeyframes.append(Dictionary(keyframe4, m_isolate));
+
+    EffectInput::convert(element.get(), jsKeyframes, exceptionState);
+    EXPECT_TRUE(exceptionState.hadException());
+}
+
 TEST_F(AnimationEffectInputTest, Invalid)
 {
     // Not loosely sorted by offset, and there exists a keyframe with null offset.
@@ -117,7 +141,7 @@ TEST_F(AnimationEffectInputTest, Invalid)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
     jsKeyframes.append(Dictionary(keyframe3, m_isolate));
 
-    RefPtrWillBeRawPtr<AnimationEffect> animationEffect ALLOW_UNUSED = EffectInput::convert(element.get(), jsKeyframes, exceptionState);
+    EffectInput::convert(element.get(), jsKeyframes, exceptionState);
     EXPECT_TRUE(exceptionState.hadException());
     EXPECT_EQ(InvalidModificationError, exceptionState.code());
 }

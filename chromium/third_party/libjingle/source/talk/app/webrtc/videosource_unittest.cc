@@ -28,15 +28,15 @@
 #include <string>
 #include <vector>
 
-#include "talk/app/webrtc/test/fakeconstraints.h"
 #include "talk/app/webrtc/remotevideocapturer.h"
+#include "talk/app/webrtc/test/fakeconstraints.h"
 #include "talk/app/webrtc/videosource.h"
-#include "talk/base/gunit.h"
 #include "talk/media/base/fakemediaengine.h"
 #include "talk/media/base/fakevideorenderer.h"
 #include "talk/media/devices/fakedevicemanager.h"
 #include "talk/media/webrtc/webrtcvideoframe.h"
 #include "talk/session/media/channelmanager.h"
+#include "webrtc/base/gunit.h"
 
 using webrtc::FakeConstraints;
 using webrtc::VideoSource;
@@ -121,7 +121,7 @@ class StateObserver : public ObserverInterface {
 
  private:
   MediaSourceInterface::SourceState state_;
-  talk_base::scoped_refptr<VideoSourceInterface> source_;
+  rtc::scoped_refptr<VideoSourceInterface> source_;
 };
 
 class VideoSourceTest : public testing::Test {
@@ -131,7 +131,7 @@ class VideoSourceTest : public testing::Test {
         capturer_(capturer_cleanup_.get()),
         channel_manager_(new cricket::ChannelManager(
           new cricket::FakeMediaEngine(),
-          new cricket::FakeDeviceManager(), talk_base::Thread::Current())) {
+          new cricket::FakeDeviceManager(), rtc::Thread::Current())) {
   }
 
   void SetUp() {
@@ -157,12 +157,12 @@ class VideoSourceTest : public testing::Test {
     source_->AddSink(&renderer_);
   }
 
-  talk_base::scoped_ptr<TestVideoCapturer> capturer_cleanup_;
+  rtc::scoped_ptr<TestVideoCapturer> capturer_cleanup_;
   TestVideoCapturer* capturer_;
   cricket::FakeVideoRenderer renderer_;
-  talk_base::scoped_ptr<cricket::ChannelManager> channel_manager_;
-  talk_base::scoped_ptr<StateObserver> state_observer_;
-  talk_base::scoped_refptr<VideoSource> source_;
+  rtc::scoped_ptr<cricket::ChannelManager> channel_manager_;
+  rtc::scoped_ptr<StateObserver> state_observer_;
+  rtc::scoped_refptr<VideoSource> source_;
 };
 
 
@@ -366,21 +366,12 @@ TEST_F(VideoSourceTest, InvalidOptionalConstraint) {
 TEST_F(VideoSourceTest, SetValidOptionValues) {
   FakeConstraints constraints;
   constraints.AddMandatory(MediaConstraintsInterface::kNoiseReduction, "false");
-  constraints.AddMandatory(
-      MediaConstraintsInterface::kTemporalLayeredScreencast, "false");
-  constraints.AddOptional(
-      MediaConstraintsInterface::kLeakyBucket, "true");
 
   CreateVideoSource(&constraints);
 
   bool value = true;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_FALSE(value);
-  EXPECT_TRUE(source_->options()->
-      video_temporal_layer_screencast.Get(&value));
-  EXPECT_FALSE(value);
-  EXPECT_TRUE(source_->options()->video_leaky_bucket.Get(&value));
-  EXPECT_TRUE(value);
 }
 
 TEST_F(VideoSourceTest, OptionNotSet) {
@@ -402,7 +393,6 @@ TEST_F(VideoSourceTest, MandatoryOptionOverridesOptional) {
   bool value = false;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_TRUE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
 }
 
 TEST_F(VideoSourceTest, InvalidOptionKeyOptional) {
@@ -437,18 +427,14 @@ TEST_F(VideoSourceTest, InvalidOptionKeyMandatory) {
 TEST_F(VideoSourceTest, InvalidOptionValueOptional) {
   FakeConstraints constraints;
   constraints.AddOptional(
-      MediaConstraintsInterface::kNoiseReduction, "true");
-  constraints.AddOptional(
-      MediaConstraintsInterface::kLeakyBucket, "not boolean");
+      MediaConstraintsInterface::kNoiseReduction, "not a boolean");
 
   CreateVideoSource(&constraints);
 
   EXPECT_EQ_WAIT(MediaSourceInterface::kLive, state_observer_->state(),
       kMaxWaitMs);
   bool value = false;
-  EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
-  EXPECT_TRUE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
+  EXPECT_FALSE(source_->options()->video_noise_reduction.Get(&value));
 }
 
 TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
@@ -458,7 +444,7 @@ TEST_F(VideoSourceTest, InvalidOptionValueMandatory) {
       MediaConstraintsInterface::kNoiseReduction, "false");
   // Values are case-sensitive and must be all lower-case.
   constraints.AddMandatory(
-      MediaConstraintsInterface::kLeakyBucket, "True");
+      MediaConstraintsInterface::kNoiseReduction, "True");
 
   CreateVideoSource(&constraints);
 
@@ -491,7 +477,6 @@ TEST_F(VideoSourceTest, MixedOptionsAndConstraints) {
   bool value = true;
   EXPECT_TRUE(source_->options()->video_noise_reduction.Get(&value));
   EXPECT_FALSE(value);
-  EXPECT_FALSE(source_->options()->video_leaky_bucket.Get(&value));
 }
 
 // Tests that the source starts video with the default resolution for

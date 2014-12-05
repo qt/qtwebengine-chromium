@@ -70,7 +70,7 @@ class UI_BASE_EXPORT SimpleMenuModel : public MenuModel {
   // The Delegate can be NULL, though if it is items can't be checked or
   // disabled.
   explicit SimpleMenuModel(Delegate* delegate);
-  virtual ~SimpleMenuModel();
+  ~SimpleMenuModel() override;
 
   // Methods for adding items to the model.
   void AddItem(int command_id, const base::string16& label);
@@ -140,33 +140,31 @@ class UI_BASE_EXPORT SimpleMenuModel : public MenuModel {
   int GetIndexOfCommandId(int command_id);
 
   // Overridden from MenuModel:
-  virtual bool HasIcons() const OVERRIDE;
-  virtual int GetItemCount() const OVERRIDE;
-  virtual ItemType GetTypeAt(int index) const OVERRIDE;
-  virtual ui::MenuSeparatorType GetSeparatorTypeAt(int index) const OVERRIDE;
-  virtual int GetCommandIdAt(int index) const OVERRIDE;
-  virtual base::string16 GetLabelAt(int index) const OVERRIDE;
-  virtual base::string16 GetSublabelAt(int index) const OVERRIDE;
-  virtual base::string16 GetMinorTextAt(int index) const OVERRIDE;
-  virtual bool IsItemDynamicAt(int index) const OVERRIDE;
-  virtual bool GetAcceleratorAt(int index,
-                                ui::Accelerator* accelerator) const OVERRIDE;
-  virtual bool IsItemCheckedAt(int index) const OVERRIDE;
-  virtual int GetGroupIdAt(int index) const OVERRIDE;
-  virtual bool GetIconAt(int index, gfx::Image* icon) OVERRIDE;
-  virtual ui::ButtonMenuItemModel* GetButtonMenuItemAt(
-      int index) const OVERRIDE;
-  virtual bool IsEnabledAt(int index) const OVERRIDE;
-  virtual bool IsVisibleAt(int index) const OVERRIDE;
-  virtual void HighlightChangedTo(int index) OVERRIDE;
-  virtual void ActivatedAt(int index) OVERRIDE;
-  virtual void ActivatedAt(int index, int event_flags) OVERRIDE;
-  virtual MenuModel* GetSubmenuModelAt(int index) const OVERRIDE;
-  virtual void MenuWillShow() OVERRIDE;
-  virtual void MenuClosed() OVERRIDE;
-  virtual void SetMenuModelDelegate(
-      ui::MenuModelDelegate* menu_model_delegate) OVERRIDE;
-  virtual MenuModelDelegate* GetMenuModelDelegate() const OVERRIDE;
+  bool HasIcons() const override;
+  int GetItemCount() const override;
+  ItemType GetTypeAt(int index) const override;
+  ui::MenuSeparatorType GetSeparatorTypeAt(int index) const override;
+  int GetCommandIdAt(int index) const override;
+  base::string16 GetLabelAt(int index) const override;
+  base::string16 GetSublabelAt(int index) const override;
+  base::string16 GetMinorTextAt(int index) const override;
+  bool IsItemDynamicAt(int index) const override;
+  bool GetAcceleratorAt(int index, ui::Accelerator* accelerator) const override;
+  bool IsItemCheckedAt(int index) const override;
+  int GetGroupIdAt(int index) const override;
+  bool GetIconAt(int index, gfx::Image* icon) override;
+  ui::ButtonMenuItemModel* GetButtonMenuItemAt(int index) const override;
+  bool IsEnabledAt(int index) const override;
+  bool IsVisibleAt(int index) const override;
+  void HighlightChangedTo(int index) override;
+  void ActivatedAt(int index) override;
+  void ActivatedAt(int index, int event_flags) override;
+  MenuModel* GetSubmenuModelAt(int index) const override;
+  void MenuWillShow() override;
+  void MenuClosed() override;
+  void SetMenuModelDelegate(
+      ui::MenuModelDelegate* menu_model_delegate) override;
+  MenuModelDelegate* GetMenuModelDelegate() const override;
 
  protected:
   void set_delegate(Delegate* delegate) { delegate_ = delegate; }

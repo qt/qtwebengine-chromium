@@ -30,27 +30,27 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFilter FINAL : public Filter {
+class SVGFilter final : public Filter {
 public:
-    static PassRefPtr<SVGFilter> create(const AffineTransform&, const IntRect&, const FloatRect&, const FloatRect&, bool);
+    static PassRefPtr<SVGFilter> create(const IntRect&, const FloatRect&, const FloatRect&, bool);
 
-    virtual float applyHorizontalScale(float value) const OVERRIDE;
-    virtual float applyVerticalScale(float value) const OVERRIDE;
-    virtual FloatPoint3D resolve3dPoint(const FloatPoint3D&) const OVERRIDE;
+    virtual float applyHorizontalScale(float value) const override;
+    virtual float applyVerticalScale(float value) const override;
+    virtual FloatPoint3D resolve3dPoint(const FloatPoint3D&) const override;
 
-    virtual IntRect sourceImageRect() const OVERRIDE { return m_absoluteSourceDrawingRegion; }
+    virtual IntRect sourceImageRect() const override { return m_absoluteSourceDrawingRegion; }
     FloatRect targetBoundingBox() const { return m_targetBoundingBox; }
 
 private:
-    SVGFilter(const AffineTransform& absoluteTransform, const IntRect& absoluteSourceDrawingRegion, const FloatRect& targetBoundingBox, const FloatRect& filterRegion, bool effectBBoxMode);
+    SVGFilter(const IntRect& absoluteSourceDrawingRegion, const FloatRect& targetBoundingBox, const FloatRect& filterRegion, bool effectBBoxMode);
 
     IntRect m_absoluteSourceDrawingRegion;
     FloatRect m_targetBoundingBox;
     bool m_effectBBoxMode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGFilter_h

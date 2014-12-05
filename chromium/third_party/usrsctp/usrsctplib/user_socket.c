@@ -46,7 +46,9 @@
 #define __FAVOR_BSD    /* (on Ubuntu at least) enables UDP header field names like BSD in RFC 768 */
 #endif
 #if !defined (__Userspace_os_Windows)
+#if defined INET || defined INET6
 #include <netinet/udp.h>
+#endif
 #include <arpa/inet.h>
 #else
 #include <user_socketvar.h>
@@ -708,6 +710,7 @@ userspace_sctp_sendmsg(struct socket *so,
 	struct uio auio;
 	struct iovec iov[1];
 
+	memset(sinfo, 0, sizeof(struct sctp_sndrcvinfo));
 	sinfo->sinfo_ppid = ppid;
 	sinfo->sinfo_flags = flags;
 	sinfo->sinfo_stream = stream_no;
@@ -1377,7 +1380,7 @@ sbreserve_locked(struct sockbuf *sb, u_long cc, struct socket *so)
 {
 	SOCKBUF_LOCK_ASSERT(sb);
 	sb->sb_mbmax = (u_int)min(cc * sb_efficiency, sb_max);
-	sb->sb_hiwat = cc;
+	sb->sb_hiwat = (u_int)cc;
 	if (sb->sb_lowat > (int)sb->sb_hiwat)
 		sb->sb_lowat = (int)sb->sb_hiwat;
 	return (1);
@@ -2446,7 +2449,7 @@ usrsctp_bindx(struct socket *so, struct sockaddr *addrs, int addrcnt, int flags)
 	for (i = 0; i < addrcnt; i++) {
 #ifndef HAVE_SA_LEN
 		size_t sa_len;
-#endif 
+#endif
 		memset(gaddrs, 0, argsz);
 		gaddrs->sget_assoc_id = 0;
 #ifdef HAVE_SA_LEN
@@ -2984,7 +2987,7 @@ void sctp_userspace_ip6_output(int *result, struct mbuf *o_pak,
 	memset((void *)&dst, 0, sizeof(struct sockaddr_in6));
 	dst.sin6_family = AF_INET6;
 	dst.sin6_addr = ip6->ip6_dst;
-#ifdef HAVE_SIN6_LEN 
+#ifdef HAVE_SIN6_LEN
 	dst.sin6_len = sizeof(struct sockaddr_in6);
 #endif
 
@@ -3154,7 +3157,7 @@ usrsctp_dumppacket(void *buf, size_t len, int outbound)
 	strncpy_s(dump_buf + pos, strlen(HEADER) + 1, HEADER, strlen(HEADER));
 #else
 	strcpy(dump_buf + pos, HEADER);
-#endif	
+#endif
 	pos += strlen(HEADER);
 	packet = (char *)buf;
 	for (i = 0; i < len; i++) {
@@ -3245,6 +3248,12 @@ USRSCTP_SYSCTL_SET_DEF(sctp_recvspace)
 USRSCTP_SYSCTL_SET_DEF(sctp_auto_asconf)
 USRSCTP_SYSCTL_SET_DEF(sctp_multiple_asconfs)
 USRSCTP_SYSCTL_SET_DEF(sctp_ecn_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_pr_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_auth_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_asconf_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_reconfig_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_nrsack_enable)
+USRSCTP_SYSCTL_SET_DEF(sctp_pktdrop_enable)
 USRSCTP_SYSCTL_SET_DEF(sctp_strict_sacks)
 #if !defined(SCTP_WITH_NO_CSUM)
 USRSCTP_SYSCTL_SET_DEF(sctp_no_csum_on_loopback)
@@ -3276,10 +3285,7 @@ USRSCTP_SYSCTL_SET_DEF(sctp_add_more_threshold)
 USRSCTP_SYSCTL_SET_DEF(sctp_nr_outgoing_streams_default)
 USRSCTP_SYSCTL_SET_DEF(sctp_cmt_on_off)
 USRSCTP_SYSCTL_SET_DEF(sctp_cmt_use_dac)
-USRSCTP_SYSCTL_SET_DEF(sctp_nr_sack_on_off)
 USRSCTP_SYSCTL_SET_DEF(sctp_use_cwnd_based_maxburst)
-USRSCTP_SYSCTL_SET_DEF(sctp_asconf_auth_nochk)
-USRSCTP_SYSCTL_SET_DEF(sctp_auth_disable)
 USRSCTP_SYSCTL_SET_DEF(sctp_nat_friendly)
 USRSCTP_SYSCTL_SET_DEF(sctp_L2_abc_variable)
 USRSCTP_SYSCTL_SET_DEF(sctp_mbuf_threshold_count)
@@ -3324,6 +3330,12 @@ USRSCTP_SYSCTL_GET_DEF(sctp_recvspace)
 USRSCTP_SYSCTL_GET_DEF(sctp_auto_asconf)
 USRSCTP_SYSCTL_GET_DEF(sctp_multiple_asconfs)
 USRSCTP_SYSCTL_GET_DEF(sctp_ecn_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_pr_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_auth_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_asconf_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_reconfig_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_nrsack_enable)
+USRSCTP_SYSCTL_GET_DEF(sctp_pktdrop_enable)
 USRSCTP_SYSCTL_GET_DEF(sctp_strict_sacks)
 #if !defined(SCTP_WITH_NO_CSUM)
 USRSCTP_SYSCTL_GET_DEF(sctp_no_csum_on_loopback)
@@ -3355,10 +3367,7 @@ USRSCTP_SYSCTL_GET_DEF(sctp_add_more_threshold)
 USRSCTP_SYSCTL_GET_DEF(sctp_nr_outgoing_streams_default)
 USRSCTP_SYSCTL_GET_DEF(sctp_cmt_on_off)
 USRSCTP_SYSCTL_GET_DEF(sctp_cmt_use_dac)
-USRSCTP_SYSCTL_GET_DEF(sctp_nr_sack_on_off)
 USRSCTP_SYSCTL_GET_DEF(sctp_use_cwnd_based_maxburst)
-USRSCTP_SYSCTL_GET_DEF(sctp_asconf_auth_nochk)
-USRSCTP_SYSCTL_GET_DEF(sctp_auth_disable)
 USRSCTP_SYSCTL_GET_DEF(sctp_nat_friendly)
 USRSCTP_SYSCTL_GET_DEF(sctp_L2_abc_variable)
 USRSCTP_SYSCTL_GET_DEF(sctp_mbuf_threshold_count)

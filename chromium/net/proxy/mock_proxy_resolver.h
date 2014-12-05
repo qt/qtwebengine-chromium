@@ -70,20 +70,19 @@ class MockAsyncProxyResolverBase : public ProxyResolver {
 
   typedef std::vector<scoped_refptr<Request> > RequestsList;
 
-  virtual ~MockAsyncProxyResolverBase();
+  ~MockAsyncProxyResolverBase() override;
 
   // ProxyResolver implementation.
-  virtual int GetProxyForURL(const GURL& url,
-                             ProxyInfo* results,
-                             const net::CompletionCallback& callback,
-                             RequestHandle* request_handle,
-                             const BoundNetLog& /*net_log*/) OVERRIDE;
-  virtual void CancelRequest(RequestHandle request_handle) OVERRIDE;
-  virtual LoadState GetLoadState(RequestHandle request_handle) const OVERRIDE;
-  virtual int SetPacScript(
-      const scoped_refptr<ProxyResolverScriptData>& script_data,
-      const net::CompletionCallback& callback) OVERRIDE;
-  virtual void CancelSetPacScript() OVERRIDE;
+  int GetProxyForURL(const GURL& url,
+                     ProxyInfo* results,
+                     const net::CompletionCallback& callback,
+                     RequestHandle* request_handle,
+                     const BoundNetLog& /*net_log*/) override;
+  void CancelRequest(RequestHandle request_handle) override;
+  LoadState GetLoadState(RequestHandle request_handle) const override;
+  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& script_data,
+                   const net::CompletionCallback& callback) override;
+  void CancelSetPacScript() override;
 
   const RequestsList& pending_requests() const {
     return pending_requests_;

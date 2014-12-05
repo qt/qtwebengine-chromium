@@ -172,7 +172,9 @@ Device.prototype.getDOMNode = function(maxNumTabs, row) {
 
   // Name heading
   var heading = document.createElement('h3');
-  heading.textContent = this.session_.name;
+  var name = heading.appendChild(
+      createElementWithClassName('span', 'device-name'));
+  name.textContent = this.session_.name;
   heading.sessionData_ = this.session_;
   deviceDiv.appendChild(heading);
 
@@ -185,7 +187,9 @@ Device.prototype.getDOMNode = function(maxNumTabs, row) {
   heading.addEventListener('contextmenu', handleDropDownFocus);
 
   var dropDownButton = new cr.ui.ContextMenuButton;
+  dropDownButton.tabIndex = 0;
   dropDownButton.classList.add('drop-down');
+  dropDownButton.title = loadTimeData.getString('actionMenuDescription');
   dropDownButton.addEventListener('mousedown', function(event) {
       handleDropDownFocus(event);
       // Mousedown handling of cr.ui.MenuButton.handleEvent calls
@@ -198,7 +202,7 @@ Device.prototype.getDOMNode = function(maxNumTabs, row) {
 
   var timeSpan = createElementWithClassName('div', 'device-timestamp');
   timeSpan.textContent = this.session_.modifiedTime;
-  heading.appendChild(timeSpan);
+  deviceDiv.appendChild(timeSpan);
 
   cr.ui.contextMenuHandler.setContextMenu(
       heading, DeviceContextMenuController.getInstance().menu);
@@ -239,7 +243,7 @@ Device.prototype.setSearchText = function(searchText) {
  * @private
  */
 Device.prototype.createSessionContents_ = function(maxNumTabs) {
-  var contents = createElementWithClassName('div', 'device-contents');
+  var contents = createElementWithClassName('ol', 'device-contents');
 
   var sessionTag = this.session_.tag;
   var numTabsShown = 0;
@@ -290,14 +294,12 @@ Device.prototype.createSessionContents_ = function(maxNumTabs) {
   }
 
   if (numTabsHidden > 0) {
-    var moreLinkButton = createElementWithClassName('button',
-        'device-show-more-tabs link-button');
-    moreLinkButton.addEventListener('click', this.view_.increaseRowHeight.bind(
+    var moreLink = document.createElement('a', 'action-link');
+    moreLink.classList.add('device-show-more-tabs');
+    moreLink.addEventListener('click', this.view_.increaseRowHeight.bind(
         this.view_, this.row_, numTabsHidden));
-    var xMore = loadTimeData.getString('xMore');
-    moreLinkButton.appendChild(
-        document.createTextNode(xMore.replace('$1', numTabsHidden)));
-    contents.appendChild(moreLinkButton);
+    moreLink.textContent = loadTimeData.getStringF('xMore', numTabsHidden);
+    contents.appendChild(moreLink);
   }
 
   return contents;
@@ -349,6 +351,7 @@ function DevicesView() {
   this.resultDiv_ = $('other-devices');
   this.searchText_ = '';
   this.rowHeights_ = [NB_ENTRIES_FIRST_ROW_COLUMN];
+  this.focusGrids_ = [];
   this.updateSignInState(loadTimeData.getBoolean('isUserSignedIn'));
   recordUmaEvent_(HISTOGRAM_EVENT.INITIALIZED);
 }
@@ -444,7 +447,7 @@ DevicesView.prototype.displayResults_ = function() {
     if (i % MAX_NUM_COLUMNS == 0) {
       if (currentRowElement)
         resultsFragment.appendChild(currentRowElement);
-      currentRowElement = createElementWithClassName('div', 'devices-row');
+      currentRowElement = createElementWithClassName('div', 'device-row');
       rowIndex++;
       if (rowIndex < this.rowHeights_.length)
         maxNumTabs = this.rowHeights_[rowIndex];
@@ -471,6 +474,22 @@ DevicesView.prototype.displayResults_ = function() {
 
   this.resultDiv_.appendChild(
       createElementWithClassName('div', 'other-devices-bottom'));
+
+  this.focusGrids_.forEach(function(grid) { grid.destroy(); });
+  this.focusGrids_.length = 0;
+
+  var singleColumn = function(e) { return [e]; };
+
+  var devices = this.resultDiv_.querySelectorAll('.device-contents');
+  for (var i = 0; i < devices.length; ++i) {
+    var rows = devices[i].querySelectorAll('.device-tab-entry, button');
+    if (!rows.length)
+      continue;
+
+    var grid = new cr.ui.FocusGrid(devices[i]);
+    grid.setGrid(Array.prototype.map.call(rows, singleColumn));
+    this.focusGrids_.push(grid);
+  }
 };
 
 /**

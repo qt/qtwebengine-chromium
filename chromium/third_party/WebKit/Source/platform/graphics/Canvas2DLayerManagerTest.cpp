@@ -36,19 +36,19 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 using testing::InSequence;
 using testing::Return;
 using testing::Test;
 
 namespace {
 
-class MockWebGraphicsContext3DProvider : public blink::WebGraphicsContext3DProvider {
+class MockWebGraphicsContext3DProvider : public WebGraphicsContext3DProvider {
 public:
-    MockWebGraphicsContext3DProvider(blink::WebGraphicsContext3D* context3d)
+    MockWebGraphicsContext3DProvider(WebGraphicsContext3D* context3d)
         : m_context3d(context3d) { }
 
-    blink::WebGraphicsContext3D* context3d()
+    WebGraphicsContext3D* context3d()
     {
         return m_context3d;
     }
@@ -59,20 +59,20 @@ public:
     }
 
 private:
-    blink::WebGraphicsContext3D* m_context3d;
+    WebGraphicsContext3D* m_context3d;
 };
 
 class FakeCanvas2DLayerBridge : public Canvas2DLayerBridge {
 public:
-    FakeCanvas2DLayerBridge(blink::WebGraphicsContext3D* context, PassOwnPtr<SkDeferredCanvas> canvas)
-        : Canvas2DLayerBridge(adoptPtr(new MockWebGraphicsContext3DProvider(context)), canvas, 0, NonOpaque)
+    FakeCanvas2DLayerBridge(WebGraphicsContext3D* context, PassOwnPtr<SkDeferredCanvas> canvas, PassRefPtr<SkSurface> surface)
+        : Canvas2DLayerBridge(adoptPtr(new MockWebGraphicsContext3DProvider(context)), canvas, surface, 0, NonOpaque)
         , m_freeableBytes(0)
         , m_freeMemoryIfPossibleCount(0)
         , m_flushCount(0)
     {
     }
 
-    virtual size_t storageAllocatedForRecording() OVERRIDE
+    virtual size_t storageAllocatedForRecording() override
     {
         // Because the fake layer has no canvas to query, just
         // return status quo. Allocation changes that would normally be
@@ -86,7 +86,7 @@ public:
         m_freeableBytes = size;
     }
 
-    virtual size_t freeMemoryIfPossible(size_t size) OVERRIDE
+    virtual size_t freeMemoryIfPossible(size_t size) override
     {
         m_freeMemoryIfPossibleCount++;
         size_t bytesFreed = size < m_freeableBytes ? size : m_freeableBytes;
@@ -96,7 +96,7 @@ public:
         return bytesFreed;
     }
 
-    virtual void flush() OVERRIDE
+    virtual void flush() override
     {
         flushedDrawCommands();
         m_freeableBytes = bytesAllocated();
@@ -126,12 +126,6 @@ private:
     RefPtr<FakeCanvas2DLayerBridge> m_layerBridge;
 };
 
-static PassOwnPtr<SkDeferredCanvas> createCanvas()
-{
-    RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
-    return adoptPtr(SkDeferredCanvas::Create(surface.get()));
-}
-
 } // unnamed namespace
 
 class Canvas2DLayerManagerTest : public Test {
@@ -141,9 +135,10 @@ protected:
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 10);
         {
-            OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
-            OwnPtr<SkDeferredCanvas> canvas1 = createCanvas();
-            FakeCanvas2DLayerBridgePtr layer1(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas1.release())));
+            OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
+            RefPtr<SkSurface> surface1 = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+            OwnPtr<SkDeferredCanvas> canvas1 = adoptPtr(SkDeferredCanvas::Create(surface1.get()));
+            FakeCanvas2DLayerBridgePtr layer1(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas1.release(), surface1.release())));
             EXPECT_EQ((size_t)0, manager.m_bytesAllocated);
             layer1->storageAllocatedForRecordingChanged(1);
             EXPECT_EQ((size_t)1, manager.m_bytesAllocated);
@@ -154,8 +149,9 @@ protected:
             layer1->storageAllocatedForRecordingChanged(1);
             EXPECT_EQ((size_t)1, manager.m_bytesAllocated);
             {
-                OwnPtr<SkDeferredCanvas> canvas2 = createCanvas();
-                FakeCanvas2DLayerBridgePtr layer2(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas2.release())));
+                RefPtr<SkSurface> surface2 = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+                OwnPtr<SkDeferredCanvas> canvas2 = adoptPtr(SkDeferredCanvas::Create(surface2.get()));
+                FakeCanvas2DLayerBridgePtr layer2(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas2.release(), surface2.release())));
                 EXPECT_EQ((size_t)1, manager.m_bytesAllocated);
                 // verify multi-layer allocation tracking
                 layer2->storageAllocatedForRecordingChanged(2);
@@ -168,11 +164,12 @@ protected:
 
     void evictionTest()
     {
-        OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
+        OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        OwnPtr<SkDeferredCanvas> canvas = createCanvas();
-        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release())));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
+        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(10);
         layer->storageAllocatedForRecordingChanged(8); // under the max
         EXPECT_EQ(0, layer->m_freeMemoryIfPossibleCount);
@@ -185,11 +182,12 @@ protected:
 
     void hiddenCanvasTest()
     {
-        OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
+        OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(20, 5);
-        OwnPtr<SkDeferredCanvas> canvas = createCanvas();
-        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release())));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
+        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(5);
         layer->storageAllocatedForRecordingChanged(10);
         EXPECT_EQ(0, layer->m_freeMemoryIfPossibleCount);
@@ -204,11 +202,12 @@ protected:
 
     void addRemoveLayerTest()
     {
-        OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
+        OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        OwnPtr<SkDeferredCanvas> canvas = createCanvas();
-        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release())));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
+        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         EXPECT_FALSE(manager.isInList(layer.get()));
         layer->storageAllocatedForRecordingChanged(5);
         EXPECT_TRUE(manager.isInList(layer.get()));
@@ -218,11 +217,12 @@ protected:
 
     void flushEvictionTest()
     {
-        OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
+        OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager& manager = Canvas2DLayerManager::get();
         manager.init(10, 5);
-        OwnPtr<SkDeferredCanvas> canvas = createCanvas();
-        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release())));
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
+        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
         layer->fakeFreeableBytes(1); // Not enough freeable bytes, will cause aggressive eviction by flushing
         layer->storageAllocatedForRecordingChanged(8); // under the max
         EXPECT_EQ(0, layer->m_freeMemoryIfPossibleCount);
@@ -236,18 +236,19 @@ protected:
 
     void doDeferredFrameTestTask(FakeCanvas2DLayerBridge* layer, bool skipCommands)
     {
+        FloatRect invalidationRect(0, 0, 1, 1);
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
-        layer->willUse();
+        layer->finalizeFrame(invalidationRect);
         layer->storageAllocatedForRecordingChanged(1);
         EXPECT_TRUE(Canvas2DLayerManager::get().m_taskObserverActive);
         if (skipCommands) {
-            layer->willUse();
+            layer->finalizeFrame(invalidationRect);
             layer->skippedPendingDrawCommands();
         }
-        blink::Platform::current()->currentThread()->exitRunLoop();
+        Platform::current()->currentThread()->exitRunLoop();
     }
 
-    class DeferredFrameTestTask : public blink::WebThread::Task {
+    class DeferredFrameTestTask : public WebThread::Task {
     public:
         DeferredFrameTestTask(Canvas2DLayerManagerTest* test, FakeCanvas2DLayerBridge* layer, bool skipCommands)
         {
@@ -256,7 +257,7 @@ protected:
             m_skipCommands = skipCommands;
         }
 
-        virtual void run() OVERRIDE
+        virtual void run() override
         {
             m_test->doDeferredFrameTestTask(m_layer, m_skipCommands);
         }
@@ -268,36 +269,37 @@ protected:
 
     void deferredFrameTest()
     {
-        OwnPtr<blink::MockWebGraphicsContext3D> webContext = adoptPtr(new blink::MockWebGraphicsContext3D);
+        OwnPtr<MockWebGraphicsContext3D> webContext = adoptPtr(new MockWebGraphicsContext3D);
         Canvas2DLayerManager::get().init(10, 10);
-        OwnPtr<SkDeferredCanvas> canvas = createCanvas();
-        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release())));
-        blink::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        blink::Platform::current()->currentThread()->enterRunLoop();
+        RefPtr<SkSurface> surface = adoptRef(SkSurface::NewRasterPMColor(1, 1));
+        OwnPtr<SkDeferredCanvas> canvas = adoptPtr(SkDeferredCanvas::Create(surface.get()));
+        FakeCanvas2DLayerBridgePtr layer(adoptRef(new FakeCanvas2DLayerBridge(webContext.get(), canvas.release(), surface.release())));
+        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->currentThread()->enterRunLoop();
         // Verify that didProcessTask was called upon completion
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         // Verify that no flush was performed because frame is fresh
         EXPECT_EQ(0, layer->m_flushCount);
 
         // Verify that no flushes are triggered as long as frame are fresh
-        blink::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        blink::Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->currentThread()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(0, layer->m_flushCount);
 
-        blink::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
-        blink::Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), true));
+        Platform::current()->currentThread()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(0, layer->m_flushCount);
 
         // Verify that a flush is triggered when queue is accumulating a multi-frame backlog.
-        blink::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
-        blink::Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
+        Platform::current()->currentThread()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(1, layer->m_flushCount);
 
-        blink::Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
-        blink::Platform::current()->currentThread()->enterRunLoop();
+        Platform::current()->currentThread()->postTask(new DeferredFrameTestTask(this, layer.get(), false));
+        Platform::current()->currentThread()->enterRunLoop();
         EXPECT_FALSE(Canvas2DLayerManager::get().m_taskObserverActive);
         EXPECT_EQ(2, layer->m_flushCount);
     }

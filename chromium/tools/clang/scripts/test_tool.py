@@ -17,7 +17,7 @@ import sys
 
 def _GenerateCompileCommands(files, include_paths):
   """Returns a JSON string containing a compilation database for the input."""
-  include_path_flags = ''.join('-I %s' % include_path
+  include_path_flags = ' '.join('-I %s' % include_path
                                for include_path in include_paths)
   return json.dumps([{'directory': '.',
                       'command': 'clang++ -fsyntax-only %s -c %s' % (
@@ -45,13 +45,19 @@ def main(argv):
                                   'compile_commands.json')
   source_files = glob.glob(os.path.join(test_directory_for_tool,
                                         '*-original.cc'))
-  actual_files = ['-'.join([source_file.rsplit('-', 2)[0], 'actual.cc'])
+  actual_files = ['-'.join([source_file.rsplit('-', 1)[0], 'actual.cc'])
                   for source_file in source_files]
-  expected_files = ['-'.join([source_file.rsplit('-', 2)[0], 'expected.cc'])
+  expected_files = ['-'.join([source_file.rsplit('-', 1)[0], 'expected.cc'])
                     for source_file in source_files]
   include_paths = []
   include_paths.append(
       os.path.realpath(os.path.join(tools_clang_directory, '../..')))
+  # Many gtest headers expect to have testing/gtest/include in the include
+  # search path.
+  include_paths.append(
+      os.path.realpath(os.path.join(tools_clang_directory,
+                                    '../..',
+                                    'testing/gtest/include')))
 
   try:
     # Set up the test environment.
@@ -87,12 +93,12 @@ def main(argv):
       with open(actual, 'r') as f:
         actual_output = f.readlines()
       if actual_output != expected_output:
-        print '[  FAILED  ] %s' % os.path.relpath(actual)
         failed += 1
         for line in difflib.unified_diff(expected_output, actual_output,
                                          fromfile=os.path.relpath(expected),
                                          tofile=os.path.relpath(actual)):
           sys.stdout.write(line)
+        print '[  FAILED  ] %s' % os.path.relpath(actual)
         # Don't clean up the file on failure, so the results can be referenced
         # more easily.
         continue

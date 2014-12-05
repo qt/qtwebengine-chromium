@@ -11,6 +11,7 @@
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
 #include "content/public/common/content_switches.h"
+#include "content/public/common/web_preferences.h"
 #include "content/renderer/pepper/host_globals.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/renderer/pepper/plugin_module.h"
@@ -25,7 +26,6 @@
 #include "third_party/WebKit/public/web/WebElement.h"
 #include "third_party/WebKit/public/web/WebLocalFrame.h"
 #include "third_party/WebKit/public/web/WebPluginContainer.h"
-#include "webkit/common/webpreferences.h"
 
 using ppapi::thunk::EnterResourceNoLock;
 using ppapi::thunk::PPB_Graphics3D_API;
@@ -81,9 +81,12 @@ PP_Resource PPB_Graphics3D_Impl::Create(PP_Instance instance,
 }
 
 // static
-PP_Resource PPB_Graphics3D_Impl::CreateRaw(PP_Instance instance,
-                                           PP_Resource share_context,
-                                           const int32_t* attrib_list) {
+PP_Resource PPB_Graphics3D_Impl::CreateRaw(
+    PP_Instance instance,
+    PP_Resource share_context,
+    const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
+    base::SharedMemoryHandle* shared_state_handle) {
   PPB_Graphics3D_API* share_api = NULL;
   if (share_context) {
     EnterResourceNoLock<PPB_Graphics3D_API> enter(share_context, true);
@@ -93,7 +96,8 @@ PP_Resource PPB_Graphics3D_Impl::CreateRaw(PP_Instance instance,
   }
   scoped_refptr<PPB_Graphics3D_Impl> graphics_3d(
       new PPB_Graphics3D_Impl(instance));
-  if (!graphics_3d->InitRaw(share_api, attrib_list))
+  if (!graphics_3d->InitRaw(share_api, attrib_list, capabilities,
+                            shared_state_handle))
     return 0;
   return graphics_3d->GetReference();
 }
@@ -135,6 +139,14 @@ gpu::CommandBuffer::State PPB_Graphics3D_Impl::WaitForGetOffsetInRange(
 
 uint32_t PPB_Graphics3D_Impl::InsertSyncPoint() {
   return command_buffer_->InsertSyncPoint();
+}
+
+uint32_t PPB_Graphics3D_Impl::InsertFutureSyncPoint() {
+  return command_buffer_->InsertFutureSyncPoint();
+}
+
+void PPB_Graphics3D_Impl::RetireSyncPoint(uint32_t sync_point) {
+  return command_buffer_->RetireSyncPoint(sync_point);
 }
 
 bool PPB_Graphics3D_Impl::BindToInstance(bool bind) {
@@ -190,8 +202,10 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
     commit_pending_ = true;
   } else {
     // Wait for the command to complete on the GPU to allow for throttling.
-    command_buffer_->Echo(base::Bind(&PPB_Graphics3D_Impl::OnSwapBuffers,
-                                     weak_ptr_factory_.GetWeakPtr()));
+    command_buffer_->SignalSyncPoint(
+        sync_point_,
+        base::Bind(&PPB_Graphics3D_Impl::OnSwapBuffers,
+                   weak_ptr_factory_.GetWeakPtr()));
   }
 
   return PP_OK_COMPLETIONPENDING;
@@ -199,7 +213,7 @@ int32 PPB_Graphics3D_Impl::DoSwapBuffers() {
 
 bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
                                const int32_t* attrib_list) {
-  if (!InitRaw(share_context, attrib_list))
+  if (!InitRaw(share_context, attrib_list, NULL, NULL))
     return false;
 
   gpu::gles2::GLES2Implementation* share_gles2 = NULL;
@@ -211,8 +225,11 @@ bool PPB_Graphics3D_Impl::Init(PPB_Graphics3D_API* share_context,
   return CreateGLES2Impl(kCommandBufferSize, kTransferBufferSize, share_gles2);
 }
 
-bool PPB_Graphics3D_Impl::InitRaw(PPB_Graphics3D_API* share_context,
-                                  const int32_t* attrib_list) {
+bool PPB_Graphics3D_Impl::InitRaw(
+    PPB_Graphics3D_API* share_context,
+    const int32_t* attrib_list,
+    gpu::Capabilities* capabilities,
+    base::SharedMemoryHandle* shared_state_handle) {
   PepperPluginInstanceImpl* plugin_instance =
       HostGlobals::Get()->GetInstance(pp_instance());
   if (!plugin_instance)
@@ -281,6 +298,10 @@ bool PPB_Graphics3D_Impl::InitRaw(PPB_Graphics3D_API* share_context,
     return false;
   if (!command_buffer_->Initialize())
     return false;
+  if (shared_state_handle)
+    *shared_state_handle = command_buffer_->GetSharedStateHandle();
+  if (capabilities)
+    *capabilities = command_buffer_->GetCapabilities();
   mailbox_ = gpu::Mailbox::Generate();
   if (!command_buffer_->ProduceFrontBuffer(mailbox_))
     return false;

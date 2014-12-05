@@ -41,8 +41,6 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -65,7 +63,7 @@ WebMediaStreamSource WebMediaStreamSource::ExtraData::owner()
     return WebMediaStreamSource(m_owner);
 }
 
-void WebMediaStreamSource::ExtraData::setOwner(WebCore::MediaStreamSource* owner)
+void WebMediaStreamSource::ExtraData::setOwner(MediaStreamSource* owner)
 {
     ASSERT(!m_owner);
     m_owner = owner;
@@ -76,7 +74,7 @@ WebMediaStreamSource::WebMediaStreamSource(const PassRefPtr<MediaStreamSource>& 
 {
 }
 
-WebMediaStreamSource& WebMediaStreamSource::operator=(WebCore::MediaStreamSource* mediaStreamSource)
+WebMediaStreamSource& WebMediaStreamSource::operator=(MediaStreamSource* mediaStreamSource)
 {
     m_private = mediaStreamSource;
     return *this;
@@ -104,7 +102,12 @@ WebMediaStreamSource::operator MediaStreamSource*() const
 
 void WebMediaStreamSource::initialize(const WebString& id, Type type, const WebString& name)
 {
-    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name);
+    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name, false, true);
+}
+
+void WebMediaStreamSource::initialize(const WebString& id, Type type, const WebString& name, bool remote, bool readonly)
+{
+    m_private = MediaStreamSource::create(id, static_cast<MediaStreamSource::Type>(type), name, remote, readonly);
 }
 
 WebString WebMediaStreamSource::id() const
@@ -168,15 +171,15 @@ bool WebMediaStreamSource::requiresAudioConsumer() const
     return m_private->requiresAudioConsumer();
 }
 
-class ConsumerWrapper : public WebCore::AudioDestinationConsumer {
+class ConsumerWrapper final : public AudioDestinationConsumer {
 public:
-    static PassRefPtr<ConsumerWrapper> create(WebAudioDestinationConsumer* consumer)
+    static ConsumerWrapper* create(WebAudioDestinationConsumer* consumer)
     {
-        return adoptRef(new ConsumerWrapper(consumer));
+        return new ConsumerWrapper(consumer);
     }
 
-    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
-    virtual void consumeAudio(AudioBus*, size_t numberOfFrames) OVERRIDE;
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
+    virtual void consumeAudio(AudioBus*, size_t numberOfFrames) override;
 
     WebAudioDestinationConsumer* consumer() { return m_consumer; }
 
@@ -199,7 +202,7 @@ void ConsumerWrapper::consumeAudio(AudioBus* bus, size_t numberOfFrames)
 
     // Wrap AudioBus.
     size_t numberOfChannels = bus->numberOfChannels();
-    blink::WebVector<const float*> busVector(numberOfChannels);
+    WebVector<const float*> busVector(numberOfChannels);
     for (size_t i = 0; i < numberOfChannels; ++i)
         busVector[i] = bus->channel(i)->data();
 
@@ -219,8 +222,8 @@ bool WebMediaStreamSource::removeAudioConsumer(WebAudioDestinationConsumer* cons
     ASSERT(isMainThread());
     ASSERT(!m_private.isNull() && consumer);
 
-    const Vector<RefPtr<AudioDestinationConsumer> >& consumers = m_private->audioConsumers();
-    for (Vector<RefPtr<AudioDestinationConsumer> >::const_iterator it = consumers.begin(); it != consumers.end(); ++it) {
+    const HeapHashSet<Member<AudioDestinationConsumer> >& consumers = m_private->audioConsumers();
+    for (HeapHashSet<Member<AudioDestinationConsumer> >::const_iterator it = consumers.begin(); it != consumers.end(); ++it) {
         ConsumerWrapper* wrapper = static_cast<ConsumerWrapper*>(it->get());
         if (wrapper->consumer() == consumer) {
             m_private->removeAudioConsumer(wrapper);

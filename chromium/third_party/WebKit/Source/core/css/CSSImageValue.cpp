@@ -31,7 +31,7 @@
 #include "core/rendering/style/StylePendingImage.h"
 #include "platform/weborigin/KURL.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSImageValue::CSSImageValue(const String& rawValue, const KURL& url, StyleImage* image)
     : CSSValue(ImageClass)
@@ -86,6 +86,7 @@ void CSSImageValue::restoreCachedResourceIfNeeded(Document& document)
         return;
 
     FetchRequest request(ResourceRequest(m_absoluteURL), m_initiatorName.isEmpty() ? FetchInitiatorTypeNames::css : m_initiatorName, resource->options());
+    document.fetcher()->maybeNotifyInsecureContent(resource);
     document.fetcher()->requestLoadStarted(resource, request, ResourceFetcher::ResourceLoadingFromCache);
 }
 
@@ -136,4 +137,4 @@ void CSSImageValue::reResolveURL(const Document& document)
     m_image.clear();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -31,15 +31,16 @@
 #ifndef SVGPointTearOff_h
 #define SVGPointTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGPoint.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGMatrixTearOff;
 
 class SVGPointTearOff : public SVGPropertyTearOff<SVGPoint>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtr<SVGPointTearOff> create(PassRefPtr<SVGPoint> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
@@ -57,6 +58,6 @@ protected:
     SVGPointTearOff(PassRefPtr<SVGPoint>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGPointTearOff_h_
+#endif // SVGPointTearOff_h

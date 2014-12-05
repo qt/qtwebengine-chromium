@@ -31,13 +31,14 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringImpl.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Node;
 class StyleSheetContents;
 
 class StyleSheetInvalidationAnalysis {
+    STACK_ALLOCATED();
 public:
     StyleSheetInvalidationAnalysis(const WillBeHeapVector<RawPtrWillBeMember<StyleSheetContents> >&);
 
@@ -51,7 +52,7 @@ private:
     bool m_dirtiesAllStyle;
     HashSet<StringImpl*> m_idScopes;
     HashSet<StringImpl*> m_classScopes;
-    Vector<Node*, 8> m_scopingNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node>, 8> m_scopingNodes;
 };
 
 }

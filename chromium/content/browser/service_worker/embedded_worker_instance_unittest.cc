@@ -24,13 +24,11 @@ class EmbeddedWorkerInstanceTest : public testing::Test {
   EmbeddedWorkerInstanceTest()
       : thread_bundle_(TestBrowserThreadBundle::IO_MAINLOOP) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     helper_.reset(new EmbeddedWorkerTestHelper(kRenderProcessId));
   }
 
-  virtual void TearDown() OVERRIDE {
-    helper_.reset();
-  }
+  void TearDown() override { helper_.reset(); }
 
   ServiceWorkerContextCore* context() { return helper_->context(); }
 
@@ -44,6 +42,7 @@ class EmbeddedWorkerInstanceTest : public testing::Test {
   TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<EmbeddedWorkerTestHelper> helper_;
 
+ private:
   DISALLOW_COPY_AND_ASSIGN(EmbeddedWorkerInstanceTest);
 };
 
@@ -59,29 +58,28 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
       embedded_worker_registry()->CreateWorker();
   EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
 
-  const int embedded_worker_id = worker->embedded_worker_id();
   const int64 service_worker_version_id = 55L;
-  const GURL scope("http://example.com/*");
+  const GURL pattern("http://example.com/");
   const GURL url("http://example.com/worker.js");
 
-  // Simulate adding one process to the worker.
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, kRenderProcessId);
+  // Simulate adding one process to the pattern.
+  helper_->SimulateAddProcessToPattern(pattern, kRenderProcessId);
 
   // Start should succeed.
   ServiceWorkerStatusCode status;
   base::RunLoop run_loop;
   worker->Start(
       service_worker_version_id,
-      scope,
+      pattern,
       url,
-      std::vector<int>(),
+      false,
       base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
+  EXPECT_EQ(EmbeddedWorkerInstance::STARTING, worker->status());
   run_loop.Run();
   EXPECT_EQ(SERVICE_WORKER_OK, status);
-  EXPECT_EQ(EmbeddedWorkerInstance::STARTING, worker->status());
-  base::RunLoop().RunUntilIdle();
 
-  // Worker started message should be notified (by EmbeddedWorkerTestHelper).
+  // The 'WorkerStarted' message should have been sent by
+  // EmbeddedWorkerTestHelper.
   EXPECT_EQ(EmbeddedWorkerInstance::RUNNING, worker->status());
   EXPECT_EQ(kRenderProcessId, worker->process_id());
 
@@ -90,7 +88,8 @@ TEST_F(EmbeddedWorkerInstanceTest, StartAndStop) {
   EXPECT_EQ(EmbeddedWorkerInstance::STOPPING, worker->status());
   base::RunLoop().RunUntilIdle();
 
-  // Worker stopped message should be notified (by EmbeddedWorkerTestHelper).
+  // The 'WorkerStopped' message should have been sent by
+  // EmbeddedWorkerTestHelper.
   EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
 
   // Verify that we've sent two messages to start and terminate the worker.
@@ -106,19 +105,19 @@ TEST_F(EmbeddedWorkerInstanceTest, InstanceDestroyedBeforeStartFinishes) {
   EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
 
   const int64 service_worker_version_id = 55L;
-  const GURL scope("http://example.com/*");
+  const GURL pattern("http://example.com/");
   const GURL url("http://example.com/worker.js");
 
   ServiceWorkerStatusCode status;
   base::RunLoop run_loop;
   // Begin starting the worker.
-  std::vector<int> available_process;
-  available_process.push_back(kRenderProcessId);
+  context()->process_manager()->AddProcessReferenceToPattern(
+      pattern, kRenderProcessId);
   worker->Start(
       service_worker_version_id,
-      scope,
+      pattern,
       url,
-      available_process,
+      false,
       base::Bind(&SaveStatusAndCall, &status, run_loop.QuitClosure()));
   // But destroy it before it gets a chance to complete.
   worker.reset();
@@ -128,40 +127,6 @@ TEST_F(EmbeddedWorkerInstanceTest, InstanceDestroyedBeforeStartFinishes) {
   // Verify that we didn't send the message to start the worker.
   ASSERT_FALSE(
       ipc_sink()->GetUniqueMessageMatching(EmbeddedWorkerMsg_StartWorker::ID));
-}
-
-TEST_F(EmbeddedWorkerInstanceTest, SortProcesses) {
-  scoped_ptr<EmbeddedWorkerInstance> worker =
-      embedded_worker_registry()->CreateWorker();
-  EXPECT_EQ(EmbeddedWorkerInstance::STOPPED, worker->status());
-
-  // Simulate adding processes to the worker.
-  // Process 1 has 1 ref, 2 has 2 refs and 3 has 3 refs.
-  const int embedded_worker_id = worker->embedded_worker_id();
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 1);
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 2);
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 2);
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 3);
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 3);
-  helper_->SimulateAddProcessToWorker(embedded_worker_id, 3);
-
-  // Process 3 has the biggest # of references and it should be chosen.
-  EXPECT_THAT(worker->SortProcesses(std::vector<int>()),
-              testing::ElementsAre(3, 2, 1));
-  EXPECT_EQ(-1, worker->process_id());
-
-  // Argument processes are added to the existing set, but only for a single
-  // call.
-  std::vector<int> registering_processes;
-  registering_processes.push_back(1);
-  registering_processes.push_back(1);
-  registering_processes.push_back(1);
-  registering_processes.push_back(4);
-  EXPECT_THAT(worker->SortProcesses(registering_processes),
-              testing::ElementsAre(1, 3, 2, 4));
-
-  EXPECT_THAT(worker->SortProcesses(std::vector<int>()),
-              testing::ElementsAre(3, 2, 1));
 }
 
 }  // namespace content

@@ -13,8 +13,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -38,9 +38,9 @@
 #include "sql/meta_table.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/sqlite/sqlite3.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/special_storage_policy.h"
 
 using base::Time;
 
@@ -76,7 +76,7 @@ class SQLitePersistentCookieStore::Backend
       const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
       const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
       bool restore_old_session_cookies,
-      quota::SpecialStoragePolicy* special_storage_policy,
+      storage::SpecialStoragePolicy* special_storage_policy,
       CookieCryptoDelegate* crypto_delegate)
       : path_(path),
         num_pending_(0),
@@ -249,7 +249,7 @@ class SQLitePersistentCookieStore::Backend
   bool restore_old_session_cookies_;
 
   // Policy defining what data is deleted on shutdown.
-  scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy_;
+  scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy_;
 
   // The cumulative time spent loading the cookies on the background runner.
   // Incremented and reported from the background runner.
@@ -1205,7 +1205,7 @@ SQLitePersistentCookieStore::SQLitePersistentCookieStore(
     const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
     const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
     bool restore_old_session_cookies,
-    quota::SpecialStoragePolicy* special_storage_policy,
+    storage::SpecialStoragePolicy* special_storage_policy,
     CookieCryptoDelegate* crypto_delegate)
     : backend_(new Backend(path,
                            client_task_runner,
@@ -1259,15 +1259,15 @@ CookieStoreConfig::CookieStoreConfig()
 }
 
 CookieStoreConfig::CookieStoreConfig(
-     const base::FilePath& path,
+    const base::FilePath& path,
     SessionCookieMode session_cookie_mode,
-     quota::SpecialStoragePolicy* storage_policy,
+    storage::SpecialStoragePolicy* storage_policy,
     net::CookieMonsterDelegate* cookie_delegate)
-  : path(path),
-    session_cookie_mode(session_cookie_mode),
-    storage_policy(storage_policy),
-    cookie_delegate(cookie_delegate),
-    crypto_delegate(NULL) {
+    : path(path),
+      session_cookie_mode(session_cookie_mode),
+      storage_policy(storage_policy),
+      cookie_delegate(cookie_delegate),
+      crypto_delegate(NULL) {
   CHECK(!path.empty() || session_cookie_mode == EPHEMERAL_SESSION_COOKIES);
 }
 
@@ -1279,19 +1279,19 @@ net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
 
   if (config.path.empty()) {
     // Empty path means in-memory store.
-    cookie_monster = new net::CookieMonster(NULL, config.cookie_delegate);
+    cookie_monster = new net::CookieMonster(NULL, config.cookie_delegate.get());
   } else {
     scoped_refptr<base::SequencedTaskRunner> client_task_runner =
         config.client_task_runner;
     scoped_refptr<base::SequencedTaskRunner> background_task_runner =
         config.background_task_runner;
 
-    if (!client_task_runner) {
+    if (!client_task_runner.get()) {
       client_task_runner =
           BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO);
     }
 
-    if (!background_task_runner) {
+    if (!background_task_runner.get()) {
       background_task_runner =
           BrowserThread::GetBlockingPool()->GetSequencedTaskRunner(
               BrowserThread::GetBlockingPool()->GetSequenceToken());
@@ -1304,11 +1304,11 @@ net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
             background_task_runner,
             (config.session_cookie_mode ==
              CookieStoreConfig::RESTORED_SESSION_COOKIES),
-            config.storage_policy,
+            config.storage_policy.get(),
             config.crypto_delegate);
 
     cookie_monster =
-        new net::CookieMonster(persistent_store, config.cookie_delegate);
+        new net::CookieMonster(persistent_store, config.cookie_delegate.get());
     if ((config.session_cookie_mode ==
          CookieStoreConfig::PERSISTANT_SESSION_COOKIES) ||
         (config.session_cookie_mode ==
@@ -1317,16 +1317,7 @@ net::CookieStore* CreateCookieStore(const CookieStoreConfig& config) {
     }
   }
 
-  // In the case of Android WebView, the cookie store may be created
-  // before the browser process fully initializes -- certainly before
-  // the main loop ever runs. In this situation, the CommandLine singleton
-  // will not have been set up. Android tests do not need file cookies
-  // so always ignore them here.
-  //
-  // TODO(ajwong): Remove the InitializedForCurrentProcess() check
-  // once http://crbug.com/331424 is resolved.
-  if (CommandLine::InitializedForCurrentProcess() &&
-      CommandLine::ForCurrentProcess()->HasSwitch(
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kEnableFileCookies)) {
     cookie_monster->SetEnableFileScheme(true);
   }

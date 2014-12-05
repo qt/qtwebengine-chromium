@@ -31,7 +31,9 @@
 #include "config.h"
 #include "core/workers/WorkerGlobalScopeProxyProvider.h"
 
-namespace WebCore {
+#include "core/page/Page.h"
+
+namespace blink {
 
 WorkerGlobalScopeProxyProvider* WorkerGlobalScopeProxyProvider::from(Page& page)
 {
@@ -48,4 +50,4 @@ void provideWorkerGlobalScopeProxyProviderTo(Page& page, PassOwnPtrWillBeRawPtr<
     WillBeHeapSupplement<Page>::provideTo(page, WorkerGlobalScopeProxyProvider::supplementName(), provider);
 }
 
-} // namespace WebCore
+} // namespace blink

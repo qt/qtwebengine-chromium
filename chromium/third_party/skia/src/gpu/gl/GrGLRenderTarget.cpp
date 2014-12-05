@@ -9,77 +9,51 @@
 
 #include "GrGpuGL.h"
 
-#define GPUGL static_cast<GrGpuGL*>(getGpu())
-
+#define GPUGL static_cast<GrGpuGL*>(this->getGpu())
 #define GL_CALL(X) GR_GL_CALL(GPUGL->glInterface(), X)
 
-void GrGLRenderTarget::init(const Desc& desc,
-                            const GrGLIRect& viewport,
-                            GrGLTexID* texID) {
-    fRTFBOID                = desc.fRTFBOID;
-    fTexFBOID               = desc.fTexFBOID;
-    fMSColorRenderbufferID  = desc.fMSColorRenderbufferID;
-    fViewport               = viewport;
-    fTexIDObj.reset(SkSafeRef(texID));
+// Because this class is virtually derived from GrSurface we must explicitly call its constructor.
+GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc)
+    : GrSurface(gpu, idDesc.fIsWrapped, desc)
+    , INHERITED(gpu, idDesc.fIsWrapped, desc) {
+    this->init(desc, idDesc);
+    this->registerWithCache();
 }
 
-namespace {
-GrTextureDesc MakeDesc(GrTextureFlags flags,
-                       int width, int height,
-                       GrPixelConfig config, int sampleCnt,
-                       GrSurfaceOrigin origin) {
-    GrTextureDesc temp;
-    temp.fFlags = flags;
-    temp.fWidth = width;
-    temp.fHeight = height;
-    temp.fConfig = config;
-    temp.fSampleCnt = sampleCnt;
-    temp.fOrigin = origin;
-    return temp;
+GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu, const GrSurfaceDesc& desc, const IDDesc& idDesc,
+                                   Derived)
+    : GrSurface(gpu, idDesc.fIsWrapped, desc)
+    , INHERITED(gpu, idDesc.fIsWrapped, desc) {
+    this->init(desc, idDesc);
 }
 
-};
+void GrGLRenderTarget::init(const GrSurfaceDesc& desc, const IDDesc& idDesc) {
+    fRTFBOID                = idDesc.fRTFBOID;
+    fTexFBOID               = idDesc.fTexFBOID;
+    fMSColorRenderbufferID  = idDesc.fMSColorRenderbufferID;
 
-GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu,
-                                   const Desc& desc,
-                                   const GrGLIRect& viewport,
-                                   GrGLTexID* texID,
-                                   GrGLTexture* texture)
-    : INHERITED(gpu,
-                desc.fIsWrapped,
-                texture,
-                MakeDesc(kNone_GrTextureFlags,
-                         viewport.fWidth, viewport.fHeight,
-                         desc.fConfig, desc.fSampleCnt,
-                         desc.fOrigin)) {
-    SkASSERT(NULL != texID);
-    SkASSERT(NULL != texture);
-    // FBO 0 can't also be a texture, right?
-    SkASSERT(0 != desc.fRTFBOID);
-    SkASSERT(0 != desc.fTexFBOID);
+    fViewport.fLeft   = 0;
+    fViewport.fBottom = 0;
+    fViewport.fWidth  = desc.fWidth;
+    fViewport.fHeight = desc.fHeight;
 
-    // we assume this is true, TODO: get rid of viewport as a param.
-    SkASSERT(viewport.fWidth == texture->width());
-    SkASSERT(viewport.fHeight == texture->height());
-
-    this->init(desc, viewport, texID);
+    // We own one color value for each MSAA sample.
+    fColorValuesPerPixel = SkTMax(1, fDesc.fSampleCnt);
+    if (fTexFBOID != fRTFBOID) {
+        // If we own the resolve buffer then that is one more sample per pixel.
+        fColorValuesPerPixel += 1;
+    } 
 }
 
-GrGLRenderTarget::GrGLRenderTarget(GrGpuGL* gpu,
-                                   const Desc& desc,
-                                   const GrGLIRect& viewport)
-    : INHERITED(gpu,
-                desc.fIsWrapped,
-                NULL,
-                MakeDesc(kNone_GrTextureFlags,
-                         viewport.fWidth, viewport.fHeight,
-                         desc.fConfig, desc.fSampleCnt,
-                         desc.fOrigin)) {
-    this->init(desc, viewport, NULL);
+size_t GrGLRenderTarget::gpuMemorySize() const {
+    SkASSERT(kUnknown_GrPixelConfig != fDesc.fConfig);
+    SkASSERT(!GrPixelConfigIsCompressed(fDesc.fConfig));
+    size_t colorBytes = GrBytesPerPixel(fDesc.fConfig);
+    SkASSERT(colorBytes > 0);
+    return fColorValuesPerPixel * fDesc.fWidth * fDesc.fHeight * colorBytes;
 }
 
 void GrGLRenderTarget::onRelease() {
-    GPUGL->notifyRenderTargetDelete(this);
     if (!this->isWrapped()) {
         if (fTexFBOID) {
             GL_CALL(DeleteFramebuffers(1, &fTexFBOID));
@@ -94,7 +68,6 @@ void GrGLRenderTarget::onRelease() {
     fRTFBOID                = 0;
     fTexFBOID               = 0;
     fMSColorRenderbufferID  = 0;
-    fTexIDObj.reset(NULL);
     INHERITED::onRelease();
 }
 
@@ -102,9 +75,5 @@ void GrGLRenderTarget::onAbandon() {
     fRTFBOID                = 0;
     fTexFBOID               = 0;
     fMSColorRenderbufferID  = 0;
-    if (NULL != fTexIDObj.get()) {
-        fTexIDObj->abandon();
-        fTexIDObj.reset(NULL);
-    }
     INHERITED::onAbandon();
 }

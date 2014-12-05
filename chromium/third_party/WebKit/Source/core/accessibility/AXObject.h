@@ -37,22 +37,16 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXObject;
-class AXObjectCache;
+class AXObjectCacheImpl;
 class Element;
-class LocalFrame;
 class FrameView;
-class HTMLAnchorElement;
-class HTMLAreaElement;
 class IntPoint;
-class IntSize;
 class Node;
 class RenderObject;
-class RenderListItem;
 class ScrollableArea;
-class VisibleSelection;
 class Widget;
 
 typedef unsigned AXID;
@@ -64,6 +58,7 @@ enum AccessibilityRole {
     ApplicationRole,
     ArticleRole,
     BannerRole,
+    BlockquoteRole,
     BrowserRole,
     BusyIndicatorRole,
     ButtonRole,
@@ -76,9 +71,13 @@ enum AccessibilityRole {
     ComboBoxRole,
     ComplementaryRole,
     ContentInfoRole,
+    DateRole,
+    DateTimeRole,
     DefinitionRole,
     DescriptionListDetailRole,
+    DescriptionListRole,
     DescriptionListTermRole,
+    DetailsRole,
     DialogRole,
     DirectoryRole,
     DisclosureTriangleRole,
@@ -87,6 +86,8 @@ enum AccessibilityRole {
     DrawerRole,
     EditableTextRole,
     EmbeddedObjectRole,
+    FigcaptionRole,
+    FigureRole,
     FooterRole,
     FormRole,
     GridRole,
@@ -119,14 +120,19 @@ enum AccessibilityRole {
     MenuBarRole,
     MenuButtonRole,
     MenuItemRole,
+    MenuItemCheckBoxRole,
+    MenuItemRadioRole,
     MenuListOptionRole,
     MenuListPopupRole,
     MenuRole,
+    MeterRole,
     NavigationRole,
+    NoneRole,
     NoteRole,
     OutlineRole,
     ParagraphRole,
     PopUpButtonRole,
+    PreRole,
     PresentationalRole,
     ProgressIndicatorRole,
     RadioButtonRole,
@@ -160,6 +166,7 @@ enum AccessibilityRole {
     TableRole,
     TextAreaRole,
     TextFieldRole,
+    TimeRole,
     TimerRole,
     ToggleButtonRole,
     ToolbarRole,
@@ -187,7 +194,6 @@ enum AccessibilityTextSource {
 enum AccessibilityState {
     AXBusyState,
     AXCheckedState,
-    AXCollapsedState,
     AXEnabledState,
     AXExpandedState,
     AXFocusableState,
@@ -250,6 +256,12 @@ enum AccessibilityTextDirection {
     AccessibilityTextDirectionBottomToTop
 };
 
+enum AccessibilityExpanded {
+    ExpandedUndefined = 0,
+    ExpandedCollapsed,
+    ExpandedExpanded,
+};
+
 class AXObject : public RefCounted<AXObject> {
 public:
     typedef Vector<RefPtr<AXObject> > AccessibilityChildrenVector;
@@ -279,7 +291,7 @@ public:
     virtual ~AXObject();
 
     // After constructing an AXObject, it must be given a
-    // unique ID, then added to AXObjectCache, and finally init() must
+    // unique ID, then added to AXObjectCacheImpl, and finally init() must
     // be called last.
     void setAXObjectID(AXID axObjectID) { m_id = axObjectID; }
     virtual void init() { }
@@ -289,8 +301,11 @@ public:
     virtual void detach();
     virtual bool isDetached() const;
 
-    // The AXObjectCache that owns this object, and its unique ID within this cache.
-    AXObjectCache* axObjectCache() const;
+    // If the parent of this object is known, this can be faster than using computeParent().
+    virtual void setParent(AXObject* parent) { m_parent = parent; }
+
+    // The AXObjectCacheImpl that owns this object, and its unique ID within this cache.
+    AXObjectCacheImpl* axObjectCache() const;
     AXID axObjectID() const { return m_id; }
 
     // Determine subclass type.
@@ -338,6 +353,7 @@ public:
     virtual bool isNativeTextControl() const { return false; } // input or textarea
     virtual bool isNonNativeTextControl() const { return false; } // contenteditable or role=textbox
     virtual bool isPasswordField() const { return false; }
+    virtual bool isPasswordFieldAndShouldHideValue() const;
     virtual bool isProgressIndicator() const { return false; }
     bool isRadioButton() const { return roleValue() == RadioButtonRole; }
     bool isScrollbar() const { return roleValue() == ScrollBarRole; }
@@ -358,7 +374,7 @@ public:
     virtual bool isClickable() const;
     virtual bool isCollapsed() const { return false; }
     virtual bool isEnabled() const { return false; }
-    bool isExpanded() const;
+    virtual AccessibilityExpanded isExpanded() const { return ExpandedUndefined; }
     virtual bool isFocused() const { return false; }
     virtual bool isHovered() const { return false; }
     virtual bool isIndeterminate() const { return false; }
@@ -401,6 +417,10 @@ public:
     virtual AXObject* titleUIElement() const { return 0; }
     virtual KURL url() const { return KURL(); }
 
+    // Load inline text boxes for just this node, even if
+    // settings->inlineTextBoxAccessibilityEnabled() is false.
+    virtual void loadInlineTextBoxes() { }
+
     // For an inline text box.
     virtual AccessibilityTextDirection textDirection() const { return AccessibilityTextDirectionLeftToRight; }
     // The integer horizontal pixel offset of each character in the string; negative values for RTL.
@@ -417,6 +437,7 @@ public:
     virtual float maxValueForRange() const { return 0.0f; }
     virtual float minValueForRange() const { return 0.0f; }
     virtual String stringValue() const { return String(); }
+    virtual const AtomicString& textInputType() const { return nullAtom; }
 
     // ARIA attributes.
     virtual AXObject* activeDescendant() const { return 0; }
@@ -447,11 +468,17 @@ public:
     void ariaTreeRows(AccessibilityChildrenVector&);
 
     // ARIA live-region features.
-    bool supportsARIALiveRegion() const;
-    virtual const AtomicString& ariaLiveRegionStatus() const { return nullAtom; }
-    virtual const AtomicString& ariaLiveRegionRelevant() const { return nullAtom; }
-    virtual bool ariaLiveRegionAtomic() const { return false; }
-    virtual bool ariaLiveRegionBusy() const { return false; }
+    bool isLiveRegion() const;
+    const AXObject* liveRegionRoot() const;
+    virtual const AtomicString& liveRegionStatus() const { return nullAtom; }
+    virtual const AtomicString& liveRegionRelevant() const { return nullAtom; }
+    virtual bool liveRegionAtomic() const { return false; }
+    virtual bool liveRegionBusy() const { return false; }
+
+    const AtomicString& containerLiveRegionStatus() const;
+    const AtomicString& containerLiveRegionRelevant() const;
+    bool containerLiveRegionAtomic() const;
+    bool containerLiveRegionBusy() const;
 
     // Accessibility Text.
     virtual String textUnderElement() const { return String(); }
@@ -475,9 +502,12 @@ public:
 
     // High-level accessibility tree access. Other modules should only use these functions.
     const AccessibilityChildrenVector& children();
-    virtual AXObject* parentObject() const = 0;
+    AXObject* parentObject() const;
+    AXObject* parentObjectIfExists() const;
+    virtual AXObject* computeParent() const = 0;
+    virtual AXObject* computeParentIfExists() const { return 0; }
+    AXObject* cachedParentObject() const { return m_parent; }
     AXObject* parentObjectUnignored() const;
-    virtual AXObject* parentObjectIfExists() const { return 0; }
 
     // Low-level accessibility tree exploration, only for use within the accessibility module.
     virtual AXObject* firstChild() const { return 0; }
@@ -490,7 +520,7 @@ public:
     virtual bool needsToUpdateChildren() const { return false; }
     virtual void setNeedsToUpdateChildren() { }
     virtual void clearChildren();
-    virtual void detachFromParent() { }
+    virtual void detachFromParent() { m_parent = 0; }
     virtual AXObject* observableObject() const { return 0; }
     virtual AXObject* scrollBar(AccessibilityOrientation) { return 0; }
 
@@ -572,11 +602,23 @@ protected:
     unsigned getLengthForTextRange() const { return text().length(); }
 
     bool m_detached;
+
+    mutable AXObject* m_parent;
+
+    // The following cached attribute values (the ones starting with m_cached*)
+    // are only valid if m_lastModificationCount matches AXObjectCacheImpl::modificationCount().
+    mutable int m_lastModificationCount;
+    mutable bool m_cachedIsIgnored;
+    mutable const AXObject* m_cachedLiveRegionRoot;
+
+    // Updates the cached attribute values. This may be recursive, so to prevent deadlocks,
+    // functions called here may only search up the tree (ancestors), not down.
+    void updateCachedAttributeValuesIfNeeded() const;
 };
 
 #define DEFINE_AX_OBJECT_TYPE_CASTS(thisType, predicate) \
     DEFINE_TYPE_CASTS(thisType, AXObject, object, object->predicate, object.predicate)
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXObject_h

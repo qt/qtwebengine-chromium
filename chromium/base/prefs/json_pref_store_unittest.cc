@@ -5,7 +5,7 @@
 #include "base/prefs/json_pref_store.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
@@ -32,15 +32,15 @@ const char kHomePage[] = "homepage";
 class InterceptingPrefFilter : public PrefFilter {
  public:
   InterceptingPrefFilter();
-  virtual ~InterceptingPrefFilter();
+  ~InterceptingPrefFilter() override;
 
   // PrefFilter implementation:
-  virtual void FilterOnLoad(
+  void FilterOnLoad(
       const PostFilterOnLoadCallback& post_filter_on_load_callback,
-      scoped_ptr<base::DictionaryValue> pref_store_contents) OVERRIDE;
-  virtual void FilterUpdate(const std::string& path) OVERRIDE {}
-  virtual void FilterSerializeData(
-      base::DictionaryValue* pref_store_contents) OVERRIDE {}
+      scoped_ptr<base::DictionaryValue> pref_store_contents) override;
+  void FilterUpdate(const std::string& path) override {}
+  void FilterSerializeData(
+      base::DictionaryValue* pref_store_contents) override {}
 
   bool has_intercepted_prefs() const { return intercepted_prefs_ != NULL; }
 
@@ -86,7 +86,7 @@ class MockReadErrorDelegate : public PersistentPrefStore::ReadErrorDelegate {
 
 class JsonPrefStoreTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
     ASSERT_TRUE(PathService::Get(base::DIR_TEST_DATA, &data_dir_));
@@ -94,7 +94,7 @@ class JsonPrefStoreTest : public testing::Test {
     ASSERT_TRUE(PathExists(data_dir_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     // Make sure all pending tasks have been processed (e.g., deleting the
     // JsonPrefStore may post write tasks).
     message_loop_.PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
@@ -388,7 +388,7 @@ TEST_F(JsonPrefStoreTest, ReadWithInterceptor) {
   scoped_refptr<JsonPrefStore> pref_store =
       new JsonPrefStore(input_file,
                         message_loop_.message_loop_proxy().get(),
-                        intercepting_pref_filter.PassAs<PrefFilter>());
+                        intercepting_pref_filter.Pass());
 
   ASSERT_EQ(PersistentPrefStore::PREF_READ_ERROR_ASYNCHRONOUS_TASK_INCOMPLETE,
             pref_store->ReadPrefs());
@@ -435,7 +435,7 @@ TEST_F(JsonPrefStoreTest, ReadAsyncWithInterceptor) {
   scoped_refptr<JsonPrefStore> pref_store =
       new JsonPrefStore(input_file,
                         message_loop_.message_loop_proxy().get(),
-                        intercepting_pref_filter.PassAs<PrefFilter>());
+                        intercepting_pref_filter.Pass());
 
   MockPrefStoreObserver mock_observer;
   pref_store->AddObserver(&mock_observer);

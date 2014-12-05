@@ -22,6 +22,7 @@
 #include "content/common/content_constants_internal.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "device/battery/android/battery_jni_registrar.h"
 #include "media/base/android/media_jni_registrar.h"
 #include "net/android/net_jni_registrar.h"
 #include "ui/base/android/ui_base_jni_registrar.h"
@@ -62,6 +63,9 @@ bool EnsureJniRegistered(JNIEnv* env) {
     if (!content::android::RegisterAppJni(env))
       return false;
 
+    if (!device::android::RegisterBatteryJni(env))
+      return false;
+
     if (!media::RegisterJni(env))
       return false;
 
@@ -71,18 +75,16 @@ bool EnsureJniRegistered(JNIEnv* env) {
   return true;
 }
 
-bool LibraryLoaded(JNIEnv* env, jclass clazz,
-                          jobjectArray init_command_line) {
-  base::android::InitNativeCommandLineFromJavaArray(env, init_command_line);
-
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+bool LibraryLoaded(JNIEnv* env, jclass clazz) {
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
 
   if (command_line->HasSwitch(switches::kTraceStartup)) {
     base::debug::CategoryFilter category_filter(
         command_line->GetSwitchValueASCII(switches::kTraceStartup));
-    base::debug::TraceLog::GetInstance()->SetEnabled(category_filter,
+    base::debug::TraceLog::GetInstance()->SetEnabled(
+        category_filter,
         base::debug::TraceLog::RECORDING_MODE,
-        base::debug::TraceLog::RECORD_UNTIL_FULL);
+        base::debug::TraceOptions());
   }
 
   // Android's main browser loop is custom so we set the browser

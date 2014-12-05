@@ -2,30 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_host.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_host.h"
-
-using appcache::AppCache;
-using appcache::AppCacheDatabase;
-using appcache::AppCacheEntry;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheGroup;
-using appcache::AppCacheHost;
-using appcache::AppCacheInfo;
-using appcache::AppCacheErrorDetails;
-using appcache::AppCacheEventID;
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::APPCACHE_INTERCEPT_NAMESPACE;
-using appcache::AppCacheLogLevel;
-using appcache::Manifest;
-using appcache::Namespace;
-using appcache::NamespaceVector;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
-using appcache::PARSE_MANIFEST_ALLOWING_INTERCEPTS;
-using appcache::PARSE_MANIFEST_PER_STANDARD;
-using appcache::AppCacheStatus;
 
 namespace content {
 
@@ -33,23 +13,21 @@ namespace {
 
 class MockAppCacheFrontend : public AppCacheFrontend {
  public:
-  virtual void OnCacheSelected(int host_id, const AppCacheInfo& info) OVERRIDE {
-  }
-  virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                               AppCacheStatus status) OVERRIDE {}
-  virtual void OnEventRaised(const std::vector<int>& host_ids,
-                             AppCacheEventID event_id) OVERRIDE {}
-  virtual void OnProgressEventRaised(
-      const std::vector<int>& host_ids,
-      const GURL& url,
-      int num_total, int num_complete) OVERRIDE {}
-  virtual void OnErrorEventRaised(
-      const std::vector<int>& host_ids,
-      const AppCacheErrorDetails& details) OVERRIDE {}
-  virtual void OnLogMessage(int host_id, AppCacheLogLevel log_level,
-                            const std::string& message) OVERRIDE {}
-  virtual void OnContentBlocked(
-      int host_id, const GURL& manifest_url) OVERRIDE {}
+  void OnCacheSelected(int host_id, const AppCacheInfo& info) override {}
+  void OnStatusChanged(const std::vector<int>& host_ids,
+                       AppCacheStatus status) override {}
+  void OnEventRaised(const std::vector<int>& host_ids,
+                     AppCacheEventID event_id) override {}
+  void OnProgressEventRaised(const std::vector<int>& host_ids,
+                             const GURL& url,
+                             int num_total,
+                             int num_complete) override {}
+  void OnErrorEventRaised(const std::vector<int>& host_ids,
+                          const AppCacheErrorDetails& details) override {}
+  void OnLogMessage(int host_id,
+                    AppCacheLogLevel log_level,
+                    const std::string& message) override {}
+  void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
 };
 
 }  // namespace
@@ -128,27 +106,30 @@ TEST(AppCacheTest, InitializeWithManifest) {
   EXPECT_TRUE(cache->online_whitelist_namespaces_.empty());
   EXPECT_FALSE(cache->online_whitelist_all_);
 
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.explicit_urls.insert("http://one.com");
   manifest.explicit_urls.insert("http://two.com");
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, GURL("http://fb1.com"),
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, GURL("http://fb1.com"),
                 GURL("http://fbone.com"), true));
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE, GURL("http://w1.com"), GURL(), false));
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, GURL("http://w1.com"),
+          GURL(), false));
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE, GURL("http://w2.com"), GURL(), false));
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, GURL("http://w2.com"),
+          GURL(), false));
   manifest.online_whitelist_all = true;
 
   cache->InitializeWithManifest(&manifest);
-  const std::vector<Namespace>& fallbacks =
+  const std::vector<AppCacheNamespace>& fallbacks =
       cache->fallback_namespaces_;
   size_t expected = 1;
   EXPECT_EQ(expected, fallbacks.size());
   EXPECT_EQ(GURL("http://fb1.com"), fallbacks[0].namespace_url);
   EXPECT_EQ(GURL("http://fbone.com"), fallbacks[0].target_url);
   EXPECT_TRUE(fallbacks[0].is_pattern);
-  const NamespaceVector& whitelist = cache->online_whitelist_namespaces_;
+  const AppCacheNamespaceVector& whitelist =
+      cache->online_whitelist_namespaces_;
   expected = 2;
   EXPECT_EQ(expected, whitelist.size());
   EXPECT_EQ(GURL("http://w1.com"), whitelist[0].namespace_url);
@@ -191,26 +172,25 @@ TEST(AppCacheTest, FindResponseForRequest) {
   const int64 kExplicitInOnlineNamespaceResponseId = 5;
   const int64 kInterceptResponseId = 6;
 
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceUrl,
-                GURL(), false));
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceUrl,
+          GURL(), false));
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE,
-                kOnlineNamespaceWithinOtherNamespaces,
-                GURL(), false));
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE,
+          kOnlineNamespaceWithinOtherNamespaces, GURL(), false));
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
-                kFallbackEntryUrl1, false));
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
+          kFallbackEntryUrl1, false));
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
-                kFallbackEntryUrl2, false));
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
+          kFallbackEntryUrl2, false));
   manifest.intercept_namespaces.push_back(
-      Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
-                kInterceptNamespaceEntry, false));
+      AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespace,
+          kInterceptNamespaceEntry, false));
   manifest.intercept_namespaces.push_back(
-      Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptNamespaceWithinFallback,
-                kInterceptNamespaceEntry, false));
+      AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE,
+          kInterceptNamespaceWithinFallback, kInterceptNamespaceEntry, false));
 
   // Create a cache with some namespaces and entries.
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), 1234));
@@ -383,10 +363,10 @@ TEST(AppCacheTest, FindInterceptPatternResponseForRequest) {
       kInterceptNamespaceBase.Resolve("*.hit*"));
   const GURL kInterceptNamespaceEntry("http://blah/intercept_resource");
   const int64 kInterceptResponseId = 1;
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.intercept_namespaces.push_back(
-      Namespace(APPCACHE_INTERCEPT_NAMESPACE, kInterceptPatternNamespace,
-                kInterceptNamespaceEntry, true));
+      AppCacheNamespace(APPCACHE_INTERCEPT_NAMESPACE,
+          kInterceptPatternNamespace, kInterceptNamespaceEntry, true));
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), 1234));
   cache->InitializeWithManifest(&manifest);
   cache->AddEntry(
@@ -454,9 +434,9 @@ TEST(AppCacheTest, FindFallbackPatternResponseForRequest) {
       kFallbackNamespaceBase.Resolve("*.hit*"));
   const GURL kFallbackNamespaceEntry("http://blah/fallback_resource");
   const int64 kFallbackResponseId = 1;
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackPatternNamespace,
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackPatternNamespace,
                 kFallbackNamespaceEntry, true));
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), 1234));
   cache->InitializeWithManifest(&manifest);
@@ -524,9 +504,9 @@ TEST(AppCacheTest, FindNetworkNamespacePatternResponseForRequest) {
   const GURL kNetworkNamespaceBase("http://blah/network_namespace/");
   const GURL kNetworkPatternNamespace(
       kNetworkNamespaceBase.Resolve("*.hit*"));
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE, kNetworkPatternNamespace,
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kNetworkPatternNamespace,
                 GURL(), true));
   manifest.online_whitelist_all = false;
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), 1234));
@@ -580,7 +560,7 @@ TEST(AppCacheTest, ToFromDatabaseRecords) {
   scoped_refptr<AppCacheGroup> group =
       new AppCacheGroup(service.storage(), kManifestUrl, kGroupId);
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
-  Manifest manifest;
+  AppCacheManifest manifest;
   EXPECT_TRUE(ParseManifest(kManifestUrl, kData.c_str(), kData.length(),
                             PARSE_MANIFEST_ALLOWING_INTERCEPTS, manifest));
   cache->InitializeWithManifest(&manifest);
@@ -644,7 +624,7 @@ TEST(AppCacheTest, ToFromDatabaseRecords) {
 }
 
 TEST(AppCacheTest, IsNamespaceMatch) {
-  Namespace prefix;
+  AppCacheNamespace prefix;
   prefix.namespace_url = GURL("http://foo.com/prefix");
   prefix.is_pattern = false;
   EXPECT_TRUE(prefix.IsMatch(
@@ -652,7 +632,7 @@ TEST(AppCacheTest, IsNamespaceMatch) {
   EXPECT_FALSE(prefix.IsMatch(
       GURL("http://foo.com/nope")));
 
-  Namespace bar_no_star;
+  AppCacheNamespace bar_no_star;
   bar_no_star.namespace_url = GURL("http://foo.com/bar");
   bar_no_star.is_pattern = true;
   EXPECT_TRUE(bar_no_star.IsMatch(
@@ -660,7 +640,7 @@ TEST(AppCacheTest, IsNamespaceMatch) {
   EXPECT_FALSE(bar_no_star.IsMatch(
       GURL("http://foo.com/bar/nope")));
 
-  Namespace bar_star;
+  AppCacheNamespace bar_star;
   bar_star.namespace_url = GURL("http://foo.com/bar/*");
   bar_star.is_pattern = true;
   EXPECT_TRUE(bar_star.IsMatch(
@@ -670,7 +650,7 @@ TEST(AppCacheTest, IsNamespaceMatch) {
   EXPECT_FALSE(bar_star.IsMatch(
       GURL("http://foo.com/not_bar/should_not_match")));
 
-  Namespace star_bar_star;
+  AppCacheNamespace star_bar_star;
   star_bar_star.namespace_url = GURL("http://foo.com/*/bar/*");
   star_bar_star.is_pattern = true;
   EXPECT_TRUE(star_bar_star.IsMatch(
@@ -680,7 +660,7 @@ TEST(AppCacheTest, IsNamespaceMatch) {
   EXPECT_FALSE(star_bar_star.IsMatch(
       GURL("http://foo.com/any/not_bar/no_match")));
 
-  Namespace query_star_edit;
+  AppCacheNamespace query_star_edit;
   query_star_edit.namespace_url = GURL("http://foo.com/query?id=*&verb=edit*");
   query_star_edit.is_pattern = true;
   EXPECT_TRUE(query_star_edit.IsMatch(
@@ -692,7 +672,7 @@ TEST(AppCacheTest, IsNamespaceMatch) {
   EXPECT_TRUE(query_star_edit.IsMatch(
       GURL("http://foo.com/query?id=123&verb=print&verb=edit")));
 
-  Namespace star_greediness;
+  AppCacheNamespace star_greediness;
   star_greediness.namespace_url = GURL("http://foo.com/*/b");
   star_greediness.is_pattern = true;
   EXPECT_TRUE(star_greediness.IsMatch(

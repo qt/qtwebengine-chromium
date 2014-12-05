@@ -36,9 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 ScrollAnimator::ScrollAnimator(ScrollableArea* scrollableArea)
     : m_scrollableArea(scrollableArea)
@@ -145,4 +143,4 @@ float ScrollAnimator::clampScrollPosition(ScrollbarOrientation orientation, floa
     return std::max(std::min(pos, maxScrollPos), minScrollPos);
 }
 
-} // namespace WebCore
+} // namespace blink

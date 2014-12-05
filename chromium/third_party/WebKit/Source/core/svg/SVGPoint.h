@@ -31,15 +31,15 @@
 #ifndef SVGPoint_h
 #define SVGPoint_h
 
-#include "core/svg/properties/SVGProperty.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 #include "platform/geometry/FloatPoint.h"
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class SVGPointTearOff;
 
-class SVGPoint : public SVGPropertyBase {
+class SVGPoint : public SVGPropertyHelper<SVGPoint> {
 public:
     typedef SVGPointTearOff TearOffType;
 
@@ -54,7 +54,6 @@ public:
     }
 
     PassRefPtr<SVGPoint> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
 
     const FloatPoint& value() const { return m_value; }
     void setValue(const FloatPoint& value) { m_value = value; }
@@ -66,15 +65,12 @@ public:
 
     FloatPoint matrixTransform(const AffineTransform&) const;
 
-    bool operator==(const SVGPoint&) const;
-    bool operator!=(const SVGPoint& other) const { return !operator==(other); }
-
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedPoint; }
 
@@ -95,6 +91,6 @@ inline PassRefPtr<SVGPoint> toSVGPoint(PassRefPtr<SVGPropertyBase> passBase)
     return static_pointer_cast<SVGPoint>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGPoint_h

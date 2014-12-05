@@ -31,7 +31,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class InlineTextBox;
 class RenderText;
@@ -46,11 +46,13 @@ enum TextIteratorBehavior {
     TextIteratorStopsOnFormControls = 1 << 4,
     TextIteratorEmitsImageAltText = 1 << 5,
     TextIteratorEntersAuthorShadowRoots = 1 << 6,
-    TextIteratorEmitsObjectReplacementCharacter = 1 << 7
+    TextIteratorEmitsObjectReplacementCharacter = 1 << 7,
+    TextIteratorDoesNotBreakAtReplacedElement = 1 << 8
 };
 typedef unsigned TextIteratorBehaviorFlags;
 
 String plainText(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+String plainText(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 PassRefPtrWillBeRawPtr<Range> findPlainText(const Range*, const String&, FindOptions);
 void findPlainText(const Position& inputStart, const Position& inputEnd, const String&, FindOptions, Position& resultStart, Position& resultEnd);
 
@@ -84,6 +86,7 @@ public:
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
+    bool isInsideReplacedElement() const;
 
     int length() const { return m_textLength; }
     UChar characterAt(unsigned index) const;
@@ -106,8 +109,18 @@ public:
         }
     }
 
-    PassRefPtrWillBeRawPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> createRange() const;
     Node* node() const;
+
+    Document* ownerDocument() const;
+    Node* startContainer() const;
+    Node* endContainer() const;
+    int startOffset() const;
+    int endOffset() const;
+    Position startPosition() const;
+    Position endPosition() const;
+
+    bool breaksAtReplacedElement() { return m_breaksAtReplacedElement; }
 
     // Computes the length of the given range using a text iterator. The default
     // iteration behavior is to always emit object replacement characters for
@@ -115,7 +128,9 @@ public:
     // also emits spaces for other non-text nodes using the
     // |TextIteratorEmitsCharactersBetweenAllVisiblePosition| mode.
     static int rangeLength(const Range*, bool forSelectionPreservation = false);
+    static int rangeLength(const Position& start, const Position& end, bool forSelectionPreservation = false);
     static PassRefPtrWillBeRawPtr<Range> subrange(Range* entireRange, int characterOffset, int characterCount);
+    static void subrange(Position& start, Position& end, int characterOffset, int characterCount);
 
 private:
     enum IterationProgress {
@@ -128,7 +143,8 @@ private:
 
     void initialize(const Position& start, const Position& end);
 
-    int startOffset() const { return m_positionStartOffset; }
+    void flushPositionOffsets() const;
+    int positionStartOffset() const { return m_positionStartOffset; }
     const String& string() const { return m_text; }
     void exitNode();
     bool shouldRepresentNodeOffsetZero();
@@ -141,8 +157,7 @@ private:
     void handleTextNodeFirstLetter(RenderTextFragment*);
     bool hasVisibleTextNode(RenderText*);
     void emitCharacter(UChar, Node* textNode, Node* offsetBaseNode, int textStartOffset, int textEndOffset);
-    void emitText(Node* textNode, RenderObject* renderObject, int textStartOffset, int textEndOffset);
-    void emitText(Node* textNode, int textStartOffset, int textEndOffset);
+    void emitText(Node* textNode, RenderText* renderer, int textStartOffset, int textEndOffset);
 
     // Current position, not necessarily of the text being returned, but position
     // as we walk through the DOM tree.
@@ -175,10 +190,10 @@ private:
     // remaining text box.
     InlineTextBox* m_remainingTextBox;
     // Used to point to RenderText object for :first-letter.
-    RenderText *m_firstLetterText;
+    RawPtrWillBeMember<RenderText> m_firstLetterText;
 
     // Used to do the whitespace collapsing logic.
-    RawPtrWillBeMember<Node> m_lastTextNode;
+    RawPtrWillBeMember<Text> m_lastTextNode;
     bool m_lastTextNodeEndedWithCollapsedSpace;
     UChar m_lastCharacter;
 
@@ -216,6 +231,8 @@ private:
     bool m_entersAuthorShadowRoots;
 
     bool m_emitsObjectReplacementCharacter;
+
+    bool m_breaksAtReplacedElement;
 };
 
 // Iterates through the DOM range, returning all the text, and 0-length boundaries
@@ -225,6 +242,7 @@ class SimplifiedBackwardsTextIterator {
     STACK_ALLOCATED();
 public:
     explicit SimplifiedBackwardsTextIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    SimplifiedBackwardsTextIterator(const Position& start, const Position& end, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     bool atEnd() const { return !m_positionNode || m_shouldStop; }
     void advance();
@@ -244,9 +262,13 @@ public:
             m_textContainer.prependTo(output, m_textOffset, m_textLength);
     }
 
-    PassRefPtrWillBeRawPtr<Range> range() const;
+    Node* startContainer() const;
+    int endOffset() const;
+    Position startPosition() const;
+    Position endPosition() const;
 
 private:
+    void init(Node* startNode, Node* endNode, int startOffset, int endOffset);
     void exitNode();
     bool handleTextNode();
     RenderText* handleFirstLetter(int& startOffset, int& offsetInNode);
@@ -280,7 +302,7 @@ private:
     int m_textLength;
 
     // Used to do the whitespace logic.
-    RawPtrWillBeMember<Node> m_lastTextNode;
+    RawPtrWillBeMember<Text> m_lastTextNode;
     UChar m_lastCharacter;
 
     // Used for whitespace characters that aren't in the DOM, so we can point at them.
@@ -322,7 +344,15 @@ public:
     void appendTextTo(BufferType& output) { m_textIterator.appendTextTo(output, m_runOffset); }
 
     int characterOffset() const { return m_offset; }
-    PassRefPtrWillBeRawPtr<Range> range() const;
+    PassRefPtrWillBeRawPtr<Range> createRange() const;
+
+    Document* ownerDocument() const;
+    Node* startContainer() const;
+    Node* endContainer() const;
+    int startOffset() const;
+    int endOffset() const;
+    Position startPosition() const;
+    Position endPosition() const;
 
 private:
     void initialize();
@@ -338,12 +368,13 @@ class BackwardsCharacterIterator {
     STACK_ALLOCATED();
 public:
     explicit BackwardsCharacterIterator(const Range*, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
+    BackwardsCharacterIterator(const Position&, const Position&, TextIteratorBehaviorFlags = TextIteratorDefaultBehavior);
 
     void advance(int);
 
     bool atEnd() const { return m_textIterator.atEnd(); }
 
-    PassRefPtrWillBeRawPtr<Range> range() const;
+    Position endPosition() const;
 
 private:
     int m_offset;
@@ -358,7 +389,7 @@ private:
 class WordAwareIterator {
     STACK_ALLOCATED();
 public:
-    explicit WordAwareIterator(const Range*);
+    explicit WordAwareIterator(const Position& start, const Position& end);
     ~WordAwareIterator();
 
     bool atEnd() const { return !m_didLookAhead && m_textIterator.atEnd(); }
@@ -372,7 +403,6 @@ private:
     Vector<UChar> m_buffer;
     // Did we have to look ahead in the textIterator to confirm the current chunk?
     bool m_didLookAhead;
-    RefPtrWillBeMember<Range> m_range;
     TextIterator m_textIterator;
 };
 

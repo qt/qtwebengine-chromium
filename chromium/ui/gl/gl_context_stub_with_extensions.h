@@ -15,15 +15,15 @@ namespace gfx {
 class GL_EXPORT GLContextStubWithExtensions : public gfx::GLContextStub {
  public:
   GLContextStubWithExtensions() {}
-  virtual std::string GetExtensions() OVERRIDE;
+  std::string GetExtensions() override;
 
   void AddExtensionsString(const char* extensions);
   void SetGLVersionString(const char* version_str);
 
  protected:
-  virtual std::string GetGLVersion() OVERRIDE;
+  std::string GetGLVersion() override;
 
-  virtual ~GLContextStubWithExtensions() {}
+  ~GLContextStubWithExtensions() override {}
 
  private:
   std::string extensions_;

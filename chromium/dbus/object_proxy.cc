@@ -18,12 +18,14 @@
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
 #include "dbus/scoped_dbus_error.h"
+#include "dbus/util.h"
 
 namespace dbus {
 
 namespace {
 
 const char kErrorServiceUnknown[] = "org.freedesktop.DBus.Error.ServiceUnknown";
+const char kErrorObjectUnknown[] = "org.freedesktop.DBus.Error.UnknownObject";
 
 // Used for success ratio histograms. 1 for success, 0 for failure.
 const int kSuccessRatioHistogramMaxValue = 2;
@@ -39,15 +41,6 @@ const char kDBusSystemObjectAddress[] = "org.freedesktop.DBus";
 
 // The NameOwnerChanged member in |kDBusSystemObjectInterface|.
 const char kNameOwnerChangedMember[] = "NameOwnerChanged";
-
-// Gets the absolute signal name by concatenating the interface name and
-// the signal name. Used for building keys for method_table_ in
-// ObjectProxy.
-std::string GetAbsoluteSignalName(
-    const std::string& interface_name,
-    const std::string& signal_name) {
-  return interface_name + "." + signal_name;
-}
 
 // An empty function used for ObjectProxy::EmptyResponseCallback().
 void EmptyResponseCallbackBody(Response* /*response*/) {
@@ -73,8 +66,8 @@ ObjectProxy::~ObjectProxy() {
 // Originally we tried to make |method_call| a const reference, but we
 // gave up as dbus_connection_send_with_reply_and_block() takes a
 // non-const pointer of DBusMessage as the second parameter.
-scoped_ptr<Response> ObjectProxy::CallMethodAndBlock(MethodCall* method_call,
-                                                     int timeout_ms) {
+scoped_ptr<Response> ObjectProxy::CallMethodAndBlockWithErrorDetails(
+    MethodCall* method_call, int timeout_ms, ScopedDBusError* error) {
   bus_->AssertOnDBusThread();
 
   if (!bus_->Connect() ||
@@ -84,12 +77,10 @@ scoped_ptr<Response> ObjectProxy::CallMethodAndBlock(MethodCall* method_call,
 
   DBusMessage* request_message = method_call->raw_message();
 
-  ScopedDBusError error;
-
   // Send the message synchronously.
   const base::TimeTicks start_time = base::TimeTicks::Now();
   DBusMessage* response_message =
-      bus_->SendWithReplyAndBlock(request_message, timeout_ms, error.get());
+      bus_->SendWithReplyAndBlock(request_message, timeout_ms, error->get());
   // Record if the method call is successful, or not. 1 if successful.
   UMA_HISTOGRAM_ENUMERATION("DBus.SyncMethodCallSuccess",
                             response_message ? 1 : 0,
@@ -101,8 +92,8 @@ scoped_ptr<Response> ObjectProxy::CallMethodAndBlock(MethodCall* method_call,
   if (!response_message) {
     LogMethodCallFailure(method_call->GetInterface(),
                          method_call->GetMember(),
-                         error.is_set() ? error.name() : "unknown error type",
-                         error.is_set() ? error.message() : "");
+                         error->is_set() ? error->name() : "unknown error type",
+                         error->is_set() ? error->message() : "");
     return scoped_ptr<Response>();
   }
   // Record time spent for the method call. Don't include failures.
@@ -110,6 +101,12 @@ scoped_ptr<Response> ObjectProxy::CallMethodAndBlock(MethodCall* method_call,
                       base::TimeTicks::Now() - start_time);
 
   return Response::FromRawMessage(response_message);
+}
+
+scoped_ptr<Response> ObjectProxy::CallMethodAndBlock(MethodCall* method_call,
+                                                     int timeout_ms) {
+  ScopedDBusError error;
+  return CallMethodAndBlockWithErrorDetails(method_call, timeout_ms, &error);
 }
 
 void ObjectProxy::CallMethod(MethodCall* method_call,
@@ -420,7 +417,7 @@ bool ObjectProxy::ConnectToSignalInternal(const std::string& interface_name,
     return false;
 
   const std::string absolute_signal_name =
-      GetAbsoluteSignalName(interface_name, signal_name);
+      GetAbsoluteMemberName(interface_name, signal_name);
 
   // Add a match rule so the signal goes through HandleMessage().
   const std::string match_rule =
@@ -487,7 +484,7 @@ DBusHandlerResult ObjectProxy::HandleMessage(
   statistics::AddReceivedSignal(service_name_, interface, member);
 
   // Check if we know about the signal.
-  const std::string absolute_signal_name = GetAbsoluteSignalName(
+  const std::string absolute_signal_name = GetAbsoluteMemberName(
       interface, member);
   MethodTable::const_iterator iter = method_table_.find(absolute_signal_name);
   if (iter == method_table_.end()) {
@@ -561,12 +558,20 @@ void ObjectProxy::LogMethodCallFailure(
     const base::StringPiece& method_name,
     const base::StringPiece& error_name,
     const base::StringPiece& error_message) const {
-  if (ignore_service_unknown_errors_ && error_name == kErrorServiceUnknown)
+  if (ignore_service_unknown_errors_ &&
+      (error_name == kErrorServiceUnknown || error_name == kErrorObjectUnknown))
     return;
-  LOG(ERROR) << "Failed to call method: "
-             << interface_name << "." << method_name
-             << ": object_path= " << object_path_.value()
-             << ": " << error_name << ": " << error_message;
+  logging::LogSeverity severity = logging::LOG_ERROR;
+  // "UnknownObject" indicates that an object or service is no longer available,
+  // e.g. a Shill network service has gone out of range. Treat these as warnings
+  // not errors.
+  if (error_name == kErrorObjectUnknown)
+    severity = logging::LOG_WARNING;
+  std::ostringstream msg;
+  msg << "Failed to call method: " << interface_name << "." << method_name
+      << ": object_path= " << object_path_.value()
+      << ": " << error_name << ": " << error_message;
+  logging::LogAtLevel(severity, msg.str());
 }
 
 void ObjectProxy::OnCallMethodError(const std::string& interface_name,

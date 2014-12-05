@@ -35,6 +35,7 @@ class SoftwareFrameData;
 
 namespace content {
 class ContextProviderCommandBuffer;
+class FrameSwapMessageQueue;
 
 // This class can be created only on the main thread, but then becomes pinned
 // to a fixed thread when bindToClient is called.
@@ -50,19 +51,20 @@ class CompositorOutputSurface
       uint32 output_surface_id,
       const scoped_refptr<ContextProviderCommandBuffer>& context_provider,
       scoped_ptr<cc::SoftwareOutputDevice> software,
+      scoped_refptr<FrameSwapMessageQueue> swap_frame_message_queue,
       bool use_swap_compositor_frame_message);
-  virtual ~CompositorOutputSurface();
+  ~CompositorOutputSurface() override;
 
   // cc::OutputSurface implementation.
-  virtual bool BindToClient(cc::OutputSurfaceClient* client) OVERRIDE;
-  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
+  bool BindToClient(cc::OutputSurfaceClient* client) override;
+  void SwapBuffers(cc::CompositorFrame* frame) override;
 #if defined(OS_ANDROID)
-  virtual void SetNeedsBeginFrame(bool enable) OVERRIDE;
+  virtual void SetNeedsBeginFrame(bool enable) override;
 #endif
 
   // TODO(epenner): This seems out of place here and would be a better fit
   // int CompositorThread after it is fully refactored (http://crbug/170828)
-  virtual void UpdateSmoothnessTakesPriority(bool prefer_smoothness) OVERRIDE;
+  void UpdateSmoothnessTakesPriority(bool prefer_smoothness) override;
 
  protected:
   void ShortcutSwapAck(uint32 output_surface_id,
@@ -108,6 +110,7 @@ class CompositorOutputSurface
   scoped_refptr<IPC::ForwardingMessageFilter> output_surface_filter_;
   scoped_refptr<CompositorOutputSurfaceProxy> output_surface_proxy_;
   scoped_refptr<IPC::SyncMessageFilter> message_sender_;
+  scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue_;
   int routing_id_;
   bool prefers_smoothness_;
   base::PlatformThreadHandle main_thread_handle_;

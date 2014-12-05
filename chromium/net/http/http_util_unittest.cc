@@ -114,7 +114,7 @@ TEST(HttpUtilTest, HasHeader) {
     { "fOO: 1\r\nbar: 2", "foo", true },
     { "g: 0\r\nfoo: 1\r\nbar: 2", "foo", true },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     bool result = HttpUtil::HasHeader(tests[i].headers, tests[i].name);
     EXPECT_EQ(tests[i].expected_result, result);
   }
@@ -272,7 +272,7 @@ TEST(HttpUtilTest, LocateEndOfHeaders) {
     { "foo\nbar\n\r\njunk", 10 },
     { "foo\nbar\r\n\njunk", 10 },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     int input_len = static_cast<int>(strlen(tests[i].input));
     int eoh = HttpUtil::LocateEndOfHeaders(tests[i].input, input_len);
     EXPECT_EQ(tests[i].expected_result, eoh);
@@ -582,7 +582,7 @@ TEST(HttpUtilTest, AssembleRawHeaders) {
       "HTTP/1.0 200 OK|Foo: 1Foo2: 3|Bar: 2||"
     },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string input = tests[i].input;
     std::replace(input.begin(), input.end(), '|', '\0');
     std::string raw = HttpUtil::AssembleRawHeaders(input.data(), input.size());
@@ -629,7 +629,7 @@ TEST(HttpUtilTest, RequestUrlSanitize) {
       "/foobar?query=1"
     }
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     GURL url(GURL(tests[i].url));
     std::string expected_spec(tests[i].expected_spec);
     std::string expected_path(tests[i].expected_path);
@@ -725,7 +725,7 @@ TEST(HttpUtilTest, ParseContentType) {
     },
     // TODO(abarth): Add more interesting test cases.
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string mime_type;
     std::string charset;
     bool had_charset = false;
@@ -853,7 +853,7 @@ TEST(HttpUtilTest, ParseRanges) {
     },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::vector<net::HttpByteRange> ranges;
     bool return_value = HttpUtil::ParseRanges(std::string(tests[i].headers),
                                               &ranges);
@@ -868,6 +868,49 @@ TEST(HttpUtilTest, ParseRanges) {
         EXPECT_EQ(tests[i].expected_ranges[j].expected_suffix_length,
                   ranges[j].suffix_length());
       }
+    }
+  }
+}
+
+TEST(HttpUtilTest, ParseRetryAfterHeader) {
+  base::Time::Exploded now_exploded = { 2014, 11, -1, 5, 22, 39, 30, 0 };
+  base::Time now = base::Time::FromUTCExploded(now_exploded);
+
+  base::Time::Exploded later_exploded = { 2015, 1, -1, 1, 12, 34, 56, 0 };
+  base::Time later = base::Time::FromUTCExploded(later_exploded);
+
+  const struct {
+    const char* retry_after_string;
+    bool expected_return_value;
+    base::TimeDelta expected_retry_after;
+  } tests[] = {
+    { "", false, base::TimeDelta() },
+    { "-3", false, base::TimeDelta() },
+    { "-2", false, base::TimeDelta() },
+    { "-1", false, base::TimeDelta() },
+    { "0", true, base::TimeDelta::FromSeconds(0) },
+    { "1", true, base::TimeDelta::FromSeconds(1) },
+    { "2", true, base::TimeDelta::FromSeconds(2) },
+    { "3", true, base::TimeDelta::FromSeconds(3) },
+    { "60", true, base::TimeDelta::FromSeconds(60) },
+    { "3600", true, base::TimeDelta::FromSeconds(3600) },
+    { "86400", true, base::TimeDelta::FromSeconds(86400) },
+    { "Thu, 1 Jan 2015 12:34:56 GMT", true, later - now },
+    { "Mon, 1 Jan 1900 12:34:56 GMT", false, base::TimeDelta() }
+  };
+
+  for (size_t i = 0; i < arraysize(tests); ++i) {
+    base::TimeDelta retry_after;
+    bool return_value = HttpUtil::ParseRetryAfterHeader(
+        tests[i].retry_after_string, now, &retry_after);
+    EXPECT_EQ(tests[i].expected_return_value, return_value)
+        << "Test case " << i << ": expected " << tests[i].expected_return_value
+        << " but got " << return_value << ".";
+    if (tests[i].expected_return_value && return_value) {
+      EXPECT_EQ(tests[i].expected_retry_after, retry_after)
+          << "Test case " << i << ": expected "
+          << tests[i].expected_retry_after.InSeconds() << "s but got "
+          << retry_after.InSeconds() << "s.";
     }
   }
 }

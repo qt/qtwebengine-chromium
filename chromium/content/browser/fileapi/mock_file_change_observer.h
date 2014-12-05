@@ -7,29 +7,29 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "webkit/browser/fileapi/file_observers.h"
-#include "webkit/browser/fileapi/file_system_url.h"
-#include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
+#include "storage/browser/fileapi/file_observers.h"
+#include "storage/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
 
-namespace fileapi {
+namespace storage {
 
 // Mock file change observer.
 class MockFileChangeObserver : public FileChangeObserver {
  public:
   MockFileChangeObserver();
-  virtual ~MockFileChangeObserver();
+  ~MockFileChangeObserver() override;
 
   // Creates a ChangeObserverList which only contains given |observer|.
   static ChangeObserverList CreateList(MockFileChangeObserver* observer);
 
   // FileChangeObserver overrides.
-  virtual void OnCreateFile(const FileSystemURL& url) OVERRIDE;
-  virtual void OnCreateFileFrom(const FileSystemURL& url,
-                                const FileSystemURL& src) OVERRIDE;
-  virtual void OnRemoveFile(const FileSystemURL& url) OVERRIDE;
-  virtual void OnModifyFile(const FileSystemURL& url) OVERRIDE;
-  virtual void OnCreateDirectory(const FileSystemURL& url) OVERRIDE;
-  virtual void OnRemoveDirectory(const FileSystemURL& url) OVERRIDE;
+  void OnCreateFile(const FileSystemURL& url) override;
+  void OnCreateFileFrom(const FileSystemURL& url,
+                        const FileSystemURL& src) override;
+  void OnRemoveFile(const FileSystemURL& url) override;
+  void OnModifyFile(const FileSystemURL& url) override;
+  void OnCreateDirectory(const FileSystemURL& url) override;
+  void OnRemoveDirectory(const FileSystemURL& url) override;
 
   void ResetCount() {
     create_file_count_ = 0;
@@ -98,6 +98,6 @@ class MockFileChangeObserver : public FileChangeObserver {
   DISALLOW_COPY_AND_ASSIGN(MockFileChangeObserver);
 };
 
-}  // namespace fileapi
+}  // namespace storage
 
 #endif  // WEBKIT_BROWSER_FILEAPI_MOCK_FILE_CHANGE_OBSERVER_H_

@@ -15,8 +15,8 @@
 #include "base/supports_user_data.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/common/referrer.h"
+#include "content/public/common/resource_type.h"
 #include "net/base/load_states.h"
-#include "webkit/common/resource_type.h"
 
 namespace content {
 class CrossSiteResourceHandler;
@@ -49,42 +49,43 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
       bool is_main_frame,
       bool parent_is_main_frame,
       int parent_render_frame_id,
-      ResourceType::Type resource_type,
-      PageTransition transition_type,
+      ResourceType resource_type,
+      ui::PageTransition transition_type,
       bool should_replace_current_entry,
       bool is_download,
       bool is_stream,
       bool allow_download,
       bool has_user_gesture,
+      bool enable_load_timing,
+      bool enable_upload_progress,
       blink::WebReferrerPolicy referrer_policy,
       blink::WebPageVisibilityState visibility_state,
       ResourceContext* context,
       base::WeakPtr<ResourceMessageFilter> filter,
       bool is_async);
-  virtual ~ResourceRequestInfoImpl();
+  ~ResourceRequestInfoImpl() override;
 
   // ResourceRequestInfo implementation:
-  virtual ResourceContext* GetContext() const OVERRIDE;
-  virtual int GetChildID() const OVERRIDE;
-  virtual int GetRouteID() const OVERRIDE;
-  virtual int GetOriginPID() const OVERRIDE;
-  virtual int GetRequestID() const OVERRIDE;
-  virtual int GetRenderFrameID() const OVERRIDE;
-  virtual bool IsMainFrame() const OVERRIDE;
-  virtual bool ParentIsMainFrame() const OVERRIDE;
-  virtual int GetParentRenderFrameID() const OVERRIDE;
-  virtual ResourceType::Type GetResourceType() const OVERRIDE;
-  virtual int GetProcessType() const OVERRIDE;
-  virtual blink::WebReferrerPolicy GetReferrerPolicy() const OVERRIDE;
-  virtual blink::WebPageVisibilityState GetVisibilityState() const OVERRIDE;
-  virtual PageTransition GetPageTransition() const OVERRIDE;
-  virtual bool HasUserGesture() const OVERRIDE;
-  virtual bool WasIgnoredByHandler() const OVERRIDE;
-  virtual bool GetAssociatedRenderFrame(int* render_process_id,
-                                        int* render_frame_id) const OVERRIDE;
-  virtual bool IsAsync() const OVERRIDE;
-  virtual bool IsDownload() const OVERRIDE;
-
+  ResourceContext* GetContext() const override;
+  int GetChildID() const override;
+  int GetRouteID() const override;
+  int GetOriginPID() const override;
+  int GetRequestID() const override;
+  int GetRenderFrameID() const override;
+  bool IsMainFrame() const override;
+  bool ParentIsMainFrame() const override;
+  int GetParentRenderFrameID() const override;
+  ResourceType GetResourceType() const override;
+  int GetProcessType() const override;
+  blink::WebReferrerPolicy GetReferrerPolicy() const override;
+  blink::WebPageVisibilityState GetVisibilityState() const override;
+  ui::PageTransition GetPageTransition() const override;
+  bool HasUserGesture() const override;
+  bool WasIgnoredByHandler() const override;
+  bool GetAssociatedRenderFrame(int* render_process_id,
+                                int* render_frame_id) const override;
+  bool IsAsync() const override;
+  bool IsDownload() const override;
 
   CONTENT_EXPORT void AssociateWithRequest(net::URLRequest* request);
 
@@ -147,10 +148,24 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
     was_ignored_by_handler_ = value;
   }
 
+  // Whether this request has been counted towards the number of in flight
+  // requests, which is only true for requests that require a file descriptor
+  // for their shared memory buffer.
+  bool counted_as_in_flight_request() const {
+    return counted_as_in_flight_request_;
+  }
+  void set_counted_as_in_flight_request(bool was_counted) {
+    counted_as_in_flight_request_ = was_counted;
+  }
+
   // The approximate in-memory size (bytes) that we credited this request
   // as consuming in |outstanding_requests_memory_cost_map_|.
   int memory_cost() const { return memory_cost_; }
   void set_memory_cost(int cost) { memory_cost_ = cost; }
+
+  bool is_load_timing_enabled() const { return enable_load_timing_; }
+
+  bool is_upload_progress_enabled() const { return enable_upload_progress_; }
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ResourceDispatcherHostTest,
@@ -175,9 +190,12 @@ class ResourceRequestInfoImpl : public ResourceRequestInfo,
   bool is_stream_;
   bool allow_download_;
   bool has_user_gesture_;
+  bool enable_load_timing_;
+  bool enable_upload_progress_;
   bool was_ignored_by_handler_;
-  ResourceType::Type resource_type_;
-  PageTransition transition_type_;
+  bool counted_as_in_flight_request_;
+  ResourceType resource_type_;
+  ui::PageTransition transition_type_;
   int memory_cost_;
   blink::WebReferrerPolicy referrer_policy_;
   blink::WebPageVisibilityState visibility_state_;

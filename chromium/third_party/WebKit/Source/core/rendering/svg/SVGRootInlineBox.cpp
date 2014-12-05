@@ -24,37 +24,17 @@
 #include "config.h"
 #include "core/rendering/svg/SVGRootInlineBox.h"
 
+#include "core/paint/SVGRootInlineBoxPainter.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 #include "core/rendering/svg/RenderSVGText.h"
 #include "core/rendering/svg/SVGInlineFlowBox.h"
 #include "core/rendering/svg/SVGInlineTextBox.h"
-#include "core/rendering/svg/SVGRenderingContext.h"
 
-namespace WebCore {
+namespace blink {
 
 void SVGRootInlineBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit, LayoutUnit)
 {
-    ASSERT(paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection);
-    ASSERT(!paintInfo.context->paintingDisabled());
-
-    bool isPrinting = renderer().document().printing();
-    bool hasSelection = !isPrinting && selectionState() != RenderObject::SelectionNone;
-
-    PaintInfo childPaintInfo(paintInfo);
-    if (hasSelection) {
-        for (InlineBox* child = firstChild(); child; child = child->nextOnLine()) {
-            if (child->isSVGInlineTextBox())
-                toSVGInlineTextBox(child)->paintSelectionBackground(childPaintInfo);
-            else if (child->isSVGInlineFlowBox())
-                toSVGInlineFlowBox(child)->paintSelectionBackground(childPaintInfo);
-        }
-    }
-
-    SVGRenderingContext renderingContext(&renderer(), paintInfo, SVGRenderingContext::SaveGraphicsContext);
-    if (renderingContext.isRenderingPrepared()) {
-        for (InlineBox* child = firstChild(); child; child = child->nextOnLine())
-            child->paint(paintInfo, paintOffset, 0, 0);
-    }
+    SVGRootInlineBoxPainter(*this).paint(paintInfo, paintOffset);
 }
 
 void SVGRootInlineBox::markDirty()
@@ -259,8 +239,8 @@ static inline void reverseInlineBoxRangeAndValueListsIfNeeded(void* userData, Ve
 
         // Reordering is only necessary for BiDi text that is _absolutely_ positioned.
         if (firstTextBox->len() == 1 && firstTextBox->len() == lastTextBox->len()) {
-            RenderSVGInlineText& firstContext = toRenderSVGInlineText(firstTextBox->textRenderer());
-            RenderSVGInlineText& lastContext = toRenderSVGInlineText(lastTextBox->textRenderer());
+            RenderSVGInlineText& firstContext = toRenderSVGInlineText(firstTextBox->renderer());
+            RenderSVGInlineText& lastContext = toRenderSVGInlineText(lastTextBox->renderer());
 
             SVGTextLayoutAttributes* firstAttributes = 0;
             SVGTextLayoutAttributes* lastAttributes = 0;
@@ -282,4 +262,4 @@ void SVGRootInlineBox::reorderValueLists(Vector<SVGTextLayoutAttributes*>& attri
     collectLeafBoxesInLogicalOrder(leafBoxesInLogicalOrder, reverseInlineBoxRangeAndValueListsIfNeeded, &attributes);
 }
 
-} // namespace WebCore
+} // namespace blink

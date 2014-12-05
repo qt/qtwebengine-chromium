@@ -1,10 +1,24 @@
 #include "DMUtil.h"
 
 #include "SkColorPriv.h"
+#include "SkCommandLineFlags.h"
 #include "SkPicture.h"
 #include "SkPictureRecorder.h"
 
+DEFINE_string(matrix, "1 0 0 0 1 0 0 0 1",
+              "Matrix to apply to the canvas before drawing.");
+
 namespace DM {
+
+void CanvasPreflight(SkCanvas* canvas) {
+    if (FLAGS_matrix.count() == 9) {
+        SkMatrix m;
+        for (int i = 0; i < 9; i++) {
+            m[i] = (SkScalar)atof(FLAGS_matrix[i]);
+        }
+        canvas->concat(m);
+    }
+}
 
 SkString UnderJoin(const char* a, const char* b) {
     SkString s;
@@ -20,10 +34,13 @@ SkString FileToTaskName(SkString filename) {
     return filename;
 }
 
-SkPicture* RecordPicture(skiagm::GM* gm, uint32_t recordFlags, SkBBHFactory* factory) {
-    const SkISize size = gm->getISize();
+SkPicture* RecordPicture(skiagm::GM* gm, SkBBHFactory* factory) {
+    const SkScalar w = SkIntToScalar(gm->getISize().width()),
+                   h = SkIntToScalar(gm->getISize().height());
     SkPictureRecorder recorder;
-    SkCanvas* canvas = recorder.beginRecording(size.width(), size.height(), factory, recordFlags);
+
+    SkCanvas* canvas = recorder.beginRecording(w, h, factory);
+    CanvasPreflight(canvas);
     canvas->concat(gm->getInitialTransform());
     gm->draw(canvas);
     canvas->flush();
@@ -39,11 +56,10 @@ void AllocatePixels(const SkBitmap& reference, SkBitmap* bitmap) {
     AllocatePixels(reference.colorType(), reference.width(), reference.height(), bitmap);
 }
 
-void DrawPicture(SkPicture* picture, SkBitmap* bitmap) {
-    SkASSERT(picture != NULL);
+void DrawPicture(const SkPicture& picture, SkBitmap* bitmap) {
     SkASSERT(bitmap != NULL);
     SkCanvas canvas(*bitmap);
-    canvas.drawPicture(picture);
+    canvas.drawPicture(&picture);
     canvas.flush();
 }
 

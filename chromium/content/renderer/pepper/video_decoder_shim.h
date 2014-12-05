@@ -13,12 +13,15 @@
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "media/base/video_decoder_config.h"
 #include "media/video/video_decode_accelerator.h"
 
 #include "ppapi/c/pp_codecs.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace gpu {
 namespace gles2 {
@@ -47,19 +50,18 @@ class PepperVideoDecoderHost;
 class VideoDecoderShim : public media::VideoDecodeAccelerator {
  public:
   explicit VideoDecoderShim(PepperVideoDecoderHost* host);
-  virtual ~VideoDecoderShim();
+  ~VideoDecoderShim() override;
 
   // media::VideoDecodeAccelerator implementation.
-  virtual bool Initialize(
-      media::VideoCodecProfile profile,
-      media::VideoDecodeAccelerator::Client* client) OVERRIDE;
-  virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
-  virtual void AssignPictureBuffers(
-      const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
-  virtual void ReusePictureBuffer(int32 picture_buffer_id) OVERRIDE;
-  virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
+  bool Initialize(media::VideoCodecProfile profile,
+                  media::VideoDecodeAccelerator::Client* client) override;
+  void Decode(const media::BitstreamBuffer& bitstream_buffer) override;
+  void AssignPictureBuffers(
+      const std::vector<media::PictureBuffer>& buffers) override;
+  void ReusePictureBuffer(int32 picture_buffer_id) override;
+  void Flush() override;
+  void Reset() override;
+  void Destroy() override;
 
  private:
   enum State {
@@ -89,7 +91,7 @@ class VideoDecoderShim : public media::VideoDecodeAccelerator {
   State state_;
 
   PepperVideoDecoderHost* host_;
-  scoped_refptr<base::MessageLoopProxy> media_message_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> media_task_runner_;
   scoped_refptr<webkit::gpu::ContextProviderWebContext> context_provider_;
 
   // The current decoded frame size.

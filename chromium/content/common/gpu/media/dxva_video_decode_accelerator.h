@@ -6,7 +6,12 @@
 #define CONTENT_COMMON_GPU_MEDIA_DXVA_VIDEO_DECODE_ACCELERATOR_H_
 
 #include <d3d9.h>
+// Work around bug in this header by disabling the relevant warning for it.
+// https://connect.microsoft.com/VisualStudio/feedback/details/911260/dxva2api-h-in-win8-sdk-triggers-c4201-with-w4
+#pragma warning(push)
+#pragma warning(disable:4201)
 #include <dxva2api.h>
+#pragma warning(pop)
 #include <list>
 #include <map>
 #include <mfidl.h>
@@ -48,15 +53,15 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
 
   // media::VideoDecodeAccelerator implementation.
   virtual bool Initialize(media::VideoCodecProfile profile,
-                          Client* client) OVERRIDE;
-  virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) OVERRIDE;
+                          Client* client) override;
+  virtual void Decode(const media::BitstreamBuffer& bitstream_buffer) override;
   virtual void AssignPictureBuffers(
-      const std::vector<media::PictureBuffer>& buffers) OVERRIDE;
-  virtual void ReusePictureBuffer(int32 picture_buffer_id) OVERRIDE;
-  virtual void Flush() OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool CanDecodeOnIOThread() OVERRIDE;
+      const std::vector<media::PictureBuffer>& buffers) override;
+  virtual void ReusePictureBuffer(int32 picture_buffer_id) override;
+  virtual void Flush() override;
+  virtual void Reset() override;
+  virtual void Destroy() override;
+  virtual bool CanDecodeOnIOThread() override;
 
  private:
   typedef void* EGLConfig;
@@ -146,7 +151,10 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   typedef std::map<int32, linked_ptr<DXVAPictureBuffer> > OutputBuffers;
 
   // Tells the client to dismiss the stale picture buffers passed in.
-  void DismissStaleBuffers(const OutputBuffers& picture_buffers);
+  void DismissStaleBuffers();
+
+  // Called after the client indicates we can recycle a stale picture buffer.
+  void DeferredDismissStaleBuffer(int32 picture_buffer_id);
 
   // To expose client callbacks from VideoDecodeAccelerator.
   media::VideoDecodeAccelerator::Client* client_;
@@ -190,6 +198,12 @@ class CONTENT_EXPORT DXVAVideoDecodeAccelerator
   // This map maintains the picture buffers passed the client for decoding.
   // The key is the picture buffer id.
   OutputBuffers output_picture_buffers_;
+
+  // After a resolution change there may be a few output buffers which have yet
+  // to be displayed so they cannot be dismissed immediately. We move them from
+  // |output_picture_buffers_| to this map so they may be dismissed once they
+  // become available.
+  OutputBuffers stale_output_picture_buffers_;
 
   // Set to true if we requested picture slots from the client.
   bool pictures_requested_;

@@ -9,7 +9,9 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_vector.h"
+#include "base/single_thread_task_runner.h"
 #include "base/synchronization/lock.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "third_party/libjingle/source/talk/app/webrtc/mediastreamtrack.h"
 #include "third_party/libjingle/source/talk/media/base/audiorenderer.h"
@@ -40,9 +42,10 @@ class CONTENT_EXPORT WebRtcLocalAudioTrackAdapter
 
   WebRtcLocalAudioTrackAdapter(
       const std::string& label,
-      webrtc::AudioSourceInterface* track_source);
+      webrtc::AudioSourceInterface* track_source,
+      const scoped_refptr<base::SingleThreadTaskRunner>& signaling_thread);
 
-  virtual ~WebRtcLocalAudioTrackAdapter();
+  ~WebRtcLocalAudioTrackAdapter() override;
 
   void Initialize(WebRtcLocalAudioTrack* owner);
 
@@ -59,31 +62,35 @@ class CONTENT_EXPORT WebRtcLocalAudioTrackAdapter
   void SetAudioProcessor(
       const scoped_refptr<MediaStreamAudioProcessor>& processor);
 
- private:
   // webrtc::MediaStreamTrack implementation.
-  virtual std::string kind() const OVERRIDE;
+  std::string kind() const override;
+  bool set_enabled(bool enable) override;
 
+ private:
   // webrtc::AudioTrackInterface implementation.
-  virtual void AddSink(webrtc::AudioTrackSinkInterface* sink) OVERRIDE;
-  virtual void RemoveSink(webrtc::AudioTrackSinkInterface* sink) OVERRIDE;
-  virtual bool GetSignalLevel(int* level) OVERRIDE;
-  virtual talk_base::scoped_refptr<webrtc::AudioProcessorInterface>
-      GetAudioProcessor() OVERRIDE;
+  void AddSink(webrtc::AudioTrackSinkInterface* sink) override;
+  void RemoveSink(webrtc::AudioTrackSinkInterface* sink) override;
+  bool GetSignalLevel(int* level) override;
+  rtc::scoped_refptr<webrtc::AudioProcessorInterface> GetAudioProcessor()
+      override;
 
   // cricket::AudioCapturer implementation.
-  virtual void AddChannel(int channel_id) OVERRIDE;
-  virtual void RemoveChannel(int channel_id) OVERRIDE;
+  void AddChannel(int channel_id) override;
+  void RemoveChannel(int channel_id) override;
 
   // webrtc::AudioTrackInterface implementation.
-  virtual webrtc::AudioSourceInterface* GetSource() const OVERRIDE;
-  virtual cricket::AudioRenderer* GetRenderer() OVERRIDE;
+  webrtc::AudioSourceInterface* GetSource() const override;
+  cricket::AudioRenderer* GetRenderer() override;
 
   // Weak reference.
   WebRtcLocalAudioTrack* owner_;
 
   // The source of the audio track which handles the audio constraints.
   // TODO(xians): merge |track_source_| to |capturer_| in WebRtcLocalAudioTrack.
-  talk_base::scoped_refptr<webrtc::AudioSourceInterface> track_source_;
+  rtc::scoped_refptr<webrtc::AudioSourceInterface> track_source_;
+
+  // Libjingle's signaling thread.
+  const scoped_refptr<base::SingleThreadTaskRunner> signaling_thread_;
 
   // The audio processsor that applies audio processing on the data of audio
   // track.
@@ -98,6 +105,10 @@ class CONTENT_EXPORT WebRtcLocalAudioTrackAdapter
 
   // The amplitude of the signal.
   int signal_level_;
+
+  // Thread checker for libjingle's signaling thread.
+  base::ThreadChecker signaling_thread_checker_;
+  base::ThreadChecker capture_thread_;
 
   // Protects |voe_channels_|, |audio_processor_| and |signal_level_|.
   mutable base::Lock lock_;

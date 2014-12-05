@@ -9,16 +9,16 @@
 
 namespace content {
 
-// An implementation of WifiDataProviderImplBase that does not provide any
+// An implementation of WifiDataProvider that does not provide any
 // data. Used on platforms where a real implementation is not available.
-class EmptyWifiDataProvider : public WifiDataProviderImplBase {
+class EmptyWifiDataProvider : public WifiDataProvider {
  public:
   EmptyWifiDataProvider();
 
-  // WifiDataProviderImplBase implementation
-  virtual void StartDataProvider() OVERRIDE { }
-  virtual void StopDataProvider() OVERRIDE { }
-  virtual bool GetData(WifiData* data) OVERRIDE;
+  // WifiDataProvider implementation
+  virtual void StartDataProvider() override { }
+  virtual void StopDataProvider() override { }
+  virtual bool GetData(WifiData* data) override;
 
  private:
   virtual ~EmptyWifiDataProvider();

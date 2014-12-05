@@ -20,7 +20,7 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
   static const char kViewClassName[];
 
   explicit Checkbox(const base::string16& label);
-  virtual ~Checkbox();
+  ~Checkbox() override;
 
   // Sets a listener for this checkbox. Checkboxes aren't required to have them
   // since their state can be read independently of them being toggled.
@@ -32,12 +32,12 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
 
  protected:
   // Overridden from LabelButton:
-  virtual void Layout() OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
-  virtual const gfx::ImageSkia& GetImage(ButtonState for_state) OVERRIDE;
+  void Layout() override;
+  const char* GetClassName() const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void OnFocus() override;
+  void OnBlur() override;
+  const gfx::ImageSkia& GetImage(ButtonState for_state) override;
 
   // Set the image shown for each button state depending on whether it is
   // [checked] or [focused].
@@ -48,11 +48,10 @@ class VIEWS_EXPORT Checkbox : public LabelButton {
 
  private:
   // Overridden from Button:
-  virtual void NotifyClick(const ui::Event& event) OVERRIDE;
+  void NotifyClick(const ui::Event& event) override;
 
-  virtual ui::NativeTheme::Part GetThemePart() const OVERRIDE;
-  virtual void GetExtraParams(
-      ui::NativeTheme::ExtraParams* params) const OVERRIDE;
+  ui::NativeTheme::Part GetThemePart() const override;
+  void GetExtraParams(ui::NativeTheme::ExtraParams* params) const override;
 
   // True if the checkbox is checked.
   bool checked_;

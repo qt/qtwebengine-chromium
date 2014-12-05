@@ -130,6 +130,7 @@ static void dump_headers(AVCodecContext *avctx, FLACStreaminfo *s)
 static int allocate_buffers(FLACContext *s)
 {
     int buf_size;
+    int ret;
 
     av_assert0(s->max_blocksize);
 
@@ -142,9 +143,10 @@ static int allocate_buffers(FLACContext *s)
     if (!s->decoded_buffer)
         return AVERROR(ENOMEM);
 
-    return av_samples_fill_arrays((uint8_t **)s->decoded, NULL,
+    ret = av_samples_fill_arrays((uint8_t **)s->decoded, NULL,
                                   s->decoded_buffer, s->channels,
                                   s->max_blocksize, AV_SAMPLE_FMT_S32P, 0);
+    return ret < 0 ? ret : 0;
 }
 
 /**
@@ -162,7 +164,7 @@ static int parse_streaminfo(FLACContext *s, const uint8_t *buf, int buf_size)
         /* need more data */
         return 0;
     }
-    avpriv_flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
+    flac_parse_block_header(&buf[4], NULL, &metadata_type, &metadata_size);
     if (metadata_type != FLAC_METADATA_TYPE_STREAMINFO ||
         metadata_size != FLAC_STREAMINFO_SIZE) {
         return AVERROR_INVALIDDATA;
@@ -193,7 +195,7 @@ static int get_metadata_size(const uint8_t *buf, int buf_size)
     do {
         if (buf_end - buf < 4)
             return 0;
-        avpriv_flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
+        flac_parse_block_header(buf, &metadata_last, NULL, &metadata_size);
         buf += 4;
         if (buf_end - buf < metadata_size) {
             /* need more data in order to read the complete header */

@@ -63,6 +63,9 @@ combined_config="$(echo "$combined_config" | sed 's/.*define//')"
 combined_config="$(echo "$combined_config" | sed 's/\.equ//')" # gas style
 combined_config="$(echo "$combined_config" | sed 's/equ//')" # rvds style
 
+# Remove %define in YASM ASM files.
+combined_config="$(echo "$combined_config" | sed 's/%define\s *//')" # yasm style
+
 # Remove useless comma in gas style assembly file.
 combined_config="$(echo "$combined_config" | sed 's/,//')"
 

@@ -10,18 +10,18 @@
 
 #include "base/basictypes.h"
 #include "net/base/net_export.h"
+#include "net/quic/quic_bandwidth.h"
 #include "net/quic/quic_clock.h"
 #include "net/quic/quic_connection_stats.h"
 #include "net/quic/quic_time.h"
 
 namespace net {
 
-// TCP congestion window in QUIC is in packets, not bytes.
-typedef uint32 QuicTcpCongestionWindow;
-
 class NET_EXPORT_PRIVATE Cubic {
  public:
   Cubic(const QuicClock* clock, QuicConnectionStats* stats);
+
+  void SetNumConnections(int num_connections);
 
   // Call after a timeout to reset the cubic state.
   void Reset();
@@ -29,26 +29,32 @@ class NET_EXPORT_PRIVATE Cubic {
   // Compute a new congestion window to use after a loss event.
   // Returns the new congestion window in packets. The new congestion window is
   // a multiplicative decrease of our current window.
-  QuicTcpCongestionWindow CongestionWindowAfterPacketLoss(
-      QuicTcpCongestionWindow current);
+  QuicPacketCount CongestionWindowAfterPacketLoss(QuicPacketCount current);
 
   // Compute a new congestion window to use after a received ACK.
   // Returns the new congestion window in packets. The new congestion window
   // follows a cubic function that depends on the time passed since last
   // packet loss.
-  QuicTcpCongestionWindow CongestionWindowAfterAck(
-      QuicTcpCongestionWindow current,
-      QuicTime::Delta delay_min);
+  QuicPacketCount CongestionWindowAfterAck(QuicPacketCount current,
+                                           QuicTime::Delta delay_min);
 
  private:
   static const QuicTime::Delta MaxCubicTimeInterval() {
     return QuicTime::Delta::FromMilliseconds(30);
   }
 
+  // Compute the TCP Cubic alpha and beta based on the current number of
+  // connections.
+  float Alpha() const;
+  float Beta() const;
+
   // Update congestion control variables in QuicConnectionStats.
-  void UpdateCongestionControlStats(QuicTcpCongestionWindow new_cubic_mode_cwnd,
-                                    QuicTcpCongestionWindow new_reno_mode_cwnd);
+  void UpdateCongestionControlStats(QuicPacketCount new_cubic_mode_cwnd,
+                                    QuicPacketCount new_reno_mode_cwnd);
   const QuicClock* clock_;
+
+  // Number of connections to simulate.
+  int num_connections_;
 
   // Time when this cycle started, after last loss event.
   QuicTime epoch_;
@@ -57,27 +63,27 @@ class NET_EXPORT_PRIVATE Cubic {
   QuicTime last_update_time_;
 
   // Last congestion window (in packets) used.
-  QuicTcpCongestionWindow last_congestion_window_;
+  QuicPacketCount last_congestion_window_;
 
   // Max congestion window (in packets) used just before last loss event.
   // Note: to improve fairness to other streams an additional back off is
   // applied to this value if the new value is below our latest value.
-  QuicTcpCongestionWindow last_max_congestion_window_;
+  QuicPacketCount last_max_congestion_window_;
 
   // Number of acked packets since the cycle started (epoch).
   uint32 acked_packets_count_;
 
   // TCP Reno equivalent congestion window in packets.
-  QuicTcpCongestionWindow estimated_tcp_congestion_window_;
+  QuicPacketCount estimated_tcp_congestion_window_;
 
   // Origin point of cubic function.
-  QuicTcpCongestionWindow origin_point_congestion_window_;
+  QuicPacketCount origin_point_congestion_window_;
 
   // Time to origin point of cubic function in 2^10 fractions of a second.
   uint32 time_to_origin_point_;
 
   // Last congestion window in packets computed by cubic function.
-  QuicTcpCongestionWindow last_target_congestion_window_;
+  QuicPacketCount last_target_congestion_window_;
 
   // QuicConnectionStats includes congestion control related stats.
   QuicConnectionStats* stats_;

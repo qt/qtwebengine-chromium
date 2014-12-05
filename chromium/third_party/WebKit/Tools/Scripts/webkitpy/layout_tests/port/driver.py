@@ -150,7 +150,8 @@ class Driver(object):
         Returns a DriverOutput object.
         """
         start_time = time.time()
-        self.start(driver_input.should_run_pixel_test, driver_input.args)
+        stdin_deadline = start_time + int(driver_input.timeout) / 2000.0
+        self.start(driver_input.should_run_pixel_test, driver_input.args, stdin_deadline)
         test_begin_time = time.time()
         self.error_from_test = str()
         self.err_seen_eof = False
@@ -167,11 +168,13 @@ class Driver(object):
         pid = self._server_process.pid()
         leaked = self._leaked
 
-        if not crashed and 'AddressSanitizer' in self.error_from_test:
-            self.error_from_test = 'OUTPUT CONTAINS "AddressSanitizer", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
-            crashed = True
-            self._crashed_process_name = "unknown process name"
-            self._crashed_pid = 0
+        if not crashed:
+            sanitizer = self._port._output_contains_sanitizer_messages(self.error_from_test)
+            if sanitizer:
+                self.error_from_test = 'OUTPUT CONTAINS "' + sanitizer + '", so we are treating this test as if it crashed, even though it did not.\n\n' + self.error_from_test
+                crashed = True
+                self._crashed_process_name = "unknown process name"
+                self._crashed_pid = 0
 
         if stop_when_done or crashed or timed_out or leaked:
             # We call stop() even if we crashed or timed out in order to get any remaining stdout/stderr output.
@@ -224,14 +227,19 @@ class Driver(object):
         return test_name.startswith(self.HTTP_DIR) and not test_name.startswith(self.HTTP_LOCAL_DIR)
 
     def test_to_uri(self, test_name):
-        """Convert a test name to a URI."""
+        """Convert a test name to a URI.
+
+        Tests which have an 'https' directory in their paths (e.g.
+        '/http/tests/security/mixedContent/https/test1.html') or '.https.' in
+        their name (e.g. 'http/tests/security/mixedContent/test1.https.html') will
+        be loaded over HTTPS; all other tests over HTTP.
+        """
         if not self.is_http_test(test_name):
             return path.abspath_to_uri(self._port.host.platform, self._port.abspath_for_test(test_name))
 
         relative_path = test_name[len(self.HTTP_DIR):]
 
-        # TODO(dpranke): remove the SSL reference?
-        if relative_path.startswith("ssl/"):
+        if "/https/" in test_name or ".https." in test_name:
             return "https://127.0.0.1:8443/" + relative_path
         return "http://127.0.0.1:8000/" + relative_path
 
@@ -265,7 +273,7 @@ class Driver(object):
             return True
         return False
 
-    def start(self, pixel_tests, per_test_args):
+    def start(self, pixel_tests, per_test_args, deadline):
         new_cmd_line = self.cmd_line(pixel_tests, per_test_args)
         if not self._server_process or new_cmd_line != self._current_cmd_line:
             self._start(pixel_tests, per_test_args)
@@ -318,9 +326,9 @@ class Driver(object):
         # Remote drivers will override this method to return the pid on the device.
         return self._server_process.pid()
 
-    def stop(self):
+    def stop(self, timeout_secs=0.0):
         if self._server_process:
-            self._server_process.stop()
+            self._server_process.stop(timeout_secs)
             self._server_process = None
             if self._profiler:
                 self._profiler.profile_after_exit()
@@ -430,7 +438,8 @@ class Driver(object):
             or self._read_header(block, line, 'Content-Length: ', '_content_length', int)
             or self._read_header(block, line, 'ActualHash: ', 'content_hash')
             or self._read_header(block, line, 'DumpMalloc: ', 'malloc')
-            or self._read_header(block, line, 'DumpJSHeap: ', 'js_heap')):
+            or self._read_header(block, line, 'DumpJSHeap: ', 'js_heap')
+            or self._read_header(block, line, 'StdinPath', 'stdin_path')):
             return
         # Note, we're not reading ExpectedHash: here, but we could.
         # If the line wasn't a header, we just append it to the content.
@@ -507,6 +516,7 @@ class ContentBlock(object):
         self.decoded_content = None
         self.malloc = None
         self.js_heap = None
+        self.stdin_path = None
 
     def decode_content(self):
         if self.encoding == 'base64' and self.content is not None:

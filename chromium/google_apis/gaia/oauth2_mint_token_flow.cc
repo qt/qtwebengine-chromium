@@ -41,6 +41,8 @@ const char kOAuth2IssueTokenBodyFormat[] =
     "&scope=%s"
     "&client_id=%s"
     "&origin=%s";
+const char kOAuth2IssueTokenBodyFormatDeviceIdAddendum[] =
+    "&device_id=%s&device_type=chrome";
 const char kIssueAdviceKey[] = "issueAdvice";
 const char kIssueAdviceValueConsent[] = "consent";
 const char kAccessTokenKey[] = "token";
@@ -98,30 +100,24 @@ bool IssueAdviceInfoEntry::operator ==(const IssueAdviceInfoEntry& rhs) const {
 OAuth2MintTokenFlow::Parameters::Parameters() : mode(MODE_ISSUE_ADVICE) {}
 
 OAuth2MintTokenFlow::Parameters::Parameters(
-    const std::string& at,
     const std::string& eid,
     const std::string& cid,
     const std::vector<std::string>& scopes_arg,
+    const std::string& device_id,
     Mode mode_arg)
-    : access_token(at),
-      extension_id(eid),
+    : extension_id(eid),
       client_id(cid),
       scopes(scopes_arg),
+      device_id(device_id),
       mode(mode_arg) {
 }
 
 OAuth2MintTokenFlow::Parameters::~Parameters() {}
 
-OAuth2MintTokenFlow::OAuth2MintTokenFlow(URLRequestContextGetter* context,
-                                         Delegate* delegate,
+OAuth2MintTokenFlow::OAuth2MintTokenFlow(Delegate* delegate,
                                          const Parameters& parameters)
-    : OAuth2ApiCallFlow(context,
-                        std::string(),
-                        parameters.access_token,
-                        std::vector<std::string>()),
-      delegate_(delegate),
-      parameters_(parameters),
-      weak_factory_(this) {}
+    : delegate_(delegate), parameters_(parameters), weak_factory_(this) {
+}
 
 OAuth2MintTokenFlow::~OAuth2MintTokenFlow() { }
 
@@ -162,7 +158,7 @@ std::string OAuth2MintTokenFlow::CreateApiCallBody() {
       (parameters_.mode == MODE_MINT_TOKEN_NO_FORCE ||
        parameters_.mode == MODE_MINT_TOKEN_FORCE)
           ? kResponseTypeValueToken : kResponseTypeValueNone;
-  return base::StringPrintf(
+  std::string body = base::StringPrintf(
       kOAuth2IssueTokenBodyFormat,
       net::EscapeUrlEncodedData(force_value, true).c_str(),
       net::EscapeUrlEncodedData(response_type_value, true).c_str(),
@@ -170,6 +166,12 @@ std::string OAuth2MintTokenFlow::CreateApiCallBody() {
           JoinString(parameters_.scopes, ' '), true).c_str(),
       net::EscapeUrlEncodedData(parameters_.client_id, true).c_str(),
       net::EscapeUrlEncodedData(parameters_.extension_id, true).c_str());
+  if (!parameters_.device_id.empty()) {
+    body.append(base::StringPrintf(
+        kOAuth2IssueTokenBodyFormatDeviceIdAddendum,
+        net::EscapeUrlEncodedData(parameters_.device_id, true).c_str()));
+  }
+  return body;
 }
 
 void OAuth2MintTokenFlow::ProcessApiCallSuccess(
@@ -215,16 +217,6 @@ void OAuth2MintTokenFlow::ProcessApiCallSuccess(
 void OAuth2MintTokenFlow::ProcessApiCallFailure(
     const net::URLFetcher* source) {
   ReportFailure(CreateAuthError(source));
-}
-void OAuth2MintTokenFlow::ProcessNewAccessToken(
-    const std::string& access_token) {
-  // We don't currently store new access tokens. We generate one every time.
-  // So we have nothing to do here.
-  return;
-}
-void OAuth2MintTokenFlow::ProcessMintAccessTokenFailure(
-    const GoogleServiceAuthError& error) {
-  ReportFailure(error);
 }
 
 // static

@@ -1,11 +1,9 @@
 #include "DMReporter.h"
 
 #include "SkDynamicAnnotations.h"
-#include "SkCommandLineFlags.h"
+#include "SkCommonFlags.h"
 #include "OverwriteLine.h"
-
-DEFINE_bool2(quiet, q, false, "If true, don't print status updates.");
-DEFINE_bool2(verbose, v, false, "If true, print status updates one-per-line.");
+#include "ProcStats.h"
 
 namespace DM {
 
@@ -24,7 +22,11 @@ void Reporter::printStatus(SkString name, SkMSec timeMs) const {
         status.appendf(", %d failed", failed);
     }
     if (FLAGS_verbose) {
-        status.appendf("\t%5dms %s", timeMs, name.c_str());
+        int max_rss_mb = sk_tools::getMaxResidentSetSizeMB();
+        if (max_rss_mb >= 0) {
+            status.appendf("\t%4dM peak", max_rss_mb);
+        }
+        status.appendf("\t%5dms\t%s", timeMs, name.c_str());
     }
     SkDebugf("%s", status.c_str());
 }

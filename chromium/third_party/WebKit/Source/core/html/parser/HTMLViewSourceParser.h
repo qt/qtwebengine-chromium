@@ -33,9 +33,9 @@
 #include "core/html/parser/HTMLTokenizer.h"
 #include "core/html/parser/XSSAuditor.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLViewSourceParser FINAL :  public DecodedDataDocumentParser {
+class HTMLViewSourceParser final :  public DecodedDataDocumentParser {
 public:
     static PassRefPtrWillBeRawPtr<HTMLViewSourceParser> create(HTMLViewSourceDocument& document, const String& mimeType)
     {
@@ -47,9 +47,9 @@ private:
     HTMLViewSourceParser(HTMLViewSourceDocument&, const String& mimeType);
 
     // DocumentParser
-    virtual void insert(const SegmentedString&) OVERRIDE { ASSERT_NOT_REACHED(); }
-    virtual void append(PassRefPtr<StringImpl>) OVERRIDE;
-    virtual void finish() OVERRIDE;
+    virtual void insert(const SegmentedString&) override { ASSERT_NOT_REACHED(); }
+    virtual void append(PassRefPtr<StringImpl>) override;
+    virtual void finish() override;
 
     HTMLViewSourceDocument* document() const { return static_cast<HTMLViewSourceDocument*>(DecodedDataDocumentParser::document()); }
 

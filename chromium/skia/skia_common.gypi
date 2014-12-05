@@ -6,6 +6,9 @@
 # Skia build.
 {
   'includes': [
+    # blink_skia_config.gypi defines blink_skia_defines
+    '../third_party/WebKit/public/blink_skia_config.gypi',
+
     # skia_for_chromium_defines.gypi defines skia_for_chromium_defines
     '../third_party/skia/gyp/skia_for_chromium_defines.gypi',
   ],
@@ -19,11 +22,6 @@
     [ 'OS != "android"', {
       'sources/': [
          ['exclude', '_android\\.(cc|cpp)$'],
-      ],
-    }],
-    [ 'OS == "android"', {
-      'defines': [
-        'SK_FONTHOST_DOES_NOT_USE_FONTMGR',
       ],
     }],
     [ 'OS != "ios"', {
@@ -111,13 +109,20 @@
     # Neon support.
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon == 1', {
       'defines': [
-        '__ARM_HAVE_NEON',
+        'SK_ARM_HAS_NEON',
       ],
     }],
     [ 'target_arch == "arm" and arm_version >= 7 and arm_neon_optional == 1', {
       'defines': [
-        '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
+        'SK_ARM_HAS_OPTIONAL_NEON',
       ],
+    }],
+
+    # Enable feedback-directed optimisation for skia when building in android.
+    [ 'android_webview_build == 1', {
+      'aosp_build_settings': {
+        'LOCAL_FDO_SUPPORT': 'true',
+      },
     }],
   ],
 
@@ -129,7 +134,7 @@
         }, {
           'skia_support_gpu': 1,
         }],
-        ['OS=="ios" or enable_printing == 0', {
+        ['OS=="ios" or (enable_basic_printing==0 and enable_print_preview==0)', {
           'skia_support_pdf': 0,
         }, {
           'skia_support_pdf': 1,
@@ -154,10 +159,13 @@
       'GR_GL_IGNORE_ES3_MSAA=0',
       'SK_WILL_NEVER_DRAW_PERSPECTIVE_TEXT',
 
+      # This variable contains additional defines, specified in blink's
+      # blink_skia_config.gypi file.
+      '<@(blink_skia_defines)',
+
       # This variable contains additional defines, specified in skia's
       # skia_for_chromium_defines.gypi file.
       '<@(skia_for_chromium_defines)',
-      'SK_SUPPORT_LEGACY_GETTOTALCLIP',
     ],
 
     'default_font_cache_limit%': '(20*1024*1024)',
@@ -188,15 +196,9 @@
     # all filters used in Blink support the optimized path properly
     'SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION',
 
-    # Disable this check because it is too strict for some Chromium-specific
-    # subclasses of SkPixelRef. See bug: crbug.com/171776.
-    'SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK',
-
     'IGNORE_ROT_AA_RECT_OPT',
 
     'SK_IGNORE_BLURRED_RRECT_OPT',
-
-    'SK_IGNORE_QUAD_RR_CORNERS_OPT',
 
     # this flag forces Skia not to use typographic metrics with GDI.
     'SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS',

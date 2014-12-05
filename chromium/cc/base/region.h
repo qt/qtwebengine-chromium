@@ -7,18 +7,21 @@
 
 #include <string>
 
-#include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "third_party/skia/include/core/SkRegion.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/skia_util.h"
 
 namespace base {
 class Value;
+namespace debug {
+class TracedValue;
+}
 }
 
 namespace cc {
+class SimpleEnclosedRegion;
 
 class CC_EXPORT Region {
  public:
@@ -44,6 +47,7 @@ class CC_EXPORT Region {
 
   void Subtract(const gfx::Rect& rect);
   void Subtract(const Region& region);
+  void Subtract(const SimpleEnclosedRegion& region);
   void Union(const gfx::Rect& rect);
   void Union(const Region& region);
   void Intersect(const gfx::Rect& rect);
@@ -59,6 +63,7 @@ class CC_EXPORT Region {
 
   std::string ToString() const;
   scoped_ptr<base::Value> AsValue() const;
+  void AsValueInto(base::debug::TracedValue* array) const;
 
   class CC_EXPORT Iterator {
    public:

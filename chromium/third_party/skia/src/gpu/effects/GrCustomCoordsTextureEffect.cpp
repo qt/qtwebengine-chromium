@@ -6,90 +6,84 @@
  */
 
 #include "GrCustomCoordsTextureEffect.h"
-#include "gl/GrGLEffect.h"
+#include "gl/builders/GrGLProgramBuilder.h"
+#include "gl/GrGLProcessor.h"
 #include "gl/GrGLSL.h"
 #include "gl/GrGLTexture.h"
-#include "gl/GrGLVertexEffect.h"
-#include "GrTBackendEffectFactory.h"
+#include "gl/GrGLGeometryProcessor.h"
+#include "GrTBackendProcessorFactory.h"
 #include "GrTexture.h"
 
-class GrGLCustomCoordsTextureEffect : public GrGLVertexEffect {
+class GrGLCustomCoordsTextureEffect : public GrGLGeometryProcessor {
 public:
-    GrGLCustomCoordsTextureEffect(const GrBackendEffectFactory& factory, const GrDrawEffect& drawEffect)
+    GrGLCustomCoordsTextureEffect(const GrBackendProcessorFactory& factory, const GrProcessor&)
         : INHERITED (factory) {}
 
-    virtual void emitCode(GrGLFullShaderBuilder* builder,
-                          const GrDrawEffect& drawEffect,
-                          EffectKey key,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray& samplers) SK_OVERRIDE {
-        SkASSERT(1 == drawEffect.castEffect<GrCustomCoordsTextureEffect>().numVertexAttribs());
+    virtual void emitCode(const EmitArgs& args) SK_OVERRIDE {
+        const GrCustomCoordsTextureEffect& customCoordsTextureEffect =
+                args.fGP.cast<GrCustomCoordsTextureEffect>();
+        SkASSERT(1 == customCoordsTextureEffect.getVertexAttribs().count());
 
-        SkString fsCoordName;
-        const char* vsVaryingName;
-        const char* fsVaryingNamePtr;
-        builder->addVarying(kVec2f_GrSLType, "textureCoords", &vsVaryingName, &fsVaryingNamePtr);
-        fsCoordName = fsVaryingNamePtr;
+        GrGLVertToFrag v(kVec2f_GrSLType);
+        args.fPB->addVarying("TextureCoords", &v);
 
-        const char* attrName =
-            builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0])->c_str();
-        builder->vsCodeAppendf("\t%s = %s;\n", vsVaryingName, attrName);
+        GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+        const GrShaderVar& inTextureCoords = customCoordsTextureEffect.inTextureCoords();
+        vsBuilder->codeAppendf("%s = %s;", v.vsOut(), inTextureCoords.c_str());
 
-        builder->fsCodeAppendf("\t%s = ", outputColor);
-        builder->fsAppendTextureLookupAndModulate(inputColor,
-                                                  samplers[0],
-                                                  fsCoordName.c_str(),
+        GrGLGPFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+        fsBuilder->codeAppendf("%s = ", args.fOutput);
+        fsBuilder->appendTextureLookupAndModulate(args.fInput,
+                                                  args.fSamplers[0],
+                                                  v.fsIn(),
                                                   kVec2f_GrSLType);
-        builder->fsCodeAppend(";\n");
+        fsBuilder->codeAppend(";");
     }
 
-    virtual void setData(const GrGLUniformManager& uman,
-                         const GrDrawEffect& drawEffect) SK_OVERRIDE {}
+    virtual void setData(const GrGLProgramDataManager&,
+                         const GrProcessor&) SK_OVERRIDE {}
 
 private:
-    typedef GrGLVertexEffect INHERITED;
+    typedef GrGLGeometryProcessor INHERITED;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
 
 GrCustomCoordsTextureEffect::GrCustomCoordsTextureEffect(GrTexture* texture,
                                                          const GrTextureParams& params)
-    : fTextureAccess(texture, params) {
+    : fTextureAccess(texture, params)
+    , fInTextureCoords(this->addVertexAttrib(GrShaderVar("inTextureCoords",
+                                                         kVec2f_GrSLType,
+                                                         GrShaderVar::kAttribute_TypeModifier))) {
     this->addTextureAccess(&fTextureAccess);
-    this->addVertexAttrib(kVec2f_GrSLType);
 }
 
-bool GrCustomCoordsTextureEffect::onIsEqual(const GrEffect& other) const {
-    const GrCustomCoordsTextureEffect& cte = CastEffect<GrCustomCoordsTextureEffect>(other);
-    return fTextureAccess == cte.fTextureAccess;
+bool GrCustomCoordsTextureEffect::onIsEqual(const GrGeometryProcessor& other) const {
+    return true;
 }
 
-void GrCustomCoordsTextureEffect::getConstantColorComponents(GrColor* color,
-                                                             uint32_t* validFlags) const {
-    if ((*validFlags & kA_GrColorComponentFlag) && 0xFF == GrColorUnpackA(*color) &&
-        GrPixelConfigIsOpaque(this->texture(0)->config())) {
-        *validFlags = kA_GrColorComponentFlag;
+void GrCustomCoordsTextureEffect::onComputeInvariantOutput(InvariantOutput* inout) const {
+    if (GrPixelConfigIsOpaque(this->texture(0)->config())) {
+        inout->mulByUnknownOpaqueColor();
     } else {
-        *validFlags = 0;
+        inout->mulByUnknownColor();
     }
 }
 
-const GrBackendEffectFactory& GrCustomCoordsTextureEffect::getFactory() const {
-    return GrTBackendEffectFactory<GrCustomCoordsTextureEffect>::getInstance();
+const GrBackendGeometryProcessorFactory& GrCustomCoordsTextureEffect::getFactory() const {
+    return GrTBackendGeometryProcessorFactory<GrCustomCoordsTextureEffect>::getInstance();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_EFFECT_TEST(GrCustomCoordsTextureEffect);
+GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrCustomCoordsTextureEffect);
 
-GrEffectRef* GrCustomCoordsTextureEffect::TestCreate(SkRandom* random,
-                                                     GrContext*,
-                                                     const GrDrawTargetCaps&,
-                                                     GrTexture* textures[]) {
-    int texIdx = random->nextBool() ? GrEffectUnitTest::kSkiaPMTextureIdx :
-                                      GrEffectUnitTest::kAlphaTextureIdx;
+GrGeometryProcessor* GrCustomCoordsTextureEffect::TestCreate(SkRandom* random,
+                                                             GrContext*,
+                                                             const GrDrawTargetCaps&,
+                                                             GrTexture* textures[]) {
+    int texIdx = random->nextBool() ? GrProcessorUnitTest::kSkiaPMTextureIdx :
+                                      GrProcessorUnitTest::kAlphaTextureIdx;
     static const SkShader::TileMode kTileModes[] = {
         SkShader::kClamp_TileMode,
         SkShader::kRepeat_TileMode,

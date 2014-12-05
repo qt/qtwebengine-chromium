@@ -57,21 +57,22 @@ class CONTENT_EXPORT GoogleStreamingRemoteEngine
   static const int kDownstreamUrlFetcherIdForTesting;
 
   explicit GoogleStreamingRemoteEngine(net::URLRequestContextGetter* context);
-  virtual ~GoogleStreamingRemoteEngine();
+  ~GoogleStreamingRemoteEngine() override;
 
   // SpeechRecognitionEngine methods.
-  virtual void SetConfig(const SpeechRecognitionEngineConfig& config) OVERRIDE;
-  virtual void StartRecognition() OVERRIDE;
-  virtual void EndRecognition() OVERRIDE;
-  virtual void TakeAudioChunk(const AudioChunk& data) OVERRIDE;
-  virtual void AudioChunksEnded() OVERRIDE;
-  virtual bool IsRecognitionPending() const OVERRIDE;
-  virtual int GetDesiredAudioChunkDurationMs() const OVERRIDE;
+  void SetConfig(const SpeechRecognitionEngineConfig& config) override;
+  void StartRecognition() override;
+  void EndRecognition() override;
+  void TakeAudioChunk(const AudioChunk& data) override;
+  void AudioChunksEnded() override;
+  bool IsRecognitionPending() const override;
+  int GetDesiredAudioChunkDurationMs() const override;
 
   // net::URLFetcherDelegate methods.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
-  virtual void OnURLFetchDownloadProgress(const net::URLFetcher* source,
-                                          int64 current, int64 total) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
+  void OnURLFetchDownloadProgress(const net::URLFetcher* source,
+                                  int64 current,
+                                  int64 total) override;
 
  private:
   // Response status codes from the speech recognition webservice.

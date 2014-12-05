@@ -30,7 +30,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Storage;
 
@@ -44,7 +44,8 @@ struct StorageEventInit : public EventInit {
     RefPtrWillBeMember<Storage> storageArea;
 };
 
-class StorageEvent FINAL : public Event {
+class StorageEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<StorageEvent> create();
     static PassRefPtrWillBeRawPtr<StorageEvent> create(const AtomicString& type, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
@@ -56,16 +57,15 @@ public:
     const String& newValue() const { return m_newValue; }
     const String& url() const { return m_url; }
     Storage* storageArea() const { return m_storageArea.get(); }
-    Storage* storageArea(bool& isNull) const { isNull = !m_storageArea; return m_storageArea.get(); }
 
     void initStorageEvent(const AtomicString& type, bool canBubble, bool cancelable, const String& key, const String& oldValue, const String& newValue, const String& url, Storage* storageArea);
 
     // Needed once we support init<blank>EventNS
     // void initStorageEventNS(in DOMString namespaceURI, in DOMString typeArg, in boolean canBubbleArg, in boolean cancelableArg, in DOMString keyArg, in DOMString oldValueArg, in DOMString newValueArg, in DOMString urlArg, Storage storageAreaArg);
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     StorageEvent();
@@ -79,6 +79,6 @@ private:
     RefPtrWillBeMember<Storage> m_storageArea;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageEvent_h

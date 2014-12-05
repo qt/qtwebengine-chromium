@@ -33,16 +33,16 @@ class MEDIA_EXPORT FFmpegAudioDecoder : public AudioDecoder {
   FFmpegAudioDecoder(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const LogCB& log_cb);
-  virtual ~FFmpegAudioDecoder();
+  ~FFmpegAudioDecoder() override;
 
   // AudioDecoder implementation.
-  virtual void Initialize(const AudioDecoderConfig& config,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const AudioDecoderConfig& config,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
 
  private:
   // There are four states the decoder can be in:

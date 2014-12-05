@@ -35,8 +35,13 @@ class HttpListenSocket : public TCPListenSocket {
  public:
   HttpListenSocket(const SocketDescriptor socket_descriptor,
                    StreamListenSocket::Delegate* delegate);
-  virtual ~HttpListenSocket();
+  ~HttpListenSocket() override;
   virtual void Listen();
+
+  // Listen on the current IO thread. If the IO thread has changed since this
+  // object is constructed, call |ListenOnIOThread| to make sure it listens on
+  // the right thread. Otherwise must call |Listen| instead.
+  void ListenOnIOThread();
 
  private:
   friend class EmbeddedTestServer;
@@ -101,7 +106,7 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
   // Creates a http test server. InitializeAndWaitUntilReady() must be called
   // to start the server.
   EmbeddedTestServer();
-  virtual ~EmbeddedTestServer();
+  ~EmbeddedTestServer() override;
 
   // Initializes and waits until the server is ready to accept requests.
   bool InitializeAndWaitUntilReady() WARN_UNUSED_RESULT;
@@ -123,6 +128,12 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
   // should start with '/'. For example: GetURL("/path?query=foo") =>
   // http://127.0.0.1:<port>/path?query=foo.
   GURL GetURL(const std::string& relative_url) const;
+
+  // Similar to the above method with the difference that it uses the supplied
+  // |hostname| for the URL instead of 127.0.0.1. The hostname should be
+  // resolved to 127.0.0.1.
+  GURL GetURL(const std::string& hostname,
+              const std::string& relative_url) const;
 
   // Returns the port number used by the server.
   int port() const { return port_; }
@@ -161,12 +172,12 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
                      scoped_ptr<HttpRequest> request);
 
   // StreamListenSocket::Delegate overrides:
-  virtual void DidAccept(StreamListenSocket* server,
-                         scoped_ptr<StreamListenSocket> connection) OVERRIDE;
-  virtual void DidRead(StreamListenSocket* connection,
-                       const char* data,
-                       int length) OVERRIDE;
-  virtual void DidClose(StreamListenSocket* connection) OVERRIDE;
+  void DidAccept(StreamListenSocket* server,
+                 scoped_ptr<StreamListenSocket> connection) override;
+  void DidRead(StreamListenSocket* connection,
+               const char* data,
+               int length) override;
+  void DidClose(StreamListenSocket* connection) override;
 
   HttpConnection* FindConnection(StreamListenSocket* socket);
 
@@ -186,11 +197,11 @@ class EmbeddedTestServer : public StreamListenSocket::Delegate {
   // Vector of registered request handlers.
   std::vector<HandleRequestCallback> request_handlers_;
 
+  base::ThreadChecker thread_checker_;
+
   // Note: This should remain the last member so it'll be destroyed and
   // invalidate its weak pointers before any other members are destroyed.
   base::WeakPtrFactory<EmbeddedTestServer> weak_factory_;
-
-  base::ThreadChecker thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(EmbeddedTestServer);
 };

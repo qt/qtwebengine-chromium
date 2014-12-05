@@ -25,7 +25,7 @@
 #include "core/SVGNames.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGStitchOptions>()
 {
@@ -55,8 +55,6 @@ inline SVGFETurbulenceElement::SVGFETurbulenceElement(Document& document)
     , m_type(SVGAnimatedEnumeration<TurbulenceType>::create(this, SVGNames::typeAttr, FETURBULENCE_TYPE_TURBULENCE))
     , m_numOctaves(SVGAnimatedInteger::create(this, SVGNames::numOctavesAttr, SVGInteger::create(1)))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_baseFrequency);
     addToPropertyMap(m_seed);
     addToPropertyMap(m_stitchTiles);
@@ -81,27 +79,7 @@ bool SVGFETurbulenceElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFETurbulenceElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::baseFrequencyAttr)
-        m_baseFrequency->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::numOctavesAttr)
-        m_numOctaves->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::seedAttr)
-        m_seed->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::stitchTilesAttr)
-        m_stitchTiles->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::typeAttr)
-        m_type->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFETurbulenceElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
@@ -153,4 +131,4 @@ PassRefPtr<FilterEffect> SVGFETurbulenceElement::build(SVGFilterBuilder*, Filter
     return FETurbulence::create(filter, m_type->currentValue()->enumValue(), baseFrequencyX()->currentValue()->value(), baseFrequencyY()->currentValue()->value(), m_numOctaves->currentValue()->value(), m_seed->currentValue()->value(), m_stitchTiles->currentValue()->enumValue() == SVG_STITCHTYPE_STITCH);
 }
 
-}
+} // namespace blink

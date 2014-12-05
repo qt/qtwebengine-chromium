@@ -2,7 +2,7 @@
  * Copyright (C) 1999 Lars Knoll (knoll@kde.org)
  *           (C) 1999 Antti Koivisto (koivisto@kde.org)
  *           (C) 2001 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,56 +23,57 @@
 #include "config.h"
 #include "core/dom/ContainerNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ChildFrameDisconnector.h"
 #include "core/dom/ChildListMutationScope.h"
 #include "core/dom/ClassCollection.h"
-#include "core/dom/ContainerNodeAlgorithms.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/NameNodeList.h"
-#include "core/dom/NoEventDispatchAssertion.h"
 #include "core/dom/NodeChildRemovalTracker.h"
 #include "core/dom/NodeRareData.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
-#include "core/dom/ScriptForbiddenScope.h"
 #include "core/dom/SelectorQuery.h"
 #include "core/dom/StaticNodeList.h"
+#include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/events/MutationEvent.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "core/html/HTMLTagCollection.h"
 #include "core/html/RadioNodeList.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/InlineTextBox.h"
 #include "core/rendering/RenderText.h"
 #include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
+#include "platform/EventDispatchForbiddenScope.h"
+#include "platform/ScriptForbiddenScope.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 static void dispatchChildInsertionEvents(Node&);
 static void dispatchChildRemovalEvents(Node&);
 
-#ifndef NDEBUG
-unsigned NoEventDispatchAssertion::s_count = 0;
+#if ENABLE(ASSERT)
+unsigned EventDispatchForbiddenScope::s_count = 0;
 #endif
 
 static void collectChildrenAndRemoveFromOldParent(Node& node, NodeVector& nodes, ExceptionState& exceptionState)
 {
-    if (!node.isDocumentFragment()) {
-        nodes.append(&node);
-        if (ContainerNode* oldParent = node.parentNode())
-            oldParent->removeChild(&node, exceptionState);
+    if (node.isDocumentFragment()) {
+        DocumentFragment& fragment = toDocumentFragment(node);
+        getChildNodes(fragment, nodes);
+        fragment.removeChildren();
         return;
     }
-    getChildNodes(node, nodes);
-    toContainerNode(node).removeChildren();
+    nodes.append(&node);
+    if (ContainerNode* oldParent = node.parentNode())
+        oldParent->removeChild(&node, exceptionState);
 }
 
 #if !ENABLE(OILPAN)
@@ -80,7 +81,7 @@ void ContainerNode::removeDetachedChildren()
 {
     ASSERT(!connectedSubframeCount());
     ASSERT(needsAttach());
-    removeDetachedChildrenInContainer<Node, ContainerNode>(*this);
+    removeDetachedChildrenInContainer(*this);
 }
 #endif
 
@@ -175,7 +176,7 @@ bool ContainerNode::checkAcceptChildGuaranteedNodeTypes(const Node& newChild, Ex
     return true;
 }
 
-void ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* refChild, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* refChild, ExceptionState& exceptionState)
 {
 #if !ENABLE(OILPAN)
     // Check that this node is not "floating".
@@ -187,43 +188,49 @@ void ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* re
 
     // insertBefore(node, 0) is equivalent to appendChild(node)
     if (!refChild) {
-        appendChild(newChild, exceptionState);
-        return;
+        return appendChild(newChild, exceptionState);
     }
 
     // Make sure adding the new child is OK.
-    if (!checkAcceptChild(newChild.get(), 0, exceptionState))
-        return;
+    if (!checkAcceptChild(newChild.get(), 0, exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return newChild;
+    }
     ASSERT(newChild);
 
     // NotFoundError: Raised if refChild is not a child of this node
     if (refChild->parentNode() != this) {
         exceptionState.throwDOMException(NotFoundError, "The node before which the new node is to be inserted is not a child of this node.");
-        return;
+        return nullptr;
     }
 
-    if (refChild->previousSibling() == newChild || refChild == newChild) // nothing to do
-        return;
+    // Nothing to do.
+    if (refChild->previousSibling() == newChild || refChild == newChild)
+        return newChild;
 
     RefPtrWillBeRawPtr<Node> next = refChild;
 
     NodeVector targets;
     collectChildrenAndRemoveFromOldParent(*newChild, targets, exceptionState);
     if (exceptionState.hadException())
-        return;
+        return nullptr;
     if (targets.isEmpty())
-        return;
+        return newChild;
 
     // We need this extra check because collectChildrenAndRemoveFromOldParent() can fire mutation events.
-    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState))
-        return;
+    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return newChild;
+    }
 
     InspectorInstrumentation::willInsertDOMNode(this);
 
     ChildListMutationScope mutation(*this);
-    for (NodeVector::const_iterator it = targets.begin(); it != targets.end(); ++it) {
-        ASSERT(*it);
-        Node& child = **it;
+    for (const auto& targetNode : targets) {
+        ASSERT(targetNode);
+        Node& child = *targetNode;
 
         // Due to arbitrary code running in response to a DOM mutation event it's
         // possible that "next" is no longer a child of "this".
@@ -242,11 +249,13 @@ void ContainerNode::insertBefore(PassRefPtrWillBeRawPtr<Node> newChild, Node* re
     }
 
     dispatchSubtreeModifiedEvent();
+
+    return newChild;
 }
 
 void ContainerNode::insertBeforeCommon(Node& nextChild, Node& newChild)
 {
-    NoEventDispatchAssertion assertNoEventDispatch;
+    EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
     ASSERT(!newChild.parentNode()); // Use insertBefore if you need to handle reparenting (and want DOM mutation events).
@@ -294,6 +303,8 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
     if (nextChild.previousSibling() == newChild || &nextChild == newChild) // nothing to do
         return;
 
+    RefPtrWillBeRawPtr<Node> protect(this);
+
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
 
@@ -303,12 +314,10 @@ void ContainerNode::parserInsertBefore(PassRefPtrWillBeRawPtr<Node> newChild, No
 
     ChildListMutationScope(*this).childAdded(*newChild);
 
-    childrenChanged(true, newChild->previousSibling(), &nextChild, 1);
-
-    notifyNodeInserted(*newChild);
+    notifyNodeInserted(*newChild, ChildrenChangeSourceParser);
 }
 
-void ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* oldChild, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, PassRefPtrWillBeRawPtr<Node> oldChild, ExceptionState& exceptionState)
 {
 #if !ENABLE(OILPAN)
     // Check that this node is not "floating".
@@ -318,57 +327,66 @@ void ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* ol
 
     RefPtrWillBeRawPtr<Node> protect(this);
 
-    if (oldChild == newChild) // nothing to do
-        return;
+    if (oldChild == newChild) // Nothing to do.
+        return oldChild;
 
     if (!oldChild) {
         exceptionState.throwDOMException(NotFoundError, "The node to be replaced is null.");
-        return;
+        return nullptr;
     }
 
-    // Make sure replacing the old child with the new is ok
-    if (!checkAcceptChild(newChild.get(), oldChild, exceptionState))
-        return;
+    RefPtrWillBeRawPtr<Node> child = oldChild;
+
+    // Make sure replacing the old child with the new is OK.
+    if (!checkAcceptChild(newChild.get(), child.get(), exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return child;
+    }
 
     // NotFoundError: Raised if oldChild is not a child of this node.
-    if (oldChild->parentNode() != this) {
+    if (child->parentNode() != this) {
         exceptionState.throwDOMException(NotFoundError, "The node to be replaced is not a child of this node.");
-        return;
+        return nullptr;
     }
 
     ChildListMutationScope mutation(*this);
 
-    RefPtrWillBeRawPtr<Node> next = oldChild->nextSibling();
+    RefPtrWillBeRawPtr<Node> next = child->nextSibling();
 
-    // Remove the node we're replacing
-    RefPtrWillBeRawPtr<Node> protectRemovedChild = oldChild;
-    ASSERT_UNUSED(protectRemovedChild, protectRemovedChild);
-    removeChild(oldChild, exceptionState);
+    // Remove the node we're replacing.
+    removeChild(child, exceptionState);
     if (exceptionState.hadException())
-        return;
+        return nullptr;
 
     if (next && (next->previousSibling() == newChild || next == newChild)) // nothing to do
-        return;
+        return child;
 
     // Does this one more time because removeChild() fires a MutationEvent.
-    if (!checkAcceptChild(newChild.get(), oldChild, exceptionState))
-        return;
+    if (!checkAcceptChild(newChild.get(), child.get(), exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return child;
+    }
 
     NodeVector targets;
     collectChildrenAndRemoveFromOldParent(*newChild, targets, exceptionState);
     if (exceptionState.hadException())
-        return;
+        return nullptr;
 
     // Does this yet another check because collectChildrenAndRemoveFromOldParent() fires a MutationEvent.
-    if (!checkAcceptChild(newChild.get(), oldChild, exceptionState))
-        return;
+    if (!checkAcceptChild(newChild.get(), child.get(), exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return child;
+    }
 
     InspectorInstrumentation::willInsertDOMNode(this);
 
-    // Add the new child(ren)
-    for (NodeVector::const_iterator it = targets.begin(); it != targets.end(); ++it) {
-        ASSERT(*it);
-        Node& child = **it;
+    // Add the new child(ren).
+    for (const auto& targetNode : targets) {
+        ASSERT(targetNode);
+        Node& child = *targetNode;
 
         // Due to arbitrary code running in response to a DOM mutation event it's
         // possible that "next" is no longer a child of "this".
@@ -383,7 +401,7 @@ void ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* ol
 
         // Add child before "next".
         {
-            NoEventDispatchAssertion assertNoEventDispatch;
+            EventDispatchForbiddenScope assertNoEventDispatch;
             if (next)
                 insertBeforeCommon(*next, child);
             else
@@ -394,6 +412,7 @@ void ContainerNode::replaceChild(PassRefPtrWillBeRawPtr<Node> newChild, Node* ol
     }
 
     dispatchSubtreeModifiedEvent();
+    return child;
 }
 
 void ContainerNode::willRemoveChild(Node& child)
@@ -412,9 +431,9 @@ void ContainerNode::willRemoveChildren()
     getChildNodes(*this, children);
 
     ChildListMutationScope mutation(*this);
-    for (NodeVector::const_iterator it = children.begin(); it != children.end(); ++it) {
-        ASSERT(*it);
-        Node& child = **it;
+    for (const auto& node : children) {
+        ASSERT(node);
+        Node& child = *node;
         mutation.willRemoveChild(child);
         child.notifyMutationObserversNodeWillDetach();
         dispatchChildRemovalEvents(child);
@@ -422,6 +441,73 @@ void ContainerNode::willRemoveChildren()
 
     ChildFrameDisconnector(*this).disconnect(ChildFrameDisconnector::DescendantsOnly);
 }
+
+#if !ENABLE(OILPAN)
+void ContainerNode::removeDetachedChildrenInContainer(ContainerNode& container)
+{
+    // List of nodes to be deleted.
+    Node* head = nullptr;
+    Node* tail = nullptr;
+
+    addChildNodesToDeletionQueue(head, tail, container);
+
+    Node* n;
+    Node* next;
+    while (head) {
+        n = head;
+        ASSERT_WITH_SECURITY_IMPLICATION(n->m_deletionHasBegun);
+
+        next = n->nextSibling();
+        n->setNextSibling(nullptr);
+
+        head = next;
+        if (!next)
+            tail = nullptr;
+
+        if (n->hasChildren())
+            addChildNodesToDeletionQueue(head, tail, toContainerNode(*n));
+
+        delete n;
+    }
+}
+
+void ContainerNode::addChildNodesToDeletionQueue(Node*& head, Node*& tail, ContainerNode& container)
+{
+    // We have to tell all children that their parent has died.
+    Node* next = nullptr;
+    for (Node* n = container.firstChild(); n; n = next) {
+        ASSERT_WITH_SECURITY_IMPLICATION(!n->m_deletionHasBegun);
+
+        next = n->nextSibling();
+        n->setNextSibling(nullptr);
+        n->setParentOrShadowHostNode(nullptr);
+        container.setFirstChild(next);
+        if (next)
+            next->setPreviousSibling(nullptr);
+
+        if (!n->refCount()) {
+#if ENABLE(SECURITY_ASSERT)
+            n->m_deletionHasBegun = true;
+#endif
+            // Add the node to the list of nodes to be deleted.
+            // Reuse the nextSibling pointer for this purpose.
+            if (tail)
+                tail->setNextSibling(n);
+            else
+                head = n;
+
+            tail = n;
+        } else {
+            RefPtrWillBeRawPtr<Node> protect(n); // removedFromDocument may remove all references to this node.
+            container.document().adoptIfNeeded(*n);
+            if (n->inDocument())
+                container.notifyNodeRemoved(*n);
+        }
+    }
+
+    container.setLastChild(nullptr);
+}
+#endif
 
 void ContainerNode::disconnectDescendantFrames()
 {
@@ -435,7 +521,7 @@ void ContainerNode::trace(Visitor* visitor)
     Node::trace(visitor);
 }
 
-void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> ContainerNode::removeChild(PassRefPtrWillBeRawPtr<Node> oldChild, ExceptionState& exceptionState)
 {
 #if !ENABLE(OILPAN)
     // Check that this node is not "floating".
@@ -451,21 +537,18 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
     // ASSERT(!oldChild->isPseudoElement())
     if (!oldChild || oldChild->parentNode() != this || oldChild->isPseudoElement()) {
         exceptionState.throwDOMException(NotFoundError, "The node to be removed is not a child of this node.");
-        return;
+        return nullptr;
     }
 
     RefPtrWillBeRawPtr<Node> child = oldChild;
 
     document().removeFocusedElementOfSubtree(child.get());
 
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document()))
-        fullscreen->removeFullScreenElementOfSubtree(child.get());
-
     // Events fired when blurring currently focused node might have moved this
     // child into a different parent.
     if (child->parentNode() != this) {
         exceptionState.throwDOMException(NotFoundError, "The node to be removed is no longer a child of this node. Perhaps it was moved in a 'blur' event handler?");
-        return;
+        return nullptr;
     }
 
     willRemoveChild(*child);
@@ -473,7 +556,7 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
     // Mutation events might have moved this child into a different parent.
     if (child->parentNode() != this) {
         exceptionState.throwDOMException(NotFoundError, "The node to be removed is no longer a child of this node. Perhaps it was moved in response to a mutation?");
-        return;
+        return nullptr;
     }
 
     {
@@ -482,15 +565,16 @@ void ContainerNode::removeChild(Node* oldChild, ExceptionState& exceptionState)
         Node* prev = child->previousSibling();
         Node* next = child->nextSibling();
         removeBetween(prev, next, *child);
-        childrenChanged(false, prev, next, -1);
         notifyNodeRemoved(*child);
+        childrenChanged(ChildrenChange::forRemoval(*child, prev, next, ChildrenChangeSourceAPI));
     }
     dispatchSubtreeModifiedEvent();
+    return child;
 }
 
 void ContainerNode::removeBetween(Node* previousChild, Node* nextChild, Node& oldChild)
 {
-    NoEventDispatchAssertion assertNoEventDispatch;
+    EventDispatchForbiddenScope assertNoEventDispatch;
 
     ASSERT(oldChild.parentNode() == this);
 
@@ -506,9 +590,9 @@ void ContainerNode::removeBetween(Node* previousChild, Node* nextChild, Node& ol
     if (m_lastChild == &oldChild)
         m_lastChild = previousChild;
 
-    oldChild.setPreviousSibling(0);
-    oldChild.setNextSibling(0);
-    oldChild.setParentOrShadowHostNode(0);
+    oldChild.setPreviousSibling(nullptr);
+    oldChild.setNextSibling(nullptr);
+    oldChild.setParentOrShadowHostNode(nullptr);
 
     document().adoptIfNeeded(oldChild);
 }
@@ -528,11 +612,11 @@ void ContainerNode::parserRemoveChild(Node& oldChild)
 
     removeBetween(prev, next, oldChild);
 
-    childrenChanged(true, prev, next, -1);
     notifyNodeRemoved(oldChild);
+    childrenChanged(ChildrenChange::forRemoval(oldChild, prev, next, ChildrenChangeSourceParser));
 }
 
-// this differs from other remove functions because it forcibly removes all the children,
+// This differs from other remove functions because it forcibly removes all the children,
 // regardless of read-only status or event exceptions, e.g.
 void ContainerNode::removeChildren()
 {
@@ -541,9 +625,6 @@ void ContainerNode::removeChildren()
 
     // The container node can be removed from event handlers.
     RefPtrWillBeRawPtr<ContainerNode> protect(this);
-
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document()))
-        fullscreen->removeFullScreenElementOfSubtree(this, true);
 
     // Do any prep work needed before actually starting to detach
     // and remove... e.g. stop loading frames, fire unload events.
@@ -564,29 +645,40 @@ void ContainerNode::removeChildren()
         document().nodeChildrenWillBeRemoved(*this);
     }
 
-
+    // FIXME: Remove this NodeVector. Right now WebPluginContainerImpl::m_element is a
+    // raw ptr which means the code below can drop the last ref to a plugin element and
+    // then the code in UpdateSuspendScope::performDeferredWidgetTreeOperations will
+    // try to destroy the plugin which will be a use-after-free. We should use a RefPtr
+    // in the WebPluginContainerImpl instead.
     NodeVector removedChildren;
     {
         HTMLFrameOwnerElement::UpdateSuspendScope suspendWidgetHierarchyUpdates;
+
         {
-            NoEventDispatchAssertion assertNoEventDispatch;
+            EventDispatchForbiddenScope assertNoEventDispatch;
+            ScriptForbiddenScope forbidScript;
+
             removedChildren.reserveInitialCapacity(countChildren());
-            while (m_firstChild) {
-                removedChildren.append(m_firstChild);
-                removeBetween(0, m_firstChild->nextSibling(), *m_firstChild);
+
+            while (RefPtrWillBeRawPtr<Node> child = m_firstChild) {
+                removeBetween(0, child->nextSibling(), *child);
+                removedChildren.append(child.get());
+                notifyNodeRemoved(*child);
             }
         }
 
-        childrenChanged(false, 0, 0, -static_cast<int>(removedChildren.size()));
-
-        for (size_t i = 0; i < removedChildren.size(); ++i)
-            notifyNodeRemoved(*removedChildren[i]);
+        ChildrenChange change = {AllChildrenRemoved, nullptr, nullptr, ChildrenChangeSourceAPI};
+        childrenChanged(change);
     }
 
-    dispatchSubtreeModifiedEvent();
+    // We don't fire the DOMSubtreeModified event for Attr Nodes. This matches the behavior
+    // of IE and Firefox. This event is fired synchronously and is a source of trouble for
+    // attributes as the JS callback could alter the attributes and leave us in a bad state.
+    if (!isAttributeNode())
+        dispatchSubtreeModifiedEvent();
 }
 
-void ContainerNode::appendChild(PassRefPtrWillBeRawPtr<Node> newChild, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<Node> ContainerNode::appendChild(PassRefPtrWillBeRawPtr<Node> newChild, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<ContainerNode> protect(this);
 
@@ -597,32 +689,38 @@ void ContainerNode::appendChild(PassRefPtrWillBeRawPtr<Node> newChild, Exception
 #endif
 
     // Make sure adding the new child is ok
-    if (!checkAcceptChild(newChild.get(), 0, exceptionState))
-        return;
+    if (!checkAcceptChild(newChild.get(), 0, exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return newChild;
+    }
     ASSERT(newChild);
 
     if (newChild == m_lastChild) // nothing to do
-        return;
+        return newChild;
 
     NodeVector targets;
     collectChildrenAndRemoveFromOldParent(*newChild, targets, exceptionState);
     if (exceptionState.hadException())
-        return;
+        return nullptr;
 
     if (targets.isEmpty())
-        return;
+        return newChild;
 
     // We need this extra check because collectChildrenAndRemoveFromOldParent() can fire mutation events.
-    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState))
-        return;
+    if (!checkAcceptChildGuaranteedNodeTypes(*newChild, exceptionState)) {
+        if (exceptionState.hadException())
+            return nullptr;
+        return newChild;
+    }
 
     InspectorInstrumentation::willInsertDOMNode(this);
 
-    // Now actually add the child(ren)
+    // Now actually add the child(ren).
     ChildListMutationScope mutation(*this);
-    for (NodeVector::const_iterator it = targets.begin(); it != targets.end(); ++it) {
-        ASSERT(*it);
-        Node& child = **it;
+    for (const auto& targetNode : targets) {
+        ASSERT(targetNode);
+        Node& child = *targetNode;
 
         // If the child has a parent again, just stop what we're doing, because
         // that means someone is doing something with DOM mutation -- can't re-parent
@@ -631,7 +729,7 @@ void ContainerNode::appendChild(PassRefPtrWillBeRawPtr<Node> newChild, Exception
             break;
 
         {
-            NoEventDispatchAssertion assertNoEventDispatch;
+            EventDispatchForbiddenScope assertNoEventDispatch;
             ScriptForbiddenScope forbidScript;
 
             treeScope().adoptIfNeeded(child);
@@ -642,6 +740,7 @@ void ContainerNode::appendChild(PassRefPtrWillBeRawPtr<Node> newChild, Exception
     }
 
     dispatchSubtreeModifiedEvent();
+    return newChild;
 }
 
 void ContainerNode::parserAppendChild(PassRefPtrWillBeRawPtr<Node> newChild)
@@ -651,13 +750,13 @@ void ContainerNode::parserAppendChild(PassRefPtrWillBeRawPtr<Node> newChild)
     ASSERT(!newChild->isDocumentFragment());
     ASSERT(!isHTMLTemplateElement(this));
 
+    RefPtrWillBeRawPtr<Node> protect(this);
+
     if (document() != newChild->document())
         document().adoptNode(newChild.get(), ASSERT_NO_EXCEPTION);
 
-    Node* last = m_lastChild;
-
     {
-        NoEventDispatchAssertion assertNoEventDispatch;
+        EventDispatchForbiddenScope assertNoEventDispatch;
         ScriptForbiddenScope forbidScript;
 
         treeScope().adoptIfNeeded(*newChild);
@@ -666,13 +765,13 @@ void ContainerNode::parserAppendChild(PassRefPtrWillBeRawPtr<Node> newChild)
         ChildListMutationScope(*this).childAdded(*newChild);
     }
 
-    childrenChanged(true, last, 0, 1);
-    notifyNodeInserted(*newChild);
+    notifyNodeInserted(*newChild, ChildrenChangeSourceParser);
 }
 
-void ContainerNode::notifyNodeInserted(Node& root)
+void ContainerNode::notifyNodeInserted(Node& root, ChildrenChangeSource source)
 {
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
+    ASSERT(!root.isShadowRoot());
 
     InspectorInstrumentation::didInsertDOMNode(&root);
 
@@ -682,8 +781,9 @@ void ContainerNode::notifyNodeInserted(Node& root)
     NodeVector postInsertionNotificationTargets;
     notifyNodeInsertedInternal(root, postInsertionNotificationTargets);
 
-    for (size_t i = 0; i < postInsertionNotificationTargets.size(); ++i) {
-        Node* targetNode = postInsertionNotificationTargets[i].get();
+    childrenChanged(ChildrenChange::forInsertion(root, source));
+
+    for (const auto& targetNode : postInsertionNotificationTargets) {
         if (targetNode->inDocument())
             targetNode->didNotifySubtreeInsertionsToDocument();
     }
@@ -691,17 +791,17 @@ void ContainerNode::notifyNodeInserted(Node& root)
 
 void ContainerNode::notifyNodeInsertedInternal(Node& root, NodeVector& postInsertionNotificationTargets)
 {
-    NoEventDispatchAssertion assertNoEventDispatch;
+    EventDispatchForbiddenScope assertNoEventDispatch;
     ScriptForbiddenScope forbidScript;
 
-    for (Node* node = &root; node; node = NodeTraversal::next(*node, &root)) {
+    for (Node& node : NodeTraversal::inclusiveDescendantsOf(root)) {
         // As an optimization we don't notify leaf nodes when when inserting
         // into detached subtrees.
-        if (!inDocument() && !node->isContainerNode())
+        if (!inDocument() && !node.isContainerNode())
             continue;
-        if (Node::InsertionShouldCallDidNotifySubtreeInsertions == node->insertedInto(this))
-            postInsertionNotificationTargets.append(node);
-        for (ShadowRoot* shadowRoot = node->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
+        if (Node::InsertionShouldCallDidNotifySubtreeInsertions == node.insertedInto(this))
+            postInsertionNotificationTargets.append(&node);
+        for (ShadowRoot* shadowRoot = node.youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
             notifyNodeInsertedInternal(*shadowRoot, postInsertionNotificationTargets);
     }
 }
@@ -709,19 +809,19 @@ void ContainerNode::notifyNodeInsertedInternal(Node& root, NodeVector& postInser
 void ContainerNode::notifyNodeRemoved(Node& root)
 {
     ScriptForbiddenScope forbidScript;
-    NoEventDispatchAssertion assertNoEventDispatch;
+    EventDispatchForbiddenScope assertNoEventDispatch;
 
     Document& document = root.document();
-    for (Node* node = &root; node; node = NodeTraversal::next(*node, &root)) {
+    for (Node& node : NodeTraversal::inclusiveDescendantsOf(root)) {
         // As an optimization we skip notifying Text nodes and other leaf nodes
         // of removal when they're not in the Document tree since the virtual
         // call to removedFrom is not needed.
-        if (!node->inDocument() && !node->isContainerNode())
+        if (!node.inDocument() && !node.isContainerNode())
             continue;
         if (document.cssTarget() == node)
             document.setCSSTarget(nullptr);
-        node->removedFrom(this);
-        for (ShadowRoot* shadowRoot = node->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
+        node.removedFrom(this);
+        for (ShadowRoot* shadowRoot = node.youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot())
             notifyNodeRemoved(*shadowRoot);
     }
 }
@@ -740,13 +840,13 @@ void ContainerNode::detach(const AttachContext& context)
     Node::detach(context);
 }
 
-void ContainerNode::childrenChanged(bool changedByParser, Node*, Node*, int childCountDelta)
+void ContainerNode::childrenChanged(const ChildrenChange& change)
 {
     document().incDOMTreeVersion();
-    if (!changedByParser && childCountDelta)
+    if (!change.byParser && change.type != TextChanged)
         document().updateRangesAfterChildrenChanged(this);
     invalidateNodeListCachesInAncestors();
-    if (childCountDelta > 0 && !childNeedsStyleRecalc()) {
+    if (change.isChildInsertion() && !childNeedsStyleRecalc()) {
         setChildNeedsStyleRecalc();
         markAncestorsWithChildNeedsStyleRecalc();
     }
@@ -764,15 +864,15 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
 {
     if (!renderer())
         return false;
-    // What is this code really trying to do?
-    RenderObject* o = renderer();
 
+    // FIXME: What is this code really trying to do?
+    RenderObject* o = renderer();
     if (!o->isInline() || o->isReplaced()) {
         point = o->localToAbsolute(FloatPoint(), UseTransforms);
         return true;
     }
 
-    // find the next text/image child, to get a position
+    // Find the next text/image child, to get a position.
     while (o) {
         RenderObject* p = o;
         if (RenderObject* oFirstChild = o->slowFirstChild()) {
@@ -780,7 +880,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         } else if (o->nextSibling()) {
             o = o->nextSibling();
         } else {
-            RenderObject* next = 0;
+            RenderObject* next = nullptr;
             while (!next && o->parent()) {
                 o = o->parent();
                 next = o->nextSibling();
@@ -798,7 +898,7 @@ bool ContainerNode::getUpperLeftCorner(FloatPoint& point) const
         }
 
         if (p->node() && p->node() == this && o->isText() && !o->isBR() && !toRenderText(o)->firstTextBox()) {
-            // do nothing - skip unrendered whitespace that is a child or next sibling of the anchor
+            // Do nothing - skip unrendered whitespace that is a child or next sibling of the anchor.
         } else if ((o->isText() && !o->isBR()) || o->isReplaced()) {
             point = FloatPoint();
             if (o->isText() && toRenderText(o)->firstTextBox()) {
@@ -833,21 +933,21 @@ bool ContainerNode::getLowerRightCorner(FloatPoint& point) const
         return true;
     }
 
-    // find the last text/image child, to get a position
+    // Find the last text/image child, to get a position.
     while (o) {
         if (RenderObject* oLastChild = o->slowLastChild()) {
             o = oLastChild;
         } else if (o->previousSibling()) {
             o = o->previousSibling();
         } else {
-            RenderObject* prev = 0;
-        while (!prev) {
-            o = o->parent();
-            if (!o)
-                return false;
-            prev = o->previousSibling();
-        }
-        o = prev;
+            RenderObject* prev = nullptr;
+            while (!prev) {
+                o = o->parent();
+                if (!o)
+                    return false;
+                prev = o->previousSibling();
+            }
+            o = prev;
         }
         ASSERT(o);
         if (o->isText() || o->isReplaced()) {
@@ -902,11 +1002,11 @@ void ContainerNode::focusStateChanged()
 
     if (styleChangeType() < SubtreeStyleChange) {
         if (renderStyle()->affectedByFocus() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
         else if (renderStyle()->affectedByFocus())
-            setNeedsStyleRecalc(LocalStyleChange);
+            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
     }
 
     if (renderer() && renderer()->style()->hasAppearance())
@@ -929,7 +1029,7 @@ void ContainerNode::setFocus(bool received)
     if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByFocus() && styleChangeType() < SubtreeStyleChange)
         document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoFocus, *toElement(this));
     else
-        setNeedsStyleRecalc(LocalStyleChange);
+        setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Focus));
 }
 
 void ContainerNode::setActive(bool down)
@@ -943,11 +1043,11 @@ void ContainerNode::setActive(bool down)
     if (renderer()) {
         if (styleChangeType() < SubtreeStyleChange) {
             if (renderStyle()->affectedByActive() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
-                setNeedsStyleRecalc(SubtreeStyleChange);
+                setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
             else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByActive())
                 document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoActive, *toElement(this));
             else if (renderStyle()->affectedByActive())
-                setNeedsStyleRecalc(LocalStyleChange);
+                setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Active));
         }
 
         if (renderStyle()->hasAppearance())
@@ -969,17 +1069,17 @@ void ContainerNode::setHovered(bool over)
         if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover() && styleChangeType() < SubtreeStyleChange)
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
         else
-            setNeedsStyleRecalc(LocalStyleChange);
+            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
         return;
     }
 
     if (styleChangeType() < SubtreeStyleChange) {
         if (renderStyle()->affectedByHover() && renderStyle()->hasPseudoStyle(FIRST_LETTER))
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
         else if (isElementNode() && toElement(this)->childrenOrSiblingsAffectedByHover())
             document().ensureStyleResolver().ensureUpdatedRuleFeatureSet().scheduleStyleInvalidationForPseudoChange(CSSSelector::PseudoHover, *toElement(this));
         else if (renderStyle()->affectedByHover())
-            setNeedsStyleRecalc(LocalStyleChange);
+            setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::createWithExtraData(StyleChangeReason::PseudoClass, StyleChangeExtraData::Hover));
     }
 
     if (renderer()->style()->hasAppearance())
@@ -988,7 +1088,7 @@ void ContainerNode::setHovered(bool over)
 
 PassRefPtrWillBeRawPtr<HTMLCollection> ContainerNode::children()
 {
-    return ensureRareData().ensureNodeLists().addCache<HTMLCollection>(*this, NodeChildren);
+    return ensureCachedCollection<HTMLCollection>(NodeChildren);
 }
 
 unsigned ContainerNode::countChildren() const
@@ -998,15 +1098,6 @@ unsigned ContainerNode::countChildren() const
     for (n = firstChild(); n; n = n->nextSibling())
         count++;
     return count;
-}
-
-Node* ContainerNode::traverseToChildAt(unsigned index) const
-{
-    unsigned i;
-    Node *n = firstChild();
-    for (i = 0; n != 0 && i < index; i++)
-        n = n->nextSibling();
-    return n;
 }
 
 PassRefPtrWillBeRawPtr<Element> ContainerNode::querySelector(const AtomicString& selectors, ExceptionState& exceptionState)
@@ -1022,7 +1113,7 @@ PassRefPtrWillBeRawPtr<Element> ContainerNode::querySelector(const AtomicString&
     return selectorQuery->queryFirst(*this);
 }
 
-PassRefPtrWillBeRawPtr<StaticNodeList> ContainerNode::querySelectorAll(const AtomicString& selectors, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<StaticElementList> ContainerNode::querySelectorAll(const AtomicString& selectors, ExceptionState& exceptionState)
 {
     if (selectors.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "The provided selector is empty.");
@@ -1041,7 +1132,7 @@ static void dispatchChildInsertionEvents(Node& child)
     if (child.isInShadowTree())
         return;
 
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
 
     RefPtrWillBeRawPtr<Node> c(child);
     RefPtrWillBeRawPtr<Document> document(child.document());
@@ -1063,20 +1154,20 @@ static void dispatchChildRemovalEvents(Node& child)
         return;
     }
 
-    ASSERT(!NoEventDispatchAssertion::isEventDispatchForbidden());
+    ASSERT(!EventDispatchForbiddenScope::isEventDispatchForbidden());
 
     InspectorInstrumentation::willRemoveDOMNode(&child);
 
     RefPtrWillBeRawPtr<Node> c(child);
     RefPtrWillBeRawPtr<Document> document(child.document());
 
-    // dispatch pre-removal mutation events
+    // Dispatch pre-removal mutation events.
     if (c->parentNode() && document->hasListenerType(Document::DOMNODEREMOVED_LISTENER)) {
         NodeChildRemovalTracker scope(child);
         c->dispatchScopedEvent(MutationEvent::create(EventTypeNames::DOMNodeRemoved, true, c->parentNode()));
     }
 
-    // dispatch the DOMNodeRemovedFromDocument event to all descendants
+    // Dispatch the DOMNodeRemovedFromDocument event to all descendants.
     if (c->inDocument() && document->hasListenerType(Document::DOMNODEREMOVEDFROMDOCUMENT_LISTENER)) {
         NodeChildRemovalTracker scope(child);
         for (; c; c = NodeTraversal::next(*c, &child))
@@ -1092,8 +1183,6 @@ void ContainerNode::updateTreeAfterInsertion(Node& child)
 #endif
 
     ChildListMutationScope(*this).childAdded(child);
-
-    childrenChanged(false, child.previousSibling(), child.nextSibling(), 1);
 
     notifyNodeInserted(child);
 
@@ -1116,6 +1205,37 @@ void ContainerNode::setRestyleFlag(DynamicRestyleFlags mask)
     ensureRareData().setRestyleFlag(mask);
 }
 
+void ContainerNode::recalcChildStyle(StyleRecalcChange change)
+{
+    ASSERT(document().inStyleRecalc());
+    ASSERT(change >= UpdatePseudoElements || childNeedsStyleRecalc());
+    ASSERT(!needsStyleRecalc());
+
+    if (change < Force && hasRareData() && childNeedsStyleRecalc())
+        checkForChildrenAdjacentRuleChanges();
+
+    // This loop is deliberately backwards because we use insertBefore in the rendering tree, and want to avoid
+    // a potentially n^2 loop to find the insertion point while resolving style. Having us start from the last
+    // child and work our way back means in the common case, we'll find the insertion point in O(1) time.
+    // See crbug.com/288225
+    StyleResolver& styleResolver = document().ensureStyleResolver();
+    Text* lastTextNode = nullptr;
+    for (Node* child = lastChild(); child; child = child->previousSibling()) {
+        if (child->isTextNode()) {
+            toText(child)->recalcTextStyle(change, lastTextNode);
+            lastTextNode = toText(child);
+        } else if (child->isElementNode()) {
+            Element* element = toElement(child);
+            if (element->shouldCallRecalcStyle(change))
+                element->recalcStyle(change, lastTextNode);
+            else if (element->supportsStyleSharing())
+                styleResolver.addToStyleSharingList(*element);
+            if (element->renderer())
+                lastTextNode = nullptr;
+        }
+    }
+}
+
 void ContainerNode::checkForChildrenAdjacentRuleChanges()
 {
     bool hasDirectAdjacentRules = childrenAffectedByDirectAdjacentRules();
@@ -1132,7 +1252,7 @@ void ContainerNode::checkForChildrenAdjacentRuleChanges()
         bool childRulesChanged = child->needsStyleRecalc() && child->styleChangeType() >= SubtreeStyleChange;
 
         if (forceCheckOfNextElementCount || forceCheckOfAnyElementSibling)
-            child->setNeedsStyleRecalc(SubtreeStyleChange);
+            child->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
 
         if (childRulesChanged && hasDirectAdjacentRules)
             forceCheckOfNextElementCount = document.styleEngine()->maxDirectAdjacentSelectors();
@@ -1143,7 +1263,7 @@ void ContainerNode::checkForChildrenAdjacentRuleChanges()
     }
 }
 
-void ContainerNode::checkForSiblingStyleChanges(bool finishedParsingCallback, Node* beforeChange, Node* afterChange, int childCountDelta)
+void ContainerNode::checkForSiblingStyleChanges(SiblingCheckType changeType, Node* nodeBeforeChange, Node* nodeAfterChange)
 {
     if (!inActiveDocument() || document().hasPendingForcedStyleRecalc() || styleChangeType() >= SubtreeStyleChange)
         return;
@@ -1159,58 +1279,88 @@ void ContainerNode::checkForSiblingStyleChanges(bool finishedParsingCallback, No
     // |afterChange| is 0 in the parser callback case, so we won't do any work for the forward case if we don't have to.
     // For performance reasons we just mark the parent node as changed, since we don't want to make childrenChanged O(n^2) by crawling all our kids
     // here. recalcStyle will then force a walk of the children when it sees that this has happened.
-    if (((childrenAffectedByForwardPositionalRules() || childrenAffectedByIndirectAdjacentRules()) && afterChange)
-        || (childrenAffectedByBackwardPositionalRules() && beforeChange)) {
-        setNeedsStyleRecalc(SubtreeStyleChange);
+    if (((childrenAffectedByForwardPositionalRules() || childrenAffectedByIndirectAdjacentRules()) && nodeAfterChange)
+        || (childrenAffectedByBackwardPositionalRules() && nodeBeforeChange)) {
+        setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
         return;
     }
 
     // :first-child. In the parser callback case, we don't have to check anything, since we were right the first time.
     // In the DOM case, we only need to do something if |afterChange| is not 0.
     // |afterChange| is 0 in the parser case, so it works out that we'll skip this block.
-    if (childrenAffectedByFirstChildRules() && afterChange) {
-        // Find our new first child.
-        Element* newFirstChild = ElementTraversal::firstWithin(*this);
-        RenderStyle* newFirstChildStyle = newFirstChild ? newFirstChild->renderStyle() : 0;
+    if (childrenAffectedByFirstChildRules() && nodeAfterChange) {
+        ASSERT(changeType != FinishedParsingChildren);
+        // Find our new first child element.
+        Element* firstChildElement = ElementTraversal::firstChild(*this);
+        RenderStyle* firstChildElementStyle = firstChildElement ? firstChildElement->renderStyle() : nullptr;
 
-        // Find the first element node following |afterChange|
-        Node* firstElementAfterInsertion = afterChange->isElementNode() ? afterChange : ElementTraversal::nextSibling(*afterChange);
-        RenderStyle* firstElementAfterInsertionStyle = firstElementAfterInsertion ? firstElementAfterInsertion->renderStyle() : 0;
+        // Find the first element after the change.
+        Element* elementAfterChange = nodeAfterChange->isElementNode() ? toElement(nodeAfterChange) : ElementTraversal::nextSibling(*nodeAfterChange);
+        RenderStyle* elementAfterChangeStyle = elementAfterChange ? elementAfterChange->renderStyle() : nullptr;
 
-        // This is the insert/append case.
-        if (newFirstChild != firstElementAfterInsertion && firstElementAfterInsertionStyle && firstElementAfterInsertionStyle->firstChildState())
-            firstElementAfterInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+        // This is the element insertion as first child element case.
+        if (firstChildElement != elementAfterChange && elementAfterChangeStyle && elementAfterChangeStyle->firstChildState()) {
+            ASSERT(changeType == SiblingElementInserted);
+            elementAfterChange->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
+        }
 
-        // We also have to handle node removal.
-        if (childCountDelta < 0 && newFirstChild == firstElementAfterInsertion && newFirstChild && (!newFirstChildStyle || !newFirstChildStyle->firstChildState()))
-            newFirstChild->setNeedsStyleRecalc(SubtreeStyleChange);
+        // This is the first child element removal case.
+        if (changeType == SiblingElementRemoved && firstChildElement == elementAfterChange && firstChildElement && (!firstChildElementStyle || !firstChildElementStyle->firstChildState()))
+            firstChildElement->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
     }
 
     // :last-child. In the parser callback case, we don't have to check anything, since we were right the first time.
     // In the DOM case, we only need to do something if |afterChange| is not 0.
-    if (childrenAffectedByLastChildRules() && beforeChange) {
-        // Find our new last child.
-        Node* newLastChild = ElementTraversal::lastChild(*this);
-        RenderStyle* newLastChildStyle = newLastChild ? newLastChild->renderStyle() : 0;
+    if (childrenAffectedByLastChildRules() && nodeBeforeChange) {
+        // Find our new last child element.
+        Element* lastChildElement = ElementTraversal::lastChild(*this);
+        RenderStyle* lastChildElementStyle = lastChildElement ? lastChildElement->renderStyle() : nullptr;
 
-        // Find the last element node going backwards from |beforeChange|
-        Node* lastElementBeforeInsertion = beforeChange->isElementNode() ? beforeChange : ElementTraversal::previousSibling(*beforeChange);
-        RenderStyle* lastElementBeforeInsertionStyle = lastElementBeforeInsertion ? lastElementBeforeInsertion->renderStyle() : 0;
+        // Find the last element before the change.
+        Element* elementBeforeChange = nodeBeforeChange->isElementNode() ? toElement(nodeBeforeChange) : ElementTraversal::previousSibling(*nodeBeforeChange);
+        RenderStyle* elementBeforeChangeStyle = elementBeforeChange ? elementBeforeChange->renderStyle() : nullptr;
 
-        if (newLastChild != lastElementBeforeInsertion && lastElementBeforeInsertionStyle && lastElementBeforeInsertionStyle->lastChildState())
-            lastElementBeforeInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+        // This is the element insertion as last child element case.
+        if (lastChildElement != elementBeforeChange && elementBeforeChangeStyle && elementBeforeChangeStyle->lastChildState()) {
+            ASSERT(SiblingElementInserted);
+            elementBeforeChange->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
+        }
 
-        // We also have to handle node removal. The parser callback case is similar to node removal as well in that we need to change the last child
+        // This is the last child element removal case. The parser callback case is similar to node removal as well in that we need to change the last child
         // to match now.
-        if ((childCountDelta < 0 || finishedParsingCallback) && newLastChild == lastElementBeforeInsertion && newLastChild && (!newLastChildStyle || !newLastChildStyle->lastChildState()))
-            newLastChild->setNeedsStyleRecalc(SubtreeStyleChange);
+        if ((changeType == SiblingElementRemoved || changeType == FinishedParsingChildren) && lastChildElement == elementBeforeChange && lastChildElement && (!lastChildElementStyle || !lastChildElementStyle->lastChildState()))
+            lastChildElement->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
     }
 
-    // The + selector. We need to invalidate the first element following the insertion point. It is the only possible element
+    // The + selector. We need to invalidate the first element following the change. It is the only possible element
     // that could be affected by this DOM change.
-    if (childrenAffectedByDirectAdjacentRules() && afterChange) {
-        if (Node* firstElementAfterInsertion = afterChange->isElementNode() ? afterChange : ElementTraversal::nextSibling(*afterChange))
-            firstElementAfterInsertion->setNeedsStyleRecalc(SubtreeStyleChange);
+    if (childrenAffectedByDirectAdjacentRules() && nodeAfterChange) {
+        if (Element* elementAfterChange = nodeAfterChange->isElementNode() ? toElement(nodeAfterChange) : ElementTraversal::nextSibling(*nodeAfterChange))
+            elementAfterChange->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SiblingSelector));
+    }
+}
+
+void ContainerNode::invalidateNodeListCachesInAncestors(const QualifiedName* attrName, Element* attributeOwnerElement)
+{
+    if (hasRareData() && (!attrName || isAttributeNode())) {
+        if (NodeListsNodeData* lists = rareData()->nodeLists()) {
+            if (ChildNodeList* childNodeList = lists->childNodeList(*this))
+                childNodeList->invalidateCache();
+        }
+    }
+
+    // Modifications to attributes that are not associated with an Element can't invalidate NodeList caches.
+    if (attrName && !attributeOwnerElement)
+        return;
+
+    if (!document().shouldInvalidateNodeListCaches(attrName))
+        return;
+
+    document().invalidateNodeListCaches(attrName);
+
+    for (ContainerNode* node = this; node; node = node->parentNode()) {
+        if (NodeListsNodeData* lists = node->nodeLists())
+            lists->invalidateCaches(attrName);
     }
 }
 
@@ -1220,8 +1370,8 @@ PassRefPtrWillBeRawPtr<TagCollection> ContainerNode::getElementsByTagName(const 
         return nullptr;
 
     if (document().isHTMLDocument())
-        return ensureRareData().ensureNodeLists().addCache<HTMLTagCollection>(*this, HTMLTagCollectionType, localName);
-    return ensureRareData().ensureNodeLists().addCache<TagCollection>(*this, TagCollectionType, localName);
+        return ensureCachedCollection<HTMLTagCollection>(HTMLTagCollectionType, localName);
+    return ensureCachedCollection<TagCollection>(TagCollectionType, localName);
 }
 
 PassRefPtrWillBeRawPtr<TagCollection> ContainerNode::getElementsByTagNameNS(const AtomicString& namespaceURI, const AtomicString& localName)
@@ -1232,28 +1382,28 @@ PassRefPtrWillBeRawPtr<TagCollection> ContainerNode::getElementsByTagNameNS(cons
     if (namespaceURI == starAtom)
         return getElementsByTagName(localName);
 
-    return ensureRareData().ensureNodeLists().addCache(*this, namespaceURI.isEmpty() ? nullAtom : namespaceURI, localName);
+    return ensureCachedCollection<TagCollection>(TagCollectionType, namespaceURI.isEmpty() ? nullAtom : namespaceURI, localName);
 }
 
 // Takes an AtomicString in argument because it is common for elements to share the same name attribute.
 // Therefore, the NameNodeList factory function expects an AtomicString type.
 PassRefPtrWillBeRawPtr<NameNodeList> ContainerNode::getElementsByName(const AtomicString& elementName)
 {
-    return ensureRareData().ensureNodeLists().addCache<NameNodeList>(*this, NameNodeListType, elementName);
+    return ensureCachedCollection<NameNodeList>(NameNodeListType, elementName);
 }
 
 // Takes an AtomicString in argument because it is common for elements to share the same set of class names.
 // Therefore, the ClassNodeList factory function expects an AtomicString type.
 PassRefPtrWillBeRawPtr<ClassCollection> ContainerNode::getElementsByClassName(const AtomicString& classNames)
 {
-    return ensureRareData().ensureNodeLists().addCache<ClassCollection>(*this, ClassCollectionType, classNames);
+    return ensureCachedCollection<ClassCollection>(ClassCollectionType, classNames);
 }
 
 PassRefPtrWillBeRawPtr<RadioNodeList> ContainerNode::radioNodeList(const AtomicString& name, bool onlyMatchImgElements)
 {
     ASSERT(isHTMLFormElement(this) || isHTMLFieldSetElement(this));
     CollectionType type = onlyMatchImgElements ? RadioImgNodeListType : RadioNodeListType;
-    return ensureRareData().ensureNodeLists().addCache<RadioNodeList>(*this, type, name);
+    return ensureCachedCollection<RadioNodeList>(type, name);
 }
 
 Element* ContainerNode::getElementById(const AtomicString& id) const
@@ -1263,20 +1413,25 @@ Element* ContainerNode::getElementById(const AtomicString& id) const
         // and check if the matching element is in our subtree.
         Element* element = treeScope().getElementById(id);
         if (!element)
-            return 0;
+            return nullptr;
         if (element->isDescendantOf(this))
             return element;
     }
 
     // Fall back to traversing our subtree. In case of duplicate ids, the first element found will be returned.
-    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
-        if (element->getIdAttribute() == id)
-            return element;
+    for (Element& element : ElementTraversal::descendantsOf(*this)) {
+        if (element.getIdAttribute() == id)
+            return &element;
     }
-    return 0;
+    return nullptr;
 }
 
-#ifndef NDEBUG
+NodeListsNodeData& ContainerNode::ensureNodeLists()
+{
+    return ensureRareData().ensureNodeLists();
+}
+
+#if ENABLE(ASSERT)
 bool childAttachedAllowedWhenAttachingChildren(ContainerNode* node)
 {
     if (node->isShadowRoot())
@@ -1292,4 +1447,4 @@ bool childAttachedAllowedWhenAttachingChildren(ContainerNode* node)
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

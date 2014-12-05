@@ -33,7 +33,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<InputTypeView> InputTypeView::create(HTMLInputElement& input)
 {
@@ -122,6 +122,10 @@ void InputTypeView::handleFocusEvent(Element*, FocusType)
 }
 
 void InputTypeView::handleBlurEvent()
+{
+}
+
+void InputTypeView::handleFocusInEvent(Element*, FocusType)
 {
 }
 
@@ -218,9 +222,14 @@ void InputTypeView::updatePlaceholderText()
 {
 }
 
+AXObject* InputTypeView::popupRootAXObject()
+{
+    return 0;
+}
+
 void ClickHandlingState::trace(Visitor* visitor)
 {
     visitor->trace(checkedRadioButton);
 }
 
-} // namespace WebCore
+} // namespace blink

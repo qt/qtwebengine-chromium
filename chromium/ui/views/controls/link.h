@@ -26,7 +26,7 @@ class VIEWS_EXPORT Link : public Label {
  public:
   Link();
   explicit Link(const base::string16& title);
-  virtual ~Link();
+  ~Link() override;
 
   static SkColor GetDefaultEnabledColor();
 
@@ -34,24 +34,23 @@ class VIEWS_EXPORT Link : public Label {
   void set_listener(LinkListener* listener) { listener_ = listener; }
 
   // Label:
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool CanProcessEventsWithinSubtree() const OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool SkipDefaultKeyEventProcessing(
-      const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void OnEnabledChanged() OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
-  virtual void SetFontList(const gfx::FontList& font_list) OVERRIDE;
-  virtual void SetText(const base::string16& text) OVERRIDE;
-  virtual void SetEnabledColor(SkColor color) OVERRIDE;
+  const char* GetClassName() const override;
+  gfx::NativeCursor GetCursor(const ui::MouseEvent& event) override;
+  bool CanProcessEventsWithinSubtree() const override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  void OnMouseCaptureLost() override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void OnEnabledChanged() override;
+  void OnFocus() override;
+  void OnBlur() override;
+  void SetFontList(const gfx::FontList& font_list) override;
+  void SetText(const base::string16& text) override;
+  void SetEnabledColor(SkColor color) override;
 
   void SetPressedColor(SkColor color);
   void SetUnderline(bool underline);

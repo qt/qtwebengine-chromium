@@ -29,7 +29,6 @@
 #ifndef Console_h
 #define Console_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
@@ -37,14 +36,14 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class MemoryInfo;
-class Page;
-class ScriptArguments;
 
-class Console FINAL : public ConsoleBase, public ScriptWrappable, public DOMWindowProperty {
+class Console final : public ConsoleBase, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Console);
 public:
     static PassRefPtrWillBeRawPtr<Console> create(LocalFrame* frame)
     {
@@ -54,16 +53,16 @@ public:
 
     PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
 
-    virtual void trace(Visitor* visitor) OVERRIDE { ConsoleBase::trace(visitor); }
+    virtual void trace(Visitor*) override;
 
 protected:
-    virtual ExecutionContext* context() OVERRIDE;
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
+    virtual ExecutionContext* context() override;
+    virtual void reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
 
 private:
     explicit Console(LocalFrame*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Console_h

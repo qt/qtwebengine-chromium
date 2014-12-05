@@ -113,7 +113,7 @@ WebInspector.TimelinePresentationModel.prototype = {
             parentRecord = coalescedRecord;
 
         var formattedRecord = new WebInspector.TimelinePresentationModel.ActualRecord(record, parentRecord);
-        this._recordToPresentationRecord.put(record, formattedRecord);
+        this._recordToPresentationRecord.set(record, formattedRecord);
 
         formattedRecord._collapsed = parentRecord === this._rootRecord;
         if (coalescingBucket)
@@ -174,7 +174,6 @@ WebInspector.TimelinePresentationModel.prototype = {
 
         coalescedRecord._presentationParent = parent;
         parent._presentationChildren[parent._presentationChildren.indexOf(presentationRecord)] = coalescedRecord;
-        WebInspector.TimelineUIUtils.aggregateTimeByCategory(coalescedRecord.presentationAggregatedStats(), presentationRecord.presentationAggregatedStats());
 
         return coalescedRecord;
     },
@@ -185,7 +184,6 @@ WebInspector.TimelinePresentationModel.prototype = {
     _updateCoalescingParent: function(presentationRecord)
     {
         var parentRecord = presentationRecord._presentationParent;
-        WebInspector.TimelineUIUtils.aggregateTimeByCategory(parentRecord.presentationAggregatedStats(), presentationRecord.presentationAggregatedStats());
         if (parentRecord.endTime() < presentationRecord.endTime())
             parentRecord._endTime = presentationRecord.endTime();
     },
@@ -195,7 +193,18 @@ WebInspector.TimelinePresentationModel.prototype = {
      */
     setTextFilter: function(textFilter)
     {
+        var records = this._recordToPresentationRecord.valuesArray();
+        for (var i = 0; i < records.length; ++i)
+            records[i]._expandedOrCollapsedWhileFiltered = false;
         this._textFilter = textFilter;
+    },
+
+    refreshRecords: function()
+    {
+        this.reset();
+        var modelRecords = this._model.records();
+        for (var i = 0; i < modelRecords.length; ++i)
+            this.addRecord(modelRecords[i]);
     },
 
     invalidateFilteredRecords: function()
@@ -316,14 +325,6 @@ WebInspector.TimelinePresentationModel.Record.prototype = {
      * @return {!WebInspector.TimelineModel.Record}
      */
     record: function()
-    {
-        throw new Error("Not implemented.");
-    },
-
-    /**
-     * @return {!Object.<string, number>}
-     */
-    presentationAggregatedStats: function()
     {
         throw new Error("Not implemented.");
     },
@@ -485,14 +486,6 @@ WebInspector.TimelinePresentationModel.ActualRecord.prototype = {
     },
 
     /**
-     * @return {!Object.<string, number>}
-     */
-    presentationAggregatedStats: function()
-    {
-        return this._record.aggregatedStats();
-    },
-
-    /**
      * @return {boolean}
      */
     hasWarnings: function()
@@ -513,7 +506,6 @@ WebInspector.TimelinePresentationModel.CoalescedRecord = function(record)
     WebInspector.TimelinePresentationModel.Record.call(this, null);
     this._startTime = record.startTime();
     this._endTime = record.endTime();
-    this._aggregatedStats = {};
 }
 
 WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
@@ -550,14 +542,6 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
     },
 
     /**
-     * @return {!Object.<string, number>}
-     */
-    presentationAggregatedStats: function()
-    {
-        return this._aggregatedStats;
-    },
-
-    /**
      * @return {boolean}
      */
     coalesced: function()
@@ -583,18 +567,9 @@ WebInspector.TimelinePresentationModel.CoalescedRecord.prototype = {
 WebInspector.TimelinePresentationModel.RootRecord = function()
 {
     WebInspector.TimelinePresentationModel.Record.call(this, null);
-    this._aggregatedStats = {};
 }
 
 WebInspector.TimelinePresentationModel.RootRecord.prototype = {
-    /**
-     * @return {!Object.<string, number>}
-     */
-    presentationAggregatedStats: function()
-    {
-        return this._aggregatedStats;
-    },
-
     /**
      * @return {boolean}
      */

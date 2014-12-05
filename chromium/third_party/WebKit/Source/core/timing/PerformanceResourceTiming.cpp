@@ -39,7 +39,7 @@
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
 
-namespace WebCore {
+namespace blink {
 
 static double monotonicTimeToDocumentMilliseconds(Document* document, double seconds)
 {
@@ -58,7 +58,6 @@ PerformanceResourceTiming::PerformanceResourceTiming(const ResourceTimingInfo& i
     , m_allowRedirectDetails(allowRedirectDetails)
     , m_requestingDocument(requestingDocument)
 {
-    ScriptWrappable::init(this);
 }
 
 PerformanceResourceTiming::~PerformanceResourceTiming()
@@ -197,4 +196,4 @@ void PerformanceResourceTiming::trace(Visitor* visitor)
     PerformanceEntry::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

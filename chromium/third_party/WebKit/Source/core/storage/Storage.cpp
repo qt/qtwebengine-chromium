@@ -26,12 +26,12 @@
 #include "config.h"
 #include "core/storage/Storage.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<Storage> Storage::create(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageArea)
 {
@@ -44,12 +44,9 @@ Storage::Storage(LocalFrame* frame, PassOwnPtrWillBeRawPtr<StorageArea> storageA
 {
     ASSERT(m_frame);
     ASSERT(m_storageArea);
-    ScriptWrappable::init(this);
 }
 
-Storage::~Storage()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(Storage);
 
 String Storage::anonymousIndexedGetter(unsigned index, ExceptionState& exceptionState)
 {
@@ -128,6 +125,7 @@ bool Storage::namedPropertyQuery(const AtomicString& name, ExceptionState& excep
 void Storage::trace(Visitor* visitor)
 {
     visitor->trace(m_storageArea);
+    DOMWindowProperty::trace(visitor);
 }
 
 }

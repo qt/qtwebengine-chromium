@@ -10,7 +10,7 @@
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/common/resource_messages.h"
 #include "content/public/browser/resource_context.h"
-#include "webkit/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
 
 namespace content {
 
@@ -19,7 +19,7 @@ ResourceMessageFilter::ResourceMessageFilter(
     int process_type,
     ChromeAppCacheService* appcache_service,
     ChromeBlobStorageContext* blob_storage_context,
-    fileapi::FileSystemContext* file_system_context,
+    storage::FileSystemContext* file_system_context,
     ServiceWorkerContextWrapper* service_worker_context,
     const GetContextsCallback& get_contexts_callback)
     : BrowserMessageFilter(ResourceMsgStart),

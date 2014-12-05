@@ -43,6 +43,12 @@ QuicAckFrame* QuicConnectionPeer::CreateAckFrame(QuicConnection* connection) {
 }
 
 // static
+QuicStopWaitingFrame* QuicConnectionPeer::CreateStopWaitingFrame(
+    QuicConnection* connection) {
+  return connection->CreateStopWaitingFrame();
+}
+
+// static
 QuicConnectionVisitorInterface* QuicConnectionPeer::GetVisitor(
     QuicConnection* connection) {
   return connection->visitor_;
@@ -101,17 +107,18 @@ bool QuicConnectionPeer::IsRetransmission(
 QuicPacketEntropyHash QuicConnectionPeer::GetSentEntropyHash(
     QuicConnection* connection,
     QuicPacketSequenceNumber sequence_number) {
-  return connection->sent_entropy_manager_.EntropyHash(sequence_number);
+  QuicSentEntropyManager::CumulativeEntropy last_entropy_copy =
+      connection->sent_entropy_manager_.last_cumulative_entropy_;
+  connection->sent_entropy_manager_.UpdateCumulativeEntropy(sequence_number,
+                                                            &last_entropy_copy);
+  return last_entropy_copy.entropy;
 }
 
 // static
-bool QuicConnectionPeer::IsValidEntropy(
+QuicPacketEntropyHash QuicConnectionPeer::PacketEntropy(
     QuicConnection* connection,
-    QuicPacketSequenceNumber largest_observed,
-    const SequenceNumberSet& missing_packets,
-    QuicPacketEntropyHash entropy_hash) {
-  return connection->sent_entropy_manager_.IsValidEntropy(
-      largest_observed, missing_packets, entropy_hash);
+    QuicPacketSequenceNumber sequence_number) {
+  return connection->sent_entropy_manager_.GetPacketEntropy(sequence_number);
 }
 
 // static
@@ -163,6 +170,7 @@ QuicFramer* QuicConnectionPeer::GetFramer(QuicConnection* connection) {
   return &connection->framer_;
 }
 
+// static
 QuicFecGroup* QuicConnectionPeer::GetFecGroup(QuicConnection* connection,
                                               int fec_group) {
   connection->last_header_.fec_group = fec_group;
@@ -208,8 +216,13 @@ QuicPacketWriter* QuicConnectionPeer::GetWriter(QuicConnection* connection) {
 
 // static
 void QuicConnectionPeer::SetWriter(QuicConnection* connection,
-                                   QuicPacketWriter* writer) {
+                                   QuicPacketWriter* writer,
+                                   bool owns_writer) {
+  if (connection->owns_writer_) {
+    delete connection->writer_;
+  }
   connection->writer_ = writer;
+  connection->owns_writer_ = owns_writer;
 }
 
 // static
@@ -227,6 +240,18 @@ QuicEncryptedPacket* QuicConnectionPeer::GetConnectionClosePacket(
 void QuicConnectionPeer::SetSupportedVersions(QuicConnection* connection,
                                               QuicVersionVector versions) {
   connection->framer_.SetSupportedVersions(versions);
+}
+
+// static
+QuicPacketHeader* QuicConnectionPeer::GetLastHeader(
+    QuicConnection* connection) {
+  return &connection->last_header_;
+}
+
+// static
+void QuicConnectionPeer::SetSequenceNumberOfLastSentPacket(
+    QuicConnection* connection, QuicPacketSequenceNumber number) {
+  connection->sequence_number_of_last_sent_packet_ = number;
 }
 
 }  // namespace test

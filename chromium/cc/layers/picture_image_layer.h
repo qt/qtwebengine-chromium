@@ -9,7 +9,7 @@
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/picture_layer.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
@@ -20,22 +20,22 @@ class CC_EXPORT PictureImageLayer : public PictureLayer, ContentLayerClient {
   void SetBitmap(const SkBitmap& image);
 
   // Layer implementation.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(
-      LayerTreeImpl* tree_impl) OVERRIDE;
-  virtual bool DrawsContent() const OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
   // ContentLayerClient implementation.
-  virtual void PaintContents(
+  void PaintContents(
       SkCanvas* canvas,
       const gfx::Rect& clip,
-      gfx::RectF* opaque,
-      ContentLayerClient::GraphicsContextStatus gc_status) OVERRIDE;
-  virtual void DidChangeLayerCanUseLCDText() OVERRIDE {}
-  virtual bool FillsBoundsCompletely() const OVERRIDE;
+      ContentLayerClient::GraphicsContextStatus gc_status) override;
+  void DidChangeLayerCanUseLCDText() override {}
+  bool FillsBoundsCompletely() const override;
+
+ protected:
+  bool HasDrawableContent() const override;
 
  private:
   PictureImageLayer();
-  virtual ~PictureImageLayer();
+  ~PictureImageLayer() override;
 
   SkBitmap bitmap_;
 

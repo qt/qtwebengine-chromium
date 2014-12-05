@@ -8,12 +8,12 @@
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Navigator;
 class PushManager;
 
-class NavigatorPushManager FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorPushManager>, public WillBeHeapSupplement<Navigator> {
+class NavigatorPushManager final : public NoBaseWillBeGarbageCollectedFinalized<NavigatorPushManager>, public WillBeHeapSupplement<Navigator> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorPushManager);
 public:
     virtual ~NavigatorPushManager();
@@ -31,6 +31,6 @@ private:
     PersistentWillBeMember<PushManager> m_pushManager;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorPushManager_h

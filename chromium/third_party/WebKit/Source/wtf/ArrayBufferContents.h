@@ -45,7 +45,7 @@ public:
     ArrayBufferContents(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy);
 
     // Use with care. data must be allocated with allocateMemory.
-    // ArrayBufferContents will take ownership of the data and free it (using freeMemorY)
+    // ArrayBufferContents will take ownership of the data and free it (using freeMemory)
     // upon destruction.
     // This constructor will not call observer->StartObserving(), so it is a responsibility
     // of the caller to make sure JS knows about external memory.
@@ -63,6 +63,12 @@ public:
         if (!m_deallocationObserver) {
             m_deallocationObserver = observer;
             m_deallocationObserver->blinkAllocatedMemory(m_sizeInBytes);
+        }
+    }
+    void setDeallocationObserverWithoutAllocationNotification(ArrayBufferDeallocationObserver* observer)
+    {
+        if (!m_deallocationObserver) {
+            m_deallocationObserver = observer;
         }
     }
 

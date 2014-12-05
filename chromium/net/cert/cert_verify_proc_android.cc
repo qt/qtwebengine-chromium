@@ -4,6 +4,8 @@
 
 #include "net/cert/cert_verify_proc_android.h"
 
+#include <openssl/x509v3.h>
+
 #include <string>
 #include <vector>
 
@@ -36,21 +38,21 @@ bool VerifyFromAndroidTrustManager(const std::vector<std::string>& cert_bytes,
                                &status, &verify_result->is_issued_by_known_root,
                                &verified_chain);
   switch (status) {
-    case android::VERIFY_FAILED:
+    case android::CERT_VERIFY_STATUS_ANDROID_FAILED:
       return false;
-    case android::VERIFY_OK:
+    case android::CERT_VERIFY_STATUS_ANDROID_OK:
       break;
-    case android::VERIFY_NO_TRUSTED_ROOT:
+    case android::CERT_VERIFY_STATUS_ANDROID_NO_TRUSTED_ROOT:
       verify_result->cert_status |= CERT_STATUS_AUTHORITY_INVALID;
       break;
-    case android::VERIFY_EXPIRED:
-    case android::VERIFY_NOT_YET_VALID:
+    case android::CERT_VERIFY_STATUS_ANDROID_EXPIRED:
+    case android::CERT_VERIFY_STATUS_ANDROID_NOT_YET_VALID:
       verify_result->cert_status |= CERT_STATUS_DATE_INVALID;
       break;
-    case android::VERIFY_UNABLE_TO_PARSE:
+    case android::CERT_VERIFY_STATUS_ANDROID_UNABLE_TO_PARSE:
       verify_result->cert_status |= CERT_STATUS_INVALID;
       break;
-    case android::VERIFY_INCORRECT_KEY_USAGE:
+    case android::CERT_VERIFY_STATUS_ANDROID_INCORRECT_KEY_USAGE:
       verify_result->cert_status |= CERT_STATUS_INVALID;
       break;
     default:
@@ -67,8 +69,39 @@ bool VerifyFromAndroidTrustManager(const std::vector<std::string>& cert_bytes,
     }
     scoped_refptr<X509Certificate> verified_cert =
         X509Certificate::CreateFromDERCertChain(verified_chain_pieces);
-    if (verified_cert)
+    if (verified_cert.get())
       verify_result->verified_cert = verified_cert;
+  }
+
+  // Extract the algorithm information from the certs
+  X509Certificate::OSCertHandles chain;
+  const X509Certificate::OSCertHandles& intermediates =
+      verify_result->verified_cert->GetIntermediateCertificates();
+  chain.push_back(verify_result->verified_cert->os_cert_handle());
+  chain.insert(chain.end(), intermediates.begin(), intermediates.end());
+
+  // If the chain successfully verified, ignore the trust anchor (the last
+  // certificate). Otherwise, assume the chain is partial. This is not entirely
+  // correct, as a full chain may have been constructed and then failed to
+  // validate. However, if that is the case, the more serious error will
+  // override any SHA-1 considerations.
+  size_t correction_for_root =
+      (status == android::CERT_VERIFY_STATUS_ANDROID_OK) ? 1 : 0;
+  for (size_t i = 0; i < chain.size() - correction_for_root; ++i) {
+    int sig_alg = OBJ_obj2nid(chain[i]->sig_alg->algorithm);
+    if (sig_alg == NID_md2WithRSAEncryption) {
+      verify_result->has_md2 = true;
+    } else if (sig_alg == NID_md4WithRSAEncryption) {
+      verify_result->has_md4 = true;
+    } else if (sig_alg == NID_md5WithRSAEncryption ||
+               sig_alg == NID_md5WithRSA) {
+      verify_result->has_md5 = true;
+    } else if (sig_alg == NID_sha1WithRSAEncryption ||
+               sig_alg == NID_dsaWithSHA || sig_alg == NID_dsaWithSHA1 ||
+               sig_alg == NID_dsaWithSHA1_2 || sig_alg == NID_sha1WithRSA ||
+               sig_alg == NID_ecdsa_with_SHA1) {
+      verify_result->has_sha1 = true;
+    }
   }
 
   // Extract the public key hashes.

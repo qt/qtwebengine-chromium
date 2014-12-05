@@ -25,16 +25,19 @@
 #ifndef RTCStatsCallback_h
 #define RTCStatsCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class RTCStatsResponse;
 
-class RTCStatsCallback {
+class RTCStatsCallback : public GarbageCollectedFinalized<RTCStatsCallback> {
 public:
     virtual ~RTCStatsCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(RTCStatsResponse*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsCallback_h

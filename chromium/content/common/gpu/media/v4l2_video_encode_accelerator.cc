@@ -21,14 +21,14 @@
 #define NOTIFY_ERROR(x)                            \
   do {                                             \
     SetEncoderState(kError);                       \
-    DLOG(ERROR) << "calling NotifyError(): " << x; \
+    LOG(ERROR) << "calling NotifyError(): " << x;  \
     NotifyError(x);                                \
   } while (0)
 
 #define IOCTL_OR_ERROR_RETURN_VALUE(type, arg, value)              \
   do {                                                             \
     if (device_->Ioctl(type, arg) != 0) {                          \
-      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
+      PLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type;  \
       NOTIFY_ERROR(kPlatformFailureError);                         \
       return value;                                                \
     }                                                              \
@@ -43,7 +43,7 @@
 #define IOCTL_OR_LOG_ERROR(type, arg)                              \
   do {                                                             \
     if (device_->Ioctl(type, arg) != 0)                            \
-      DPLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type; \
+      PLOG(ERROR) << __func__ << "(): ioctl() failed: " << #type;  \
   } while (0)
 
 namespace content {
@@ -66,13 +66,10 @@ V4L2VideoEncodeAccelerator::OutputRecord::OutputRecord()
 V4L2VideoEncodeAccelerator::V4L2VideoEncodeAccelerator(
     scoped_ptr<V4L2Device> device)
     : child_message_loop_proxy_(base::MessageLoopProxy::current()),
-      weak_this_ptr_factory_(this),
-      weak_this_(weak_this_ptr_factory_.GetWeakPtr()),
       output_buffer_byte_size_(0),
       device_input_format_(media::VideoFrame::UNKNOWN),
       input_planes_count_(0),
       output_format_fourcc_(0),
-      encoder_thread_("V4L2EncoderThread"),
       encoder_state_(kUninitialized),
       stream_header_size_(0),
       device_(device.Pass()),
@@ -81,7 +78,10 @@ V4L2VideoEncodeAccelerator::V4L2VideoEncodeAccelerator(
       input_memory_type_(V4L2_MEMORY_USERPTR),
       output_streamon_(false),
       output_buffer_queued_count_(0),
-      device_poll_thread_("V4L2EncoderDevicePollThread") {
+      encoder_thread_("V4L2EncoderThread"),
+      device_poll_thread_("V4L2EncoderDevicePollThread"),
+      weak_this_ptr_factory_(this) {
+  weak_this_ = weak_this_ptr_factory_.GetWeakPtr();
 }
 
 V4L2VideoEncodeAccelerator::~V4L2VideoEncodeAccelerator() {
@@ -119,13 +119,13 @@ bool V4L2VideoEncodeAccelerator::Initialize(
                               V4L2_CAP_VIDEO_OUTPUT_MPLANE | V4L2_CAP_STREAMING;
   IOCTL_OR_ERROR_RETURN_FALSE(VIDIOC_QUERYCAP, &caps);
   if ((caps.capabilities & kCapsRequired) != kCapsRequired) {
-    DLOG(ERROR) << "Initialize(): ioctl() failed: VIDIOC_QUERYCAP: "
-                   "caps check failed: 0x" << std::hex << caps.capabilities;
+    LOG(ERROR) << "Initialize(): ioctl() failed: VIDIOC_QUERYCAP: "
+                  "caps check failed: 0x" << std::hex << caps.capabilities;
     return false;
   }
 
   if (!SetFormats(input_format, output_profile)) {
-    DLOG(ERROR) << "Failed setting up formats";
+    LOG(ERROR) << "Failed setting up formats";
     return false;
   }
 
@@ -148,7 +148,7 @@ bool V4L2VideoEncodeAccelerator::Initialize(
             input_allocated_size_,
             base::Bind(&V4L2VideoEncodeAccelerator::ImageProcessorError,
                        weak_this_))) {
-      DLOG(ERROR) << "Failed initializing image processor";
+      LOG(ERROR) << "Failed initializing image processor";
       return false;
     }
   }
@@ -160,7 +160,7 @@ bool V4L2VideoEncodeAccelerator::Initialize(
     return false;
 
   if (!encoder_thread_.Start()) {
-    DLOG(ERROR) << "Initialize(): encoder thread failed to start";
+    LOG(ERROR) << "Initialize(): encoder thread failed to start";
     return false;
   }
 
@@ -181,7 +181,7 @@ bool V4L2VideoEncodeAccelerator::Initialize(
 }
 
 void V4L2VideoEncodeAccelerator::ImageProcessorError() {
-  DVLOG(1) << "Image processor error";
+  LOG(ERROR) << "Image processor error";
   NOTIFY_ERROR(kPlatformFailureError);
 }
 
@@ -255,6 +255,7 @@ void V4L2VideoEncodeAccelerator::Destroy() {
 
   // We're destroying; cancel all callbacks.
   client_ptr_factory_.reset();
+  weak_this_ptr_factory_.InvalidateWeakPtrs();
 
   if (image_processor_.get())
     image_processor_.release()->Destroy();
@@ -279,26 +280,25 @@ void V4L2VideoEncodeAccelerator::Destroy() {
   delete this;
 }
 
-// static
 std::vector<media::VideoEncodeAccelerator::SupportedProfile>
 V4L2VideoEncodeAccelerator::GetSupportedProfiles() {
   std::vector<SupportedProfile> profiles;
   SupportedProfile profile;
 
-  const CommandLine* cmd_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* cmd_line = base::CommandLine::ForCurrentProcess();
   if (cmd_line->HasSwitch(switches::kEnableWebRtcHWVp8Encoding)) {
-    profile.profile = media::VP8PROFILE_MAIN;
+    profile.profile = media::VP8PROFILE_ANY;
     profile.max_resolution.SetSize(1920, 1088);
-    profile.max_framerate.numerator = 30;
-    profile.max_framerate.denominator = 1;
-    profiles.push_back(profile);
-  } else {
-    profile.profile = media::H264PROFILE_MAIN;
-    profile.max_resolution.SetSize(1920, 1088);
-    profile.max_framerate.numerator = 30;
-    profile.max_framerate.denominator = 1;
+    profile.max_framerate_numerator = 30;
+    profile.max_framerate_denominator = 1;
     profiles.push_back(profile);
   }
+
+  profile.profile = media::H264PROFILE_MAIN;
+  profile.max_resolution.SetSize(1920, 1088);
+  profile.max_framerate_numerator = 30;
+  profile.max_framerate_denominator = 1;
+  profiles.push_back(profile);
 
   return profiles;
 }
@@ -499,7 +499,7 @@ void V4L2VideoEncodeAccelerator::Dequeue() {
         // EAGAIN if we're just out of buffers to dequeue.
         break;
       }
-      DPLOG(ERROR) << "Dequeue(): ioctl() failed: VIDIOC_DQBUF";
+      PLOG(ERROR) << "Dequeue(): ioctl() failed: VIDIOC_DQBUF";
       NOTIFY_ERROR(kPlatformFailureError);
       return;
     }
@@ -527,7 +527,7 @@ void V4L2VideoEncodeAccelerator::Dequeue() {
         // EAGAIN if we're just out of buffers to dequeue.
         break;
       }
-      DPLOG(ERROR) << "Dequeue(): ioctl() failed: VIDIOC_DQBUF";
+      PLOG(ERROR) << "Dequeue(): ioctl() failed: VIDIOC_DQBUF";
       NOTIFY_ERROR(kPlatformFailureError);
       return;
     }
@@ -608,6 +608,7 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord() {
 
     switch (input_memory_type_) {
       case V4L2_MEMORY_USERPTR:
+        qbuf.m.planes[i].length = qbuf.m.planes[i].bytesused;
         qbuf.m.planes[i].m.userptr =
             reinterpret_cast<unsigned long>(frame->data(i));
         DCHECK(qbuf.m.planes[i].m.userptr);
@@ -672,7 +673,7 @@ bool V4L2VideoEncodeAccelerator::StartDevicePoll() {
 
   // Start up the device poll thread and schedule its first DevicePollTask().
   if (!device_poll_thread_.Start()) {
-    DLOG(ERROR) << "StartDevicePoll(): Device thread failed to start";
+    LOG(ERROR) << "StartDevicePoll(): Device thread failed to start";
     NOTIFY_ERROR(kPlatformFailureError);
     return false;
   }
@@ -830,7 +831,7 @@ bool V4L2VideoEncodeAccelerator::SetOutputFormat(
   output_format_fourcc_ =
       V4L2Device::VideoCodecProfileToV4L2PixFmt(output_profile);
   if (!output_format_fourcc_) {
-    DLOG(ERROR) << "Initialize(): invalid output_profile=" << output_profile;
+    LOG(ERROR) << "Initialize(): invalid output_profile=" << output_profile;
     return false;
   }
 
@@ -858,6 +859,7 @@ bool V4L2VideoEncodeAccelerator::SetOutputFormat(
 
 bool V4L2VideoEncodeAccelerator::NegotiateInputFormat(
     media::VideoFrame::Format input_format) {
+  DVLOG(3) << "NegotiateInputFormat()";
   DCHECK(child_message_loop_proxy_->BelongsToCurrentThread());
   DCHECK(!input_streamon_);
   DCHECK(!output_streamon_);
@@ -868,7 +870,7 @@ bool V4L2VideoEncodeAccelerator::NegotiateInputFormat(
   uint32 input_format_fourcc =
       V4L2Device::VideoFrameFormatToV4L2PixFmt(input_format);
   if (!input_format_fourcc) {
-    DVLOG(1) << "Unsupported input format";
+    LOG(ERROR) << "Unsupported input format";
     return false;
   }
 
@@ -1044,7 +1046,7 @@ bool V4L2VideoEncodeAccelerator::CreateOutputBuffers() {
                                   MAP_SHARED,
                                   buffer.m.planes[0].m.mem_offset);
     if (address == MAP_FAILED) {
-      DPLOG(ERROR) << "CreateOutputBuffers(): mmap() failed";
+      PLOG(ERROR) << "CreateOutputBuffers(): mmap() failed";
       return false;
     }
     output_buffer_map_[i].address = address;

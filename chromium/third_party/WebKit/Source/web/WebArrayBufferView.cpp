@@ -29,10 +29,8 @@
 #include "config.h"
 #include "public/web/WebArrayBufferView.h"
 
-#include "bindings/v8/custom/V8ArrayBufferViewCustom.h"
+#include "bindings/core/v8/V8ArrayBufferView.h"
 #include "wtf/ArrayBufferView.h"
-
-using namespace WTF;
 
 namespace blink {
 
@@ -65,8 +63,8 @@ WebArrayBufferView* WebArrayBufferView::createFromV8Value(v8::Handle<v8::Value> 
 {
     if (!value->IsArrayBufferView())
         return 0;
-    ArrayBufferView* view = WebCore::V8ArrayBufferView::toNative(value->ToObject());
-    return new WebArrayBufferView(view);
+    DOMArrayBufferView* view = V8ArrayBufferView::toImpl(value->ToObject());
+    return new WebArrayBufferView(view->view());
 }
 
 WebArrayBufferView::WebArrayBufferView(const PassRefPtr<ArrayBufferView>& value)

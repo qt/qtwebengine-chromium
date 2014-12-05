@@ -31,16 +31,18 @@
 #ifndef RTCErrorCallback_h
 #define RTCErrorCallback_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCErrorCallback {
+class RTCErrorCallback : public GarbageCollectedFinalized<RTCErrorCallback> {
 public:
     virtual ~RTCErrorCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(const String& errorInformation) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCErrorCallback_h

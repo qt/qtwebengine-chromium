@@ -33,18 +33,19 @@
 #include "core/workers/SharedWorkerGlobalScope.h"
 
 #include "core/events/MessageEvent.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/workers/SharedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtrWillBeRawPtr<MessagePort> prpPort)
 {
     RefPtrWillBeRawPtr<MessagePort> port = prpPort;
-    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create(adoptPtr(new MessagePortArray(1, port)), String(), String(), port);
+    RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create(adoptPtrWillBeNoop(new MessagePortArray(1, port)), String(), String(), port);
     event->initEvent(EventTypeNames::connect, false, false);
     return event.release();
 }
@@ -52,16 +53,15 @@ PassRefPtrWillBeRawPtr<MessageEvent> createConnectEvent(PassRefPtrWillBeRawPtr<M
 // static
 PassRefPtrWillBeRawPtr<SharedWorkerGlobalScope> SharedWorkerGlobalScope::create(const String& name, SharedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData)
 {
-    RefPtrWillBeRawPtr<SharedWorkerGlobalScope> context = adoptRefWillBeRefCountedGarbageCollected(new SharedWorkerGlobalScope(name, startupData->m_scriptURL, startupData->m_userAgent, thread, startupData->m_workerClients.release()));
+    RefPtrWillBeRawPtr<SharedWorkerGlobalScope> context = adoptRefWillBeNoop(new SharedWorkerGlobalScope(name, startupData->m_scriptURL, startupData->m_userAgent, thread, startupData->m_starterOrigin, startupData->m_workerClients.release()));
     context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
     return context.release();
 }
 
-SharedWorkerGlobalScope::SharedWorkerGlobalScope(const String& name, const KURL& url, const String& userAgent, SharedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
-    : WorkerGlobalScope(url, userAgent, thread, monotonicallyIncreasingTime(), workerClients)
+SharedWorkerGlobalScope::SharedWorkerGlobalScope(const String& name, const KURL& url, const String& userAgent, SharedWorkerThread* thread, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+    : WorkerGlobalScope(url, userAgent, thread, monotonicallyIncreasingTime(), starterOrigin, workerClients)
     , m_name(name)
 {
-    ScriptWrappable::init(this);
 }
 
 SharedWorkerGlobalScope::~SharedWorkerGlobalScope()
@@ -78,10 +78,13 @@ SharedWorkerThread* SharedWorkerGlobalScope::thread()
     return static_cast<SharedWorkerThread*>(Base::thread());
 }
 
-void SharedWorkerGlobalScope::logExceptionToConsole(const String& errorMessage, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
+void SharedWorkerGlobalScope::logExceptionToConsole(const String& errorMessage, int scriptId, const String& sourceURL, int lineNumber, int columnNumber, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack)
 {
-    WorkerGlobalScope::logExceptionToConsole(errorMessage, sourceURL, lineNumber, columnNumber, callStack);
-    addMessageToWorkerConsole(JSMessageSource, ErrorMessageLevel, errorMessage, sourceURL, lineNumber, callStack, 0);
+    WorkerGlobalScope::logExceptionToConsole(errorMessage, scriptId, sourceURL, lineNumber, columnNumber, callStack);
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, errorMessage, sourceURL, lineNumber);
+    consoleMessage->setScriptId(scriptId);
+    consoleMessage->setCallStack(callStack);
+    addMessageToWorkerConsole(consoleMessage.release());
 }
 
 void SharedWorkerGlobalScope::trace(Visitor* visitor)
@@ -89,4 +92,4 @@ void SharedWorkerGlobalScope::trace(Visitor* visitor)
     WorkerGlobalScope::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

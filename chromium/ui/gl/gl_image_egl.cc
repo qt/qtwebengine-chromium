@@ -8,10 +8,13 @@
 
 namespace gfx {
 
-GLImageEGL::GLImageEGL(gfx::Size size)
-    : egl_image_(EGL_NO_IMAGE_KHR), size_(size) {}
+GLImageEGL::GLImageEGL(const gfx::Size& size)
+    : egl_image_(EGL_NO_IMAGE_KHR), size_(size) {
+}
 
-GLImageEGL::~GLImageEGL() { Destroy(); }
+GLImageEGL::~GLImageEGL() {
+  DCHECK_EQ(EGL_NO_IMAGE_KHR, egl_image_);
+}
 
 bool GLImageEGL::Initialize(EGLenum target,
                             EGLClientBuffer buffer,
@@ -31,7 +34,7 @@ bool GLImageEGL::Initialize(EGLenum target,
   return true;
 }
 
-void GLImageEGL::Destroy() {
+void GLImageEGL::Destroy(bool have_context) {
   if (egl_image_ != EGL_NO_IMAGE_KHR) {
     eglDestroyImageKHR(GLSurfaceEGL::GetHardwareDisplay(), egl_image_);
     egl_image_ = EGL_NO_IMAGE_KHR;
@@ -45,6 +48,18 @@ bool GLImageEGL::BindTexImage(unsigned target) {
   glEGLImageTargetTexture2DOES(target, egl_image_);
   DCHECK_EQ(static_cast<GLenum>(GL_NO_ERROR), glGetError());
   return true;
+}
+
+bool GLImageEGL::CopyTexImage(unsigned target) {
+  return false;
+}
+
+bool GLImageEGL::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                      int z_order,
+                                      OverlayTransform transform,
+                                      const Rect& bounds_rect,
+                                      const RectF& crop_rect) {
+  return false;
 }
 
 }  // namespace gfx

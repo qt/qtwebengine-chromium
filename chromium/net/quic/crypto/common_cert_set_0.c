@@ -6,8 +6,8 @@
 /* This file contains common certificates. It's designed to be #included in
  * another file, in a namespace. */
 
-#include "net/quic/crypto/common_cert_set_1_50.inc"
-#include "net/quic/crypto/common_cert_set_51_100.inc"
+#include "net/quic/crypto/common_cert_set_0a.inc"
+#include "net/quic/crypto/common_cert_set_0b.inc"
 
 static const size_t kNumCerts = 102;
 static const unsigned char* const kCerts[] = {

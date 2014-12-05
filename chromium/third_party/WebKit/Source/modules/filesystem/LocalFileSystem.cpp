@@ -46,18 +46,18 @@
 #include "wtf/Functional.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-void fileSystemNotAllowed(ExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
+void reportFailure(ExecutionContext*, PassOwnPtr<AsyncFileSystemCallbacks> callbacks, FileError::ErrorCode error)
 {
-    callbacks->didFail(FileError::ABORT_ERR);
+    callbacks->didFail(error);
 }
 
 } // namespace
 
-class CallbackWrapper : public RefCounted<CallbackWrapper> {
+class CallbackWrapper final : public GarbageCollectedFinalized<CallbackWrapper> {
 public:
     CallbackWrapper(PassOwnPtr<AsyncFileSystemCallbacks> c)
         : m_callbacks(c)
@@ -68,6 +68,8 @@ public:
     {
         return m_callbacks.release();
     }
+
+    void trace(Visitor*) { }
 
 private:
     OwnPtr<AsyncFileSystemCallbacks> m_callbacks;
@@ -84,16 +86,17 @@ LocalFileSystem::~LocalFileSystem()
 
 void LocalFileSystem::resolveURL(ExecutionContext* context, const KURL& fileSystemURL, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
-    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    RefPtrWillBeRawPtr<ExecutionContext> contextPtr(context);
+    CallbackWrapper* wrapper = new CallbackWrapper(callbacks);
     requestFileSystemAccessInternal(context,
-        bind(&LocalFileSystem::resolveURLInternal, this, fileSystemURL, wrapper),
-        bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, PassRefPtrWillBeRawPtr<ExecutionContext>(context), wrapper));
+        bind(&LocalFileSystem::resolveURLInternal, this, contextPtr, fileSystemURL, wrapper),
+        bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, contextPtr, wrapper));
 }
 
 void LocalFileSystem::requestFileSystem(ExecutionContext* context, FileSystemType type, long long size, PassOwnPtr<AsyncFileSystemCallbacks> callbacks)
 {
     RefPtrWillBeRawPtr<ExecutionContext> contextPtr(context);
-    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    CallbackWrapper* wrapper = new CallbackWrapper(callbacks);
     requestFileSystemAccessInternal(context,
         bind(&LocalFileSystem::fileSystemAllowedInternal, this, contextPtr, type, wrapper),
         bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, contextPtr, wrapper));
@@ -105,10 +108,18 @@ void LocalFileSystem::deleteFileSystem(ExecutionContext* context, FileSystemType
     ASSERT(context);
     ASSERT_WITH_SECURITY_IMPLICATION(context->isDocument());
 
-    RefPtr<CallbackWrapper> wrapper = adoptRef(new CallbackWrapper(callbacks));
+    CallbackWrapper* wrapper = new CallbackWrapper(callbacks);
     requestFileSystemAccessInternal(context,
         bind(&LocalFileSystem::deleteFileSystemInternal, this, contextPtr, type, wrapper),
         bind(&LocalFileSystem::fileSystemNotAllowedInternal, this, contextPtr, wrapper));
+}
+
+WebFileSystem* LocalFileSystem::fileSystem() const
+{
+    Platform* platform = Platform::current();
+    if (!platform)
+        return nullptr;
+    return Platform::current()->fileSystem();
 }
 
 void LocalFileSystem::requestFileSystemAccessInternal(ExecutionContext* context, const Closure& allowed, const Closure& denied)
@@ -128,36 +139,57 @@ void LocalFileSystem::requestFileSystemAccessInternal(ExecutionContext* context,
     client()->requestFileSystemAccessAsync(context, PermissionCallbacks::create(allowed, denied));
 }
 
+void LocalFileSystem::fileSystemNotAvailable(
+    PassRefPtrWillBeRawPtr<ExecutionContext> context,
+    CallbackWrapper* callbacks)
+{
+    context->postTask(createCrossThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
+}
+
 void LocalFileSystem::fileSystemNotAllowedInternal(
     PassRefPtrWillBeRawPtr<ExecutionContext> context,
-    PassRefPtr<CallbackWrapper> callbacks)
+    CallbackWrapper* callbacks)
 {
-    context->postTask(createCallbackTask(&fileSystemNotAllowed, callbacks->release()));
+    context->postTask(createCrossThreadTask(&reportFailure, callbacks->release(), FileError::ABORT_ERR));
 }
 
 void LocalFileSystem::fileSystemAllowedInternal(
     PassRefPtrWillBeRawPtr<ExecutionContext> context,
     FileSystemType type,
-    PassRefPtr<CallbackWrapper> callbacks)
+    CallbackWrapper* callbacks)
 {
+    if (!fileSystem()) {
+        fileSystemNotAvailable(context, callbacks);
+        return;
+    }
+
     KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    blink::Platform::current()->fileSystem()->openFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks->release());
+    fileSystem()->openFileSystem(storagePartition, static_cast<WebFileSystemType>(type), callbacks->release());
 }
 
 void LocalFileSystem::resolveURLInternal(
+    PassRefPtrWillBeRawPtr<ExecutionContext> context,
     const KURL& fileSystemURL,
-    PassRefPtr<CallbackWrapper> callbacks)
+    CallbackWrapper* callbacks)
 {
-    blink::Platform::current()->fileSystem()->resolveURL(fileSystemURL, callbacks->release());
+    if (!fileSystem()) {
+        fileSystemNotAvailable(context, callbacks);
+        return;
+    }
+    fileSystem()->resolveURL(fileSystemURL, callbacks->release());
 }
 
 void LocalFileSystem::deleteFileSystemInternal(
     PassRefPtrWillBeRawPtr<ExecutionContext> context,
     FileSystemType type,
-    PassRefPtr<CallbackWrapper> callbacks)
+    CallbackWrapper* callbacks)
 {
+    if (!fileSystem()) {
+        fileSystemNotAvailable(context, callbacks);
+        return;
+    }
     KURL storagePartition = KURL(KURL(), context->securityOrigin()->toString());
-    blink::Platform::current()->fileSystem()->deleteFileSystem(storagePartition, static_cast<blink::WebFileSystemType>(type), callbacks->release());
+    fileSystem()->deleteFileSystem(storagePartition, static_cast<WebFileSystemType>(type), callbacks->release());
 }
 
 LocalFileSystem::LocalFileSystem(PassOwnPtr<FileSystemClient> client)
@@ -189,4 +221,4 @@ void provideLocalFileSystemToWorker(WorkerClients* clients, PassOwnPtr<FileSyste
     clients->provideSupplement(LocalFileSystem::supplementName(), LocalFileSystem::create(client));
 }
 
-} // namespace WebCore
+} // namespace blink

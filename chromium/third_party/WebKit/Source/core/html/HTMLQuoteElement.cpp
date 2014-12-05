@@ -24,10 +24,9 @@
 #include "core/html/HTMLQuoteElement.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/Document.h"
 #include "core/dom/StyleEngine.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -35,7 +34,6 @@ inline HTMLQuoteElement::HTMLQuoteElement(const QualifiedName& tagName, Document
     : HTMLElement(tagName, document)
 {
     ASSERT(hasTagName(qTag) || hasTagName(blockquoteTag));
-    ScriptWrappable::init(this);
 }
 
 DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLQuoteElement)

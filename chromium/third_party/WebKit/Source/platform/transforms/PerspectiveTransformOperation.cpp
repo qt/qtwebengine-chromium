@@ -29,9 +29,7 @@
 #include "platform/animation/AnimationUtilities.h"
 #include "wtf/MathExtras.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<TransformOperation> PerspectiveTransformOperation::blend(const TransformOperation* from, double progress, bool blendToIdentity)
 {
@@ -39,8 +37,8 @@ PassRefPtr<TransformOperation> PerspectiveTransformOperation::blend(const Transf
         return this;
 
     if (blendToIdentity) {
-        double p = WebCore::blend(m_p, 1., progress); // FIXME: this seems wrong. https://bugs.webkit.org/show_bug.cgi?id=52700
-        return PerspectiveTransformOperation::create(clampToPositiveInteger(p));
+        double p = blink::blend(m_p, 1., progress); // FIXME: this seems wrong. https://bugs.webkit.org/show_bug.cgi?id=52700
+        return PerspectiveTransformOperation::create(clampTo<int>(p, 0));
     }
 
     const PerspectiveTransformOperation* fromOp = static_cast<const PerspectiveTransformOperation*>(from);
@@ -55,9 +53,9 @@ PassRefPtr<TransformOperation> PerspectiveTransformOperation::blend(const Transf
 
     if (decomp.perspectiveZ) {
         double val = -1.0 / decomp.perspectiveZ;
-        return PerspectiveTransformOperation::create(clampToPositiveInteger(val));
+        return PerspectiveTransformOperation::create(clampTo<int>(val, 0));
     }
     return PerspectiveTransformOperation::create(0);
 }
 
-} // namespace WebCore
+} // namespace blink

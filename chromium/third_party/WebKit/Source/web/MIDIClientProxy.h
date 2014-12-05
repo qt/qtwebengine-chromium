@@ -34,24 +34,21 @@
 #include "modules/webmidi/MIDIClient.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
-class MIDIAccessInitializer;
-}
-
 namespace blink {
 
+class MIDIAccessInitializer;
 class WebMIDIClient;
 
-class MIDIClientProxy FINAL : public WebCore::MIDIClient {
+class MIDIClientProxy final : public MIDIClient {
 public:
     static PassOwnPtr<MIDIClientProxy> create(WebMIDIClient* client)
     {
         return adoptPtr(new MIDIClientProxy(client));
     }
 
-    // WebCore::MIDIClient
-    virtual void requestSysexPermission(WebCore::MIDIAccessInitializer*) OVERRIDE;
-    virtual void cancelSysexPermissionRequest(WebCore::MIDIAccessInitializer*) OVERRIDE;
+    // MIDIClient
+    virtual void requestSysexPermission(MIDIAccessInitializer*) override;
+    virtual void cancelSysexPermissionRequest(MIDIAccessInitializer*) override;
 
 private:
     explicit MIDIClientProxy(WebMIDIClient*);

@@ -29,40 +29,33 @@ namespace printing {
 class PRINTING_EXPORT PdfMetafileCg : public Metafile {
  public:
   PdfMetafileCg();
-  virtual ~PdfMetafileCg();
+  ~PdfMetafileCg() override;
 
   // Metafile methods.
-  virtual bool Init() OVERRIDE;
-  virtual bool InitFromData(const void* src_buffer,
-                            uint32 src_buffer_size) OVERRIDE;
+  bool Init() override;
+  bool InitFromData(const void* src_buffer, uint32 src_buffer_size) override;
 
   // Not implemented on mac.
-  virtual SkBaseDevice* StartPageForVectorCanvas(
-      const gfx::Size& page_size, const gfx::Rect& content_area,
-      const float& scale_factor) OVERRIDE;
-  virtual bool StartPage(const gfx::Size& page_size,
-                         const gfx::Rect& content_area,
-                         const float& scale_factor) OVERRIDE;
-  virtual bool FinishPage() OVERRIDE;
-  virtual bool FinishDocument() OVERRIDE;
+  bool StartPage(const gfx::Size& page_size,
+                 const gfx::Rect& content_area,
+                 const float& scale_factor) override;
+  bool FinishPage() override;
+  bool FinishDocument() override;
 
-  virtual uint32 GetDataSize() const OVERRIDE;
-  virtual bool GetData(void* dst_buffer, uint32 dst_buffer_size) const OVERRIDE;
+  uint32 GetDataSize() const override;
+  bool GetData(void* dst_buffer, uint32 dst_buffer_size) const override;
 
-  // For testing purposes only.
-  virtual bool SaveTo(const base::FilePath& file_path) const OVERRIDE;
-
-  virtual gfx::Rect GetPageBounds(unsigned int page_number) const OVERRIDE;
-  virtual unsigned int GetPageCount() const OVERRIDE;
+  gfx::Rect GetPageBounds(unsigned int page_number) const override;
+  unsigned int GetPageCount() const override;
 
   // Note: The returned context *must not be retained* past Close(). If it is,
   // the data returned from GetData will not be valid PDF data.
-  virtual CGContextRef context() const OVERRIDE;
+  CGContextRef context() const override;
 
-  virtual bool RenderPage(unsigned int page_number,
-                          gfx::NativeDrawingContext context,
-                          const CGRect rect,
-                          const MacRenderPageParams& params) const OVERRIDE;
+  bool RenderPage(unsigned int page_number,
+                  gfx::NativeDrawingContext context,
+                  const CGRect rect,
+                  const MacRenderPageParams& params) const override;
 
  private:
   // Returns a CGPDFDocumentRef version of pdf_data_.

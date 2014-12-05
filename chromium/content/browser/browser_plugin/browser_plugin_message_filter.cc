@@ -10,7 +10,6 @@
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/browser_plugin/browser_plugin_constants.h"
 #include "content/common/browser_plugin/browser_plugin_messages.h"
-#include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_plugin_guest_manager.h"
@@ -39,14 +38,7 @@ bool BrowserPluginMessageFilter::OnMessageReceived(
     // thread.
     return true;
   }
-  bool handled = true;
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  IPC_BEGIN_MESSAGE_MAP(BrowserPluginMessageFilter, message)
-    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_BuffersSwappedACK,
-                        OnSwapBuffersACK)
-    IPC_MESSAGE_UNHANDLED(handled = false)
-  IPC_END_MESSAGE_MAP()
-  return handled;
+  return false;
 }
 
 void BrowserPluginMessageFilter::OnDestruct() const {
@@ -59,45 +51,32 @@ void BrowserPluginMessageFilter::OverrideThreadForMessage(
     *thread = BrowserThread::UI;
 }
 
-static void BrowserPluginGuestMessageCallback(const IPC::Message& message,
-                                              WebContents* guest_web_contents) {
-  if (!guest_web_contents)
-    return;
-  static_cast<WebContentsImpl*>(guest_web_contents)->GetBrowserPluginGuest()->
-      OnMessageReceivedFromEmbedder(message);
-}
-
 void BrowserPluginMessageFilter::ForwardMessageToGuest(
     const IPC::Message& message) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  RenderProcessHostImpl* host = static_cast<RenderProcessHostImpl*>(
-      RenderProcessHost::FromID(render_process_id_));
-  if (!host)
+  RenderViewHost* rvh = RenderViewHost::FromID(render_process_id_,
+                                               message.routing_id());
+  if (!rvh)
     return;
 
-  int instance_id = 0;
+  WebContents* embedder_web_contents = WebContents::FromRenderViewHost(rvh);
+
+  int browser_plugin_instance_id = 0;
   // All allowed messages must have instance_id as their first parameter.
   PickleIterator iter(message);
-  bool success = iter.ReadInt(&instance_id);
+  bool success = iter.ReadInt(&browser_plugin_instance_id);
   DCHECK(success);
-  host->GetBrowserContext()->GetGuestManager()->
-      MaybeGetGuestByInstanceIDOrKill(
-          instance_id,
-          render_process_id_,
-          base::Bind(&BrowserPluginGuestMessageCallback,
-                     message));
-}
-
-void BrowserPluginMessageFilter::OnSwapBuffersACK(
-    const FrameHostMsg_BuffersSwappedACK_Params& params) {
-  GpuProcessHost* gpu_host = GpuProcessHost::FromID(params.gpu_host_id);
-  if (!gpu_host)
+  WebContents* guest_web_contents =
+      embedder_web_contents->GetBrowserContext()
+          ->GetGuestManager()
+          ->GetGuestByInstanceID(embedder_web_contents,
+                                 browser_plugin_instance_id);
+  if (!guest_web_contents)
     return;
-  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-  ack_params.mailbox = params.mailbox;
-  ack_params.sync_point = params.sync_point;
-  gpu_host->Send(new AcceleratedSurfaceMsg_BufferPresented(params.gpu_route_id,
-                                                           ack_params));
+
+  static_cast<WebContentsImpl*>(guest_web_contents)
+      ->GetBrowserPluginGuest()
+      ->OnMessageReceivedFromEmbedder(message);
 }
 
 } // namespace content

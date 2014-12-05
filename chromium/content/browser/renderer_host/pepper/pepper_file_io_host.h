@@ -12,7 +12,6 @@
 #include "base/files/file.h"
 #include "base/files/file_proxy.h"
 #include "base/memory/weak_ptr.h"
-#include "base/platform_file.h"
 #include "content/browser/renderer_host/pepper/browser_ppapi_host_impl.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_platform_file.h"
@@ -21,8 +20,8 @@
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 #include "ppapi/shared_impl/file_io_state_manager.h"
+#include "storage/browser/fileapi/file_system_context.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
 
 namespace ppapi {
 struct FileGrowth;
@@ -39,18 +38,18 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   PepperFileIOHost(BrowserPpapiHostImpl* host,
                    PP_Instance instance,
                    PP_Resource resource);
-  virtual ~PepperFileIOHost();
+  ~PepperFileIOHost() override;
 
   // ppapi::host::ResourceHost override.
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   struct UIThreadStuff {
     UIThreadStuff();
     ~UIThreadStuff();
     base::ProcessId resolved_render_process_id;
-    scoped_refptr<fileapi::FileSystemContext> file_system_context;
+    scoped_refptr<storage::FileSystemContext> file_system_context;
   };
 
  private:
@@ -127,8 +126,8 @@ class PepperFileIOHost : public ppapi::host::ResourceHost,
   base::WeakPtr<PepperFileSystemBrowserHost> file_system_host_;
 
   // Valid only for PP_FILESYSTEMTYPE_LOCAL{PERSISTENT,TEMPORARY}.
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
-  fileapi::FileSystemURL file_system_url_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
+  storage::FileSystemURL file_system_url_;
   base::Closure on_close_callback_;
   int64_t max_written_offset_;
   bool check_quota_;

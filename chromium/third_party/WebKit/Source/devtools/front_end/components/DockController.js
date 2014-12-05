@@ -68,9 +68,9 @@ WebInspector.DockController.prototype = {
         if (!this._canDock)
             return;
 
-        this._states = [WebInspector.DockController.State.DockedToBottom, WebInspector.DockController.State.Undocked, WebInspector.DockController.State.DockedToRight];
-        this._titles = [WebInspector.UIString("Dock to main window."), WebInspector.UIString("Undock into separate window."), WebInspector.UIString("Dock to main window.")];
-        if (WebInspector.experimentsSettings.dockToLeft.isEnabled()) {
+        this._states = [WebInspector.DockController.State.DockedToRight, WebInspector.DockController.State.DockedToBottom, WebInspector.DockController.State.Undocked];
+        this._titles = [WebInspector.UIString("Dock to main window."), WebInspector.UIString("Dock to main window."), WebInspector.UIString("Undock into separate window.")];
+        if (Runtime.experiments.isEnabled("dockToLeft")) {
             this._states.push(WebInspector.DockController.State.DockedToLeft);
             this._titles.push(WebInspector.UIString("Dock to main window."));
         }
@@ -113,6 +113,7 @@ WebInspector.DockController.prototype = {
 
         var eventData = { from: this._dockSide, to: dockSide };
         this.dispatchEventToListeners(WebInspector.DockController.Events.BeforeDockSideChanged, eventData);
+        console.timeStamp("DockController.setIsDocked");
         InspectorFrontendHost.setIsDocked(dockSide !== WebInspector.DockController.State.Undocked, this._setIsDockedResponse.bind(this, eventData));
         this._dockSide = dockSide;
         this._updateUI();
@@ -127,9 +128,12 @@ WebInspector.DockController.prototype = {
         this.dispatchEventToListeners(WebInspector.DockController.Events.AfterDockSideChanged, eventData);
     },
 
+    /**
+     * @suppressGlobalPropertiesCheck
+     */
     _updateUI: function()
     {
-        var body = document.body;
+        var body = document.body;  // Only for main window.
         switch (this._dockSide) {
         case WebInspector.DockController.State.DockedToBottom:
             body.classList.remove("undocked");
@@ -163,7 +167,7 @@ WebInspector.DockController.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarButton.Provider}
+ * @implements {WebInspector.StatusBarItem.Provider}
  */
 WebInspector.DockController.ButtonProvider = function()
 {
@@ -171,9 +175,9 @@ WebInspector.DockController.ButtonProvider = function()
 
 WebInspector.DockController.ButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarButton}
+     * @return {?WebInspector.StatusBarItem}
      */
-    button: function()
+    item: function()
     {
         if (!WebInspector.dockController.canDock())
             return null;

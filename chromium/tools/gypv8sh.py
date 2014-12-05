@@ -26,6 +26,8 @@ def main ():
   parser.add_option('--deps_js', action="store",
                     help=("Path to deps.js for dependency resolution, " +
                           "optional."))
+  parser.add_option('--external', action='store',
+                    help="Load V8's initial snapshot from external files (y/n)")
   (opts, args) = parser.parse_args()
 
   if len(args) != 9:
@@ -36,6 +38,12 @@ def main ():
   icudatafile = os.path.join(os.path.dirname(v8_shell), 'icudtl.dat')
   if os.path.exists(icudatafile):
     cmd.extend(['--icu-data-file=%s' % icudatafile])
+  v8nativesfile = os.path.join(os.path.dirname(v8_shell), 'natives_blob.bin')
+  if opts.external == 'y' and os.path.exists(v8nativesfile):
+    cmd.extend(['--natives_blob=%s' % v8nativesfile])
+  v8snapshotfile = os.path.join(os.path.dirname(v8_shell), 'snapshot_blob.bin')
+  if opts.external == 'y' and os.path.exists(v8snapshotfile):
+    cmd.extend(['--snapshot_blob=%s' % v8snapshotfile])
   arguments = [js2webui, inputfile, inputrelfile, opts.deps_js,
                cxxoutfile, test_type]
   cmd.extend(['-e', "arguments=" + json.dumps(arguments), mock_js,
@@ -44,13 +52,14 @@ def main ():
     print cmd
   if not opts.impotent:
     try:
-      with open(cxxoutfile, 'w') as f:
-        subprocess.check_call(cmd, stdin=subprocess.PIPE, stdout=f)
+      p = subprocess.Popen(
+          cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0)
+      out, err = p.communicate()
+      with open(cxxoutfile, 'wb') as f:
+        f.write(out)
       shutil.copyfile(inputfile, jsoutfile)
     except Exception, ex:
       if os.path.exists(cxxoutfile):
-        # The contents of the output file will include the error message.
-        print open(cxxoutfile).read()
         os.remove(cxxoutfile)
       if os.path.exists(jsoutfile):
         os.remove(jsoutfile)

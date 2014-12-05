@@ -26,19 +26,16 @@ class TestTransientWindowObserver : public TransientWindowObserver {
   TestTransientWindowObserver() : add_count_(0), remove_count_(0) {
   }
 
-  virtual ~TestTransientWindowObserver() {
-  }
+  ~TestTransientWindowObserver() override {}
 
   int add_count() const { return add_count_; }
   int remove_count() const { return remove_count_; }
 
   // TransientWindowObserver overrides:
-  virtual void OnTransientChildAdded(Window* window,
-                                     Window* transient) OVERRIDE {
+  void OnTransientChildAdded(Window* window, Window* transient) override {
     add_count_++;
   }
-  virtual void OnTransientChildRemoved(Window* window,
-                                       Window* transient) OVERRIDE {
+  void OnTransientChildRemoved(Window* window, Window* transient) override {
     remove_count_++;
   }
 
@@ -52,14 +49,14 @@ class TestTransientWindowObserver : public TransientWindowObserver {
 class TransientWindowManagerTest : public aura::test::AuraTestBase {
  public:
   TransientWindowManagerTest() {}
-  virtual ~TransientWindowManagerTest() {}
+  ~TransientWindowManagerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AuraTestBase::SetUp();
     wm_state_.reset(new wm::WMState);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     wm_state_.reset();
     AuraTestBase::TearDown();
   }
@@ -116,6 +113,47 @@ TEST_F(TransientWindowManagerTest, TransientChildren) {
   EXPECT_TRUE(w2->IsVisible());
   w1->Hide();
   EXPECT_FALSE(w2->IsVisible());
+
+  // And they should stay hidden even after the parent became visible.
+  w1->Show();
+  EXPECT_FALSE(w2->IsVisible());
+
+  // Hidden transient child should stay hidden regardless of
+  // parent's visibility.
+  w2->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w1->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w1->Show();
+  EXPECT_FALSE(w2->IsVisible());
+
+  // Transient child can be shown even if the transient parent is hidden.
+  w1->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w2->Show();
+  EXPECT_TRUE(w2->IsVisible());
+  w1->Show();
+  EXPECT_TRUE(w2->IsVisible());
+
+  // When the parent_controls_visibility is true, TransientWindowManager
+  // controls the children's visibility. It stays invisible even if
+  // Window::Show() is called, and gets shown when the parent becomes visible.
+  wm::TransientWindowManager::Get(w2)->set_parent_controls_visibility(true);
+  w1->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w2->Show();
+  EXPECT_FALSE(w2->IsVisible());
+  w1->Show();
+  EXPECT_TRUE(w2->IsVisible());
+
+  // Hiding a transient child that is hidden by the transient parent
+  // is not currently handled and will be shown anyway.
+  w1->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w2->Hide();
+  EXPECT_FALSE(w2->IsVisible());
+  w1->Show();
+  EXPECT_TRUE(w2->IsVisible());
 }
 
 // Tests that transient children are stacked as a unit when using stack above.
@@ -308,7 +346,7 @@ class DestroyedTrackingDelegate : public aura::test::TestWindowDelegate {
       : name_(name),
         results_(results) {}
 
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {
+  void OnWindowDestroyed(aura::Window* window) override {
     results_->push_back(name_);
   }
 
@@ -416,17 +454,15 @@ class StackingMadrigalLayoutManager : public aura::LayoutManager {
       : root_window_(root_window) {
     root_window_->SetLayoutManager(this);
   }
-  virtual ~StackingMadrigalLayoutManager() {
-  }
+  ~StackingMadrigalLayoutManager() override {}
 
  private:
   // Overridden from LayoutManager:
-  virtual void OnWindowResized() OVERRIDE {}
-  virtual void OnWindowAddedToLayout(Window* child) OVERRIDE {}
-  virtual void OnWillRemoveWindowFromLayout(Window* child) OVERRIDE {}
-  virtual void OnWindowRemovedFromLayout(Window* child) OVERRIDE {}
-  virtual void OnChildWindowVisibilityChanged(Window* child,
-                                              bool visible) OVERRIDE {
+  void OnWindowResized() override {}
+  void OnWindowAddedToLayout(Window* child) override {}
+  void OnWillRemoveWindowFromLayout(Window* child) override {}
+  void OnWindowRemovedFromLayout(Window* child) override {}
+  void OnChildWindowVisibilityChanged(Window* child, bool visible) override {
     Window::Windows::const_iterator it = root_window_->children().begin();
     Window* last_window = NULL;
     for (; it != root_window_->children().end(); ++it) {
@@ -440,8 +476,8 @@ class StackingMadrigalLayoutManager : public aura::LayoutManager {
       last_window = *it;
     }
   }
-  virtual void SetChildBounds(Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE {
+  void SetChildBounds(Window* child,
+                      const gfx::Rect& requested_bounds) override {
     SetChildBoundsDirect(child, requested_bounds);
   }
 
@@ -456,8 +492,7 @@ class StackingMadrigalVisibilityClient : public aura::client::VisibilityClient {
       : ignored_window_(NULL) {
     aura::client::SetVisibilityClient(root_window, this);
   }
-  virtual ~StackingMadrigalVisibilityClient() {
-  }
+  ~StackingMadrigalVisibilityClient() override {}
 
   void set_ignored_window(Window* ignored_window) {
     ignored_window_ = ignored_window;
@@ -465,7 +500,7 @@ class StackingMadrigalVisibilityClient : public aura::client::VisibilityClient {
 
  private:
   // Overridden from client::VisibilityClient:
-  virtual void UpdateLayerVisibility(Window* window, bool visible) OVERRIDE {
+  void UpdateLayerVisibility(Window* window, bool visible) override {
     if (!visible) {
       if (window == ignored_window_)
         window->layer()->set_delegate(NULL);

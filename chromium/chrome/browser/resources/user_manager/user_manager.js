@@ -1,14 +1,15 @@
 // Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
-<include src="../login/screen.js"></include>
-<include src="../login/bubble.js"></include>
-<include src="../login/display_manager.js"></include>
-<include src="control_bar.js"></include>
-<include src="../login/screen_account_picker.js"></include>
-<include src="../login/user_pod_row.js"></include>
-<include src="../login/resource_loader.js"></include>
-<include src="user_manager_tutorial.js"></include>
+<include src="../../../../ui/login/screen.js">
+<include src="../../../../ui/login/bubble.js">
+<include src="../../../../ui/login/login_ui_tools.js">
+<include src="../../../../ui/login/display_manager.js">
+<include src="control_bar.js">
+<include src="../../../../ui/login/account_picker/screen_account_picker.js">
+<include src="../../../../ui/login/account_picker/user_pod_row.js">
+<include src="../../../../ui/login/resource_loader.js">
+<include src="user_manager_tutorial.js">
 
 cr.define('cr.ui', function() {
   var DisplayManager = cr.ui.login.DisplayManager;
@@ -31,14 +32,20 @@ cr.define('cr.ui', function() {
 
   /**
    * Shows the given screen.
-   * @param {Object} screen Screen params dict, e.g. {id: screenId, data: data}
+   * @param {bool} showGuest Whether the 'Browse as Guest' button is displayed.
+   * @param {bool} showAddPerson Whether the 'Add Person' button is displayed.
    */
-  Oobe.showUserManagerScreen = function() {
+  Oobe.showUserManagerScreen = function(showGuest, showAddPerson) {
     Oobe.getInstance().showScreen({id: 'account-picker',
                                    data: {disableAddUser: false}});
     // The ChromeOS account-picker will hide the AddUser button if a user is
     // logged in and the screen is "locked", so we must re-enabled it
     $('add-user-header-bar-item').hidden = false;
+
+    // Hide control options if the user does not have the right permissions.
+    $('guest-user-button').hidden = !showGuest;
+    $('add-user-button').hidden = !showAddPerson;
+    $('login-header-bar').hidden = false;
 
     // Disable the context menu, as the Print/Inspect element items don't
     // make sense when displayed as a widget.
@@ -129,7 +136,12 @@ cr.define('UserManager', function() {
     login.AccountPickerScreen.register();
     cr.ui.Bubble.decorate($('bubble'));
     login.HeaderBar.decorate($('login-header-bar'));
-    chrome.send('userManagerInitialize');
+
+    // Hide the header bar until the showUserManagerMethod can apply function
+    // parameters that affect widget visiblity.
+    $('login-header-bar').hidden = true;
+
+    chrome.send('userManagerInitialize', [window.location.hash]);
   }
 
   // Return an object with all of the exports.

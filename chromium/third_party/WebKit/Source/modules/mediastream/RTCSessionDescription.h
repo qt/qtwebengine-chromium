@@ -31,21 +31,20 @@
 #ifndef RTCSessionDescription_h
 #define RTCSessionDescription_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "public/platform/WebRTCSessionDescription.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
 
-class RTCSessionDescription FINAL : public RefCountedWillBeGarbageCollectedFinalized<RTCSessionDescription>, public ScriptWrappable {
+class RTCSessionDescription final : public GarbageCollectedFinalized<RTCSessionDescription>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<RTCSessionDescription> create(const Dictionary&, ExceptionState&);
-    static PassRefPtrWillBeRawPtr<RTCSessionDescription> create(blink::WebRTCSessionDescription);
+    static RTCSessionDescription* create(const Dictionary&, ExceptionState&);
+    static RTCSessionDescription* create(WebRTCSessionDescription);
 
     String type();
     void setType(const String&, ExceptionState&);
@@ -53,16 +52,16 @@ public:
     String sdp();
     void setSdp(const String&);
 
-    blink::WebRTCSessionDescription webSessionDescription();
+    WebRTCSessionDescription webSessionDescription();
 
     void trace(Visitor*) { }
 
 private:
-    explicit RTCSessionDescription(blink::WebRTCSessionDescription);
+    explicit RTCSessionDescription(WebRTCSessionDescription);
 
-    blink::WebRTCSessionDescription m_webSessionDescription;
+    WebRTCSessionDescription m_webSessionDescription;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCSessionDescription_h

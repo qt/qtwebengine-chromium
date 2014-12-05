@@ -45,25 +45,25 @@ public:
 
     WrappedResourceRequest() { }
 
-    WrappedResourceRequest(WebCore::ResourceRequest& resourceRequest)
+    WrappedResourceRequest(ResourceRequest& resourceRequest)
     {
         bind(resourceRequest);
     }
 
-    WrappedResourceRequest(const WebCore::ResourceRequest& resourceRequest)
+    WrappedResourceRequest(const ResourceRequest& resourceRequest)
     {
         bind(resourceRequest);
     }
 
-    void bind(WebCore::ResourceRequest& resourceRequest)
+    void bind(ResourceRequest& resourceRequest)
     {
         m_handle.m_resourceRequest = &resourceRequest;
         assign(&m_handle);
     }
 
-    void bind(const WebCore::ResourceRequest& resourceRequest)
+    void bind(const ResourceRequest& resourceRequest)
     {
-        bind(*const_cast<WebCore::ResourceRequest*>(&resourceRequest));
+        bind(*const_cast<ResourceRequest*>(&resourceRequest));
     }
 
 private:

@@ -20,10 +20,10 @@ class DefaultActivationClient::Deleter : public aura::WindowObserver {
   }
 
  private:
-  virtual ~Deleter() {}
+  ~Deleter() override {}
 
   // Overridden from WindowObserver:
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE {
+  void OnWindowDestroyed(aura::Window* window) override {
     DCHECK_EQ(window, root_window_);
     root_window_->RemoveObserver(this);
     delete client_;
@@ -104,11 +104,6 @@ aura::Window* DefaultActivationClient::GetActivatableWindow(
 
 aura::Window* DefaultActivationClient::GetToplevelWindow(aura::Window* window) {
   return NULL;
-}
-
-bool DefaultActivationClient::OnWillFocusWindow(aura::Window* window,
-                                                const ui::Event* event) {
-  return true;
 }
 
 bool DefaultActivationClient::CanActivateWindow(aura::Window* window) const {

@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_export.h"
 
 namespace gpu {
 namespace gles2 {
@@ -17,6 +18,7 @@ namespace gfx {
 
 class GLContext;
 class GLSurface;
+struct GLVersionInfo;
 
 void InitializeStaticGLBindingsGL();
 void InitializeDynamicGLBindingsGL(GLContext* context);
@@ -29,6 +31,7 @@ void ClearGLBindingsGL();
 void SetGLToRealGLApi();
 void SetGLApi(GLApi* api);
 void SetGLApiToNoContext();
+const GLVersionInfo* GetGLVersionInfo();
 
 class GLApiBase : public GLApi {
  public:
@@ -39,7 +42,7 @@ class GLApiBase : public GLApi {
 
  protected:
   GLApiBase();
-  virtual ~GLApiBase();
+  ~GLApiBase() override;
   void InitializeBase(DriverGL* driver);
   void SignalFlush();
 
@@ -50,19 +53,19 @@ class GLApiBase : public GLApi {
 class RealGLApi : public GLApiBase {
  public:
   RealGLApi();
-  virtual ~RealGLApi();
+  ~RealGLApi() override;
   void Initialize(DriverGL* driver);
 
  private:
-  virtual void glFinishFn() OVERRIDE;
-  virtual void glFlushFn() OVERRIDE;
+  void glFinishFn() override;
+  void glFlushFn() override;
 };
 
 // Inserts a TRACE for every GL call.
 class TraceGLApi : public GLApi {
  public:
   TraceGLApi(GLApi* gl_api) : gl_api_(gl_api) { }
-  virtual ~TraceGLApi();
+  ~TraceGLApi() override;
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
@@ -77,7 +80,7 @@ class TraceGLApi : public GLApi {
 class NoContextGLApi : public GLApi {
  public:
   NoContextGLApi();
-  virtual ~NoContextGLApi();
+  ~NoContextGLApi() override;
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
@@ -91,7 +94,7 @@ class NoContextGLApi : public GLApi {
 class VirtualGLApi : public GLApiBase {
  public:
   VirtualGLApi();
-  virtual ~VirtualGLApi();
+  ~VirtualGLApi() override;
   void Initialize(DriverGL* driver, GLContext* real_context);
 
   // Sets the current virutal context.
@@ -101,9 +104,9 @@ class VirtualGLApi : public GLApiBase {
 
 private:
   // Overridden functions from GLApiBase
-  virtual const GLubyte* glGetStringFn(GLenum name) OVERRIDE;
-  virtual void glFinishFn() OVERRIDE;
-  virtual void glFlushFn() OVERRIDE;
+ const GLubyte* glGetStringFn(GLenum name) override;
+ void glFinishFn() override;
+ void glFlushFn() override;
 
   // The real context we're running on.
   GLContext* real_context_;
@@ -113,6 +116,15 @@ private:
 
   // The supported extensions being advertised for this virtual context.
   std::string extensions_;
+};
+
+class GL_EXPORT ScopedSetGLToRealGLApi {
+ public:
+  ScopedSetGLToRealGLApi();
+  ~ScopedSetGLToRealGLApi();
+
+ private:
+  GLApi* old_gl_api_;
 };
 
 }  // namespace gfx

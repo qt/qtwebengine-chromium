@@ -28,23 +28,21 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+enum AnimationPlayState { "idle", "pending", "running", "paused", "finished" };
+
 [
-    RuntimeEnabled=WebAnimationsElementAnimate,
     NoInterfaceObject,
-    WillBeGarbageCollected,
     ActiveDOMObject,
 ] interface AnimationPlayer : EventTarget {
-    [RuntimeEnabled=WebAnimationsAPI]          attribute AnimationNode? source;
-    [RuntimeEnabled=WebAnimationsAPI]          attribute double     startTime;
-    [RuntimeEnabled=WebAnimationsAPI]          attribute double     currentTime;
-    [RuntimeEnabled=WebAnimationsAPI] readonly attribute double     timeLag;
-    [RuntimeEnabled=WebAnimationsAPI]          attribute double     playbackRate;
-    [RuntimeEnabled=WebAnimationsAPI] readonly attribute boolean    paused;
-    [RuntimeEnabled=WebAnimationsAPI] readonly attribute boolean    finished;
-    [RuntimeEnabled=WebAnimationsAPI, RaisesException] void finish();
-    [RuntimeEnabled=WebAnimationsAPI] void play();
-    [RuntimeEnabled=WebAnimationsAPI] void pause();
-    [RuntimeEnabled=WebAnimationsAPI] void reverse();
+    [RuntimeEnabled=WebAnimationsAPI]                      attribute AnimationNode? source;
+    [RuntimeEnabled=WebAnimationsPlaybackControl]          attribute double?    startTime;
+    [RuntimeEnabled=WebAnimationsPlaybackControl]          attribute double?    currentTime;
+    [RuntimeEnabled=WebAnimationsPlaybackControl]          attribute double     playbackRate;
+    [RuntimeEnabled=WebAnimationsPlaybackControl, MeasureAs=AnimationPlayerGetPlayState] readonly attribute AnimationPlayState playState;
+    [RuntimeEnabled=WebAnimationsPlaybackControl, MeasureAs=AnimationPlayerFinish, RaisesException] void finish();
+    [RuntimeEnabled=WebAnimationsPlaybackControl, MeasureAs=AnimationPlayerPlay] void play();
+    [RuntimeEnabled=WebAnimationsPlaybackControl, MeasureAs=AnimationPlayerPause] void pause();
+    [RuntimeEnabled=WebAnimationsPlaybackControl, MeasureAs=AnimationPlayerReverse] void reverse();
 
     void cancel();
     [MeasureAs=AnimationPlayerFinishEvent] attribute EventHandler onfinish;

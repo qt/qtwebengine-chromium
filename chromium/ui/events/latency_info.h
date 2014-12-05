@@ -22,6 +22,8 @@ enum LatencyComponentType {
   INPUT_EVENT_LATENCY_BEGIN_RWH_COMPONENT,
   // Timestamp when the input event is received in plugin.
   INPUT_EVENT_LATENCY_BEGIN_PLUGIN_COMPONENT,
+  // Timestamp when a scroll update for the main thread is begun.
+  INPUT_EVENT_LATENCY_BEGIN_SCROLL_UPDATE_MAIN_COMPONENT,
   // ---------------------------NORMAL COMPONENT-------------------------------
   // Timestamp when the scroll update gesture event is sent from RWH to
   // renderer. In Aura, touch event's LatencyInfo is carried over to the gesture
@@ -39,11 +41,26 @@ enum LatencyComponentType {
   // This is special component indicating there is rendering scheduled for
   // the event associated with this LatencyInfo.
   INPUT_EVENT_LATENCY_RENDERING_SCHEDULED_COMPONENT,
-  // Timestamp when the touch event is acked.
-  INPUT_EVENT_LATENCY_ACKED_TOUCH_COMPONENT,
+  // Timestamp when a scroll update is forwarded to the main thread.
+  INPUT_EVENT_LATENCY_FORWARD_SCROLL_UPDATE_TO_MAIN_COMPONENT,
+  // Timestamp when the event's ack is received by the RWH.
+  INPUT_EVENT_LATENCY_ACK_RWH_COMPONENT,
   // Frame number when a window snapshot was requested. The snapshot
   // is taken when the rendering results actually reach the screen.
   WINDOW_SNAPSHOT_FRAME_NUMBER_COMPONENT,
+  // Frame number for a snapshot requested via
+  // gpuBenchmarking.beginWindowSnapshotPNG
+  // TODO(vkuzkokov): remove when patch adding this hits Stable
+  WINDOW_OLD_SNAPSHOT_FRAME_NUMBER_COMPONENT,
+  // Timestamp when a tab is requested to be shown.
+  TAB_SHOW_COMPONENT,
+  // Timestamp of when the Browser process began compositing
+  INPUT_EVENT_BROWSER_COMPOSITE_COMPONENT,
+  // Timestamp of when the Browser process began swap buffers
+  INPUT_EVENT_BROWSER_SWAP_BUFFER_COMPONENT,
+  // Timestamp of when the gpu service began swap buffers, unlike
+  // INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT which measure after
+  INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT,
   // ---------------------------TERMINAL COMPONENT-----------------------------
   // TERMINAL COMPONENT is when we show the latency end in chrome://tracing.
   // Timestamp when the mouse event is acked from renderer and it does not
@@ -61,12 +78,12 @@ enum LatencyComponentType {
   // This component indicates that the input causes a commit to be scheduled
   // but the commit failed.
   INPUT_EVENT_LATENCY_TERMINATED_COMMIT_FAILED_COMPONENT,
+  // This component indicates that the input causes a commit to be scheduled
+  // but the commit was aborted since it carried no new information.
+  INPUT_EVENT_LATENCY_TERMINATED_COMMIT_NO_UPDATE_COMPONENT,
   // This component indicates that the input causes a swap to be scheduled
   // but the swap failed.
   INPUT_EVENT_LATENCY_TERMINATED_SWAP_FAILED_COMPONENT,
-  // This component indicates that the cached LatencyInfo number exceeds the
-  // maximal allowed size.
-  LATENCY_INFO_LIST_TERMINATED_OVERFLOW_COMPONENT,
   // Timestamp when the input event is considered not cause any rendering
   // damage in plugin and thus terminated.
   INPUT_EVENT_LATENCY_TERMINATED_PLUGIN_COMPONENT,
@@ -85,8 +102,18 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
     uint32 event_count;
   };
 
+  struct EVENTS_BASE_EXPORT InputCoordinate {
+    InputCoordinate();
+    InputCoordinate(float x, float y);
+
+    float x;
+    float y;
+  };
+
   // Empirically determined constant based on a typical scroll sequence.
-  enum { kTypicalMaxComponentsPerLatencyInfo = 6 };
+  enum { kTypicalMaxComponentsPerLatencyInfo = 9 };
+
+  enum { kMaxInputCoordinates = 2 };
 
   // Map a Latency Component (with a component-specific int64 id) to a
   // component info.
@@ -143,6 +170,11 @@ struct EVENTS_BASE_EXPORT LatencyInfo {
   void TraceEventType(const char* event_type);
 
   LatencyMap latency_components;
+
+  // These coordinates represent window coordinates of the original input event.
+  uint32 input_coordinates_size;
+  InputCoordinate input_coordinates[kMaxInputCoordinates];
+
   // The unique id for matching the ASYNC_BEGIN/END trace event.
   int64 trace_id;
   // Whether a terminal component has been added.

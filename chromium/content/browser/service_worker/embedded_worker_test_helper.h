@@ -45,18 +45,18 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
  public:
   // Initialize this helper for |context|, and enable this as an IPC
   // sender for |mock_render_process_id|.
-  EmbeddedWorkerTestHelper(int mock_render_process_id);
-  virtual ~EmbeddedWorkerTestHelper();
+  explicit EmbeddedWorkerTestHelper(int mock_render_process_id);
+  ~EmbeddedWorkerTestHelper() override;
 
-  // Call this to simulate add/associate a process to a worker.
+  // Call this to simulate add/associate a process to a pattern.
   // This also registers this sender for the process.
-  void SimulateAddProcessToWorker(int embedded_worker_id, int process_id);
+  void SimulateAddProcessToPattern(const GURL& pattern, int process_id);
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // IPC sink for EmbeddedWorker messages.
   IPC::TestSink* ipc_sink() { return &sink_; }
@@ -66,6 +66,8 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   ServiceWorkerContextCore* context();
   ServiceWorkerContextWrapper* context_wrapper() { return wrapper_.get(); }
   void ShutdownContext();
+
+  int mock_render_process_id() const { return mock_render_process_id_;}
 
  protected:
   // Called when StartWorker, StopWorker and SendMessageToWorker message
@@ -77,7 +79,9 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   virtual void OnStartWorker(int embedded_worker_id,
                              int64 service_worker_version_id,
                              const GURL& scope,
-                             const GURL& script_url);
+                             const GURL& script_url,
+                             bool pause_after_download);
+  virtual void OnResumeAfterDownload(int embedded_worker_id);
   virtual void OnStopWorker(int embedded_worker_id);
   virtual bool OnMessageToWorker(int thread_id,
                                  int embedded_worker_id,
@@ -97,15 +101,19 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
 
   // These functions simulate sending an EmbeddedHostMsg message to the
   // browser.
-  void SimulateWorkerStarted(int thread_id, int embedded_worker_id);
+  void SimulatePausedAfterDownload(int embedded_worker_id);
+  void SimulateWorkerReadyForInspection(int embedded_worker_id);
+  void SimulateWorkerScriptLoaded(int thread_id, int embedded_worker_id);
+  void SimulateWorkerScriptEvaluated(int embedded_worker_id);
+  void SimulateWorkerStarted(int embedded_worker_id);
   void SimulateWorkerStopped(int embedded_worker_id);
   void SimulateSend(IPC::Message* message);
 
- protected:
   EmbeddedWorkerRegistry* registry();
 
  private:
   void OnStartWorkerStub(const EmbeddedWorkerMsg_StartWorker_Params& params);
+  void OnResumeAfterDownloadStub(int embedded_worker_id);
   void OnStopWorkerStub(int embedded_worker_id);
   void OnMessageToWorkerStub(int thread_id,
                              int embedded_worker_id,
@@ -121,6 +129,7 @@ class EmbeddedWorkerTestHelper : public IPC::Sender,
   IPC::TestSink inner_sink_;
 
   int next_thread_id_;
+  int mock_render_process_id_;
 
   // Updated each time MessageToWorker message is received.
   int current_embedded_worker_id_;

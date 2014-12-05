@@ -5,8 +5,8 @@
 #include "base/compiler_specific.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "jingle/notifier/base/weak_xmpp_client.h"
-#include "talk/xmpp/asyncsocket.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "webrtc/libjingle/xmpp/asyncsocket.h"
 
 namespace notifier {
 
@@ -20,7 +20,7 @@ class MockAsyncSocket : public buzz::AsyncSocket {
   MOCK_METHOD0(state, State());
   MOCK_METHOD0(error, Error());
   MOCK_METHOD0(GetError, int());
-  MOCK_METHOD1(Connect, bool(const talk_base::SocketAddress&));
+  MOCK_METHOD1(Connect, bool(const rtc::SocketAddress&));
   MOCK_METHOD3(Read, bool(char*, size_t, size_t*));
   MOCK_METHOD2(Write, bool(const char*, size_t));
   MOCK_METHOD0(Close, bool());
@@ -35,15 +35,13 @@ namespace {
 // PushNotificationsSubscribeTask.
 class FakeWeakXmppClient : public notifier::WeakXmppClient {
  public:
-  explicit FakeWeakXmppClient(talk_base::TaskParent* parent)
+  explicit FakeWeakXmppClient(rtc::TaskParent* parent)
       : notifier::WeakXmppClient(parent),
         jid_("test@example.com/testresource") {}
 
-  virtual ~FakeWeakXmppClient() {}
+  ~FakeWeakXmppClient() override {}
 
-  virtual const buzz::Jid& jid() const OVERRIDE {
-    return jid_;
-  }
+  const buzz::Jid& jid() const override { return jid_; }
 
  private:
   buzz::Jid jid_;

@@ -26,30 +26,19 @@
 #include "config.h"
 #include "core/html/parser/HTMLParserOptions.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/loader/FrameLoader.h"
 
-namespace WebCore {
+namespace blink {
 
 HTMLParserOptions::HTMLParserOptions(Document* document)
 {
     LocalFrame* frame = document ? document->frame() : 0;
     scriptEnabled = frame && frame->script().canExecuteScripts(NotAboutToExecuteScript);
     pluginsEnabled = frame && frame->loader().allowPlugins(NotAboutToInstantiatePlugin);
-
-    // We force the main-thread parser for two cases:
-    // - about:blank and javascript (which uses about:blank) for compatibility
-    //   with historical synchronous loading/parsing behavior.
-    // - instances where the Document has no Frame (this happens sometimes for
-    //   HTML imports, and possibly other cases).
-    // FIXME: We want to use the threaded parser for XHRs (where there is no
-    // frame) so the second case should go away eventually.
-    // FIXME: Gecko does not load javascript: urls synchronously, why do we?
-    // See LayoutTests/loader/iframe-sync-loads.html
-    useThreading = document && document->frame() && !document->url().isAboutBlankURL();
 }
 
 }

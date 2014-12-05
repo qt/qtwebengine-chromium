@@ -34,7 +34,7 @@
 #include "core/svg/SVGAnimatedNumber.h"
 #include "core/svg/SVGNumberOptionalNumber.h"
 
-namespace WebCore {
+namespace blink {
 
 // SVG Spec: http://www.w3.org/TR/SVG11/types.html <number-optional-number>
 // Unlike other SVGAnimated* class, this class is not exposed to Javascript directly,
@@ -48,9 +48,9 @@ public:
         return adoptRef(new SVGAnimatedNumberOptionalNumber(contextElement, attributeName, initialFirstValue, initialSecondValue));
     }
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) OVERRIDE;
-    virtual bool needsSynchronizeAttribute() OVERRIDE;
-    virtual void animationEnded() OVERRIDE;
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) override;
+    virtual bool needsSynchronizeAttribute() override;
+    virtual void animationEnded() override;
 
     SVGAnimatedNumber* firstNumber() { return m_firstNumber.get(); }
     SVGAnimatedNumber* secondNumber() { return m_secondNumber.get(); }
@@ -62,6 +62,6 @@ protected:
     RefPtr<SVGAnimatedNumber> m_secondNumber;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedNumberOptionalNumber_h

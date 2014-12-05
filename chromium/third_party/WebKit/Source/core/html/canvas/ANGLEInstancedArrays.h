@@ -30,31 +30,32 @@
 #ifndef ANGLEInstancedArrays_h
 #define ANGLEInstancedArrays_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLRenderingContextBase;
 
-class ANGLEInstancedArrays FINAL : public WebGLExtension, public ScriptWrappable {
+class ANGLEInstancedArrays final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<ANGLEInstancedArrays> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<ANGLEInstancedArrays> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~ANGLEInstancedArrays();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
     void drawArraysInstancedANGLE(GLenum mode, GLint first, GLsizei count, GLsizei primcount);
     void drawElementsInstancedANGLE(GLenum mode, GLsizei count, GLenum type, long long offset, GLsizei primcount);
     void vertexAttribDivisorANGLE(GLuint index, GLuint divisor);
 
 private:
-    ANGLEInstancedArrays(WebGLRenderingContextBase*);
+    explicit ANGLEInstancedArrays(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ANGLEInstancedArrays_h

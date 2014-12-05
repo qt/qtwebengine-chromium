@@ -4,6 +4,7 @@
 
 #include "printing/emf_win.h"
 
+#include "base/files/file.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -19,22 +20,6 @@
 #include "ui/gfx/size.h"
 
 namespace {
-
-const int kCustomGdiCommentSignature = 0xdeadbabe;
-struct PageBreakRecord {
-  int signature;
-  enum PageBreakType {
-    START_PAGE,
-    END_PAGE,
-  } type;
-  explicit PageBreakRecord(PageBreakType type_in)
-      : signature(kCustomGdiCommentSignature), type(type_in) {
-  }
-  bool IsValid() const {
-    return (signature == kCustomGdiCommentSignature) &&
-           (type >= START_PAGE) && (type <= END_PAGE);
-  }
-};
 
 int CALLBACK IsAlphaBlendUsedEnumProc(HDC,
                                       HANDLETABLE*,
@@ -110,33 +95,33 @@ class RasterBitmap {
   explicit RasterBitmap(const gfx::Size& raster_size)
       : saved_object_(NULL) {
     context_.Set(::CreateCompatibleDC(NULL));
-    if (!context_) {
+    if (!context_.IsValid()) {
       NOTREACHED() << "Bitmap DC creation failed";
       return;
     }
-    ::SetGraphicsMode(context_, GM_ADVANCED);
+    ::SetGraphicsMode(context_.Get(), GM_ADVANCED);
     void* bits = NULL;
     gfx::Rect bitmap_rect(raster_size);
     gfx::CreateBitmapHeader(raster_size.width(), raster_size.height(),
                             &header_.bmiHeader);
-    bitmap_.Set(::CreateDIBSection(context_, &header_, DIB_RGB_COLORS, &bits,
-                                   NULL, 0));
+    bitmap_.Set(::CreateDIBSection(context_.Get(), &header_, DIB_RGB_COLORS,
+                                   &bits, NULL, 0));
     if (!bitmap_)
       NOTREACHED() << "Raster bitmap creation for printing failed";
 
-    saved_object_ = ::SelectObject(context_, bitmap_);
+    saved_object_ = ::SelectObject(context_.Get(), bitmap_);
     RECT rect = bitmap_rect.ToRECT();
-    ::FillRect(context_, &rect,
+    ::FillRect(context_.Get(), &rect,
                static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
 
   }
 
   ~RasterBitmap() {
-    ::SelectObject(context_, saved_object_);
+    ::SelectObject(context_.Get(), saved_object_);
   }
 
   HDC context() const {
-    return context_;
+    return context_.Get();
   }
 
   base::win::ScopedCreateDC context_;
@@ -165,13 +150,18 @@ bool DIBFormatNativelySupported(HDC dc, uint32 escape, const BYTE* bits,
   return !!supported;
 }
 
-Emf::Emf() : emf_(NULL), hdc_(NULL), page_count_(0) {
+Emf::Emf() : emf_(NULL), hdc_(NULL) {
 }
 
 Emf::~Emf() {
+  Close();
+}
+
+void Emf::Close() {
   DCHECK(!hdc_);
   if (emf_)
     DeleteEnhMetaFile(emf_);
+  emf_ = NULL;
 }
 
 bool Emf::InitToFile(const base::FilePath& metafile_path) {
@@ -230,8 +220,10 @@ bool Emf::SafePlayback(HDC context) const {
   }
   Emf::EnumerationContext playback_context;
   playback_context.base_matrix = &base_matrix;
-  RECT rect = GetPageBounds(1).ToRECT();
-  return EnumEnhMetaFile(context,
+  gfx::Rect bound = GetPageBounds(1);
+  RECT rect = bound.ToRECT();
+  return bound.IsEmpty() ||
+         EnumEnhMetaFile(context,
                          emf_,
                          &Emf::SafePlaybackProc,
                          reinterpret_cast<void*>(&playback_context),
@@ -266,38 +258,6 @@ bool Emf::GetData(void* buffer, uint32 size) const {
       GetEnhMetaFileBits(emf_, size, reinterpret_cast<BYTE*>(buffer));
   DCHECK(size2 == size);
   return size2 == size && size2 != 0;
-}
-
-bool Emf::GetDataAsVector(std::vector<uint8>* buffer) const {
-  uint32 size = GetDataSize();
-  if (!size)
-    return false;
-
-  buffer->resize(size);
-  if (!GetData(&buffer->front(), size))
-    return false;
-  return true;
-}
-
-bool Emf::SaveTo(const base::FilePath& file_path) const {
-  HANDLE file = CreateFile(file_path.value().c_str(), GENERIC_WRITE,
-                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
-                           CREATE_ALWAYS, 0, NULL);
-  if (file == INVALID_HANDLE_VALUE)
-    return false;
-
-  bool success = false;
-  std::vector<uint8> buffer;
-  if (GetDataAsVector(&buffer)) {
-    DWORD written = 0;
-    if (WriteFile(file, &*buffer.begin(), static_cast<DWORD>(buffer.size()),
-                  &written, NULL) &&
-        written == buffer.size()) {
-      success = true;
-    }
-  }
-  CloseHandle(file);
-  return success;
 }
 
 int CALLBACK Emf::SafePlaybackProc(HDC hdc,
@@ -409,7 +369,7 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
         DCHECK(bitmap.get());
         if (bitmap.get()) {
           SkAutoLockPixels lock(*bitmap.get());
-          DCHECK_EQ(bitmap->config(), SkBitmap::kARGB_8888_Config);
+          DCHECK_EQ(bitmap->colorType(), kN32_SkColorType);
           const uint32_t* pixels =
               static_cast<const uint32_t*>(bitmap->getPixels());
           if (pixels == NULL) {
@@ -481,34 +441,6 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
       // Ignore it.
       res = true;
       break;
-    case EMR_GDICOMMENT: {
-      const EMRGDICOMMENT* comment_record =
-          reinterpret_cast<const EMRGDICOMMENT*>(record());
-      if (comment_record->cbData == sizeof(PageBreakRecord)) {
-        const PageBreakRecord* page_break_record =
-            reinterpret_cast<const PageBreakRecord*>(comment_record->Data);
-        if (page_break_record && page_break_record->IsValid()) {
-          if (page_break_record->type == PageBreakRecord::START_PAGE) {
-            res = !!::StartPage(context->hdc);
-            DCHECK_EQ(0, context->dc_on_page_start);
-            context->dc_on_page_start = ::SaveDC(context->hdc);
-          } else if (page_break_record->type == PageBreakRecord::END_PAGE) {
-            DCHECK_NE(0, context->dc_on_page_start);
-            ::RestoreDC(context->hdc, context->dc_on_page_start);
-            context->dc_on_page_start = 0;
-            res = !!::EndPage(context->hdc);
-          } else {
-            res = false;
-            NOTREACHED();
-          }
-        } else {
-          res = Play(context);
-        }
-      } else {
-        res = true;
-      }
-      break;
-    }
     default: {
       res = Play(context);
       break;
@@ -517,36 +449,14 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
   return res;
 }
 
-SkBaseDevice* Emf::StartPageForVectorCanvas(
-    const gfx::Size& page_size, const gfx::Rect& content_area,
-    const float& scale_factor) {
-  if (!StartPage(page_size, content_area, scale_factor))
-    return NULL;
-
-  return skia::VectorPlatformDeviceEmf::CreateDevice(page_size.width(),
-                                                     page_size.height(),
-                                                     true, hdc_);
-}
-
 bool Emf::StartPage(const gfx::Size& /*page_size*/,
                     const gfx::Rect& /*content_area*/,
                     const float& /*scale_factor*/) {
-  DCHECK(hdc_);
-  if (!hdc_)
-    return false;
-  page_count_++;
-  PageBreakRecord record(PageBreakRecord::START_PAGE);
-  return !!GdiComment(hdc_, sizeof(record),
-                      reinterpret_cast<const BYTE *>(&record));
+  return true;
 }
 
 bool Emf::FinishPage() {
-  DCHECK(hdc_);
-  if (!hdc_)
-    return false;
-  PageBreakRecord record(PageBreakRecord::END_PAGE);
-  return !!GdiComment(hdc_, sizeof(record),
-                      reinterpret_cast<const BYTE *>(&record));
+  return true;
 }
 
 Emf::Enumerator::Enumerator(const Emf& emf, HDC context, const RECT* rect) {
@@ -601,7 +511,7 @@ bool Emf::IsAlphaBlendUsed() const {
   return result;
 }
 
-Emf* Emf::RasterizeMetafile(int raster_area_in_pixels) const {
+scoped_ptr<Emf> Emf::RasterizeMetafile(int raster_area_in_pixels) const {
   gfx::Rect page_bounds = GetPageBounds(1);
   gfx::Size page_size(page_bounds.size());
   if (page_size.GetArea() <= 0) {
@@ -643,10 +553,10 @@ Emf* Emf::RasterizeMetafile(int raster_area_in_pixels) const {
   result->FinishPage();
   result->FinishDocument();
 
-  return result.release();
+  return result.Pass();
 }
 
-Emf* Emf::RasterizeAlphaBlend() const {
+scoped_ptr<Emf> Emf::RasterizeAlphaBlend() const {
   gfx::Rect page_bounds = GetPageBounds(1);
   if (page_bounds.size().GetArea() <= 0) {
     NOTREACHED() << "Metafile is empty";
@@ -671,7 +581,7 @@ Emf* Emf::RasterizeAlphaBlend() const {
 
   result->FinishDocument();
 
-  return result.release();
+  return result.Pass();
 }
 
 

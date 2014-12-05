@@ -37,16 +37,12 @@
 #include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class CharacterData;
 class LocalFrame;
 class GraphicsContext;
 class HTMLFormElement;
-class MutableStylePropertySet;
-class RenderObject;
-class RenderView;
-class Settings;
 class Text;
 class VisiblePosition;
 
@@ -57,12 +53,12 @@ enum RevealExtentOption {
     DoNotRevealExtent
 };
 
-class FrameSelection FINAL : public NoBaseWillBeGarbageCollectedFinalized<FrameSelection>, public VisibleSelection::ChangeObserver, private CaretBase {
+class FrameSelection final : public NoBaseWillBeGarbageCollectedFinalized<FrameSelection>, public VisibleSelection::ChangeObserver, private CaretBase {
     WTF_MAKE_NONCOPYABLE(FrameSelection);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(FrameSelection);
 public:
-    static PassOwnPtrWillBeRawPtr<FrameSelection> create(LocalFrame* frame = 0)
+    static PassOwnPtrWillBeRawPtr<FrameSelection> create(LocalFrame* frame = nullptr)
     {
         return adoptPtrWillBeNoop(new FrameSelection(frame));
     }
@@ -89,12 +85,16 @@ public:
         NonDirectional,
         Directional
     };
+    enum ResetCaretBlinkOption {
+        None,
+        ResetCaretBlink
+    };
 
     Element* rootEditableElement() const { return m_selection.rootEditableElement(); }
     Element* rootEditableElementOrDocumentElement() const;
-    Node* rootEditableElementOrTreeScopeRootNode() const;
+    ContainerNode* rootEditableElementOrTreeScopeRootNode() const;
 
-    bool rendererIsEditable() const { return m_selection.rendererIsEditable(); }
+    bool hasEditableStyle() const { return m_selection.hasEditableStyle(); }
     bool isContentEditable() const { return m_selection.isContentEditable(); }
     bool isContentRichlyEditable() const { return m_selection.isContentRichlyEditable(); }
 
@@ -137,14 +137,10 @@ public:
     Position end() const { return m_selection.end(); }
 
     // Return the renderer that is responsible for painting the caret (in the selection start node)
-    RenderObject* caretRenderer() const;
-
-    // Caret rect local to the caret's renderer
-    LayoutRect localCaretRect();
+    RenderBlock* caretRenderer() const;
 
     // Bounds of (possibly transformed) caret in absolute coords
     IntRect absoluteCaretBounds();
-    void setCaretRectNeedsUpdate() { CaretBase::setCaretRectNeedsUpdate(); }
 
     void didChangeFocus();
     void willBeModified(EAlteration, SelectionDirection);
@@ -167,10 +163,14 @@ public:
     void didMergeTextNodes(const Text& oldNode, unsigned offset);
     void didSplitTextNode(const Text& oldNode);
 
+    void updateAppearance(ResetCaretBlinkOption = None);
     void setCaretVisible(bool caretIsVisible) { setCaretVisibility(caretIsVisible ? Visible : Hidden); }
-    bool recomputeCaretRect();
+    bool isCaretBoundsDirty() const { return m_caretRectDirty; }
+    void setCaretRectNeedsUpdate();
+    void scheduleVisualUpdate() const;
     void invalidateCaretRect();
     void paintCaret(GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect);
+    bool ShouldPaintCaretForTesting() const { return m_shouldPaintCaret; }
 
     // Used to suspend caret blinking while the mouse is down.
     void setCaretBlinkingSuspended(bool suspended) { m_isCaretBlinkingSuspended = suspended; }
@@ -182,10 +182,10 @@ public:
     bool isFocusedAndActive() const;
     void pageActivationChanged();
 
-    // Painting.
-    void updateAppearance();
-
     void updateSecureKeyboardEntryIfActive();
+
+    // Returns true if a word is selected.
+    bool selectWordAroundPosition(const VisiblePosition&);
 
 #ifndef NDEBUG
     void formatForDebugger(char* buffer, unsigned length) const;
@@ -204,7 +204,9 @@ public:
     String selectedText() const;
     String selectedTextForClipboard() const;
 
-    FloatRect bounds(bool clipToVisibleContent = true) const;
+    // The bounds are clipped to the viewport as this is what callers expect.
+    LayoutRect bounds() const;
+    LayoutRect unclippedBounds() const;
 
     HTMLFormElement* currentForm() const;
 
@@ -214,9 +216,9 @@ public:
     void setShouldShowBlockCursor(bool);
 
     // VisibleSelection::ChangeObserver interface.
-    virtual void didChangeVisibleSelection() OVERRIDE;
+    virtual void didChangeVisibleSelection() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit FrameSelection(LocalFrame*);
@@ -244,6 +246,8 @@ private:
     LayoutUnit lineDirectionPointForBlockDirectionNavigation(EPositionType);
 
     void notifyAccessibilityForSelectionChange();
+    void notifyCompositorForSelectionChange();
+    void notifyEventHandlerForSelectionChange();
 
     void focusedOrActiveStateChanged();
 
@@ -261,7 +265,9 @@ private:
     void startObservingVisibleSelectionChange();
     void stopObservingVisibleSelectionChangeIfNecessary();
 
-    LocalFrame* m_frame;
+    VisibleSelection validateSelection(const VisibleSelection&);
+
+    RawPtrWillBeMember<LocalFrame> m_frame;
 
     LayoutUnit m_xPosForVerticalArrowNavigation;
 
@@ -276,14 +282,14 @@ private:
     RefPtrWillBeMember<Range> m_logicalRange;
 
     RefPtrWillBeMember<Node> m_previousCaretNode; // The last node which painted the caret. Retained for clearing the old caret when it moves.
+    LayoutRect m_previousCaretRect;
 
     RefPtrWillBeMember<EditingStyle> m_typingStyle;
 
     Timer<FrameSelection> m_caretBlinkTimer;
-    // The painted bounds of the caret in absolute coordinates
-    IntRect m_absCaretBounds;
-    bool m_absCaretBoundsDirty : 1;
-    bool m_caretPaint : 1;
+
+    bool m_caretRectDirty : 1;
+    bool m_shouldPaintCaret : 1;
     bool m_isCaretBlinkingSuspended : 1;
     bool m_focused : 1;
     bool m_shouldShowBlockCursor : 1;
@@ -303,12 +309,12 @@ inline void FrameSelection::setTypingStyle(PassRefPtrWillBeRawPtr<EditingStyle> 
 {
     m_typingStyle = style;
 }
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::FrameSelection&);
-void showTree(const WebCore::FrameSelection*);
+void showTree(const blink::FrameSelection&);
+void showTree(const blink::FrameSelection*);
 #endif
 
 #endif // FrameSelection_h

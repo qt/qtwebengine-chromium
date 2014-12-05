@@ -271,8 +271,6 @@ int32_t VideoReceiver::SetVideoProtection(VCMVideoProtection videoProtection,
 
 // Initialize receiver, resets codec database etc
 int32_t VideoReceiver::InitializeReceiver() {
-  CriticalSectionScoped receive_cs(_receiveCritSect);
-  CriticalSectionScoped process_cs(process_crit_sect_.get());
   int32_t ret = _receiver.Initialize();
   if (ret < 0) {
     return ret;
@@ -282,18 +280,25 @@ int32_t VideoReceiver::InitializeReceiver() {
   if (ret < 0) {
     return ret;
   }
-  _codecDataBase.ResetReceiver();
-  _timing.Reset();
 
-  _decoder = NULL;
-  _decodedFrameCallback.SetUserReceiveCallback(NULL);
-  _receiverInited = true;
-  _frameTypeCallback = NULL;
-  _receiveStatsCallback = NULL;
-  _decoderTimingCallback = NULL;
-  _packetRequestCallback = NULL;
-  _keyRequestMode = kKeyOnError;
-  _scheduleKeyRequest = false;
+  {
+    CriticalSectionScoped receive_cs(_receiveCritSect);
+    _codecDataBase.ResetReceiver();
+    _timing.Reset();
+    _receiverInited = true;
+  }
+
+  {
+    CriticalSectionScoped process_cs(process_crit_sect_.get());
+    _decoder = NULL;
+    _decodedFrameCallback.SetUserReceiveCallback(NULL);
+    _frameTypeCallback = NULL;
+    _receiveStatsCallback = NULL;
+    _decoderTimingCallback = NULL;
+    _packetRequestCallback = NULL;
+    _keyRequestMode = kKeyOnError;
+    _scheduleKeyRequest = false;
+  }
 
   return VCM_OK;
 }
@@ -364,6 +369,7 @@ int VideoReceiver::RegisterRenderBufferSizeCallback(
 // Should be called as often as possible to get the most out of the decoder.
 int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
   int64_t nextRenderTimeMs;
+  bool supports_render_scheduling;
   {
     CriticalSectionScoped cs(_receiveCritSect);
     if (!_receiverInited) {
@@ -372,6 +378,7 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
     if (!_codecDataBase.DecoderRegistered()) {
       return VCM_NO_CODEC_REGISTERED;
     }
+    supports_render_scheduling = _codecDataBase.SupportsRenderScheduling();
   }
 
   const bool dualReceiverEnabledNotReceiving = (
@@ -380,7 +387,7 @@ int32_t VideoReceiver::Decode(uint16_t maxWaitTimeMs) {
   VCMEncodedFrame* frame =
       _receiver.FrameForDecoding(maxWaitTimeMs,
                                  nextRenderTimeMs,
-                                 _codecDataBase.SupportsRenderScheduling(),
+                                 supports_render_scheduling,
                                  &_dualReceiver);
 
   if (dualReceiverEnabledNotReceiving && _dualReceiver.State() == kReceiving) {
@@ -781,7 +788,6 @@ void VideoReceiver::SetNackSettings(size_t max_nack_list_size,
                                     int max_packet_age_to_nack,
                                     int max_incomplete_time_ms) {
   if (max_nack_list_size != 0) {
-    CriticalSectionScoped receive_cs(_receiveCritSect);
     CriticalSectionScoped process_cs(process_crit_sect_.get());
     max_nack_list_size_ = max_nack_list_size;
   }

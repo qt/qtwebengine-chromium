@@ -12,7 +12,7 @@ set -ex
 # We only need the nss/lib directory, but hg requires us to check out the
 # complete nss source tree.
 rm -rf nss
-hg clone -u NSS_3_16_2_BETA3 https://hg.mozilla.org/projects/nss
+hg clone -u NSS_3_16_5_RTM https://hg.mozilla.org/projects/nss
 
 # Rename one of the utf8.c files to avoid name conflict.
 mv nss/lib/base/utf8.c nss/lib/base/nssutf8.c

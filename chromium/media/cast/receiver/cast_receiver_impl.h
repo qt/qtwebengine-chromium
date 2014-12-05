@@ -10,8 +10,8 @@
 #include "media/cast/cast_config.h"
 #include "media/cast/cast_environment.h"
 #include "media/cast/cast_receiver.h"
+#include "media/cast/net/pacing/paced_sender.h"
 #include "media/cast/receiver/frame_receiver.h"
-#include "media/cast/transport/pacing/paced_sender.h"
 
 namespace media {
 namespace cast {
@@ -27,20 +27,20 @@ class CastReceiverImpl : public CastReceiver {
   CastReceiverImpl(scoped_refptr<CastEnvironment> cast_environment,
                    const FrameReceiverConfig& audio_config,
                    const FrameReceiverConfig& video_config,
-                   transport::PacketSender* const packet_sender);
+                   PacketSender* const packet_sender);
 
-  virtual ~CastReceiverImpl();
+  ~CastReceiverImpl() override;
 
   // CastReceiver implementation.
-  virtual transport::PacketReceiverCallback packet_receiver() OVERRIDE;
-  virtual void RequestDecodedAudioFrame(
-      const AudioFrameDecodedCallback& callback) OVERRIDE;
-  virtual void RequestEncodedAudioFrame(
-      const ReceiveEncodedFrameCallback& callback) OVERRIDE;
-  virtual void RequestDecodedVideoFrame(
-      const VideoFrameDecodedCallback& callback) OVERRIDE;
-  virtual void RequestEncodedVideoFrame(
-      const ReceiveEncodedFrameCallback& callback) OVERRIDE;
+  PacketReceiverCallback packet_receiver() override;
+  void RequestDecodedAudioFrame(
+      const AudioFrameDecodedCallback& callback) override;
+  void RequestEncodedAudioFrame(
+      const ReceiveEncodedFrameCallback& callback) override;
+  void RequestDecodedVideoFrame(
+      const VideoFrameDecodedCallback& callback) override;
+  void RequestEncodedVideoFrame(
+      const ReceiveEncodedFrameCallback& callback) override;
 
  private:
   // Forwards |packet| to a specific RTP frame receiver, or drops it if SSRC
@@ -51,13 +51,13 @@ class CastReceiverImpl : public CastReceiver {
   // uses this as a callback for RequestEncodedAudioFrame().
   void DecodeEncodedAudioFrame(
       const AudioFrameDecodedCallback& callback,
-      scoped_ptr<transport::EncodedFrame> encoded_frame);
+      scoped_ptr<EncodedFrame> encoded_frame);
 
   // Feeds an EncodedFrame into |video_decoder_|.  RequestDecodedVideoFrame()
   // uses this as a callback for RequestEncodedVideoFrame().
   void DecodeEncodedVideoFrame(
       const VideoFrameDecodedCallback& callback,
-      scoped_ptr<transport::EncodedFrame> encoded_frame);
+      scoped_ptr<EncodedFrame> encoded_frame);
 
   // Receives an AudioBus from |audio_decoder_|, logs the event, and passes the
   // data on by running the given |callback|.  This method is static to ensure
@@ -88,7 +88,7 @@ class CastReceiverImpl : public CastReceiver {
       bool is_continuous);
 
   const scoped_refptr<CastEnvironment> cast_environment_;
-  transport::PacedSender pacer_;
+  PacedSender pacer_;
   FrameReceiver audio_receiver_;
   FrameReceiver video_receiver_;
 
@@ -102,8 +102,8 @@ class CastReceiverImpl : public CastReceiver {
   // the internal software-based decoders.
   const int num_audio_channels_;
   const int audio_sampling_rate_;
-  const transport::AudioCodec audio_codec_;
-  const transport::VideoCodec video_codec_;
+  const Codec audio_codec_;
+  const Codec video_codec_;
 
   // Created on-demand to decode frames from |audio_receiver_| into AudioBuses
   // for playback.

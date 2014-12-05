@@ -35,7 +35,7 @@
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
 #if !OS(ANDROID)
 const unsigned cMaxInactiveFontData = 250;
@@ -152,4 +152,4 @@ bool FontDataCache::purgeLeastRecentlyUsed(int count)
     return didWork;
 }
 
-}
+} // namespace blink

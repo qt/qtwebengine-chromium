@@ -38,18 +38,19 @@
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class Element;
 class ExceptionState;
 class SampledEffect;
 
-class Animation FINAL : public AnimationNode {
+class Animation final : public AnimationNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum Priority { DefaultPriority, TransitionPriority };
 
-    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtr<EventDelegate> = nullptr);
+    static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority = DefaultPriority, PassOwnPtrWillBeRawPtr<EventDelegate> = nullptr);
     // Web Animations API Bindings constructors.
     static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Dictionary& timingInputDictionary);
     static PassRefPtrWillBeRawPtr<Animation> create(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, double duration);
@@ -60,7 +61,7 @@ public:
 
     virtual ~Animation();
 
-    virtual bool isAnimation() const OVERRIDE { return true; }
+    virtual bool isAnimation() const override { return true; }
 
     bool affects(CSSPropertyID) const;
     const AnimationEffect* effect() const { return m_effect.get(); }
@@ -73,27 +74,28 @@ public:
     void notifyElementDestroyed();
 #endif
 
-    bool isCandidateForAnimationOnCompositor() const;
+    bool isCandidateForAnimationOnCompositor(double playerPlaybackRate) const;
     // Must only be called once.
-    bool maybeStartAnimationOnCompositor(double startTime);
+    bool maybeStartAnimationOnCompositor(double startTime, double timeOffset);
+    bool maybeStartAnimationOnCompositor(double startTime, double timeOffset, double playerPlaybackRate);
     bool hasActiveAnimationsOnCompositor() const;
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     void cancelAnimationOnCompositor();
     void pauseAnimationForTestingOnCompositor(double pauseTime);
 
-    virtual void trace(Visitor*);
+    virtual void trace(Visitor*) override;
 
 protected:
     void applyEffects();
     void clearEffects();
-    virtual void updateChildrenAndEffects() const OVERRIDE;
-    virtual void attach(AnimationPlayer*) OVERRIDE;
-    virtual void detach() OVERRIDE;
-    virtual void specifiedTimingChanged() OVERRIDE;
-    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
+    virtual void updateChildrenAndEffects() const override;
+    virtual void attach(AnimationPlayer*) override;
+    virtual void detach() override;
+    virtual void specifiedTimingChanged() override;
+    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const override;
 
 private:
-    Animation(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtr<EventDelegate>);
+    Animation(Element*, PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, Priority, PassOwnPtrWillBeRawPtr<EventDelegate>);
 
     RawPtrWillBeMember<Element> m_target;
     RefPtrWillBeMember<AnimationEffect> m_effect;
@@ -108,6 +110,6 @@ private:
 
 DEFINE_TYPE_CASTS(Animation, AnimationNode, animationNode, animationNode->isAnimation(), animationNode.isAnimation());
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // Animation_h

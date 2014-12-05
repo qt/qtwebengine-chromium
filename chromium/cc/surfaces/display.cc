@@ -4,160 +4,173 @@
 
 #include "cc/surfaces/display.h"
 
+#include "base/debug/trace_event.h"
 #include "base/message_loop/message_loop.h"
+#include "cc/debug/benchmark_instrumentation.h"
 #include "cc/output/compositor_frame.h"
+#include "cc/output/compositor_frame_ack.h"
 #include "cc/output/direct_renderer.h"
 #include "cc/output/gl_renderer.h"
 #include "cc/output/software_renderer.h"
+#include "cc/resources/texture_mailbox_deleter.h"
 #include "cc/surfaces/display_client.h"
 #include "cc/surfaces/surface.h"
+#include "cc/surfaces/surface_aggregator.h"
+#include "cc/surfaces/surface_manager.h"
+#include "cc/trees/blocking_task_runner.h"
 
 namespace cc {
 
-static ResourceProvider::ResourceId ResourceRemapHelper(
-    bool* invalid_frame,
-    const ResourceProvider::ResourceIdMap& child_to_parent_map,
-    ResourceProvider::ResourceIdArray* resources_in_frame,
-    ResourceProvider::ResourceId id) {
-  ResourceProvider::ResourceIdMap::const_iterator it =
-      child_to_parent_map.find(id);
-  if (it == child_to_parent_map.end()) {
-    *invalid_frame = true;
-    return 0;
-  }
-
-  DCHECK_EQ(it->first, id);
-  ResourceProvider::ResourceId remapped_id = it->second;
-  resources_in_frame->push_back(id);
-  return remapped_id;
-}
-
 Display::Display(DisplayClient* client,
                  SurfaceManager* manager,
-                 SharedBitmapManager* bitmap_manager)
+                 SharedBitmapManager* bitmap_manager,
+                 gpu::GpuMemoryBufferManager* gpu_memory_buffer_manager)
     : client_(client),
       manager_(manager),
-      aggregator_(manager),
-      bitmap_manager_(bitmap_manager) {
+      bitmap_manager_(bitmap_manager),
+      gpu_memory_buffer_manager_(gpu_memory_buffer_manager),
+      device_scale_factor_(1.f),
+      blocking_main_thread_task_runner_(
+          BlockingTaskRunner::Create(base::MessageLoopProxy::current())),
+      texture_mailbox_deleter_(
+          new TextureMailboxDeleter(base::MessageLoopProxy::current())) {
+  manager_->AddObserver(this);
 }
 
 Display::~Display() {
+  manager_->RemoveObserver(this);
 }
 
-void Display::Resize(const gfx::Size& size) {
-  current_surface_.reset(new Surface(manager_, this, size));
+bool Display::Initialize(scoped_ptr<OutputSurface> output_surface) {
+  output_surface_ = output_surface.Pass();
+  return output_surface_->BindToClient(this);
 }
 
-void Display::InitializeOutputSurface() {
-  if (output_surface_)
-    return;
-  scoped_ptr<OutputSurface> output_surface = client_->CreateOutputSurface();
-  if (!output_surface->BindToClient(this))
+void Display::Resize(SurfaceId id,
+                     const gfx::Size& size,
+                     float device_scale_factor) {
+  current_surface_id_ = id;
+  current_surface_size_ = size;
+  device_scale_factor_ = device_scale_factor;
+  client_->DisplayDamaged();
+}
+
+void Display::InitializeRenderer() {
+  if (resource_provider_)
     return;
 
   int highp_threshold_min = 0;
   bool use_rgba_4444_texture_format = false;
   size_t id_allocation_chunk_size = 1;
-  bool use_distance_field_text = false;
   scoped_ptr<ResourceProvider> resource_provider =
-      ResourceProvider::Create(output_surface.get(),
+      ResourceProvider::Create(output_surface_.get(),
                                bitmap_manager_,
+                               gpu_memory_buffer_manager_,
+                               blocking_main_thread_task_runner_.get(),
                                highp_threshold_min,
                                use_rgba_4444_texture_format,
-                               id_allocation_chunk_size,
-                               use_distance_field_text);
+                               id_allocation_chunk_size);
   if (!resource_provider)
     return;
 
-  if (output_surface->context_provider()) {
-    TextureMailboxDeleter* texture_mailbox_deleter = NULL;
+  if (output_surface_->context_provider()) {
     scoped_ptr<GLRenderer> renderer =
         GLRenderer::Create(this,
                            &settings_,
-                           output_surface.get(),
+                           output_surface_.get(),
                            resource_provider.get(),
-                           texture_mailbox_deleter,
+                           texture_mailbox_deleter_.get(),
                            highp_threshold_min);
     if (!renderer)
       return;
     renderer_ = renderer.Pass();
   } else {
     scoped_ptr<SoftwareRenderer> renderer = SoftwareRenderer::Create(
-        this, &settings_, output_surface.get(), resource_provider.get());
+        this, &settings_, output_surface_.get(), resource_provider.get());
     if (!renderer)
       return;
     renderer_ = renderer.Pass();
   }
 
-  output_surface_ = output_surface.Pass();
   resource_provider_ = resource_provider.Pass();
-  child_id_ = resource_provider_->CreateChild(
-      base::Bind(&Display::ReturnResources, base::Unretained(this)));
+  aggregator_.reset(new SurfaceAggregator(manager_, resource_provider_.get()));
+}
+
+void Display::DidLoseOutputSurface() {
+  client_->OutputSurfaceLost();
 }
 
 bool Display::Draw() {
-  if (!current_surface_)
+  if (current_surface_id_.is_null())
     return false;
 
-  InitializeOutputSurface();
+  InitializeRenderer();
   if (!output_surface_)
     return false;
 
-  // TODO(jamesr): Use the surface aggregator instead.
-  scoped_ptr<DelegatedFrameData> frame_data(new DelegatedFrameData);
-  CompositorFrame* current_frame = current_surface_->GetEligibleFrame();
-  frame_data->resource_list =
-      current_frame->delegated_frame_data->resource_list;
-  RenderPass::CopyAll(current_frame->delegated_frame_data->render_pass_list,
-                      &frame_data->render_pass_list);
-
-  if (frame_data->render_pass_list.empty())
+  // TODO(skyostil): We should hold a BlockingTaskRunner::CapturePostTasks
+  // while Aggregate is called to immediately run release callbacks afterward.
+  scoped_ptr<CompositorFrame> frame =
+      aggregator_->Aggregate(current_surface_id_);
+  if (!frame)
     return false;
 
-  const ResourceProvider::ResourceIdMap& resource_map =
-      resource_provider_->GetChildToParentMap(child_id_);
-  resource_provider_->ReceiveFromChild(child_id_, frame_data->resource_list);
+  TRACE_EVENT0("cc", "Display::Draw");
+  benchmark_instrumentation::IssueDisplayRenderingStatsEvent();
+  DelegatedFrameData* frame_data = frame->delegated_frame_data.get();
 
-  bool invalid_frame = false;
-  ResourceProvider::ResourceIdArray resources_in_frame;
-  DrawQuad::ResourceIteratorCallback remap_resources_to_parent_callback =
-      base::Bind(&ResourceRemapHelper,
-                 &invalid_frame,
-                 resource_map,
-                 &resources_in_frame);
-  for (size_t i = 0; i < frame_data->render_pass_list.size(); ++i) {
-    RenderPass* pass = frame_data->render_pass_list[i];
-    for (size_t j = 0; j < pass->quad_list.size(); ++j) {
-      DrawQuad* quad = pass->quad_list[j];
-      quad->IterateResources(remap_resources_to_parent_callback);
-    }
-  }
-
-  if (invalid_frame)
-    return false;
-  resource_provider_->DeclareUsedResourcesFromChild(child_id_,
-                                                    resources_in_frame);
-
-  float device_scale_factor = 1.0f;
-  gfx::Rect device_viewport_rect = gfx::Rect(current_surface_->size());
+  gfx::Rect device_viewport_rect = gfx::Rect(current_surface_size_);
   gfx::Rect device_clip_rect = device_viewport_rect;
   bool disable_picture_quad_image_filtering = false;
 
+  renderer_->DecideRenderPassAllocationsForFrame(frame_data->render_pass_list);
   renderer_->DrawFrame(&frame_data->render_pass_list,
-                       device_scale_factor,
+                       device_scale_factor_,
                        device_viewport_rect,
                        device_clip_rect,
                        disable_picture_quad_image_filtering);
-  CompositorFrameMetadata metadata;
-  renderer_->SwapBuffers(metadata);
+  renderer_->SwapBuffers(frame->metadata);
+  for (SurfaceAggregator::SurfaceIndexMap::iterator it =
+           aggregator_->previous_contained_surfaces().begin();
+       it != aggregator_->previous_contained_surfaces().end();
+       ++it) {
+    Surface* surface = manager_->GetSurfaceForId(it->first);
+    if (surface)
+      surface->RunDrawCallbacks();
+  }
   return true;
 }
 
-SurfaceId Display::CurrentSurfaceId() {
-  return current_surface_ ? current_surface_->surface_id() : SurfaceId();
+void Display::DidSwapBuffers() {
+  client_->DidSwapBuffers();
 }
 
-void Display::ReturnResources(const ReturnedResourceArray& resources) {
+void Display::DidSwapBuffersComplete() {
+  client_->DidSwapBuffersComplete();
+}
+
+void Display::CommitVSyncParameters(base::TimeTicks timebase,
+                                    base::TimeDelta interval) {
+  client_->CommitVSyncParameters(timebase, interval);
+}
+
+void Display::SetMemoryPolicy(const ManagedMemoryPolicy& policy) {
+  client_->SetMemoryPolicy(policy);
+}
+
+void Display::OnSurfaceDamaged(SurfaceId surface) {
+  if (aggregator_ && aggregator_->previous_contained_surfaces().count(surface))
+    client_->DisplayDamaged();
+}
+
+SurfaceId Display::CurrentSurfaceId() {
+  return current_surface_id_;
+}
+
+int Display::GetMaxFramesPending() {
+  if (!output_surface_)
+    return OutputSurface::DEFAULT_MAX_FRAMES_PENDING;
+  return output_surface_->capabilities().max_frames_pending;
 }
 
 }  // namespace cc

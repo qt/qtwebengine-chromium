@@ -37,7 +37,7 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebClipboard.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DataObject> DataObject::createFromPasteboard(PasteMode pasteMode)
 {
@@ -103,7 +103,7 @@ PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::add(const String& data, const
     return item;
 }
 
-PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::add(PassRefPtrWillBeRawPtr<File> file)
+PassRefPtrWillBeRawPtr<DataObjectItem> DataObject::add(File* file)
 {
     if (!file)
         return nullptr;
@@ -152,12 +152,11 @@ String DataObject::getData(const String& type) const
     return String();
 }
 
-bool DataObject::setData(const String& type, const String& data)
+void DataObject::setData(const String& type, const String& data)
 {
     clearData(type);
     if (!add(data, type))
         ASSERT_NOT_REACHED();
-    return true;
 }
 
 void DataObject::urlAndTitle(String& url, String* title) const
@@ -205,14 +204,14 @@ Vector<String> DataObject::filenames() const
     Vector<String> results;
     for (size_t i = 0; i < m_itemList.size(); ++i) {
         if (m_itemList[i]->isFilename())
-            results.append(static_cast<File*>(m_itemList[i]->getAsFile().get())->path());
+            results.append(toFile(m_itemList[i]->getAsFile())->path());
     }
     return results;
 }
 
 void DataObject::addFilename(const String& filename, const String& displayName)
 {
-    internalAddFileItem(DataObjectItem::createFromFile(File::createWithName(filename, displayName, File::AllContentTypes)));
+    internalAddFileItem(DataObjectItem::createFromFile(File::createForUserProvidedFile(filename, displayName)));
 }
 
 void DataObject::addSharedBuffer(const String& name, PassRefPtr<SharedBuffer> buffer)
@@ -260,8 +259,10 @@ void DataObject::internalAddFileItem(PassRefPtrWillBeRawPtr<DataObjectItem> item
 
 void DataObject::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_itemList);
-    WillBeHeapSupplementable<DataObject>::trace(visitor);
+    HeapSupplementable<DataObject>::trace(visitor);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

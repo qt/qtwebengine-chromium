@@ -10,6 +10,7 @@
 
 namespace net {
 
+class QuicCryptoStream;
 class QuicDataStream;
 class QuicHeadersStream;
 class QuicSession;
@@ -20,12 +21,15 @@ class QuicSessionPeer {
  public:
   static void SetNextStreamId(QuicSession* session, QuicStreamId id);
   static void SetMaxOpenStreams(QuicSession* session, uint32 max_streams);
+  static QuicCryptoStream* GetCryptoStream(QuicSession* session);
   static QuicHeadersStream* GetHeadersStream(QuicSession* session);
   static void SetHeadersStream(QuicSession* session,
                                QuicHeadersStream* headers_stream);
   static QuicWriteBlockedList* GetWriteBlockedStreams(QuicSession* session);
   static QuicDataStream* GetIncomingDataStream(QuicSession* session,
                                                QuicStreamId stream_id);
+  static std::map<QuicStreamId, QuicStreamOffset>&
+  GetLocallyClosedStreamsHighestOffset(QuicSession* session);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicSessionPeer);

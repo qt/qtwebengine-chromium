@@ -45,7 +45,7 @@ class SingleSplitViewListenerImpl : public views::SingleSplitViewListener {
  public:
   SingleSplitViewListenerImpl() : count_(0) {}
 
-  virtual bool SplitHandleMoved(views::SingleSplitView* sender) OVERRIDE {
+  bool SplitHandleMoved(views::SingleSplitView* sender) override {
     ++count_;
     return false;
   }
@@ -64,7 +64,7 @@ class MinimumSizedView: public views::View {
 
  private:
   gfx::Size min_size_;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  gfx::Size GetMinimumSize() const override;
 };
 
 gfx::Size MinimumSizedView::GetMinimumSize() const {
@@ -120,7 +120,7 @@ TEST(SingleSplitViewTest, Resize) {
     split.Layout();
 
     // Run all test cases.
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(test_cases); ++i) {
+    for (size_t i = 0; i < arraysize(test_cases); ++i) {
       split.set_resize_leading_on_bounds_change(
           test_cases[i].resize_leading_on_bounds_change);
       if (split.orientation() == SingleSplitView::HORIZONTAL_SPLIT) {

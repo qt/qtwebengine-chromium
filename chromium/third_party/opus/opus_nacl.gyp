@@ -3,9 +3,6 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'werror': '',
-  },
   'includes': [
     '../../native_client/build/untrusted.gypi',
   ],
@@ -36,8 +33,14 @@
         'src/silk/float',
       ],
       'includes': ['opus_srcs.gypi', ],
-      'sources/': [
-        ['exclude', '/fixed/[^/]*_FIX.(h|c)$'],
+      'sources': [
+        '<@(opus_common_sources)',
+        '<@(opus_float_sources)',
+      ],
+      # Suppress a warning given by opus_decoder.c that tells us
+      # optimizations are turned off.
+      'cflags': [
+        '-Wno-#pragma-messages',
       ],
     },  # end of target 'opus_nacl'
   ],

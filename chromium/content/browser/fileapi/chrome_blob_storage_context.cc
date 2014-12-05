@@ -9,35 +9,33 @@
 #include "content/public/browser/blob_handle.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
 
 using base::UserDataAdapter;
-using webkit_blob::BlobStorageContext;
+using storage::BlobStorageContext;
 
 namespace content {
 
 namespace {
 
+const char kBlobStorageContextKeyName[] = "content_blob_storage_context";
+
 class BlobHandleImpl : public BlobHandle {
  public:
-  BlobHandleImpl(scoped_ptr<webkit_blob::BlobDataHandle> handle)
+  explicit BlobHandleImpl(scoped_ptr<storage::BlobDataHandle> handle)
       : handle_(handle.Pass()) {
   }
 
-  virtual ~BlobHandleImpl() {}
+  ~BlobHandleImpl() override {}
 
-  virtual std::string GetUUID() OVERRIDE {
-    return handle_->uuid();
-  }
+  std::string GetUUID() override { return handle_->uuid(); }
 
  private:
-  scoped_ptr<webkit_blob::BlobDataHandle> handle_;
+  scoped_ptr<storage::BlobDataHandle> handle_;
 };
 
 }  // namespace
-
-static const char* kBlobStorageContextKeyName = "content_blob_storage_context";
 
 ChromeBlobStorageContext::ChromeBlobStorageContext() {}
 
@@ -71,11 +69,10 @@ scoped_ptr<BlobHandle> ChromeBlobStorageContext::CreateMemoryBackedBlob(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   std::string uuid(base::GenerateGUID());
-  scoped_refptr<webkit_blob::BlobData> blob_data =
-      new webkit_blob::BlobData(uuid);
+  scoped_refptr<storage::BlobData> blob_data = new storage::BlobData(uuid);
   blob_data->AppendData(data, length);
 
-  scoped_ptr<webkit_blob::BlobDataHandle> blob_data_handle =
+  scoped_ptr<storage::BlobDataHandle> blob_data_handle =
       context_->AddFinishedBlob(blob_data.get());
   if (!blob_data_handle)
     return scoped_ptr<BlobHandle>();

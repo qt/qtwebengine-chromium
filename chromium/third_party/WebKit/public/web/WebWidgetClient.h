@@ -51,10 +51,6 @@ public:
     // Called when a region of the WebWidget needs to be re-painted.
     virtual void didInvalidateRect(const WebRect&) { }
 
-    // Called when a region of the WebWidget, given by clipRect, should be
-    // scrolled by the specified dx and dy amounts.
-    virtual void didScrollRect(int dx, int dy, const WebRect& clipRect) { }
-
     // Called when the Widget has changed size as a result of an auto-resize.
     virtual void didAutoResize(const WebSize& newSize) { }
 
@@ -176,6 +172,9 @@ public:
     // Called when value of focused text field gets dirty, e.g. value is
     // modified by script, not by user input.
     virtual void didUpdateTextOfFocusedElementByNonUserInput() { }
+
+    // Request the browser to show the IME for current input type.
+    virtual void showImeIfNeeded() { }
 
 protected:
     ~WebWidgetClient() { }

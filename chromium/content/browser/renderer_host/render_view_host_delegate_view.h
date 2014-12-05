@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "content/common/content_export.h"
 #include "content/common/drag_event_source_info.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
@@ -18,6 +19,11 @@ namespace gfx {
 class ImageSkia;
 class Rect;
 class Vector2d;
+}
+
+namespace ui {
+class GestureEvent;
+class MouseEvent;
 }
 
 namespace content {
@@ -35,20 +41,6 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
   // provided in the supplied params.
   virtual void ShowContextMenu(RenderFrameHost* render_frame_host,
                                const ContextMenuParams& params) {}
-
-  // Shows a popup menu with the specified items.
-  // This method should call RenderViewHost::DidSelectPopupMenuItem[s]() or
-  // RenderViewHost::DidCancelPopupMenu() based on the user action.
-  virtual void ShowPopupMenu(const gfx::Rect& bounds,
-                             int item_height,
-                             double item_font_size,
-                             int selected_item,
-                             const std::vector<MenuItem>& items,
-                             bool right_aligned,
-                             bool allow_multiple_selection) {};
-
-  // Hides a popup menu opened by ShowPopupMenu().
-  virtual void HidePopupMenu() {};
 
   // The user started dragging content of the specified type within the
   // RenderView. Contextual information about the dragged content is supplied
@@ -72,6 +64,39 @@ class CONTENT_EXPORT RenderViewHostDelegateView {
   // the browser's chrome. If reverse is true, it means the focus was
   // retrieved by doing a Shift-Tab.
   virtual void TakeFocus(bool reverse) {}
+
+#if defined(OS_MACOSX) || defined(OS_ANDROID)
+  // Shows a popup menu with the specified items.
+  // This method should call RenderFrameHost::DidSelectPopupMenuItem[s]() or
+  // RenderFrameHost::DidCancelPopupMenu() based on the user action.
+  virtual void ShowPopupMenu(RenderFrameHost* render_frame_host,
+                             const gfx::Rect& bounds,
+                             int item_height,
+                             double item_font_size,
+                             int selected_item,
+                             const std::vector<MenuItem>& items,
+                             bool right_aligned,
+                             bool allow_multiple_selection) {};
+
+  // Hides a popup menu opened by ShowPopupMenu().
+  virtual void HidePopupMenu() {};
+#endif
+
+#if defined(TOOLKIT_VIEWS) || defined(USE_AURA)
+  // Shows a Link Disambiguation Popup. |target_rect| is the area the user
+  // touched that resulted in ambiguity, in DIPs in the host's coordinate
+  // system, |zoomed_bitmap| is an enlarged image of that |target_rect|, and
+  // |callback| is for forwarding on to the original scale web content.
+  virtual void ShowDisambiguationPopup(
+      const gfx::Rect& target_rect,
+      const SkBitmap& zoomed_bitmap,
+      const base::Callback<void(ui::GestureEvent*)>& gesture_cb,
+      const base::Callback<void(ui::MouseEvent*)>& mouse_cb) {}
+
+  // Hides the Link Disambiguation Popup, if it was showing, otherwise does
+  // nothing.
+  virtual void HideDisambiguationPopup() {}
+#endif
 
  protected:
   virtual ~RenderViewHostDelegateView() {}

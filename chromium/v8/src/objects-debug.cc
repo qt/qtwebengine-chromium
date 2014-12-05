@@ -4,11 +4,12 @@
 
 #include "src/v8.h"
 
-#include "src/disassembler.h"
 #include "src/disasm.h"
+#include "src/disassembler.h"
+#include "src/heap/objects-visiting.h"
 #include "src/jsregexp.h"
 #include "src/macro-assembler.h"
-#include "src/objects-visiting.h"
+#include "src/ostreams.h"
 
 namespace v8 {
 namespace internal {
@@ -54,6 +55,7 @@ void HeapObject::HeapObjectVerify() {
       Map::cast(this)->MapVerify();
       break;
     case HEAP_NUMBER_TYPE:
+    case MUTABLE_HEAP_NUMBER_TYPE:
       HeapNumber::cast(this)->HeapNumberVerify();
       break;
     case FIXED_ARRAY_TYPE:
@@ -122,6 +124,9 @@ void HeapObject::HeapObjectVerify() {
       break;
     case PROPERTY_CELL_TYPE:
       PropertyCell::cast(this)->PropertyCellVerify();
+      break;
+    case WEAK_CELL_TYPE:
+      WeakCell::cast(this)->WeakCellVerify();
       break;
     case JS_ARRAY_TYPE:
       JSArray::cast(this)->JSArrayVerify();
@@ -205,7 +210,7 @@ void Symbol::SymbolVerify() {
 
 
 void HeapNumber::HeapNumberVerify() {
-  CHECK(IsHeapNumber());
+  CHECK(IsHeapNumber() || IsMutableHeapNumber());
 }
 
 
@@ -254,19 +259,27 @@ void JSObject::JSObjectVerify() {
   }
 
   if (HasFastProperties()) {
-    CHECK_EQ(map()->unused_property_fields(),
-             (map()->inobject_properties() + properties()->length() -
-              map()->NextFreePropertyIndex()));
+    int actual_unused_property_fields = map()->inobject_properties() +
+                                        properties()->length() -
+                                        map()->NextFreePropertyIndex();
+    if (map()->unused_property_fields() != actual_unused_property_fields) {
+      // This could actually happen in the middle of StoreTransitionStub
+      // when the new extended backing store is already set into the object and
+      // the allocation of the MutableHeapNumber triggers GC (in this case map
+      // is not updated yet).
+      CHECK_EQ(map()->unused_property_fields(),
+               actual_unused_property_fields - JSObject::kFieldsAdded);
+    }
     DescriptorArray* descriptors = map()->instance_descriptors();
     for (int i = 0; i < map()->NumberOfOwnDescriptors(); i++) {
       if (descriptors->GetDetails(i).type() == FIELD) {
         Representation r = descriptors->GetDetails(i).representation();
         FieldIndex index = FieldIndex::ForDescriptor(map(), i);
         Object* value = RawFastPropertyAt(index);
-        if (r.IsDouble()) ASSERT(value->IsHeapNumber());
+        if (r.IsDouble()) DCHECK(value->IsMutableHeapNumber());
         if (value->IsUninitialized()) continue;
-        if (r.IsSmi()) ASSERT(value->IsSmi());
-        if (r.IsHeapObject()) ASSERT(value->IsHeapObject());
+        if (r.IsSmi()) DCHECK(value->IsSmi());
+        if (r.IsHeapObject()) DCHECK(value->IsHeapObject());
         HeapType* field_type = descriptors->GetFieldType(i);
         if (r.IsNone()) {
           CHECK(field_type->Is(HeapType::None()));
@@ -298,17 +311,17 @@ void Map::MapVerify() {
           instance_size() < heap->Capacity()));
   VerifyHeapPointer(prototype());
   VerifyHeapPointer(instance_descriptors());
-  SLOW_ASSERT(instance_descriptors()->IsSortedNoDuplicates());
+  SLOW_DCHECK(instance_descriptors()->IsSortedNoDuplicates());
   if (HasTransitionArray()) {
-    SLOW_ASSERT(transitions()->IsSortedNoDuplicates());
-    SLOW_ASSERT(transitions()->IsConsistentWithBackPointers(this));
+    SLOW_DCHECK(transitions()->IsSortedNoDuplicates());
+    SLOW_DCHECK(transitions()->IsConsistentWithBackPointers(this));
   }
 }
 
 
-void Map::SharedMapVerify() {
+void Map::DictionaryMapVerify() {
   MapVerify();
-  CHECK(is_shared());
+  CHECK(is_dictionary_map());
   CHECK(instance_descriptors()->IsEmpty());
   CHECK_EQ(0, pre_allocated_property_fields());
   CHECK_EQ(0, unused_property_fields());
@@ -347,6 +360,7 @@ void PolymorphicCodeCache::PolymorphicCodeCacheVerify() {
 void TypeFeedbackInfo::TypeFeedbackInfoVerify() {
   VerifyObjectField(kStorage1Offset);
   VerifyObjectField(kStorage2Offset);
+  VerifyObjectField(kStorage3Offset);
 }
 
 
@@ -368,9 +382,9 @@ void FixedDoubleArray::FixedDoubleArrayVerify() {
     if (!is_the_hole(i)) {
       double value = get_scalar(i);
       CHECK(!std::isnan(value) ||
-             (BitCast<uint64_t>(value) ==
-              BitCast<uint64_t>(canonical_not_the_hole_nan_as_double())) ||
-             ((BitCast<uint64_t>(value) & Double::kSignMask) != 0));
+            (bit_cast<uint64_t>(value) ==
+             bit_cast<uint64_t>(canonical_not_the_hole_nan_as_double())) ||
+            ((bit_cast<uint64_t>(value) & Double::kSignMask) != 0));
     }
   }
 }
@@ -544,7 +558,7 @@ void JSGlobalProxy::JSGlobalProxyVerify() {
   VerifyObjectField(JSGlobalProxy::kNativeContextOffset);
   // Make sure that this object has no properties, elements.
   CHECK_EQ(0, properties()->length());
-  CHECK(HasFastSmiElements());
+  CHECK_EQ(FAST_HOLEY_SMI_ELEMENTS, GetElementsKind());
   CHECK_EQ(0, FixedArray::cast(elements())->length());
 }
 
@@ -624,6 +638,13 @@ void PropertyCell::PropertyCellVerify() {
 }
 
 
+void WeakCell::WeakCellVerify() {
+  CHECK(IsWeakCell());
+  VerifyObjectField(kValueOffset);
+  VerifyObjectField(kNextOffset);
+}
+
+
 void Code::CodeVerify() {
   CHECK(IsAligned(reinterpret_cast<intptr_t>(instruction_start()),
                   kCodeAlignment));
@@ -638,6 +659,8 @@ void Code::CodeVerify() {
       last_gc_pc = it.rinfo()->pc();
     }
   }
+  CHECK(raw_type_feedback_info() == Smi::FromInt(0) ||
+        raw_type_feedback_info()->IsSmi() == IsCodeStubOrIC());
 }
 
 
@@ -747,19 +770,21 @@ void JSRegExp::JSRegExpVerify() {
       bool is_native = RegExpImpl::UsesNativeRegExp();
 
       FixedArray* arr = FixedArray::cast(data());
-      Object* ascii_data = arr->get(JSRegExp::kIrregexpASCIICodeIndex);
+      Object* one_byte_data = arr->get(JSRegExp::kIrregexpLatin1CodeIndex);
       // Smi : Not compiled yet (-1) or code prepared for flushing.
       // JSObject: Compilation error.
       // Code/ByteArray: Compiled code.
-      CHECK(ascii_data->IsSmi() ||
-             (is_native ? ascii_data->IsCode() : ascii_data->IsByteArray()));
+      CHECK(
+          one_byte_data->IsSmi() ||
+          (is_native ? one_byte_data->IsCode() : one_byte_data->IsByteArray()));
       Object* uc16_data = arr->get(JSRegExp::kIrregexpUC16CodeIndex);
       CHECK(uc16_data->IsSmi() ||
              (is_native ? uc16_data->IsCode() : uc16_data->IsByteArray()));
 
-      Object* ascii_saved = arr->get(JSRegExp::kIrregexpASCIICodeSavedIndex);
-      CHECK(ascii_saved->IsSmi() || ascii_saved->IsString() ||
-             ascii_saved->IsCode());
+      Object* one_byte_saved =
+          arr->get(JSRegExp::kIrregexpLatin1CodeSavedIndex);
+      CHECK(one_byte_saved->IsSmi() || one_byte_saved->IsString() ||
+            one_byte_saved->IsCode());
       Object* uc16_saved = arr->get(JSRegExp::kIrregexpUC16CodeSavedIndex);
       CHECK(uc16_saved->IsSmi() || uc16_saved->IsString() ||
              uc16_saved->IsCode());
@@ -878,7 +903,6 @@ void AccessorPair::AccessorPairVerify() {
   CHECK(IsAccessorPair());
   VerifyPointer(getter());
   VerifyPointer(setter());
-  VerifySmiField(kAccessFlagsOffset);
 }
 
 
@@ -1008,7 +1032,7 @@ void NormalizedMapCache::NormalizedMapCacheVerify() {
     for (int i = 0; i < length(); i++) {
       Object* e = FixedArray::get(i);
       if (e->IsMap()) {
-        Map::cast(e)->SharedMapVerify();
+        Map::cast(e)->DictionaryMapVerify();
       } else {
         CHECK(e->IsUndefined());
       }
@@ -1140,13 +1164,15 @@ bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
   for (int i = 0; i < number_of_descriptors(); i++) {
     Name* key = GetSortedKey(i);
     if (key == current_key) {
-      PrintDescriptors();
+      OFStream os(stdout);
+      PrintDescriptors(os);
       return false;
     }
     current_key = key;
     uint32_t hash = GetSortedKey(i)->Hash();
     if (hash < current) {
-      PrintDescriptors();
+      OFStream os(stdout);
+      PrintDescriptors(os);
       return false;
     }
     current = hash;
@@ -1156,19 +1182,21 @@ bool DescriptorArray::IsSortedNoDuplicates(int valid_entries) {
 
 
 bool TransitionArray::IsSortedNoDuplicates(int valid_entries) {
-  ASSERT(valid_entries == -1);
+  DCHECK(valid_entries == -1);
   Name* current_key = NULL;
   uint32_t current = 0;
   for (int i = 0; i < number_of_transitions(); i++) {
     Name* key = GetSortedKey(i);
     if (key == current_key) {
-      PrintTransitions();
+      OFStream os(stdout);
+      PrintTransitions(os);
       return false;
     }
     current_key = key;
     uint32_t hash = GetSortedKey(i)->Hash();
     if (hash < current) {
-      PrintTransitions();
+      OFStream os(stdout);
+      PrintTransitions(os);
       return false;
     }
     current = hash;
@@ -1187,6 +1215,24 @@ bool TransitionArray::IsConsistentWithBackPointers(Map* current_map) {
     if (!CheckOneBackPointer(current_map, GetTarget(i))) return false;
   }
   return true;
+}
+
+
+void Code::VerifyEmbeddedObjectsInFullCode() {
+  // Check that no context-specific object has been embedded.
+  Heap* heap = GetIsolate()->heap();
+  int mask = RelocInfo::ModeMask(RelocInfo::EMBEDDED_OBJECT);
+  for (RelocIterator it(this, mask); !it.done(); it.next()) {
+    Object* obj = it.rinfo()->target_object();
+    if (obj->IsCell()) obj = Cell::cast(obj)->value();
+    if (obj->IsPropertyCell()) obj = PropertyCell::cast(obj)->value();
+    if (!obj->IsHeapObject()) continue;
+    Map* map = obj->IsMap() ? Map::cast(obj) : HeapObject::cast(obj)->map();
+    int i = 0;
+    while (map != heap->roots_array_start()[i++]) {
+      CHECK_LT(i, Heap::kStrongRootListLength);
+    }
+  }
 }
 
 

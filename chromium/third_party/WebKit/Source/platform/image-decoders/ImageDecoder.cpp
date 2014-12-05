@@ -30,7 +30,7 @@
 #include "platform/image-decoders/webp/WEBPImageDecoder.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static unsigned copyFromSharedBuffer(char* buffer, unsigned bufferLength, const SharedBuffer& sharedBuffer, unsigned offset)
 {
@@ -87,7 +87,7 @@ PassOwnPtr<ImageDecoder> ImageDecoder::create(const SharedBuffer& data, ImageSou
     static const unsigned longestSignatureLength = sizeof("RIFF????WEBPVP") - 1;
     ASSERT(longestSignatureLength == 14);
 
-    size_t maxDecodedBytes = blink::Platform::current()->maxDecodedImageBytes();
+    size_t maxDecodedBytes = Platform::current()->maxDecodedImageBytes();
 
     char contents[longestSignatureLength];
     if (copyFromSharedBuffer(contents, longestSignatureLength, data, 0) < longestSignatureLength)
@@ -204,4 +204,32 @@ size_t ImageDecoder::findRequiredPreviousFrame(size_t frameIndex, bool frameRect
     }
 }
 
-} // namespace WebCore
+ImagePlanes::ImagePlanes()
+{
+    for (int i = 0; i < 3; ++i) {
+        m_planes[i] = 0;
+        m_rowBytes[i] = 0;
+    }
+}
+
+ImagePlanes::ImagePlanes(void* planes[3], size_t rowBytes[3])
+{
+    for (int i = 0; i < 3; ++i) {
+        m_planes[i] = planes[i];
+        m_rowBytes[i] = rowBytes[i];
+    }
+}
+
+void* ImagePlanes::plane(int i)
+{
+    ASSERT((i >= 0) && i < 3);
+    return m_planes[i];
+}
+
+size_t ImagePlanes::rowBytes(int i) const
+{
+    ASSERT((i >= 0) && i < 3);
+    return m_rowBytes[i];
+}
+
+} // namespace blink

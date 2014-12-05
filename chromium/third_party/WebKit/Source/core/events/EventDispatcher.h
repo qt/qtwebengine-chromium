@@ -31,7 +31,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class EventDispatchMediator;
@@ -69,8 +69,8 @@ private:
 
     RefPtrWillBeMember<Node> m_node;
     RefPtrWillBeMember<Event> m_event;
-    RefPtr<FrameView> m_view;
-#ifndef NDEBUG
+    RefPtrWillBeMember<FrameView> m_view;
+#if ENABLE(ASSERT)
     bool m_eventDispatched;
 #endif
 };

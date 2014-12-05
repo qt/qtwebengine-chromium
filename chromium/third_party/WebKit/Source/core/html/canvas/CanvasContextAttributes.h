@@ -27,21 +27,23 @@
 #ifndef CanvasContextAttributes_h
 #define CanvasContextAttributes_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 // A base class for any attributes that are needed which would affect
 // the creation of the Canvas's rendering context.
 
-class CanvasContextAttributes : public RefCounted<CanvasContextAttributes> {
-  public:
-    virtual ~CanvasContextAttributes();
+class CanvasContextAttributes : public RefCountedWillBeGarbageCollectedFinalized<CanvasContextAttributes> {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(CanvasContextAttributes);
+public:
+    virtual void trace(Visitor*) { }
 
-  protected:
+protected:
     CanvasContextAttributes();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CanvasContextAttributes_h

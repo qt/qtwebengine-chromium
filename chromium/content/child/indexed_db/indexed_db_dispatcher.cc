@@ -278,12 +278,17 @@ void IndexedDBDispatcher::RequestIDBDatabaseClose(
     pending_database_callbacks_.Remove(ipc_database_callbacks_id);
 }
 
+void IndexedDBDispatcher::NotifyIDBDatabaseVersionChangeIgnored(
+    int32 ipc_database_id) {
+  Send(new IndexedDBHostMsg_DatabaseVersionChangeIgnored(ipc_database_id));
+}
+
 void IndexedDBDispatcher::RequestIDBDatabaseCreateTransaction(
     int32 ipc_database_id,
     int64 transaction_id,
     WebIDBDatabaseCallbacks* database_callbacks_ptr,
     WebVector<long long> object_store_ids,
-    WebIDBDatabase::TransactionMode mode) {
+    blink::WebIDBTransactionMode mode) {
   scoped_ptr<WebIDBDatabaseCallbacks> database_callbacks(
       database_callbacks_ptr);
   IndexedDBHostMsg_DatabaseCreateTransaction_Params params;
@@ -327,11 +332,10 @@ void IndexedDBDispatcher::RequestIDBDatabasePut(
     const WebData& value,
     const blink::WebVector<WebBlobInfo>& web_blob_info,
     const IndexedDBKey& key,
-    WebIDBDatabase::PutMode put_mode,
+    blink::WebIDBPutMode put_mode,
     WebIDBCallbacks* callbacks,
     const WebVector<long long>& index_ids,
     const WebVector<WebVector<WebIDBKey> >& index_keys) {
-
   if (value.size() + key.size_estimate() > kMaxIDBValueSizeInBytes) {
     callbacks->onError(WebIDBDatabaseError(
         blink::WebIDBDatabaseExceptionUnknownError,
@@ -391,9 +395,9 @@ void IndexedDBDispatcher::RequestIDBDatabaseOpenCursor(
     int64 object_store_id,
     int64 index_id,
     const IndexedDBKeyRange& key_range,
-    WebIDBCursor::Direction direction,
+    blink::WebIDBCursorDirection direction,
     bool key_only,
-    WebIDBDatabase::TaskType task_type,
+    blink::WebIDBTaskType task_type,
     WebIDBCallbacks* callbacks) {
   ResetCursorPrefetchCaches(transaction_id, kAllCursors);
   IndexedDBHostMsg_DatabaseOpenCursor_Params params;

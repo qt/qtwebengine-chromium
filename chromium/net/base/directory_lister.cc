@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/message_loop/message_loop.h"
 #include "base/threading/thread_restrictions.h"
@@ -41,8 +41,8 @@ bool CompareAlphaDirsFirst(const DirectoryLister::DirectoryListerData& a,
   if (a_is_directory != b_is_directory)
     return a_is_directory;
 
-  return file_util::LocaleAwareCompareFilenames(a.info.GetName(),
-                                                b.info.GetName());
+  return base::i18n::LocaleAwareCompareFilenames(a.info.GetName(),
+                                                 b.info.GetName());
 }
 
 bool CompareDate(const DirectoryLister::DirectoryListerData& a,
@@ -66,7 +66,7 @@ bool CompareDate(const DirectoryLister::DirectoryListerData& a,
 // Static.
 bool CompareFullPath(const DirectoryLister::DirectoryListerData& a,
                      const DirectoryLister::DirectoryListerData& b) {
-  return file_util::LocaleAwareCompareFilenames(a.path, b.path);
+  return base::i18n::LocaleAwareCompareFilenames(a.path, b.path);
 }
 
 void SortData(std::vector<DirectoryLister::DirectoryListerData>* data,

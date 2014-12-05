@@ -17,9 +17,10 @@
  * are available, the Javascript formats them and displays them.
  */
 define('main', [
-    'mojo/public/js/bindings/connection',
+    'mojo/public/js/connection',
     'chrome/browser/ui/webui/omnibox/omnibox.mojom',
-], function(connector, browser) {
+    'content/public/renderer/service_provider',
+], function(connector, browser, serviceProvider) {
   'use strict';
 
   var connection;
@@ -425,15 +426,18 @@ define('main', [
   }
 
   OmniboxPageImpl.prototype =
-      Object.create(browser.OmniboxPageStub.prototype);
+      Object.create(browser.OmniboxPage.stubClass.prototype);
 
   OmniboxPageImpl.prototype.handleNewAutocompleteResult = function(result) {
     progressiveAutocompleteResults.push(result);
     refresh();
   };
 
-  return function(handle) {
-    connection = new connector.Connection(handle, OmniboxPageImpl,
-                                          browser.OmniboxUIHandlerMojoProxy);
+  return function() {
+    connection = new connector.Connection(
+        serviceProvider.connectToService(
+            browser.OmniboxUIHandlerMojo.name),
+        OmniboxPageImpl,
+        browser.OmniboxUIHandlerMojo.proxyClass);
   };
 });

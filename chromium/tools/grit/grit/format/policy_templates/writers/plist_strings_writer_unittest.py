@@ -43,6 +43,33 @@ class PListStringsWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'Chromium.pfm_description = "Chromium preferen\\"ces";')
     self.assertEquals(output.strip(), expected_output.strip())
 
+  def testEmptyVersion(self):
+    # Test PListStringsWriter in case of empty polices.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [],
+        'placeholders': [],
+        'messages': {
+          'mac_chrome_preferences': {
+            'text': '$1 preferen"ces',
+            'desc': 'blah'
+          }
+        }
+      }''')
+    output = self.GetOutput(
+        grd,
+        'fr',
+        {'_chromium': '1',
+         'mac_bundle_id': 'com.example.Test',
+         'version': '39.0.0.0'},
+        'plist_strings',
+        'en')
+    expected_output = (
+        '/* chromium version: 39.0.0.0 */\n'
+        'Chromium.pfm_title = "Chromium";\n'
+        'Chromium.pfm_description = "Chromium preferen\\"ces";')
+    self.assertEquals(output.strip(), expected_output.strip())
+
   def testMainPolicy(self):
     # Tests a policy group with a single policy of type 'main'.
     grd = self.PrepareTest('''
@@ -125,6 +152,111 @@ With a newline.""",
         'StringPolicy.pfm_title = "Caption of policy.";\n'
         'StringPolicy.pfm_description = '
             '"Description of policy.\\nWith a newline.";')
+    self.assertEquals(output.strip(), expected_output.strip())
+
+  def testStringListPolicy(self):
+    # Tests a policy group with a single policy of type 'list'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'ListGroup',
+            'type': 'group',
+            'caption': '',
+            'desc': '',
+            'policies': [{
+              'name': 'ListPolicy',
+              'type': 'list',
+              'caption': 'Caption of policy.',
+              'desc': """Description of policy.
+With a newline.""",
+              'schema': {
+                  'type': 'array',
+                  'items': { 'type': 'string' },
+              },
+              'supported_on': ['chrome.mac:8-'],
+            }],
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'mac_chrome_preferences': {
+            'text': 'Preferences of $1',
+            'desc': 'blah'
+          }
+        }
+      }''')
+    output = self.GetOutput(
+        grd,
+        'fr',
+        {'_chromium' : '1', 'mac_bundle_id': 'com.example.Test'},
+        'plist_strings',
+        'en')
+    expected_output = (
+        'Chromium.pfm_title = "Chromium";\n'
+        'Chromium.pfm_description = "Preferences of Chromium";\n'
+        'ListPolicy.pfm_title = "Caption of policy.";\n'
+        'ListPolicy.pfm_description = '
+            '"Description of policy.\\nWith a newline.";')
+    self.assertEquals(output.strip(), expected_output.strip())
+
+  def testStringEnumListPolicy(self):
+    # Tests a policy group with a single policy of type 'string-enum-list'.
+    grd = self.PrepareTest('''
+      {
+        'policy_definitions': [
+          {
+            'name': 'EnumGroup',
+            'type': 'group',
+            'caption': '',
+            'desc': '',
+            'policies': [{
+              'name': 'EnumPolicy',
+              'type': 'string-enum-list',
+              'caption': 'Caption of policy.',
+              'desc': """Description of policy.
+With a newline.""",
+              'schema': {
+                  'type': 'array',
+                  'items': { 'type': 'string' },
+              },
+              'items': [
+                {
+                  'name': 'ProxyServerDisabled',
+                  'value': 'one',
+                  'caption': 'Option1'
+                },
+                {
+                  'name': 'ProxyServerAutoDetect',
+                  'value': 'two',
+                  'caption': 'Option2'
+                },
+              ],
+              'supported_on': ['chrome.mac:8-'],
+            }],
+          },
+        ],
+        'placeholders': [],
+        'messages': {
+          'mac_chrome_preferences': {
+            'text': 'Preferences of $1',
+            'desc': 'blah'
+          }
+        }
+      }''')
+    output = self.GetOutput(
+        grd,
+        'fr',
+        {'_chromium' : '1', 'mac_bundle_id': 'com.example.Test'},
+        'plist_strings',
+        'en')
+    expected_output = (
+        'Chromium.pfm_title = "Chromium";\n'
+        'Chromium.pfm_description = "Preferences of Chromium";\n'
+        'EnumPolicy.pfm_title = "Caption of policy.";\n'
+        'EnumPolicy.pfm_description = '
+            '"one - Option1\\ntwo - Option2\\n'
+            'Description of policy.\\nWith a newline.";')
     self.assertEquals(output.strip(), expected_output.strip())
 
   def testIntEnumPolicy(self):

@@ -41,7 +41,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "platform/geometry/IntRect.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -55,13 +55,11 @@ static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const Layo
 static bool isScrollableNode(const Node*);
 
 FocusCandidate::FocusCandidate(Node* node, FocusType type)
-    : visibleNode(0)
-    , focusableNode(0)
-    , enclosingScrollableBox(0)
+    : visibleNode(nullptr)
+    , focusableNode(nullptr)
+    , enclosingScrollableBox(nullptr)
     , distance(maxDistance())
-    , parentDistance(maxDistance())
     , alignment(None)
-    , parentAlignment(None)
     , isOffscreen(true)
     , isOffscreenAfterScrolling(true)
 {
@@ -502,10 +500,10 @@ static LayoutRect rectToAbsoluteCoordinates(LocalFrame* initialFrame, const Layo
         if (!frame->isLocalFrame())
             continue;
         // FIXME: Spatial navigation is broken for OOPI.
-        if (Element* element = frame->deprecatedLocalOwner()) {
-            do {
+        Element* element = frame->deprecatedLocalOwner();
+        if (element) {
+            for (; element; element = element->offsetParent())
                 rect.move(element->offsetLeft(), element->offsetTop());
-            } while ((element = element->offsetParent()));
             rect.move((-toLocalFrame(frame)->view()->scrollOffset()));
         }
     }
@@ -752,7 +750,7 @@ LayoutRect virtualRectForAreaElementAndDirection(HTMLAreaElement& area, FocusTyp
 
 HTMLFrameOwnerElement* frameOwnerElement(FocusCandidate& candidate)
 {
-    return candidate.isFrameOwnerElement() ? toHTMLFrameOwnerElement(candidate.visibleNode) : 0;
+    return candidate.isFrameOwnerElement() ? toHTMLFrameOwnerElement(candidate.visibleNode) : nullptr;
 };
 
-} // namespace WebCore
+} // namespace blink

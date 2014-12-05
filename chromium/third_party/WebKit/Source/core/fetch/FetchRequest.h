@@ -33,13 +33,13 @@
 #include "platform/network/ResourceRequest.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 class SecurityOrigin;
 
 class FetchRequest {
 public:
-    enum DeferOption { NoDefer, DeferredByClient };
-    enum OriginRestriction { UseDefaultOriginRestrictionForType, RestrictToSameOrigin };
+    enum DeferOption { NoDefer, LazyLoad, DeferredByClient };
+    enum OriginRestriction { UseDefaultOriginRestrictionForType, RestrictToSameOrigin, NoOriginRestriction };
 
     explicit FetchRequest(const ResourceRequest&, const AtomicString& initiator, const String& charset = String(), ResourceLoadPriority = ResourceLoadPriorityUnresolved);
     FetchRequest(const ResourceRequest&, const AtomicString& initiator, const ResourceLoaderOptions&);
@@ -75,6 +75,6 @@ private:
     OriginRestriction m_originRestriction;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

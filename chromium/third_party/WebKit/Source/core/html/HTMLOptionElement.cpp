@@ -27,21 +27,23 @@
 #include "config.h"
 #include "core/html/HTMLOptionElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/NodeTraversal.h"
 #include "core/dom/ScriptLoader.h"
 #include "core/dom/Text.h"
+#include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLOptGroupElement.h"
 #include "core/html/HTMLSelectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderTheme.h"
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -51,18 +53,24 @@ HTMLOptionElement::HTMLOptionElement(Document& document)
     , m_isSelected(false)
 {
     setHasCustomStyleCallbacks();
-    ScriptWrappable::init(this);
+}
+
+HTMLOptionElement::~HTMLOptionElement()
+{
 }
 
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::create(Document& document)
 {
-    return adoptRefWillBeNoop(new HTMLOptionElement(document));
+    RefPtrWillBeRawPtr<HTMLOptionElement> option = adoptRefWillBeNoop(new HTMLOptionElement(document));
+    option->ensureUserAgentShadowRoot();
+    return option.release();
 }
 
 PassRefPtrWillBeRawPtr<HTMLOptionElement> HTMLOptionElement::createForJSConstructor(Document& document, const String& data, const AtomicString& value,
     bool defaultSelected, bool selected, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<HTMLOptionElement> element = adoptRefWillBeNoop(new HTMLOptionElement(document));
+    element->ensureUserAgentShadowRoot();
     element->appendChild(Text::create(document, data.isNull() ? "" : data), exceptionState);
     if (exceptionState.hadException())
         return nullptr;
@@ -95,12 +103,6 @@ void HTMLOptionElement::detach(const AttachContext& context)
     HTMLElement::detach(context);
 }
 
-bool HTMLOptionElement::rendererIsFocusable() const
-{
-    // Option elements do not have a renderer so we check the renderStyle instead.
-    return renderStyle() && renderStyle()->display() != NONE;
-}
-
 String HTMLOptionElement::text() const
 {
     Document& document = this->document();
@@ -130,11 +132,9 @@ void HTMLOptionElement::setText(const String &text, ExceptionState& exceptionSta
     bool selectIsMenuList = select && select->usesMenuList();
     int oldSelectedIndex = selectIsMenuList ? select->selectedIndex() : -1;
 
-    // Handle the common special case where there's exactly 1 child node, and it's a text node.
-    Node* child = firstChild();
-    if (child && child->isTextNode() && !child->nextSibling())
-        toText(child)->setData(text);
-    else {
+    if (hasOneTextChild()) {
+        toText(firstChild())->setData(text);
+    } else {
         removeChildren();
         appendChild(Text::create(document(), text), exceptionState);
     }
@@ -159,7 +159,7 @@ int HTMLOptionElement::index() const
 
     int optionIndex = 0;
 
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& items = selectElement->listItems();
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& items = selectElement->listItems();
     size_t length = items.size();
     for (size_t i = 0; i < length; ++i) {
         if (!isHTMLOptionElement(*items[i]))
@@ -181,13 +181,16 @@ void HTMLOptionElement::parseAttribute(const QualifiedName& name, const AtomicSt
         bool oldDisabled = m_disabled;
         m_disabled = !value.isNull();
         if (oldDisabled != m_disabled) {
-            didAffectSelector(AffectedSelectorDisabled | AffectedSelectorEnabled);
+            pseudoStateChanged(CSSSelector::PseudoDisabled);
+            pseudoStateChanged(CSSSelector::PseudoEnabled);
             if (renderer() && renderer()->style()->hasAppearance())
                 RenderTheme::theme().stateChanged(renderer(), EnabledControlState);
         }
     } else if (name == selectedAttr) {
         if (bool willBeSelected = !value.isNull())
             setSelected(willBeSelected);
+    } else if (name == labelAttr) {
+        updateLabel();
     } else
         HTMLElement::parseAttribute(name, value);
 }
@@ -239,19 +242,20 @@ void HTMLOptionElement::setSelectedState(bool selected)
         return;
 
     m_isSelected = selected;
-    didAffectSelector(AffectedSelectorChecked);
+    pseudoStateChanged(CSSSelector::PseudoChecked);
 
     if (HTMLSelectElement* select = ownerSelectElement())
         select->invalidateSelectedItems();
 }
 
-void HTMLOptionElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLOptionElement::childrenChanged(const ChildrenChange& change)
 {
     if (HTMLDataListElement* dataList = ownerDataListElement())
         dataList->optionElementChildrenChanged();
     else if (HTMLSelectElement* select = ownerSelectElement())
         select->optionElementChildrenChanged();
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    updateLabel();
+    HTMLElement::childrenChanged(change);
 }
 
 HTMLDataListElement* HTMLOptionElement::ownerDataListElement() const
@@ -279,12 +283,9 @@ void HTMLOptionElement::setLabel(const AtomicString& label)
 
 void HTMLOptionElement::updateNonRenderStyle()
 {
-    bool oldDisplayNoneStatus = isDisplayNone();
     m_style = originalStyleForRenderer();
-    if (oldDisplayNoneStatus != isDisplayNone()) {
-        if (HTMLSelectElement* select = ownerSelectElement())
-            select->updateListOnRenderer();
-    }
+    if (HTMLSelectElement* select = ownerSelectElement())
+        select->updateListOnRenderer();
 }
 
 RenderStyle* HTMLOptionElement::nonRendererStyle() const
@@ -306,7 +307,7 @@ void HTMLOptionElement::didRecalcStyle(StyleRecalcChange change)
     // FIXME: We ask our owner select to repaint regardless of which property changed.
     if (HTMLSelectElement* select = ownerSelectElement()) {
         if (RenderObject* renderer = select->renderer())
-            renderer->paintInvalidationForWholeRenderer();
+            renderer->setShouldDoFullPaintInvalidation();
     }
 }
 
@@ -333,14 +334,25 @@ Node::InsertionNotificationRequest HTMLOptionElement::insertedInto(ContainerNode
         select->setRecalcListItems();
         // Do not call selected() since calling updateListItemSelectedStates()
         // at this time won't do the right thing. (Why, exactly?)
-        // FIXME: Might be better to call this unconditionally, always passing m_isSelected,
-        // rather than only calling it if we are selected.
-        if (m_isSelected)
+        if (m_isSelected) {
+            // FIXME: Might be better to call this unconditionally, always
+            // passing m_isSelected, rather than only calling it if we are
+            // selected.
             select->optionSelectionStateChanged(this, true);
-        select->scrollToSelection();
+            select->scrollToSelection();
+        }
     }
 
     return HTMLElement::insertedInto(insertionPoint);
+}
+
+void HTMLOptionElement::removedFrom(ContainerNode* insertionPoint)
+{
+    if (HTMLSelectElement* select = Traversal<HTMLSelectElement>::firstAncestorOrSelf(*insertionPoint)) {
+        select->setRecalcListItems();
+        select->optionRemoved(*this);
+    }
+    HTMLElement::removedFrom(insertionPoint);
 }
 
 String HTMLOptionElement::collectOptionInnerText() const
@@ -363,19 +375,44 @@ HTMLFormElement* HTMLOptionElement::form() const
     if (HTMLSelectElement* selectElement = ownerSelectElement())
         return selectElement->formOwner();
 
-    return 0;
+    return nullptr;
+}
+
+void HTMLOptionElement::didAddUserAgentShadowRoot(ShadowRoot& root)
+{
+    updateLabel();
+}
+
+void HTMLOptionElement::updateLabel()
+{
+    if (ShadowRoot* root = userAgentShadowRoot())
+        root->setTextContent(textIndentedToRespectGroupLabel());
+}
+
+bool HTMLOptionElement::spatialNavigationFocused() const
+{
+    HTMLSelectElement* select = ownerSelectElement();
+    if (!select || !select->focused())
+        return false;
+    return select->spatialNavigationFocusedOption() == this;
 }
 
 bool HTMLOptionElement::isDisplayNone() const
 {
-    ContainerNode* parent = parentNode();
-    // Check for parent optgroup having display NONE
-    if (parent && isHTMLOptGroupElement(*parent)) {
-        if (toHTMLOptGroupElement(*parent).isDisplayNone())
-            return true;
+    // If m_style is not set, then the node is still unattached.
+    // We have to wait till it gets attached to read the display property.
+    if (!m_style)
+        return false;
+
+    if (m_style->display() != NONE) {
+        Element* parent = parentElement();
+        ASSERT(parent);
+        if (isHTMLOptGroupElement(*parent)) {
+            RenderStyle* parentStyle = parent->renderStyle() ? parent->renderStyle() : parent->computedStyle();
+            return !parentStyle || parentStyle->display() == NONE;
+        }
     }
-    RenderStyle* style = nonRendererStyle();
-    return style && style->display() == NONE;
+    return m_style->display() == NONE;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -25,7 +25,7 @@ class FileStream;
 class GrowableIOBuffer;
 }
 
-namespace webkit_blob {
+namespace storage {
 class ShareableFileReference;
 }
 
@@ -46,7 +46,7 @@ class CONTENT_EXPORT RedirectToFileResourceHandler
   // |next_handler|.
   RedirectToFileResourceHandler(scoped_ptr<ResourceHandler> next_handler,
                                 net::URLRequest* request);
-  virtual ~RedirectToFileResourceHandler();
+  ~RedirectToFileResourceHandler() override;
 
   // Replace the CreateTemporaryFileStream implementation with a mocked one for
   // testing purposes. The function should create a net::FileStream and a
@@ -56,22 +56,20 @@ class CONTENT_EXPORT RedirectToFileResourceHandler
       const CreateTemporaryFileStreamFunction& create_temporary_file_stream);
 
   // LayeredResourceHandler implementation:
-  virtual bool OnResponseStarted(ResourceResponse* response,
-                                 bool* defer) OVERRIDE;
-  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
-  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& security_info,
-                                   bool* defer) OVERRIDE;
+  bool OnResponseStarted(ResourceResponse* response, bool* defer) override;
+  bool OnWillStart(const GURL& url, bool* defer) override;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& security_info,
+                           bool* defer) override;
 
  private:
-  void DidCreateTemporaryFile(
-      base::File::Error error_code,
-      scoped_ptr<net::FileStream> file_stream,
-      webkit_blob::ShareableFileReference* deletable_file);
+  void DidCreateTemporaryFile(base::File::Error error_code,
+                              scoped_ptr<net::FileStream> file_stream,
+                              storage::ShareableFileReference* deletable_file);
 
   // Called by RedirectToFileResourceHandler::Writer.
   void DidWriteToFile(int result);
@@ -94,7 +92,7 @@ class CONTENT_EXPORT RedirectToFileResourceHandler
   int write_cursor_;
 
   // Helper writer object which maintains references to the net::FileStream and
-  // webkit_blob::ShareableFileReference. This is maintained separately so that,
+  // storage::ShareableFileReference. This is maintained separately so that,
   // on Windows, the temporary file isn't deleted until after it is closed.
   class Writer;
   Writer* writer_;

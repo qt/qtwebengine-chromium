@@ -32,6 +32,7 @@
 #include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "core/xml/XSLTExtensions.h"
 #include "core/xml/XSLTUnicodeSort.h"
@@ -42,7 +43,6 @@
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
-#include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuffer.h"
 #include "wtf/unicode/UTF8.h"
@@ -51,7 +51,7 @@
 #include <libxslt/variables.h>
 #include <libxslt/xsltutils.h>
 
-namespace WebCore {
+namespace blink {
 
 void XSLTProcessor::genericErrorFunc(void*, const char*, ...)
 {
@@ -79,7 +79,7 @@ void XSLTProcessor::parseErrorFunc(void* userData, xmlError* error)
         break;
     }
 
-    console->addMessage(XMLMessageSource, level, error->message, error->file, error->line);
+    console->addMessage(ConsoleMessage::create(XMLMessageSource, level, error->message, error->file, error->line));
 }
 
 // FIXME: There seems to be no way to control the ctxt pointer for loading here, thus we have globals.
@@ -218,11 +218,13 @@ static void freeXsltParamArray(const char** params)
     fastFree(params);
 }
 
-static xsltStylesheetPtr xsltStylesheetPointer(RefPtrWillBeMember<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
+static xsltStylesheetPtr xsltStylesheetPointer(Document* document, RefPtrWillBeMember<XSLStyleSheet>& cachedStylesheet, Node* stylesheetRootNode)
 {
     if (!cachedStylesheet && stylesheetRootNode) {
+        // When using importStylesheet, we will use the given document as the imported stylesheet's owner.
         cachedStylesheet = XSLStyleSheet::createForXSLTProcessor(
-            stylesheetRootNode->parentNode() ? stylesheetRootNode->parentNode() : stylesheetRootNode,
+            stylesheetRootNode->parentNode() ? &stylesheetRootNode->parentNode()->document() : document,
+            stylesheetRootNode,
             stylesheetRootNode->document().url().string(),
             stylesheetRootNode->document().url()); // FIXME: Should we use baseURL here?
 
@@ -278,7 +280,7 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     RefPtrWillBeRawPtr<Document> ownerDocument(sourceNode->document());
 
     setXSLTLoadCallBack(docLoaderFunc, this, ownerDocument->fetcher());
-    xsltStylesheetPtr sheet = xsltStylesheetPointer(m_stylesheet, m_stylesheetRootNode.get());
+    xsltStylesheetPtr sheet = xsltStylesheetPointer(m_document.get(), m_stylesheet, m_stylesheetRootNode.get());
     if (!sheet) {
         setXSLTLoadCallBack(0, 0, 0);
         m_stylesheet = nullptr;
@@ -333,7 +335,8 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
         if (shouldFreeSourceDoc)
             xmlFreeDoc(sourceDoc);
 
-        if ((success = saveResultToString(resultDoc, sheet, resultString))) {
+        success = saveResultToString(resultDoc, sheet, resultString);
+        if (success) {
             mimeType = resultMIMEType(resultDoc, sheet);
             resultEncoding = (char*)resultDoc->encoding;
         }
@@ -348,4 +351,4 @@ bool XSLTProcessor::transformToString(Node* sourceNode, String& mimeType, String
     return success;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -32,6 +32,7 @@
 #include "config.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 
+#include "core/inspector/InspectorNodeIds.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/graphics/GraphicsContextAnnotation.h"
@@ -39,34 +40,41 @@
 
 namespace {
 
-static const char* paintPhaseName(WebCore::PaintPhase phase)
+const char AnnotationKeyRendererName[]    = "RENDERER";
+const char AnnotationKeyPaintPhase[]      = "PHASE";
+const char AnnotationKeyElementId[]       = "ID";
+const char AnnotationKeyElementClass[]    = "CLASS";
+const char AnnotationKeyElementTag[]      = "TAG";
+const char AnnotationKeyInspectorNodeId[] = "INSPECTOR_ID";
+
+static const char* paintPhaseName(blink::PaintPhase phase)
 {
     switch (phase) {
-    case WebCore::PaintPhaseBlockBackground:
+    case blink::PaintPhaseBlockBackground:
         return "BlockBackground";
-    case WebCore::PaintPhaseChildBlockBackground:
+    case blink::PaintPhaseChildBlockBackground:
         return "ChildBlockBackground";
-    case WebCore::PaintPhaseChildBlockBackgrounds:
+    case blink::PaintPhaseChildBlockBackgrounds:
         return "ChildBlockBackgrounds";
-    case WebCore::PaintPhaseFloat:
+    case blink::PaintPhaseFloat:
         return "Float";
-    case WebCore::PaintPhaseForeground:
+    case blink::PaintPhaseForeground:
         return "Foreground";
-    case WebCore::PaintPhaseOutline:
+    case blink::PaintPhaseOutline:
         return "Outline";
-    case WebCore::PaintPhaseChildOutlines:
+    case blink::PaintPhaseChildOutlines:
         return "ChildOutlines";
-    case WebCore::PaintPhaseSelfOutline:
+    case blink::PaintPhaseSelfOutline:
         return "SelfOutline";
-    case WebCore::PaintPhaseSelection:
+    case blink::PaintPhaseSelection:
         return "Selection";
-    case WebCore::PaintPhaseCollapsedTableBorders:
+    case blink::PaintPhaseCollapsedTableBorders:
         return "CollapsedTableBorders";
-    case WebCore::PaintPhaseTextClip:
+    case blink::PaintPhaseTextClip:
         return "TextClip";
-    case WebCore::PaintPhaseMask:
+    case blink::PaintPhaseMask:
         return "Mask";
-    case WebCore::PaintPhaseClippingMask:
+    case blink::PaintPhaseClippingMask:
         return "ClippingMask";
     default:
         ASSERT_NOT_REACHED();
@@ -76,7 +84,7 @@ static const char* paintPhaseName(WebCore::PaintPhase phase)
 
 }
 
-namespace WebCore {
+namespace blink {
 
 void GraphicsContextAnnotator::annotate(const PaintInfo& paintInfo, const RenderObject* object)
 {
@@ -85,24 +93,18 @@ void GraphicsContextAnnotator::annotate(const PaintInfo& paintInfo, const Render
     ASSERT(paintInfo.context);
     ASSERT(object);
 
+    AnnotationList annotations;
     AnnotationModeFlags mode = paintInfo.context->annotationMode();
     Element* element = object->node() && object->node()->isElementNode() ? toElement(object->node()) : 0;
 
-    const char* rendererName = 0;
-    const char* paintPhase = 0;
-    String elementId, elementClass, elementTag;
-
     if (mode & AnnotateRendererName)
-        rendererName = object->renderName();
+        annotations.append(std::make_pair(AnnotationKeyRendererName, object->renderName()));
 
     if (mode & AnnotatePaintPhase)
-        paintPhase = paintPhaseName(paintInfo.phase);
+        annotations.append(std::make_pair(AnnotationKeyPaintPhase, paintPhaseName(paintInfo.phase)));
 
-    if ((mode & AnnotateElementId) && element) {
-        const AtomicString id = element->getIdAttribute();
-        if (!id.isNull() && !id.isEmpty())
-            elementId = id.string();
-    }
+    if ((mode & AnnotateElementId) && element && element->hasID())
+        annotations.append(std::make_pair(AnnotationKeyElementId, element->getIdAttribute().string()));
 
     if ((mode & AnnotateElementClass) && element && element->hasClass()) {
         SpaceSplitString classes = element->classNames();
@@ -110,19 +112,26 @@ void GraphicsContextAnnotator::annotate(const PaintInfo& paintInfo, const Render
             StringBuilder classBuilder;
             for (size_t i = 0; i < classes.size(); ++i) {
                 if (i > 0)
-                    classBuilder.append(" ");
+                    classBuilder.append(' ');
                 classBuilder.append(classes[i]);
             }
 
-            elementClass = classBuilder.toString();
+            annotations.append(std::make_pair(AnnotationKeyElementClass, classBuilder.toString()));
         }
     }
 
     if ((mode & AnnotateElementTag) && element)
-        elementTag = element->tagName();
+        annotations.append(std::make_pair(AnnotationKeyElementTag, element->tagName()));
+
+    if (mode & AnnotateInspectorId) {
+        if (Node* ownerNode = object->generatingNode()) {
+            annotations.append(std::make_pair(AnnotationKeyInspectorNodeId,
+                String::number(InspectorNodeIds::idForNode(ownerNode))));
+        }
+    }
 
     m_context = paintInfo.context;
-    m_context->beginAnnotation(rendererName, paintPhase, elementId, elementClass, elementTag);
+    m_context->beginAnnotation(annotations);
 }
 
 void GraphicsContextAnnotator::finishAnnotation()
@@ -131,4 +140,4 @@ void GraphicsContextAnnotator::finishAnnotation()
     m_context->endAnnotation();
 }
 
-}
+} // namespace blink

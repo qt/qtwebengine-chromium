@@ -30,15 +30,15 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.ConsoleModel = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.ConsoleModel, target);
 
     /** @type {!Array.<!WebInspector.ConsoleMessage>} */
-    this.messages = [];
+    this._messages = [];
     this.warnings = 0;
     this.errors = 0;
     this._consoleAgent = target.consoleAgent();
@@ -80,49 +80,17 @@ WebInspector.ConsoleModel.prototype = {
 
     /**
      * @param {!WebInspector.ConsoleMessage} msg
-     * @param {boolean=} isFromBackend
      */
-    addMessage: function(msg, isFromBackend)
+    addMessage: function(msg)
     {
-        if (isFromBackend && WebInspector.NetworkManager.hasDevToolsRequestHeader(msg.request))
+        if (WebInspector.NetworkManager.hasDevToolsRequestHeader(msg.request))
             return;
 
-        msg.index = this.messages.length;
-        this.messages.push(msg);
+        msg.index = this._messages.length;
+        this._messages.push(msg);
         this._incrementErrorWarningCount(msg);
 
         this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.MessageAdded, msg);
-    },
-
-    show: function()
-    {
-        WebInspector.Revealer.reveal(this);
-    },
-
-    /**
-     * @param {string} messageText
-     * @param {!WebInspector.ConsoleMessage.MessageLevel=} messageLevel
-     * @param {boolean=} showConsole
-     */
-    log: function(messageText, messageLevel, showConsole)
-    {
-        var message = new WebInspector.ConsoleMessage(
-            this.target(),
-            WebInspector.ConsoleMessage.MessageSource.Other,
-            messageLevel || WebInspector.ConsoleMessage.MessageLevel.Debug,
-            messageText);
-
-        this.addMessage(message);
-        if (showConsole)
-            this.show();
-    },
-
-    /**
-     * @param {string} error
-     */
-    showErrorMessage: function(error)
-    {
-        this.log(error, WebInspector.ConsoleMessage.MessageLevel.Error, true);
     },
 
     /**
@@ -140,22 +108,29 @@ WebInspector.ConsoleModel.prototype = {
         }
     },
 
+    /**
+     * @return {!Array.<!WebInspector.ConsoleMessage>}
+     */
+    messages: function()
+    {
+        return this._messages;
+    },
+
     requestClearMessages: function()
     {
         this._consoleAgent.clearMessages();
-        this.clearMessages();
+        this._messagesCleared();
     },
 
-    clearMessages: function()
+    _messagesCleared: function()
     {
-        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.ConsoleCleared);
-
-        this.messages = [];
+        this._messages = [];
         this.errors = 0;
         this.warnings = 0;
+        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.ConsoleCleared);
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -169,24 +144,28 @@ WebInspector.ConsoleModel.evaluateCommandInConsole = function(executionContext, 
     var target = executionContext.target();
 
     var commandMessage = new WebInspector.ConsoleMessage(target, WebInspector.ConsoleMessage.MessageSource.JS, null, text, WebInspector.ConsoleMessage.MessageType.Command);
+    commandMessage.setExecutionContextId(executionContext.id);
     target.consoleModel.addMessage(commandMessage);
 
     /**
      * @param {?WebInspector.RemoteObject} result
      * @param {boolean} wasThrown
      * @param {?RuntimeAgent.RemoteObject=} valueResult
-     * @this {WebInspector.ConsoleModel}
+     * @param {?DebuggerAgent.ExceptionDetails=} exceptionDetails
      */
-    function printResult(result, wasThrown, valueResult)
+    function printResult(result, wasThrown, valueResult, exceptionDetails)
     {
         if (!result)
             return;
 
-        this.show();
-        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.CommandEvaluated, {result: result, wasThrown: wasThrown, text: text, commandMessage: commandMessage});
+        WebInspector.console.showPromise().then(reportUponEvaluation).done();
+        function reportUponEvaluation()
+        {
+            target.consoleModel.dispatchEventToListeners(WebInspector.ConsoleModel.Events.CommandEvaluated, {result: result, wasThrown: wasThrown, text: text, commandMessage: commandMessage, exceptionDetails: exceptionDetails});
+        }
     }
 
-    executionContext.evaluate(text, "console", useCommandLineAPI, false, false, true, printResult.bind(target.consoleModel));
+    executionContext.evaluate(text, "console", useCommandLineAPI, false, false, true, printResult);
 
     WebInspector.userMetrics.ConsoleEvaluated.record();
 }
@@ -208,30 +187,42 @@ WebInspector.ConsoleModel.evaluateCommandInConsole = function(executionContext, 
  * @param {number=} timestamp
  * @param {boolean=} isOutdated
  * @param {!RuntimeAgent.ExecutionContextId=} executionContextId
+ * @param {!ConsoleAgent.AsyncStackTrace=} asyncStackTrace
+ * @param {?string=} scriptId
  */
-WebInspector.ConsoleMessage = function(target, source, level, messageText, type, url, line, column, requestId, parameters, stackTrace, timestamp, isOutdated, executionContextId)
+WebInspector.ConsoleMessage = function(target, source, level, messageText, type, url, line, column, requestId, parameters, stackTrace, timestamp, isOutdated, executionContextId, asyncStackTrace, scriptId)
 {
     this._target = target;
     this.source = source;
     this.level = level;
     this.messageText = messageText;
     this.type = type || WebInspector.ConsoleMessage.MessageType.Log;
-    this.url = url || null;
+    /** @type {string|undefined} */
+    this.url = url || undefined;
+    /** @type {number} */
     this.line = line || 0;
+    /** @type {number} */
     this.column = column || 0;
     this.parameters = parameters;
+    /** @type {!Array.<!ConsoleAgent.CallFrame>|undefined} */
     this.stackTrace = stackTrace;
     this.timestamp = timestamp || Date.now();
     this.isOutdated = isOutdated;
     this.executionContextId = executionContextId || 0;
+    this.asyncStackTrace = asyncStackTrace;
+    this.scriptId = scriptId || null;
 
     this.request = requestId ? target.networkLog.requestForId(requestId) : null;
 
     if (this.request) {
-        this.stackTrace = this.request.initiator.stackTrace;
-        if (this.request.initiator && this.request.initiator.url) {
-            this.url = this.request.initiator.url;
-            this.line = this.request.initiator.lineNumber;
+        var initiator = this.request.initiator();
+        if (initiator) {
+            this.stackTrace = initiator.stackTrace || undefined;
+            this.asyncStackTrace = initiator.asyncStackTrace;
+            if (initiator.url) {
+                this.url = initiator.url;
+                this.line = initiator.lineNumber || 0;
+            }
         }
     }
 }
@@ -251,6 +242,15 @@ WebInspector.ConsoleMessage.prototype = {
     setOriginatingMessage: function(originatingMessage)
     {
         this._originatingConsoleMessage = originatingMessage;
+        this.executionContextId = originatingMessage.executionContextId;
+    },
+
+    /**
+     * @param {!RuntimeAgent.ExecutionContextId} executionContextId
+     */
+    setExecutionContextId: function(executionContextId)
+    {
+        this.executionContextId = executionContextId;
     },
 
     /**
@@ -307,7 +307,9 @@ WebInspector.ConsoleMessage.prototype = {
             this.stackTrace,
             this.timestamp,
             this.isOutdated,
-            this.executionContextId);
+            this.executionContextId,
+            this.asyncStackTrace,
+            this.scriptId);
     },
 
     /**
@@ -319,17 +321,20 @@ WebInspector.ConsoleMessage.prototype = {
         if (!msg)
             return false;
 
-        if (this.stackTrace) {
-            if (!msg.stackTrace || this.stackTrace.length !== msg.stackTrace.length)
-                return false;
+        if (!this._isEqualStackTraces(this.stackTrace, msg.stackTrace))
+            return false;
 
-            for (var i = 0; i < msg.stackTrace.length; ++i) {
-                if (this.stackTrace[i].url !== msg.stackTrace[i].url ||
-                    this.stackTrace[i].functionName !== msg.stackTrace[i].functionName ||
-                    this.stackTrace[i].lineNumber !== msg.stackTrace[i].lineNumber ||
-                    this.stackTrace[i].columnNumber !== msg.stackTrace[i].columnNumber)
-                    return false;
-            }
+        var asyncTrace1 = this.asyncStackTrace;
+        var asyncTrace2 = msg.asyncStackTrace;
+        while (asyncTrace1 || asyncTrace2) {
+            if (!asyncTrace1 || !asyncTrace2)
+                return false;
+            if (asyncTrace1.description !== asyncTrace2.description)
+                return false;
+            if (!this._isEqualStackTraces(asyncTrace1.callFrames, asyncTrace2.callFrames))
+                return false;
+            asyncTrace1 = asyncTrace1.asyncStackTrace;
+            asyncTrace2 = asyncTrace2.asyncStackTrace;
         }
 
         if (this.parameters) {
@@ -351,7 +356,29 @@ WebInspector.ConsoleMessage.prototype = {
             && (this.url === msg.url)
             && (this.messageText === msg.messageText)
             && (this.request === msg.request)
-            && (this.executionContextId === msg.executionContextId);
+            && (this.executionContextId === msg.executionContextId)
+            && (this.scriptId === msg.scriptId);
+    },
+
+    /**
+     * @param {!Array.<!ConsoleAgent.CallFrame>|undefined} stackTrace1
+     * @param {!Array.<!ConsoleAgent.CallFrame>|undefined} stackTrace2
+     * @return {boolean}
+     */
+    _isEqualStackTraces: function(stackTrace1, stackTrace2)
+    {
+        stackTrace1 = stackTrace1 || [];
+        stackTrace2 = stackTrace2 || [];
+        if (stackTrace1.length !== stackTrace2.length)
+            return false;
+        for (var i = 0, n = stackTrace1.length; i < n; ++i) {
+            if (stackTrace1[i].url !== stackTrace2[i].url ||
+                stackTrace1[i].functionName !== stackTrace2[i].functionName ||
+                stackTrace1[i].lineNumber !== stackTrace2[i].lineNumber ||
+                stackTrace1[i].columnNumber !== stackTrace2[i].columnNumber)
+                return false;
+        }
+        return true;
     }
 }
 
@@ -402,6 +429,24 @@ WebInspector.ConsoleMessage.MessageLevel = {
     Warning: "warning",
     Error: "error",
     Debug: "debug"
+};
+
+WebInspector.ConsoleMessage._messageLevelPriority = {
+    "debug": 0,
+    "log": 1,
+    "info": 2,
+    "warning": 3,
+    "error": 4
+};
+
+/**
+ * @param {!WebInspector.ConsoleMessage} a
+ * @param {!WebInspector.ConsoleMessage} b
+ * @return {number}
+ */
+WebInspector.ConsoleMessage.messageLevelComparator = function(a, b)
+{
+    return WebInspector.ConsoleMessage._messageLevelPriority[a.level] - WebInspector.ConsoleMessage._messageLevelPriority[b.level];
 }
 
 /**
@@ -444,8 +489,10 @@ WebInspector.ConsoleDispatcher.prototype = {
             payload.stackTrace,
             payload.timestamp * 1000, // Convert to ms.
             this._console._enablingConsole,
-            payload.executionContextId);
-        this._console.addMessage(consoleMessage, true);
+            payload.executionContextId,
+            payload.asyncStackTrace,
+            payload.scriptId);
+        this._console.addMessage(consoleMessage);
     },
 
     /**
@@ -458,11 +505,82 @@ WebInspector.ConsoleDispatcher.prototype = {
     messagesCleared: function()
     {
         if (!WebInspector.settings.preserveConsoleLog.get())
-            this._console.clearMessages();
+            this._console._messagesCleared();
     }
 }
 
 /**
- * @type {!WebInspector.ConsoleModel}
+ * @constructor
+ * @extends {WebInspector.Object}
+ * @implements {WebInspector.TargetManager.Observer}
  */
-WebInspector.console;
+WebInspector.MultitargetConsoleModel = function()
+{
+    WebInspector.targetManager.observeTargets(this);
+    WebInspector.targetManager.addModelListener(WebInspector.ConsoleModel, WebInspector.ConsoleModel.Events.MessageAdded, this._consoleMessageAdded, this);
+    WebInspector.targetManager.addModelListener(WebInspector.ConsoleModel, WebInspector.ConsoleModel.Events.CommandEvaluated, this._commandEvaluated, this);
+}
+
+WebInspector.MultitargetConsoleModel.prototype = {
+    /**
+     * @param {!WebInspector.Target} target
+     */
+    targetAdded: function(target)
+    {
+        if (!this._mainTarget) {
+            this._mainTarget = target;
+            target.consoleModel.addEventListener(WebInspector.ConsoleModel.Events.ConsoleCleared, this._consoleCleared, this);
+        }
+    },
+
+    /**
+     * @param {!WebInspector.Target} target
+     */
+    targetRemoved: function(target)
+    {
+        if (this._mainTarget === target) {
+            delete this._mainTarget;
+            target.consoleModel.removeEventListener(WebInspector.ConsoleModel.Events.ConsoleCleared, this._consoleCleared, this);
+        }
+    },
+
+    /**
+     * @return {!Array.<!WebInspector.ConsoleMessage>}
+     */
+    messages: function()
+    {
+        var targets = WebInspector.targetManager.targets();
+        var result = [];
+        for (var i = 0; i < targets.length; ++i)
+            result = result.concat(targets[i].consoleModel.messages());
+        return result;
+    },
+
+    _consoleCleared: function()
+    {
+        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.ConsoleCleared);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _consoleMessageAdded: function(event)
+    {
+        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.MessageAdded, event.data);
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _commandEvaluated: function(event)
+    {
+        this.dispatchEventToListeners(WebInspector.ConsoleModel.Events.CommandEvaluated, event.data);
+    },
+
+    __proto__: WebInspector.Object.prototype
+}
+
+/**
+ * @type {!WebInspector.MultitargetConsoleModel}
+ */
+WebInspector.multitargetConsoleModel;

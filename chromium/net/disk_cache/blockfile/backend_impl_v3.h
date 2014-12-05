@@ -9,6 +9,7 @@
 
 #include "base/containers/hash_tables.h"
 #include "base/files/file_path.h"
+#include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
 #include "net/disk_cache/blockfile/block_bitmaps_v3.h"
 #include "net/disk_cache/blockfile/block_files.h"
@@ -18,6 +19,10 @@
 #include "net/disk_cache/blockfile/stress_support.h"
 #include "net/disk_cache/blockfile/trace.h"
 #include "net/disk_cache/disk_cache.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
 
 namespace net {
 class NetLog;
@@ -43,16 +48,12 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
   };
 
   BackendImplV3(const base::FilePath& path,
-                base::MessageLoopProxy* cache_thread,
+                const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
                 net::NetLog* net_log);
-  virtual ~BackendImplV3();
+  ~BackendImplV3() override;
 
   // Performs general initialization for this current instance of the cache.
   int Init(const CompletionCallback& callback);
-
-  // Same behavior as OpenNextEntry but walks the list from back to front.
-  int OpenPrevEntry(void** iter, Entry** prev_entry,
-                    const CompletionCallback& callback);
 
   // Sets the maximum size for the total amount of data stored by this instance.
   bool SetMaxSize(int max_bytes);
@@ -171,29 +172,31 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
   int SelfCheck();
 
   // Backend implementation.
-  virtual net::CacheType GetCacheType() const OVERRIDE;
-  virtual int32 GetEntryCount() const OVERRIDE;
-  virtual int OpenEntry(const std::string& key, Entry** entry,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int CreateEntry(const std::string& key, Entry** entry,
-                          const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntry(const std::string& key,
-                        const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomAllEntries(const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesBetween(base::Time initial_time,
-                                 base::Time end_time,
-                                 const CompletionCallback& callback) OVERRIDE;
-  virtual int DoomEntriesSince(base::Time initial_time,
-                               const CompletionCallback& callback) OVERRIDE;
-  virtual int OpenNextEntry(void** iter, Entry** next_entry,
-                            const CompletionCallback& callback) OVERRIDE;
-  virtual void EndEnumeration(void** iter) OVERRIDE;
-  virtual void GetStats(StatsItems* stats) OVERRIDE;
-  virtual void OnExternalCacheHit(const std::string& key) OVERRIDE;
+  net::CacheType GetCacheType() const override;
+  int32 GetEntryCount() const override;
+  int OpenEntry(const std::string& key,
+                Entry** entry,
+                const CompletionCallback& callback) override;
+  int CreateEntry(const std::string& key,
+                  Entry** entry,
+                  const CompletionCallback& callback) override;
+  int DoomEntry(const std::string& key,
+                const CompletionCallback& callback) override;
+  int DoomAllEntries(const CompletionCallback& callback) override;
+  int DoomEntriesBetween(base::Time initial_time,
+                         base::Time end_time,
+                         const CompletionCallback& callback) override;
+  int DoomEntriesSince(base::Time initial_time,
+                       const CompletionCallback& callback) override;
+  scoped_ptr<Iterator> CreateIterator() override;
+  void GetStats(StatsItems* stats) override;
+  void OnExternalCacheHit(const std::string& key) override;
 
  private:
   friend class EvictionV3;
   typedef base::hash_map<CacheAddr, EntryImplV3*> EntriesMap;
+  class IteratorImpl;
+  class NotImplementedIterator;
   class Worker;
 
   void AdjustMaxCacheSize();
@@ -210,10 +213,6 @@ class NET_EXPORT_PRIVATE BackendImplV3 : public Backend {
   // Creates a new entry object. Returns zero on success, or a disk_cache error
   // on failure.
   int NewEntry(Addr address, EntryImplV3** entry);
-
-  // Opens the next or previous entry on a cache iteration.
-  int OpenFollowingEntry(bool forward, void** iter, Entry** next_entry,
-                         const CompletionCallback& callback);
 
   // Handles the used storage count.
   void AddStorageSize(int32 bytes);

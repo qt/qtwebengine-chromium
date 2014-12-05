@@ -37,23 +37,17 @@ namespace blink {
 
 class WebBlobData;
 class WebString;
-class WebThreadSafeData;
 class WebURL;
 
 class WebBlobRegistry {
 public:
     virtual ~WebBlobRegistry() { }
 
-    virtual void registerBlobData(const blink::WebString& uuid, const blink::WebBlobData&) { }
-    virtual void addBlobDataRef(const blink::WebString& uuid) { }
-    virtual void removeBlobDataRef(const blink::WebString& uuid) { }
-    virtual void registerPublicBlobURL(const blink::WebURL&, const blink::WebString& uuid) { }
-    virtual void revokePublicBlobURL(const blink::WebURL&) { }
-
-    // DEPRECATED - old style blob handling is being replaced
-    virtual void registerBlobURL(const WebURL&, WebBlobData&) { }
-    virtual void registerBlobURL(const WebURL&, const WebURL& srcURL) { }
-    virtual void unregisterBlobURL(const WebURL&) { }
+    virtual void registerBlobData(const WebString& uuid, const WebBlobData&) { }
+    virtual void addBlobDataRef(const WebString& uuid) { }
+    virtual void removeBlobDataRef(const WebString& uuid) { }
+    virtual void registerPublicBlobURL(const WebURL&, const WebString& uuid) { }
+    virtual void revokePublicBlobURL(const WebURL&) { }
 
     // Registers a stream URL referring to a stream with the specified media
     // type.
@@ -64,7 +58,7 @@ public:
     virtual void registerStreamURL(const WebURL&, const WebURL& srcURL) { BLINK_ASSERT_NOT_REACHED(); };
 
     // Add data to the stream referred by the URL.
-    virtual void addDataToStream(const WebURL&, WebThreadSafeData&) { BLINK_ASSERT_NOT_REACHED(); }
+    virtual void addDataToStream(const WebURL&, const char* data, size_t length) { BLINK_ASSERT_NOT_REACHED(); }
 
     // Tell the registry that construction of this stream has completed
     // successfully and so it won't receive any more data.

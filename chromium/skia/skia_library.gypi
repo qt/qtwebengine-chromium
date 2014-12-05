@@ -21,14 +21,12 @@
     '../third_party/skia/gyp/core.gypi',
     '../third_party/skia/gyp/effects.gypi',
     '../third_party/skia/gyp/pdf.gypi',
-    '../third_party/skia/gyp/record.gypi',
     '../third_party/skia/gyp/utils.gypi',
   ],
 
   'sources': [
     # this should likely be moved into src/utils in skia
     '../third_party/skia/src/core/SkFlate.cpp',
-    '../third_party/skia/src/core/SkPaintOptionsAndroid.cpp',
 
     '../third_party/skia/src/ports/SkImageDecoder_empty.cpp',
     '../third_party/skia/src/images/SkScaledBitmapSampler.cpp',
@@ -36,7 +34,6 @@
 
     '../third_party/skia/src/opts/opts_check_x86.cpp',
 
-    '../third_party/skia/src/ports/SkFontConfigInterface_android.cpp',
     '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
 
     '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
@@ -52,6 +49,7 @@
     '../third_party/skia/src/ports/SkFontConfigParser_android.cpp',
     '../third_party/skia/src/ports/SkFontHost_mac.cpp',
     '../third_party/skia/src/ports/SkFontHost_win.cpp',
+    "../third_party/skia/src/ports/SkFontMgr_android.cpp",
     '../third_party/skia/src/ports/SkFontMgr_win_dw.cpp',
     '../third_party/skia/src/ports/SkGlobalInitialization_chromium.cpp',
     '../third_party/skia/src/ports/SkOSFile_posix.cpp',
@@ -90,13 +88,6 @@
 
   # Exclude all unused files in skia utils.gypi file
   'sources!': [
-  '../third_party/skia/include/utils/SkCondVar.h',
-  '../third_party/skia/include/utils/SkCountdown.h',
-  '../third_party/skia/include/utils/SkRunnable.h',
-  '../third_party/skia/include/utils/SkThreadPool.h',
-  '../third_party/skia/src/utils/SkCondVar.cpp',
-  '../third_party/skia/src/utils/SkCountdown.cpp',
-
   '../third_party/skia/include/utils/SkBoundaryPatch.h',
   '../third_party/skia/include/utils/SkFrontBufferedStream.h',
   '../third_party/skia/include/utils/SkCamera.h',
@@ -141,16 +132,12 @@
   '../third_party/skia/src/utils/SkPathUtils.cpp',
   '../third_party/skia/src/utils/SkSHA1.cpp',
   '../third_party/skia/src/utils/SkSHA1.h',
-  '../third_party/skia/src/utils/SkThreadUtils.h',
-  '../third_party/skia/src/utils/SkThreadUtils_pthread.cpp',
-  '../third_party/skia/src/utils/SkThreadUtils_pthread.h',
-  '../third_party/skia/src/utils/SkThreadUtils_pthread_linux.cpp',
-  '../third_party/skia/src/utils/SkThreadUtils_pthread_mach.cpp',
-  '../third_party/skia/src/utils/SkThreadUtils_pthread_other.cpp',
-  '../third_party/skia/src/utils/SkThreadUtils_win.cpp',
-  '../third_party/skia/src/utils/SkThreadUtils_win.h',
   '../third_party/skia/src/utils/SkTFitsIn.h',
   '../third_party/skia/src/utils/SkTLogic.h',
+
+  # We don't currently need to change thread affinity, so leave out this complexity for now.
+  "../third_party/skia/src/utils/SkThreadUtils_pthread_mach.cpp",
+  "../third_party/skia/src/utils/SkThreadUtils_pthread_linux.cpp",
 
 #windows
   '../third_party/skia/include/utils/win/SkAutoCoInitialize.h',
@@ -167,6 +154,7 @@
   ],
 
   'include_dirs': [
+    '../third_party/skia/include/c',
     '../third_party/skia/include/core',
     '../third_party/skia/include/effects',
     '../third_party/skia/include/images',
@@ -210,14 +198,19 @@
       ],
     }],
 
-    [ 'OS != "ios"', {
-      'dependencies': [
-        '../third_party/WebKit/public/blink_skia_config.gyp:blink_skia_config',
+    [ 'OS == "win"', {
+      'sources!': [
+        # Keeping _win.cpp
+        "../third_party/skia/src/utils/SkThreadUtils_pthread.cpp",
+        "../third_party/skia/src/utils/SkThreadUtils_pthread_other.cpp",
       ],
-      'export_dependent_settings': [
-        '../third_party/WebKit/public/blink_skia_config.gyp:blink_skia_config',
+    },{
+      'sources!': [
+        # Keeping _pthread.cpp and _pthread_other.cpp
+        "../third_party/skia/src/utils/SkThreadUtils_win.cpp",
       ],
     }],
+
     [ 'OS != "mac"', {
       'sources/': [
         ['exclude', '/mac/']
@@ -232,7 +225,7 @@
       ],
     }],
     [ 'target_arch == "arm" or target_arch == "arm64" or \
-       target_arch == "mipsel"', {
+       target_arch == "mipsel" or target_arch == "mips64el"', {
       'sources!': [
         '../third_party/skia/src/opts/opts_check_x86.cpp'
       ],
@@ -256,6 +249,7 @@
     [ 'OS=="win" or OS=="mac" or OS=="ios" or OS=="android"', {
       'sources!': [
         '../third_party/skia/src/ports/SkFontConfigInterface_direct.cpp',
+        '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
         '../third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp',
       ],
     }],
@@ -263,7 +257,6 @@
       'sources!': [
         '../third_party/skia/src/ports/SkFontHost_FreeType.cpp',
         '../third_party/skia/src/ports/SkFontHost_FreeType_common.cpp',
-        '../third_party/skia/src/ports/SkFontHost_fontconfig.cpp',
 
       ],
     }],
@@ -355,18 +348,6 @@
         '../third_party/skia/src/utils/win/SkDWriteGeometrySink.cpp',
         '../third_party/skia/src/utils/win/SkDWriteGeometrySink.h',
         '../third_party/skia/src/utils/win/SkHRESULT.cpp',
-      ],
-    }],
-    # TODO(scottmg): http://crbug.com/177306
-    ['clang==1', {
-      'xcode_settings': {
-        'WARNING_CFLAGS!': [
-          # Don't warn about string->bool used in asserts.
-          '-Wstring-conversion',
-        ],
-      },
-      'cflags!': [
-        '-Wstring-conversion',
       ],
     }],
   ],

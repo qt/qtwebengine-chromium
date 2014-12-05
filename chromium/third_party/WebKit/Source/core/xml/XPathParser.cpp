@@ -28,7 +28,7 @@
 #include "config.h"
 #include "core/xml/XPathParser.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/XPathGrammar.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/xml/XPathEvaluator.h"
@@ -37,7 +37,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringHash.h"
 
-using namespace WebCore;
+using namespace blink;
 using namespace WTF;
 using namespace Unicode;
 using namespace XPath;

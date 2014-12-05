@@ -16,9 +16,10 @@ void QuicConfigPeer::SetReceivedInitialWindow(QuicConfig* config,
 }
 
 // static
-void QuicConfigPeer::SetReceivedLossDetection(QuicConfig* config,
-                                              QuicTag loss_detection) {
-  config->loss_detection_.SetReceivedValue(loss_detection);
+void QuicConfigPeer::SetReceivedSocketReceiveBuffer(
+    QuicConfig* config,
+    uint32 receive_buffer_bytes) {
+  config->socket_receive_buffer_.SetReceivedValue(receive_buffer_bytes);
 }
 
 // static
@@ -29,16 +30,31 @@ void QuicConfigPeer::SetReceivedInitialFlowControlWindow(QuicConfig* config,
 
 // static
 void QuicConfigPeer::SetReceivedInitialStreamFlowControlWindow(
-    QuicConfig* config, uint32 window_bytes) {
+    QuicConfig* config,
+    uint32 window_bytes) {
   config->initial_stream_flow_control_window_bytes_.SetReceivedValue(
       window_bytes);
 }
 
 // static
 void QuicConfigPeer::SetReceivedInitialSessionFlowControlWindow(
-    QuicConfig* config, uint32 window_bytes) {
+    QuicConfig* config,
+    uint32 window_bytes) {
   config->initial_session_flow_control_window_bytes_.SetReceivedValue(
       window_bytes);
+}
+
+// static
+void QuicConfigPeer::SetReceivedConnectionOptions(
+    QuicConfig* config,
+    const QuicTagVector& options) {
+  config->connection_options_.SetReceivedValues(options);
+}
+
+// static
+void QuicConfigPeer::SetReceivedBytesForConnectionId(QuicConfig* config,
+                                                     uint32 bytes) {
+  config->bytes_for_connection_id_.SetReceivedValue(bytes);
 }
 
 }  // namespace test

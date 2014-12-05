@@ -12,6 +12,7 @@
 #undef None
 
 #include "base/memory/scoped_ptr.h"
+#include "base/run_loop.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
@@ -48,12 +49,11 @@ class WMStateWaiter : public X11PropertyChangeWaiter {
     atom_cache_.reset(new ui::X11AtomCache(gfx::GetXDisplay(), kAtomsToCache));
   }
 
-  virtual ~WMStateWaiter() {
-  }
+  ~WMStateWaiter() override {}
 
  private:
   // X11PropertyChangeWaiter:
-  virtual bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) OVERRIDE {
+  bool ShouldKeepOnWaiting(const ui::PlatformEvent& event) override {
     std::vector<Atom> hints;
     if (ui::GetAtomArrayProperty(xwindow(), "_NET_WM_STATE", &hints)) {
       std::vector<Atom>::iterator it = std::find(
@@ -83,22 +83,16 @@ class ShapedNonClientFrameView : public NonClientFrameView {
   explicit ShapedNonClientFrameView() {
   }
 
-  virtual ~ShapedNonClientFrameView() {
-  }
+  ~ShapedNonClientFrameView() override {}
 
   // NonClientFrameView:
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE {
-    return bounds();
-  }
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE {
+  gfx::Rect GetBoundsForClientView() const override { return bounds(); }
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override {
     return client_bounds;
   }
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE {
-    return HTNOWHERE;
-  }
-  virtual void GetWindowMask(const gfx::Size& size,
-                             gfx::Path* window_mask) OVERRIDE {
+  int NonClientHitTest(const gfx::Point& point) override { return HTNOWHERE; }
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {
     int right = size.width();
     int bottom = size.height();
 
@@ -110,12 +104,10 @@ class ShapedNonClientFrameView : public NonClientFrameView {
     window_mask->lineTo(right - 10, 0);
     window_mask->close();
   }
-  virtual void ResetWindowControls() OVERRIDE {
-  }
-  virtual void UpdateWindowIcon() OVERRIDE {
-  }
-  virtual void UpdateWindowTitle() OVERRIDE {
-  }
+  void ResetWindowControls() override {}
+  void UpdateWindowIcon() override {}
+  void UpdateWindowTitle() override {}
+  void SizeConstraintsChanged() override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ShapedNonClientFrameView);
@@ -126,12 +118,10 @@ class ShapedWidgetDelegate : public WidgetDelegateView {
   ShapedWidgetDelegate() {
   }
 
-  virtual ~ShapedWidgetDelegate() {
-  }
+  ~ShapedWidgetDelegate() override {}
 
   // WidgetDelegateView:
-  virtual NonClientFrameView* CreateNonClientFrameView(
-      Widget* widget) OVERRIDE {
+  NonClientFrameView* CreateNonClientFrameView(Widget* widget) override {
     return new ShapedNonClientFrameView;
   }
 
@@ -187,16 +177,21 @@ bool ShapeRectContainsPoint(const std::vector<gfx::Rect>& shape_rects,
   return false;
 }
 
+// Flush the message loop.
+void RunAllPendingInMessageLoop() {
+  base::RunLoop run_loop;
+  run_loop.RunUntilIdle();
+}
+
 }  // namespace
 
 class DesktopWindowTreeHostX11Test : public ViewsTestBase {
  public:
   DesktopWindowTreeHostX11Test() {
   }
-  virtual ~DesktopWindowTreeHostX11Test() {
-  }
+  ~DesktopWindowTreeHostX11Test() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ViewsTestBase::SetUp();
 
     // Make X11 synchronous for our display connection. This does not force the
@@ -204,7 +199,7 @@ class DesktopWindowTreeHostX11Test : public ViewsTestBase {
     XSynchronize(gfx::GetXDisplay(), True);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     XSynchronize(gfx::GetXDisplay(), False);
     ViewsTestBase::TearDown();
   }
@@ -261,10 +256,13 @@ TEST_F(DesktopWindowTreeHostX11Test, Shape) {
       waiter.Wait();
     }
 
+    // Ensure that the task which is posted when a window is resized is run.
+    RunAllPendingInMessageLoop();
+
     // xvfb does not support Xrandr so we cannot check the maximized window's
     // bounds.
     gfx::Rect maximized_bounds;
-    ui::GetWindowRect(xid1, &maximized_bounds);
+    ui::GetOuterWindowBounds(xid1, &maximized_bounds);
 
     shape_rects = GetShapeRects(xid1);
     ASSERT_FALSE(shape_rects.empty());
@@ -307,6 +305,17 @@ TEST_F(DesktopWindowTreeHostX11Test, Shape) {
   EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 15, 5));
   EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 15));
   EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 105, 15));
+
+  // Setting the shape to NULL resets the shape back to the entire
+  // window bounds.
+  widget2->SetShape(NULL);
+  shape_rects = GetShapeRects(xid2);
+  ASSERT_FALSE(shape_rects.empty());
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 5, 5));
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 15, 5));
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 95, 15));
+  EXPECT_TRUE(ShapeRectContainsPoint(shape_rects, 105, 15));
+  EXPECT_FALSE(ShapeRectContainsPoint(shape_rects, 500, 500));
 }
 
 // Test that the widget ignores changes in fullscreen state initiated by the

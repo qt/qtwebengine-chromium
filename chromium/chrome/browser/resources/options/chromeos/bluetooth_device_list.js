@@ -2,6 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/**
+ * @typedef {{name: string,
+ *            address: string,
+ *            paired: boolean,
+ *            connected: boolean,
+ *            connecting: boolean,
+ *            connectable: boolean,
+ *            pairing: (string|undefined),
+ *            passkey: (number|undefined),
+ *            pincode: (string|undefined),
+ *            entered: (number|undefined)}}
+ */
+var BluetoothDevice;
+
 cr.define('options.system.bluetooth', function() {
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
   /** @const */ var DeletableItem = options.DeletableItem;
@@ -15,17 +29,7 @@ cr.define('options.system.bluetooth', function() {
 
   /**
    * Creates a new bluetooth list item.
-   * @param {{name: string,
-   *          address: string,
-   *          paired: boolean,
-   *          connected: boolean,
-   *          connecting: boolean,
-   *          connectable: boolean,
-   *          pairing: string|undefined,
-   *          passkey: number|undefined,
-   *          pincode: string|undefined,
-   *          entered: number|undefined}} device
-   *    Description of the Bluetooth device.
+   * @param {BluetoothDevice} device Description of the Bluetooth device.
    * @constructor
    * @extends {options.DeletableItem}
    */
@@ -47,16 +51,7 @@ cr.define('options.system.bluetooth', function() {
 
     /**
      * Description of the Bluetooth device.
-     * @type {{name: string,
-     *         address: string,
-     *         paired: boolean,
-     *         connected: boolean,
-     *         connecting: boolean,
-     *         connectable: boolean,
-     *         pairing: string|undefined,
-     *         passkey: number|undefined,
-     *         pincode: string|undefined,
-     *         entered: number|undefined}}
+     * @type {?BluetoothDevice}
      */
     data: null,
 
@@ -112,7 +107,7 @@ cr.define('options.system.bluetooth', function() {
     /**
      * Width of a list entry in px.
      * @type {number}
-     * @private.
+     * @private
      */
     itemWidth_: 400,
 
@@ -141,10 +136,10 @@ cr.define('options.system.bluetooth', function() {
      *          connected: boolean,
      *          connecting: boolean,
      *          connectable: boolean,
-     *          pairing: string|undefined,
-     *          passkey: number|undefined,
-     *          pincode: string|undefined,
-     *          entered: number|undefined}} device
+     *          pairing: (string|undefined),
+     *          passkey: (number|undefined),
+     *          pincode: (string|undefined),
+     *          entered: (number|undefined)}} device
      *     Description of the bluetooth device.
      * @return {boolean} True if the devies was successfully added or updated.
      */
@@ -184,14 +179,14 @@ cr.define('options.system.bluetooth', function() {
     /**
      * Retrieves the address of the selected device, or null if no device is
      * selected.
-     * @return {?string} Address of selected device or null.
+     * @return {(string|undefined)} Address of selected device or null.
      * @private
      */
     getSelectedDevice_: function() {
       var selection = this.selectedItem;
       if (selection)
         return selection.address;
-      return null;
+      return undefined;
     },
 
     /**
@@ -229,7 +224,10 @@ cr.define('options.system.bluetooth', function() {
       }
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {BluetoothDevice} entry
+     */
     createItem: function(entry) {
       return new BluetoothListItem(entry);
     },
@@ -250,7 +248,7 @@ cr.define('options.system.bluetooth', function() {
       return {
         height: this.itemHeight_,
         marginTop: 0,
-        marginBotton: 0,
+        marginBottom: 0,
         width: this.itemWidth_,
         marginLeft: 0,
         marginRight: 0
@@ -260,9 +258,9 @@ cr.define('options.system.bluetooth', function() {
     /**
      * Override the default implementation to return a predetermined size,
      * which in turns allows proper layout of items even if the list is hidden.
-     * @return {height: number, width: number} Dimensions of a single item in
+     * @return {{height: number, width: number}} Dimensions of a single item in
      *     the list of bluetooth device.
-     * @private.
+     * @private
      */
     getDefaultItemSize_: function() {
       return {
@@ -272,17 +270,17 @@ cr.define('options.system.bluetooth', function() {
     },
 
     /**
-     * Override base implementation of handleClick_, which unconditionally
+     * Override base implementation of handleClick, which unconditionally
      * removes the item.  In this case, removal of the element is deferred
      * pending confirmation from the Bluetooth adapter.
      * @param {Event} e The click event object.
-     * @private
+     * @override
      */
-    handleClick_: function(e) {
+    handleClick: function(e) {
       if (this.disabled)
         return;
 
-      var target = e.target;
+      var target = /** @type {HTMLElement} */(e.target);
       if (!target.classList.contains('row-delete-button'))
         return;
 

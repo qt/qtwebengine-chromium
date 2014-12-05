@@ -38,9 +38,9 @@
 #include <limits>
 #include <stdlib.h>
 
-namespace WebCore {
+namespace blink {
 
-#ifdef NDEBUG
+#if !ERROR_DISABLED
 
 #define REPORT_OVERFLOW(doesOverflow) ((void)0)
 
@@ -68,20 +68,20 @@ public:
     LayoutUnit(unsigned value) { setValue(value); }
     LayoutUnit(unsigned long value) { m_value = clampTo<int>(value * kFixedPointDenominator); }
     LayoutUnit(unsigned long long value) { m_value = clampTo<int>(value * kFixedPointDenominator); }
-    LayoutUnit(float value) { m_value = clampTo<float>(value * kFixedPointDenominator, static_cast<float>(INT_MIN), static_cast<float>(INT_MAX)); }
-    LayoutUnit(double value) { m_value = clampTo<double>(value * kFixedPointDenominator, static_cast<double>(INT_MIN), static_cast<double>(INT_MAX)); }
+    LayoutUnit(float value) { m_value = clampTo<int>(value * kFixedPointDenominator); }
+    LayoutUnit(double value) { m_value = clampTo<int>(value * kFixedPointDenominator); }
 
     static LayoutUnit fromFloatCeil(float value)
     {
         LayoutUnit v;
-        v.m_value = clampToInteger(ceilf(value * kFixedPointDenominator));
+        v.m_value = clampTo<int>(ceilf(value * kFixedPointDenominator));
         return v;
     }
 
     static LayoutUnit fromFloatFloor(float value)
     {
         LayoutUnit v;
-        v.m_value = clampToInteger(floorf(value * kFixedPointDenominator));
+        v.m_value = clampTo<int>(floorf(value * kFixedPointDenominator));
         return v;
     }
 
@@ -131,11 +131,7 @@ public:
         returnValue.setRawValue(::abs(m_value));
         return returnValue;
     }
-#if OS(MACOSX)
-    int wtf_ceil() const
-#else
     int ceil() const
-#endif
     {
         if (UNLIKELY(m_value >= INT_MAX - kFixedPointDenominator + 1))
             return intMaxForLayoutUnit;
@@ -220,21 +216,14 @@ private:
         return ::fabs(value) <= std::numeric_limits<int>::max() / kFixedPointDenominator;
     }
 
-    inline void setValue(int value)
+    ALWAYS_INLINE void setValue(int value)
     {
-        if (value > intMaxForLayoutUnit)
-            m_value = std::numeric_limits<int>::max();
-        else if (value < intMinForLayoutUnit)
-            m_value = std::numeric_limits<int>::min();
-        else
-            m_value = value * kFixedPointDenominator;
+        m_value = saturatedSet(value, kLayoutUnitFractionalBits);
     }
+
     inline void setValue(unsigned value)
     {
-        if (value >= static_cast<unsigned>(intMaxForLayoutUnit))
-            m_value = std::numeric_limits<int>::max();
-        else
-            m_value = value * kFixedPointDenominator;
+        m_value = saturatedSet(value, kLayoutUnitFractionalBits);
     }
 
     int m_value;
@@ -628,6 +617,11 @@ inline float operator-(const LayoutUnit& a, float b)
     return a.toFloat() - b;
 }
 
+inline double operator-(const LayoutUnit& a, double b)
+{
+    return a.toDouble() - b;
+}
+
 inline LayoutUnit operator-(const int a, const LayoutUnit& b)
 {
     return LayoutUnit(a) - b;
@@ -799,6 +793,6 @@ inline LayoutUnit clampToLayoutUnit(LayoutUnit value, LayoutUnit min, LayoutUnit
     return value;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LayoutUnit_h

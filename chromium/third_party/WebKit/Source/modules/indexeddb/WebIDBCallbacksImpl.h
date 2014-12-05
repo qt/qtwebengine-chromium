@@ -35,46 +35,44 @@
 #include "wtf/RefPtr.h"
 
 namespace blink {
+
+class IDBRequest;
 class WebBlobInfo;
 class WebData;
 class WebIDBCursor;
 class WebIDBDatabase;
 class WebIDBDatabaseError;
-class WebIDBIndex;
 class WebIDBKey;
 class WebIDBKeyPath;
 struct WebIDBMetadata;
-}
 
-namespace WebCore {
-class IDBRequest;
-
-class WebIDBCallbacksImpl FINAL : public blink::WebIDBCallbacks {
+class WebIDBCallbacksImpl final : public WebIDBCallbacks {
 public:
     static PassOwnPtr<WebIDBCallbacksImpl> create(IDBRequest*);
 
     virtual ~WebIDBCallbacksImpl();
 
     // Pointers transfer ownership.
-    virtual void onError(const blink::WebIDBDatabaseError&) OVERRIDE;
-    virtual void onSuccess(const blink::WebVector<blink::WebString>&) OVERRIDE;
-    virtual void onSuccess(blink::WebIDBCursor*, const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
-    virtual void onSuccess(blink::WebIDBDatabase*, const blink::WebIDBMetadata&) OVERRIDE;
-    virtual void onSuccess(const blink::WebIDBKey&) OVERRIDE;
-    virtual void onSuccess(const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
-    virtual void onSuccess(const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&, const blink::WebIDBKey&, const blink::WebIDBKeyPath&) OVERRIDE;
-    virtual void onSuccess(long long) OVERRIDE;
-    virtual void onSuccess() OVERRIDE;
-    virtual void onSuccess(const blink::WebIDBKey&, const blink::WebIDBKey& primaryKey, const blink::WebData&, const blink::WebVector<blink::WebBlobInfo>&) OVERRIDE;
-    virtual void onBlocked(long long oldVersion) OVERRIDE;
-    virtual void onUpgradeNeeded(long long oldVersion, blink::WebIDBDatabase*, const blink::WebIDBMetadata&, unsigned short dataLoss, blink::WebString dataLossMessage) OVERRIDE;
+    virtual void onError(const WebIDBDatabaseError&) override;
+    virtual void onSuccess(const WebVector<WebString>&) override;
+    virtual void onSuccess(WebIDBCursor*, const WebIDBKey&, const WebIDBKey& primaryKey, const WebData&, const WebVector<WebBlobInfo>&) override;
+    virtual void onSuccess(WebIDBDatabase*, const WebIDBMetadata&) override;
+    virtual void onSuccess(const WebIDBKey&) override;
+    virtual void onSuccess(const WebData&, const WebVector<WebBlobInfo>&) override;
+    virtual void onSuccess(const WebData&, const WebVector<WebBlobInfo>&, const WebIDBKey&, const WebIDBKeyPath&) override;
+    virtual void onSuccess(long long) override;
+    virtual void onSuccess() override;
+    virtual void onSuccess(const WebIDBKey&, const WebIDBKey& primaryKey, const WebData&, const WebVector<WebBlobInfo>&) override;
+    virtual void onBlocked(long long oldVersion) override;
+    virtual void onUpgradeNeeded(long long oldVersion, WebIDBDatabase*, const WebIDBMetadata&, unsigned short dataLoss, WebString dataLossMessage) override;
 
 private:
     explicit WebIDBCallbacksImpl(IDBRequest*);
 
     Persistent<IDBRequest> m_request;
+    int m_asyncOperationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebIDBCallbacksImpl_h

@@ -25,14 +25,12 @@
 #include "core/css/CSSRule.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSStyleSheetResource;
 class MediaList;
-class MediaQuerySet;
 class StyleRuleImport;
 
-class CSSImportRule FINAL : public CSSRule {
+class CSSImportRule final : public CSSRule {
 public:
     static PassRefPtrWillBeRawPtr<CSSImportRule> create(StyleRuleImport* rule, CSSStyleSheet* sheet)
     {
@@ -41,15 +39,15 @@ public:
 
     virtual ~CSSImportRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return IMPORT_RULE; }
-    virtual String cssText() const OVERRIDE;
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual CSSRule::Type type() const override { return IMPORT_RULE; }
+    virtual String cssText() const override;
+    virtual void reattach(StyleRuleBase*) override;
 
     String href() const;
     MediaList* media() const;
     CSSStyleSheet* styleSheet() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CSSImportRule(StyleRuleImport*, CSSStyleSheet*);
@@ -61,6 +59,6 @@ private:
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSImportRule, IMPORT_RULE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSImportRule_h

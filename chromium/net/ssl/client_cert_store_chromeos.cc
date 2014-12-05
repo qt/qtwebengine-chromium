@@ -5,18 +5,37 @@
 #include "net/ssl/client_cert_store_chromeos.h"
 
 #include <cert.h>
+#include <algorithm>
 
 #include "base/bind.h"
-#include "crypto/nss_crypto_module_delegate.h"
-#include "crypto/nss_util_internal.h"
+#include "base/bind_helpers.h"
+#include "base/callback.h"
 
 namespace net {
 
+namespace {
+
+class CertNotAllowedPredicate {
+ public:
+  explicit CertNotAllowedPredicate(
+      const ClientCertStoreChromeOS::CertFilter& filter)
+      : filter_(filter) {}
+  bool operator()(const scoped_refptr<X509Certificate>& cert) const {
+    return !filter_.IsCertAllowed(cert);
+  }
+
+ private:
+  const ClientCertStoreChromeOS::CertFilter& filter_;
+};
+
+}  // namespace
+
 ClientCertStoreChromeOS::ClientCertStoreChromeOS(
-    const std::string& username_hash,
+    scoped_ptr<CertFilter> cert_filter,
     const PasswordDelegateFactory& password_delegate_factory)
     : ClientCertStoreNSS(password_delegate_factory),
-      username_hash_(username_hash) {}
+      cert_filter_(cert_filter.Pass()) {
+}
 
 ClientCertStoreChromeOS::~ClientCertStoreChromeOS() {}
 
@@ -24,71 +43,41 @@ void ClientCertStoreChromeOS::GetClientCerts(
     const SSLCertRequestInfo& cert_request_info,
     CertificateList* selected_certs,
     const base::Closure& callback) {
-  crypto::ScopedPK11Slot private_slot(crypto::GetPrivateSlotForChromeOSUser(
-      username_hash_,
-      base::Bind(&ClientCertStoreChromeOS::DidGetPrivateSlot,
+  base::Closure bound_callback =
+      base::Bind(&ClientCertStoreChromeOS::CertFilterInitialized,
                  // Caller is responsible for keeping the ClientCertStore alive
                  // until the callback is run.
                  base::Unretained(this),
                  &cert_request_info,
                  selected_certs,
-                 callback)));
-  if (private_slot)
-    DidGetPrivateSlot(
-        &cert_request_info, selected_certs, callback, private_slot.Pass());
+                 callback);
+
+  if (cert_filter_->Init(bound_callback))
+    bound_callback.Run();
 }
 
-void ClientCertStoreChromeOS::GetClientCertsImpl(CERTCertList* cert_list,
-                                            const SSLCertRequestInfo& request,
-                                            bool query_nssdb,
-                                            CertificateList* selected_certs) {
+void ClientCertStoreChromeOS::GetClientCertsImpl(
+    CERTCertList* cert_list,
+    const SSLCertRequestInfo& request,
+    bool query_nssdb,
+    CertificateList* selected_certs) {
   ClientCertStoreNSS::GetClientCertsImpl(
       cert_list, request, query_nssdb, selected_certs);
 
   size_t pre_size = selected_certs->size();
-  selected_certs->erase(
-      std::remove_if(
-          selected_certs->begin(),
-          selected_certs->end(),
-          NSSProfileFilterChromeOS::CertNotAllowedForProfilePredicate(
-              profile_filter_)),
-      selected_certs->end());
+  selected_certs->erase(std::remove_if(selected_certs->begin(),
+                                       selected_certs->end(),
+                                       CertNotAllowedPredicate(*cert_filter_)),
+                        selected_certs->end());
   DVLOG(1) << "filtered " << pre_size - selected_certs->size() << " of "
            << pre_size << " certs";
 }
 
-void ClientCertStoreChromeOS::DidGetPrivateSlot(
+void ClientCertStoreChromeOS::CertFilterInitialized(
     const SSLCertRequestInfo* request,
     CertificateList* selected_certs,
-    const base::Closure& callback,
-    crypto::ScopedPK11Slot private_slot) {
-  profile_filter_.Init(crypto::GetPublicSlotForChromeOSUser(username_hash_),
-                       private_slot.Pass());
+    const base::Closure& callback) {
   ClientCertStoreNSS::GetClientCerts(*request, selected_certs, callback);
 }
-
-void ClientCertStoreChromeOS::InitForTesting(
-    crypto::ScopedPK11Slot public_slot,
-    crypto::ScopedPK11Slot private_slot) {
-  profile_filter_.Init(public_slot.Pass(), private_slot.Pass());
-}
-
-bool ClientCertStoreChromeOS::SelectClientCertsForTesting(
-    const CertificateList& input_certs,
-    const SSLCertRequestInfo& request,
-    CertificateList* selected_certs) {
-  CERTCertList* cert_list = CERT_NewCertList();
-  if (!cert_list)
-    return false;
-  for (size_t i = 0; i < input_certs.size(); ++i) {
-    CERT_AddCertToListTail(
-        cert_list, CERT_DupCertificate(input_certs[i]->os_cert_handle()));
-  }
-
-  GetClientCertsImpl(cert_list, request, false, selected_certs);
-  CERT_DestroyCertList(cert_list);
-  return true;
-}
-
 
 }  // namespace net

@@ -25,17 +25,17 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <string>
-#include <sstream>
 #include <iostream>
-#include "common/common.h"
-#include "buzz/xmppengine.h"
-#include "buzz/xmlelement.h"
+#include <sstream>
+#include <string>
 #include "buzz/chatroommodule.h"
 #include "buzz/constants.h"
+#include "buzz/xmlelement.h"
+#include "buzz/xmppengine.h"
+#include "common/common.h"
 #include "engine/util_unittest.h"
-#include "test/unittest.h"
 #include "test/unittest-inl.h"
+#include "test/unittest.h"
 
 #define TEST_OK(x) TEST_EQ((x),XMPP_RETURN_OK)
 #define TEST_BADARGUMENT(x) TEST_EQ((x),XMPP_RETURN_BADARGUMENT)
@@ -116,7 +116,7 @@ public:
 
   void ChatroomEnteredStatus(XmppChatroomModule* room,
                              XmppChatroomEnteredStatus status) {
-    UNUSED(room);
+    RTC_UNUSED(room);
     ss_ <<"[ChatroomEnteredStatus status: ";
     WriteEnteredStatus(ss_, status);
     ss_ <<"]";
@@ -125,7 +125,7 @@ public:
 
   void ChatroomExitedStatus(XmppChatroomModule* room,
                             XmppChatroomExitedStatus status) {
-    UNUSED(room);
+    RTC_UNUSED(room);
     ss_ <<"[ChatroomExitedStatus status: ";
     WriteExitedStatus(ss_, status);
     ss_ <<"]";
@@ -133,24 +133,24 @@ public:
 
   void MemberEntered(XmppChatroomModule* room, 
                           const XmppChatroomMember* entered_member) {
-    UNUSED(room);
+    RTC_UNUSED(room);
     ss_ << "[MemberEntered " << entered_member->member_jid().Str() << "]";
   }
 
   void MemberExited(XmppChatroomModule* room,
                          const XmppChatroomMember* exited_member) {
-    UNUSED(room);
+    RTC_UNUSED(room);
     ss_ << "[MemberExited " << exited_member->member_jid().Str() << "]";
   }
 
   void MemberChanged(XmppChatroomModule* room,
       const XmppChatroomMember* changed_member) {
-    UNUSED(room);
+    RTC_UNUSED(room);
     ss_ << "[MemberChanged " << changed_member->member_jid().Str() << "]";
   }
 
   virtual void MessageReceived(XmppChatroomModule* room, const XmlElement& message) {
-    UNUSED2(room, message);
+    RTC_UNUSED2(room, message);
   }
 
  

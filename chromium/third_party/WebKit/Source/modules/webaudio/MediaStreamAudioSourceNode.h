@@ -35,37 +35,39 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 
-class MediaStreamAudioSourceNode FINAL : public AudioSourceNode, public AudioSourceProviderClient {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaStreamAudioSourceNode);
+class MediaStreamAudioSourceNode final : public AudioSourceNode, public AudioSourceProviderClient {
+    DEFINE_WRAPPERTYPEINFO();
+    USING_GARBAGE_COLLECTED_MIXIN(MediaStreamAudioSourceNode);
 public:
-    static PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> create(AudioContext*, MediaStream*, MediaStreamTrack*, PassOwnPtr<AudioSourceProvider>);
+    static MediaStreamAudioSourceNode* create(AudioContext*, MediaStream*, MediaStreamTrack*, PassOwnPtr<AudioSourceProvider>);
 
     virtual ~MediaStreamAudioSourceNode();
 
     MediaStream* mediaStream() { return m_mediaStream.get(); }
 
     // AudioNode
-    virtual void process(size_t framesToProcess) OVERRIDE;
+    virtual void dispose() override;
+    virtual void process(size_t framesToProcess) override;
 
     // AudioSourceProviderClient
-    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
 
     AudioSourceProvider* audioSourceProvider() const { return m_audioSourceProvider.get(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaStreamAudioSourceNode(AudioContext*, MediaStream*, MediaStreamTrack*, PassOwnPtr<AudioSourceProvider>);
 
     // As an audio source, we will never propagate silence.
-    virtual bool propagatesSilence() const OVERRIDE { return false; }
+    virtual bool propagatesSilence() const override { return false; }
 
-    RefPtrWillBeMember<MediaStream> m_mediaStream;
-    RefPtrWillBeMember<MediaStreamTrack> m_audioTrack;
+    Member<MediaStream> m_mediaStream;
+    Member<MediaStreamTrack> m_audioTrack;
     OwnPtr<AudioSourceProvider> m_audioSourceProvider;
 
     Mutex m_processLock;
@@ -73,7 +75,7 @@ private:
     unsigned m_sourceNumberOfChannels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)
 

@@ -31,10 +31,7 @@
 #include "config.h"
 #include "platform/network/HTTPHeaderMap.h"
 
-
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 HTTPHeaderMap::HTTPHeaderMap()
 {
@@ -51,7 +48,7 @@ PassOwnPtr<CrossThreadHTTPHeaderMapData> HTTPHeaderMap::copyData() const
 
     HTTPHeaderMap::const_iterator endIt = end();
     for (HTTPHeaderMap::const_iterator it = begin(); it != endIt; ++it)
-        data->uncheckedAppend(make_pair(it->key.string().isolatedCopy(), it->value.string().isolatedCopy()));
+        data->uncheckedAppend(std::make_pair(it->key.string().isolatedCopy(), it->value.string().isolatedCopy()));
 
     return data.release();
 }
@@ -64,16 +61,6 @@ void HTTPHeaderMap::adopt(PassOwnPtr<CrossThreadHTTPHeaderMapData> data)
         pair<String, String>& header = (*data)[index];
         set(AtomicString(header.first), AtomicString(header.second));
     }
-}
-
-const AtomicString& HTTPHeaderMap::get(const AtomicString& name) const
-{
-    return HashMap<AtomicString, AtomicString, CaseFoldingHash>::get(name);
-}
-
-HTTPHeaderMap::AddResult HTTPHeaderMap::add(const AtomicString& name, const AtomicString& value)
-{
-    return HashMap<AtomicString, AtomicString, CaseFoldingHash>::add(name, value);
 }
 
 // Adapter that allows the HashMap to take C strings as keys.
@@ -96,7 +83,7 @@ struct CaseFoldingCStringTranslator {
 
 const AtomicString& HTTPHeaderMap::get(const char* name) const
 {
-    const_iterator i = find<CaseFoldingCStringTranslator>(name);
+    const_iterator i = m_headers.find<CaseFoldingCStringTranslator>(name);
     if (i == end())
         return nullAtom;
     return i->value;
@@ -104,12 +91,12 @@ const AtomicString& HTTPHeaderMap::get(const char* name) const
 
 bool HTTPHeaderMap::contains(const char* name) const
 {
-    return find<CaseFoldingCStringTranslator>(name) != end();
+    return m_headers.find<CaseFoldingCStringTranslator>(name) != end();
 }
 
 HTTPHeaderMap::AddResult HTTPHeaderMap::add(const char* name, const AtomicString& value)
 {
-    return HashMap<AtomicString, AtomicString, CaseFoldingHash>::add<CaseFoldingCStringTranslator>(name, value);
+    return m_headers.add<CaseFoldingCStringTranslator>(name, value);
 }
 
-} // namespace WebCore
+} // namespace blink

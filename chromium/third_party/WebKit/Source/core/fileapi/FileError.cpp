@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/fileapi/FileError.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 const char FileError::abortErrorMessage[] = "An ongoing operation was aborted, typically with a call to abort().";
 const char FileError::encodingErrorMessage[] = "A URI supplied to the API was malformed, or the resulting Data URL has exceeded the URL length limitations for Data URLs.";
@@ -141,7 +141,6 @@ FileError::FileError(ErrorCode code)
     : DOMError(DOMException::getErrorName(errorCodeToExceptionCode(code)), errorCodeToMessage(code))
     , m_code(code)
 {
-    ScriptWrappable::init(this);
 }
 
-} // namespace WebCore
+} // namespace blink

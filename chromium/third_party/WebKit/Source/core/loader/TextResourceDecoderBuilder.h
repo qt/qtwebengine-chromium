@@ -35,21 +35,20 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class TextResourceDecoder;
 
 class TextResourceDecoderBuilder {
 public:
-    TextResourceDecoderBuilder(const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen);
+    TextResourceDecoderBuilder(const AtomicString& mimeType, const AtomicString& encoding);
     ~TextResourceDecoderBuilder();
 
     PassOwnPtr<TextResourceDecoder> buildFor(Document*);
 
     const AtomicString& mimeType() const { return m_mimeType; }
     const AtomicString& encoding() const { return m_encoding; }
-    bool encodingWasChosenByUser() const { return m_encodingWasChosenByUser; }
 
     void clear();
 
@@ -59,9 +58,8 @@ private:
 
     AtomicString m_mimeType;
     AtomicString m_encoding;
-    bool m_encodingWasChosenByUser;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextResourceDecoderBuilder_h

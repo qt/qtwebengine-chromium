@@ -37,11 +37,11 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class QualifiedName;
 
-class MutationObserverRegistration FINAL : public NoBaseWillBeGarbageCollectedFinalized<MutationObserverRegistration> {
+class MutationObserverRegistration final : public NoBaseWillBeGarbageCollectedFinalized<MutationObserverRegistration> {
 public:
     static PassOwnPtrWillBeRawPtr<MutationObserverRegistration> create(MutationObserver&, Node*, MutationObserverOptions, const HashSet<AtomicString>& attributeFilter);
     ~MutationObserverRegistration();
@@ -59,7 +59,7 @@ public:
     MutationRecordDeliveryOptions deliveryOptions() const { return m_options & (MutationObserver::AttributeOldValue | MutationObserver::CharacterDataOldValue); }
     MutationObserverOptions mutationTypes() const { return m_options & MutationObserver::AllMutationTypes; }
 
-    void addRegistrationNodesToSet(HashSet<Node*>&) const;
+    void addRegistrationNodesToSet(WillBeHeapHashSet<RawPtrWillBeMember<Node> >&) const;
 
     void trace(Visitor*);
 
@@ -78,6 +78,6 @@ private:
     HashSet<AtomicString> m_attributeFilter;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MutationObserverRegistration_h

@@ -25,13 +25,13 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_
-#define TALK_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_
+#ifndef WEBRTC_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_
+#define WEBRTC_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_
 
 #include <string>
 
-#include "talk/p2p/base/candidate.h"
-#include "talk/p2p/base/portallocator.h"
+#include "webrtc/p2p/base/candidate.h"
+#include "webrtc/p2p/base/portallocator.h"
 
 namespace cricket {
 class PortAllocator;
@@ -42,7 +42,7 @@ class PortProxy;
 // deleted upon receiving SignalDestroyed signal. This class is used when
 // PORTALLOCATOR_ENABLE_BUNDLE flag is set.
 
-class PortAllocatorSessionMuxer : public talk_base::MessageHandler,
+class PortAllocatorSessionMuxer : public rtc::MessageHandler,
                                   public sigslot::has_slots<> {
  public:
   explicit PortAllocatorSessionMuxer(PortAllocatorSession* session);
@@ -59,16 +59,16 @@ class PortAllocatorSessionMuxer : public talk_base::MessageHandler,
   sigslot::signal1<PortAllocatorSessionMuxer*> SignalDestroyed;
 
  private:
-  virtual void OnMessage(talk_base::Message *pmsg);
+  virtual void OnMessage(rtc::Message *pmsg);
   void OnSessionProxyDestroyed(PortAllocatorSession* proxy);
   void SendAllocationDone_w(PortAllocatorSessionProxy* proxy);
   void SendAllocatedPorts_w(PortAllocatorSessionProxy* proxy);
 
   // Port will be deleted when SignalDestroyed received, otherwise delete
   // happens when PortAllocatorSession dtor is called.
-  talk_base::Thread* worker_thread_;
+  rtc::Thread* worker_thread_;
   std::vector<PortInterface*> ports_;
-  talk_base::scoped_ptr<PortAllocatorSession> session_;
+  rtc::scoped_ptr<PortAllocatorSession> session_;
   std::vector<PortAllocatorSessionProxy*> session_proxies_;
   bool candidate_done_signal_received_;
 };
@@ -120,4 +120,4 @@ class PortAllocatorSessionProxy : public PortAllocatorSession {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_
+#endif  // WEBRTC_P2P_BASE_PORTALLOCATORSESSIONPROXY_H_

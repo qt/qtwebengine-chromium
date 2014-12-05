@@ -2,82 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/**
- * Shortcut for document.getElementById.
- * @param {string} id of the element.
- * @return {HTMLElement} with the id.
- */
-function $(id) {
-  return document.getElementById(id);
-}
-
-/**
- * Asserts that a given argument's value is undefined.
- * @param {object} a The argument to check.
- */
-function assertUndefined(a) {
-  if (a !== undefined) {
-    throw new Error('Assertion failed: expected undefined');
-  }
-}
-
-/**
- * Asserts that a given function call raises an exception.
- * @param {string} msg The message to print if this fails.
- * @param {Function} fn The function to call.
- * @param {string} error The name of the exception we expect to throw.
- * @return {boolean} True if it throws the exception.
- */
-function assertException(msg, fn, error) {
-  try {
-    fn();
-  } catch (e) {
-    if (error && e.name != error) {
-      throw new Error('Expected to throw ' + error + ' but threw ' + e.name +
-          ' - ' + msg);
-    }
-
-    return true;
-  }
-
-  throw new Error('Expected to throw exception');
-}
-
-/**
- * Asserts that two arrays of strings are equal.
- * @param {Array.<string>} array1 The expected array.
- * @param {Array.<string>} array2 The test array.
- */
-function assertEqualStringArrays(array1, array2) {
-  var same = true;
-  if (array1.length != array2.length) {
-    same = false;
-  }
-  for (var i = 0; i < Math.min(array1.length, array2.length); i++) {
-    if (array1[i].trim() != array2[i].trim()) {
-      same = false;
-    }
-  }
-  if (!same) {
-    throw new Error('Expected ' + JSON.stringify(array1) +
-                    ', got ' + JSON.stringify(array2));
-  }
-}
-
-/**
- * Asserts that two objects have the same JSON serialization.
- * @param {Object} obj1 The expected object.
- * @param {Object} obj2 The actual object.
- */
-function assertEqualsJSON(obj1, obj2) {
-  if (!eqJSON(obj1, obj2)) {
-    throw new Error('Expected ' + JSON.stringify(obj1) +
-                    ', got ' + JSON.stringify(obj2));
-  }
-}
-
-assertSame = assertEquals;
-assertNotSame = assertNotEquals;
+GEN_INCLUDE([
+    'chrome/browser/resources/chromeos/chromevox/testing/assert_additions.js']);
+GEN_INCLUDE([
+  'chrome/browser/resources/chromeos/chromevox/testing/common.js']);
 
 /**
  * Base test fixture for ChromeVox unit tests.
@@ -95,6 +23,13 @@ ChromeVoxUnitTestBase.prototype = {
   __proto__: testing.Test.prototype,
 
   /** @override */
+  closureModuleDeps: [
+    'cvox.ChromeVoxTester',
+    'cvox.ChromeVoxUserCommands',
+    'cvox.SpokenListBuilder',
+  ],
+
+  /** @override */
   browsePreload: DUMMY_URL,
 
   /**
@@ -105,14 +40,18 @@ ChromeVoxUnitTestBase.prototype = {
   runAccessibilityChecks: false,
 
   /**
-   * Loads some inlined html into the current document, replacing
+   * Loads some inlined html into the body of the current document, replacing
    * whatever was there previously.
    * @param {string} html The html to load as a string.
    */
   loadHtml: function(html) {
-    document.open();
-    document.write(html);
-    document.close();
+    while (document.head.firstChild) {
+      document.head.removeChild(document.head.firstChild);
+    }
+    while (document.body.firstChild) {
+      document.body.removeChild(document.body.firstChild);
+    }
+    this.appendHtml(html);
   },
 
   /**
@@ -128,9 +67,128 @@ ChromeVoxUnitTestBase.prototype = {
    *     comment inside an anonymous function - see example, above.
    */
   loadDoc: function(commentEncodedHtml) {
-    var html = commentEncodedHtml.toString().
-        replace(/^[^\/]+\/\*!?/, '').
-        replace(/\*\/[^\/]+$/, '');
+    var html =
+        TestUtils.extractHtmlFromCommentEncodedString(commentEncodedHtml);
     this.loadHtml(html);
+  },
+
+  /**
+   * Appends some inlined html into the current document, at the end of
+   * the body element. Takes the html encoded as a comment inside a function,
+   * so you can use it like this:
+   *
+   * this.appendDoc(function() {/*!
+   *     <p>Html goes here</p>
+   * * /});
+   *
+   * @param {Function} commentEncodedHtml The html to load, embedded as a
+   *     comment inside an anonymous function - see example, above.
+   */
+  appendDoc: function(commentEncodedHtml) {
+    var html =
+        TestUtils.extractHtmlFromCommentEncodedString(commentEncodedHtml);
+    this.appendHtml(html);
+  },
+
+  /**
+   * Appends some inlined html into the current document, at the end of
+   * the body element.
+   * @param {string} html The html to load as a string.
+   */
+  appendHtml: function(html) {
+    var div = document.createElement('div');
+    div.innerHTML = html;
+    var fragment = document.createDocumentFragment();
+    while (div.firstChild) {
+      fragment.appendChild(div.firstChild);
+    }
+    document.body.appendChild(fragment);
+  },
+
+  /**
+   * Waits for the queued events in ChromeVoxEventWatcher to be
+   * handled, then calls a callback function with provided arguments
+   * in the test case scope. Very useful for asserting the results of events.
+   *
+   * @param {function()} func A function to call when ChromeVox is ready.
+   * @param {*} var_args Additional arguments to pass through to the function.
+   * @return {ChromeVoxUnitTestBase} this.
+   */
+  waitForCalm: function(func, var_args) {
+    var me = this;
+    var calmArguments = Array.prototype.slice.call(arguments);
+    calmArguments.shift();
+    cvox.ChromeVoxEventWatcher.addReadyCallback(function() {
+      func.apply(me, calmArguments);
+    });
+    return this; // for chaining.
+  },
+
+  /**
+   * Asserts the TTS engine spoke a certain string. Clears the TTS buffer.
+   * @param {string} expectedText The expected text.
+   * @return {ChromeVoxUnitTestBase} this.
+   */
+  assertSpoken: function(expectedText) {
+    assertEquals(expectedText,
+                 cvox.ChromeVoxTester.testTts().getUtterancesAsString());
+    cvox.ChromeVoxTester.clearUtterances();
+    return this; // for chaining.
+  },
+
+  /**
+   * Asserts a list of utterances are in the correct queue mode.
+   * @param {cvox.SpokenListBuilder|Array} expectedList A list
+   *     of [text, queueMode] tuples OR a SpokenListBuilder with the expected
+   *     utterances.
+   * @return {ChromeVoxUnitTestBase} this.
+   */
+  assertSpokenList: function(expectedList) {
+    if (expectedList instanceof cvox.SpokenListBuilder) {
+      expectedList = expectedList.build();
+    }
+
+    var ulist = cvox.ChromeVoxTester.testTts().getUtteranceInfoList();
+    for (var i = 0; i < expectedList.length; i++) {
+      var text = expectedList[i][0];
+      var queueMode = expectedList[i][1];
+      this.assertSingleUtterance_(text, queueMode,
+                                  ulist[i].text, ulist[i].queueMode);
+    }
+    cvox.ChromeVoxTester.clearUtterances();
+    return this; // for chaining.
+  },
+
+  assertSingleUtterance_: function(
+      expectedText, expectedQueueMode, text, queueMode) {
+    assertEquals(expectedQueueMode, queueMode);
+    assertEquals(expectedText, text);
+  },
+
+  /**
+   * Focuses an element.
+   * @param {string} id The id of the element to focus.
+   * @return {ChromeVoxUnitTestBase} this.
+   */
+  setFocus: function(id) {
+    $(id).focus();
+    return this; // for chaining.
+  },
+
+  /**
+   * Executes a ChromeVox user command.
+   * @param {string} command The name of the command to run.
+   * @return {ChromeVoxUnitTestBase} this.
+   */
+  userCommand: function(command) {
+    cvox.ChromeVoxUserCommands.commands[command]();
+    return this; // for chaining.
+  },
+
+  /**
+   * @return {cvox.SpokenListBuilder} A new builder.
+   */
+  spokenList: function() {
+    return new cvox.SpokenListBuilder();
   }
 };

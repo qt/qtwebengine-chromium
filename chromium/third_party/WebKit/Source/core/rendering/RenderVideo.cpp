@@ -32,12 +32,13 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLVideoElement.h"
+#include "core/paint/VideoPainter.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderFullScreen.h"
 #include "platform/graphics/media/MediaPlayer.h"
 #include "public/platform/WebLayer.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -53,11 +54,7 @@ RenderVideo::~RenderVideo()
 
 IntSize RenderVideo::defaultSize()
 {
-    // These values are specified in the spec.
-    static const int cDefaultWidth = 300;
-    static const int cDefaultHeight = 150;
-
-    return IntSize(cDefaultWidth, cDefaultHeight);
+    return IntSize(defaultWidth, defaultHeight);
 }
 
 void RenderVideo::intrinsicSizeChanged()
@@ -97,7 +94,7 @@ LayoutSize RenderVideo::calculateIntrinsicSize()
     // The intrinsic height of a video element's playback area is the intrinsic height
     // of the video resource, if that is available; otherwise it is the intrinsic
     // height of the poster frame, if that is available; otherwise it is 150 CSS pixels.
-    blink::WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
+    WebMediaPlayer* webMediaPlayer = mediaElement()->webMediaPlayer();
     if (webMediaPlayer && video->readyState() >= HTMLVideoElement::HAVE_METADATA) {
         IntSize size = webMediaPlayer->naturalSize();
         if (!size.isEmpty())
@@ -148,37 +145,12 @@ bool RenderVideo::shouldDisplayVideo() const
 
 void RenderVideo::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    MediaPlayer* mediaPlayer = mediaElement()->player();
-    bool displayingPoster = videoElement()->shouldDisplayPosterImage();
-    if (!displayingPoster && !mediaPlayer)
-        return;
-
-    LayoutRect rect = videoBox();
-    if (rect.isEmpty())
-        return;
-    rect.moveBy(paintOffset);
-
-    LayoutRect contentRect = contentBoxRect();
-    contentRect.moveBy(paintOffset);
-    GraphicsContext* context = paintInfo.context;
-    bool clip = !contentRect.contains(rect);
-    if (clip) {
-        context->save();
-        context->clip(contentRect);
-    }
-
-    if (displayingPoster)
-        paintIntoRect(context, rect);
-    else if ((document().view() && document().view()->paintBehavior() & PaintBehaviorFlattenCompositingLayers) || !acceleratedRenderingInUse())
-        mediaPlayer->paint(context, pixelSnappedIntRect(rect));
-
-    if (clip)
-        context->restore();
+    VideoPainter(*this).paintReplaced(paintInfo, paintOffset);
 }
 
 bool RenderVideo::acceleratedRenderingInUse()
 {
-    blink::WebLayer* webLayer = mediaElement()->platformLayer();
+    WebLayer* webLayer = mediaElement()->platformLayer();
     return webLayer && !webLayer->isOrphan();
 }
 
@@ -203,7 +175,7 @@ void RenderVideo::updatePlayer()
 {
     updateIntrinsicSize();
 
-    MediaPlayer* mediaPlayer = mediaElement()->player();
+    WebMediaPlayer* mediaPlayer = mediaElement()->webMediaPlayer();
     if (!mediaPlayer)
         return;
 
@@ -274,7 +246,7 @@ LayoutUnit RenderVideo::offsetHeight() const
     return RenderMedia::offsetHeight();
 }
 
-CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+CompositingReasons RenderVideo::additionalCompositingReasons() const
 {
     if (RuntimeEnabledFeatures::overlayFullscreenVideoEnabled()) {
         HTMLMediaElement* media = toHTMLMediaElement(node());
@@ -282,10 +254,10 @@ CompositingReasons RenderVideo::additionalCompositingReasons(CompositingTriggerF
             return CompositingReasonVideo;
     }
 
-    if ((triggers & VideoTrigger) && shouldDisplayVideo() && supportsAcceleratedRendering())
+    if (shouldDisplayVideo() && supportsAcceleratedRendering())
         return CompositingReasonVideo;
 
     return CompositingReasonNone;
 }
 
-} // namespace WebCore
+} // namespace blink

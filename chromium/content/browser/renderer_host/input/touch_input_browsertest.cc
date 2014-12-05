@@ -97,7 +97,7 @@ class InputEventMessageFilter : public BrowserMessageFilter {
   InputEventAckState last_ack_state() const { return state_; }
 
  protected:
-  virtual ~InputEventMessageFilter() {}
+  ~InputEventMessageFilter() override {}
 
  private:
   void ReceivedEventAck(WebInputEvent::Type type, InputEventAckState state) {
@@ -108,7 +108,7 @@ class InputEventMessageFilter : public BrowserMessageFilter {
   }
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     if (message.type() == InputHostMsg_HandleInputEvent_ACK::ID) {
       InputHostMsg_HandleInputEvent_ACK::Param params;
       InputHostMsg_HandleInputEvent_ACK::Read(&message, &params);
@@ -131,7 +131,7 @@ class InputEventMessageFilter : public BrowserMessageFilter {
 class TouchInputBrowserTest : public ContentBrowserTest {
  public:
   TouchInputBrowserTest() {}
-  virtual ~TouchInputBrowserTest() {}
+  ~TouchInputBrowserTest() override {}
 
   RenderWidgetHostImpl* GetWidgetHost() {
     return RenderWidgetHostImpl::From(shell()->web_contents()->
@@ -156,10 +156,10 @@ class TouchInputBrowserTest : public ContentBrowserTest {
       GiveItSomeTime();
 
     filter_ = new InputEventMessageFilter();
-    host->GetProcess()->AddFilter(filter_);
+    host->GetProcess()->AddFilter(filter_.get());
   }
 
-  virtual void SetUpCommandLine(CommandLine* cmd) OVERRIDE {
+  void SetUpCommandLine(CommandLine* cmd) override {
     cmd->AppendSwitchASCII(switches::kTouchEvents,
                            switches::kTouchEventsEnabled);
   }
@@ -183,14 +183,8 @@ IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, MAYBE_TouchNoHandler) {
   GetWidgetHost()->ForwardTouchEventWithLatencyInfo(touch, ui::LatencyInfo());
   filter()->WaitForAck(WebInputEvent::TouchStart);
 
-  if (content::IsThreadedCompositingEnabled()) {
-    EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
-              filter()->last_ack_state());
-  } else {
-    // http://crbug.com/326232: This should be NO_CONSUMER_EXISTS once
-    // WebViewImpl::hasTouchEventHandlersAt() is implemented.
-    EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, filter()->last_ack_state());
-  }
+  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
+            filter()->last_ack_state());
 
   // If a touch-press is acked with NO_CONSUMER_EXISTS, then subsequent
   // touch-points don't need to be dispatched until the touch point is released.
@@ -247,14 +241,8 @@ IN_PROC_BROWSER_TEST_F(TouchInputBrowserTest, MAYBE_MultiPointTouchPress) {
   touch.PressPoint(25, 25);
   GetWidgetHost()->ForwardTouchEventWithLatencyInfo(touch, ui::LatencyInfo());
   filter()->WaitForAck(WebInputEvent::TouchStart);
-  if (content::IsThreadedCompositingEnabled()) {
-    EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
-              filter()->last_ack_state());
-  } else {
-    // http://crbug.com/326232: This should be NO_CONSUMER_EXISTS once
-    // WebViewImpl::hasTouchEventHandlersAt() is implemented.
-    EXPECT_EQ(INPUT_EVENT_ACK_STATE_NOT_CONSUMED, filter()->last_ack_state());
-  }
+  EXPECT_EQ(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS,
+            filter()->last_ack_state());
 
   touch.PressPoint(25, 125);
   GetWidgetHost()->ForwardTouchEventWithLatencyInfo(touch, ui::LatencyInfo());

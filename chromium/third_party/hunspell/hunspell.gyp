@@ -63,6 +63,15 @@
           'USE_HUNSPELL',
         ],
       },
+      'variables': {
+        'clang_warning_flags': [
+          # affentry.cxx has one `while ((p = nextchar(p)));` parsing loop.
+          '-Wno-empty-body',
+          # affentry.hxx has NULL as default parameter for a FLAG in two
+          # places.
+          '-Wno-null-conversion',
+        ],
+      },
       # TODO(jschuh): http://crbug.com/167187 size_t -> int
       'msvs_disabled_warnings': [ 4267 ],
       'conditions': [
@@ -78,21 +87,6 @@
             # affentry.hxx has NULL as default parameter for a FLAG in two
             # places.
             '-Wno-conversion-null',
-          ],
-        }],
-        ['clang == 1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              # affentry.cxx has one `while ((p = nextchar(p)));` parsing loop.
-              '-Wno-empty-body',
-              # affentry.hxx has NULL as default parameter for a FLAG in two
-              # places.
-              '-Wno-null-conversion',
-            ],
-          },
-          'cflags': [
-            '-Wno-empty-body',
-            '-Wno-null-conversion',
           ],
         }],
       ],

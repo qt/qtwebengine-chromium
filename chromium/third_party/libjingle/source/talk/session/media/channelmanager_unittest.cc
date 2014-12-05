@@ -23,17 +23,17 @@
 // OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
 // ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include "talk/base/gunit.h"
-#include "talk/base/logging.h"
-#include "talk/base/thread.h"
 #include "talk/media/base/fakecapturemanager.h"
 #include "talk/media/base/fakemediaengine.h"
 #include "talk/media/base/fakemediaprocessor.h"
 #include "talk/media/base/nullvideorenderer.h"
-#include "talk/media/devices/fakedevicemanager.h"
 #include "talk/media/base/testutils.h"
-#include "talk/p2p/base/fakesession.h"
+#include "talk/media/devices/fakedevicemanager.h"
+#include "webrtc/p2p/base/fakesession.h"
 #include "talk/session/media/channelmanager.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/thread.h"
 
 namespace cricket {
 
@@ -62,7 +62,7 @@ class ChannelManagerTest : public testing::Test {
     fdm_ = new cricket::FakeDeviceManager();
     fcm_ = new cricket::FakeCaptureManager();
     cm_ = new cricket::ChannelManager(
-        fme_, fdme_, fdm_, fcm_, talk_base::Thread::Current());
+        fme_, fdme_, fdm_, fcm_, rtc::Thread::Current());
     session_ = new cricket::FakeSession(true);
 
     std::vector<std::string> in_device_list, out_device_list, vid_device_list;
@@ -87,7 +87,7 @@ class ChannelManagerTest : public testing::Test {
     fme_ = NULL;
   }
 
-  talk_base::Thread worker_;
+  rtc::Thread worker_;
   cricket::FakeMediaEngine* fme_;
   cricket::FakeDataEngine* fdme_;
   cricket::FakeDeviceManager* fdm_;
@@ -99,7 +99,7 @@ class ChannelManagerTest : public testing::Test {
 // Test that we startup/shutdown properly.
 TEST_F(ChannelManagerTest, StartupShutdown) {
   EXPECT_FALSE(cm_->initialized());
-  EXPECT_EQ(talk_base::Thread::Current(), cm_->worker_thread());
+  EXPECT_EQ(rtc::Thread::Current(), cm_->worker_thread());
   EXPECT_TRUE(cm_->Init());
   EXPECT_TRUE(cm_->initialized());
   cm_->Terminate();
@@ -110,23 +110,14 @@ TEST_F(ChannelManagerTest, StartupShutdown) {
 TEST_F(ChannelManagerTest, StartupShutdownOnThread) {
   worker_.Start();
   EXPECT_FALSE(cm_->initialized());
-  EXPECT_EQ(talk_base::Thread::Current(), cm_->worker_thread());
+  EXPECT_EQ(rtc::Thread::Current(), cm_->worker_thread());
   EXPECT_TRUE(cm_->set_worker_thread(&worker_));
   EXPECT_EQ(&worker_, cm_->worker_thread());
   EXPECT_TRUE(cm_->Init());
   EXPECT_TRUE(cm_->initialized());
   // Setting the worker thread while initialized should fail.
-  EXPECT_FALSE(cm_->set_worker_thread(talk_base::Thread::Current()));
+  EXPECT_FALSE(cm_->set_worker_thread(rtc::Thread::Current()));
   cm_->Terminate();
-  EXPECT_FALSE(cm_->initialized());
-}
-
-// Test that we fail to startup if we're given an unstarted thread.
-// TODO(fischman): delete once Thread::RunningForChannelManager() is gone
-// (webrtc:3388).
-TEST_F(ChannelManagerTest, DISABLED_StartupShutdownOnUnstartedThread) {
-  EXPECT_TRUE(cm_->set_worker_thread(&worker_));
-  EXPECT_FALSE(cm_->Init());
   EXPECT_FALSE(cm_->initialized());
 }
 
@@ -136,9 +127,8 @@ TEST_F(ChannelManagerTest, CreateDestroyChannels) {
   cricket::VoiceChannel* voice_channel = cm_->CreateVoiceChannel(
       session_, cricket::CN_AUDIO, false);
   EXPECT_TRUE(voice_channel != NULL);
-  cricket::VideoChannel* video_channel =
-      cm_->CreateVideoChannel(session_, cricket::CN_VIDEO,
-                              false, voice_channel);
+  cricket::VideoChannel* video_channel = cm_->CreateVideoChannel(
+      session_, cricket::CN_VIDEO, false, VideoOptions(), voice_channel);
   EXPECT_TRUE(video_channel != NULL);
   cricket::DataChannel* data_channel =
       cm_->CreateDataChannel(session_, cricket::CN_DATA,
@@ -160,9 +150,8 @@ TEST_F(ChannelManagerTest, CreateDestroyChannelsOnThread) {
   cricket::VoiceChannel* voice_channel = cm_->CreateVoiceChannel(
       session_, cricket::CN_AUDIO, false);
   EXPECT_TRUE(voice_channel != NULL);
-  cricket::VideoChannel* video_channel =
-      cm_->CreateVideoChannel(session_, cricket::CN_VIDEO,
-                              false, voice_channel);
+  cricket::VideoChannel* video_channel = cm_->CreateVideoChannel(
+      session_, cricket::CN_VIDEO, false, VideoOptions(), voice_channel);
   EXPECT_TRUE(video_channel != NULL);
   cricket::DataChannel* data_channel =
       cm_->CreateDataChannel(session_, cricket::CN_DATA,
@@ -187,9 +176,8 @@ TEST_F(ChannelManagerTest, NoTransportChannelTest) {
   cricket::VoiceChannel* voice_channel = cm_->CreateVoiceChannel(
       session_, cricket::CN_AUDIO, false);
   EXPECT_TRUE(voice_channel == NULL);
-  cricket::VideoChannel* video_channel =
-      cm_->CreateVideoChannel(session_, cricket::CN_VIDEO,
-                              false, voice_channel);
+  cricket::VideoChannel* video_channel = cm_->CreateVideoChannel(
+      session_, cricket::CN_VIDEO, false, VideoOptions(), voice_channel);
   EXPECT_TRUE(video_channel == NULL);
   cricket::DataChannel* data_channel =
       cm_->CreateDataChannel(session_, cricket::CN_DATA,
@@ -276,7 +264,7 @@ TEST_F(ChannelManagerTest, SetAudioOptionsBeforeInit) {
   EXPECT_EQ(options, set_options);
   // At this point, the media engine should also be initialized.
   EXPECT_EQ(options, fme_->audio_options());
-  EXPECT_EQ(cricket::MediaEngineInterface::kDefaultAudioDelayOffset,
+  EXPECT_EQ(cricket::kDefaultAudioDelayOffset,
             fme_->audio_delay_offset());
 }
 
@@ -303,7 +291,7 @@ TEST_F(ChannelManagerTest, SetAudioOptions) {
             fme_->audio_in_device());
   EXPECT_EQ(std::string(cricket::DeviceManagerInterface::kDefaultDeviceName),
             fme_->audio_out_device());
-  EXPECT_EQ(cricket::MediaEngineInterface::kDefaultAudioDelayOffset,
+  EXPECT_EQ(cricket::kDefaultAudioDelayOffset,
             fme_->audio_delay_offset());
   // Test setting specific values.
   AudioOptions options;
@@ -315,7 +303,7 @@ TEST_F(ChannelManagerTest, SetAudioOptions) {
   EXPECT_TRUE(
       fme_->audio_options().auto_gain_control.Get(&auto_gain_control));
   EXPECT_TRUE(auto_gain_control);
-  EXPECT_EQ(cricket::MediaEngineInterface::kDefaultAudioDelayOffset,
+  EXPECT_EQ(cricket::kDefaultAudioDelayOffset,
             fme_->audio_delay_offset());
   // Test setting bad values.
   EXPECT_FALSE(cm_->SetAudioOptions("audio-in9", "audio-out2", options));
@@ -518,46 +506,30 @@ TEST_F(ChannelManagerTest, GetSetOutputVolume) {
   EXPECT_EQ(60, level);
 }
 
-// Test that a value set before Init is applied properly.
-TEST_F(ChannelManagerTest, SetLocalRendererBeforeInit) {
-  cricket::NullVideoRenderer renderer;
-  EXPECT_TRUE(cm_->SetLocalRenderer(&renderer));
-  EXPECT_TRUE(cm_->Init());
-  EXPECT_EQ(&renderer, fme_->local_renderer());
-}
-
-// Test that a value set after init is passed through properly.
-TEST_F(ChannelManagerTest, SetLocalRenderer) {
-  cricket::NullVideoRenderer renderer;
-  EXPECT_TRUE(cm_->Init());
-  EXPECT_TRUE(cm_->SetLocalRenderer(&renderer));
-  EXPECT_EQ(&renderer, fme_->local_renderer());
-}
-
 // Test that logging options set before Init are applied properly,
 // and retained even after Init.
 TEST_F(ChannelManagerTest, SetLoggingBeforeInit) {
-  cm_->SetVoiceLogging(talk_base::LS_INFO, "test-voice");
-  cm_->SetVideoLogging(talk_base::LS_VERBOSE, "test-video");
-  EXPECT_EQ(talk_base::LS_INFO, fme_->voice_loglevel());
+  cm_->SetVoiceLogging(rtc::LS_INFO, "test-voice");
+  cm_->SetVideoLogging(rtc::LS_VERBOSE, "test-video");
+  EXPECT_EQ(rtc::LS_INFO, fme_->voice_loglevel());
   EXPECT_STREQ("test-voice", fme_->voice_logfilter().c_str());
-  EXPECT_EQ(talk_base::LS_VERBOSE, fme_->video_loglevel());
+  EXPECT_EQ(rtc::LS_VERBOSE, fme_->video_loglevel());
   EXPECT_STREQ("test-video", fme_->video_logfilter().c_str());
   EXPECT_TRUE(cm_->Init());
-  EXPECT_EQ(talk_base::LS_INFO, fme_->voice_loglevel());
+  EXPECT_EQ(rtc::LS_INFO, fme_->voice_loglevel());
   EXPECT_STREQ("test-voice", fme_->voice_logfilter().c_str());
-  EXPECT_EQ(talk_base::LS_VERBOSE, fme_->video_loglevel());
+  EXPECT_EQ(rtc::LS_VERBOSE, fme_->video_loglevel());
   EXPECT_STREQ("test-video", fme_->video_logfilter().c_str());
 }
 
 // Test that logging options set after Init are applied properly.
 TEST_F(ChannelManagerTest, SetLogging) {
   EXPECT_TRUE(cm_->Init());
-  cm_->SetVoiceLogging(talk_base::LS_INFO, "test-voice");
-  cm_->SetVideoLogging(talk_base::LS_VERBOSE, "test-video");
-  EXPECT_EQ(talk_base::LS_INFO, fme_->voice_loglevel());
+  cm_->SetVoiceLogging(rtc::LS_INFO, "test-voice");
+  cm_->SetVideoLogging(rtc::LS_VERBOSE, "test-video");
+  EXPECT_EQ(rtc::LS_INFO, fme_->voice_loglevel());
   EXPECT_STREQ("test-voice", fme_->voice_logfilter().c_str());
-  EXPECT_EQ(talk_base::LS_VERBOSE, fme_->video_loglevel());
+  EXPECT_EQ(rtc::LS_VERBOSE, fme_->video_loglevel());
   EXPECT_STREQ("test-video", fme_->video_logfilter().c_str());
 }
 

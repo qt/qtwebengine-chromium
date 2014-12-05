@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Type 1 font loader (body).                                           */
 /*                                                                         */
-/*  Copyright 1996-2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009 by */
+/*  Copyright 1996-2011 by                                                 */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -69,6 +69,13 @@
 
 #include "t1load.h"
 #include "t1errors.h"
+
+
+#ifdef FT_CONFIG_OPTION_INCREMENTAL
+#define IS_INCREMENTAL  ( face->root.internal->incremental_interface != 0 )
+#else
+#define IS_INCREMENTAL  0
+#endif
 
 
   /*************************************************************************/
@@ -302,7 +309,7 @@
                  FT_MM_Var*  *master )
   {
     FT_Memory        memory = face->root.memory;
-    FT_MM_Var       *mmvar;
+    FT_MM_Var       *mmvar = NULL;
     FT_Multi_Master  mmaster;
     FT_Error         error;
     FT_UInt          i;
@@ -896,7 +903,7 @@
   }
 
 
-#endif /* T1_CONFIG_OPTION_NO_MM_SUPPORT */
+#endif /* !T1_CONFIG_OPTION_NO_MM_SUPPORT */
 
 
 
@@ -920,6 +927,9 @@
     FT_UInt   max_objects;
     PS_Blend  blend = face->blend;
 
+
+    if ( blend && blend->num_designs == 0 )
+      blend = NULL;
 
     /* if the keyword has a dedicated callback, call it */
     if ( field->type == T1_FIELD_TYPE_CALLBACK )
@@ -1027,7 +1037,8 @@
   static int
   read_binary_data( T1_Parser  parser,
                     FT_Long*   size,
-                    FT_Byte**  base )
+                    FT_Byte**  base,
+                    FT_Bool    incremental )
   {
     FT_Byte*  cur;
     FT_Byte*  limit = parser->root.limit;
@@ -1045,7 +1056,8 @@
 
     if ( cur < limit && ft_isdigit( *cur ) )
     {
-      *size = T1_ToInt( parser );
+      FT_Long  s = T1_ToInt( parser );
+
 
       T1_Skip_PS_Token( parser );   /* `RD' or `-|' or something else */
 
@@ -1053,12 +1065,20 @@
       /* `RD' or `-|' token                          */
       *base = parser->root.cursor + 1;
 
-      parser->root.cursor += *size + 1;
-      return !parser->root.error;
+      if ( s >= 0 && s < limit - *base )
+      {
+        parser->root.cursor += s + 1;
+        *size = s;
+        return !parser->root.error;
+      }
     }
 
-    FT_ERROR(( "read_binary_data: invalid size field\n" ));
-    parser->root.error = T1_Err_Invalid_File_Format;
+    if( !incremental )
+    {
+      FT_ERROR(( "read_binary_data: invalid size field\n" ));
+      parser->root.error = T1_Err_Invalid_File_Format;
+    }
+
     return 0;
   }
 
@@ -1111,7 +1131,7 @@
       temp[2] = FT_DivFix( temp[2], temp_scale );
       temp[4] = FT_DivFix( temp[4], temp_scale );
       temp[5] = FT_DivFix( temp[5], temp_scale );
-      temp[3] = 0x10000L;
+      temp[3] = temp[3] < 0 ? -0x10000L : 0x10000L;
     }
 
     matrix->xx = temp[0];
@@ -1379,15 +1399,17 @@
       FT_Byte*  base;
 
 
-      /* If the next token isn't `dup' we are done. */
-      if ( ft_strncmp( (char*)parser->root.cursor, "dup", 3 ) != 0 )
+      /* If we are out of data, or if the next token isn't `dup', */
+      /* we are done.                                             */
+      if ( parser->root.cursor + 4 >= parser->root.limit          ||
+          ft_strncmp( (char*)parser->root.cursor, "dup", 3 ) != 0 )
         break;
 
       T1_Skip_PS_Token( parser );       /* `dup' */
 
       idx = T1_ToInt( parser );
 
-      if ( !read_binary_data( parser, &size, &base ) )
+      if ( !read_binary_data( parser, &size, &base, IS_INCREMENTAL ) )
         return;
 
       /* The binary string is followed by one token, e.g. `NP' */
@@ -1399,7 +1421,8 @@
         return;
       T1_Skip_Spaces  ( parser );
 
-      if ( ft_strncmp( (char*)parser->root.cursor, "put", 3 ) == 0 )
+      if ( parser->root.cursor + 4 < parser->root.limit            &&
+           ft_strncmp( (char*)parser->root.cursor, "put", 3 ) == 0 )
       {
         T1_Skip_PS_Token( parser ); /* skip `put' */
         T1_Skip_Spaces  ( parser );
@@ -1572,7 +1595,7 @@
         cur++;                              /* skip `/' */
         len = parser->root.cursor - cur;
 
-        if ( !read_binary_data( parser, &size, &base ) )
+        if ( !read_binary_data( parser, &size, &base, IS_INCREMENTAL ) )
           return;
 
         /* for some non-standard fonts like `Optima' which provides */
@@ -1861,7 +1884,7 @@
 
 
         parser->root.cursor = start_binary;
-        if ( !read_binary_data( parser, &s, &b ) )
+        if ( !read_binary_data( parser, &s, &b, IS_INCREMENTAL ) )
           return T1_Err_Invalid_File_Format;
         have_integer = 0;
       }
@@ -1874,7 +1897,7 @@
 
 
         parser->root.cursor = start_binary;
-        if ( !read_binary_data( parser, &s, &b ) )
+        if ( !read_binary_data( parser, &s, &b, IS_INCREMENTAL ) )
           return T1_Err_Invalid_File_Format;
         have_integer = 0;
       }
@@ -2132,8 +2155,10 @@
         }
       }
     }
+    else
+      face->len_buildchar = 0;
 
-#endif /* T1_CONFIG_OPTION_NO_MM_SUPPORT */
+#endif /* !T1_CONFIG_OPTION_NO_MM_SUPPORT */
 
     /* now, propagate the subrs, charstrings, and glyphnames tables */
     /* to the Type1 data                                            */
@@ -2148,9 +2173,7 @@
       type1->subrs_len   = loader.subrs.lengths;
     }
 
-#ifdef FT_CONFIG_OPTION_INCREMENTAL
-    if ( !face->root.internal->incremental_interface )
-#endif
+    if ( !IS_INCREMENTAL )
       if ( !loader.charstrings.init )
       {
         FT_ERROR(( "T1_Open_Face: no `/CharStrings' array in face\n" ));
@@ -2180,7 +2203,7 @@
       /* OK, we do the following: for each element in the encoding  */
       /* table, look up the index of the glyph having the same name */
       /* the index is then stored in type1.encoding.char_index, and */
-      /* a the name to type1.encoding.char_name                     */
+      /* the name to type1.encoding.char_name                       */
 
       min_char = 0;
       max_char = 0;

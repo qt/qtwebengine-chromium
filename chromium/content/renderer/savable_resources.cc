@@ -70,8 +70,8 @@ void GetSavableResourceLinkForElement(
     SavableResourcesResult* result) {
 
   // Handle frame and iframe tag.
-  if (element.hasTagName("iframe") ||
-      element.hasTagName("frame")) {
+  if (element.hasHTMLTagName("iframe") ||
+      element.hasHTMLTagName("frame")) {
     WebFrame* sub_frame = WebLocalFrame::fromFrameOwnerElement(element);
     if (sub_frame)
       unique_check->frames->push_back(sub_frame);
@@ -90,7 +90,7 @@ void GetSavableResourceLinkForElement(
   // Ignore those URLs which are not standard protocols. Because FTP
   // protocol does no have cache mechanism, we will skip all
   // sub-resources if they use FTP protocol.
-  if (!u.SchemeIsHTTPOrHTTPS() && !u.SchemeIs("file"))
+  if (!u.SchemeIsHTTPOrHTTPS() && !u.SchemeIs(url::kFileScheme))
     return;
   // Ignore duplicated resource link.
   if (!unique_check->resources_set->insert(u).second)

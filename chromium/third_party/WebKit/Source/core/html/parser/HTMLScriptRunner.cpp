@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/parser/HTMLScriptRunner.h"
 
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/dom/Element.h"
 #include "core/events/Event.h"
 #include "core/dom/IgnoreDestructiveWriteCountIncrementer.h"
@@ -38,8 +38,9 @@
 #include "core/html/parser/HTMLScriptRunnerHost.h"
 #include "core/html/parser/NestingLevelIncrementer.h"
 #include "platform/NotImplemented.h"
+#include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -48,6 +49,7 @@ HTMLScriptRunner::HTMLScriptRunner(Document* document, HTMLScriptRunnerHost* hos
     , m_host(host)
     , m_scriptNestingLevel(0)
     , m_hasScriptsWaitingForResources(false)
+    , m_parserBlockingScriptAlreadyLoaded(false)
 {
     ASSERT(m_host);
 }
@@ -71,13 +73,13 @@ void HTMLScriptRunner::detach()
     if (!m_document)
         return;
 
-    if (m_parserBlockingScript.resource() && m_parserBlockingScript.watchingForLoad())
-        stopWatchingForLoad(m_parserBlockingScript);
+    m_parserBlockingScript.stopWatchingForLoad(this);
+    m_parserBlockingScript.releaseElementAndClear();
 
     while (!m_scriptsToExecuteAfterParsing.isEmpty()) {
         PendingScript pendingScript = m_scriptsToExecuteAfterParsing.takeFirst();
-        if (pendingScript.resource() && pendingScript.watchingForLoad())
-            stopWatchingForLoad(pendingScript);
+        pendingScript.stopWatchingForLoad(this);
+        pendingScript.releaseElementAndClear();
     }
     m_document = nullptr;
 }
@@ -102,25 +104,12 @@ inline PassRefPtrWillBeRawPtr<Event> createScriptLoadEvent()
     return Event::create(EventTypeNames::load);
 }
 
-ScriptSourceCode HTMLScriptRunner::sourceFromPendingScript(const PendingScript& script, bool& errorOccurred) const
-{
-    if (script.resource()) {
-        errorOccurred = script.resource()->errorOccurred();
-        ASSERT(script.resource()->isLoaded());
-        return ScriptSourceCode(script.resource());
-    }
-    errorOccurred = false;
-    return ScriptSourceCode(script.element()->textContent(), documentURLForScriptExecution(m_document), script.startingPosition());
-}
-
 bool HTMLScriptRunner::isPendingScriptReady(const PendingScript& script)
 {
     m_hasScriptsWaitingForResources = !m_document->isScriptExecutionReady();
     if (m_hasScriptsWaitingForResources)
         return false;
-    if (script.resource() && !script.resource()->isLoaded())
-        return false;
-    return true;
+    return script.isReady();
 }
 
 void HTMLScriptRunner::executeParsingBlockingScript()
@@ -131,21 +120,21 @@ void HTMLScriptRunner::executeParsingBlockingScript()
     ASSERT(isPendingScriptReady(m_parserBlockingScript));
 
     InsertionPointRecord insertionPointRecord(m_host->inputStream());
-    executePendingScriptAndDispatchEvent(m_parserBlockingScript, PendingScriptBlockingParser);
+    executePendingScriptAndDispatchEvent(m_parserBlockingScript, PendingScript::ParsingBlocking);
 }
 
-void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendingScript, PendingScriptType pendingScriptType)
+void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendingScript, PendingScript::Type pendingScriptType)
 {
     bool errorOccurred = false;
-    ScriptSourceCode sourceCode = sourceFromPendingScript(pendingScript, errorOccurred);
+    double loadFinishTime = pendingScript.resource() && pendingScript.resource()->url().protocolIsInHTTPFamily() ? pendingScript.resource()->loadFinishTime() : 0;
+    ScriptSourceCode sourceCode = pendingScript.getSource(documentURLForScriptExecution(m_document), errorOccurred);
 
     // Stop watching loads before executeScript to prevent recursion if the script reloads itself.
-    if (pendingScript.resource() && pendingScript.watchingForLoad())
-        stopWatchingForLoad(pendingScript);
+    pendingScript.stopWatchingForLoad(this);
 
     if (!isExecutingScript()) {
         Microtask::performCheckpoint();
-        if (pendingScriptType == PendingScriptBlockingParser) {
+        if (pendingScriptType == PendingScript::ParsingBlocking) {
             m_hasScriptsWaitingForResources = !m_document->isScriptExecutionReady();
             // The parser cannot be unblocked as a microtask requested another resource
             if (m_hasScriptsWaitingForResources)
@@ -155,6 +144,7 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
 
     // Clear the pending script before possible rentrancy from executeScript()
     RefPtrWillBeRawPtr<Element> element = pendingScript.releaseElementAndClear();
+    double compilationFinishTime = 0;
     if (ScriptLoader* scriptLoader = toScriptLoaderIfPossible(element.get())) {
         NestingLevelIncrementer nestingLevelIncrementer(m_scriptNestingLevel);
         IgnoreDestructiveWriteCountIncrementer ignoreDestructiveWriteCountIncrementer(m_document);
@@ -162,29 +152,17 @@ void HTMLScriptRunner::executePendingScriptAndDispatchEvent(PendingScript& pendi
             scriptLoader->dispatchErrorEvent();
         else {
             ASSERT(isExecutingScript());
-            scriptLoader->executeScript(sourceCode);
+            scriptLoader->executeScript(sourceCode, &compilationFinishTime);
             element->dispatchEvent(createScriptLoadEvent());
         }
     }
+    // The exact value doesn't matter; valid time stamps are much bigger than this value.
+    const double epsilon = 1;
+    if (pendingScriptType == PendingScript::ParsingBlocking && !m_parserBlockingScriptAlreadyLoaded && compilationFinishTime > epsilon && loadFinishTime > epsilon) {
+        blink::Platform::current()->histogramCustomCounts("WebCore.Scripts.ParsingBlocking.TimeBetweenLoadedAndCompiled", (compilationFinishTime - loadFinishTime) * 1000, 0, 10000, 50);
+    }
+
     ASSERT(!isExecutingScript());
-}
-
-void HTMLScriptRunner::watchForLoad(PendingScript& pendingScript)
-{
-    ASSERT(!pendingScript.watchingForLoad());
-    ASSERT(!pendingScript.resource()->isLoaded());
-    // addClient() will call notifyFinished() if the load is complete.
-    // Callers do not expect to be re-entered from this call, so they
-    // should not become a client of an already-loaded Resource.
-    pendingScript.resource()->addClient(this);
-    pendingScript.setWatchingForLoad(true);
-}
-
-void HTMLScriptRunner::stopWatchingForLoad(PendingScript& pendingScript)
-{
-    ASSERT(pendingScript.watchingForLoad());
-    pendingScript.resource()->removeClient(this);
-    pendingScript.setWatchingForLoad(false);
 }
 
 void HTMLScriptRunner::notifyFinished(Resource* cachedResource)
@@ -231,7 +209,7 @@ void HTMLScriptRunner::executeScriptsWaitingForLoad(Resource* resource)
     ASSERT(!isExecutingScript());
     ASSERT(hasParserBlockingScript());
     ASSERT_UNUSED(resource, m_parserBlockingScript.resource() == resource);
-    ASSERT(m_parserBlockingScript.resource()->isLoaded());
+    ASSERT(m_parserBlockingScript.isReady());
     executeParsingBlockingScripts();
 }
 
@@ -252,12 +230,12 @@ bool HTMLScriptRunner::executeScriptsWaitingForParsing()
         ASSERT(!isExecutingScript());
         ASSERT(!hasParserBlockingScript());
         ASSERT(m_scriptsToExecuteAfterParsing.first().resource());
-        if (!m_scriptsToExecuteAfterParsing.first().resource()->isLoaded()) {
-            watchForLoad(m_scriptsToExecuteAfterParsing.first());
+        if (!m_scriptsToExecuteAfterParsing.first().isReady()) {
+            m_scriptsToExecuteAfterParsing.first().watchForLoad(this);
             return false;
         }
         PendingScript first = m_scriptsToExecuteAfterParsing.takeFirst();
-        executePendingScriptAndDispatchEvent(first, PendingScriptDeferred);
+        executePendingScriptAndDispatchEvent(first, PendingScript::Deferred);
         // FIXME: What is this m_document check for?
         if (!m_document)
             return false;
@@ -272,11 +250,21 @@ void HTMLScriptRunner::requestParsingBlockingScript(Element* element)
 
     ASSERT(m_parserBlockingScript.resource());
 
+    // Exclude already loaded resources (from memory cache) and reloads from the
+    // computation of
+    // WebCore.Scripts.ParsingBlocking.TimeBetweenLoadedAndCompiled (done after
+    // the script is compiled).
+    m_parserBlockingScriptAlreadyLoaded = m_parserBlockingScript.resource()->isLoaded() || m_parserBlockingScript.resource()->resourceToRevalidate();
+    blink::Platform::current()->histogramEnumeration("WebCore.Scripts.ParsingBlocking.AlreadyLoaded", m_parserBlockingScriptAlreadyLoaded ? 1 : 0, 2);
+
     // We only care about a load callback if resource is not already
     // in the cache. Callers will attempt to run the m_parserBlockingScript
     // if possible before returning control to the parser.
-    if (!m_parserBlockingScript.resource()->isLoaded())
-        watchForLoad(m_parserBlockingScript);
+    if (!m_parserBlockingScript.isReady()) {
+        if (m_document->frame())
+            ScriptStreamer::startStreaming(m_parserBlockingScript, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()), PendingScript::ParsingBlocking);
+        m_parserBlockingScript.watchForLoad(this);
+    }
 }
 
 void HTMLScriptRunner::requestDeferredScript(Element* element)
@@ -286,6 +274,9 @@ void HTMLScriptRunner::requestDeferredScript(Element* element)
         return;
 
     ASSERT(pendingScript.resource());
+    if (m_document->frame() && !pendingScript.isReady())
+        ScriptStreamer::startStreaming(pendingScript, m_document->frame()->settings(), ScriptState::forMainWorld(m_document->frame()), PendingScript::Deferred);
+
     m_scriptsToExecuteAfterParsing.append(pendingScript);
 }
 

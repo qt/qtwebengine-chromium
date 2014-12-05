@@ -31,22 +31,26 @@
 
 import sys
 import time
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.host_mock import MockHost
 from webkitpy.layout_tests.controllers.manager import Manager
 from webkitpy.layout_tests.models import test_expectations
 from webkitpy.layout_tests.models.test_run_results import TestRunResults
-from webkitpy.thirdparty.mock import Mock
 from webkitpy.tool.mocktool import MockOptions
+
+
+class FakePrinter(object):
+    def write_update(self, s):
+        pass
 
 
 class ManagerTest(unittest.TestCase):
     def test_needs_servers(self):
         def get_manager():
-            port = Mock()  # FIXME: Use a tighter mock.
-            port.TEST_PATH_SEPARATOR = '/'
-            manager = Manager(port, options=MockOptions(http=True, max_locked_shards=1), printer=Mock())
+            host = MockHost()
+            port = host.port_factory.get('test-mac-leopard')
+            manager = Manager(port, options=MockOptions(http=True, max_locked_shards=1), printer=FakePrinter())
             return manager
 
         manager = get_manager()
@@ -57,7 +61,7 @@ class ManagerTest(unittest.TestCase):
 
     def test_servers_started(self):
         def get_manager(port):
-            manager = Manager(port, options=MockOptions(http=True, max_locked_shards=1), printer=Mock())
+            manager = Manager(port, options=MockOptions(http=True, max_locked_shards=1), printer=FakePrinter())
             return manager
 
         def start_http_server(additional_dirs, number_of_drivers):
@@ -109,7 +113,7 @@ class ManagerTest(unittest.TestCase):
         def get_manager():
             host = MockHost()
             port = host.port_factory.get('test-mac-leopard')
-            manager = Manager(port, options=MockOptions(test_list=None, http=True, max_locked_shards=1), printer=Mock())
+            manager = Manager(port, options=MockOptions(test_list=None, http=True, max_locked_shards=1), printer=FakePrinter())
             return manager
         host = MockHost()
         port = host.port_factory.get('test-mac-leopard')
@@ -118,3 +122,55 @@ class ManagerTest(unittest.TestCase):
         run_results = TestRunResults(expectations, len(tests))
         manager = get_manager()
         manager._look_for_new_crash_logs(run_results, time.time())
+
+    def _make_fake_test_result(self, host, results_directory):
+        host.filesystem.maybe_make_directory(results_directory)
+        host.filesystem.write_binary_file(results_directory + '/results.html', 'This is a test results file')
+
+    def test_rename_results_folder(self):
+        host = MockHost()
+        port = host.port_factory.get('test-mac-leopard')
+
+        def get_manager():
+            manager = Manager(port, options=MockOptions(max_locked_shards=1), printer=FakePrinter())
+            return manager
+        self._make_fake_test_result(port.host, '/tmp/layout-test-results')
+        self.assertTrue(port.host.filesystem.exists('/tmp/layout-test-results'))
+        timestamp = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime(port.host.filesystem.mtime('/tmp/layout-test-results/results.html')))
+        archived_file_name = '/tmp/layout-test-results' + '_' + timestamp
+        manager = get_manager()
+        manager._rename_results_folder()
+        self.assertFalse(port.host.filesystem.exists('/tmp/layout-test-results'))
+        self.assertTrue(port.host.filesystem.exists(archived_file_name))
+
+    def test_clobber_old_results(self):
+        host = MockHost()
+        port = host.port_factory.get('test-mac-leopard')
+
+        def get_manager():
+            manager = Manager(port, options=MockOptions(max_locked_shards=1), printer=FakePrinter())
+            return manager
+        self._make_fake_test_result(port.host, '/tmp/layout-test-results')
+        self.assertTrue(port.host.filesystem.exists('/tmp/layout-test-results'))
+        manager = get_manager()
+        manager._clobber_old_results()
+        self.assertFalse(port.host.filesystem.exists('/tmp/layout-test-results'))
+
+    def test_limit_archived_results_count(self):
+        host = MockHost()
+        port = host.port_factory.get('test-mac-leopard')
+
+        def get_manager():
+            manager = Manager(port, options=MockOptions(max_locked_shards=1), printer=FakePrinter())
+            return manager
+        for x in range(1, 31):
+            dir_name = '/tmp/layout-test-results' + '_' + str(x)
+            self._make_fake_test_result(port.host, dir_name)
+        manager = get_manager()
+        manager._limit_archived_results_count()
+        deleted_dir_count = 0
+        for x in range(1, 31):
+            dir_name = '/tmp/layout-test-results' + '_' + str(x)
+            if not port.host.filesystem.exists(dir_name):
+                deleted_dir_count = deleted_dir_count + 1
+        self.assertEqual(deleted_dir_count, 5)

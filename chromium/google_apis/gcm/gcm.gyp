@@ -10,6 +10,7 @@
   'targets': [
     # The public GCM target.
     {
+      # GN version: //google_apis/gcm
       'target_name': 'gcm',
       'type': '<(component)',
       'variables': {
@@ -37,12 +38,15 @@
         '../../url/url.gyp:url_lib',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'base/mcs_message.cc',
         'base/mcs_message.h',
         'base/mcs_util.cc',
         'base/mcs_util.h',
         'base/socket_stream.cc',
         'base/socket_stream.h',
+        'engine/account_mapping.cc',
+        'engine/account_mapping.h',
         'engine/checkin_request.cc',
         'engine/checkin_request.h',
         'engine/connection_factory.cc',
@@ -81,6 +85,7 @@
 
     # The test support library that is needed to test gcm.
     {
+      # GN version: //google_apis/gcm:test_support
       'target_name': 'gcm_test_support',
       'type': 'static_library',
       'include_dirs': [
@@ -96,6 +101,7 @@
         'gcm',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'base/fake_encryptor.cc',
         'base/fake_encryptor.h',
         'engine/fake_connection_factory.cc',
@@ -105,10 +111,11 @@
         'monitoring/fake_gcm_stats_recorder.cc',
         'monitoring/fake_gcm_stats_recorder.h',
       ],
-    },    
+    },
 
     # A standalone MCS (mobile connection server) client.
     {
+      # GN version: //google_apis/gcm:mcs_probe
       'target_name': 'mcs_probe',
       'type': 'executable',
       'variables': { 'enable_wexit_time_destructors': 1, },
@@ -124,6 +131,7 @@
         'gcm_test_support'
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'tools/mcs_probe.cc',
       ],
     },
@@ -146,7 +154,6 @@
         '../../net/net.gyp:net_test_support',
         '../../testing/gtest.gyp:gtest',
         '../../third_party/protobuf/protobuf.gyp:protobuf_lite',
-        'mcs_probe',
         'gcm',
         'gcm_test_support'
       ],
@@ -154,6 +161,7 @@
         'base/mcs_message_unittest.cc',
         'base/mcs_util_unittest.cc',
         'base/socket_stream_unittest.cc',
+        'engine/account_mapping_unittest.cc',
         'engine/checkin_request_unittest.cc',
         'engine/connection_factory_impl_unittest.cc',
         'engine/connection_handler_impl_unittest.cc',

@@ -10,44 +10,41 @@
 #include "wtf/Forward.h"
 
 namespace blink {
-class WebServiceWorkerProvider;
-}
-
-namespace WebCore {
 
 class ExecutionContext;
+class WebServiceWorkerProvider;
 
 // This mainly exists to provide access to WebServiceWorkerProvider.
 // Owned by Document (or WorkerClients).
-class ServiceWorkerContainerClient FINAL :
-    public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerContainerClient>,
-    public DocumentSupplement,
-    public WillBeHeapSupplement<WorkerClients> {
+class ServiceWorkerContainerClient final
+    : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerContainerClient>
+    , public DocumentSupplement
+    , public WillBeHeapSupplement<WorkerClients> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerContainerClient);
     WTF_MAKE_NONCOPYABLE(ServiceWorkerContainerClient);
 public:
-    static PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> create(PassOwnPtr<blink::WebServiceWorkerProvider>);
+    static PassOwnPtrWillBeRawPtr<ServiceWorkerContainerClient> create(PassOwnPtr<WebServiceWorkerProvider>);
     virtual ~ServiceWorkerContainerClient();
 
-    blink::WebServiceWorkerProvider* provider() { return m_provider.get(); }
+    WebServiceWorkerProvider* provider() { return m_provider.get(); }
 
     static const char* supplementName();
     static ServiceWorkerContainerClient* from(ExecutionContext*);
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         DocumentSupplement::trace(visitor);
         WillBeHeapSupplement<WorkerClients>::trace(visitor);
     }
 
 protected:
-    explicit ServiceWorkerContainerClient(PassOwnPtr<blink::WebServiceWorkerProvider>);
+    explicit ServiceWorkerContainerClient(PassOwnPtr<WebServiceWorkerProvider>);
 
-    OwnPtr<blink::WebServiceWorkerProvider> m_provider;
+    OwnPtr<WebServiceWorkerProvider> m_provider;
 };
 
-void provideServiceWorkerContainerClientToWorker(WorkerClients*, PassOwnPtr<blink::WebServiceWorkerProvider>);
+void provideServiceWorkerContainerClientToWorker(WorkerClients*, PassOwnPtr<WebServiceWorkerProvider>);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ServiceWorkerContainerClient_h

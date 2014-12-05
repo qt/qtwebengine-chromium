@@ -14,7 +14,7 @@ const char* const StatisticsExtension::kSource =
 v8::Handle<v8::FunctionTemplate> StatisticsExtension::GetNativeFunctionTemplate(
     v8::Isolate* isolate,
     v8::Handle<v8::String> str) {
-  ASSERT(strcmp(*v8::String::Utf8Value(str), "getV8Statistics") == 0);
+  DCHECK(strcmp(*v8::String::Utf8Value(str), "getV8Statistics") == 0);
   return v8::FunctionTemplate::New(isolate, StatisticsExtension::GetCounters);
 }
 
@@ -53,7 +53,8 @@ void StatisticsExtension::GetCounters(
   Heap* heap = isolate->heap();
 
   if (args.Length() > 0) {  // GC if first argument evaluates to true.
-    if (args[0]->IsBoolean() && args[0]->ToBoolean()->Value()) {
+    if (args[0]->IsBoolean() &&
+        args[0]->ToBoolean(args.GetIsolate())->Value()) {
       heap->CollectAllGarbage(Heap::kNoGCFlags, "counters extension");
     }
   }

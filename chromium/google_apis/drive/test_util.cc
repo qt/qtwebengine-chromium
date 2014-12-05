@@ -4,7 +4,7 @@
 
 #include "google_apis/drive/test_util.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
@@ -119,8 +119,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleDownloadFileRequest(
   std::string remaining_path;
   if (!RemovePrefix(absolute_url.path(), "/files/", &remaining_path))
     return scoped_ptr<net::test_server::HttpResponse>();
-  return CreateHttpResponseFromFile(
-      GetTestFilePath(remaining_path)).PassAs<net::test_server::HttpResponse>();
+  return CreateHttpResponseFromFile(GetTestFilePath(remaining_path));
 }
 
 bool ParseContentRangeHeader(const std::string& value,

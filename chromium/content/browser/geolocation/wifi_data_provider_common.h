@@ -25,7 +25,7 @@ base::string16 MacAddressAsString16(const uint8 mac_as_int[6]);
 // do polling behavior is taken care of by this base class, and all the platform
 // need do is provide the underlying WLAN access API and polling policy.
 // Also designed this way for ease of testing the cross-platform behavior.
-class CONTENT_EXPORT WifiDataProviderCommon : public WifiDataProviderImplBase {
+class CONTENT_EXPORT WifiDataProviderCommon : public WifiDataProvider {
  public:
   // Interface to abstract the low level data OS library call, and to allow
   // mocking (hence public).
@@ -38,13 +38,13 @@ class CONTENT_EXPORT WifiDataProviderCommon : public WifiDataProviderImplBase {
 
   WifiDataProviderCommon();
 
-  // WifiDataProviderImplBase implementation
-  virtual void StartDataProvider() OVERRIDE;
-  virtual void StopDataProvider() OVERRIDE;
-  virtual bool GetData(WifiData* data) OVERRIDE;
+  // WifiDataProvider implementation
+  void StartDataProvider() override;
+  void StopDataProvider() override;
+  bool GetData(WifiData* data) override;
 
  protected:
-  virtual ~WifiDataProviderCommon();
+  ~WifiDataProviderCommon() override;
 
   // Returns ownership.
   virtual WlanApiInterface* NewWlanApi() = 0;

@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/process/kill.h"
@@ -34,7 +34,7 @@ class OrphanedTestServerFilter : public base::ProcessFilter {
       : path_string_(path_string),
         port_string_(port_string) {}
 
-  virtual bool Includes(const base::ProcessEntry& entry) const OVERRIDE {
+  bool Includes(const base::ProcessEntry& entry) const override {
     if (entry.parent_pid() != 1)
       return false;
     bool found_path_string = false;

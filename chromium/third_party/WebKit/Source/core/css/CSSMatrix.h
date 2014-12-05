@@ -26,16 +26,17 @@
 #ifndef CSSMatrix_h
 #define CSSMatrix_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class CSSMatrix FINAL : public RefCountedWillBeGarbageCollectedFinalized<CSSMatrix>, public ScriptWrappable {
+class CSSMatrix final : public RefCountedWillBeGarbageCollected<CSSMatrix>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<CSSMatrix> create(const TransformationMatrix& m)
     {
@@ -156,6 +157,6 @@ protected:
     TransformationMatrix m_matrix;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSMatrix_h

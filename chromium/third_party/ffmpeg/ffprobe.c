@@ -33,6 +33,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
+#include "libavutil/hash.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/dict.h"
@@ -80,6 +81,7 @@ static int show_private_data            = 1;
 
 static char *print_format;
 static char *stream_specifier;
+static char *show_data_hash;
 
 typedef struct {
     int id;             ///< identifier
@@ -123,6 +125,8 @@ typedef enum {
     SECTION_ID_FRAME,
     SECTION_ID_FRAMES,
     SECTION_ID_FRAME_TAGS,
+    SECTION_ID_FRAME_SIDE_DATA_LIST,
+    SECTION_ID_FRAME_SIDE_DATA,
     SECTION_ID_LIBRARY_VERSION,
     SECTION_ID_LIBRARY_VERSIONS,
     SECTION_ID_PACKET,
@@ -152,8 +156,10 @@ static struct section sections[] = {
     [SECTION_ID_FORMAT] =             { SECTION_ID_FORMAT, "format", 0, { SECTION_ID_FORMAT_TAGS, -1 } },
     [SECTION_ID_FORMAT_TAGS] =        { SECTION_ID_FORMAT_TAGS, "tags", SECTION_FLAG_HAS_VARIABLE_FIELDS, { -1 }, .element_name = "tag", .unique_name = "format_tags" },
     [SECTION_ID_FRAMES] =             { SECTION_ID_FRAMES, "frames", SECTION_FLAG_IS_ARRAY, { SECTION_ID_FRAME, SECTION_ID_SUBTITLE, -1 } },
-    [SECTION_ID_FRAME] =              { SECTION_ID_FRAME, "frame", 0, { SECTION_ID_FRAME_TAGS, -1 } },
+    [SECTION_ID_FRAME] =              { SECTION_ID_FRAME, "frame", 0, { SECTION_ID_FRAME_TAGS, SECTION_ID_FRAME_SIDE_DATA_LIST, -1 } },
     [SECTION_ID_FRAME_TAGS] =         { SECTION_ID_FRAME_TAGS, "tags", SECTION_FLAG_HAS_VARIABLE_FIELDS, { -1 }, .element_name = "tag", .unique_name = "frame_tags" },
+    [SECTION_ID_FRAME_SIDE_DATA_LIST] ={ SECTION_ID_FRAME_SIDE_DATA_LIST, "side_data_list", SECTION_FLAG_IS_ARRAY, { SECTION_ID_FRAME_SIDE_DATA, -1 } },
+    [SECTION_ID_FRAME_SIDE_DATA] =     { SECTION_ID_FRAME_SIDE_DATA, "side_data", 0, { -1 } },
     [SECTION_ID_LIBRARY_VERSIONS] =   { SECTION_ID_LIBRARY_VERSIONS, "library_versions", SECTION_FLAG_IS_ARRAY, { SECTION_ID_LIBRARY_VERSION, -1 } },
     [SECTION_ID_LIBRARY_VERSION] =    { SECTION_ID_LIBRARY_VERSION, "library_version", 0, { -1 } },
     [SECTION_ID_PACKETS] =            { SECTION_ID_PACKETS, "packets", SECTION_FLAG_IS_ARRAY, { SECTION_ID_PACKET, -1} },
@@ -183,6 +189,8 @@ static const OptionDef *options;
 static const char *input_filename;
 static AVInputFormat *iformat = NULL;
 
+static struct AVHashContext *hash;
+
 static const char *const binary_unit_prefixes [] = { "", "Ki", "Mi", "Gi", "Ti", "Pi" };
 static const char *const decimal_unit_prefixes[] = { "", "K" , "M" , "G" , "T" , "P"  };
 
@@ -191,6 +199,7 @@ static const char unit_hertz_str[]          = "Hz"   ;
 static const char unit_byte_str[]           = "byte" ;
 static const char unit_bit_per_second_str[] = "bit/s";
 
+static int nb_streams;
 static uint64_t *nb_streams_packets;
 static uint64_t *nb_streams_frames;
 static int *selected_streams;
@@ -678,6 +687,21 @@ static void writer_print_data(WriterContext *wctx, const char *name,
     }
     writer_print_string(wctx, name, bp.str, 0);
     av_bprint_finalize(&bp, NULL);
+}
+
+static void writer_print_data_hash(WriterContext *wctx, const char *name,
+                                   uint8_t *data, int size)
+{
+    char *p, buf[AV_HASH_MAX_SIZE * 2 + 64] = { 0 };
+
+    if (!hash)
+        return;
+    av_hash_init(hash);
+    av_hash_update(hash, data, size);
+    snprintf(buf, sizeof(buf), "%s:", av_hash_get_name(hash));
+    p = buf + strlen(buf);
+    av_hash_final_hex(hash, p, buf + sizeof(buf) - p);
+    writer_print_string(wctx, name, buf, 0);
 }
 
 #define MAX_REGISTERED_WRITERS_NB 64
@@ -1632,6 +1656,14 @@ static void writer_register_all(void)
 #define print_section_header(s) writer_print_section_header(w, s)
 #define print_section_footer(s) writer_print_section_footer(w, s)
 
+#define REALLOCZ_ARRAY_STREAM(ptr, cur_n, new_n)                        \
+{                                                                       \
+    ret = av_reallocp_array(&(ptr), (new_n), sizeof(*(ptr)));           \
+    if (ret < 0)                                                        \
+        goto end;                                                       \
+    memset( (ptr) + (cur_n), 0, ((new_n) - (cur_n)) * sizeof(*(ptr)) ); \
+}
+
 static inline int show_tags(WriterContext *w, AVDictionary *tags, int section_id)
 {
     AVDictionaryEntry *tag = NULL;
@@ -1679,6 +1711,7 @@ static void show_packet(WriterContext *w, AVFormatContext *fmt_ctx, AVPacket *pk
     print_fmt("flags", "%c",      pkt->flags & AV_PKT_FLAG_KEY ? 'K' : '_');
     if (do_show_data)
         writer_print_data(w, "data", pkt->data, pkt->size);
+    writer_print_data_hash(w, "data_hash", pkt->data, pkt->size);
     writer_print_section_footer(w);
 
     av_bprint_finalize(&pbuf, NULL);
@@ -1713,6 +1746,7 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
 {
     AVBPrint pbuf;
     const char *s;
+    int i;
 
     av_bprint_init(&pbuf, 1, AV_BPRINT_SIZE_UNLIMITED);
 
@@ -1775,6 +1809,20 @@ static void show_frame(WriterContext *w, AVFrame *frame, AVStream *stream,
     }
     if (do_show_frame_tags)
         show_tags(w, av_frame_get_metadata(frame), SECTION_ID_FRAME_TAGS);
+    if (frame->nb_side_data) {
+        writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA_LIST);
+        for (i = 0; i < frame->nb_side_data; i++) {
+            AVFrameSideData *sd = frame->side_data[i];
+            const char *name;
+
+            writer_print_section_header(w, SECTION_ID_FRAME_SIDE_DATA);
+            name = av_frame_side_data_name(sd->type);
+            print_str("side_data_type", name ? name : "unknown");
+            print_int("side_data_size", sd->size);
+            writer_print_section_footer(w);
+        }
+        writer_print_section_footer(w);
+    }
 
     writer_print_section_footer(w);
 
@@ -1893,6 +1941,12 @@ static int read_interval_packets(WriterContext *w, AVFormatContext *fmt_ctx,
         goto end;
     }
     while (!av_read_frame(fmt_ctx, &pkt)) {
+        if (fmt_ctx->nb_streams > nb_streams) {
+            REALLOCZ_ARRAY_STREAM(nb_streams_frames,  nb_streams, fmt_ctx->nb_streams);
+            REALLOCZ_ARRAY_STREAM(nb_streams_packets, nb_streams, fmt_ctx->nb_streams);
+            REALLOCZ_ARRAY_STREAM(selected_streams,   nb_streams, fmt_ctx->nb_streams);
+            nb_streams = fmt_ctx->nb_streams;
+        }
         if (selected_streams[pkt.stream_index]) {
             AVRational tb = fmt_ctx->streams[pkt.stream_index]->time_base;
 
@@ -2043,6 +2097,13 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
             if (s) print_str    ("pix_fmt", s);
             else   print_str_opt("pix_fmt", "unknown");
             print_int("level",   dec_ctx->level);
+            if (dec_ctx->color_range != AVCOL_RANGE_UNSPECIFIED)
+                print_str    ("color_range", dec_ctx->color_range == AVCOL_RANGE_MPEG ? "tv": "pc");
+            else
+                print_str_opt("color_range", "N/A");
+            s = av_get_colorspace_name(dec_ctx->colorspace);
+            if (s) print_str    ("color_space", s);
+            else   print_str_opt("color_space", "unknown");
             if (dec_ctx->timecode_frame_start >= 0) {
                 char tcbuf[AV_TIMECODE_STR_SIZE];
                 av_timecode_make_mpeg_tc_string(tcbuf, dec_ctx->timecode_frame_start);
@@ -2107,6 +2168,10 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     print_time("duration",    stream->duration, &stream->time_base);
     if (dec_ctx->bit_rate > 0) print_val    ("bit_rate", dec_ctx->bit_rate, unit_bit_per_second_str);
     else                       print_str_opt("bit_rate", "N/A");
+    if (dec_ctx->rc_max_rate > 0) print_val ("max_bit_rate", dec_ctx->rc_max_rate, unit_bit_per_second_str);
+    else                       print_str_opt("max_bit_rate", "N/A");
+    if (dec_ctx->bits_per_raw_sample > 0) print_fmt("bits_per_raw_sample", "%d", dec_ctx->bits_per_raw_sample);
+    else                       print_str_opt("bits_per_raw_sample", "N/A");
     if (stream->nb_frames) print_fmt    ("nb_frames", "%"PRId64, stream->nb_frames);
     else                   print_str_opt("nb_frames", "N/A");
     if (nb_streams_frames[stream_idx])  print_fmt    ("nb_read_frames", "%"PRIu64, nb_streams_frames[stream_idx]);
@@ -2116,6 +2181,8 @@ static int show_stream(WriterContext *w, AVFormatContext *fmt_ctx, int stream_id
     if (do_show_data)
         writer_print_data(w, "extradata", dec_ctx->extradata,
                                           dec_ctx->extradata_size);
+    writer_print_data_hash(w, "extradata_hash", dec_ctx->extradata,
+                                                dec_ctx->extradata_size);
 
     /* Print disposition information */
 #define PRINT_DISPOSITION(flagname, name) do {                                \
@@ -2374,9 +2441,10 @@ static int probe_file(WriterContext *wctx, const char *filename)
 
 #define CHECK_END if (ret < 0) goto end
 
-    nb_streams_frames  = av_calloc(fmt_ctx->nb_streams, sizeof(*nb_streams_frames));
-    nb_streams_packets = av_calloc(fmt_ctx->nb_streams, sizeof(*nb_streams_packets));
-    selected_streams   = av_calloc(fmt_ctx->nb_streams, sizeof(*selected_streams));
+    nb_streams = fmt_ctx->nb_streams;
+    REALLOCZ_ARRAY_STREAM(nb_streams_frames,0,fmt_ctx->nb_streams);
+    REALLOCZ_ARRAY_STREAM(nb_streams_packets,0,fmt_ctx->nb_streams);
+    REALLOCZ_ARRAY_STREAM(selected_streams,0,fmt_ctx->nb_streams);
 
     for (i = 0; i < fmt_ctx->nb_streams; i++) {
         if (stream_specifier) {
@@ -2724,7 +2792,7 @@ static int parse_read_intervals(const char *intervals_spec)
             n++;
     n++;
 
-    read_intervals = av_malloc(n * sizeof(*read_intervals));
+    read_intervals = av_malloc_array(n, sizeof(*read_intervals));
     if (!read_intervals) {
         ret = AVERROR(ENOMEM);
         goto end;
@@ -2843,6 +2911,7 @@ static const OptionDef real_options[] = {
     { "select_streams", OPT_STRING | HAS_ARG, {(void*)&stream_specifier}, "select the specified streams", "stream_specifier" },
     { "sections", OPT_EXIT, {.func_arg = opt_sections}, "print sections structure and section information, and exit" },
     { "show_data",    OPT_BOOL, {(void*)&do_show_data}, "show packets data" },
+    { "show_data_hash", OPT_STRING | HAS_ARG, {(void*)&show_data_hash}, "show packets data hash" },
     { "show_error",   0, {(void*)&opt_show_error},  "show probing error" },
     { "show_format",  0, {(void*)&opt_show_format}, "show format/container info" },
     { "show_frames",  0, {(void*)&opt_show_frames}, "show frames info" },
@@ -2946,6 +3015,21 @@ int main(int argc, char **argv)
     w_name = av_strtok(print_format, "=", &buf);
     w_args = buf;
 
+    if (show_data_hash) {
+        if ((ret = av_hash_alloc(&hash, show_data_hash)) < 0) {
+            if (ret == AVERROR(EINVAL)) {
+                const char *n;
+                av_log(NULL, AV_LOG_ERROR,
+                       "Unknown hash algorithm '%s'\nKnown algorithms:",
+                       show_data_hash);
+                for (i = 0; (n = av_hash_names(i)); i++)
+                    av_log(NULL, AV_LOG_ERROR, " %s", n);
+                av_log(NULL, AV_LOG_ERROR, "\n");
+            }
+            goto end;
+        }
+    }
+
     w = writer_get_by_name(w_name);
     if (!w) {
         av_log(NULL, AV_LOG_ERROR, "Unknown output format with name '%s'\n", w_name);
@@ -2985,6 +3069,7 @@ int main(int argc, char **argv)
 end:
     av_freep(&print_format);
     av_freep(&read_intervals);
+    av_hash_freep(&hash);
 
     uninit_opts();
     for (i = 0; i < FF_ARRAY_ELEMS(sections); i++)

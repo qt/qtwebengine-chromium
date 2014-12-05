@@ -259,7 +259,8 @@ TEST(FontListTest, Fonts_DeriveWithSizeDelta) {
 TEST(FontListTest, Fonts_GetHeight_GetBaseline) {
   // If a font list has only one font, the height and baseline must be the same.
   Font font1("Arial", 16);
-  ASSERT_EQ("arial", StringToLowerASCII(font1.GetActualFontNameForTesting()));
+  ASSERT_EQ("arial",
+            base::StringToLowerASCII(font1.GetActualFontNameForTesting()));
   FontList font_list1("Arial, 16px");
   EXPECT_EQ(font1.GetHeight(), font_list1.GetHeight());
   EXPECT_EQ(font1.GetBaseline(), font_list1.GetBaseline());
@@ -267,7 +268,8 @@ TEST(FontListTest, Fonts_GetHeight_GetBaseline) {
   // If there are two different fonts, the font list returns the max value
   // for ascent and descent.
   Font font2("Symbol", 16);
-  ASSERT_EQ("symbol", StringToLowerASCII(font2.GetActualFontNameForTesting()));
+  ASSERT_EQ("symbol",
+            base::StringToLowerASCII(font2.GetActualFontNameForTesting()));
   EXPECT_NE(font1.GetBaseline(), font2.GetBaseline());
   EXPECT_NE(font1.GetHeight() - font1.GetBaseline(),
             font2.GetHeight() - font2.GetBaseline());
@@ -282,6 +284,29 @@ TEST(FontListTest, Fonts_GetHeight_GetBaseline) {
   // descent of FontList == max(descent of Fonts)
   EXPECT_EQ(std::max(font1.GetBaseline(), font2.GetBaseline()),
             font_list_mix.GetBaseline());
+}
+
+TEST(FontListTest, Fonts_DeriveWithHeightUpperBound) {
+  std::vector<Font> fonts;
+
+  fonts.push_back(gfx::Font("Arial", 18));
+  fonts.push_back(gfx::Font("Sans serif", 18));
+  fonts.push_back(gfx::Font("Symbol", 18));
+  FontList font_list = FontList(fonts);
+
+  // A smaller upper bound should derive a font list with a smaller height.
+  const int height_1 = font_list.GetHeight() - 5;
+  FontList derived_1 = font_list.DeriveWithHeightUpperBound(height_1);
+  EXPECT_LE(derived_1.GetHeight(), height_1);
+  EXPECT_LT(derived_1.GetHeight(), font_list.GetHeight());
+  EXPECT_LT(derived_1.GetFontSize(), font_list.GetFontSize());
+
+  // A larger upper bound should not change the height of the font list.
+  const int height_2 = font_list.GetHeight() + 5;
+  FontList derived_2 = font_list.DeriveWithHeightUpperBound(height_2);
+  EXPECT_LE(derived_2.GetHeight(), height_2);
+  EXPECT_EQ(font_list.GetHeight(), derived_2.GetHeight());
+  EXPECT_EQ(font_list.GetFontSize(), derived_2.GetFontSize());
 }
 
 }  // namespace gfx

@@ -30,7 +30,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 SegmentedFontData::~SegmentedFontData()
 {
@@ -99,11 +99,4 @@ bool SegmentedFontData::shouldSkipDrawing() const
     return false;
 }
 
-#ifndef NDEBUG
-String SegmentedFontData::description() const
-{
-    return "[segmented font]";
-}
-#endif
-
-} // namespace WebCore
+} // namespace blink

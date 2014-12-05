@@ -43,7 +43,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -86,14 +86,8 @@ String MonthInputType::serializeWithMilliseconds(double value) const
 
 Decimal MonthInputType::defaultValueForStepUp() const
 {
-    double current = currentTimeMS();
-    double utcOffset = calculateUTCOffset();
-    double dstOffset = calculateDSTOffset(current, utcOffset);
-    int offset = static_cast<int>((utcOffset + dstOffset) / msPerMinute);
-    current += offset * msPerMinute;
-
     DateComponents date;
-    date.setMillisecondsSinceEpochForMonth(current);
+    date.setMillisecondsSinceEpochForMonth(convertToLocalTime(currentTimeMS()));
     double months = date.monthsSinceEpoch();
     ASSERT(std::isfinite(months));
     return Decimal::fromDouble(months);
@@ -129,11 +123,6 @@ bool MonthInputType::setMillisecondToDateComponents(double value, DateComponents
     return date->setMonthsSinceEpoch(value);
 }
 
-bool MonthInputType::isMonthField() const
-{
-    return true;
-}
-
 bool MonthInputType::canSetSuggestedValue()
 {
     return true;
@@ -164,4 +153,4 @@ bool MonthInputType::isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bo
     return hasYear && hasMonth;
 }
 #endif
-} // namespace WebCore
+} // namespace blink

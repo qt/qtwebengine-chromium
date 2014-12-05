@@ -25,25 +25,28 @@ class SkRecorder;
 
 class SK_API SkPictureRecorder : SkNoncopyable {
 public:
-    SkPictureRecorder() : fPictureRecord(NULL), fRecorder(NULL), fRecord(NULL) { }
+    SkPictureRecorder();
     ~SkPictureRecorder();
 
+#ifdef SK_LEGACY_PICTURE_SIZE_API
+    SkCanvas* beginRecording(int width, int height,
+                             SkBBHFactory* bbhFactory = NULL,
+                             uint32_t recordFlags = 0) {
+        return this->beginRecording(SkIntToScalar(width), SkIntToScalar(height),
+                                    bbhFactory, recordFlags);
+    }
+#endif
+
     /** Returns the canvas that records the drawing commands.
-        @param width the base width for the picture, as if the recording
-                     canvas' bitmap had this width.
-        @param height the base width for the picture, as if the recording
-                     canvas' bitmap had this height.
+        @param width the width of the cull rect used when recording this picture.
+        @param height the height of the cull rect used when recording this picture.
         @param bbhFactory factory to create desired acceleration structure
         @param recordFlags optional flags that control recording.
         @return the canvas.
     */
-    SkCanvas* beginRecording(int width, int height,
+    SkCanvas* beginRecording(SkScalar width, SkScalar height,
                              SkBBHFactory* bbhFactory = NULL,
                              uint32_t recordFlags = 0);
-
-    /** Same as beginRecording(), using a new faster backend. */
-    SkCanvas* EXPERIMENTAL_beginRecording(int width, int height,
-                                          SkBBHFactory* bbhFactory = NULL);
 
     /** Returns the recording canvas if one is active, or NULL if recording is
         not active. This does not alter the refcnt on the canvas (if present).
@@ -57,14 +60,6 @@ public:
     */
     SkPicture* endRecording();
 
-    /** Enable/disable all the picture recording optimizations (i.e.,
-        those in SkPictureRecord). It is mainly intended for testing the
-        existing optimizations (i.e., to actually have the pattern
-        appear in an .skp we have to disable the optimization). Call right
-        after 'beginRecording'.
-    */
-    void internalOnly_EnableOpts(bool enableOpts);
-
 private:
     void reset();
 
@@ -77,15 +72,11 @@ private:
     friend class SkPictureRecorderReplayTester; // for unit testing
     void partialReplay(SkCanvas* canvas) const;
 
-    int                     fWidth;
-    int                     fHeight;
-
-    // Both ref counted.  One of these two will be non-null:
-    SkPictureRecord*        fPictureRecord;   // beginRecording()
-    SkRecorder*             fRecorder;        // EXPERIMENTAL_beginRecording()
-
-    // Not refcounted.  Used by EXPERIMENTAL_beginRecording().
-    SkRecord* fRecord;
+    SkScalar                      fCullWidth;
+    SkScalar                      fCullHeight;
+    SkAutoTUnref<SkBBoxHierarchy> fBBH;
+    SkAutoTUnref<SkRecorder>      fRecorder;
+    SkAutoTDelete<SkRecord>       fRecord;
 
     typedef SkNoncopyable INHERITED;
 };

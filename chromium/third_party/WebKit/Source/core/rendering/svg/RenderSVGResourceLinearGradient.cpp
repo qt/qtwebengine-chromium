@@ -24,9 +24,7 @@
 
 #include "core/svg/SVGLinearGradientElement.h"
 
-namespace WebCore {
-
-const RenderSVGResourceType RenderSVGResourceLinearGradient::s_resourceType = LinearGradientResourceType;
+namespace blink {
 
 RenderSVGResourceLinearGradient::RenderSVGResourceLinearGradient(SVGLinearGradientElement* node)
     : RenderSVGResourceGradient(node)

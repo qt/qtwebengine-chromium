@@ -44,20 +44,19 @@
 #include "public/platform/WebStorageQuotaCallbacks.h"
 #include "public/platform/WebStorageQuotaType.h"
 
-namespace WebCore {
+namespace blink {
 
 DeprecatedStorageQuota::DeprecatedStorageQuota(Type type)
     : m_type(type)
 {
-    ScriptWrappable::init(this);
 }
 
-void DeprecatedStorageQuota::queryUsageAndQuota(ExecutionContext* executionContext, PassOwnPtr<StorageUsageCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+void DeprecatedStorageQuota::queryUsageAndQuota(ExecutionContext* executionContext, StorageUsageCallback* successCallback, StorageErrorCallback* errorCallback)
 {
     ASSERT(executionContext);
 
-    blink::WebStorageQuotaType storageType = static_cast<blink::WebStorageQuotaType>(m_type);
-    if (storageType != blink::WebStorageQuotaTypeTemporary && storageType != blink::WebStorageQuotaTypePersistent) {
+    WebStorageQuotaType storageType = static_cast<WebStorageQuotaType>(m_type);
+    if (storageType != WebStorageQuotaTypeTemporary && storageType != WebStorageQuotaTypePersistent) {
         // Unknown storage type is requested.
         executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
         return;
@@ -70,16 +69,16 @@ void DeprecatedStorageQuota::queryUsageAndQuota(ExecutionContext* executionConte
     }
 
     KURL storagePartition = KURL(KURL(), securityOrigin->toString());
-    OwnPtr<StorageQuotaCallbacks> callbacks = DeprecatedStorageQuotaCallbacksImpl::create(successCallback, errorCallback);
-    blink::Platform::current()->queryStorageUsageAndQuota(storagePartition, storageType, callbacks.release());
+    StorageQuotaCallbacks* callbacks = DeprecatedStorageQuotaCallbacksImpl::create(successCallback, errorCallback);
+    Platform::current()->queryStorageUsageAndQuota(storagePartition, storageType, callbacks);
 }
 
-void DeprecatedStorageQuota::requestQuota(ExecutionContext* executionContext, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback> successCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+void DeprecatedStorageQuota::requestQuota(ExecutionContext* executionContext, unsigned long long newQuotaInBytes, StorageQuotaCallback* successCallback, StorageErrorCallback* errorCallback)
 {
     ASSERT(executionContext);
 
-    blink::WebStorageQuotaType storageType = static_cast<blink::WebStorageQuotaType>(m_type);
-    if (storageType != blink::WebStorageQuotaTypeTemporary && storageType != blink::WebStorageQuotaTypePersistent) {
+    WebStorageQuotaType storageType = static_cast<WebStorageQuotaType>(m_type);
+    if (storageType != WebStorageQuotaTypeTemporary && storageType != WebStorageQuotaTypePersistent) {
         // Unknown storage type is requested.
         executionContext->postTask(StorageErrorCallback::CallbackTask::create(errorCallback, NotSupportedError));
         return;
@@ -94,8 +93,4 @@ void DeprecatedStorageQuota::requestQuota(ExecutionContext* executionContext, un
     client->requestQuota(executionContext, storageType, newQuotaInBytes, successCallback, errorCallback);
 }
 
-DeprecatedStorageQuota::~DeprecatedStorageQuota()
-{
-}
-
-} // namespace WebCore
+} // namespace blink

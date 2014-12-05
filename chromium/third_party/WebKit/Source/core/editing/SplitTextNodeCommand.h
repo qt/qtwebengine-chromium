@@ -28,25 +28,25 @@
 
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class Text;
 
-class SplitTextNodeCommand FINAL : public SimpleEditCommand {
+class SplitTextNodeCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<SplitTextNodeCommand> create(PassRefPtrWillBeRawPtr<Text> node, int offset)
     {
         return adoptRefWillBeNoop(new SplitTextNodeCommand(node, offset));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     SplitTextNodeCommand(PassRefPtrWillBeRawPtr<Text>, int offset);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
-    virtual void doReapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
+    virtual void doReapply() override;
     void insertText1AndTrimText2();
 
     RefPtrWillBeMember<Text> m_text1;
@@ -54,6 +54,6 @@ private:
     unsigned m_offset;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SplitTextNodeCommand_h

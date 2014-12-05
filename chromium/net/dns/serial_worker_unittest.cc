@@ -21,16 +21,16 @@ class SerialWorkerTest : public testing::Test {
    public:
     explicit TestSerialWorker(SerialWorkerTest* t)
       : test_(t) {}
-    virtual void DoWork() OVERRIDE {
+    void DoWork() override {
       ASSERT_TRUE(test_);
       test_->OnWork();
     }
-    virtual void OnWorkFinished() OVERRIDE {
+    void OnWorkFinished() override {
       ASSERT_TRUE(test_);
       test_->OnWorkFinished();
     }
    private:
-    virtual ~TestSerialWorker() {}
+    ~TestSerialWorker() override {}
     SerialWorkerTest* test_;
   };
 
@@ -96,12 +96,12 @@ class SerialWorkerTest : public testing::Test {
   }
 
   // test::Test methods
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     message_loop_ = base::MessageLoop::current();
     worker_ = new TestSerialWorker(this);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Cancel the worker to catch if it makes a late DoWork call.
     worker_->Cancel();
     // Check if OnWork is stalled.

@@ -18,18 +18,14 @@ class SharedPtr {
  public:
   SharedPtr() {}
 
-  explicit SharedPtr(P* ptr) {
-    impl_.mutable_value()->ptr = ptr;
-  }
+  explicit SharedPtr(P* ptr) { impl_.mutable_value()->ptr = ptr; }
 
   // Default copy-constructor and assignment operator are OK.
 
-  P* get() {
-    return impl_.value().ptr;
-  }
-  const P* get() const {
-    return impl_.value().ptr;
-  }
+  P* get() { return impl_.value().ptr; }
+  const P* get() const { return impl_.value().ptr; }
+
+  void reset() { impl_.reset(); }
 
   P* operator->() { return get(); }
   const P* operator->() const { return get(); }
@@ -42,11 +38,9 @@ class SharedPtr {
         delete ptr;
     }
 
-    Impl() : ptr(NULL) {
-    }
+    Impl() : ptr(nullptr) {}
 
-    Impl(P* ptr) : ptr(ptr) {
-    }
+    Impl(P* ptr) : ptr(ptr) {}
 
     P* ptr;
 

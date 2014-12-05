@@ -31,22 +31,21 @@
 #include "config.h"
 #include "core/animation/Animation.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/animation/ActiveAnimations.h"
-#include "core/animation/AnimationHelpers.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/CompositorAnimations.h"
+#include "core/animation/Interpolation.h"
 #include "core/animation/KeyframeEffectModel.h"
-#include "core/animation/interpolation/Interpolation.h"
 #include "core/dom/Element.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/RenderLayer.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
+PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtrWillBeRawPtr<EventDelegate> eventDelegate)
 {
     return adoptRefWillBeNoop(new Animation(target, effect, timing, priority, eventDelegate));
 }
@@ -88,7 +87,7 @@ PassRefPtrWillBeRawPtr<Animation> Animation::create(Element* element, const Vect
     return create(element, EffectInput::convert(element, keyframeDictionaryVector, exceptionState), Timing());
 }
 
-Animation::Animation(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtr<EventDelegate> eventDelegate)
+Animation::Animation(Element* target, PassRefPtrWillBeRawPtr<AnimationEffect> effect, const Timing& timing, Priority priority, PassOwnPtrWillBeRawPtr<EventDelegate> eventDelegate)
     : AnimationNode(timing, eventDelegate)
     , m_target(target)
     , m_effect(effect)
@@ -112,7 +111,7 @@ Animation::~Animation()
 void Animation::attach(AnimationPlayer* player)
 {
     if (m_target) {
-        m_target->ensureActiveAnimations().addPlayer(player);
+        m_target->ensureActiveAnimations().players().add(player);
         m_target->setNeedsAnimationStyleRecalc();
     }
     AnimationNode::attach(player);
@@ -121,7 +120,7 @@ void Animation::attach(AnimationPlayer* player)
 void Animation::detach()
 {
     if (m_target)
-        m_target->activeAnimations()->removePlayer(player());
+        m_target->activeAnimations()->players().remove(player());
     if (m_sampledEffect)
         clearEffects();
     AnimationNode::detach();
@@ -129,11 +128,10 @@ void Animation::detach()
 
 void Animation::specifiedTimingChanged()
 {
-    cancelAnimationOnCompositor();
     if (player()) {
         // FIXME: Needs to consider groups when added.
         ASSERT(player()->source() == this);
-        player()->schedulePendingAnimationOnCompositor();
+        player()->setCompositorPending(true);
     }
 }
 
@@ -194,6 +192,8 @@ double Animation::calculateTimeToEffectChange(bool forwards, double localTime, d
     const double end = start + activeDurationInternal();
 
     switch (phase()) {
+    case PhaseNone:
+        return std::numeric_limits<double>::infinity();
     case PhaseBefore:
         ASSERT(start >= localTime);
         return forwards
@@ -201,7 +201,6 @@ double Animation::calculateTimeToEffectChange(bool forwards, double localTime, d
             : std::numeric_limits<double>::infinity();
     case PhaseActive:
         if (forwards && hasActiveAnimationsOnCompositor()) {
-            ASSERT(specifiedTiming().playbackRate == 1);
             // Need service to apply fill / fire events.
             const double timeToEnd = end - localTime;
             if (hasEvents()) {
@@ -246,21 +245,26 @@ void Animation::notifyElementDestroyed()
 }
 #endif
 
-bool Animation::isCandidateForAnimationOnCompositor() const
+bool Animation::isCandidateForAnimationOnCompositor(double playerPlaybackRate) const
 {
     if (!effect() || !m_target)
         return false;
-    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specifiedTiming(), *effect());
+    return CompositorAnimations::instance()->isCandidateForAnimationOnCompositor(specifiedTiming(), *effect(), playerPlaybackRate);
 }
 
-bool Animation::maybeStartAnimationOnCompositor(double startTime)
+bool Animation::maybeStartAnimationOnCompositor(double startTime, double currentTime)
+{
+    return maybeStartAnimationOnCompositor(startTime, currentTime, 1);
+}
+
+bool Animation::maybeStartAnimationOnCompositor(double startTime, double currentTime, double playerPlaybackRate)
 {
     ASSERT(!hasActiveAnimationsOnCompositor());
-    if (!isCandidateForAnimationOnCompositor())
+    if (!isCandidateForAnimationOnCompositor(playerPlaybackRate))
         return false;
     if (!CompositorAnimations::instance()->canStartAnimationOnCompositor(*m_target))
         return false;
-    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target, startTime, specifiedTiming(), *effect(), m_compositorAnimationIds))
+    if (!CompositorAnimations::instance()->startAnimationOnCompositor(*m_target, startTime, currentTime, specifiedTiming(), *effect(), m_compositorAnimationIds, playerPlaybackRate))
         return false;
     ASSERT(!m_compositorAnimationIds.isEmpty());
     return true;
@@ -294,6 +298,7 @@ void Animation::cancelAnimationOnCompositor()
     for (size_t i = 0; i < m_compositorAnimationIds.size(); ++i)
         CompositorAnimations::instance()->cancelAnimationOnCompositor(*m_target, m_compositorAnimationIds[i]);
     m_compositorAnimationIds.clear();
+    player()->setCompositorPending(true);
 }
 
 void Animation::pauseAnimationForTestingOnCompositor(double pauseTime)
@@ -313,4 +318,4 @@ void Animation::trace(Visitor* visitor)
     AnimationNode::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

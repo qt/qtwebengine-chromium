@@ -19,6 +19,20 @@
 #include "media/audio/audio_manager_base.h"
 #include "media/base/audio_bus.h"
 
+namespace {
+
+void LogMessage(int stream_id, const std::string& msg, bool add_prefix) {
+  std::ostringstream oss;
+  oss << "[stream_id=" << stream_id << "] ";
+  if (add_prefix)
+    oss << "AIRH::";
+  oss << msg;
+  content::MediaStreamManager::SendMessageToNativeLog(oss.str());
+  DVLOG(1) << oss.str();
+}
+
+}  // namespace
+
 namespace content {
 
 struct AudioInputRendererHost::AudioEntry {
@@ -42,12 +56,16 @@ struct AudioInputRendererHost::AudioEntry {
 
   // Set to true after we called Close() for the controller.
   bool pending_close;
+
+  // If this entry's layout has a keyboard mic channel.
+  bool has_keyboard_mic_;
 };
 
 AudioInputRendererHost::AudioEntry::AudioEntry()
     : stream_id(0),
       shared_memory_segment_count(0),
-      pending_close(false) {
+      pending_close(false),
+      has_keyboard_mic_(false) {
 }
 
 AudioInputRendererHost::AudioEntry::~AudioEntry() {}
@@ -133,8 +151,10 @@ void AudioInputRendererHost::DoCompleteCreation(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   AudioEntry* entry = LookupByController(controller);
-  if (!entry)
+  if (!entry) {
+    NOTREACHED() << "AudioInputController is invalid.";
     return;
+  }
 
   if (!PeerHandle()) {
     NOTREACHED() << "Renderer process handle is invalid.";
@@ -162,22 +182,21 @@ void AudioInputRendererHost::DoCompleteCreation(
   AudioInputSyncWriter* writer =
       static_cast<AudioInputSyncWriter*>(entry->writer.get());
 
-#if defined(OS_WIN)
-  base::SyncSocket::Handle foreign_socket_handle;
-#else
-  base::FileDescriptor foreign_socket_handle;
-#endif
+  base::SyncSocket::TransitDescriptor socket_transit_descriptor;
 
   // If we failed to prepare the sync socket for the renderer then we fail
   // the construction of audio input stream.
-  if (!writer->PrepareForeignSocketHandle(PeerHandle(),
-                                          &foreign_socket_handle)) {
+  if (!writer->PrepareForeignSocket(PeerHandle(), &socket_transit_descriptor)) {
     DeleteEntryOnError(entry, SYNC_SOCKET_ERROR);
     return;
   }
 
-  Send(new AudioInputMsg_NotifyStreamCreated(entry->stream_id,
-      foreign_memory_handle, foreign_socket_handle,
+  LogMessage(entry->stream_id,
+             "DoCompleteCreation: IPC channel and stream are now open",
+             true);
+
+  Send(new AudioInputMsg_NotifyStreamCreated(
+      entry->stream_id, foreign_memory_handle, socket_transit_descriptor,
       entry->shared_memory.requested_size(),
       entry->shared_memory_segment_count));
 }
@@ -187,29 +206,39 @@ void AudioInputRendererHost::DoSendRecordingMessage(
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // TODO(henrika): See crbug.com/115262 for details on why this method
   // should be implemented.
+  AudioEntry* entry = LookupByController(controller);
+  if (!entry) {
+    NOTREACHED() << "AudioInputController is invalid.";
+    return;
+  }
+  LogMessage(
+      entry->stream_id, "DoSendRecordingMessage: stream is now started", true);
 }
 
 void AudioInputRendererHost::DoHandleError(
     media::AudioInputController* controller,
     media::AudioInputController::ErrorCode error_code) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
-  // Log all errors even it is ignored later.
-  MediaStreamManager::SendMessageToNativeLog(
-      base::StringPrintf("AudioInputController error: %d", error_code));
+  AudioEntry* entry = LookupByController(controller);
+  if (!entry) {
+    NOTREACHED() << "AudioInputController is invalid.";
+    return;
+  }
 
   // This is a fix for crbug.com/357501. The error can be triggered when closing
   // the lid on Macs, which causes more problems than it fixes.
   // Also, in crbug.com/357569, the goal is to remove usage of the error since
   // it was added to solve a crash on Windows that no longer can be reproduced.
   if (error_code == media::AudioInputController::NO_DATA_ERROR) {
-    DVLOG(1) << "AudioInputRendererHost@" << this << "::DoHandleError: "
-             << "NO_DATA_ERROR ignored.";
+    // TODO(henrika): it might be possible to do something other than just
+    // logging when we detect many NO_DATA_ERROR calls for a stream.
+    LogMessage(entry->stream_id, "AIC::DoCheckForNoData: NO_DATA_ERROR", false);
     return;
   }
 
-  AudioEntry* entry = LookupByController(controller);
-  if (!entry)
-    return;
+  std::ostringstream oss;
+  oss << "AIC reports error_code=" << error_code;
+  LogMessage(entry->stream_id, oss.str(), false);
 
   audio_log_->OnError(entry->stream_id);
   DeleteEntryOnError(entry, AUDIO_INPUT_CONTROLLER_ERROR);
@@ -219,15 +248,13 @@ void AudioInputRendererHost::DoLog(media::AudioInputController* controller,
                                    const std::string& message) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   AudioEntry* entry = LookupByController(controller);
-  if (!entry)
+  if (!entry) {
+    NOTREACHED() << "AudioInputController is invalid.";
     return;
+  }
 
   // Add stream ID and current audio level reported by AIC to native log.
-  std::string log_string =
-      base::StringPrintf("[stream_id=%d] ", entry->stream_id);
-  log_string += message;
-  MediaStreamManager::SendMessageToNativeLog(log_string);
-  DVLOG(1) << log_string;
+  LogMessage(entry->stream_id, message, false);
 }
 
 bool AudioInputRendererHost::OnMessageReceived(const IPC::Message& message) {
@@ -250,15 +277,42 @@ void AudioInputRendererHost::OnCreateStream(
     const AudioInputHostMsg_CreateStream_Config& config) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
-  DVLOG(1) << "AudioInputRendererHost@" << this
-           << "::OnCreateStream(stream_id=" << stream_id
-           << ", render_view_id=" << render_view_id
-           << ", session_id=" << session_id << ")";
+#if defined(OS_CHROMEOS)
+  if (config.params.channel_layout() ==
+      media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
+    media_stream_manager_->audio_input_device_manager()
+        ->RegisterKeyboardMicStream(
+            base::Bind(&AudioInputRendererHost::DoCreateStream,
+                       this,
+                       stream_id,
+                       render_view_id,
+                       session_id,
+                       config));
+  } else {
+    DoCreateStream(stream_id, render_view_id, session_id, config);
+  }
+#else
+  DoCreateStream(stream_id, render_view_id, session_id, config);
+#endif
+}
+
+void AudioInputRendererHost::DoCreateStream(
+    int stream_id,
+    int render_view_id,
+    int session_id,
+    const AudioInputHostMsg_CreateStream_Config& config) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+
+  std::ostringstream oss;
+  oss << "[stream_id=" << stream_id << "] "
+      << "AIRH::OnCreateStream(render_view_id=" << render_view_id
+      << ", session_id=" << session_id << ")";
   DCHECK_GT(render_view_id, 0);
 
   // media::AudioParameters is validated in the deserializer.
   if (LookupById(stream_id) != NULL) {
     SendErrorMessage(stream_id, STREAM_ALREADY_EXISTS);
+    MaybeUnregisterKeyboardMicStream(config);
     return;
   }
 
@@ -267,7 +321,7 @@ void AudioInputRendererHost::OnCreateStream(
       ShouldUseFakeDevice()) {
     audio_params.Reset(
         media::AudioParameters::AUDIO_FAKE,
-        config.params.channel_layout(), config.params.channels(), 0,
+        config.params.channel_layout(), config.params.channels(),
         config.params.sample_rate(), config.params.bits_per_sample(),
         config.params.frames_per_buffer());
   }
@@ -282,11 +336,13 @@ void AudioInputRendererHost::OnCreateStream(
       SendErrorMessage(stream_id, PERMISSION_DENIED);
       DLOG(WARNING) << "No permission has been granted to input stream with "
                     << "session_id=" << session_id;
+      MaybeUnregisterKeyboardMicStream(config);
       return;
     }
 
     device_id = info->device.id;
     device_name = info->device.name;
+    oss << ": device_name=" << device_name;
   }
 
   // Create a new AudioEntry structure.
@@ -305,6 +361,7 @@ void AudioInputRendererHost::OnCreateStream(
       !entry->shared_memory.CreateAndMapAnonymous(size.ValueOrDie())) {
     // If creation of shared memory failed then send an error message.
     SendErrorMessage(stream_id, SHARED_MEMORY_CREATE_FAILED);
+    MaybeUnregisterKeyboardMicStream(config);
     return;
   }
 
@@ -313,6 +370,7 @@ void AudioInputRendererHost::OnCreateStream(
 
   if (!writer->Init()) {
     SendErrorMessage(stream_id, SYNC_WRITER_INIT_FAILED);
+    MaybeUnregisterKeyboardMicStream(config);
     return;
   }
 
@@ -331,40 +389,45 @@ void AudioInputRendererHost::OnCreateStream(
         entry->writer.get(),
         user_input_monitor_);
   } else {
-    // TODO(henrika): replace CreateLowLatency() with Create() as soon
-    // as satish has ensured that Speech Input also uses the default low-
-    // latency path. See crbug.com/112472 for details.
-    entry->controller =
-        media::AudioInputController::CreateLowLatency(audio_manager_,
-                                                      this,
-                                                      audio_params,
-                                                      device_id,
-                                                      entry->writer.get(),
-                                                      user_input_monitor_);
+    DCHECK_EQ(config.params.format(),
+              media::AudioParameters::AUDIO_PCM_LOW_LATENCY);
+    entry->controller = media::AudioInputController::CreateLowLatency(
+        audio_manager_,
+        this,
+        audio_params,
+        device_id,
+        entry->writer.get(),
+        user_input_monitor_,
+        config.automatic_gain_control);
+    oss << ", AGC=" << config.automatic_gain_control;
   }
 
   if (!entry->controller.get()) {
     SendErrorMessage(stream_id, STREAM_CREATE_ERROR);
+    MaybeUnregisterKeyboardMicStream(config);
     return;
   }
 
-  // Set the initial AGC state for the audio input stream. Note that, the AGC
-  // is only supported in AUDIO_PCM_LOW_LATENCY mode.
-  if (config.params.format() == media::AudioParameters::AUDIO_PCM_LOW_LATENCY)
-    entry->controller->SetAutomaticGainControl(config.automatic_gain_control);
+#if defined(OS_CHROMEOS)
+  if (config.params.channel_layout() ==
+          media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
+    entry->has_keyboard_mic_ = true;
+  }
+#endif
+
+  MediaStreamManager::SendMessageToNativeLog(oss.str());
+  DVLOG(1) << oss.str();
 
   // Since the controller was created successfully, create an entry and add it
   // to the map.
   entry->stream_id = stream_id;
   audio_entries_.insert(std::make_pair(stream_id, entry.release()));
-
-  MediaStreamManager::SendMessageToNativeLog(
-      "Audio input stream created successfully. Device name: " + device_name);
   audio_log_->OnCreated(stream_id, audio_params, device_id);
 }
 
 void AudioInputRendererHost::OnRecordStream(int stream_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  LogMessage(stream_id, "OnRecordStream", true);
 
   AudioEntry* entry = LookupById(stream_id);
   if (!entry) {
@@ -378,6 +441,7 @@ void AudioInputRendererHost::OnRecordStream(int stream_id) {
 
 void AudioInputRendererHost::OnCloseStream(int stream_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  LogMessage(stream_id, "OnCloseStream", true);
 
   AudioEntry* entry = LookupById(stream_id);
 
@@ -400,8 +464,10 @@ void AudioInputRendererHost::OnSetVolume(int stream_id, double volume) {
 
 void AudioInputRendererHost::SendErrorMessage(
     int stream_id, ErrorCode error_code) {
-  MediaStreamManager::SendMessageToNativeLog(
-      base::StringPrintf("AudioInputRendererHost error: %d", error_code));
+  std::string err_msg =
+      base::StringPrintf("SendErrorMessage(error_code=%d)", error_code);
+  LogMessage(stream_id, err_msg, true);
+
   Send(new AudioInputMsg_NotifyStreamStateChanged(
       stream_id, media::AudioInputIPCDelegate::kError));
 }
@@ -419,6 +485,7 @@ void AudioInputRendererHost::CloseAndDeleteStream(AudioEntry* entry) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!entry->pending_close) {
+    LogMessage(entry->stream_id, "CloseAndDeleteStream", true);
     entry->controller->Close(base::Bind(&AudioInputRendererHost::DeleteEntry,
                                         this, entry));
     entry->pending_close = true;
@@ -428,6 +495,14 @@ void AudioInputRendererHost::CloseAndDeleteStream(AudioEntry* entry) {
 
 void AudioInputRendererHost::DeleteEntry(AudioEntry* entry) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  LogMessage(entry->stream_id, "DeleteEntry: stream is now closed", true);
+
+#if defined(OS_CHROMEOS)
+  if (entry->has_keyboard_mic_) {
+    media_stream_manager_->audio_input_device_manager()
+        ->UnregisterKeyboardMicStream();
+  }
+#endif
 
   // Delete the entry when this method goes out of scope.
   scoped_ptr<AudioEntry> entry_deleter(entry);
@@ -468,6 +543,17 @@ AudioInputRendererHost::AudioEntry* AudioInputRendererHost::LookupByController(
       return i->second;
   }
   return NULL;
+}
+
+void AudioInputRendererHost::MaybeUnregisterKeyboardMicStream(
+    const AudioInputHostMsg_CreateStream_Config& config) {
+#if defined(OS_CHROMEOS)
+  if (config.params.channel_layout() ==
+      media::CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
+    media_stream_manager_->audio_input_device_manager()
+        ->UnregisterKeyboardMicStream();
+  }
+#endif
 }
 
 }  // namespace content

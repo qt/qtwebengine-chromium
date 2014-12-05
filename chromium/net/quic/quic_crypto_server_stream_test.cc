@@ -41,7 +41,7 @@ class QuicCryptoServerConfigPeer {
  public:
   static string GetPrimaryOrbit(const QuicCryptoServerConfig& config) {
     base::AutoLock lock(config.configs_lock_);
-    CHECK(config.primary_config_ != NULL);
+    CHECK(config.primary_config_.get() != nullptr);
     return string(reinterpret_cast<const char*>(config.primary_config_->orbit),
                   kOrbitSize);
   }
@@ -60,15 +60,14 @@ class QuicCryptoServerStreamTest : public ::testing::TestWithParam<bool> {
         crypto_config_(QuicCryptoServerConfig::TESTING,
                        QuicRandom::GetInstance()),
         stream_(crypto_config_, &session_),
-        strike_register_client_(NULL) {
-    config_.SetDefaults();
-    session_.config()->SetDefaults();
+        strike_register_client_(nullptr) {
     session_.SetCryptoStream(&stream_);
     // We advance the clock initially because the default time is zero and the
     // strike register worries that we've just overflowed a uint32 time.
     connection_->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
-    // TODO(rtenneti): Enable testing of ProofSource.
-    // crypto_config_.SetProofSource(CryptoTestUtils::ProofSourceForTesting());
+    // TODO(wtc): replace this with ProofSourceForTesting() when Chromium has
+    // a working ProofSourceForTesting().
+    crypto_config_.SetProofSource(CryptoTestUtils::FakeProofSourceForTesting());
     crypto_config_.set_strike_register_no_startup_period();
 
     CryptoTestUtils::SetupCryptoServerConfigForTest(
@@ -139,16 +138,14 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
   server_conn->AdvanceTime(QuicTime::Delta::FromSeconds(100000));
 
   QuicConfig client_config;
-  client_config.SetDefaults();
   scoped_ptr<TestClientSession> client_session(
       new TestClientSession(client_conn, client_config));
   QuicCryptoClientConfig client_crypto_config;
-  client_crypto_config.SetDefaults();
 
   QuicServerId server_id(kServerHostname, kServerPort, false,
                          PRIVACY_MODE_DISABLED);
   scoped_ptr<QuicCryptoClientStream> client(new QuicCryptoClientStream(
-      server_id, client_session.get(), NULL, &client_crypto_config));
+      server_id, client_session.get(), nullptr, &client_crypto_config));
   client_session->SetCryptoStream(client.get());
 
   // Do a first handshake in order to prime the client config with the server's
@@ -180,8 +177,8 @@ TEST_P(QuicCryptoServerStreamTest, ZeroRTT) {
   reinterpret_cast<MockRandom*>(client_conn->random_generator())->ChangeValue();
   client_session.reset(new TestClientSession(client_conn, client_config));
   server_session.reset(new TestSession(server_conn, config_));
-  client.reset(new QuicCryptoClientStream(
-      server_id, client_session.get(), NULL, &client_crypto_config));
+  client.reset(new QuicCryptoClientStream(server_id, client_session.get(),
+                                          nullptr, &client_crypto_config));
   client_session->SetCryptoStream(client.get());
 
   server.reset(new QuicCryptoServerStream(crypto_config_,
@@ -242,7 +239,7 @@ TEST_P(QuicCryptoServerStreamTest, BadMessageType) {
 }
 
 TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
-  crypto_config_.SetProofSource(NULL);
+  crypto_config_.SetProofSource(nullptr);
   client_options_.dont_verify_certs = true;
 
   // Only 2 client hellos need to be sent in the no-certs case: one to get the
@@ -254,11 +251,28 @@ TEST_P(QuicCryptoServerStreamTest, WithoutCertificates) {
 
 TEST_P(QuicCryptoServerStreamTest, ChannelID) {
   client_options_.channel_id_enabled = true;
+  client_options_.channel_id_source_async = false;
   // CompleteCryptoHandshake verifies
   // stream_.crypto_negotiated_params().channel_id is correct.
   EXPECT_EQ(2, CompleteCryptoHandshake());
   EXPECT_TRUE(stream_.encryption_established());
   EXPECT_TRUE(stream_.handshake_confirmed());
+}
+
+TEST_P(QuicCryptoServerStreamTest, ChannelIDAsync) {
+  client_options_.channel_id_enabled = true;
+  client_options_.channel_id_source_async = true;
+  // CompleteCryptoHandshake verifies
+  // stream_.crypto_negotiated_params().channel_id is correct.
+  EXPECT_EQ(2, CompleteCryptoHandshake());
+  EXPECT_TRUE(stream_.encryption_established());
+  EXPECT_TRUE(stream_.handshake_confirmed());
+}
+
+TEST_P(QuicCryptoServerStreamTest, OnlySendSCUPAfterHandshakeComplete) {
+  // An attempt to send a SCUP before completing handshake should fail.
+  stream_.SendServerConfigUpdate(nullptr);
+  EXPECT_EQ(0, stream_.num_server_config_update_messages_sent());
 }
 
 }  // namespace

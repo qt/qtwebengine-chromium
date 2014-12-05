@@ -24,10 +24,11 @@
 #include "config.h"
 #include "core/events/WheelEvent.h"
 
-#include "core/clipboard/Clipboard.h"
+#include "core/clipboard/DataTransfer.h"
+#include "platform/PlatformMouseEvent.h"
 #include "platform/PlatformWheelEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 WheelEventInit::WheelEventInit()
     : deltaX(0)
@@ -44,9 +45,7 @@ WheelEvent::WheelEvent()
     , m_deltaY(0)
     , m_deltaZ(0)
     , m_deltaMode(DOM_DELTA_PIXEL)
-    , m_directionInvertedFromDevice(false)
 {
-    ScriptWrappable::init(this);
 }
 
 WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializer)
@@ -57,57 +56,20 @@ WheelEvent::WheelEvent(const AtomicString& type, const WheelEventInit& initializ
     , m_deltaZ(initializer.deltaZ)
     , m_deltaMode(initializer.deltaMode)
 {
-    ScriptWrappable::init(this);
 }
 
 WheelEvent::WheelEvent(const FloatPoint& wheelTicks, const FloatPoint& rawDelta, unsigned deltaMode,
     PassRefPtrWillBeRawPtr<AbstractView> view, const IntPoint& screenLocation, const IntPoint& pageLocation,
-    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, bool directionInvertedFromDevice)
-    : MouseEvent(EventTypeNames::wheel,
-                 true, true, view, 0, screenLocation.x(), screenLocation.y(),
-                 pageLocation.x(), pageLocation.y(),
-                 0, 0,
-                 ctrlKey, altKey, shiftKey, metaKey, 0, nullptr, nullptr, false)
+    bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
+    : MouseEvent(EventTypeNames::wheel, true, true, view, 0, screenLocation.x(), screenLocation.y(),
+        pageLocation.x(), pageLocation.y(), 0, 0, ctrlKey, altKey, shiftKey, metaKey, 0, nullptr,
+        nullptr, false, PlatformMouseEvent::RealOrIndistinguishable)
     , m_wheelDelta(wheelTicks.x() * TickMultiplier, wheelTicks.y() * TickMultiplier)
     , m_deltaX(-rawDelta.x())
     , m_deltaY(-rawDelta.y())
     , m_deltaZ(0)
     , m_deltaMode(deltaMode)
-    , m_directionInvertedFromDevice(directionInvertedFromDevice)
 {
-    ScriptWrappable::init(this);
-}
-
-void WheelEvent::initWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView> view,
-                                int screenX, int screenY, int pageX, int pageY,
-                                bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
-{
-    if (dispatched())
-        return;
-
-    initUIEvent(EventTypeNames::wheel, true, true, view, 0);
-
-    m_screenLocation = IntPoint(screenX, screenY);
-    m_ctrlKey = ctrlKey;
-    m_altKey = altKey;
-    m_shiftKey = shiftKey;
-    m_metaKey = metaKey;
-
-    m_wheelDelta = IntPoint(rawDeltaX * TickMultiplier, rawDeltaY * TickMultiplier);
-    m_deltaX = -rawDeltaX;
-    m_deltaY = -rawDeltaY;
-    m_deltaMode = DOM_DELTA_PIXEL;
-    m_directionInvertedFromDevice = false;
-
-    initCoordinates(IntPoint(pageX, pageY));
-}
-
-void WheelEvent::initWebKitWheelEvent(int rawDeltaX, int rawDeltaY, PassRefPtrWillBeRawPtr<AbstractView> view,
-                                      int screenX, int screenY, int pageX, int pageY,
-                                      bool ctrlKey, bool altKey, bool shiftKey, bool metaKey)
-{
-    initWheelEvent(rawDeltaX, rawDeltaY, view, screenX, screenY, pageX, pageY,
-                   ctrlKey, altKey, shiftKey, metaKey);
 }
 
 const AtomicString& WheelEvent::interfaceName() const
@@ -147,7 +109,7 @@ WheelEventDispatchMediator::WheelEventDispatchMediator(const PlatformWheelEvent&
 
     setEvent(WheelEvent::create(FloatPoint(event.wheelTicksX(), event.wheelTicksY()), FloatPoint(event.deltaX(), event.deltaY()),
         deltaMode(event), view, event.globalPosition(), event.position(),
-        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey(), event.directionInvertedFromDevice()));
+        event.ctrlKey(), event.altKey(), event.shiftKey(), event.metaKey()));
 }
 
 WheelEvent* WheelEventDispatchMediator::event() const
@@ -161,4 +123,4 @@ bool WheelEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) cons
     return EventDispatchMediator::dispatchEvent(dispatcher) && !event()->defaultHandled();
 }
 
-} // namespace WebCore
+} // namespace blink

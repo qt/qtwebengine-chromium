@@ -20,13 +20,15 @@
 static int g_UploadCount = 0;
 #endif
 
-GrPlot::GrPlot() : fDrawToken(NULL, 0)
-                 , fTexture(NULL)
-                 , fRects(NULL)
-                 , fAtlasMgr(NULL)
-                 , fBytesPerPixel(1)
-                 , fDirty(false)
-                 , fBatchUploads(false)
+GrPlot::GrPlot() 
+    : fDrawToken(NULL, 0)
+    , fID(-1)
+    , fTexture(NULL)
+    , fRects(NULL)
+    , fAtlas(NULL)
+    , fBytesPerPixel(1)
+    , fDirty(false)
+    , fBatchUploads(false)
 {
     fOffset.set(0, 0);
 }
@@ -37,10 +39,11 @@ GrPlot::~GrPlot() {
     delete fRects;
 }
 
-void GrPlot::init(GrAtlasMgr* mgr, int offX, int offY, int width, int height, size_t bpp,
+void GrPlot::init(GrAtlas* atlas, int id, int offX, int offY, int width, int height, size_t bpp,
                   bool batchUploads) {
+    fID = id;
     fRects = GrRectanizer::Factory(width, height);
-    fAtlasMgr = mgr;
+    fAtlas = atlas;
     fOffset.set(offX * width, offY * height);
     fBytesPerPixel = bpp;
     fPlotData = NULL;
@@ -54,8 +57,7 @@ static inline void adjust_for_offset(SkIPoint16* loc, const SkIPoint16& offset) 
     loc->fY += offset.fY;
 }
 
-bool GrPlot::addSubImage(int width, int height, const void* image,
-                         SkIPoint16* loc) {
+bool GrPlot::addSubImage(int width, int height, const void* image, SkIPoint16* loc) {
     float percentFull = fRects->percentFull();
     if (!fRects->addRect(width, height, loc)) {
         return false;
@@ -71,7 +73,7 @@ bool GrPlot::addSubImage(int width, int height, const void* image,
     }
 
     // if we have backing memory, copy to the memory and set for future upload
-    if (NULL != fPlotData) {
+    if (fPlotData) {
         const unsigned char* imagePtr = (const unsigned char*) image;
         // point ourselves at the right starting spot
         unsigned char* dataPtr = fPlotData;
@@ -88,14 +90,13 @@ bool GrPlot::addSubImage(int width, int height, const void* image,
         adjust_for_offset(loc, fOffset);
         fDirty = true;
     // otherwise, just upload the image directly
+    } else if (image) {
+        adjust_for_offset(loc, fOffset);
+        TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), "GrPlot::uploadToTexture");
+        fTexture->writePixels(loc->fX, loc->fY, width, height, fTexture->config(), image, 0,
+                              GrContext::kDontFlush_PixelOpsFlag);
     } else {
         adjust_for_offset(loc, fOffset);
-        GrContext* context = fTexture->getContext();
-        TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), "GrPlot::uploadToTexture");
-        context->writeTexturePixels(fTexture,
-                                    loc->fX, loc->fY, width, height,
-                                    fTexture->config(), image, 0,
-                                    GrContext::kDontFlush_PixelOpsFlag);
     }
 
 #if FONT_CACHE_STATS
@@ -113,8 +114,7 @@ void GrPlot::uploadToTexture() {
 
     if (fDirty) {
         TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia.gpu"), "GrPlot::uploadToTexture");
-        SkASSERT(NULL != fTexture);
-        GrContext* context = fTexture->getContext();
+        SkASSERT(fTexture);
         // We pass the flag that does not force a flush. We assume our caller is
         // smart and hasn't referenced the part of the texture we're about to update
         // since the last flush.
@@ -122,12 +122,9 @@ void GrPlot::uploadToTexture() {
         const unsigned char* dataPtr = fPlotData;
         dataPtr += rowBytes*fDirtyRect.fTop;
         dataPtr += fBytesPerPixel*fDirtyRect.fLeft;
-        context->writeTexturePixels(fTexture,
-                                    fOffset.fX + fDirtyRect.fLeft, fOffset.fY + fDirtyRect.fTop,
-                                    fDirtyRect.width(), fDirtyRect.height(),
-                                    fTexture->config(), dataPtr,
-                                    rowBytes,
-                                    GrContext::kDontFlush_PixelOpsFlag);
+        fTexture->writePixels(fOffset.fX + fDirtyRect.fLeft, fOffset.fY + fDirtyRect.fTop,
+                              fDirtyRect.width(), fDirtyRect.height(), fTexture->config(), dataPtr,
+                              rowBytes, GrContext::kDontFlush_PixelOpsFlag);
         fDirtyRect.setEmpty();
         fDirty = false;
         // If the Plot is nearly full, anything else we add will probably be small and one
@@ -140,17 +137,18 @@ void GrPlot::uploadToTexture() {
 }
 
 void GrPlot::resetRects() {
-    SkASSERT(NULL != fRects);
+    SkASSERT(fRects);
     fRects->reset();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrAtlasMgr::GrAtlasMgr(GrGpu* gpu, GrPixelConfig config,
-                       const SkISize& backingTextureSize,
-                       int numPlotsX, int numPlotsY, bool batchUploads) {
+GrAtlas::GrAtlas(GrGpu* gpu, GrPixelConfig config, GrSurfaceFlags flags,
+                 const SkISize& backingTextureSize,
+                 int numPlotsX, int numPlotsY, bool batchUploads) {
     fGpu = SkRef(gpu);
     fPixelConfig = config;
+    fFlags = flags;
     fBackingTextureSize = backingTextureSize;
     fNumPlotsX = numPlotsX;
     fNumPlotsY = numPlotsY;
@@ -176,7 +174,7 @@ GrAtlasMgr::GrAtlasMgr(GrGpu* gpu, GrPixelConfig config,
     GrPlot* currPlot = fPlotArray;
     for (int y = numPlotsY-1; y >= 0; --y) {
         for (int x = numPlotsX-1; x >= 0; --x) {
-            currPlot->init(this, x, y, plotWidth, plotHeight, bpp, batchUploads);
+            currPlot->init(this, y*numPlotsX+x, x, y, plotWidth, plotHeight, bpp, batchUploads);
 
             // build LRU list
             fPlotList.addToHead(currPlot);
@@ -185,17 +183,17 @@ GrAtlasMgr::GrAtlasMgr(GrGpu* gpu, GrPixelConfig config,
     }
 }
 
-GrAtlasMgr::~GrAtlasMgr() {
+GrAtlas::~GrAtlas() {
     SkSafeUnref(fTexture);
     SkDELETE_ARRAY(fPlotArray);
 
     fGpu->unref();
 #if FONT_CACHE_STATS
-      GrPrintf("Num uploads: %d\n", g_UploadCount);
+      SkDebugf("Num uploads: %d\n", g_UploadCount);
 #endif
 }
 
-void GrAtlasMgr::moveToHead(GrPlot* plot) {
+void GrAtlas::makeMRU(GrPlot* plot) {
     if (fPlotList.head() == plot) {
         return;
     }
@@ -204,15 +202,16 @@ void GrAtlasMgr::moveToHead(GrPlot* plot) {
     fPlotList.addToHead(plot);
 };
 
-GrPlot* GrAtlasMgr::addToAtlas(GrAtlas* atlas,
-                               int width, int height, const void* image,
-                               SkIPoint16* loc) {
+GrPlot* GrAtlas::addToAtlas(ClientPlotUsage* usage,
+                            int width, int height, const void* image,
+                            SkIPoint16* loc) {
     // iterate through entire plot list for this atlas, see if we can find a hole
     // last one was most recently added and probably most empty
-    for (int i = atlas->fPlots.count()-1; i >= 0; --i) {
-        GrPlot* plot = atlas->fPlots[i];
-        if (plot->addSubImage(width, height, image, loc)) {
-            this->moveToHead(plot);
+    for (int i = usage->fPlots.count()-1; i >= 0; --i) {
+        GrPlot* plot = usage->fPlots[i];
+        // client may have plots from more than one atlas, must check for ours before adding
+        if (this == plot->fAtlas && plot->addSubImage(width, height, image, loc)) {
+            this->makeMRU(plot);
             return plot;
         }
     }
@@ -220,8 +219,8 @@ GrPlot* GrAtlasMgr::addToAtlas(GrAtlas* atlas,
     // before we get a new plot, make sure we have a backing texture
     if (NULL == fTexture) {
         // TODO: Update this to use the cache rather than directly creating a texture.
-        GrTextureDesc desc;
-        desc.fFlags = kDynamicUpdate_GrTextureFlagBit;
+        GrSurfaceDesc desc;
+        desc.fFlags = fFlags;
         desc.fWidth = fBackingTextureSize.width();
         desc.fHeight = fBackingTextureSize.height();
         desc.fConfig = fPixelConfig;
@@ -236,13 +235,14 @@ GrPlot* GrAtlasMgr::addToAtlas(GrAtlas* atlas,
     GrPlotList::Iter plotIter;
     plotIter.init(fPlotList, GrPlotList::Iter::kHead_IterStart);
     GrPlot* plot;
-    while (NULL != (plot = plotIter.get())) {
+    while ((plot = plotIter.get())) {
         // make sure texture is set for quick lookup
         plot->fTexture = fTexture;
         if (plot->addSubImage(width, height, image, loc)) {
-            this->moveToHead(plot);
+            this->makeMRU(plot);
             // new plot for atlas, put at end of array
-            *(atlas->fPlots.append()) = plot;
+            SkASSERT(!usage->fPlots.contains(plot));
+            *(usage->fPlots.append()) = plot;
             return plot;
         }
         plotIter.next();
@@ -252,25 +252,19 @@ GrPlot* GrAtlasMgr::addToAtlas(GrAtlas* atlas,
     return NULL;
 }
 
-bool GrAtlasMgr::removePlot(GrAtlas* atlas, const GrPlot* plot) {
-    // iterate through plot list for this atlas
-    int count = atlas->fPlots.count();
-    for (int i = 0; i < count; ++i) {
-        if (plot == atlas->fPlots[i]) {
-            atlas->fPlots.remove(i);
-            return true;
-        }
+void GrAtlas::RemovePlot(ClientPlotUsage* usage, const GrPlot* plot) {
+    int index = usage->fPlots.find(const_cast<GrPlot*>(plot));
+    if (index >= 0) {
+        usage->fPlots.remove(index);
     }
-
-    return false;
 }
 
 // get a plot that's not being used by the current draw
-GrPlot* GrAtlasMgr::getUnusedPlot() {
+GrPlot* GrAtlas::getUnusedPlot() {
     GrPlotList::Iter plotIter;
     plotIter.init(fPlotList, GrPlotList::Iter::kTail_IterStart);
     GrPlot* plot;
-    while (NULL != (plot = plotIter.get())) {
+    while ((plot = plotIter.get())) {
         if (plot->drawToken().isIssued()) {
             return plot;
         }
@@ -280,12 +274,12 @@ GrPlot* GrAtlasMgr::getUnusedPlot() {
     return NULL;
 }
 
-void GrAtlasMgr::uploadPlotsToTexture() {
+void GrAtlas::uploadPlotsToTexture() {
     if (fBatchUploads) {
         GrPlotList::Iter plotIter;
         plotIter.init(fPlotList, GrPlotList::Iter::kHead_IterStart);
         GrPlot* plot;
-        while (NULL != (plot = plotIter.get())) {
+        while ((plot = plotIter.get())) {
             plot->uploadToTexture();
             plotIter.next();
         }

@@ -13,7 +13,7 @@
 // This means that it's possible for pages opened very quickly not to get the
 // correct transport security information.
 //
-// To load the state, we schedule a Task on file_task_runner, which
+// To load the state, we schedule a Task on background_runner, which
 // deserializes and configures the TransportSecurityState.
 //
 // The TransportSecurityState object supports running a callback function
@@ -51,20 +51,21 @@ namespace net {
 // Reads and updates on-disk TransportSecurity state. Clients of this class
 // should create, destroy, and call into it from one thread.
 //
-// file_task_runner is the task runner this class should use internally to
+// background_runner is the task runner this class should use internally to
 // perform file IO, and can optionally be associated with a different thread.
 class NET_EXPORT TransportSecurityPersister
     : public TransportSecurityState::Delegate,
       public base::ImportantFileWriter::DataSerializer {
  public:
-  TransportSecurityPersister(TransportSecurityState* state,
-                             const base::FilePath& profile_path,
-                             base::SequencedTaskRunner* file_task_runner,
-                             bool readonly);
-  virtual ~TransportSecurityPersister();
+  TransportSecurityPersister(
+      TransportSecurityState* state,
+      const base::FilePath& profile_path,
+      const scoped_refptr<base::SequencedTaskRunner>& background_runner,
+      bool readonly);
+  ~TransportSecurityPersister() override;
 
   // Called by the TransportSecurityState when it changes its state.
-  virtual void StateIsDirty(TransportSecurityState*) OVERRIDE;
+  void StateIsDirty(TransportSecurityState*) override;
 
   // ImportantFileWriter::DataSerializer:
   //
@@ -96,7 +97,7 @@ class NET_EXPORT TransportSecurityPersister
   // The reason for hashing them is so that the stored state does not
   // trivially reveal a user's browsing history to an attacker reading the
   // serialized state on disk.
-  virtual bool SerializeData(std::string* data) OVERRIDE;
+  bool SerializeData(std::string* data) override;
 
   // Clears any existing non-static entries, and then re-populates
   // |transport_security_state_|.

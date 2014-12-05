@@ -21,6 +21,7 @@
 #include "config.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 
+#include "core/css/parser/CSSParser.h"
 #include "core/svg/SVGAnimateTransformElement.h"
 #include "core/svg/SVGAnimatedColor.h"
 #include "core/svg/SVGAnimationElement.h"
@@ -28,12 +29,11 @@
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGNumber.h"
-#include "core/svg/SVGPaint.h"
 #include "core/svg/SVGPointList.h"
 #include "core/svg/SVGString.h"
 #include "core/svg/SVGTransformList.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimatedTypeAnimator::SVGAnimatedTypeAnimator(SVGAnimationElement* animationElement, SVGElement* contextElement)
     : m_animationElement(animationElement)
@@ -87,7 +87,7 @@ PassRefPtr<SVGPropertyBase> SVGAnimatedTypeAnimator::createPropertyForAnimation(
 
     switch (m_type) {
     case AnimatedColor:
-        return SVGColorProperty::create(value.isEmpty() ? StyleColor::currentColor() : SVGPaint::colorFromRGBColorString(value));
+        return SVGColorProperty::create(value.isEmpty() ? StyleColor::currentColor() : CSSParser::colorFromRGBColorString(value));
     case AnimatedNumber: {
         RefPtr<SVGNumber> property = SVGNumber::create();
         property->setValueAsString(value, IGNORE_EXCEPTION);

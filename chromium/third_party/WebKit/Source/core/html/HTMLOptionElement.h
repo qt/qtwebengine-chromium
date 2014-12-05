@@ -27,13 +27,14 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class HTMLDataListElement;
 class HTMLSelectElement;
 
-class HTMLOptionElement FINAL : public HTMLElement {
+class HTMLOptionElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLOptionElement> create(Document&);
     static PassRefPtrWillBeRawPtr<HTMLOptionElement> createForJSConstructor(Document&, const String& data, const AtomicString& value,
@@ -58,44 +59,45 @@ public:
 
     bool ownElementDisabled() const { return m_disabled; }
 
-    virtual bool isDisabledFormControl() const OVERRIDE;
+    virtual bool isDisabledFormControl() const override;
 
     String textIndentedToRespectGroupLabel() const;
 
     void setSelectedState(bool);
 
     HTMLFormElement* form() const;
+    bool spatialNavigationFocused() const;
 
     bool isDisplayNone() const;
-
 private:
     explicit HTMLOptionElement(Document&);
+    virtual ~HTMLOptionElement();
 
-    virtual bool rendererIsFocusable() const OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void accessKeyAction(bool) OVERRIDE;
-
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual bool rendererIsFocusable() const override { return true; }
+    virtual void attach(const AttachContext& = AttachContext()) override;
+    virtual void detach(const AttachContext& = AttachContext()) override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void accessKeyAction(bool) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
     // <option> never has a renderer so we manually manage a cached style.
     void updateNonRenderStyle();
-    virtual RenderStyle* nonRendererStyle() const OVERRIDE;
-    virtual PassRefPtr<RenderStyle> customStyleForRenderer() OVERRIDE;
-    virtual void didRecalcStyle(StyleRecalcChange) OVERRIDE;
+    virtual RenderStyle* nonRendererStyle() const override;
+    virtual PassRefPtr<RenderStyle> customStyleForRenderer() override;
+    virtual void didRecalcStyle(StyleRecalcChange) override;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
     String collectOptionInnerText() const;
+
+    void updateLabel();
 
     bool m_disabled;
     bool m_isSelected;
     RefPtr<RenderStyle> m_style;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // HTMLOptionElement_h

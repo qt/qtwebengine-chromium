@@ -6,13 +6,14 @@
 #include "core/frame/DeviceSingleWindowEventController.h"
 
 #include "core/dom/Document.h"
+#include "core/events/Event.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/page/Page.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceSingleWindowEventController::DeviceSingleWindowEventController(Document& document)
-    : DeviceEventControllerBase(document.page())
+    : PlatformEventController(document.page())
     , DOMWindowLifecycleObserver(document.domWindow())
     , m_needsCheckingNullEvents(true)
     , m_document(document)
@@ -30,11 +31,11 @@ void DeviceSingleWindowEventController::didUpdateData()
 
 void DeviceSingleWindowEventController::dispatchDeviceEvent(PassRefPtrWillBeRawPtr<Event> prpEvent)
 {
-    if (!m_document.domWindow() || m_document.activeDOMObjectsAreSuspended() || m_document.activeDOMObjectsAreStopped())
+    if (!document().domWindow() || document().activeDOMObjectsAreSuspended() || document().activeDOMObjectsAreStopped())
         return;
 
     RefPtrWillBeRawPtr<Event> event = prpEvent;
-    m_document.domWindow()->dispatchEvent(event);
+    document().domWindow()->dispatchEvent(event);
 
     if (m_needsCheckingNullEvents) {
         if (isNullEvent(event.get()))
@@ -70,4 +71,10 @@ void DeviceSingleWindowEventController::didRemoveAllEventListeners(LocalDOMWindo
     m_hasEventListener = false;
 }
 
-} // namespace WebCore
+void DeviceSingleWindowEventController::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    PlatformEventController::trace(visitor);
+}
+
+} // namespace blink

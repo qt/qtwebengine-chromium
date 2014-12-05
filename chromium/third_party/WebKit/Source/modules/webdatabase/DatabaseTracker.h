@@ -30,17 +30,17 @@
 #define DatabaseTracker_h
 
 #include "modules/webdatabase/DatabaseError.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class DatabaseBackendBase;
+class Database;
 class DatabaseContext;
-class OriginLock;
 class SecurityOrigin;
 
 class DatabaseTracker {
@@ -57,31 +57,33 @@ public:
     bool canEstablishDatabase(DatabaseContext*, const String& name, const String& displayName, unsigned long estimatedSize, DatabaseError&);
     String fullPathForDatabase(SecurityOrigin*, const String& name, bool createIfDoesNotExist = true);
 
-    void addOpenDatabase(DatabaseBackendBase*);
-    void removeOpenDatabase(DatabaseBackendBase*);
+    void addOpenDatabase(Database*);
+    void removeOpenDatabase(Database*);
 
-    unsigned long long getMaxSizeForDatabase(const DatabaseBackendBase*);
+    unsigned long long getMaxSizeForDatabase(const Database*);
 
-    void interruptAllDatabasesForContext(const DatabaseContext*);
     void closeDatabasesImmediately(const String& originIdentifier, const String& name);
 
-    void prepareToOpenDatabase(DatabaseBackendBase*);
-    void failedToOpenDatabase(DatabaseBackendBase*);
+    void prepareToOpenDatabase(Database*);
+    void failedToOpenDatabase(Database*);
 
 private:
-    typedef HashSet<DatabaseBackendBase*> DatabaseSet;
+    typedef HashSet<Database*> DatabaseSet;
     typedef HashMap<String, DatabaseSet*> DatabaseNameMap;
     typedef HashMap<String, DatabaseNameMap*> DatabaseOriginMap;
     class CloseOneDatabaseImmediatelyTask;
 
     DatabaseTracker();
 
-    void closeOneDatabaseImmediately(const String& originIdentifier, const String& name, DatabaseBackendBase*);
+    void closeOneDatabaseImmediately(const String& originIdentifier, const String& name, Database*);
 
     Mutex m_openDatabaseMapGuard;
+    // This map contains raw pointers to a garbage-collected class. We can't
+    // make this traceable because it is updated by multiple database threads.
+    GC_PLUGIN_IGNORE("crbug.com/417990")
     mutable OwnPtr<DatabaseOriginMap> m_openDatabaseMap;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseTracker_h

@@ -168,39 +168,14 @@ function GestureConfig() {
       units: 'milliseconds',
     },
     {
-      key: 'semi_long_press_time_in_seconds',
+      key: 'semi_long_press_time_in_ms',
       label: 'Semi Long Press Time',
-      units: 'seconds',
-      step: 0.1
+      units: 'milliseconds',
     },
     {
       key: 'max_separation_for_gesture_touches_in_pixels',
       label: 'Maximum Separation for Gesture Touches',
       units: 'pixels'
-    },
-    {
-      key: 'fling_acceleration_curve_coefficient_0',
-      label: 'Touchscreen Fling Acceleration',
-      units: 'x<sup>3</sup>',
-      min: '-1'
-    },
-    {
-      key: 'fling_acceleration_curve_coefficient_1',
-      label: '+',
-      units: 'x<sup>2</sup>',
-      min: '-1'
-    },
-    {
-      key: 'fling_acceleration_curve_coefficient_2',
-      label: '+',
-      units: 'x<sup>1</sup>',
-      min: '-1'
-    },
-    {
-      key: 'fling_acceleration_curve_coefficient_3',
-      label: '+',
-      units: 'x<sup>0</sup>',
-      min: '-1'
     },
     {
       key: 'tab_scrub_activation_delay_in_ms',
@@ -265,57 +240,6 @@ function OverscrollConfig() {
 }
 
 /**
- * Returns a GeneralConfig for configuring flingcurve.* preferences.
- * @return {object} A GeneralConfig object.
- */
-function FlingConfig() {
-  /** @const */ var FLING_TITLE = 'Fling Configuration';
-
-  /** @const */ var FLING_PREFIX = 'flingcurve.';
-
-  var FLING_FIELDS = [
-    {
-      key: 'touchscreen_alpha',
-      label: 'Touchscreen fling deacceleration coefficients',
-      units: 'alpha',
-      min: '-inf'
-    },
-    {
-      key: 'touchscreen_beta',
-      label: '',
-      units: 'beta',
-      min: '-inf'
-    },
-    {
-      key: 'touchscreen_gamma',
-      label: '',
-      units: 'gamma',
-      min: '-inf'
-    },
-    {
-      key: 'touchpad_alpha',
-      label: 'Touchpad fling deacceleration coefficients',
-      units: 'alpha',
-      min: '-inf'
-    },
-    {
-      key: 'touchpad_beta',
-      label: '',
-      units: 'beta',
-      min: '-inf'
-    },
-    {
-      key: 'touchpad_gamma',
-      label: '',
-      units: 'gamma',
-      min: '-inf'
-    },
-  ];
-
-  return new GeneralConfig(FLING_TITLE, FLING_PREFIX, FLING_FIELDS);
-}
-
-/**
  * WebUI instance for configuring preference values related to gesture input.
  */
 window.gesture_config = {
@@ -329,13 +253,9 @@ window.gesture_config = {
     var o = OverscrollConfig();
     o.buildAll();
 
-    var f = FlingConfig();
-    f.buildAll();
-
     $('reset-all-button').onclick = function() {
       g.onReset();
       o.onReset();
-      f.onReset();
     };
   },
 

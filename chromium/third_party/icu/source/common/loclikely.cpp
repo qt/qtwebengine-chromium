@@ -1,7 +1,7 @@
 /*
 *******************************************************************************
 *
-*   Copyright (C) 1997-2010, International Business Machines
+*   Copyright (C) 1997-2012, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 *******************************************************************************
@@ -325,9 +325,14 @@ createTagStringWithAlternates(
         }
 
         if (trailingLength > 0) {
-            if (capacityRemaining > 0 && !regionAppended) {
+            if (*trailing != '@' && capacityRemaining > 0) {
                 tag[tagLength++] = '_';
                 --capacityRemaining;
+                if (capacityRemaining > 0 && !regionAppended) {
+                    /* extra separator is required */
+                    tag[tagLength++] = '_';
+                    --capacityRemaining;
+                }
             }
 
             if (capacityRemaining > 0) {
@@ -546,6 +551,9 @@ parseTagString(
              **/
             *regionLength = 0;
         }
+    } else if (*position != 0 && *position != '@') {
+        /* back up over consumed trailing separator */
+        --position;
     }
 
 exit:
@@ -587,7 +595,6 @@ createLikelySubtagsString(
      **/
     char tagBuffer[ULOC_FULLNAME_CAPACITY];
     char likelySubtagsBuffer[ULOC_FULLNAME_CAPACITY];
-    int32_t tagBufferLength = 0;
 
     if(U_FAILURE(*err)) {
         goto error;
@@ -600,7 +607,7 @@ createLikelySubtagsString(
 
         const char* likelySubtags = NULL;
 
-        tagBufferLength = createTagString(
+        createTagString(
             lang,
             langLength,
             script,
@@ -653,7 +660,7 @@ createLikelySubtagsString(
 
         const char* likelySubtags = NULL;
 
-        tagBufferLength = createTagString(
+        createTagString(
             lang,
             langLength,
             script,
@@ -883,6 +890,9 @@ _uloc_addLikelySubtags(const char*    localeID,
     }
 
     /* Find the length of the trailing portion. */
+    while (_isIDSeparator(localeID[trailingIndex])) {
+        trailingIndex++;
+    }
     trailing = &localeID[trailingIndex];
     trailingLength = (int32_t)uprv_strlen(trailing);
 
@@ -987,7 +997,10 @@ _uloc_minimizeSubtags(const char*    localeID,
         goto error;
     }
 
-    /* Find the spot where the variants begin, if any. */
+    /* Find the spot where the variants or the keywords begin, if any. */
+    while (_isIDSeparator(localeID[trailingIndex])) {
+        trailingIndex++;
+    }
     trailing = &localeID[trailingIndex];
     trailingLength = (int32_t)uprv_strlen(trailing);
 
@@ -1213,7 +1226,7 @@ do_canonicalize(const char*    localeID,
     }
 }
 
-U_DRAFT int32_t U_EXPORT2
+U_CAPI int32_t U_EXPORT2
 uloc_addLikelySubtags(const char*    localeID,
          char* maximizedLocaleID,
          int32_t maximizedLocaleIDCapacity,
@@ -1237,7 +1250,7 @@ uloc_addLikelySubtags(const char*    localeID,
     }    
 }
 
-U_DRAFT int32_t U_EXPORT2
+U_CAPI int32_t U_EXPORT2
 uloc_minimizeSubtags(const char*    localeID,
          char* minimizedLocaleID,
          int32_t minimizedLocaleIDCapacity,

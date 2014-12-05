@@ -7,7 +7,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -33,6 +33,10 @@
 #include "net/url_request/url_request_context.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
+#endif
 
 using ::testing::_;
 using ::testing::AtLeast;
@@ -86,23 +90,23 @@ class MockMediaStreamRequester : public MediaStreamRequester {
 
   // MediaStreamRequester implementation.
   MOCK_METHOD5(StreamGenerated,
-               void(int render_view_id,
+               void(int render_frame_id,
                     int page_request_id,
                     const std::string& label,
                     const StreamDeviceInfoArray& audio_devices,
                     const StreamDeviceInfoArray& video_devices));
   MOCK_METHOD3(StreamGenerationFailed,
-      void(int render_view_id,
+      void(int render_frame_id,
            int page_request_id,
            content::MediaStreamRequestResult result));
-  MOCK_METHOD3(DeviceStopped, void(int render_view_id,
+  MOCK_METHOD3(DeviceStopped, void(int render_frame_id,
                                    const std::string& label,
                                    const StreamDeviceInfo& device));
-  MOCK_METHOD4(DevicesEnumerated, void(int render_view_id,
+  MOCK_METHOD4(DevicesEnumerated, void(int render_frame_id,
                                        int page_request_id,
                                        const std::string& label,
                                        const StreamDeviceInfoArray& devices));
-  MOCK_METHOD4(DeviceOpened, void(int render_view_id,
+  MOCK_METHOD4(DeviceOpened, void(int render_frame_id,
                                   int page_request_id,
                                   const std::string& label,
                                   const StreamDeviceInfo& device_info));
@@ -126,10 +130,11 @@ class MockVideoCaptureHost : public VideoCaptureHost {
                     int buffer_id));
   MOCK_METHOD2(OnBufferFreed,
                void(int device_id, int buffer_id));
-  MOCK_METHOD4(OnBufferFilled,
+  MOCK_METHOD5(OnBufferFilled,
                void(int device_id,
                     int buffer_id,
                     const media::VideoCaptureFormat& format,
+                    const gfx::Rect& visible_rect,
                     base::TimeTicks timestamp));
   MOCK_METHOD5(OnMailboxBufferFilled,
                void(int device_id,
@@ -152,7 +157,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   void ReturnReceivedDibs(int device_id)  {
     int handle = GetReceivedDib();
     while (handle) {
-      this->OnReceiveEmptyBuffer(device_id, handle, std::vector<uint32>());
+      this->OnReceiveEmptyBuffer(device_id, handle, 0);
       handle = GetReceivedDib();
     }
   }
@@ -177,7 +182,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   // This method is used to dispatch IPC messages to the renderer. We intercept
   // these messages here and dispatch to our mock methods to verify the
   // conversation between this object and the renderer.
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  virtual bool Send(IPC::Message* message) override {
     CHECK(message);
 
     // In this method we dispatch the messages to the according handlers as if
@@ -222,6 +227,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
   void OnBufferFilledDispatch(int device_id,
                               int buffer_id,
                               const media::VideoCaptureFormat& frame_format,
+                              const gfx::Rect& visible_rect,
                               base::TimeTicks timestamp) {
     base::SharedMemory* dib = filled_dib_[buffer_id];
     ASSERT_TRUE(dib != NULL);
@@ -238,10 +244,9 @@ class MockVideoCaptureHost : public VideoCaptureHost {
       dumper_.NewVideoFrame(dib->memory());
     }
 
-    OnBufferFilled(device_id, buffer_id, frame_format, timestamp);
+    OnBufferFilled(device_id, buffer_id, frame_format, visible_rect, timestamp);
     if (return_buffers_) {
-      VideoCaptureHost::OnReceiveEmptyBuffer(
-          device_id, buffer_id, std::vector<uint32>());
+      VideoCaptureHost::OnReceiveEmptyBuffer(device_id, buffer_id, 0);
     }
   }
 
@@ -253,8 +258,7 @@ class MockVideoCaptureHost : public VideoCaptureHost {
     OnMailboxBufferFilled(
         device_id, buffer_id, mailbox_holder, format, timestamp);
     if (return_buffers_) {
-      VideoCaptureHost::OnReceiveEmptyBuffer(
-          device_id, buffer_id, std::vector<uint32>());
+      VideoCaptureHost::OnReceiveEmptyBuffer(device_id, buffer_id, 0);
     }
   }
 
@@ -283,8 +287,13 @@ class VideoCaptureHostTest : public testing::Test {
         message_loop_(base::MessageLoopProxy::current()),
         opened_session_id_(kInvalidMediaCaptureSessionId) {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     SetBrowserClientForTesting(&browser_client_);
+
+#if defined(OS_CHROMEOS)
+    chromeos::CrasAudioHandler::InitializeForTesting();
+#endif
+
     // Create our own MediaStreamManager.
     audio_manager_.reset(media::AudioManager::CreateForTesting());
 #ifndef TEST_REAL_CAPTURE_DEVICE
@@ -301,7 +310,7 @@ class VideoCaptureHostTest : public testing::Test {
     OpenSession();
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     // Verifies and removes the expectations on host_ and
     // returns true iff successful.
     Mock::VerifyAndClearExpectations(host_.get());
@@ -315,11 +324,15 @@ class VideoCaptureHostTest : public testing::Test {
     // Release the reference to the mock object. The object will be destructed
     // on the current message loop.
     host_ = NULL;
+
+#if defined(OS_CHROMEOS)
+    chromeos::CrasAudioHandler::Shutdown();
+#endif
   }
 
   void OpenSession() {
     const int render_process_id = 1;
-    const int render_view_id = 1;
+    const int render_frame_id = 1;
     const int page_request_id = 1;
     const GURL security_origin("http://test.com");
 
@@ -332,13 +345,12 @@ class VideoCaptureHostTest : public testing::Test {
       std::string label = media_stream_manager_->EnumerateDevices(
           &stream_requester_,
           render_process_id,
-          render_view_id,
+          render_frame_id,
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
-          security_origin,
-          true);
-      EXPECT_CALL(stream_requester_, DevicesEnumerated(render_view_id,
+          security_origin);
+      EXPECT_CALL(stream_requester_, DevicesEnumerated(render_frame_id,
                                                        page_request_id,
                                                        label,
                                                        _))
@@ -359,13 +371,13 @@ class VideoCaptureHostTest : public testing::Test {
       media_stream_manager_->OpenDevice(
           &stream_requester_,
           render_process_id,
-          render_view_id,
+          render_frame_id,
           browser_context_.GetResourceContext()->GetMediaDeviceIDSalt(),
           page_request_id,
           devices[0].device.id,
           MEDIA_DEVICE_VIDEO_CAPTURE,
           security_origin);
-      EXPECT_CALL(stream_requester_, DeviceOpened(render_view_id,
+      EXPECT_CALL(stream_requester_, DeviceOpened(render_frame_id,
                                                   page_request_id,
                                                   _,
                                                   _))
@@ -390,13 +402,14 @@ class VideoCaptureHostTest : public testing::Test {
 
  protected:
   void StartCapture() {
-    EXPECT_CALL(*host_, OnNewBufferCreated(kDeviceId, _, _, _))
-        .Times(AnyNumber()).WillRepeatedly(Return());
+    EXPECT_CALL(*host_.get(), OnNewBufferCreated(kDeviceId, _, _, _))
+        .Times(AnyNumber())
+        .WillRepeatedly(Return());
 
     base::RunLoop run_loop;
-    EXPECT_CALL(*host_, OnBufferFilled(kDeviceId, _, _, _))
-        .Times(AnyNumber()).WillOnce(ExitMessageLoop(
-            message_loop_, run_loop.QuitClosure()));
+    EXPECT_CALL(*host_.get(), OnBufferFilled(kDeviceId, _, _, _, _))
+        .Times(AnyNumber())
+        .WillOnce(ExitMessageLoop(message_loop_, run_loop.QuitClosure()));
 
     media::VideoCaptureParams params;
     params.requested_format = media::VideoCaptureFormat(
@@ -410,7 +423,8 @@ class VideoCaptureHostTest : public testing::Test {
     // asynchronous start operations to complete.
     InSequence s;
     base::RunLoop run_loop;
-    EXPECT_CALL(*host_, OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED));
+    EXPECT_CALL(*host_.get(),
+                OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED));
     media::VideoCaptureParams params;
     params.requested_format = media::VideoCaptureFormat(
         gfx::Size(352, 288), 30, media::PIXEL_FORMAT_I420);
@@ -426,7 +440,7 @@ class VideoCaptureHostTest : public testing::Test {
         .Times(AnyNumber()).WillRepeatedly(Return());
 
     base::RunLoop run_loop;
-    EXPECT_CALL(*host_, OnBufferFilled(kDeviceId, _, _, _))
+    EXPECT_CALL(*host_, OnBufferFilled(kDeviceId, _, _, _, _))
         .Times(AnyNumber())
         .WillOnce(ExitMessageLoop(message_loop_, run_loop.QuitClosure()));
 
@@ -441,7 +455,8 @@ class VideoCaptureHostTest : public testing::Test {
 
   void StopCapture() {
     base::RunLoop run_loop;
-    EXPECT_CALL(*host_, OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED))
+    EXPECT_CALL(*host_.get(),
+                OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED))
         .WillOnce(ExitMessageLoop(message_loop_, run_loop.QuitClosure()));
 
     host_->OnStopCapture(kDeviceId);
@@ -457,9 +472,9 @@ class VideoCaptureHostTest : public testing::Test {
 
   void NotifyPacketReady() {
     base::RunLoop run_loop;
-    EXPECT_CALL(*host_, OnBufferFilled(kDeviceId, _, _, _))
-        .Times(AnyNumber()).WillOnce(ExitMessageLoop(
-            message_loop_, run_loop.QuitClosure()))
+    EXPECT_CALL(*host_.get(), OnBufferFilled(kDeviceId, _, _, _, _))
+        .Times(AnyNumber())
+        .WillOnce(ExitMessageLoop(message_loop_, run_loop.QuitClosure()))
         .RetiresOnSaturation();
     run_loop.Run();
   }
@@ -470,8 +485,8 @@ class VideoCaptureHostTest : public testing::Test {
 
   void SimulateError() {
     // Expect a change state to error state sent through IPC.
-    EXPECT_CALL(*host_, OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_ERROR))
-        .Times(1);
+    EXPECT_CALL(*host_.get(),
+                OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_ERROR)).Times(1);
     VideoCaptureControllerID id(kDeviceId);
     host_->OnError(id);
     // Wait for the error callback.
@@ -499,8 +514,8 @@ TEST_F(VideoCaptureHostTest, CloseSessionWithoutStopping) {
 
   // When the session is closed via the stream without stopping capture, the
   // ENDED event is sent.
-  EXPECT_CALL(*host_, OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_ENDED))
-      .Times(1);
+  EXPECT_CALL(*host_.get(),
+              OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_ENDED)).Times(1);
   CloseSession();
   base::RunLoop().RunUntilIdle();
 }
@@ -524,8 +539,8 @@ TEST_F(VideoCaptureHostTest, StartCaptureErrorStop) {
 }
 
 TEST_F(VideoCaptureHostTest, StartCaptureError) {
-  EXPECT_CALL(*host_, OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED))
-      .Times(0);
+  EXPECT_CALL(*host_.get(),
+              OnStateChanged(kDeviceId, VIDEO_CAPTURE_STATE_STOPPED)).Times(0);
   StartCapture();
   NotifyPacketReady();
   SimulateError();

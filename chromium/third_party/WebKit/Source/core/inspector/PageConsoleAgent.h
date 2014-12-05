@@ -34,30 +34,37 @@
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
+class ConsoleMessageStorage;
 class InspectorDOMAgent;
+class Page;
 
-class PageConsoleAgent FINAL : public InspectorConsoleAgent {
+class PageConsoleAgent final : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(PageConsoleAgent);
 public:
-    static PassOwnPtr<PageConsoleAgent> create(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent)
+    static PassOwnPtrWillBeRawPtr<PageConsoleAgent> create(InjectedScriptManager* injectedScriptManager, InspectorDOMAgent* domAgent, InspectorTimelineAgent* timelineAgent, Page* page)
     {
-        return adoptPtr(new PageConsoleAgent(injectedScriptManager, domAgent, timelineAgent));
+        return adoptPtrWillBeNoop(new PageConsoleAgent(injectedScriptManager, domAgent, timelineAgent, page));
     }
     virtual ~PageConsoleAgent();
+    virtual void trace(Visitor*) override;
 
-    virtual bool isWorkerAgent() OVERRIDE { return false; }
+    virtual bool isWorkerAgent() override { return false; }
+
+protected:
+    virtual ConsoleMessageStorage* messageStorage() override;
 
 private:
-    PageConsoleAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorTimelineAgent*);
-    virtual void clearMessages(ErrorString*) OVERRIDE;
-    virtual void addInspectedNode(ErrorString*, int nodeId) OVERRIDE;
+    PageConsoleAgent(InjectedScriptManager*, InspectorDOMAgent*, InspectorTimelineAgent*, Page*);
+    virtual void clearMessages(ErrorString*) override;
+    virtual void addInspectedNode(ErrorString*, int nodeId) override;
 
-    InspectorDOMAgent* m_inspectorDOMAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_inspectorDOMAgent;
+    RawPtrWillBeMember<Page> m_page;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(PageConsoleAgent_h)

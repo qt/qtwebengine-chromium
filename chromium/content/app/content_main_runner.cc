@@ -50,6 +50,10 @@
 #include "ui/base/ui_base_paths.h"
 #include "ui/base/ui_base_switches.h"
 
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+#include "gin/public/isolate_holder.h"
+#endif
+
 #if defined(OS_ANDROID)
 #include "content/public/common/content_descriptors.h"
 #endif
@@ -78,7 +82,6 @@
 
 #include "base/strings/string_number_conversions.h"
 #include "ui/base/win/atl_module.h"
-#include "ui/base/win/dpi_setup.h"
 #include "ui/gfx/win/dpi.h"
 #elif defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -121,13 +124,15 @@ extern int PpapiBrokerMain(const MainFunctionParams&);
 #endif
 extern int RendererMain(const content::MainFunctionParams&);
 extern int UtilityMain(const MainFunctionParams&);
-extern int WorkerMain(const MainFunctionParams&);
 }  // namespace content
 
 namespace content {
 
+#if !defined(CHROME_MULTIPLE_DLL_CHILD)
 base::LazyInstance<ContentBrowserClient>
     g_empty_content_browser_client = LAZY_INSTANCE_INITIALIZER;
+#endif  //  !CHROME_MULTIPLE_DLL_CHILD
+
 #if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
 base::LazyInstance<ContentPluginClient>
     g_empty_content_plugin_client = LAZY_INSTANCE_INITIALIZER;
@@ -191,7 +196,7 @@ void CommonSubprocessInit(const std::string& process_type) {
 
 // Only needed on Windows for creating stats tables.
 #if defined(OS_WIN)
-static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
+static base::ProcessId GetBrowserPid(const base::CommandLine& command_line) {
   base::ProcessId browser_pid = base::GetCurrentProcId();
   if (command_line.HasSwitch(switches::kProcessChannelID)) {
     std::string channel_name =
@@ -206,7 +211,7 @@ static base::ProcessId GetBrowserPid(const CommandLine& command_line) {
 }
 #endif
 
-static void InitializeStatsTable(const CommandLine& command_line) {
+static void InitializeStatsTable(const base::CommandLine& command_line) {
   // Initialize the Stats Counters table.  With this initialized,
   // the StatsViewer can be utilized to read counters outside of
   // Chrome.  These lines can be commented out to effectively turn
@@ -243,12 +248,14 @@ class ContentClientInitializer {
   static void Set(const std::string& process_type,
                   ContentMainDelegate* delegate) {
     ContentClient* content_client = GetContentClient();
+#if !defined(CHROME_MULTIPLE_DLL_CHILD)
     if (process_type.empty()) {
       if (delegate)
         content_client->browser_ = delegate->CreateContentBrowserClient();
       if (!content_client->browser_)
         content_client->browser_ = &g_empty_content_browser_client.Get();
     }
+#endif  // !CHROME_MULTIPLE_DLL_CHILD
 
 #if !defined(OS_IOS) && !defined(CHROME_MULTIPLE_DLL_BROWSER)
     if (process_type == switches::kPluginProcess ||
@@ -259,7 +266,7 @@ class ContentClientInitializer {
         content_client->plugin_ = &g_empty_content_plugin_client.Get();
       // Single process not supported in split dll mode.
     } else if (process_type == switches::kRendererProcess ||
-               CommandLine::ForCurrentProcess()->HasSwitch(
+               base::CommandLine::ForCurrentProcess()->HasSwitch(
                    switches::kSingleProcess)) {
       if (delegate)
         content_client->renderer_ = delegate->CreateContentRendererClient();
@@ -268,7 +275,7 @@ class ContentClientInitializer {
     }
 
     if (process_type == switches::kUtilityProcess ||
-        CommandLine::ForCurrentProcess()->HasSwitch(
+        base::CommandLine::ForCurrentProcess()->HasSwitch(
             switches::kSingleProcess)) {
       if (delegate)
         content_client->utility_ = delegate->CreateContentUtilityClient();
@@ -296,7 +303,6 @@ int RunZygote(const MainFunctionParams& main_function_params,
               ContentMainDelegate* delegate) {
   static const MainFunction kMainFunctions[] = {
     { switches::kRendererProcess,    RendererMain },
-    { switches::kWorkerProcess,      WorkerMain },
 #if defined(ENABLE_PLUGINS)
     { switches::kPpapiPluginProcess, PpapiPluginMain },
 #endif
@@ -322,7 +328,8 @@ int RunZygote(const MainFunctionParams& main_function_params,
 
   // Zygote::HandleForkRequest may have reallocated the command
   // line so update it here with the new version.
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   ContentClientInitializer::Set(process_type, delegate);
@@ -333,6 +340,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
   InitializeStatsTable(command_line);
 
   MainFunctionParams main_params(command_line);
+  main_params.zygote_child = true;
 
   for (size_t i = 0; i < arraysize(kMainFunctions); ++i) {
     if (process_type == kMainFunctions[i].name)
@@ -349,7 +357,7 @@ int RunZygote(const MainFunctionParams& main_function_params,
 
 #if !defined(OS_IOS)
 static void RegisterMainThreadFactories() {
-#if !defined(CHROME_MULTIPLE_DLL_BROWSER)
+#if !defined(CHROME_MULTIPLE_DLL_BROWSER) && !defined(CHROME_MULTIPLE_DLL_CHILD)
   UtilityProcessHostImpl::RegisterUtilityMainThreadFactory(
       CreateInProcessUtilityThread);
   RenderProcessHostImpl::RegisterRendererMainThreadFactory(
@@ -357,7 +365,7 @@ static void RegisterMainThreadFactories() {
   GpuProcessHost::RegisterGpuMainThreadFactory(
       CreateInProcessGpuThread);
 #else
-  CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  base::CommandLine& command_line = *base::CommandLine::ForCurrentProcess();
   if (command_line.HasSwitch(switches::kSingleProcess)) {
     LOG(FATAL) <<
         "--single-process is not supported in chrome multiple dll browser.";
@@ -366,7 +374,7 @@ static void RegisterMainThreadFactories() {
     LOG(FATAL) <<
         "--in-process-gpu is not supported in chrome multiple dll browser.";
   }
-#endif
+#endif  // !CHROME_MULTIPLE_DLL_BROWSER && !CHROME_MULTIPLE_DLL_CHILD
 }
 
 // Run the FooMain() for a given process type.
@@ -385,7 +393,6 @@ int RunNamedProcessTypeMain(
 #if !defined(OS_LINUX)
     { switches::kPluginProcess,      PluginMain },
 #endif
-    { switches::kWorkerProcess,      WorkerMain },
     { switches::kPpapiPluginProcess, PpapiPluginMain },
     { switches::kPpapiBrokerProcess, PpapiBrokerMain },
 #endif  // ENABLE_PLUGINS
@@ -446,7 +453,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif
   }
 
-  virtual ~ContentMainRunnerImpl() {
+  ~ContentMainRunnerImpl() override {
     if (is_initialized_ && !is_shutdown_)
       Shutdown();
   }
@@ -476,7 +483,7 @@ class ContentMainRunnerImpl : public ContentMainRunner {
   }
 #endif
 
-  virtual int Initialize(const ContentMainParams& params) OVERRIDE {
+  int Initialize(const ContentMainParams& params) override {
     ui_task_ = params.ui_task;
 
 #if defined(OS_WIN)
@@ -556,9 +563,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     is_initialized_ = true;
     delegate_ = params.delegate;
 
-    base::EnableTerminationOnHeapCorruption();
-    base::EnableTerminationOnOutOfMemory();
-
     // The exit manager is in charge of calling the dtors of singleton objects.
     // On Android, AtExitManager is set up when library is loaded.
     // On iOS, it's set up in main(), which can't call directly through to here.
@@ -594,26 +598,46 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     argv = params.argv;
 #endif
 
-    CommandLine::Init(argc, argv);
+    base::CommandLine::Init(argc, argv);
+
+    if (!delegate_ || delegate_->ShouldEnableTerminationOnHeapCorruption())
+      base::EnableTerminationOnHeapCorruption();
+    base::EnableTerminationOnOutOfMemory();
 
 #if !defined(OS_IOS)
     SetProcessTitleFromCommandLine(argv);
 #endif
 #endif // !OS_ANDROID
 
-    int exit_code;
+    int exit_code = 0;
     if (delegate_ && delegate_->BasicStartupComplete(&exit_code))
       return exit_code;
 
     completed_basic_startup_ = true;
 
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     std::string process_type =
         command_line.GetSwitchValueASCII(switches::kProcessType);
 
 #if !defined(OS_IOS)
     // Initialize mojo here so that services can be registered.
     InitializeMojo();
+#endif
+
+#if defined(OS_WIN)
+    bool init_device_scale_factor = true;
+    if (command_line.HasSwitch(switches::kDeviceScaleFactor)) {
+      std::string scale_factor_string = command_line.GetSwitchValueASCII(
+          switches::kDeviceScaleFactor);
+      double scale_factor = 0;
+      if (base::StringToDouble(scale_factor_string, &scale_factor)) {
+        init_device_scale_factor = false;
+        gfx::InitDeviceScaleFactor(scale_factor);
+      }
+    }
+    if (init_device_scale_factor)
+      gfx::InitDeviceScaleFactor(gfx::GetDPIScale());
 #endif
 
     if (!GetContentClient())
@@ -634,7 +658,8 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       base::debug::TraceLog::GetInstance()->SetEnabled(
           category_filter,
           base::debug::TraceLog::RECORDING_MODE,
-          base::debug::TraceLog::RECORD_UNTIL_FULL);
+          base::debug::TraceOptions(
+              base::debug::RECORD_UNTIL_FULL));
     }
 #if !defined(OS_ANDROID)
     // Android tracing started at the beginning of the method.
@@ -659,22 +684,6 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       MachBroker::ChildSendTaskPortToParent();
     }
 #elif defined(OS_WIN)
-    if (command_line.HasSwitch(switches::kEnableHighResolutionTime))
-      base::TimeTicks::SetNowIsHighResNowIfSupported();
-
-    bool init_device_scale_factor = true;
-    if (command_line.HasSwitch(switches::kDeviceScaleFactor)) {
-      std::string scale_factor_string = command_line.GetSwitchValueASCII(
-          switches::kDeviceScaleFactor);
-      double scale_factor = 0;
-      if (base::StringToDouble(scale_factor_string, &scale_factor)) {
-        init_device_scale_factor = false;
-        gfx::InitDeviceScaleFactor(scale_factor);
-      }
-    }
-    if (init_device_scale_factor)
-      ui::win::InitDeviceScaleFactor();
-
     SetupCRT(command_line);
 #endif
 
@@ -711,9 +720,26 @@ class ContentMainRunnerImpl : public ContentMainRunner {
       CHECK(base::i18n::InitializeICUWithFileDescriptor(icudata_fd));
     else
       CHECK(base::i18n::InitializeICU());
+
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+    int v8_natives_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
+        kV8NativesDataDescriptor);
+    int v8_snapshot_fd = base::GlobalDescriptors::GetInstance()->MaybeGet(
+        kV8SnapshotDataDescriptor);
+    if (v8_natives_fd != -1 && v8_snapshot_fd != -1) {
+      CHECK(gin::IsolateHolder::LoadV8SnapshotFD(v8_natives_fd,
+                                                 v8_snapshot_fd));
+    } else {
+      CHECK(gin::IsolateHolder::LoadV8Snapshot());
+    }
+#endif // V8_USE_EXTERNAL_STARTUP_DATA
+
 #else
     CHECK(base::i18n::InitializeICU());
-#endif
+#ifdef V8_USE_EXTERNAL_STARTUP_DATA
+    CHECK(gin::IsolateHolder::LoadV8Snapshot());
+#endif // V8_USE_EXTERNAL_STARTUP_DATA
+#endif // OS_ANDROID
 
     InitializeStatsTable(command_line);
 
@@ -743,12 +769,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
     return -1;
   }
 
-  virtual int Run() OVERRIDE {
+  int Run() override {
     DCHECK(is_initialized_);
     DCHECK(!is_shutdown_);
-    const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+    const base::CommandLine& command_line =
+        *base::CommandLine::ForCurrentProcess();
     std::string process_type =
-          command_line.GetSwitchValueASCII(switches::kProcessType);
+        command_line.GetSwitchValueASCII(switches::kProcessType);
 
     MainFunctionParams main_params(command_line);
     main_params.ui_task = ui_task_;
@@ -765,12 +792,13 @@ class ContentMainRunnerImpl : public ContentMainRunner {
 #endif
   }
 
-  virtual void Shutdown() OVERRIDE {
+  void Shutdown() override {
     DCHECK(is_initialized_);
     DCHECK(!is_shutdown_);
 
     if (completed_basic_startup_ && delegate_) {
-      const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+      const base::CommandLine& command_line =
+          *base::CommandLine::ForCurrentProcess();
       std::string process_type =
           command_line.GetSwitchValueASCII(switches::kProcessType);
 

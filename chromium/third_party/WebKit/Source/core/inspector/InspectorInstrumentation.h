@@ -31,7 +31,7 @@
 #ifndef InspectorInstrumentation_h
 #define InspectorInstrumentation_h
 
-#include "bindings/v8/ScriptString.h"
+#include "bindings/core/v8/ScriptString.h"
 #include "core/css/CSSSelector.h"
 #include "core/css/CSSStyleDeclaration.h"
 #include "core/css/CSSStyleSheet.h"
@@ -41,7 +41,6 @@
 #include "core/events/NodeEventContext.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/ConsoleAPITypes.h"
-#include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderImage.h"
 #include "core/storage/StorageArea.h"
@@ -50,25 +49,22 @@
 #include "platform/network/WebSocketHandshakeResponse.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-struct CSSParserString;
 class Document;
-class Element;
 class EventTarget;
 class ExecutionContext;
-class GraphicsContext;
-class GraphicsLayer;
+class FrameHost;
 class InspectorTimelineAgent;
 class InstrumentingAgents;
-class RenderLayer;
 class ThreadableLoaderClient;
 class WorkerGlobalScope;
-class WorkerGlobalScopeProxy;
+class WorkerInspectorProxy;
 
 #define FAST_RETURN_IF_NO_FRONTENDS(value) if (!hasFrontends()) return value;
 
 class InspectorInstrumentationCookie {
+    STACK_ALLOCATED();
 public:
     InspectorInstrumentationCookie();
     InspectorInstrumentationCookie(InstrumentingAgents*, int);
@@ -81,7 +77,7 @@ public:
     bool hasMatchingTimelineAgentId(int id) const { return m_timelineAgentId == id; }
 
 private:
-    RefPtr<InstrumentingAgents> m_instrumentingAgents;
+    RefPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
     int m_timelineAgentId;
 };
 
@@ -114,6 +110,7 @@ InstrumentingAgents* instrumentingAgentsFor(Document*);
 InstrumentingAgents* instrumentingAgentsFor(RenderObject*);
 InstrumentingAgents* instrumentingAgentsFor(Node*);
 InstrumentingAgents* instrumentingAgentsFor(WorkerGlobalScope*);
+InstrumentingAgents* instrumentingAgentsFor(FrameHost*);
 
 // Helper for the one above.
 InstrumentingAgents* instrumentingAgentsForNonDocumentContext(ExecutionContext*);
@@ -188,7 +185,7 @@ InstrumentingAgents* instrumentationForPage(Page*);
 
 InstrumentingAgents* instrumentationForWorkerGlobalScope(WorkerGlobalScope*);
 
-} // namespace WebCore
+} // namespace blink
 
 #include "core/InspectorInstrumentationInl.h"
 

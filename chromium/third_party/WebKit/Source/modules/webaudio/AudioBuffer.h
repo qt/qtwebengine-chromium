@@ -29,27 +29,28 @@
 #ifndef AudioBuffer_h
 #define AudioBuffer_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "wtf/Float32Array.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class ExceptionState;
 
-class AudioBuffer : public RefCountedWillBeGarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
+class AudioBuffer : public GarbageCollectedFinalized<AudioBuffer>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<AudioBuffer> create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
-    static PassRefPtrWillBeRawPtr<AudioBuffer> create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
+    static AudioBuffer* create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
+    static AudioBuffer* create(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate, ExceptionState&);
 
     // Returns 0 if data is not a valid audio file.
-    static PassRefPtrWillBeRawPtr<AudioBuffer> createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate);
+    static AudioBuffer* createFromAudioFileData(const void* data, size_t dataSize, bool mixToMono, float sampleRate);
 
-    static PassRefPtrWillBeRawPtr<AudioBuffer> createFromAudioBus(AudioBus*);
+    static AudioBuffer* createFromAudioBus(AudioBus*);
 
     // Format
     size_t length() const { return m_length; }
@@ -58,14 +59,13 @@ public:
 
     // Channel data access
     unsigned numberOfChannels() const { return m_channels.size(); }
-    PassRefPtr<Float32Array> getChannelData(unsigned channelIndex, ExceptionState&);
+    PassRefPtr<DOMFloat32Array> getChannelData(unsigned channelIndex, ExceptionState&);
     Float32Array* getChannelData(unsigned channelIndex);
     void zero();
 
-    static float minAllowedSampleRate();
-    static float maxAllowedSampleRate();
-
     void trace(Visitor*) { }
+
+    virtual v8::Handle<v8::Object> associateWithWrapper(const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper, v8::Isolate*) override;
 
 protected:
     AudioBuffer(unsigned numberOfChannels, size_t numberOfFrames, float sampleRate);
@@ -78,6 +78,6 @@ protected:
     Vector<RefPtr<Float32Array> > m_channels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioBuffer_h

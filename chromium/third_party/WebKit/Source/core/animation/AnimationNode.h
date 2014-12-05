@@ -31,13 +31,14 @@
 #ifndef AnimationNode_h
 #define AnimationNode_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/animation/Timing.h"
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class AnimationPlayer;
 class AnimationNode;
@@ -58,7 +59,8 @@ static inline double nullValue()
     return std::numeric_limits<double>::quiet_NaN();
 }
 
-class AnimationNode : public RefCountedWillBeGarbageCollectedFinalized<AnimationNode> {
+class AnimationNode : public RefCountedWillBeGarbageCollectedFinalized<AnimationNode>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
     friend class AnimationPlayer; // Calls attach/detach, updateInheritedTime.
 public:
     // Note that logic in CSSAnimations depends on the order of these values.
@@ -69,10 +71,11 @@ public:
         PhaseNone,
     };
 
-    class EventDelegate {
+    class EventDelegate : public NoBaseWillBeGarbageCollectedFinalized<EventDelegate> {
     public:
-        virtual ~EventDelegate() { };
+        virtual ~EventDelegate() { }
         virtual void onEventCondition(const AnimationNode*) = 0;
+        virtual void trace(Visitor*) { }
     };
 
     virtual ~AnimationNode() { }
@@ -102,7 +105,6 @@ public:
 
     const AnimationPlayer* player() const { return m_player; }
     AnimationPlayer* player() { return m_player; }
-    AnimationPlayer* player(bool& isNull) { isNull = !m_player; return m_player; }
     const Timing& specifiedTiming() const { return m_timing; }
     PassRefPtrWillBeRawPtr<AnimationNodeTiming> timing();
     void updateSpecifiedTiming(const Timing&);
@@ -111,10 +113,13 @@ public:
     double localTime(bool& isNull) const { isNull = !m_player; return ensureCalculated().localTime * 1000; }
     double currentIteration(bool& isNull) const { isNull = !ensureCalculated().isInEffect; return ensureCalculated().currentIteration; }
 
+    void setName(const String& name) { m_name = name; }
+    const String& name() const { return m_name; }
+
     virtual void trace(Visitor*);
 
 protected:
-    explicit AnimationNode(const Timing&, PassOwnPtr<EventDelegate> = nullptr);
+    explicit AnimationNode(const Timing&, PassOwnPtrWillBeRawPtr<EventDelegate> = nullptr);
 
     // When AnimationNode receives a new inherited time via updateInheritedTime
     // it will (if necessary) recalculate timings and (if necessary) call
@@ -147,7 +152,7 @@ protected:
     const double m_startTime;
     RawPtrWillBeMember<AnimationPlayer> m_player;
     Timing m_timing;
-    OwnPtr<EventDelegate> m_eventDelegate;
+    OwnPtrWillBeMember<EventDelegate> m_eventDelegate;
 
     mutable struct CalculatedTiming {
         Phase phase;
@@ -162,10 +167,11 @@ protected:
     } m_calculated;
     mutable bool m_needsUpdate;
     mutable double m_lastUpdateTime;
+    String m_name;
 
     const CalculatedTiming& ensureCalculated() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

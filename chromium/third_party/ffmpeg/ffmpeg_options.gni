@@ -11,7 +11,7 @@ if (is_chrome_branded) {
 }
 
 if (is_chromeos) {
-  _default_ffmpeg_branding = ffmpeg_branding + "OS"
+  _default_ffmpeg_branding = _default_ffmpeg_branding + "OS"
 }
 
 declare_args() {
@@ -31,13 +31,17 @@ assert(ffmpeg_branding == "Chromium" ||
        ffmpeg_branding == "ChromiumOS" ||
        ffmpeg_branding == "ChromeOS")
 
-if (cpu_arch == "arm" && arm_version == 7 && arm_use_neon) {
+if (cpu_arch == "x86") {
+  ffmpeg_arch = "ia32"
+} else if (cpu_arch == "arm" && arm_version == 7 && arm_use_neon) {
   ffmpeg_arch = "arm-neon"
 } else {
   ffmpeg_arch = cpu_arch
 }
 
 os_config = os
-if (is_linux && is_msan) {
+if ((is_linux || is_chromeos) && is_msan) {
   os_config = "linux-noasm"
+} else if (is_chromeos) {
+  os_config = "linux"
 }

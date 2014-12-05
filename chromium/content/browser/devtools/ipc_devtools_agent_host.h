@@ -16,19 +16,26 @@ namespace content {
 class CONTENT_EXPORT IPCDevToolsAgentHost : public DevToolsAgentHostImpl {
  public:
   // DevToolsAgentHostImpl implementation.
-  virtual void Attach() OVERRIDE;
-  virtual void Detach() OVERRIDE;
-  virtual void DispatchOnInspectorBackend(const std::string& message) OVERRIDE;
-  virtual void InspectElement(int x, int y) OVERRIDE;
+  void Attach() override;
+  void Detach() override;
+  void DispatchProtocolMessage(const std::string& message) override;
+  void InspectElement(int x, int y) override;
 
  protected:
-  virtual ~IPCDevToolsAgentHost();
+  IPCDevToolsAgentHost();
+  ~IPCDevToolsAgentHost() override;
 
   void Reattach(const std::string& saved_agent_state);
+  void ProcessChunkedMessageFromAgent(const std::string& message,
+                                      uint32 total_size);
 
   virtual void SendMessageToAgent(IPC::Message* msg) = 0;
   virtual void OnClientAttached() = 0;
   virtual void OnClientDetached() = 0;
+
+ private:
+  std::string message_buffer_;
+  uint32 message_buffer_size_;
 };
 
 }  // namespace content

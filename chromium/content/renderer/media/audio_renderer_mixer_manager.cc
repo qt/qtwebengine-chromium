@@ -21,7 +21,9 @@ AudioRendererMixerManager::AudioRendererMixerManager(
 }
 
 AudioRendererMixerManager::~AudioRendererMixerManager() {
-  DCHECK(mixers_.empty());
+  // References to AudioRendererMixers may be owned by garbage collected
+  // objects.  During process shutdown they may be leaked, so, transitively,
+  // |mixers_| may leak (i.e., may be non-empty at this time) as well.
 }
 
 media::AudioRendererMixerInput* AudioRendererMixerManager::CreateInput(
@@ -45,6 +47,9 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
     int source_render_view_id,
     int source_render_frame_id,
     const media::AudioParameters& params) {
+  // Effects are not passed through to output creation, so ensure none are set.
+  DCHECK_EQ(params.effects(), media::AudioParameters::NO_EFFECTS);
+
   const MixerKey key(source_render_view_id, params);
   base::AutoLock auto_lock(mixers_lock_);
 
@@ -54,9 +59,9 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
     return it->second.mixer;
   }
 
-  // On ChromeOS and Linux we can rely on the playback device to handle
-  // resampling, so don't waste cycles on it here.
-#if defined(OS_CHROMEOS) || defined(OS_LINUX)
+  // On ChromeOS we can rely on the playback device to handle resampling, so
+  // don't waste cycles on it here.
+#if defined(OS_CHROMEOS)
   int sample_rate = params.sample_rate();
 #else
   int sample_rate = hardware_config_->GetOutputSampleRate();
@@ -64,7 +69,7 @@ media::AudioRendererMixer* AudioRendererMixerManager::GetMixer(
 
   // Create output parameters based on the audio hardware configuration for
   // passing on to the output sink.  Force to 16-bit output for now since we
-  // know that works well for WebAudio and WebRTC.
+  // know that works everywhere; ChromeOS does not support other bit depths.
   media::AudioParameters output_params(
       media::AudioParameters::AUDIO_PCM_LOW_LATENCY, params.channel_layout(),
       sample_rate, 16, hardware_config_->GetHighLatencyBufferSize());

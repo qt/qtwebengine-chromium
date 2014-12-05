@@ -45,9 +45,9 @@ template<typename LinkedHashSet> class LinkedHashSetConstIterator;
 template<typename LinkedHashSet> class LinkedHashSetReverseIterator;
 template<typename LinkedHashSet> class LinkedHashSetConstReverseIterator;
 
-template<typename Value, typename HashFunctions> struct LinkedHashSetTranslator;
-template<typename Value> struct LinkedHashSetExtractor;
-template<typename Value, typename ValueTraits> struct LinkedHashSetTraits;
+template<typename Value, typename HashFunctions, typename Allocator> struct LinkedHashSetTranslator;
+template<typename Value, typename Allocator> struct LinkedHashSetExtractor;
+template<typename Value, typename ValueTraits, typename Allocator> struct LinkedHashSetTraits;
 
 class LinkedHashSetNodeBase {
 public:
@@ -116,7 +116,7 @@ private:
     LinkedHashSetNodeBase& operator=(const LinkedHashSetNodeBase& other);
 };
 
-template<typename ValueArg>
+template<typename ValueArg, typename Allocator>
 class LinkedHashSetNode : public LinkedHashSetNodeBase {
 public:
     LinkedHashSetNode(const ValueArg& value, LinkedHashSetNodeBase* prev, LinkedHashSetNodeBase* next)
@@ -142,10 +142,10 @@ class LinkedHashSet {
 private:
     typedef ValueArg Value;
     typedef TraitsArg Traits;
-    typedef LinkedHashSetNode<Value> Node;
+    typedef LinkedHashSetNode<Value, Allocator> Node;
     typedef LinkedHashSetNodeBase NodeBase;
-    typedef LinkedHashSetTranslator<Value, HashFunctions> NodeHashFunctions;
-    typedef LinkedHashSetTraits<Value, Traits> NodeHashTraits;
+    typedef LinkedHashSetTranslator<Value, HashFunctions, Allocator> NodeHashFunctions;
+    typedef LinkedHashSetTraits<Value, Traits, Allocator> NodeHashTraits;
 
     typedef HashTable<Node, Node, IdentityExtractor,
         NodeHashFunctions, NodeHashTraits, NodeHashTraits, Allocator> ImplType;
@@ -265,14 +265,11 @@ private:
 
     ImplType m_impl;
     NodeBase m_anchor;
-#ifndef ASSERT_ENABLED
-    uint64_t m_modifications;
-#endif
 };
 
-template<typename Value, typename HashFunctions>
+template<typename Value, typename HashFunctions, typename Allocator>
 struct LinkedHashSetTranslator {
-    typedef LinkedHashSetNode<Value> Node;
+    typedef LinkedHashSetNode<Value, Allocator> Node;
     typedef LinkedHashSetNodeBase NodeBase;
     typedef typename HashTraits<Value>::PeekInType ValuePeekInType;
     static unsigned hash(const Node& node) { return HashFunctions::hash(node.m_value); }
@@ -281,8 +278,8 @@ struct LinkedHashSetTranslator {
     static bool equal(const Node& a, const Node& b) { return HashFunctions::equal(a.m_value, b.m_value); }
     static void translate(Node& location, ValuePeekInType key, NodeBase* anchor)
     {
-        location.m_value = key;
         anchor->insertBefore(location);
+        location.m_value = key;
     }
 
     // Empty (or deleted) slots have the m_next pointer set to null, but we
@@ -292,14 +289,14 @@ struct LinkedHashSetTranslator {
     static const bool safeToCompareToEmptyOrDeleted = false;
 };
 
-template<typename Value>
+template<typename Value, typename Allocator>
 struct LinkedHashSetExtractor {
-    static const Value& extract(const LinkedHashSetNode<Value>& node) { return node.m_value; }
+    static const Value& extract(const LinkedHashSetNode<Value, Allocator>& node) { return node.m_value; }
 };
 
-template<typename Value, typename ValueTraitsArg>
-struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Value> > {
-    typedef LinkedHashSetNode<Value> Node;
+template<typename Value, typename ValueTraitsArg, typename Allocator>
+struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Value, Allocator> > {
+    typedef LinkedHashSetNode<Value, Allocator> Node;
     typedef ValueTraitsArg ValueTraits;
 
     // The slot is empty when the m_next field is zero so it's safe to zero
@@ -311,7 +308,7 @@ struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Valu
 
     static const int deletedValue = -1;
 
-    static void constructDeletedValue(Node& slot) { slot.m_next = reinterpret_cast<Node*>(deletedValue); }
+    static void constructDeletedValue(Node& slot, bool) { slot.m_next = reinterpret_cast<Node*>(deletedValue); }
     static bool isDeletedValue(const Node& slot) { return slot.m_next == reinterpret_cast<Node*>(deletedValue); }
 
     // We always need to call destructors, that's how we get linked and
@@ -325,11 +322,6 @@ struct LinkedHashSetTraits : public SimpleClassHashTraits<LinkedHashSetNode<Valu
         static const bool value = ValueTraits::template NeedsTracingLazily<>::value;
     };
     static const WeakHandlingFlag weakHandlingFlag = ValueTraits::weakHandlingFlag;
-    template<typename Visitor>
-    static bool shouldRemoveFromCollection(Visitor* visitor, LinkedHashSetNode<Value>& node)
-    {
-        return ValueTraits::shouldRemoveFromCollection(visitor, node.m_value);
-    }
 };
 
 template<typename LinkedHashSetType>
@@ -388,7 +380,7 @@ private:
 protected:
     LinkedHashSetConstIterator(const LinkedHashSetNodeBase* position, const LinkedHashSetType* container)
         : m_position(position)
-#ifdef ASSERT_ENABLED
+#if ENABLE(ASSERT)
         , m_container(container)
         , m_containerModifications(container->modifications())
 #endif
@@ -434,7 +426,7 @@ public:
 
 private:
     const LinkedHashSetNodeBase* m_position;
-#ifdef ASSERT_ENABLED
+#if ENABLE(ASSERT)
     void checkModifications() const { m_container->checkModifications(m_containerModifications); }
     const LinkedHashSetType* m_container;
     int64_t m_containerModifications;
@@ -507,7 +499,7 @@ template<typename T, typename U, typename V, typename W>
 inline void LinkedHashSet<T, U, V, W>::swap(LinkedHashSet& other)
 {
     m_impl.swap(other.m_impl);
-    swap(m_anchor, other.m_anchor);
+    swapAnchor(m_anchor, other.m_anchor);
 }
 
 template<typename T, typename U, typename V, typename Allocator>
@@ -675,8 +667,32 @@ inline void LinkedHashSet<T, U, V, W>::remove(ValuePeekInType value)
     remove(find(value));
 }
 
+inline void swapAnchor(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b)
+{
+    ASSERT(a.m_prev && a.m_next && b.m_prev && b.m_next);
+    swap(a.m_prev, b.m_prev);
+    swap(a.m_next, b.m_next);
+    if (b.m_next == &a) {
+        ASSERT(b.m_prev == &a);
+        b.m_next = &b;
+        b.m_prev = &b;
+    } else {
+        b.m_next->m_prev = &b;
+        b.m_prev->m_next = &b;
+    }
+    if (a.m_next == &b) {
+        ASSERT(a.m_prev == &b);
+        a.m_next = &a;
+        a.m_prev = &a;
+    } else {
+        a.m_next->m_prev = &a;
+        a.m_prev->m_next = &a;
+    }
+}
+
 inline void swap(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b)
 {
+    ASSERT(a.m_next != &a && b.m_next != &b);
     swap(a.m_prev, b.m_prev);
     swap(a.m_next, b.m_next);
     if (b.m_next) {
@@ -689,13 +705,14 @@ inline void swap(LinkedHashSetNodeBase& a, LinkedHashSetNodeBase& b)
     }
 }
 
-template<typename T>
-inline void swap(LinkedHashSetNode<T>& a, LinkedHashSetNode<T>& b)
+template<typename T, typename Allocator>
+inline void swap(LinkedHashSetNode<T, Allocator>& a, LinkedHashSetNode<T, Allocator>& b)
 {
     typedef LinkedHashSetNodeBase Base;
-
+    Allocator::enterNoAllocationScope();
     swap(static_cast<Base&>(a), static_cast<Base&>(b));
     swap(a.m_value, b.m_value);
+    Allocator::leaveNoAllocationScope();
 }
 
 // Warning: After and while calling this you have a collection with deleted
@@ -709,6 +726,13 @@ void deleteAllValues(const LinkedHashSet<ValueType, T, U>& set)
     for (iterator it = set.begin(); it != end; ++it)
         delete *it;
 }
+
+#if !ENABLE(OILPAN)
+template<typename T, typename U, typename V>
+struct NeedsTracing<LinkedHashSet<T, U, V> > {
+    static const bool value = false;
+};
+#endif
 
 }
 

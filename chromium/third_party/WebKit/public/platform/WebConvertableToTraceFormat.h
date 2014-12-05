@@ -8,19 +8,17 @@
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 
-namespace WebCore {
+namespace blink {
+
 namespace TraceEvent {
 class ConvertableToTraceFormat;
 }
-}
-
-namespace blink {
 
 class WebConvertableToTraceFormat {
 public:
     WebConvertableToTraceFormat() { }
 #if INSIDE_BLINK
-    WebConvertableToTraceFormat(WebCore::TraceEvent::ConvertableToTraceFormat*);
+    WebConvertableToTraceFormat(TraceEvent::ConvertableToTraceFormat*);
 #endif
     ~WebConvertableToTraceFormat() { reset(); }
 
@@ -36,7 +34,7 @@ public:
     }
 
 private:
-    WebPrivatePtr<WebCore::TraceEvent::ConvertableToTraceFormat> m_private;
+    WebPrivatePtr<TraceEvent::ConvertableToTraceFormat> m_private;
 };
 
 } // namespace blink

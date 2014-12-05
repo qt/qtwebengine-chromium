@@ -34,6 +34,7 @@ WHICH GENERATES THE GLSL ES PARSER (glslang_tab.cpp AND glslang_tab.h).
 #pragma warning(disable: 4701)
 #endif
 
+#include "angle_gl.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/ParseContext.h"
 #include "GLSLANG/ShaderLang.h"
@@ -106,14 +107,14 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, const char* reason)
   } while (0)
 
 #define VERTEX_ONLY(S, L) {  \
-    if (context->shaderType != SH_VERTEX_SHADER) {  \
+    if (context->shaderType != GL_VERTEX_SHADER) {  \
         context->error(L, " supported in vertex shaders only ", S);  \
         context->recover();  \
     }  \
 }
 
 #define FRAG_ONLY(S, L) {  \
-    if (context->shaderType != SH_FRAGMENT_SHADER) {  \
+    if (context->shaderType != GL_FRAGMENT_SHADER) {  \
         context->error(L, " supported in fragment shaders only ", S);  \
         context->recover();  \
     }  \
@@ -208,38 +209,7 @@ identifier
 variable_identifier
     : IDENTIFIER {
         // The symbol table search was done in the lexical phase
-        const TSymbol *symbol = $1.symbol;
-        const TVariable *variable = 0;
-
-        if (!symbol)
-        {
-            context->error(@1, "undeclared identifier", $1.string->c_str());
-            context->recover();
-        }
-        else if (!symbol->isVariable())
-        {
-            context->error(@1, "variable expected", $1.string->c_str());
-            context->recover();
-        }
-        else
-        {
-            variable = static_cast<const TVariable*>(symbol);
-
-            if (context->symbolTable.findBuiltIn(variable->getName(), context->shaderVersion) &&
-                !variable->getExtension().empty() &&
-                context->extensionErrorCheck(@1, variable->getExtension()))
-            {
-                context->recover();
-            }
-        }
-
-        if (!variable)
-        {
-            TType type(EbtFloat, EbpUndefined);
-            TVariable *fakeVariable = new TVariable($1.string, type);
-            context->symbolTable.declare(*fakeVariable);
-            variable = fakeVariable;
-        }
+        const TVariable *variable = context->getNamedVariable(@1, $1.string, $1.symbol);
 
         if (variable->getType().getQualifier() == EvqConst)
         {
@@ -384,6 +354,15 @@ function_call
                         // Treat it like a built-in unary operator.
                         //
                         $$ = context->intermediate.addUnaryMath(op, $1.intermNode, @1);
+                        const TType& returnType = fnCandidate->getReturnType();
+                        if (returnType.getBasicType() == EbtBool) {
+                            // Bool types should not have precision, so we'll override any precision
+                            // that might have been set by addUnaryMath.
+                            $$->setType(returnType);
+                        } else {
+                            // addUnaryMath has set the precision of the node based on the operand.
+                            $$->setTypePreservePrecision(returnType);
+                        }
                         if ($$ == 0)  {
                             std::stringstream extraInfoStream;
                             extraInfoStream << "built in unary operator function.  Type: " << static_cast<TIntermTyped*>($1.intermNode)->getCompleteString();
@@ -392,33 +371,41 @@ function_call
                             YYERROR;
                         }
                     } else {
-                        $$ = context->intermediate.setAggregateOperator($1.intermAggregate, op, @1);
+                        TIntermAggregate *aggregate = context->intermediate.setAggregateOperator($1.intermAggregate, op, @1);
+                        aggregate->setType(fnCandidate->getReturnType());
+                        aggregate->setPrecisionFromChildren();
+                        $$ = aggregate;
                     }
                 } else {
                     // This is a real function call
 
-                    $$ = context->intermediate.setAggregateOperator($1.intermAggregate, EOpFunctionCall, @1);
-                    $$->setType(fnCandidate->getReturnType());
+                    TIntermAggregate *aggregate = context->intermediate.setAggregateOperator($1.intermAggregate, EOpFunctionCall, @1);
+                    aggregate->setType(fnCandidate->getReturnType());
 
                     // this is how we know whether the given function is a builtIn function or a user defined function
                     // if builtIn == false, it's a userDefined -> could be an overloaded builtIn function also
                     // if builtIn == true, it's definitely a builtIn function with EOpNull
                     if (!builtIn)
-                        $$->getAsAggregate()->setUserDefined();
-                    $$->getAsAggregate()->setName(fnCandidate->getMangledName());
+                        aggregate->setUserDefined();
+                    aggregate->setName(fnCandidate->getMangledName());
+
+                    // This needs to happen after the name is set
+                    if (builtIn)
+                        aggregate->setBuiltInFunctionPrecision();
+
+                    $$ = aggregate;
 
                     TQualifier qual;
                     for (size_t i = 0; i < fnCandidate->getParamCount(); ++i) {
                         qual = fnCandidate->getParam(i).type->getQualifier();
                         if (qual == EvqOut || qual == EvqInOut) {
-                            if (context->lValueErrorCheck($$->getLine(), "assign", $$->getAsAggregate()->getSequence()[i]->getAsTyped())) {
+                            if (context->lValueErrorCheck($$->getLine(), "assign", (*($$->getAsAggregate()->getSequence()))[i]->getAsTyped())) {
                                 context->error($1.intermNode->getLine(), "Constant value cannot be passed for 'out' or 'inout' parameters.", "Error");
                                 context->recover();
                             }
                         }
                     }
                 }
-                $$->setType(fnCandidate->getReturnType());
             } else {
                 // error message was put out by PaFindFunction()
                 // Put on a dummy node for error recovery
@@ -530,6 +517,7 @@ unary_expression
                 const char* errorOp = "";
                 switch($1.op) {
                 case EOpNegative:   errorOp = "-"; break;
+                case EOpPositive:   errorOp = "+"; break;
                 case EOpLogicalNot: errorOp = "!"; break;
                 default: break;
                 }
@@ -544,7 +532,7 @@ unary_expression
 // Grammar Note:  No traditional style type casts.
 
 unary_operator
-    : PLUS  { $$.op = EOpNull; }
+    : PLUS  { $$.op = EOpPositive; }
     | DASH  { $$.op = EOpNegative; }
     | BANG  { $$.op = EOpLogicalNot; }
     ;
@@ -815,12 +803,13 @@ declaration
         context->symbolTable.pop();
     }
     | init_declarator_list SEMICOLON {
-        if ($1.intermAggregate)
-            $1.intermAggregate->setOp(EOpDeclaration);
-        $$ = $1.intermAggregate;
+        TIntermAggregate *aggNode = $1.intermAggregate;
+        if (aggNode && aggNode->getOp() == EOpNull)
+            aggNode->setOp(EOpDeclaration);
+        $$ = aggNode;
     }
     | PRECISION precision_qualifier type_specifier_no_prec SEMICOLON {
-        if (($2 == EbpHigh) && (context->shaderType == SH_FRAGMENT_SHADER) && !context->fragmentPrecisionHigh) {
+        if (($2 == EbpHigh) && (context->shaderType == GL_FRAGMENT_SHADER) && !context->fragmentPrecisionHigh) {
             context->error(@1, "precision is not supported in fragment shader", "highp");
             context->recover();
         }
@@ -887,7 +876,8 @@ function_prototype
         else
         {
             // Insert the unmangled name to detect potential future redefinition as a variable.
-            context->symbolTable.getOuterLevel()->insert($1->getName(), *$1);
+            TFunction *function = new TFunction(NewPoolTString($1->getName().c_str()), $1->getReturnType());
+            context->symbolTable.getOuterLevel()->insert(function);
         }
 
         //
@@ -899,7 +889,7 @@ function_prototype
 
         // We're at the inner scope level of the function's arguments and body statement.
         // Add the function prototype to the surrounding scope instead.
-        context->symbolTable.getOuterLevel()->insert(*$$.function);
+        context->symbolTable.getOuterLevel()->insert($$.function);
     }
     ;
 
@@ -1100,22 +1090,8 @@ single_declaration
         $$.intermAggregate = context->parseSingleInitDeclaration($$.type, @2, *$2.string, @3, $4);
     }
     | INVARIANT IDENTIFIER {
-        VERTEX_ONLY("invariant declaration", @1);
-        if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "invariant varying"))
-            context->recover();
-        $$.type.setBasic(EbtInvariant, EvqInvariantVaryingOut, @2);
-        if (!$2.symbol)
-        {
-            context->error(@2, "undeclared identifier declared as invariant", $2.string->c_str());
-            context->recover();
-            
-            $$.intermAggregate = 0;
-        }
-        else
-        {
-            TIntermSymbol *symbol = context->intermediate.addSymbol(0, *$2.string, TType($$.type), @2);
-            $$.intermAggregate = context->intermediate.makeAggregate(symbol, @2);
-        }
+        // $$.type is not used in invariant declarations.
+        $$.intermAggregate = context->parseInvariantDeclaration(@1, @2, $2.string, $2.symbol);
     }
     ;
 
@@ -1161,7 +1137,7 @@ type_qualifier
         ES2_ONLY("varying", @1);
         if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "varying"))
             context->recover();
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
             $$.setBasic(EbtVoid, EvqVaryingOut, @1);
         else
             $$.setBasic(EbtVoid, EvqVaryingIn, @1);
@@ -1170,7 +1146,7 @@ type_qualifier
         ES2_ONLY("varying", @1);
         if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "invariant varying"))
             context->recover();
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
             $$.setBasic(EbtVoid, EvqInvariantVaryingOut, @1);
         else
             $$.setBasic(EbtVoid, EvqInvariantVaryingIn, @1);
@@ -1209,29 +1185,29 @@ storage_qualifier
     }
     | IN_QUAL {
         ES3_ONLY("in", @1, "storage qualifier");
-        $$.qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
+        $$.qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
     }
     | OUT_QUAL {
         ES3_ONLY("out", @1, "storage qualifier");
-        $$.qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
+        $$.qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
     }
     | CENTROID IN_QUAL {
         ES3_ONLY("centroid in", @1, "storage qualifier");
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
         {
             context->error(@1, "invalid storage qualifier", "it is an error to use 'centroid in' in the vertex shader");
             context->recover();
         }
-        $$.qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
+        $$.qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
     }
     | CENTROID OUT_QUAL {
         ES3_ONLY("centroid out", @1, "storage qualifier");
-        if (context->shaderType == SH_FRAGMENT_SHADER)
+        if (context->shaderType == GL_FRAGMENT_SHADER)
         {
             context->error(@1, "invalid storage qualifier", "it is an error to use 'centroid out' in the fragment shader");
             context->recover();
         }
-        $$.qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
+        $$.qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
     }
     | UNIFORM {
         if (context->globalErrorCheck(@1, context->symbolTable.atGlobalLevel(), "uniform"))
@@ -1899,7 +1875,7 @@ function_definition
                 //
                 // Insert the parameters with name in the symbol table.
                 //
-                if (! context->symbolTable.declare(*variable)) {
+                if (! context->symbolTable.declare(variable)) {
                     context->error(@1, "redefinition", variable->getName().c_str());
                     context->recover();
                     delete variable;

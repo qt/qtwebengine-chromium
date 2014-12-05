@@ -11,8 +11,8 @@
 #include "cc/layers/layer_impl.h"
 #include "cc/resources/resource_provider.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
 class DictionaryValue;
@@ -26,7 +26,7 @@ class CC_EXPORT UIResourceLayerImpl : public LayerImpl {
                                                int id) {
     return make_scoped_ptr(new UIResourceLayerImpl(tree_impl, id));
   }
-  virtual ~UIResourceLayerImpl();
+  ~UIResourceLayerImpl() override;
 
   void SetUIResourceId(UIResourceId uid);
 
@@ -39,16 +39,16 @@ class CC_EXPORT UIResourceLayerImpl : public LayerImpl {
   // opacity value.
   void SetVertexOpacity(const float vertex_opacity[4]);
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
 
-  virtual base::DictionaryValue* LayerTreeAsJson() const OVERRIDE;
+  base::DictionaryValue* LayerTreeAsJson() const override;
 
  protected:
   UIResourceLayerImpl(LayerTreeImpl* tree_impl, int id);
@@ -63,7 +63,7 @@ class CC_EXPORT UIResourceLayerImpl : public LayerImpl {
   float vertex_opacity_[4];
 
  private:
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
   DISALLOW_COPY_AND_ASSIGN(UIResourceLayerImpl);
 };

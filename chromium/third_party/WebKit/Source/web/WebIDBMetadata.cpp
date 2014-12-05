@@ -31,11 +31,9 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebVector.h"
 
-using namespace WebCore;
-
 namespace blink {
 
-WebIDBMetadata::WebIDBMetadata(const WebCore::IDBDatabaseMetadata& metadata)
+WebIDBMetadata::WebIDBMetadata(const IDBDatabaseMetadata& metadata)
 {
     name = metadata.name;
     version = metadata.version;

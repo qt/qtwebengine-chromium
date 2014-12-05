@@ -64,7 +64,7 @@ void QuicSpdyServerStream::OnFinRead() {
   }
 }
 
-int QuicSpdyServerStream::ParseRequestHeaders() {
+void QuicSpdyServerStream::ParseRequestHeaders() {
   size_t read_buf_len = static_cast<size_t>(read_buf_->offset());
   SpdyFramer framer(SPDY3);
   SpdyHeaderBlock headers;
@@ -72,12 +72,12 @@ int QuicSpdyServerStream::ParseRequestHeaders() {
   size_t len = framer.ParseHeaderBlockInBuffer(data, read_buf_->offset(),
                                                &headers);
   if (len == 0) {
-    return -1;
+    return;
   }
 
   if (!SpdyUtils::FillBalsaRequestHeaders(headers, &headers_)) {
     SendErrorResponse();
-    return -1;
+    return;
   }
 
   size_t delta = read_buf_len - len;
@@ -86,14 +86,13 @@ int QuicSpdyServerStream::ParseRequestHeaders() {
   }
 
   request_headers_received_ = true;
-  return len;
 }
 
 void QuicSpdyServerStream::SendResponse() {
   // Find response in cache. If not found, send error response.
   const QuicInMemoryCache::Response* response =
       QuicInMemoryCache::GetInstance()->GetResponse(headers_);
-  if (response == NULL) {
+  if (response == nullptr) {
     SendErrorResponse();
     return;
   }
@@ -133,10 +132,10 @@ void QuicSpdyServerStream::SendHeadersAndBody(
   SpdyHeaderBlock header_block =
       SpdyUtils::ResponseHeadersToSpdyHeaders(response_headers);
 
-  WriteHeaders(header_block, body.empty(), NULL);
+  WriteHeaders(header_block, body.empty(), nullptr);
 
   if (!body.empty()) {
-    WriteOrBufferData(body, true, NULL);
+    WriteOrBufferData(body, true, nullptr);
   }
 }
 

@@ -23,15 +23,17 @@ class WebMediaPlayerClient;
 
 namespace media {
 class MediaLog;
+class WebMediaPlayerDelegate;
 }
 
+namespace cc_blink {
+class WebLayerImpl;
+}
 
 namespace content {
 class MediaStreamAudioRenderer;
 class MediaStreamRendererFactory;
 class VideoFrameProvider;
-class WebLayerImpl;
-class WebMediaPlayerDelegate;
 
 // WebMediaPlayerMS delegates calls from WebCore::MediaPlayerPrivate to
 // Chrome's media player when "src" is from media stream.
@@ -56,7 +58,7 @@ class WebMediaPlayerMS
   // a MediaStreamClient which provides VideoFrameProvider.
   WebMediaPlayerMS(blink::WebFrame* frame,
                    blink::WebMediaPlayerClient* client,
-                   base::WeakPtr<WebMediaPlayerDelegate> delegate,
+                   base::WeakPtr<media::WebMediaPlayerDelegate> delegate,
                    media::MediaLog* media_log,
                    scoped_ptr<MediaStreamRendererFactory> factory);
   virtual ~WebMediaPlayerMS();
@@ -74,12 +76,13 @@ class WebMediaPlayerMS
   virtual void setVolume(double volume);
   virtual void setPreload(blink::WebMediaPlayer::Preload preload);
   virtual blink::WebTimeRanges buffered() const;
-  virtual double maxTimeSeekable() const;
+  virtual blink::WebTimeRanges seekable() const;
 
   // Methods for painting.
   virtual void paint(blink::WebCanvas* canvas,
                      const blink::WebRect& rect,
-                     unsigned char alpha);
+                     unsigned char alpha,
+                     SkXfermode::Mode mode);
 
   // True if the loaded media has a playable video/audio track.
   virtual bool hasVideo() const;
@@ -111,11 +114,10 @@ class WebMediaPlayerMS
   virtual unsigned videoDecodedByteCount() const;
 
   // VideoFrameProvider implementation.
-  virtual void SetVideoFrameProviderClient(
-      cc::VideoFrameProvider::Client* client) OVERRIDE;
-  virtual scoped_refptr<media::VideoFrame> GetCurrentFrame() OVERRIDE;
-  virtual void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame)
-      OVERRIDE;
+  void SetVideoFrameProviderClient(
+      cc::VideoFrameProvider::Client* client) override;
+  scoped_refptr<media::VideoFrame> GetCurrentFrame() override;
+  void PutCurrentFrame(const scoped_refptr<media::VideoFrame>& frame) override;
 
  private:
   // The callback for VideoFrameProvider to signal a new frame is available.
@@ -141,12 +143,14 @@ class WebMediaPlayerMS
 
   blink::WebTimeRanges buffered_;
 
+  float volume_;
+
   // Used for DCHECKs to ensure methods calls executed in the correct thread.
   base::ThreadChecker thread_checker_;
 
   blink::WebMediaPlayerClient* client_;
 
-  base::WeakPtr<WebMediaPlayerDelegate> delegate_;
+  base::WeakPtr<media::WebMediaPlayerDelegate> delegate_;
 
   // Specify content:: to disambiguate from cc::.
   scoped_refptr<content::VideoFrameProvider> video_frame_provider_;
@@ -166,7 +170,7 @@ class WebMediaPlayerMS
   base::Lock current_frame_lock_;
   bool pending_repaint_;
 
-  scoped_ptr<WebLayerImpl> video_weblayer_;
+  scoped_ptr<cc_blink::WebLayerImpl> video_weblayer_;
 
   // A pointer back to the compositor to inform it about state changes. This is
   // not NULL while the compositor is actively using this webmediaplayer.

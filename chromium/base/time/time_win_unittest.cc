@@ -121,7 +121,7 @@ TEST(TimeTicks, SubMillisecondTimers) {
   bool saw_submillisecond_timer = false;
 
   // Run kRetries attempts to see a sub-millisecond timer.
-  for (int index = 0; index < 1000; index++) {
+  for (int index = 0; index < kRetries; index++) {
     TimeTicks last_time = TimeTicks::HighResNow();
     TimeDelta delta;
     // Spin until the clock has detected a change.
@@ -170,15 +170,11 @@ TEST(TimeTicks, TimerPerformance) {
   // Verify that various timer mechanisms can always complete quickly.
   // Note:  This is a somewhat arbitrary test.
   const int kLoops = 10000;
-  // Due to the fact that these run on bbots, which are horribly slow,
-  // we can't really make any guarantees about minimum runtime.
-  // Really, we want these to finish in ~10ms, and that is generous.
-  const int kMaxTime = 35;  // Maximum acceptible milliseconds for test.
 
   typedef TimeTicks (*TestFunc)();
   struct TestCase {
     TestFunc func;
-    char *description;
+    const char *description;
   };
   // Cheating a bit here:  assumes sizeof(TimeTicks) == sizeof(Time)
   // in order to create a single test case list.
@@ -203,6 +199,7 @@ TEST(TimeTicks, TimerPerformance) {
     // The reason to remove the check is because the tests run on many
     // buildbots, some of which are VMs.  These machines can run horribly
     // slow, and there is really no value for checking against a max timer.
+    //const int kMaxTime = 35;  // Maximum acceptible milliseconds for test.
     //EXPECT_LT((stop - start).InMilliseconds(), kMaxTime);
     printf("%s: %1.2fus per call\n", cases[test_case].description,
       (stop - start).InMillisecondsF() * 1000 / kLoops);
@@ -210,7 +207,8 @@ TEST(TimeTicks, TimerPerformance) {
   }
 }
 
-TEST(TimeTicks, Drift) {
+// http://crbug.com/396384
+TEST(TimeTicks, DISABLED_Drift) {
   // If QPC is disabled, this isn't measuring anything.
   if (!TimeTicks::IsHighResClockWorking())
     return;
@@ -239,4 +237,35 @@ TEST(TimeTicks, Drift) {
 
   printf("average time drift in microseconds: %lld\n",
          total_drift / kIterations);
+}
+
+int64 QPCValueToMicrosecondsSafely(LONGLONG qpc_value,
+                                   int64 ticks_per_second) {
+  int64 whole_seconds = qpc_value / ticks_per_second;
+  int64 leftover_ticks = qpc_value % ticks_per_second;
+  int64 microseconds = (whole_seconds * Time::kMicrosecondsPerSecond) +
+                       ((leftover_ticks * Time::kMicrosecondsPerSecond) /
+                        ticks_per_second);
+  return microseconds;
+}
+
+TEST(TimeTicks, FromQPCValue) {
+  if (!TimeTicks::IsHighResClockWorking())
+    return;
+  LARGE_INTEGER frequency;
+  QueryPerformanceFrequency(&frequency);
+  int64 ticks_per_second = frequency.QuadPart;
+  LONGLONG qpc_value = Time::kQPCOverflowThreshold;
+  TimeTicks expected_value = TimeTicks::FromInternalValue(
+    QPCValueToMicrosecondsSafely(qpc_value + 1, ticks_per_second));
+  EXPECT_EQ(expected_value,
+            TimeTicks::FromQPCValue(qpc_value + 1));
+  expected_value = TimeTicks::FromInternalValue(
+    QPCValueToMicrosecondsSafely(qpc_value, ticks_per_second));
+  EXPECT_EQ(expected_value,
+            TimeTicks::FromQPCValue(qpc_value));
+  expected_value = TimeTicks::FromInternalValue(
+    QPCValueToMicrosecondsSafely(qpc_value - 1, ticks_per_second));
+  EXPECT_EQ(expected_value,
+            TimeTicks::FromQPCValue(qpc_value - 1));
 }

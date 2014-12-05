@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// This include must be here so that the includes provided transitively
-// by gl_surface_egl.h don't make it impossible to compile this code.
-#include "third_party/mesa/src/include/GL/osmesa.h"
-
 #include "ui/gl/gl_surface_egl.h"
 
 #if defined(OS_ANDROID)
 #include <android/native_window_jni.h>
 #endif
 
+#include "base/command_line.h"
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -21,7 +18,6 @@
 #include "ui/gl/egl_util.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
-#include "ui/gl/gl_surface_osmesa.h"
 #include "ui/gl/gl_surface_stub.h"
 #include "ui/gl/gl_switches.h"
 #include "ui/gl/scoped_make_current.h"
@@ -41,9 +37,24 @@ extern "C" {
 #define EGL_FIXED_SIZE_ANGLE 0x3201
 #endif
 
+#if defined(OS_WIN)
+// From ANGLE's egl/eglext.h.
+#if !defined(EGL_PLATFORM_ANGLE_ANGLE)
+#define EGL_PLATFORM_ANGLE_ANGLE 0x3201
+#endif
+#if !defined(EGL_PLATFORM_ANGLE_TYPE_ANGLE)
+#define EGL_PLATFORM_ANGLE_TYPE_ANGLE 0x3202
+#endif
+#if !defined(EGL_PLATFORM_ANGLE_TYPE_D3D11_WARP_ANGLE)
+#define EGL_PLATFORM_ANGLE_TYPE_D3D11_WARP_ANGLE 0x3206
+#endif
+#endif  // defined(OS_WIN)
+
 using ui::GetLastEGLErrorString;
 
 namespace gfx {
+
+unsigned int NativeViewGLSurfaceEGL::current_swap_generation_ = 0;
 
 namespace {
 
@@ -65,12 +76,12 @@ class EGLSyncControlVSyncProvider
         surface_(surface) {
   }
 
-  virtual ~EGLSyncControlVSyncProvider() { }
+  ~EGLSyncControlVSyncProvider() override {}
 
  protected:
-  virtual bool GetSyncValues(int64* system_time,
-                             int64* media_stream_counter,
-                             int64* swap_buffer_counter) OVERRIDE {
+  bool GetSyncValues(int64* system_time,
+                     int64* media_stream_counter,
+                     int64* swap_buffer_counter) override {
     uint64 u_system_time, u_media_stream_counter, u_swap_buffer_counter;
     bool result = eglGetSyncValuesCHROMIUM(
         g_display, surface_, &u_system_time,
@@ -83,7 +94,7 @@ class EGLSyncControlVSyncProvider
     return result;
   }
 
-  virtual bool GetMscRate(int32* numerator, int32* denominator) OVERRIDE {
+  bool GetMscRate(int32* numerator, int32* denominator) override {
     return false;
   }
 
@@ -103,7 +114,13 @@ bool GLSurfaceEGL::InitializeOneOff() {
     return true;
 
   g_native_display = GetPlatformDefaultEGLNativeDisplay();
+
+#if defined(OS_WIN)
+  g_display = GetPlatformDisplay(g_native_display);
+#else
   g_display = eglGetDisplay(g_native_display);
+#endif
+
   if (!g_display) {
     LOG(ERROR) << "eglGetDisplay failed with error " << GetLastEGLErrorString();
     return false;
@@ -233,12 +250,47 @@ bool GLSurfaceEGL::IsEGLSurfacelessContextSupported() {
 
 GLSurfaceEGL::~GLSurfaceEGL() {}
 
+#if defined(OS_WIN)
+static const EGLint kDisplayAttribsWarp[] {
+  EGL_PLATFORM_ANGLE_TYPE_ANGLE,
+  EGL_PLATFORM_ANGLE_TYPE_D3D11_WARP_ANGLE,
+  EGL_NONE
+};
+
+// static
+EGLDisplay GLSurfaceEGL::GetPlatformDisplay(
+    EGLNativeDisplayType native_display) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUseWarp)) {
+    // Check for availability of WARP via ANGLE extension.
+    bool supports_warp = false;
+    const char* no_display_extensions = eglQueryString(EGL_NO_DISPLAY,
+        EGL_EXTENSIONS);
+    // If EGL_EXT_client_extensions not supported this call to eglQueryString
+    // will return NULL.
+    if (no_display_extensions)
+      supports_warp =
+          ExtensionsContain(no_display_extensions, "ANGLE_platform_angle") &&
+          ExtensionsContain(no_display_extensions, "ANGLE_platform_angle_d3d");
+
+    if (!supports_warp)
+      return NULL;
+
+    return eglGetPlatformDisplayEXT(EGL_PLATFORM_ANGLE_ANGLE, native_display,
+        kDisplayAttribsWarp);
+  }
+
+  return eglGetDisplay(native_display);
+}
+#endif
+
 NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(EGLNativeWindowType window)
     : window_(window),
       surface_(NULL),
       supports_post_sub_buffer_(false),
       config_(NULL),
-      size_(1, 1) {
+      size_(1, 1),
+      swap_interval_(1),
+      swap_generation_(0) {
 #if defined(OS_ANDROID)
   if (window)
     ANativeWindow_acquire(window);
@@ -402,11 +454,36 @@ bool NativeViewGLSurfaceEGL::SwapBuffers() {
       "width", GetSize().width(),
       "height", GetSize().height());
 
+#if defined(OS_WIN)
+  bool force_no_vsync = false;
+  if (swap_interval_ != 0) {
+    // This code is a simple way of enforcing that only one surface actually
+    // vsyncs per frame. This provides single window cases a stable refresh
+    // while allowing multi-window cases to not slow down due to multiple syncs
+    // on a single thread. A better way to fix this problem would be to have
+    // each surface present on its own thread.
+    if (current_swap_generation_ == swap_generation_) {
+      current_swap_generation_++;
+    } else {
+      force_no_vsync = true;
+      eglSwapInterval(GetDisplay(), 0);
+    }
+
+    swap_generation_ = current_swap_generation_;
+  }
+#endif
+
   if (!eglSwapBuffers(GetDisplay(), surface_)) {
     DVLOG(1) << "eglSwapBuffers failed with error "
              << GetLastEGLErrorString();
     return false;
   }
+
+#if defined(OS_WIN)
+  if (force_no_vsync) {
+    eglSwapInterval(GetDisplay(), swap_interval_);
+  }
+#endif
 
   return true;
 }
@@ -482,16 +559,16 @@ VSyncProvider* NativeViewGLSurfaceEGL::GetVSyncProvider() {
   return vsync_provider_.get();
 }
 
+void NativeViewGLSurfaceEGL::SetSwapInterval(int interval) {
+  swap_interval_ = interval;
+}
+
 NativeViewGLSurfaceEGL::~NativeViewGLSurfaceEGL() {
   Destroy();
 #if defined(OS_ANDROID)
   if (window_)
     ANativeWindow_release(window_);
 #endif
-}
-
-void NativeViewGLSurfaceEGL::SetHandle(EGLSurface surface) {
-  surface_ = surface;
 }
 
 PbufferGLSurfaceEGL::PbufferGLSurfaceEGL(const gfx::Size& size)
@@ -635,6 +712,10 @@ EGLConfig SurfacelessEGL::GetConfig() {
 }
 
 bool SurfacelessEGL::IsOffscreen() {
+  return true;
+}
+
+bool SurfacelessEGL::IsSurfaceless() const {
   return true;
 }
 

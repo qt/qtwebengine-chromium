@@ -26,17 +26,13 @@
 #ifndef StorageArea_h
 #define StorageArea_h
 
+#include "core/frame/FrameDestructionObserver.h"
 #include "platform/heap/Handle.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
-class WebStorageArea;
-class WebStorageNamespace;
-}
-
-namespace WebCore {
 
 class ExceptionState;
 class LocalFrame;
@@ -44,15 +40,19 @@ class KURL;
 class Page;
 class SecurityOrigin;
 class Storage;
+class WebStorageArea;
+class WebStorageNamespace;
 
 enum StorageType {
     LocalStorage,
     SessionStorage
 };
 
-class StorageArea : public NoBaseWillBeGarbageCollectedFinalized<StorageArea> {
+class StorageArea final : public NoBaseWillBeGarbageCollectedFinalized<StorageArea>, public FrameDestructionObserver {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(StorageArea);
 public:
-    StorageArea(PassOwnPtr<blink::WebStorageArea>, StorageType);
+    static PassOwnPtrWillBeRawPtr<StorageArea> create(PassOwnPtr<WebStorageArea>, StorageType);
+
     virtual ~StorageArea();
 
     // The HTML5 DOM Storage API
@@ -68,22 +68,23 @@ public:
     size_t memoryBytesUsedByCache();
 
     static void dispatchLocalStorageEvent(const String& key, const String& oldValue, const String& newValue,
-        SecurityOrigin*, const KURL& pageURL, blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess);
+        SecurityOrigin*, const KURL& pageURL, WebStorageArea* sourceAreaInstance, bool originatedInProcess);
     static void dispatchSessionStorageEvent(const String& key, const String& oldValue, const String& newValue,
-        SecurityOrigin*, const KURL& pageURL, const blink::WebStorageNamespace&,
-        blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess);
+        SecurityOrigin*, const KURL& pageURL, const WebStorageNamespace&,
+        WebStorageArea* sourceAreaInstance, bool originatedInProcess);
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
 private:
-    static bool isEventSource(Storage*, blink::WebStorageArea* sourceAreaInstance);
+    StorageArea(PassOwnPtr<WebStorageArea>, StorageType);
 
-    OwnPtr<blink::WebStorageArea> m_storageArea;
+    static bool isEventSource(Storage*, WebStorageArea* sourceAreaInstance);
+
+    OwnPtr<WebStorageArea> m_storageArea;
     StorageType m_storageType;
     bool m_canAccessStorageCachedResult;
-    LocalFrame* m_canAccessStorageCachedFrame;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageArea_h

@@ -88,36 +88,32 @@ class NetWatcher :
  public:
   NetWatcher() {}
 
-  virtual ~NetWatcher() {}
+  ~NetWatcher() override {}
 
   // net::NetworkChangeNotifier::IPAddressObserver implementation.
-  virtual void OnIPAddressChanged() OVERRIDE {
-    LOG(INFO) << "OnIPAddressChanged()";
-  }
+  void OnIPAddressChanged() override { LOG(INFO) << "OnIPAddressChanged()"; }
 
   // net::NetworkChangeNotifier::ConnectionTypeObserver implementation.
-  virtual void OnConnectionTypeChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE {
+  void OnConnectionTypeChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override {
     LOG(INFO) << "OnConnectionTypeChanged("
               << ConnectionTypeToString(type) << ")";
   }
 
   // net::NetworkChangeNotifier::DNSObserver implementation.
-  virtual void OnDNSChanged() OVERRIDE {
-    LOG(INFO) << "OnDNSChanged()";
-  }
+  void OnDNSChanged() override { LOG(INFO) << "OnDNSChanged()"; }
 
   // net::NetworkChangeNotifier::NetworkChangeObserver implementation.
-  virtual void OnNetworkChanged(
-      net::NetworkChangeNotifier::ConnectionType type) OVERRIDE {
+  void OnNetworkChanged(
+      net::NetworkChangeNotifier::ConnectionType type) override {
     LOG(INFO) << "OnNetworkChanged("
               << ConnectionTypeToString(type) << ")";
   }
 
   // net::ProxyConfigService::Observer implementation.
-  virtual void OnProxyConfigChanged(
+  void OnProxyConfigChanged(
       const net::ProxyConfig& config,
-      net::ProxyConfigService::ConfigAvailability availability) OVERRIDE {
+      net::ProxyConfigService::ConfigAvailability availability) override {
     LOG(INFO) << "OnProxyConfigChanged("
               << ProxyConfigToString(config) << ", "
               << ConfigAvailabilityToString(availability) << ")";
@@ -160,7 +156,8 @@ int main(int argc, char* argv[]) {
   // Use the network loop as the file loop also.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
       net::ProxyService::CreateSystemProxyConfigService(
-          network_loop.message_loop_proxy().get(), &network_loop));
+          network_loop.message_loop_proxy(),
+          network_loop.message_loop_proxy()));
 
   // Uses |network_change_notifier|.
   net::NetworkChangeNotifier::AddIPAddressObserver(&net_watcher);

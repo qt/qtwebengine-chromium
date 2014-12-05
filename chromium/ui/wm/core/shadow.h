@@ -17,8 +17,6 @@ class Layer;
 
 namespace wm {
 
-class ImageGrid;
-
 // Simple class that draws a drop shadow around content at given bounds.
 class WM_EXPORT Shadow : public ui::ImplicitAnimationObserver {
  public:
@@ -36,40 +34,48 @@ class WM_EXPORT Shadow : public ui::ImplicitAnimationObserver {
   };
 
   Shadow();
-  virtual ~Shadow();
+  ~Shadow() override;
 
   void Init(Style style);
 
-  // Returns |image_grid_|'s ui::Layer.  This is exposed so it can be added to
-  // the same layer as the content and stacked below it.  SetContentBounds()
-  // should be used to adjust the shadow's size and position (rather than
-  // applying transformations to this layer).
-  ui::Layer* layer() const;
+  // Returns |layer_.get()|. This is exposed so it can be added to the same
+  // layer as the content and stacked below it.  SetContentBounds() should be
+  // used to adjust the shadow's size and position (rather than applying
+  // transformations to this layer).
+  ui::Layer* layer() const { return layer_.get(); }
 
   const gfx::Rect& content_bounds() const { return content_bounds_; }
   Style style() const { return style_; }
 
-  // Moves and resizes |image_grid_| to frame |content_bounds|.
+  // Moves and resizes the shadow layer to frame |content_bounds|.
   void SetContentBounds(const gfx::Rect& content_bounds);
 
   // Sets the shadow's style, animating opacity as necessary.
   void SetStyle(Style style);
 
   // ui::ImplicitAnimationObserver overrides:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE;
+  void OnImplicitAnimationsCompleted() override;
 
  private:
-  // Updates the |image_grid_| images to the current |style_|.
+  // Updates the shadow images to the current |style_|.
   void UpdateImagesForStyle();
 
-  // Updates the |image_grid_| bounds based on its image sizes and the
-  // current |content_bounds_|.
-  void UpdateImageGridBounds();
+  // Updates the shadow layer bounds based on the inteior inset and the current
+  // |content_bounds_|.
+  void UpdateLayerBounds();
 
   // The current style, set when the transition animation starts.
   Style style_;
 
-  scoped_ptr<ImageGrid> image_grid_;
+  // The parent layer of the shadow layer. It serves as a container accessible
+  // from the outside to control the visibility of the shadow.
+  scoped_ptr<ui::Layer> layer_;
+
+  // The actual shadow layer corresponding to a cc::NinePatchLayer.
+  scoped_ptr<ui::Layer> shadow_layer_;
+
+  // Size of the current shadow image.
+  gfx::Size image_size_;
 
   // Bounds of the content that the shadow encloses.
   gfx::Rect content_bounds_;

@@ -51,8 +51,8 @@ WebInspector.KeyboardShortcut.Modifiers = {
     },
     get ShiftOrOption()
     {
-        // Shift on Mac, Alt on other platforms
-        return WebInspector.isMac() ? this.Shift : this.Alt;
+        // Option on Mac, Shift on other platforms
+        return WebInspector.isMac() ? this.Alt : this.Shift;
     }
 };
 
@@ -64,6 +64,7 @@ WebInspector.KeyboardShortcut.Keys = {
     Backspace: { code: 8, name: "\u21a4" },
     Tab: { code: 9, name: { mac: "\u21e5", other: "Tab" } },
     Enter: { code: 13, name: { mac: "\u21a9", other: "Enter" } },
+    Shift: { code: 16, name: { mac: "\u21e7", other: "Shift" } },
     Ctrl: { code: 17, name: "Ctrl" },
     Esc: { code: 27, name: { mac: "\u238b", other: "Esc" } },
     Space: { code: 32, name: "Space" },
@@ -119,7 +120,7 @@ WebInspector.KeyboardShortcut.KeyBindings = {};
         var descriptor = WebInspector.KeyboardShortcut.Keys[key];
         if (typeof descriptor === "object" && descriptor["code"]) {
             var name = typeof descriptor["name"] === "string" ? descriptor["name"] : key;
-            WebInspector.KeyboardShortcut.KeyBindings[name] = { code: descriptor["code"] };
+            WebInspector.KeyboardShortcut.KeyBindings[name] = descriptor;
         }
     }
 })();
@@ -156,12 +157,19 @@ WebInspector.KeyboardShortcut.makeKeyFromEvent = function(keyboardEvent)
     if (keyboardEvent.metaKey)
         modifiers |= WebInspector.KeyboardShortcut.Modifiers.Meta;
 
-    function keyCodeForEvent(keyboardEvent)
-    {
-        // Use either a real or a synthetic keyCode (for events originating from extensions).
-        return keyboardEvent.keyCode || keyboardEvent["__keyCode"];
-    }
-    return WebInspector.KeyboardShortcut._makeKeyFromCodeAndModifiers(keyCodeForEvent(keyboardEvent), modifiers);
+    // Use either a real or a synthetic keyCode (for events originating from extensions).
+    var keyCode = keyboardEvent.keyCode || keyboardEvent["__keyCode"];
+    return WebInspector.KeyboardShortcut._makeKeyFromCodeAndModifiers(keyCode, modifiers);
+}
+
+/**
+ * @param {?KeyboardEvent} keyboardEvent
+ * @return {number}
+ */
+WebInspector.KeyboardShortcut.makeKeyFromEventIgnoringModifiers = function(keyboardEvent)
+{
+    var keyCode = keyboardEvent.keyCode || keyboardEvent["__keyCode"];
+    return WebInspector.KeyboardShortcut._makeKeyFromCodeAndModifiers(keyCode, WebInspector.KeyboardShortcut.Modifiers.None);
 }
 
 /**
@@ -174,7 +182,7 @@ WebInspector.KeyboardShortcut.eventHasCtrlOrMeta = function(event)
 }
 
 /**
- * @param {?Event} event
+ * @param {!Event} event
  * @return {boolean}
  */
 WebInspector.KeyboardShortcut.hasNoModifiers = function(event)
@@ -200,25 +208,30 @@ WebInspector.KeyboardShortcut.makeDescriptor = function(key, modifiers)
 
 /**
  * @param {string} shortcut
- * @return {number}
+ * @return {?WebInspector.KeyboardShortcut.Descriptor}
  */
-WebInspector.KeyboardShortcut.makeKeyFromBindingShortcut = function(shortcut)
+WebInspector.KeyboardShortcut.makeDescriptorFromBindingShortcut = function(shortcut)
 {
     var parts = shortcut.split(/\+(?!$)/);
     var modifiers = 0;
+    var keyString;
     for (var i = 0; i < parts.length; ++i) {
         if (typeof WebInspector.KeyboardShortcut.Modifiers[parts[i]] !== "undefined") {
             modifiers |= WebInspector.KeyboardShortcut.Modifiers[parts[i]];
             continue;
         }
-        console.assert(i === parts.length - 1, "Modifiers-only shortcuts are not allowed (encountered <" + shortcut + ">)");
-        var key = WebInspector.KeyboardShortcut.Keys[parts[i]] || WebInspector.KeyboardShortcut.KeyBindings[parts[i]];
-        if (key && key.shiftKey)
-            modifiers |= WebInspector.KeyboardShortcut.Modifiers.Shift;
-        return WebInspector.KeyboardShortcut.makeKey(key ? key.code : parts[i].toLowerCase(), modifiers)
+        console.assert(i === parts.length - 1, "Only one key other than modifier is allowed in shortcut <" + shortcut + ">");
+        keyString = parts[i];
+        break;
     }
-    console.assert(false);
-    return 0;
+    console.assert(keyString, "Modifiers-only shortcuts are not allowed (encountered <" + shortcut + ">)");
+    if (!keyString)
+        return null;
+
+    var key = WebInspector.KeyboardShortcut.Keys[keyString] || WebInspector.KeyboardShortcut.KeyBindings[keyString];
+    if (key && key.shiftKey)
+        modifiers |= WebInspector.KeyboardShortcut.Modifiers.Shift;
+    return WebInspector.KeyboardShortcut.makeDescriptor(key ? key : keyString, modifiers);
 }
 
 /**

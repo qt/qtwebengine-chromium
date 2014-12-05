@@ -18,10 +18,10 @@
 #include "content/browser/ssl/ssl_request_info.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/common/resource_type.h"
 #include "content/public/common/ssl_status.h"
 #include "content/public/common/url_constants.h"
 #include "net/ssl/ssl_info.h"
-#include "webkit/common/resource_type.h"
 
 
 namespace content {
@@ -32,21 +32,23 @@ SSLPolicy::SSLPolicy(SSLPolicyBackend* backend)
 }
 
 void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
+  bool expired_previous_decision;
   // First we check if we know the policy for this error.
-  net::CertPolicy::Judgment judgment = backend_->QueryPolicy(
-      handler->ssl_info().cert.get(),
-      handler->request_url().host(),
-      handler->cert_error());
+  DCHECK(handler->ssl_info().is_valid());
+  SSLHostStateDelegate::CertJudgment judgment =
+      backend_->QueryPolicy(*handler->ssl_info().cert.get(),
+                            handler->request_url().host(),
+                            handler->cert_error(),
+                            &expired_previous_decision);
 
-  if (judgment == net::CertPolicy::ALLOWED) {
+  if (judgment == SSLHostStateDelegate::ALLOWED) {
     handler->ContinueRequest();
     return;
   }
 
-  // The judgment is either DENIED or UNKNOWN.
-  // For now we handle the DENIED as the UNKNOWN, which means a blocking
-  // page is shown to the user every time he comes back to the page.
-
+  // For all other hosts, which must be DENIED, a blocking page is shown to the
+  // user every time they come back to the page.
+  int options_mask = 0;
   switch (handler->cert_error()) {
     case net::ERR_CERT_COMMON_NAME_INVALID:
     case net::ERR_CERT_DATE_INVALID:
@@ -54,7 +56,13 @@ void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
     case net::ERR_CERT_WEAK_SIGNATURE_ALGORITHM:
     case net::ERR_CERT_WEAK_KEY:
     case net::ERR_CERT_NAME_CONSTRAINT_VIOLATION:
-      OnCertErrorInternal(handler, !handler->fatal(), handler->fatal());
+      if (!handler->fatal())
+        options_mask |= OVERRIDABLE;
+      else
+        options_mask |= STRICT_ENFORCEMENT;
+      if (expired_previous_decision)
+        options_mask |= EXPIRED_PREVIOUS_DECISION;
+      OnCertErrorInternal(handler, options_mask);
       break;
     case net::ERR_CERT_NO_REVOCATION_MECHANISM:
       // Ignore this error.
@@ -70,7 +78,11 @@ void SSLPolicy::OnCertError(SSLCertErrorHandler* handler) {
     case net::ERR_CERT_INVALID:
     case net::ERR_SSL_WEAK_SERVER_EPHEMERAL_DH_KEY:
     case net::ERR_SSL_PINNED_KEY_NOT_IN_CERT_CHAIN:
-      OnCertErrorInternal(handler, false, handler->fatal());
+      if (handler->fatal())
+        options_mask |= STRICT_ENFORCEMENT;
+      if (expired_previous_decision)
+        options_mask |= EXPIRED_PREVIOUS_DECISION;
+      OnCertErrorInternal(handler, options_mask);
       break;
     default:
       NOTREACHED();
@@ -150,6 +162,7 @@ void SSLPolicy::UpdateEntry(NavigationEntryImpl* entry,
 
 void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
                                    bool allow) {
+  DCHECK(handler->ssl_info().is_valid());
   if (allow) {
     // Default behavior for accepting a certificate.
     // Note that we should not call SetMaxSecurityStyle here, because the active
@@ -161,19 +174,12 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
     // While AllowCertForHost() executes synchronously on this thread,
     // ContinueRequest() gets posted to a different thread. Calling
     // AllowCertForHost() first ensures deterministic ordering.
-    backend_->AllowCertForHost(handler->ssl_info().cert.get(),
+    backend_->AllowCertForHost(*handler->ssl_info().cert.get(),
                                handler->request_url().host(),
                                handler->cert_error());
     handler->ContinueRequest();
   } else {
     // Default behavior for rejecting a certificate.
-    //
-    // While DenyCertForHost() executes synchronously on this thread,
-    // CancelRequest() gets posted to a different thread. Calling
-    // DenyCertForHost() first ensures deterministic ordering.
-    backend_->DenyCertForHost(handler->ssl_info().cert.get(),
-                              handler->request_url().host(),
-                              handler->cert_error());
     handler->CancelRequest();
   }
 }
@@ -182,8 +188,11 @@ void SSLPolicy::OnAllowCertificate(scoped_refptr<SSLCertErrorHandler> handler,
 // Certificate Error Routines
 
 void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
-                                    bool overridable,
-                                    bool strict_enforcement) {
+                                    int options_mask) {
+  bool overridable = (options_mask & OVERRIDABLE) != 0;
+  bool strict_enforcement = (options_mask & STRICT_ENFORCEMENT) != 0;
+  bool expired_previous_decision =
+      (options_mask & EXPIRED_PREVIOUS_DECISION) != 0;
   CertificateRequestResultType result =
       CERTIFICATE_REQUEST_RESULT_TYPE_CONTINUE;
   GetContentClient()->browser()->AllowCertificateError(
@@ -195,7 +204,9 @@ void SSLPolicy::OnCertErrorInternal(SSLCertErrorHandler* handler,
       handler->resource_type(),
       overridable,
       strict_enforcement,
-      base::Bind(&SSLPolicy::OnAllowCertificate, base::Unretained(this),
+      expired_previous_decision,
+      base::Bind(&SSLPolicy::OnAllowCertificate,
+                 base::Unretained(this),
                  make_scoped_refptr(handler)),
       &result);
   switch (result) {

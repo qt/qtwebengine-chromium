@@ -33,28 +33,27 @@
 
 #include "core/html/forms/BaseTextInputType.h"
 
-namespace WebCore {
+namespace blink {
 
-class EmailInputType FINAL : public BaseTextInputType {
+class EmailInputType final : public BaseTextInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     EmailInputType(HTMLInputElement& element) : BaseTextInputType(element) { }
-    virtual void countUsage() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool typeMismatchFor(const String&) const OVERRIDE;
-    virtual bool typeMismatch() const OVERRIDE;
-    virtual String typeMismatchText() const OVERRIDE;
-    virtual bool isEmailField() const OVERRIDE;
-    virtual bool supportsSelectionAPI() const OVERRIDE;
-    virtual String sanitizeValue(const String&) const OVERRIDE;
-    virtual String convertFromVisibleValue(const String&) const OVERRIDE;
-    virtual String visibleValue() const OVERRIDE;
+    virtual void countUsage() override;
+    virtual const AtomicString& formControlType() const override;
+    virtual bool typeMismatchFor(const String&) const override;
+    virtual bool typeMismatch() const override;
+    virtual String typeMismatchText() const override;
+    virtual bool supportsSelectionAPI() const override;
+    virtual String sanitizeValue(const String&) const override;
+    virtual String convertFromVisibleValue(const String&) const override;
+    virtual String visibleValue() const override;
     String convertEmailAddressToUnicode(const String&) const;
     String findInvalidAddress(const String&) const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ButtonInputType_h

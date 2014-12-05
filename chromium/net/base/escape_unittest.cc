@@ -232,7 +232,8 @@ TEST(EscapeTest, UnescapeURLComponent) {
     {L"Some%20random text %25%E2%80%84OK", UnescapeRule::NORMAL,
      L"Some%20random text %25\xE2\x80\x84OK"},
 
-    // BiDi Control characters should not be unescaped.
+    // BiDi Control characters should not be unescaped unless explicity told to
+    // do so with UnescapeRule::CONTROL_CHARS
     {L"Some%20random text %25%D8%9COK", UnescapeRule::NORMAL,
      L"Some%20random text %25%D8%9COK"},
     {L"Some%20random text %25%E2%80%8EOK", UnescapeRule::NORMAL,
@@ -249,6 +250,31 @@ TEST(EscapeTest, UnescapeURLComponent) {
      L"Some%20random text %25%E2%81%A6OK"},
     {L"Some%20random text %25%E2%81%A9OK", UnescapeRule::NORMAL,
      L"Some%20random text %25%E2%81%A9OK"},
+    // UnescapeRule::CONTROL_CHARS should unescape BiDi Control characters.
+    {L"Some%20random text %25%D8%9COK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xD8\x9COK"},
+    {L"Some%20random text %25%E2%80%8EOK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x80\x8EOK"},
+    {L"Some%20random text %25%E2%80%8FOK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x80\x8FOK"},
+    {L"Some%20random text %25%E2%80%AAOK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x80\xAAOK"},
+    {L"Some%20random text %25%E2%80%ABOK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x80\xABOK"},
+    {L"Some%20random text %25%E2%80%AEOK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x80\xAEOK"},
+    {L"Some%20random text %25%E2%81%A6OK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x81\xA6OK"},
+    {L"Some%20random text %25%E2%81%A9OK",
+     UnescapeRule::NORMAL | UnescapeRule::CONTROL_CHARS,
+     L"Some%20random text %25\xE2\x81\xA9OK"},
 
     {L"Some%20random text %25%2dOK", UnescapeRule::SPACES,
      L"Some random text %25-OK"},
@@ -453,6 +479,43 @@ TEST(EscapeTest, UnescapeForHTML) {
   }
 }
 
+TEST(EscapeTest, EscapeExternalHandlerValue) {
+  ASSERT_EQ(
+      // Escaped
+      "%02%0A%1D%20!%22#$%25&'()*+,-./0123456789:;"
+      "%3C=%3E?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+      "[%5C]%5E_%60abcdefghijklmnopqrstuvwxyz"
+      "%7B%7C%7D~%7F%80%FF",
+      // Most of the character space we care about, un-escaped
+      EscapeExternalHandlerValue(
+          "\x02\n\x1d !\"#$%&'()*+,-./0123456789:;"
+          "<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+          "[\\]^_`abcdefghijklmnopqrstuvwxyz"
+          "{|}~\x7f\x80\xff"));
+
+  ASSERT_EQ(
+      "!#$&'()*+,-./0123456789:;=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_"
+      "abcdefghijklmnopqrstuvwxyz~",
+      EscapeExternalHandlerValue(
+          "!#$&'()*+,-./0123456789:;=?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[]_"
+          "abcdefghijklmnopqrstuvwxyz~"));
+
+  ASSERT_EQ("%258k", EscapeExternalHandlerValue("%8k"));
+  ASSERT_EQ("a%25", EscapeExternalHandlerValue("a%"));
+  ASSERT_EQ("%25a", EscapeExternalHandlerValue("%a"));
+  ASSERT_EQ("a%258", EscapeExternalHandlerValue("a%8"));
+  ASSERT_EQ("%ab", EscapeExternalHandlerValue("%ab"));
+  ASSERT_EQ("%AB", EscapeExternalHandlerValue("%AB"));
+
+  ASSERT_EQ("http://example.com/path/sub?q=a%7Cb%7Cc&q=1%7C2%7C3#ref%7C",
+            EscapeExternalHandlerValue(
+                "http://example.com/path/sub?q=a|b|c&q=1|2|3#ref|"));
+  ASSERT_EQ("http://example.com/path/sub?q=a%7Cb%7Cc&q=1%7C2%7C3#ref%7C",
+            EscapeExternalHandlerValue(
+                "http://example.com/path/sub?q=a%7Cb%7Cc&q=1%7C2%7C3#ref%7C"));
+  ASSERT_EQ("http://[2001:db8:0:1]:80",
+            EscapeExternalHandlerValue("http://[2001:db8:0:1]:80"));
+}
 
 }  // namespace
 }  // namespace net

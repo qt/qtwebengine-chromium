@@ -32,21 +32,17 @@
 #define TraceEventDispatcher_h
 
 #include "platform/TraceEvent.h"
+#include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 #include "wtf/Threading.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/Vector.h"
+#include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorClient;
-
-struct TraceEventTargetBase {
-    virtual ~TraceEventTargetBase() { }
-};
-
-template<typename C> struct TraceEventTarget;
 
 class TraceEventDispatcher {
     WTF_MAKE_NONCOPYABLE(TraceEventDispatcher);
@@ -104,7 +100,7 @@ public:
                 ASSERT_NOT_REACHED();
                 return 0;
             }
-            return reinterpret_cast<const WebCore::TraceEvent::TraceValueUnion*>(m_argumentValues + index)->m_int;
+            return reinterpret_cast<const blink::TraceEvent::TraceValueUnion*>(m_argumentValues + index)->m_int;
         }
         unsigned long long asUInt(const char* name) const
         {
@@ -123,7 +119,7 @@ public:
         enum { MaxArguments = 2 };
 
         size_t findParameter(const char*) const;
-        const WebCore::TraceEvent::TraceValueUnion& parameter(const char* name, unsigned char expectedType) const;
+        const blink::TraceEvent::TraceValueUnion& parameter(const char* name, unsigned char expectedType) const;
 
         double m_timestamp;
         char m_phase;
@@ -133,14 +129,22 @@ public:
         int m_argumentCount;
         const char* m_argumentNames[MaxArguments];
         unsigned char m_argumentTypes[MaxArguments];
-        WebCore::TraceEvent::TraceValueUnion m_argumentValues[MaxArguments];
+        blink::TraceEvent::TraceValueUnion m_argumentValues[MaxArguments];
         // These are only used as buffers for TRACE_VALUE_TYPE_COPY_STRING.
         // Consider allocating the entire vector of buffered trace events and their copied arguments out of a special arena
         // to make things more compact.
         String m_stringArguments[MaxArguments];
     };
 
-    typedef void (TraceEventTargetBase::*TraceEventHandlerMethod)(const TraceEvent&);
+    class TraceEventListener : public NoBaseWillBeGarbageCollected<TraceEventListener> {
+    public:
+#if !ENABLE(OILPAN)
+        virtual ~TraceEventListener() { }
+#endif
+        virtual void call(const TraceEventDispatcher::TraceEvent&) = 0;
+        virtual void* target() = 0;
+        virtual void trace(Visitor*) { }
+    };
 
     static TraceEventDispatcher* instance()
     {
@@ -148,32 +152,18 @@ public:
         return &instance;
     }
 
-    template<typename ListenerClass>
-    void addListener(const char* name, char phase, ListenerClass* instance, typename TraceEventTarget<ListenerClass>::TraceEventHandler handler, InspectorClient* client)
-    {
-        innerAddListener(name, phase, instance, static_cast<TraceEventHandlerMethod>(handler), client);
-    }
+    void addListener(const char* name, char phase, PassOwnPtrWillBeRawPtr<TraceEventListener>, InspectorClient*);
 
-    void removeAllListeners(TraceEventTargetBase*, InspectorClient*);
+    void removeAllListeners(void*, InspectorClient*);
     void processBackgroundEvents();
 
 private:
-    struct BoundTraceEventHandler {
-        TraceEventTargetBase* instance;
-        TraceEventHandlerMethod method;
-
-        BoundTraceEventHandler() : instance(0), method(0) { }
-        BoundTraceEventHandler(TraceEventTargetBase* instance, TraceEventHandlerMethod method)
-            : instance(instance)
-            , method(method)
-        {
-        }
-    };
     typedef std::pair<String, int> EventSelector;
-    typedef HashMap<EventSelector, Vector<BoundTraceEventHandler> > HandlersMap;
+    typedef WillBeHeapHashMap<EventSelector, OwnPtrWillBeMember<WillBeHeapVector<OwnPtrWillBeMember<TraceEventListener> > > > ListenersMap;
 
     TraceEventDispatcher()
-        : m_processEventsTaskInFlight(false)
+        : m_listeners(adoptPtrWillBeNoop(new ListenersMap()))
+        , m_processEventsTaskInFlight(false)
         , m_lastEventProcessingTime(0)
     {
     }
@@ -182,21 +172,17 @@ private:
         int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
         unsigned char flags, double timestamp);
 
-    void enqueueEvent(const TraceEvent&);
-    void innerAddListener(const char* name, char phase, TraceEventTargetBase*, TraceEventHandlerMethod, InspectorClient*);
+    void enqueueEvent(double timestamp, char phase, const char* name, unsigned long long id, ThreadIdentifier,
+        int argumentCount, const char* const* argumentNames, const unsigned char* argumentTypes, const unsigned long long* argumentValues);
     void processBackgroundEventsTask();
 
     Mutex m_mutex;
-    HandlersMap m_handlers;
+    OwnPtrWillBePersistent<ListenersMap> m_listeners;
     Vector<TraceEvent> m_backgroundEvents;
     bool m_processEventsTaskInFlight;
     double m_lastEventProcessingTime;
 };
 
-template<typename C> struct TraceEventTarget : public TraceEventTargetBase {
-    typedef void (C::*TraceEventHandler)(const TraceEventDispatcher::TraceEvent&);
-};
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // TraceEventDispatcher_h

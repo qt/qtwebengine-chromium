@@ -31,11 +31,11 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 
-class RealtimeAnalyser FINAL {
+class RealtimeAnalyser final {
     WTF_MAKE_NONCOPYABLE(RealtimeAnalyser);
 public:
     RealtimeAnalyser();
@@ -92,6 +92,6 @@ private:
     double m_maxDecibels;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RealtimeAnalyser_h

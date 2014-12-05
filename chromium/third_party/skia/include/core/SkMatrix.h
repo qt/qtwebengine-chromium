@@ -10,6 +10,7 @@
 #ifndef SkMatrix_DEFINED
 #define SkMatrix_DEFINED
 
+#include "SkDynamicAnnotations.h"
 #include "SkRect.h"
 
 class SkString;
@@ -59,6 +60,10 @@ public:
         return this->getType() == 0;
     }
 
+    bool isScaleTranslate() const {
+        return !(this->getType() & ~(kScale_Mask | kTranslate_Mask));
+    }
+
     /** Returns true if will map a rectangle to another rectangle. This can be
         true if the matrix is identity, scale-only, or rotates a multiple of
         90 degrees.
@@ -80,12 +85,12 @@ public:
                         kPerspective_Mask);
     }
 
-    /** Returns true if the matrix contains only translation, rotation or uniform scale
+    /** Returns true if the matrix contains only translation, rotation/reflection or uniform scale
         Returns false if other transformation types are included or is degenerate
      */
     bool isSimilarity(SkScalar tol = SK_ScalarNearlyZero) const;
 
-    /** Returns true if the matrix contains only translation, rotation or scale
+    /** Returns true if the matrix contains only translation, rotation/reflection or scale
         (non-uniform scale is allowed).
         Returns false if other transformation types are included or is degenerate
      */
@@ -348,7 +353,7 @@ public:
     bool SK_WARN_UNUSED_RESULT invert(SkMatrix* inverse) const {
         // Allow the trivial case to be inlined.
         if (this->isIdentity()) {
-            if (NULL != inverse) {
+            if (inverse) {
                 inverse->reset();
             }
             return true;
@@ -538,8 +543,8 @@ public:
         return 0 == memcmp(fMat, m.fMat, sizeof(fMat));
     }
 
-    friend bool operator==(const SkMatrix& a, const SkMatrix& b);
-    friend bool operator!=(const SkMatrix& a, const SkMatrix& b) {
+    friend SK_API bool operator==(const SkMatrix& a, const SkMatrix& b);
+    friend SK_API bool operator!=(const SkMatrix& a, const SkMatrix& b) {
         return !(a == b);
     }
 
@@ -559,8 +564,8 @@ public:
      */
     size_t readFromMemory(const void* buffer, size_t length);
 
-    SkDEVCODE(void dump() const;)
-    SK_TO_STRING_NONVIRT()
+    void dump() const;
+    void toString(SkString*) const;
 
     /**
      * Calculates the minimum scaling factor of the matrix as computed from the SVD of the upper
@@ -643,7 +648,30 @@ private:
     };
 
     SkScalar         fMat[9];
-    mutable uint32_t fTypeMask;
+    mutable SkTRacy<uint32_t> fTypeMask;
+
+    void setScaleTranslate(SkScalar sx, SkScalar sy, SkScalar tx, SkScalar ty) {
+        fMat[kMScaleX] = sx;
+        fMat[kMSkewX]  = 0;
+        fMat[kMTransX] = tx;
+        
+        fMat[kMSkewY]  = 0;
+        fMat[kMScaleY] = sy;
+        fMat[kMTransY] = ty;
+        
+        fMat[kMPersp0] = 0;
+        fMat[kMPersp1] = 0;
+        fMat[kMPersp2] = 1;
+        
+        unsigned mask = 0;
+        if (sx != 1 || sy != 1) {
+            mask |= kScale_Mask;
+        }
+        if (tx || ty) {
+            mask |= kTranslate_Mask;
+        }
+        this->setTypeMask(mask | kRectStaysRect_Mask);
+    }
 
     uint8_t computeTypeMask() const;
     uint8_t computePerspectiveTypeMask() const;
@@ -664,7 +692,7 @@ private:
     void clearTypeMask(int mask) {
         // only allow a valid mask
         SkASSERT((mask & kAllMasks) == mask);
-        fTypeMask &= ~mask;
+        fTypeMask = fTypeMask & ~mask;
     }
 
     TypeMask getPerspectiveTypeMaskOnly() const {

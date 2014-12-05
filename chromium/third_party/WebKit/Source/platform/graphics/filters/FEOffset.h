@@ -23,10 +23,9 @@
 #ifndef FEOffset_h
 #define FEOffset_h
 
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT FEOffset : public FilterEffect {
 public:
@@ -38,21 +37,19 @@ public:
     float dy() const;
     void setDy(float);
 
-    virtual FloatRect mapRect(const FloatRect&, bool forward = true) OVERRIDE FINAL;
+    virtual FloatRect mapRect(const FloatRect&, bool forward = true) override final;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
 private:
     FEOffset(Filter*, float dx, float dy);
-
-    virtual void applySoftware() OVERRIDE;
 
     float m_dx;
     float m_dy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FEOffset_h

@@ -11,17 +11,15 @@
 // file, see it for specifics.
 
 namespace mojo {
-namespace view_manager {
 
-// Used to identify nodes, views and change ids.
+// Used to identify views and change ids.
 typedef uint32_t Id;
 
-// Used to identify a connection as well as a connection specific view or node
-// id. For example, the Id for a node consists of the ConnectionSpecificId of
-// the connection and the ConnectionSpecificId of the node.
+// Used to identify a connection as well as a connection specific view id. For
+// example, the Id for a view consists of the ConnectionSpecificId of the
+// connection and the ConnectionSpecificId of the view.
 typedef uint16_t ConnectionSpecificId;
 
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_TYPES_H_

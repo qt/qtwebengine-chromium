@@ -9,21 +9,21 @@
 #ifndef GrGLProgram_DEFINED
 #define GrGLProgram_DEFINED
 
+#include "builders/GrGLProgramBuilder.h"
+#include "builders/GrGLNvprProgramBuilder.h"
 #include "GrDrawState.h"
 #include "GrGLContext.h"
 #include "GrGLProgramDesc.h"
-#include "GrGLShaderBuilder.h"
 #include "GrGLSL.h"
 #include "GrGLTexture.h"
-#include "GrGLUniformManager.h"
+#include "GrGLProgramDataManager.h"
 
 #include "SkString.h"
 #include "SkXfermode.h"
 
-class GrBinHashKeyBuilder;
-class GrGLEffect;
-class GrGLProgramEffects;
-class GrGLShaderBuilder;
+class GrGLProcessor;
+class GrGLInstalledProcessors;
+class GrGLProgramBuilder;
 
 /**
  * This class manages a GPU program and records per-program information.
@@ -38,10 +38,7 @@ class GrGLProgram : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrGLProgram)
 
-    static GrGLProgram* Create(GrGpuGL* gpu,
-                               const GrGLProgramDesc& desc,
-                               const GrEffectStage* colorStages[],
-                               const GrEffectStage* coverageStages[]);
+    typedef GrGLProgramBuilder::BuiltinUniformHandles BuiltinUniformHandles;
 
     virtual ~GrGLProgram();
 
@@ -50,40 +47,17 @@ public:
      */
     void abandon();
 
-    /**
-     * The shader may modify the blend coefficients. Params are in/out.
-     */
-    void overrideBlend(GrBlendCoeff* srcCoeff, GrBlendCoeff* dstCoeff) const;
-
-    const GrGLProgramDesc& getDesc() { return fDesc; }
+    const GrProgramDesc& getDesc() { return fDesc; }
 
     /**
      * Gets the GL program ID for this program.
      */
-    GrGLuint programID() const { return fBuilderOutput.fProgramID; }
+    GrGLuint programID() const { return fProgramID; }
 
-    bool hasVertexShader() const { return fBuilderOutput.fHasVertexShader; }
-
-    /**
-     * Some GL state that is relevant to programs is not stored per-program. In particular color
-     * and coverage attributes can be global state. This struct is read and updated by
-     * GrGLProgram::setColor and GrGLProgram::setCoverage to allow us to avoid setting this state
-     * redundantly.
+    /*
+     * The base class always has a vertex shader, only the NVPR variants may omit a vertex shader
      */
-    struct SharedGLState {
-        GrColor fConstAttribColor;
-        int     fConstAttribColorIndex;
-        GrColor fConstAttribCoverage;
-        int     fConstAttribCoverageIndex;
-
-        SharedGLState() { this->invalidate(); }
-        void invalidate() {
-            fConstAttribColor = GrColor_ILLEGAL;
-            fConstAttribColorIndex = -1;
-            fConstAttribCoverage = GrColor_ILLEGAL;
-            fConstAttribCoverageIndex = -1;
-        }
-    };
+    virtual bool hasVertexShader() const { return true; }
 
     /**
      * The GrDrawState's view matrix along with the aspects of the render target determine the
@@ -150,53 +124,145 @@ public:
     };
 
     /**
-     * This function uploads uniforms and calls each GrGLEffect's setData. It is called before a
+     * This function uploads uniforms and calls each GrGLProcessor's setData. It is called before a
      * draw occurs using the program after the program has already been bound. It also uses the
-     * GrGpuGL object to bind the textures required by the GrGLEffects. The color and coverage
+     * GrGpuGL object to bind the textures required by the GrGLProcessors. The color and coverage
      * stages come from GrGLProgramDesc::Build().
      */
-    void setData(GrDrawState::BlendOptFlags,
-                 const GrEffectStage* colorStages[],
-                 const GrEffectStage* coverageStages[],
-                 const GrDeviceCoordTexture* dstCopy, // can be NULL
-                 SharedGLState*);
+    void setData(const GrOptDrawState&,
+                 GrGpu::DrawType,
+                 const GrDeviceCoordTexture* dstCopy /* can be NULL*/);
 
-private:
-    typedef GrGLUniformManager::UniformHandle UniformHandle;
+protected:
+    typedef GrGLProgramDataManager::UniformHandle UniformHandle;
+    typedef GrGLProgramDataManager::UniformInfoArray UniformInfoArray;
 
     GrGLProgram(GrGpuGL*,
-                const GrGLProgramDesc&,
-                GrGLUniformManager*,
-                const GrGLShaderBuilder::GenProgramOutput&);
+                const GrProgramDesc&,
+                const BuiltinUniformHandles&,
+                GrGLuint programID,
+                const UniformInfoArray&,
+                GrGLInstalledGeoProc* geometryProcessor,
+                GrGLInstalledFragProcs* fragmentProcessors);
 
     // Sets the texture units for samplers.
     void initSamplerUniforms();
+    void initSamplers(GrGLInstalledProc*, int* texUnitIdx);
 
     // Helper for setData(). Makes GL calls to specify the initial color when there is not
     // per-vertex colors.
-    void setColor(const GrDrawState&, GrColor color, SharedGLState*);
+    void setColor(const GrOptDrawState&, GrColor color);
 
     // Helper for setData(). Makes GL calls to specify the initial coverage when there is not
     // per-vertex coverages.
-    void setCoverage(const GrDrawState&, GrColor coverage, SharedGLState*);
+    void setCoverage(const GrOptDrawState&, uint8_t coverage);
+
+    // A templated helper to loop over effects, set the transforms(via subclass) and bind textures
+    void setFragmentData(const GrOptDrawState&);
+    virtual void setTransformData(const GrFragmentStage& effectStage, GrGLInstalledFragProc* pe);
+    void bindTextures(const GrGLInstalledProc*, const GrProcessor&);
+
+    /*
+     * Legacy NVPR needs a hook here to flush path tex gen settings.
+     * TODO when legacy nvpr is removed, remove this call.
+     */
+    virtual void didSetData(GrGpu::DrawType);
 
     // Helper for setData() that sets the view matrix and loads the render target height uniform
-    void setMatrixAndRenderTargetHeight(const GrDrawState&);
+    void setMatrixAndRenderTargetHeight(GrGpu::DrawType, const GrOptDrawState&);
+    virtual void onSetMatrixAndRenderTargetHeight(GrGpu::DrawType, const GrOptDrawState&);
 
     // these reflect the current values of uniforms (GL uniform values travel with program)
-    MatrixState                         fMatrixState;
-    GrColor                             fColor;
-    GrColor                             fCoverage;
-    int                                 fDstCopyTexUnit;
+    MatrixState fMatrixState;
+    GrColor fColor;
+    uint8_t fCoverage;
+    int fDstCopyTexUnit;
+    BuiltinUniformHandles fBuiltinUniformHandles;
+    GrGLuint fProgramID;
 
-    GrGLShaderBuilder::GenProgramOutput fBuilderOutput;
+    // the installed effects
+    SkAutoTDelete<GrGLInstalledGeoProc> fGeometryProcessor;
+    SkAutoTUnref<GrGLInstalledFragProcs> fFragmentProcessors;
 
-    GrGLProgramDesc                     fDesc;
-    GrGpuGL*                            fGpu;
+    GrProgramDesc fDesc;
+    GrGpuGL* fGpu;
+    GrGLProgramDataManager fProgramDataManager;
 
-    SkAutoTUnref<GrGLUniformManager>    fUniformManager;
+    friend class GrGLProgramBuilder;
 
     typedef SkRefCnt INHERITED;
+};
+
+/*
+ * Below are slight specializations of the program object for the different types of programs
+ * The default GrGL programs consist of at the very least a vertex and fragment shader.
+ * Legacy Nvpr only has a fragment shader, 1.3+ Nvpr ignores the vertex shader, but both require
+ * specialized methods for setting transform data. Both types of NVPR also require setting the
+ * projection matrix through a special function call
+ */
+class GrGLNvprProgramBase : public GrGLProgram {
+protected:
+    GrGLNvprProgramBase(GrGpuGL*,
+                        const GrProgramDesc&,
+                        const BuiltinUniformHandles&,
+                        GrGLuint programID,
+                        const UniformInfoArray&,
+                        GrGLInstalledFragProcs* fragmentProcessors);
+    virtual void onSetMatrixAndRenderTargetHeight(GrGpu::DrawType, const GrOptDrawState&);
+
+    typedef GrGLProgram INHERITED;
+};
+
+class GrGLNvprProgram : public GrGLNvprProgramBase {
+public:
+      virtual bool hasVertexShader() const SK_OVERRIDE { return true; }
+
+private:
+    typedef GrGLNvprProgramBuilder::SeparableVaryingInfo SeparableVaryingInfo;
+    typedef GrGLNvprProgramBuilder::SeparableVaryingInfoArray SeparableVaryingInfoArray;
+    GrGLNvprProgram(GrGpuGL*,
+                    const GrProgramDesc&,
+                    const BuiltinUniformHandles&,
+                    GrGLuint programID,
+                    const UniformInfoArray&,
+                    GrGLInstalledFragProcs* fragmentProcessors,
+                    const SeparableVaryingInfoArray& separableVaryings);
+    virtual void didSetData(GrGpu::DrawType) SK_OVERRIDE;
+    virtual void setTransformData(const GrFragmentStage&, GrGLInstalledFragProc*) SK_OVERRIDE;
+
+    struct Varying {
+        GrGLint     fLocation;
+        SkDEBUGCODE(
+            GrSLType    fType;
+        );
+    };
+    SkTArray<Varying, true> fVaryings;
+
+    friend class GrGLNvprProgramBuilder;
+
+    typedef GrGLNvprProgramBase INHERITED;
+};
+
+class GrGLLegacyNvprProgram : public GrGLNvprProgramBase {
+public:
+    virtual bool hasVertexShader() const SK_OVERRIDE { return false; }
+
+private:
+    GrGLLegacyNvprProgram(GrGpuGL* gpu,
+                          const GrProgramDesc& desc,
+                          const BuiltinUniformHandles&,
+                          GrGLuint programID,
+                          const UniformInfoArray&,
+                          GrGLInstalledFragProcs* fragmentProcessors,
+                          int texCoordSetCnt);
+    virtual void didSetData(GrGpu::DrawType) SK_OVERRIDE;
+    virtual void setTransformData(const GrFragmentStage&, GrGLInstalledFragProc*) SK_OVERRIDE;
+
+    int fTexCoordSetCnt;
+
+    friend class GrGLLegacyNvprProgramBuilder;
+
+    typedef GrGLNvprProgramBase INHERITED;
 };
 
 #endif

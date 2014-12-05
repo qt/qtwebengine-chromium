@@ -160,7 +160,7 @@ class InsertEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() != INSERT_EDIT || new_text_end() != edit->new_text_start_)
       return false;
     // If continuous edit, merge it.
@@ -193,7 +193,7 @@ class ReplaceEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() == DELETE_EDIT ||
         new_text_end() != edit->old_text_start_ ||
         edit->old_text_start_ != edit->new_text_start_)
@@ -223,7 +223,7 @@ class DeleteEdit : public Edit {
   }
 
   // Edit implementation.
-  virtual bool DoMerge(const Edit* edit) OVERRIDE {
+  bool DoMerge(const Edit* edit) override {
     if (edit->type() != DELETE_EDIT)
       return false;
 
@@ -485,7 +485,6 @@ bool TextfieldModel::Redo() {
 bool TextfieldModel::Cut() {
   if (!HasCompositionText() && HasSelection() && !render_text_->obscured()) {
     ui::ScopedClipboardWriter(
-        ui::Clipboard::GetForCurrentThread(),
         ui::CLIPBOARD_TYPE_COPY_PASTE).WriteText(GetSelectedText());
     // A trick to let undo/redo handle cursor correctly.
     // Undoing CUT moves the cursor to the end of the change rather
@@ -503,7 +502,6 @@ bool TextfieldModel::Cut() {
 bool TextfieldModel::Copy() {
   if (!HasCompositionText() && HasSelection() && !render_text_->obscured()) {
     ui::ScopedClipboardWriter(
-        ui::Clipboard::GetForCurrentThread(),
         ui::CLIPBOARD_TYPE_COPY_PASTE).WriteText(GetSelectedText());
     return true;
   }

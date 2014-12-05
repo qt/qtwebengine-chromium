@@ -33,10 +33,9 @@
 
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Node.h"
+#include "core/frame/FrameView.h"
 #include "core/page/EventHandler.h"
 #include "core/rendering/HitTestResult.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -52,7 +51,7 @@ int area(const RectType& rect) {
 
 Node* findNonEmptyAnchorNode(const IntPoint& point, const IntRect& viewRect, EventHandler* eventHandler)
 {
-    Node* node = eventHandler->hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
+    Node* node = eventHandler->hitTestResultAtPoint(point, HitTestRequest::ReadOnly | HitTestRequest::Active).innerNode();
 
     // If the node bounding box is sufficiently large, make a single attempt to
     // find a smaller node; the larger the node bounds, the greater the
@@ -61,7 +60,7 @@ Node* findNonEmptyAnchorNode(const IntPoint& point, const IntRect& viewRect, Eve
     if (node && area(node->boundingBox()) > maxNodeArea) {
         IntSize pointOffset = viewRect.size();
         pointOffset.scale(viewportAnchorRelativeEpsilon);
-        node = eventHandler->hitTestResultAtPoint(point + pointOffset, HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent).innerNode();
+        node = eventHandler->hitTestResultAtPoint(point + pointOffset, HitTestRequest::ReadOnly | HitTestRequest::Active).innerNode();
     }
 
     while (node && node->boundingBox().isEmpty())
@@ -70,31 +69,76 @@ Node* findNonEmptyAnchorNode(const IntPoint& point, const IntRect& viewRect, Eve
     return node;
 }
 
+void moveToEncloseRect(IntRect& outer, const FloatRect& inner)
+{
+    IntPoint minimumPosition = ceiledIntPoint(inner.location() + inner.size() - FloatSize(outer.size()));
+    IntPoint maximumPosition = flooredIntPoint(inner.location());
+
+    IntPoint outerOrigin = outer.location();
+    outerOrigin = outerOrigin.expandedTo(minimumPosition);
+    outerOrigin = outerOrigin.shrunkTo(maximumPosition);
+
+    outer.setLocation(outerOrigin);
+}
+
+void moveIntoRect(FloatRect& inner, const IntRect& outer)
+{
+    FloatPoint minimumPosition = FloatPoint(outer.location());
+    FloatPoint maximumPosition = minimumPosition + outer.size() - inner.size();
+
+    // Adjust maximumPosition to the nearest lower integer because
+    // PinchViewport::maximumScrollPosition() does the same.
+    // The value of minumumPosition is already adjusted since it is
+    // constructed from an integer point.
+    maximumPosition = flooredIntPoint(maximumPosition);
+
+    FloatPoint innerOrigin = inner.location();
+    innerOrigin = innerOrigin.expandedTo(minimumPosition);
+    innerOrigin = innerOrigin.shrunkTo(maximumPosition);
+
+    inner.setLocation(innerOrigin);
+}
+
 } // namespace
 
 ViewportAnchor::ViewportAnchor(EventHandler* eventHandler)
     : m_eventHandler(eventHandler) { }
 
-void ViewportAnchor::setAnchor(const IntRect& viewRect, const FloatSize& anchorInViewCoords)
+void ViewportAnchor::setAnchor(const IntRect& outerViewRect, const IntRect& innerViewRect,
+    const FloatSize& anchorInInnerViewCoords)
 {
-    m_viewRect = viewRect;
+    // Preserve the inner viewport position in document in case we won't find the anchor
+    m_pinchViewportInDocument = innerViewRect.location();
+
     m_anchorNode.clear();
     m_anchorNodeBounds = LayoutRect();
     m_anchorInNodeCoords = FloatSize();
-    m_anchorInViewCoords = anchorInViewCoords;
+    m_anchorInInnerViewCoords = anchorInInnerViewCoords;
+    m_normalizedPinchViewportOffset = FloatSize();
 
-    if (viewRect.isEmpty())
+    if (innerViewRect.isEmpty())
         return;
 
     // Preserve origins at the absolute screen origin
-    if (viewRect.location() == IntPoint::zero())
+    if (innerViewRect.location() == IntPoint::zero())
         return;
 
-    FloatSize anchorOffset = viewRect.size();
-    anchorOffset.scale(anchorInViewCoords.width(), anchorInViewCoords.height());
-    const FloatPoint anchorPoint = FloatPoint(viewRect.location()) + anchorOffset;
+    // Inner rectangle should be within the outer one.
+    ASSERT(outerViewRect.contains(innerViewRect));
 
-    Node* node = findNonEmptyAnchorNode(flooredIntPoint(anchorPoint), viewRect, m_eventHandler);
+    // Outer rectangle is used as a scale, we need positive width and height.
+    ASSERT(!outerViewRect.isEmpty());
+
+    m_normalizedPinchViewportOffset = innerViewRect.location() - outerViewRect.location();
+
+    // Normalize by the size of the outer rect
+    m_normalizedPinchViewportOffset.scale(1.0 / outerViewRect.width(), 1.0 / outerViewRect.height());
+
+    FloatSize anchorOffset = innerViewRect.size();
+    anchorOffset.scale(anchorInInnerViewCoords.width(), anchorInInnerViewCoords.height());
+    const FloatPoint anchorPoint = FloatPoint(innerViewRect.location()) + anchorOffset;
+
+    Node* node = findNonEmptyAnchorNode(flooredIntPoint(anchorPoint), innerViewRect, m_eventHandler);
     if (!node)
         return;
 
@@ -104,14 +148,39 @@ void ViewportAnchor::setAnchor(const IntRect& viewRect, const FloatSize& anchorI
     m_anchorInNodeCoords.scale(1.f / m_anchorNodeBounds.width(), 1.f / m_anchorNodeBounds.height());
 }
 
-IntPoint ViewportAnchor::computeOrigin(const IntSize& currentViewSize) const
+void ViewportAnchor::computeOrigins(const FrameView& frameView, const FloatSize& innerSize,
+    IntPoint& mainFrameOffset, FloatPoint& pinchViewportOffset) const
+{
+    IntSize outerSize = frameView.visibleContentRect().size();
+
+    // Compute the viewport origins in CSS pixels relative to the document.
+    FloatSize absPinchViewportOffset = m_normalizedPinchViewportOffset;
+    absPinchViewportOffset.scale(outerSize.width(), outerSize.height());
+
+    FloatPoint innerOrigin = getInnerOrigin(innerSize);
+    FloatPoint outerOrigin = innerOrigin - absPinchViewportOffset;
+
+    IntRect outerRect = IntRect(flooredIntPoint(outerOrigin), outerSize);
+    FloatRect innerRect = FloatRect(innerOrigin, innerSize);
+
+    moveToEncloseRect(outerRect, innerRect);
+
+    outerRect.setLocation(frameView.adjustScrollPositionWithinRange(outerRect.location()));
+
+    moveIntoRect(innerRect, outerRect);
+
+    mainFrameOffset = outerRect.location();
+    pinchViewportOffset = FloatPoint(innerRect.location() - outerRect.location());
+}
+
+FloatPoint ViewportAnchor::getInnerOrigin(const FloatSize& innerSize) const
 {
     if (!m_anchorNode || !m_anchorNode->inDocument())
-        return m_viewRect.location();
+        return m_pinchViewportInDocument;
 
     const LayoutRect currentNodeBounds = m_anchorNode->boundingBox();
     if (m_anchorNodeBounds == currentNodeBounds)
-        return m_viewRect.location();
+        return m_pinchViewportInDocument;
 
     // Compute the new anchor point relative to the node position
     FloatSize anchorOffsetFromNode = currentNodeBounds.size();
@@ -119,9 +188,9 @@ IntPoint ViewportAnchor::computeOrigin(const IntSize& currentViewSize) const
     FloatPoint anchorPoint = currentNodeBounds.location() + anchorOffsetFromNode;
 
     // Compute the new origin point relative to the new anchor point
-    FloatSize anchorOffsetFromOrigin = currentViewSize;
-    anchorOffsetFromOrigin.scale(m_anchorInViewCoords.width(), m_anchorInViewCoords.height());
-    return flooredIntPoint(anchorPoint - anchorOffsetFromOrigin);
+    FloatSize anchorOffsetFromOrigin = innerSize;
+    anchorOffsetFromOrigin.scale(m_anchorInInnerViewCoords.width(), m_anchorInInnerViewCoords.height());
+    return anchorPoint - anchorOffsetFromOrigin;
 }
 
 } // namespace blink

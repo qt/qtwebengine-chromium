@@ -20,14 +20,14 @@ class MEDIA_EXPORT VideoCaptureDeviceFactoryLinux
  public:
   explicit VideoCaptureDeviceFactoryLinux(
       scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner);
-  virtual ~VideoCaptureDeviceFactoryLinux();
+  ~VideoCaptureDeviceFactoryLinux() override;
 
-  virtual scoped_ptr<VideoCaptureDevice> Create(
-      const VideoCaptureDevice::Name& device_name) OVERRIDE;
-  virtual void GetDeviceNames(VideoCaptureDevice::Names* device_names) OVERRIDE;
-  virtual void GetDeviceSupportedFormats(
+  scoped_ptr<VideoCaptureDevice> Create(
+      const VideoCaptureDevice::Name& device_name) override;
+  void GetDeviceNames(VideoCaptureDevice::Names* device_names) override;
+  void GetDeviceSupportedFormats(
       const VideoCaptureDevice::Name& device,
-      VideoCaptureFormats* supported_formats) OVERRIDE;
+      VideoCaptureFormats* supported_formats) override;
 
  private:
   scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner_;

@@ -34,24 +34,31 @@
 #include "core/inspector/InspectorConsoleAgent.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class WorkerConsoleAgent FINAL : public InspectorConsoleAgent {
+class WorkerGlobalScope;
+
+class WorkerConsoleAgent final : public InspectorConsoleAgent {
     WTF_MAKE_NONCOPYABLE(WorkerConsoleAgent);
 public:
-    static PassOwnPtr<WorkerConsoleAgent> create(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager)
+    static PassOwnPtrWillBeRawPtr<WorkerConsoleAgent> create(InspectorTimelineAgent* timelineAgent, InjectedScriptManager* injectedScriptManager, WorkerGlobalScope* workerGlobalScope)
     {
-        return adoptPtr(new WorkerConsoleAgent(timelineAgent, injectedScriptManager));
+        return adoptPtrWillBeNoop(new WorkerConsoleAgent(timelineAgent, injectedScriptManager, workerGlobalScope));
     }
     virtual ~WorkerConsoleAgent();
 
-    virtual bool isWorkerAgent() OVERRIDE { return true; }
+    virtual bool isWorkerAgent() override { return true; }
+
+protected:
+    virtual ConsoleMessageStorage* messageStorage() override;
 
 private:
-    WorkerConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*);
-    virtual void addInspectedNode(ErrorString*, int nodeId) OVERRIDE;
+    WorkerConsoleAgent(InspectorTimelineAgent*, InjectedScriptManager*, WorkerGlobalScope*);
+    virtual void addInspectedNode(ErrorString*, int nodeId) override;
+
+    WorkerGlobalScope* m_workerGlobalScope;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(WorkerConsoleAgent_h)

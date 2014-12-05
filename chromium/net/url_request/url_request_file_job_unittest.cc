@@ -4,24 +4,28 @@
 
 #include "net/url_request/url_request_file_job.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "net/base/filename_util.h"
 #include "net/base/net_util.h"
+#include "net/url_request/url_request.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace net {
 
 namespace {
 
 // A URLRequestFileJob for testing OnSeekComplete / OnReadComplete callbacks.
-class URLRequestFileJobWithCallbacks : public net::URLRequestFileJob {
+class URLRequestFileJobWithCallbacks : public URLRequestFileJob {
  public:
   URLRequestFileJobWithCallbacks(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate,
+      URLRequest* request,
+      NetworkDelegate* network_delegate,
       const base::FilePath& file_path,
       const scoped_refptr<base::TaskRunner>& file_task_runner)
       : URLRequestFileJob(request,
@@ -35,14 +39,14 @@ class URLRequestFileJobWithCallbacks : public net::URLRequestFileJob {
   const std::vector<std::string>& data_chunks() { return data_chunks_; }
 
  protected:
-  virtual ~URLRequestFileJobWithCallbacks() {}
+  ~URLRequestFileJobWithCallbacks() override {}
 
-  virtual void OnSeekComplete(int64 result) OVERRIDE {
+  void OnSeekComplete(int64 result) override {
     ASSERT_EQ(seek_position_, 0);
     seek_position_ = result;
   }
 
-  virtual void OnReadComplete(net::IOBuffer* buf, int result) OVERRIDE {
+  void OnReadComplete(IOBuffer* buf, int result) override {
     data_chunks_.push_back(std::string(buf->data(), result));
   }
 
@@ -52,7 +56,7 @@ class URLRequestFileJobWithCallbacks : public net::URLRequestFileJob {
 
 // A URLRequestJobFactory that will return URLRequestFileJobWithCallbacks
 // instances for file:// scheme URLs.
-class CallbacksJobFactory : public net::URLRequestJobFactory {
+class CallbacksJobFactory : public URLRequestJobFactory {
  public:
   class JobObserver {
    public:
@@ -63,12 +67,12 @@ class CallbacksJobFactory : public net::URLRequestJobFactory {
       : path_(path), observer_(observer) {
   }
 
-  virtual ~CallbacksJobFactory() {}
+  ~CallbacksJobFactory() override {}
 
-  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+  URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      URLRequest* request,
+      NetworkDelegate* network_delegate) const override {
     URLRequestFileJobWithCallbacks* job = new URLRequestFileJobWithCallbacks(
         request,
         network_delegate,
@@ -78,15 +82,28 @@ class CallbacksJobFactory : public net::URLRequestJobFactory {
     return job;
   }
 
-  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override {
+    return nullptr;
+  }
+
+  net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override {
+    return nullptr;
+  }
+
+  bool IsHandledProtocol(const std::string& scheme) const override {
     return scheme == "file";
   }
 
-  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+  bool IsHandledURL(const GURL& url) const override {
     return IsHandledProtocol(url.scheme());
   }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return false;
   }
 
@@ -112,7 +129,7 @@ bool CreateTempFileWithContent(const std::string& content,
 
 class JobObserverImpl : public CallbacksJobFactory::JobObserver {
  public:
-  virtual void OnJobCreated(URLRequestFileJobWithCallbacks* job) OVERRIDE {
+  void OnJobCreated(URLRequestFileJobWithCallbacks* job) override {
     jobs_.push_back(job);
   }
 
@@ -156,8 +173,8 @@ class URLRequestFileJobEventsTest : public testing::Test {
   void RunRequest(const std::string& content, const Range* range);
 
   JobObserverImpl observer_;
-  net::TestURLRequestContext context_;
-  net::TestDelegate delegate_;
+  TestURLRequestContext context_;
+  TestDelegate delegate_;
 };
 
 URLRequestFileJobEventsTest::URLRequestFileJobEventsTest() {}
@@ -171,10 +188,8 @@ void URLRequestFileJobEventsTest::RunRequest(const std::string& content,
   CallbacksJobFactory factory(path, &observer_);
   context_.set_job_factory(&factory);
 
-  net::TestURLRequest request(net::FilePathToFileURL(path),
-                              net::DEFAULT_PRIORITY,
-                              &delegate_,
-                              &context_);
+  scoped_ptr<URLRequest> request(context_.CreateRequest(
+      FilePathToFileURL(path), DEFAULT_PRIORITY, &delegate_, NULL));
   if (range) {
     ASSERT_GE(range->start, 0);
     ASSERT_GE(range->end, 0);
@@ -182,10 +197,10 @@ void URLRequestFileJobEventsTest::RunRequest(const std::string& content,
     ASSERT_LT(static_cast<unsigned int>(range->end), content.length());
     std::string range_value =
         base::StringPrintf("bytes=%d-%d", range->start, range->end);
-    request.SetExtraRequestHeaderByName(
-        net::HttpRequestHeaders::kRange, range_value, true /*overwrite*/);
+    request->SetExtraRequestHeaderByName(
+        HttpRequestHeaders::kRange, range_value, true /*overwrite*/);
   }
-  request.Start();
+  request->Start();
 
   base::RunLoop loop;
   loop.Run();
@@ -215,7 +230,6 @@ void URLRequestFileJobEventsTest::RunRequest(const std::string& content,
     observed_content.append(*i);
   }
   EXPECT_EQ(expected_content, observed_content);
-  EXPECT_TRUE(expected_content == observed_content);
 }
 
 // Helper function to make a character array filled with |size| bytes of
@@ -229,8 +243,6 @@ std::string MakeContentOfSize(int size) {
   }
   return result;
 }
-
-}  // namespace
 
 TEST_F(URLRequestFileJobEventsTest, TinyFile) {
   RunRequest(std::string("hello world"), NULL);
@@ -251,3 +263,7 @@ TEST_F(URLRequestFileJobEventsTest, Range) {
   Range range(1701, (6 * 1024) + 3);
   RunRequest(MakeContentOfSize(size), &range);
 }
+
+}  // namespace
+
+}  // namespace net

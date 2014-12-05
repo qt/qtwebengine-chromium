@@ -41,8 +41,9 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
+class AXObject;
 class BeforeTextInsertedEvent;
 class Element;
 class Event;
@@ -54,7 +55,7 @@ class RenderObject;
 class RenderStyle;
 class TouchEvent;
 
-struct ClickHandlingState FINAL : public NoBaseWillBeGarbageCollected<ClickHandlingState> {
+struct ClickHandlingState final : public NoBaseWillBeGarbageCollected<ClickHandlingState> {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 
 public:
@@ -92,6 +93,7 @@ public:
     virtual PassRefPtrWillBeRawPtr<HTMLFormElement> formForSubmission() const;
     virtual bool hasCustomFocusLogic() const;
     virtual void handleFocusEvent(Element* oldFocusedElement, FocusType);
+    virtual void handleFocusInEvent(Element* oldFocusedElement, FocusType);
     virtual void handleBlurEvent();
     virtual void subtreeHasChanged();
     virtual bool hasTouchEventHandler() const;
@@ -116,6 +118,7 @@ public:
     virtual void listAttributeTargetChanged();
     virtual void updateClearButtonVisibility();
     virtual void updatePlaceholderText();
+    virtual AXObject* popupRootAXObject();
 
 protected:
     InputTypeView(HTMLInputElement& element) : m_element(&element) { }
@@ -127,5 +130,5 @@ private:
     RawPtrWillBeMember<HTMLInputElement> m_element;
 };
 
-} // namespace WebCore
+} // namespace blink
 #endif

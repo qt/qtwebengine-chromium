@@ -26,18 +26,18 @@
 #ifndef DeviceRotationRate_h
 #define DeviceRotationRate_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class DeviceRotationRate : public RefCountedWillBeGarbageCollectedFinalized<DeviceRotationRate>, public ScriptWrappable {
+class DeviceRotationRate final : public GarbageCollected<DeviceRotationRate>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DeviceRotationRate> create(PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate> rotationRate)
+    static DeviceRotationRate* create(DeviceMotionData::RotationRate* rotationRate)
     {
-        return adoptRefWillBeNoop(new DeviceRotationRate(rotationRate));
+        return new DeviceRotationRate(rotationRate);
     }
     void trace(Visitor*);
 
@@ -46,11 +46,11 @@ public:
     double gamma(bool& isNull) const;
 
 private:
-    DeviceRotationRate(PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate>);
+    explicit DeviceRotationRate(DeviceMotionData::RotationRate*);
 
-    RefPtrWillBeMember<DeviceMotionData::RotationRate> m_rotationRate;
+    Member<DeviceMotionData::RotationRate> m_rotationRate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceRotationRate_h

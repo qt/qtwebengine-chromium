@@ -26,7 +26,7 @@
 #include "config.h"
 #include "modules/mediastream/RTCDTMFToneChangeEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create()
 {
@@ -46,21 +46,18 @@ PassRefPtrWillBeRawPtr<RTCDTMFToneChangeEvent> RTCDTMFToneChangeEvent::create(co
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent(const String& tone)
     : Event(EventTypeNames::tonechange, false, false)
     , m_tone(tone)
 {
-    ScriptWrappable::init(this);
 }
 
 RTCDTMFToneChangeEvent::RTCDTMFToneChangeEvent(const RTCDTMFToneChangeEventInit& initializer)
     : Event(EventTypeNames::tonechange, initializer)
     , m_tone(initializer.tone)
 {
-    ScriptWrappable::init(this);
 }
 
 RTCDTMFToneChangeEvent::~RTCDTMFToneChangeEvent()
@@ -82,5 +79,5 @@ void RTCDTMFToneChangeEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 

@@ -53,9 +53,11 @@ namespace content {
 
 class URLRequestInfoTest : public RenderViewTest {
  public:
-  URLRequestInfoTest() : pp_instance_(1234) {}
+  // Note: using -1 as the instance value allows code in
+  // url_request_info_util.cc to detect that this is a test instance.
+  URLRequestInfoTest() : pp_instance_(-1) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     RenderViewTest::SetUp();
     ppapi::ProxyLock::DisableLockingOnThreadForTest();
 
@@ -66,7 +68,7 @@ class URLRequestInfoTest : public RenderViewTest {
         ppapi::proxy::Connection(), pp_instance_, URLRequestInfoData());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     test_globals_.GetResourceTracker()->DidDeleteInstance(pp_instance_);
     RenderViewTest::TearDown();
   }
@@ -130,7 +132,7 @@ TEST_F(URLRequestInfoTest, GetInterface) {
 }
 
 TEST_F(URLRequestInfoTest, AsURLRequestInfo) {
-  EXPECT_EQ(info_, info_->AsPPB_URLRequestInfo_API());
+  EXPECT_EQ(info_.get(), info_->AsPPB_URLRequestInfo_API());
 }
 
 TEST_F(URLRequestInfoTest, StreamToFile) {

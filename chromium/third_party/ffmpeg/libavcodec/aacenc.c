@@ -705,8 +705,8 @@ static av_cold int dsp_init(AVCodecContext *avctx, AACEncContext *s)
 static av_cold int alloc_buffers(AVCodecContext *avctx, AACEncContext *s)
 {
     int ch;
-    FF_ALLOCZ_OR_GOTO(avctx, s->buffer.samples, 3 * 1024 * s->channels * sizeof(s->buffer.samples[0]), alloc_fail);
-    FF_ALLOCZ_OR_GOTO(avctx, s->cpe, sizeof(ChannelElement) * s->chan_map[0], alloc_fail);
+    FF_ALLOCZ_ARRAY_OR_GOTO(avctx, s->buffer.samples, s->channels, 3 * 1024 * sizeof(s->buffer.samples[0]), alloc_fail);
+    FF_ALLOCZ_ARRAY_OR_GOTO(avctx, s->cpe, s->chan_map[0], sizeof(ChannelElement), alloc_fail);
     FF_ALLOCZ_OR_GOTO(avctx, avctx->extradata, 5 + FF_INPUT_BUFFER_PADDING_SIZE, alloc_fail);
 
     for(ch = 0; ch < s->channels; ch++)
@@ -769,7 +769,7 @@ static av_cold int aac_encode_init(AVCodecContext *avctx)
     if (HAVE_MIPSDSPR1)
         ff_aac_coder_init_mips(s);
 
-    s->lambda = avctx->global_quality ? avctx->global_quality : 120;
+    s->lambda = avctx->global_quality > 0 ? avctx->global_quality : 120;
 
     ff_aac_tableinit();
 

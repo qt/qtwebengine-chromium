@@ -27,19 +27,20 @@
 
 #include "modules/speech/SpeechRecognition.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/page/Page.h"
+#include "modules/mediastream/MediaStreamTrack.h"
 #include "modules/speech/SpeechRecognitionController.h"
 #include "modules/speech/SpeechRecognitionError.h"
 #include "modules/speech/SpeechRecognitionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 SpeechRecognition* SpeechRecognition::create(ExecutionContext* context)
 {
-    SpeechRecognition* speechRecognition = adoptRefCountedGarbageCollectedWillBeNoop(new SpeechRecognition(context));
+    SpeechRecognition* speechRecognition = new SpeechRecognition(context);
     speechRecognition->suspendIfNeeded();
     return speechRecognition;
 }
@@ -53,7 +54,7 @@ void SpeechRecognition::start(ExceptionState& exceptionState)
     }
 
     m_finalResults.clear();
-    m_controller->start(this, m_grammars.get(), m_lang, m_continuous, m_interimResults, m_maxAlternatives);
+    m_controller->start(this, m_grammars.get(), m_lang, m_continuous, m_interimResults, m_maxAlternatives, m_audioTrack);
     m_started = true;
 }
 
@@ -168,6 +169,7 @@ bool SpeechRecognition::hasPendingActivity() const
 SpeechRecognition::SpeechRecognition(ExecutionContext* context)
     : ActiveDOMObject(context)
     , m_grammars(SpeechGrammarList::create()) // FIXME: The spec is not clear on the default value for the grammars attribute.
+    , m_audioTrack(nullptr)
     , m_continuous(false)
     , m_interimResults(false)
     , m_maxAlternatives(1)
@@ -176,7 +178,6 @@ SpeechRecognition::SpeechRecognition(ExecutionContext* context)
     , m_started(false)
     , m_stopping(false)
 {
-    ScriptWrappable::init(this);
     Document* document = toDocument(executionContext());
 
     Page* page = document->page();
@@ -195,6 +196,7 @@ SpeechRecognition::~SpeechRecognition()
 void SpeechRecognition::trace(Visitor* visitor)
 {
     visitor->trace(m_grammars);
+    visitor->trace(m_audioTrack);
 #if ENABLE(OILPAN)
     visitor->trace(m_controller);
 #endif
@@ -202,4 +204,4 @@ void SpeechRecognition::trace(Visitor* visitor)
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

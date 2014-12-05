@@ -30,27 +30,32 @@
 
 #include "core/dom/TreeScopeStyleSheetCollection.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentStyleSheetCollector;
 class StyleEngine;
 class TreeScope;
 
-class DocumentStyleSheetCollection FINAL : public TreeScopeStyleSheetCollection {
+class DocumentStyleSheetCollection final : public TreeScopeStyleSheetCollection {
     WTF_MAKE_NONCOPYABLE(DocumentStyleSheetCollection);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    explicit DocumentStyleSheetCollection(TreeScope&);
+    static PassOwnPtrWillBeRawPtr<DocumentStyleSheetCollection> create(TreeScope& treeScope)
+    {
+        return adoptPtrWillBeNoop(new DocumentStyleSheetCollection(treeScope));
+    }
 
     void updateActiveStyleSheets(StyleEngine*, StyleResolverUpdateMode);
     void collectStyleSheets(StyleEngine*, DocumentStyleSheetCollector&);
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         TreeScopeStyleSheetCollection::trace(visitor);
     }
 
 private:
+    explicit DocumentStyleSheetCollection(TreeScope&);
+
     void collectStyleSheetsFromCandidates(StyleEngine*, DocumentStyleSheetCollector&);
 };
 

@@ -39,7 +39,46 @@ class CONTENT_EXPORT NavigationControllerAndroid {
   void GoBack(JNIEnv* env, jobject obj);
   void GoForward(JNIEnv* env, jobject obj);
   void GoToOffset(JNIEnv* env, jobject obj, jint offset);
+  void LoadIfNecessary(JNIEnv* env, jobject obj);
+  void ContinuePendingReload(JNIEnv* env, jobject obj);
+  void Reload(JNIEnv* env, jobject obj, jboolean check_for_repost);
+  void ReloadIgnoringCache(JNIEnv* env, jobject obj, jboolean check_for_repost);
+  void RequestRestoreLoad(JNIEnv* env, jobject obj);
+  void CancelPendingReload(JNIEnv* env, jobject obj);
   void GoToNavigationIndex(JNIEnv* env, jobject obj, jint index);
+  void LoadUrl(JNIEnv* env,
+               jobject obj,
+               jstring url,
+               jint load_url_type,
+               jint transition_type,
+               jstring j_referrer_url,
+               jint referrer_policy,
+               jint ua_override_option,
+               jstring extra_headers,
+               jbyteArray post_data,
+               jstring base_url_for_data_url,
+               jstring virtual_url_for_data_url,
+               jboolean can_load_local_resources,
+               jboolean is_renderer_initiated);
+  void ClearSslPreferences(JNIEnv* env, jobject /* obj */);
+  bool GetUseDesktopUserAgent(JNIEnv* env, jobject /* obj */);
+  void SetUseDesktopUserAgent(JNIEnv* env,
+                              jobject /* obj */,
+                              jboolean state,
+                              jboolean reload_on_state_change);
+  base::android::ScopedJavaLocalRef<jobject> GetPendingEntry(JNIEnv* env,
+                                                             jobject /* obj */);
+  int GetNavigationHistory(JNIEnv* env, jobject obj, jobject history);
+  void GetDirectedNavigationHistory(JNIEnv* env,
+                                    jobject obj,
+                                    jobject history,
+                                    jboolean is_forward,
+                                    jint max_entries);
+  base::android::ScopedJavaLocalRef<jstring>
+      GetOriginalUrlForVisibleNavigationEntry(JNIEnv* env, jobject obj);
+  void ClearHistory(JNIEnv* env, jobject obj);
+  int GetLastCommittedEntryIndex(JNIEnv* env, jobject obj);
+  jboolean RemoveEntryAtIndex(JNIEnv* env, jobject obj, jint index);
 
  private:
   NavigationController* navigation_controller_;

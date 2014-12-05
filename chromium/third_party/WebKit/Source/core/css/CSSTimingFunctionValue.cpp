@@ -28,7 +28,7 @@
 
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 String CSSCubicBezierTimingFunctionValue::customCSSText() const
 {
@@ -48,13 +48,13 @@ String CSSStepsTimingFunctionValue::customCSSText() const
 {
     String stepAtPositionString;
     switch (m_stepAtPosition) {
-    case StepsTimingFunction::StepAtStart:
+    case StepsTimingFunction::Start:
         stepAtPositionString = "start";
         break;
-    case StepsTimingFunction::StepAtMiddle:
+    case StepsTimingFunction::Middle:
         stepAtPositionString = "middle";
         break;
-    case StepsTimingFunction::StepAtEnd:
+    case StepsTimingFunction::End:
         stepAtPositionString = "end";
         break;
     default:
@@ -70,4 +70,4 @@ bool CSSStepsTimingFunctionValue::equals(const CSSStepsTimingFunctionValue& othe
     return m_steps == other.m_steps && m_stepAtPosition == other.m_stepAtPosition;
 }
 
-} // namespace WebCore
+} // namespace blink

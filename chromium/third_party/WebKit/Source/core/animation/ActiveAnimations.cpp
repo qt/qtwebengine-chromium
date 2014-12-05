@@ -33,36 +33,26 @@
 
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
+
+ActiveAnimations::ActiveAnimations()
+    : m_animationStyleChange(false)
+{
+}
 
 ActiveAnimations::~ActiveAnimations()
 {
 #if !ENABLE(OILPAN)
-    for (size_t i = 0; i < m_animations.size(); ++i)
-        m_animations[i]->notifyElementDestroyed();
+    for (Animation* animation : m_animations)
+        animation->notifyElementDestroyed();
     m_animations.clear();
 #endif
 }
 
-void ActiveAnimations::addPlayer(AnimationPlayer* player)
-{
-    ++m_players.add(player, 0).storedValue->value;
-}
-
-void ActiveAnimations::removePlayer(AnimationPlayer* player)
-{
-    AnimationPlayerCountedSet::iterator it = m_players.find(player);
-    ASSERT(it != m_players.end());
-    ASSERT(it->value > 0);
-    --it->value;
-    if (!it->value)
-        m_players.remove(it);
-}
-
 void ActiveAnimations::updateAnimationFlags(RenderStyle& style)
 {
-    for (AnimationPlayerCountedSet::const_iterator it = m_players.begin(); it != m_players.end(); ++it) {
-        const AnimationPlayer& player = *it->key;
+    for (const auto& entry : m_players) {
+        const AnimationPlayer& player = *entry.key;
         ASSERT(player.source());
         // FIXME: Needs to consider AnimationGroup once added.
         ASSERT(player.source()->isAnimation());
@@ -87,15 +77,44 @@ void ActiveAnimations::updateAnimationFlags(RenderStyle& style)
 
 void ActiveAnimations::cancelAnimationOnCompositor()
 {
-    for (AnimationPlayerCountedSet::iterator it = m_players.begin(); it != m_players.end(); ++it)
-        it->key->cancelAnimationOnCompositor();
+    for (const auto& entry : m_players)
+        entry.key->cancelAnimationOnCompositor();
 }
 
 void ActiveAnimations::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_cssAnimations);
     visitor->trace(m_defaultStack);
     visitor->trace(m_players);
+#endif
 }
 
-} // namespace WebCore
+const RenderStyle* ActiveAnimations::baseRenderStyle() const
+{
+#if !ENABLE(ASSERT)
+    if (isAnimationStyleChange())
+        return m_baseRenderStyle.get();
+#endif
+    return nullptr;
+}
+
+void ActiveAnimations::updateBaseRenderStyle(const RenderStyle* renderStyle)
+{
+    if (!isAnimationStyleChange()) {
+        m_baseRenderStyle = nullptr;
+        return;
+    }
+#if ENABLE(ASSERT)
+    if (m_baseRenderStyle && renderStyle)
+        ASSERT(*m_baseRenderStyle == *renderStyle);
+#endif
+    m_baseRenderStyle = RenderStyle::clone(renderStyle);
+}
+
+void ActiveAnimations::clearBaseRenderStyle()
+{
+    m_baseRenderStyle = nullptr;
+}
+
+} // namespace blink

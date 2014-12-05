@@ -26,13 +26,14 @@
 #ifndef PositionError_h
 #define PositionError_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PositionError : public GarbageCollectedFinalized<PositionError>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum ErrorCode {
         PERMISSION_DENIED = 1,
@@ -52,10 +53,7 @@ private:
     PositionError(ErrorCode code, const String& message)
         : m_code(code)
         , m_message(message)
-        , m_isFatal(false)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_isFatal(false) { }
 
     ErrorCode m_code;
     String m_message;
@@ -64,6 +62,6 @@ private:
     bool m_isFatal;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PositionError_h

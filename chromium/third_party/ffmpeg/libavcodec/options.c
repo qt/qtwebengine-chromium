@@ -144,7 +144,8 @@ AVCodecContext *avcodec_alloc_context3(const AVCodec *codec)
 {
     AVCodecContext *avctx= av_malloc(sizeof(AVCodecContext));
 
-    if(avctx==NULL) return NULL;
+    if (!avctx)
+        return NULL;
 
     if(avcodec_get_context_defaults3(avctx, codec) < 0){
         av_free(avctx);
@@ -152,6 +153,21 @@ AVCodecContext *avcodec_alloc_context3(const AVCodec *codec)
     }
 
     return avctx;
+}
+
+void avcodec_free_context(AVCodecContext **pavctx)
+{
+    AVCodecContext *avctx = *pavctx;
+
+    if (!avctx)
+        return;
+
+    avcodec_close(avctx);
+
+    av_freep(&avctx->extradata);
+    av_freep(&avctx->subtitle_header);
+
+    av_freep(pavctx);
 }
 
 int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
@@ -167,11 +183,14 @@ int avcodec_copy_context(AVCodecContext *dest, const AVCodecContext *src)
     }
 
     av_opt_free(dest);
-    av_free(dest->priv_data);
 
     memcpy(dest, src, sizeof(*dest));
 
     dest->priv_data       = orig_priv_data;
+
+    if (orig_priv_data)
+        av_opt_copy(orig_priv_data, src->priv_data);
+
     dest->codec           = orig_codec;
 
     /* set values specific to opened codecs back to their default state */

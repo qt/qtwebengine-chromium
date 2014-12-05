@@ -25,8 +25,9 @@
 #include "wtf/HashTableDeletedValueType.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/TypeTraits.h"
-#include <utility>
 #include <limits>
+#include <string.h> // For memset.
+#include <utility>
 
 namespace WTF {
 
@@ -38,6 +39,11 @@ namespace WTF {
     template<typename T> struct HashTraits;
 
     template<bool isInteger, typename T> struct GenericHashTraitsBase;
+
+    enum ShouldWeakPointersBeMarkedStrongly {
+        WeakPointersActStrong,
+        WeakPointersActWeak
+    };
 
     template<typename T> struct GenericHashTraitsBase<false, T> {
         // The emptyValueIsZero flag is used to optimize allocation of empty hash tables with zeroed memory.
@@ -53,7 +59,7 @@ namespace WTF {
 
         // The starting table size. Can be overridden when we know beforehand that
         // a hash table will have at least N entries.
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if defined(MEMORY_SANITIZER_INITIAL_SIZE)
         static const unsigned minimumTableSize = 1;
 #else
         static const unsigned minimumTableSize = 8;
@@ -64,15 +70,13 @@ namespace WTF {
             static const bool value = NeedsTracing<T>::value;
         };
         static const WeakHandlingFlag weakHandlingFlag = IsWeak<T>::value ? WeakHandlingInCollections : NoWeakHandlingInCollections;
-        template<typename Visitor>
-        static bool shouldRemoveFromCollection(Visitor*, T&) { return false; }
     };
 
     // Default integer traits disallow both 0 and -1 as keys (max value instead of -1 for unsigned).
     template<typename T> struct GenericHashTraitsBase<true, T> : GenericHashTraitsBase<false, T> {
         static const bool emptyValueIsZero = true;
         static const bool needsDestruction = false;
-        static void constructDeletedValue(T& slot) { slot = static_cast<T>(-1); }
+        static void constructDeletedValue(T& slot, bool) { slot = static_cast<T>(-1); }
         static bool isDeletedValue(T value) { return value == static_cast<T>(-1); }
     };
 
@@ -112,7 +116,7 @@ namespace WTF {
     template<typename T> struct FloatHashTraits : GenericHashTraits<T> {
         static const bool needsDestruction = false;
         static T emptyValue() { return std::numeric_limits<T>::infinity(); }
-        static void constructDeletedValue(T& slot) { slot = -std::numeric_limits<T>::infinity(); }
+        static void constructDeletedValue(T& slot, bool) { slot = -std::numeric_limits<T>::infinity(); }
         static bool isDeletedValue(T value) { return value == -std::numeric_limits<T>::infinity(); }
     };
 
@@ -124,20 +128,20 @@ namespace WTF {
         static const bool emptyValueIsZero = false;
         static const bool needsDestruction = false;
         static T emptyValue() { return std::numeric_limits<T>::max(); }
-        static void constructDeletedValue(T& slot) { slot = std::numeric_limits<T>::max() - 1; }
+        static void constructDeletedValue(T& slot, bool) { slot = std::numeric_limits<T>::max() - 1; }
         static bool isDeletedValue(T value) { return value == std::numeric_limits<T>::max() - 1; }
     };
 
     template<typename P> struct HashTraits<P*> : GenericHashTraits<P*> {
         static const bool emptyValueIsZero = true;
         static const bool needsDestruction = false;
-        static void constructDeletedValue(P*& slot) { slot = reinterpret_cast<P*>(-1); }
+        static void constructDeletedValue(P*& slot, bool) { slot = reinterpret_cast<P*>(-1); }
         static bool isDeletedValue(P* value) { return value == reinterpret_cast<P*>(-1); }
     };
 
     template<typename T> struct SimpleClassHashTraits : GenericHashTraits<T> {
         static const bool emptyValueIsZero = true;
-        static void constructDeletedValue(T& slot) { new (NotNull, &slot) T(HashTableDeletedValue); }
+        static void constructDeletedValue(T& slot, bool) { new (NotNull, &slot) T(HashTableDeletedValue); }
         static bool isDeletedValue(const T& value) { return value.isHashTableDeletedValue(); }
     };
 
@@ -225,7 +229,20 @@ namespace WTF {
 
         static const unsigned minimumTableSize = FirstTraits::minimumTableSize;
 
-        static void constructDeletedValue(TraitType& slot) { FirstTraits::constructDeletedValue(slot.first); }
+        static void constructDeletedValue(TraitType& slot, bool zeroValue)
+        {
+            FirstTraits::constructDeletedValue(slot.first, zeroValue);
+            // For GC collections the memory for the backing is zeroed when it
+            // is allocated, and the constructors may take advantage of that,
+            // especially if a GC occurs during insertion of an entry into the
+            // table. This slot is being marked deleted, but If the slot is
+            // reused at a later point, the same assumptions around memory
+            // zeroing must hold as they did at the initial allocation.
+            // Therefore we zero the value part of the slot here for GC
+            // collections.
+            if (zeroValue)
+                memset(reinterpret_cast<void*>(&slot.second), 0, sizeof(slot.second));
+        }
         static bool isDeletedValue(const TraitType& value) { return FirstTraits::isDeletedValue(value.first); }
     };
 
@@ -235,10 +252,6 @@ namespace WTF {
     template<typename KeyTypeArg, typename ValueTypeArg>
     struct KeyValuePair {
         typedef KeyTypeArg KeyType;
-
-        KeyValuePair()
-        {
-        }
 
         KeyValuePair(const KeyTypeArg& _key, const ValueTypeArg& _value)
             : key(_key)
@@ -276,14 +289,14 @@ namespace WTF {
 
         static const unsigned minimumTableSize = KeyTraits::minimumTableSize;
 
-        static void constructDeletedValue(TraitType& slot) { KeyTraits::constructDeletedValue(slot.key); }
-        static bool isDeletedValue(const TraitType& value) { return KeyTraits::isDeletedValue(value.key); }
-        template<typename Visitor>
-        static bool shouldRemoveFromCollection(Visitor* visitor, TraitType& pair)
+        static void constructDeletedValue(TraitType& slot, bool zeroValue)
         {
-            return KeyTraits::shouldRemoveFromCollection(visitor, pair.key)
-                || ValueTraits::shouldRemoveFromCollection(visitor, pair.value);
+            KeyTraits::constructDeletedValue(slot.key, zeroValue);
+            // See similar code in this file for why we need to do this.
+            if (zeroValue)
+                memset(reinterpret_cast<void*>(&slot.value), 0, sizeof(slot.value));
         }
+        static bool isDeletedValue(const TraitType& value) { return KeyTraits::isDeletedValue(value.key); }
     };
 
     template<typename Key, typename Value>
@@ -294,6 +307,16 @@ namespace WTF {
         static const bool emptyValueIsZero = false;
         static T emptyValue() { return reinterpret_cast<T>(1); }
     };
+
+    // This is for tracing inside collections that have special support for weak
+    // pointers. The trait has a trace method which returns true if there are weak
+    // pointers to things that have not (yet) been marked live. Returning true
+    // indicates that the entry in the collection may yet be removed by weak
+    // handling. Default implementation for non-weak types is to use the regular
+    // non-weak TraceTrait. Default implementation for types with weakness is to
+    // call traceInCollection on the type's trait.
+    template<WeakHandlingFlag weakHandlingFlag, ShouldWeakPointersBeMarkedStrongly strongify, typename T, typename Traits>
+    struct TraceInCollectionTrait;
 
 } // namespace WTF
 

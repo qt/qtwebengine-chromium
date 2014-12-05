@@ -124,8 +124,8 @@ void GLES2CopyTexImage2D(GLenum target,
                          GLsizei width,
                          GLsizei height,
                          GLint border) {
-  gles2::GetGLContext()->CopyTexImage2D(
-      target, level, internalformat, x, y, width, height, border);
+  gles2::GetGLContext()->CopyTexImage2D(target, level, internalformat, x, y,
+                                        width, height, border);
 }
 void GLES2CopyTexSubImage2D(GLenum target,
                             GLint level,
@@ -135,8 +135,8 @@ void GLES2CopyTexSubImage2D(GLenum target,
                             GLint y,
                             GLsizei width,
                             GLsizei height) {
-  gles2::GetGLContext()->CopyTexSubImage2D(
-      target, level, xoffset, yoffset, x, y, width, height);
+  gles2::GetGLContext()->CopyTexSubImage2D(target, level, xoffset, yoffset, x,
+                                           y, width, height);
 }
 GLuint GLES2CreateProgram() {
   return gles2::GetGLContext()->CreateProgram();
@@ -216,8 +216,8 @@ void GLES2FramebufferTexture2D(GLenum target,
                                GLenum textarget,
                                GLuint texture,
                                GLint level) {
-  gles2::GetGLContext()->FramebufferTexture2D(
-      target, attachment, textarget, texture, level);
+  gles2::GetGLContext()->FramebufferTexture2D(target, attachment, textarget,
+                                              texture, level);
 }
 void GLES2FrontFace(GLenum mode) {
   gles2::GetGLContext()->FrontFace(mode);
@@ -244,8 +244,8 @@ void GLES2GetActiveAttrib(GLuint program,
                           GLint* size,
                           GLenum* type,
                           char* name) {
-  gles2::GetGLContext()->GetActiveAttrib(
-      program, index, bufsize, length, size, type, name);
+  gles2::GetGLContext()->GetActiveAttrib(program, index, bufsize, length, size,
+                                         type, name);
 }
 void GLES2GetActiveUniform(GLuint program,
                            GLuint index,
@@ -254,8 +254,8 @@ void GLES2GetActiveUniform(GLuint program,
                            GLint* size,
                            GLenum* type,
                            char* name) {
-  gles2::GetGLContext()->GetActiveUniform(
-      program, index, bufsize, length, size, type, name);
+  gles2::GetGLContext()->GetActiveUniform(program, index, bufsize, length, size,
+                                          type, name);
 }
 void GLES2GetAttachedShaders(GLuint program,
                              GLsizei maxcount,
@@ -282,8 +282,8 @@ void GLES2GetFramebufferAttachmentParameteriv(GLenum target,
                                               GLenum attachment,
                                               GLenum pname,
                                               GLint* params) {
-  gles2::GetGLContext()->GetFramebufferAttachmentParameteriv(
-      target, attachment, pname, params);
+  gles2::GetGLContext()->GetFramebufferAttachmentParameteriv(target, attachment,
+                                                             pname, params);
 }
 void GLES2GetIntegerv(GLenum pname, GLint* params) {
   gles2::GetGLContext()->GetIntegerv(pname, params);
@@ -315,8 +315,8 @@ void GLES2GetShaderPrecisionFormat(GLenum shadertype,
                                    GLenum precisiontype,
                                    GLint* range,
                                    GLint* precision) {
-  gles2::GetGLContext()->GetShaderPrecisionFormat(
-      shadertype, precisiontype, range, precision);
+  gles2::GetGLContext()->GetShaderPrecisionFormat(shadertype, precisiontype,
+                                                  range, precision);
 }
 void GLES2GetShaderSource(GLuint shader,
                           GLsizei bufsize,
@@ -403,8 +403,8 @@ void GLES2RenderbufferStorage(GLenum target,
                               GLenum internalformat,
                               GLsizei width,
                               GLsizei height) {
-  gles2::GetGLContext()->RenderbufferStorage(
-      target, internalformat, width, height);
+  gles2::GetGLContext()->RenderbufferStorage(target, internalformat, width,
+                                             height);
 }
 void GLES2SampleCoverage(GLclampf value, GLboolean invert) {
   gles2::GetGLContext()->SampleCoverage(value, invert);
@@ -464,15 +464,8 @@ void GLES2TexImage2D(GLenum target,
                      GLenum format,
                      GLenum type,
                      const void* pixels) {
-  gles2::GetGLContext()->TexImage2D(target,
-                                    level,
-                                    internalformat,
-                                    width,
-                                    height,
-                                    border,
-                                    format,
-                                    type,
-                                    pixels);
+  gles2::GetGLContext()->TexImage2D(target, level, internalformat, width,
+                                    height, border, format, type, pixels);
 }
 void GLES2TexParameterf(GLenum target, GLenum pname, GLfloat param) {
   gles2::GetGLContext()->TexParameterf(target, pname, param);
@@ -495,8 +488,8 @@ void GLES2TexSubImage2D(GLenum target,
                         GLenum format,
                         GLenum type,
                         const void* pixels) {
-  gles2::GetGLContext()->TexSubImage2D(
-      target, level, xoffset, yoffset, width, height, format, type, pixels);
+  gles2::GetGLContext()->TexSubImage2D(target, level, xoffset, yoffset, width,
+                                       height, format, type, pixels);
 }
 void GLES2Uniform1f(GLint location, GLfloat x) {
   gles2::GetGLContext()->Uniform1f(location, x);
@@ -608,8 +601,8 @@ void GLES2VertexAttribPointer(GLuint indx,
                               GLboolean normalized,
                               GLsizei stride,
                               const void* ptr) {
-  gles2::GetGLContext()->VertexAttribPointer(
-      indx, size, type, normalized, stride, ptr);
+  gles2::GetGLContext()->VertexAttribPointer(indx, size, type, normalized,
+                                             stride, ptr);
 }
 void GLES2Viewport(GLint x, GLint y, GLsizei width, GLsizei height) {
   gles2::GetGLContext()->Viewport(x, y, width, height);
@@ -657,8 +650,8 @@ void GLES2TexStorage2DEXT(GLenum target,
                           GLenum internalFormat,
                           GLsizei width,
                           GLsizei height) {
-  gles2::GetGLContext()->TexStorage2DEXT(
-      target, levels, internalFormat, width, height);
+  gles2::GetGLContext()->TexStorage2DEXT(target, levels, internalFormat, width,
+                                         height);
 }
 void GLES2GenQueriesEXT(GLsizei n, GLuint* queries) {
   gles2::GetGLContext()->GenQueriesEXT(n, queries);
@@ -709,24 +702,8 @@ GLuint GLES2GetMaxValueInBufferCHROMIUM(GLuint buffer_id,
                                         GLsizei count,
                                         GLenum type,
                                         GLuint offset) {
-  return gles2::GetGLContext()->GetMaxValueInBufferCHROMIUM(
-      buffer_id, count, type, offset);
-}
-void GLES2GenSharedIdsCHROMIUM(GLuint namespace_id,
-                               GLuint id_offset,
-                               GLsizei n,
-                               GLuint* ids) {
-  gles2::GetGLContext()->GenSharedIdsCHROMIUM(namespace_id, id_offset, n, ids);
-}
-void GLES2DeleteSharedIdsCHROMIUM(GLuint namespace_id,
-                                  GLsizei n,
-                                  const GLuint* ids) {
-  gles2::GetGLContext()->DeleteSharedIdsCHROMIUM(namespace_id, n, ids);
-}
-void GLES2RegisterSharedIdsCHROMIUM(GLuint namespace_id,
-                                    GLsizei n,
-                                    const GLuint* ids) {
-  gles2::GetGLContext()->RegisterSharedIdsCHROMIUM(namespace_id, n, ids);
+  return gles2::GetGLContext()->GetMaxValueInBufferCHROMIUM(buffer_id, count,
+                                                            type, offset);
 }
 GLboolean GLES2EnableFeatureCHROMIUM(const char* feature) {
   return gles2::GetGLContext()->EnableFeatureCHROMIUM(feature);
@@ -737,18 +714,12 @@ void* GLES2MapBufferCHROMIUM(GLuint target, GLenum access) {
 GLboolean GLES2UnmapBufferCHROMIUM(GLuint target) {
   return gles2::GetGLContext()->UnmapBufferCHROMIUM(target);
 }
-void* GLES2MapImageCHROMIUM(GLuint image_id) {
-  return gles2::GetGLContext()->MapImageCHROMIUM(image_id);
-}
-void GLES2UnmapImageCHROMIUM(GLuint image_id) {
-  gles2::GetGLContext()->UnmapImageCHROMIUM(image_id);
-}
 void* GLES2MapBufferSubDataCHROMIUM(GLuint target,
                                     GLintptr offset,
                                     GLsizeiptr size,
                                     GLenum access) {
-  return gles2::GetGLContext()->MapBufferSubDataCHROMIUM(
-      target, offset, size, access);
+  return gles2::GetGLContext()->MapBufferSubDataCHROMIUM(target, offset, size,
+                                                         access);
 }
 void GLES2UnmapBufferSubDataCHROMIUM(const void* mem) {
   gles2::GetGLContext()->UnmapBufferSubDataCHROMIUM(mem);
@@ -784,8 +755,8 @@ void GLES2GetMultipleIntegervCHROMIUM(const GLenum* pnames,
                                       GLuint count,
                                       GLint* results,
                                       GLsizeiptr size) {
-  gles2::GetGLContext()->GetMultipleIntegervCHROMIUM(
-      pnames, count, results, size);
+  gles2::GetGLContext()->GetMultipleIntegervCHROMIUM(pnames, count, results,
+                                                     size);
 }
 void GLES2GetProgramInfoCHROMIUM(GLuint program,
                                  GLsizei bufsize,
@@ -796,27 +767,29 @@ void GLES2GetProgramInfoCHROMIUM(GLuint program,
 GLuint GLES2CreateStreamTextureCHROMIUM(GLuint texture) {
   return gles2::GetGLContext()->CreateStreamTextureCHROMIUM(texture);
 }
-GLuint GLES2CreateImageCHROMIUM(GLsizei width,
+GLuint GLES2CreateImageCHROMIUM(ClientBuffer buffer,
+                                GLsizei width,
                                 GLsizei height,
-                                GLenum internalformat,
-                                GLenum usage) {
-  return gles2::GetGLContext()->CreateImageCHROMIUM(
-      width, height, internalformat, usage);
+                                GLenum internalformat) {
+  return gles2::GetGLContext()->CreateImageCHROMIUM(buffer, width, height,
+                                                    internalformat);
 }
 void GLES2DestroyImageCHROMIUM(GLuint image_id) {
   gles2::GetGLContext()->DestroyImageCHROMIUM(image_id);
 }
-void GLES2GetImageParameterivCHROMIUM(GLuint image_id,
-                                      GLenum pname,
-                                      GLint* params) {
-  gles2::GetGLContext()->GetImageParameterivCHROMIUM(image_id, pname, params);
+GLuint GLES2CreateGpuMemoryBufferImageCHROMIUM(GLsizei width,
+                                               GLsizei height,
+                                               GLenum internalformat,
+                                               GLenum usage) {
+  return gles2::GetGLContext()->CreateGpuMemoryBufferImageCHROMIUM(
+      width, height, internalformat, usage);
 }
 void GLES2GetTranslatedShaderSourceANGLE(GLuint shader,
                                          GLsizei bufsize,
                                          GLsizei* length,
                                          char* source) {
-  gles2::GetGLContext()->GetTranslatedShaderSourceANGLE(
-      shader, bufsize, length, source);
+  gles2::GetGLContext()->GetTranslatedShaderSourceANGLE(shader, bufsize, length,
+                                                        source);
 }
 void GLES2PostSubBufferCHROMIUM(GLint x, GLint y, GLint width, GLint height) {
   gles2::GetGLContext()->PostSubBufferCHROMIUM(x, y, width, height);
@@ -826,8 +799,8 @@ void GLES2TexImageIOSurface2DCHROMIUM(GLenum target,
                                       GLsizei height,
                                       GLuint ioSurfaceId,
                                       GLuint plane) {
-  gles2::GetGLContext()->TexImageIOSurface2DCHROMIUM(
-      target, width, height, ioSurfaceId, plane);
+  gles2::GetGLContext()->TexImageIOSurface2DCHROMIUM(target, width, height,
+                                                     ioSurfaceId, plane);
 }
 void GLES2CopyTextureCHROMIUM(GLenum target,
                               GLenum source_id,
@@ -835,23 +808,23 @@ void GLES2CopyTextureCHROMIUM(GLenum target,
                               GLint level,
                               GLint internalformat,
                               GLenum dest_type) {
-  gles2::GetGLContext()->CopyTextureCHROMIUM(
-      target, source_id, dest_id, level, internalformat, dest_type);
+  gles2::GetGLContext()->CopyTextureCHROMIUM(target, source_id, dest_id, level,
+                                             internalformat, dest_type);
 }
 void GLES2DrawArraysInstancedANGLE(GLenum mode,
                                    GLint first,
                                    GLsizei count,
                                    GLsizei primcount) {
-  gles2::GetGLContext()->DrawArraysInstancedANGLE(
-      mode, first, count, primcount);
+  gles2::GetGLContext()->DrawArraysInstancedANGLE(mode, first, count,
+                                                  primcount);
 }
 void GLES2DrawElementsInstancedANGLE(GLenum mode,
                                      GLsizei count,
                                      GLenum type,
                                      const void* indices,
                                      GLsizei primcount) {
-  gles2::GetGLContext()->DrawElementsInstancedANGLE(
-      mode, count, type, indices, primcount);
+  gles2::GetGLContext()->DrawElementsInstancedANGLE(mode, count, type, indices,
+                                                    primcount);
 }
 void GLES2VertexAttribDivisorANGLE(GLuint index, GLuint divisor) {
   gles2::GetGLContext()->VertexAttribDivisorANGLE(index, divisor);
@@ -879,6 +852,30 @@ void GLES2BindUniformLocationCHROMIUM(GLuint program,
                                       GLint location,
                                       const char* name) {
   gles2::GetGLContext()->BindUniformLocationCHROMIUM(program, location, name);
+}
+void GLES2GenValuebuffersCHROMIUM(GLsizei n, GLuint* buffers) {
+  gles2::GetGLContext()->GenValuebuffersCHROMIUM(n, buffers);
+}
+void GLES2DeleteValuebuffersCHROMIUM(GLsizei n, const GLuint* valuebuffers) {
+  gles2::GetGLContext()->DeleteValuebuffersCHROMIUM(n, valuebuffers);
+}
+GLboolean GLES2IsValuebufferCHROMIUM(GLuint valuebuffer) {
+  return gles2::GetGLContext()->IsValuebufferCHROMIUM(valuebuffer);
+}
+void GLES2BindValuebufferCHROMIUM(GLenum target, GLuint valuebuffer) {
+  gles2::GetGLContext()->BindValuebufferCHROMIUM(target, valuebuffer);
+}
+void GLES2SubscribeValueCHROMIUM(GLenum target, GLenum subscription) {
+  gles2::GetGLContext()->SubscribeValueCHROMIUM(target, subscription);
+}
+void GLES2PopulateSubscribedValuesCHROMIUM(GLenum target) {
+  gles2::GetGLContext()->PopulateSubscribedValuesCHROMIUM(target);
+}
+void GLES2UniformValuebufferCHROMIUM(GLint location,
+                                     GLenum target,
+                                     GLenum subscription) {
+  gles2::GetGLContext()->UniformValuebufferCHROMIUM(location, target,
+                                                    subscription);
 }
 void GLES2BindTexImage2DCHROMIUM(GLenum target, GLint imageId) {
   gles2::GetGLContext()->BindTexImage2DCHROMIUM(target, imageId);
@@ -913,15 +910,9 @@ void GLES2AsyncTexImage2DCHROMIUM(GLenum target,
                                   GLenum format,
                                   GLenum type,
                                   const void* pixels) {
-  gles2::GetGLContext()->AsyncTexImage2DCHROMIUM(target,
-                                                 level,
-                                                 internalformat,
-                                                 width,
-                                                 height,
-                                                 border,
-                                                 format,
-                                                 type,
-                                                 pixels);
+  gles2::GetGLContext()->AsyncTexImage2DCHROMIUM(target, level, internalformat,
+                                                 width, height, border, format,
+                                                 type, pixels);
 }
 void GLES2WaitAsyncTexImage2DCHROMIUM(GLenum target) {
   gles2::GetGLContext()->WaitAsyncTexImage2DCHROMIUM(target);
@@ -960,34 +951,38 @@ void GLES2ScheduleOverlayPlaneCHROMIUM(GLint plane_z_order,
                                        GLfloat uv_y,
                                        GLfloat uv_width,
                                        GLfloat uv_height) {
-  gles2::GetGLContext()->ScheduleOverlayPlaneCHROMIUM(plane_z_order,
-                                                      plane_transform,
-                                                      overlay_texture_id,
-                                                      bounds_x,
-                                                      bounds_y,
-                                                      bounds_width,
-                                                      bounds_height,
-                                                      uv_x,
-                                                      uv_y,
-                                                      uv_width,
-                                                      uv_height);
+  gles2::GetGLContext()->ScheduleOverlayPlaneCHROMIUM(
+      plane_z_order, plane_transform, overlay_texture_id, bounds_x, bounds_y,
+      bounds_width, bounds_height, uv_x, uv_y, uv_width, uv_height);
+}
+void GLES2MatrixLoadfCHROMIUM(GLenum matrixMode, const GLfloat* m) {
+  gles2::GetGLContext()->MatrixLoadfCHROMIUM(matrixMode, m);
+}
+void GLES2MatrixLoadIdentityCHROMIUM(GLenum matrixMode) {
+  gles2::GetGLContext()->MatrixLoadIdentityCHROMIUM(matrixMode);
+}
+void GLES2BlendBarrierKHR() {
+  gles2::GetGLContext()->BlendBarrierKHR();
 }
 
 namespace gles2 {
 
 extern const NameToFunc g_gles2_function_table[] = {
     {
-     "glActiveTexture", reinterpret_cast<GLES2FunctionPointer>(glActiveTexture),
+     "glActiveTexture",
+     reinterpret_cast<GLES2FunctionPointer>(glActiveTexture),
     },
     {
-     "glAttachShader", reinterpret_cast<GLES2FunctionPointer>(glAttachShader),
+     "glAttachShader",
+     reinterpret_cast<GLES2FunctionPointer>(glAttachShader),
     },
     {
      "glBindAttribLocation",
      reinterpret_cast<GLES2FunctionPointer>(glBindAttribLocation),
     },
     {
-     "glBindBuffer", reinterpret_cast<GLES2FunctionPointer>(glBindBuffer),
+     "glBindBuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glBindBuffer),
     },
     {
      "glBindFramebuffer",
@@ -998,52 +993,64 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glBindRenderbuffer),
     },
     {
-     "glBindTexture", reinterpret_cast<GLES2FunctionPointer>(glBindTexture),
+     "glBindTexture",
+     reinterpret_cast<GLES2FunctionPointer>(glBindTexture),
     },
     {
-     "glBlendColor", reinterpret_cast<GLES2FunctionPointer>(glBlendColor),
+     "glBlendColor",
+     reinterpret_cast<GLES2FunctionPointer>(glBlendColor),
     },
     {
-     "glBlendEquation", reinterpret_cast<GLES2FunctionPointer>(glBlendEquation),
+     "glBlendEquation",
+     reinterpret_cast<GLES2FunctionPointer>(glBlendEquation),
     },
     {
      "glBlendEquationSeparate",
      reinterpret_cast<GLES2FunctionPointer>(glBlendEquationSeparate),
     },
     {
-     "glBlendFunc", reinterpret_cast<GLES2FunctionPointer>(glBlendFunc),
+     "glBlendFunc",
+     reinterpret_cast<GLES2FunctionPointer>(glBlendFunc),
     },
     {
      "glBlendFuncSeparate",
      reinterpret_cast<GLES2FunctionPointer>(glBlendFuncSeparate),
     },
     {
-     "glBufferData", reinterpret_cast<GLES2FunctionPointer>(glBufferData),
+     "glBufferData",
+     reinterpret_cast<GLES2FunctionPointer>(glBufferData),
     },
     {
-     "glBufferSubData", reinterpret_cast<GLES2FunctionPointer>(glBufferSubData),
+     "glBufferSubData",
+     reinterpret_cast<GLES2FunctionPointer>(glBufferSubData),
     },
     {
      "glCheckFramebufferStatus",
      reinterpret_cast<GLES2FunctionPointer>(glCheckFramebufferStatus),
     },
     {
-     "glClear", reinterpret_cast<GLES2FunctionPointer>(glClear),
+     "glClear",
+     reinterpret_cast<GLES2FunctionPointer>(glClear),
     },
     {
-     "glClearColor", reinterpret_cast<GLES2FunctionPointer>(glClearColor),
+     "glClearColor",
+     reinterpret_cast<GLES2FunctionPointer>(glClearColor),
     },
     {
-     "glClearDepthf", reinterpret_cast<GLES2FunctionPointer>(glClearDepthf),
+     "glClearDepthf",
+     reinterpret_cast<GLES2FunctionPointer>(glClearDepthf),
     },
     {
-     "glClearStencil", reinterpret_cast<GLES2FunctionPointer>(glClearStencil),
+     "glClearStencil",
+     reinterpret_cast<GLES2FunctionPointer>(glClearStencil),
     },
     {
-     "glColorMask", reinterpret_cast<GLES2FunctionPointer>(glColorMask),
+     "glColorMask",
+     reinterpret_cast<GLES2FunctionPointer>(glColorMask),
     },
     {
-     "glCompileShader", reinterpret_cast<GLES2FunctionPointer>(glCompileShader),
+     "glCompileShader",
+     reinterpret_cast<GLES2FunctionPointer>(glCompileShader),
     },
     {
      "glCompressedTexImage2D",
@@ -1062,72 +1069,88 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glCopyTexSubImage2D),
     },
     {
-     "glCreateProgram", reinterpret_cast<GLES2FunctionPointer>(glCreateProgram),
+     "glCreateProgram",
+     reinterpret_cast<GLES2FunctionPointer>(glCreateProgram),
     },
     {
-     "glCreateShader", reinterpret_cast<GLES2FunctionPointer>(glCreateShader),
+     "glCreateShader",
+     reinterpret_cast<GLES2FunctionPointer>(glCreateShader),
     },
     {
-     "glCullFace", reinterpret_cast<GLES2FunctionPointer>(glCullFace),
+     "glCullFace",
+     reinterpret_cast<GLES2FunctionPointer>(glCullFace),
     },
     {
-     "glDeleteBuffers", reinterpret_cast<GLES2FunctionPointer>(glDeleteBuffers),
+     "glDeleteBuffers",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteBuffers),
     },
     {
      "glDeleteFramebuffers",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteFramebuffers),
     },
     {
-     "glDeleteProgram", reinterpret_cast<GLES2FunctionPointer>(glDeleteProgram),
+     "glDeleteProgram",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteProgram),
     },
     {
      "glDeleteRenderbuffers",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteRenderbuffers),
     },
     {
-     "glDeleteShader", reinterpret_cast<GLES2FunctionPointer>(glDeleteShader),
+     "glDeleteShader",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteShader),
     },
     {
      "glDeleteTextures",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteTextures),
     },
     {
-     "glDepthFunc", reinterpret_cast<GLES2FunctionPointer>(glDepthFunc),
+     "glDepthFunc",
+     reinterpret_cast<GLES2FunctionPointer>(glDepthFunc),
     },
     {
-     "glDepthMask", reinterpret_cast<GLES2FunctionPointer>(glDepthMask),
+     "glDepthMask",
+     reinterpret_cast<GLES2FunctionPointer>(glDepthMask),
     },
     {
-     "glDepthRangef", reinterpret_cast<GLES2FunctionPointer>(glDepthRangef),
+     "glDepthRangef",
+     reinterpret_cast<GLES2FunctionPointer>(glDepthRangef),
     },
     {
-     "glDetachShader", reinterpret_cast<GLES2FunctionPointer>(glDetachShader),
+     "glDetachShader",
+     reinterpret_cast<GLES2FunctionPointer>(glDetachShader),
     },
     {
-     "glDisable", reinterpret_cast<GLES2FunctionPointer>(glDisable),
+     "glDisable",
+     reinterpret_cast<GLES2FunctionPointer>(glDisable),
     },
     {
      "glDisableVertexAttribArray",
      reinterpret_cast<GLES2FunctionPointer>(glDisableVertexAttribArray),
     },
     {
-     "glDrawArrays", reinterpret_cast<GLES2FunctionPointer>(glDrawArrays),
+     "glDrawArrays",
+     reinterpret_cast<GLES2FunctionPointer>(glDrawArrays),
     },
     {
-     "glDrawElements", reinterpret_cast<GLES2FunctionPointer>(glDrawElements),
+     "glDrawElements",
+     reinterpret_cast<GLES2FunctionPointer>(glDrawElements),
     },
     {
-     "glEnable", reinterpret_cast<GLES2FunctionPointer>(glEnable),
+     "glEnable",
+     reinterpret_cast<GLES2FunctionPointer>(glEnable),
     },
     {
      "glEnableVertexAttribArray",
      reinterpret_cast<GLES2FunctionPointer>(glEnableVertexAttribArray),
     },
     {
-     "glFinish", reinterpret_cast<GLES2FunctionPointer>(glFinish),
+     "glFinish",
+     reinterpret_cast<GLES2FunctionPointer>(glFinish),
     },
     {
-     "glFlush", reinterpret_cast<GLES2FunctionPointer>(glFlush),
+     "glFlush",
+     reinterpret_cast<GLES2FunctionPointer>(glFlush),
     },
     {
      "glFramebufferRenderbuffer",
@@ -1138,10 +1161,12 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glFramebufferTexture2D),
     },
     {
-     "glFrontFace", reinterpret_cast<GLES2FunctionPointer>(glFrontFace),
+     "glFrontFace",
+     reinterpret_cast<GLES2FunctionPointer>(glFrontFace),
     },
     {
-     "glGenBuffers", reinterpret_cast<GLES2FunctionPointer>(glGenBuffers),
+     "glGenBuffers",
+     reinterpret_cast<GLES2FunctionPointer>(glGenBuffers),
     },
     {
      "glGenerateMipmap",
@@ -1156,7 +1181,8 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGenRenderbuffers),
     },
     {
-     "glGenTextures", reinterpret_cast<GLES2FunctionPointer>(glGenTextures),
+     "glGenTextures",
+     reinterpret_cast<GLES2FunctionPointer>(glGenTextures),
     },
     {
      "glGetActiveAttrib",
@@ -1175,17 +1201,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetAttribLocation),
     },
     {
-     "glGetBooleanv", reinterpret_cast<GLES2FunctionPointer>(glGetBooleanv),
+     "glGetBooleanv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetBooleanv),
     },
     {
      "glGetBufferParameteriv",
      reinterpret_cast<GLES2FunctionPointer>(glGetBufferParameteriv),
     },
     {
-     "glGetError", reinterpret_cast<GLES2FunctionPointer>(glGetError),
+     "glGetError",
+     reinterpret_cast<GLES2FunctionPointer>(glGetError),
     },
     {
-     "glGetFloatv", reinterpret_cast<GLES2FunctionPointer>(glGetFloatv),
+     "glGetFloatv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetFloatv),
     },
     {
      "glGetFramebufferAttachmentParameteriv",
@@ -1193,10 +1222,12 @@ extern const NameToFunc g_gles2_function_table[] = {
          glGetFramebufferAttachmentParameteriv),
     },
     {
-     "glGetIntegerv", reinterpret_cast<GLES2FunctionPointer>(glGetIntegerv),
+     "glGetIntegerv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetIntegerv),
     },
     {
-     "glGetProgramiv", reinterpret_cast<GLES2FunctionPointer>(glGetProgramiv),
+     "glGetProgramiv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetProgramiv),
     },
     {
      "glGetProgramInfoLog",
@@ -1207,7 +1238,8 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetRenderbufferParameteriv),
     },
     {
-     "glGetShaderiv", reinterpret_cast<GLES2FunctionPointer>(glGetShaderiv),
+     "glGetShaderiv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetShaderiv),
     },
     {
      "glGetShaderInfoLog",
@@ -1222,7 +1254,8 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetShaderSource),
     },
     {
-     "glGetString", reinterpret_cast<GLES2FunctionPointer>(glGetString),
+     "glGetString",
+     reinterpret_cast<GLES2FunctionPointer>(glGetString),
     },
     {
      "glGetTexParameterfv",
@@ -1233,10 +1266,12 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetTexParameteriv),
     },
     {
-     "glGetUniformfv", reinterpret_cast<GLES2FunctionPointer>(glGetUniformfv),
+     "glGetUniformfv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetUniformfv),
     },
     {
-     "glGetUniformiv", reinterpret_cast<GLES2FunctionPointer>(glGetUniformiv),
+     "glGetUniformiv",
+     reinterpret_cast<GLES2FunctionPointer>(glGetUniformiv),
     },
     {
      "glGetUniformLocation",
@@ -1255,44 +1290,56 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glGetVertexAttribPointerv),
     },
     {
-     "glHint", reinterpret_cast<GLES2FunctionPointer>(glHint),
+     "glHint",
+     reinterpret_cast<GLES2FunctionPointer>(glHint),
     },
     {
-     "glIsBuffer", reinterpret_cast<GLES2FunctionPointer>(glIsBuffer),
+     "glIsBuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glIsBuffer),
     },
     {
-     "glIsEnabled", reinterpret_cast<GLES2FunctionPointer>(glIsEnabled),
+     "glIsEnabled",
+     reinterpret_cast<GLES2FunctionPointer>(glIsEnabled),
     },
     {
-     "glIsFramebuffer", reinterpret_cast<GLES2FunctionPointer>(glIsFramebuffer),
+     "glIsFramebuffer",
+     reinterpret_cast<GLES2FunctionPointer>(glIsFramebuffer),
     },
     {
-     "glIsProgram", reinterpret_cast<GLES2FunctionPointer>(glIsProgram),
+     "glIsProgram",
+     reinterpret_cast<GLES2FunctionPointer>(glIsProgram),
     },
     {
      "glIsRenderbuffer",
      reinterpret_cast<GLES2FunctionPointer>(glIsRenderbuffer),
     },
     {
-     "glIsShader", reinterpret_cast<GLES2FunctionPointer>(glIsShader),
+     "glIsShader",
+     reinterpret_cast<GLES2FunctionPointer>(glIsShader),
     },
     {
-     "glIsTexture", reinterpret_cast<GLES2FunctionPointer>(glIsTexture),
+     "glIsTexture",
+     reinterpret_cast<GLES2FunctionPointer>(glIsTexture),
     },
     {
-     "glLineWidth", reinterpret_cast<GLES2FunctionPointer>(glLineWidth),
+     "glLineWidth",
+     reinterpret_cast<GLES2FunctionPointer>(glLineWidth),
     },
     {
-     "glLinkProgram", reinterpret_cast<GLES2FunctionPointer>(glLinkProgram),
+     "glLinkProgram",
+     reinterpret_cast<GLES2FunctionPointer>(glLinkProgram),
     },
     {
-     "glPixelStorei", reinterpret_cast<GLES2FunctionPointer>(glPixelStorei),
+     "glPixelStorei",
+     reinterpret_cast<GLES2FunctionPointer>(glPixelStorei),
     },
     {
-     "glPolygonOffset", reinterpret_cast<GLES2FunctionPointer>(glPolygonOffset),
+     "glPolygonOffset",
+     reinterpret_cast<GLES2FunctionPointer>(glPolygonOffset),
     },
     {
-     "glReadPixels", reinterpret_cast<GLES2FunctionPointer>(glReadPixels),
+     "glReadPixels",
+     reinterpret_cast<GLES2FunctionPointer>(glReadPixels),
     },
     {
      "glReleaseShaderCompiler",
@@ -1307,13 +1354,16 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glSampleCoverage),
     },
     {
-     "glScissor", reinterpret_cast<GLES2FunctionPointer>(glScissor),
+     "glScissor",
+     reinterpret_cast<GLES2FunctionPointer>(glScissor),
     },
     {
-     "glShaderBinary", reinterpret_cast<GLES2FunctionPointer>(glShaderBinary),
+     "glShaderBinary",
+     reinterpret_cast<GLES2FunctionPointer>(glShaderBinary),
     },
     {
-     "glShaderSource", reinterpret_cast<GLES2FunctionPointer>(glShaderSource),
+     "glShaderSource",
+     reinterpret_cast<GLES2FunctionPointer>(glShaderSource),
     },
     {
      "glShallowFinishCHROMIUM",
@@ -1324,93 +1374,116 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glShallowFlushCHROMIUM),
     },
     {
-     "glStencilFunc", reinterpret_cast<GLES2FunctionPointer>(glStencilFunc),
+     "glStencilFunc",
+     reinterpret_cast<GLES2FunctionPointer>(glStencilFunc),
     },
     {
      "glStencilFuncSeparate",
      reinterpret_cast<GLES2FunctionPointer>(glStencilFuncSeparate),
     },
     {
-     "glStencilMask", reinterpret_cast<GLES2FunctionPointer>(glStencilMask),
+     "glStencilMask",
+     reinterpret_cast<GLES2FunctionPointer>(glStencilMask),
     },
     {
      "glStencilMaskSeparate",
      reinterpret_cast<GLES2FunctionPointer>(glStencilMaskSeparate),
     },
     {
-     "glStencilOp", reinterpret_cast<GLES2FunctionPointer>(glStencilOp),
+     "glStencilOp",
+     reinterpret_cast<GLES2FunctionPointer>(glStencilOp),
     },
     {
      "glStencilOpSeparate",
      reinterpret_cast<GLES2FunctionPointer>(glStencilOpSeparate),
     },
     {
-     "glTexImage2D", reinterpret_cast<GLES2FunctionPointer>(glTexImage2D),
+     "glTexImage2D",
+     reinterpret_cast<GLES2FunctionPointer>(glTexImage2D),
     },
     {
-     "glTexParameterf", reinterpret_cast<GLES2FunctionPointer>(glTexParameterf),
+     "glTexParameterf",
+     reinterpret_cast<GLES2FunctionPointer>(glTexParameterf),
     },
     {
      "glTexParameterfv",
      reinterpret_cast<GLES2FunctionPointer>(glTexParameterfv),
     },
     {
-     "glTexParameteri", reinterpret_cast<GLES2FunctionPointer>(glTexParameteri),
+     "glTexParameteri",
+     reinterpret_cast<GLES2FunctionPointer>(glTexParameteri),
     },
     {
      "glTexParameteriv",
      reinterpret_cast<GLES2FunctionPointer>(glTexParameteriv),
     },
     {
-     "glTexSubImage2D", reinterpret_cast<GLES2FunctionPointer>(glTexSubImage2D),
+     "glTexSubImage2D",
+     reinterpret_cast<GLES2FunctionPointer>(glTexSubImage2D),
     },
     {
-     "glUniform1f", reinterpret_cast<GLES2FunctionPointer>(glUniform1f),
+     "glUniform1f",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform1f),
     },
     {
-     "glUniform1fv", reinterpret_cast<GLES2FunctionPointer>(glUniform1fv),
+     "glUniform1fv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform1fv),
     },
     {
-     "glUniform1i", reinterpret_cast<GLES2FunctionPointer>(glUniform1i),
+     "glUniform1i",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform1i),
     },
     {
-     "glUniform1iv", reinterpret_cast<GLES2FunctionPointer>(glUniform1iv),
+     "glUniform1iv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform1iv),
     },
     {
-     "glUniform2f", reinterpret_cast<GLES2FunctionPointer>(glUniform2f),
+     "glUniform2f",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform2f),
     },
     {
-     "glUniform2fv", reinterpret_cast<GLES2FunctionPointer>(glUniform2fv),
+     "glUniform2fv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform2fv),
     },
     {
-     "glUniform2i", reinterpret_cast<GLES2FunctionPointer>(glUniform2i),
+     "glUniform2i",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform2i),
     },
     {
-     "glUniform2iv", reinterpret_cast<GLES2FunctionPointer>(glUniform2iv),
+     "glUniform2iv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform2iv),
     },
     {
-     "glUniform3f", reinterpret_cast<GLES2FunctionPointer>(glUniform3f),
+     "glUniform3f",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform3f),
     },
     {
-     "glUniform3fv", reinterpret_cast<GLES2FunctionPointer>(glUniform3fv),
+     "glUniform3fv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform3fv),
     },
     {
-     "glUniform3i", reinterpret_cast<GLES2FunctionPointer>(glUniform3i),
+     "glUniform3i",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform3i),
     },
     {
-     "glUniform3iv", reinterpret_cast<GLES2FunctionPointer>(glUniform3iv),
+     "glUniform3iv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform3iv),
     },
     {
-     "glUniform4f", reinterpret_cast<GLES2FunctionPointer>(glUniform4f),
+     "glUniform4f",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform4f),
     },
     {
-     "glUniform4fv", reinterpret_cast<GLES2FunctionPointer>(glUniform4fv),
+     "glUniform4fv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform4fv),
     },
     {
-     "glUniform4i", reinterpret_cast<GLES2FunctionPointer>(glUniform4i),
+     "glUniform4i",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform4i),
     },
     {
-     "glUniform4iv", reinterpret_cast<GLES2FunctionPointer>(glUniform4iv),
+     "glUniform4iv",
+     reinterpret_cast<GLES2FunctionPointer>(glUniform4iv),
     },
     {
      "glUniformMatrix2fv",
@@ -1425,7 +1498,8 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glUniformMatrix4fv),
     },
     {
-     "glUseProgram", reinterpret_cast<GLES2FunctionPointer>(glUseProgram),
+     "glUseProgram",
+     reinterpret_cast<GLES2FunctionPointer>(glUseProgram),
     },
     {
      "glValidateProgram",
@@ -1468,7 +1542,8 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glVertexAttribPointer),
     },
     {
-     "glViewport", reinterpret_cast<GLES2FunctionPointer>(glViewport),
+     "glViewport",
+     reinterpret_cast<GLES2FunctionPointer>(glViewport),
     },
     {
      "glBlitFramebufferCHROMIUM",
@@ -1494,23 +1569,28 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glTexStorage2DEXT),
     },
     {
-     "glGenQueriesEXT", reinterpret_cast<GLES2FunctionPointer>(glGenQueriesEXT),
+     "glGenQueriesEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glGenQueriesEXT),
     },
     {
      "glDeleteQueriesEXT",
      reinterpret_cast<GLES2FunctionPointer>(glDeleteQueriesEXT),
     },
     {
-     "glIsQueryEXT", reinterpret_cast<GLES2FunctionPointer>(glIsQueryEXT),
+     "glIsQueryEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glIsQueryEXT),
     },
     {
-     "glBeginQueryEXT", reinterpret_cast<GLES2FunctionPointer>(glBeginQueryEXT),
+     "glBeginQueryEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glBeginQueryEXT),
     },
     {
-     "glEndQueryEXT", reinterpret_cast<GLES2FunctionPointer>(glEndQueryEXT),
+     "glEndQueryEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glEndQueryEXT),
     },
     {
-     "glGetQueryivEXT", reinterpret_cast<GLES2FunctionPointer>(glGetQueryivEXT),
+     "glGetQueryivEXT",
+     reinterpret_cast<GLES2FunctionPointer>(glGetQueryivEXT),
     },
     {
      "glGetQueryObjectuivEXT",
@@ -1545,23 +1625,12 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glBindVertexArrayOES),
     },
     {
-     "glSwapBuffers", reinterpret_cast<GLES2FunctionPointer>(glSwapBuffers),
+     "glSwapBuffers",
+     reinterpret_cast<GLES2FunctionPointer>(glSwapBuffers),
     },
     {
      "glGetMaxValueInBufferCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glGetMaxValueInBufferCHROMIUM),
-    },
-    {
-     "glGenSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glGenSharedIdsCHROMIUM),
-    },
-    {
-     "glDeleteSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glDeleteSharedIdsCHROMIUM),
-    },
-    {
-     "glRegisterSharedIdsCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glRegisterSharedIdsCHROMIUM),
     },
     {
      "glEnableFeatureCHROMIUM",
@@ -1574,14 +1643,6 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glUnmapBufferCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glUnmapBufferCHROMIUM),
-    },
-    {
-     "glMapImageCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glMapImageCHROMIUM),
-    },
-    {
-     "glUnmapImageCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glUnmapImageCHROMIUM),
     },
     {
      "glMapBufferSubDataCHROMIUM",
@@ -1637,8 +1698,9 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glDestroyImageCHROMIUM),
     },
     {
-     "glGetImageParameterivCHROMIUM",
-     reinterpret_cast<GLES2FunctionPointer>(glGetImageParameterivCHROMIUM),
+     "glCreateGpuMemoryBufferImageCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(
+         glCreateGpuMemoryBufferImageCHROMIUM),
     },
     {
      "glGetTranslatedShaderSourceANGLE",
@@ -1691,6 +1753,34 @@ extern const NameToFunc g_gles2_function_table[] = {
     {
      "glBindUniformLocationCHROMIUM",
      reinterpret_cast<GLES2FunctionPointer>(glBindUniformLocationCHROMIUM),
+    },
+    {
+     "glGenValuebuffersCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glGenValuebuffersCHROMIUM),
+    },
+    {
+     "glDeleteValuebuffersCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glDeleteValuebuffersCHROMIUM),
+    },
+    {
+     "glIsValuebufferCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glIsValuebufferCHROMIUM),
+    },
+    {
+     "glBindValuebufferCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glBindValuebufferCHROMIUM),
+    },
+    {
+     "glSubscribeValueCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glSubscribeValueCHROMIUM),
+    },
+    {
+     "glPopulateSubscribedValuesCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glPopulateSubscribedValuesCHROMIUM),
+    },
+    {
+     "glUniformValuebufferCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glUniformValuebufferCHROMIUM),
     },
     {
      "glBindTexImage2DCHROMIUM",
@@ -1753,7 +1843,20 @@ extern const NameToFunc g_gles2_function_table[] = {
      reinterpret_cast<GLES2FunctionPointer>(glScheduleOverlayPlaneCHROMIUM),
     },
     {
-     NULL, NULL,
+     "glMatrixLoadfCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glMatrixLoadfCHROMIUM),
+    },
+    {
+     "glMatrixLoadIdentityCHROMIUM",
+     reinterpret_cast<GLES2FunctionPointer>(glMatrixLoadIdentityCHROMIUM),
+    },
+    {
+     "glBlendBarrierKHR",
+     reinterpret_cast<GLES2FunctionPointer>(glBlendBarrierKHR),
+    },
+    {
+     NULL,
+     NULL,
     },
 };
 

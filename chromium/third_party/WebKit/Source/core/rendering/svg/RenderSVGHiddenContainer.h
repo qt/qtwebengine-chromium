@@ -22,7 +22,7 @@
 
 #include "core/rendering/svg/RenderSVGContainer.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
@@ -32,20 +32,19 @@ class RenderSVGHiddenContainer : public RenderSVGContainer {
 public:
     explicit RenderSVGHiddenContainer(SVGElement*);
 
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGHiddenContainer"; }
+    virtual const char* renderName() const override { return "RenderSVGHiddenContainer"; }
 
 protected:
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
+
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGHiddenContainer || RenderSVGContainer::isOfType(type); }
 
 private:
-    virtual bool isSVGHiddenContainer() const OVERRIDE FINAL { return true; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject*, const PaintInvalidationState* = 0) const override final { return LayoutRect(); }
+    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL;
-
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject*) const OVERRIDE FINAL { return LayoutRect(); }
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE FINAL;
-
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE FINAL;
+    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override final;
 };
 }
 

@@ -51,11 +51,11 @@ public:
     bool unique() const {
         // We believe we're reading fRefCnt in a safe way here, so we stifle the TSAN warning about
         // an unproctected read.  Generally, don't read fRefCnt, and don't stifle this warning.
-        bool const unique = (1 == SK_ANNOTATE_UNPROTECTED_READ(fRefCnt));
+        bool const unique = (1 == sk_acquire_load(&fRefCnt));
         if (unique) {
             // Acquire barrier (L/SL), if not provided by load of fRefCnt.
             // Prevents user's 'unique' code from happening before decrements.
-            //TODO: issue the barrier.
+            //TODO: issue the barrier only when unique is true
         }
         return unique;
     }
@@ -113,7 +113,6 @@ private:
 
     // The following friends are those which override internal_dispose()
     // and conditionally call SkRefCnt::internal_dispose().
-    friend class GrTexture;
     friend class SkWeakRefCnt;
 
     mutable int32_t fRefCnt;
@@ -169,7 +168,7 @@ template <typename T> static inline void SkSafeUnref(T* obj) {
 }
 
 template<typename T> static inline void SkSafeSetNull(T*& obj) {
-    if (NULL != obj) {
+    if (obj) {
         obj->unref();
         obj = NULL;
     }
@@ -235,7 +234,7 @@ public:
     BlockRefType *operator->() const {
         return static_cast<BlockRefType*>(fObj);
     }
-    operator T*() { return fObj; }
+    operator T*() const { return fObj; }
 
 private:
     T*  fObj;
@@ -247,46 +246,5 @@ public:
     SkAutoUnref(SkRefCnt* obj) : SkAutoTUnref<SkRefCnt>(obj) {}
 };
 #define SkAutoUnref(...) SK_REQUIRE_LOCAL_VAR(SkAutoUnref)
-
-class SkAutoRef : SkNoncopyable {
-public:
-    SkAutoRef(SkRefCnt* obj) : fObj(obj) { SkSafeRef(obj); }
-    ~SkAutoRef() { SkSafeUnref(fObj); }
-private:
-    SkRefCnt* fObj;
-};
-#define SkAutoRef(...) SK_REQUIRE_LOCAL_VAR(SkAutoRef)
-
-/** Wrapper class for SkRefCnt pointers. This manages ref/unref of a pointer to
-    a SkRefCnt (or subclass) object.
- */
-template <typename T> class SkRefPtr {
-public:
-    SkRefPtr() : fObj(NULL) {}
-    SkRefPtr(T* obj) : fObj(obj) { SkSafeRef(fObj); }
-    SkRefPtr(const SkRefPtr& o) : fObj(o.fObj) { SkSafeRef(fObj); }
-    ~SkRefPtr() { SkSafeUnref(fObj); }
-
-    SkRefPtr& operator=(const SkRefPtr& rp) {
-        SkRefCnt_SafeAssign(fObj, rp.fObj);
-        return *this;
-    }
-    SkRefPtr& operator=(T* obj) {
-        SkRefCnt_SafeAssign(fObj, obj);
-        return *this;
-    }
-
-    T* get() const { return fObj; }
-    T& operator*() const { return *fObj; }
-    T* operator->() const { return fObj; }
-
-    typedef T* SkRefPtr::*unspecified_bool_type;
-    operator unspecified_bool_type() const {
-        return fObj ? &SkRefPtr::fObj : NULL;
-    }
-
-private:
-    T* fObj;
-};
 
 #endif

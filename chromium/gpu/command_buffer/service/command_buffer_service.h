@@ -33,6 +33,9 @@ class GPU_EXPORT CommandBufferServiceBase : public CommandBuffer {
   // NOTE: if calling this in conjunction with SetParseError,
   // call this first.
   virtual void SetContextLostReason(error::ContextLostReason) = 0;
+
+  // Allows the reader to obtain the current put offset.
+  virtual int32 GetPutOffset() = 0;
 };
 
 // An object that implements a shared memory command buffer and a synchronous
@@ -42,26 +45,26 @@ class GPU_EXPORT CommandBufferService : public CommandBufferServiceBase {
   typedef base::Callback<bool(int32)> GetBufferChangedCallback;
   explicit CommandBufferService(
       TransferBufferManagerInterface* transfer_buffer_manager);
-  virtual ~CommandBufferService();
+  ~CommandBufferService() override;
 
   // CommandBuffer implementation:
-  virtual bool Initialize() OVERRIDE;
-  virtual State GetLastState() OVERRIDE;
-  virtual int32 GetLastToken() OVERRIDE;
-  virtual void Flush(int32 put_offset) OVERRIDE;
-  virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
-  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
-  virtual void SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
-  virtual scoped_refptr<Buffer> CreateTransferBuffer(size_t size,
-                                                     int32* id) OVERRIDE;
-  virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
+  bool Initialize() override;
+  State GetLastState() override;
+  int32 GetLastToken() override;
+  void Flush(int32 put_offset) override;
+  void WaitForTokenInRange(int32 start, int32 end) override;
+  void WaitForGetOffsetInRange(int32 start, int32 end) override;
+  void SetGetBuffer(int32 transfer_buffer_id) override;
+  scoped_refptr<Buffer> CreateTransferBuffer(size_t size, int32* id) override;
+  void DestroyTransferBuffer(int32 id) override;
 
   // CommandBufferServiceBase implementation:
-  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
-  virtual scoped_refptr<Buffer> GetTransferBuffer(int32 id) OVERRIDE;
-  virtual void SetToken(int32 token) OVERRIDE;
-  virtual void SetParseError(error::Error error) OVERRIDE;
-  virtual void SetContextLostReason(error::ContextLostReason) OVERRIDE;
+  void SetGetOffset(int32 get_offset) override;
+  scoped_refptr<Buffer> GetTransferBuffer(int32 id) override;
+  void SetToken(int32 token) override;
+  void SetParseError(error::Error error) override;
+  void SetContextLostReason(error::ContextLostReason) override;
+  int32 GetPutOffset() override;
 
   // Sets a callback that is called whenever the put offset is changed. When
   // called with sync==true, the callback must not return until some progress

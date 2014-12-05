@@ -6,54 +6,81 @@
 
 #include <algorithm>
 
-#include "cc/layers/quad_sink.h"
+#include "cc/layers/append_quads_data.h"
 #include "cc/quads/solid_color_draw_quad.h"
+#include "cc/trees/occlusion.h"
 
 namespace cc {
 
+namespace {
+const int kSolidQuadTileSize = 256;
+}
+
 SolidColorLayerImpl::SolidColorLayerImpl(LayerTreeImpl* tree_impl, int id)
-    : LayerImpl(tree_impl, id),
-      tile_size_(256) {}
+    : LayerImpl(tree_impl, id) {
+}
 
 SolidColorLayerImpl::~SolidColorLayerImpl() {}
 
 scoped_ptr<LayerImpl> SolidColorLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return SolidColorLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return SolidColorLayerImpl::Create(tree_impl, id());
 }
 
-void SolidColorLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                      AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
-  PopulateSharedQuadState(shared_quad_state);
-
-  AppendDebugBorderQuad(
-      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
-
+void SolidColorLayerImpl::AppendSolidQuads(
+    RenderPass* render_pass,
+    const Occlusion& occlusion_in_content_space,
+    SharedQuadState* shared_quad_state,
+    const gfx::Rect& visible_content_rect,
+    SkColor color,
+    AppendQuadsData* append_quads_data) {
   // We create a series of smaller quads instead of just one large one so that
   // the culler can reduce the total pixels drawn.
-  int width = content_bounds().width();
-  int height = content_bounds().height();
-  for (int x = 0; x < width; x += tile_size_) {
-    for (int y = 0; y < height; y += tile_size_) {
+  int right = visible_content_rect.right();
+  int bottom = visible_content_rect.bottom();
+  for (int x = visible_content_rect.x(); x < visible_content_rect.right();
+       x += kSolidQuadTileSize) {
+    for (int y = visible_content_rect.y(); y < visible_content_rect.bottom();
+         y += kSolidQuadTileSize) {
       gfx::Rect quad_rect(x,
                           y,
-                          std::min(width - x, tile_size_),
-                          std::min(height - y, tile_size_));
-      gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
-          quad_rect, draw_properties().target_space_transform);
+                          std::min(right - x, kSolidQuadTileSize),
+                          std::min(bottom - y, kSolidQuadTileSize));
+      gfx::Rect visible_quad_rect =
+          occlusion_in_content_space.GetUnoccludedContentRect(quad_rect);
       if (visible_quad_rect.IsEmpty())
         continue;
 
-      scoped_ptr<SolidColorDrawQuad> quad = SolidColorDrawQuad::Create();
-      quad->SetNew(shared_quad_state,
-                   quad_rect,
-                   visible_quad_rect,
-                   background_color(),
-                   false);
-      quad_sink->Append(quad.PassAs<DrawQuad>());
+      append_quads_data->visible_content_area +=
+          visible_quad_rect.width() * visible_quad_rect.height();
+
+      SolidColorDrawQuad* quad =
+          render_pass->CreateAndAppendDrawQuad<SolidColorDrawQuad>();
+      quad->SetNew(
+          shared_quad_state, quad_rect, visible_quad_rect, color, false);
     }
   }
+}
+
+void SolidColorLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const Occlusion& occlusion_in_content_space,
+    AppendQuadsData* append_quads_data) {
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
+  PopulateSharedQuadState(shared_quad_state);
+
+  AppendDebugBorderQuad(
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
+
+  // TODO(hendrikw): We need to pass the visible content rect rather than
+  // |content_bounds()| here.
+  AppendSolidQuads(render_pass,
+                   occlusion_in_content_space,
+                   shared_quad_state,
+                   gfx::Rect(content_bounds()),
+                   background_color(),
+                   append_quads_data);
 }
 
 const char* SolidColorLayerImpl::LayerTypeAsString() const {

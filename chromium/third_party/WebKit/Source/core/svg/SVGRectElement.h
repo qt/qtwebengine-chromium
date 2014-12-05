@@ -26,9 +26,10 @@
 #include "core/svg/SVGAnimatedLength.h"
 #include "core/svg/SVGGeometryElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGRectElement FINAL : public SVGGeometryElement {
+class SVGRectElement final : public SVGGeometryElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGRectElement);
 
@@ -43,12 +44,12 @@ private:
     explicit SVGRectElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 
     RefPtr<SVGAnimatedLength> m_x;
     RefPtr<SVGAnimatedLength> m_y;
@@ -58,6 +59,6 @@ private:
     RefPtr<SVGAnimatedLength> m_ry;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGRectElement_h

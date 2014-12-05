@@ -8,6 +8,7 @@
     <output filename="grit/ui_resources_map.h" type="resource_map_header" context="default_100_percent" />
     <output filename="ui_resources_100_percent.pak" type="data_package" context="default_100_percent" />
     <output filename="ui_resources_200_percent.pak" type="data_package" context="default_200_percent" />
+    <output filename="ui_resources_300_percent.pak" type="data_package" context="default_300_percent" />
   </outputs>
   <release seq="1">
     <structures fallback_to_low_resolution="true">
@@ -102,22 +103,8 @@
         <structure type="chrome_scaled_image" name="IDR_AURA_CURSOR_GRABBING" file="common/pointers/hand3.png" />
       </if>
       <if expr="toolkit_views">
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_BOTTOM" file="common/window_shadow_active_bottom.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_BOTTOM_LEFT" file="common/window_shadow_active_bottom_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_BOTTOM_RIGHT" file="common/window_shadow_active_bottom_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_LEFT" file="common/window_shadow_active_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_RIGHT" file="common/window_shadow_active_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_TOP" file="common/window_shadow_active_top.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_TOP_LEFT" file="common/window_shadow_active_top_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE_TOP_RIGHT" file="common/window_shadow_active_top_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_BOTTOM" file="common/window_shadow_inactive_bottom.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_BOTTOM_LEFT" file="common/window_shadow_inactive_bottom_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_BOTTOM_RIGHT" file="common/window_shadow_inactive_bottom_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_LEFT" file="common/window_shadow_inactive_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_RIGHT" file="common/window_shadow_inactive_right.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_TOP" file="common/window_shadow_inactive_top.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_TOP_LEFT" file="common/window_shadow_inactive_top_left.png" />
-        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE_TOP_RIGHT" file="common/window_shadow_inactive_top_right.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_ACTIVE" file="common/window_shadow_active.png" />
+        <structure type="chrome_scaled_image" name="IDR_AURA_SHADOW_INACTIVE" file="common/window_shadow_inactive.png" />
       </if>
       <structure type="chrome_scaled_image" name="IDR_BACK_ARROW" file="common/back_arrow.png" />
       <structure type="chrome_scaled_image" name="IDR_FORWARD_ARROW" file="common/forward_arrow.png" />
@@ -177,9 +164,14 @@
       <structure type="chrome_scaled_image" name="IDR_CLOSE_2_H" file="close_2_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_2_MASK" file="close_2_mask.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_2_P" file="close_2_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_CLOSE_3_MASK" file="common/close_3_mask.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG" file="close_dialog.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_H" file="close_dialog_hover.png" />
       <structure type="chrome_scaled_image" name="IDR_CLOSE_DIALOG_P" file="close_dialog_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE" file="disable.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE_H" file="disable_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_DISABLE_P" file="disable_pressed.png" />
+
       <if expr="desktop_linux">
         <structure type="chrome_scaled_image" name="IDR_CLOSE_H" file="linux/linux_close_hover.png" />
         <structure type="chrome_scaled_image" name="IDR_CLOSE_P" file="linux/linux_close_pressed.png" />
@@ -272,6 +264,22 @@
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON" file="common/default_favicon.png" />
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_32" file="common/default_favicon_32.png" />
       <structure type="chrome_scaled_image" name="IDR_DEFAULT_FAVICON_64" file="common/default_favicon_64.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED" file="common/easy_unlock_hardlocked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED_HOVER" file="common/easy_unlock_hardlocked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_HARDLOCKED_PRESSED" file="common/easy_unlock_hardlocked_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED" file="common/easy_unlock_locked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_HOVER" file="common/easy_unlock_locked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_PRESSED" file="common/easy_unlock_locked_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_TO_BE_ACTIVATED" file="common/easy_unlock_locked_to_be_activated.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_TO_BE_ACTIVATED_HOVER" file="common/easy_unlock_locked_to_be_activated_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_TO_BE_ACTIVATED_PRESSED" file="common/easy_unlock_locked_to_be_activated_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_WITH_PROXIMITY_HINT" file="common/easy_unlock_locked_with_proximity_hint.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_WITH_PROXIMITY_HINT_HOVER" file="common/easy_unlock_locked_with_proximity_hint_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_LOCKED_WITH_PROXIMITY_HINT_PRESSED" file="common/easy_unlock_locked_with_proximity_hint_pressed.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_SPINNER" file="common/easy_unlock_spinner.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED" file="common/easy_unlock_unlocked.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_HOVER" file="common/easy_unlock_unlocked_hover.png" />
+      <structure type="chrome_scaled_image" name="IDR_EASY_UNLOCK_UNLOCKED_PRESSED" file="common/easy_unlock_unlocked_pressed.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED" file="common/folder_closed.png" />
       <structure type="chrome_scaled_image" name="IDR_FOLDER_CLOSED_RTL" file="common/folder_closed_rtl.png" />
       <if expr="toolkit_views">
@@ -298,9 +306,9 @@
       <if expr="(is_macosx or is_ios) and not toolkit_views">
         <structure type="chrome_scaled_image" name="IDR_MENU_HIERARCHY_ARROW" file="mac/menu_hierarchy_arrow.png" />
       </if>
+      <structure type="chrome_scaled_image" name="IDR_MENU_CHECK_CHECKED" file="common/menu_check.png" />
       <if expr="toolkit_views">
         <structure type="chrome_scaled_image" name="IDR_MENU_CHECK" file="cros/menu_check.png" />
-        <structure type="chrome_scaled_image" name="IDR_MENU_CHECK_CHECKED" file="common/menu_check.png" />
         <structure type="chrome_scaled_image" name="IDR_MENU_CHECK_CHECKED_DARK_BACKGROUND" file="common/menu_check_white.png" />
         <structure type="chrome_scaled_image" name="IDR_MENU_RADIO_EMPTY" file="common/menu_radio_empty.png" />
         <structure type="chrome_scaled_image" name="IDR_MENU_RADIO_SELECTED" file="common/menu_radio_selected.png" />
@@ -360,6 +368,13 @@
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_SETTINGS" file="common/notification_settings.png"/>
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_SETTINGS_HOVER" file="common/notification_settings_hover.png"/>
         <structure type="chrome_scaled_image" name="IDR_NOTIFICATION_SETTINGS_PRESSED" file="common/notification_settings_pressed.png"/>
+      </if>
+      <!-- TODO(calamity): The 1x local ntp resources require a proper version.
+           See crbug.com/363519. -->
+      <structure type="chrome_scaled_image" name="IDR_LOCAL_NTP_IMAGES_LOGO_PNG" file="common/ntp_google_logo.png" />
+      <structure type="chrome_scaled_image" name="IDR_LOCAL_NTP_IMAGES_WHITE_LOGO_PNG" file="common/ntp_white_google_logo.png" />
+      <if expr="not is_android and not is_ios">
+        <structure type="chrome_scaled_image" name="IDR_NTP_DEFAULT_FAVICON" file="common/ntp_default_favicon.png" />
       </if>
       <if expr="not is_android and not is_ios">
         <structure type="chrome_scaled_image" name="IDR_OOBE_ACTION_BOX_BUTTON_HOVER" file="cros/action_box_button_hover.png" />
@@ -523,6 +538,12 @@
         <structure type="chrome_scaled_image" name="IDR_TOUCH_DRAG_TIP_NODROP" file="common/drag_tip_nodrop.png" />
       </if>
       <if expr="is_macosx or is_ios">
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_ATTENTION" file="mac/notification_dark_tray_attention.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_PRESSED" file="mac/notification_dark_tray_pressed.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_dark_tray_do_not_disturb_attention.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_PRESSED" file="mac/notification_dark_tray_do_not_disturb_pressed.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_DO_NOT_DISTURB_EMPTY" file="mac/notification_tray_do_not_disturb_empty.png"/>
+        <structure type="chrome_scaled_image" name="IDR_DARK_TRAY_EMPTY" file="mac/notification_dark_tray_empty.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION" file="mac/notification_tray_attention.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_ATTENTION_PRESSED" file="mac/notification_tray_attention_pressed.png"/>
         <structure type="chrome_scaled_image" name="IDR_TRAY_DO_NOT_DISTURB_ATTENTION" file="mac/notification_tray_do_not_disturb_attention.png"/>
@@ -555,6 +576,7 @@
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SPIKE_BIG_LEFT" file="common/window_bubble_shadow_spike_big_left.png" />
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SPIKE_BIG_RIGHT" file="common/window_bubble_shadow_spike_big_right.png" />
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SPIKE_BIG_TOP" file="common/window_bubble_shadow_spike_big_top.png" />
+        <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SMALL" file="common/window_bubble_shadow_small.png" />
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM" file="common/window_bubble_shadow_small_bottom.png" />
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM_LEFT" file="common/window_bubble_shadow_small_bottom_left.png" />
         <structure type="chrome_scaled_image" name="IDR_WINDOW_BUBBLE_SHADOW_SMALL_BOTTOM_RIGHT" file="common/window_bubble_shadow_small_bottom_right.png" />

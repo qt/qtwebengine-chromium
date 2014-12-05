@@ -6,7 +6,7 @@
  * @fileoverview Oobe signin screen implementation.
  */
 
-<include src="../../gaia_auth_host/gaia_auth_host.js"></include>
+<include src="../../gaia_auth_host/gaia_auth_host.js">
 
 login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
   // Gaia loading time after which error message must be displayed and
@@ -22,7 +22,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     EXTERNAL_API: [
       'loadAuthExtension',
       'updateAuthExtension',
-      'setAuthenticatedUserEmail',
       'doReload',
       'onFrameError',
       'updateCancelButtonState'
@@ -56,6 +55,13 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     email: '',
 
     /**
+     * Whether consumer management enrollment is in progress.
+     * @type {boolean}
+     * @private
+     */
+    isEnrollingConsumerManagement_: false,
+
+    /**
      * Timer id of pending load.
      * @type {number}
      * @private
@@ -87,14 +93,16 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       this.gaiaAuthHost_ = new cr.login.GaiaAuthHost($('signin-frame'));
       this.gaiaAuthHost_.addEventListener(
           'ready', this.onAuthReady_.bind(this));
-      this.gaiaAuthHost_.retrieveAuthenticatedUserEmailCallback =
-          this.onRetrieveAuthenticatedUserEmail_.bind(this);
       this.gaiaAuthHost_.confirmPasswordCallback =
           this.onAuthConfirmPassword_.bind(this);
       this.gaiaAuthHost_.noPasswordCallback =
           this.onAuthNoPassword_.bind(this);
       this.gaiaAuthHost_.insecureContentBlockedCallback =
           this.onInsecureContentBlocked_.bind(this);
+      this.gaiaAuthHost_.missingGaiaInfoCallback =
+          this.missingGaiaInfo_.bind(this);
+      this.gaiaAuthHost_.samlApiUsedCallback =
+          this.samlApiUsed_.bind(this);
       this.gaiaAuthHost_.addEventListener('authFlowChange',
           this.onAuthFlowChange_.bind(this));
 
@@ -211,10 +219,13 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
      */
     onBeforeShow: function(data) {
       chrome.send('loginUIStateChanged', ['gaia-signin', true]);
-      $('login-header-bar').signinUIState = SIGNIN_UI_STATE.GAIA_SIGNIN;
+      $('login-header-bar').signinUIState =
+          this.isEnrollingConsumerManagement_ ?
+              SIGNIN_UI_STATE.CONSUMER_MANAGEMENT_ENROLLMENT :
+              SIGNIN_UI_STATE.GAIA_SIGNIN;
 
       // Ensure that GAIA signin (or loading UI) is actually visible.
-      window.webkitRequestAnimationFrame(function() {
+      window.requestAnimationFrame(function() {
         chrome.send('loginVisible', ['gaia-loading']);
       });
 
@@ -299,40 +310,32 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
       $('createAccount').hidden = !data.createAccount;
       $('guestSignin').hidden = !data.guestSignin;
-      $('createManagedUserPane').hidden = !data.managedUsersEnabled;
+      $('createSupervisedUserPane').hidden = !data.supervisedUsersEnabled;
 
-      $('createManagedUserLinkPlaceholder').hidden =
-          !data.managedUsersCanCreate;
-      $('createManagedUserNoManagerText').hidden = data.managedUsersCanCreate;
-      $('createManagedUserNoManagerText').textContent =
-          data.managedUsersRestrictionReason;
+      $('createSupervisedUserLinkPlaceholder').hidden =
+          !data.supervisedUsersCanCreate;
+      $('createSupervisedUserNoManagerText').hidden =
+          data.supervisedUsersCanCreate;
+      $('createSupervisedUserNoManagerText').textContent =
+          data.supervisedUsersRestrictionReason;
+
+      var isEnrollingConsumerManagement = data.isEnrollingConsumerManagement;
+      $('consumerManagementEnrollment').hidden = !isEnrollingConsumerManagement;
 
       this.isShowUsers_ = data.isShowUsers;
       this.updateCancelButtonState();
+
+      this.isEnrollingConsumerManagement_ = isEnrollingConsumerManagement;
 
       // Sign-in right panel is hidden if all of its items are hidden.
       var noRightPanel = $('gaia-signin-reason').hidden &&
                          $('createAccount').hidden &&
                          $('guestSignin').hidden &&
-                         $('createManagedUserPane').hidden;
+                         $('createSupervisedUserPane').hidden &&
+                         $('consumerManagementEnrollment').hidden;
       this.classList.toggle('no-right-panel', noRightPanel);
       if (Oobe.getInstance().currentScreen === this)
         Oobe.getInstance().updateScreenSize(this);
-    },
-
-    /**
-     * Sends the authenticated user's e-mail address to the auth extension.
-     * @param {number} attemptToken The opaque token provided to
-     *     onRetrieveAuthenticatedUserEmail_.
-     * @param {string} email The authenticated user's e-mail address.
-     */
-    setAuthenticatedUserEmail: function(attemptToken, email) {
-      if (!email) {
-        this.showFatalAuthError(
-            loadTimeData.getString('fatalErrorMessageNoEmail'));
-      } else {
-        this.gaiaAuthHost_.setAuthenticatedUserEmail(attemptToken, email);
-      }
     },
 
     /**
@@ -393,27 +396,6 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
 
       // Warm up the user images screen.
       Oobe.getInstance().preloadScreen({id: SCREEN_USER_IMAGE_PICKER});
-    },
-
-    /**
-     * Invoked when the user has successfully authenticated via SAML and the
-     * auth host needs to retrieve the user's e-mail.
-     * @param {number} attemptToken Opaque token to be passed to
-     *     setAuthenticatedUserEmail along with the e-mail address.
-     * @param {boolean} apiUsed Whether the principals API was used during
-     *     authentication.
-     * @private
-     */
-    onRetrieveAuthenticatedUserEmail_: function(attemptToken, apiUsed) {
-      if (apiUsed) {
-        // If the principals API was used, report this to the C++ backend so
-        // that statistics can be kept. If password scraping was used instead,
-        // there is no need to inform the C++ backend at this point: Either
-        // onAuthNoPassword_ or onAuthConfirmPassword_ will be called in a
-        // moment, both of which imply to the backend that the API was not used.
-        chrome.send('usingSAMLAPI');
-      }
-      chrome.send('retrieveAuthenticatedUserEmail', [attemptToken]);
     },
 
     /**
@@ -486,6 +468,21 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
     },
 
     /**
+     * Show fatal auth error when information is missing from GAIA.
+     */
+    missingGaiaInfo_: function() {
+      this.showFatalAuthError(
+          loadTimeData.getString('fatalErrorMessageNoAccountDetails'));
+    },
+
+    /**
+     * Record that SAML API was used during sign-in.
+     */
+    samlApiUsed_: function() {
+      chrome.send('usingSAMLAPI');
+    },
+
+    /**
      * Invoked when auth is completed successfully.
      * @param {!Object} credentials Credentials of the completed authentication.
      * @private
@@ -494,15 +491,19 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
       if (credentials.useOffline) {
         this.email = credentials.email;
         chrome.send('authenticateUser',
-                    [credentials.email, credentials.password]);
+                    [credentials.gaiaId,
+                     credentials.email,
+                     credentials.password]);
       } else if (credentials.authCode) {
         chrome.send('completeAuthentication',
-                    [credentials.email,
+                    [credentials.gaiaId,
+                     credentials.email,
                      credentials.password,
                      credentials.authCode]);
       } else {
         chrome.send('completeLogin',
-                    [credentials.email,
+                    [credentials.gaiaId,
+                     credentials.email,
                      credentials.password,
                      credentials.usingSAML]);
       }
@@ -557,10 +558,13 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
           'guestSignin',
           '<a id="guestSigninLink" class="signin-link" href="#">',
           '</a>');
-      $('createManagedUserLinkPlaceholder').innerHTML = loadTimeData.getStringF(
-            'createLocallyManagedUser',
-            '<a id="createManagedUserLink" class="signin-link" href="#">',
-            '</a>');
+      $('createSupervisedUserLinkPlaceholder').innerHTML =
+          loadTimeData.getStringF(
+              'createSupervisedUser',
+              '<a id="createSupervisedUserLink" class="signin-link" href="#">',
+              '</a>');
+      $('consumerManagementEnrollment').innerHTML = loadTimeData.getString(
+          'consumerManagementEnrollmentSigninMessage');
       $('createAccountLink').addEventListener('click', function(e) {
         chrome.send('createAccount');
         e.preventDefault();
@@ -569,8 +573,8 @@ login.createScreen('GaiaSigninScreen', 'gaia-signin', function() {
         chrome.send('launchIncognito');
         e.preventDefault();
       });
-      $('createManagedUserLink').addEventListener('click', function(e) {
-        chrome.send('showLocallyManagedUserCreationScreen');
+      $('createSupervisedUserLink').addEventListener('click', function(e) {
+        chrome.send('showSupervisedUserCreationScreen');
         e.preventDefault();
       });
     },

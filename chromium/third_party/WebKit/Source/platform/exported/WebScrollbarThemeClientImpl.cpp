@@ -29,9 +29,7 @@
 
 #include "platform/scroll/ScrollbarTheme.h"
 
-using blink::WebScrollbar;
-
-namespace WebCore {
+namespace blink {
 
 WebScrollbarThemeClientImpl::WebScrollbarThemeClientImpl(WebScrollbar* scrollbar)
     : m_scrollbar(scrollbar)
@@ -111,14 +109,14 @@ void WebScrollbarThemeClientImpl::invalidateRect(const IntRect&)
     ASSERT_NOT_REACHED();
 }
 
-WebCore::ScrollbarOverlayStyle WebScrollbarThemeClientImpl::scrollbarOverlayStyle() const
+ScrollbarOverlayStyle WebScrollbarThemeClientImpl::scrollbarOverlayStyle() const
 {
-    return static_cast<WebCore::ScrollbarOverlayStyle>(m_scrollbar->scrollbarOverlayStyle());
+    return static_cast<ScrollbarOverlayStyle>(m_scrollbar->scrollbarOverlayStyle());
 }
 
 void WebScrollbarThemeClientImpl::getTickmarks(Vector<IntRect>& tickmarks) const
 {
-    blink::WebVector<blink::WebRect> webTickmarks;
+    WebVector<WebRect> webTickmarks;
     m_scrollbar->getTickmarks(webTickmarks);
     tickmarks.resize(webTickmarks.size());
     for (size_t i = 0; i < webTickmarks.size(); ++i)
@@ -128,13 +126,6 @@ void WebScrollbarThemeClientImpl::getTickmarks(Vector<IntRect>& tickmarks) const
 bool WebScrollbarThemeClientImpl::isScrollableAreaActive() const
 {
     return m_scrollbar->isScrollableAreaActive();
-}
-
-bool WebScrollbarThemeClientImpl::isScrollViewScrollbar() const
-{
-    // Unused by Chromium scrollbar themes.
-    ASSERT_NOT_REACHED();
-    return false;
 }
 
 IntPoint WebScrollbarThemeClientImpl::convertFromContainingWindow(const IntPoint& windowPoint)
@@ -149,9 +140,9 @@ bool WebScrollbarThemeClientImpl::isCustomScrollbar() const
     return m_scrollbar->isCustomScrollbar();
 }
 
-WebCore::ScrollbarOrientation WebScrollbarThemeClientImpl::orientation() const
+ScrollbarOrientation WebScrollbarThemeClientImpl::orientation() const
 {
-    return static_cast<WebCore::ScrollbarOrientation>(m_scrollbar->orientation());
+    return static_cast<ScrollbarOrientation>(m_scrollbar->orientation());
 }
 
 bool WebScrollbarThemeClientImpl::isLeftSideVerticalScrollbar() const
@@ -184,19 +175,19 @@ int WebScrollbarThemeClientImpl::maximum() const
     return m_scrollbar->maximum();
 }
 
-WebCore::ScrollbarControlSize WebScrollbarThemeClientImpl::controlSize() const
+ScrollbarControlSize WebScrollbarThemeClientImpl::controlSize() const
 {
-    return static_cast<WebCore::ScrollbarControlSize>(m_scrollbar->controlSize());
+    return static_cast<ScrollbarControlSize>(m_scrollbar->controlSize());
 }
 
-WebCore::ScrollbarPart WebScrollbarThemeClientImpl::pressedPart() const
+ScrollbarPart WebScrollbarThemeClientImpl::pressedPart() const
 {
-    return static_cast<WebCore::ScrollbarPart>(m_scrollbar->pressedPart());
+    return static_cast<ScrollbarPart>(m_scrollbar->pressedPart());
 }
 
-WebCore::ScrollbarPart WebScrollbarThemeClientImpl::hoveredPart() const
+ScrollbarPart WebScrollbarThemeClientImpl::hoveredPart() const
 {
-    return static_cast<WebCore::ScrollbarPart>(m_scrollbar->hoveredPart());
+    return static_cast<ScrollbarPart>(m_scrollbar->hoveredPart());
 }
 
 void WebScrollbarThemeClientImpl::styleChanged()

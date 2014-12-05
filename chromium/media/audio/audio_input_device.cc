@@ -31,12 +31,12 @@ class AudioInputDevice::AudioThreadCallback
                       int memory_length,
                       int total_segments,
                       CaptureCallback* capture_callback);
-  virtual ~AudioThreadCallback();
+  ~AudioThreadCallback() override;
 
-  virtual void MapSharedMemory() OVERRIDE;
+  void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  virtual void Process(int pending_data) OVERRIDE;
+  void Process(uint32 pending_data) override;
 
  private:
   int current_segment_id_;
@@ -295,7 +295,7 @@ void AudioInputDevice::AudioThreadCallback::MapSharedMemory() {
   }
 }
 
-void AudioInputDevice::AudioThreadCallback::Process(int pending_data) {
+void AudioInputDevice::AudioThreadCallback::Process(uint32 pending_data) {
   // The shared memory represents parameters, size of the data buffer and the
   // actual data buffer containing audio data. Map the memory into this
   // structure and parse out parameters and the data area.

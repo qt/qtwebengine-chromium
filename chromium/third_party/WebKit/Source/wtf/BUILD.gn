@@ -8,7 +8,7 @@ gypi_values = exec_script("//build/gypi_to_gn.py",
                           "scope",
                           [ "wtf.gypi" ])
 
-visibility = "//third_party/WebKit/*"
+visibility = [ "//third_party/WebKit/*" ]
 
 config("wtf_config") {
   if (is_win) {
@@ -28,6 +28,8 @@ config("wtf_config") {
       "/wd4344",
       # Conversion from 'size_t' to 'type'.
       "/wd4267",
+      # dtoa, icu, etc. like doing assignment within conditional.
+      "/wd4706",
     ]
 
     if (component_mode == "shared_library") {
@@ -50,21 +52,17 @@ component("wtf") {
 
   defines = [ "WTF_IMPLEMENTATION=1" ]
 
-  direct_dependent_configs = [
+  public_configs = [
     ":wtf_config",
     "//third_party/WebKit/Source:features",
   ]
 
-  deps = [
+  public_deps = [
     "//third_party/icu",
   ]
 
-  forward_dependent_configs_from = [ "//third_party/icu" ]
-
   if (is_win) {
     sources -= [
-      "ThreadIdentifierDataPthreads.cpp",
-      "ThreadIdentifierDataPthreads.h",
       "ThreadingPthreads.cpp",
     ]
 
@@ -97,6 +95,8 @@ component("wtf") {
 test("wtf_unittests") {
   sources = gypi_values.wtf_unittest_files
 
+  sources += [ "testing/RunAllTests.cpp" ]
+
   if (is_win) {
     cflags = [
       "/wd4068",  # Unknown pragma.
@@ -107,35 +107,18 @@ test("wtf_unittests") {
   configs += [ "//third_party/WebKit/Source:config", ]
 
   deps = [
-    ":run_all_tests",
-    ":unittest_helpers",
+    ":test_support",
     ":wtf",
     "//base",
     "//base/allocator",
-    "//testing/gmock",
-    "//testing/gtest",
-  ]
-}
-
-source_set("run_all_tests") {
-  sources = [
-    "testing/RunAllTests.cpp",
-  ]
-
-  configs += [
-    ":wtf_config",
-    "//third_party/WebKit/Source:config",
-    "//third_party/WebKit/Source:non_test_config",
-  ]
-
-  deps = [
     "//base/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
 }
 
-component("unittest_helpers") {
+component("test_support") {
+  output_name = "wtf_test_support"
   sources = gypi_values.wtf_unittest_helper_files
   defines = [ "WTF_UNITTEST_HELPERS_IMPLEMENTATION=1" ]
 

@@ -12,15 +12,15 @@ namespace {
 class UserInputMonitorMac : public UserInputMonitor {
  public:
   UserInputMonitorMac();
-  virtual ~UserInputMonitorMac();
+  ~UserInputMonitorMac() override;
 
-  virtual size_t GetKeyPressCount() const OVERRIDE;
+  size_t GetKeyPressCount() const override;
 
  private:
-  virtual void StartKeyboardMonitoring() OVERRIDE;
-  virtual void StopKeyboardMonitoring() OVERRIDE;
-  virtual void StartMouseMonitoring() OVERRIDE;
-  virtual void StopMouseMonitoring() OVERRIDE;
+  void StartKeyboardMonitoring() override;
+  void StopKeyboardMonitoring() override;
+  void StartMouseMonitoring() override;
+  void StopMouseMonitoring() override;
 
   DISALLOW_COPY_AND_ASSIGN(UserInputMonitorMac);
 };

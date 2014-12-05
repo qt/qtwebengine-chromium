@@ -32,7 +32,7 @@ std::string IntVectorToString(const std::vector<int>& items) {
 AXNodeData::AXNodeData()
     : id(-1),
       role(AX_ROLE_UNKNOWN),
-      state(-1) {
+      state(0xFFFFFFFF) {
 }
 
 AXNodeData::~AXNodeData() {
@@ -203,6 +203,12 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_COLOR_VALUE_BLUE:
         result += " color_value_blue=" + value;
         break;
+      case AX_ATTR_TREE_ID:
+        result += " tree_id=" + value;
+        break;
+      case AX_ATTR_CHILD_TREE_ID:
+        result += " child_tree_id=" + value;
+        break;
       case AX_ATTR_TEXT_DIRECTION:
         switch (int_attributes[i].second) {
           case AX_TEXT_DIRECTION_LR:
@@ -276,6 +282,9 @@ std::string AXNodeData::ToString() const {
       case AX_ATTR_SHORTCUT:
         result += " shortcut=" + value;
         break;
+     case AX_ATTR_TEXT_INPUT_TYPE:
+        result += " text_input_type=" + value;
+        break;
       case AX_ATTR_URL:
         result += " url=" + value;
         break;
@@ -342,6 +351,9 @@ std::string AXNodeData::ToString() const {
         break;
       case AX_ATTR_CANVAS_HAS_FALLBACK:
         result += " has_fallback=" + value;
+        break;
+      case AX_ATTR_IS_AX_TREE_HOST:
+        result += " is_ax_tree_host=" + value;
         break;
       case AX_BOOL_ATTRIBUTE_NONE:
         break;

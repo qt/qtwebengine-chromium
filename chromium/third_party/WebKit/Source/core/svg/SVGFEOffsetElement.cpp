@@ -26,7 +26,7 @@
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEOffsetElement::SVGFEOffsetElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feOffsetTag, document)
@@ -34,8 +34,6 @@ inline SVGFEOffsetElement::SVGFEOffsetElement(Document& document)
     , m_dy(SVGAnimatedNumber::create(this, SVGNames::dyAttr, SVGNumber::create()))
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_dx);
     addToPropertyMap(m_dy);
     addToPropertyMap(m_in1);
@@ -56,23 +54,7 @@ bool SVGFEOffsetElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFEOffsetElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::dxAttr)
-        m_dx->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::dyAttr)
-        m_dy->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFEOffsetElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -83,13 +65,7 @@ void SVGFEOffsetElement::svgAttributeChanged(const QualifiedName& attrName)
     }
 
     SVGElement::InvalidationGuard invalidationGuard(this);
-
-    if (attrName == SVGNames::inAttr || attrName == SVGNames::dxAttr || attrName == SVGNames::dyAttr) {
-        invalidate();
-        return;
-    }
-
-    ASSERT_NOT_REACHED();
+    invalidate();
 }
 
 PassRefPtr<FilterEffect> SVGFEOffsetElement::build(SVGFilterBuilder* filterBuilder, Filter* filter)
@@ -104,4 +80,4 @@ PassRefPtr<FilterEffect> SVGFEOffsetElement::build(SVGFilterBuilder* filterBuild
     return effect.release();
 }
 
-}
+} // namespace blink

@@ -28,20 +28,20 @@ class PPB_Widget_Impl : public ppapi::Resource,
   explicit PPB_Widget_Impl(PP_Instance instance);
 
   // Resource overrides.
-  virtual ppapi::thunk::PPB_Widget_API* AsPPB_Widget_API() OVERRIDE;
+  ppapi::thunk::PPB_Widget_API* AsPPB_Widget_API() override;
 
   // PPB_WidgetAPI implementation.
-  virtual PP_Bool Paint(const PP_Rect* rect, PP_Resource) OVERRIDE;
-  virtual PP_Bool HandleEvent(PP_Resource pp_input_event) OVERRIDE;
-  virtual PP_Bool GetLocation(PP_Rect* location) OVERRIDE;
-  virtual void SetLocation(const PP_Rect* location) OVERRIDE;
-  virtual void SetScale(float scale) OVERRIDE;
+  PP_Bool Paint(const PP_Rect* rect, PP_Resource) override;
+  PP_Bool HandleEvent(PP_Resource pp_input_event) override;
+  PP_Bool GetLocation(PP_Rect* location) override;
+  void SetLocation(const PP_Rect* location) override;
+  void SetScale(float scale) override;
 
   // Notifies the plugin instance that the given rect needs to be repainted.
   void Invalidate(const PP_Rect* dirty);
 
  protected:
-  virtual ~PPB_Widget_Impl();
+  ~PPB_Widget_Impl() override;
 
   virtual PP_Bool PaintInternal(const gfx::Rect& rect,
                                 PPB_ImageData_Impl* image) = 0;

@@ -31,53 +31,49 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class AudioContext;
 
-class OfflineAudioDestinationNode FINAL : public AudioDestinationNode {
+class OfflineAudioDestinationNode final : public AudioDestinationNode {
 public:
-    static PassRefPtrWillBeRawPtr<OfflineAudioDestinationNode> create(AudioContext* context, AudioBuffer* renderTarget)
+    static OfflineAudioDestinationNode* create(AudioContext* context, AudioBuffer* renderTarget)
     {
-        return adoptRefWillBeNoop(new OfflineAudioDestinationNode(context, renderTarget));
+        return new OfflineAudioDestinationNode(context, renderTarget);
     }
 
     virtual ~OfflineAudioDestinationNode();
 
     // AudioNode
-    virtual void initialize() OVERRIDE;
-    virtual void uninitialize() OVERRIDE;
+    virtual void dispose() override;
+    virtual void initialize() override;
+    virtual void uninitialize() override;
 
     // AudioDestinationNode
-    virtual void startRendering() OVERRIDE;
+    virtual void startRendering() override;
 
-    virtual float sampleRate()  const OVERRIDE { return m_renderTarget->sampleRate(); }
+    virtual float sampleRate()  const override { return m_renderTarget->sampleRate(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    class OfflineRenderingTask;
-    friend class OfflineRenderingTask;
-
     OfflineAudioDestinationNode(AudioContext*, AudioBuffer* renderTarget);
 
     // This AudioNode renders into this AudioBuffer.
-    RefPtrWillBeMember<AudioBuffer> m_renderTarget;
-
+    Member<AudioBuffer> m_renderTarget;
     // Temporary AudioBus for each render quantum.
     RefPtr<AudioBus> m_renderBus;
 
     // Rendering thread.
-    OwnPtr<blink::WebThread> m_renderThread;
+    OwnPtr<WebThread> m_renderThread;
     bool m_startedRendering;
     void offlineRender();
 
     // For completion callback on main thread.
-    static void notifyCompleteDispatch(void* userData);
     void notifyComplete();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // OfflineAudioDestinationNode_h

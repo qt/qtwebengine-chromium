@@ -17,6 +17,11 @@ const char kEnableCrashReporter[]           = "enable-crash-reporter";
 // Generates full memory crash dump.
 const char kFullMemoryCrashReport[]         = "full-memory-crash-report";
 
+// Force low-end device when set to 1;
+// Auto-detect low-end device when set to 2;
+// Force non-low-end device when set to other values or empty;
+const char kLowEndDeviceMode[]              = "low-end-device-mode";
+
 // Suppresses all error dialogs when present.
 const char kNoErrorDialogs[]                = "noerrdialogs";
 
@@ -45,6 +50,14 @@ const char kWaitForDebugger[]               = "wait-for-debugger";
 // Sends a pretty-printed version of tracing info to the console.
 const char kTraceToConsole[]                = "trace-to-console";
 
+// Sends trace events from these categories to a file.
+// --trace-to-file on its own sends to default categories.
+const char kTraceToFile[]                   = "trace-to-file";
+
+// Specifies the file name for --trace-to-file. If unspecified, it will
+// go to a default file name.
+const char kTraceToFileName[]               = "trace-to-file-name";
+
 // Configure whether chrome://profiler will contain timing information. This
 // option is enabled by default. A value of "0" will disable profiler timing,
 // while all other values will enable it.
@@ -58,14 +71,6 @@ const char kProfilerTimingDisabledValue[]   = "0";
 // crash reporting is typically compiled but disabled.
 const char kEnableCrashReporterForTesting[] =
     "enable-crash-reporter-for-testing";
-#endif
-
-#if defined(OS_ANDROID)
-// Overrides low-end device detection, disabling low-end device optimizations.
-const char kDisableLowEndDeviceMode[]       = "disable-low-end-device-mode";
-
-// Overrides low-end device detection, enabling low-end device optimizations.
-const char kEnableLowEndDeviceMode[]        = "enable-low-end-device-mode";
 #endif
 
 }  // namespace switches

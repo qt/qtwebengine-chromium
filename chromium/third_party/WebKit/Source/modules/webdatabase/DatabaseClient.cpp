@@ -29,15 +29,15 @@
  */
 
 #include "config.h"
-#include "DatabaseClient.h"
+#include "modules/webdatabase/DatabaseClient.h"
 
 #include "core/dom/Document.h"
 #include "core/inspector/InspectorController.h"
-#include "core/workers/WorkerGlobalScope.h"
+#include "core/page/Page.h"
 #include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/InspectorDatabaseAgent.h"
 
-namespace WebCore {
+namespace blink {
 
 DatabaseClient::DatabaseClient()
     : m_inspectorAgent(0)
@@ -45,11 +45,7 @@ DatabaseClient::DatabaseClient()
 
 DatabaseClient* DatabaseClient::from(ExecutionContext* context)
 {
-    if (context->isDocument()) {
-        return static_cast<DatabaseClient*>(WillBeHeapSupplement<Page>::from(toDocument(context)->page(), supplementName()));
-    }
-    ASSERT(context->isWorkerGlobalScope());
-    return static_cast<DatabaseClient*>(WillBeHeapSupplement<WorkerClients>::from(toWorkerGlobalScope(context)->clients(), supplementName()));
+    return static_cast<DatabaseClient*>(WillBeHeapSupplement<Page>::from(toDocument(context)->page(), supplementName()));
 }
 
 const char* DatabaseClient::supplementName()
@@ -57,7 +53,7 @@ const char* DatabaseClient::supplementName()
     return "DatabaseClient";
 }
 
-void DatabaseClient::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, const String& domain, const String& name, const String& version)
+void DatabaseClient::didOpenDatabase(Database* database, const String& domain, const String& name, const String& version)
 {
     if (m_inspectorAgent)
         m_inspectorAgent->didOpenDatabase(database, domain, name, version);
@@ -66,7 +62,7 @@ void DatabaseClient::didOpenDatabase(PassRefPtrWillBeRawPtr<Database> database, 
 void DatabaseClient::createInspectorAgentFor(Page* page)
 {
     ASSERT(!m_inspectorAgent);
-    OwnPtr<InspectorDatabaseAgent> inspectorAgent = InspectorDatabaseAgent::create();
+    OwnPtrWillBeRawPtr<InspectorDatabaseAgent> inspectorAgent = InspectorDatabaseAgent::create();
     m_inspectorAgent = inspectorAgent.get();
     page->inspectorController().registerModuleAgent(inspectorAgent.release());
 }
@@ -78,9 +74,4 @@ void provideDatabaseClientTo(Page& page, PassOwnPtrWillBeRawPtr<DatabaseClient> 
     clientPtr->createInspectorAgentFor(&page);
 }
 
-void provideDatabaseClientToWorker(WorkerClients* workerClients, PassOwnPtrWillBeRawPtr<DatabaseClient> client)
-{
-    workerClients->provideSupplement(DatabaseClient::supplementName(), client);
-}
-
-} // namespace WebCore
+} // namespace blink

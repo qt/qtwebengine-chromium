@@ -485,19 +485,11 @@ class WebTouchEvent : public WebInputEvent {
 public:
     // Maximum number of simultaneous touches supported on
     // Ash/Aura.
-    enum { touchesLengthCap = 12 };
+    enum { touchesLengthCap = 16 };
 
     unsigned touchesLength;
-    // List of all touches which are currently down.
+    // List of all touches, regardless of state.
     WebTouchPoint touches[touchesLengthCap];
-
-    unsigned changedTouchesLength;
-    // List of all touches whose state has changed since the last WebTouchEvent
-    WebTouchPoint changedTouches[touchesLengthCap];
-
-    unsigned targetTouchesLength;
-    // List of all touches which are currently down and are targeting the event recipient.
-    WebTouchPoint targetTouches[touchesLengthCap];
 
     // Whether the event can be canceled (with preventDefault). If true then the browser
     // must wait for an ACK for this event. If false then no ACK IPC is expected.
@@ -507,8 +499,6 @@ public:
     WebTouchEvent()
         : WebInputEvent(sizeof(WebTouchEvent))
         , touchesLength(0)
-        , changedTouchesLength(0)
-        , targetTouchesLength(0)
         , cancelable(true)
     {
     }

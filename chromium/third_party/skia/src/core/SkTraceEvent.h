@@ -162,6 +162,7 @@
 #define SkTraceEvent_DEFINED
 
 #include "SkEventTracer.h"
+#include "SkDynamicAnnotations.h"
 
 // By default, const char* argument values are assumed to have long-lived scope
 // and will not be copied. Use this macro to force a const char* to be copied.
@@ -764,10 +765,12 @@
 // write here because it's not strictly needed for correctness.
 // So says Nat.
 // FIXME
+//
+// Skia addition: we mark these as unprotected reads and writes to shut up TSAN.
 
 #define TRACE_EVENT_API_ATOMIC_WORD intptr_t
-#define TRACE_EVENT_API_ATOMIC_LOAD(var) (*(&var))
-#define TRACE_EVENT_API_ATOMIC_STORE(var, value) (var=value)
+#define TRACE_EVENT_API_ATOMIC_LOAD(var) SK_ANNOTATE_UNPROTECTED_READ(var)
+#define TRACE_EVENT_API_ATOMIC_STORE(var, value) SK_ANNOTATE_UNPROTECTED_WRITE(&var, value)
 
 // Defines visibility for classes in trace_event.h
 #define TRACE_EVENT_API_CLASS_EXPORT SK_API
@@ -949,7 +952,7 @@ class TraceID {
    public:
     explicit DontMangle(const void* id)
         : data_(static_cast<uint64_t>(
-              reinterpret_cast<unsigned long>(id))) {}
+              reinterpret_cast<uintptr_t>(id))) {}
     explicit DontMangle(uint64_t id) : data_(id) {}
     explicit DontMangle(unsigned int id) : data_(id) {}
     explicit DontMangle(unsigned short id) : data_(id) {}
@@ -992,7 +995,7 @@ class TraceID {
 
   TraceID(const void* id, unsigned char* flags)
       : data_(static_cast<uint64_t>(
-              reinterpret_cast<unsigned long>(id))) {
+              reinterpret_cast<uintptr_t>(id))) {
     *flags |= TRACE_EVENT_FLAG_MANGLE_ID;
   }
   TraceID(ForceMangle id, unsigned char* flags) : data_(id.data()) {

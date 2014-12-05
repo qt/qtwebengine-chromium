@@ -32,11 +32,12 @@
 #include "core/frame/FrameHost.h"
 
 #include "core/frame/EventHandlerRegistry.h"
+#include "core/inspector/ConsoleMessageStorage.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<FrameHost> FrameHost::create(Page& page)
 {
@@ -45,8 +46,10 @@ PassOwnPtrWillBeRawPtr<FrameHost> FrameHost::create(Page& page)
 
 FrameHost::FrameHost(Page& page)
     : m_page(&page)
-    , m_pinchViewport(adoptPtr(new PinchViewport(*this)))
+    , m_pinchViewport(PinchViewport::create(*this))
     , m_eventHandlerRegistry(adoptPtrWillBeNoop(new EventHandlerRegistry(*this)))
+    , m_consoleMessageStorage(ConsoleMessageStorage::createForFrameHost(this))
+    , m_subframeCount(0)
 {
 }
 
@@ -85,10 +88,38 @@ EventHandlerRegistry& FrameHost::eventHandlerRegistry() const
     return *m_eventHandlerRegistry;
 }
 
+ConsoleMessageStorage& FrameHost::consoleMessageStorage() const
+{
+    return *m_consoleMessageStorage;
+}
+
 void FrameHost::trace(Visitor* visitor)
 {
     visitor->trace(m_page);
+    visitor->trace(m_pinchViewport);
     visitor->trace(m_eventHandlerRegistry);
+    visitor->trace(m_consoleMessageStorage);
+}
+
+#if ENABLE(ASSERT)
+void checkFrameCountConsistency(int expectedFrameCount, Frame* frame)
+{
+    ASSERT(expectedFrameCount >= 0);
+
+    int actualFrameCount = 0;
+    for (; frame; frame = frame->tree().traverseNext())
+        ++actualFrameCount;
+
+    ASSERT(expectedFrameCount == actualFrameCount);
+}
+#endif
+
+int FrameHost::subframeCount() const
+{
+#if ENABLE(ASSERT)
+    checkFrameCountConsistency(m_subframeCount + 1, m_page->mainFrame());
+#endif
+    return m_subframeCount;
 }
 
 }

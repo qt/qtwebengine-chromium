@@ -33,23 +33,23 @@
 
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
 
-namespace WebCore {
+namespace blink {
 
 // Base of button, file, image, reset, and submit types.
 class BaseButtonInputType : public BaseClickableWithKeyInputType {
 protected:
     BaseButtonInputType(HTMLInputElement& element) : BaseClickableWithKeyInputType(element) { }
+    virtual void valueAttributeChanged() override;
 
 private:
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void valueAttributeChanged() OVERRIDE;
-    virtual bool shouldSaveAndRestoreFormControlState() const OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool) const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) const OVERRIDE;
-    virtual bool storesValueSeparateFromAttribute() OVERRIDE;
-    virtual void setValue(const String&, bool, TextFieldEventBehavior) OVERRIDE;
+    virtual void createShadowSubtree() override;
+    virtual bool shouldSaveAndRestoreFormControlState() const override;
+    virtual bool appendFormData(FormDataList&, bool) const override;
+    virtual RenderObject* createRenderer(RenderStyle*) const override;
+    virtual bool storesValueSeparateFromAttribute() override;
+    virtual void setValue(const String&, bool, TextFieldEventBehavior) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BaseButtonInputType_h

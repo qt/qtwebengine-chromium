@@ -26,23 +26,22 @@
 #include "config.h"
 #include "core/html/TimeRanges.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include <math.h>
 
-using namespace WebCore;
+using namespace blink;
 
 TimeRanges::TimeRanges(double start, double end)
 {
-    ScriptWrappable::init(this);
     add(start, end);
 }
 
-PassRefPtr<TimeRanges> TimeRanges::create(const blink::WebTimeRanges& webRanges)
+PassRefPtrWillBeRawPtr<TimeRanges> TimeRanges::create(const blink::WebTimeRanges& webRanges)
 {
-    RefPtr<TimeRanges> ranges = TimeRanges::create();
+    RefPtrWillBeRawPtr<TimeRanges> ranges = TimeRanges::create();
 
     unsigned size = webRanges.size();
     for (unsigned i = 0; i < size; ++i)
@@ -51,9 +50,9 @@ PassRefPtr<TimeRanges> TimeRanges::create(const blink::WebTimeRanges& webRanges)
     return ranges.release();
 }
 
-PassRefPtr<TimeRanges> TimeRanges::copy() const
+PassRefPtrWillBeRawPtr<TimeRanges> TimeRanges::copy() const
 {
-    RefPtr<TimeRanges> newSession = TimeRanges::create();
+    RefPtrWillBeRawPtr<TimeRanges> newSession = TimeRanges::create();
 
     unsigned size = m_ranges.size();
     for (unsigned i = 0; i < size; i++)
@@ -64,7 +63,7 @@ PassRefPtr<TimeRanges> TimeRanges::copy() const
 
 void TimeRanges::invert()
 {
-    RefPtr<TimeRanges> inverted = TimeRanges::create();
+    RefPtrWillBeRawPtr<TimeRanges> inverted = TimeRanges::create();
     double posInf = std::numeric_limits<double>::infinity();
     double negInf = -std::numeric_limits<double>::infinity();
 
@@ -93,7 +92,7 @@ void TimeRanges::intersectWith(const TimeRanges* other)
     if (other == this)
         return;
 
-    RefPtr<TimeRanges> invertedOther = other->copy();
+    RefPtrWillBeRawPtr<TimeRanges> invertedOther = other->copy();
     invertedOther->invert();
 
     invert();
@@ -104,7 +103,7 @@ void TimeRanges::intersectWith(const TimeRanges* other)
 void TimeRanges::unionWith(const TimeRanges* other)
 {
     ASSERT(other);
-    RefPtr<TimeRanges> unioned = copy();
+    RefPtrWillBeRawPtr<TimeRanges> unioned = copy();
     for (size_t index = 0; index < other->m_ranges.size(); ++index) {
         const Range& range = other->m_ranges[index];
         unioned->add(range.m_start, range.m_end);
@@ -183,19 +182,36 @@ bool TimeRanges::contain(double time) const
     return false;
 }
 
-double TimeRanges::nearest(double time) const
+double TimeRanges::nearest(double newPlaybackPosition, double currentPlaybackPosition) const
 {
-    double closest = 0;
     unsigned count = length();
+    double bestMatch = 0;
+    double bestDelta = std::numeric_limits<double>::infinity();
     for (unsigned ndx = 0; ndx < count; ndx++) {
         double startTime = start(ndx, IGNORE_EXCEPTION);
         double endTime = end(ndx, IGNORE_EXCEPTION);
-        if (time >= startTime && time <= endTime)
-            return time;
-        if (fabs(startTime - time) < closest)
-            closest = fabs(startTime - time);
-        else if (fabs(endTime - time) < closest)
-            closest = fabs(endTime - time);
+        if (newPlaybackPosition >= startTime && newPlaybackPosition <= endTime)
+            return newPlaybackPosition;
+
+        double delta, match;
+        if (newPlaybackPosition < startTime) {
+            delta = startTime - newPlaybackPosition;
+            match = startTime;
+        } else {
+            delta = newPlaybackPosition - endTime;
+            match = endTime;
+        }
+
+        if (delta < bestDelta || (delta == bestDelta
+            && std::abs(currentPlaybackPosition - match) < std::abs(currentPlaybackPosition - bestMatch))) {
+            bestDelta = delta;
+            bestMatch = match;
+        }
     }
-    return closest;
+    return bestMatch;
+}
+
+void TimeRanges::trace(Visitor* visitor)
+{
+    visitor->trace(m_ranges);
 }

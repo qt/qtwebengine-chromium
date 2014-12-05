@@ -11,16 +11,16 @@
 WebInspector.DevicesView = function()
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("devicesView.css");
+    this.registerRequiredCSS("devices/devicesView.css");
     this.element.classList.add("devices");
     this._devicesHelp = this.element.createChild("div");
-    this._devicesHelp.innerHTML = WebInspector.UIString("No devices detected. \
-        Please read the <a href=\"https://developers.google.com/chrome-developer\
-        -tools/docs/remote-debugging\"> remote debugging documentation</a> to \
-        verify your device is enabled for USB debugging.");
+    this._devicesHelp.innerHTML = WebInspector.UIString("No devices detected. " +
+        "Please read the <a href=\"https://developers.google.com/chrome-developer-tools/docs/remote-debugging\"> remote debugging documentation</a> " +
+        "to verify your device is enabled for USB debugging.");
     this.element.createChild("div", "devices-info").innerHTML = WebInspector.UIString("Click \"Try here\" button, to open the current page in the selected remote browser.");
     this._devicesList = this.element.createChild("div");
     this._devicesList.cellSpacing = 0;
+    InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.DevicesUpdated, this._onDevicesUpdated, this);
 };
 
 WebInspector.DevicesView.MinVersionNewTab = 29;
@@ -43,7 +43,7 @@ WebInspector.DevicesView.Events = {
 };
 
 WebInspector.DevicesView.prototype = {
-    _onDevicesChanged: function(event)
+    _onDevicesUpdated: function(event)
     {
         this._updateDeviceList(/** @type {!Array.<!Adb.Device>} */(event.data));
     },
@@ -146,7 +146,7 @@ WebInspector.DevicesView.prototype = {
                 var incompatibleVersion = browser.hasOwnProperty("compatibleVersion") && !browser.compatibleVersion;
                 var browserSection = deviceSection.querySelector("#" + sanitizeForId(browser.id));
                 if (!browserSection) {
-                    browserSection = document.createElementWithClass("div", "browser");
+                    browserSection = createElementWithClass("div", "browser");
                     browserSection.id = sanitizeForId(browser.id);
                     insertChildSortedById(deviceSection, browserSection);
 
@@ -161,10 +161,10 @@ WebInspector.DevicesView.prototype = {
                             ? WebInspector.UIString("You may need a newer version of desktop Chrome. Please try Chrome %s  or later.", browser.adbBrowserVersion)
                             : WebInspector.UIString("You may need a newer version of Chrome on your device. Please try Chrome %s or later.", WebInspector.DevicesView.MinVersionNewTab);
                     } else {
-                        var newPageButton = browserSection.createChild("button", "settings-tab-text-button");
+                        var newPageButton = browserSection.createChild("button", "text-button");
                         newPageButton.textContent = WebInspector.UIString("Try here");
                         newPageButton.title = WebInspector.UIString("Inspect current page in this browser.");
-                        newPageButton.addEventListener("click", InspectorFrontendHost.openUrlOnRemoteDeviceAndInspect.bind(null, browser.id, WebInspector.resourceTreeModel.inspectedPageURL()), true);
+                        newPageButton.addEventListener("click", InspectorFrontendHost.openUrlOnRemoteDeviceAndInspect.bind(null, browser.id, WebInspector.targetManager.inspectedPageURL()), true);
                     }
                 }
 
@@ -174,12 +174,12 @@ WebInspector.DevicesView.prototype = {
 
     willHide: function()
     {
-        WebInspector.inspectorFrontendEventSink.removeEventListener(WebInspector.DevicesView.Events.DevicesChanged, this._onDevicesChanged, this);
+        InspectorFrontendHost.setDevicesUpdatesEnabled(false);
     },
 
     wasShown: function()
     {
-        WebInspector.inspectorFrontendEventSink.addEventListener(WebInspector.DevicesView.Events.DevicesChanged, this._onDevicesChanged, this);
+        InspectorFrontendHost.setDevicesUpdatesEnabled(true);
     },
 
     __proto__: WebInspector.VBox.prototype

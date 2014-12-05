@@ -9,20 +9,31 @@
 #include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/crypto/crypto_utils.h"
 #include "net/quic/crypto/quic_crypto_server_config.h"
+#include "net/quic/crypto/source_address_token.h"
 #include "net/quic/quic_config.h"
+#include "net/quic/quic_flags.h"
 #include "net/quic/quic_protocol.h"
 #include "net/quic/quic_session.h"
 
 namespace net {
+
+void ServerHelloNotifier::OnAckNotification(
+    int num_original_packets,
+    int num_original_bytes,
+    int num_retransmitted_packets,
+    int num_retransmitted_bytes,
+    QuicTime::Delta delta_largest_observed) {
+  server_stream_->OnServerHelloAcked();
+}
 
 QuicCryptoServerStream::QuicCryptoServerStream(
     const QuicCryptoServerConfig& crypto_config,
     QuicSession* session)
     : QuicCryptoStream(session),
       crypto_config_(crypto_config),
-      validate_client_hello_cb_(NULL),
-      num_handshake_messages_(0) {
-}
+      validate_client_hello_cb_(nullptr),
+      num_handshake_messages_(0),
+      num_server_config_update_messages_sent_(0) {}
 
 QuicCryptoServerStream::~QuicCryptoServerStream() {
   CancelOutstandingCallbacks();
@@ -30,7 +41,7 @@ QuicCryptoServerStream::~QuicCryptoServerStream() {
 
 void QuicCryptoServerStream::CancelOutstandingCallbacks() {
   // Detach from the validation callback.  Calling this multiple times is safe.
-  if (validate_client_hello_cb_ != NULL) {
+  if (validate_client_hello_cb_ != nullptr) {
     validate_client_hello_cb_->Cancel();
   }
 }
@@ -51,7 +62,7 @@ void QuicCryptoServerStream::OnHandshakeMessage(
     return;
   }
 
-  if (validate_client_hello_cb_ != NULL) {
+  if (validate_client_hello_cb_ != nullptr) {
     // Already processing some other handshake message.  The protocol
     // does not allow for clients to send multiple handshake messages
     // before the server has a chance to respond.
@@ -71,8 +82,8 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
     const CryptoHandshakeMessage& message,
     const ValidateClientHelloResultCallback::Result& result) {
   // Clear the callback that got us here.
-  DCHECK(validate_client_hello_cb_ != NULL);
-  validate_client_hello_cb_ = NULL;
+  DCHECK(validate_client_hello_cb_ != nullptr);
+  validate_client_hello_cb_ = nullptr;
 
   string error_details;
   CryptoHandshakeMessage reply;
@@ -109,20 +120,30 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   session()->connection()->SetEncrypter(
       ENCRYPTION_INITIAL,
       crypto_negotiated_params_.initial_crypters.encrypter.release());
-  session()->connection()->SetDefaultEncryptionLevel(
-      ENCRYPTION_INITIAL);
+  session()->connection()->SetDefaultEncryptionLevel(ENCRYPTION_INITIAL);
   // Set the decrypter immediately so that we no longer accept unencrypted
   // packets.
   session()->connection()->SetDecrypter(
       crypto_negotiated_params_.initial_crypters.decrypter.release(),
       ENCRYPTION_INITIAL);
-  SendHandshakeMessage(reply);
+
+  // We want to be notified when the SHLO is ACKed so that we can disable
+  // HANDSHAKE_MODE in the sent packet manager.
+  if (session()->connection()->version() <= QUIC_VERSION_21) {
+    SendHandshakeMessage(reply);
+  } else {
+    scoped_refptr<ServerHelloNotifier> server_hello_notifier(
+        new ServerHelloNotifier(this));
+    SendHandshakeMessage(reply, server_hello_notifier.get());
+  }
 
   session()->connection()->SetEncrypter(
       ENCRYPTION_FORWARD_SECURE,
       crypto_negotiated_params_.forward_secure_crypters.encrypter.release());
-  session()->connection()->SetDefaultEncryptionLevel(
-      ENCRYPTION_FORWARD_SECURE);
+  if (!FLAGS_enable_quic_delay_forward_security) {
+    session()->connection()->SetDefaultEncryptionLevel(
+        ENCRYPTION_FORWARD_SECURE);
+  }
   session()->connection()->SetAlternativeDecrypter(
       crypto_negotiated_params_.forward_secure_crypters.decrypter.release(),
       ENCRYPTION_FORWARD_SECURE, false /* don't latch */);
@@ -130,6 +151,43 @@ void QuicCryptoServerStream::FinishProcessingHandshakeMessage(
   encryption_established_ = true;
   handshake_confirmed_ = true;
   session()->OnCryptoHandshakeEvent(QuicSession::HANDSHAKE_CONFIRMED);
+}
+
+void QuicCryptoServerStream::SendServerConfigUpdate(
+    const CachedNetworkParameters* cached_network_params) {
+  if (session()->connection()->version() <= QUIC_VERSION_21 ||
+      !handshake_confirmed_) {
+    return;
+  }
+
+  CryptoHandshakeMessage server_config_update_message;
+  if (!crypto_config_.BuildServerConfigUpdateMessage(
+          session()->connection()->peer_address(),
+          session()->connection()->clock(),
+          session()->connection()->random_generator(),
+          crypto_negotiated_params_,
+          cached_network_params,
+          &server_config_update_message)) {
+    DVLOG(1) << "Server: Failed to build server config update (SCUP)!";
+    return;
+  }
+
+  DVLOG(1) << "Server: Sending server config update: "
+           << server_config_update_message.DebugString();
+  const QuicData& data = server_config_update_message.GetSerialized();
+  WriteOrBufferData(string(data.data(), data.length()), false, nullptr);
+
+  ++num_server_config_update_messages_sent_;
+}
+
+void QuicCryptoServerStream::OnServerHelloAcked() {
+  session()->connection()->OnHandshakeComplete();
+}
+
+void QuicCryptoServerStream::set_previous_cached_network_params(
+    CachedNetworkParameters cached_network_params) {
+  previous_cached_network_params_.reset(
+      new CachedNetworkParameters(cached_network_params));
 }
 
 bool QuicCryptoServerStream::GetBase64SHA256ClientChannelID(
@@ -167,6 +225,12 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
     const ValidateClientHelloResultCallback::Result& result,
     CryptoHandshakeMessage* reply,
     string* error_details) {
+  // Store the bandwidth estimate from the client.
+  if (result.cached_network_params.bandwidth_estimate_bytes_per_second() > 0) {
+    previous_cached_network_params_.reset(
+        new CachedNetworkParameters(result.cached_network_params));
+  }
+
   return crypto_config_.ProcessClientHello(
       result,
       session()->connection()->connection_id(),
@@ -181,18 +245,21 @@ QuicErrorCode QuicCryptoServerStream::ProcessClientHello(
 void QuicCryptoServerStream::OverrideQuicConfigDefaults(QuicConfig* config) {
 }
 
+CachedNetworkParameters*
+QuicCryptoServerStream::get_previous_cached_network_params() {
+  return previous_cached_network_params_.get();
+}
+
 QuicCryptoServerStream::ValidateCallback::ValidateCallback(
     QuicCryptoServerStream* parent) : parent_(parent) {
 }
 
-void QuicCryptoServerStream::ValidateCallback::Cancel() {
-  parent_ = NULL;
-}
+void QuicCryptoServerStream::ValidateCallback::Cancel() { parent_ = nullptr; }
 
 void QuicCryptoServerStream::ValidateCallback::RunImpl(
     const CryptoHandshakeMessage& client_hello,
     const Result& result) {
-  if (parent_ != NULL) {
+  if (parent_ != nullptr) {
     parent_->FinishProcessingHandshakeMessage(client_hello, result);
   }
 }

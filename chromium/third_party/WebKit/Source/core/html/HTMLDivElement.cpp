@@ -27,14 +27,13 @@
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 HTMLDivElement::HTMLDivElement(Document& document)
     : HTMLElement(divTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLDivElement)

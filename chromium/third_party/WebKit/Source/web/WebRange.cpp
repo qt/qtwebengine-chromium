@@ -31,8 +31,8 @@
 #include "config.h"
 #include "public/web/WebRange.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
@@ -41,14 +41,11 @@
 #include "core/editing/PlainTextRange.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
-#include "public/platform/WebFloatQuad.h"
 #include "public/platform/WebString.h"
 #include "public/web/WebExceptionCode.h"
 #include "public/web/WebNode.h"
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -108,39 +105,18 @@ WebRange WebRange::expandedToParagraph() const
 // static
 WebRange WebRange::fromDocumentRange(WebLocalFrame* frame, int start, int length)
 {
-    WebCore::LocalFrame* webFrame = toWebLocalFrameImpl(frame)->frame();
+    LocalFrame* webFrame = toWebLocalFrameImpl(frame)->frame();
     Element* selectionRoot = webFrame->selection().rootEditableElement();
     ContainerNode* scope = selectionRoot ? selectionRoot : webFrame->document()->documentElement();
     return PlainTextRange(start, start + length).createRange(*scope);
 }
 
-WebVector<WebFloatQuad> WebRange::textQuads() const
-{
-    if (isNull())
-        return WebVector<WebFloatQuad>();
-
-    LocalFrame* frame = m_private->ownerDocument().frame();
-    if (!frame)
-        return WebVector<WebFloatQuad>();
-
-    Vector<FloatQuad> quads;
-    m_private->textQuads(quads);
-    for (unsigned i = 0; i < quads.size(); ++i) {
-        quads[i].setP1(frame->view()->contentsToWindow(roundedIntPoint(quads[i].p1())));
-        quads[i].setP2(frame->view()->contentsToWindow(roundedIntPoint(quads[i].p2())));
-        quads[i].setP3(frame->view()->contentsToWindow(roundedIntPoint(quads[i].p3())));
-        quads[i].setP4(frame->view()->contentsToWindow(roundedIntPoint(quads[i].p4())));
-    }
-
-    return quads;
-}
-
-WebRange::WebRange(const PassRefPtrWillBeRawPtr<WebCore::Range>& range)
+WebRange::WebRange(const PassRefPtrWillBeRawPtr<Range>& range)
     : m_private(range)
 {
 }
 
-WebRange::operator PassRefPtrWillBeRawPtr<WebCore::Range>() const
+WebRange::operator PassRefPtrWillBeRawPtr<Range>() const
 {
     return m_private.get();
 }

@@ -23,19 +23,20 @@
 
 #include "core/svg/SVGTextPositioningElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGTSpanElement FINAL : public SVGTextPositioningElement {
+class SVGTSpanElement final : public SVGTextPositioningElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGTSpanElement);
 
 private:
     explicit SVGTSpanElement(Document&);
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGTSpanElement_h

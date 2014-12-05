@@ -1,6 +1,6 @@
 /*
  ******************************************************************************
- * Copyright (C) 1996-2010, International Business Machines Corporation and
+ * Copyright (C) 1996-2013, International Business Machines Corporation and
  * others. All Rights Reserved.
  ******************************************************************************
  */
@@ -54,8 +54,6 @@
  * 01/29/01     synwee      Modified into a C++ wrapper calling C APIs (ucol.h)
  */
 
-#include "unicode/utypeinfo.h"  // for 'typeid' to work
-
 #include "unicode/utypes.h"
 
 #if !UCONFIG_NO_COLLATION
@@ -70,6 +68,7 @@
 #include "cmemory.h"
 #include "cstring.h"
 #include "putilimp.h"
+#include "ustr_imp.h"
 
 /* public RuleBasedCollator constructor ---------------------------------- */
 
@@ -102,7 +101,7 @@ RuleBasedCollator::RuleBasedCollator(const UnicodeString& rules,
                                      UErrorCode& status) : dataIsOwned(FALSE)
 {
     construct(rules,
-        getUCollationStrength(collationStrength),
+        (UColAttributeValue)collationStrength,
         UCOL_DEFAULT,
         status);
 }
@@ -124,7 +123,7 @@ RuleBasedCollator::RuleBasedCollator(const UnicodeString& rules,
                                      UErrorCode& status) : dataIsOwned(FALSE)
 {
     construct(rules,
-        getUCollationStrength(collationStrength),
+        (UColAttributeValue)collationStrength,
         decompositionMode,
         status);
 }
@@ -192,62 +191,49 @@ RuleBasedCollator::~RuleBasedCollator()
 UBool RuleBasedCollator::operator==(const Collator& that) const
 {
   /* only checks for address equals here */
-  if (Collator::operator==(that))
+  if (this == &that) {
     return TRUE;
-
-  if (typeid(*this) != typeid(that))
+  }
+  if (!Collator::operator==(that)) {
     return FALSE;  /* not the same class */
+  }
 
   RuleBasedCollator& thatAlias = (RuleBasedCollator&)that;
 
-  // weiv: use C function, commented code below is wrong
   return ucol_equals(this->ucollator, thatAlias.ucollator);
-  /*
-  synwee : orginal code does not check for data compatibility
-  */
-  /*
-  if (ucollator != thatAlias.ucollator)
-    return FALSE;
-
-  return TRUE;
-  */
-}
-
-UBool RuleBasedCollator::operator!=(const Collator& other) const
-{
-    return !(*this == other);
 }
 
 // aliasing, not write-through
 RuleBasedCollator& RuleBasedCollator::operator=(const RuleBasedCollator& that)
 {
-    if (this != &that)
-    {
-        if (dataIsOwned)
-        {
-            ucol_close(ucollator);
-        }
+    if (this == &that) { return *this; }
 
-        urulestring.truncate(0); // empty the rule string
-        dataIsOwned = TRUE;
-        isWriteThroughAlias = FALSE;
+    UErrorCode intStatus = U_ZERO_ERROR;
+    UCollator *ucol = ucol_safeClone(that.ucollator, NULL, NULL, &intStatus);
+    if (U_FAILURE(intStatus)) { return *this; }
 
-        UErrorCode intStatus = U_ZERO_ERROR;
-        int32_t buffersize = U_COL_SAFECLONE_BUFFERSIZE;
-        ucollator = ucol_safeClone(that.ucollator, NULL, &buffersize,
-                                        &intStatus);
-        if (U_SUCCESS(intStatus)) {
-            setRuleStringFromCollator();
-        }
+    if (dataIsOwned) {
+        ucol_close(ucollator);
     }
+    ucollator = ucol;
+    dataIsOwned = TRUE;
+    isWriteThroughAlias = FALSE;
+    setRuleStringFromCollator();
     return *this;
 }
 
 // aliasing, not write-through
 Collator* RuleBasedCollator::clone() const
 {
-    return new RuleBasedCollator(*this);
+    RuleBasedCollator* coll = new RuleBasedCollator(*this);
+    // There is a small chance that the internal ucol_safeClone() call fails.
+    if (coll != NULL && coll->ucollator == NULL) {
+        delete coll;
+        return NULL;
+    }
+    return coll;
 }
+
 
 CollationElementIterator* RuleBasedCollator::createCollationElementIterator
                                            (const UnicodeString& source) const
@@ -331,15 +317,9 @@ void RuleBasedCollator::getVersion(UVersionInfo versionInfo) const
     }
 }
 
-Collator::EComparisonResult RuleBasedCollator::compare(
-                                               const UnicodeString& source,
-                                               const UnicodeString& target,
-                                               int32_t length) const
-{
-    UErrorCode status = U_ZERO_ERROR;
-    return getEComparisonResult(compare(source.getBuffer(), uprv_min(length,source.length()), target.getBuffer(), uprv_min(length,target.length()), status));
-}
-
+/**
+* Compare two strings using this collator
+*/
 UCollationResult RuleBasedCollator::compare(
                                                const UnicodeString& source,
                                                const UnicodeString& target,
@@ -347,16 +327,6 @@ UCollationResult RuleBasedCollator::compare(
                                                UErrorCode &status) const
 {
     return compare(source.getBuffer(), uprv_min(length,source.length()), target.getBuffer(), uprv_min(length,target.length()), status);
-}
-
-Collator::EComparisonResult RuleBasedCollator::compare(const UChar* source,
-                                                       int32_t sourceLength,
-                                                       const UChar* target,
-                                                       int32_t targetLength)
-                                                       const
-{
-    return  getEComparisonResult(ucol_strcoll(ucollator, source, sourceLength,
-                                                         target, targetLength));
 }
 
 UCollationResult RuleBasedCollator::compare(const UChar* source,
@@ -370,17 +340,6 @@ UCollationResult RuleBasedCollator::compare(const UChar* source,
     } else {
         return UCOL_EQUAL;
     }
-}
-
-/**
-* Compare two strings using this collator
-*/
-Collator::EComparisonResult RuleBasedCollator::compare(
-                                             const UnicodeString& source,
-                                             const UnicodeString& target) const
-{
-    return getEComparisonResult(ucol_strcoll(ucollator, source.getBuffer(), source.length(),
-                                                        target.getBuffer(), target.length()));
 }
 
 UCollationResult RuleBasedCollator::compare(
@@ -452,21 +411,28 @@ CollationKey& RuleBasedCollator::getCollationKey(const UChar* source,
                                                     CollationKey& sortkey,
                                                     UErrorCode& status) const
 {
-    if (U_FAILURE(status))
-    {
+    if (U_FAILURE(status)) {
+        return sortkey.setToBogus();
+    }
+    if (sourceLen < -1 || (source == NULL && sourceLen != 0)) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
         return sortkey.setToBogus();
     }
 
-    if ((!source) || (sourceLen == 0)) {
+    if (sourceLen < 0) {
+        sourceLen = u_strlen(source);
+    }
+    if (sourceLen == 0) {
         return sortkey.reset();
     }
 
-    uint8_t *result;
-    int32_t resultLen = ucol_getSortKeyWithAllocation(ucollator,
-                                                      source, sourceLen,
-                                                      &result,
-                                                      &status);
-    sortkey.adopt(result, resultLen);
+    int32_t resultLen = ucol_getCollationKey(ucollator, source, sourceLen, sortkey, status);
+
+    if (U_SUCCESS(status)) {
+        sortkey.setLength(resultLen);
+    } else {
+        sortkey.setToBogus();
+    }
     return sortkey;
 }
 
@@ -489,7 +455,23 @@ int32_t RuleBasedCollator::getMaxExpansion(int32_t order) const
 uint8_t* RuleBasedCollator::cloneRuleData(int32_t &length,
                                               UErrorCode &status)
 {
-    return ucol_cloneRuleData(ucollator, &length, &status);
+    if (U_FAILURE(status)) { return NULL; }
+    LocalMemory<uint8_t> buffer((uint8_t *)uprv_malloc(20000));
+    if (buffer.isNull()) {
+        status = U_MEMORY_ALLOCATION_ERROR;
+        return NULL;
+    }
+    length = cloneBinary(buffer.getAlias(), 20000, status);
+    if (status == U_BUFFER_OVERFLOW_ERROR) {
+        if (buffer.allocateInsteadAndCopy(length, 0) == NULL) {
+            status = U_MEMORY_ALLOCATION_ERROR;
+            return NULL;
+        }
+        status = U_ZERO_ERROR;
+        length = cloneBinary(buffer.getAlias(), length, status);
+    }
+    if (U_FAILURE(status)) { return NULL; }
+    return buffer.orphan();
 }
 
 
@@ -509,7 +491,7 @@ void RuleBasedCollator::setAttribute(UColAttribute attr,
 }
 
 UColAttributeValue RuleBasedCollator::getAttribute(UColAttribute attr,
-                                                      UErrorCode &status)
+                                                      UErrorCode &status) const
 {
     if (U_FAILURE(status))
         return UCOL_DEFAULT;
@@ -521,12 +503,12 @@ uint32_t RuleBasedCollator::setVariableTop(const UChar *varTop, int32_t len, UEr
     return ucol_setVariableTop(ucollator, varTop, len, &status);
 }
 
-uint32_t RuleBasedCollator::setVariableTop(const UnicodeString varTop, UErrorCode &status) {
+uint32_t RuleBasedCollator::setVariableTop(const UnicodeString &varTop, UErrorCode &status) {
     checkOwned();
     return ucol_setVariableTop(ucollator, varTop.getBuffer(), varTop.length(), &status);
 }
 
-void RuleBasedCollator::setVariableTop(const uint32_t varTop, UErrorCode &status) {
+void RuleBasedCollator::setVariableTop(uint32_t varTop, UErrorCode &status) {
     checkOwned();
     ucol_restoreVariableTop(ucollator, varTop, &status);
 }
@@ -534,29 +516,6 @@ void RuleBasedCollator::setVariableTop(const uint32_t varTop, UErrorCode &status
 uint32_t RuleBasedCollator::getVariableTop(UErrorCode &status) const {
   return ucol_getVariableTop(ucollator, &status);
 }
-
-Collator* RuleBasedCollator::safeClone(void)
-{
-    UErrorCode intStatus = U_ZERO_ERROR;
-    int32_t buffersize = U_COL_SAFECLONE_BUFFERSIZE;
-    UCollator *ucol = ucol_safeClone(ucollator, NULL, &buffersize,
-                                    &intStatus);
-    if (U_FAILURE(intStatus)) {
-        return NULL;
-    }
-
-    RuleBasedCollator *result = new RuleBasedCollator();
-    // Null pointer check
-    if (result != NULL) {
-	    result->ucollator = ucol;
-	    result->dataIsOwned = TRUE;
-	    result->isWriteThroughAlias = FALSE;
-	    setRuleStringFromCollator();
-    }
-
-    return result;
-}
-
 
 int32_t RuleBasedCollator::getSortKey(const UnicodeString& source,
                                          uint8_t *result, int32_t resultLength)
@@ -572,21 +531,6 @@ int32_t RuleBasedCollator::getSortKey(const UChar *source,
     return ucol_getSortKey(ucollator, source, sourceLength, result, resultLength);
 }
 
-Collator::ECollationStrength RuleBasedCollator::getStrength(void) const
-{
-    UErrorCode intStatus = U_ZERO_ERROR;
-    return getECollationStrength(ucol_getAttribute(ucollator, UCOL_STRENGTH,
-                                &intStatus));
-}
-
-void RuleBasedCollator::setStrength(ECollationStrength newStrength)
-{
-    checkOwned();
-    UErrorCode intStatus = U_ZERO_ERROR;
-    UCollationStrength strength = getUCollationStrength(newStrength);
-    ucol_setAttribute(ucollator, UCOL_STRENGTH, strength, &intStatus);
-}
-
 int32_t RuleBasedCollator::getReorderCodes(int32_t *dest,
                                           int32_t destCapacity,
                                           UErrorCode& status) const
@@ -598,9 +542,17 @@ void RuleBasedCollator::setReorderCodes(const int32_t *reorderCodes,
                                        int32_t reorderCodesLength,
                                        UErrorCode& status)
 {
+    checkOwned();
     ucol_setReorderCodes(ucollator, reorderCodes, reorderCodesLength, &status);
 }
 
+int32_t RuleBasedCollator::getEquivalentReorderCodes(int32_t reorderCode,
+                                int32_t* dest,
+                                int32_t destCapacity,
+                                UErrorCode& status)
+{
+    return ucol_getEquivalentReorderCodes(reorderCode, dest, destCapacity, &status);
+}
 
 /**
 * Create a hash code for this collation. Just hash the main rule table -- that
@@ -610,13 +562,13 @@ int32_t RuleBasedCollator::hashCode() const
 {
     int32_t length;
     const UChar *rules = ucol_getRules(ucollator, &length);
-    return uhash_hashUCharsN(rules, length);
+    return ustr_hashUCharsN(rules, length);
 }
 
 /**
 * return the locale of this collator
 */
-const Locale RuleBasedCollator::getLocale(ULocDataLocaleType type, UErrorCode &status) const {
+Locale RuleBasedCollator::getLocale(ULocDataLocaleType type, UErrorCode &status) const {
     const char *result = ucol_getLocaleByType(ucollator, type, &status);
     if(result == NULL) {
         Locale res("");
@@ -704,8 +656,9 @@ void
 RuleBasedCollator::setUCollator(const char *locale,
                                 UErrorCode &status)
 {
-    if (U_FAILURE(status))
+    if (U_FAILURE(status)) {
         return;
+    }
     if (ucollator && dataIsOwned)
         ucol_close(ucollator);
     ucollator = ucol_open_internal(locale, &status);
@@ -724,6 +677,16 @@ RuleBasedCollator::checkOwned() {
         isWriteThroughAlias = FALSE;
     }
 }
+
+
+int32_t RuleBasedCollator::internalGetShortDefinitionString(const char *locale,
+                                                                      char *buffer,
+                                                                      int32_t capacity,
+                                                                      UErrorCode &status) const {
+  /* simply delegate */
+  return ucol_getShortDefinitionString(ucollator, locale, buffer, capacity, &status);
+}
+
 
 UOBJECT_DEFINE_RTTI_IMPLEMENTATION(RuleBasedCollator)
 

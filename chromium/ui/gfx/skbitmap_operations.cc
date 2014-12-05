@@ -21,13 +21,12 @@
 
 // static
 SkBitmap SkBitmapOperations::CreateInvertedBitmap(const SkBitmap& image) {
-  DCHECK(image.colorType() == kPMColor_SkColorType);
+  DCHECK(image.colorType() == kN32_SkColorType);
 
   SkAutoLockPixels lock_image(image);
 
   SkBitmap inverted;
   inverted.allocN32Pixels(image.width(), image.height());
-  inverted.eraseARGB(0, 0, 0, 0);
 
   for (int y = 0; y < image.height(); ++y) {
     uint32* image_row = image.getAddr32(0, y);
@@ -44,35 +43,6 @@ SkBitmap SkBitmapOperations::CreateInvertedBitmap(const SkBitmap& image) {
 }
 
 // static
-SkBitmap SkBitmapOperations::CreateSuperimposedBitmap(const SkBitmap& first,
-                                                      const SkBitmap& second) {
-  DCHECK(first.width() == second.width());
-  DCHECK(first.height() == second.height());
-  DCHECK(first.bytesPerPixel() == second.bytesPerPixel());
-  DCHECK(first.colorType() == kPMColor_SkColorType);
-
-  SkAutoLockPixels lock_first(first);
-  SkAutoLockPixels lock_second(second);
-
-  SkBitmap superimposed;
-  superimposed.allocN32Pixels(first.width(), first.height());
-  superimposed.eraseARGB(0, 0, 0, 0);
-
-  SkCanvas canvas(superimposed);
-
-  SkRect rect;
-  rect.fLeft = 0;
-  rect.fTop = 0;
-  rect.fRight = SkIntToScalar(first.width());
-  rect.fBottom = SkIntToScalar(first.height());
-
-  canvas.drawBitmapRect(first, NULL, rect);
-  canvas.drawBitmapRect(second, NULL, rect);
-
-  return superimposed;
-}
-
-// static
 SkBitmap SkBitmapOperations::CreateBlendedBitmap(const SkBitmap& first,
                                                  const SkBitmap& second,
                                                  double alpha) {
@@ -80,7 +50,7 @@ SkBitmap SkBitmapOperations::CreateBlendedBitmap(const SkBitmap& first,
   DCHECK(first.width() == second.width());
   DCHECK(first.height() == second.height());
   DCHECK(first.bytesPerPixel() == second.bytesPerPixel());
-  DCHECK(first.colorType() == kPMColor_SkColorType);
+  DCHECK(first.colorType() == kN32_SkColorType);
 
   // Optimize for case where we won't need to blend anything.
   static const double alpha_min = 1.0 / 255;
@@ -95,7 +65,6 @@ SkBitmap SkBitmapOperations::CreateBlendedBitmap(const SkBitmap& first,
 
   SkBitmap blended;
   blended.allocN32Pixels(first.width(), first.height());
-  blended.eraseARGB(0, 0, 0, 0);
 
   double first_alpha = 1 - alpha;
 
@@ -130,12 +99,11 @@ SkBitmap SkBitmapOperations::CreateMaskedBitmap(const SkBitmap& rgb,
   DCHECK(rgb.width() == alpha.width());
   DCHECK(rgb.height() == alpha.height());
   DCHECK(rgb.bytesPerPixel() == alpha.bytesPerPixel());
-  DCHECK(rgb.colorType() == kPMColor_SkColorType);
-  DCHECK(alpha.colorType() == kPMColor_SkColorType);
+  DCHECK(rgb.colorType() == kN32_SkColorType);
+  DCHECK(alpha.colorType() == kN32_SkColorType);
 
   SkBitmap masked;
   masked.allocN32Pixels(rgb.width(), rgb.height());
-  masked.eraseARGB(0, 0, 0, 0);
 
   SkAutoLockPixels lock_rgb(rgb);
   SkAutoLockPixels lock_alpha(alpha);
@@ -167,8 +135,8 @@ SkBitmap SkBitmapOperations::CreateMaskedBitmap(const SkBitmap& rgb,
 SkBitmap SkBitmapOperations::CreateButtonBackground(SkColor color,
                                                     const SkBitmap& image,
                                                     const SkBitmap& mask) {
-  DCHECK(image.colorType() == kPMColor_SkColorType);
-  DCHECK(mask.colorType() == kPMColor_SkColorType);
+  DCHECK(image.colorType() == kN32_SkColorType);
+  DCHECK(mask.colorType() == kN32_SkColorType);
 
   SkBitmap background;
   background.allocN32Pixels(mask.width(), mask.height());
@@ -547,11 +515,10 @@ SkBitmap SkBitmapOperations::CreateHSLShiftedBitmap(
       HSLShift::kLineProcessors[H_op][S_op][L_op];
 
   DCHECK(bitmap.empty() == false);
-  DCHECK(bitmap.colorType() == kPMColor_SkColorType);
+  DCHECK(bitmap.colorType() == kN32_SkColorType);
 
   SkBitmap shifted;
   shifted.allocN32Pixels(bitmap.width(), bitmap.height());
-  shifted.eraseARGB(0, 0, 0, 0);
 
   SkAutoLockPixels lock_bitmap(bitmap);
   SkAutoLockPixels lock_shifted(shifted);
@@ -571,11 +538,10 @@ SkBitmap SkBitmapOperations::CreateHSLShiftedBitmap(
 SkBitmap SkBitmapOperations::CreateTiledBitmap(const SkBitmap& source,
                                                int src_x, int src_y,
                                                int dst_w, int dst_h) {
-  DCHECK(source.colorType() == kPMColor_SkColorType);
+  DCHECK(source.colorType() == kN32_SkColorType);
 
   SkBitmap cropped;
   cropped.allocN32Pixels(dst_w, dst_h);
-  cropped.eraseARGB(0, 0, 0, 0);
 
   SkAutoLockPixels lock_source(source);
   SkAutoLockPixels lock_cropped(cropped);
@@ -711,7 +677,7 @@ SkBitmap SkBitmapOperations::UnPreMultiply(const SkBitmap& bitmap) {
 
 // static
 SkBitmap SkBitmapOperations::CreateTransposedBitmap(const SkBitmap& image) {
-  DCHECK(image.colorType() == kPMColor_SkColorType);
+  DCHECK(image.colorType() == kN32_SkColorType);
 
   SkBitmap transposed;
   transposed.allocN32Pixels(image.height(), image.width());
@@ -733,7 +699,7 @@ SkBitmap SkBitmapOperations::CreateTransposedBitmap(const SkBitmap& image) {
 // static
 SkBitmap SkBitmapOperations::CreateColorMask(const SkBitmap& bitmap,
                                              SkColor c) {
-  DCHECK(bitmap.colorType() == kPMColor_SkColorType);
+  DCHECK(bitmap.colorType() == kN32_SkColorType);
 
   SkBitmap color_mask;
   color_mask.allocN32Pixels(bitmap.width(), bitmap.height());
@@ -753,7 +719,7 @@ SkBitmap SkBitmapOperations::CreateColorMask(const SkBitmap& bitmap,
 SkBitmap SkBitmapOperations::CreateDropShadow(
     const SkBitmap& bitmap,
     const gfx::ShadowValues& shadows) {
-  DCHECK(bitmap.colorType() == kPMColor_SkColorType);
+  DCHECK(bitmap.colorType() == kN32_SkColorType);
 
   // Shadow margin insets are negative values because they grow outside.
   // Negate them here as grow direction is not important and only pixel value
@@ -800,21 +766,18 @@ SkBitmap SkBitmapOperations::Rotate(const SkBitmap& source,
   switch (rotation) {
    case ROTATION_90_CW:
      angle = SkFloatToScalar(90.0f);
-     result.setConfig(
-         SkBitmap::kARGB_8888_Config, source.height(), source.width());
+     result.allocN32Pixels(source.height(), source.width());
      break;
    case ROTATION_180_CW:
      angle = SkFloatToScalar(180.0f);
-     result.setConfig(
-         SkBitmap::kARGB_8888_Config, source.width(), source.height());
+     result.allocN32Pixels(source.width(), source.height());
      break;
    case ROTATION_270_CW:
      angle = SkFloatToScalar(270.0f);
-     result.setConfig(
-         SkBitmap::kARGB_8888_Config, source.height(), source.width());
+     result.allocN32Pixels(source.height(), source.width());
      break;
   }
-  result.allocPixels();
+
   SkCanvas canvas(result);
   canvas.clear(SkColorSetARGB(0, 0, 0, 0));
 

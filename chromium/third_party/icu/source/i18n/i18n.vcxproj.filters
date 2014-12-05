@@ -24,22 +24,10 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="bms.cpp">
-      <Filter>collation</Filter>
-    </ClCompile>
-    <ClCompile Include="bmsearch.cpp">
-      <Filter>collation</Filter>
-    </ClCompile>
-    <ClCompile Include="bocsu.c">
-      <Filter>collation</Filter>
-    </ClCompile>
     <ClCompile Include="coleitr.cpp">
       <Filter>collation</Filter>
     </ClCompile>
     <ClCompile Include="coll.cpp">
-      <Filter>collation</Filter>
-    </ClCompile>
-    <ClCompile Include="colldata.cpp">
       <Filter>collation</Filter>
     </ClCompile>
     <ClCompile Include="search.cpp">
@@ -120,6 +108,9 @@
     <ClCompile Include="currunit.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
+    <ClCompile Include="dangical.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
     <ClCompile Include="datefmt.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
@@ -127,6 +118,9 @@
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="decContext.c">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="decfmtst.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="decimfmt.cpp">
@@ -169,6 +163,9 @@
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="fpositer.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="gender.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="gregocal.cpp">
@@ -246,6 +243,9 @@
     <ClCompile Include="smpdtfmt.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
+    <ClCompile Include="smpdtfst.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
     <ClCompile Include="taiwncal.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
@@ -276,6 +276,9 @@
     <ClCompile Include="udat.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
+    <ClCompile Include="udateintervalformat.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
     <ClCompile Include="udatpg.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
@@ -286,6 +289,12 @@
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="unum.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="unumsys.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="upluralrules.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
     <ClCompile Include="utmscale.c">
@@ -312,9 +321,6 @@
     <ClCompile Include="zrule.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
-    <ClCompile Include="zstrfmt.cpp">
-      <Filter>formatting</Filter>
-    </ClCompile>
     <ClCompile Include="ztrans.cpp">
       <Filter>formatting</Filter>
     </ClCompile>
@@ -322,6 +328,9 @@
       <Filter>misc</Filter>
     </ClCompile>
     <ClCompile Include="regexcmp.cpp">
+      <Filter>regex</Filter>
+    </ClCompile>
+    <ClCompile Include="regeximp.cpp">
       <Filter>regex</Filter>
     </ClCompile>
     <ClCompile Include="regexst.cpp">
@@ -453,6 +462,12 @@
     <ClCompile Include="ucsdet.cpp">
       <Filter>charset detect</Filter>
     </ClCompile>
+    <ClCompile Include="identifier_info.cpp">
+      <Filter>spoof</Filter>
+    </ClCompile>
+    <ClCompile Include="scriptset.cpp">
+      <Filter>spoof</Filter>
+    </ClCompile>
     <ClCompile Include="uspoof.cpp">
       <Filter>spoof</Filter>
     </ClCompile>
@@ -467,6 +482,33 @@
     </ClCompile>
     <ClCompile Include="uspoof_wsconf.cpp">
       <Filter>spoof</Filter>
+    </ClCompile>
+    <ClCompile Include="alphaindex.cpp">
+      <Filter>collation</Filter>
+    </ClCompile>
+    <ClCompile Include="tzfmt.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="tzgnames.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="tznames.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="tznames_impl.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="compactdecimalformat.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="region.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="uregion.cpp">
+      <Filter>formatting</Filter>
+    </ClCompile>
+    <ClCompile Include="bocsu.cpp">
+      <Filter>transforms</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -512,10 +554,13 @@
     <ClInclude Include="currfmt.h">
       <Filter>formatting</Filter>
     </ClInclude>
-    <ClInclude Include="unicode\currpinf.h">
+    <ClInclude Include="dangical.h">
       <Filter>formatting</Filter>
     </ClInclude>
     <ClInclude Include="decContext.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="decfmtst.h">
       <Filter>formatting</Filter>
     </ClInclude>
     <ClInclude Include="decNumber.h">
@@ -581,6 +626,9 @@
     <ClInclude Include="reldtfmt.h">
       <Filter>formatting</Filter>
     </ClInclude>
+    <ClInclude Include="smpdtfst.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
     <ClInclude Include="taiwncal.h">
       <Filter>formatting</Filter>
     </ClInclude>
@@ -606,9 +654,6 @@
       <Filter>formatting</Filter>
     </ClInclude>
     <ClInclude Include="zrule.h">
-      <Filter>formatting</Filter>
-    </ClInclude>
-    <ClInclude Include="zstrfmt.h">
       <Filter>formatting</Filter>
     </ClInclude>
     <ClInclude Include="ztrans.h">
@@ -734,6 +779,12 @@
     <ClInclude Include="inputext.h">
       <Filter>charset detect</Filter>
     </ClInclude>
+    <ClInclude Include="identifier_info.h">
+      <Filter>spoof</Filter>
+    </ClInclude>
+    <ClInclude Include="scriptset.h">
+      <Filter>spoof</Filter>
+    </ClInclude>
     <ClInclude Include="uspoof_conf.h">
       <Filter>spoof</Filter>
     </ClInclude>
@@ -743,6 +794,24 @@
     <ClInclude Include="uspoof_wsconf.h">
       <Filter>spoof</Filter>
     </ClInclude>
+    <ClInclude Include="tzgnames.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="tznames_impl.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="numsys_impl.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="dcfmtimp.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="selfmtimpl.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
+    <ClInclude Include="region_impl.h">
+      <Filter>formatting</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="i18n.rc">
@@ -750,19 +819,10 @@
     </ResourceCompile>
   </ItemGroup>
   <ItemGroup>
-    <CustomBuild Include="unicode\bms.h">
-      <Filter>collation</Filter>
-    </CustomBuild>
-    <CustomBuild Include="unicode\bmsearch.h">
-      <Filter>collation</Filter>
-    </CustomBuild>
     <CustomBuild Include="unicode\coleitr.h">
       <Filter>collation</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\coll.h">
-      <Filter>collation</Filter>
-    </CustomBuild>
-    <CustomBuild Include="unicode\colldata.h">
       <Filter>collation</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\search.h">
@@ -837,6 +897,9 @@
     <CustomBuild Include="unicode\fpositer.h">
       <Filter>formatting</Filter>
     </CustomBuild>
+    <CustomBuild Include="unicode\gender.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
     <CustomBuild Include="unicode\gregocal.h">
       <Filter>formatting</Filter>
     </CustomBuild>
@@ -909,7 +972,16 @@
     <CustomBuild Include="unicode\udat.h">
       <Filter>formatting</Filter>
     </CustomBuild>
+    <CustomBuild Include="unicode\udateintervalformat.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
     <CustomBuild Include="unicode\udatpg.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\udisplaycontext.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\ugender.h">
       <Filter>formatting</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\uldnames.h">
@@ -922,6 +994,12 @@
       <Filter>formatting</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\unum.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\unumsys.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\upluralrules.h">
       <Filter>formatting</Filter>
     </CustomBuild>
     <CustomBuild Include="unicode\utmscale.h">
@@ -950,6 +1028,27 @@
     </CustomBuild>
     <CustomBuild Include="unicode\uspoof.h">
       <Filter>spoof</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\alphaindex.h">
+      <Filter>collation</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\tzfmt.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\tznames.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\compactdecimalformat.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\currpinf.h">
+      <Filter>formatting</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\region.h">
+      <Filter>misc</Filter>
+    </CustomBuild>
+    <CustomBuild Include="unicode\uregion.h">
+      <Filter>misc</Filter>
     </CustomBuild>
   </ItemGroup>
 </Project>

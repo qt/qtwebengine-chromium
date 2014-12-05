@@ -27,7 +27,7 @@ namespace net {
 class CanonicalCookie;
 }
 
-namespace quota {
+namespace storage {
 class SpecialStoragePolicy;
 }
 
@@ -50,21 +50,21 @@ class CONTENT_EXPORT SQLitePersistentCookieStore
       const scoped_refptr<base::SequencedTaskRunner>& client_task_runner,
       const scoped_refptr<base::SequencedTaskRunner>& background_task_runner,
       bool restore_old_session_cookies,
-      quota::SpecialStoragePolicy* special_storage_policy,
+      storage::SpecialStoragePolicy* special_storage_policy,
       CookieCryptoDelegate* crypto_delegate);
 
   // net::CookieMonster::PersistentCookieStore:
-  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE;
-  virtual void LoadCookiesForKey(const std::string& key,
-      const LoadedCallback& callback) OVERRIDE;
-  virtual void AddCookie(const net::CanonicalCookie& cc) OVERRIDE;
-  virtual void UpdateCookieAccessTime(const net::CanonicalCookie& cc) OVERRIDE;
-  virtual void DeleteCookie(const net::CanonicalCookie& cc) OVERRIDE;
-  virtual void SetForceKeepSessionState() OVERRIDE;
-  virtual void Flush(const base::Closure& callback) OVERRIDE;
+  void Load(const LoadedCallback& loaded_callback) override;
+  void LoadCookiesForKey(const std::string& key,
+                         const LoadedCallback& callback) override;
+  void AddCookie(const net::CanonicalCookie& cc) override;
+  void UpdateCookieAccessTime(const net::CanonicalCookie& cc) override;
+  void DeleteCookie(const net::CanonicalCookie& cc) override;
+  void SetForceKeepSessionState() override;
+  void Flush(const base::Closure& callback) override;
 
  protected:
-   virtual ~SQLitePersistentCookieStore();
+  ~SQLitePersistentCookieStore() override;
 
  private:
   class Backend;

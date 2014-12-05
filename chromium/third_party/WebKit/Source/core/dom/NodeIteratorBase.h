@@ -28,16 +28,15 @@
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Node;
 class NodeFilter;
 
 class NodeIteratorBase : public WillBeGarbageCollectedMixin {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(NodeIteratorBase);
 public:
-    virtual ~NodeIteratorBase() { }
-
     Node* root() const { return m_root.get(); }
     unsigned whatToShow() const { return m_whatToShow; }
     NodeFilter* filter() const { return m_filter.get(); }
@@ -58,6 +57,6 @@ private:
     RefPtrWillBeMember<NodeFilter> m_filter;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeIteratorBase_h

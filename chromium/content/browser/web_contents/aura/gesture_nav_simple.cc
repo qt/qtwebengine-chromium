@@ -12,7 +12,6 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/overscroll_configuration.h"
 #include "content/public/common/content_client.h"
-#include "grit/ui_resources.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -21,6 +20,7 @@
 #include "ui/gfx/animation/tween.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
+#include "ui/resources/grit/ui_resources.h"
 
 namespace content {
 
@@ -56,7 +56,7 @@ class DeleteAfterAnimation : public ui::ImplicitAnimationObserver {
   virtual ~DeleteAfterAnimation() {}
 
   // ui::ImplicitAnimationObserver:
-  virtual void OnImplicitAnimationsCompleted() OVERRIDE {
+  virtual void OnImplicitAnimationsCompleted() override {
     // Deleting an observer when a ScopedLayerAnimationSettings is iterating
     // over them can cause a crash (which can happen during tests). So instead,
     // schedule this observer to be deleted soon.
@@ -78,13 +78,13 @@ class ArrowLayerDelegate : public ui::LayerDelegate {
     CHECK(!image_.IsEmpty());
   }
 
-  virtual ~ArrowLayerDelegate() {}
+  ~ArrowLayerDelegate() override {}
 
   bool left() const { return left_arrow_; }
 
  private:
   // ui::LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaintLayer(gfx::Canvas* canvas) override {
     SkPaint paint;
     paint.setColor(SkColorSetARGB(0xa0, 0, 0, 0));
     paint.setStyle(SkPaint::kFill_Style);
@@ -99,9 +99,11 @@ class ArrowLayerDelegate : public ui::LayerDelegate {
                          (kArrowHeight - image_.Height()) / 2);
   }
 
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {}
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
 
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE {
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
+
+  base::Closure PrepareForLayerBoundsChange() override {
     return base::Closure();
   }
 
@@ -145,9 +147,9 @@ void GestureNavSimple::CompleteGestureAnimation() {
   ApplyEffectsAndDestroy(arrow_->transform(), 0.f);
 }
 
-void GestureNavSimple::ApplyEffectsForDelta(float delta_x) {
+bool GestureNavSimple::ApplyEffectsForDelta(float delta_x) {
   if (!arrow_)
-    return;
+    return false;
   CHECK_GT(completion_threshold_, 0.f);
   CHECK_GE(delta_x, 0.f);
   double complete = std::min(1.f, delta_x / completion_threshold_);
@@ -157,14 +159,15 @@ void GestureNavSimple::ApplyEffectsForDelta(float delta_x) {
                       0.f);
   arrow_->SetTransform(transform);
   arrow_->SetOpacity(gfx::Tween::FloatValueBetween(complete, kMinOpacity, 1.f));
+  return true;
 }
 
 gfx::Rect GestureNavSimple::GetVisibleBounds() const {
   return web_contents_->GetNativeView()->bounds();
 }
 
-void GestureNavSimple::OnOverscrollUpdate(float delta_x, float delta_y) {
-  ApplyEffectsForDelta(std::abs(delta_x) + 50.f);
+bool GestureNavSimple::OnOverscrollUpdate(float delta_x, float delta_y) {
+  return ApplyEffectsForDelta(std::abs(delta_x) + 50.f);
 }
 
 void GestureNavSimple::OnOverscrollComplete(OverscrollMode overscroll_mode) {

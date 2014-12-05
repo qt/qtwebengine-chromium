@@ -30,7 +30,7 @@
 #include "core/editing/TextGranularity.h"
 #include "core/editing/VisiblePosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class LayoutPoint;
 class Position;
@@ -96,14 +96,18 @@ public:
     // We don't yet support multi-range selections, so we only ever have one range to return.
     PassRefPtrWillBeRawPtr<Range> firstRange() const;
 
-    // FIXME: Most callers probably don't want this function, but are using it
-    // for historical reasons.  toNormalizedRange contracts the range around
-    // text, and moves the caret upstream before returning the range.
+    bool intersectsNode(Node*) const;
+
+    // FIXME: Most callers probably don't want these functions, but
+    // are using them for historical reasons. toNormalizedRange and
+    // toNormalizedPositions contracts the range around text, and
+    // moves the caret upstream before returning the range/positions.
     PassRefPtrWillBeRawPtr<Range> toNormalizedRange() const;
+    bool toNormalizedPositions(Position& start, Position& end) const;
 
     Element* rootEditableElement() const;
     bool isContentEditable() const;
-    bool rendererIsEditable() const;
+    bool hasEditableStyle() const;
     bool isContentRichlyEditable() const;
     // Returns a shadow tree node for legacy shadow trees, a child of the
     // ShadowRoot node for new shadow trees, or 0 for non-shadow trees.
@@ -183,12 +187,12 @@ inline bool operator!=(const VisibleSelection& a, const VisibleSelection& b)
     return !(a == b);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::VisibleSelection&);
-void showTree(const WebCore::VisibleSelection*);
+void showTree(const blink::VisibleSelection&);
+void showTree(const blink::VisibleSelection*);
 #endif
 
 #endif // VisibleSelection_h

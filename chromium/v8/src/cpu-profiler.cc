@@ -20,17 +20,16 @@ namespace internal {
 static const int kProfilerStackSize = 64 * KB;
 
 
-ProfilerEventsProcessor::ProfilerEventsProcessor(
-    ProfileGenerator* generator,
-    Sampler* sampler,
-    TimeDelta period)
+ProfilerEventsProcessor::ProfilerEventsProcessor(ProfileGenerator* generator,
+                                                 Sampler* sampler,
+                                                 base::TimeDelta period)
     : Thread(Thread::Options("v8:ProfEvntProc", kProfilerStackSize)),
       generator_(generator),
       sampler_(sampler),
-      running_(true),
+      running_(1),
       period_(period),
-      last_code_event_id_(0), last_processed_code_event_id_(0) {
-}
+      last_code_event_id_(0),
+      last_processed_code_event_id_(0) {}
 
 
 void ProfilerEventsProcessor::Enqueue(const CodeEventsContainer& event) {
@@ -49,14 +48,13 @@ void ProfilerEventsProcessor::AddCurrentStack(Isolate* isolate) {
     regs.fp = frame->fp();
     regs.pc = frame->pc();
   }
-  record.sample.Init(isolate, regs);
+  record.sample.Init(isolate, regs, TickSample::kSkipCEntryFrame);
   ticks_from_vm_buffer_.Enqueue(record);
 }
 
 
 void ProfilerEventsProcessor::StopSynchronously() {
-  if (!running_) return;
-  running_ = false;
+  if (!base::NoBarrier_AtomicExchange(&running_, 0)) return;
   Join();
 }
 
@@ -107,8 +105,8 @@ ProfilerEventsProcessor::SampleProcessingResult
 
 
 void ProfilerEventsProcessor::Run() {
-  while (running_) {
-    ElapsedTimer timer;
+  while (!!base::NoBarrier_Load(&running_)) {
+    base::ElapsedTimer timer;
     timer.Start();
     // Keep processing existing events until we need to do next sample.
     do {
@@ -222,21 +220,21 @@ void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag,
 }
 
 
-void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag,
-                                  Code* code,
+void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag, Code* code,
                                   SharedFunctionInfo* shared,
-                                  CompilationInfo* info,
-                                  Name* name) {
+                                  CompilationInfo* info, Name* script_name) {
   if (FilterOutCodeCreateEvent(tag)) return;
   CodeEventsContainer evt_rec(CodeEventRecord::CODE_CREATION);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
   rec->start = code->address();
-  rec->entry = profiles_->NewCodeEntry(tag, profiles_->GetFunctionName(name));
+  rec->entry = profiles_->NewCodeEntry(
+      tag, profiles_->GetFunctionName(shared->DebugName()),
+      CodeEntry::kEmptyNamePrefix, profiles_->GetName(script_name));
   if (info) {
     rec->entry->set_no_frame_ranges(info->ReleaseNoFrameRanges());
   }
   if (shared->script()->IsScript()) {
-    ASSERT(Script::cast(shared->script()));
+    DCHECK(Script::cast(shared->script()));
     Script* script = Script::cast(shared->script());
     rec->entry->set_script_id(script->id()->value());
     rec->entry->set_bailout_reason(
@@ -248,26 +246,22 @@ void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag,
 }
 
 
-void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag,
-                                  Code* code,
+void CpuProfiler::CodeCreateEvent(Logger::LogEventsAndTags tag, Code* code,
                                   SharedFunctionInfo* shared,
-                                  CompilationInfo* info,
-                                  Name* source, int line, int column) {
+                                  CompilationInfo* info, Name* script_name,
+                                  int line, int column) {
   if (FilterOutCodeCreateEvent(tag)) return;
   CodeEventsContainer evt_rec(CodeEventRecord::CODE_CREATION);
   CodeCreateEventRecord* rec = &evt_rec.CodeCreateEventRecord_;
   rec->start = code->address();
   rec->entry = profiles_->NewCodeEntry(
-      tag,
-      profiles_->GetFunctionName(shared->DebugName()),
-      CodeEntry::kEmptyNamePrefix,
-      profiles_->GetName(source),
-      line,
+      tag, profiles_->GetFunctionName(shared->DebugName()),
+      CodeEntry::kEmptyNamePrefix, profiles_->GetName(script_name), line,
       column);
   if (info) {
     rec->entry->set_no_frame_ranges(info->ReleaseNoFrameRanges());
   }
-  ASSERT(Script::cast(shared->script()));
+  DCHECK(Script::cast(shared->script()));
   Script* script = Script::cast(shared->script());
   rec->entry->set_script_id(script->id()->value());
   rec->size = code->ExecutableSize();
@@ -373,7 +367,7 @@ void CpuProfiler::SetterCallbackEvent(Name* name, Address entry_point) {
 
 CpuProfiler::CpuProfiler(Isolate* isolate)
     : isolate_(isolate),
-      sampling_interval_(TimeDelta::FromMicroseconds(
+      sampling_interval_(base::TimeDelta::FromMicroseconds(
           FLAG_cpu_profiler_sampling_interval)),
       profiles_(new CpuProfilesCollection(isolate->heap())),
       generator_(NULL),
@@ -387,7 +381,7 @@ CpuProfiler::CpuProfiler(Isolate* isolate,
                          ProfileGenerator* test_generator,
                          ProfilerEventsProcessor* test_processor)
     : isolate_(isolate),
-      sampling_interval_(TimeDelta::FromMicroseconds(
+      sampling_interval_(base::TimeDelta::FromMicroseconds(
           FLAG_cpu_profiler_sampling_interval)),
       profiles_(test_profiles),
       generator_(test_generator),
@@ -397,13 +391,13 @@ CpuProfiler::CpuProfiler(Isolate* isolate,
 
 
 CpuProfiler::~CpuProfiler() {
-  ASSERT(!is_profiling_);
+  DCHECK(!is_profiling_);
   delete profiles_;
 }
 
 
-void CpuProfiler::set_sampling_interval(TimeDelta value) {
-  ASSERT(!is_profiling_);
+void CpuProfiler::set_sampling_interval(base::TimeDelta value) {
+  DCHECK(!is_profiling_);
   sampling_interval_ = value;
 }
 
@@ -441,7 +435,7 @@ void CpuProfiler::StartProcessorIfNotStarted() {
       generator_, sampler, sampling_interval_);
   is_profiling_ = true;
   // Enumerate stuff we already have in the heap.
-  ASSERT(isolate_->heap()->HasBeenSetUp());
+  DCHECK(isolate_->heap()->HasBeenSetUp());
   if (!FLAG_prof_browser_mode) {
     logger->LogCodeObjects();
   }
@@ -497,7 +491,7 @@ void CpuProfiler::StopProcessor() {
 
 void CpuProfiler::LogBuiltins() {
   Builtins* builtins = isolate_->builtins();
-  ASSERT(builtins->is_initialized());
+  DCHECK(builtins->is_initialized());
   for (int i = 0; i < Builtins::builtin_count; i++) {
     CodeEventsContainer evt_rec(CodeEventRecord::REPORT_BUILTIN);
     ReportBuiltinEventRecord* rec = &evt_rec.ReportBuiltinEventRecord_;

@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "content/browser/renderer_host/pepper/pepper_file_io_host.h"
 #include "content/browser/renderer_host/pepper/quota_reservation.h"
+#include "content/common/pepper_file_util.h"
 #include "content/public/browser/browser_ppapi_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
@@ -21,11 +22,11 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/isolated_context.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/common/fileapi/file_system_util.h"
-#include "webkit/common/quota/quota_types.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/isolated_context.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/common/fileapi/file_system_util.h"
+#include "storage/common/quota/quota_types.h"
 
 namespace content {
 
@@ -34,7 +35,7 @@ namespace {
 // This is the minimum amount of quota we reserve per file system.
 const int64_t kMinimumQuotaReservationSize = 1024 * 1024;  // 1 MB
 
-scoped_refptr<fileapi::FileSystemContext> GetFileSystemContextFromRenderId(
+scoped_refptr<storage::FileSystemContext> GetFileSystemContextFromRenderId(
     int render_process_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
@@ -117,7 +118,7 @@ bool PepperFileSystemBrowserHost::IsFileSystemHost() { return true; }
 
 void PepperFileSystemBrowserHost::OpenQuotaFile(
     PepperFileIOHost* file_io_host,
-    const fileapi::FileSystemURL& url,
+    const storage::FileSystemURL& url,
     const OpenQuotaFileCallback& callback) {
   int32_t id = file_io_host->pp_resource();
   std::pair<FileMap::iterator, bool> insert_result =
@@ -162,9 +163,9 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
     return PP_ERROR_INPROGRESS;
   called_open_ = true;
 
-  fileapi::FileSystemType file_system_type =
-      ppapi::PepperFileSystemTypeToFileSystemType(type_);
-  if (file_system_type == fileapi::kFileSystemTypeUnknown)
+  storage::FileSystemType file_system_type =
+      PepperFileSystemTypeToFileSystemType(type_);
+  if (file_system_type == storage::kFileSystemTypeUnknown)
     return PP_ERROR_FAILED;
 
   int render_process_id = 0;
@@ -187,7 +188,7 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgOpen(
 
 void PepperFileSystemBrowserHost::OpenExistingFileSystem(
     const base::Closure& callback,
-    scoped_refptr<fileapi::FileSystemContext> file_system_context) {
+    scoped_refptr<storage::FileSystemContext> file_system_context) {
   if (file_system_context.get()) {
     opened_ = true;
   } else {
@@ -206,8 +207,8 @@ void PepperFileSystemBrowserHost::OpenExistingFileSystem(
 
 void PepperFileSystemBrowserHost::OpenFileSystem(
     ppapi::host::ReplyMessageContext reply_context,
-    fileapi::FileSystemType file_system_type,
-    scoped_refptr<fileapi::FileSystemContext> file_system_context) {
+    storage::FileSystemType file_system_type,
+    scoped_refptr<storage::FileSystemContext> file_system_context) {
   if (!file_system_context.get()) {
     OpenFileSystemComplete(
         reply_context, GURL(), std::string(), base::File::FILE_ERROR_FAILED);
@@ -221,7 +222,7 @@ void PepperFileSystemBrowserHost::OpenFileSystem(
   file_system_context_->OpenFileSystem(
       origin,
       file_system_type,
-      fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+      storage::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
       base::Bind(&PepperFileSystemBrowserHost::OpenFileSystemComplete,
                  weak_factory_.GetWeakPtr(),
                  reply_context));
@@ -253,14 +254,14 @@ void PepperFileSystemBrowserHost::OpenIsolatedFileSystem(
     ppapi::host::ReplyMessageContext reply_context,
     const std::string& fsid,
     PP_IsolatedFileSystemType_Private type,
-    scoped_refptr<fileapi::FileSystemContext> file_system_context) {
+    scoped_refptr<storage::FileSystemContext> file_system_context) {
   if (!file_system_context.get()) {
     SendReplyForIsolatedFileSystem(reply_context, fsid, PP_ERROR_FAILED);
     return;
   }
   SetFileSystemContext(file_system_context);
 
-  root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
+  root_url_ = GURL(storage::GetIsolatedFileSystemRootURIString(
       browser_ppapi_host_->GetDocumentURLForInstance(pp_instance()).GetOrigin(),
       fsid,
       ppapi::IsolatedFileSystemTypeToRootName(type)));
@@ -287,7 +288,7 @@ void PepperFileSystemBrowserHost::OpenIsolatedFileSystem(
 void PepperFileSystemBrowserHost::OpenPluginPrivateFileSystem(
     ppapi::host::ReplyMessageContext reply_context,
     const std::string& fsid,
-    scoped_refptr<fileapi::FileSystemContext> file_system_context) {
+    scoped_refptr<storage::FileSystemContext> file_system_context) {
   GURL origin =
       browser_ppapi_host_->GetDocumentURLForInstance(pp_instance()).GetOrigin();
   if (!origin.is_valid()) {
@@ -303,10 +304,10 @@ void PepperFileSystemBrowserHost::OpenPluginPrivateFileSystem(
 
   file_system_context->OpenPluginPrivateFileSystem(
       origin,
-      fileapi::kFileSystemTypePluginPrivate,
+      storage::kFileSystemTypePluginPrivate,
       fsid,
       plugin_id,
-      fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+      storage::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
       base::Bind(
           &PepperFileSystemBrowserHost::OpenPluginPrivateFileSystemComplete,
           weak_factory_.GetWeakPtr(),
@@ -334,18 +335,18 @@ int32_t PepperFileSystemBrowserHost::OnHostMsgInitIsolatedFileSystem(
   called_open_ = true;
 
   // Do a sanity check.
-  if (!fileapi::ValidateIsolatedFileSystemId(fsid))
+  if (!storage::ValidateIsolatedFileSystemId(fsid))
     return PP_ERROR_BADARGUMENT;
 
   int render_process_id = 0;
   int unused;
   if (!browser_ppapi_host_->GetRenderFrameIDsForInstance(
           pp_instance(), &render_process_id, &unused)) {
-    fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
+    storage::IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
     return PP_ERROR_FAILED;
   }
 
-  root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
+  root_url_ = GURL(storage::GetIsolatedFileSystemRootURIString(
       browser_ppapi_host_->GetDocumentURLForInstance(pp_instance()).GetOrigin(),
       fsid,
       ppapi::IsolatedFileSystemTypeToRootName(type)));
@@ -400,14 +401,14 @@ void PepperFileSystemBrowserHost::SendReplyForIsolatedFileSystem(
     const std::string& fsid,
     int32_t error) {
   if (error != PP_OK)
-    fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
+    storage::IsolatedContext::GetInstance()->RevokeFileSystem(fsid);
   reply_context.params.set_result(error);
   host()->SendReply(reply_context,
                     PpapiPluginMsg_FileSystem_InitIsolatedFileSystemReply());
 }
 
 void PepperFileSystemBrowserHost::SetFileSystemContext(
-    scoped_refptr<fileapi::FileSystemContext> file_system_context) {
+    scoped_refptr<storage::FileSystemContext> file_system_context) {
   file_system_context_ = file_system_context;
   if (type_ != PP_FILESYSTEMTYPE_EXTERNAL || root_url_.is_valid()) {
     file_system_operation_runner_ =
@@ -421,15 +422,15 @@ bool PepperFileSystemBrowserHost::ShouldCreateQuotaReservation() const {
     return false;
 
   // For file system types with quota, some origins have unlimited storage.
-  quota::QuotaManagerProxy* quota_manager_proxy =
+  storage::QuotaManagerProxy* quota_manager_proxy =
       file_system_context_->quota_manager_proxy();
   CHECK(quota_manager_proxy);
   CHECK(quota_manager_proxy->quota_manager());
-  fileapi::FileSystemType file_system_type =
-      ppapi::PepperFileSystemTypeToFileSystemType(type_);
+  storage::FileSystemType file_system_type =
+      PepperFileSystemTypeToFileSystemType(type_);
   return !quota_manager_proxy->quota_manager()->IsStorageUnlimited(
       root_url_.GetOrigin(),
-      fileapi::FileSystemTypeToQuotaStorageType(file_system_type));
+      storage::FileSystemTypeToQuotaStorageType(file_system_type));
 }
 
 void PepperFileSystemBrowserHost::CreateQuotaReservation(
@@ -441,7 +442,7 @@ void PepperFileSystemBrowserHost::CreateQuotaReservation(
       base::Bind(&QuotaReservation::Create,
                  file_system_context_,
                  root_url_.GetOrigin(),
-                 ppapi::PepperFileSystemTypeToFileSystemType(type_)),
+                 PepperFileSystemTypeToFileSystemType(type_)),
       base::Bind(&PepperFileSystemBrowserHost::GotQuotaReservation,
                  weak_factory_.GetWeakPtr(),
                  callback));

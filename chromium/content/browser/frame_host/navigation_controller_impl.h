@@ -31,68 +31,63 @@ class CONTENT_EXPORT NavigationControllerImpl
   NavigationControllerImpl(
       NavigationControllerDelegate* delegate,
       BrowserContext* browser_context);
-  virtual ~NavigationControllerImpl();
+  ~NavigationControllerImpl() override;
 
   // NavigationController implementation:
-  virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual BrowserContext* GetBrowserContext() const OVERRIDE;
-  virtual void SetBrowserContext(
-      BrowserContext* browser_context) OVERRIDE;
-  virtual void Restore(
-      int selected_navigation,
-      RestoreType type,
-      std::vector<NavigationEntry*>* entries) OVERRIDE;
-  virtual NavigationEntry* GetActiveEntry() const OVERRIDE;
-  virtual NavigationEntry* GetVisibleEntry() const OVERRIDE;
-  virtual int GetCurrentEntryIndex() const OVERRIDE;
-  virtual NavigationEntry* GetLastCommittedEntry() const OVERRIDE;
-  virtual int GetLastCommittedEntryIndex() const OVERRIDE;
-  virtual bool CanViewSource() const OVERRIDE;
-  virtual int GetEntryCount() const OVERRIDE;
-  virtual NavigationEntry* GetEntryAtIndex(int index) const OVERRIDE;
-  virtual NavigationEntry* GetEntryAtOffset(int offset) const OVERRIDE;
-  virtual void DiscardNonCommittedEntries() OVERRIDE;
-  virtual NavigationEntry* GetPendingEntry() const OVERRIDE;
-  virtual int GetPendingEntryIndex() const OVERRIDE;
-  virtual NavigationEntry* GetTransientEntry() const OVERRIDE;
-  virtual void SetTransientEntry(NavigationEntry* entry) OVERRIDE;
-  virtual void LoadURL(const GURL& url,
-                       const Referrer& referrer,
-                       PageTransition type,
-                       const std::string& extra_headers) OVERRIDE;
-  virtual void LoadURLWithParams(const LoadURLParams& params) OVERRIDE;
-  virtual void LoadIfNecessary() OVERRIDE;
-  virtual bool CanGoBack() const OVERRIDE;
-  virtual bool CanGoForward() const OVERRIDE;
-  virtual bool CanGoToOffset(int offset) const OVERRIDE;
-  virtual void GoBack() OVERRIDE;
-  virtual void GoForward() OVERRIDE;
-  virtual void GoToIndex(int index) OVERRIDE;
-  virtual void GoToOffset(int offset) OVERRIDE;
-  virtual bool RemoveEntryAtIndex(int index) OVERRIDE;
-  virtual const SessionStorageNamespaceMap&
-      GetSessionStorageNamespaceMap() const OVERRIDE;
-  virtual SessionStorageNamespace*
-      GetDefaultSessionStorageNamespace() OVERRIDE;
-  virtual void SetMaxRestoredPageID(int32 max_id) OVERRIDE;
-  virtual int32 GetMaxRestoredPageID() const OVERRIDE;
-  virtual bool NeedsReload() const OVERRIDE;
-  virtual void SetNeedsReload() OVERRIDE;
-  virtual void CancelPendingReload() OVERRIDE;
-  virtual void ContinuePendingReload() OVERRIDE;
-  virtual bool IsInitialNavigation() const OVERRIDE;
-  virtual void Reload(bool check_for_repost) OVERRIDE;
-  virtual void ReloadIgnoringCache(bool check_for_repost) OVERRIDE;
-  virtual void ReloadOriginalRequestURL(bool check_for_repost) OVERRIDE;
-  virtual void NotifyEntryChanged(const NavigationEntry* entry,
-                                 int index) OVERRIDE;
-  virtual void CopyStateFrom(
-      const NavigationController& source) OVERRIDE;
-  virtual void CopyStateFromAndPrune(NavigationController* source,
-                                     bool replace_entry) OVERRIDE;
-  virtual bool CanPruneAllButLastCommitted() OVERRIDE;
-  virtual void PruneAllButLastCommitted() OVERRIDE;
-  virtual void ClearAllScreenshots() OVERRIDE;
+  WebContents* GetWebContents() const override;
+  BrowserContext* GetBrowserContext() const override;
+  void SetBrowserContext(BrowserContext* browser_context) override;
+  void Restore(int selected_navigation,
+               RestoreType type,
+               std::vector<NavigationEntry*>* entries) override;
+  NavigationEntry* GetActiveEntry() const override;
+  NavigationEntry* GetVisibleEntry() const override;
+  int GetCurrentEntryIndex() const override;
+  NavigationEntry* GetLastCommittedEntry() const override;
+  int GetLastCommittedEntryIndex() const override;
+  bool CanViewSource() const override;
+  int GetEntryCount() const override;
+  NavigationEntry* GetEntryAtIndex(int index) const override;
+  NavigationEntry* GetEntryAtOffset(int offset) const override;
+  void DiscardNonCommittedEntries() override;
+  NavigationEntry* GetPendingEntry() const override;
+  int GetPendingEntryIndex() const override;
+  NavigationEntry* GetTransientEntry() const override;
+  void SetTransientEntry(NavigationEntry* entry) override;
+  void LoadURL(const GURL& url,
+               const Referrer& referrer,
+               ui::PageTransition type,
+               const std::string& extra_headers) override;
+  void LoadURLWithParams(const LoadURLParams& params) override;
+  void LoadIfNecessary() override;
+  bool CanGoBack() const override;
+  bool CanGoForward() const override;
+  bool CanGoToOffset(int offset) const override;
+  void GoBack() override;
+  void GoForward() override;
+  void GoToIndex(int index) override;
+  void GoToOffset(int offset) override;
+  bool RemoveEntryAtIndex(int index) override;
+  const SessionStorageNamespaceMap& GetSessionStorageNamespaceMap()
+      const override;
+  SessionStorageNamespace* GetDefaultSessionStorageNamespace() override;
+  void SetMaxRestoredPageID(int32 max_id) override;
+  int32 GetMaxRestoredPageID() const override;
+  bool NeedsReload() const override;
+  void SetNeedsReload() override;
+  void CancelPendingReload() override;
+  void ContinuePendingReload() override;
+  bool IsInitialNavigation() const override;
+  void Reload(bool check_for_repost) override;
+  void ReloadIgnoringCache(bool check_for_repost) override;
+  void ReloadOriginalRequestURL(bool check_for_repost) override;
+  void NotifyEntryChanged(const NavigationEntry* entry, int index) override;
+  void CopyStateFrom(const NavigationController& source) override;
+  void CopyStateFromAndPrune(NavigationController* source,
+                             bool replace_entry) override;
+  bool CanPruneAllButLastCommitted() override;
+  void PruneAllButLastCommitted() override;
+  void ClearAllScreenshots() override;
 
   // Whether this is the initial navigation in an unmodified new tab.  In this
   // case, we know there is no content displayed in the page.
@@ -167,7 +162,7 @@ class CONTENT_EXPORT NavigationControllerImpl
   bool IsURLInPageNavigation(
       const GURL& url,
       bool renderer_says_in_page,
-      NavigationType navigation_type) const;
+      RenderFrameHost* rfh) const;
 
   // Sets the SessionStorageNamespace for the given |partition_id|. This is
   // used during initialization of a new NavigationController to allow

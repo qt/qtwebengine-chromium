@@ -5,11 +5,12 @@
 #include "config.h"
 #include "core/animation/AnimationNodeTiming.h"
 
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationNode.h"
 #include "platform/animation/TimingFunction.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<AnimationNodeTiming> AnimationNodeTiming::create(AnimationNode* parent)
 {
@@ -17,7 +18,7 @@ PassRefPtrWillBeRawPtr<AnimationNodeTiming> AnimationNodeTiming::create(Animatio
 }
 
 AnimationNodeTiming::AnimationNodeTiming(AnimationNode* parent)
-: m_parent(parent)
+    : m_parent(parent)
 {
 }
 
@@ -64,18 +65,17 @@ double AnimationNodeTiming::iterations()
 // and bindings/tests/results/V8TestInterface.cpp.
 // FIXME: It might be possible to have 'duration' defined as an attribute in the idl.
 // If possible, fix will be in a follow-up patch.
-void AnimationNodeTiming::getDuration(String propertyName, bool& element0Enabled, double& element0, bool& element1Enabled, String& element1)
+// http://crbug.com/240176
+void AnimationNodeTiming::getDuration(String propertyName, DoubleOrString& returnValue)
 {
     if (propertyName != "duration")
         return;
 
     if (std::isnan(m_parent->specifiedTiming().iterationDuration)) {
-        element1Enabled = true;
-        element1 = "auto";
+        returnValue.setString("auto");
         return;
     }
-    element0Enabled = true;
-    element0 = m_parent->specifiedTiming().iterationDuration * 1000;
+    returnValue.setDouble(m_parent->specifiedTiming().iterationDuration * 1000);
     return;
 }
 
@@ -177,4 +177,4 @@ void AnimationNodeTiming::trace(Visitor* visitor)
     visitor->trace(m_parent);
 }
 
-} // namespace WebCore
+} // namespace blink

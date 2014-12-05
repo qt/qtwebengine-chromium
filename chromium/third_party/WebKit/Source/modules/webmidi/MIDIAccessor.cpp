@@ -37,7 +37,7 @@
 
 using blink::WebString;
 
-namespace WebCore {
+namespace blink {
 
 // Factory method
 PassOwnPtr<MIDIAccessor> MIDIAccessor::create(MIDIAccessorClient* client)
@@ -50,7 +50,7 @@ MIDIAccessor::MIDIAccessor(MIDIAccessorClient* client)
 {
     ASSERT(client);
 
-    m_accessor = adoptPtr(blink::Platform::current()->createMIDIAccessor(this));
+    m_accessor = adoptPtr(Platform::current()->createMIDIAccessor(this));
 
     ASSERT(m_accessor);
 }
@@ -65,14 +65,24 @@ void MIDIAccessor::sendMIDIData(unsigned portIndex, const unsigned char* data, s
     m_accessor->sendMIDIData(portIndex, data, length, timeStamp);
 }
 
-void MIDIAccessor::didAddInputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version)
+void MIDIAccessor::didAddInputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version, bool isActive)
 {
-    m_client->didAddInputPort(id, manufacturer, name, version);
+    m_client->didAddInputPort(id, manufacturer, name, version, isActive);
 }
 
-void MIDIAccessor::didAddOutputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version)
+void MIDIAccessor::didAddOutputPort(const WebString& id, const WebString& manufacturer, const WebString& name, const WebString& version, bool isActive)
 {
-    m_client->didAddOutputPort(id, manufacturer, name, version);
+    m_client->didAddOutputPort(id, manufacturer, name, version, isActive);
+}
+
+void MIDIAccessor::didSetInputPortState(unsigned portIndex, bool isActive)
+{
+    m_client->didSetInputPortState(portIndex, isActive);
+}
+
+void MIDIAccessor::didSetOutputPortState(unsigned portIndex, bool isActive)
+{
+    m_client->didSetOutputPortState(portIndex, isActive);
 }
 
 void MIDIAccessor::didStartSession(bool success, const WebString& error, const WebString& message)
@@ -85,4 +95,4 @@ void MIDIAccessor::didReceiveMIDIData(unsigned portIndex, const unsigned char* d
     m_client->didReceiveMIDIData(portIndex, data, length, timeStamp);
 }
 
-} // namespace WebCore
+} // namespace blink

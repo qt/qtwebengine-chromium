@@ -30,16 +30,16 @@
 #include "core/css/resolver/ElementResolveContext.h"
 #include "core/css/resolver/ElementStyleResources.h"
 #include "core/css/resolver/FontBuilder.h"
+#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/rendering/style/CachedUAStyle.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSAnimationUpdate;
 class FontDescription;
-class StyleRule;
 
 class StyleResolverState {
     STACK_ALLOCATED();
@@ -50,7 +50,7 @@ public:
 
     // In FontFaceSet and CanvasRenderingContext2D, we don't have an element to grab the document from.
     // This is why we have to store the document separately.
-    Document& document() const { return m_document; }
+    Document& document() const { return *m_document; }
     // These are all just pass-through methods to ElementResolveContext.
     Element* element() const { return m_elementContext.element(); }
     const ContainerNode* parentNode() const { return m_elementContext.parentNode(); }
@@ -60,7 +60,12 @@ public:
 
     const ElementResolveContext& elementContext() const { return m_elementContext; }
 
-    void setStyle(PassRefPtr<RenderStyle> style) { m_style = style; m_cssToLengthConversionData.setStyle(m_style.get()); }
+    void setStyle(PassRefPtr<RenderStyle> style)
+    {
+        m_style = style;
+        m_cssToLengthConversionData.setStyle(m_style.get());
+        m_fontBuilder.setStyle(m_style.get());
+    }
     const RenderStyle* style() const { return m_style.get(); }
     RenderStyle* style() { return m_style.get(); }
     PassRefPtr<RenderStyle> takeStyle() { return m_style.release(); }
@@ -75,9 +80,6 @@ public:
     const RenderStyle* parentStyle() const { return m_parentStyle.get(); }
     RenderStyle* parentStyle() { return m_parentStyle.get(); }
 
-    void setCurrentRule(StyleRule* currentRule) { m_currentRule = currentRule; }
-    const StyleRule* currentRule() const { return m_currentRule; }
-
     // FIXME: These are effectively side-channel "out parameters" for the various
     // map functions. When we map from CSS to style objects we use this state object
     // to track various meta-data about that mapping (e.g. if it's cache-able).
@@ -90,9 +92,6 @@ public:
 
     // Holds all attribute names found while applying "content" properties that contain an "attr()" value.
     Vector<AtomicString>& contentAttrValues() { return m_contentAttrValues; }
-
-    void setLineHeightValue(CSSValue* value) { m_lineHeightValue = value; }
-    CSSValue* lineHeightValue() { return m_lineHeightValue; }
 
     void cacheUserAgentBorderAndBackground()
     {
@@ -135,7 +134,7 @@ public:
 
 private:
     ElementResolveContext m_elementContext;
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
 
     // m_style is the primary output for each element's style resolve.
     RefPtr<RenderStyle> m_style;
@@ -151,8 +150,6 @@ private:
     bool m_applyPropertyToRegularStyle;
     bool m_applyPropertyToVisitedLinkStyle;
 
-    RawPtrWillBeMember<CSSValue> m_lineHeightValue;
-
     FontBuilder m_fontBuilder;
 
     OwnPtr<CachedUAStyle> m_cachedUAStyle;
@@ -162,10 +159,8 @@ private:
     // a back-pointer to this object.
     CSSToStyleMap m_styleMap;
     Vector<AtomicString> m_contentAttrValues;
-
-    RawPtrWillBeMember<StyleRule> m_currentRule;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StyleResolverState_h

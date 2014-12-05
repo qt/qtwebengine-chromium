@@ -52,13 +52,16 @@ MidiHost::MidiHost(int renderer_process_id, media::MidiManager* midi_manager)
     : BrowserMessageFilter(MidiMsgStart),
       renderer_process_id_(renderer_process_id),
       has_sys_ex_permission_(false),
+      is_session_requested_(false),
       midi_manager_(midi_manager),
       sent_bytes_in_flight_(0),
       bytes_sent_since_last_acknowledgement_(0) {
+  CHECK(midi_manager_);
 }
 
 MidiHost::~MidiHost() {
-  if (midi_manager_)
+  // Close an open session, or abort opening a session.
+  if (is_session_requested_)
     midi_manager_->EndSession(this);
 }
 
@@ -72,23 +75,21 @@ bool MidiHost::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(MidiHost, message)
     IPC_MESSAGE_HANDLER(MidiHostMsg_StartSession, OnStartSession)
     IPC_MESSAGE_HANDLER(MidiHostMsg_SendData, OnSendData)
+    IPC_MESSAGE_HANDLER(MidiHostMsg_EndSession, OnEndSession)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
   return handled;
 }
 
-void MidiHost::OnStartSession(int client_id) {
-  if (midi_manager_)
-    midi_manager_->StartSession(this, client_id);
+void MidiHost::OnStartSession() {
+  is_session_requested_ = true;
+  midi_manager_->StartSession(this);
 }
 
 void MidiHost::OnSendData(uint32 port,
                           const std::vector<uint8>& data,
                           double timestamp) {
-  if (!midi_manager_)
-    return;
-
   if (data.empty())
     return;
 
@@ -117,25 +118,31 @@ void MidiHost::OnSendData(uint32 port,
   midi_manager_->DispatchSendMidiData(this, port, data, timestamp);
 }
 
-void MidiHost::CompleteStartSession(int client_id, media::MidiResult result) {
-  MidiPortInfoList input_ports;
-  MidiPortInfoList output_ports;
+void MidiHost::OnEndSession() {
+  is_session_requested_ = false;
+  midi_manager_->EndSession(this);
+}
 
+void MidiHost::CompleteStartSession(media::MidiResult result) {
+  DCHECK(is_session_requested_);
   if (result == media::MIDI_OK) {
-    input_ports = midi_manager_->input_ports();
-    output_ports = midi_manager_->output_ports();
-    received_messages_queues_.clear();
-    received_messages_queues_.resize(input_ports.size());
     // ChildSecurityPolicy is set just before OnStartSession by
     // MidiDispatcherHost. So we can safely cache the policy.
     has_sys_ex_permission_ = ChildProcessSecurityPolicyImpl::GetInstance()->
         CanSendMidiSysExMessage(renderer_process_id_);
   }
+  Send(new MidiMsg_SessionStarted(result));
+}
 
-  Send(new MidiMsg_SessionStarted(client_id,
-                                  result,
-                                  input_ports,
-                                  output_ports));
+void MidiHost::AddInputPort(const media::MidiPortInfo& info) {
+  base::AutoLock auto_lock(messages_queues_lock_);
+  // MidiMessageQueue is created later in ReceiveMidiData().
+  received_messages_queues_.push_back(nullptr);
+  Send(new MidiMsg_AddInputPort(info));
+}
+
+void MidiHost::AddOutputPort(const media::MidiPortInfo& info) {
+  Send(new MidiMsg_AddOutputPort(info));
 }
 
 void MidiHost::ReceiveMidiData(
@@ -145,11 +152,12 @@ void MidiHost::ReceiveMidiData(
     double timestamp) {
   TRACE_EVENT0("midi", "MidiHost::ReceiveMidiData");
 
+  base::AutoLock auto_lock(messages_queues_lock_);
   if (received_messages_queues_.size() <= port)
     return;
 
   // Lazy initialization
-  if (received_messages_queues_[port] == NULL)
+  if (received_messages_queues_[port] == nullptr)
     received_messages_queues_[port] = new media::MidiMessageQueue(true);
 
   received_messages_queues_[port]->Add(data, length);

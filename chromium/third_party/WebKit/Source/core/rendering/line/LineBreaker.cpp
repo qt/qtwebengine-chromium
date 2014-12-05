@@ -25,7 +25,7 @@
 
 #include "core/rendering/line/BreakingContextInlineHeaders.h"
 
-namespace WebCore {
+namespace blink {
 
 void LineBreaker::skipLeadingWhitespace(InlineBidiResolver& resolver, LineInfo& lineInfo,
     FloatingObject* lastFloatFromPreviousLine, LineWidth& width)
@@ -47,7 +47,7 @@ void LineBreaker::skipLeadingWhitespace(InlineBidiResolver& resolver, LineInfo& 
         }
         resolver.position().increment(&resolver);
     }
-    resolver.commitExplicitEmbedding();
+    resolver.commitExplicitEmbedding(resolver.runs());
 }
 
 void LineBreaker::reset()
@@ -57,7 +57,9 @@ void LineBreaker::reset()
     m_clear = CNONE;
 }
 
-InlineIterator LineBreaker::nextLineBreak(InlineBidiResolver& resolver, LineInfo& lineInfo, RenderTextInfo& renderTextInfo, FloatingObject* lastFloatFromPreviousLine, unsigned consecutiveHyphenatedLines, WordMeasurements& wordMeasurements)
+InlineIterator LineBreaker::nextLineBreak(InlineBidiResolver& resolver, LineInfo& lineInfo,
+    RenderTextInfo& renderTextInfo, FloatingObject* lastFloatFromPreviousLine,
+    WordMeasurements& wordMeasurements)
 {
     reset();
 

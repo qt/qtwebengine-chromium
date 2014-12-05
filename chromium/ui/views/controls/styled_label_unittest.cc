@@ -24,11 +24,11 @@ namespace views {
 class StyledLabelTest : public ViewsTestBase, public StyledLabelListener {
  public:
   StyledLabelTest() {}
-  virtual ~StyledLabelTest() {}
+  ~StyledLabelTest() override {}
 
   // StyledLabelListener implementation.
-  virtual void StyledLabelLinkClicked(const gfx::Range& range,
-                                      int event_flags) OVERRIDE {}
+  void StyledLabelLinkClicked(const gfx::Range& range,
+                              int event_flags) override {}
 
  protected:
   StyledLabel* styled() { return styled_.get(); }
@@ -403,6 +403,16 @@ TEST_F(StyledLabelTest, SetBaseFontList) {
   // Make sure we have the same sizing as a label.
   EXPECT_EQ(label.GetPreferredSize().height(), styled()->height());
   EXPECT_EQ(label.GetPreferredSize().width(), styled()->width());
+}
+
+TEST_F(StyledLabelTest, LineHeight) {
+  const std::string text("one");
+  InitStyledLabel(text);
+  int default_height = styled()->GetHeightForWidth(100);
+  const std::string newline_text("one\ntwo\nthree");
+  InitStyledLabel(newline_text);
+  styled()->SetLineHeight(18);
+  EXPECT_EQ(18 * 2 + default_height, styled()->GetHeightForWidth(100));
 }
 
 TEST_F(StyledLabelTest, HandleEmptyLayout) {

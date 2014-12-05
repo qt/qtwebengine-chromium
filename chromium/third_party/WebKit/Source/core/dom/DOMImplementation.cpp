@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/dom/DOMImplementation.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSStyleSheet.h"
@@ -36,12 +36,15 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/Text.h"
 #include "core/dom/XMLDocument.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/UseCounter.h"
 #include "core/html/HTMLDocument.h"
+#include "core/html/HTMLHeadElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLTitleElement.h"
 #include "core/html/HTMLViewSourceDocument.h"
 #include "core/html/ImageDocument.h"
 #include "core/html/MediaDocument.h"
@@ -57,7 +60,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashSet<String, CaseFoldingHash> FeatureSet;
 
@@ -74,19 +77,15 @@ static bool isSupportedSVG10Feature(const String& feature, const String& version
     static bool initialized = false;
     DEFINE_STATIC_LOCAL(FeatureSet, svgFeatures, ());
     if (!initialized) {
-#if ENABLE(SVG_FONTS)
         addString(svgFeatures, "svg");
         addString(svgFeatures, "svg.static");
-#endif
 //      addString(svgFeatures, "svg.animation");
 //      addString(svgFeatures, "svg.dynamic");
 //      addString(svgFeatures, "svg.dom.animation");
 //      addString(svgFeatures, "svg.dom.dynamic");
-#if ENABLE(SVG_FONTS)
         addString(svgFeatures, "dom");
         addString(svgFeatures, "dom.svg");
         addString(svgFeatures, "dom.svg.static");
-#endif
 //      addString(svgFeatures, "svg.all");
 //      addString(svgFeatures, "dom.svg.all");
         initialized = true;
@@ -106,12 +105,10 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         // Sadly, we cannot claim to implement any of the SVG 1.1 generic feature sets
         // lack of Font and Filter support.
         // http://bugs.webkit.org/show_bug.cgi?id=15480
-#if ENABLE(SVG_FONTS)
         addString(svgFeatures, "SVG");
         addString(svgFeatures, "SVGDOM");
         addString(svgFeatures, "SVG-static");
         addString(svgFeatures, "SVGDOM-static");
-#endif
         addString(svgFeatures, "SVG-animation");
         addString(svgFeatures, "SVGDOM-animation");
 //      addString(svgFeatures, "SVG-dynamic);
@@ -150,10 +147,6 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
         addString(svgFeatures, "View");
         addString(svgFeatures, "Script");
         addString(svgFeatures, "Animation");
-#if ENABLE(SVG_FONTS)
-        addString(svgFeatures, "Font");
-        addString(svgFeatures, "BasicFont");
-#endif
         addString(svgFeatures, "Extensibility");
         initialized = true;
     }
@@ -164,7 +157,6 @@ static bool isSupportedSVG11Feature(const String& feature, const String& version
 DOMImplementation::DOMImplementation(Document& document)
     : m_document(document)
 {
-    ScriptWrappable::init(this);
 }
 
 bool DOMImplementation::hasFeature(const String& feature, const String& version)
@@ -324,9 +316,14 @@ PassRefPtrWillBeRawPtr<HTMLDocument> DOMImplementation::createHTMLDocument(const
         .withRegistrationContext(document().registrationContext());
     RefPtrWillBeRawPtr<HTMLDocument> d = HTMLDocument::create(init);
     d->open();
-    d->write("<!doctype html><html><body></body></html>");
-    if (!title.isNull())
-        d->setTitle(title);
+    d->write("<!doctype html><html><head></head><body></body></html>");
+    if (!title.isNull()) {
+        HTMLHeadElement* headElement = d->head();
+        ASSERT(headElement);
+        RefPtrWillBeRawPtr<HTMLTitleElement> titleElement = HTMLTitleElement::create(*d);
+        headElement->appendChild(titleElement);
+        titleElement->appendChild(d->createTextNode(title), ASSERT_NO_EXCEPTION);
+    }
     d->setSecurityOrigin(document().securityOrigin()->isolatedCopy());
     d->setContextFeatures(document().contextFeatures());
     return d.release();

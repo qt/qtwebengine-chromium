@@ -31,39 +31,38 @@
 #ifndef MIDIAccess_h
 #define MIDIAccess_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
 #include "modules/webmidi/MIDIAccessInitializer.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
-#include "modules/webmidi/MIDIInput.h"
-#include "modules/webmidi/MIDIOutput.h"
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
-struct MIDIOptions;
+class MIDIInput;
+class MIDIInputMap;
+class MIDIOutput;
+class MIDIOutputMap;
 
-class MIDIAccess FINAL : public RefCountedWillBeRefCountedGarbageCollected<MIDIAccess>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
-    REFCOUNTED_EVENT_TARGET(MIDIAccess);
+class MIDIAccess final : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<MIDIAccess>, public ActiveDOMObject, public EventTargetWithInlineData, public MIDIAccessorClient {
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<MIDIAccess>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MIDIAccess);
 public:
-    static PassRefPtrWillBeRawPtr<MIDIAccess> create(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
+    static MIDIAccess* create(PassOwnPtr<MIDIAccessor> accessor, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>& ports, ExecutionContext* executionContext)
     {
-        RefPtrWillBeRawPtr<MIDIAccess> access = adoptRefWillBeRefCountedGarbageCollected(new MIDIAccess(accessor, sysexEnabled, ports, executionContext));
+        MIDIAccess* access = new MIDIAccess(accessor, sysexEnabled, ports, executionContext);
         access->suspendIfNeeded();
         return access;
     }
     virtual ~MIDIAccess();
 
-    MIDIInputVector inputs() const { return m_inputs; }
-    MIDIOutputVector outputs() const { return m_outputs; }
+    MIDIInputMap* inputs() const;
+    MIDIOutputMap* outputs() const;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(connect);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(disconnect);
@@ -71,37 +70,39 @@ public:
     bool sysexEnabled() const { return m_sysexEnabled; }
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIAccess; }
-    virtual ExecutionContext* executionContext() const OVERRIDE { return ActiveDOMObject::executionContext(); }
+    virtual const AtomicString& interfaceName() const override { return EventTargetNames::MIDIAccess; }
+    virtual ExecutionContext* executionContext() const override { return ActiveDOMObject::executionContext(); }
 
     // ActiveDOMObject
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
 
     // MIDIAccessorClient
-    virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didStartSession(bool success, const String& error, const String& message) OVERRIDE
+    virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
+    virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
+    virtual void didSetInputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didSetOutputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didStartSession(bool success, const String& error, const String& message) override
     {
         // This method is for MIDIAccess initialization: MIDIAccessInitializer
         // has the implementation.
         ASSERT_NOT_REACHED();
     }
-    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE;
+    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) override;
 
     // |timeStampInMilliseconds| is in the same time coordinate system as performance.now().
     void sendMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStampInMilliseconds);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MIDIAccess(PassOwnPtr<MIDIAccessor>, bool sysexEnabled, const Vector<MIDIAccessInitializer::PortDescriptor>&, ExecutionContext*);
 
     OwnPtr<MIDIAccessor> m_accessor;
     bool m_sysexEnabled;
-    MIDIInputVector m_inputs;
-    MIDIOutputVector m_outputs;
+    HeapVector<Member<MIDIInput> > m_inputs;
+    HeapVector<Member<MIDIOutput> > m_outputs;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIAccess_h

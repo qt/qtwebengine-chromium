@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/frame/History.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalFrame.h"
@@ -34,28 +34,29 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "core/loader/HistoryItem.h"
-#include "core/page/BackForwardClient.h"
 #include "core/page/Page.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 History::History(LocalFrame* frame)
     : DOMWindowProperty(frame)
     , m_lastStateObjectRequested(nullptr)
 {
-    ScriptWrappable::init(this);
+}
+
+void History::trace(Visitor* visitor)
+{
+    DOMWindowProperty::trace(visitor);
 }
 
 unsigned History::length() const
 {
-    if (!m_frame)
+    if (!m_frame || !m_frame->loader().client())
         return 0;
-    if (!m_frame->page())
-        return 0;
-    return m_frame->page()->backForward().backForwardListCount();
+    return m_frame->loader().client()->backForwardLength();
 }
 
 SerializedScriptValue* History::state()
@@ -97,7 +98,7 @@ void History::forward(ExecutionContext* context)
 
 void History::go(ExecutionContext* context, int distance)
 {
-    if (!m_frame)
+    if (!m_frame || !m_frame->loader().client())
         return;
 
     ASSERT(isMainThread());
@@ -108,7 +109,10 @@ void History::go(ExecutionContext* context, int distance)
     if (!activeDocument->canNavigate(*m_frame))
         return;
 
-    m_frame->navigationScheduler().scheduleHistoryNavigation(distance);
+    if (distance)
+        m_frame->loader().client()->navigateBackForward(distance);
+    else
+        m_frame->navigationScheduler().scheduleReload();
 }
 
 KURL History::urlForState(const String& urlString)
@@ -137,4 +141,4 @@ void History::stateObjectAdded(PassRefPtr<SerializedScriptValue> data, const Str
     m_frame->loader().updateForSameDocumentNavigation(fullURL, SameDocumentNavigationHistoryApi, data, type);
 }
 
-} // namespace WebCore
+} // namespace blink

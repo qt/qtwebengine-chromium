@@ -27,18 +27,24 @@
 #include "config.h"
 #include "core/html/shadow/MediaControls.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "core/dom/ClientRect.h"
 #include "core/events/MouseEvent.h"
 #include "core/frame/Settings.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/MediaController.h"
 #include "core/rendering/RenderTheme.h"
 
-namespace WebCore {
+namespace blink {
 
 // If you change this value, then also update the corresponding value in
 // LayoutTests/media/media-controls.js.
 static const double timeWithoutMouseMovementBeforeHidingMediaControls = 3;
+
+static bool fullscreenIsSupported(const Document& document)
+{
+    return !document.settings() || document.settings()->fullscreenSupported();
+}
 
 MediaControls::MediaControls(HTMLMediaElement& mediaElement)
     : HTMLDivElement(mediaElement.document())
@@ -54,11 +60,14 @@ MediaControls::MediaControls(HTMLMediaElement& mediaElement)
     , m_volumeSlider(nullptr)
     , m_toggleClosedCaptionsButton(nullptr)
     , m_fullScreenButton(nullptr)
+    , m_castButton(nullptr)
+    , m_overlayCastButton(nullptr)
     , m_durationDisplay(nullptr)
     , m_enclosure(nullptr)
     , m_hideMediaControlsTimer(this, &MediaControls::hideMediaControlsTimerFired)
     , m_isMouseOverControls(false)
     , m_isPausedForScrubbing(false)
+    , m_wasLastEventTouch(false)
 {
 }
 
@@ -76,19 +85,26 @@ bool MediaControls::initializeControls()
 {
     TrackExceptionState exceptionState;
 
+    RefPtrWillBeRawPtr<MediaControlOverlayEnclosureElement> overlayEnclosure = MediaControlOverlayEnclosureElement::create(*this);
+
     if (document().settings() && document().settings()->mediaControlsOverlayPlayButtonEnabled()) {
-        RefPtrWillBeRawPtr<MediaControlOverlayEnclosureElement> overlayEnclosure = MediaControlOverlayEnclosureElement::create(*this);
         RefPtrWillBeRawPtr<MediaControlOverlayPlayButtonElement> overlayPlayButton = MediaControlOverlayPlayButtonElement::create(*this);
         m_overlayPlayButton = overlayPlayButton.get();
         overlayEnclosure->appendChild(overlayPlayButton.release(), exceptionState);
         if (exceptionState.hadException())
             return false;
-
-        m_overlayEnclosure = overlayEnclosure.get();
-        appendChild(overlayEnclosure.release(), exceptionState);
-        if (exceptionState.hadException())
-            return false;
     }
+
+    RefPtrWillBeRawPtr<MediaControlCastButtonElement> overlayCastButton = MediaControlCastButtonElement::create(*this, true);
+    m_overlayCastButton = overlayCastButton.get();
+    overlayEnclosure->appendChild(overlayCastButton.release(), exceptionState);
+    if (exceptionState.hadException())
+        return false;
+
+    m_overlayEnclosure = overlayEnclosure.get();
+    appendChild(overlayEnclosure.release(), exceptionState);
+    if (exceptionState.hadException())
+        return false;
 
     // Create an enclosing element for the panel so we can visually offset the controls correctly.
     RefPtrWillBeRawPtr<MediaControlPanelEnclosureElement> enclosure = MediaControlPanelEnclosureElement::create(*this);
@@ -138,6 +154,12 @@ bool MediaControls::initializeControls()
     if (exceptionState.hadException())
         return false;
 
+    RefPtrWillBeRawPtr<MediaControlCastButtonElement> castButton = MediaControlCastButtonElement::create(*this, false);
+    m_castButton = castButton.get();
+    panel->appendChild(castButton.release(), exceptionState);
+    if (exceptionState.hadException())
+        return false;
+
     RefPtrWillBeRawPtr<MediaControlFullscreenButtonElement> fullscreenButton = MediaControlFullscreenButtonElement::create(*this);
     m_fullScreenButton = fullscreenButton.get();
     panel->appendChild(fullscreenButton.release(), exceptionState);
@@ -178,11 +200,12 @@ void MediaControls::reset()
 
     refreshClosedCaptionsButtonVisibility();
 
-    if (mediaElement().hasVideo())
+    if (mediaElement().hasVideo() && fullscreenIsSupported(document()))
         m_fullScreenButton->show();
     else
         m_fullScreenButton->hide();
 
+    refreshCastButtonVisibility();
     makeOpaque();
 }
 
@@ -191,18 +214,24 @@ void MediaControls::show()
     makeOpaque();
     m_panel->setIsDisplayed(true);
     m_panel->show();
+    if (m_overlayPlayButton)
+        m_overlayPlayButton->updateDisplayType();
 }
 
 void MediaControls::mediaElementFocused()
 {
-    show();
-    stopHideMediaControlsTimer();
+    if (mediaElement().shouldShowControls()) {
+        show();
+        resetHideMediaControlsTimer();
+    }
 }
 
 void MediaControls::hide()
 {
     m_panel->setIsDisplayed(false);
     m_panel->hide();
+    if (m_overlayPlayButton)
+        m_overlayPlayButton->hide();
 }
 
 void MediaControls::makeOpaque()
@@ -218,11 +247,15 @@ void MediaControls::makeTransparent()
 bool MediaControls::shouldHideMediaControls(unsigned behaviorFlags) const
 {
     // Never hide for a media element without visual representation.
-    if (!mediaElement().hasVideo())
+    if (!mediaElement().hasVideo() || mediaElement().isPlayingRemotely())
         return false;
-    // Don't hide if the controls are hovered or the mouse is over the video area.
+    // Don't hide if the mouse is over the controls.
+    const bool ignoreControlsHover = behaviorFlags & IgnoreControlsHover;
+    if (!ignoreControlsHover && m_panel->hovered())
+        return false;
+    // Don't hide if the mouse is over the video area.
     const bool ignoreVideoHover = behaviorFlags & IgnoreVideoHover;
-    if (m_panel->hovered() || (!ignoreVideoHover && m_isMouseOverControls))
+    if (!ignoreVideoHover && m_isMouseOverControls)
         return false;
     // Don't hide if focus is on the HTMLMediaElement or within the
     // controls/shadow tree. (Perform the checks separately to avoid going
@@ -311,7 +344,7 @@ void MediaControls::updateVolume()
 {
     m_muteButton->updateDisplayType();
     if (m_muteButton->renderer())
-        m_muteButton->renderer()->paintInvalidationForWholeRenderer();
+        m_muteButton->renderer()->setShouldDoFullPaintInvalidation();
 
     if (mediaElement().muted())
         m_volumeSlider->setVolume(0);
@@ -332,9 +365,40 @@ void MediaControls::refreshClosedCaptionsButtonVisibility()
         m_toggleClosedCaptionsButton->hide();
 }
 
-void MediaControls::closedCaptionTracksChanged()
+void MediaControls::textTracksChanged()
 {
     refreshClosedCaptionsButtonVisibility();
+}
+
+void MediaControls::refreshCastButtonVisibility()
+{
+    if (mediaElement().hasRemoteRoutes()) {
+        // The reason for the autoplay test is that some pages (e.g. vimeo.com) have an autoplay background video, which
+        // doesn't autoplay on Chrome for Android (we prevent it) so starts paused. In such cases we don't want to automatically
+        // show the cast button, since it looks strange and is unlikely to correspond with anything the user wants to do.
+        // If a user does want to cast a paused autoplay video then they can still do so by touching or clicking on the
+        // video, which will cause the cast button to appear.
+        if (!mediaElement().shouldShowControls() && !mediaElement().autoplay() && mediaElement().paused()) {
+            showOverlayCastButton();
+        } else if (mediaElement().shouldShowControls()) {
+            m_overlayCastButton->hide();
+            m_castButton->show();
+            // Check that the cast button actually fits on the bar.
+            if (m_fullScreenButton->getBoundingClientRect()->right() > m_panel->getBoundingClientRect()->right()) {
+                m_castButton->hide();
+                m_overlayCastButton->show();
+            }
+        }
+    } else {
+        m_castButton->hide();
+        m_overlayCastButton->hide();
+    }
+}
+
+void MediaControls::showOverlayCastButton()
+{
+    m_overlayCastButton->show();
+    resetHideMediaControlsTimer();
 }
 
 void MediaControls::enteredFullscreen()
@@ -351,9 +415,23 @@ void MediaControls::exitedFullscreen()
     startHideMediaControlsTimer();
 }
 
+void MediaControls::startedCasting()
+{
+    m_castButton->setIsPlayingRemotely(true);
+    m_overlayCastButton->setIsPlayingRemotely(true);
+}
+
+void MediaControls::stoppedCasting()
+{
+    m_castButton->setIsPlayingRemotely(false);
+    m_overlayCastButton->setIsPlayingRemotely(false);
+}
+
 void MediaControls::defaultEventHandler(Event* event)
 {
     HTMLDivElement::defaultEventHandler(event);
+    m_wasLastEventTouch = event->isTouchEvent() || event->isGestureEvent()
+        || (event->isMouseEvent() && toMouseEvent(event)->fromTouch());
 
     if (event->type() == EventTypeNames::mouseover) {
         if (!containsRelatedTarget(event)) {
@@ -379,6 +457,7 @@ void MediaControls::defaultEventHandler(Event* event)
         // When we get a mouse move, show the media controls, and start a timer
         // that will hide the media controls after a 3 seconds without a mouse move.
         makeOpaque();
+        refreshCastButtonVisibility();
         if (shouldHideMediaControls(IgnoreVideoHover))
             startHideMediaControlsTimer();
         return;
@@ -390,10 +469,15 @@ void MediaControls::hideMediaControlsTimerFired(Timer<MediaControls>*)
     if (mediaElement().togglePlayStateWillPlay())
         return;
 
-    if (!shouldHideMediaControls(IgnoreFocus | IgnoreVideoHover))
+    unsigned behaviorFlags = IgnoreFocus | IgnoreVideoHover;
+    if (m_wasLastEventTouch) {
+        behaviorFlags |= IgnoreControlsHover;
+    }
+    if (!shouldHideMediaControls(behaviorFlags))
         return;
 
     makeTransparent();
+    m_overlayCastButton->hide();
 }
 
 void MediaControls::startHideMediaControlsTimer()
@@ -406,9 +490,17 @@ void MediaControls::stopHideMediaControlsTimer()
     m_hideMediaControlsTimer.stop();
 }
 
+void MediaControls::resetHideMediaControlsTimer()
+{
+    stopHideMediaControlsTimer();
+    if (!mediaElement().paused())
+        startHideMediaControlsTimer();
+}
+
+
 const AtomicString& MediaControls::shadowPseudoId() const
 {
-    DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls"));
+    DEFINE_STATIC_LOCAL(AtomicString, id, ("-webkit-media-controls", AtomicString::ConstructFromLiteral));
     return id;
 }
 
@@ -431,10 +523,10 @@ void MediaControls::createTextTrackDisplay()
     m_textDisplayContainer = textDisplayContainer.get();
 
     // Insert it before (behind) all other control elements.
-    if (m_overlayEnclosure && m_overlayPlayButton)
+    if (m_overlayPlayButton)
         m_overlayEnclosure->insertBefore(textDisplayContainer.release(), m_overlayPlayButton);
     else
-        insertBefore(textDisplayContainer.release(), m_enclosure);
+        m_overlayEnclosure->insertBefore(textDisplayContainer.release(), m_overlayCastButton);
 }
 
 void MediaControls::showTextTrackDisplay()
@@ -475,6 +567,8 @@ void MediaControls::trace(Visitor* visitor)
     visitor->trace(m_fullScreenButton);
     visitor->trace(m_durationDisplay);
     visitor->trace(m_enclosure);
+    visitor->trace(m_castButton);
+    visitor->trace(m_overlayCastButton);
     HTMLDivElement::trace(visitor);
 }
 

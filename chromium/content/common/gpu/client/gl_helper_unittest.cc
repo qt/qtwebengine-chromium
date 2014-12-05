@@ -15,7 +15,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
@@ -53,13 +53,13 @@ const char* kQualityNames[] = {"best", "good", "fast", };
 
 class GLHelperTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     WebGraphicsContext3D::Attributes attributes;
     bool lose_context_when_out_of_memory = false;
     context_ =
         WebGraphicsContext3DInProcessCommandBufferImpl::CreateOffscreenContext(
             attributes, lose_context_when_out_of_memory);
-    context_->makeContextCurrent();
+    context_->InitializeOnCurrentThread();
     context_support_ = context_->GetContextSupport();
     helper_.reset(
         new content::GLHelper(context_->GetGLInterface(), context_support_));
@@ -67,7 +67,7 @@ class GLHelperTest : public testing::Test {
         context_->GetGLInterface(), helper_.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     helper_scaling_.reset(NULL);
     helper_.reset(NULL);
     context_.reset(NULL);
@@ -77,7 +77,8 @@ class GLHelperTest : public testing::Test {
     base::debug::TraceLog::GetInstance()->SetEnabled(
         base::debug::CategoryFilter(filter),
         base::debug::TraceLog::RECORDING_MODE,
-        base::debug::TraceLog::RECORD_UNTIL_FULL);
+        base::debug::TraceOptions(
+            base::debug::RECORD_UNTIL_FULL));
   }
 
   static void TraceDataCB(
@@ -117,7 +118,11 @@ class GLHelperTest : public testing::Test {
         CHECK(item->GetAsDictionary(&dict));
         std::string name;
         CHECK(dict->GetString("name", &name));
-        (*event_counts)[name]++;
+        std::string trace_type;
+        CHECK(dict->GetString("ph", &trace_type));
+        // Count all except END traces, as they come in BEGIN/END pairs.
+        if (trace_type != "E")
+          (*event_counts)[name]++;
         VLOG(1) << "trace name: " << name;
       }
     }
@@ -138,24 +143,40 @@ class GLHelperTest : public testing::Test {
     }
   }
 
-  // Look up a single R/G/B/A value.
-  // Clamp x/y.
+  // Look up a single channel value. Works for 4-channel and single channel
+  // bitmaps.  Clamp x/y.
   int Channel(SkBitmap* pixels, int x, int y, int c) {
-    uint32* data =
-        pixels->getAddr32(std::max(0, std::min(x, pixels->width() - 1)),
-                          std::max(0, std::min(y, pixels->height() - 1)));
-    return (*data) >> (c * 8) & 0xff;
+    if (pixels->bytesPerPixel() == 4) {
+      uint32* data =
+          pixels->getAddr32(std::max(0, std::min(x, pixels->width() - 1)),
+                            std::max(0, std::min(y, pixels->height() - 1)));
+      return (*data) >> (c * 8) & 0xff;
+    } else {
+      DCHECK_EQ(pixels->bytesPerPixel(), 1);
+      DCHECK_EQ(c, 0);
+      return *pixels->getAddr8(std::max(0, std::min(x, pixels->width() - 1)),
+                               std::max(0, std::min(y, pixels->height() - 1)));
+    }
   }
 
-  // Set a single R/G/B/A value.
+  // Set a single channel value. Works for 4-channel and single channel
+  // bitmaps.  Clamp x/y.
   void SetChannel(SkBitmap* pixels, int x, int y, int c, int v) {
     DCHECK_GE(x, 0);
     DCHECK_GE(y, 0);
     DCHECK_LT(x, pixels->width());
     DCHECK_LT(y, pixels->height());
-    uint32* data = pixels->getAddr32(x, y);
-    v = std::max(0, std::min(v, 255));
-    *data = (*data & ~(0xffu << (c * 8))) | (v << (c * 8));
+    if (pixels->bytesPerPixel() == 4) {
+      uint32* data = pixels->getAddr32(x, y);
+      v = std::max(0, std::min(v, 255));
+      *data = (*data & ~(0xffu << (c * 8))) | (v << (c * 8));
+    } else {
+      DCHECK_EQ(pixels->bytesPerPixel(), 1);
+      DCHECK_EQ(c, 0);
+      uint8* data = pixels->getAddr8(x, y);
+      v = std::max(0, std::min(v, 255));
+      *data = v;
+    }
   }
 
   // Print all the R, G, B or A values from an SkBitmap in a
@@ -258,6 +279,7 @@ class GLHelperTest : public testing::Test {
   void ValidateScalerStages(
       content::GLHelper::ScalerQuality quality,
       const std::vector<GLHelperScaling::ScalerStage>& scaler_stages,
+      const gfx::Size& dst_size,
       const std::string& message) {
     bool previous_error = HasFailure();
     // First, check that the input size for each stage is equal to
@@ -274,6 +296,12 @@ class GLHelperTest : public testing::Test {
       EXPECT_EQ(scaler_stages[i].src_subrect.height(),
                 scaler_stages[i].src_size.height());
     }
+
+    // Check the output size matches the destination of the last stage
+    EXPECT_EQ(scaler_stages[scaler_stages.size() - 1].dst_size.width(),
+              dst_size.width());
+    EXPECT_EQ(scaler_stages[scaler_stages.size() - 1].dst_size.height(),
+              dst_size.height());
 
     // Used to verify that up-scales are not attempted after some
     // other scale.
@@ -370,9 +398,10 @@ class GLHelperTest : public testing::Test {
     }
   }
 
-  // Compare two bitmaps, make sure that each component of each pixel
-  // is no more than |maxdiff| apart. If they are not similar enough,
-  // prints out |truth|, |other|, |source|, |scaler_stages| and |message|.
+  // Compares two bitmaps taking color types into account. Checks whether each
+  // component of each pixel is no more than |maxdiff| apart. If bitmaps are not
+  // similar enough, prints out |truth|, |other|, |source|, |scaler_stages|
+  // and |message|.
   void Compare(SkBitmap* truth,
                SkBitmap* other,
                int maxdiff,
@@ -381,21 +410,39 @@ class GLHelperTest : public testing::Test {
                std::string message) {
     EXPECT_EQ(truth->width(), other->width());
     EXPECT_EQ(truth->height(), other->height());
+    bool swizzle = (truth->colorType() == kRGBA_8888_SkColorType &&
+                    other->colorType() == kBGRA_8888_SkColorType) ||
+                   (truth->colorType() == kBGRA_8888_SkColorType &&
+                    other->colorType() == kRGBA_8888_SkColorType);
+    EXPECT_TRUE(swizzle || truth->colorType() == other->colorType());
+    int bpp = truth->bytesPerPixel();
     for (int x = 0; x < truth->width(); x++) {
       for (int y = 0; y < truth->height(); y++) {
-        for (int c = 0; c < 4; c++) {
+        for (int c = 0; c < bpp; c++) {
           int a = Channel(truth, x, y, c);
-          int b = Channel(other, x, y, c);
+          // swizzle when comparing if needed
+          int b = swizzle && (c == 0 || c == 2)
+                      ? Channel(other, x, y, (c + 2) & 2)
+                      : Channel(other, x, y, c);
           EXPECT_NEAR(a, b, maxdiff) << " x=" << x << " y=" << y << " c=" << c
                                      << " " << message;
           if (std::abs(a - b) > maxdiff) {
             LOG(ERROR) << "-------expected--------";
-            PrintChannel(truth, c);
+            for (int i = 0; i < bpp; i++) {
+              LOG(ERROR) << "Channel " << i << ":";
+              PrintChannel(truth, i);
+            }
             LOG(ERROR) << "-------actual--------";
-            PrintChannel(other, c);
+            for (int i = 0; i < bpp; i++) {
+              LOG(ERROR) << "Channel " << i << ":";
+              PrintChannel(other, i);
+            }
             if (source) {
-              LOG(ERROR) << "-------before scaling--------";
-              PrintChannel(source, c);
+              LOG(ERROR) << "-------original--------";
+              for (int i = 0; i < source->bytesPerPixel(); i++) {
+                LOG(ERROR) << "Channel " << i << ":";
+                PrintChannel(source, i);
+              }
             }
             LOG(ERROR) << "-----Scaler stages------";
             LOG(ERROR) << PrintStages(scaler_stages);
@@ -423,6 +470,30 @@ class GLHelperTest : public testing::Test {
             ChannelAsFloat(pixels, base_x + 1, base_y, c) * x * (1 - y) +
             ChannelAsFloat(pixels, base_x, base_y + 1, c) * (1 - x) * y +
             ChannelAsFloat(pixels, base_x + 1, base_y + 1, c) * x * y);
+  }
+
+  // Encodes an RGBA bitmap to grayscale.
+  // Reference implementation for
+  // GLHelper::CopyToTextureImpl::EncodeTextureAsGrayscale.
+  void EncodeToGrayscaleSlow(SkBitmap* input, SkBitmap* output) {
+    const float kRGBtoGrayscaleColorWeights[3] = {0.213f, 0.715f, 0.072f};
+    CHECK_EQ(kAlpha_8_SkColorType, output->colorType());
+    CHECK_EQ(input->width(), output->width());
+    CHECK_EQ(input->height(), output->height());
+    CHECK_EQ(input->colorType(), kRGBA_8888_SkColorType);
+
+    for (int dst_y = 0; dst_y < output->height(); dst_y++) {
+      for (int dst_x = 0; dst_x < output->width(); dst_x++) {
+        float c0 = ChannelAsFloat(input, dst_x, dst_y, 0);
+        float c1 = ChannelAsFloat(input, dst_x, dst_y, 1);
+        float c2 = ChannelAsFloat(input, dst_x, dst_y, 2);
+        float value = c0 * kRGBtoGrayscaleColorWeights[0] +
+                      c1 * kRGBtoGrayscaleColorWeights[1] +
+                      c2 * kRGBtoGrayscaleColorWeights[2];
+        SetChannel(
+            output, dst_x, dst_y, 0, static_cast<int>(value * 255.0f + 0.5f));
+      }
+    }
   }
 
   // Very slow bicubic / bilinear scaler for reference.
@@ -507,15 +578,34 @@ class GLHelperTest : public testing::Test {
   }
 
   void FlipSKBitmap(SkBitmap* bitmap) {
+    int bpp = bitmap->bytesPerPixel();
+    DCHECK(bpp == 4 || bpp == 1);
     int top_line = 0;
     int bottom_line = bitmap->height() - 1;
     while (top_line < bottom_line) {
       for (int x = 0; x < bitmap->width(); x++) {
-        std::swap(*bitmap->getAddr32(x, top_line),
-                  *bitmap->getAddr32(x, bottom_line));
+        bpp == 4 ? std::swap(*bitmap->getAddr32(x, top_line),
+                             *bitmap->getAddr32(x, bottom_line))
+                 : std::swap(*bitmap->getAddr8(x, top_line),
+                             *bitmap->getAddr8(x, bottom_line));
       }
       top_line++;
       bottom_line--;
+    }
+  }
+
+  // Swaps red and blue channels in each pixel in a 32-bit bitmap.
+  void SwizzleSKBitmap(SkBitmap* bitmap) {
+    int bpp = bitmap->bytesPerPixel();
+    DCHECK(bpp == 4);
+    for (int y = 0; y < bitmap->height(); y++) {
+      for (int x = 0; x < bitmap->width(); x++) {
+        // Swap channels 0 and 2 (red and blue)
+        int c0 = Channel(bitmap, x, y, 0);
+        int c2 = Channel(bitmap, x, y, 2);
+        SetChannel(bitmap, x, y, 2, c0);
+        SetChannel(bitmap, x, y, 0, c2);
+      }
     }
   }
 
@@ -561,12 +651,164 @@ class GLHelperTest : public testing::Test {
     }
 
     SkBitmap tmp;
-    tmp.setConfig(SkBitmap::kARGB_8888_Config, xtmp, ytmp);
-    tmp.allocPixels();
-    SkAutoLockPixels lock(tmp);
+    tmp.allocN32Pixels(xtmp, ytmp);
 
     ScaleSlowRecursive(input, &tmp, quality);
     ScaleSlowRecursive(&tmp, output, quality);
+  }
+
+  // Creates an RGBA SkBitmap
+  scoped_ptr<SkBitmap> CreateTestBitmap(int width,
+                                        int height,
+                                        int test_pattern) {
+    scoped_ptr<SkBitmap> bitmap(new SkBitmap);
+    bitmap->allocPixels(SkImageInfo::Make(
+        width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType));
+
+    for (int x = 0; x < width; ++x) {
+      for (int y = 0; y < height; ++y) {
+        switch (test_pattern) {
+          case 0:  // Smooth test pattern
+            SetChannel(bitmap.get(), x, y, 0, x * 10);
+            SetChannel(bitmap.get(), x, y, 0, y == 0 ? x * 50 : x * 10);
+            SetChannel(bitmap.get(), x, y, 1, y * 10);
+            SetChannel(bitmap.get(), x, y, 2, (x + y) * 10);
+            SetChannel(bitmap.get(), x, y, 3, 255);
+            break;
+          case 1:  // Small blocks
+            SetChannel(bitmap.get(), x, y, 0, x & 1 ? 255 : 0);
+            SetChannel(bitmap.get(), x, y, 1, y & 1 ? 255 : 0);
+            SetChannel(bitmap.get(), x, y, 2, (x + y) & 1 ? 255 : 0);
+            SetChannel(bitmap.get(), x, y, 3, 255);
+            break;
+          case 2:  // Medium blocks
+            SetChannel(bitmap.get(), x, y, 0, 10 + x / 2 * 50);
+            SetChannel(bitmap.get(), x, y, 1, 10 + y / 3 * 50);
+            SetChannel(bitmap.get(), x, y, 2, (x + y) / 5 * 50 + 5);
+            SetChannel(bitmap.get(), x, y, 3, 255);
+            break;
+        }
+      }
+    }
+    return bitmap.Pass();
+  }
+
+  // Binds texture and framebuffer and loads the bitmap pixels into the texture.
+  void BindTextureAndFrameBuffer(WebGLId texture,
+                                 WebGLId framebuffer,
+                                 SkBitmap* bitmap,
+                                 int width,
+                                 int height) {
+    context_->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+    context_->bindTexture(GL_TEXTURE_2D, texture);
+    context_->texImage2D(GL_TEXTURE_2D,
+                         0,
+                         GL_RGBA,
+                         width,
+                         height,
+                         0,
+                         GL_RGBA,
+                         GL_UNSIGNED_BYTE,
+                         bitmap->getPixels());
+  }
+
+  // Create a test image, transform it using
+  // GLHelper::CropScaleReadbackAndCleanTexture and a reference implementation
+  // and compare the results.
+  void TestCropScaleReadbackAndCleanTexture(int xsize,
+                                            int ysize,
+                                            int scaled_xsize,
+                                            int scaled_ysize,
+                                            int test_pattern,
+                                            SkColorType out_color_type,
+                                            bool swizzle,
+                                            size_t quality_index) {
+    DCHECK(out_color_type == kAlpha_8_SkColorType ||
+           out_color_type == kRGBA_8888_SkColorType ||
+           out_color_type == kBGRA_8888_SkColorType);
+    WebGLId src_texture = context_->createTexture();
+    WebGLId framebuffer = context_->createFramebuffer();
+    scoped_ptr<SkBitmap> input_pixels =
+        CreateTestBitmap(xsize, ysize, test_pattern).Pass();
+    BindTextureAndFrameBuffer(
+        src_texture, framebuffer, input_pixels.get(), xsize, ysize);
+
+    std::string message = base::StringPrintf(
+        "input size: %dx%d "
+        "output size: %dx%d "
+        "pattern: %d , quality: %s, "
+        "out_color_type: %d",
+        xsize,
+        ysize,
+        scaled_xsize,
+        scaled_ysize,
+        test_pattern,
+        kQualityNames[quality_index],
+        out_color_type);
+
+    // Transform the bitmap using GLHelper::CropScaleReadbackAndCleanTexture.
+    SkBitmap output_pixels;
+    output_pixels.allocPixels(SkImageInfo::Make(
+        scaled_xsize, scaled_ysize, out_color_type, kPremul_SkAlphaType));
+    base::RunLoop run_loop;
+    gfx::Size encoded_texture_size;
+    helper_->CropScaleReadbackAndCleanTexture(
+        src_texture,
+        gfx::Size(xsize, ysize),
+        gfx::Rect(xsize, ysize),
+        gfx::Size(scaled_xsize, scaled_ysize),
+        static_cast<unsigned char*>(output_pixels.getPixels()),
+        out_color_type,
+        base::Bind(&callcallback, run_loop.QuitClosure()),
+        kQualities[quality_index]);
+    run_loop.Run();
+    // CropScaleReadbackAndCleanTexture flips the pixels. Flip them back.
+    FlipSKBitmap(&output_pixels);
+
+    // If the bitmap shouldn't have changed - compare against input.
+    if (xsize == scaled_xsize && ysize == scaled_ysize &&
+        out_color_type != kAlpha_8_SkColorType) {
+      const std::vector<GLHelperScaling::ScalerStage> dummy_stages;
+      Compare(input_pixels.get(),
+              &output_pixels,
+              0,
+              NULL,
+              dummy_stages,
+              message + " comparing against input");
+      return;
+    }
+
+    // Now transform the bitmap using the reference implementation.
+    SkBitmap scaled_pixels;
+    scaled_pixels.allocPixels(SkImageInfo::Make(scaled_xsize,
+                                                scaled_ysize,
+                                                kRGBA_8888_SkColorType,
+                                                kPremul_SkAlphaType));
+    SkBitmap truth_pixels;
+    // Step 1: Scale
+    ScaleSlowRecursive(
+        input_pixels.get(), &scaled_pixels, kQualities[quality_index]);
+    // Step 2: Encode to grayscale if needed.
+    if (out_color_type == kAlpha_8_SkColorType) {
+      truth_pixels.allocPixels(SkImageInfo::Make(
+          scaled_xsize, scaled_ysize, out_color_type, kPremul_SkAlphaType));
+      EncodeToGrayscaleSlow(&scaled_pixels, &truth_pixels);
+    } else {
+      truth_pixels = scaled_pixels;
+    }
+
+    // Now compare the results.
+    SkAutoLockPixels lock_input(truth_pixels);
+    const std::vector<GLHelperScaling::ScalerStage> dummy_stages;
+    Compare(&truth_pixels,
+            &output_pixels,
+            2,
+            input_pixels.get(),
+            dummy_stages,
+            message + " comparing against transformed/scaled");
+
+    context_->deleteTexture(src_texture);
+    context_->deleteFramebuffer(framebuffer);
   }
 
   // Scaling test: Create a test image, scale it using GLHelperScaling
@@ -576,51 +818,14 @@ class GLHelperTest : public testing::Test {
                  int scaled_xsize,
                  int scaled_ysize,
                  int test_pattern,
-                 size_t quality,
+                 size_t quality_index,
                  bool flip) {
     WebGLId src_texture = context_->createTexture();
     WebGLId framebuffer = context_->createFramebuffer();
-    SkBitmap input_pixels;
-    input_pixels.setConfig(SkBitmap::kARGB_8888_Config, xsize, ysize);
-    input_pixels.allocPixels();
-    SkAutoLockPixels lock(input_pixels);
-
-    for (int x = 0; x < xsize; ++x) {
-      for (int y = 0; y < ysize; ++y) {
-        switch (test_pattern) {
-          case 0:  // Smooth test pattern
-            SetChannel(&input_pixels, x, y, 0, x * 10);
-            SetChannel(&input_pixels, x, y, 1, y * 10);
-            SetChannel(&input_pixels, x, y, 2, (x + y) * 10);
-            SetChannel(&input_pixels, x, y, 3, 255);
-            break;
-          case 1:  // Small blocks
-            SetChannel(&input_pixels, x, y, 0, x & 1 ? 255 : 0);
-            SetChannel(&input_pixels, x, y, 1, y & 1 ? 255 : 0);
-            SetChannel(&input_pixels, x, y, 2, (x + y) & 1 ? 255 : 0);
-            SetChannel(&input_pixels, x, y, 3, 255);
-            break;
-          case 2:  // Medium blocks
-            SetChannel(&input_pixels, x, y, 0, 10 + x / 2 * 50);
-            SetChannel(&input_pixels, x, y, 1, 10 + y / 3 * 50);
-            SetChannel(&input_pixels, x, y, 2, (x + y) / 5 * 50 + 5);
-            SetChannel(&input_pixels, x, y, 3, 255);
-            break;
-        }
-      }
-    }
-
-    context_->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-    context_->bindTexture(GL_TEXTURE_2D, src_texture);
-    context_->texImage2D(GL_TEXTURE_2D,
-                         0,
-                         GL_RGBA,
-                         xsize,
-                         ysize,
-                         0,
-                         GL_RGBA,
-                         GL_UNSIGNED_BYTE,
-                         input_pixels.getPixels());
+    scoped_ptr<SkBitmap> input_pixels =
+        CreateTestBitmap(xsize, ysize, test_pattern).Pass();
+    BindTextureAndFrameBuffer(
+        src_texture, framebuffer, input_pixels.get(), xsize, ysize);
 
     std::string message = base::StringPrintf(
         "input size: %dx%d "
@@ -631,59 +836,67 @@ class GLHelperTest : public testing::Test {
         scaled_xsize,
         scaled_ysize,
         test_pattern,
-        kQualityNames[quality]);
+        kQualityNames[quality_index]);
 
     std::vector<GLHelperScaling::ScalerStage> stages;
-    helper_scaling_->ComputeScalerStages(kQualities[quality],
+    helper_scaling_->ComputeScalerStages(kQualities[quality_index],
                                          gfx::Size(xsize, ysize),
                                          gfx::Rect(0, 0, xsize, ysize),
                                          gfx::Size(scaled_xsize, scaled_ysize),
                                          flip,
                                          false,
                                          &stages);
-    ValidateScalerStages(kQualities[quality], stages, message);
+    ValidateScalerStages(kQualities[quality_index],
+                         stages,
+                         gfx::Size(scaled_xsize, scaled_ysize),
+                         message);
 
     WebGLId dst_texture =
         helper_->CopyAndScaleTexture(src_texture,
                                      gfx::Size(xsize, ysize),
                                      gfx::Size(scaled_xsize, scaled_ysize),
                                      flip,
-                                     kQualities[quality]);
+                                     kQualities[quality_index]);
 
     SkBitmap output_pixels;
-    output_pixels.setConfig(
-        SkBitmap::kARGB_8888_Config, scaled_xsize, scaled_ysize);
-    output_pixels.allocPixels();
-    SkAutoLockPixels output_lock(output_pixels);
+    output_pixels.allocPixels(SkImageInfo::Make(scaled_xsize,
+                                                scaled_ysize,
+                                                kRGBA_8888_SkColorType,
+                                                kPremul_SkAlphaType));
 
     helper_->ReadbackTextureSync(
         dst_texture,
         gfx::Rect(0, 0, scaled_xsize, scaled_ysize),
         static_cast<unsigned char*>(output_pixels.getPixels()),
-        SkBitmap::kARGB_8888_Config);
+        kRGBA_8888_SkColorType);
     if (flip) {
       // Flip the pixels back.
       FlipSKBitmap(&output_pixels);
     }
+
+    // If the bitmap shouldn't have changed - compare against input.
     if (xsize == scaled_xsize && ysize == scaled_ysize) {
-      Compare(&input_pixels,
+      Compare(input_pixels.get(),
               &output_pixels,
-              2,
+              0,
               NULL,
               stages,
               message + " comparing against input");
+      return;
     }
-    SkBitmap truth_pixels;
-    truth_pixels.setConfig(
-        SkBitmap::kARGB_8888_Config, scaled_xsize, scaled_ysize);
-    truth_pixels.allocPixels();
-    SkAutoLockPixels truth_lock(truth_pixels);
 
-    ScaleSlowRecursive(&input_pixels, &truth_pixels, kQualities[quality]);
+    // Now scale the bitmap using the reference implementation.
+    SkBitmap truth_pixels;
+    truth_pixels.allocPixels(SkImageInfo::Make(scaled_xsize,
+                                               scaled_ysize,
+                                               kRGBA_8888_SkColorType,
+                                               kPremul_SkAlphaType));
+    ScaleSlowRecursive(
+        input_pixels.get(), &truth_pixels, kQualities[quality_index]);
     Compare(&truth_pixels,
             &output_pixels,
             2,
-            &input_pixels,
+            input_pixels.get(),
             stages,
             message + " comparing against scaled");
 
@@ -709,6 +922,7 @@ class GLHelperTest : public testing::Test {
                                          &stages);
     ValidateScalerStages(kQualities[quality],
                          stages,
+                         gfx::Size(dst_xsize, dst_ysize),
                          base::StringPrintf(
                              "input size: %dx%d "
                              "output size: %dx%d "
@@ -736,7 +950,10 @@ class GLHelperTest : public testing::Test {
                                          false,
                                          false,
                                          &stages);
-    ValidateScalerStages(content::GLHelper::SCALER_QUALITY_GOOD, stages, "");
+    ValidateScalerStages(content::GLHelper::SCALER_QUALITY_GOOD,
+                         stages,
+                         gfx::Size(dst_xsize, dst_ysize),
+                         "");
     EXPECT_EQ(PrintStages(stages), description);
   }
 
@@ -855,9 +1072,10 @@ class GLHelperTest : public testing::Test {
       for (int x = 0; x < w; ++x) {
         bool on_grid = (y_on_grid || ((x % grid_pitch) < grid_width));
 
-        if (bmp.config() == SkBitmap::kARGB_8888_Config) {
+        if (bmp.colorType() == kRGBA_8888_SkColorType ||
+            bmp.colorType() == kBGRA_8888_SkColorType) {
           *bmp.getAddr32(x, y) = (on_grid ? grid_color : background_color);
-        } else if (bmp.config() == SkBitmap::kRGB_565_Config) {
+        } else if (bmp.colorType() == kRGB_565_SkColorType) {
           *bmp.getAddr16(x, y) = (on_grid ? grid_color : background_color);
         }
       }
@@ -879,9 +1097,10 @@ class GLHelperTest : public testing::Test {
         bool x_bit = (((x / rect_w) & 0x1) == 0);
 
         bool use_color2 = (x_bit != y_bit);  // xor
-        if (bmp.config() == SkBitmap::kARGB_8888_Config) {
+        if (bmp.colorType() == kRGBA_8888_SkColorType ||
+            bmp.colorType() == kBGRA_8888_SkColorType) {
           *bmp.getAddr32(x, y) = (use_color2 ? color2 : color1);
-        } else if (bmp.config() == SkBitmap::kRGB_565_Config) {
+        } else if (bmp.colorType() == kRGB_565_SkColorType) {
           *bmp.getAddr16(x, y) = (use_color2 ? color2 : color1);
         }
       }
@@ -890,15 +1109,16 @@ class GLHelperTest : public testing::Test {
 
   bool ColorComponentsClose(SkColor component1,
                             SkColor component2,
-                            SkBitmap::Config config) {
+                            SkColorType color_type) {
     int c1 = static_cast<int>(component1);
     int c2 = static_cast<int>(component2);
     bool result = false;
-    switch (config) {
-      case SkBitmap::kARGB_8888_Config:
+    switch (color_type) {
+      case kRGBA_8888_SkColorType:
+      case kBGRA_8888_SkColorType:
         result = (std::abs(c1 - c2) == 0);
         break;
-      case SkBitmap::kRGB_565_Config:
+      case kRGB_565_SkColorType:
         result = (std::abs(c1 - c2) <= 7);
         break;
       default:
@@ -907,16 +1127,16 @@ class GLHelperTest : public testing::Test {
     return result;
   }
 
-  bool ColorsClose(SkColor color1, SkColor color2, SkBitmap::Config config) {
+  bool ColorsClose(SkColor color1, SkColor color2, SkColorType color_type) {
     bool red = ColorComponentsClose(SkColorGetR(color1),
-                                    SkColorGetR(color2), config);
+                                    SkColorGetR(color2), color_type);
     bool green = ColorComponentsClose(SkColorGetG(color1),
-                                        SkColorGetG(color2), config);
+                                        SkColorGetG(color2), color_type);
     bool blue = ColorComponentsClose(SkColorGetB(color1),
-                                     SkColorGetB(color2), config);
+                                     SkColorGetB(color2), color_type);
     bool alpha = ColorComponentsClose(SkColorGetA(color1),
-                                      SkColorGetA(color2), config);
-    if (config == SkBitmap::kRGB_565_Config) {
+                                      SkColorGetA(color2), color_type);
+    if (color_type == kRGB_565_SkColorType) {
       return red && blue && green;
     }
     return red && blue && green && alpha;
@@ -930,7 +1150,7 @@ class GLHelperTest : public testing::Test {
         LOG(ERROR) << "Bitmap geometry check failure";
         return false;
     }
-    if (bmp1.config() != bmp2.config())
+    if (bmp1.colorType() != bmp2.colorType())
       return false;
 
     SkAutoLockPixels lock1(bmp1);
@@ -943,7 +1163,7 @@ class GLHelperTest : public testing::Test {
       for (int x = 0; x < bmp1.width(); ++x) {
         if (!ColorsClose(bmp1.getColor(x,y),
                          bmp2.getColor(x,y),
-                         bmp1.config())) {
+                         bmp1.colorType())) {
           LOG(ERROR) << "Bitmap color comparision failure";
           return false;
         }
@@ -953,13 +1173,25 @@ class GLHelperTest : public testing::Test {
   }
 
   void BindAndAttachTextureWithPixels(GLuint src_texture,
-                                      SkBitmap::Config bitmap_config,
+                                      SkColorType color_type,
                                       const gfx::Size& src_size,
                                       const SkBitmap& input_pixels) {
     context_->bindTexture(GL_TEXTURE_2D, src_texture);
-    GLenum format = (bitmap_config == SkBitmap::kRGB_565_Config) ?
-                    GL_RGB : GL_RGBA;
-    GLenum type = (bitmap_config == SkBitmap::kRGB_565_Config) ?
+    GLenum format = 0;
+    switch (color_type) {
+      case kBGRA_8888_SkColorType:
+        format = GL_BGRA_EXT;
+        break;
+      case kRGBA_8888_SkColorType:
+        format = GL_RGBA;
+        break;
+      case kRGB_565_SkColorType:
+        format = GL_RGB;
+        break;
+      default:
+        NOTREACHED();
+    }
+    GLenum type = (color_type == kRGB_565_SkColorType) ?
                   GL_UNSIGNED_SHORT_5_6_5 : GL_UNSIGNED_BYTE;
     context_->texImage2D(GL_TEXTURE_2D,
                          0,
@@ -975,14 +1207,14 @@ class GLHelperTest : public testing::Test {
   void ReadBackTexture(GLuint src_texture,
                        const gfx::Size& src_size,
                        unsigned char* pixels,
-                       SkBitmap::Config bitmap_config,
+                       SkColorType color_type,
                        bool async) {
     if (async) {
       base::RunLoop run_loop;
       helper_->ReadbackTextureAsync(src_texture,
                                     src_size,
                                     pixels,
-                                    bitmap_config,
+                                    color_type,
                                     base::Bind(&callcallback,
                                                run_loop.QuitClosure()));
       run_loop.Run();
@@ -990,41 +1222,39 @@ class GLHelperTest : public testing::Test {
       helper_->ReadbackTextureSync(src_texture,
                                    gfx::Rect(src_size),
                                    pixels,
-                                   bitmap_config);
+                                   color_type);
     }
   }
-
   // Test basic format readback.
   bool TestTextureFormatReadback(const gfx::Size& src_size,
-                         SkBitmap::Config bitmap_config,
+                         SkColorType color_type,
                          bool async) {
-    if (!helper_->IsReadbackConfigSupported(bitmap_config)) {
-      LOG(INFO) << "Skipping test format not supported" << bitmap_config;
+    SkImageInfo info =
+        SkImageInfo::Make(src_size.width(),
+                          src_size.height(),
+                          color_type,
+                          kPremul_SkAlphaType);
+    if (!helper_->IsReadbackConfigSupported(color_type)) {
+      LOG(INFO) << "Skipping test format not supported" << color_type;
       return true;
     }
     WebGLId src_texture = context_->createTexture();
     SkBitmap input_pixels;
-    input_pixels.setConfig(bitmap_config, src_size.width(),
-                           src_size.height());
-    input_pixels.allocPixels();
-    SkAutoLockPixels lock1(input_pixels);
+    input_pixels.allocPixels(info);
     // Test Pattern-1, Fill with Plain color pattern.
     // Erase the input bitmap with red color.
     input_pixels.eraseColor(SK_ColorRED);
     BindAndAttachTextureWithPixels(src_texture,
-                                   bitmap_config,
+                                   color_type,
                                    src_size,
                                    input_pixels);
     SkBitmap output_pixels;
-    output_pixels.setConfig(bitmap_config, src_size.width(),
-                           src_size.height());
-    output_pixels.allocPixels();
-    SkAutoLockPixels lock2(output_pixels);
+    output_pixels.allocPixels(info);
     // Initialize the output bitmap with Green color.
     // When the readback is over output bitmap should have the red color.
     output_pixels.eraseColor(SK_ColorGREEN);
     uint8* pixels = static_cast<uint8*>(output_pixels.getPixels());
-    ReadBackTexture(src_texture, src_size, pixels, bitmap_config, async);
+    ReadBackTexture(src_texture, src_size, pixels, color_type, async);
     bool result = IsEqual(input_pixels, output_pixels);
     if (!result) {
       LOG(ERROR) << "Bitmap comparision failure Pattern-1";
@@ -1038,10 +1268,10 @@ class GLHelperTest : public testing::Test {
                    src_grid_pitch, src_grid_width,
                    input_pixels);
     BindAndAttachTextureWithPixels(src_texture,
-                                   bitmap_config,
+                                   color_type,
                                    src_size,
                                    input_pixels);
-    ReadBackTexture(src_texture, src_size, pixels, bitmap_config, async);
+    ReadBackTexture(src_texture, src_size, pixels, color_type, async);
     result = IsEqual(input_pixels, output_pixels);
     if (!result) {
       LOG(ERROR) << "Bitmap comparision failure Pattern-2";
@@ -1053,10 +1283,10 @@ class GLHelperTest : public testing::Test {
                     color1,
                     color2, rect_w, rect_h, input_pixels);
     BindAndAttachTextureWithPixels(src_texture,
-                                   bitmap_config,
+                                   color_type,
                                    src_size,
                                    input_pixels);
-    ReadBackTexture(src_texture, src_size, pixels, bitmap_config, async);
+    ReadBackTexture(src_texture, src_size, pixels, color_type, async);
     result = IsEqual(input_pixels, output_pixels);
     if (!result) {
       LOG(ERROR) << "Bitmap comparision failure Pattern-3";
@@ -1084,9 +1314,7 @@ class GLHelperTest : public testing::Test {
                        content::GLHelper::ScalerQuality quality) {
     WebGLId src_texture = context_->createTexture();
     SkBitmap input_pixels;
-    input_pixels.setConfig(SkBitmap::kARGB_8888_Config, xsize, ysize);
-    input_pixels.allocPixels();
-    SkAutoLockPixels lock(input_pixels);
+    input_pixels.allocN32Pixels(xsize, ysize);
 
     for (int x = 0; x < xsize; ++x) {
       for (int y = 0; y < ysize; ++y) {
@@ -1190,26 +1418,38 @@ class GLHelperTest : public testing::Test {
     memset(U, 0x80, u_stride * output_ysize / 2);
     memset(V, 0x80, v_stride * output_ysize / 2);
 
+    const float kRGBtoYColorWeights[] = {0.257f, 0.504f, 0.098f, 0.0625f};
+    const float kRGBtoUColorWeights[] = {-0.148f, -0.291f, 0.439f, 0.5f};
+    const float kRGBtoVColorWeights[] = {0.439f, -0.368f, -0.071f, 0.5f};
+
     for (int y = 0; y < ysize; y++) {
       for (int x = 0; x < xsize; x++) {
         Y[(y + ymargin) * y_stride + x + xmargin] = float_to_byte(
-            ChannelAsFloat(&input_pixels, x, y, 0) * 0.257 +
-            ChannelAsFloat(&input_pixels, x, y, 1) * 0.504 +
-            ChannelAsFloat(&input_pixels, x, y, 2) * 0.098 + 0.0625);
+            ChannelAsFloat(&input_pixels, x, y, 0) * kRGBtoYColorWeights[0] +
+            ChannelAsFloat(&input_pixels, x, y, 1) * kRGBtoYColorWeights[1] +
+            ChannelAsFloat(&input_pixels, x, y, 2) * kRGBtoYColorWeights[2] +
+            kRGBtoYColorWeights[3]);
       }
     }
 
     for (int y = 0; y < ysize / 2; y++) {
       for (int x = 0; x < xsize / 2; x++) {
-        U[(y + ymargin / 2) * u_stride + x + xmargin / 2] = float_to_byte(
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 0) * -0.148 +
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 1) * -0.291 +
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 2) * 0.439 + 0.5);
-        V[(y + ymargin / 2) * v_stride + x + xmargin / 2] = float_to_byte(
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 0) * 0.439 +
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 1) * -0.368 +
-            Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 2) * -0.071 +
-            0.5);
+        U[(y + ymargin / 2) * u_stride + x + xmargin / 2] =
+            float_to_byte(Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 0) *
+                              kRGBtoUColorWeights[0] +
+                          Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 1) *
+                              kRGBtoUColorWeights[1] +
+                          Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 2) *
+                              kRGBtoUColorWeights[2] +
+                          kRGBtoUColorWeights[3]);
+        V[(y + ymargin / 2) * v_stride + x + xmargin / 2] =
+            float_to_byte(Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 0) *
+                              kRGBtoVColorWeights[0] +
+                          Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 1) *
+                              kRGBtoVColorWeights[1] +
+                          Bilinear(&input_pixels, x * 2 + 1.0, y * 2 + 1.0, 2) *
+                              kRGBtoVColorWeights[2] +
+                          kRGBtoVColorWeights[3]);
       }
     }
 
@@ -1298,7 +1538,10 @@ class GLHelperTest : public testing::Test {
         &stages);
     EXPECT_EQ(x_ops_.size(), 0U);
     EXPECT_EQ(y_ops_.size(), 0U);
-    ValidateScalerStages(content::GLHelper::SCALER_QUALITY_GOOD, stages, "");
+    ValidateScalerStages(content::GLHelper::SCALER_QUALITY_GOOD,
+                         stages,
+                         gfx::Size(dst_xsize, dst_ysize),
+                         "");
     EXPECT_EQ(PrintStages(stages), description);
   }
 
@@ -1321,7 +1564,7 @@ class GLHelperTest : public testing::Test {
     // X scaled 1/2, Y scaled 1/2, one bilinear pass
     x_ops_.push_back(GLHelperScaling::ScaleOp(2, true, 512));
     y_ops_.push_back(GLHelperScaling::ScaleOp(2, false, 384));
-    CheckPipeline2(1024, 768, 2000, 384, "1024x768 -> 512x384 bilinear\n");
+    CheckPipeline2(1024, 768, 512, 384, "1024x768 -> 512x384 bilinear\n");
 
     // X scaled 1/2, Y scaled to 60%, one bilinear2 pass.
     x_ops_.push_back(GLHelperScaling::ScaleOp(2, true, 50));
@@ -1333,7 +1576,7 @@ class GLHelperTest : public testing::Test {
     x_ops_.push_back(GLHelperScaling::ScaleOp(0, true, 120));
     x_ops_.push_back(GLHelperScaling::ScaleOp(2, true, 60));
     y_ops_.push_back(GLHelperScaling::ScaleOp(2, false, 50));
-    CheckPipeline2(100, 100, 50, 60, "100x100 -> 60x50 bilinear2 X\n");
+    CheckPipeline2(100, 100, 60, 50, "100x100 -> 60x50 bilinear2 X\n");
 
     // X scaled to 60%, Y scaled 60%, one bilinear2x2 pass.
     x_ops_.push_back(GLHelperScaling::ScaleOp(0, true, 120));
@@ -1428,8 +1671,8 @@ class GLHelperTest : public testing::Test {
     y_ops_.push_back(GLHelperScaling::ScaleOp(2, false, 1));
     CheckPipeline2(100,
                    100,
-                   30,
-                   30,
+                   1,
+                   1,
                    "100x100 -> 100x32 bilinear4 Y\n"
                    "100x32 -> 100x4 bilinear4 Y\n"
                    "100x4 -> 64x1 bilinear2x2\n"
@@ -1449,10 +1692,19 @@ class GLHelperPixelTest : public GLHelperTest {
   gfx::DisableNullDrawGLBindings enable_pixel_output_;
 };
 
-TEST_F(GLHelperTest, ARGBSyncReadbackTest) {
+TEST_F(GLHelperTest, RGBASyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
-                                          SkBitmap::kARGB_8888_Config,
+                                          kRGBA_8888_SkColorType,
+                                          false);
+  EXPECT_EQ(result, true);
+}
+
+
+TEST_F(GLHelperTest, BGRASyncReadbackTest) {
+  const int kTestSize = 64;
+  bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
+                                          kBGRA_8888_SkColorType,
                                           false);
   EXPECT_EQ(result, true);
 }
@@ -1460,15 +1712,23 @@ TEST_F(GLHelperTest, ARGBSyncReadbackTest) {
 TEST_F(GLHelperTest, RGB565SyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
-                                          SkBitmap::kRGB_565_Config,
+                                          kRGB_565_SkColorType,
                                           false);
   EXPECT_EQ(result, true);
 }
 
-TEST_F(GLHelperTest, ARGBASyncReadbackTest) {
+TEST_F(GLHelperTest, RGBAASyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
-                                          SkBitmap::kARGB_8888_Config,
+                                          kRGBA_8888_SkColorType,
+                                          true);
+  EXPECT_EQ(result, true);
+}
+
+TEST_F(GLHelperTest, BGRAASyncReadbackTest) {
+  const int kTestSize = 64;
+  bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
+                                          kBGRA_8888_SkColorType,
                                           true);
   EXPECT_EQ(result, true);
 }
@@ -1476,7 +1736,7 @@ TEST_F(GLHelperTest, ARGBASyncReadbackTest) {
 TEST_F(GLHelperTest, RGB565ASyncReadbackTest) {
   const int kTestSize = 64;
   bool result = TestTextureFormatReadback(gfx::Size(kTestSize,kTestSize),
-                                          SkBitmap::kRGB_565_Config,
+                                          kRGB_565_SkColorType,
                                           true);
   EXPECT_EQ(result, true);
 }
@@ -1563,7 +1823,7 @@ TEST_F(GLHelperPixelTest, YUVReadbackTest) {
 TEST_F(GLHelperPixelTest, ScaleTest) {
   int sizes[] = {3, 6, 16};
   for (int flip = 0; flip <= 1; flip++) {
-    for (size_t q = 0; q < arraysize(kQualities); q++) {
+    for (size_t q_index = 0; q_index < arraysize(kQualities); q_index++) {
       for (int x = 0; x < 3; x++) {
         for (int y = 0; y < 3; y++) {
           for (int dst_x = 0; dst_x < 3; dst_x++) {
@@ -1574,11 +1834,45 @@ TEST_F(GLHelperPixelTest, ScaleTest) {
                           sizes[dst_x],
                           sizes[dst_y],
                           pattern,
-                          q,
+                          q_index,
                           flip == 1);
                 if (HasFailure()) {
                   return;
                 }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Per pixel tests, all sizes are small so that we can print
+// out the generated bitmaps.
+TEST_F(GLHelperPixelTest, CropScaleReadbackAndCleanTextureTest) {
+  const int kSizes[] = {3, 6, 16};
+  const SkColorType kColorTypes[] = {
+      kAlpha_8_SkColorType, kRGBA_8888_SkColorType, kBGRA_8888_SkColorType};
+  for (size_t color_type = 0; color_type < arraysize(kColorTypes);
+       color_type++) {
+    // Test BEST and FAST qualities, skip GOOD
+    for (size_t q_index = 0; q_index < arraysize(kQualities); q_index += 2) {
+      for (size_t x = 0; x < arraysize(kSizes); x++) {
+        for (size_t y = 0; y < arraysize(kSizes); y++) {
+          for (size_t dst_x = 0; dst_x < arraysize(kSizes); dst_x++) {
+            for (size_t dst_y = 0; dst_y < arraysize(kSizes); dst_y++) {
+              for (int pattern = 0; pattern < 3; pattern++) {
+                TestCropScaleReadbackAndCleanTexture(kSizes[x],
+                                                     kSizes[y],
+                                                     kSizes[dst_x],
+                                                     kSizes[dst_y],
+                                                     pattern,
+                                                     kColorTypes[color_type],
+                                                     false,
+                                                     q_index);
+                if (HasFailure())
+                  return;
               }
             }
           }
@@ -1661,7 +1955,7 @@ TEST_F(GLHelperTest, CheckOptimizations) {
 // These tests needs to run against a proper GL environment, so we
 // need to set it up before we can run the tests.
 int main(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   base::TestSuite* suite = new content::ContentTestSuite(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;

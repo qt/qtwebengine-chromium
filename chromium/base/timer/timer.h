@@ -60,6 +60,7 @@
 namespace base {
 
 class BaseTimerTaskInternal;
+class SingleThreadTaskRunner;
 
 //-----------------------------------------------------------------------------
 // This class wraps MessageLoop::PostDelayedTask to manage delayed and repeating
@@ -87,6 +88,10 @@ class BASE_EXPORT Timer {
   // Returns the current delay for this timer.
   virtual TimeDelta GetCurrentDelay() const;
 
+  // Set the task runner on which the task should be scheduled. This method can
+  // only be called before any tasks have been scheduled.
+  virtual void SetTaskRunner(scoped_refptr<SingleThreadTaskRunner> task_runner);
+
   // Start the timer to run at the given |delay| from now. If the timer is
   // already running, it will be replaced to call the given |user_task|.
   virtual void Start(const tracked_objects::Location& posted_from,
@@ -111,8 +116,14 @@ class BASE_EXPORT Timer {
                    TimeDelta delay,
                    const base::Closure& user_task);
 
+  void set_user_task(const Closure& task) { user_task_ = task; }
+  void set_desired_run_time(TimeTicks desired) { desired_run_time_ = desired; }
+  void set_is_running(bool running) { is_running_ = running; }
+
+  const tracked_objects::Location& posted_from() const { return posted_from_; }
   bool retain_user_task() const { return retain_user_task_; }
   bool is_repeating() const { return is_repeating_; }
+  bool is_running() const { return is_running_; }
 
  private:
   friend class BaseTimerTaskInternal;
@@ -121,6 +132,11 @@ class BASE_EXPORT Timer {
   // with the given |delay|. scheduled_task_ must be NULL. scheduled_run_time_
   // and desired_run_time_ are reset to Now() + delay.
   void PostNewScheduledTask(TimeDelta delay);
+
+  // Returns the task runner on which the task should be scheduled. If the
+  // corresponding task_runner_ field is null, the task runner for the current
+  // thread is returned.
+  scoped_refptr<SingleThreadTaskRunner> GetTaskRunner();
 
   // Disable scheduled_task_ and abandon it so that it no longer refers back to
   // this object.
@@ -138,6 +154,10 @@ class BASE_EXPORT Timer {
   // When non-NULL, the scheduled_task_ is waiting in the MessageLoop to call
   // RunScheduledTask() at scheduled_run_time_.
   BaseTimerTaskInternal* scheduled_task_;
+
+  // The task runner on which the task should be scheduled. If it is null, the
+  // task runner for the current thread should be used.
+  scoped_refptr<SingleThreadTaskRunner> task_runner_;
 
   // Location in user code.
   tracked_objects::Location posted_from_;

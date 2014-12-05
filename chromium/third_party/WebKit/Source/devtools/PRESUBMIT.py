@@ -32,16 +32,22 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts
 for more details about the presubmit API built into gcl.
 """
 
-import os
-import re
 import sys
 
+compile_note = "Be sure to run your patch by the compile_frontend.py script prior to committing!"
 
 def _CompileDevtoolsFrontend(input_api, output_api):
-    if not input_api.platform.startswith('linux'):
-        return []
     local_paths = [f.LocalPath() for f in input_api.AffectedFiles()]
-    if (any("devtools/front_end" in path for path in local_paths) or
+
+    # FIXME: The compilation does not actually run if injected script-related files
+    # have changed, as they reside in core/inspector, which is not affected
+    # by this presubmit.
+    # Once this is fixed, InjectedScriptHost.idl and JavaScriptCallFrame.idl
+    # should be added to the list of triggers.
+    devtools_front_end = input_api.os_path.join("devtools", "front_end")
+    if (any(devtools_front_end in path for path in local_paths) or
+        any("protocol.json" in path for path in local_paths) or
+        any("compile_frontend.py" in path for path in local_paths) or
         any("InjectedScriptSource.js" in path for path in local_paths) or
         any("InjectedScriptCanvasModuleSource.js" in path for path in local_paths)):
         lint_path = input_api.os_path.join(input_api.PresubmitLocalPath(),
@@ -50,8 +56,10 @@ def _CompileDevtoolsFrontend(input_api, output_api):
             [input_api.python_executable, lint_path],
             stdout=input_api.subprocess.PIPE,
             stderr=input_api.subprocess.STDOUT).communicate()
-        if "WARNING" in out or "ERROR" in out:
+        if "ERROR" in out or "WARNING" in out:
             return [output_api.PresubmitError(out)]
+        if "NOTE" in out:
+            return [output_api.PresubmitPromptWarning(out + compile_note)]
     return []
 
 
@@ -67,14 +75,15 @@ def _CheckConvertSVGToPNGHashes(input_api, output_api):
         sys.path = original_sys_path
 
     absolute_local_paths = [af.AbsoluteLocalPath() for af in input_api.AffectedFiles(include_deletes=False)]
-    image_source_file_paths = [path for path in absolute_local_paths if "devtools/front_end/Images/src" in path and path.endswith(".svg")]
+    images_src_path = input_api.os_path.join("devtools", "front_end", "Images", "src")
+    image_source_file_paths = [path for path in absolute_local_paths if images_src_path in path and path.endswith(".svg")]
     image_sources_path = input_api.os_path.join(input_api.PresubmitLocalPath(), "front_end", "Images", "src")
     hashes_file_name = "svg2png.hashes"
-    hashes_file_path = image_sources_path + "/" + hashes_file_name
+    hashes_file_path = input_api.os_path.join(image_sources_path, hashes_file_name)
     invalid_hash_file_paths = devtools_file_hashes.files_with_invalid_hashes(hashes_file_path, image_source_file_paths)
     if len(invalid_hash_file_paths) == 0:
         return []
-    invalid_hash_file_names = [re.sub(".*/", "", file_path) for file_path in invalid_hash_file_paths]
+    invalid_hash_file_names = [input_api.os_path.basename(file_path) for file_path in invalid_hash_file_paths]
     file_paths_str = ", ".join(invalid_hash_file_names)
     error_message = "The following SVG files should be converted to PNG using convert_svg_images_png.py script before uploading: \n  - %s" % file_paths_str
     return [output_api.PresubmitError(error_message)]
@@ -92,14 +101,15 @@ def _CheckOptimizePNGHashes(input_api, output_api):
         sys.path = original_sys_path
 
     absolute_local_paths = [af.AbsoluteLocalPath() for af in input_api.AffectedFiles(include_deletes=False)]
-    image_source_file_paths = [path for path in absolute_local_paths if "devtools/front_end/Images/src" in path and path.endswith(".svg")]
+    images_src_path = input_api.os_path.join("devtools", "front_end", "Images", "src")
+    image_source_file_paths = [path for path in absolute_local_paths if images_src_path in path and path.endswith(".svg")]
     image_sources_path = input_api.os_path.join(input_api.PresubmitLocalPath(), "front_end", "Images", "src")
     hashes_file_name = "optimize_png.hashes"
-    hashes_file_path = image_sources_path + "/" + hashes_file_name
+    hashes_file_path = input_api.os_path.join(image_sources_path, hashes_file_name)
     invalid_hash_file_paths = devtools_file_hashes.files_with_invalid_hashes(hashes_file_path, image_source_file_paths)
     if len(invalid_hash_file_paths) == 0:
         return []
-    invalid_hash_file_names = [re.sub(".*/", "", file_path) for file_path in invalid_hash_file_paths]
+    invalid_hash_file_names = [input_api.os_path.basename(file_path) for file_path in invalid_hash_file_paths]
     file_paths_str = ", ".join(invalid_hash_file_names)
     error_message = "The following PNG files should be optimized using optimize_png_images.py script before uploading: \n  - %s" % file_paths_str
     return [output_api.PresubmitError(error_message)]

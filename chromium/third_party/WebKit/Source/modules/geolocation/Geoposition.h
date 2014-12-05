@@ -26,14 +26,15 @@
 #ifndef Geoposition_h
 #define Geoposition_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/EventModules.h"
 #include "modules/geolocation/Coordinates.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class Geoposition : public GarbageCollectedFinalized<Geoposition>, public ScriptWrappable {
+class Geoposition final : public GarbageCollected<Geoposition>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static Geoposition* create(Coordinates* coordinates, DOMTimeStamp timestamp)
     {
@@ -54,13 +55,12 @@ private:
         , m_timestamp(timestamp)
     {
         ASSERT(m_coordinates);
-        ScriptWrappable::init(this);
     }
 
     Member<Coordinates> m_coordinates;
     DOMTimeStamp m_timestamp;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Geoposition_h

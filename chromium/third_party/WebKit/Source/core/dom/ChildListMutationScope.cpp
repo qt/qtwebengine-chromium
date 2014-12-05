@@ -37,7 +37,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 // The accumulator map is used to make sure that there is only one mutation
 // accumulator for a given node even if there are multiple ChildListMutationScopes
@@ -147,7 +147,7 @@ void ChildListMutationAccumulator::enqueueMutationRecord()
 bool ChildListMutationAccumulator::isEmpty()
 {
     bool result = m_removedNodes.isEmpty() && m_addedNodes.isEmpty();
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (result) {
         ASSERT(!m_previousSibling);
         ASSERT(!m_nextSibling);
@@ -168,4 +168,4 @@ void ChildListMutationAccumulator::trace(Visitor* visitor)
     visitor->trace(m_observers);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="extension_command_list.js"></include>
+<include src="extension_command_list.js">
 
 cr.define('extensions', function() {
   'use strict';
@@ -51,6 +51,8 @@ cr.define('extensions', function() {
   /**
    * Called by the dom_ui_ to re-populate the page with data representing
    * the current state of extension commands.
+   * @param {!{commands: Array.<{name: string, id: string, commands: ?Array}>}}
+   *     extensionsData
    */
   ExtensionCommandsOverlay.returnExtensionsData = function(extensionsData) {
     ExtensionCommandList.prototype.data_ = extensionsData;
@@ -68,7 +70,7 @@ cr.define('extensions', function() {
       list.classList.add('empty-extension-commands-list');
     else
       list.classList.remove('empty-extension-commands-list');
-  }
+  };
 
   // Export
   return {

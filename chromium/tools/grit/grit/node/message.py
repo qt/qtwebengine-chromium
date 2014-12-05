@@ -224,6 +224,13 @@ class MessageNode(base.ContentNode):
     message = self.ws_at_start + self.Translate(lang) + self.ws_at_end
     return id, util.Encode(message, encoding)
 
+  def IsResourceMapSource(self):
+    return True
+
+  def GeneratesResourceMapEntry(self, output_all_resource_defines,
+                                is_active_descendant):
+    return is_active_descendant
+
   @staticmethod
   def Construct(parent, message, name, desc='', meaning='', translateable=True):
     '''Constructs a new message node that is a child of 'parent', with the

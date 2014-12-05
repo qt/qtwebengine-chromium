@@ -115,7 +115,7 @@ ifeq ($(CONFIG_VP9_ENCODER),yes)
   CODEC_EXPORTS-yes += $(addprefix $(VP9_PREFIX),$(VP9_CX_EXPORTS))
   CODEC_SRCS-yes += $(VP9_PREFIX)vp9cx.mk vpx/vp8.h vpx/vp8cx.h
   INSTALL-LIBS-yes += include/vpx/vp8.h include/vpx/vp8cx.h
-  INSTALL-LIBS-yes += include/vpx/svc_context.h
+  INSTALL-LIBS-$(CONFIG_SPATIAL_SVC) += include/vpx/svc_context.h
   INSTALL_MAPS += include/vpx/% $(SRC_PATH_BARE)/$(VP9_PREFIX)/%
   CODEC_DOC_SRCS += vpx/vp8.h vpx/vp8cx.h
   CODEC_DOC_SECTIONS += vp9 vp9_encoder
@@ -133,6 +133,8 @@ ifeq ($(CONFIG_VP9_DECODER),yes)
   CODEC_DOC_SECTIONS += vp9 vp9_decoder
 endif
 
+VP9_PREFIX=vp9/
+$(BUILD_PFX)$(VP9_PREFIX)%.c.o: CFLAGS += -Wextra
 
 ifeq ($(CONFIG_ENCODERS),yes)
   CODEC_DOC_SECTIONS += encoder
@@ -170,7 +172,7 @@ CODEC_SRCS-$(BUILD_LIBVPX) += vpx_ports/vpx_once.h
 CODEC_SRCS-$(BUILD_LIBVPX) += $(BUILD_PFX)vpx_config.c
 INSTALL-SRCS-no += $(BUILD_PFX)vpx_config.c
 ifeq ($(ARCH_X86)$(ARCH_X86_64),yes)
-CODEC_SRCS-$(BUILD_LIBVPX) += third_party/x86inc/x86inc.asm
+INSTALL-SRCS-$(CONFIG_CODEC_SRCS) += third_party/x86inc/x86inc.asm
 endif
 CODEC_EXPORTS-$(BUILD_LIBVPX) += vpx/exports_com
 CODEC_EXPORTS-$(CONFIG_ENCODERS) += vpx/exports_enc
@@ -222,6 +224,7 @@ obj_int_extract.$(VCPROJ_SFX): $(SRC_PATH_BARE)/build/make/obj_int_extract.c
     --name=obj_int_extract \
     --ver=$(CONFIG_VS_VERSION) \
     --proj-guid=E1360C65-D375-4335-8057-7ED99CC3F9B2 \
+    --src-path-bare="$(SRC_PATH_BARE)" \
     $(if $(CONFIG_STATIC_MSVCRT),--static-crt) \
     --out=$@ $^ \
     -I. \
@@ -253,6 +256,7 @@ vpx.$(VCPROJ_SFX): $(CODEC_SRCS) vpx.def obj_int_extract.$(VCPROJ_SFX)
             --proj-guid=DCE19DAF-69AC-46DB-B14A-39F0FAA5DB74 \
             --module-def=vpx.def \
             --ver=$(CONFIG_VS_VERSION) \
+            --src-path-bare="$(SRC_PATH_BARE)" \
             --out=$@ $(CFLAGS) \
             $(filter-out $(addprefix %, $(ASM_INCLUDES)), $^) \
             --src-path-bare="$(SRC_PATH_BARE)" \
@@ -407,12 +411,16 @@ $(LIBVPX_TEST_DATA): $(SRC_PATH_BARE)/test/test-data.sha1
             curl -L -o $@ $(call libvpx_test_data_url,$(@F))
 
 testdata:: $(LIBVPX_TEST_DATA)
-	$(qexec)if [ -x "$$(which sha1sum)" ]; then\
+	$(qexec)[ -x "$$(which sha1sum)" ] && sha1sum=sha1sum;\
+          [ -x "$$(which shasum)" ] && sha1sum=shasum;\
+          [ -x "$$(which sha1)" ] && sha1sum=sha1;\
+          if [ -n "$${sha1sum}" ]; then\
+            set -e;\
             echo "Checking test data:";\
             if [ -n "$(LIBVPX_TEST_DATA)" ]; then\
                 for f in $(call enabled,LIBVPX_TEST_DATA); do\
                     grep $$f $(SRC_PATH_BARE)/test/test-data.sha1 |\
-                        (cd $(LIBVPX_TEST_DATA_PATH); sha1sum -c);\
+                        (cd $(LIBVPX_TEST_DATA_PATH); $${sha1sum} -c);\
                 done; \
             fi; \
         else\
@@ -447,6 +455,7 @@ test_libvpx.$(VCPROJ_SFX): $(LIBVPX_TEST_SRCS) vpx.$(VCPROJ_SFX) gtest.$(VCPROJ_
             -D_VARIADIC_MAX=10 \
             --proj-guid=CD837F5F-52D8-4314-A370-895D614166A7 \
             --ver=$(CONFIG_VS_VERSION) \
+            --src-path-bare="$(SRC_PATH_BARE)" \
             $(if $(CONFIG_STATIC_MSVCRT),--static-crt) \
             --out=$@ $(INTERNAL_CFLAGS) $(CFLAGS) \
             -I. -I"$(SRC_PATH_BARE)/third_party/googletest/src/include" \
@@ -522,7 +531,6 @@ libs.doxy: $(CODEC_DOC_SRCS)
 	@echo "    [CREATE] $@"
 	@rm -f $@
 	@echo "INPUT += $^" >> $@
-	@echo "PREDEFINED = VPX_CODEC_DISABLE_COMPAT" >> $@
 	@echo "INCLUDE_PATH += ." >> $@;
 	@echo "ENABLED_SECTIONS += $(sort $(CODEC_DOC_SECTIONS))" >> $@
 
@@ -555,4 +563,27 @@ utiltest: testdata
 else
 utiltest:
 	@echo Unit tests must be enabled to make the utiltest target.
+endif
+
+##
+## Example tests.
+##
+ifeq ($(CONFIG_UNIT_TESTS),yes)
+# All non-MSVC targets output example targets in a sub dir named examples.
+EXAMPLES_BIN_PATH = examples
+ifeq ($(CONFIG_MSVS),yes)
+# MSVC will build both Debug and Release configurations of the examples in a
+# sub directory named for the current target. Assume the user wants to
+# run the Release tools, and assign EXAMPLES_BIN_PATH accordingly.
+# TODO(tomfinegan): Is this adequate for ARM?
+# TODO(tomfinegan): Support running the debug versions of tools?
+EXAMPLES_BIN_PATH := $(TGT_OS:win64=x64)/Release
+endif
+exampletest: examples testdata
+	$(qexec)$(SRC_PATH_BARE)/test/examples.sh \
+		--test-data-path $(LIBVPX_TEST_DATA_PATH) \
+		--bin-path $(EXAMPLES_BIN_PATH)
+else
+exampletest:
+	@echo Unit tests must be enabled to make the exampletest target.
 endif

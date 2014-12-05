@@ -47,7 +47,7 @@ class SystemDelayTest : public ::testing::Test {
   int samples_per_frame_;
   // Dummy input/output speech data.
   static const int kSamplesPerChunk = 160;
-  int16_t far_[kSamplesPerChunk];
+  float far_[kSamplesPerChunk];
   float near_[kSamplesPerChunk];
   float out_[kSamplesPerChunk];
 };
@@ -55,9 +55,10 @@ class SystemDelayTest : public ::testing::Test {
 SystemDelayTest::SystemDelayTest()
     : handle_(NULL), self_(NULL), samples_per_frame_(0) {
   // Dummy input data are set with more or less arbitrary non-zero values.
-  memset(far_, 1, sizeof(far_));
-  for (int i = 0; i < kSamplesPerChunk; i++)
+  for (int i = 0; i < kSamplesPerChunk; i++) {
+    far_[i] = 257.0;
     near_[i] = 514.0;
+  }
   memset(out_, 0, sizeof(out_));
 }
 
@@ -248,7 +249,8 @@ TEST_F(SystemDelayTest, CorrectDelayAfterUnstableStartup) {
   }
 }
 
-TEST_F(SystemDelayTest, CorrectDelayAfterStableBufferBuildUp) {
+TEST_F(SystemDelayTest,
+       DISABLED_ON_ANDROID(CorrectDelayAfterStableBufferBuildUp)) {
   // In this test we start by establishing the device buffer size during stable
   // conditions, but with an empty internal far-end buffer. Once that is done we
   // verify that the system delay is increased correctly until we have reach an
@@ -332,7 +334,7 @@ TEST_F(SystemDelayTest, CorrectDelayWhenBufferUnderrun) {
   }
 }
 
-TEST_F(SystemDelayTest, CorrectDelayDuringDrift) {
+TEST_F(SystemDelayTest, DISABLED_ON_ANDROID(CorrectDelayDuringDrift)) {
   // This drift test should verify that the system delay is never exceeding the
   // device buffer. The drift is simulated by decreasing the reported device
   // buffer size by 1 ms every 100 ms. If the device buffer size goes below 30
@@ -366,7 +368,7 @@ TEST_F(SystemDelayTest, CorrectDelayDuringDrift) {
   }
 }
 
-TEST_F(SystemDelayTest, ShouldRecoverAfterGlitch) {
+TEST_F(SystemDelayTest, DISABLED_ON_ANDROID(ShouldRecoverAfterGlitch)) {
   // This glitch test should verify that the system delay recovers if there is
   // a glitch in data. The data glitch is constructed as 200 ms of buffering
   // after which the stable procedure continues. The glitch is never reported by

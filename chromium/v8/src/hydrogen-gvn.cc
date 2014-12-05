@@ -9,7 +9,7 @@
 namespace v8 {
 namespace internal {
 
-class HInstructionMap V8_FINAL : public ZoneObject {
+class HInstructionMap FINAL : public ZoneObject {
  public:
   HInstructionMap(Zone* zone, SideEffectsTracker* side_effects_tracker)
       : array_size_(0),
@@ -70,7 +70,7 @@ class HInstructionMap V8_FINAL : public ZoneObject {
 };
 
 
-class HSideEffectMap V8_FINAL BASE_EMBEDDED {
+class HSideEffectMap FINAL BASE_EMBEDDED {
  public:
   HSideEffectMap();
   explicit HSideEffectMap(HSideEffectMap* other);
@@ -83,8 +83,8 @@ class HSideEffectMap V8_FINAL BASE_EMBEDDED {
   bool IsEmpty() const { return count_ == 0; }
 
   inline HInstruction* operator[](int i) const {
-    ASSERT(0 <= i);
-    ASSERT(i < kNumberOfTrackedSideEffects);
+    DCHECK(0 <= i);
+    DCHECK(i < kNumberOfTrackedSideEffects);
     return data_[i];
   }
   inline HInstruction* at(int i) const { return operator[](i); }
@@ -98,7 +98,7 @@ class HSideEffectMap V8_FINAL BASE_EMBEDDED {
 void TraceGVN(const char* msg, ...) {
   va_list arguments;
   va_start(arguments, msg);
-  OS::VPrint(msg, arguments);
+  base::OS::VPrint(msg, arguments);
   va_end(arguments);
 }
 
@@ -212,7 +212,7 @@ HInstruction* HInstructionMap::Lookup(HInstruction* instr) const {
 
 
 void HInstructionMap::Resize(int new_size, Zone* zone) {
-  ASSERT(new_size > count_);
+  DCHECK(new_size > count_);
   // Hashing the values into the new array has no more collisions than in the
   // old hash map, so we can use the existing lists_ array, if we are careful.
 
@@ -252,12 +252,12 @@ void HInstructionMap::Resize(int new_size, Zone* zone) {
     }
   }
   USE(old_count);
-  ASSERT(count_ == old_count);
+  DCHECK(count_ == old_count);
 }
 
 
 void HInstructionMap::ResizeLists(int new_size, Zone* zone) {
-  ASSERT(new_size > lists_size_);
+  DCHECK(new_size > lists_size_);
 
   HInstructionMapListElement* new_lists =
       zone->NewArray<HInstructionMapListElement>(new_size);
@@ -280,10 +280,10 @@ void HInstructionMap::ResizeLists(int new_size, Zone* zone) {
 
 
 void HInstructionMap::Insert(HInstruction* instr, Zone* zone) {
-  ASSERT(instr != NULL);
+  DCHECK(instr != NULL);
   // Resizing when half of the hashtable is filled up.
   if (count_ >= array_size_ >> 1) Resize(array_size_ << 1, zone);
-  ASSERT(count_ < array_size_);
+  DCHECK(count_ < array_size_);
   count_++;
   uint32_t pos = Bound(static_cast<uint32_t>(instr->Hashcode()));
   if (array_[pos].instr == NULL) {
@@ -294,11 +294,11 @@ void HInstructionMap::Insert(HInstruction* instr, Zone* zone) {
       ResizeLists(lists_size_ << 1, zone);
     }
     int new_element_pos = free_list_head_;
-    ASSERT(new_element_pos != kNil);
+    DCHECK(new_element_pos != kNil);
     free_list_head_ = lists_[free_list_head_].next;
     lists_[new_element_pos].instr = instr;
     lists_[new_element_pos].next = array_[pos].next;
-    ASSERT(array_[pos].next == kNil || lists_[array_[pos].next].instr != NULL);
+    DCHECK(array_[pos].next == kNil || lists_[array_[pos].next].instr != NULL);
     array_[pos].next = new_element_pos;
   }
 }
@@ -400,20 +400,20 @@ SideEffects SideEffectsTracker::ComputeDependsOn(HInstruction* instr) {
 }
 
 
-void SideEffectsTracker::PrintSideEffectsTo(StringStream* stream,
-                                          SideEffects side_effects) const {
+std::ostream& operator<<(std::ostream& os, const TrackedEffects& te) {
+  SideEffectsTracker* t = te.tracker;
   const char* separator = "";
-  stream->Add("[");
+  os << "[";
   for (int bit = 0; bit < kNumberOfFlags; ++bit) {
     GVNFlag flag = GVNFlagFromInt(bit);
-    if (side_effects.ContainsFlag(flag)) {
-      stream->Add(separator);
+    if (te.effects.ContainsFlag(flag)) {
+      os << separator;
       separator = ", ";
       switch (flag) {
-#define DECLARE_FLAG(Type)      \
-        case k##Type:           \
-          stream->Add(#Type);   \
-          break;
+#define DECLARE_FLAG(Type) \
+  case k##Type:            \
+    os << #Type;           \
+    break;
 GVN_TRACKED_FLAG_LIST(DECLARE_FLAG)
 GVN_UNTRACKED_FLAG_LIST(DECLARE_FLAG)
 #undef DECLARE_FLAG
@@ -422,21 +422,20 @@ GVN_UNTRACKED_FLAG_LIST(DECLARE_FLAG)
       }
     }
   }
-  for (int index = 0; index < num_global_vars_; ++index) {
-    if (side_effects.ContainsSpecial(GlobalVar(index))) {
-      stream->Add(separator);
+  for (int index = 0; index < t->num_global_vars_; ++index) {
+    if (te.effects.ContainsSpecial(t->GlobalVar(index))) {
+      os << separator << "[" << *t->global_vars_[index].handle() << "]";
       separator = ", ";
-      stream->Add("[%p]", *global_vars_[index].handle());
     }
   }
-  for (int index = 0; index < num_inobject_fields_; ++index) {
-    if (side_effects.ContainsSpecial(InobjectField(index))) {
-      stream->Add(separator);
+  for (int index = 0; index < t->num_inobject_fields_; ++index) {
+    if (te.effects.ContainsSpecial(t->InobjectField(index))) {
+      os << separator << t->inobject_fields_[index];
       separator = ", ";
-      inobject_fields_[index].PrintTo(stream);
     }
   }
-  stream->Add("]");
+  os << "]";
+  return os;
 }
 
 
@@ -449,11 +448,9 @@ bool SideEffectsTracker::ComputeGlobalVar(Unique<Cell> cell, int* index) {
   }
   if (num_global_vars_ < kNumberOfGlobalVars) {
     if (FLAG_trace_gvn) {
-      HeapStringAllocator allocator;
-      StringStream stream(&allocator);
-      stream.Add("Tracking global var [%p] (mapped to index %d)\n",
-                 *cell.handle(), num_global_vars_);
-      stream.OutputToStdOut();
+      OFStream os(stdout);
+      os << "Tracking global var [" << *cell.handle() << "] "
+         << "(mapped to index " << num_global_vars_ << ")" << std::endl;
     }
     *index = num_global_vars_;
     global_vars_[num_global_vars_++] = cell;
@@ -473,12 +470,9 @@ bool SideEffectsTracker::ComputeInobjectField(HObjectAccess access,
   }
   if (num_inobject_fields_ < kNumberOfInobjectFields) {
     if (FLAG_trace_gvn) {
-      HeapStringAllocator allocator;
-      StringStream stream(&allocator);
-      stream.Add("Tracking inobject field access ");
-      access.PrintTo(&stream);
-      stream.Add(" (mapped to index %d)\n", num_inobject_fields_);
-      stream.OutputToStdOut();
+      OFStream os(stdout);
+      os << "Tracking inobject field access " << access << " (mapped to index "
+         << num_inobject_fields_ << ")" << std::endl;
     }
     *index = num_inobject_fields_;
     inobject_fields_[num_inobject_fields_++] = access;
@@ -494,7 +488,7 @@ HGlobalValueNumberingPhase::HGlobalValueNumberingPhase(HGraph* graph)
       block_side_effects_(graph->blocks()->length(), zone()),
       loop_side_effects_(graph->blocks()->length(), zone()),
       visited_on_paths_(graph->blocks()->length(), zone()) {
-  ASSERT(!AllowHandleAllocation::IsAllowed());
+  DCHECK(!AllowHandleAllocation::IsAllowed());
   block_side_effects_.AddBlock(
       SideEffects(), graph->blocks()->length(), zone());
   loop_side_effects_.AddBlock(
@@ -503,7 +497,7 @@ HGlobalValueNumberingPhase::HGlobalValueNumberingPhase(HGraph* graph)
 
 
 void HGlobalValueNumberingPhase::Run() {
-  ASSERT(!removed_side_effects_);
+  DCHECK(!removed_side_effects_);
   for (int i = FLAG_gvn_iterations; i > 0; --i) {
     // Compute the side effects.
     ComputeBlockSideEffects();
@@ -519,8 +513,8 @@ void HGlobalValueNumberingPhase::Run() {
     removed_side_effects_ = false;
 
     // Clear all side effects.
-    ASSERT_EQ(block_side_effects_.length(), graph()->blocks()->length());
-    ASSERT_EQ(loop_side_effects_.length(), graph()->blocks()->length());
+    DCHECK_EQ(block_side_effects_.length(), graph()->blocks()->length());
+    DCHECK_EQ(loop_side_effects_.length(), graph()->blocks()->length());
     for (int i = 0; i < graph()->blocks()->length(); ++i) {
       block_side_effects_[i].RemoveAll();
       loop_side_effects_[i].RemoveAll();
@@ -571,13 +565,9 @@ void HGlobalValueNumberingPhase::LoopInvariantCodeMotion() {
     if (block->IsLoopHeader()) {
       SideEffects side_effects = loop_side_effects_[block->block_id()];
       if (FLAG_trace_gvn) {
-        HeapStringAllocator allocator;
-        StringStream stream(&allocator);
-        stream.Add("Try loop invariant motion for block B%d changes ",
-                   block->block_id());
-        side_effects_tracker_.PrintSideEffectsTo(&stream, side_effects);
-        stream.Add("\n");
-        stream.OutputToStdOut();
+        OFStream os(stdout);
+        os << "Try loop invariant motion for " << *block << " changes "
+           << Print(side_effects) << std::endl;
       }
       HBasicBlock* last = block->loop_information()->GetLastBackEdge();
       for (int j = block->block_id(); j <= last->block_id(); ++j) {
@@ -594,13 +584,9 @@ void HGlobalValueNumberingPhase::ProcessLoopBlock(
     SideEffects loop_kills) {
   HBasicBlock* pre_header = loop_header->predecessors()->at(0);
   if (FLAG_trace_gvn) {
-    HeapStringAllocator allocator;
-    StringStream stream(&allocator);
-    stream.Add("Loop invariant code motion for B%d depends on ",
-               block->block_id());
-    side_effects_tracker_.PrintSideEffectsTo(&stream, loop_kills);
-    stream.Add("\n");
-    stream.OutputToStdOut();
+    OFStream os(stdout);
+    os << "Loop invariant code motion for " << *block << " depends on "
+       << Print(loop_kills) << std::endl;
   }
   HInstruction* instr = block->first();
   while (instr != NULL) {
@@ -609,17 +595,11 @@ void HGlobalValueNumberingPhase::ProcessLoopBlock(
       SideEffects changes = side_effects_tracker_.ComputeChanges(instr);
       SideEffects depends_on = side_effects_tracker_.ComputeDependsOn(instr);
       if (FLAG_trace_gvn) {
-        HeapStringAllocator allocator;
-        StringStream stream(&allocator);
-        stream.Add("Checking instruction i%d (%s) changes ",
-                   instr->id(), instr->Mnemonic());
-        side_effects_tracker_.PrintSideEffectsTo(&stream, changes);
-        stream.Add(", depends on ");
-        side_effects_tracker_.PrintSideEffectsTo(&stream, depends_on);
-        stream.Add(". Loop changes ");
-        side_effects_tracker_.PrintSideEffectsTo(&stream, loop_kills);
-        stream.Add("\n");
-        stream.OutputToStdOut();
+        OFStream os(stdout);
+        os << "Checking instruction i" << instr->id() << " ("
+           << instr->Mnemonic() << ") changes " << Print(changes)
+           << ", depends on " << Print(depends_on) << ". Loop changes "
+           << Print(loop_kills) << std::endl;
       }
       bool can_hoist = !depends_on.ContainsAnyOf(loop_kills);
       if (can_hoist && !graph()->use_optimistic_licm()) {
@@ -854,20 +834,17 @@ void HGlobalValueNumberingPhase::AnalyzeGraph() {
         map->Kill(changes);
         dominators->Store(changes, instr);
         if (FLAG_trace_gvn) {
-          HeapStringAllocator allocator;
-          StringStream stream(&allocator);
-          stream.Add("Instruction i%d changes ", instr->id());
-          side_effects_tracker_.PrintSideEffectsTo(&stream, changes);
-          stream.Add("\n");
-          stream.OutputToStdOut();
+          OFStream os(stdout);
+          os << "Instruction i" << instr->id() << " changes " << Print(changes)
+             << std::endl;
         }
       }
       if (instr->CheckFlag(HValue::kUseGVN) &&
           !instr->CheckFlag(HValue::kCantBeReplaced)) {
-        ASSERT(!instr->HasObservableSideEffects());
+        DCHECK(!instr->HasObservableSideEffects());
         HInstruction* other = map->Lookup(instr);
         if (other != NULL) {
-          ASSERT(instr->Equals(other) && other->Equals(instr));
+          DCHECK(instr->Equals(other) && other->Equals(instr));
           TRACE_GVN_4("Replacing instruction i%d (%s) with i%d (%s)\n",
                       instr->id(),
                       instr->Mnemonic(),

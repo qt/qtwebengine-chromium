@@ -31,13 +31,16 @@
 #ifndef MetadataCallback_h
 #define MetadataCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class Metadata;
 
-class MetadataCallback {
+class MetadataCallback : public GarbageCollectedFinalized<MetadataCallback> {
 public:
     virtual ~MetadataCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(Metadata*) = 0;
 };
 

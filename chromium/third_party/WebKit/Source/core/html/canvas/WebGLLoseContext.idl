@@ -25,7 +25,8 @@
 
 [
     NoInterfaceObject,
-    TypeChecking=Interface|Nullable,
+    TypeChecking=Interface,
+    WillBeGarbageCollected,
 ] interface WebGLLoseContext {
     void loseContext();
     void restoreContext();

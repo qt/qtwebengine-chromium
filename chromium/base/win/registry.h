@@ -12,6 +12,8 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/stl_util.h"
+#include "base/win/object_watcher.h"
+#include "base/win/scoped_handle.h"
 
 namespace base {
 namespace win {
@@ -25,6 +27,9 @@ namespace win {
 // are not touched in case of failure.
 class BASE_EXPORT RegKey {
  public:
+  // Called from the MessageLoop when the key changes.
+  typedef base::Callback<void()> ChangeCallback;
+
   RegKey();
   explicit RegKey(HKEY key);
   RegKey(HKEY rootkey, const wchar_t* subkey, REGSAM access);
@@ -120,22 +125,16 @@ class BASE_EXPORT RegKey {
 
   // Starts watching the key to see if any of its values have changed.
   // The key must have been opened with the KEY_NOTIFY access privilege.
-  LONG StartWatching();
+  // Returns true on success.
+  // To stop watching, delete this RegKey object. To continue watching the
+  // object after the callback is invoked, call StartWatching again.
+  bool StartWatching(const ChangeCallback& callback);
 
-  // If StartWatching hasn't been called, always returns false.
-  // Otherwise, returns true if anything under the key has changed.
-  // This can't be const because the |watch_event_| may be refreshed.
-  bool HasChanged();
-
-  // Will automatically be called by destructor if not manually called
-  // beforehand.  Returns true if it was watching, false otherwise.
-  LONG StopWatching();
-
-  inline bool IsWatching() const { return watch_event_ != 0; }
-  HANDLE watch_event() const { return watch_event_; }
   HKEY Handle() const { return key_; }
 
  private:
+  class Watcher;
+
   // Calls RegDeleteKeyEx on supported platforms, alternatively falls back to
   // RegDeleteKey.
   static LONG RegDeleteKeyExWrapper(HKEY hKey,
@@ -147,9 +146,10 @@ class BASE_EXPORT RegKey {
   static LONG RegDelRecurse(HKEY root_key,
                             const std::wstring& name,
                             REGSAM access);
+
   HKEY key_;  // The registry key being iterated.
-  HANDLE watch_event_;
   REGSAM wow64access_;
+  scoped_ptr<Watcher> key_watcher_;
 
   DISALLOW_COPY_AND_ASSIGN(RegKey);
 };
@@ -157,7 +157,17 @@ class BASE_EXPORT RegKey {
 // Iterates the entries found in a particular folder on the registry.
 class BASE_EXPORT RegistryValueIterator {
  public:
+  // Construct a Registry Value Iterator with default WOW64 access.
   RegistryValueIterator(HKEY root_key, const wchar_t* folder_key);
+
+  // Construct a Registry Key Iterator with specific WOW64 access, one of
+  // KEY_WOW64_32KEY or KEY_WOW64_64KEY, or 0.
+  // Note: |wow64access| should be the same access used to open |root_key|
+  // previously, or a predefined key (e.g. HKEY_LOCAL_MACHINE).
+  // See http://msdn.microsoft.com/en-us/library/windows/desktop/aa384129.aspx.
+  RegistryValueIterator(HKEY root_key,
+                        const wchar_t* folder_key,
+                        REGSAM wow64access);
 
   ~RegistryValueIterator();
 
@@ -181,6 +191,8 @@ class BASE_EXPORT RegistryValueIterator {
   // Read in the current values.
   bool Read();
 
+  void Initialize(HKEY root_key, const wchar_t* folder_key, REGSAM wow64access);
+
   // The registry key being iterated.
   HKEY key_;
 
@@ -198,7 +210,17 @@ class BASE_EXPORT RegistryValueIterator {
 
 class BASE_EXPORT RegistryKeyIterator {
  public:
+  // Construct a Registry Key Iterator with default WOW64 access.
   RegistryKeyIterator(HKEY root_key, const wchar_t* folder_key);
+
+  // Construct a Registry Value Iterator with specific WOW64 access, one of
+  // KEY_WOW64_32KEY or KEY_WOW64_64KEY, or 0.
+  // Note: |wow64access| should be the same access used to open |root_key|
+  // previously, or a predefined key (e.g. HKEY_LOCAL_MACHINE).
+  // See http://msdn.microsoft.com/en-us/library/windows/desktop/aa384129.aspx.
+  RegistryKeyIterator(HKEY root_key,
+                      const wchar_t* folder_key,
+                      REGSAM wow64access);
 
   ~RegistryKeyIterator();
 
@@ -217,6 +239,8 @@ class BASE_EXPORT RegistryKeyIterator {
  private:
   // Read in the current values.
   bool Read();
+
+  void Initialize(HKEY root_key, const wchar_t* folder_key, REGSAM wow64access);
 
   // The registry key being iterated.
   HKEY key_;

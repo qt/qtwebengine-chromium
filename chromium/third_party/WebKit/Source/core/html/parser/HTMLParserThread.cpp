@@ -32,11 +32,10 @@
 #include "core/html/parser/HTMLParserThread.h"
 
 #include "platform/Task.h"
-#include "platform/TaskSynchronizer.h"
 #include "public/platform/Platform.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 static HTMLParserThread* s_sharedThread = 0;
 
@@ -56,11 +55,8 @@ void HTMLParserThread::init()
 
 void HTMLParserThread::setupHTMLParserThread()
 {
-    m_pendingGCRunner = adoptPtr(new PendingGCRunner);
-    m_messageLoopInterruptor = adoptPtr(new MessageLoopInterruptor(&platformThread()));
-    platformThread().addTaskObserver(m_pendingGCRunner.get());
-    ThreadState::attach();
-    ThreadState::current()->addInterruptor(m_messageLoopInterruptor.get());
+    ASSERT(m_thread);
+    m_thread->attachGC();
 }
 
 void HTMLParserThread::shutdown()
@@ -68,22 +64,15 @@ void HTMLParserThread::shutdown()
     ASSERT(s_sharedThread);
     // currentThread will always be non-null in production, but can be null in Chromium unit tests.
     if (blink::Platform::current()->currentThread() && s_sharedThread->isRunning()) {
-        TaskSynchronizer taskSynchronizer;
-        s_sharedThread->postTask(WTF::bind(&HTMLParserThread::cleanupHTMLParserThread, s_sharedThread, &taskSynchronizer));
-        taskSynchronizer.waitForTaskCompletion();
+        s_sharedThread->postTask(WTF::bind(&HTMLParserThread::cleanupHTMLParserThread, s_sharedThread));
     }
     delete s_sharedThread;
     s_sharedThread = 0;
 }
 
-void HTMLParserThread::cleanupHTMLParserThread(TaskSynchronizer* taskSynchronizer)
+void HTMLParserThread::cleanupHTMLParserThread()
 {
-    ThreadState::current()->removeInterruptor(m_messageLoopInterruptor.get());
-    ThreadState::detach();
-    platformThread().removeTaskObserver(m_pendingGCRunner.get());
-    m_pendingGCRunner = nullptr;
-    m_messageLoopInterruptor = nullptr;
-    taskSynchronizer->taskCompleted();
+    m_thread->detachGC();
 }
 
 HTMLParserThread* HTMLParserThread::shared()
@@ -94,10 +83,10 @@ HTMLParserThread* HTMLParserThread::shared()
 blink::WebThread& HTMLParserThread::platformThread()
 {
     if (!isRunning()) {
-        m_thread = adoptPtr(blink::Platform::current()->createThread("HTMLParserThread"));
+        m_thread = WebThreadSupportingGC::create("HTMLParserThread");
         postTask(WTF::bind(&HTMLParserThread::setupHTMLParserThread, this));
     }
-    return *m_thread;
+    return m_thread->platformThread();
 }
 
 bool HTMLParserThread::isRunning()
@@ -110,4 +99,4 @@ void HTMLParserThread::postTask(const Closure& closure)
     platformThread().postTask(new Task(closure));
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -31,13 +31,13 @@
 #ifndef PerformanceTiming_h
 #define PerformanceTiming_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentLoadTiming;
 class DocumentLoader;
@@ -45,7 +45,9 @@ struct DocumentTiming;
 class LocalFrame;
 class ResourceLoadTiming;
 
-class PerformanceTiming FINAL : public RefCountedWillBeGarbageCollectedFinalized<PerformanceTiming>, public ScriptWrappable, public DOMWindowProperty {
+class PerformanceTiming final : public RefCountedWillBeGarbageCollected<PerformanceTiming>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PerformanceTiming);
 public:
     static PassRefPtrWillBeRawPtr<PerformanceTiming> create(LocalFrame* frame)
     {
@@ -74,7 +76,7 @@ public:
     unsigned long long loadEventStart() const;
     unsigned long long loadEventEnd() const;
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit PerformanceTiming(LocalFrame*);
@@ -87,6 +89,6 @@ private:
     unsigned long long monotonicTimeToIntegerMilliseconds(double) const;
 };
 
-}
+} // namespace blink
 
-#endif // !defined(PerformanceTiming_h)
+#endif // PerformanceTiming_h

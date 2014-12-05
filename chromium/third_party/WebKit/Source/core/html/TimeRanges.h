@@ -26,7 +26,7 @@
 #ifndef TimeRanges_h
 #define TimeRanges_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "public/platform/WebTimeRange.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
@@ -34,48 +34,17 @@
 
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class TimeRanges : public RefCounted<TimeRanges>, public ScriptWrappable {
+class TimeRanges : public RefCountedWillBeGarbageCollected<TimeRanges>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<TimeRanges> create()
-    {
-        return adoptRef(new TimeRanges);
-    }
-    static PassRefPtr<TimeRanges> create(double start, double end)
-    {
-        return adoptRef(new TimeRanges(start, end));
-    }
-    static PassRefPtr<TimeRanges> create(const blink::WebTimeRanges&);
-
-    PassRefPtr<TimeRanges> copy() const;
-    void intersectWith(const TimeRanges*);
-    void unionWith(const TimeRanges*);
-
-    unsigned length() const { return m_ranges.size(); }
-    double start(unsigned index, ExceptionState&) const;
-    double end(unsigned index, ExceptionState&) const;
-
-    void add(double start, double end);
-
-    bool contain(double time) const;
-
-    double nearest(double time) const;
-
-private:
-    TimeRanges()
-    {
-        ScriptWrappable::init(this);
-    }
-
-    TimeRanges(double start, double end);
-
-    void invert();
-
     // We consider all the Ranges to be semi-bounded as follow: [start, end[
     struct Range {
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
         Range() { }
         Range(double start, double end)
         {
@@ -114,11 +83,48 @@ private:
         {
             return range.m_start >= m_end;
         }
+
+        void trace(Visitor*) { }
     };
 
-    Vector<Range> m_ranges;
+    static PassRefPtrWillBeRawPtr<TimeRanges> create()
+    {
+        return adoptRefWillBeNoop(new TimeRanges);
+    }
+    static PassRefPtrWillBeRawPtr<TimeRanges> create(double start, double end)
+    {
+        return adoptRefWillBeNoop(new TimeRanges(start, end));
+    }
+    static PassRefPtrWillBeRawPtr<TimeRanges> create(const blink::WebTimeRanges&);
+
+    PassRefPtrWillBeRawPtr<TimeRanges> copy() const;
+    void intersectWith(const TimeRanges*);
+    void unionWith(const TimeRanges*);
+
+    unsigned length() const { return m_ranges.size(); }
+    double start(unsigned index, ExceptionState&) const;
+    double end(unsigned index, ExceptionState&) const;
+
+    void add(double start, double end);
+
+    bool contain(double time) const;
+
+    double nearest(double newPlaybackPosition, double currentPlaybackPosition) const;
+
+    void trace(Visitor*);
+
+private:
+    TimeRanges() { }
+
+    TimeRanges(double start, double end);
+
+    void invert();
+
+    WillBeHeapVector<Range> m_ranges;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::TimeRanges::Range);
+
+#endif // TimeRanges_h

@@ -16,13 +16,13 @@ class VIEWS_EXPORT BlueButton : public LabelButton {
   static const char kViewClassName[];
 
   BlueButton(ButtonListener* listener, const base::string16& text);
-  virtual ~BlueButton();
+  ~BlueButton() override;
 
  private:
   // Overridden from LabelButton:
-  virtual void ResetColorsFromNativeTheme() OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const OVERRIDE;
+  void ResetColorsFromNativeTheme() override;
+  const char* GetClassName() const override;
+  scoped_ptr<LabelButtonBorder> CreateDefaultBorder() const override;
 
   DISALLOW_COPY_AND_ASSIGN(BlueButton);
 };

@@ -5,6 +5,7 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 
+#include "gpu/command_buffer/service/shader_translator.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
 
@@ -15,6 +16,7 @@ struct DisallowedFeatures;
 class Buffer;
 class BufferManager;
 class MockErrorState;
+class Shader;
 class TextureRef;
 class TextureManager;
 
@@ -106,6 +108,29 @@ class TestHelper {
       ::gfx::MockGLInterface* gl, MockErrorState* error_state,
       TextureManager* manager, TextureRef* texture_ref,
       GLenum pname, GLint value, GLenum error);
+
+  static void SetShaderStates(
+      ::gfx::MockGLInterface* gl, Shader* shader,
+      bool expected_valid,
+      const std::string* const expected_log_info,
+      const std::string* const expected_translated_source,
+      const AttributeMap* const expected_attrib_map,
+      const UniformMap* const expected_uniform_map,
+      const VaryingMap* const expected_varying_map,
+      const NameMap* const expected_name_map);
+
+  static void SetShaderStates(
+      ::gfx::MockGLInterface* gl, Shader* shader, bool valid);
+
+  static sh::Attribute ConstructAttribute(
+      GLenum type, GLint array_size, GLenum precision,
+      bool static_use, const std::string& name);
+  static sh::Uniform ConstructUniform(
+      GLenum type, GLint array_size, GLenum precision,
+      bool static_use, const std::string& name);
+  static sh::Varying ConstructVarying(
+      GLenum type, GLint array_size, GLenum precision,
+      bool static_use, const std::string& name);
 
  private:
   static void SetupTextureInitializationExpectations(::gfx::MockGLInterface* gl,

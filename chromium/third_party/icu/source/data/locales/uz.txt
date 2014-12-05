@@ -1,21 +1,22 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/uz.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/uz.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/uz.xml
- *  Chrome Note: This locale data is abridged to contain categories
- *  actually used by Chrome.
+ * ICU <specials> source: <path>/common/main/uz.xml
  */
 uz{
-    AuxExemplarCharacters{"[ц щ ы ь]"}
-    ExemplarCharacters{"[а б в г ғ д е ё ж з и й к қ л м н о п р с т у ў ф х ҳ ч ш ъ э ю я]"}
-    LocaleScript{
-        "Cyrl",
+    AuxExemplarCharacters{"[c w]"}
+    ExemplarCharacters{
+        "[a {aʼ} b {ch} d e {eʼ} f g {gʻ} h i {iʼ} j k l m n o {oʻ} p q r s {sh} t u "
+        "{uʼ} v x y z]"
     }
-    Version{"2.0.47.67"}
+    LocaleScript{
+        "Latn",
+    }
+    Version{"2.0.92.87"}
 }

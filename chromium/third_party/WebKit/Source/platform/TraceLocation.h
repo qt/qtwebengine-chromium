@@ -9,11 +9,11 @@
 // that we could easily replace usage of TraceLocation
 // with base::Location after merging into Chromium.
 
-namespace WebCore {
+namespace blink {
 
 class TraceLocation {
 public:
-    // Currenetly only store the bits used in Blink, base::Location stores more.
+    // Currently only store the bits used in Blink, base::Location stores more.
     // These char*s are not copied and must live for the duration of the program.
     TraceLocation(const char* functionName, const char* fileName)
         : m_functionName(functionName)
@@ -33,8 +33,7 @@ private:
     const char* m_fileName;
 };
 
-#define FROM_HERE WebCore::TraceLocation(__FUNCTION__, __FILE__)
-
-}
+#define FROM_HERE ::blink::TraceLocation(__FUNCTION__, __FILE__)
+} // namespace blink
 
 #endif // TraceLocation_h

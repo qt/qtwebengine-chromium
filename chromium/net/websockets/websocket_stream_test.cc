@@ -9,12 +9,15 @@
 #include <utility>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_vector.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/timer/mock_timer.h"
+#include "base/timer/timer.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_data_directory.h"
 #include "net/http/http_request_headers.h"
@@ -55,6 +58,36 @@ std::vector<HeaderKeyValuePair> ToVector(const HttpResponseHeaders& headers) {
   return result;
 }
 
+// Simple builder for a DeterministicSocketData object to save repetitive code.
+// It always sets the connect data to MockConnect(SYNCHRONOUS, OK), so it cannot
+// be used in tests where the connect fails. In practice, those tests never have
+// any read/write data and so can't benefit from it anyway.  The arrays are not
+// copied. It is up to the caller to ensure they stay in scope until the test
+// ends.
+template <size_t reads_count, size_t writes_count>
+scoped_ptr<DeterministicSocketData> BuildSocketData(
+    MockRead (&reads)[reads_count],
+    MockWrite (&writes)[writes_count]) {
+  scoped_ptr<DeterministicSocketData> socket_data(
+      new DeterministicSocketData(reads, reads_count, writes, writes_count));
+  socket_data->set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  socket_data->SetStop(reads_count + writes_count);
+  return socket_data.Pass();
+}
+
+// Builder for a DeterministicSocketData that expects nothing. This does not
+// set the connect data, so the calling code must do that explicitly.
+scoped_ptr<DeterministicSocketData> BuildNullSocketData() {
+  return make_scoped_ptr(new DeterministicSocketData(NULL, 0, NULL, 0));
+}
+
+class MockWeakTimer : public base::MockTimer,
+                      public base::SupportsWeakPtr<MockWeakTimer> {
+ public:
+  MockWeakTimer(bool retain_user_task, bool is_repeating)
+      : MockTimer(retain_user_task, is_repeating) {}
+};
+
 // A sub-class of WebSocketHandshakeStreamCreateHelper which always sets a
 // deterministic key to use in the WebSocket handshake.
 class DeterministicKeyWebSocketHandshakeStreamCreateHelper
@@ -66,16 +99,8 @@ class DeterministicKeyWebSocketHandshakeStreamCreateHelper
       : WebSocketHandshakeStreamCreateHelper(connect_delegate,
                                              requested_subprotocols) {}
 
-  virtual WebSocketHandshakeStreamBase* CreateBasicStream(
-      scoped_ptr<ClientSocketHandle> connection,
-      bool using_proxy) OVERRIDE {
-    WebSocketHandshakeStreamCreateHelper::CreateBasicStream(connection.Pass(),
-                                                            using_proxy);
-    // This will break in an obvious way if the type created by
-    // CreateBasicStream() changes.
-    static_cast<WebSocketBasicHandshakeStream*>(stream())
-        ->SetWebSocketKeyForTesting("dGhlIHNhbXBsZSBub25jZQ==");
-    return stream();
+  void OnStreamCreated(WebSocketBasicHandshakeStream* stream) override {
+    stream->SetWebSocketKeyForTesting("dGhlIHNhbXBsZSBub25jZQ==");
   }
 };
 
@@ -89,11 +114,12 @@ class WebSocketStreamCreateTest : public ::testing::Test {
       const std::vector<std::string>& sub_protocols,
       const std::string& origin,
       const std::string& extra_request_headers,
-      const std::string& response_body) {
+      const std::string& response_body,
+      scoped_ptr<base::Timer> timer = scoped_ptr<base::Timer>()) {
     url_request_context_host_.SetExpectations(
         WebSocketStandardRequest(socket_path, origin, extra_request_headers),
         response_body);
-    CreateAndConnectStream(socket_url, sub_protocols, origin);
+    CreateAndConnectStream(socket_url, sub_protocols, origin, timer.Pass());
   }
 
   // |extra_request_headers| and |extra_response_headers| must end in "\r\n" or
@@ -103,30 +129,40 @@ class WebSocketStreamCreateTest : public ::testing::Test {
                                 const std::vector<std::string>& sub_protocols,
                                 const std::string& origin,
                                 const std::string& extra_request_headers,
-                                const std::string& extra_response_headers) {
+                                const std::string& extra_response_headers,
+                                scoped_ptr<base::Timer> timer =
+                                scoped_ptr<base::Timer>()) {
     CreateAndConnectCustomResponse(
         socket_url,
         socket_path,
         sub_protocols,
         origin,
         extra_request_headers,
-        WebSocketStandardResponse(extra_response_headers));
+        WebSocketStandardResponse(extra_response_headers),
+        timer.Pass());
   }
 
   void CreateAndConnectRawExpectations(
       const std::string& socket_url,
       const std::vector<std::string>& sub_protocols,
       const std::string& origin,
-      scoped_ptr<DeterministicSocketData> socket_data) {
+      scoped_ptr<DeterministicSocketData> socket_data,
+      scoped_ptr<base::Timer> timer = scoped_ptr<base::Timer>()) {
+    AddRawExpectations(socket_data.Pass());
+    CreateAndConnectStream(socket_url, sub_protocols, origin, timer.Pass());
+  }
+
+  // Add additional raw expectations for sockets created before the final one.
+  void AddRawExpectations(scoped_ptr<DeterministicSocketData> socket_data) {
     url_request_context_host_.AddRawExpectations(socket_data.Pass());
-    CreateAndConnectStream(socket_url, sub_protocols, origin);
   }
 
   // A wrapper for CreateAndConnectStreamForTesting that knows about our default
   // parameters.
   void CreateAndConnectStream(const std::string& socket_url,
                               const std::vector<std::string>& sub_protocols,
-                              const std::string& origin) {
+                              const std::string& origin,
+                              scoped_ptr<base::Timer> timer) {
     for (size_t i = 0; i < ssl_data_.size(); ++i) {
       scoped_ptr<SSLSocketDataProvider> ssl_data(ssl_data_[i]);
       ssl_data_[i] = NULL;
@@ -145,7 +181,9 @@ class WebSocketStreamCreateTest : public ::testing::Test {
         url::Origin(origin),
         url_request_context_host_.GetURLRequestContext(),
         BoundNetLog(),
-        connect_delegate.Pass());
+        connect_delegate.Pass(),
+        timer ? timer.Pass() : scoped_ptr<base::Timer>(
+            new base::Timer(false, false)));
   }
 
   static void RunUntilIdle() { base::RunLoop().RunUntilIdle(); }
@@ -163,32 +201,32 @@ class WebSocketStreamCreateTest : public ::testing::Test {
     explicit TestConnectDelegate(WebSocketStreamCreateTest* owner)
         : owner_(owner) {}
 
-    virtual void OnSuccess(scoped_ptr<WebSocketStream> stream) OVERRIDE {
+    void OnSuccess(scoped_ptr<WebSocketStream> stream) override {
       stream.swap(owner_->stream_);
     }
 
-    virtual void OnFailure(const std::string& message) OVERRIDE {
+    void OnFailure(const std::string& message) override {
       owner_->has_failed_ = true;
       owner_->failure_message_ = message;
     }
 
-    virtual void OnStartOpeningHandshake(
-        scoped_ptr<WebSocketHandshakeRequestInfo> request) OVERRIDE {
-      if (owner_->request_info_)
-        ADD_FAILURE();
+    void OnStartOpeningHandshake(
+        scoped_ptr<WebSocketHandshakeRequestInfo> request) override {
+      // Can be called multiple times (in the case of HTTP auth). Last call
+      // wins.
       owner_->request_info_ = request.Pass();
     }
-    virtual void OnFinishOpeningHandshake(
-        scoped_ptr<WebSocketHandshakeResponseInfo> response) OVERRIDE {
+    void OnFinishOpeningHandshake(
+        scoped_ptr<WebSocketHandshakeResponseInfo> response) override {
       if (owner_->response_info_)
         ADD_FAILURE();
       owner_->response_info_ = response.Pass();
     }
-    virtual void OnSSLCertificateError(
+    void OnSSLCertificateError(
         scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
             ssl_error_callbacks,
         const SSLInfo& ssl_info,
-        bool fatal) OVERRIDE {
+        bool fatal) override {
       owner_->ssl_error_callbacks_ = ssl_error_callbacks.Pass();
       owner_->ssl_info_ = ssl_info;
       owner_->ssl_fatal_ = fatal;
@@ -233,6 +271,132 @@ class WebSocketStreamCreateExtensionTest : public WebSocketStreamCreateTest {
   }
 };
 
+// Common code to construct expectations for authentication tests that receive
+// the auth challenge on one connection and then create a second connection to
+// send the authenticated request on.
+class CommonAuthTestHelper {
+ public:
+  CommonAuthTestHelper() : reads1_(), writes1_(), reads2_(), writes2_() {}
+
+  scoped_ptr<DeterministicSocketData> BuildSocketData1(
+      const std::string& response) {
+    request1_ = WebSocketStandardRequest("/", "http://localhost", "");
+    writes1_[0] = MockWrite(SYNCHRONOUS, 0, request1_.c_str());
+    response1_ = response;
+    reads1_[0] = MockRead(SYNCHRONOUS, 1, response1_.c_str());
+    reads1_[1] = MockRead(SYNCHRONOUS, OK, 2);  // Close connection
+
+    return BuildSocketData(reads1_, writes1_);
+  }
+
+  scoped_ptr<DeterministicSocketData> BuildSocketData2(
+      const std::string& request,
+      const std::string& response) {
+    request2_ = request;
+    response2_ = response;
+    writes2_[0] = MockWrite(SYNCHRONOUS, 0, request2_.c_str());
+    reads2_[0] = MockRead(SYNCHRONOUS, 1, response2_.c_str());
+    return BuildSocketData(reads2_, writes2_);
+  }
+
+ private:
+  // These need to be object-scoped since they have to remain valid until all
+  // socket operations in the test are complete.
+  std::string request1_;
+  std::string request2_;
+  std::string response1_;
+  std::string response2_;
+  MockRead reads1_[2];
+  MockWrite writes1_[1];
+  MockRead reads2_[1];
+  MockWrite writes2_[1];
+
+  DISALLOW_COPY_AND_ASSIGN(CommonAuthTestHelper);
+};
+
+// Data and methods for BasicAuth tests.
+class WebSocketStreamCreateBasicAuthTest : public WebSocketStreamCreateTest {
+ protected:
+  void CreateAndConnectAuthHandshake(const std::string& url,
+                                     const std::string& base64_user_pass,
+                                     const std::string& response2) {
+    AddRawExpectations(helper_.BuildSocketData1(kUnauthorizedResponse));
+
+    static const char request2format[] =
+        "GET / HTTP/1.1\r\n"
+        "Host: localhost\r\n"
+        "Connection: Upgrade\r\n"
+        "Pragma: no-cache\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Authorization: Basic %s\r\n"
+        "Upgrade: websocket\r\n"
+        "Origin: http://localhost\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "User-Agent:\r\n"
+        "Accept-Encoding: gzip, deflate\r\n"
+        "Accept-Language: en-us,fr\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Extensions: permessage-deflate; "
+        "client_max_window_bits\r\n"
+        "\r\n";
+    const std::string request =
+        base::StringPrintf(request2format, base64_user_pass.c_str());
+    CreateAndConnectRawExpectations(
+        url,
+        NoSubProtocols(),
+        "http://localhost",
+        helper_.BuildSocketData2(request, response2));
+  }
+
+  static const char kUnauthorizedResponse[];
+
+  CommonAuthTestHelper helper_;
+};
+
+class WebSocketStreamCreateDigestAuthTest : public WebSocketStreamCreateTest {
+ protected:
+  static const char kUnauthorizedResponse[];
+  static const char kAuthorizedRequest[];
+
+  CommonAuthTestHelper helper_;
+};
+
+const char WebSocketStreamCreateBasicAuthTest::kUnauthorizedResponse[] =
+    "HTTP/1.1 401 Unauthorized\r\n"
+    "Content-Length: 0\r\n"
+    "WWW-Authenticate: Basic realm=\"camelot\"\r\n"
+    "\r\n";
+
+// These negotiation values are borrowed from
+// http_auth_handler_digest_unittest.cc. Feel free to come up with new ones if
+// you are bored. Only the weakest (no qop) variants of Digest authentication
+// can be tested by this method, because the others involve random input.
+const char WebSocketStreamCreateDigestAuthTest::kUnauthorizedResponse[] =
+    "HTTP/1.1 401 Unauthorized\r\n"
+    "Content-Length: 0\r\n"
+    "WWW-Authenticate: Digest realm=\"Oblivion\", nonce=\"nonce-value\"\r\n"
+    "\r\n";
+
+const char WebSocketStreamCreateDigestAuthTest::kAuthorizedRequest[] =
+    "GET / HTTP/1.1\r\n"
+    "Host: localhost\r\n"
+    "Connection: Upgrade\r\n"
+    "Pragma: no-cache\r\n"
+    "Cache-Control: no-cache\r\n"
+    "Authorization: Digest username=\"FooBar\", realm=\"Oblivion\", "
+    "nonce=\"nonce-value\", uri=\"/\", "
+    "response=\"f72ff54ebde2f928860f806ec04acd1b\"\r\n"
+    "Upgrade: websocket\r\n"
+    "Origin: http://localhost\r\n"
+    "Sec-WebSocket-Version: 13\r\n"
+    "User-Agent:\r\n"
+    "Accept-Encoding: gzip, deflate\r\n"
+    "Accept-Language: en-us,fr\r\n"
+    "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+    "Sec-WebSocket-Extensions: permessage-deflate; "
+    "client_max_window_bits\r\n"
+    "\r\n";
+
 class WebSocketStreamCreateUMATest : public ::testing::Test {
  public:
   // This enum should match with the enum in Delegate in websocket_stream.cc.
@@ -244,7 +408,7 @@ class WebSocketStreamCreateUMATest : public ::testing::Test {
   };
 
   class StreamCreation : public WebSocketStreamCreateTest {
-    virtual void TestBody() OVERRIDE {}
+    void TestBody() override {}
   };
 
   scoped_ptr<base::HistogramSamples> GetSamples(const std::string& name) {
@@ -312,7 +476,7 @@ TEST_F(WebSocketStreamCreateTest, HandshakeInfo) {
   EXPECT_EQ(HeaderKeyValuePair("Sec-WebSocket-Version", "13"),
             request_headers[6]);
   EXPECT_EQ(HeaderKeyValuePair("User-Agent", ""), request_headers[7]);
-  EXPECT_EQ(HeaderKeyValuePair("Accept-Encoding", "gzip,deflate"),
+  EXPECT_EQ(HeaderKeyValuePair("Accept-Encoding", "gzip, deflate"),
             request_headers[8]);
   EXPECT_EQ(HeaderKeyValuePair("Accept-Language", "en-us,fr"),
             request_headers[9]);
@@ -322,7 +486,7 @@ TEST_F(WebSocketStreamCreateTest, HandshakeInfo) {
             request_headers[11]);
 
   std::vector<HeaderKeyValuePair> response_headers =
-      ToVector(*response_info_->headers);
+      ToVector(*response_info_->headers.get());
   ASSERT_EQ(6u, response_headers.size());
   // Sort the headers for ease of verification.
   std::sort(response_headers.begin(), response_headers.end());
@@ -925,8 +1089,7 @@ TEST_F(WebSocketStreamCreateTest, Cancellation) {
 
 // Connect failure must look just like negotiation failure.
 TEST_F(WebSocketStreamCreateTest, ConnectionFailure) {
-  scoped_ptr<DeterministicSocketData> socket_data(
-      new DeterministicSocketData(NULL, 0, NULL, 0));
+  scoped_ptr<DeterministicSocketData> socket_data(BuildNullSocketData());
   socket_data->set_connect_data(
       MockConnect(SYNCHRONOUS, ERR_CONNECTION_REFUSED));
   CreateAndConnectRawExpectations("ws://localhost/", NoSubProtocols(),
@@ -941,8 +1104,7 @@ TEST_F(WebSocketStreamCreateTest, ConnectionFailure) {
 
 // Connect timeout must look just like any other failure.
 TEST_F(WebSocketStreamCreateTest, ConnectionTimeout) {
-  scoped_ptr<DeterministicSocketData> socket_data(
-      new DeterministicSocketData(NULL, 0, NULL, 0));
+  scoped_ptr<DeterministicSocketData> socket_data(BuildNullSocketData());
   socket_data->set_connect_data(
       MockConnect(ASYNC, ERR_CONNECTION_TIMED_OUT));
   CreateAndConnectRawExpectations("ws://localhost/", NoSubProtocols(),
@@ -953,10 +1115,78 @@ TEST_F(WebSocketStreamCreateTest, ConnectionTimeout) {
             failure_message());
 }
 
+// The server doesn't respond to the opening handshake.
+TEST_F(WebSocketStreamCreateTest, HandshakeTimeout) {
+  scoped_ptr<DeterministicSocketData> socket_data(BuildNullSocketData());
+  socket_data->set_connect_data(MockConnect(SYNCHRONOUS, ERR_IO_PENDING));
+  scoped_ptr<MockWeakTimer> timer(new MockWeakTimer(false, false));
+  base::WeakPtr<MockWeakTimer> weak_timer = timer->AsWeakPtr();
+  CreateAndConnectRawExpectations("ws://localhost/",
+                                  NoSubProtocols(),
+                                  "http://localhost",
+                                  socket_data.Pass(),
+                                  timer.Pass());
+  EXPECT_FALSE(has_failed());
+  ASSERT_TRUE(weak_timer.get());
+  EXPECT_TRUE(weak_timer->IsRunning());
+
+  weak_timer->Fire();
+  RunUntilIdle();
+
+  EXPECT_TRUE(has_failed());
+  EXPECT_EQ("WebSocket opening handshake timed out", failure_message());
+  ASSERT_TRUE(weak_timer.get());
+  EXPECT_FALSE(weak_timer->IsRunning());
+}
+
+// When the connection establishes the timer should be stopped.
+TEST_F(WebSocketStreamCreateTest, HandshakeTimerOnSuccess) {
+  scoped_ptr<MockWeakTimer> timer(new MockWeakTimer(false, false));
+  base::WeakPtr<MockWeakTimer> weak_timer = timer->AsWeakPtr();
+
+  CreateAndConnectStandard("ws://localhost/",
+                           "/",
+                           NoSubProtocols(),
+                           "http://localhost",
+                           "",
+                           "",
+                           timer.Pass());
+  ASSERT_TRUE(weak_timer);
+  EXPECT_TRUE(weak_timer->IsRunning());
+
+  RunUntilIdle();
+  EXPECT_FALSE(has_failed());
+  EXPECT_TRUE(stream_);
+  ASSERT_TRUE(weak_timer);
+  EXPECT_FALSE(weak_timer->IsRunning());
+}
+
+// When the connection fails the timer should be stopped.
+TEST_F(WebSocketStreamCreateTest, HandshakeTimerOnFailure) {
+  scoped_ptr<DeterministicSocketData> socket_data(BuildNullSocketData());
+  socket_data->set_connect_data(
+      MockConnect(SYNCHRONOUS, ERR_CONNECTION_REFUSED));
+  scoped_ptr<MockWeakTimer> timer(new MockWeakTimer(false, false));
+  base::WeakPtr<MockWeakTimer> weak_timer = timer->AsWeakPtr();
+  CreateAndConnectRawExpectations("ws://localhost/",
+                                  NoSubProtocols(),
+                                  "http://localhost",
+                                  socket_data.Pass(),
+                                  timer.Pass());
+  ASSERT_TRUE(weak_timer.get());
+  EXPECT_TRUE(weak_timer->IsRunning());
+
+  RunUntilIdle();
+  EXPECT_TRUE(has_failed());
+  EXPECT_EQ("Error in connection establishment: net::ERR_CONNECTION_REFUSED",
+            failure_message());
+  ASSERT_TRUE(weak_timer.get());
+  EXPECT_FALSE(weak_timer->IsRunning());
+}
+
 // Cancellation during connect works.
 TEST_F(WebSocketStreamCreateTest, CancellationDuringConnect) {
-  scoped_ptr<DeterministicSocketData> socket_data(
-      new DeterministicSocketData(NULL, 0, NULL, 0));
+  scoped_ptr<DeterministicSocketData> socket_data(BuildNullSocketData());
   socket_data->set_connect_data(MockConnect(SYNCHRONOUS, ERR_IO_PENDING));
   CreateAndConnectRawExpectations("ws://localhost/",
                                   NoSubProtocols(),
@@ -998,15 +1228,15 @@ TEST_F(WebSocketStreamCreateTest, CancellationDuringRead) {
   MockRead reads[] = {
     MockRead(ASYNC, 1, "HTTP/1.1 101 Switching Protocols\r\nUpgr"),
   };
-  DeterministicSocketData* socket_data(new DeterministicSocketData(
-      reads, arraysize(reads), writes, arraysize(writes)));
-  socket_data->set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  scoped_ptr<DeterministicSocketData> socket_data(
+      BuildSocketData(reads, writes));
   socket_data->SetStop(1);
+  DeterministicSocketData* socket_data_raw_ptr = socket_data.get();
   CreateAndConnectRawExpectations("ws://localhost/",
                                   NoSubProtocols(),
                                   "http://localhost",
-                                  make_scoped_ptr(socket_data));
-  socket_data->Run();
+                                  socket_data.Pass());
+  socket_data_raw_ptr->Run();
   stream_request_.reset();
   RunUntilIdle();
   EXPECT_FALSE(has_failed());
@@ -1039,14 +1269,14 @@ TEST_F(WebSocketStreamCreateTest, NoResponse) {
   std::string request = WebSocketStandardRequest("/", "http://localhost", "");
   MockWrite writes[] = {MockWrite(ASYNC, request.data(), request.size(), 0)};
   MockRead reads[] = {MockRead(ASYNC, 0, 1)};
-  DeterministicSocketData* socket_data(new DeterministicSocketData(
-      reads, arraysize(reads), writes, arraysize(writes)));
-  socket_data->set_connect_data(MockConnect(SYNCHRONOUS, OK));
+  scoped_ptr<DeterministicSocketData> socket_data(
+      BuildSocketData(reads, writes));
+  DeterministicSocketData* socket_data_raw_ptr = socket_data.get();
   CreateAndConnectRawExpectations("ws://localhost/",
                                   NoSubProtocols(),
                                   "http://localhost",
-                                  make_scoped_ptr(socket_data));
-  socket_data->RunFor(2);
+                                  socket_data.Pass());
+  socket_data_raw_ptr->RunFor(2);
   EXPECT_TRUE(has_failed());
   EXPECT_FALSE(stream_);
   EXPECT_FALSE(response_info_);
@@ -1059,9 +1289,8 @@ TEST_F(WebSocketStreamCreateTest, SelfSignedCertificateFailure) {
       new SSLSocketDataProvider(ASYNC, ERR_CERT_AUTHORITY_INVALID));
   ssl_data_[0]->cert =
       ImportCertFromFile(GetTestCertsDirectory(), "unittest.selfsigned.der");
-  ASSERT_TRUE(ssl_data_[0]->cert);
-  scoped_ptr<DeterministicSocketData> raw_socket_data(
-      new DeterministicSocketData(NULL, 0, NULL, 0));
+  ASSERT_TRUE(ssl_data_[0]->cert.get());
+  scoped_ptr<DeterministicSocketData> raw_socket_data(BuildNullSocketData());
   CreateAndConnectRawExpectations("wss://localhost/",
                                   NoSubProtocols(),
                                   "http://localhost",
@@ -1080,12 +1309,11 @@ TEST_F(WebSocketStreamCreateTest, SelfSignedCertificateSuccess) {
       new SSLSocketDataProvider(ASYNC, ERR_CERT_AUTHORITY_INVALID));
   ssl_data->cert =
       ImportCertFromFile(GetTestCertsDirectory(), "unittest.selfsigned.der");
-  ASSERT_TRUE(ssl_data->cert);
+  ASSERT_TRUE(ssl_data->cert.get());
   ssl_data_.push_back(ssl_data.release());
   ssl_data.reset(new SSLSocketDataProvider(ASYNC, OK));
   ssl_data_.push_back(ssl_data.release());
-  url_request_context_host_.AddRawExpectations(
-      make_scoped_ptr(new DeterministicSocketData(NULL, 0, NULL, 0)));
+  url_request_context_host_.AddRawExpectations(BuildNullSocketData());
   CreateAndConnectStandard(
       "wss://localhost/", "/", NoSubProtocols(), "http://localhost", "", "");
   RunUntilIdle();
@@ -1094,6 +1322,60 @@ TEST_F(WebSocketStreamCreateTest, SelfSignedCertificateSuccess) {
   RunUntilIdle();
   EXPECT_FALSE(has_failed());
   EXPECT_TRUE(stream_);
+}
+
+// If the server requests authorisation, but we have no credentials, the
+// connection should fail cleanly.
+TEST_F(WebSocketStreamCreateBasicAuthTest, FailureNoCredentials) {
+  CreateAndConnectCustomResponse("ws://localhost/",
+                                 "/",
+                                 NoSubProtocols(),
+                                 "http://localhost",
+                                 "",
+                                 kUnauthorizedResponse);
+  RunUntilIdle();
+  EXPECT_TRUE(has_failed());
+  EXPECT_EQ("HTTP Authentication failed; no valid credentials available",
+            failure_message());
+  EXPECT_TRUE(response_info_);
+}
+
+TEST_F(WebSocketStreamCreateBasicAuthTest, SuccessPasswordInUrl) {
+  CreateAndConnectAuthHandshake("ws://foo:bar@localhost/",
+                                "Zm9vOmJhcg==",
+                                WebSocketStandardResponse(std::string()));
+  RunUntilIdle();
+  EXPECT_FALSE(has_failed());
+  EXPECT_TRUE(stream_);
+  ASSERT_TRUE(response_info_);
+  EXPECT_EQ(101, response_info_->status_code);
+}
+
+TEST_F(WebSocketStreamCreateBasicAuthTest, FailureIncorrectPasswordInUrl) {
+  CreateAndConnectAuthHandshake(
+      "ws://foo:baz@localhost/", "Zm9vOmJheg==", kUnauthorizedResponse);
+  RunUntilIdle();
+  EXPECT_TRUE(has_failed());
+  EXPECT_TRUE(response_info_);
+}
+
+// Digest auth has the same connection semantics as Basic auth, so we can
+// generally assume that whatever works for Basic auth will also work for
+// Digest. There's just one test here, to confirm that it works at all.
+TEST_F(WebSocketStreamCreateDigestAuthTest, DigestPasswordInUrl) {
+  AddRawExpectations(helper_.BuildSocketData1(kUnauthorizedResponse));
+
+  CreateAndConnectRawExpectations(
+      "ws://FooBar:pass@localhost/",
+      NoSubProtocols(),
+      "http://localhost",
+      helper_.BuildSocketData2(kAuthorizedRequest,
+                               WebSocketStandardResponse(std::string())));
+  RunUntilIdle();
+  EXPECT_FALSE(has_failed());
+  EXPECT_TRUE(stream_);
+  ASSERT_TRUE(response_info_);
+  EXPECT_EQ(101, response_info_->status_code);
 }
 
 TEST_F(WebSocketStreamCreateUMATest, Incomplete) {

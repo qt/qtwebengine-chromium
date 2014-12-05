@@ -27,7 +27,16 @@
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/VisitedLinkState.h"
 
-namespace WebCore {
+namespace blink {
+
+ElementResolveContext::ElementResolveContext(const Document& document)
+    : m_element(nullptr)
+    , m_parentNode(nullptr)
+    , m_rootElementStyle(document.documentElement() ? document.documentElement()->renderStyle() : document.renderStyle())
+    , m_elementLinkState(NotInsideLink)
+    , m_distributedToInsertionPoint(false)
+{
+}
 
 ElementResolveContext::ElementResolveContext(Element& element)
     : m_element(&element)
@@ -46,4 +55,4 @@ ElementResolveContext::ElementResolveContext(Element& element)
         m_rootElementStyle = documentStyle;
 }
 
-} // namespace WebCore
+} // namespace blink

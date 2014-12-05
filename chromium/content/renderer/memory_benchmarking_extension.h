@@ -27,11 +27,11 @@ class MemoryBenchmarkingExtension
 
  private:
   MemoryBenchmarkingExtension();
-  virtual ~MemoryBenchmarkingExtension();
+  ~MemoryBenchmarkingExtension() override;
 
   // gin::Wrappable.
-  virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
+  gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override;
 
   bool IsHeapProfilerRunning();
 

@@ -16,6 +16,7 @@
 #include "net/base/request_priority.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/http/http_transaction.h"
 
@@ -60,7 +61,7 @@ class HttpCache::Transaction : public HttpTransaction {
 
   Transaction(RequestPriority priority,
               HttpCache* cache);
-  virtual ~Transaction();
+  ~Transaction() override;
 
   Mode mode() const { return mode_; }
 
@@ -103,38 +104,41 @@ class HttpCache::Transaction : public HttpTransaction {
 
   const BoundNetLog& net_log() const;
 
+  // Bypasses the cache lock whenever there is lock contention.
+  void BypassLockForTest() {
+    bypass_lock_for_test_ = true;
+  }
+
   // HttpTransaction methods:
-  virtual int Start(const HttpRequestInfo* request_info,
-                    const CompletionCallback& callback,
-                    const BoundNetLog& net_log) OVERRIDE;
-  virtual int RestartIgnoringLastError(
-      const CompletionCallback& callback) OVERRIDE;
-  virtual int RestartWithCertificate(
-      X509Certificate* client_cert,
-      const CompletionCallback& callback) OVERRIDE;
-  virtual int RestartWithAuth(const AuthCredentials& credentials,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual bool IsReadyToRestartForAuth() OVERRIDE;
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual void StopCaching() OVERRIDE;
-  virtual bool GetFullRequestHeaders(
-      HttpRequestHeaders* headers) const OVERRIDE;
-  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
-  virtual void DoneReading() OVERRIDE;
-  virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual UploadProgress GetUploadProgress(void) const OVERRIDE;
-  virtual void SetQuicServerInfo(QuicServerInfo* quic_server_info) OVERRIDE;
-  virtual bool GetLoadTimingInfo(
-      LoadTimingInfo* load_timing_info) const OVERRIDE;
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-  virtual void SetWebSocketHandshakeStreamCreateHelper(
-      net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
-  virtual void SetBeforeNetworkStartCallback(
-      const BeforeNetworkStartCallback& callback) OVERRIDE;
-  virtual int ResumeNetworkStart() OVERRIDE;
+  int Start(const HttpRequestInfo* request_info,
+            const CompletionCallback& callback,
+            const BoundNetLog& net_log) override;
+  int RestartIgnoringLastError(const CompletionCallback& callback) override;
+  int RestartWithCertificate(X509Certificate* client_cert,
+                             const CompletionCallback& callback) override;
+  int RestartWithAuth(const AuthCredentials& credentials,
+                      const CompletionCallback& callback) override;
+  bool IsReadyToRestartForAuth() override;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  void StopCaching() override;
+  bool GetFullRequestHeaders(HttpRequestHeaders* headers) const override;
+  int64 GetTotalReceivedBytes() const override;
+  void DoneReading() override;
+  const HttpResponseInfo* GetResponseInfo() const override;
+  LoadState GetLoadState() const override;
+  UploadProgress GetUploadProgress(void) const override;
+  void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
+  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
+  void SetPriority(RequestPriority priority) override;
+  void SetWebSocketHandshakeStreamCreateHelper(
+      net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
+  void SetBeforeNetworkStartCallback(
+      const BeforeNetworkStartCallback& callback) override;
+  void SetBeforeProxyHeadersSentCallback(
+      const BeforeProxyHeadersSentCallback& callback) override;
+  int ResumeNetworkStart() override;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -260,6 +264,11 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoCacheWriteData(int num_bytes);
   int DoCacheWriteDataComplete(int result);
 
+  // These functions are involved in a field trial testing storing certificates
+  // in seperate entries from the HttpResponseInfo.
+  void ReadCertChain();
+  void WriteCertChain();
+
   // Sets request_ and fields derived from it.
   void SetRequest(const BoundNetLog& net_log, const HttpRequestInfo* request);
 
@@ -299,8 +308,9 @@ class HttpCache::Transaction : public HttpTransaction {
   // Returns network error code.
   int RestartNetworkRequestWithAuth(const AuthCredentials& credentials);
 
-  // Called to determine if we need to validate the cache entry before using it.
-  bool RequiresValidation();
+  // Called to determine if we need to validate the cache entry before using it,
+  // and whether the validation should be synchronous or asynchronous.
+  ValidationType RequiresValidation();
 
   // Called to make the request conditional (to ask the server if the cached
   // copy is valid).  Returns true if able to make the request conditional.
@@ -313,6 +323,12 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Handles a response validation error by bypassing the cache.
   void IgnoreRangeRequest();
+
+  // Removes content-length and byte range related info if needed.
+  void FixHeadersForHead();
+
+  // Launches an asynchronous revalidation based on this transaction.
+  void TriggerAsyncValidation();
 
   // Changes the response code of a range request to be 416 (Requested range not
   // satisfiable).
@@ -349,6 +365,9 @@ class HttpCache::Transaction : public HttpTransaction {
   // current operation |result| is also logged. If |restart| is true, the
   // transaction should be restarted.
   int OnCacheReadError(int result, bool restart);
+
+  // Called when the cache lock timeout fires.
+  void OnAddToEntryTimeout(base::TimeTicks start_time);
 
   // Deletes the current partial cache entry (sparse), and optionally removes
   // the control object (partial_).
@@ -412,6 +431,7 @@ class HttpCache::Transaction : public HttpTransaction {
   bool done_reading_;  // All available data was read.
   bool vary_mismatch_;  // The request doesn't match the stored vary data.
   bool couldnt_conditionalize_request_;
+  bool bypass_lock_for_test_;  // A test is exercising the cache lock.
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;
@@ -419,7 +439,6 @@ class HttpCache::Transaction : public HttpTransaction {
   int write_len_;
   scoped_ptr<PartialData> partial_;  // We are dealing with range requests.
   UploadProgress final_upload_progress_;
-  base::WeakPtrFactory<Transaction> weak_factory_;
   CompletionCallback io_callback_;
 
   // Members used to track data for histograms.
@@ -443,6 +462,9 @@ class HttpCache::Transaction : public HttpTransaction {
       websocket_handshake_stream_base_create_helper_;
 
   BeforeNetworkStartCallback before_network_start_callback_;
+  BeforeProxyHeadersSentCallback before_proxy_headers_sent_callback_;
+
+  base::WeakPtrFactory<Transaction> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Transaction);
 };

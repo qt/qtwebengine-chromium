@@ -1,24 +1,72 @@
 {#--- Begin #}
-  function {{struct.name}}() {
+  function {{struct.name}}(values) {
     this.initDefaults_();
+    this.initFields_(values);
   }
 
 {#--- Enums #}
 {%- from "enum_definition.tmpl" import enum_def %}
 {%  for enum in struct.enums %}
-  {{enum_def("%s.%s"|format(struct.name, enum.name), enum, module)}}
-{%  endfor %}
+  {{enum_def("%s.%s"|format(struct.name, enum.name), enum)}}
+{%-  endfor %}
 
 {#--- Constants #}
 {%  for constant in struct.constants %}
   {{struct.name}}.{{constant.name}} = {{constant.value|expression_to_text}};
-{%  endfor %}
+{%-  endfor %}
 
-{#--- Set up defaults #}
+{#--- initDefaults() #}
   {{struct.name}}.prototype.initDefaults_ = function() {
 {%- for packed_field in struct.packed.packed_fields %}
     this.{{packed_field.field.name}} = {{packed_field.field|default_value}};
 {%- endfor %}
+  };
+
+{#--- initFields() #}
+  {{struct.name}}.prototype.initFields_ = function(fields) {
+    for(var field in fields) {
+        if (this.hasOwnProperty(field))
+          this[field] = fields[field];
+    }
+  };
+
+{#--- Validation #}
+
+  {{struct.name}}.validate = function(messageValidator, offset) {
+    var err;
+{% macro check_err() -%}
+    if (err !== validator.validationError.NONE)
+        return err;
+{%- endmacro %}
+    err = messageValidator.validateStructHeader(offset, {{struct.name}}.encodedSize, {{struct.packed.packed_fields|length}});
+    {{check_err()}}
+
+{%- for packed_field in struct.packed.packed_fields %}
+{%-   set field_name = packed_field.field.name %}
+{%-   if packed_field.field|is_string_pointer_field %}
+    // validate {{struct.name}}.{{field_name}}
+    err = messageValidator.validateStringPointer({{packed_field|validate_string_params}})
+    {{check_err()}}
+{%-   elif packed_field.field|is_array_pointer_field %}
+    // validate {{struct.name}}.{{field_name}}
+    err = messageValidator.validateArrayPointer({{packed_field|validate_array_params}});
+    {{check_err()}}
+{%-   elif packed_field.field|is_struct_pointer_field %}
+    // validate {{struct.name}}.{{field_name}}
+    err = messageValidator.validateStructPointer({{packed_field|validate_struct_params}});
+    {{check_err()}}
+{%-   elif packed_field.field|is_map_pointer_field %}
+    // validate {{struct.name}}.{{field_name}}
+    err = messageValidator.validateMapPointer({{packed_field|validate_map_params}});
+    {{check_err()}}
+{%-   elif packed_field.field|is_handle_field %}
+    // validate {{struct.name}}.{{field_name}}
+    err = messageValidator.validateHandle({{packed_field|validate_handle_params}})
+    {{check_err()}}
+{%-   endif %}
+{%- endfor %}
+
+    return validator.validationError.NONE;
   };
 
 {#--- Encoding and decoding #}

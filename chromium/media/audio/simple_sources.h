@@ -19,7 +19,7 @@ class MEDIA_EXPORT SineWaveAudioSource
   // hertz and it has to be less than half of the sampling frequency
   // |sample_freq| or else you will get aliasing.
   SineWaveAudioSource(int channels, double freq, double sample_freq);
-  virtual ~SineWaveAudioSource() {}
+  ~SineWaveAudioSource() override {}
 
   // Return up to |cap| samples of data via OnMoreData().  Use Reset() to
   // allow more data to be served.
@@ -27,11 +27,10 @@ class MEDIA_EXPORT SineWaveAudioSource
   void Reset();
 
   // Implementation of AudioSourceCallback.
-  virtual int OnMoreData(AudioBus* audio_bus,
-                         AudioBuffersState audio_buffers) OVERRIDE;
-  virtual void OnError(AudioOutputStream* stream) OVERRIDE;
+  int OnMoreData(AudioBus* audio_bus, uint32 total_bytes_delay) override;
+  void OnError(AudioOutputStream* stream) override;
 
-  // The number of OnMoreData()+OnMoreIOData() and OnError() calls respectively.
+  // The number of OnMoreData() and OnError() calls respectively.
   int callbacks() { return callbacks_; }
   int errors() { return errors_; }
 

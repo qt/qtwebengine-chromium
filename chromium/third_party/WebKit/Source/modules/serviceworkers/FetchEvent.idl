@@ -4,10 +4,12 @@
 
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#fetch-event-interface
 [
-    RuntimeEnabled=ServiceWorker,
-    Exposed=ServiceWorker
+    RuntimeEnabled=ServiceWorkerOnFetch,
+    Exposed=ServiceWorker,
+    TypeChecking=Interface,
 ] interface FetchEvent : Event {
     readonly attribute Request request;
+    readonly attribute boolean isReload;
 
-    [CallWith=ScriptState] void respondWith(any value);
+    [CallWith=ScriptState, RaisesException] void respondWith(any value);
 };

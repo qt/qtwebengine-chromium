@@ -35,7 +35,7 @@
 #include "core/html/imports/HTMLImportsController.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: Broken with OOPI.
 static Document* parentDocument(LocalFrame* frame)
@@ -70,6 +70,7 @@ DocumentInit::DocumentInit(const KURL& url, LocalFrame* frame, WeakPtrWillBeRawP
     , m_contextDocument(contextDocument)
     , m_importsController(importsController)
     , m_createNewRegistrationContext(false)
+    , m_shouldReuseDefaultView(frame && frame->shouldReuseDefaultView(url))
 {
 }
 
@@ -82,6 +83,7 @@ DocumentInit::DocumentInit(const DocumentInit& other)
     , m_importsController(other.m_importsController)
     , m_registrationContext(other.m_registrationContext)
     , m_createNewRegistrationContext(other.m_createNewRegistrationContext)
+    , m_shouldReuseDefaultView(other.m_shouldReuseDefaultView)
 {
 }
 
@@ -161,5 +163,5 @@ DocumentInit DocumentInit::fromContext(WeakPtrWillBeRawPtr<Document> contextDocu
     return DocumentInit(url, 0, contextDocument, 0);
 }
 
-} // namespace WebCore
+} // namespace blink
 

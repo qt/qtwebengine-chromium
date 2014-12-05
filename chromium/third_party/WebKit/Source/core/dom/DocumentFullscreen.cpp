@@ -26,51 +26,39 @@
 #include "config.h"
 #include "core/dom/DocumentFullscreen.h"
 
-#include "core/dom/FullscreenElementStack.h"
+#include "core/dom/Fullscreen.h"
 
-namespace WebCore {
+namespace blink {
 
-bool DocumentFullscreen::webkitIsFullScreen(Document& document)
+bool DocumentFullscreen::fullscreenEnabled(Document& document)
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document))
-        return fullscreen->webkitIsFullScreen();
-    return false;
+    return Fullscreen::fullscreenEnabled(document);
+}
+
+Element* DocumentFullscreen::fullscreenElement(Document& document)
+{
+    if (Fullscreen* fullscreen = Fullscreen::fromIfExists(document))
+        return fullscreen->fullscreenElement();
+    return 0;
+}
+
+void DocumentFullscreen::exitFullscreen(Document& document)
+{
+    Fullscreen::from(document).exitFullscreen();
 }
 
 bool DocumentFullscreen::webkitFullScreenKeyboardInputAllowed(Document& document)
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document))
+    if (Fullscreen* fullscreen = Fullscreen::fromIfExists(document))
         return fullscreen->webkitFullScreenKeyboardInputAllowed();
     return false;
 }
 
 Element* DocumentFullscreen::webkitCurrentFullScreenElement(Document& document)
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document))
+    if (Fullscreen* fullscreen = Fullscreen::fromIfExists(document))
         return fullscreen->webkitCurrentFullScreenElement();
     return 0;
 }
 
-void DocumentFullscreen::webkitCancelFullScreen(Document& document)
-{
-    FullscreenElementStack::from(document).webkitCancelFullScreen();
-}
-
-bool DocumentFullscreen::webkitFullscreenEnabled(Document& document)
-{
-    return FullscreenElementStack::webkitFullscreenEnabled(document);
-}
-
-Element* DocumentFullscreen::webkitFullscreenElement(Document& document)
-{
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(document))
-        return fullscreen->webkitFullscreenElement();
-    return 0;
-}
-
-void DocumentFullscreen::webkitExitFullscreen(Document& document)
-{
-    FullscreenElementStack::from(document).webkitExitFullscreen();
-}
-
-} // namespace WebCore
+} // namespace blink

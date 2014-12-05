@@ -141,7 +141,7 @@ class DnsUDPAttempt : public DnsAttempt {
         query_(query.Pass()) {}
 
   // DnsAttempt:
-  virtual int Start(const CompletionCallback& callback) OVERRIDE {
+  int Start(const CompletionCallback& callback) override {
     DCHECK_EQ(STATE_NONE, next_state_);
     callback_ = callback;
     start_time_ = base::TimeTicks::Now();
@@ -149,16 +149,14 @@ class DnsUDPAttempt : public DnsAttempt {
     return DoLoop(OK);
   }
 
-  virtual const DnsQuery* GetQuery() const OVERRIDE {
-    return query_.get();
-  }
+  const DnsQuery* GetQuery() const override { return query_.get(); }
 
-  virtual const DnsResponse* GetResponse() const OVERRIDE {
+  const DnsResponse* GetResponse() const override {
     const DnsResponse* resp = response_.get();
     return (resp != NULL && resp->IsValid()) ? resp : NULL;
   }
 
-  virtual const BoundNetLog& GetSocketNetLog() const OVERRIDE {
+  const BoundNetLog& GetSocketNetLog() const override {
     return socket_lease_->socket()->NetLog();
   }
 
@@ -306,7 +304,7 @@ class DnsTCPAttempt : public DnsAttempt {
         response_length_(0) {}
 
   // DnsAttempt:
-  virtual int Start(const CompletionCallback& callback) OVERRIDE {
+  int Start(const CompletionCallback& callback) override {
     DCHECK_EQ(STATE_NONE, next_state_);
     callback_ = callback;
     start_time_ = base::TimeTicks::Now();
@@ -320,16 +318,14 @@ class DnsTCPAttempt : public DnsAttempt {
     return DoLoop(rv);
   }
 
-  virtual const DnsQuery* GetQuery() const OVERRIDE {
-    return query_.get();
-  }
+  const DnsQuery* GetQuery() const override { return query_.get(); }
 
-  virtual const DnsResponse* GetResponse() const OVERRIDE {
+  const DnsResponse* GetResponse() const override {
     const DnsResponse* resp = response_.get();
     return (resp != NULL && resp->IsValid()) ? resp : NULL;
   }
 
-  virtual const BoundNetLog& GetSocketNetLog() const OVERRIDE {
+  const BoundNetLog& GetSocketNetLog() const override {
     return socket_->NetLog();
   }
 
@@ -339,7 +335,9 @@ class DnsTCPAttempt : public DnsAttempt {
     STATE_SEND_LENGTH,
     STATE_SEND_QUERY,
     STATE_READ_LENGTH,
+    STATE_READ_LENGTH_COMPLETE,
     STATE_READ_RESPONSE,
+    STATE_READ_RESPONSE_COMPLETE,
     STATE_NONE,
   };
 
@@ -362,8 +360,14 @@ class DnsTCPAttempt : public DnsAttempt {
         case STATE_READ_LENGTH:
           rv = DoReadLength(rv);
           break;
+        case STATE_READ_LENGTH_COMPLETE:
+          rv = DoReadLengthComplete(rv);
+          break;
         case STATE_READ_RESPONSE:
           rv = DoReadResponse(rv);
+          break;
+        case STATE_READ_RESPONSE_COMPLETE:
+          rv = DoReadResponseComplete(rv);
           break;
         default:
           NOTREACHED();
@@ -435,18 +439,25 @@ class DnsTCPAttempt : public DnsAttempt {
   }
 
   int DoReadLength(int rv) {
+    DCHECK_EQ(OK, rv);
+
+    next_state_ = STATE_READ_LENGTH_COMPLETE;
+    return ReadIntoBuffer();
+  }
+
+  int DoReadLengthComplete(int rv) {
     DCHECK_NE(ERR_IO_PENDING, rv);
     if (rv < 0)
       return rv;
+    if (rv == 0)
+      return ERR_CONNECTION_CLOSED;
 
     buffer_->DidConsume(rv);
     if (buffer_->BytesRemaining() > 0) {
       next_state_ = STATE_READ_LENGTH;
-      return socket_->Read(
-          buffer_.get(),
-          buffer_->BytesRemaining(),
-          base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
+      return OK;
     }
+
     base::ReadBigEndian<uint16>(length_buffer_->data(), &response_length_);
     // Check if advertised response is too short. (Optimization only.)
     if (response_length_ < query_->io_buffer()->size())
@@ -459,18 +470,25 @@ class DnsTCPAttempt : public DnsAttempt {
   }
 
   int DoReadResponse(int rv) {
+    DCHECK_EQ(OK, rv);
+
+    next_state_ = STATE_READ_RESPONSE_COMPLETE;
+    return ReadIntoBuffer();
+  }
+
+  int DoReadResponseComplete(int rv) {
     DCHECK_NE(ERR_IO_PENDING, rv);
     if (rv < 0)
       return rv;
+    if (rv == 0)
+      return ERR_CONNECTION_CLOSED;
 
     buffer_->DidConsume(rv);
     if (buffer_->BytesRemaining() > 0) {
       next_state_ = STATE_READ_RESPONSE;
-      return socket_->Read(
-          buffer_.get(),
-          buffer_->BytesRemaining(),
-          base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
+      return OK;
     }
+
     if (!response_->InitParse(buffer_->BytesConsumed(), *query_))
       return ERR_DNS_MALFORMED_RESPONSE;
     if (response_->flags() & dns_protocol::kFlagTC)
@@ -488,6 +506,13 @@ class DnsTCPAttempt : public DnsAttempt {
     rv = DoLoop(rv);
     if (rv != ERR_IO_PENDING)
       callback_.Run(rv);
+  }
+
+  int ReadIntoBuffer() {
+    return socket_->Read(
+        buffer_.get(),
+        buffer_->BytesRemaining(),
+        base::Bind(&DnsTCPAttempt::OnIOComplete, base::Unretained(this)));
   }
 
   State next_state_;
@@ -538,24 +563,24 @@ class DnsTransactionImpl : public DnsTransaction,
     DCHECK(!IsIPLiteral(hostname_));
   }
 
-  virtual ~DnsTransactionImpl() {
+  ~DnsTransactionImpl() override {
     if (!callback_.is_null()) {
       net_log_.EndEventWithNetErrorCode(NetLog::TYPE_DNS_TRANSACTION,
                                         ERR_ABORTED);
     }  // otherwise logged in DoCallback or Start
   }
 
-  virtual const std::string& GetHostname() const OVERRIDE {
+  const std::string& GetHostname() const override {
     DCHECK(CalledOnValidThread());
     return hostname_;
   }
 
-  virtual uint16 GetType() const OVERRIDE {
+  uint16 GetType() const override {
     DCHECK(CalledOnValidThread());
     return qtype_;
   }
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     DCHECK(!callback_.is_null());
     DCHECK(attempts_.empty());
     net_log_.BeginEvent(NetLog::TYPE_DNS_TRANSACTION,
@@ -939,11 +964,11 @@ class DnsTransactionFactoryImpl : public DnsTransactionFactory {
     session_ = session;
   }
 
-  virtual scoped_ptr<DnsTransaction> CreateTransaction(
+  scoped_ptr<DnsTransaction> CreateTransaction(
       const std::string& hostname,
       uint16 qtype,
       const CallbackType& callback,
-      const BoundNetLog& net_log) OVERRIDE {
+      const BoundNetLog& net_log) override {
     return scoped_ptr<DnsTransaction>(new DnsTransactionImpl(
         session_.get(), hostname, qtype, callback, net_log));
   }

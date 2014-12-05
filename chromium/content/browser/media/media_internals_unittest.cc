@@ -8,48 +8,36 @@
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/test/test_browser_thread_bundle.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/channel_layout.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace {
 const int kTestComponentID = 0;
 const char kTestDeviceID[] = "test-device-id";
-}  // namespace
 
-namespace content {
-
-class MediaInternalsTest
-    : public testing::TestWithParam<media::AudioLogFactory::AudioComponent> {
+// This class encapsulates a MediaInternals reference. It also has some useful
+// methods to receive a callback, deserialize its associated data and expect
+// integer/string values.
+class MediaInternalsTestBase {
  public:
-  MediaInternalsTest()
-      : media_internals_(MediaInternals::GetInstance()),
-        update_cb_(base::Bind(&MediaInternalsTest::UpdateCallbackImpl,
-                              base::Unretained(this))),
-        test_params_(media::AudioParameters::AUDIO_PCM_LINEAR,
-                     media::CHANNEL_LAYOUT_MONO,
-                     0,
-                     48000,
-                     16,
-                     128,
-                     media::AudioParameters::ECHO_CANCELLER |
-                     media::AudioParameters::DUCKING),
-        test_component_(GetParam()),
-        audio_log_(media_internals_->CreateAudioLog(test_component_)) {
-    media_internals_->AddUpdateCallback(update_cb_);
+  MediaInternalsTestBase()
+    : media_internals_(content::MediaInternals::GetInstance()) {
   }
-
-  virtual ~MediaInternalsTest() {
-    media_internals_->RemoveUpdateCallback(update_cb_);
-  }
+  virtual ~MediaInternalsTestBase() {}
 
  protected:
   // Extracts and deserializes the JSON update data; merges into |update_data_|.
   void UpdateCallbackImpl(const base::string16& update) {
-    // Each update string looks like "<JavaScript Function Name>({<JSON>});", to
-    // use the JSON reader we need to strip out the JavaScript code.
+    // Each update string looks like "<JavaScript Function Name>({<JSON>});"
+    // or for video capabilities: "<JavaScript Function Name>([{<JSON>}]);".
+    // In the second case we will be able to extract the dictionary if it is the
+    // only member of the list.
+    // To use the JSON reader we need to strip out the JS function name and ().
     std::string utf8_update = base::UTF16ToUTF8(update);
     const std::string::size_type first_brace = utf8_update.find('{');
     const std::string::size_type last_brace = utf8_update.rfind('}');
@@ -62,34 +50,191 @@ class MediaInternalsTest
     update_data_.MergeDictionary(output_dict);
   }
 
-  void ExpectInt(const std::string& key, int expected_value) {
+  void ExpectInt(const std::string& key, int expected_value) const {
     int actual_value = 0;
     ASSERT_TRUE(update_data_.GetInteger(key, &actual_value));
     EXPECT_EQ(expected_value, actual_value);
   }
 
-  void ExpectString(const std::string& key, const std::string& expected_value) {
+  void ExpectString(const std::string& key,
+                    const std::string& expected_value) const {
     std::string actual_value;
     ASSERT_TRUE(update_data_.GetString(key, &actual_value));
     EXPECT_EQ(expected_value, actual_value);
   }
 
-  void ExpectStatus(const std::string& expected_value) {
+  void ExpectStatus(const std::string& expected_value) const {
     ExpectString("status", expected_value);
   }
 
-  TestBrowserThreadBundle thread_bundle_;
-  MediaInternals* const media_internals_;
-  MediaInternals::UpdateCallback update_cb_;
+  void ExpectListOfStrings(const std::string& key,
+                           const base::ListValue& expected_list) const {
+    const base::ListValue* actual_list;
+    ASSERT_TRUE(update_data_.GetList(key, &actual_list));
+    const size_t expected_size = expected_list.GetSize();
+    const size_t actual_size = actual_list->GetSize();
+    ASSERT_EQ(expected_size, actual_size);
+    for (size_t i = 0; i < expected_size; ++i) {
+      std::string expected_value, actual_value;
+      ASSERT_TRUE(expected_list.GetString(i, &expected_value));
+      ASSERT_TRUE(actual_list->GetString(i, &actual_value));
+      EXPECT_EQ(expected_value, actual_value);
+    }
+  }
+
+  const content::TestBrowserThreadBundle thread_bundle_;
   base::DictionaryValue update_data_;
+  content::MediaInternals* const media_internals_;
+};
+
+}  // namespace
+
+namespace content {
+
+class MediaInternalsVideoCaptureDeviceTest : public testing::Test,
+                                             public MediaInternalsTestBase {
+ public:
+  MediaInternalsVideoCaptureDeviceTest()
+      : update_cb_(base::Bind(
+            &MediaInternalsVideoCaptureDeviceTest::UpdateCallbackImpl,
+            base::Unretained(this))) {
+    media_internals_->AddUpdateCallback(update_cb_);
+  }
+
+  ~MediaInternalsVideoCaptureDeviceTest() override {
+    media_internals_->RemoveUpdateCallback(update_cb_);
+  }
+
+ protected:
+  MediaInternals::UpdateCallback update_cb_;
+};
+
+#if defined(OS_WIN) || defined(OS_MACOSX)
+TEST_F(MediaInternalsVideoCaptureDeviceTest,
+       AllCaptureApiTypesHaveProperStringRepresentation) {
+  typedef media::VideoCaptureDevice::Name VideoCaptureDeviceName;
+  typedef std::map<VideoCaptureDeviceName::CaptureApiType, std::string>
+      CaptureApiTypeStringMap;
+  CaptureApiTypeStringMap m;
+#if defined(OS_WIN)
+  m[VideoCaptureDeviceName::MEDIA_FOUNDATION] = "Media Foundation";
+  m[VideoCaptureDeviceName::DIRECT_SHOW] = "Direct Show";
+  m[VideoCaptureDeviceName::DIRECT_SHOW_WDM_CROSSBAR] =
+      "Direct Show WDM Crossbar";
+#elif defined(OS_MACOSX)
+  m[VideoCaptureDeviceName::AVFOUNDATION] = "AV Foundation";
+  m[VideoCaptureDeviceName::QTKIT] = "QTKit";
+  m[VideoCaptureDeviceName::DECKLINK] = "DeckLink";
+#endif
+  EXPECT_EQ(media::VideoCaptureDevice::Name::API_TYPE_UNKNOWN, m.size());
+  for (CaptureApiTypeStringMap::iterator it = m.begin(); it != m.end(); ++it) {
+    const VideoCaptureDeviceName device_name("dummy", "dummy", it->first);
+    EXPECT_EQ(it->second, device_name.GetCaptureApiTypeString());
+  }
+}
+#endif
+
+TEST_F(MediaInternalsVideoCaptureDeviceTest,
+       VideoCaptureFormatStringIsInExpectedFormat) {
+  // Since media internals will send video capture capabilities to JavaScript in
+  // an expected format and there are no public methods for accessing the
+  // resolutions, frame rates or pixel formats, this test checks that the format
+  // has not changed. If the test fails because of the changed format, it should
+  // be updated at the same time as the media internals JS files.
+  const float kFrameRate = 30.0f;
+  const gfx::Size kFrameSize(1280, 720);
+  const media::VideoPixelFormat kPixelFormat = media::PIXEL_FORMAT_I420;
+  const media::VideoCaptureFormat capture_format(
+      kFrameSize, kFrameRate, kPixelFormat);
+  const std::string expected_string =
+      base::StringPrintf("resolution: %s, fps: %f, pixel format: %s",
+                         kFrameSize.ToString().c_str(),
+                         kFrameRate,
+                         media::VideoCaptureFormat::PixelFormatToString(
+                              kPixelFormat).c_str());
+  EXPECT_EQ(expected_string, capture_format.ToString());
+}
+
+TEST_F(MediaInternalsVideoCaptureDeviceTest,
+       NotifyVideoCaptureDeviceCapabilitiesEnumerated) {
+  const int kWidth = 1280;
+  const int kHeight = 720;
+  const float kFrameRate = 30.0f;
+  const media::VideoPixelFormat kPixelFormat = media::PIXEL_FORMAT_I420;
+  const media::VideoCaptureFormat format_hd({kWidth, kHeight},
+      kFrameRate, kPixelFormat);
+  media::VideoCaptureFormats formats{};
+  formats.push_back(format_hd);
+  const media::VideoCaptureDeviceInfo device_info(
+#if defined(OS_MACOSX)
+      media::VideoCaptureDevice::Name("dummy", "dummy",
+          media::VideoCaptureDevice::Name::QTKIT),
+#elif defined(OS_WIN)
+      media::VideoCaptureDevice::Name("dummy", "dummy",
+          media::VideoCaptureDevice::Name::DIRECT_SHOW),
+#elif defined(OS_LINUX) || defined(OS_CHROMEOS)
+      media::VideoCaptureDevice::Name("dummy", "/dev/dummy"),
+#else
+      media::VideoCaptureDevice::Name("dummy", "dummy"),
+#endif
+      formats);
+  media::VideoCaptureDeviceInfos device_infos{};
+  device_infos.push_back(device_info);
+
+  // When updating video capture capabilities, the update will serialize
+  // a JSON array of objects to string. So here, the |UpdateCallbackImpl| will
+  // deserialize the first object in the array. This means we have to have
+  // exactly one device_info in the |device_infos|.
+  media_internals_->UpdateVideoCaptureDeviceCapabilities(device_infos);
+
+#if defined(OS_LINUX) || defined(OS_CHROMEOS)
+  ExpectString("id", "/dev/dummy");
+#else
+  ExpectString("id", "dummy");
+#endif
+  ExpectString("name", "dummy");
+  base::ListValue expected_list;
+  expected_list.AppendString(format_hd.ToString());
+  ExpectListOfStrings("formats", expected_list);
+#if defined(OS_MACOSX)
+  ExpectString("captureApi", "QTKit");
+#elif defined(OS_WIN)
+  ExpectString("captureApi", "Direct Show");
+#endif
+}
+
+class MediaInternalsAudioLogTest
+    : public MediaInternalsTestBase,
+      public testing::TestWithParam<media::AudioLogFactory::AudioComponent> {
+ public:
+  MediaInternalsAudioLogTest() :
+      update_cb_(base::Bind(&MediaInternalsAudioLogTest::UpdateCallbackImpl,
+                            base::Unretained(this))),
+      test_params_(media::AudioParameters::AUDIO_PCM_LINEAR,
+                   media::CHANNEL_LAYOUT_MONO,
+                   48000,
+                   16,
+                   128,
+                   media::AudioParameters::ECHO_CANCELLER |
+                   media::AudioParameters::DUCKING),
+      test_component_(GetParam()),
+      audio_log_(media_internals_->CreateAudioLog(test_component_)) {
+    media_internals_->AddUpdateCallback(update_cb_);
+  }
+
+  virtual ~MediaInternalsAudioLogTest() {
+    media_internals_->RemoveUpdateCallback(update_cb_);
+  }
+
+ protected:
+  MediaInternals::UpdateCallback update_cb_;
   const media::AudioParameters test_params_;
   const media::AudioLogFactory::AudioComponent test_component_;
   scoped_ptr<media::AudioLog> audio_log_;
 };
 
-TEST_P(MediaInternalsTest, AudioLogCreateStartStopErrorClose) {
-  audio_log_->OnCreated(
-      kTestComponentID, test_params_, kTestDeviceID);
+TEST_P(MediaInternalsAudioLogTest, AudioLogCreateStartStopErrorClose) {
+  audio_log_->OnCreated(kTestComponentID, test_params_, kTestDeviceID);
   base::RunLoop().RunUntilIdle();
 
   ExpectString("channel_layout",
@@ -97,7 +242,6 @@ TEST_P(MediaInternalsTest, AudioLogCreateStartStopErrorClose) {
   ExpectInt("sample_rate", test_params_.sample_rate());
   ExpectInt("frames_per_buffer", test_params_.frames_per_buffer());
   ExpectInt("channels", test_params_.channels());
-  ExpectInt("input_channels", test_params_.input_channels());
   ExpectString("effects", "ECHO_CANCELLER | DUCKING");
   ExpectString("device_id", kTestDeviceID);
   ExpectInt("component_id", kTestComponentID);
@@ -128,9 +272,8 @@ TEST_P(MediaInternalsTest, AudioLogCreateStartStopErrorClose) {
   ExpectStatus("closed");
 }
 
-TEST_P(MediaInternalsTest, AudioLogCreateClose) {
-  audio_log_->OnCreated(
-      kTestComponentID, test_params_, kTestDeviceID);
+TEST_P(MediaInternalsAudioLogTest, AudioLogCreateClose) {
+  audio_log_->OnCreated(kTestComponentID, test_params_, kTestDeviceID);
   base::RunLoop().RunUntilIdle();
   ExpectStatus("created");
 
@@ -140,7 +283,7 @@ TEST_P(MediaInternalsTest, AudioLogCreateClose) {
 }
 
 INSTANTIATE_TEST_CASE_P(
-    MediaInternalsTest, MediaInternalsTest, testing::Values(
+    MediaInternalsAudioLogTest, MediaInternalsAudioLogTest, testing::Values(
         media::AudioLogFactory::AUDIO_INPUT_CONTROLLER,
         media::AudioLogFactory::AUDIO_OUTPUT_CONTROLLER,
         media::AudioLogFactory::AUDIO_OUTPUT_STREAM));

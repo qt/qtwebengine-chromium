@@ -11,10 +11,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
+#include "cc/surfaces/surface_sequence.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "third_party/skia/include/core/SkColor.h"
+#include "ui/compositor/compositor_animation_observer.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/layer_animator_collection.h"
@@ -35,6 +38,7 @@ class Layer;
 class LayerTreeDebugState;
 class LayerTreeHost;
 class SharedBitmapManager;
+class SurfaceIdAllocator;
 }
 
 namespace gfx {
@@ -43,6 +47,7 @@ class Size;
 }
 
 namespace gpu {
+class GpuMemoryBufferManager;
 struct Mailbox;
 }
 
@@ -64,8 +69,8 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Creates an output surface for the given compositor. The factory may keep
   // per-compositor data (e.g. a shared context), that needs to be cleaned up
   // by calling RemoveCompositor when the compositor gets destroyed.
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
-      Compositor* compositor, bool software_fallback) = 0;
+  virtual void CreateOutputSurface(base::WeakPtr<Compositor> compositor,
+                                   bool software_fallback) = 0;
 
   // Creates a reflector that copies the content of the |mirrored_compositor|
   // onto |mirroing_layer|.
@@ -90,9 +95,15 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Gets the shared bitmap manager for software mode.
   virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
 
+  // Gets the GPU memory buffer manager.
+  virtual gpu::GpuMemoryBufferManager* GetGpuMemoryBufferManager() = 0;
+
   // Gets the compositor message loop, or NULL if not using threaded
   // compositing.
   virtual base::MessageLoopProxy* GetCompositorMessageLoop() = 0;
+
+  // Creates a Surface ID allocator with a new namespace.
+  virtual scoped_ptr<cc::SurfaceIdAllocator> CreateSurfaceIdAllocator() = 0;
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -127,14 +138,16 @@ class COMPOSITOR_EXPORT CompositorLock
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
     : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
-      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient),
-      NON_EXPORTED_BASE(public LayerAnimatorCollectionDelegate) {
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
   Compositor(gfx::AcceleratedWidget widget,
-             ui::ContextFactory* context_factory);
-  virtual ~Compositor();
+             ui::ContextFactory* context_factory,
+             scoped_refptr<base::SingleThreadTaskRunner> task_runner);
+  ~Compositor() override;
 
   ui::ContextFactory* context_factory() { return context_factory_; }
+
+  void SetOutputSurface(scoped_ptr<cc::OutputSurface> surface);
 
   // Schedules a redraw of the layer tree associated with this compositor.
   void ScheduleDraw();
@@ -184,17 +197,30 @@ class COMPOSITOR_EXPORT Compositor
   // the |root_layer|.
   void SetBackgroundColor(SkColor color);
 
+  // Set the visibility of the underlying compositor.
+  void SetVisible(bool visible);
+
   // Returns the widget for this compositor.
   gfx::AcceleratedWidget widget() const { return widget_; }
 
   // Returns the vsync manager for this compositor.
   scoped_refptr<CompositorVSyncManager> vsync_manager() const;
 
+  // Returns the main thread task runner this compositor uses. Users of the
+  // compositor generally shouldn't use this.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner() const {
+    return task_runner_;
+  }
+
   // Compositor does not own observers. It is the responsibility of the
   // observer to remove itself when it is done observing.
   void AddObserver(CompositorObserver* observer);
   void RemoveObserver(CompositorObserver* observer);
   bool HasObserver(CompositorObserver* observer);
+
+  void AddAnimationObserver(CompositorAnimationObserver* observer);
+  void RemoveAnimationObserver(CompositorAnimationObserver* observer);
+  bool HasAnimationObserver(CompositorAnimationObserver* observer);
 
   // Creates a compositor lock. Returns NULL if it is not possible to lock at
   // this time (i.e. we're waiting to complete a previous unlock).
@@ -213,28 +239,29 @@ class COMPOSITOR_EXPORT Compositor
   void OnSwapBuffersAborted();
 
   // LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
-  virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) OVERRIDE {}
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
-      OVERRIDE;
-  virtual void DidInitializeOutputSurface() OVERRIDE {}
-  virtual void WillCommit() OVERRIDE {}
-  virtual void DidCommit() OVERRIDE;
-  virtual void DidCommitAndDrawFrame() OVERRIDE;
-  virtual void DidCompleteSwapBuffers() OVERRIDE;
+  void WillBeginMainFrame(int frame_id) override {}
+  void DidBeginMainFrame() override {}
+  void BeginMainFrame(const cc::BeginFrameArgs& args) override;
+  void Layout() override;
+  void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
+                           const gfx::Vector2d& outer_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void RequestNewOutputSurface(bool fallback) override;
+  void DidInitializeOutputSurface() override {}
+  void WillCommit() override {}
+  void DidCommit() override;
+  void DidCommitAndDrawFrame() override;
+  void DidCompleteSwapBuffers() override;
 
   // cc::LayerTreeHostSingleThreadClient implementation.
-  virtual void ScheduleComposite() OVERRIDE;
-  virtual void ScheduleAnimation() OVERRIDE;
-  virtual void DidPostSwapBuffers() OVERRIDE;
-  virtual void DidAbortSwapBuffers() OVERRIDE;
-
-  // LayerAnimatorCollectionDelegate implementation.
-  virtual void ScheduleAnimationForLayerCollection() OVERRIDE;
+  void ScheduleComposite() override;
+  void ScheduleAnimation() override;
+  void DidPostSwapBuffers() override;
+  void DidAbortSwapBuffers() override;
 
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }
@@ -246,6 +273,10 @@ class COMPOSITOR_EXPORT Compositor
 
   LayerAnimatorCollection* layer_animator_collection() {
     return &layer_animator_collection_;
+  }
+
+  cc::SurfaceIdAllocator* surface_id_allocator() {
+    return surface_id_allocator_.get();
   }
 
  private:
@@ -269,11 +300,14 @@ class COMPOSITOR_EXPORT Compositor
   Layer* root_layer_;
 
   ObserverList<CompositorObserver> observer_list_;
+  ObserverList<CompositorAnimationObserver> animation_observer_list_;
 
   gfx::AcceleratedWidget widget_;
+  scoped_ptr<cc::SurfaceIdAllocator> surface_id_allocator_;
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
   scoped_refptr<base::MessageLoopProxy> compositor_thread_loop_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
   // The manager of vsync parameters for this compositor.
   scoped_refptr<CompositorVSyncManager> vsync_manager_;
@@ -300,7 +334,7 @@ class COMPOSITOR_EXPORT Compositor
 
   LayerAnimatorCollection layer_animator_collection_;
 
-  base::WeakPtrFactory<Compositor> schedule_draw_factory_;
+  base::WeakPtrFactory<Compositor> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Compositor);
 };

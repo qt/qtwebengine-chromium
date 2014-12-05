@@ -6,12 +6,22 @@
 
 #include "sandbox/linux/seccomp-bpf-helpers/sigsys_handlers.h"
 
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "base/basictypes.h"
+#include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "build/build_config.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#include "sandbox/linux/seccomp-bpf/syscall.h"
+#include "sandbox/linux/services/linux_syscalls.h"
+
+#if defined(__mips__)
+// __NR_Linux, is defined in <asm/unistd.h>.
+#include <asm/unistd.h>
+#endif
 
 #define SECCOMP_MESSAGE_COMMON_CONTENT "seccomp-bpf failure"
 #define SECCOMP_MESSAGE_CLONE_CONTENT "clone() failure"
@@ -45,6 +55,26 @@ void WriteToStdErr(const char* error_message, size_t size) {
   }
 }
 
+// Invalid syscall values are truncated to zero.
+// On architectures where base value is zero (Intel and Arm),
+// syscall number is the same as offset from base.
+// This function returns values between 0 and 1023 on all architectures.
+// On architectures where base value is different than zero (currently only
+// Mips), we are truncating valid syscall values to offset from base.
+uint32_t SyscallNumberToOffsetFromBase(uint32_t sysno) {
+#if defined(__mips__)
+  // On MIPS syscall numbers are in different range than on x86 and ARM.
+  // Valid MIPS O32 ABI syscall __NR_syscall will be truncated to zero for
+  // simplicity.
+  sysno = sysno - __NR_Linux;
+#endif
+
+  if (sysno >= 1024)
+    sysno = 0;
+
+  return sysno;
+}
+
 // Print a seccomp-bpf failure to handle |sysno| to stderr in an
 // async-signal safe way.
 void PrintSyscallError(uint32_t sysno) {
@@ -60,8 +90,13 @@ void PrintSyscallError(uint32_t sysno) {
     rem /= 10;
     sysno_base10[i] = '0' + mod;
   }
+#if defined(__mips__) && (_MIPS_SIM == _MIPS_SIM_ABI32)
+  static const char kSeccompErrorPrefix[] = __FILE__
+      ":**CRASHING**:" SECCOMP_MESSAGE_COMMON_CONTENT " in syscall 4000 + ";
+#else
   static const char kSeccompErrorPrefix[] =
       __FILE__":**CRASHING**:" SECCOMP_MESSAGE_COMMON_CONTENT " in syscall ";
+#endif
   static const char kSeccompErrorPostfix[] = "\n";
   WriteToStdErr(kSeccompErrorPrefix, sizeof(kSeccompErrorPrefix) - 1);
   WriteToStdErr(sysno_base10, sizeof(sysno_base10));
@@ -73,9 +108,8 @@ void PrintSyscallError(uint32_t sysno) {
 namespace sandbox {
 
 intptr_t CrashSIGSYS_Handler(const struct arch_seccomp_data& args, void* aux) {
-  uint32_t syscall = args.nr;
-  if (syscall >= 1024)
-    syscall = 0;
+  uint32_t syscall = SyscallNumberToOffsetFromBase(args.nr);
+
   PrintSyscallError(syscall);
 
   // Encode 8-bits of the 1st two arguments too, so we can discern which socket
@@ -175,6 +209,68 @@ intptr_t SIGSYSFutexFailure(const struct arch_seccomp_data& args,
   *addr = '\0';
   for (;;)
     _exit(1);
+}
+
+intptr_t SIGSYSSchedHandler(const struct arch_seccomp_data& args,
+                            void* aux) {
+  switch (args.nr) {
+    case __NR_sched_getaffinity:
+    case __NR_sched_getattr:
+    case __NR_sched_getparam:
+    case __NR_sched_getscheduler:
+    case __NR_sched_rr_get_interval:
+    case __NR_sched_setaffinity:
+    case __NR_sched_setattr:
+    case __NR_sched_setparam:
+    case __NR_sched_setscheduler:
+      const pid_t tid = syscall(__NR_gettid);
+      // The first argument is the pid.  If is our thread id, then replace it
+      // with 0, which is equivalent and allowed by the policy.
+      if (args.args[0] == static_cast<uint64_t>(tid)) {
+        return Syscall::Call(args.nr,
+                             0,
+                             static_cast<intptr_t>(args.args[1]),
+                             static_cast<intptr_t>(args.args[2]),
+                             static_cast<intptr_t>(args.args[3]),
+                             static_cast<intptr_t>(args.args[4]),
+                             static_cast<intptr_t>(args.args[5]));
+      }
+      break;
+  }
+
+  CrashSIGSYS_Handler(args, aux);
+
+  // Should never be reached.
+  RAW_CHECK(false);
+  return -ENOSYS;
+}
+
+bpf_dsl::ResultExpr CrashSIGSYS() {
+  return bpf_dsl::Trap(CrashSIGSYS_Handler, NULL);
+}
+
+bpf_dsl::ResultExpr CrashSIGSYSClone() {
+  return bpf_dsl::Trap(SIGSYSCloneFailure, NULL);
+}
+
+bpf_dsl::ResultExpr CrashSIGSYSPrctl() {
+  return bpf_dsl::Trap(SIGSYSPrctlFailure, NULL);
+}
+
+bpf_dsl::ResultExpr CrashSIGSYSIoctl() {
+  return bpf_dsl::Trap(SIGSYSIoctlFailure, NULL);
+}
+
+bpf_dsl::ResultExpr CrashSIGSYSKill() {
+  return bpf_dsl::Trap(SIGSYSKillFailure, NULL);
+}
+
+bpf_dsl::ResultExpr CrashSIGSYSFutex() {
+  return bpf_dsl::Trap(SIGSYSFutexFailure, NULL);
+}
+
+bpf_dsl::ResultExpr RewriteSchedSIGSYS() {
+  return bpf_dsl::Trap(SIGSYSSchedHandler, NULL);
 }
 
 const char* GetErrorMessageContentForTests() {

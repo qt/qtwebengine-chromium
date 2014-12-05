@@ -30,21 +30,21 @@
 #include "modules/indexeddb/IndexedDBClient.h"
 #include "platform/Supplementable.h"
 
-namespace WebCore {
+namespace blink {
 
 class IDBFactory;
 class LocalDOMWindow;
 
-class DOMWindowIndexedDatabase FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMWindowIndexedDatabase>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
+class DOMWindowIndexedDatabase final : public NoBaseWillBeGarbageCollected<DOMWindowIndexedDatabase>, public WillBeHeapSupplement<LocalDOMWindow>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMWindowIndexedDatabase);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowIndexedDatabase);
 public:
-    virtual ~DOMWindowIndexedDatabase();
     static DOMWindowIndexedDatabase& from(LocalDOMWindow&);
 
     static IDBFactory* indexedDB(LocalDOMWindow&);
 
-    virtual void willDestroyGlobalObjectInFrame() OVERRIDE;
-    virtual void willDetachGlobalObjectFromFrame() OVERRIDE;
+    virtual void willDestroyGlobalObjectInFrame() override;
+    virtual void willDetachGlobalObjectFromFrame() override;
 
     void trace(Visitor*);
 
@@ -58,6 +58,6 @@ private:
     PersistentWillBeMember<IDBFactory> m_idbFactory;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowIndexedDatabase_h

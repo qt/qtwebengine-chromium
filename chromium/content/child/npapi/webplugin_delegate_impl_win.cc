@@ -252,7 +252,7 @@ WebPluginDelegateImpl::WebPluginDelegateImpl(
 
   const WebPluginInfo& plugin_info = instance_->plugin_lib()->plugin_info();
   std::wstring filename =
-      StringToLowerASCII(plugin_info.path.BaseName().value());
+      base::StringToLowerASCII(plugin_info.path.BaseName().value());
 
   if (instance_->mime_type() == kFlashPluginSwfMimeType ||
       filename == kFlashPlugin) {
@@ -499,34 +499,6 @@ bool WebPluginDelegateImpl::WindowedCreatePlugin() {
 
   BOOL result = SetProp(windowed_handle_, kWebPluginDelegateProperty, this);
   DCHECK(result == TRUE) << "SetProp failed, last error = " << GetLastError();
-  // Get the name and version of the plugin, create atoms and set them in a
-  // window property. Use atoms so that other processes can access the name and
-  // version of the plugin that this window is hosting.
-  if (instance_ != NULL) {
-    PluginLib* plugin_lib = instance()->plugin_lib();
-    if (plugin_lib != NULL) {
-      std::wstring plugin_name = plugin_lib->plugin_info().name;
-      if (!plugin_name.empty()) {
-        ATOM plugin_name_atom = GlobalAddAtomW(plugin_name.c_str());
-        DCHECK_NE(0, plugin_name_atom);
-        result = SetProp(windowed_handle_,
-            kPluginNameAtomProperty,
-            reinterpret_cast<HANDLE>(plugin_name_atom));
-        DCHECK(result == TRUE) << "SetProp failed, last error = " <<
-            GetLastError();
-      }
-      base::string16 plugin_version = plugin_lib->plugin_info().version;
-      if (!plugin_version.empty()) {
-        ATOM plugin_version_atom = GlobalAddAtomW(plugin_version.c_str());
-        DCHECK_NE(0, plugin_version_atom);
-        result = SetProp(windowed_handle_,
-            kPluginVersionAtomProperty,
-            reinterpret_cast<HANDLE>(plugin_version_atom));
-        DCHECK(result == TRUE) << "SetProp failed, last error = " <<
-            GetLastError();
-      }
-    }
-  }
 
   // Calling SetWindowLongPtrA here makes the window proc ASCII, which is
   // required by at least the Shockwave Director plug-in.
@@ -1026,14 +998,6 @@ LRESULT CALLBACK WebPluginDelegateImpl::NativeWndProc(
 
     if (message == WM_NCDESTROY) {
       RemoveProp(hwnd, kWebPluginDelegateProperty);
-      ATOM plugin_name_atom = reinterpret_cast<ATOM>(
-          RemoveProp(hwnd, kPluginNameAtomProperty));
-      if (plugin_name_atom != 0)
-        GlobalDeleteAtom(plugin_name_atom);
-      ATOM plugin_version_atom = reinterpret_cast<ATOM>(
-          RemoveProp(hwnd, kPluginVersionAtomProperty));
-      if (plugin_version_atom != 0)
-        GlobalDeleteAtom(plugin_version_atom);
       ClearThrottleQueueForWindow(hwnd);
     }
   }
@@ -1065,7 +1029,7 @@ void WebPluginDelegateImpl::WindowlessUpdateGeometry(
     NPEvent pos_changed_event;
     pos_changed_event.event = WM_WINDOWPOSCHANGED;
     pos_changed_event.wParam = 0;
-    pos_changed_event.lParam = PtrToUlong(&win_pos);
+    pos_changed_event.lParam = reinterpret_cast<uintptr_t>(&win_pos);
 
     instance()->NPP_HandleEvent(&pos_changed_event);
   }
@@ -1087,9 +1051,8 @@ void WebPluginDelegateImpl::WindowlessPaint(HDC hdc,
 
   NPEvent paint_event;
   paint_event.event = WM_PAINT;
-  // NOTE: NPAPI is not 64bit safe.  It puts pointers into 32bit values.
   paint_event.wParam = PtrToUlong(hdc);
-  paint_event.lParam = PtrToUlong(&damage_rect_win);
+  paint_event.lParam = reinterpret_cast<uintptr_t>(&damage_rect_win);
   base::StatsRate plugin_paint("Plugin.Paint");
   base::StatsScope<base::StatsRate> scope(plugin_paint);
   instance()->NPP_HandleEvent(&paint_event);

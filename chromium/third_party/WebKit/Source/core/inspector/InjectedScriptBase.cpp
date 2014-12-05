@@ -33,15 +33,70 @@
 
 #include "core/inspector/InjectedScriptBase.h"
 
-#include "bindings/v8/ScriptFunctionCall.h"
+#include "bindings/core/v8/ScriptFunctionCall.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
-using WebCore::TypeBuilder::Runtime::RemoteObject;
+using blink::TypeBuilder::Array;
+using blink::TypeBuilder::Runtime::RemoteObject;
 
-namespace WebCore {
+namespace blink {
+
+static PassRefPtr<TypeBuilder::Debugger::ExceptionDetails> toExceptionDetails(PassRefPtr<JSONObject> object)
+{
+    String text;
+    if (!object->getString("text", &text))
+        return nullptr;
+
+    RefPtr<TypeBuilder::Debugger::ExceptionDetails> exceptionDetails = TypeBuilder::Debugger::ExceptionDetails::create().setText(text);
+    String url;
+    if (object->getString("url", &url))
+        exceptionDetails->setUrl(url);
+    int line = 0;
+    if (object->getNumber("line", &line))
+        exceptionDetails->setLine(line);
+    int column = 0;
+    if (object->getNumber("column", &column))
+        exceptionDetails->setColumn(column);
+    int originScriptId = 0;
+    object->getNumber("scriptId", &originScriptId);
+
+    RefPtr<JSONArray> stackTrace = object->getArray("stackTrace");
+    if (stackTrace && stackTrace->length() > 0) {
+        RefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > frames = TypeBuilder::Array<TypeBuilder::Console::CallFrame>::create();
+        for (unsigned i = 0; i < stackTrace->length(); ++i) {
+            RefPtr<JSONObject> stackFrame = stackTrace->get(i)->asObject();
+            int lineNumber = 0;
+            stackFrame->getNumber("lineNumber", &lineNumber);
+            int column = 0;
+            stackFrame->getNumber("column", &column);
+            int scriptId = 0;
+            stackFrame->getNumber("scriptId", &scriptId);
+            if (i == 0 && scriptId == originScriptId)
+                originScriptId = 0;
+
+            String sourceURL;
+            stackFrame->getString("scriptNameOrSourceURL", &sourceURL);
+            String functionName;
+            stackFrame->getString("functionName", &functionName);
+
+            RefPtr<TypeBuilder::Console::CallFrame> callFrame = TypeBuilder::Console::CallFrame::create()
+                .setFunctionName(functionName)
+                .setScriptId(String::number(scriptId))
+                .setUrl(sourceURL)
+                .setLineNumber(lineNumber)
+                .setColumnNumber(column);
+
+            frames->addItem(callFrame.release());
+        }
+        exceptionDetails->setStackTrace(frames.release());
+    }
+    if (originScriptId)
+        exceptionDetails->setScriptId(String::number(originScriptId));
+    return exceptionDetails.release();
+}
 
 InjectedScriptBase::InjectedScriptBase(const String& name)
     : m_name(name)
@@ -121,7 +176,7 @@ void InjectedScriptBase::makeCall(ScriptFunctionCall& function, RefPtr<JSONValue
     }
 }
 
-void InjectedScriptBase::makeEvalCall(ErrorString* errorString, ScriptFunctionCall& function, RefPtr<TypeBuilder::Runtime::RemoteObject>* objectResult, TypeBuilder::OptOutput<bool>* wasThrown)
+void InjectedScriptBase::makeEvalCall(ErrorString* errorString, ScriptFunctionCall& function, RefPtr<TypeBuilder::Runtime::RemoteObject>* objectResult, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
 {
     RefPtr<JSONValue> result;
     makeCall(function, &result);
@@ -145,9 +200,14 @@ void InjectedScriptBase::makeEvalCall(ErrorString* errorString, ScriptFunctionCa
         *errorString = "Internal error: result is not a pair of value and wasThrown flag";
         return;
     }
+    if (wasThrownVal) {
+        RefPtr<JSONObject> objectExceptionDetails = resultPair->getObject("exceptionDetails");
+        if (objectExceptionDetails)
+            *exceptionDetails = toExceptionDetails(objectExceptionDetails.release());
+    }
     *objectResult = TypeBuilder::Runtime::RemoteObject::runtimeCast(resultObj);
     *wasThrown = wasThrownVal;
 }
 
-} // namespace WebCore
+} // namespace blink
 

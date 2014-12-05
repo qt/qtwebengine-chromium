@@ -33,16 +33,14 @@
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/HTMLDivElement.h"
-#include "platform/DateTimeChooser.h"
-#include "platform/DateTimeChooserClient.h"
+#include "core/html/forms/DateTimeChooser.h"
+#include "core/html/forms/DateTimeChooserClient.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLInputElement;
-class PagePopup;
 
-class PickerIndicatorElement FINAL : public HTMLDivElement, public DateTimeChooserClient {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PickerIndicatorElement);
+class PickerIndicatorElement final : public HTMLDivElement, public DateTimeChooserClient {
 public:
     // PickerIndicatorOwner implementer must call removePickerIndicatorOwner when
     // it doesn't handle event, e.g. at destruction.
@@ -53,34 +51,39 @@ public:
         // FIXME: Remove. Deprecated in favor of double version.
         virtual void pickerIndicatorChooseValue(const String&) = 0;
         virtual void pickerIndicatorChooseValue(double) = 0;
+        virtual Element& pickerOwnerElement() const = 0;
         virtual bool setupDateTimeChooserParameters(DateTimeChooserParameters&) = 0;
     };
 
     static PassRefPtrWillBeRawPtr<PickerIndicatorElement> create(Document&, PickerIndicatorOwner&);
     virtual ~PickerIndicatorElement();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
     void openPopup();
     void closePopup();
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    virtual bool willRespondToMouseClickEvents() override;
     void removePickerIndicatorOwner() { m_pickerIndicatorOwner = nullptr; }
+    AXObject* popupRootAXObject() const;
 
     // DateTimeChooserClient implementation.
-    virtual void didChooseValue(const String&) OVERRIDE;
-    virtual void didChooseValue(double) OVERRIDE;
-    virtual void didEndChooser() OVERRIDE;
+    virtual Element& ownerElement() const override;
+    virtual void didChooseValue(const String&) override;
+    virtual void didChooseValue(double) override;
+    virtual void didEndChooser() override;
 
 private:
     PickerIndicatorElement(Document&, PickerIndicatorOwner&);
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual void defaultEventHandler(Event*) OVERRIDE;
-    virtual void detach(const AttachContext& = AttachContext()) OVERRIDE;
-    virtual bool isPickerIndicatorElement() const OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual void defaultEventHandler(Event*) override;
+    virtual void detach(const AttachContext& = AttachContext()) override;
+    virtual bool isPickerIndicatorElement() const override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override;
 
     HTMLInputElement* hostInput();
 
     RawPtrWillBeMember<PickerIndicatorOwner> m_pickerIndicatorOwner;
-    RefPtrWillBeMember<DateTimeChooser> m_chooser;
+    RefPtr<DateTimeChooser> m_chooser;
     bool m_isInOpenPopup;
 };
 

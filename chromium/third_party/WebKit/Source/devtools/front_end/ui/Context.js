@@ -30,7 +30,7 @@ WebInspector.Context.prototype = {
         if (value === flavorValue)
             return;
         if (flavorValue)
-            this._flavors.put(flavorType, flavorValue);
+            this._flavors.set(flavorType, flavorValue);
         else
             this._flavors.remove(flavorType);
 
@@ -60,7 +60,7 @@ WebInspector.Context.prototype = {
         var dispatcher = this._eventDispatchers.get(flavorType);
         if (!dispatcher) {
             dispatcher = new WebInspector.Object();
-            this._eventDispatchers.put(flavorType, dispatcher);
+            this._eventDispatchers.set(flavorType, dispatcher);
         }
         dispatcher.addEventListener(WebInspector.Context.Events.FlavorChanged, listener, thisObject);
     },
@@ -91,24 +91,24 @@ WebInspector.Context.prototype = {
     },
 
     /**
-     * @return {!Array.<function(new:Object, ...)>}
+     * @return {!Set.<function(new:Object, ...)>}
      */
     flavors: function()
     {
-        return this._flavors.keys();
+        return new Set(this._flavors.keys());
     },
 
     /**
-     * @param {!Array.<!WebInspector.ModuleManager.Extension>} extensions
-     * @return {!Set.<!WebInspector.ModuleManager.Extension>}
+     * @param {!Array.<!Runtime.Extension>} extensions
+     * @return {!Set.<!Runtime.Extension>}
      */
     applicableExtensions: function(extensions)
     {
         var targetExtensionSet = new Set();
 
-        var availableFlavors = Set.fromArray(this.flavors());
+        var availableFlavors = this.flavors();
         extensions.forEach(function(extension) {
-            if (WebInspector.moduleManager.isExtensionApplicableToContextTypes(extension, availableFlavors))
+            if (self.runtime.isExtensionApplicableToContextTypes(extension, availableFlavors))
                 targetExtensionSet.add(extension);
         });
 

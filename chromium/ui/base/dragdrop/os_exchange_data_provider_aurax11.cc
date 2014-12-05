@@ -127,6 +127,9 @@ bool OSExchangeDataProviderAuraX11::DidOriginateFromRenderer() const {
 }
 
 void OSExchangeDataProviderAuraX11::SetString(const base::string16& text_data) {
+  if (HasString())
+    return;
+
   std::string utf8 = base::UTF16ToUTF8(text_data);
   scoped_refptr<base::RefCountedMemory> mem(
       base::RefCountedString::TakeString(&utf8));
@@ -514,7 +517,7 @@ uint32_t OSExchangeDataProviderAuraX11::DispatchEvent(
   XEvent* xev = event;
   switch (xev->type) {
     case SelectionRequest:
-      selection_owner_.OnSelectionRequest(xev->xselectionrequest);
+      selection_owner_.OnSelectionRequest(*xev);
       return ui::POST_DISPATCH_STOP_PROPAGATION;
     default:
       NOTIMPLEMENTED();

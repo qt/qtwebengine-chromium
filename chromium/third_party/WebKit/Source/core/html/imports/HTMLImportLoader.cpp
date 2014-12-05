@@ -32,6 +32,7 @@
 #include "core/html/imports/HTMLImportLoader.h"
 
 #include "core/dom/Document.h"
+#include "core/dom/DocumentParser.h"
 #include "core/dom/StyleEngine.h"
 #include "core/dom/custom/CustomElementSyncMicrotaskQueue.h"
 #include "core/html/HTMLDocument.h"
@@ -41,7 +42,7 @@
 #include "platform/network/ContentSecurityPolicyResponseHeaders.h"
 
 
-namespace WebCore {
+namespace blink {
 
 HTMLImportLoader::HTMLImportLoader(HTMLImportsController* controller)
     : m_controller(controller)
@@ -79,8 +80,9 @@ void HTMLImportLoader::startLoading(const ResourcePtr<RawResource>& resource)
     setResource(resource);
 }
 
-void HTMLImportLoader::responseReceived(Resource* resource, const ResourceResponse& response)
+void HTMLImportLoader::responseReceived(Resource* resource, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
+    ASSERT_UNUSED(handle, !handle);
     // Resource may already have been loaded with the import loader
     // being added as a client later & now being notified. Fail early.
     if (resource->loadFailedOrCanceled() || response.httpStatusCode() >= 400) {
@@ -90,7 +92,7 @@ void HTMLImportLoader::responseReceived(Resource* resource, const ResourceRespon
     setState(startWritingAndParsing(response));
 }
 
-void HTMLImportLoader::dataReceived(Resource*, const char* data, int length)
+void HTMLImportLoader::dataReceived(Resource*, const char* data, unsigned length)
 {
     RefPtrWillBeRawPtr<DocumentWriter> protectingWriter(m_writer.get());
     m_writer->addData(data, length);
@@ -115,6 +117,10 @@ HTMLImportLoader::State HTMLImportLoader::startWritingAndParsing(const ResourceR
         .withRegistrationContext(m_controller->master()->registrationContext());
     m_document = HTMLDocument::create(init);
     m_writer = DocumentWriter::create(m_document.get(), response.mimeType(), "UTF-8");
+
+    DocumentParser* parser = m_document->parser();
+    ASSERT(parser);
+    parser->addClient(this);
 
     return StateLoading;
 }
@@ -151,11 +157,15 @@ void HTMLImportLoader::setState(State state)
         didFinishLoading();
 }
 
-void HTMLImportLoader::didFinishParsing()
+void HTMLImportLoader::notifyParserStopped()
 {
     setState(finishParsing());
     if (!hasPendingResources())
         setState(finishLoading());
+
+    DocumentParser* parser = m_document->parser();
+    ASSERT(parser);
+    parser->removeClient(this);
 }
 
 void HTMLImportLoader::didRemoveAllPendingStylesheet()
@@ -224,6 +234,7 @@ void HTMLImportLoader::trace(Visitor* visitor)
     visitor->trace(m_document);
     visitor->trace(m_writer);
     visitor->trace(m_microtaskQueue);
+    DocumentParserClient::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

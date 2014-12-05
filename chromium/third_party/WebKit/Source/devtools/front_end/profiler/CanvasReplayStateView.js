@@ -36,7 +36,7 @@
 WebInspector.CanvasReplayStateView = function(traceLogPlayer)
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("canvasProfiler.css");
+    this.registerRequiredCSS("profiler/canvasProfiler.css");
     this.element.classList.add("canvas-replay-state-view");
     this._traceLogPlayer = traceLogPlayer;
 
@@ -365,7 +365,7 @@ WebInspector.CanvasReplayStateView.prototype = {
                 parent.appendChild(childNode);
                 var oldChildrenItem = oldChildren[childNode.name] || {};
                 var oldChildNode = oldChildrenItem.node;
-                if (!oldChildNode || oldChildNode.element.textContent !== childNode.element.textContent)
+                if (!oldChildNode || oldChildNode.element().textContent !== childNode.element().textContent)
                     nodesToHighlight.push(childNode);
                 appendResourceStateDescriptors.call(this, descriptor.values, childNode, oldChildrenItem.children);
             }
@@ -385,13 +385,13 @@ WebInspector.CanvasReplayStateView.prototype = {
     _updateDataGridHighlights: function(nodes)
     {
         for (var i = 0, n = this._highlightedGridNodes.length; i < n; ++i)
-            this._highlightedGridNodes[i].element.classList.remove("canvas-grid-node-highlighted");
+            this._highlightedGridNodes[i].element().classList.remove("canvas-grid-node-highlighted");
 
         this._highlightedGridNodes = nodes;
 
         for (var i = 0, n = this._highlightedGridNodes.length; i < n; ++i) {
             var node = this._highlightedGridNodes[i];
-            WebInspector.runCSSAnimationOnce(node.element, "canvas-grid-node-highlighted");
+            WebInspector.runCSSAnimationOnce(node.element(), "canvas-grid-node-highlighted");
             node.reveal();
         }
     },
@@ -509,7 +509,7 @@ WebInspector.CanvasReplayStateView.prototype = {
             if (typeof nameElement === "string")
                 nameElement += "[" + descriptor.values.length + "]";
             else {
-                var element = document.createElement("span");
+                var element = createElement("span");
                 element.appendChild(nameElement);
                 element.createTextChild("[" + descriptor.values.length + "]");
                 nameElement = element;

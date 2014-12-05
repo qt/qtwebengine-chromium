@@ -38,26 +38,25 @@
 
 const unsigned DefaultNumberOfOutputChannels = 1;
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<ChannelMergerNode> ChannelMergerNode::create(AudioContext* context, float sampleRate, unsigned numberOfInputs)
+ChannelMergerNode* ChannelMergerNode::create(AudioContext* context, float sampleRate, unsigned numberOfInputs)
 {
     if (!numberOfInputs || numberOfInputs > AudioContext::maxNumberOfChannels())
-        return nullptr;
+        return 0;
 
-    return adoptRefWillBeNoop(new ChannelMergerNode(context, sampleRate, numberOfInputs));
+    return new ChannelMergerNode(context, sampleRate, numberOfInputs);
 }
 
 ChannelMergerNode::ChannelMergerNode(AudioContext* context, float sampleRate, unsigned numberOfInputs)
     : AudioNode(context, sampleRate)
     , m_desiredNumberOfOutputChannels(DefaultNumberOfOutputChannels)
 {
-    ScriptWrappable::init(this);
     // Create the requested number of inputs.
     for (unsigned i = 0; i < numberOfInputs; ++i)
-        addInput(adoptPtr(new AudioNodeInput(this)));
+        addInput();
 
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addOutput(AudioNodeOutput::create(this, 1));
     setNodeType(NodeTypeChannelMerger);
     initialize();
 }
@@ -132,6 +131,6 @@ void ChannelMergerNode::checkNumberOfChannelsForInput(AudioNodeInput* input)
     AudioNode::checkNumberOfChannelsForInput(input);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

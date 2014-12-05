@@ -32,18 +32,15 @@
 #define AnimationTranslationUtil_h
 
 namespace blink {
-class WebTransformOperations;
-class WebFilterOperations;
-}
-
-namespace WebCore {
 
 class FilterOperations;
 class TransformOperations;
+class WebFilterOperations;
+class WebTransformOperations;
 
-void toWebTransformOperations(const TransformOperations& inOperations, blink::WebTransformOperations* outOperations);
-bool toWebFilterOperations(const FilterOperations& inOperations, blink::WebFilterOperations* outOperations);
+void toWebTransformOperations(const TransformOperations& inOperations, WebTransformOperations* outOperations);
+void toWebFilterOperations(const FilterOperations& inOperations, WebFilterOperations* outOperations);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AnimationTranslationUtil_h

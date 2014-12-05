@@ -620,7 +620,7 @@ public:
             }
         }
 
-        void setMask(const SkMask* mask) { fMask = mask; }
+        virtual void set3DMask(const SkMask* mask) SK_OVERRIDE { fMask = mask; }
 
         virtual void shadeSpan(int x, int y, SkPMColor span[], int count) SK_OVERRIDE {
             if (fProxyContext) {
@@ -700,7 +700,7 @@ public:
     virtual void toString(SkString* str) const SK_OVERRIDE {
         str->append("Sk3DShader: (");
 
-        if (NULL != fProxy) {
+        if (fProxy) {
             str->append("Proxy: ");
             fProxy->toString(str);
         }
@@ -714,19 +714,17 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(Sk3DShader)
 
 protected:
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
     Sk3DShader(SkReadBuffer& buffer) : INHERITED(buffer) {
         fProxy = buffer.readShader();
         // Leaving this here until we bump the picture version, though this
         // shader should never be recorded.
         buffer.readColor();
     }
+#endif
 
     virtual void flatten(SkWriteBuffer& buffer) const SK_OVERRIDE {
-        this->INHERITED::flatten(buffer);
         buffer.writeFlattenable(fProxy);
-        // Leaving this here until we bump the picture version, though this
-        // shader should never be recorded.
-        buffer.writeColor(SkColor());
     }
 
 private:
@@ -735,11 +733,16 @@ private:
     typedef SkShader INHERITED;
 };
 
+SkFlattenable* Sk3DShader::CreateProc(SkReadBuffer& buffer) {
+    SkAutoTUnref<SkShader> shader(buffer.readShader());
+    return SkNEW_ARGS(Sk3DShader, (shader));
+}
+
 class Sk3DBlitter : public SkBlitter {
 public:
-    Sk3DBlitter(SkBlitter* proxy, Sk3DShader::Sk3DShaderContext* shaderContext)
+    Sk3DBlitter(SkBlitter* proxy, SkShader::Context* shaderContext)
         : fProxy(proxy)
-        , f3DShaderContext(shaderContext)
+        , fShaderContext(shaderContext)
     {}
 
     virtual void blitH(int x, int y, int width) {
@@ -761,13 +764,13 @@ public:
 
     virtual void blitMask(const SkMask& mask, const SkIRect& clip) {
         if (mask.fFormat == SkMask::k3D_Format) {
-            f3DShaderContext->setMask(&mask);
+            fShaderContext->set3DMask(&mask);
 
             ((SkMask*)&mask)->fFormat = SkMask::kA8_Format;
             fProxy->blitMask(mask, clip);
             ((SkMask*)&mask)->fFormat = SkMask::k3D_Format;
 
-            f3DShaderContext->setMask(NULL);
+            fShaderContext->set3DMask(NULL);
         } else {
             fProxy->blitMask(mask, clip);
         }
@@ -775,8 +778,8 @@ public:
 
 private:
     // Both pointers are unowned. They will be deleted by SkSmallAllocator.
-    SkBlitter*                     fProxy;
-    Sk3DShader::Sk3DShaderContext* f3DShaderContext;
+    SkBlitter*          fProxy;
+    SkShader::Context*  fShaderContext;
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -872,7 +875,7 @@ SkBlitter* SkBlitter::Choose(const SkBitmap& device,
         shader = shader3D;
     }
 
-    if (NULL != mode) {
+    if (mode) {
         switch (interpret_xfermode(*paint, mode, device.colorType())) {
             case kSrcOver_XferInterp:
                 mode = NULL;
@@ -984,9 +987,9 @@ SkBlitter* SkBlitter::Choose(const SkBitmap& device,
     if (shader3D) {
         SkBlitter* innerBlitter = blitter;
         // innerBlitter was allocated by allocator, which will delete it.
-        // We know shaderContext is of type Sk3DShaderContext because it belongs to shader3D.
-        blitter = allocator->createT<Sk3DBlitter>(innerBlitter,
-                static_cast<Sk3DShader::Sk3DShaderContext*>(shaderContext));
+        // We know shaderContext or its proxies is of type Sk3DShaderContext, so we need to
+        // wrapper the blitter to notify it when we see an emboss mask.
+        blitter = allocator->createT<Sk3DBlitter>(innerBlitter, shaderContext);
     }
     return blitter;
 }

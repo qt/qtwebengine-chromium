@@ -34,28 +34,30 @@
 #include "core/MediaFeatureNames.h"
 #include "core/MediaFeatures.h"
 #include "core/MediaTypeNames.h"
-#include "core/css/CSSAspectRatioValue.h"
 #include "core/css/CSSHelper.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaValuesDynamic.h"
+#include "core/css/PointerProperties.h"
 #include "core/css/resolver/MediaQueryResult.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "platform/PlatformScreen.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/geometry/FloatRect.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace MediaFeatureNames;
 
@@ -70,28 +72,20 @@ MediaQueryEvaluator::MediaQueryEvaluator(bool mediaFeatureResult)
 {
 }
 
-MediaQueryEvaluator::MediaQueryEvaluator(const String& acceptedMediaType, bool mediaFeatureResult)
-    : m_mediaType(acceptedMediaType)
-    , m_expectedResult(mediaFeatureResult)
-{
-}
-
 MediaQueryEvaluator::MediaQueryEvaluator(const char* acceptedMediaType, bool mediaFeatureResult)
     : m_mediaType(acceptedMediaType)
     , m_expectedResult(mediaFeatureResult)
 {
 }
 
-MediaQueryEvaluator::MediaQueryEvaluator(const String& acceptedMediaType, LocalFrame* frame)
-    : m_mediaType(acceptedMediaType)
-    , m_expectedResult(false) // Doesn't matter when we have m_frame and m_style.
+MediaQueryEvaluator::MediaQueryEvaluator(LocalFrame* frame)
+    : m_expectedResult(false) // Doesn't matter when we have m_frame and m_style.
     , m_mediaValues(MediaValues::createDynamicIfFrameExists(frame))
 {
 }
 
-MediaQueryEvaluator::MediaQueryEvaluator(const String& acceptedMediaType, const MediaValues& mediaValues)
-    : m_mediaType(acceptedMediaType)
-    , m_expectedResult(false) // Doesn't matter when we have mediaValues.
+MediaQueryEvaluator::MediaQueryEvaluator(const MediaValues& mediaValues)
+    : m_expectedResult(false) // Doesn't matter when we have mediaValues.
     , m_mediaValues(mediaValues.copy())
 {
 }
@@ -100,25 +94,47 @@ MediaQueryEvaluator::~MediaQueryEvaluator()
 {
 }
 
+const String MediaQueryEvaluator::mediaType() const
+{
+    // If a static mediaType was given by the constructor, we use it here.
+    if (!m_mediaType.isEmpty())
+        return m_mediaType;
+    // Otherwise, we get one from mediaValues (which may be dynamic or cached).
+    if (m_mediaValues)
+        return m_mediaValues->mediaType();
+    return nullAtom;
+}
+
 bool MediaQueryEvaluator::mediaTypeMatch(const String& mediaTypeToMatch) const
 {
     return mediaTypeToMatch.isEmpty()
         || equalIgnoringCase(mediaTypeToMatch, MediaTypeNames::all)
-        || equalIgnoringCase(mediaTypeToMatch, m_mediaType);
-}
-
-bool MediaQueryEvaluator::mediaTypeMatchSpecific(const char* mediaTypeToMatch) const
-{
-    // Like mediaTypeMatch, but without the special cases for "" and "all".
-    ASSERT(mediaTypeToMatch);
-    ASSERT(mediaTypeToMatch[0] != '\0');
-    ASSERT(!equalIgnoringCase(mediaTypeToMatch, MediaTypeNames::all));
-    return equalIgnoringCase(mediaTypeToMatch, m_mediaType);
+        || equalIgnoringCase(mediaTypeToMatch, mediaType());
 }
 
 static bool applyRestrictor(MediaQuery::Restrictor r, bool value)
 {
     return r == MediaQuery::Not ? !value : value;
+}
+
+bool MediaQueryEvaluator::eval(const MediaQuery* query, MediaQueryResultList* viewportDependentMediaQueryResults) const
+{
+    if (!mediaTypeMatch(query->mediaType()))
+        return applyRestrictor(query->restrictor(), false);
+
+    const ExpressionHeapVector& expressions = query->expressions();
+    // Iterate through expressions, stop if any of them eval to false (AND semantics).
+    size_t i = 0;
+    for (; i < expressions.size(); ++i) {
+        bool exprResult = eval(expressions.at(i).get());
+        if (viewportDependentMediaQueryResults && expressions.at(i)->isViewportDependent())
+            viewportDependentMediaQueryResults->append(adoptRefWillBeNoop(new MediaQueryResult(*expressions.at(i), exprResult)));
+        if (!exprResult)
+            break;
+    }
+
+    // Assume true if we are at the end of the list, otherwise assume false.
+    return applyRestrictor(query->restrictor(), expressions.size() == i);
 }
 
 bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultList* viewportDependentMediaQueryResults) const
@@ -132,27 +148,8 @@ bool MediaQueryEvaluator::eval(const MediaQuerySet* querySet, MediaQueryResultLi
 
     // Iterate over queries, stop if any of them eval to true (OR semantics).
     bool result = false;
-    for (size_t i = 0; i < queries.size() && !result; ++i) {
-        MediaQuery* query = queries[i].get();
-
-        if (mediaTypeMatch(query->mediaType())) {
-            const ExpressionHeapVector& expressions = query->expressions();
-            // Iterate through expressions, stop if any of them eval to false (AND semantics).
-            size_t j = 0;
-            for (; j < expressions.size(); ++j) {
-                bool exprResult = eval(expressions.at(j).get());
-                if (viewportDependentMediaQueryResults && expressions.at(j)->isViewportDependent())
-                    viewportDependentMediaQueryResults->append(adoptRefWillBeNoop(new MediaQueryResult(*expressions.at(j), exprResult)));
-                if (!exprResult)
-                    break;
-            }
-
-            // Assume true if we are at the end of the list, otherwise assume false.
-            result = applyRestrictor(query->restrictor(), expressions.size() == j);
-        } else {
-            result = applyRestrictor(query->restrictor(), false);
-        }
-    }
+    for (size_t i = 0; i < queries.size() && !result; ++i)
+        result = eval(queries[i].get(), viewportDependentMediaQueryResults);
 
     return result;
 }
@@ -268,9 +265,9 @@ static bool evalResolution(const MediaQueryExpValue& value, MediaFeaturePrefix o
     // this method only got called if this media type matches the one defined
     // in the query. Thus, if if the document's media type is "print", the
     // media type of the query will either be "print" or "all".
-    if (mediaValues.screenMediaType()) {
+    if (equalIgnoringCase(mediaValues.mediaType(), MediaTypeNames::screen)) {
         actualResolution = clampTo<float>(mediaValues.devicePixelRatio());
-    } else if (mediaValues.printMediaType()) {
+    } else if (equalIgnoringCase(mediaValues.mediaType(), MediaTypeNames::print)) {
         // The resolution of images while printing should not depend on the DPI
         // of the screen. Until we support proper ways of querying this info
         // we use 300px which is considered minimum for current printers.
@@ -328,7 +325,7 @@ static bool gridMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePr
     return false;
 }
 
-static bool computeLength(const MediaQueryExpValue& value, const MediaValues& mediaValues, int& result)
+static bool computeLength(const MediaQueryExpValue& value, const MediaValues& mediaValues, double& result)
 {
     if (!value.isValue)
         return false;
@@ -343,12 +340,17 @@ static bool computeLength(const MediaQueryExpValue& value, const MediaValues& me
     return false;
 }
 
+static bool computeLengthAndCompare(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues, double compareToValue)
+{
+    double length;
+    return computeLength(value, mediaValues, length) && compareValue(compareToValue, length, op);
+}
+
 static bool deviceHeightMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
-    if (value.isValid()) {
-        int length;
-        return computeLength(value, mediaValues, length) && compareValue(static_cast<int>(mediaValues.deviceHeight()), length, op);
-    }
+    if (value.isValid())
+        return computeLengthAndCompare(value, op, mediaValues, mediaValues.deviceHeight());
+
     // ({,min-,max-}device-height)
     // assume if we have a device, assume non-zero
     return true;
@@ -356,10 +358,9 @@ static bool deviceHeightMediaFeatureEval(const MediaQueryExpValue& value, MediaF
 
 static bool deviceWidthMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
-    if (value.isValid()) {
-        int length;
-        return computeLength(value, mediaValues, length) && compareValue(static_cast<int>(mediaValues.deviceWidth()), length, op);
-    }
+    if (value.isValid())
+        return computeLengthAndCompare(value, op, mediaValues, mediaValues.deviceWidth());
+
     // ({,min-,max-}device-width)
     // assume if we have a device, assume non-zero
     return true;
@@ -368,10 +369,8 @@ static bool deviceWidthMediaFeatureEval(const MediaQueryExpValue& value, MediaFe
 static bool heightMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
     int height = mediaValues.viewportHeight();
-    if (value.isValid()) {
-        int length;
-        return computeLength(value, mediaValues, length) && compareValue(height, length, op);
-    }
+    if (value.isValid())
+        return computeLengthAndCompare(value, op, mediaValues, height);
 
     return height;
 }
@@ -379,10 +378,8 @@ static bool heightMediaFeatureEval(const MediaQueryExpValue& value, MediaFeature
 static bool widthMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix op, const MediaValues& mediaValues)
 {
     int width = mediaValues.viewportWidth();
-    if (value.isValid()) {
-        int length;
-        return computeLength(value, mediaValues, length) && compareValue(width, length, op);
-    }
+    if (value.isValid())
+        return computeLengthAndCompare(value, op, mediaValues, width);
 
     return width;
 }
@@ -524,49 +521,102 @@ static bool transform3dMediaFeatureEval(const MediaQueryExpValue& value, MediaFe
 
 static bool hoverMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
-    MediaValues::PointerDeviceType pointer = mediaValues.pointer();
+    HoverType hover = mediaValues.primaryHoverType();
 
-    // If we're on a port that hasn't explicitly opted into providing pointer device information
-    // (or otherwise can't be confident in the pointer hardware available), then behave exactly
-    // as if this feature feature isn't supported.
-    if (pointer == MediaValues::UnknownPointer)
-        return false;
+    if (RuntimeEnabledFeatures::hoverMediaQueryKeywordsEnabled()) {
+        if (!value.isValid())
+            return hover != HoverTypeNone;
 
-    float number = 1;
-    if (value.isValid()) {
-        if (!numberValue(value, number))
+        if (!value.isID)
             return false;
-    }
 
-    return (pointer == MediaValues::NoPointer && !number)
-        || (pointer == MediaValues::TouchPointer && !number)
-        || (pointer == MediaValues::MousePointer && number == 1);
+        return (hover == HoverTypeNone && value.id == CSSValueNone)
+            || (hover == HoverTypeOnDemand && value.id == CSSValueOnDemand)
+            || (hover == HoverTypeHover && value.id == CSSValueHover);
+    } else {
+        float number = 1;
+        if (value.isValid()) {
+            if (!numberValue(value, number))
+                return false;
+        }
+
+        return (hover == HoverTypeNone && !number)
+            || (hover == HoverTypeOnDemand && !number)
+            || (hover == HoverTypeHover && number == 1);
+    }
 }
 
-static bool pointerMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
+static bool anyHoverMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
-    MediaValues::PointerDeviceType pointer = mediaValues.pointer();
-
-    // If we're on a port that hasn't explicitly opted into providing pointer device information
-    // (or otherwise can't be confident in the pointer hardware available), then behave exactly
-    // as if this feature feature isn't supported.
-    if (pointer == MediaValues::UnknownPointer)
+    if (!RuntimeEnabledFeatures::anyPointerMediaQueriesEnabled())
         return false;
 
+    int availableHoverTypes = mediaValues.availableHoverTypes();
+
     if (!value.isValid())
-        return pointer != MediaValues::NoPointer;
+        return availableHoverTypes & ~HoverTypeNone;
 
     if (!value.isID)
         return false;
 
-    return (pointer == MediaValues::NoPointer && value.id == CSSValueNone)
-        || (pointer == MediaValues::TouchPointer && value.id == CSSValueCoarse)
-        || (pointer == MediaValues::MousePointer && value.id == CSSValueFine);
+    switch (value.id) {
+    case CSSValueNone:
+        return availableHoverTypes & HoverTypeNone;
+    case CSSValueOnDemand:
+        return availableHoverTypes & HoverTypeOnDemand;
+    case CSSValueHover:
+        return availableHoverTypes & HoverTypeHover;
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+}
+
+static bool pointerMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
+{
+    PointerType pointer = mediaValues.primaryPointerType();
+
+    if (!value.isValid())
+        return pointer != PointerTypeNone;
+
+    if (!value.isID)
+        return false;
+
+    return (pointer == PointerTypeNone && value.id == CSSValueNone)
+        || (pointer == PointerTypeCoarse && value.id == CSSValueCoarse)
+        || (pointer == PointerTypeFine && value.id == CSSValueFine);
+}
+
+static bool anyPointerMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
+{
+    if (!RuntimeEnabledFeatures::anyPointerMediaQueriesEnabled())
+        return false;
+
+    int availablePointers = mediaValues.availablePointerTypes();
+
+    if (!value.isValid())
+        return availablePointers & ~PointerTypeNone;
+
+    if (!value.isID)
+        return false;
+
+    switch (value.id) {
+    case CSSValueCoarse:
+        return availablePointers & PointerTypeCoarse;
+    case CSSValueFine:
+        return availablePointers & PointerTypeFine;
+    case CSSValueNone:
+        return availablePointers & PointerTypeNone;
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
+    }
 }
 
 static bool scanMediaFeatureEval(const MediaQueryExpValue& value, MediaFeaturePrefix, const MediaValues& mediaValues)
 {
-    if (!mediaValues.scanMediaType())
+    // Scan only applies to 'tv' media.
+    if (!equalIgnoringCase(mediaValues.mediaType(), MediaTypeNames::tv))
         return false;
 
     if (!value.isValid())

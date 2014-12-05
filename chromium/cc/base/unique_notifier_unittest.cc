@@ -17,7 +17,7 @@ class UniqueNotifierTest : public testing::Test {
  public:
   UniqueNotifierTest() : notification_count_(0) {}
 
-  virtual void SetUp() OVERRIDE { ResetNotificationCount(); }
+  virtual void SetUp() override { ResetNotificationCount(); }
 
   void Notify() { ++notification_count_; }
 
@@ -32,7 +32,7 @@ class UniqueNotifierTest : public testing::Test {
 TEST_F(UniqueNotifierTest, Schedule) {
   {
     UniqueNotifier notifier(
-        base::MessageLoopProxy::current(),
+        base::MessageLoopProxy::current().get(),
         base::Bind(&UniqueNotifierTest::Notify, base::Unretained(this)));
 
     EXPECT_EQ(0, NotificationCount());

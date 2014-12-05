@@ -111,7 +111,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD0(OnDownloadedFileRemoved, void());
   virtual void Start(
       scoped_ptr<DownloadFile> download_file,
-      scoped_ptr<DownloadRequestHandleInterface> req_handle) OVERRIDE {
+      scoped_ptr<DownloadRequestHandleInterface> req_handle) override {
     MockStart(download_file.get(), req_handle.get());
   }
 
@@ -159,7 +159,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD0(GetAutoOpened, bool());
   MOCK_CONST_METHOD0(GetForcedFilePath, const base::FilePath&());
   MOCK_CONST_METHOD0(HasUserGesture, bool());
-  MOCK_CONST_METHOD0(GetTransitionType, PageTransition());
+  MOCK_CONST_METHOD0(GetTransitionType, ui::PageTransition());
   MOCK_CONST_METHOD0(IsTemporary, bool());
   MOCK_METHOD1(SetIsTemporary, void(bool));
   MOCK_METHOD1(SetOpened, void(bool));
@@ -173,7 +173,7 @@ class MockDownloadItemImpl : public DownloadItemImpl {
   MOCK_METHOD1(SetDisplayName, void(const base::FilePath&));
   MOCK_METHOD0(NotifyRemoved, void());
   // May be called when vlog is on.
-  virtual std::string DebugString(bool verbose) const OVERRIDE {
+  virtual std::string DebugString(bool verbose) const override {
     return std::string();
   }
 };
@@ -211,7 +211,7 @@ class MockDownloadItemFactory
       public base::SupportsWeakPtr<MockDownloadItemFactory> {
  public:
   MockDownloadItemFactory();
-  virtual ~MockDownloadItemFactory();
+  ~MockDownloadItemFactory() override;
 
   // Access to map of created items.
   // TODO(rdsmith): Could add type (save page, persisted, etc.)
@@ -229,7 +229,7 @@ class MockDownloadItemFactory
   void RemoveItem(int id);
 
   // Overridden methods from DownloadItemFactory.
-  virtual DownloadItemImpl* CreatePersistedItem(
+  DownloadItemImpl* CreatePersistedItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const base::FilePath& current_path,
@@ -248,20 +248,20 @@ class MockDownloadItemFactory
       DownloadDangerType danger_type,
       DownloadInterruptReason interrupt_reason,
       bool opened,
-      const net::BoundNetLog& bound_net_log) OVERRIDE;
-  virtual DownloadItemImpl* CreateActiveItem(
+      const net::BoundNetLog& bound_net_log) override;
+  DownloadItemImpl* CreateActiveItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const DownloadCreateInfo& info,
-      const net::BoundNetLog& bound_net_log) OVERRIDE;
-  virtual DownloadItemImpl* CreateSavePageItem(
+      const net::BoundNetLog& bound_net_log) override;
+  DownloadItemImpl* CreateSavePageItem(
       DownloadItemImplDelegate* delegate,
       uint32 download_id,
       const base::FilePath& path,
       const GURL& url,
-        const std::string& mime_type,
+      const std::string& mime_type,
       scoped_ptr<DownloadRequestHandleInterface> request_handle,
-      const net::BoundNetLog& bound_net_log) OVERRIDE;
+      const net::BoundNetLog& bound_net_log) override;
 
  private:
   std::map<uint32, MockDownloadItemImpl*> items_;
@@ -415,8 +415,9 @@ class MockBrowserContext : public BrowserContext {
   MOCK_METHOD0(GetResourceContext, ResourceContext*());
   MOCK_METHOD0(GetDownloadManagerDelegate, DownloadManagerDelegate*());
   MOCK_METHOD0(GetGuestManager, BrowserPluginGuestManager* ());
-  MOCK_METHOD0(GetSpecialStoragePolicy, quota::SpecialStoragePolicy*());
+  MOCK_METHOD0(GetSpecialStoragePolicy, storage::SpecialStoragePolicy*());
   MOCK_METHOD0(GetPushMessagingService, PushMessagingService*());
+  MOCK_METHOD0(GetSSLHostStateDelegate, SSLHostStateDelegate*());
 };
 
 class MockDownloadManagerObserver : public DownloadManager::Observer {
@@ -445,12 +446,12 @@ class DownloadManagerTest : public testing::Test {
   }
 
   // We tear down everything in TearDown().
-  virtual ~DownloadManagerTest() {}
+  ~DownloadManagerTest() override {}
 
   // Create a MockDownloadItemFactory and MockDownloadManagerDelegate,
   // then create a DownloadManager that points
   // at all of those.
-  virtual void SetUp() {
+  void SetUp() override {
     DCHECK(!download_manager_);
 
     mock_download_item_factory_ = (new MockDownloadItemFactory())->AsWeakPtr();
@@ -476,7 +477,7 @@ class DownloadManagerTest : public testing::Test {
     download_manager_->SetDelegate(mock_download_manager_delegate_.get());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     while (MockDownloadItemImpl*
            item = mock_download_item_factory_->PopItem()) {
       EXPECT_CALL(*item, GetState())

@@ -37,7 +37,7 @@
 #include "libavutil/pixdesc.h"
 #include "libavutil/avstring.h"
 
-#define NS(n) n < 0 ? (int)(n*65536.0-0.5+DBL_EPSILON) : (int)(n*65536.0+0.5)
+#define NS(n) ((n) < 0 ? (int)((n)*65536.0-0.5+DBL_EPSILON) : (int)((n)*65536.0+0.5))
 #define CB(n) av_clip_uint8(n)
 
 static const double yuv_coeff[4][3][3] = {
@@ -158,7 +158,7 @@ static void calc_coefficients(AVFilterContext *ctx)
     }
 }
 
-static const char *color_modes[] = {"bt709", "fcc", "bt601", "smpte240m"};
+static const char * const color_modes[] = {"bt709", "fcc", "bt601", "smpte240m"};
 
 static av_cold int init(AVFilterContext *ctx)
 {

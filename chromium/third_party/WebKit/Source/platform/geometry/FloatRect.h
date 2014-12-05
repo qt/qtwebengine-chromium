@@ -39,11 +39,10 @@ typedef struct CGRect CGRect;
 #endif
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class LayoutRect;
 class IntRect;
-class IntPoint;
 
 class PLATFORM_EXPORT FloatRect {
 public:

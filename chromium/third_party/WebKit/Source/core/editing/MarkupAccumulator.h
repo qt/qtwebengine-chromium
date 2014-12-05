@@ -31,7 +31,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 class Attribute;
 class DocumentType;
@@ -66,10 +66,10 @@ class MarkupAccumulator {
     WTF_MAKE_NONCOPYABLE(MarkupAccumulator);
     STACK_ALLOCATED();
 public:
-    MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node> >*, EAbsoluteURLs, const Range* = 0, SerializationType = AsOwnerDocument);
+    MarkupAccumulator(WillBeHeapVector<RawPtrWillBeMember<Node>>*, EAbsoluteURLs, const Range* = nullptr, SerializationType = AsOwnerDocument);
     virtual ~MarkupAccumulator();
 
-    String serializeNodes(Node& targetNode, EChildrenOnly, Vector<QualifiedName>* tagNamesToSkip = 0);
+    String serializeNodes(Node& targetNode, EChildrenOnly, Vector<QualifiedName>* tagNamesToSkip = nullptr);
 
     static void appendComment(StringBuilder&, const String&);
 
@@ -77,8 +77,8 @@ public:
 
 protected:
     void appendString(const String&);
-    void appendStartTag(Node&, Namespaces* = 0);
-    virtual void appendEndTag(const Node&);
+    void appendStartTag(Node&, Namespaces* = nullptr);
+    virtual void appendEndTag(const Element&);
     static size_t totalLength(const Vector<String>&);
     size_t length() const { return m_markup.length(); }
     void concatenateMarkup(StringBuilder&);
@@ -99,11 +99,11 @@ protected:
     void appendAttribute(StringBuilder&, const Element&, const Attribute&, Namespaces*);
     void appendCDATASection(StringBuilder&, const String&);
     void appendStartMarkup(StringBuilder&, Node&, Namespaces*);
-    bool shouldSelfClose(const Node&);
+    bool shouldSelfClose(const Element&);
     bool elementCannotHaveEndTag(const Node&);
-    void appendEndMarkup(StringBuilder&, const Node&);
+    void appendEndMarkup(StringBuilder&, const Element&);
 
-    RawPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Node> > > const m_nodes;
+    RawPtrWillBeMember<WillBeHeapVector<RawPtrWillBeMember<Node>>> const m_nodes;
     RawPtrWillBeMember<const Range> const m_range;
 
 private:

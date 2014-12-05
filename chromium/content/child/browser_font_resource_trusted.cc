@@ -6,6 +6,7 @@
 
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "content/public/common/web_preferences.h"
 #include "ppapi/c/dev/ppb_font_dev.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
@@ -43,11 +44,9 @@ namespace {
 // undefined reference linker error.
 const char kCommonScript[] = "Zyyy";
 
-base::string16 GetFontFromMap(
-    const webkit_glue::ScriptFontFamilyMap& map,
-    const std::string& script) {
-  webkit_glue::ScriptFontFamilyMap::const_iterator it =
-      map.find(script);
+base::string16 GetFontFromMap(const ScriptFontFamilyMap& map,
+                              const std::string& script) {
+  ScriptFontFamilyMap::const_iterator it = map.find(script);
   if (it != map.end())
     return it->second;
   return base::string16();
@@ -202,9 +201,9 @@ WebFontDescription PPFontDescToWebFontDesc(
     // we should use the fixed or regular font size. It's difficult at this
     // level to detect if the requested font is fixed width, so we only apply
     // the alternate font size to the default fixed font family.
-    if (StringToLowerASCII(resolved_family) ==
-        StringToLowerASCII(GetFontFromMap(prefs.fixed_font_family_map,
-                                          kCommonScript)))
+    if (base::StringToLowerASCII(resolved_family) ==
+        base::StringToLowerASCII(GetFontFromMap(prefs.fixed_font_family_map,
+                                                kCommonScript)))
       result.size = static_cast<float>(prefs.default_fixed_font_size);
     else
       result.size = static_cast<float>(prefs.default_font_size);

@@ -28,6 +28,8 @@
     'config/gpu_info.cc',
     'config/gpu_info.h',
     'config/gpu_info_collector_android.cc',
+    'config/gpu_info_collector_linux.cc',
+    'config/gpu_info_collector_linux.h',
     'config/gpu_info_collector_mac.mm',
     'config/gpu_info_collector_ozone.cc',
     'config/gpu_info_collector_win.cc',
@@ -57,17 +59,21 @@
       # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
       'msvs_disabled_warnings': [ 4267, ],
     }],
-    ['OS=="win" and branding=="Chrome"', {
+    ['OS=="win" and branding=="Chrome" and buildtype=="Official"', {
       'sources': [
         '../third_party/amd/AmdCfxPxExt.h',
         '../third_party/amd/amd_videocard_info_win.cc',
+      ],
+    }],
+    ['OS=="linux" and use_libpci==1 and (use_x11==1 or use_ozone==1)', {
+      'dependencies': [
+        '../build/linux/system.gyp:libpci',
       ],
     }],
     ['OS=="linux" and use_x11==1', {
       'dependencies': [
         '../build/linux/system.gyp:x11',
         '../build/linux/system.gyp:xext',
-        '../build/linux/system.gyp:libpci',
         '../third_party/libXNVCtrl/libXNVCtrl.gyp:libXNVCtrl',
       ],
     }],

@@ -26,44 +26,47 @@
 
 #include "core/html/FormAssociatedElement.h"
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLElement.h"
 #include "core/html/RadioNodeList.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLElement;
 class HTMLImageElement;
-class QualifiedName;
+class RadioNodeListOrElement;
 
 // This class is just a big hack to find form elements even in malformed HTML elements.
 // The famous <table><tr><form><td> problem.
 
-class HTMLFormControlsCollection FINAL : public HTMLCollection {
+class HTMLFormControlsCollection final : public HTMLCollection {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> create(ContainerNode&, CollectionType);
 
     virtual ~HTMLFormControlsCollection();
 
-    virtual Element* namedItem(const AtomicString& name) const OVERRIDE;
-    void namedGetter(const AtomicString& name, bool& radioNodeListEnabled, RefPtrWillBeRawPtr<RadioNodeList>&, bool& elementEnabled, RefPtrWillBeRawPtr<Element>&);
+    HTMLElement* item(unsigned offset) const { return toHTMLElement(HTMLCollection::item(offset)); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual HTMLElement* namedItem(const AtomicString& name) const override;
+    void namedGetter(const AtomicString& name, RadioNodeListOrElement&);
+
+    virtual void trace(Visitor*) override;
 
 private:
     explicit HTMLFormControlsCollection(ContainerNode&);
 
-    virtual void updateIdNameCache() const OVERRIDE;
-    virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
+    virtual void updateIdNameCache() const override;
+    virtual void supportedPropertyNames(Vector<String>& names) override;
 
     const FormAssociatedElement::List& formControlElements() const;
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement> >& formImageElements() const;
-    virtual Element* virtualItemAfter(Element*) const OVERRIDE;
-    virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE;
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLImageElement>>& formImageElements() const;
+    virtual HTMLElement* virtualItemAfter(Element*) const override;
+    virtual void invalidateCache(Document* oldDocument = 0) const override;
 
-    mutable RawPtrWillBeMember<Element> m_cachedElement;
+    mutable RawPtrWillBeMember<HTMLElement> m_cachedElement;
     mutable unsigned m_cachedElementOffsetInArray;
 };
 DEFINE_TYPE_CASTS(HTMLFormControlsCollection, LiveNodeListBase, collection, collection->type() == FormControls, collection.type() == FormControls);
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLFormControlsCollection_h

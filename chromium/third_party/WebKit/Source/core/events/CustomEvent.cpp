@@ -26,19 +26,17 @@
 #include "config.h"
 #include "core/events/CustomEvent.h"
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 
-namespace WebCore {
+namespace blink {
 
 CustomEvent::CustomEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 CustomEvent::CustomEvent(const AtomicString& type, const CustomEventInit& initializer)
     : Event(type, initializer)
 {
-    ScriptWrappable::init(this);
 }
 
 CustomEvent::~CustomEvent()
@@ -65,4 +63,4 @@ void CustomEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

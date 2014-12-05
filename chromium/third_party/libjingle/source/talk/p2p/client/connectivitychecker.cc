@@ -1,24 +1,48 @@
-// Copyright 2011 Google Inc. All Rights Reserved.
-
+/*
+ * libjingle
+ * Copyright 2011, Google Inc.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ *  1. Redistributions of source code must retain the above copyright notice,
+ *     this list of conditions and the following disclaimer.
+ *  2. Redistributions in binary form must reproduce the above copyright notice,
+ *     this list of conditions and the following disclaimer in the documentation
+ *     and/or other materials provided with the distribution.
+ *  3. The name of the author may not be used to endorse or promote products
+ *     derived from this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+ * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
+ * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
+ * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ */
 
 #include <string>
 
-#include "talk/p2p/client/connectivitychecker.h"
+#include "webrtc/p2p/client/connectivitychecker.h"
 
-#include "talk/base/asynchttprequest.h"
-#include "talk/base/autodetectproxy.h"
-#include "talk/base/helpers.h"
-#include "talk/base/httpcommon.h"
-#include "talk/base/httpcommon-inl.h"
-#include "talk/base/logging.h"
-#include "talk/base/proxydetect.h"
-#include "talk/base/thread.h"
-#include "talk/p2p/base/candidate.h"
-#include "talk/p2p/base/constants.h"
-#include "talk/p2p/base/common.h"
-#include "talk/p2p/base/port.h"
-#include "talk/p2p/base/relayport.h"
-#include "talk/p2p/base/stunport.h"
+#include "webrtc/p2p/base/candidate.h"
+#include "webrtc/p2p/base/common.h"
+#include "webrtc/p2p/base/constants.h"
+#include "webrtc/p2p/base/port.h"
+#include "webrtc/p2p/base/relayport.h"
+#include "webrtc/p2p/base/stunport.h"
+#include "webrtc/base/asynchttprequest.h"
+#include "webrtc/base/autodetectproxy.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/httpcommon-inl.h"
+#include "webrtc/base/httpcommon.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/proxydetect.h"
+#include "webrtc/base/thread.h"
 
 namespace cricket {
 
@@ -37,7 +61,7 @@ enum {
 
 class TestHttpPortAllocator : public HttpPortAllocator {
  public:
-  TestHttpPortAllocator(talk_base::NetworkManager* network_manager,
+  TestHttpPortAllocator(rtc::NetworkManager* network_manager,
                         const std::string& user_agent,
                         const std::string& relay_token) :
       HttpPortAllocator(network_manager, user_agent) {
@@ -61,9 +85,9 @@ void TestHttpPortAllocatorSession::ConfigReady(PortConfiguration* config) {
 }
 
 void TestHttpPortAllocatorSession::OnRequestDone(
-    talk_base::SignalThread* data) {
-  talk_base::AsyncHttpRequest* request =
-      static_cast<talk_base::AsyncHttpRequest*>(data);
+    rtc::SignalThread* data) {
+  rtc::AsyncHttpRequest* request =
+      static_cast<rtc::AsyncHttpRequest*>(data);
 
   // Tell the checker that the request is complete.
   SignalRequestDone(request);
@@ -73,7 +97,7 @@ void TestHttpPortAllocatorSession::OnRequestDone(
 }
 
 ConnectivityChecker::ConnectivityChecker(
-    talk_base::Thread* worker,
+    rtc::Thread* worker,
     const std::string& jid,
     const std::string& session_id,
     const std::string& user_agent,
@@ -115,13 +139,13 @@ bool ConnectivityChecker::Initialize() {
 }
 
 void ConnectivityChecker::Start() {
-  main_ = talk_base::Thread::Current();
+  main_ = rtc::Thread::Current();
   worker_->Post(this, MSG_START);
   started_ = true;
 }
 
 void ConnectivityChecker::CleanUp() {
-  ASSERT(worker_ == talk_base::Thread::Current());
+  ASSERT(worker_ == rtc::Thread::Current());
   if (proxy_detect_) {
     proxy_detect_->Release();
     proxy_detect_ = NULL;
@@ -137,14 +161,14 @@ void ConnectivityChecker::CleanUp() {
   ports_.clear();
 }
 
-bool ConnectivityChecker::AddNic(const talk_base::IPAddress& ip,
-                                 const talk_base::SocketAddress& proxy_addr) {
+bool ConnectivityChecker::AddNic(const rtc::IPAddress& ip,
+                                 const rtc::SocketAddress& proxy_addr) {
   NicMap::iterator i = nics_.find(NicId(ip, proxy_addr));
   if (i != nics_.end()) {
     // Already have it.
     return false;
   }
-  uint32 now = talk_base::Time();
+  uint32 now = rtc::Time();
   NicInfo info;
   info.ip = ip;
   info.proxy_info = GetProxyInfo();
@@ -153,13 +177,13 @@ bool ConnectivityChecker::AddNic(const talk_base::IPAddress& ip,
   return true;
 }
 
-void ConnectivityChecker::SetProxyInfo(const talk_base::ProxyInfo& proxy_info) {
+void ConnectivityChecker::SetProxyInfo(const rtc::ProxyInfo& proxy_info) {
   port_allocator_->set_proxy(user_agent_, proxy_info);
   AllocatePorts();
 }
 
-talk_base::ProxyInfo ConnectivityChecker::GetProxyInfo() const {
-  talk_base::ProxyInfo proxy_info;
+rtc::ProxyInfo ConnectivityChecker::GetProxyInfo() const {
+  rtc::ProxyInfo proxy_info;
   if (proxy_detect_) {
     proxy_info = proxy_detect_->proxy();
   }
@@ -172,10 +196,10 @@ void ConnectivityChecker::CheckNetworks() {
   network_manager_->StartUpdating();
 }
 
-void ConnectivityChecker::OnMessage(talk_base::Message *msg) {
+void ConnectivityChecker::OnMessage(rtc::Message *msg) {
   switch (msg->message_id) {
     case MSG_START:
-      ASSERT(worker_ == talk_base::Thread::Current());
+      ASSERT(worker_ == rtc::Thread::Current());
       worker_->PostDelayed(timeout_ms_, this, MSG_TIMEOUT);
       CheckNetworks();
       break;
@@ -188,7 +212,7 @@ void ConnectivityChecker::OnMessage(talk_base::Message *msg) {
       main_->Post(this, MSG_SIGNAL_RESULTS);
       break;
     case MSG_SIGNAL_RESULTS:
-      ASSERT(main_ == talk_base::Thread::Current());
+      ASSERT(main_ == rtc::Thread::Current());
       SignalCheckDone(this);
       break;
     default:
@@ -196,32 +220,37 @@ void ConnectivityChecker::OnMessage(talk_base::Message *msg) {
   }
 }
 
-void ConnectivityChecker::OnProxyDetect(talk_base::SignalThread* thread) {
-  ASSERT(worker_ == talk_base::Thread::Current());
-  if (proxy_detect_->proxy().type != talk_base::PROXY_NONE) {
+void ConnectivityChecker::OnProxyDetect(rtc::SignalThread* thread) {
+  ASSERT(worker_ == rtc::Thread::Current());
+  if (proxy_detect_->proxy().type != rtc::PROXY_NONE) {
     SetProxyInfo(proxy_detect_->proxy());
   }
 }
 
-void ConnectivityChecker::OnRequestDone(talk_base::AsyncHttpRequest* request) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+void ConnectivityChecker::OnRequestDone(rtc::AsyncHttpRequest* request) {
+  ASSERT(worker_ == rtc::Thread::Current());
   // Since we don't know what nic were actually used for the http request,
   // for now, just use the first one.
-  std::vector<talk_base::Network*> networks;
+  std::vector<rtc::Network*> networks;
   network_manager_->GetNetworks(&networks);
   if (networks.empty()) {
     LOG(LS_ERROR) << "No networks while registering http start.";
     return;
   }
-  talk_base::ProxyInfo proxy_info = request->proxy();
-  NicMap::iterator i = nics_.find(NicId(networks[0]->ip(), proxy_info.address));
+  rtc::ProxyInfo proxy_info = request->proxy();
+  NicMap::iterator i =
+#ifdef USE_WEBRTC_DEV_BRANCH
+      nics_.find(NicId(networks[0]->GetBestIP(), proxy_info.address));
+#else  // USE_WEBRTC_DEV_BRANCH
+      nics_.find(NicId(networks[0]->ip(), proxy_info.address));
+#endif  // USE_WEBRTC_DEV_BRANCH
   if (i != nics_.end()) {
     int port = request->port();
-    uint32 now = talk_base::Time();
+    uint32 now = rtc::Time();
     NicInfo* nic_info = &i->second;
-    if (port == talk_base::HTTP_DEFAULT_PORT) {
+    if (port == rtc::HTTP_DEFAULT_PORT) {
       nic_info->http.rtt = now - nic_info->http.start_time_ms;
-    } else if (port == talk_base::HTTP_SECURE_PORT) {
+    } else if (port == rtc::HTTP_SECURE_PORT) {
       nic_info->https.rtt = now - nic_info->https.start_time_ms;
     } else {
       LOG(LS_ERROR) << "Got response with unknown port: " << port;
@@ -233,8 +262,8 @@ void ConnectivityChecker::OnRequestDone(talk_base::AsyncHttpRequest* request) {
 
 void ConnectivityChecker::OnConfigReady(
     const std::string& username, const std::string& password,
-    const PortConfiguration* config, const talk_base::ProxyInfo& proxy_info) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+    const PortConfiguration* config, const rtc::ProxyInfo& proxy_info) {
+  ASSERT(worker_ == rtc::Thread::Current());
 
   // Since we send requests on both HTTP and HTTPS we will get two
   // configs per nic. Results from the second will overwrite the
@@ -244,10 +273,14 @@ void ConnectivityChecker::OnConfigReady(
 }
 
 void ConnectivityChecker::OnRelayPortComplete(Port* port) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+  ASSERT(worker_ == rtc::Thread::Current());
   RelayPort* relay_port = reinterpret_cast<RelayPort*>(port);
   const ProtocolAddress* address = relay_port->ServerAddress(0);
-  talk_base::IPAddress ip = port->Network()->ip();
+#ifdef USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->GetBestIP();
+#else  // USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->ip();
+#endif  // USE_WEBRTC_DEV_BRANCH
   NicMap::iterator i = nics_.find(NicId(ip, port->proxy().address));
   if (i != nics_.end()) {
     // We have it already, add the new information.
@@ -269,7 +302,7 @@ void ConnectivityChecker::OnRelayPortComplete(Port* port) {
       }
       if (connect_info) {
         connect_info->rtt =
-            talk_base::TimeSince(connect_info->start_time_ms);
+            rtc::TimeSince(connect_info->start_time_ms);
       }
     }
   } else {
@@ -278,17 +311,23 @@ void ConnectivityChecker::OnRelayPortComplete(Port* port) {
 }
 
 void ConnectivityChecker::OnStunPortComplete(Port* port) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+  ASSERT(worker_ == rtc::Thread::Current());
   const std::vector<Candidate> candidates = port->Candidates();
   Candidate c = candidates[0];
-  talk_base::IPAddress ip = port->Network()->ip();
+#ifdef USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->GetBestIP();
+#else  // USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->ip();
+#endif  // USE_WEBRTC_DEV_BRANCH
   NicMap::iterator i = nics_.find(NicId(ip, port->proxy().address));
   if (i != nics_.end()) {
     // We have it already, add the new information.
-    uint32 now = talk_base::Time();
+    uint32 now = rtc::Time();
     NicInfo* nic_info = &i->second;
     nic_info->external_address = c.address();
-    nic_info->stun_server_address = static_cast<StunPort*>(port)->server_addr();
+
+    nic_info->stun_server_addresses =
+        static_cast<StunPort*>(port)->server_addresses();
     nic_info->stun.rtt = now - nic_info->stun.start_time_ms;
   } else {
     LOG(LS_ERROR) << "Got stun address for non-existing nic";
@@ -296,25 +335,31 @@ void ConnectivityChecker::OnStunPortComplete(Port* port) {
 }
 
 void ConnectivityChecker::OnStunPortError(Port* port) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+  ASSERT(worker_ == rtc::Thread::Current());
   LOG(LS_ERROR) << "Stun address error.";
-  talk_base::IPAddress ip = port->Network()->ip();
+#ifdef USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->GetBestIP();
+#else  // USE_WEBRTC_DEV_BRANCH
+  rtc::IPAddress ip = port->Network()->ip();
+#endif  // USE_WEBRTC_DEV_BRANCH
   NicMap::iterator i = nics_.find(NicId(ip, port->proxy().address));
   if (i != nics_.end()) {
     // We have it already, add the new information.
     NicInfo* nic_info = &i->second;
-    nic_info->stun_server_address = static_cast<StunPort*>(port)->server_addr();
+
+    nic_info->stun_server_addresses =
+        static_cast<StunPort*>(port)->server_addresses();
   }
 }
 
 void ConnectivityChecker::OnRelayPortError(Port* port) {
-  ASSERT(worker_ == talk_base::Thread::Current());
+  ASSERT(worker_ == rtc::Thread::Current());
   LOG(LS_ERROR) << "Relay address error.";
 }
 
 void ConnectivityChecker::OnNetworksChanged() {
-  ASSERT(worker_ == talk_base::Thread::Current());
-  std::vector<talk_base::Network*> networks;
+  ASSERT(worker_ == rtc::Thread::Current());
+  std::vector<rtc::Network*> networks;
   network_manager_->GetNetworks(&networks);
   if (networks.empty()) {
     LOG(LS_ERROR) << "Machine has no networks; nothing to do";
@@ -324,7 +369,7 @@ void ConnectivityChecker::OnNetworksChanged() {
 }
 
 HttpPortAllocator* ConnectivityChecker::CreatePortAllocator(
-    talk_base::NetworkManager* network_manager,
+    rtc::NetworkManager* network_manager,
     const std::string& user_agent,
     const std::string& relay_token) {
   return new TestHttpPortAllocator(network_manager, user_agent, relay_token);
@@ -332,27 +377,44 @@ HttpPortAllocator* ConnectivityChecker::CreatePortAllocator(
 
 StunPort* ConnectivityChecker::CreateStunPort(
     const std::string& username, const std::string& password,
-    const PortConfiguration* config, talk_base::Network* network) {
-  return StunPort::Create(worker_, socket_factory_.get(),
-                          network, network->ip(), 0, 0,
-                          username, password, config->stun_address);
+    const PortConfiguration* config, rtc::Network* network) {
+  return StunPort::Create(worker_,
+                          socket_factory_.get(),
+                          network,
+#ifdef USE_WEBRTC_DEV_BRANCH
+                          network->GetBestIP(),
+#else  // USE_WEBRTC_DEV_BRANCH
+                          network->ip(),
+#endif  // USE_WEBRTC_DEV_BRANCH
+                          0,
+                          0,
+                          username,
+                          password,
+                          config->stun_servers);
 }
 
 RelayPort* ConnectivityChecker::CreateRelayPort(
     const std::string& username, const std::string& password,
-    const PortConfiguration* config, talk_base::Network* network) {
-  return RelayPort::Create(worker_, socket_factory_.get(),
-                           network, network->ip(),
+    const PortConfiguration* config, rtc::Network* network) {
+  return RelayPort::Create(worker_,
+                           socket_factory_.get(),
+                           network,
+#ifdef USE_WEBRTC_DEV_BRANCH
+                           network->GetBestIP(),
+#else  // USE_WEBRTC_DEV_BRANCH
+                           network->ip(),
+#endif  // USE_WEBRTC_DEV_BRANCH
                            port_allocator_->min_port(),
                            port_allocator_->max_port(),
-                           username, password);
+                           username,
+                           password);
 }
 
 void ConnectivityChecker::CreateRelayPorts(
     const std::string& username, const std::string& password,
-    const PortConfiguration* config, const talk_base::ProxyInfo& proxy_info) {
+    const PortConfiguration* config, const rtc::ProxyInfo& proxy_info) {
   PortConfiguration::RelayList::const_iterator relay;
-  std::vector<talk_base::Network*> networks;
+  std::vector<rtc::Network*> networks;
   network_manager_->GetNetworks(&networks);
   if (networks.empty()) {
     LOG(LS_ERROR) << "Machine has no networks; no relay ports created.";
@@ -361,13 +423,17 @@ void ConnectivityChecker::CreateRelayPorts(
   for (relay = config->relays.begin();
        relay != config->relays.end(); ++relay) {
     for (uint32 i = 0; i < networks.size(); ++i) {
-      NicMap::iterator iter = nics_.find(NicId(networks[i]->ip(),
-                                               proxy_info.address));
+      NicMap::iterator iter =
+#ifdef USE_WEBRTC_DEV_BRANCH
+          nics_.find(NicId(networks[i]->GetBestIP(), proxy_info.address));
+#else  // USE_WEBRTC_DEV_BRANCH
+          nics_.find(NicId(networks[i]->ip(), proxy_info.address));
+#endif  // USE_WEBRTC_DEV_BRANCH
       if (iter != nics_.end()) {
         // TODO: Now setting the same start time for all protocols.
         // This might affect accuracy, but since we are mainly looking for
         // connect failures or number that stick out, this is good enough.
-        uint32 now = talk_base::Time();
+        uint32 now = rtc::Time();
         NicInfo* nic_info = &iter->second;
         nic_info->udp.start_time_ms = now;
         nic_info->tcp.start_time_ms = now;
@@ -405,19 +471,25 @@ void ConnectivityChecker::CreateRelayPorts(
 }
 
 void ConnectivityChecker::AllocatePorts() {
-  const std::string username = talk_base::CreateRandomString(ICE_UFRAG_LENGTH);
-  const std::string password = talk_base::CreateRandomString(ICE_PWD_LENGTH);
-  PortConfiguration config(stun_address_, username, password);
-  std::vector<talk_base::Network*> networks;
+  const std::string username = rtc::CreateRandomString(ICE_UFRAG_LENGTH);
+  const std::string password = rtc::CreateRandomString(ICE_PWD_LENGTH);
+  ServerAddresses stun_servers;
+  stun_servers.insert(stun_address_);
+  PortConfiguration config(stun_servers, username, password);
+  std::vector<rtc::Network*> networks;
   network_manager_->GetNetworks(&networks);
   if (networks.empty()) {
     LOG(LS_ERROR) << "Machine has no networks; no ports will be allocated";
     return;
   }
-  talk_base::ProxyInfo proxy_info = GetProxyInfo();
+  rtc::ProxyInfo proxy_info = GetProxyInfo();
   bool allocate_relay_ports = false;
   for (uint32 i = 0; i < networks.size(); ++i) {
+#ifdef USE_WEBRTC_DEV_BRANCH
+    if (AddNic(networks[i]->GetBestIP(), proxy_info.address)) {
+#else  // USE_WEBRTC_DEV_BRANCH
     if (AddNic(networks[i]->ip(), proxy_info.address)) {
+#endif  // USE_WEBRTC_DEV_BRANCH
       Port* port = CreateStunPort(username, password, &config, networks[i]);
       if (port) {
 
@@ -447,9 +519,9 @@ void ConnectivityChecker::AllocatePorts() {
 void ConnectivityChecker::InitiateProxyDetection() {
   // Only start if we haven't been started before.
   if (!proxy_detect_) {
-    proxy_detect_ = new talk_base::AutoDetectProxy(user_agent_);
-    talk_base::Url<char> host_url("/", "relay.google.com",
-                                  talk_base::HTTP_DEFAULT_PORT);
+    proxy_detect_ = new rtc::AutoDetectProxy(user_agent_);
+    rtc::Url<char> host_url("/", "relay.google.com",
+                                  rtc::HTTP_DEFAULT_PORT);
     host_url.set_secure(true);
     proxy_detect_->set_server_url(host_url.url());
     proxy_detect_->SignalWorkDone.connect(
@@ -465,8 +537,8 @@ void ConnectivityChecker::AllocateRelayPorts() {
           port_allocator_->CreateSessionInternal(
               "connectivity checker test content",
               ICE_CANDIDATE_COMPONENT_RTP,
-              talk_base::CreateRandomString(ICE_UFRAG_LENGTH),
-              talk_base::CreateRandomString(ICE_PWD_LENGTH)));
+              rtc::CreateRandomString(ICE_UFRAG_LENGTH),
+              rtc::CreateRandomString(ICE_PWD_LENGTH)));
   allocator_session->set_proxy(port_allocator_->proxy());
   allocator_session->SignalConfigReady.connect(
       this, &ConnectivityChecker::OnConfigReady);
@@ -474,12 +546,12 @@ void ConnectivityChecker::AllocateRelayPorts() {
       this, &ConnectivityChecker::OnRequestDone);
 
   // Try both http and https.
-  RegisterHttpStart(talk_base::HTTP_SECURE_PORT);
+  RegisterHttpStart(rtc::HTTP_SECURE_PORT);
   allocator_session->SendSessionRequest("relay.l.google.com",
-                                        talk_base::HTTP_SECURE_PORT);
-  RegisterHttpStart(talk_base::HTTP_DEFAULT_PORT);
+                                        rtc::HTTP_SECURE_PORT);
+  RegisterHttpStart(rtc::HTTP_DEFAULT_PORT);
   allocator_session->SendSessionRequest("relay.l.google.com",
-                                        talk_base::HTTP_DEFAULT_PORT);
+                                        rtc::HTTP_DEFAULT_PORT);
 
   sessions_.push_back(allocator_session);
 }
@@ -487,20 +559,25 @@ void ConnectivityChecker::AllocateRelayPorts() {
 void ConnectivityChecker::RegisterHttpStart(int port) {
   // Since we don't know what nic were actually used for the http request,
   // for now, just use the first one.
-  std::vector<talk_base::Network*> networks;
+  std::vector<rtc::Network*> networks;
   network_manager_->GetNetworks(&networks);
   if (networks.empty()) {
     LOG(LS_ERROR) << "No networks while registering http start.";
     return;
   }
-  talk_base::ProxyInfo proxy_info = GetProxyInfo();
-  NicMap::iterator i = nics_.find(NicId(networks[0]->ip(), proxy_info.address));
+  rtc::ProxyInfo proxy_info = GetProxyInfo();
+  NicMap::iterator i =
+#ifdef USE_WEBRTC_DEV_BRANCH
+      nics_.find(NicId(networks[0]->GetBestIP(), proxy_info.address));
+#else  // USE_WEBRTC_DEV_BRANCH
+      nics_.find(NicId(networks[0]->ip(), proxy_info.address));
+#endif  // USE_WEBRTC_DEV_BRANCH
   if (i != nics_.end()) {
-    uint32 now = talk_base::Time();
+    uint32 now = rtc::Time();
     NicInfo* nic_info = &i->second;
-    if (port == talk_base::HTTP_DEFAULT_PORT) {
+    if (port == rtc::HTTP_DEFAULT_PORT) {
       nic_info->http.start_time_ms = now;
-    } else if (port == talk_base::HTTP_SECURE_PORT) {
+    } else if (port == rtc::HTTP_SECURE_PORT) {
       nic_info->https.start_time_ms = now;
     } else {
       LOG(LS_ERROR) << "Registering start time for unknown port: " << port;
@@ -510,4 +587,4 @@ void ConnectivityChecker::RegisterHttpStart(int port) {
   }
 }
 
-}  // namespace talk_base
+}  // namespace rtc

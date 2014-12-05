@@ -9,7 +9,7 @@
 
 .show-with-ui-state-update,
 .show-with-ui-state-signin,
-.show-with-ui-state-locally-managed,
+.show-with-ui-state-supervised,
 .show-with-ui-state-kiosk-mode,
 .show-with-ui-state-local-state-error,
 .show-with-ui-state-auto-enrollment-error,
@@ -27,7 +27,7 @@
 
 .ui-state-update .show-with-ui-state-update,
 .ui-state-signin .show-with-ui-state-signin,
-.ui-state-locally-managed .show-with-ui-state-locally-managed,
+.ui-state-supervised .show-with-ui-state-supervised,
 .ui-state-kiosk-mode .show-with-ui-state-kiosk-mode,
 .ui-state-local-state-error .show-with-ui-state-local-state-error,
 .ui-state-auto-enrollment-error .show-with-ui-state-auto-enrollment-error,
@@ -58,8 +58,8 @@
 }
 
 .error-icon {
-  -webkit-margin-after: 40px;
   height: 64px;
+  margin-bottom: 40px;
 }
 
 .error-title {
@@ -83,7 +83,7 @@
 }
 
 .error-message-paragraph {
-  -webkit-margin-before: 20px;
+  margin-top: 20px;
 }
 
 .error-message-paragraph a {

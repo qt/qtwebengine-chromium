@@ -42,21 +42,19 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
         expect_fail_(expect_fail) {
   }
 
-  virtual ~MockPluginProcessHostClient() {
+  ~MockPluginProcessHostClient() override {
     if (channel_)
       BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, channel_);
   }
 
   // PluginProcessHost::Client implementation.
-  virtual int ID() OVERRIDE { return 42; }
-  virtual bool OffTheRecord() OVERRIDE { return false; }
-  virtual ResourceContext* GetResourceContext() OVERRIDE {
-    return context_;
-  }
-  virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {}
-  virtual void OnSentPluginChannelRequest() OVERRIDE {}
+  int ID() override { return 42; }
+  bool OffTheRecord() override { return false; }
+  ResourceContext* GetResourceContext() override { return context_; }
+  void OnFoundPluginProcessHost(PluginProcessHost* host) override {}
+  void OnSentPluginChannelRequest() override {}
 
-  virtual void OnChannelOpened(const IPC::ChannelHandle& handle) OVERRIDE {
+  void OnChannelOpened(const IPC::ChannelHandle& handle) override {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::IO));
     ASSERT_TRUE(set_plugin_info_called_);
     ASSERT_TRUE(!channel_);
@@ -64,36 +62,28 @@ class MockPluginProcessHostClient : public PluginProcessHost::Client,
     ASSERT_TRUE(channel_->Connect());
   }
 
-  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {
+  void SetPluginInfo(const WebPluginInfo& info) override {
     ASSERT_TRUE(info.mime_types.size());
     ASSERT_EQ(kNPAPITestPluginMimeType, info.mime_types[0].mime_type);
     set_plugin_info_called_ = true;
   }
 
-  virtual void OnError() OVERRIDE {
-    Fail();
-  }
+  void OnError() override { Fail(); }
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     Fail();
     return false;
   }
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
+  void OnChannelConnected(int32 peer_pid) override {
     if (expect_fail_)
       FAIL();
     QuitMessageLoop();
   }
-  virtual void OnChannelError() OVERRIDE {
-    Fail();
-  }
+  void OnChannelError() override { Fail(); }
 #if defined(OS_POSIX)
-  virtual void OnChannelDenied() OVERRIDE {
-    Fail();
-  }
-  virtual void OnChannelListenError() OVERRIDE {
-    Fail();
-  }
+  void OnChannelDenied() override { Fail(); }
+  void OnChannelListenError() override { Fail(); }
 #endif
 
  private:
@@ -119,17 +109,19 @@ class MockPluginServiceFilter : public content::PluginServiceFilter {
  public:
   MockPluginServiceFilter() {}
 
-  virtual bool IsPluginAvailable(
-      int render_process_id,
-      int render_view_id,
-      const void* context,
-      const GURL& url,
-      const GURL& policy_url,
-      WebPluginInfo* plugin) OVERRIDE { return true; }
+  bool IsPluginAvailable(int render_process_id,
+                         int render_view_id,
+                         const void* context,
+                         const GURL& url,
+                         const GURL& policy_url,
+                         WebPluginInfo* plugin) override {
+    return true;
+  }
 
-  virtual bool CanLoadPlugin(
-      int render_process_id,
-      const base::FilePath& path) OVERRIDE { return false; }
+  bool CanLoadPlugin(int render_process_id,
+                     const base::FilePath& path) override {
+    return false;
+  }
 };
 
 class PluginServiceTest : public ContentBrowserTest {
@@ -140,7 +132,7 @@ class PluginServiceTest : public ContentBrowserTest {
     return shell()->web_contents()->GetBrowserContext()->GetResourceContext();
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
 #if defined(OS_MACOSX)
     base::FilePath browser_directory;
     PathService::Get(base::DIR_MODULE, &browser_directory);
@@ -193,7 +185,7 @@ class MockCanceledPluginServiceClient : public PluginProcessHost::Client {
 
   // Client implementation.
   MOCK_METHOD0(ID, int());
-  virtual ResourceContext* GetResourceContext() OVERRIDE {
+  virtual ResourceContext* GetResourceContext() override {
     get_resource_context_called_ = true;
     return context_;
   }
@@ -254,16 +246,16 @@ class MockCanceledBeforeSentPluginProcessHostClient
         on_found_plugin_process_host_called_(false),
         host_(NULL) {}
 
-  virtual ~MockCanceledBeforeSentPluginProcessHostClient() {}
+  ~MockCanceledBeforeSentPluginProcessHostClient() override {}
 
   // Client implementation.
-  virtual void SetPluginInfo(const WebPluginInfo& info) OVERRIDE {
+  void SetPluginInfo(const WebPluginInfo& info) override {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     ASSERT_TRUE(info.mime_types.size());
     ASSERT_EQ(kNPAPITestPluginMimeType, info.mime_types[0].mime_type);
     set_plugin_info_called_ = true;
   }
-  virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {
+  void OnFoundPluginProcessHost(PluginProcessHost* host) override {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     set_on_found_plugin_process_host_called();
     set_host(host);
@@ -326,21 +318,21 @@ class MockCanceledAfterSentPluginProcessHostClient
       ResourceContext* context)
       : MockCanceledBeforeSentPluginProcessHostClient(context),
         on_sent_plugin_channel_request_called_(false) {}
-  virtual ~MockCanceledAfterSentPluginProcessHostClient() {}
+  ~MockCanceledAfterSentPluginProcessHostClient() override {}
 
   // Client implementation.
 
-  virtual int ID() OVERRIDE { return 42; }
-  virtual bool OffTheRecord() OVERRIDE { return false; }
+  int ID() override { return 42; }
+  bool OffTheRecord() override { return false; }
 
   // We override this guy again since we don't want to cancel yet.
-  virtual void OnFoundPluginProcessHost(PluginProcessHost* host) OVERRIDE {
+  void OnFoundPluginProcessHost(PluginProcessHost* host) override {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     set_on_found_plugin_process_host_called();
     set_host(host);
   }
 
-  virtual void OnSentPluginChannelRequest() OVERRIDE {
+  void OnSentPluginChannelRequest() override {
     on_sent_plugin_channel_request_called_ = true;
     host()->CancelSentRequest(this);
     BrowserThread::PostTask(

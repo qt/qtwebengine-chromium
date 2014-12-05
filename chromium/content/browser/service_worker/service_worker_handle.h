@@ -28,7 +28,7 @@ class ServiceWorkerRegistration;
 // ServiceWorkerRegistration (therefore they're guaranteed to be alive while
 // this handle is around).
 class CONTENT_EXPORT ServiceWorkerHandle
-    : public ServiceWorkerVersion::Listener {
+    : NON_EXPORTED_BASE(public ServiceWorkerVersion::Listener) {
  public:
   // Creates a handle for a live version. The version's corresponding
   // registration must be also alive.
@@ -40,36 +40,40 @@ class CONTENT_EXPORT ServiceWorkerHandle
       base::WeakPtr<ServiceWorkerContextCore> context,
       IPC::Sender* sender,
       int thread_id,
+      int provider_id,
       ServiceWorkerVersion* version);
 
   ServiceWorkerHandle(base::WeakPtr<ServiceWorkerContextCore> context,
                       IPC::Sender* sender,
                       int thread_id,
+                      int provider_id,
                       ServiceWorkerRegistration* registration,
                       ServiceWorkerVersion* version);
-  virtual ~ServiceWorkerHandle();
+  ~ServiceWorkerHandle() override;
 
   // ServiceWorkerVersion::Listener overrides.
-  virtual void OnWorkerStarted(ServiceWorkerVersion* version) OVERRIDE;
-  virtual void OnWorkerStopped(ServiceWorkerVersion* version) OVERRIDE;
-  virtual void OnErrorReported(ServiceWorkerVersion* version,
-                               const base::string16& error_message,
-                               int line_number,
-                               int column_number,
-                               const GURL& source_url) OVERRIDE;
-  virtual void OnReportConsoleMessage(ServiceWorkerVersion* version,
-                                      int source_identifier,
-                                      int message_level,
-                                      const base::string16& message,
-                                      int line_number,
-                                      const GURL& source_url) OVERRIDE;
-  virtual void OnVersionStateChanged(ServiceWorkerVersion* version) OVERRIDE;
+  void OnWorkerStarted(ServiceWorkerVersion* version) override;
+  void OnWorkerStopped(ServiceWorkerVersion* version) override;
+  void OnErrorReported(ServiceWorkerVersion* version,
+                       const base::string16& error_message,
+                       int line_number,
+                       int column_number,
+                       const GURL& source_url) override;
+  void OnReportConsoleMessage(ServiceWorkerVersion* version,
+                              int source_identifier,
+                              int message_level,
+                              const base::string16& message,
+                              int line_number,
+                              const GURL& source_url) override;
+  void OnVersionStateChanged(ServiceWorkerVersion* version) override;
 
   ServiceWorkerObjectInfo GetObjectInfo();
 
+  int thread_id() const { return thread_id_; }
+  int provider_id() const { return provider_id_; }
+  int handle_id() const { return handle_id_; }
   ServiceWorkerRegistration* registration() { return registration_.get(); }
   ServiceWorkerVersion* version() { return version_.get(); }
-  int handle_id() const { return handle_id_; }
 
   bool HasNoRefCount() const { return ref_count_ <= 0; }
   void IncrementRefCount();
@@ -79,6 +83,7 @@ class CONTENT_EXPORT ServiceWorkerHandle
   base::WeakPtr<ServiceWorkerContextCore> context_;
   IPC::Sender* sender_;  // Not owned, it should always outlive this.
   const int thread_id_;
+  const int provider_id_;
   const int handle_id_;
   int ref_count_;  // Created with 1.
   scoped_refptr<ServiceWorkerRegistration> registration_;

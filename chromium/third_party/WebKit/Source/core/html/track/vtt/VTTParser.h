@@ -42,7 +42,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class VTTScanner;
@@ -56,7 +56,7 @@ public:
     virtual void fileFailedToParse() = 0;
 };
 
-class VTTParser FINAL : public NoBaseWillBeGarbageCollectedFinalized<VTTParser> {
+class VTTParser final : public NoBaseWillBeGarbageCollectedFinalized<VTTParser> {
 public:
     enum ParseState {
         Initial,
@@ -105,8 +105,8 @@ public:
     void flush();
 
     // Transfers ownership of last parsed cues to caller.
-    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue> >&);
-    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion> >&);
+    void getNewCues(WillBeHeapVector<RefPtrWillBeMember<VTTCue>>&);
+    void getNewRegions(WillBeHeapVector<RefPtrWillBeMember<VTTRegion>>&);
 
     void trace(Visitor*);
 
@@ -143,11 +143,11 @@ private:
 
     VTTParserClient* m_client;
 
-    WillBeHeapVector<RefPtrWillBeMember<VTTCue> > m_cueList;
+    WillBeHeapVector<RefPtrWillBeMember<VTTCue>> m_cueList;
 
-    WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > m_regionList;
+    WillBeHeapVector<RefPtrWillBeMember<VTTRegion>> m_regionList;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

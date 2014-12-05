@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/storage/StorageArea.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -43,18 +43,28 @@
 #include "public/platform/WebString.h"
 #include "public/platform/WebURL.h"
 
-namespace WebCore {
+namespace blink {
 
-StorageArea::StorageArea(PassOwnPtr<blink::WebStorageArea> storageArea, StorageType storageType)
-    : m_storageArea(storageArea)
+PassOwnPtrWillBeRawPtr<StorageArea> StorageArea::create(PassOwnPtr<WebStorageArea> storageArea, StorageType storageType)
+{
+    return adoptPtrWillBeNoop(new StorageArea(storageArea, storageType));
+}
+
+StorageArea::StorageArea(PassOwnPtr<WebStorageArea> storageArea, StorageType storageType)
+    : FrameDestructionObserver(nullptr)
+    , m_storageArea(storageArea)
     , m_storageType(storageType)
     , m_canAccessStorageCachedResult(false)
-    , m_canAccessStorageCachedFrame(0)
 {
 }
 
 StorageArea::~StorageArea()
 {
+}
+
+void StorageArea::trace(Visitor* visitor)
+{
+    FrameDestructionObserver::trace(visitor);
 }
 
 unsigned StorageArea::length(ExceptionState& exceptionState, LocalFrame* frame)
@@ -90,9 +100,9 @@ void StorageArea::setItem(const String& key, const String& value, ExceptionState
         exceptionState.throwSecurityError("access is denied for this document.");
         return;
     }
-    blink::WebStorageArea::Result result = blink::WebStorageArea::ResultOK;
+    WebStorageArea::Result result = WebStorageArea::ResultOK;
     m_storageArea->setItem(key, value, frame->document()->url(), result);
-    if (result != blink::WebStorageArea::ResultOK)
+    if (result != WebStorageArea::ResultOK)
         exceptionState.throwDOMException(QuotaExceededError, "Setting the value of '" + key + "' exceeded the quota.");
 }
 
@@ -127,10 +137,15 @@ bool StorageArea::canAccessStorage(LocalFrame* frame)
 {
     if (!frame || !frame->page())
         return false;
-    if (m_canAccessStorageCachedFrame == frame)
+
+    // FrameDestructionObserver is used to safely keep the cached
+    // reference to the LocalFrame. Should the LocalFrame die before
+    // this StorageArea does, that cached reference will be cleared.
+    if (m_frame == frame)
         return m_canAccessStorageCachedResult;
     bool result = frame->page()->storageClient().canAccessStorage(frame, m_storageType);
-    m_canAccessStorageCachedFrame = frame;
+    // Move attention to the new LocalFrame.
+    observeFrame(frame);
     m_canAccessStorageCachedResult = result;
     return result;
 }
@@ -140,12 +155,12 @@ size_t StorageArea::memoryBytesUsedByCache()
     return m_storageArea->memoryBytesUsedByCache();
 }
 
-void StorageArea::dispatchLocalStorageEvent(const String& key, const String& oldValue, const String& newValue, SecurityOrigin* securityOrigin, const KURL& pageURL, blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
+void StorageArea::dispatchLocalStorageEvent(const String& key, const String& oldValue, const String& newValue, SecurityOrigin* securityOrigin, const KURL& pageURL, WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
     // FIXME: This looks suspicious. Why doesn't this use allPages instead?
     const HashSet<Page*>& pages = Page::ordinaryPages();
-    for (HashSet<Page*>::const_iterator it = pages.begin(); it != pages.end(); ++it) {
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (Page* page : pages) {
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
             // FIXME: We do not yet have a way to dispatch events to out-of-process frames.
             if (!frame->isLocalFrame())
                 continue;
@@ -153,24 +168,24 @@ void StorageArea::dispatchLocalStorageEvent(const String& key, const String& old
             if (storage && toLocalFrame(frame)->document()->securityOrigin()->canAccess(securityOrigin) && !isEventSource(storage, sourceAreaInstance))
                 frame->domWindow()->enqueueWindowEvent(StorageEvent::create(EventTypeNames::storage, key, oldValue, newValue, pageURL, storage));
         }
-        InspectorInstrumentation::didDispatchDOMStorageEvent(*it, key, oldValue, newValue, LocalStorage, securityOrigin);
+        InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, LocalStorage, securityOrigin);
     }
 }
 
-static Page* findPageWithSessionStorageNamespace(const blink::WebStorageNamespace& sessionNamespace)
+static Page* findPageWithSessionStorageNamespace(const WebStorageNamespace& sessionNamespace)
 {
     // FIXME: This looks suspicious. Why doesn't this use allPages instead?
     const HashSet<Page*>& pages = Page::ordinaryPages();
-    for (HashSet<Page*>::const_iterator it = pages.begin(); it != pages.end(); ++it) {
+    for (Page* page : pages) {
         const bool dontCreateIfMissing = false;
-        StorageNamespace* storageNamespace = (*it)->sessionStorage(dontCreateIfMissing);
+        StorageNamespace* storageNamespace = page->sessionStorage(dontCreateIfMissing);
         if (storageNamespace && storageNamespace->isSameNamespace(sessionNamespace))
-            return *it;
+            return page;
     }
-    return 0;
+    return nullptr;
 }
 
-void StorageArea::dispatchSessionStorageEvent(const String& key, const String& oldValue, const String& newValue, SecurityOrigin* securityOrigin, const KURL& pageURL, const blink::WebStorageNamespace& sessionNamespace, blink::WebStorageArea* sourceAreaInstance, bool originatedInProcess)
+void StorageArea::dispatchSessionStorageEvent(const String& key, const String& oldValue, const String& newValue, SecurityOrigin* securityOrigin, const KURL& pageURL, const WebStorageNamespace& sessionNamespace, WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
     Page* page = findPageWithSessionStorageNamespace(sessionNamespace);
     if (!page)
@@ -187,11 +202,11 @@ void StorageArea::dispatchSessionStorageEvent(const String& key, const String& o
     InspectorInstrumentation::didDispatchDOMStorageEvent(page, key, oldValue, newValue, SessionStorage, securityOrigin);
 }
 
-bool StorageArea::isEventSource(Storage* storage, blink::WebStorageArea* sourceAreaInstance)
+bool StorageArea::isEventSource(Storage* storage, WebStorageArea* sourceAreaInstance)
 {
     ASSERT(storage);
     StorageArea* area = storage->area();
     return area->m_storageArea == sourceAreaInstance;
 }
 
-} // namespace WebCore
+} // namespace blink

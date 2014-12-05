@@ -4,8 +4,17 @@
 
 #include "net/quic/congestion_control/rtt_stats.h"
 
+#include <vector>
+
 #include "base/logging.h"
+#include "net/test/scoped_mock_log.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using logging::LOG_WARNING;
+using std::vector;
+using testing::HasSubstr;
+using testing::Message;
+using testing::_;
 
 namespace net {
 namespace test {
@@ -26,12 +35,39 @@ class RttStatsTest : public ::testing::Test {
   RttStats rtt_stats_;
 };
 
+TEST_F(RttStatsTest, DefaultsBeforeUpdate) {
+  EXPECT_LT(0u, rtt_stats_.initial_rtt_us());
+  EXPECT_EQ(QuicTime::Delta::Zero(), rtt_stats_.min_rtt());
+  EXPECT_EQ(QuicTime::Delta::Zero(), rtt_stats_.smoothed_rtt());
+}
+
+TEST_F(RttStatsTest, SmoothedRtt) {
+  // Verify that ack_delay is corrected for in Smoothed RTT.
+  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(300),
+                       QuicTime::Delta::FromMilliseconds(100),
+                       QuicTime::Zero());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.latest_rtt());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.smoothed_rtt());
+  // Verify that effective RTT of zero does not change Smoothed RTT.
+  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(200),
+                       QuicTime::Delta::FromMilliseconds(200),
+                       QuicTime::Zero());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.latest_rtt());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.smoothed_rtt());
+  // Verify that large erroneous ack_delay does not change Smoothed RTT.
+  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(200),
+                       QuicTime::Delta::FromMilliseconds(300),
+                       QuicTime::Zero());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.latest_rtt());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.smoothed_rtt());
+}
+
 TEST_F(RttStatsTest, MinRtt) {
-  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(100),
+  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(200),
                        QuicTime::Delta::Zero(),
                        QuicTime::Zero());
-  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(100), rtt_stats_.min_rtt());
-  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(100),
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200), rtt_stats_.min_rtt());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(200),
             rtt_stats_.recent_min_rtt());
   rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(10),
                        QuicTime::Delta::Zero(),
@@ -57,6 +93,13 @@ TEST_F(RttStatsTest, MinRtt) {
                            QuicTime::Delta::FromMilliseconds(40)));
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(10), rtt_stats_.min_rtt());
   EXPECT_EQ(QuicTime::Delta::FromMilliseconds(10), rtt_stats_.recent_min_rtt());
+  // Verify that ack_delay does not go into recording of min_rtt_.
+  rtt_stats_.UpdateRtt(QuicTime::Delta::FromMilliseconds(7),
+                       QuicTime::Delta::FromMilliseconds(2),
+                       QuicTime::Zero().Add(
+                           QuicTime::Delta::FromMilliseconds(50)));
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(7), rtt_stats_.min_rtt());
+  EXPECT_EQ(QuicTime::Delta::FromMilliseconds(7), rtt_stats_.recent_min_rtt());
 }
 
 TEST_F(RttStatsTest, RecentMinRtt) {
@@ -154,7 +197,61 @@ TEST_F(RttStatsTest, WindowedRecentMinRtt) {
   EXPECT_EQ(rtt_sample, rtt_stats_.recent_min_rtt());
 }
 
+TEST_F(RttStatsTest, ExpireSmoothedMetrics) {
+  QuicTime::Delta initial_rtt = QuicTime::Delta::FromMilliseconds(10);
+  rtt_stats_.UpdateRtt(initial_rtt, QuicTime::Delta::Zero(), QuicTime::Zero());
+  EXPECT_EQ(initial_rtt, rtt_stats_.min_rtt());
+  EXPECT_EQ(initial_rtt, rtt_stats_.recent_min_rtt());
+  EXPECT_EQ(initial_rtt, rtt_stats_.smoothed_rtt());
 
+  EXPECT_EQ(initial_rtt.Multiply(0.5), rtt_stats_.mean_deviation());
+
+  // Update once with a 20ms RTT.
+  QuicTime::Delta doubled_rtt = initial_rtt.Multiply(2);
+  rtt_stats_.UpdateRtt(doubled_rtt, QuicTime::Delta::Zero(), QuicTime::Zero());
+  EXPECT_EQ(initial_rtt.Multiply(1.125), rtt_stats_.smoothed_rtt());
+
+  // Expire the smoothed metrics, increasing smoothed rtt and mean deviation.
+  rtt_stats_.ExpireSmoothedMetrics();
+  EXPECT_EQ(doubled_rtt, rtt_stats_.smoothed_rtt());
+  EXPECT_EQ(initial_rtt.Multiply(0.875), rtt_stats_.mean_deviation());
+
+  // Now go back down to 5ms and expire the smoothed metrics, and ensure the
+  // mean deviation increases to 15ms.
+  QuicTime::Delta half_rtt = initial_rtt.Multiply(0.5);
+  rtt_stats_.UpdateRtt(half_rtt, QuicTime::Delta::Zero(), QuicTime::Zero());
+  EXPECT_GT(doubled_rtt, rtt_stats_.smoothed_rtt());
+  EXPECT_LT(initial_rtt, rtt_stats_.mean_deviation());
+}
+
+TEST_F(RttStatsTest, UpdateRttWithBadSendDeltas) {
+  // Make sure we ignore bad RTTs.
+  ScopedMockLog log;
+
+  QuicTime::Delta initial_rtt = QuicTime::Delta::FromMilliseconds(10);
+  rtt_stats_.UpdateRtt(initial_rtt, QuicTime::Delta::Zero(), QuicTime::Zero());
+  EXPECT_EQ(initial_rtt, rtt_stats_.min_rtt());
+  EXPECT_EQ(initial_rtt, rtt_stats_.recent_min_rtt());
+  EXPECT_EQ(initial_rtt, rtt_stats_.smoothed_rtt());
+
+  vector<QuicTime::Delta> bad_send_deltas;
+  bad_send_deltas.push_back(QuicTime::Delta::Zero());
+  bad_send_deltas.push_back(QuicTime::Delta::Infinite());
+  bad_send_deltas.push_back(QuicTime::Delta::FromMicroseconds(-1000));
+  log.StartCapturingLogs();
+
+  for (QuicTime::Delta bad_send_delta : bad_send_deltas) {
+    SCOPED_TRACE(Message() << "bad_send_delta = "
+                 << bad_send_delta.ToMicroseconds());
+    EXPECT_CALL(log, Log(LOG_WARNING, _,  _, _, HasSubstr("Ignoring")));
+    rtt_stats_.UpdateRtt(bad_send_delta,
+                         QuicTime::Delta::Zero(),
+                         QuicTime::Zero());
+    EXPECT_EQ(initial_rtt, rtt_stats_.min_rtt());
+    EXPECT_EQ(initial_rtt, rtt_stats_.recent_min_rtt());
+    EXPECT_EQ(initial_rtt, rtt_stats_.smoothed_rtt());
+  }
+}
 
 }  // namespace test
 }  // namespace net

@@ -98,13 +98,13 @@ class SequencedWorkerPoolTaskRunner : public TaskRunner {
       SequencedWorkerPool::WorkerShutdown shutdown_behavior);
 
   // TaskRunner implementation
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const Closure& task,
-                               TimeDelta delay) OVERRIDE;
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const Closure& task,
+                       TimeDelta delay) override;
+  bool RunsTasksOnCurrentThread() const override;
 
  private:
-  virtual ~SequencedWorkerPoolTaskRunner();
+  ~SequencedWorkerPoolTaskRunner() override;
 
   const scoped_refptr<SequencedWorkerPool> pool_;
 
@@ -151,19 +151,18 @@ class SequencedWorkerPoolSequencedTaskRunner : public SequencedTaskRunner {
       SequencedWorkerPool::WorkerShutdown shutdown_behavior);
 
   // TaskRunner implementation
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const Closure& task,
-                               TimeDelta delay) OVERRIDE;
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE;
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const Closure& task,
+                       TimeDelta delay) override;
+  bool RunsTasksOnCurrentThread() const override;
 
   // SequencedTaskRunner implementation
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const Closure& task,
-      TimeDelta delay) OVERRIDE;
+  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                                  const Closure& task,
+                                  TimeDelta delay) override;
 
  private:
-  virtual ~SequencedWorkerPoolSequencedTaskRunner();
+  ~SequencedWorkerPoolSequencedTaskRunner() override;
 
   const scoped_refptr<SequencedWorkerPool> pool_;
 
@@ -235,10 +234,10 @@ class SequencedWorkerPool::Worker : public SimpleThread {
   Worker(const scoped_refptr<SequencedWorkerPool>& worker_pool,
          int thread_number,
          const std::string& thread_name_prefix);
-  virtual ~Worker();
+  ~Worker() override;
 
   // SimpleThread implementation. This actually runs the background thread.
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
   void set_running_task_info(SequenceToken token,
                              WorkerShutdown shutdown_behavior) {
@@ -755,13 +754,14 @@ void SequencedWorkerPool::Inner::ThreadLoop(Worker* this_worker) {
           this_worker->set_running_task_info(
               SequenceToken(task.sequence_token_id), task.shutdown_behavior);
 
-          tracked_objects::TrackedTime start_time =
-              tracked_objects::ThreadData::NowForStartOfRun(task.birth_tally);
-
+          tracked_objects::ThreadData::PrepareForStartOfRun(task.birth_tally);
+          tracked_objects::TaskStopwatch stopwatch;
+          stopwatch.Start();
           task.task.Run();
+          stopwatch.Stop();
 
-          tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(task,
-              start_time, tracked_objects::ThreadData::NowForEndOfRun());
+          tracked_objects::ThreadData::TallyRunOnNamedThreadIfTracking(
+              task, stopwatch);
 
           // Make sure our task is erased outside the lock for the
           // same reason we do this with delete_these_oustide_lock.
@@ -903,11 +903,6 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
     std::vector<Closure>* delete_these_outside_lock) {
   lock_.AssertAcquired();
 
-#if !defined(OS_NACL)
-  UMA_HISTOGRAM_COUNTS_100("SequencedWorkerPool.TaskCount",
-                           static_cast<int>(pending_tasks_.size()));
-#endif
-
   // Find the next task with a sequence token that's not currently in use.
   // If the token is in use, that means another thread is running something
   // in that sequence, and we can't run it without going out-of-order.
@@ -988,13 +983,6 @@ SequencedWorkerPool::Inner::GetWorkStatus SequencedWorkerPool::Inner::GetWork(
     break;
   }
 
-  // Track the number of tasks we had to skip over to see if we should be
-  // making this more efficient. If this number ever becomes large or is
-  // frequently "some", we should consider the optimization above.
-#if !defined(OS_NACL)
-  UMA_HISTOGRAM_COUNTS_100("SequencedWorkerPool.UnrunnableTaskCount",
-                           unrunnable_tasks);
-#endif
   return status;
 }
 

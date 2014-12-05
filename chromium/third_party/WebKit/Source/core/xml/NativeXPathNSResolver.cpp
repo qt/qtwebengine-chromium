@@ -30,14 +30,10 @@
 #include "core/dom/Node.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 NativeXPathNSResolver::NativeXPathNSResolver(PassRefPtrWillBeRawPtr<Node> node)
     : m_node(node)
-{
-}
-
-NativeXPathNSResolver::~NativeXPathNSResolver()
 {
 }
 
@@ -57,4 +53,4 @@ void NativeXPathNSResolver::trace(Visitor* visitor)
     XPathNSResolver::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

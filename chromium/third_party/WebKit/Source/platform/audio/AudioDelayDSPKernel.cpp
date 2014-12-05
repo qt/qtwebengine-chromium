@@ -32,9 +32,7 @@
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 const float SmoothingTimeConstant = 0.020f; // 20ms
 
@@ -115,8 +113,8 @@ void AudioDelayDSPKernel::process(const float* source, float* destination, size_
         delayTime = this->delayTime(sampleRate);
 
         // Make sure the delay time is in a valid range.
-        delayTime = min(maxTime, delayTime);
-        delayTime = max(0.0, delayTime);
+        delayTime = std::min(maxTime, delayTime);
+        delayTime = std::max(0.0, delayTime);
 
         if (m_firstTime) {
             m_currentDelayTime = delayTime;
@@ -177,6 +175,6 @@ double AudioDelayDSPKernel::latencyTime() const
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

@@ -7,6 +7,7 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
+#include "base/observer_list.h"
 #include "content/renderer/media/android/stream_texture_factory.h"
 
 namespace gfx {
@@ -31,6 +32,9 @@ class StreamTextureFactorySynchronousImpl : public StreamTextureFactory {
 
     virtual gpu::gles2::GLES2Interface* ContextGL() = 0;
 
+    virtual void AddObserver(StreamTextureFactoryContextObserver* obs) = 0;
+    virtual void RemoveObserver(StreamTextureFactoryContextObserver* obs) = 0;
+
    protected:
     friend class base::RefCountedThreadSafe<ContextProvider>;
     virtual ~ContextProvider() {}
@@ -43,14 +47,17 @@ class StreamTextureFactorySynchronousImpl : public StreamTextureFactory {
       const CreateContextProviderCallback& try_create_callback,
       int frame_id);
 
-  virtual StreamTextureProxy* CreateProxy() OVERRIDE;
-  virtual void EstablishPeer(int32 stream_id, int player_id) OVERRIDE;
+  virtual StreamTextureProxy* CreateProxy() override;
+  virtual void EstablishPeer(int32 stream_id, int player_id) override;
   virtual unsigned CreateStreamTexture(unsigned texture_target,
                                        unsigned* texture_id,
-                                       gpu::Mailbox* texture_mailbox) OVERRIDE;
+                                       gpu::Mailbox* texture_mailbox) override;
   virtual void SetStreamTextureSize(int32 stream_id,
-                                    const gfx::Size& size) OVERRIDE;
-  virtual gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
+                                    const gfx::Size& size) override;
+  virtual gpu::gles2::GLES2Interface* ContextGL() override;
+  virtual void AddObserver(StreamTextureFactoryContextObserver* obs) override;
+  virtual void RemoveObserver(
+      StreamTextureFactoryContextObserver* obs) override;
 
  private:
   friend class base::RefCounted<StreamTextureFactorySynchronousImpl>;
@@ -62,6 +69,7 @@ class StreamTextureFactorySynchronousImpl : public StreamTextureFactory {
   CreateContextProviderCallback create_context_provider_callback_;
   scoped_refptr<ContextProvider> context_provider_;
   int frame_id_;
+  StreamTextureFactoryContextObserver* observer_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StreamTextureFactorySynchronousImpl);
 };

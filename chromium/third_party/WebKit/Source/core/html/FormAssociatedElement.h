@@ -28,7 +28,7 @@
 #include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
 class Document;
@@ -37,9 +37,7 @@ class FormDataList;
 class HTMLElement;
 class HTMLFormElement;
 class Node;
-class ValidationMessage;
 class ValidityState;
-class VisibleSelection;
 
 class FormAssociatedElement : public WillBeGarbageCollectedMixin {
 public:
@@ -57,6 +55,7 @@ public:
     virtual bool isFormControlElement() const = 0;
     virtual bool isFormControlElementWithState() const;
     virtual bool isEnumeratable() const = 0;
+    virtual bool isLabelElement() const { return false; }
 
     // Returns the 'name' attribute value. If this element has no name
     // attribute, it returns an empty string instead of null string.
@@ -75,13 +74,14 @@ public:
     bool customError() const;
 
     // Override functions for patterMismatch, rangeOverflow, rangerUnderflow,
-    // stepMismatch, tooLong and valueMissing must call willValidate method.
+    // stepMismatch, tooLong, tooShort and valueMissing must call willValidate method.
     virtual bool hasBadInput() const;
     virtual bool patternMismatch() const;
     virtual bool rangeOverflow() const;
     virtual bool rangeUnderflow() const;
     virtual bool stepMismatch() const;
     virtual bool tooLong() const;
+    virtual bool tooShort() const;
     virtual bool typeMismatch() const;
     virtual bool valueMissing() const;
     virtual String validationMessage() const;
@@ -90,12 +90,12 @@ public:
 
     void formAttributeTargetChanged();
 
-    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement> > List;
+    typedef WillBeHeapVector<RawPtrWillBeMember<FormAssociatedElement>> List;
 
 protected:
     FormAssociatedElement();
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*);
     void insertedInto(ContainerNode*);
     void removedFrom(ContainerNode*);
     void didMoveToNewDocument(Document& oldDocument);
@@ -131,6 +131,10 @@ private:
 #endif
     OwnPtrWillBeMember<ValidityState> m_validityState;
     String m_customValidationMessage;
+    // Non-Oilpan: Even if m_formWasSetByParser is true, m_form can be null
+    // because parentNode is not a strong reference and |this| and m_form don't
+    // die together.
+    // Oilpan: If m_formWasSetByParser is true, m_form is always non-null.
     bool m_formWasSetByParser;
 };
 

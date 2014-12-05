@@ -28,10 +28,10 @@ namespace {
 class NoMessageLoopOutputSurface : public OutputSurface {
  public:
   NoMessageLoopOutputSurface() : OutputSurface(TestContextProvider::Create()) {}
-  virtual ~NoMessageLoopOutputSurface() {}
+  ~NoMessageLoopOutputSurface() override {}
 
   // OutputSurface overrides.
-  virtual void SwapBuffers(CompositorFrame* frame) OVERRIDE {
+  void SwapBuffers(CompositorFrame* frame) override {
     DCHECK(client_);
     client_->DidSwapBuffers();
     client_->DidSwapBuffersComplete();
@@ -53,31 +53,32 @@ class LayerTreeHostNoMessageLoopTest
   virtual ~LayerTreeHostNoMessageLoopTest() {}
 
   // LayerTreeHostClient overrides.
-  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
-  virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
-  virtual void Layout() OVERRIDE {}
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) OVERRIDE {}
-  virtual scoped_ptr<OutputSurface> CreateOutputSurface(
-      bool fallback) OVERRIDE {
-    return make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface);
+  void WillBeginMainFrame(int frame_id) override {}
+  void BeginMainFrame(const BeginFrameArgs& args) override {}
+  void DidBeginMainFrame() override {}
+  void Layout() override {}
+  void ApplyViewportDeltas(const gfx::Vector2d& inner_delta,
+                           const gfx::Vector2d& outer_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void ApplyViewportDeltas(const gfx::Vector2d& scroll_delta,
+                           float page_scale,
+                           float top_controls_delta) override {}
+  void RequestNewOutputSurface(bool fallback) override {
+    layer_tree_host_->SetOutputSurface(
+        make_scoped_ptr<OutputSurface>(new NoMessageLoopOutputSurface));
   }
-  virtual void DidInitializeOutputSurface() OVERRIDE {
+  void DidInitializeOutputSurface() override {
     did_initialize_output_surface_ = true;
   }
-  virtual void WillCommit() OVERRIDE {}
-  virtual void DidCommit() OVERRIDE { did_commit_ = true; }
-  virtual void DidCommitAndDrawFrame() OVERRIDE {
-    did_commit_and_draw_frame_ = true;
-  }
-  virtual void DidCompleteSwapBuffers() OVERRIDE {}
+  void WillCommit() override {}
+  void DidCommit() override { did_commit_ = true; }
+  void DidCommitAndDrawFrame() override { did_commit_and_draw_frame_ = true; }
+  void DidCompleteSwapBuffers() override {}
 
   // LayerTreeHostSingleThreadClient overrides.
-  virtual void ScheduleComposite() OVERRIDE {}
-  virtual void ScheduleAnimation() OVERRIDE {}
-  virtual void DidPostSwapBuffers() OVERRIDE {}
-  virtual void DidAbortSwapBuffers() OVERRIDE {}
+  void DidPostSwapBuffers() override {}
+  void DidAbortSwapBuffers() override {}
 
   void RunTest() {
     no_loop_thread_.Start();
@@ -85,10 +86,10 @@ class LayerTreeHostNoMessageLoopTest
   }
 
   // base::DelegateSimpleThread::Delegate override.
-  virtual void Run() OVERRIDE {
-    ASSERT_FALSE(base::MessageLoopProxy::current());
+  void Run() override {
+    ASSERT_FALSE(base::MessageLoopProxy::current().get());
     RunTestWithoutMessageLoop();
-    EXPECT_FALSE(base::MessageLoopProxy::current());
+    EXPECT_FALSE(base::MessageLoopProxy::current().get());
   }
 
  protected:
@@ -96,8 +97,9 @@ class LayerTreeHostNoMessageLoopTest
 
   void SetupLayerTreeHost() {
     LayerTreeSettings settings;
-    layer_tree_host_ =
-        LayerTreeHost::CreateSingleThreaded(this, this, NULL, settings);
+    settings.single_thread_proxy_scheduler = false;
+    layer_tree_host_ = LayerTreeHost::CreateSingleThreaded(
+        this, this, NULL, NULL, settings, NULL);
     layer_tree_host_->SetViewportSize(size_);
     layer_tree_host_->SetRootLayer(root_layer_);
   }
@@ -113,8 +115,8 @@ class LayerTreeHostNoMessageLoopTest
 
   void TearDownLayerTreeHost() {
     // Explicit teardown to make failures easier to debug.
-    layer_tree_host_.reset();
-    root_layer_ = NULL;
+    layer_tree_host_ = nullptr;
+    root_layer_ = nullptr;
   }
 
   // All protected member variables are accessed only on |no_loop_thread_|.
@@ -133,7 +135,7 @@ class LayerTreeHostNoMessageLoopTest
 class LayerTreeHostNoMessageLoopSmokeTest
     : public LayerTreeHostNoMessageLoopTest {
  protected:
-  virtual void RunTestWithoutMessageLoop() OVERRIDE {
+  void RunTestWithoutMessageLoop() override {
     gfx::Size size(100, 100);
 
     // Set up root layer.
@@ -160,13 +162,14 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
     : public LayerTreeHostNoMessageLoopTest,
       public DelegatedFrameResourceCollectionClient {
  protected:
-  virtual void RunTestWithoutMessageLoop() OVERRIDE {
+  void RunTestWithoutMessageLoop() override {
     resource_collection_ = new DelegatedFrameResourceCollection;
     frame_provider_ = new DelegatedFrameProvider(
         resource_collection_.get(), CreateFrameDataWithResource(998));
 
     root_layer_ = Layer::Create();
-    delegated_layer_ = FakeDelegatedRendererLayer::Create(frame_provider_);
+    delegated_layer_ =
+        FakeDelegatedRendererLayer::Create(frame_provider_.get());
     delegated_layer_->SetBounds(size_);
     delegated_layer_->SetIsDrawable(true);
     root_layer_->AddChild(delegated_layer_);
@@ -193,7 +196,7 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
   }
 
   // DelegatedFrameResourceCollectionClient overrides.
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {}
+  void UnusedResourcesAreAvailable() override {}
 
  private:
   scoped_ptr<DelegatedFrameData> CreateFrameDataWithResource(
@@ -203,7 +206,7 @@ class LayerTreeHostNoMessageLoopDelegatedLayer
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
     root_pass->SetNew(
-        RenderPass::Id(1, 1), frame_rect, frame_rect, gfx::Transform());
+        RenderPassId(1, 1), frame_rect, frame_rect, gfx::Transform());
     frame->render_pass_list.push_back(root_pass.Pass());
 
     TransferableResource resource;

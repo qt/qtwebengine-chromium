@@ -27,84 +27,126 @@
 #ifndef WorkerThread_h
 #define WorkerThread_h
 
+#include "core/dom/ExecutionContextTask.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
-#include "core/workers/WorkerRunLoop.h"
+#include "core/workers/WorkerGlobalScope.h"
+#include "platform/SharedTimer.h"
+#include "platform/WebThreadSupportingGC.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Forward.h"
+#include "wtf/MessageQueue.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
 namespace blink {
+
+class KURL;
 class WebWaitableEvent;
-}
+class WorkerGlobalScope;
+class WorkerInspectorController;
+class WorkerLoaderProxy;
+class WorkerReportingProxy;
+class WorkerSharedTimer;
+class WorkerThreadShutdownFinishTask;
+class WorkerThreadStartupData;
+class WorkerThreadTask;
 
-namespace WebCore {
+enum WorkerThreadStartMode {
+    DontPauseWorkerGlobalScopeOnStart,
+    PauseWorkerGlobalScopeOnStart
+};
 
-    class KURL;
-    class NotificationClient;
-    class WorkerGlobalScope;
-    class WorkerLoaderProxy;
-    class WorkerReportingProxy;
-    class WorkerThreadStartupData;
+class WorkerThread : public RefCounted<WorkerThread> {
+public:
+    virtual ~WorkerThread();
 
-    enum WorkerThreadStartMode { DontPauseWorkerGlobalScopeOnStart, PauseWorkerGlobalScopeOnStart };
+    virtual void start();
+    virtual void stop();
 
-    class WorkerThread : public RefCounted<WorkerThread> {
-    public:
-        virtual ~WorkerThread();
+    // Can be used to wait for this worker thread to shut down.
+    // (This is signalled on the main thread, so it's assumed to be waited on the worker context thread)
+    WebWaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
 
-        bool start();
-        void stop();
+    WebWaitableEvent* terminationEvent() { return m_terminationEvent.get(); }
+    void terminateAndWait();
+    static void terminateAndWaitForAllWorkers();
 
-        // Can be used to wait for this worker thread to shut down.
-        // (This is signalled on the main thread, so it's assumed to be waited on the worker context thread)
-        blink::WebWaitableEvent* shutdownEvent() { return m_shutdownEvent.get(); }
+    bool isCurrentThread() const;
+    WorkerLoaderProxy& workerLoaderProxy() const { return m_workerLoaderProxy; }
+    WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
 
-        bool isCurrentThread() const;
-        WorkerRunLoop& runLoop() { return m_runLoop; }
-        WorkerLoaderProxy& workerLoaderProxy() const { return m_workerLoaderProxy; }
-        WorkerReportingProxy& workerReportingProxy() const { return m_workerReportingProxy; }
+    void postTask(PassOwnPtr<ExecutionContextTask>);
+    void postDebuggerTask(PassOwnPtr<ExecutionContextTask>);
 
-        // Number of active worker threads.
-        static unsigned workerThreadCount();
+    enum WaitMode { WaitForMessage, DontWaitForMessage };
+    MessageQueueWaitResult runDebuggerTask(WaitMode = WaitForMessage);
 
-        NotificationClient* getNotificationClient() { return m_notificationClient; }
-        void setNotificationClient(NotificationClient* client) { m_notificationClient = client; }
+    // These methods should be called if the holder of the thread is
+    // going to call runDebuggerTask in a loop.
+    void willEnterNestedLoop();
+    void didLeaveNestedLoop();
 
-    protected:
-        WorkerThread(WorkerLoaderProxy&, WorkerReportingProxy&, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
+    WorkerGlobalScope* workerGlobalScope() const { return m_workerGlobalScope.get(); }
+    bool terminated();
 
-        // Factory method for creating a new worker context for the thread.
-        virtual PassRefPtrWillBeRawPtr<WorkerGlobalScope> createWorkerGlobalScope(PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>) = 0;
+    // Number of active worker threads.
+    static unsigned workerThreadCount();
 
-        // Executes the event loop for the worker thread. Derived classes can override to perform actions before/after entering the event loop.
-        virtual void runEventLoop();
+    PlatformThreadId platformThreadId() const;
 
-        WorkerGlobalScope* workerGlobalScope() { return m_workerGlobalScope.get(); }
+    void interruptAndDispatchInspectorCommands();
+    void setWorkerInspectorController(WorkerInspectorController*);
 
-    private:
-        // Static function executed as the core routine on the new thread. Passed a pointer to a WorkerThread object.
-        static void workerThreadStart(void*);
+protected:
+    WorkerThread(WorkerLoaderProxy&, WorkerReportingProxy&, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>);
 
-        void workerThread();
+    // Factory method for creating a new worker context for the thread.
+    virtual PassRefPtrWillBeRawPtr<WorkerGlobalScope> createWorkerGlobalScope(PassOwnPtrWillBeRawPtr<WorkerThreadStartupData>) = 0;
 
-        ThreadIdentifier m_threadID;
-        WorkerRunLoop m_runLoop;
-        WorkerLoaderProxy& m_workerLoaderProxy;
-        WorkerReportingProxy& m_workerReportingProxy;
+    virtual void postInitialize() { }
 
-        RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
-        Mutex m_threadCreationMutex;
+private:
+    friend class WorkerSharedTimer;
+    friend class WorkerThreadShutdownFinishTask;
 
-        OwnPtrWillBePersistent<WorkerThreadStartupData> m_startupData;
+    void stopInShutdownSequence();
+    void stopInternal();
 
-        NotificationClient* m_notificationClient;
+    void initialize();
+    void cleanup();
+    void idleHandler();
+    void postDelayedTask(PassOwnPtr<ExecutionContextTask>, long long delayMs);
 
-        // Used to signal thread shutdown.
-        OwnPtr<blink::WebWaitableEvent> m_shutdownEvent;
-    };
+    bool m_terminated;
+    OwnPtr<WorkerSharedTimer> m_sharedTimer;
+    MessageQueue<WorkerThreadTask> m_debuggerMessageQueue;
+    OwnPtr<WebThread::TaskObserver> m_microtaskRunner;
 
-} // namespace WebCore
+    WorkerLoaderProxy& m_workerLoaderProxy;
+    WorkerReportingProxy& m_workerReportingProxy;
+
+    RefPtrWillBePersistent<WorkerInspectorController> m_workerInspectorController;
+    Mutex m_workerInspectorControllerMutex;
+
+    Mutex m_threadCreationMutex;
+    RefPtrWillBePersistent<WorkerGlobalScope> m_workerGlobalScope;
+    OwnPtrWillBePersistent<WorkerThreadStartupData> m_startupData;
+
+    // Used to signal thread shutdown.
+    OwnPtr<WebWaitableEvent> m_shutdownEvent;
+
+    // Used to signal thread termination.
+    OwnPtr<WebWaitableEvent> m_terminationEvent;
+
+    // FIXME: This has to be last because of crbug.com/401397 - the
+    // WorkerThread might get deleted before it had a chance to properly
+    // shut down. By deleting the WebThread first, we can guarantee that
+    // no pending tasks on the thread might want to access any of the other
+    // members during the WorkerThread's destruction.
+    OwnPtr<WebThreadSupportingGC> m_thread;
+};
+
+} // namespace blink
 
 #endif // WorkerThread_h

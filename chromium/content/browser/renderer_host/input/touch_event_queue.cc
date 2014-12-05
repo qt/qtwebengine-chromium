@@ -69,15 +69,28 @@ class TouchEventQueue::TouchTimeoutHandler {
         timeout_delay_(timeout_delay),
         pending_ack_state_(PENDING_ACK_NONE),
         timeout_monitor_(base::Bind(&TouchTimeoutHandler::OnTimeOut,
-                                    base::Unretained(this))) {
+                                    base::Unretained(this))),
+        enabled_(true),
+        enabled_for_current_sequence_(false) {
     DCHECK(timeout_delay != base::TimeDelta());
   }
 
   ~TouchTimeoutHandler() {}
 
-  void Start(const TouchEventWithLatencyInfo& event) {
+  void StartIfNecessary(const TouchEventWithLatencyInfo& event) {
     DCHECK_EQ(pending_ack_state_, PENDING_ACK_NONE);
-    DCHECK(ShouldTouchTriggerTimeout(event.event));
+    if (!enabled_)
+      return;
+
+    if (!ShouldTouchTriggerTimeout(event.event))
+      return;
+
+    if (WebTouchEventTraits::IsTouchSequenceStart(event.event))
+      enabled_for_current_sequence_ = true;
+
+    if (!enabled_for_current_sequence_)
+      return;
+
     timeout_event_ = event;
     timeout_monitor_.Restart(timeout_delay_);
   }
@@ -85,6 +98,8 @@ class TouchEventQueue::TouchTimeoutHandler {
   bool ConfirmTouchEvent(InputEventAckState ack_result) {
     switch (pending_ack_state_) {
       case PENDING_ACK_NONE:
+        if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED)
+          enabled_for_current_sequence_ = false;
         timeout_monitor_.Stop();
         return false;
       case PENDING_ACK_ORIGINAL_EVENT:
@@ -95,7 +110,8 @@ class TouchEventQueue::TouchTimeoutHandler {
           touch_queue_->SendTouchEventImmediately(cancel_event);
         } else {
           SetPendingAckState(PENDING_ACK_NONE);
-          touch_queue_->UpdateTouchAckStates(timeout_event_.event, ack_result);
+          touch_queue_->UpdateTouchConsumerStates(timeout_event_.event,
+                                                  ack_result);
         }
         return true;
       case PENDING_ACK_CANCEL_EVENT:
@@ -109,18 +125,28 @@ class TouchEventQueue::TouchTimeoutHandler {
     return HasTimeoutEvent();
   }
 
-  bool IsTimeoutTimerRunning() const {
-    return timeout_monitor_.IsRunning();
+  void SetEnabled(bool enabled) {
+    if (enabled_ == enabled)
+      return;
+
+    enabled_ = enabled;
+
+    if (enabled_)
+      return;
+
+    enabled_for_current_sequence_ = false;
+    // Only reset the |timeout_handler_| if the timer is running and has not
+    // yet timed out. This ensures that an already timed out sequence is
+    // properly flushed by the handler.
+    if (IsTimeoutTimerRunning()) {
+      pending_ack_state_ = PENDING_ACK_NONE;
+      timeout_monitor_.Stop();
+    }
   }
 
-  void Reset() {
-    pending_ack_state_ = PENDING_ACK_NONE;
-    timeout_monitor_.Stop();
-  }
+  bool IsTimeoutTimerRunning() const { return timeout_monitor_.IsRunning(); }
 
-  void set_timeout_delay(base::TimeDelta timeout_delay) {
-    timeout_delay_ = timeout_delay;
-  }
+  bool enabled() const { return enabled_; }
 
  private:
   enum PendingAckState {
@@ -184,6 +210,9 @@ class TouchEventQueue::TouchTimeoutHandler {
 
   // Provides timeout-based callback behavior.
   TimeoutMonitor timeout_monitor_;
+
+  bool enabled_;
+  bool enabled_for_current_sequence_;
 };
 
 // Provides touchmove slop suppression for a single touch that remains within
@@ -193,9 +222,14 @@ class TouchEventQueue::TouchTimeoutHandler {
 class TouchEventQueue::TouchMoveSlopSuppressor {
  public:
   TouchMoveSlopSuppressor(double slop_suppression_length_dips)
-      : slop_suppression_length_dips_squared_(slop_suppression_length_dips *
-                                              slop_suppression_length_dips),
-        suppressing_touchmoves_(false) {}
+      : slop_suppression_length_dips_squared_(0),
+        suppressing_touchmoves_(false) {
+    if (slop_suppression_length_dips) {
+      slop_suppression_length_dips += kSlopEpsilon;
+      slop_suppression_length_dips_squared_ =
+          slop_suppression_length_dips * slop_suppression_length_dips;
+    }
+  }
 
   bool FilterEvent(const WebTouchEvent& event) {
     if (WebTouchEventTraits::IsTouchSequenceStart(event)) {
@@ -248,15 +282,9 @@ class TouchEventQueue::TouchMoveSlopSuppressor {
 // the Client receives the event with their original timestamp.
 class CoalescedWebTouchEvent {
  public:
-  // Events for which |async| is true will not be ack'ed to the client after the
-  // corresponding ack is received following dispatch.
-  CoalescedWebTouchEvent(const TouchEventWithLatencyInfo& event, bool async)
-      : coalesced_event_(event) {
-    if (async)
-      coalesced_event_.event.cancelable = false;
-    else
-      events_to_ack_.push_back(event);
-
+  CoalescedWebTouchEvent(const TouchEventWithLatencyInfo& event,
+                         bool suppress_client_ack)
+      : coalesced_event_(event), suppress_client_ack_(suppress_client_ack) {
     TRACE_EVENT_ASYNC_BEGIN0("input", "TouchEventQueue::QueueEvent", this);
   }
 
@@ -268,42 +296,48 @@ class CoalescedWebTouchEvent {
   // the event was coalesced.
   bool CoalesceEventIfPossible(
       const TouchEventWithLatencyInfo& event_with_latency) {
-    if (!WillDispatchAckToClient())
+    if (suppress_client_ack_)
       return false;
 
     if (!coalesced_event_.CanCoalesceWith(event_with_latency))
       return false;
 
+    // Addition of the first event to |uncoaleseced_events_to_ack_| is deferred
+    // until the first coalesced event, optimizing the (common) case where the
+    // event is not coalesced at all.
+    if (uncoaleseced_events_to_ack_.empty())
+      uncoaleseced_events_to_ack_.push_back(coalesced_event_);
+
     TRACE_EVENT_INSTANT0(
         "input", "TouchEventQueue::MoveCoalesced", TRACE_EVENT_SCOPE_THREAD);
     coalesced_event_.CoalesceWith(event_with_latency);
-    events_to_ack_.push_back(event_with_latency);
+    uncoaleseced_events_to_ack_.push_back(event_with_latency);
+    DCHECK_GE(uncoaleseced_events_to_ack_.size(), 2U);
     return true;
   }
 
-  void UpdateLatencyInfoForAck(const ui::LatencyInfo& renderer_latency_info) {
-    if (!WillDispatchAckToClient())
-      return;
-
-    for (WebTouchEventWithLatencyList::iterator iter = events_to_ack_.begin(),
-                                                end = events_to_ack_.end();
-         iter != end;
-         ++iter) {
-      iter->latency.AddNewLatencyFrom(renderer_latency_info);
-    }
-  }
-
   void DispatchAckToClient(InputEventAckState ack_result,
+                           const ui::LatencyInfo* optional_latency_info,
                            TouchEventQueueClient* client) {
     DCHECK(client);
-    if (!WillDispatchAckToClient())
+    if (suppress_client_ack_)
       return;
 
-    for (WebTouchEventWithLatencyList::const_iterator
-             iter = events_to_ack_.begin(),
-             end = events_to_ack_.end();
+    if (uncoaleseced_events_to_ack_.empty()) {
+      if (optional_latency_info)
+        coalesced_event_.latency.AddNewLatencyFrom(*optional_latency_info);
+      client->OnTouchEventAck(coalesced_event_, ack_result);
+      return;
+    }
+
+    DCHECK_GE(uncoaleseced_events_to_ack_.size(), 2U);
+    for (WebTouchEventWithLatencyList::iterator
+             iter = uncoaleseced_events_to_ack_.begin(),
+             end = uncoaleseced_events_to_ack_.end();
          iter != end;
          ++iter) {
+      if (optional_latency_info)
+        iter->latency.AddNewLatencyFrom(*optional_latency_info);
       client->OnTouchEventAck(*iter, ack_result);
     }
   }
@@ -313,22 +347,22 @@ class CoalescedWebTouchEvent {
   }
 
  private:
-  bool WillDispatchAckToClient() const { return !events_to_ack_.empty(); }
-
   // This is the event that is forwarded to the renderer.
   TouchEventWithLatencyInfo coalesced_event_;
 
   // This is the list of the original events that were coalesced, each requiring
   // future ack dispatch to the client.
+  // Note that this will be empty if no coalescing has occurred.
   typedef std::vector<TouchEventWithLatencyInfo> WebTouchEventWithLatencyList;
-  WebTouchEventWithLatencyList events_to_ack_;
+  WebTouchEventWithLatencyList uncoaleseced_events_to_ack_;
+
+  bool suppress_client_ack_;
 
   DISALLOW_COPY_AND_ASSIGN(CoalescedWebTouchEvent);
 };
 
 TouchEventQueue::Config::Config()
     : touchmove_slop_suppression_length_dips(0),
-      touchmove_slop_suppression_region_includes_boundary(true),
       touch_scrolling_mode(TOUCH_SCROLLING_MODE_DEFAULT),
       touch_ack_timeout_delay(base::TimeDelta::FromMilliseconds(200)),
       touch_ack_timeout_supported(false) {
@@ -339,19 +373,16 @@ TouchEventQueue::TouchEventQueue(TouchEventQueueClient* client,
     : client_(client),
       dispatching_touch_ack_(NULL),
       dispatching_touch_(false),
-      touch_filtering_state_(TOUCH_FILTERING_STATE_DEFAULT),
-      ack_timeout_enabled_(config.touch_ack_timeout_supported),
+      has_handlers_(true),
+      drop_remaining_touches_in_sequence_(false),
       touchmove_slop_suppressor_(new TouchMoveSlopSuppressor(
-          config.touchmove_slop_suppression_length_dips +
-          (config.touchmove_slop_suppression_region_includes_boundary
-               ? kSlopEpsilon
-               : -kSlopEpsilon))),
+          config.touchmove_slop_suppression_length_dips)),
       send_touch_events_async_(false),
       needs_async_touchmove_for_outer_slop_region_(false),
       last_sent_touch_timestamp_sec_(0),
       touch_scrolling_mode_(config.touch_scrolling_mode) {
   DCHECK(client);
-  if (ack_timeout_enabled_) {
+  if (config.touch_ack_timeout_supported) {
     timeout_handler_.reset(
         new TouchTimeoutHandler(this, config.touch_ack_timeout_delay));
   }
@@ -411,11 +442,6 @@ void TouchEventQueue::ProcessTouchAck(InputEventAckState ack_result,
   if (touch_queue_.empty())
     return;
 
-  if (ack_result == INPUT_EVENT_ACK_STATE_CONSUMED &&
-      touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT) {
-    touch_filtering_state_ = FORWARD_ALL_TOUCHES;
-  }
-
   PopTouchEventToClient(ack_result, latency_info);
   TryForwardNextEventToRenderer();
 }
@@ -446,18 +472,7 @@ void TouchEventQueue::ForwardNextEventToRenderer() {
 
   DCHECK(!empty());
   DCHECK(!dispatching_touch_);
-  DCHECK_NE(touch_filtering_state_, DROP_ALL_TOUCHES);
   TouchEventWithLatencyInfo touch = touch_queue_.front()->coalesced_event();
-
-  if (WebTouchEventTraits::IsTouchSequenceStart(touch.event)) {
-    touch_filtering_state_ =
-        ack_timeout_enabled_ ? FORWARD_TOUCHES_UNTIL_TIMEOUT
-                             : FORWARD_ALL_TOUCHES;
-    touch_ack_states_.clear();
-    send_touch_events_async_ = false;
-    touch_sequence_start_position_ =
-        gfx::PointF(touch.event.touches[0].position);
-  }
 
   if (send_touch_events_async_ &&
       touch.event.type == WebInputEvent::TouchMove) {
@@ -503,7 +518,8 @@ void TouchEventQueue::ForwardNextEventToRenderer() {
     if (pending_async_touchmove_->CanCoalesceWith(touch)) {
       pending_async_touchmove_->CoalesceWith(touch);
       pending_async_touchmove_->event.cancelable = !send_touch_events_async_;
-      touch = *pending_async_touchmove_.Pass();
+      touch = *pending_async_touchmove_;
+      pending_async_touchmove_.reset();
     } else {
       scoped_ptr<TouchEventWithLatencyInfo> async_move =
           pending_async_touchmove_.Pass();
@@ -524,46 +540,42 @@ void TouchEventQueue::ForwardNextEventToRenderer() {
   // the touch timeout should not be started.
   base::AutoReset<bool> dispatching_touch(&dispatching_touch_, true);
   SendTouchEventImmediately(touch);
-  if (dispatching_touch_ &&
-      touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT &&
-      ShouldTouchTriggerTimeout(touch.event)) {
-    DCHECK(timeout_handler_);
-    timeout_handler_->Start(touch);
-  }
+  if (dispatching_touch_ && timeout_handler_)
+    timeout_handler_->StartIfNecessary(touch);
 }
 
 void TouchEventQueue::OnGestureScrollEvent(
     const GestureEventWithLatencyInfo& gesture_event) {
-  if (gesture_event.event.type != blink::WebInputEvent::GestureScrollBegin)
-    return;
-
-  if (touch_filtering_state_ != DROP_ALL_TOUCHES &&
-      touch_filtering_state_ != DROP_TOUCHES_IN_SEQUENCE) {
-    DCHECK(!touchmove_slop_suppressor_->suppressing_touchmoves())
-        << "The renderer should be offered a touchmove before scrolling begins";
-  }
-
-  if (touch_scrolling_mode_ == TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE) {
-    if (touch_filtering_state_ != DROP_ALL_TOUCHES &&
-        touch_filtering_state_ != DROP_TOUCHES_IN_SEQUENCE) {
+  if (gesture_event.event.type == blink::WebInputEvent::GestureScrollBegin) {
+    if (!touch_consumer_states_.is_empty() &&
+        !drop_remaining_touches_in_sequence_) {
+      DCHECK(!touchmove_slop_suppressor_->suppressing_touchmoves())
+          <<  "A touch handler should be offered a touchmove before scrolling.";
+    }
+    if (touch_scrolling_mode_ == TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE &&
+        !drop_remaining_touches_in_sequence_ &&
+        touch_consumer_states_.is_empty()) {
       // If no touch points have a consumer, prevent all subsequent touch events
       // received during the scroll from reaching the renderer. This ensures
       // that the first touchstart the renderer sees in any given sequence can
       // always be preventDefault'ed (cancelable == true).
       // TODO(jdduke): Revisit if touchstarts during scroll are made cancelable.
-      if (touch_ack_states_.empty() ||
-          AllTouchAckStatesHaveState(
-              INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS)) {
-        touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
-        return;
-      }
+      drop_remaining_touches_in_sequence_ = true;
     }
 
-    pending_async_touchmove_.reset();
-    send_touch_events_async_ = true;
-    needs_async_touchmove_for_outer_slop_region_ = true;
+    if (touch_scrolling_mode_ == TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE) {
+      needs_async_touchmove_for_outer_slop_region_ = true;
+      pending_async_touchmove_.reset();
+    }
+
     return;
   }
+
+  if (gesture_event.event.type != blink::WebInputEvent::GestureScrollUpdate)
+    return;
+
+  if (touch_scrolling_mode_ == TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE)
+    send_touch_events_async_ = true;
 
   if (touch_scrolling_mode_ != TOUCH_SCROLLING_MODE_TOUCHCANCEL)
     return;
@@ -575,10 +587,10 @@ void TouchEventQueue::OnGestureScrollEvent(
   if (!dispatching_touch_ack_)
     return;
 
-  if (touch_filtering_state_ == DROP_TOUCHES_IN_SEQUENCE)
+  if (drop_remaining_touches_in_sequence_)
     return;
 
-  touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
+  drop_remaining_touches_in_sequence_ = true;
 
   // Fake a TouchCancel to cancel the touch points of the touch event
   // that is currently being acked.
@@ -614,27 +626,7 @@ void TouchEventQueue::OnGestureEventAck(
 void TouchEventQueue::OnHasTouchEventHandlers(bool has_handlers) {
   DCHECK(!dispatching_touch_ack_);
   DCHECK(!dispatching_touch_);
-
-  if (has_handlers) {
-    if (touch_filtering_state_ == DROP_ALL_TOUCHES) {
-      // If no touch handler was previously registered, ensure that we don't
-      // send a partial touch sequence to the renderer.
-      DCHECK(touch_queue_.empty());
-      touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
-    }
-  } else {
-    // TODO(jdduke): Synthesize a TouchCancel if necessary to update Blink touch
-    // state tracking and/or touch-action filtering (e.g., if the touch handler
-    // was removed mid-sequence), crbug.com/375940.
-    touch_filtering_state_ = DROP_ALL_TOUCHES;
-    pending_async_touchmove_.reset();
-    if (timeout_handler_)
-      timeout_handler_->Reset();
-    if (!touch_queue_.empty())
-      ProcessTouchAck(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS, LatencyInfo());
-    // As there is no touch handler, ack'ing the event should flush the queue.
-    DCHECK(touch_queue_.empty());
-  }
+  has_handlers_ = has_handlers;
 }
 
 bool TouchEventQueue::IsPendingAckTouchStart() const {
@@ -648,25 +640,12 @@ bool TouchEventQueue::IsPendingAckTouchStart() const {
 }
 
 void TouchEventQueue::SetAckTimeoutEnabled(bool enabled) {
-  // The timeout handler is valid only if explicitly supported in the config.
-  if (!timeout_handler_)
-    return;
+  if (timeout_handler_)
+    timeout_handler_->SetEnabled(enabled);
+}
 
-  if (ack_timeout_enabled_ == enabled)
-    return;
-
-  ack_timeout_enabled_ = enabled;
-
-  if (enabled)
-    return;
-
-  if (touch_filtering_state_ == FORWARD_TOUCHES_UNTIL_TIMEOUT)
-    touch_filtering_state_ = FORWARD_ALL_TOUCHES;
-  // Only reset the |timeout_handler_| if the timer is running and has not yet
-  // timed out. This ensures that an already timed out sequence is properly
-  // flushed by the handler.
-  if (timeout_handler_ && timeout_handler_->IsTimeoutTimerRunning())
-    timeout_handler_->Reset();
+bool TouchEventQueue::IsAckTimeoutEnabled() const {
+  return timeout_handler_ && timeout_handler_->enabled();
 }
 
 bool TouchEventQueue::HasPendingAsyncTouchMoveForTesting() const {
@@ -686,36 +665,34 @@ void TouchEventQueue::FlushQueue() {
   DCHECK(!dispatching_touch_ack_);
   DCHECK(!dispatching_touch_);
   pending_async_touchmove_.reset();
-  if (touch_filtering_state_ != DROP_ALL_TOUCHES)
-    touch_filtering_state_ = DROP_TOUCHES_IN_SEQUENCE;
+  drop_remaining_touches_in_sequence_ = true;
   while (!touch_queue_.empty())
     PopTouchEventToClient(INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS);
 }
 
 void TouchEventQueue::PopTouchEventToClient(InputEventAckState ack_result) {
-  AckTouchEventToClient(ack_result, PopTouchEvent());
+  AckTouchEventToClient(ack_result, PopTouchEvent(), NULL);
 }
 
 void TouchEventQueue::PopTouchEventToClient(
     InputEventAckState ack_result,
     const LatencyInfo& renderer_latency_info) {
-  scoped_ptr<CoalescedWebTouchEvent> acked_event = PopTouchEvent();
-  acked_event->UpdateLatencyInfoForAck(renderer_latency_info);
-  AckTouchEventToClient(ack_result, acked_event.Pass());
+  AckTouchEventToClient(ack_result, PopTouchEvent(), &renderer_latency_info);
 }
 
 void TouchEventQueue::AckTouchEventToClient(
     InputEventAckState ack_result,
-    scoped_ptr<CoalescedWebTouchEvent> acked_event) {
+    scoped_ptr<CoalescedWebTouchEvent> acked_event,
+    const ui::LatencyInfo* optional_latency_info) {
   DCHECK(acked_event);
   DCHECK(!dispatching_touch_ack_);
-  UpdateTouchAckStates(acked_event->coalesced_event().event, ack_result);
+  UpdateTouchConsumerStates(acked_event->coalesced_event().event, ack_result);
 
   // Note that acking the touch-event may result in multiple gestures being sent
   // to the renderer, or touch-events being queued.
   base::AutoReset<const CoalescedWebTouchEvent*> dispatching_touch_ack(
       &dispatching_touch_ack_, acked_event.get());
-  acked_event->DispatchAckToClient(ack_result, client_);
+  acked_event->DispatchAckToClient(ack_result, optional_latency_info, client_);
 }
 
 scoped_ptr<CoalescedWebTouchEvent> TouchEventQueue::PopTouchEvent() {
@@ -748,19 +725,25 @@ TouchEventQueue::FilterBeforeForwarding(const WebTouchEvent& event) {
   if (touchmove_slop_suppressor_->FilterEvent(event))
     return ACK_WITH_NOT_CONSUMED;
 
-  if (touch_filtering_state_ == DROP_ALL_TOUCHES)
-    return ACK_WITH_NO_CONSUMER_EXISTS;
+  if (WebTouchEventTraits::IsTouchSequenceStart(event)) {
+    touch_consumer_states_.clear();
+    send_touch_events_async_ = false;
+    pending_async_touchmove_.reset();
+    touch_sequence_start_position_ = gfx::PointF(event.touches[0].position);
+    drop_remaining_touches_in_sequence_ = false;
+    if (!has_handlers_) {
+      drop_remaining_touches_in_sequence_ = true;
+      return ACK_WITH_NO_CONSUMER_EXISTS;
+    }
+  }
 
-  if (touch_filtering_state_ == DROP_TOUCHES_IN_SEQUENCE &&
+  if (drop_remaining_touches_in_sequence_ &&
       event.type != WebInputEvent::TouchCancel) {
-    if (WebTouchEventTraits::IsTouchSequenceStart(event))
-      return FORWARD_TO_RENDERER;
     return ACK_WITH_NO_CONSUMER_EXISTS;
   }
 
-  // Touch press events should always be forwarded to the renderer.
   if (event.type == WebInputEvent::TouchStart)
-    return FORWARD_TO_RENDERER;
+    return has_handlers_ ? FORWARD_TO_RENDERER : ACK_WITH_NO_CONSUMER_EXISTS;
 
   for (unsigned int i = 0; i < event.touchesLength; ++i) {
     const WebTouchPoint& point = event.touches[i];
@@ -768,22 +751,15 @@ TouchEventQueue::FilterBeforeForwarding(const WebTouchEvent& event) {
     if (point.state == WebTouchPoint::StateStationary)
       continue;
 
-    if (touch_ack_states_.count(point.id) > 0) {
-      if (touch_ack_states_.find(point.id)->second !=
-          INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS)
-        return FORWARD_TO_RENDERER;
-    } else {
-      // If the ACK status of a point is unknown, then the event should be
-      // forwarded to the renderer.
+    if (touch_consumer_states_.has_bit(point.id))
       return FORWARD_TO_RENDERER;
-    }
   }
 
   return ACK_WITH_NO_CONSUMER_EXISTS;
 }
 
-void TouchEventQueue::UpdateTouchAckStates(const WebTouchEvent& event,
-                                           InputEventAckState ack_result) {
+void TouchEventQueue::UpdateTouchConsumerStates(const WebTouchEvent& event,
+                                                InputEventAckState ack_result) {
   // Update the ACK status for each touch point in the ACKed event.
   if (event.type == WebInputEvent::TouchEnd ||
       event.type == WebInputEvent::TouchCancel) {
@@ -792,31 +768,19 @@ void TouchEventQueue::UpdateTouchAckStates(const WebTouchEvent& event,
       const WebTouchPoint& point = event.touches[i];
       if (point.state == WebTouchPoint::StateReleased ||
           point.state == WebTouchPoint::StateCancelled)
-        touch_ack_states_.erase(point.id);
+        touch_consumer_states_.clear_bit(point.id);
     }
   } else if (event.type == WebInputEvent::TouchStart) {
     for (unsigned i = 0; i < event.touchesLength; ++i) {
       const WebTouchPoint& point = event.touches[i];
-      if (point.state == WebTouchPoint::StatePressed)
-        touch_ack_states_[point.id] = ack_result;
+      if (point.state == WebTouchPoint::StatePressed) {
+        if (ack_result != INPUT_EVENT_ACK_STATE_NO_CONSUMER_EXISTS)
+          touch_consumer_states_.mark_bit(point.id);
+        else
+          touch_consumer_states_.clear_bit(point.id);
+      }
     }
   }
-}
-
-bool TouchEventQueue::AllTouchAckStatesHaveState(
-    InputEventAckState ack_state) const {
-  if (touch_ack_states_.empty())
-    return false;
-
-  for (TouchPointAckStates::const_iterator iter = touch_ack_states_.begin(),
-                                           end = touch_ack_states_.end();
-       iter != end;
-       ++iter) {
-    if (iter->second != ack_state)
-      return false;
-  }
-
-  return true;
 }
 
 }  // namespace content

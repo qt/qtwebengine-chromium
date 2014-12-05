@@ -5,6 +5,8 @@
 cr.define('options', function() {
 
   var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * FontSettings class
@@ -12,22 +14,19 @@ cr.define('options', function() {
    * @class
    */
   function FontSettings() {
-    OptionsPage.call(this,
-                     'fonts',
-                     loadTimeData.getString('fontSettingsPageTabTitle'),
-                     'font-settings');
+    Page.call(this, 'fonts',
+              loadTimeData.getString('fontSettingsPageTabTitle'),
+              'font-settings');
   }
 
   cr.addSingletonGetter(FontSettings);
 
   FontSettings.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var standardFontRange = $('standard-font-size');
       standardFontRange.valueMap = [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20,
@@ -59,7 +58,7 @@ cr.define('options', function() {
       });
 
       $('font-settings-confirm').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
 
       $('advanced-font-settings-options').onclick = function() {
@@ -67,9 +66,7 @@ cr.define('options', function() {
       };
     },
 
-    /**
-     * Called by the options page when this page has been shown.
-     */
+    /** @override */
     didShowPage: function() {
       // The fonts list may be large so we only load it when this page is
       // loaded for the first time.  This makes opening the options window
@@ -156,7 +153,8 @@ cr.define('options', function() {
      * @param {Element} el The div containing the sample text.
      * @param {number} size The font size of the sample text.
      * @param {string} font The font family of the sample text.
-     * @param {bool} showSize True if the font size should appear in the sample.
+     * @param {boolean} showSize True if the font size should appear in the
+     *     sample.
      * @private
      */
     setUpFontSample_: function(el, size, font, showSize) {
@@ -180,13 +178,12 @@ cr.define('options', function() {
       element.textContent = '';
 
       // Insert new child nodes into select element.
-      var value, text, selected, option;
       for (var i = 0; i < items.length; i++) {
-        value = items[i][0];
-        text = items[i][1];
-        dir = items[i][2];
+        var value = items[i][0];
+        var text = items[i][1];
+        var dir = items[i][2];
         if (text) {
-          selected = value == selectedValue;
+          var selected = value == selectedValue;
           var option = new Option(text, value, false, selected);
           option.dir = dir;
           element.appendChild(option);

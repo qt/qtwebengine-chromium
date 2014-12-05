@@ -29,39 +29,43 @@
 #ifndef ImageData_h
 #define ImageData_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "platform/geometry/IntSize.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Uint8ClampedArray.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class ImageData FINAL : public RefCountedWillBeGarbageCollectedFinalized<ImageData>, public ScriptWrappable {
+class ImageData final : public RefCountedWillBeGarbageCollectedFinalized<ImageData>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ImageData> create(const IntSize&);
     static PassRefPtrWillBeRawPtr<ImageData> create(const IntSize&, PassRefPtr<Uint8ClampedArray>);
     static PassRefPtrWillBeRawPtr<ImageData> create(unsigned width, unsigned height, ExceptionState&);
-    static PassRefPtrWillBeRawPtr<ImageData> create(Uint8ClampedArray*, unsigned width, unsigned height, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<ImageData> create(DOMUint8ClampedArray*, unsigned width, unsigned height, ExceptionState&);
 
     IntSize size() const { return m_size; }
     int width() const { return m_size.width(); }
     int height() const { return m_size.height(); }
-    Uint8ClampedArray* data() const { return m_data.get(); }
+    const Uint8ClampedArray* data() const { return m_data->view(); }
+    Uint8ClampedArray* data() { return m_data->view(); }
 
     void trace(Visitor*) { }
 
+    virtual v8::Handle<v8::Object> associateWithWrapper(const WrapperTypeInfo*, v8::Handle<v8::Object> wrapper, v8::Isolate*) override;
+
 private:
     explicit ImageData(const IntSize&);
-    ImageData(const IntSize&, PassRefPtr<Uint8ClampedArray>);
+    ImageData(const IntSize&, PassRefPtr<DOMUint8ClampedArray>);
 
     IntSize m_size;
-    RefPtr<Uint8ClampedArray> m_data;
+    RefPtr<DOMUint8ClampedArray> m_data;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ImageData_h

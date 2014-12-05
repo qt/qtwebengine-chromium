@@ -7,13 +7,11 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 
-namespace gfx {
+namespace {
 
-void CreateBitmapHeader(int width, int height, BITMAPINFOHEADER* hdr) {
-  CreateBitmapHeaderWithColorDepth(width, height, 32, hdr);
-}
-
-void CreateBitmapHeaderWithColorDepth(int width, int height, int color_depth,
+void CreateBitmapHeaderWithColorDepth(LONG width,
+                                      LONG height,
+                                      WORD color_depth,
                                       BITMAPINFOHEADER* hdr) {
   // These values are shared with gfx::PlatformDevice
   hdr->biSize = sizeof(BITMAPINFOHEADER);
@@ -27,6 +25,14 @@ void CreateBitmapHeaderWithColorDepth(int width, int height, int color_depth,
   hdr->biYPelsPerMeter = 1;
   hdr->biClrUsed = 0;
   hdr->biClrImportant = 0;
+}
+
+}  // namespace
+
+namespace gfx {
+
+void CreateBitmapHeader(int width, int height, BITMAPINFOHEADER* hdr) {
+  CreateBitmapHeaderWithColorDepth(width, height, 32, hdr);
 }
 
 void CreateBitmapV4Header(int width, int height, BITMAPV4HEADER* hdr) {
@@ -49,17 +55,7 @@ void CreateBitmapV4Header(int width, int height, BITMAPV4HEADER* hdr) {
 void CreateMonochromeBitmapHeader(int width,
                                   int height,
                                   BITMAPINFOHEADER* hdr) {
-  hdr->biSize = sizeof(BITMAPINFOHEADER);
-  hdr->biWidth = width;
-  hdr->biHeight = -height;
-  hdr->biPlanes = 1;
-  hdr->biBitCount = 1;
-  hdr->biCompression = BI_RGB;
-  hdr->biSizeImage = 0;
-  hdr->biXPelsPerMeter = 1;
-  hdr->biYPelsPerMeter = 1;
-  hdr->biClrUsed = 0;
-  hdr->biClrImportant = 0;
+  CreateBitmapHeaderWithColorDepth(width, height, 1, hdr);
 }
 
 void SubtractRectanglesFromRegion(HRGN hrgn,
@@ -96,7 +92,7 @@ HRGN ConvertPathToHRGN(const gfx::Path& path) {
 }
 
 
-double CalculatePageScale(HDC dc, int page_width, int page_height) {
+float CalculatePageScale(HDC dc, int page_width, int page_height) {
   int dc_width = GetDeviceCaps(dc, HORZRES);
   int dc_height = GetDeviceCaps(dc, VERTRES);
 
@@ -104,15 +100,15 @@ double CalculatePageScale(HDC dc, int page_width, int page_height) {
   if (dc_width >= page_width && dc_height >= page_height)
     return 1.0;
 
-  double x_factor =
-      static_cast<double>(dc_width) / static_cast<double>(page_width);
-  double y_factor =
-      static_cast<double>(dc_height) / static_cast<double>(page_height);
+  float x_factor =
+      static_cast<float>(dc_width) / static_cast<float>(page_width);
+  float y_factor =
+      static_cast<float>(dc_height) / static_cast<float>(page_height);
   return std::min(x_factor, y_factor);
 }
 
 // Apply scaling to the DC.
-bool ScaleDC(HDC dc, double scale_factor) {
+bool ScaleDC(HDC dc, float scale_factor) {
   SetGraphicsMode(dc, GM_ADVANCED);
   XFORM xform = {0};
   xform.eM11 = xform.eM22 = scale_factor;

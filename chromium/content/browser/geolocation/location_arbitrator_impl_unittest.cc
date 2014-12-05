@@ -73,23 +73,21 @@ class TestingLocationArbitrator : public LocationArbitratorImpl {
         access_token_store_(access_token_store) {
   }
 
-  virtual base::Time GetTimeNow() const OVERRIDE {
-    return GetTimeNowForTest();
-  }
+  base::Time GetTimeNow() const override { return GetTimeNowForTest(); }
 
-  virtual AccessTokenStore* NewAccessTokenStore() OVERRIDE {
+  AccessTokenStore* NewAccessTokenStore() override {
     return access_token_store_.get();
   }
 
-  virtual LocationProvider* NewNetworkLocationProvider(
+  LocationProvider* NewNetworkLocationProvider(
       AccessTokenStore* access_token_store,
       net::URLRequestContextGetter* context,
       const GURL& url,
-      const base::string16& access_token) OVERRIDE {
+      const base::string16& access_token) override {
     return new MockLocationProvider(&cell_);
   }
 
-  virtual LocationProvider* NewSystemLocationProvider() OVERRIDE {
+  LocationProvider* NewSystemLocationProvider() override {
     return new MockLocationProvider(&gps_);
   }
 
@@ -107,7 +105,7 @@ class TestingLocationArbitrator : public LocationArbitratorImpl {
 class GeolocationLocationArbitratorTest : public testing::Test {
  protected:
   // testing::Test
-  virtual void SetUp() {
+  void SetUp() override {
     access_token_store_ = new NiceMock<FakeAccessTokenStore>;
     observer_.reset(new MockLocationObserver);
     LocationArbitratorImpl::LocationUpdateCallback callback =
@@ -118,8 +116,7 @@ class GeolocationLocationArbitratorTest : public testing::Test {
   }
 
   // testing::Test
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
   void CheckLastPositionInfo(double latitude,
                              double longitude,

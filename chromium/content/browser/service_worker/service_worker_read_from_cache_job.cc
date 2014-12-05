@@ -4,9 +4,13 @@
 
 #include "content/browser/service_worker/service_worker_read_from_cache_job.h"
 
+#include <string>
+#include <vector>
+
+#include "base/debug/trace_event.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
-#include "content/browser/service_worker/service_worker_histograms.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_request_headers.h"
@@ -33,6 +37,10 @@ ServiceWorkerReadFromCacheJob::~ServiceWorkerReadFromCacheJob() {
 }
 
 void ServiceWorkerReadFromCacheJob::Start() {
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerReadFromCacheJob::ReadInfo",
+                           this,
+                           "URL", request_->url().spec());
   if (!context_) {
     NotifyStartError(net::URLRequestStatus(
         net::URLRequestStatus::FAILED, net::ERR_FAILED));
@@ -44,7 +52,7 @@ void ServiceWorkerReadFromCacheJob::Start() {
   reader_ = context_->storage()->CreateResponseReader(response_id_);
   http_info_io_buffer_ = new HttpResponseInfoIOBuffer;
   reader_->ReadInfo(
-      http_info_io_buffer_,
+      http_info_io_buffer_.get(),
       base::Bind(&ServiceWorkerReadFromCacheJob::OnReadInfoComplete,
                  weak_factory_.GetWeakPtr()));
   SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
@@ -116,6 +124,10 @@ bool ServiceWorkerReadFromCacheJob::ReadRawData(
   DCHECK_NE(buf_size, 0);
   DCHECK(bytes_read);
   DCHECK(!reader_->IsReadPending());
+  TRACE_EVENT_ASYNC_BEGIN1("ServiceWorker",
+                           "ServiceWorkerReadFromCacheJob::ReadRawData",
+                           this,
+                           "URL", request_->url().spec());
   reader_->ReadData(
       buf, buf_size, base::Bind(&ServiceWorkerReadFromCacheJob::OnReadComplete,
                                 weak_factory_.GetWeakPtr()));
@@ -134,18 +146,22 @@ const net::HttpResponseInfo* ServiceWorkerReadFromCacheJob::http_info() const {
 void ServiceWorkerReadFromCacheJob::OnReadInfoComplete(int result) {
   scoped_refptr<ServiceWorkerReadFromCacheJob> protect(this);
   if (!http_info_io_buffer_->http_info) {
-    DCHECK(result < 0);
-    ServiceWorkerHistograms::CountReadResponseResult(
-        ServiceWorkerHistograms::READ_HEADERS_ERROR);
+    DCHECK_LT(result, 0);
+    ServiceWorkerMetrics::CountReadResponseResult(
+        ServiceWorkerMetrics::READ_HEADERS_ERROR);
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
     return;
   }
-  DCHECK(result >= 0);
+  DCHECK_GE(result, 0);
   SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   http_info_.reset(http_info_io_buffer_->http_info.release());
   if (is_range_request())
     SetupRangeResponse(http_info_io_buffer_->response_data_size);
   http_info_io_buffer_ = NULL;
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerReadFromCacheJob::ReadInfo",
+                         this,
+                         "Result", result);
   NotifyHeadersComplete();
 }
 
@@ -173,19 +189,23 @@ void ServiceWorkerReadFromCacheJob::SetupRangeResponse(int resource_size) {
 }
 
 void ServiceWorkerReadFromCacheJob::OnReadComplete(int result) {
-  ServiceWorkerHistograms::ReadResponseResult check_result;
+  ServiceWorkerMetrics::ReadResponseResult check_result;
   if (result == 0) {
-    check_result = ServiceWorkerHistograms::READ_OK;
+    check_result = ServiceWorkerMetrics::READ_OK;
     NotifyDone(net::URLRequestStatus());
   } else if (result < 0) {
-    check_result = ServiceWorkerHistograms::READ_DATA_ERROR;
+    check_result = ServiceWorkerMetrics::READ_DATA_ERROR;
     NotifyDone(net::URLRequestStatus(net::URLRequestStatus::FAILED, result));
   } else {
-    check_result = ServiceWorkerHistograms::READ_OK;
+    check_result = ServiceWorkerMetrics::READ_OK;
     SetStatus(net::URLRequestStatus());  // Clear the IO_PENDING status
   }
-  ServiceWorkerHistograms::CountReadResponseResult(check_result);
+  ServiceWorkerMetrics::CountReadResponseResult(check_result);
   NotifyReadComplete(result);
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "ServiceWorkerReadFromCacheJob::ReadRawData",
+                         this,
+                         "Result", result);
 }
 
 }  // namespace content

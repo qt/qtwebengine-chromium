@@ -25,37 +25,46 @@
 #define HTMLOptionsCollection_h
 
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLOptionElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
-class HTMLOptionElement;
-class HTMLSelectElement;
+class NodeListOrElement;
 
-class HTMLOptionsCollection FINAL : public HTMLCollection {
+class HTMLOptionsCollection final : public HTMLCollection {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLOptionsCollection> create(ContainerNode&, CollectionType);
+
+    HTMLOptionElement* item(unsigned offset) const { return toHTMLOptionElement(HTMLCollection::item(offset)); }
 
     void add(PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
     void add(PassRefPtrWillBeRawPtr<HTMLOptionElement>, int index, ExceptionState&);
     void remove(int index);
-    void remove(HTMLOptionElement*);
 
     int selectedIndex() const;
     void setSelectedIndex(int);
 
     void setLength(unsigned, ExceptionState&);
-    void namedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<NodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
+    void namedGetter(const AtomicString& name, NodeListOrElement&);
     bool anonymousIndexedSetter(unsigned, PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
+
+    bool elementMatches(const HTMLElement&) const;
 
 private:
     explicit HTMLOptionsCollection(ContainerNode&);
 
-    virtual void supportedPropertyNames(Vector<String>& names) OVERRIDE;
+    virtual void supportedPropertyNames(Vector<String>& names) override;
 };
 
 DEFINE_TYPE_CASTS(HTMLOptionsCollection, LiveNodeListBase, collection, collection->type() == SelectOptions, collection.type() == SelectOptions);
 
-} //namespace
+inline bool HTMLOptionsCollection::elementMatches(const HTMLElement& element) const
+{
+    return isHTMLOptionElement(element);
+}
 
-#endif
+} // namespace blink
+
+#endif // HTMLOptionsCollection_h

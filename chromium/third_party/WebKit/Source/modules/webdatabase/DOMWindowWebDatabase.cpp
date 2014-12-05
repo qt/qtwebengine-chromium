@@ -28,7 +28,7 @@
 
 #include "modules/webdatabase/DOMWindowWebDatabase.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/frame/LocalDOMWindow.h"
@@ -38,14 +38,14 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<Database> DOMWindowWebDatabase::openDatabase(LocalDOMWindow& window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState& exceptionState)
+Database* DOMWindowWebDatabase::openDatabase(LocalDOMWindow& window, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, DatabaseCallback* creationCallback, ExceptionState& exceptionState)
 {
     if (!window.isCurrentlyDisplayedInFrame())
         return nullptr;
 
-    RefPtrWillBeRawPtr<Database> database = nullptr;
+    Database* database = nullptr;
     DatabaseManager& dbManager = DatabaseManager::manager();
     DatabaseError error = DatabaseError::None;
     if (RuntimeEnabledFeatures::databaseEnabled() && window.document()->securityOrigin()->canAccessDatabase()) {
@@ -61,4 +61,4 @@ PassRefPtrWillBeRawPtr<Database> DOMWindowWebDatabase::openDatabase(LocalDOMWind
     return database;
 }
 
-} // namespace WebCore
+} // namespace blink

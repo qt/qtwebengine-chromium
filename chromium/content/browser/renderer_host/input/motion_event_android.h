@@ -1,3 +1,4 @@
+
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
@@ -10,6 +11,7 @@
 #include "base/android/scoped_java_ref.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
+#include "content/common/content_export.h"
 #include "ui/events/gesture_detection/motion_event.h"
 #include "ui/gfx/geometry/point_f.h"
 
@@ -18,8 +20,25 @@ namespace content {
 // Implementation of ui::MotionEvent wrapping a native Android MotionEvent.
 // All *input* coordinates are in device pixels (as with Android MotionEvent),
 // while all *output* coordinates are in DIPs (as with WebTouchEvent).
-class MotionEventAndroid : public ui::MotionEvent {
+class CONTENT_EXPORT MotionEventAndroid : public ui::MotionEvent {
  public:
+  struct Pointer {
+    Pointer(jint id,
+            jfloat pos_x_pixels,
+            jfloat pos_y_pixels,
+            jfloat touch_major_pixels,
+            jfloat touch_minor_pixels,
+            jfloat orientation_rad,
+            jint tool_type);
+    jint id;
+    jfloat pos_x_pixels;
+    jfloat pos_y_pixels;
+    jfloat touch_major_pixels;
+    jfloat touch_minor_pixels;
+    jfloat orientation_rad;
+    jint tool_type;
+  };
+
   // Forcing the caller to provide all cached values upon construction
   // eliminates the need to perform a JNI call to retrieve values individually.
   MotionEventAndroid(float pix_to_dip,
@@ -30,68 +49,49 @@ class MotionEventAndroid : public ui::MotionEvent {
                      jint pointer_count,
                      jint history_size,
                      jint action_index,
-                     jfloat pos_x_0_pixels,
-                     jfloat pos_y_0_pixels,
-                     jfloat pos_x_1_pixels,
-                     jfloat pos_y_1_pixels,
-                     jint pointer_id_0,
-                     jint pointer_id_1,
-                     jfloat touch_major_0_pixels,
-                     jfloat touch_major_1_pixels,
-                     jfloat raw_pos_x_pixels,
-                     jfloat raw_pos_y_pixels);
+                     jint android_button_state,
+                     jint meta_state,
+                     jfloat raw_offset_x_pixels,
+                     jfloat raw_offset_y_pixels,
+                     const Pointer& pointer0,
+                     const Pointer& pointer1);
   virtual ~MotionEventAndroid();
 
   // ui::MotionEvent methods.
-  virtual int GetId() const OVERRIDE;
-  virtual Action GetAction() const OVERRIDE;
-  virtual int GetActionIndex() const OVERRIDE;
-  virtual size_t GetPointerCount() const OVERRIDE;
-  virtual int GetPointerId(size_t pointer_index) const OVERRIDE;
-  virtual float GetX(size_t pointer_index) const OVERRIDE;
-  virtual float GetY(size_t pointer_index) const OVERRIDE;
-  virtual float GetRawX(size_t pointer_index) const OVERRIDE;
-  virtual float GetRawY(size_t pointer_index) const OVERRIDE;
-  virtual float GetTouchMajor(size_t pointer_index) const OVERRIDE;
-  virtual float GetPressure(size_t pointer_index) const OVERRIDE;
-  virtual base::TimeTicks GetEventTime() const OVERRIDE;
-  virtual size_t GetHistorySize() const OVERRIDE;
+  virtual int GetId() const override;
+  virtual Action GetAction() const override;
+  virtual int GetActionIndex() const override;
+  virtual size_t GetPointerCount() const override;
+  virtual int GetPointerId(size_t pointer_index) const override;
+  virtual float GetX(size_t pointer_index) const override;
+  virtual float GetY(size_t pointer_index) const override;
+  virtual float GetRawX(size_t pointer_index) const override;
+  virtual float GetRawY(size_t pointer_index) const override;
+  virtual float GetTouchMajor(size_t pointer_index) const override;
+  virtual float GetTouchMinor(size_t pointer_index) const override;
+  virtual float GetOrientation(size_t pointer_index) const override;
+  virtual float GetPressure(size_t pointer_index) const override;
+  virtual base::TimeTicks GetEventTime() const override;
+  virtual size_t GetHistorySize() const override;
   virtual base::TimeTicks GetHistoricalEventTime(
-      size_t historical_index) const OVERRIDE;
+      size_t historical_index) const override;
   virtual float GetHistoricalTouchMajor(size_t pointer_index,
-                                        size_t historical_index) const OVERRIDE;
+                                        size_t historical_index) const override;
   virtual float GetHistoricalX(size_t pointer_index,
-                               size_t historical_index) const OVERRIDE;
+                               size_t historical_index) const override;
   virtual float GetHistoricalY(size_t pointer_index,
-                               size_t historical_index) const OVERRIDE;
-  virtual scoped_ptr<MotionEvent> Clone() const OVERRIDE;
-  virtual scoped_ptr<MotionEvent> Cancel() const OVERRIDE;
-
-  // Additional Android MotionEvent methods.
-  float GetTouchMinor() const { return GetTouchMinor(0); }
-  float GetTouchMinor(size_t pointer_index) const;
-  float GetOrientation() const;
-  base::TimeTicks GetDownTime() const;
+                               size_t historical_index) const override;
+  virtual ToolType GetToolType(size_t pointer_index) const override;
+  virtual int GetButtonState() const override;
+  virtual int GetFlags() const override;
 
   static bool RegisterMotionEventAndroid(JNIEnv* env);
 
-  static base::android::ScopedJavaLocalRef<jobject> Obtain(
-      const MotionEventAndroid& event);
-  static base::android::ScopedJavaLocalRef<jobject> Obtain(
-      base::TimeTicks down_time,
-      base::TimeTicks event_time,
-      Action action,
-      float x_pixels,
-      float y_pixels);
-
  private:
-  MotionEventAndroid();
-  MotionEventAndroid(float pix_to_dip, JNIEnv* env, jobject event);
-  MotionEventAndroid(const MotionEventAndroid&);
-  MotionEventAndroid& operator=(const MotionEventAndroid&);
+  struct CachedPointer;
 
   float ToDips(float pixels) const;
-  gfx::PointF ToDips(const gfx::PointF& pixels) const;
+  CachedPointer FromAndroidPointer(const Pointer& pointer) const;
 
   // Cache pointer coords, id's and major lengths for the most common
   // touch-related scenarios, i.e., scrolling and pinching.  This prevents
@@ -101,23 +101,29 @@ class MotionEventAndroid : public ui::MotionEvent {
   // The Java reference to the underlying MotionEvent.
   base::android::ScopedJavaGlobalRef<jobject> event_;
 
-  base::TimeTicks cached_time_;
-  Action cached_action_;
-  size_t cached_pointer_count_;
-  size_t cached_history_size_;
-  int cached_action_index_;
-  gfx::PointF cached_positions_[MAX_POINTERS_TO_CACHE];
-  int cached_pointer_ids_[MAX_POINTERS_TO_CACHE];
-  float cached_touch_majors_[MAX_POINTERS_TO_CACHE];
-  gfx::Vector2dF cached_raw_position_offset_;
-
   // Used to convert pixel coordinates from the Java-backed MotionEvent to
   // DIP coordinates cached/returned by the MotionEventAndroid.
   const float pix_to_dip_;
 
-  // Whether |event_| should be recycled on destruction. This will only be true
-  // for those events generated via |Obtain(...)|.
-  bool should_recycle_;
+  const base::TimeTicks cached_time_;
+  const Action cached_action_;
+  const size_t cached_pointer_count_;
+  const size_t cached_history_size_;
+  const int cached_action_index_;
+  const int cached_button_state_;
+  const int cached_flags_;
+  const gfx::Vector2dF cached_raw_position_offset_;
+  struct CachedPointer {
+    CachedPointer();
+    int id;
+    gfx::PointF position;
+    float touch_major;
+    float touch_minor;
+    float orientation;
+    ToolType tool_type;
+  } cached_pointers_[MAX_POINTERS_TO_CACHE];
+
+  DISALLOW_COPY_AND_ASSIGN(MotionEventAndroid);
 };
 
 }  // namespace content

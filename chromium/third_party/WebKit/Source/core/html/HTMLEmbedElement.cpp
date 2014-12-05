@@ -27,22 +27,22 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLImageLoader.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/PluginDocument.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/rendering/RenderEmbeddedObject.h"
-#include "core/rendering/RenderWidget.h"
+#include "core/rendering/RenderPart.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLEmbedElement::HTMLEmbedElement(Document& document, bool createdByParser)
     : HTMLPlugInElement(embedTag, document, createdByParser, ShouldPreferPlugInsForImages)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& document, bool createdByParser)
@@ -52,20 +52,20 @@ PassRefPtrWillBeRawPtr<HTMLEmbedElement> HTMLEmbedElement::create(Document& docu
     return element.release();
 }
 
-static inline RenderWidget* findWidgetRenderer(const Node* n)
+static inline RenderPart* findPartRenderer(const Node* n)
 {
     if (!n->renderer())
         n = Traversal<HTMLObjectElement>::firstAncestor(*n);
 
-    if (n && n->renderer() && n->renderer()->isWidget())
-        return toRenderWidget(n->renderer());
+    if (n && n->renderer() && n->renderer()->isRenderPart())
+        return toRenderPart(n->renderer());
 
-    return 0;
+    return nullptr;
 }
 
-RenderWidget* HTMLEmbedElement::existingRenderWidget() const
+RenderPart* HTMLEmbedElement::existingRenderPart() const
 {
-    return findWidgetRenderer(this);
+    return findPartRenderer(this);
 }
 
 bool HTMLEmbedElement::isPresentationAttribute(const QualifiedName& name) const
@@ -90,7 +90,7 @@ void HTMLEmbedElement::collectStyleForPresentationAttribute(const QualifiedName&
 void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
     if (name == typeAttr) {
-        m_serviceType = value.string().lower();
+        m_serviceType = value.lower();
         size_t pos = m_serviceType.find(";");
         if (pos != kNotFound)
             m_serviceType = m_serviceType.left(pos);
@@ -103,7 +103,7 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
         if (renderer() && isImageType()) {
             if (!m_imageLoader)
                 m_imageLoader = HTMLImageLoader::create(this);
-            m_imageLoader->updateFromElementIgnoringPreviousError();
+            m_imageLoader->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         }
     } else {
         HTMLPlugInElement::parseAttribute(name, value);
@@ -112,14 +112,10 @@ void HTMLEmbedElement::parseAttribute(const QualifiedName& name, const AtomicStr
 
 void HTMLEmbedElement::parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues)
 {
-    if (!hasAttributes())
-        return;
-
     AttributeCollection attributes = this->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        paramNames.append(it->localName().string());
-        paramValues.append(it->value().string());
+    for (const Attribute& attribute : attributes) {
+        paramNames.append(attribute.localName().string());
+        paramValues.append(attribute.value().string());
     }
 }
 
@@ -183,11 +179,6 @@ bool HTMLEmbedElement::isURLAttribute(const Attribute& attribute) const
 const QualifiedName& HTMLEmbedElement::subResourceAttributeName() const
 {
     return srcAttr;
-}
-
-const AtomicString HTMLEmbedElement::imageSourceURL() const
-{
-    return getAttribute(srcAttr);
 }
 
 bool HTMLEmbedElement::isInteractiveContent() const

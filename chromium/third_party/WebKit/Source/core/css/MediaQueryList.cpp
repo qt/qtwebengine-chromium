@@ -24,28 +24,48 @@
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/MediaQueryListListener.h"
 #include "core/css/MediaQueryMatcher.h"
+#include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryList::create(PassRefPtrWillBeRawPtr<MediaQueryMatcher> vector, PassRefPtrWillBeRawPtr<MediaQuerySet> media, bool matches)
+PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryList::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<MediaQueryMatcher> matcher, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
 {
-    return adoptRefWillBeNoop(new MediaQueryList(vector, media, matches));
+    RefPtrWillBeRawPtr<MediaQueryList> list = adoptRefWillBeNoop(new MediaQueryList(context, matcher, media));
+    list->suspendIfNeeded();
+    return list.release();
 }
 
-MediaQueryList::MediaQueryList(PassRefPtrWillBeRawPtr<MediaQueryMatcher> vector, PassRefPtrWillBeRawPtr<MediaQuerySet> media, bool matches)
-    : m_matcher(vector)
+MediaQueryList::MediaQueryList(ExecutionContext* context, PassRefPtrWillBeRawPtr<MediaQueryMatcher> matcher, PassRefPtrWillBeRawPtr<MediaQuerySet> media)
+    : ActiveDOMObject(context)
+    , m_matcher(matcher)
     , m_media(media)
-    , m_evaluationRound(m_matcher->evaluationRound())
-    , m_changeRound(m_evaluationRound - 1) // m_evaluationRound and m_changeRound initial values must be different.
-    , m_matches(matches)
+    , m_matchesDirty(true)
+    , m_matches(false)
 {
+    m_matcher->addMediaQueryList(this);
+    updateMatches();
 }
 
-DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQueryList)
+MediaQueryList::~MediaQueryList()
+{
+#if !ENABLE(OILPAN)
+    m_matcher->removeMediaQueryList(this);
+#endif
+}
 
 String MediaQueryList::media() const
 {
     return m_media->mediaText();
+}
+
+void MediaQueryList::addDeprecatedListener(PassRefPtr<EventListener> listener)
+{
+    addEventListener(EventTypeNames::change, listener, false);
+}
+
+void MediaQueryList::removeDeprecatedListener(PassRefPtr<EventListener> listener)
+{
+    removeEventListener(EventTypeNames::change, listener, false);
 }
 
 void MediaQueryList::addListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener)
@@ -53,7 +73,7 @@ void MediaQueryList::addListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> 
     if (!listener)
         return;
 
-    m_matcher->addListener(listener, this);
+    m_listeners.add(listener);
 }
 
 void MediaQueryList::removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener)
@@ -61,38 +81,68 @@ void MediaQueryList::removeListener(PassRefPtrWillBeRawPtr<MediaQueryListListene
     if (!listener)
         return;
 
-    m_matcher->removeListener(listener.get(), this);
+    RefPtrWillBeRawPtr<MediaQueryList> protect(this);
+    m_listeners.remove(listener);
 }
 
-bool MediaQueryList::evaluate(MediaQueryEvaluator* evaluator)
+bool MediaQueryList::hasPendingActivity() const
 {
-    if (m_evaluationRound != m_matcher->evaluationRound() && evaluator)
-        setMatches(evaluator->eval(m_media.get()));
-    return m_changeRound == m_matcher->evaluationRound();
+    return m_listeners.size() || hasEventListeners(EventTypeNames::change);
 }
 
-void MediaQueryList::setMatches(bool newValue)
+void MediaQueryList::stop()
 {
-    m_evaluationRound = m_matcher->evaluationRound();
+    // m_listeners.clear() can drop the last ref to this MediaQueryList.
+    RefPtrWillBeRawPtr<MediaQueryList> protect(this);
+    m_listeners.clear();
+    removeAllEventListeners();
+}
 
-    if (newValue == m_matches)
-        return;
+bool MediaQueryList::mediaFeaturesChanged(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >* listenersToNotify)
+{
+    m_matchesDirty = true;
+    if (!updateMatches())
+        return false;
+    for (const auto& listener : m_listeners) {
+        listenersToNotify->append(listener);
+    }
+    return hasEventListeners(EventTypeNames::change);
+}
 
-    m_matches = newValue;
-    m_changeRound = m_evaluationRound;
+bool MediaQueryList::updateMatches()
+{
+    m_matchesDirty = false;
+    if (m_matches != m_matcher->evaluate(m_media.get())) {
+        m_matches = !m_matches;
+        return true;
+    }
+    return false;
 }
 
 bool MediaQueryList::matches()
 {
-    if (m_evaluationRound != m_matcher->evaluationRound())
-        setMatches(m_matcher->evaluate(m_media.get()));
+    updateMatches();
     return m_matches;
 }
 
 void MediaQueryList::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_matcher);
     visitor->trace(m_media);
+    visitor->trace(m_listeners);
+#endif
+    EventTargetWithInlineData::trace(visitor);
+}
+
+const AtomicString& MediaQueryList::interfaceName() const
+{
+    return EventTargetNames::MediaQueryList;
+}
+
+ExecutionContext* MediaQueryList::executionContext() const
+{
+    return ActiveDOMObject::executionContext();
 }
 
 }

@@ -40,9 +40,8 @@ class MyObject : public BaseClass,
 
  protected:
   MyObject() : value_(0) {}
-  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
-  virtual ~MyObject() {}
+  ObjectTemplateBuilder GetObjectTemplateBuilder(v8::Isolate* isolate) override;
+  ~MyObject() override {}
 
  private:
   int value_;
@@ -61,8 +60,8 @@ class MyObjectSubclass : public MyObject {
   std::string result;
 
  private:
-  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE {
+  ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override {
     return MyObject::GetObjectTemplateBuilder(isolate)
         .SetMethod("sayHello", &MyObjectSubclass::SayHello);
   }
@@ -70,8 +69,7 @@ class MyObjectSubclass : public MyObject {
   MyObjectSubclass() {
   }
 
-  virtual ~MyObjectSubclass() {
-  }
+  ~MyObjectSubclass() override {}
 };
 
 class MyCallableObject : public Wrappable<MyCallableObject> {
@@ -85,8 +83,8 @@ class MyCallableObject : public Wrappable<MyCallableObject> {
   int result() { return result_; }
 
  private:
-  virtual ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE {
+  ObjectTemplateBuilder GetObjectTemplateBuilder(
+      v8::Isolate* isolate) override {
     return Wrappable<MyCallableObject>::GetObjectTemplateBuilder(isolate)
         .SetCallAsFunctionHandler(&MyCallableObject::Call);
   }
@@ -94,11 +92,13 @@ class MyCallableObject : public Wrappable<MyCallableObject> {
   MyCallableObject() : result_(0) {
   }
 
-  virtual ~MyCallableObject() {
-  }
+  ~MyCallableObject() override {}
 
-  void Call(int val) {
-    result_ = val;
+  void Call(int val1, int val2, int val3, const gin::Arguments& arguments) {
+    if (arguments.IsConstructCall())
+      arguments.ThrowTypeError("Cannot be called as constructor.");
+    else
+      result_ = val1;
   }
 
   int result_;
@@ -222,28 +222,6 @@ TEST_F(WrappableTest, WrappableSubclass) {
   EXPECT_EQ("Hello, Lily", object->result);
 }
 
-TEST_F(WrappableTest, ErrorInObjectConstructorProperty) {
-  v8::Isolate* isolate = instance_->isolate();
-  v8::HandleScope handle_scope(isolate);
-
-  v8::Handle<v8::String> source = StringToV8(
-      isolate,
-      "(function() {"
-      "  Object.defineProperty(Object.prototype, 'constructor', {"
-      "    get: function() { throw 'Error'; },"
-      "    set: function() { throw 'Error'; }"
-      "  });"
-      "})();");
-  EXPECT_FALSE(source.IsEmpty());
-  v8::Handle<v8::Script> script = v8::Script::Compile(source);
-  script->Run();
-
-  gin::TryCatch try_catch;
-  gin::Handle<MyObject> obj = MyObject::Create(isolate);
-  EXPECT_TRUE(obj.IsEmpty());
-  EXPECT_TRUE(try_catch.HasCaught());
-}
-
 TEST_F(WrappableTest, CallAsFunction) {
   v8::Isolate* isolate = instance_->isolate();
   v8::HandleScope handle_scope(isolate);
@@ -252,7 +230,7 @@ TEST_F(WrappableTest, CallAsFunction) {
   EXPECT_EQ(0, object->result());
   v8::Handle<v8::String> source = StringToV8(isolate,
                                              "(function(obj) {"
-                                             "obj(42);"
+                                             "obj(42, 2, 5);"
                                              "})");
   gin::TryCatch try_catch;
   v8::Handle<v8::Script> script = v8::Script::Compile(source);
@@ -265,6 +243,28 @@ TEST_F(WrappableTest, CallAsFunction) {
   func->Call(v8::Undefined(isolate), 1, argv);
   EXPECT_FALSE(try_catch.HasCaught());
   EXPECT_EQ(42, object->result());
+}
+
+TEST_F(WrappableTest, CallAsConstructor) {
+  v8::Isolate* isolate = instance_->isolate();
+  v8::HandleScope handle_scope(isolate);
+
+  gin::Handle<MyCallableObject> object(MyCallableObject::Create(isolate));
+  EXPECT_EQ(0, object->result());
+  v8::Handle<v8::String> source = StringToV8(isolate,
+                                             "(function(obj) {"
+                                             "new obj(42, 2, 5);"
+                                             "})");
+  gin::TryCatch try_catch;
+  v8::Handle<v8::Script> script = v8::Script::Compile(source);
+  v8::Handle<v8::Value> val = script->Run();
+  v8::Handle<v8::Function> func;
+  EXPECT_TRUE(ConvertFromV8(isolate, val, &func));
+  v8::Handle<v8::Value> argv[] = {
+    ConvertToV8(isolate, object.get())
+  };
+  func->Call(v8::Undefined(isolate), 1, argv);
+  EXPECT_TRUE(try_catch.HasCaught());
 }
 
 }  // namespace gin

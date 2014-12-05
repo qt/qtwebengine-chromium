@@ -34,7 +34,7 @@
 #include "platform/geometry/FloatSize.h"
 
 
-namespace WebCore {
+namespace blink {
 
 void GeneratedImage::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsicHeight, FloatSize& intrinsicRatio)
 {
@@ -42,4 +42,4 @@ void GeneratedImage::computeIntrinsicDimensions(Length& intrinsicWidth, Length& 
     intrinsicRatio = FloatSize();
 }
 
-}
+} // namespace blink

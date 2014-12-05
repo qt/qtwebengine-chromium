@@ -11,6 +11,7 @@
     'generated_html_files': [
       '<(SHARED_INTERMEDIATE_DIR)/main.html',
       '<(SHARED_INTERMEDIATE_DIR)/wcs_sandbox.html',
+      '<(SHARED_INTERMEDIATE_DIR)/background.html',
     ],
   },
   'dependencies': [
@@ -20,7 +21,7 @@
   'conditions': [
     ['run_jscompile != 0', {
       'variables': {
-        'success_stamp': '<(PRODUCT_DIR)/remoting_webapp_jscompile.stamp',
+        'success_stamp': '<(PRODUCT_DIR)/<(_target_name)_jscompile.stamp',
       },
       'actions': [
         {
@@ -47,7 +48,7 @@
       'action_name': 'Build Remoting WebApp',
       'inputs': [
         'webapp/build-webapp.py',
-        'webapp/manifest.json.jinja2',
+        'webapp/crd/manifest.json.jinja2',
         '<(chrome_version_path)',
         '<(remoting_version_path)',
         '<@(generated_html_files)',
@@ -65,7 +66,7 @@
         '<(version_full)',
         '<(output_dir)',
         '<(zip_path)',
-        'webapp/manifest.json.jinja2',
+        'webapp/crd/manifest.json.jinja2',
         '<(webapp_type)',
         '<@(generated_html_files)',
         '<@(remoting_webapp_files)',

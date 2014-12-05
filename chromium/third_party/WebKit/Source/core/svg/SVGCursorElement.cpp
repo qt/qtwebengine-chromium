@@ -24,9 +24,8 @@
 
 #include "core/SVGNames.h"
 #include "core/XLinkNames.h"
-#include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGCursorElement::SVGCursorElement(Document& document)
     : SVGElement(SVGNames::cursorTag, document)
@@ -35,8 +34,6 @@ inline SVGCursorElement::SVGCursorElement(Document& document)
     , m_x(SVGAnimatedLength::create(this, SVGNames::xAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y(SVGAnimatedLength::create(this, SVGNames::yAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
 }
@@ -47,9 +44,8 @@ SVGCursorElement::~SVGCursorElement()
 {
     // The below teardown is all handled by weak pointer processing in oilpan.
 #if !ENABLE(OILPAN)
-    HashSet<RawPtr<SVGElement> >::iterator end = m_clients.end();
-    for (HashSet<RawPtr<SVGElement> >::iterator it = m_clients.begin(); it != end; ++it)
-        (*it)->cursorElementRemoved();
+    for (const auto& client : m_clients)
+        client->cursorElementRemoved();
 #endif
 }
 
@@ -67,21 +63,7 @@ bool SVGCursorElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGCursorElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-    } else if (name == SVGNames::xAttr) {
-        m_x->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::yAttr) {
-        m_y->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else if (SVGTests::parseAttribute(name, value)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGCursorElement::addClient(SVGElement* element)
@@ -116,17 +98,16 @@ void SVGCursorElement::svgAttributeChanged(const QualifiedName& attrName)
     SVGElement::InvalidationGuard invalidationGuard(this);
 
     // Any change of a cursor specific attribute triggers this recalc.
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator it = m_clients.begin();
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<SVGElement> >::const_iterator end = m_clients.end();
-
-    for (; it != end; ++it)
-        (*it)->setNeedsStyleRecalc(SubtreeStyleChange);
+    for (const auto& client : m_clients)
+        client->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SVGCursor));
 }
 
 void SVGCursorElement::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_clients);
+#endif
     SVGElement::trace(visitor);
 }
 
-}
+} // namespace blink

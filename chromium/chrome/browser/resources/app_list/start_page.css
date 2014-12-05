@@ -5,7 +5,7 @@
 html,
 body,
 #start-page {
-  background-color: rgb(251, 251, 251);
+  background-color: rgb(245, 245, 245);
   height: 100%;
   margin: 0;
   overflow: hidden;
@@ -32,4 +32,4 @@ body,
   width: 269px;
 }
 
-<include src="recommended_apps.css"/>
+<include src="recommended_apps.css">

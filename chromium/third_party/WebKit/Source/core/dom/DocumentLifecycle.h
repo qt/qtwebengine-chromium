@@ -34,7 +34,7 @@
 #include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentLifecycle {
     WTF_MAKE_NONCOPYABLE(DocumentLifecycle);
@@ -57,6 +57,9 @@ public:
 
         InCompositingUpdate,
         CompositingClean,
+
+        InPaintInvalidation,
+        PaintInvalidationClean,
 
         // Once the document starts shuting down, we cannot return
         // to the style/layout/rendering states.
@@ -132,7 +135,7 @@ public:
     }
 
 private:
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool canAdvanceTo(State) const;
     bool canRewindTo(State) const;
 #endif
@@ -163,6 +166,7 @@ inline bool DocumentLifecycle::stateAllowsDetach() const
         || m_state == InPreLayout
         || m_state == LayoutClean
         || m_state == CompositingClean
+        || m_state == PaintInvalidationClean
         || m_state == Stopping;
 }
 

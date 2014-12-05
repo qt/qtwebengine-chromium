@@ -5,8 +5,6 @@
 #ifndef MOJO_PUBLIC_CPP_BINDINGS_NO_INTERFACE_H_
 #define MOJO_PUBLIC_CPP_BINDINGS_NO_INTERFACE_H_
 
-#include <assert.h>
-
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/message_filter.h"
 #include "mojo/public/cpp/system/core.h"
@@ -39,12 +37,11 @@ class NoInterfaceStub : public MessageReceiverWithResponder {
  public:
   NoInterfaceStub() {}
   void set_sink(NoInterface* sink) {}
-  NoInterface* sink() { return NULL; }
-  virtual bool Accept(Message* message) MOJO_OVERRIDE;
-  virtual bool AcceptWithResponder(Message* message, MessageReceiver* responder)
-      MOJO_OVERRIDE;
+  NoInterface* sink() { return nullptr; }
+  bool Accept(Message* message) override;
+  bool AcceptWithResponder(Message* message,
+                           MessageReceiver* responder) override;
 };
-
 
 // AnyInterface is for use in cases where any interface would do (e.g., see the
 // Shell::Connect method).

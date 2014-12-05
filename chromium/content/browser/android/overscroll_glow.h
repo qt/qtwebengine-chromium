@@ -5,14 +5,12 @@
 #ifndef CONTENT_BROWSER_ANDROID_OVERSCROLL_GLOW_H_
 #define CONTENT_BROWSER_ANDROID_OVERSCROLL_GLOW_H_
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
-#include "content/browser/android/edge_effect.h"
 #include "ui/gfx/size_f.h"
 #include "ui/gfx/vector2d_f.h"
-
-class SkBitmap;
 
 namespace cc {
 class Layer;
@@ -20,17 +18,23 @@ class Layer;
 
 namespace content {
 
+class EdgeEffectBase;
+
 /* |OverscrollGlow| mirrors its Android counterpart, OverscrollGlow.java.
  * Conscious tradeoffs were made to align this as closely as possible with the
  * original Android Java version.
  */
 class OverscrollGlow {
  public:
-  // Create a new effect. If |enabled| is false, the effect will remain
-  // deactivated until explicitly enabled.
-  // Note: No resources will be allocated until the effect is both
-  //       enabled and an overscroll event has occurred.
-  static scoped_ptr<OverscrollGlow> Create(bool enabled);
+  enum Edge { EDGE_TOP = 0, EDGE_LEFT, EDGE_BOTTOM, EDGE_RIGHT, EDGE_COUNT };
+
+  // Allows lazy creation of the edge effects.
+  typedef base::Callback<scoped_ptr<EdgeEffectBase>(void)> EdgeEffectProvider;
+
+  // |edge_effect_provider| must be valid for the duration of the effect's
+  // lifetime.  The effect is enabled by default, but will remain dormant until
+  // the first overscroll event.
+  explicit OverscrollGlow(const EdgeEffectProvider& edge_effect_provider);
 
   ~OverscrollGlow();
 
@@ -50,7 +54,8 @@ class OverscrollGlow {
                       base::TimeTicks current_time,
                       gfx::Vector2dF accumulated_overscroll,
                       gfx::Vector2dF overscroll_delta,
-                      gfx::Vector2dF velocity);
+                      gfx::Vector2dF velocity,
+                      gfx::Vector2dF overscroll_location);
 
   // Returns true if the effect still needs animation ticks.
   // Note: The effect will detach itself when no further animation is required.
@@ -61,33 +66,31 @@ class OverscrollGlow {
   struct DisplayParameters {
     DisplayParameters();
     gfx::SizeF size;
-    float edge_offsets[EdgeEffect::EDGE_COUNT];
-    float device_scale_factor;
+    float edge_offsets[EDGE_COUNT];
   };
   void UpdateDisplayParameters(const DisplayParameters& params);
 
-
  private:
   enum Axis { AXIS_X, AXIS_Y };
-
-  OverscrollGlow(bool enabled);
 
   // Returns whether the effect is initialized.
   bool InitializeIfNecessary();
   bool NeedsAnimate() const;
   void UpdateLayerAttachment(cc::Layer* parent);
   void Detach();
-  void Pull(base::TimeTicks current_time, gfx::Vector2dF overscroll_delta);
+  void Pull(base::TimeTicks current_time,
+            const gfx::Vector2dF& overscroll_delta,
+            const gfx::Vector2dF& overscroll_location);
   void Absorb(base::TimeTicks current_time,
-              gfx::Vector2dF velocity,
+              const gfx::Vector2dF& velocity,
               bool x_overscroll_started,
               bool y_overscroll_started);
   void Release(base::TimeTicks current_time);
-  void ReleaseAxis(Axis axis, base::TimeTicks current_time);
 
-  EdgeEffect* GetOppositeEdge(int edge_index);
+  EdgeEffectBase* GetOppositeEdge(int edge_index);
 
-  scoped_ptr<EdgeEffect> edge_effects_[EdgeEffect::EDGE_COUNT];
+  EdgeEffectProvider edge_effect_provider_;
+  scoped_ptr<EdgeEffectBase> edge_effects_[EDGE_COUNT];
 
   DisplayParameters display_params_;
   bool enabled_;

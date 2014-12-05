@@ -24,6 +24,7 @@
 
 #if defined(USE_X11)
 #include <X11/Xlib.h>
+#include "ui/aura/test/x11_event_sender.h"
 #include "ui/events/test/events_test_utils_x11.h"
 #endif  // USE_X11
 
@@ -40,10 +41,10 @@ class MockDispatcher : public ui::PlatformEventDispatcher {
 
  private:
   // ui::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override {
     return true;
   }
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE {
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override {
     if (ui::EventTypeFromNative(event) == ui::ET_KEY_RELEASED)
       num_key_events_dispatched_++;
     return ui::POST_DISPATCH_NONE;
@@ -57,16 +58,16 @@ class MockDispatcher : public ui::PlatformEventDispatcher {
 class TestTarget : public ui::AcceleratorTarget {
  public:
   TestTarget() : accelerator_pressed_count_(0) {}
-  virtual ~TestTarget() {}
+  ~TestTarget() override {}
 
   int accelerator_pressed_count() const { return accelerator_pressed_count_; }
 
   // Overridden from ui::AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE {
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override {
     accelerator_pressed_count_++;
     return true;
   }
-  virtual bool CanHandleAccelerators() const OVERRIDE { return true; }
+  bool CanHandleAccelerators() const override { return true; }
 
  private:
   int accelerator_pressed_count_;
@@ -79,18 +80,18 @@ void DispatchKeyReleaseA(aura::Window* root_window) {
 // manager only checks a keyup event following a keydown event. See
 // ShouldHandle() in ui/base/accelerators/accelerator_manager.cc for details.
 #if defined(OS_WIN)
-  MSG native_event_down = {NULL, WM_KEYDOWN, ui::VKEY_A, 0};
   aura::WindowTreeHost* host = root_window->GetHost();
-  host->PostNativeEvent(native_event_down);
+  HWND hwnd = host->GetAcceleratedWidget();
+  ::PostMessage(hwnd, WM_KEYDOWN, ui::VKEY_A, 0);
   MSG native_event_up = {NULL, WM_KEYUP, ui::VKEY_A, 0};
-  host->PostNativeEvent(native_event_up);
+  ::PostMessage(hwnd, WM_KEYUP, ui::VKEY_A, 0);
 #elif defined(USE_X11)
   ui::ScopedXI2Event native_event;
   native_event.InitKeyEvent(ui::ET_KEY_PRESSED, ui::VKEY_A, 0);
   aura::WindowTreeHost* host = root_window->GetHost();
-  host->PostNativeEvent(native_event);
+  aura::test::PostEventToWindowTreeHost(*native_event, host);
   native_event.InitKeyEvent(ui::ET_KEY_RELEASED, ui::VKEY_A, 0);
-  host->PostNativeEvent(native_event);
+  aura::test::PostEventToWindowTreeHost(*native_event, host);
 #endif
   // Make sure the inner message-loop terminates after dispatching the events.
   base::MessageLoop::current()->PostTask(
@@ -101,11 +102,10 @@ class MockNestedAcceleratorDelegate : public NestedAcceleratorDelegate {
  public:
   MockNestedAcceleratorDelegate()
       : accelerator_manager_(new ui::AcceleratorManager) {}
-  virtual ~MockNestedAcceleratorDelegate() {}
+  ~MockNestedAcceleratorDelegate() override {}
 
   // NestedAcceleratorDelegate:
-  virtual Result ProcessAccelerator(
-      const ui::Accelerator& accelerator) OVERRIDE {
+  Result ProcessAccelerator(const ui::Accelerator& accelerator) override {
     return accelerator_manager_->Process(accelerator) ?
         RESULT_PROCESSED : RESULT_NOT_PROCESSED;
   }
@@ -125,9 +125,9 @@ class MockNestedAcceleratorDelegate : public NestedAcceleratorDelegate {
 class NestedAcceleratorTest : public aura::test::AuraTestBase {
  public:
   NestedAcceleratorTest() {}
-  virtual ~NestedAcceleratorTest() {}
+  ~NestedAcceleratorTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AuraTestBase::SetUp();
     delegate_ = new MockNestedAcceleratorDelegate();
     nested_accelerator_controller_.reset(
@@ -136,7 +136,7 @@ class NestedAcceleratorTest : public aura::test::AuraTestBase {
                                       nested_accelerator_controller_.get());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     aura::client::SetDispatcherClient(root_window(), NULL);
     AuraTestBase::TearDown();
     delegate_ = NULL;
@@ -155,7 +155,8 @@ class NestedAcceleratorTest : public aura::test::AuraTestBase {
 }  // namespace
 
 // Aura window above lock screen in z order.
-TEST_F(NestedAcceleratorTest, AssociatedWindowAboveLockScreen) {
+// http://crbug.com/396494
+TEST_F(NestedAcceleratorTest, DISABLED_AssociatedWindowAboveLockScreen) {
   // TODO(oshima|sadrul): remove when Win implements PES.
   if (!ui::PlatformEventSource::GetInstance())
     return;
@@ -180,7 +181,8 @@ TEST_F(NestedAcceleratorTest, AssociatedWindowAboveLockScreen) {
 }
 
 // Test that the nested dispatcher handles accelerators.
-TEST_F(NestedAcceleratorTest, AcceleratorsHandled) {
+// http://crbug.com/396494
+TEST_F(NestedAcceleratorTest, DISABLED_AcceleratorsHandled) {
   // TODO(oshima|sadrul): remove when Win implements PES.
   if (!ui::PlatformEventSource::GetInstance())
     return;

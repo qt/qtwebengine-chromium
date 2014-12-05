@@ -36,10 +36,8 @@
 #include "wtf/OwnPtr.h"
 
 namespace blink {
-class WebGraphicsContext3DProvider;
-}
 
-namespace WebCore {
+class WebGraphicsContext3DProvider;
 
 // This is a GPU backed surface that has no canvas or render target.
 class PLATFORM_EXPORT WebGLImageBufferSurface : public ImageBufferSurface {
@@ -48,25 +46,25 @@ public:
     WebGLImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
     virtual ~WebGLImageBufferSurface();
 
-    virtual SkCanvas* canvas() const OVERRIDE { return 0; }
-    virtual const SkBitmap& bitmap() const OVERRIDE { return m_bitmap; }
-    virtual bool isValid() const OVERRIDE { return m_bitmap.pixelRef(); }
-    virtual bool isAccelerated() const OVERRIDE { return true; }
-    virtual Platform3DObject getBackingTexture() const OVERRIDE;
-    virtual bool cachedBitmapEnabled() const OVERRIDE { return true; }
-    virtual const SkBitmap& cachedBitmap() const OVERRIDE { return m_cachedBitmap; }
-    virtual void invalidateCachedBitmap() OVERRIDE;
-    virtual void updateCachedBitmapIfNeeded() OVERRIDE;
+    virtual SkCanvas* canvas() const override { return 0; }
+    virtual const SkBitmap& bitmap() override { return m_bitmap; }
+    virtual bool isValid() const override { return m_bitmap.pixelRef(); }
+    virtual bool isAccelerated() const override { return true; }
+    virtual Platform3DObject getBackingTexture() const override;
+    virtual void didModifyBackingTexture() override;
+    virtual bool cachedBitmapEnabled() const override { return true; }
+    virtual const SkBitmap& cachedBitmap() const override { return m_cachedBitmap; }
+    virtual void invalidateCachedBitmap() override;
+    virtual void updateCachedBitmapIfNeeded() override;
 
 private:
     SkBitmap m_bitmap;
     // This raw-pixel based SkBitmap works as a cache at CPU side to avoid heavy cost
     // on readback from GPU side to CPU side in some cases.
     SkBitmap m_cachedBitmap;
-    OwnPtr<blink::WebGraphicsContext3DProvider> m_contextProvider;
+    OwnPtr<WebGraphicsContext3DProvider> m_contextProvider;
 };
 
-
-} // namespace WebCore
+} // namespace blink
 
 #endif

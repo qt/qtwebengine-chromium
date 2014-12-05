@@ -31,13 +31,14 @@
 #ifndef SVGLengthTearOff_h
 #define SVGLengthTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGLength.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGLengthTearOff FINAL : public SVGPropertyTearOff<SVGLength>, public ScriptWrappable {
+class SVGLengthTearOff final : public SVGPropertyTearOff<SVGLength>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // Forward declare these enums in the w3c naming scheme, for IDL generation
     enum {
@@ -74,6 +75,6 @@ private:
     SVGLengthTearOff(PassRefPtr<SVGLength>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGLengthTearOff_h_
+#endif // SVGLengthTearOff_h

@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegWithContext.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegCurvetoQuadraticSmoothRel FINAL : public SVGPathSegSingleCoordinate {
+class SVGPathSegCurvetoQuadraticSmoothRel final : public SVGPathSegSingleCoordinate {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegCurvetoQuadraticSmoothRel> create(SVGPathElement* element, SVGPathSegRole role, float x, float y)
+    static PassRefPtr<SVGPathSegCurvetoQuadraticSmoothRel> create(SVGPathElement* element, float x, float y)
     {
-        return adoptRef(new SVGPathSegCurvetoQuadraticSmoothRel(element, role, x, y));
+        return adoptRef(new SVGPathSegCurvetoQuadraticSmoothRel(element, x, y));
     }
 
 private:
-    SVGPathSegCurvetoQuadraticSmoothRel(SVGPathElement* element, SVGPathSegRole role, float x, float y)
-        : SVGPathSegSingleCoordinate(element, role, x, y)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegCurvetoQuadraticSmoothRel(SVGPathElement* element, float x, float y)
+        : SVGPathSegSingleCoordinate(element, x, y) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_REL; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "t"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_CURVETO_QUADRATIC_SMOOTH_REL; }
+    virtual String pathSegTypeAsLetter() const override { return "t"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegCurvetoQuadraticSmoothRel_h

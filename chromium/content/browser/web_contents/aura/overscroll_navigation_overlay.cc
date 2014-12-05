@@ -21,13 +21,31 @@
 #include "ui/gfx/image/image_skia.h"
 
 namespace content {
+namespace {
+
+// Returns true if the entry's URL or any of the URLs in entry's redirect chain
+// match |url|.
+bool DoesEntryMatchURL(NavigationEntry* entry, const GURL& url) {
+  if (entry->GetURL() == url)
+    return true;
+  const std::vector<GURL>& redirect_chain = entry->GetRedirectChain();
+  for (std::vector<GURL>::const_iterator it = redirect_chain.begin();
+       it != redirect_chain.end();
+       it++) {
+    if (*it == url)
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
 
 // A LayerDelegate that paints an image for the layer.
 class ImageLayerDelegate : public ui::LayerDelegate {
  public:
   ImageLayerDelegate() {}
 
-  virtual ~ImageLayerDelegate() {}
+  ~ImageLayerDelegate() override {}
 
   void SetImage(const gfx::Image& image) {
     image_ = image;
@@ -37,9 +55,9 @@ class ImageLayerDelegate : public ui::LayerDelegate {
 
  private:
   // Overridden from ui::LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaintLayer(gfx::Canvas* canvas) override {
     if (image_.IsEmpty()) {
-      canvas->DrawColor(SK_ColorGRAY);
+      canvas->DrawColor(SK_ColorWHITE);
     } else {
       SkISize size = canvas->sk_canvas()->getDeviceSize();
       if (size.width() != image_size_.width() ||
@@ -50,13 +68,14 @@ class ImageLayerDelegate : public ui::LayerDelegate {
     }
   }
 
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override {}
+
   // Called when the layer's device scale factor has changed.
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE {
-  }
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override {}
 
   // Invoked prior to the bounds changing. The returned closured is run after
   // the bounds change.
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE {
+  base::Closure PrepareForLayerBoundsChange() override {
     return base::Closure();
   }
 
@@ -89,21 +108,19 @@ class OverlayDismissAnimator
   }
 
   // Overridden from ui::LayerAnimationObserver
-  virtual void OnLayerAnimationEnded(
-      ui::LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationEnded(ui::LayerAnimationSequence* sequence) override {
     delete this;
   }
 
-  virtual void OnLayerAnimationAborted(
-      ui::LayerAnimationSequence* sequence) OVERRIDE {
+  void OnLayerAnimationAborted(ui::LayerAnimationSequence* sequence) override {
     delete this;
   }
 
-  virtual void OnLayerAnimationScheduled(
-      ui::LayerAnimationSequence* sequence) OVERRIDE {}
+  void OnLayerAnimationScheduled(
+      ui::LayerAnimationSequence* sequence) override {}
 
  private:
-  virtual ~OverlayDismissAnimator() {}
+  ~OverlayDismissAnimator() override {}
 
   scoped_ptr<ui::Layer> layer_;
 
@@ -116,7 +133,6 @@ OverscrollNavigationOverlay::OverscrollNavigationOverlay(
       image_delegate_(NULL),
       loading_complete_(false),
       received_paint_update_(false),
-      pending_entry_id_(0),
       slide_direction_(SLIDE_UNKNOWN) {
 }
 
@@ -127,7 +143,6 @@ void OverscrollNavigationOverlay::StartObserving() {
   loading_complete_ = false;
   received_paint_update_ = false;
   overlay_dismiss_layer_.reset();
-  pending_entry_id_ = 0;
   Observe(web_contents_);
 
   // Make sure the overlay window is on top.
@@ -137,10 +152,10 @@ void OverscrollNavigationOverlay::StartObserving() {
   // Assumes the navigation has been initiated.
   NavigationEntry* pending_entry =
       web_contents_->GetController().GetPendingEntry();
-  // Save id of the pending entry to identify when it loads and paints later.
+  // Save url of the pending entry to identify when it loads and paints later.
   // Under some circumstances navigation can leave a null pending entry -
   // see comments in NavigationControllerImpl::NavigateToPendingEntry().
-  pending_entry_id_ = pending_entry ? pending_entry->GetUniqueID() : 0;
+  pending_entry_url_ = pending_entry ? pending_entry->GetURL() : GURL();
 }
 
 void OverscrollNavigationOverlay::SetOverlayWindow(
@@ -197,8 +212,7 @@ ui::Layer* OverscrollNavigationOverlay::CreateSlideLayer(int offset) {
   gfx::Image image;
   if (entry && entry->screenshot().get()) {
     std::vector<gfx::ImagePNGRep> image_reps;
-    image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(),
-        ui::GetScaleFactorForNativeView(window_.get())));
+    image_reps.push_back(gfx::ImagePNGRep(entry->screenshot(), 1.0f));
     image = gfx::Image(image_reps);
   }
   if (!layer_delegate_)
@@ -274,29 +288,27 @@ void OverscrollNavigationOverlay::OnWindowSliderDestroyed() {
   // (including recursively) for a single event.
   if (window_slider_.get()) {
     // The slider has just been destroyed. Release the ownership.
-    WindowSlider* slider ALLOW_UNUSED = window_slider_.release();
+    ignore_result(window_slider_.release());
     StopObservingIfDone();
   }
 }
 
 void OverscrollNavigationOverlay::DidFirstVisuallyNonEmptyPaint() {
-  int visible_entry_id =
-      web_contents_->GetController().GetVisibleEntry()->GetUniqueID();
-  if (visible_entry_id == pending_entry_id_ || !pending_entry_id_) {
+  NavigationEntry* visible_entry =
+      web_contents_->GetController().GetVisibleEntry();
+  if (pending_entry_url_.is_empty() ||
+      DoesEntryMatchURL(visible_entry, pending_entry_url_)) {
     received_paint_update_ = true;
     StopObservingIfDone();
   }
 }
 
 void OverscrollNavigationOverlay::DidStopLoading(RenderViewHost* host) {
-  // Use the last committed entry rather than the active one, in case a
-  // pending entry has been created.
-  int committed_entry_id =
-      web_contents_->GetController().GetLastCommittedEntry()->GetUniqueID();
-  if (committed_entry_id == pending_entry_id_ || !pending_entry_id_) {
-    loading_complete_ = true;
-    StopObservingIfDone();
-  }
+  // Don't compare URLs in this case - it's possible they won't match if
+  // a gesture-nav initiated navigation was interrupted by some other in-site
+  // navigation ((e.g., from a script, or from a bookmark).
+  loading_complete_ = true;
+  StopObservingIfDone();
 }
 
 }  // namespace content

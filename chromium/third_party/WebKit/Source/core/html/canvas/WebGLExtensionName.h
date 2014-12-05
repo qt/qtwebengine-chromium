@@ -5,7 +5,7 @@
 #ifndef WebGLExtensionName_h
 #define WebGLExtensionName_h
 
-namespace WebCore {
+namespace blink {
 
 // Extension names are needed to properly wrap instances in JavaScript objects.
 enum WebGLExtensionName {
@@ -13,6 +13,7 @@ enum WebGLExtensionName {
     EXTBlendMinMaxName,
     EXTFragDepthName,
     EXTShaderTextureLODName,
+    EXTsRGBName,
     EXTTextureFilterAnisotropicName,
     OESElementIndexUintName,
     OESStandardDerivativesName,

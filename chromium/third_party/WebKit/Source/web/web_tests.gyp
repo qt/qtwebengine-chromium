@@ -41,51 +41,13 @@
     ],
     'targets': [
         {
-            'target_name': 'webkit_unit_tests_resources',
-            'type': 'none',
-            'dependencies': [
-                '<(DEPTH)/net/net.gyp:net_resources',
-                '<(DEPTH)/ui/resources/ui_resources.gyp:ui_resources',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
-                '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
-            ],
-            'actions': [{
-                'action_name': 'repack_webkit_unit_tests_resources',
-                'variables': {
-                    'repack_path': '<(DEPTH)/tools/grit/grit/format/repack.py',
-                    'pak_inputs': [
-                        '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/ui/ui_resources/ui_resources_100_percent.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_strings_en-US.pak',
-                        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_resources_100_percent.pak',
-                ]},
-                'inputs': [
-                    '<(repack_path)',
-                    '<@(pak_inputs)',
-                ],
-                'outputs': [
-                    '<(PRODUCT_DIR)/webkit_unit_tests_resources.pak',
-                ],
-                'action': ['python', '<(repack_path)', '<@(_outputs)', '<@(pak_inputs)'],
-            }],
-            'conditions': [
-                ['OS=="mac"', {
-                    'all_dependent_settings': {
-                        'mac_bundle_resources': [
-                            '<(PRODUCT_DIR)/webkit_unit_tests_resources.pak',
-                        ],
-                    },
-                }],
-            ]
-        },
-        {
+            # GN version: //third_party/WebKit/Source/web:webkit_unit_tests
             'target_name': 'webkit_unit_tests',
             'type': 'executable',
             'variables': { 'enable_wexit_time_destructors': 1, },
             'dependencies': [
-                '../config.gyp:unittest_config',
                 '../../public/blink.gyp:blink',
+                '../config.gyp:unittest_config',
                 '../wtf/wtf_tests.gyp:wtf_unittest_helpers',
                 'web.gyp:blink_web_test_support',
                 '<(DEPTH)/base/base.gyp:base',
@@ -98,7 +60,6 @@
                 '<(DEPTH)/url/url.gyp:url_lib',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                 '<(DEPTH)/content/content_shell_and_tests.gyp:test_support_content',
-                'webkit_unit_tests_resources',
             ],
             'sources': [
                 '../web/tests/RunAllTests.cpp',
@@ -109,11 +70,7 @@
                 'src',
             ],
             'conditions': [
-                ['component=="shared_library"', {
-                    'defines': [
-                        'BLINK_DLL_UNITTEST',
-                    ],
-                }, {
+                ['component!="shared_library"', {
                     'dependencies': [
                         '../core/core.gyp:webcore',
                     ],
@@ -182,12 +139,35 @@
                 'type': 'none',
                 'dependencies': [
                     '<(DEPTH)/base/base.gyp:base_java',
+                    '<(DEPTH)/content/content_shell_and_tests.gyp:content_shell_pak',
                     '<(DEPTH)/net/net.gyp:net_java',
                     'webkit_unit_tests',
+                ],
+                'conditions': [
+                  ['v8_use_external_startup_data==1', {
+                    'dependencies': [
+                      '<(DEPTH)/v8/tools/gyp/v8.gyp:v8_external_snapshot',
+                      '<(DEPTH)/content/content.gyp:content_v8_external_data',
+                    ],
+                  }],
                 ],
                 'variables': {
                     'test_suite_name': 'webkit_unit_tests',
                     'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)webkit_unit_tests<(SHARED_LIB_SUFFIX)',
+                    'additional_input_paths': ['<(PRODUCT_DIR)/content_shell/assets/content_shell.pak'],
+                    'asset_location': '<(PRODUCT_DIR)/content_shell/assets',
+                    'conditions': [
+                      ['v8_use_external_startup_data==1', {
+                        'additional_input_paths': [
+                          '<(PRODUCT_DIR)/content_shell/assets/natives_blob.bin',
+                          '<(PRODUCT_DIR)/content_shell/assets/snapshot_blob.bin',
+                        ],
+                        'inputs': [
+                          '<(PRODUCT_DIR)/natives_blob.bin',
+                          '<(PRODUCT_DIR)/snapshot_blob.bin',
+                        ],
+                      }],
+                    ],
                 },
                 'includes': [ '../../../../build/apk_test.gypi' ],
             }],

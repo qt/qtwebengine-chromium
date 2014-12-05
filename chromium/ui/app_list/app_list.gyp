@@ -8,12 +8,14 @@
   },
   'targets': [
     {
+      # GN version: //ui/app_list
       'target_name': 'app_list',
       'type': '<(component)',
       'dependencies': [
         '../../base/base.gyp:base',
         '../../base/base.gyp:base_i18n',
         '../../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
+        '../../components/components.gyp:keyed_service_core',
         '../../skia/skia.gyp:skia',
         '../base/ui_base.gyp:ui_base',
         '../compositor/compositor.gyp:compositor',
@@ -22,11 +24,13 @@
         '../gfx/gfx.gyp:gfx_geometry',
         '../resources/ui_resources.gyp:ui_resources',
         '../strings/ui_strings.gyp:ui_strings',
+        '../../third_party/icu/icu.gyp:icuuc',
       ],
       'defines': [
         'APP_LIST_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'app_list_constants.cc',
         'app_list_constants.h',
         'app_list_export.h',
@@ -70,19 +74,46 @@
         'cocoa/item_drag_controller.mm',
         'cocoa/scroll_view_with_no_scrollbars.h',
         'cocoa/scroll_view_with_no_scrollbars.mm',
+        'folder_image.cc',
+        'folder_image.h',
+        'pagination_controller.cc',
+        'pagination_controller.h',
         'pagination_model.cc',
         'pagination_model.h',
         'pagination_model_observer.h',
         'search_box_model.cc',
         'search_box_model.h',
         'search_box_model_observer.h',
+        'search_controller.cc',
+        'search_controller.h',
         'search_provider.cc',
         'search_provider.h',
         'search_result.cc',
         'search_result.h',
+        'search/dictionary_data_store.cc',
+        'search/dictionary_data_store.h',
+        'search/history.cc',
+        'search/history.h',
+        'search/history_data.cc',
+        'search/history_data.h',
+        'search/history_data_store.cc',
+        'search/history_data_store.h',
+        'search/history_types.h',
+        'search/mixer.cc',
+        'search/mixer.h',
+        'search/term_break_iterator.cc',
+        'search/term_break_iterator.h',
+        'search/tokenized_string.cc',
+        'search/tokenized_string.h',
+        'search/tokenized_string_char_iterator.cc',
+        'search/tokenized_string_char_iterator.h',
+        'search/tokenized_string_match.cc',
+        'search/tokenized_string_match.h',
         'speech_ui_model.cc',
         'speech_ui_model.h',
         'speech_ui_model_observer.h',
+        'views/all_apps_tile_item_view.h',
+        'views/all_apps_tile_item_view.cc',
         'views/apps_container_view.cc',
         'views/apps_container_view.h',
         'views/app_list_background.cc',
@@ -125,9 +156,13 @@
         'views/search_box_view_delegate.h',
         'views/search_result_actions_view.cc',
         'views/search_result_actions_view.h',
+        'views/search_result_container_view.cc',
+        'views/search_result_container_view.h',
         'views/search_result_list_view.cc',
         'views/search_result_list_view.h',
         'views/search_result_list_view_delegate.h',
+        'views/search_result_tile_item_view.cc',
+        'views/search_result_tile_item_view.h',
         'views/search_result_view.cc',
         'views/search_result_view.h',
         'views/speech_view.cc',
@@ -175,6 +210,7 @@
       'msvs_disabled_warnings': [ 4267, ],
     },
     {
+      # GN version: //ui/app_list:test_support
       'target_name': 'app_list_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -185,13 +221,17 @@
         'app_list',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'test/app_list_test_model.cc',
         'test/app_list_test_model.h',
         'test/app_list_test_view_delegate.cc',
         'test/app_list_test_view_delegate.h',
+        'test/test_search_result.cc',
+        'test/test_search_result.h',
       ],
     },
     {
+      # GN version: //ui/app_list:app_list_unittests
       'target_name': 'app_list_unittests',
       'type': 'executable',
       'dependencies': [
@@ -207,6 +247,7 @@
         'app_list_test_support',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'app_list_item_list_unittest.cc',
         'app_list_model_unittest.cc',
         'pagination_model_unittest.cc',
@@ -217,6 +258,13 @@
         'cocoa/apps_search_results_controller_unittest.mm',
         'cocoa/test/apps_grid_controller_test_helper.h',
         'cocoa/test/apps_grid_controller_test_helper.mm',
+        'folder_image_unittest.cc',
+        'search/history_data_store_unittest.cc',
+        'search/mixer_unittest.cc',
+        'search/term_break_iterator_unittest.cc',
+        'search/tokenized_string_char_iterator_unittest.cc',
+        'search/tokenized_string_match_unittest.cc',
+        'search/tokenized_string_unittest.cc',
         'test/run_all_unittests.cc',
         'views/app_list_main_view_unittest.cc',
         'views/app_list_view_unittest.cc',
@@ -259,10 +307,6 @@
         ['OS=="linux" and use_allocator!="none"', {
           'dependencies': [
             '../../base/allocator/allocator.gyp:allocator',
-            # The following two dependencies provide the missing
-            # symbol HeapProfilerStart in Linux component builds.
-            # They probably can be removed after http://crbug.com/263316
-            '../../webkit/child/webkit_child.gyp:webkit_child',
           ],
         }],
         ['OS=="win" and win_use_allocator_shim==1', {
@@ -282,7 +326,6 @@
           'target_name': 'app_list_demo',
           'type': 'executable',
           'sources': [
-            '../../content/app/startup_helper_win.cc',
             'demo/app_list_demo_views.cc',
           ],
           'dependencies': [
@@ -310,6 +353,12 @@
               },
               'dependencies': [
                 '../../sandbox/sandbox.gyp:sandbox',
+                '../../content/content.gyp:content_startup_helper_win',
+              ],
+            }],
+            ['OS=="win" and component!="shared_library" and win_use_allocator_shim==1', {
+              'dependencies': [
+                '<(DEPTH)/base/allocator/allocator.gyp:allocator',
               ],
             }],
           ],

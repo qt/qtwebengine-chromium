@@ -51,26 +51,7 @@ public:
     {
     }
 
-    void shrink(unsigned newLength)
-    {
-        if (m_data->length() == newLength)
-            return;
-        m_data->truncateAssumingIsolated(newLength);
-    }
-
-    void resize(unsigned newLength)
-    {
-        if (!m_data) {
-            CharType* characters;
-            m_data = StringImpl::createUninitialized(newLength, characters);
-            return;
-        }
-        if (newLength > m_data->length()) {
-            m_data = StringImpl::reallocate(m_data.release(), newLength);
-            return;
-        }
-        shrink(newLength);
-    }
+    void shrink(unsigned newLength);
 
     unsigned length() const { return m_data ? m_data->length() : 0; }
     CharType* characters() { return length() ? const_cast<CharType*>(m_data->getCharacters<CharType>()) : 0; }
@@ -82,6 +63,15 @@ public:
 private:
     RefPtr<StringImpl> m_data;
 };
+
+template <typename CharType>
+void StringBuffer<CharType>::shrink(unsigned newLength)
+{
+    ASSERT(m_data);
+    if (m_data->length() == newLength)
+        return;
+    m_data->truncateAssumingIsolated(newLength);
+}
 
 } // namespace WTF
 

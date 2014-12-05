@@ -58,27 +58,31 @@ enum NetEqPlayoutMode {
   kPlayoutStreaming
 };
 
-enum NetEqBackgroundNoiseMode {
-  kBgnOn,    // Default behavior with eternal noise.
-  kBgnFade,  // Noise fades to zero after some time.
-  kBgnOff    // Background noise is always zero.
-};
-
 // This is the interface class for NetEq.
 class NetEq {
  public:
+  enum BackgroundNoiseMode {
+    kBgnOn,    // Default behavior with eternal noise.
+    kBgnFade,  // Noise fades to zero after some time.
+    kBgnOff    // Background noise is always zero.
+  };
+
   struct Config {
     Config()
         : sample_rate_hz(16000),
           enable_audio_classifier(false),
           max_packets_in_buffer(50),
           // |max_delay_ms| has the same effect as calling SetMaximumDelay().
-          max_delay_ms(2000) {}
+          max_delay_ms(2000),
+          background_noise_mode(kBgnOff),
+          playout_mode(kPlayoutOn) {}
 
     int sample_rate_hz;  // Initial vale. Will change with input data.
     bool enable_audio_classifier;
     int max_packets_in_buffer;
     int max_delay_ms;
+    BackgroundNoiseMode background_noise_mode;
+    NetEqPlayoutMode playout_mode;
   };
 
   enum ReturnCodes {
@@ -200,9 +204,13 @@ class NetEq {
   virtual int CurrentDelay() = 0;
 
   // Sets the playout mode to |mode|.
+  // Deprecated. Set the mode in the Config struct passed to the constructor.
+  // TODO(henrik.lundin) Delete.
   virtual void SetPlayoutMode(NetEqPlayoutMode mode) = 0;
 
   // Returns the current playout mode.
+  // Deprecated.
+  // TODO(henrik.lundin) Delete.
   virtual NetEqPlayoutMode PlayoutMode() const = 0;
 
   // Writes the current network statistics to |stats|. The statistics are reset
@@ -240,7 +248,7 @@ class NetEq {
 
   // Returns the error code for the last occurred error. If no error has
   // occurred, 0 is returned.
-  virtual int LastError() = 0;
+  virtual int LastError() const = 0;
 
   // Returns the error code last returned by a decoder (audio or comfort noise).
   // When LastError() returns kDecoderErrorCode or kComfortNoiseErrorCode, check
@@ -258,12 +266,6 @@ class NetEq {
   // This method is to facilitate NACK.
   virtual int DecodedRtpInfo(int* sequence_number,
                              uint32_t* timestamp) const = 0;
-
-  // Sets the background noise mode.
-  virtual void SetBackgroundNoiseMode(NetEqBackgroundNoiseMode mode) = 0;
-
-  // Gets the background noise mode.
-  virtual NetEqBackgroundNoiseMode BackgroundNoiseMode() const = 0;
 
  protected:
   NetEq() {}

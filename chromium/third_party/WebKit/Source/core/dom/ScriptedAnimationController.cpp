@@ -26,6 +26,7 @@
 #include "config.h"
 #include "core/dom/ScriptedAnimationController.h"
 
+#include "core/css/MediaQueryListListener.h"
 #include "core/dom/Document.h"
 #include "core/dom/RequestAnimationFrameCallback.h"
 #include "core/events/Event.h"
@@ -34,8 +35,9 @@
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
 #include "core/loader/DocumentLoader.h"
+#include "platform/Logging.h"
 
-namespace WebCore {
+namespace blink {
 
 std::pair<EventTarget*, StringImpl*> eventTargetKey(const Event* event)
 {
@@ -55,9 +57,12 @@ ScriptedAnimationController::~ScriptedAnimationController()
 
 void ScriptedAnimationController::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
+    visitor->trace(m_callbacks);
+    visitor->trace(m_callbacksToInvoke);
     visitor->trace(m_document);
     visitor->trace(m_eventQueue);
-#if ENABLE(OILPAN)
+    visitor->trace(m_mediaQueryListListeners);
     visitor->trace(m_perFrameEvents);
 #endif
 }
@@ -76,7 +81,13 @@ void ScriptedAnimationController::resume()
     scheduleAnimationIfNeeded();
 }
 
-ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(PassOwnPtr<RequestAnimationFrameCallback> callback)
+void ScriptedAnimationController::dispatchEventsAndCallbacksForPrinting()
+{
+    dispatchEvents(EventNames::MediaQueryListEvent);
+    callMediaQueryListListeners();
+}
+
+ScriptedAnimationController::CallbackId ScriptedAnimationController::registerCallback(RequestAnimationFrameCallback* callback)
 {
     ScriptedAnimationController::CallbackId id = ++m_nextCallbackId;
     callback->m_cancelled = false;
@@ -117,11 +128,25 @@ void ScriptedAnimationController::cancelCallback(CallbackId id)
     }
 }
 
-void ScriptedAnimationController::dispatchEvents()
+void ScriptedAnimationController::dispatchEvents(const AtomicString& eventInterfaceFilter)
 {
     WillBeHeapVector<RefPtrWillBeMember<Event> > events;
-    events.swap(m_eventQueue);
-    m_perFrameEvents.clear();
+    if (eventInterfaceFilter.isEmpty()) {
+        events.swap(m_eventQueue);
+        m_perFrameEvents.clear();
+    } else {
+        WillBeHeapVector<RefPtrWillBeMember<Event> > remaining;
+        for (auto& event : m_eventQueue) {
+            if (event && event->interfaceName() == eventInterfaceFilter) {
+                m_perFrameEvents.remove(eventTargetKey(event.get()));
+                events.append(event.release());
+            } else {
+                remaining.append(event.release());
+            }
+        }
+        remaining.swap(m_eventQueue);
+    }
+
 
     for (size_t i = 0; i < events.size(); ++i) {
         EventTarget* eventTarget = events[i]->target();
@@ -169,9 +194,20 @@ void ScriptedAnimationController::executeCallbacks(double monotonicTimeNow)
     m_callbacksToInvoke.clear();
 }
 
+void ScriptedAnimationController::callMediaQueryListListeners()
+{
+    MediaQueryListListeners listeners;
+    listeners.swap(m_mediaQueryListListeners);
+
+    for (MediaQueryListListeners::const_iterator it = listeners.begin(), end = listeners.end();
+        it != end; ++it) {
+        (*it)->notifyMediaQueryChanged();
+    }
+}
+
 void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTimeNow)
 {
-    if (!m_callbacks.size() && !m_eventQueue.size())
+    if (!m_callbacks.size() && !m_eventQueue.size() && !m_mediaQueryListListeners.size())
         return;
 
     if (m_suspendCount)
@@ -179,6 +215,7 @@ void ScriptedAnimationController::serviceScriptedAnimations(double monotonicTime
 
     RefPtrWillBeRawPtr<ScriptedAnimationController> protect(this);
 
+    callMediaQueryListListeners();
     dispatchEvents();
     executeCallbacks(monotonicTimeNow);
 
@@ -199,6 +236,14 @@ void ScriptedAnimationController::enqueuePerFrameEvent(PassRefPtrWillBeRawPtr<Ev
     enqueueEvent(event);
 }
 
+void ScriptedAnimationController::enqueueMediaQueryChangeListeners(WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> >& listeners)
+{
+    for (size_t i = 0; i < listeners.size(); ++i) {
+        m_mediaQueryListListeners.add(listeners[i]);
+    }
+    scheduleAnimationIfNeeded();
+}
+
 void ScriptedAnimationController::scheduleAnimationIfNeeded()
 {
     if (!m_document)
@@ -207,7 +252,7 @@ void ScriptedAnimationController::scheduleAnimationIfNeeded()
     if (m_suspendCount)
         return;
 
-    if (!m_callbacks.size() && !m_eventQueue.size())
+    if (!m_callbacks.size() && !m_eventQueue.size() && !m_mediaQueryListListeners.size())
         return;
 
     if (FrameView* frameView = m_document->view())

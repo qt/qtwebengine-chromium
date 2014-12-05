@@ -38,15 +38,15 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // VideoCaptureDevice::Create.
   class MEDIA_EXPORT Name {
    public:
-    Name() {}
-    Name(const std::string& name, const std::string& id)
-        : device_name_(name), unique_id_(id) {}
+    Name();
+    Name(const std::string& name, const std::string& id);
 
 #if defined(OS_WIN)
     // Windows targets Capture Api type: it can only be set on construction.
     enum CaptureApiType {
       MEDIA_FOUNDATION,
       DIRECT_SHOW,
+      DIRECT_SHOW_WDM_CROSSBAR,
       API_TYPE_UNKNOWN
     };
 #endif
@@ -55,16 +55,27 @@ class MEDIA_EXPORT VideoCaptureDevice {
     enum CaptureApiType {
       AVFOUNDATION,
       QTKIT,
+      DECKLINK,
       API_TYPE_UNKNOWN
+    };
+    // For AVFoundation Api, identify devices that are built-in or USB.
+    enum TransportType {
+      USB_OR_BUILT_IN,
+      OTHER_TRANSPORT
     };
 #endif
 #if defined(OS_WIN) || defined(OS_MACOSX)
     Name(const std::string& name,
          const std::string& id,
-         const CaptureApiType api_type)
-        : device_name_(name), unique_id_(id), capture_api_class_(api_type) {}
+         const CaptureApiType api_type);
 #endif
-    ~Name() {}
+#if defined(OS_MACOSX)
+    Name(const std::string& name,
+         const std::string& id,
+         const CaptureApiType api_type,
+         const TransportType transport_type);
+#endif
+    ~Name();
 
     // Friendly name of a device
     const std::string& name() const { return device_name_; }
@@ -95,6 +106,28 @@ class MEDIA_EXPORT VideoCaptureDevice {
     CaptureApiType capture_api_type() const {
       return capture_api_class_.capture_api_type();
     }
+    const char* GetCaptureApiTypeString() const;
+#endif
+#if defined(OS_WIN)
+    // Certain devices need an ID different from the |unique_id_| for
+    // capabilities retrieval.
+    const std::string& capabilities_id() const {
+      return capabilities_id_;
+    }
+    void set_capabilities_id(const std::string& id) {
+      capabilities_id_ = id;
+    }
+#endif
+#if defined(OS_MACOSX)
+    TransportType transport_type() const {
+      return transport_type_;
+    }
+    bool is_blacklisted() const {
+      return is_blacklisted_;
+    }
+    void set_is_blacklisted(bool is_blacklisted) {
+      is_blacklisted_ = is_blacklisted;
+    }
 #endif  // if defined(OS_WIN)
 
    private:
@@ -117,6 +150,15 @@ class MEDIA_EXPORT VideoCaptureDevice {
     };
 
     CaptureApiClass capture_api_class_;
+#endif
+#if defined(OS_WIN)
+    // ID used for capabilities retrieval. By default is equal to |unique_id|.
+    std::string capabilities_id_;
+#endif
+#if defined(OS_MACOSX)
+    TransportType transport_type_;
+    // Flag used to mark blacklisted devices for QTKit Api.
+    bool is_blacklisted_;
 #endif
     // Allow generated copy constructor and assignment.
   };
@@ -190,24 +232,44 @@ class MEDIA_EXPORT VideoCaptureDevice {
 
     // VideoCaptureDevice requests the |message| to be logged.
     virtual void OnLog(const std::string& message) {}
+
+    // The video stream has been muted. After this callback, no more
+    // OnIncomingCapturedData() will be called. This may happen when
+    // CaptureImage() has called. After the still image captured, the client
+    // will get notified by OnUnmute() and the video stream will be resumed.
+    virtual void OnMute() {}
+
+    // The video stream has resumed.
+    virtual void OnUnmute() {}
   };
 
-  // Creates a VideoCaptureDevice object.
-  // Return NULL if the hardware is not available.
-  static VideoCaptureDevice* Create(
-      scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner,
-      const Name& device_name);
+  // Interface for clients that use VideoCaptureDevice for taking still images.
+  class MEDIA_EXPORT ImageClient {
+   public:
+    virtual ~ImageClient() {}
+
+    // Callback function to notify the client a captured image is available.
+    //
+    // The captured still image is stored at address |data| and is of |length|
+    // bytes. The format of the frame is described by |format|, and is assumed
+    // to be tightly packed. The still image should be rotated |rotation|
+    // degrees clockwise for viewing.
+    //
+    // Note that the content in |data| will not be valid after this callback
+    // returns. Copy the content to use it later.
+    virtual void OnIncomingCapturedData(const uint8* data,
+                                        size_t length,
+                                        const ImageCaptureFormat& format,
+                                        int rotation,
+                                        base::TimeTicks timestamp) = 0;
+
+    // Callback function to notify the client about a failure of the image
+    // capture. The VideoCaptureDevice must be StopAndDeAllocate()-ed.
+    // |reason| contains a text description of the error.
+    virtual void OnError(const std::string& reason) = 0;
+  };
+
   virtual ~VideoCaptureDevice();
-
-  // Gets the names of all video capture devices connected to this computer.
-  static void GetDeviceNames(Names* device_names);
-
-  // Gets the supported formats of a particular device attached to the system.
-  // This method should be called before allocating or starting a device. In
-  // case format enumeration is not supported, or there was a problem, the
-  // formats array will be empty.
-  static void GetDeviceSupportedFormats(const Name& device,
-                                        VideoCaptureFormats* supported_formats);
 
   // Prepares the camera for use. After this function has been called no other
   // applications can use the camera. StopAndDeAllocate() must be called before
@@ -231,6 +293,32 @@ class MEDIA_EXPORT VideoCaptureDevice {
   // Gets the power line frequency from the current system time zone if this is
   // defined, otherwise returns 0.
   int GetPowerLineFrequencyForLocation() const;
+
+  // Initializes the device for still image capture for the given image format.
+  // This call is synchronous and returns true iff the initialization is
+  // successful.
+  //
+  // This function must be called between AllocateAndStart() and
+  // StopAndDeAllocate().
+  virtual bool InitializeImageCapture(const ImageCaptureFormat& image_format,
+                                      scoped_ptr<ImageClient> client);
+
+  // Releases resources for image capture.
+  //
+  // The ImageClient passed from InitializeImageCapture will be freed. This
+  // method must be called between InitializeImageCapture() and
+  // StopAndDeAllocate().
+  virtual void ReleaseImageCapture() {}
+
+  // Requests one image from the device.
+  //
+  // The image will be returned via the ImageClient::OnIncomingCapturedData()
+  // callback. If the video stream has to be stopped to capture the still image,
+  // the Client::OnMute() and Client::OnUnmute() will be called.
+  //
+  // This function must be called between InitializeImageCapture() and
+  // ReleaseImageCapture().
+  virtual void CaptureImage() {}
 
  protected:
   static const int kPowerLine50Hz = 50;

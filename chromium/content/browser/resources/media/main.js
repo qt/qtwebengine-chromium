@@ -39,11 +39,15 @@ var media = (function() {
     manager = theManager;
   };
 
-  media.onReceiveEverything = function(everything) {
-    for (var component in everything) {
-      media.updateAudioComponent(everything[component]);
+  media.onReceiveAudioStreamData = function(audioStreamData) {
+    for (var component in audioStreamData) {
+      media.updateAudioComponent(audioStreamData[component]);
     }
   };
+
+  media.onReceiveVideoCaptureCapabilities = function(videoCaptureCapabilities) {
+    manager.updateVideoCaptureCapabilities(videoCaptureCapabilities)
+  }
 
   media.onReceiveConstants = function(constants) {
     for (var key in constants.eventTypes) {

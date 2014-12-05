@@ -31,40 +31,28 @@
 #include "config.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 
-#include "bindings/v8/ScriptDebugServer.h"
+#include "bindings/core/v8/ScriptDebugServer.h"
+#include "core/inspector/WorkerInspectorController.h"
 #include "core/workers/WorkerGlobalScope.h"
 #include "core/workers/WorkerThread.h"
 #include "wtf/MessageQueue.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-Mutex& workerDebuggerAgentsMutex()
-{
-    AtomicallyInitializedStatic(Mutex&, mutex = *new Mutex);
-    return mutex;
-}
-
-typedef HashMap<WorkerThread*, WorkerDebuggerAgent*> WorkerDebuggerAgents;
-
-WorkerDebuggerAgents& workerDebuggerAgents()
-{
-    DEFINE_STATIC_LOCAL(WorkerDebuggerAgents, agents, ());
-    return agents;
-}
-
-
-class RunInspectorCommandsTask FINAL : public ScriptDebugServer::Task {
+class RunInspectorCommandsTask final : public ScriptDebugServer::Task {
 public:
     explicit RunInspectorCommandsTask(WorkerThread* thread)
         : m_thread(thread) { }
     virtual ~RunInspectorCommandsTask() { }
-    virtual void run() OVERRIDE
+    virtual void run() override
     {
         // Process all queued debugger commands. WorkerThread is certainly
         // alive if this task is being executed.
-        while (MessageQueueMessageReceived == m_thread->runLoop().runDebuggerTask(WorkerRunLoop::DontWaitForMessage)) { }
+        m_thread->willEnterNestedLoop();
+        while (MessageQueueMessageReceived == m_thread->runDebuggerTask(WorkerThread::DontWaitForMessage)) { }
+        m_thread->didLeaveNestedLoop();
     }
 
 private:
@@ -73,9 +61,9 @@ private:
 
 } // namespace
 
-PassOwnPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
+PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> WorkerDebuggerAgent::create(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
 {
-    return adoptPtr(new WorkerDebuggerAgent(scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
+    return adoptPtrWillBeNoop(new WorkerDebuggerAgent(scriptDebugServer, inspectedWorkerGlobalScope, injectedScriptManager));
 }
 
 WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerScriptDebugServer* scriptDebugServer, WorkerGlobalScope* inspectedWorkerGlobalScope, InjectedScriptManager* injectedScriptManager)
@@ -83,23 +71,21 @@ WorkerDebuggerAgent::WorkerDebuggerAgent(WorkerScriptDebugServer* scriptDebugSer
     , m_scriptDebugServer(scriptDebugServer)
     , m_inspectedWorkerGlobalScope(inspectedWorkerGlobalScope)
 {
-    MutexLocker lock(workerDebuggerAgentsMutex());
-    workerDebuggerAgents().set(inspectedWorkerGlobalScope->thread(), this);
 }
 
 WorkerDebuggerAgent::~WorkerDebuggerAgent()
 {
-    MutexLocker lock(workerDebuggerAgentsMutex());
-    ASSERT(workerDebuggerAgents().contains(m_inspectedWorkerGlobalScope->thread()));
-    workerDebuggerAgents().remove(m_inspectedWorkerGlobalScope->thread());
 }
 
-void WorkerDebuggerAgent::interruptAndDispatchInspectorCommands(WorkerThread* thread)
+void WorkerDebuggerAgent::trace(Visitor* visitor)
 {
-    MutexLocker lock(workerDebuggerAgentsMutex());
-    WorkerDebuggerAgent* agent = workerDebuggerAgents().get(thread);
-    if (agent)
-        agent->m_scriptDebugServer->interruptAndRunTask(adoptPtr(new RunInspectorCommandsTask(thread)));
+    visitor->trace(m_inspectedWorkerGlobalScope);
+    InspectorDebuggerAgent::trace(visitor);
+}
+
+void WorkerDebuggerAgent::interruptAndDispatchInspectorCommands()
+{
+    scriptDebugServer().interruptAndRunTask(adoptPtr(new RunInspectorCommandsTask(m_inspectedWorkerGlobalScope->thread())));
 }
 
 void WorkerDebuggerAgent::startListeningScriptDebugServer()
@@ -119,11 +105,13 @@ WorkerScriptDebugServer& WorkerDebuggerAgent::scriptDebugServer()
 
 InjectedScript WorkerDebuggerAgent::injectedScriptForEval(ErrorString* error, const int* executionContextId)
 {
-    if (executionContextId) {
-        *error = "Execution context id is not supported for workers as there is only one execution context.";
-        return InjectedScript();
-    }
-    return injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
+    if (!executionContextId)
+        return injectedScriptManager()->injectedScriptFor(m_inspectedWorkerGlobalScope->script()->scriptState());
+
+    InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
+    if (injectedScript.isEmpty())
+        *error = "Execution context with given id not found.";
+    return injectedScript;
 }
 
 void WorkerDebuggerAgent::muteConsole()
@@ -136,4 +124,4 @@ void WorkerDebuggerAgent::unmuteConsole()
     // We don't need to mute console for workers.
 }
 
-} // namespace WebCore
+} // namespace blink

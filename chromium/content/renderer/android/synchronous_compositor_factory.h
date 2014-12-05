@@ -21,6 +21,7 @@ class OutputSurface;
 namespace webkit {
 namespace gpu {
 class ContextProviderWebContext;
+class WebGraphicsContext3DInProcessCommandBufferImpl;
 }
 }
 
@@ -28,6 +29,7 @@ namespace content {
 
 class InputHandlerManagerClient;
 class StreamTextureFactory;
+class FrameSwapMessageQueue;
 
 // Decouples creation from usage of the parts needed for the synchonous
 // compositor rendering path. In practice this is only used in single
@@ -44,17 +46,21 @@ class SynchronousCompositorFactory {
       GetCompositorMessageLoop() = 0;
   virtual bool RecordFullLayer() = 0;
   virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
-      int routing_id) = 0;
+      int routing_id,
+      scoped_refptr<FrameSwapMessageQueue> frame_swap_message_queue) = 0;
 
   // The factory maintains ownership of the returned interface.
   virtual InputHandlerManagerClient* GetInputHandlerManagerClient() = 0;
 
   virtual scoped_refptr<webkit::gpu::ContextProviderWebContext>
-      GetSharedOffscreenContextProviderForMainThread() = 0;
+      CreateOffscreenContextProvider(
+          const blink::WebGraphicsContext3D::Attributes& attributes,
+          const std::string& debug_name) = 0;
   virtual scoped_refptr<StreamTextureFactory> CreateStreamTextureFactory(
       int frame_id) = 0;
-  virtual blink::WebGraphicsContext3D* CreateOffscreenGraphicsContext3D(
-      const blink::WebGraphicsContext3D::Attributes& attributes) = 0;
+  virtual webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl*
+      CreateOffscreenGraphicsContext3D(
+          const blink::WebGraphicsContext3D::Attributes& attributes) = 0;
 
  protected:
   SynchronousCompositorFactory() {}

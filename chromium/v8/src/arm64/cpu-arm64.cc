@@ -8,8 +8,8 @@
 
 #if V8_TARGET_ARCH_ARM64
 
-#include "src/cpu.h"
 #include "src/arm64/utils-arm64.h"
+#include "src/assembler.h"
 
 namespace v8 {
 namespace internal {
@@ -40,7 +40,7 @@ class CacheLineSizes {
 };
 
 
-void CPU::FlushICache(void* address, size_t length) {
+void CpuFeatures::FlushICache(void* address, size_t length) {
   if (length == 0) return;
 
 #ifdef USE_SIMULATOR
@@ -59,8 +59,8 @@ void CPU::FlushICache(void* address, size_t length) {
   uintptr_t dsize = sizes.dcache_line_size();
   uintptr_t isize = sizes.icache_line_size();
   // Cache line sizes are always a power of 2.
-  ASSERT(CountSetBits(dsize, 64) == 1);
-  ASSERT(CountSetBits(isize, 64) == 1);
+  DCHECK(CountSetBits(dsize, 64) == 1);
+  DCHECK(CountSetBits(isize, 64) == 1);
   uintptr_t dstart = start & ~(dsize - 1);
   uintptr_t istart = start & ~(isize - 1);
   uintptr_t end = start + length;

@@ -31,18 +31,19 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/GraphicsContextStateSaver.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderInline;
 class RenderLayerModelObject;
 class RenderObject;
-class RenderWidget;
+class RenderPart;
 
-typedef HashMap<RenderWidget*, IntRect> OverlapTestRequestMap;
+typedef HashMap<RenderPart*, IntRect> OverlapTestRequestMap;
 
 /*
  * Paint the object and its children, clipped by (x|y|w|h).
@@ -51,13 +52,12 @@ typedef HashMap<RenderWidget*, IntRect> OverlapTestRequestMap;
 struct PaintInfo {
     PaintInfo(GraphicsContext* newContext, const IntRect& newRect, PaintPhase newPhase, PaintBehavior newPaintBehavior,
         RenderObject* newPaintingRoot = 0, ListHashSet<RenderInline*>* newOutlineObjects = 0,
-        OverlapTestRequestMap* overlapTestRequests = 0, const RenderLayerModelObject* newPaintContainer = 0)
+        const RenderLayerModelObject* newPaintContainer = 0)
         : context(newContext)
         , rect(newRect)
         , phase(newPhase)
         , paintBehavior(newPaintBehavior)
         , paintingRoot(newPaintingRoot)
-        , overlapTestRequests(overlapTestRequests)
         , m_paintContainer(newPaintContainer)
         , m_outlineObjects(newOutlineObjects)
     {
@@ -85,10 +85,14 @@ struct PaintInfo {
     bool skipRootBackground() const { return paintBehavior & PaintBehaviorSkipRootBackground; }
     bool paintRootBackgroundOnly() const { return paintBehavior & PaintBehaviorRootBackgroundOnly; }
 
-    void applyTransform(const AffineTransform& localToAncestorTransform, bool identityStatusUnknown = true)
+    void applyTransform(const AffineTransform& localToAncestorTransform,
+        GraphicsContextStateSaver* stateSaver = 0)
     {
-        if (identityStatusUnknown && localToAncestorTransform.isIdentity())
+        if (localToAncestorTransform.isIdentity())
             return;
+
+        if (stateSaver)
+            stateSaver->saveIfNeeded();
 
         context->concatCTM(localToAncestorTransform);
 
@@ -113,14 +117,12 @@ struct PaintInfo {
     PaintPhase phase;
     PaintBehavior paintBehavior;
     RenderObject* paintingRoot; // used to draw just one element and its visual kids
-    OverlapTestRequestMap* overlapTestRequests;
 
 private:
-
     const RenderLayerModelObject* m_paintContainer; // the layer object that originates the current painting
     ListHashSet<RenderInline*>* m_outlineObjects; // used to list outlines that should be painted by a block with inline children
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PaintInfo_h

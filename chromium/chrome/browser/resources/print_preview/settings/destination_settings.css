@@ -2,22 +2,21 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
-#destination-settings h1 {
+#destination-settings .left-column {
   padding-top: 20px;
   vertical-align: top;
 }
 
 #destination-settings .throbber {
   display: block;
-  margin-bottom: 14px;
+  margin-bottom: 4px;
   margin-top: 8px;
 }
 
 #destination-settings .destination-settings-box {
   -webkit-box-align: center;
   display: -webkit-box;
-  height: 28px;
-  margin-bottom: 10px;
+  min-height: 28px;
 }
 
 .destination-settings-box.stale {
@@ -25,7 +24,7 @@
 }
 
 #destination-settings .destination-settings-change-button {
-  margin-bottom: 10px;
+  margin: 10px 0;
 }
 
 .destination-settings-icon {
@@ -37,17 +36,11 @@
 
 .destination-settings-info-wrapper {
   -webkit-box-flex: 1;
-  height: 28px;
-  position: relative;
 }
 
 .destination-settings-info {
-  -webkit-box-orient: vertical;
-  -webkit-box-pack: center;
-  display: -webkit-box;
-  height: 100%;
-  position: absolute;
-  white-space: nowrap;
+  display: table;
+  table-layout: fixed;
   width: 100%;
 }
 
@@ -57,7 +50,7 @@
 }
 
 .throbber-container .throbber {
-   -webkit-margin-end: 8px;
+  -webkit-margin-end: 8px;
 }
 
 .destination-throbber-name-container {
@@ -65,23 +58,30 @@
   -webkit-box-orient: vertical;
   -webkit-box-pack: center;
   display: -webkit-box;
-  height: 28px;
+  min-height: 28px;
 }
 
-.destination-settings-name,
 .destination-throbber-name {
   font-size: 110%;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.destination-settings-location {
-  opacity: 0.4;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.destination-settings-info > div {
+  display: table-row;
 }
 
-.destination-settings-offline-status {
+.destination-settings-info > div > div {
+  display: table-cell;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.destination-settings-name {
+  font-size: 110%;
+}
+
+.destination-settings-location {
+  opacity: 0.4;
 }

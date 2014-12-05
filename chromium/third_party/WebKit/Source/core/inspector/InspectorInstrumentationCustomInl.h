@@ -31,7 +31,7 @@
 #ifndef InspectorInstrumentationCustom_inl_h
 #define InspectorInstrumentationCustom_inl_h
 
-namespace WebCore {
+namespace blink {
 
 namespace InspectorInstrumentation {
 
@@ -39,6 +39,7 @@ bool isDebuggerPausedImpl(InstrumentingAgents*);
 bool collectingHTMLParseErrorsImpl(InstrumentingAgents*);
 PassOwnPtr<ScriptSourceCode> preprocessImpl(InstrumentingAgents*, LocalFrame*, const ScriptSourceCode&);
 String preprocessEventListenerImpl(InstrumentingAgents*, LocalFrame*, const String& source, const String& url, const String& functionName);
+void appendAsyncCallStack(ExecutionContext*, ScriptCallStack*);
 
 bool canvasAgentEnabled(ExecutionContext*);
 bool consoleAgentEnabled(ExecutionContext*);
@@ -78,6 +79,6 @@ inline PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame* frame, const ScriptSo
 
 } // namespace InspectorInstrumentation
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorInstrumentationCustom_inl_h)

@@ -25,12 +25,11 @@
 #include "core/html/HTMLTextFormControlElement.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderTheme.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "platform/scroll/ScrollbarTheme.h"
 #include "wtf/unicode/CharacterNames.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderTextControl::RenderTextControl(HTMLTextFormControlElement* element)
     : RenderBlockFlow(element)
@@ -76,7 +75,7 @@ void RenderTextControl::styleDidChange(StyleDifference diff, const RenderStyle* 
         innerEditorRenderer->style()->setHeight(Length());
         innerEditorRenderer->style()->setWidth(Length());
         innerEditorRenderer->setStyle(createInnerEditorStyle(style()));
-        innerEditor->setNeedsStyleRecalc(SubtreeStyleChange);
+        innerEditor->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Control));
     }
     textFormControlElement()->updatePlaceholderVisibility(false);
 }
@@ -232,7 +231,6 @@ float RenderTextControl::getAvgCharWidth(AtomicString family)
     const String str = String(&ch, 1);
     const Font& font = style()->font();
     TextRun textRun = constructTextRun(this, font, str, style(), TextRun::AllowTrailingExpansion);
-    textRun.disableRoundingHacks();
     return font.width(textRun);
 }
 
@@ -268,13 +266,13 @@ void RenderTextControl::computePreferredLogicalWidths()
         computeIntrinsicLogicalWidths(m_minPreferredLogicalWidth, m_maxPreferredLogicalWidth);
 
     if (styleToUse->logicalMinWidth().isFixed() && styleToUse->logicalMinWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
+        m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
+        m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
     }
 
     if (styleToUse->logicalMaxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
+        m_maxPreferredLogicalWidth = std::min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
+        m_minPreferredLogicalWidth = std::min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
     }
 
     LayoutUnit toAdd = borderAndPaddingLogicalWidth();
@@ -285,10 +283,10 @@ void RenderTextControl::computePreferredLogicalWidths()
     clearPreferredLogicalWidthsDirty();
 }
 
-void RenderTextControl::addFocusRingRects(Vector<IntRect>& rects, const LayoutPoint& additionalOffset, const RenderLayerModelObject*)
+void RenderTextControl::addFocusRingRects(Vector<LayoutRect>& rects, const LayoutPoint& additionalOffset, const RenderLayerModelObject*) const
 {
     if (!size().isEmpty())
-        rects.append(pixelSnappedIntRect(additionalOffset, size()));
+        rects.append(LayoutRect(additionalOffset, size()));
 }
 
 RenderObject* RenderTextControl::layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope& layoutScope)
@@ -302,4 +300,4 @@ RenderObject* RenderTextControl::layoutSpecialExcludedChild(bool relayoutChildre
     return placeholderRenderer;
 }
 
-} // namespace WebCore
+} // namespace blink

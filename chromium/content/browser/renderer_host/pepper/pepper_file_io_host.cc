@@ -28,11 +28,11 @@
 #include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
 #include "ppapi/shared_impl/time_conversion.h"
-#include "webkit/browser/fileapi/file_observers.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/task_runner_bound_observer_list.h"
-#include "webkit/common/fileapi/file_system_util.h"
+#include "storage/browser/fileapi/file_observers.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/task_runner_bound_observer_list.h"
+#include "storage/common/fileapi/file_system_util.h"
 
 namespace content {
 
@@ -87,7 +87,7 @@ void DidCloseFile(const base::Closure& on_close_callback) {
 }
 
 void DidOpenFile(base::WeakPtr<PepperFileIOHost> file_host,
-                 fileapi::FileSystemOperation::OpenFileCallback callback,
+                 storage::FileSystemOperation::OpenFileCallback callback,
                  base::File file,
                  const base::Closure& on_close_callback) {
   if (file_host) {
@@ -109,7 +109,8 @@ PepperFileIOHost::PepperFileIOHost(BrowserPpapiHostImpl* host,
     : ResourceHost(host->GetPpapiHost(), instance, resource),
       browser_ppapi_host_(host),
       render_process_host_(NULL),
-      file_(BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)),
+      file_(BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE)
+                .get()),
       open_flags_(0),
       file_system_type_(PP_FILESYSTEMTYPE_INVALID),
       max_written_offset_(0),
@@ -186,13 +187,13 @@ int32_t PepperFileIOHost::OnHostMsgOpen(
 
     // Not all external file systems are fully supported yet.
     // Whitelist the supported ones.
-    if (file_system_url_.mount_type() == fileapi::kFileSystemTypeExternal) {
+    if (file_system_url_.mount_type() == storage::kFileSystemTypeExternal) {
       switch (file_system_url_.type()) {
-        case fileapi::kFileSystemTypeNativeMedia:
-        case fileapi::kFileSystemTypeDeviceMedia:
-        case fileapi::kFileSystemTypePicasa:
-        case fileapi::kFileSystemTypeItunes:
-        case fileapi::kFileSystemTypeIphoto:
+        case storage::kFileSystemTypeNativeMedia:
+        case storage::kFileSystemTypeDeviceMedia:
+        case storage::kFileSystemTypePicasa:
+        case storage::kFileSystemTypeItunes:
+        case storage::kFileSystemTypeIphoto:
           break;
         default:
           return PP_ERROR_NOACCESS;

@@ -5,6 +5,7 @@
 #ifndef CONTENT_PULIC_COMMON_CHILD_PROCESS_HOST_H_
 #define CONTENT_PULIC_COMMON_CHILD_PROCESS_HOST_H_
 
+#include "base/files/scoped_file.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
 #include "ipc/ipc_channel_proxy.h"
@@ -26,7 +27,7 @@ class ChildProcessHostDelegate;
 // processes that run independent of the browser process.
 class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
  public:
-  virtual ~ChildProcessHost() {}
+  ~ChildProcessHost() override {}
 
   // This is a value never returned as the unique id of any child processes of
   // any kind, including the values returned by RenderProcessHost::GetID().
@@ -98,7 +99,7 @@ class CONTENT_EXPORT ChildProcessHost : public IPC::Sender {
 
 #if defined(OS_POSIX)
   // See IPC::Channel::TakeClientFileDescriptor.
-  virtual int TakeClientFileDescriptor() = 0;
+  virtual base::ScopedFD TakeClientFileDescriptor() = 0;
 #endif
 };
 

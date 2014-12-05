@@ -31,7 +31,7 @@
 #include "platform/KeyboardCodes.h"
 #include "platform/PlatformKeyboardEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 //
 // The below code was adapted from the WebKit file webview.cpp
@@ -186,8 +186,8 @@ const char* EditingBehavior::interpretKeyEvent(const KeyboardEvent& event) const
     if (!keyEvent)
         return "";
 
-    static HashMap<int, const char*>* keyDownCommandsMap = 0;
-    static HashMap<int, const char*>* keyPressCommandsMap = 0;
+    static HashMap<int, const char*>* keyDownCommandsMap = nullptr;
+    static HashMap<int, const char*>* keyPressCommandsMap = nullptr;
 
     if (!keyDownCommandsMap) {
         keyDownCommandsMap = new HashMap<int, const char*>;
@@ -263,5 +263,5 @@ bool EditingBehavior::shouldInsertCharacter(const KeyboardEvent& event) const
 
     return true;
 }
-} // namespace WebCore
+} // namespace blink
 

@@ -23,12 +23,14 @@
  */
 
 [
-    WillBeGarbageCollected,
     Conditional=WEB_AUDIO,
     Constructor(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate),
     ConstructorCallWith=ExecutionContext,
     RaisesException=Constructor,
     NoInterfaceObject,
 ] interface OfflineAudioContext : AudioContext {
+    // Offline rendering
+    attribute EventHandler oncomplete;
+    void startRendering();
 
 };

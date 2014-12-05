@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/environment.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -64,13 +64,13 @@ class FakeAudioInputCallback : public AudioInputStream::AudioInputCallback {
   virtual void OnData(AudioInputStream* stream,
                       const AudioBus* src,
                       uint32 hardware_delay_bytes,
-                      double volume) OVERRIDE {
+                      double volume) override {
     EXPECT_NE(hardware_delay_bytes, 0u);
     num_received_audio_frames_ += src->frames();
     data_event_.Signal();
   }
 
-  virtual void OnError(AudioInputStream* stream) OVERRIDE {
+  virtual void OnError(AudioInputStream* stream) override {
     error_ = true;
   }
 
@@ -208,7 +208,6 @@ class AudioInputStreamWrapper {
   AudioInputStream* CreateInputStream() {
     AudioInputStream* ais = audio_man_->MakeAudioInputStream(
         AudioParameters(format(), default_params_.channel_layout(),
-                        default_params_.input_channels(),
                         sample_rate(), bits_per_sample(), frames_per_buffer_,
                         default_params_.effects()),
         AudioManagerBase::kDefaultDeviceId);

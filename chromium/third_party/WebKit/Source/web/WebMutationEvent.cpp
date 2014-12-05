@@ -33,8 +33,6 @@
 
 #include "core/events/MutationEvent.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebNode WebMutationEvent::relatedNode() const

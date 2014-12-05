@@ -28,32 +28,36 @@
 
 #include "core/rendering/svg/RenderSVGShape.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderSVGPath FINAL : public RenderSVGShape {
+class RenderSVGPath final : public RenderSVGShape {
 public:
     explicit RenderSVGPath(SVGGraphicsElement*);
     virtual ~RenderSVGPath();
 
-private:
-    virtual bool isSVGPath() const OVERRIDE { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGPath"; }
+    virtual const Vector<MarkerPosition>* markerPositions() const override { return &m_markerPositions; }
 
-    virtual void updateShapeFromElement() OVERRIDE;
+    virtual const Vector<FloatPoint>* zeroLengthLineCaps() const override { return &m_zeroLengthLinecapLocations; }
+    static FloatRect zeroLengthSubpathRect(const FloatPoint&, float);
+
+private:
+    virtual const char* renderName() const override { return "RenderSVGPath"; }
+
+    virtual void updateShapeFromElement() override;
     FloatRect calculateUpdatedStrokeBoundingBox() const;
 
-    virtual void strokeShape(GraphicsContext*) const OVERRIDE;
-    virtual bool shapeDependentStrokeContains(const FloatPoint&) OVERRIDE;
+    virtual bool shapeDependentStrokeContains(const FloatPoint&) override;
+
+    FloatRect markerRect(float strokeWidth) const;
+    bool shouldGenerateMarkerPositions() const;
+    virtual void processMarkerPositions() override;
 
     bool shouldStrokeZeroLengthSubpath() const;
-    Path* zeroLengthLinecapPath(const FloatPoint&) const;
-    FloatRect zeroLengthSubpathRect(const FloatPoint&, float) const;
     void updateZeroLengthSubpaths();
 
+    Vector<MarkerPosition> m_markerPositions;
     Vector<FloatPoint> m_zeroLengthLinecapLocations;
 };
-
-DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGPath, isSVGPath());
 
 }
 

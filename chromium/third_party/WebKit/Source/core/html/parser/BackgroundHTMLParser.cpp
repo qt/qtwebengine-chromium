@@ -32,7 +32,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 // On a network with high latency and high bandwidth, using a device
 // with a fast CPU, we could end up speculatively tokenizing
@@ -54,7 +54,7 @@ static const size_t pendingTokenLimit = 1000;
 
 using namespace HTMLNames;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 
 static void checkThatTokensAreSafeToSendToAnotherThread(const CompactHTMLTokenStream* tokens)
 {
@@ -76,13 +76,13 @@ static void checkThatXSSInfosAreSafeToSendToAnotherThread(const XSSInfoStream& i
 
 #endif
 
-void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
+void BackgroundHTMLParser::start(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config)
 {
     new BackgroundHTMLParser(reference, config);
     // Caller must free by calling stop().
 }
 
-BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> > reference, PassOwnPtr<Configuration> config)
+BackgroundHTMLParser::BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>> reference, PassOwnPtr<Configuration> config)
     : m_weakFactory(reference, this)
     , m_token(adoptPtr(new HTMLToken))
     , m_tokenizer(HTMLTokenizer::create(config->options))
@@ -106,7 +106,7 @@ void BackgroundHTMLParser::appendRawBytesFromParserThread(const char* data, int 
     updateDocument(m_decoder->decode(data, dataLength));
 }
 
-void BackgroundHTMLParser::appendRawBytesFromMainThread(PassOwnPtr<Vector<char> > buffer)
+void BackgroundHTMLParser::appendRawBytesFromMainThread(PassOwnPtr<Vector<char>> buffer)
 {
     ASSERT(m_decoder);
     updateDocument(m_decoder->decode(buffer->data(), buffer->size()));
@@ -239,7 +239,7 @@ void BackgroundHTMLParser::sendTokensToMainThread()
     if (m_pendingTokens->isEmpty())
         return;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     checkThatTokensAreSafeToSendToAnotherThread(m_pendingTokens.get());
     checkThatPreloadsAreSafeToSendToAnotherThread(m_pendingPreloads);
     checkThatXSSInfosAreSafeToSendToAnotherThread(m_pendingXSSInfos);

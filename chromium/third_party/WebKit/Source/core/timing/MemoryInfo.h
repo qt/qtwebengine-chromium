@@ -31,15 +31,16 @@
 #ifndef MemoryInfo_h
 #define MemoryInfo_h
 
-#include "bindings/v8/ScriptGCEvent.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptGCEvent.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class MemoryInfo : public RefCountedWillBeGarbageCollectedFinalized<MemoryInfo>, public ScriptWrappable {
+class MemoryInfo final : public RefCountedWillBeGarbageCollected<MemoryInfo>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MemoryInfo> create()
     {
@@ -60,6 +61,6 @@ private:
 
 size_t quantizeMemorySize(size_t);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MemoryInfo_h

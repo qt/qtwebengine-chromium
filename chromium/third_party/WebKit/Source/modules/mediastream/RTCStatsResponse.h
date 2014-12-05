@@ -25,7 +25,7 @@
 #ifndef RTCStatsResponse_h
 #define RTCStatsResponse_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/mediastream/RTCStatsReport.h"
 #include "platform/heap/Handle.h"
 #include "platform/mediastream/RTCStatsResponseBase.h"
@@ -33,27 +33,29 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCStatsResponse FINAL : public RTCStatsResponseBase, public ScriptWrappable {
+class RTCStatsResponse final : public RTCStatsResponseBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<RTCStatsResponse> create();
+    static RTCStatsResponse* create();
 
-    const WillBeHeapVector<RefPtrWillBeMember<RTCStatsReport> >& result() const { return m_result; }
+    const HeapVector<Member<RTCStatsReport> >& result() const { return m_result; }
 
-    PassRefPtrWillBeRawPtr<RTCStatsReport> namedItem(const AtomicString& name);
+    RTCStatsReport* namedItem(const AtomicString& name);
 
-    virtual size_t addReport(String id, String type, double timestamp) OVERRIDE;
-    virtual void addStatistic(size_t report, String name, String value) OVERRIDE;
+    virtual size_t addReport(const String& id, const String& type, double timestamp) override;
+    virtual void addStatistic(size_t report, const String& name, const String& value) override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RTCStatsResponse();
-    WillBeHeapVector<RefPtrWillBeMember<RTCStatsReport> > m_result;
+
+    HeapVector<Member<RTCStatsReport> > m_result;
     HashMap<String, int> m_idmap;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsResponse_h

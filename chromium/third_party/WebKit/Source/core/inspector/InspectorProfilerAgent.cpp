@@ -30,8 +30,10 @@
 #include "config.h"
 #include "core/inspector/InspectorProfilerAgent.h"
 
-#include "bindings/v8/ScriptCallStackFactory.h"
-#include "bindings/v8/ScriptProfiler.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
+#include "bindings/core/v8/ScriptProfiler.h"
+#include "core/frame/ConsoleTypes.h"
+#include "core/frame/UseCounter.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "core/inspector/InspectorOverlay.h"
@@ -39,11 +41,10 @@
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/inspector/ScriptProfile.h"
-#include "core/frame/ConsoleTypes.h"
 #include "wtf/CurrentTime.h"
 #include "wtf/text/StringConcatenate.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace ProfilerAgentState {
 static const char samplingInterval[] = "samplingInterval";
@@ -63,9 +64,9 @@ static PassRefPtr<TypeBuilder::Profiler::CPUProfile> createCPUProfile(const Scri
     return profile.release();
 }
 
-static PassRefPtr<TypeBuilder::Debugger::Location> currentDebugLocation(ScriptState* scriptState)
+static PassRefPtr<TypeBuilder::Debugger::Location> currentDebugLocation()
 {
-    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(scriptState, 1));
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStack(1));
     const ScriptCallFrame& lastCaller = callStack->at(0);
     RefPtr<TypeBuilder::Debugger::Location> location = TypeBuilder::Debugger::Location::create()
         .setScriptId(lastCaller.scriptId())
@@ -83,9 +84,9 @@ public:
     String m_title;
 };
 
-PassOwnPtr<InspectorProfilerAgent> InspectorProfilerAgent::create(InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PassOwnPtrWillBeRawPtr<InspectorProfilerAgent> InspectorProfilerAgent::create(InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
 {
-    return adoptPtr(new InspectorProfilerAgent(injectedScriptManager, overlay));
+    return adoptPtrWillBeNoop(new InspectorProfilerAgent(injectedScriptManager, overlay));
 }
 
 InspectorProfilerAgent::InspectorProfilerAgent(InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
@@ -103,16 +104,17 @@ InspectorProfilerAgent::~InspectorProfilerAgent()
 {
 }
 
-void InspectorProfilerAgent::consoleProfile(const String& title, ScriptState* scriptState)
+void InspectorProfilerAgent::consoleProfile(ExecutionContext* context, const String& title)
 {
+    UseCounter::count(context, UseCounter::DevToolsConsoleProfile);
     ASSERT(m_frontend && enabled());
     String id = nextProfileId();
     m_startedProfiles.append(ProfileDescriptor(id, title));
     ScriptProfiler::start(id);
-    m_frontend->consoleProfileStarted(id, currentDebugLocation(scriptState), title.isNull() ? 0 : &title);
+    m_frontend->consoleProfileStarted(id, currentDebugLocation(), title.isNull() ? 0 : &title);
 }
 
-void InspectorProfilerAgent::consoleProfileEnd(const String& title, ScriptState* scriptState)
+void InspectorProfilerAgent::consoleProfileEnd(const String& title)
 {
     ASSERT(m_frontend && enabled());
     String id;
@@ -139,7 +141,7 @@ void InspectorProfilerAgent::consoleProfileEnd(const String& title, ScriptState*
     RefPtrWillBeRawPtr<ScriptProfile> profile = ScriptProfiler::stop(id);
     if (!profile)
         return;
-    RefPtr<TypeBuilder::Debugger::Location> location = currentDebugLocation(scriptState);
+    RefPtr<TypeBuilder::Debugger::Location> location = currentDebugLocation();
     m_frontend->consoleProfileFinished(id, location, createCPUProfile(*profile), resolvedTitle.isNull() ? 0 : &resolvedTitle);
 }
 
@@ -295,5 +297,11 @@ void InspectorProfilerAgent::didLeaveNestedRunLoop()
     idleFinished();
 }
 
-} // namespace WebCore
+void InspectorProfilerAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_injectedScriptManager);
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink
 

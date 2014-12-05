@@ -74,10 +74,10 @@ class WinVistaCondVar: public ConditionVarImpl {
   WinVistaCondVar(Lock* user_lock);
   ~WinVistaCondVar() {};
   // Overridden from ConditionVarImpl.
-  virtual void Wait() OVERRIDE;
-  virtual void TimedWait(const TimeDelta& max_time) OVERRIDE;
-  virtual void Broadcast() OVERRIDE;
-  virtual void Signal() OVERRIDE;
+  virtual void Wait() override;
+  virtual void TimedWait(const TimeDelta& max_time) override;
+  virtual void Broadcast() override;
+  virtual void Signal() override;
 
  private:
   base::Lock& user_lock_;
@@ -99,7 +99,7 @@ void WinVistaCondVar::TimedWait(const TimeDelta& max_time) {
   DWORD timeout = static_cast<DWORD>(max_time.InMilliseconds());
   CRITICAL_SECTION* cs = user_lock_.lock_.native_handle();
 
-#if !defined(NDEBUG)
+#if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
   user_lock_.CheckHeldAndUnmark();
 #endif
 
@@ -107,7 +107,7 @@ void WinVistaCondVar::TimedWait(const TimeDelta& max_time) {
     DCHECK(GetLastError() != WAIT_TIMEOUT);
   }
 
-#if !defined(NDEBUG)
+#if !defined(NDEBUG) || defined(DCHECK_ALWAYS_ON)
   user_lock_.CheckUnheldAndMark();
 #endif
 }
@@ -129,10 +129,10 @@ class WinXPCondVar : public ConditionVarImpl {
   WinXPCondVar(Lock* user_lock);
   ~WinXPCondVar();
   // Overridden from ConditionVarImpl.
-  virtual void Wait() OVERRIDE;
-  virtual void TimedWait(const TimeDelta& max_time) OVERRIDE;
-  virtual void Broadcast() OVERRIDE;
-  virtual void Signal() OVERRIDE;
+  virtual void Wait() override;
+  virtual void TimedWait(const TimeDelta& max_time) override;
+  virtual void Broadcast() override;
+  virtual void Signal() override;
 
   // Define Event class that is used to form circularly linked lists.
   // The list container is an element with NULL as its handle_ value.

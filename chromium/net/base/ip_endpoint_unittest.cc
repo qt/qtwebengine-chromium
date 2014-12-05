@@ -29,11 +29,11 @@ struct TestData {
   { "::1", "[::1]", true },
   { "2001:db8:0::42", "[2001:db8::42]", true },
 };
-int test_count = ARRAYSIZE_UNSAFE(tests);
+int test_count = arraysize(tests);
 
 class IPEndPointTest : public PlatformTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     // This is where we populate the TestData.
     for (int index = 0; index < test_count; ++index) {
       EXPECT_TRUE(ParseIPLiteralToNumber(tests[index].host,

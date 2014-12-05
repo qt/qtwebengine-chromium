@@ -5,6 +5,7 @@
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
 #include "content/child/child_process.h"
 #include "content/renderer/media/media_stream_video_track.h"
 #include "content/renderer/media/mock_media_stream_video_sink.h"
@@ -12,6 +13,7 @@
 #include "content/renderer/media/webrtc/mock_peer_connection_dependency_factory.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 #include "third_party/libjingle/source/talk/media/webrtc/webrtcvideoframe.h"
 
 namespace content {
@@ -23,10 +25,10 @@ ACTION_P(RunClosure, closure) {
 class MediaStreamRemoteVideoSourceUnderTest
     : public MediaStreamRemoteVideoSource {
  public:
-  MediaStreamRemoteVideoSourceUnderTest(webrtc::VideoTrackInterface* track)
-      : MediaStreamRemoteVideoSource(track) {
+  MediaStreamRemoteVideoSourceUnderTest(const scoped_refptr<Observer>& observer)
+      : MediaStreamRemoteVideoSource(observer) {
   }
- using MediaStreamRemoteVideoSource::RenderInterfaceForTest;
+  using MediaStreamRemoteVideoSource::RenderInterfaceForTest;
 };
 
 class MediaStreamRemoteVideoSourceTest
@@ -35,12 +37,12 @@ class MediaStreamRemoteVideoSourceTest
   MediaStreamRemoteVideoSourceTest()
       : child_process_(new ChildProcess()),
         mock_factory_(new MockPeerConnectionDependencyFactory()),
-        webrtc_video_track_(
-            mock_factory_->CreateLocalVideoTrack(
-                "test",
-                static_cast<cricket::VideoCapturer*>(NULL))),
-        remote_source_(
-            new MediaStreamRemoteVideoSourceUnderTest(webrtc_video_track_)),
+        webrtc_video_track_(mock_factory_->CreateLocalVideoTrack(
+            "test",
+            static_cast<cricket::VideoCapturer*>(NULL))),
+        observer_(new MediaStreamRemoteVideoSource::Observer(
+            base::ThreadTaskRunnerHandle::Get(), webrtc_video_track_.get())),
+        remote_source_(new MediaStreamRemoteVideoSourceUnderTest(observer_)),
         number_of_successful_constraints_applied_(0),
         number_of_failed_constraints_applied_(0) {
     webkit_source_.initialize(base::UTF8ToUTF16("dummy_source_id"),
@@ -49,21 +51,26 @@ class MediaStreamRemoteVideoSourceTest
     webkit_source_.setExtraData(remote_source_);
   }
 
+  void TearDown() override {
+    webkit_source_.reset();
+    blink::WebHeap::collectAllGarbageForTesting();
+  }
+
   MediaStreamRemoteVideoSourceUnderTest* source() {
     return remote_source_;
   }
 
- MediaStreamVideoTrack* CreateTrack() {
-   bool enabled = true;
-   blink::WebMediaConstraints constraints;
-   constraints.initialize();
-   return new MediaStreamVideoTrack(
-       source(),
-       constraints,
-       base::Bind(
-           &MediaStreamRemoteVideoSourceTest::OnConstraintsApplied,
-           base::Unretained(this)),
-       enabled);
+  MediaStreamVideoTrack* CreateTrack() {
+    bool enabled = true;
+    blink::WebMediaConstraints constraints;
+    constraints.initialize();
+    return new MediaStreamVideoTrack(
+        source(),
+        constraints,
+        base::Bind(
+            &MediaStreamRemoteVideoSourceTest::OnConstraintsApplied,
+            base::Unretained(this)),
+        enabled);
   }
 
   int NumberOfSuccessConstraintsCallbacks() const {
@@ -84,9 +91,11 @@ class MediaStreamRemoteVideoSourceTest
   }
 
  private:
-  void OnConstraintsApplied(MediaStreamSource* source, bool success) {
+  void OnConstraintsApplied(MediaStreamSource* source,
+                            MediaStreamRequestResult result,
+                            const blink::WebString& result_name) {
     ASSERT_EQ(source, remote_source_);
-    if (success)
+    if (result == MEDIA_DEVICE_OK)
       ++number_of_successful_constraints_applied_;
     else
       ++number_of_failed_constraints_applied_;
@@ -96,6 +105,7 @@ class MediaStreamRemoteVideoSourceTest
   scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<MockPeerConnectionDependencyFactory> mock_factory_;
   scoped_refptr<webrtc::VideoTrackInterface> webrtc_video_track_;
+  scoped_refptr<MediaStreamRemoteVideoSource::Observer> observer_;
   // |remote_source_| is owned by |webkit_source_|.
   MediaStreamRemoteVideoSourceUnderTest* remote_source_;
   blink::WebMediaStreamSource webkit_source_;
@@ -131,6 +141,7 @@ TEST_F(MediaStreamRemoteVideoSourceTest, RemoteTrackStop) {
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateLive,
             webkit_source().readyState());
   StopWebRtcTrack();
+  base::RunLoop().RunUntilIdle();
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateEnded,
             webkit_source().readyState());
   EXPECT_EQ(blink::WebMediaStreamSource::ReadyStateEnded, sink.state());

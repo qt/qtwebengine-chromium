@@ -32,19 +32,12 @@
 
 #include "core/svg/SVGBoolean.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimationElement.h"
 
-namespace WebCore {
-
-PassRefPtr<SVGPropertyBase> SVGBoolean::cloneForAnimation(const String& value) const
-{
-    RefPtr<SVGBoolean> svgBoolean = create();
-    svgBoolean->setValueAsString(value, IGNORE_EXCEPTION);
-    return svgBoolean.release();
-}
+namespace blink {
 
 String SVGBoolean::valueAsString() const
 {

@@ -34,64 +34,59 @@ class NET_EXPORT_PRIVATE URLFetcherImpl : public URLFetcher {
   URLFetcherImpl(const GURL& url,
                  RequestType request_type,
                  URLFetcherDelegate* d);
-  virtual ~URLFetcherImpl();
+  ~URLFetcherImpl() override;
 
   // URLFetcher implementation:
-  virtual void SetUploadData(const std::string& upload_content_type,
-                             const std::string& upload_content) OVERRIDE;
-  virtual void SetUploadFilePath(
+  void SetUploadData(const std::string& upload_content_type,
+                     const std::string& upload_content) override;
+  void SetUploadFilePath(
       const std::string& upload_content_type,
       const base::FilePath& file_path,
       uint64 range_offset,
       uint64 range_length,
-      scoped_refptr<base::TaskRunner> file_task_runner) OVERRIDE;
-  virtual void SetChunkedUpload(
-      const std::string& upload_content_type) OVERRIDE;
-  virtual void AppendChunkToUpload(const std::string& data,
-                                   bool is_last_chunk) OVERRIDE;
-  virtual void SetLoadFlags(int load_flags) OVERRIDE;
-  virtual int GetLoadFlags() const OVERRIDE;
-  virtual void SetReferrer(const std::string& referrer) OVERRIDE;
-  virtual void SetReferrerPolicy(
-      URLRequest::ReferrerPolicy referrer_policy) OVERRIDE;
-  virtual void SetExtraRequestHeaders(
-      const std::string& extra_request_headers) OVERRIDE;
-  virtual void AddExtraRequestHeader(const std::string& header_line) OVERRIDE;
-  virtual void SetRequestContext(
-      URLRequestContextGetter* request_context_getter) OVERRIDE;
-  virtual void SetFirstPartyForCookies(
-      const GURL& first_party_for_cookies) OVERRIDE;
-  virtual void SetURLRequestUserData(
+      scoped_refptr<base::TaskRunner> file_task_runner) override;
+  void SetChunkedUpload(const std::string& upload_content_type) override;
+  void AppendChunkToUpload(const std::string& data,
+                           bool is_last_chunk) override;
+  void SetLoadFlags(int load_flags) override;
+  int GetLoadFlags() const override;
+  void SetReferrer(const std::string& referrer) override;
+  void SetReferrerPolicy(URLRequest::ReferrerPolicy referrer_policy) override;
+  void SetExtraRequestHeaders(
+      const std::string& extra_request_headers) override;
+  void AddExtraRequestHeader(const std::string& header_line) override;
+  void SetRequestContext(
+      URLRequestContextGetter* request_context_getter) override;
+  void SetFirstPartyForCookies(const GURL& first_party_for_cookies) override;
+  void SetURLRequestUserData(
       const void* key,
-      const CreateDataCallback& create_data_callback) OVERRIDE;
-  virtual void SetStopOnRedirect(bool stop_on_redirect) OVERRIDE;
-  virtual void SetAutomaticallyRetryOn5xx(bool retry) OVERRIDE;
-  virtual void SetMaxRetriesOn5xx(int max_retries) OVERRIDE;
-  virtual int GetMaxRetriesOn5xx() const OVERRIDE;
-  virtual base::TimeDelta GetBackoffDelay() const OVERRIDE;
-  virtual void SetAutomaticallyRetryOnNetworkChanges(int max_retries) OVERRIDE;
-  virtual void SaveResponseToFileAtPath(
+      const CreateDataCallback& create_data_callback) override;
+  void SetStopOnRedirect(bool stop_on_redirect) override;
+  void SetAutomaticallyRetryOn5xx(bool retry) override;
+  void SetMaxRetriesOn5xx(int max_retries) override;
+  int GetMaxRetriesOn5xx() const override;
+  base::TimeDelta GetBackoffDelay() const override;
+  void SetAutomaticallyRetryOnNetworkChanges(int max_retries) override;
+  void SaveResponseToFileAtPath(
       const base::FilePath& file_path,
-      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
-  virtual void SaveResponseToTemporaryFile(
-      scoped_refptr<base::SequencedTaskRunner> file_task_runner) OVERRIDE;
-  virtual void SaveResponseWithWriter(
-      scoped_ptr<URLFetcherResponseWriter> response_writer) OVERRIDE;
-  virtual HttpResponseHeaders* GetResponseHeaders() const OVERRIDE;
-  virtual HostPortPair GetSocketAddress() const OVERRIDE;
-  virtual bool WasFetchedViaProxy() const OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual const GURL& GetOriginalURL() const OVERRIDE;
-  virtual const GURL& GetURL() const OVERRIDE;
-  virtual const URLRequestStatus& GetStatus() const OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual const ResponseCookies& GetCookies() const OVERRIDE;
-  virtual void ReceivedContentWasMalformed() OVERRIDE;
-  virtual bool GetResponseAsString(
-      std::string* out_response_string) const OVERRIDE;
-  virtual bool GetResponseAsFilePath(
-      bool take_ownership,
-      base::FilePath* out_response_path) const OVERRIDE;
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) override;
+  void SaveResponseToTemporaryFile(
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner) override;
+  void SaveResponseWithWriter(
+      scoped_ptr<URLFetcherResponseWriter> response_writer) override;
+  HttpResponseHeaders* GetResponseHeaders() const override;
+  HostPortPair GetSocketAddress() const override;
+  bool WasFetchedViaProxy() const override;
+  void Start() override;
+  const GURL& GetOriginalURL() const override;
+  const GURL& GetURL() const override;
+  const URLRequestStatus& GetStatus() const override;
+  int GetResponseCode() const override;
+  const ResponseCookies& GetCookies() const override;
+  void ReceivedContentWasMalformed() override;
+  bool GetResponseAsString(std::string* out_response_string) const override;
+  bool GetResponseAsFilePath(bool take_ownership,
+                             base::FilePath* out_response_path) const override;
 
   static void CancelAll();
 

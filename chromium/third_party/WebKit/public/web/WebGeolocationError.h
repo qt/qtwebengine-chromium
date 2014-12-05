@@ -29,10 +29,9 @@
 #include "../platform/WebCommon.h"
 #include "../platform/WebPrivatePtr.h"
 
-namespace WebCore { class GeolocationError; }
-
 namespace blink {
 
+class GeolocationError;
 class WebString;
 
 class WebGeolocationError {
@@ -51,13 +50,13 @@ public:
     BLINK_EXPORT void reset();
 
 #if BLINK_IMPLEMENTATION
-    WebGeolocationError(WebCore::GeolocationError*);
-    WebGeolocationError& operator=(WebCore::GeolocationError*);
-    operator WebCore::GeolocationError*() const;
+    WebGeolocationError(GeolocationError*);
+    WebGeolocationError& operator=(GeolocationError*);
+    operator GeolocationError*() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::GeolocationError> m_private;
+    WebPrivatePtr<GeolocationError> m_private;
 };
 
 } // namespace blink

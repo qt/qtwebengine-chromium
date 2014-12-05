@@ -4,17 +4,17 @@
 
 #include "media/audio/pulse/pulse_input.h"
 
-#include <pulse/pulseaudio.h>
-
 #include "base/logging.h"
 #include "media/audio/pulse/audio_manager_pulse.h"
 #include "media/audio/pulse/pulse_util.h"
-#include "media/base/seekable_buffer.h"
 
 namespace media {
 
 using pulse::AutoPulseLock;
 using pulse::WaitForOperationCompletion;
+
+// Number of blocks of buffers used in the |fifo_|.
+const int kNumberOfBlocksBufferInFifo = 2;
 
 PulseAudioInputStream::PulseAudioInputStream(AudioManagerPulse* audio_manager,
                                              const std::string& device_name,
@@ -28,6 +28,10 @@ PulseAudioInputStream::PulseAudioInputStream(AudioManagerPulse* audio_manager,
       channels_(0),
       volume_(0.0),
       stream_started_(false),
+      muted_(false),
+      fifo_(params.channels(),
+            params.frames_per_buffer(),
+            kNumberOfBlocksBufferInFifo),
       pa_mainloop_(mainloop),
       pa_context_(context),
       handle_(NULL),
@@ -35,7 +39,6 @@ PulseAudioInputStream::PulseAudioInputStream(AudioManagerPulse* audio_manager,
   DCHECK(mainloop);
   DCHECK(context);
   CHECK(params_.IsValid());
-  audio_bus_ = AudioBus::Create(params_);
 }
 
 PulseAudioInputStream::~PulseAudioInputStream() {
@@ -54,8 +57,6 @@ bool PulseAudioInputStream::Open() {
 
   DCHECK(handle_);
 
-  buffer_.reset(new media::SeekableBuffer(0, 2 * params_.GetBytesPerBuffer()));
-  audio_data_buffer_.reset(new uint8[params_.GetBytesPerBuffer()]);
   return true;
 }
 
@@ -71,10 +72,6 @@ void PulseAudioInputStream::Start(AudioInputCallback* callback) {
 
   if (stream_started_)
     return;
-
-  // Clean up the old buffer.
-  pa_stream_drop(handle_);
-  buffer_->Clear();
 
   // Start the streaming.
   callback_ = callback;
@@ -97,6 +94,10 @@ void PulseAudioInputStream::Stop() {
   // Set the flag to false to stop filling new data to soundcard.
   stream_started_ = false;
 
+  // Clean up the old buffer.
+  pa_stream_drop(handle_);
+  fifo_.Clear();
+
   pa_operation* operation = pa_stream_flush(handle_,
                                             &pulse::StreamSuccessCallback,
                                             pa_mainloop_);
@@ -117,7 +118,9 @@ void PulseAudioInputStream::Close() {
     if (handle_) {
       // Disable all the callbacks before disconnecting.
       pa_stream_set_state_callback(handle_, NULL, NULL);
-      pa_stream_flush(handle_, NULL, NULL);
+      pa_operation* operation = pa_stream_flush(
+          handle_, &pulse::StreamSuccessCallback, pa_mainloop_);
+      WaitForOperationCompletion(pa_mainloop_, operation);
 
       if (pa_stream_get_state(handle_) != PA_STREAM_UNCONNECTED)
         pa_stream_disconnect(handle_);
@@ -181,18 +184,15 @@ double PulseAudioInputStream::GetVolume() {
     // Return zero and the callback will asynchronously update the |volume_|.
     return 0.0;
   } else {
-    // Called by other thread, put an AutoPulseLock and wait for the operation.
-    AutoPulseLock auto_lock(pa_mainloop_);
-    if (!handle_)
-      return 0.0;
-
-    size_t index = pa_stream_get_device_index(handle_);
-    pa_operation* operation = pa_context_get_source_info_by_index(
-        pa_context_, index, &VolumeCallback, this);
-    WaitForOperationCompletion(pa_mainloop_, operation);
-
+    GetSourceInformation(&VolumeCallback);
     return volume_;
   }
+}
+
+bool PulseAudioInputStream::IsMuted() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  GetSourceInformation(&MuteCallback);
+  return muted_;
 }
 
 // static, used by pa_stream_set_read_callback.
@@ -232,11 +232,32 @@ void PulseAudioInputStream::VolumeCallback(pa_context* context,
   stream->volume_ = static_cast<double>(volume);
 }
 
+// static, used by pa_context_get_source_info_by_index.
+void PulseAudioInputStream::MuteCallback(pa_context* context,
+                                         const pa_source_info* info,
+                                         int error,
+                                         void* user_data) {
+  // Runs on PulseAudio callback thread. It might be possible to make this
+  // method more thread safe by passing a struct (or pair) of a local copy of
+  // |pa_mainloop_| and |muted_| instead.
+  PulseAudioInputStream* stream =
+      reinterpret_cast<PulseAudioInputStream*>(user_data);
+
+  // Avoid infinite wait loop in case of error.
+  if (error) {
+    pa_threaded_mainloop_signal(stream->pa_mainloop_, 0);
+    return;
+  }
+
+  stream->muted_ = info->mute != 0;
+}
+
 // static, used by pa_stream_set_state_callback.
 void PulseAudioInputStream::StreamNotifyCallback(pa_stream* s,
                                                  void* user_data) {
   PulseAudioInputStream* stream =
       reinterpret_cast<PulseAudioInputStream*>(user_data);
+
   if (s && stream->callback_ &&
       pa_stream_get_state(s) == PA_STREAM_FAILED) {
     stream->callback_->OnError(stream);
@@ -265,31 +286,48 @@ void PulseAudioInputStream::ReadData() {
     if (!data || length == 0)
       break;
 
-    buffer_->Append(reinterpret_cast<const uint8*>(data), length);
+    const int number_of_frames = length / params_.GetBytesPerFrame();
+    if (number_of_frames > fifo_.GetUnfilledFrames()) {
+      // Dynamically increase capacity to the FIFO to handle larger buffer got
+      // from Pulse.
+      const int increase_blocks_of_buffer = static_cast<int>(
+          (number_of_frames - fifo_.GetUnfilledFrames()) /
+              params_.frames_per_buffer()) + 1;
+      fifo_.IncreaseCapacity(increase_blocks_of_buffer);
+    }
+
+    fifo_.Push(data, number_of_frames, params_.bits_per_sample() / 8);
 
     // Checks if we still have data.
     pa_stream_drop(handle_);
   } while (pa_stream_readable_size(handle_) > 0);
 
-  int packet_size = params_.GetBytesPerBuffer();
-  while (buffer_->forward_bytes() >= packet_size) {
-    buffer_->Read(audio_data_buffer_.get(), packet_size);
-    audio_bus_->FromInterleaved(audio_data_buffer_.get(),
-                                audio_bus_->frames(),
-                                params_.bits_per_sample() / 8);
-    callback_->OnData(
-        this, audio_bus_.get(), hardware_delay, normalized_volume);
+  while (fifo_.available_blocks()) {
+    const AudioBus* audio_bus = fifo_.Consume();
 
-    if (buffer_->forward_bytes() < packet_size)
-      break;
+    // Compensate the audio delay caused by the FIFO.
+    hardware_delay += fifo_.GetAvailableFrames() * params_.GetBytesPerFrame();
+    callback_->OnData(this, audio_bus, hardware_delay, normalized_volume);
 
-    // TODO(xians): Remove once PPAPI is using circular buffers.
-    DVLOG(1) << "OnData is being called consecutively, sleep 5ms to "
-             << "wait until render consumes the data";
-    base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(5));
+    // Sleep 5ms to wait until render consumes the data in order to avoid
+    // back to back OnData() method.
+    if (fifo_.available_blocks())
+      base::PlatformThread::Sleep(base::TimeDelta::FromMilliseconds(5));
   }
 
   pa_threaded_mainloop_signal(pa_mainloop_, 0);
+}
+
+bool PulseAudioInputStream::GetSourceInformation(pa_source_info_cb_t callback) {
+  AutoPulseLock auto_lock(pa_mainloop_);
+  if (!handle_)
+    return false;
+
+  size_t index = pa_stream_get_device_index(handle_);
+  pa_operation* operation =
+      pa_context_get_source_info_by_index(pa_context_, index, callback, this);
+  WaitForOperationCompletion(pa_mainloop_, operation);
+  return true;
 }
 
 }  // namespace media

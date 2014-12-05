@@ -77,6 +77,7 @@ void VideoCaptureHost::OnBufferReady(
     const VideoCaptureControllerID& controller_id,
     int buffer_id,
     const media::VideoCaptureFormat& frame_format,
+    const gfx::Rect& visible_rect,
     base::TimeTicks timestamp) {
   BrowserThread::PostTask(
       BrowserThread::IO,
@@ -86,6 +87,7 @@ void VideoCaptureHost::OnBufferReady(
                  controller_id,
                  buffer_id,
                  frame_format,
+                 visible_rect,
                  timestamp));
 }
 
@@ -143,6 +145,7 @@ void VideoCaptureHost::DoSendFilledBufferOnIOThread(
     const VideoCaptureControllerID& controller_id,
     int buffer_id,
     const media::VideoCaptureFormat& format,
+    const gfx::Rect& visible_rect,
     base::TimeTicks timestamp) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
@@ -150,7 +153,7 @@ void VideoCaptureHost::DoSendFilledBufferOnIOThread(
     return;
 
   Send(new VideoCaptureMsg_BufferReady(
-      controller_id.device_id, buffer_id, format, timestamp));
+      controller_id.device_id, buffer_id, format, visible_rect, timestamp));
 }
 
 void VideoCaptureHost::DoSendFilledMailboxBufferOnIOThread(
@@ -199,6 +202,7 @@ bool VideoCaptureHost::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(VideoCaptureHost, message)
     IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_Start, OnStartCapture)
     IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_Pause, OnPauseCapture)
+    IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_Resume, OnResumeCapture)
     IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_Stop, OnStopCapture)
     IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_BufferReady, OnReceiveEmptyBuffer)
     IPC_MESSAGE_HANDLER(VideoCaptureHostMsg_GetDeviceSupportedFormats,
@@ -218,9 +222,11 @@ void VideoCaptureHost::OnStartCapture(int device_id,
   DVLOG(1) << "VideoCaptureHost::OnStartCapture:"
            << " session_id=" << session_id
            << ", device_id=" << device_id
-           << ", format=" << params.requested_format.frame_size.ToString()
+           << ", format=" << params.requested_format.ToString()
            << "@" << params.requested_format.frame_rate
-           << " (" << (params.allow_resolution_change ? "variable" : "constant")
+           << " (" << (params.resolution_change_policy ==
+                           media::RESOLUTION_POLICY_DYNAMIC_WITHIN_LIMIT ?
+                           "variable" : "constant")
            << ")";
   VideoCaptureControllerID controller_id(device_id);
   if (entries_.find(controller_id) != entries_.end()) {
@@ -290,14 +296,39 @@ void VideoCaptureHost::OnStopCapture(int device_id) {
 void VideoCaptureHost::OnPauseCapture(int device_id) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
   DVLOG(1) << "VideoCaptureHost::OnPauseCapture, device_id " << device_id;
-  // Not used.
-  Send(new VideoCaptureMsg_StateChanged(device_id, VIDEO_CAPTURE_STATE_ERROR));
+
+  VideoCaptureControllerID controller_id(device_id);
+  EntryMap::iterator it = entries_.find(controller_id);
+  if (it == entries_.end())
+    return;
+
+  if (it->second) {
+    media_stream_manager_->video_capture_manager()->PauseCaptureForClient(
+        it->second.get(), controller_id, this);
+  }
 }
 
-void VideoCaptureHost::OnReceiveEmptyBuffer(
+void VideoCaptureHost::OnResumeCapture(
     int device_id,
-    int buffer_id,
-    const std::vector<uint32>& sync_points) {
+    media::VideoCaptureSessionId session_id,
+    const media::VideoCaptureParams& params) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DVLOG(1) << "VideoCaptureHost::OnResumeCapture, device_id " << device_id;
+
+  VideoCaptureControllerID controller_id(device_id);
+  EntryMap::iterator it = entries_.find(controller_id);
+  if (it == entries_.end())
+    return;
+
+  if (it->second) {
+    media_stream_manager_->video_capture_manager()->ResumeCaptureForClient(
+        session_id, params, it->second.get(), controller_id, this);
+  }
+}
+
+void VideoCaptureHost::OnReceiveEmptyBuffer(int device_id,
+                                            int buffer_id,
+                                            uint32 sync_point) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   VideoCaptureControllerID controller_id(device_id);
@@ -305,7 +336,7 @@ void VideoCaptureHost::OnReceiveEmptyBuffer(
   if (it != entries_.end()) {
     const base::WeakPtr<VideoCaptureController>& controller = it->second;
     if (controller)
-      controller->ReturnBuffer(controller_id, this, buffer_id, sync_points);
+      controller->ReturnBuffer(controller_id, this, buffer_id, sync_point);
   }
 }
 

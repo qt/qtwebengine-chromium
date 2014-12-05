@@ -34,7 +34,7 @@
 #include "core/svg/SVGNumberTearOff.h"
 #include "core/svg/properties/SVGAnimatedProperty.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAnimatedNumberOptionalNumber;
 
@@ -46,7 +46,7 @@ public:
         return adoptRef(new SVGAnimatedNumber(contextElement, attributeName, initialValue));
     }
 
-    virtual void synchronizeAttribute() OVERRIDE;
+    virtual void synchronizeAttribute() override;
 
     void setParentOptionalNumber(SVGAnimatedNumberOptionalNumber* numberOptionalNumber)
     {
@@ -64,6 +64,6 @@ protected:
     SVGAnimatedNumberOptionalNumber* m_parentNumberOptionalNumber;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedNumber_h

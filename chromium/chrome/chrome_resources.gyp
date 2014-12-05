@@ -10,6 +10,7 @@
   },
   'targets': [
     {
+      # GN version: //chrome:extra_resources
       'target_name': 'chrome_extra_resources',
       'type': 'none',
       # These resources end up in resources.pak because they are resources
@@ -17,6 +18,7 @@
       # it easier for us to reference them internally.
       'actions': [
         {
+          # GN version: //chrome/browser/resources:memory_internals_resources
           'action_name': 'generate_memory_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/memory_internals_resources.grd',
@@ -24,6 +26,7 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:net_internals_resources
           'action_name': 'generate_net_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/net_internals_resources.grd',
@@ -31,6 +34,7 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:invalidations_resources
           'action_name': 'generate_invalidations_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/invalidations_resources.grd',
@@ -38,6 +42,7 @@
           'includes': ['../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:password_manager_internals_resources
           'action_name': 'generate_password_manager_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/password_manager_internals_resources.grd',
@@ -45,6 +50,7 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:signin_internals_resources
           'action_name': 'generate_signin_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/signin_internals_resources.grd',
@@ -52,6 +58,7 @@
           'includes': ['../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:sync_internals_resources
           'action_name': 'generate_sync_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/sync_internals_resources.grd',
@@ -59,6 +66,7 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
         {
+          # GN version: //chrome/browser/resources:translate_internals_resources
           'action_name': 'generate_translate_internals_resources',
           'variables': {
             'grit_grd_file': 'browser/resources/translate_internals_resources.grd',
@@ -76,6 +84,7 @@
           ],
           'actions': [
             {
+              # GN version: //chrome/browser/resources:component_extension_resources
               'action_name': 'generate_component_extension_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/component_extension_resources.grd',
@@ -83,29 +92,17 @@
               'includes': [ '../build/grit_action.gypi' ],
             },
             {
+              # GN version: //chrome/browser/resources:options_resources
               'action_name': 'generate_options_resources',
               'variables': {
                 'grit_grd_file': 'browser/resources/options_resources.grd',
               },
               'includes': [ '../build/grit_action.gypi' ],
             },
-            {
-              'action_name': 'generate_quota_internals_resources',
-              'variables': {
-                'grit_grd_file': 'browser/resources/quota_internals_resources.grd',
-              },
-              'includes': [ '../build/grit_action.gypi' ],
-            },
-            {
-              'action_name': 'generate_sync_file_system_internals_resources',
-              'variables': {
-                'grit_grd_file': 'browser/resources/sync_file_system_internals_resources.grd',
-              },
-              'includes': [ '../build/grit_action.gypi' ],
-            },
           ],
           'copies': [
             {
+              # GN version: //chrome/browser/resources:extension_resource_demo
               'destination': '<(PRODUCT_DIR)/resources/extension/demo',
               'files': [
                 'browser/resources/extension_resource/demo/library.js',
@@ -114,17 +111,28 @@
           ],
         }],
         ['chromeos==1 and disable_nacl==0 and disable_nacl_untrusted==0', {
-          'conditions': [
-            # TODO(dtseng): Remove use_chromevox_next once ChromeVox Next is ready for testing.
-            ['use_chromevox_next==1', {
-              'dependencies': [
-                'browser/resources/chromeos/chromevox2/chromevox.gyp:chromevox2',
-              ],
-            }, { # else use_chromevox_next == 0
-              'dependencies': [
-                'browser/resources/chromeos/chromevox/chromevox.gyp:chromevox',
-              ],
-            }],
+          'dependencies': [
+            'browser/resources/chromeos/chromevox/chromevox.gyp:chromevox',
+          ],
+        }],
+        ['enable_extensions==1', {
+          'actions': [
+            {
+              # GN version: //chrome/browser/resources:quota_internals_resources
+              'action_name': 'generate_quota_internals_resources',
+              'variables': {
+                'grit_grd_file': 'browser/resources/quota_internals_resources.grd',
+              },
+              'includes': [ '../build/grit_action.gypi' ],
+            },
+            {
+              # GN version: //chrome/browser/resources:sync_file_system_internals_resources
+              'action_name': 'generate_sync_file_system_internals_resources',
+              'variables': {
+                'grit_grd_file': 'browser/resources/sync_file_system_internals_resources.grd',
+              },
+              'includes': [ '../build/grit_action.gypi' ],
+            },
           ],
         }],
       ],
@@ -266,9 +274,9 @@
           'includes': [ '../build/grit_action.gypi' ],
         },
       ],
-      'includes': [ '../build/grit_target.gypi' ],
     },
     {
+      # GN version: //chrome/app:make_generated_resources_map
       'target_name': 'chrome_strings_map',
       'type': 'none',
       'dependencies': [ 'chrome_strings', ],
@@ -276,6 +284,7 @@
         {
           'action_name': 'generate_resources_map',
           'inputs': [
+            'browser/metrics/variations/generate_resources_map.py',
             '<(grit_out_dir)/grit/generated_resources.h'
           ],
           'outputs': [
@@ -292,6 +301,7 @@
       ],
     },
     {
+      # GN version: //chrome/app/resources:platform_locale_settings
       'target_name': 'platform_locale_settings',
       'type': 'none',
       'variables': {
@@ -359,6 +369,7 @@
       'includes': [ '../build/grit_target.gypi' ],
     },
     {
+      # GN version: //chrome:packed_extra_resources
       'target_name': 'packed_extra_resources',
       'type': 'none',
       'dependencies': [
@@ -386,6 +397,7 @@
       ],
     },
     {
+      # GN version: //chrome:packed_resources
       'target_name': 'packed_resources',
       'type': 'none',
       'dependencies': [
@@ -402,6 +414,7 @@
       ],
       'actions': [
         {
+          # GN version: //chrome:repack_locales_pack
           'action_name': 'repack_locales_pack',
           'variables': {
             'pak_locales': '<(locales)',
@@ -409,6 +422,7 @@
           'includes': ['chrome_repack_locales.gypi']
         },
         {
+          # GN version: //chrome:repack_pseudo_locales_pack
           'action_name': 'repack_pseudo_locales_pack',
           'variables': {
             'pak_locales': '<(pseudo_locales)',
@@ -425,11 +439,19 @@
       'conditions': [
         ['OS != "ios"', {
           'dependencies': [
-            '<(DEPTH)/content/content_resources.gyp:content_resources',
-            '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
-            '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
-            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_resources',
-            '<(DEPTH)/webkit/webkit_resources.gyp:webkit_strings',
+            '<(DEPTH)/content/app/resources/content_resources.gyp:content_resources',
+            '<(DEPTH)/content/app/strings/content_strings.gyp:content_strings',
+            '<(DEPTH)/third_party/WebKit/public/blink_resources.gyp:blink_resources',
+          ],
+        }, {  # else
+          'actions': [
+            {
+              'conditions': [
+                ['OS == "ios"', {
+                  'includes': ['chrome_repack_chrome_300_percent.gypi']
+                }],
+              ],
+            },
           ],
         }],
         ['use_ash==1', {
@@ -438,9 +460,28 @@
              '<(DEPTH)/ash/ash_strings.gyp:ash_strings',
           ],
         }],
+        ['chromeos==1', {
+          'dependencies': [
+            '<(DEPTH)/remoting/remoting.gyp:remoting_resources',
+            '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_resources',
+            '<(DEPTH)/ui/chromeos/ui_chromeos.gyp:ui_chromeos_strings',
+          ],
+        }],
+        ['use_athena==1', {
+          'dependencies': [
+            '<(DEPTH)/athena/resources/athena_resources.gyp:athena_resources',
+            '<(DEPTH)/athena/strings/athena_strings.gyp:athena_strings',
+          ],
+        }],
         ['enable_autofill_dialog==1 and OS!="android"', {
           'dependencies': [
             '<(DEPTH)/third_party/libaddressinput/libaddressinput.gyp:libaddressinput_strings',
+          ],
+        }],
+        ['enable_extensions==1', {
+          'dependencies': [
+            '<(DEPTH)/device/bluetooth/bluetooth_strings.gyp:device_bluetooth_strings',
+            '<(DEPTH)/extensions/extensions_strings.gyp:extensions_strings',
           ],
         }],
         ['OS != "mac" and OS != "ios"', {
@@ -502,6 +543,7 @@
       ], # conditions
     },
     {
+      # GN version: //chrome/app/theme:chrome_unscaled_resources
       'target_name': 'chrome_unscaled_resources',
       'type': 'none',
       'actions': [

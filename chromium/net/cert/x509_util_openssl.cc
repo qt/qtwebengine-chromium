@@ -10,15 +10,29 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
 #include "crypto/ec_private_key.h"
 #include "crypto/openssl_util.h"
 #include "crypto/rsa_private_key.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/cert/x509_cert_types.h"
 #include "net/cert/x509_util.h"
 
 namespace net {
 
 namespace {
+
+typedef crypto::ScopedOpenSSL<ASN1_INTEGER, ASN1_INTEGER_free>::Type
+    ScopedASN1_INTEGER;
+typedef crypto::ScopedOpenSSL<ASN1_OCTET_STRING, ASN1_OCTET_STRING_free>::Type
+    ScopedASN1_OCTET_STRING;
+typedef crypto::ScopedOpenSSL<ASN1_STRING, ASN1_STRING_free>::Type
+    ScopedASN1_STRING;
+typedef crypto::ScopedOpenSSL<ASN1_TIME, ASN1_TIME_free>::Type ScopedASN1_TIME;
+typedef crypto::ScopedOpenSSL<X509, X509_free>::Type ScopedX509;
+typedef crypto::ScopedOpenSSL<X509_EXTENSION, X509_EXTENSION_free>::Type
+    ScopedX509_EXTENSION;
+typedef crypto::ScopedOpenSSL<X509_NAME, X509_NAME_free>::Type ScopedX509_NAME;
 
 const EVP_MD* ToEVP(x509_util::DigestAlgorithm alg) {
   switch (alg) {
@@ -43,8 +57,7 @@ X509* CreateCertificate(EVP_PKEY* key,
                         base::Time not_valid_before,
                         base::Time not_valid_after) {
   // Put the serial number into an OpenSSL-friendly object.
-  crypto::ScopedOpenSSL<ASN1_INTEGER, ASN1_INTEGER_free> asn1_serial(
-      ASN1_INTEGER_new());
+  ScopedASN1_INTEGER asn1_serial(ASN1_INTEGER_new());
   if (!asn1_serial.get() ||
       !ASN1_INTEGER_set(asn1_serial.get(), static_cast<long>(serial_number))) {
     LOG(ERROR) << "Invalid serial number " << serial_number;
@@ -52,7 +65,7 @@ X509* CreateCertificate(EVP_PKEY* key,
   }
 
   // Do the same for the time stamps.
-  crypto::ScopedOpenSSL<ASN1_TIME, ASN1_TIME_free> asn1_not_before_time(
+  ScopedASN1_TIME asn1_not_before_time(
       ASN1_TIME_set(NULL, not_valid_before.ToTimeT()));
   if (!asn1_not_before_time.get()) {
     LOG(ERROR) << "Invalid not_valid_before time: "
@@ -60,7 +73,7 @@ X509* CreateCertificate(EVP_PKEY* key,
     return NULL;
   }
 
-  crypto::ScopedOpenSSL<ASN1_TIME, ASN1_TIME_free> asn1_not_after_time(
+  ScopedASN1_TIME asn1_not_after_time(
       ASN1_TIME_set(NULL, not_valid_after.ToTimeT()));
   if (!asn1_not_after_time.get()) {
     LOG(ERROR) << "Invalid not_valid_after time: " << not_valid_after.ToTimeT();
@@ -87,7 +100,7 @@ X509* CreateCertificate(EVP_PKEY* key,
   int common_name_len =
       static_cast<int>(common_name.size() - kCommonNamePrefixLen);
 
-  crypto::ScopedOpenSSL<X509_NAME, X509_NAME_free> name(X509_NAME_new());
+  ScopedX509_NAME name(X509_NAME_new());
   if (!name.get() || !X509_NAME_add_entry_by_NID(name.get(),
                                                  NID_commonName,
                                                  MBSTRING_ASC,
@@ -100,7 +113,7 @@ X509* CreateCertificate(EVP_PKEY* key,
   }
 
   // Now create certificate and populate it.
-  crypto::ScopedOpenSSL<X509, X509_free> cert(X509_new());
+  ScopedX509 cert(X509_new());
   if (!cert.get() || !X509_set_version(cert.get(), 2L) /* i.e. version 3 */ ||
       !X509_set_pubkey(cert.get(), key) ||
       !X509_set_serialNumber(cert.get(), asn1_serial.get()) ||
@@ -113,6 +126,22 @@ X509* CreateCertificate(EVP_PKEY* key,
   }
 
   return cert.release();
+}
+
+// DER-encodes |x509|. On success, returns true and writes the
+// encoding to |*out_der|.
+bool DerEncodeCert(X509* x509, std::string* out_der) {
+  int len = i2d_X509(x509, NULL);
+  if (len < 0)
+    return false;
+
+  uint8_t* ptr = reinterpret_cast<uint8_t*>(WriteInto(out_der, len + 1));
+  if (i2d_X509(x509, &ptr) < 0) {
+    NOTREACHED();
+    out_der->clear();
+    return false;
+  }
+  return true;
 }
 
 bool SignAndDerEncodeCert(X509* cert,
@@ -133,17 +162,7 @@ bool SignAndDerEncodeCert(X509* cert,
   }
 
   // Convert it into a DER-encoded string copied to |der_encoded|.
-  int der_data_length = i2d_X509(cert, NULL);
-  if (der_data_length < 0)
-    return false;
-
-  der_encoded->resize(der_data_length);
-  unsigned char* der_data =
-      reinterpret_cast<unsigned char*>(&(*der_encoded)[0]);
-  if (i2d_X509(cert, &der_data) < 0)
-    return false;
-
-  return true;
+  return DerEncodeCert(cert, der_encoded);
 }
 
 // There is no OpenSSL NID for the 'originBoundCertificate' extension OID yet,
@@ -175,6 +194,36 @@ ASN1_OBJECT* GetDomainBoundOid() {
       LAZY_INSTANCE_INITIALIZER;
   return s_lazy.Get().obj();
 }
+
+
+struct DERCache {
+  std::string data;
+};
+
+void DERCache_free(void* parent, void* ptr, CRYPTO_EX_DATA* ad, int idx,
+                   long argl, void* argp) {
+  DERCache* der_cache = static_cast<DERCache*>(ptr);
+  delete der_cache;
+}
+
+class DERCacheInitSingleton {
+ public:
+  DERCacheInitSingleton() {
+    crypto::EnsureOpenSSLInit();
+    der_cache_ex_index_ = X509_get_ex_new_index(0, 0, 0, 0, DERCache_free);
+    DCHECK_NE(-1, der_cache_ex_index_);
+  }
+
+  int der_cache_ex_index() const { return der_cache_ex_index_; }
+
+ private:
+  int der_cache_ex_index_;
+
+  DISALLOW_COPY_AND_ASSIGN(DERCacheInitSingleton);
+};
+
+base::LazyInstance<DERCacheInitSingleton>::Leaky g_der_cache_singleton =
+    LAZY_INSTANCE_INITIALIZER;
 
 }  // namespace
 
@@ -211,7 +260,7 @@ bool IsSupportedValidityRange(base::Time not_valid_before,
   return true;
 }
 
-bool CreateDomainBoundCertEC(
+bool CreateChannelIDEC(
     crypto::ECPrivateKey* key,
     DigestAlgorithm alg,
     const std::string& domain,
@@ -221,20 +270,18 @@ bool CreateDomainBoundCertEC(
     std::string* der_cert) {
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
   // Create certificate.
-  crypto::ScopedOpenSSL<X509, X509_free> cert(
-      CreateCertificate(key->key(),
-                        alg,
-                        "CN=anonymous.invalid",
-                        serial_number,
-                        not_valid_before,
-                        not_valid_after));
+  ScopedX509 cert(CreateCertificate(key->key(),
+                                    alg,
+                                    "CN=anonymous.invalid",
+                                    serial_number,
+                                    not_valid_before,
+                                    not_valid_after));
   if (!cert.get())
     return false;
 
   // Add TLS-Channel-ID extension to the certificate before signing it.
   // The value must be stored DER-encoded, as a ASN.1 IA5String.
-  crypto::ScopedOpenSSL<ASN1_STRING, ASN1_STRING_free> domain_ia5(
-      ASN1_IA5STRING_new());
+  ScopedASN1_STRING domain_ia5(ASN1_IA5STRING_new());
   if (!domain_ia5.get() ||
       !ASN1_STRING_set(domain_ia5.get(), domain.data(), domain.size()))
     return false;
@@ -250,15 +297,13 @@ bool CreateDomainBoundCertEC(
   if (i2d_ASN1_IA5STRING(domain_ia5.get(), &domain_der_data) < 0)
     return false;
 
-  crypto::ScopedOpenSSL<ASN1_OCTET_STRING, ASN1_OCTET_STRING_free> domain_str(
-      ASN1_OCTET_STRING_new());
+  ScopedASN1_OCTET_STRING domain_str(ASN1_OCTET_STRING_new());
   if (!domain_str.get() ||
       !ASN1_STRING_set(domain_str.get(), domain_der.data(), domain_der.size()))
     return false;
 
-  crypto::ScopedOpenSSL<X509_EXTENSION, X509_EXTENSION_free> ext(
-      X509_EXTENSION_create_by_OBJ(
-          NULL, GetDomainBoundOid(), 1 /* critical */, domain_str.get()));
+  ScopedX509_EXTENSION ext(X509_EXTENSION_create_by_OBJ(
+      NULL, GetDomainBoundOid(), 1 /* critical */, domain_str.get()));
   if (!ext.get() || !X509_add_ext(cert.get(), ext.get(), -1)) {
     return false;
   }
@@ -275,27 +320,21 @@ bool CreateSelfSignedCert(crypto::RSAPrivateKey* key,
                           base::Time not_valid_after,
                           std::string* der_encoded) {
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  crypto::ScopedOpenSSL<X509, X509_free> cert(
-      CreateCertificate(key->key(),
-                        alg,
-                        common_name,
-                        serial_number,
-                        not_valid_before,
-                        not_valid_after));
+  ScopedX509 cert(CreateCertificate(key->key(),
+                                    alg,
+                                    common_name,
+                                    serial_number,
+                                    not_valid_before,
+                                    not_valid_after));
   if (!cert.get())
     return false;
 
   return SignAndDerEncodeCert(cert.get(), key->key(), alg, der_encoded);
 }
 
-bool ParsePrincipalKeyAndValueByIndex(X509_NAME* name,
-                                      int index,
-                                      std::string* key,
-                                      std::string* value) {
-  X509_NAME_ENTRY* entry = X509_NAME_get_entry(name, index);
-  if (!entry)
-    return false;
-
+bool ParsePrincipalKeyAndValue(X509_NAME_ENTRY* entry,
+                               std::string* key,
+                               std::string* value) {
   if (key) {
     ASN1_OBJECT* object = X509_NAME_ENTRY_get_object(entry);
     key->assign(OBJ_nid2sn(OBJ_obj2nid(object)));
@@ -313,6 +352,17 @@ bool ParsePrincipalKeyAndValueByIndex(X509_NAME* name,
   value->assign(reinterpret_cast<const char*>(buf), len);
   OPENSSL_free(buf);
   return true;
+}
+
+bool ParsePrincipalKeyAndValueByIndex(X509_NAME* name,
+                                      int index,
+                                      std::string* key,
+                                      std::string* value) {
+  X509_NAME_ENTRY* entry = X509_NAME_get_entry(name, index);
+  if (!entry)
+    return false;
+
+  return ParsePrincipalKeyAndValue(entry, key, value);
 }
 
 bool ParsePrincipalValueByIndex(X509_NAME* name,
@@ -341,6 +391,30 @@ bool ParseDate(ASN1_TIME* x509_time, base::Time* time) {
   CertDateFormat format = x509_time->type == V_ASN1_UTCTIME ?
       CERT_DATE_FORMAT_UTC_TIME : CERT_DATE_FORMAT_GENERALIZED_TIME;
   return ParseCertificateDate(str_date, format, time);
+}
+
+// Returns true if |der_cache| points to valid data, false otherwise.
+// (note: the DER-encoded data in |der_cache| is owned by |cert|, callers should
+// not free it).
+bool GetDER(X509* x509, base::StringPiece* der_cache) {
+  int x509_der_cache_index =
+      g_der_cache_singleton.Get().der_cache_ex_index();
+
+  // Re-encoding the DER data via i2d_X509 is an expensive operation,
+  // but it's necessary for comparing two certificates. Re-encode at
+  // most once per certificate and cache the data within the X509 cert
+  // using X509_set_ex_data.
+  DERCache* internal_cache = static_cast<DERCache*>(
+      X509_get_ex_data(x509, x509_der_cache_index));
+  if (!internal_cache) {
+    scoped_ptr<DERCache> new_cache(new DERCache);
+    if (!DerEncodeCert(x509, &new_cache->data))
+      return false;
+    internal_cache = new_cache.get();
+    X509_set_ex_data(x509, x509_der_cache_index, new_cache.release());
+  }
+  *der_cache = base::StringPiece(internal_cache->data);
+  return true;
 }
 
 }  // namespace x509_util

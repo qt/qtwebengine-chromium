@@ -39,7 +39,7 @@
 #include "wtf/MainThread.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<WorkerLoaderClientBridgeSyncHelper> WorkerLoaderClientBridgeSyncHelper::create(ThreadableLoaderClient& client, PassOwnPtr<blink::WebWaitableEvent> event)
 {
@@ -67,19 +67,19 @@ void WorkerLoaderClientBridgeSyncHelper::didSendData(unsigned long long bytesSen
     m_clientTasks.append(bind(&ThreadableLoaderClient::didSendData, &m_client, bytesSent, totalBytesToBeSent));
 }
 
-static void didReceiveResponseAdapter(ThreadableLoaderClient* client, unsigned long identifier, PassOwnPtr<CrossThreadResourceResponseData> responseData)
+static void didReceiveResponseAdapter(ThreadableLoaderClient* client, unsigned long identifier, PassOwnPtr<CrossThreadResourceResponseData> responseData, PassOwnPtr<WebDataConsumerHandle> handle)
 {
     OwnPtr<ResourceResponse> response(ResourceResponse::adopt(responseData));
-    client->didReceiveResponse(identifier, *response);
+    client->didReceiveResponse(identifier, *response, handle);
 }
 
-void WorkerLoaderClientBridgeSyncHelper::didReceiveResponse(unsigned long identifier, const ResourceResponse& response)
+void WorkerLoaderClientBridgeSyncHelper::didReceiveResponse(unsigned long identifier, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&didReceiveResponseAdapter, &m_client, identifier, response.copyData()));
+    m_clientTasks.append(bind(&didReceiveResponseAdapter, &m_client, identifier, response.copyData(), handle));
 }
 
-void WorkerLoaderClientBridgeSyncHelper::didReceiveData(const char* data, int dataLength)
+void WorkerLoaderClientBridgeSyncHelper::didReceiveData(const char* data, unsigned dataLength)
 {
     ASSERT(isMainThread());
     Vector<char>* buffer = new Vector<char>(dataLength);
@@ -114,7 +114,7 @@ void WorkerLoaderClientBridgeSyncHelper::didFinishLoading(unsigned long identifi
 void WorkerLoaderClientBridgeSyncHelper::didFail(const ResourceError& error)
 {
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFail, &m_client, error));
+    m_clientTasks.append(bind(&ThreadableLoaderClient::didFail, &m_client, error.copy()));
     m_done = true;
     m_event->signal();
 }
@@ -122,7 +122,7 @@ void WorkerLoaderClientBridgeSyncHelper::didFail(const ResourceError& error)
 void WorkerLoaderClientBridgeSyncHelper::didFailAccessControlCheck(const ResourceError& error)
 {
     ASSERT(isMainThread());
-    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailAccessControlCheck, &m_client, error));
+    m_clientTasks.append(bind(&ThreadableLoaderClient::didFailAccessControlCheck, &m_client, error.copy()));
     m_done = true;
     m_event->signal();
 }
@@ -143,4 +143,4 @@ WorkerLoaderClientBridgeSyncHelper::WorkerLoaderClientBridgeSyncHelper(Threadabl
     ASSERT(m_event);
 }
 
-} // namespace WebCore
+} // namespace blink

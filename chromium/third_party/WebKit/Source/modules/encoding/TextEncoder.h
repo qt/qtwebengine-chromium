@@ -31,27 +31,26 @@
 #ifndef TextEncoder_h
 #define TextEncoder_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "platform/heap/Handle.h"
-#include "wtf/ArrayBufferView.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Uint8Array.h"
 #include "wtf/text/TextCodec.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class Dictionary;
 class ExceptionState;
 
-class TextEncoder FINAL : public GarbageCollectedFinalized<TextEncoder> {
+class TextEncoder final : public GarbageCollectedFinalized<TextEncoder>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static TextEncoder* create(const String& utfLabel, ExceptionState&);
     ~TextEncoder();
 
     // Implement the IDL
     String encoding() const;
-    PassRefPtr<Uint8Array> encode(const String&, const Dictionary&);
+    PassRefPtr<DOMUint8Array> encode(const String&);
 
     void trace(Visitor*) { }
 
@@ -62,6 +61,6 @@ private:
     OwnPtr<WTF::TextCodec> m_codec;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextEncoder_h

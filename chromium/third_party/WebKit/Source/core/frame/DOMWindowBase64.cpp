@@ -33,12 +33,12 @@
 #include "config.h"
 #include "core/frame/DOMWindowBase64.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "wtf/text/Base64.h"
 
-namespace WebCore {
+namespace blink {
 
 String DOMWindowBase64::btoa(const String& stringToEncode, ExceptionState& exceptionState)
 {
@@ -71,4 +71,4 @@ String DOMWindowBase64::atob(const String& encodedString, ExceptionState& except
     return String(out.data(), out.size());
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -14,7 +14,7 @@ cr.define('cr.ui', function() {
    *     interact with.
    *
    * @constructor
-   * @extends {!cr.EventTarget}
+   * @extends {cr.EventTarget}
    */
   function ListSelectionController(selectionModel) {
     this.selectionModel_ = selectionModel;
@@ -237,10 +237,12 @@ cr.define('cr.ui', function() {
               this.getFirstIndex() : this.getIndexBelow(leadIndex);
           break;
         case 'Left':
+        case 'MediaPreviousTrack':
           newIndex = leadIndex == -1 ?
               this.getLastIndex() : this.getIndexBefore(leadIndex);
           break;
         case 'Right':
+        case 'MediaNextTrack':
           newIndex = leadIndex == -1 ?
               this.getFirstIndex() : this.getIndexAfter(leadIndex);
           break;

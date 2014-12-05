@@ -41,9 +41,9 @@
 #include "wtf/WeakPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSSelectorWatch FINAL : public NoBaseWillBeGarbageCollectedFinalized<CSSSelectorWatch>, public DocumentSupplement {
+class CSSSelectorWatch final : public NoBaseWillBeGarbageCollectedFinalized<CSSSelectorWatch>, public DocumentSupplement {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(CSSSelectorWatch);
 public:
     virtual ~CSSSelectorWatch() { }
@@ -55,13 +55,14 @@ public:
 
     void updateSelectorMatches(const Vector<String>& removedSelectors, const Vector<String>& addedSelectors);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit CSSSelectorWatch(Document&);
     void callbackSelectorChangeTimerFired(Timer<CSSSelectorWatch>*);
+    Document& document() const { return *m_document; }
 
-    Document& m_document;
+    RawPtrWillBeMember<Document> m_document;
 
     WillBeHeapVector<RefPtrWillBeMember<StyleRule> > m_watchedCallbackSelectors;
 
@@ -80,6 +81,6 @@ private:
     int m_timerExpirations;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSSelectorWatch_h

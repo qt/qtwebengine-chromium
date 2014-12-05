@@ -15,8 +15,8 @@
 
 #include <string>
 
-#include "gmock/gmock.h"
-#include "gtest/gtest.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 #include "webrtc/modules/audio_coding/neteq/mock/mock_audio_decoder.h"
 #include "webrtc/test/testsupport/gtest_disable.h"
@@ -189,21 +189,18 @@ TEST(DecoderDatabase, ActiveDecoders) {
   EXPECT_TRUE(changed);
   AudioDecoder* decoder = db.GetActiveDecoder();
   ASSERT_FALSE(decoder == NULL);  // Should get a decoder here.
-  EXPECT_EQ(kDecoderPCMu, decoder->codec_type());
 
   // Set the same again. Expect no change.
   EXPECT_EQ(DecoderDatabase::kOK, db.SetActiveDecoder(0, &changed));
   EXPECT_FALSE(changed);
   decoder = db.GetActiveDecoder();
   ASSERT_FALSE(decoder == NULL);  // Should get a decoder here.
-  EXPECT_EQ(kDecoderPCMu, decoder->codec_type());
 
   // Change active decoder.
   EXPECT_EQ(DecoderDatabase::kOK, db.SetActiveDecoder(103, &changed));
   EXPECT_TRUE(changed);
   decoder = db.GetActiveDecoder();
   ASSERT_FALSE(decoder == NULL);  // Should get a decoder here.
-  EXPECT_EQ(kDecoderISAC, decoder->codec_type());
 
   // Remove the active decoder, and verify that the active becomes NULL.
   EXPECT_EQ(DecoderDatabase::kOK, db.Remove(103));
@@ -213,7 +210,6 @@ TEST(DecoderDatabase, ActiveDecoders) {
   EXPECT_EQ(DecoderDatabase::kOK, db.SetActiveCngDecoder(13));
   decoder = db.GetActiveCngDecoder();
   ASSERT_FALSE(decoder == NULL);  // Should get a decoder here.
-  EXPECT_EQ(kDecoderCNGnb, decoder->codec_type());
 
   // Remove the active CNG decoder, and verify that the active becomes NULL.
   EXPECT_EQ(DecoderDatabase::kOK, db.Remove(13));

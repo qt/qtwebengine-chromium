@@ -32,7 +32,7 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
                                       public FocusChangeListener {
  public:
   DialogClientView(Widget* widget, View* contents_view);
-  virtual ~DialogClientView();
+  ~DialogClientView() override;
 
   // Accept or Cancel the dialog.
   void AcceptWindow();
@@ -46,27 +46,25 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   void UpdateDialogButtons();
 
   // ClientView implementation:
-  virtual bool CanClose() OVERRIDE;
-  virtual DialogClientView* AsDialogClientView() OVERRIDE;
-  virtual const DialogClientView* AsDialogClientView() const OVERRIDE;
+  bool CanClose() override;
+  DialogClientView* AsDialogClientView() override;
+  const DialogClientView* AsDialogClientView() const override;
 
   // FocusChangeListener implementation:
-  virtual void OnWillChangeFocus(View* focused_before,
-                                 View* focused_now) OVERRIDE;
-  virtual void OnDidChangeFocus(View* focused_before,
-                                View* focused_now) OVERRIDE;
+  void OnWillChangeFocus(View* focused_before, View* focused_now) override;
+  void OnDidChangeFocus(View* focused_before, View* focused_now) override;
 
   // View implementation:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual void NativeViewHierarchyChanged() OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void Layout() override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
+  void NativeViewHierarchyChanged() override;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // ButtonListener implementation:
-  virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
+  void ButtonPressed(Button* sender, const ui::Event& event) override;
 
  protected:
   // For testing.
@@ -82,8 +80,8 @@ class VIEWS_EXPORT DialogClientView : public ClientView,
   void CreateFootnoteView();
 
   // View implementation.
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-  virtual void ChildVisibilityChanged(View* child) OVERRIDE;
+  void ChildPreferredSizeChanged(View* child) override;
+  void ChildVisibilityChanged(View* child) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(DialogClientViewTest, FocusManager);

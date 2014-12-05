@@ -30,16 +30,15 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
+ * @extends {WebInspector.SDKModel}
  * @param {!WebInspector.Target} target
  */
 WebInspector.TimelineManager = function(target)
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.SDKModel.call(this, WebInspector.TimelineManager, target);
     this._dispatcher = new WebInspector.TimelineDispatcher(this);
     this._enablementCount = 0;
-    this._jsProfilerStarted = false;
-    TimelineAgent.enable();
+    target.timelineAgent().enable();
 }
 
 WebInspector.TimelineManager.EventTypes = {
@@ -60,29 +59,23 @@ WebInspector.TimelineManager.prototype = {
 
     /**
      * @param {number=} maxCallStackDepth
-     * @param {boolean=} bufferEvents
      * @param {string=} liveEvents
      * @param {boolean=} includeCounters
      * @param {boolean=} includeGPUEvents
      * @param {function(?Protocol.Error)=} callback
      */
-    start: function(maxCallStackDepth, bufferEvents, liveEvents, includeCounters, includeGPUEvents, callback)
+    start: function(maxCallStackDepth, liveEvents, includeCounters, includeGPUEvents, callback)
     {
         this._enablementCount++;
-        this.target().profilingLock.acquire();
-        if (WebInspector.experimentsSettings.timelineJSCPUProfile.isEnabled() && maxCallStackDepth) {
-            this._configureCpuProfilerSamplingInterval();
-            this._jsProfilerStarted = true;
-            ProfilerAgent.start();
-        }
+        WebInspector.targetManager.suspendAllTargets();
         if (this._enablementCount === 1)
-            TimelineAgent.start(maxCallStackDepth, bufferEvents, liveEvents, includeCounters, includeGPUEvents, callback);
+            this.target().timelineAgent().start(maxCallStackDepth, true, liveEvents, includeCounters, includeGPUEvents, callback);
         else if (callback)
             callback(null);
     },
 
     /**
-     * @param {function(?Protocol.Error,?ProfilerAgent.CPUProfile)} callback
+     * @param {function(?Protocol.Error)} callback
      */
     stop: function(callback)
     {
@@ -92,78 +85,33 @@ WebInspector.TimelineManager.prototype = {
             return;
         }
 
-        var masterError = null;
-        var masterProfile = null;
-        var callbackBarrier = new CallbackBarrier();
-
-        if (this._jsProfilerStarted) {
-            ProfilerAgent.stop(callbackBarrier.createCallback(profilerCallback));
-            this._jsProfilerStarted = false;
-        }
         if (!this._enablementCount)
-            TimelineAgent.stop(callbackBarrier.createCallback(this._processBufferedEvents.bind(this, timelineCallback)));
-
-        callbackBarrier.callWhenDone(allDoneCallback.bind(this));
+            this.target().timelineAgent().stop(allDoneCallback);
 
         /**
          * @param {?Protocol.Error} error
          */
-        function timelineCallback(error)
+        function allDoneCallback(error)
         {
-            masterError = masterError || error;
-        }
-
-        /**
-         * @param {?Protocol.Error} error
-         * @param {!ProfilerAgent.CPUProfile} profile
-         */
-        function profilerCallback(error, profile)
-        {
-            masterError = masterError || error;
-            masterProfile = profile;
-        }
-
-        /**
-         * @this {WebInspector.TimelineManager}
-         */
-        function allDoneCallback()
-        {
-            this.target().profilingLock.release();
-            callback(masterError, masterProfile);
+            WebInspector.targetManager.resumeAllTargets();
+            callback(error);
         }
     },
 
     /**
-     * @param {function(?Protocol.Error)|undefined} callback
-     * @param {?Protocol.Error} error
+     * @param {boolean=} consoleTimeline
      * @param {!Array.<!TimelineAgent.TimelineEvent>=} events
      */
-    _processBufferedEvents: function(callback, error, events)
+    _stopped: function(consoleTimeline, events)
     {
-        if (events) {
-            for (var i = 0; i < events.length; ++i)
-                this._dispatcher.eventRecorded(events[i]);
-        }
-        if (callback)
-            callback(error);
+        var data = {
+            consoleTimeline: consoleTimeline,
+            events: events || []
+        };
+        this.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStopped, data);
     },
 
-    _configureCpuProfilerSamplingInterval: function()
-    {
-        var intervalUs = WebInspector.settings.highResolutionCpuProfiling.get() ? 100 : 1000;
-        ProfilerAgent.setSamplingInterval(intervalUs, didChangeInterval.bind(this));
-
-        /**
-         * @this {WebInspector.TimelineManager}
-         */
-        function didChangeInterval(error)
-        {
-            if (error)
-                this.target().consoleModel.showErrorMessage(error);
-        }
-    },
-
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.SDKModel.prototype
 }
 
 /**
@@ -173,7 +121,7 @@ WebInspector.TimelineManager.prototype = {
 WebInspector.TimelineDispatcher = function(manager)
 {
     this._manager = manager;
-    InspectorBackend.registerTimelineDispatcher(this);
+    this._manager.target().registerTimelineDispatcher(this);
 }
 
 WebInspector.TimelineDispatcher.prototype = {
@@ -198,21 +146,18 @@ WebInspector.TimelineDispatcher.prototype = {
      */
     started: function(consoleTimeline)
     {
-        if (consoleTimeline) {
-            // Wake up timeline panel module.
-            WebInspector.moduleManager.loadModule("timeline");
-        }
         this._started = true;
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStarted, consoleTimeline);
     },
 
     /**
      * @param {boolean=} consoleTimeline
+     * @param {!Array.<!TimelineAgent.TimelineEvent>=} events
      */
-    stopped: function(consoleTimeline)
+    stopped: function(consoleTimeline, events)
     {
         this._started = false;
-        this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineStopped, consoleTimeline);
+        this._manager._stopped(consoleTimeline, events);
     },
 
     /**
@@ -223,8 +168,3 @@ WebInspector.TimelineDispatcher.prototype = {
         this._manager.dispatchEventToListeners(WebInspector.TimelineManager.EventTypes.TimelineProgress, count);
     }
 }
-
-/**
- * @type {!WebInspector.TimelineManager}
- */
-WebInspector.timelineManager;

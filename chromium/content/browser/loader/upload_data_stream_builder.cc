@@ -7,15 +7,15 @@
 #include "base/logging.h"
 #include "content/browser/fileapi/upload_file_system_file_element_reader.h"
 #include "content/common/resource_request_body.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/upload_bytes_element_reader.h"
-#include "net/base/upload_data_stream.h"
 #include "net/base/upload_file_element_reader.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
 
-using webkit_blob::BlobData;
-using webkit_blob::BlobDataHandle;
-using webkit_blob::BlobStorageContext;
+using storage::BlobData;
+using storage::BlobDataHandle;
+using storage::BlobStorageContext;
 
 namespace content {
 namespace {
@@ -30,7 +30,7 @@ class BytesElementReader : public net::UploadBytesElementReader {
     DCHECK_EQ(ResourceRequestBody::Element::TYPE_BYTES, element.type());
   }
 
-  virtual ~BytesElementReader() {}
+  ~BytesElementReader() override {}
 
  private:
   scoped_refptr<ResourceRequestBody> resource_request_body_;
@@ -55,7 +55,7 @@ class FileElementReader : public net::UploadFileElementReader {
     DCHECK_EQ(ResourceRequestBody::Element::TYPE_FILE, element.type());
   }
 
-  virtual ~FileElementReader() {}
+  ~FileElementReader() override {}
 
  private:
   scoped_refptr<ResourceRequestBody> resource_request_body_;
@@ -64,12 +64,11 @@ class FileElementReader : public net::UploadFileElementReader {
 };
 
 void ResolveBlobReference(
-    ResourceRequestBody* body,
-    webkit_blob::BlobStorageContext* blob_context,
+    storage::BlobStorageContext* blob_context,
     const ResourceRequestBody::Element& element,
     std::vector<const ResourceRequestBody::Element*>* resolved_elements) {
   DCHECK(blob_context);
-  scoped_ptr<webkit_blob::BlobDataHandle> handle =
+  scoped_ptr<storage::BlobDataHandle> handle =
       blob_context->GetBlobDataFromUUID(element.blob_uuid());
   DCHECK(handle);
   if (!handle)
@@ -85,11 +84,6 @@ void ResolveBlobReference(
     DCHECK_NE(BlobData::Item::TYPE_BLOB, item.type());
     resolved_elements->push_back(&item);
   }
-
-  // Ensure the blob and any attached shareable files survive until
-  // upload completion. The |body| takes ownership of |handle|.
-  const void* key = handle.get();
-  body->SetUserData(key, handle.release());
 }
 
 }  // namespace
@@ -97,14 +91,14 @@ void ResolveBlobReference(
 scoped_ptr<net::UploadDataStream> UploadDataStreamBuilder::Build(
     ResourceRequestBody* body,
     BlobStorageContext* blob_context,
-    fileapi::FileSystemContext* file_system_context,
+    storage::FileSystemContext* file_system_context,
     base::TaskRunner* file_task_runner) {
   // Resolve all blob elements.
   std::vector<const ResourceRequestBody::Element*> resolved_elements;
   for (size_t i = 0; i < body->elements()->size(); ++i) {
     const ResourceRequestBody::Element& element = (*body->elements())[i];
     if (element.type() == ResourceRequestBody::Element::TYPE_BLOB)
-      ResolveBlobReference(body, blob_context, element, &resolved_elements);
+      ResolveBlobReference(blob_context, element, &resolved_elements);
     else
       resolved_elements.push_back(&element);
   }
@@ -121,6 +115,9 @@ scoped_ptr<net::UploadDataStream> UploadDataStreamBuilder::Build(
             new FileElementReader(body, file_task_runner, element));
         break;
       case ResourceRequestBody::Element::TYPE_FILE_FILESYSTEM:
+        // If |body| contains any filesystem URLs, the caller should have
+        // supplied a FileSystemContext.
+        DCHECK(file_system_context);
         element_readers.push_back(
             new content::UploadFileSystemFileElementReader(
                 file_system_context,
@@ -140,7 +137,8 @@ scoped_ptr<net::UploadDataStream> UploadDataStreamBuilder::Build(
   }
 
   return make_scoped_ptr(
-      new net::UploadDataStream(element_readers.Pass(), body->identifier()));
+      new net::ElementsUploadDataStream(element_readers.Pass(),
+                                        body->identifier()));
 }
 
 }  // namespace content

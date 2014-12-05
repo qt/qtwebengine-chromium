@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementCallbackQueue.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<CustomElementCallbackQueue> CustomElementCallbackQueue::create(PassRefPtrWillBeRawPtr<Element> element)
 {
@@ -52,7 +52,7 @@ bool CustomElementCallbackQueue::processInElementQueue(ElementQueueId caller)
     bool didWork = false;
 
     while (m_index < m_queue.size() && owner() == caller) {
-        m_inCreatedCallback = m_queue[m_index]->isCreated();
+        m_inCreatedCallback = m_queue[m_index]->isCreatedCallback();
 
         // dispatch() may cause recursion which steals this callback
         // queue and reenters processInQueue. owner() == caller
@@ -77,4 +77,4 @@ void CustomElementCallbackQueue::trace(Visitor* visitor)
     visitor->trace(m_element);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -27,12 +27,13 @@
 #define ContextMenuController_h
 
 #include "core/rendering/HitTestResult.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
     class ContextMenu;
     class ContextMenuClient;
@@ -40,14 +41,15 @@ namespace WebCore {
     class ContextMenuProvider;
     class Document;
     class Event;
+    class LocalFrame;
     class Page;
 
-    class ContextMenuController {
-        WTF_MAKE_NONCOPYABLE(ContextMenuController); WTF_MAKE_FAST_ALLOCATED;
+    class ContextMenuController final : public NoBaseWillBeGarbageCollectedFinalized<ContextMenuController> {
+        WTF_MAKE_NONCOPYABLE(ContextMenuController); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     public:
+        static PassOwnPtrWillBeRawPtr<ContextMenuController> create(Page*, ContextMenuClient*);
         ~ContextMenuController();
-
-        static PassOwnPtr<ContextMenuController> create(Page*, ContextMenuClient*);
+        void trace(Visitor*);
 
         ContextMenu* contextMenu() const { return m_contextMenu.get(); }
         void clearContextMenu();
@@ -55,7 +57,8 @@ namespace WebCore {
         void documentDetached(Document*);
 
         void handleContextMenuEvent(Event*);
-        void showContextMenu(Event*, PassRefPtr<ContextMenuProvider>);
+        void showContextMenu(Event*, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
+        void showContextMenuAtPoint(LocalFrame*, float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider>);
 
         void contextMenuItemSelected(const ContextMenuItem*);
 
@@ -65,14 +68,16 @@ namespace WebCore {
         ContextMenuController(Page*, ContextMenuClient*);
 
         PassOwnPtr<ContextMenu> createContextMenu(Event*);
+        PassOwnPtr<ContextMenu> createContextMenu(LocalFrame*, const LayoutPoint&);
+        void populateCustomContextMenu(const Event&);
         void showContextMenu(Event*);
 
         ContextMenuClient* m_client;
         OwnPtr<ContextMenu> m_contextMenu;
-        RefPtr<ContextMenuProvider> m_menuProvider;
+        RefPtrWillBeMember<ContextMenuProvider> m_menuProvider;
         HitTestResult m_hitTestResult;
     };
 
-}
+} // namespace blink
 
-#endif
+#endif // ContextMenuController_h

@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/base
       'target_name': 'ui_base',
       'type': '<(component)',
       'dependencies': [
@@ -20,6 +21,7 @@
         '../../third_party/icu/icu.gyp:icui18n',
         '../../third_party/icu/icu.gyp:icuuc',
         '../../url/url.gyp:url_lib',
+        '../events/events.gyp:events',
         '../events/events.gyp:events_base',
         '../events/platform/events_platform.gyp:events_platform',
         '../gfx/gfx.gyp:gfx',
@@ -35,6 +37,7 @@
         '../gfx/gfx.gyp:gfx',
       ],
       'sources' : [
+        # Note: file list duplicated in GN build.
         'accelerators/accelerator.cc',
         'accelerators/accelerator.h',
         'accelerators/accelerator_manager.cc',
@@ -44,6 +47,7 @@
         'accelerators/platform_accelerator.h',
         'accelerators/platform_accelerator_cocoa.h',
         'accelerators/platform_accelerator_cocoa.mm',
+        'android/system_ui_resource_manager.h',
         'android/ui_base_jni_registrar.cc',
         'android/ui_base_jni_registrar.h',
         'android/view_android.cc',
@@ -57,15 +61,19 @@
         'clipboard/clipboard.cc',
         'clipboard/clipboard.h',
         'clipboard/clipboard_android.cc',
-        'clipboard/clipboard_android_initialization.h',
+        'clipboard/clipboard_android.h',
         'clipboard/clipboard_aura.cc',
+        'clipboard/clipboard_aura.h',
         'clipboard/clipboard_aurax11.cc',
+        'clipboard/clipboard_aurax11.h',
         'clipboard/clipboard_constants.cc',
+        'clipboard/clipboard_mac.h',
         'clipboard/clipboard_mac.mm',
         'clipboard/clipboard_types.h',
         'clipboard/clipboard_util_win.cc',
         'clipboard/clipboard_util_win.h',
         'clipboard/clipboard_win.cc',
+        'clipboard/clipboard_win.h',
         'clipboard/custom_data_helper.cc',
         'clipboard/custom_data_helper.h',
         'clipboard/custom_data_helper_linux.cc',
@@ -87,6 +95,8 @@
         'cocoa/controls/hover_image_menu_button_cell.mm',
         'cocoa/controls/hyperlink_button_cell.h',
         'cocoa/controls/hyperlink_button_cell.mm',
+        'cocoa/controls/hyperlink_text_view.h',
+        'cocoa/controls/hyperlink_text_view.mm',
         'cocoa/find_pasteboard.h',
         'cocoa/find_pasteboard.mm',
         'cocoa/flipped_view.h',
@@ -107,6 +117,10 @@
         'cocoa/nib_loading.mm',
         'cocoa/nsgraphics_context_additions.h',
         'cocoa/nsgraphics_context_additions.mm',
+        'cocoa/nsview_additions.h',
+        'cocoa/nsview_additions.mm',
+        'cocoa/remote_layer_api.h',
+        'cocoa/remote_layer_api.mm',
         'cocoa/tracking_area.h',
         'cocoa/tracking_area.mm',
         'cocoa/underlay_opengl_hosting_window.h',
@@ -172,6 +186,69 @@
         'dragdrop/os_exchange_data_provider_win.cc',
         'dragdrop/os_exchange_data_provider_win.h',
         'hit_test.h',
+        'ime/candidate_window.cc',
+        'ime/candidate_window.h',
+        'ime/chromeos/character_composer.cc',
+        'ime/chromeos/character_composer.h',
+        'ime/chromeos/ime_bridge.cc',
+        'ime/chromeos/ime_bridge.h',
+        'ime/chromeos/ime_keymap.cc',
+        'ime/chromeos/ime_keymap.h',
+        'ime/chromeos/mock_ime_candidate_window_handler.cc',
+        'ime/chromeos/mock_ime_candidate_window_handler.h',
+        'ime/chromeos/mock_ime_engine_handler.cc',
+        'ime/chromeos/mock_ime_engine_handler.h',
+        'ime/chromeos/mock_ime_input_context_handler.cc',
+        'ime/chromeos/mock_ime_input_context_handler.h',
+        'ime/composition_text.cc',
+        'ime/composition_text.h',
+        'ime/composition_text_util_pango.cc',
+        'ime/composition_text_util_pango.h',
+        'ime/composition_underline.h',
+        'ime/dummy_input_method_delegate.cc',
+        'ime/dummy_input_method_delegate.h',
+        'ime/infolist_entry.cc',
+        'ime/infolist_entry.h',
+        'ime/input_method.h',
+        'ime/input_method_auralinux.cc',
+        'ime/input_method_auralinux.h',
+        'ime/input_method_base.cc',
+        'ime/input_method_base.h',
+        'ime/input_method_chromeos.cc',
+        'ime/input_method_chromeos.h',
+        'ime/input_method_delegate.h',
+        'ime/input_method_factory.cc',
+        'ime/input_method_factory.h',
+        'ime/input_method_initializer.cc',
+        'ime/input_method_initializer.h',
+        'ime/input_method_mac.h',
+        'ime/input_method_mac.mm',
+        'ime/input_method_minimal.cc',
+        'ime/input_method_minimal.h',
+        'ime/input_method_observer.h',
+        'ime/input_method_win.cc',
+        'ime/input_method_win.h',
+        'ime/linux/fake_input_method_context.cc',
+        'ime/linux/fake_input_method_context.h',
+        'ime/linux/fake_input_method_context_factory.cc',
+        'ime/linux/fake_input_method_context_factory.h',
+        'ime/linux/linux_input_method_context.h',
+        'ime/linux/linux_input_method_context_factory.cc',
+        'ime/linux/linux_input_method_context_factory.h',
+        'ime/mock_input_method.cc',
+        'ime/mock_input_method.h',
+        'ime/remote_input_method_delegate_win.h',
+        'ime/remote_input_method_win.cc',
+        'ime/remote_input_method_win.h',
+        'ime/text_input_client.cc',
+        'ime/text_input_client.h',
+        'ime/text_input_focus_manager.cc',
+        'ime/text_input_focus_manager.h',
+        'ime/text_input_type.h',
+        'ime/win/imm32_manager.cc',
+        'ime/win/imm32_manager.h',
+        'ime/win/tsf_input_scope.cc',
+        'ime/win/tsf_input_scope.h',
         'l10n/formatter.cc',
         'l10n/formatter.h',
         'l10n/l10n_font_util.cc',
@@ -221,6 +298,9 @@
         'models/tree_node_model.h',
         'nine_image_painter_factory.cc',
         'nine_image_painter_factory.h',
+        'page_transition_types.cc',
+        'page_transition_types.h',
+        'page_transition_types_list.h',
         'resource/data_pack.cc',
         'resource/data_pack.h',
         'resource/resource_bundle.cc',
@@ -268,8 +348,6 @@
         'win/accessibility_misc_utils.cc',
         'win/accessibility_misc_utils.h',
         'win/atl_module.h',
-        'win/dpi_setup.cc',
-        'win/dpi_setup.h',
         'win/foreground_helper.cc',
         'win/foreground_helper.h',
         'win/hidden_window.cc',
@@ -284,6 +362,8 @@
         'win/message_box_win.h',
         'win/mouse_wheel_util.cc',
         'win/mouse_wheel_util.h',
+        'win/open_file_name_win.cc',
+        'win/open_file_name_win.h',
         'win/scoped_ole_initializer.cc',
         'win/scoped_ole_initializer.h',
         'win/shell.cc',
@@ -301,6 +381,8 @@
         'x/selection_requestor.h',
         'x/selection_utils.cc',
         'x/selection_utils.h',
+        'x/x11_foreign_window_manager.cc',
+        'x/x11_foreign_window_manager.h',
         'x/x11_menu_list.cc',
         'x/x11_menu_list.h',
         'x/x11_util.cc',
@@ -315,11 +397,7 @@
         }],
       ],
       'conditions': [
-        ['OS!="ios"', {
-          'includes': [
-            'ime/ime.gypi',
-          ],
-        }, {  # OS=="ios"
+        ['OS=="ios"', {
           # iOS only uses a subset of UI.
           'sources/': [
             ['exclude', '\\.(cc|mm)$'],
@@ -327,6 +405,7 @@
             ['include', '(^|/)ios/'],
             ['include', '^l10n/'],
             ['include', '^layout'],
+            ['include', '^page_transition_type'],
             ['include', '^resource/'],
             ['include', '^ui_base_'],
           ],
@@ -336,19 +415,11 @@
             ],
           },
         }],
-        ['toolkit_views==1', {
-          'dependencies': [
-            '../events/events.gyp:events',
-          ],
-        }],
         ['use_aura==1', {
           'sources/': [
             ['exclude', 'clipboard/clipboard_mac.mm'],
             ['exclude', 'layout_mac.mm'],
             ['exclude', 'work_area_watcher_observer.h'],
-          ],
-          'dependencies': [
-            '../events/events.gyp:events',
           ],
         }, {  # use_aura!=1
           'sources!': [
@@ -575,9 +646,54 @@
           # ui to be a hard dependency for all its users.
           'hard_dependency': 1,
         }],
+        ['toolkit_views==0 and use_aura==0', {
+          'sources!': [
+            'ime/input_method_factory.cc',
+            'ime/input_method_factory.h',
+            'ime/input_method_minimal.cc',
+            'ime/input_method_minimal.h',
+          ],
+        }],
+        ['chromeos==0', {
+          'sources!': [
+            'ime/input_method_chromeos.cc',
+            'ime/input_method_chromeos.h',
+          ],
+        }],
+        ['chromeos==1', {
+          'dependencies': [
+            '../../chromeos/chromeos.gyp:chromeos',
+          ],
+        }],
+        ['OS!="win"', {
+          'sources!': [
+            'ime/input_method_imm32.cc',
+            'ime/input_method_imm32.h',
+          ],
+        }],
+        ['use_aura==0 or (desktop_linux==0 and use_ozone==0)', {
+          'sources!': [
+            'ime/input_method_auralinux.cc',
+            'ime/input_method_auralinux.h',
+            'ime/linux/fake_input_method_context.cc',
+            'ime/linux/fake_input_method_context.h',
+            'ime/linux/fake_input_method_context_factory.cc',
+            'ime/linux/fake_input_method_context_factory.h',
+            'ime/linux/linux_input_method_context.h',
+            'ime/linux/linux_input_method_context_factory.cc',
+            'ime/linux/linux_input_method_context_factory.h',
+          ],
+        }],
+        ['use_x11==0', {
+          'sources!': [
+            'ime/composition_text_util_pango.cc',
+            'ime/composition_text_util_pango.h',
+          ],
+        }],
       ],
     },
     {
+      # GN version: //ui/base:test_support
       'target_name': 'ui_base_test_support',
       'dependencies': [
         '../../base/base.gyp:base',
@@ -587,6 +703,7 @@
         '../gfx/gfx.gyp:gfx_geometry',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'test/ui_controls.h',
         'test/ui_controls_aura.cc',
         'test/ui_controls_internal_win.cc',
@@ -600,7 +717,12 @@
       'conditions': [
         ['OS!="ios"', {
           'type': 'static_library',
-          'includes': [ 'ime/ime_test_support.gypi' ],
+            'sources': [
+              'ime/dummy_input_method.cc',
+              'ime/dummy_input_method.h',
+              'ime/dummy_text_input_client.cc',
+              'ime/dummy_text_input_client.h',
+            ],
         }, {  # OS=="ios"
           # None of the sources in this target are built on iOS, resulting in
           # link errors when building targets that depend on this target
@@ -622,12 +744,15 @@
     ['OS=="android"' , {
        'targets': [
          {
+           # GN version: //ui/base:ui_base_jni_headers
            'target_name': 'ui_base_jni_headers',
            'type': 'none',
            'sources': [
+             # Note: file list duplicated in GN build.
              '../android/java/src/org/chromium/ui/base/Clipboard.java',
              '../android/java/src/org/chromium/ui/base/DeviceFormFactor.java',
              '../android/java/src/org/chromium/ui/base/LocalizationUtils.java',
+             '../android/java/src/org/chromium/ui/base/ResourceBundle.java',
              '../android/java/src/org/chromium/ui/base/SelectFileDialog.java',
              '../android/java/src/org/chromium/ui/base/TouchDevice.java',
              '../android/java/src/org/chromium/ui/base/ViewAndroid.java',

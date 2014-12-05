@@ -14,9 +14,7 @@
 
 #if defined(USE_OPENSSL)
 #include "crypto/openssl_util.h"
-// Forward declaration for openssl/*.h
-typedef struct ec_key_st EC_KEY;
-extern "C" void EC_KEY_free(EC_KEY* key);
+#include "crypto/scoped_openssl_types.h"
 #else
 #include "crypto/ec_private_key.h"
 #include "crypto/scoped_nss_types.h"
@@ -28,10 +26,10 @@ namespace net {
 // Diffie-Hellman on NIST P-256.
 class NET_EXPORT_PRIVATE P256KeyExchange : public KeyExchange {
  public:
-  virtual ~P256KeyExchange();
+  ~P256KeyExchange() override;
 
   // New creates a new key exchange object from a private key. If
-  // |private_key| is invalid, NULL is returned.
+  // |private_key| is invalid, nullptr is returned.
   static P256KeyExchange* New(base::StringPiece private_key);
 
   // |NewPrivateKey| returns a private key, suitable for passing to |New|.
@@ -40,11 +38,11 @@ class NET_EXPORT_PRIVATE P256KeyExchange : public KeyExchange {
   static std::string NewPrivateKey();
 
   // KeyExchange interface.
-  virtual KeyExchange* NewKeyPair(QuicRandom* rand) const OVERRIDE;
-  virtual bool CalculateSharedKey(const base::StringPiece& peer_public_value,
-                                  std::string* shared_key) const OVERRIDE;
-  virtual base::StringPiece public_value() const OVERRIDE;
-  virtual QuicTag tag() const OVERRIDE;
+  KeyExchange* NewKeyPair(QuicRandom* rand) const override;
+  bool CalculateSharedKey(const base::StringPiece& peer_public_value,
+                          std::string* shared_key) const override;
+  base::StringPiece public_value() const override;
+  QuicTag tag() const override;
 
  private:
   enum {
@@ -63,7 +61,7 @@ class NET_EXPORT_PRIVATE P256KeyExchange : public KeyExchange {
   // |public_key| consists of |kUncompressedP256PointBytes| bytes.
   P256KeyExchange(EC_KEY* private_key, const uint8* public_key);
 
-  crypto::ScopedOpenSSL<EC_KEY, EC_KEY_free> private_key_;
+  crypto::ScopedEC_KEY private_key_;
 #else
   // P256KeyExchange takes ownership of |key_pair|, and expects
   // |public_key| consists of |kUncompressedP256PointBytes| bytes.
@@ -79,4 +77,3 @@ class NET_EXPORT_PRIVATE P256KeyExchange : public KeyExchange {
 
 }  // namespace net
 #endif  // NET_QUIC_CRYPTO_P256_KEY_EXCHANGE_H_
-

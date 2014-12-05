@@ -13,10 +13,10 @@
 
 #include <string>
 
+#include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_types.h"
 #include "webrtc/frame_callback.h"
 #include "webrtc/modules/remote_bitrate_estimator/rate_statistics.h"
-#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/video_engine/include/vie_codec.h"
 #include "webrtc/video_engine/include/vie_rtp_rtcp.h"
 #include "webrtc/video_receive_stream.h"
@@ -52,7 +52,7 @@ class ReceiveStatisticsProxy : public ViEDecoderObserver,
                                     const VideoCodec& video_codec) OVERRIDE {}
   virtual void IncomingRate(const int video_channel,
                             const unsigned int framerate,
-                            const unsigned int bitrate) OVERRIDE;
+                            const unsigned int bitrate_bps) OVERRIDE;
   virtual void DecoderTiming(int decode_ms,
                              int max_decode_ms,
                              int current_delay_ms,

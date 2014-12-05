@@ -23,23 +23,22 @@
  */
 
 #include "config.h"
-
 #include "modules/mediastream/RTCStatsRequestImpl.h"
 
 #include "modules/mediastream/MediaStreamTrack.h"
 #include "modules/mediastream/RTCPeerConnection.h"
 #include "modules/mediastream/RTCStatsCallback.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<RTCStatsRequestImpl> RTCStatsRequestImpl::create(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<RTCStatsCallback> callback, PassRefPtr<MediaStreamTrack> selector)
+RTCStatsRequestImpl* RTCStatsRequestImpl::create(ExecutionContext* context, RTCPeerConnection* requester, RTCStatsCallback* callback, MediaStreamTrack* selector)
 {
-    RefPtr<RTCStatsRequestImpl> request = adoptRef(new RTCStatsRequestImpl(context, requester, callback, selector));
+    RTCStatsRequestImpl* request = new RTCStatsRequestImpl(context, requester, callback, selector);
     request->suspendIfNeeded();
-    return request.release();
+    return request;
 }
 
-RTCStatsRequestImpl::RTCStatsRequestImpl(ExecutionContext* context, PassRefPtrWillBeRawPtr<RTCPeerConnection> requester, PassOwnPtr<RTCStatsCallback> callback, PassRefPtr<MediaStreamTrack> selector)
+RTCStatsRequestImpl::RTCStatsRequestImpl(ExecutionContext* context, RTCPeerConnection* requester, RTCStatsCallback* callback, MediaStreamTrack* selector)
     : ActiveDOMObject(context)
     , m_successCallback(callback)
     , m_component(selector ? selector->component() : 0)
@@ -52,7 +51,7 @@ RTCStatsRequestImpl::~RTCStatsRequestImpl()
 {
 }
 
-PassRefPtrWillBeRawPtr<RTCStatsResponseBase> RTCStatsRequestImpl::createResponse()
+RTCStatsResponseBase* RTCStatsRequestImpl::createResponse()
 {
     return RTCStatsResponse::create();
 }
@@ -67,11 +66,11 @@ MediaStreamComponent* RTCStatsRequestImpl::component()
     return m_component.get();
 }
 
-void RTCStatsRequestImpl::requestSucceeded(PassRefPtrWillBeRawPtr<RTCStatsResponseBase> response)
+void RTCStatsRequestImpl::requestSucceeded(RTCStatsResponseBase* response)
 {
     bool shouldFireCallback = m_requester ? m_requester->shouldFireGetStatsCallback() : false;
     if (shouldFireCallback && m_successCallback)
-        m_successCallback->handleEvent(static_cast<RTCStatsResponse*>(response.get()));
+        m_successCallback->handleEvent(static_cast<RTCStatsResponse*>(response));
     clear();
 }
 
@@ -86,4 +85,11 @@ void RTCStatsRequestImpl::clear()
     m_requester.clear();
 }
 
-} // namespace WebCore
+void RTCStatsRequestImpl::trace(Visitor* visitor)
+{
+    visitor->trace(m_successCallback);
+    visitor->trace(m_requester);
+    RTCStatsRequest::trace(visitor);
+}
+
+} // namespace blink

@@ -15,6 +15,8 @@
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/gpu_export.h"
 
+extern "C" typedef struct _ClientBuffer* ClientBuffer;
+
 namespace gfx {
 class GpuMemoryBuffer;
 }
@@ -29,21 +31,35 @@ class GPU_EXPORT GpuControl {
 
   virtual Capabilities GetCapabilities() = 0;
 
-  // Create a gpu memory buffer of the given dimensions and format. Returns
-  // its ID or -1 on error.
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(
-      size_t width,
-      size_t height,
-      unsigned internalformat,
-      unsigned usage,
-      int32_t* id) = 0;
+  // Create an image for a client buffer with the given dimensions and
+  // format. Returns its ID or -1 on error.
+  virtual int32_t CreateImage(ClientBuffer buffer,
+                              size_t width,
+                              size_t height,
+                              unsigned internalformat) = 0;
 
-  // Destroy a gpu memory buffer. The ID must be positive.
-  virtual void DestroyGpuMemoryBuffer(int32_t id) = 0;
+  // Destroy an image. The ID must be positive.
+  virtual void DestroyImage(int32_t id) = 0;
+
+  // Create a gpu memory buffer backed image with the given dimensions and
+  // format for |usage|. Returns its ID or -1 on error.
+  virtual int32_t CreateGpuMemoryBufferImage(size_t width,
+                                             size_t height,
+                                             unsigned internalformat,
+                                             unsigned usage) = 0;
 
   // Inserts a sync point, returning its ID. Sync point IDs are global and can
   // be used for cross-context synchronization.
   virtual uint32_t InsertSyncPoint() = 0;
+
+  // Inserts a future sync point, returning its ID. Sync point IDs are global
+  // and can be used for cross-context synchronization. The sync point won't be
+  // retired immediately.
+  virtual uint32_t InsertFutureSyncPoint() = 0;
+
+  // Retires a future sync point. This will signal contexts that are waiting
+  // on it to start executing.
+  virtual void RetireSyncPoint(uint32_t sync_point) = 0;
 
   // Runs |callback| when a sync point is reached.
   virtual void SignalSyncPoint(uint32_t sync_point,
@@ -54,9 +70,6 @@ class GPU_EXPORT GpuControl {
   virtual void SignalQuery(uint32_t query, const base::Closure& callback) = 0;
 
   virtual void SetSurfaceVisible(bool visible) = 0;
-
-  // Invokes the callback once the context has been flushed.
-  virtual void Echo(const base::Closure& callback) = 0;
 
   // Attaches an external stream to the texture given by |texture_id| and
   // returns a stream identifier.

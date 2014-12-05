@@ -28,7 +28,7 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 struct OverflowEventInit : public EventInit {
     OverflowEventInit();
@@ -38,7 +38,8 @@ struct OverflowEventInit : public EventInit {
     bool verticalOverflow;
 };
 
-class OverflowEvent FINAL : public Event {
+class OverflowEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum orientType {
         HORIZONTAL = 0,
@@ -63,9 +64,9 @@ public:
     bool horizontalOverflow() const { return m_horizontalOverflow; }
     bool verticalOverflow() const { return m_verticalOverflow; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     OverflowEvent();
@@ -77,6 +78,6 @@ private:
     bool m_verticalOverflow;
 };
 
-}
+} // namespace blink
 
 #endif // OverflowEvent_h

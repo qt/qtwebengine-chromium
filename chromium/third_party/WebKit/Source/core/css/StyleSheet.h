@@ -21,12 +21,12 @@
 #ifndef StyleSheet_h
 #define StyleSheet_h
 
-#include "core/css/CSSParserMode.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSRule;
 class KURL;
@@ -34,8 +34,10 @@ class MediaList;
 class Node;
 class StyleSheet;
 
-class StyleSheet : public RefCountedWillBeGarbageCollectedFinalized<StyleSheet> {
+class StyleSheet : public RefCountedWillBeGarbageCollectedFinalized<StyleSheet>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
+    StyleSheet() { }
     virtual ~StyleSheet();
 
     virtual bool disabled() const = 0;
@@ -56,6 +58,6 @@ public:
     virtual void trace(Visitor*) { }
 };
 
-} // namespace
+} // namespace blink
 
 #endif

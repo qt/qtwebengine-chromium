@@ -224,12 +224,12 @@ bool RTCPReceiver::GetAndResetXrRrRtt(uint16_t* rtt_ms) {
   return true;
 }
 
-int32_t
-RTCPReceiver::NTP(uint32_t *ReceivedNTPsecs,
-                  uint32_t *ReceivedNTPfrac,
-                  uint32_t *RTCPArrivalTimeSecs,
-                  uint32_t *RTCPArrivalTimeFrac,
-                  uint32_t *rtcp_timestamp) const
+// TODO(pbos): Make this fail when we haven't received NTP.
+bool RTCPReceiver::NTP(uint32_t* ReceivedNTPsecs,
+                       uint32_t* ReceivedNTPfrac,
+                       uint32_t* RTCPArrivalTimeSecs,
+                       uint32_t* RTCPArrivalTimeFrac,
+                       uint32_t* rtcp_timestamp) const
 {
     CriticalSectionScoped lock(_criticalSectionRTCPReceiver);
     if(ReceivedNTPsecs)
@@ -251,7 +251,7 @@ RTCPReceiver::NTP(uint32_t *ReceivedNTPsecs,
     if (rtcp_timestamp) {
       *rtcp_timestamp = _remoteSenderInfo.RTPtimeStamp;
     }
-    return 0;
+    return true;
 }
 
 bool RTCPReceiver::LastReceivedXrReferenceTimeInfo(
@@ -833,6 +833,8 @@ RTCPReceiver::HandleNACK(RTCPUtility::RTCPParserV2& rtcpParser,
 
     if (rtcpPacketInformation.rtcpPacketTypeFlags & kRtcpNack) {
       ++packet_type_counter_.nack_packets;
+      packet_type_counter_.nack_requests = nack_stats_.requests();
+      packet_type_counter_.unique_nack_requests = nack_stats_.unique_requests();
     }
 }
 
@@ -842,6 +844,7 @@ RTCPReceiver::HandleNACKItem(const RTCPUtility::RTCPPacket& rtcpPacket,
                              RTCPPacketInformation& rtcpPacketInformation)
 {
     rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID);
+    nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID);
 
     uint16_t bitMask = rtcpPacket.NACKItem.BitMask;
     if(bitMask)
@@ -851,6 +854,7 @@ RTCPReceiver::HandleNACKItem(const RTCPUtility::RTCPPacket& rtcpPacket,
             if(bitMask & 0x01)
             {
                 rtcpPacketInformation.AddNACKPacket(rtcpPacket.NACKItem.PacketID + i);
+                nack_stats_.ReportRequest(rtcpPacket.NACKItem.PacketID + i);
             }
             bitMask = bitMask >>1;
         }
@@ -1361,8 +1365,6 @@ int32_t RTCPReceiver::UpdateTMMBR() {
 void RTCPReceiver::RegisterRtcpStatisticsCallback(
     RtcpStatisticsCallback* callback) {
   CriticalSectionScoped cs(_criticalSectionFeedbacks);
-  if (callback != NULL)
-    assert(stats_callback_ == NULL);
   stats_callback_ = callback;
 }
 
@@ -1472,7 +1474,7 @@ void RTCPReceiver::TriggerCallbacksFromRTCPPacket(
         stats.fraction_lost = it->fractionLost;
         stats.jitter = it->jitter;
 
-        stats_callback_->StatisticsUpdated(stats, local_ssrc);
+        stats_callback_->StatisticsUpdated(stats, it->sourceSSRC);
       }
     }
   }

@@ -32,7 +32,6 @@
  */
 WebInspector.ProfileDataGridNode = function(profileNode, owningTree, hasChildren)
 {
-    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
     this.profileNode = profileNode;
 
     WebInspector.DataGridNode.call(this, null, hasChildren);
@@ -45,7 +44,7 @@ WebInspector.ProfileDataGridNode = function(profileNode, owningTree, hasChildren
     this.callUID = profileNode.callUID;
     this.selfTime = profileNode.selfTime;
     this.totalTime = profileNode.totalTime;
-    this.functionName = profileNode.functionName;
+    this.functionName = WebInspector.CPUProfileDataModel.beautifyFunctionName(profileNode.functionName);
     this._deoptReason = (!profileNode.deoptReason || profileNode.deoptReason === "no reason") ? "" : profileNode.deoptReason;
     this.url = profileNode.url;
 }
@@ -71,16 +70,14 @@ WebInspector.ProfileDataGridNode.prototype = {
         if (this._deoptReason)
             cell.classList.add("not-optimized");
 
-        if (this.profileNode._searchMatchedFunctionColumn)
+        if (this._searchMatchedFunctionColumn)
             cell.classList.add("highlight");
 
         if (this.profileNode.scriptId !== "0") {
             var lineNumber = this.profileNode.lineNumber ? this.profileNode.lineNumber - 1 : 0;
             var columnNumber = this.profileNode.columnNumber ? this.profileNode.columnNumber - 1 : 0;
-            var location = new WebInspector.DebuggerModel.Location(/** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget()), this.profileNode.scriptId, lineNumber, columnNumber);
-            var urlElement = this.tree.profileView._linkifier.linkifyRawLocation(location, "profile-node-file");
-            if (!urlElement)
-                urlElement = this.tree.profileView._linkifier.linkifyLocation(this._target, this.profileNode.url, lineNumber, columnNumber, "profile-node-file");
+            var target = this.tree.profileView.target();
+            var urlElement = this.tree.profileView._linkifier.linkifyScriptLocation(target, this.profileNode.scriptId, this.profileNode.url, lineNumber, columnNumber, "profile-node-file");
             urlElement.style.maxWidth = "75%";
             cell.insertBefore(urlElement, cell.firstChild);
         }
@@ -97,15 +94,15 @@ WebInspector.ProfileDataGridNode.prototype = {
         if (columnIdentifier !== "self" && columnIdentifier !== "total")
             return null;
 
-        var cell = document.createElement("td");
+        var cell = createElement("td");
         cell.className = "numeric-column";
-        var div = document.createElement("div");
-        var valueSpan = document.createElement("span");
+        var div = createElement("div");
+        var valueSpan = createElement("span");
         valueSpan.textContent = this.data[columnIdentifier];
         div.appendChild(valueSpan);
         var percentColumn = columnIdentifier + "-percent";
         if (percentColumn in this.data) {
-            var percentSpan = document.createElement("span");
+            var percentSpan = createElement("span");
             percentSpan.className = "percent-column";
             percentSpan.textContent = this.data[percentColumn];
             div.appendChild(percentSpan);
@@ -128,7 +125,7 @@ WebInspector.ProfileDataGridNode.prototype = {
 
         var functionName;
         if (this._deoptReason) {
-            var content = document.createDocumentFragment();
+            var content = createDocumentFragment();
             var marker = content.createChild("span", "profile-warn-marker");
             marker.title = WebInspector.UIString("Not optimized: %s", this._deoptReason);
             content.createTextChild(this.functionName);
@@ -191,7 +188,7 @@ WebInspector.ProfileDataGridNode.prototype = {
                     children.sort(comparator);
 
                     for (var childIndex = 0; childIndex < childCount; ++childIndex)
-                        children[childIndex]._recalculateSiblings(childIndex);
+                        children[childIndex].recalculateSiblings(childIndex);
 
                     gridNodeGroups.push(children);
                 }
@@ -248,28 +245,22 @@ WebInspector.ProfileDataGridNode.prototype = {
         return this.totalTime / this.tree.totalTime * 100.0;
     },
 
-    get _parent()
-    {
-        return this.parent !== this.dataGrid ? this.parent : this.tree;
-    },
-
     populate: function()
     {
-        if (this._populated)
-            return;
-        this._populated = true;
+        WebInspector.ProfileDataGridNode.populate(this);
+    },
 
-        this._sharedPopulate();
-
-        var currentComparator = this.tree.lastComparator;
-
-        if (currentComparator)
-            this.sort(currentComparator, true);
+    /**
+     * @protected
+     */
+    populateChildren: function()
+    {
     },
 
     // When focusing and collapsing we modify lots of nodes in the tree.
     // This allows us to restore them all to their original state when we revert.
-    _save: function()
+
+    save: function()
     {
         if (this._savedChildren)
             return;
@@ -280,9 +271,12 @@ WebInspector.ProfileDataGridNode.prototype = {
         this._savedChildren = this.children.slice();
     },
 
-    // When focusing and collapsing we modify lots of nodes in the tree.
-    // This allows us to restore them all to their original state when we revert.
-    _restore: function()
+    /**
+     * When focusing and collapsing we modify lots of nodes in the tree.
+     * This allows us to restore them all to their original state when we revert.
+     * @protected
+     */
+    restore: function()
     {
         if (!this._savedChildren)
             return;
@@ -296,44 +290,75 @@ WebInspector.ProfileDataGridNode.prototype = {
         var count = children.length;
 
         for (var index = 0; index < count; ++index) {
-            children[index]._restore();
+            children[index].restore();
             this.appendChild(children[index]);
         }
     },
 
-    _merge: function(child, shouldAbsorb)
+    /**
+     * @param {!WebInspector.ProfileDataGridNode} child
+     * @param {boolean} shouldAbsorb
+     */
+    merge: function(child, shouldAbsorb)
     {
-        this.selfTime += child.selfTime;
-
-        if (!shouldAbsorb)
-            this.totalTime += child.totalTime;
-
-        var children = this.children.slice();
-
-        this.removeChildren();
-
-        var count = children.length;
-
-        for (var index = 0; index < count; ++index) {
-            if (!shouldAbsorb || children[index] !== child)
-                this.appendChild(children[index]);
-        }
-
-        children = child.children.slice();
-        count = children.length;
-
-        for (var index = 0; index < count; ++index) {
-            var orphanedChild = children[index],
-                existingChild = this.childrenByCallUID[orphanedChild.callUID];
-
-            if (existingChild)
-                existingChild._merge(orphanedChild, false);
-            else
-                this.appendChild(orphanedChild);
-        }
+        WebInspector.ProfileDataGridNode.merge(this, child, shouldAbsorb);
     },
 
     __proto__: WebInspector.DataGridNode.prototype
+}
+
+/**
+ * @param {!WebInspector.ProfileDataGridNode|!WebInspector.ProfileDataGridTree} container
+ * @param {!WebInspector.ProfileDataGridNode} child
+ * @param {boolean} shouldAbsorb
+ */
+WebInspector.ProfileDataGridNode.merge = function(container, child, shouldAbsorb)
+{
+    container.selfTime += child.selfTime;
+
+    if (!shouldAbsorb)
+        container.totalTime += child.totalTime;
+
+    var children = container.children.slice();
+
+    container.removeChildren();
+
+    var count = children.length;
+
+    for (var index = 0; index < count; ++index) {
+        if (!shouldAbsorb || children[index] !== child)
+            container.appendChild(children[index]);
+    }
+
+    children = child.children.slice();
+    count = children.length;
+
+    for (var index = 0; index < count; ++index) {
+        var orphanedChild = children[index];
+        var existingChild = container.childrenByCallUID[orphanedChild.callUID];
+
+        if (existingChild)
+            existingChild.merge(orphanedChild, false);
+        else
+            container.appendChild(orphanedChild);
+    }
+}
+
+/**
+ * @param {!WebInspector.ProfileDataGridNode|!WebInspector.ProfileDataGridTree} container
+ */
+WebInspector.ProfileDataGridNode.populate = function(container)
+{
+    if (container._populated)
+        return;
+    container._populated = true;
+
+    container.populateChildren();
+
+    var currentComparator = container.tree.lastComparator;
+
+    if (currentComparator)
+        container.sort(currentComparator, true);
 }
 
 /**
@@ -377,10 +402,17 @@ WebInspector.ProfileDataGridTree.prototype = {
         this.childrenByCallUID = {};
     },
 
+    populateChildren: function()
+    {
+    },
+
     findChild: WebInspector.ProfileDataGridNode.prototype.findChild,
     sort: WebInspector.ProfileDataGridNode.prototype.sort,
 
-    _save: function()
+    /**
+     * @protected
+     */
+    save: function()
     {
         if (this._savedChildren)
             return;
@@ -401,7 +433,7 @@ WebInspector.ProfileDataGridTree.prototype = {
         var count = children.length;
 
         for (var index = 0; index < count; ++index)
-            children[index]._restore();
+            children[index].restore();
 
         this._savedChildren = null;
     }

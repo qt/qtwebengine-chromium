@@ -33,6 +33,8 @@ class MockObserver : public MergeSessionHelper::Observer {
   MOCK_METHOD2(MergeSessionCompleted,
                void(const std::string&,
                     const GoogleServiceAuthError& ));
+  MOCK_METHOD1(GetCheckConnectionInfoCompleted, void(bool));
+
  private:
   MergeSessionHelper* helper_;
 
@@ -50,7 +52,8 @@ class InstrumentedMergeSessionHelper : public MergeSessionHelper {
   InstrumentedMergeSessionHelper(
       OAuth2TokenService* token_service,
       net::URLRequestContextGetter* request_context) :
-    MergeSessionHelper(token_service, request_context, NULL) {
+    MergeSessionHelper(token_service, GaiaConstants::kChromeSource,
+                       request_context, NULL) {
     total++;
   }
 
@@ -76,7 +79,7 @@ class MergeSessionHelperTest : public testing::Test {
 
   OAuth2TokenService* token_service() { return &token_service_; }
   net::URLRequestContextGetter* request_context() {
-    return request_context_getter_;
+    return request_context_getter_.get();
   }
 
   void SimulateUbertokenFailure(UbertokenConsumer* consumer,
@@ -98,9 +101,31 @@ class MergeSessionHelperTest : public testing::Test {
     consumer->OnURLFetchComplete(NULL);
   }
 
+  void SimulateGetCheckConnctionInfoSuccess(
+      net::TestURLFetcher* fetcher,
+      const std::string& data) {
+    fetcher->set_status(net::URLRequestStatus());
+    fetcher->set_response_code(200);
+    fetcher->SetResponseString(data);
+    fetcher->delegate()->OnURLFetchComplete(fetcher);
+  }
+
+  void SimulateGetCheckConnctionInfoResult(
+      net::URLFetcher* fetcher,
+      const std::string& result) {
+    net::TestURLFetcher* test_fetcher =
+        static_cast<net::TestURLFetcher*>(fetcher);
+    test_fetcher->set_status(net::URLRequestStatus());
+    test_fetcher->set_response_code(200);
+    test_fetcher->SetResponseString(result);
+    test_fetcher->delegate()->OnURLFetchComplete(fetcher);
+  }
+
   const GoogleServiceAuthError& no_error() { return no_error_; }
   const GoogleServiceAuthError& error() { return error_; }
   const GoogleServiceAuthError& canceled() { return canceled_; }
+
+  net::TestURLFetcherFactory* factory() { return &factory_; }
 
  private:
   base::MessageLoop message_loop_;
@@ -304,4 +329,89 @@ TEST_F(MergeSessionHelperTest, DoubleSignout) {
   SimulateMergeSessionSuccess(&helper, "token1");
   SimulateLogoutSuccess(&helper);
   SimulateMergeSessionSuccess(&helper, "token1");
+}
+
+TEST_F(MergeSessionHelperTest, ExternalCcResultFetcher) {
+  InstrumentedMergeSessionHelper helper(token_service(), request_context());
+  MergeSessionHelper::ExternalCcResultFetcher result_fetcher(&helper);
+  MockObserver observer(&helper);
+  EXPECT_CALL(observer, GetCheckConnectionInfoCompleted(true));
+  result_fetcher.Start();
+
+  // Simulate a successful completion of GetCheckConnctionInfo.
+  net::TestURLFetcher* fetcher = factory()->GetFetcherByID(0);
+  ASSERT_TRUE(NULL != fetcher);
+  SimulateGetCheckConnctionInfoSuccess(fetcher,
+      "[{\"carryBackToken\": \"yt\", \"url\": \"http://www.yt.com\"},"
+      " {\"carryBackToken\": \"bl\", \"url\": \"http://www.bl.com\"}]");
+
+  // Simulate responses for the two connection URLs.
+  MergeSessionHelper::ExternalCcResultFetcher::URLToTokenAndFetcher fetchers =
+      result_fetcher.get_fetcher_map_for_testing();
+  ASSERT_EQ(2u, fetchers.size());
+  ASSERT_EQ(1u, fetchers.count(GURL("http://www.yt.com")));
+  ASSERT_EQ(1u, fetchers.count(GURL("http://www.bl.com")));
+
+  ASSERT_EQ("bl:null,yt:null", result_fetcher.GetExternalCcResult());
+  SimulateGetCheckConnctionInfoResult(
+      fetchers[GURL("http://www.yt.com")].second, "yt_result");
+  ASSERT_EQ("bl:null,yt:yt_result", result_fetcher.GetExternalCcResult());
+  SimulateGetCheckConnctionInfoResult(
+      fetchers[GURL("http://www.bl.com")].second, "bl_result");
+  ASSERT_EQ("bl:bl_result,yt:yt_result", result_fetcher.GetExternalCcResult());
+}
+
+TEST_F(MergeSessionHelperTest, ExternalCcResultFetcherTimeout) {
+  InstrumentedMergeSessionHelper helper(token_service(), request_context());
+  MergeSessionHelper::ExternalCcResultFetcher result_fetcher(&helper);
+  MockObserver observer(&helper);
+  EXPECT_CALL(observer, GetCheckConnectionInfoCompleted(false));
+  result_fetcher.Start();
+
+  // Simulate a successful completion of GetCheckConnctionInfo.
+  net::TestURLFetcher* fetcher = factory()->GetFetcherByID(0);
+  ASSERT_TRUE(NULL != fetcher);
+  SimulateGetCheckConnctionInfoSuccess(fetcher,
+      "[{\"carryBackToken\": \"yt\", \"url\": \"http://www.yt.com\"},"
+      " {\"carryBackToken\": \"bl\", \"url\": \"http://www.bl.com\"}]");
+
+  MergeSessionHelper::ExternalCcResultFetcher::URLToTokenAndFetcher fetchers =
+      result_fetcher.get_fetcher_map_for_testing();
+  ASSERT_EQ(2u, fetchers.size());
+  ASSERT_EQ(1u, fetchers.count(GURL("http://www.yt.com")));
+  ASSERT_EQ(1u, fetchers.count(GURL("http://www.bl.com")));
+
+  // Simulate response only for "yt".
+  ASSERT_EQ("bl:null,yt:null", result_fetcher.GetExternalCcResult());
+  SimulateGetCheckConnctionInfoResult(
+      fetchers[GURL("http://www.yt.com")].second, "yt_result");
+  ASSERT_EQ("bl:null,yt:yt_result", result_fetcher.GetExternalCcResult());
+
+  // Now timeout.
+  result_fetcher.TimeoutForTests();
+  ASSERT_EQ("bl:null,yt:yt_result", result_fetcher.GetExternalCcResult());
+  fetchers = result_fetcher.get_fetcher_map_for_testing();
+  ASSERT_EQ(0u, fetchers.size());
+}
+
+TEST_F(MergeSessionHelperTest, ExternalCcResultFetcherTruncate) {
+  InstrumentedMergeSessionHelper helper(token_service(), request_context());
+  MergeSessionHelper::ExternalCcResultFetcher result_fetcher(&helper);
+  result_fetcher.Start();
+
+  // Simulate a successful completion of GetCheckConnctionInfo.
+  net::TestURLFetcher* fetcher = factory()->GetFetcherByID(0);
+  ASSERT_TRUE(NULL != fetcher);
+  SimulateGetCheckConnctionInfoSuccess(fetcher,
+      "[{\"carryBackToken\": \"yt\", \"url\": \"http://www.yt.com\"}]");
+
+  MergeSessionHelper::ExternalCcResultFetcher::URLToTokenAndFetcher fetchers =
+      result_fetcher.get_fetcher_map_for_testing();
+  ASSERT_EQ(1u, fetchers.size());
+  ASSERT_EQ(1u, fetchers.count(GURL("http://www.yt.com")));
+
+  // Simulate response for "yt" with a string that is too long.
+  SimulateGetCheckConnctionInfoResult(
+      fetchers[GURL("http://www.yt.com")].second, "1234567890123456trunc");
+  ASSERT_EQ("yt:1234567890123456", result_fetcher.GetExternalCcResult());
 }

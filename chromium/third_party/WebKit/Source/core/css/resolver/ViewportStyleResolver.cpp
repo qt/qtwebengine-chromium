@@ -40,7 +40,7 @@
 #include "core/dom/ViewportDescription.h"
 #include "core/frame/FrameView.h"
 
-namespace WebCore {
+namespace blink {
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ViewportStyleResolver);
 
@@ -200,6 +200,7 @@ Length ViewportStyleResolver::viewportLengthValue(CSSPropertyID id) const
 void ViewportStyleResolver::trace(Visitor* visitor)
 {
     visitor->trace(m_propertySet);
+    visitor->trace(m_document);
 }
 
-} // namespace WebCore
+} // namespace blink

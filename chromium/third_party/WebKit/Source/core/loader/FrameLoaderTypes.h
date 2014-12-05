@@ -29,7 +29,7 @@
 #ifndef FrameLoaderTypes_h
 #define FrameLoaderTypes_h
 
-namespace WebCore {
+namespace blink {
 
 enum FrameState {
     FrameStateProvisional,
@@ -46,6 +46,7 @@ enum FrameLoadType {
     FrameLoadTypeSame, // user loads same URL again (but not reload button)
     FrameLoadTypeRedirectWithLockedBackForwardList,
     FrameLoadTypeInitialInChildFrame,
+    FrameLoadTypeInitialHistoryLoad,
     FrameLoadTypeReloadFromOrigin,
 };
 

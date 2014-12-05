@@ -28,6 +28,7 @@
 
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
@@ -37,25 +38,25 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 String XSSInfo::buildConsoleError() const
 {
     StringBuilder message;
-    message.append("The XSS Auditor ");
+    message.appendLiteral("The XSS Auditor ");
     message.append(m_didBlockEntirePage ? "blocked access to" : "refused to execute a script in");
-    message.append(" '");
+    message.appendLiteral(" '");
     message.append(m_originalURL);
-    message.append("' because ");
+    message.appendLiteral("' because ");
     message.append(m_didBlockEntirePage ? "the source code of a script" : "its source code");
-    message.append(" was found within the request.");
+    message.appendLiteral(" was found within the request.");
 
     if (m_didSendCSPHeader)
-        message.append(" The server sent a 'Content-Security-Policy' header requesting this behavior.");
+        message.appendLiteral(" The server sent a 'Content-Security-Policy' header requesting this behavior.");
     else if (m_didSendXSSProtectionHeader)
-        message.append(" The server sent an 'X-XSS-Protection' header requesting this behavior.");
+        message.appendLiteral(" The server sent an 'X-XSS-Protection' header requesting this behavior.");
     else
-        message.append(" The auditor was enabled as the server sent neither an 'X-XSS-Protection' nor 'Content-Security-Policy' header.");
+        message.appendLiteral(" The auditor was enabled as the server sent neither an 'X-XSS-Protection' nor 'Content-Security-Policy' header.");
 
     return message.toString();
 }
@@ -71,6 +72,11 @@ XSSAuditorDelegate::XSSAuditorDelegate(Document* document)
 {
     ASSERT(isMainThread());
     ASSERT(m_document);
+}
+
+void XSSAuditorDelegate::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
 }
 
 PassRefPtr<FormData> XSSAuditorDelegate::generateViolationReport(const XSSInfo& xssInfo)
@@ -98,10 +104,10 @@ void XSSAuditorDelegate::didBlockScript(const XSSInfo& xssInfo)
 {
     ASSERT(isMainThread());
 
-    m_document->addConsoleMessage(JSMessageSource, ErrorMessageLevel, xssInfo.buildConsoleError());
+    m_document->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, xssInfo.buildConsoleError()));
 
     // stopAllLoaders can detach the LocalFrame, so protect it.
-    RefPtr<LocalFrame> protect(m_document->frame());
+    RefPtrWillBeRawPtr<LocalFrame> protect(m_document->frame());
     FrameLoader& frameLoader = m_document->frame()->loader();
     if (xssInfo.m_didBlockEntirePage)
         frameLoader.stopAllLoaders();
@@ -116,7 +122,7 @@ void XSSAuditorDelegate::didBlockScript(const XSSInfo& xssInfo)
     }
 
     if (xssInfo.m_didBlockEntirePage)
-        m_document->frame()->navigationScheduler().scheduleLocationChange(m_document, SecurityOrigin::urlWithUniqueSecurityOrigin(), Referrer());
+        m_document->frame()->navigationScheduler().schedulePageBlock(m_document);
 }
 
-} // namespace WebCore
+} // namespace blink

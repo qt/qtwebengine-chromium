@@ -65,13 +65,6 @@ protected:
         kNPOTSize = 3,
     };
 
-    virtual uint32_t onGetFlags() const SK_OVERRIDE {
-        if (!fPowerOfTwoSize) {
-            return kSkipTiled_Flag;  // Only for 565.  8888 is fine.
-        }
-        return 0;
-    }
-
     SkString onShortName() {
         SkString name("scaled_tilemodes");
         if (!fPowerOfTwoSize) {
@@ -79,6 +72,13 @@ protected:
         }
         return name;
     }
+
+#ifdef SK_CPU_ARM64
+    // Skip tiled drawing on 64-bit ARM until https://skbug.com/2908 is fixed.
+    virtual uint32_t onGetFlags() const SK_OVERRIDE {
+        return kSkipTiled_Flag;
+    }
+#endif
 
     SkISize onISize() { return SkISize::Make(880, 760); }
 
@@ -117,6 +117,7 @@ protected:
                 SkPaint p;
                 SkString str;
                 p.setAntiAlias(true);
+                sk_tool_utils::set_portable_typeface(&p);
                 p.setDither(true);
                 p.setLooper(fLooper);
                 str.printf("[%s,%s]", gModeNames[kx], gModeNames[ky]);
@@ -158,6 +159,7 @@ protected:
                     SkPaint p;
                     SkString str;
                     p.setAntiAlias(true);
+                    sk_tool_utils::set_portable_typeface(&p);
                     p.setLooper(fLooper);
                     str.printf("%s, %s", gColorTypeNames[i], gFilterNames[j]);
                     canvas->drawText(str.c_str(), str.size(), scale*x, scale*(y + r.height() * 2 / 3), p);
@@ -241,6 +243,7 @@ protected:
 
         SkPaint p;
         p.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&p);
         p.setTextAlign(SkPaint::kCenter_Align);
 
         for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {

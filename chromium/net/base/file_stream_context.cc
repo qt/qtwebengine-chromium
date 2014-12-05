@@ -7,6 +7,7 @@
 #include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/message_loop/message_loop_proxy.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
 #include "base/threading/thread_restrictions.h"
@@ -78,13 +79,15 @@ void FileStream::Context::Orphan() {
   if (!async_in_progress_) {
     CloseAndDelete();
   } else if (file_.IsValid()) {
+#if defined(OS_WIN)
     CancelIo(file_.GetPlatformFile());
+#endif
   }
 }
 
-void FileStream::Context::OpenAsync(const base::FilePath& path,
-                                    int open_flags,
-                                    const CompletionCallback& callback) {
+void FileStream::Context::Open(const base::FilePath& path,
+                               int open_flags,
+                               const CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
 
   bool posted = base::PostTaskAndReplyWithResult(
@@ -98,7 +101,7 @@ void FileStream::Context::OpenAsync(const base::FilePath& path,
   async_in_progress_ = true;
 }
 
-void FileStream::Context::CloseAsync(const CompletionCallback& callback) {
+void FileStream::Context::Close(const CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
   bool posted = base::PostTaskAndReplyWithResult(
       task_runner_.get(),
@@ -112,9 +115,9 @@ void FileStream::Context::CloseAsync(const CompletionCallback& callback) {
   async_in_progress_ = true;
 }
 
-void FileStream::Context::SeekAsync(Whence whence,
-                                    int64 offset,
-                                    const Int64CompletionCallback& callback) {
+void FileStream::Context::Seek(base::File::Whence whence,
+                               int64 offset,
+                               const Int64CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
 
   bool posted = base::PostTaskAndReplyWithResult(
@@ -130,7 +133,7 @@ void FileStream::Context::SeekAsync(Whence whence,
   async_in_progress_ = true;
 }
 
-void FileStream::Context::FlushAsync(const CompletionCallback& callback) {
+void FileStream::Context::Flush(const CompletionCallback& callback) {
   DCHECK(!async_in_progress_);
 
   bool posted = base::PostTaskAndReplyWithResult(
@@ -147,6 +150,11 @@ void FileStream::Context::FlushAsync(const CompletionCallback& callback) {
 
 FileStream::Context::OpenResult FileStream::Context::OpenFileImpl(
     const base::FilePath& path, int open_flags) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 FileStream::Context::OpenFileImpl"));
+
 #if defined(OS_POSIX)
   // Always use blocking IO.
   open_flags &= ~base::File::FLAG_ASYNC;
@@ -172,7 +180,8 @@ FileStream::Context::OpenResult FileStream::Context::OpenFileImpl(
   }
 #endif  // defined(OS_ANDROID)
   if (!file.IsValid())
-    return OpenResult(base::File(), IOResult::FromOSError(GetLastErrno()));
+    return OpenResult(base::File(),
+                      IOResult::FromOSError(logging::GetLastSystemErrorCode()));
 
   return OpenResult(file.Pass(), IOResult(OK, 0));
 }
@@ -182,11 +191,24 @@ FileStream::Context::IOResult FileStream::Context::CloseFileImpl() {
   return IOResult(OK, 0);
 }
 
+FileStream::Context::IOResult FileStream::Context::FlushFileImpl() {
+  if (file_.Flush())
+    return IOResult(OK, 0);
+
+  return IOResult::FromOSError(logging::GetLastSystemErrorCode());
+}
+
 void FileStream::Context::OnOpenCompleted(const CompletionCallback& callback,
                                           OpenResult open_result) {
   file_ = open_result.file.Pass();
-  if (file_.IsValid() && !orphaned_)
-    OnAsyncFileOpened();
+  if (file_.IsValid() && !orphaned_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 FileStream::Context::OnOpenCompleted"));
+
+    OnFileOpened();
+  }
 
   OnAsyncCompleted(IntToInt64(callback), open_result.error_code);
 }
@@ -214,7 +236,7 @@ void FileStream::Context::OnAsyncCompleted(
     const Int64CompletionCallback& callback,
     const IOResult& result) {
   // Reset this before Run() as Run() may issue a new async operation. Also it
-  // should be reset before CloseAsync() because it shouldn't run if any async
+  // should be reset before Close() because it shouldn't run if any async
   // operation is in progress.
   async_in_progress_ = false;
   if (orphaned_)

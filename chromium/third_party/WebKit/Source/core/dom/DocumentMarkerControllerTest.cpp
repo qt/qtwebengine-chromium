@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/dom/DocumentMarkerController.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Range.h"
 #include "core/dom/Text.h"
@@ -42,13 +42,13 @@
 #include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
 class DocumentMarkerControllerTest : public ::testing::Test {
 protected:
-    virtual void SetUp() OVERRIDE;
+    virtual void SetUp() override;
 
     Document& document() const { return *m_document; }
     DocumentMarkerController& markerController() const { return m_document->markers(); }

@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -31,14 +32,6 @@ class NET_EXPORT OpenSSLClientKeyStore {
   // Platforms must define this factory function as appropriate.
   static OpenSSLClientKeyStore* GetInstance();
 
-  struct EVP_PKEY_Deleter {
-    inline void operator()(EVP_PKEY* ptr) const {
-      EVP_PKEY_free(ptr);
-    }
-  };
-
-  typedef scoped_ptr<EVP_PKEY, EVP_PKEY_Deleter> ScopedEVP_PKEY;
-
   // Record the association between a certificate and its
   // private key. This method should be called _before_
   // FetchClientCertPrivateKey to ensure that the private key is returned
@@ -50,17 +43,14 @@ class NET_EXPORT OpenSSLClientKeyStore {
   // Returns false if an error occured.
   // This function does not take ownership of the private_key, but may
   // increment its internal reference count.
-  NET_EXPORT bool RecordClientCertPrivateKey(const X509Certificate* cert,
-                                             EVP_PKEY* private_key);
+  bool RecordClientCertPrivateKey(const X509Certificate* cert,
+                                  EVP_PKEY* private_key);
 
   // Given a certificate's |public_key|, return the corresponding private
   // key that has been recorded previously by RecordClientCertPrivateKey().
   // |cert| is a client certificate.
-  // |*private_key| will be reset to its matching private key on success.
-  // Returns true on success, false otherwise. This increments the reference
-  // count of the private key on success.
-  bool FetchClientCertPrivateKey(const X509Certificate* cert,
-                                 ScopedEVP_PKEY* private_key);
+  // Returns its matching private key on success, NULL otherwise.
+  crypto::ScopedEVP_PKEY FetchClientCertPrivateKey(const X509Certificate* cert);
 
   // Flush all recorded keys.
   void Flush();
@@ -83,11 +73,13 @@ class NET_EXPORT OpenSSLClientKeyStore {
    public:
     explicit KeyPair(EVP_PKEY* pub_key, EVP_PKEY* priv_key);
     KeyPair(const KeyPair& other);
-    void operator=(const KeyPair& other);
+    // Intentionally pass by value, in order to use the copy-and-swap idiom.
+    void operator=(KeyPair other);
+    void swap(KeyPair& other);
     ~KeyPair();
 
-    EVP_PKEY* public_key;
-    EVP_PKEY* private_key;
+    crypto::ScopedEVP_PKEY public_key;
+    crypto::ScopedEVP_PKEY private_key;
 
    private:
     KeyPair();  // intentionally not implemented.

@@ -46,7 +46,7 @@ class WebLayerTreeView;
 class WebScrollbarLayer;
 }
 
-namespace WebCore {
+namespace blink {
 
 class FrameHost;
 class GraphicsContext;
@@ -61,10 +61,14 @@ class LocalFrame;
 // offset is set through the GraphicsLayer <-> CC sync mechanisms. Its contents is the page's
 // main FrameView, which corresponds to the outer viewport. The inner viewport is always contained
 // in the outer viewport and can pan within it.
-class PinchViewport FINAL : public GraphicsLayerClient, public ScrollableArea {
+class PinchViewport final : public NoBaseWillBeGarbageCollectedFinalized<PinchViewport>, public GraphicsLayerClient, public ScrollableArea {
 public:
-    explicit PinchViewport(FrameHost&);
+    static PassOwnPtrWillBeRawPtr<PinchViewport> create(FrameHost& host)
+    {
+        return adoptPtrWillBeNoop(new PinchViewport(host));
+    }
     virtual ~PinchViewport();
+    virtual void trace(Visitor*);
 
     void attachToLayerTree(GraphicsLayer*, GraphicsLayerFactory*);
     GraphicsLayer* rootGraphicsLayer()
@@ -75,14 +79,18 @@ public:
     {
         return m_innerViewportContainerLayer.get();
     }
+    GraphicsLayer* scrollLayer()
+    {
+        return m_innerViewportScrollLayer.get();
+    }
 
     // Sets the location of the inner viewport relative to the outer viewport. The
     // coordinates are in partial CSS pixels.
     void setLocation(const FloatPoint&);
     void move(const FloatPoint&);
+    FloatPoint location() const { return m_offset; }
 
     // Sets the size of the inner viewport when unscaled in CSS pixels.
-    // This will be clamped to the size of the outer viewport (the main frame).
     void setSize(const IntSize&);
     IntSize size() const { return m_size; }
 
@@ -93,6 +101,8 @@ public:
     // rotation on Android or window resize elsewhere).
     void mainFrameDidChangeSize();
 
+    // Sets scale and location in one operation, preventing intermediate clamping.
+    void setScaleAndLocation(float scale, const FloatPoint& location);
     void setScale(float);
     float scale() const { return m_scale; }
 
@@ -109,42 +119,66 @@ public:
     // Scroll the main frame and pinch viewport so that the given rect in the
     // top-level document is centered in the viewport. This method will avoid
     // scrolling the pinch viewport unless necessary.
-    void scrollIntoView(const FloatRect&);
+    void scrollIntoView(const LayoutRect&);
+
+    // Clamp the given point, in document coordinates, to the maximum/minimum
+    // scroll extents of the viewport within the document.
+    IntPoint clampDocumentOffsetAtScale(const IntPoint& offset, float scale);
+
+    // FIXME: This is kind of a hack. Ideally, we would just resize the
+    // viewports to account for top controls. However, FrameView includes much
+    // more than just scrolling so we can't simply resize it without incurring
+    // all sorts of side-effects. Until we can seperate out the scrollability
+    // aspect from FrameView, we use this method to let PinchViewport make the
+    // necessary adjustments so that we don't incorrectly clamp scroll offsets
+    // coming from the compositor. crbug.com/422328
+    void setTopControlsAdjustment(float);
+
+    // Adjust the viewport's offset so that it remains bounded by the outer
+    // viepwort.
+    void clampToBoundaries();
 private:
+    explicit PinchViewport(FrameHost&);
+
     // ScrollableArea implementation
-    virtual bool isActive() const OVERRIDE { return false; }
-    virtual int scrollSize(ScrollbarOrientation) const OVERRIDE;
-    virtual bool isScrollCornerVisible() const OVERRIDE { return false; }
-    virtual IntRect scrollCornerRect() const OVERRIDE { return IntRect(); }
-    virtual IntPoint scrollPosition() const OVERRIDE { return flooredIntPoint(m_offset); }
-    virtual IntPoint minimumScrollPosition() const OVERRIDE;
-    virtual IntPoint maximumScrollPosition() const OVERRIDE;
-    virtual int visibleHeight() const OVERRIDE { return visibleRect().height(); };
-    virtual int visibleWidth() const OVERRIDE { return visibleRect().width(); };
-    virtual IntSize contentsSize() const OVERRIDE;
-    virtual bool scrollbarsCanBeActive() const OVERRIDE { return false; }
-    virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
-    virtual bool userInputScrollable(ScrollbarOrientation) const OVERRIDE { return true; }
-    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE { return false; }
-    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
-    virtual void invalidateScrollCornerRect(const IntRect&) OVERRIDE { }
-    virtual void setScrollOffset(const IntPoint&) OVERRIDE;
-    virtual GraphicsLayer* layerForContainer() const OVERRIDE;
-    virtual GraphicsLayer* layerForScrolling() const OVERRIDE;
-    virtual GraphicsLayer* layerForHorizontalScrollbar() const OVERRIDE;
-    virtual GraphicsLayer* layerForVerticalScrollbar() const OVERRIDE;
+    virtual bool isActive() const override { return false; }
+    virtual int scrollSize(ScrollbarOrientation) const override;
+    virtual bool isScrollCornerVisible() const override { return false; }
+    virtual IntRect scrollCornerRect() const override { return IntRect(); }
+    virtual IntPoint scrollPosition() const override { return flooredIntPoint(m_offset); }
+    virtual IntPoint minimumScrollPosition() const override;
+    virtual IntPoint maximumScrollPosition() const override;
+    virtual int visibleHeight() const override { return visibleRect().height(); };
+    virtual int visibleWidth() const override { return visibleRect().width(); };
+    virtual IntSize contentsSize() const override;
+    virtual bool scrollbarsCanBeActive() const override { return false; }
+    virtual IntRect scrollableAreaBoundingBox() const override;
+    virtual bool userInputScrollable(ScrollbarOrientation) const override { return true; }
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const override { return false; }
+    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
+    virtual void invalidateScrollCornerRect(const IntRect&) override { }
+    virtual void setScrollOffset(const IntPoint&) override;
+    virtual GraphicsLayer* layerForContainer() const override;
+    virtual GraphicsLayer* layerForScrolling() const override;
+    virtual GraphicsLayer* layerForHorizontalScrollbar() const override;
+    virtual GraphicsLayer* layerForVerticalScrollbar() const override;
 
     // GraphicsLayerClient implementation.
-    virtual void notifyAnimationStarted(const GraphicsLayer*, double monotonicTime) OVERRIDE;
-    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) OVERRIDE;
-    virtual String debugName(const GraphicsLayer*) OVERRIDE;
+    virtual void paintContents(const GraphicsLayer*, GraphicsContext&, GraphicsLayerPaintingPhase, const IntRect& inClip) override;
+    virtual String debugName(const GraphicsLayer*) override;
 
     void setupScrollbar(blink::WebScrollbar::Orientation);
     FloatPoint clampOffsetToBoundaries(const FloatPoint&);
 
     LocalFrame* mainFrame() const;
 
-    FrameHost& m_frameHost;
+    FrameHost& frameHost() const
+    {
+        ASSERT(m_frameHost);
+        return *m_frameHost;
+    }
+
+    RawPtrWillBeMember<FrameHost> m_frameHost;
     OwnPtr<GraphicsLayer> m_rootTransformLayer;
     OwnPtr<GraphicsLayer> m_innerViewportContainerLayer;
     OwnPtr<GraphicsLayer> m_pageScaleLayer;
@@ -158,8 +192,9 @@ private:
     FloatPoint m_offset;
     float m_scale;
     IntSize m_size;
+    float m_topControlsAdjustment;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PinchViewport_h

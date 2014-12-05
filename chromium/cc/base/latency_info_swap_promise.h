@@ -14,10 +14,12 @@ namespace cc {
 class CC_EXPORT LatencyInfoSwapPromise : public SwapPromise {
  public:
   explicit LatencyInfoSwapPromise(const ui::LatencyInfo& latency_info);
-  virtual ~LatencyInfoSwapPromise();
+  ~LatencyInfoSwapPromise() override;
 
-  virtual void DidSwap(CompositorFrameMetadata* metadata) OVERRIDE;
-  virtual void DidNotSwap(DidNotSwapReason reason) OVERRIDE;
+  void DidSwap(CompositorFrameMetadata* metadata) override;
+  void DidNotSwap(DidNotSwapReason reason) override;
+
+  int64 TraceId() const override;
 
  private:
   ui::LatencyInfo latency_;

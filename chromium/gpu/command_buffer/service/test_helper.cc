@@ -13,6 +13,7 @@
 #include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -23,6 +24,7 @@ using ::testing::DoAll;
 using ::testing::InSequence;
 using ::testing::MatcherCast;
 using ::testing::Pointee;
+using ::testing::NotNull;
 using ::testing::Return;
 using ::testing::SetArrayArgument;
 using ::testing::SetArgumentPointee;
@@ -31,6 +33,24 @@ using ::testing::StrictMock;
 
 namespace gpu {
 namespace gles2 {
+
+namespace {
+
+template<typename T>
+T ConstructShaderVariable(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  T var;
+  var.type = type;
+  var.arraySize = array_size;
+  var.precision = precision;
+  var.staticUse = static_use;
+  var.name = name;
+  var.mappedName = name;  // No name hashing.
+  return var;
+}
+
+}  // namespace anonymous
 
 // GCC requires these declarations, but MSVC requires they not be present
 #ifndef COMPILER_MSVC
@@ -249,7 +269,7 @@ void TestHelper::SetupContextGroupInitExpectations(
 
   SetupFeatureInfoInitExpectationsWithGLVersion(gl, extensions, "", gl_version);
 
-  std::string l_version(StringToLowerASCII(std::string(gl_version)));
+  std::string l_version(base::StringToLowerASCII(std::string(gl_version)));
   bool is_es3 = (l_version.substr(0, 12) == "opengl es 3.");
 
   EXPECT_CALL(*gl, GetIntegerv(GL_MAX_RENDERBUFFER_SIZE, _))
@@ -319,7 +339,7 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
       .WillOnce(Return(reinterpret_cast<const uint8*>(gl_version)))
       .RetiresOnSaturation();
 
-  std::string l_version(StringToLowerASCII(std::string(gl_version)));
+  std::string l_version(base::StringToLowerASCII(std::string(gl_version)));
   bool is_es3 = (l_version.substr(0, 12) == "opengl es 3.");
 
   if (strstr(extensions, "GL_ARB_texture_float") ||
@@ -389,6 +409,17 @@ void TestHelper::SetupFeatureInfoInitExpectationsWithGLVersion(
         .WillOnce(Return(GL_NO_ERROR))
         .RetiresOnSaturation();
 #endif
+  }
+
+  if (strstr(extensions, "GL_EXT_draw_buffers") ||
+      strstr(extensions, "GL_ARB_draw_buffers") ||
+      (is_es3 && strstr(extensions, "GL_NV_draw_buffers"))) {
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, _))
+        .WillOnce(SetArgumentPointee<1>(8))
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetIntegerv(GL_MAX_DRAW_BUFFERS_ARB, _))
+        .WillOnce(SetArgumentPointee<1>(8))
+        .RetiresOnSaturation();
   }
 }
 
@@ -638,6 +669,98 @@ void TestHelper::SetTexParameteriWithExpectations(
         .RetiresOnSaturation();
   }
   manager->SetParameteri("", error_state, texture_ref, pname, value);
+}
+
+// static
+void TestHelper::SetShaderStates(
+      ::gfx::MockGLInterface* gl, Shader* shader,
+      bool expected_valid,
+      const std::string* const expected_log_info,
+      const std::string* const expected_translated_source,
+      const AttributeMap* const expected_attrib_map,
+      const UniformMap* const expected_uniform_map,
+      const VaryingMap* const expected_varying_map,
+      const NameMap* const expected_name_map) {
+  const std::string empty_log_info;
+  const std::string* log_info = (expected_log_info && !expected_valid) ?
+      expected_log_info : &empty_log_info;
+  const std::string empty_translated_source;
+  const std::string* translated_source =
+      (expected_translated_source && expected_valid) ?
+          expected_translated_source : &empty_translated_source;
+  const AttributeMap empty_attrib_map;
+  const AttributeMap* attrib_map = (expected_attrib_map && expected_valid) ?
+      expected_attrib_map : &empty_attrib_map;
+  const UniformMap empty_uniform_map;
+  const UniformMap* uniform_map = (expected_uniform_map && expected_valid) ?
+      expected_uniform_map : &empty_uniform_map;
+  const VaryingMap empty_varying_map;
+  const VaryingMap* varying_map = (expected_varying_map && expected_valid) ?
+      expected_varying_map : &empty_varying_map;
+  const NameMap empty_name_map;
+  const NameMap* name_map = (expected_name_map && expected_valid) ?
+      expected_name_map : &empty_name_map;
+
+  MockShaderTranslator translator;
+  EXPECT_CALL(translator, Translate(_,
+                                    NotNull(),  // log_info
+                                    NotNull(),  // translated_source
+                                    NotNull(),  // attrib_map
+                                    NotNull(),  // uniform_map
+                                    NotNull(),  // varying_map
+                                    NotNull()))  // name_map
+      .WillOnce(DoAll(SetArgumentPointee<1>(*log_info),
+                      SetArgumentPointee<2>(*translated_source),
+                      SetArgumentPointee<3>(*attrib_map),
+                      SetArgumentPointee<4>(*uniform_map),
+                      SetArgumentPointee<5>(*varying_map),
+                      SetArgumentPointee<6>(*name_map),
+                      Return(expected_valid)))
+      .RetiresOnSaturation();
+  if (expected_valid) {
+    EXPECT_CALL(*gl, ShaderSource(shader->service_id(), 1, _, NULL))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, CompileShader(shader->service_id()))
+        .Times(1)
+        .RetiresOnSaturation();
+    EXPECT_CALL(*gl, GetShaderiv(shader->service_id(),
+                                 GL_COMPILE_STATUS,
+                                 NotNull()))  // status
+        .WillOnce(SetArgumentPointee<2>(GL_TRUE))
+        .RetiresOnSaturation();
+  }
+  shader->DoCompile(&translator, Shader::kGL);
+}
+
+// static
+void TestHelper::SetShaderStates(
+      ::gfx::MockGLInterface* gl, Shader* shader, bool valid) {
+  SetShaderStates(gl, shader, valid, NULL, NULL, NULL, NULL, NULL, NULL);
+}
+
+// static
+sh::Attribute TestHelper::ConstructAttribute(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Attribute>(
+      type, array_size, precision, static_use, name);
+}
+
+// static
+sh::Uniform TestHelper::ConstructUniform(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Uniform>(
+      type, array_size, precision, static_use, name);
+}
+
+// static
+sh::Varying TestHelper::ConstructVarying(
+    GLenum type, GLint array_size, GLenum precision,
+    bool static_use, const std::string& name) {
+  return ConstructShaderVariable<sh::Varying>(
+      type, array_size, precision, static_use, name);
 }
 
 ScopedGLImplementationSetter::ScopedGLImplementationSetter(

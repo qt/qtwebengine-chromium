@@ -60,7 +60,7 @@ class DesktopCaptureDeviceAuraTest : public testing::Test {
   virtual ~DesktopCaptureDeviceAuraTest() {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // The ContextFactory must exist before any Compositors are created.
     bool enable_pixel_output = false;
     ui::ContextFactory* context_factory =
@@ -82,7 +82,7 @@ class DesktopCaptureDeviceAuraTest : public testing::Test {
     desktop_window_->Show();
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     helper_->RunAllPendingInMessageLoop();
     root_window()->RemoveChild(desktop_window_.get());
     desktop_window_.reset();
@@ -115,9 +115,7 @@ TEST_F(DesktopCaptureDeviceAuraTest, StartAndStop) {
   capture_params.requested_format.frame_size.SetSize(640, 480);
   capture_params.requested_format.frame_rate = kFrameRate;
   capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
-  capture_device->AllocateAndStart(
-      capture_params, client.PassAs<media::VideoCaptureDevice::Client>());
+  capture_device->AllocateAndStart(capture_params, client.Pass());
   capture_device->StopAndDeAllocate();
 }
 

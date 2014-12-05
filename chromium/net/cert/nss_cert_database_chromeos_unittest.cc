@@ -8,8 +8,9 @@
 #include "base/callback.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
-#include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
+#include "crypto/scoped_test_nss_chromeos_user.h"
+#include "crypto/scoped_test_nss_db.h"
 #include "net/base/test_data_directory.h"
 #include "net/cert/cert_database.h"
 #include "net/test/cert_test_util.h"
@@ -47,7 +48,7 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
   NSSCertDatabaseChromeOSTest()
       : observer_added_(false), user_1_("user1"), user_2_("user2") {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     // Initialize nss_util slots.
     ASSERT_TRUE(user_1_.constructed_successfully());
     ASSERT_TRUE(user_2_.constructed_successfully());
@@ -61,6 +62,8 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
             user_1_.username_hash(),
             base::Callback<void(crypto::ScopedPK11Slot)>())));
     db_1_->SetSlowTaskRunnerForTest(base::MessageLoopProxy::current());
+    db_1_->SetSystemSlot(
+        crypto::ScopedPK11Slot(PK11_ReferenceSlot(system_db_.slot())));
     db_2_.reset(new NSSCertDatabaseChromeOS(
         crypto::GetPublicSlotForChromeOSUser(user_2_.username_hash()),
         crypto::GetPrivateSlotForChromeOSUser(
@@ -74,19 +77,19 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
     observer_added_ = true;
   }
 
-  virtual void TearDown() OVERRIDE {
+  virtual void TearDown() override {
     if (observer_added_)
       CertDatabase::GetInstance()->RemoveObserver(this);
   }
 
   // CertDatabase::Observer:
-  virtual void OnCertAdded(const X509Certificate* cert) OVERRIDE {
+  virtual void OnCertAdded(const X509Certificate* cert) override {
     added_.push_back(cert ? cert->os_cert_handle() : NULL);
   }
 
-  virtual void OnCertRemoved(const X509Certificate* cert) OVERRIDE {}
+  virtual void OnCertRemoved(const X509Certificate* cert) override {}
 
-  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE {
+  virtual void OnCACertChanged(const X509Certificate* cert) override {
     added_ca_.push_back(cert ? cert->os_cert_handle() : NULL);
   }
 
@@ -98,6 +101,7 @@ class NSSCertDatabaseChromeOSTest : public testing::Test,
 
   crypto::ScopedTestNSSChromeOSUser user_1_;
   crypto::ScopedTestNSSChromeOSUser user_2_;
+  crypto::ScopedTestNSSDB system_db_;
   scoped_ptr<NSSCertDatabaseChromeOS> db_1_;
   scoped_ptr<NSSCertDatabaseChromeOS> db_2_;
 };
@@ -166,11 +170,11 @@ TEST_F(NSSCertDatabaseChromeOSTest, ImportCACerts) {
 
   // Check that the imported certs only shows up in the list for the user that
   // imported them.
-  EXPECT_TRUE(IsCertInCertificateList(certs_1[0], user_1_certlist));
-  EXPECT_FALSE(IsCertInCertificateList(certs_1[0], user_2_certlist));
+  EXPECT_TRUE(IsCertInCertificateList(certs_1[0].get(), user_1_certlist));
+  EXPECT_FALSE(IsCertInCertificateList(certs_1[0].get(), user_2_certlist));
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_2[0], user_2_certlist));
-  EXPECT_FALSE(IsCertInCertificateList(certs_2[0], user_1_certlist));
+  EXPECT_TRUE(IsCertInCertificateList(certs_2[0].get(), user_2_certlist));
+  EXPECT_FALSE(IsCertInCertificateList(certs_2[0].get(), user_1_certlist));
 
   // Run the message loop so the observer notifications get processed.
   base::RunLoop().RunUntilIdle();
@@ -192,11 +196,13 @@ TEST_F(NSSCertDatabaseChromeOSTest, ImportCACerts) {
 
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_1[0], user_1_certlist_async));
-  EXPECT_FALSE(IsCertInCertificateList(certs_1[0], user_2_certlist_async));
+  EXPECT_TRUE(IsCertInCertificateList(certs_1[0].get(), user_1_certlist_async));
+  EXPECT_FALSE(
+      IsCertInCertificateList(certs_1[0].get(), user_2_certlist_async));
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_2[0], user_2_certlist_async));
-  EXPECT_FALSE(IsCertInCertificateList(certs_2[0], user_1_certlist_async));
+  EXPECT_TRUE(IsCertInCertificateList(certs_2[0].get(), user_2_certlist_async));
+  EXPECT_FALSE(
+      IsCertInCertificateList(certs_2[0].get(), user_1_certlist_async));
 }
 
 // Test that ImportServerCerts imports the cert to the correct slot, and that
@@ -232,11 +238,11 @@ TEST_F(NSSCertDatabaseChromeOSTest, ImportServerCert) {
 
   // Check that the imported certs only shows up in the list for the user that
   // imported them.
-  EXPECT_TRUE(IsCertInCertificateList(certs_1[0], user_1_certlist));
-  EXPECT_FALSE(IsCertInCertificateList(certs_1[0], user_2_certlist));
+  EXPECT_TRUE(IsCertInCertificateList(certs_1[0].get(), user_1_certlist));
+  EXPECT_FALSE(IsCertInCertificateList(certs_1[0].get(), user_2_certlist));
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_2[0], user_2_certlist));
-  EXPECT_FALSE(IsCertInCertificateList(certs_2[0], user_1_certlist));
+  EXPECT_TRUE(IsCertInCertificateList(certs_2[0].get(), user_2_certlist));
+  EXPECT_FALSE(IsCertInCertificateList(certs_2[0].get(), user_1_certlist));
 
   // Run the message loop so the observer notifications get processed.
   base::RunLoop().RunUntilIdle();
@@ -255,11 +261,13 @@ TEST_F(NSSCertDatabaseChromeOSTest, ImportServerCert) {
 
   base::RunLoop().RunUntilIdle();
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_1[0], user_1_certlist_async));
-  EXPECT_FALSE(IsCertInCertificateList(certs_1[0], user_2_certlist_async));
+  EXPECT_TRUE(IsCertInCertificateList(certs_1[0].get(), user_1_certlist_async));
+  EXPECT_FALSE(
+      IsCertInCertificateList(certs_1[0].get(), user_2_certlist_async));
 
-  EXPECT_TRUE(IsCertInCertificateList(certs_2[0], user_2_certlist_async));
-  EXPECT_FALSE(IsCertInCertificateList(certs_2[0], user_1_certlist_async));
+  EXPECT_TRUE(IsCertInCertificateList(certs_2[0].get(), user_2_certlist_async));
+  EXPECT_FALSE(
+      IsCertInCertificateList(certs_2[0].get(), user_1_certlist_async));
 }
 
 // Tests that There is no crash if the database is deleted while ListCerts
@@ -274,6 +282,42 @@ TEST_F(NSSCertDatabaseChromeOSTest, NoCrashIfShutdownBeforeDoneOnWorkerPool) {
   base::RunLoop().RunUntilIdle();
 
   EXPECT_LT(0U, certlist.size());
+}
+
+TEST_F(NSSCertDatabaseChromeOSTest, ListCertsReadsSystemSlot) {
+  scoped_refptr<X509Certificate> cert_1(
+      ImportClientCertAndKeyFromFile(GetTestCertsDirectory(),
+                                     "client_1.pem",
+                                     "client_1.pk8",
+                                     db_1_->GetPublicSlot().get()));
+
+  scoped_refptr<X509Certificate> cert_2(
+      ImportClientCertAndKeyFromFile(GetTestCertsDirectory(),
+                                     "client_2.pem",
+                                     "client_2.pk8",
+                                     db_1_->GetSystemSlot().get()));
+  CertificateList certs;
+  db_1_->ListCertsSync(&certs);
+  EXPECT_TRUE(IsCertInCertificateList(cert_1.get(), certs));
+  EXPECT_TRUE(IsCertInCertificateList(cert_2.get(), certs));
+}
+
+TEST_F(NSSCertDatabaseChromeOSTest, ListCertsDoesNotCrossReadSystemSlot) {
+  scoped_refptr<X509Certificate> cert_1(
+      ImportClientCertAndKeyFromFile(GetTestCertsDirectory(),
+                                     "client_1.pem",
+                                     "client_1.pk8",
+                                     db_2_->GetPublicSlot().get()));
+
+  scoped_refptr<X509Certificate> cert_2(
+      ImportClientCertAndKeyFromFile(GetTestCertsDirectory(),
+                                     "client_2.pem",
+                                     "client_2.pk8",
+                                     system_db_.slot()));
+  CertificateList certs;
+  db_2_->ListCertsSync(&certs);
+  EXPECT_TRUE(IsCertInCertificateList(cert_1.get(), certs));
+  EXPECT_FALSE(IsCertInCertificateList(cert_2.get(), certs));
 }
 
 }  // namespace net

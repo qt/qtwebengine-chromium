@@ -171,7 +171,7 @@ class ContentShellDriverDetails():
         return 'libcontent_shell_content_view.so'
 
     def additional_resources(self):
-        return ['content_resources.pak', 'shell_resources.pak']
+        return ['content_resources.pak', 'content_shell.pak', 'shell_resources.pak']
 
     def command_line_file(self):
         return '/data/local/tmp/content-shell-command-line'
@@ -257,7 +257,9 @@ class AndroidCommands(object):
         result = self._executive.run_command(self.adb_command() + command, error_handler=error_handler, debug_logging=self._debug_logging)
 
         # We limit the length to avoid outputting too verbose commands, such as "adb logcat".
-        self._log_debug('Run adb result: ' + result[:80])
+        # Also make sure that the output is ascii-encoded to avoid confusing other parts of
+        # the system.
+        self._log_debug('Run adb result: ' + result[:80].encode('ascii', errors='replace'))
         return result
 
     def get_serial(self):
@@ -396,7 +398,7 @@ class AndroidDevices(object):
 
     def _is_device_screen_on(self, commands):
         power_status = commands.run(['shell', 'dumpsys', 'power'])
-        return 'mScreenOn=true' in power_status or 'mScreenOn=SCREEN_ON_BIT' in power_status
+        return 'mScreenOn=true' in power_status or 'mScreenOn=SCREEN_ON_BIT' in power_status or 'Display Power: state=ON' in power_status
 
 
 class AndroidPort(base.Port):
@@ -645,15 +647,6 @@ class AndroidPort(base.Port):
 
     def _path_to_image_diff(self):
         return self._host_port._path_to_image_diff()
-
-    def path_to_lighttpd(self):
-        return self._host_port._path_to_lighttpd()
-
-    def path_to_lighttpd_modules(self):
-        return self._host_port._path_to_lighttpd_modules()
-
-    def path_to_lighttpd_php(self):
-        return self._host_port._path_to_lighttpd_php()
 
     def _path_to_wdiff(self):
         return self._host_port._path_to_wdiff()
@@ -1080,7 +1073,7 @@ class ChromiumAndroidDriver(driver.Driver):
                 not self._android_commands.file_exists(self._out_fifo_path) and
                 not self._android_commands.file_exists(self._err_fifo_path))
 
-    def start(self, pixel_tests, per_test_args):
+    def start(self, pixel_tests, per_test_args, deadline):
         # We override the default start() so that we can call _android_driver_cmd_line()
         # instead of cmd_line().
         new_cmd_line = self._android_driver_cmd_line(pixel_tests, per_test_args)
@@ -1093,7 +1086,7 @@ class ChromiumAndroidDriver(driver.Driver):
             self.stop()
         self._current_android_cmd_line = new_cmd_line
 
-        super(ChromiumAndroidDriver, self).start(pixel_tests, per_test_args)
+        super(ChromiumAndroidDriver, self).start(pixel_tests, per_test_args, deadline)
 
     def _start(self, pixel_tests, per_test_args):
         if not self._android_devices.is_device_prepared(self._android_commands.get_serial()):

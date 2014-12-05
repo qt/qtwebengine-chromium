@@ -7,8 +7,10 @@
 
 #include <map>
 
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_pump.h"
+#include "base/observer_list.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "mojo/common/mojo_common_export.h"
@@ -22,15 +24,32 @@ class MessagePumpMojoHandler;
 // Mojo implementation of MessagePump.
 class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
  public:
+  class Observer {
+   public:
+    Observer() {}
+
+    virtual void WillSignalHandler() = 0;
+    virtual void DidSignalHandler() = 0;
+
+   protected:
+    virtual ~Observer() {}
+  };
+
   MessagePumpMojo();
-  virtual ~MessagePumpMojo();
+  ~MessagePumpMojo() override;
 
   // Static factory function (for using with |base::Thread::Options|, wrapped
   // using |base::Bind()|).
   static scoped_ptr<base::MessagePump> Create();
 
+  // Returns the MessagePumpMojo instance of the current thread, if it exists.
+  static MessagePumpMojo* current();
+
+  static bool IsCurrent() { return !!current(); }
+
   // Registers a MessagePumpMojoHandler for the specified handle. Only one
   // handler can be registered for a specified handle.
+  // NOTE: a value of 0 for |deadline| indicates an indefinite timeout.
   void AddHandler(MessagePumpMojoHandler* handler,
                   const Handle& handle,
                   MojoHandleSignals wait_signals,
@@ -38,12 +57,14 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
 
   void RemoveHandler(const Handle& handle);
 
+  void AddObserver(Observer*);
+  void RemoveObserver(Observer*);
+
   // MessagePump:
-  virtual void Run(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
-  virtual void ScheduleWork() OVERRIDE;
-  virtual void ScheduleDelayedWork(
-      const base::TimeTicks& delayed_work_time) OVERRIDE;
+  void Run(Delegate* delegate) override;
+  void Quit() override;
+  void ScheduleWork() override;
+  void ScheduleDelayedWork(const base::TimeTicks& delayed_work_time) override;
 
  private:
   struct RunState;
@@ -66,8 +87,9 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
   void DoRunLoop(RunState* run_state, Delegate* delegate);
 
   // Services the set of handles ready. If |block| is true this waits for a
-  // handle to become ready, otherwise this does not block.
-  void DoInternalWork(const RunState& run_state, bool block);
+  // handle to become ready, otherwise this does not block. Returns |true| if a
+  // handle has become ready, |false| otherwise.
+  bool DoInternalWork(const RunState& run_state, bool block);
 
   // Removes the first invalid handle. This is called if MojoWaitMany finds an
   // invalid handle.
@@ -79,6 +101,9 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
 
   // Returns the deadline for the call to MojoWaitMany().
   MojoDeadline GetDeadlineForWait(const RunState& run_state) const;
+
+  void WillSignalHandler();
+  void DidSignalHandler();
 
   // If non-NULL we're running (inside Run()). Member is reference to value on
   // stack.
@@ -97,6 +122,8 @@ class MOJO_COMMON_EXPORT MessagePumpMojo : public base::MessagePump {
   // match it means the handler was removed then added so that we shouldn't
   // notify it.
   int next_handler_id_;
+
+  ObserverList<Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(MessagePumpMojo);
 };

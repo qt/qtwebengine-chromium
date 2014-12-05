@@ -28,7 +28,7 @@
 #include "config.h"
 #include "core/workers/Worker.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/events/MessageEvent.h"
 #include "core/fetch/ResourceFetcher.h"
@@ -41,13 +41,12 @@
 #include "core/workers/WorkerThread.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 inline Worker::Worker(ExecutionContext* context)
     : AbstractWorker(context)
-    , m_contextProxy(0)
+    , m_contextProxy(nullptr)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<Worker> Worker::create(ExecutionContext* context, const String& url, ExceptionState& exceptionState)
@@ -62,16 +61,13 @@ PassRefPtrWillBeRawPtr<Worker> Worker::create(ExecutionContext* context, const S
     WorkerGlobalScopeProxyProvider* proxyProvider = WorkerGlobalScopeProxyProvider::from(*document->page());
     ASSERT(proxyProvider);
 
-    RefPtrWillBeRawPtr<Worker> worker = adoptRefWillBeRefCountedGarbageCollected(new Worker(context));
+    RefPtrWillBeRawPtr<Worker> worker = adoptRefWillBeNoop(new Worker(context));
 
     worker->suspendIfNeeded();
 
     KURL scriptURL = worker->resolveURL(url, exceptionState);
     if (scriptURL.isEmpty())
         return nullptr;
-
-    // The worker context does not exist while loading, so we must ensure that the worker object is not collected, nor are its event listeners.
-    worker->setPendingActivity(worker.get());
 
     worker->m_scriptLoader = WorkerScriptLoader::create();
     worker->m_scriptLoader->loadAsynchronously(*context, scriptURL, DenyCrossOriginRequests, worker.get());
@@ -82,9 +78,10 @@ PassRefPtrWillBeRawPtr<Worker> Worker::create(ExecutionContext* context, const S
 Worker::~Worker()
 {
     ASSERT(isMainThread());
+    if (!m_contextProxy)
+        return;
     ASSERT(executionContext()); // The context is protected by worker context proxy, so it cannot be destroyed while a Worker exists.
-    if (m_contextProxy)
-        m_contextProxy->workerObjectDestroyed();
+    m_contextProxy->workerObjectDestroyed();
 }
 
 const AtomicString& Worker::interfaceName() const
@@ -92,8 +89,9 @@ const AtomicString& Worker::interfaceName() const
     return EventTargetNames::Worker;
 }
 
-void Worker::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void Worker::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
+    ASSERT(m_contextProxy);
     // Disentangle the port in preparation for sending it to the remote context.
     OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
     if (exceptionState.hadException())
@@ -114,7 +112,8 @@ void Worker::stop()
 
 bool Worker::hasPendingActivity() const
 {
-    return m_contextProxy->hasPendingActivity() || ActiveDOMObject::hasPendingActivity();
+    // The worker context does not exist while loading, so we must ensure that the worker object is not collected, nor are its event listeners.
+    return (m_contextProxy && m_contextProxy->hasPendingActivity()) || m_scriptLoader;
 }
 
 void Worker::didReceiveResponse(unsigned long identifier, const ResourceResponse&)
@@ -127,6 +126,7 @@ void Worker::notifyFinished()
     if (m_scriptLoader->failed()) {
         dispatchEvent(Event::createCancelable(EventTypeNames::error));
     } else {
+        ASSERT(m_contextProxy);
         WorkerThreadStartMode startMode = DontPauseWorkerGlobalScopeOnStart;
         if (InspectorInstrumentation::shouldPauseDedicatedWorkerOnStart(executionContext()))
             startMode = PauseWorkerGlobalScopeOnStart;
@@ -134,8 +134,6 @@ void Worker::notifyFinished()
         InspectorInstrumentation::scriptImported(executionContext(), m_scriptLoader->identifier(), m_scriptLoader->script());
     }
     m_scriptLoader = nullptr;
-
-    unsetPendingActivity(this);
 }
 
 void Worker::trace(Visitor* visitor)
@@ -143,4 +141,4 @@ void Worker::trace(Visitor* visitor)
     AbstractWorker::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

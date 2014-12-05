@@ -32,6 +32,7 @@
 #include "wtf/PartitionAlloc.h"
 
 #include "wtf/BitwiseOperations.h"
+#include "wtf/CPU.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 #include <gtest/gtest.h>
@@ -40,6 +41,8 @@
 
 #if OS(POSIX)
 #include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/time.h>
 
 #ifndef MAP_ANONYMOUS
 #define MAP_ANONYMOUS MAP_ANON
@@ -55,7 +58,7 @@ static SizeSpecificPartitionAllocator<kTestMaxAllocation> allocator;
 static PartitionAllocatorGeneric genericAllocator;
 
 static const size_t kTestAllocSize = 16;
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 static const size_t kPointerOffset = 0;
 static const size_t kExtraAllocSize = 0;
 #else
@@ -83,6 +86,44 @@ static void TestShutdown()
     // detection.
     EXPECT_TRUE(allocator.shutdown());
     EXPECT_TRUE(genericAllocator.shutdown());
+}
+
+static bool SetAddressSpaceLimit()
+{
+#if !CPU(64BIT)
+    // 32 bits => address space is limited already.
+    return true;
+#elif OS(POSIX)
+    const size_t kAddressSpaceLimit = static_cast<size_t>(4096) * 1024 * 1024;
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_AS, &limit) != 0)
+        return false;
+    if (limit.rlim_cur == RLIM_INFINITY || limit.rlim_cur > kAddressSpaceLimit) {
+        limit.rlim_cur = kAddressSpaceLimit;
+        if (setrlimit(RLIMIT_AS, &limit) != 0)
+            return false;
+    }
+    return true;
+#else
+    return false;
+#endif
+}
+
+static bool ClearAddressSpaceLimit()
+{
+#if !CPU(64BIT)
+    return true;
+#elif OS(POSIX)
+    struct rlimit limit;
+    if (getrlimit(RLIMIT_AS, &limit) != 0)
+        return false;
+    limit.rlim_cur = limit.rlim_max;
+    if (setrlimit(RLIMIT_AS, &limit) != 0)
+        return false;
+    return true;
+#else
+    return false;
+#endif
 }
 
 static WTF::PartitionPage* GetFullPage(size_t size)
@@ -454,7 +495,7 @@ TEST(PartitionAllocTest, GenericAlloc)
     // Check that the realloc copied correctly.
     char* newCharPtr = static_cast<char*>(newPtr);
     EXPECT_EQ(*newCharPtr, 'A');
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // Subtle: this checks for an old bug where we copied too much from the
     // source of the realloc. The condition can be detected by a trashing of
     // the uninitialized value in the space of the upsized allocation.
@@ -557,13 +598,14 @@ TEST(PartitionAllocTest, GenericAllocSizes)
     EXPECT_EQ(ptr3, newPtr);
     newPtr = partitionAllocGeneric(genericAllocator.root(), size);
     EXPECT_EQ(ptr2, newPtr);
-#if OS(LINUX) && defined(NDEBUG)
+#if OS(LINUX) && !ENABLE(ASSERT)
     // On Linux, we have a guarantee that freelisting a page should cause its
     // contents to be nulled out. We check for null here to detect an bug we
     // had where a large slot size was causing us to not properly free all
     // resources back to the system.
-    // We only run the check in optimized builds because the debug build
-    // writes over the allocated area with an "uninitialized" byte pattern.
+    // We only run the check when asserts are disabled because when they are
+    // enabled, the allocated area is overwritten with an "uninitialized"
+    // byte pattern.
     EXPECT_EQ(0, *(reinterpret_cast<char*>(newPtr) + (size - 1)));
 #endif
     partitionFreeGeneric(genericAllocator.root(), newPtr);
@@ -681,7 +723,7 @@ TEST(PartitionAllocTest, Realloc)
     char* charPtr2 = static_cast<char*>(ptr2);
     EXPECT_EQ('A', charPtr2[0]);
     EXPECT_EQ('A', charPtr2[size - 1]);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     EXPECT_EQ(WTF::kUninitializedByte, static_cast<unsigned char>(charPtr2[size]));
 #endif
 
@@ -692,7 +734,7 @@ TEST(PartitionAllocTest, Realloc)
     char* charPtr = static_cast<char*>(ptr);
     EXPECT_EQ('A', charPtr[0]);
     EXPECT_EQ('A', charPtr[size - 2]);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     EXPECT_EQ(WTF::kUninitializedByte, static_cast<unsigned char>(charPtr[size - 1]));
 #endif
 
@@ -1096,6 +1138,54 @@ TEST(PartitionAllocTest, LostFreePagesBug)
     TestShutdown();
 }
 
+#if !CPU(64BIT) || OS(POSIX)
+
+// Tests that if an allocation fails in "return null" mode, repeating it doesn't
+// crash, and still returns null. The test tries to allocate 6 GB of memory in
+// 512 kB blocks. On 64-bit POSIX systems, the address space is limited to 4 GB
+// using setrlimit() first.
+TEST(PartitionAllocTest, RepeatedReturnNull)
+{
+    TestSetup();
+
+    EXPECT_TRUE(SetAddressSpaceLimit());
+
+    // 512 kB x 12288 == 6 GB
+    const size_t blockSize = 512 * 1024;
+    const int numAllocations = 12288;
+
+    void* ptrs[numAllocations];
+    int i;
+
+    for (i = 0; i < numAllocations; ++i) {
+        ptrs[i] = partitionAllocGenericFlags(genericAllocator.root(), WTF::PartitionAllocReturnNull, blockSize);
+        if (!ptrs[i]) {
+            ptrs[i] = partitionAllocGenericFlags(genericAllocator.root(), WTF::PartitionAllocReturnNull, blockSize);
+            EXPECT_FALSE(ptrs[i]);
+            break;
+        }
+    }
+
+    // We shouldn't succeed in allocating all 6 GB of memory. If we do, then
+    // we're not actually testing anything here.
+    EXPECT_LT(i, numAllocations);
+
+    // Free, reallocate and free again each block we allocated. We do this to
+    // check that freeing memory also works correctly after a failed allocation.
+    for (--i; i >= 0; --i) {
+        partitionFreeGeneric(genericAllocator.root(), ptrs[i]);
+        ptrs[i] = partitionAllocGenericFlags(genericAllocator.root(), WTF::PartitionAllocReturnNull, blockSize);
+        EXPECT_TRUE(ptrs[i]);
+        partitionFreeGeneric(genericAllocator.root(), ptrs[i]);
+    }
+
+    EXPECT_TRUE(ClearAddressSpaceLimit());
+
+    TestShutdown();
+}
+
+#endif // !CPU(64BIT) || OS(POSIX)
+
 #if !OS(ANDROID)
 
 // Make sure that malloc(-1) dies.
@@ -1173,10 +1263,10 @@ TEST(PartitionAllocDeathTest, GuardPages)
 // functions working correctly.
 TEST(PartitionAllocTest, CLZWorks)
 {
-    EXPECT_EQ(32u, WTF::countLeadingZeros32(0));
-    EXPECT_EQ(31u, WTF::countLeadingZeros32(1));
-    EXPECT_EQ(1u, WTF::countLeadingZeros32(1 << 30));
-    EXPECT_EQ(0u, WTF::countLeadingZeros32(1 << 31));
+    EXPECT_EQ(32u, WTF::countLeadingZeros32(0u));
+    EXPECT_EQ(31u, WTF::countLeadingZeros32(1u));
+    EXPECT_EQ(1u, WTF::countLeadingZeros32(1u << 30));
+    EXPECT_EQ(0u, WTF::countLeadingZeros32(1u << 31));
 
 #if CPU(64BIT)
     EXPECT_EQ(64u, WTF::countLeadingZerosSizet(0ull));
@@ -1185,10 +1275,10 @@ TEST(PartitionAllocTest, CLZWorks)
     EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1ull << 62));
     EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1ull << 63));
 #else
-    EXPECT_EQ(32u, WTF::countLeadingZerosSizet(0));
-    EXPECT_EQ(31u, WTF::countLeadingZerosSizet(1));
-    EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1 << 30));
-    EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1 << 31));
+    EXPECT_EQ(32u, WTF::countLeadingZerosSizet(0u));
+    EXPECT_EQ(31u, WTF::countLeadingZerosSizet(1u));
+    EXPECT_EQ(1u, WTF::countLeadingZerosSizet(1u << 30));
+    EXPECT_EQ(0u, WTF::countLeadingZerosSizet(1u << 31));
 #endif
 }
 

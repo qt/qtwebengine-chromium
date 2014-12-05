@@ -28,31 +28,33 @@
 #include "talk/media/devices/devicemanager.h"
 
 #ifdef WIN32
-#include "talk/base/win32.h"
 #include <objbase.h>
+#include "webrtc/base/win32.h"
 #endif
 #include <string>
 
-#include "talk/base/fileutils.h"
-#include "talk/base/gunit.h"
-#include "talk/base/logging.h"
-#include "talk/base/pathutils.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/stream.h"
-#include "talk/base/windowpickerfactory.h"
 #include "talk/media/base/fakevideocapturer.h"
+#include "talk/media/base/screencastid.h"
 #include "talk/media/base/testutils.h"
+#include "talk/media/base/videocapturerfactory.h"
 #include "talk/media/devices/filevideocapturer.h"
 #include "talk/media/devices/v4llookup.h"
+#include "webrtc/base/fileutils.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/pathutils.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/stream.h"
+#include "webrtc/base/windowpickerfactory.h"
 
 #ifdef LINUX
 // TODO(juberti): Figure out why this doesn't compile on Windows.
-#include "talk/base/fileutils_mock.h"
+#include "webrtc/base/fileutils_mock.h"
 #endif  // LINUX
 
-using talk_base::Pathname;
-using talk_base::FileTimeType;
-using talk_base::scoped_ptr;
+using rtc::Pathname;
+using rtc::FileTimeType;
+using rtc::scoped_ptr;
 using cricket::Device;
 using cricket::DeviceManager;
 using cricket::DeviceManagerFactory;
@@ -65,12 +67,24 @@ const cricket::VideoFormat kHdFormat(1280, 720,
                                      cricket::VideoFormat::FpsToInterval(30),
                                      cricket::FOURCC_I420);
 
-class FakeVideoCapturerFactory : public cricket::VideoCapturerFactory {
+class FakeVideoDeviceCapturerFactory :
+    public cricket::VideoDeviceCapturerFactory {
  public:
-  FakeVideoCapturerFactory() {}
-  virtual ~FakeVideoCapturerFactory() {}
+  FakeVideoDeviceCapturerFactory() {}
+  virtual ~FakeVideoDeviceCapturerFactory() {}
 
   virtual cricket::VideoCapturer* Create(const cricket::Device& device) {
+    return new cricket::FakeVideoCapturer;
+  }
+};
+
+class FakeScreenCapturerFactory : public cricket::ScreenCapturerFactory {
+ public:
+  FakeScreenCapturerFactory() {}
+  virtual ~FakeScreenCapturerFactory() {}
+
+  virtual cricket::VideoCapturer* Create(
+      const cricket::ScreencastId& screenid) {
     return new cricket::FakeVideoCapturer;
   }
 };
@@ -81,8 +95,10 @@ class DeviceManagerTestFake : public testing::Test {
     dm_.reset(DeviceManagerFactory::Create());
     EXPECT_TRUE(dm_->Init());
     DeviceManager* device_manager = static_cast<DeviceManager*>(dm_.get());
-    device_manager->set_device_video_capturer_factory(
-        new FakeVideoCapturerFactory());
+    device_manager->SetVideoDeviceCapturerFactory(
+        new FakeVideoDeviceCapturerFactory());
+    device_manager->SetScreenCapturerFactory(
+        new FakeScreenCapturerFactory());
   }
 
   virtual void TearDown() {
@@ -290,17 +306,17 @@ TEST(DeviceManagerTest, GetVideoCaptureDevices_K2_6) {
   devices.push_back("/dev/video5");
   cricket::V4LLookup::SetV4LLookup(new FakeV4LLookup(devices));
 
-  std::vector<talk_base::FakeFileSystem::File> files;
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video0", ""));
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video5", ""));
-  files.push_back(talk_base::FakeFileSystem::File(
+  std::vector<rtc::FakeFileSystem::File> files;
+  files.push_back(rtc::FakeFileSystem::File("/dev/video0", ""));
+  files.push_back(rtc::FakeFileSystem::File("/dev/video5", ""));
+  files.push_back(rtc::FakeFileSystem::File(
       "/sys/class/video4linux/video0/name", "Video Device 1"));
-  files.push_back(talk_base::FakeFileSystem::File(
+  files.push_back(rtc::FakeFileSystem::File(
       "/sys/class/video4linux/video1/model", "Bad Device"));
   files.push_back(
-      talk_base::FakeFileSystem::File("/sys/class/video4linux/video5/model",
+      rtc::FakeFileSystem::File("/sys/class/video4linux/video5/model",
                                       "Video Device 2"));
-  talk_base::FilesystemScope fs(new talk_base::FakeFileSystem(files));
+  rtc::FilesystemScope fs(new rtc::FakeFileSystem(files));
 
   scoped_ptr<DeviceManagerInterface> dm(DeviceManagerFactory::Create());
   std::vector<Device> video_ins;
@@ -317,19 +333,19 @@ TEST(DeviceManagerTest, GetVideoCaptureDevices_K2_4) {
   devices.push_back("/dev/video5");
   cricket::V4LLookup::SetV4LLookup(new FakeV4LLookup(devices));
 
-  std::vector<talk_base::FakeFileSystem::File> files;
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video0", ""));
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video5", ""));
-  files.push_back(talk_base::FakeFileSystem::File(
+  std::vector<rtc::FakeFileSystem::File> files;
+  files.push_back(rtc::FakeFileSystem::File("/dev/video0", ""));
+  files.push_back(rtc::FakeFileSystem::File("/dev/video5", ""));
+  files.push_back(rtc::FakeFileSystem::File(
           "/proc/video/dev/video0",
           "param1: value1\nname: Video Device 1\n param2: value2\n"));
-  files.push_back(talk_base::FakeFileSystem::File(
+  files.push_back(rtc::FakeFileSystem::File(
           "/proc/video/dev/video1",
           "param1: value1\nname: Bad Device\n param2: value2\n"));
-  files.push_back(talk_base::FakeFileSystem::File(
+  files.push_back(rtc::FakeFileSystem::File(
           "/proc/video/dev/video5",
           "param1: value1\nname:   Video Device 2\n param2: value2\n"));
-  talk_base::FilesystemScope fs(new talk_base::FakeFileSystem(files));
+  rtc::FilesystemScope fs(new rtc::FakeFileSystem(files));
 
   scoped_ptr<DeviceManagerInterface> dm(DeviceManagerFactory::Create());
   std::vector<Device> video_ins;
@@ -346,11 +362,11 @@ TEST(DeviceManagerTest, GetVideoCaptureDevices_KUnknown) {
   devices.push_back("/dev/video5");
   cricket::V4LLookup::SetV4LLookup(new FakeV4LLookup(devices));
 
-  std::vector<talk_base::FakeFileSystem::File> files;
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video0", ""));
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video1", ""));
-  files.push_back(talk_base::FakeFileSystem::File("/dev/video5", ""));
-  talk_base::FilesystemScope fs(new talk_base::FakeFileSystem(files));
+  std::vector<rtc::FakeFileSystem::File> files;
+  files.push_back(rtc::FakeFileSystem::File("/dev/video0", ""));
+  files.push_back(rtc::FakeFileSystem::File("/dev/video1", ""));
+  files.push_back(rtc::FakeFileSystem::File("/dev/video5", ""));
+  rtc::FilesystemScope fs(new rtc::FakeFileSystem(files));
 
   scoped_ptr<DeviceManagerInterface> dm(DeviceManagerFactory::Create());
   std::vector<Device> video_ins;
@@ -365,44 +381,46 @@ TEST(DeviceManagerTest, GetVideoCaptureDevices_KUnknown) {
 // TODO(noahric): These are flaky on windows on headless machines.
 #ifndef WIN32
 TEST(DeviceManagerTest, GetWindows) {
-  if (!talk_base::WindowPickerFactory::IsSupported()) {
+  if (!rtc::WindowPickerFactory::IsSupported()) {
     LOG(LS_INFO) << "skipping test: window capturing is not supported with "
                  << "current configuration.";
     return;
   }
   scoped_ptr<DeviceManagerInterface> dm(DeviceManagerFactory::Create());
-  std::vector<talk_base::WindowDescription> descriptions;
+  dm->SetScreenCapturerFactory(new FakeScreenCapturerFactory());
+  std::vector<rtc::WindowDescription> descriptions;
   EXPECT_TRUE(dm->Init());
   if (!dm->GetWindows(&descriptions) || descriptions.empty()) {
     LOG(LS_INFO) << "skipping test: window capturing. Does not have any "
                  << "windows to capture.";
     return;
   }
-  scoped_ptr<cricket::VideoCapturer> capturer(dm->CreateWindowCapturer(
-      descriptions.front().id()));
+  scoped_ptr<cricket::VideoCapturer> capturer(dm->CreateScreenCapturer(
+      cricket::ScreencastId(descriptions.front().id())));
   EXPECT_FALSE(capturer.get() == NULL);
   // TODO(hellner): creating a window capturer and immediately deleting it
   // results in "Continuous Build and Test Mainline - Mac opt" failure (crash).
   // Remove the following line as soon as this has been resolved.
-  talk_base::Thread::Current()->ProcessMessages(1);
+  rtc::Thread::Current()->ProcessMessages(1);
 }
 
 TEST(DeviceManagerTest, GetDesktops) {
-  if (!talk_base::WindowPickerFactory::IsSupported()) {
+  if (!rtc::WindowPickerFactory::IsSupported()) {
     LOG(LS_INFO) << "skipping test: desktop capturing is not supported with "
                  << "current configuration.";
     return;
   }
   scoped_ptr<DeviceManagerInterface> dm(DeviceManagerFactory::Create());
-  std::vector<talk_base::DesktopDescription> descriptions;
+  dm->SetScreenCapturerFactory(new FakeScreenCapturerFactory());
+  std::vector<rtc::DesktopDescription> descriptions;
   EXPECT_TRUE(dm->Init());
   if (!dm->GetDesktops(&descriptions) || descriptions.empty()) {
     LOG(LS_INFO) << "skipping test: desktop capturing. Does not have any "
                  << "desktops to capture.";
     return;
   }
-  scoped_ptr<cricket::VideoCapturer> capturer(dm->CreateDesktopCapturer(
-      descriptions.front().id()));
+  scoped_ptr<cricket::VideoCapturer> capturer(dm->CreateScreenCapturer(
+      cricket::ScreencastId(descriptions.front().id())));
   EXPECT_FALSE(capturer.get() == NULL);
 }
 #endif  // !WIN32

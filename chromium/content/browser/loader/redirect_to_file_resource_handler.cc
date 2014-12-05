@@ -15,9 +15,9 @@
 #include "net/base/io_buffer.h"
 #include "net/base/mime_sniffer.h"
 #include "net/base/net_errors.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
-using webkit_blob::ShareableFileReference;
+using storage::ShareableFileReference;
 
 namespace {
 
@@ -38,7 +38,7 @@ class DependentIOBuffer : public net::WrappedIOBuffer {
         backing_(backing) {
   }
  private:
-  virtual ~DependentIOBuffer() {}
+  ~DependentIOBuffer() override {}
 
   scoped_refptr<net::IOBuffer> backing_;
 };
@@ -121,7 +121,7 @@ class RedirectToFileResourceHandler::Writer {
 
   // We create a ShareableFileReference that's deletable for the temp file
   // created as a result of the download.
-  scoped_refptr<webkit_blob::ShareableFileReference> deletable_file_;
+  scoped_refptr<storage::ShareableFileReference> deletable_file_;
 
   DISALLOW_COPY_AND_ASSIGN(Writer);
 };
@@ -157,11 +157,8 @@ void RedirectToFileResourceHandler::
 bool RedirectToFileResourceHandler::OnResponseStarted(
     ResourceResponse* response,
     bool* defer) {
-  if (response->head.error_code == net::OK ||
-      response->head.error_code == net::ERR_IO_PENDING) {
-    DCHECK(writer_);
-    response->head.download_file_path = writer_->path();
-  }
+  DCHECK(writer_);
+  response->head.download_file_path = writer_->path();
   return next_handler_->OnResponseStarted(response, defer);
 }
 

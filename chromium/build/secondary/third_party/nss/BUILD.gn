@@ -205,7 +205,7 @@ if (is_linux) {
       "nspr/pr/src/threads/prtpd.c",
     ]
 
-    direct_dependent_configs = [ ":nspr_config" ]
+    public_configs = [ ":nspr_config" ]
 
     configs -= [
       "//build/config/compiler:chromium_code",
@@ -220,7 +220,7 @@ if (is_linux) {
 
     cflags = []
     defines = [
-      "_NSPR_BUILD",
+      "_NSPR_BUILD_",
       "FORCE_PR_LOG",
     ]
 
@@ -348,10 +348,10 @@ if (is_linux) {
       "nss/lib/nss/nssver.c",
     ]
 
-    deps = [ ":nss_static" ]
+    public_deps = [ ":nss_static" ]
 
     if (include_nss_root_certs) {
-      deps += [ ":nssckbi" ]
+      public_deps += [ ":nssckbi" ]
     }
 
     if (component_mode == "shared_library") {
@@ -359,11 +359,11 @@ if (is_linux) {
         ldflags = [ "-all_load" ]
       } else if (is_win) {
         # Pass the def file to the linker.
-        ldflags = [ rebase_path("nss/exports_win.def", root_build_dir) ]
+        ldflags = [
+          "/DEF:" + rebase_path("nss/exports_win.def", root_build_dir)
+        ]
       }
     }
-
-    forward_dependent_configs_from = deps
   }
 
   config("nssckbi_config") {
@@ -385,7 +385,7 @@ if (is_linux) {
   # TODO(rsleevi): http://crbug.com/128134 - Break the circular dependency
   # without requiring nssckbi to be built as a shared library.
   source_set("nssckbi") {
-    visibility = ":nss"  # This target is internal implementation detail.
+    visibility = [ ":nss" ]  # This target is internal implementation detail.
 
     sources = [
       "nss/lib/ckfw/builtins/anchor.c",
@@ -441,12 +441,11 @@ if (is_linux) {
     configs += [ "//build/config/compiler:no_chromium_code" ]
 
     include_dirs = [ "nss/lib/ckfw" ]
-    direct_dependent_configs = [ ":nssckbi_config" ]
+    public_configs = [ ":nssckbi_config" ]
 
-    deps = [
+    public_deps = [
       ":nss_static",
     ]
-    forward_dependent_configs_from = deps
   }
 
   config("nss_static_config") {
@@ -477,6 +476,50 @@ if (is_linux) {
       "nss/lib/softoken",
       "nss/lib/util",
     ]
+  }
+
+  if (is_win && cpu_arch == "x86") {
+    source_set("nss_static_avx") {
+      sources = [
+        "nss/lib/freebl/intel-gcm-wrap.c",
+        "nss/lib/freebl/intel-gcm-x86-masm.asm",
+        "nss/lib/freebl/intel-gcm.h",
+      ]
+      defines = [
+        "_WINDOWS",
+        "_X86_",
+        "INTEL_GCM",
+        "MP_API_COMPATIBLE",
+        "MP_ASSEMBLY_DIV_2DX1D",
+        "MP_ASSEMBLY_MULTIPLY",
+        "MP_ASSEMBLY_SQUARE",
+        "MP_NO_MP_WORD",
+        "MP_USE_UINT_DIGIT",
+        "NSS_DISABLE_DBM",
+        "NSS_STATIC",
+        "NSS_USE_STATIC_LIBS",
+        "NSS_X86",
+        "NSS_X86_OR_X64",
+        "RIJNDAEL_INCLUDE_TABLES",
+        "SHLIB_PREFIX=\"\"",
+        "SHLIB_SUFFIX=\"dll\"",
+        "SHLIB_VERSION=\"3\"",
+        "SOFTOKEN_LIB_NAME=\"softokn3.dll\"",
+        "SOFTOKEN_SHLIB_VERSION=\"3\"",
+        "USE_HW_AES",
+        "USE_UTIL_DIRECTLY",
+        "WIN32",
+        "WIN95",
+        "XP_PC",
+      ]
+      include_dirs = [
+        "nspr/pr/include",
+        "nspr/lib/ds",
+        "nspr/lib/libc/include",
+        "nss/lib/freebl/ecl",
+        "nss/lib/util",
+      ]
+    }
   }
 
   source_set("nss_static") {
@@ -561,7 +604,6 @@ if (is_linux) {
       "nss/lib/freebl/blapi.h",
       "nss/lib/freebl/blapii.h",
       "nss/lib/freebl/blapit.h",
-      "nss/lib/freebl/build_config_mac.h",
       "nss/lib/freebl/camellia.c",
       "nss/lib/freebl/camellia.h",
       "nss/lib/freebl/chacha20/chacha20.c",
@@ -603,6 +645,8 @@ if (is_linux) {
       "nss/lib/freebl/ecl/ec_naf.c",
       "nss/lib/freebl/gcm.c",
       "nss/lib/freebl/gcm.h",
+      "nss/lib/freebl/intel-aes-x86-masm.asm",
+      "nss/lib/freebl/intel-aes.h",
       "nss/lib/freebl/hmacct.c",
       "nss/lib/freebl/hmacct.h",
       "nss/lib/freebl/jpake.c",
@@ -627,6 +671,7 @@ if (is_linux) {
       "nss/lib/freebl/mpi/mp_gf2m.c",
       "nss/lib/freebl/mpi/mp_gf2m.h",
       "nss/lib/freebl/mpi/primes.c",
+      "nss/lib/freebl/nss_build_config_mac.h",
       "nss/lib/freebl/poly1305/poly1305-donna-x64-sse2-incremental-source.c",
       "nss/lib/freebl/poly1305/poly1305.c",
       "nss/lib/freebl/poly1305/poly1305.h",
@@ -784,6 +829,8 @@ if (is_linux) {
       "nss/lib/util/pkcs11p.h",
       "nss/lib/util/pkcs11t.h",
       "nss/lib/util/pkcs11u.h",
+      "nss/lib/util/pkcs1sig.c",
+      "nss/lib/util/pkcs1sig.h",
       "nss/lib/util/portreg.c",
       "nss/lib/util/portreg.h",
       "nss/lib/util/quickder.c",
@@ -841,7 +888,7 @@ if (is_linux) {
       ]
     }
     configs += [ "//build/config/compiler:no_chromium_code" ]
-    direct_dependent_configs = [ ":nss_static_config" ]
+    public_configs = [ ":nss_static_config" ]
 
     cflags = []
 
@@ -1070,7 +1117,7 @@ if (is_linux) {
       ]
       cflags += [
         "-include",
-        rebase_path("//third_party/nss/nss/lib/freebl/build_config_mac.h",
+        rebase_path("//third_party/nss/nss/lib/freebl/nss_build_config_mac.h",
                     root_build_dir),
       ]
       defines += [
@@ -1100,7 +1147,6 @@ if (is_linux) {
       ]
 
       if (cpu_arch == "x86") {
-        sources -= [ "nss/lib/freebl/mpi/mpi_amd64.c" ]
         defines += [
           "NSS_X86_OR_X64",
           "NSS_X86",
@@ -1114,7 +1160,11 @@ if (is_linux) {
           "INTEL_GCM",
         ]
       } else if (cpu_arch == "x64") {
-        sources -= [ "nss/lib/freebl/mpi/mpi_x86_asm.c" ]
+        sources -= [
+          "nss/lib/freebl/intel-aes-x86-masm.asm",
+          "nss/lib/freebl/mpi/mpi_amd64.c",
+          "nss/lib/freebl/mpi/mpi_x86_asm.c",
+        ]
         defines += [
           "NSS_USE_64",
           "NSS_X86_OR_X64",
@@ -1148,12 +1198,17 @@ if (is_linux) {
       ]
     }
 
+    public_deps = [
+      ":nspr",
+    ]
     deps = [
       ":nspr",
       "//third_party/sqlite",
     ]
 
-    forward_dependent_configs_from = [ ":nspr" ]
+    if (is_win && cpu_arch == "x86") {
+      deps += [ ":nss_static_avx" ]
+    }
   }
 }  # Windows/Mac/iOS.
 

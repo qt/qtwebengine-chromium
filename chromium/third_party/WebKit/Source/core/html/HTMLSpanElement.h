@@ -28,9 +28,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLSpanElement : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLSpanElement);
 
@@ -38,6 +39,6 @@ protected:
     explicit HTMLSpanElement(Document&);
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // HTMLSpanElement_h

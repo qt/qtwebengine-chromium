@@ -7,6 +7,7 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "content/browser/indexed_db/indexed_db_transaction.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
@@ -44,7 +45,7 @@ bool IndexedDBTransactionCoordinator::IsRunningVersionChangeTransaction()
     const {
   return !started_transactions_.empty() &&
          (*started_transactions_.begin())->mode() ==
-             indexed_db::TRANSACTION_VERSION_CHANGE;
+             blink::WebIDBTransactionModeVersionChange;
 }
 
 #ifndef NDEBUG
@@ -66,16 +67,10 @@ std::vector<const IndexedDBTransaction*>
 IndexedDBTransactionCoordinator::GetTransactions() const {
   std::vector<const IndexedDBTransaction*> result;
 
-  for (TransactionSet::const_iterator it = started_transactions_.begin();
-       it != started_transactions_.end();
-       ++it) {
-    result.push_back(*it);
-  }
-  for (TransactionSet::const_iterator it = queued_transactions_.begin();
-       it != queued_transactions_.end();
-       ++it) {
-    result.push_back(*it);
-  }
+  for (const auto& transaction : started_transactions_)
+    result.push_back(transaction.get());
+  for (const auto& transaction : queued_transactions_)
+    result.push_back(transaction.get());
 
   return result;
 }
@@ -93,11 +88,8 @@ void IndexedDBTransactionCoordinator::ProcessQueuedTransactions() {
   // data. ("Version change" transactions are exclusive, but handled by the
   // connection sequencing in IndexedDBDatabase.)
   std::set<int64> locked_scope;
-  for (TransactionSet::const_iterator it = started_transactions_.begin();
-       it != started_transactions_.end();
-       ++it) {
-    IndexedDBTransaction* transaction = *it;
-    if (transaction->mode() == indexed_db::TRANSACTION_READ_WRITE) {
+  for (const auto& transaction : started_transactions_) {
+    if (transaction->mode() == blink::WebIDBTransactionModeReadWrite) {
       // Started read/write transactions have exclusive access to the object
       // stores within their scopes.
       locked_scope.insert(transaction->scope().begin(),
@@ -109,14 +101,14 @@ void IndexedDBTransactionCoordinator::ProcessQueuedTransactions() {
   while (it != queued_transactions_.end()) {
     scoped_refptr<IndexedDBTransaction> transaction = *it;
     ++it;
-    if (CanStartTransaction(transaction, locked_scope)) {
+    if (CanStartTransaction(transaction.get(), locked_scope)) {
       DCHECK_EQ(IndexedDBTransaction::CREATED, transaction->state());
       queued_transactions_.erase(transaction);
       started_transactions_.insert(transaction);
       transaction->Start();
       DCHECK_EQ(IndexedDBTransaction::STARTED, transaction->state());
     }
-    if (transaction->mode() == indexed_db::TRANSACTION_READ_WRITE) {
+    if (transaction->mode() == blink::WebIDBTransactionModeReadWrite) {
       // Either the transaction started, so it has exclusive access to the
       // stores in its scope, or per the spec the transaction which was
       // created first must get access first, so the stores are also locked.
@@ -147,16 +139,16 @@ bool IndexedDBTransactionCoordinator::CanStartTransaction(
     const std::set<int64>& locked_scope) const {
   DCHECK(queued_transactions_.count(transaction));
   switch (transaction->mode()) {
-    case indexed_db::TRANSACTION_VERSION_CHANGE:
+    case blink::WebIDBTransactionModeVersionChange:
       DCHECK_EQ(1u, queued_transactions_.size());
       DCHECK(started_transactions_.empty());
       DCHECK(locked_scope.empty());
       return true;
 
-    case indexed_db::TRANSACTION_READ_ONLY:
+    case blink::WebIDBTransactionModeReadOnly:
       return true;
 
-    case indexed_db::TRANSACTION_READ_WRITE:
+    case blink::WebIDBTransactionModeReadWrite:
       return !DoSetsIntersect(transaction->scope(), locked_scope);
   }
   NOTREACHED();

@@ -23,9 +23,9 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderDetailsMarker FINAL : public RenderBlockFlow {
+class RenderDetailsMarker final : public RenderBlockFlow {
 public:
     RenderDetailsMarker(Element*);
 
@@ -34,13 +34,11 @@ public:
     Orientation orientation() const;
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderDetailsMarker"; }
-    virtual bool isDetailsMarker() const OVERRIDE { return true; }
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual const char* renderName() const override { return "RenderDetailsMarker"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectDetailsMarker || RenderBlockFlow::isOfType(type); }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
 
     bool isOpen() const;
-    Path getCanonicalPath() const;
-    Path getPath(const LayoutPoint& origin) const;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderDetailsMarker, isDetailsMarker());

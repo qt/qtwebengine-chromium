@@ -26,12 +26,11 @@
 #include "config.h"
 #include "modules/device_orientation/DeviceRotationRate.h"
 
-namespace WebCore {
+namespace blink {
 
-DeviceRotationRate::DeviceRotationRate(PassRefPtrWillBeRawPtr<DeviceMotionData::RotationRate> rotationRate)
+DeviceRotationRate::DeviceRotationRate(DeviceMotionData::RotationRate* rotationRate)
     : m_rotationRate(rotationRate)
 {
-    ScriptWrappable::init(this);
 }
 
 void DeviceRotationRate::trace(Visitor* visitor)
@@ -66,4 +65,4 @@ double DeviceRotationRate::gamma(bool& isNull) const
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

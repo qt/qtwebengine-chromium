@@ -4,16 +4,16 @@
 
 #include <set>
 
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "storage/browser/fileapi/native_file_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/native_file_util.h"
 
-using fileapi::FileSystemFileUtil;
-using fileapi::FileSystemOperation;
-using fileapi::NativeFileUtil;
+using storage::FileSystemFileUtil;
+using storage::FileSystemOperation;
+using storage::NativeFileUtil;
 
 namespace content {
 
@@ -21,9 +21,7 @@ class NativeFileUtilTest : public testing::Test {
  public:
   NativeFileUtilTest() {}
 
-  virtual void SetUp() {
-    ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-  }
+  void SetUp() override { ASSERT_TRUE(data_dir_.CreateUniqueTempDir()); }
 
  protected:
   base::FilePath Path() {

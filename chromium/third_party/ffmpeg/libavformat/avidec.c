@@ -219,7 +219,7 @@ static int read_braindead_odml_indx(AVFormatContext *s, int frame_num)
 #ifdef DEBUG_SEEK
             av_log(s, AV_LOG_ERROR, "pos:%"PRId64", len:%X\n", pos, len);
 #endif
-            if (url_feof(pb))
+            if (avio_feof(pb))
                 return AVERROR_INVALIDDATA;
 
             if (last_pos == pos || pos == base - 8)
@@ -237,7 +237,7 @@ static int read_braindead_odml_indx(AVFormatContext *s, int frame_num)
             avio_rl32(pb);       /* size */
             duration = avio_rl32(pb);
 
-            if (url_feof(pb))
+            if (avio_feof(pb))
                 return AVERROR_INVALIDDATA;
 
             pos = avio_tell(pb);
@@ -492,7 +492,7 @@ static int avi_read_header(AVFormatContext *s)
     codec_type   = -1;
     frame_period = 0;
     for (;;) {
-        if (url_feof(pb))
+        if (avio_feof(pb))
             goto fail;
         tag  = avio_rl32(pb);
         size = avio_rl32(pb);
@@ -1111,7 +1111,7 @@ static int avi_sync(AVFormatContext *s, int exit_early)
 
 start_sync:
     memset(d, -1, sizeof(d));
-    for (i = sync = avio_tell(pb); !url_feof(pb); i++) {
+    for (i = sync = avio_tell(pb); !avio_feof(pb); i++) {
         int j;
 
         for (j = 0; j < 7; j++)
@@ -1506,7 +1506,7 @@ static int avi_read_idx1(AVFormatContext *s, int size)
 
     /* Read the entries and sort them in each stream component. */
     for (i = 0; i < nb_index_entries; i++) {
-        if (url_feof(pb))
+        if (avio_feof(pb))
             return -1;
 
         tag   = avio_rl32(pb);
@@ -1662,7 +1662,7 @@ static int avi_load_index(AVFormatContext *s)
     for (;;) {
         tag  = avio_rl32(pb);
         size = avio_rl32(pb);
-        if (url_feof(pb))
+        if (avio_feof(pb))
             break;
         next = avio_tell(pb) + size + (size & 1);
 
@@ -1780,8 +1780,7 @@ static int avi_read_seek(AVFormatContext *s, int stream_index,
             continue;
 
 //        av_assert1(st2->codec->block_align);
-        av_assert0((int64_t)st2->time_base.num * ast2->rate ==
-                   (int64_t)st2->time_base.den * ast2->scale);
+        av_assert0(fabs(av_q2d(st2->time_base) - ast2->scale / (double)ast2->rate) < av_q2d(st2->time_base) * 0.00000001);
         index = av_index_search_timestamp(st2,
                                           av_rescale_q(timestamp,
                                                        st->time_base,

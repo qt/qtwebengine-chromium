@@ -25,16 +25,16 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_PORTALLOCATOR_H_
-#define TALK_P2P_BASE_PORTALLOCATOR_H_
+#ifndef WEBRTC_P2P_BASE_PORTALLOCATOR_H_
+#define WEBRTC_P2P_BASE_PORTALLOCATOR_H_
 
 #include <string>
 #include <vector>
 
-#include "talk/base/helpers.h"
-#include "talk/base/proxyinfo.h"
-#include "talk/base/sigslot.h"
-#include "talk/p2p/base/portinterface.h"
+#include "webrtc/p2p/base/portinterface.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/proxyinfo.h"
+#include "webrtc/base/sigslot.h"
 
 namespace cricket {
 
@@ -44,16 +44,18 @@ namespace cricket {
 // Clients can override this class to control port allocation, including
 // what kinds of ports are allocated.
 
-const uint32 PORTALLOCATOR_DISABLE_UDP = 0x01;
-const uint32 PORTALLOCATOR_DISABLE_STUN = 0x02;
-const uint32 PORTALLOCATOR_DISABLE_RELAY = 0x04;
-const uint32 PORTALLOCATOR_DISABLE_TCP = 0x08;
-const uint32 PORTALLOCATOR_ENABLE_SHAKER = 0x10;
-const uint32 PORTALLOCATOR_ENABLE_BUNDLE = 0x20;
-const uint32 PORTALLOCATOR_ENABLE_IPV6 = 0x40;
-const uint32 PORTALLOCATOR_ENABLE_SHARED_UFRAG = 0x80;
-const uint32 PORTALLOCATOR_ENABLE_SHARED_SOCKET = 0x100;
-const uint32 PORTALLOCATOR_ENABLE_STUN_RETRANSMIT_ATTRIBUTE = 0x200;
+enum {
+  PORTALLOCATOR_DISABLE_UDP = 0x01,
+  PORTALLOCATOR_DISABLE_STUN = 0x02,
+  PORTALLOCATOR_DISABLE_RELAY = 0x04,
+  PORTALLOCATOR_DISABLE_TCP = 0x08,
+  PORTALLOCATOR_ENABLE_SHAKER = 0x10,
+  PORTALLOCATOR_ENABLE_BUNDLE = 0x20,
+  PORTALLOCATOR_ENABLE_IPV6 = 0x40,
+  PORTALLOCATOR_ENABLE_SHARED_UFRAG = 0x80,
+  PORTALLOCATOR_ENABLE_SHARED_SOCKET = 0x100,
+  PORTALLOCATOR_ENABLE_STUN_RETRANSMIT_ATTRIBUTE = 0x200,
+};
 
 const uint32 kDefaultPortAllocatorFlags = 0;
 
@@ -61,6 +63,15 @@ const uint32 kDefaultStepDelay = 1000;  // 1 sec step delay.
 // As per RFC 5245 Appendix B.1, STUN transactions need to be paced at certain
 // internal. Less than 20ms is not acceptable. We choose 50ms as our default.
 const uint32 kMinimumStepDelay = 50;
+
+// CF = CANDIDATE FILTER
+enum {
+  CF_NONE = 0x0,
+  CF_HOST = 0x1,
+  CF_REFLEXIVE = 0x2,
+  CF_RELAY = 0x4,
+  CF_ALL = 0x7,
+};
 
 class PortAllocatorSessionMuxer;
 
@@ -117,7 +128,8 @@ class PortAllocator : public sigslot::has_slots<> {
       min_port_(0),
       max_port_(0),
       step_delay_(kDefaultStepDelay),
-      allow_tcp_listen_(true) {
+      allow_tcp_listen_(true),
+      candidate_filter_(CF_ALL) {
     // This will allow us to have old behavior on non webrtc clients.
   }
   virtual ~PortAllocator();
@@ -136,8 +148,8 @@ class PortAllocator : public sigslot::has_slots<> {
   void set_flags(uint32 flags) { flags_ = flags; }
 
   const std::string& user_agent() const { return agent_; }
-  const talk_base::ProxyInfo& proxy() const { return proxy_; }
-  void set_proxy(const std::string& agent, const talk_base::ProxyInfo& proxy) {
+  const rtc::ProxyInfo& proxy() const { return proxy_; }
+  void set_proxy(const std::string& agent, const rtc::ProxyInfo& proxy) {
     agent_ = agent;
     proxy_ = proxy;
   }
@@ -157,13 +169,19 @@ class PortAllocator : public sigslot::has_slots<> {
 
   uint32 step_delay() const { return step_delay_; }
   void set_step_delay(uint32 delay) {
-    ASSERT(delay >= kMinimumStepDelay);
     step_delay_ = delay;
   }
 
   bool allow_tcp_listen() const { return allow_tcp_listen_; }
   void set_allow_tcp_listen(bool allow_tcp_listen) {
     allow_tcp_listen_ = allow_tcp_listen;
+  }
+
+  uint32 candidate_filter() { return candidate_filter_; }
+  bool set_candidate_filter(uint32 filter) {
+    // TODO(mallinath) - Do transition check?
+    candidate_filter_ = filter;
+    return true;
   }
 
  protected:
@@ -177,14 +195,15 @@ class PortAllocator : public sigslot::has_slots<> {
 
   uint32 flags_;
   std::string agent_;
-  talk_base::ProxyInfo proxy_;
+  rtc::ProxyInfo proxy_;
   int min_port_;
   int max_port_;
   uint32 step_delay_;
   SessionMuxerMap muxers_;
   bool allow_tcp_listen_;
+  uint32 candidate_filter_;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_PORTALLOCATOR_H_
+#endif  // WEBRTC_P2P_BASE_PORTALLOCATOR_H_

@@ -97,6 +97,9 @@ class IOSPlistWriter(plist_writer.PListWriter):
     self._plist.attributes['version'] = '1.0'
     self._root_dict = self.AddElement(self._plist, 'dict')
     self.AddComment(self._root_dict, CHROME_POLICY_COMMENT)
+    if self._GetChromiumVersionString() is not None:
+      self.AddComment(self._root_dict, ' ' + self.config['build'] + \
+          ' version: ' + self._GetChromiumVersionString() + ' ')
     self._dict = self._AddKeyValuePair(self._root_dict, 'ChromePolicy', 'dict')
 
     self._encoded_plist.attributes['version'] = '1.0'

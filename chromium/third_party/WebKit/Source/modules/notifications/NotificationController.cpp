@@ -26,10 +26,12 @@
 #include "config.h"
 #include "modules/notifications/NotificationController.h"
 
+#include "core/dom/Document.h"
+#include "core/dom/ExecutionContext.h"
 #include "modules/notifications/NotificationClient.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 NotificationController::NotificationController(PassOwnPtr<NotificationClient> client)
     : m_client(client)
@@ -45,9 +47,16 @@ PassOwnPtrWillBeRawPtr<NotificationController> NotificationController::create(Pa
     return adoptPtrWillBeNoop(new NotificationController(client));
 }
 
-NotificationClient& NotificationController::clientFrom(LocalFrame* frame)
+NotificationController* NotificationController::from(ExecutionContext* context)
 {
-    NotificationController* controller = NotificationController::from(frame);
+    ASSERT(context->isDocument());
+
+    return static_cast<NotificationController*>(WillBeHeapSupplement<LocalFrame>::from(toDocument(context)->frame(), supplementName()));
+}
+
+NotificationClient& NotificationController::clientFrom(ExecutionContext* context)
+{
+    NotificationController* controller = NotificationController::from(context);
     ASSERT(controller);
     return controller->client();
 }
@@ -62,4 +71,4 @@ void provideNotification(LocalFrame& frame, PassOwnPtr<NotificationClient> clien
     NotificationController::provideTo(frame, NotificationController::supplementName(), NotificationController::create(client));
 }
 
-} // namespace WebCore
+} // namespace blink

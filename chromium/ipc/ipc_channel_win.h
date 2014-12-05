@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/win/scoped_handle.h"
 #include "ipc/ipc_channel_reader.h"
 
 namespace base {
@@ -31,10 +32,11 @@ class ChannelWin : public Channel,
   ~ChannelWin();
 
   // Channel implementation
-  virtual bool Connect() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual bool Send(Message* message) OVERRIDE;
-  virtual base::ProcessId GetPeerPID() const OVERRIDE;
+  virtual bool Connect() override;
+  virtual void Close() override;
+  virtual bool Send(Message* message) override;
+  virtual base::ProcessId GetPeerPID() const override;
+  virtual base::ProcessId GetSelfPID() const override;
 
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
@@ -43,10 +45,10 @@ class ChannelWin : public Channel,
   // ChannelReader implementation.
   virtual ReadState ReadData(char* buffer,
                              int buffer_len,
-                             int* bytes_read) OVERRIDE;
-  virtual bool WillDispatchInputMessage(Message* msg) OVERRIDE;
-  bool DidEmptyInputBuffers() OVERRIDE;
-  virtual void HandleInternalMessage(const Message& msg) OVERRIDE;
+                             int* bytes_read) override;
+  virtual bool WillDispatchInputMessage(Message* msg) override;
+  bool DidEmptyInputBuffers() override;
+  virtual void HandleInternalMessage(const Message& msg) override;
 
   static const base::string16 PipeName(const std::string& channel_id,
                                        int32* secret);
@@ -59,7 +61,7 @@ class ChannelWin : public Channel,
   // MessageLoop::IOHandler implementation.
   virtual void OnIOCompleted(base::MessageLoopForIO::IOContext* context,
                              DWORD bytes_transfered,
-                             DWORD error);
+                             DWORD error) override;
 
  private:
   struct State {
@@ -72,7 +74,7 @@ class ChannelWin : public Channel,
   State input_state_;
   State output_state_;
 
-  HANDLE pipe_;
+  base::win::ScopedHandle pipe_;
 
   base::ProcessId peer_pid_;
 
@@ -92,16 +94,29 @@ class ChannelWin : public Channel,
   // Determines if we should validate a client's secret on connection.
   bool validate_client_;
 
+  // True if there is a write in progress. TODO(rvargas): remove this.
+  bool writing_;
+
+  // Tracks the lifetime of this object, for debugging purposes.
+  uint32 debug_flags_;
+
+  // OS result for the current write. TODO(rvargas): remove this.
+  uint32 write_error_;
+
+  // OS result for a previous failed write. TODO(rvargas): remove this.
+  uint32 last_write_error_;
+
+  // Size of the current write. TODO(rvargas): remove this.
+  uint32 write_size_;
+
   // This is a unique per-channel value used to authenticate the client end of
   // a connection. If the value is non-zero, the client passes it in the hello
   // and the host validates. (We don't send the zero value fto preserve IPC
   // compatability with existing clients that don't validate the channel.)
   int32 client_secret_;
 
-
-  base::WeakPtrFactory<ChannelWin> weak_factory_;
-
   scoped_ptr<base::ThreadChecker> thread_check_;
+  base::WeakPtrFactory<ChannelWin> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChannelWin);
 };

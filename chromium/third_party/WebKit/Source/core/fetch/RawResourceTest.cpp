@@ -45,21 +45,21 @@
 #include "public/platform/WebURLResponse.h"
 #include "public/platform/WebUnitTestSupport.h"
 
-using namespace WebCore;
+using namespace blink;
 
-namespace WebCore {
+namespace blink {
 
 TEST(RawResourceTest, DontIgnoreAcceptForCacheReuse)
 {
     ResourceRequest jpegRequest;
     jpegRequest.setHTTPAccept("image/jpeg");
 
-    RawResource jpegResource(jpegRequest, Resource::Raw);
+    ResourcePtr<RawResource> jpegResource(new RawResource(jpegRequest, Resource::Raw));
 
     ResourceRequest pngRequest;
     pngRequest.setHTTPAccept("image/png");
 
-    ASSERT_FALSE(jpegResource.canReuse(pngRequest));
+    ASSERT_FALSE(jpegResource->canReuse(pngRequest));
 }
 
 TEST(RawResourceTest, RevalidationSucceeded)
@@ -80,7 +80,7 @@ TEST(RawResourceTest, RevalidationSucceeded)
     // we shouldn't hit any ASSERTs.
     ResourceResponse response;
     response.setHTTPStatusCode(304);
-    newResource->responseReceived(response);
+    newResource->responseReceived(response, nullptr);
     EXPECT_EQ(memoryCache()->resourceForURL(KURL(ParsedURLString, "data:text/html,")), oldResource.get());
     EXPECT_EQ(oldResource.get(), newResource.get());
     EXPECT_NE(newResource.get(), newResourcePointer);
@@ -187,4 +187,4 @@ TEST(RawResourceTest, RemoveClientDuringCallback)
     EXPECT_FALSE(raw->hasClients());
 }
 
-} // namespace WebCore
+} // namespace blink

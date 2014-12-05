@@ -29,7 +29,7 @@
 #include "wtf/HashCountedSet.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 // Call this "walker" instead of iterator so people won't expect Qt or STL-style iterator interface.
 // Just keep calling next() on this. It's safe from deletions of items.
@@ -38,11 +38,9 @@ public:
     ResourceClientWalker(const HashCountedSet<ResourceClient*>& set)
         : m_clientSet(set), m_clientVector(set.size()), m_index(0)
     {
-        typedef HashCountedSet<ResourceClient*>::const_iterator Iterator;
-        Iterator end = set.end();
         size_t clientIndex = 0;
-        for (Iterator current = set.begin(); current != end; ++current)
-            m_clientVector[clientIndex++] = current->key;
+        for (const auto& resourceClient : set)
+            m_clientVector[clientIndex++] = resourceClient.key;
     }
 
     T* next()

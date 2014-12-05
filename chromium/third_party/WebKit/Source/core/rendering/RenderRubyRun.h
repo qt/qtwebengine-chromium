@@ -33,7 +33,7 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderRubyBase;
 class RenderRubyText;
@@ -41,7 +41,7 @@ class RenderRubyText;
 // RenderRubyRun are 'inline-block/table' like objects,and wrap a single pairing of a ruby base with its ruby text(s).
 // See RenderRuby.h for further comments on the structure
 
-class RenderRubyRun FINAL : public RenderBlockFlow {
+class RenderRubyRun final : public RenderBlockFlow {
 public:
     virtual ~RenderRubyRun();
 
@@ -51,15 +51,12 @@ public:
     RenderRubyBase* rubyBase() const;
     RenderRubyBase* rubyBaseSafe(); // creates the base if it doesn't already exist
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) OVERRIDE;
-    virtual void layout() OVERRIDE;
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) override;
+    virtual void layout() override;
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
-    virtual void removeChild(RenderObject* child) OVERRIDE;
-
-    virtual RenderBlock* firstLineBlock() const OVERRIDE;
-    virtual void updateFirstLetter() OVERRIDE;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override;
+    virtual void removeChild(RenderObject* child) override;
 
     void getOverhang(bool firstLine, RenderObject* startRenderer, RenderObject* endRenderer, int& startOverhang, int& endOverhang) const;
 
@@ -71,14 +68,14 @@ protected:
 private:
     RenderRubyRun();
 
-    virtual bool isRubyRun() const OVERRIDE { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderRubyRun (anonymous)"; }
-    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) OVERRIDE { }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRubyRun || RenderBlockFlow::isOfType(type); }
+    virtual const char* renderName() const override { return "RenderRubyRun (anonymous)"; }
+    virtual bool createsAnonymousWrapper() const override { return true; }
+    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override { }
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderRubyRun, isRubyRun());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderRubyRun_h

@@ -5,18 +5,20 @@
 #ifndef EventHandlerRegistry_h
 #define EventHandlerRegistry_h
 
-#include "core/events/Event.h"
 #include "core/frame/FrameHost.h"
 #include "wtf/HashCountedSet.h"
 
-namespace WebCore {
+namespace blink {
+
+class Document;
+class EventTarget;
 
 typedef HashCountedSet<EventTarget*> EventTargetSet;
 
 // Registry for keeping track of event handlers. Note that only handlers on
 // documents that can be rendered or can receive input (i.e., are attached to a
 // FrameHost) are registered here.
-class EventHandlerRegistry FINAL : public NoBaseWillBeGarbageCollectedFinalized<EventHandlerRegistry> {
+class EventHandlerRegistry final : public NoBaseWillBeGarbageCollectedFinalized<EventHandlerRegistry> {
 public:
     explicit EventHandlerRegistry(FrameHost&);
     virtual ~EventHandlerRegistry();
@@ -26,7 +28,8 @@ public:
     enum EventHandlerClass {
         ScrollEvent,
         WheelEvent,
-#if ASSERT_ENABLED
+        TouchEvent,
+#if ENABLE(ASSERT)
         // Additional event categories for verifying handler tracking logic.
         EventsForTesting,
 #endif
@@ -45,13 +48,15 @@ public:
     void didRemoveEventHandler(EventTarget&, const AtomicString& eventType);
     void didRemoveEventHandler(EventTarget&, EventHandlerClass);
     void didRemoveAllEventHandlers(EventTarget&);
+
     void didMoveIntoFrameHost(EventTarget&);
     void didMoveOutOfFrameHost(EventTarget&);
+    static void didMoveBetweenFrameHosts(EventTarget&, FrameHost* oldFrameHost, FrameHost* newFrameHost);
 
-    // Either |documentDetached| or |didMoveOutOfFrameHost| must be called
-    // whenever the FrameHost that is associated with a registered event target
-    // changes. This ensures the registry does not end up with stale references
-    // to handlers that are no longer related to it.
+    // Either |documentDetached| or |didMove{Into,OutOf,Between}FrameHosts| must
+    // be called whenever the FrameHost that is associated with a registered event
+    // target changes. This ensures the registry does not end up with stale
+    // references to handlers that are no longer related to it.
     void documentDetached(Document&);
 
     void trace(Visitor*);
@@ -77,6 +82,11 @@ private:
     // between the two cases.
     void notifyHasHandlersChanged(EventHandlerClass, bool hasActiveHandlers);
 
+    // Called to notify clients whenever a single event handler target is
+    // registered or unregistered. If several handlers are registered for the
+    // same target, only the first registration will trigger this notification.
+    void notifyDidAddOrRemoveEventHandlerTarget(EventHandlerClass);
+
     // Record a change operation to a given event handler class and notify any
     // parent registry and other clients accordingly.
     void updateEventHandlerOfType(ChangeOperation, const AtomicString& eventType, EventTarget*);
@@ -91,6 +101,6 @@ private:
     EventTargetSet m_targets[EventHandlerClassCount];
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventHandlerRegistry_h

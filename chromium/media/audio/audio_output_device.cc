@@ -23,12 +23,12 @@ class AudioOutputDevice::AudioThreadCallback
                       base::SharedMemoryHandle memory,
                       int memory_length,
                       AudioRendererSink::RenderCallback* render_callback);
-  virtual ~AudioThreadCallback();
+  ~AudioThreadCallback() override;
 
-  virtual void MapSharedMemory() OVERRIDE;
+  void MapSharedMemory() override;
 
   // Called whenever we receive notifications about pending data.
-  virtual void Process(int pending_data) OVERRIDE;
+  void Process(uint32 pending_data) override;
 
  private:
   AudioRendererSink::RenderCallback* render_callback_;
@@ -285,11 +285,7 @@ void AudioOutputDevice::AudioThreadCallback::MapSharedMemory() {
 }
 
 // Called whenever we receive notifications about pending data.
-void AudioOutputDevice::AudioThreadCallback::Process(int pending_data) {
-  // Negative |pending_data| indicates the browser side stream has stopped.
-  if (pending_data < 0)
-    return;
-
+void AudioOutputDevice::AudioThreadCallback::Process(uint32 pending_data) {
   // Convert the number of pending bytes in the render buffer into milliseconds.
   int audio_delay_milliseconds = pending_data / bytes_per_ms_;
 

@@ -25,18 +25,18 @@
 #ifndef WaveShaperProcessor_h
 #define WaveShaperProcessor_h
 
+#include "core/dom/DOMTypedArray.h"
+#include "modules/webaudio/AudioNode.h"
 #include "platform/audio/AudioDSPKernel.h"
 #include "platform/audio/AudioDSPKernelProcessor.h"
-#include "modules/webaudio/AudioNode.h"
-#include "wtf/Float32Array.h"
 #include "wtf/RefPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 
-namespace WebCore {
+namespace blink {
 
 // WaveShaperProcessor is an AudioDSPKernelProcessor which uses WaveShaperDSPKernel objects to implement non-linear distortion effects.
 
-class WaveShaperProcessor FINAL : public AudioDSPKernelProcessor {
+class WaveShaperProcessor final : public AudioDSPKernelProcessor {
 public:
     enum OverSampleType {
         OverSampleNone,
@@ -48,23 +48,23 @@ public:
 
     virtual ~WaveShaperProcessor();
 
-    virtual PassOwnPtr<AudioDSPKernel> createKernel() OVERRIDE;
+    virtual PassOwnPtr<AudioDSPKernel> createKernel() override;
 
-    virtual void process(const AudioBus* source, AudioBus* destination, size_t framesToProcess) OVERRIDE;
+    virtual void process(const AudioBus* source, AudioBus* destination, size_t framesToProcess) override;
 
-    void setCurve(Float32Array*);
-    Float32Array* curve() { return m_curve.get(); }
+    void setCurve(DOMFloat32Array*);
+    DOMFloat32Array* curve() { return m_curve.get(); }
 
     void setOversample(OverSampleType);
     OverSampleType oversample() const { return m_oversample; }
 
 private:
     // m_curve represents the non-linear shaping curve.
-    RefPtr<Float32Array> m_curve;
+    RefPtr<DOMFloat32Array> m_curve;
 
     OverSampleType m_oversample;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WaveShaperProcessor_h

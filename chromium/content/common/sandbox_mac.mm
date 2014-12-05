@@ -16,7 +16,7 @@ extern "C" {
 #include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
@@ -31,12 +31,17 @@ extern "C" {
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
+#include "content/grit/content_resources.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
-#include "grit/content_resources.h"
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/layout.h"
 #include "ui/gl/gl_surface.h"
+
+extern "C" {
+void CGSSetDenyWindowServerConnections(bool);
+void CGSShutdownServerConnections();
+};
 
 namespace content {
 namespace {
@@ -53,7 +58,6 @@ struct SandboxTypeToResourceIDMapping {
 // profile for all process types known to content.
 SandboxTypeToResourceIDMapping kDefaultSandboxTypeToResourceIDMapping[] = {
   { SANDBOX_TYPE_RENDERER, IDR_RENDERER_SANDBOX_PROFILE },
-  { SANDBOX_TYPE_WORKER,   IDR_WORKER_SANDBOX_PROFILE },
   { SANDBOX_TYPE_UTILITY,  IDR_UTILITY_SANDBOX_PROFILE },
   { SANDBOX_TYPE_GPU,      IDR_GPU_SANDBOX_PROFILE },
   { SANDBOX_TYPE_PPAPI,    IDR_PPAPI_SANDBOX_PROFILE },
@@ -269,8 +273,8 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
         kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
 
     // Load in the color profiles we'll need (as a side effect).
-    (void) base::mac::GetSRGBColorSpace();
-    (void) base::mac::GetSystemColorSpace();
+    ignore_result(base::mac::GetSRGBColorSpace());
+    ignore_result(base::mac::GetSystemColorSpace());
 
     // CGColorSpaceCreateSystemDefaultCMYK - 10.6
     base::ScopedCFTypeRef<CGColorSpaceRef> cmyk_colorspace(
@@ -325,6 +329,18 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     // Preload AppKit color spaces used for Flash/ppapi. http://crbug.com/348304
     NSColor* color = [NSColor controlTextColor];
     [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+  }
+
+  if (sandbox_type == SANDBOX_TYPE_RENDERER &&
+      base::mac::IsOSMountainLionOrLater()) {
+    // Now disconnect from WindowServer, after all objects have been warmed up.
+    // Shutting down the connection requires connecting to WindowServer,
+    // so do this before actually engaging the sandbox. This is only done on
+    // 10.8 and higher because doing it on earlier OSes causes layout tests to
+    // fail <http://crbug.com/397642#c48>. This may cause two log messages to
+    // be printed to the system logger on certain OS versions.
+    CGSSetDenyWindowServerConnections(true);
+    CGSShutdownServerConnections();
   }
 }
 
@@ -526,7 +542,8 @@ bool Sandbox::EnableSandbox(int sandbox_type,
 
   // Enable verbose logging if enabled on the command line. (See common.sb
   // for details).
-  const CommandLine* command_line = CommandLine::ForCurrentProcess();
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
   bool enable_logging =
       command_line->HasSwitch(switches::kEnableSandboxLogging);;
   if (enable_logging) {

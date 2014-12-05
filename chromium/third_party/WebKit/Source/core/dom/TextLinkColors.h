@@ -31,10 +31,9 @@
 #include "platform/graphics/Color.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSPrimitiveValue;
-class Element;
 
 class TextLinkColors {
 WTF_MAKE_NONCOPYABLE(TextLinkColors);

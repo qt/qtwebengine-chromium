@@ -5,126 +5,79 @@
 """Translates parse tree to Mojom IR."""
 
 
-import ast
+from . import ast
 
 
-def _MapTree(func, tree, name):
+def _MapTreeForType(func, tree, type_to_map):
+  assert isinstance(type_to_map, type)
   if not tree:
     return []
-  return [func(subtree) for subtree in tree if subtree[0] == name]
+  return [func(subtree) for subtree in tree if isinstance(subtree, type_to_map)]
 
 def _MapKind(kind):
-  map_to_kind = { 'bool': 'b',
-                  'int8': 'i8',
-                  'int16': 'i16',
-                  'int32': 'i32',
-                  'int64': 'i64',
-                  'uint8': 'u8',
-                  'uint16': 'u16',
-                  'uint32': 'u32',
-                  'uint64': 'u64',
-                  'float': 'f',
-                  'double': 'd',
-                  'string': 's',
-                  'handle': 'h',
-                  'handle<data_pipe_consumer>': 'h:d:c',
-                  'handle<data_pipe_producer>': 'h:d:p',
-                  'handle<message_pipe>': 'h:m',
-                  'handle<shared_buffer>': 'h:s'}
-  if kind.endswith('[]'):
-    return 'a:' + _MapKind(kind[0:len(kind)-2])
+  map_to_kind = {'bool': 'b',
+                 'int8': 'i8',
+                 'int16': 'i16',
+                 'int32': 'i32',
+                 'int64': 'i64',
+                 'uint8': 'u8',
+                 'uint16': 'u16',
+                 'uint32': 'u32',
+                 'uint64': 'u64',
+                 'float': 'f',
+                 'double': 'd',
+                 'string': 's',
+                 'handle': 'h',
+                 'handle<data_pipe_consumer>': 'h:d:c',
+                 'handle<data_pipe_producer>': 'h:d:p',
+                 'handle<message_pipe>': 'h:m',
+                 'handle<shared_buffer>': 'h:s'}
+  if kind.endswith('?'):
+    base_kind = _MapKind(kind[0:-1])
+    # NOTE: This doesn't rule out enum types. Those will be detected later, when
+    # cross-reference is established.
+    reference_kinds = ('m', 's', 'h', 'a', 'r', 'x')
+    if base_kind[0] not in reference_kinds:
+      raise Exception(
+          'A type (spec "%s") cannot be made nullable' % base_kind)
+    return '?' + base_kind
+  if kind.endswith('}'):
+    lbracket = kind.rfind('{')
+    value = kind[0:lbracket]
+    return 'm[' + _MapKind(kind[lbracket+1:-1]) + '][' + _MapKind(value) + ']'
+  if kind.endswith(']'):
+    lbracket = kind.rfind('[')
+    typename = kind[0:lbracket]
+    return 'a' + kind[lbracket+1:-1] + ':' + _MapKind(typename)
   if kind.endswith('&'):
-    return 'r:' + _MapKind(kind[0:len(kind)-1])
+    return 'r:' + _MapKind(kind[0:-1])
   if kind in map_to_kind:
     return map_to_kind[kind]
   return 'x:' + kind
 
-def _MapAttributes(attributes):
-  if not attributes:
+def _AttributeListToDict(attribute_list):
+  if attribute_list is None:
     return {}
-  return dict([(attribute[1], attribute[2])
-               for attribute in attributes if attribute[0] == 'ATTRIBUTE'])
+  assert isinstance(attribute_list, ast.AttributeList)
+  # TODO(vtl): Check for duplicate keys here.
+  return dict([(attribute.key, attribute.value)
+                   for attribute in attribute_list])
 
-def _GetAttribute(attributes, name):
-  out = None
-  if attributes:
-    for attribute in attributes:
-      if attribute[0] == 'ATTRIBUTE' and attribute[1] == name:
-        out = attribute[2]
-  return out
+def _EnumToDict(enum):
+  def EnumValueToDict(enum_value):
+    assert isinstance(enum_value, ast.EnumValue)
+    return {'name': enum_value.name,
+            'value': enum_value.value}
 
-def _MapField(tree):
-  assert type(tree[3]) is ast.Ordinal
-  return {'name': tree[2],
-          'kind': _MapKind(tree[1]),
-          'ordinal': tree[3].value,
-          'default': tree[4]}
+  assert isinstance(enum, ast.Enum)
+  return {'name': enum.name,
+          'fields': map(EnumValueToDict, enum.enum_value_list)}
 
-def _MapParameter(tree):
-  assert type(tree[3]) is ast.Ordinal
-  return {'name': tree[2],
-          'kind': _MapKind(tree[1]),
-          'ordinal': tree[3].value}
-
-def _MapMethod(tree):
-  assert type(tree[3]) is ast.Ordinal
-  method = {'name': tree[1],
-            'parameters': _MapTree(_MapParameter, tree[2], 'PARAM'),
-            'ordinal': tree[3].value}
-  if tree[4] != None:
-    method['response_parameters'] = _MapTree(_MapParameter, tree[4], 'PARAM')
-  return method
-
-def _MapEnumField(tree):
-  return {'name': tree[1],
-          'value': tree[2]}
-
-def _MapStruct(tree):
-  struct = {}
-  struct['name'] = tree[1]
-  struct['attributes'] = _MapAttributes(tree[2])
-  struct['fields'] = _MapTree(_MapField, tree[3], 'FIELD')
-  struct['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
-  struct['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
-  return struct
-
-def _MapInterface(tree):
-  interface = {}
-  interface['name'] = tree[1]
-  interface['client'] = _GetAttribute(tree[2], 'Client')
-  interface['methods'] = _MapTree(_MapMethod, tree[3], 'METHOD')
-  interface['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
-  interface['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
-  return interface
-
-def _MapEnum(tree):
-  enum = {}
-  enum['name'] = tree[1]
-  enum['fields'] = _MapTree(_MapEnumField, tree[2], 'ENUM_FIELD')
-  return enum
-
-def _MapConstant(tree):
-  constant = {}
-  constant['name'] = tree[2]
-  constant['kind'] = _MapKind(tree[1])
-  constant['value'] = tree[3]
-  return constant
-
-def _MapModule(tree, name):
-  mojom = {}
-  mojom['name'] = name
-  mojom['namespace'] = tree[1]
-  mojom['attributes'] = _MapAttributes(tree[2])
-  mojom['structs'] = _MapTree(_MapStruct, tree[3], 'STRUCT')
-  mojom['interfaces'] = _MapTree(_MapInterface, tree[3], 'INTERFACE')
-  mojom['enums'] = _MapTree(_MapEnum, tree[3], 'ENUM')
-  mojom['constants'] = _MapTree(_MapConstant, tree[3], 'CONST')
-  return mojom
-
-def _MapImport(tree):
-  import_item = {}
-  import_item['filename'] = tree[1]
-  return import_item
+def _ConstToDict(const):
+  assert isinstance(const, ast.Const)
+  return {'name': const.name,
+          'kind': _MapKind(const.typename),
+          'value': const.value}
 
 
 class _MojomBuilder(object):
@@ -132,11 +85,67 @@ class _MojomBuilder(object):
     self.mojom = {}
 
   def Build(self, tree, name):
-    modules = [_MapModule(item, name) for item in tree if item[0] == 'MODULE']
-    if len(modules) != 1:
-      raise Exception('A mojom file must contain exactly 1 module.')
-    self.mojom = modules[0]
-    self.mojom['imports'] = _MapTree(_MapImport, tree, 'IMPORT')
+    def StructToDict(struct):
+      def StructFieldToDict(struct_field):
+        assert isinstance(struct_field, ast.StructField)
+        return {'name': struct_field.name,
+                'kind': _MapKind(struct_field.typename),
+                'ordinal': struct_field.ordinal.value \
+                    if struct_field.ordinal else None,
+                'default': struct_field.default_value}
+
+      assert isinstance(struct, ast.Struct)
+      return {'name': struct.name,
+              'attributes': _AttributeListToDict(struct.attribute_list),
+              'fields': _MapTreeForType(StructFieldToDict, struct.body,
+                                        ast.StructField),
+              'enums': _MapTreeForType(_EnumToDict, struct.body, ast.Enum),
+              'constants': _MapTreeForType(_ConstToDict, struct.body,
+                                           ast.Const)}
+
+    def InterfaceToDict(interface):
+      def MethodToDict(method):
+        def ParameterToDict(param):
+          assert isinstance(param, ast.Parameter)
+          return {'name': param.name,
+                  'kind': _MapKind(param.typename),
+                  'ordinal': param.ordinal.value if param.ordinal else None}
+
+        assert isinstance(method, ast.Method)
+        rv = {'name': method.name,
+              'parameters': map(ParameterToDict, method.parameter_list),
+              'ordinal': method.ordinal.value if method.ordinal else None}
+        if method.response_parameter_list is not None:
+          rv['response_parameters'] = map(ParameterToDict,
+                                          method.response_parameter_list)
+        return rv
+
+      assert isinstance(interface, ast.Interface)
+      attributes = _AttributeListToDict(interface.attribute_list)
+      return {'name': interface.name,
+              'attributes': attributes,
+              'client': attributes.get('Client'),
+              'methods': _MapTreeForType(MethodToDict, interface.body,
+                                         ast.Method),
+              'enums': _MapTreeForType(_EnumToDict, interface.body, ast.Enum),
+              'constants': _MapTreeForType(_ConstToDict, interface.body,
+                                           ast.Const)}
+
+    assert isinstance(tree, ast.Mojom)
+    self.mojom['name'] = name
+    self.mojom['namespace'] = tree.module.name[1] if tree.module else ''
+    self.mojom['imports'] = \
+        [{'filename': imp.import_filename} for imp in tree.import_list]
+    self.mojom['attributes'] = \
+        _AttributeListToDict(tree.module.attribute_list) if tree.module else {}
+    self.mojom['structs'] = \
+        _MapTreeForType(StructToDict, tree.definition_list, ast.Struct)
+    self.mojom['interfaces'] = \
+        _MapTreeForType(InterfaceToDict, tree.definition_list, ast.Interface)
+    self.mojom['enums'] = \
+        _MapTreeForType(_EnumToDict, tree.definition_list, ast.Enum)
+    self.mojom['constants'] = \
+        _MapTreeForType(_ConstToDict, tree.definition_list, ast.Const)
     return self.mojom
 
 

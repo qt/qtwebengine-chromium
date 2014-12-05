@@ -4,7 +4,6 @@
 {
   'variables': {
     'chromium_code': 1,
-    'package_name': 'multiple_proguard',
   },
   'targets': [
     {
@@ -15,6 +14,9 @@
         'java_in_dir': '.',
         'proguard_enabled': 'true',
         'proguard_flags_paths': [
+          # Both these proguard?.flags files need to be part of the build to
+          # remove both warnings from the src/dummy/DummyActivity.java file, else the
+          # build will fail.
           'proguard1.flags',
           'proguard2.flags',
         ],
@@ -23,12 +25,9 @@
         'apk_name': 'MultipleProguards',
         # This is a build-only test. There's nothing to install.
         'gyp_managed_install': 0,
+        # The Java code produces warnings, so force the build to not show them.
+        'chromium_code': 0,
       },
-      'dependencies': [
-        # guava has references to objects using reflection which
-        # should be ignored in proguard step.
-        '../../../../third_party/guava/guava.gyp:guava_javalib',
-      ],
       'includes': [ '../../../../build/java_apk.gypi' ],
     },
   ],

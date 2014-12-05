@@ -4,14 +4,13 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "cc/test/fake_picture_pile_impl.h"
-#include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/skia_common.h"
 #include "skia/ext/refptr.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkShader.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace cc {
 namespace {
@@ -37,9 +36,9 @@ TEST(PicturePileImplTest, AnalyzeIsSolidUnscaled) {
   // Ensure everything is solid
   for (int y = 0; y <= 300; y += 100) {
     for (int x = 0; x <= 300; x += 100) {
-      PicturePileImpl::Analysis analysis;
+      RasterSource::SolidColorAnalysis analysis;
       gfx::Rect rect(x, y, 100, 100);
-      pile->AnalyzeInRect(rect, 1.0, &analysis);
+      pile->PerformSolidColorAnalysis(rect, 1.0, &analysis);
       EXPECT_TRUE(analysis.is_solid_color) << rect.ToString();
       EXPECT_EQ(analysis.solid_color, solid_color) << rect.ToString();
     }
@@ -49,27 +48,28 @@ TEST(PicturePileImplTest, AnalyzeIsSolidUnscaled) {
   pile->add_draw_rect_with_paint(gfx::Rect(50, 50, 1, 1), non_solid_paint);
   pile->RerecordPile();
 
-  PicturePileImpl::Analysis analysis;
-  pile->AnalyzeInRect(gfx::Rect(0, 0, 100, 100), 1.0, &analysis);
+  RasterSource::SolidColorAnalysis analysis;
+  pile->PerformSolidColorAnalysis(gfx::Rect(0, 0, 100, 100), 1.0, &analysis);
   EXPECT_FALSE(analysis.is_solid_color);
 
-  pile->AnalyzeInRect(gfx::Rect(100, 0, 100, 100), 1.0, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(100, 0, 100, 100), 1.0, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   // Boundaries should be clipped
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(350, 0, 100, 100), 1.0, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(350, 0, 100, 100), 1.0, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(0, 350, 100, 100), 1.0, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(0, 350, 100, 100), 1.0, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(350, 350, 100, 100), 1.0, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(350, 350, 100, 100), 1.0,
+                                  &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 }
@@ -95,9 +95,9 @@ TEST(PicturePileImplTest, AnalyzeIsSolidScaled) {
   // Ensure everything is solid
   for (int y = 0; y <= 30; y += 10) {
     for (int x = 0; x <= 30; x += 10) {
-      PicturePileImpl::Analysis analysis;
+      RasterSource::SolidColorAnalysis analysis;
       gfx::Rect rect(x, y, 10, 10);
-      pile->AnalyzeInRect(rect, 0.1f, &analysis);
+      pile->PerformSolidColorAnalysis(rect, 0.1f, &analysis);
       EXPECT_TRUE(analysis.is_solid_color) << rect.ToString();
       EXPECT_EQ(analysis.solid_color, solid_color) << rect.ToString();
     }
@@ -107,27 +107,27 @@ TEST(PicturePileImplTest, AnalyzeIsSolidScaled) {
   pile->add_draw_rect_with_paint(gfx::Rect(50, 50, 1, 1), non_solid_paint);
   pile->RerecordPile();
 
-  PicturePileImpl::Analysis analysis;
-  pile->AnalyzeInRect(gfx::Rect(0, 0, 10, 10), 0.1f, &analysis);
+  RasterSource::SolidColorAnalysis analysis;
+  pile->PerformSolidColorAnalysis(gfx::Rect(0, 0, 10, 10), 0.1f, &analysis);
   EXPECT_FALSE(analysis.is_solid_color);
 
-  pile->AnalyzeInRect(gfx::Rect(10, 0, 10, 10), 0.1f, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(10, 0, 10, 10), 0.1f, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   // Boundaries should be clipped
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(35, 0, 10, 10), 0.1f, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(35, 0, 10, 10), 0.1f, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(0, 35, 10, 10), 0.1f, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(0, 35, 10, 10), 0.1f, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 
   analysis.is_solid_color = false;
-  pile->AnalyzeInRect(gfx::Rect(35, 35, 10, 10), 0.1f, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(35, 35, 10, 10), 0.1f, &analysis);
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, solid_color);
 }
@@ -138,10 +138,10 @@ TEST(PicturePileImplTest, AnalyzeIsSolidEmpty) {
 
   scoped_refptr<FakePicturePileImpl> pile =
       FakePicturePileImpl::CreateFilledPile(tile_size, layer_bounds);
-  PicturePileImpl::Analysis analysis;
+  RasterSource::SolidColorAnalysis analysis;
   EXPECT_FALSE(analysis.is_solid_color);
 
-  pile->AnalyzeInRect(gfx::Rect(0, 0, 400, 400), 1.f, &analysis);
+  pile->PerformSolidColorAnalysis(gfx::Rect(0, 0, 400, 400), 1.f, &analysis);
 
   EXPECT_TRUE(analysis.is_solid_color);
   EXPECT_EQ(analysis.solid_color, SkColorSetARGB(0, 0, 0, 0));
@@ -685,12 +685,7 @@ TEST_P(FullContentsTest, RasterFullContents) {
       SkCanvas canvas(bitmap);
       canvas.clear(SK_ColorTRANSPARENT);
 
-      FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
-
-      pile->RasterToBitmap(&canvas,
-                           canvas_rect,
-                           contents_scale,
-                           &rendering_stats_instrumentation);
+      pile->PlaybackToCanvas(&canvas, canvas_rect, contents_scale);
 
       SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
       int num_pixels = bitmap.width() * bitmap.height();
@@ -737,9 +732,7 @@ TEST(PicturePileImpl, RasterContentsTransparent) {
   bitmap.allocN32Pixels(canvas_rect.width(), canvas_rect.height());
   SkCanvas canvas(bitmap);
 
-  FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
-  pile->RasterToBitmap(
-      &canvas, canvas_rect, contents_scale, &rendering_stats_instrumentation);
+  pile->PlaybackToCanvas(&canvas, canvas_rect, contents_scale);
 
   SkColor* pixels = reinterpret_cast<SkColor*>(bitmap.getPixels());
   int num_pixels = bitmap.width() * bitmap.height();
@@ -780,17 +773,10 @@ TEST_P(OverlapTest, NoOverlap) {
       gfx::ToCeiledSize(gfx::ScaleSize(layer_bounds, contents_scale)));
 
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                   content_bounds.width(),
-                   content_bounds.height());
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(content_bounds.width(), content_bounds.height());
   SkCanvas canvas(bitmap);
 
-  FakeRenderingStatsInstrumentation rendering_stats_instrumentation;
-  pile->RasterToBitmap(&canvas,
-                       gfx::Rect(content_bounds),
-                       contents_scale,
-                       &rendering_stats_instrumentation);
+  pile->PlaybackToCanvas(&canvas, gfx::Rect(content_bounds), contents_scale);
 
   for (int y = 0; y < bitmap.height(); y++) {
     for (int x = 0; x < bitmap.width(); x++) {

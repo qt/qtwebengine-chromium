@@ -29,7 +29,7 @@ void MenuConfig::Init(const NativeTheme* theme) {
 
   arrow_color = color_utils::GetSysSkColor(COLOR_MENUTEXT);
 
-  NONCLIENTMETRICS metrics;
+  NONCLIENTMETRICS_XP metrics;
   base::win::GetNonClientMetrics(&metrics);
   l10n_util::AdjustUIFont(&(metrics.lfMenuFont));
   {
@@ -73,6 +73,9 @@ void MenuConfig::Init(const NativeTheme* theme) {
        show_cues == TRUE);
 
   SystemParametersInfo(SPI_GETMENUSHOWDELAY, 0, &show_delay, 0);
+
+  separator_upper_height = 5;
+  separator_lower_height = 7;
 }
 
 // static

@@ -29,20 +29,22 @@
 
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<WebGLVertexArrayObjectOES> WebGLVertexArrayObjectOES::create(WebGLRenderingContextBase* ctx, VaoType type)
+PassRefPtrWillBeRawPtr<WebGLVertexArrayObjectOES> WebGLVertexArrayObjectOES::create(WebGLRenderingContextBase* ctx, VaoType type)
 {
-    return adoptRef(new WebGLVertexArrayObjectOES(ctx, type));
+    return adoptRefWillBeNoop(new WebGLVertexArrayObjectOES(ctx, type));
 }
 
 WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContextBase* ctx, VaoType type)
     : WebGLContextObject(ctx)
     , m_type(type)
     , m_hasEverBeenBound(false)
+#if ENABLE(OILPAN)
+    , m_destructionInProgress(false)
+#endif
     , m_boundElementArrayBuffer(nullptr)
 {
-    ScriptWrappable::init(this);
     m_vertexAttribState.resize(ctx->maxVertexAttribs());
 
     switch (m_type) {
@@ -56,19 +58,23 @@ WebGLVertexArrayObjectOES::WebGLVertexArrayObjectOES(WebGLRenderingContextBase* 
 
 WebGLVertexArrayObjectOES::~WebGLVertexArrayObjectOES()
 {
-    deleteObject(0);
+#if ENABLE(OILPAN)
+    m_destructionInProgress = true;
+#endif
+
+    // Delete the platform framebuffer resource. Explicit detachment
+    // is for the benefit of Oilpan, where this vertex array object
+    // isn't detached when it and the WebGLRenderingContextBase object
+    // it is registered with are both finalized. Without Oilpan, the
+    // object will have been detached.
+    //
+    // To keep the code regular, the trivial detach()ment is always
+    // performed.
+    detachAndDeleteObject();
 }
 
-void WebGLVertexArrayObjectOES::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
+void WebGLVertexArrayObjectOES::dispatchDetached(blink::WebGraphicsContext3D* context3d)
 {
-    switch (m_type) {
-    case VaoTypeDefault:
-        break;
-    default:
-        context()->webContext()->deleteVertexArrayOES(object);
-        break;
-    }
-
     if (m_boundElementArrayBuffer)
         m_boundElementArrayBuffer->onDetached(context3d);
 
@@ -79,18 +85,40 @@ void WebGLVertexArrayObjectOES::deleteObjectImpl(blink::WebGraphicsContext3D* co
     }
 }
 
-void WebGLVertexArrayObjectOES::setElementArrayBuffer(PassRefPtr<WebGLBuffer> buffer)
+void WebGLVertexArrayObjectOES::deleteObjectImpl(blink::WebGraphicsContext3D* context3d, Platform3DObject object)
+{
+    switch (m_type) {
+    case VaoTypeDefault:
+        break;
+    default:
+        context3d->deleteVertexArrayOES(object);
+        break;
+    }
+
+#if ENABLE(OILPAN)
+    // These m_boundElementArrayBuffer and m_vertexAttribState heap
+    // objects must not be accessed during destruction in the oilpan
+    // build. They could have been already finalized. The finalizers
+    // of these objects (and their elements) will themselves handle
+    // detachment.
+    if (!m_destructionInProgress)
+        dispatchDetached(context3d);
+#else
+    dispatchDetached(context3d);
+#endif
+}
+
+void WebGLVertexArrayObjectOES::setElementArrayBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer> buffer)
 {
     if (buffer)
         buffer->onAttached();
     if (m_boundElementArrayBuffer)
         m_boundElementArrayBuffer->onDetached(context()->webContext());
     m_boundElementArrayBuffer = buffer;
-
 }
 
 void WebGLVertexArrayObjectOES::setVertexAttribState(
-    GLuint index, GLsizei bytesPerElement, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLintptr offset, PassRefPtr<WebGLBuffer> buffer)
+    GLuint index, GLsizei bytesPerElement, GLint size, GLenum type, GLboolean normalized, GLsizei stride, GLintptr offset, PassRefPtrWillBeRawPtr<WebGLBuffer> buffer)
 {
     GLsizei validatedStride = stride ? stride : bytesPerElement;
 
@@ -111,7 +139,7 @@ void WebGLVertexArrayObjectOES::setVertexAttribState(
     state.offset = offset;
 }
 
-void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtr<WebGLBuffer> buffer)
+void WebGLVertexArrayObjectOES::unbindBuffer(PassRefPtrWillBeRawPtr<WebGLBuffer> buffer)
 {
     if (m_boundElementArrayBuffer == buffer) {
         m_boundElementArrayBuffer->onDetached(context()->webContext());
@@ -131,6 +159,18 @@ void WebGLVertexArrayObjectOES::setVertexAttribDivisor(GLuint index, GLuint divi
 {
     VertexAttribState& state = m_vertexAttribState[index];
     state.divisor = divisor;
+}
+
+void WebGLVertexArrayObjectOES::VertexAttribState::trace(Visitor* visitor)
+{
+    visitor->trace(bufferBinding);
+}
+
+void WebGLVertexArrayObjectOES::trace(Visitor* visitor)
+{
+    visitor->trace(m_boundElementArrayBuffer);
+    visitor->trace(m_vertexAttribState);
+    WebGLContextObject::trace(visitor);
 }
 
 }

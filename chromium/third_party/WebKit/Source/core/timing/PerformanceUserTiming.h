@@ -35,14 +35,14 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Performance;
 class PerformanceEntry;
 
 typedef unsigned long long (PerformanceTiming::*NavigationTimingFunction)() const;
-typedef WillBeHeapHashMap<String, PerformanceEntryVector> PerformanceEntryMap;
+using PerformanceEntryMap = WillBeHeapHashMap<String, PerformanceEntryVector>;
 
 class UserTiming : public RefCountedWillBeGarbageCollected<UserTiming> {
 public:

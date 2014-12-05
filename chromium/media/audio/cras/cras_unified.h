@@ -36,12 +36,12 @@ class MEDIA_EXPORT CrasUnifiedStream : public AudioOutputStream {
   virtual ~CrasUnifiedStream();
 
   // Implementation of AudioOutputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
+  virtual bool Open() override;
+  virtual void Close() override;
+  virtual void Start(AudioSourceCallback* callback) override;
+  virtual void Stop() override;
+  virtual void SetVolume(double volume) override;
+  virtual void GetVolume(double* volume) override;
 
  private:
   // Convert Latency in time to bytes.
@@ -69,13 +69,6 @@ class MEDIA_EXPORT CrasUnifiedStream : public AudioOutputStream {
                           uint8* output_samples,
                           const timespec* input_ts,
                           const timespec* output_ts);
-
-  // Receives input samples and write output samples for a unified I/O stream.
-  uint32 ReadWriteAudio(size_t frames,
-                        uint8* input_samples,
-                        uint8* output_samples,
-                        const timespec* input_ts,
-                        const timespec* output_ts);
 
   // Writes audio for a playback stream.
   uint32 WriteAudio(size_t frames, uint8* buffer, const timespec* sample_ts);
@@ -108,7 +101,6 @@ class MEDIA_EXPORT CrasUnifiedStream : public AudioOutputStream {
   AudioSourceCallback* source_callback_;
 
   // Container for exchanging data with AudioSourceCallback::OnMoreData().
-  scoped_ptr<AudioBus> input_bus_;
   scoped_ptr<AudioBus> output_bus_;
 
   // Direciton of the stream.

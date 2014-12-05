@@ -36,20 +36,20 @@ const char kPrivilegedScheme[] = "privileged";
 
 class SiteInstanceTestWebUIControllerFactory : public WebUIControllerFactory {
  public:
-  virtual WebUIController* CreateWebUIControllerForURL(
-      WebUI* web_ui, const GURL& url) const OVERRIDE {
+  WebUIController* CreateWebUIControllerForURL(WebUI* web_ui,
+                                               const GURL& url) const override {
     return NULL;
   }
-  virtual WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
-      const GURL& url) const OVERRIDE {
+  WebUI::TypeID GetWebUIType(BrowserContext* browser_context,
+                             const GURL& url) const override {
     return WebUI::kNoWebUI;
   }
-  virtual bool UseWebUIForURL(BrowserContext* browser_context,
-                              const GURL& url) const OVERRIDE {
+  bool UseWebUIForURL(BrowserContext* browser_context,
+                      const GURL& url) const override {
     return HasWebUIScheme(url);
   }
-  virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
-                                      const GURL& url) const OVERRIDE {
+  bool UseWebUIBindingsForURL(BrowserContext* browser_context,
+                              const GURL& url) const override {
     return HasWebUIScheme(url);
   }
 };
@@ -61,12 +61,12 @@ class SiteInstanceTestBrowserClient : public TestContentBrowserClient {
     WebUIControllerFactory::RegisterFactory(&factory_);
   }
 
-  virtual ~SiteInstanceTestBrowserClient() {
+  ~SiteInstanceTestBrowserClient() override {
     WebUIControllerFactory::UnregisterFactoryForTesting(&factory_);
   }
 
-  virtual bool IsSuitableHost(RenderProcessHost* process_host,
-                              const GURL& site_url) OVERRIDE {
+  bool IsSuitableHost(RenderProcessHost* process_host,
+                      const GURL& site_url) override {
     return (privileged_process_id_ == process_host->GetID()) ==
         site_url.SchemeIs(kPrivilegedScheme);
   }
@@ -90,7 +90,7 @@ class SiteInstanceTest : public testing::Test {
         old_browser_client_(NULL) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
     url::AddStandardScheme(kPrivilegedScheme);
     url::AddStandardScheme(kChromeUIScheme);
@@ -98,7 +98,7 @@ class SiteInstanceTest : public testing::Test {
     SiteInstanceImpl::set_render_process_host_factory(&rph_factory_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Ensure that no RenderProcessHosts are left over after the tests.
     EXPECT_TRUE(RenderProcessHost::AllHostsIterator().IsAtEnd());
 
@@ -157,9 +157,7 @@ class TestBrowsingInstance : public BrowsingInstance {
   using BrowsingInstance::UnregisterSiteInstance;
 
  private:
-  virtual ~TestBrowsingInstance() {
-    (*delete_counter_)++;
-  }
+  ~TestBrowsingInstance() override { (*delete_counter_)++; }
 
   int* delete_counter_;
 };
@@ -179,9 +177,7 @@ class TestSiteInstance : public SiteInstanceImpl {
  private:
   TestSiteInstance(BrowsingInstance* browsing_instance, int* delete_counter)
     : SiteInstanceImpl(browsing_instance), delete_counter_(delete_counter) {}
-  virtual ~TestSiteInstance() {
-    (*delete_counter_)++;
-  }
+  ~TestSiteInstance() override { (*delete_counter_)++; }
 
   int* delete_counter_;
 };
@@ -204,7 +200,7 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
   EXPECT_EQ(0, site_delete_counter);
 
   NavigationEntryImpl* e1 = new NavigationEntryImpl(
-      instance, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      instance, 0, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
       false);
 
   // Redundantly setting e1's SiteInstance shouldn't affect the ref count.
@@ -213,7 +209,7 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
 
   // Add a second reference
   NavigationEntryImpl* e2 = new NavigationEntryImpl(
-      instance, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      instance, 0, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
       false);
 
   // Now delete both entries and be sure the SiteInstance goes away.
@@ -266,7 +262,7 @@ TEST_F(SiteInstanceTest, CloneNavigationEntry) {
                                                &browsing_delete_counter);
 
   NavigationEntryImpl* e1 = new NavigationEntryImpl(
-      instance1, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      instance1, 0, url, Referrer(), base::string16(), ui::PAGE_TRANSITION_LINK,
       false);
   // Clone the entry
   NavigationEntryImpl* e2 = new NavigationEntryImpl(*e1);
@@ -372,6 +368,7 @@ TEST_F(SiteInstanceTest, IsSameWebSite) {
   GURL url_foo_https = GURL("https://foo/a.html");
   GURL url_foo_port = GURL("http://foo:8080/a.html");
   GURL url_javascript = GURL("javascript:alert(1);");
+  GURL url_blank = GURL(url::kAboutBlankURL);
 
   // Same scheme and port -> same site.
   EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_foo, url_foo2));
@@ -388,13 +385,23 @@ TEST_F(SiteInstanceTest, IsSameWebSite) {
   EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_javascript, url_foo_https));
   EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_javascript, url_foo_port));
 
+  // Navigating to a blank page is considered the same site.
+  EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_foo, url_blank));
+  EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_foo_https, url_blank));
+  EXPECT_TRUE(SiteInstance::IsSameWebSite(NULL, url_foo_port, url_blank));
+
+  // Navigating from a blank site is not considered to be the same site.
+  EXPECT_FALSE(SiteInstance::IsSameWebSite(NULL, url_blank, url_foo));
+  EXPECT_FALSE(SiteInstance::IsSameWebSite(NULL, url_blank, url_foo_https));
+  EXPECT_FALSE(SiteInstance::IsSameWebSite(NULL, url_blank, url_foo_port));
+
   DrainMessageLoops();
 }
 
 // Test to ensure that there is only one SiteInstance per site in a given
 // BrowsingInstance, when process-per-site is not in use.
 TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
-  ASSERT_FALSE(CommandLine::ForCurrentProcess()->HasSwitch(
+  ASSERT_FALSE(base::CommandLine::ForCurrentProcess()->HasSwitch(
       switches::kProcessPerSite));
   int delete_counter = 0;
   scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
@@ -468,7 +475,7 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
 // Test to ensure that there is only one RenderProcessHost per site for an
 // entire BrowserContext, if process-per-site is in use.
 TEST_F(SiteInstanceTest, OneSiteInstancePerSiteInBrowserContext) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kProcessPerSite);
   int delete_counter = 0;
   scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
@@ -557,10 +564,19 @@ static SiteInstanceImpl* CreateSiteInstance(BrowserContext* browser_context,
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
-  // This test shouldn't run with --site-per-process mode, since it doesn't
-  // allow render process reuse, which this test explicitly exercises.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess))
+  // This test shouldn't run with --site-per-process or
+  // --enable-strict-site-isolation modes, since they don't allow render
+  // process reuse, which this test explicitly exercises.
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
+  if (command_line.HasSwitch(switches::kSitePerProcess) ||
+      command_line.HasSwitch(switches::kEnableStrictSiteIsolation))
     return;
+
+  // On Android by default the number of renderer hosts is unlimited and process
+  // sharing doesn't happen. We set the override so that the test can run
+  // everywhere.
+  RenderProcessHost::SetMaxRendererProcessCount(kMaxRendererProcessCount);
 
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -607,6 +623,9 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
   }
 
   DrainMessageLoops();
+
+  // Disable the process limit override.
+  RenderProcessHost::SetMaxRendererProcessCount(0u);
 }
 
 // Test to ensure that HasWrongProcessForURL behaves properly for different
@@ -671,7 +690,7 @@ TEST_F(SiteInstanceTest, HasWrongProcessForURL) {
 // Test to ensure that HasWrongProcessForURL behaves properly even when
 // --site-per-process is used (http://crbug.com/160671).
 TEST_F(SiteInstanceTest, HasWrongProcessForURLInSitePerProcess) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kSitePerProcess);
 
   scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
@@ -745,7 +764,7 @@ TEST_F(SiteInstanceTest, ProcessPerSiteWithWrongBindings) {
 // Test that we do not register processes with empty sites for process-per-site
 // mode.
 TEST_F(SiteInstanceTest, NoProcessPerSiteForEmptySite) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kProcessPerSite);
   scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
   scoped_ptr<RenderProcessHost> host;

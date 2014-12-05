@@ -15,13 +15,13 @@ class DictionaryValue;
 
 namespace printing {
 
-class Metafile;
+class MetafilePlayer;
 class PrintDialogGtkInterface;
 
 // PrintingContext with optional native UI for print dialog and pdf_paper_size.
 class PRINTING_EXPORT PrintingContextLinux : public PrintingContext {
  public:
-  explicit PrintingContextLinux(const std::string& app_locale);
+  explicit PrintingContextLinux(Delegate* delegate);
   virtual ~PrintingContextLinux();
 
   // Sets the function that creates the print dialog.
@@ -34,25 +34,25 @@ class PRINTING_EXPORT PrintingContextLinux : public PrintingContext {
       gfx::Size (*get_pdf_paper_size)(PrintingContextLinux* context));
 
   // Prints the document contained in |metafile|.
-  void PrintDocument(const Metafile* metafile);
+  void PrintDocument(const MetafilePlayer& metafile);
 
   // PrintingContext implementation.
   virtual void AskUserForSettings(
-      gfx::NativeView parent_view,
       int max_pages,
       bool has_selection,
-      const PrintSettingsCallback& callback) OVERRIDE;
-  virtual gfx::Size GetPdfPaperSizeDeviceUnits() OVERRIDE;
-  virtual Result UseDefaultSettings() OVERRIDE;
-  virtual Result UpdatePrinterSettings(bool external_preview) OVERRIDE;
-  virtual Result InitWithSettings(const PrintSettings& settings) OVERRIDE;
-  virtual Result NewDocument(const base::string16& document_name) OVERRIDE;
-  virtual Result NewPage() OVERRIDE;
-  virtual Result PageDone() OVERRIDE;
-  virtual Result DocumentDone() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void ReleaseContext() OVERRIDE;
-  virtual gfx::NativeDrawingContext context() const OVERRIDE;
+      const PrintSettingsCallback& callback) override;
+  virtual gfx::Size GetPdfPaperSizeDeviceUnits() override;
+  virtual Result UseDefaultSettings() override;
+  virtual Result UpdatePrinterSettings(bool external_preview,
+                                       bool show_system_dialog) override;
+  virtual Result InitWithSettings(const PrintSettings& settings) override;
+  virtual Result NewDocument(const base::string16& document_name) override;
+  virtual Result NewPage() override;
+  virtual Result PageDone() override;
+  virtual Result DocumentDone() override;
+  virtual void Cancel() override;
+  virtual void ReleaseContext() override;
+  virtual gfx::NativeDrawingContext context() const override;
 
  private:
   base::string16 document_name_;

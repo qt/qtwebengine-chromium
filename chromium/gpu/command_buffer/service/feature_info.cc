@@ -14,6 +14,7 @@
 #include "base/strings/string_util.h"
 #include "gpu/command_buffer/service/gl_utils.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
+#include "ui/gl/gl_fence.h"
 #include "ui/gl/gl_implementation.h"
 
 namespace gpu {
@@ -131,6 +132,7 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       enable_shader_name_hashing(false),
       enable_samplers(false),
       ext_draw_buffers(false),
+      nv_draw_buffers(false),
       ext_frag_depth(false),
       ext_shader_texture_lod(false),
       use_async_readpixels(false),
@@ -140,7 +142,10 @@ FeatureInfo::FeatureFlags::FeatureFlags()
       is_angle(false),
       is_swiftshader(false),
       angle_texture_usage(false),
-      ext_texture_storage(false) {
+      ext_texture_storage(false),
+      chromium_path_rendering(false),
+      blend_equation_advanced(false),
+      blend_equation_advanced_coherent(false) {
 }
 
 FeatureInfo::Workarounds::Workarounds() :
@@ -226,8 +231,6 @@ void FeatureInfo::InitializeFeatures() {
   StringSet extensions(
       reinterpret_cast<const char*>(glGetString(GL_EXTENSIONS)));
 
-  bool npot_ok = false;
-
   const char* renderer_str =
       reinterpret_cast<const char*>(glGetString(GL_RENDERER));
   if (renderer_str) {
@@ -238,7 +241,7 @@ void FeatureInfo::InitializeFeatures() {
   const char* version_str =
       reinterpret_cast<const char*>(glGetString(GL_VERSION));
   if (version_str) {
-    std::string lstr(StringToLowerASCII(std::string(version_str)));
+    std::string lstr(base::StringToLowerASCII(std::string(version_str)));
     is_es3 = (lstr.substr(0, 12) == "opengl es 3.");
   }
 
@@ -372,7 +375,7 @@ void FeatureInfo::InitializeFeatures() {
     validators_.render_buffer_format.AddValue(GL_DEPTH24_STENCIL8);
   }
 
-  if (extensions.Contains("GL_OES_vertex_array_object") ||
+  if (is_es3 || extensions.Contains("GL_OES_vertex_array_object") ||
       extensions.Contains("GL_ARB_vertex_array_object") ||
       extensions.Contains("GL_APPLE_vertex_array_object")) {
     feature_flags_.native_vertex_array_object = true;
@@ -385,19 +388,35 @@ void FeatureInfo::InitializeFeatures() {
     feature_flags_.native_vertex_array_object = false;
   }
 
-  if (extensions.Contains("GL_OES_element_index_uint") ||
+  if (is_es3 || extensions.Contains("GL_OES_element_index_uint") ||
       gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_OES_element_index_uint");
     validators_.index_type.AddValue(GL_UNSIGNED_INT);
   }
 
+  if (is_es3 || extensions.Contains("GL_EXT_sRGB") ||
+      gfx::HasDesktopGLFeatures()) {
+    AddExtensionString("GL_EXT_sRGB");
+    texture_format_validators_[GL_SRGB_EXT].AddValue(GL_UNSIGNED_BYTE);
+    texture_format_validators_[GL_SRGB_ALPHA_EXT].AddValue(GL_UNSIGNED_BYTE);
+    validators_.texture_internal_format.AddValue(GL_SRGB_EXT);
+    validators_.texture_internal_format.AddValue(GL_SRGB_ALPHA_EXT);
+    validators_.texture_format.AddValue(GL_SRGB_EXT);
+    validators_.texture_format.AddValue(GL_SRGB_ALPHA_EXT);
+    validators_.render_buffer_format.AddValue(GL_SRGB8_ALPHA8_EXT);
+    validators_.frame_buffer_parameter.AddValue(
+        GL_FRAMEBUFFER_ATTACHMENT_COLOR_ENCODING_EXT);
+  }
+
   bool enable_texture_format_bgra8888 = false;
   bool enable_read_format_bgra = false;
   bool enable_render_buffer_bgra = false;
+  bool enable_immutable_texture_format_bgra_on_es3 =
+      extensions.Contains("GL_APPLE_texture_format_BGRA8888");
 
   // Check if we should allow GL_EXT_texture_format_BGRA8888
   if (extensions.Contains("GL_EXT_texture_format_BGRA8888") ||
-      extensions.Contains("GL_APPLE_texture_format_BGRA8888") ||
+      enable_immutable_texture_format_bgra_on_es3 ||
       extensions.Contains("GL_EXT_bgra")) {
     enable_texture_format_bgra8888 = true;
   }
@@ -436,10 +455,10 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   // Check if we should allow GL_OES_texture_npot
-  if (extensions.Contains("GL_ARB_texture_non_power_of_two") ||
+  if (is_es3 || extensions.Contains("GL_ARB_texture_non_power_of_two") ||
       extensions.Contains("GL_OES_texture_npot")) {
     AddExtensionString("GL_OES_texture_npot");
-    npot_ok = true;
+    feature_flags_.npot_ok = true;
   }
 
   // Check if we should allow GL_OES_texture_float, GL_OES_texture_half_float,
@@ -458,7 +477,7 @@ void FeatureInfo::InitializeFeatures() {
     enable_texture_half_float_linear = true;
     may_enable_chromium_color_buffer_float = true;
   } else {
-    if (extensions.Contains("GL_OES_texture_float")) {
+    if (is_es3 || extensions.Contains("GL_OES_texture_float")) {
       enable_texture_float = true;
       if (extensions.Contains("GL_OES_texture_float_linear")) {
         enable_texture_float_linear = true;
@@ -468,6 +487,8 @@ void FeatureInfo::InitializeFeatures() {
         may_enable_chromium_color_buffer_float = true;
       }
     }
+    // TODO(dshwang): GLES3 supports half float by default but GL_HALF_FLOAT_OES
+    // isn't equal to GL_HALF_FLOAT.
     if (extensions.Contains("GL_OES_texture_half_float")) {
       enable_texture_half_float = true;
       if (extensions.Contains("GL_OES_texture_half_float_linear")) {
@@ -602,7 +623,7 @@ void FeatureInfo::InitializeFeatures() {
   }
 
   if (!workarounds_.disable_oes_standard_derivatives &&
-      (extensions.Contains("GL_OES_standard_derivatives") ||
+      (is_es3 || extensions.Contains("GL_OES_standard_derivatives") ||
        gfx::HasDesktopGLFeatures())) {
     AddExtensionString("GL_OES_standard_derivatives");
     feature_flags_.oes_standard_derivatives = true;
@@ -675,7 +696,6 @@ void FeatureInfo::InitializeFeatures() {
   feature_flags_.enable_texture_float_linear |= enable_texture_float_linear;
   feature_flags_.enable_texture_half_float_linear |=
       enable_texture_half_float_linear;
-  feature_flags_.npot_ok |= npot_ok;
 
   if (extensions.Contains("GL_ANGLE_pack_reverse_row_order")) {
     AddExtensionString("GL_ANGLE_pack_reverse_row_order");
@@ -690,7 +710,18 @@ void FeatureInfo::InitializeFeatures() {
     validators_.texture_parameter.AddValue(GL_TEXTURE_USAGE_ANGLE);
   }
 
-  if (extensions.Contains("GL_EXT_texture_storage")) {
+  // Note: Only APPLE_texture_format_BGRA8888 extension allows BGRA8_EXT in
+  // ES3's glTexStorage2D. We prefer support BGRA to texture storage.
+  // So we don't expose GL_EXT_texture_storage when ES3 +
+  // GL_EXT_texture_format_BGRA8888 because we fail the GL_BGRA8 requirement.
+  // However we expose GL_EXT_texture_storage when just ES3 because we don't
+  // claim to handle GL_BGRA8.
+  bool support_texture_storage_on_es3 =
+      (is_es3 && enable_immutable_texture_format_bgra_on_es3) ||
+      (is_es3 && !enable_texture_format_bgra8888);
+  if (extensions.Contains("GL_EXT_texture_storage") ||
+      extensions.Contains("GL_ARB_texture_storage") ||
+      support_texture_storage_on_es3) {
     feature_flags_.ext_texture_storage = true;
     AddExtensionString("GL_EXT_texture_storage");
     validators_.texture_parameter.AddValue(GL_TEXTURE_IMMUTABLE_FORMAT_EXT);
@@ -746,11 +777,24 @@ void FeatureInfo::InitializeFeatures() {
     validators_.vertex_attribute.AddValue(GL_VERTEX_ATTRIB_ARRAY_DIVISOR_ANGLE);
   }
 
+  bool vendor_agnostic_draw_buffers =
+      extensions.Contains("GL_ARB_draw_buffers") ||
+      extensions.Contains("GL_EXT_draw_buffers");
   if (!workarounds_.disable_ext_draw_buffers &&
-      (extensions.Contains("GL_ARB_draw_buffers") ||
-       extensions.Contains("GL_EXT_draw_buffers"))) {
+      (vendor_agnostic_draw_buffers ||
+       (extensions.Contains("GL_NV_draw_buffers") && is_es3))) {
     AddExtensionString("GL_EXT_draw_buffers");
     feature_flags_.ext_draw_buffers = true;
+
+    // This flag is set to enable emulation of EXT_draw_buffers when we're
+    // running on GLES 3.0+, NV_draw_buffers extension is supported and
+    // glDrawBuffers from GLES 3.0 core has been bound. It toggles using the
+    // NV_draw_buffers extension directive instead of EXT_draw_buffers extension
+    // directive in ESSL 100 shaders translated by ANGLE, enabling them to write
+    // into multiple gl_FragData values, which is not by default possible in
+    // ESSL 100 with core GLES 3.0. For more information, see the
+    // NV_draw_buffers specification.
+    feature_flags_.nv_draw_buffers = !vendor_agnostic_draw_buffers;
 
     GLint max_color_attachments = 0;
     glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &max_color_attachments);
@@ -759,6 +803,8 @@ void FeatureInfo::InitializeFeatures() {
          ++i) {
       validators_.attachment.AddValue(i);
     }
+    COMPILE_ASSERT(GL_COLOR_ATTACHMENT0_EXT == GL_COLOR_ATTACHMENT0,
+                   color_attachment0_variation_must_match);
 
     validators_.g_l_state.AddValue(GL_MAX_COLOR_ATTACHMENTS_EXT);
     validators_.g_l_state.AddValue(GL_MAX_DRAW_BUFFERS_ARB);
@@ -771,13 +817,16 @@ void FeatureInfo::InitializeFeatures() {
     }
   }
 
-  if (extensions.Contains("GL_EXT_blend_minmax") ||
+  if (is_es3 || extensions.Contains("GL_EXT_blend_minmax") ||
       gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_blend_minmax");
     validators_.equation.AddValue(GL_MIN_EXT);
     validators_.equation.AddValue(GL_MAX_EXT);
+    COMPILE_ASSERT(GL_MIN_EXT == GL_MIN && GL_MAX_EXT == GL_MAX,
+                   min_max_variations_must_match);
   }
 
+  // TODO(dshwang): GLES3 supports gl_FragDepth, not gl_FragDepthEXT.
   if (extensions.Contains("GL_EXT_frag_depth") || gfx::HasDesktopGLFeatures()) {
     AddExtensionString("GL_EXT_frag_depth");
     feature_flags_.ext_frag_depth = true;
@@ -789,18 +838,17 @@ void FeatureInfo::InitializeFeatures() {
     feature_flags_.ext_shader_texture_lod = true;
   }
 
-  bool egl_khr_fence_sync = false;
 #if !defined(OS_MACOSX)
   if (workarounds_.disable_egl_khr_fence_sync) {
     gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync = false;
   }
-  egl_khr_fence_sync = gfx::g_driver_egl.ext.b_EGL_KHR_fence_sync;
+  if (workarounds_.disable_egl_khr_wait_sync) {
+    gfx::g_driver_egl.ext.b_EGL_KHR_wait_sync = false;
+  }
 #endif
   if (workarounds_.disable_arb_sync)
     gfx::g_driver_gl.ext.b_GL_ARB_sync = false;
-  bool ui_gl_fence_works = is_es3 || extensions.Contains("GL_NV_fence") ||
-                           gfx::g_driver_gl.ext.b_GL_ARB_sync ||
-                           egl_khr_fence_sync;
+  bool ui_gl_fence_works = gfx::GLFence::IsSupported();
   UMA_HISTOGRAM_BOOLEAN("GPU.FenceSupport", ui_gl_fence_works);
 
   feature_flags_.map_buffer_range =
@@ -834,9 +882,53 @@ void FeatureInfo::InitializeFeatures() {
     AddExtensionString("GL_CHROMIUM_sync_query");
     feature_flags_.chromium_sync_query = true;
   }
+
+  bool blend_equation_advanced_coherent =
+    extensions.Contains("GL_NV_blend_equation_advanced_coherent") ||
+    extensions.Contains("GL_KHR_blend_equation_advanced_coherent");
+
+  if (blend_equation_advanced_coherent ||
+      extensions.Contains("GL_NV_blend_equation_advanced") ||
+      extensions.Contains("GL_KHR_blend_equation_advanced")) {
+    const GLenum equations[] = {GL_MULTIPLY_KHR,
+                                GL_SCREEN_KHR,
+                                GL_OVERLAY_KHR,
+                                GL_DARKEN_KHR,
+                                GL_LIGHTEN_KHR,
+                                GL_COLORDODGE_KHR,
+                                GL_COLORBURN_KHR,
+                                GL_HARDLIGHT_KHR,
+                                GL_SOFTLIGHT_KHR,
+                                GL_DIFFERENCE_KHR,
+                                GL_EXCLUSION_KHR,
+                                GL_HSL_HUE_KHR,
+                                GL_HSL_SATURATION_KHR,
+                                GL_HSL_COLOR_KHR,
+                                GL_HSL_LUMINOSITY_KHR};
+
+    for (GLenum equation : equations)
+      validators_.equation.AddValue(equation);
+    if (blend_equation_advanced_coherent)
+      AddExtensionString("GL_KHR_blend_equation_advanced_coherent");
+
+    AddExtensionString("GL_KHR_blend_equation_advanced");
+    feature_flags_.blend_equation_advanced = true;
+    feature_flags_.blend_equation_advanced_coherent =
+      blend_equation_advanced_coherent;
+  }
+
+  if (extensions.Contains("GL_NV_path_rendering")) {
+    if (extensions.Contains("GL_EXT_direct_state_access") || is_es3) {
+      AddExtensionString("GL_CHROMIUM_path_rendering");
+      feature_flags_.chromium_path_rendering = true;
+      validators_.g_l_state.AddValue(GL_PATH_MODELVIEW_MATRIX_CHROMIUM);
+      validators_.g_l_state.AddValue(GL_PATH_PROJECTION_MATRIX_CHROMIUM);
+    }
+  }
 }
 
-void FeatureInfo::AddExtensionString(const std::string& str) {
+void FeatureInfo::AddExtensionString(const char* s) {
+  std::string str(s);
   size_t pos = extensions_.find(str);
   while (pos != std::string::npos &&
          pos + str.length() < extensions_.length() &&

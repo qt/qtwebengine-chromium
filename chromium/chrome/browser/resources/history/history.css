@@ -55,9 +55,13 @@ html[dir='rtl'] #notification-bar.alone {
 }
 
 #filter-controls {
+  display: flex;
   margin-bottom: 4px;
   margin-top: 4px;
-  overflow: auto;
+}
+
+#filter-controls > * {
+  flex: 1;
 }
 
 #editing-controls {
@@ -71,10 +75,6 @@ html[dir='rtl'] #editing-controls {
 
 #editing-controls button:first-of-type {
   -webkit-margin-start: 0;
-}
-
-#filter-controls select {
-  -webkit-margin-end: 0;
 }
 
 #range-next,
@@ -136,46 +136,28 @@ html[dir='rtl'] #range-previous {
   -webkit-margin-end: 0;
 }
 
-#display-filter-controls {
-  float: right;
+#timeframe-controls {
+  display: flex;
+  justify-content: flex-end;
 }
 
-html[dir='rtl'] #display-filter-controls {
-  float: left;
-}
-
-.display-filter-button {
-  float: left;
-}
-
-html[dir='rtl'] .display-filter-button {
-  float: right;
-}
-
-#display-filter-controls label input[type='radio'] {
-  display: none;
-}
-
-#display-filter-controls label span {
-  -webkit-align-items: flex-start;
-  -webkit-appearance: none;
-  -webkit-user-select: none;
+#timeframe-controls input[type='radio'] {
   background-color: buttonface;
   background-image: -webkit-linear-gradient(rgb(237, 237, 237),
                                             rgb(237, 237, 237) 38%,
                                             rgb(222, 222, 222));
   border: 1px solid rgba(0, 0, 0, 0.25);
   border-radius: 0;
+  bottom: auto;
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.08),
               inset 0 1px 2px rgba(255, 255, 255, 0.75);
   box-sizing: border-box;
   color: rgb(68, 68, 68);
-  cursor: default;
   display: inline-block;
+  height: 100%;
   letter-spacing: normal;
   line-height: 2em;
-  margin-left: -1px;
-  margin-right: -1px;
+  margin: 0;
   min-height: 2em;
   min-width: 4em;
   text-align: center;
@@ -183,29 +165,48 @@ html[dir='rtl'] .display-filter-button {
   text-shadow: 0 1px 0 rgb(240, 240, 240);
   text-transform: none;
   vertical-align: middle;
+  width: auto;
   word-spacing: normal;
 }
 
-html[dir='rtl'] #display-filter-controls label span.last-button-component,
-#display-filter-controls label span.first-button-component {
+#timeframe-controls input[type='radio']:not(:first-of-type) {
+  -webkit-border-start-width: 0;
+}
+
+#timeframe-controls input[type='radio']:not(:first-of-type):focus {
+  -webkit-border-start-width: 1px;
+  -webkit-margin-start: -1px;
+}
+
+html[dir='ltr'] #timeframe-controls input[type='radio']:first-of-type,
+html[dir='rtl'] #timeframe-controls input[type='radio']:last-of-type {
   border-bottom-left-radius: 2px;
   border-top-left-radius: 2px;
-  margin-left: 0;
 }
 
-html[dir='rtl'] #display-filter-controls label span.first-button-component,
-#display-filter-controls label span.last-button-component {
+html[dir='ltr'] #timeframe-controls input[type='radio']:last-of-type,
+html[dir='rtl'] #timeframe-controls input[type='radio']:first-of-type {
   border-bottom-right-radius: 2px;
   border-top-right-radius: 2px;
-  margin-right: 0;
 }
 
-#display-filter-controls input:checked ~ span {
+#timeframe-controls input[type='radio']:checked {
   background-image: -webkit-linear-gradient(rgb(185, 185, 185),
                                             rgb(216, 216, 216) 38%,
                                             rgb(167, 167, 167));
-  border-left-color: rgb(173, 173, 173);
-  border-right-color: rgb(173, 173, 173);
+}
+
+#timeframe-controls input[type='radio']:focus {
+  border-color: rgb(77, 144, 254);
+}
+
+#timeframe-controls input[type='radio']::before {
+  display: none;  /* Hide the ( )/(O). */
+}
+
+#timeframe-controls input[type='radio']::after {
+  content: attr(aria-label);
+  padding: 0 1em;
 }
 
 #results-display {
@@ -245,21 +246,25 @@ html[dir='rtl'] #display-filter-controls label span.first-button-component,
 }
 
 .entry-box,
-.site-domain-wrapper {
-  -webkit-align-items: center;
-  cursor: default;
-  display: -webkit-flex;
-  /* An odd line-height ensures a consistent baseline on all platforms. */
-  line-height: 1.75em;
+.site-domain-row {
+  align-items: center;
+  display: flex;
   margin-bottom: 6px;
   /* The box should be no bigger than its parent. */
   max-width: 100%;
+  min-height: 2em;
   overflow: hidden;
   padding-bottom: 1px;
 }
 
+.entry-box {
+  /* Ensures a consistent baseline on all platforms. */
+  line-height: 1.75em;
+}
+
 .site-domain-wrapper {
   cursor: pointer;
+  display: flex;
   width: 100%;
 }
 
@@ -298,11 +303,11 @@ h2.timeframe {
 }
 
 .entry .domain {
+  -webkit-padding-end: 6px;
+  -webkit-padding-start: 2px;
   color: rgb(151, 156, 160);
   min-width: -webkit-min-content;
   overflow: hidden;
-  padding-left: 6px;
-  padding-right: 6px;
   white-space: nowrap;
 }
 
@@ -344,7 +349,8 @@ html[dir='rtl'] .site-domain {
   white-space: nowrap;
 }
 
-.entry input[type='checkbox'] {
+.entry input[type='checkbox'],
+.site-domain-row input[type='checkbox'] {
   -webkit-margin-end: 6px;
   line-height: 1em;
   min-width: 13px;
@@ -364,7 +370,7 @@ html[dir='rtl'] .site-domain {
 }
 
 .filter-status > div {
-  -webkit-flex: 0 0 auto;
+  flex: 0 0 auto;
   -webkit-transition: background-color 150ms;
   border-radius: 3px;
   display: none;
@@ -402,35 +408,25 @@ html[dir='rtl'] .site-domain {
   background-color: rgb(225, 255, 205);
   color: rgb(148, 148, 148);
 }
-
-/* TODO(sergiu): If this is the final icon replace it with a separate resource.
- */
-.blocked-indicator {
-  background: url('../ssl/images/roadblock.png');
-  background-size: 30%;
-}
-
-.blocked-indicator .title {
-  color: rgb(151, 156, 160);
-}
 </if>
 
-.entry-box {
+.entry-box,
+.site-domain-row {
+  -webkit-padding-end: 6px;
   -webkit-padding-start: 6px;
   border-radius: 2px;
 }
 
-.entry-box:hover,
-.entry-box.contains-focus {
+.active :-webkit-any(.entry-box, .site-domain-row) {
   background-color: rgba(0, 0, 0, .05);
 }
 
 .entry-box-container {
-  display: -webkit-flex;
+  display: flex;
 }
 
 .entry .visit-entry {
-  display: -webkit-flex;
+  display: flex;
   min-width: 0;
 }
 
@@ -444,8 +440,12 @@ html[dir='rtl'] .site-domain {
 .entry .visit-entry,
 .site-domain {
   /* Make room for the favicon. */
-  -webkit-padding-start: 20px;
+  -webkit-padding-start: 16px;
+}
 
+.entry .visit-entry,
+.site-domain,
+.blocked-indicator {
   /* Control the favicon appearance. */
   background-position-y: center;
   background-repeat: no-repeat;
@@ -453,19 +453,30 @@ html[dir='rtl'] .site-domain {
 }
 
 html[dir='rtl'] .entry .visit-entry,
-html[dir='rtl'] .site-domain {
+html[dir='rtl'] .site-domain,
+html[dir='rtl'] .blocked-indicator {
   background-position-x: right;
 }
 
-.site-domain button {
-  color: rgb(48, 57, 66);
+<if expr="not is_android">
+/* TODO(sergiu): If this is the final icon replace it with a separate resource.
+ */
+.entry .blocked-indicator {
+  -webkit-padding-start: 20px;  /* 16px for favicon, 4px for <a> padding. */
+  background-image: url(../ssl/images/roadblock.png);
 }
+
+.blocked-indicator .title {
+  color: rgb(151, 156, 160);
+}
+</if>
 
 .site-domain button:hover {
   text-decoration: none;
 }
 
 .site-domain-arrow {
+  -webkit-transform: rotate(0);
   -webkit-transition: -webkit-transform 300ms linear;
   background: url(../disclosure_triangle_small.png) no-repeat;
   background-position: 5px 5px;
@@ -477,37 +488,43 @@ html[dir='rtl'] .site-domain {
   width: 21px;
 }
 
-.site-domain-arrow.collapse {
-  -webkit-transform: rotate(0);
-}
-
-.site-domain-arrow.expand {
-  -webkit-transform: rotate(90deg);
-}
-
-html[dir='rtl'] .site-domain-arrow.collapse {
-  -webkit-transform: rotate(90deg);
-}
-
-html[dir='rtl'] .site-domain-arrow.expand {
+html[dir='rtl'] .site-domain-arrow {
   -webkit-transform: rotate(180deg);
+}
+
+html .expand .site-domain-arrow {
+  -webkit-transform: rotate(90deg);
 }
 
 .entry .bookmark-section {
   -webkit-margin-end: 3px;
   -webkit-margin-start: 8px;
+  background: no-repeat center
+      url(../../../../ui/webui/resources/images/star_small.png);
+  border: none;
   display: inline-block;
-  height: 11px;
+  height: 15px;
   min-width: 15px;
+  visibility: hidden;
 }
 
 .entry .starred {
-  background:
-      url(../../../../ui/webui/resources/images/star_small.png) no-repeat;
+  visibility: visible;
 }
 
-.entry .title > a {
+.entry .title > a,
+.site-domain [is='action-link'] {
   color: rgb(48, 57, 66);
+  margin: 2px;
+  padding: 2px;
+  /* Focus outlines are rendered differently for each platform. */
+<if expr="is_macosx">
+  margin: 4px;
+  padding: 0;
+</if>
+<if expr="is_win">
+  padding: 0 2px;
+</if>
   text-decoration: none;
 }
 
@@ -525,6 +542,7 @@ html[dir='rtl'] .site-domain-arrow.expand {
 }
 
 button.menu-button.drop-down {
+  -webkit-margin-end: 0;
   min-width: 12px;
   top: 0;
 }

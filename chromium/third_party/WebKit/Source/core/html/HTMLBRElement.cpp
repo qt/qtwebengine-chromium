@@ -28,14 +28,13 @@
 #include "core/HTMLNames.h"
 #include "core/rendering/RenderBR.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLBRElement::HTMLBRElement(Document& document)
     : HTMLElement(brTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLBRElement)

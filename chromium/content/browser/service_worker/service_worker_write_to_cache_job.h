@@ -5,12 +5,15 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_WRITE_TO_CACHE_JOB_H_
 
+#include <string>
+
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
 #include "content/browser/service_worker/service_worker_version.h"
 #include "content/common/content_export.h"
 #include "content/common/service_worker/service_worker_status_code.h"
 #include "content/common/service_worker/service_worker_types.h"
+#include "content/public/common/resource_type.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_job.h"
 
@@ -34,32 +37,36 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
   ServiceWorkerWriteToCacheJob(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
+      ResourceType resource_type,
       base::WeakPtr<ServiceWorkerContextCore> context,
       ServiceWorkerVersion* version,
+      int extra_load_flags,
       int64 response_id);
 
  private:
-  virtual ~ServiceWorkerWriteToCacheJob();
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateBefore24Hours);
+  FRIEND_TEST_ALL_PREFIXES(ServiceWorkerContextRequestHandlerTest,
+                           UpdateAfter24Hours);
+
+  ~ServiceWorkerWriteToCacheJob() override;
 
   // net::URLRequestJob overrides
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual net::LoadState GetLoadState() const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual void SetExtraRequestHeaders(
-      const net::HttpRequestHeaders& headers) OVERRIDE;
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int *bytes_read) OVERRIDE;
+  void Start() override;
+  void Kill() override;
+  net::LoadState GetLoadState() const override;
+  bool GetCharset(std::string* charset) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  void GetResponseInfo(net::HttpResponseInfo* info) override;
+  int GetResponseCode() const override;
+  void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override;
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
 
   const net::HttpResponseInfo* http_info() const;
 
   // Methods to drive the net request forward and
   // write data to the disk cache.
-  void InitNetRequest();
+  void InitNetRequest(int extra_load_flags);
   void StartNetRequest();
   net::URLRequestStatus ReadNetData(
       net::IOBuffer* buf,
@@ -71,30 +78,24 @@ class CONTENT_EXPORT ServiceWorkerWriteToCacheJob
   void OnWriteDataComplete(int result);
 
   // net::URLRequest::Delegate overrides that observe the net request.
-  virtual void OnReceivedRedirect(
+  void OnReceivedRedirect(net::URLRequest* request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer_redirect) override;
+  void OnAuthRequired(net::URLRequest* request,
+                      net::AuthChallengeInfo* auth_info) override;
+  void OnCertificateRequested(
       net::URLRequest* request,
-      const GURL& new_url,
-      bool* defer_redirect) OVERRIDE;
-  virtual void OnAuthRequired(
-      net::URLRequest* request,
-      net::AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual void OnCertificateRequested(
-      net::URLRequest* request,
-      net::SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual void OnSSLCertificateError(
-      net::URLRequest* request,
-      const net::SSLInfo& ssl_info,
-      bool fatal) OVERRIDE;
-  virtual void OnBeforeNetworkStart(
-      net::URLRequest* request,
-      bool* defer) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(
-      net::URLRequest* request,
-      int bytes_read) OVERRIDE;
+      net::SSLCertRequestInfo* cert_request_info) override;
+  void OnSSLCertificateError(net::URLRequest* request,
+                             const net::SSLInfo& ssl_info,
+                             bool fatal) override;
+  void OnBeforeNetworkStart(net::URLRequest* request, bool* defer) override;
+  void OnResponseStarted(net::URLRequest* request) override;
+  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
 
   void AsyncNotifyDoneHelper(const net::URLRequestStatus& status);
 
+  ResourceType resource_type_;  // Differentiate main script and imports
   scoped_refptr<net::IOBuffer> io_buffer_;
   scoped_refptr<HttpResponseInfoIOBuffer> info_buffer_;
   base::WeakPtr<ServiceWorkerContextCore> context_;

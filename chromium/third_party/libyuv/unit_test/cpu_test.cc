@@ -13,6 +13,7 @@
 
 #include "libyuv/basic_types.h"
 #include "libyuv/cpu_id.h"
+#include "libyuv/row.h"  // For HAS_ARGBSHUFFLEROW_AVX2.
 #include "libyuv/version.h"
 #include "../unit_test/unit_test.h"
 
@@ -49,6 +50,26 @@ TEST_F(libyuvTest, TestCpuHas) {
   printf("Has MIPS DSP %x\n", has_mips_dsp);
   int has_mips_dspr2 = TestCpuFlag(kCpuHasMIPS_DSPR2);
   printf("Has MIPS DSPR2 %x\n", has_mips_dspr2);
+}
+
+TEST_F(libyuvTest, TestCompilerHasAVX2) {
+#ifdef _MSC_VER
+printf("_MSC_VER %d\n", _MSC_VER);
+#endif
+#if !defined(LIBYUV_DISABLE_X86) && (defined(GCC_HAS_AVX2) || \
+    defined(CLANG_HAS_AVX2) || defined(VISUALC_HAS_AVX2))
+  printf("Has AVX2 1\n");
+  // If compiler supports AVX2, the following function is expected to exist:
+#if !defined(HAS_ARGBSHUFFLEROW_AVX2)
+  EXPECT_TRUE(0);  // HAS_ARGBSHUFFLEROW_AVX2 was expected.
+#endif
+#else
+  printf("Has AVX2 0\n");
+  // If compiler does not support AVX2, the following function not expected:
+#if defined(HAS_ARGBSHUFFLEROW_AVX2)
+  EXPECT_TRUE(0);  // HAS_ARGBSHUFFLEROW_AVX2 was not expected.
+#endif
+#endif
 }
 
 #if defined(__i386__) || defined(__x86_64__) || \
@@ -105,6 +126,7 @@ TEST_F(libyuvTest, TestLinuxNeon) {
   if (FileExists("../../unit_test/testdata/arm_v7.txt")) {
     EXPECT_EQ(0, ArmCpuCaps("../../unit_test/testdata/arm_v7.txt"));
     EXPECT_EQ(kCpuHasNEON, ArmCpuCaps("../../unit_test/testdata/tegra3.txt"));
+    EXPECT_EQ(kCpuHasNEON, ArmCpuCaps("../../unit_test/testdata/juno.txt"));
   } else {
     printf("WARNING: unable to load \"../../unit_test/testdata/arm_v7.txt\"\n");
   }

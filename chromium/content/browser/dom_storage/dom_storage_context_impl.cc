@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/guid.h"
 #include "base/location.h"
 #include "base/time/time.h"
@@ -20,7 +20,7 @@
 #include "content/public/browser/dom_storage_context.h"
 #include "content/public/browser/local_storage_usage_info.h"
 #include "content/public/browser/session_storage_usage_info.h"
-#include "webkit/browser/quota/special_storage_policy.h"
+#include "storage/browser/quota/special_storage_policy.h"
 
 namespace content {
 
@@ -29,7 +29,7 @@ static const int kSessionStoraceScavengingSeconds = 60;
 DOMStorageContextImpl::DOMStorageContextImpl(
     const base::FilePath& localstorage_directory,
     const base::FilePath& sessionstorage_directory,
-    quota::SpecialStoragePolicy* special_storage_policy,
+    storage::SpecialStoragePolicy* special_storage_policy,
     DOMStorageTaskRunner* task_runner)
     : localstorage_directory_(localstorage_directory),
       sessionstorage_directory_(sessionstorage_directory),
@@ -278,7 +278,7 @@ void DOMStorageContextImpl::DeleteSessionNamespace(
   } else {
     if (should_persist_data)
       it->second->set_must_persist_at_shutdown(true);
-    MaybeShutdownSessionNamespace(it->second);
+    MaybeShutdownSessionNamespace(it->second.get());
   }
 }
 
@@ -485,11 +485,11 @@ DOMStorageContextImpl::MergeSessionStorage(
   StorageNamespaceMap::const_iterator it = namespaces_.find(namespace1_id);
   if (it == namespaces_.end())
     return SessionStorageNamespace::MERGE_RESULT_NAMESPACE_NOT_FOUND;
-  DOMStorageNamespace* ns1 = it->second;
+  DOMStorageNamespace* ns1 = it->second.get();
   it = namespaces_.find(namespace2_id);
   if (it == namespaces_.end())
     return SessionStorageNamespace::MERGE_RESULT_NAMESPACE_NOT_FOUND;
-  DOMStorageNamespace* ns2 = it->second;
+  DOMStorageNamespace* ns2 = it->second.get();
   return ns1->Merge(actually_merge, process_id, ns2, this);
 }
 

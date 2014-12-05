@@ -1,11 +1,9 @@
-
 /*
  * Copyright 2006 The Android Open Source Project
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 
 #ifndef SkGraphics_DEFINED
 #define SkGraphics_DEFINED
@@ -79,9 +77,39 @@ public:
      */
     static void PurgeFontCache();
 
-    static size_t GetImageCacheBytesUsed();
-    static size_t GetImageCacheByteLimit();
-    static size_t SetImageCacheByteLimit(size_t newLimit);
+    /**
+     *  Scaling bitmaps with the SkPaint::kHigh_FilterLevel setting is
+     *  expensive, so the result is saved in the global Scaled Image
+     *  Cache.
+     *
+     *  This function returns the memory usage of the Scaled Image Cache.
+     */
+    static size_t GetResourceCacheTotalBytesUsed();
+
+    /**
+     *  These functions get/set the memory usage limit for the resource cache, used for temporary
+     *  bitmaps and other resources. Entries are purged from the cache when the memory useage
+     *  exceeds this limit.
+     */
+    static size_t GetResourceCacheTotalByteLimit();
+    static size_t SetResourceCacheTotalByteLimit(size_t newLimit);
+
+    /**
+     *  For debugging purposes, this will attempt to purge the resource cache. It
+     *  does not change the limit.
+     */
+    static void PurgeResourceCache();
+
+    /**
+     *  When the cachable entry is very lage (e.g. a large scaled bitmap), adding it to the cache
+     *  can cause most/all of the existing entries to be purged. To avoid the, the client can set
+     *  a limit for a single allocation. If a cacheable entry would have been cached, but its size
+     *  exceeds this limit, then we do not attempt to cache it at all.
+     *
+     *  Zero is the default value, meaning we always attempt to cache entries.
+     */
+    static size_t GetResourceCacheSingleAllocationByteLimit();
+    static size_t SetResourceCacheSingleAllocationByteLimit(size_t newLimit);
 
     /**
      *  Applications with command line options may pass optional state, such
@@ -112,13 +140,6 @@ public:
      *  global font cache.
      */
     static void SetTLSFontCacheLimit(size_t bytes);
-
-private:
-    /** This is automatically called by SkGraphics::Init(), and must be
-        implemented by the host OS. This allows the host OS to register a callback
-        with the C++ runtime to call SkGraphics::FreeCaches()
-    */
-    static void InstallNewHandler();
 };
 
 class SkAutoGraphics {

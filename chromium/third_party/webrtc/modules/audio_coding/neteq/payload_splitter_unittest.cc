@@ -16,7 +16,7 @@
 
 #include <utility>  // pair
 
-#include "gtest/gtest.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/audio_coding/neteq/mock/mock_decoder_database.h"
 #include "webrtc/modules/audio_coding/neteq/packet.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
@@ -743,7 +743,7 @@ TEST(FecPayloadSplitter, MixedPayload) {
   // Check first packet.
   packet = packet_list.front();
   EXPECT_EQ(0, packet->header.payloadType);
-  EXPECT_EQ(kBaseTimestamp - 20 * 32, packet->header.timestamp);
+  EXPECT_EQ(kBaseTimestamp - 20 * 48, packet->header.timestamp);
   EXPECT_EQ(10, packet->payload_length);
   EXPECT_FALSE(packet->primary);
   delete [] packet->payload;

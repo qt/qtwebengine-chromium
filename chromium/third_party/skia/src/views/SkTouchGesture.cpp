@@ -142,7 +142,7 @@ void SkTouchGesture::appendNewRec(void* owner, float x, float y) {
 }
 
 void SkTouchGesture::touchBegin(void* owner, float x, float y) {
-//    GrPrintf("--- %d touchBegin %p %g %g\n", fTouches.count(), owner, x, y);
+//    SkDebugf("--- %d touchBegin %p %g %g\n", fTouches.count(), owner, x, y);
 
     int index = this->findRec(owner);
     if (index >= 0) {
@@ -201,9 +201,11 @@ float SkTouchGesture::limitTotalZoom(float scale) const {
 }
 
 void SkTouchGesture::touchMoved(void* owner, float x, float y) {
-//    GrPrintf("--- %d touchMoved %p %g %g\n", fTouches.count(), owner, x, y);
+//    SkDebugf("--- %d touchMoved %p %g %g\n", fTouches.count(), owner, x, y);
 
-    SkASSERT(kEmpty_State != fState);
+    if (kEmpty_State == fState) {
+        return;
+    }
 
     int index = this->findRec(owner);
     if (index < 0) {
@@ -218,7 +220,7 @@ void SkTouchGesture::touchMoved(void* owner, float x, float y) {
     // not sure how valuable this is
     if (fTouches.count() == 2) {
         if (close_enough_for_jitter(rec.fLastX, rec.fLastY, x, y)) {
-//            GrPrintf("--- drop touchMove, withing jitter tolerance %g %g\n", rec.fLastX - x, rec.fLastY - y);
+//            SkDebugf("--- drop touchMove, withing jitter tolerance %g %g\n", rec.fLastX - x, rec.fLastY - y);
             return;
         }
     }
@@ -255,7 +257,7 @@ void SkTouchGesture::touchMoved(void* owner, float x, float y) {
 }
 
 void SkTouchGesture::touchEnd(void* owner) {
-//    GrPrintf("--- %d touchEnd   %p\n", fTouches.count(), owner);
+//    SkDebugf("--- %d touchEnd   %p\n", fTouches.count(), owner);
 
     int index = this->findRec(owner);
     if (index < 0) {

@@ -16,27 +16,26 @@ namespace content {
 class MockMediaStreamDispatcher : public MediaStreamDispatcher {
  public:
   MockMediaStreamDispatcher();
-  virtual ~MockMediaStreamDispatcher();
+  ~MockMediaStreamDispatcher() override;
 
-  virtual void GenerateStream(
+  void GenerateStream(
       int request_id,
       const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
       const StreamOptions& components,
-      const GURL& url) OVERRIDE;
-  virtual void CancelGenerateStream(
+      const GURL& url) override;
+  void CancelGenerateStream(
       int request_id,
-      const base::WeakPtr<MediaStreamDispatcherEventHandler>&
-          event_handler) OVERRIDE;
-  virtual void EnumerateDevices(
+      const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler)
+      override;
+  void EnumerateDevices(
       int request_id,
       const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
       MediaStreamType type,
-      const GURL& security_origin,
-      bool hide_labels_if_no_access) OVERRIDE;
-  virtual void StopStreamDevice(const StreamDeviceInfo& device_info) OVERRIDE;
-  virtual bool IsStream(const std::string& label) OVERRIDE;
-  virtual int video_session_id(const std::string& label, int index) OVERRIDE;
-  virtual int audio_session_id(const std::string& label, int index) OVERRIDE;
+      const GURL& security_origin) override;
+  void StopStreamDevice(const StreamDeviceInfo& device_info) override;
+  bool IsStream(const std::string& label) override;
+  int video_session_id(const std::string& label, int index) override;
+  int audio_session_id(const std::string& label, int index) override;
 
   int audio_input_request_id() const { return audio_input_request_id_; }
   int audio_output_request_id() const { return audio_output_request_id_; }
@@ -59,7 +58,7 @@ class MockMediaStreamDispatcher : public MediaStreamDispatcher {
  private:
   void AddAudioInputDeviceToArray(bool matched_output);
   void AddAudioOutputDeviceToArray();
-  void AddVideoDeviceToArray();
+  void AddVideoDeviceToArray(bool facing_user);
 
   int audio_input_request_id_;
   int audio_output_request_id_;  // Only used for EnumerateDevices.

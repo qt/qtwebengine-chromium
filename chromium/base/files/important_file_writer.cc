@@ -10,9 +10,9 @@
 
 #include "base/bind.h"
 #include "base/critical_closure.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
@@ -33,6 +33,7 @@ enum TempFileFailure {
   FAILED_CLOSING,
   FAILED_WRITING,
   FAILED_RENAMING,
+  FAILED_FLUSHING,
   TEMP_FILE_FAILURE_MAX
 };
 
@@ -69,12 +70,18 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
   CHECK_LE(data.length(), static_cast<size_t>(kint32max));
   int bytes_written = tmp_file.Write(0, data.data(),
                                      static_cast<int>(data.length()));
-  tmp_file.Flush();  // Ignore return value.
+  bool flush_success = tmp_file.Flush();
   tmp_file.Close();
 
   if (bytes_written < static_cast<int>(data.length())) {
     LogFailure(path, FAILED_WRITING, "error writing, bytes_written=" +
                IntToString(bytes_written));
+    base::DeleteFile(tmp_file_path, false);
+    return false;
+  }
+
+  if (!flush_success) {
+    LogFailure(path, FAILED_FLUSHING, "error flushing");
     base::DeleteFile(tmp_file_path, false);
     return false;
   }
@@ -88,8 +95,9 @@ bool ImportantFileWriter::WriteFileAtomically(const FilePath& path,
   return true;
 }
 
-ImportantFileWriter::ImportantFileWriter(const FilePath& path,
-                                         base::SequencedTaskRunner* task_runner)
+ImportantFileWriter::ImportantFileWriter(
+    const FilePath& path,
+    const scoped_refptr<base::SequencedTaskRunner>& task_runner)
     : path_(path),
       task_runner_(task_runner),
       serializer_(NULL),
@@ -169,7 +177,7 @@ bool ImportantFileWriter::PostWriteTask(const std::string& data) {
   // using PostTask() in the typical scenario below.
   if (!on_next_successful_write_.is_null()) {
     return base::PostTaskAndReplyWithResult(
-        task_runner_,
+        task_runner_.get(),
         FROM_HERE,
         MakeCriticalClosure(
             Bind(&ImportantFileWriter::WriteFileAtomically, path_, data)),

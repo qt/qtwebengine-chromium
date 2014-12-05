@@ -26,15 +26,14 @@
 #include "config.h"
 #include "core/rendering/RenderScrollbarPart.h"
 
+#include "core/frame/UseCounter.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderScrollbar.h"
 #include "core/rendering/RenderScrollbarTheme.h"
 #include "core/rendering/RenderView.h"
 #include "platform/LengthFunctions.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderScrollbarPart::RenderScrollbarPart(RenderScrollbar* scrollbar, ScrollbarPart part)
     : RenderBlock(0)
@@ -47,9 +46,38 @@ RenderScrollbarPart::~RenderScrollbarPart()
 {
 }
 
+static void recordScrollbarPartStats(Document& document, ScrollbarPart part)
+{
+    switch (part) {
+    case BackButtonStartPart:
+    case ForwardButtonStartPart:
+    case BackButtonEndPart:
+    case ForwardButtonEndPart:
+        UseCounter::count(document, UseCounter::CSSSelectorPseudoScrollbarButton);
+        break;
+    case BackTrackPart:
+    case ForwardTrackPart:
+        UseCounter::count(document, UseCounter::CSSSelectorPseudoScrollbarTrackPiece);
+        break;
+    case ThumbPart:
+        UseCounter::count(document, UseCounter::CSSSelectorPseudoScrollbarThumb);
+        break;
+    case TrackBGPart:
+        UseCounter::count(document, UseCounter::CSSSelectorPseudoScrollbarTrack);
+        break;
+    case ScrollbarBGPart:
+        UseCounter::count(document, UseCounter::CSSSelectorPseudoScrollbar);
+        break;
+    case NoPart:
+    case AllParts:
+        break;
+    }
+}
+
 RenderScrollbarPart* RenderScrollbarPart::createAnonymous(Document* document, RenderScrollbar* scrollbar, ScrollbarPart part)
 {
     RenderScrollbarPart* renderer = new RenderScrollbarPart(scrollbar, part);
+    recordScrollbarPartStats(*document, part);
     renderer->setDocumentForAnonymous(document);
     return renderer;
 }
@@ -103,8 +131,8 @@ void RenderScrollbarPart::computeScrollbarWidth()
     int visibleSize = m_scrollbar->owningRenderer()->width() - m_scrollbar->owningRenderer()->style()->borderLeftWidth() - m_scrollbar->owningRenderer()->style()->borderRightWidth();
     int w = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->width(), visibleSize);
     int minWidth = calcScrollbarThicknessUsing(MinSize, style()->minWidth(), visibleSize);
-    int maxWidth = style()->maxWidth().isUndefined() ? w : calcScrollbarThicknessUsing(MaxSize, style()->maxWidth(), visibleSize);
-    setWidth(max(minWidth, min(maxWidth, w)));
+    int maxWidth = style()->maxWidth().isMaxSizeNone() ? w : calcScrollbarThicknessUsing(MaxSize, style()->maxWidth(), visibleSize);
+    setWidth(std::max(minWidth, std::min(maxWidth, w)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
     m_marginBox.setLeft(minimumValueForLength(style()->marginLeft(), visibleSize));
@@ -120,8 +148,8 @@ void RenderScrollbarPart::computeScrollbarHeight()
     int visibleSize = m_scrollbar->owningRenderer()->height() -  m_scrollbar->owningRenderer()->style()->borderTopWidth() - m_scrollbar->owningRenderer()->style()->borderBottomWidth();
     int h = calcScrollbarThicknessUsing(MainOrPreferredSize, style()->height(), visibleSize);
     int minHeight = calcScrollbarThicknessUsing(MinSize, style()->minHeight(), visibleSize);
-    int maxHeight = style()->maxHeight().isUndefined() ? h : calcScrollbarThicknessUsing(MaxSize, style()->maxHeight(), visibleSize);
-    setHeight(max(minHeight, min(maxHeight, h)));
+    int maxHeight = style()->maxHeight().isMaxSizeNone() ? h : calcScrollbarThicknessUsing(MaxSize, style()->maxHeight(), visibleSize);
+    setHeight(std::max(minHeight, std::min(maxHeight, h)));
 
     // Buttons and track pieces can all have margins along the axis of the scrollbar.
     m_marginBox.setTop(minimumValueForLength(style()->marginTop(), visibleSize));
@@ -151,7 +179,7 @@ void RenderScrollbarPart::styleDidChange(StyleDifference diff, const RenderStyle
     clearPositionedState();
     setFloating(false);
     setHasOverflowClip(false);
-    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsRepaint() || diff.needsLayout()))
+    if (oldStyle && m_scrollbar && m_part != NoPart && (diff.needsPaintInvalidation() || diff.needsLayout()))
         m_scrollbar->theme()->invalidatePart(m_scrollbar, m_part);
 }
 
@@ -169,29 +197,6 @@ void RenderScrollbarPart::imageChanged(WrappedImagePtr image, const IntRect* rec
 
         RenderBlock::imageChanged(image, rect);
     }
-}
-
-void RenderScrollbarPart::paintIntoRect(GraphicsContext* graphicsContext, const LayoutPoint& paintOffset, const LayoutRect& rect)
-{
-    // Make sure our dimensions match the rect.
-    setLocation(rect.location() - toSize(paintOffset));
-    setWidth(rect.width());
-    setHeight(rect.height());
-
-    if (graphicsContext->paintingDisabled())
-        return;
-
-    // Now do the paint.
-    PaintInfo paintInfo(graphicsContext, pixelSnappedIntRect(rect), PaintPhaseBlockBackground, PaintBehaviorNormal);
-    paint(paintInfo, paintOffset);
-    paintInfo.phase = PaintPhaseChildBlockBackgrounds;
-    paint(paintInfo, paintOffset);
-    paintInfo.phase = PaintPhaseFloat;
-    paint(paintInfo, paintOffset);
-    paintInfo.phase = PaintPhaseForeground;
-    paint(paintInfo, paintOffset);
-    paintInfo.phase = PaintPhaseOutline;
-    paint(paintInfo, paintOffset);
 }
 
 RenderObject* RenderScrollbarPart::rendererOwningScrollbar() const

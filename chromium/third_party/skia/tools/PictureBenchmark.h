@@ -13,8 +13,8 @@
 #include "SkTypes.h"
 #include "TimerData.h"
 
-class BenchTimer;
 class SkPicture;
+class Timer;
 
 namespace sk_tools {
 
@@ -28,7 +28,7 @@ public:
      * Draw the provided SkPicture fRepeats times while collecting timing data, and log the output
      * via fWriter.
      */
-    void run(SkPicture* pict);
+    void run(SkPicture* pict, bool useMultiPictureDraw);
 
     void setRepeats(int repeats) {
         fRepeats = repeats;
@@ -45,10 +45,8 @@ public:
     void setPurgeDecodedTex(bool purgeDecodedTex) { fPurgeDecodedTex = purgeDecodedTex; }
     bool purgeDecodedText() const { return fPurgeDecodedTex; }
 
-    void setPreprocess(bool preprocess) { fPreprocess = preprocess; }
-    bool preprocess() const { return fPreprocess; }
-
     PictureRenderer* setRenderer(PictureRenderer*);
+    PictureRenderer* renderer() { return fRenderer; }
 
     void setTimerResultType(TimerData::Result resultType) { fTimerResult = resultType; }
 
@@ -63,11 +61,10 @@ private:
     uint32_t          fTimerTypes; // bitfield of TimerData::TimerFlags values
     bool              fTimeIndividualTiles;
     bool              fPurgeDecodedTex;
-    bool              fPreprocess;
 
     PictureResultsWriter* fWriter;
 
-    BenchTimer* setupTimer(bool useGLTimer = true);
+    Timer* setupTimer(bool useGLTimer = true);
 };
 
 }

@@ -25,13 +25,13 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/base/byteorder.h"
-#include "talk/base/gunit.h"
-#include "talk/base/thread.h"
 #include "talk/media/base/cryptoparams.h"
 #include "talk/media/base/fakertp.h"
-#include "talk/p2p/base/sessiondescription.h"
+#include "webrtc/p2p/base/sessiondescription.h"
 #include "talk/session/media/srtpfilter.h"
+#include "webrtc/base/byteorder.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/thread.h"
 #ifdef SRTP_RELATIVE_PATH
 #include "crypto/include/err.h"
 #else
@@ -82,9 +82,12 @@ class SrtpFilterTest : public testing::Test {
                      const std::vector<CryptoParams>& params2) {
     EXPECT_TRUE(f1_.SetOffer(params1, CS_LOCAL));
     EXPECT_TRUE(f2_.SetOffer(params1, CS_REMOTE));
+    EXPECT_FALSE(f1_.IsActive());
+    EXPECT_FALSE(f2_.IsActive());
     EXPECT_TRUE(f2_.SetAnswer(params2, CS_LOCAL));
     EXPECT_TRUE(f1_.SetAnswer(params2, CS_REMOTE));
     EXPECT_TRUE(f1_.IsActive());
+    EXPECT_TRUE(f2_.IsActive());
   }
   void TestProtectUnprotect(const std::string& cs1, const std::string& cs2) {
     char rtp_packet[sizeof(kPcmuFrame) + 10];
@@ -94,7 +97,7 @@ class SrtpFilterTest : public testing::Test {
     memcpy(rtp_packet, kPcmuFrame, rtp_len);
     // In order to be able to run this test function multiple times we can not
     // use the same sequence number twice. Increase the sequence number by one.
-    talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet) + 2,
+    rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet) + 2,
                        ++sequence_number_);
     memcpy(original_rtp_packet, rtp_packet, rtp_len);
     memcpy(rtcp_packet, kRtcpReport, rtcp_len);
@@ -139,6 +142,7 @@ class SrtpFilterTest : public testing::Test {
 // Test that we can set up the session and keys properly.
 TEST_F(SrtpFilterTest, TestGoodSetupOneCipherSuite) {
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams1), CS_LOCAL));
+  EXPECT_FALSE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetAnswer(MakeVector(kTestCryptoParams2), CS_REMOTE));
   EXPECT_TRUE(f1_.IsActive());
 }
@@ -153,6 +157,7 @@ TEST_F(SrtpFilterTest, TestGoodSetupMultipleCipherSuites) {
   answer[0].tag = 2;
   answer[0].cipher_suite = CS_AES_CM_128_HMAC_SHA1_32;
   EXPECT_TRUE(f1_.SetOffer(offer, CS_LOCAL));
+  EXPECT_FALSE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetAnswer(answer, CS_REMOTE));
   EXPECT_TRUE(f1_.IsActive());
 }
@@ -188,6 +193,7 @@ TEST_F(SrtpFilterTest, TestBadSetup) {
 TEST_F(SrtpFilterTest, TestGoodSetupMultipleOffers) {
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams1), CS_LOCAL));
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams2), CS_LOCAL));
+  EXPECT_FALSE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetAnswer(MakeVector(kTestCryptoParams2), CS_REMOTE));
   EXPECT_TRUE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams1), CS_LOCAL));
@@ -196,6 +202,7 @@ TEST_F(SrtpFilterTest, TestGoodSetupMultipleOffers) {
 
   EXPECT_TRUE(f2_.SetOffer(MakeVector(kTestCryptoParams1), CS_REMOTE));
   EXPECT_TRUE(f2_.SetOffer(MakeVector(kTestCryptoParams2), CS_REMOTE));
+  EXPECT_FALSE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetAnswer(MakeVector(kTestCryptoParams2), CS_LOCAL));
   EXPECT_TRUE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetOffer(MakeVector(kTestCryptoParams1), CS_REMOTE));
@@ -206,6 +213,7 @@ TEST_F(SrtpFilterTest, TestGoodSetupMultipleOffers) {
 TEST_F(SrtpFilterTest, TestBadSetupMultipleOffers) {
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams1), CS_LOCAL));
   EXPECT_FALSE(f1_.SetOffer(MakeVector(kTestCryptoParams2), CS_REMOTE));
+  EXPECT_FALSE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetAnswer(MakeVector(kTestCryptoParams1), CS_REMOTE));
   EXPECT_TRUE(f1_.IsActive());
   EXPECT_TRUE(f1_.SetOffer(MakeVector(kTestCryptoParams2), CS_LOCAL));
@@ -214,6 +222,7 @@ TEST_F(SrtpFilterTest, TestBadSetupMultipleOffers) {
 
   EXPECT_TRUE(f2_.SetOffer(MakeVector(kTestCryptoParams2), CS_REMOTE));
   EXPECT_FALSE(f2_.SetOffer(MakeVector(kTestCryptoParams1), CS_LOCAL));
+  EXPECT_FALSE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetAnswer(MakeVector(kTestCryptoParams2), CS_LOCAL));
   EXPECT_TRUE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetOffer(MakeVector(kTestCryptoParams2), CS_REMOTE));
@@ -402,6 +411,8 @@ TEST_F(SrtpFilterTest, TestProvisionalAnswer) {
 
   EXPECT_TRUE(f1_.SetOffer(offer, CS_LOCAL));
   EXPECT_TRUE(f2_.SetOffer(offer, CS_REMOTE));
+  EXPECT_FALSE(f1_.IsActive());
+  EXPECT_FALSE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetProvisionalAnswer(answer, CS_LOCAL));
   EXPECT_TRUE(f1_.SetProvisionalAnswer(answer, CS_REMOTE));
   EXPECT_TRUE(f1_.IsActive());
@@ -425,8 +436,37 @@ TEST_F(SrtpFilterTest, TestProvisionalAnswerWithoutCrypto) {
 
   EXPECT_TRUE(f1_.SetOffer(offer, CS_LOCAL));
   EXPECT_TRUE(f2_.SetOffer(offer, CS_REMOTE));
+  EXPECT_FALSE(f1_.IsActive());
+  EXPECT_FALSE(f2_.IsActive());
   EXPECT_TRUE(f2_.SetProvisionalAnswer(answer, CS_LOCAL));
   EXPECT_TRUE(f1_.SetProvisionalAnswer(answer, CS_REMOTE));
+  EXPECT_FALSE(f1_.IsActive());
+  EXPECT_FALSE(f2_.IsActive());
+
+  answer.push_back(kTestCryptoParams2);
+  EXPECT_TRUE(f2_.SetAnswer(answer, CS_LOCAL));
+  EXPECT_TRUE(f1_.SetAnswer(answer, CS_REMOTE));
+  EXPECT_TRUE(f1_.IsActive());
+  EXPECT_TRUE(f2_.IsActive());
+  TestProtectUnprotect(CS_AES_CM_128_HMAC_SHA1_80, CS_AES_CM_128_HMAC_SHA1_80);
+}
+
+// Test that if we get a new local offer after a provisional answer
+// with no crypto, that we are in an inactive state.
+TEST_F(SrtpFilterTest, TestLocalOfferAfterProvisionalAnswerWithoutCrypto) {
+  std::vector<CryptoParams> offer(MakeVector(kTestCryptoParams1));
+  std::vector<CryptoParams> answer;
+
+  EXPECT_TRUE(f1_.SetOffer(offer, CS_LOCAL));
+  EXPECT_TRUE(f2_.SetOffer(offer, CS_REMOTE));
+  EXPECT_TRUE(f1_.SetProvisionalAnswer(answer, CS_REMOTE));
+  EXPECT_TRUE(f2_.SetProvisionalAnswer(answer, CS_LOCAL));
+  EXPECT_FALSE(f1_.IsActive());
+  EXPECT_FALSE(f2_.IsActive());
+  // The calls to set an offer after a provisional answer fail, so the
+  // state doesn't change.
+  EXPECT_FALSE(f1_.SetOffer(offer, CS_LOCAL));
+  EXPECT_FALSE(f2_.SetOffer(offer, CS_REMOTE));
   EXPECT_FALSE(f1_.IsActive());
   EXPECT_FALSE(f2_.IsActive());
 
@@ -679,36 +719,36 @@ TEST_F(SrtpSessionTest, TestReplay) {
   EXPECT_TRUE(s2_.SetRecv(CS_AES_CM_128_HMAC_SHA1_80, kTestKey1, kTestKeyLen));
 
   // Initial sequence number.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum_big);
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum_big);
   EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                              &out_len));
 
   // Replay within the 1024 window should succeed.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
                      seqnum_big - replay_window + 1);
   EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                              &out_len));
 
   // Replay out side of the 1024 window should fail.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
                      seqnum_big - replay_window - 1);
   EXPECT_FALSE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                               &out_len));
 
   // Increment sequence number to a small number.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum_small);
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum_small);
   EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                              &out_len));
 
   // Replay around 0 but out side of the 1024 window should fail.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
                      kMaxSeqnum + seqnum_small - replay_window - 1);
   EXPECT_FALSE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                               &out_len));
 
   // Replay around 0 but within the 1024 window should succeed.
   for (uint16 seqnum = 65000; seqnum < 65003; ++seqnum) {
-    talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum);
+    rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2, seqnum);
     EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                                &out_len));
   }
@@ -718,7 +758,7 @@ TEST_F(SrtpSessionTest, TestReplay) {
   // without the fix, the loop above would keep incrementing local sequence
   // number in libsrtp, eventually the new sequence number would go out side
   // of the window.
-  talk_base::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
+  rtc::SetBE16(reinterpret_cast<uint8*>(rtp_packet_) + 2,
                      seqnum_small + 1);
   EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_, sizeof(rtp_packet_),
                              &out_len));
@@ -782,7 +822,7 @@ TEST_F(SrtpStatTest, TestProtectRtpError) {
   EXPECT_EQ(cricket::SrtpFilter::ERROR_NONE, error_);
   // Now the error will be triggered again.
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddProtectRtpResult(1, err_status_fail);
   EXPECT_EQ(1U, ssrc_);
   EXPECT_EQ(cricket::SrtpFilter::PROTECT, mode_);
@@ -806,7 +846,7 @@ TEST_F(SrtpStatTest, TestUnprotectRtpError) {
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
   EXPECT_EQ(cricket::SrtpFilter::ERROR_REPLAY, error_);
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddUnprotectRtpResult(1, err_status_replay_old);
   EXPECT_EQ(1U, ssrc_);
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
@@ -824,7 +864,7 @@ TEST_F(SrtpStatTest, TestUnprotectRtpError) {
   EXPECT_EQ(cricket::SrtpFilter::ERROR_NONE, error_);
   // Now the error will be triggered again.
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddUnprotectRtpResult(1, err_status_fail);
   EXPECT_EQ(1U, ssrc_);
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
@@ -851,7 +891,7 @@ TEST_F(SrtpStatTest, TestProtectRtcpError) {
   EXPECT_EQ(cricket::SrtpFilter::ERROR_NONE, error_);
   // Now the error will be triggered again.
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddProtectRtcpResult(err_status_fail);
   EXPECT_EQ(cricket::SrtpFilter::PROTECT, mode_);
   EXPECT_EQ(cricket::SrtpFilter::ERROR_FAIL, error_);
@@ -871,7 +911,7 @@ TEST_F(SrtpStatTest, TestUnprotectRtcpError) {
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
   EXPECT_EQ(cricket::SrtpFilter::ERROR_REPLAY, error_);
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddUnprotectRtcpResult(err_status_replay_fail);
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
   EXPECT_EQ(cricket::SrtpFilter::ERROR_REPLAY, error_);
@@ -886,7 +926,7 @@ TEST_F(SrtpStatTest, TestUnprotectRtcpError) {
   EXPECT_EQ(cricket::SrtpFilter::ERROR_NONE, error_);
   // Now the error will be triggered again.
   Reset();
-  talk_base::Thread::Current()->SleepMs(210);
+  rtc::Thread::Current()->SleepMs(210);
   srtp_stat_.AddUnprotectRtcpResult(err_status_fail);
   EXPECT_EQ(cricket::SrtpFilter::UNPROTECT, mode_);
   EXPECT_EQ(cricket::SrtpFilter::ERROR_FAIL, error_);

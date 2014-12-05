@@ -27,10 +27,10 @@
 #include "core/dom/LiveNodeList.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 // NodeList which lists all Nodes in a Element with a given "name" attribute
-class NameNodeList FINAL : public LiveNodeList {
+class NameNodeList final : public LiveNodeList {
 public:
     static PassRefPtrWillBeRawPtr<NameNodeList> create(ContainerNode& rootNode, CollectionType type, const AtomicString& name)
     {
@@ -43,11 +43,11 @@ public:
 private:
     NameNodeList(ContainerNode& rootNode, const AtomicString& name);
 
-    virtual bool elementMatches(const Element&) const OVERRIDE;
+    virtual bool elementMatches(const Element&) const override;
 
     AtomicString m_name;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NameNodeList_h

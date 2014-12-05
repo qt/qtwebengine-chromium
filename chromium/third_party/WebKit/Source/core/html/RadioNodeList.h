@@ -30,9 +30,10 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RadioNodeList FINAL : public LiveNodeList {
+class RadioNodeList final : public LiveNodeList {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<RadioNodeList> create(ContainerNode& ownerNode, CollectionType type, const AtomicString& name)
     {
@@ -51,13 +52,13 @@ private:
     bool checkElementMatchesRadioNodeListFilter(const Element&) const;
 
     bool matchesByIdOrName(const Element&) const;
+    bool shouldOnlyMatchImgElements() const { return type() == RadioImgNodeListType; }
 
-    virtual bool elementMatches(const Element&) const OVERRIDE;
+    virtual bool elementMatches(const Element&) const override;
 
     AtomicString m_name;
-    const bool m_onlyMatchImgElements;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // RadioNodeList_h

@@ -34,7 +34,7 @@
 #include "core/html/forms/BaseChooserOnlyDateAndTimeInputType.h"
 #include "core/html/forms/BaseMultipleFieldsDateAndTimeInputType.h"
 
-namespace WebCore {
+namespace blink {
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 typedef BaseMultipleFieldsDateAndTimeInputType BaseWeekInputType;
@@ -42,27 +42,26 @@ typedef BaseMultipleFieldsDateAndTimeInputType BaseWeekInputType;
 typedef BaseChooserOnlyDateAndTimeInputType BaseWeekInputType;
 #endif
 
-class WeekInputType FINAL : public BaseWeekInputType {
+class WeekInputType final : public BaseWeekInputType {
 public:
     static PassRefPtrWillBeRawPtr<InputType> create(HTMLInputElement&);
 
 private:
     WeekInputType(HTMLInputElement& element) : BaseWeekInputType(element) { }
-    virtual void countUsage() OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual StepRange createStepRange(AnyStepHandling) const OVERRIDE;
-    virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const OVERRIDE;
-    virtual bool setMillisecondToDateComponents(double, DateComponents*) const OVERRIDE;
-    virtual bool isWeekField() const OVERRIDE;
+    virtual void countUsage() override;
+    virtual const AtomicString& formControlType() const override;
+    virtual StepRange createStepRange(AnyStepHandling) const override;
+    virtual bool parseToDateComponentsInternal(const String&, DateComponents*) const override;
+    virtual bool setMillisecondToDateComponents(double, DateComponents*) const override;
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
     // BaseMultipleFieldsDateAndTimeInputType functions
-    virtual String formatDateTimeFieldsState(const DateTimeFieldsState&) const OVERRIDE;
-    virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const OVERRIDE;
-    virtual bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const OVERRIDE;
+    virtual String formatDateTimeFieldsState(const DateTimeFieldsState&) const override;
+    virtual void setupLayoutParameters(DateTimeEditElement::LayoutParameters&, const DateComponents&) const override;
+    virtual bool isValidFormat(bool hasYear, bool hasMonth, bool hasWeek, bool hasDay, bool hasAMPM, bool hasHour, bool hasMinute, bool hasSecond) const override;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WeekInputType_h

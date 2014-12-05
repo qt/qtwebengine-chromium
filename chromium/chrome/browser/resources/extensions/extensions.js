@@ -2,18 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="../uber/uber_utils.js"></include>
-<include src="extension_code.js"></include>
-<include src="extension_commands_overlay.js"></include>
-<include src="extension_focus_manager.js"></include>
-<include src="extension_list.js"></include>
-<include src="pack_extension_overlay.js"></include>
-<include src="extension_error_overlay.js"></include>
-<include src="extension_loader.js"></include>
+<include src="../uber/uber_utils.js">
+<include src="extension_code.js">
+<include src="extension_commands_overlay.js">
+<include src="extension_error_overlay.js">
+<include src="extension_focus_manager.js">
+<include src="extension_list.js">
+<include src="pack_extension_overlay.js">
+<include src="extension_loader.js">
+<include src="extension_options_overlay.js">
 
 <if expr="chromeos">
-<include src="chromeos/kiosk_apps.js"></include>
+<include src="chromeos/kiosk_apps.js">
 </if>
+
+/**
+ * The type of the extension data object. The definition is based on
+ * chrome/browser/ui/webui/extensions/extension_settings_handler.cc:
+ *     ExtensionSettingsHandler::HandleRequestExtensionsData()
+ * @typedef {{developerMode: boolean,
+ *            extensions: Array,
+ *            incognitoAvailable: boolean,
+ *            loadUnpackedDisabled: boolean,
+ *            profileIsSupervised: boolean,
+ *            promoteAppsDevTools: boolean}}
+ */
+var ExtensionDataResponse;
 
 // Used for observing function of the backend datasource for this page by
 // tests.
@@ -66,8 +80,10 @@ cr.define('extensions', function() {
       }
       // Only process files that look like extensions. Other files should
       // navigate the browser normally.
-      if (!toSend && /\.(crx|user\.js)$/i.test(e.dataTransfer.files[0].name))
+      if (!toSend &&
+          /\.(crx|user\.js|zip)$/i.test(e.dataTransfer.files[0].name)) {
         toSend = 'installDroppedFile';
+      }
 
       if (toSend) {
         e.preventDefault();
@@ -151,6 +167,9 @@ cr.define('extensions', function() {
       extensions.ExtensionErrorOverlay.getInstance().initializePage(
           extensions.ExtensionSettings.showOverlay);
 
+      extensions.ExtensionOptionsOverlay.getInstance().initializePage(
+          extensions.ExtensionSettings.showOverlay);
+
       // Initialize the kiosk overlay.
       if (cr.isChromeOS) {
         var kioskOverlay = extensions.KioskAppsOverlay.getInstance();
@@ -176,8 +195,6 @@ cr.define('extensions', function() {
         if (overlayName == 'configureCommands')
           this.showExtensionCommandsConfigUi_();
       }
-
-      preventDefaultOnPoundLinkClicks();  // From webui/js/util.js.
     },
 
     /**
@@ -253,7 +270,7 @@ cr.define('extensions', function() {
       } else {
         $('extension-settings').classList.remove('dev-mode');
       }
-      window.setTimeout(this.updatePromoVisibility_.bind(this));
+      window.setTimeout(this.updatePromoVisibility_.bind(this), 0);
 
       chrome.send('extensionSettingsToggleDeveloperMode');
     },
@@ -274,6 +291,7 @@ cr.define('extensions', function() {
   /**
    * Called by the dom_ui_ to re-populate the page with data representing
    * the current state of installed extensions.
+   * @param {ExtensionDataResponse} extensionsData
    */
   ExtensionSettings.returnExtensionsData = function(extensionsData) {
     // We can get called many times in short order, thus we need to
@@ -303,12 +321,12 @@ cr.define('extensions', function() {
 
     var pageDiv = $('extension-settings');
     var marginTop = 0;
-    if (extensionsData.profileIsManaged) {
-      pageDiv.classList.add('profile-is-managed');
+    if (extensionsData.profileIsSupervised) {
+      pageDiv.classList.add('profile-is-supervised');
     } else {
-      pageDiv.classList.remove('profile-is-managed');
+      pageDiv.classList.remove('profile-is-supervised');
     }
-    if (extensionsData.profileIsManaged) {
+    if (extensionsData.profileIsSupervised) {
       pageDiv.classList.add('showing-banner');
       $('toggle-dev-on').disabled = true;
       marginTop += 45;
@@ -337,7 +355,7 @@ cr.define('extensions', function() {
     ExtensionsList.prototype.data_ = extensionsData;
     var extensionList = $('extension-settings-list');
     ExtensionsList.decorate(extensionList);
-  }
+  };
 
   // Indicate that warning |message| has occured for pack of |crx_path| and
   // |pem_path| files.  Ask if user wants override the warning.  Send
@@ -359,7 +377,7 @@ cr.define('extensions', function() {
         },
         closeAlert);
     ExtensionSettings.showOverlay($('alertOverlay'));
-  }
+  };
 
   /**
    * Returns the current overlay or null if one does not exist.
@@ -367,7 +385,7 @@ cr.define('extensions', function() {
    */
   ExtensionSettings.getCurrentOverlay = function() {
     return document.querySelector('#overlay .page.showing');
-  }
+  };
 
   /**
    * Sets the given overlay to show. This hides whatever overlay is currently
@@ -397,10 +415,10 @@ cr.define('extensions', function() {
       pages[i].setAttribute('aria-hidden', node ? 'true' : 'false');
     }
 
-    overlay.hidden = !node;
+    $('overlay').hidden = !node;
     uber.invokeMethodOnParent(node ? 'beginInterceptingEvents' :
                                      'stopInterceptingEvents');
-  }
+  };
 
   /**
    * Utility function to find the width of various UI strings and synchronize
@@ -412,12 +430,15 @@ cr.define('extensions', function() {
     var measuringDiv = $('font-measuring-div');
     measuringDiv.textContent =
         loadTimeData.getString('extensionSettingsEnabled');
+    measuringDiv.className = 'enabled-text';
     var pxWidth = measuringDiv.clientWidth + trashWidth;
     measuringDiv.textContent =
         loadTimeData.getString('extensionSettingsEnable');
+    measuringDiv.className = 'enable-text';
     pxWidth = Math.max(measuringDiv.clientWidth + trashWidth, pxWidth);
     measuringDiv.textContent =
         loadTimeData.getString('extensionSettingsDeveloperMode');
+    measuringDiv.className = '';
     pxWidth = Math.max(measuringDiv.clientWidth, pxWidth);
 
     var style = document.createElement('style');
@@ -430,7 +451,7 @@ cr.define('extensions', function() {
         '  min-width: ' + pxWidth + 'px;' +
         '}';
     document.querySelector('head').appendChild(style);
-  }
+  };
 
   // Export
   return {

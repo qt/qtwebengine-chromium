@@ -31,20 +31,29 @@
   </div>
   <div id="network-log-container">
   </div>
+  <div id="advanced-options">
+    <span>Click '+' to get network properties of type:  </span>
+    <select id="get-network-type">
+      <option id="normal" selected>ONC</option>
+      <option id="managed">Managed ONC</option>
+      <option id="shill">Shill</option>
+    </select>
+  </div>
   <h3>Visible Networks: </h3>
   <table id="network-state-table" class="state-table">
     <tr class="state-table-header">
       <td></td>
       <td>GUID</td>
+      <td>Path</td>
       <td>Name</td>
       <td>Type</td>
       <td>State</td>
       <td>Connect?</td>
       <td>Error</td>
       <td>Security</td>
-      <td>Technology</td>
+      <td>Tech</td>
       <td>Activation</td>
-      <td>Roaming</td>
+      <td>Roam</td>
       <td>OOC</td>
       <td>Strength</td>
     </tr>
@@ -54,6 +63,7 @@
     <tr class="state-table-header">
       <td></td>
       <td>GUID</td>
+      <td>Path</td>
       <td>Name</td>
       <td>Type</td>
       <td>Profile</td>

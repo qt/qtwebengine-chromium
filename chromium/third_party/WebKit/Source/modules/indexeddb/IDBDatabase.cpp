@@ -26,11 +26,11 @@
 #include "config.h"
 #include "modules/indexeddb/IDBDatabase.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/IDBBindingUtilities.h"
-#include "bindings/v8/Nullable.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/Nullable.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
+#include "bindings/modules/v8/IDBBindingUtilities.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/EventQueue.h"
 #include "core/inspector/ScriptCallStack.h"
@@ -50,7 +50,7 @@
 
 using blink::WebIDBDatabase;
 
-namespace WebCore {
+namespace blink {
 
 const char IDBDatabase::indexDeletedErrorMessage[] = "The index or its object store has been deleted.";
 const char IDBDatabase::isKeyCursorErrorMessage[] = "The cursor is a key cursor.";
@@ -70,7 +70,7 @@ const char IDBDatabase::databaseClosedErrorMessage[] = "The database connection 
 
 IDBDatabase* IDBDatabase::create(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> database, IDBDatabaseCallbacks* callbacks)
 {
-    IDBDatabase* idbDatabase = adoptRefCountedGarbageCollectedWillBeNoop(new IDBDatabase(context, database, callbacks));
+    IDBDatabase* idbDatabase = new IDBDatabase(context, database, callbacks);
     idbDatabase->suspendIfNeeded();
     return idbDatabase;
 }
@@ -82,7 +82,6 @@ IDBDatabase::IDBDatabase(ExecutionContext* context, PassOwnPtr<WebIDBDatabase> b
     , m_contextStopped(false)
     , m_databaseCallbacks(callbacks)
 {
-    ScriptWrappable::init(this);
     m_databaseCallbacks->connect(this);
 }
 
@@ -111,12 +110,12 @@ int64_t IDBDatabase::nextTransactionId()
     return atomicIncrement(&currentTransactionId);
 }
 
-void IDBDatabase::ackReceivedBlobs(const Vector<blink::WebBlobInfo>* blobInfo)
+void IDBDatabase::ackReceivedBlobs(const Vector<WebBlobInfo>* blobInfo)
 {
     ASSERT(blobInfo);
     if (!blobInfo->size() || !m_backend)
         return;
-    Vector<blink::WebBlobInfo>::const_iterator iter;
+    Vector<WebBlobInfo>::const_iterator iter;
     Vector<String> uuids;
     uuids.reserveCapacity(blobInfo->size());
     for (iter = blobInfo->begin(); iter != blobInfo->end(); ++iter)
@@ -166,7 +165,7 @@ void IDBDatabase::transactionFinished(const IDBTransaction* transaction)
         closeConnection();
 }
 
-void IDBDatabase::onAbort(int64_t transactionId, PassRefPtrWillBeRawPtr<DOMError> error)
+void IDBDatabase::onAbort(int64_t transactionId, DOMError* error)
 {
     ASSERT(m_transactions.contains(transactionId));
     m_transactions.get(transactionId)->onAbort(error);
@@ -203,12 +202,12 @@ IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const Diction
     if (!options.isUndefinedOrNull()) {
         String keyPathString;
         Vector<String> keyPathArray;
-        if (options.get("keyPath", keyPathArray))
+        if (DictionaryHelper::get(options, "keyPath", keyPathArray))
             keyPath = IDBKeyPath(keyPathArray);
         else if (options.getWithUndefinedOrNullCheck("keyPath", keyPathString))
             keyPath = IDBKeyPath(keyPathString);
 
-        options.get("autoIncrement", autoIncrement);
+        DictionaryHelper::get(options, "autoIncrement", autoIncrement);
     }
 
     return createObjectStore(name, keyPath, autoIncrement, exceptionState);
@@ -217,7 +216,7 @@ IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const Diction
 IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const IDBKeyPath& keyPath, bool autoIncrement, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBDatabase::createObjectStore");
-    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBCreateObjectStoreCall, IDBMethodsMax);
+    Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBCreateObjectStoreCall, IDBMethodsMax);
     if (!m_versionChangeTransaction) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::notVersionChangeTransactionErrorMessage);
         return 0;
@@ -266,7 +265,7 @@ IDBObjectStore* IDBDatabase::createObjectStore(const String& name, const IDBKeyP
 void IDBDatabase::deleteObjectStore(const String& name, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBDatabase::deleteObjectStore");
-    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteObjectStoreCall, IDBMethodsMax);
+    Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBDeleteObjectStoreCall, IDBMethodsMax);
     if (!m_versionChangeTransaction) {
         exceptionState.throwDOMException(InvalidStateError, IDBDatabase::notVersionChangeTransactionErrorMessage);
         return;
@@ -296,16 +295,16 @@ void IDBDatabase::deleteObjectStore(const String& name, ExceptionState& exceptio
     m_metadata.objectStores.remove(objectStoreId);
 }
 
-IDBTransaction* IDBDatabase::transaction(ExecutionContext* context, const Vector<String>& scope, const String& modeString, ExceptionState& exceptionState)
+IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const Vector<String>& scope, const String& modeString, ExceptionState& exceptionState)
 {
     IDB_TRACE("IDBDatabase::transaction");
-    blink::Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBTransactionCall, IDBMethodsMax);
+    Platform::current()->histogramEnumeration("WebCore.IndexedDB.FrontEndAPICalls", IDBTransactionCall, IDBMethodsMax);
     if (!scope.size()) {
         exceptionState.throwDOMException(InvalidAccessError, "The storeNames parameter was empty.");
         return 0;
     }
 
-    blink::WebIDBTransactionMode mode = IDBTransaction::stringToMode(modeString, exceptionState);
+    WebIDBTransactionMode mode = IDBTransaction::stringToMode(modeString, exceptionState);
     if (exceptionState.hadException())
         return 0;
 
@@ -337,14 +336,14 @@ IDBTransaction* IDBDatabase::transaction(ExecutionContext* context, const Vector
     int64_t transactionId = nextTransactionId();
     m_backend->createTransaction(transactionId, WebIDBDatabaseCallbacksImpl::create(m_databaseCallbacks).leakPtr(), objectStoreIds, mode);
 
-    return IDBTransaction::create(context, transactionId, scope, mode, this);
+    return IDBTransaction::create(scriptState, transactionId, scope, mode, this);
 }
 
-IDBTransaction* IDBDatabase::transaction(ExecutionContext* context, const String& storeName, const String& mode, ExceptionState& exceptionState)
+IDBTransaction* IDBDatabase::transaction(ScriptState* scriptState, const String& storeName, const String& mode, ExceptionState& exceptionState)
 {
     RefPtrWillBeRawPtr<DOMStringList> storeNames = DOMStringList::create();
     storeNames->append(storeName);
-    return transaction(context, storeNames, mode, exceptionState);
+    return transaction(scriptState, storeNames, mode, exceptionState);
 }
 
 void IDBDatabase::forceClose()
@@ -397,8 +396,13 @@ void IDBDatabase::onVersionChange(int64_t oldVersion, int64_t newVersion)
     if (m_contextStopped || !executionContext())
         return;
 
-    if (m_closePending)
+    if (m_closePending) {
+        // If we're pending, that means there's a busy transaction. We won't
+        // fire 'versionchange' but since we're not closing immediately the
+        // back-end should still send out 'blocked'.
+        m_backend->versionChangeIgnored();
         return;
+    }
 
     Nullable<unsigned long long> newVersionNullable = (newVersion == IDBDatabaseMetadata::NoIntVersion) ? Nullable<unsigned long long>() : Nullable<unsigned long long>(newVersion);
     enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::versionchange, oldVersion, newVersionNullable));
@@ -424,7 +428,11 @@ bool IDBDatabase::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
         if (m_enqueuedEvents[i].get() == event.get())
             m_enqueuedEvents.remove(i);
     }
-    return EventTarget::dispatchEvent(event.get());
+
+    bool result = EventTarget::dispatchEvent(event.get());
+    if (event->type() == EventTypeNames::versionchange && !m_closePending && m_backend)
+        m_backend->versionChangeIgnored();
+    return result;
 }
 
 int64_t IDBDatabase::findObjectStoreId(const String& name) const
@@ -468,4 +476,4 @@ ExecutionContext* IDBDatabase::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-} // namespace WebCore
+} // namespace blink

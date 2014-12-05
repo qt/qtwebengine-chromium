@@ -18,18 +18,15 @@
  * Boston, MA 02110-1301, USA.
  */
 
-[
-    // FIXME: Oilpan: remove this once Node specifies WillBeGarbageCollected.
-    WillBeGarbageCollected
-] interface HTMLDocument : Document {
+interface HTMLDocument : Document {
     [Custom, CustomElementCallbacks] void open();
     [RaisesException] void close();
 
     // We support multiple DOMString arguments to match FF / IE, e.g.:
     // document.write("a", "b", "c") --> document.write("abc")
     // document.write() --> document.write("")
-    [CallWith=ActiveWindow,LogActivity, CustomElementCallbacks, RaisesException] void write(DOMString... text);
-    [CallWith=ActiveWindow, LogActivity, CustomElementCallbacks, RaisesException] void writeln(DOMString... text);
+    [CallWith=ActiveWindow, CustomElementCallbacks, RaisesException] void write(DOMString... text);
+    [CallWith=ActiveWindow, CustomElementCallbacks, RaisesException] void writeln(DOMString... text);
 
     // Extensions
 

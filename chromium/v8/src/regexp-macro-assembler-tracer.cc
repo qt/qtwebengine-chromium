@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "src/v8.h"
+
 #include "src/ast.h"
 #include "src/regexp-macro-assembler.h"
 #include "src/regexp-macro-assembler-tracer.h"
@@ -15,7 +16,7 @@ RegExpMacroAssemblerTracer::RegExpMacroAssemblerTracer(
   RegExpMacroAssembler(assembler->zone()),
   assembler_(assembler) {
   unsigned int type = assembler->Implementation();
-  ASSERT(type < 6);
+  DCHECK(type < 6);
   const char* impl_names[] = {"IA32", "ARM", "ARM64",
                               "MIPS", "X64", "X87", "Bytecode"};
   PrintF("RegExpMacroAssembler%s();\n", impl_names[type]);

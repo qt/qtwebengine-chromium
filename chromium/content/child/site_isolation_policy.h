@@ -12,9 +12,8 @@
 #include "base/memory/linked_ptr.h"
 #include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
-#include "webkit/common/resource_type.h"
-
-class GURL;
+#include "content/public/common/resource_type.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -55,7 +54,6 @@ struct ResourceResponseInfo;
 //   # of responses that are plausibly sniffed to be JavaScript.
 
 struct SiteIsolationResponseMetaData {
-
   enum CanonicalMimeType {
     HTML = 0,
     XML = 1,
@@ -69,7 +67,7 @@ struct SiteIsolationResponseMetaData {
 
   std::string frame_origin;
   GURL response_url;
-  ResourceType::Type resource_type;
+  ResourceType resource_type;
   CanonicalMimeType canonical_mime_type;
   int http_status_code;
   bool no_sniff;
@@ -86,7 +84,7 @@ class CONTENT_EXPORT SiteIsolationPolicy {
   static linked_ptr<SiteIsolationResponseMetaData> OnReceivedResponse(
       const GURL& frame_origin,
       const GURL& response_url,
-      ResourceType::Type resource_type,
+      ResourceType resource_type,
       int origin_pid,
       const ResourceResponseInfo& info);
 

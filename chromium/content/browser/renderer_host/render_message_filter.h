@@ -20,7 +20,6 @@
 #include "base/strings/string16.h"
 #include "build/build_config.h"
 #include "cc/resources/shared_bitmap_manager.h"
-#include "content/common/pepper_renderer_instance_data.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/common/three_d_api_types.h"
 #include "ipc/message_filter.h"
@@ -28,10 +27,14 @@
 #include "media/base/channel_layout.h"
 #include "net/cookies/canonical_cookie.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/surface/transport_dib.h"
 
 #if defined(OS_MACOSX)
+#include <IOSurface/IOSurfaceAPI.h>
+#include "base/mac/scoped_cftyperef.h"
 #include "content/common/mac/font_loader.h"
 #endif
 
@@ -39,7 +42,12 @@
 #include "base/threading/worker_pool.h"
 #endif
 
+#if defined(ENABLE_PLUGINS)
+#include "content/common/pepper_renderer_instance_data.h"
+#endif
+
 struct FontDescriptor;
+struct FrameHostMsg_AddNavigationTransitionData_Params;
 struct ViewHostMsg_CreateWindow_Params;
 
 namespace blink {
@@ -50,6 +58,10 @@ namespace base {
 class ProcessMetrics;
 class SharedMemory;
 class TaskRunner;
+}
+
+namespace gfx {
+struct GpuMemoryBufferHandle;
 }
 
 namespace media {
@@ -77,7 +89,7 @@ struct WebPluginInfo;
 
 // This class filters out incoming IPC messages for the renderer process on the
 // IPC thread.
-class RenderMessageFilter : public BrowserMessageFilter {
+class CONTENT_EXPORT RenderMessageFilter : public BrowserMessageFilter {
  public:
   // Create the filter.
   RenderMessageFilter(int render_process_id,
@@ -90,14 +102,13 @@ class RenderMessageFilter : public BrowserMessageFilter {
                       DOMStorageContextWrapper* dom_storage_context);
 
   // IPC::MessageFilter methods:
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  void OnChannelClosing() override;
 
   // BrowserMessageFilter methods:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual base::TaskRunner* OverrideTaskRunnerForMessage(
-      const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnDestruct() const override;
+  base::TaskRunner* OverrideTaskRunnerForMessage(
+      const IPC::Message& message) override;
 
   bool OffTheRecord() const;
 
@@ -108,13 +119,21 @@ class RenderMessageFilter : public BrowserMessageFilter {
   // Only call on the IO thread.
   net::CookieStore* GetCookieStoreForURL(const GURL& url);
 
+ protected:
+  ~RenderMessageFilter() override;
+
+  // This method will be overridden by TestSaveImageFromDataURL class for test.
+  virtual void DownloadUrl(int render_view_id,
+                           const GURL& url,
+                           const Referrer& referrer,
+                           const base::string16& suggested_name,
+                           const bool use_prompt) const;
+
  private:
   friend class BrowserThread;
   friend class base::DeleteHelper<RenderMessageFilter>;
 
   class OpenChannelToNpapiPluginCallback;
-
-  virtual ~RenderMessageFilter();
 
   void OnGetProcessMemorySizes(size_t* private_bytes, size_t* shared_bytes);
   void OnCreateWindow(const ViewHostMsg_CreateWindow_Params& params,
@@ -158,6 +177,7 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                 const base::string16& characters);
 #endif
 
+#if defined(ENABLE_PLUGINS)
   void OnGetPlugins(bool refresh, IPC::Message* reply_msg);
   void GetPluginsCallback(IPC::Message* reply_msg,
                           const std::vector<WebPluginInfo>& plugins);
@@ -185,16 +205,15 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                              bool is_external);
   void OnOpenChannelToPpapiBroker(int routing_id,
                                   const base::FilePath& path);
+#endif  // defined(ENABLE_PLUGINS)
   void OnGenerateRoutingID(int* route_id);
   void OnDownloadUrl(int render_view_id,
                      const GURL& url,
                      const Referrer& referrer,
-                     const base::string16& suggested_name,
-                     const bool use_prompt);
+                     const base::string16& suggested_name);
+  void OnSaveImageFromDataURL(int render_view_id, const std::string& url_str);
   void OnCheckNotificationPermission(const GURL& source_origin,
                                      int* permission_level);
-
-  void OnGetCPUUsage(int* cpu_usage);
 
   void OnGetAudioHardwareConfig(media::AudioParameters* input_params,
                                 media::AudioParameters* output_params);
@@ -220,6 +239,11 @@ class RenderMessageFilter : public BrowserMessageFilter {
                                const cc::SharedBitmapId& id);
   void OnDeletedSharedBitmap(const cc::SharedBitmapId& id);
   void OnResolveProxy(const GURL& url, IPC::Message* reply_msg);
+
+  // Browser side discardable shared memory allocation.
+  void OnAllocateLockedDiscardableSharedMemory(
+      uint32 size,
+      base::SharedMemoryHandle* handle);
 
   // Browser side transport DIB allocation
   void OnAllocTransportDIB(uint32 size,
@@ -270,6 +294,19 @@ class RenderMessageFilter : public BrowserMessageFilter {
                             uint32_t data_size);
 #endif
 
+  void OnAddNavigationTransitionData(
+      FrameHostMsg_AddNavigationTransitionData_Params params);
+
+  void OnAllocateGpuMemoryBuffer(uint32 width,
+                                 uint32 height,
+                                 gfx::GpuMemoryBuffer::Format format,
+                                 gfx::GpuMemoryBuffer::Usage usage,
+                                 IPC::Message* reply);
+  void GpuMemoryBufferAllocated(IPC::Message* reply,
+                                const gfx::GpuMemoryBufferHandle& handle);
+  void OnDeletedGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
+                                uint32 sync_point);
+
   // Cached resource request dispatcher host and plugin service, guaranteed to
   // be non-null if Init succeeds. We do not own the objects, they are managed
   // by the BrowserProcess, which has a wider scope than we do.
@@ -297,13 +334,6 @@ class RenderMessageFilter : public BrowserMessageFilter {
   int render_process_id_;
 
   std::set<OpenChannelToNpapiPluginCallback*> plugin_host_clients_;
-
-  // Records the last time we sampled CPU usage of the renderer process.
-  base::TimeTicks cpu_usage_sample_time_;
-  // Records the last sampled CPU usage in percents.
-  int cpu_usage_;
-  // Used for sampling CPU usage of the renderer process.
-  scoped_ptr<base::ProcessMetrics> process_metrics_;
 
   media::AudioManager* audio_manager_;
   MediaInternals* media_internals_;

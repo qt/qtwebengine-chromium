@@ -7,56 +7,57 @@
 
 #include <string>
 
-#include "crypto/scoped_nss_types.h"
-#include "net/cert/nss_profile_filter_chromeos.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/ssl/client_cert_store_nss.h"
 
 namespace net {
 
+class X509Certificate;
+
 class NET_EXPORT ClientCertStoreChromeOS : public ClientCertStoreNSS {
  public:
+  class CertFilter {
+   public:
+    virtual ~CertFilter() {}
+
+    // Initializes this filter. Returns true if it finished initialization,
+    // otherwise returns false and calls |callback| once the initialization is
+    // completed.
+    // Must be called at most once.
+    virtual bool Init(const base::Closure& callback) = 0;
+
+    // Returns true if |cert| is allowed to be used as a client certificate
+    // (e.g. for a certain browser context or user).
+    // This is only called once initialization is finished, see Init().
+    virtual bool IsCertAllowed(
+        const scoped_refptr<X509Certificate>& cert) const = 0;
+  };
+
+  // This ClientCertStore will return only client certs that pass the filter
+  // |cert_filter|.
   ClientCertStoreChromeOS(
-      const std::string& username_hash,
+      scoped_ptr<CertFilter> cert_filter,
       const PasswordDelegateFactory& password_delegate_factory);
   virtual ~ClientCertStoreChromeOS();
 
   // ClientCertStoreNSS:
   virtual void GetClientCerts(const SSLCertRequestInfo& cert_request_info,
                               CertificateList* selected_certs,
-                              const base::Closure& callback) OVERRIDE;
+                              const base::Closure& callback) override;
 
  protected:
   // ClientCertStoreNSS:
   virtual void GetClientCertsImpl(CERTCertList* cert_list,
                                   const SSLCertRequestInfo& request,
                                   bool query_nssdb,
-                                  CertificateList* selected_certs) OVERRIDE;
+                                  CertificateList* selected_certs) override;
 
  private:
-  friend class ClientCertStoreChromeOSTestDelegate;
+  void CertFilterInitialized(const SSLCertRequestInfo* request,
+                             CertificateList* selected_certs,
+                             const base::Closure& callback);
 
-  void DidGetPrivateSlot(const SSLCertRequestInfo* request,
-                         CertificateList* selected_certs,
-                         const base::Closure& callback,
-                         crypto::ScopedPK11Slot private_slot);
-
-  // Allows tests to initialize the cert store with the given slots.
-  // Must be called before SelectClientCertsForTesting.
-  void InitForTesting(crypto::ScopedPK11Slot public_slot,
-                      crypto::ScopedPK11Slot private_slot);
-
-  // A hook for testing. Filters |input_certs| using the logic being used to
-  // filter the system store when GetClientCerts() is called.
-  // Implemented by creating a list of certificates that otherwise would be
-  // extracted from the system store and filtering it using the common logic
-  // (less adequate than the approach used on Windows).
-  bool SelectClientCertsForTesting(const CertificateList& input_certs,
-                                   const SSLCertRequestInfo& cert_request_info,
-                                   CertificateList* selected_certs);
-
-
-  std::string username_hash_;
-  NSSProfileFilterChromeOS profile_filter_;
+  scoped_ptr<CertFilter> cert_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(ClientCertStoreChromeOS);
 };

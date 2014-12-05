@@ -33,10 +33,9 @@
 #include "config.h"
 #include "core/page/EventSource.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -46,21 +45,24 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/parser/TextResourceDecoder.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/ThreadableLoader.h"
+#include "core/page/EventSourceInit.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
 #include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 const unsigned long long EventSource::defaultReconnectDelay = 3000;
 
-inline EventSource::EventSource(ExecutionContext* context, const KURL& url, const Dictionary& eventSourceInit)
+inline EventSource::EventSource(ExecutionContext* context, const KURL& url, const EventSourceInit& eventSourceInit)
     : ActiveDOMObject(context)
     , m_url(url)
-    , m_withCredentials(false)
+    , m_withCredentials(eventSourceInit.withCredentials())
     , m_state(CONNECTING)
     , m_decoder(TextResourceDecoder::create("text/plain", "UTF-8"))
     , m_connectTimer(this, &EventSource::connectTimerFired)
@@ -68,11 +70,9 @@ inline EventSource::EventSource(ExecutionContext* context, const KURL& url, cons
     , m_requestInFlight(false)
     , m_reconnectDelay(defaultReconnectDelay)
 {
-    ScriptWrappable::init(this);
-    eventSourceInit.get("withCredentials", m_withCredentials);
 }
 
-PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const Dictionary& eventSourceInit, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* context, const String& url, const EventSourceInit& eventSourceInit, ExceptionState& exceptionState)
 {
     if (url.isEmpty()) {
         exceptionState.throwDOMException(SyntaxError, "Cannot open an EventSource to an empty URL.");
@@ -86,20 +86,19 @@ PassRefPtrWillBeRawPtr<EventSource> EventSource::create(ExecutionContext* contex
     }
 
     // FIXME: Convert this to check the isolated world's Content Security Policy once webkit.org/b/104520 is solved.
-    bool shouldBypassMainWorldContentSecurityPolicy = false;
+    bool shouldBypassMainWorldCSP = false;
     if (context->isDocument()) {
         Document* document = toDocument(context);
-        shouldBypassMainWorldContentSecurityPolicy = document->frame()->script().shouldBypassMainWorldContentSecurityPolicy();
+        shouldBypassMainWorldCSP = document->frame()->script().shouldBypassMainWorldCSP();
     }
-    if (!shouldBypassMainWorldContentSecurityPolicy && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
+    if (!shouldBypassMainWorldCSP && !context->contentSecurityPolicy()->allowConnectToSource(fullURL)) {
         // We can safely expose the URL to JavaScript, as this exception is generate synchronously before any redirects take place.
         exceptionState.throwSecurityError("Refused to connect to '" + fullURL.elidedString() + "' because it violates the document's Content Security Policy.");
         return nullptr;
     }
 
-    RefPtrWillBeRawPtr<EventSource> source = adoptRefWillBeRefCountedGarbageCollected(new EventSource(context, fullURL, eventSourceInit));
+    RefPtrWillBeRawPtr<EventSource> source = adoptRefWillBeNoop(new EventSource(context, fullURL, eventSourceInit));
 
-    source->setPendingActivity(source.get());
     source->scheduleInitialConnect();
     source->suspendIfNeeded();
 
@@ -131,6 +130,7 @@ void EventSource::connect()
     request.setHTTPMethod("GET");
     request.setHTTPHeaderField("Accept", "text/event-stream");
     request.setHTTPHeaderField("Cache-Control", "no-cache");
+    request.setRequestContext(blink::WebURLRequest::RequestContextEventSource);
     if (!m_lastEventId.isEmpty())
         request.setHTTPHeaderField("Last-Event-ID", m_lastEventId);
 
@@ -146,6 +146,7 @@ void EventSource::connect()
     resourceLoaderOptions.credentialsRequested = m_withCredentials ? ClientRequestedCredentials : ClientDidNotRequestCredentials;
     resourceLoaderOptions.dataBufferingPolicy = DoNotBufferData;
     resourceLoaderOptions.securityOrigin = origin;
+    resourceLoaderOptions.mixedContentBlockingTreatment = TreatAsActiveContent;
 
     m_loader = ThreadableLoader::create(executionContext, this, request, options, resourceLoaderOptions);
 
@@ -162,8 +163,6 @@ void EventSource::networkRequestEnded()
 
     if (m_state != CLOSED)
         scheduleReconnect();
-    else
-        unsetPendingActivity(this);
 }
 
 void EventSource::scheduleReconnect()
@@ -203,7 +202,6 @@ void EventSource::close()
     // Stop trying to reconnect if EventSource was explicitly closed or if ActiveDOMObject::stop() was called.
     if (m_connectTimer.isActive()) {
         m_connectTimer.stop();
-        unsetPendingActivity(this);
     }
 
     if (m_requestInFlight)
@@ -222,8 +220,9 @@ ExecutionContext* EventSource::executionContext() const
     return ActiveDOMObject::executionContext();
 }
 
-void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& response)
+void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
+    ASSERT_UNUSED(handle, !handle);
     ASSERT(m_state == CONNECTING);
     ASSERT(m_requestInFlight);
 
@@ -241,7 +240,7 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
             message.append(charset);
             message.appendLiteral("\") that is not UTF-8. Aborting the connection.");
             // FIXME: We are missing the source line.
-            executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
+            executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message.toString()));
         }
     } else {
         // To keep the signal-to-noise ratio low, we only log 200-response with an invalid MIME type.
@@ -251,7 +250,7 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
             message.append(response.mimeType());
             message.appendLiteral("\") that is not \"text/event-stream\". Aborting the connection.");
             // FIXME: We are missing the source line.
-            executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message.toString());
+            executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message.toString()));
         }
     }
 
@@ -264,7 +263,7 @@ void EventSource::didReceiveResponse(unsigned long, const ResourceResponse& resp
     }
 }
 
-void EventSource::didReceiveData(const char* data, int length)
+void EventSource::didReceiveData(const char* data, unsigned length)
 {
     ASSERT(m_state == OPEN);
     ASSERT(m_requestInFlight);
@@ -303,7 +302,7 @@ void EventSource::didFail(const ResourceError& error)
 void EventSource::didFailAccessControlCheck(const ResourceError& error)
 {
     String message = "EventSource cannot load " + error.failingURL() + ". " + error.localizedDescription();
-    executionContext()->addConsoleMessage(JSMessageSource, ErrorMessageLevel, message);
+    executionContext()->addConsoleMessage(ConsoleMessage::create(JSMessageSource, ErrorMessageLevel, message));
 
     abortConnectionAttempt();
 }
@@ -321,7 +320,6 @@ void EventSource::abortConnectionAttempt()
         m_loader->cancel();
     } else {
         m_state = CLOSED;
-        unsetPendingActivity(this);
     }
 
     ASSERT(m_state == CLOSED);
@@ -427,6 +425,11 @@ void EventSource::stop()
     close();
 }
 
+bool EventSource::hasPendingActivity() const
+{
+    return m_state != CLOSED;
+}
+
 PassRefPtrWillBeRawPtr<MessageEvent> EventSource::createMessageEvent()
 {
     RefPtrWillBeRawPtr<MessageEvent> event = MessageEvent::create();
@@ -435,4 +438,4 @@ PassRefPtrWillBeRawPtr<MessageEvent> EventSource::createMessageEvent()
     return event.release();
 }
 
-} // namespace WebCore
+} // namespace blink

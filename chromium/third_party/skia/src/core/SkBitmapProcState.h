@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2007 The Android Open Source Project
  *
@@ -6,15 +5,14 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef SkBitmapProcState_DEFINED
 #define SkBitmapProcState_DEFINED
 
 #include "SkBitmap.h"
 #include "SkBitmapFilter.h"
 #include "SkMatrix.h"
+#include "SkMipMap.h"
 #include "SkPaint.h"
-#include "SkScaledImageCache.h"
 
 #define FractionalInt_IS_64BIT
 
@@ -33,11 +31,10 @@
 #endif
 
 class SkPaint;
-struct SkConvolutionProcs;
 
 struct SkBitmapProcState {
 
-    SkBitmapProcState(): fScaledCacheID(NULL), fBitmapFilter(NULL) {}
+    SkBitmapProcState() : fBitmapFilter(NULL) {}
     ~SkBitmapProcState();
 
     typedef void (*ShaderProc32)(const SkBitmapProcState&, int x, int y,
@@ -104,12 +101,6 @@ struct SkBitmapProcState {
      */
     void platformProcs();
 
-    /** Platforms can also optionally overwrite the convolution functions
-        if we have SIMD versions of them.
-      */
-
-    void platformConvolutionProcs(SkConvolutionProcs*);
-
     /** Given the byte size of the index buffer to be passed to the matrix proc,
         return the maximum number of resulting pixels that can be computed
         (i.e. the number of SkPMColor values to be written by the sample proc).
@@ -149,7 +140,8 @@ private:
     SkBitmap            fOrigBitmap;        // CONSTRUCTOR
     SkBitmap            fScaledBitmap;      // chooseProcs
 
-    SkScaledImageCache::ID* fScaledCacheID;
+    SkAutoTUnref<const SkMipMap> fCurrMip;
+    bool                fAdjustedMatrix;    // set by possiblyScaleImage
 
     MatrixProc chooseMatrixProc(bool trivial_matrix);
     bool chooseProcs(const SkMatrix& inv, const SkPaint&);

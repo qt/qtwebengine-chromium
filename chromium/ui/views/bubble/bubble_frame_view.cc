@@ -6,13 +6,13 @@
 
 #include <algorithm>
 
-#include "grit/ui_resources.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/path.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/widget/widget.h"
@@ -57,12 +57,6 @@ namespace views {
 // static
 const char BubbleFrameView::kViewClassName[] = "BubbleFrameView";
 
-// static
-gfx::Insets BubbleFrameView::GetTitleInsets() {
-  return gfx::Insets(kTitleTopInset, kTitleLeftInset,
-                     kTitleBottomInset, kTitleRightInset);
-}
-
 BubbleFrameView::BubbleFrameView(const gfx::Insets& content_margins)
     : bubble_border_(NULL),
       content_margins_(content_margins),
@@ -75,20 +69,33 @@ BubbleFrameView::BubbleFrameView(const gfx::Insets& content_margins)
   title_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   AddChildView(title_);
 
-  close_ = new LabelButton(this, base::string16());
-  close_->SetImage(CustomButton::STATE_NORMAL,
-                   *rb.GetImageNamed(IDR_CLOSE_DIALOG).ToImageSkia());
-  close_->SetImage(CustomButton::STATE_HOVERED,
-                   *rb.GetImageNamed(IDR_CLOSE_DIALOG_H).ToImageSkia());
-  close_->SetImage(CustomButton::STATE_PRESSED,
-                   *rb.GetImageNamed(IDR_CLOSE_DIALOG_P).ToImageSkia());
-  close_->SetBorder(scoped_ptr<Border>());
-  close_->SetSize(close_->GetPreferredSize());
+  close_ = CreateCloseButton(this);
   close_->SetVisible(false);
   AddChildView(close_);
 }
 
 BubbleFrameView::~BubbleFrameView() {}
+
+// static
+gfx::Insets BubbleFrameView::GetTitleInsets() {
+  return gfx::Insets(
+      kTitleTopInset, kTitleLeftInset, kTitleBottomInset, kTitleRightInset);
+}
+
+// static
+LabelButton* BubbleFrameView::CreateCloseButton(ButtonListener* listener) {
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  LabelButton* close = new LabelButton(listener, base::string16());
+  close->SetImage(CustomButton::STATE_NORMAL,
+                  *rb.GetImageNamed(IDR_CLOSE_DIALOG).ToImageSkia());
+  close->SetImage(CustomButton::STATE_HOVERED,
+                  *rb.GetImageNamed(IDR_CLOSE_DIALOG_H).ToImageSkia());
+  close->SetImage(CustomButton::STATE_PRESSED,
+                  *rb.GetImageNamed(IDR_CLOSE_DIALOG_P).ToImageSkia());
+  close->SetBorder(scoped_ptr<Border>());
+  close->SetSize(close->GetPreferredSize());
+  return close;
+}
 
 gfx::Rect BubbleFrameView::GetBoundsForClientView() const {
   gfx::Rect client_bounds = GetLocalBounds();
@@ -162,6 +169,8 @@ void BubbleFrameView::UpdateWindowTitle() {
   // Update the close button visibility too, otherwise it's not intialized.
   ResetWindowControls();
 }
+
+void BubbleFrameView::SizeConstraintsChanged() {}
 
 void BubbleFrameView::SetTitleFontList(const gfx::FontList& font_list) {
   title_->SetFontList(font_list);
@@ -244,7 +253,7 @@ void BubbleFrameView::ButtonPressed(Button* sender, const ui::Event& event) {
 
 void BubbleFrameView::SetBubbleBorder(scoped_ptr<BubbleBorder> border) {
   bubble_border_ = border.get();
-  SetBorder(border.PassAs<Border>());
+  SetBorder(border.Pass());
 
   // Update the background, which relies on the border.
   set_background(new views::BubbleBackground(bubble_border_));
@@ -284,6 +293,14 @@ gfx::Rect BubbleFrameView::GetAvailableScreenBounds(const gfx::Rect& rect) {
   // TODO(scottmg): Native is wrong. http://crbug.com/133312
   return gfx::Screen::GetNativeScreen()->GetDisplayNearestPoint(
       rect.CenterPoint()).work_area();
+}
+
+bool BubbleFrameView::IsCloseButtonVisible() const {
+  return close_->visible();
+}
+
+gfx::Rect BubbleFrameView::GetCloseButtonBounds() const {
+  return close_->bounds();
 }
 
 void BubbleFrameView::MirrorArrowIfOffScreen(

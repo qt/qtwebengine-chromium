@@ -13,6 +13,9 @@
         # Tell ICU to not insert |using namespace icu;| into its headers,
         # so that chrome's source explicitly has to use |icu::|.
         'U_USING_ICU_NAMESPACE=0',
+        # We don't use ICU plugins and dyload is only necessary for them.
+        # NaCl-related builds also fail looking for dlfcn.h when it's enabled.
+        'U_ENABLE_DYLOAD=0',
       ],
     },
     'defines': [
@@ -46,6 +49,10 @@
       },
       'sources': [
         'source/stubdata/stubdata.c',
+        # Temporary work around for an incremental build NOT rebuilding 
+        # icudata_nacl after an ICU version change.
+        # TODO(jungshik): Remove it once a fix for bug 384752 is in.
+        'source/common/unicode/uvernum.h',
       ],
       'dependencies': [
         '../../native_client/tools.gyp:prep_toolchain',

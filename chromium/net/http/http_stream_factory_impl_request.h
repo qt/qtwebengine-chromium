@@ -27,7 +27,7 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
           WebSocketHandshakeStreamBase::CreateHelper*
               websocket_handshake_stream_create_helper,
           const BoundNetLog& net_log);
-  virtual ~Request();
+  ~Request() override;
 
   // The GURL from the HttpRequestInfo the started the Request.
   const GURL& url() const { return url_; }
@@ -71,7 +71,7 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
   void OnStreamReady(Job* job,
                      const SSLConfig& used_ssl_config,
                      const ProxyInfo& used_proxy_info,
-                     HttpStreamBase* stream);
+                     HttpStream* stream);
   void OnWebSocketHandshakeStreamReady(Job* job,
                                        const SSLConfig& used_ssl_config,
                                        const ProxyInfo& used_proxy_info,
@@ -94,17 +94,16 @@ class HttpStreamFactoryImpl::Request : public HttpStreamRequest {
       const HttpResponseInfo& response_info,
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      HttpStreamBase* stream);
+      HttpStream* stream);
 
   // HttpStreamRequest methods.
 
-  virtual int RestartTunnelWithProxyAuth(
-      const AuthCredentials& credentials) OVERRIDE;
-  virtual void SetPriority(RequestPriority priority) OVERRIDE;
-  virtual LoadState GetLoadState() const OVERRIDE;
-  virtual bool was_npn_negotiated() const OVERRIDE;
-  virtual NextProto protocol_negotiated() const OVERRIDE;
-  virtual bool using_spdy() const OVERRIDE;
+  int RestartTunnelWithProxyAuth(const AuthCredentials& credentials) override;
+  void SetPriority(RequestPriority priority) override;
+  LoadState GetLoadState() const override;
+  bool was_npn_negotiated() const override;
+  NextProto protocol_negotiated() const override;
+  bool using_spdy() const override;
 
  private:
   // Used to orphan all jobs in |jobs_| other than |job| which becomes "bound"

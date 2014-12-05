@@ -34,10 +34,13 @@
 #include "core/editing/InsertLineBreakCommand.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
+#include "core/html/HTMLQuoteElement.h"
 #include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderText.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -58,10 +61,10 @@ static Element* highestVisuallyEquivalentDivBelowRoot(Element* startBlock)
     return curBlock;
 }
 
-InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document& document, bool mustUseDefaultParagraphElement, bool pasteBlockqutoeIntoUnquotedArea)
+InsertParagraphSeparatorCommand::InsertParagraphSeparatorCommand(Document& document, bool mustUseDefaultParagraphElement, bool pasteBlockquoteIntoUnquotedArea)
     : CompositeEditCommand(document)
     , m_mustUseDefaultParagraphElement(mustUseDefaultParagraphElement)
-    , m_pasteBlockqutoeIntoUnquotedArea(pasteBlockqutoeIntoUnquotedArea)
+    , m_pasteBlockquoteIntoUnquotedArea(pasteBlockquoteIntoUnquotedArea)
 {
 }
 
@@ -84,7 +87,7 @@ void InsertParagraphSeparatorCommand::calculateStyleBeforeInsertion(const Positi
     m_style->mergeTypingStyle(pos.document());
 }
 
-void InsertParagraphSeparatorCommand::applyStyleAfterInsertion(Node* originalEnclosingBlock)
+void InsertParagraphSeparatorCommand::applyStyleAfterInsertion(Element* originalEnclosingBlock)
 {
     // Not only do we break out of header tags, but we also do not preserve the typing style,
     // in order to match other browsers.
@@ -103,7 +106,7 @@ void InsertParagraphSeparatorCommand::applyStyleAfterInsertion(Node* originalEnc
         applyStyle(m_style.get());
 }
 
-bool InsertParagraphSeparatorCommand::shouldUseDefaultParagraphElement(Node* enclosingBlock) const
+bool InsertParagraphSeparatorCommand::shouldUseDefaultParagraphElement(Element* enclosingBlock) const
 {
     if (m_mustUseDefaultParagraphElement)
         return true;
@@ -119,7 +122,7 @@ bool InsertParagraphSeparatorCommand::shouldUseDefaultParagraphElement(Node* enc
            enclosingBlock->hasTagName(h5Tag);
 }
 
-void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, WillBeHeapVector<RefPtrWillBeMember<Element> >& ancestors)
+void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insertionNode, Element* outerBlock, WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors)
 {
     ancestors.clear();
 
@@ -130,7 +133,7 @@ void InsertParagraphSeparatorCommand::getAncestorsInsideBlock(const Node* insert
     }
 }
 
-PassRefPtrWillBeRawPtr<Element> InsertParagraphSeparatorCommand::cloneHierarchyUnderNewBlock(const WillBeHeapVector<RefPtrWillBeMember<Element> >& ancestors, PassRefPtrWillBeRawPtr<Element> blockToInsert)
+PassRefPtrWillBeRawPtr<Element> InsertParagraphSeparatorCommand::cloneHierarchyUnderNewBlock(const WillBeHeapVector<RefPtrWillBeMember<Element>>& ancestors, PassRefPtrWillBeRawPtr<Element> blockToInsert)
 {
     // Make clones of ancestors in between the start node and the start block.
     RefPtrWillBeRawPtr<Element> parent = blockToInsert;
@@ -165,14 +168,14 @@ void InsertParagraphSeparatorCommand::doApply()
     // FIXME: The parentAnchoredEquivalent conversion needs to be moved into enclosingBlock.
     RefPtrWillBeRawPtr<Element> startBlock = enclosingBlock(insertionPosition.parentAnchoredEquivalent().containerNode());
     Node* listChildNode = enclosingListChild(insertionPosition.parentAnchoredEquivalent().containerNode());
-    RefPtrWillBeRawPtr<Element> listChild = listChildNode && listChildNode->isHTMLElement() ? toHTMLElement(listChildNode) : 0;
+    RefPtrWillBeRawPtr<HTMLElement> listChild = listChildNode && listChildNode->isHTMLElement() ? toHTMLElement(listChildNode) : 0;
     Position canonicalPos = VisiblePosition(insertionPosition).deepEquivalent();
     if (!startBlock
         || !startBlock->nonShadowBoundaryParentNode()
         || isTableCell(startBlock.get())
         || isHTMLFormElement(*startBlock)
         // FIXME: If the node is hidden, we don't have a canonical position so we will do the wrong thing for tables and <hr>. https://bugs.webkit.org/show_bug.cgi?id=40342
-        || (!canonicalPos.isNull() && isRenderedTable(canonicalPos.deprecatedNode()))
+        || (!canonicalPos.isNull() && isRenderedTableElement(canonicalPos.deprecatedNode()))
         || (!canonicalPos.isNull() && isHTMLHRElement(*canonicalPos.deprecatedNode()))) {
         applyCommandToComposite(InsertLineBreakCommand::create(document()));
         return;
@@ -219,7 +222,7 @@ void InsertParagraphSeparatorCommand::doApply()
             if (isFirstInBlock && !lineBreakExistsAtVisiblePosition(visiblePos)) {
                 // The block is empty.  Create an empty block to
                 // represent the paragraph that we're leaving.
-                RefPtrWillBeRawPtr<Element> extraBlock = createDefaultParagraphElement(document());
+                RefPtrWillBeRawPtr<HTMLElement> extraBlock = createDefaultParagraphElement(document());
                 appendNode(extraBlock, startBlock);
                 appendBlockPlaceholder(extraBlock);
             }
@@ -227,9 +230,9 @@ void InsertParagraphSeparatorCommand::doApply()
         } else {
             // We can get here if we pasted a copied portion of a blockquote with a newline at the end and are trying to paste it
             // into an unquoted area. We then don't want the newline within the blockquote or else it will also be quoted.
-            if (m_pasteBlockqutoeIntoUnquotedArea) {
-                if (Node* highestBlockquote = highestEnclosingNodeOfType(canonicalPos, &isMailBlockquote))
-                    startBlock = toElement(highestBlockquote);
+            if (m_pasteBlockquoteIntoUnquotedArea) {
+                if (HTMLQuoteElement* highestBlockquote = toHTMLQuoteElement(highestEnclosingNodeOfType(canonicalPos, &isMailHTMLBlockquoteElement)))
+                    startBlock = highestBlockquote;
             }
 
             if (listChild && listChild != startBlock) {
@@ -239,16 +242,16 @@ void InsertParagraphSeparatorCommand::doApply()
             } else {
                 // Most of the time we want to stay at the nesting level of the startBlock (e.g., when nesting within lists). However,
                 // for div nodes, this can result in nested div tags that are hard to break out of.
-                Element* siblingNode = startBlock.get();
+                Element* siblingElement = startBlock.get();
                 if (isHTMLDivElement(*blockToInsert))
-                    siblingNode = highestVisuallyEquivalentDivBelowRoot(startBlock.get());
-                insertNodeAfter(blockToInsert, siblingNode);
+                    siblingElement = highestVisuallyEquivalentDivBelowRoot(startBlock.get());
+                insertNodeAfter(blockToInsert, siblingElement);
             }
         }
 
         // Recreate the same structure in the new paragraph.
 
-        WillBeHeapVector<RefPtrWillBeMember<Element> > ancestors;
+        WillBeHeapVector<RefPtrWillBeMember<Element>> ancestors;
         getAncestorsInsideBlock(positionOutsideTabSpan(insertionPosition).deprecatedNode(), startBlock.get(), ancestors);
         RefPtrWillBeRawPtr<Element> parent = cloneHierarchyUnderNewBlock(ancestors, blockToInsert);
 
@@ -263,7 +266,7 @@ void InsertParagraphSeparatorCommand::doApply()
     // Handle case when position is in the first visible position in its block, and
     // similar case where previous position is in another, presumeably nested, block.
     if (isFirstInBlock || !inSameBlock(visiblePos, visiblePos.previous())) {
-        Node* refNode = 0;
+        Node* refNode = nullptr;
         insertionPosition = positionOutsideTabSpan(insertionPosition);
 
         if (isFirstInBlock && !nestNewBlock) {
@@ -276,11 +279,11 @@ void InsertParagraphSeparatorCommand::doApply()
             }
         } else if (isFirstInBlock && nestNewBlock) {
             // startBlock should always have children, otherwise isLastInBlock would be true and it's handled above.
-            ASSERT(startBlock->firstChild());
+            ASSERT(startBlock->hasChildren());
             refNode = startBlock->firstChild();
         }
         else if (insertionPosition.deprecatedNode() == startBlock && nestNewBlock) {
-            refNode = startBlock->traverseToChildAt(insertionPosition.deprecatedEditingOffset());
+            refNode = NodeTraversal::childAt(*startBlock, insertionPosition.deprecatedEditingOffset());
             ASSERT(refNode); // must be true or we'd be in the end of block case
         } else
             refNode = insertionPosition.deprecatedNode();
@@ -293,7 +296,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
         // Recreate the same structure in the new paragraph.
 
-        WillBeHeapVector<RefPtrWillBeMember<Element> > ancestors;
+        WillBeHeapVector<RefPtrWillBeMember<Element>> ancestors;
         getAncestorsInsideBlock(positionAvoidingSpecialElementBoundary(positionOutsideTabSpan(insertionPosition)).deprecatedNode(), startBlock.get(), ancestors);
 
         appendBlockPlaceholder(cloneHierarchyUnderNewBlock(ancestors, blockToInsert));
@@ -311,7 +314,7 @@ void InsertParagraphSeparatorCommand::doApply()
     // it if visiblePos is at the start of a paragraph so that the
     // content will move down a line.
     if (isStartOfParagraph(visiblePos)) {
-        RefPtrWillBeRawPtr<Element> br = createBreakElement(document());
+        RefPtrWillBeRawPtr<HTMLBRElement> br = createBreakElement(document());
         insertNodeAt(br.get(), insertionPosition);
         insertionPosition = positionInParentAfterNode(*br);
         // If the insertion point is a break element, there is nothing else
@@ -342,7 +345,7 @@ void InsertParagraphSeparatorCommand::doApply()
 
     // Make sure we do not cause a rendered space to become unrendered.
     // FIXME: We need the affinity for pos, but pos.downstream() does not give it
-    Position leadingWhitespace = insertionPosition.leadingWhitespacePosition(VP_DEFAULT_AFFINITY);
+    Position leadingWhitespace = leadingWhitespacePosition(insertionPosition, VP_DEFAULT_AFFINITY);
     // FIXME: leadingWhitespacePosition is returning the position before preserved newlines for positions
     // after the preserved newline, causing the newline to be turned into a nbsp.
     if (leadingWhitespace.isNotNull() && leadingWhitespace.deprecatedNode()->isTextNode()) {
@@ -432,4 +435,4 @@ void InsertParagraphSeparatorCommand::trace(Visitor *visitor)
 }
 
 
-} // namespace WebCore
+} // namespace blink

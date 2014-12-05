@@ -43,6 +43,10 @@
 #include <sanitizer/tsan_interface_atomic.h>
 #endif
 
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
 namespace WTF {
 
 #if COMPILER(MSVC)
@@ -106,6 +110,7 @@ ALWAYS_INLINE void atomicSetOneToZero(int volatile* ptr)
 #endif
 
 #if defined(THREAD_SANITIZER)
+
 ALWAYS_INLINE void releaseStore(volatile int* ptr, int value)
 {
     __tsan_atomic32_store(ptr, value, __tsan_memory_order_release);
@@ -115,6 +120,17 @@ ALWAYS_INLINE int acquireLoad(volatile const int* ptr)
 {
     return __tsan_atomic32_load(ptr, __tsan_memory_order_acquire);
 }
+
+ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
+{
+    __tsan_atomic32_store(reinterpret_cast<volatile int*>(ptr), static_cast<int>(value), __tsan_memory_order_release);
+}
+
+ALWAYS_INLINE unsigned acquireLoad(volatile const unsigned* ptr)
+{
+    return static_cast<unsigned>(__tsan_atomic32_load(reinterpret_cast<volatile const int*>(ptr), __tsan_memory_order_acquire));
+}
+
 #else
 
 #if CPU(X86) || CPU(X86_64)
@@ -156,7 +172,60 @@ ALWAYS_INLINE int acquireLoad(volatile const int* ptr)
     return value;
 }
 
+ALWAYS_INLINE void releaseStore(volatile unsigned* ptr, unsigned value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
+
+ALWAYS_INLINE unsigned acquireLoad(volatile const unsigned* ptr)
+{
+    unsigned value = *ptr;
+    MEMORY_BARRIER();
+    return value;
+}
+
+#if defined(ADDRESS_SANITIZER)
+
+// FIXME: See comment on NO_SANITIZE_ADDRESS in platform/heap/AddressSanitizer.h
+#if !OS(WIN) || COMPILER(CLANG)
+#define NO_SANITIZE_ADDRESS_ATOMICS __attribute__((no_sanitize_address))
+#else
+#define NO_SANITIZE_ADDRESS_ATOMICS
+#endif
+
+NO_SANITIZE_ADDRESS_ATOMICS ALWAYS_INLINE void asanUnsafeReleaseStore(volatile unsigned* ptr, unsigned value)
+{
+    MEMORY_BARRIER();
+    *ptr = value;
+}
+
+NO_SANITIZE_ADDRESS_ATOMICS ALWAYS_INLINE unsigned asanUnsafeAcquireLoad(volatile const unsigned* ptr)
+{
+    unsigned value = *ptr;
+    MEMORY_BARRIER();
+    return value;
+}
+
+#undef NO_SANITIZE_ADDRESS_ATOMICS
+
+#endif // defined(ADDRESS_SANITIZER)
+
 #undef MEMORY_BARRIER
+
+#endif
+
+#if !defined(ADDRESS_SANITIZER)
+
+ALWAYS_INLINE void asanUnsafeReleaseStore(volatile unsigned* ptr, unsigned value)
+{
+    releaseStore(ptr, value);
+}
+
+ALWAYS_INLINE unsigned asanUnsafeAcquireLoad(volatile const unsigned* ptr)
+{
+    return acquireLoad(ptr);
+}
 
 #endif
 
@@ -170,5 +239,11 @@ using WTF::atomicTestAndSetToOne;
 using WTF::atomicSetOneToZero;
 using WTF::acquireLoad;
 using WTF::releaseStore;
+
+// These methods allow loading from and storing to poisoned memory. Only
+// use these methods if you know what you are doing since they will
+// silence use-after-poison errors from ASan.
+using WTF::asanUnsafeAcquireLoad;
+using WTF::asanUnsafeReleaseStore;
 
 #endif // Atomics_h

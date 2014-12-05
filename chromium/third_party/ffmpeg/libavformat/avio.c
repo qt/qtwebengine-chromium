@@ -32,7 +32,7 @@
 
 static URLProtocol *first_protocol = NULL;
 
-URLProtocol *ffurl_protocol_next(URLProtocol *prev)
+URLProtocol *ffurl_protocol_next(const URLProtocol *prev)
 {
     return prev ? prev->next : first_protocol;
 }
@@ -98,7 +98,7 @@ int ffurl_register_protocol(URLProtocol *protocol)
 {
     URLProtocol **p;
     p = &first_protocol;
-    while (*p != NULL)
+    while (*p)
         p = &(*p)->next;
     *p             = protocol;
     protocol->next = NULL;
@@ -261,7 +261,7 @@ int ffurl_alloc(URLContext **puc, const char *filename, int flags,
        return url_alloc_for_protocol(puc, p, filename, flags, int_cb);
 
     *puc = NULL;
-    if (av_strstart("https:", filename, NULL))
+    if (av_strstart(filename, "https:", NULL))
         av_log(NULL, AV_LOG_WARNING, "https protocol not found, recompile with openssl or gnutls enabled.\n");
     return AVERROR_PROTOCOL_NOT_FOUND;
 }
@@ -312,8 +312,8 @@ static inline int retry_transfer_wrapper(URLContext *h, uint8_t *buf,
             } else {
                 if (h->rw_timeout) {
                     if (!wait_since)
-                        wait_since = av_gettime();
-                    else if (av_gettime() > wait_since + h->rw_timeout)
+                        wait_since = av_gettime_relative();
+                    else if (av_gettime_relative() > wait_since + h->rw_timeout)
                         return AVERROR(EIO);
                 }
                 av_usleep(1000);

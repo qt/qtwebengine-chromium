@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
+#include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
@@ -21,8 +22,9 @@ namespace IPC {
 
 //------------------------------------------------------------------------------
 
-ChannelProxy::Context::Context(Listener* listener,
-                               base::SingleThreadTaskRunner* ipc_task_runner)
+ChannelProxy::Context::Context(
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
     : listener_task_runner_(base::ThreadTaskRunnerHandle::Get()),
       listener_(listener),
       ipc_task_runner_(ipc_task_runner),
@@ -48,11 +50,10 @@ void ChannelProxy::Context::ClearIPCTaskRunner() {
   ipc_task_runner_ = NULL;
 }
 
-void ChannelProxy::Context::CreateChannel(const IPC::ChannelHandle& handle,
-                                          const Channel::Mode& mode) {
+void ChannelProxy::Context::CreateChannel(scoped_ptr<ChannelFactory> factory) {
   DCHECK(!channel_);
-  channel_id_ = handle.name;
-  channel_ = Channel::Create(handle, mode, this);
+  channel_id_ = factory->GetName();
+  channel_ = factory->BuildChannel(this);
 }
 
 bool ChannelProxy::Context::TryFilters(const Message& message) {
@@ -309,9 +310,19 @@ scoped_ptr<ChannelProxy> ChannelProxy::Create(
     const IPC::ChannelHandle& channel_handle,
     Channel::Mode mode,
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner) {
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
   scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
   channel->Init(channel_handle, mode, true);
+  return channel.Pass();
+}
+
+// static
+scoped_ptr<ChannelProxy> ChannelProxy::Create(
+    scoped_ptr<ChannelFactory> factory,
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner) {
+  scoped_ptr<ChannelProxy> channel(new ChannelProxy(listener, ipc_task_runner));
+  channel->Init(factory.Pass(), true);
   return channel.Pass();
 }
 
@@ -320,8 +331,9 @@ ChannelProxy::ChannelProxy(Context* context)
       did_init_(false) {
 }
 
-ChannelProxy::ChannelProxy(Listener* listener,
-                           base::SingleThreadTaskRunner* ipc_task_runner)
+ChannelProxy::ChannelProxy(
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner)
     : context_(new Context(listener, ipc_task_runner)), did_init_(false) {
 }
 
@@ -334,8 +346,6 @@ ChannelProxy::~ChannelProxy() {
 void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
                         Channel::Mode mode,
                         bool create_pipe_now) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(!did_init_);
 #if defined(OS_POSIX)
   // When we are creating a server on POSIX, we need its file descriptor
   // to be created immediately so that it can be accessed and passed
@@ -345,17 +355,25 @@ void ChannelProxy::Init(const IPC::ChannelHandle& channel_handle,
     create_pipe_now = true;
   }
 #endif  // defined(OS_POSIX)
+  Init(ChannelFactory::Create(channel_handle, mode),
+       create_pipe_now);
+}
+
+void ChannelProxy::Init(scoped_ptr<ChannelFactory> factory,
+                        bool create_pipe_now) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!did_init_);
 
   if (create_pipe_now) {
     // Create the channel immediately.  This effectively sets up the
     // low-level pipe so that the client can connect.  Without creating
     // the pipe immediately, it is possible for a listener to attempt
     // to connect and get an error since the pipe doesn't exist yet.
-    context_->CreateChannel(channel_handle, mode);
+    context_->CreateChannel(factory.Pass());
   } else {
     context_->ipc_task_runner()->PostTask(
-        FROM_HERE, base::Bind(&Context::CreateChannel, context_.get(),
-                              channel_handle, mode));
+        FROM_HERE, base::Bind(&Context::CreateChannel,
+                              context_.get(), Passed(factory.Pass())));
   }
 
   // complete initialization on the background thread
@@ -416,7 +434,7 @@ void ChannelProxy::ClearIPCTaskRunner() {
   context()->ClearIPCTaskRunner();
 }
 
-#if defined(OS_POSIX) && !defined(OS_NACL)
+#if defined(OS_POSIX) && !defined(OS_NACL_SFI)
 // See the TODO regarding lazy initialization of the channel in
 // ChannelProxy::Init().
 int ChannelProxy::GetClientFileDescriptor() {
@@ -428,7 +446,7 @@ int ChannelProxy::GetClientFileDescriptor() {
   return channel->GetClientFileDescriptor();
 }
 
-int ChannelProxy::TakeClientFileDescriptor() {
+base::ScopedFD ChannelProxy::TakeClientFileDescriptor() {
   DCHECK(CalledOnValidThread());
 
   Channel* channel = context_.get()->channel_.get();

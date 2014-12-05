@@ -32,7 +32,7 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
 
   ScrollView();
 
-  virtual ~ScrollView();
+  ~ScrollView() override;
 
   // Creates a ScrollView with a theme specific border.
   static ScrollView* CreateScrollViewWithBorder();
@@ -75,23 +75,24 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   void SetVerticalScrollBar(ScrollBar* vert_sb);
 
   // View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual int GetHeightForWidth(int width) const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnMouseWheel(const ui::MouseWheelEvent& e) OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  int GetHeightForWidth(int width) const override;
+  void Layout() override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnMouseWheel(const ui::MouseWheelEvent& e) override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  const char* GetClassName() const override;
 
   // ScrollBarController overrides:
-  virtual void ScrollToPosition(ScrollBar* source, int position) OVERRIDE;
-  virtual int GetScrollIncrement(ScrollBar* source,
-                                 bool is_page,
-                                 bool is_positive) OVERRIDE;
+  void ScrollToPosition(ScrollBar* source, int position) override;
+  int GetScrollIncrement(ScrollBar* source,
+                         bool is_page,
+                         bool is_positive) override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(ScrollViewTest, CornerViewVisibility);
   class Viewport;
 
   // Used internally by SetHeader() and SetContents() to reset the view.  Sets
@@ -111,7 +112,7 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
                                    bool* horiz_is_shown,
                                    bool* vert_is_shown) const;
 
-  // Shows or hides the scrollbar/resize_corner based on the value of
+  // Shows or hides the scrollbar/corner_view based on the value of
   // |should_show|.
   void SetControlVisibility(View* control, bool should_show);
 
@@ -134,8 +135,8 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   // Vertical scrollbar.
   ScrollBar* vert_sb_;
 
-  // Resize corner.
-  View* resize_corner_;
+  // Corner view.
+  View* corner_view_;
 
   // The min and max height for the bounded scroll view. These are negative
   // values if the view is not bounded.
@@ -210,7 +211,7 @@ class FixedRowHeightScrollHelper : public VariableRowHeightScrollHelper {
 
  protected:
   // Calculates the bounds of the row from the top margin and row height.
-  virtual RowInfo GetRowInfo(int y) OVERRIDE;
+  RowInfo GetRowInfo(int y) override;
 
  private:
   int top_margin_;

@@ -26,18 +26,20 @@
 #ifndef HTMLSelectElement_h
 #define HTMLSelectElement_h
 
-#include "core/events/Event.h"
+#include "core/html/HTMLContentElement.h"
 #include "core/html/HTMLFormControlElementWithState.h"
 #include "core/html/HTMLOptionsCollection.h"
 #include "core/html/forms/TypeAhead.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
+class AutoscrollController;
 class ExceptionState;
 class HTMLOptionElement;
 
-class HTMLSelectElement FINAL : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+class HTMLSelectElement final : public HTMLFormControlElementWithState, public TypeAheadDataSource {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&);
     static PassRefPtrWillBeRawPtr<HTMLSelectElement> create(Document&, HTMLFormElement*);
@@ -50,10 +52,10 @@ public:
     void optionSelectedByUser(int index, bool dispatchChangeEvent, bool allowMultipleSelection = false);
 
     // For ValidityState
-    virtual String validationMessage() const OVERRIDE;
-    virtual bool valueMissing() const OVERRIDE;
+    virtual String validationMessage() const override;
+    virtual bool valueMissing() const override;
 
-    virtual void resetImpl() OVERRIDE;
+    virtual void resetImpl() override;
 
     unsigned length() const;
 
@@ -82,9 +84,9 @@ public:
     void invalidateSelectedItems();
     void updateListItemSelectedStates();
 
-    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement> >& listItems() const;
+    const WillBeHeapVector<RawPtrWillBeMember<HTMLElement>>& listItems() const;
 
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
+    virtual void accessKeyAction(bool sendMouseEvents) override;
     void accessKeySetSelectedIndex(int);
 
     void setMultiple(bool);
@@ -95,9 +97,10 @@ public:
     void setLength(unsigned, ExceptionState&);
 
     Element* namedItem(const AtomicString& name);
-    Element* item(unsigned index);
+    HTMLOptionElement* item(unsigned index);
 
     void scrollToSelection();
+    void scrollTo(int listIndex);
 
     void listBoxSelectItem(int listIndex, bool allowMultiplySelections, bool shift, bool fireOnChangeNow = true);
 
@@ -110,44 +113,48 @@ public:
     int activeSelectionEndListIndex() const;
     void setActiveSelectionAnchorIndex(int);
     void setActiveSelectionEndIndex(int);
-    void updateListBoxSelection(bool deselectOtherOptions);
 
     // For use in the implementation of HTMLOptionElement.
     void optionSelectionStateChanged(HTMLOptionElement*, bool optionIsSelected);
+    void optionRemoved(const HTMLOptionElement&);
     bool anonymousIndexedSetter(unsigned, PassRefPtrWillBeRawPtr<HTMLOptionElement>, ExceptionState&);
 
     void updateListOnRenderer();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    HTMLOptionElement* spatialNavigationFocusedOption();
+    void handleMouseRelease();
+
+    virtual void trace(Visitor*) override;
 
 protected:
     HTMLSelectElement(Document&, HTMLFormElement*);
 
 private:
-    virtual const AtomicString& formControlType() const OVERRIDE;
+    virtual const AtomicString& formControlType() const override;
 
-    virtual bool shouldShowFocusRingOnMouseFocus() const OVERRIDE;
+    virtual bool shouldShowFocusRingOnMouseFocus() const override;
 
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE;
-    virtual void dispatchBlurEvent(Element* newFocusedElemnet) OVERRIDE;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual void dispatchBlurEvent(Element* newFocusedElemnet) override;
 
-    virtual bool canStartSelection() const OVERRIDE { return false; }
+    virtual bool canStartSelection() const override { return false; }
 
-    virtual bool isEnumeratable() const OVERRIDE { return true; }
-    virtual bool isInteractiveContent() const OVERRIDE;
-    virtual bool supportsAutofocus() const OVERRIDE;
-    virtual bool supportLabels() const OVERRIDE { return true; }
+    virtual bool isEnumeratable() const override { return true; }
+    virtual bool isInteractiveContent() const override;
+    virtual bool supportsAutofocus() const override;
+    virtual bool supportLabels() const override { return true; }
 
-    virtual FormControlState saveFormControlState() const OVERRIDE;
-    virtual void restoreFormControlState(const FormControlState&) OVERRIDE;
+    virtual FormControlState saveFormControlState() const override;
+    virtual void restoreFormControlState(const FormControlState&) override;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool appendFormData(FormDataList&, bool) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool appendFormData(FormDataList&, bool) override;
+    virtual void didAddUserAgentShadowRoot(ShadowRoot&) override;
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
     void dispatchInputAndChangeEventForMenuList(bool requiresUserGesture = true);
 
@@ -156,10 +163,10 @@ private:
     void typeAheadFind(KeyboardEvent*);
     void saveLastSelection();
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
-    virtual bool isOptionalFormControl() const OVERRIDE { return !isRequiredFormControl(); }
-    virtual bool isRequiredFormControl() const OVERRIDE;
+    virtual bool isOptionalFormControl() const override { return !isRequiredFormControl(); }
+    virtual bool isRequiredFormControl() const override;
 
     bool hasPlaceholderLabelOption() const;
 
@@ -175,10 +182,13 @@ private:
     int lastSelectedListIndex() const;
     void updateSelectedState(int listIndex, bool multi, bool shift);
     void menuListDefaultEventHandler(Event*);
-    bool platformHandleKeydownEvent(KeyboardEvent*);
+    void handlePopupOpenKeyboardEvent(Event*);
+    bool shouldOpenPopupForKeyDownEvent(KeyboardEvent*);
+    bool shouldOpenPopupForKeyPressEvent(KeyboardEvent*);
     void listBoxDefaultEventHandler(Event*);
     void setOptionsChangedOnRenderer();
     size_t searchOptionsForValue(const String&, size_t listIndexStart, size_t listIndexEnd) const;
+    void updateListBoxSelection(bool deselectOtherOptions, bool scroll = true);
 
     enum SkipDirection {
         SkipBackwards = -1,
@@ -190,18 +200,21 @@ private:
     int firstSelectableListIndex() const;
     int lastSelectableListIndex() const;
     int nextSelectableListIndexPageAway(int startIndex, SkipDirection) const;
+    int listIndexForEventTargetOption(const Event&);
+    int listIndexForOption(const HTMLOptionElement&);
+    AutoscrollController* autoscrollController() const;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
-    virtual void finishParsingChildren() OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) override;
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
+    virtual void finishParsingChildren() override;
 
     // TypeAheadDataSource functions.
-    virtual int indexOfSelectedOption() const OVERRIDE;
-    virtual int optionCount() const OVERRIDE;
-    virtual String optionAtIndex(int index) const OVERRIDE;
+    virtual int indexOfSelectedOption() const override;
+    virtual int optionCount() const override;
+    virtual String optionAtIndex(int index) const override;
 
     // m_listItems contains HTMLOptionElement, HTMLOptGroupElement, and HTMLHRElement objects.
-    mutable WillBeHeapVector<RawPtrWillBeMember<HTMLElement> > m_listItems;
+    mutable WillBeHeapVector<RawPtrWillBeMember<HTMLElement>> m_listItems;
     Vector<bool> m_lastOnChangeSelection;
     Vector<bool> m_cachedStateForActiveSelection;
     TypeAhead m_typeAhead;
@@ -214,8 +227,9 @@ private:
     bool m_activeSelectionState;
     mutable bool m_shouldRecalcListItems;
     int m_suggestedIndex;
+    bool m_isAutofilledByPreview;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLSelectElement_h

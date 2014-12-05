@@ -13,10 +13,10 @@
 #include "base/memory/weak_ptr.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/tracked_objects.h"
+#include "content/child/mojo/mojo_application.h"
 #include "content/common/content_export.h"
 #include "content/common/message_router.h"
 #include "ipc/ipc_message.h"  // For IPC_MESSAGE_LOG_ENABLED.
-#include "mojo/public/interfaces/service_provider/service_provider.mojom.h"
 
 namespace base {
 class MessageLoop;
@@ -35,46 +35,50 @@ namespace blink {
 class WebFrame;
 }  // namespace blink
 
-namespace webkit_glue {
-class ResourceLoaderBridge;
-}  // namespace webkit_glue
-
 namespace content {
+class ChildDiscardableSharedMemoryManager;
+class ChildGpuMemoryBufferManager;
 class ChildHistogramMessageFilter;
 class ChildResourceMessageFilter;
 class ChildSharedBitmapManager;
 class FileSystemDispatcher;
-class MojoApplication;
-class ServiceWorkerDispatcher;
+class GeofencingMessageFilter;
+class NotificationDispatcher;
 class ServiceWorkerMessageFilter;
 class QuotaDispatcher;
 class QuotaMessageFilter;
 class ResourceDispatcher;
-class SocketStreamDispatcher;
 class ThreadSafeSender;
 class WebSocketDispatcher;
 struct RequestInfo;
 
 // The main thread of a child process derives from this class.
-class CONTENT_EXPORT ChildThread
-    : public IPC::Listener,
-      public IPC::Sender,
-      public NON_EXPORTED_BASE(mojo::ServiceProvider) {
+class CONTENT_EXPORT ChildThread : public IPC::Listener, public IPC::Sender {
  public:
+  struct CONTENT_EXPORT Options {
+    Options();
+    explicit Options(bool mojo);
+    Options(std::string name, bool mojo)
+        : channel_name(name), use_mojo_channel(mojo) {}
+
+    std::string channel_name;
+    bool use_mojo_channel;
+  };
+
   // Creates the thread.
   ChildThread();
   // Used for single-process mode and for in process gpu mode.
-  explicit ChildThread(const std::string& channel_name);
+  explicit ChildThread(const Options& options);
   // ChildProcess::main_thread() is reset after Shutdown(), and before the
   // destructor, so any subsystem that relies on ChildProcess::main_thread()
   // must be terminated before Shutdown returns. In particular, if a subsystem
   // has a thread that post tasks to ChildProcess::main_thread(), that thread
   // should be joined in Shutdown().
-  virtual ~ChildThread();
+  ~ChildThread() override;
   virtual void Shutdown();
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   IPC::SyncChannel* channel() { return channel_.get(); }
 
@@ -95,12 +99,17 @@ class CONTENT_EXPORT ChildThread
     return shared_bitmap_manager_.get();
   }
 
-  ResourceDispatcher* resource_dispatcher() const {
-    return resource_dispatcher_.get();
+  ChildGpuMemoryBufferManager* gpu_memory_buffer_manager() const {
+    return gpu_memory_buffer_manager_.get();
   }
 
-  SocketStreamDispatcher* socket_stream_dispatcher() const {
-    return socket_stream_dispatcher_.get();
+  ChildDiscardableSharedMemoryManager* discardable_shared_memory_manager()
+      const {
+    return discardable_shared_memory_manager_.get();
+  }
+
+  ResourceDispatcher* resource_dispatcher() const {
+    return resource_dispatcher_.get();
   }
 
   WebSocketDispatcher* websocket_dispatcher() const {
@@ -111,12 +120,12 @@ class CONTENT_EXPORT ChildThread
     return file_system_dispatcher_.get();
   }
 
-  ServiceWorkerDispatcher* service_worker_dispatcher() const {
-    return service_worker_dispatcher_.get();
-  }
-
   QuotaDispatcher* quota_dispatcher() const {
     return quota_dispatcher_.get();
+  }
+
+  NotificationDispatcher* notification_dispatcher() const {
+    return notification_dispatcher_.get();
   }
 
   IPC::SyncMessageFilter* sync_message_filter() const {
@@ -153,6 +162,10 @@ class CONTENT_EXPORT ChildThread
   static void ShutdownThread();
 #endif
 
+  ServiceRegistry* service_registry() const {
+    return mojo_application_->service_registry();
+  }
+
  protected:
   friend class ChildProcess;
 
@@ -166,29 +179,23 @@ class CONTENT_EXPORT ChildThread
   }
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
-
-  // mojo::ServiceProvider implementation:
-  virtual void ConnectToService(
-      const mojo::String& service_url,
-      const mojo::String& service_name,
-      mojo::ScopedMessagePipeHandle message_pipe,
-      const mojo::String& requestor_url) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
 
  private:
   class ChildThreadMessageRouter : public MessageRouter {
    public:
     // |sender| must outlive this object.
     explicit ChildThreadMessageRouter(IPC::Sender* sender);
-    virtual bool Send(IPC::Message* msg) OVERRIDE;
+    bool Send(IPC::Message* msg) override;
 
    private:
     IPC::Sender* const sender_;
   };
 
-  void Init();
+  void Init(const Options& options);
+  scoped_ptr<IPC::SyncChannel> CreateChannel(bool use_mojo_channel);
 
   // IPC message handlers.
   void OnShutdown();
@@ -221,9 +228,6 @@ class CONTENT_EXPORT ChildThread
   // Handles resource loads for this process.
   scoped_ptr<ResourceDispatcher> resource_dispatcher_;
 
-  // Handles SocketStream for this process.
-  scoped_ptr<SocketStreamDispatcher> socket_stream_dispatcher_;
-
   scoped_ptr<WebSocketDispatcher> websocket_dispatcher_;
 
   // The OnChannelError() callback was invoked - the channel is dead, don't
@@ -233,8 +237,6 @@ class CONTENT_EXPORT ChildThread
   base::MessageLoop* message_loop_;
 
   scoped_ptr<FileSystemDispatcher> file_system_dispatcher_;
-
-  scoped_ptr<ServiceWorkerDispatcher> service_worker_dispatcher_;
 
   scoped_ptr<QuotaDispatcher> quota_dispatcher_;
 
@@ -246,9 +248,14 @@ class CONTENT_EXPORT ChildThread
 
   scoped_refptr<QuotaMessageFilter> quota_message_filter_;
 
+  scoped_refptr<NotificationDispatcher> notification_dispatcher_;
+
   scoped_ptr<ChildSharedBitmapManager> shared_bitmap_manager_;
 
-  base::WeakPtrFactory<ChildThread> channel_connected_factory_;
+  scoped_ptr<ChildGpuMemoryBufferManager> gpu_memory_buffer_manager_;
+
+  scoped_ptr<ChildDiscardableSharedMemoryManager>
+      discardable_shared_memory_manager_;
 
   // Observes the trace event system. When tracing is enabled, optionally
   // starts profiling the tcmalloc heap.
@@ -256,7 +263,11 @@ class CONTENT_EXPORT ChildThread
 
   scoped_ptr<base::PowerMonitor> power_monitor_;
 
+  scoped_refptr<GeofencingMessageFilter> geofencing_message_filter_;
+
   bool in_browser_process_;
+
+  base::WeakPtrFactory<ChildThread> channel_connected_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChildThread);
 };

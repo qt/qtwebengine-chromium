@@ -41,7 +41,7 @@
 #include "platform/fonts/SimpleFontData.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSFontSelector::CSSFontSelector(Document* document)
     : m_document(document)
@@ -98,15 +98,14 @@ void CSSFontSelector::fontCacheInvalidated()
 
 static AtomicString familyNameFromSettings(const GenericFontFamilySettings& settings, const FontDescription& fontDescription, const AtomicString& genericFamilyName)
 {
-    UScriptCode script = fontDescription.script();
-
 #if OS(ANDROID)
     if (fontDescription.genericFamily() == FontDescription::StandardFamily)
-        return FontCache::getGenericFamilyNameForScript(FontFamilyNames::webkit_standard, script);
+        return FontCache::getGenericFamilyNameForScript(FontFamilyNames::webkit_standard, fontDescription);
 
     if (genericFamilyName.startsWith("-webkit-"))
-        return FontCache::getGenericFamilyNameForScript(genericFamilyName, script);
+        return FontCache::getGenericFamilyNameForScript(genericFamilyName, fontDescription);
 #else
+    UScriptCode script = fontDescription.script();
     if (fontDescription.genericFamily() == FontDescription::StandardFamily)
         return settings.standard(script);
     if (genericFamilyName == FontFamilyNames::webkit_serif)
@@ -160,6 +159,7 @@ void CSSFontSelector::clearDocument()
 {
     m_fontLoader->clearResourceFetcherAndFontSelector();
     m_document = nullptr;
+    m_fontFaceCache.clearAll();
 }
 #endif
 
@@ -174,10 +174,12 @@ void CSSFontSelector::updateGenericFontFamilySettings(Document& document)
 
 void CSSFontSelector::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_document);
     visitor->trace(m_fontFaceCache);
     visitor->trace(m_clients);
     visitor->trace(m_fontLoader);
+#endif
     FontSelector::trace(visitor);
 }
 

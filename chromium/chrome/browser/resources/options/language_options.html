@@ -28,7 +28,8 @@
       <div id="language-options-details">
         <h3 id="language-options-language-name"></h3>
 <if expr="os == 'win32' or chromeos">
-        <div class="language-options-contents">
+        <div id="language-options-ui-language-section"
+             class="language-options-contents">
           <button id="language-options-ui-language-button"
               i18n-content="displayInThisLanguage">
           </button>
@@ -105,9 +106,9 @@
 <if expr="chromeos">
       <div i18n-content="switchInputMethodsHint"></div>
       <div i18n-content="selectPreviousInputMethodHint"></div>
-      <button id="edit-dictionary-button"
-          class="link-button standalone-link-button"
-          i18n-content="languageDictionaryOverlayTitle"></button>
+      <a is="action-link" id="edit-dictionary-button"
+          class="standalone-action-link"
+          i18n-content="languageDictionaryOverlayTitle"></a>
 </if>
 <if expr="not chromeos and not is_macosx">
       <div id="spell-check-option" class="checkbox">
@@ -116,8 +117,8 @@
               metric="Options_SpellCheck" type="checkbox">
           <span i18n-content="enableSpellCheck"></span>
         </label>
-        <button id="edit-dictionary-button" class="link-button"
-            i18n-content="languageDictionaryOverlayTitle" hidden></button>
+        <a is="action-link" id="edit-dictionary-button"
+            i18n-content="languageDictionaryOverlayTitle" hidden></a>
       </div>
       <div id="auto-spell-correction-option" class="checkbox" hidden>
         <label>

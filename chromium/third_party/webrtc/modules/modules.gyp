@@ -68,6 +68,8 @@
             '<@(audio_coding_defines)',
           ],
           'dependencies': [
+            'acm_receive_test',
+            'acm_send_test',
             'audio_coding_module',
             'audio_processing',
             'bitrate_controller',
@@ -93,15 +95,20 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
+            '<(webrtc_root)/modules/modules.gyp:video_capture_module_impl',
             '<(webrtc_root)/modules/video_coding/codecs/vp8/vp8.gyp:webrtc_vp8',
+            '<(webrtc_root)/modules/video_coding/codecs/vp9/vp9.gyp:webrtc_vp9',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/test/test.gyp:test_support_main',
             '<(webrtc_root)/test/test.gyp:frame_generator',
-            '<(webrtc_root)/test/test.gyp:rtcp_packet_parser',
+            '<(webrtc_root)/test/test.gyp:rtp_test_utils',
+            '<(webrtc_root)/test/test.gyp:test_support_main',
           ],
           'sources': [
+            'audio_coding/main/acm2/acm_opus_unittest.cc',
             'audio_coding/main/acm2/acm_receiver_unittest.cc',
+            'audio_coding/main/acm2/acm_receiver_unittest_oldapi.cc',
             'audio_coding/main/acm2/audio_coding_module_unittest.cc',
+            'audio_coding/main/acm2/audio_coding_module_unittest_oldapi.cc',
             'audio_coding/main/acm2/call_statistics_unittest.cc',
             'audio_coding/main/acm2/initial_delay_manager_unittest.cc',
             'audio_coding/main/acm2/nack_unittest.cc',
@@ -147,9 +154,11 @@
             'audio_coding/neteq/mock/mock_delay_peak_detector.h',
             'audio_coding/neteq/mock/mock_dtmf_buffer.h',
             'audio_coding/neteq/mock/mock_dtmf_tone_generator.h',
+            'audio_coding/neteq/mock/mock_expand.h',
             'audio_coding/neteq/mock/mock_external_decoder_pcm16b.h',
             'audio_coding/neteq/mock/mock_packet_buffer.h',
             'audio_coding/neteq/mock/mock_payload_splitter.h',
+            'audio_coding/neteq/tools/input_audio_file_unittest.cc',
             'audio_coding/neteq/tools/packet_unittest.cc',
             'audio_processing/aec/system_delay_unittest.cc',
             'audio_processing/aec/echo_cancellation_unittest.cc',
@@ -172,6 +181,7 @@
             'desktop_capture/win/cursor_unittest_resources.rc',
             'media_file/source/media_file_unittest.cc',
             'module_common_types_unittest.cc',
+            'pacing/bitrate_prober_unittest.cc',
             'pacing/paced_sender_unittest.cc',
             'remote_bitrate_estimator/bwe_simulations.cc',
             'remote_bitrate_estimator/include/mock/mock_remote_bitrate_observer.h',
@@ -204,14 +214,15 @@
             'rtp_rtcp/source/rtcp_packet_unittest.cc',
             'rtp_rtcp/source/rtcp_receiver_unittest.cc',
             'rtp_rtcp/source/rtcp_sender_unittest.cc',
+            'rtp_rtcp/source/rtcp_utility_unittest.cc',
             'rtp_rtcp/source/rtp_fec_unittest.cc',
+            'rtp_rtcp/source/rtp_format_h264_unittest.cc',
             'rtp_rtcp/source/rtp_format_vp8_unittest.cc',
             'rtp_rtcp/source/rtp_format_vp8_test_helper.cc',
             'rtp_rtcp/source/rtp_format_vp8_test_helper.h',
             'rtp_rtcp/source/rtp_packet_history_unittest.cc',
             'rtp_rtcp/source/rtp_payload_registry_unittest.cc',
             'rtp_rtcp/source/rtp_rtcp_impl_unittest.cc',
-            'rtp_rtcp/source/rtp_utility_unittest.cc',
             'rtp_rtcp/source/rtp_header_extension_unittest.cc',
             'rtp_rtcp/source/rtp_sender_unittest.cc',
             'rtp_rtcp/source/vp8_partition_aggregator_unittest.cc',
@@ -230,6 +241,7 @@
             'video_coding/main/interface/mock/mock_vcm_callbacks.h',
             'video_coding/main/source/decoding_state_unittest.cc',
             'video_coding/main/source/jitter_buffer_unittest.cc',
+            'video_coding/main/source/jitter_estimator_tests.cc',
             'video_coding/main/source/media_optimization_unittest.cc',
             'video_coding/main/source/receiver_unittest.cc',
             'video_coding/main/source/session_info_unittest.cc',
@@ -240,15 +252,11 @@
             'video_coding/main/source/qm_select_unittest.cc',
             'video_coding/main/source/test/stream_generator.cc',
             'video_coding/main/source/test/stream_generator.h',
-            'video_coding/main/test/pcap_file_reader.cc',
-            'video_coding/main/test/pcap_file_reader_unittest.cc',
-            'video_coding/main/test/rtp_file_reader.cc',
-            'video_coding/main/test/rtp_file_reader_unittest.cc',
+            'video_coding/utility/quality_scaler_unittest.cc',
             'video_processing/main/test/unit_test/brightness_detection_test.cc',
             'video_processing/main/test/unit_test/color_enhancement_test.cc',
             'video_processing/main/test/unit_test/content_metrics_test.cc',
             'video_processing/main/test/unit_test/deflickering_test.cc',
-            'video_processing/main/test/unit_test/denoising_test.cc',
             'video_processing/main/test/unit_test/video_processing_unittest.cc',
             'video_processing/main/test/unit_test/video_processing_unittest.h',
           ],
@@ -295,9 +303,7 @@
                 '<(DEPTH)/third_party/libvpx/libvpx.gyp:libvpx',
               ],
             }],
-            # TODO(henrike): remove build_with_chromium==1 when the bots are
-            # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android"', {
+            ['OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -321,6 +327,7 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/common_video/common_video.gyp:common_video',
             '<(webrtc_root)/modules/video_coding/codecs/vp8/vp8.gyp:webrtc_vp8',
+            '<(webrtc_root)/modules/video_coding/codecs/vp9/vp9.gyp:webrtc_vp9',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/metrics.gyp:metrics',
             '<(webrtc_root)/test/test.gyp:test_support',
@@ -330,7 +337,6 @@
             '<@(audio_coding_defines)',
           ],
           'sources': [
-            'audio_coding/main/test/ACMTest.cc',
             'audio_coding/main/test/APITest.cc',
             'audio_coding/main/test/Channel.cc',
             'audio_coding/main/test/dual_stream_unittest.cc',
@@ -356,9 +362,7 @@
             'video_coding/codecs/vp8/test/vp8_impl_unittest.cc',
           ],
           'conditions': [
-            # TODO(henrike): remove build_with_chromium==1 when the bots are
-            # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android"', {
+            ['OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -367,9 +371,7 @@
         },
       ],
       'conditions': [
-        # TODO(henrike): remove build_with_chromium==1 when the bots are using
-        # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'targets': [
             {
               'target_name': 'modules_unittests_apk_target',
@@ -397,7 +399,6 @@
               ],
               'includes': [
                 '../build/isolate.gypi',
-                'modules_tests.isolate',
               ],
               'sources': [
                 'modules_tests.isolate',
@@ -411,7 +412,6 @@
               ],
               'includes': [
                 '../build/isolate.gypi',
-                'modules_unittests.isolate',
               ],
               'sources': [
                 'modules_unittests.isolate',

@@ -24,9 +24,9 @@ class SandboxIPCHandler : public base::DelegateSimpleThread::Delegate {
   // the other end of.
   // browser_socket: the browser's end of the sandbox IPC socketpair.
   SandboxIPCHandler(int lifeline_fd, int browser_socket);
-  virtual ~SandboxIPCHandler();
+  ~SandboxIPCHandler() override;
 
-  virtual void Run() OVERRIDE;
+  void Run() override;
 
  private:
   void EnsureWebKitInitialized();
@@ -76,7 +76,7 @@ class SandboxIPCHandler : public base::DelegateSimpleThread::Delegate {
 
   const int lifeline_fd_;
   const int browser_socket_;
-  scoped_ptr<BlinkPlatformImpl> webkit_platform_support_;
+  scoped_ptr<BlinkPlatformImpl> blink_platform_impl_;
   SkTDArray<SkString*> paths_;
 
   DISALLOW_COPY_AND_ASSIGN(SandboxIPCHandler);

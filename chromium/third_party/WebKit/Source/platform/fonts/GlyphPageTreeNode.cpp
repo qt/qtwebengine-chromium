@@ -37,7 +37,7 @@
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using std::max;
 using std::min;
@@ -61,7 +61,7 @@ GlyphPageTreeNode* GlyphPageTreeNode::getRoot(unsigned pageNumber)
         return foundNode;
 
     GlyphPageTreeNode* node = new GlyphPageTreeNode;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     node->m_pageNumber = pageNumber;
 #endif
     roots->set(pageNumber, node);
@@ -120,10 +120,6 @@ void GlyphPageTreeNode::pruneTreeFontData(const SimpleFontData* fontData)
 
 static bool fill(GlyphPage* pageToFill, unsigned offset, unsigned length, UChar* buffer, unsigned bufferLength, const SimpleFontData* fontData)
 {
-#if ENABLE(SVG_FONTS)
-    if (fontData->isSVGFont())
-        return fontData->customFontData()->fillSVGGlyphPage(pageToFill, offset, length, buffer, bufferLength, fontData);
-#endif
     bool hasGlyphs = fontData->fillGlyphPage(pageToFill, offset, length, buffer, bufferLength);
 #if ENABLE(OPENTYPE_VERTICAL)
     if (hasGlyphs && fontData->verticalData())
@@ -169,10 +165,11 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
                         buffer[i] = zeroWidthSpace;
                     buffer[softHyphen] = zeroWidthSpace;
 
-                    // \n, \t, and nonbreaking space must render as a space.
-                    buffer[(int)'\n'] = ' ';
-                    buffer[(int)'\t'] = ' ';
-                    buffer[noBreakSpace] = ' ';
+                    // \n and \t must render as a space.
+                    buffer[newlineCharacter] = space;
+                    buffer[characterTabulation] = space;
+                } else if (start == (arabicLetterMark & ~(GlyphPage::size - 1))) {
+                    buffer[arabicLetterMark - start] = zeroWidthSpace;
                 } else if (start == (leftToRightMark & ~(GlyphPage::size - 1))) {
                     // LRM, RLM, LRE, RLE, ZWNJ, ZWJ, and PDF must not render at all.
                     buffer[leftToRightMark - start] = zeroWidthSpace;
@@ -184,6 +181,16 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
                     buffer[zeroWidthNonJoiner - start] = zeroWidthSpace;
                     buffer[zeroWidthJoiner - start] = zeroWidthSpace;
                     buffer[popDirectionalFormatting - start] = zeroWidthSpace;
+                    buffer[activateArabicFormShaping - start] = zeroWidthSpace;
+                    buffer[activateSymmetricSwapping - start] = zeroWidthSpace;
+                    buffer[firstStrongIsolate - start] = zeroWidthSpace;
+                    buffer[inhibitArabicFormShaping - start] = zeroWidthSpace;
+                    buffer[inhibitSymmetricSwapping - start] = zeroWidthSpace;
+                    buffer[leftToRightIsolate - start] = zeroWidthSpace;
+                    buffer[nationalDigitShapes - start] = zeroWidthSpace;
+                    buffer[nominalDigitShapes - start] = zeroWidthSpace;
+                    buffer[popDirectionalIsolate - start] = zeroWidthSpace;
+                    buffer[rightToLeftIsolate - start] = zeroWidthSpace;
                 } else if (start == (objectReplacementCharacter & ~(GlyphPage::size - 1))) {
                     // Object replacement character must not render at all.
                     buffer[objectReplacementCharacter - start] = zeroWidthSpace;
@@ -207,13 +214,13 @@ void GlyphPageTreeNode::initializePage(const FontData* fontData, unsigned pageNu
             // for only 128 out of 256 characters.
             bool haveGlyphs;
             if (!fontData->isSegmented()) {
-                m_page = GlyphPage::createForSingleFontData(this, static_cast<const SimpleFontData*>(fontData));
-                haveGlyphs = fill(m_page.get(), 0, GlyphPage::size, buffer, bufferLength, static_cast<const SimpleFontData*>(fontData));
+                m_page = GlyphPage::createForSingleFontData(this, toSimpleFontData(fontData));
+                haveGlyphs = fill(m_page.get(), 0, GlyphPage::size, buffer, bufferLength, toSimpleFontData(fontData));
             } else {
                 m_page = GlyphPage::createForMixedFontData(this);
                 haveGlyphs = false;
 
-                const SegmentedFontData* segmentedFontData = static_cast<const SegmentedFontData*>(fontData);
+                const SegmentedFontData* segmentedFontData = toSegmentedFontData(fontData);
                 for (int i = segmentedFontData->numRanges() - 1; i >= 0; i--) {
                     const FontDataRange& range = segmentedFontData->rangeAt(i);
                     // all this casting is to ensure all the parameters to min and max have the same type,
@@ -322,7 +329,7 @@ GlyphPageTreeNode* GlyphPageTreeNode::getChild(const FontData* fontData, unsigne
             curr->m_customFontCount++;
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     child->m_pageNumber = m_pageNumber;
 #endif
     if (fontData) {
@@ -383,41 +390,5 @@ void GlyphPageTreeNode::pruneFontData(const SimpleFontData* fontData, unsigned l
         it->value->pruneFontData(fontData, level);
 }
 
-#ifndef NDEBUG
-    void GlyphPageTreeNode::showSubtree()
-    {
-        Vector<char> indent(level());
-        indent.fill('\t', level());
-        indent.append(0);
+} // namespace blink
 
-        GlyphPageTreeNodeMap::iterator end = m_children.end();
-        for (GlyphPageTreeNodeMap::iterator it = m_children.begin(); it != end; ++it) {
-            printf("%s\t%p %s\n", indent.data(), it->key, it->key->description().utf8().data());
-            it->value->showSubtree();
-        }
-        if (m_systemFallbackChild) {
-            printf("%s\t* fallback\n", indent.data());
-            m_systemFallbackChild->showSubtree();
-        }
-    }
-#endif
-
-}
-
-#ifndef NDEBUG
-void showGlyphPageTrees()
-{
-    printf("Page 0:\n");
-    showGlyphPageTree(0);
-    HashMap<int, WebCore::GlyphPageTreeNode*>::iterator end = WebCore::GlyphPageTreeNode::roots->end();
-    for (HashMap<int, WebCore::GlyphPageTreeNode*>::iterator it = WebCore::GlyphPageTreeNode::roots->begin(); it != end; ++it) {
-        printf("\nPage %d:\n", it->key);
-        showGlyphPageTree(it->key);
-    }
-}
-
-void showGlyphPageTree(unsigned pageNumber)
-{
-    WebCore::GlyphPageTreeNode::getRoot(pageNumber)->showSubtree();
-}
-#endif

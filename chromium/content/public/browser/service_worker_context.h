@@ -5,14 +5,17 @@
 #ifndef CONTENT_PUBLIC_BROWSER_SERVICE_WORKER_CONTEXT_H_
 #define CONTENT_PUBLIC_BROWSER_SERVICE_WORKER_CONTEXT_H_
 
+#include <set>
+#include <string>
+
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
+#include "content/public/browser/service_worker_usage_info.h"
 #include "url/gurl.h"
 
 namespace content {
 
-// Represents the per-StoragePartition ServiceWorker data.  Must be used from
-// the UI thread.
+// Represents the per-StoragePartition ServiceWorker data.
 class ServiceWorkerContext {
  public:
   // https://rawgithub.com/slightlyoff/ServiceWorker/master/spec/service_worker/index.html#url-scope:
@@ -20,6 +23,18 @@ class ServiceWorkerContext {
   typedef GURL Scope;
 
   typedef base::Callback<void(bool success)> ResultCallback;
+
+  typedef base::Callback<void(const std::vector<ServiceWorkerUsageInfo>&
+                                  usage_info)> GetUsageInfoCallback;
+
+  // Registers the header name which should not be passed to the ServiceWorker.
+  // Must be called from the IO thread.
+  CONTENT_EXPORT static void AddExcludedHeadersForFetchEvent(
+      const std::set<std::string>& header_names);
+
+  // Returns true if the header name should not be passed to the ServiceWorker.
+  // Must be called from the IO thread.
+  static bool IsExcludedHeaderNameForFetchEvent(const std::string& header_name);
 
   // Equivalent to calling navigator.serviceWorker.register(script_url, {scope:
   // pattern}) from a renderer, except that |pattern| is an absolute URL instead
@@ -49,10 +64,9 @@ class ServiceWorkerContext {
 
   // TODO(jyasskin): Provide a way to SendMessage to a Scope.
 
-  // Synchronously releases all of the RenderProcessHosts that have Service
-  // Workers running inside them, and prevents any new Service Worker instances
-  // from starting up.
-  virtual void Terminate() = 0;
+  // Methods used in response to browsing data and quota manager requests.
+  virtual void GetAllOriginsInfo(const GetUsageInfoCallback& callback) = 0;
+  virtual void DeleteForOrigin(const GURL& origin_url) = 0;
 
  protected:
   ServiceWorkerContext() {}

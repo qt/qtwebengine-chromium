@@ -33,14 +33,15 @@
 
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class Entry;
 typedef HeapVector<Member<Entry> > EntryHeapVector;
 
-class EntriesCallback {
+class EntriesCallback : public GarbageCollectedFinalized<EntriesCallback> {
 public:
     virtual ~EntriesCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(const EntryHeapVector&) = 0;
 };
 

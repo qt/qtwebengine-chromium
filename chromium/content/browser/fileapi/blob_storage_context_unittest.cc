@@ -9,11 +9,11 @@
 #include "base/run_loop.h"
 #include "base/time/time.h"
 #include "content/browser/fileapi/blob_storage_host.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
 
-using webkit_blob::BlobDataHandle;
+using storage::BlobDataHandle;
 
 namespace content {
 

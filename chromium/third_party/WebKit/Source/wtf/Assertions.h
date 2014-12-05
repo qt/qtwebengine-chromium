@@ -43,40 +43,39 @@
 #include "wtf/Compiler.h"
 #include "wtf/WTFExport.h"
 
-#ifdef NDEBUG
-/* Disable ASSERT* macros in release mode. */
-#define ASSERTIONS_DISABLED_DEFAULT 1
+// Users must test "#if ENABLE(ASSERT)", which helps ensure that code
+// testing this macro has included this header.
+#ifndef ENABLE_ASSERT
+#if defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON)
+/* Disable ASSERT* macros in release mode by default. */
+#define ENABLE_ASSERT 0
 #else
-#define ASSERTIONS_DISABLED_DEFAULT 0
+#define ENABLE_ASSERT 1
+#endif /* defined(NDEBUG) && !defined(DCHECK_ALWAYS_ON) */
 #endif
 
 #ifndef BACKTRACE_DISABLED
-#define BACKTRACE_DISABLED ASSERTIONS_DISABLED_DEFAULT
-#endif
-
-#ifndef ASSERT_ENABLED
-// Notice the not below:
-#define ASSERT_ENABLED !ASSERTIONS_DISABLED_DEFAULT
+#define BACKTRACE_DISABLED !ENABLE(ASSERT)
 #endif
 
 #ifndef ASSERT_MSG_DISABLED
-#define ASSERT_MSG_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#define ASSERT_MSG_DISABLED !ENABLE(ASSERT)
 #endif
 
 #ifndef ASSERT_ARG_DISABLED
-#define ASSERT_ARG_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#define ASSERT_ARG_DISABLED !ENABLE(ASSERT)
 #endif
 
 #ifndef FATAL_DISABLED
-#define FATAL_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#define FATAL_DISABLED !ENABLE(ASSERT)
 #endif
 
 #ifndef ERROR_DISABLED
-#define ERROR_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#define ERROR_DISABLED !ENABLE(ASSERT)
 #endif
 
 #ifndef LOG_DISABLED
-#define LOG_DISABLED ASSERTIONS_DISABLED_DEFAULT
+#define LOG_DISABLED !ENABLE(ASSERT)
 #endif
 
 /* WTF logging functions can process %@ in the format string to log a NSObject* but the printf format attribute
@@ -89,10 +88,6 @@
 #endif
 
 /* These helper functions are always declared, but not necessarily always defined if the corresponding function is disabled. */
-
-#ifdef __cplusplus
-extern "C" {
-#endif
 
 typedef enum { WTFLogChannelOff, WTFLogChannelOn } WTFLogChannelState;
 
@@ -113,14 +108,6 @@ WTF_EXPORT void WTFGetBacktrace(void** stack, int* size);
 WTF_EXPORT void WTFReportBacktrace(int framesToShow = 31);
 WTF_EXPORT void WTFPrintBacktrace(void** stack, int size);
 
-typedef void (*WTFCrashHookFunction)();
-WTF_EXPORT void WTFSetCrashHook(WTFCrashHookFunction);
-WTF_EXPORT void WTFInvokeCrashHook();
-WTF_EXPORT void WTFInstallReportBacktraceOnCrashHook();
-
-#ifdef __cplusplus
-}
-
 namespace WTF {
 
 class WTF_EXPORT FrameToNameScope {
@@ -137,7 +124,6 @@ private:
 } // namespace WTF
 
 using WTF::FrameToNameScope;
-#endif
 
 /* IMMEDIATE_CRASH() - Like CRASH() below but crashes in the fastest, simplest possible way with no attempt at logging. */
 #ifndef IMMEDIATE_CRASH
@@ -159,7 +145,6 @@ using WTF::FrameToNameScope;
 #ifndef CRASH
 #define CRASH() \
     (WTFReportBacktrace(), \
-     WTFInvokeCrashHook(), \
      (*(int*)0xfbadbeef = 0), \
      IMMEDIATE_CRASH())
 #endif
@@ -196,7 +181,7 @@ using WTF::FrameToNameScope;
 #undef ASSERT
 #endif
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 
 #define ASSERT(assertion) \
     (!(assertion) ? \
@@ -255,10 +240,12 @@ using WTF::FrameToNameScope;
 
 #endif
 
-#if defined(ADDRESS_SANITIZER) || ASSERT_ENABLED
-#define SECURITY_ASSERT_ENABLED 1
+// Users must test "#if ENABLE(SECURITY_ASSERT)", which helps ensure
+// that code testing this macro has included this header.
+#if defined(ADDRESS_SANITIZER) || ENABLE(ASSERT)
+#define ENABLE_SECURITY_ASSERT 1
 #else
-#define SECURITY_ASSERT_ENABLED 0
+#define ENABLE_SECURITY_ASSERT 0
 #endif
 
 /* ASSERT_WITH_MESSAGE */
@@ -369,7 +356,7 @@ static inline void UNREACHABLE_FOR_PLATFORM()
       http://code.google.com/p/chromium/issues/entry?template=Security%20Bug
 */
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 #define RELEASE_ASSERT(assertion) ASSERT(assertion)
 #define RELEASE_ASSERT_WITH_MESSAGE(assertion, ...) ASSERT_WITH_MESSAGE(assertion, __VA_ARGS__)
 #define RELEASE_ASSERT_NOT_REACHED() ASSERT_NOT_REACHED()
@@ -382,6 +369,7 @@ static inline void UNREACHABLE_FOR_PLATFORM()
 /* DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES */
 
 // Allow equality comparisons of Objects by reference or pointer, interchangeably.
+// This can be only used on types whose equality makes no other sense than pointer equality.
 #define DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(thisType) \
     inline bool operator==(const thisType& a, const thisType& b) { return &a == &b; } \
     inline bool operator==(const thisType& a, const thisType* b) { return &a == b; } \

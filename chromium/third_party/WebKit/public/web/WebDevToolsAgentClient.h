@@ -35,6 +35,7 @@
 #include "../platform/WebCommon.h"
 
 namespace blink {
+
 class WebString;
 struct WebDeviceEmulationParams;
 struct WebDevToolsMessageData;
@@ -46,16 +47,18 @@ public:
     virtual void sendMessageToInspectorFrontend(const WebString&) { }
     virtual void sendDebuggerOutput(const WebString&) { }
 
-    // Returns the identifier of the entity hosting this agent.
-    // FIXME: remove once migrated to debuggerId().
-    virtual int hostIdentifier() { return -1; }
+    // Returns process id.
+    virtual long processId() { return -1; }
 
     // Returns unique identifier of the entity within process.
-    virtual int debuggerId() { return hostIdentifier(); }
+    virtual int debuggerId() { return -1; }
 
     // Save the agent state in order to pass it later into WebDevToolsAgent::reattach
     // if the same client is reattached to another agent.
     virtual void saveAgentRuntimeState(const WebString&) { }
+
+    // Resume the inspected renderer that is waiting for DevTools front-end to initialize its state.
+    virtual void resumeStartup() { }
 
     class WebKitClientMessageLoop {
     public:
@@ -66,22 +69,6 @@ public:
     virtual WebKitClientMessageLoop* createClientMessageLoop() { return 0; }
     virtual void willEnterDebugLoop() { }
     virtual void didExitDebugLoop() { }
-
-    class AllocatedObjectVisitor {
-    public:
-        virtual bool visitObject(const void* ptr) = 0;
-    protected:
-        virtual ~AllocatedObjectVisitor() { }
-    };
-    virtual void visitAllocatedObjects(AllocatedObjectVisitor*) { }
-
-    class InstrumentedObjectSizeProvider {
-    public:
-        virtual size_t objectSize(const void* ptr) const = 0;
-    protected:
-        virtual ~InstrumentedObjectSizeProvider() { }
-    };
-    virtual void dumpUncountedAllocatedObjects(const InstrumentedObjectSizeProvider*) { }
 
     typedef void (*TraceEventCallback)(char phase, const unsigned char*, const char* name, unsigned long long id,
         int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,

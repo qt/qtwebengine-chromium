@@ -40,35 +40,36 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScriptManager;
 class HeapStatsUpdateTask;
-class ScriptHeapSnapshot;
 
 typedef String ErrorString;
 
-class InspectorHeapProfilerAgent FINAL : public InspectorBaseAgent<InspectorHeapProfilerAgent>, public InspectorBackendDispatcher::HeapProfilerCommandHandler {
-    WTF_MAKE_NONCOPYABLE(InspectorHeapProfilerAgent); WTF_MAKE_FAST_ALLOCATED;
+class InspectorHeapProfilerAgent final : public InspectorBaseAgent<InspectorHeapProfilerAgent>, public InspectorBackendDispatcher::HeapProfilerCommandHandler {
+    WTF_MAKE_NONCOPYABLE(InspectorHeapProfilerAgent);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<InspectorHeapProfilerAgent> create(InjectedScriptManager*);
+    static PassOwnPtrWillBeRawPtr<InspectorHeapProfilerAgent> create(InjectedScriptManager*);
     virtual ~InspectorHeapProfilerAgent();
+    virtual void trace(Visitor*) override;
 
-    virtual void collectGarbage(ErrorString*) OVERRIDE;
+    virtual void collectGarbage(ErrorString*) override;
 
-    virtual void enable(ErrorString*) OVERRIDE;
-    virtual void disable(ErrorString*) OVERRIDE;
-    virtual void startTrackingHeapObjects(ErrorString*, const bool* trackAllocations) OVERRIDE;
-    virtual void stopTrackingHeapObjects(ErrorString*, const bool* reportProgress) OVERRIDE;
+    virtual void enable(ErrorString*) override;
+    virtual void disable(ErrorString*) override;
+    virtual void startTrackingHeapObjects(ErrorString*, const bool* trackAllocations) override;
+    virtual void stopTrackingHeapObjects(ErrorString*, const bool* reportProgress) override;
 
-    virtual void setFrontend(InspectorFrontend*) OVERRIDE;
-    virtual void clearFrontend() OVERRIDE;
-    virtual void restore() OVERRIDE;
+    virtual void setFrontend(InspectorFrontend*) override;
+    virtual void clearFrontend() override;
+    virtual void restore() override;
 
-    virtual void takeHeapSnapshot(ErrorString*, const bool* reportProgress) OVERRIDE;
+    virtual void takeHeapSnapshot(ErrorString*, const bool* reportProgress) override;
 
-    virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) OVERRIDE;
-    virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId) OVERRIDE;
+    virtual void getObjectByHeapObjectId(ErrorString*, const String& heapSnapshotObjectId, const String* objectGroup, RefPtr<TypeBuilder::Runtime::RemoteObject>& result) override;
+    virtual void getHeapObjectId(ErrorString*, const String& objectId, String* heapSnapshotObjectId) override;
 
 private:
     class HeapStatsStream;
@@ -82,13 +83,13 @@ private:
     void startTrackingHeapObjectsInternal(bool trackAllocations);
     void stopTrackingHeapObjectsInternal();
 
-    InjectedScriptManager* m_injectedScriptManager;
+    RawPtrWillBeMember<InjectedScriptManager> m_injectedScriptManager;
     InspectorFrontend::HeapProfiler* m_frontend;
     unsigned m_nextUserInitiatedHeapSnapshotNumber;
-    OwnPtr<HeapStatsUpdateTask> m_heapStatsUpdateTask;
+    OwnPtrWillBeMember<HeapStatsUpdateTask> m_heapStatsUpdateTask;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(InspectorHeapProfilerAgent_h)

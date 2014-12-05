@@ -34,7 +34,7 @@ class Widget;
 
 namespace internal {
 class DisplayChangeListener;
-class MenuRunnerImpl;
+class MenuRunnerImplInterface;
 }
 
 namespace test {
@@ -82,6 +82,12 @@ class VIEWS_EXPORT MenuRunner {
     // The menu should behave like a Windows native Combobox dropdow menu.
     // This behavior includes accepting the pending item and closing on F4.
     COMBOBOX  = 1 << 4,
+
+    // A child view is performing a drag-and-drop operation, so the menu should
+    // stay open (even if it doesn't receive drag updated events). In this case,
+    // the caller is responsible for closing the menu upon completion of the
+    // drag-and-drop.
+    NESTED_DRAG = 1 << 5,
   };
 
   enum RunResult {
@@ -93,20 +99,13 @@ class VIEWS_EXPORT MenuRunner {
   };
 
   // Creates a new MenuRunner.
-  explicit MenuRunner(ui::MenuModel* menu_model);
-  explicit MenuRunner(MenuItemView* menu);
+  // |run_types| is a bitmask of RunTypes.
+  MenuRunner(ui::MenuModel* menu_model, int32 run_types);
+  MenuRunner(MenuItemView* menu, int32 run_types);
   ~MenuRunner();
 
-  // Returns the menu.
-  MenuItemView* GetMenu();
-
-  // Takes ownership of |menu|, deleting it when MenuRunner is deleted. You
-  // only need call this if you create additional menus from
-  // MenuDelegate::GetSiblingMenu.
-  void OwnMenu(MenuItemView* menu);
-
-  // Runs the menu. |types| is a bitmask of RunTypes. If this returns
-  // MENU_DELETED the method is returning because the MenuRunner was deleted.
+  // Runs the menu. If this returns MENU_DELETED the method is returning
+  // because the MenuRunner was deleted.
   // Typically callers should NOT do any processing if this returns
   // MENU_DELETED.
   // If |anchor| uses a |BUBBLE_..| type, the bounds will get determined by
@@ -115,8 +114,7 @@ class VIEWS_EXPORT MenuRunner {
                       MenuButton* button,
                       const gfx::Rect& bounds,
                       MenuAnchorPosition anchor,
-                      ui::MenuSourceType source_type,
-                      int32 types) WARN_UNUSED_RESULT;
+                      ui::MenuSourceType source_type) WARN_UNUSED_RESULT;
 
   // Returns true if we're in a nested message loop running the menu.
   bool IsRunning() const;
@@ -133,9 +131,10 @@ class VIEWS_EXPORT MenuRunner {
   // Sets an implementation of RunMenuAt. This is intended to be used at test.
   void SetRunnerHandler(scoped_ptr<MenuRunnerHandler> runner_handler);
 
-  scoped_ptr<MenuModelAdapter> menu_model_adapter_;
+  const int32 run_types_;
 
-  internal::MenuRunnerImpl* holder_;
+  // We own this. No scoped_ptr because it is destroyed by calling Release().
+  internal::MenuRunnerImplInterface* impl_;
 
   // An implementation of RunMenuAt. This is usually NULL and ignored. If this
   // is not NULL, this implementation will be used.
@@ -164,7 +163,7 @@ class DisplayChangeListener {
   DisplayChangeListener() {}
 };
 
-}
+}  // namespace internal
 
 }  // namespace views
 

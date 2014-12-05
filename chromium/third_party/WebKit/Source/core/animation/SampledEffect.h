@@ -7,11 +7,11 @@
 
 #include "core/animation/Animation.h"
 #include "core/animation/AnimationPlayer.h"
-#include "core/animation/interpolation/Interpolation.h"
+#include "core/animation/Interpolation.h"
 #include "wtf/BitArray.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class SampledEffect : public NoBaseWillBeGarbageCollected<SampledEffect> {
 public:
@@ -27,7 +27,7 @@ public:
     void setInterpolations(PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > interpolations) { m_interpolations = interpolations; }
 
     Animation* animation() const { return m_animation; }
-    const AnimationPlayer::SortInfo& sortInfo() const { return m_playerSortInfo; }
+    unsigned sequenceNumber() const { return m_sequenceNumber; }
     Animation::Priority priority() const { return m_priority; }
 
     void removeReplacedInterpolationsIfNeeded(const BitArray<numCSSProperties>&);
@@ -42,10 +42,10 @@ private:
     RefPtr<AnimationPlayer> m_player;
 #endif
     OwnPtrWillBeMember<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > m_interpolations;
-    AnimationPlayer::SortInfo m_playerSortInfo;
+    const unsigned m_sequenceNumber;
     Animation::Priority m_priority;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

@@ -26,7 +26,7 @@
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<MorphologyOperatorType>()
 {
@@ -44,21 +44,12 @@ inline SVGFEMorphologyElement::SVGFEMorphologyElement(Document& document)
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
     , m_svgOperator(SVGAnimatedEnumeration<MorphologyOperatorType>::create(this, SVGNames::operatorAttr, FEMORPHOLOGY_OPERATOR_ERODE))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_radius);
     addToPropertyMap(m_in1);
     addToPropertyMap(m_svgOperator);
 }
 
 DEFINE_NODE_FACTORY(SVGFEMorphologyElement)
-
-void SVGFEMorphologyElement::setRadius(float x, float y)
-{
-    radiusX()->baseValue()->setValue(x);
-    radiusY()->baseValue()->setValue(y);
-    invalidate();
-}
 
 bool SVGFEMorphologyElement::isSupportedAttribute(const QualifiedName& attrName)
 {
@@ -73,23 +64,7 @@ bool SVGFEMorphologyElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFEMorphologyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::radiusAttr)
-        m_radius->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::operatorAttr)
-        m_svgOperator->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFEMorphologyElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
@@ -147,4 +122,4 @@ PassRefPtr<FilterEffect> SVGFEMorphologyElement::build(SVGFilterBuilder* filterB
     return effect.release();
 }
 
-} // namespace WebCore
+} // namespace blink

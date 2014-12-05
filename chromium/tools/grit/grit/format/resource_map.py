@@ -109,18 +109,18 @@ def _FormatSource(get_key, root, lang, output_dir):
   tids = rc_header.GetIds(root)
   seen = set()
   active_descendants = [item for item in root.ActiveDescendants()]
+  output_all_resource_defines = root.ShouldOutputAllResourceDefines()
   for item in root:
-    if isinstance(item, (include.IncludeNode,
-                         structure.StructureNode,
-                         message.MessageNode)):
-      key = get_key(item)
-      tid = item.attrs['name']
-      if tid in tids and key not in seen:
-        seen.add(key)
-        # For messages, only include the active ones
-        if not isinstance(item, message.MessageNode) \
-            or item in active_descendants:
-          yield '  {"%s", %s},\n' % (key, tid)
+    if not item.IsResourceMapSource():
+      continue
+    key = get_key(item)
+    tid = item.attrs['name']
+    if tid not in tids or key in seen:
+      continue
+    seen.add(key)
+    if item.GeneratesResourceMapEntry(output_all_resource_defines,
+                                      item in active_descendants):
+      yield '  {"%s", %s},\n' % (key, tid)
   yield _FormatSourceFooter(root)
 
 

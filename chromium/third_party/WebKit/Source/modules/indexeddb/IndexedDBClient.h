@@ -29,18 +29,16 @@
 #define IndexedDBClient_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
 class IndexedDBClient : public GarbageCollected<IndexedDBClient> {
 public:
     static IndexedDBClient* create();
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) { }
 
     virtual bool allowIndexedDB(ExecutionContext*, const String& name) = 0;
 };
@@ -49,6 +47,6 @@ typedef IndexedDBClient* CreateIndexedDBClient();
 
 void setIndexedDBClientCreateFunction(CreateIndexedDBClient);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IndexedDBClient_h

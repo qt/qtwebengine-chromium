@@ -25,12 +25,12 @@ namespace {
 
 class SimpleComparator : public LevelDBComparator {
  public:
-  virtual int Compare(const base::StringPiece& a,
-                      const base::StringPiece& b) const OVERRIDE {
+  int Compare(const base::StringPiece& a,
+              const base::StringPiece& b) const override {
     size_t len = std::min(a.size(), b.size());
     return memcmp(a.begin(), b.begin(), len);
   }
-  virtual const char* Name() const OVERRIDE { return "temp_comparator"; }
+  const char* Name() const override { return "temp_comparator"; }
 };
 
 }  // namespace
@@ -51,7 +51,7 @@ TEST(LevelDBDatabaseTest, CorruptionTest) {
   put_value = value;
   leveldb::Status status = leveldb->Put(key, &put_value);
   EXPECT_TRUE(status.ok());
-  leveldb.Pass();
+  leveldb.reset();
   EXPECT_FALSE(leveldb);
 
   LevelDBDatabase::Open(temp_directory.path(), &comparator, &leveldb);
@@ -61,7 +61,7 @@ TEST(LevelDBDatabaseTest, CorruptionTest) {
   EXPECT_TRUE(status.ok());
   EXPECT_TRUE(found);
   EXPECT_EQ(value, got_value);
-  leveldb.Pass();
+  leveldb.reset();
   EXPECT_FALSE(leveldb);
 
   base::FilePath file_path = temp_directory.path().AppendASCII("CURRENT");

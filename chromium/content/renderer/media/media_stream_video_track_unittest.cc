@@ -15,8 +15,12 @@
 #include "content/renderer/media/mock_media_stream_video_source.h"
 #include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 
 namespace content {
+
+const uint8 kBlackValue = 0x00;
+const uint8 kColorValue = 0xAB;
 
 ACTION_P(RunClosure, closure) {
   closure.Run();
@@ -34,7 +38,11 @@ class MediaStreamVideoTrackTest : public ::testing::Test {
     blink_source_.setExtraData(mock_source_);
   }
 
-  virtual ~MediaStreamVideoTrackTest() {
+  ~MediaStreamVideoTrackTest() override {}
+
+  void TearDown() override {
+    blink_source_.reset();
+    blink::WebHeap::collectAllGarbageForTesting();
   }
 
   void DeliverVideoFrameAndWaitForRenderer(MockMediaStreamVideoSink* sink) {
@@ -43,9 +51,10 @@ class MediaStreamVideoTrackTest : public ::testing::Test {
     EXPECT_CALL(*sink, OnVideoFrame()).WillOnce(
         RunClosure(quit_closure));
     scoped_refptr<media::VideoFrame> frame =
-        media::VideoFrame::CreateBlackFrame(
+        media::VideoFrame::CreateColorFrame(
             gfx::Size(MediaStreamVideoSource::kDefaultWidth,
-                      MediaStreamVideoSource::kDefaultHeight));
+                      MediaStreamVideoSource::kDefaultHeight),
+            kColorValue, kColorValue, kColorValue, base::TimeDelta());
     mock_source()->DeliverVideoFrame(frame);
     run_loop.Run();
   }
@@ -163,24 +172,20 @@ TEST_F(MediaStreamVideoTrackTest, SetEnabled) {
 
   DeliverVideoFrameAndWaitForRenderer(&sink);
   EXPECT_EQ(1, sink.number_of_frames());
+  EXPECT_EQ(kColorValue, *sink.last_frame()->data(media::VideoFrame::kYPlane));
 
   video_track->SetEnabled(false);
   EXPECT_FALSE(sink.enabled());
 
-  scoped_refptr<media::VideoFrame> frame =
-      media::VideoFrame::CreateBlackFrame(
-          gfx::Size(MediaStreamVideoSource::kDefaultWidth,
-                    MediaStreamVideoSource::kDefaultHeight));
-  mock_source()->DeliverVideoFrame(frame);
-  // Wait for the IO thread to complete delivering frames.
-  io_message_loop()->RunUntilIdle();
-  EXPECT_EQ(1, sink.number_of_frames());
+  DeliverVideoFrameAndWaitForRenderer(&sink);
+  EXPECT_EQ(2, sink.number_of_frames());
+  EXPECT_EQ(kBlackValue, *sink.last_frame()->data(media::VideoFrame::kYPlane));
 
   video_track->SetEnabled(true);
   EXPECT_TRUE(sink.enabled());
-  mock_source()->DeliverVideoFrame(frame);
   DeliverVideoFrameAndWaitForRenderer(&sink);
-  EXPECT_EQ(2, sink.number_of_frames());
+  EXPECT_EQ(3, sink.number_of_frames());
+  EXPECT_EQ(kColorValue, *sink.last_frame()->data(media::VideoFrame::kYPlane));
   MediaStreamVideoSink::RemoveFromVideoTrack(&sink, track);
 }
 

@@ -31,14 +31,14 @@
 #include "platform/LifecycleNotifier.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 class DummyContext : public LifecycleContext<DummyContext> {
 };
 }
 
-namespace WebCore {
+namespace blink {
 
 template<> void observerContext(DummyContext* context, LifecycleObserver<DummyContext>* observer)
 {
@@ -62,7 +62,7 @@ public:
         , m_contextDestroyedCalled(false)
     { }
 
-    virtual void contextDestroyed() OVERRIDE
+    virtual void contextDestroyed() override
     {
         LifecycleObserver<DummyContext>::contextDestroyed();
         m_contextDestroyedCalled = true;

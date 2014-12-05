@@ -18,18 +18,6 @@
 #include "vp9/encoder/vp9_extend.h"
 #include "vp9/encoder/vp9_lookahead.h"
 
-// The max of past frames we want to keep in the queue.
-#define MAX_PRE_FRAMES 1
-
-struct lookahead_ctx {
-  unsigned int max_sz;         /* Absolute size of the queue */
-  unsigned int sz;             /* Number of buffers currently in the queue */
-  unsigned int read_idx;       /* Read index */
-  unsigned int write_idx;      /* Write index */
-  struct lookahead_entry *buf; /* Buffer list */
-};
-
-
 /* Return the buffer at the given absolute index and increment the index */
 static struct lookahead_entry *pop(struct lookahead_ctx *ctx,
                                    unsigned int *idx) {
@@ -62,6 +50,9 @@ struct lookahead_ctx *vp9_lookahead_init(unsigned int width,
                                          unsigned int height,
                                          unsigned int subsampling_x,
                                          unsigned int subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                                         int use_highbitdepth,
+#endif
                                          unsigned int depth) {
   struct lookahead_ctx *ctx = NULL;
 
@@ -82,6 +73,9 @@ struct lookahead_ctx *vp9_lookahead_init(unsigned int width,
     for (i = 0; i < depth; i++)
       if (vp9_alloc_frame_buffer(&ctx->buf[i].img,
                                  width, height, subsampling_x, subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                                 use_highbitdepth,
+#endif
                                  VP9_ENC_BORDER_IN_PIXELS))
         goto bail;
   }

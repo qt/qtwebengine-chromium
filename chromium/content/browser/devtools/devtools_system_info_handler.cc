@@ -34,45 +34,43 @@ class AuxGPUInfoEnumerator : public gpu::GPUInfo::Enumerator {
       : dictionary_(dictionary),
         in_aux_attributes_(false) { }
 
-  virtual void AddInt64(const char* name, int64 value) OVERRIDE {
+  void AddInt64(const char* name, int64 value) override {
     if (in_aux_attributes_)
       dictionary_->SetDouble(name, value);
   }
 
-  virtual void AddInt(const char* name, int value) OVERRIDE {
+  void AddInt(const char* name, int value) override {
     if (in_aux_attributes_)
       dictionary_->SetInteger(name, value);
   }
 
-  virtual void AddString(const char* name, const std::string& value) OVERRIDE {
+  void AddString(const char* name, const std::string& value) override {
     if (in_aux_attributes_)
       dictionary_->SetString(name, value);
   }
 
-  virtual void AddBool(const char* name, bool value) OVERRIDE {
+  void AddBool(const char* name, bool value) override {
     if (in_aux_attributes_)
       dictionary_->SetBoolean(name, value);
   }
 
-  virtual void AddTimeDeltaInSecondsF(const char* name,
-                                      const base::TimeDelta& value) OVERRIDE {
+  void AddTimeDeltaInSecondsF(const char* name,
+                              const base::TimeDelta& value) override {
     if (in_aux_attributes_)
       dictionary_->SetDouble(name, value.InSecondsF());
   }
 
-  virtual void BeginGPUDevice() OVERRIDE {
-  }
+  void BeginGPUDevice() override {}
 
-  virtual void EndGPUDevice() OVERRIDE {
-  }
+  void EndGPUDevice() override {}
 
-  virtual void BeginAuxAttributes() OVERRIDE {
-    in_aux_attributes_ = true;
-  }
+  void BeginVideoEncodeAcceleratorSupportedProfile() override {}
 
-  virtual void EndAuxAttributes() OVERRIDE {
-    in_aux_attributes_ = false;
-  }
+  void EndVideoEncodeAcceleratorSupportedProfile() override {}
+
+  void BeginAuxAttributes() override { in_aux_attributes_ = true; }
+
+  void EndAuxAttributes() override { in_aux_attributes_ = false; }
 
  private:
   base::DictionaryValue* dictionary_;

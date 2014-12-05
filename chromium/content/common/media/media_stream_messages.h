@@ -78,8 +78,7 @@ IPC_MESSAGE_ROUTED2(MediaStreamMsg_DeviceStopped,
 
 // The browser has enumerated devices. If no devices are found
 // |device_list| is empty.
-// Used by Pepper.
-// TODO(vrk,wjia): Move this to pepper code.
+// Used by Pepper and WebRTC.
 IPC_MESSAGE_ROUTED2(MediaStreamMsg_DevicesEnumerated,
                     int /* request id */,
                     content::StreamDeviceInfoArray /* device_list */)
@@ -96,16 +95,11 @@ IPC_MESSAGE_ROUTED3(MediaStreamMsg_DeviceOpened,
 IPC_MESSAGE_ROUTED1(MediaStreamMsg_DeviceOpenFailed,
                     int /* request id */)
 
-// Response to enumerate devices request.
-IPC_MESSAGE_CONTROL2(MediaStreamMsg_GetSourcesACK,
-                     int /* request id */,
-                     content::StreamDeviceInfoArray /* device_list */)
-
 // Messages sent from the renderer to the browser.
 
 // Request a new media stream.
 IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_GenerateStream,
-                     int /* render view id */,
+                     int /* render frame id */,
                      int /* request id */,
                      content::StreamOptions /* components */,
                      GURL /* security origin */,
@@ -113,36 +107,30 @@ IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_GenerateStream,
 
 // Request to cancel the request for a new media stream.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CancelGenerateStream,
-                     int /* render view id */,
+                     int /* render frame id */,
                      int /* request id */)
 
 // Request to close a device that has been opened by GenerateStream.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_StopStreamDevice,
-                     int /* render view id */,
+                     int /* render frame id */,
                      std::string /*device_id*/)
 
 // Request to enumerate devices.
-IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_GetSources,
-                     int /* request id */,
-                     GURL /* origin */)
-
-// Request to enumerate devices.
 // Used by Pepper and WebRTC.
-IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_EnumerateDevices,
-                     int /* render view id */,
+IPC_MESSAGE_CONTROL4(MediaStreamHostMsg_EnumerateDevices,
+                     int /* render frame id */,
                      int /* request id */,
                      content::MediaStreamType /* type */,
-                     GURL /* security origin */,
-                     bool /* hide_labels_if_no_access */)
+                     GURL /* security origin */)
 
 // Request to stop enumerating devices.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CancelEnumerateDevices,
-                     int /* render view id */,
+                     int /* render frame id */,
                      int /* request id */)
 
 // Request to open the device.
 IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_OpenDevice,
-                     int /* render view id */,
+                     int /* render frame id */,
                      int /* request id */,
                      std::string /* device_id */,
                      content::MediaStreamType /* type */,
@@ -150,5 +138,5 @@ IPC_MESSAGE_CONTROL5(MediaStreamHostMsg_OpenDevice,
 
 // Request to close a device.
 IPC_MESSAGE_CONTROL2(MediaStreamHostMsg_CloseDevice,
-                     int /* render view id */,
+                     int /* render frame id */,
                      std::string /*label*/)

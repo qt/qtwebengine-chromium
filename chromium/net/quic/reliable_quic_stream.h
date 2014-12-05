@@ -38,9 +38,8 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   virtual ~ReliableQuicStream();
 
   // Called when a (potentially duplicate) stream frame has been received
-  // for this stream.  Returns false if this frame can not be accepted
-  // because there is too much data already buffered.
-  virtual bool OnStreamFrame(const QuicStreamFrame& frame);
+  // for this stream.
+  virtual void OnStreamFrame(const QuicStreamFrame& frame);
 
   // Called when the connection becomes writeable to allow the stream
   // to write any pending data.
@@ -90,6 +89,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   void set_fin_sent(bool fin_sent) { fin_sent_ = fin_sent; }
   void set_rst_sent(bool rst_sent) { rst_sent_ = rst_sent; }
 
+  void set_fec_policy(FecPolicy fec_policy) { fec_policy_ = fec_policy; }
+  FecPolicy fec_policy() const { return fec_policy_; }
+
   // Adjust our flow control windows according to new offset in |frame|.
   virtual void OnWindowUpdateFrame(const QuicWindowUpdateFrame& frame);
 
@@ -109,6 +111,10 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // WINDOW_UPDATE frame.
   void AddBytesConsumed(uint64 bytes);
 
+  // Updates the flow controller's send window offset and calls OnCanWrite if
+  // it was blocked before.
+  void UpdateSendWindowOffset(uint64 new_offset);
+
   // Returns true if the stream is flow control blocked, by the stream flow
   // control window or the connection flow control window.
   bool IsFlowControlBlocked();
@@ -120,6 +126,9 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   bool HasFinalReceivedByteOffset() const {
     return fin_received_ || rst_received_;
   }
+
+  // Returns true if the stream has queued data waiting to write.
+  bool HasBufferedData() const;
 
  protected:
   // Sends as much of 'data' to the connection as the connection will consume,
@@ -149,11 +158,7 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   // Close the write side of the socket.  Further writes will fail.
   void CloseWriteSide();
 
-  bool HasBufferedData() const;
-
   bool fin_buffered() const { return fin_buffered_; }
-
-  void set_fec_policy(FecPolicy fec_policy) { fec_policy_ = fec_policy; }
 
   const QuicSession* session() const { return session_; }
   QuicSession* session() { return session_; }
@@ -161,8 +166,13 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
   const QuicStreamSequencer* sequencer() const { return &sequencer_; }
   QuicStreamSequencer* sequencer() { return &sequencer_; }
 
+  // TODO(rjshade): Remove this method when removing QUIC_VERSION_19.
   void DisableFlowControl() {
     flow_controller_.Disable();
+  }
+
+  void DisableConnectionFlowControlForThisStream() {
+    stream_contributes_to_connection_flow_control_ = false;
   }
 
  private:
@@ -233,6 +243,11 @@ class NET_EXPORT_PRIVATE ReliableQuicStream {
 
   // The connection level flow controller. Not owned.
   QuicFlowController* connection_flow_controller_;
+
+  // Special streams, such as the crypto and headers streams, do not respect
+  // connection level flow control limits (but are stream level flow control
+  // limited).
+  bool stream_contributes_to_connection_flow_control_;
 
   DISALLOW_COPY_AND_ASSIGN(ReliableQuicStream);
 };

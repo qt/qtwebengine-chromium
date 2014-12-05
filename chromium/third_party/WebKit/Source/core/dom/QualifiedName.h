@@ -26,7 +26,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct QualifiedNameComponents {
     StringImpl* m_prefix;
@@ -55,11 +55,6 @@ public:
 
         unsigned computeHash() const;
 
-        bool hasOneRef() const
-        {
-            return m_isStatic || RefCounted<QualifiedNameImpl>::hasOneRef();
-        }
-
         void ref()
         {
             if (m_isStatic)
@@ -74,22 +69,22 @@ public:
             RefCounted<QualifiedNameImpl>::deref();
         }
 
-        const AtomicString m_prefix;
-        const AtomicString m_localName;
-        const AtomicString m_namespace;
-        mutable AtomicString m_localNameUpper;
         // We rely on StringHasher's hashMemory clearing out the top 8 bits when
         // doing hashing and use one of the bits for the m_isStatic value.
         mutable unsigned m_existingHash : 24;
         unsigned m_isStatic : 1;
+        const AtomicString m_prefix;
+        const AtomicString m_localName;
+        const AtomicString m_namespace;
+        mutable AtomicString m_localNameUpper;
 
     private:
         QualifiedNameImpl(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI, bool isStatic)
-            : m_prefix(prefix)
+            : m_existingHash(0)
+            , m_isStatic(isStatic)
+            , m_prefix(prefix)
             , m_localName(localName)
             , m_namespace(namespaceURI)
-            , m_existingHash(0)
-            , m_isStatic(isStatic)
 
         {
             ASSERT(!namespaceURI.isEmpty() || namespaceURI.isNull());
@@ -98,9 +93,6 @@ public:
 
     QualifiedName(const AtomicString& prefix, const AtomicString& localName, const AtomicString& namespaceURI);
     ~QualifiedName();
-#ifdef QNAME_DEFAULT_CONSTRUCTOR
-    QualifiedName() { }
-#endif
 
     QualifiedName(const QualifiedName& other) : m_impl(other.m_impl) { }
     const QualifiedName& operator=(const QualifiedName& other) { m_impl = other.m_impl; return *this; }
@@ -146,10 +138,8 @@ private:
     RefPtr<QualifiedNameImpl> m_impl;
 };
 
-#ifndef WEBCORE_QUALIFIEDNAME_HIDE_GLOBALS
-extern const QualifiedName anyName;
+extern const QualifiedName& anyName;
 inline const QualifiedName& anyQName() { return anyName; }
-#endif
 
 inline bool operator==(const AtomicString& a, const QualifiedName& q) { return a == q.localName(); }
 inline bool operator!=(const AtomicString& a, const QualifiedName& q) { return a != q.localName(); }
@@ -177,19 +167,19 @@ struct QualifiedNameHash {
     static const bool safeToCompareToEmptyOrDeleted = false;
 };
 
-}
+} // namespace blink
 
 namespace WTF {
 
     template<typename T> struct DefaultHash;
 
-    template<> struct DefaultHash<WebCore::QualifiedName> {
-        typedef WebCore::QualifiedNameHash Hash;
+    template<> struct DefaultHash<blink::QualifiedName> {
+        typedef blink::QualifiedNameHash Hash;
     };
 
-    template<> struct HashTraits<WebCore::QualifiedName> : SimpleClassHashTraits<WebCore::QualifiedName> {
+    template<> struct HashTraits<blink::QualifiedName> : SimpleClassHashTraits<blink::QualifiedName> {
         static const bool emptyValueIsZero = false;
-        static WebCore::QualifiedName emptyValue() { return WebCore::QualifiedName::null(); }
+        static blink::QualifiedName emptyValue() { return blink::QualifiedName::null(); }
     };
 }
 

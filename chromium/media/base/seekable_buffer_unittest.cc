@@ -23,7 +23,7 @@ class SeekableBufferTest : public testing::Test {
   static const int kBufferSize = 4096;
   static const int kWriteSize = 512;
 
-  virtual void SetUp() {
+  void SetUp() override {
     // Note: We use srand() and rand() rather than base::RandXXX() to improve
     // unit test performance.  We don't need good random numbers, just
     // something that generates "mixed data."
@@ -333,7 +333,7 @@ TEST_F(SeekableBufferTest, GetTime) {
 
   scoped_refptr<DataBuffer> buffer = DataBuffer::CopyFrom(data_, kWriteSize);
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     buffer->set_timestamp(base::TimeDelta::FromMicroseconds(
         tests[i].first_time_useconds));
     buffer->set_duration(base::TimeDelta::FromMicroseconds(

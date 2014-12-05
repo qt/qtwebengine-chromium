@@ -274,7 +274,7 @@ void X509Certificate::GetSubjectAltName(
 bool X509Certificate::GetDEREncoded(X509Certificate::OSCertHandle cert_handle,
                                     std::string* encoded) {
   CSSM_DATA der_data;
-  if (SecCertificateGetData(cert_handle, &der_data) != noErr)
+  if (!cert_handle || SecCertificateGetData(cert_handle, &der_data) != noErr)
     return false;
   encoded->assign(reinterpret_cast<char*>(der_data.Data),
                   der_data.Length);
@@ -350,7 +350,8 @@ X509Certificate::OSCertHandle X509Certificate::DupOSCertHandle(
 
 // static
 void X509Certificate::FreeOSCertHandle(OSCertHandle cert_handle) {
-  CFRelease(cert_handle);
+  if (cert_handle)
+    CFRelease(cert_handle);
 }
 
 // static
@@ -370,6 +371,24 @@ SHA1HashValue X509Certificate::CalculateFingerprint(
   CC_SHA1(cert_data.Data, cert_data.Length, sha1.data);
 
   return sha1;
+}
+
+// static
+SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
+  SHA256HashValue sha256;
+  memset(sha256.data, 0, sizeof(sha256.data));
+
+  CSSM_DATA cert_data;
+  OSStatus status = SecCertificateGetData(cert, &cert_data);
+  if (status)
+    return sha256;
+
+  DCHECK(cert_data.Data);
+  DCHECK_NE(cert_data.Length, 0U);
+
+  CC_SHA256(cert_data.Data, cert_data.Length, sha256.data);
+
+  return sha256;
 }
 
 // static
@@ -510,6 +529,43 @@ void X509Certificate::GetPublicKeyInfo(OSCertHandle cert_handle,
       *size_bits = 0;
       break;
   }
+}
+
+// static
+bool X509Certificate::IsSelfSigned(OSCertHandle cert_handle) {
+  x509_util::CSSMCachedCertificate cached_cert;
+  OSStatus status = cached_cert.Init(cert_handle);
+  if (status != noErr)
+    return false;
+
+  x509_util::CSSMFieldValue subject;
+  status = cached_cert.GetField(&CSSMOID_X509V1SubjectNameStd, &subject);
+  if (status != CSSM_OK || !subject.field())
+    return false;
+
+  x509_util::CSSMFieldValue issuer;
+  status = cached_cert.GetField(&CSSMOID_X509V1IssuerNameStd, &issuer);
+  if (status != CSSM_OK || !issuer.field())
+    return false;
+
+  if (subject.field()->Length != issuer.field()->Length ||
+      memcmp(subject.field()->Data, issuer.field()->Data,
+             issuer.field()->Length) != 0) {
+    return false;
+  }
+
+  CSSM_CL_HANDLE cl_handle = CSSM_INVALID_HANDLE;
+  status = SecCertificateGetCLHandle(cert_handle, &cl_handle);
+  if (status)
+    return false;
+  CSSM_DATA cert_data;
+  status = SecCertificateGetData(cert_handle, &cert_data);
+  if (status)
+    return false;
+
+  if (CSSM_CL_CertVerify(cl_handle, 0, &cert_data, &cert_data, NULL, 0))
+    return false;
+  return true;
 }
 
 }  // namespace net

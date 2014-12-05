@@ -20,12 +20,6 @@
 
 #include "webrtc/modules/audio_device/audio_device_config.h"
 
-#if defined(WEBRTC_WINDOWS_CORE_AUDIO_BUILD)
-#pragma message(">> INFO: WEBRTC_WINDOWS_CORE_AUDIO_BUILD is defined")
-#else
-#pragma message(">> INFO: WEBRTC_WINDOWS_CORE_AUDIO_BUILD is *not* defined")
-#endif
-
 #ifdef WEBRTC_WINDOWS_CORE_AUDIO_BUILD
 
 #include "webrtc/modules/audio_device/win/audio_device_core_win.h"
@@ -2201,7 +2195,7 @@ int32_t AudioDeviceWindowsCore::InitPlayout()
 
     HRESULT hr = S_OK;
     WAVEFORMATEX* pWfxOut = NULL;
-    WAVEFORMATEX Wfx;
+    WAVEFORMATEX Wfx = WAVEFORMATEX();
     WAVEFORMATEX* pWfxClosestMatch = NULL;
 
     // Create COM object with IAudioClient interface.
@@ -2538,7 +2532,7 @@ int32_t AudioDeviceWindowsCore::InitRecording()
 
     HRESULT hr = S_OK;
     WAVEFORMATEX* pWfxIn = NULL;
-    WAVEFORMATEX Wfx;
+    WAVEFORMATEX Wfx = WAVEFORMATEX();
     WAVEFORMATEX* pWfxClosestMatch = NULL;
 
     // Create COM object with IAudioClient interface.
@@ -3335,7 +3329,7 @@ DWORD AudioDeviceWindowsCore::DoGetCaptureVolumeThread()
             default:            // unexpected error
                 WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, _id,
                     "  unknown wait termination on get volume thread");
-                return -1;
+                return 1;
         }
     }
 }
@@ -3356,7 +3350,7 @@ DWORD AudioDeviceWindowsCore::DoSetCaptureVolumeThread()
             default:                 // unexpected error
                 WEBRTC_TRACE(kTraceWarning, kTraceAudioDevice, _id,
                     "  unknown wait termination on set volume thread");
-                    return -1;
+                    return 1;
         }
 
         _Lock();
@@ -3392,10 +3386,10 @@ DWORD AudioDeviceWindowsCore::DoRenderThread()
     if (!comInit.succeeded()) {
       WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id,
           "failed to initialize COM in render thread");
-      return -1;
+      return 1;
     }
 
-    _SetThreadName(-1, "webrtc_core_audio_render_thread");
+    _SetThreadName(0, "webrtc_core_audio_render_thread");
 
     // Use Multimedia Class Scheduler Service (MMCSS) to boost the thread priority.
     //
@@ -3672,7 +3666,7 @@ DWORD AudioDeviceWindowsCore::InitCaptureThreadPriority()
 {
     _hMmTask = NULL;
 
-    _SetThreadName(-1, "webrtc_core_audio_capture_thread");
+    _SetThreadName(0, "webrtc_core_audio_capture_thread");
 
     // Use Multimedia Class Scheduler Service (MMCSS) to boost the thread
     // priority.
@@ -3726,7 +3720,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThreadPollDMO()
     if (!comInit.succeeded()) {
       WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id,
         "failed to initialize COM in polling DMO thread");
-      return -1;
+      return 1;
     }
 
     HRESULT hr = InitCaptureThreadPriority();
@@ -3884,7 +3878,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
     if (!comInit.succeeded()) {
       WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id,
         "failed to initialize COM in capture thread");
-      return -1;
+      return 1;
     }
 
     hr = InitCaptureThreadPriority();
@@ -3899,6 +3893,12 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
     // This value is fixed during the capturing session.
     //
     UINT32 bufferLength = 0;
+    if (_ptrClientIn == NULL)
+    {
+      WEBRTC_TRACE(kTraceError, kTraceAudioDevice, _id,
+        "input state has been modified before capture loop starts.");
+      return 1;
+    }
     hr = _ptrClientIn->GetBufferSize(&bufferLength);
     EXIT_ON_ERROR(hr);
     WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "[CAPT] size of buffer       : %u", bufferLength);
@@ -3911,7 +3911,7 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
     syncBuffer = new BYTE[syncBufferSize];
     if (syncBuffer == NULL)
     {
-        return E_POINTER;
+        return (DWORD)E_POINTER;
     }
     WEBRTC_TRACE(kTraceInfo, kTraceAudioDevice, _id, "[CAPT] size of sync buffer  : %u [bytes]", syncBufferSize);
 
@@ -4119,7 +4119,10 @@ DWORD AudioDeviceWindowsCore::DoCaptureThread()
 
     // ---------------------------- THREAD LOOP ---------------------------- <<
 
-    hr = _ptrClientIn->Stop();
+    if (_ptrClientIn)
+    {
+        hr = _ptrClientIn->Stop();
+    }
 
 Exit:
     if (FAILED(hr))

@@ -9,13 +9,12 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/resources/release_callback.h"
+#include "cc/resources/release_callback_impl.h"
 #include "cc/resources/resource_format.h"
 #include "cc/resources/texture_mailbox.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace media {
 class SkCanvasVideoRenderer;
@@ -50,11 +49,11 @@ class CC_EXPORT VideoFrameExternalResources {
 
   ResourceType type;
   std::vector<TextureMailbox> mailboxes;
-  std::vector<ReleaseCallback> release_callbacks;
+  std::vector<ReleaseCallbackImpl> release_callbacks;
 
   // TODO(danakj): Remove these too.
   std::vector<unsigned> software_resources;
-  ReleaseCallback software_release_callback;
+  ReleaseCallbackImpl software_release_callback;
 
   VideoFrameExternalResources();
   ~VideoFrameExternalResources();
@@ -105,7 +104,13 @@ class CC_EXPORT VideoResourceUpdater
   static void RecycleResource(base::WeakPtr<VideoResourceUpdater> updater,
                               RecycleResourceData data,
                               uint32 sync_point,
-                              bool lost_resource);
+                              bool lost_resource,
+                              BlockingTaskRunner* main_thread_task_runner);
+  static void ReturnTexture(base::WeakPtr<VideoResourceUpdater> updater,
+                            const scoped_refptr<media::VideoFrame>& video_frame,
+                            uint32 sync_point,
+                            bool lost_resource,
+                            BlockingTaskRunner* main_thread_task_runner);
 
   ContextProvider* context_provider_;
   ResourceProvider* resource_provider_;

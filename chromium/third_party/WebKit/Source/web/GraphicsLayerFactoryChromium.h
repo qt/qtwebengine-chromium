@@ -31,13 +31,13 @@
 namespace blink {
 class WebViewImpl;
 
-class GraphicsLayerFactoryChromium FINAL : public WebCore::GraphicsLayerFactory {
+class GraphicsLayerFactoryChromium final : public GraphicsLayerFactory {
 public:
     explicit GraphicsLayerFactoryChromium(WebViewImpl*);
 
     virtual ~GraphicsLayerFactoryChromium();
 
-    virtual PassOwnPtr<WebCore::GraphicsLayer> createGraphicsLayer(WebCore::GraphicsLayerClient*) OVERRIDE;
+    virtual PassOwnPtr<GraphicsLayer> createGraphicsLayer(GraphicsLayerClient*) override;
 
 private:
     // The owner of this GraphicsLayerFactoryChromium.

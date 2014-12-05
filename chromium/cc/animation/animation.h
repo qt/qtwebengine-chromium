@@ -51,6 +51,13 @@ class CC_EXPORT Animation {
 
   enum Direction { Normal, Reverse, Alternate, AlternateReverse };
 
+  enum FillMode {
+    FillModeNone,
+    FillModeForwards,
+    FillModeBackwards,
+    FillModeBoth
+  };
+
   static scoped_ptr<Animation> Create(scoped_ptr<AnimationCurve> curve,
                                       int animation_id,
                                       int group_id,
@@ -68,8 +75,13 @@ class CC_EXPORT Animation {
   // This is the number of times that the animation will play. If this
   // value is zero the animation will not play. If it is negative, then
   // the animation will loop indefinitely.
-  int iterations() const { return iterations_; }
-  void set_iterations(int n) { iterations_ = n; }
+  double iterations() const { return iterations_; }
+  void set_iterations(double n) { iterations_ = n; }
+
+  double iteration_start() const { return iteration_start_; }
+  void set_iteration_start(double iteration_start) {
+    iteration_start_ = iteration_start;
+  }
 
   base::TimeTicks start_time() const { return start_time_; }
 
@@ -89,12 +101,22 @@ class CC_EXPORT Animation {
   Direction direction() { return direction_; }
   void set_direction(Direction direction) { direction_ = direction; }
 
+  FillMode fill_mode() { return fill_mode_; }
+  void set_fill_mode(FillMode fill_mode) { fill_mode_ = fill_mode; }
+
+  double playback_rate() { return playback_rate_; }
+  void set_playback_rate(double playback_rate) {
+    playback_rate_ = playback_rate;
+  }
+
   bool IsFinishedAt(base::TimeTicks monotonic_time) const;
   bool is_finished() const {
     return run_state_ == Finished ||
         run_state_ == Aborted ||
         run_state_ == WaitingForDeletion;
   }
+
+  bool InEffect(base::TimeTicks monotonic_time) const;
 
   AnimationCurve* curve() { return curve_.get(); }
   const AnimationCurve* curve() const { return curve_.get(); }
@@ -147,6 +169,8 @@ class CC_EXPORT Animation {
             int group_id,
             TargetProperty target_property);
 
+  double ConvertToActiveTime(base::TimeTicks monotonic_time) const;
+
   scoped_ptr<AnimationCurve> curve_;
 
   // IDs are not necessarily unique.
@@ -161,9 +185,12 @@ class CC_EXPORT Animation {
 
   TargetProperty target_property_;
   RunState run_state_;
-  int iterations_;
+  double iterations_;
+  double iteration_start_;
   base::TimeTicks start_time_;
   Direction direction_;
+  double playback_rate_;
+  FillMode fill_mode_;
 
   // The time offset effectively pushes the start of the animation back in time.
   // This is used for resuming paused animations -- an animation is added with a

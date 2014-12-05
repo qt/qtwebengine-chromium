@@ -40,10 +40,10 @@ TEST(DataURLTest, Parse) {
       "" },
 
     { "data:;charset=,test",
-      true,
-      "text/plain",
-      "US-ASCII",
-      "test" },
+      false,
+      "",
+      "",
+      "" },
 
     { "data:TeXt/HtMl,<b>x</b>",
       true,
@@ -62,6 +62,28 @@ TEST(DataURLTest, Parse) {
       "text/plain",
       "US-ASCII",
       "hello world" },
+
+    // Allow invalid mediatype for backward compatibility but set mime_type to
+    // "text/plain" instead of the invalid mediatype.
+    { "data:foo,boo",
+      true,
+      "text/plain",
+      "US-ASCII",
+      "boo" },
+
+    // When accepting an invalid mediatype, override charset with "US-ASCII"
+    { "data:foo;charset=UTF-8,boo",
+      true,
+      "text/plain",
+      "US-ASCII",
+      "boo" },
+
+    // Invalid mediatype. Includes a slash but the type part is not a token.
+    { "data:f(oo/bar;baz=1;charset=kk,boo",
+      true,
+      "text/plain",
+      "US-ASCII",
+      "boo" },
 
     { "data:foo/bar;baz=1;charset=kk,boo",
       true,
@@ -87,13 +109,6 @@ TEST(DataURLTest, Parse) {
       "text/html",
       "US-ASCII",
       "<html><body><b>hello world</b></body></html>" },
-
-    // Bad mime type
-    { "data:f(oo/bar;baz=1;charset=kk,boo",
-      false,
-      "",
-      "",
-      "" },
 
     // the comma cannot be url-escaped!
     { "data:%2Cblah",
@@ -168,6 +183,44 @@ TEST(DataURLTest, Parse) {
       "",
       "",
       "" },
+
+    // BiDi control characters should be unescaped and preserved as is, and
+    // should not be replaced with % versions. In the below case, \xE2\x80\x8F
+    // is the RTL mark and the parsed text should preserve it as is.
+    {
+      "data:text/plain;charset=utf-8,\xE2\x80\x8Ftest",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8Ftest"},
+
+    // Same as above but with Arabic text after RTL mark.
+    {
+      "data:text/plain;charset=utf-8,"
+          "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1"},
+
+    // RTL mark encoded as %E2%80%8F should be unescaped too. Note that when
+    // wrapped in a GURL, this URL and the next effectively become the same as
+    // the previous two URLs.
+    {
+      "data:text/plain;charset=utf-8,%E2%80%8Ftest",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8Ftest"},
+
+    // Same as above but with Arabic text after RTL mark.
+    {
+      "data:text/plain;charset=utf-8,"
+          "%E2%80%8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1",
+      true,
+      "text/plain",
+      "utf-8",
+      "\xE2\x80\x8F\xD8\xA7\xD8\xAE\xD8\xAA\xD8\xA8\xD8\xA7\xD8\xB1"}
 
     // TODO(darin): add more interesting tests
   };

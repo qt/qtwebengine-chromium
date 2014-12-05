@@ -1,4 +1,4 @@
-/* A Bison parser, made by GNU Bison 2.7.1.  */
+/* A Bison parser, made by GNU Bison 2.7.12-4996.  */
 
 /* Bison implementation for Yacc-like parsers in C
    
@@ -44,7 +44,7 @@
 #define YYBISON 1
 
 /* Bison version.  */
-#define YYBISON_VERSION "2.7.1"
+#define YYBISON_VERSION "2.7.12-4996"
 
 /* Skeleton name.  */
 #define YYSKELETON_NAME "yacc.c"
@@ -84,6 +84,7 @@
 #pragma warning(disable: 4701)
 #endif
 
+#include "angle_gl.h"
 #include "compiler/translator/SymbolTable.h"
 #include "compiler/translator/ParseContext.h"
 #include "GLSLANG/ShaderLang.h"
@@ -362,14 +363,14 @@ extern void yyerror(YYLTYPE* yylloc, TParseContext* context, const char* reason)
   } while (0)
 
 #define VERTEX_ONLY(S, L) {  \
-    if (context->shaderType != SH_VERTEX_SHADER) {  \
+    if (context->shaderType != GL_VERTEX_SHADER) {  \
         context->error(L, " supported in vertex shaders only ", S);  \
         context->recover();  \
     }  \
 }
 
 #define FRAG_ONLY(S, L) {  \
-    if (context->shaderType != SH_FRAGMENT_SHADER) {  \
+    if (context->shaderType != GL_FRAGMENT_SHADER) {  \
         context->error(L, " supported in fragment shaders only ", S);  \
         context->recover();  \
     }  \
@@ -794,32 +795,32 @@ static const yytype_int16 yyrhs[] =
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   205,   205,   206,   209,   264,   267,   272,   277,   282,
-     287,   293,   296,   299,   302,   305,   315,   328,   336,   436,
-     439,   447,   450,   456,   460,   467,   473,   482,   490,   493,
-     503,   506,   516,   526,   547,   548,   549,   554,   555,   563,
-     574,   575,   583,   594,   598,   599,   609,   619,   629,   642,
-     643,   653,   666,   670,   674,   678,   679,   692,   693,   706,
-     707,   720,   721,   738,   739,   752,   753,   754,   755,   756,
-     760,   763,   774,   782,   790,   817,   822,   833,   837,   841,
-     845,   852,   907,   910,   917,   925,   946,   967,   977,  1005,
-    1010,  1020,  1025,  1035,  1038,  1041,  1044,  1050,  1057,  1060,
-    1064,  1068,  1072,  1079,  1083,  1087,  1094,  1098,  1102,  1123,
-    1132,  1138,  1141,  1147,  1153,  1160,  1169,  1178,  1186,  1189,
-    1196,  1200,  1207,  1210,  1214,  1218,  1227,  1236,  1244,  1254,
-    1266,  1269,  1272,  1278,  1285,  1288,  1294,  1297,  1300,  1306,
-    1309,  1324,  1328,  1332,  1336,  1340,  1344,  1349,  1354,  1359,
-    1364,  1369,  1374,  1379,  1384,  1389,  1394,  1399,  1404,  1409,
-    1414,  1419,  1424,  1429,  1434,  1439,  1444,  1449,  1453,  1457,
-    1461,  1465,  1469,  1473,  1477,  1481,  1485,  1489,  1493,  1497,
-    1501,  1505,  1509,  1517,  1525,  1529,  1542,  1542,  1545,  1545,
-    1551,  1554,  1570,  1573,  1582,  1586,  1592,  1599,  1614,  1618,
-    1622,  1623,  1629,  1630,  1631,  1632,  1633,  1637,  1638,  1638,
-    1638,  1648,  1649,  1653,  1653,  1654,  1654,  1659,  1662,  1672,
-    1675,  1681,  1682,  1686,  1694,  1698,  1708,  1713,  1730,  1730,
-    1735,  1735,  1742,  1742,  1750,  1753,  1759,  1762,  1768,  1772,
-    1779,  1786,  1793,  1800,  1811,  1820,  1824,  1831,  1834,  1840,
-    1840
+       0,   206,   206,   207,   210,   234,   237,   242,   247,   252,
+     257,   263,   266,   269,   272,   275,   285,   298,   306,   423,
+     426,   434,   437,   443,   447,   454,   460,   469,   477,   480,
+     490,   493,   503,   513,   535,   536,   537,   542,   543,   551,
+     562,   563,   571,   582,   586,   587,   597,   607,   617,   630,
+     631,   641,   654,   658,   662,   666,   667,   680,   681,   694,
+     695,   708,   709,   726,   727,   740,   741,   742,   743,   744,
+     748,   751,   762,   770,   778,   805,   811,   822,   826,   830,
+     834,   841,   897,   900,   907,   915,   936,   957,   967,   995,
+    1000,  1010,  1015,  1025,  1028,  1031,  1034,  1040,  1047,  1050,
+    1054,  1058,  1062,  1069,  1073,  1077,  1084,  1088,  1092,  1099,
+    1108,  1114,  1117,  1123,  1129,  1136,  1145,  1154,  1162,  1165,
+    1172,  1176,  1183,  1186,  1190,  1194,  1203,  1212,  1220,  1230,
+    1242,  1245,  1248,  1254,  1261,  1264,  1270,  1273,  1276,  1282,
+    1285,  1300,  1304,  1308,  1312,  1316,  1320,  1325,  1330,  1335,
+    1340,  1345,  1350,  1355,  1360,  1365,  1370,  1375,  1380,  1385,
+    1390,  1395,  1400,  1405,  1410,  1415,  1420,  1425,  1429,  1433,
+    1437,  1441,  1445,  1449,  1453,  1457,  1461,  1465,  1469,  1473,
+    1477,  1481,  1485,  1493,  1501,  1505,  1518,  1518,  1521,  1521,
+    1527,  1530,  1546,  1549,  1558,  1562,  1568,  1575,  1590,  1594,
+    1598,  1599,  1605,  1606,  1607,  1608,  1609,  1613,  1614,  1614,
+    1614,  1624,  1625,  1629,  1629,  1630,  1630,  1635,  1638,  1648,
+    1651,  1657,  1658,  1662,  1670,  1674,  1684,  1689,  1706,  1706,
+    1711,  1711,  1718,  1718,  1726,  1729,  1735,  1738,  1744,  1748,
+    1755,  1762,  1769,  1776,  1787,  1796,  1800,  1807,  1810,  1816,
+    1816
 };
 #endif
 
@@ -2546,38 +2547,7 @@ yyreduce:
 
     {
         // The symbol table search was done in the lexical phase
-        const TSymbol *symbol = (yyvsp[(1) - (1)].lex).symbol;
-        const TVariable *variable = 0;
-
-        if (!symbol)
-        {
-            context->error((yylsp[(1) - (1)]), "undeclared identifier", (yyvsp[(1) - (1)].lex).string->c_str());
-            context->recover();
-        }
-        else if (!symbol->isVariable())
-        {
-            context->error((yylsp[(1) - (1)]), "variable expected", (yyvsp[(1) - (1)].lex).string->c_str());
-            context->recover();
-        }
-        else
-        {
-            variable = static_cast<const TVariable*>(symbol);
-
-            if (context->symbolTable.findBuiltIn(variable->getName(), context->shaderVersion) &&
-                !variable->getExtension().empty() &&
-                context->extensionErrorCheck((yylsp[(1) - (1)]), variable->getExtension()))
-            {
-                context->recover();
-            }
-        }
-
-        if (!variable)
-        {
-            TType type(EbtFloat, EbpUndefined);
-            TVariable *fakeVariable = new TVariable((yyvsp[(1) - (1)].lex).string, type);
-            context->symbolTable.declare(*fakeVariable);
-            variable = fakeVariable;
-        }
+        const TVariable *variable = context->getNamedVariable((yylsp[(1) - (1)]), (yyvsp[(1) - (1)].lex).string, (yyvsp[(1) - (1)].lex).symbol);
 
         if (variable->getType().getQualifier() == EvqConst)
         {
@@ -2766,6 +2736,15 @@ yyreduce:
                         // Treat it like a built-in unary operator.
                         //
                         (yyval.interm.intermTypedNode) = context->intermediate.addUnaryMath(op, (yyvsp[(1) - (1)].interm).intermNode, (yylsp[(1) - (1)]));
+                        const TType& returnType = fnCandidate->getReturnType();
+                        if (returnType.getBasicType() == EbtBool) {
+                            // Bool types should not have precision, so we'll override any precision
+                            // that might have been set by addUnaryMath.
+                            (yyval.interm.intermTypedNode)->setType(returnType);
+                        } else {
+                            // addUnaryMath has set the precision of the node based on the operand.
+                            (yyval.interm.intermTypedNode)->setTypePreservePrecision(returnType);
+                        }
                         if ((yyval.interm.intermTypedNode) == 0)  {
                             std::stringstream extraInfoStream;
                             extraInfoStream << "built in unary operator function.  Type: " << static_cast<TIntermTyped*>((yyvsp[(1) - (1)].interm).intermNode)->getCompleteString();
@@ -2774,33 +2753,41 @@ yyreduce:
                             YYERROR;
                         }
                     } else {
-                        (yyval.interm.intermTypedNode) = context->intermediate.setAggregateOperator((yyvsp[(1) - (1)].interm).intermAggregate, op, (yylsp[(1) - (1)]));
+                        TIntermAggregate *aggregate = context->intermediate.setAggregateOperator((yyvsp[(1) - (1)].interm).intermAggregate, op, (yylsp[(1) - (1)]));
+                        aggregate->setType(fnCandidate->getReturnType());
+                        aggregate->setPrecisionFromChildren();
+                        (yyval.interm.intermTypedNode) = aggregate;
                     }
                 } else {
                     // This is a real function call
 
-                    (yyval.interm.intermTypedNode) = context->intermediate.setAggregateOperator((yyvsp[(1) - (1)].interm).intermAggregate, EOpFunctionCall, (yylsp[(1) - (1)]));
-                    (yyval.interm.intermTypedNode)->setType(fnCandidate->getReturnType());
+                    TIntermAggregate *aggregate = context->intermediate.setAggregateOperator((yyvsp[(1) - (1)].interm).intermAggregate, EOpFunctionCall, (yylsp[(1) - (1)]));
+                    aggregate->setType(fnCandidate->getReturnType());
 
                     // this is how we know whether the given function is a builtIn function or a user defined function
                     // if builtIn == false, it's a userDefined -> could be an overloaded builtIn function also
                     // if builtIn == true, it's definitely a builtIn function with EOpNull
                     if (!builtIn)
-                        (yyval.interm.intermTypedNode)->getAsAggregate()->setUserDefined();
-                    (yyval.interm.intermTypedNode)->getAsAggregate()->setName(fnCandidate->getMangledName());
+                        aggregate->setUserDefined();
+                    aggregate->setName(fnCandidate->getMangledName());
+
+                    // This needs to happen after the name is set
+                    if (builtIn)
+                        aggregate->setBuiltInFunctionPrecision();
+
+                    (yyval.interm.intermTypedNode) = aggregate;
 
                     TQualifier qual;
                     for (size_t i = 0; i < fnCandidate->getParamCount(); ++i) {
                         qual = fnCandidate->getParam(i).type->getQualifier();
                         if (qual == EvqOut || qual == EvqInOut) {
-                            if (context->lValueErrorCheck((yyval.interm.intermTypedNode)->getLine(), "assign", (yyval.interm.intermTypedNode)->getAsAggregate()->getSequence()[i]->getAsTyped())) {
+                            if (context->lValueErrorCheck((yyval.interm.intermTypedNode)->getLine(), "assign", (*((yyval.interm.intermTypedNode)->getAsAggregate()->getSequence()))[i]->getAsTyped())) {
                                 context->error((yyvsp[(1) - (1)].interm).intermNode->getLine(), "Constant value cannot be passed for 'out' or 'inout' parameters.", "Error");
                                 context->recover();
                             }
                         }
                     }
                 }
-                (yyval.interm.intermTypedNode)->setType(fnCandidate->getReturnType());
             } else {
                 // error message was put out by PaFindFunction()
                 // Put on a dummy node for error recovery
@@ -2949,6 +2936,7 @@ yyreduce:
                 const char* errorOp = "";
                 switch((yyvsp[(1) - (2)].interm).op) {
                 case EOpNegative:   errorOp = "-"; break;
+                case EOpPositive:   errorOp = "+"; break;
                 case EOpLogicalNot: errorOp = "!"; break;
                 default: break;
                 }
@@ -2963,7 +2951,7 @@ yyreduce:
 
   case 34:
 
-    { (yyval.interm).op = EOpNull; }
+    { (yyval.interm).op = EOpPositive; }
     break;
 
   case 35:
@@ -3343,16 +3331,17 @@ yyreduce:
   case 75:
 
     {
-        if ((yyvsp[(1) - (2)].interm).intermAggregate)
-            (yyvsp[(1) - (2)].interm).intermAggregate->setOp(EOpDeclaration);
-        (yyval.interm.intermNode) = (yyvsp[(1) - (2)].interm).intermAggregate;
+        TIntermAggregate *aggNode = (yyvsp[(1) - (2)].interm).intermAggregate;
+        if (aggNode && aggNode->getOp() == EOpNull)
+            aggNode->setOp(EOpDeclaration);
+        (yyval.interm.intermNode) = aggNode;
     }
     break;
 
   case 76:
 
     {
-        if (((yyvsp[(2) - (4)].interm.precision) == EbpHigh) && (context->shaderType == SH_FRAGMENT_SHADER) && !context->fragmentPrecisionHigh) {
+        if (((yyvsp[(2) - (4)].interm.precision) == EbpHigh) && (context->shaderType == GL_FRAGMENT_SHADER) && !context->fragmentPrecisionHigh) {
             context->error((yylsp[(1) - (4)]), "precision is not supported in fragment shader", "highp");
             context->recover();
         }
@@ -3436,7 +3425,8 @@ yyreduce:
         else
         {
             // Insert the unmangled name to detect potential future redefinition as a variable.
-            context->symbolTable.getOuterLevel()->insert((yyvsp[(1) - (2)].interm.function)->getName(), *(yyvsp[(1) - (2)].interm.function));
+            TFunction *function = new TFunction(NewPoolTString((yyvsp[(1) - (2)].interm.function)->getName().c_str()), (yyvsp[(1) - (2)].interm.function)->getReturnType());
+            context->symbolTable.getOuterLevel()->insert(function);
         }
 
         //
@@ -3448,7 +3438,7 @@ yyreduce:
 
         // We're at the inner scope level of the function's arguments and body statement.
         // Add the function prototype to the surrounding scope instead.
-        context->symbolTable.getOuterLevel()->insert(*(yyval.interm).function);
+        context->symbolTable.getOuterLevel()->insert((yyval.interm).function);
     }
     break;
 
@@ -3717,22 +3707,8 @@ yyreduce:
   case 108:
 
     {
-        VERTEX_ONLY("invariant declaration", (yylsp[(1) - (2)]));
-        if (context->globalErrorCheck((yylsp[(1) - (2)]), context->symbolTable.atGlobalLevel(), "invariant varying"))
-            context->recover();
-        (yyval.interm).type.setBasic(EbtInvariant, EvqInvariantVaryingOut, (yylsp[(2) - (2)]));
-        if (!(yyvsp[(2) - (2)].lex).symbol)
-        {
-            context->error((yylsp[(2) - (2)]), "undeclared identifier declared as invariant", (yyvsp[(2) - (2)].lex).string->c_str());
-            context->recover();
-            
-            (yyval.interm).intermAggregate = 0;
-        }
-        else
-        {
-            TIntermSymbol *symbol = context->intermediate.addSymbol(0, *(yyvsp[(2) - (2)].lex).string, TType((yyval.interm).type), (yylsp[(2) - (2)]));
-            (yyval.interm).intermAggregate = context->intermediate.makeAggregate(symbol, (yylsp[(2) - (2)]));
-        }
+        // $$.type is not used in invariant declarations.
+        (yyval.interm).intermAggregate = context->parseInvariantDeclaration((yylsp[(1) - (2)]), (yylsp[(2) - (2)]), (yyvsp[(2) - (2)].lex).string, (yyvsp[(2) - (2)].lex).symbol);
     }
     break;
 
@@ -3794,7 +3770,7 @@ yyreduce:
         ES2_ONLY("varying", (yylsp[(1) - (1)]));
         if (context->globalErrorCheck((yylsp[(1) - (1)]), context->symbolTable.atGlobalLevel(), "varying"))
             context->recover();
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingOut, (yylsp[(1) - (1)]));
         else
             (yyval.interm.type).setBasic(EbtVoid, EvqVaryingIn, (yylsp[(1) - (1)]));
@@ -3807,7 +3783,7 @@ yyreduce:
         ES2_ONLY("varying", (yylsp[(1) - (2)]));
         if (context->globalErrorCheck((yylsp[(1) - (2)]), context->symbolTable.atGlobalLevel(), "invariant varying"))
             context->recover();
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
             (yyval.interm.type).setBasic(EbtVoid, EvqInvariantVaryingOut, (yylsp[(1) - (2)]));
         else
             (yyval.interm.type).setBasic(EbtVoid, EvqInvariantVaryingIn, (yylsp[(1) - (2)]));
@@ -3871,7 +3847,7 @@ yyreduce:
 
     {
         ES3_ONLY("in", (yylsp[(1) - (1)]), "storage qualifier");
-        (yyval.interm.type).qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
+        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentIn : EvqVertexIn;
     }
     break;
 
@@ -3879,7 +3855,7 @@ yyreduce:
 
     {
         ES3_ONLY("out", (yylsp[(1) - (1)]), "storage qualifier");
-        (yyval.interm.type).qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
+        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqVertexOut;
     }
     break;
 
@@ -3887,12 +3863,12 @@ yyreduce:
 
     {
         ES3_ONLY("centroid in", (yylsp[(1) - (2)]), "storage qualifier");
-        if (context->shaderType == SH_VERTEX_SHADER)
+        if (context->shaderType == GL_VERTEX_SHADER)
         {
             context->error((yylsp[(1) - (2)]), "invalid storage qualifier", "it is an error to use 'centroid in' in the vertex shader");
             context->recover();
         }
-        (yyval.interm.type).qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
+        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqCentroidIn : EvqVertexIn;
     }
     break;
 
@@ -3900,12 +3876,12 @@ yyreduce:
 
     {
         ES3_ONLY("centroid out", (yylsp[(1) - (2)]), "storage qualifier");
-        if (context->shaderType == SH_FRAGMENT_SHADER)
+        if (context->shaderType == GL_FRAGMENT_SHADER)
         {
             context->error((yylsp[(1) - (2)]), "invalid storage qualifier", "it is an error to use 'centroid out' in the fragment shader");
             context->recover();
         }
-        (yyval.interm.type).qualifier = (context->shaderType == SH_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
+        (yyval.interm.type).qualifier = (context->shaderType == GL_FRAGMENT_SHADER) ? EvqFragmentOut : EvqCentroidOut;
     }
     break;
 
@@ -4967,7 +4943,7 @@ yyreduce:
                 //
                 // Insert the parameters with name in the symbol table.
                 //
-                if (! context->symbolTable.declare(*variable)) {
+                if (! context->symbolTable.declare(variable)) {
                     context->error((yylsp[(1) - (1)]), "redefinition", variable->getName().c_str());
                     context->recover();
                     delete variable;

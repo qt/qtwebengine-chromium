@@ -27,7 +27,7 @@
 #include "platform/graphics/Path.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderObject;
 class RenderStyle;
@@ -56,19 +56,19 @@ public:
     void finishLayout();
 
 private:
-    void updateCharacerPositionIfNeeded(float& x, float& y);
+    void updateCharacterPositionIfNeeded(float& x, float& y);
     void updateCurrentTextPosition(float x, float y, float glyphAdvance);
     void updateRelativePositionAdjustmentsIfNeeded(float dx, float dy);
 
-    void recordTextFragment(SVGInlineTextBox*, Vector<SVGTextMetrics>&);
+    void recordTextFragment(SVGInlineTextBox*, const Vector<SVGTextMetrics>&);
     bool parentDefinesTextLength(RenderObject*) const;
 
-    void layoutTextOnLineOrPath(SVGInlineTextBox*, RenderSVGInlineText*, const RenderStyle*);
+    void layoutTextOnLineOrPath(SVGInlineTextBox*, const RenderSVGInlineText&, const RenderStyle&);
     void finalizeTransformMatrices(Vector<SVGInlineTextBox*>&);
 
     bool currentLogicalCharacterAttributes(SVGTextLayoutAttributes*&);
     bool currentLogicalCharacterMetrics(SVGTextLayoutAttributes*&, SVGTextMetrics&);
-    bool currentVisualCharacterMetrics(SVGInlineTextBox*, Vector<SVGTextMetrics>&, SVGTextMetrics&);
+    bool currentVisualCharacterMetrics(SVGInlineTextBox*, const Vector<SVGTextMetrics>&, SVGTextMetrics&);
 
     void advanceToNextLogicalCharacter(const SVGTextMetrics&);
     void advanceToNextVisualCharacter(const SVGTextMetrics&);
@@ -102,6 +102,6 @@ private:
     float m_textPathScaling;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

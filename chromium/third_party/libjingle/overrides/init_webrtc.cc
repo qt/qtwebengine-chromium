@@ -6,13 +6,14 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
-#include "talk/base/basictypes.h"
-#include "third_party/libjingle/overrides/talk/base/logging.h"
+#include "webrtc/base/basictypes.h"
+#include "webrtc/base/logging.h"
 
 const unsigned char* GetCategoryGroupEnabled(const char* category_group) {
   return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(category_group);
@@ -32,6 +33,42 @@ void AddTraceEvent(char phase,
                                   NULL, flags);
 }
 
+namespace webrtc {
+// Define webrtc::field_trial::FindFullName to provide webrtc with a field trial
+// implementation.
+namespace field_trial {
+std::string FindFullName(const std::string& trial_name) {
+  return base::FieldTrialList::FindFullName(trial_name);
+}
+}  // namespace field_trial
+
+// Define webrtc::metrics functions to provide webrtc with implementations.
+namespace metrics {
+Histogram* HistogramFactoryGetCounts(
+    const std::string& name, int min, int max, int bucket_count) {
+  return reinterpret_cast<Histogram*>(
+      base::Histogram::FactoryGet(name, min, max, bucket_count,
+          base::HistogramBase::kUmaTargetedHistogramFlag));
+}
+
+Histogram* HistogramFactoryGetEnumeration(
+    const std::string& name, int boundary) {
+  return reinterpret_cast<Histogram*>(
+      base::LinearHistogram::FactoryGet(name, 1, boundary, boundary + 1,
+          base::HistogramBase::kUmaTargetedHistogramFlag));
+}
+
+void HistogramAdd(
+    Histogram* histogram_pointer, const std::string& name, int sample) {
+  base::HistogramBase* ptr =
+      reinterpret_cast<base::HistogramBase*>(histogram_pointer);
+  // The name should not vary.
+  DCHECK(ptr->histogram_name() == name);
+  ptr->Add(sample);
+}
+}  // namespace metrics
+}  // namespace webrtc
+
 #if defined(LIBPEERCONNECTION_LIB)
 
 // libpeerconnection is being compiled as a static lib.  In this case
@@ -42,17 +79,6 @@ bool InitializeWebRtcModule() {
   webrtc::SetupEventTracer(&GetCategoryGroupEnabled, &AddTraceEvent);
   return true;
 }
-
-// Define webrtc:field_trial::FindFullName to provide webrtc with a field trial
-// implementation. When compiled as a static library this can be done directly
-// and without pointers to functions.
-namespace webrtc {
-namespace field_trial {
-std::string FindFullName(const std::string& trial_name) {
-  return base::FieldTrialList::FindFullName(trial_name);
-}
-}  // namespace field_trial
-}  // namespace webrtc
 
 #else  // !LIBPEERCONNECTION_LIB
 
@@ -127,16 +153,22 @@ bool InitializeWebRtcModule() {
   InitDiagnosticLoggingDelegateFunctionFunction init_diagnostic_logging = NULL;
   bool init_ok = initialize_module(*CommandLine::ForCurrentProcess(),
 #if !defined(OS_MACOSX) && !defined(OS_ANDROID)
-      &Allocate, &Dellocate,
+      &Allocate,
+      &Dellocate,
 #endif
-      &base::FieldTrialList::FindFullName,
+      &webrtc::field_trial::FindFullName,
+      &webrtc::metrics::HistogramFactoryGetCounts,
+      &webrtc::metrics::HistogramFactoryGetEnumeration,
+      &webrtc::metrics::HistogramAdd,
       logging::GetLogMessageHandler(),
-      &GetCategoryGroupEnabled, &AddTraceEvent,
-      &g_create_webrtc_media_engine, &g_destroy_webrtc_media_engine,
+      &GetCategoryGroupEnabled,
+      &AddTraceEvent,
+      &g_create_webrtc_media_engine,
+      &g_destroy_webrtc_media_engine,
       &init_diagnostic_logging);
 
   if (init_ok)
-    talk_base::SetExtraLoggingInit(init_diagnostic_logging);
+    rtc::SetExtraLoggingInit(init_diagnostic_logging);
   return init_ok;
 }
 

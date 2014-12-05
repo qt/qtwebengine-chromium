@@ -34,20 +34,18 @@
 #define InputType_h
 
 #include "core/html/HTMLTextFormControlElement.h"
+#include "core/html/forms/ColorChooserClient.h"
 #include "core/html/forms/InputTypeView.h"
 #include "core/html/forms/StepRange.h"
 #include "core/frame/UseCounter.h"
 
-namespace WebCore {
+namespace blink {
 
 class Chrome;
-class DateComponents;
 class DragData;
 class ExceptionState;
 class FileList;
 class FormDataList;
-class HTMLElement;
-class Node;
 
 // An InputType object represents the type-specific part of an HTMLInputElement.
 // Do not expose instances of InputType and classes derived from it to classes
@@ -74,28 +72,9 @@ public:
     // inflexible because it's harder to add new input types if there is
     // scattered code with special cases for various types.
 
-    virtual bool isCheckbox() const;
-    virtual bool isColorControl() const;
-    virtual bool isDateField() const;
-    virtual bool isDateTimeLocalField() const;
-    virtual bool isEmailField() const;
-    virtual bool isFileUpload() const;
-    virtual bool isHiddenType() const;
-    virtual bool isImageButton() const;
     virtual bool isInteractiveContent() const;
-    virtual bool isMonthField() const;
-    virtual bool isNumberField() const;
-    virtual bool isPasswordField() const;
-    virtual bool isRadioButton() const;
-    virtual bool isRangeControl() const;
-    virtual bool isSearchField() const;
-    virtual bool isTelephoneField() const;
     virtual bool isTextButton() const;
     virtual bool isTextField() const;
-    virtual bool isTextType() const;
-    virtual bool isTimeField() const;
-    virtual bool isURLField() const;
-    virtual bool isWeekField() const;
 
     // Form value functions
 
@@ -129,6 +108,8 @@ public:
     virtual bool valueMissing(const String&) const;
     virtual bool hasBadInput() const;
     virtual bool patternMismatch(const String&) const;
+    virtual bool tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const;
+    virtual bool tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const;
     bool rangeUnderflow(const String&) const;
     bool rangeOverflow(const String&) const;
     bool isInRange(const String&) const;
@@ -152,10 +133,11 @@ public:
     // Returing the null string means "use the default value."
     // This function must be called only by HTMLInputElement::sanitizeValue().
     virtual String sanitizeValue(const String&) const;
+    virtual void warnIfValueIsInvalid(const String&) const;
+    void warnIfValueIsInvalidAndElementIsVisible(const String&) const;
 
     virtual bool isKeyboardFocusable() const;
     virtual bool shouldShowFocusRingOnMouseFocus() const;
-    virtual bool shouldUseInputMethod() const;
     virtual void enableSecureTextInput();
     virtual void disableSecureTextInput();
     virtual void accessKeyAction(bool sendMouseEvents);
@@ -168,7 +150,7 @@ public:
     virtual void sanitizeValueInResponseToMinOrMaxAttributeChange();
     virtual bool shouldRespectAlignAttribute();
     virtual FileList* files();
-    virtual void setFiles(PassRefPtrWillBeRawPtr<FileList>);
+    virtual void setFiles(FileList*);
     // Should return true if the given DragData has more than one dropped files.
     virtual bool receiveDroppedFiles(const DragData*);
     virtual String droppedFileSystemId();
@@ -184,6 +166,8 @@ public:
     virtual bool isCheckable();
     virtual bool isSteppable() const;
     virtual bool shouldRespectHeightAndWidthAttributes();
+    virtual int maxLength() const;
+    virtual int minLength() const;
     virtual bool supportsPlaceholder() const;
     virtual bool supportsReadOnly() const;
     virtual String defaultToolTip() const;
@@ -203,7 +187,7 @@ public:
     // string. This should not be called for types without valueAsNumber.
     virtual String serialize(const Decimal&) const;
 
-    virtual bool supportsIndeterminateAppearance() const;
+    virtual bool shouldAppearIndeterminate() const;
 
     virtual bool supportsInputModeAttribute() const;
 
@@ -214,13 +198,18 @@ public:
     virtual unsigned height() const;
     virtual unsigned width() const;
 
+    virtual TextDirection computedTextDirection();
+
     void dispatchSimulatedClickIfActive(KeyboardEvent*) const;
 
     // InputTypeView override
-    virtual bool shouldSubmitImplicitly(Event*) OVERRIDE;
-    virtual bool hasCustomFocusLogic() const OVERRIDE;
+    virtual bool shouldSubmitImplicitly(Event*) override;
+    virtual bool hasCustomFocusLogic() const override;
 
     virtual bool shouldDispatchFormControlChangeEvent(String&, String&);
+
+    // For test purpose
+    virtual ColorChooserClient* colorChooserClient();
 
 protected:
     InputType(HTMLInputElement& element) : InputTypeView(element) { }
@@ -239,5 +228,5 @@ private:
     void applyStep(const Decimal&, int count, AnyStepHandling, TextFieldEventBehavior, ExceptionState&);
 };
 
-} // namespace WebCore
+} // namespace blink
 #endif

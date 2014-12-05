@@ -36,14 +36,9 @@
 #include "core/workers/WorkerGlobalScope.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 WorkerPerformance::WorkerPerformance()
-{
-    ScriptWrappable::init(this);
-}
-
-WorkerPerformance::~WorkerPerformance()
 {
 }
 
@@ -61,4 +56,4 @@ PassRefPtrWillBeRawPtr<MemoryInfo> WorkerPerformance::memory() const
     return MemoryInfo::create();
 }
 
-} // namespace WebCore
+} // namespace blink

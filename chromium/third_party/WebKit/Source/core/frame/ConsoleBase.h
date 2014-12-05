@@ -30,8 +30,8 @@
 #ifndef ConsoleBase_h
 #define ConsoleBase_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/inspector/ScriptCallStack.h"
 #include "core/frame/ConsoleTypes.h"
@@ -41,11 +41,13 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
+class ConsoleMessage;
 class ScriptArguments;
 
-class ConsoleBase : public RefCountedWillBeGarbageCollectedFinalized<ConsoleBase> {
+class ConsoleBase : public RefCountedWillBeGarbageCollectedFinalized<ConsoleBase>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     void debug(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
     void error(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
@@ -60,8 +62,8 @@ public:
     void assertCondition(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, bool condition);
     void count(ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>);
     void markTimeline(const String&);
-    void profile(ScriptState*, const String&);
-    void profileEnd(ScriptState*, const String&);
+    void profile(const String&);
+    void profileEnd(const String&);
     void time(const String&);
     void timeEnd(ScriptState*, const String&);
     void timeStamp(const String&);
@@ -77,12 +79,15 @@ public:
 
 protected:
     virtual ExecutionContext* context() = 0;
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) = 0;
+    virtual void reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>) = 0;
 
 private:
     void internalAddMessage(MessageType, MessageLevel, ScriptState*, PassRefPtrWillBeRawPtr<ScriptArguments>, bool acceptNoArguments = false, bool printTrace = false);
+
+    HashCountedSet<String> m_counts;
+    HashMap<String, double> m_times;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ConsoleBase_h

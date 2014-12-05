@@ -24,12 +24,13 @@
 #include "ui/base/dragdrop/os_exchange_data_provider_aurax11.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/devices/x11/device_data_manager_x11.h"
+#include "ui/events/devices/x11/device_list_cache_x11.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/events/platform/x11/x11_event_source.h"
-#include "ui/events/x/device_data_manager.h"
-#include "ui/events/x/device_list_cache_x.h"
-#include "ui/events/x/touch_factory_x11.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
 #include "ui/gfx/insets.h"
@@ -42,14 +43,12 @@
 #include "ui/views/linux_ui/linux_ui.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/views_switches.h"
-#include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 #include "ui/views/widget/desktop_aura/desktop_drag_drop_client_aurax11.h"
 #include "ui/views/widget/desktop_aura/desktop_native_cursor_manager.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_observer_x11.h"
 #include "ui/views/widget/desktop_aura/x11_desktop_handler.h"
 #include "ui/views/widget/desktop_aura/x11_desktop_window_move_client.h"
-#include "ui/views/widget/desktop_aura/x11_scoped_capture.h"
 #include "ui/views/widget/desktop_aura/x11_window_event_filter.h"
 #include "ui/wm/core/compound_event_filter.h"
 #include "ui/wm/core/window_util.h"
@@ -122,6 +121,9 @@ const char* kAtomsToCache[] = {
   NULL
 };
 
+const char kX11WindowRolePopup[] = "popup";
+const char kX11WindowRoleBubble[] = "bubble";
+
 }  // namespace
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -130,8 +132,7 @@ const char* kAtomsToCache[] = {
 DesktopWindowTreeHostX11::DesktopWindowTreeHostX11(
     internal::NativeWidgetDelegate* native_widget_delegate,
     DesktopNativeWidgetAura* desktop_native_widget_aura)
-    : close_widget_factory_(this),
-      xdisplay_(gfx::GetXDisplay()),
+    : xdisplay_(gfx::GetXDisplay()),
       xwindow_(0),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
@@ -139,16 +140,17 @@ DesktopWindowTreeHostX11::DesktopWindowTreeHostX11(
       is_fullscreen_(false),
       is_always_on_top_(false),
       use_native_frame_(false),
+      should_maximize_after_map_(false),
       use_argb_visual_(false),
       drag_drop_client_(NULL),
-      current_cursor_(ui::kCursorNull),
       native_widget_delegate_(native_widget_delegate),
       desktop_native_widget_aura_(desktop_native_widget_aura),
       content_window_(NULL),
       window_parent_(NULL),
       window_shape_(NULL),
       custom_window_shape_(false),
-      urgency_hint_set_(false) {
+      urgency_hint_set_(false),
+      close_widget_factory_(this) {
 }
 
 DesktopWindowTreeHostX11::~DesktopWindowTreeHostX11() {
@@ -205,6 +207,8 @@ void DesktopWindowTreeHostX11::HandleNativeWidgetActivationChanged(
     OnHostActivated();
     open_windows().remove(xwindow_);
     open_windows().insert(open_windows().begin(), xwindow_);
+  } else {
+    ReleaseCapture();
   }
 
   desktop_native_widget_aura_->HandleActivationChanged(active);
@@ -291,6 +295,7 @@ DesktopWindowTreeHostX11::CreateDragDropClient(
     DesktopNativeCursorManager* cursor_manager) {
   drag_drop_client_ = new DesktopDragDropClientAuraX11(
       window(), cursor_manager, xdisplay_, xwindow_);
+  drag_drop_client_->Init();
   return scoped_ptr<aura::client::DragDropClient>(drag_drop_client_).Pass();
 }
 
@@ -314,7 +319,7 @@ void DesktopWindowTreeHostX11::CloseNow() {
   if (xwindow_ == None)
     return;
 
-  x11_capture_.reset();
+  ReleaseCapture();
   native_widget_delegate_->OnNativeWidgetDestroying();
 
   // If we have children, close them. Use a copy for iteration because they'll
@@ -365,9 +370,6 @@ void DesktopWindowTreeHostX11::ShowWindowWithState(
 
   if (show_state == ui::SHOW_STATE_NORMAL ||
       show_state == ui::SHOW_STATE_MAXIMIZED) {
-    // Note: XFCE ignores a maximize hint given before mapping the window.
-    if (show_state == ui::SHOW_STATE_MAXIMIZED)
-      Maximize();
     Activate();
   }
 
@@ -385,7 +387,8 @@ bool DesktopWindowTreeHostX11::IsVisible() const {
   return window_mapped_;
 }
 
-void DesktopWindowTreeHostX11::SetSize(const gfx::Size& size) {
+void DesktopWindowTreeHostX11::SetSize(const gfx::Size& requested_size) {
+  gfx::Size size = AdjustSize(requested_size);
   bool size_changed = bounds_.size() != size;
   XResizeWindow(xdisplay_, xwindow_, size.width(), size.height());
   bounds_.set_size(size);
@@ -494,10 +497,15 @@ gfx::Rect DesktopWindowTreeHostX11::GetWorkAreaBoundsInScreen() const {
 void DesktopWindowTreeHostX11::SetShape(gfx::NativeRegion native_region) {
   if (window_shape_)
     XDestroyRegion(window_shape_);
-  custom_window_shape_ = true;
-  window_shape_ = gfx::CreateRegionFromSkRegion(*native_region);
+  custom_window_shape_ = false;
+  window_shape_ = NULL;
+
+  if (native_region) {
+    custom_window_shape_ = true;
+    window_shape_ = gfx::CreateRegionFromSkRegion(*native_region);
+    delete native_region;
+  }
   ResetWindowRegion();
-  delete native_region;
 }
 
 void DesktopWindowTreeHostX11::Activate() {
@@ -511,8 +519,8 @@ void DesktopWindowTreeHostX11::Deactivate() {
   if (!IsActive())
     return;
 
-  x11_capture_.reset();
-  XLowerWindow(xdisplay_, xwindow_);
+  ReleaseCapture();
+  X11DesktopHandler::get()->DeactivateWindow(xwindow_);
 }
 
 bool DesktopWindowTreeHostX11::IsActive() const {
@@ -520,6 +528,24 @@ bool DesktopWindowTreeHostX11::IsActive() const {
 }
 
 void DesktopWindowTreeHostX11::Maximize() {
+  if (HasWMSpecProperty("_NET_WM_STATE_FULLSCREEN")) {
+    // Unfullscreen the window if it is fullscreen.
+    SetWMSpecState(false,
+                   atom_cache_.GetAtom("_NET_WM_STATE_FULLSCREEN"),
+                   None);
+
+    // Resize the window so that it does not have the same size as a monitor.
+    // (Otherwise, some window managers immediately put the window back in
+    // fullscreen mode).
+    gfx::Rect adjusted_bounds(bounds_.origin(), AdjustSize(bounds_.size()));
+    if (adjusted_bounds != bounds_)
+      SetBounds(adjusted_bounds);
+  }
+
+  // Some WMs do not respect maximization hints on unmapped windows, so we
+  // save this one for later too.
+  should_maximize_after_map_ = !window_mapped_;
+
   // When we are in the process of requesting to maximize a window, we can
   // accurately keep track of our restored bounds instead of relying on the
   // heuristics that are in the PropertyNotify and ConfigureNotify handlers.
@@ -533,11 +559,12 @@ void DesktopWindowTreeHostX11::Maximize() {
 }
 
 void DesktopWindowTreeHostX11::Minimize() {
-  x11_capture_.reset();
+  ReleaseCapture();
   XIconifyWindow(xdisplay_, xwindow_, 0);
 }
 
 void DesktopWindowTreeHostX11::Restore() {
+  should_maximize_after_map_ = false;
   SetWMSpecState(false,
                  atom_cache_.GetAtom("_NET_WM_STATE_MAXIMIZED_VERT"),
                  atom_cache_.GetAtom("_NET_WM_STATE_MAXIMIZED_HORZ"));
@@ -611,11 +638,13 @@ bool DesktopWindowTreeHostX11::SetWindowTitle(const base::string16& title) {
                   PropModeReplace,
                   reinterpret_cast<const unsigned char*>(utf8str.c_str()),
                   utf8str.size());
-  // TODO(erg): This is technically wrong. So XStoreName and friends expect
-  // this in Host Portable Character Encoding instead of UTF-8, which I believe
-  // is Compound Text. This shouldn't matter 90% of the time since this is the
-  // fallback to the UTF8 property above.
-  XStoreName(xdisplay_, xwindow_, utf8str.c_str());
+  XTextProperty xtp;
+  char *c_utf8_str = const_cast<char *>(utf8str.c_str());
+  if (Xutf8TextListToTextProperty(xdisplay_, &c_utf8_str, 1,
+                                  XUTF8StringStyle, &xtp) == Success) {
+    XSetWMName(xdisplay_, xwindow_, &xtp);
+    XFree(xtp.value);
+  }
   return true;
 }
 
@@ -682,9 +711,24 @@ void DesktopWindowTreeHostX11::SetFullscreen(bool fullscreen) {
   if (is_fullscreen_ == fullscreen)
     return;
   is_fullscreen_ = fullscreen;
+  if (is_fullscreen_)
+    delayed_resize_task_.Cancel();
+
+  // Work around a bug where if we try to unfullscreen, metacity immediately
+  // fullscreens us again. This is a little flickery and not necessary if
+  // there's a gnome-panel, but it's not easy to detect whether there's a
+  // panel or not.
+  bool unmaximize_and_remaximize = !fullscreen && IsMaximized() &&
+                                   ui::GuessWindowManager() == ui::WM_METACITY;
+
+  if (unmaximize_and_remaximize)
+    Restore();
   SetWMSpecState(fullscreen,
                  atom_cache_.GetAtom("_NET_WM_STATE_FULLSCREEN"),
                  None);
+  if (unmaximize_and_remaximize)
+    Maximize();
+
   // Try to guess the size we will have after the switch to/from fullscreen:
   // - (may) avoid transient states
   // - works around Flash content which expects to have the size updated
@@ -788,33 +832,8 @@ void DesktopWindowTreeHostX11::FlashFrame(bool flash_frame) {
   urgency_hint_set_ = flash_frame;
 }
 
-void DesktopWindowTreeHostX11::OnRootViewLayout() const {
-  if (!window_mapped_)
-    return;
-
-  XSizeHints hints;
-  long supplied_return;
-  XGetWMNormalHints(xdisplay_, xwindow_, &hints, &supplied_return);
-
-  gfx::Size minimum = native_widget_delegate_->GetMinimumSize();
-  if (minimum.IsEmpty()) {
-    hints.flags &= ~PMinSize;
-  } else {
-    hints.flags |= PMinSize;
-    hints.min_width = minimum.width();
-    hints.min_height = minimum.height();
-  }
-
-  gfx::Size maximum = native_widget_delegate_->GetMaximumSize();
-  if (maximum.IsEmpty()) {
-    hints.flags &= ~PMaxSize;
-  } else {
-    hints.flags |= PMaxSize;
-    hints.max_width = maximum.width();
-    hints.max_height = maximum.height();
-  }
-
-  XSetWMNormalHints(xdisplay_, xwindow_, &hints);
+void DesktopWindowTreeHostX11::OnRootViewLayout() {
+  UpdateMinAndMaxSize();
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
@@ -822,10 +841,8 @@ void DesktopWindowTreeHostX11::OnNativeWidgetFocus() {
 }
 
 void DesktopWindowTreeHostX11::OnNativeWidgetBlur() {
-  if (xwindow_) {
-    x11_capture_.reset();
+  if (xwindow_)
     native_widget_delegate_->AsWidget()->GetInputMethod()->OnBlur();
-  }
 }
 
 bool DesktopWindowTreeHostX11::IsAnimatingClosed() const {
@@ -834,6 +851,10 @@ bool DesktopWindowTreeHostX11::IsAnimatingClosed() const {
 
 bool DesktopWindowTreeHostX11::IsTranslucentWindowOpacitySupported() const {
   return false;
+}
+
+void DesktopWindowTreeHostX11::SizeConstraintsChanged() {
+  UpdateMinAndMaxSize();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -864,16 +885,28 @@ gfx::Rect DesktopWindowTreeHostX11::GetBounds() const {
   return bounds_;
 }
 
-void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& bounds) {
+void DesktopWindowTreeHostX11::SetBounds(const gfx::Rect& requested_bounds) {
+  gfx::Rect bounds(requested_bounds.origin(),
+                   AdjustSize(requested_bounds.size()));
   bool origin_changed = bounds_.origin() != bounds.origin();
   bool size_changed = bounds_.size() != bounds.size();
   XWindowChanges changes = {0};
   unsigned value_mask = 0;
 
   if (size_changed) {
-    // X11 will send an XError at our process if have a 0 sized window.
-    DCHECK_GT(bounds.width(), 0);
-    DCHECK_GT(bounds.height(), 0);
+    if (bounds.width() < min_size_.width() ||
+        bounds.height() < min_size_.height() ||
+        (!max_size_.IsEmpty() &&
+         (bounds.width() > max_size_.width() ||
+          bounds.height() > max_size_.height()))) {
+      // Update the minimum and maximum sizes in case they have changed.
+      UpdateMinAndMaxSize();
+
+      gfx::Size size = bounds.size();
+      size.SetToMin(max_size_);
+      size.SetToMax(min_size_);
+      bounds.set_size(size);
+    }
 
     changes.width = bounds.width();
     changes.height = bounds.height();
@@ -908,24 +941,37 @@ gfx::Point DesktopWindowTreeHostX11::GetLocationOnNativeScreen() const {
 }
 
 void DesktopWindowTreeHostX11::SetCapture() {
-  // This is vaguely based on the old NativeWidgetGtk implementation.
-  //
-  // X11's XPointerGrab() shouldn't be used for everything; it doesn't map
-  // cleanly to Windows' SetCapture(). GTK only provides a separate concept of
-  // a grab that wasn't the X11 pointer grab, but was instead a manual
-  // redirection of the event. (You need to drop into GDK if you want to
-  // perform a raw X11 grab).
+  if (HasCapture())
+    return;
 
-  if (g_current_capture)
-    g_current_capture->OnCaptureReleased();
-
+  // Grabbing the mouse is asynchronous. However, we synchronously start
+  // forwarding all mouse events received by Chrome to the
+  // aura::WindowEventDispatcher which has capture. This makes capture
+  // synchronous for all intents and purposes if either:
+  // - |g_current_capture|'s X window has capture.
+  // OR
+  // - The topmost window underneath the mouse is managed by Chrome.
+  DesktopWindowTreeHostX11* old_capturer = g_current_capture;
   g_current_capture = this;
-  x11_capture_.reset(new X11ScopedCapture(xwindow_));
+  if (old_capturer)
+    old_capturer->OnHostLostWindowCapture();
+
+  unsigned int event_mask = PointerMotionMask | ButtonReleaseMask |
+                            ButtonPressMask;
+  XGrabPointer(xdisplay_, xwindow_, True, event_mask, GrabModeAsync,
+               GrabModeAsync, None, None, CurrentTime);
 }
 
 void DesktopWindowTreeHostX11::ReleaseCapture() {
-  if (g_current_capture == this)
-    g_current_capture->OnCaptureReleased();
+  if (g_current_capture == this) {
+    // Release mouse grab asynchronously. A window managed by Chrome is likely
+    // the topmost window underneath the mouse so the capture release being
+    // asynchronous is likely inconsequential.
+    g_current_capture = NULL;
+    XUngrabPointer(xdisplay_, CurrentTime);
+
+    OnHostLostWindowCapture();
+  }
 }
 
 void DesktopWindowTreeHostX11::SetCursorNative(gfx::NativeCursor cursor) {
@@ -940,43 +986,6 @@ void DesktopWindowTreeHostX11::MoveCursorToNative(const gfx::Point& location) {
 void DesktopWindowTreeHostX11::OnCursorVisibilityChangedNative(bool show) {
   // TODO(erg): Conditional on us enabling touch on desktop linux builds, do
   // the same tap-to-click disabling here that chromeos does.
-}
-
-void DesktopWindowTreeHostX11::PostNativeEvent(
-    const base::NativeEvent& native_event) {
-  DCHECK(xwindow_);
-  DCHECK(xdisplay_);
-  XEvent xevent = *native_event;
-  xevent.xany.display = xdisplay_;
-  xevent.xany.window = xwindow_;
-
-  switch (xevent.type) {
-    case EnterNotify:
-    case LeaveNotify:
-    case MotionNotify:
-    case KeyPress:
-    case KeyRelease:
-    case ButtonPress:
-    case ButtonRelease: {
-      // The fields used below are in the same place for all of events
-      // above. Using xmotion from XEvent's unions to avoid repeating
-      // the code.
-      xevent.xmotion.root = x_root_window_;
-      xevent.xmotion.time = CurrentTime;
-
-      gfx::Point point(xevent.xmotion.x, xevent.xmotion.y);
-      ConvertPointToNativeScreen(&point);
-      xevent.xmotion.x_root = point.x();
-      xevent.xmotion.y_root = point.y();
-    }
-    default:
-      break;
-  }
-  XSendEvent(xdisplay_, xwindow_, False, 0, &xevent);
-}
-
-void DesktopWindowTreeHostX11::OnDeviceScaleFactorChanged(
-    float device_scale_factor) {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1047,7 +1056,8 @@ void DesktopWindowTreeHostX11::InitX11Window(
     }
   }
 
-  bounds_ = params.bounds;
+  bounds_ = gfx::Rect(params.bounds.origin(),
+                      AdjustSize(params.bounds.size()));
   xwindow_ = XCreateWindow(
       xdisplay_, x_root_window_,
       bounds_.x(), bounds_.y(),
@@ -1145,12 +1155,26 @@ void DesktopWindowTreeHostX11::InitX11Window(
     ui::SetWindowClassHint(
         xdisplay_, xwindow_, params.wm_class_name, params.wm_class_class);
   }
-  if (!params.wm_role_name.empty() ||
-      params.type == Widget::InitParams::TYPE_POPUP) {
-    const char kX11WindowRolePopup[] = "popup";
-    ui::SetWindowRole(xdisplay_, xwindow_, params.wm_role_name.empty() ?
-                      std::string(kX11WindowRolePopup) : params.wm_role_name);
+
+  const char* wm_role_name = NULL;
+  // If the widget isn't overriding the role, provide a default value for popup
+  // and bubble types.
+  if (!params.wm_role_name.empty()) {
+    wm_role_name = params.wm_role_name.c_str();
+  } else {
+    switch (params.type) {
+      case Widget::InitParams::TYPE_POPUP:
+        wm_role_name = kX11WindowRolePopup;
+        break;
+      case Widget::InitParams::TYPE_BUBBLE:
+        wm_role_name = kX11WindowRoleBubble;
+        break;
+      default:
+        break;
+    }
   }
+  if (wm_role_name)
+    ui::SetWindowRole(xdisplay_, xwindow_, std::string(wm_role_name));
 
   if (params.remove_standard_frame) {
     // Setting _GTK_HIDE_TITLEBAR_WHEN_MAXIMIZED tells gnome-shell to not force
@@ -1180,6 +1204,25 @@ void DesktopWindowTreeHostX11::InitX11Window(
   CreateCompositor(GetAcceleratedWidget());
 }
 
+gfx::Size DesktopWindowTreeHostX11::AdjustSize(
+    const gfx::Size& requested_size) {
+  std::vector<gfx::Display> displays =
+      gfx::Screen::GetScreenByType(gfx::SCREEN_TYPE_NATIVE)->GetAllDisplays();
+  // Compare against all monitor sizes. The window manager can move the window
+  // to whichever monitor it wants.
+  for (size_t i = 0; i < displays.size(); ++i) {
+    if (requested_size == displays[i].size()) {
+      return gfx::Size(requested_size.width() - 1,
+                       requested_size.height() - 1);
+    }
+  }
+
+  // Do not request a 0x0 window size. It causes an XError.
+  gfx::Size size = requested_size;
+  size.SetToMax(gfx::Size(1,1));
+  return size;
+}
+
 void DesktopWindowTreeHostX11::OnWMStateUpdated() {
   std::vector< ::Atom> atom_list;
   if (!ui::GetAtomArrayProperty(xwindow_, "_NET_WM_STATE", &atom_list))
@@ -1199,12 +1242,19 @@ void DesktopWindowTreeHostX11::OnWMStateUpdated() {
   // HWNDMessageHandler::GetClientAreaBounds() returns an empty size when the
   // window is minimized. On Linux, returning empty size in GetBounds() or
   // SetBounds() does not work.
+  // We also propagate the minimization to the compositor, to makes sure that we
+  // don't draw any 'blank' frames that could be noticed in applications such as
+  // window manager previews, which show content even when a window is
+  // minimized.
   bool is_minimized = IsMinimized();
   if (is_minimized != was_minimized) {
-    if (is_minimized)
+    if (is_minimized) {
+      compositor()->SetVisible(false);
       content_window_->Hide();
-    else
+    } else {
       content_window_->Show();
+      compositor()->SetVisible(true);
+    }
   }
 
   if (restored_bounds_.IsEmpty()) {
@@ -1250,6 +1300,41 @@ void DesktopWindowTreeHostX11::OnFrameExtentsUpdated() {
   } else {
     native_window_frame_borders_ = gfx::Insets();
   }
+}
+
+void DesktopWindowTreeHostX11::UpdateMinAndMaxSize() {
+  if (!window_mapped_)
+    return;
+
+  gfx::Size minimum = native_widget_delegate_->GetMinimumSize();
+  gfx::Size maximum = native_widget_delegate_->GetMaximumSize();
+  if (min_size_ == minimum && max_size_ == maximum)
+    return;
+
+  min_size_ = minimum;
+  max_size_ = maximum;
+
+  XSizeHints hints;
+  long supplied_return;
+  XGetWMNormalHints(xdisplay_, xwindow_, &hints, &supplied_return);
+
+  if (minimum.IsEmpty()) {
+    hints.flags &= ~PMinSize;
+  } else {
+    hints.flags |= PMinSize;
+    hints.min_width = min_size_.width();
+    hints.min_height = min_size_.height();
+  }
+
+  if (maximum.IsEmpty()) {
+    hints.flags &= ~PMaxSize;
+  } else {
+    hints.flags |= PMaxSize;
+    hints.max_width = max_size_.width();
+    hints.max_height = max_size_.height();
+  }
+
+  XSetWMNormalHints(xdisplay_, xwindow_, &hints);
 }
 
 void DesktopWindowTreeHostX11::UpdateWMUserTime(
@@ -1305,13 +1390,6 @@ void DesktopWindowTreeHostX11::SetUseNativeFrame(bool use_native_frame) {
   use_native_frame_ = use_native_frame;
   ui::SetUseOSWindowFrame(xwindow_, use_native_frame);
   ResetWindowRegion();
-}
-
-void DesktopWindowTreeHostX11::OnCaptureReleased() {
-  x11_capture_.reset();
-  g_current_capture = NULL;
-  OnHostLostWindowCapture();
-  native_widget_delegate_->OnMouseCaptureLost();
 }
 
 void DesktopWindowTreeHostX11::DispatchMouseEvent(ui::MouseEvent* event) {
@@ -1473,7 +1551,8 @@ std::list<XID>& DesktopWindowTreeHostX11::open_windows() {
 void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
   if (show_state != ui::SHOW_STATE_DEFAULT &&
       show_state != ui::SHOW_STATE_NORMAL &&
-      show_state != ui::SHOW_STATE_INACTIVE) {
+      show_state != ui::SHOW_STATE_INACTIVE &&
+      show_state != ui::SHOW_STATE_MAXIMIZED) {
     // It will behave like SHOW_STATE_NORMAL.
     NOTIMPLEMENTED();
   }
@@ -1510,6 +1589,13 @@ void DesktopWindowTreeHostX11::MapWindow(ui::WindowShowState show_state) {
   if (ui::X11EventSource::GetInstance())
     ui::X11EventSource::GetInstance()->BlockUntilWindowMapped(xwindow_);
   window_mapped_ = true;
+
+  // Some WMs only respect maximize hints after the window has been mapped.
+  // Check whether we need to re-do a maximization.
+  if (should_maximize_after_map_) {
+    Maximize();
+    should_maximize_after_map_ = false;
+  }
 }
 
 void DesktopWindowTreeHostX11::SetWindowTransparency() {
@@ -1571,13 +1657,19 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
       break;
     }
     case KeyPress: {
-      ui::KeyEvent keydown_event(xev, false);
+      ui::KeyEvent keydown_event(xev);
       SendEventToProcessor(&keydown_event);
       break;
     }
     case KeyRelease: {
-      ui::KeyEvent keyup_event(xev, false);
-      SendEventToProcessor(&keyup_event);
+      // There is no way to deactivate a window in X11 so ignore input if
+      // window is supposed to be 'inactive'. See comments in
+      // X11DesktopHandler::DeactivateWindow() for more details.
+      if (!IsActive() && !HasCapture())
+        break;
+
+      ui::KeyEvent key_event(xev);
+      SendEventToProcessor(&key_event);
       break;
     }
     case ButtonPress:
@@ -1698,6 +1790,12 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
           SendEventToProcessor(&scrollev);
           break;
         }
+        case ui::ET_KEY_PRESSED:
+        case ui::ET_KEY_RELEASED: {
+          ui::KeyEvent key_event(xev);
+          SendEventToProcessor(&key_event);
+          break;
+        }
         case ui::ET_UNKNOWN:
           break;
         default:
@@ -1760,7 +1858,7 @@ uint32_t DesktopWindowTreeHostX11::DispatchEvent(
           XRefreshKeyboardMapping(&xev->xmapping);
           break;
         case MappingPointer:
-          ui::DeviceDataManager::GetInstance()->UpdateButtonMap();
+          ui::DeviceDataManagerX11::GetInstance()->UpdateButtonMap();
           break;
         default:
           NOTIMPLEMENTED() << " Unknown request: " << xev->xmapping.request;

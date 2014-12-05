@@ -5,10 +5,7 @@
 #include "net/base/keygen_handler.h"
 
 #include <windows.h>
-#include <wincrypt.h>
-#pragma comment(lib, "crypt32.lib")
 #include <rpc.h>
-#pragma comment(lib, "rpcrt4.lib")
 
 #include <list>
 #include <string>
@@ -22,7 +19,10 @@
 #include "base/strings/utf_string_conversions.h"
 #include "crypto/capi_util.h"
 #include "crypto/scoped_capi_types.h"
+#include "crypto/wincrypt_shim.h"
 
+#pragma comment(lib, "crypt32.lib")
+#pragma comment(lib, "rpcrt4.lib")
 
 namespace net {
 
@@ -36,7 +36,8 @@ bool GetSubjectPublicKeyInfo(HCRYPTPROV prov, std::vector<BYTE>* output) {
   // as a CERT_PUBLIC_KEY_INFO structure. Currently, only RSA public keys are
   // supported.
   ok = CryptExportPublicKeyInfoEx(prov, AT_KEYEXCHANGE, X509_ASN_ENCODING,
-                                  szOID_RSA_RSA, 0, NULL, NULL, &size);
+                                  const_cast<char*>(szOID_RSA_RSA), 0, NULL,
+                                  NULL, &size);
   DCHECK(ok);
   if (!ok)
     return false;
@@ -46,8 +47,8 @@ bool GetSubjectPublicKeyInfo(HCRYPTPROV prov, std::vector<BYTE>* output) {
   PCERT_PUBLIC_KEY_INFO public_key_casted =
       reinterpret_cast<PCERT_PUBLIC_KEY_INFO>(&(*output)[0]);
   ok = CryptExportPublicKeyInfoEx(prov, AT_KEYEXCHANGE, X509_ASN_ENCODING,
-                                  szOID_RSA_RSA, 0, NULL, public_key_casted,
-                                  &size);
+                                  const_cast<char*>(szOID_RSA_RSA), 0, NULL,
+                                  public_key_casted, &size);
   DCHECK(ok);
   if (!ok)
     return false;
@@ -64,7 +65,7 @@ bool GetSubjectPublicKeyInfo(HCRYPTPROV prov, std::vector<BYTE>* output) {
 bool GetSignedPublicKeyAndChallenge(HCRYPTPROV prov,
                                     const std::string& challenge,
                                     std::string* output) {
-  std::wstring wide_challenge = base::ASCIIToWide(challenge);
+  base::string16 challenge16 = base::ASCIIToUTF16(challenge);
   std::vector<BYTE> spki;
 
   if (!GetSubjectPublicKeyInfo(prov, &spki))
@@ -78,11 +79,11 @@ bool GetSignedPublicKeyAndChallenge(HCRYPTPROV prov,
   pkac.dwVersion = CERT_KEYGEN_REQUEST_V1;
   pkac.SubjectPublicKeyInfo =
       *reinterpret_cast<PCERT_PUBLIC_KEY_INFO>(&spki[0]);
-  pkac.pwszChallengeString = const_cast<wchar_t*>(wide_challenge.c_str());
+  pkac.pwszChallengeString = const_cast<base::char16*>(challenge16.c_str());
 
   CRYPT_ALGORITHM_IDENTIFIER sig_alg;
   memset(&sig_alg, 0, sizeof(sig_alg));
-  sig_alg.pszObjId = szOID_RSA_MD5RSA;
+  sig_alg.pszObjId = const_cast<char*>(szOID_RSA_MD5RSA);
 
   BOOL ok;
   DWORD size = 0;

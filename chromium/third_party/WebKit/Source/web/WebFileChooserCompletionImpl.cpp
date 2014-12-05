@@ -30,10 +30,11 @@
 
 #include "config.h"
 #include "web/WebFileChooserCompletionImpl.h"
+#include "platform/FileMetadata.h"
 
 namespace blink {
 
-WebFileChooserCompletionImpl::WebFileChooserCompletionImpl(PassRefPtr<WebCore::FileChooser> chooser)
+WebFileChooserCompletionImpl::WebFileChooserCompletionImpl(PassRefPtr<FileChooser> chooser)
     : m_fileChooser(chooser)
 {
 }
@@ -44,9 +45,9 @@ WebFileChooserCompletionImpl::~WebFileChooserCompletionImpl()
 
 void WebFileChooserCompletionImpl::didChooseFile(const WebVector<WebString>& fileNames)
 {
-    Vector<WebCore::FileChooserFileInfo> fileInfo;
+    Vector<FileChooserFileInfo> fileInfo;
     for (size_t i = 0; i < fileNames.size(); ++i)
-        fileInfo.append(WebCore::FileChooserFileInfo(fileNames[i]));
+        fileInfo.append(FileChooserFileInfo(fileNames[i]));
     m_fileChooser->chooseFiles(fileInfo);
     // This object is no longer needed.
     delete this;
@@ -54,9 +55,18 @@ void WebFileChooserCompletionImpl::didChooseFile(const WebVector<WebString>& fil
 
 void WebFileChooserCompletionImpl::didChooseFile(const WebVector<SelectedFileInfo>& files)
 {
-    Vector<WebCore::FileChooserFileInfo> fileInfo;
-    for (size_t i = 0; i < files.size(); ++i)
-        fileInfo.append(WebCore::FileChooserFileInfo(files[i].path, files[i].displayName));
+    Vector<FileChooserFileInfo> fileInfo;
+    for (size_t i = 0; i < files.size(); ++i) {
+        if (files[i].fileSystemURL.isEmpty()) {
+            fileInfo.append(FileChooserFileInfo(files[i].path, files[i].displayName));
+        } else {
+            FileMetadata metadata;
+            metadata.modificationTime = files[i].modificationTime;
+            metadata.length = files[i].length;
+            metadata.type = files[i].isDirectory ? FileMetadata::TypeDirectory : FileMetadata::TypeFile;
+            fileInfo.append(FileChooserFileInfo(files[i].fileSystemURL, metadata));
+        }
+    }
     m_fileChooser->chooseFiles(fileInfo);
     // This object is no longer needed.
     delete this;

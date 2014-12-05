@@ -38,27 +38,30 @@
 namespace blink {
 
 class WebServiceWorkerContextClient;
+class WebServiceWorkerResponse;
 class WebURL;
 
-class ServiceWorkerGlobalScopeClientImpl FINAL : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerGlobalScopeClientImpl>, public WebCore::ServiceWorkerGlobalScopeClient {
+class ServiceWorkerGlobalScopeClientImpl final : public NoBaseWillBeGarbageCollectedFinalized<ServiceWorkerGlobalScopeClientImpl>, public ServiceWorkerGlobalScopeClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ServiceWorkerGlobalScopeClientImpl);
 public:
-    static PassOwnPtrWillBeRawPtr<WebCore::ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
+    static PassOwnPtrWillBeRawPtr<ServiceWorkerGlobalScopeClient> create(WebServiceWorkerContextClient&);
     virtual ~ServiceWorkerGlobalScopeClientImpl();
 
     virtual void getClients(WebServiceWorkerClientsCallbacks*);
-    virtual WebURL scope() const OVERRIDE;
+    virtual WebURL scope() const override;
+    virtual WebServiceWorkerCacheStorage* cacheStorage() const override;
 
-    virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult) OVERRIDE;
-    virtual void didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult) OVERRIDE;
-    virtual void didHandleFetchEvent(int fetchEventID, PassRefPtr<WebCore::Response>) OVERRIDE;
-    virtual void didHandleSyncEvent(int syncEventID) OVERRIDE;
-    virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) OVERRIDE;
+    virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult) override;
+    virtual void didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult) override;
+    virtual void didHandleFetchEvent(int fetchEventID) override;
+    virtual void didHandleFetchEvent(int fetchEventID, const WebServiceWorkerResponse&) override;
+    virtual void didHandleSyncEvent(int syncEventID) override;
+    virtual void postMessageToClient(int clientID, const WebString& message, PassOwnPtr<WebMessagePortChannelArray>) override;
 
-    virtual void trace(WebCore::Visitor* visitor) OVERRIDE { WebCore::ServiceWorkerGlobalScopeClient::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { ServiceWorkerGlobalScopeClient::trace(visitor); }
 
 private:
-    ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient&);
+    explicit ServiceWorkerGlobalScopeClientImpl(WebServiceWorkerContextClient&);
 
     WebServiceWorkerContextClient& m_client;
 };

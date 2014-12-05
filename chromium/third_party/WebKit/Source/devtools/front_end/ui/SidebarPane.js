@@ -29,6 +29,7 @@
 /**
  * @constructor
  * @extends {WebInspector.View}
+ * @param {string} title
  */
 WebInspector.SidebarPane = function(title)
 {
@@ -36,13 +37,9 @@ WebInspector.SidebarPane = function(title)
     this.setMinimumSize(25, 0);
     this.element.className = "sidebar-pane"; // Override
 
-    this.titleElement = document.createElement("div");
-    this.titleElement.className = "sidebar-pane-toolbar";
-
+    this.titleElement = createElementWithClass("div", "sidebar-pane-toolbar");
     this.bodyElement = this.element.createChild("div", "body");
-
     this._title = title;
-
     this._expandCallback = null;
 }
 
@@ -145,7 +142,7 @@ WebInspector.SidebarPaneTitle.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onTitleKeyDown: function(event)
     {
@@ -163,7 +160,8 @@ WebInspector.SidebarPaneStack = function()
     WebInspector.View.call(this);
     this.setMinimumSize(25, 0);
     this.element.className = "sidebar-pane-stack"; // Override
-    this.registerRequiredCSS("sidebarPane.css");
+    /** @type {!Map.<!WebInspector.SidebarPane, !WebInspector.SidebarPaneTitle>} */
+    this._titleByPane = new Map();
 }
 
 WebInspector.SidebarPaneStack.prototype = {
@@ -172,7 +170,21 @@ WebInspector.SidebarPaneStack.prototype = {
      */
     addPane: function(pane)
     {
-        new WebInspector.SidebarPaneTitle(this.element, pane);
+        this._titleByPane.set(pane, new WebInspector.SidebarPaneTitle(this.element, pane));
+    },
+
+    /**
+     * @param {!WebInspector.SidebarPane} pane
+     * @param {boolean} hide
+     */
+    togglePaneHidden: function(pane, hide)
+    {
+        var title = this._titleByPane.get(pane);
+        if (!title)
+            return;
+
+        title.element.classList.toggle("hidden", hide);
+        pane.element.classList.toggle("hidden", hide);
     },
 
     __proto__: WebInspector.View.prototype
@@ -187,7 +199,6 @@ WebInspector.SidebarTabbedPane = function()
     WebInspector.TabbedPane.call(this);
     this.setRetainTabOrder(true);
     this.element.classList.add("sidebar-tabbed-pane");
-    this.registerRequiredCSS("sidebarPane.css");
 }
 
 WebInspector.SidebarTabbedPane.prototype = {

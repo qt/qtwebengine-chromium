@@ -5,20 +5,11 @@
 #ifndef CONTENT_PUBLIC_BROWSER_BROWSER_PLUGIN_GUEST_MANAGER_H_
 #define CONTENT_PUBLIC_BROWSER_BROWSER_PLUGIN_GUEST_MANAGER_H_
 
-#include <string>
-
 #include "base/callback.h"
 #include "content/common/content_export.h"
 
-class GURL;
-
-namespace base {
-class DictionaryValue;
-}  // namespace base
-
 namespace content {
 
-class SiteInstance;
 class WebContents;
 
 // A BrowserPluginGuestManager offloads guest management and routing
@@ -27,28 +18,11 @@ class CONTENT_EXPORT BrowserPluginGuestManager {
  public:
   virtual ~BrowserPluginGuestManager() {}
 
-  // Requests the allocation of a new guest WebContents.
-  virtual content::WebContents* CreateGuest(
-      content::SiteInstance* embedder_site_instance,
-      int instance_id,
-      scoped_ptr<base::DictionaryValue> extra_params);
-
-  // Return a new instance ID.
-  // TODO(fsamuel): Remove this. Once the instance ID concept is moved
-  // entirely out of content and into chrome, this API will be unnecessary.
-  virtual int GetNextInstanceID();
-
-  typedef base::Callback<void(WebContents*)> GuestByInstanceIDCallback;
   // Requests a guest WebContents associated with the provided
-  // |guest_instance_id|. If a guest associated with the provided ID
-  // does not exist, then the |callback| will be called with a NULL
-  // WebContents. If the provided |embedder_render_process_id| does
-  // not own the requested guest, then the embedder will be killed,
-  // and the |callback| will not be called.
-  virtual void MaybeGetGuestByInstanceIDOrKill(
-      int guest_instance_id,
-      int embedder_render_process_id,
-      const GuestByInstanceIDCallback& callback) {}
+  // |browser_plugin_instance_id|.
+  // Returns the guest associated with the provided ID if one exists.
+  virtual WebContents* GetGuestByInstanceID(WebContents* embedder_web_contents,
+                                            int browser_plugin_instance_id);
 
   // Iterates over all WebContents belonging to a given |embedder_web_contents|,
   // calling |callback| for each. If one of the callbacks returns true, then

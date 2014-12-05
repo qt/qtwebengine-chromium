@@ -25,13 +25,14 @@ class Bus;
 class ErrorResponse;
 class MethodCall;
 class Response;
+class ScopedDBusError;
 class Signal;
 
 // ObjectProxy is used to communicate with remote objects, mainly for
 // calling methods of these objects.
 //
 // ObjectProxy is a ref counted object, to ensure that |this| of the
-// object is is alive when callbacks referencing |this| are called; the
+// object is alive when callbacks referencing |this| are called; the
 // bus always holds at least one of those references so object proxies
 // always last as long as the bus that created them.
 class CHROME_DBUS_EXPORT ObjectProxy
@@ -46,7 +47,8 @@ class CHROME_DBUS_EXPORT ObjectProxy
 
   // Options to be OR-ed together when calling Bus::GetObjectProxyWithOptions().
   // Set the IGNORE_SERVICE_UNKNOWN_ERRORS option to silence logging of
-  // org.freedesktop.DBus.Error.ServiceUnknown errors.
+  // org.freedesktop.DBus.Error.ServiceUnknown errors and
+  // org.freedesktop.DBus.Error.ObjectUnknown errors.
   enum Options {
     DEFAULT_OPTIONS = 0,
     IGNORE_SERVICE_UNKNOWN_ERRORS = 1 << 0
@@ -88,6 +90,16 @@ class CHROME_DBUS_EXPORT ObjectProxy
   // - whether it was successful or not.
   typedef base::Callback<void (const std::string&, const std::string&, bool)>
       OnConnectedCallback;
+
+  // Calls the method of the remote object and blocks until the response
+  // is returned. Returns NULL on error with the error details specified
+  // in the |error| object.
+  //
+  // BLOCKING CALL.
+  virtual scoped_ptr<Response> CallMethodAndBlockWithErrorDetails(
+      MethodCall* method_call,
+      int timeout_ms,
+      ScopedDBusError* error);
 
   // Calls the method of the remote object and blocks until the response
   // is returned. Returns NULL on error.
@@ -304,7 +316,7 @@ class CHROME_DBUS_EXPORT ObjectProxy
 
   const bool ignore_service_unknown_errors_;
 
-  // Known name owner of the well-known bus name represnted by |service_name_|.
+  // Known name owner of the well-known bus name represented by |service_name_|.
   std::string service_name_owner_;
 
   DISALLOW_COPY_AND_ASSIGN(ObjectProxy);

@@ -84,9 +84,8 @@ class MediaDecoderJob {
   // Releases all the decoder resources as the current tab is going background.
   virtual void ReleaseDecoderResources();
 
-  // Sets the demuxer configs. Returns true if configs has changed, or false
-  // otherwise.
-  bool SetDemuxerConfigs(const DemuxerConfigs& configs);
+  // Sets the demuxer configs.
+  virtual void SetDemuxerConfigs(const DemuxerConfigs& configs) = 0;
 
   // Returns whether the decoder has finished decoding all the data.
   bool OutputEOSReached() const;
@@ -100,6 +99,8 @@ class MediaDecoderJob {
   bool is_decoding() const { return !decode_cb_.is_null(); }
 
   bool is_content_encrypted() const { return is_content_encrypted_; }
+
+  bool prerolling() const { return prerolling_; }
 
  protected:
   // Creates a new MediaDecoderJob instance.
@@ -217,9 +218,6 @@ class MediaDecoderJob {
   // true, the next access unit is guarateed to be an I-frame.
   virtual void CurrentDataConsumed(bool is_config_change) {}
 
-  // Called when |media_codec_bridge_| is released
-  virtual void OnMediaCodecBridgeReleased() {}
-
   // Implemented by the child class to create |media_codec_bridge_| for a
   // particular stream. Returns true if it is created, or false otherwise.
   virtual bool CreateMediaCodecBridgeInternal() = 0;
@@ -229,12 +227,13 @@ class MediaDecoderJob {
   virtual bool AreDemuxerConfigsChanged(
       const DemuxerConfigs& configs) const = 0;
 
-  // Updates the demuxer configs.
-  virtual void UpdateDemuxerConfigs(const DemuxerConfigs& configs) = 0;
-
   // Returns true if |media_codec_bridge_| needs to be reconfigured for the
   // new DemuxerConfigs, or false otherwise.
   virtual bool IsCodecReconfigureNeeded(const DemuxerConfigs& configs) const;
+
+  // Update the output format from the decoder, returns true if the output
+  // format changes, or false otherwise.
+  virtual bool UpdateOutputFormat();
 
   // Return the index to |received_data_| that is not currently being decoded.
   size_t inactive_demuxer_data_index() const {

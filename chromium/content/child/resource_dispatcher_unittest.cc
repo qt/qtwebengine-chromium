@@ -9,13 +9,14 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "base/process/process.h"
 #include "base/process/process_handle.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
 #include "content/child/request_extra_data.h"
 #include "content/child/request_info.h"
 #include "content/child/resource_dispatcher.h"
+#include "content/child/resource_loader_bridge.h"
+#include "content/common/appcache_interfaces.h"
 #include "content/common/resource_messages.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "content/public/child/request_peer.h"
@@ -23,10 +24,6 @@
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/child/resource_loader_bridge.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
-
-using webkit_glue::ResourceLoaderBridge;
 
 namespace content {
 
@@ -56,46 +53,43 @@ class TestRequestPeer : public RequestPeer {
          bridge_(bridge) {
   }
 
-  virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE {
-  }
+  void OnUploadProgress(uint64 position, uint64 size) override {}
 
-  virtual bool OnReceivedRedirect(const GURL& new_url,
-                                  const GURL& new_first_party_for_cookies,
-                                  const ResourceResponseInfo& info) OVERRIDE {
+  bool OnReceivedRedirect(const net::RedirectInfo& redirect_info,
+                          const ResourceResponseInfo& info) override {
     ++seen_redirects_;
     if (defer_on_redirect_)
       bridge_->SetDefersLoading(true);
     return follow_redirects_;
   }
 
-  virtual void OnReceivedResponse(const ResourceResponseInfo& info) OVERRIDE {
+  void OnReceivedResponse(const ResourceResponseInfo& info) override {
     EXPECT_FALSE(received_response_);
     received_response_ = true;
     if (cancel_on_receive_response_)
       bridge_->Cancel();
   }
 
-  virtual void OnDownloadedData(int len, int encoded_data_length) OVERRIDE {
+  void OnDownloadedData(int len, int encoded_data_length) override {
     total_downloaded_data_length_ += len;
     total_encoded_data_length_ += encoded_data_length;
   }
 
-  virtual void OnReceivedData(const char* data,
-                              int data_length,
-                              int encoded_data_length) OVERRIDE {
+  void OnReceivedData(const char* data,
+                      int data_length,
+                      int encoded_data_length) override {
     EXPECT_TRUE(received_response_);
     EXPECT_FALSE(complete_);
     data_.append(data, data_length);
     total_encoded_data_length_ += encoded_data_length;
   }
 
-  virtual void OnCompletedRequest(
-      int error_code,
-      bool was_ignored_by_handler,
-      bool stale_copy_in_cache,
-      const std::string& security_info,
-      const base::TimeTicks& completion_time,
-      int64 total_transfer_size) OVERRIDE {
+  void OnCompletedRequest(int error_code,
+                          bool was_ignored_by_handler,
+                          bool stale_copy_in_cache,
+                          const std::string& security_info,
+                          const base::TimeTicks& completion_time,
+                          int64 total_transfer_size) override {
     EXPECT_TRUE(received_response_);
     EXPECT_FALSE(complete_);
     complete_ = true;
@@ -160,14 +154,14 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
  public:
   ResourceDispatcherTest() : dispatcher_(this) {}
 
-  virtual ~ResourceDispatcherTest() {
+  ~ResourceDispatcherTest() override {
     STLDeleteContainerPairSecondPointers(shared_memory_map_.begin(),
                                          shared_memory_map_.end());
   }
 
   // Emulates IPC send operations (IPC::Sender) by adding
   // pending messages to the queue.
-  virtual bool Send(IPC::Message* msg) OVERRIDE {
+  bool Send(IPC::Message* msg) override {
     message_queue_.push_back(IPC::Message(*msg));
     delete msg;
     return true;
@@ -251,10 +245,13 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     std::string raw_headers(kTestRedirectHeaders);
     std::replace(raw_headers.begin(), raw_headers.end(), '\n', '\0');
     head.headers = new net::HttpResponseHeaders(raw_headers);
-    head.error_code = net::OK;
+    net::RedirectInfo redirect_info;
+    redirect_info.status_code = 302;
+    redirect_info.new_method = "GET";
+    redirect_info.new_url = GURL(kTestPageUrl);
+    redirect_info.new_first_party_for_cookies = GURL(kTestPageUrl);
     EXPECT_EQ(true, dispatcher_.OnMessageReceived(
-        ResourceMsg_ReceivedRedirect(request_id, GURL(kTestPageUrl),
-                                     GURL(kTestPageUrl), head)));
+        ResourceMsg_ReceivedRedirect(request_id, redirect_info, head)));
   }
 
   void NotifyReceivedResponse(int request_id) {
@@ -264,7 +261,6 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     head.headers = new net::HttpResponseHeaders(raw_headers);
     head.mime_type = kTestPageMimeType;
     head.charset = kTestPageCharset;
-    head.error_code = net::OK;
     EXPECT_EQ(true,
               dispatcher_.OnMessageReceived(
                   ResourceMsg_ReceivedResponse(request_id, head)));
@@ -277,8 +273,8 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     EXPECT_TRUE(shared_memory->CreateAndMapAnonymous(buffer_size));
 
     base::SharedMemoryHandle duplicate_handle;
-    EXPECT_TRUE(shared_memory->ShareToProcess(
-        base::Process::Current().handle(), &duplicate_handle));
+    EXPECT_TRUE(shared_memory->ShareToProcess(base::GetCurrentProcessHandle(),
+                                              &duplicate_handle));
     EXPECT_TRUE(dispatcher_.OnMessageReceived(
         ResourceMsg_SetDataBuffer(request_id, duplicate_handle,
                                   shared_memory->requested_size(), 0)));
@@ -330,8 +326,8 @@ class ResourceDispatcherTest : public testing::Test, public IPC::Sender {
     request_info.headers = std::string();
     request_info.load_flags = 0;
     request_info.requestor_pid = 0;
-    request_info.request_type = ResourceType::SUB_RESOURCE;
-    request_info.appcache_host_id = appcache::kAppCacheNoHostId;
+    request_info.request_type = RESOURCE_TYPE_SUB_RESOURCE;
+    request_info.appcache_host_id = kAppCacheNoHostId;
     request_info.routing_id = 0;
     request_info.download_to_file = download_to_file;
     RequestExtraData extra_data;
@@ -705,7 +701,7 @@ TEST_F(ResourceDispatcherTest, SerializedPostData) {
 class TimeConversionTest : public ResourceDispatcherTest,
                            public RequestPeer {
  public:
-  virtual bool Send(IPC::Message* msg) OVERRIDE {
+  bool Send(IPC::Message* msg) override {
     delete msg;
     return true;
   }
@@ -719,35 +715,29 @@ class TimeConversionTest : public ResourceDispatcherTest,
   }
 
   // RequestPeer methods.
-  virtual void OnUploadProgress(uint64 position, uint64 size) OVERRIDE {
-  }
+  void OnUploadProgress(uint64 position, uint64 size) override {}
 
-  virtual bool OnReceivedRedirect(const GURL& new_url,
-                                  const GURL& new_first_party_for_cookies,
-                                  const ResourceResponseInfo& info) OVERRIDE {
+  bool OnReceivedRedirect(const net::RedirectInfo& redirect_info,
+                          const ResourceResponseInfo& info) override {
     return true;
   }
 
-  virtual void OnReceivedResponse(const ResourceResponseInfo& info) OVERRIDE {
+  void OnReceivedResponse(const ResourceResponseInfo& info) override {
     response_info_ = info;
   }
 
-  virtual void OnDownloadedData(int len, int encoded_data_length) OVERRIDE {
-  }
+  void OnDownloadedData(int len, int encoded_data_length) override {}
 
-  virtual void OnReceivedData(const char* data,
-                              int data_length,
-                              int encoded_data_length) OVERRIDE {
-  }
+  void OnReceivedData(const char* data,
+                      int data_length,
+                      int encoded_data_length) override {}
 
-  virtual void OnCompletedRequest(
-      int error_code,
-      bool was_ignored_by_handler,
-      bool stale_copy_in_cache,
-      const std::string& security_info,
-      const base::TimeTicks& completion_time,
-      int64 total_transfer_size) OVERRIDE {
-  }
+  void OnCompletedRequest(int error_code,
+                          bool was_ignored_by_handler,
+                          bool stale_copy_in_cache,
+                          const std::string& security_info,
+                          const base::TimeTicks& completion_time,
+                          int64 total_transfer_size) override {}
 
   const ResourceResponseInfo& response_info() const { return response_info_; }
 
@@ -758,7 +748,6 @@ class TimeConversionTest : public ResourceDispatcherTest,
 // TODO(simonjam): Enable this when 10829031 lands.
 TEST_F(TimeConversionTest, DISABLED_ProperlyInitialized) {
   ResourceResponseHead response_head;
-  response_head.error_code = net::OK;
   response_head.request_start = base::TimeTicks::FromInternalValue(5);
   response_head.response_start = base::TimeTicks::FromInternalValue(15);
   response_head.load_timing.request_start_time = base::Time::Now();
@@ -778,7 +767,6 @@ TEST_F(TimeConversionTest, DISABLED_ProperlyInitialized) {
 
 TEST_F(TimeConversionTest, PartiallyInitialized) {
   ResourceResponseHead response_head;
-  response_head.error_code = net::OK;
   response_head.request_start = base::TimeTicks::FromInternalValue(5);
   response_head.response_start = base::TimeTicks::FromInternalValue(15);
 
@@ -791,7 +779,6 @@ TEST_F(TimeConversionTest, PartiallyInitialized) {
 
 TEST_F(TimeConversionTest, NotInitialized) {
   ResourceResponseHead response_head;
-  response_head.error_code = net::OK;
 
   PerformTest(response_head);
 

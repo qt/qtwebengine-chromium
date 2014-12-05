@@ -17,9 +17,9 @@ class PowerMonitorMessageSender : public IPC::Sender {
         suspends_(0),
         resumes_(0) {
   }
-  virtual ~PowerMonitorMessageSender() {}
+  ~PowerMonitorMessageSender() override {}
 
-  virtual bool Send(IPC::Message* msg) OVERRIDE {
+  bool Send(IPC::Message* msg) override {
     switch (msg->type()) {
       case PowerMonitorMsg_Suspend::ID:
         suspends_++;
@@ -53,7 +53,7 @@ class PowerMonitorMessageBroadcasterTest : public testing::Test {
     power_monitor_.reset(new base::PowerMonitor(
         scoped_ptr<base::PowerMonitorSource>(power_monitor_source_)));
   }
-  virtual ~PowerMonitorMessageBroadcasterTest() {};
+  ~PowerMonitorMessageBroadcasterTest() override {}
 
   base::PowerMonitorTestSource* source() { return power_monitor_source_; }
   base::PowerMonitor* monitor() { return power_monitor_.get(); }
@@ -68,6 +68,10 @@ class PowerMonitorMessageBroadcasterTest : public testing::Test {
 TEST_F(PowerMonitorMessageBroadcasterTest, PowerMessageBroadcast) {
   PowerMonitorMessageSender sender;
   PowerMonitorMessageBroadcaster broadcaster(&sender);
+
+  // Calling Init should invoke a power state change.
+  broadcaster.Init();
+  EXPECT_EQ(sender.power_state_changes(), 1);
 
   // Sending resume when not suspended should have no effect.
   source()->GenerateResumeEvent();
@@ -91,19 +95,19 @@ TEST_F(PowerMonitorMessageBroadcasterTest, PowerMessageBroadcast) {
 
   // Pretend the device has gone on battery power
   source()->GeneratePowerStateEvent(true);
-  EXPECT_EQ(sender.power_state_changes(), 1);
+  EXPECT_EQ(sender.power_state_changes(), 2);
 
   // Repeated indications the device is on battery power should be suppressed.
   source()->GeneratePowerStateEvent(true);
-  EXPECT_EQ(sender.power_state_changes(), 1);
+  EXPECT_EQ(sender.power_state_changes(), 2);
 
   // Pretend the device has gone off battery power
   source()->GeneratePowerStateEvent(false);
-  EXPECT_EQ(sender.power_state_changes(), 2);
+  EXPECT_EQ(sender.power_state_changes(), 3);
 
   // Repeated indications the device is off battery power should be suppressed.
   source()->GeneratePowerStateEvent(false);
-  EXPECT_EQ(sender.power_state_changes(), 2);
+  EXPECT_EQ(sender.power_state_changes(), 3);
 }
 
 }  // namespace base

@@ -25,14 +25,13 @@
 
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLMenuElement::HTMLMenuElement(Document& document)
     : HTMLElement(menuTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLMenuElement)

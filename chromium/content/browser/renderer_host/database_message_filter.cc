@@ -13,22 +13,22 @@
 #include "content/common/database_messages.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/result_codes.h"
+#include "storage/browser/database/database_util.h"
+#include "storage/browser/database/vfs_backend.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/browser/database/database_util.h"
-#include "webkit/browser/database/vfs_backend.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/common/database/database_identifier.h"
 
 #if defined(OS_POSIX)
 #include "base/file_descriptor_posix.h"
 #endif
 
-using quota::QuotaManager;
-using quota::QuotaStatusCode;
-using webkit_database::DatabaseTracker;
-using webkit_database::DatabaseUtil;
-using webkit_database::VfsBackend;
+using storage::QuotaManager;
+using storage::QuotaStatusCode;
+using storage::DatabaseTracker;
+using storage::DatabaseUtil;
+using storage::VfsBackend;
 
 namespace content {
 namespace {
@@ -39,7 +39,7 @@ const int kDelayDeleteRetryMs = 100;
 }  // namespace
 
 DatabaseMessageFilter::DatabaseMessageFilter(
-    webkit_database::DatabaseTracker* db_tracker)
+    storage::DatabaseTracker* db_tracker)
     : BrowserMessageFilter(DatabaseMsgStart),
       db_tracker_(db_tracker),
       observer_added_(false) {
@@ -270,19 +270,19 @@ void DatabaseMessageFilter::OnDatabaseGetSpaceAvailable(
   }
 
   quota_manager->GetUsageAndQuota(
-      webkit_database::GetOriginFromIdentifier(origin_identifier),
-      quota::kStorageTypeTemporary,
-      base::Bind(&DatabaseMessageFilter::OnDatabaseGetUsageAndQuota,
-                 this, reply_msg));
+      storage::GetOriginFromIdentifier(origin_identifier),
+      storage::kStorageTypeTemporary,
+      base::Bind(
+          &DatabaseMessageFilter::OnDatabaseGetUsageAndQuota, this, reply_msg));
 }
 
 void DatabaseMessageFilter::OnDatabaseGetUsageAndQuota(
     IPC::Message* reply_msg,
-    quota::QuotaStatusCode status,
+    storage::QuotaStatusCode status,
     int64 usage,
     int64 quota) {
   int64 available = 0;
-  if ((status == quota::kQuotaStatusOk) && (usage < quota))
+  if ((status == storage::kQuotaStatusOk) && (usage < quota))
     available = quota - usage;
   DatabaseHostMsg_GetSpaceAvailable::WriteReplyParams(reply_msg, available);
   Send(reply_msg);

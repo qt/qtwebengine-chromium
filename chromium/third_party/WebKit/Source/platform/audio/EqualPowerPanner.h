@@ -27,20 +27,20 @@
 
 #include "platform/audio/Panner.h"
 
-namespace WebCore {
+namespace blink {
 
 // Common type of stereo panner as found in normal audio mixing equipment.
 
-class PLATFORM_EXPORT EqualPowerPanner : public Panner {
+class PLATFORM_EXPORT EqualPowerPanner final : public Panner {
 public:
     EqualPowerPanner(float sampleRate);
 
-    virtual void pan(double azimuth, double elevation, const AudioBus* inputBus, AudioBus* outputBuf, size_t framesToProcess) OVERRIDE;
+    virtual void pan(double azimuth, double elevation, const AudioBus* inputBus, AudioBus* outputBuf, size_t framesToProcess) override;
 
-    virtual void reset() OVERRIDE { m_isFirstRender = true; }
+    virtual void reset() override { m_isFirstRender = true; }
 
-    virtual double tailTime() const OVERRIDE { return 0; }
-    virtual double latencyTime() const OVERRIDE { return 0; }
+    virtual double tailTime() const override { return 0; }
+    virtual double latencyTime() const override { return 0; }
 
 private:
     // For smoothing / de-zippering
@@ -51,6 +51,6 @@ private:
     double m_gainR;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EqualPowerPanner_h

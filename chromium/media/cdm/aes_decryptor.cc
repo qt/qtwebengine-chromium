@@ -53,6 +53,10 @@ class AesDecryptor::SessionIdDecryptionKeyMap {
     return key_list_.begin()->second;
   }
 
+  bool Contains(const std::string& web_session_id) {
+    return Find(web_session_id) != key_list_.end();
+  }
+
  private:
   // Searches the list for an element with |web_session_id|.
   KeyList::iterator Find(const std::string& web_session_id);
@@ -220,15 +224,25 @@ static scoped_refptr<DecoderBuffer> DecryptData(const DecoderBuffer& input,
 }
 
 AesDecryptor::AesDecryptor(const SessionMessageCB& session_message_cb,
-                           const SessionClosedCB& session_closed_cb)
+                           const SessionClosedCB& session_closed_cb,
+                           const SessionKeysChangeCB& session_keys_change_cb)
     : session_message_cb_(session_message_cb),
-      session_closed_cb_(session_closed_cb) {
+      session_closed_cb_(session_closed_cb),
+      session_keys_change_cb_(session_keys_change_cb) {
   DCHECK(!session_message_cb_.is_null());
   DCHECK(!session_closed_cb_.is_null());
+  DCHECK(!session_keys_change_cb_.is_null());
 }
 
 AesDecryptor::~AesDecryptor() {
   key_map_.clear();
+}
+
+void AesDecryptor::SetServerCertificate(const uint8* certificate_data,
+                                        int certificate_data_length,
+                                        scoped_ptr<SimpleCdmPromise> promise) {
+  promise->reject(
+      NOT_SUPPORTED_ERROR, 0, "SetServerCertificate() is not supported.");
 }
 
 void AesDecryptor::CreateSession(const std::string& init_data_type,
@@ -241,11 +255,11 @@ void AesDecryptor::CreateSession(const std::string& init_data_type,
 
   // For now, the AesDecryptor does not care about |init_data_type| or
   // |session_type|; just resolve the promise and then fire a message event
-  // with the |init_data| as the request.
+  // using the |init_data| as the key ID in the license request.
   // TODO(jrummell): Validate |init_data_type| and |session_type|.
   std::vector<uint8> message;
   if (init_data && init_data_length)
-    message.assign(init_data, init_data + init_data_length);
+    CreateLicenseRequest(init_data, init_data_length, session_type, &message);
 
   promise->resolve(web_session_id);
 
@@ -276,7 +290,8 @@ void AesDecryptor::UpdateSession(const std::string& web_session_id,
                          response_length);
 
   KeyIdAndKeyPairs keys;
-  if (!ExtractKeysFromJWKSet(key_string, &keys)) {
+  SessionType session_type = MediaKeys::TEMPORARY_SESSION;
+  if (!ExtractKeysFromJWKSet(key_string, &keys, &session_type)) {
     promise->reject(
         INVALID_ACCESS_ERROR, 0, "response is not a valid JSON Web Key Set.");
     return;
@@ -313,17 +328,17 @@ void AesDecryptor::UpdateSession(const std::string& web_session_id,
   }
 
   promise->resolve();
+
+  // Assume that at least 1 new key has been successfully added and thus
+  // sending true.
+  session_keys_change_cb_.Run(web_session_id, true);
 }
 
-void AesDecryptor::ReleaseSession(const std::string& web_session_id,
-                                  scoped_ptr<SimpleCdmPromise> promise) {
+void AesDecryptor::CloseSession(const std::string& web_session_id,
+                                scoped_ptr<SimpleCdmPromise> promise) {
   // Validate that this is a reference to an active session and then forget it.
   std::set<std::string>::iterator it = valid_sessions_.find(web_session_id);
-  // TODO(jrummell): Convert back to a DCHECK once prefixed EME is removed.
-  if (it == valid_sessions_.end()) {
-    promise->reject(INVALID_ACCESS_ERROR, 0, "Session does not exist.");
-    return;
-  }
+  DCHECK(it != valid_sessions_.end());
 
   valid_sessions_.erase(it);
 
@@ -333,9 +348,51 @@ void AesDecryptor::ReleaseSession(const std::string& web_session_id,
   session_closed_cb_.Run(web_session_id);
 }
 
+void AesDecryptor::RemoveSession(const std::string& web_session_id,
+                                 scoped_ptr<SimpleCdmPromise> promise) {
+  // AesDecryptor doesn't keep any persistent data, so this should be
+  // NOT_REACHED().
+  // TODO(jrummell): Make sure persistent session types are rejected.
+  // http://crbug.com/384152.
+  //
+  // However, v0.1b calls to CancelKeyRequest() will call this, so close the
+  // session, if it exists.
+  // TODO(jrummell): Remove the close() call when prefixed EME is removed.
+  // http://crbug.com/249976.
+  if (valid_sessions_.find(web_session_id) != valid_sessions_.end()) {
+    CloseSession(web_session_id, promise.Pass());
+    return;
+  }
+
+  promise->reject(INVALID_ACCESS_ERROR, 0, "Session does not exist.");
+}
+
+void AesDecryptor::GetUsableKeyIds(const std::string& web_session_id,
+                                   scoped_ptr<KeyIdsPromise> promise) {
+  // Since |web_session_id| is not provided by the user, this should never
+  // happen.
+  DCHECK(valid_sessions_.find(web_session_id) != valid_sessions_.end());
+
+  KeyIdsVector keyids;
+  base::AutoLock auto_lock(key_map_lock_);
+  for (KeyIdToSessionKeysMap::iterator it = key_map_.begin();
+       it != key_map_.end();
+       ++it) {
+    if (it->second->Contains(web_session_id))
+      keyids.push_back(std::vector<uint8>(it->first.begin(), it->first.end()));
+  }
+  promise->resolve(keyids);
+}
+
 Decryptor* AesDecryptor::GetDecryptor() {
   return this;
 }
+
+#if defined(ENABLE_BROWSER_CDMS)
+int AesDecryptor::GetCdmId() const {
+  return kInvalidCdmId;
+}
+#endif  // defined(ENABLE_BROWSER_CDMS)
 
 void AesDecryptor::RegisterNewKeyCB(StreamType stream_type,
                                     const NewKeyCB& new_key_cb) {

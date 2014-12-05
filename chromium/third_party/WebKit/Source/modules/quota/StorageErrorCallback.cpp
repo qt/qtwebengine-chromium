@@ -34,9 +34,9 @@
 
 #include "core/dom/DOMError.h"
 
-namespace WebCore {
+namespace blink {
 
-StorageErrorCallback::CallbackTask::CallbackTask(PassOwnPtr<StorageErrorCallback> callback, ExceptionCode ec)
+StorageErrorCallback::CallbackTask::CallbackTask(StorageErrorCallback* callback, ExceptionCode ec)
     : m_callback(callback)
     , m_ec(ec)
 {
@@ -46,7 +46,7 @@ void StorageErrorCallback::CallbackTask::performTask(ExecutionContext*)
 {
     if (!m_callback)
         return;
-    m_callback->handleEvent(DOMError::create(m_ec).get());
+    m_callback->handleEvent(DOMError::create(m_ec));
 }
 
-} // namespace WebCore
+} // namespace blink

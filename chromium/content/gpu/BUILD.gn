@@ -2,14 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/ui.gni")
 import("//content/content.gni")
 
-# We don't support x64 prior to Win7 and D3DCompiler_43.dll is not needed on
-# Vista+.
-need_d3dcompiler = (is_win && cpu_arch == "x86" && directxsdk_exists)
-
 source_set("gpu") {
-  visibility = "//content/*"
+  visibility = [ "//content/*" ]
+
   sources = [
     "gpu_main.cc",
     "gpu_process.cc",
@@ -27,7 +25,7 @@ source_set("gpu") {
   deps = [
     "//base",
     "//content:export",
-    "//mojo/public/interfaces/service_provider",
+    "//mojo/public/interfaces/application",
     "//skia",
     "//ui/gl",
   ]
@@ -44,30 +42,11 @@ source_set("gpu") {
     ]
   }
 
-  if (need_d3dcompiler) {
-    deps += [ ":extract_d3dcompiler" ]
-  }
-
   if (is_chromeos && cpu_arch != "arm") {
-    configs += [ "//third_party/libva/libva_config" ]
+    configs += [ "//third_party/libva:libva_config" ]
   }
-}
 
-if (need_d3dcompiler) {
-  action("extract_d3dcompiler") {
-    visibility = ":*"
-    script = "//build/extract_from_cab.py"
-
-    cabfile = "//third_party/directxsdk/files/Redist/Jun2010_D3DCompiler_43_x86.cab"
-    dllfile = "D3DCompiler_43.dll"
-
-    source_prereqs = [ cabfile ]
-    outputs = [ "$root_out_dir/$dllfile" ]
-
-    args = [
-      rebase_path(cabfile, root_build_dir),
-      dllfile,
-      rebase_path(root_out_dir, root_build_dir),
-    ]
+  if (use_x11) {
+    deps += [ "//ui/events/platform/x11" ]
   }
 }

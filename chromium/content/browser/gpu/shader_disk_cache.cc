@@ -4,6 +4,7 @@
 
 #include "content/browser/gpu/shader_disk_cache.h"
 
+#include "base/profiler/scoped_tracker.h"
 #include "base/threading/thread_checker.h"
 #include "content/browser/gpu/gpu_process_host.h"
 #include "content/public/browser/browser_thread.h"
@@ -21,6 +22,9 @@ static const base::FilePath::CharType kGpuCachePath[] =
 
 void EntryCloser(disk_cache::Entry* entry) {
   entry->Close();
+}
+
+void FreeDiskCacheIterator(scoped_ptr<disk_cache::Backend::Iterator> iterator) {
 }
 
 }  // namespace
@@ -95,7 +99,7 @@ class ShaderDiskReadHelper
 
   base::WeakPtr<ShaderDiskCache> cache_;
   OpType op_type_;
-  void* iter_;
+  scoped_ptr<disk_cache::Backend::Iterator> iter_;
   scoped_refptr<net::IOBufferWithSize> buf_;
   int host_id_;
   disk_cache::Entry* entry_;
@@ -243,7 +247,6 @@ ShaderDiskReadHelper::ShaderDiskReadHelper(
     int host_id)
     : cache_(cache),
       op_type_(OPEN_NEXT),
-      iter_(NULL),
       buf_(NULL),
       host_id_(host_id),
       entry_(NULL) {
@@ -257,6 +260,11 @@ void ShaderDiskReadHelper::LoadCache() {
 }
 
 void ShaderDiskReadHelper::OnOpComplete(int rv) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 ShaderDiskReadHelper::OnOpComplete"));
+
   DCHECK(CalledOnValidThread());
   if (!cache_.get())
     return;
@@ -291,16 +299,17 @@ int ShaderDiskReadHelper::OpenNextEntry() {
   DCHECK(CalledOnValidThread());
   // Called through OnOpComplete, so we know |cache_| is valid.
   op_type_ = OPEN_NEXT_COMPLETE;
-  return cache_->backend()->OpenNextEntry(
-      &iter_,
-      &entry_,
-      base::Bind(&ShaderDiskReadHelper::OnOpComplete, this));
+  if (!iter_)
+    iter_ = cache_->backend()->CreateIterator();
+  return iter_->OpenNextEntry(
+      &entry_, base::Bind(&ShaderDiskReadHelper::OnOpComplete, this));
 }
 
 int ShaderDiskReadHelper::OpenNextEntryComplete(int rv) {
   DCHECK(CalledOnValidThread());
   // Called through OnOpComplete, so we know |cache_| is valid.
   if (rv == net::ERR_FAILED) {
+    iter_.reset();
     op_type_ = ITERATION_FINISHED;
     return net::OK;
   }
@@ -339,16 +348,21 @@ int ShaderDiskReadHelper::ReadComplete(int rv) {
 int ShaderDiskReadHelper::IterationComplete(int rv) {
   DCHECK(CalledOnValidThread());
   // Called through OnOpComplete, so we know |cache_| is valid.
-  cache_->backend()->EndEnumeration(&iter_);
-  iter_ = NULL;
+  iter_.reset();
   op_type_ = TERMINATE;
   return net::OK;
 }
 
 ShaderDiskReadHelper::~ShaderDiskReadHelper() {
-  if (entry_)
+  if (entry_) {
     BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
                             base::Bind(&EntryCloser, entry_));
+  }
+  if (iter_) {
+    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                            base::Bind(&FreeDiskCacheIterator,
+                                       base::Passed(&iter_)));
+  }
 }
 
 ShaderClearHelper::ShaderClearHelper(scoped_refptr<ShaderDiskCache> cache,
@@ -545,7 +559,7 @@ void ShaderDiskCache::Cache(const std::string& key, const std::string& shader) {
       new ShaderDiskCacheEntry(AsWeakPtr(), key, shader);
   shim->Cache();
 
-  entry_map_[shim] = shim;
+  entry_map_[shim.get()] = shim;
 }
 
 int ShaderDiskCache::Clear(

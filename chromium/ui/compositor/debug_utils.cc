@@ -55,6 +55,9 @@ void PrintLayerHierarchyImp(const Layer* layer,
     case ui::LAYER_SOLID_COLOR:
       *out << L" solid";
       break;
+    case ui::LAYER_NINE_PATCH:
+      *out << L" nine_patch";
+      break;
   }
 
   if (!layer->visible())
@@ -64,6 +67,17 @@ void PrintLayerHierarchyImp(const Layer* layer,
   *out << L'\n' << UTF8ToWide(property_indent_str);
   *out << L"bounds: " << layer->bounds().x() << L',' << layer->bounds().y();
   *out << L' ' << layer->bounds().width() << L'x' << layer->bounds().height();
+  if (!layer->subpixel_position_offset().IsZero())
+    *out << " " << UTF8ToWide(layer->subpixel_position_offset().ToString());
+
+  const ui::Layer* mask = const_cast<ui::Layer*>(layer)->layer_mask_layer();
+
+  if (mask) {
+    *out << L'\n' << UTF8ToWide(property_indent_str);
+    *out << L"mask layer: " << std::setprecision(2)
+         << UTF8ToWide(mask->bounds().ToString())
+         << UTF8ToWide(mask->subpixel_position_offset().ToString());
+  }
 
   if (layer->opacity() != 1.0f) {
     *out << L'\n' << UTF8ToWide(property_indent_str);

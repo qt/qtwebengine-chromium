@@ -25,26 +25,29 @@
 #ifndef SVGRenderingContext_h
 #define SVGRenderingContext_h
 
-#include "core/rendering/PaintInfo.h"
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
-#include "platform/graphics/ImageBuffer.h"
+#include "platform/transforms/AffineTransform.h"
 
-namespace WebCore {
+namespace blink {
 
-class AffineTransform;
 class RenderObject;
 class FloatRect;
+struct PaintInfo;
 class RenderSVGResourceFilter;
 class RenderSVGResourceMasker;
+
+class SubtreeContentTransformScope {
+public:
+    SubtreeContentTransformScope(const AffineTransform&);
+    ~SubtreeContentTransformScope();
+
+private:
+    AffineTransform m_savedContentTransformation;
+};
 
 // SVGRenderingContext
 class SVGRenderingContext {
 public:
-    enum NeedsGraphicsContextSave {
-        SaveGraphicsContext,
-        DontSaveGraphicsContext,
-    };
-
     // Does not start rendering.
     SVGRenderingContext()
         : m_renderingFlags(0)
@@ -53,43 +56,34 @@ public:
         , m_savedContext(0)
         , m_filter(0)
         , m_clipper(0)
+        , m_clipperState(RenderSVGResourceClipper::ClipperNotApplied)
         , m_masker(0)
     {
     }
 
-    SVGRenderingContext(RenderObject* object, PaintInfo& paintinfo, NeedsGraphicsContextSave needsGraphicsContextSave = DontSaveGraphicsContext)
+    SVGRenderingContext(RenderObject* object, PaintInfo& paintinfo)
         : m_renderingFlags(0)
         , m_object(0)
         , m_paintInfo(0)
         , m_savedContext(0)
         , m_filter(0)
         , m_clipper(0)
+        , m_clipperState(RenderSVGResourceClipper::ClipperNotApplied)
         , m_masker(0)
     {
-        prepareToRenderSVGContent(object, paintinfo, needsGraphicsContextSave);
+        prepareToRenderSVGContent(object, paintinfo);
     }
 
     // Automatically finishes context rendering.
     ~SVGRenderingContext();
 
     // Used by all SVG renderers who apply clip/filter/etc. resources to the renderer content.
-    void prepareToRenderSVGContent(RenderObject*, PaintInfo&, NeedsGraphicsContextSave = DontSaveGraphicsContext);
+    void prepareToRenderSVGContent(RenderObject*, PaintInfo&);
     bool isRenderingPrepared() const { return m_renderingFlags & RenderingPrepared; }
 
-    static void renderSubtree(GraphicsContext*, RenderObject*, const AffineTransform&);
+    static void renderSubtree(GraphicsContext*, RenderObject*);
 
     static float calculateScreenFontSizeScalingFactor(const RenderObject*);
-    static void calculateDeviceSpaceTransformation(const RenderObject*, AffineTransform& absoluteTransform);
-    static FloatRect clampedAbsoluteTargetRect(const FloatRect& absoluteTargetRect);
-    static void clear2DRotation(AffineTransform&);
-
-    static IntRect calculateImageBufferRect(const FloatRect& targetRect, const AffineTransform& absoluteTransform)
-    {
-        return enclosingIntRect(absoluteTransform.mapRect(targetRect));
-    }
-
-    // Support for the buffered-rendering hint.
-    bool bufferForeground(OwnPtr<ImageBuffer>&);
 
 private:
     // To properly revert partially successful initializtions in the destructor, we record all successful steps.
@@ -111,10 +105,10 @@ private:
     IntRect m_savedPaintRect;
     RenderSVGResourceFilter* m_filter;
     RenderSVGResourceClipper* m_clipper;
-    ClipperContext m_clipperContext;
+    RenderSVGResourceClipper::ClipperState m_clipperState;
     RenderSVGResourceMasker* m_masker;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRenderingContext_h

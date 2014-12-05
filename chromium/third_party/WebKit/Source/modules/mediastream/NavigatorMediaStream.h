@@ -20,10 +20,11 @@
 #ifndef NavigatorMediaStream_h
 #define NavigatorMediaStream_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Dictionary;
 class ExceptionState;
@@ -34,15 +35,15 @@ class NavigatorUserMediaSuccessCallback;
 
 class NavigatorMediaStream {
 public:
-    static void webkitGetUserMedia(Navigator&, const Dictionary&, PassOwnPtr<NavigatorUserMediaSuccessCallback>, PassOwnPtr<NavigatorUserMediaErrorCallback>, ExceptionState&);
+    static void webkitGetUserMedia(Navigator&, const Dictionary&, NavigatorUserMediaSuccessCallback*, NavigatorUserMediaErrorCallback*, ExceptionState&);
 
-    static void getMediaDevices(Navigator&, PassOwnPtr<MediaDeviceInfoCallback>, ExceptionState&);
+    static void getMediaDevices(Navigator&, MediaDeviceInfoCallback*, ExceptionState&);
 
 private:
     NavigatorMediaStream();
     ~NavigatorMediaStream();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorMediaStream_h

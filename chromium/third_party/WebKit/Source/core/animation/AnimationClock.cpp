@@ -43,7 +43,7 @@ const double approximateFrameTime = 1 / 60.0;
 
 }
 
-namespace WebCore {
+namespace blink {
 
 unsigned AnimationClock::s_currentTask = 0;
 
@@ -72,9 +72,9 @@ double AnimationClock::currentTime()
     return m_time;
 }
 
-void AnimationClock::resetTimeForTesting()
+void AnimationClock::resetTimeForTesting(double time)
 {
-    m_time = 0;
+    m_time = time;
     m_currentTask = 0;
     s_currentTask = 0;
 }

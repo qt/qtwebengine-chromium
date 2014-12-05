@@ -11,7 +11,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "gin/modules/module_registry_observer.h"
-#include "mojo/public/cpp/system/core.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -36,10 +35,9 @@ class WebUIMojoContextState : public gin::ModuleRegistryObserver {
  public:
   WebUIMojoContextState(blink::WebFrame* frame,
                         v8::Handle<v8::Context> context);
-  virtual ~WebUIMojoContextState();
+  ~WebUIMojoContextState() override;
 
-  // Called once the mojo::Handle is available.
-  void SetHandle(mojo::ScopedMessagePipeHandle handle);
+  void Run();
 
   // Returns true if at least one module was added.
   bool module_added() const { return module_added_; }
@@ -60,9 +58,9 @@ class WebUIMojoContextState : public gin::ModuleRegistryObserver {
                              const std::string& data);
 
   // gin::ModuleRegistryObserver overrides:
-  virtual void OnDidAddPendingModule(
+  void OnDidAddPendingModule(
       const std::string& id,
-      const std::vector<std::string>& dependencies) OVERRIDE;
+      const std::vector<std::string>& dependencies) override;
 
   // Frame script is executed in. Also used to download resources.
   blink::WebFrame* frame_;

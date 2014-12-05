@@ -24,7 +24,7 @@
 
 #include "core/svg/SVGSVGElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSHelper.h"
@@ -38,9 +38,7 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/UseCounter.h"
 #include "core/rendering/RenderObject.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/svg/RenderSVGModelObject.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/RenderSVGViewportContainer.h"
 #include "core/svg/SVGAngleTearOff.h"
@@ -59,7 +57,7 @@
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGSVGElement::SVGSVGElement(Document& doc)
     : SVGGraphicsElement(SVGNames::svgTag, doc)
@@ -72,8 +70,6 @@ inline SVGSVGElement::SVGSVGElement(Document& doc)
     , m_timeContainer(SMILTimeContainer::create(*this))
     , m_translation(SVGPoint::create())
 {
-    ScriptWrappable::init(this);
-
     m_width->setDefaultValueAsString("100%");
     m_height->setDefaultValueAsString("100%");
 
@@ -181,7 +177,7 @@ public:
         return adoptRef(new SVGCurrentTranslateTearOff(contextElement));
     }
 
-    virtual void commitChange() OVERRIDE
+    virtual void commitChange() override
     {
         ASSERT(contextElement());
         toSVGSVGElement(contextElement())->updateCurrentTranslate();
@@ -213,8 +209,6 @@ void SVGSVGElement::updateCurrentTranslate()
 
 void SVGSVGElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
     if (!nearestViewportElement()) {
         bool setListener = true;
 
@@ -238,21 +232,10 @@ void SVGSVGElement::parseAttribute(const QualifiedName& name, const AtomicString
         document().setWindowAttributeEventListener(EventTypeNames::abort, createAttributeEventListener(document().frame(), name, value, eventParameterName()));
     } else if (name == HTMLNames::onerrorAttr) {
         document().setWindowAttributeEventListener(EventTypeNames::error, createAttributeEventListener(document().frame(), name, value, eventParameterName()));
-    } else if (name == SVGNames::xAttr) {
-        m_x->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::yAttr) {
-        m_y->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::widthAttr) {
-        m_width->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::heightAttr) {
-        m_height->setBaseValueAsString(value, parseError);
-    } else if (SVGFitToViewBox::parseAttribute(name, value, document(), parseError)) {
     } else if (SVGZoomAndPan::parseAttribute(name, value)) {
     } else {
-        SVGGraphicsElement::parseAttribute(name, value);
+        parseAttributeNew(name, value);
     }
-
-    reportAttributeParsingError(parseError, name, value);
 }
 
 bool SVGSVGElement::isPresentationAttribute(const QualifiedName& name) const
@@ -302,7 +285,7 @@ void SVGSVGElement::svgAttributeChanged(const QualifiedName& attrName)
             RenderObject* renderObject = renderer();
             if (renderObject && renderObject->isSVGRoot()) {
                 invalidateSVGPresentationAttributeStyle();
-                setNeedsStyleRecalc(LocalStyleChange);
+                setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::SVGContainerSizeChange));
             }
         }
     }
@@ -318,7 +301,7 @@ void SVGSVGElement::svgAttributeChanged(const QualifiedName& attrName)
     if (updateRelativeLengthsOrViewBox
         || SVGZoomAndPan::isKnownAttribute(attrName)) {
         if (renderer())
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer());
+            markForLayoutAndParentResourceInvalidation(renderer());
         return;
     }
 
@@ -391,10 +374,9 @@ PassRefPtrWillBeRawPtr<StaticNodeList> SVGSVGElement::collectIntersectionOrEnclo
         }
     }
 
-    for (SVGGraphicsElement* element = Traversal<SVGGraphicsElement>::firstWithin(*root); element;
-        element = Traversal<SVGGraphicsElement>::next(*element, root)) {
-        if (checkIntersectionOrEnclosure(*element, rect, mode))
-            nodes.append(element);
+    for (SVGGraphicsElement& element : Traversal<SVGGraphicsElement>::descendantsOf(*root)) {
+        if (checkIntersectionOrEnclosure(element, rect, mode))
+            nodes.append(&element);
     }
 
     return StaticNodeList::adopt(nodes);
@@ -630,12 +612,6 @@ FloatRect SVGSVGElement::currentViewBoxRect() const
 
 FloatSize SVGSVGElement::currentViewportSize() const
 {
-    if (hasIntrinsicWidth() && hasIntrinsicHeight()) {
-        Length intrinsicWidth = this->intrinsicWidth();
-        Length intrinsicHeight = this->intrinsicHeight();
-        return FloatSize(floatValueForLength(intrinsicWidth, 0), floatValueForLength(intrinsicHeight, 0));
-    }
-
     if (!renderer())
         return FloatSize();
 
@@ -706,7 +682,7 @@ void SVGSVGElement::setupInitialView(const String& fragmentIdentifier, Element* 
     if (fragmentIdentifier.startsWith("xpointer(")) {
         // FIXME: XPointer references are ignored (https://bugs.webkit.org/show_bug.cgi?id=17491)
         if (renderer && hadUseCurrentView)
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+            markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
@@ -720,7 +696,7 @@ void SVGSVGElement::setupInitialView(const String& fragmentIdentifier, Element* 
             view->reset();
 
         if (renderer && (hadUseCurrentView || m_useCurrentView))
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+            markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
@@ -735,7 +711,7 @@ void SVGSVGElement::setupInitialView(const String& fragmentIdentifier, Element* 
             svg->inheritViewAttributes(&viewElement);
 
             if (RenderObject* renderer = svg->renderer())
-                RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+                markForLayoutAndParentResourceInvalidation(renderer);
         }
     }
 
@@ -787,4 +763,4 @@ void SVGSVGElement::trace(Visitor* visitor)
     SVGGraphicsElement::trace(visitor);
 }
 
-}
+} // namespace blink

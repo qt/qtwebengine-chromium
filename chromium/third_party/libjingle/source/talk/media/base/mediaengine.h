@@ -37,8 +37,6 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/fileutils.h"
-#include "talk/base/sigslotrepeater.h"
 #include "talk/media/base/codec.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/base/mediacommon.h"
@@ -47,6 +45,8 @@
 #include "talk/media/base/videoprocessor.h"
 #include "talk/media/base/voiceprocessor.h"
 #include "talk/media/devices/devicemanager.h"
+#include "webrtc/base/fileutils.h"
+#include "webrtc/base/sigslotrepeater.h"
 
 #if defined(GOOGLE_CHROME_BUILD) || defined(CHROMIUM_BUILD)
 #define DISABLE_MEDIA_ENGINE_FACTORY
@@ -69,7 +69,7 @@ class MediaEngineInterface {
 
   // Initialization
   // Starts the engine.
-  virtual bool Init(talk_base::Thread* worker_thread) = 0;
+  virtual bool Init(rtc::Thread* worker_thread) = 0;
   // Shuts down the engine.
   virtual void Terminate() = 0;
   // Returns what the engine is capable of, as a set of Capabilities, above.
@@ -80,7 +80,8 @@ class MediaEngineInterface {
   virtual VoiceMediaChannel *CreateChannel() = 0;
   // Creates a video media channel, paired with the specified voice channel.
   // Returns NULL on failure.
-  virtual VideoMediaChannel *CreateVideoChannel(
+  virtual VideoMediaChannel* CreateVideoChannel(
+      const VideoOptions& options,
       VoiceMediaChannel* voice_media_channel) = 0;
 
   // Creates a soundclip object for playing sounds on. Returns NULL on failure.
@@ -91,8 +92,6 @@ class MediaEngineInterface {
   virtual AudioOptions GetAudioOptions() const = 0;
   // Sets global audio options. "options" are from AudioOptions, above.
   virtual bool SetAudioOptions(const AudioOptions& options) = 0;
-  // Sets global video options. "options" are from VideoOptions, above.
-  virtual bool SetVideoOptions(const VideoOptions& options) = 0;
   // Sets the value used by the echo canceller to offset delay values obtained
   // from the OS.
   virtual bool SetAudioDelayOffset(int offset) = 0;
@@ -100,10 +99,6 @@ class MediaEngineInterface {
   // and encode video.
   virtual bool SetDefaultVideoEncoderConfig(const VideoEncoderConfig& config)
       = 0;
-  // Gets the default (maximum) codec/resolution and encoder option used to
-  // capture and encode video, as set by SetDefaultVideoEncoderConfig or the
-  // default from the video engine if not previously set.
-  virtual VideoEncoderConfig GetDefaultVideoEncoderConfig() const = 0;
 
   // Device selection
   // TODO(tschmelcher): Add method for selecting the soundclip device.
@@ -124,7 +119,6 @@ class MediaEngineInterface {
   // when a VoiceMediaChannel starts sending.
   virtual bool SetLocalMonitor(bool enable) = 0;
   // Installs a callback for raw frames from the local camera.
-  virtual bool SetLocalRenderer(VideoRenderer* renderer) = 0;
 
   virtual const std::vector<AudioCodec>& audio_codecs() = 0;
   virtual const std::vector<RtpHeaderExtension>&
@@ -138,7 +132,7 @@ class MediaEngineInterface {
   virtual void SetVideoLogging(int min_sev, const char* filter) = 0;
 
   // Starts AEC dump using existing file.
-  virtual bool StartAecDump(talk_base::PlatformFile file) = 0;
+  virtual bool StartAecDump(rtc::PlatformFile file) = 0;
 
   // Voice processors for effects.
   virtual bool RegisterVoiceProcessor(uint32 ssrc,
@@ -180,7 +174,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
  public:
   CompositeMediaEngine() {}
   virtual ~CompositeMediaEngine() {}
-  virtual bool Init(talk_base::Thread* worker_thread) {
+  virtual bool Init(rtc::Thread* worker_thread) {
     if (!voice_.Init(worker_thread))
       return false;
     if (!video_.Init(worker_thread)) {
@@ -201,8 +195,9 @@ class CompositeMediaEngine : public MediaEngineInterface {
   virtual VoiceMediaChannel *CreateChannel() {
     return voice_.CreateChannel();
   }
-  virtual VideoMediaChannel *CreateVideoChannel(VoiceMediaChannel* channel) {
-    return video_.CreateChannel(channel);
+  virtual VideoMediaChannel* CreateVideoChannel(const VideoOptions& options,
+                                                VoiceMediaChannel* channel) {
+    return video_.CreateChannel(options, channel);
   }
   virtual SoundclipMedia *CreateSoundclip() {
     return voice_.CreateSoundclip();
@@ -214,17 +209,11 @@ class CompositeMediaEngine : public MediaEngineInterface {
   virtual bool SetAudioOptions(const AudioOptions& options) {
     return voice_.SetOptions(options);
   }
-  virtual bool SetVideoOptions(const VideoOptions& options) {
-    return video_.SetOptions(options);
-  }
   virtual bool SetAudioDelayOffset(int offset) {
     return voice_.SetDelayOffset(offset);
   }
   virtual bool SetDefaultVideoEncoderConfig(const VideoEncoderConfig& config) {
     return video_.SetDefaultEncoderConfig(config);
-  }
-  virtual VideoEncoderConfig GetDefaultVideoEncoderConfig() const {
-    return video_.GetDefaultEncoderConfig();
   }
 
   virtual bool SetSoundDevices(const Device* in_device,
@@ -245,10 +234,6 @@ class CompositeMediaEngine : public MediaEngineInterface {
   virtual bool SetLocalMonitor(bool enable) {
     return voice_.SetLocalMonitor(enable);
   }
-  virtual bool SetLocalRenderer(VideoRenderer* renderer) {
-    return video_.SetLocalRenderer(renderer);
-  }
-
   virtual const std::vector<AudioCodec>& audio_codecs() {
     return voice_.codecs();
   }
@@ -269,7 +254,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
     video_.SetLogging(min_sev, filter);
   }
 
-  virtual bool StartAecDump(talk_base::PlatformFile file) {
+  virtual bool StartAecDump(rtc::PlatformFile file) {
     return voice_.StartAecDump(file);
   }
 
@@ -301,7 +286,7 @@ class CompositeMediaEngine : public MediaEngineInterface {
 // a video engine is desired.
 class NullVoiceEngine {
  public:
-  bool Init(talk_base::Thread* worker_thread) { return true; }
+  bool Init(rtc::Thread* worker_thread) { return true; }
   void Terminate() {}
   int GetCapabilities() { return 0; }
   // If you need this to return an actual channel, use FakeMediaEngine instead.
@@ -329,7 +314,7 @@ class NullVoiceEngine {
     return rtp_header_extensions_;
   }
   void SetLogging(int min_sev, const char* filter) {}
-  bool StartAecDump(talk_base::PlatformFile file) { return false; }
+  bool StartAecDump(rtc::PlatformFile file) { return false; }
   bool RegisterProcessor(uint32 ssrc,
                          VoiceProcessor* voice_processor,
                          MediaProcessorDirection direction) { return true; }
@@ -346,7 +331,7 @@ class NullVoiceEngine {
 // a voice engine is desired.
 class NullVideoEngine {
  public:
-  bool Init(talk_base::Thread* worker_thread) { return true; }
+  bool Init(rtc::Thread* worker_thread) { return true; }
   void Terminate() {}
   int GetCapabilities() { return 0; }
   // If you need this to return an actual channel, use FakeMediaEngine instead.
@@ -355,13 +340,9 @@ class NullVideoEngine {
     return NULL;
   }
   bool SetOptions(const VideoOptions& options) { return true; }
-  VideoEncoderConfig GetDefaultEncoderConfig() const {
-    return VideoEncoderConfig();
-  }
   bool SetDefaultEncoderConfig(const VideoEncoderConfig& config) {
     return true;
   }
-  bool SetLocalRenderer(VideoRenderer* renderer) { return true; }
   const std::vector<VideoCodec>& codecs() { return codecs_; }
   const std::vector<RtpHeaderExtension>& rtp_header_extensions() {
     return rtp_header_extensions_;

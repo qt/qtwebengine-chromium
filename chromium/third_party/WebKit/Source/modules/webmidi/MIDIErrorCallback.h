@@ -31,16 +31,19 @@
 #ifndef MIDIErrorCallback_h
 #define MIDIErrorCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class DOMError;
 
-class MIDIErrorCallback {
+class MIDIErrorCallback : public GarbageCollectedFinalized<MIDIErrorCallback> {
 public:
     virtual ~MIDIErrorCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(DOMError*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIErrorCallback_h

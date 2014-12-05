@@ -71,6 +71,7 @@ from idl_parser.idl_parser import IDLParser, ListFromConcat
 from idl_parser.idl_parser import ParseFile as parse_file
 
 from blink_idl_lexer import BlinkIDLLexer
+import blink_idl_lexer
 
 
 # Explicitly set starting symbol to rule defined only in base parser.
@@ -284,14 +285,15 @@ class BlinkIDLParser(IDLParser):
         if len(p) > 3:
             p[0] = ListFromConcat(p[2], p[3])
 
-    # [b51] Add ExtendedAttributeIdentAndOrIdent
+    # [b51] Add ExtendedAttributeStringLiteral and ExtendedAttributeStringLiteralList
     def p_ExtendedAttribute(self, p):
         """ExtendedAttribute : ExtendedAttributeNoArgs
                              | ExtendedAttributeArgList
                              | ExtendedAttributeIdent
                              | ExtendedAttributeIdentList
-                             | ExtendedAttributeStringLiteralList
-                             | ExtendedAttributeNamedArgList"""
+                             | ExtendedAttributeNamedArgList
+                             | ExtendedAttributeStringLiteral
+                             | ExtendedAttributeStringLiteralList"""
         p[0] = p[1]
 
     # [59]
@@ -332,54 +334,41 @@ class BlinkIDLParser(IDLParser):
         elif len(p) == 3:
             p[0] = ListFromConcat(self.BuildTrue('NULLABLE'), p[2])
 
-    # [b76.1] Add support for compound Extended Attribute values (A&B and A|B)
-    def p_ExtendedAttributeIdentList(self, p):
-        """ExtendedAttributeIdentList : identifier '=' identifier '&' IdentAndList
-                                      | identifier '=' identifier '|' IdentOrList"""
-        value = self.BuildAttribute('VALUE', p[3] + p[4] + p[5])
+    # Blink extension: Add support for string literal Extended Attribute values
+    def p_ExtendedAttributeStringLiteral(self, p):
+        """ExtendedAttributeStringLiteral : identifier '=' StringLiteral """
+        def unwrap_string(ls):
+            """Reach in and grab the string literal's "NAME"."""
+            return ls[1].value
+
+        value = self.BuildAttribute('VALUE', unwrap_string(p[3]))
         p[0] = self.BuildNamed('ExtAttribute', p, 1, value)
 
-    # [b76.2] A&B&C
-    def p_IdentAndList(self, p):
-        """IdentAndList : identifier '&' IdentAndList
-                        | identifier"""
-        if len(p) > 3:
-            p[0] = p[1] + p[2] + p[3]
-        else:
-            p[0] = p[1]
-
-    # [b76.3] A|B|C
-    def p_IdentOrList(self, p):
-        """IdentOrList : identifier '|' IdentOrList
-                       | identifier"""
-        if len(p) > 3:
-            p[0] = p[1] + p[2] + p[3]
-        else:
-            p[0] = p[1]
-
-    # Blink extension: Add support for compound Extended Attribute values over string literals ("A"|"B")
+    # Blink extension: Add support for compound Extended Attribute values over string literals ("A","B")
     def p_ExtendedAttributeStringLiteralList(self, p):
-        """ExtendedAttributeStringLiteralList : identifier '=' StringLiteralOrList"""
-        value = self.BuildAttribute('VALUE', p[3])
+        """ExtendedAttributeStringLiteralList : identifier '=' '(' StringLiteralList ')' """
+        value = self.BuildAttribute('VALUE', p[4])
         p[0] = self.BuildNamed('ExtAttribute', p, 1, value)
 
     # Blink extension: one or more string literals. The values aren't propagated as literals,
     # but their by their value only.
-    def p_StringLiteralOrList(self, p):
-        """StringLiteralOrList : StringLiteral '|' StringLiteralOrList
-                               | StringLiteral"""
+    def p_StringLiteralList(self, p):
+        """StringLiteralList : StringLiteral ',' StringLiteralList
+                             | StringLiteral"""
         def unwrap_string(ls):
             """Reach in and grab the string literal's "NAME"."""
             return ls[1].value
 
         if len(p) > 3:
-            p[0] = unwrap_string(p[1]) + p[2] + p[3]
+            p[0] = ListFromConcat(unwrap_string(p[1]), p[3])
         else:
-            p[0] = unwrap_string(p[1])
+            p[0] = ListFromConcat(unwrap_string(p[1]))
 
     def __init__(self,
                  # common parameters
                  debug=False,
+                 # local parameters
+                 rewrite_tables=False,
                  # idl_parser parameters
                  lexer=None, verbose=False, mute_error=False,
                  # yacc parameters
@@ -394,6 +383,11 @@ class BlinkIDLParser(IDLParser):
             write_tables = True
         if outputdir:
             picklefile = picklefile or os.path.join(outputdir, 'parsetab.pickle')
+            if rewrite_tables:
+                try:
+                    os.unlink(picklefile)
+                except OSError:
+                    pass
 
         lexer = lexer or BlinkIDLLexer(debug=debug,
                                        outputdir=outputdir,
@@ -433,13 +427,17 @@ class BlinkIDLParser(IDLParser):
 ################################################################################
 
 def main(argv):
-    # If file itself executed, cache parse table
+    # If file itself executed, cache lex/parse tables
     try:
         outputdir = argv[1]
     except IndexError as err:
         print 'Usage: %s OUTPUT_DIR' % argv[0]
         return 1
-    parser = BlinkIDLParser(outputdir=outputdir)
+    blink_idl_lexer.main(argv)
+    # Important: rewrite_tables=True causes the cache file to be deleted if it
+    # exists, thus making sure that PLY doesn't load it instead of regenerating
+    # the parse table.
+    parser = BlinkIDLParser(outputdir=outputdir, rewrite_tables=True)
 
 
 if __name__ == '__main__':

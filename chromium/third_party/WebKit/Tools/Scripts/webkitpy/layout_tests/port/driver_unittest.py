@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 
@@ -63,14 +63,17 @@ class DriverTest(unittest.TestCase):
         driver = Driver(port, None, pixel_tests=False)
         self.assertEqual(driver.test_to_uri('foo/bar.html'), 'file://%s/foo/bar.html' % port.layout_tests_dir())
         self.assertEqual(driver.test_to_uri('http/tests/foo.html'), 'http://127.0.0.1:8000/foo.html')
-        self.assertEqual(driver.test_to_uri('http/tests/ssl/bar.html'), 'https://127.0.0.1:8443/ssl/bar.html')
+        self.assertEqual(driver.test_to_uri('http/tests/https/bar.html'), 'https://127.0.0.1:8443/https/bar.html')
+        self.assertEqual(driver.test_to_uri('http/tests/bar.https.html'), 'https://127.0.0.1:8443/bar.https.html')
+        self.assertEqual(driver.test_to_uri('http/tests/barhttps.html'), 'http://127.0.0.1:8000/barhttps.html')
 
     def test_uri_to_test(self):
         port = self.make_port()
         driver = Driver(port, None, pixel_tests=False)
         self.assertEqual(driver.uri_to_test('file://%s/foo/bar.html' % port.layout_tests_dir()), 'foo/bar.html')
         self.assertEqual(driver.uri_to_test('http://127.0.0.1:8000/foo.html'), 'http/tests/foo.html')
-        self.assertEqual(driver.uri_to_test('https://127.0.0.1:8443/ssl/bar.html'), 'http/tests/ssl/bar.html')
+        self.assertEqual(driver.uri_to_test('https://127.0.0.1:8443/https/bar.html'), 'http/tests/https/bar.html')
+        self.assertEqual(driver.uri_to_test('https://127.0.0.1:8443/bar.https.html'), 'http/tests/bar.https.html')
 
     def test_read_block(self):
         port = TestWebKitPort()
@@ -220,7 +223,7 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         last_tmpdir = port._filesystem.last_tmpdir
         self.assertNotEquals(last_tmpdir, None)
         driver.stop()
@@ -230,7 +233,7 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         last_tmpdir = port._filesystem.last_tmpdir
         driver._start(True, [])
         self.assertFalse(port._filesystem.isdir(last_tmpdir))
@@ -239,5 +242,5 @@ class DriverTest(unittest.TestCase):
         port = TestWebKitPort()
         port._server_process_constructor = MockServerProcess
         driver = Driver(port, 0, pixel_tests=True)
-        driver.start(True, [])
+        driver.start(True, [], None)
         self.assertTrue(driver._server_process.started)

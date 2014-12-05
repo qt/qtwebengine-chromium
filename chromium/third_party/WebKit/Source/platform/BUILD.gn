@@ -5,41 +5,26 @@
 import("//build/config/ui.gni")
 import("//third_party/WebKit/Source/build/scripts/scripts.gni")
 import("//third_party/WebKit/Source/config.gni")
+import("//third_party/WebKit/Source/platform/platform.gni")
 import("//third_party/WebKit/Source/platform/platform_generated.gni")
 
 # Most targets in this file are private actions so use that as the default.
-visibility = ":*"
+visibility = [ ":*" ]
 
-# TODO(GYP) Remove when test targets link (depends on ffmpeg)
-enable_blink_platform_test_targets = false
-
-
-import("//third_party/yasm/yasm_assemble.gni")
-
-platform_gypi = exec_script(
-    "//build/gypi_to_gn.py",
-    [ rebase_path("blink_platform.gypi") ],
-    "scope",
-    [ "blink_platform.gypi" ])
-if (enable_blink_platform_test_targets) {
 heap_gypi = exec_script(
     "//build/gypi_to_gn.py",
     [ rebase_path("heap/blink_heap.gypi") ],
     "scope",
     [ "heap/blink_heap.gypi" ])
-}
 
 blink_platform_neon_files = [
   "graphics/cpu/arm/WebGLImageConversionNEON.h",
-  "graphics/cpu/arm/filters/FEBlendNEON.h",
-  "graphics/cpu/arm/filters/FECompositeArithmeticNEON.h",
-  "graphics/cpu/arm/filters/FEGaussianBlurNEON.h",
-  "graphics/cpu/arm/filters/NEONHelpers.h",
 ]
 
 # blink_common in blink_platform.gyp
 component("blink_common") {
-  visibility = "//third_party/WebKit/*"
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "//third_party/WebKit/*" ]
   sources = [
     "exported/WebCString.cpp",
     "exported/WebString.cpp",
@@ -101,7 +86,7 @@ action("font_family_names") {
   script = "../build/scripts/make_names.py"
 
   font_family_names_in = "fonts/FontFamilyNames.in"
-  source_prereqs = make_names_files + [ font_family_names_in ]
+  inputs = make_names_files + [ font_family_names_in ]
 
   outputs = [
     "$blink_platform_output_dir/FontFamilyNames.cpp",
@@ -121,7 +106,7 @@ action("runtime_enabled_features") {
   script = "../build/scripts/make_runtime_features.py"
 
   runtime_enabled_features_in = "RuntimeEnabledFeatures.in"
-  source_prereqs = scripts_for_in_files + [
+  inputs = scripts_for_in_files + [
     runtime_enabled_features_in,
     "../build/scripts/templates/RuntimeEnabledFeatures.cpp.tmpl",
     "../build/scripts/templates/RuntimeEnabledFeatures.h.tmpl",
@@ -144,7 +129,7 @@ action("color_data") {
   script = "../build/scripts/gperf.py"
 
   color_data_gperf = "ColorData.gperf"
-  source_prereqs = [ color_data_gperf ]
+  inputs = [ color_data_gperf ]
 
   output_file = "$blink_platform_output_dir/ColorData.cpp"
   outputs = [ output_file ]
@@ -161,7 +146,8 @@ action("color_data") {
 # This isn't strictly necessary since we can just add the deps to "platform",
 # but it helps to have the targets match the GYP build.
 group("make_platform_generated") {
-  visibility = "//third_party/WebKit/Source/*"
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "//third_party/WebKit/Source/*" ]
   deps = [
     ":blink_common",
     ":color_data",
@@ -173,10 +159,11 @@ group("make_platform_generated") {
 # TODO(brettw) Objective C Renaming postbuild steps on Mac.
 # blink_platform target in blink_platform.gyp
 component("platform") {
-  visibility = "//third_party/WebKit/*"
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "//third_party/WebKit/*" ]
   output_name = "blink_platform"
 
-  sources = platform_gypi.platform_files
+  sources = platform_files
   sources -= blink_platform_neon_files
 
   # Add in the generated files.
@@ -200,50 +187,34 @@ component("platform") {
     "$root_gen_dir/blink",
   ]
 
-  deps = [
-    ":heap_asm_stubs",
-    ":make_platform_generated",
+  public_deps = [
     "//gpu/command_buffer/client:gles2_c_lib",
     "//skia",
     "//third_party:jpeg",
-    "//third_party/harfbuzz-ng",
     "//third_party/iccjpeg",
-    "//third_party/icu",
     "//third_party/libpng",
     "//third_party/libwebp",
     "//third_party/ots",
     "//third_party/qcms",
-    "//third_party/WebKit/Source/wtf",
-    "//third_party/WebKit/Source/platform/heap",
     "//url",
     "//v8",
   ]
-
-  forward_dependent_configs_from = [
-    "//gpu/command_buffer/client:gles2_c_lib",
-    "//skia",
-    "//third_party:jpeg",
-    "//third_party/iccjpeg",
-    "//third_party/libpng",
-    "//third_party/libwebp",
-    "//third_party/ots",
-    "//third_party/qcms",
-    "//url",
-    "//v8",
+  deps = [
+    ":make_platform_generated",
+    "//third_party/harfbuzz-ng",
+    "//third_party/icu",
+    "//third_party/WebKit/Source/wtf",
+    "//third_party/WebKit/Source/platform/heap",
   ]
 
   if (is_mac) {
     sources -= [
-      "fonts/harfbuzz/FontHarfBuzz.cpp",
-      "fonts/harfbuzz/FontPlatformDataHarfBuzz.cpp",
-      "fonts/harfbuzz/HarfBuzzFaceSkia.cpp",
       "fonts/opentype/OpenTypeTypes.h",
       "fonts/opentype/OpenTypeVerticalData.cpp",
       "fonts/opentype/OpenTypeVerticalData.h",
       # The Mac currently uses FontCustomPlatformDataMac.cpp instead.
       "fonts/skia/FontCustomPlatformDataSkia.cpp",
       "fonts/skia/FontCacheSkia.cpp",
-      "fonts/skia/SimpleFontDataSkia.cpp",
       # Uses LocaleMac instead.
       "text/LocaleICU.cpp",
       "text/LocaleICU.h",
@@ -260,7 +231,7 @@ component("platform") {
     # prefix header injected.
     cflags = [
       "-include",
-      rebase_path("../core/WebCorePrefixMac.h", root_build_dir),
+      rebase_path("../build/mac/Prefix.h", root_build_dir),
     ]
 
     defines += [ "WebFontCache=ChromiumWebCoreObjCWebFontCache" ]
@@ -272,10 +243,6 @@ component("platform") {
     ]
   } else {
     sources -= [
-      # FIXME: We will eventually compile this too, but for now it's
-      # only used on mac.
-      "fonts/FontPlatformData.cpp",
-      "fonts/harfbuzz/HarfBuzzFaceCoreText.cpp",
       "geometry/cg/FloatPointCG.cpp",
       "geometry/cg/FloatRectCG.cpp",
       "geometry/cg/FloatSizeCG.cpp",
@@ -310,7 +277,7 @@ component("platform") {
     set_sources_assignment_filter([])
     sources += [
       "exported/linux/WebFontRenderStyle.cpp",
-      "fonts/linux/FontPlatformDataLinuxHarfBuzz.cpp",
+      "fonts/linux/FontPlatformDataLinux.cpp",
     ]
     set_sources_assignment_filter(sources_assignment_filter)
   } else {
@@ -320,7 +287,7 @@ component("platform") {
   }
 
   if (is_linux) {
-    direct_dependent_configs = [ "//build/config/linux:fontconfig" ]
+    public_configs = [ "//build/config/linux:fontconfig" ]
   }
 
   if (!use_default_render_theme) {
@@ -336,131 +303,65 @@ component("platform") {
 
   if (use_webaudio_ffmpeg) {
     include_dirs += [ "//third_party/ffmpeg" ]
-    # TODO(GYP)
-    #deps += [ "//third_party/ffmpeg" ]
+    deps += [ "//third_party/ffmpeg" ]
   }
   if (use_openmax_dl_fft) {
     include_dirs += [ "//third_party/openmax_dl" ]
-    # TODO(GYP)
-    # deps += [ "//third_party/openmax_dl/dl" ]
+    deps += [ "//third_party/openmax_dl/dl" ]
   }
 }
-
-yasm_assemble("heap_asm_stubs") {
-  if (cpu_arch == "x86" || cpu_arch == "x64") {
-    sources = [ "heap/asm/SaveRegisters_x86.asm" ]
-  } else if (cpu_arch == "arm") {
-    sources = [ "heap/asm/SaveRegisters_arm.S" ]
-  } else if (cpu_arch == "arm64") {
-    sources = [ "heap/asm/SaveRegisters_arm64.S" ]
-  } else if (cpu_arch == "mipsel") {
-    sources = [ "heap/asm/SaveRegisters_mips.S" ]
-  }
-
-  yasm_flags = []
-  if (is_mac) {
-    # Necessary to ensure symbols end up with a _ prefix; added by
-    # yasm_compile.gypi for Windows, but not Mac.
-    yasm_flags += [ "-DPREFIX" ]
-  }
-  if (cpu_arch == "x64") {
-    if (is_win) {
-      yasm_flags += [ "-DX64WIN=1" ]
-    } else {
-      yasm_flags += [ "-DX64POSIX=1" ]
-    }
-  } else if (cpu_arch == "x86") {
-    yasm_flags += [ "-DIA32=1" ]
-  } else if (cpu_arch == "arm") {
-    yasm_flags += [ "-DARM=1" ]
-  }
-}
-
-source_set("heap_run_all_tests") {
-  sources = [
-    "heap/RunAllTests.cpp"
-  ]
-
-  configs += [
-    "//third_party/WebKit/Source/wtf:wtf_config",
-    "//third_party/WebKit/Source:config",
-    "//third_party/WebKit/Source:non_test_config",
-  ]
-
-  deps = [
-    "//base/test:test_support",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/WebKit/Source/wtf",
-  ]
-}
-
-if (enable_blink_platform_test_targets) {
 
 test("heap_unittests") {
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "//third_party/WebKit/*" ]
   output_name = "blink_heap_unittests"
 
   sources = rebase_path(heap_gypi.platform_heap_test_files, ".", "heap")
-
-  configs += [
-    "//third_party/WebKit/Source:config",
-  ]
-
-  deps = [
-    ":heap_run_all_tests",
-    ":platform",
-    "//base",
-    "//base/allocator",
-    "//testing/gmock",
-    "//testing/gtest",
-    "//third_party/WebKit/Source/wtf",
-    "//third_party/WebKit/Source/wtf:unittest_helpers",
-  ]
-}
-
-}
-
-source_set("platform_run_all_tests") {
-  sources = [
-    "testing/RunAllTests.cpp"
-  ]
+  sources += [ "heap/RunAllTests.cpp" ]
 
   configs += [
     "//third_party/WebKit/Source/wtf:wtf_config",
     "//third_party/WebKit/Source:config",
-    "//third_party/WebKit/Source:non_test_config",
   ]
 
   deps = [
+    ":platform",
+    "//base",
+    "//base/allocator",
     "//base/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/WebKit/Source/wtf",
+    "//third_party/WebKit/Source/wtf:test_support",
+    "//content/test:test_support",
   ]
 }
 
-if (enable_blink_platform_test_targets) {
-
 test("platform_unittests") {
+  visibility = []  # Allow re-assignment of list.
+  visibility = [ "//third_party/WebKit/*" ]
   output_name = "blink_platform_unittests"
 
-  sources = platform_gypi.platform_test_files
+  sources = platform_test_files
+
+  sources += [ "testing/RunAllTests.cpp" ]
 
   configs += [
+    "//third_party/WebKit/Source/wtf:wtf_config",
     "//third_party/WebKit/Source:config",
   ]
 
   deps = [
     ":blink_common",
-    ":platform_run_all_tests",
     ":platform",
     "//base",
     "//base/allocator",
+    "//base/test:test_support",
     "//skia",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/WebKit/Source/wtf",
-    "//third_party/WebKit/Source/wtf:unittest_helpers",
+    "//third_party/WebKit/Source/wtf:test_support",
     "//url",
   ]
 
@@ -471,8 +372,6 @@ test("platform_unittests") {
   include_dirs = [
     "$root_gen_dir/blink",
   ]
-}
-
 }
 
 

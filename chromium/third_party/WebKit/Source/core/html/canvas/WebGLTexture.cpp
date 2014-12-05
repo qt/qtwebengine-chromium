@@ -29,11 +29,11 @@
 
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<WebGLTexture> WebGLTexture::create(WebGLRenderingContextBase* ctx)
+PassRefPtrWillBeRawPtr<WebGLTexture> WebGLTexture::create(WebGLRenderingContextBase* ctx)
 {
-    return adoptRef(new WebGLTexture(ctx));
+    return adoptRefWillBeNoop(new WebGLTexture(ctx));
 }
 
 WebGLTexture::WebGLTexture(WebGLRenderingContextBase* ctx)
@@ -50,13 +50,19 @@ WebGLTexture::WebGLTexture(WebGLRenderingContextBase* ctx)
     , m_isFloatType(false)
     , m_isHalfFloatType(false)
 {
-    ScriptWrappable::init(this);
     setObject(ctx->webContext()->createTexture());
 }
 
 WebGLTexture::~WebGLTexture()
 {
-    deleteObject(0);
+    // Always perform detach here to ensure that platform object
+    // deletion happens with Oilpan enabled. It keeps the code regular
+    // to do it with or without Oilpan enabled.
+    //
+    // See comment in WebGLBuffer's destructor for additional
+    // information on why this is done for WebGLSharedObject-derived
+    // objects.
+    detachAndDeleteObject();
 }
 
 void WebGLTexture::setTarget(GLenum target, GLint maxLevel)
@@ -372,12 +378,12 @@ void WebGLTexture::update()
 const WebGLTexture::LevelInfo* WebGLTexture::getLevelInfo(GLenum target, GLint level) const
 {
     if (!object() || !m_target)
-        return 0;
+        return nullptr;
     int targetIndex = mapTargetToIndex(target);
     if (targetIndex < 0 || targetIndex >= static_cast<int>(m_info.size()))
-        return 0;
+        return nullptr;
     if (level < 0 || level >= static_cast<GLint>(m_info[targetIndex].size()))
-        return 0;
+        return nullptr;
     return &(m_info[targetIndex][level]);
 }
 

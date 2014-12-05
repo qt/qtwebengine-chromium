@@ -30,7 +30,6 @@
  */
 
 #include "config.h"
-
 #include "platform/mediastream/MediaStreamCenter.h"
 
 #include "platform/mediastream/MediaStreamDescriptor.h"
@@ -41,12 +40,11 @@
 #include "public/platform/WebMediaStream.h"
 #include "public/platform/WebMediaStreamCenter.h"
 #include "public/platform/WebMediaStreamTrack.h"
-#include "public/platform/WebMediaStreamTrackSourcesRequest.h"
 #include "wtf/Assertions.h"
 #include "wtf/MainThread.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 MediaStreamCenter& MediaStreamCenter::instance()
 {
@@ -56,17 +54,12 @@ MediaStreamCenter& MediaStreamCenter::instance()
 }
 
 MediaStreamCenter::MediaStreamCenter()
-    : m_private(adoptPtr(blink::Platform::current()->createMediaStreamCenter(this)))
+    : m_private(adoptPtr(Platform::current()->createMediaStreamCenter(this)))
 {
 }
 
 MediaStreamCenter::~MediaStreamCenter()
 {
-}
-
-bool MediaStreamCenter::getMediaStreamTrackSources(PassRefPtrWillBeRawPtr<MediaStreamTrackSourcesRequest> request)
-{
-    return m_private && m_private->getMediaStreamTrackSources(request);
 }
 
 void MediaStreamCenter::didSetMediaStreamTrackEnabled(MediaStreamComponent* component)
@@ -112,15 +105,15 @@ void MediaStreamCenter::didCreateMediaStreamAndTracks(MediaStreamDescriptor* str
     for (size_t i = 0; i < stream->numberOfVideoComponents(); ++i)
         didCreateMediaStreamTrack(stream->videoComponent(i));
 
-    blink::WebMediaStream webStream(stream);
+    WebMediaStream webStream(stream);
     m_private->didCreateMediaStream(webStream);
 }
 
 void MediaStreamCenter::didCreateMediaStream(MediaStreamDescriptor* stream)
 {
     if (m_private) {
-        blink::WebMediaStream WebMediaStream(stream);
-        m_private->didCreateMediaStream(WebMediaStream);
+        WebMediaStream webStream(stream);
+        m_private->didCreateMediaStream(webStream);
     }
 }
 
@@ -141,7 +134,7 @@ PassOwnPtr<AudioSourceProvider> MediaStreamCenter::createWebAudioSourceFromMedia
     return nullptr;
 }
 
-void MediaStreamCenter::stopLocalMediaStream(const blink::WebMediaStream& webStream)
+void MediaStreamCenter::stopLocalMediaStream(const WebMediaStream& webStream)
 {
     MediaStreamDescriptor* stream = webStream;
     MediaStreamDescriptorClient* client = stream->client();
@@ -151,4 +144,4 @@ void MediaStreamCenter::stopLocalMediaStream(const blink::WebMediaStream& webStr
         stream->setEnded();
 }
 
-} // namespace WebCore
+} // namespace blink

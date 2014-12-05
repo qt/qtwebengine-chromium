@@ -9,7 +9,6 @@
 #include <set>
 
 #include "base/basictypes.h"
-#include "base/compiler_specific.h"
 #include "base/containers/hash_tables.h"
 #include "base/hash.h"
 #include "base/memory/ref_counted.h"
@@ -20,18 +19,12 @@
 #include "content/common/content_export.h"
 
 namespace BASE_HASH_NAMESPACE {
-#if defined(COMPILER_GCC)
 template <>
 struct hash<cc::SharedBitmapId> {
   size_t operator()(const cc::SharedBitmapId& id) const {
     return base::Hash(reinterpret_cast<const char*>(id.name), sizeof(id.name));
   }
 };
-#elif defined(COMPILER_MSVC)
-inline std::size_t hash_value(const cc::SharedBitmapId& id) {
-  return base::Hash(reinterpret_cast<const char*>(id.name), sizeof(id.name));
-}
-#endif  // COMPILER
 }  // namespace BASE_HASH_NAMESPACE
 
 namespace content {
@@ -40,18 +33,18 @@ class BitmapData;
 class CONTENT_EXPORT HostSharedBitmapManager : public cc::SharedBitmapManager {
  public:
   HostSharedBitmapManager();
-  virtual ~HostSharedBitmapManager();
+  ~HostSharedBitmapManager() override;
 
   static HostSharedBitmapManager* current();
 
   // cc::SharedBitmapManager implementation.
-  virtual scoped_ptr<cc::SharedBitmap> AllocateSharedBitmap(
-      const gfx::Size& size) OVERRIDE;
-  virtual scoped_ptr<cc::SharedBitmap> GetSharedBitmapFromId(
+  scoped_ptr<cc::SharedBitmap> AllocateSharedBitmap(
+      const gfx::Size& size) override;
+  scoped_ptr<cc::SharedBitmap> GetSharedBitmapFromId(
       const gfx::Size& size,
-      const cc::SharedBitmapId&) OVERRIDE;
-  virtual scoped_ptr<cc::SharedBitmap> GetBitmapForSharedMemory(
-      base::SharedMemory*) OVERRIDE;
+      const cc::SharedBitmapId&) override;
+  scoped_ptr<cc::SharedBitmap> GetBitmapForSharedMemory(
+      base::SharedMemory*) override;
 
   void AllocateSharedBitmapForChild(
       base::ProcessHandle process_handle,
@@ -65,12 +58,12 @@ class CONTENT_EXPORT HostSharedBitmapManager : public cc::SharedBitmapManager {
   void ChildDeletedSharedBitmap(const cc::SharedBitmapId& id);
   void ProcessRemoved(base::ProcessHandle process_handle);
 
-  size_t AllocatedBitmapCount() const { return handle_map_.size(); }
+  size_t AllocatedBitmapCount() const;
 
  private:
   void FreeSharedMemoryFromMap(cc::SharedBitmap* bitmap);
 
-  base::Lock lock_;
+  mutable base::Lock lock_;
 
   typedef base::hash_map<cc::SharedBitmapId, scoped_refptr<BitmapData> >
       BitmapMap;

@@ -217,7 +217,7 @@ namespace WTF {
             : m_value(value)
             , m_prev(0)
             , m_next(0)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
             , m_isAllocated(true)
 #endif
         {
@@ -228,7 +228,7 @@ namespace WTF {
             : m_value(value)
             , m_prev(0)
             , m_next(0)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
             , m_isAllocated(true)
 #endif
         {
@@ -238,7 +238,7 @@ namespace WTF {
         ValueArg m_value;
         ListHashSetNodeBase* m_prev;
         ListHashSetNodeBase* m_next;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         bool m_isAllocated;
 #endif
     };
@@ -314,7 +314,7 @@ namespace WTF {
         void deallocate(Node* node)
         {
             if (inPool(node)) {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
                 node->m_isAllocated = false;
 #endif
                 node->m_next = m_freeList;
@@ -338,7 +338,7 @@ namespace WTF {
 
         Node* m_freeList;
         bool m_isDoneWithInitialFreeList;
-#if defined(MEMORY_TOOL_REPLACES_ALLOCATOR)
+#if defined(MEMORY_SANITIZER_INITIAL_SIZE)
         // The allocation pool for nodes is one big chunk that ASAN has no
         // insight into, so it can cloak errors. Make it as small as possible
         // to force nodes to be allocated individually where ASAN can see them.
@@ -1002,6 +1002,13 @@ namespace WTF {
         // so we do not have to explicitly trace them here.
         m_impl.trace(visitor);
     }
+
+#if !ENABLE(OILPAN)
+    template<typename T, size_t U, typename V>
+    struct NeedsTracing<ListHashSet<T, U, V> > {
+        static const bool value = false;
+    };
+#endif
 
 } // namespace WTF
 

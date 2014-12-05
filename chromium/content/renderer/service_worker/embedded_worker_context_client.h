@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef CONTENT_CHILD_SERVICE_WORKER_EMBEDDED_WORKER_CLIENT_H_
-#define CONTENT_CHILD_SERVICE_WORKER_EMBEDDED_WORKER_CLIENT_H_
+#ifndef CONTENT_RENDERER_SERVICE_WORKER_EMBEDDED_WORKER_CONTEXT_CLIENT_H_
+#define CONTENT_RENDERER_SERVICE_WORKER_EMBEDDED_WORKER_CONTEXT_CLIENT_H_
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
@@ -60,15 +60,16 @@ class EmbeddedWorkerContextClient
 
   void Send(IPC::Message* message);
 
-  // TODO(kinuko): Deprecate this.
-  void SendReplyToBrowser(int request_id, const IPC::Message& message);
-
   // WebServiceWorkerContextClient overrides, some of them are just dispatched
   // on to script_context_.
   virtual blink::WebURL scope() const;
+  virtual blink::WebServiceWorkerCacheStorage* cacheStorage();
+  virtual void didPauseAfterDownload();
   virtual void getClients(blink::WebServiceWorkerClientsCallbacks*);
+  virtual void workerReadyForInspection();
   virtual void workerContextFailedToStart();
   virtual void workerContextStarted(blink::WebServiceWorkerContextProxy* proxy);
+  virtual void didEvaluateWorkerScript(bool success);
   virtual void willDestroyWorkerContext();
   virtual void workerContextDestroyed();
   virtual void reportException(const blink::WebString& error_message,
@@ -102,9 +103,9 @@ class EmbeddedWorkerContextClient
 
   int embedded_worker_id() const { return embedded_worker_id_; }
   base::MessageLoopProxy* main_thread_proxy() const {
-    return main_thread_proxy_;
+    return main_thread_proxy_.get();
   }
-  ThreadSafeSender* thread_safe_sender() { return sender_; }
+  ThreadSafeSender* thread_safe_sender() { return sender_.get(); }
 
  private:
   void OnMessageToWorker(int thread_id,
@@ -130,4 +131,4 @@ class EmbeddedWorkerContextClient
 
 }  // namespace content
 
-#endif  // CONTENT_CHILD_SERVICE_WORKER_EMBEDDED_WORKER_CLIENT_H_
+#endif  // CONTENT_RENDERER_SERVICE_WORKER_EMBEDDED_WORKER_CONTEXT_CLIENT_H_

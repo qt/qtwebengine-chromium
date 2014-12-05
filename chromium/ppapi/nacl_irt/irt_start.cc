@@ -2,6 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/build_config.h"
+
+// We need nacl_irt_start injection in SFI mode. Non-SFI has a different
+// start up procedure so we just exclude it.
+#if defined(OS_NACL_SFI)
+
 #include "base/at_exit.h"
 #include "native_client/src/public/chrome_main.h"
 #include "native_client/src/public/irt_core.h"
@@ -19,8 +25,10 @@ void nacl_irt_start(uint32_t* info) {
   ppapi::SetIPCFileDescriptors(
       NACL_CHROME_DESC_BASE,
       NACL_CHROME_DESC_BASE + 1,
-      -1);  // Currently manifest service is disabled on NaCl in SFI mode.
+      NACL_CHROME_DESC_BASE + 2);
   ppapi::StartUpPlugin();
 
   nacl_irt_enter_user_code(info, chrome_irt_query);
 }
+
+#endif  // defined(OS_NACL_SFI)

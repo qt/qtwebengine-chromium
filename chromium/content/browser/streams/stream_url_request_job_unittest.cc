@@ -38,9 +38,9 @@ class StreamURLRequestJobTest : public testing::Test {
     MockProtocolHandler(StreamRegistry* registry) : registry_(registry) {}
 
     // net::URLRequestJobFactory::ProtocolHandler override.
-    virtual net::URLRequestJob* MaybeCreateJob(
+    net::URLRequestJob* MaybeCreateJob(
         net::URLRequest* request,
-        net::NetworkDelegate* network_delegate) const OVERRIDE {
+        net::NetworkDelegate* network_delegate) const override {
       scoped_refptr<Stream> stream = registry_->GetStream(request->url());
       if (stream.get())
         return new StreamURLRequestJob(request, network_delegate, stream);
@@ -53,7 +53,7 @@ class StreamURLRequestJobTest : public testing::Test {
 
   StreamURLRequestJobTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     registry_.reset(new StreamRegistry());
 
     url_request_job_factory_.SetProtocolHandler(
@@ -61,8 +61,7 @@ class StreamURLRequestJobTest : public testing::Test {
     url_request_context_.set_job_factory(&url_request_job_factory_);
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
   void TestSuccessRequest(const GURL& url,
                           const std::string& expected_response) {

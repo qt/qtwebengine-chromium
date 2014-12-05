@@ -31,8 +31,9 @@
 #include "config.h"
 #include "modules/webdatabase/SQLTransactionClient.h"
 
+#include "core/dom/CrossThreadTask.h"
 #include "core/dom/ExecutionContext.h"
-#include "modules/webdatabase/DatabaseBackendBase.h"
+#include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "platform/weborigin/DatabaseIdentifier.h"
 #include "platform/weborigin/SecurityOrigin.h"
@@ -40,29 +41,29 @@
 #include "public/platform/WebDatabaseObserver.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
-static void databaseModified(DatabaseBackendBase* database)
+static void databaseModified(Database* database)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->databaseModified(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->databaseModified(
             createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin()),
             database->stringIdentifier());
     }
 }
 
-void SQLTransactionClient::didCommitWriteTransaction(DatabaseBackendBase* database)
+void SQLTransactionClient::didCommitWriteTransaction(Database* database)
 {
     ExecutionContext* executionContext = database->databaseContext()->executionContext();
     if (!executionContext->isContextThread()) {
-        executionContext->postTask(bind(&databaseModified, PassRefPtrWillBeRawPtr<DatabaseBackendBase>(database)));
+        executionContext->postTask(createCrossThreadTask(&databaseModified, database));
         return;
     }
 
     databaseModified(database);
 }
 
-bool SQLTransactionClient::didExceedQuota(DatabaseBackendBase* database)
+bool SQLTransactionClient::didExceedQuota(Database* database)
 {
     // Chromium does not allow users to manually change the quota for an origin (for now, at least).
     // Don't do anything.
@@ -70,4 +71,4 @@ bool SQLTransactionClient::didExceedQuota(DatabaseBackendBase* database)
     return false;
 }
 
-}
+} // namespace blink

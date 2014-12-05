@@ -23,6 +23,7 @@
 #define WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_RTP_RTCP_H_
 
 #include "webrtc/common_types.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
 
 namespace webrtc {
 
@@ -151,6 +152,17 @@ class WEBRTC_DLLEXPORT ViERTP_RTCP {
   virtual int SetStartSequenceNumber(const int video_channel,
                                      unsigned short sequence_number) = 0;
 
+  // TODO(pbos): Remove default implementation once this has been implemented
+  // in libjingle.
+  virtual void SetRtpStateForSsrc(int video_channel,
+                                  uint32_t ssrc,
+                                  const RtpState& rtp_state) {}
+  // TODO(pbos): Remove default implementation once this has been implemented
+  // in libjingle.
+  virtual RtpState GetRtpStateForSsrc(int video_channel, uint32_t ssrc) {
+    return RtpState();
+  }
+
   // This function sets the RTCP status for the specified channel.
   // Default mode is kRtcpCompound_RFC4585.
   virtual int SetRTCPStatus(const int video_channel,
@@ -165,10 +177,12 @@ class WEBRTC_DLLEXPORT ViERTP_RTCP {
   virtual int SetRTCPCName(const int video_channel,
                            const char rtcp_cname[KMaxRTCPCNameLength]) = 0;
 
-  // This function gets the RTCP canonical name (CNAME) for the RTCP reports
-  // sent the specified channel.
+  // TODO(holmer): Remove this API once it has been removed from
+  // fakewebrtcvideoengine.h.
   virtual int GetRTCPCName(const int video_channel,
-                           char rtcp_cname[KMaxRTCPCNameLength]) const = 0;
+                           char rtcp_cname[KMaxRTCPCNameLength]) const {
+    return -1;
+  }
 
   // This function gets the RTCP canonical name (CNAME) for the RTCP reports
   // received on the specified channel.
@@ -261,8 +275,7 @@ class WEBRTC_DLLEXPORT ViERTP_RTCP {
 
   // Enables/disables RTCP Receiver Reference Time Report Block extension/
   // DLRR Report Block extension (RFC 3611).
-  // TODO(asapersson): Remove default implementation.
-  virtual int SetRtcpXrRrtrStatus(int video_channel, bool enable) { return -1; }
+  virtual int SetRtcpXrRrtrStatus(int video_channel, bool enable) = 0;
 
   // Enables transmission smoothening, i.e. packets belonging to the same frame
   // will be sent over a longer period of time instead of sending them
@@ -292,8 +305,11 @@ class WEBRTC_DLLEXPORT ViERTP_RTCP {
                                               RtcpStatistics& basic_stats,
                                               int& rtt_ms) const = 0;
 
-  // This function returns statistics reported by the remote client in a RTCP
-  // packet.
+  // This function returns statistics reported by the remote client in RTCP
+  // report blocks. If several streams are reported, the statistics will be
+  // aggregated.
+  // If statistics are aggregated, extended_max_sequence_number is not reported,
+  // and will always be set to 0.
   virtual int GetSendChannelRtcpStatistics(const int video_channel,
                                            RtcpStatistics& basic_stats,
                                            int& rtt_ms) const = 0;

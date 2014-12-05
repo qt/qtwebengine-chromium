@@ -20,8 +20,7 @@ namespace ui {
 //
 // The library doesn't support all devices currently. In particular there
 // is no support for keyboard events.
-class EventReaderLibevdevCros : public base::MessagePumpLibevent::Watcher,
-                                public EventConverterEvdev {
+class EventReaderLibevdevCros : public EventConverterEvdev {
  public:
   class Delegate {
    public:
@@ -38,16 +37,12 @@ class EventReaderLibevdevCros : public base::MessagePumpLibevent::Watcher,
 
   EventReaderLibevdevCros(int fd,
                           const base::FilePath& path,
+                          int id,
                           scoped_ptr<Delegate> delegate);
   ~EventReaderLibevdevCros();
 
-  // Overridden from ui::EventDeviceEvdev.
-  void Start() OVERRIDE;
-  void Stop() OVERRIDE;
-
-  // Overidden from MessagePumpLibevent::Watcher.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  // EventConverterEvdev:
+  void OnFileCanReadWithoutBlocking(int fd) override;
 
  private:
   static void OnSynReport(void* data,
@@ -66,9 +61,6 @@ class EventReaderLibevdevCros : public base::MessagePumpLibevent::Watcher,
 
   // Delegate for event processing.
   scoped_ptr<Delegate> delegate_;
-
-  // Controller for watching the input fd.
-  base::MessagePumpLibevent::FileDescriptorWatcher controller_;
 
   DISALLOW_COPY_AND_ASSIGN(EventReaderLibevdevCros);
 };

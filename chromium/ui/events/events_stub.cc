@@ -12,7 +12,7 @@
 namespace ui {
 
 // Stub implementations of platform-specific methods in events_util.h, built
-// on platform sthat currently do not have a complete implementation of events.
+// on platforms that currently do not have a complete implementation of events.
 
 void UpdateDeviceList() {
   NOTIMPLEMENTED();
@@ -69,6 +69,10 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
 }
 
+void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+}
+
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
 }
@@ -118,27 +122,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
   return false;
 }
 
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return static_cast<KeyboardCode>(0);
@@ -153,5 +136,26 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   NOTIMPLEMENTED();
   return 0;
 }
+
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return false;
+}
+
+uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 TextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
+uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
+  return 0;
+}
+
 
 }  // namespace ui

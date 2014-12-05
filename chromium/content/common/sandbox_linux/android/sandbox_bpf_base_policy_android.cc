@@ -4,9 +4,13 @@
 
 #include "content/common/sandbox_linux/android/sandbox_bpf_base_policy_android.h"
 
+#include <sys/syscall.h>
 #include <sys/types.h>
 
-#include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
+#include "sandbox/linux/bpf_dsl/bpf_dsl.h"
+
+using sandbox::bpf_dsl::Allow;
+using sandbox::bpf_dsl::ResultExpr;
 
 namespace content {
 
@@ -15,9 +19,7 @@ SandboxBPFBasePolicyAndroid::SandboxBPFBasePolicyAndroid()
 
 SandboxBPFBasePolicyAndroid::~SandboxBPFBasePolicyAndroid() {}
 
-sandbox::ErrorCode SandboxBPFBasePolicyAndroid::EvaluateSyscall(
-    sandbox::SandboxBPF* sandbox,
-    int sysno) const {
+ResultExpr SandboxBPFBasePolicyAndroid::EvaluateSyscall(int sysno) const {
   bool override_and_allow = false;
 
   switch (sysno) {
@@ -52,9 +54,9 @@ sandbox::ErrorCode SandboxBPFBasePolicyAndroid::EvaluateSyscall(
   }
 
   if (override_and_allow)
-    return sandbox::ErrorCode(sandbox::ErrorCode::ERR_ALLOWED);
+    return Allow();
 
-  return SandboxBPFBasePolicy::EvaluateSyscall(sandbox, sysno);
+  return SandboxBPFBasePolicy::EvaluateSyscall(sysno);
 }
 
 }  // namespace content

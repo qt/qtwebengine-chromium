@@ -25,18 +25,20 @@
 
 #include "core/dom/CharacterData.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class RenderText;
-class ExecutionContext;
 
 class Text : public CharacterData {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static const unsigned defaultLengthLimit = 1 << 16;
 
     static PassRefPtrWillBeRawPtr<Text> create(Document&, const String&);
     static PassRefPtrWillBeRawPtr<Text> createEditingText(Document&, const String&);
+
+    RenderText* renderer() const;
 
     // mergeNextSiblingNodesIfPossible() merges next sibling nodes if possible
     // then returns a node not merged.
@@ -53,33 +55,32 @@ public:
     RenderText* createTextRenderer(RenderStyle*);
     void updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfReplacedData, RecalcStyleBehavior = DoNotRecalcStyle);
 
-    virtual void attach(const AttachContext& = AttachContext()) OVERRIDE FINAL;
+    virtual void attach(const AttachContext& = AttachContext()) override final;
 
-    virtual bool canContainRangeEndPoint() const OVERRIDE FINAL { return true; }
-    virtual NodeType nodeType() const OVERRIDE;
+    virtual bool canContainRangeEndPoint() const override final { return true; }
+    virtual NodeType nodeType() const override;
 
 protected:
     Text(TreeScope& treeScope, const String& data, ConstructionType type)
-        : CharacterData(treeScope, data, type)
-    {
-        ScriptWrappable::init(this);
-    }
+        : CharacterData(treeScope, data, type) { }
 
 private:
-    virtual String nodeName() const OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE FINAL;
+    virtual String nodeName() const override;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override final;
+
+    bool isTextNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
 
     bool needsWhitespaceRenderer();
 
     virtual PassRefPtrWillBeRawPtr<Text> cloneWithData(const String&);
 
 #ifndef NDEBUG
-    virtual void formatForDebugger(char* buffer, unsigned length) const OVERRIDE;
+    virtual void formatForDebugger(char* buffer, unsigned length) const override;
 #endif
 };
 
 DEFINE_NODE_TYPE_CASTS(Text, isTextNode());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Text_h

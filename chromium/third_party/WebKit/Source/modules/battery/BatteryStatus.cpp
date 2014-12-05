@@ -7,16 +7,16 @@
 
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<BatteryStatus> BatteryStatus::create()
+BatteryStatus* BatteryStatus::create()
 {
-    return adoptRefWillBeNoop(new BatteryStatus);
+    return new BatteryStatus;
 }
 
-PassRefPtrWillBeRawPtr<BatteryStatus> BatteryStatus::create(bool charging, double chargingTime, double dischargingTime, double level)
+BatteryStatus* BatteryStatus::create(bool charging, double chargingTime, double dischargingTime, double level)
 {
-    return adoptRefWillBeNoop(new BatteryStatus(charging, chargingTime, dischargingTime, level));
+    return new BatteryStatus(charging, chargingTime, dischargingTime, level);
 }
 
 BatteryStatus::BatteryStatus()
@@ -35,4 +35,4 @@ BatteryStatus::BatteryStatus(bool charging, double chargingTime, double discharg
 {
 }
 
-} // namespace WebCore
+} // namespace blink

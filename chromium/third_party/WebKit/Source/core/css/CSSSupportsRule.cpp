@@ -33,7 +33,7 @@
 #include "core/css/StyleRule.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSSupportsRule::CSSSupportsRule(StyleRuleSupports* supportsRule, CSSStyleSheet* parent)
     : CSSGroupingRule(supportsRule, parent)
@@ -44,9 +44,9 @@ String CSSSupportsRule::cssText() const
 {
     StringBuilder result;
 
-    result.append("@supports ");
+    result.appendLiteral("@supports ");
     result.append(conditionText());
-    result.append(" {\n");
+    result.appendLiteral(" {\n");
     appendCSSTextForItems(result);
     result.append('}');
 
@@ -58,4 +58,4 @@ String CSSSupportsRule::conditionText() const
     return toStyleRuleSupports(m_groupRule.get())->conditionText();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -35,25 +35,45 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/loader/EmptyClients.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
-PassOwnPtr<DummyPageHolder> DummyPageHolder::create(const IntSize& initialViewSize)
-{
-    return adoptPtr(new DummyPageHolder(initialViewSize));
+PassOwnPtr<DummyPageHolder> DummyPageHolder::create(
+    const IntSize& initialViewSize,
+    Page::PageClients* pageClients,
+    PassOwnPtr<FrameLoaderClient> frameLoaderClient) {
+    return adoptPtr(new DummyPageHolder(initialViewSize, pageClients, frameLoaderClient));
 }
 
-DummyPageHolder::DummyPageHolder(const IntSize& initialViewSize)
+DummyPageHolder::DummyPageHolder(
+    const IntSize& initialViewSize,
+    Page::PageClients* pageClients,
+    PassOwnPtr<FrameLoaderClient> frameLoaderClient)
 {
-    fillWithEmptyClients(m_pageClients);
+    if (!pageClients) {
+        fillWithEmptyClients(m_pageClients);
+    } else {
+        m_pageClients.chromeClient = pageClients->chromeClient;
+        m_pageClients.contextMenuClient = pageClients->contextMenuClient;
+        m_pageClients.editorClient = pageClients->editorClient;
+        m_pageClients.dragClient = pageClients->dragClient;
+        m_pageClients.inspectorClient = pageClients->inspectorClient;
+        m_pageClients.spellCheckerClient = pageClients->spellCheckerClient;
+        m_pageClients.storageClient = pageClients->storageClient;
+    }
     m_page = adoptPtrWillBeNoop(new Page(m_pageClients));
     Settings& settings = m_page->settings();
     // FIXME: http://crbug.com/363843. This needs to find a better way to
     // not create graphics layers.
     settings.setAcceleratedCompositingEnabled(false);
 
-    m_frame = LocalFrame::create(&m_frameLoaderClient, &m_page->frameHost(), 0);
+    m_frameLoaderClient = frameLoaderClient;
+    if (!m_frameLoaderClient)
+        m_frameLoaderClient = adoptPtr(new EmptyFrameLoaderClient);
+
+    m_frame = LocalFrame::create(m_frameLoaderClient.get(), &m_page->frameHost(), 0);
     m_frame->setView(FrameView::create(m_frame.get(), initialViewSize));
     m_frame->init();
 }
@@ -75,6 +95,7 @@ Page& DummyPageHolder::page() const
 
 LocalFrame& DummyPageHolder::frame() const
 {
+    ASSERT(m_frame);
     return *m_frame;
 }
 
@@ -88,4 +109,4 @@ Document& DummyPageHolder::document() const
     return *m_frame->domWindow()->document();
 }
 
-} // namespace WebCore
+} // namespace blink

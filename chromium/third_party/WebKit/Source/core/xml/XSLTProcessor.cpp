@@ -33,9 +33,8 @@
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/Assertions.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline void transformTextStringToXHTMLDocumentString(String& text)
 {
@@ -87,7 +86,7 @@ PassRefPtrWillBeRawPtr<Document> XSLTProcessor::createDocumentFromSource(const S
             result->setTransformSourceDocument(oldDocument.get());
             result->updateSecurityOrigin(oldDocument->securityOrigin());
             result->setCookieURL(oldDocument->cookieURL());
-            result->contentSecurityPolicy()->copyStateFrom(oldDocument->contentSecurityPolicy());
+            result->initContentSecurityPolicy();
         }
     } else {
         result = LocalDOMWindow::createDocument(sourceMIMEType, init, forceXHTML);
@@ -163,6 +162,7 @@ void XSLTProcessor::trace(Visitor* visitor)
 {
     visitor->trace(m_stylesheet);
     visitor->trace(m_stylesheetRootNode);
+    visitor->trace(m_document);
 }
 
-} // namespace WebCore
+} // namespace blink

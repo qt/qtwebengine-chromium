@@ -28,7 +28,7 @@
 #include "core/css/StyleSheetContents.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSImportRule::CSSImportRule(StyleRuleImport* importRule, CSSStyleSheet* parent)
     : CSSRule(parent)
@@ -62,9 +62,9 @@ MediaList* CSSImportRule::media() const
 String CSSImportRule::cssText() const
 {
     StringBuilder result;
-    result.append("@import url(\"");
+    result.appendLiteral("@import url(\"");
     result.append(m_importRule->href());
-    result.append("\")");
+    result.appendLiteral("\")");
 
     if (m_importRule->mediaQueries()) {
         String mediaText = m_importRule->mediaQueries()->mediaText();
@@ -102,4 +102,4 @@ void CSSImportRule::trace(Visitor* visitor)
     CSSRule::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

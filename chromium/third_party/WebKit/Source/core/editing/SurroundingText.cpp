@@ -37,7 +37,7 @@
 #include "core/dom/Range.h"
 #include "core/editing/TextIterator.h"
 
-namespace WebCore {
+namespace blink {
 
 SurroundingText::SurroundingText(const Range& range, unsigned maxLength)
     : m_startOffsetInContent(0)
@@ -73,7 +73,7 @@ void SurroundingText::initialize(const Position& startPosition, const Position& 
     if (!forwardIterator.atEnd())
         forwardIterator.advance(maxLength - halfMaxLength);
 
-    forwardRange = forwardIterator.range();
+    forwardRange = forwardIterator.createRange();
     if (!forwardRange || !Range::create(*document, endPosition, forwardRange->startPosition())->text().length()) {
         ASSERT(forwardRange);
         return;
@@ -87,15 +87,9 @@ void SurroundingText::initialize(const Position& startPosition, const Position& 
     if (!backwardsIterator.atEnd())
         backwardsIterator.advance(halfMaxLength);
 
-    backwardsRange = backwardsIterator.range();
-    if (!backwardsRange) {
-        ASSERT(backwardsRange);
-        return;
-    }
-
-    m_startOffsetInContent = Range::create(*document, backwardsRange->endPosition(), startPosition)->text().length();
-    m_endOffsetInContent = Range::create(*document, backwardsRange->endPosition(), endPosition)->text().length();
-    m_contentRange = Range::create(*document, backwardsRange->endPosition(), forwardRange->startPosition());
+    m_startOffsetInContent = Range::create(*document, backwardsIterator.endPosition(), startPosition)->text().length();
+    m_endOffsetInContent = Range::create(*document, backwardsIterator.endPosition(), endPosition)->text().length();
+    m_contentRange = Range::create(*document, backwardsIterator.endPosition(), forwardRange->startPosition());
     ASSERT(m_contentRange);
 }
 
@@ -109,14 +103,12 @@ PassRefPtrWillBeRawPtr<Range> SurroundingText::rangeFromContentOffsets(unsigned 
     ASSERT(!iterator.atEnd());
     iterator.advance(startOffsetInContent);
 
-    ASSERT(iterator.range());
-    Position start = iterator.range()->startPosition();
+    Position start = iterator.startPosition();
 
     ASSERT(!iterator.atEnd());
     iterator.advance(endOffsetInContent - startOffsetInContent);
 
-    ASSERT(iterator.range());
-    Position end = iterator.range()->startPosition();
+    Position end = iterator.startPosition();
 
     ASSERT(start.document());
     return Range::create(*start.document(), start, end);
@@ -139,4 +131,4 @@ unsigned SurroundingText::endOffsetInContent() const
     return m_endOffsetInContent;
 }
 
-} // namespace WebCore
+} // namespace blink

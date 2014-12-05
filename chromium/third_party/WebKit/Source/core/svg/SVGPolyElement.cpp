@@ -19,15 +19,13 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGPolyElement.h"
 
-#include "core/dom/Document.h"
-#include "core/rendering/svg/RenderSVGResource.h"
+#include "core/rendering/svg/RenderSVGShape.h"
 #include "core/svg/SVGAnimatedPointList.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGPolyElement::SVGPolyElement(const QualifiedName& tagName, Document& document)
     : SVGGeometryElement(tagName, document)
@@ -36,35 +34,14 @@ SVGPolyElement::SVGPolyElement(const QualifiedName& tagName, Document& document)
     addToPropertyMap(m_points);
 }
 
-bool SVGPolyElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty()) {
-        supportedAttributes.add(SVGNames::pointsAttr);
-    }
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGPolyElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGGeometryElement::parseAttribute(name, value);
-        return;
-    }
-
-    if (name == SVGNames::pointsAttr) {
-        SVGParsingError parseError = NoError;
-        m_points->setBaseValueAsString(value, parseError);
-        reportAttributeParsingError(parseError, name, value);
-        return;
-    }
-
-    ASSERT_NOT_REACHED();
+    parseAttributeNew(name, value);
 }
 
 void SVGPolyElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
+    if (attrName != SVGNames::pointsAttr) {
         SVGGeometryElement::svgAttributeChanged(attrName);
         return;
     }
@@ -75,13 +52,8 @@ void SVGPolyElement::svgAttributeChanged(const QualifiedName& attrName)
     if (!renderer)
         return;
 
-    if (attrName == SVGNames::pointsAttr) {
-        renderer->setNeedsShapeUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
-        return;
-    }
-
-    ASSERT_NOT_REACHED();
+    renderer->setNeedsShapeUpdate();
+    markForLayoutAndParentResourceInvalidation(renderer);
 }
 
 }

@@ -32,14 +32,13 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/appcache/ApplicationCacheHost.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLHtmlElement::HTMLHtmlElement(Document& document)
     : HTMLElement(htmlTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLHtmlElement)

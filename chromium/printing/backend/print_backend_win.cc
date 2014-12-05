@@ -30,7 +30,7 @@ HRESULT StreamOnHGlobalToString(IStream* stream, std::string* out) {
   HRESULT hr = GetHGlobalFromStream(stream, &hdata);
   if (SUCCEEDED(hr)) {
     DCHECK(hdata);
-    base::win::ScopedHGlobal<char> locked_data(hdata);
+    base::win::ScopedHGlobal<char*> locked_data(hdata);
     out->assign(locked_data.release(), locked_data.Size());
   }
   return hr;
@@ -157,17 +157,17 @@ class PrintBackendWin : public PrintBackend {
   PrintBackendWin() {}
 
   // PrintBackend implementation.
-  virtual bool EnumeratePrinters(PrinterList* printer_list) OVERRIDE;
-  virtual std::string GetDefaultPrinterName() OVERRIDE;
+  virtual bool EnumeratePrinters(PrinterList* printer_list) override;
+  virtual std::string GetDefaultPrinterName() override;
   virtual bool GetPrinterSemanticCapsAndDefaults(
       const std::string& printer_name,
-      PrinterSemanticCapsAndDefaults* printer_info) OVERRIDE;
+      PrinterSemanticCapsAndDefaults* printer_info) override;
   virtual bool GetPrinterCapsAndDefaults(
       const std::string& printer_name,
-      PrinterCapsAndDefaults* printer_info) OVERRIDE;
+      PrinterCapsAndDefaults* printer_info) override;
   virtual std::string GetPrinterDriverInfo(
-      const std::string& printer_name) OVERRIDE;
-  virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
+      const std::string& printer_name) override;
+  virtual bool IsValidPrinter(const std::string& printer_name) override;
 
  protected:
   virtual ~PrintBackendWin() {}
@@ -197,7 +197,7 @@ bool PrintBackendWin::EnumeratePrinters(PrinterList* printer_list) {
     ScopedPrinterHandle printer;
     PrinterBasicInfo info;
     if (printer.OpenPrinter(printer_info[index].pPrinterName) &&
-        InitBasicPrinterInfo(printer, &info)) {
+        InitBasicPrinterInfo(printer.Get(), &info)) {
       info.is_default = (info.printer_name == default_printer);
       printer_list->push_back(info);
     }
@@ -223,7 +223,7 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   }
 
   PrinterInfo5 info_5;
-  if (!info_5.Init(printer_handle))
+  if (!info_5.Init(printer_handle.Get()))
     return false;
   const wchar_t* name = info_5.get()->pPrinterName;
   const wchar_t* port = info_5.get()->pPortName;
@@ -232,7 +232,7 @@ bool PrintBackendWin::GetPrinterSemanticCapsAndDefaults(
   PrinterSemanticCapsAndDefaults caps;
 
   scoped_ptr<DEVMODE, base::FreeDeleter> user_settings =
-      CreateDevMode(printer_handle, NULL);
+      CreateDevMode(printer_handle.Get(), NULL);
   if (user_settings) {
     if (user_settings->dmFields & DM_COLOR)
       caps.color_default = (user_settings->dmColor == DMCOLOR_COLOR);
@@ -322,7 +322,7 @@ bool PrintBackendWin::GetPrinterCapsAndDefaults(
     ScopedPrinterHandle printer_handle;
     if (printer_handle.OpenPrinter(printer_name_wide.c_str())) {
       scoped_ptr<DEVMODE, base::FreeDeleter> devmode_out(
-          CreateDevMode(printer_handle, NULL));
+          CreateDevMode(printer_handle.Get(), NULL));
       if (!devmode_out)
         return false;
       base::win::ScopedComPtr<IStream> printer_defaults_stream;
@@ -354,7 +354,7 @@ std::string PrintBackendWin::GetPrinterDriverInfo(
   if (!printer.OpenPrinter(base::UTF8ToWide(printer_name).c_str())) {
     return std::string();
   }
-  return GetDriverInfo(printer);
+  return GetDriverInfo(printer.Get());
 }
 
 bool PrintBackendWin::IsValidPrinter(const std::string& printer_name) {

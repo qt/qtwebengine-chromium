@@ -82,7 +82,6 @@ namespace views {
 
 class FocusManagerDelegate;
 class FocusSearch;
-class RootView;
 class View;
 class Widget;
 
@@ -183,6 +182,10 @@ class VIEWS_EXPORT FocusManager {
   // Clears the focused view. The window associated with the top root view gets
   // the native focus (so we still get keyboard events).
   void ClearFocus();
+
+  // Tries to advance focus if the focused view has become unfocusable. If there
+  // is no view available to advance focus to, focus will be cleared.
+  void AdvanceFocusIfNecessary();
 
   // Validates the focused view, clearing it if the window it belongs too is not
   // attached to the window hierarchy anymore.

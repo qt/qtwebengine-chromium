@@ -11,10 +11,8 @@
 #ifndef WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_CORE_INTERNAL_H_
 #define WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_CORE_INTERNAL_H_
 
-#ifdef WEBRTC_AEC_DEBUG_DUMP
-#include <stdio.h>
-#endif
-
+#include "webrtc/common_audio/wav_file.h"
+#include "webrtc/modules/audio_processing/aec/aec_common.h"
 #include "webrtc/modules/audio_processing/aec/aec_core.h"
 #include "webrtc/modules/audio_processing/utility/ring_buffer.h"
 #include "webrtc/typedefs.h"
@@ -140,11 +138,19 @@ struct AecCore {
   int num_partitions;
 
 #ifdef WEBRTC_AEC_DEBUG_DUMP
+  // Sequence number of this AEC instance, so that different instances can
+  // choose different dump file names.
+  int instance_index;
+
+  // Number of times we've restarted dumping; used to pick new dump file names
+  // each time.
+  int debug_dump_count;
+
   RingBuffer* far_time_buf;
-  FILE* farFile;
-  FILE* nearFile;
-  FILE* outFile;
-  FILE* outLinearFile;
+  rtc_WavWriter* farFile;
+  rtc_WavWriter* nearFile;
+  rtc_WavWriter* outFile;
+  rtc_WavWriter* outLinearFile;
 #endif
 };
 
@@ -169,5 +175,13 @@ typedef void (*WebRtcAec_ComfortNoise_t)(AecCore* aec,
                                          const float* noisePow,
                                          const float* lambda);
 extern WebRtcAec_ComfortNoise_t WebRtcAec_ComfortNoise;
+
+typedef void (*WebRtcAec_SubbandCoherence_t)(AecCore* aec,
+                                             float efw[2][PART_LEN1],
+                                             float xfw[2][PART_LEN1],
+                                             float* fft,
+                                             float* cohde,
+                                             float* cohxd);
+extern WebRtcAec_SubbandCoherence_t WebRtcAec_SubbandCoherence;
 
 #endif  // WEBRTC_MODULES_AUDIO_PROCESSING_AEC_AEC_CORE_INTERNAL_H_

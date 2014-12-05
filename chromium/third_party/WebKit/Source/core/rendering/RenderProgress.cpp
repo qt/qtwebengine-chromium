@@ -27,9 +27,7 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/RefPtr.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderProgress::RenderProgress(HTMLElement* element)
     : RenderBlockFlow(element)
@@ -46,6 +44,15 @@ RenderProgress::~RenderProgress()
 {
 }
 
+void RenderProgress::destroy()
+{
+    if (m_animating) {
+        m_animationTimer.stop();
+        m_animating = false;
+    }
+    RenderBlockFlow::destroy();
+}
+
 void RenderProgress::updateFromElement()
 {
     HTMLProgressElement* element = progressElement();
@@ -54,7 +61,7 @@ void RenderProgress::updateFromElement()
     m_position = element->position();
 
     updateAnimationState();
-    paintInvalidationForWholeRenderer();
+    setShouldDoFullPaintInvalidation();
     RenderBlockFlow::updateFromElement();
 }
 
@@ -71,7 +78,7 @@ bool RenderProgress::isDeterminate() const
 
 void RenderProgress::animationTimerFired(Timer<RenderProgress>*)
 {
-    paintInvalidationForWholeRenderer();
+    setShouldDoFullPaintInvalidation();
     if (!m_animationTimer.isActive() && m_animating)
         m_animationTimer.startOneShot(m_animationRepeatInterval, FROM_HERE);
 }
@@ -105,4 +112,4 @@ HTMLProgressElement* RenderProgress::progressElement() const
     return toHTMLProgressElement(node()->shadowHost());
 }
 
-} // namespace WebCore
+} // namespace blink

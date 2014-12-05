@@ -21,9 +21,9 @@
 #include "config.h"
 #include "core/rendering/RenderCombineText.h"
 
-#include "core/rendering/RenderBlockFlow.h"
+#include "core/rendering/TextRunConstructor.h"
 
-namespace WebCore {
+namespace blink {
 
 const float textCombineMargin = 1.1f; // Allow em + 10% margin
 
@@ -99,7 +99,7 @@ void RenderCombineText::combineText()
     if (style()->isHorizontalWritingMode())
         return;
 
-    TextRun run = RenderBlockFlow::constructTextRun(this, originalFont(), this, style(), style()->direction());
+    TextRun run = constructTextRun(this, originalFont(), this, style(), style()->direction());
     FontDescription description = originalFont().fontDescription();
     float emWidth = description.computedSize() * textCombineMargin;
     bool shouldUpdateFont = false;
@@ -144,4 +144,4 @@ void RenderCombineText::combineText()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

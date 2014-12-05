@@ -9,18 +9,60 @@
     '../third_party/icu/icu.isolate',
   ],
   'conditions': [
-    ['OS=="win" and component=="shared_library"', {
+    ['OS=="linux" and asan==1 and chromeos==0', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
+          '<(PRODUCT_DIR)/lib/libc++.so',
+        ],
+      },
+    }],
+    ['OS=="mac" and asan==1', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/libclang_rt.asan_osx_dynamic.dylib',
+        ],
+      },
+    }],
+    ['OS=="linux" and asan==1', {
+      'variables': {
+        'files': [
+          '../third_party/llvm-build/Release+Asserts/lib/libstdc++.so.6',
+        ],
+      },
+    }],
+    ['asan==1', {
+      'variables': {
+        'files': [
+          '../tools/valgrind/asan/',
+          '../third_party/llvm-build/Release+Asserts/bin/llvm-symbolizer',
+        ],
+      },
+    }],
+    ['lsan==1', {
+      'variables': {
+        'files': [
+          '../tools/lsan/suppressions.txt',
+        ],
+      },
+    }],
+    ['OS=="win" and component=="shared_library" and CONFIGURATION_NAME=="Debug"', {
+      'variables': {
+        'files': [
           # Copy the VS runtime DLLs into the isolate so that they
-          # don't have to be preinstalled on the target machine. Note
-          # that depending on whether the build is Debug or Release,
-          # half of these dependencies will be broken, so these
-          # dependencies require --ignore-broken-items to be passed to
-          # the isolate driver.
+          # don't have to be preinstalled on the target machine.
           '<(PRODUCT_DIR)/msvcp120d.dll',
-          '<(PRODUCT_DIR)/msvcp120.dll',
           '<(PRODUCT_DIR)/msvcr120d.dll',
+          '<(PRODUCT_DIR)/x64/msvcp120d.dll',
+          '<(PRODUCT_DIR)/x64/msvcr120d.dll',
+        ],
+      },
+    }],
+    ['OS=="win" and component=="shared_library" and CONFIGURATION_NAME=="Release"', {
+      'variables': {
+        'files': [
+          # Copy the VS runtime DLLs into the isolate so that they
+          # don't have to be preinstalled on the target machine.
+          '<(PRODUCT_DIR)/msvcp120.dll',
           '<(PRODUCT_DIR)/msvcr120.dll',
         ],
       },

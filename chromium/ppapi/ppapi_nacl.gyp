@@ -8,7 +8,7 @@
 
 {
   'includes': [
-    '../native_client/build/untrusted.gypi',
+    '../build/common_untrusted.gypi',
     'ppapi_sources.gypi',
   ],
   'targets': [
@@ -57,7 +57,9 @@
       'target_name': 'ppapi_nacl_tests',
       'type': 'none',
       'dependencies': [
+         '<(DEPTH)/native_client/tools.gyp:prep_toolchain',
          '<(DEPTH)/native_client/src/untrusted/nacl/nacl.gyp:nacl_lib',
+         '<(DEPTH)/native_client/src/untrusted/pthread/pthread.gyp:pthread_lib',
          'ppapi_cpp_lib',
          'native_client/native_client.gyp:ppapi_lib',
       ],
@@ -98,22 +100,24 @@
           '-O0',
         ],
         'conditions': [
-          ['target_arch=="ia32" or target_arch=="x64"', {
-            'extra_deps_newlib64': [
-              '>(tc_lib_dir_newlib64)/libppapi_cpp.a',
-              '>(tc_lib_dir_newlib64)/libppapi.a',
-            ],
+          ['target_arch=="ia32"', {
             'extra_deps_newlib32': [
               '>(tc_lib_dir_newlib32)/libppapi_cpp.a',
               '>(tc_lib_dir_newlib32)/libppapi.a',
             ],
-            'extra_deps_glibc64': [
-              '>(tc_lib_dir_glibc64)/libppapi_cpp.so',
-              '>(tc_lib_dir_glibc64)/libppapi.so',
-            ],
             'extra_deps_glibc32': [
               '>(tc_lib_dir_glibc32)/libppapi_cpp.so',
               '>(tc_lib_dir_glibc32)/libppapi.so',
+            ],
+          }],
+          ['target_arch=="x64" or (target_arch=="ia32" and OS=="win")', {
+            'extra_deps_newlib64': [
+              '>(tc_lib_dir_newlib64)/libppapi_cpp.a',
+              '>(tc_lib_dir_newlib64)/libppapi.a',
+            ],
+            'extra_deps_glibc64': [
+              '>(tc_lib_dir_glibc64)/libppapi_cpp.so',
+              '>(tc_lib_dir_glibc64)/libppapi.so',
             ],
           }],
           ['target_arch=="arm"', {
@@ -138,7 +142,7 @@
         'create_nonsfi_test_nmf': 'tests/create_nonsfi_test_nmf.py',
       },
       'conditions': [
-        ['target_arch!="arm" and target_arch!="mipsel" and disable_glibc==0', {
+        ['(target_arch=="ia32" or target_arch=="x64") and disable_glibc==0', {
           'variables': {
             'build_glibc': 1,
             # NOTE: Use /lib, not /lib64 here; it is a symbolic link which
@@ -153,7 +157,7 @@
             'action_name': 'Generate GLIBC NMF and copy libs',
             # NOTE: create_nmf must be first, it is the script python executes
             # below.
-            'inputs': ['>(create_nmf)', '>(out_glibc64)', '>(out_glibc32)'],
+            'inputs': ['>(create_nmf)'],
             # NOTE: There is no explicit dependency for the lib32
             # and lib64 directories created in the PRODUCT_DIR.
             # They are created as a side-effect of NMF creation.
@@ -162,12 +166,24 @@
               'python',
               '>@(_inputs)',
               '--objdump=>(nacl_objdump)',
-              '--library-path=>(libdir_glibc64)',
-              '--library-path=>(libdir_glibc32)',
-              '--library-path=>(tc_lib_dir_glibc32)',
-              '--library-path=>(tc_lib_dir_glibc64)',
               '--output=>(nmf_glibc)',
               '--stage-dependencies=<(PRODUCT_DIR)',
+            ],
+            'conditions': [
+              ['target_arch=="ia32"', {
+                'action': [
+                  '--library-path=>(libdir_glibc32)',
+                  '--library-path=>(tc_lib_dir_glibc32)',
+                ],
+                'inputs': ['>(out_glibc32)'],
+              }],
+              ['target_arch=="x64" or (target_arch=="ia32" and OS=="win")', {
+                'action': [
+                  '--library-path=>(libdir_glibc64)',
+                  '--library-path=>(tc_lib_dir_glibc64)',
+                ],
+                'inputs': ['>(out_glibc64)'],
+              }],
             ],
           },
         ],
@@ -183,11 +199,12 @@
         ['disable_pnacl==0 and (target_arch=="ia32" or target_arch=="x64")', {
           'variables': {
             'build_pnacl_newlib': 1,
+            'translate_pexe_with_build': 1,
             'nmf_pnacl%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl.nmf',
           },
           # Shim is a dependency for the nexe because we pre-translate.
           'dependencies': [
-            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:shim_aot',
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
           ],
           'actions': [
             {
@@ -196,14 +213,24 @@
               # below.
               'inputs': [
                 '>(create_nmf)',
-                '>(out_pnacl_newlib_x86_32_nexe)',
-                '>(out_pnacl_newlib_x86_64_nexe)'
               ],
               'outputs': ['>(nmf_pnacl)'],
               'action': [
                 'python',
                 '>@(_inputs)',
                 '--output=>(nmf_pnacl)',
+              ],
+              'conditions': [
+                ['target_arch=="ia32"', {
+                  'inputs': [
+                    '>(out_pnacl_newlib_x86_32_nexe)',
+                  ],
+                }],
+                ['target_arch=="x64" or (target_arch=="ia32" and OS=="win")', {
+                  'inputs': [
+                    '>(out_pnacl_newlib_x86_64_nexe)',
+                  ],
+                }],
               ],
             },
           ],
@@ -213,8 +240,13 @@
           # by translating from .pexe binary, for non-SFI mode PPAPI testing.
           'variables': {
             'enable_x86_32_nonsfi': 1,
+            'translate_pexe_with_build': 1,
             'nmf_nonsfi%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl_nonsfi.nmf',
           },
+          # Shim is a dependency for the nexe because we pre-translate.
+         'dependencies': [
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
+          ],
           'actions': [
             {
               'action_name': 'Generate PNACL NEWLIB NONSFI NMF',
@@ -232,11 +264,12 @@
         ['disable_pnacl==0 and target_arch=="arm"', {
           'variables': {
             'build_pnacl_newlib': 1,
+            'translate_pexe_with_build': 1,
             'nmf_pnacl%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl.nmf',
           },
           # Shim is a dependency for the nexe because we pre-translate.
           'dependencies': [
-            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:shim_aot',
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
           ],
           'actions': [
             {
@@ -256,11 +289,12 @@
         ['disable_pnacl==0 and target_arch=="mipsel"', {
           'variables': {
             'build_pnacl_newlib': 1,
+            'translate_pexe_with_build': 1,
             'nmf_pnacl%': '<(PRODUCT_DIR)/>(nexe_target)_pnacl.nmf',
           },
           # Shim is a dependency for the nexe because we pre-translate.
           'dependencies': [
-            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:shim_aot',
+            '<(DEPTH)/ppapi/native_client/src/untrusted/pnacl_irt_shim/pnacl_irt_shim.gyp:aot',
           ],
           'actions': [
             {

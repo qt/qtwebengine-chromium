@@ -7,10 +7,6 @@
 #define RTCD_EXTERN extern
 #endif
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
 /*
  * VP8
  */
@@ -25,6 +21,10 @@ struct macroblock;
 struct variance_vtable;
 union int_mv;
 struct yv12_buffer_config;
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void vp8_bilinear_predict16x16_c(unsigned char *src, int src_pitch, int xofst, int yofst, unsigned char *dst, int dst_pitch);
 #define vp8_bilinear_predict16x16 vp8_bilinear_predict16x16_c
@@ -73,6 +73,9 @@ void vp8_dc_only_idct_add_c(short input, unsigned char *pred, int pred_stride, u
 
 int vp8_denoiser_filter_c(unsigned char *mc_running_avg_y, int mc_avg_y_stride, unsigned char *running_avg_y, int avg_y_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
 #define vp8_denoiser_filter vp8_denoiser_filter_c
+
+int vp8_denoiser_filter_uv_c(unsigned char *mc_running_avg, int mc_avg_stride, unsigned char *running_avg, int avg_stride, unsigned char *sig, int sig_stride, unsigned int motion_magnitude, int increase_denoising);
+#define vp8_denoiser_filter_uv vp8_denoiser_filter_uv_c
 
 void vp8_dequant_idct_add_c(short *input, short *dq, unsigned char *output, int stride);
 #define vp8_dequant_idct_add vp8_dequant_idct_add_c
@@ -319,9 +322,6 @@ unsigned int vp8_variance_halfpixvar16x16_hv_c(const unsigned char *src_ptr, int
 
 unsigned int vp8_variance_halfpixvar16x16_v_c(const unsigned char *src_ptr, int source_stride, const unsigned char *ref_ptr, int  ref_stride, unsigned int *sse);
 #define vp8_variance_halfpixvar16x16_v vp8_variance_halfpixvar16x16_v_c
-
-void vp8_yv12_copy_partial_frame_c(struct yv12_buffer_config *src_ybc, struct yv12_buffer_config *dst_ybc);
-#define vp8_yv12_copy_partial_frame vp8_yv12_copy_partial_frame_c
 
 void vp8_rtcd(void);
 

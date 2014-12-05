@@ -31,16 +31,16 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
       const blink::WebScreenInfo& screen_info);
 
   // pepper::FullscreenContainer API.
-  virtual void Invalidate() OVERRIDE;
-  virtual void InvalidateRect(const blink::WebRect& rect) OVERRIDE;
-  virtual void ScrollRect(int dx, int dy, const blink::WebRect& rect) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual void DidChangeCursor(const blink::WebCursorInfo& cursor) OVERRIDE;
-  virtual void SetLayer(blink::WebLayer* layer) OVERRIDE;
+  void Invalidate() override;
+  void InvalidateRect(const blink::WebRect& rect) override;
+  void ScrollRect(int dx, int dy, const blink::WebRect& rect) override;
+  void Destroy() override;
+  void DidChangeCursor(const blink::WebCursorInfo& cursor) override;
+  void SetLayer(blink::WebLayer* layer) override;
 
   // IPC::Listener implementation. This overrides the implementation
   // in RenderWidgetFullscreen.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Could be NULL when this widget is closing.
   PepperPluginInstanceImpl* plugin() const { return plugin_; }
@@ -53,20 +53,20 @@ class RenderWidgetFullscreenPepper : public RenderWidgetFullscreen,
   RenderWidgetFullscreenPepper(PepperPluginInstanceImpl* plugin,
                                const GURL& active_url,
                                const blink::WebScreenInfo& screen_info);
-  virtual ~RenderWidgetFullscreenPepper();
+  ~RenderWidgetFullscreenPepper() override;
 
   // RenderWidget API.
-  virtual void DidInitiatePaint() OVERRIDE;
-  virtual void DidFlushPaint() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void OnResize(const ViewMsg_Resize_Params& params) OVERRIDE;
+  void DidInitiatePaint() override;
+  void DidFlushPaint() override;
+  void Close() override;
+  void OnResize(const ViewMsg_Resize_Params& params) override;
 
   // RenderWidgetFullscreen API.
-  virtual blink::WebWidget* CreateWebWidget() OVERRIDE;
+  blink::WebWidget* CreateWebWidget() override;
 
   // RenderWidget overrides.
-  virtual GURL GetURLForGraphicsContext3D() OVERRIDE;
-  virtual void SetDeviceScaleFactor(float device_scale_factor) OVERRIDE;
+  GURL GetURLForGraphicsContext3D() override;
+  void SetDeviceScaleFactor(float device_scale_factor) override;
 
  private:
   // URL that is responsible for this widget, passed to ggl::CreateViewContext.

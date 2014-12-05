@@ -56,7 +56,7 @@ void ExecuteCalculateDrawProperties(LayerImpl* root_layer,
 }
 
 void ExecuteCalculateDrawProperties(LayerImpl* root_layer) {
-  LayerImpl* page_scale_application_layer = NULL;
+  LayerImpl* page_scale_application_layer = nullptr;
   ExecuteCalculateDrawProperties(
       root_layer, 1.f, 1.f, page_scale_application_layer, false);
 }
@@ -142,10 +142,7 @@ void SetFixedContainerSizeDelta(LayerImpl* scroll_layer,
   DCHECK(scroll_layer->scrollable());
 
   LayerImpl* container_layer = scroll_layer->scroll_clip_layer();
-  gfx::Size container_size(container_layer->bounds());
-  gfx::Size new_container_size(container_size.width() + delta.x(),
-                               container_size.height() + delta.y());
-  container_layer->SetTemporaryImplBounds(new_container_size);
+  container_layer->SetBoundsDelta(delta);
 }
 }  // namespace
 

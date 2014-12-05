@@ -18,26 +18,39 @@
 
 /**
  * @constructor
- * @extends {WebInspector.VBox}
+ * @extends {WebInspector.SplitView}
+ * @param {!WebInspector.NetworkRequest} request
  */
-WebInspector.ResourceWebSocketFrameView = function(resource)
+WebInspector.ResourceWebSocketFrameView = function(request)
 {
-    WebInspector.VBox.call(this);
-    this.element.classList.add("resource-websocket");
-    this.resource = resource;
-    this.element.removeChildren();
+    WebInspector.SplitView.call(this, false, true, "resourceWebSocketFrameViewSplitViewState");
+    this.registerRequiredCSS("network/webSocketFrameView.css");
+    this.element.classList.add("websocket-frame-view");
+    this._request = request;
 
-    this._dataGrid = new WebInspector.DataGrid([
-        {id: "data", title: WebInspector.UIString("Data"), sortable: false, weight: 88, longText: true},
-        {id: "length", title: WebInspector.UIString("Length"), sortable: false, alig: WebInspector.DataGrid.Align.Right, weight: 5},
-        {id: "time", title: WebInspector.UIString("Time"), weight: 7}
-    ], undefined, undefined, undefined, this._onContextMenu.bind(this));
+    var columns = [
+        {id: "data", title: WebInspector.UIString("Data"), sortable: false, weight: 88},
+        {id: "length", title: WebInspector.UIString("Length"), sortable: false, align: WebInspector.DataGrid.Align.Right, weight: 5},
+        {id: "time", title: WebInspector.UIString("Time"), sortable: true, weight: 7}
+    ]
 
-    this.refresh();
+    this._dataGrid = new WebInspector.SortableDataGrid(columns, undefined, undefined, undefined, this._onContextMenu.bind(this));
+    this._dataGrid.setStickToBottom(true);
+    this._dataGrid.setCellClass("websocket-frame-view-td");
+    this._timeComparator = /** @type {!WebInspector.SortableDataGrid.NodeComparator} */ (WebInspector.ResourceWebSocketFrameNodeTimeComparator);
+    this._dataGrid.sortNodes(this._timeComparator, false);
+    this._dataGrid.markColumnAsSortedBy("time", WebInspector.DataGrid.Order.Ascending);
+    this._dataGrid.addEventListener(WebInspector.DataGrid.Events.SortingChanged, this._sortItems, this);
+
     this._dataGrid.setName("ResourceWebSocketFrameView");
-    this._dataGrid.show(this.element);
+    this._dataGrid.addEventListener(WebInspector.DataGrid.Events.SelectedNode, this._onFrameSelected, this);
+    this._dataGrid.show(this.mainElement());
+
+    this._messageView = new WebInspector.EmptyView("Select frame to browse its content.");
+    this._messageView.show(this.sidebarElement());
 }
 
+/** @enum {number} */
 WebInspector.ResourceWebSocketFrameView.OpCodes = {
     ContinuationFrame: 0,
     TextFrame: 1,
@@ -47,70 +60,73 @@ WebInspector.ResourceWebSocketFrameView.OpCodes = {
     PongFrame: 10
 };
 
+/** @type {!Array.<string> } */
+WebInspector.ResourceWebSocketFrameView.opCodeDescriptions = (function()
+{
+    var opCodes = WebInspector.ResourceWebSocketFrameView.OpCodes;
+    var map = [];
+    map[opCodes.ContinuationFrame] = "Continuation Frame";
+    map[opCodes.TextFrame] = "Text Frame";
+    map[opCodes.BinaryFrame] = "Binary Frame";
+    map[opCodes.ContinuationFrame] = "Connection Close Frame";
+    map[opCodes.PingFrame] = "Ping Frame";
+    map[opCodes.PongFrame] = "Pong Frame";
+    return map;
+})();
+
+/**
+ * @param {number} opCode
+ * @param {boolean} mask
+ * @return {string}
+ */
+WebInspector.ResourceWebSocketFrameView.opCodeDescription = function(opCode, mask)
+{
+    var rawDescription = WebInspector.ResourceWebSocketFrameView.opCodeDescriptions[opCode] || "";
+    var localizedDescription = WebInspector.UIString(rawDescription);
+    return WebInspector.UIString("%s (Opcode %d%s)", localizedDescription, opCode, (mask ? ", mask" : ""));
+}
+
 WebInspector.ResourceWebSocketFrameView.prototype = {
-    appendFrame: function(frame)
+    wasShown: function()
     {
-        var payload = frame;
+        this.refresh();
+        this._request.addEventListener(WebInspector.NetworkRequest.Events.WebsocketFrameAdded, this._frameAdded, this);
+    },
 
-        var date = new Date(payload.time * 1000);
-        var row = {
-            data: "",
-            length: typeof payload.payloadData === "undefined" ? payload.errorMessage.length.toString() : payload.payloadData.length.toString(),
-            time: date.toLocaleTimeString()
-        };
+    willHide: function()
+    {
+        this._request.removeEventListener(WebInspector.NetworkRequest.Events.WebsocketFrameAdded, this._frameAdded, this);
+    },
 
-        var rowClass = "";
-        if (payload.errorMessage) {
-            rowClass = "error";
-            row.data = payload.errorMessage;
-        } else if (payload.opcode == WebInspector.ResourceWebSocketFrameView.OpCodes.TextFrame) {
-            if (payload.sent)
-                rowClass = "outcoming";
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _frameAdded: function(event)
+    {
+        var frame = /** @type {!WebInspector.NetworkRequest.WebSocketFrame} */ (event.data);
+        this._dataGrid.insertChild(new WebInspector.ResourceWebSocketFrameNode(frame));
+    },
 
-            row.data = payload.payloadData;
-        } else {
-            rowClass = "opcode";
-            var opcodeMeaning = "";
-            switch (payload.opcode) {
-            case WebInspector.ResourceWebSocketFrameView.OpCodes.ContinuationFrame:
-                opcodeMeaning = WebInspector.UIString("Continuation Frame");
-                break;
-            case WebInspector.ResourceWebSocketFrameView.OpCodes.BinaryFrame:
-                opcodeMeaning = WebInspector.UIString("Binary Frame");
-                break;
-            case WebInspector.ResourceWebSocketFrameView.OpCodes.ConnectionCloseFrame:
-                opcodeMeaning = WebInspector.UIString("Connection Close Frame");
-                break;
-            case WebInspector.ResourceWebSocketFrameView.OpCodes.PingFrame:
-                opcodeMeaning = WebInspector.UIString("Ping Frame");
-                break;
-            case WebInspector.ResourceWebSocketFrameView.OpCodes.PongFrame:
-                opcodeMeaning = WebInspector.UIString("Pong Frame");
-                break;
-            }
-            row.data = WebInspector.UIString("%s (Opcode %d%s)", opcodeMeaning, payload.opcode, (payload.mask ? ", mask" : ""));
-        }
-
-        var node = new WebInspector.DataGridNode(row, false);
-        this._dataGrid.rootNode().appendChild(node);
-
-        if (rowClass)
-            node.element.classList.add("resource-websocket-row-" + rowClass);
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onFrameSelected: function(event)
+    {
+        var selectedNode = /** @type {!WebInspector.ResourceWebSocketFrameNode} */ (event.target.selectedNode);
+        if (this._messageView)
+            this._messageView.detach();
+        if (this._dataView)
+            this._dataView.detach();
+        this._dataView = new WebInspector.ResourceSourceFrame(selectedNode.contentProvider());
+        this._dataView.show(this.sidebarElement());
     },
 
     refresh: function()
     {
         this._dataGrid.rootNode().removeChildren();
-        var frames = this.resource.frames();
-        for (var i = frames.length - 1; i >= 0; i--) {
-            this.appendFrame(frames[i]);
-        }
-    },
-
-    show: function(parentElement, insertBefore)
-    {
-        this.refresh();
-        WebInspector.View.prototype.show.call(this, parentElement, insertBefore);
+        var frames = this._request.frames();
+        for (var i = 0; i < frames.length; ++i)
+            this._dataGrid.insertChild(new WebInspector.ResourceWebSocketFrameNode(frames[i]));
     },
 
     /**
@@ -130,5 +146,70 @@ WebInspector.ResourceWebSocketFrameView.prototype = {
         InspectorFrontendHost.copyText(row.data);
     },
 
-    __proto__: WebInspector.VBox.prototype
+    _sortItems: function()
+    {
+        this._dataGrid.sortNodes(this._timeComparator, !this._dataGrid.isSortOrderAscending());
+    },
+
+    __proto__: WebInspector.SplitView.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.SortableDataGridNode}
+ * @param {!WebInspector.NetworkRequest.WebSocketFrame} frame
+ */
+WebInspector.ResourceWebSocketFrameNode = function(frame)
+{
+    this._frame = frame;
+    this._dataText = frame.text;
+    this._length = frame.text.length;
+    this._timeText = (new Date(frame.time * 1000)).toLocaleTimeString();
+
+    this._isTextFrame = frame.opCode === WebInspector.ResourceWebSocketFrameView.OpCodes.TextFrame;
+    if (!this._isTextFrame)
+        this._dataText = WebInspector.ResourceWebSocketFrameView.opCodeDescription(frame.opCode, frame.mask);
+
+    WebInspector.SortableDataGridNode.call(this, {data: this._dataText, length: this._length, time: this._timeText});
+}
+
+WebInspector.ResourceWebSocketFrameNode.prototype = {
+    /** override */
+    createCells: function()
+    {
+        var element = this._element;
+        element.classList.toggle("websocket-frame-view-row-error", this._frame.type === WebInspector.NetworkRequest.WebSocketFrameType.Error);
+        element.classList.toggle("websocket-frame-view-row-outcoming", this._frame.type === WebInspector.NetworkRequest.WebSocketFrameType.Send);
+        element.classList.toggle("websocket-frame-view-row-opcode", !this._isTextFrame);
+        WebInspector.SortableDataGridNode.prototype.createCells.call(this);
+    },
+
+    /**
+     * @override
+     * @return {number}
+     */
+    nodeSelfHeight: function()
+    {
+        return 17;
+    },
+
+    /**
+     * @return {!WebInspector.ContentProvider}
+     */
+    contentProvider: function()
+    {
+        return new WebInspector.StaticContentProvider(WebInspector.resourceTypes.WebSocket, this._dataText);
+    },
+
+    __proto__: WebInspector.SortableDataGridNode.prototype
+}
+
+/**
+ * @param {!WebInspector.ResourceWebSocketFrameNode} a
+ * @param {!WebInspector.ResourceWebSocketFrameNode} b
+ * @return {number}
+ */
+WebInspector.ResourceWebSocketFrameNodeTimeComparator = function(a, b)
+{
+    return a._frame.time - b._frame.time;
 }

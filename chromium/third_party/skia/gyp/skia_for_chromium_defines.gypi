@@ -13,13 +13,8 @@
     # If these become 'permanent', they should be moved into skia_common.gypi
     #
     'skia_for_chromium_defines': [
-      'SK_SUPPORT_LEGACY_GETTOPDEVICE',
-      'SK_SUPPORT_LEGACY_BITMAP_CONFIG',
-      'SK_SUPPORT_LEGACY_DEVICE_VIRTUAL_ISOPAQUE',
-      'SK_SUPPORT_LEGACY_N32_NAME',
-      'SK_SUPPORT_LEGACY_SETCONFIG',
-      'SK_IGNORE_ETC1_SUPPORT',
-      'SK_IGNORE_GPU_DITHER',
+      'SK_SUPPORT_LEGACY_TEXTRENDERMODE',
+      'SK_IGNORE_GPU_LAYER_HOISTING',
     ],
   },
 }

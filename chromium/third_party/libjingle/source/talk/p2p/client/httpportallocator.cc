@@ -25,19 +25,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/p2p/client/httpportallocator.h"
+#include "webrtc/p2p/client/httpportallocator.h"
 
 #include <algorithm>
 #include <map>
 
-#include "talk/base/asynchttprequest.h"
-#include "talk/base/basicdefs.h"
-#include "talk/base/common.h"
-#include "talk/base/helpers.h"
-#include "talk/base/logging.h"
-#include "talk/base/nethelpers.h"
-#include "talk/base/signalthread.h"
-#include "talk/base/stringencode.h"
+#include "webrtc/base/asynchttprequest.h"
+#include "webrtc/base/basicdefs.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/nethelpers.h"
+#include "webrtc/base/signalthread.h"
+#include "webrtc/base/stringencode.h"
 
 namespace {
 
@@ -95,22 +95,22 @@ const int HttpPortAllocatorBase::kNumRetries = 5;
 const char HttpPortAllocatorBase::kCreateSessionURL[] = "/create_session";
 
 HttpPortAllocatorBase::HttpPortAllocatorBase(
-    talk_base::NetworkManager* network_manager,
-    talk_base::PacketSocketFactory* socket_factory,
+    rtc::NetworkManager* network_manager,
+    rtc::PacketSocketFactory* socket_factory,
     const std::string &user_agent)
     : BasicPortAllocator(network_manager, socket_factory), agent_(user_agent) {
   relay_hosts_.push_back("relay.google.com");
   stun_hosts_.push_back(
-      talk_base::SocketAddress("stun.l.google.com", 19302));
+      rtc::SocketAddress("stun.l.google.com", 19302));
 }
 
 HttpPortAllocatorBase::HttpPortAllocatorBase(
-    talk_base::NetworkManager* network_manager,
+    rtc::NetworkManager* network_manager,
     const std::string &user_agent)
     : BasicPortAllocator(network_manager), agent_(user_agent) {
   relay_hosts_.push_back("relay.google.com");
   stun_hosts_.push_back(
-      talk_base::SocketAddress("stun.l.google.com", 19302));
+      rtc::SocketAddress("stun.l.google.com", 19302));
 }
 
 HttpPortAllocatorBase::~HttpPortAllocatorBase() {
@@ -124,7 +124,7 @@ HttpPortAllocatorSessionBase::HttpPortAllocatorSessionBase(
     int component,
     const std::string& ice_ufrag,
     const std::string& ice_pwd,
-    const std::vector<talk_base::SocketAddress>& stun_hosts,
+    const std::vector<rtc::SocketAddress>& stun_hosts,
     const std::vector<std::string>& relay_hosts,
     const std::string& relay_token,
     const std::string& user_agent)
@@ -142,7 +142,13 @@ void HttpPortAllocatorSessionBase::GetPortConfigurations() {
   // but for now is done here and added to the initial config.  Note any later
   // configs will have unresolved stun ips and will be discarded by the
   // AllocationSequence.
-  PortConfiguration* config = new PortConfiguration(stun_hosts_[0],
+  ServerAddresses hosts;
+  for (std::vector<rtc::SocketAddress>::iterator it = stun_hosts_.begin();
+      it != stun_hosts_.end(); ++it) {
+    hosts.insert(*it);
+  }
+
+  PortConfiguration* config = new PortConfiguration(hosts,
                                                     username(),
                                                     password());
   ConfigReady(config);
@@ -174,7 +180,7 @@ void HttpPortAllocatorSessionBase::TryCreateRelaySession() {
     LOG(LS_WARNING) << "No relay auth token found.";
   }
 
-  SendSessionRequest(host, talk_base::HTTP_SECURE_PORT);
+  SendSessionRequest(host, rtc::HTTP_SECURE_PORT);
 }
 
 std::string HttpPortAllocatorSessionBase::GetSessionRequestUrl() {
@@ -182,8 +188,8 @@ std::string HttpPortAllocatorSessionBase::GetSessionRequestUrl() {
   if (allocator()->flags() & PORTALLOCATOR_ENABLE_SHARED_UFRAG) {
     ASSERT(!username().empty());
     ASSERT(!password().empty());
-    url = url + "?username=" + talk_base::s_url_encode(username()) +
-        "&password=" + talk_base::s_url_encode(password());
+    url = url + "?username=" + rtc::s_url_encode(username()) +
+        "&password=" + rtc::s_url_encode(password());
   }
   return url;
 }
@@ -206,21 +212,27 @@ void HttpPortAllocatorSessionBase::ReceiveSessionResponse(
   std::string relay_tcp_port = map["relay.tcp_port"];
   std::string relay_ssltcp_port = map["relay.ssltcp_port"];
 
-  PortConfiguration* config = new PortConfiguration(stun_hosts_[0],
+  ServerAddresses hosts;
+  for (std::vector<rtc::SocketAddress>::iterator it = stun_hosts_.begin();
+      it != stun_hosts_.end(); ++it) {
+    hosts.insert(*it);
+  }
+
+  PortConfiguration* config = new PortConfiguration(hosts,
                                                     map["username"],
                                                     map["password"]);
 
   RelayServerConfig relay_config(RELAY_GTURN);
   if (!relay_udp_port.empty()) {
-    talk_base::SocketAddress address(relay_ip, atoi(relay_udp_port.c_str()));
+    rtc::SocketAddress address(relay_ip, atoi(relay_udp_port.c_str()));
     relay_config.ports.push_back(ProtocolAddress(address, PROTO_UDP));
   }
   if (!relay_tcp_port.empty()) {
-    talk_base::SocketAddress address(relay_ip, atoi(relay_tcp_port.c_str()));
+    rtc::SocketAddress address(relay_ip, atoi(relay_tcp_port.c_str()));
     relay_config.ports.push_back(ProtocolAddress(address, PROTO_TCP));
   }
   if (!relay_ssltcp_port.empty()) {
-    talk_base::SocketAddress address(relay_ip, atoi(relay_ssltcp_port.c_str()));
+    rtc::SocketAddress address(relay_ip, atoi(relay_ssltcp_port.c_str()));
     relay_config.ports.push_back(ProtocolAddress(address, PROTO_SSLTCP));
   }
   config->AddRelay(relay_config);
@@ -230,14 +242,14 @@ void HttpPortAllocatorSessionBase::ReceiveSessionResponse(
 // HttpPortAllocator
 
 HttpPortAllocator::HttpPortAllocator(
-    talk_base::NetworkManager* network_manager,
-    talk_base::PacketSocketFactory* socket_factory,
+    rtc::NetworkManager* network_manager,
+    rtc::PacketSocketFactory* socket_factory,
     const std::string &user_agent)
     : HttpPortAllocatorBase(network_manager, socket_factory, user_agent) {
 }
 
 HttpPortAllocator::HttpPortAllocator(
-    talk_base::NetworkManager* network_manager,
+    rtc::NetworkManager* network_manager,
     const std::string &user_agent)
     : HttpPortAllocatorBase(network_manager, user_agent) {
 }
@@ -261,7 +273,7 @@ HttpPortAllocatorSession::HttpPortAllocatorSession(
     int component,
     const std::string& ice_ufrag,
     const std::string& ice_pwd,
-    const std::vector<talk_base::SocketAddress>& stun_hosts,
+    const std::vector<rtc::SocketAddress>& stun_hosts,
     const std::vector<std::string>& relay_hosts,
     const std::string& relay,
     const std::string& agent)
@@ -271,7 +283,7 @@ HttpPortAllocatorSession::HttpPortAllocatorSession(
 }
 
 HttpPortAllocatorSession::~HttpPortAllocatorSession() {
-  for (std::list<talk_base::AsyncHttpRequest*>::iterator it = requests_.begin();
+  for (std::list<rtc::AsyncHttpRequest*>::iterator it = requests_.begin();
        it != requests_.end(); ++it) {
     (*it)->Destroy(true);
   }
@@ -280,15 +292,15 @@ HttpPortAllocatorSession::~HttpPortAllocatorSession() {
 void HttpPortAllocatorSession::SendSessionRequest(const std::string& host,
                                                   int port) {
   // Initiate an HTTP request to create a session through the chosen host.
-  talk_base::AsyncHttpRequest* request =
-      new talk_base::AsyncHttpRequest(user_agent());
+  rtc::AsyncHttpRequest* request =
+      new rtc::AsyncHttpRequest(user_agent());
   request->SignalWorkDone.connect(this,
       &HttpPortAllocatorSession::OnRequestDone);
 
-  request->set_secure(port == talk_base::HTTP_SECURE_PORT);
+  request->set_secure(port == rtc::HTTP_SECURE_PORT);
   request->set_proxy(allocator()->proxy());
-  request->response().document.reset(new talk_base::MemoryStream);
-  request->request().verb = talk_base::HV_GET;
+  request->response().document.reset(new rtc::MemoryStream);
+  request->request().verb = rtc::HV_GET;
   request->request().path = GetSessionRequestUrl();
   request->request().addHeader("X-Talk-Google-Relay-Auth", relay_token(), true);
   request->request().addHeader("X-Stream-Type", "video_rtp", true);
@@ -300,12 +312,12 @@ void HttpPortAllocatorSession::SendSessionRequest(const std::string& host,
   requests_.push_back(request);
 }
 
-void HttpPortAllocatorSession::OnRequestDone(talk_base::SignalThread* data) {
-  talk_base::AsyncHttpRequest* request =
-      static_cast<talk_base::AsyncHttpRequest*>(data);
+void HttpPortAllocatorSession::OnRequestDone(rtc::SignalThread* data) {
+  rtc::AsyncHttpRequest* request =
+      static_cast<rtc::AsyncHttpRequest*>(data);
 
   // Remove the request from the list of active requests.
-  std::list<talk_base::AsyncHttpRequest*>::iterator it =
+  std::list<rtc::AsyncHttpRequest*>::iterator it =
       std::find(requests_.begin(), requests_.end(), request);
   if (it != requests_.end()) {
     requests_.erase(it);
@@ -319,8 +331,8 @@ void HttpPortAllocatorSession::OnRequestDone(talk_base::SignalThread* data) {
   }
   LOG(LS_INFO) << "HTTPPortAllocator: request succeeded";
 
-  talk_base::MemoryStream* stream =
-      static_cast<talk_base::MemoryStream*>(request->response().document.get());
+  rtc::MemoryStream* stream =
+      static_cast<rtc::MemoryStream*>(request->response().document.get());
   stream->Rewind();
   size_t length;
   stream->GetSize(&length);

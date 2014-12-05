@@ -37,10 +37,10 @@ NativeWidgetAura* Init(aura::Window* parent, Widget* widget) {
 class NativeWidgetAuraTest : public aura::test::AuraTestBase {
  public:
   NativeWidgetAuraTest() {}
-  virtual ~NativeWidgetAuraTest() {}
+  ~NativeWidgetAuraTest() override {}
 
   // testing::Test overrides:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AuraTestBase::SetUp();
     new wm::DefaultActivationClient(root_window());
     host()->SetBounds(gfx::Rect(640, 480));
@@ -103,17 +103,17 @@ TEST_F(NativeWidgetAuraTest, CenterWindowSmallParentNotAtOrigin) {
 class TestLayoutManagerBase : public aura::LayoutManager {
  public:
   TestLayoutManagerBase() {}
-  virtual ~TestLayoutManagerBase() {}
+  ~TestLayoutManagerBase() override {}
 
   // aura::LayoutManager:
-  virtual void OnWindowResized() OVERRIDE {}
-  virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {}
-  virtual void OnWillRemoveWindowFromLayout(aura::Window* child) OVERRIDE {}
-  virtual void OnWindowRemovedFromLayout(aura::Window* child) OVERRIDE {}
-  virtual void OnChildWindowVisibilityChanged(aura::Window* child,
-                                              bool visible) OVERRIDE {}
-  virtual void SetChildBounds(aura::Window* child,
-                              const gfx::Rect& requested_bounds) OVERRIDE {}
+  void OnWindowResized() override {}
+  void OnWindowAddedToLayout(aura::Window* child) override {}
+  void OnWillRemoveWindowFromLayout(aura::Window* child) override {}
+  void OnWindowRemovedFromLayout(aura::Window* child) override {}
+  void OnChildWindowVisibilityChanged(aura::Window* child,
+                                      bool visible) override {}
+  void SetChildBounds(aura::Window* child,
+                      const gfx::Rect& requested_bounds) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestLayoutManagerBase);
@@ -123,11 +123,11 @@ class TestLayoutManagerBase : public aura::LayoutManager {
 class MaximizeLayoutManager : public TestLayoutManagerBase {
  public:
   MaximizeLayoutManager() {}
-  virtual ~MaximizeLayoutManager() {}
+  ~MaximizeLayoutManager() override {}
 
  private:
   // aura::LayoutManager:
-  virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {
+  void OnWindowAddedToLayout(aura::Window* child) override {
     // This simulates what happens when adding a maximized window.
     SetChildBoundsDirect(child, gfx::Rect(0, 0, 300, 300));
   }
@@ -148,7 +148,7 @@ class TestWidget : public views::Widget {
     return did_size_change_more_than_once_;
   }
 
-  virtual void OnNativeWidgetSizeChanged(const gfx::Size& new_size) OVERRIDE {
+  void OnNativeWidgetSizeChanged(const gfx::Size& new_size) override {
     if (last_size_.IsEmpty())
       last_size_ = new_size;
     else if (!did_size_change_more_than_once_ && new_size != last_size_)
@@ -185,14 +185,15 @@ TEST_F(NativeWidgetAuraTest, ShowMaximizedDoesntBounceAround) {
 class PropertyTestLayoutManager : public TestLayoutManagerBase {
  public:
   PropertyTestLayoutManager() : added_(false) {}
-  virtual ~PropertyTestLayoutManager() {}
+  ~PropertyTestLayoutManager() override {}
 
   bool added() const { return added_; }
 
  private:
   // aura::LayoutManager:
-  virtual void OnWindowAddedToLayout(aura::Window* child) OVERRIDE {
+  void OnWindowAddedToLayout(aura::Window* child) override {
     EXPECT_TRUE(child->GetProperty(aura::client::kCanMaximizeKey));
+    EXPECT_TRUE(child->GetProperty(aura::client::kCanMinimizeKey));
     EXPECT_TRUE(child->GetProperty(aura::client::kCanResizeKey));
     added_ = true;
   }
@@ -205,32 +206,23 @@ class PropertyTestLayoutManager : public TestLayoutManagerBase {
 class PropertyTestWidgetDelegate : public views::WidgetDelegate {
  public:
   explicit PropertyTestWidgetDelegate(Widget* widget) : widget_(widget) {}
-  virtual ~PropertyTestWidgetDelegate() {}
+  ~PropertyTestWidgetDelegate() override {}
 
  private:
   // views::WidgetDelegate:
-  virtual bool CanMaximize() const OVERRIDE {
-    return true;
-  }
-  virtual bool CanResize() const OVERRIDE {
-    return true;
-  }
-  virtual void DeleteDelegate() OVERRIDE {
-    delete this;
-  }
-  virtual Widget* GetWidget() OVERRIDE {
-    return widget_;
-  }
-  virtual const Widget* GetWidget() const OVERRIDE {
-    return widget_;
-  }
+  bool CanMaximize() const override { return true; }
+  bool CanMinimize() const override { return true; }
+  bool CanResize() const override { return true; }
+  void DeleteDelegate() override { delete this; }
+  Widget* GetWidget() override { return widget_; }
+  const Widget* GetWidget() const override { return widget_; }
 
   Widget* widget_;
   DISALLOW_COPY_AND_ASSIGN(PropertyTestWidgetDelegate);
 };
 
-// Verifies that the kCanMaximizeKey/kCanReizeKey have the correct
-// value when added to the layout manager.
+// Verifies that the kCanMaximizeKey/kCanMinimizeKey/kCanResizeKey have the
+// correct value when added to the layout manager.
 TEST_F(NativeWidgetAuraTest, TestPropertiesWhenAddedToLayout) {
   root_window()->SetBounds(gfx::Rect(0, 0, 640, 480));
   PropertyTestLayoutManager* layout_manager = new PropertyTestLayoutManager();
@@ -282,7 +274,7 @@ class GestureTrackingView : public views::View {
   }
 
   // View overrides:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     got_gesture_event_ = true;
     if (consume_gesture_event_)
       event->StopPropagation();
@@ -444,13 +436,13 @@ TEST_F(NativeWidgetAuraTest, NoCrashOnThemeAfterClose) {
 class MoveTestWidgetDelegate : public WidgetDelegateView {
  public:
   MoveTestWidgetDelegate() : got_move_(false) {}
-  virtual ~MoveTestWidgetDelegate() {}
+  ~MoveTestWidgetDelegate() override {}
 
   void ClearGotMove() { got_move_ = false; }
   bool got_move() const { return got_move_; }
 
   // WidgetDelegate overrides:
-  virtual void OnWidgetMove() OVERRIDE { got_move_ = true; }
+  void OnWidgetMove() override { got_move_ = true; }
 
  private:
   bool got_move_;

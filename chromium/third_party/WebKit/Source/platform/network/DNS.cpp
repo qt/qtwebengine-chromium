@@ -30,16 +30,12 @@
 #include "public/platform/Platform.h"
 #include "public/platform/WebPrescientNetworking.h"
 
-namespace WebCore {
+namespace blink {
 
 void prefetchDNS(const String& hostname)
 {
-    blink::WebPrescientNetworking* prescientNetworking = blink::Platform::current()->prescientNetworking();
-
-    if (!prescientNetworking)
-        return;
-
-    prescientNetworking->prefetchDNS(hostname);
+    if (WebPrescientNetworking* prescientNetworking = Platform::current()->prescientNetworking())
+        prescientNetworking->prefetchDNS(hostname);
 }
 
-} // namespace WebCore
+} // namespace blink

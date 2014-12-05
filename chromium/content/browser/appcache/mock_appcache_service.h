@@ -6,11 +6,9 @@
 #define CONTENT_BROWSER_APPCACHE_MOCK_APPCACHE_SERVICE_H_
 
 #include "base/compiler_specific.h"
+#include "content/browser/appcache/appcache_service_impl.h"
 #include "content/browser/appcache/mock_appcache_storage.h"
-#include "webkit/browser/appcache/appcache_service_impl.h"
-#include "webkit/browser/quota/quota_manager.h"
-
-using appcache::AppCacheServiceImpl;
+#include "storage/browser/quota/quota_manager.h"
 
 namespace content {
 
@@ -26,11 +24,11 @@ class MockAppCacheService : public AppCacheServiceImpl {
 
   // Just returns a canned completion code without actually
   // removing groups and caches in our mock storage instance.
-  virtual void DeleteAppCachesForOrigin(
+  void DeleteAppCachesForOrigin(
       const GURL& origin,
-      const net::CompletionCallback& callback) OVERRIDE;
+      const net::CompletionCallback& callback) override;
 
-  void set_quota_manager_proxy(quota::QuotaManagerProxy* proxy) {
+  void set_quota_manager_proxy(storage::QuotaManagerProxy* proxy) {
     quota_manager_proxy_ = proxy;
   }
 

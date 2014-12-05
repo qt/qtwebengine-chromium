@@ -94,8 +94,7 @@ const HSL kDefaultUpperBound = {-1, -1, 0.85};
 scoped_refptr<base::RefCountedMemory> CreateTestPNG(
     const std::vector<SkColor>& colors) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, colors.size(), 1);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(colors.size(), 1);
 
   SkAutoLockPixels lock(bitmap);
   for (size_t i = 0; i < colors.size(); ++i) {
@@ -114,14 +113,13 @@ class MockKMeanImageSampler : public KMeanImageSampler {
         current_result_index_(0) {
   }
 
-  virtual ~MockKMeanImageSampler() {
-  }
+  ~MockKMeanImageSampler() override {}
 
   void AddSample(int sample) {
     prebaked_sample_results_.push_back(sample);
   }
 
-  virtual int GetSample(int width, int height) OVERRIDE {
+  int GetSample(int width, int height) override {
     if (current_result_index_ >= prebaked_sample_results_.size()) {
       current_result_index_ = 0;
     }
@@ -150,7 +148,7 @@ void Calculate8bitBitmapMinMax(const SkBitmap& bitmap,
                                uint8_t* max_gl) {
   SkAutoLockPixels bitmap_lock(bitmap);
   DCHECK(bitmap.getPixels());
-  DCHECK(bitmap.config() == SkBitmap::kA8_Config);
+  DCHECK_EQ(bitmap.colorType(), kAlpha_8_SkColorType);
   DCHECK(min_gl);
   DCHECK(max_gl);
   *min_gl = std::numeric_limits<uint8_t>::max();
@@ -279,8 +277,7 @@ TEST_F(ColorAnalysisTest, FindClosestColor) {
 
   // Single color image returns that color.
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(16, 16);
   bitmap.eraseColor(SK_ColorWHITE);
   color = FindClosestColor(static_cast<uint8_t*>(bitmap.getPixels()),
                            bitmap.width(),
@@ -302,8 +299,7 @@ TEST_F(ColorAnalysisTest, FindClosestColor) {
 TEST_F(ColorAnalysisTest, CalculateKMeanColorOfBitmap) {
   // Create a 16x16 bitmap to represent a favicon.
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(16, 16);
   bitmap.eraseARGB(255, 100, 150, 200);
 
   SkColor color = CalculateKMeanColorOfBitmap(bitmap);
@@ -326,7 +322,7 @@ TEST_F(ColorAnalysisTest, CalculateKMeanColorOfBitmap) {
 
 TEST_F(ColorAnalysisTest, ComputeColorCovarianceTrivial) {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 100, 200);
+  bitmap.setInfo(SkImageInfo::MakeN32Premul(100, 200));
 
   EXPECT_EQ(gfx::Matrix3F::Zeros(), ComputeColorCovariance(bitmap));
   bitmap.allocPixels();
@@ -361,11 +357,9 @@ TEST_F(ColorAnalysisTest, ApplyColorReductionSingleColor) {
   // The test runs color reduction on a single-colot image, where results are
   // bound to be uninteresting. This is an important edge case, though.
   SkBitmap source, result;
-  source.setConfig(SkBitmap::kARGB_8888_Config, 300, 200);
-  result.setConfig(SkBitmap::kA8_Config, 300, 200);
+  source.allocN32Pixels(300, 200);
+  result.allocPixels(SkImageInfo::MakeA8(300, 200));
 
-  source.allocPixels();
-  result.allocPixels();
   source.eraseARGB(255, 50, 150, 200);
 
   gfx::Vector3dF transform(1.0f, .5f, 0.1f);
@@ -410,8 +404,7 @@ TEST_F(ColorAnalysisTest, ApplyColorReductionBlackAndWhite) {
   SkBitmap source =
       skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
   SkBitmap result;
-  result.setConfig(SkBitmap::kA8_Config, 300, 200);
-  result.allocPixels();
+  result.allocPixels(SkImageInfo::MakeA8(300, 200));
 
   gfx::Vector3dF transform(1.0f, 0.5f, 0.1f);
   EXPECT_TRUE(ApplyColorReduction(source, transform, true, &result));
@@ -449,8 +442,7 @@ TEST_F(ColorAnalysisTest, ApplyColorReductionMultiColor) {
   SkBitmap source =
       skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
   SkBitmap result;
-  result.setConfig(SkBitmap::kA8_Config, 300, 200);
-  result.allocPixels();
+  result.allocPixels(SkImageInfo::MakeA8(300, 200));
 
   gfx::Vector3dF transform(1.0f, 0.5f, 0.1f);
   EXPECT_TRUE(ApplyColorReduction(source, transform, false, &result));
@@ -474,11 +466,9 @@ TEST_F(ColorAnalysisTest, ApplyColorReductionMultiColor) {
 
 TEST_F(ColorAnalysisTest, ComputePrincipalComponentImageNotComputable) {
   SkBitmap source, result;
-  source.setConfig(SkBitmap::kARGB_8888_Config, 300, 200);
-  result.setConfig(SkBitmap::kA8_Config, 300, 200);
+  source.allocN32Pixels(300, 200);
+  result.allocPixels(SkImageInfo::MakeA8(300, 200));
 
-  source.allocPixels();
-  result.allocPixels();
   source.eraseARGB(255, 50, 150, 200);
 
   // This computation should fail since all colors always vary together.
@@ -495,8 +485,7 @@ TEST_F(ColorAnalysisTest, ComputePrincipalComponentImage) {
   SkBitmap source =
       skia::GetTopDevice(*canvas.sk_canvas())->accessBitmap(false);
   SkBitmap result;
-  result.setConfig(SkBitmap::kA8_Config, 300, 200);
-  result.allocPixels();
+  result.allocPixels(SkImageInfo::MakeA8(300, 200));
 
   // This computation should fail since all colors always vary together.
   EXPECT_TRUE(ComputePrincipalComponentImage(source, &result));

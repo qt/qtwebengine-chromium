@@ -1,15 +1,7 @@
-# *   Copyright (C) 1998-2010, International Business Machines
+# *   Copyright (C) 1998-2013, International Business Machines
 # *   Corporation and others.  All Rights Reserved.
-COLLATION_CLDR_VERSION = 1.9
+COLLATION_CLDR_VERSION = 24
 # A list of txt's to build
-# Note: 
-#
-#   If you are thinking of modifying this file, READ THIS. 
-#
-# Instead of changing this file [unless you want to check it back in],
-# you should consider creating a 'collocal.mk' file in this same directory.
-# Then, you can have your local changes remain even if you upgrade or
-# reconfigure ICU.
 #
 # Example 'collocal.mk' files:
 #
@@ -27,11 +19,10 @@ COLLATION_CLDR_VERSION = 1.9
 
 # Aliases which do not have a corresponding xx.xml file (see icu-config.xml & build.xml)
 COLLATION_SYNTHETIC_ALIAS = de_.txt de__PHONEBOOK.txt es_.txt es__TRADITIONAL.txt\
- hi_.txt hi__DIRECT.txt in.txt in_ID.txt iw.txt\
- iw_IL.txt no.txt no_NO.txt\
- sr_BA.txt sr_ME.txt sr_RS.txt zh_.txt\
- zh_CN.txt zh_HK.txt zh_MO.txt zh_SG.txt zh_TW.txt\
- zh_TW_STROKE.txt zh__PINYIN.txt
+ in.txt in_ID.txt iw.txt iw_IL.txt mo.txt\
+ no.txt no_NO.txt\
+ sr_BA.txt sr_ME.txt sr_RS.txt \
+ zh.txt zh_CN.txt zh_HK.txt zh_MO.txt zh_SG.txt zh_TW.txt
 
 
 # All aliases (to not be included under 'installed'), but not including root.
@@ -60,7 +51,7 @@ COLLATION_EMPTY_SOURCE = ar_AE.txt ar_BH.txt ar_DZ.txt ar_EG.txt\
  ko_KR.txt lt_LT.txt lv_LV.txt\
  nb_NO.txt nl.txt nl_BE.txt nl_NL.txt nn_NO.txt\
  pl_PL.txt\
- pt.txt pt_BR.txt pt_PT.txt ro_RO.txt ru_RU.txt\
+ pt.txt pt_BR.txt pt_PT.txt ro_RO.txt ro_MD.txt ru_RU.txt\
  ru_UA.txt sk_SK.txt sl_SI.txt sr_Cyrl.txt\
  sr_Cyrl_BA.txt sr_Cyrl_ME.txt sr_Cyrl_RS.txt sr_Latn_BA.txt sr_Latn_ME.txt\
  sr_Latn_RS.txt sv_FI.txt sv_SE.txt\

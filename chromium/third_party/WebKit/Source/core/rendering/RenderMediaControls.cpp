@@ -28,14 +28,14 @@
 #include "config.h"
 #include "core/rendering/RenderMediaControls.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/TimeRanges.h"
 #include "core/rendering/PaintInfo.h"
 #include "platform/graphics/Gradient.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef WTF::HashMap<const char*, Image*> MediaControlImageMap;
 static MediaControlImageMap* gMediaControlImageMap = 0;
@@ -205,7 +205,7 @@ static bool paintMediaSlider(RenderObject* object, const PaintInfo& paintInfo, c
 
     // Draw the buffered range. Since the element may have multiple buffered ranges and it'd be
     // distracting/'busy' to show all of them, show only the buffered range containing the current play head.
-    RefPtr<TimeRanges> bufferedTimeRanges = mediaElement->buffered();
+    RefPtrWillBeRawPtr<TimeRanges> bufferedTimeRanges = mediaElement->buffered();
     float duration = mediaElement->duration();
     float currentTime = mediaElement->currentTime();
     if (std::isnan(duration) || std::isinf(duration) || !duration || std::isnan(currentTime))
@@ -246,7 +246,9 @@ static bool paintMediaSlider(RenderObject* object, const PaintInfo& paintInfo, c
 
 static bool paintMediaSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    ASSERT(object->node());
+    if (!object->node())
+        return false;
+
     HTMLMediaElement* mediaElement = toParentMediaElement(object->node()->shadowHost());
     if (!mediaElement)
         return false;
@@ -299,7 +301,9 @@ static bool paintMediaVolumeSlider(RenderObject* object, const PaintInfo& paintI
 
 static bool paintMediaVolumeSliderThumb(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
-    ASSERT(object->node());
+    if (!object->node())
+        return false;
+
     HTMLMediaElement* mediaElement = toParentMediaElement(object->node()->shadowHost());
     if (!mediaElement)
         return false;
@@ -335,7 +339,31 @@ static bool paintMediaToggleClosedCaptionsButton(RenderObject* object, const Pai
 
     return paintMediaButton(paintInfo.context, rect, mediaClosedCaptionButtonDisabled);
 }
+static bool paintMediaCastButton(RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
+{
+    HTMLMediaElement* mediaElement = toParentMediaElement(object);
+    if (!mediaElement)
+        return false;
 
+    static Image* mediaCastOn = platformResource("mediaplayerCastOn");
+    static Image* mediaCastOff = platformResource("mediaplayerCastOff");
+    // To ensure that the overlaid cast button is visible when overlaid on pale videos we use a
+    // different version of it for the overlaid case with a semi-opaque background.
+    static Image* mediaOverlayCastOff = platformResource("mediaplayerOverlayCastOff");
+
+    switch (mediaControlElementType(object->node())) {
+    case MediaCastOnButton:
+    case MediaOverlayCastOnButton:
+        return paintMediaButton(paintInfo.context, rect, mediaCastOn);
+    case MediaCastOffButton:
+        return paintMediaButton(paintInfo.context, rect, mediaCastOff);
+    case MediaOverlayCastOffButton:
+        return paintMediaButton(paintInfo.context, rect, mediaOverlayCastOff);
+    default:
+        ASSERT_NOT_REACHED();
+        return false;
+    }
+}
 
 bool RenderMediaControls::paintMediaControlsPart(MediaControlElementType part, RenderObject* object, const PaintInfo& paintInfo, const IntRect& rect)
 {
@@ -361,6 +389,11 @@ bool RenderMediaControls::paintMediaControlsPart(MediaControlElementType part, R
         return paintMediaFullscreenButton(object, paintInfo, rect);
     case MediaOverlayPlayButton:
         return paintMediaOverlayPlayButton(object, paintInfo, rect);
+    case MediaCastOffButton:
+    case MediaCastOnButton:
+    case MediaOverlayCastOffButton:
+    case MediaOverlayCastOnButton:
+        return paintMediaCastButton(object, paintInfo, rect);
     case MediaVolumeSliderContainer:
     case MediaTimelineContainer:
     case MediaCurrentTimeDisplay:
@@ -440,4 +473,4 @@ String RenderMediaControls::formatMediaControlsCurrentTime(float currentTime, fl
     return formatChromiumMediaControlsTime(currentTime, duration);
 }
 
-} // namespace WebCore
+} // namespace blink

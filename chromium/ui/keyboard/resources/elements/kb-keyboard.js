@@ -368,7 +368,7 @@ Polymer('kb-keyboard', {
    * Otherwise, the keyboard layout for 'text' type will be loaded.
    */
   inputTypeChanged: function() {
-    // Disable layout switching at accessbility mode.
+    // Disable layout switching at accessibility mode.
     if (this.config && this.config.a11ymode)
       return;
 
@@ -746,7 +746,7 @@ Polymer('kb-keyboard', {
     this.onNonControlKeyTyped();
   },
 
-  /*
+  /**
    * Handles key-longpress event that is sent by kb-key-base.
    * @param {CustomEvent} event The key-longpress event dispatched by
    *     kb-key-base.

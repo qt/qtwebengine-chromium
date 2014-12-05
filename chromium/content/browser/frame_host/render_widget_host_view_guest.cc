@@ -12,7 +12,6 @@
 #include "content/common/browser_plugin/browser_plugin_messages.h"
 #include "content/common/frame_messages.h"
 #include "content/common/gpu/gpu_messages.h"
-#include "content/common/host_shared_bitmap_manager.h"
 #include "content/common/input/web_touch_event_traits.h"
 #include "content/common/view_messages.h"
 #include "content/common/webplugin_geometry.h"
@@ -47,7 +46,7 @@ blink::WebGestureEvent CreateFlingCancelEvent(double time_stamp) {
 RenderWidgetHostViewGuest::RenderWidgetHostViewGuest(
     RenderWidgetHost* widget_host,
     BrowserPluginGuest* guest,
-    RenderWidgetHostViewBase* platform_view)
+    base::WeakPtr<RenderWidgetHostViewBase> platform_view)
     : RenderWidgetHostViewChildFrame(widget_host),
       // |guest| is NULL during test.
       guest_(guest ? guest->AsWeakPtr() : base::WeakPtr<BrowserPluginGuest>()),
@@ -64,6 +63,19 @@ RenderWidgetHostViewGuest::~RenderWidgetHostViewGuest() {
 #endif  // defined(USE_AURA)
 }
 
+bool RenderWidgetHostViewGuest::OnMessageReceivedFromEmbedder(
+    const IPC::Message& message,
+    RenderWidgetHostImpl* embedder) {
+  bool handled = true;
+  IPC_BEGIN_MESSAGE_MAP_WITH_PARAM(RenderWidgetHostViewGuest, message,
+                                   embedder)
+    IPC_MESSAGE_HANDLER(BrowserPluginHostMsg_HandleInputEvent,
+                        OnHandleInputEvent)
+    IPC_MESSAGE_UNHANDLED(handled = false)
+  IPC_END_MESSAGE_MAP()
+  return handled;
+}
+
 void RenderWidgetHostViewGuest::WasShown() {
   // If the WebContents associated with us showed an interstitial page in the
   // beginning, the teardown path might call WasShown() while |host_| is in
@@ -74,7 +86,13 @@ void RenderWidgetHostViewGuest::WasShown() {
   // |guest_| is NULL during test.
   if ((guest_ && guest_->is_in_destruction()) || !host_->is_hidden())
     return;
-  host_->WasShown();
+  // Make sure the size of this view matches the size of the WebContentsView.
+  // The two sizes may fall out of sync if we switch RenderWidgetHostViews,
+  // resize, and then switch page, as is the case with interstitial pages.
+  // NOTE: |guest_| is NULL in unit tests.
+  if (guest_)
+    SetSize(guest_->web_contents()->GetViewBounds().size());
+  host_->WasShown(ui::LatencyInfo());
 }
 
 void RenderWidgetHostViewGuest::WasHidden() {
@@ -93,6 +111,20 @@ void RenderWidgetHostViewGuest::SetBounds(const gfx::Rect& rect) {
   SetSize(rect.size());
 }
 
+void RenderWidgetHostViewGuest::Focus() {
+  // InterstitialPageImpl focuses views directly, so we place focus logic here.
+  // InterstitialPages are not WebContents, and so BrowserPluginGuest does not
+  // have direct access to the interstitial page's RenderWidgetHost.
+  if (guest_)
+    guest_->SetFocus(host_, true);
+}
+
+bool RenderWidgetHostViewGuest::HasFocus() const {
+  if (!guest_)
+    return false;
+  return guest_->focused();
+}
+
 #if defined(USE_AURA)
 void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
     const TouchEventWithLatencyInfo& touch, InputEventAckState ack_result) {
@@ -109,8 +141,11 @@ void RenderWidgetHostViewGuest::ProcessAckedTouchEvent(
       INPUT_EVENT_ACK_STATE_CONSUMED) ? ui::ER_HANDLED : ui::ER_UNHANDLED;
   for (ScopedVector<ui::TouchEvent>::iterator iter = events.begin(),
       end = events.end(); iter != end; ++iter)  {
+    if (!gesture_recognizer_->ProcessTouchEventPreDispatch(*(*iter), this))
+      continue;
+
     scoped_ptr<ui::GestureRecognizer::Gestures> gestures;
-    gestures.reset(gesture_recognizer_->ProcessTouchEventForGesture(
+    gestures.reset(gesture_recognizer_->ProcessTouchEventPostDispatch(
         *(*iter), result, this));
     ProcessGestures(gestures.get());
   }
@@ -125,10 +160,8 @@ gfx::Rect RenderWidgetHostViewGuest::GetViewBounds() const {
   gfx::Rect embedder_bounds;
   if (rwhv)
     embedder_bounds = rwhv->GetViewBounds();
-  gfx::Rect shifted_rect = guest_->ToGuestRect(embedder_bounds);
-  shifted_rect.set_width(size_.width());
-  shifted_rect.set_height(size_.height());
-  return shifted_rect;
+  return gfx::Rect(
+      guest_->GetScreenCoordinates(embedder_bounds.origin()), size_);
 }
 
 void RenderWidgetHostViewGuest::RenderProcessGone(
@@ -144,7 +177,8 @@ void RenderWidgetHostViewGuest::Destroy() {
   // The RenderWidgetHost's destruction led here, so don't call it.
   DestroyGuestView();
 
-  platform_view_->Destroy();
+  if (platform_view_)  // The platform view might have been destroyed already.
+    platform_view_->Destroy();
 }
 
 gfx::Size RenderWidgetHostViewGuest::GetPhysicalBackingSize() const {
@@ -157,29 +191,8 @@ base::string16 RenderWidgetHostViewGuest::GetSelectedText() const {
 
 void RenderWidgetHostViewGuest::SetTooltipText(
     const base::string16& tooltip_text) {
-  platform_view_->SetTooltipText(tooltip_text);
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-    int gpu_host_id) {
-  if (!guest_)
-    return;
-
-  FrameMsg_BuffersSwapped_Params guest_params;
-  guest_params.size = params.size;
-  guest_params.mailbox = params.mailbox;
-  guest_params.gpu_route_id = params.route_id;
-  guest_params.gpu_host_id = gpu_host_id;
-  guest_->SendMessageToEmbedder(
-      new BrowserPluginMsg_BuffersSwapped(guest_->instance_id(),
-                                          guest_params));
-}
-
-void RenderWidgetHostViewGuest::AcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-    int gpu_host_id) {
-  NOTREACHED();
+  if (guest_)
+    guest_->SetTooltipText(tooltip_text);
 }
 
 void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
@@ -188,39 +201,11 @@ void RenderWidgetHostViewGuest::OnSwapCompositorFrame(
   if (!guest_)
     return;
 
-  if (!guest_->attached()) {
-    // If the guest doesn't have an embedder then there's nothing to give the
-    // the frame to.
-    return;
-  }
-  base::SharedMemoryHandle software_frame_handle =
-      base::SharedMemory::NULLHandle();
-  if (frame->software_frame_data) {
-    cc::SoftwareFrameData* frame_data = frame->software_frame_data.get();
-    scoped_ptr<cc::SharedBitmap> bitmap =
-        HostSharedBitmapManager::current()->GetSharedBitmapFromId(
-            frame_data->size, frame_data->bitmap_id);
-    if (!bitmap)
-      return;
-
-    RenderWidgetHostView* embedder_rwhv =
-        guest_->GetEmbedderRenderWidgetHostView();
-    base::ProcessHandle embedder_pid =
-        embedder_rwhv->GetRenderWidgetHost()->GetProcess()->GetHandle();
-
-    bitmap->memory()->ShareToProcess(embedder_pid, &software_frame_handle);
-  }
-
-  FrameMsg_CompositorFrameSwapped_Params guest_params;
-  frame->AssignTo(&guest_params.frame);
-  guest_params.output_surface_id = output_surface_id;
-  guest_params.producing_route_id = host_->GetRoutingID();
-  guest_params.producing_host_id = host_->GetProcess()->GetID();
-  guest_params.shared_memory_handle = software_frame_handle;
-
-  guest_->SendMessageToEmbedder(
-      new BrowserPluginMsg_CompositorFrameSwapped(guest_->instance_id(),
-                                                  guest_params));
+  last_scroll_offset_ = frame->metadata.root_scroll_offset;
+  guest_->SwapCompositorFrame(output_surface_id,
+                              host_->GetProcess()->GetID(),
+                              host_->GetRoutingID(),
+                              frame.Pass());
 }
 
 bool RenderWidgetHostViewGuest::OnMessageReceived(const IPC::Message& msg) {
@@ -280,15 +265,27 @@ void RenderWidgetHostViewGuest::MovePluginWindows(
 }
 
 void RenderWidgetHostViewGuest::UpdateCursor(const WebCursor& cursor) {
-  platform_view_->UpdateCursor(cursor);
+  // InterstitialPages are not WebContents so we cannot intercept
+  // ViewHostMsg_SetCursor for interstitial pages in BrowserPluginGuest.
+  // All guest RenderViewHosts have RenderWidgetHostViewGuests however,
+  // and so we will always hit this code path.
+  if (!guest_)
+    return;
+  guest_->SendMessageToEmbedder(
+      new BrowserPluginMsg_SetCursor(guest_->browser_plugin_instance_id(),
+                                     cursor));
+
 }
 
 void RenderWidgetHostViewGuest::SetIsLoading(bool is_loading) {
   platform_view_->SetIsLoading(is_loading);
 }
 
-void RenderWidgetHostViewGuest::TextInputStateChanged(
-    const ViewHostMsg_TextInputState_Params& params) {
+void RenderWidgetHostViewGuest::TextInputTypeChanged(
+    ui::TextInputType type,
+    ui::TextInputMode input_mode,
+    bool can_compose_inline,
+    int flags) {
   if (!guest_)
     return;
 
@@ -296,7 +293,7 @@ void RenderWidgetHostViewGuest::TextInputStateChanged(
   if (!rwhv)
     return;
   // Forward the information to embedding RWHV.
-  rwhv->TextInputStateChanged(params);
+  rwhv->TextInputTypeChanged(type, input_mode, can_compose_inline, flags);
 }
 
 void RenderWidgetHostViewGuest::ImeCancelComposition() {
@@ -322,8 +319,9 @@ void RenderWidgetHostViewGuest::ImeCompositionRangeChanged(
     return;
   std::vector<gfx::Rect> guest_character_bounds;
   for (size_t i = 0; i < character_bounds.size(); ++i) {
-    gfx::Rect guest_rect = guest_->ToGuestRect(character_bounds[i]);
-    guest_character_bounds.push_back(guest_rect);
+    guest_character_bounds.push_back(gfx::Rect(
+        guest_->GetScreenCoordinates(character_bounds[i].origin()),
+        character_bounds[i].size()));
   }
   // Forward the information to embedding RWHV.
   rwhv->ImeCompositionRangeChanged(range, guest_character_bounds);
@@ -345,22 +343,24 @@ void RenderWidgetHostViewGuest::SelectionBoundsChanged(
   if (!rwhv)
     return;
   ViewHostMsg_SelectionBounds_Params guest_params(params);
-  guest_params.anchor_rect = guest_->ToGuestRect(params.anchor_rect);
-  guest_params.focus_rect = guest_->ToGuestRect(params.focus_rect);
+  guest_params.anchor_rect.set_origin(
+      guest_->GetScreenCoordinates(params.anchor_rect.origin()));
+  guest_params.focus_rect.set_origin(
+      guest_->GetScreenCoordinates(params.focus_rect.origin()));
   rwhv->SelectionBoundsChanged(guest_params);
 }
 
-void RenderWidgetHostViewGuest::CopyFromCompositingSurface(
-    const gfx::Rect& src_subrect,
-    const gfx::Size& dst_size,
-    const base::Callback<void(bool, const SkBitmap&)>& callback,
-    const SkBitmap::Config config) {
-  CHECK(guest_);
-  guest_->CopyFromCompositingSurface(src_subrect, dst_size, callback);
-}
-
-void RenderWidgetHostViewGuest::SetBackgroundOpaque(bool opaque) {
-  platform_view_->SetBackgroundOpaque(opaque);
+void RenderWidgetHostViewGuest::SetBackgroundColor(SkColor color) {
+  // Content embedders can toggle opaque backgrounds through this API.
+  // We plumb the value here so that BrowserPlugin updates its compositing
+  // state in response to this change. We also want to preserve this flag
+  // after recovering from a crash so we let BrowserPluginGuest store it.
+  if (!guest_)
+    return;
+  RenderWidgetHostViewBase::SetBackgroundColor(color);
+  bool opaque = GetBackgroundOpaque();
+  host_->SetBackgroundOpaque(opaque);
+  guest_->SetContentsOpaque(opaque);
 }
 
 bool RenderWidgetHostViewGuest::LockMouse() {
@@ -382,10 +382,6 @@ void RenderWidgetHostViewGuest::GetScreenInfo(blink::WebScreenInfo* results) {
 #if defined(OS_MACOSX)
 void RenderWidgetHostViewGuest::SetActive(bool active) {
   platform_view_->SetActive(active);
-}
-
-void RenderWidgetHostViewGuest::SetTakesFocusOnlyOnMouseDown(bool flag) {
-  platform_view_->SetTakesFocusOnlyOnMouseDown(flag);
 }
 
 void RenderWidgetHostViewGuest::SetWindowVisibility(bool visible) {
@@ -413,7 +409,7 @@ void RenderWidgetHostViewGuest::ShowDefinitionForSelection() {
       // Vertical offset from guest's top to embedder's bottom edge.
       embedder_bounds.bottom() - guest_bounds.y());
 
-  RenderWidgetHostViewMacDictionaryHelper helper(platform_view_);
+  RenderWidgetHostViewMacDictionaryHelper helper(platform_view_.get());
   helper.SetTargetView(rwhv);
   helper.set_offset(guest_offset);
   helper.ShowDefinitionForSelection();
@@ -442,12 +438,14 @@ bool RenderWidgetHostViewGuest::PostProcessEventForPluginIme(
 
 #endif  // defined(OS_MACOSX)
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
 void RenderWidgetHostViewGuest::ShowDisambiguationPopup(
-    const gfx::Rect& target_rect,
+    const gfx::Rect& rect_pixels,
     const SkBitmap& zoomed_bitmap) {
 }
+#endif  // defined(OS_ANDROID) || defined(TOOLKIT_VIEWS)
 
+#if defined(OS_ANDROID)
 void RenderWidgetHostViewGuest::LockCompositingSurface() {
 }
 
@@ -544,14 +542,53 @@ void RenderWidgetHostViewGuest::ProcessGestures(
   }
 }
 
-SkBitmap::Config RenderWidgetHostViewGuest::PreferredReadbackFormat() {
-  return SkBitmap::kARGB_8888_Config;
+SkColorType RenderWidgetHostViewGuest::PreferredReadbackFormat() {
+  return kN32_SkColorType;
 }
 
 RenderWidgetHostViewBase*
 RenderWidgetHostViewGuest::GetGuestRenderWidgetHostView() const {
   return static_cast<RenderWidgetHostViewBase*>(
       guest_->GetEmbedderRenderWidgetHostView());
+}
+
+void RenderWidgetHostViewGuest::OnHandleInputEvent(
+    RenderWidgetHostImpl* embedder,
+    int browser_plugin_instance_id,
+    const gfx::Rect& guest_window_rect,
+    const blink::WebInputEvent* event) {
+  if (blink::WebInputEvent::isMouseEventType(event->type)) {
+    host_->ForwardMouseEvent(
+        *static_cast<const blink::WebMouseEvent*>(event));
+    return;
+  }
+
+  if (event->type == blink::WebInputEvent::MouseWheel) {
+    host_->ForwardWheelEvent(
+        *static_cast<const blink::WebMouseWheelEvent*>(event));
+    return;
+  }
+
+  if (blink::WebInputEvent::isKeyboardEventType(event->type)) {
+    if (!embedder->GetLastKeyboardEvent())
+      return;
+    NativeWebKeyboardEvent keyboard_event(*embedder->GetLastKeyboardEvent());
+    host_->ForwardKeyboardEvent(keyboard_event);
+    return;
+  }
+
+  if (blink::WebInputEvent::isTouchEventType(event->type)) {
+    host_->ForwardTouchEventWithLatencyInfo(
+        *static_cast<const blink::WebTouchEvent*>(event),
+        ui::LatencyInfo());
+    return;
+  }
+
+  if (blink::WebInputEvent::isGestureEventType(event->type)) {
+    host_->ForwardGestureEvent(
+        *static_cast<const blink::WebGestureEvent*>(event));
+    return;
+  }
 }
 
 }  // namespace content

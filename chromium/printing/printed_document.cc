@@ -10,8 +10,8 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
 #include "base/json/json_writer.h"
@@ -48,13 +48,15 @@ void DebugDumpPageTask(const base::string16& doc_name,
   base::string16 filename = doc_name;
   filename +=
       base::ASCIIToUTF16(base::StringPrintf("_%04d", page->page_number()));
+  base::FilePath file_path =
 #if defined(OS_WIN)
-  page->metafile()->SaveTo(PrintedDocument::CreateDebugDumpPath(
-      filename, FILE_PATH_LITERAL(".emf")));
+      PrintedDocument::CreateDebugDumpPath(filename, FILE_PATH_LITERAL(".emf"));
 #else   // OS_WIN
-  page->metafile()->SaveTo(PrintedDocument::CreateDebugDumpPath(
-      filename, FILE_PATH_LITERAL(".pdf")));
+      PrintedDocument::CreateDebugDumpPath(filename, FILE_PATH_LITERAL(".pdf"));
 #endif  // OS_WIN
+  base::File file(file_path,
+                  base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+  page->metafile()->SaveTo(&file);
 }
 
 void DebugDumpDataTask(const base::string16& doc_name,
@@ -109,16 +111,16 @@ PrintedDocument::~PrintedDocument() {
 }
 
 void PrintedDocument::SetPage(int page_number,
-                              Metafile* metafile,
+                              scoped_ptr<MetafilePlayer> metafile,
 #if defined(OS_WIN)
-                              double shrink,
+                              float shrink,
 #endif  // OS_WIN
                               const gfx::Size& paper_size,
                               const gfx::Rect& page_rect) {
   // Notice the page_number + 1, the reason is that this is the value that will
   // be shown. Users dislike 0-based counting.
   scoped_refptr<PrintedPage> page(
-      new PrintedPage(page_number + 1, metafile, paper_size, page_rect));
+      new PrintedPage(page_number + 1, metafile.Pass(), paper_size, page_rect));
 #if defined(OS_WIN)
   page->set_shrink_factor(shrink);
 #endif  // OS_WIN
@@ -177,26 +179,6 @@ void PrintedDocument::DisconnectSource() {
   mutable_.source_ = NULL;
 }
 
-uint32 PrintedDocument::MemoryUsage() const {
-  std::vector< scoped_refptr<PrintedPage> > pages_copy;
-  {
-    base::AutoLock lock(lock_);
-    pages_copy.reserve(mutable_.pages_.size());
-    PrintedPages::const_iterator end = mutable_.pages_.end();
-    for (PrintedPages::const_iterator itr = mutable_.pages_.begin();
-         itr != end; ++itr) {
-      if (itr->second.get()) {
-        pages_copy.push_back(itr->second);
-      }
-    }
-  }
-  uint32 total = 0;
-  for (size_t i = 0; i < pages_copy.size(); ++i) {
-    total += pages_copy[i]->metafile()->GetDataSize();
-  }
-  return total;
-}
-
 void PrintedDocument::set_page_count(int max_page) {
   base::AutoLock lock(lock_);
   DCHECK_EQ(0, mutable_.page_count_);
@@ -242,7 +224,7 @@ base::FilePath PrintedDocument::CreateDebugDumpPath(
 #else   // OS_WIN
   system_filename = base::UTF16ToUTF8(filename);
 #endif  // OS_WIN
-  file_util::ReplaceIllegalCharactersInPath(&system_filename, '_');
+  base::i18n::ReplaceIllegalCharactersInPath(&system_filename, '_');
   return g_debug_dump_info.Get().Append(system_filename).AddExtension(
       extension);
 }

@@ -8,12 +8,12 @@
 #include "modules/device_light/DeviceLightController.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceLightDispatcher& DeviceLightDispatcher::instance()
 {
-    DEFINE_STATIC_LOCAL(DeviceLightDispatcher, deviceLightDispatcher, ());
-    return deviceLightDispatcher;
+    DEFINE_STATIC_LOCAL(Persistent<DeviceLightDispatcher>, deviceLightDispatcher, (new DeviceLightDispatcher()));
+    return *deviceLightDispatcher;
 }
 
 DeviceLightDispatcher::DeviceLightDispatcher()
@@ -25,14 +25,19 @@ DeviceLightDispatcher::~DeviceLightDispatcher()
 {
 }
 
+void DeviceLightDispatcher::trace(Visitor* visitor)
+{
+    PlatformEventDispatcher::trace(visitor);
+}
+
 void DeviceLightDispatcher::startListening()
 {
-    blink::Platform::current()->setDeviceLightListener(this);
+    Platform::current()->startListening(WebPlatformEventDeviceLight, this);
 }
 
 void DeviceLightDispatcher::stopListening()
 {
-    blink::Platform::current()->setDeviceLightListener(0);
+    Platform::current()->stopListening(WebPlatformEventDeviceLight);
     m_lastDeviceLightData = -1;
 }
 
@@ -47,4 +52,4 @@ double DeviceLightDispatcher::latestDeviceLightData() const
     return m_lastDeviceLightData;
 }
 
-} // namespace WebCore
+} // namespace blink

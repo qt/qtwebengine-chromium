@@ -32,12 +32,11 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/StdLibExtras.h"
-#include "wtf/Vector.h"
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT TimingFunction : public RefCounted<TimingFunction> {
 public:
@@ -56,6 +55,10 @@ public:
     // accuracy and is not guaranteed.
     virtual double evaluate(double fraction, double accuracy) const = 0;
 
+    // This function returns the minimum and maximum values obtainable when
+    // calling evaluate();
+    virtual void range(double* minValue, double* maxValue) const = 0;
+
 protected:
     TimingFunction(Type type)
         : m_type(type)
@@ -66,7 +69,7 @@ private:
     Type m_type;
 };
 
-class PLATFORM_EXPORT LinearTimingFunction FINAL : public TimingFunction {
+class PLATFORM_EXPORT LinearTimingFunction final : public TimingFunction {
 public:
     static LinearTimingFunction* shared()
     {
@@ -76,10 +79,11 @@ public:
 
     virtual ~LinearTimingFunction() { }
 
-    virtual String toString() const OVERRIDE;
+    virtual String toString() const override;
 
-    virtual double evaluate(double fraction, double) const OVERRIDE;
+    virtual double evaluate(double fraction, double) const override;
 
+    virtual void range(double* minValue, double* maxValue) const override;
 private:
     LinearTimingFunction()
         : TimingFunction(LinearFunction)
@@ -87,7 +91,7 @@ private:
     }
 };
 
-class PLATFORM_EXPORT CubicBezierTimingFunction FINAL : public TimingFunction {
+class PLATFORM_EXPORT CubicBezierTimingFunction final : public TimingFunction {
 public:
     enum SubType {
         Ease,
@@ -133,9 +137,10 @@ public:
 
     virtual ~CubicBezierTimingFunction() { }
 
-    virtual String toString() const OVERRIDE;
+    virtual String toString() const override;
 
-    virtual double evaluate(double fraction, double accuracy) const OVERRIDE;
+    virtual double evaluate(double fraction, double accuracy) const override;
+    virtual void range(double* minValue, double* maxValue) const override;
 
     double x1() const { return m_x1; }
     double y1() const { return m_y1; }
@@ -163,74 +168,58 @@ private:
     mutable OwnPtr<UnitBezier> m_bezier;
 };
 
-class PLATFORM_EXPORT StepsTimingFunction FINAL : public TimingFunction {
+class PLATFORM_EXPORT StepsTimingFunction final : public TimingFunction {
 public:
-    enum SubType {
-        Start,
-        End,
-        Middle,
-        Custom
-    };
-
     enum StepAtPosition {
-        StepAtStart,
-        StepAtMiddle,
-        StepAtEnd
+        Start,
+        Middle,
+        End
     };
 
     static PassRefPtr<StepsTimingFunction> create(int steps, StepAtPosition stepAtPosition)
     {
-        return adoptRef(new StepsTimingFunction(Custom, steps, stepAtPosition));
+        return adoptRef(new StepsTimingFunction(steps, stepAtPosition));
     }
 
-    static StepsTimingFunction* preset(SubType subType)
+    static StepsTimingFunction* preset(StepAtPosition position)
     {
-        switch (subType) {
+        DEFINE_STATIC_REF(StepsTimingFunction, start, create(1, Start));
+        DEFINE_STATIC_REF(StepsTimingFunction, middle, create(1, Middle));
+        DEFINE_STATIC_REF(StepsTimingFunction, end, create(1, End));
+        switch (position) {
         case Start:
-            {
-                DEFINE_STATIC_REF(StepsTimingFunction, start, (adoptRef(new StepsTimingFunction(Start, 1, StepAtStart))));
-                return start;
-            }
+            return start;
         case Middle:
-            {
-                DEFINE_STATIC_REF(StepsTimingFunction, middle, (adoptRef(new StepsTimingFunction(Middle, 1, StepAtMiddle))));
-                return middle;
-            }
+            return middle;
         case End:
-            {
-                DEFINE_STATIC_REF(StepsTimingFunction, end, (adoptRef(new StepsTimingFunction(End, 1, StepAtEnd))));
-                return end;
-            }
+            return end;
         default:
             ASSERT_NOT_REACHED();
-            return 0;
+            return end;
         }
     }
 
 
     virtual ~StepsTimingFunction() { }
 
-    virtual String toString() const OVERRIDE;
+    virtual String toString() const override;
 
-    virtual double evaluate(double fraction, double) const OVERRIDE;
+    virtual double evaluate(double fraction, double) const override;
 
+    virtual void range(double* minValue, double* maxValue) const override;
     int numberOfSteps() const { return m_steps; }
     StepAtPosition stepAtPosition() const { return m_stepAtPosition; }
 
-    SubType subType() const { return m_subType; }
-
 private:
-    StepsTimingFunction(SubType subType, int steps, StepAtPosition stepAtPosition)
+    StepsTimingFunction(int steps, StepAtPosition stepAtPosition)
         : TimingFunction(StepsFunction)
         , m_steps(steps)
         , m_stepAtPosition(stepAtPosition)
-        , m_subType(subType)
     {
     }
 
     int m_steps;
     StepAtPosition m_stepAtPosition;
-    SubType m_subType;
 };
 
 PLATFORM_EXPORT bool operator==(const LinearTimingFunction&, const TimingFunction&);
@@ -250,6 +239,6 @@ DEFINE_TIMING_FUNCTION_TYPE_CASTS(Linear);
 DEFINE_TIMING_FUNCTION_TYPE_CASTS(CubicBezier);
 DEFINE_TIMING_FUNCTION_TYPE_CASTS(Steps);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TimingFunction_h

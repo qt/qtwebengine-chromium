@@ -8,6 +8,7 @@
 
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
+#include "gl/GrGLUtil.h"
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 
@@ -17,7 +18,7 @@ public:
         fModule = LoadLibrary(moduleName);
     }
     ~AutoLibraryUnload() {
-        if (NULL != fModule) {
+        if (fModule) {
             FreeLibrary(fModule);
         }
     }
@@ -31,14 +32,14 @@ class GLProcGetter {
 public:
     GLProcGetter() : fGLLib("opengl32.dll") {}
 
-    bool isInitialized() const { return NULL != fGLLib.get(); }
+    bool isInitialized() const { return SkToBool(fGLLib.get()); }
 
     GrGLFuncPtr getProc(const char name[]) const {
         GrGLFuncPtr proc;
-        if (NULL != (proc = (GrGLFuncPtr) GetProcAddress(fGLLib.get(), name))) {
+        if ((proc = (GrGLFuncPtr) GetProcAddress(fGLLib.get(), name))) {
             return proc;
         }
-        if (NULL != (proc = (GrGLFuncPtr) wglGetProcAddress(name))) {
+        if ((proc = (GrGLFuncPtr) wglGetProcAddress(name))) {
             return proc;
         }
         return NULL;
@@ -49,8 +50,8 @@ private:
 };
 
 static GrGLFuncPtr win_get_gl_proc(void* ctx, const char name[]) {
-    SkASSERT(NULL != ctx);
-    SkASSERT(NULL != wglGetCurrentContext());
+    SkASSERT(ctx);
+    SkASSERT(wglGetCurrentContext());
     const GLProcGetter* getter = (const GLProcGetter*) ctx;
     return getter->getProc(name);
 }
@@ -70,5 +71,17 @@ const GrGLInterface* GrGLCreateNativeInterface() {
         return NULL;
     }
 
-    return GrGLAssembleGLInterface(&getter, win_get_gl_proc);
+    GrGLGetStringProc getString = (GrGLGetStringProc)getter.getProc("glGetString");
+    if (NULL == getString) {
+        return NULL;
+    }
+    const char* verStr = reinterpret_cast<const char*>(getString(GR_GL_VERSION));
+    GrGLStandard standard = GrGLGetStandardInUseFromString(verStr);
+
+    if (kGLES_GrGLStandard == standard) {
+        return GrGLAssembleGLESInterface(&getter, win_get_gl_proc);
+    } else if (kGL_GrGLStandard == standard) {
+        return GrGLAssembleGLInterface(&getter, win_get_gl_proc);
+    }
+    return NULL;
 }

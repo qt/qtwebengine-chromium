@@ -10,14 +10,14 @@ namespace chrome_checker {
 struct Options {
   Options()
       : check_base_classes(false),
-        check_virtuals_in_implementations(true),
         check_weak_ptr_factory_order(false),
-        check_enum_last_value(false) {}
+        check_enum_last_value(false),
+        strict_virtual_specifiers(false) {}
 
   bool check_base_classes;
-  bool check_virtuals_in_implementations;
   bool check_weak_ptr_factory_order;
   bool check_enum_last_value;
+  bool strict_virtual_specifiers;
 };
 
 }  // namespace chrome_checker

@@ -14,6 +14,7 @@
 #include "webrtc/base/httpserver.h"
 #include "webrtc/base/socketstream.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 

@@ -37,47 +37,52 @@
 #include "core/dom/TreeScope.h"
 #include "core/html/HTMLMapElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
-inline bool keyMatchesId(StringImpl* key, Element& element)
+inline bool keyMatchesId(const AtomicString& key, const Element& element)
 {
-    return element.getIdAttribute().impl() == key;
+    return element.getIdAttribute() == key;
 }
 
-inline bool keyMatchesMapName(StringImpl* key, Element& element)
+inline bool keyMatchesMapName(const AtomicString& key, const Element& element)
 {
-    return isHTMLMapElement(element) && toHTMLMapElement(element).getName().impl() == key;
+    return isHTMLMapElement(element) && toHTMLMapElement(element).getName() == key;
 }
 
-inline bool keyMatchesLowercasedMapName(StringImpl* key, Element& element)
+inline bool keyMatchesLowercasedMapName(const AtomicString& key, const Element& element)
 {
-    return isHTMLMapElement(element) && toHTMLMapElement(element).getName().lower().impl() == key;
+    return isHTMLMapElement(element) && toHTMLMapElement(element).getName().lower() == key;
 }
 
-inline bool keyMatchesLabelForAttribute(StringImpl* key, Element& element)
+inline bool keyMatchesLabelForAttribute(const AtomicString& key, const Element& element)
 {
-    return isHTMLLabelElement(element) && element.getAttribute(forAttr).impl() == key;
+    return isHTMLLabelElement(element) && element.getAttribute(forAttr) == key;
 }
 
-void DocumentOrderedMap::add(StringImpl* key, Element* element)
+PassOwnPtrWillBeRawPtr<DocumentOrderedMap> DocumentOrderedMap::create()
+{
+    return adoptPtrWillBeNoop(new DocumentOrderedMap());
+}
+
+void DocumentOrderedMap::add(const AtomicString& key, Element* element)
 {
     ASSERT(key);
     ASSERT(element);
 
-    Map::AddResult addResult = m_map.add(key, adoptPtr(new MapEntry(element)));
+    Map::AddResult addResult = m_map.add(key, adoptPtrWillBeNoop(new MapEntry(element)));
     if (addResult.isNewEntry)
         return;
 
-    OwnPtr<MapEntry>& entry = addResult.storedValue->value;
+    OwnPtrWillBeMember<MapEntry>& entry = addResult.storedValue->value;
     ASSERT(entry->count);
-    entry->element = 0;
+    entry->element = nullptr;
     entry->count++;
     entry->orderedList.clear();
 }
 
-void DocumentOrderedMap::remove(StringImpl* key, Element* element)
+void DocumentOrderedMap::remove(const AtomicString& key, Element* element)
 {
     ASSERT(key);
     ASSERT(element);
@@ -86,7 +91,7 @@ void DocumentOrderedMap::remove(StringImpl* key, Element* element)
     if (it == m_map.end())
         return;
 
-    OwnPtr<MapEntry>& entry = it->value;
+    OwnPtrWillBeMember<MapEntry>& entry = it->value;
     ASSERT(entry->count);
     if (entry->count == 1) {
         ASSERT(!entry->element || entry->element == element);
@@ -94,15 +99,15 @@ void DocumentOrderedMap::remove(StringImpl* key, Element* element)
     } else {
         if (entry->element == element) {
             ASSERT(entry->orderedList.isEmpty() || entry->orderedList.first() == element);
-            entry->element = entry->orderedList.size() > 1 ? entry->orderedList[1] : 0;
+            entry->element = entry->orderedList.size() > 1 ? entry->orderedList[1] : nullptr;
         }
         entry->count--;
         entry->orderedList.clear();
     }
 }
 
-template<bool keyMatches(StringImpl*, Element&)>
-inline Element* DocumentOrderedMap::get(StringImpl* key, const TreeScope* scope) const
+template<bool keyMatches(const AtomicString&, const Element&)>
+inline Element* DocumentOrderedMap::get(const AtomicString& key, const TreeScope* scope) const
 {
     ASSERT(key);
     ASSERT(scope);
@@ -116,37 +121,37 @@ inline Element* DocumentOrderedMap::get(StringImpl* key, const TreeScope* scope)
         return entry->element;
 
     // We know there's at least one node that matches; iterate to find the first one.
-    for (Element* element = ElementTraversal::firstWithin(scope->rootNode()); element; element = ElementTraversal::next(*element)) {
-        if (!keyMatches(key, *element))
+    for (Element& element : ElementTraversal::startsAfter(scope->rootNode())) {
+        if (!keyMatches(key, element))
             continue;
-        entry->element = element;
-        return element;
+        entry->element = &element;
+        return &element;
     }
     ASSERT_NOT_REACHED();
     return 0;
 }
 
-Element* DocumentOrderedMap::getElementById(StringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementById(const AtomicString& key, const TreeScope* scope) const
 {
     return get<keyMatchesId>(key, scope);
 }
 
-const Vector<Element*>& DocumentOrderedMap::getAllElementsById(StringImpl* key, const TreeScope* scope) const
+const WillBeHeapVector<RawPtrWillBeMember<Element> >& DocumentOrderedMap::getAllElementsById(const AtomicString& key, const TreeScope* scope) const
 {
     ASSERT(key);
     ASSERT(scope);
-    DEFINE_STATIC_LOCAL(Vector<Element*>, emptyVector, ());
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element> > >, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element> >())));
 
     Map::iterator it = m_map.find(key);
     if (it == m_map.end())
-        return emptyVector;
+        return *emptyVector;
 
-    OwnPtr<MapEntry>& entry = it->value;
+    OwnPtrWillBeMember<MapEntry>& entry = it->value;
     ASSERT(entry->count);
 
     if (entry->orderedList.isEmpty()) {
         entry->orderedList.reserveCapacity(entry->count);
-        for (Element* element = entry->element ? entry->element : ElementTraversal::firstWithin(scope->rootNode()); entry->orderedList.size() < entry->count; element = ElementTraversal::next(*element)) {
+        for (Element* element = entry->element ? entry->element.get() : ElementTraversal::firstWithin(scope->rootNode()); entry->orderedList.size() < entry->count; element = ElementTraversal::next(*element)) {
             ASSERT(element);
             if (!keyMatchesId(key, *element))
                 continue;
@@ -159,19 +164,34 @@ const Vector<Element*>& DocumentOrderedMap::getAllElementsById(StringImpl* key, 
     return entry->orderedList;
 }
 
-Element* DocumentOrderedMap::getElementByMapName(StringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementByMapName(const AtomicString& key, const TreeScope* scope) const
 {
     return get<keyMatchesMapName>(key, scope);
 }
 
-Element* DocumentOrderedMap::getElementByLowercasedMapName(StringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementByLowercasedMapName(const AtomicString& key, const TreeScope* scope) const
 {
     return get<keyMatchesLowercasedMapName>(key, scope);
 }
 
-Element* DocumentOrderedMap::getElementByLabelForAttribute(StringImpl* key, const TreeScope* scope) const
+Element* DocumentOrderedMap::getElementByLabelForAttribute(const AtomicString& key, const TreeScope* scope) const
 {
     return get<keyMatchesLabelForAttribute>(key, scope);
 }
 
-} // namespace WebCore
+void DocumentOrderedMap::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_map);
+#endif
+}
+
+void DocumentOrderedMap::MapEntry::trace(Visitor* visitor)
+{
+    visitor->trace(element);
+#if ENABLE(OILPAN)
+    visitor->trace(orderedList);
+#endif
+}
+
+} // namespace blink

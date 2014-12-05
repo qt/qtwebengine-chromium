@@ -26,21 +26,16 @@
 #include "config.h"
 #include "core/css/CSSValuePool.h"
 
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSValueList.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSValuePool& cssValuePool()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<CSSValuePool>, pool, (new CSSValuePool()));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<CSSValuePool>, pool, (adoptPtrWillBeNoop(new CSSValuePool())));
     return *pool;
-#else
-    DEFINE_STATIC_LOCAL(CSSValuePool, pool, ());
-    return pool;
-#endif // ENABLE(OILPAN)
 }
 
 CSSValuePool::CSSValuePool()
@@ -146,13 +141,17 @@ PassRefPtrWillBeRawPtr<CSSValueList> CSSValuePool::createFontFaceValue(const Ato
         m_fontFaceValueCache.clear();
 
     RefPtrWillBeMember<CSSValueList>& value = m_fontFaceValueCache.add(string, nullptr).storedValue->value;
-    if (!value)
-        value = BisonCSSParser::parseFontFaceValue(string);
+    if (!value) {
+        RefPtrWillBeRawPtr<CSSValue> parsedValue = CSSParser::parseSingleValue(CSSPropertyFontFamily, string);
+        if (parsedValue && parsedValue->isValueList())
+            value = toCSSValueList(parsedValue.get());
+    }
     return value;
 }
 
 void CSSValuePool::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_inheritedValue);
     visitor->trace(m_implicitInitialValue);
     visitor->trace(m_explicitInitialValue);
@@ -166,6 +165,7 @@ void CSSValuePool::trace(Visitor* visitor)
     visitor->trace(m_numberValueCache);
     visitor->trace(m_fontFaceValueCache);
     visitor->trace(m_fontFamilyValueCache);
+#endif
 }
 
 }

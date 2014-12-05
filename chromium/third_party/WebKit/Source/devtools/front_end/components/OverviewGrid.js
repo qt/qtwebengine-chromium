@@ -34,7 +34,7 @@
  */
 WebInspector.OverviewGrid = function(prefix)
 {
-    this.element = document.createElement("div");
+    this.element = createElement("div");
     this.element.id = prefix + "-overview-container";
 
     this._grid = new WebInspector.TimelineGrid();
@@ -154,15 +154,15 @@ WebInspector.OverviewGrid.ResizerOffset = 3.5; // half pixel because offset valu
  * @constructor
  * @extends {WebInspector.Object}
  * @param {!Element} parentElement
- * @param {!Element} dividersLabelBarElement
+ * @param {!Element=} dividersLabelBarElement
  */
 WebInspector.OverviewGrid.Window = function(parentElement, dividersLabelBarElement)
 {
     this._parentElement = parentElement;
-    this._dividersLabelBarElement = dividersLabelBarElement;
 
     WebInspector.installDragHandle(this._parentElement, this._startWindowSelectorDragging.bind(this), this._windowSelectorDragging.bind(this), this._endWindowSelectorDragging.bind(this), "ew-resize", null);
-    WebInspector.installDragHandle(this._dividersLabelBarElement, this._startWindowDragging.bind(this), this._windowDragging.bind(this), null, "move");
+    if (dividersLabelBarElement)
+        WebInspector.installDragHandle(dividersLabelBarElement, this._startWindowDragging.bind(this), this._windowDragging.bind(this), null, "move");
 
     this.windowLeft = 0.0;
     this.windowRight = 1.0;
@@ -171,6 +171,7 @@ WebInspector.OverviewGrid.Window = function(parentElement, dividersLabelBarEleme
     this._parentElement.addEventListener("dblclick", this._resizeWindowMaximum.bind(this), true);
 
     this._overviewWindowElement = parentElement.createChild("div", "overview-grid-window");
+    this._overviewWindowElement.appendChild(WebInspector.View.createStyleElement("components/overviewGrid.css"));
     this._overviewWindowBordersElement = parentElement.createChild("div", "overview-grid-window-rulers");
     parentElement.createChild("div", "overview-grid-dividers-background");
 
@@ -391,10 +392,12 @@ WebInspector.OverviewGrid.Window.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onMouseWheel: function(event)
     {
+        if (!this._enabled)
+            return;
         if (typeof event.wheelDeltaY === "number" && event.wheelDeltaY) {
             const zoomFactor = 1.1;
             const mouseWheelZoomSpeed = 1 / 120;
@@ -451,7 +454,7 @@ WebInspector.OverviewGrid.WindowSelector = function(parent, position)
 {
     this._startPosition = position;
     this._width = parent.offsetWidth;
-    this._windowSelector = document.createElement("div");
+    this._windowSelector = createElement("div");
     this._windowSelector.className = "overview-grid-window-selector";
     this._windowSelector.style.left = this._startPosition + "px";
     this._windowSelector.style.right = this._width - this._startPosition + "px";

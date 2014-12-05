@@ -24,14 +24,16 @@ TEST(ChannelMixerTest, ConstructAllPossibleLayouts) {
        input_layout <= CHANNEL_LAYOUT_MAX;
        input_layout = static_cast<ChannelLayout>(input_layout + 1)) {
     for (ChannelLayout output_layout = CHANNEL_LAYOUT_MONO;
-         output_layout < CHANNEL_LAYOUT_STEREO_DOWNMIX;
+         output_layout <= CHANNEL_LAYOUT_MAX;
          output_layout = static_cast<ChannelLayout>(output_layout + 1)) {
       // DISCRETE can't be tested here based on the current approach.
       // CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC is not mixable.
+      // Stereo down mix should never be the output layout.
       if (input_layout == CHANNEL_LAYOUT_DISCRETE ||
           input_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC ||
           output_layout == CHANNEL_LAYOUT_DISCRETE ||
-          output_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC) {
+          output_layout == CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC ||
+          output_layout == CHANNEL_LAYOUT_STEREO_DOWNMIX) {
         continue;
       }
 
@@ -107,7 +109,6 @@ TEST_P(ChannelMixerTest, Mixing) {
                               input_layout == CHANNEL_LAYOUT_DISCRETE ?
                                   input_channels :
                                   ChannelLayoutToChannelCount(input_layout),
-                              0,
                               AudioParameters::kAudioCDSampleRate, 16,
                               kFrames,
                               AudioParameters::NO_EFFECTS);
@@ -118,9 +119,8 @@ TEST_P(ChannelMixerTest, Mixing) {
   AudioParameters output_audio(AudioParameters::AUDIO_PCM_LINEAR,
                                output_layout,
                                output_layout == CHANNEL_LAYOUT_DISCRETE ?
-                                  output_channels :
-                                  ChannelLayoutToChannelCount(output_layout),
-                               0,
+                                   output_channels :
+                                   ChannelLayoutToChannelCount(output_layout),
                                AudioParameters::kAudioCDSampleRate, 16,
                                kFrames,
                                AudioParameters::NO_EFFECTS);
@@ -143,7 +143,7 @@ TEST_P(ChannelMixerTest, Mixing) {
   if (input_layout != CHANNEL_LAYOUT_DISCRETE) {
     for (int ch = 0; ch < output_bus->channels(); ++ch) {
       for (int frame = 0; frame < output_bus->frames(); ++frame) {
-        ASSERT_FLOAT_EQ(output_bus->channel(ch)[frame], expected_value);
+        ASSERT_FLOAT_EQ(expected_value, output_bus->channel(ch)[frame]);
       }
     }
   } else {
@@ -153,7 +153,7 @@ TEST_P(ChannelMixerTest, Mixing) {
     for (int ch = 0; ch < output_bus->channels(); ++ch) {
       expected_value = (ch < input_channels) ? channel_values[ch] : 0;
       for (int frame = 0; frame < output_bus->frames(); ++frame) {
-        ASSERT_FLOAT_EQ(output_bus->channel(ch)[frame], expected_value);
+        ASSERT_FLOAT_EQ(expected_value, output_bus->channel(ch)[frame]);
       }
     }
   }

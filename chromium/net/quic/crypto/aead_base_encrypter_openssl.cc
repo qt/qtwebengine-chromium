@@ -56,7 +56,7 @@ bool AeadBaseEncrypter::SetKey(StringPiece key) {
   EVP_AEAD_CTX_cleanup(ctx_.get());
 
   if (!EVP_AEAD_CTX_init(ctx_.get(), aead_alg_, key_, key_size_,
-                         auth_tag_size_, NULL)) {
+                         auth_tag_size_, nullptr)) {
     DLogOpenSslErrors();
     return false;
   }
@@ -81,14 +81,18 @@ bool AeadBaseEncrypter::Encrypt(StringPiece nonce,
     return false;
   }
 
-  ssize_t len = EVP_AEAD_CTX_seal(
-      ctx_.get(), output, plaintext.size() + auth_tag_size_,
-      reinterpret_cast<const uint8_t*>(nonce.data()), nonce.size(),
-      reinterpret_cast<const uint8_t*>(plaintext.data()), plaintext.size(),
-      reinterpret_cast<const uint8_t*>(associated_data.data()),
-      associated_data.size());
-
-  if (len < 0) {
+  size_t len;
+  if (!EVP_AEAD_CTX_seal(
+          ctx_.get(),
+          output,
+          &len,
+          plaintext.size() + auth_tag_size_,
+          reinterpret_cast<const uint8_t*>(nonce.data()),
+          nonce.size(),
+          reinterpret_cast<const uint8_t*>(plaintext.data()),
+          plaintext.size(),
+          reinterpret_cast<const uint8_t*>(associated_data.data()),
+          associated_data.size())) {
     DLogOpenSslErrors();
     return false;
   }
@@ -113,7 +117,7 @@ QuicData* AeadBaseEncrypter::EncryptPacket(
   if (!Encrypt(StringPiece(reinterpret_cast<char*>(nonce), nonce_size),
                associated_data, plaintext,
                reinterpret_cast<unsigned char*>(ciphertext.get()))) {
-    return NULL;
+    return nullptr;
   }
 
   return new QuicData(ciphertext.release(), ciphertext_size, true);

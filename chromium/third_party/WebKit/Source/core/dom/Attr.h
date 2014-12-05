@@ -28,9 +28,7 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/QualifiedName.h"
 
-namespace WebCore {
-
-class ExceptionState;
+namespace blink {
 
 // Attr can have Text children
 // therefore it has to be a fullblown Node. The plan
@@ -38,7 +36,8 @@ class ExceptionState;
 // resulting nodevalue in the attribute upon
 // destruction. however, this is not yet implemented.
 
-class Attr FINAL : public ContainerNode {
+class Attr final : public ContainerNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<Attr> create(Element&, const QualifiedName&);
     static PassRefPtrWillBeRawPtr<Attr> create(Document&, const QualifiedName&, const AtomicString& value);
@@ -59,31 +58,33 @@ public:
     void attachToElement(Element*, const AtomicString&);
     void detachFromElementWithValue(const AtomicString&);
 
-    virtual const AtomicString& localName() const OVERRIDE { return m_name.localName(); }
-    virtual const AtomicString& namespaceURI() const OVERRIDE { return m_name.namespaceURI(); }
+    virtual const AtomicString& localName() const override { return m_name.localName(); }
+    virtual const AtomicString& namespaceURI() const override { return m_name.namespaceURI(); }
     const AtomicString& prefix() const { return m_name.prefix(); }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     Attr(Element&, const QualifiedName&);
     Attr(Document&, const QualifiedName&, const AtomicString& value);
 
+    bool isElementNode() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+
     void createTextChild();
 
     void setValueInternal(const AtomicString&);
 
-    virtual String nodeName() const OVERRIDE { return name(); }
-    virtual NodeType nodeType() const OVERRIDE { return ATTRIBUTE_NODE; }
+    virtual String nodeName() const override { return name(); }
+    virtual NodeType nodeType() const override { return ATTRIBUTE_NODE; }
 
-    virtual String nodeValue() const OVERRIDE { return value(); }
-    virtual void setNodeValue(const String&) OVERRIDE;
-    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) OVERRIDE;
+    virtual String nodeValue() const override { return value(); }
+    virtual void setNodeValue(const String&) override;
+    virtual PassRefPtrWillBeRawPtr<Node> cloneNode(bool deep = true) override;
 
-    virtual bool isAttributeNode() const OVERRIDE { return true; }
-    virtual bool childTypeAllowed(NodeType) const OVERRIDE;
+    virtual bool isAttributeNode() const override { return true; }
+    virtual bool childTypeAllowed(NodeType) const override;
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
     Attribute& elementAttribute();
 
@@ -101,6 +102,6 @@ private:
 
 DEFINE_NODE_TYPE_CASTS(Attr, isAttributeNode());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Attr_h

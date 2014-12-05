@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/html/HTMLNoScriptElement.h"
 
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

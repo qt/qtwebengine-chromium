@@ -12,8 +12,8 @@
 #include <unistd.h>
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
@@ -45,35 +45,35 @@ class IPCChannelPosixTestListener : public IPC::Listener {
         quit_only_on_message_(quit_only_on_message) {
   }
 
-  virtual ~IPCChannelPosixTestListener() {}
+  ~IPCChannelPosixTestListener() override {}
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     EXPECT_EQ(message.type(), kQuitMessage);
     status_ = MESSAGE_RECEIVED;
     QuitRunLoop();
     return true;
   }
 
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
+  void OnChannelConnected(int32 peer_pid) override {
     status_ = CONNECTED;
     if (!quit_only_on_message_) {
       QuitRunLoop();
     }
   }
 
-  virtual void OnChannelError() OVERRIDE {
+  void OnChannelError() override {
     status_ = CHANNEL_ERROR;
     QuitRunLoop();
   }
 
-  virtual void OnChannelDenied() OVERRIDE {
+  void OnChannelDenied() override {
     status_ = DENIED;
     if (!quit_only_on_message_) {
       QuitRunLoop();
     }
   }
 
-  virtual void OnChannelListenError() OVERRIDE {
+  void OnChannelListenError() override {
     status_ = LISTEN_ERROR;
     if (!quit_only_on_message_) {
       QuitRunLoop();
@@ -246,9 +246,8 @@ TEST_F(IPCChannelPosixTest, SendHangTest) {
   IPC::ChannelHandle in_handle("IN");
   scoped_ptr<IPC::ChannelPosix> in_chan(new IPC::ChannelPosix(
       in_handle, IPC::Channel::MODE_SERVER, &in_listener));
-  base::FileDescriptor out_fd(
-      in_chan->TakeClientFileDescriptor(), false);
-  IPC::ChannelHandle out_handle("OUT", out_fd);
+  IPC::ChannelHandle out_handle(
+      "OUT", base::FileDescriptor(in_chan->TakeClientFileDescriptor()));
   scoped_ptr<IPC::ChannelPosix> out_chan(new IPC::ChannelPosix(
       out_handle, IPC::Channel::MODE_CLIENT, &out_listener));
   ASSERT_TRUE(in_chan->Connect());
@@ -272,9 +271,8 @@ TEST_F(IPCChannelPosixTest, AcceptHangTest) {
   IPC::ChannelHandle in_handle("IN");
   scoped_ptr<IPC::ChannelPosix> in_chan(new IPC::ChannelPosix(
       in_handle, IPC::Channel::MODE_SERVER, &in_listener));
-  base::FileDescriptor out_fd(
-      in_chan->TakeClientFileDescriptor(), false);
-  IPC::ChannelHandle out_handle("OUT", out_fd);
+  IPC::ChannelHandle out_handle(
+      "OUT", base::FileDescriptor(in_chan->TakeClientFileDescriptor()));
   scoped_ptr<IPC::ChannelPosix> out_chan(new IPC::ChannelPosix(
       out_handle, IPC::Channel::MODE_CLIENT, &out_listener));
   ASSERT_TRUE(in_chan->Connect());

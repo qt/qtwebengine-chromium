@@ -117,7 +117,7 @@ class Git(SCM):
     def _status_regexp(self, expected_types):
         return '^(?P<status>[%s])\t(?P<filename>.+)$' % expected_types
 
-    def add_list(self, paths, return_exit_code=False):
+    def add_list(self, paths, return_exit_code=False, recurse=True):
         return self._run_git(["add"] + paths, return_exit_code=return_exit_code)
 
     def delete_list(self, paths):
@@ -179,20 +179,20 @@ class Git(SCM):
     def display_name(self):
         return "git"
 
-    def _most_recent_log_matching(self, grep_str, path):
+    def most_recent_log_matching(self, grep_str, path):
         # We use '--grep=' + foo rather than '--grep', foo because
         # git 1.7.0.4 (and earlier) didn't support the separate arg.
         return self._run_git(['log', '-1', '--grep=' + grep_str, '--date=iso', self.find_checkout_root(path)])
 
     def svn_revision(self, path):
-        git_log = self._most_recent_log_matching('git-svn-id:', path)
+        git_log = self.most_recent_log_matching('git-svn-id:', path)
         match = re.search("^\s*git-svn-id:.*@(?P<svn_revision>\d+)\ ", git_log, re.MULTILINE)
         if not match:
             return ""
         return str(match.group('svn_revision'))
 
     def timestamp_of_revision(self, path, revision):
-        git_log = self._most_recent_log_matching('git-svn-id:.*@%s' % revision, path)
+        git_log = self.most_recent_log_matching('git-svn-id:.*@%s' % revision, path)
         match = re.search("^Date:\s*(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2})$", git_log, re.MULTILINE)
         if not match:
             return ""

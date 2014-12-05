@@ -20,7 +20,7 @@ IndexedDBFakeBackingStore::IndexedDBFakeBackingStore()
 }
 IndexedDBFakeBackingStore::IndexedDBFakeBackingStore(
     IndexedDBFactory* factory,
-    base::TaskRunner* task_runner)
+    base::SequencedTaskRunner* task_runner)
     : IndexedDBBackingStore(factory,
                             GURL("http://localhost:81"),
                             base::FilePath(),
@@ -82,8 +82,8 @@ leveldb::Status IndexedDBFakeBackingStore::PutRecord(
     int64 database_id,
     int64 object_store_id,
     const IndexedDBKey& key,
-    IndexedDBValue& value,
-    ScopedVector<webkit_blob::BlobDataHandle>* handles,
+    IndexedDBValue* value,
+    ScopedVector<storage::BlobDataHandle>* handles,
     RecordIdentifier* record) {
   return leveldb::Status::OK();
 }
@@ -163,7 +163,7 @@ IndexedDBFakeBackingStore::OpenObjectStoreKeyCursor(
     int64 database_id,
     int64 object_store_id,
     const IndexedDBKeyRange& key_range,
-    indexed_db::CursorDirection,
+    blink::WebIDBCursorDirection,
     leveldb::Status* s) {
   return scoped_ptr<IndexedDBBackingStore::Cursor>();
 }
@@ -173,7 +173,7 @@ IndexedDBFakeBackingStore::OpenObjectStoreCursor(
     int64 database_id,
     int64 object_store_id,
     const IndexedDBKeyRange& key_range,
-    indexed_db::CursorDirection,
+    blink::WebIDBCursorDirection,
     leveldb::Status* s) {
   return scoped_ptr<IndexedDBBackingStore::Cursor>();
 }
@@ -184,7 +184,7 @@ IndexedDBFakeBackingStore::OpenIndexKeyCursor(
     int64 object_store_id,
     int64 index_id,
     const IndexedDBKeyRange& key_range,
-    indexed_db::CursorDirection,
+    blink::WebIDBCursorDirection,
     leveldb::Status* s) {
   return scoped_ptr<IndexedDBBackingStore::Cursor>();
 }
@@ -195,7 +195,7 @@ IndexedDBFakeBackingStore::OpenIndexCursor(
     int64 object_store_id,
     int64 index_id,
     const IndexedDBKeyRange& key_range,
-    indexed_db::CursorDirection,
+    blink::WebIDBCursorDirection,
     leveldb::Status* s) {
   return scoped_ptr<IndexedDBBackingStore::Cursor>();
 }

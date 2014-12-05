@@ -1,17 +1,18 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/ko.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/ko.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/ko.xml
+ * ICU <specials> source: <path>/common/main/ko.xml
  */
 ko{
     Countries{
         419{"라틴 아메리카"}
+        AC{"어센션 섬"}
         AD{"안도라"}
         AE{"아랍에미리트 연합"}
         AF{"아프가니스탄"}
@@ -42,6 +43,7 @@ ko{
         BM{"버뮤다"}
         BN{"브루나이"}
         BO{"볼리비아"}
+        BQ{"네덜란드령 카리브"}
         BR{"브라질"}
         BS{"바하마"}
         BT{"부탄"}
@@ -51,7 +53,7 @@ ko{
         BZ{"벨리즈"}
         CA{"캐나다"}
         CC{"코코스제도"}
-        CD{"콩고 민주공화국"}
+        CD{"콩고-킨샤사"}
         CF{"중앙 아프리카 공화국"}
         CG{"콩고"}
         CH{"스위스"}
@@ -61,19 +63,22 @@ ko{
         CM{"카메룬"}
         CN{"중국"}
         CO{"콜롬비아"}
+        CP{"클립퍼튼 섬"}
         CR{"코스타리카"}
-        CS{"세르비아 및 몬테네그로"}
         CU{"쿠바"}
         CV{"까뽀베르데"}
+        CW{"퀴라소"}
         CX{"크리스마스섬"}
         CY{"사이프러스"}
         CZ{"체코"}
         DE{"독일"}
+        DG{"디에고 가르시아"}
         DJ{"지부티"}
         DK{"덴마크"}
         DM{"도미니카"}
         DO{"도미니카 공화국"}
         DZ{"알제리"}
+        EA{"세우타 및 멜리야"}
         EC{"에콰도르"}
         EE{"에스토니아"}
         EG{"이집트"}
@@ -91,7 +96,7 @@ ko{
         GA{"가봉"}
         GB{"영국"}
         GD{"그레나다"}
-        GE{"그루지야"}
+        GE{"조지아"}
         GF{"프랑스령 기아나"}
         GG{"건지"}
         GH{"가나"}
@@ -113,6 +118,7 @@ ko{
         HR{"크로아티아"}
         HT{"아이티"}
         HU{"헝가리"}
+        IC{"카나리아 제도"}
         ID{"인도네시아"}
         IE{"아일랜드"}
         IL{"이스라엘"}
@@ -221,10 +227,13 @@ ko{
         SN{"세네갈"}
         SO{"소말리아"}
         SR{"수리남"}
+        SS{"남수단"}
         ST{"상투메 프린시페"}
         SV{"엘살바도르"}
+        SX{"신트마르턴"}
         SY{"시리아"}
         SZ{"스와질랜드"}
+        TA{"트리스탄다쿠나"}
         TC{"터크스케이커스제도"}
         TD{"차드"}
         TF{"프랑스 남부 지방"}
@@ -256,6 +265,7 @@ ko{
         VU{"바누아투"}
         WF{"왈리스-푸투나 제도"}
         WS{"사모아"}
+        XK{"코소보"}
         YE{"예멘"}
         YT{"마요티"}
         ZA{"남아프리카"}
@@ -263,5 +273,12 @@ ko{
         ZW{"짐바브웨"}
         ZZ{"알수없거나 유효하지 않은 지역"}
     }
-    Version{"2.0.49.58"}
+    CountriesShort{
+        GB{"영국"}
+        HK{"홍콩"}
+        MO{"마카오"}
+        PS{"팔레스타인"}
+        US{"미국"}
+    }
+    Version{"2.0.92.87"}
 }

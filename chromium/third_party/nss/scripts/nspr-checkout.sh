@@ -10,8 +10,9 @@
 set -ex
 
 rm -rf nspr
-hg clone -u NSPR_4_10_4_RTM https://hg.mozilla.org/projects/nspr
+hg clone -u NSPR_4_10_7_RTM https://hg.mozilla.org/projects/nspr
 
+rm -r nspr/.hg
 rm -r nspr/admin
 rm -r nspr/build
 rm -r nspr/config
@@ -28,10 +29,11 @@ rm -r nspr/pr/src/md/beos
 rm -r nspr/pr/src/md/os2
 
 find nspr -name .cvsignore -print | xargs rm
+rm nspr/.hgignore
+rm nspr/.hgtags
 find nspr -name README -print | xargs rm
 
 # Remove the build system.
-rm nspr/aclocal.m4
 rm nspr/configure
 rm nspr/configure.in
 find nspr -name Makefile.in -print | xargs rm

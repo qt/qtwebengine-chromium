@@ -15,10 +15,6 @@ const char kDisableThreadedAnimation[] = "disable-threaded-animation";
 const char kDisableCompositedAntialiasing[] =
     "disable-composited-antialiasing";
 
-// Disables sending the next BeginMainFrame before the previous commit has
-// drawn.
-const char kDisableMainFrameBeforeDraw[] = "disable-main-frame-before-draw";
-
 // Disables sending the next BeginMainFrame before the previous commit
 // activates. Overrides the kEnableMainFrameBeforeActivation flag.
 const char kDisableMainFrameBeforeActivation[] =
@@ -76,7 +72,9 @@ const char kEnableGpuBenchmarking[] = "enable-gpu-benchmarking";
 const char kShowCompositedLayerBorders[] = "show-composited-layer-borders";
 const char kUIShowCompositedLayerBorders[] = "ui-show-layer-borders";
 
-// Draws a FPS indicator
+// Draws a heads-up-display showing Frames Per Second as well as GPU memory
+// usage. If you also use --vmodule="head*=1" then FPS will also be output to
+// the console log.
 const char kShowFPSCounter[] = "show-fps-counter";
 const char kUIShowFPSCounter[] = "ui-show-fps-counter";
 
@@ -119,10 +117,6 @@ const char kCCLayerTreeTestNoTimeout[] = "cc-layer-tree-test-no-timeout";
 
 // Makes pixel tests write their output instead of read it.
 const char kCCRebaselinePixeltests[] = "cc-rebaseline-pixeltests";
-
-// Disable touch hit testing in the compositor.
-const char kDisableCompositorTouchHitTesting[] =
-    "disable-compositor-touch-hit-testing";
 
 }  // namespace switches
 }  // namespace cc

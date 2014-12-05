@@ -41,18 +41,17 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<InjectedScriptHost> InjectedScriptHost::create()
+PassRefPtrWillBeRawPtr<InjectedScriptHost> InjectedScriptHost::create()
 {
-    return adoptRef(new InjectedScriptHost());
+    return adoptRefWillBeNoop(new InjectedScriptHost());
 }
 
 InjectedScriptHost::InjectedScriptHost()
-    : m_instrumentingAgents(0)
+    : m_instrumentingAgents(nullptr)
     , m_scriptDebugServer(0)
 {
-    ScriptWrappable::init(this);
     m_defaultInspectableObject = adoptPtr(new InspectableObject());
 }
 
@@ -60,9 +59,14 @@ InjectedScriptHost::~InjectedScriptHost()
 {
 }
 
+void InjectedScriptHost::trace(Visitor* visitor)
+{
+    visitor->trace(m_instrumentingAgents);
+}
+
 void InjectedScriptHost::disconnect()
 {
-    m_instrumentingAgents = 0;
+    m_instrumentingAgents = nullptr;
     m_scriptDebugServer = 0;
 }
 
@@ -142,5 +146,5 @@ void InjectedScriptHost::unmonitorFunction(const String& scriptId, int lineNumbe
         debuggerAgent->removeBreakpoint(scriptId, lineNumber, columnNumber, InspectorDebuggerAgent::MonitorCommandBreakpointSource);
 }
 
-} // namespace WebCore
+} // namespace blink
 

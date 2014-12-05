@@ -257,9 +257,9 @@ void NPObjectStub::OnSetProperty(const NPIdentifier_Param& name,
     if (npobject_->_class->setProperty) {
 #if defined(OS_WIN)
       static base::FilePath plugin_path =
-          CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+          base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
               switches::kPluginPath);
-      static std::wstring filename = StringToLowerASCII(
+      static std::wstring filename = base::StringToLowerASCII(
           plugin_path.BaseName().value());
       static NPIdentifier fullscreen =
           WebBindings::getStringIdentifier("fullScreen");

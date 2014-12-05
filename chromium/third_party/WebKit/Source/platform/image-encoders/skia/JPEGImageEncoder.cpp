@@ -41,7 +41,7 @@ extern "C" {
 #include "jpeglib.h"
 }
 
-namespace WebCore {
+namespace blink {
 
 struct JPEGOutputBuffer : public jpeg_destination_mgr {
     Vector<unsigned char>* output;
@@ -201,7 +201,7 @@ bool JPEGImageEncoder::encode(const SkBitmap& bitmap, int quality, Vector<unsign
 {
     SkAutoLockPixels bitmapLock(bitmap);
 
-    if (bitmap.colorType() != kPMColor_SkColorType || !bitmap.getPixels())
+    if (bitmap.colorType() != kN32_SkColorType || !bitmap.getPixels())
         return false; // Only support 32 bit/pixel skia bitmaps.
 
     return encodePixels(IntSize(bitmap.width(), bitmap.height()), static_cast<unsigned char *>(bitmap.getPixels()), true, quality, output);
@@ -212,4 +212,4 @@ bool JPEGImageEncoder::encode(const ImageDataBuffer& imageData, int quality, Vec
     return encodePixels(imageData.size(), imageData.data(), false, quality, output);
 }
 
-} // namespace WebCore
+} // namespace blink

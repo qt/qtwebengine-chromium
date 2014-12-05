@@ -28,7 +28,7 @@
 
 #include "core/rendering/RenderImage.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLMediaElement;
 
@@ -36,6 +36,7 @@ class RenderMedia : public RenderImage {
 public:
     explicit RenderMedia(HTMLMediaElement*);
     virtual ~RenderMedia();
+    virtual void trace(Visitor*) override;
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -50,29 +51,31 @@ public:
     HTMLMediaElement* mediaElement() const;
 
 protected:
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
+
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectMedia || RenderImage::isOfType(type); }
 
 private:
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE FINAL { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE FINAL { return children(); }
+    virtual RenderObjectChildList* virtualChildren() override final { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const override final { return children(); }
 
-    virtual LayerType layerTypeRequired() const OVERRIDE { return NormalLayer; }
+    virtual LayerType layerTypeRequired() const override { return NormalLayer; }
 
     // FIXME: RenderMedia::layout makes assumptions about what children are allowed
     // so we can't support generated content.
-    virtual bool canHaveGeneratedChildren() const OVERRIDE FINAL { return false; }
-    virtual bool canHaveChildren() const OVERRIDE FINAL { return true; }
+    virtual bool canHaveGeneratedChildren() const override final { return false; }
+    virtual bool canHaveChildren() const override final { return true; }
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override final;
 
-    virtual const char* renderName() const OVERRIDE { return "RenderMedia"; }
-    virtual bool isMedia() const OVERRIDE FINAL { return true; }
-    virtual bool isImage() const OVERRIDE FINAL { return false; }
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual const char* renderName() const override { return "RenderMedia"; }
+    virtual bool isImage() const override final { return false; }
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) override;
 
     RenderObjectChildList m_children;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderMedia, isMedia());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderMedia_h

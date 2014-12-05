@@ -12,6 +12,7 @@
 #define WEBRTC_VIDEO_ENGINE_OVERUSE_FRAME_DETECTOR_H_
 
 #include "webrtc/base/constructormagic.h"
+#include "webrtc/base/exp_filter.h"
 #include "webrtc/modules/interface/module.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
 #include "webrtc/video_engine/include/vie_base.h"
@@ -21,7 +22,6 @@ namespace webrtc {
 class Clock;
 class CpuOveruseObserver;
 class CriticalSectionWrapper;
-class VCMExpFilter;
 
 // TODO(pbos): Move this somewhere appropriate.
 class Statistics {
@@ -43,8 +43,8 @@ class Statistics {
   float sum_;
   uint64_t count_;
   CpuOveruseOptions options_;
-  scoped_ptr<VCMExpFilter> filtered_samples_;
-  scoped_ptr<VCMExpFilter> filtered_variance_;
+  scoped_ptr<rtc::ExpFilter> filtered_samples_;
+  scoped_ptr<rtc::ExpFilter> filtered_variance_;
 };
 
 // Use to detect system overuse based on jitter in incoming frames.
@@ -61,7 +61,7 @@ class OveruseFrameDetector : public Module {
   void SetOptions(const CpuOveruseOptions& options);
 
   // Called for each captured frame.
-  void FrameCaptured(int width, int height);
+  void FrameCaptured(int width, int height, int64_t capture_time_ms);
 
   // Called when the processing of a captured frame is started.
   void FrameProcessingStarted();
@@ -69,14 +69,19 @@ class OveruseFrameDetector : public Module {
   // Called for each encoded frame.
   void FrameEncoded(int encode_time_ms);
 
+  // Called for each sent frame.
+  void FrameSent(int64_t capture_time_ms);
+
   // Accessors.
 
   // Returns CpuOveruseMetrics where
   // capture_jitter_ms: The estimated jitter based on incoming captured frames.
   // avg_encode_time_ms: Running average of reported encode time
   //                     (FrameEncoded()). Only used for stats.
-  // encode_usage_percent: The average encode time divided by the average time
-  //                       difference between incoming captured frames.
+  // TODO(asapersson): Rename metric.
+  // encode_usage_percent: The average processing time of a frame on the
+  //                       send-side divided by the average time difference
+  //                       between incoming captured frames.
   // capture_queue_delay_ms_per_s: The current time delay between an incoming
   //                               captured frame (FrameCaptured()) until the
   //                               frame is being processed
@@ -87,7 +92,10 @@ class OveruseFrameDetector : public Module {
   //                               Only used for stats.
   void GetCpuOveruseMetrics(CpuOveruseMetrics* metrics) const;
 
+  // Only public for testing.
   int CaptureQueueDelayMsPerS() const;
+  int LastProcessingTimeMs() const;
+  int FramesInQueue() const;
 
   // Implements Module.
   virtual int32_t TimeUntilNextProcess() OVERRIDE;
@@ -95,9 +103,11 @@ class OveruseFrameDetector : public Module {
 
  private:
   class EncodeTimeAvg;
-  class EncodeTimeRsd;
-  class EncodeUsage;
+  class SendProcessingUsage;
   class CaptureQueueDelay;
+  class FrameQueue;
+
+  void AddProcessingTime(int elapsed_ms);
 
   bool IsOverusing();
   bool IsUnderusing(int64_t time_now);
@@ -135,8 +145,9 @@ class OveruseFrameDetector : public Module {
 
   int64_t last_encode_sample_ms_;
   scoped_ptr<EncodeTimeAvg> encode_time_;
-  scoped_ptr<EncodeTimeRsd> encode_rsd_;
-  scoped_ptr<EncodeUsage> encode_usage_;
+  scoped_ptr<SendProcessingUsage> usage_;
+  scoped_ptr<FrameQueue> frame_queue_;
+  int64_t last_sample_time_ms_;
 
   scoped_ptr<CaptureQueueDelay> capture_queue_delay_;
 

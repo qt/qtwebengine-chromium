@@ -31,11 +31,12 @@
 #include "platform/geometry/LayoutRect.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class GraphicsContext;
-class RenderObject;
+class PositionWithAffinity;
+class RenderBlock;
 class RenderView;
 
 class CaretBase {
@@ -47,6 +48,10 @@ protected:
 
     void invalidateCaretRect(Node*, bool caretRectChanged = false);
     void clearCaretRect();
+    // Creating VisiblePosition causes synchronous layout so we should use the
+    // PositionWithAffinity version if possible.
+    // A position in HTMLTextFromControlElement is a typical example.
+    bool updateCaretRect(Document*, const PositionWithAffinity& caretPosition);
     bool updateCaretRect(Document*, const VisiblePosition& caretPosition);
     IntRect absoluteBoundsForLocalRect(Node*, const LayoutRect&) const;
     bool shouldRepaintCaret(const RenderView*, bool isContentEditable) const;
@@ -62,8 +67,8 @@ protected:
     CaretVisibility caretVisibility() const { return m_caretVisibility; }
 
 protected:
-    static RenderObject* caretRenderer(Node*);
-    static void repaintCaretForLocalRect(Node*, const LayoutRect&);
+    static RenderBlock* caretRenderer(Node*);
+    static void invalidateLocalCaretRect(Node*, const LayoutRect&);
 
 private:
     LayoutRect m_caretLocalRect; // caret rect in coords local to the renderer responsible for painting the caret
@@ -71,13 +76,13 @@ private:
     CaretVisibility m_caretVisibility;
 };
 
-class DragCaretController FINAL : public NoBaseWillBeGarbageCollected<DragCaretController>, private CaretBase {
+class DragCaretController final : public NoBaseWillBeGarbageCollected<DragCaretController>, private CaretBase {
     WTF_MAKE_NONCOPYABLE(DragCaretController);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<DragCaretController> create();
 
-    RenderObject* caretRenderer() const;
+    RenderBlock* caretRenderer() const;
     void paintDragCaret(LocalFrame*, GraphicsContext*, const LayoutPoint&, const LayoutRect& clipRect) const;
 
     bool isContentEditable() const { return m_position.rootEditableElement(); }
@@ -98,7 +103,7 @@ private:
     VisiblePosition m_position;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // Caret_h

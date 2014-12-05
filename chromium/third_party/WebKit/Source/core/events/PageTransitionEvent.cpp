@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/events/PageTransitionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 PageTransitionEventInit::PageTransitionEventInit()
     : persisted(false)
@@ -36,21 +36,18 @@ PageTransitionEventInit::PageTransitionEventInit()
 PageTransitionEvent::PageTransitionEvent()
     : m_persisted(false)
 {
-    ScriptWrappable::init(this);
 }
 
 PageTransitionEvent::PageTransitionEvent(const AtomicString& type, bool persisted)
     : Event(type, true, true)
     , m_persisted(persisted)
 {
-    ScriptWrappable::init(this);
 }
 
 PageTransitionEvent::PageTransitionEvent(const AtomicString& type, const PageTransitionEventInit& initializer)
     : Event(type, initializer)
     , m_persisted(initializer.persisted)
 {
-    ScriptWrappable::init(this);
 }
 
 PageTransitionEvent::~PageTransitionEvent()
@@ -67,4 +64,4 @@ void PageTransitionEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -54,26 +54,24 @@ class GPU_EXPORT TransferBufferInterface {
 class GPU_EXPORT TransferBuffer : public TransferBufferInterface {
  public:
   TransferBuffer(CommandBufferHelper* helper);
-  virtual ~TransferBuffer();
+  ~TransferBuffer() override;
 
   // Overridden from TransferBufferInterface.
-  virtual bool Initialize(
-      unsigned int default_buffer_size,
-      unsigned int result_size,
-      unsigned int min_buffer_size,
-      unsigned int max_buffer_size,
-      unsigned int alignment,
-      unsigned int size_to_flush) OVERRIDE;
-  virtual int GetShmId() OVERRIDE;
-  virtual void* GetResultBuffer() OVERRIDE;
-  virtual int GetResultOffset() OVERRIDE;
-  virtual void Free() OVERRIDE;
-  virtual bool HaveBuffer() const OVERRIDE;
-  virtual void* AllocUpTo(
-      unsigned int size, unsigned int* size_allocated) OVERRIDE;
-  virtual void* Alloc(unsigned int size) OVERRIDE;
-  virtual RingBuffer::Offset GetOffset(void* pointer) const OVERRIDE;
-  virtual void FreePendingToken(void* p, unsigned int token) OVERRIDE;
+  bool Initialize(unsigned int default_buffer_size,
+                  unsigned int result_size,
+                  unsigned int min_buffer_size,
+                  unsigned int max_buffer_size,
+                  unsigned int alignment,
+                  unsigned int size_to_flush) override;
+  int GetShmId() override;
+  void* GetResultBuffer() override;
+  int GetResultOffset() override;
+  void Free() override;
+  bool HaveBuffer() const override;
+  void* AllocUpTo(unsigned int size, unsigned int* size_allocated) override;
+  void* Alloc(unsigned int size) override;
+  RingBuffer::Offset GetOffset(void* pointer) const override;
+  void FreePendingToken(void* p, unsigned int token) override;
 
   // These are for testing.
   unsigned int GetCurrentMaxAllocationWithoutRealloc() const;

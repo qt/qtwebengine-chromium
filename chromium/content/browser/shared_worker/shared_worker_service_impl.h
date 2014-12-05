@@ -41,10 +41,10 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
   static SharedWorkerServiceImpl* GetInstance();
 
   // WorkerService implementation:
-  virtual bool TerminateWorker(int process_id, int route_id) OVERRIDE;
-  virtual std::vector<WorkerInfo> GetWorkers() OVERRIDE;
-  virtual void AddObserver(WorkerServiceObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(WorkerServiceObserver* observer) OVERRIDE;
+  bool TerminateWorker(int process_id, int route_id) override;
+  std::vector<WorkerInfo> GetWorkers() override;
+  void AddObserver(WorkerServiceObserver* observer) override;
+  void RemoveObserver(WorkerServiceObserver* observer) override;
 
   // These methods correspond to worker related IPCs.
   void CreateWorker(const ViewHostMsg_CreateWorker_Params& params,
@@ -61,6 +61,8 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
                            SharedWorkerMessageFilter* filter);
   void WorkerContextDestroyed(int worker_route_id,
                               SharedWorkerMessageFilter* filter);
+  void WorkerReadyForInspection(int worker_route_id,
+                                SharedWorkerMessageFilter* filter);
   void WorkerScriptLoaded(int worker_route_id,
                           SharedWorkerMessageFilter* filter);
   void WorkerScriptLoadFailed(int worker_route_id,
@@ -77,7 +79,7 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
                      SharedWorkerMessageFilter* filter);
   void AllowFileSystem(int worker_route_id,
                        const GURL& url,
-                       bool* result,
+                       IPC::Message* reply_msg,
                        SharedWorkerMessageFilter* filter);
   void AllowIndexedDB(int worker_route_id,
                       const GURL& url,
@@ -113,7 +115,7 @@ class CONTENT_EXPORT SharedWorkerServiceImpl
       PendingInstaneMap;
 
   SharedWorkerServiceImpl();
-  virtual ~SharedWorkerServiceImpl();
+  ~SharedWorkerServiceImpl() override;
 
   void ResetForTesting();
 

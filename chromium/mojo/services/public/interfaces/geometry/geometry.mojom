@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-module mojo {
+module mojo;
 
 struct Point {
   int32 x;
@@ -26,9 +26,14 @@ struct Rect {
   int32 height;
 };
 
-struct Transform {
-  // Should have exactly 16 entries.
-  float[] matrix;
+struct RectF {
+  float x;
+  float y;
+  float width;
+  float height;
 };
 
-}
+struct Transform {
+  // Row major order.
+  array<float, 16>? matrix;
+};

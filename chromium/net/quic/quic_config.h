@@ -61,13 +61,16 @@ class NET_EXPORT_PRIVATE QuicConfigValue {
 class NET_EXPORT_PRIVATE QuicNegotiableValue : public QuicConfigValue {
  public:
   QuicNegotiableValue(QuicTag tag, QuicConfigPresence presence);
-  virtual ~QuicNegotiableValue();
+  ~QuicNegotiableValue() override;
 
   bool negotiated() const {
     return negotiated_;
   }
 
  protected:
+  void set_negotiated(bool negotiated) { negotiated_ = negotiated; }
+
+ private:
   bool negotiated_;
 };
 
@@ -75,7 +78,7 @@ class NET_EXPORT_PRIVATE QuicNegotiableUint32 : public QuicNegotiableValue {
  public:
   // Default and max values default to 0.
   QuicNegotiableUint32(QuicTag name, QuicConfigPresence presence);
-  virtual ~QuicNegotiableUint32();
+  ~QuicNegotiableUint32() override;
 
   // Sets the maximum possible value that can be achieved after negotiation and
   // also the default values to be assumed if PRESENCE_OPTIONAL and the *HLO msg
@@ -89,16 +92,15 @@ class NET_EXPORT_PRIVATE QuicNegotiableUint32 : public QuicNegotiableValue {
 
   // Serialises |name_| and value to |out|. If |negotiated_| is true then
   // |negotiated_value_| is serialised, otherwise |max_value_| is serialised.
-  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
 
   // Sets |negotiated_value_| to the minimum of |max_value_| and the
   // corresponding value from |peer_hello|. If the corresponding value is
   // missing and PRESENCE_OPTIONAL then |negotiated_value_| is set to
   // |default_value_|.
-  virtual QuicErrorCode ProcessPeerHello(
-      const CryptoHandshakeMessage& peer_hello,
-      HelloType hello_type,
-      std::string* error_details) OVERRIDE;
+  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
+                                 HelloType hello_type,
+                                 std::string* error_details) override;
 
  private:
   uint32 max_value_;
@@ -109,7 +111,7 @@ class NET_EXPORT_PRIVATE QuicNegotiableUint32 : public QuicNegotiableValue {
 class NET_EXPORT_PRIVATE QuicNegotiableTag : public QuicNegotiableValue {
  public:
   QuicNegotiableTag(QuicTag name, QuicConfigPresence presence);
-  virtual ~QuicNegotiableTag();
+  ~QuicNegotiableTag() override;
 
   // Sets the possible values that |negotiated_tag_| can take after negotiation
   // and the default value that |negotiated_tag_| takes if OPTIONAL and *HLO
@@ -123,15 +125,14 @@ class NET_EXPORT_PRIVATE QuicNegotiableTag : public QuicNegotiableValue {
   // Serialises |name_| and vector (either possible or negotiated) to |out|. If
   // |negotiated_| is true then |negotiated_tag_| is serialised, otherwise
   // |possible_values_| is serialised.
-  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
 
   // Selects the tag common to both tags in |client_hello| for |name_| and
   // |possible_values_| with preference to tag in |possible_values_|. The
   // selected tag is set as |negotiated_tag_|.
-  virtual QuicErrorCode ProcessPeerHello(
-      const CryptoHandshakeMessage& peer_hello,
-      HelloType hello_type,
-      std::string* error_details) OVERRIDE;
+  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
+                                 HelloType hello_type,
+                                 std::string* error_details) override;
 
  private:
   // Reads the vector corresponding to |name_| from |msg| into |out|. If the
@@ -151,7 +152,7 @@ class NET_EXPORT_PRIVATE QuicNegotiableTag : public QuicNegotiableValue {
 class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
  public:
   QuicFixedUint32(QuicTag name, QuicConfigPresence presence);
-  virtual ~QuicFixedUint32();
+  ~QuicFixedUint32() override;
 
   bool HasSendValue() const;
 
@@ -166,13 +167,12 @@ class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
   void SetReceivedValue(uint32 value);
 
   // If has_send_value is true, serialises |tag_| and |send_value_| to |out|.
-  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
 
   // Sets |value_| to the corresponding value from |peer_hello_| if it exists.
-  virtual QuicErrorCode ProcessPeerHello(
-      const CryptoHandshakeMessage& peer_hello,
-      HelloType hello_type,
-      std::string* error_details) OVERRIDE;
+  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
+                                 HelloType hello_type,
+                                 std::string* error_details) override;
 
  private:
   uint32 send_value_;
@@ -185,7 +185,7 @@ class NET_EXPORT_PRIVATE QuicFixedUint32 : public QuicConfigValue {
 class NET_EXPORT_PRIVATE QuicFixedTag : public QuicConfigValue {
  public:
   QuicFixedTag(QuicTag name, QuicConfigPresence presence);
-  virtual ~QuicFixedTag();
+  ~QuicFixedTag() override;
 
   bool HasSendValue() const;
 
@@ -200,13 +200,12 @@ class NET_EXPORT_PRIVATE QuicFixedTag : public QuicConfigValue {
   void SetReceivedValue(QuicTag value);
 
   // If has_send_value is true, serialises |tag_| and |send_value_| to |out|.
-  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
 
   // Sets |value_| to the corresponding value from |client_hello_| if it exists.
-  virtual QuicErrorCode ProcessPeerHello(
-      const CryptoHandshakeMessage& peer_hello,
-      HelloType hello_type,
-      std::string* error_details) OVERRIDE;
+  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
+                                 HelloType hello_type,
+                                 std::string* error_details) override;
 
  private:
   QuicTag send_value_;
@@ -219,7 +218,7 @@ class NET_EXPORT_PRIVATE QuicFixedTag : public QuicConfigValue {
 class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
  public:
   QuicFixedTagVector(QuicTag name, QuicConfigPresence presence);
-  virtual ~QuicFixedTagVector();
+  ~QuicFixedTagVector() override;
 
   bool HasSendValues() const;
 
@@ -235,14 +234,13 @@ class NET_EXPORT_PRIVATE QuicFixedTagVector : public QuicConfigValue {
 
   // If has_send_value is true, serialises |tag_vector_| and |send_value_| to
   // |out|.
-  virtual void ToHandshakeMessage(CryptoHandshakeMessage* out) const OVERRIDE;
+  void ToHandshakeMessage(CryptoHandshakeMessage* out) const override;
 
   // Sets |receive_values_| to the corresponding value from |client_hello_| if
   // it exists.
-  virtual QuicErrorCode ProcessPeerHello(
-      const CryptoHandshakeMessage& peer_hello,
-      HelloType hello_type,
-      std::string* error_details) OVERRIDE;
+  QuicErrorCode ProcessPeerHello(const CryptoHandshakeMessage& peer_hello,
+                                 HelloType hello_type,
+                                 std::string* error_details) override;
 
  private:
   QuicTagVector send_values_;
@@ -258,40 +256,68 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicConfig();
   ~QuicConfig();
 
-  void set_congestion_feedback(const QuicTagVector& congestion_feedback,
-                               QuicTag default_congestion_feedback);
+  void SetCongestionFeedback(const QuicTagVector& congestion_feedback,
+                             QuicTag default_congestion_feedback);
 
-  QuicTag congestion_feedback() const;
+  QuicTag CongestionFeedback() const;
 
-  void SetCongestionOptionsToSend(const QuicTagVector& congestion_options);
+  void SetConnectionOptionsToSend(const QuicTagVector& connection_options);
 
-  bool HasReceivedCongestionOptions() const;
+  bool HasReceivedConnectionOptions() const;
 
-  QuicTagVector ReceivedCongestionOptions() const;
+  QuicTagVector ReceivedConnectionOptions() const;
 
-  void SetLossDetectionToSend(QuicTag loss_detection);
+  bool HasSendConnectionOptions() const;
 
-  bool HasReceivedLossDetection() const;
+  QuicTagVector SendConnectionOptions() const;
 
-  QuicTag ReceivedLossDetection() const;
-
-  void set_idle_connection_state_lifetime(
+  void SetIdleConnectionStateLifetime(
       QuicTime::Delta max_idle_connection_state_lifetime,
       QuicTime::Delta default_idle_conection_state_lifetime);
 
-  QuicTime::Delta idle_connection_state_lifetime() const;
+  QuicTime::Delta IdleConnectionStateLifetime() const;
 
-  QuicTime::Delta keepalive_timeout() const;
+  QuicTime::Delta KeepaliveTimeout() const;
 
-  void set_max_streams_per_connection(size_t max_streams,
-                                      size_t default_streams);
+  void SetMaxStreamsPerConnection(size_t max_streams, size_t default_streams);
 
-  uint32 max_streams_per_connection() const;
+  uint32 MaxStreamsPerConnection() const;
 
   void set_max_time_before_crypto_handshake(
-      QuicTime::Delta max_time_before_crypto_handshake);
+      QuicTime::Delta max_time_before_crypto_handshake) {
+    max_time_before_crypto_handshake_ = max_time_before_crypto_handshake;
+  }
 
-  QuicTime::Delta max_time_before_crypto_handshake() const;
+  QuicTime::Delta max_time_before_crypto_handshake() const {
+    return max_time_before_crypto_handshake_;
+  }
+
+  void set_max_idle_time_before_crypto_handshake(
+      QuicTime::Delta max_idle_time_before_crypto_handshake) {
+    max_idle_time_before_crypto_handshake_ =
+        max_idle_time_before_crypto_handshake;
+  }
+
+  QuicTime::Delta max_idle_time_before_crypto_handshake() const {
+    return max_idle_time_before_crypto_handshake_;
+  }
+
+  void set_max_undecryptable_packets(size_t max_undecryptable_packets) {
+    max_undecryptable_packets_ = max_undecryptable_packets;
+  }
+
+  size_t max_undecryptable_packets() const {
+    return max_undecryptable_packets_;
+  }
+
+  bool HasSetBytesForConnectionIdToSend() const;
+
+  // Sets the peer's connection id length, in bytes.
+  void SetBytesForConnectionIdToSend(uint32 bytes);
+
+  bool HasReceivedBytesForConnectionId() const;
+
+  uint32 ReceivedBytesForConnectionId() const;
 
   // Sets the peer's default initial congestion window in packets.
   void SetInitialCongestionWindowToSend(size_t initial_window);
@@ -306,6 +332,10 @@ class NET_EXPORT_PRIVATE QuicConfig {
   bool HasReceivedInitialRoundTripTimeUs() const;
 
   uint32 ReceivedInitialRoundTripTimeUs() const;
+
+  bool HasInitialRoundTripTimeUsToSend() const;
+
+  uint32 GetInitialRoundTripTimeUsToSend() const;
 
   // TODO(rjshade): Remove all InitialFlowControlWindow methods when removing
   // QUIC_VERSION_19.
@@ -336,13 +366,16 @@ class NET_EXPORT_PRIVATE QuicConfig {
 
   uint32 ReceivedInitialSessionFlowControlWindowBytes() const;
 
-  bool negotiated();
+  // Sets socket receive buffer to transmit to the peer.
+  void SetSocketReceiveBufferToSend(uint32 window_bytes);
 
-  // SetDefaults sets the members to sensible, default values.
-  void SetDefaults();
+  uint32 GetSocketReceiveBufferToSend() const;
 
-  // Enabled pacing.
-  void EnablePacing(bool enable_pacing);
+  bool HasReceivedSocketReceiveBuffer() const;
+
+  uint32 ReceivedSocketReceiveBuffer() const;
+
+  bool negotiated() const;
 
   // ToHandshakeMessage serialises the settings in this object as a series of
   // tags /value pairs and adds them to |out|.
@@ -357,21 +390,29 @@ class NET_EXPORT_PRIVATE QuicConfig {
  private:
   friend class test::QuicConfigPeer;
 
+  // SetDefaults sets the members to sensible, default values.
+  void SetDefaults();
+
+  // Configurations options that are not negotiated.
+  // Maximum time the session can be alive before crypto handshake is finished.
+  QuicTime::Delta max_time_before_crypto_handshake_;
+  // Maximum idle time before the crypto handshake has completed.
+  QuicTime::Delta max_idle_time_before_crypto_handshake_;
+  // Maximum number of undecryptable packets stored before CHLO/SHLO.
+  size_t max_undecryptable_packets_;
+
   // Congestion control feedback type.
   QuicNegotiableTag congestion_feedback_;
-  // Congestion control option.
-  QuicFixedTagVector congestion_options_;
-  // Loss detection feedback type.
-  QuicFixedTag loss_detection_;
+  // Connection options.
+  QuicFixedTagVector connection_options_;
   // Idle connection state lifetime
   QuicNegotiableUint32 idle_connection_state_lifetime_seconds_;
   // Keepalive timeout, or 0 to turn off keepalive probes
   QuicNegotiableUint32 keepalive_timeout_seconds_;
   // Maximum number of streams that the connection can support.
   QuicNegotiableUint32 max_streams_per_connection_;
-  // Maximum time till the session can be alive before crypto handshake is
-  // finished. (Not negotiated).
-  QuicTime::Delta max_time_before_crypto_handshake_;
+  // The number of bytes required for the connection ID.
+  QuicFixedUint32 bytes_for_connection_id_;
   // Initial congestion window in packets.
   QuicFixedUint32 initial_congestion_window_;
   // Initial round trip time estimate in microseconds.
@@ -385,6 +426,9 @@ class NET_EXPORT_PRIVATE QuicConfig {
   QuicFixedUint32 initial_stream_flow_control_window_bytes_;
   // Initial session flow control receive window in bytes.
   QuicFixedUint32 initial_session_flow_control_window_bytes_;
+
+  // Socket receive buffer in bytes.
+  QuicFixedUint32 socket_receive_buffer_;
 };
 
 }  // namespace net

@@ -12,8 +12,8 @@
 #include "base/logging.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/strings/grit/ui_strings.h"
 
 #if !defined(OS_WIN) && (defined(USE_AURA) || defined(OS_MACOSX))
 #include "ui/events/keycodes/keyboard_code_conversion.h"
@@ -189,7 +189,7 @@ base::string16 Accelerator::GetShortcutText() const {
     // default zoom level), we leave VK_[0-9] alone without translation.
     wchar_t key;
     if (key_code_ >= '0' && key_code_ <= '9')
-      key = key_code_;
+      key = static_cast<wchar_t>(key_code_);
     else
       key = LOWORD(::MapVirtualKeyW(key_code_, MAPVK_VK_TO_CHAR));
     shortcut += key;

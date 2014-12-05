@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-<include src="extension_error_overlay.js"></include>
-
 cr.define('extensions', function() {
   'use strict';
 
@@ -13,8 +11,8 @@ cr.define('extensions', function() {
    * @return {HTMLElement} The clone of the template.
    */
   function cloneTemplate(templateName) {
-    return $('template-collection-extension-error').
-        querySelector('.' + templateName).cloneNode(true);
+    return /** @type {HTMLElement} */($('template-collection-extension-error').
+        querySelector('.' + templateName).cloneNode(true));
   }
 
   /**
@@ -44,7 +42,10 @@ cr.define('extensions', function() {
   ExtensionError.prototype = {
     __proto__: HTMLDivElement.prototype,
 
-    /** @override */
+    /**
+     * @param {RuntimeError} error
+     * @override
+     */
     decorate: function(error) {
       // Add an additional class for the severity level.
       if (error.level == 0)
@@ -98,15 +99,15 @@ cr.define('extensions', function() {
     return div;
   }
 
+  /**
+   * @private
+   * @const
+   * @type {number}
+   */
+  ExtensionErrorList.MAX_ERRORS_TO_SHOW_ = 3;
+
   ExtensionErrorList.prototype = {
     __proto__: HTMLDivElement.prototype,
-
-    /**
-     * @private
-     * @const
-     * @type {number}
-     */
-    MAX_ERRORS_TO_SHOW_: 3,
 
     /** @override */
     decorate: function() {
@@ -118,33 +119,49 @@ cr.define('extensions', function() {
         }
       }, this);
 
-      if (this.contents_.children.length > this.MAX_ERRORS_TO_SHOW_)
-        this.initShowMoreButton_();
+      var numShowing = this.contents_.children.length;
+      if (numShowing > ExtensionErrorList.MAX_ERRORS_TO_SHOW_)
+        this.initShowMoreLink_();
     },
 
     /**
-     * Initialize the "Show More" button for the error list. If there are more
+     * Initialize the "Show More" link for the error list. If there are more
      * than |MAX_ERRORS_TO_SHOW_| errors in the list.
      * @private
      */
-    initShowMoreButton_: function() {
-      var button = this.querySelector('.extension-error-list-show-more button');
-      button.hidden = false;
-      button.isShowingAll = false;
+    initShowMoreLink_: function() {
+      var link = this.querySelector(
+          '.extension-error-list-show-more [is="action-link"]');
+      link.hidden = false;
+      link.isShowingAll = false;
+
       var listContents = this.querySelector('.extension-error-list-contents');
+
+      // TODO(dbeam/kalman): trade all this transition voodoo for .animate()?
       listContents.addEventListener('webkitTransitionEnd', function(e) {
-        if (listContents.classList.contains('active'))
+        if (listContents.classList.contains('deactivating'))
+          listContents.classList.remove('deactivating', 'active');
+        else
           listContents.classList.add('scrollable');
       });
-      button.addEventListener('click', function(e) {
+
+      link.addEventListener('click', function(e) {
+        link.isShowingAll = !link.isShowingAll;
+
+        var message = link.isShowingAll ? 'extensionErrorsShowFewer' :
+                                          'extensionErrorsShowMore';
+        link.textContent = loadTimeData.getString(message);
+
         // Disable scrolling while transitioning. If the element is active,
         // scrolling is enabled when the transition ends.
-        listContents.classList.toggle('active');
         listContents.classList.remove('scrollable');
-        var message = button.isShowingAll ? 'extensionErrorsShowMore' :
-                                            'extensionErrorsShowFewer';
-        button.textContent = loadTimeData.getString(message);
-        button.isShowingAll = !button.isShowingAll;
+
+        if (link.isShowingAll) {
+          listContents.classList.add('active');
+          listContents.classList.remove('deactivating');
+        } else {
+          listContents.classList.add('deactivating');
+        }
       }.bind(this));
     }
   };

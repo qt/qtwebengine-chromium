@@ -19,44 +19,44 @@ class PrefixDelegate;
 class VIEWS_EXPORT PrefixSelector : public ui::TextInputClient {
  public:
   explicit PrefixSelector(PrefixDelegate* delegate);
-  virtual ~PrefixSelector();
+  ~PrefixSelector() override;
 
   // Invoked from the view when it loses focus.
   void OnViewBlur();
 
   // ui::TextInputClient:
-  virtual void SetCompositionText(
-      const ui::CompositionText& composition) OVERRIDE;
-  virtual void ConfirmCompositionText() OVERRIDE;
-  virtual void ClearCompositionText() OVERRIDE;
-  virtual void InsertText(const base::string16& text) OVERRIDE;
-  virtual void InsertChar(base::char16 ch, int flags) OVERRIDE;
-  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
-  virtual ui::TextInputType GetTextInputType() const OVERRIDE;
-  virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
-  virtual bool CanComposeInline() const OVERRIDE;
-  virtual gfx::Rect GetCaretBounds() const OVERRIDE;
-  virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) const OVERRIDE;
-  virtual bool HasCompositionText() const OVERRIDE;
-  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE;
-  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE;
-  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE;
-  virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
-  virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
-  virtual bool GetTextFromRange(const gfx::Range& range,
-                                base::string16* text) const OVERRIDE;
-  virtual void OnInputMethodChanged() OVERRIDE;
-  virtual bool ChangeTextDirectionAndLayoutAlignment(
-      base::i18n::TextDirection direction) OVERRIDE;
-  virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
-  virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
-  virtual void OnCandidateWindowShown() OVERRIDE;
-  virtual void OnCandidateWindowUpdated() OVERRIDE;
-  virtual void OnCandidateWindowHidden() OVERRIDE;
+  void SetCompositionText(const ui::CompositionText& composition) override;
+  void ConfirmCompositionText() override;
+  void ClearCompositionText() override;
+  void InsertText(const base::string16& text) override;
+  void InsertChar(base::char16 ch, int flags) override;
+  gfx::NativeWindow GetAttachedWindow() const override;
+  ui::TextInputType GetTextInputType() const override;
+  ui::TextInputMode GetTextInputMode() const override;
+  int GetTextInputFlags() const override;
+  bool CanComposeInline() const override;
+  gfx::Rect GetCaretBounds() const override;
+  bool GetCompositionCharacterBounds(uint32 index,
+                                     gfx::Rect* rect) const override;
+  bool HasCompositionText() const override;
+  bool GetTextRange(gfx::Range* range) const override;
+  bool GetCompositionTextRange(gfx::Range* range) const override;
+  bool GetSelectionRange(gfx::Range* range) const override;
+  bool SetSelectionRange(const gfx::Range& range) override;
+  bool DeleteRange(const gfx::Range& range) override;
+  bool GetTextFromRange(const gfx::Range& range,
+                        base::string16* text) const override;
+  void OnInputMethodChanged() override;
+  bool ChangeTextDirectionAndLayoutAlignment(
+      base::i18n::TextDirection direction) override;
+  void ExtendSelectionAndDelete(size_t before, size_t after) override;
+  void EnsureCaretInRect(const gfx::Rect& rect) override;
+  void OnCandidateWindowShown() override;
+  void OnCandidateWindowUpdated() override;
+  void OnCandidateWindowHidden() override;
 
-  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
-  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
+  bool IsEditingCommandEnabled(int command_id) override;
+  void ExecuteEditingCommand(int command_id) override;
 
  private:
   // Invoked when text is typed. Tries to change the selection appropriately.

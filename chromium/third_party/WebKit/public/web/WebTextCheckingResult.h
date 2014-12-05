@@ -35,11 +35,9 @@
 #include "../platform/WebString.h"
 #include "WebTextDecorationType.h"
 
-namespace WebCore {
-struct TextCheckingResult;
-}
-
 namespace blink {
+
+struct TextCheckingResult;
 
 // A checked entry of text checking.
 struct WebTextCheckingResult {
@@ -61,7 +59,7 @@ struct WebTextCheckingResult {
     }
 
 #if BLINK_IMPLEMENTATION
-    operator WebCore::TextCheckingResult() const;
+    operator TextCheckingResult() const;
 #endif
 
     WebTextDecorationType decoration;

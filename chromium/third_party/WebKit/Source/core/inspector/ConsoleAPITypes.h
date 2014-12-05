@@ -25,10 +25,10 @@
 #ifndef ConsoleAPITypes_h
 #define ConsoleAPITypes_h
 
-namespace WebCore {
+namespace blink {
 
 enum MessageType {
-    LogMessageType,
+    LogMessageType = 1,
     DirMessageType,
     DirXMLMessageType,
     TableMessageType,
@@ -37,9 +37,11 @@ enum MessageType {
     StartGroupCollapsedMessageType,
     EndGroupMessageType,
     ClearMessageType,
-    AssertMessageType
+    AssertMessageType,
+    TimeEndMessageType,
+    CountMessageType
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ConsoleAPITypes_h

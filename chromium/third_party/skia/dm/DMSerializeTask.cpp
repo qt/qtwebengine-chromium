@@ -6,13 +6,11 @@
 #include "SkPicture.h"
 #include "SkPixelRef.h"
 
-DEFINE_bool(serialize, true, "If true, run picture serialization tests.");
+DEFINE_bool(serialize, true, "If true, run picture serialization tests via SkPictureData.");
 
 namespace DM {
 
-SerializeTask::SerializeTask(const Task& parent,
-                             skiagm::GM* gm,
-                             SkBitmap reference)
+SerializeTask::SerializeTask(const Task& parent, skiagm::GM* gm, SkBitmap reference)
     : CpuTask(parent)
     , fName(UnderJoin(parent.name().c_str(), "serialize"))
     , fGM(gm)
@@ -20,7 +18,7 @@ SerializeTask::SerializeTask(const Task& parent,
     {}
 
 void SerializeTask::draw() {
-    SkAutoTUnref<SkPicture> recorded(RecordPicture(fGM.get()));
+    SkAutoTUnref<SkPicture> recorded(RecordPicture(fGM.get(), NULL/*no BBH*/));
 
     SkDynamicMemoryWStream wStream;
     recorded->serialize(&wStream, NULL);
@@ -29,15 +27,18 @@ void SerializeTask::draw() {
 
     SkBitmap bitmap;
     AllocatePixels(fReference, &bitmap);
-    DrawPicture(reconstructed, &bitmap);
+    DrawPicture(*reconstructed, &bitmap);
     if (!BitmapsEqual(bitmap, fReference)) {
         this->fail();
-        this->spawnChild(SkNEW_ARGS(WriteTask, (*this, bitmap)));
+        this->spawnChild(SkNEW_ARGS(WriteTask, (*this, "GM", bitmap)));
     }
 }
 
 bool SerializeTask::shouldSkip() const {
-    return !FLAGS_serialize || fGM->getFlags() & skiagm::GM::kSkipPicture_Flag;
+    if (fGM->getFlags() & skiagm::GM::kSkipPicture_Flag) {
+        return true;
+    }
+    return !FLAGS_serialize;
 }
 
 }  // namespace DM

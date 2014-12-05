@@ -30,11 +30,10 @@
 #define BindingVisitors_h
 
 namespace WTF {
-class ArrayBufferView;
 class StringImpl;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
@@ -52,6 +51,6 @@ protected:
     virtual ~ExternalStringVisitor() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BindingVisitors_h

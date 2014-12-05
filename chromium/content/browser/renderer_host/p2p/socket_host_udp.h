@@ -18,7 +18,7 @@
 #include "content/common/p2p_socket_type.h"
 #include "net/base/ip_endpoint.h"
 #include "net/udp/udp_server_socket.h"
-#include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
+#include "third_party/webrtc/base/asyncpacketsocket.h"
 
 namespace content {
 
@@ -29,18 +29,19 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
   P2PSocketHostUdp(IPC::Sender* message_sender,
                    int socket_id,
                    P2PMessageThrottler* throttler);
-  virtual ~P2PSocketHostUdp();
+  ~P2PSocketHostUdp() override;
 
   // P2PSocketHost overrides.
-  virtual bool Init(const net::IPEndPoint& local_address,
-                    const P2PHostAndIPEndPoint& remote_address) OVERRIDE;
-  virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data,
-                    const talk_base::PacketOptions& options,
-                    uint64 packet_id) OVERRIDE;
-  virtual P2PSocketHost* AcceptIncomingTcpConnection(
-      const net::IPEndPoint& remote_address, int id) OVERRIDE;
-  virtual bool SetOption(P2PSocketOption option, int value) OVERRIDE;
+  bool Init(const net::IPEndPoint& local_address,
+            const P2PHostAndIPEndPoint& remote_address) override;
+  void Send(const net::IPEndPoint& to,
+            const std::vector<char>& data,
+            const rtc::PacketOptions& options,
+            uint64 packet_id) override;
+  P2PSocketHost* AcceptIncomingTcpConnection(
+      const net::IPEndPoint& remote_address,
+      int id) override;
+  bool SetOption(P2PSocketOption option, int value) override;
 
  private:
   friend class P2PSocketHostUdpTest;
@@ -50,25 +51,27 @@ class CONTENT_EXPORT P2PSocketHostUdp : public P2PSocketHost {
   struct PendingPacket {
     PendingPacket(const net::IPEndPoint& to,
                   const std::vector<char>& content,
-                  const talk_base::PacketOptions& options,
+                  const rtc::PacketOptions& options,
                   uint64 id);
     ~PendingPacket();
     net::IPEndPoint to;
     scoped_refptr<net::IOBuffer> data;
     int size;
-    talk_base::PacketOptions packet_options;
+    rtc::PacketOptions packet_options;
     uint64 id;
   };
 
   void OnError();
+
+  void SetSendBufferSize();
 
   void DoRead();
   void OnRecv(int result);
   void HandleReadResult(int result);
 
   void DoSend(const PendingPacket& packet);
-  void OnSend(uint64 packet_id, int result);
-  void HandleSendResult(uint64 packet_id, int result);
+  void OnSend(uint64 packet_id, uint64 tick_received, int result);
+  void HandleSendResult(uint64 packet_id, uint64 tick_received, int result);
 
   scoped_ptr<net::DatagramServerSocket> socket_;
   scoped_refptr<net::IOBuffer> recv_buffer_;

@@ -26,13 +26,13 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 // A primitive value representing a pair.  This is useful for properties like border-radius, background-size/position,
 // and border-spacing (all of which are space-separated sets of two values).  At the moment we are only using it for
 // border-radius and background-size, but (FIXME) border-spacing and background-position could be converted over to use
 // it (eliminating some extra -webkit- internal properties).
-class Pair FINAL : public RefCountedWillBeGarbageCollected<Pair> {
+class Pair final : public RefCountedWillBeGarbageCollected<Pair> {
 public:
     enum IdenticalValuesPolicy { DropIdenticalValues, KeepIdenticalValues };
 

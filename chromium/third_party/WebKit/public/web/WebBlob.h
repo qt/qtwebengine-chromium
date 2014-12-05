@@ -48,9 +48,9 @@ class Value;
 template <class T> class Handle;
 }
 
-namespace WebCore { class Blob; }
-
 namespace blink {
+
+class Blob;
 
 class WebBlob {
 public:
@@ -77,12 +77,12 @@ public:
     BLINK_EXPORT v8::Handle<v8::Value>  toV8Value(v8::Handle<v8::Object> creationContext, v8::Isolate*);
 
 #if BLINK_IMPLEMENTATION
-    explicit WebBlob(const PassRefPtrWillBeRawPtr<WebCore::Blob>&);
-    WebBlob& operator=(const PassRefPtrWillBeRawPtr<WebCore::Blob>&);
+    WebBlob(Blob*);
+    WebBlob& operator=(Blob*);
 #endif
 
 protected:
-    WebPrivatePtr<WebCore::Blob> m_private;
+    WebPrivatePtr<Blob> m_private;
 };
 
 } // namespace blink

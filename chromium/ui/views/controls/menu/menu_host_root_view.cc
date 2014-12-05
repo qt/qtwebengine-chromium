@@ -55,15 +55,15 @@ bool MenuHostRootView::OnMouseWheel(const ui::MouseWheelEvent& event) {
       GetMenuController()->OnMouseWheel(submenu_, event);
 }
 
-void MenuHostRootView::DispatchGestureEvent(ui::GestureEvent* event) {
-  RootView::DispatchGestureEvent(event);
-  if (event->handled())
-    return;
-  // ChromeOS uses MenuController to forward events like other
-  // mouse events.
-  if (!GetMenuController())
-    return;
-  GetMenuController()->OnGestureEvent(submenu_, event);
+void MenuHostRootView::OnEventProcessingFinished(ui::Event* event) {
+  RootView::OnEventProcessingFinished(event);
+
+  // Forward unhandled gesture events to our menu controller.
+  // TODO(tdanderson): Investigate whether this should be moved into a
+  //                   post-target handler installed on |this| instead
+  //                   (invoked only if event->target() == this).
+  if (event->IsGestureEvent() && !event->handled() && GetMenuController())
+    GetMenuController()->OnGestureEvent(submenu_, event->AsGestureEvent());
 }
 
 MenuController* MenuHostRootView::GetMenuController() {

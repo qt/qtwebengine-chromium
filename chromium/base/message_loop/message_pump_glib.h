@@ -22,7 +22,7 @@ namespace base {
 class BASE_EXPORT MessagePumpGlib : public MessagePump {
  public:
   MessagePumpGlib();
-  virtual ~MessagePumpGlib();
+  ~MessagePumpGlib() override;
 
   // Internal methods used for processing the pump callbacks.  They are
   // public for simplicity but should not be used directly.  HandlePrepare
@@ -35,10 +35,10 @@ class BASE_EXPORT MessagePumpGlib : public MessagePump {
   void HandleDispatch();
 
   // Overridden from MessagePump:
-  virtual void Run(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
-  virtual void ScheduleWork() OVERRIDE;
-  virtual void ScheduleDelayedWork(const TimeTicks& delayed_work_time) OVERRIDE;
+  void Run(Delegate* delegate) override;
+  void Quit() override;
+  void ScheduleWork() override;
+  void ScheduleDelayedWork(const TimeTicks& delayed_work_time) override;
 
  private:
   bool ShouldQuit() const;

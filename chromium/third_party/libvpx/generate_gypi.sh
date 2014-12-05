@@ -4,34 +4,39 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# This script is used to generate .gypi files and files in the config/platform
-# directories needed to build libvpx.
+# This script is used to generate .gypi, .gni files and files in the
+# config/platform directories needed to build libvpx.
 # Every time libvpx source code is updated just run this script.
 #
 # For example:
 # $ ./generate_gypi.sh
 #
-# And this will update all the .gypi and config files needed.
+# And this will update all the .gypi, .gni and config files needed.
 #
 # !!! It's highly recommended to install yasm before running this script.
 
 export LC_ALL=C
-BASE_DIR=`pwd`
+BASE_DIR=$(pwd)
 LIBVPX_SRC_DIR="source/libvpx"
 LIBVPX_CONFIG_DIR="source/config"
 
-# Print gypi boilerplate header
+# Print license header.
 # $1 - Output base name
-function write_gypi_header {
-  echo "# This file is generated. Do not edit." > $1
-  echo "# Copyright (c) 2013 The Chromium Authors. All rights reserved." >> $1
+function write_license {
+  echo "# This file is generated. Do not edit." >> $1
+  echo "# Copyright (c) 2014 The Chromium Authors. All rights reserved." >> $1
   echo "# Use of this source code is governed by a BSD-style license that can be" >> $1
   echo "# found in the LICENSE file." >> $1
   echo "" >> $1
+}
+
+# Print gypi boilerplate header.
+# $1 - Output base name
+function write_gypi_header {
   echo "{" >> $1
 }
 
-# Print gypi boilerplate footer
+# Print gypi boilerplate footer.
 # $1 - Output base name
 function write_gypi_footer {
   echo "}" >> $1
@@ -41,20 +46,39 @@ function write_gypi_footer {
 # $1 - Array name for file list. This is processed with 'declare' below to
 #      regenerate the array locally.
 # $2 - Output file
-function write_file_list {
+function write_gypi {
+  # Convert the first argument back in to an array.
+  local readonly file_list=(${!1})
+
+  rm -rf "$2"
+  write_license "$2"
+  write_gypi_header "$2"
+
+  echo "  'sources': [" >> "$2"
+  for f in ${file_list[@]}
+  do
+    echo "    '<(libvpx_source)/$f'," >> "$2"
+  done
+  echo "  ]," >> "$2"
+
+  write_gypi_footer "$2"
+}
+
+# Generate a gni with a list of source files.
+# $1 - Array name for file list. This is processed with 'declare' below to
+#      regenerate the array locally.
+# $2 - GN variable name.
+# $3 - Output file.
+function write_gni {
   # Convert the first argument back in to an array.
   declare -a file_list=("${!1}")
 
-  write_gypi_header $2
-
-  echo "  'sources': [" >> $2
+  echo "$2 = [" >> "$3"
   for f in $file_list
   do
-    echo "    '<(libvpx_source)/$f'," >> $2
+    echo "  \"//third_party/libvpx/source/libvpx/$f\"," >> "$3"
   done
-  echo "  ]," >> $2
-
-  write_gypi_footer $2
+  echo "]" >> "$3"
 }
 
 # Target template function
@@ -65,40 +89,52 @@ function write_file_list {
 function write_target_definition {
   declare -a sources_list=("${!1}")
 
-  echo "    {" >> $2
-  echo "      'target_name': '$3'," >> $2
-  echo "      'type': 'static_library'," >> $2
-  echo "      'include_dirs': [" >> $2
-  echo "        'source/config/<(OS_CATEGORY)/<(target_arch_full)'," >> $2
-  echo "        '<(libvpx_source)'," >> $2
-  echo "      ]," >> $2
-  echo "      'sources': [" >> $2
+  echo "    {" >> "$2"
+  echo "      'target_name': '$3'," >> "$2"
+  echo "      'type': 'static_library'," >> "$2"
+  echo "      'include_dirs': [" >> "$2"
+  echo "        'source/config/<(OS_CATEGORY)/<(target_arch_full)'," >> "$2"
+  echo "        '<(libvpx_source)'," >> "$2"
+  echo "      ]," >> "$2"
+  echo "      'sources': [" >> "$2"
   for f in $sources_list
   do
     echo "        '<(libvpx_source)/$f'," >> $2
   done
-  echo "      ]," >> $2
+  echo "      ]," >> "$2"
+  if [[ $4 == fpu=neon ]]; then
+  echo "      'cflags!': [ '-mfpu=vfpv3-d16' ]," >> "$2"
   echo "      'conditions': [" >> $2
-  echo "        ['os_posix==1 and OS!=\"mac\" and OS!=\"ios\"', {" >> $2
-  echo "          'cflags!': [ '-mfpu=vfpv3-d16' ]," >> $2
-  echo "          'cflags': [ '-m$4', ]," >> $2
-  echo "        }]," >> $2
-  echo "        ['OS==\"mac\" or OS==\"ios\"', {" >> $2
-  echo "          'xcode_settings': {" >> $2
-  echo "            'OTHER_CFLAGS': [ '-m$4', ]," >> $2
-  echo "          }," >> $2
-  echo "        }]," >> $2
-  if [[ $4 == avx* ]]; then
-  echo "        ['OS==\"win\"', {" >> $2
-  echo "          'msvs_settings': {" >> $2
-  echo "            'VCCLCompilerTool': {" >> $2
-  echo "              'EnableEnhancedInstructionSet': '3', # /arch:AVX" >> $2
-  echo "            }," >> $2
-  echo "          }," >> $2
-  echo "        }]," >> $2
+  echo "        # Disable LTO in neon targets due to compiler bug" >> "$2"
+  echo "        # crbug.com/408997" >> "$2"
+  echo "        ['use_lto==1', {" >> "$2"
+  echo "          'cflags!': [" >> "$2"
+  echo "            '-flto'," >> "$2"
+  echo "            '-ffat-lto-objects'," >> "$2"
+  echo "          ]," >> "$2"
+  echo "        }]," >> "$2"
+  echo "      ]," >> "$2"
   fi
-  echo "      ]," >> $2
-  echo "    }," >> $2
+  echo "      'cflags': [ '-m$4', ]," >> "$2"
+  echo "      'xcode_settings': { 'OTHER_CFLAGS': [ '-m$4' ] }," >> "$2"
+  if [[ $4 == avx* ]]; then
+  echo "      'msvs_settings': {" >> "$2"
+  echo "        'VCCLCompilerTool': {" >> "$2"
+  echo "          'EnableEnhancedInstructionSet': '3', # /arch:AVX" >> "$2"
+  echo "        }," >> "$2"
+  echo "      }," >> "$2"
+  elif [[ $4 == ssse3 || $4 == sse4.1 ]]; then
+  echo "      'conditions': [" >> "$2"
+  echo "        ['OS==\"win\" and clang==1', {" >> "$2"
+  echo "          # cl.exe's /arch flag doesn't have a setting for SSSE3/4, and cl.exe" >> "$2"
+  echo "          # doesn't need it for intrinsics. clang-cl does need it, though." >> "$2"
+  echo "          'msvs_settings': {" >> "$2"
+  echo "            'VCCLCompilerTool': { 'AdditionalOptions': [ '-m$4' ] }," >> "$2"
+  echo "          }," >> "$2"
+  echo "        }]," >> "$2"
+  echo "      ]," >> "$2"
+  fi
+  echo "    }," >> "$2"
 }
 
 
@@ -106,7 +142,7 @@ function write_target_definition {
 # name.
 # $1 - Array name for file list.
 # $2 - Output file
-function write_special_flags {
+function write_intrinsics_gypi {
   declare -a file_list=("${!1}")
 
   local mmx_sources=$(echo "$file_list" | grep '_mmx\.c$')
@@ -116,63 +152,62 @@ function write_special_flags {
   local sse4_1_sources=$(echo "$file_list" | grep '_sse4\.c$')
   local avx_sources=$(echo "$file_list" | grep '_avx\.c$')
   local avx2_sources=$(echo "$file_list" | grep '_avx2\.c$')
-
   local neon_sources=$(echo "$file_list" | grep '_neon\.c$')
 
   # Intrinsic functions and files are in flux. We can selectively generate them
   # but we can not selectively include them in libvpx.gyp. Throw some errors
   # when new targets are needed.
 
-  write_gypi_header $2
+  rm -rf "$2"
+  write_license "$2"
+  write_gypi_header "$2"
 
-  echo "  'targets': [" >> $2
+  echo "  'targets': [" >> "$2"
 
   # x86[_64]
   if [ 0 -ne ${#mmx_sources} ]; then
-    write_target_definition mmx_sources[@] $2 libvpx_intrinsics_mmx mmx
+    write_target_definition mmx_sources[@] "$2" libvpx_intrinsics_mmx mmx
   fi
   if [ 0 -ne ${#sse2_sources} ]; then
-    write_target_definition sse2_sources[@] $2 libvpx_intrinsics_sse2 sse2
+    write_target_definition sse2_sources[@] "$2" libvpx_intrinsics_sse2 sse2
   fi
   if [ 0 -ne ${#sse3_sources} ]; then
-    #write_target_definition sse3_sources[@] $2 libvpx_intrinsics_sse3 sse3
+    #write_target_definition sse3_sources[@] "$2" libvpx_intrinsics_sse3 sse3
     echo "ERROR: Uncomment sse3 sections in libvpx.gyp"
     exit 1
   fi
   if [ 0 -ne ${#ssse3_sources} ]; then
-    write_target_definition ssse3_sources[@] $2 libvpx_intrinsics_ssse3 ssse3
+    write_target_definition ssse3_sources[@] "$2" libvpx_intrinsics_ssse3 ssse3
   fi
   if [ 0 -ne ${#sse4_1_sources} ]; then
-    #write_target_definition sse4_1_sources[@] $2 libvpx_intrinsics_sse4_1 sse4.1
-    echo "ERROR: Uncomment sse4_1 sections in libvpx.gyp"
-    exit 1
+    write_target_definition sse4_1_sources[@] "$2" libvpx_intrinsics_sse4_1 sse4.1
   fi
   if [ 0 -ne ${#avx_sources} ]; then
-    #write_target_definition avx_sources[@] $2 libvpx_intrinsics_avx avx
+    #write_target_definition avx_sources[@] "$2" libvpx_intrinsics_avx avx
     echo "ERROR: Uncomment avx sections in libvpx.gyp"
     exit 1
   fi
   if [ 0 -ne ${#avx2_sources} ]; then
-    #write_target_definition avx2_sources[@] $2 libvpx_intrinsics_avx2 avx2
+    #write_target_definition avx2_sources[@] "$2" libvpx_intrinsics_avx2 avx2
     echo "ERROR: Uncomment avx2 sections in libvpx.gyp"
     exit 1
   fi
 
   # arm neon
   if [ 0 -ne ${#neon_sources} ]; then
-    write_target_definition neon_sources[@] $2 libvpx_intrinsics_neon fpu=neon
+    write_target_definition neon_sources[@] "$2" libvpx_intrinsics_neon fpu=neon
   fi
 
-  echo "  ]," >> $2
+  echo "  ]," >> "$2"
 
-  write_gypi_footer $2
+  write_gypi_footer "$2"
 }
 
-# Convert a list of source files into gypi file.
+# Convert a list of source files into gypi and gni files.
 # $1 - Input file.
 # $2 - Output gypi file base. Will generate additional .gypi files when
 #      different compilation flags are required.
-function convert_srcs_to_gypi {
+function convert_srcs_to_project_files {
   # Do the following here:
   # 1. Filter .c, .h, .s, .S and .asm files.
   # 2. Move certain files to a separate include to allow applying different
@@ -208,14 +243,47 @@ function convert_srcs_to_gypi {
   # Remove these files from the main list.
   source_list=$(comm -23 <(echo "$source_list") <(echo "$intrinsic_list"))
 
-  write_file_list source_list $BASE_DIR/$2.gypi
+  local x86_list=$(echo "$source_list" | egrep '/x86/')
+
+  write_gypi source_list "$BASE_DIR/$2.gypi"
 
   # All the files are in a single "element." Check if the first element has
   # length 0.
   if [ 0 -ne ${#intrinsic_list} ]; then
-    write_special_flags intrinsic_list[@] $BASE_DIR/$2_intrinsics.gypi
+    write_intrinsics_gypi intrinsic_list[@] "$BASE_DIR/$2_intrinsics.gypi"
   fi
 
+  # Write a single .gni file that includes all source files for all archs.
+  if [ 0 -ne ${#x86_list} ]; then
+    local c_sources=$(echo "$source_list" | egrep '.(c|h)$')
+    local assembly_sources=$(echo "$source_list" | egrep '.asm$')
+    local mmx_sources=$(echo "$intrinsic_list" | grep '_mmx\.c$')
+    local sse2_sources=$(echo "$intrinsic_list" | grep '_sse2\.c$')
+    local sse3_sources=$(echo "$intrinsic_list" | grep '_sse3\.c$')
+    local ssse3_sources=$(echo "$intrinsic_list" | grep '_ssse3\.c$')
+    local sse4_1_sources=$(echo "$intrinsic_list" | grep '_sse4\.c$')
+    local avx_sources=$(echo "$intrinsic_list" | grep '_avx\.c$')
+    local avx2_sources=$(echo "$intrinsic_list" | grep '_avx2\.c$')
+
+    write_gni c_sources $2 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni assembly_sources $2_assembly "$BASE_DIR/libvpx_srcs.gni"
+    write_gni mmx_sources $2_mmx "$BASE_DIR/libvpx_srcs.gni"
+    write_gni sse2_sources $2_sse2 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni sse3_sources $2_sse3 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni ssse3_sources $2_ssse3 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni sse4_1_sources $2_sse4_1 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni avx_sources $2_avx "$BASE_DIR/libvpx_srcs.gni"
+    write_gni avx2_sources $2_avx2 "$BASE_DIR/libvpx_srcs.gni"
+  else
+    local c_sources=$(echo "$source_list" | egrep '.(c|h)$')
+    local assembly_sources=$(echo "$source_list" | egrep '.asm$')
+    local neon_sources=$(echo "$intrinsic_list" | grep '_neon\.c$')
+    write_gni c_sources $2 "$BASE_DIR/libvpx_srcs.gni"
+    write_gni assembly_sources $2_assembly "$BASE_DIR/libvpx_srcs.gni"
+    if [ 0 -ne ${#neon_sources} ]; then
+      write_gni neon_sources $2_neon "$BASE_DIR/libvpx_srcs.gni"
+    fi
+  fi
 }
 
 # Clean files from previous make.
@@ -229,7 +297,7 @@ function make_clean {
 function lint_config {
   # mips does not contain any assembly so the header does not need to be
   # compared to the asm.
-  if [[ "$1" != *mipsel ]]; then
+  if [[ "$1" != *mipsel && "$1" != *mips64el ]]; then
     $BASE_DIR/lint_config.sh \
       -h $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.h \
       -a $BASE_DIR/$LIBVPX_CONFIG_DIR/$1/vpx_config.asm
@@ -266,7 +334,7 @@ function gen_rtcd_header {
   echo "Generate $LIBVPX_CONFIG_DIR/$1/*_rtcd.h files."
 
   rm -rf $BASE_DIR/$TEMP_DIR/libvpx.config
-  if [ "$2" = "mipsel" ]; then
+  if [[ "$2" == "mipsel" || "$2" == "mips64el" ]]; then
     print_config_basic $1 > $BASE_DIR/$TEMP_DIR/libvpx.config
   else
     $BASE_DIR/lint_config.sh -p \
@@ -310,9 +378,9 @@ function gen_config_files {
   ./configure $2  > /dev/null
 
   # Generate vpx_config.asm. Do not create one for mips.
-  if [[ "$1" != *mipsel ]]; then
+  if [[ "$1" != *mipsel && "$1" != *mips64el ]]; then
     if [[ "$1" == *x64* ]] || [[ "$1" == *ia32* ]]; then
-      egrep "#define [A-Z0-9_]+ [01]" vpx_config.h | awk '{print $2 " equ " $3}' > vpx_config.asm
+      egrep "#define [A-Z0-9_]+ [01]" vpx_config.h | awk '{print "%define " $2 " " $3}' > vpx_config.asm
     else
       egrep "#define [A-Z0-9_]+ [01]" vpx_config.h | awk '{print $2 " EQU " $3}' | perl $BASE_DIR/$LIBVPX_SRC_DIR/build/make/ads2gas.pl > vpx_config.asm
     fi
@@ -329,7 +397,7 @@ rm -rf $TEMP_DIR
 cp -R $LIBVPX_SRC_DIR $TEMP_DIR
 cd $TEMP_DIR
 
-echo "Generate Config Files"
+echo "Generate config files."
 # TODO(joeyparrish) Enable AVX2 when broader VS2013 support is available
 all_platforms="--enable-external-build --enable-postproc --disable-install-srcs --enable-multi-res-encoding --enable-temporal-denoising --disable-unit-tests --disable-install-docs --disable-examples --disable-avx2"
 gen_config_files linux/ia32 "--target=x86-linux-gcc --disable-ccache --enable-pic --enable-realtime-only ${all_platforms}"
@@ -339,6 +407,7 @@ gen_config_files linux/arm-neon "--target=armv7-linux-gcc --enable-pic --enable-
 gen_config_files linux/arm-neon-cpu-detect "--target=armv7-linux-gcc --enable-pic --enable-realtime-only --enable-runtime-cpu-detect --disable-edsp ${all_platforms}"
 gen_config_files linux/arm64 "--force-target=armv8-linux-gcc --enable-pic --enable-realtime-only --disable-edsp ${all_platforms}"
 gen_config_files linux/mipsel "--target=mips32-linux-gcc --disable-fast-unaligned ${all_platforms}"
+gen_config_files linux/mips64el "--target=mips64-linux-gcc --disable-fast-unaligned ${all_platforms}"
 gen_config_files linux/generic "--target=generic-gnu --enable-pic --enable-realtime-only ${all_platforms}"
 gen_config_files win/ia32 "--target=x86-win32-vs12 --enable-realtime-only ${all_platforms}"
 gen_config_files win/x64 "--target=x86_64-win64-vs12 --enable-realtime-only ${all_platforms}"
@@ -358,6 +427,7 @@ lint_config linux/arm-neon
 lint_config linux/arm-neon-cpu-detect
 lint_config linux/arm64
 lint_config linux/mipsel
+lint_config linux/mips64el
 lint_config linux/generic
 lint_config win/ia32
 lint_config win/x64
@@ -378,6 +448,7 @@ gen_rtcd_header linux/arm-neon armv7
 gen_rtcd_header linux/arm-neon-cpu-detect armv7
 gen_rtcd_header linux/arm64 armv8
 gen_rtcd_header linux/mipsel mipsel
+gen_rtcd_header linux/mips64el mips64el
 gen_rtcd_header linux/generic generic
 gen_rtcd_header win/ia32 x86
 gen_rtcd_header win/x64 x86_64
@@ -389,11 +460,15 @@ echo "Prepare Makefile."
 ./configure --target=generic-gnu > /dev/null
 make_clean
 
+# Remove existing .gni file.
+rm -rf $BASE_DIR/libvpx_srcs.gni
+write_license $BASE_DIR/libvpx_srcs.gni
+
 echo "Generate X86 source list."
 config=$(print_config linux/ia32)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_x86
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_x86
 
 # Copy vpx_version.h. The file should be the same for all platforms.
 cp vpx_version.h $BASE_DIR/$LIBVPX_CONFIG_DIR
@@ -402,49 +477,51 @@ echo "Generate X86_64 source list."
 config=$(print_config linux/x64)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_x86_64
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_x86_64
 
 echo "Generate ARM source list."
 config=$(print_config linux/arm)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_arm
 
 echo "Generate ARM NEON source list."
 config=$(print_config linux/arm-neon)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm_neon
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_arm_neon
 
 echo "Generate ARM NEON CPU DETECT source list."
 config=$(print_config linux/arm-neon-cpu-detect)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm_neon_cpu_detect
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_arm_neon_cpu_detect
 
 echo "Generate ARM64 source list."
 config=$(print_config linux/arm64)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_arm64
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_arm64
 
 echo "Generate MIPS source list."
 config=$(print_config_basic linux/mipsel)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_mips
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_mips
+
+echo "MIPS64 source list is identical to MIPS source list. No need to generate it."
 
 echo "Generate NaCl source list."
 config=$(print_config_basic nacl)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_nacl
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_nacl
 
 echo "Generate GENERIC source list."
 config=$(print_config_basic linux/generic)
 make_clean
 make libvpx_srcs.txt target=libs $config > /dev/null
-convert_srcs_to_gypi libvpx_srcs.txt libvpx_srcs_generic
+convert_srcs_to_project_files libvpx_srcs.txt libvpx_srcs_generic
 
 echo "Remove temporary directory."
 cd $BASE_DIR

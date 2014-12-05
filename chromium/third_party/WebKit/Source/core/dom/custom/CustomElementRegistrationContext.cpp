@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/dom/Document.h"
@@ -44,7 +44,7 @@
 #include "core/svg/SVGUnknownElement.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 CustomElementRegistrationContext::CustomElementRegistrationContext()
     : m_candidates(CustomElementUpgradeCandidateMap::create())
@@ -64,8 +64,8 @@ void CustomElementRegistrationContext::registerElement(Document* document, Custo
     if (!upgradeCandidates)
         return;
 
-    for (CustomElementUpgradeCandidateMap::ElementSet::const_iterator it = upgradeCandidates->begin(); it != upgradeCandidates->end(); ++it)
-        CustomElement::define(*it, definition);
+    for (const auto& candidate : *upgradeCandidates)
+        CustomElement::define(candidate, definition);
 }
 
 PassRefPtrWillBeRawPtr<Element> CustomElementRegistrationContext::createCustomTagElement(Document& document, const QualifiedName& tagName)
@@ -152,7 +152,7 @@ void CustomElementRegistrationContext::setTypeExtension(Element* element, const 
         return;
 
     element->setCustomElementState(Element::WaitingForUpgrade);
-    context->didGiveTypeExtension(element, type);
+    context->didGiveTypeExtension(element, element->document().convertLocalName(type));
 }
 
 void CustomElementRegistrationContext::trace(Visitor* visitor)
@@ -160,4 +160,4 @@ void CustomElementRegistrationContext::trace(Visitor* visitor)
     visitor->trace(m_candidates);
 }
 
-} // namespace WebCore
+} // namespace blink

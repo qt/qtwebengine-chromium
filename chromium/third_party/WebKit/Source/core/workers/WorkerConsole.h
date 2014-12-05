@@ -30,22 +30,23 @@
 #ifndef WorkerConsole_h
 #define WorkerConsole_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/inspector/ConsoleAPITypes.h"
 #include "core/frame/ConsoleBase.h"
 #include "core/frame/ConsoleTypes.h"
-#include "core/workers/WorkerGlobalScope.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
+class ConsoleMessage;
 class ScriptArguments;
+class WorkerGlobalScope;
 
-class WorkerConsole FINAL : public ConsoleBase, public ScriptWrappable {
+class WorkerConsole final : public ConsoleBase {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<WorkerConsole> create(WorkerGlobalScope* scope)
     {
@@ -53,11 +54,11 @@ public:
     }
     virtual ~WorkerConsole();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
-    virtual ExecutionContext* context() OVERRIDE;
-    virtual void reportMessageToClient(MessageLevel, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack>) OVERRIDE;
+    virtual ExecutionContext* context() override;
+    virtual void reportMessageToConsole(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
 
 private:
     explicit WorkerConsole(WorkerGlobalScope*);
@@ -65,6 +66,6 @@ private:
     RawPtrWillBeMember<WorkerGlobalScope> m_scope;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerConsole_h

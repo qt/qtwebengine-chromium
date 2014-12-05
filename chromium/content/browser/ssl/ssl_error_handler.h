@@ -12,8 +12,8 @@
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/common/resource_type.h"
 #include "url/gurl.h"
-#include "webkit/common/resource_type.h"
 
 namespace net {
 class SSLInfo;
@@ -42,22 +42,18 @@ class SSLManager;
 //
 class SSLErrorHandler : public base::RefCountedThreadSafe<SSLErrorHandler> {
  public:
-  // Delegate functions must be called from IO thread. All functions accept
-  // |id| as the first argument. |id| is a copy of the second argument of
-  // SSLManager::OnSSLCertificateError() and represents the request.
-  // Finally, CancelSSLRequest() or ContinueSSLRequest() will be called after
+  // Delegate functions must be called from IO thread. Finally,
+  // CancelSSLRequest() or ContinueSSLRequest() will be called after
   // SSLErrorHandler makes a decision on the SSL error.
   class CONTENT_EXPORT Delegate {
    public:
     // Called when SSLErrorHandler decides to cancel the request because of
     // the SSL error.
-    virtual void CancelSSLRequest(const GlobalRequestID& id,
-                                  int error,
-                                  const net::SSLInfo* ssl_info) = 0;
+    virtual void CancelSSLRequest(int error, const net::SSLInfo* ssl_info) = 0;
 
     // Called when SSLErrorHandler decides to continue the request despite the
     // SSL error.
-    virtual void ContinueSSLRequest(const GlobalRequestID& id) = 0;
+    virtual void ContinueSSLRequest() = 0;
 
    protected:
     virtual ~Delegate() {}
@@ -75,7 +71,7 @@ class SSLErrorHandler : public base::RefCountedThreadSafe<SSLErrorHandler> {
   const GURL& request_url() const { return request_url_; }
 
   // Available on either thread.
-  ResourceType::Type resource_type() const { return resource_type_; }
+  ResourceType resource_type() const { return resource_type_; }
 
   // Cancels the associated net::URLRequest.
   // This method can be called from OnDispatchFailed and OnDispatched.
@@ -108,8 +104,7 @@ class SSLErrorHandler : public base::RefCountedThreadSafe<SSLErrorHandler> {
 
   // Construct on the IO thread.
   SSLErrorHandler(const base::WeakPtr<Delegate>& delegate,
-                  const GlobalRequestID& id,
-                  ResourceType::Type resource_type,
+                  ResourceType resource_type,
                   const GURL& url,
                   int render_process_id,
                   int render_frame_id);
@@ -124,10 +119,6 @@ class SSLErrorHandler : public base::RefCountedThreadSafe<SSLErrorHandler> {
 
   // Should only be accessed on the UI thread.
   SSLManager* manager_;  // Our manager.
-
-  // The id of the request associated with this object.
-  // Should only be accessed from the IO thread.
-  GlobalRequestID request_id_;
 
   // The delegate we are associated with.
   base::WeakPtr<Delegate> delegate_;
@@ -158,7 +149,7 @@ class SSLErrorHandler : public base::RefCountedThreadSafe<SSLErrorHandler> {
   // What kind of resource is associated with the requested that generated
   // that error.
   // This read-only member can be accessed on any thread.
-  const ResourceType::Type resource_type_;
+  const ResourceType resource_type_;
 
   // A flag to make sure we notify the net::URLRequest exactly once.
   // Should only be accessed on the IO thread

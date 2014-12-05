@@ -6,11 +6,13 @@
 
 #include <vector>
 
+#include "net/base/chunked_upload_data_stream.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/upload_bytes_element_reader.h"
-#include "net/base/upload_data_stream.h"
 #include "net/http/http_response_headers.h"
+#include "net/http/transport_security_state.h"
 #include "net/quic/congestion_control/receive_algorithm_interface.h"
 #include "net/quic/congestion_control/send_algorithm_interface.h"
 #include "net/quic/crypto/crypto_protocol.h"
@@ -48,7 +50,7 @@ namespace net {
 namespace test {
 namespace {
 
-const char kUploadData[] = "hello world!";
+const char kUploadData[] = "Really nifty data!";
 const char kServerHostname[] = "www.google.com";
 const uint16 kServerPort = 80;
 
@@ -58,8 +60,13 @@ class TestQuicConnection : public QuicConnection {
                      QuicConnectionId connection_id,
                      IPEndPoint address,
                      QuicConnectionHelper* helper,
-                     QuicPacketWriter* writer)
-      : QuicConnection(connection_id, address, helper, writer, false,
+                     const QuicConnection::PacketWriterFactory& writer_factory)
+      : QuicConnection(connection_id,
+                       address,
+                       helper,
+                       writer_factory,
+                       true  /* owns_writer */,
+                       false  /* is_server */,
                        versions) {
   }
 
@@ -91,10 +98,24 @@ class AutoClosingStream : public QuicHttpStream {
       : QuicHttpStream(session) {
   }
 
-  virtual int OnDataReceived(const char* data, int length) OVERRIDE {
+  int OnDataReceived(const char* data, int length) override {
     Close(false);
     return OK;
   }
+};
+
+class TestPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+ public:
+  explicit TestPacketWriterFactory(DatagramClientSocket* socket)
+      : socket_(socket) {}
+  ~TestPacketWriterFactory() override {}
+
+  QuicPacketWriter* Create(QuicConnection* connection) const override {
+    return new QuicDefaultPacketWriter(socket_);
+  }
+
+ private:
+  DatagramClientSocket* socket_;
 };
 
 }  // namespace
@@ -130,12 +151,13 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
         read_buffer_(new IOBufferWithSize(4096)),
         connection_id_(2),
         stream_id_(kClientDataStreamId1),
-        maker_(GetParam(), connection_id_),
+        maker_(GetParam(), connection_id_, &clock_),
         random_generator_(0) {
     IPAddressNumber ip;
     CHECK(ParseIPLiteralToNumber("192.0.2.33", &ip));
     peer_addr_ = IPEndPoint(ip, 443);
     self_addr_ = IPEndPoint(ip, 8435);
+    clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
   }
 
   ~QuicHttpStreamTest() {
@@ -172,8 +194,8 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
                                   writes_[i].packet->length());
     };
 
-    socket_data_.reset(new StaticSocketDataProvider(NULL, 0, mock_writes_.get(),
-                                                    writes_.size()));
+    socket_data_.reset(new StaticSocketDataProvider(
+        nullptr, 0, mock_writes_.get(), writes_.size()));
 
     MockUDPClientSocket* socket = new MockUDPClientSocket(socket_data_.get(),
                                                           net_log_.net_log());
@@ -196,32 +218,34 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
     EXPECT_CALL(*send_algorithm_, SetFromConfig(_, _)).Times(AnyNumber());
     helper_.reset(new QuicConnectionHelper(runner_.get(), &clock_,
                                            &random_generator_));
-    writer_.reset(new QuicDefaultPacketWriter(socket));
+    TestPacketWriterFactory writer_factory(socket);
     connection_ = new TestQuicConnection(SupportedVersions(GetParam()),
                                          connection_id_, peer_addr_,
-                                         helper_.get(), writer_.get());
+                                         helper_.get(), writer_factory);
     connection_->set_visitor(&visitor_);
     connection_->SetSendAlgorithm(send_algorithm_);
     connection_->SetReceiveAlgorithm(receive_algorithm_);
-    crypto_config_.SetDefaults();
     session_.reset(
         new QuicClientSession(connection_,
                               scoped_ptr<DatagramClientSocket>(socket),
-                              writer_.Pass(), NULL,
-                              &crypto_client_stream_factory_,
-                              make_scoped_ptr((QuicServerInfo*)NULL),
-                              QuicServerId(kServerHostname, kServerPort,
-                                           false, PRIVACY_MODE_DISABLED),
-                              DefaultQuicConfig(), &crypto_config_,
+                              nullptr,
+                              &transport_security_state_,
+                              make_scoped_ptr((QuicServerInfo*)nullptr),
+                              DefaultQuicConfig(),
+                              /*is_secure=*/false,
                               base::MessageLoop::current()->
                                   message_loop_proxy().get(),
-                              NULL));
+                              nullptr));
+    session_->InitializeSession(QuicServerId(kServerHostname, kServerPort,
+                                             /*is_secure=*/false,
+                                             PRIVACY_MODE_DISABLED),
+                                &crypto_config_,
+                                &crypto_client_stream_factory_);
     session_->GetCryptoStream()->CryptoConnect();
     EXPECT_TRUE(session_->IsCryptoHandshakeConfirmed());
     stream_.reset(use_closing_stream_ ?
                   new AutoClosingStream(session_->GetWeakPtr()) :
                   new QuicHttpStream(session_->GetWeakPtr()));
-    clock_.AdvanceTime(QuicTime::Delta::FromMilliseconds(20));
   }
 
   void SetRequest(const std::string& method,
@@ -263,7 +287,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
       QuicPacketSequenceNumber sequence_number) {
     return maker_.MakeRstPacket(
         sequence_number, true, stream_id_,
-        AdjustErrorForVersion(QUIC_RST_FLOW_CONTROL_ACCOUNTING, GetParam()));
+        AdjustErrorForVersion(QUIC_RST_ACKNOWLEDGEMENT, GetParam()));
   }
 
   scoped_ptr<QuicEncryptedPacket> ConstructAckAndRstStreamPacket(
@@ -292,7 +316,7 @@ class QuicHttpStreamTest : public ::testing::TestWithParam<QuicVersion> {
   scoped_ptr<QuicConnectionHelper> helper_;
   testing::StrictMock<MockConnectionVisitor> visitor_;
   scoped_ptr<QuicHttpStream> stream_;
-  scoped_ptr<QuicDefaultPacketWriter> writer_;
+  TransportSecurityState transport_security_state_;
   scoped_ptr<QuicClientSession> session_;
   QuicCryptoClientConfig crypto_config_;
   TestCompletionCallback callback_;
@@ -322,7 +346,7 @@ INSTANTIATE_TEST_CASE_P(Version, QuicHttpStreamTest,
 
 TEST_P(QuicHttpStreamTest, RenewStreamForAuth) {
   Initialize();
-  EXPECT_EQ(NULL, stream_->RenewStreamForAuth());
+  EXPECT_EQ(nullptr, stream_->RenewStreamForAuth());
 }
 
 TEST_P(QuicHttpStreamTest, CanFindEndOfResponse) {
@@ -418,6 +442,44 @@ TEST_P(QuicHttpStreamTest, GetRequestLargeResponse) {
   EXPECT_TRUE(AtEof());
 }
 
+// Regression test for http://crbug.com/409101
+TEST_P(QuicHttpStreamTest, SessionClosedBeforeSendRequest) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+
+  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+
+  EXPECT_EQ(ERR_CONNECTION_CLOSED,
+            stream_->SendRequest(headers_, &response_,
+                                 callback_.callback()));
+}
+
+// Regression test for http://crbug.com/409871
+TEST_P(QuicHttpStreamTest, SessionClosedBeforeReadResponseHeaders) {
+  SetRequest("GET", "/", DEFAULT_PRIORITY);
+  AddWrite(ConstructRequestHeadersPacket(1, kFin));
+  Initialize();
+
+  request_.method = "GET";
+  request_.url = GURL("http://www.google.com/");
+
+  EXPECT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+
+  EXPECT_EQ(OK, stream_->SendRequest(headers_, &response_,
+                                     callback_.callback()));
+
+  session_->connection()->CloseConnection(QUIC_NO_ERROR, true);
+
+  EXPECT_NE(OK, stream_->ReadResponseHeaders(callback_.callback()));
+}
+
 TEST_P(QuicHttpStreamTest, SendPostRequest) {
   SetRequest("POST", "/", DEFAULT_PRIORITY);
   AddWrite(ConstructRequestHeadersPacket(1, !kFin));
@@ -429,7 +491,7 @@ TEST_P(QuicHttpStreamTest, SendPostRequest) {
   ScopedVector<UploadElementReader> element_readers;
   element_readers.push_back(
       new UploadBytesElementReader(kUploadData, strlen(kUploadData)));
-  UploadDataStream upload_data_stream(element_readers.Pass(), 0);
+  ElementsUploadDataStream upload_data_stream(element_readers.Pass(), 0);
   request_.method = "POST";
   request_.url = GURL("http://www.google.com/");
   request_.upload_data_stream = &upload_data_stream;
@@ -475,22 +537,122 @@ TEST_P(QuicHttpStreamTest, SendChunkedPostRequest) {
   AddWrite(ConstructAckPacket(4, 3, 1));
   Initialize();
 
-  UploadDataStream upload_data_stream(UploadDataStream::CHUNKED, 0);
-  upload_data_stream.AppendChunk(kUploadData, chunk_size, false);
+  ChunkedUploadDataStream upload_data_stream(0);
+  upload_data_stream.AppendData(kUploadData, chunk_size, false);
 
   request_.method = "POST";
   request_.url = GURL("http://www.google.com/");
   request_.upload_data_stream = &upload_data_stream;
-  ASSERT_EQ(OK, request_.upload_data_stream->Init(CompletionCallback()));
+  ASSERT_EQ(OK, request_.upload_data_stream->Init(
+      TestCompletionCallback().callback()));
 
   ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
                                           net_log_, callback_.callback()));
   ASSERT_EQ(ERR_IO_PENDING, stream_->SendRequest(headers_, &response_,
                                                  callback_.callback()));
 
-  upload_data_stream.AppendChunk(kUploadData, chunk_size, true);
+  upload_data_stream.AppendData(kUploadData, chunk_size, true);
 
   // Ack both packets in the request.
+  ProcessPacket(ConstructAckPacket(1, 0, 0));
+
+  // Send the response headers (but not the body).
+  SetResponse("200 OK", std::string());
+  ProcessPacket(ConstructResponseHeadersPacket(2, !kFin));
+
+  // Since the headers have already arrived, this should return immediately.
+  ASSERT_EQ(OK, stream_->ReadResponseHeaders(callback_.callback()));
+  ASSERT_TRUE(response_.headers.get());
+  EXPECT_EQ(200, response_.headers->response_code());
+  EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
+
+  // Send the response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(ConstructDataPacket(3, false, kFin, response_data_.length(),
+                                    kResponseBody));
+
+  // Since the body has already arrived, this should return immediately.
+  ASSERT_EQ(static_cast<int>(strlen(kResponseBody)),
+            stream_->ReadResponseBody(read_buffer_.get(), read_buffer_->size(),
+                                      callback_.callback()));
+
+  EXPECT_TRUE(stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+}
+
+TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithFinalEmptyDataPacket) {
+  SetRequest("POST", "/", DEFAULT_PRIORITY);
+  size_t chunk_size = strlen(kUploadData);
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructDataPacket(2, kIncludeVersion, !kFin, 0, kUploadData));
+  AddWrite(ConstructDataPacket(3, kIncludeVersion, kFin, chunk_size, ""));
+  AddWrite(ConstructAckPacket(4, 3, 1));
+  Initialize();
+
+  ChunkedUploadDataStream upload_data_stream(0);
+  upload_data_stream.AppendData(kUploadData, chunk_size, false);
+
+  request_.method = "POST";
+  request_.url = GURL("http://www.google.com/");
+  request_.upload_data_stream = &upload_data_stream;
+  ASSERT_EQ(OK, request_.upload_data_stream->Init(
+      TestCompletionCallback().callback()));
+
+  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+  ASSERT_EQ(ERR_IO_PENDING, stream_->SendRequest(headers_, &response_,
+                                                 callback_.callback()));
+
+  upload_data_stream.AppendData(nullptr, 0, true);
+
+  ProcessPacket(ConstructAckPacket(1, 0, 0));
+
+  // Send the response headers (but not the body).
+  SetResponse("200 OK", std::string());
+  ProcessPacket(ConstructResponseHeadersPacket(2, !kFin));
+
+  // Since the headers have already arrived, this should return immediately.
+  ASSERT_EQ(OK, stream_->ReadResponseHeaders(callback_.callback()));
+  ASSERT_TRUE(response_.headers.get());
+  EXPECT_EQ(200, response_.headers->response_code());
+  EXPECT_TRUE(response_.headers->HasHeaderValue("Content-Type", "text/plain"));
+
+  // Send the response body.
+  const char kResponseBody[] = "Hello world!";
+  ProcessPacket(ConstructDataPacket(3, false, kFin, response_data_.length(),
+                                    kResponseBody));
+
+  // Since the body has already arrived, this should return immediately.
+  ASSERT_EQ(static_cast<int>(strlen(kResponseBody)),
+            stream_->ReadResponseBody(read_buffer_.get(), read_buffer_->size(),
+                                      callback_.callback()));
+
+  EXPECT_TRUE(stream_->IsResponseBodyComplete());
+  EXPECT_TRUE(AtEof());
+}
+
+TEST_P(QuicHttpStreamTest, SendChunkedPostRequestWithOneEmptyDataPacket) {
+  SetRequest("POST", "/", DEFAULT_PRIORITY);
+  AddWrite(ConstructRequestHeadersPacket(1, !kFin));
+  AddWrite(ConstructDataPacket(2, kIncludeVersion, kFin, 0, ""));
+  AddWrite(ConstructAckPacket(3, 3, 1));
+  Initialize();
+
+  ChunkedUploadDataStream upload_data_stream(0);
+
+  request_.method = "POST";
+  request_.url = GURL("http://www.google.com/");
+  request_.upload_data_stream = &upload_data_stream;
+  ASSERT_EQ(OK, request_.upload_data_stream->Init(
+      TestCompletionCallback().callback()));
+
+  ASSERT_EQ(OK, stream_->InitializeStream(&request_, DEFAULT_PRIORITY,
+                                          net_log_, callback_.callback()));
+  ASSERT_EQ(ERR_IO_PENDING, stream_->SendRequest(headers_, &response_,
+                                                 callback_.callback()));
+
+  upload_data_stream.AppendData(nullptr, 0, true);
+
   ProcessPacket(ConstructAckPacket(1, 0, 0));
 
   // Send the response headers (but not the body).
@@ -609,9 +771,9 @@ TEST_P(QuicHttpStreamTest, CheckPriorityWithNoDelegate) {
   DCHECK_EQ(QuicWriteBlockedList::kHighestPriority,
             reliable_stream->EffectivePriority());
 
-  // Set Delegate to NULL and make sure EffectivePriority returns highest
+  // Set Delegate to nullptr and make sure EffectivePriority returns highest
   // priority.
-  reliable_stream->SetDelegate(NULL);
+  reliable_stream->SetDelegate(nullptr);
   DCHECK_EQ(QuicWriteBlockedList::kHighestPriority,
             reliable_stream->EffectivePriority());
   reliable_stream->SetDelegate(delegate);

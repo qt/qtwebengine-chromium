@@ -12,7 +12,7 @@
 #include "cc/layers/picture_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_host_common.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -31,13 +31,13 @@ PictureRecordBenchmark::PictureRecordBenchmark(
   if (!value)
     return;
 
-  base::ListValue* list = NULL;
+  base::ListValue* list = nullptr;
   value->GetAsList(&list);
   if (!list)
     return;
 
   for (base::ListValue::iterator it = list->begin(); it != list->end(); ++it) {
-    base::DictionaryValue* dictionary = NULL;
+    base::DictionaryValue* dictionary = nullptr;
     (*it)->GetAsDictionary(&dictionary);
     if (!dictionary ||
         !dictionary->HasKey("width") ||
@@ -80,7 +80,7 @@ void PictureRecordBenchmark::DidUpdateLayers(LayerTreeHost* host) {
     results->Append(result.release());
   }
 
-  NotifyDone(results.PassAs<base::Value>());
+  NotifyDone(results.Pass());
 }
 
 void PictureRecordBenchmark::Run(Layer* layer) {
@@ -111,7 +111,7 @@ void PictureRecordBenchmark::RunOnLayer(PictureLayer* layer) {
         base::TimeTicks start = base::TimeTicks::HighResNow();
 
         scoped_refptr<Picture> picture = Picture::Create(
-            rect, painter, tile_grid_info, false, 0, Picture::RECORD_NORMALLY);
+            rect, painter, tile_grid_info, false, Picture::RECORD_NORMALLY);
 
         base::TimeTicks end = base::TimeTicks::HighResNow();
         base::TimeDelta duration = end - start;

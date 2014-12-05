@@ -34,7 +34,7 @@ namespace message_center {
 class InnerBoundedLabel : public views::Label {
  public:
   InnerBoundedLabel(const BoundedLabel& owner);
-  virtual ~InnerBoundedLabel();
+  ~InnerBoundedLabel() override;
 
   void SetNativeTheme(const ui::NativeTheme* theme);
 
@@ -44,12 +44,12 @@ class InnerBoundedLabel : public views::Label {
   std::vector<base::string16> GetWrappedText(int width, int lines);
 
   // Overridden from views::Label.
-  virtual void SetText(const base::string16& text) OVERRIDE;
+  void SetText(const base::string16& text) override;
 
  protected:
   // Overridden from views::Label.
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
  private:
   int GetTextFlags();
@@ -182,7 +182,8 @@ void InnerBoundedLabel::OnPaint(gfx::Canvas* canvas) {
       wrapped_text_lines_ = lines;
     }
     bounds.set_x(GetMirroredXForRect(bounds));
-    PaintText(canvas, wrapped_text_, bounds, GetTextFlags());
+    canvas->DrawStringRectWithFlags(
+        wrapped_text_, font_list(), enabled_color(), bounds, GetTextFlags());
   }
 }
 
@@ -198,20 +199,11 @@ int InnerBoundedLabel::GetTextFlags() {
   if (SkColorGetA(background_color()) != 0xFF)
     flags |= gfx::Canvas::NO_SUBPIXEL_RENDERING;
 
-  if (directionality_mode() == gfx::DIRECTIONALITY_FORCE_LTR) {
-    flags |= gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-  } else if (directionality_mode() == gfx::DIRECTIONALITY_FORCE_RTL) {
-    flags |= gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
-  } else if (directionality_mode() == gfx::DIRECTIONALITY_FROM_TEXT) {
-    base::i18n::TextDirection direction =
-        base::i18n::GetFirstStrongCharacterDirection(text());
-    if (direction == base::i18n::RIGHT_TO_LEFT)
-      flags |= gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
-    else
-      flags |= gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
-  }
-
-  return flags;
+  const base::i18n::TextDirection direction =
+      base::i18n::GetFirstStrongCharacterDirection(text());
+  if (direction == base::i18n::RIGHT_TO_LEFT)
+    return flags | gfx::Canvas::FORCE_RTL_DIRECTIONALITY;
+  return flags | gfx::Canvas::FORCE_LTR_DIRECTIONALITY;
 }
 
 void InnerBoundedLabel::ClearCaches() {

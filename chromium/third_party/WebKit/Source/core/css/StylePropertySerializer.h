@@ -26,20 +26,24 @@
 #include "core/css/CSSValueList.h"
 #include "core/css/StylePropertySet.h"
 
-namespace WebCore {
+#include "wtf/BitArray.h"
+
+namespace blink {
 
 class StylePropertySet;
+class StylePropertyShorthand;
 
 class StylePropertySerializer {
 public:
-    StylePropertySerializer(const StylePropertySet&);
+    explicit StylePropertySerializer(const StylePropertySet&);
+
     String asText() const;
     String getPropertyValue(CSSPropertyID) const;
 private:
     String getCommonValue(const StylePropertyShorthand&) const;
     enum CommonValueMode { OmitUncommonValues, ReturnNullOnUncommonValues };
     String borderPropertyValue(CommonValueMode) const;
-    String getLayeredShorthandValue(const StylePropertyShorthand&) const;
+    String getLayeredShorthandValue(const StylePropertyShorthand&, bool checkShorthandAvailable = false) const;
     String get4Values(const StylePropertyShorthand&) const;
     String borderSpacingValue(const StylePropertyShorthand&) const;
     String getShorthandValue(const StylePropertyShorthand&) const;
@@ -51,9 +55,64 @@ private:
     bool shorthandHasOnlyInitialOrInheritedValue(const StylePropertyShorthand&) const;
     void appendBackgroundPropertyAsText(StringBuilder& result, unsigned& numDecls) const;
 
-    const StylePropertySet& m_propertySet;
+    // Only StylePropertySerializer uses the following two classes.
+    class PropertyValueForSerializer {
+    public:
+        explicit PropertyValueForSerializer(StylePropertySet::PropertyReference property)
+            : m_value(property.value())
+            , m_id(property.id())
+            , m_isImportant(property.isImportant())
+            , m_isImplicit(property.isImplicit())
+            , m_isInherited(property.isInherited()) { }
+
+        PropertyValueForSerializer(CSSPropertyID id, const CSSValue* value, bool isImportant)
+            : m_value(value)
+            , m_id(id)
+            , m_isImportant(isImportant)
+            , m_isImplicit(value->isImplicitInitialValue())
+            , m_isInherited(value->isInheritedValue()) { }
+
+        CSSPropertyID id() const { return m_id; }
+        const CSSValue* value() const { return m_value; }
+        bool isImportant() const { return m_isImportant; }
+        bool isImplicit() const { return m_isImplicit; }
+        bool isInherited() const { return m_isInherited; }
+        bool isValid() const { return m_value; }
+
+    private:
+        const CSSValue* m_value;
+        CSSPropertyID m_id;
+        bool m_isImportant;
+        bool m_isImplicit;
+        bool m_isInherited;
+    };
+
+    class StylePropertySetForSerializer {
+    public:
+        explicit StylePropertySetForSerializer(const StylePropertySet&);
+
+        unsigned propertyCount() const;
+        PropertyValueForSerializer propertyAt(unsigned index) const;
+        bool shouldProcessPropertyAt(unsigned index) const;
+        int findPropertyIndex(CSSPropertyID) const;
+        const CSSValue* getPropertyCSSValue(CSSPropertyID) const;
+        String getPropertyValue(CSSPropertyID) const;
+        bool isPropertyImplicit(CSSPropertyID) const;
+        bool propertyIsImportant(CSSPropertyID) const;
+
+    private:
+        bool hasExpandedAllProperty() const { return hasAllProperty() && m_needToExpandAll; }
+        bool hasAllProperty() const { return m_allIndex != -1; }
+
+        const StylePropertySet& m_propertySet;
+        int m_allIndex;
+        BitArray<numCSSProperties> m_longhandPropertyUsed;
+        bool m_needToExpandAll;
+    };
+
+    const StylePropertySetForSerializer m_propertySet;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

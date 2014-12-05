@@ -19,7 +19,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
 {
   "name": "gpu driver bug list",
   // Please update the version number whenever you change this file.
-  "version": "6.7",
+  "version": "7.8",
   "entries": [
     {
       "id": 1,
@@ -27,10 +27,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
+      "gl_vendor": "Imagination.*",
       "features": [
         "use_client_side_arrays_for_stream_buffers"
       ]
@@ -41,10 +38,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
+      "gl_vendor": "ARM.*",
       "features": [
         "use_client_side_arrays_for_stream_buffers"
       ]
@@ -112,10 +106,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "4.3"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "restore_scissor_on_fbo_change"
       ]
@@ -251,29 +242,12 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 18,
-      "description": "Everything except async + NPOT + multiple-of-8 textures are brutally slow for Imagination drivers",
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
-      "features": [
-        "enable_chromium_fast_npot_mo8_textures"
-      ]
-    },
-    {
       "id": 19,
       "description": "Disable depth textures on Android with Qualcomm GPUs",
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "disable_depth_texture"
       ]
@@ -298,10 +272,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_extensions": {
-        "op": "contains",
-        "value": "GL_VIV_shader_binary"
-      },
+      "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
         "unbind_fbo_on_context_switch"
       ]
@@ -313,10 +284,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
+      "gl_vendor": "Imagination.*",
       "features": [
         "unbind_fbo_on_context_switch"
       ]
@@ -341,14 +309,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "Mali-400"
-      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": ".*Mali-400.*",
       "features": [
         "use_non_zero_size_for_client_side_stream_buffers"
       ]
@@ -411,14 +373,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 31,
       "cr_bugs": [154715, 10068, 269829, 294779, 285292],
       "description": "The Mali-Txxx driver does not guarantee flush ordering",
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
-      "gl_renderer": {
-        "op": "beginwith",
-        "value": "Mali-T"
-      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali-T.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -430,10 +386,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Broadcom"
-      },
+      "gl_vendor": "Broadcom.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -444,10 +397,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
+      "gl_vendor": "Imagination.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -459,10 +409,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_extensions": {
-        "op": "contains",
-        "value": "GL_VIV_shader_binary"
-      },
+      "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -478,10 +425,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "4.3"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "NVIDIA"
-      },
+      "gl_vendor": "NVIDIA.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -497,10 +441,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "4.3"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -524,10 +465,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "use_virtualized_gl_contexts"
       ]
@@ -554,10 +492,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
           "value": "4.4"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
+      "gl_vendor": "ARM.*",
       "features": [
         "disable_ext_discard_framebuffer"
       ]
@@ -569,14 +504,8 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination"
-      },
-      "gl_renderer": {
-        "op": "=",
-        "value": "PowerVR SGX 540"
-      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 540",
       "features": [
         "disable_ext_discard_framebuffer"
       ]
@@ -588,10 +517,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_extensions": {
-        "op": "contains",
-        "value": "GL_VIV_shader_binary"
-      },
+      "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
         "disable_ext_discard_framebuffer"
       ]
@@ -649,26 +575,9 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "wake_up_gpu_before_drawing"
-      ]
-    },
-    {
-      "id": 50,
-      "description": "NVIDIA driver requires unbinding a GpuMemoryBuffer from the texture before mapping it to main memory",
-      "os": {
-        "type": "android"
-      },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "NVIDIA"
-      },
-      "features": [
-        "release_image_after_use"
       ]
     },
     {
@@ -677,10 +586,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "win"
       },
-      "gl_renderer": {
-        "op": "beginwith",
-        "value": "ANGLE"
-      },
+      "gl_renderer": "ANGLE.*",
       "features": [
         "texsubimage2d_faster_than_teximage2d"
       ]
@@ -691,10 +597,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "disable_multisampling"
       ]
@@ -725,10 +628,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "driver_vendor": {
-        "op": "=",
-        "value": "Mesa"
-      },
+      "driver_vendor": "Mesa",
       "features": [
         "count_all_in_varyings_packing"
       ]
@@ -740,10 +640,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "chromeos"
       },
-      "driver_vendor": {
-        "op": "=",
-        "value": "Mesa"
-      },
+      "driver_vendor": "Mesa",
       "features": [
         "count_all_in_varyings_packing"
       ]
@@ -866,6 +763,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
+      "driver_vendor": "Mesa",
       "features": [
         "disable_post_sub_buffers_for_onscreen_surfaces"
       ]
@@ -874,10 +772,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "id": 69,
       "description": "Some shaders in Skia need more than the min available vertex and fragment shader uniform vectors in case of OSMesa",
       "cr_bugs": [174845],
-      "driver_vendor": {
-        "op": "=",
-        "value": "osmesa"
-      },
+      "driver_vendor": "osmesa",
       "features": [
        "max_fragment_uniform_vectors_32",
        "max_varying_vectors_16",
@@ -907,10 +802,7 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_extensions": {
-        "op": "contains",
-        "value": "GL_VIV_shader_binary"
-      },
+      "gl_extensions": ".*GL_VIV_shader_binary.*",
       "features": [
         "disable_oes_standard_derivatives"
       ]
@@ -927,24 +819,9 @@ const char kGpuDriverBugListJson[] = LONG_STRING_CONST(
         "op": "=",
         "value": "3.1"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "NVidia"
-      },
+      "gl_vendor": "NVIDIA.*",
       "features": [
         "use_virtualized_gl_contexts"
-      ]
-    },
-    {
-      "id": 73,
-      "description": "Using D3D11 causes browser crashes on certain Intel GPUs",
-      "cr_bugs": [310808],
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x8086",
-      "features": [
-        "disable_d3d11"
       ]
     },
 )  // LONG_STRING_CONST macro
@@ -961,10 +838,7 @@ LONG_STRING_CONST(
           "value": "4.4.4"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "disable_egl_khr_fence_sync"
       ]
@@ -980,14 +854,8 @@ LONG_STRING_CONST(
           "value": "4.3"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "Mali-400"
-      },
+      "gl_vendor": "ARM.*",
+      "gl_renderer": ".*Mali-400.*",
       "features": [
         "disable_multisampling"
       ]
@@ -1003,18 +871,15 @@ LONG_STRING_CONST(
           "value": "4.4.4"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Imagination Technologies"
-      },
+      "gl_vendor": "Imagination Technologies.*",
       "features": [
         "disable_egl_khr_fence_sync"
       ]
     },
     {
       "id": 77,
-      "cr_bugs": [378691, 373360, 371530],
-      "description": "Testing fences was broken on Mali-400 MP drivers",
+      "cr_bugs": [378691, 373360, 371530, 398964],
+      "description": "Testing fences was broken on Mali ES2 drivers",
       "os": {
         "type": "android",
         "version": {
@@ -1022,13 +887,12 @@ LONG_STRING_CONST(
           "value": "4.4.4"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ARM"
-      },
-      "gl_renderer": {
-        "op": "beginwith",
-        "value": "Mali-400 MP"
+      "gl_vendor": "ARM.*",
+      "gl_renderer": "Mali.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "<",
+        "value": "3.0"
       },
       "features": [
         "disable_egl_khr_fence_sync"
@@ -1045,10 +909,7 @@ LONG_STRING_CONST(
           "value": "4.4.4"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Broadcom"
-      },
+      "gl_vendor": "Broadcom.*",
       "features": [
         "disable_egl_khr_fence_sync"
       ]
@@ -1075,10 +936,7 @@ LONG_STRING_CONST(
           "value": "4.3"
         }
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "Qualcomm"
-      },
+      "gl_vendor": "Qualcomm.*",
       "features": [
         "disable_async_readpixels"
       ]
@@ -1093,6 +951,121 @@ LONG_STRING_CONST(
       "vendor_id": "0x102b",
       "features": [
         "disable_d3d11"
+      ]
+    },
+    {
+      "id": 87,
+      "description": "Disable use of Direct3D 11 on older AMD drivers",
+      "cr_bugs": [402134],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "driver_date": {
+        "op": "<",
+        "value": "2011.1"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 88,
+      "description": "Always rewrite vec/mat constructors to be consistent",
+      "cr_bugs": [398694],
+      "features": [
+        "scalarize_vec_and_mat_constructor_args"
+      ]
+    },
+    {
+      "id": 89,
+      "description": "Mac drivers handle struct scopes incorrectly",
+      "cr_bugs": [403957],
+      "os": {
+        "type": "macosx"
+      },
+      "features": [
+        "regenerate_struct_names"
+      ]
+    },
+    {
+      "id": 90,
+      "description": "Linux AMD drivers handle struct scopes incorrectly",
+      "cr_bugs": [403957],
+      "os": {
+        "type": "linux"
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "regenerate_struct_names"
+      ]
+    },
+    {
+      "id": 91,
+      "cr_bugs": [150500, 414816],
+      "description": "ETC1 non-power-of-two sized textures crash older IMG drivers",
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "Imagination.*",
+      "gl_renderer": "PowerVR SGX 5.*",
+      "features": [
+        "etc1_power_of_two_only"
+      ]
+    },
+    {
+      "id": 92,
+      "description": "Old Intel drivers cannot reliably support D3D11",
+      "cr_bugs": [363721],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "<",
+        "value": "8.16"
+      },
+      "features": [
+        "disable_d3d11"
+      ]
+    },
+    {
+      "id": 93,
+      "description": "The GL implementation on the Android emulator has problems with PBOs.",
+      "cr_bugs": [340882],
+      "os": {
+        "type": "android"
+      },
+      "gl_vendor": "VMware.*",
+      "gl_renderer": "Gallium.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "=",
+        "value": "3.0"
+      },
+      "features": [
+        "disable_async_readpixels"
+      ]
+    },
+    {
+      "id": 94,
+      "description": "Disable EGL_KHR_wait_sync on NVIDIA with GLES 3.1",
+      "cr_bugs": [433057],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<=",
+          "value": "5.0.0"
+        }
+      },
+      "gl_vendor": "NVIDIA.*",
+      "gl_type": "gles",
+      "gl_version": {
+        "op": "=",
+        "value": "3.1"
+      },
+      "features": [
+        "disable_egl_khr_wait_sync"
       ]
     }
   ]

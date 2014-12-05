@@ -33,7 +33,7 @@ class PepperGraphics2DHostTest : public testing::Test {
 
   PepperGraphics2DHostTest() : renderer_ppapi_host_(NULL, 12345) {}
 
-  virtual ~PepperGraphics2DHostTest() {
+  ~PepperGraphics2DHostTest() override {
     ppapi::ProxyAutoLock proxy_lock;
     host_.reset();
   }
@@ -85,8 +85,7 @@ class PepperGraphics2DHostTest : public testing::Test {
     int height = plugin_rect.point.y + plugin_rect.size.height;
     if (bitmap->isNull() || bitmap->width() != width ||
         bitmap->height() != height) {
-      bitmap->setConfig(SkBitmap::kARGB_8888_Config, width, height);
-      bitmap->allocPixels();
+      bitmap->allocN32Pixels(width, height);
     }
     bitmap->eraseColor(0);
   }
@@ -148,7 +147,7 @@ TEST_F(PepperGraphics2DHostTest, ConvertToLogicalPixels) {
                // Check negative scroll deltas
                {10, 10, 20, 20, 5, 5, 10, 10, -6, -4, -3, -2, 0.5, true},
                {10, 10, 20, 20, 5, 5, 10, 10, -6, -3, -3, -1, 0.5, false}, };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     gfx::Rect r1(tests[i].x1, tests[i].y1, tests[i].w1, tests[i].h1);
     gfx::Rect r2(tests[i].x2, tests[i].y2, tests[i].w2, tests[i].h2);
     gfx::Rect orig = r1;

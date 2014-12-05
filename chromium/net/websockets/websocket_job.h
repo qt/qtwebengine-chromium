@@ -50,42 +50,39 @@ class NET_EXPORT WebSocketJob
   static void EnsureInit();
 
   State state() const { return state_; }
-  virtual void Connect() OVERRIDE;
-  virtual bool SendData(const char* data, int len) OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void RestartWithAuth(const AuthCredentials& credentials) OVERRIDE;
-  virtual void DetachDelegate() OVERRIDE;
+  void Connect() override;
+  bool SendData(const char* data, int len) override;
+  void Close() override;
+  void RestartWithAuth(const AuthCredentials& credentials) override;
+  void DetachDelegate() override;
 
   // SocketStream::Delegate methods.
-  virtual int OnStartOpenConnection(
-      SocketStream* socket, const CompletionCallback& callback) OVERRIDE;
-  virtual void OnConnected(SocketStream* socket,
-                           int max_pending_send_allowed) OVERRIDE;
-  virtual void OnSentData(SocketStream* socket, int amount_sent) OVERRIDE;
-  virtual void OnReceivedData(SocketStream* socket,
-                              const char* data,
-                              int len) OVERRIDE;
-  virtual void OnClose(SocketStream* socket) OVERRIDE;
-  virtual void OnAuthRequired(
-      SocketStream* socket, AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual void OnSSLCertificateError(SocketStream* socket,
-                                     const SSLInfo& ssl_info,
-                                     bool fatal) OVERRIDE;
-  virtual void OnError(const SocketStream* socket, int error) OVERRIDE;
+  int OnStartOpenConnection(SocketStream* socket,
+                            const CompletionCallback& callback) override;
+  void OnConnected(SocketStream* socket, int max_pending_send_allowed) override;
+  void OnSentData(SocketStream* socket, int amount_sent) override;
+  void OnReceivedData(SocketStream* socket, const char* data, int len) override;
+  void OnClose(SocketStream* socket) override;
+  void OnAuthRequired(SocketStream* socket,
+                      AuthChallengeInfo* auth_info) override;
+  void OnSSLCertificateError(SocketStream* socket,
+                             const SSLInfo& ssl_info,
+                             bool fatal) override;
+  void OnError(const SocketStream* socket, int error) override;
 
   // SpdyWebSocketStream::Delegate methods.
-  virtual void OnCreatedSpdyStream(int status) OVERRIDE;
-  virtual void OnSentSpdyHeaders() OVERRIDE;
-  virtual void OnSpdyResponseHeadersUpdated(
-      const SpdyHeaderBlock& response_headers) OVERRIDE;
-  virtual void OnSentSpdyData(size_t bytes_sent) OVERRIDE;
-  virtual void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnCloseSpdyStream() OVERRIDE;
+  void OnCreatedSpdyStream(int status) override;
+  void OnSentSpdyHeaders() override;
+  void OnSpdyResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) override;
+  void OnSentSpdyData(size_t bytes_sent) override;
+  void OnReceivedSpdyData(scoped_ptr<SpdyBuffer> buffer) override;
+  void OnCloseSpdyStream() override;
 
  private:
   friend class WebSocketThrottle;
   friend class WebSocketJobTest;
-  virtual ~WebSocketJob();
+  ~WebSocketJob() override;
 
   bool SendHandshakeRequest(const char* data, int len);
   void AddCookieHeaderAndSend();

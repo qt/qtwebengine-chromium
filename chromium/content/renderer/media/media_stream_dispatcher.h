@@ -13,9 +13,10 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/common/media/media_stream_options.h"
-#include "content/public/renderer/render_view_observer.h"
+#include "content/public/renderer/render_frame_observer.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 
 namespace base {
@@ -24,19 +25,17 @@ class MessageLoopProxy;
 
 namespace content {
 
-class RenderViewImpl;
-
 // MediaStreamDispatcher is a delegate for the Media Stream API messages.
 // MediaStreams are used by WebKit to open media devices such as Video Capture
 // and Audio input devices.
 // It's the complement of MediaStreamDispatcherHost (owned by
 // BrowserRenderProcessHost).
 class CONTENT_EXPORT MediaStreamDispatcher
-    : public RenderViewObserver,
+    : public RenderFrameObserver,
       public base::SupportsWeakPtr<MediaStreamDispatcher> {
  public:
-  explicit MediaStreamDispatcher(RenderViewImpl* render_view);
-  virtual ~MediaStreamDispatcher();
+  explicit MediaStreamDispatcher(RenderFrame* render_frame);
+  ~MediaStreamDispatcher() override;
 
   // Request a new media stream to be created.
   // This can be used either by WebKit or a plugin.
@@ -56,15 +55,11 @@ class CONTENT_EXPORT MediaStreamDispatcher
   virtual void StopStreamDevice(const StreamDeviceInfo& device_info);
 
   // Request to enumerate devices.
-  // If |hide_labels_if_no_access| is true, labels will be empty in the
-  // response if permission has not been granted for the device type. This
-  // should normally be true.
   virtual void EnumerateDevices(
       int request_id,
       const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
       MediaStreamType type,
-      const GURL& security_origin,
-      bool hide_labels_if_no_access);
+      const GURL& security_origin);
 
   // Request to stop enumerating devices.
   void StopEnumerateDevices(
@@ -95,6 +90,11 @@ class CONTENT_EXPORT MediaStreamDispatcher
   // Returns an audio session_id given a label and an index.
   virtual int audio_session_id(const std::string& label, int index);
 
+  // Returns true if an audio input stream is currently active that was opened
+  // with audio ducking enabled.  This is information is used when playing out
+  // audio so that rendered audio can be excluded from the ducking operation.
+  bool IsAudioDuckingActive() const;
+
  protected:
   int GetNextIpcIdForTest() { return next_ipc_id_; }
 
@@ -102,6 +102,7 @@ class CONTENT_EXPORT MediaStreamDispatcher
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, BasicVideoDevice);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, TestFailure);
   FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, CancelGenerateStream);
+  FRIEND_TEST_ALL_PREFIXES(MediaStreamDispatcherTest, CheckDuckingState);
 
   struct Request;
 
@@ -109,11 +110,12 @@ class CONTENT_EXPORT MediaStreamDispatcher
   // opened it.
   struct Stream;
 
-  // RenderViewObserver OVERRIDE.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  // RenderFrameObserver override.
+  void OnDestruct() override;
+  bool Send(IPC::Message* message) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Messages from the browser.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
   void OnStreamGenerated(
       int request_id,
       const std::string& label,
@@ -134,7 +136,7 @@ class CONTENT_EXPORT MediaStreamDispatcher
   void OnDeviceOpenFailed(int request_id);
 
   // Used for DCHECKs so methods calls won't execute in the wrong thread.
-  scoped_refptr<base::MessageLoopProxy> main_loop_;
+  base::ThreadChecker thread_checker_;
 
   int next_ipc_id_;
   typedef std::map<std::string, Stream> LabelStreamMap;

@@ -37,12 +37,6 @@
 
 namespace blink {
 
-// FIXME: delete after waitForDebugger is in use in both chrome and blink.
-enum WebEmbeddedWorkerStartMode {
-    WebEmbeddedWorkerStartModeDontPauseOnStart,
-    WebEmbeddedWorkerStartModePauseOnStart
-};
-
 struct WebEmbeddedWorkerStartData {
     enum PauseAfterDownloadMode {
         DontPauseAfterDownload,
@@ -55,9 +49,12 @@ struct WebEmbeddedWorkerStartData {
 
     WebURL scriptURL;
     WebString userAgent;
-    WebEmbeddedWorkerStartMode startMode; // FIXME: ditto delete
     PauseAfterDownloadMode pauseAfterDownloadMode;
     WaitForDebuggerMode waitForDebuggerMode;
+
+    WebEmbeddedWorkerStartData()
+        : pauseAfterDownloadMode(DontPauseAfterDownload)
+        , waitForDebuggerMode(DontWaitForDebugger) { }
 };
 
 } // namespace blink

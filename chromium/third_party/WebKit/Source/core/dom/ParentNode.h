@@ -33,9 +33,10 @@
 
 #include "core/dom/ContainerNode.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/html/HTMLCollection.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class ParentNode {
 public:
@@ -57,7 +58,7 @@ public:
     static unsigned childElementCount(ContainerNode& node)
     {
         unsigned count = 0;
-        for (Element* child = ElementTraversal::firstWithin(node); child; child = ElementTraversal::nextSibling(*child))
+        for (Element* child = ElementTraversal::firstChild(node); child; child = ElementTraversal::nextSibling(*child))
             ++count;
         return count;
     }
@@ -67,12 +68,12 @@ public:
         return node.querySelector(selectors, exceptionState);
     }
 
-    static PassRefPtrWillBeRawPtr<StaticNodeList> querySelectorAll(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
+    static PassRefPtrWillBeRawPtr<StaticElementList> querySelectorAll(ContainerNode& node, const AtomicString& selectors, ExceptionState& exceptionState)
     {
         return node.querySelectorAll(selectors, exceptionState);
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ParentNode_h

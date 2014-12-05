@@ -28,7 +28,7 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 struct ProgressEventInit : public EventInit {
     ProgressEventInit();
@@ -39,6 +39,7 @@ struct ProgressEventInit : public EventInit {
 };
 
 class ProgressEvent : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ProgressEvent> create()
     {
@@ -57,9 +58,9 @@ public:
     unsigned long long loaded() const { return m_loaded; }
     unsigned long long total() const { return m_total; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
     ProgressEvent();
@@ -71,6 +72,7 @@ private:
     unsigned long long m_loaded;
     unsigned long long m_total;
 };
-}
+
+} // namespace blink
 
 #endif // ProgressEvent_h

@@ -49,6 +49,7 @@ public:
     Benchmark();
 
     const char* getName();
+    const char* getUniqueName();
     SkIPoint getSize();
 
     enum Backend {
@@ -76,14 +77,6 @@ public:
         fForceAlpha = alpha;
     }
 
-    void setForceAA(bool aa) {
-        fForceAA = aa;
-    }
-
-    void setForceFilter(bool filter) {
-        fForceFilter = filter;
-    }
-
     void setDither(SkTriState::State state) {
         fDither = state;
     }
@@ -106,6 +99,7 @@ protected:
     virtual void setupPaint(SkPaint* paint);
 
     virtual const char* onGetName() = 0;
+    virtual const char* onGetUniqueName() { return this->onGetName(); }
     virtual void onPreDraw() {}
     // Each bench should do its main work in a loop like this:
     //   for (int i = 0; i < loops; i++) { <work here> }
@@ -115,8 +109,6 @@ protected:
 
 private:
     int     fForceAlpha;
-    bool    fForceAA;
-    bool    fForceFilter;
     SkTriState::State  fDither;
     uint32_t    fOrMask, fClearMask;
 

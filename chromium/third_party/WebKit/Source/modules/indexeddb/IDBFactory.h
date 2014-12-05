@@ -28,26 +28,24 @@
 #ifndef IDBFactory_h
 #define IDBFactory_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 #include "modules/indexeddb/IndexedDBClient.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
-class IDBKey;
-class IDBKeyRange;
-class ExecutionContext;
+class ScriptState;
 
-class IDBFactory : public GarbageCollectedFinalized<IDBFactory>, public ScriptWrappable {
+class IDBFactory final : public GarbageCollected<IDBFactory>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static IDBFactory* create(IndexedDBClient* client)
     {
         return new IDBFactory(client);
     }
-    ~IDBFactory();
     void trace(Visitor*);
 
     IDBRequest* getDatabaseNames(ScriptState*, ExceptionState&);
@@ -66,6 +64,6 @@ private:
     Member<IndexedDBClient> m_permissionClient;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IDBFactory_h

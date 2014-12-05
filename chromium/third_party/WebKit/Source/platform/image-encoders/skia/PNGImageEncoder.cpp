@@ -40,7 +40,7 @@ extern "C" {
 #include "png.h"
 }
 
-namespace WebCore {
+namespace blink {
 
 static void writeOutput(png_structp png, png_bytep data, png_size_t size)
 {
@@ -118,7 +118,7 @@ bool PNGImageEncoder::encode(const SkBitmap& bitmap, Vector<unsigned char>* outp
 {
     SkAutoLockPixels bitmapLock(bitmap);
 
-    if (bitmap.colorType() != kPMColor_SkColorType || !bitmap.getPixels())
+    if (bitmap.colorType() != kN32_SkColorType || !bitmap.getPixels())
         return false; // Only support 32 bit/pixel skia bitmaps.
 
     return encodePixels(IntSize(bitmap.width(), bitmap.height()), static_cast<unsigned char*>(bitmap.getPixels()), true, output);
@@ -129,4 +129,4 @@ bool PNGImageEncoder::encode(const ImageDataBuffer& imageData, Vector<unsigned c
     return encodePixels(imageData.size(), imageData.data(), false, output);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -28,21 +28,21 @@
 
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 void setSharedTimerFiredFunction(void (*f)())
 {
-    blink::Platform::current()->setSharedTimerFiredFunction(f);
+    Platform::current()->setSharedTimerFiredFunction(f);
 }
 
 void setSharedTimerFireInterval(double fireTime)
 {
-    blink::Platform::current()->setSharedTimerFireInterval(fireTime);
+    Platform::current()->setSharedTimerFireInterval(fireTime);
 }
 
 void stopSharedTimer()
 {
-    blink::Platform::current()->stopSharedTimer();
+    Platform::current()->stopSharedTimer();
 }
 
-} // namespace WebCore
+} // namespace blink

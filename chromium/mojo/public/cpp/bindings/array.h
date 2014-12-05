@@ -12,18 +12,17 @@
 #include <vector>
 
 #include "mojo/public/cpp/bindings/lib/array_internal.h"
+#include "mojo/public/cpp/bindings/lib/bindings_internal.h"
 #include "mojo/public/cpp/bindings/lib/template_util.h"
 #include "mojo/public/cpp/bindings/type_converter.h"
 
 namespace mojo {
 
-// Provides read-only access to array data.
 template <typename T>
 class Array {
   MOJO_MOVE_ONLY_TYPE_FOR_CPP_03(Array, RValue)
  public:
-  typedef internal::ArrayTraits<T, internal::IsMoveOnlyType<T>::value>
-      Traits;
+  typedef internal::ArrayTraits<T, internal::IsMoveOnlyType<T>::value> Traits;
   typedef typename Traits::ConstRefType ConstRefType;
   typedef typename Traits::RefType RefType;
   typedef typename Traits::StorageType StorageType;
@@ -44,18 +43,16 @@ class Array {
     return *this;
   }
 
-  static Array New(size_t size) {
-    return Array(size).Pass();
-  }
+  static Array New(size_t size) { return Array(size).Pass(); }
 
   template <typename U>
   static Array From(const U& other) {
-    return TypeConverter<Array, U>::ConvertFrom(other);
+    return TypeConverter<Array, U>::Convert(other);
   }
 
   template <typename U>
   U To() const {
-    return TypeConverter<Array, U>::ConvertTo(*this);
+    return TypeConverter<U, Array>::Convert(*this);
   }
 
   void reset() {
@@ -67,6 +64,9 @@ class Array {
   }
 
   bool is_null() const { return is_null_; }
+
+  ConstRefType front() const { return vec_.front(); }
+  RefType front() { return vec_.front(); }
 
   size_t size() const { return vec_.size(); }
 
@@ -86,12 +86,8 @@ class Array {
     Traits::Resize(&vec_, size);
   }
 
-  const std::vector<StorageType>& storage() const {
-    return vec_;
-  }
-  operator const std::vector<StorageType>&() const {
-    return vec_;
-  }
+  const std::vector<StorageType>& storage() const { return vec_; }
+  operator const std::vector<StorageType>&() const { return vec_; }
 
   void Swap(Array* other) {
     std::swap(is_null_, other->is_null_);
@@ -100,6 +96,28 @@ class Array {
   void Swap(std::vector<StorageType>* other) {
     is_null_ = false;
     vec_.swap(*other);
+  }
+
+  // Please note that calling this method will fail compilation if the element
+  // type cannot be cloned (which usually means that it is a Mojo handle type or
+  // a type contains Mojo handles).
+  Array Clone() const {
+    Array result;
+    result.is_null_ = is_null_;
+    Traits::Clone(vec_, &result.vec_);
+    return result.Pass();
+  }
+
+  bool Equals(const Array& other) const {
+    if (is_null() != other.is_null())
+      return false;
+    if (size() != other.size())
+      return false;
+    for (size_t i = 0; i < size(); ++i) {
+      if (!internal::ValueTraits<T>::Equals(at(i), other.at(i)))
+        return false;
+    }
+    return true;
   }
 
  private:
@@ -119,20 +137,23 @@ class Array {
 };
 
 template <typename T, typename E>
-class TypeConverter<Array<T>, std::vector<E> > {
- public:
-  static Array<T> ConvertFrom(const std::vector<E>& input) {
+struct TypeConverter<Array<T>, std::vector<E>> {
+  static Array<T> Convert(const std::vector<E>& input) {
     Array<T> result(input.size());
     for (size_t i = 0; i < input.size(); ++i)
-      result[i] = TypeConverter<T, E>::ConvertFrom(input[i]);
+      result[i] = TypeConverter<T, E>::Convert(input[i]);
     return result.Pass();
   }
-  static std::vector<E> ConvertTo(const Array<T>& input) {
+};
+
+template <typename E, typename T>
+struct TypeConverter<std::vector<E>, Array<T>> {
+  static std::vector<E> Convert(const Array<T>& input) {
     std::vector<E> result;
     if (!input.is_null()) {
       result.resize(input.size());
       for (size_t i = 0; i < input.size(); ++i)
-        result[i] = TypeConverter<T, E>::ConvertTo(input[i]);
+        result[i] = TypeConverter<E, T>::Convert(input[i]);
     }
     return result;
   }

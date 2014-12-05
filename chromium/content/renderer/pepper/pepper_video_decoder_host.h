@@ -37,7 +37,7 @@ class CONTENT_EXPORT PepperVideoDecoderHost
   PepperVideoDecoderHost(RendererPpapiHost* host,
                          PP_Instance instance,
                          PP_Resource resource);
-  virtual ~PepperVideoDecoderHost();
+  ~PepperVideoDecoderHost() override;
 
  private:
   struct PendingDecode {
@@ -52,25 +52,25 @@ class CONTENT_EXPORT PepperVideoDecoderHost
   friend class VideoDecoderShim;
 
   // ResourceHost implementation.
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // media::VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 requested_num_of_buffers,
-                                     const gfx::Size& dimensions,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 picture_buffer_id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 bitstream_buffer_id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
+  void ProvidePictureBuffers(uint32 requested_num_of_buffers,
+                             const gfx::Size& dimensions,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 picture_buffer_id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyEndOfBitstreamBuffer(int32 bitstream_buffer_id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
 
   int32_t OnHostMsgInitialize(ppapi::host::HostMessageContext* context,
                               const ppapi::HostResource& graphics_context,
                               PP_VideoProfile profile,
-                              bool allow_software_fallback);
+                              PP_HardwareAcceleration acceleration);
   int32_t OnHostMsgGetShm(ppapi::host::HostMessageContext* context,
                           uint32_t shm_id,
                           uint32_t shm_size);

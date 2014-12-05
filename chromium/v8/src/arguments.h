@@ -6,6 +6,7 @@
 #define V8_ARGUMENTS_H_
 
 #include "src/allocation.h"
+#include "src/isolate.h"
 
 namespace v8 {
 namespace internal {
@@ -31,7 +32,7 @@ class Arguments BASE_EMBEDDED {
       : length_(length), arguments_(arguments) { }
 
   Object*& operator[] (int index) {
-    ASSERT(0 <= index && index < length_);
+    DCHECK(0 <= index && index < length_);
     return *(reinterpret_cast<Object**>(reinterpret_cast<intptr_t>(arguments_) -
                                         index * kPointerSize));
   }
@@ -67,13 +68,13 @@ class Arguments BASE_EMBEDDED {
 // They are used to generate the Call() functions below
 // These aren't included in the list as they have duplicate signatures
 // F(NamedPropertyEnumeratorCallback, ...)
-// F(NamedPropertyGetterCallback, ...)
 
 #define FOR_EACH_CALLBACK_TABLE_MAPPING_0(F) \
   F(IndexedPropertyEnumeratorCallback, v8::Array) \
 
 #define FOR_EACH_CALLBACK_TABLE_MAPPING_1(F) \
-  F(AccessorGetterCallback, v8::Value, v8::Local<v8::String>) \
+  F(NamedPropertyGetterCallback, v8::Value, v8::Local<v8::String>) \
+  F(AccessorNameGetterCallback, v8::Value, v8::Local<v8::Name>) \
   F(NamedPropertyQueryCallback, \
     v8::Integer, \
     v8::Local<v8::String>) \
@@ -101,9 +102,9 @@ class Arguments BASE_EMBEDDED {
     v8::Local<v8::Value>) \
 
 #define FOR_EACH_CALLBACK_TABLE_MAPPING_2_VOID_RETURN(F) \
-  F(AccessorSetterCallback, \
+  F(AccessorNameSetterCallback, \
     void, \
-    v8::Local<v8::String>, \
+    v8::Local<v8::Name>, \
     v8::Local<v8::Value>) \
 
 
@@ -175,8 +176,8 @@ class PropertyCallbackArguments
     values[T::kReturnValueDefaultValueIndex] =
         isolate->heap()->the_hole_value();
     values[T::kReturnValueIndex] = isolate->heap()->the_hole_value();
-    ASSERT(values[T::kHolderIndex]->IsHeapObject());
-    ASSERT(values[T::kIsolateIndex]->IsSmi());
+    DCHECK(values[T::kHolderIndex]->IsHeapObject());
+    DCHECK(values[T::kIsolateIndex]->IsSmi());
   }
 
   /*
@@ -247,9 +248,9 @@ class FunctionCallbackArguments
     values[T::kReturnValueDefaultValueIndex] =
         isolate->heap()->the_hole_value();
     values[T::kReturnValueIndex] = isolate->heap()->the_hole_value();
-    ASSERT(values[T::kCalleeIndex]->IsJSFunction());
-    ASSERT(values[T::kHolderIndex]->IsHeapObject());
-    ASSERT(values[T::kIsolateIndex]->IsSmi());
+    DCHECK(values[T::kCalleeIndex]->IsJSFunction());
+    DCHECK(values[T::kHolderIndex]->IsHeapObject());
+    DCHECK(values[T::kIsolateIndex]->IsSmi());
   }
 
   /*

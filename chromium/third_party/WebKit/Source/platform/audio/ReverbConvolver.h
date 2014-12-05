@@ -40,12 +40,9 @@
 #include "wtf/Vector.h"
 
 namespace blink {
-class WebThread;
-}
-
-namespace WebCore {
 
 class AudioChannel;
+class WebThread;
 
 class PLATFORM_EXPORT ReverbConvolver {
     WTF_MAKE_NONCOPYABLE(ReverbConvolver);
@@ -83,9 +80,9 @@ private:
     size_t m_maxRealtimeFFTSize;
 
     // Background thread and synchronization
-    OwnPtr<blink::WebThread> m_backgroundThread;
+    OwnPtr<WebThread> m_backgroundThread;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ReverbConvolver_h

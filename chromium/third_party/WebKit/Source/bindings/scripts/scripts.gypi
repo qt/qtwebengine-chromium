@@ -35,11 +35,18 @@
       'code_generator_v8.py',
       'v8_attributes.py',
       'v8_callback_interface.py',
+      'v8_dictionary.py',
       'v8_globals.py',
       'v8_interface.py',
       'v8_methods.py',
       'v8_types.py',
+      'v8_union.py',
       'v8_utilities.py',
+    ],
+    'idl_cache_files': [
+      '<(bindings_scripts_output_dir)/lextab.py',
+      '<(bindings_scripts_output_dir)/parsetab.pickle',
+      '<(bindings_scripts_output_dir)/cached_jinja_templates.stamp',
     ],
 
     'conditions': [

@@ -25,7 +25,7 @@
 #include "core/svg/SVGGradientElement.h"
 #include "core/svg/SVGStopElement.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGGradientStop::RenderSVGGradientStop(SVGStopElement* element)
     : RenderObject(element)
@@ -39,7 +39,7 @@ RenderSVGGradientStop::~RenderSVGGradientStop()
 void RenderSVGGradientStop::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
 {
     RenderObject::styleDidChange(diff, oldStyle);
-    if (diff.hasNoChange())
+    if (!diff.hasDifference())
         return;
 
     // <stop> elements should only be allowed to make renderers under gradient elements

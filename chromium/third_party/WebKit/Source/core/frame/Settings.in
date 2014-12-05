@@ -75,11 +75,9 @@ shrinksStandaloneImagesToFit initial=true
 # FIXME: Does this do anything now that we don't support page cache?
 pageCacheSupportsPlugins initial=false
 
-needsSiteSpecificQuirks initial=false
 offlineWebApplicationCacheEnabled initial=false
 usesEncodingDetector initial=false
 allowScriptsToCloseWindows initial=false
-deferredFiltersEnabled initial=true
 regionBasedColumnsEnabled initial=false
 
 containerCullingEnabled initial=false
@@ -93,13 +91,7 @@ xssAuditorEnabled initial=false
 unsafePluginPastingEnabled initial=true
 treatIPAddressAsDomain initial=false
 
-acceleratedCompositingForVideoEnabled initial=true, invalidate=AcceleratedCompositing
-acceleratedCompositingForCanvasEnabled initial=true, invalidate=AcceleratedCompositing
-acceleratedCompositingForFiltersEnabled initial=false, invalidate=AcceleratedCompositing
-acceleratedCompositingForFixedPositionEnabled initial=false, invalidate=AcceleratedCompositing
-acceleratedCompositingForOverflowScrollEnabled initial=false, invalidate=AcceleratedCompositing
-acceleratedCompositingForFixedRootBackgroundEnabled initial=false
-compositedScrollingForFramesEnabled initial=false, invalidate=AcceleratedCompositing
+preferCompositingToLCDTextEnabled initial=false, invalidate=AcceleratedCompositing
 
 # 3D canvas (WebGL) support.
 webGLEnabled initial=false
@@ -107,6 +99,7 @@ webGLEnabled initial=false
 webGLErrorsToConsoleEnabled initial=true
 accelerated2dCanvasEnabled initial=false
 antialiased2dCanvasEnabled initial=true
+antialiasedClips2dCanvasEnabled initial=false
 accelerated2dCanvasMSAASampleCount type=int, initial=0
 
 # WebAudio support.
@@ -124,6 +117,19 @@ mediaControlsOverlayPlayButtonEnabled initial=false
 mediaPlaybackRequiresUserGesture initial=false
 
 scrollAnimatorEnabled initial=true
+
+# Used to disable threaded, compositor scrolling for testing purposes.
+# crbug.com/410974 tracks removal once alternative solutions for selective
+# main thread scrolling are supported.
+threadedScrollingEnabled initial=true, invalidate=Style
+
+# Handles frame-level scrolls via the root RenderLayer instead of the FrameView.
+# crbug.com/417782 tracks enabling this by default.
+rootLayerScrolls initial=false
+
+# Used in layout tests for gesture tap highlights. Makes the highlights square
+# (rather than rounded) to make it possible to reftest the results.
+mockGestureTapHighlightsEnabled initial=false
 
 shouldRespectImageOrientation initial=false
 
@@ -147,9 +153,6 @@ maxTouchPoints type=int, initial=0
 # disabled for testing purposes as the algorithm is not yet perfect.
 # crbug.com/304895 tracks removal once we're satisfied with the algorithm.
 touchAdjustmentEnabled initial=true
-
-# A mostly-stable performance optimization. crbug.com/304518 tracks removal.
-compositorTouchHitTesting initial=true
 
 syncXHRInDocumentsEnabled initial=true
 cookieEnabled initial=true
@@ -203,6 +206,10 @@ viewportMetaMergeContentQuirk initial=false
 # See http://crbug.com/288037.
 wideViewportQuirkEnabled initial=false
 
+# Used by the android_webview to support a horizontal height auto-sizing
+# mode.
+forceZeroLayoutHeight initial=false, invalidate=ViewportDescription
+
 # Touch based text selection and editing on desktop.
 # crbug.com/304873 tracks removal once it's been enabled on all platforms.
 touchEditingEnabled initial=false
@@ -245,11 +252,6 @@ viewportMetaEnabled initial=false
 
 dnsPrefetchingEnabled initial=false, invalidate=DNSPrefetching
 
-
-# FIXME: This is a temporary flag and should be removed once
-# accelerated overflow scroll is ready (crbug.com/254111).
-compositorDrivenAcceleratedScrollingEnabled initial=false, invalidate=AcceleratedCompositing
-
 # FIXME: This is a temporary flag and should be removed
 # when squashing is ready. (crbug.com/261605)
 layerSquashingEnabled initial=false
@@ -271,5 +273,35 @@ deviceScaleAdjustment type=double, initial=1.0, invalidate=TextAutosizing
 # The spec ( https://dvcs.w3.org/hg/webperf/raw-file/tip/specs/Beacon/Overview.html )
 # does not proscribe an upper limit, but allows for it -- the underlying
 # API will return 'false' in that case.
-maxBeaconTransmission type=int, initial=16384
+maxBeaconTransmission type=int, initial=65536
 
+# This value is set to false if the platform does not support fullscreen.
+# When set to false all the requests to enter fullscreen will return an error
+# (fullscreenerror or webkitfullscreenerror) as specified in the standard:
+# http://fullscreen.spec.whatwg.org/#dom-element-requestfullscreen
+fullscreenSupported initial=true
+
+# V8 supports different types of caching. Used by V8 bindings.
+v8CacheOptions type=V8CacheOptions, initial=V8CacheOptionsOff
+
+v8ScriptStreamingEnabled initial=false
+v8ScriptStreamingMode type=ScriptStreamingMode, initial=ScriptStreamingModeAll
+
+# These values are bit fields for the properties of available pointing devices
+# and may take on multiple values (e.g. laptop with touchpad and touchscreen
+# has pointerType coarse *and* fine).
+availablePointerTypes type=int, initial=PointerTypeNone, invalidate=MediaQuery
+availableHoverTypes type=int, initial=HoverTypeNone, invalidate=MediaQuery
+
+# These values specify properties of the user's primary pointing device only.
+primaryPointerType type=PointerType, initial=PointerTypeNone, invalidate=MediaQuery
+primaryHoverType type=HoverType, initial=HoverTypeNone, invalidate=MediaQuery
+
+# Whether accessibility support is enabled at all.
+accessibilityEnabled initial=false, invalidate=AccessibilityState
+
+# If true, the value in password fields is exposed to assistive technologies.
+accessibilityPasswordValuesEnabled initial=false
+
+# If true, static text nodes expose inline text box children.
+inlineTextBoxAccessibilityEnabled initial=false

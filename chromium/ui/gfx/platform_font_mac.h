@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/mac/scoped_nsobject.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/platform_font.h"
 
 namespace gfx {
@@ -19,23 +20,24 @@ class PlatformFontMac : public PlatformFont {
                   int font_size);
 
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  Font DeriveFont(int size_delta, int style) const override;
+  int GetHeight() const override;
+  int GetBaseline() const override;
+  int GetCapHeight() const override;
+  int GetExpectedTextWidth(int length) const override;
+  int GetStyle() const override;
+  std::string GetFontName() const override;
+  std::string GetActualFontNameForTesting() const override;
+  int GetFontSize() const override;
+  const FontRenderParams& GetFontRenderParams() const override;
+  NativeFont GetNativeFont() const override;
 
  private:
   PlatformFontMac(const std::string& font_name, int font_size, int font_style);
-  virtual ~PlatformFontMac();
+  ~PlatformFontMac() override;
 
-  // Calculates and caches the font metrics.
-  void CalculateMetrics();
+  // Calculates and caches the font metrics and inits |render_params_|.
+  void CalculateMetricsAndInitRenderParams();
 
   // The NSFont instance for this object. If this object was constructed from an
   // NSFont instance, this holds that NSFont instance. Otherwise this NSFont
@@ -54,6 +56,9 @@ class PlatformFontMac : public PlatformFont {
   int ascent_;
   int cap_height_;
   int average_width_;
+
+  // Details about how the font should be rendered.
+  FontRenderParams render_params_;
 
   DISALLOW_COPY_AND_ASSIGN(PlatformFontMac);
 };

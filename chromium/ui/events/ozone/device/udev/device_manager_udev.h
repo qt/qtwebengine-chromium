@@ -7,7 +7,7 @@
 
 #include "base/message_loop/message_pump_libevent.h"
 #include "base/observer_list.h"
-#include "device/udev_linux/udev.h"
+#include "device/udev_linux/scoped_udev.h"
 #include "ui/events/ozone/device/device_manager.h"
 
 namespace ui {
@@ -19,7 +19,7 @@ class DeviceManagerUdev
     : public DeviceManager, base::MessagePumpLibevent::Watcher {
  public:
   DeviceManagerUdev();
-  virtual ~DeviceManagerUdev();
+  ~DeviceManagerUdev() override;
 
  private:
   scoped_ptr<DeviceEvent> ProcessMessage(udev_device* device);
@@ -28,13 +28,13 @@ class DeviceManagerUdev
   void CreateMonitor();
 
   // DeviceManager overrides:
-  virtual void ScanDevices(DeviceEventObserver* observer) OVERRIDE;
-  virtual void AddObserver(DeviceEventObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(DeviceEventObserver* observer) OVERRIDE;
+  void ScanDevices(DeviceEventObserver* observer) override;
+  void AddObserver(DeviceEventObserver* observer) override;
+  void RemoveObserver(DeviceEventObserver* observer) override;
 
   // base::MessagePumpLibevent::Watcher overrides:
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
   device::ScopedUdevPtr udev_;
   device::ScopedUdevMonitorPtr monitor_;

@@ -38,7 +38,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class GeolocationController;
 class GeolocationPosition;
@@ -55,15 +55,16 @@ public:
     int numberOfPendingPermissionRequests() const;
 
     // GeolocationClient
-    virtual void geolocationDestroyed() OVERRIDE;
-    virtual void startUpdating() OVERRIDE;
-    virtual void stopUpdating() OVERRIDE;
-    virtual void setEnableHighAccuracy(bool) OVERRIDE;
-    virtual GeolocationPosition* lastPosition() OVERRIDE;
-    virtual void requestPermission(Geolocation*) OVERRIDE;
-    virtual void cancelPermissionRequest(Geolocation*) OVERRIDE;
-    void controllerForTestAdded(GeolocationController*) OVERRIDE;
-    void controllerForTestRemoved(GeolocationController*) OVERRIDE;
+    virtual void startUpdating() override;
+    virtual void stopUpdating() override;
+    virtual void setEnableHighAccuracy(bool) override;
+    virtual GeolocationPosition* lastPosition() override;
+    virtual void requestPermission(Geolocation*) override;
+    virtual void cancelPermissionRequest(Geolocation*) override;
+    void controllerForTestAdded(GeolocationController*) override;
+    void controllerForTestRemoved(GeolocationController*) override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     void asyncUpdateController();
@@ -74,9 +75,10 @@ private:
 
     void clearError();
 
-    typedef WillBeHeapHashSet<RawPtrWillBeMember<GeolocationController> > GeolocationControllers;
-    WillBePersistentHeapHashSet<RawPtrWillBeMember<GeolocationController> > m_controllers;
-    Persistent<GeolocationPosition> m_lastPosition;
+    typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<GeolocationController> > GeolocationControllers;
+    GeolocationControllers m_controllers;
+
+    PersistentWillBeMember<GeolocationPosition> m_lastPosition;
     bool m_hasError;
     String m_errorMessage;
     Timer<GeolocationClientMock> m_controllerTimer;
@@ -90,8 +92,9 @@ private:
     };
 
     PermissionState m_permissionState;
-    typedef HeapHashSet<Member<Geolocation> > GeolocationSet;
-    PersistentHeapHashSet<Member<Geolocation> > m_pendingPermissions;
+
+    typedef PersistentHeapHashSetWillBeHeapHashSet<Member<Geolocation> > GeolocationSet;
+    GeolocationSet m_pendingPermissions;
 };
 
 }

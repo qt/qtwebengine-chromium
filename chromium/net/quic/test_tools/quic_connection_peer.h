@@ -44,6 +44,9 @@ class QuicConnectionPeer {
 
   static QuicAckFrame* CreateAckFrame(QuicConnection* connection);
 
+  static QuicStopWaitingFrame* CreateStopWaitingFrame(
+      QuicConnection* connection);
+
   static QuicConnectionVisitorInterface* GetVisitor(
       QuicConnection* connection);
 
@@ -70,10 +73,9 @@ class QuicConnectionPeer {
       QuicConnection* connection,
       QuicPacketSequenceNumber sequence_number);
 
-  static bool IsValidEntropy(QuicConnection* connection,
-                             QuicPacketSequenceNumber largest_observed,
-                             const SequenceNumberSet& missing_packets,
-                             QuicPacketEntropyHash entropy_hash);
+  static QuicPacketEntropyHash PacketEntropy(
+      QuicConnection* connection,
+      QuicPacketSequenceNumber sequence_number);
 
   static QuicPacketEntropyHash ReceivedEntropyHash(
       QuicConnection* connection,
@@ -106,13 +108,21 @@ class QuicConnectionPeer {
   static QuicAlarm* GetTimeoutAlarm(QuicConnection* connection);
 
   static QuicPacketWriter* GetWriter(QuicConnection* connection);
-  static void SetWriter(QuicConnection* connection, QuicPacketWriter* writer);
+  // If |owns_writer| is true, takes ownership of |writer|.
+  static void SetWriter(QuicConnection* connection,
+                        QuicPacketWriter* writer,
+                        bool owns_writer);
   static void CloseConnection(QuicConnection* connection);
   static QuicEncryptedPacket* GetConnectionClosePacket(
       QuicConnection* connection);
 
   static void SetSupportedVersions(QuicConnection* connection,
                                    QuicVersionVector versions);
+
+  static QuicPacketHeader* GetLastHeader(QuicConnection* connection);
+
+  static void SetSequenceNumberOfLastSentPacket(
+      QuicConnection* connection, QuicPacketSequenceNumber number);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionPeer);

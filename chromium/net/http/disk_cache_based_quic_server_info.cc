@@ -6,7 +6,9 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/callback_helpers.h"
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -47,24 +49,28 @@ DiskCacheBasedQuicServerInfo::DiskCacheBasedQuicServerInfo(
     const QuicServerId& server_id,
     HttpCache* http_cache)
     : QuicServerInfo(server_id),
-      weak_factory_(this),
       data_shim_(new CacheOperationDataShim()),
-      io_callback_(
-          base::Bind(&DiskCacheBasedQuicServerInfo::OnIOComplete,
-                     weak_factory_.GetWeakPtr(),
-                     base::Owned(data_shim_))),  // Ownership assigned.
       state_(GET_BACKEND),
       ready_(false),
       found_entry_(false),
       server_id_(server_id),
       http_cache_(http_cache),
       backend_(NULL),
-      entry_(NULL) {
+      entry_(NULL),
+      last_failure_(NO_FAILURE),
+      weak_factory_(this) {
+      io_callback_ =
+          base::Bind(&DiskCacheBasedQuicServerInfo::OnIOComplete,
+                     weak_factory_.GetWeakPtr(),
+                     base::Owned(data_shim_));  // Ownership assigned.
 }
 
 void DiskCacheBasedQuicServerInfo::Start() {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(GET_BACKEND, state_);
+  DCHECK_EQ(last_failure_, NO_FAILURE);
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_START);
+  load_start_time_ = base::TimeTicks::Now();
   DoLoop(OK);
 }
 
@@ -73,18 +79,33 @@ int DiskCacheBasedQuicServerInfo::WaitForDataReady(
   DCHECK(CalledOnValidThread());
   DCHECK_NE(GET_BACKEND, state_);
 
-  if (ready_)
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_WAIT_FOR_DATA_READY);
+  if (ready_) {
+    RecordLastFailure();
     return OK;
+  }
 
   if (!callback.is_null()) {
     // Prevent a new callback for WaitForDataReady overwriting an existing
-    // pending callback (|user_callback_|).
-    if (!user_callback_.is_null())
+    // pending callback (|wait_for_ready_callback_|).
+    if (!wait_for_ready_callback_.is_null()) {
+      RecordQuicServerInfoFailure(WAIT_FOR_DATA_READY_INVALID_ARGUMENT_FAILURE);
       return ERR_INVALID_ARGUMENT;
-    user_callback_ = callback;
+    }
+    wait_for_ready_callback_ = callback;
   }
 
   return ERR_IO_PENDING;
+}
+
+void DiskCacheBasedQuicServerInfo::CancelWaitForDataReadyCallback() {
+  DCHECK(CalledOnValidThread());
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_WAIT_FOR_DATA_READY_CANCEL);
+  if (!wait_for_ready_callback_.is_null()) {
+    RecordLastFailure();
+    wait_for_ready_callback_.Reset();
+  }
 }
 
 bool DiskCacheBasedQuicServerInfo::IsDataReady() {
@@ -94,27 +115,64 @@ bool DiskCacheBasedQuicServerInfo::IsDataReady() {
 bool DiskCacheBasedQuicServerInfo::IsReadyToPersist() {
   // The data can be persisted if it has been loaded from the disk cache
   // and there are no pending writes.
-  return ready_ && new_data_.empty();
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_READY_TO_PERSIST);
+  if (ready_ && new_data_.empty())
+    return true;
+  RecordQuicServerInfoFailure(READY_TO_PERSIST_FAILURE);
+  return false;
 }
 
 void DiskCacheBasedQuicServerInfo::Persist() {
   DCHECK(CalledOnValidThread());
-  DCHECK_NE(GET_BACKEND, state_);
+  if (!IsReadyToPersist()) {
+    // Handle updates while a write is pending or if we haven't loaded from disk
+    // cache. Save the data to be written into a temporary buffer and then
+    // persist that data when we are ready to persist.
+    pending_write_data_ = Serialize();
+    return;
+  }
+  PersistInternal();
+}
 
+void DiskCacheBasedQuicServerInfo::PersistInternal() {
+  DCHECK(CalledOnValidThread());
+  DCHECK_NE(GET_BACKEND, state_);
   DCHECK(new_data_.empty());
   CHECK(ready_);
-  DCHECK(user_callback_.is_null());
-  new_data_ = Serialize();
+  DCHECK(wait_for_ready_callback_.is_null());
 
-  if (!backend_)
+  if (pending_write_data_.empty()) {
+    new_data_ = Serialize();
+  } else {
+    new_data_ = pending_write_data_;
+    pending_write_data_.clear();
+  }
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_PERSIST);
+  if (!backend_) {
+    RecordQuicServerInfoFailure(PERSIST_NO_BACKEND_FAILURE);
     return;
+  }
 
   state_ = CREATE_OR_OPEN;
   DoLoop(OK);
 }
 
+void DiskCacheBasedQuicServerInfo::OnExternalCacheHit() {
+  DCHECK(CalledOnValidThread());
+  DCHECK_NE(GET_BACKEND, state_);
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_EXTERNAL_CACHE_HIT);
+  if (!backend_) {
+    RecordQuicServerInfoFailure(PERSIST_NO_BACKEND_FAILURE);
+    return;
+  }
+
+  backend_->OnExternalCacheHit(key());
+}
+
 DiskCacheBasedQuicServerInfo::~DiskCacheBasedQuicServerInfo() {
-  DCHECK(user_callback_.is_null());
+  DCHECK(wait_for_ready_callback_.is_null());
   if (entry_)
     entry_->Close();
 }
@@ -127,10 +185,15 @@ void DiskCacheBasedQuicServerInfo::OnIOComplete(CacheOperationDataShim* unused,
                                                 int rv) {
   DCHECK_NE(NONE, state_);
   rv = DoLoop(rv);
-  if (rv != ERR_IO_PENDING && !user_callback_.is_null()) {
-    CompletionCallback callback = user_callback_;
-    user_callback_.Reset();
-    callback.Run(rv);
+  if (rv == ERR_IO_PENDING)
+    return;
+  if (!wait_for_ready_callback_.is_null()) {
+    RecordLastFailure();
+    base::ResetAndReturn(&wait_for_ready_callback_).Run(rv);
+  }
+  if (ready_ && !pending_write_data_.empty()) {
+    DCHECK_EQ(NONE, state_);
+    PersistInternal();
   }
 }
 
@@ -187,6 +250,7 @@ int DiskCacheBasedQuicServerInfo::DoGetBackendComplete(int rv) {
     backend_ = data_shim_->backend;
     state_ = OPEN;
   } else {
+    RecordQuicServerInfoFailure(GET_BACKEND_FAILURE);
     state_ = WAIT_FOR_DATA_READY_DONE;
   }
   return OK;
@@ -198,6 +262,7 @@ int DiskCacheBasedQuicServerInfo::DoOpenComplete(int rv) {
     state_ = READ;
     found_entry_ = true;
   } else {
+    RecordQuicServerInfoFailure(OPEN_FAILURE);
     state_ = WAIT_FOR_DATA_READY_DONE;
   }
 
@@ -207,21 +272,30 @@ int DiskCacheBasedQuicServerInfo::DoOpenComplete(int rv) {
 int DiskCacheBasedQuicServerInfo::DoReadComplete(int rv) {
   if (rv > 0)
     data_.assign(read_buffer_->data(), rv);
+  else if (rv < 0)
+    RecordQuicServerInfoFailure(READ_FAILURE);
 
   state_ = WAIT_FOR_DATA_READY_DONE;
   return OK;
 }
 
 int DiskCacheBasedQuicServerInfo::DoWriteComplete(int rv) {
+  if (rv < 0)
+    RecordQuicServerInfoFailure(WRITE_FAILURE);
   state_ = SET_DONE;
   return OK;
 }
 
 int DiskCacheBasedQuicServerInfo::DoCreateOrOpenComplete(int rv) {
   if (rv != OK) {
+    RecordQuicServerInfoFailure(CREATE_OR_OPEN_FAILURE);
     state_ = SET_DONE;
   } else {
-    entry_ = data_shim_->entry;
+    if (!entry_) {
+      entry_ = data_shim_->entry;
+      found_entry_ = true;
+    }
+    DCHECK(entry_);
     state_ = WRITE;
   }
   return OK;
@@ -247,7 +321,7 @@ int DiskCacheBasedQuicServerInfo::DoRead() {
   read_buffer_ = new IOBuffer(size);
   state_ = READ_COMPLETE;
   return entry_->ReadData(
-      0 /* index */, 0 /* offset */, read_buffer_, size, io_callback_);
+      0 /* index */, 0 /* offset */, read_buffer_.get(), size, io_callback_);
 }
 
 int DiskCacheBasedQuicServerInfo::DoWrite() {
@@ -255,14 +329,19 @@ int DiskCacheBasedQuicServerInfo::DoWrite() {
   memcpy(write_buffer_->data(), new_data_.data(), new_data_.size());
   state_ = WRITE_COMPLETE;
 
-  return entry_->WriteData(
-      0 /* index */, 0 /* offset */, write_buffer_, new_data_.size(),
-      io_callback_, true /* truncate */);
+  return entry_->WriteData(0 /* index */,
+                           0 /* offset */,
+                           write_buffer_.get(),
+                           new_data_.size(),
+                           io_callback_,
+                           true /* truncate */);
 }
 
 int DiskCacheBasedQuicServerInfo::DoCreateOrOpen() {
-  DCHECK(entry_ == NULL);
   state_ = CREATE_OR_OPEN_COMPLETE;
+  if (entry_)
+    return OK;
+
   if (found_entry_) {
     return backend_->OpenEntry(key(), &data_shim_->entry, io_callback_);
   }
@@ -279,7 +358,17 @@ int DiskCacheBasedQuicServerInfo::DoWaitForDataReadyDone() {
   if (entry_)
     entry_->Close();
   entry_ = NULL;
-  Parse(data_);
+
+  RecordQuicServerInfoStatus(QUIC_SERVER_INFO_PARSE);
+  if (!Parse(data_)) {
+    if (data_.empty())
+      RecordQuicServerInfoFailure(PARSE_NO_DATA_FAILURE);
+    else
+      RecordQuicServerInfoFailure(PARSE_FAILURE);
+  }
+
+  UMA_HISTOGRAM_TIMES("Net.QuicServerInfo.DiskCacheLoadTime",
+                      base::TimeTicks::Now() - load_start_time_);
   return OK;
 }
 
@@ -290,6 +379,45 @@ int DiskCacheBasedQuicServerInfo::DoSetDone() {
   new_data_.clear();
   state_ = NONE;
   return OK;
+}
+
+void DiskCacheBasedQuicServerInfo::RecordQuicServerInfoStatus(
+    QuicServerInfoAPICall call) {
+  if (!backend_) {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall.NoBackend", call,
+                              QUIC_SERVER_INFO_NUM_OF_API_CALLS);
+  } else if (backend_->GetCacheType() == net::MEMORY_CACHE) {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall.MemoryCache", call,
+                              QUIC_SERVER_INFO_NUM_OF_API_CALLS);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.APICall.DiskCache", call,
+                              QUIC_SERVER_INFO_NUM_OF_API_CALLS);
+  }
+}
+
+void DiskCacheBasedQuicServerInfo::RecordLastFailure() {
+  if (last_failure_ != NO_FAILURE) {
+    UMA_HISTOGRAM_ENUMERATION(
+        "Net.QuicDiskCache.FailureReason.WaitForDataReady",
+        last_failure_, NUM_OF_FAILURES);
+  }
+  last_failure_ = NO_FAILURE;
+}
+
+void DiskCacheBasedQuicServerInfo::RecordQuicServerInfoFailure(
+    FailureReason failure) {
+  last_failure_ = failure;
+
+  if (!backend_) {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason.NoBackend",
+                              failure, NUM_OF_FAILURES);
+  } else if (backend_->GetCacheType() == net::MEMORY_CACHE) {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason.MemoryCache",
+                              failure, NUM_OF_FAILURES);
+  } else {
+    UMA_HISTOGRAM_ENUMERATION("Net.QuicDiskCache.FailureReason.DiskCache",
+                              failure, NUM_OF_FAILURES);
+  }
 }
 
 }  // namespace net

@@ -22,6 +22,7 @@ class SingleThreadTaskRunner;
 
 namespace IPC {
 
+class ChannelFactory;
 class MessageFilter;
 class MessageFilterRouter;
 class SendCallbackHelper;
@@ -68,9 +69,14 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
       const IPC::ChannelHandle& channel_handle,
       Channel::Mode mode,
       Listener* listener,
-      base::SingleThreadTaskRunner* ipc_task_runner);
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
-  virtual ~ChannelProxy();
+  static scoped_ptr<ChannelProxy> Create(
+      scoped_ptr<ChannelFactory> factory,
+      Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
+
+  ~ChannelProxy() override;
 
   // Initializes the channel proxy. Only call this once to initialize a channel
   // proxy that was not initialized in its constructor. If create_pipe_now is
@@ -78,6 +84,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // thread.
   void Init(const IPC::ChannelHandle& channel_handle, Channel::Mode mode,
             bool create_pipe_now);
+  void Init(scoped_ptr<ChannelFactory> factory, bool create_pipe_now);
 
   // Close the IPC::Channel.  This operation completes asynchronously, once the
   // background thread processes the command to close the channel.  It is ok to
@@ -91,7 +98,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
   // Send a message asynchronously.  The message is routed to the background
   // thread where it is passed to the IPC::Channel's Send method.
-  virtual bool Send(Message* message) OVERRIDE;
+  bool Send(Message* message) override;
 
   // Used to intercept messages as they are received on the background thread.
   //
@@ -112,11 +119,11 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // Returns base::kNullProcessId if the peer is not connected yet.
   base::ProcessId GetPeerPID() const { return context_->peer_pid_; }
 
-#if defined(OS_POSIX) && !defined(OS_NACL)
+#if defined(OS_POSIX) && !defined(OS_NACL_SFI)
   // Calls through to the underlying channel's methods.
   int GetClientFileDescriptor();
-  int TakeClientFileDescriptor();
-#endif  // defined(OS_POSIX)
+  base::ScopedFD TakeClientFileDescriptor();
+#endif
 
  protected:
   class Context;
@@ -124,14 +131,16 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // to the internal state.
   ChannelProxy(Context* context);
 
-  ChannelProxy(Listener* listener,
-               base::SingleThreadTaskRunner* ipc_task_runner);
+  ChannelProxy(
+      Listener* listener,
+      const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner);
 
   // Used internally to hold state that is referenced on the IPC thread.
   class Context : public base::RefCountedThreadSafe<Context>,
                   public Listener {
    public:
-    Context(Listener* listener, base::SingleThreadTaskRunner* ipc_thread);
+    Context(Listener* listener,
+            const scoped_refptr<base::SingleThreadTaskRunner>& ipc_thread);
     void ClearIPCTaskRunner();
     base::SingleThreadTaskRunner* ipc_task_runner() const {
       return ipc_task_runner_.get();
@@ -143,12 +152,12 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
 
    protected:
     friend class base::RefCountedThreadSafe<Context>;
-    virtual ~Context();
+    ~Context() override;
 
     // IPC::Listener methods:
-    virtual bool OnMessageReceived(const Message& message) OVERRIDE;
-    virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-    virtual void OnChannelError() OVERRIDE;
+    bool OnMessageReceived(const Message& message) override;
+    void OnChannelConnected(int32 peer_pid) override;
+    void OnChannelError() override;
 
     // Like OnMessageReceived but doesn't try the filters.
     bool OnMessageReceivedNoFilter(const Message& message);
@@ -171,8 +180,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     friend class SendCallbackHelper;
 
     // Create the Channel
-    void CreateChannel(const IPC::ChannelHandle& channel_handle,
-                       const Channel::Mode& mode);
+    void CreateChannel(scoped_ptr<ChannelFactory> factory);
 
     // Methods called on the IO thread.
     void OnSendMessage(scoped_ptr<Message> message_ptr);

@@ -11,6 +11,7 @@
 #include "base/values.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/proxy_delegate.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/socket/client_socket_factory.h"
@@ -37,7 +38,8 @@ HttpProxySocketParams::HttpProxySocketParams(
     HttpAuthCache* http_auth_cache,
     HttpAuthHandlerFactory* http_auth_handler_factory,
     SpdySessionPool* spdy_session_pool,
-    bool tunnel)
+    bool tunnel,
+    ProxyDelegate* proxy_delegate)
     : transport_params_(transport_params),
       ssl_params_(ssl_params),
       spdy_session_pool_(spdy_session_pool),
@@ -46,7 +48,8 @@ HttpProxySocketParams::HttpProxySocketParams(
       endpoint_(endpoint),
       http_auth_cache_(tunnel ? http_auth_cache : NULL),
       http_auth_handler_factory_(tunnel ? http_auth_handler_factory : NULL),
-      tunnel_(tunnel) {
+      tunnel_(tunnel),
+      proxy_delegate_(proxy_delegate) {
   DCHECK((transport_params.get() == NULL && ssl_params.get() != NULL) ||
          (transport_params.get() != NULL && ssl_params.get() == NULL));
   if (transport_params_.get()) {
@@ -68,12 +71,13 @@ HttpProxySocketParams::~HttpProxySocketParams() {}
 
 // HttpProxyConnectJobs will time out after this many seconds.  Note this is on
 // top of the timeout for the transport socket.
-#if (defined(OS_ANDROID) || defined(OS_IOS)) && defined(SPDY_PROXY_AUTH_ORIGIN)
+// TODO(kundaji): Proxy connect timeout should be independent of platform and be
+// based on proxy. Bug http://crbug.com/407446.
+#if defined(OS_ANDROID) || defined(OS_IOS)
 static const int kHttpProxyConnectJobTimeoutInSeconds = 10;
 #else
 static const int kHttpProxyConnectJobTimeoutInSeconds = 30;
 #endif
-
 
 HttpProxyConnectJob::HttpProxyConnectJob(
     const std::string& group_name,
@@ -87,15 +91,15 @@ HttpProxyConnectJob::HttpProxyConnectJob(
     NetLog* net_log)
     : ConnectJob(group_name, timeout_duration, priority, delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
-      weak_ptr_factory_(this),
       params_(params),
       transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
       resolver_(host_resolver),
-      callback_(base::Bind(&HttpProxyConnectJob::OnIOComplete,
-                           weak_ptr_factory_.GetWeakPtr())),
       using_spdy_(false),
-      protocol_negotiated_(kProtoUnknown) {
+      protocol_negotiated_(kProtoUnknown),
+      weak_ptr_factory_(this) {
+    callback_= base::Bind(&HttpProxyConnectJob::OnIOComplete,
+                           weak_ptr_factory_.GetWeakPtr());
 }
 
 HttpProxyConnectJob::~HttpProxyConnectJob() {}
@@ -127,8 +131,10 @@ void HttpProxyConnectJob::GetAdditionalErrorState(ClientSocketHandle * handle) {
 
 void HttpProxyConnectJob::OnIOComplete(int result) {
   int rv = DoLoop(result);
-  if (rv != ERR_IO_PENDING)
+  if (rv != ERR_IO_PENDING) {
+    NotifyProxyDelegateOfCompletion(rv);
     NotifyDelegateOfCompletion(rv);  // Deletes |this|
+  }
 }
 
 int HttpProxyConnectJob::DoLoop(int result) {
@@ -291,6 +297,7 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
                                 params_->tunnel(),
                                 using_spdy_,
                                 protocol_negotiated_,
+                                params_->proxy_delegate(),
                                 params_->ssl_params().get() != NULL));
   return transport_socket_->Connect(callback_);
 }
@@ -298,7 +305,7 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
 int HttpProxyConnectJob::DoHttpProxyConnectComplete(int result) {
   if (result == OK || result == ERR_PROXY_AUTH_REQUESTED ||
       result == ERR_HTTPS_PROXY_TUNNEL_RESPONSE) {
-    SetSocket(transport_socket_.PassAs<StreamSocket>());
+    SetSocket(transport_socket_.Pass());
   }
 
   return result;
@@ -358,13 +365,29 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
   return transport_socket_->Connect(callback_);
 }
 
+void HttpProxyConnectJob::NotifyProxyDelegateOfCompletion(int result) {
+  if (!params_->proxy_delegate())
+    return;
+
+  const HostPortPair& proxy_server = params_->destination().host_port_pair();
+  params_->proxy_delegate()->OnTunnelConnectCompleted(params_->endpoint(),
+                                                      proxy_server,
+                                                      result);
+}
+
 int HttpProxyConnectJob::ConnectInternal() {
   if (params_->transport_params().get()) {
     next_state_ = STATE_TCP_CONNECT;
   } else {
     next_state_ = STATE_SSL_CONNECT;
   }
-  return DoLoop(OK);
+
+  int rv = DoLoop(OK);
+  if (rv != ERR_IO_PENDING) {
+    NotifyProxyDelegateOfCompletion(rv);
+  }
+
+  return rv;
 }
 
 HttpProxyClientSocketPool::
@@ -372,14 +395,18 @@ HttpProxyConnectJobFactory::HttpProxyConnectJobFactory(
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
     HostResolver* host_resolver,
+    const ProxyDelegate* proxy_delegate,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
       host_resolver_(host_resolver),
+      proxy_delegate_(proxy_delegate),
       net_log_(net_log) {
   base::TimeDelta max_pool_timeout = base::TimeDelta();
 
-#if (defined(OS_ANDROID) || defined(OS_IOS)) && defined(SPDY_PROXY_AUTH_ORIGIN)
+// TODO(kundaji): Proxy connect timeout should be independent of platform and be
+// based on proxy. Bug http://crbug.com/407446.
+#if (defined(OS_ANDROID) || defined(OS_IOS))
 #else
   if (transport_pool_)
     max_pool_timeout = transport_pool_->ConnectionTimeout();
@@ -421,6 +448,7 @@ HttpProxyClientSocketPool::HttpProxyClientSocketPool(
     HostResolver* host_resolver,
     TransportClientSocketPool* transport_pool,
     SSLClientSocketPool* ssl_pool,
+    const ProxyDelegate* proxy_delegate,
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
@@ -430,6 +458,7 @@ HttpProxyClientSocketPool::HttpProxyClientSocketPool(
             new HttpProxyConnectJobFactory(transport_pool,
                                            ssl_pool,
                                            host_resolver,
+                                           proxy_delegate,
                                            net_log)) {
   // We should always have a |transport_pool_| except in unit tests.
   if (transport_pool_)

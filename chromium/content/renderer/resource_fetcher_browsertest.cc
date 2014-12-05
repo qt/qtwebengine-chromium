@@ -108,14 +108,14 @@ FetcherDelegate* FetcherDelegate::instance_ = NULL;
 
 class EvilFetcherDelegate : public FetcherDelegate {
  public:
-  virtual ~EvilFetcherDelegate() {}
+  ~EvilFetcherDelegate() override {}
 
   void SetFetcher(ResourceFetcher* fetcher) {
     fetcher_.reset(fetcher);
   }
 
-  virtual void OnURLFetchComplete(const WebURLResponse& response,
-                                  const std::string& data) OVERRIDE {
+  void OnURLFetchComplete(const WebURLResponse& response,
+                          const std::string& data) override {
     FetcherDelegate::OnURLFetchComplete(response, data);
 
     // Destroy the ResourceFetcher here.  We are testing that upon returning
@@ -131,7 +131,7 @@ class EvilFetcherDelegate : public FetcherDelegate {
 
 class ResourceFetcherTests : public ContentBrowserTest {
  public:
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitch(switches::kSingleProcess);
 #if defined(OS_WIN)
     // Don't want to try to create a GPU process.
@@ -150,7 +150,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
 
     delegate->WaitForResponse();
@@ -166,7 +169,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
 
     delegate->WaitForResponse();
@@ -183,7 +189,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
     GURL url("http://localhost:1339/doesnotexist");
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
 
     delegate->WaitForResponse();
@@ -201,7 +210,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
 
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
     fetcher->SetTimeout(base::TimeDelta());
 
@@ -220,7 +232,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
 
     scoped_ptr<EvilFetcherDelegate> delegate(new EvilFetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
     fetcher->SetTimeout(base::TimeDelta());
     delegate->SetFetcher(fetcher.release());
@@ -238,7 +253,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
     fetcher->SetMethod("POST");
     fetcher->SetBody(kBody);
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
 
     delegate->WaitForResponse();
@@ -255,7 +273,10 @@ class ResourceFetcherTests : public ContentBrowserTest {
     scoped_ptr<FetcherDelegate> delegate(new FetcherDelegate);
     scoped_ptr<ResourceFetcher> fetcher(ResourceFetcher::Create(url));
     fetcher->SetHeader("header", kHeader);
-    fetcher->Start(frame, WebURLRequest::TargetIsMainFrame,
+    fetcher->Start(frame,
+                   WebURLRequest::RequestContextInternal,
+                   WebURLRequest::FrameTypeNone,
+                   ResourceFetcher::PLATFORM_LOADER,
                    delegate->NewCallback());
 
     delegate->WaitForResponse();

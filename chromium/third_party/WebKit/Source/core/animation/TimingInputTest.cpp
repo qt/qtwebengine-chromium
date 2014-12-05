@@ -5,13 +5,13 @@
 #include "config.h"
 #include "core/animation/TimingInput.h"
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 #include "core/animation/AnimationNodeTiming.h"
 #include "core/animation/AnimationTestHelper.h"
 #include <gtest/gtest.h>
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class AnimationTimingInputTest : public ::testing::Test {
 protected:
@@ -150,9 +150,9 @@ TEST_F(AnimationTimingInputTest, TimingInputTimingFunction)
     EXPECT_EQ(*StepsTimingFunction::preset(StepsTimingFunction::Middle), *applyTimingInputString("easing", "step-middle").timingFunction);
     EXPECT_EQ(*StepsTimingFunction::preset(StepsTimingFunction::End), *applyTimingInputString("easing", "step-end").timingFunction);
     EXPECT_EQ(*CubicBezierTimingFunction::create(1, 1, 0.3, 0.3), *applyTimingInputString("easing", "cubic-bezier(1, 1, 0.3, 0.3)").timingFunction);
-    EXPECT_EQ(*StepsTimingFunction::create(3, StepsTimingFunction::StepAtStart), *applyTimingInputString("easing", "steps(3, start)").timingFunction);
-    EXPECT_EQ(*StepsTimingFunction::create(5, StepsTimingFunction::StepAtMiddle), *applyTimingInputString("easing", "steps(5, middle)").timingFunction);
-    EXPECT_EQ(*StepsTimingFunction::create(5, StepsTimingFunction::StepAtEnd), *applyTimingInputString("easing", "steps(5, end)").timingFunction);
+    EXPECT_EQ(*StepsTimingFunction::create(3, StepsTimingFunction::Start), *applyTimingInputString("easing", "steps(3, start)").timingFunction);
+    EXPECT_EQ(*StepsTimingFunction::create(5, StepsTimingFunction::Middle), *applyTimingInputString("easing", "steps(5, middle)").timingFunction);
+    EXPECT_EQ(*StepsTimingFunction::create(5, StepsTimingFunction::End), *applyTimingInputString("easing", "steps(5, end)").timingFunction);
     EXPECT_EQ(*defaultTimingFunction, *applyTimingInputString("easing", "steps(5.6, end)").timingFunction);
     EXPECT_EQ(*defaultTimingFunction, *applyTimingInputString("easing", "cubic-bezier(2, 2, 0.3, 0.3)").timingFunction);
     EXPECT_EQ(*defaultTimingFunction, *applyTimingInputString("easing", "rubbish").timingFunction);
@@ -178,4 +178,4 @@ TEST_F(AnimationTimingInputTest, TimingInputEmpty)
     EXPECT_EQ(*controlTiming.timingFunction, *updatedTiming.timingFunction);
 }
 
-} // namespace WebCore
+} // namespace blink

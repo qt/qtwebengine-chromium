@@ -13,7 +13,7 @@
 
 #include "webrtc/modules/audio_coding/neteq/interface/audio_decoder.h"
 
-#include "gmock/gmock.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "webrtc/base/constructormagic.h"
 #include "webrtc/modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
 #include "webrtc/typedefs.h"
@@ -27,15 +27,13 @@ using ::testing::Invoke;
 // audio_decoder_impl.{cc, h}.
 class ExternalPcm16B : public AudioDecoder {
  public:
-  explicit ExternalPcm16B(enum NetEqDecoder type)
-      : AudioDecoder(type) {
-  }
+  ExternalPcm16B() {}
 
   virtual int Decode(const uint8_t* encoded, size_t encoded_len,
                      int16_t* decoded, SpeechType* speech_type) {
     int16_t temp_type;
     int16_t ret = WebRtcPcm16b_DecodeW16(
-        state_, reinterpret_cast<int16_t*>(const_cast<uint8_t*>(encoded)),
+        reinterpret_cast<int16_t*>(const_cast<uint8_t*>(encoded)),
         static_cast<int16_t>(encoded_len), decoded, &temp_type);
     *speech_type = ConvertSpeechType(temp_type);
     return ret;
@@ -51,9 +49,7 @@ class ExternalPcm16B : public AudioDecoder {
 // The reason is that we can then track that the correct calls are being made.
 class MockExternalPcm16B : public ExternalPcm16B {
  public:
-  explicit MockExternalPcm16B(enum NetEqDecoder type)
-      : ExternalPcm16B(type),
-        real_(type) {
+  MockExternalPcm16B() {
     // By default, all calls are delegated to the real object.
     ON_CALL(*this, Decode(_, _, _, _))
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::Decode));
@@ -67,8 +63,6 @@ class MockExternalPcm16B : public ExternalPcm16B {
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::IncomingPacket));
     ON_CALL(*this, ErrorCode())
         .WillByDefault(Invoke(&real_, &ExternalPcm16B::ErrorCode));
-    ON_CALL(*this, codec_type())
-        .WillByDefault(Invoke(&real_, &ExternalPcm16B::codec_type));
   }
   virtual ~MockExternalPcm16B() { Die(); }
 

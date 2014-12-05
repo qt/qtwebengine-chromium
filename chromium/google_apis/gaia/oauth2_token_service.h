@@ -16,7 +16,6 @@
 #include "base/observer_list.h"
 #include "base/threading/non_thread_safe.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 #include "google_apis/gaia/oauth2_access_token_consumer.h"
 #include "google_apis/gaia/oauth2_access_token_fetcher.h"
@@ -69,7 +68,7 @@ class OAuth2TokenService : public base::NonThreadSafe {
   // which will be called back when the request completes.
   class Consumer {
    public:
-    Consumer(const std::string& id);
+    explicit Consumer(const std::string& id);
     virtual ~Consumer();
 
     std::string id() const { return id_; }
@@ -100,6 +99,10 @@ class OAuth2TokenService : public base::NonThreadSafe {
     // Called after all refresh tokens are loaded during OAuth2TokenService
     // startup.
     virtual void OnRefreshTokensLoaded() {}
+    // Sent before starting a batch of refresh token changes.
+    virtual void OnStartBatchChanges() {}
+    // Sent after a batch of refresh token changes is done.
+    virtual void OnEndBatchChanges() {}
 
    protected:
     virtual ~Observer() {}
@@ -143,10 +146,10 @@ class OAuth2TokenService : public base::NonThreadSafe {
   // |account_id|. The caller owns the returned Request.
   // |scopes| is the set of scopes to get an access token for, |consumer| is
   // the object that will be called back with results if the returned request
-  // is not deleted.
-  scoped_ptr<Request> StartRequest(const std::string& account_id,
-                                   const ScopeSet& scopes,
-                                   Consumer* consumer);
+  // is not deleted. Virtual for mocking.
+  virtual scoped_ptr<Request> StartRequest(const std::string& account_id,
+                                           const ScopeSet& scopes,
+                                           Consumer* consumer);
 
   // This method does the same as |StartRequest| except it uses |client_id| and
   // |client_secret| to identify OAuth client app instead of using
@@ -210,11 +213,11 @@ class OAuth2TokenService : public base::NonThreadSafe {
                       public Request {
    public:
     // |consumer| is required to outlive this.
-    explicit RequestImpl(const std::string& account_id, Consumer* consumer);
-    virtual ~RequestImpl();
+    RequestImpl(const std::string& account_id, Consumer* consumer);
+    ~RequestImpl() override;
 
     // Overridden from Request:
-    virtual std::string GetAccountId() const OVERRIDE;
+    std::string GetAccountId() const override;
 
     std::string GetConsumerId() const;
 
@@ -227,6 +230,16 @@ class OAuth2TokenService : public base::NonThreadSafe {
     // |consumer_| to call back when this request completes.
     const std::string account_id_;
     Consumer* const consumer_;
+  };
+
+  // Helper class to scope batch changes.
+  class ScopedBatchChange {
+   public:
+    explicit ScopedBatchChange(OAuth2TokenService* token_service);
+    ~ScopedBatchChange();
+   private:
+    OAuth2TokenService* token_service_;  // Weak.
+    DISALLOW_COPY_AND_ASSIGN(ScopedBatchChange);
   };
 
   // Subclasses can override if they want to report errors to the user.
@@ -261,6 +274,9 @@ class OAuth2TokenService : public base::NonThreadSafe {
   virtual void FireRefreshTokenAvailable(const std::string& account_id);
   virtual void FireRefreshTokenRevoked(const std::string& account_id);
   virtual void FireRefreshTokensLoaded();
+
+  virtual void StartBatchChanges();
+  virtual void EndBatchChanges();
 
   // Fetches an OAuth token for the specified client/scopes. Virtual so it can
   // be overridden for tests and for platform-specific behavior on Android.
@@ -373,6 +389,9 @@ class OAuth2TokenService : public base::NonThreadSafe {
 
   // List of observers to notify when access token status changes.
   ObserverList<DiagnosticsObserver, true> diagnostics_observer_list_;
+
+  // The depth of batch changes.
+  int batch_change_depth_;
 
   // Maximum number of retries in fetching an OAuth2 access token.
   static int max_fetch_retry_num_;

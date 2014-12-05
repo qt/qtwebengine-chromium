@@ -1,7 +1,7 @@
 //
 //  regexst.h
 //
-//  Copyright (C) 2004-2010, International Business Machines Corporation and others.
+//  Copyright (C) 2004-2013, International Business Machines Corporation and others.
 //  All Rights Reserved.
 //
 //  This file contains class RegexStaticSets
@@ -79,8 +79,10 @@ static const UChar gIsWordPattern[] = {
           0x5c, 0x70, 0x7b, 0x4d, 0x7d,
 //          \     p     {    N     d     }                         Digit_Numeric
           0x5c, 0x70, 0x7b, 0x4e, 0x64, 0x7d,
-//          \     p     {    P     c     }      ]                  Connector_Punctuation
-          0x5c, 0x70, 0x7b, 0x50, 0x63, 0x7d, 0x5d, 0};
+//          \     p     {    P     c     }                         Connector_Punctuation
+          0x5c, 0x70, 0x7b, 0x50, 0x63, 0x7d,
+//          \     u     2    0     0     c      \     u     2    0     0     d     ]
+          0x5c, 0x75, 0x32, 0x30, 0x30, 0x63, 0x5c, 0x75, 0x32, 0x30, 0x30, 0x64, 0x5d, 0};
 
 
 //
@@ -142,6 +144,7 @@ static const UChar gGC_LVTPattern[] = {
 
 
 RegexStaticSets *RegexStaticSets::gStaticSets = NULL;
+UInitOnce gStaticSetsInitOnce = U_INITONCE_INITIALIZER;
 
 RegexStaticSets::RegexStaticSets(UErrorCode *status)
 :
@@ -253,6 +256,7 @@ UBool
 RegexStaticSets::cleanup(void) {
     delete RegexStaticSets::gStaticSets;
     RegexStaticSets::gStaticSets = NULL;
+    gStaticSetsInitOnce.reset();
     return TRUE;
 }
 
@@ -261,34 +265,24 @@ static UBool U_CALLCONV
 regex_cleanup(void) {
     return RegexStaticSets::cleanup();
 }
+
+static void U_CALLCONV initStaticSets(UErrorCode &status) {
+    U_ASSERT(RegexStaticSets::gStaticSets == NULL);
+    ucln_i18n_registerCleanup(UCLN_I18N_REGEX, regex_cleanup);
+    RegexStaticSets::gStaticSets = new RegexStaticSets(&status);
+    if (U_FAILURE(status)) {
+        delete RegexStaticSets::gStaticSets;
+        RegexStaticSets::gStaticSets = NULL;
+    }
+    if (RegexStaticSets::gStaticSets == NULL && U_SUCCESS(status)) {
+        status = U_MEMORY_ALLOCATION_ERROR;
+    }
+}
 U_CDECL_END
 
 void RegexStaticSets::initGlobals(UErrorCode *status) {
-    RegexStaticSets *p;
-    UMTX_CHECK(NULL, gStaticSets, p);
-    if (p == NULL) {
-        p = new RegexStaticSets(status);
-        if (p == NULL) {
-        	*status = U_MEMORY_ALLOCATION_ERROR;
-        	return;
-        }
-        if (U_FAILURE(*status)) {
-            delete p;
-            return;
-        }
-        umtx_lock(NULL);
-        if (gStaticSets == NULL) {
-            gStaticSets = p;
-            p = NULL;
-        }
-        umtx_unlock(NULL);
-        if (p) {
-            delete p;
-        }
-        ucln_i18n_registerCleanup(UCLN_I18N_REGEX, regex_cleanup);
-    }
+    umtx_initOnce(gStaticSetsInitOnce, &initStaticSets, *status);
 }
-
 
 U_NAMESPACE_END
 #endif  // !UCONFIG_NO_REGULAR_EXPRESSIONS

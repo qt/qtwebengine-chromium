@@ -31,7 +31,7 @@ void SplitString(const std::wstring& str,
 
 class SplitStringIntoKeyValuePairsTest : public testing::Test {
  protected:
-  std::vector<std::pair<std::string, std::string> > kv_pairs;
+  base::StringPairs kv_pairs;
 };
 
 TEST_F(SplitStringIntoKeyValuePairsTest, EmptyString) {
@@ -312,7 +312,7 @@ TEST(StringSplitTest, SplitStringAlongWhitespace) {
     { "b\tat",   2, "b",  "at" },
     { "b\t at",  2, "b",  "at" },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(data); ++i) {
+  for (size_t i = 0; i < arraysize(data); ++i) {
     std::vector<std::string> results;
     SplitStringAlongWhitespace(data[i].input, &results);
     ASSERT_EQ(data[i].expected_result_count, results.size());

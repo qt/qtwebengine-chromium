@@ -31,29 +31,28 @@
 #ifndef MutationRecord_h
 #define MutationRecord_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 class QualifiedName;
-class StaticNodeList;
+template <typename NodeType> class StaticNodeTypeList;
+typedef StaticNodeTypeList<Node> StaticNodeList;
 
 class MutationRecord : public RefCountedWillBeGarbageCollectedFinalized<MutationRecord>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MutationRecord> createChildList(PassRefPtrWillBeRawPtr<Node> target, PassRefPtrWillBeRawPtr<StaticNodeList> added, PassRefPtrWillBeRawPtr<StaticNodeList> removed, PassRefPtrWillBeRawPtr<Node> previousSibling, PassRefPtrWillBeRawPtr<Node> nextSibling);
     static PassRefPtrWillBeRawPtr<MutationRecord> createAttributes(PassRefPtrWillBeRawPtr<Node> target, const QualifiedName&, const AtomicString& oldValue);
     static PassRefPtrWillBeRawPtr<MutationRecord> createCharacterData(PassRefPtrWillBeRawPtr<Node> target, const String& oldValue);
     static PassRefPtrWillBeRawPtr<MutationRecord> createWithNullOldValue(PassRefPtrWillBeRawPtr<MutationRecord>);
 
-    MutationRecord()
-    {
-        ScriptWrappable::init(this);
-    }
+    MutationRecord() { }
 
     virtual ~MutationRecord();
 
@@ -74,6 +73,6 @@ public:
 
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MutationRecord_h

@@ -18,12 +18,12 @@ struct WebSocketFrame;
 class NET_EXPORT_PRIVATE WebSocketDeflatePredictorImpl
     : public WebSocketDeflatePredictor {
  public:
-  virtual ~WebSocketDeflatePredictorImpl() {}
+  ~WebSocketDeflatePredictorImpl() override {}
 
-  virtual Result Predict(const ScopedVector<WebSocketFrame>& frames,
-                         size_t frame_index) OVERRIDE;
-  virtual void RecordInputDataFrame(const WebSocketFrame* frame) OVERRIDE;
-  virtual void RecordWrittenDataFrame(const WebSocketFrame* frame) OVERRIDE;
+  Result Predict(const ScopedVector<WebSocketFrame>& frames,
+                 size_t frame_index) override;
+  void RecordInputDataFrame(const WebSocketFrame* frame) override;
+  void RecordWrittenDataFrame(const WebSocketFrame* frame) override;
 };
 
 }  // namespace net

@@ -29,11 +29,12 @@
 #include "modules/EventModules.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeviceOrientationData;
 
-class DeviceOrientationEvent FINAL : public Event {
+class DeviceOrientationEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~DeviceOrientationEvent();
     static PassRefPtrWillBeRawPtr<DeviceOrientationEvent> create()
@@ -54,19 +55,19 @@ public:
     double gamma(bool& isNull) const;
     bool absolute(bool& isNull) const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     DeviceOrientationEvent();
     DeviceOrientationEvent(const AtomicString& eventType, DeviceOrientationData*);
 
-    RefPtrWillBeMember<DeviceOrientationData> m_orientation;
+    PersistentWillBeMember<DeviceOrientationData> m_orientation;
 };
 
 DEFINE_TYPE_CASTS(DeviceOrientationEvent, Event, event, event->interfaceName() == EventNames::DeviceOrientationEvent, event.interfaceName() == EventNames::DeviceOrientationEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceOrientationEvent_h

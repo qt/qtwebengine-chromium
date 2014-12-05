@@ -586,6 +586,7 @@ WebInspector.Color.Nicknames = {
     "plum":               [221,160,221],
     "powderblue":         [176,224,230],
     "purple":             [128,0,128],
+    "rebeccapurple":      [102,51,153],
     "red":                [255,0,0],
     "rosybrown":          [188,143,143],
     "royalblue":          [65,105,225],
@@ -627,7 +628,9 @@ WebInspector.Color.PageHighlight = {
     BorderLight: WebInspector.Color.fromRGBA([255, 229, 153, .5]),
     Margin: WebInspector.Color.fromRGBA([246, 178, 107, .66]),
     MarginLight: WebInspector.Color.fromRGBA([246, 178, 107, .5]),
-    EventTarget: WebInspector.Color.fromRGBA([255, 196, 196, .66])
+    EventTarget: WebInspector.Color.fromRGBA([255, 196, 196, .66]),
+    Shape: WebInspector.Color.fromRGBA([96, 82, 177, 0.8]),
+    ShapeMargin: WebInspector.Color.fromRGBA([96, 82, 127, .6])
 }
 
 WebInspector.Color.Format = {

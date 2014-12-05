@@ -29,60 +29,60 @@
 #ifndef SQLTransaction_h
 #define SQLTransaction_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "modules/webdatabase/AbstractSQLTransaction.h"
-#include "modules/webdatabase/SQLCallbackWrapper.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/SQLStatement.h"
 #include "modules/webdatabase/SQLTransactionStateMachine.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class AbstractSQLTransactionBackend;
 class Database;
 class ExceptionState;
 class SQLErrorData;
 class SQLStatementCallback;
 class SQLStatementErrorCallback;
+class SQLTransactionBackend;
 class SQLTransactionCallback;
 class SQLTransactionErrorCallback;
 class SQLValue;
 class VoidCallback;
 
-class SQLTransaction FINAL : public AbstractSQLTransaction, public SQLTransactionStateMachine<SQLTransaction>, public ScriptWrappable {
+class SQLTransaction final
+    : public GarbageCollectedFinalized<SQLTransaction>
+    , public SQLTransactionStateMachine<SQLTransaction>
+    , public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLTransaction> create(Database*, PassOwnPtr<SQLTransactionCallback>,
-        PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback>,
-        bool readOnly);
-    virtual void trace(Visitor*) OVERRIDE;
+    static SQLTransaction* create(Database*, SQLTransactionCallback*,
+        VoidCallback* successCallback, SQLTransactionErrorCallback*, bool readOnly);
+    ~SQLTransaction();
+    void trace(Visitor*);
 
     void performPendingCallback();
 
     void executeSQL(const String& sqlStatement, const Vector<SQLValue>& arguments,
-        PassOwnPtr<SQLStatementCallback>, PassOwnPtr<SQLStatementErrorCallback>, ExceptionState&);
+        SQLStatementCallback*, SQLStatementErrorCallback*, ExceptionState&);
 
     Database* database() { return m_database.get(); }
 
-    PassOwnPtr<SQLTransactionErrorCallback> releaseErrorCallback();
+    SQLTransactionErrorCallback* releaseErrorCallback();
+
+    // APIs called from the backend published:
+    void requestTransitToState(SQLTransactionState);
+    bool hasCallback() const;
+    bool hasSuccessCallback() const;
+    bool hasErrorCallback() const;
+    void setBackend(SQLTransactionBackend*);
 
 private:
-    SQLTransaction(Database*, PassOwnPtr<SQLTransactionCallback>,
-        PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<SQLTransactionErrorCallback>,
+    SQLTransaction(Database*, SQLTransactionCallback*,
+        VoidCallback* successCallback, SQLTransactionErrorCallback*,
         bool readOnly);
 
-    void clearCallbackWrappers();
-
-    // APIs called from the backend published via AbstractSQLTransaction:
-    virtual void requestTransitToState(SQLTransactionState) OVERRIDE;
-    virtual bool hasCallback() const OVERRIDE;
-    virtual bool hasSuccessCallback() const OVERRIDE;
-    virtual bool hasErrorCallback() const OVERRIDE;
-    virtual void setBackend(AbstractSQLTransactionBackend*) OVERRIDE;
+    void clearCallbacks();
 
     // State Machine functions:
-    virtual StateFunction stateFunctionFor(SQLTransactionState) OVERRIDE;
+    virtual StateFunction stateFunctionFor(SQLTransactionState) override;
     bool computeNextStateAndCleanupIfNeeded();
 
     // State functions:
@@ -97,18 +97,19 @@ private:
 
     SQLTransactionState nextStateForTransactionError();
 
-    RefPtrWillBeMember<Database> m_database;
-    RefPtrWillBeMember<AbstractSQLTransactionBackend> m_backend;
-    SQLCallbackWrapper<SQLTransactionCallback> m_callbackWrapper;
-    SQLCallbackWrapper<VoidCallback> m_successCallbackWrapper;
-    SQLCallbackWrapper<SQLTransactionErrorCallback> m_errorCallbackWrapper;
+    Member<Database> m_database;
+    Member<SQLTransactionBackend> m_backend;
+    Member<SQLTransactionCallback> m_callback;
+    Member<VoidCallback> m_successCallback;
+    Member<SQLTransactionErrorCallback> m_errorCallback;
 
     bool m_executeSqlAllowed;
     OwnPtr<SQLErrorData> m_transactionError;
 
     bool m_readOnly;
+    int m_asyncOperationId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLTransaction_h

@@ -28,7 +28,7 @@
 
 #include "core/css/CSSRule.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSKeyframesRule;
 class CSSParserValueList;
@@ -37,7 +37,7 @@ class MutableStylePropertySet;
 class StylePropertySet;
 class StyleRuleCSSStyleDeclaration;
 
-class StyleKeyframe FINAL : public RefCountedWillBeGarbageCollectedFinalized<StyleKeyframe> {
+class StyleKeyframe final : public RefCountedWillBeGarbageCollectedFinalized<StyleKeyframe> {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassRefPtrWillBeRawPtr<StyleKeyframe> create()
@@ -57,37 +57,37 @@ public:
 
     const StylePropertySet& properties() const { return *m_properties; }
     MutableStylePropertySet& mutableProperties();
-    void setProperties(PassRefPtr<StylePropertySet>);
+    void setProperties(PassRefPtrWillBeRawPtr<StylePropertySet>);
 
     String cssText() const;
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
     static PassOwnPtr<Vector<double> > createKeyList(CSSParserValueList*);
 
 private:
     StyleKeyframe();
 
-    RefPtr<StylePropertySet> m_properties;
+    RefPtrWillBeMember<StylePropertySet> m_properties;
     // These are both calculated lazily. Either one can be set, which invalidates the other.
     mutable String m_keyText;
     mutable OwnPtr<Vector<double> > m_keys;
 };
 
-class CSSKeyframeRule FINAL : public CSSRule {
+class CSSKeyframeRule final : public CSSRule {
 public:
     virtual ~CSSKeyframeRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return KEYFRAME_RULE; }
-    virtual String cssText() const OVERRIDE { return m_keyframe->cssText(); }
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
+    virtual CSSRule::Type type() const override { return KEYFRAME_RULE; }
+    virtual String cssText() const override { return m_keyframe->cssText(); }
+    virtual void reattach(StyleRuleBase*) override;
 
     String keyText() const { return m_keyframe->keyText(); }
     void setKeyText(const String& s) { m_keyframe->setKeyText(s); }
 
     CSSStyleDeclaration* style() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CSSKeyframeRule(StyleKeyframe*, CSSKeyframesRule* parent);
@@ -100,6 +100,6 @@ private:
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSKeyframeRule, KEYFRAME_RULE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSKeyframeRule_h

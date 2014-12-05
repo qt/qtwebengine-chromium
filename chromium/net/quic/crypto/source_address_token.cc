@@ -4,17 +4,46 @@
 
 #include "net/quic/crypto/source_address_token.h"
 
-#include <vector>
-
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 
 using std::string;
-using std::vector;
 
 namespace net {
 
-SourceAddressToken::SourceAddressToken() {
+CachedNetworkParameters::CachedNetworkParameters()
+    : bandwidth_estimate_bytes_per_second_(0),
+      max_bandwidth_estimate_bytes_per_second_(0),
+      max_bandwidth_timestamp_seconds_(0),
+      min_rtt_ms_(0),
+      previous_connection_state_(0),
+      timestamp_(0) {
+}
+
+CachedNetworkParameters::~CachedNetworkParameters() {
+}
+
+bool CachedNetworkParameters::operator==(
+    const CachedNetworkParameters& other) const {
+  return serving_region_ == other.serving_region_ &&
+      bandwidth_estimate_bytes_per_second_ ==
+          other.bandwidth_estimate_bytes_per_second_ &&
+      max_bandwidth_estimate_bytes_per_second_ ==
+          other.max_bandwidth_estimate_bytes_per_second_ &&
+      max_bandwidth_timestamp_seconds_ ==
+          other.max_bandwidth_timestamp_seconds_ &&
+      min_rtt_ms_ == other.min_rtt_ms_ &&
+      previous_connection_state_ == other.previous_connection_state_ &&
+      timestamp_ == other.timestamp_;
+}
+
+bool CachedNetworkParameters::operator!=(
+    const CachedNetworkParameters& other) const {
+  return !(*this == other);
+}
+
+SourceAddressToken::SourceAddressToken()
+    : has_cached_network_parameters_(false) {
 }
 
 SourceAddressToken::~SourceAddressToken() {
@@ -27,6 +56,8 @@ string SourceAddressToken::SerializeAsString() const {
   string time_str = base::Int64ToString(timestamp_);
   out.push_back(time_str.size());
   out.append(time_str);
+  // TODO(rtenneti): Implement serialization of optional CachedNetworkParameters
+  // when they are used.
   return out;
 }
 
@@ -52,6 +83,9 @@ bool SourceAddressToken::ParseFromArray(const char* plaintext,
 
   ip_.assign(&plaintext[1], ip_len);
   timestamp_ = timestamp;
+
+  // TODO(rtenneti): Implement parsing of optional CachedNetworkParameters when
+  // they are used.
   return true;
 }
 

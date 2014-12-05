@@ -7,13 +7,17 @@
 #include "base/android/jni_registrar.h"
 #include "base/android/library_loader/library_loader_hooks.h"
 #include "mojo/android/javatests/mojo_test_case.h"
+#include "mojo/android/javatests/validation_test_util.h"
 #include "mojo/android/system/core_impl.h"
+#include "mojo/edk/embedder/embedder.h"
+#include "mojo/edk/embedder/simple_platform_support.h"
 
 namespace {
 
 base::android::RegistrationMethod kMojoRegisteredMethods[] = {
   { "CoreImpl", mojo::android::RegisterCoreImpl },
   { "MojoTestCase", mojo::android::RegisterMojoTestCase },
+  { "ValidationTestUtil", mojo::android::RegisterValidationTestUtil },
 };
 
 bool RegisterMojoJni(JNIEnv* env) {
@@ -35,6 +39,9 @@ JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
 
   if (!RegisterMojoJni(env))
     return -1;
+
+  mojo::embedder::Init(scoped_ptr<mojo::embedder::PlatformSupport>(
+      new mojo::embedder::SimplePlatformSupport()));
 
   return JNI_VERSION_1_4;
 }

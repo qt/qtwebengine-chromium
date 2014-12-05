@@ -86,11 +86,21 @@ function SparseJoin(array, len, convert) {
 }
 
 
-function UseSparseVariant(object, length, is_array) {
-   return is_array &&
-       length > 1000 &&
-       (!%_IsSmi(length) ||
-        %EstimateNumberOfElements(object) < (length >> 2));
+function UseSparseVariant(array, length, is_array, touched) {
+  // Only use the sparse variant on arrays that are likely to be sparse and the
+  // number of elements touched in the operation is relatively small compared to
+  // the overall size of the array.
+  if (!is_array || length < 1000 || %IsObserved(array) ||
+      %HasComplexElements(array)) {
+    return false;
+  }
+  if (!%_IsSmi(length)) {
+    return true;
+  }
+  var elements_threshold = length >> 2;  // No more than 75% holes
+  var estimated_elements = %EstimateNumberOfElements(array);
+  return (estimated_elements < elements_threshold) &&
+    (touched > estimated_elements * 4);
 }
 
 
@@ -107,7 +117,8 @@ function Join(array, length, separator, convert) {
 
   // Attempt to convert the elements.
   try {
-    if (UseSparseVariant(array, length, is_array)) {
+    if (UseSparseVariant(array, length, is_array, length)) {
+      %NormalizeElements(array);
       if (separator.length == 0) {
         return SparseJoin(array, length, convert);
       } else {
@@ -134,7 +145,7 @@ function Join(array, length, separator, convert) {
         elements[elements_length++] = e;
       }
       elements.length = elements_length;
-      var result = %_FastAsciiArrayJoin(elements, '');
+      var result = %_FastOneByteArrayJoin(elements, '');
       if (!IS_UNDEFINED(result)) return result;
       return %StringBuilderConcat(elements, elements_length, '');
     }
@@ -158,7 +169,7 @@ function Join(array, length, separator, convert) {
         elements[i] = e;
       }
     }
-    var result = %_FastAsciiArrayJoin(elements, separator);
+    var result = %_FastOneByteArrayJoin(elements, separator);
     if (!IS_UNDEFINED(result)) return result;
 
     return %StringBuilderJoin(elements, length, separator);
@@ -193,7 +204,7 @@ function ConvertToLocaleString(e) {
 
 // This function implements the optimized splice implementation that can use
 // special array operations to handle sparse arrays in a sensible fashion.
-function SmartSlice(array, start_i, del_count, len, deleted_elements) {
+function SparseSlice(array, start_i, del_count, len, deleted_elements) {
   // Move deleted elements to a new array (the return value from splice).
   var indices = %GetArrayKeys(array, start_i + del_count);
   if (IS_NUMBER(indices)) {
@@ -201,7 +212,7 @@ function SmartSlice(array, start_i, del_count, len, deleted_elements) {
     for (var i = start_i; i < limit; ++i) {
       var current = array[i];
       if (!IS_UNDEFINED(current) || i in array) {
-        deleted_elements[i - start_i] = current;
+        %AddElement(deleted_elements, i - start_i, current, NONE);
       }
     }
   } else {
@@ -212,7 +223,7 @@ function SmartSlice(array, start_i, del_count, len, deleted_elements) {
         if (key >= start_i) {
           var current = array[key];
           if (!IS_UNDEFINED(current) || key in array) {
-            deleted_elements[key - start_i] = current;
+            %AddElement(deleted_elements, key - start_i, current, NONE);
           }
         }
       }
@@ -223,7 +234,9 @@ function SmartSlice(array, start_i, del_count, len, deleted_elements) {
 
 // This function implements the optimized splice implementation that can use
 // special array operations to handle sparse arrays in a sensible fashion.
-function SmartMove(array, start_i, del_count, len, num_additional_args) {
+function SparseMove(array, start_i, del_count, len, num_additional_args) {
+  // Bail out if no moving is necessary.
+  if (num_additional_args === del_count) return;
   // Move data to new array.
   var new_array = new InternalArray(len - del_count + num_additional_args);
   var indices = %GetArrayKeys(array, len);
@@ -271,12 +284,11 @@ function SmartMove(array, start_i, del_count, len, num_additional_args) {
 function SimpleSlice(array, start_i, del_count, len, deleted_elements) {
   for (var i = 0; i < del_count; i++) {
     var index = start_i + i;
-    // The spec could also be interpreted such that %HasOwnProperty
-    // would be the appropriate test.  We follow KJS in consulting the
-    // prototype.
-    var current = array[index];
-    if (!IS_UNDEFINED(current) || index in array) {
-      deleted_elements[i] = current;
+    if (index in array) {
+      var current = array[index];
+      // The spec requires [[DefineOwnProperty]] here, %AddElement is close
+      // enough (in that it ignores the prototype).
+      %AddElement(deleted_elements, i, current, NONE);
     }
   }
 }
@@ -290,12 +302,8 @@ function SimpleMove(array, start_i, del_count, len, num_additional_args) {
       for (var i = len - del_count; i > start_i; i--) {
         var from_index = i + del_count - 1;
         var to_index = i + num_additional_args - 1;
-        // The spec could also be interpreted such that
-        // %HasOwnProperty would be the appropriate test.  We follow
-        // KJS in consulting the prototype.
-        var current = array[from_index];
-        if (!IS_UNDEFINED(current) || from_index in array) {
-          array[to_index] = current;
+        if (from_index in array) {
+          array[to_index] = array[from_index];
         } else {
           delete array[to_index];
         }
@@ -304,12 +312,8 @@ function SimpleMove(array, start_i, del_count, len, num_additional_args) {
       for (var i = start_i; i < len - del_count; i++) {
         var from_index = i + del_count;
         var to_index = i + num_additional_args;
-        // The spec could also be interpreted such that
-        // %HasOwnProperty would be the appropriate test.  We follow
-        // KJS in consulting the prototype.
-        var current = array[from_index];
-        if (!IS_UNDEFINED(current) || from_index in array) {
-          array[to_index] = current;
+        if (from_index in array) {
+          array[to_index] = array[from_index];
         } else {
           delete array[to_index];
         }
@@ -339,7 +343,7 @@ function ArrayToString() {
     func = array.join;
   }
   if (!IS_SPEC_FUNCTION(func)) {
-    return %_CallFunction(array, ObjectToString);
+    return %_CallFunction(array, NoSideEffectsObjectToString);
   }
   return %_CallFunction(array, func);
 }
@@ -365,8 +369,16 @@ function ArrayJoin(separator) {
     separator = NonStringToString(separator);
   }
 
-  var result = %_FastAsciiArrayJoin(array, separator);
+  var result = %_FastOneByteArrayJoin(array, separator);
   if (!IS_UNDEFINED(result)) return result;
+
+  // Fast case for one-element arrays.
+  if (length === 1) {
+    var e = array[0];
+    if (IS_STRING(e)) return e;
+    if (IS_NULL_OR_UNDEFINED(e)) return '';
+    return NonStringToString(e);
+  }
 
   return Join(array, length, separator, ConvertToString);
 }
@@ -443,9 +455,7 @@ function ArrayPush() {
   var m = %_ArgumentsLength();
 
   for (var i = 0; i < m; i++) {
-    // Use SetProperty rather than a direct keyed store to ensure that the store
-    // site doesn't become poisened with an elements transition KeyedStoreIC.
-    %SetProperty(array, i+n, %_Arguments(i), 0, kStrictMode);
+    array[i+n] = %_Arguments(i);
   }
 
   var new_length = n + m;
@@ -520,13 +530,15 @@ function ArrayReverse() {
   CHECK_OBJECT_COERCIBLE(this, "Array.prototype.reverse");
 
   var array = TO_OBJECT_INLINE(this);
-  var j = TO_UINT32(array.length) - 1;
+  var len = TO_UINT32(array.length);
 
-  if (UseSparseVariant(array, j, IS_ARRAY(array))) {
-    SparseReverse(array, j+1);
+  if (UseSparseVariant(array, len, IS_ARRAY(array), len)) {
+    %NormalizeElements(array);
+    SparseReverse(array, len);
     return array;
   }
 
+  var j = len - 1;
   for (var i = 0; i < j; i++, j--) {
     var current_i = array[i];
     if (!IS_UNDEFINED(current_i) || i in array) {
@@ -586,8 +598,8 @@ function ArrayShift() {
 
   var first = array[0];
 
-  if (IS_ARRAY(array)) {
-    SmartMove(array, 0, 1, len, 0);
+  if (UseSparseVariant(array, len, IS_ARRAY(array), len)) {
+    SparseMove(array, 0, 1, len, 0);
   } else {
     SimpleMove(array, 0, 1, len, 0);
   }
@@ -626,10 +638,10 @@ function ArrayUnshift(arg1) {  // length == 1
   var array = TO_OBJECT_INLINE(this);
   var len = TO_UINT32(array.length);
   var num_arguments = %_ArgumentsLength();
-  var is_sealed = ObjectIsSealed(array);
 
-  if (IS_ARRAY(array) && !is_sealed && len > 0) {
-    SmartMove(array, 0, 0, len, num_arguments);
+  if (len > 0 && UseSparseVariant(array, len, IS_ARRAY(array), len) &&
+     !ObjectIsSealed(array)) {
+    SparseMove(array, 0, 0, len, num_arguments);
   } else {
     SimpleMove(array, 0, 0, len, num_arguments);
   }
@@ -672,11 +684,10 @@ function ArraySlice(start, end) {
 
   if (end_i < start_i) return result;
 
-  if (IS_ARRAY(array) &&
-      !%IsObserved(array) &&
-      (end_i > 1000) &&
-      (%EstimateNumberOfElements(array) < end_i)) {
-    SmartSlice(array, start_i, end_i - start_i, len, result);
+  if (UseSparseVariant(array, len, IS_ARRAY(array), end_i - start_i)) {
+    %NormalizeElements(array);
+    %NormalizeElements(result);
+    SparseSlice(array, start_i, end_i - start_i, len, result);
   } else {
     SimpleSlice(array, start_i, end_i - start_i, len, result);
   }
@@ -783,24 +794,20 @@ function ArraySplice(start, delete_count) {
                         ["Array.prototype.splice"]);
   }
 
-  var use_simple_splice = true;
-  if (IS_ARRAY(array) &&
-      num_elements_to_add !== del_count) {
-    // If we are only deleting/moving a few things near the end of the
-    // array then the simple version is going to be faster, because it
-    // doesn't touch most of the array.
-    var estimated_non_hole_elements = %EstimateNumberOfElements(array);
-    if (len > 20 && (estimated_non_hole_elements >> 2) < (len - start_i)) {
-      use_simple_splice = false;
-    }
+  var changed_elements = del_count;
+  if (num_elements_to_add != del_count) {
+    // If the slice needs to do a actually move elements after the insertion
+    // point, then include those in the estimate of changed elements.
+    changed_elements += len - start_i - del_count;
   }
-
-  if (use_simple_splice) {
+  if (UseSparseVariant(array, len, IS_ARRAY(array), changed_elements)) {
+    %NormalizeElements(array);
+    %NormalizeElements(deleted_elements);
+    SparseSlice(array, start_i, del_count, len, deleted_elements);
+    SparseMove(array, start_i, del_count, len, num_elements_to_add);
+  } else {
     SimpleSlice(array, start_i, del_count, len, deleted_elements);
     SimpleMove(array, start_i, del_count, len, num_elements_to_add);
-  } else {
-    SmartSlice(array, start_i, del_count, len, deleted_elements);
-    SmartMove(array, start_i, del_count, len, num_elements_to_add);
   }
 
   // Insert the arguments into the resulting array in
@@ -858,11 +865,12 @@ function ArraySort(comparefn) {
     var t_array = [];
     // Use both 'from' and 'to' to determine the pivot candidates.
     var increment = 200 + ((to - from) & 15);
-    for (var i = from + 1; i < to - 1; i += increment) {
-      t_array.push([i, a[i]]);
+    for (var i = from + 1, j = 0; i < to - 1; i += increment, j++) {
+      t_array[j] = [i, a[i]];
     }
-    t_array.sort(function(a, b) {
-        return %_CallFunction(receiver, a[1], b[1], comparefn) } );
+    %_CallFunction(t_array, function(a, b) {
+      return %_CallFunction(receiver, a[1], b[1], comparefn);
+    }, ArraySort);
     var third_index = t_array[t_array.length >> 1][0];
     return third_index;
   }
@@ -964,7 +972,7 @@ function ArraySort(comparefn) {
         // It's an interval.
         var proto_length = indices;
         for (var i = 0; i < proto_length; i++) {
-          if (!obj.hasOwnProperty(i) && proto.hasOwnProperty(i)) {
+          if (!HAS_OWN_PROPERTY(obj, i) && HAS_OWN_PROPERTY(proto, i)) {
             obj[i] = proto[i];
             if (i >= max) { max = i + 1; }
           }
@@ -972,8 +980,8 @@ function ArraySort(comparefn) {
       } else {
         for (var i = 0; i < indices.length; i++) {
           var index = indices[i];
-          if (!IS_UNDEFINED(index) &&
-              !obj.hasOwnProperty(index) && proto.hasOwnProperty(index)) {
+          if (!IS_UNDEFINED(index) && !HAS_OWN_PROPERTY(obj, index)
+              && HAS_OWN_PROPERTY(proto, index)) {
             obj[index] = proto[index];
             if (index >= max) { max = index + 1; }
           }
@@ -993,7 +1001,7 @@ function ArraySort(comparefn) {
         // It's an interval.
         var proto_length = indices;
         for (var i = from; i < proto_length; i++) {
-          if (proto.hasOwnProperty(i)) {
+          if (HAS_OWN_PROPERTY(proto, i)) {
             obj[i] = UNDEFINED;
           }
         }
@@ -1001,7 +1009,7 @@ function ArraySort(comparefn) {
         for (var i = 0; i < indices.length; i++) {
           var index = indices[i];
           if (!IS_UNDEFINED(index) && from <= index &&
-              proto.hasOwnProperty(index)) {
+              HAS_OWN_PROPERTY(proto, index)) {
             obj[index] = UNDEFINED;
           }
         }
@@ -1024,14 +1032,14 @@ function ArraySort(comparefn) {
       }
       // Maintain the invariant num_holes = the number of holes in the original
       // array with indices <= first_undefined or > last_defined.
-      if (!obj.hasOwnProperty(first_undefined)) {
+      if (!HAS_OWN_PROPERTY(obj, first_undefined)) {
         num_holes++;
       }
 
       // Find last defined element.
       while (first_undefined < last_defined &&
              IS_UNDEFINED(obj[last_defined])) {
-        if (!obj.hasOwnProperty(last_defined)) {
+        if (!HAS_OWN_PROPERTY(obj, last_defined)) {
           num_holes++;
         }
         last_defined--;
@@ -1119,22 +1127,24 @@ function ArrayFilter(f, receiver) {
   if (!IS_SPEC_FUNCTION(f)) {
     throw MakeTypeError('called_non_callable', [ f ]);
   }
+  var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
-  } else if (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(f)) {
-    receiver = ToObject(receiver);
+  } else {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
   var result = new $Array();
   var accumulator = new InternalArray();
   var accumulator_length = 0;
-  var stepping = %_DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
   for (var i = 0; i < length; i++) {
     if (i in array) {
       var element = array[i];
       // Prepare break slots for debugger step in.
       if (stepping) %DebugPrepareStepInIfStepping(f);
-      if (%_CallFunction(receiver, element, i, array, f)) {
+      var new_receiver = needs_wrapper ? ToObject(receiver) : receiver;
+      if (%_CallFunction(new_receiver, element, i, array, f)) {
         accumulator[accumulator_length++] = element;
       }
     }
@@ -1155,19 +1165,21 @@ function ArrayForEach(f, receiver) {
   if (!IS_SPEC_FUNCTION(f)) {
     throw MakeTypeError('called_non_callable', [ f ]);
   }
+  var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
-  } else if (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(f)) {
-    receiver = ToObject(receiver);
+  } else {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
-  var stepping = %_DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
   for (var i = 0; i < length; i++) {
     if (i in array) {
       var element = array[i];
       // Prepare break slots for debugger step in.
       if (stepping) %DebugPrepareStepInIfStepping(f);
-      %_CallFunction(receiver, element, i, array, f);
+      var new_receiver = needs_wrapper ? ToObject(receiver) : receiver;
+      %_CallFunction(new_receiver, element, i, array, f);
     }
   }
 }
@@ -1186,19 +1198,21 @@ function ArraySome(f, receiver) {
   if (!IS_SPEC_FUNCTION(f)) {
     throw MakeTypeError('called_non_callable', [ f ]);
   }
+  var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
-  } else if (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(f)) {
-    receiver = ToObject(receiver);
+  } else {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
-  var stepping = %_DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
   for (var i = 0; i < length; i++) {
     if (i in array) {
       var element = array[i];
       // Prepare break slots for debugger step in.
       if (stepping) %DebugPrepareStepInIfStepping(f);
-      if (%_CallFunction(receiver, element, i, array, f)) return true;
+      var new_receiver = needs_wrapper ? ToObject(receiver) : receiver;
+      if (%_CallFunction(new_receiver, element, i, array, f)) return true;
     }
   }
   return false;
@@ -1216,19 +1230,21 @@ function ArrayEvery(f, receiver) {
   if (!IS_SPEC_FUNCTION(f)) {
     throw MakeTypeError('called_non_callable', [ f ]);
   }
+  var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
-  } else if (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(f)) {
-    receiver = ToObject(receiver);
+  } else {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
-  var stepping = %_DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
   for (var i = 0; i < length; i++) {
     if (i in array) {
       var element = array[i];
       // Prepare break slots for debugger step in.
       if (stepping) %DebugPrepareStepInIfStepping(f);
-      if (!%_CallFunction(receiver, element, i, array, f)) return false;
+      var new_receiver = needs_wrapper ? ToObject(receiver) : receiver;
+      if (!%_CallFunction(new_receiver, element, i, array, f)) return false;
     }
   }
   return true;
@@ -1245,21 +1261,23 @@ function ArrayMap(f, receiver) {
   if (!IS_SPEC_FUNCTION(f)) {
     throw MakeTypeError('called_non_callable', [ f ]);
   }
+  var needs_wrapper = false;
   if (IS_NULL_OR_UNDEFINED(receiver)) {
     receiver = %GetDefaultReceiver(f) || receiver;
-  } else if (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(f)) {
-    receiver = ToObject(receiver);
+  } else {
+    needs_wrapper = SHOULD_CREATE_WRAPPER(f, receiver);
   }
 
   var result = new $Array();
   var accumulator = new InternalArray(length);
-  var stepping = %_DebugCallbackSupportsStepping(f);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(f);
   for (var i = 0; i < length; i++) {
     if (i in array) {
       var element = array[i];
       // Prepare break slots for debugger step in.
       if (stepping) %DebugPrepareStepInIfStepping(f);
-      accumulator[i] = %_CallFunction(receiver, element, i, array, f);
+      var new_receiver = needs_wrapper ? ToObject(receiver) : receiver;
+      accumulator[i] = %_CallFunction(new_receiver, element, i, array, f);
     }
   }
   %MoveArrayContents(accumulator, result);
@@ -1285,7 +1303,8 @@ function ArrayIndexOf(element, index) {
   }
   var min = index;
   var max = length;
-  if (UseSparseVariant(this, length, IS_ARRAY(this))) {
+  if (UseSparseVariant(this, length, IS_ARRAY(this), max - min)) {
+    %NormalizeElements(this);
     var indices = %GetArrayKeys(this, length);
     if (IS_NUMBER(indices)) {
       // It's an interval.
@@ -1340,7 +1359,8 @@ function ArrayLastIndexOf(element, index) {
   }
   var min = 0;
   var max = index;
-  if (UseSparseVariant(this, length, IS_ARRAY(this))) {
+  if (UseSparseVariant(this, length, IS_ARRAY(this), index)) {
+    %NormalizeElements(this);
     var indices = %GetArrayKeys(this, index + 1);
     if (IS_NUMBER(indices)) {
       // It's an interval.
@@ -1390,9 +1410,8 @@ function ArrayReduce(callback, current) {
   var i = 0;
   find_initial: if (%_ArgumentsLength() < 2) {
     for (; i < length; i++) {
-      current = array[i];
-      if (!IS_UNDEFINED(current) || i in array) {
-        i++;
+      if (i in array) {
+        current = array[i++];
         break find_initial;
       }
     }
@@ -1400,7 +1419,7 @@ function ArrayReduce(callback, current) {
   }
 
   var receiver = %GetDefaultReceiver(callback);
-  var stepping = %_DebugCallbackSupportsStepping(callback);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(callback);
   for (; i < length; i++) {
     if (i in array) {
       var element = array[i];
@@ -1427,9 +1446,8 @@ function ArrayReduceRight(callback, current) {
   var i = length - 1;
   find_initial: if (%_ArgumentsLength() < 2) {
     for (; i >= 0; i--) {
-      current = array[i];
-      if (!IS_UNDEFINED(current) || i in array) {
-        i--;
+      if (i in array) {
+        current = array[i--];
         break find_initial;
       }
     }
@@ -1437,7 +1455,7 @@ function ArrayReduceRight(callback, current) {
   }
 
   var receiver = %GetDefaultReceiver(callback);
-  var stepping = %_DebugCallbackSupportsStepping(callback);
+  var stepping = DEBUG_IS_ACTIVE && %DebugCallbackSupportsStepping(callback);
   for (; i >= 0; i--) {
     if (i in array) {
       var element = array[i];
@@ -1462,7 +1480,20 @@ function SetUpArray() {
 
   // Set up non-enumerable constructor property on the Array.prototype
   // object.
-  %SetProperty($Array.prototype, "constructor", $Array, DONT_ENUM);
+  %AddNamedProperty($Array.prototype, "constructor", $Array, DONT_ENUM);
+
+  // Set up unscopable properties on the Array.prototype object.
+  var unscopables = {
+    __proto__: null,
+    copyWithin: true,
+    entries: true,
+    fill: true,
+    find: true,
+    findIndex: true,
+    keys: true,
+  };
+  %AddNamedProperty($Array.prototype, symbolUnscopables, unscopables,
+      DONT_ENUM | READ_ONLY);
 
   // Set up non-enumerable functions on the Array object.
   InstallFunctions($Array, DONT_ENUM, $Array(

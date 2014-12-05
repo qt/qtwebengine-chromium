@@ -27,9 +27,8 @@
 
 [
     ActiveDOMObject,
-    WillBeGarbageCollected
 ] interface MessagePort : EventTarget {
-    [Custom, RaisesException] void postMessage(any message, optional MessagePort[] messagePorts);
+    [Custom, RaisesException] void postMessage(any message, optional sequence<Transferable> transfer);
 
     void start();
     void close();
@@ -37,4 +36,3 @@
     // event handler attributes
     attribute EventHandler onmessage;
 };
-

@@ -28,19 +28,18 @@
 
 #include "modules/webaudio/DelayNode.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 const double maximumAllowedDelayTime = 180;
 
 DelayNode::DelayNode(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
     : AudioBasicProcessorNode(context, sampleRate)
 {
-    ScriptWrappable::init(this);
     if (maxDelayTime <= 0 || maxDelayTime >= maximumAllowedDelayTime || std::isnan(maxDelayTime)) {
         exceptionState.throwDOMException(
             NotSupportedError,
@@ -49,7 +48,7 @@ DelayNode::DelayNode(AudioContext* context, float sampleRate, double maxDelayTim
             + ", exclusive.");
         return;
     }
-    m_processor = adoptPtr(new DelayProcessor(context, sampleRate, 1, maxDelayTime));
+    m_processor = new DelayProcessor(context, sampleRate, 1, maxDelayTime);
     setNodeType(NodeTypeDelay);
 }
 
@@ -58,6 +57,6 @@ AudioParam* DelayNode::delayTime()
     return delayProcessor()->delayTime();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

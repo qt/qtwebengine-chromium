@@ -4,11 +4,16 @@
 
 #include "content/browser/gpu/gpu_internals_ui.h"
 
+#if defined(OS_LINUX) && defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
+
 #include <string>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
+#include "base/environment.h"
 #include "base/i18n/time_formatting.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -16,6 +21,7 @@
 #include "base/values.h"
 #include "content/browser/gpu/compositor_util.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
+#include "content/grit/content_resources.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager_observer.h"
 #include "content/public/browser/web_contents.h"
@@ -27,11 +33,16 @@
 #include "content/public/common/url_constants.h"
 #include "gpu/config/gpu_feature_type.h"
 #include "gpu/config/gpu_info.h"
-#include "grit/content_resources.h"
 #include "third_party/angle/src/common/version.h"
+#include "ui/gl/gpu_switching_manager.h"
 
 #if defined(OS_WIN)
 #include "ui/base/win/shell.h"
+#endif
+
+#if defined(OS_LINUX) && defined(USE_X11)
+#include "ui/base/x/x11_util.h"
+#include "ui/gfx/x/x11_atom_cache.h"
 #endif
 
 namespace content {
@@ -127,6 +138,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
       ui::win::IsAeroGlassEnabled() ? "Aero Glass" : "none";
   basic_info->Append(
       NewDescriptionValuePair("Desktop compositing", compositor));
+  if (GpuDataManagerImpl::GetInstance()->ShouldUseWarp()) {
+    basic_info->Append(NewDescriptionValuePair("Using WARP",
+        new base::FundamentalValue(true)));
+  }
 #endif
 
   basic_info->Append(
@@ -157,6 +172,30 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
                                              gpu_info.gl_ws_version));
   basic_info->Append(NewDescriptionValuePair("Window system binding extensions",
                                              gpu_info.gl_ws_extensions));
+#if defined(OS_LINUX) && defined(USE_X11)
+  basic_info->Append(NewDescriptionValuePair("Window manager",
+                                             ui::GuessWindowManagerName()));
+  {
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    std::string value;
+    const char kXDGCurrentDesktop[] = "XDG_CURRENT_DESKTOP";
+    if (env->GetVar(kXDGCurrentDesktop, &value))
+      basic_info->Append(NewDescriptionValuePair(kXDGCurrentDesktop, value));
+    const char kGDMSession[] = "GDMSESSION";
+    if (env->GetVar(kGDMSession, &value))
+      basic_info->Append(NewDescriptionValuePair(kGDMSession, value));
+    const char* kAtomsToCache[] = {
+        "_NET_WM_CM_S0",
+        NULL
+    };
+    ui::X11AtomCache atom_cache(gfx::GetXDisplay(), kAtomsToCache);
+    std::string compositing_manager = XGetSelectionOwner(
+        gfx::GetXDisplay(),
+        atom_cache.GetAtom("_NET_WM_CM_S0")) != None ? "Yes" : "No";
+    basic_info->Append(
+        NewDescriptionValuePair("Compositing manager", compositing_manager));
+  }
+#endif
   std::string direct_rendering = gpu_info.direct_rendering ? "Yes" : "No";
   basic_info->Append(
       NewDescriptionValuePair("Direct rendering", direct_rendering));
@@ -165,6 +204,10 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
       base::StringPrintf("0x%04x", gpu_info.gl_reset_notification_strategy);
   basic_info->Append(NewDescriptionValuePair(
       "Reset notification strategy", reset_strategy));
+
+  basic_info->Append(NewDescriptionValuePair(
+      "GPU process crash count",
+      new base::FundamentalValue(gpu_info.process_crash_count)));
 
   base::DictionaryValue* info = new base::DictionaryValue();
   info->Set("basic_info", basic_info);
@@ -197,17 +240,20 @@ base::DictionaryValue* GpuInfoAsDictionaryValue() {
 class GpuMessageHandler
     : public WebUIMessageHandler,
       public base::SupportsWeakPtr<GpuMessageHandler>,
-      public GpuDataManagerObserver {
+      public GpuDataManagerObserver,
+      public ui::GpuSwitchingObserver {
  public:
   GpuMessageHandler();
-  virtual ~GpuMessageHandler();
+  ~GpuMessageHandler() override;
 
   // WebUIMessageHandler implementation.
-  virtual void RegisterMessages() OVERRIDE;
+  void RegisterMessages() override;
 
   // GpuDataManagerObserver implementation.
-  virtual void OnGpuInfoUpdate() OVERRIDE;
-  virtual void OnGpuSwitching() OVERRIDE;
+  void OnGpuInfoUpdate() override;
+
+  // ui::GpuSwitchingObserver implementation.
+  void OnGpuSwitched() override;
 
   // Messages
   void OnBrowserBridgeInitialized(const base::ListValue* list);
@@ -236,6 +282,7 @@ GpuMessageHandler::GpuMessageHandler()
 }
 
 GpuMessageHandler::~GpuMessageHandler() {
+  ui::GpuSwitchingManager::GetInstance()->RemoveObserver(this);
   GpuDataManagerImpl::GetInstance()->RemoveObserver(this);
 }
 
@@ -303,8 +350,10 @@ void GpuMessageHandler::OnBrowserBridgeInitialized(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // Watch for changes in GPUInfo
-  if (!observing_)
+  if (!observing_) {
     GpuDataManagerImpl::GetInstance()->AddObserver(this);
+    ui::GpuSwitchingManager::GetInstance()->AddObserver(this);
+  }
   observing_ = true;
 
   // Tell GpuDataManager it should have full GpuInfo. If the
@@ -324,7 +373,7 @@ base::Value* GpuMessageHandler::OnRequestClientInfo(
 
   dict->SetString("version", GetContentClient()->GetProduct());
   dict->SetString("command_line",
-      CommandLine::ForCurrentProcess()->GetCommandLineString());
+      base::CommandLine::ForCurrentProcess()->GetCommandLineString());
   dict->SetString("operating_system",
                   base::SysInfo::OperatingSystemName() + " " +
                   base::SysInfo::OperatingSystemVersion());
@@ -361,7 +410,7 @@ void GpuMessageHandler::OnGpuInfoUpdate() {
       *(gpu_info_val.get()));
 }
 
-void GpuMessageHandler::OnGpuSwitching() {
+void GpuMessageHandler::OnGpuSwitched() {
   GpuDataManagerImpl::GetInstance()->RequestCompleteGpuInfoIfNeeded();
 }
 

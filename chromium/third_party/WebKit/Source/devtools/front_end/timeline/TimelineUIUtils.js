@@ -93,11 +93,18 @@ WebInspector.TimelineUIUtils.prototype = {
     },
     /**
      * @param {!WebInspector.TimelineModel.Record} record
+     * @return {!WebInspector.TimelineCategory}
+     */
+    categoryForRecord: function(record)
+    {
+        throw new Error("Not implemented.");
+    },
+    /**
+     * @param {!WebInspector.TimelineModel.Record} record
      * @param {!WebInspector.Linkifier} linkifier
-     * @param {boolean} loadedFromFile
      * @return {?Node}
      */
-    buildDetailsNode: function(record, linkifier, loadedFromFile)
+    buildDetailsNode: function(record, linkifier)
     {
         throw new Error("Not implemented.");
     },
@@ -106,9 +113,8 @@ WebInspector.TimelineUIUtils.prototype = {
      * @param {!WebInspector.TimelineModel} model
      * @param {!WebInspector.Linkifier} linkifier
      * @param {function(!DocumentFragment)} callback
-     * @param {boolean} loadedFromFile
      */
-    generateDetailsContent: function(record, model, linkifier, callback, loadedFromFile)
+    generateDetailsContent: function(record, model, linkifier, callback)
     {
         throw new Error("Not implemented.");
     },
@@ -136,6 +142,28 @@ WebInspector.TimelineUIUtils.prototype = {
     testContentMatching: function(record, regExp)
     {
         throw new Error("Not implemented.");
+    },
+    /**
+     * @param {!Object} total
+     * @param {!WebInspector.TimelineModel.Record} record
+     */
+    aggregateTimeForRecord: function(total, record)
+    {
+        throw new Error("Not implemented.");
+    },
+    /**
+     * @return {!WebInspector.TimelineModel.Filter}
+     */
+    hiddenRecordsFilter: function()
+    {
+        throw new Error("Not implemented.");
+    },
+    /**
+     * @return {?WebInspector.TimelineModel.Filter}
+     */
+    hiddenEmptyRecordsFilter: function()
+    {
+        return null;
     }
 }
 
@@ -158,87 +186,8 @@ WebInspector.TimelineUIUtils.categories = function()
 };
 
 /**
- * @return {!Object.<string, !{title: string, category: !WebInspector.TimelineCategory}>}
- */
-WebInspector.TimelineUIUtils._initRecordStyles = function()
-{
-    if (WebInspector.TimelineUIUtils._recordStylesMap)
-        return WebInspector.TimelineUIUtils._recordStylesMap;
-
-    var recordTypes = WebInspector.TimelineModel.RecordType;
-    var categories = WebInspector.TimelineUIUtils.categories();
-
-    var recordStyles = {};
-    recordStyles[recordTypes.Root] = { title: "#root", category: categories["loading"] };
-    recordStyles[recordTypes.Program] = { title: WebInspector.UIString("Other"), category: categories["other"] };
-    recordStyles[recordTypes.EventDispatch] = { title: WebInspector.UIString("Event"), category: categories["scripting"] };
-    recordStyles[recordTypes.BeginFrame] = { title: WebInspector.UIString("Frame Start"), category: categories["rendering"] };
-    recordStyles[recordTypes.ScheduleStyleRecalculation] = { title: WebInspector.UIString("Schedule Style Recalculation"), category: categories["rendering"] };
-    recordStyles[recordTypes.RecalculateStyles] = { title: WebInspector.UIString("Recalculate Style"), category: categories["rendering"] };
-    recordStyles[recordTypes.InvalidateLayout] = { title: WebInspector.UIString("Invalidate Layout"), category: categories["rendering"] };
-    recordStyles[recordTypes.Layout] = { title: WebInspector.UIString("Layout"), category: categories["rendering"] };
-    recordStyles[recordTypes.UpdateLayerTree] = { title: WebInspector.UIString("Update layer tree"), category: categories["rendering"] };
-    recordStyles[recordTypes.PaintSetup] = { title: WebInspector.UIString("Paint Setup"), category: categories["painting"] };
-    recordStyles[recordTypes.Paint] = { title: WebInspector.UIString("Paint"), category: categories["painting"] };
-    recordStyles[recordTypes.Rasterize] = { title: WebInspector.UIString("Paint"), category: categories["painting"] };
-    recordStyles[recordTypes.ScrollLayer] = { title: WebInspector.UIString("Scroll"), category: categories["rendering"] };
-    recordStyles[recordTypes.DecodeImage] = { title: WebInspector.UIString("Image Decode"), category: categories["painting"] };
-    recordStyles[recordTypes.ResizeImage] = { title: WebInspector.UIString("Image Resize"), category: categories["painting"] };
-    recordStyles[recordTypes.CompositeLayers] = { title: WebInspector.UIString("Composite Layers"), category: categories["painting"] };
-    recordStyles[recordTypes.ParseHTML] = { title: WebInspector.UIString("Parse HTML"), category: categories["loading"] };
-    recordStyles[recordTypes.TimerInstall] = { title: WebInspector.UIString("Install Timer"), category: categories["scripting"] };
-    recordStyles[recordTypes.TimerRemove] = { title: WebInspector.UIString("Remove Timer"), category: categories["scripting"] };
-    recordStyles[recordTypes.TimerFire] = { title: WebInspector.UIString("Timer Fired"), category: categories["scripting"] };
-    recordStyles[recordTypes.XHRReadyStateChange] = { title: WebInspector.UIString("XHR Ready State Change"), category: categories["scripting"] };
-    recordStyles[recordTypes.XHRLoad] = { title: WebInspector.UIString("XHR Load"), category: categories["scripting"] };
-    recordStyles[recordTypes.EvaluateScript] = { title: WebInspector.UIString("Evaluate Script"), category: categories["scripting"] };
-    recordStyles[recordTypes.ResourceSendRequest] = { title: WebInspector.UIString("Send Request"), category: categories["loading"] };
-    recordStyles[recordTypes.ResourceReceiveResponse] = { title: WebInspector.UIString("Receive Response"), category: categories["loading"] };
-    recordStyles[recordTypes.ResourceFinish] = { title: WebInspector.UIString("Finish Loading"), category: categories["loading"] };
-    recordStyles[recordTypes.FunctionCall] = { title: WebInspector.UIString("Function Call"), category: categories["scripting"] };
-    recordStyles[recordTypes.ResourceReceivedData] = { title: WebInspector.UIString("Receive Data"), category: categories["loading"] };
-    recordStyles[recordTypes.GCEvent] = { title: WebInspector.UIString("GC Event"), category: categories["scripting"] };
-    recordStyles[recordTypes.JSFrame] = { title: WebInspector.UIString("JS Frame"), category: categories["scripting"] };
-    recordStyles[recordTypes.MarkDOMContent] = { title: WebInspector.UIString("DOMContentLoaded event"), category: categories["scripting"] };
-    recordStyles[recordTypes.MarkLoad] = { title: WebInspector.UIString("Load event"), category: categories["scripting"] };
-    recordStyles[recordTypes.MarkFirstPaint] = { title: WebInspector.UIString("First paint"), category: categories["painting"] };
-    recordStyles[recordTypes.TimeStamp] = { title: WebInspector.UIString("Stamp"), category: categories["scripting"] };
-    recordStyles[recordTypes.ConsoleTime] = { title: WebInspector.UIString("Console Time"), category: categories["scripting"] };
-    recordStyles[recordTypes.RequestAnimationFrame] = { title: WebInspector.UIString("Request Animation Frame"), category: categories["scripting"] };
-    recordStyles[recordTypes.CancelAnimationFrame] = { title: WebInspector.UIString("Cancel Animation Frame"), category: categories["scripting"] };
-    recordStyles[recordTypes.FireAnimationFrame] = { title: WebInspector.UIString("Animation Frame Fired"), category: categories["scripting"] };
-    recordStyles[recordTypes.WebSocketCreate] = { title: WebInspector.UIString("Create WebSocket"), category: categories["scripting"] };
-    recordStyles[recordTypes.WebSocketSendHandshakeRequest] = { title: WebInspector.UIString("Send WebSocket Handshake"), category: categories["scripting"] };
-    recordStyles[recordTypes.WebSocketReceiveHandshakeResponse] = { title: WebInspector.UIString("Receive WebSocket Handshake"), category: categories["scripting"] };
-    recordStyles[recordTypes.WebSocketDestroy] = { title: WebInspector.UIString("Destroy WebSocket"), category: categories["scripting"] };
-    recordStyles[recordTypes.EmbedderCallback] = { title: WebInspector.UIString("Embedder Callback"), category: categories["scripting"] };
-
-    WebInspector.TimelineUIUtils._recordStylesMap = recordStyles;
-    return recordStyles;
-}
-
-/**
- * @param {!WebInspector.TimelineModel.Record} record
- * @return {!{title: string, category: !WebInspector.TimelineCategory}}
- */
-WebInspector.TimelineUIUtils.recordStyle = function(record)
-{
-    var type = record.type();
-    var recordStyles = WebInspector.TimelineUIUtils._initRecordStyles();
-    var result = recordStyles[type];
-    if (!result) {
-        result = {
-            title: WebInspector.UIString("Unknown: %s", type),
-            category: WebInspector.TimelineUIUtils.categories()["other"]
-        };
-        recordStyles[type] = result;
-    }
-    return result;
-}
-
-/**
  * @param {!WebInspector.TimelineModel} model
- * @param {!{name: string, tasks: !Array.<!{startTime: number, endTime: number}>, firstTaskIndex: number, lastTaskIndex: number}} info
+ * @param {!{name: string, tasks: !Array.<!WebInspector.TimelineModel.Record>, firstTaskIndex: number, lastTaskIndex: number}} info
  * @return {!Element}
  */
 WebInspector.TimelineUIUtils.generateMainThreadBarPopupContent = function(model, info)
@@ -251,10 +200,10 @@ WebInspector.TimelineUIUtils.generateMainThreadBarPopupContent = function(model,
 
     for (var i = firstTaskIndex; i <= lastTaskIndex; ++i) {
         var task = tasks[i];
-        cpuTime += task.endTime - task.startTime;
+        cpuTime += task.endTime() - task.startTime();
     }
-    var startTime = tasks[firstTaskIndex].startTime;
-    var endTime = tasks[lastTaskIndex].endTime;
+    var startTime = tasks[firstTaskIndex].startTime();
+    var endTime = tasks[lastTaskIndex].endTime();
     var duration = endTime - startTime;
 
     var contentHelper = new WebInspector.TimelinePopupContentHelper(info.name);
@@ -267,51 +216,6 @@ WebInspector.TimelineUIUtils.generateMainThreadBarPopupContent = function(model,
 }
 
 /**
- * @param {!Object} total
- * @param {!Object} addend
- */
-WebInspector.TimelineUIUtils.aggregateTimeByCategory = function(total, addend)
-{
-    for (var category in addend)
-        total[category] = (total[category] || 0) + addend[category];
-}
-
-/**
- * @param {!Object} total
- * @param {!WebInspector.TimelineModel.Record} record
- */
-WebInspector.TimelineUIUtils.aggregateTimeForRecord = function(total, record)
-{
-    var childrenTime = 0;
-    var children = record.children();
-    for (var i = 0; i < children.length; ++i) {
-        WebInspector.TimelineUIUtils.aggregateTimeForRecord(total, children[i]);
-        childrenTime += children[i].endTime() - children[i].startTime();
-    }
-    var categoryName = WebInspector.TimelineUIUtils.recordStyle(record).category.name;
-    var ownTime = record.endTime() - record.startTime() - childrenTime;
-    total[categoryName] = (total[categoryName] || 0) + ownTime;
-}
-
-/**
- * @param {!Object} aggregatedStats
- */
-WebInspector.TimelineUIUtils._generateAggregatedInfo = function(aggregatedStats)
-{
-    var cell = document.createElement("span");
-    cell.className = "timeline-aggregated-info";
-    for (var index in aggregatedStats) {
-        var label = document.createElement("div");
-        label.className = "timeline-aggregated-category timeline-" + index;
-        cell.appendChild(label);
-        var text = document.createElement("span");
-        text.textContent = Number.millisToString(aggregatedStats[index], true);
-        cell.appendChild(text);
-    }
-    return cell;
-}
-
-/**
  * @param {!Object} aggregatedStats
  * @param {!WebInspector.TimelineCategory=} selfCategory
  * @param {number=} selfTime
@@ -319,8 +223,7 @@ WebInspector.TimelineUIUtils._generateAggregatedInfo = function(aggregatedStats)
  */
 WebInspector.TimelineUIUtils.generatePieChart = function(aggregatedStats, selfCategory, selfTime)
 {
-    var element = document.createElement("div");
-    element.className = "timeline-aggregated-info";
+    var element = createElementWithClass("div", "timeline-details-view-pie-chart hbox");
 
     var total = 0;
     for (var categoryName in aggregatedStats)
@@ -330,15 +233,18 @@ WebInspector.TimelineUIUtils.generatePieChart = function(aggregatedStats, selfCa
     {
         return Number.millisToString(value, true);
     }
-    var pieChart = new WebInspector.PieChart(total, formatter);
+    var pieChart = new WebInspector.PieChart(100, formatter);
+    pieChart.setTotal(total);
     element.appendChild(pieChart.element);
-    var footerElement = element.createChild("div", "timeline-aggregated-info-legend");
+    var footerElement = element.createChild("div", "timeline-aggregated-info timeline-aggregated-info-legend");
+    var rowElement = footerElement.createChild("div");
+    rowElement.createTextChild(formatter(total));
 
     // In case of self time, first add self, then children of the same category.
     if (selfCategory && selfTime) {
         // Self.
         pieChart.addSlice(selfTime, selfCategory.fillColorStop1);
-        var rowElement = footerElement.createChild("div");
+        rowElement = footerElement.createChild("div");
         rowElement.createChild("div", "timeline-aggregated-category timeline-" + selfCategory.name);
         rowElement.createTextChild(WebInspector.UIString("%s %s (Self)", formatter(selfTime), selfCategory.title));
 
@@ -362,7 +268,7 @@ WebInspector.TimelineUIUtils.generatePieChart = function(aggregatedStats, selfCa
          if (!value)
              continue;
          pieChart.addSlice(value, category.fillColorStop0);
-         var rowElement = footerElement.createChild("div");
+         rowElement = footerElement.createChild("div");
          rowElement.createChild("div", "timeline-aggregated-category timeline-" + category.name);
          rowElement.createTextChild(WebInspector.UIString("%s %s", formatter(value), category.title));
     }
@@ -376,16 +282,16 @@ WebInspector.TimelineUIUtils.generatePieChart = function(aggregatedStats, selfCa
  */
 WebInspector.TimelineUIUtils.generateDetailsContentForFrame = function(frameModel, frame)
 {
-    var contentHelper = new WebInspector.TimelineDetailsContentHelper(null, null, true);
     var durationInMillis = frame.endTime - frame.startTime;
     var durationText = WebInspector.UIString("%s (at %s)", Number.millisToString(frame.endTime - frame.startTime, true),
         Number.millisToString(frame.startTimeOffset, true));
+    var pieChart = WebInspector.TimelineUIUtils.generatePieChart(frame.timeByCategory);
+    var contentHelper = new WebInspector.TimelineDetailsContentHelper(null, null, true);
     contentHelper.appendTextRow(WebInspector.UIString("Duration"), durationText);
     contentHelper.appendTextRow(WebInspector.UIString("FPS"), Math.floor(1000 / durationInMillis));
     contentHelper.appendTextRow(WebInspector.UIString("CPU time"), Number.millisToString(frame.cpuTime, true));
-    contentHelper.appendElementRow(WebInspector.UIString("Aggregated Time"),
-        WebInspector.TimelineUIUtils._generateAggregatedInfo(frame.timeByCategory));
-    if (WebInspector.experimentsSettings.layersPanel.isEnabled() && frame.layerTree) {
+    contentHelper.appendElementRow(WebInspector.UIString("Aggregated Time"), pieChart);
+    if (Runtime.experiments.isEnabled("layersPanel") && frame.layerTree) {
         contentHelper.appendElementRow(WebInspector.UIString("Layer tree"),
                                        WebInspector.Linkifier.linkifyUsingRevealer(frame.layerTree, WebInspector.UIString("show")));
     }
@@ -431,7 +337,6 @@ WebInspector.TimelineUIUtils.createStyleRuleForCategory = function(category)
 {
     var selector = ".timeline-category-" + category.name + " .timeline-graph-bar, " +
         ".panel.timeline .timeline-filters-header .filter-checkbox-filter.filter-checkbox-filter-" + category.name + " .checkbox-filter-checkbox, " +
-        ".popover .timeline-" + category.name + ", " +
         ".timeline-details-view .timeline-" + category.name + ", " +
         ".timeline-category-" + category.name + " .timeline-tree-icon"
 
@@ -445,7 +350,7 @@ WebInspector.TimelineUIUtils.createStyleRuleForCategory = function(category)
  * @param {!Array.<number>} quad
  * @return {number}
  */
-WebInspector.TimelineUIUtils._quadWidth = function(quad)
+WebInspector.TimelineUIUtils.quadWidth = function(quad)
 {
     return Math.round(Math.sqrt(Math.pow(quad[0] - quad[2], 2) + Math.pow(quad[1] - quad[3], 2)));
 }
@@ -454,7 +359,7 @@ WebInspector.TimelineUIUtils._quadWidth = function(quad)
  * @param {!Array.<number>} quad
  * @return {number}
  */
-WebInspector.TimelineUIUtils._quadHeight = function(quad)
+WebInspector.TimelineUIUtils.quadHeight = function(quad)
 {
     return Math.round(Math.sqrt(Math.pow(quad[0] - quad[6], 2) + Math.pow(quad[1] - quad[7], 2)));
 }
@@ -510,10 +415,10 @@ WebInspector.TimelineCategory.prototype = {
  */
 WebInspector.TimelinePopupContentHelper = function(title)
 {
-    this._contentTable = document.createElement("table");
+    this._contentTable = createElement("table");
     var titleCell = this._createCell(WebInspector.UIString("%s - Details", title), "timeline-details-title");
     titleCell.colSpan = 2;
-    var titleRow = document.createElement("tr");
+    var titleRow = createElement("tr");
     titleRow.appendChild(titleCell);
     this._contentTable.appendChild(titleRow);
 }
@@ -533,9 +438,9 @@ WebInspector.TimelinePopupContentHelper.prototype = {
      */
     _createCell: function(content, styleName)
     {
-        var text = document.createElement("label");
-        text.appendChild(document.createTextNode(content));
-        var cell = document.createElement("td");
+        var text = createElement("label");
+        text.createTextChild(String(content));
+        var cell = createElement("td");
         cell.className = "timeline-details";
         if (styleName)
             cell.className += " " + styleName;
@@ -549,7 +454,7 @@ WebInspector.TimelinePopupContentHelper.prototype = {
      */
     appendTextRow: function(title, content)
     {
-        var row = document.createElement("tr");
+        var row = createElement("tr");
         row.appendChild(this._createCell(title, "timeline-details-row-title"));
         row.appendChild(this._createCell(content, "timeline-details-row-data"));
         this._contentTable.appendChild(row);
@@ -561,10 +466,10 @@ WebInspector.TimelinePopupContentHelper.prototype = {
      */
     appendElementRow: function(title, content)
     {
-        var row = document.createElement("tr");
+        var row = createElement("tr");
         var titleCell = this._createCell(title, "timeline-details-row-title");
         row.appendChild(titleCell);
-        var cell = document.createElement("td");
+        var cell = createElement("td");
         cell.className = "details";
         if (content instanceof Node)
             cell.appendChild(content);
@@ -585,7 +490,7 @@ WebInspector.TimelineDetailsContentHelper = function(target, linkifier, monospac
 {
     this._linkifier = linkifier;
     this._target = target;
-    this.element = document.createElement("div");
+    this.element = createElement("div");
     this.element.className = "timeline-details-view-block";
     this._monospaceValues = monospaceValues;
 }
@@ -598,8 +503,8 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     appendTextRow: function(title, value)
     {
         var rowElement = this.element.createChild("div", "timeline-details-view-row");
-        rowElement.createChild("span", "timeline-details-view-row-title").textContent = WebInspector.UIString("%s: ", title);
-        rowElement.createChild("span", "timeline-details-view-row-value" + (this._monospaceValues ? " monospace" : "")).textContent = value;
+        rowElement.createChild("div", "timeline-details-view-row-title").textContent = title;
+        rowElement.createChild("div", "timeline-details-view-row-value" + (this._monospaceValues ? " monospace" : "")).textContent = value;
     },
 
     /**
@@ -609,8 +514,8 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     appendElementRow: function(title, content)
     {
         var rowElement = this.element.createChild("div", "timeline-details-view-row");
-        rowElement.createChild("span", "timeline-details-view-row-title").textContent = WebInspector.UIString("%s: ", title);
-        var valueElement = rowElement.createChild("span", "timeline-details-view-row-details" + (this._monospaceValues ? " monospace" : ""));
+        rowElement.createChild("div", "timeline-details-view-row-title").textContent = title;
+        var valueElement = rowElement.createChild("div", "timeline-details-view-row-value timeline-details-view-row-details" + (this._monospaceValues ? " monospace" : ""));
         if (content instanceof Node)
             valueElement.appendChild(content);
         else
@@ -626,7 +531,7 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
     {
         if (!this._linkifier || !this._target)
             return;
-        this.appendElementRow(title, this._linkifier.linkifyLocation(this._target, url, line - 1) || "");
+        this.appendElementRow(title, this._linkifier.linkifyScriptLocation(this._target, null, url, line - 1) || "");
     },
 
     /**
@@ -639,15 +544,23 @@ WebInspector.TimelineDetailsContentHelper.prototype = {
             return;
 
         var rowElement = this.element.createChild("div", "timeline-details-view-row");
-        rowElement.createChild("span", "timeline-details-view-row-title").textContent = WebInspector.UIString("%s: ", title);
-        var stackTraceElement = rowElement.createChild("div", "timeline-details-view-row-stack-trace monospace");
+        rowElement.createChild("div", "timeline-details-view-row-title").textContent = title;
+        this.createChildStackTraceElement(rowElement, stackTrace);
+    },
 
+    /**
+     * @param {!Element} parentElement
+     * @param {!Array.<!ConsoleAgent.CallFrame>} stackTrace
+     */
+    createChildStackTraceElement: function(parentElement, stackTrace)
+    {
+        var stackTraceElement = parentElement.createChild("div", "timeline-details-view-row-value timeline-details-view-row-stack-trace monospace");
         for (var i = 0; i < stackTrace.length; ++i) {
             var stackFrame = stackTrace[i];
             var row = stackTraceElement.createChild("div");
             row.createTextChild(stackFrame.functionName || WebInspector.UIString("(anonymous function)"));
             row.createTextChild(" @ ");
-            var urlElement = this._linkifier.linkifyLocation(this._target, stackFrame.url, stackFrame.lineNumber - 1);
+            var urlElement = this._linkifier.linkifyScriptLocation(this._target, stackFrame.scriptId, stackFrame.url, stackFrame.lineNumber - 1, stackFrame.columnNumber - 1);
             row.appendChild(urlElement);
         }
     }

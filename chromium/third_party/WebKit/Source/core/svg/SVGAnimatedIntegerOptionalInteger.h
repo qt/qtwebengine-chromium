@@ -34,7 +34,7 @@
 #include "core/svg/SVGAnimatedInteger.h"
 #include "core/svg/SVGIntegerOptionalInteger.h"
 
-namespace WebCore {
+namespace blink {
 
 // SVG Spec: http://www.w3.org/TR/SVG11/types.html <number-optional-number>
 // Unlike other SVGAnimated* class, this class is not exposed to Javascript directly,
@@ -48,9 +48,9 @@ public:
         return adoptRef(new SVGAnimatedIntegerOptionalInteger(contextElement, attributeName, initialFirstValue, initialSecondValue));
     }
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) OVERRIDE;
-    virtual bool needsSynchronizeAttribute() OVERRIDE;
-    virtual void animationEnded() OVERRIDE;
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) override;
+    virtual bool needsSynchronizeAttribute() override;
+    virtual void animationEnded() override;
 
     SVGAnimatedInteger* firstInteger() { return m_firstInteger.get(); }
     SVGAnimatedInteger* secondInteger() { return m_secondInteger.get(); }
@@ -62,6 +62,6 @@ protected:
     RefPtr<SVGAnimatedInteger> m_secondInteger;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedIntegerOptionalInteger_h

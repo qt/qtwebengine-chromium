@@ -55,7 +55,7 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
   }
 
  protected:
-  virtual ~AudioMessageFilter();
+  ~AudioMessageFilter() override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(AudioMessageFilterTest, Basic);
@@ -69,18 +69,14 @@ class CONTENT_EXPORT AudioMessageFilter : public IPC::MessageFilter {
   void Send(IPC::Message* message);
 
   // IPC::MessageFilter override. Called on |io_message_loop|.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelClosing() override;
 
   // Received when browser process has created an audio output stream.
   void OnStreamCreated(int stream_id, base::SharedMemoryHandle handle,
-#if defined(OS_WIN)
-                       base::SyncSocket::Handle socket_handle,
-#else
-                       base::FileDescriptor socket_descriptor,
-#endif
+                       base::SyncSocket::TransitDescriptor socket_descriptor,
                        uint32 length);
 
   // Received when internal state of browser process' audio output device has

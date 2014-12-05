@@ -2,12 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/local_file_stream_writer.h"
+#include "storage/browser/fileapi/local_file_stream_writer.h"
 
 #include <string>
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
@@ -18,8 +18,8 @@
 #include "net/base/test_completion_callback.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using fileapi::FileStreamWriter;
-using fileapi::LocalFileStreamWriter;
+using storage::FileStreamWriter;
+using storage::LocalFileStreamWriter;
 
 namespace content {
 
@@ -28,12 +28,12 @@ class LocalFileStreamWriterTest : public testing::Test {
   LocalFileStreamWriterTest()
       : file_thread_("FileUtilProxyTestFileThread") {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(file_thread_.Start());
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Give another chance for deleted streams to perform Close.
     base::RunLoop().RunUntilIdle();
     file_thread_.Stop();

@@ -27,7 +27,7 @@
 #ifndef WorkerLocation_h
 #define WorkerLocation_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMURLUtilsReadOnly.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -36,17 +36,18 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class WorkerLocation FINAL : public RefCountedWillBeGarbageCollectedFinalized<WorkerLocation>, public ScriptWrappable, public DOMURLUtilsReadOnly {
+class WorkerLocation final : public RefCountedWillBeGarbageCollectedFinalized<WorkerLocation>, public ScriptWrappable, public DOMURLUtilsReadOnly {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<WorkerLocation> create(const KURL& url)
     {
         return adoptRefWillBeNoop(new WorkerLocation(url));
     }
 
-    virtual KURL url() const OVERRIDE { return m_url; }
-    virtual String input() const OVERRIDE
+    virtual KURL url() const override { return m_url; }
+    virtual String input() const override
     {
         ASSERT_NOT_REACHED();
         return String();
@@ -55,14 +56,12 @@ public:
     void trace(Visitor*) { }
 
 private:
-    explicit WorkerLocation(const KURL& url) : m_url(url)
-    {
-        ScriptWrappable::init(this);
-    }
+    explicit WorkerLocation(const KURL& url)
+        : m_url(url) { }
 
     KURL m_url;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerLocation_h

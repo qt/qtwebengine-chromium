@@ -26,22 +26,23 @@
 #ifndef TouchList_h
 #define TouchList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/Touch.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class TouchList : public RefCountedWillBeGarbageCollectedFinalized<TouchList>, public ScriptWrappable {
+class TouchList final : public RefCountedWillBeGarbageCollected<TouchList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<TouchList> create()
     {
         return adoptRefWillBeNoop(new TouchList);
     }
 
-    static PassRefPtrWillBeRawPtr<TouchList> create(WillBeHeapVector<RefPtrWillBeMember<Touch> >& touches)
+    static PassRefPtrWillBeRawPtr<TouchList> adopt(WillBeHeapVector<RefPtrWillBeMember<Touch> >& touches)
     {
         return adoptRefWillBeNoop(new TouchList(touches));
     }
@@ -56,20 +57,16 @@ public:
     void trace(Visitor*);
 
 private:
-    TouchList()
-    {
-        ScriptWrappable::init(this);
-    }
+    TouchList() { }
 
     TouchList(WillBeHeapVector<RefPtrWillBeMember<Touch> >& touches)
     {
         m_values.swap(touches);
-        ScriptWrappable::init(this);
     }
 
     WillBeHeapVector<RefPtrWillBeMember<Touch> > m_values;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif /* TouchList_h */
+#endif // TouchList_h

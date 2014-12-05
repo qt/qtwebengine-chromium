@@ -25,7 +25,7 @@
 
 #include "platform/graphics/filters/LightSource.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT DistantLightSource : public LightSource {
 public:
@@ -34,7 +34,7 @@ public:
         return adoptRef(new DistantLightSource(azimuth, elevation));
     }
 
-    virtual PassRefPtr<LightSource> create(const FloatPoint3D& scale, const FloatSize& offset) const OVERRIDE
+    virtual PassRefPtr<LightSource> create(const FloatPoint3D& scale, const FloatSize& offset) const override
     {
         return adoptRef(new DistantLightSource(m_azimuth, m_elevation));
     }
@@ -42,13 +42,13 @@ public:
     float azimuth() const { return m_azimuth; }
     float elevation() const { return m_elevation; }
 
-    virtual bool setAzimuth(float) OVERRIDE;
-    virtual bool setElevation(float) OVERRIDE;
+    virtual bool setAzimuth(float) override;
+    virtual bool setElevation(float) override;
 
-    virtual void initPaintingData(PaintingData&) const OVERRIDE;
-    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const OVERRIDE;
+    virtual void initPaintingData(PaintingData&) const override;
+    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const override;
 
-    virtual TextStream& externalRepresentation(TextStream&) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&) const override;
 
 private:
     DistantLightSource(float azimuth, float elevation)
@@ -62,6 +62,6 @@ private:
     float m_elevation;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DistantLightSource_h

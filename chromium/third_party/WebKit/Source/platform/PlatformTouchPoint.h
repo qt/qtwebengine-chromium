@@ -21,11 +21,8 @@
 #define PlatformTouchPoint_h
 
 #include "platform/geometry/FloatPoint.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
-
-class PlatformTouchEvent;
+namespace blink {
 
 class PlatformTouchPoint {
 public:

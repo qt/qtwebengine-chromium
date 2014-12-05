@@ -29,6 +29,7 @@
     // All methods which access Page::settings() can raise an exception
     // when the page cannot be accessed. (Such as during page tear-down.)
     [RaisesException] void setMockScrollbarsEnabled(boolean enabled);
+    [RaisesException] void setMockGestureTapHighlightsEnabled(boolean enabled);
     [RaisesException] void setStandardFontFamily(DOMString family, DOMString script);
     [RaisesException] void setSerifFontFamily(DOMString family, DOMString script);
     [RaisesException] void setSansSerifFontFamily(DOMString family, DOMString script);
@@ -44,6 +45,10 @@
     [RaisesException] void setImagesEnabled(boolean enabled);
     [RaisesException] void setDefaultVideoPosterURL(DOMString poster);
     [RaisesException] void setViewportEnabled(boolean enabled);
+    [RaisesException] void setAvailablePointerTypes(DOMString pointers);
+    [RaisesException] void setPrimaryPointerType(DOMString pointer);
+    [RaisesException] void setAvailableHoverTypes(DOMString types);
+    [RaisesException] void setPrimaryHoverType(DOMString type);
 
     // FIXME: This is a temporary flag and should be removed once squashing is
     // ready (crbug.com/261605).
@@ -53,9 +58,10 @@
     // cannot be changed after process start.  These setters should
     // be removed or moved onto internals.runtimeFlags:
     void setAuthorShadowDOMForAnyElementEnabled(boolean enabled);
-    void setCSSExclusionsEnabled(boolean enabled);
     void setLangAttributeAwareFormControlUIEnabled(boolean enabled);
     void setOverlayScrollbarsEnabled(boolean enabled);
     void setExperimentalContentSecurityPolicyFeaturesEnabled(boolean enabled);
+    void setLaxMixedContentCheckingEnabled(boolean enabled);
     void setPseudoClassesInMatchingCriteriaInAuthorShadowTreesEnabled(boolean enabled);
+    void setImageColorProfilesEnabled(boolean enabled);
 };

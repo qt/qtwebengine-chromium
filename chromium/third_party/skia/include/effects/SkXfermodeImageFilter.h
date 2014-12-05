@@ -25,8 +25,10 @@ public:
 
     static SkXfermodeImageFilter* Create(SkXfermode* mode, SkImageFilter* background,
                                          SkImageFilter* foreground = NULL,
-                                         const CropRect* cropRect = NULL) {
-        return SkNEW_ARGS(SkXfermodeImageFilter, (mode, background, foreground, cropRect));
+                                         const CropRect* cropRect = NULL,
+                                         uint32_t uniqueID = 0) {
+        SkImageFilter* inputs[2] = { background, foreground };
+        return SkNEW_ARGS(SkXfermodeImageFilter, (mode, inputs, cropRect, uniqueID));
     }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkXfermodeImageFilter)
@@ -43,9 +45,11 @@ public:
 #endif
 
 protected:
-    SkXfermodeImageFilter(SkXfermode* mode, SkImageFilter* background,
-                          SkImageFilter* foreground, const CropRect* cropRect);
+    SkXfermodeImageFilter(SkXfermode* mode, SkImageFilter* inputs[2],
+                          const CropRect* cropRect, uint32_t uniqueID);
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
     explicit SkXfermodeImageFilter(SkReadBuffer& buffer);
+#endif
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:

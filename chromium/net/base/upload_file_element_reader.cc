@@ -5,8 +5,9 @@
 #include "net/base/upload_file_element_reader.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/task_runner_util.h"
 #include "net/base/file_stream.h"
 #include "net/base/io_buffer.h"
@@ -103,6 +104,11 @@ void UploadFileElementReader::Reset() {
 void UploadFileElementReader::OnOpenCompleted(
     const CompletionCallback& callback,
     int result) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 UploadFileElementReader::OnOpenCompleted"));
+
   DCHECK(!callback.is_null());
 
   if (result < 0) {
@@ -114,7 +120,7 @@ void UploadFileElementReader::OnOpenCompleted(
 
   if (range_offset_) {
     int result = file_stream_->Seek(
-        FROM_BEGIN, range_offset_,
+        base::File::FROM_BEGIN, range_offset_,
         base::Bind(&UploadFileElementReader::OnSeekCompleted,
                    weak_ptr_factory_.GetWeakPtr(),
                    callback));
@@ -140,11 +146,9 @@ void UploadFileElementReader::OnSeekCompleted(
 
   base::File::Info* file_info = new base::File::Info;
   bool posted = base::PostTaskAndReplyWithResult(
-      task_runner_,
+      task_runner_.get(),
       FROM_HERE,
-      base::Bind(&base::GetFileInfo,
-                 path_,
-                 file_info),
+      base::Bind(&base::GetFileInfo, path_, file_info),
       base::Bind(&UploadFileElementReader::OnGetFileInfoCompleted,
                  weak_ptr_factory_.GetWeakPtr(),
                  callback,

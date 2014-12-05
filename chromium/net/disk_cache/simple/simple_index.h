@@ -62,11 +62,11 @@ class NET_EXPORT_PRIVATE EntryMetadata {
  private:
   friend class SimpleIndexFileTest;
 
-  // When adding new members here, you should update the Serialize() and
-  // Deserialize() methods.
-
+  // There are tens of thousands of instances of EntryMetadata in memory, so the
+  // size of each entry matters.  Even when the values used to set these members
+  // are originally calculated as >32-bit types, the actual necessary size for
+  // each shouldn't exceed 32 bits, so we use 32-bit types here.
   uint32 last_used_time_seconds_since_epoch_;
-
   int32 entry_size_;  // Storage size in bytes.
 };
 COMPILE_ASSERT(sizeof(EntryMetadata) == 8, metadata_size);
@@ -77,7 +77,7 @@ class NET_EXPORT_PRIVATE SimpleIndex
  public:
   typedef std::vector<uint64> HashList;
 
-  SimpleIndex(base::SingleThreadTaskRunner* io_thread,
+  SimpleIndex(const scoped_refptr<base::SingleThreadTaskRunner>& io_thread,
               SimpleIndexDelegate* delegate,
               net::CacheType cache_type,
               scoped_ptr<SimpleIndexFile> simple_index_file);

@@ -12,7 +12,6 @@
 #include "base/test/perf_time_logger.h"
 #include "base/test/test_file_util.h"
 #include "base/threading/thread.h"
-#include "base/timer/timer.h"
 #include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -166,9 +165,15 @@ TEST_F(DiskCacheTest, CacheBackendPerformance) {
   ASSERT_TRUE(CleanupCacheDir());
   net::TestCompletionCallback cb;
   scoped_ptr<disk_cache::Backend> cache;
-  int rv = disk_cache::CreateCacheBackend(
-      net::DISK_CACHE, net::CACHE_BACKEND_BLOCKFILE, cache_path_, 0, false,
-      cache_thread.message_loop_proxy().get(), NULL, &cache, cb.callback());
+  int rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
+                                          net::CACHE_BACKEND_BLOCKFILE,
+                                          cache_path_,
+                                          0,
+                                          false,
+                                          cache_thread.task_runner(),
+                                          NULL,
+                                          &cache,
+                                          cb.callback());
 
   ASSERT_EQ(net::OK, cb.GetResult(rv));
 
@@ -194,9 +199,15 @@ TEST_F(DiskCacheTest, CacheBackendPerformance) {
   ASSERT_TRUE(base::EvictFileFromSystemCache(
               cache_path_.AppendASCII("data_3")));
 
-  rv = disk_cache::CreateCacheBackend(
-      net::DISK_CACHE, net::CACHE_BACKEND_BLOCKFILE, cache_path_, 0, false,
-      cache_thread.message_loop_proxy().get(), NULL, &cache, cb.callback());
+  rv = disk_cache::CreateCacheBackend(net::DISK_CACHE,
+                                      net::CACHE_BACKEND_BLOCKFILE,
+                                      cache_path_,
+                                      0,
+                                      false,
+                                      cache_thread.task_runner(),
+                                      NULL,
+                                      &cache,
+                                      cb.callback());
   ASSERT_EQ(net::OK, cb.GetResult(rv));
 
   EXPECT_TRUE(TimeRead(num_entries, cache.get(), entries, true));

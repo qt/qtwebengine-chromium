@@ -35,10 +35,11 @@
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ScriptCallFrame  {
 public:
+    ScriptCallFrame();
     ScriptCallFrame(const String& functionName, const String& scriptId, const String& scriptName, unsigned lineNumber, unsigned column = 0);
     ~ScriptCallFrame();
 
@@ -58,6 +59,6 @@ private:
     unsigned m_column;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScriptCallFrame_h

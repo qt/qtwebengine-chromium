@@ -15,8 +15,6 @@
 #include "third_party/WebKit/public/web/WebPageVisibilityState.h"
 #include "ui/gfx/native_widget_types.h"
 
-struct WebPreferences;
-
 namespace blink {
 class WebElement;
 class WebFrame;
@@ -29,6 +27,7 @@ struct WebContextMenuData;
 }
 
 namespace gfx {
+class Point;
 class Size;
 }
 
@@ -37,6 +36,7 @@ namespace content {
 class RenderFrame;
 class RenderViewVisitor;
 struct SSLStatus;
+struct WebPreferences;
 
 class CONTENT_EXPORT RenderView : public IPC::Sender {
  public:
@@ -50,19 +50,15 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // been closed but not yet destroyed are excluded).
   static void ForEach(RenderViewVisitor* visitor);
 
+  // Applies WebKit related preferences to this view.
+  static void ApplyWebPreferences(const WebPreferences& preferences,
+                                  blink::WebView* web_view);
+
   // Returns the main RenderFrame.
   virtual RenderFrame* GetMainRenderFrame() = 0;
 
   // Get the routing ID of the view.
   virtual int GetRoutingID() const = 0;
-
-  // Page IDs allow the browser to identify pages in each renderer process for
-  // keeping back/forward history in sync.
-  // Note that this is NOT updated for every main frame navigation, only for
-  // "regular" navigations that go into session history. In particular, client
-  // redirects, like the page cycler uses (document.location.href="foo") do not
-  // count as regular navigations and do not increment the page id.
-  virtual int GetPageId() const = 0;
 
   // Returns the size of the view.
   virtual gfx::Size GetSize() const = 0;
@@ -84,6 +80,10 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
   // Returns true if the parameter node is a textfield, text area, a content
   // editable div, or has an ARIA role of textbox.
   virtual bool IsEditableNode(const blink::WebNode& node) const = 0;
+
+  // Returns true if a hit test for |point| returns a descendant of |node|.
+  virtual bool NodeContainsPoint(const blink::WebNode& node,
+                                 const gfx::Point& point) const = 0;
 
   // Returns true if we should display scrollbars for the given view size and
   // false if the scrollbars should be hidden.
@@ -128,7 +128,7 @@ class CONTENT_EXPORT RenderView : public IPC::Sender {
 #endif
 
  protected:
-  virtual ~RenderView() {}
+  ~RenderView() override {}
 
  private:
   // This interface should only be implemented inside content.

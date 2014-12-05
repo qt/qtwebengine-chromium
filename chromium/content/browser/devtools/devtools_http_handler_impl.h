@@ -13,8 +13,10 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/devtools_agent_host.h"
 #include "content/public/browser/devtools_http_handler.h"
 #include "content/public/browser/devtools_http_handler_delegate.h"
+#include "content/public/browser/devtools_manager_delegate.h"
 #include "net/http/http_status_code.h"
 #include "net/server/http_server.h"
 
@@ -26,14 +28,11 @@ class Value;
 }
 
 namespace net {
-class StreamListenSocketFactory;
+class ServerSocketFactory;
 class URLRequestContextGetter;
 }
 
 namespace content {
-
-class DevToolsBrowserTarget;
-class DevToolsClientHost;
 
 class DevToolsHttpHandlerImpl
     : public DevToolsHttpHandler,
@@ -43,27 +42,27 @@ class DevToolsHttpHandlerImpl
   friend class base::RefCountedThreadSafe<DevToolsHttpHandlerImpl>;
   friend class DevToolsHttpHandler;
 
-  // Takes ownership over |socket_factory|.
-  DevToolsHttpHandlerImpl(const net::StreamListenSocketFactory* socket_factory,
+  class BrowserTarget;
+
+  DevToolsHttpHandlerImpl(scoped_ptr<ServerSocketFactory> server_socket_factory,
                           const std::string& frontend_url,
                           DevToolsHttpHandlerDelegate* delegate,
                           const base::FilePath& active_port_output_directory);
-  virtual ~DevToolsHttpHandlerImpl();
+  ~DevToolsHttpHandlerImpl() override;
   void Start();
 
   // DevToolsHttpHandler implementation.
-  virtual void Stop() OVERRIDE;
-  virtual GURL GetFrontendURL() OVERRIDE;
+  void Stop() override;
+  GURL GetFrontendURL() override;
 
   // net::HttpServer::Delegate implementation.
-  virtual void OnHttpRequest(int connection_id,
-                             const net::HttpServerRequestInfo& info) OVERRIDE;
-  virtual void OnWebSocketRequest(
-      int connection_id,
-      const net::HttpServerRequestInfo& info) OVERRIDE;
-  virtual void OnWebSocketMessage(int connection_id,
-                                  const std::string& data) OVERRIDE;
-  virtual void OnClose(int connection_id) OVERRIDE;
+  void OnConnect(int connection_id) override {}
+  void OnHttpRequest(int connection_id,
+                     const net::HttpServerRequestInfo& info) override;
+  void OnWebSocketRequest(int connection_id,
+                          const net::HttpServerRequestInfo& info) override;
+  void OnWebSocketMessage(int connection_id, const std::string& data) override;
+  void OnClose(int connection_id) override;
 
   void OnJsonRequestUI(int connection_id,
                        const net::HttpServerRequestInfo& info);
@@ -81,7 +80,9 @@ class DevToolsHttpHandlerImpl
   void OnTargetListReceived(
       int connection_id,
       const std::string& host,
-      const DevToolsHttpHandlerDelegate::TargetList& targets);
+      const DevToolsManagerDelegate::TargetList& targets);
+
+  void OnHttpServerInitialized(const net::IPEndPoint& ip_address);
 
   DevToolsTarget* GetTarget(const std::string& id);
 
@@ -90,6 +91,7 @@ class DevToolsHttpHandlerImpl
 
   void StartHandlerThread();
   void StopHandlerThread();
+  void StopWithoutRelease();
 
   void WriteActivePortToUserProfile();
 
@@ -117,15 +119,16 @@ class DevToolsHttpHandlerImpl
   scoped_ptr<base::Thread> thread_;
 
   std::string frontend_url_;
-  scoped_ptr<const net::StreamListenSocketFactory> socket_factory_;
-  scoped_refptr<net::HttpServer> server_;
-  typedef std::map<int, DevToolsClientHost*> ConnectionToClientHostMap;
-  ConnectionToClientHostMap connection_to_client_host_ui_;
-  scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
-  base::FilePath active_port_output_directory_;
+  const scoped_ptr<ServerSocketFactory> server_socket_factory_;
+  scoped_ptr<net::HttpServer> server_;
+  scoped_ptr<net::IPEndPoint> server_ip_address_;
+  typedef std::map<int, DevToolsAgentHostClient*> ConnectionToClientMap;
+  ConnectionToClientMap connection_to_client_ui_;
+  const scoped_ptr<DevToolsHttpHandlerDelegate> delegate_;
+  const base::FilePath active_port_output_directory_;
   typedef std::map<std::string, DevToolsTarget*> TargetMap;
   TargetMap target_map_;
-  typedef std::map<int, scoped_refptr<DevToolsBrowserTarget> > BrowserTargets;
+  typedef std::map<int, BrowserTarget*> BrowserTargets;
   BrowserTargets browser_targets_;
   DISALLOW_COPY_AND_ASSIGN(DevToolsHttpHandlerImpl);
 };

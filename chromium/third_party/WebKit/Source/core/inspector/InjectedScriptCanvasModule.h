@@ -31,21 +31,21 @@
 #ifndef InjectedScriptCanvasModule_h
 #define InjectedScriptCanvasModule_h
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScriptModule.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class InjectedScriptManager;
 class ScriptValue;
 
 
-class InjectedScriptCanvasModule FINAL : public InjectedScriptModule {
+class InjectedScriptCanvasModule final : public InjectedScriptModule {
 public:
     InjectedScriptCanvasModule();
 
-    virtual String source() const OVERRIDE;
+    virtual String source() const override;
 
     static InjectedScriptCanvasModule moduleForState(InjectedScriptManager*, ScriptState*);
 
@@ -69,6 +69,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InjectedScriptCanvasModule_h)

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/rappor
       'target_name': 'rappor',
       'type': 'static_library',
       'include_dirs': [
@@ -19,6 +20,7 @@
         'variations',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'rappor/bloom_filter.cc',
         'rappor/bloom_filter.h',
         'rappor/byte_vector_utils.cc',
@@ -40,6 +42,21 @@
         'proto_out_dir': 'components/rappor/proto',
       },
       'includes': [ '../build/protoc.gypi' ],
+    },
+    {
+      # GN version: //components/rappor:test_support
+      'target_name': 'rappor_test_support',
+      'type': 'static_library',
+      'include_dirs': [
+        '..',
+      ],
+      'dependencies': [
+        'rappor',
+      ],
+      'sources': [
+        'rappor/test_rappor_service.cc',
+        'rappor/test_rappor_service.h',
+      ],
     },
   ],
 }

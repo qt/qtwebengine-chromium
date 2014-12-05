@@ -25,10 +25,11 @@
 #include "core/html/HTMLFrameElement.h"
 
 #include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/html/HTMLFrameSetElement.h"
 #include "core/rendering/RenderFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -37,7 +38,6 @@ inline HTMLFrameElement::HTMLFrameElement(Document& document)
     , m_frameBorder(true)
     , m_frameBorderSet(false)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLFrameElement)
@@ -81,4 +81,4 @@ void HTMLFrameElement::parseAttribute(const QualifiedName& name, const AtomicStr
         HTMLFrameElementBase::parseAttribute(name, value);
 }
 
-} // namespace WebCore
+} // namespace blink

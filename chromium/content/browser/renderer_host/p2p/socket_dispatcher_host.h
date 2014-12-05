@@ -22,7 +22,7 @@ namespace net {
 class URLRequestContextGetter;
 }
 
-namespace talk_base {
+namespace rtc {
 struct PacketOptions;
 }
 
@@ -39,12 +39,12 @@ class P2PSocketDispatcherHost
                           net::URLRequestContextGetter* url_context);
 
   // content::BrowserMessageFilter overrides.
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnChannelClosing() override;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // net::NetworkChangeNotifier::IPAddressObserver interface.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // Starts the RTP packet header dumping. Must be called on the IO thread.
   void StartRtpDump(
@@ -56,7 +56,7 @@ class P2PSocketDispatcherHost
   void StopRtpDumpOnUIThread(bool incoming, bool outgoing);
 
  protected:
-  virtual ~P2PSocketDispatcherHost();
+  ~P2PSocketDispatcherHost() override;
 
  private:
   friend struct BrowserThread::DeleteOnThread<BrowserThread::IO>;
@@ -84,7 +84,7 @@ class P2PSocketDispatcherHost
   void OnSend(int socket_id,
               const net::IPEndPoint& socket_address,
               const std::vector<char>& data,
-              const talk_base::PacketOptions& options,
+              const rtc::PacketOptions& options,
               uint64 packet_id);
   void OnSetOption(int socket_id, P2PSocketOption option, int value);
   void OnDestroySocket(int socket_id);

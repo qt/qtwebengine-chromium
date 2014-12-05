@@ -24,9 +24,11 @@
 #include "core/dom/Document.h"
 #include "core/frame/FrameOwner.h"
 #include "core/html/HTMLElement.h"
+#include "platform/heap/Handle.h"
+#include "platform/scroll/ScrollTypes.h"
 #include "wtf/HashCountedSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class ExceptionState;
@@ -35,6 +37,7 @@ class RenderPart;
 class Widget;
 
 class HTMLFrameOwnerElement : public HTMLElement, public FrameOwner {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLFrameOwnerElement);
 public:
     virtual ~HTMLFrameOwnerElement();
 
@@ -45,7 +48,7 @@ public:
     void setContentFrame(Frame&);
     void clearContentFrame();
 
-    void disconnectContentFrame();
+    virtual void disconnectContentFrame();
 
     // Most subclasses use RenderPart (either RenderEmbeddedObject or RenderIFrame)
     // except for HTMLObjectElement and HTMLEmbedElement which may return any
@@ -62,7 +65,7 @@ public:
     virtual void renderFallbackContent() { }
 
     virtual bool isObjectElement() const { return false; }
-    void setWidget(PassRefPtr<Widget>);
+    void setWidget(PassRefPtrWillBeRawPtr<Widget>);
     Widget* ownedWidget() const;
 
     class UpdateSuspendScope {
@@ -74,6 +77,8 @@ public:
         void performDeferredWidgetTreeOperations();
     };
 
+    virtual void trace(Visitor*) override;
+
 protected:
     HTMLFrameOwnerElement(const QualifiedName& tagName, Document&);
     void setSandboxFlags(SandboxFlags);
@@ -81,32 +86,33 @@ protected:
     bool loadOrRedirectSubframe(const KURL&, const AtomicString& frameName, bool lockBackForwardList);
 
 private:
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isFrameOwnerElement() const OVERRIDE FINAL { return true; }
+    virtual bool isKeyboardFocusable() const override;
+    virtual bool isFrameOwnerElement() const override final { return true; }
 
     // FrameOwner overrides:
     virtual bool isLocal() const { return true; }
-    virtual SandboxFlags sandboxFlags() const OVERRIDE { return m_sandboxFlags; }
-    virtual void dispatchLoad() OVERRIDE;
+    virtual SandboxFlags sandboxFlags() const override { return m_sandboxFlags; }
+    virtual void dispatchLoad() override;
 
-    Frame* m_contentFrame;
-    RefPtr<Widget> m_widget;
+    RawPtrWillBeMember<Frame> m_contentFrame;
+    RefPtrWillBeMember<Widget> m_widget;
     SandboxFlags m_sandboxFlags;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(HTMLFrameOwnerElement, isFrameOwnerElement());
 
 class SubframeLoadingDisabler {
+    STACK_ALLOCATED();
 public:
     explicit SubframeLoadingDisabler(Node& root)
         : m_root(root)
     {
-        disabledSubtreeRoots().add(&m_root);
+        disabledSubtreeRoots().add(m_root);
     }
 
     ~SubframeLoadingDisabler()
     {
-        disabledSubtreeRoots().remove(&m_root);
+        disabledSubtreeRoots().remove(m_root);
     }
 
     static bool canLoadFrame(HTMLFrameOwnerElement& owner)
@@ -121,17 +127,13 @@ public:
     }
 
 private:
-    static HashCountedSet<Node*>& disabledSubtreeRoots()
-    {
-        DEFINE_STATIC_LOCAL(HashCountedSet<Node*>, nodes, ());
-        return nodes;
-    }
+    static WillBeHeapHashCountedSet<RawPtrWillBeMember<Node>>& disabledSubtreeRoots();
 
-    Node& m_root;
+    RawPtrWillBeMember<Node> m_root;
 };
 
 DEFINE_TYPE_CASTS(HTMLFrameOwnerElement, FrameOwner, owner, owner->isLocal(), owner.isLocal());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLFrameOwnerElement_h

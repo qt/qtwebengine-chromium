@@ -16,11 +16,35 @@ class NativeThemeMac : public FallbackTheme {
  public:
   static NativeThemeMac* instance();
 
-  virtual SkColor GetSystemColor(ColorId color_id) const OVERRIDE;
+  // Overridden from NativeTheme:
+  SkColor GetSystemColor(ColorId color_id) const override;
+
+  // Overridden from NativeThemeBase:
+  void PaintScrollbarTrack(SkCanvas* canvas,
+                           Part part,
+                           State state,
+                           const ScrollbarTrackExtraParams& extra_params,
+                           const gfx::Rect& rect) const override;
+  void PaintScrollbarThumb(SkCanvas* sk_canvas,
+                           Part part,
+                           State state,
+                           const gfx::Rect& rect) const override;
+  void PaintScrollbarCorner(SkCanvas* canvas,
+                            State state,
+                            const gfx::Rect& rect) const override;
+  void PaintMenuPopupBackground(
+      SkCanvas* canvas,
+      const gfx::Size& size,
+      const MenuBackgroundExtraParams& menu_background) const override;
+  void PaintMenuItemBackground(
+      SkCanvas* canvas,
+      State state,
+      const gfx::Rect& rect,
+      const MenuListExtraParams& menu_list) const override;
 
  private:
   NativeThemeMac();
-  virtual ~NativeThemeMac();
+  ~NativeThemeMac() override;
 
   DISALLOW_COPY_AND_ASSIGN(NativeThemeMac);
 };

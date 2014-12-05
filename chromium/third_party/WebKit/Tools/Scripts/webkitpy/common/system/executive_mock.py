@@ -26,9 +26,9 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+import StringIO
 import logging
 import os
-import StringIO
 
 from webkitpy.common.system.executive import ScriptError
 
@@ -81,17 +81,6 @@ class MockExecutive(object):
 
         _log.info("MOCK running_pids: %s" % running_pids)
         return running_pids
-
-    def run_and_throw_if_fail(self, args, quiet=False, cwd=None, env=None):
-        self.calls.append(args)
-        if self._should_log:
-            env_string = ""
-            if env:
-                env_string = ", env=%s" % env
-            _log.info("MOCK run_and_throw_if_fail: %s, cwd=%s%s" % (args, cwd, env_string))
-        if self._should_throw_when_run.intersection(args):
-            raise ScriptError("Exception for %s" % args, output="MOCK command output")
-        return "MOCK output of child process"
 
     def command_for_printing(self, args):
         string_args = map(unicode, args)
@@ -167,6 +156,9 @@ class MockExecutive(object):
         self.calls = self.calls[:num_previous_calls]
         self.calls.append(new_calls)
         return command_outputs
+
+    def map(self, thunk, arglist, processes=None):
+        return map(thunk, arglist)
 
 
 class MockExecutive2(MockExecutive):

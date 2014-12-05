@@ -27,7 +27,7 @@
 
 #include "core/html/MediaDocument.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/RawDataDocumentParser.h"
@@ -41,9 +41,10 @@
 #include "core/html/HTMLVideoElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/loader/FrameLoader.h"
+#include "core/loader/FrameLoaderClient.h"
 #include "platform/KeyboardCodes.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -62,7 +63,7 @@ private:
     {
     }
 
-    virtual void appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) override;
 
     void createDocumentStructure();
 
@@ -110,6 +111,10 @@ void MediaDocumentParser::createDocumentStructure()
 void MediaDocumentParser::appendBytes(const char*, size_t)
 {
     if (m_didBuildDocumentStructure)
+        return;
+
+    LocalFrame* frame = document()->frame();
+    if (!frame->loader().client()->allowMedia(document()->url()))
         return;
 
     createDocumentStructure();

@@ -34,10 +34,9 @@
 #include "core/html/HTMLDivElement.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLMeterElement;
-class RenderMeter;
 
 class MeterShadowElement : public HTMLDivElement {
 protected:
@@ -45,20 +44,20 @@ protected:
     HTMLMeterElement* meterElement() const;
 
 private:
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
 };
 
-class MeterInnerElement FINAL : public MeterShadowElement {
+class MeterInnerElement final : public MeterShadowElement {
 public:
     static PassRefPtrWillBeRawPtr<MeterInnerElement> create(Document&);
 
 private:
     explicit MeterInnerElement(Document&);
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 };
 
-class MeterBarElement FINAL : public MeterShadowElement {
+class MeterBarElement final : public MeterShadowElement {
 private:
     explicit MeterBarElement(Document&);
 
@@ -66,7 +65,7 @@ public:
     static PassRefPtrWillBeRawPtr<MeterBarElement> create(Document&);
 };
 
-class MeterValueElement FINAL : public MeterShadowElement {
+class MeterValueElement final : public MeterShadowElement {
 public:
     static PassRefPtrWillBeRawPtr<MeterValueElement> create(Document&);
     void setWidthPercentage(double);

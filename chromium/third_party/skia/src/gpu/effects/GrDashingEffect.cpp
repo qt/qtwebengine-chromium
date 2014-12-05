@@ -9,18 +9,19 @@
 
 #include "../GrAARectRenderer.h"
 
-#include "effects/GrVertexEffect.h"
-#include "gl/GrGLEffect.h"
-#include "gl/GrGLVertexEffect.h"
+#include "GrGeometryProcessor.h"
+#include "gl/builders/GrGLProgramBuilder.h"
+#include "gl/GrGLProcessor.h"
+#include "gl/GrGLGeometryProcessor.h"
 #include "gl/GrGLSL.h"
 #include "GrContext.h"
 #include "GrCoordTransform.h"
 #include "GrDrawTarget.h"
 #include "GrDrawTargetCaps.h"
-#include "GrEffect.h"
+#include "GrProcessor.h"
 #include "GrGpu.h"
 #include "GrStrokeInfo.h"
-#include "GrTBackendEffectFactory.h"
+#include "GrTBackendProcessorFactory.h"
 #include "SkGr.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -54,7 +55,7 @@ static bool can_fast_path_dash(const SkPoint pts[2], const GrStrokeInfo& strokeI
 
     SkPaint::Cap cap = strokeInfo.getStrokeRec().getCap();
     // Current we do don't handle Round or Square cap dashes
-    if (SkPaint::kRound_Cap == cap) {
+    if (SkPaint::kRound_Cap == cap && info.fIntervals[0] != 0.f) {
         return false;
     }
 
@@ -68,9 +69,13 @@ struct DashLineVertex {
     SkPoint fDashPos;
 };
 
+extern const GrVertexAttrib gDashLineNoAAVertexAttribs[] = {
+    { kVec2f_GrVertexAttribType, 0,                 kPosition_GrVertexAttribBinding }
+};
+
 extern const GrVertexAttrib gDashLineVertexAttribs[] = {
     { kVec2f_GrVertexAttribType, 0,                 kPosition_GrVertexAttribBinding },
-    { kVec2f_GrVertexAttribType, sizeof(SkPoint),   kEffect_GrVertexAttribBinding },
+    { kVec2f_GrVertexAttribType, sizeof(SkPoint),   kGeometryProcessor_GrVertexAttribBinding },
 };
 
 };
@@ -189,7 +194,7 @@ bool GrDashingEffect::DrawDashLine(const SkPoint pts[2], const GrPaint& paint,
         SkMatrix rotMatrix;
         align_to_x_axis(pts, &rotMatrix, ptsRot);
         if(!rotMatrix.invert(&srcRotInv)) {
-            GrPrintf("Failed to create invertible rotation matrix!\n");
+            SkDebugf("Failed to create invertible rotation matrix!\n");
             return false;
         }
     } else {
@@ -204,7 +209,7 @@ bool GrDashingEffect::DrawDashLine(const SkPoint pts[2], const GrPaint& paint,
     SkScalar perpScale;
     calc_dash_scaling(&parallelScale, &perpScale, vm, ptsRot);
 
-    bool hasCap = SkPaint::kSquare_Cap == cap && 0 != srcStrokeWidth;
+    bool hasCap = SkPaint::kButt_Cap != cap && 0 != srcStrokeWidth;
 
     // We always want to at least stroke out half a pixel on each side in device space
     // so 0.5f / perpScale gives us this min in src space
@@ -339,14 +344,22 @@ bool GrDashingEffect::DrawDashLine(const SkPoint pts[2], const GrPaint& paint,
         devInfo.fPhase = devPhase;
         devInfo.fCount = 2;
         devInfo.fIntervals = devIntervals;
-        GrEffectEdgeType edgeType= useAA ? kFillAA_GrEffectEdgeType :
-            kFillBW_GrEffectEdgeType;
-        drawState->addCoverageEffect(
-            GrDashingEffect::Create(edgeType, devInfo, strokeWidth), 1)->unref();
-    }
+        GrPrimitiveEdgeType edgeType= useAA ? kFillAA_GrProcessorEdgeType :
+            kFillBW_GrProcessorEdgeType;
+        bool isRoundCap = SkPaint::kRound_Cap == cap;
+        GrDashingEffect::DashCap capType = isRoundCap ? GrDashingEffect::kRound_DashCap :
+                                                        GrDashingEffect::kNonRound_DashCap;
+        drawState->setGeometryProcessor(
+                GrDashingEffect::Create(edgeType, devInfo, strokeWidth, capType))->unref();
 
-    // Set up the vertex data for the line and start/end dashes
-    drawState->setVertexAttribs<gDashLineVertexAttribs>(SK_ARRAY_COUNT(gDashLineVertexAttribs));
+        // Set up the vertex data for the line and start/end dashes
+        drawState->setVertexAttribs<gDashLineVertexAttribs>(SK_ARRAY_COUNT(gDashLineVertexAttribs),
+                                                            sizeof(DashLineVertex));
+    } else {
+        // Set up the vertex data for the line and start/end dashes
+        drawState->setVertexAttribs<gDashLineNoAAVertexAttribs>(
+                SK_ARRAY_COUNT(gDashLineNoAAVertexAttribs), sizeof(DashLineVertex));
+    }
 
     int totalRectCnt = 0;
 
@@ -356,13 +369,18 @@ bool GrDashingEffect::DrawDashLine(const SkPoint pts[2], const GrPaint& paint,
 
     GrDrawTarget::AutoReleaseGeometry geo(target, totalRectCnt * 4, 0);
     if (!geo.succeeded()) {
-        GrPrintf("Failed to get space for vertices!\n");
+        SkDebugf("Failed to get space for vertices!\n");
         return false;
     }
 
     DashLineVertex* verts = reinterpret_cast<DashLineVertex*>(geo.vertices());
 
     int curVIdx = 0;
+
+    if (SkPaint::kRound_Cap == cap && 0 != srcStrokeWidth) {
+        // need to adjust this for round caps to correctly set the dashPos attrib on vertices
+        startOffset -= halfDevStroke;
+    }
 
     // Draw interior part of dashed line
     if (!lineDone) {
@@ -404,209 +422,404 @@ bool GrDashingEffect::DrawDashLine(const SkPoint pts[2], const GrPaint& paint,
 
 //////////////////////////////////////////////////////////////////////////////
 
-class GLDashingLineEffect;
-
-class DashingLineEffect : public GrVertexEffect {
+class GLDashingCircleEffect;
+/*
+ * This effect will draw a dotted line (defined as a dashed lined with round caps and no on
+ * interval). The radius of the dots is given by the strokeWidth and the spacing by the DashInfo.
+ * Both of the previous two parameters are in device space. This effect also requires the setting of
+ * a vec2 vertex attribute for the the four corners of the bounding rect. This attribute is the
+ * "dash position" of each vertex. In other words it is the vertex coords (in device space) if we
+ * transform the line to be horizontal, with the start of line at the origin then shifted to the
+ * right by half the off interval. The line then goes in the positive x direction.
+ */
+class DashingCircleEffect : public GrGeometryProcessor {
 public:
     typedef SkPathEffect::DashInfo DashInfo;
 
-    /**
-     * The effect calculates the coverage for the case of a horizontal line in device space.
-     * The matrix that is passed in should be able to convert a line in source space to a
-     * horizontal line in device space. Additionally, the coord transform matrix should translate
-     * the the start of line to origin, and the shift it along the positive x-axis by the phase
-     * and half the off interval.
-     */
-    static GrEffectRef* Create(GrEffectEdgeType edgeType, const DashInfo& info,
-                               SkScalar strokeWidth);
+    static GrGeometryProcessor* Create(GrPrimitiveEdgeType edgeType,
+                                       const DashInfo& info,
+                                       SkScalar radius);
+
+    virtual ~DashingCircleEffect();
+
+    static const char* Name() { return "DashingCircleEffect"; }
+
+    const GrShaderVar& inCoord() const { return fInCoord; }
+
+    GrPrimitiveEdgeType getEdgeType() const { return fEdgeType; }
+
+    SkScalar getRadius() const { return fRadius; }
+
+    SkScalar getCenterX() const { return fCenterX; }
+
+    SkScalar getIntervalLength() const { return fIntervalLength; }
+
+    typedef GLDashingCircleEffect GLProcessor;
+
+    virtual const GrBackendGeometryProcessorFactory& getFactory() const SK_OVERRIDE;
+
+private:
+    DashingCircleEffect(GrPrimitiveEdgeType edgeType, const DashInfo& info, SkScalar radius);
+
+    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
+
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
+
+    GrPrimitiveEdgeType    fEdgeType;
+    const GrShaderVar&  fInCoord;
+    SkScalar            fIntervalLength;
+    SkScalar            fRadius;
+    SkScalar            fCenterX;
+
+    GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
+
+    typedef GrGeometryProcessor INHERITED;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class GLDashingCircleEffect : public GrGLGeometryProcessor {
+public:
+    GLDashingCircleEffect(const GrBackendProcessorFactory&, const GrProcessor&);
+
+    virtual void emitCode(const EmitArgs&) SK_OVERRIDE;
+
+    static inline void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder*);
+
+    virtual void setData(const GrGLProgramDataManager&, const GrProcessor&) SK_OVERRIDE;
+
+private:
+    GrGLProgramDataManager::UniformHandle fParamUniform;
+    SkScalar                              fPrevRadius;
+    SkScalar                              fPrevCenterX;
+    SkScalar                              fPrevIntervalLength;
+    typedef GrGLGeometryProcessor INHERITED;
+};
+
+GLDashingCircleEffect::GLDashingCircleEffect(const GrBackendProcessorFactory& factory,
+                                             const GrProcessor&)
+    : INHERITED (factory) {
+    fPrevRadius = SK_ScalarMin;
+    fPrevCenterX = SK_ScalarMin;
+    fPrevIntervalLength = SK_ScalarMax;
+}
+
+void GLDashingCircleEffect::emitCode(const EmitArgs& args) {
+    const DashingCircleEffect& dce = args.fGP.cast<DashingCircleEffect>();
+    const char *paramName;
+    // The param uniforms, xyz, refer to circle radius - 0.5, cicles center x coord, and
+    // the total interval length of the dash.
+    fParamUniform = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+                                         kVec3f_GrSLType,
+                                         "params",
+                                         &paramName);
+
+    GrGLVertToFrag v(kVec2f_GrSLType);
+    args.fPB->addVarying("Coord", &v);
+
+    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    vsBuilder->codeAppendf("\t%s = %s;\n", v.vsOut(), dce.inCoord().c_str());
+
+    // transforms all points so that we can compare them to our test circle
+    GrGLGPFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+    fsBuilder->codeAppendf("\t\tfloat xShifted = %s.x - floor(%s.x / %s.z) * %s.z;\n",
+                           v.fsIn(), v.fsIn(), paramName, paramName);
+    fsBuilder->codeAppendf("\t\tvec2 fragPosShifted = vec2(xShifted, %s.y);\n", v.fsIn());
+    fsBuilder->codeAppendf("\t\tvec2 center = vec2(%s.y, 0.0);\n", paramName);
+    fsBuilder->codeAppend("\t\tfloat dist = length(center - fragPosShifted);\n");
+    if (GrProcessorEdgeTypeIsAA(dce.getEdgeType())) {
+        fsBuilder->codeAppendf("\t\tfloat diff = dist - %s.x;\n", paramName);
+        fsBuilder->codeAppend("\t\tdiff = 1.0 - diff;\n");
+        fsBuilder->codeAppend("\t\tfloat alpha = clamp(diff, 0.0, 1.0);\n");
+    } else {
+        fsBuilder->codeAppendf("\t\tfloat alpha = 1.0;\n");
+        fsBuilder->codeAppendf("\t\talpha *=  dist < %s.x + 0.5 ? 1.0 : 0.0;\n", paramName);
+    }
+    fsBuilder->codeAppendf("\t\t%s = %s;\n", args.fOutput,
+                           (GrGLSLExpr4(args.fInput) * GrGLSLExpr1("alpha")).c_str());
+}
+
+void GLDashingCircleEffect::setData(const GrGLProgramDataManager& pdman
+                                    , const GrProcessor& processor) {
+    const DashingCircleEffect& dce = processor.cast<DashingCircleEffect>();
+    SkScalar radius = dce.getRadius();
+    SkScalar centerX = dce.getCenterX();
+    SkScalar intervalLength = dce.getIntervalLength();
+    if (radius != fPrevRadius || centerX != fPrevCenterX || intervalLength != fPrevIntervalLength) {
+        pdman.set3f(fParamUniform, radius - 0.5f, centerX, intervalLength);
+        fPrevRadius = radius;
+        fPrevCenterX = centerX;
+        fPrevIntervalLength = intervalLength;
+    }
+}
+
+void GLDashingCircleEffect::GenKey(const GrProcessor& processor, const GrGLCaps&,
+                                   GrProcessorKeyBuilder* b) {
+    const DashingCircleEffect& dce = processor.cast<DashingCircleEffect>();
+    b->add32(dce.getEdgeType());
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+GrGeometryProcessor* DashingCircleEffect::Create(GrPrimitiveEdgeType edgeType, const DashInfo& info,
+                                                 SkScalar radius) {
+    if (info.fCount != 2 || info.fIntervals[0] != 0) {
+        return NULL;
+    }
+
+    return SkNEW_ARGS(DashingCircleEffect, (edgeType, info, radius));
+}
+
+DashingCircleEffect::~DashingCircleEffect() {}
+
+void DashingCircleEffect::onComputeInvariantOutput(InvariantOutput* inout) const {
+    inout->mulByUnknownAlpha();
+}
+
+const GrBackendGeometryProcessorFactory& DashingCircleEffect::getFactory() const {
+    return GrTBackendGeometryProcessorFactory<DashingCircleEffect>::getInstance();
+}
+
+DashingCircleEffect::DashingCircleEffect(GrPrimitiveEdgeType edgeType, const DashInfo& info,
+                                         SkScalar radius)
+    : fEdgeType(edgeType)
+    , fInCoord(this->addVertexAttrib(GrShaderVar("inCoord",
+                                                 kVec2f_GrSLType,
+                                                 GrShaderVar::kAttribute_TypeModifier))) {
+    SkScalar onLen = info.fIntervals[0];
+    SkScalar offLen = info.fIntervals[1];
+    fIntervalLength = onLen + offLen;
+    fRadius = radius;
+    fCenterX = SkScalarHalf(offLen);
+}
+
+bool DashingCircleEffect::onIsEqual(const GrGeometryProcessor& other) const {
+    const DashingCircleEffect& dce = other.cast<DashingCircleEffect>();
+    return (fEdgeType == dce.fEdgeType &&
+            fIntervalLength == dce.fIntervalLength &&
+            fRadius == dce.fRadius &&
+            fCenterX == dce.fCenterX);
+}
+
+GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingCircleEffect);
+
+GrGeometryProcessor* DashingCircleEffect::TestCreate(SkRandom* random,
+                                                     GrContext*,
+                                                     const GrDrawTargetCaps& caps,
+                                                     GrTexture*[]) {
+    GrPrimitiveEdgeType edgeType = static_cast<GrPrimitiveEdgeType>(random->nextULessThan(
+            kGrProcessorEdgeTypeCnt));
+    SkScalar strokeWidth = random->nextRangeScalar(0, 100.f);
+    DashInfo info;
+    info.fCount = 2;
+    SkAutoTArray<SkScalar> intervals(info.fCount);
+    info.fIntervals = intervals.get();
+    info.fIntervals[0] = 0; 
+    info.fIntervals[1] = random->nextRangeScalar(0, 10.f);
+    info.fPhase = random->nextRangeScalar(0, info.fIntervals[1]);
+
+    return DashingCircleEffect::Create(edgeType, info, strokeWidth);
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+class GLDashingLineEffect;
+
+/*
+ * This effect will draw a dashed line. The width of the dash is given by the strokeWidth and the
+ * length and spacing by the DashInfo. Both of the previous two parameters are in device space.
+ * This effect also requires the setting of a vec2 vertex attribute for the the four corners of the
+ * bounding rect. This attribute is the "dash position" of each vertex. In other words it is the
+ * vertex coords (in device space) if we transform the line to be horizontal, with the start of
+ * line at the origin then shifted to the right by half the off interval. The line then goes in the
+ * positive x direction.
+ */
+class DashingLineEffect : public GrGeometryProcessor {
+public:
+    typedef SkPathEffect::DashInfo DashInfo;
+
+    static GrGeometryProcessor* Create(GrPrimitiveEdgeType edgeType,
+                                       const DashInfo& info,
+                                       SkScalar strokeWidth);
 
     virtual ~DashingLineEffect();
 
     static const char* Name() { return "DashingEffect"; }
 
-    GrEffectEdgeType getEdgeType() const { return fEdgeType; }
+    const GrShaderVar& inCoord() const { return fInCoord; }
+
+    GrPrimitiveEdgeType getEdgeType() const { return fEdgeType; }
 
     const SkRect& getRect() const { return fRect; }
 
     SkScalar getIntervalLength() const { return fIntervalLength; }
 
-    typedef GLDashingLineEffect GLEffect;
+    typedef GLDashingLineEffect GLProcessor;
 
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
-
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual const GrBackendGeometryProcessorFactory& getFactory() const SK_OVERRIDE;
 
 private:
-    DashingLineEffect(GrEffectEdgeType edgeType, const DashInfo& info, SkScalar strokeWidth);
+    DashingLineEffect(GrPrimitiveEdgeType edgeType, const DashInfo& info, SkScalar strokeWidth);
 
-    virtual bool onIsEqual(const GrEffect& other) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrGeometryProcessor& other) const SK_OVERRIDE;
 
-    GrEffectEdgeType    fEdgeType;
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
+
+    GrPrimitiveEdgeType    fEdgeType;
+    const GrShaderVar&  fInCoord;
     SkRect              fRect;
     SkScalar            fIntervalLength;
 
-    GR_DECLARE_EFFECT_TEST;
+    GR_DECLARE_GEOMETRY_PROCESSOR_TEST;
 
-    typedef GrEffect INHERITED;
+    typedef GrGeometryProcessor INHERITED;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-class GLDashingLineEffect : public GrGLVertexEffect {
+class GLDashingLineEffect : public GrGLGeometryProcessor {
 public:
-    GLDashingLineEffect(const GrBackendEffectFactory&, const GrDrawEffect&);
+    GLDashingLineEffect(const GrBackendProcessorFactory&, const GrProcessor&);
 
-    virtual void emitCode(GrGLFullShaderBuilder* builder,
-                          const GrDrawEffect& drawEffect,
-                          EffectKey key,
-                          const char* outputColor,
-                          const char* inputColor,
-                          const TransformedCoordsArray&,
-                          const TextureSamplerArray&) SK_OVERRIDE;
+    virtual void emitCode(const EmitArgs&) SK_OVERRIDE;
 
-    static inline EffectKey GenKey(const GrDrawEffect&, const GrGLCaps&);
+    static inline void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder*);
 
-    virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE;
+    virtual void setData(const GrGLProgramDataManager&, const GrProcessor&) SK_OVERRIDE;
 
 private:
-    GrGLUniformManager::UniformHandle   fRectUniform;
-    GrGLUniformManager::UniformHandle   fIntervalUniform;
-    SkRect                              fPrevRect;
-    SkScalar                            fPrevIntervalLength;
-    typedef GrGLVertexEffect INHERITED;
+    GrGLProgramDataManager::UniformHandle fRectUniform;
+    GrGLProgramDataManager::UniformHandle fIntervalUniform;
+    SkRect                                fPrevRect;
+    SkScalar                              fPrevIntervalLength;
+    typedef GrGLGeometryProcessor INHERITED;
 };
 
-GLDashingLineEffect::GLDashingLineEffect(const GrBackendEffectFactory& factory,
-                                     const GrDrawEffect& drawEffect)
+GLDashingLineEffect::GLDashingLineEffect(const GrBackendProcessorFactory& factory,
+                                         const GrProcessor&)
     : INHERITED (factory) {
     fPrevRect.fLeft = SK_ScalarNaN;
     fPrevIntervalLength = SK_ScalarMax;
-
 }
 
-void GLDashingLineEffect::emitCode(GrGLFullShaderBuilder* builder,
-                                    const GrDrawEffect& drawEffect,
-                                    EffectKey key,
-                                    const char* outputColor,
-                                    const char* inputColor,
-                                    const TransformedCoordsArray&,
-                                    const TextureSamplerArray& samplers) {
-    const DashingLineEffect& de = drawEffect.castEffect<DashingLineEffect>();
+void GLDashingLineEffect::emitCode(const EmitArgs& args) {
+    const DashingLineEffect& de = args.fGP.cast<DashingLineEffect>();
     const char *rectName;
     // The rect uniform's xyzw refer to (left + 0.5, top + 0.5, right - 0.5, bottom - 0.5),
     // respectively.
-    fRectUniform = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
+    fRectUniform = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
                                        kVec4f_GrSLType,
                                        "rect",
                                        &rectName);
     const char *intervalName;
     // The interval uniform's refers to the total length of the interval (on + off)
-    fIntervalUniform = builder->addUniform(GrGLShaderBuilder::kFragment_Visibility,
-                                       kFloat_GrSLType,
-                                       "interval",
-                                       &intervalName);
+    fIntervalUniform = args.fPB->addUniform(GrGLProgramBuilder::kFragment_Visibility,
+                                            kFloat_GrSLType,
+                                            "interval",
+                                            &intervalName);
 
-    const char *vsCoordName, *fsCoordName;
-    builder->addVarying(kVec2f_GrSLType, "Coord", &vsCoordName, &fsCoordName);
-    const SkString* attr0Name =
-        builder->getEffectAttributeName(drawEffect.getVertexAttribIndices()[0]);
-    builder->vsCodeAppendf("\t%s = %s;\n", vsCoordName, attr0Name->c_str());
+    GrGLVertToFrag v(kVec2f_GrSLType);
+    args.fPB->addVarying("Coord", &v);
+    GrGLVertexBuilder* vsBuilder = args.fPB->getVertexShaderBuilder();
+    vsBuilder->codeAppendf("\t%s = %s;\n", v.vsOut(), de.inCoord().c_str());
 
     // transforms all points so that we can compare them to our test rect
-    builder->fsCodeAppendf("\t\tfloat xShifted = %s.x - floor(%s.x / %s) * %s;\n",
-                           fsCoordName, fsCoordName, intervalName, intervalName);
-    builder->fsCodeAppendf("\t\tvec2 fragPosShifted = vec2(xShifted, %s.y);\n", fsCoordName);
-    if (GrEffectEdgeTypeIsAA(de.getEdgeType())) {
+    GrGLGPFragmentBuilder* fsBuilder = args.fPB->getFragmentShaderBuilder();
+    fsBuilder->codeAppendf("\t\tfloat xShifted = %s.x - floor(%s.x / %s) * %s;\n",
+                           v.fsIn(), v.fsIn(), intervalName, intervalName);
+    fsBuilder->codeAppendf("\t\tvec2 fragPosShifted = vec2(xShifted, %s.y);\n", v.fsIn());
+    if (GrProcessorEdgeTypeIsAA(de.getEdgeType())) {
         // The amount of coverage removed in x and y by the edges is computed as a pair of negative
         // numbers, xSub and ySub.
-        builder->fsCodeAppend("\t\tfloat xSub, ySub;\n");
-        builder->fsCodeAppendf("\t\txSub = min(fragPosShifted.x - %s.x, 0.0);\n", rectName);
-        builder->fsCodeAppendf("\t\txSub += min(%s.z - fragPosShifted.x, 0.0);\n", rectName);
-        builder->fsCodeAppendf("\t\tySub = min(fragPosShifted.y - %s.y, 0.0);\n", rectName);
-        builder->fsCodeAppendf("\t\tySub += min(%s.w - fragPosShifted.y, 0.0);\n", rectName);
+        fsBuilder->codeAppend("\t\tfloat xSub, ySub;\n");
+        fsBuilder->codeAppendf("\t\txSub = min(fragPosShifted.x - %s.x, 0.0);\n", rectName);
+        fsBuilder->codeAppendf("\t\txSub += min(%s.z - fragPosShifted.x, 0.0);\n", rectName);
+        fsBuilder->codeAppendf("\t\tySub = min(fragPosShifted.y - %s.y, 0.0);\n", rectName);
+        fsBuilder->codeAppendf("\t\tySub += min(%s.w - fragPosShifted.y, 0.0);\n", rectName);
         // Now compute coverage in x and y and multiply them to get the fraction of the pixel
         // covered.
-        builder->fsCodeAppendf("\t\tfloat alpha = (1.0 + max(xSub, -1.0)) * (1.0 + max(ySub, -1.0));\n");
+        fsBuilder->codeAppendf("\t\tfloat alpha = (1.0 + max(xSub, -1.0)) * (1.0 + max(ySub, -1.0));\n");
     } else {
         // Assuming the bounding geometry is tight so no need to check y values
-        builder->fsCodeAppendf("\t\tfloat alpha = 1.0;\n");
-        builder->fsCodeAppendf("\t\talpha *= (fragPosShifted.x - %s.x) > -0.5 ? 1.0 : 0.0;\n", rectName);
-        builder->fsCodeAppendf("\t\talpha *= (%s.z - fragPosShifted.x) >= -0.5 ? 1.0 : 0.0;\n", rectName);
+        fsBuilder->codeAppendf("\t\tfloat alpha = 1.0;\n");
+        fsBuilder->codeAppendf("\t\talpha *= (fragPosShifted.x - %s.x) > -0.5 ? 1.0 : 0.0;\n", rectName);
+        fsBuilder->codeAppendf("\t\talpha *= (%s.z - fragPosShifted.x) >= -0.5 ? 1.0 : 0.0;\n", rectName);
     }
-    builder->fsCodeAppendf("\t\t%s = %s;\n", outputColor,
-                           (GrGLSLExpr4(inputColor) * GrGLSLExpr1("alpha")).c_str());
+    fsBuilder->codeAppendf("\t\t%s = %s;\n", args.fOutput,
+                           (GrGLSLExpr4(args.fInput) * GrGLSLExpr1("alpha")).c_str());
 }
 
-void GLDashingLineEffect::setData(const GrGLUniformManager& uman, const GrDrawEffect& drawEffect) {
-    const DashingLineEffect& de = drawEffect.castEffect<DashingLineEffect>();
+void GLDashingLineEffect::setData(const GrGLProgramDataManager& pdman,
+                                  const GrProcessor& processor) {
+    const DashingLineEffect& de = processor.cast<DashingLineEffect>();
     const SkRect& rect = de.getRect();
     SkScalar intervalLength = de.getIntervalLength();
     if (rect != fPrevRect || intervalLength != fPrevIntervalLength) {
-        uman.set4f(fRectUniform, rect.fLeft + 0.5f, rect.fTop + 0.5f,
-                   rect.fRight - 0.5f, rect.fBottom - 0.5f);
-        uman.set1f(fIntervalUniform, intervalLength);
+        pdman.set4f(fRectUniform, rect.fLeft + 0.5f, rect.fTop + 0.5f,
+                    rect.fRight - 0.5f, rect.fBottom - 0.5f);
+        pdman.set1f(fIntervalUniform, intervalLength);
         fPrevRect = rect;
         fPrevIntervalLength = intervalLength;
     }
 }
 
-GrGLEffect::EffectKey GLDashingLineEffect::GenKey(const GrDrawEffect& drawEffect,
-                                                const GrGLCaps&) {
-    const DashingLineEffect& de = drawEffect.castEffect<DashingLineEffect>();
-    return de.getEdgeType();
+void GLDashingLineEffect::GenKey(const GrProcessor& processor, const GrGLCaps&,
+                                 GrProcessorKeyBuilder* b) {
+    const DashingLineEffect& de = processor.cast<DashingLineEffect>();
+    b->add32(de.getEdgeType());
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-GrEffectRef* DashingLineEffect::Create(GrEffectEdgeType edgeType, const DashInfo& info,
-                                       SkScalar strokeWidth) {
+GrGeometryProcessor* DashingLineEffect::Create(GrPrimitiveEdgeType edgeType,
+                                               const DashInfo& info,
+                                               SkScalar strokeWidth) {
     if (info.fCount != 2) {
         return NULL;
     }
 
-    return CreateEffectRef(AutoEffectUnref(SkNEW_ARGS(DashingLineEffect,
-                                                      (edgeType, info, strokeWidth))));
+    return SkNEW_ARGS(DashingLineEffect, (edgeType, info, strokeWidth));
 }
 
 DashingLineEffect::~DashingLineEffect() {}
 
-void DashingLineEffect::getConstantColorComponents(GrColor* color, uint32_t* validFlags) const {
-    *validFlags = 0;
+void DashingLineEffect::onComputeInvariantOutput(InvariantOutput* inout) const {
+    inout->mulByUnknownAlpha();
 }
 
-const GrBackendEffectFactory& DashingLineEffect::getFactory() const {
-    return GrTBackendEffectFactory<DashingLineEffect>::getInstance();
+const GrBackendGeometryProcessorFactory& DashingLineEffect::getFactory() const {
+    return GrTBackendGeometryProcessorFactory<DashingLineEffect>::getInstance();
 }
 
-DashingLineEffect::DashingLineEffect(GrEffectEdgeType edgeType, const DashInfo& info,
+DashingLineEffect::DashingLineEffect(GrPrimitiveEdgeType edgeType, const DashInfo& info,
                                      SkScalar strokeWidth)
-    : fEdgeType(edgeType) {
+    : fEdgeType(edgeType)
+    , fInCoord(this->addVertexAttrib(GrShaderVar("inCoord",
+                                                 kVec2f_GrSLType,
+                                                 GrShaderVar::kAttribute_TypeModifier))) {
     SkScalar onLen = info.fIntervals[0];
     SkScalar offLen = info.fIntervals[1];
     SkScalar halfOffLen = SkScalarHalf(offLen);
     SkScalar halfStroke = SkScalarHalf(strokeWidth);
     fIntervalLength = onLen + offLen;
     fRect.set(halfOffLen, -halfStroke, halfOffLen + onLen, halfStroke);
-
-    this->addVertexAttrib(kVec2f_GrSLType);
 }
 
-bool DashingLineEffect::onIsEqual(const GrEffect& other) const {
-    const DashingLineEffect& de = CastEffect<DashingLineEffect>(other);
+bool DashingLineEffect::onIsEqual(const GrGeometryProcessor& other) const {
+    const DashingLineEffect& de = other.cast<DashingLineEffect>();
     return (fEdgeType == de.fEdgeType &&
             fRect == de.fRect &&
             fIntervalLength == de.fIntervalLength);
 }
 
-GR_DEFINE_EFFECT_TEST(DashingLineEffect);
+GR_DEFINE_GEOMETRY_PROCESSOR_TEST(DashingLineEffect);
 
-GrEffectRef* DashingLineEffect::TestCreate(SkRandom* random,
-                                         GrContext*,
-                                         const GrDrawTargetCaps& caps,
-                                         GrTexture*[]) {
-    GrEffectRef* effect;
-    GrEffectEdgeType edgeType = static_cast<GrEffectEdgeType>(random->nextULessThan(
-            kGrEffectEdgeTypeCnt));
+GrGeometryProcessor* DashingLineEffect::TestCreate(SkRandom* random,
+                                                   GrContext*,
+                                                   const GrDrawTargetCaps& caps,
+                                                   GrTexture*[]) {
+    GrPrimitiveEdgeType edgeType = static_cast<GrPrimitiveEdgeType>(random->nextULessThan(
+            kGrProcessorEdgeTypeCnt));
     SkScalar strokeWidth = random->nextRangeScalar(0, 100.f);
     DashInfo info;
     info.fCount = 2;
@@ -616,13 +829,22 @@ GrEffectRef* DashingLineEffect::TestCreate(SkRandom* random,
     info.fIntervals[1] = random->nextRangeScalar(0, 10.f);
     info.fPhase = random->nextRangeScalar(0, info.fIntervals[0] + info.fIntervals[1]);
 
-    effect = DashingLineEffect::Create(edgeType, info, strokeWidth);
-    return effect;
+    return DashingLineEffect::Create(edgeType, info, strokeWidth);
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-GrEffectRef* GrDashingEffect::Create(GrEffectEdgeType edgeType, const SkPathEffect::DashInfo& info,
-                                     SkScalar strokeWidth) {
-    return DashingLineEffect::Create(edgeType, info, strokeWidth);
+GrGeometryProcessor* GrDashingEffect::Create(GrPrimitiveEdgeType edgeType,
+                                             const SkPathEffect::DashInfo& info,
+                                             SkScalar strokeWidth,
+                                             GrDashingEffect::DashCap cap) {
+    switch (cap) {
+        case GrDashingEffect::kRound_DashCap:
+            return DashingCircleEffect::Create(edgeType, info, SkScalarHalf(strokeWidth));
+        case GrDashingEffect::kNonRound_DashCap:
+            return DashingLineEffect::Create(edgeType, info, strokeWidth);
+        default:
+            SkFAIL("Unexpected dashed cap.");
+    }
+    return NULL;
 }

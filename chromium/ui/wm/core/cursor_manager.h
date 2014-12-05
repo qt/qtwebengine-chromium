@@ -40,36 +40,33 @@ class WM_EXPORT CursorManager : public aura::client::CursorClient,
                                 public NativeCursorManagerDelegate {
  public:
   explicit CursorManager(scoped_ptr<NativeCursorManager> delegate);
-  virtual ~CursorManager();
+  ~CursorManager() override;
 
   // Overridden from aura::client::CursorClient:
-  virtual void SetCursor(gfx::NativeCursor) OVERRIDE;
-  virtual gfx::NativeCursor GetCursor() const OVERRIDE;
-  virtual void ShowCursor() OVERRIDE;
-  virtual void HideCursor() OVERRIDE;
-  virtual bool IsCursorVisible() const OVERRIDE;
-  virtual void SetCursorSet(ui::CursorSetType cursor_set) OVERRIDE;
-  virtual ui::CursorSetType GetCursorSet() const OVERRIDE;
-  virtual void EnableMouseEvents() OVERRIDE;
-  virtual void DisableMouseEvents() OVERRIDE;
-  virtual bool IsMouseEventsEnabled() const OVERRIDE;
-  virtual void SetDisplay(const gfx::Display& display) OVERRIDE;
-  virtual void LockCursor() OVERRIDE;
-  virtual void UnlockCursor() OVERRIDE;
-  virtual bool IsCursorLocked() const OVERRIDE;
-  virtual void AddObserver(
-      aura::client::CursorClientObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(
-      aura::client::CursorClientObserver* observer) OVERRIDE;
-  virtual bool ShouldHideCursorOnKeyEvent(
-      const ui::KeyEvent& event) const OVERRIDE;
+  void SetCursor(gfx::NativeCursor) override;
+  gfx::NativeCursor GetCursor() const override;
+  void ShowCursor() override;
+  void HideCursor() override;
+  bool IsCursorVisible() const override;
+  void SetCursorSet(ui::CursorSetType cursor_set) override;
+  ui::CursorSetType GetCursorSet() const override;
+  void EnableMouseEvents() override;
+  void DisableMouseEvents() override;
+  bool IsMouseEventsEnabled() const override;
+  void SetDisplay(const gfx::Display& display) override;
+  void LockCursor() override;
+  void UnlockCursor() override;
+  bool IsCursorLocked() const override;
+  void AddObserver(aura::client::CursorClientObserver* observer) override;
+  void RemoveObserver(aura::client::CursorClientObserver* observer) override;
+  bool ShouldHideCursorOnKeyEvent(const ui::KeyEvent& event) const override;
 
  private:
   // Overridden from NativeCursorManagerDelegate:
-  virtual void CommitCursor(gfx::NativeCursor cursor) OVERRIDE;
-  virtual void CommitVisibility(bool visible) OVERRIDE;
-  virtual void CommitCursorSet(ui::CursorSetType cursor_set) OVERRIDE;
-  virtual void CommitMouseEventsEnabled(bool enabled) OVERRIDE;
+  void CommitCursor(gfx::NativeCursor cursor) override;
+  void CommitVisibility(bool visible) override;
+  void CommitCursorSet(ui::CursorSetType cursor_set) override;
+  void CommitMouseEventsEnabled(bool enabled) override;
 
   scoped_ptr<NativeCursorManager> delegate_;
 

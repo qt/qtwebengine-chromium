@@ -25,9 +25,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLMenuElement FINAL : public HTMLElement {
+class HTMLMenuElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLMenuElement);
 
@@ -35,6 +36,6 @@ private:
     explicit HTMLMenuElement(Document&);
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLMenuElement_h

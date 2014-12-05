@@ -95,10 +95,8 @@ protected:
 
     virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
         SkBitmap bm;
-        SkString resourcePath = GetResourcePath();
-        SkString filename = SkOSPath::SkPathJoin(resourcePath.c_str(), "mandrill_128.");
+        SkString filename = GetResourcePath("mandrill_128.");
         filename.append(this->fileExtension());
-
         SkAutoTUnref<SkData> fileData(SkData::NewFromFileName(filename.c_str()));
         if (NULL == fileData) {
             SkDebugf("Could not open the file. Did you forget to set the resourcePath?\n");
@@ -147,6 +145,20 @@ private:
     typedef ETC1BitmapGM INHERITED;
 };
 
+// This class specializes ETC1BitmapGM to load the mandrill_128.r11.ktx file.
+class ETC1Bitmap_R11_KTX_GM : public ETC1BitmapGM {
+public:
+    ETC1Bitmap_R11_KTX_GM() : ETC1BitmapGM() { }
+    virtual ~ETC1Bitmap_R11_KTX_GM() { }
+
+protected:
+
+    virtual SkString fileExtension() const SK_OVERRIDE { return SkString("r11.ktx"); }
+
+private:
+    typedef ETC1BitmapGM INHERITED;
+};
+
 #ifndef SK_IGNORE_ETC1_SUPPORT
 /**
  *  Test decoding an image from a PKM file and then
@@ -170,10 +182,8 @@ protected:
 
     virtual void onDraw(SkCanvas* canvas) SK_OVERRIDE {
         SkBitmap bm;
-        SkString resourcePath = GetResourcePath();
-        SkString filename = SkOSPath::SkPathJoin(resourcePath.c_str(), "mandrill_128.pkm");
-
-        SkAutoDataUnref fileData(SkData::NewFromFileName(filename.c_str()));
+        SkString pkmFilename = GetResourcePath("mandrill_128.pkm");
+        SkAutoDataUnref fileData(SkData::NewFromFileName(pkmFilename.c_str()));
         if (NULL == fileData) {
             SkDebugf("Could not open the file. Did you forget to set the resourcePath?\n");
             return;
@@ -215,6 +225,7 @@ private:
 
 DEF_GM( return SkNEW(skiagm::ETC1Bitmap_PKM_GM); )
 DEF_GM( return SkNEW(skiagm::ETC1Bitmap_KTX_GM); )
+DEF_GM( return SkNEW(skiagm::ETC1Bitmap_R11_KTX_GM); )
 
 #ifndef SK_IGNORE_ETC1_SUPPORT
 DEF_GM( return SkNEW(skiagm::ETC1Bitmap_NPOT_GM); )

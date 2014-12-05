@@ -7,6 +7,7 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -25,7 +26,7 @@ namespace jingle_glue {
 class PseudoTcpAdapter::Core : public cricket::IPseudoTcpNotify,
                                public base::RefCounted<Core> {
  public:
-  Core(net::Socket* socket);
+  explicit Core(net::Socket* socket);
 
   // Functions used to implement net::StreamSocket.
   int Read(net::IOBuffer* buffer, int buffer_size,
@@ -38,14 +39,15 @@ class PseudoTcpAdapter::Core : public cricket::IPseudoTcpNotify,
 
   // cricket::IPseudoTcpNotify interface.
   // These notifications are triggered from NotifyPacket.
-  virtual void OnTcpOpen(cricket::PseudoTcp* tcp) OVERRIDE;
-  virtual void OnTcpReadable(cricket::PseudoTcp* tcp) OVERRIDE;
-  virtual void OnTcpWriteable(cricket::PseudoTcp* tcp) OVERRIDE;
+  void OnTcpOpen(cricket::PseudoTcp* tcp) override;
+  void OnTcpReadable(cricket::PseudoTcp* tcp) override;
+  void OnTcpWriteable(cricket::PseudoTcp* tcp) override;
   // This is triggered by NotifyClock or NotifyPacket.
-  virtual void OnTcpClosed(cricket::PseudoTcp* tcp, uint32 error) OVERRIDE;
+  void OnTcpClosed(cricket::PseudoTcp* tcp, uint32 error) override;
   // This is triggered by NotifyClock, NotifyPacket, Recv and Send.
-  virtual WriteResult TcpWritePacket(cricket::PseudoTcp* tcp,
-                                     const char* buffer, size_t len) OVERRIDE;
+  WriteResult TcpWritePacket(cricket::PseudoTcp* tcp,
+                             const char* buffer,
+                             size_t len) override;
 
   void SetAckDelay(int delay_ms);
   void SetNoDelay(bool no_delay);
@@ -57,7 +59,7 @@ class PseudoTcpAdapter::Core : public cricket::IPseudoTcpNotify,
 
  private:
   friend class base::RefCounted<Core>;
-  virtual ~Core();
+  ~Core() override;
 
   // These are invoked by the underlying Socket, and may trigger callbacks.
   // They hold a reference to |this| while running, to protect from deletion.

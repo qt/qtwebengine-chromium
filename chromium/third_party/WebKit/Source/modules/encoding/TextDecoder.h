@@ -31,29 +31,31 @@
 #ifndef TextDecoder_h
 #define TextDecoder_h
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/encoding/TextDecodeOptions.h"
+#include "modules/encoding/TextDecoderOptions.h"
 #include "platform/heap/Handle.h"
-#include "wtf/ArrayBufferView.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/TextCodec.h"
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
+class DOMArrayBufferView;
 class ExceptionState;
 
-class TextDecoder FINAL : public GarbageCollectedFinalized<TextDecoder> {
+class TextDecoder final : public GarbageCollectedFinalized<TextDecoder>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static TextDecoder* create(const String& label, const Dictionary&, ExceptionState&);
+    static TextDecoder* create(const String& label, const TextDecoderOptions&, ExceptionState&);
     ~TextDecoder();
 
     // Implement the IDL
     String encoding() const;
     bool fatal() const { return m_fatal; }
     bool ignoreBOM() const { return m_ignoreBOM; }
-    String decode(ArrayBufferView*, const Dictionary&, ExceptionState&);
-    String decode(ExceptionState& exceptionState) { return decode(0, Dictionary(), exceptionState); }
+    String decode(DOMArrayBufferView*, const TextDecodeOptions&, ExceptionState&);
+    String decode(ExceptionState&);
 
     void trace(Visitor*) { }
 
@@ -67,6 +69,6 @@ private:
     bool m_bomSeen;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TextDecoder_h

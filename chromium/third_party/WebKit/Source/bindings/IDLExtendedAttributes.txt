@@ -36,7 +36,7 @@
 ActiveDOMObject
 CachedAttribute=*
 CallWith=ExecutionContext|ScriptState|ScriptArguments|ActiveWindow|FirstWindow|ThisValue
-CheckSecurity=Frame|Node
+CheckSecurity=Frame|Node|Window
 Clamp
 Conditional=*
 Constructor
@@ -60,15 +60,19 @@ GarbageCollected
 Global=|*
 Immutable
 ImplementedAs=*
+ImplementedInPrivateScript
 InitializedByEventConstructor
+Iterable
 LegacyTreatAsPartialInterface
 LogActivity=|GetterOnly|SetterOnly
 LogAllWorlds
-LogPreviousValue
 MeasureAs=*
 NamedConstructor=*
+NoImplHeader
 NoInterfaceObject
 NotEnumerable
+NotScriptWrappable
+OnlyExposedToPrivateScript
 OverrideBuiltins
 PartialInterfaceImplementedAs=*
 # Valid values for [PerContextEnabled] are Context Features, in
@@ -78,7 +82,6 @@ PerWorldBindings
 PrimaryGlobal=|*
 PutForwards=*
 RaisesException=|Getter|Setter|Constructor
-ReadOnly
 Reflect=|*
 ReflectEmpty=*
 ReflectInvalid=*
@@ -91,11 +94,10 @@ RuntimeEnabled=*
 SetWrapperReferenceFrom=*
 SetWrapperReferenceTo=*
 SetterCallWith=ExecutionContext|ScriptArguments|ActiveWindow|FirstWindow
-SpecialWrapFor=*
-TreatNullAs=NullString
+TreatNullAs=NullString|EmptyString
 TreatReturnedNullStringAs=Null|Undefined
 TreatUndefinedAs=NullString
-TypeChecking=Interface|Nullable|Unrestricted
+TypeChecking=Interface|Unrestricted
 URL
 Unforgeable
 WillBeGarbageCollected

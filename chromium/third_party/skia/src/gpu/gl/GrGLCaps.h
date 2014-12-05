@@ -11,8 +11,9 @@
 
 #include "GrDrawTargetCaps.h"
 #include "GrGLStencilBuffer.h"
+#include "SkChecksum.h"
+#include "SkTHashCache.h"
 #include "SkTArray.h"
-#include "SkTDArray.h"
 
 class GrGLContextInfo;
 
@@ -68,16 +69,6 @@ public:
         kLast_MSFBOType = kES_EXT_MsToTexture_MSFBOType
     };
 
-    enum FBFetchType {
-        kNone_FBFetchType,
-        /** GL_EXT_shader_framebuffer_fetch */
-        kEXT_FBFetchType,
-        /** GL_NV_shader_framebuffer_fetch */
-        kNV_FBFetchType,
-
-        kLast_FBFetchType = kNV_FBFetchType
-    };
-
     enum InvalidateFBType {
         kNone_InvalidateFBType,
         kDiscard_InvalidateFBType,       //<! glDiscardFramebuffer()
@@ -114,7 +105,7 @@ public:
      * Initializes the GrGLCaps to the set of features supported in the current
      * OpenGL context accessible via ctxInfo.
      */
-    bool init(const GrGLContextInfo& ctxInfo, const GrGLInterface* interface);
+    bool init(const GrGLContextInfo& ctxInfo, const GrGLInterface* glInterface);
 
     /**
      * Call to note that a color config has been verified as a valid color
@@ -174,7 +165,16 @@ public:
                kES_EXT_MsToTexture_MSFBOType == fMSFBOType;
     }
 
-    FBFetchType fbFetchType() const { return fFBFetchType; }
+    /**
+     * Some helper functions for encapsulating various extensions to read FB Buffer on openglES
+     *
+     * TODO(joshualitt) On desktop opengl 4.2+ we can achieve something similar to this effect
+     */
+    bool fbFetchSupport() const { return fFBFetchSupport; }
+
+    const char* fbFetchColorName() const { return fFBFetchColorName; }
+
+    const char* fbFetchExtensionString() const { return fFBFetchExtensionString; }
 
     InvalidateFBType invalidateFBType() const { return fInvalidateFBType; }
 
@@ -253,7 +253,8 @@ public:
     /// Does ReadPixels support the provided format/type combo?
     bool readPixelsSupported(const GrGLInterface* intf,
                              GrGLenum format,
-                             GrGLenum type) const;
+                             GrGLenum type,
+                             GrGLenum currFboFormat) const;
 
     bool isCoreProfile() const { return fIsCoreProfile; }
 
@@ -324,6 +325,10 @@ private:
     void initConfigRenderableTable(const GrGLContextInfo&);
     void initConfigTexturableTable(const GrGLContextInfo&, const GrGLInterface*);
 
+    bool doReadPixelsSupported(const GrGLInterface* intf,
+                                   GrGLenum format,
+                                   GrGLenum type) const;
+
     // tracks configs that have been verified to pass the FBO completeness when
     // used as a color attachment
     VerifiedColorConfigs fVerifiedColorConfigs;
@@ -340,7 +345,6 @@ private:
     int fMaxFixedFunctionTextureCoords;
 
     MSFBOType           fMSFBOType;
-    FBFetchType         fFBFetchType;
     InvalidateFBType    fInvalidateFBType;
     MapBufferType       fMapBufferType;
     LATCAlias           fLATCAlias;
@@ -363,6 +367,51 @@ private:
     bool fIsCoreProfile : 1;
     bool fFullClearIsFree : 1;
     bool fDropsTileOnZeroDivide : 1;
+    // TODO(joshualitt) encapsulate the FB Fetch logic in a feature object
+    bool fFBFetchSupport : 1;
+
+    const char* fFBFetchColorName;
+    const char* fFBFetchExtensionString;
+
+    class ReadPixelsSupportedFormats {
+    public:
+        struct Key {
+            GrGLenum fFormat;
+            GrGLenum fType;
+            GrGLenum fFboFormat;
+
+            bool operator==(const Key& rhs) const {
+                return fFormat == rhs.fFormat
+                        && fType == rhs.fType
+                        && fFboFormat == rhs.fFboFormat;
+            }
+
+            uint32_t getHash() const {
+                return SkChecksum::Murmur3(reinterpret_cast<const uint32_t*>(this), sizeof(*this));
+            }
+        };
+
+        ReadPixelsSupportedFormats(Key key, bool value) : fKey(key), fValue(value) {
+        }
+
+        static const Key& GetKey(const ReadPixelsSupportedFormats& element) {
+            return element.fKey;
+        }
+
+        static uint32_t Hash(const Key& key) {
+            return key.getHash();
+        }
+
+        bool value() const {
+            return fValue;
+        }
+    private:
+        Key fKey;
+        bool fValue;
+    };
+
+    mutable SkTHashCache<ReadPixelsSupportedFormats,
+                         ReadPixelsSupportedFormats::Key> fReadPixelsSupportedCache;
 
     typedef GrDrawTargetCaps INHERITED;
 };

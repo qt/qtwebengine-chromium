@@ -25,6 +25,19 @@ namespace printing {
 // printer and manage the document and page breaks.
 class PRINTING_EXPORT PrintingContext {
  public:
+  // Printing context delegate.
+  class Delegate {
+   public:
+    Delegate() {};
+    virtual ~Delegate() {};
+
+    // Returns parent view to use for modal dialogs.
+    virtual gfx::NativeView GetParentView() = 0;
+
+    // Returns application locale.
+    virtual std::string GetAppLocale() = 0;
+  };
+
   // Tri-state result for user behavior-dependent functions.
   enum Result {
     OK,
@@ -42,8 +55,7 @@ class PRINTING_EXPORT PrintingContext {
   // context with the select device settings. The result of the call is returned
   // in the callback. This is necessary for Linux, which only has an
   // asynchronous printing API.
-  virtual void AskUserForSettings(gfx::NativeView parent_view,
-                                  int max_pages,
+  virtual void AskUserForSettings(int max_pages,
                                   bool has_selection,
                                   const PrintSettingsCallback& callback) = 0;
 
@@ -60,7 +72,8 @@ class PRINTING_EXPORT PrintingContext {
   // Updates printer settings.
   // |external_preview| is true if pdf is going to be opened in external
   // preview. Used by MacOS only now to open Preview.app.
-  virtual Result UpdatePrinterSettings(bool external_preview) = 0;
+  virtual Result UpdatePrinterSettings(bool external_preview,
+                                       bool show_system_dialog) = 0;
 
   // Updates Print Settings. |job_settings| contains all print job
   // settings information. |ranges| has the new page range settings.
@@ -98,9 +111,8 @@ class PRINTING_EXPORT PrintingContext {
   virtual gfx::NativeDrawingContext context() const = 0;
 
   // Creates an instance of this object. Implementers of this interface should
-  // implement this method to create an object of their implementation. The
-  // caller owns the returned object.
-  static PrintingContext* Create(const std::string& app_locale);
+  // implement this method to create an object of their implementation.
+  static scoped_ptr<PrintingContext> Create(Delegate* delegate);
 
   void set_margin_type(MarginType type);
 
@@ -109,7 +121,7 @@ class PRINTING_EXPORT PrintingContext {
   }
 
  protected:
-  explicit PrintingContext(const std::string& app_locale);
+  explicit PrintingContext(Delegate* delegate);
 
   // Reinitializes the settings for object reuse.
   void ResetSettings();
@@ -120,6 +132,9 @@ class PRINTING_EXPORT PrintingContext {
   // Complete print context settings.
   PrintSettings settings_;
 
+  // Printing context delegate.
+  Delegate* delegate_;
+
   // The dialog box has been dismissed.
   volatile bool dialog_box_dismissed_;
 
@@ -128,9 +143,6 @@ class PRINTING_EXPORT PrintingContext {
 
   // Did the user cancel the print job.
   volatile bool abort_printing_;
-
-  // The application locale.
-  std::string app_locale_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PrintingContext);

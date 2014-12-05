@@ -10,7 +10,6 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/view_messages.h"
-#include "content/renderer/pepper/common.h"
 #include "content/renderer/render_thread_impl.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_instance.h"
@@ -259,8 +258,8 @@ bool ImageDataSimpleBackend::Init(PPB_ImageData_Impl* impl,
                                   int width,
                                   int height,
                                   bool init_to_zero) {
-  skia_bitmap_.setConfig(
-      SkBitmap::kARGB_8888_Config, impl->width(), impl->height());
+  skia_bitmap_.setInfo(
+      SkImageInfo::MakeN32Premul(impl->width(), impl->height()));
   shared_memory_.reset(
       RenderThread::Get()
           ->HostAllocateSharedMemoryBuffer(skia_bitmap_.getSize())

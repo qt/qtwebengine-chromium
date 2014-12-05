@@ -31,7 +31,7 @@ class TestLayer : public Layer {
   int count_representing_contributing_surface_;
   int count_representing_itself_;
 
-  virtual bool DrawsContent() const OVERRIDE { return draws_content_; }
+  bool DrawsContent() const override { return draws_content_; }
   void set_draws_content(bool draws_content) { draws_content_ = draws_content; }
 
  private:
@@ -39,7 +39,7 @@ class TestLayer : public Layer {
     SetBounds(gfx::Size(100, 100));
     SetPosition(gfx::Point());
   }
-  virtual ~TestLayer() {}
+  ~TestLayer() override {}
 
   bool draws_content_;
 };
@@ -111,7 +111,8 @@ TEST(LayerIteratorTest, SimpleTree) {
   root_layer->AddChild(third);
   root_layer->AddChild(fourth);
 
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create(&client);
   host->SetRootLayer(root_layer);
 
   RenderSurfaceLayerList render_surface_layer_list;
@@ -147,7 +148,8 @@ TEST(LayerIteratorTest, ComplexTree) {
   root22->AddChild(root221);
   root23->AddChild(root231);
 
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create(&client);
   host->SetRootLayer(root_layer);
 
   RenderSurfaceLayerList render_surface_layer_list;
@@ -192,7 +194,8 @@ TEST(LayerIteratorTest, ComplexTreeMultiSurface) {
   root23->SetOpacity(0.5f);
   root23->AddChild(root231);
 
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create(&client);
   host->SetRootLayer(root_layer);
 
   RenderSurfaceLayerList render_surface_layer_list;

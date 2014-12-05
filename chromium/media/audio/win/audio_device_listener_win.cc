@@ -125,9 +125,6 @@ STDMETHODIMP AudioDeviceListenerWin::OnDeviceRemoved(LPCWSTR device_id) {
 
 STDMETHODIMP AudioDeviceListenerWin::OnDeviceStateChanged(LPCWSTR device_id,
                                                           DWORD new_state) {
-  if (new_state != DEVICE_STATE_ACTIVE && new_state != DEVICE_STATE_NOTPRESENT)
-    return S_OK;
-
   base::SystemMonitor* monitor = base::SystemMonitor::Get();
   if (monitor)
     monitor->ProcessDevicesChanged(base::SystemMonitor::DEVTYPE_AUDIO_CAPTURE);
@@ -146,12 +143,12 @@ STDMETHODIMP AudioDeviceListenerWin::OnDefaultDeviceChanged(
   // Grab a pointer to the appropriate ID member.
   // Note that there are three "?:"'s here to select the right ID.
   std::string* current_device_id =
-      role == eRender ? (
-          flow == eConsole ?
+      flow == eRender ? (
+          role == eConsole ?
               &default_render_device_id_ :
               &default_communications_render_device_id_
       ) : (
-          flow == eConsole ?
+          role == eConsole ?
               &default_capture_device_id_ :
               &default_communications_capture_device_id_
       );

@@ -23,17 +23,17 @@
 #include "config.h"
 #include "core/svg/SVGStyleElement.h"
 
+#include "core/MediaTypeNames.h"
 #include "core/css/CSSStyleSheet.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGStyleElement::SVGStyleElement(Document& document, bool createdByParser)
     : SVGElement(SVGNames::styleTag, document)
     , StyleElement(&document, createdByParser)
     , m_svgLoadEventTimer(this, &SVGElement::svgLoadEventTimerFired)
 {
-    ScriptWrappable::init(this);
 }
 
 SVGStyleElement::~SVGStyleElement()
@@ -76,9 +76,8 @@ void SVGStyleElement::setType(const AtomicString& type)
 
 const AtomicString& SVGStyleElement::media() const
 {
-    DEFINE_STATIC_LOCAL(const AtomicString, defaultValue, ("all", AtomicString::ConstructFromLiteral));
     const AtomicString& n = fastGetAttribute(SVGNames::mediaAttr);
-    return n.isNull() ? defaultValue : n;
+    return n.isNull() ? MediaTypeNames::all : n;
 }
 
 void SVGStyleElement::setMedia(const AtomicString& media)
@@ -96,28 +95,16 @@ void SVGStyleElement::setTitle(const AtomicString& title)
     setAttribute(SVGNames::titleAttr, title);
 }
 
-bool SVGStyleElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::titleAttr);
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGStyleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
     if (name == SVGNames::titleAttr) {
         if (m_sheet)
             m_sheet->setTitle(value);
+
         return;
     }
 
-    ASSERT_NOT_REACHED();
+    SVGElement::parseAttribute(name, value);
 }
 
 void SVGStyleElement::finishParsingChildren()
@@ -126,9 +113,10 @@ void SVGStyleElement::finishParsingChildren()
     SVGElement::finishParsingChildren();
 }
 
-Node::InsertionNotificationRequest SVGStyleElement::insertedInto(ContainerNode* rootParent)
+Node::InsertionNotificationRequest SVGStyleElement::insertedInto(ContainerNode* insertionPoint)
 {
-    SVGElement::insertedInto(rootParent);
+    SVGElement::insertedInto(insertionPoint);
+    StyleElement::insertedInto(this, insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
@@ -137,16 +125,15 @@ void SVGStyleElement::didNotifySubtreeInsertionsToDocument()
     StyleElement::processStyleSheet(document(), this);
 }
 
-void SVGStyleElement::removedFrom(ContainerNode* rootParent)
+void SVGStyleElement::removedFrom(ContainerNode* insertionPoint)
 {
-    SVGElement::removedFrom(rootParent);
-    if (rootParent->inDocument())
-        StyleElement::removedFromDocument(document(), this);
+    SVGElement::removedFrom(insertionPoint);
+    StyleElement::removedFrom(this, insertionPoint);
 }
 
-void SVGStyleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGStyleElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
     StyleElement::childrenChanged(this);
 }
 

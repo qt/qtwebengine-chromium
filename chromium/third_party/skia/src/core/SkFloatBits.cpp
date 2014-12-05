@@ -85,7 +85,16 @@ int32_t SkFloatBits_toIntFloor(int32_t packed) {
         value = SkApplySign(value, SkExtractSign(packed));
         exp = -exp;
         if (exp > 25) {   // underflow
+#ifdef SK_DISCARD_DENORMALIZED_FOR_SPEED
+        // The iOS ARM processor discards small denormalized numbers to go faster.
+        // The comparision below empirically causes the result to agree with the
+        // tests in MathTest test_float_floor
+            if (exp > 149) {
+                return 0;
+            }
+#else
             exp = 25;
+#endif
         }
         // int add = 0;
         return value >> exp;
@@ -145,7 +154,17 @@ int32_t SkFloatBits_toIntCeil(int32_t packed) {
         value = SkApplySign(value, SkExtractSign(packed));
         exp = -exp;
         if (exp > 25) {   // underflow
+#ifdef SK_DISCARD_DENORMALIZED_FOR_SPEED
+        // The iOS ARM processor discards small denormalized numbers to go faster.
+        // The comparision below empirically causes the result to agree with the
+        // tests in MathTest test_float_ceil
+            if (exp > 149) {
+                return 0;
+            }
+            return 0 < value;
+#else
             exp = 25;
+#endif
         }
         int add = (1 << exp) - 1;
         return (value + add) >> exp;
@@ -179,26 +198,6 @@ float SkIntToFloatCast(int32_t value) {
     // now value is left-aligned to 24 bits
     SkASSERT((value >> 23) == 1);
     SkASSERT(shift >= 0 && shift <= 255);
-
-    SkFloatIntUnion data;
-    data.fSignBitInt = (sign << 31) | (shift << 23) | (value & ~MATISSA_MAGIC_BIG);
-    return data.fFloat;
-}
-
-float SkIntToFloatCast_NoOverflowCheck(int32_t value) {
-    if (0 == value) {
-        return 0;
-    }
-
-    int shift = EXP_BIAS;
-
-    // record the sign and make value positive
-    int sign = SkExtractSign(value);
-    value = SkApplySign(value, sign);
-
-    int zeros = SkCLZ(value << 8);
-    value <<= zeros;
-    shift -= zeros;
 
     SkFloatIntUnion data;
     data.fSignBitInt = (sign << 31) | (shift << 23) | (value & ~MATISSA_MAGIC_BIG);

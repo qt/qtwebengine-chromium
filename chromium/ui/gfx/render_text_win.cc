@@ -16,7 +16,8 @@
 #include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font_fallback_win.h"
-#include "ui/gfx/font_smoothing_win.h"
+#include "ui/gfx/font_render_params.h"
+#include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/platform_font_win.h"
 #include "ui/gfx/utf16_indexing.h"
 
@@ -36,65 +37,6 @@ const size_t kMaxRuns = 10000;
 
 // The maximum number of glyphs per run; ScriptShape fails on larger values.
 const size_t kMaxGlyphs = 65535;
-
-// Callback to |EnumEnhMetaFile()| to intercept font creation.
-int CALLBACK MetaFileEnumProc(HDC hdc,
-                              HANDLETABLE* table,
-                              CONST ENHMETARECORD* record,
-                              int table_entries,
-                              LPARAM log_font) {
-  if (record->iType == EMR_EXTCREATEFONTINDIRECTW) {
-    const EMREXTCREATEFONTINDIRECTW* create_font_record =
-        reinterpret_cast<const EMREXTCREATEFONTINDIRECTW*>(record);
-    *reinterpret_cast<LOGFONT*>(log_font) = create_font_record->elfw.elfLogFont;
-  }
-  return 1;
-}
-
-// Finds a fallback font to use to render the specified |text| with respect to
-// an initial |font|. Returns the resulting font via out param |result|. Returns
-// |true| if a fallback font was found.
-// Adapted from WebKit's |FontCache::GetFontDataForCharacters()|.
-// TODO(asvitkine): This should be moved to font_fallback_win.cc.
-bool ChooseFallbackFont(HDC hdc,
-                        const Font& font,
-                        const wchar_t* text,
-                        int text_length,
-                        Font* result) {
-  // Use a meta file to intercept the fallback font chosen by Uniscribe.
-  HDC meta_file_dc = CreateEnhMetaFile(hdc, NULL, NULL, NULL);
-  if (!meta_file_dc)
-    return false;
-
-  SelectObject(meta_file_dc, font.GetNativeFont());
-
-  SCRIPT_STRING_ANALYSIS script_analysis;
-  HRESULT hresult =
-      ScriptStringAnalyse(meta_file_dc, text, text_length, 0, -1,
-                          SSA_METAFILE | SSA_FALLBACK | SSA_GLYPHS | SSA_LINK,
-                          0, NULL, NULL, NULL, NULL, NULL, &script_analysis);
-
-  if (SUCCEEDED(hresult)) {
-    hresult = ScriptStringOut(script_analysis, 0, 0, 0, NULL, 0, 0, FALSE);
-    ScriptStringFree(&script_analysis);
-  }
-
-  bool found_fallback = false;
-  HENHMETAFILE meta_file = CloseEnhMetaFile(meta_file_dc);
-  if (SUCCEEDED(hresult)) {
-    LOGFONT log_font;
-    log_font.lfFaceName[0] = 0;
-    EnumEnhMetaFile(0, meta_file, MetaFileEnumProc, &log_font, NULL);
-    if (log_font.lfFaceName[0]) {
-      *result = Font(base::UTF16ToUTF8(log_font.lfFaceName),
-                     font.GetFontSize());
-      found_fallback = true;
-    }
-  }
-  DeleteEnhMetaFile(meta_file);
-
-  return found_fallback;
-}
 
 // Changes |font| to have the specified |font_size| (or |font_height| on Windows
 // XP) and |font_style| if it is not the case already. Only considers bold and
@@ -448,8 +390,9 @@ class LineBreaker {
       line->baseline = line_ascent_;
       line->size.set_height(line_ascent_ + line_descent_);
       line->preceding_heights = total_size_.height();
-      total_size_.set_height(total_size_.height() + line->size.height());
-      total_size_.set_width(std::max(total_size_.width(), line->size.width()));
+      const Size line_size(ToCeiledSize(line->size));
+      total_size_.set_height(total_size_.height() + line_size.height());
+      total_size_.set_width(std::max(total_size_.width(), line_size.width()));
     }
     line_x_ = 0;
     line_ascent_ = 0;
@@ -809,13 +752,9 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
   ApplyFadeEffects(&renderer);
   ApplyTextShadows(&renderer);
 
-  bool smoothing_enabled;
-  bool cleartype_enabled;
-  GetCachedFontSmoothingSettings(&smoothing_enabled, &cleartype_enabled);
-  // Note that |cleartype_enabled| corresponds to Skia's |enable_lcd_text|.
-  renderer.SetFontSmoothingSettings(
-      smoothing_enabled, cleartype_enabled && !background_is_transparent(),
-      smoothing_enabled /* subpixel_positioning */);
+  renderer.SetFontRenderParams(
+      font_list().GetPrimaryFont().GetFontRenderParams(),
+      background_is_transparent());
 
   ApplyCompositionAndSelectionStyles();
 
@@ -825,7 +764,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
 
     // Skip painting empty lines or lines outside the display rect area.
     if (!display_rect().Intersects(Rect(PointAtOffsetFromOrigin(line_offset),
-                                        line.size)))
+                                        ToCeiledSize(line.size))))
       continue;
 
     const Vector2d text_offset = line_offset + Vector2d(0, line.baseline);
@@ -863,7 +802,7 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
       pos.back().set(SkIntToScalar(text_offset.x() + segment_x),
                      SkIntToScalar(text_offset.y()));
 
-      renderer.SetTextSize(run->font.GetFontSize());
+      renderer.SetTextSize(SkIntToScalar(run->font.GetFontSize()));
       renderer.SetFontFamilyWithStyle(run->font.GetFontName(), run->font_style);
 
       for (BreakList<SkColor>::const_iterator it =
@@ -889,10 +828,10 @@ void RenderTextWin::DrawVisualText(Canvas* canvas) {
         renderer.SetForegroundColor(it->second);
         renderer.DrawPosText(&start_pos, &run->glyphs[colored_glyphs.start()],
                              colored_glyphs.length());
-        renderer.DrawDecorations(start_pos.x(), text_offset.y(),
-                                 SkScalarCeilToInt(end_pos.x() - start_pos.x()),
-                                 run->underline, run->strike,
-                                 run->diagonal_strike);
+        int start_x = SkScalarRoundToInt(start_pos.x());
+        renderer.DrawDecorations(
+            start_x, text_offset.y(), SkScalarRoundToInt(end_pos.x()) - start_x,
+            run->underline, run->strike, run->diagonal_strike);
       }
 
       preceding_segment_widths += segment_width;
@@ -1060,68 +999,89 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   const size_t run_length = run->range.length();
   const wchar_t* run_text = &(GetLayoutText()[run->range.start()]);
   Font original_font = run->font;
-  LinkedFontsIterator fonts(original_font);
-  bool tried_cached_font = false;
-  bool tried_fallback = false;
+
+  run->logical_clusters.reset(new WORD[run_length]);
+
+  // Try shaping with |original_font|.
+  Font current_font = original_font;
+  int missing_count = CountCharsWithMissingGlyphs(run,
+      ShapeTextRunWithFont(run, current_font));
+  if (missing_count == 0)
+    return;
+
   // Keep track of the font that is able to display the greatest number of
   // characters for which ScriptShape() returned S_OK. This font will be used
   // in the case where no font is able to display the entire run.
-  int best_partial_font_missing_char_count = INT_MAX;
-  Font best_partial_font = original_font;
-  Font current_font;
+  int best_partial_font_missing_char_count = missing_count;
+  Font best_partial_font = current_font;
 
-  run->logical_clusters.reset(new WORD[run_length]);
-  while (fonts.NextFont(&current_font)) {
-    HRESULT hr = ShapeTextRunWithFont(run, current_font);
-
-    bool glyphs_missing = false;
-    if (hr == USP_E_SCRIPT_NOT_IN_FONT) {
-      glyphs_missing = true;
-    } else if (hr == S_OK) {
-      // If |hr| is S_OK, there could still be missing glyphs in the output.
-      // http://msdn.microsoft.com/en-us/library/windows/desktop/dd368564.aspx
-      const int missing_count = CountCharsWithMissingGlyphs(run);
-      // Track the font that produced the least missing glyphs.
-      if (missing_count < best_partial_font_missing_char_count) {
-        best_partial_font_missing_char_count = missing_count;
-        best_partial_font = run->font;
-      }
-      glyphs_missing = (missing_count != 0);
-    } else {
-      NOTREACHED() << hr;
+  // Try to shape with the cached font from previous runs, if any.
+  std::map<std::string, Font>::const_iterator it =
+      successful_substitute_fonts_.find(original_font.GetFontName());
+  if (it != successful_substitute_fonts_.end()) {
+    current_font = it->second;
+    missing_count = CountCharsWithMissingGlyphs(run,
+        ShapeTextRunWithFont(run, current_font));
+    if (missing_count == 0)
+      return;
+    if (missing_count < best_partial_font_missing_char_count) {
+      best_partial_font_missing_char_count = missing_count;
+      best_partial_font = current_font;
     }
+  }
 
-    // Use the font if it had glyphs for all characters.
-    if (!glyphs_missing) {
-      // Save the successful fallback font that was chosen.
-      if (tried_fallback)
-        successful_substitute_fonts_[original_font.GetFontName()] = run->font;
+  // Try finding a fallback font using a meta file.
+  // TODO(msw|asvitkine): Support RenderText's font_list()?
+  Font uniscribe_font;
+  bool got_uniscribe_font = false;
+  if (GetUniscribeFallbackFont(original_font, run_text, run_length,
+                               &uniscribe_font)) {
+    got_uniscribe_font = true;
+    current_font = uniscribe_font;
+    missing_count = CountCharsWithMissingGlyphs(run,
+        ShapeTextRunWithFont(run, current_font));
+    if (missing_count == 0) {
+      successful_substitute_fonts_[original_font.GetFontName()] = current_font;
       return;
     }
-
-    // First, try the cached font from previous runs, if any.
-    if (!tried_cached_font) {
-      tried_cached_font = true;
-
-      std::map<std::string, Font>::const_iterator it =
-          successful_substitute_fonts_.find(original_font.GetFontName());
-      if (it != successful_substitute_fonts_.end()) {
-        fonts.SetNextFont(it->second);
-        continue;
-      }
+    if (missing_count < best_partial_font_missing_char_count) {
+      best_partial_font_missing_char_count = missing_count;
+      best_partial_font = current_font;
     }
+  }
 
-    // If there are missing glyphs, first try finding a fallback font using a
-    // meta file, if it hasn't yet been attempted for this run.
-    // TODO(msw|asvitkine): Support RenderText's font_list()?
-    if (!tried_fallback) {
-      tried_fallback = true;
+  // Try fonts in the fallback list except the first, which is |original_font|.
+  std::vector<std::string> fonts =
+      GetFallbackFontFamilies(original_font.GetFontName());
+  for (size_t i = 1; i < fonts.size(); ++i) {
+    current_font = Font(fonts[i], original_font.GetFontSize());
+    missing_count = CountCharsWithMissingGlyphs(run,
+        ShapeTextRunWithFont(run, current_font));
+    if (missing_count == 0) {
+      successful_substitute_fonts_[original_font.GetFontName()] = current_font;
+      return;
+    }
+    if (missing_count < best_partial_font_missing_char_count) {
+      best_partial_font_missing_char_count = missing_count;
+      best_partial_font = current_font;
+    }
+  }
 
-      Font fallback_font;
-      if (ChooseFallbackFont(cached_hdc_, run->font, run_text, run_length,
-                             &fallback_font)) {
-        fonts.SetNextFont(fallback_font);
-        continue;
+  // Try fonts in the fallback list of the Uniscribe font.
+  if (got_uniscribe_font) {
+    fonts = GetFallbackFontFamilies(uniscribe_font.GetFontName());
+    for (size_t i = 1; i < fonts.size(); ++i) {
+      current_font = Font(fonts[i], original_font.GetFontSize());
+      missing_count = CountCharsWithMissingGlyphs(run,
+          ShapeTextRunWithFont(run, current_font));
+      if (missing_count == 0) {
+        successful_substitute_fonts_[original_font.GetFontName()] =
+            current_font;
+        return;
+      }
+      if (missing_count < best_partial_font_missing_char_count) {
+        best_partial_font_missing_char_count = missing_count;
+        best_partial_font = current_font;
       }
     }
   }
@@ -1167,8 +1127,8 @@ void RenderTextWin::LayoutTextRun(internal::TextRun* run) {
   for (int i = 0; i < run->glyph_count; ++i)
     run->glyphs[i] = IsWhitespace(run_text[i]) ? space_glyph : missing_glyph;
   for (size_t i = 0; i < run_length; ++i) {
-    run->logical_clusters[i] = run->script_analysis.fRTL ?
-        run_length - 1 - i : i;
+    run->logical_clusters[i] =
+        static_cast<WORD>(run->script_analysis.fRTL ? run_length - 1 - i : i);
   }
 
   // TODO(msw): Don't use SCRIPT_UNDEFINED. Apparently Uniscribe can
@@ -1213,7 +1173,15 @@ HRESULT RenderTextWin::ShapeTextRunWithFont(internal::TextRun* run,
   return hr;
 }
 
-int RenderTextWin::CountCharsWithMissingGlyphs(internal::TextRun* run) const {
+int RenderTextWin::CountCharsWithMissingGlyphs(internal::TextRun* run,
+                                               HRESULT shaping_result) const {
+  if (shaping_result != S_OK) {
+    DCHECK_EQ(shaping_result, USP_E_SCRIPT_NOT_IN_FONT);
+    return INT_MAX;
+  }
+
+  // If |hr| is S_OK, there could still be missing glyphs in the output.
+  // http://msdn.microsoft.com/en-us/library/windows/desktop/dd368564.aspx
   int chars_not_missing_glyphs = 0;
   SCRIPT_FONTPROPERTIES properties;
   memset(&properties, 0, sizeof(properties));

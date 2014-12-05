@@ -12,9 +12,9 @@
 #include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "cc/base/region.h"
+#include "cc/base/simple_enclosed_region.h"
 #include "cc/base/tiling_data.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -63,14 +63,9 @@ class CC_EXPORT LayerTilingData {
       j_ = j;
     }
 
-    gfx::Rect opaque_rect() const { return opaque_rect_; }
-    void set_opaque_rect(const gfx::Rect& opaque_rect) {
-      opaque_rect_ = opaque_rect;
-    }
    private:
     int i_;
     int j_;
-    gfx::Rect opaque_rect_;
     DISALLOW_COPY_AND_ASSIGN(Tile);
   };
   typedef std::pair<int, int> TileMapKey;
@@ -81,8 +76,8 @@ class CC_EXPORT LayerTilingData {
   Tile* TileAt(int i, int j) const;
   const TileMap& tiles() const { return tiles_; }
 
-  void SetTilingRect(const gfx::Rect& tiling_rect);
-  gfx::Rect tiling_rect() const { return tiling_data_.tiling_rect(); }
+  void SetTilingSize(const gfx::Size& tiling_size);
+  gfx::Size tiling_size() const { return tiling_data_.tiling_size(); }
 
   void ContentRectToTileIndices(const gfx::Rect& rect,
                                 int* left,
@@ -90,8 +85,6 @@ class CC_EXPORT LayerTilingData {
                                 int* right,
                                 int* bottom) const;
   gfx::Rect TileRect(const Tile* tile) const;
-
-  Region OpaqueRegionInContentRect(const gfx::Rect& rect) const;
 
   void reset() { tiles_.clear(); }
 

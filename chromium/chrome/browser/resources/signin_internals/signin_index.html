@@ -5,6 +5,7 @@
   <title>Signin Internals</title>
   <script src="chrome://resources/js/cr.js"></script>
   <script src="chrome://resources/js/util.js"></script>
+  <script src="chrome://resources/js/load_time_data.js"></script>
   <script src="chrome://signin-internals/strings.js"></script>
   <link rel="stylesheet" type="text/css" href="signin_index.css">
 </head>
@@ -50,8 +51,22 @@
       </table>
     </div>
   </div>
-  <script src="chrome://resources/js/i18n_template.js"></script>
-  <script src="chrome://resources/js/i18n_process.js"></script>
+  <div id='cookie-info'>
+    <h2>Accounts in Cookie Jar</h2>
+    <div class="cookieSection">
+      <table class="signin-details">
+        <tr class="header">
+          <td>Email Address</td>
+          <td>Validity</td>
+        </tr>
+        <tr jsselect="cookie_info">
+          <td jscontent="email"></td>
+          <td jscontent="valid"></td>
+        </tr>
+      </table>
+    </div>
+  </div>
+  <script src="chrome://resources/js/i18n_template2.js"></script>
   <script src="chrome://resources/js/jstemplate_compiled.js"></script>
   <script src="chrome://signin-internals/signin_internals.js"></script>
 </body>

@@ -31,13 +31,14 @@
 #ifndef FileWriterBaseCallback_h
 #define FileWriterBaseCallback_h
 
-namespace WebCore {
+namespace blink {
 
 class FileWriterBase;
 
-class FileWriterBaseCallback {
+class FileWriterBaseCallback : public GarbageCollectedFinalized<FileWriterBaseCallback> {
 public:
     virtual ~FileWriterBaseCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(FileWriterBase*) = 0;
 };
 

@@ -31,9 +31,9 @@
 #include "config.h"
 #include "core/inspector/PageDebuggerAgent.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorOverlay.h"
@@ -42,11 +42,11 @@
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
 
-namespace WebCore {
+namespace blink {
 
-PassOwnPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
+PassOwnPtrWillBeRawPtr<PageDebuggerAgent> PageDebuggerAgent::create(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
 {
-    return adoptPtr(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
+    return adoptPtrWillBeNoop(new PageDebuggerAgent(pageScriptDebugServer, pageAgent, injectedScriptManager, overlay));
 }
 
 PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServer, InspectorPageAgent* pageAgent, InjectedScriptManager* injectedScriptManager, InspectorOverlay* overlay)
@@ -60,6 +60,12 @@ PageDebuggerAgent::PageDebuggerAgent(PageScriptDebugServer* pageScriptDebugServe
 
 PageDebuggerAgent::~PageDebuggerAgent()
 {
+}
+
+void PageDebuggerAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_pageAgent);
+    InspectorDebuggerAgent::trace(visitor);
 }
 
 void PageDebuggerAgent::enable()
@@ -115,7 +121,10 @@ InjectedScript PageDebuggerAgent::injectedScriptForEval(ErrorString* errorString
 {
     if (!executionContextId) {
         ScriptState* scriptState = ScriptState::forMainWorld(m_pageAgent->mainFrame());
-        return injectedScriptManager()->injectedScriptFor(scriptState);
+        InjectedScript result = injectedScriptManager()->injectedScriptFor(scriptState);
+        if (result.isEmpty())
+            *errorString = "Internal error: main world execution context not found.";
+        return result;
     }
     InjectedScript injectedScript = injectedScriptManager()->injectedScriptForId(*executionContextId);
     if (injectedScript.isEmpty())
@@ -141,20 +150,6 @@ void PageDebuggerAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
         scriptDebugServer().setPreprocessorSource(m_pageAgent->scriptPreprocessorSource());
 }
 
-String PageDebuggerAgent::preprocessEventListener(LocalFrame* frame, const String& source, const String& url, const String& functionName)
-{
-    ASSERT(frame);
-    ASSERT(m_pageScriptDebugServer);
-    return m_pageScriptDebugServer->preprocessEventListener(frame, source, url, functionName);
-}
-
-PassOwnPtr<ScriptSourceCode> PageDebuggerAgent::preprocess(LocalFrame* frame, const ScriptSourceCode& sourceCode)
-{
-    ASSERT(m_pageScriptDebugServer);
-    ASSERT(frame);
-    return m_pageScriptDebugServer->preprocess(frame, sourceCode);
-}
-
 void PageDebuggerAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
 {
     Frame* mainFrame = frame->page()->deprecatedLocalMainFrame();
@@ -162,5 +157,5 @@ void PageDebuggerAgent::didCommitLoad(LocalFrame* frame, DocumentLoader* loader)
         pageDidCommitLoad();
 }
 
-} // namespace WebCore
+} // namespace blink
 

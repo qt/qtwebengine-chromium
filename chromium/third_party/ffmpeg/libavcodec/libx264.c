@@ -194,6 +194,39 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
             x264_encoder_reconfig(x4->enc, &x4->params);
         }
 
+        if (x4->params.rc.i_vbv_buffer_size != ctx->rc_buffer_size / 1000 ||
+            x4->params.rc.i_vbv_max_bitrate != ctx->rc_max_rate    / 1000) {
+            x4->params.rc.i_vbv_buffer_size = ctx->rc_buffer_size / 1000;
+            x4->params.rc.i_vbv_max_bitrate = ctx->rc_max_rate    / 1000;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->params.rc.i_rc_method == X264_RC_ABR &&
+            x4->params.rc.i_bitrate != ctx->bit_rate / 1000) {
+            x4->params.rc.i_bitrate = ctx->bit_rate / 1000;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->crf >= 0 &&
+            x4->params.rc.i_rc_method == X264_RC_CRF &&
+            x4->params.rc.f_rf_constant != x4->crf) {
+            x4->params.rc.f_rf_constant = x4->crf;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->params.rc.i_rc_method == X264_RC_CQP &&
+            x4->cqp >= 0 &&
+            x4->params.rc.i_qp_constant != x4->cqp) {
+            x4->params.rc.i_qp_constant = x4->cqp;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
+        if (x4->crf_max >= 0 &&
+            x4->params.rc.f_rf_constant_max != x4->crf_max) {
+            x4->params.rc.f_rf_constant_max = x4->crf_max;
+            x264_encoder_reconfig(x4->enc, &x4->params);
+        }
+
         side_data = av_frame_get_side_data(frame, AV_FRAME_DATA_STEREO3D);
         if (side_data) {
             AVStereo3D *stereo = (AVStereo3D *)side_data->data;
@@ -203,10 +236,10 @@ static int X264_frame(AVCodecContext *ctx, AVPacket *pkt, const AVFrame *frame,
             case AV_STEREO3D_CHECKERBOARD:
                 fpa_type = 0;
                 break;
-            case AV_STEREO3D_LINES:
+            case AV_STEREO3D_COLUMNS:
                 fpa_type = 1;
                 break;
-            case AV_STEREO3D_COLUMNS:
+            case AV_STEREO3D_LINES:
                 fpa_type = 2;
                 break;
             case AV_STEREO3D_SIDEBYSIDE:
@@ -281,7 +314,7 @@ static av_cold int X264_close(AVCodecContext *avctx)
 #define OPT_STR(opt, param)                                                   \
     do {                                                                      \
         int ret;                                                              \
-        if (param!=NULL && (ret = x264_param_parse(&x4->params, opt, param)) < 0) { \
+        if (param && (ret = x264_param_parse(&x4->params, opt, param)) < 0) { \
             if(ret == X264_PARAM_BAD_NAME)                                    \
                 av_log(avctx, AV_LOG_ERROR,                                   \
                         "bad option '%s': '%s'\n", opt, param);               \
@@ -338,8 +371,6 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     x4->params.b_deblocking_filter         = avctx->flags & CODEC_FLAG_LOOP_FILTER;
 
-    x4->params.rc.f_pb_factor             = avctx->b_quant_factor;
-    x4->params.analyse.i_chroma_qp_offset = avctx->chromaoffset;
     if (x4->preset || x4->tune)
         if (x264_param_default_preset(&x4->params, x4->preset, x4->tune) < 0) {
             int i;
@@ -397,6 +428,10 @@ static av_cold int X264_init(AVCodecContext *avctx)
 
     if (avctx->i_quant_factor > 0)
         x4->params.rc.f_ip_factor         = 1 / fabs(avctx->i_quant_factor);
+    if (avctx->b_quant_factor > 0)
+        x4->params.rc.f_pb_factor         = avctx->b_quant_factor;
+    if (avctx->chromaoffset)
+        x4->params.analyse.i_chroma_qp_offset = avctx->chromaoffset;
 
     if (avctx->me_method == ME_EPZS)
         x4->params.analyse.i_me_method = X264_ME_DIA;
@@ -794,6 +829,7 @@ static const AVCodecDefault x264_defaults[] = {
     { "flags2",           "0" },
     { "g",                "-1" },
     { "i_qfactor",        "-1" },
+    { "b_qfactor",        "-1" },
     { "qmin",             "-1" },
     { "qmax",             "-1" },
     { "qdiff",            "-1" },

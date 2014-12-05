@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/PluginDocument.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/frame/FrameView.h"
@@ -39,7 +39,7 @@
 #include "core/plugins/PluginView.h"
 #include "core/rendering/RenderEmbeddedObject.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -51,7 +51,7 @@ public:
         return adoptRefWillBeNoop(new PluginDocumentParser(document));
     }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         visitor->trace(m_embedElement);
         RawDataDocumentParser::trace(visitor);
@@ -64,9 +64,9 @@ private:
     {
     }
 
-    virtual void appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) override;
 
-    virtual void finish() OVERRIDE;
+    virtual void finish() override;
 
     void createDocumentStructure();
 
@@ -156,7 +156,6 @@ PluginView* PluginDocumentParser::pluginView() const
 
 PluginDocument::PluginDocument(const DocumentInit& initializer)
     : HTMLDocument(initializer, PluginDocumentClass)
-    , m_shouldLoadPluginManually(true)
 {
     setCompatibilityMode(QuirksMode);
     lockCompatibilityMode();

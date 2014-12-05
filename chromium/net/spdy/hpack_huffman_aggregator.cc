@@ -58,7 +58,7 @@ void HpackHuffmanAggregator::AggregateTransactionCharacterCounts(
   {
     SpdyHeaderBlock headers;
     CreateSpdyHeadersFromHttpRequest(
-        request, request_headers, &headers, SPDY4, false);
+        request, request_headers, SPDY4, false, &headers);
 
     std::string tmp_out;
     encoder->EncodeHeaderSet(headers, &tmp_out);
@@ -94,7 +94,7 @@ void HpackHuffmanAggregator::CreateSpdyHeadersFromHttpResponse(
   std::string name, value;
   void* it = NULL;
   while (headers.EnumerateHeaderLines(&it, &name, &value)) {
-    StringToLowerASCII(&name);
+    base::StringToLowerASCII(&name);
     if (headers_out->find(name) == headers_out->end()) {
       (*headers_out)[name] = value;
     } else {

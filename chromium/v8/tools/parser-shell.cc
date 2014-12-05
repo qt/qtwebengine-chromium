@@ -33,6 +33,7 @@
 #include <vector>
 #include "src/v8.h"
 
+#include "include/libplatform/libplatform.h"
 #include "src/api.h"
 #include "src/compiler.h"
 #include "src/scanner-character-streams.h"
@@ -44,7 +45,19 @@
 
 using namespace v8::internal;
 
-std::pair<TimeDelta, TimeDelta> RunBaselineParser(
+class StringResource8 : public v8::String::ExternalOneByteStringResource {
+ public:
+  StringResource8(const char* data, int length)
+      : data_(data), length_(length) { }
+  virtual size_t length() const { return length_; }
+  virtual const char* data() const { return data_; }
+
+ private:
+  const char* data_;
+  int length_;
+};
+
+std::pair<v8::base::TimeDelta, v8::base::TimeDelta> RunBaselineParser(
     const char* fname, Encoding encoding, int repeat, v8::Isolate* isolate,
     v8::Handle<v8::Context> context) {
   int length = 0;
@@ -63,11 +76,13 @@ std::pair<TimeDelta, TimeDelta> RunBaselineParser(
       break;
     }
     case LATIN1: {
-      source_handle = v8::String::NewFromOneByte(isolate, source);
+      StringResource8* string_resource =
+          new StringResource8(reinterpret_cast<const char*>(source), length);
+      source_handle = v8::String::NewExternal(isolate, string_resource);
       break;
     }
   }
-  TimeDelta parse_time1, parse_time2;
+  v8::base::TimeDelta parse_time1, parse_time2;
   Handle<Script> script = Isolate::Current()->factory()->NewScript(
       v8::Utils::OpenHandle(*source_handle));
   i::ScriptData* cached_data_impl = NULL;
@@ -75,30 +90,32 @@ std::pair<TimeDelta, TimeDelta> RunBaselineParser(
   {
     CompilationInfoWithZone info(script);
     info.MarkAsGlobal();
-    info.SetCachedData(&cached_data_impl, i::PRODUCE_CACHED_DATA);
-    ElapsedTimer timer;
+    info.SetCachedData(&cached_data_impl,
+                       v8::ScriptCompiler::kProduceParserCache);
+    v8::base::ElapsedTimer timer;
     timer.Start();
     // Allow lazy parsing; otherwise we won't produce cached data.
     bool success = Parser::Parse(&info, true);
     parse_time1 = timer.Elapsed();
     if (!success) {
       fprintf(stderr, "Parsing failed\n");
-      return std::make_pair(TimeDelta(), TimeDelta());
+      return std::make_pair(v8::base::TimeDelta(), v8::base::TimeDelta());
     }
   }
   // Second round of parsing (consume cached data).
   {
     CompilationInfoWithZone info(script);
     info.MarkAsGlobal();
-    info.SetCachedData(&cached_data_impl, i::CONSUME_CACHED_DATA);
-    ElapsedTimer timer;
+    info.SetCachedData(&cached_data_impl,
+                       v8::ScriptCompiler::kConsumeParserCache);
+    v8::base::ElapsedTimer timer;
     timer.Start();
     // Allow lazy parsing; otherwise cached data won't help.
     bool success = Parser::Parse(&info, true);
     parse_time2 = timer.Elapsed();
     if (!success) {
       fprintf(stderr, "Parsing failed\n");
-      return std::make_pair(TimeDelta(), TimeDelta());
+      return std::make_pair(v8::base::TimeDelta(), v8::base::TimeDelta());
     }
   }
   return std::make_pair(parse_time1, parse_time2);
@@ -106,8 +123,11 @@ std::pair<TimeDelta, TimeDelta> RunBaselineParser(
 
 
 int main(int argc, char* argv[]) {
-  v8::V8::InitializeICU();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
+  v8::V8::InitializeICU();
+  v8::Platform* platform = v8::platform::CreateDefaultPlatform();
+  v8::V8::InitializePlatform(platform);
+  v8::V8::Initialize();
   Encoding encoding = LATIN1;
   std::vector<std::string> fnames;
   std::string benchmark;
@@ -134,14 +154,15 @@ int main(int argc, char* argv[]) {
     v8::HandleScope handle_scope(isolate);
     v8::Handle<v8::ObjectTemplate> global = v8::ObjectTemplate::New(isolate);
     v8::Local<v8::Context> context = v8::Context::New(isolate, NULL, global);
-    ASSERT(!context.IsEmpty());
+    DCHECK(!context.IsEmpty());
     {
       v8::Context::Scope scope(context);
       double first_parse_total = 0;
       double second_parse_total = 0;
       for (size_t i = 0; i < fnames.size(); i++) {
-        std::pair<TimeDelta, TimeDelta> time = RunBaselineParser(
-            fnames[i].c_str(), encoding, repeat, isolate, context);
+        std::pair<v8::base::TimeDelta, v8::base::TimeDelta> time =
+            RunBaselineParser(fnames[i].c_str(), encoding, repeat, isolate,
+                              context);
         first_parse_total += time.first.InMillisecondsF();
         second_parse_total += time.second.InMillisecondsF();
       }
@@ -153,5 +174,7 @@ int main(int argc, char* argv[]) {
     }
   }
   v8::V8::Dispose();
+  v8::V8::ShutdownPlatform();
+  delete platform;
   return 0;
 }

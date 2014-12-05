@@ -12,6 +12,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/values.h"
+#include "content/common/android/gin_java_bridge_errors.h"
 #include "content/public/renderer/render_frame_observer.h"
 
 namespace blink {
@@ -43,14 +44,15 @@ class GinJavaBridgeDispatcher
   virtual ~GinJavaBridgeDispatcher();
 
   // RenderFrameObserver override:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void DidClearWindowObject() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) override;
+  virtual void DidClearWindowObject() override;
 
   void GetJavaMethods(ObjectID object_id, std::set<std::string>* methods);
   bool HasJavaMethod(ObjectID object_id, const std::string& method_name);
   scoped_ptr<base::Value> InvokeJavaMethod(ObjectID object_id,
                                            const std::string& method_name,
-                                           const base::ListValue& arguments);
+                                           const base::ListValue& arguments,
+                                           GinJavaBridgeError* error);
   GinJavaBridgeObject* GetObject(ObjectID object_id);
   void OnGinJavaBridgeObjectDeleted(ObjectID object_id);
 

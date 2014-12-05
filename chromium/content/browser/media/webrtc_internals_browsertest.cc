@@ -149,15 +149,14 @@ static const int64 FAKE_TIME_STAMP = 3600000;
 class MAYBE_WebRtcInternalsBrowserTest: public ContentBrowserTest {
  public:
   MAYBE_WebRtcInternalsBrowserTest() {}
-  virtual ~MAYBE_WebRtcInternalsBrowserTest() {}
+  ~MAYBE_WebRtcInternalsBrowserTest() override {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
-    // We need fake devices in this test since we want to run on naked VMs. We
-    // assume these switches are set by default in content_browsertests.
-    ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
-        switches::kUseFakeDeviceForMediaStream));
+  void SetUpOnMainThread() override {
+    // Assume this is set by the content test launcher.
     ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
         switches::kUseFakeUIForMediaStream));
+    ASSERT_TRUE(CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kUseFakeDeviceForMediaStream));
   }
 
  protected:
@@ -175,7 +174,7 @@ class MAYBE_WebRtcInternalsBrowserTest: public ContentBrowserTest {
   void ExecuteAddPeerConnectionJs(const PeerConnectionEntry& pc) {
     std::stringstream ss;
     ss << "{pid:" << pc.pid_ <<", lid:" << pc.lid_ << ", " <<
-           "url:'u', servers:'s', constraints:'c'}";
+           "url:'u', rtcConfiguration:'s', constraints:'c'}";
     ASSERT_TRUE(ExecuteJavascript("addPeerConnection(" + ss.str() + ");"));
   }
 
@@ -232,7 +231,7 @@ class MAYBE_WebRtcInternalsBrowserTest: public ContentBrowserTest {
     ASSERT_TRUE(ExecuteScriptAndExtractString(
         shell()->web_contents(),
         "window.domAutomationController.send("
-        "JSON.stringify(userMediaRequests));",
+            "JSON.stringify(userMediaRequests));",
         &json_requests));
     scoped_ptr<base::Value> value_requests;
     value_requests.reset(base::JSONReader::Read(json_requests));
@@ -258,6 +257,24 @@ class MAYBE_WebRtcInternalsBrowserTest: public ContentBrowserTest {
       EXPECT_EQ(requests[i].origin, origin);
       EXPECT_EQ(requests[i].audio_constraints, audio);
       EXPECT_EQ(requests[i].video_constraints, video);
+    }
+
+    bool user_media_tab_existed = false;
+    ASSERT_TRUE(ExecuteScriptAndExtractBool(
+        shell()->web_contents(),
+        "window.domAutomationController.send("
+            "$('user-media-tab-id') != null);",
+        &user_media_tab_existed));
+    EXPECT_EQ(!requests.empty(), user_media_tab_existed);
+
+    if (user_media_tab_existed) {
+      int user_media_request_count = -1;
+      ASSERT_TRUE(ExecuteScriptAndExtractInt(
+          shell()->web_contents(),
+          "window.domAutomationController.send("
+              "$('user-media-tab-id').childNodes.length);",
+          &user_media_request_count));
+      ASSERT_EQ(requests.size(), static_cast<size_t>(user_media_request_count));
     }
   }
 

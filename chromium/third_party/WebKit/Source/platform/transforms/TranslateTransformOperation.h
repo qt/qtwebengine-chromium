@@ -29,7 +29,7 @@
 #include "platform/LengthFunctions.h"
 #include "platform/transforms/TransformOperation.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT TranslateTransformOperation : public TransformOperation {
 public:
@@ -53,11 +53,9 @@ public:
     double z() const { return m_z; }
 
 private:
-    virtual bool isIdentity() const OVERRIDE { return !floatValueForLength(m_x, 1) && !floatValueForLength(m_y, 1) && !m_z; }
+    virtual OperationType type() const override { return m_type; }
 
-    virtual OperationType type() const OVERRIDE { return m_type; }
-
-    virtual bool operator==(const TransformOperation& o) const OVERRIDE
+    virtual bool operator==(const TransformOperation& o) const override
     {
         if (!isSameType(o))
             return false;
@@ -65,14 +63,14 @@ private:
         return m_x == t->m_x && m_y == t->m_y && m_z == t->m_z;
     }
 
-    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const OVERRIDE
+    virtual void apply(TransformationMatrix& transform, const FloatSize& borderBoxSize) const override
     {
         transform.translate3d(x(borderBoxSize), y(borderBoxSize), z());
     }
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) OVERRIDE;
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
 
-    virtual bool dependsOnBoxSize() const OVERRIDE
+    virtual bool dependsOnBoxSize() const override
     {
         return m_x.isPercent() || m_y.isPercent();
     }
@@ -92,6 +90,6 @@ private:
     OperationType m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TranslateTransformOperation_h

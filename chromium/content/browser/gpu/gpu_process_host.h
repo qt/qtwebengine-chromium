@@ -26,18 +26,12 @@
 #include "gpu/config/gpu_info.h"
 #include "ipc/ipc_sender.h"
 #include "ipc/message_filter.h"
+#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
 #include "url/gurl.h"
 
 struct GPUCreateCommandBufferConfig;
-struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
-
-namespace gfx {
-struct GpuMemoryBufferHandle;
-}
 
 namespace IPC {
 struct ChannelHandle;
@@ -67,12 +61,11 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   typedef base::Callback<void(CreateCommandBufferResult)>
       CreateCommandBufferCallback;
 
-  typedef base::Callback<void(const gfx::Size)> CreateImageCallback;
-
   typedef base::Callback<void(const gfx::GpuMemoryBufferHandle& handle)>
       CreateGpuMemoryBufferCallback;
 
   static bool gpu_enabled() { return gpu_enabled_; }
+  static int gpu_crash_count() { return gpu_crash_count_; }
 
   // Creates a new GpuProcessHost or gets an existing one, resulting in the
   // launching of a GPU process if required.  Returns null on failure. It
@@ -102,7 +95,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   int host_id() const { return host_id_; }
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // Adds a message filter to the GpuProcessHost's channel.
   void AddFilter(IPC::MessageFilter* filter);
@@ -112,6 +105,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // and GPUInfo, we call the callback.
   void EstablishGpuChannel(int client_id,
                            bool share_context,
+                           bool allow_future_sync_points,
                            const EstablishChannelCallback& callback);
 
   // Tells the GPU process to create a new command buffer that draws into the
@@ -124,22 +118,19 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
       int route_id,
       const CreateCommandBufferCallback& callback);
 
-  // Tells the GPU process to create a new image using the given window.
-  void CreateImage(
-      gfx::PluginWindowHandle window,
-      int client_id,
-      int image_id,
-      const CreateImageCallback& callback);
-
-    // Tells the GPU process to delete image.
-  void DeleteImage(int client_id, int image_id, int sync_point);
-
-  void CreateGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+  // Tells the GPU process to create a new GPU memory buffer.
+  void CreateGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
+                             gfx::GpuMemoryBufferId id,
                              const gfx::Size& size,
-                             unsigned internalformat,
-                             unsigned usage,
+                             gfx::GpuMemoryBuffer::Format format,
+                             gfx::GpuMemoryBuffer::Usage usage,
+                             int client_id,
                              const CreateGpuMemoryBufferCallback& callback);
-  void DestroyGpuMemoryBuffer(const gfx::GpuMemoryBufferHandle& handle,
+
+  // Tells the GPU process to destroy GPU memory buffer.
+  void DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferType type,
+                              gfx::GpuMemoryBufferId id,
+                              int client_id,
                               int sync_point);
 
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
@@ -157,7 +148,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   static bool ValidateHost(GpuProcessHost* host);
 
   GpuProcessHost(int host_id, GpuProcessKind kind);
-  virtual ~GpuProcessHost();
+  ~GpuProcessHost() override;
 
   bool Init();
 
@@ -165,17 +156,16 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void RouteOnUIThread(const IPC::Message& message);
 
   // BrowserChildProcessHostDelegate implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnProcessLaunched() OVERRIDE;
-  virtual void OnProcessCrashed(int exit_code) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnProcessLaunched() override;
+  void OnProcessCrashed(int exit_code) override;
 
   // Message handlers.
   void OnInitialized(bool result, const gpu::GPUInfo& gpu_info);
   void OnChannelEstablished(const IPC::ChannelHandle& channel_handle);
   void OnCommandBufferCreated(CreateCommandBufferResult result);
   void OnDestroyCommandBuffer(int32 surface_id);
-  void OnImageCreated(const gfx::Size size);
   void OnGpuMemoryBufferCreated(const gfx::GpuMemoryBufferHandle& handle);
   void OnDidCreateOffscreenContext(const GURL& url);
   void OnDidLoseContext(bool offscreen,
@@ -184,8 +174,7 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   void OnDidDestroyOffscreenContext(const GURL& url);
   void OnGpuMemoryUmaStatsReceived(const GPUMemoryUmaStats& stats);
 #if defined(OS_MACOSX)
-  void OnAcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
+  void OnAcceleratedSurfaceBuffersSwapped(const IPC::Message& message);
 #endif
 
   void CreateChannelCache(int32 client_id);
@@ -199,6 +188,9 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   void BlockLiveOffscreenContexts();
 
+  // Update GPU crash counters.  Disable GPU if crash limit is reached.
+  void RecordProcessCrash();
+
   std::string GetShaderPrefixKey();
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
@@ -210,9 +202,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 
   // The pending create command buffer requests we need to reply to.
   std::queue<CreateCommandBufferCallback> create_command_buffer_requests_;
-
-  // The pending create image requests we need to reply to.
-  std::queue<CreateImageCallback> create_image_requests_;
 
   // The pending create gpu memory buffer requests we need to reply to.
   std::queue<CreateGpuMemoryBufferCallback> create_gpu_memory_buffer_requests_;
@@ -241,12 +230,20 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // Time Init started.  Used to log total GPU process startup time to UMA.
   base::TimeTicks init_start_time_;
 
+  // Whether this host recorded a GPU crash or not.
+  bool gpu_crash_recorded_;
+
   // Master switch for enabling/disabling GPU acceleration for the current
   // browser session. It does not change the acceleration settings for
   // existing tabs, just the future ones.
   static bool gpu_enabled_;
 
   static bool hardware_gpu_enabled_;
+
+  static int gpu_crash_count_;
+  static int gpu_recent_crash_count_;
+  static bool crashed_before_;
+  static int swiftshader_crash_count_;
 
   scoped_ptr<BrowserChildProcessHostImpl> process_;
 

@@ -29,33 +29,32 @@
 #ifndef AudioParam_h
 #define AudioParam_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/dom/DOMTypedArray.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioParamTimeline.h"
 #include "modules/webaudio/AudioSummingJunction.h"
-#include <sys/types.h>
-#include "wtf/Float32Array.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
+#include <sys/types.h>
 
-namespace WebCore {
+namespace blink {
 
 class AudioNodeOutput;
 
-class AudioParam FINAL : public RefCountedWillBeGarbageCollectedFinalized<AudioParam>, public ScriptWrappable, public AudioSummingJunction {
+class AudioParam final : public AudioSummingJunction, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static const double DefaultSmoothingConstant;
     static const double SnapThreshold;
 
-    static PassRefPtrWillBeRawPtr<AudioParam> create(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
+    static AudioParam* create(AudioContext* context, double defaultValue)
     {
-        return adoptRefWillBeNoop(new AudioParam(context, name, defaultValue, minValue, maxValue, units));
+        return new AudioParam(context, defaultValue);
     }
 
     // AudioSummingJunction
-    virtual bool canUpdateState() OVERRIDE { return true; }
-    virtual void didUpdate() OVERRIDE { }
+    virtual void didUpdate() override { }
 
     // Intrinsic value.
     float value();
@@ -65,12 +64,7 @@ public:
     // Must be called in the audio thread.
     float finalValue();
 
-    String name() const { return m_name; }
-
-    float minValue() const { return static_cast<float>(m_minValue); }
-    float maxValue() const { return static_cast<float>(m_maxValue); }
     float defaultValue() const { return static_cast<float>(m_defaultValue); }
-    unsigned units() const { return m_units; }
 
     // Value smoothing:
 
@@ -85,12 +79,30 @@ public:
     void resetSmoothedValue() { m_smoothedValue = m_value; }
 
     // Parameter automation.
-    void setValueAtTime(float value, double time) { m_timeline.setValueAtTime(value, time); }
-    void linearRampToValueAtTime(float value, double time) { m_timeline.linearRampToValueAtTime(value, time); }
-    void exponentialRampToValueAtTime(float value, double time, ExceptionState& es) { m_timeline.exponentialRampToValueAtTime(value, time, es); }
-    void setTargetAtTime(float target, double time, double timeConstant) { m_timeline.setTargetAtTime(target, time, timeConstant); }
-    void setValueCurveAtTime(Float32Array* curve, double time, double duration) { m_timeline.setValueCurveAtTime(curve, time, duration); }
-    void cancelScheduledValues(double startTime) { m_timeline.cancelScheduledValues(startTime); }
+    void setValueAtTime(float value, double time, ExceptionState& exceptionState)
+    {
+        m_timeline.setValueAtTime(value, time, exceptionState);
+    }
+    void linearRampToValueAtTime(float value, double time, ExceptionState& exceptionState)
+    {
+        m_timeline.linearRampToValueAtTime(value, time, exceptionState);
+    }
+    void exponentialRampToValueAtTime(float value, double time, ExceptionState& es)
+    {
+        m_timeline.exponentialRampToValueAtTime(value, time, es);
+    }
+    void setTargetAtTime(float target, double time, double timeConstant, ExceptionState& exceptionState)
+    {
+        m_timeline.setTargetAtTime(target, time, timeConstant, exceptionState);
+    }
+    void setValueCurveAtTime(DOMFloat32Array* curve, double time, double duration, ExceptionState& exceptionState)
+    {
+        m_timeline.setValueCurveAtTime(curve->view(), time, duration, exceptionState);
+    }
+    void cancelScheduledValues(double startTime, ExceptionState& exceptionState)
+    {
+        m_timeline.cancelScheduledValues(startTime, exceptionState);
+    }
 
     bool hasSampleAccurateValues() { return m_timeline.hasValues() || numberOfRenderingConnections(); }
 
@@ -99,36 +111,22 @@ public:
     void calculateSampleAccurateValues(float* values, unsigned numberOfValues);
 
     // Connect an audio-rate signal to control this parameter.
-    void connect(AudioNodeOutput*);
-    void disconnect(AudioNodeOutput*);
-
-    void trace(Visitor*) { }
-
-protected:
-    AudioParam(AudioContext* context, const String& name, double defaultValue, double minValue, double maxValue, unsigned units = 0)
-        : AudioSummingJunction(context)
-        , m_name(name)
-        , m_value(defaultValue)
-        , m_defaultValue(defaultValue)
-        , m_minValue(minValue)
-        , m_maxValue(maxValue)
-        , m_units(units)
-        , m_smoothedValue(defaultValue)
-    {
-        ScriptWrappable::init(this);
-    }
+    void connect(AudioNodeOutput&);
+    void disconnect(AudioNodeOutput&);
 
 private:
+    AudioParam(AudioContext* context, double defaultValue)
+        : AudioSummingJunction(context)
+        , m_value(defaultValue)
+        , m_defaultValue(defaultValue)
+        , m_smoothedValue(defaultValue) { }
+
     // sampleAccurate corresponds to a-rate (audio rate) vs. k-rate in the Web Audio specification.
     void calculateFinalValues(float* values, unsigned numberOfValues, bool sampleAccurate);
     void calculateTimelineValues(float* values, unsigned numberOfValues);
 
-    String m_name;
     double m_value;
     double m_defaultValue;
-    double m_minValue;
-    double m_maxValue;
-    unsigned m_units;
 
     // Smoothing (de-zippering)
     double m_smoothedValue;
@@ -136,6 +134,6 @@ private:
     AudioParamTimeline m_timeline;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioParam_h

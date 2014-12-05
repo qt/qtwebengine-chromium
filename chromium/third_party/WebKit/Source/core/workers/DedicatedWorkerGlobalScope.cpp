@@ -31,27 +31,26 @@
 #include "config.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/workers/DedicatedWorkerThread.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerObjectProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> DedicatedWorkerGlobalScope::create(DedicatedWorkerThread* thread, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData, double timeOrigin)
 {
-    RefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> context = adoptRefWillBeRefCountedGarbageCollected(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_workerClients.release()));
+    RefPtrWillBeRawPtr<DedicatedWorkerGlobalScope> context = adoptRefWillBeNoop(new DedicatedWorkerGlobalScope(startupData->m_scriptURL, startupData->m_userAgent, thread, timeOrigin, startupData->m_starterOrigin, startupData->m_workerClients.release()));
     context->applyContentSecurityPolicyFromString(startupData->m_contentSecurityPolicy, startupData->m_contentSecurityPolicyType);
     return context.release();
 }
 
-DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(const KURL& url, const String& userAgent, DedicatedWorkerThread* thread, double timeOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
-    : WorkerGlobalScope(url, userAgent, thread, timeOrigin, workerClients)
+DedicatedWorkerGlobalScope::DedicatedWorkerGlobalScope(const KURL& url, const String& userAgent, DedicatedWorkerThread* thread, double timeOrigin, const SecurityOrigin* starterOrigin, PassOwnPtrWillBeRawPtr<WorkerClients> workerClients)
+    : WorkerGlobalScope(url, userAgent, thread, timeOrigin, starterOrigin, workerClients)
 {
-    ScriptWrappable::init(this);
 }
 
 DedicatedWorkerGlobalScope::~DedicatedWorkerGlobalScope()
@@ -63,7 +62,7 @@ const AtomicString& DedicatedWorkerGlobalScope::interfaceName() const
     return EventTargetNames::DedicatedWorkerGlobalScope;
 }
 
-void DedicatedWorkerGlobalScope::postMessage(PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
+void DedicatedWorkerGlobalScope::postMessage(ExecutionContext*, PassRefPtr<SerializedScriptValue> message, const MessagePortArray* ports, ExceptionState& exceptionState)
 {
     // Disentangle the port in preparation for sending it to the remote context.
     OwnPtr<MessagePortChannelArray> channels = MessagePort::disentanglePorts(ports, exceptionState);
@@ -95,12 +94,13 @@ private:
     {
     }
 
-    virtual void performTask(ExecutionContext* context) OVERRIDE
+    virtual void performTask(ExecutionContext* context) override
     {
+        ASSERT(context->isDocument());
         if (m_isDeprecation)
-            UseCounter::countDeprecation(*toDocument(context), m_feature);
+            UseCounter::countDeprecation(context, m_feature);
         else
-            UseCounter::count(*toDocument(context), m_feature);
+            UseCounter::count(context, m_feature);
     }
 
     UseCounter::Feature m_feature;
@@ -122,4 +122,4 @@ void DedicatedWorkerGlobalScope::trace(Visitor* visitor)
     WorkerGlobalScope::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

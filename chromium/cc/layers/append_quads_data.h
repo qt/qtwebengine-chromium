@@ -6,27 +6,27 @@
 #define CC_LAYERS_APPEND_QUADS_DATA_H_
 
 #include "base/basictypes.h"
-#include "cc/quads/render_pass.h"
+#include "cc/quads/render_pass_id.h"
 
 namespace cc {
 
 struct AppendQuadsData {
   AppendQuadsData()
-      : had_incomplete_tile(false),
+      : num_incomplete_tiles(0),
         num_missing_tiles(0),
         visible_content_area(0),
         approximated_visible_content_area(0),
         render_pass_id(0, 0) {}
 
-  explicit AppendQuadsData(RenderPass::Id render_pass_id)
-      : had_incomplete_tile(false),
+  explicit AppendQuadsData(RenderPassId render_pass_id)
+      : num_incomplete_tiles(0),
         num_missing_tiles(0),
         visible_content_area(0),
         approximated_visible_content_area(0),
         render_pass_id(render_pass_id) {}
 
   // Set by the layer appending quads.
-  bool had_incomplete_tile;
+  int64 num_incomplete_tiles;
   // Set by the layer appending quads.
   int64 num_missing_tiles;
   // Set by the layer appending quads.
@@ -34,7 +34,7 @@ struct AppendQuadsData {
   // Set by the layer appending quads.
   int64 approximated_visible_content_area;
   // Given to the layer appending quads.
-  const RenderPass::Id render_pass_id;
+  const RenderPassId render_pass_id;
 };
 
 }  // namespace cc

@@ -11,7 +11,7 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "jingle/notifier/listener/notification_defines.h"
-#include "talk/xmpp/xmpptask.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace buzz {
 class Jid;
@@ -24,10 +24,10 @@ class PushNotificationsSendUpdateTask : public buzz::XmppTask {
  public:
   PushNotificationsSendUpdateTask(
       buzz::XmppTaskParentInterface* parent, const Notification& notification);
-  virtual ~PushNotificationsSendUpdateTask();
+  ~PushNotificationsSendUpdateTask() override;
 
   // Overridden from buzz::XmppTask.
-  virtual int ProcessStart() OVERRIDE;
+  int ProcessStart() override;
 
  private:
   // Allocates and constructs an buzz::XmlElement containing the update stanza.

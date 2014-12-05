@@ -28,7 +28,7 @@
 #include "config.h"
 #include "platform/ContentType.h"
 
-namespace WebCore {
+namespace blink {
 
 ContentType::ContentType(const String& contentType)
     : m_type(contentType)
@@ -84,11 +84,11 @@ Vector<String> ContentType::codecs() const
         return Vector<String>();
 
     Vector<String> codecs;
-    codecsParameter.split(",", codecs);
+    codecsParameter.split(',', codecs);
     for (size_t i = 0; i < codecs.size(); ++i)
         codecs[i] = codecs[i].simplifyWhiteSpace();
 
     return codecs;
 }
 
-} // namespace WebCore
+} // namespace blink

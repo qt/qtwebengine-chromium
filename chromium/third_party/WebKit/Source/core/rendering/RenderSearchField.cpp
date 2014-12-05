@@ -24,13 +24,12 @@
 #include "config.h"
 #include "core/rendering/RenderSearchField.h"
 
+#include "core/InputTypeNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/shadow/ShadowElementNames.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -39,7 +38,7 @@ using namespace HTMLNames;
 RenderSearchField::RenderSearchField(HTMLInputElement* element)
     : RenderTextControlSingleLine(element)
 {
-    ASSERT(element->isSearchField());
+    ASSERT(element->type() == InputTypeNames::search);
 }
 
 RenderSearchField::~RenderSearchField()

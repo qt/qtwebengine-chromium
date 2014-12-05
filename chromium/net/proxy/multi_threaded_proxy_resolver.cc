@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/metrics/histogram.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
@@ -176,7 +175,7 @@ class MultiThreadedProxyResolver::SetPacScriptJob
   }
 
   // Runs on the worker thread.
-  virtual void Run(scoped_refptr<base::MessageLoopProxy> origin_loop) OVERRIDE {
+  void Run(scoped_refptr<base::MessageLoopProxy> origin_loop) override {
     ProxyResolver* resolver = executor()->resolver();
     int rv = resolver->SetPacScript(script_data_, CompletionCallback());
 
@@ -187,7 +186,7 @@ class MultiThreadedProxyResolver::SetPacScriptJob
   }
 
  protected:
-  virtual ~SetPacScriptJob() {}
+  ~SetPacScriptJob() override {}
 
  private:
   // Runs the completion callback on the origin thread.
@@ -219,20 +218,17 @@ class MultiThreadedProxyResolver::GetProxyForURLJob
         url_(url),
         was_waiting_for_thread_(false) {
     DCHECK(!callback.is_null());
-    start_time_ = base::TimeTicks::Now();
   }
 
   BoundNetLog* net_log() { return &net_log_; }
 
-  virtual void WaitingForThread() OVERRIDE {
+  void WaitingForThread() override {
     was_waiting_for_thread_ = true;
     net_log_.BeginEvent(NetLog::TYPE_WAITING_FOR_PROXY_RESOLVER_THREAD);
   }
 
-  virtual void FinishedWaitingForThread() OVERRIDE {
+  void FinishedWaitingForThread() override {
     DCHECK(executor());
-
-    submitted_to_thread_time_ = base::TimeTicks::Now();
 
     if (was_waiting_for_thread_) {
       net_log_.EndEvent(NetLog::TYPE_WAITING_FOR_PROXY_RESOLVER_THREAD);
@@ -244,7 +240,7 @@ class MultiThreadedProxyResolver::GetProxyForURLJob
   }
 
   // Runs on the worker thread.
-  virtual void Run(scoped_refptr<base::MessageLoopProxy> origin_loop) OVERRIDE {
+  void Run(scoped_refptr<base::MessageLoopProxy> origin_loop) override {
     ProxyResolver* resolver = executor()->resolver();
     int rv = resolver->GetProxyForURL(
         url_, &results_buf_, CompletionCallback(), NULL, net_log_);
@@ -256,34 +252,19 @@ class MultiThreadedProxyResolver::GetProxyForURLJob
   }
 
  protected:
-  virtual ~GetProxyForURLJob() {}
+  ~GetProxyForURLJob() override {}
 
  private:
   // Runs the completion callback on the origin thread.
   void QueryComplete(int result_code) {
     // The Job may have been cancelled after it was started.
     if (!was_cancelled()) {
-      RecordPerformanceMetrics();
       if (result_code >= OK) {  // Note: unit-tests use values > 0.
         results_->Use(results_buf_);
       }
       RunUserCallback(result_code);
     }
     OnJobCompleted();
-  }
-
-  void RecordPerformanceMetrics() {
-    DCHECK(!was_cancelled());
-
-    base::TimeTicks now = base::TimeTicks::Now();
-
-    // Log the total time the request took to complete.
-    UMA_HISTOGRAM_MEDIUM_TIMES("Net.MTPR_GetProxyForUrl_Time",
-                               now - start_time_);
-
-    // Log the time the request was stalled waiting for a thread to free up.
-    UMA_HISTOGRAM_MEDIUM_TIMES("Net.MTPR_GetProxyForUrl_Thread_Wait_Time",
-                               submitted_to_thread_time_ - start_time_);
   }
 
   // Must only be used on the "origin" thread.
@@ -295,9 +276,6 @@ class MultiThreadedProxyResolver::GetProxyForURLJob
 
   // Usable from within DoQuery on the worker thread.
   ProxyInfo results_buf_;
-
-  base::TimeTicks start_time_;
-  base::TimeTicks submitted_to_thread_time_;
 
   bool was_waiting_for_thread_;
 };

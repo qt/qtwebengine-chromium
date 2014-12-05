@@ -55,6 +55,8 @@
         'level_indicator.h',
         'monitor_module.cc',
         'monitor_module.h',
+        'network_predictor.cc',
+        'network_predictor.h',
         'output_mixer.cc',
         'output_mixer.h',
         'shared_data.cc',
@@ -122,6 +124,7 @@
           ],
           'sources': [
             'channel_unittest.cc',
+            'network_predictor_unittest.cc',
             'transmit_mixer_unittest.cc',
             'utility_unittest.cc',
             'voe_audio_processing_unittest.cc',
@@ -129,9 +132,7 @@
             'voe_codec_unittest.cc',
           ],
           'conditions': [
-            # TODO(henrike): remove build_with_chromium==1 when the bots are
-            # using Chromium's buildbots.
-            ['build_with_chromium==1 and OS=="android"', {
+            ['OS=="android"', {
               'dependencies': [
                 '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
               ],
@@ -147,7 +148,7 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
            ],
@@ -215,7 +216,7 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(webrtc_root)/test/test.gyp:channel_transport',
             '<(webrtc_root)/test/test.gyp:test_support',
           ],
@@ -271,9 +272,7 @@
             },
           ],  # targets
         }],
-        # TODO(henrike): remove build_with_chromium==1 when the bots are using
-        # Chromium's buildbots.
-        ['build_with_chromium==1 and OS=="android"', {
+        ['OS=="android"', {
           'targets': [
             {
               'target_name': 'voice_engine_unittests_apk_target',
@@ -294,7 +293,6 @@
               ],
               'includes': [
                 '../build/isolate.gypi',
-                'voice_engine_unittests.isolate',
               ],
               'sources': [
                 'voice_engine_unittests.isolate',
@@ -308,7 +306,6 @@
               ],
               'includes': [
                 '../build/isolate.gypi',
-                'voe_auto_test.isolate',
               ],
               'sources': [
                 'voe_auto_test.isolate',

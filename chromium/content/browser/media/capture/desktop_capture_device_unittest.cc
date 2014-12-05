@@ -4,13 +4,13 @@
 
 #include "content/browser/media/capture/desktop_capture_device.h"
 
+#include <string>
+
 #include "base/basictypes.h"
-#include "base/sequenced_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
-#include "base/threading/sequenced_worker_pool.h"
-#include "base/threading/thread.h"
 #include "base/time/time.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/webrtc/modules/desktop_capture/desktop_frame.h"
@@ -63,9 +63,10 @@ class MockDeviceClient : public media::VideoCaptureDevice::Client {
 class InvertedDesktopFrame : public webrtc::DesktopFrame {
  public:
   // Takes ownership of |frame|.
-  InvertedDesktopFrame(webrtc::DesktopFrame* frame)
+  explicit InvertedDesktopFrame(webrtc::DesktopFrame* frame)
       : webrtc::DesktopFrame(
-            frame->size(), -frame->stride(),
+            frame->size(),
+            -frame->stride(),
             frame->data() + (frame->size().height() - 1) * frame->stride(),
             frame->shared_memory()),
         original_frame_(frame) {
@@ -73,7 +74,7 @@ class InvertedDesktopFrame : public webrtc::DesktopFrame {
     set_capture_time_ms(frame->capture_time_ms());
     mutable_updated_region()->Swap(frame->mutable_updated_region());
   }
-  virtual ~InvertedDesktopFrame() {}
+  ~InvertedDesktopFrame() override {}
 
  private:
   scoped_ptr<webrtc::DesktopFrame> original_frame_;
@@ -89,18 +90,16 @@ class FakeScreenCapturer : public webrtc::ScreenCapturer {
         frame_index_(0),
         generate_inverted_frames_(false) {
   }
-  virtual ~FakeScreenCapturer() {}
+  ~FakeScreenCapturer() override {}
 
   void set_generate_inverted_frames(bool generate_inverted_frames) {
     generate_inverted_frames_ = generate_inverted_frames;
   }
 
   // VideoFrameCapturer interface.
-  virtual void Start(Callback* callback) OVERRIDE {
-    callback_ = callback;
-  }
+  void Start(Callback* callback) override { callback_ = callback; }
 
-  virtual void Capture(const webrtc::DesktopRegion& region) OVERRIDE {
+  void Capture(const webrtc::DesktopRegion& region) override {
     webrtc::DesktopSize size;
     if (frame_index_ % 2 == 0) {
       size = webrtc::DesktopSize(kTestFrameWidth1, kTestFrameHeight1);
@@ -115,17 +114,12 @@ class FakeScreenCapturer : public webrtc::ScreenCapturer {
     callback_->OnCaptureCompleted(frame);
   }
 
-  virtual void SetMouseShapeObserver(
-      MouseShapeObserver* mouse_shape_observer) OVERRIDE {
-  }
+  void SetMouseShapeObserver(
+      MouseShapeObserver* mouse_shape_observer) override {}
 
-  virtual bool GetScreenList(ScreenList* screens) OVERRIDE {
-    return false;
-  }
+  bool GetScreenList(ScreenList* screens) override { return false; }
 
-  virtual bool SelectScreen(webrtc::ScreenId id) OVERRIDE {
-    return false;
-  }
+  bool SelectScreen(webrtc::ScreenId id) override { return false; }
 
  private:
   Callback* callback_;
@@ -137,21 +131,12 @@ class FakeScreenCapturer : public webrtc::ScreenCapturer {
 
 class DesktopCaptureDeviceTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
-    worker_pool_ = new base::SequencedWorkerPool(3, "TestCaptureThread");
-  }
-
   void CreateScreenCaptureDevice(scoped_ptr<webrtc::DesktopCapturer> capturer) {
-    capture_device_.reset(new DesktopCaptureDevice(
-        worker_pool_->GetSequencedTaskRunner(worker_pool_->GetSequenceToken()),
-        thread_.Pass(),
-        capturer.Pass(),
-        DesktopMediaID::TYPE_SCREEN));
+    capture_device_.reset(
+        new DesktopCaptureDevice(capturer.Pass(), DesktopMediaID::TYPE_SCREEN));
   }
 
  protected:
-  scoped_refptr<base::SequencedWorkerPool> worker_pool_;
-  scoped_ptr<base::Thread> thread_;
   scoped_ptr<DesktopCaptureDevice> capture_device_;
 };
 
@@ -183,9 +168,7 @@ TEST_F(DesktopCaptureDeviceTest, MAYBE_Capture) {
   capture_params.requested_format.frame_size.SetSize(640, 480);
   capture_params.requested_format.frame_rate = kFrameRate;
   capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
-  capture_device_->AllocateAndStart(
-      capture_params, client.PassAs<media::VideoCaptureDevice::Client>());
+  capture_device_->AllocateAndStart(capture_params, client.Pass());
   EXPECT_TRUE(done_event.TimedWait(TestTimeouts::action_max_timeout()));
   capture_device_->StopAndDeAllocate();
 
@@ -195,7 +178,6 @@ TEST_F(DesktopCaptureDeviceTest, MAYBE_Capture) {
   EXPECT_EQ(media::PIXEL_FORMAT_ARGB, format.pixel_format);
 
   EXPECT_EQ(format.frame_size.GetArea() * 4, frame_size);
-  worker_pool_->FlushForTesting();
 }
 
 // Test that screen capturer behaves correctly if the source frame size changes
@@ -221,10 +203,8 @@ TEST_F(DesktopCaptureDeviceTest, ScreenResolutionChangeConstantResolution) {
                                                      kTestFrameHeight1);
   capture_params.requested_format.frame_rate = kFrameRate;
   capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
 
-  capture_device_->AllocateAndStart(
-      capture_params, client.PassAs<media::VideoCaptureDevice::Client>());
+  capture_device_->AllocateAndStart(capture_params, client.Pass());
 
   // Capture at least two frames, to ensure that the source frame size has
   // changed while capturing.
@@ -240,7 +220,6 @@ TEST_F(DesktopCaptureDeviceTest, ScreenResolutionChangeConstantResolution) {
   EXPECT_EQ(media::PIXEL_FORMAT_ARGB, format.pixel_format);
 
   EXPECT_EQ(format.frame_size.GetArea() * 4, frame_size);
-  worker_pool_->FlushForTesting();
 }
 
 // Test that screen capturer behaves correctly if the source frame size changes
@@ -264,10 +243,9 @@ TEST_F(DesktopCaptureDeviceTest, ScreenResolutionChangeVariableResolution) {
                                                      kTestFrameHeight2);
   capture_params.requested_format.frame_rate = kFrameRate;
   capture_params.requested_format.pixel_format = media::PIXEL_FORMAT_I420;
-  capture_params.allow_resolution_change = false;
 
   capture_device_->AllocateAndStart(
-      capture_params, client.PassAs<media::VideoCaptureDevice::Client>());
+      capture_params, client.Pass());
 
   // Capture at least three frames, to ensure that the source frame size has
   // changed at least twice while capturing.
@@ -283,7 +261,6 @@ TEST_F(DesktopCaptureDeviceTest, ScreenResolutionChangeVariableResolution) {
   EXPECT_EQ(kTestFrameHeight1, format.frame_size.height());
   EXPECT_EQ(kFrameRate, format.frame_rate);
   EXPECT_EQ(media::PIXEL_FORMAT_ARGB, format.pixel_format);
-  worker_pool_->FlushForTesting();
 }
 
 }  // namespace content

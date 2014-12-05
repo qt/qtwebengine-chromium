@@ -26,7 +26,7 @@
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<CompositeOperationType>()
 {
@@ -52,8 +52,6 @@ inline SVGFECompositeElement::SVGFECompositeElement(Document& document)
     , m_in2(SVGAnimatedString::create(this, SVGNames::in2Attr, SVGString::create()))
     , m_svgOperator(SVGAnimatedEnumeration<CompositeOperationType>::create(this, SVGNames::operatorAttr, FECOMPOSITE_OPERATOR_OVER))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_k1);
     addToPropertyMap(m_k2);
     addToPropertyMap(m_k3);
@@ -82,31 +80,7 @@ bool SVGFECompositeElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGFECompositeElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::in2Attr)
-        m_in2->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::k1Attr)
-        m_k1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::k2Attr)
-        m_k2->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::k3Attr)
-        m_k3->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::k4Attr)
-        m_k4->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::operatorAttr)
-        m_svgOperator->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFECompositeElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
@@ -170,4 +144,4 @@ PassRefPtr<FilterEffect> SVGFECompositeElement::build(SVGFilterBuilder* filterBu
     return effect.release();
 }
 
-}
+} // namespace blink

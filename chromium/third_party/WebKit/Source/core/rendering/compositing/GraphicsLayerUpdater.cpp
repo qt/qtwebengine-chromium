@@ -28,30 +28,49 @@
 #include "core/rendering/compositing/GraphicsLayerUpdater.h"
 
 #include "core/html/HTMLMediaElement.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderLayerReflectionInfo.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
+#include "platform/TraceEvent.h"
 
-namespace WebCore {
+namespace blink {
 
-GraphicsLayerUpdater::UpdateContext::UpdateContext(const UpdateContext& other, const RenderLayer& layer)
-    : m_compositingStackingContext(other.m_compositingStackingContext)
-    , m_compositingAncestor(other.compositingContainer(layer))
-{
-    CompositingState compositingState = layer.compositingState();
-    if (compositingState != NotComposited && compositingState != PaintsIntoGroupedBacking) {
-        m_compositingAncestor = &layer;
-        if (layer.stackingNode()->isStackingContext())
-            m_compositingStackingContext = &layer;
+class GraphicsLayerUpdater::UpdateContext {
+public:
+    UpdateContext()
+        : m_compositingStackingContext(0)
+        , m_compositingAncestor(0)
+    {
     }
-}
 
-const RenderLayer* GraphicsLayerUpdater::UpdateContext::compositingContainer(const RenderLayer& layer) const
-{
-    return layer.stackingNode()->isNormalFlowOnly() ? m_compositingAncestor : m_compositingStackingContext;
-}
+    UpdateContext(const UpdateContext& other, const RenderLayer& layer)
+        : m_compositingStackingContext(other.m_compositingStackingContext)
+        , m_compositingAncestor(other.compositingContainer(layer))
+    {
+        CompositingState compositingState = layer.compositingState();
+        if (compositingState != NotComposited && compositingState != PaintsIntoGroupedBacking) {
+            m_compositingAncestor = &layer;
+            if (layer.stackingNode()->isStackingContext())
+                m_compositingStackingContext = &layer;
+        }
+    }
+
+    const RenderLayer* compositingContainer(const RenderLayer& layer) const
+    {
+        return layer.stackingNode()->isNormalFlowOnly() ? m_compositingAncestor : m_compositingStackingContext;
+    }
+
+    const RenderLayer* compositingStackingContext() const
+    {
+        return m_compositingStackingContext;
+    }
+
+private:
+    const RenderLayer* m_compositingStackingContext;
+    const RenderLayer* m_compositingAncestor;
+};
 
 GraphicsLayerUpdater::GraphicsLayerUpdater()
     : m_needsRebuildTree(false)
@@ -62,46 +81,41 @@ GraphicsLayerUpdater::~GraphicsLayerUpdater()
 {
 }
 
-void GraphicsLayerUpdater::update(Vector<RenderLayer*>& layersNeedingPaintInvalidation, RenderLayer& layer, UpdateType updateType, const UpdateContext& context)
+void GraphicsLayerUpdater::update(RenderLayer& layer, Vector<RenderLayer*>& layersNeedingPaintInvalidation)
+{
+    TRACE_EVENT0("blink", "GraphicsLayerUpdater::update");
+    updateRecursive(layer, DoNotForceUpdate, UpdateContext(), layersNeedingPaintInvalidation);
+    layer.compositor()->updateRootLayerPosition();
+}
+
+void GraphicsLayerUpdater::updateRecursive(RenderLayer& layer, UpdateType updateType, const UpdateContext& context, Vector<RenderLayer*>& layersNeedingPaintInvalidation)
 {
     if (layer.hasCompositedLayerMapping()) {
-        CompositedLayerMappingPtr mapping = layer.compositedLayerMapping();
+        CompositedLayerMapping* mapping = layer.compositedLayerMapping();
 
-        const RenderLayer* compositingContainer = context.compositingContainer(layer);
-        ASSERT(compositingContainer == layer.ancestorCompositingLayer());
-        if (mapping->updateRequiresOwnBackingStoreForAncestorReasons(compositingContainer))
-            updateType = ForceUpdate;
+        if (updateType == ForceUpdate || mapping->needsGraphicsLayerUpdate()) {
+            const RenderLayer* compositingContainer = context.compositingContainer(layer);
+            ASSERT(compositingContainer == layer.enclosingLayerWithCompositedLayerMapping(ExcludeSelf));
 
-        // Note carefully: here we assume that the compositing state of all descendants have been updated already,
-        // so it is legitimate to compute and cache the composited bounds for this layer.
-        mapping->updateCompositedBounds(updateType);
+            if (mapping->updateGraphicsLayerConfiguration())
+                m_needsRebuildTree = true;
 
-        if (RenderLayerReflectionInfo* reflection = layer.reflectionInfo()) {
-            if (reflection->reflectionLayer()->hasCompositedLayerMapping())
-                reflection->reflectionLayer()->compositedLayerMapping()->updateCompositedBounds(ForceUpdate);
+            mapping->updateGraphicsLayerGeometry(compositingContainer, context.compositingStackingContext(), layersNeedingPaintInvalidation);
+
+            if (mapping->hasUnpositionedOverflowControlsLayers())
+                layer.scrollableArea()->positionOverflowControls(IntSize());
+
+            updateType = mapping->updateTypeForChildren(updateType);
+            mapping->clearNeedsGraphicsLayerUpdate();
         }
-
-        if (mapping->updateGraphicsLayerConfiguration(updateType))
-            m_needsRebuildTree = true;
-
-        mapping->updateGraphicsLayerGeometry(updateType, compositingContainer, layersNeedingPaintInvalidation);
-
-        updateType = mapping->updateTypeForChildren(updateType);
-        mapping->clearNeedsGraphicsLayerUpdate();
-
-        if (!layer.parent())
-            layer.compositor()->updateRootLayerPosition();
-
-        if (mapping->hasUnpositionedOverflowControlsLayers())
-            layer.scrollableArea()->positionOverflowControls(IntSize());
     }
 
     UpdateContext childContext(context, layer);
     for (RenderLayer* child = layer.firstChild(); child; child = child->nextSibling())
-        update(layersNeedingPaintInvalidation, *child, updateType, childContext);
+        updateRecursive(*child, updateType, childContext, layersNeedingPaintInvalidation);
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 
 void GraphicsLayerUpdater::assertNeedsToUpdateGraphicsLayerBitsCleared(RenderLayer& layer)
 {
@@ -114,4 +128,4 @@ void GraphicsLayerUpdater::assertNeedsToUpdateGraphicsLayerBitsCleared(RenderLay
 
 #endif
 
-} // namespace WebCore
+} // namespace blink

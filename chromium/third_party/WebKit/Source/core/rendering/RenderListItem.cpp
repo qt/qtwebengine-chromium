@@ -27,26 +27,30 @@
 #include "core/HTMLNames.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/html/HTMLOListElement.h"
-#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/RenderListMarker.h"
 #include "core/rendering/RenderView.h"
+#include "core/rendering/TextAutosizer.h"
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 RenderListItem::RenderListItem(Element* element)
     : RenderBlockFlow(element)
-    , m_marker(0)
+    , m_marker(nullptr)
     , m_hasExplicitValue(false)
     , m_isValueUpToDate(false)
     , m_notInList(false)
 {
     setInline(false);
+}
+
+void RenderListItem::trace(Visitor* visitor)
+{
+    visitor->trace(m_marker);
+    RenderBlockFlow::trace(visitor);
 }
 
 void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* oldStyle)
@@ -55,16 +59,12 @@ void RenderListItem::styleDidChange(StyleDifference diff, const RenderStyle* old
 
     if (style()->listStyleType() != NoneListStyle
         || (style()->listStyleImage() && !style()->listStyleImage()->errorOccurred())) {
-        RefPtr<RenderStyle> newStyle = RenderStyle::create();
-        // The marker always inherits from the list item, regardless of where it might end
-        // up (e.g., in some deeply nested line box). See CSS3 spec.
-        newStyle->inheritFrom(style());
         if (!m_marker)
             m_marker = RenderListMarker::createAnonymous(this);
-        m_marker->setStyle(newStyle.release());
+        m_marker->listItemStyleDidChange();
     } else if (m_marker) {
         m_marker->destroy();
-        m_marker = 0;
+        m_marker = nullptr;
     }
 }
 
@@ -72,7 +72,7 @@ void RenderListItem::willBeDestroyed()
 {
     if (m_marker) {
         m_marker->destroy();
-        m_marker = 0;
+        m_marker = nullptr;
     }
     RenderBlockFlow::willBeDestroyed();
 }
@@ -276,9 +276,6 @@ void RenderListItem::updateMarkerLocationAndInvalidateWidth()
     // FIXME: We should not modify the structure of the render tree
     // during layout. crbug.com/370461
     DeprecatedDisableModifyRenderTreeStructureAsserts disabler;
-    // Removing and adding the marker can trigger repainting in
-    // containers other than ourselves, so we need to disable LayoutState.
-    ForceHorriblySlowRectMapping slowRectMapping(*this);
     if (updateMarkerLocation()) {
         // If the marker is inside we need to redo the preferred width calculations
         // as the size of the item now includes the size of the list marker.
@@ -303,11 +300,7 @@ bool RenderListItem::updateMarkerLocation()
     }
 
     if (markerParent != lineBoxParent) {
-        updateFirstLetter();
         m_marker->remove();
-        // FIXME(crbug.com/391009): Investigate whether this call is needed.
-        if (markerParent)
-            markerParent->dirtyLinesFromChangedChild(m_marker);
         lineBoxParent->addChild(m_marker, firstNonMarkerChild(lineBoxParent));
         m_marker->updateMarginsAndContent();
         // If markerParent is an anonymous block with no children, destroy it.
@@ -327,7 +320,7 @@ void RenderListItem::layout()
         // The marker must be autosized before calling
         // updateMarkerLocationAndInvalidateWidth. It cannot be done in the
         // parent's beginLayout because it is not yet in the render tree.
-        if (FastTextAutosizer* textAutosizer = document().fastTextAutosizer())
+        if (TextAutosizer* textAutosizer = document().textAutosizer())
             textAutosizer->inflateListItem(this, m_marker);
 
         updateMarkerLocationAndInvalidateWidth();
@@ -531,4 +524,4 @@ void RenderListItem::updateListMarkerNumbers()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

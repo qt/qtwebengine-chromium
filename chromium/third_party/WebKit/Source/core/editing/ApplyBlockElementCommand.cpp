@@ -27,18 +27,19 @@
 #include "config.h"
 #include "core/editing/ApplyBlockElementCommand.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/Text.h"
 #include "core/editing/VisiblePosition.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -111,15 +112,15 @@ void ApplyBlockElementCommand::formatSelection(const VisiblePosition& startOfSel
     // and there's nothing to move.
     Position start = startOfSelection.deepEquivalent().downstream();
     if (isAtUnsplittableElement(start)) {
-        RefPtrWillBeRawPtr<Element> blockquote = createBlockElement();
+        RefPtrWillBeRawPtr<HTMLElement> blockquote = createBlockElement();
         insertNodeAt(blockquote, start);
-        RefPtrWillBeRawPtr<Element> placeholder = createBreakElement(document());
+        RefPtrWillBeRawPtr<HTMLBRElement> placeholder = createBreakElement(document());
         appendNode(placeholder, blockquote);
         setEndingSelection(VisibleSelection(positionBeforeNode(placeholder.get()), DOWNSTREAM, endingSelection().isDirectional()));
         return;
     }
 
-    RefPtrWillBeRawPtr<Element> blockquoteForNextIndent = nullptr;
+    RefPtrWillBeRawPtr<HTMLElement> blockquoteForNextIndent = nullptr;
     VisiblePosition endOfCurrentParagraph = endOfParagraph(startOfSelection);
     VisiblePosition endOfLastParagraph = endOfParagraph(endOfSelection);
     VisiblePosition endAfterSelection = endOfParagraph(endOfLastParagraph.next());
@@ -280,9 +281,9 @@ VisiblePosition ApplyBlockElementCommand::endOfNextParagrahSplittingTextNodesIfN
     return VisiblePosition(Position(text.get(), position.offsetInContainerNode() - 1));
 }
 
-PassRefPtrWillBeRawPtr<Element> ApplyBlockElementCommand::createBlockElement() const
+PassRefPtrWillBeRawPtr<HTMLElement> ApplyBlockElementCommand::createBlockElement() const
 {
-    RefPtrWillBeRawPtr<Element> element = createHTMLElement(document(), m_tagName);
+    RefPtrWillBeRawPtr<HTMLElement> element = createHTMLElement(document(), m_tagName);
     if (m_inlineStyle.length())
         element->setAttribute(styleAttr, m_inlineStyle);
     return element.release();

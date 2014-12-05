@@ -21,17 +21,26 @@ ScrollbarAnimationControllerThinning::Create(
     LayerImpl* scroll_layer,
     ScrollbarAnimationControllerClient* client,
     base::TimeDelta delay_before_starting,
+    base::TimeDelta resize_delay_before_starting,
     base::TimeDelta duration) {
-  return make_scoped_ptr(new ScrollbarAnimationControllerThinning(
-      scroll_layer, client, delay_before_starting, duration));
+  return make_scoped_ptr(
+      new ScrollbarAnimationControllerThinning(scroll_layer,
+                                               client,
+                                               delay_before_starting,
+                                               resize_delay_before_starting,
+                                               duration));
 }
 
 ScrollbarAnimationControllerThinning::ScrollbarAnimationControllerThinning(
     LayerImpl* scroll_layer,
     ScrollbarAnimationControllerClient* client,
     base::TimeDelta delay_before_starting,
+    base::TimeDelta resize_delay_before_starting,
     base::TimeDelta duration)
-    : ScrollbarAnimationController(client, delay_before_starting, duration),
+    : ScrollbarAnimationController(client,
+                                   delay_before_starting,
+                                   resize_delay_before_starting,
+                                   duration),
       scroll_layer_(scroll_layer),
       mouse_is_over_scrollbar_(false),
       mouse_is_near_scrollbar_(false),
@@ -65,8 +74,8 @@ void ScrollbarAnimationControllerThinning::DidMouseMoveOffScrollbar() {
   StartAnimation();
 }
 
-void ScrollbarAnimationControllerThinning::DidScrollUpdate() {
-  ScrollbarAnimationController::DidScrollUpdate();
+void ScrollbarAnimationControllerThinning::DidScrollUpdate(bool on_resize) {
+  ScrollbarAnimationController::DidScrollUpdate(on_resize);
   ApplyOpacityAndThumbThicknessScale(
     1, mouse_is_near_scrollbar_ ? 1.f : kIdleThicknessScale);
 
@@ -136,8 +145,12 @@ void ScrollbarAnimationControllerThinning::ApplyOpacityAndThumbThicknessScale(
        ++it) {
     ScrollbarLayerImplBase* scrollbar = *it;
     if (scrollbar->is_overlay_scrollbar()) {
-      scrollbar->SetOpacity(
-          AdjustScale(opacity, scrollbar->opacity(), opacity_change_));
+      float effectiveOpacity =
+          scrollbar->CanScrollOrientation()
+              ? AdjustScale(opacity, scrollbar->opacity(), opacity_change_)
+              : 0;
+
+      scrollbar->SetOpacity(effectiveOpacity);
       scrollbar->SetThumbThicknessScaleFactor(
           AdjustScale(thumb_thickness_scale,
                       scrollbar->thumb_thickness_scale_factor(),

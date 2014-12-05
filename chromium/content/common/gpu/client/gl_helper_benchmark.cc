@@ -19,7 +19,7 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "content/common/gpu/client/gl_helper.h"
@@ -56,12 +56,12 @@ const char *kQualityNames[] = {
 
 class GLHelperTest : public testing::Test {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     WebGraphicsContext3D::Attributes attributes;
     bool lose_context_when_out_of_memory = false;
     context_ = webkit::gpu::WebGraphicsContext3DInProcessCommandBufferImpl::
         CreateOffscreenContext(attributes, lose_context_when_out_of_memory);
-    context_->makeContextCurrent();
+    context_->InitializeOnCurrentThread();
 
     helper_.reset(
         new content::GLHelper(context_->GetGLInterface(),
@@ -71,7 +71,7 @@ class GLHelperTest : public testing::Test {
         helper_.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     helper_scaling_.reset(NULL);
     helper_.reset(NULL);
     context_.reset(NULL);
@@ -141,18 +141,10 @@ TEST_F(GLHelperTest, ScaleBenchmark) {
         const gfx::Size dst_size(output_sizes[outsize],
                                  output_sizes[outsize + 1]);
         SkBitmap input;
-        input.setConfig(SkBitmap::kARGB_8888_Config,
-                        src_size.width(),
-                        src_size.height());
-        input.allocPixels();
-        SkAutoLockPixels lock(input);
+        input.allocN32Pixels(src_size.width(), src_size.height());
 
         SkBitmap output_pixels;
-        input.setConfig(SkBitmap::kARGB_8888_Config,
-                        dst_size.width(),
-                        dst_size.height());
-        output_pixels.allocPixels();
-        SkAutoLockPixels output_lock(output_pixels);
+        output_pixels.allocN32Pixels(dst_size.width(), dst_size.height());
 
         context_->bindFramebuffer(GL_FRAMEBUFFER, framebuffer);
         context_->bindTexture(GL_TEXTURE_2D, dst_texture);
@@ -278,11 +270,7 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
         kQualities[q]);
 
       SkBitmap output_pixels;
-      input.setConfig(SkBitmap::kARGB_8888_Config,
-                      dst_size.width(),
-                      dst_size.height());
-      output_pixels.allocPixels();
-      SkAutoLockPixels lock(output_pixels);
+      output_pixels.allocN32Pixels(dst_size.width(), dst_size.height());
 
       helper_->ReadbackTextureSync(
           dst_texture,
@@ -290,7 +278,7 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
                     dst_size.width(),
                     dst_size.height()),
           static_cast<unsigned char *>(output_pixels.getPixels()),
-          SkBitmap::kARGB_8888_Config);
+          kN32_SkColorType);
       context_->deleteTexture(dst_texture);
       std::string filename = base::StringPrintf("testoutput_%s_%d.ppm",
                                                 kQualityNames[q],
@@ -308,7 +296,7 @@ TEST_F(GLHelperTest, DISABLED_ScaleTestImage) {
 // These tests needs to run against a proper GL environment, so we
 // need to set it up before we can run the tests.
 int main(int argc, char** argv) {
-  CommandLine::Init(argc, argv);
+  base::CommandLine::Init(argc, argv);
   base::TestSuite* suite = new content::ContentTestSuite(argc, argv);
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;

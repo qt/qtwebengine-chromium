@@ -30,24 +30,21 @@
 #ifndef InjectedScriptHost_h
 #define InjectedScriptHost_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class Database;
 class EventTarget;
-class InjectedScript;
 class InstrumentingAgents;
 class JSONValue;
 class Node;
 class ScriptDebugServer;
 class ScriptValue;
-class Storage;
 
 struct EventListenerInfo;
 
@@ -56,10 +53,12 @@ struct EventListenerInfo;
 // InjectedScriptHost must never implemment methods that have more power over the page than the
 // page already has itself (e.g. origin restriction bypasses).
 
-class InjectedScriptHost : public RefCounted<InjectedScriptHost>, public ScriptWrappable {
+class InjectedScriptHost : public RefCountedWillBeGarbageCollectedFinalized<InjectedScriptHost>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<InjectedScriptHost> create();
+    static PassRefPtrWillBeRawPtr<InjectedScriptHost> create();
     ~InjectedScriptHost();
+    void trace(Visitor*);
 
     void init(InstrumentingAgents* instrumentingAgents, ScriptDebugServer* scriptDebugServer)
     {
@@ -96,12 +95,12 @@ public:
 private:
     InjectedScriptHost();
 
-    InstrumentingAgents* m_instrumentingAgents;
+    RawPtrWillBeMember<InstrumentingAgents> m_instrumentingAgents;
     ScriptDebugServer* m_scriptDebugServer;
     Vector<OwnPtr<InspectableObject> > m_inspectedObjects;
     OwnPtr<InspectableObject> m_defaultInspectableObject;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // !defined(InjectedScriptHost_h)
+#endif // InjectedScriptHost_h

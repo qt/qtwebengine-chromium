@@ -10,6 +10,7 @@
 
 #include "base/base64.h"
 #include "base/debug/trace_event.h"
+#include "base/debug/trace_event_argument.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
 #include "cc/base/util.h"
@@ -17,17 +18,16 @@
 #include "cc/debug/traced_value.h"
 #include "cc/layers/content_layer_client.h"
 #include "skia/ext/pixel_ref_utils.h"
+#include "third_party/skia/include/core/SkBBHFactory.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkData.h"
-#include "third_party/skia/include/core/SkDrawFilter.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/core/SkPictureRecorder.h"
 #include "third_party/skia/include/core/SkStream.h"
 #include "third_party/skia/include/utils/SkNullCanvas.h"
-#include "third_party/skia/include/utils/SkPictureUtils.h"
 #include "ui/gfx/codec/jpeg_codec.h"
 #include "ui/gfx/codec/png_codec.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
 
 namespace cc {
@@ -88,14 +88,12 @@ scoped_refptr<Picture> Picture::Create(
     ContentLayerClient* client,
     const SkTileGridFactory::TileGridInfo& tile_grid_info,
     bool gather_pixel_refs,
-    int num_raster_threads,
     RecordingMode recording_mode) {
   scoped_refptr<Picture> picture = make_scoped_refptr(new Picture(layer_rect));
 
   picture->Record(client, tile_grid_info, recording_mode);
   if (gather_pixel_refs)
     picture->GatherPixelRefs(tile_grid_info);
-  picture->CloneForDrawing(num_raster_threads);
 
   return picture;
 }
@@ -123,9 +121,7 @@ scoped_refptr<Picture> Picture::CreateFromSkpValue(const base::Value* value) {
     return NULL;
 
   gfx::Rect layer_rect(skpicture->width(), skpicture->height());
-  gfx::Rect opaque_rect(skpicture->width(), skpicture->height());
-
-  return make_scoped_refptr(new Picture(skpicture, layer_rect, opaque_rect));
+  return make_scoped_refptr(new Picture(skpicture, layer_rect));
 }
 
 scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* raw_value) {
@@ -150,37 +146,24 @@ scoped_refptr<Picture> Picture::CreateFromValue(const base::Value* raw_value) {
   if (!MathUtil::FromValue(layer_rect_value, &layer_rect))
     return NULL;
 
-  const base::Value* opaque_rect_value = NULL;
-  if (!value->Get("params.opaque_rect", &opaque_rect_value))
-    return NULL;
-
-  gfx::Rect opaque_rect;
-  if (!MathUtil::FromValue(opaque_rect_value, &opaque_rect))
-    return NULL;
-
   // Read the picture. This creates an empty picture on failure.
   SkPicture* skpicture = SkPicture::CreateFromStream(&stream, &DecodeBitmap);
   if (skpicture == NULL)
     return NULL;
 
-  return make_scoped_refptr(new Picture(skpicture, layer_rect, opaque_rect));
+  return make_scoped_refptr(new Picture(skpicture, layer_rect));
 }
 
-Picture::Picture(SkPicture* picture,
-                 const gfx::Rect& layer_rect,
-                 const gfx::Rect& opaque_rect) :
-    layer_rect_(layer_rect),
-    opaque_rect_(opaque_rect),
-    picture_(skia::AdoptRef(picture)),
-    cell_size_(layer_rect.size()) {
+Picture::Picture(SkPicture* picture, const gfx::Rect& layer_rect)
+    : layer_rect_(layer_rect),
+      picture_(skia::AdoptRef(picture)),
+      cell_size_(layer_rect.size()) {
 }
 
 Picture::Picture(const skia::RefPtr<SkPicture>& picture,
                  const gfx::Rect& layer_rect,
-                 const gfx::Rect& opaque_rect,
                  const PixelRefMap& pixel_refs) :
     layer_rect_(layer_rect),
-    opaque_rect_(opaque_rect),
     picture_(picture),
     pixel_refs_(pixel_refs),
     cell_size_(layer_rect.size()) {
@@ -189,18 +172,6 @@ Picture::Picture(const skia::RefPtr<SkPicture>& picture,
 Picture::~Picture() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
     TRACE_DISABLED_BY_DEFAULT("cc.debug"), "cc::Picture", this);
-}
-
-Picture* Picture::GetCloneForDrawingOnThread(unsigned thread_index) {
-  // We don't need clones to draw from multiple threads with SkRecord.
-  if (playback_) {
-    return this;
-  }
-
-  // SkPicture is not thread-safe to rasterize with, this returns a clone
-  // to rasterize with on a specific thread.
-  CHECK_GE(clones_.size(), thread_index);
-  return thread_index == clones_.size() ? this : clones_[thread_index].get();
 }
 
 bool Picture::IsSuitableForGpuRasterization() const {
@@ -216,36 +187,14 @@ bool Picture::IsSuitableForGpuRasterization() const {
   return picture_->suitableForGpuRasterization(NULL);
 }
 
-void Picture::CloneForDrawing(int num_threads) {
-  TRACE_EVENT1("cc", "Picture::CloneForDrawing", "num_threads", num_threads);
-
-  // We don't need clones to draw from multiple threads with SkRecord.
-  if (playback_) {
-    return;
-  }
-
+int Picture::ApproximateOpCount() const {
   DCHECK(picture_);
-  DCHECK(clones_.empty());
+  return picture_->approximateOpCount();
+}
 
-  // We can re-use this picture for one raster worker thread.
-  raster_thread_checker_.DetachFromThread();
-
-  if (num_threads > 1) {
-    scoped_ptr<SkPicture[]> clones(new SkPicture[num_threads - 1]);
-    picture_->clone(&clones[0], num_threads - 1);
-
-    for (int i = 0; i < num_threads - 1; i++) {
-      scoped_refptr<Picture> clone = make_scoped_refptr(
-          new Picture(skia::AdoptRef(new SkPicture(clones[i])),
-                      layer_rect_,
-                      opaque_rect_,
-                      pixel_refs_));
-      clones_.push_back(clone);
-
-      clone->EmitTraceSnapshotAlias(this);
-      clone->raster_thread_checker_.DetachFromThread();
-    }
-  }
+bool Picture::HasText() const {
+  DCHECK(picture_);
+  return picture_->hasText();
 }
 
 void Picture::Record(ContentLayerClient* painter,
@@ -263,8 +212,6 @@ void Picture::Record(ContentLayerClient* painter,
 
   SkTileGridFactory factory(tile_grid_info);
   SkPictureRecorder recorder;
-
-  scoped_ptr<EXPERIMENTAL::SkRecording> recording;
 
   skia::RefPtr<SkCanvas> canvas;
   canvas = skia::SharePtr(recorder.beginRecording(
@@ -288,11 +235,6 @@ void Picture::Record(ContentLayerClient* painter,
       canvas = skia::AdoptRef(SkCreateNullCanvas());
       graphics_context_status = ContentLayerClient::GRAPHICS_CONTEXT_DISABLED;
       break;
-    case RECORD_WITH_SKRECORD:
-      recording.reset(new EXPERIMENTAL::SkRecording(layer_rect_.width(),
-                                                    layer_rect_.height()));
-      canvas = skia::SharePtr(recording->canvas());
-      break;
     default:
       NOTREACHED();
   }
@@ -307,22 +249,11 @@ void Picture::Record(ContentLayerClient* painter,
                                          layer_rect_.height());
   canvas->clipRect(layer_skrect);
 
-  gfx::RectF opaque_layer_rect;
-  painter->PaintContents(
-      canvas.get(), layer_rect_, &opaque_layer_rect, graphics_context_status);
+  painter->PaintContents(canvas.get(), layer_rect_, graphics_context_status);
 
   canvas->restore();
   picture_ = skia::AdoptRef(recorder.endRecording());
   DCHECK(picture_);
-
-  if (recording) {
-    // SkRecording requires it's the only one holding onto canvas before we
-    // may call releasePlayback().  (This helps enforce thread-safety.)
-    canvas.clear();
-    playback_.reset(recording->releasePlayback());
-  }
-
-  opaque_rect_ = gfx::ToEnclosedRect(opaque_layer_rect);
 
   EmitTraceSnapshot();
 }
@@ -383,13 +314,10 @@ void Picture::GatherPixelRefs(
   max_pixel_cell_ = gfx::Point(max_x, max_y);
 }
 
-int Picture::Raster(
-    SkCanvas* canvas,
-    SkDrawPictureCallback* callback,
-    const Region& negated_content_region,
-    float contents_scale) {
-  if (!playback_)
-    DCHECK(raster_thread_checker_.CalledOnValidThread());
+int Picture::Raster(SkCanvas* canvas,
+                    SkDrawPictureCallback* callback,
+                    const Region& negated_content_region,
+                    float contents_scale) const {
   TRACE_EVENT_BEGIN1(
       "cc",
       "Picture::Raster",
@@ -405,10 +333,14 @@ int Picture::Raster(
 
   canvas->scale(contents_scale, contents_scale);
   canvas->translate(layer_rect_.x(), layer_rect_.y());
-  if (playback_) {
-    playback_->draw(canvas);
-  } else {
+  if (callback) {
+    // If we have a callback, we need to call |draw()|, |drawPicture()| doesn't
+    // take a callback.  This is used by |AnalysisCanvas| to early out.
     picture_->draw(canvas, callback);
+  } else {
+    // Prefer to call |drawPicture()| on the canvas since it could place the
+    // entire picture on the canvas instead of parsing the skia operations.
+    canvas->drawPicture(picture_.get());
   }
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
@@ -420,16 +352,9 @@ int Picture::Raster(
 }
 
 void Picture::Replay(SkCanvas* canvas) {
-  if (!playback_)
-    DCHECK(raster_thread_checker_.CalledOnValidThread());
   TRACE_EVENT_BEGIN0("cc", "Picture::Replay");
   DCHECK(picture_);
-
-  if (playback_) {
-    playback_->draw(canvas);
-  } else {
-    picture_->draw(canvas);
-  }
+  picture_->draw(canvas);
   SkIRect bounds;
   canvas->getClipDeviceBounds(&bounds);
   TRACE_EVENT_END1("cc", "Picture::Replay",
@@ -438,26 +363,11 @@ void Picture::Replay(SkCanvas* canvas) {
 
 scoped_ptr<base::Value> Picture::AsValue() const {
   SkDynamicMemoryWStream stream;
-
-  if (playback_) {
-    // SkPlayback can't serialize itself, so re-record into an SkPicture.
-    SkPictureRecorder recorder;
-    skia::RefPtr<SkCanvas> canvas(skia::SharePtr(recorder.beginRecording(
-        layer_rect_.width(),
-        layer_rect_.height(),
-        NULL)));  // Default (no) bounding-box hierarchy is fastest.
-    playback_->draw(canvas.get());
-    skia::RefPtr<SkPicture> picture(skia::AdoptRef(recorder.endRecording()));
-    picture->serialize(&stream, &EncodeBitmap);
-  } else {
-    // Serialize the picture.
-    picture_->serialize(&stream, &EncodeBitmap);
-  }
+  picture_->serialize(&stream, &EncodeBitmap);
 
   // Encode the picture as base64.
   scoped_ptr<base::DictionaryValue> res(new base::DictionaryValue());
   res->Set("params.layer_rect", MathUtil::AsValue(layer_rect_).release());
-  res->Set("params.opaque_rect", MathUtil::AsValue(opaque_rect_).release());
 
   size_t serialized_size = stream.bytesWritten();
   scoped_ptr<char[]> serialized_picture(new char[serialized_size]);
@@ -466,7 +376,7 @@ scoped_ptr<base::Value> Picture::AsValue() const {
   base::Base64Encode(std::string(serialized_picture.get(), serialized_size),
                      &b64_picture);
   res->SetString("skp64", b64_picture);
-  return res.PassAs<base::Value>();
+  return res.Pass();
 }
 
 void Picture::EmitTraceSnapshot() const {
@@ -589,18 +499,22 @@ Picture::PixelRefIterator& Picture::PixelRefIterator::operator++() {
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRasterData(float scale) const {
-  scoped_ptr<base::DictionaryValue> raster_data(new base::DictionaryValue());
-  raster_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
+  scoped_refptr<base::debug::TracedValue> raster_data =
+      new base::debug::TracedValue();
+  TracedValue::SetIDRef(this, raster_data.get(), "picture_id");
   raster_data->SetDouble("scale", scale);
-  return TracedValue::FromValue(raster_data.release());
+  return raster_data;
 }
 
 scoped_refptr<base::debug::ConvertableToTraceFormat>
     Picture::AsTraceableRecordData() const {
-  scoped_ptr<base::DictionaryValue> record_data(new base::DictionaryValue());
-  record_data->Set("picture_id", TracedValue::CreateIDRef(this).release());
-  record_data->Set("layer_rect", MathUtil::AsValue(layer_rect_).release());
-  return TracedValue::FromValue(record_data.release());
+  scoped_refptr<base::debug::TracedValue> record_data =
+      new base::debug::TracedValue();
+  TracedValue::SetIDRef(this, record_data.get(), "picture_id");
+  record_data->BeginArray("layer_rect");
+  MathUtil::AddToTracedValue(layer_rect_, record_data.get());
+  record_data->EndArray();
+  return record_data;
 }
 
 }  // namespace cc

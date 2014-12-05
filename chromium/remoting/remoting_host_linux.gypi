@@ -4,7 +4,7 @@
 
 {
   'conditions': [
-    ['OS=="linux" and branding=="Chrome" and enable_remoting_host==1', {
+    ['OS=="linux" and branding=="Chrome" and enable_remoting_host==1 and chromeos==0', {
       'variables': {
         'build_deb_script': 'host/installer/linux/build-deb.sh',
         'deb_filename': 'host/installer/<!(["<(build_deb_script)", "-p", "-s", "<(DEPTH)"])',
@@ -81,57 +81,41 @@
     ['OS=="linux" and enable_remoting_host==1', {
       'targets': [
         # Linux breakpad processing
-        {
-          'target_name': 'remoting_linux_symbols',
-          'type': 'none',
-          'conditions': [
-            ['linux_dump_symbols==1', {
-              'actions': [
-                {
-                  'action_name': 'dump_symbols',
-                  'inputs': [
-                    '<(DEPTH)/build/linux/dump_app_syms',
-                    '<(PRODUCT_DIR)/dump_syms',
-                    '<(PRODUCT_DIR)/remoting_me2me_host',
-                  ],
-                  'outputs': [
-                    '<(PRODUCT_DIR)/remoting_me2me_host.breakpad.<(target_arch)',
-                  ],
-                  'action': ['<(DEPTH)/build/linux/dump_app_syms',
-                             '<(PRODUCT_DIR)/dump_syms',
-                             '<(linux_strip_binary)',
-                             '<(PRODUCT_DIR)/remoting_me2me_host',
-                             '<@(_outputs)'],
-                  'message': 'Dumping breakpad symbols to <(_outputs)',
-                  'process_outputs_as_sources': 1,
-                },
-              ],
-              'dependencies': [
-                'remoting_me2me_host',
-                '../breakpad/breakpad.gyp:dump_syms',
-              ],
-            }],  # 'linux_dump_symbols==1'
-          ],  # end of 'conditions'
-        },  # end of target 'linux_symbols'
-        {
-          'target_name': 'remoting_start_host',
-          'type': 'executable',
-          'dependencies': [
-            'remoting_host_setup_base',
-          ],
-          'sources': [
-            'host/setup/host_starter.cc',
-            'host/setup/host_starter.h',
-            'host/setup/start_host.cc',
-          ],
-          'conditions': [
-            ['use_allocator!="none"', {
-              'dependencies': [
-                '../base/allocator/allocator.gyp:allocator',
-              ],
-            }],
-          ],
-        },  # end of target 'remoting_start_host'
+        # The following target is disabled temporarily because it was failing
+        # on build bots. See crbug.com/386886 .
+        #
+        # {
+        #   'target_name': 'remoting_linux_symbols',
+        #   'type': 'none',
+        #   'conditions': [
+        #     ['linux_dump_symbols==1', {
+        #       'actions': [
+        #         {
+        #           'action_name': 'dump_symbols',
+        #           'inputs': [
+        #             '<(DEPTH)/build/linux/dump_app_syms',
+        #             '<(PRODUCT_DIR)/dump_syms',
+        #             '<(PRODUCT_DIR)/remoting_me2me_host',
+        #           ],
+        #           'outputs': [
+        #             '<(PRODUCT_DIR)/remoting_me2me_host.breakpad.<(target_arch)',
+        #           ],
+        #           'action': ['<(DEPTH)/build/linux/dump_app_syms',
+        #                      '<(PRODUCT_DIR)/dump_syms',
+        #                      '<(linux_strip_binary)',
+        #                      '<(PRODUCT_DIR)/remoting_me2me_host',
+        #                      '<@(_outputs)'],
+        #           'message': 'Dumping breakpad symbols to <(_outputs)',
+        #           'process_outputs_as_sources': 1,
+        #         },
+        #       ],
+        #       'dependencies': [
+        #         'remoting_me2me_host',
+        #         '../breakpad/breakpad.gyp:dump_syms',
+        #       ],
+        #     }],  # 'linux_dump_symbols==1'
+        #   ],  # end of 'conditions'
+        # },  # end of target 'remoting_linux_symbols'
       ],  # end of 'targets'
     }],  # 'OS=="linux"'
 

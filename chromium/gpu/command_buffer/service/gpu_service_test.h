@@ -22,11 +22,12 @@ namespace gles2 {
 class GpuServiceTest : public testing::Test {
  public:
   GpuServiceTest();
-  virtual ~GpuServiceTest();
+  ~GpuServiceTest() override;
 
  protected:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUpWithGLVersion(const char* gl_version, const char* gl_extensions);
+  void SetUp() override;
+  void TearDown() override;
 
   scoped_ptr< ::testing::StrictMock< ::gfx::MockGLInterface> > gl_;
 

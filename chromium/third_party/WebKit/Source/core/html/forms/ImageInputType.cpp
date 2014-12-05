@@ -36,7 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -85,7 +85,7 @@ String ImageInputType::resultForDialogSubmit() const
 {
     StringBuilder result;
     result.appendNumber(m_clickLocation.x());
-    result.append(",");
+    result.append(',');
     result.appendNumber(m_clickLocation.y());
     return result.toString();
 }
@@ -136,7 +136,7 @@ void ImageInputType::srcAttributeChanged()
 {
     if (!element().renderer())
         return;
-    element().imageLoader()->updateFromElementIgnoringPreviousError();
+    element().imageLoader()->updateFromElement(ImageLoader::UpdateIgnorePreviousError);
 }
 
 void ImageInputType::startResourceLoading()
@@ -165,11 +165,6 @@ bool ImageInputType::shouldRespectAlignAttribute()
 }
 
 bool ImageInputType::canBeSuccessfulSubmitButton()
-{
-    return true;
-}
-
-bool ImageInputType::isImageButton() const
 {
     return true;
 }
@@ -242,4 +237,4 @@ const QualifiedName& ImageInputType::subResourceAttributeName() const
     return srcAttr;
 }
 
-} // namespace WebCore
+} // namespace blink

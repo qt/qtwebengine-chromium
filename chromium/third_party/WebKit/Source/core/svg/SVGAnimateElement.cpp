@@ -25,20 +25,18 @@
 #include "core/svg/SVGAnimateElement.h"
 
 #include "core/CSSPropertyNames.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/QualifiedName.h"
 #include "core/svg/SVGAnimatedTypeAnimator.h"
 #include "core/svg/SVGDocumentExtensions.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimateElement::SVGAnimateElement(const QualifiedName& tagName, Document& document)
     : SVGAnimationElement(tagName, document)
 {
-    ASSERT(isSVGAnimateElement(*this));
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<SVGAnimateElement> SVGAnimateElement::create(Document& document)
@@ -175,7 +173,7 @@ void SVGAnimateElement::resetAnimatedType()
 
         WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator end = animatedElements.end();
         for (WillBeHeapVector<RawPtrWillBeMember<SVGElement> >::const_iterator it = animatedElements.begin(); it != end; ++it)
-            document().accessSVGExtensions().addElementReferencingTarget(this, *it);
+            addReferenceTo(*it);
 
         if (!m_animatedProperty)
             m_animatedProperty = animator->startAnimValAnimation(animatedElements);
@@ -206,7 +204,7 @@ static inline void applyCSSPropertyToTarget(SVGElement* targetElement, CSSProper
     if (!propertySet->setProperty(id, value, false, 0))
         return;
 
-    targetElement->setNeedsStyleRecalc(LocalStyleChange);
+    targetElement->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Animation));
 }
 
 static inline void removeCSSPropertyFromTarget(SVGElement* targetElement, CSSPropertyID id)
@@ -215,7 +213,7 @@ static inline void removeCSSPropertyFromTarget(SVGElement* targetElement, CSSPro
     ASSERT_WITH_SECURITY_IMPLICATION(!targetElement->m_deletionHasBegun);
 #endif
     targetElement->ensureAnimatedSMILStyleProperties()->removeProperty(id);
-    targetElement->setNeedsStyleRecalc(LocalStyleChange);
+    targetElement->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::Animation));
 }
 
 static inline void applyCSSPropertyToTargetAndInstances(SVGElement* targetElement, const QualifiedName& attributeName, const String& valueAsString)

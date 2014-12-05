@@ -31,43 +31,42 @@
 #ifndef DeviceMotionDispatcher_h
 #define DeviceMotionDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebDeviceMotionListener.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
-class WebDeviceMotionData;
-}
 
-namespace WebCore {
-
-class DeviceMotionController;
 class DeviceMotionData;
+class WebDeviceMotionData;
 
 // This class listens to device motion data and notifies all registered controllers.
-class DeviceMotionDispatcher FINAL : public DeviceEventDispatcherBase, public blink::WebDeviceMotionListener {
+class DeviceMotionDispatcher final : public GarbageCollectedFinalized<DeviceMotionDispatcher>, public PlatformEventDispatcher, public WebDeviceMotionListener {
+    USING_GARBAGE_COLLECTED_MIXIN(DeviceMotionDispatcher);
 public:
     static DeviceMotionDispatcher& instance();
+    virtual ~DeviceMotionDispatcher();
 
     // Note that the returned object is owned by this class.
     // FIXME: make the return value const, see crbug.com/233174.
     DeviceMotionData* latestDeviceMotionData();
 
     // Inherited from WebDeviceMotionListener.
-    virtual void didChangeDeviceMotion(const blink::WebDeviceMotionData&) OVERRIDE;
+    virtual void didChangeDeviceMotion(const WebDeviceMotionData&) override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     DeviceMotionDispatcher();
-    virtual ~DeviceMotionDispatcher();
 
-    // Inherited from DeviceEventDispatcherBase.
-    virtual void startListening() OVERRIDE;
-    virtual void stopListening() OVERRIDE;
+    // Inherited from PlatformEventDispatcher.
+    virtual void startListening() override;
+    virtual void stopListening() override;
 
-    RefPtrWillBePersistent<DeviceMotionData> m_lastDeviceMotionData;
+    Member<DeviceMotionData> m_lastDeviceMotionData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceMotionDispatcher_h

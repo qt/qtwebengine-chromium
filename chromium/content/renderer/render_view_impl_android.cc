@@ -14,9 +14,12 @@
 namespace content {
 
 // Check content::TopControlsState and cc::TopControlsState are kept in sync.
-COMPILE_ASSERT(int(SHOWN) == int(cc::SHOWN), mismatching_enums);
-COMPILE_ASSERT(int(HIDDEN) == int(cc::HIDDEN), mismatching_enums);
-COMPILE_ASSERT(int(BOTH) == int(cc::BOTH), mismatching_enums);
+COMPILE_ASSERT(int(TOP_CONTROLS_STATE_SHOWN) == int(cc::SHOWN),
+               mismatching_enums);
+COMPILE_ASSERT(int(TOP_CONTROLS_STATE_HIDDEN) == int(cc::HIDDEN),
+               mismatching_enums);
+COMPILE_ASSERT(int(TOP_CONTROLS_STATE_BOTH) == int(cc::BOTH),
+               mismatching_enums);
 
 cc::TopControlsState ContentToCcTopControlsState(
     TopControlsState state) {
@@ -65,8 +68,12 @@ void RenderViewImpl::didScrollWithKeyboard(const blink::WebSize& delta) {
 }
 
 void RenderViewImpl::OnExtractSmartClipData(const gfx::Rect& rect) {
+  blink::WebString clip_text;
+  blink::WebString clip_html;
+  blink::WebRect clip_rect;
+  webview()->extractSmartClipData(rect, clip_text, clip_html, clip_rect);
   Send(new ViewHostMsg_SmartClipDataExtracted(
-      routing_id_, webview()->getSmartClipData(rect)));
+      routing_id_, clip_text, clip_html, clip_rect));
 }
 
 }  // namespace content

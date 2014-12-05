@@ -37,7 +37,7 @@
 #include "platform/mac/NSScrollerImpDetails.h"
 #include "platform/scroll/ScrollbarThemeClient.h"
 
-namespace WebCore {
+namespace blink {
 
 typedef HashMap<ScrollbarThemeClient*, RetainPtr<ScrollbarPainter> > ScrollbarPainterMap;
 
@@ -89,7 +89,7 @@ void ScrollbarThemeMacOverlayAPI::paintTrackBackground(GraphicsContext* context,
 
     GraphicsContextStateSaver stateSaver(*context);
     context->translate(rect.x(), rect.y());
-    LocalCurrentGraphicsContext localContext(context);
+    LocalCurrentGraphicsContext localContext(context, IntRect(IntPoint(), rect.size()));
 
     CGRect frameRect = scrollbar->frameRect();
     ScrollbarPainter scrollbarPainter = painterForScrollbar(scrollbar);
@@ -105,7 +105,7 @@ void ScrollbarThemeMacOverlayAPI::paintThumb(GraphicsContext* context, Scrollbar
 
     GraphicsContextStateSaver stateSaver(*context);
     context->translate(rect.x(), rect.y());
-    LocalCurrentGraphicsContext localContext(context);
+    LocalCurrentGraphicsContext localContext(context, IntRect(IntPoint(), rect.size()));
 
     ScrollbarPainter scrollbarPainter = painterForScrollbar(scrollbar);
     [scrollbarPainter setEnabled:scrollbar->enabled()];
@@ -192,4 +192,4 @@ void ScrollbarThemeMacOverlayAPI::updateEnabledState(ScrollbarThemeClient* scrol
     [painterForScrollbar(scrollbar) setEnabled:scrollbar->enabled()];
 }
 
-} // namespace WebCore
+} // namespace blink

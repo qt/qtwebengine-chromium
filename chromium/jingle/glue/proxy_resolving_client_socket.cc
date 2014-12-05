@@ -10,8 +10,11 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "net/base/io_buffer.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/http/http_auth_controller.h"
 #include "net/http/http_network_session.h"
+#include "net/http/proxy_client_socket.h"
 #include "net/socket/client_socket_handle.h"
 #include "net/socket/client_socket_pool_manager.h"
 #include "net/url_request/url_request_context.h"
@@ -56,8 +59,8 @@ ProxyResolvingClientSocket::ProxyResolvingClientSocket(
   session_params.cert_verifier = request_context->cert_verifier();
   session_params.transport_security_state =
       request_context->transport_security_state();
-  // TODO(rkn): This is NULL because ServerBoundCertService is not thread safe.
-  session_params.server_bound_cert_service = NULL;
+  // TODO(rkn): This is NULL because ChannelIDService is not thread safe.
+  session_params.channel_id_service = NULL;
   session_params.proxy_service = request_context->proxy_service();
   session_params.ssl_config_service = request_context->ssl_config_service();
   session_params.http_auth_handler_factory =
@@ -137,9 +140,11 @@ int ProxyResolvingClientSocket::Connect(
   // First we try and resolve the proxy.
   int status = network_session_->proxy_service()->ResolveProxy(
       proxy_url_,
+      net::LOAD_NORMAL,
       &proxy_info_,
       proxy_resolve_callback_,
       &pac_request_,
+      NULL,
       bound_net_log_);
   if (status != net::ERR_IO_PENDING) {
     // We defer execution of ProcessProxyResolveDone instead of calling it
@@ -267,6 +272,15 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
       // "address unreachable" error, and will report both of these failures as
       // ERR_ADDRESS_UNREACHABLE.
       return net::ERR_ADDRESS_UNREACHABLE;
+    case net::ERR_PROXY_AUTH_REQUESTED: {
+      net::ProxyClientSocket* proxy_socket =
+          static_cast<net::ProxyClientSocket*>(transport_->socket());
+
+      if (proxy_socket->GetAuthController()->HaveAuth())
+        return proxy_socket->RestartWithAuth(connect_callback_);
+
+      return error;
+    }
     default:
       return error;
   }
@@ -277,8 +291,8 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
   }
 
   int rv = network_session_->proxy_service()->ReconsiderProxyAfterError(
-      proxy_url_, error, &proxy_info_, proxy_resolve_callback_, &pac_request_,
-      bound_net_log_);
+      proxy_url_, net::LOAD_NORMAL, error, &proxy_info_,
+      proxy_resolve_callback_, &pac_request_, NULL, bound_net_log_);
   if (rv == net::OK || rv == net::ERR_IO_PENDING) {
     CloseTransportSocket();
   } else {
@@ -306,7 +320,7 @@ int ProxyResolvingClientSocket::ReconsiderProxyAfterError(int error) {
 }
 
 void ProxyResolvingClientSocket::ReportSuccessfulProxyConnection() {
-  network_session_->proxy_service()->ReportSuccess(proxy_info_);
+  network_session_->proxy_service()->ReportSuccess(proxy_info_, NULL);
 }
 
 void ProxyResolvingClientSocket::Disconnect() {

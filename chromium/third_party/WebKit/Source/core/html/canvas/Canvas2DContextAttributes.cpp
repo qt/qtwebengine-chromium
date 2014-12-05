@@ -30,22 +30,19 @@
 
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 Canvas2DContextAttributes::Canvas2DContextAttributes()
     : m_alpha(true)
     , m_storage(PersistentStorage)
 {
-    ScriptWrappable::init(this);
 }
 
-Canvas2DContextAttributes::~Canvas2DContextAttributes()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(Canvas2DContextAttributes);
 
-PassRefPtr<Canvas2DContextAttributes> Canvas2DContextAttributes::create()
+PassRefPtrWillBeRawPtr<Canvas2DContextAttributes> Canvas2DContextAttributes::create()
 {
-    return adoptRef(new Canvas2DContextAttributes());
+    return adoptRefWillBeNoop(new Canvas2DContextAttributes());
 }
 
 bool Canvas2DContextAttributes::alpha() const
@@ -76,4 +73,4 @@ Canvas2DContextStorage Canvas2DContextAttributes::parsedStorage() const
     return m_storage;
 }
 
-} // namespace WebCore
+} // namespace blink

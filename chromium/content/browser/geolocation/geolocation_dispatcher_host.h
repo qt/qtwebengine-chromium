@@ -10,76 +10,61 @@
 
 #include "base/callback_forward.h"
 #include "base/memory/weak_ptr.h"
-#include "content/browser/geolocation/geolocation_provider_impl.h"
 #include "content/public/browser/web_contents_observer.h"
 
 class GURL;
 
 namespace content {
 
-// GeolocationDispatcherHost is an observer for Geolocation messages.
-// It's the complement of GeolocationDispatcher (owned by RenderView).
+// GeolocationDispatcherHost is an observer for Geolocation permissions-related
+// messages. In this role, it's the complement of GeolocationDispatcher (owned
+// by RenderFrame).
+// TODO(blundell): Eliminate this class in favor of having
+// Mojo handle permissions for geolocation once there is resolution on how
+// that will work. crbug.com/420498
 class GeolocationDispatcherHost : public WebContentsObserver {
  public:
   explicit GeolocationDispatcherHost(WebContents* web_contents);
-  virtual ~GeolocationDispatcherHost();
-
-  // Pause or resumes geolocation. Resuming when nothing is paused is a no-op.
-  // If the web contents is paused while not currently using geolocation but
-  // then goes on to do so before being resumed, then it will not get
-  // geolocation updates until it is resumed.
-  void PauseOrResume(bool should_pause);
+  ~GeolocationDispatcherHost() override;
 
  private:
   // WebContentsObserver
-  virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE;
-  virtual void RenderViewHostChanged(RenderViewHost* old_host,
-                                     RenderViewHost* new_host) OVERRIDE;
-  virtual bool OnMessageReceived(
-      const IPC::Message& msg, RenderFrameHost* render_frame_host) OVERRIDE;
+  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override;
+  void DidNavigateAnyFrame(RenderFrameHost* render_frame_host,
+                                   const LoadCommittedDetails& details,
+                                   const FrameNavigateParams& params) override;
+  bool OnMessageReceived(const IPC::Message& msg,
+                         RenderFrameHost* render_frame_host) override;
 
   // Message handlers:
+  // TODO(mlamouri): |requesting_origin| should be a security origin to
+  // guarantee that a proper origin is passed.
   void OnRequestPermission(RenderFrameHost* render_frame_host,
                            int bridge_id,
-                           const GURL& requesting_frame,
+                           const GURL& requesting_origin,
                            bool user_gesture);
-  void OnCancelPermissionRequest(RenderFrameHost* render_frame_host,
-                                 int bridge_id,
-                                 const GURL& requesting_frame);
-  void OnStartUpdating(RenderFrameHost* render_frame_host,
-                       const GURL& requesting_frame,
-                       bool enable_high_accuracy);
-  void OnStopUpdating(RenderFrameHost* render_frame_host);
-
-  // Updates the geolocation provider with the currently required update
-  // options.
-  void RefreshGeolocationOptions();
-
-  void OnLocationUpdate(const Geoposition& position);
 
   void SendGeolocationPermissionResponse(int render_process_id,
                                          int render_frame_id,
                                          int bridge_id,
                                          bool allowed);
 
-  // A map from the RenderFrameHosts that have requested geolocation updates to
-  // the type of accuracy they requested (true = high accuracy).
-  std::map<RenderFrameHost*, bool> updating_frames_;
-  bool paused_;
+  // Clear pending permissions associated with a given frame and request the
+  // browser to cancel the permission requests.
+  void CancelPermissionRequestsForFrame(RenderFrameHost* render_frame_host);
 
   struct PendingPermission {
     PendingPermission(int render_frame_id,
                       int render_process_id,
-                      int bridge_id);
+                      int bridge_id,
+                      const GURL& origin);
     ~PendingPermission();
     int render_frame_id;
     int render_process_id;
     int bridge_id;
-    base::Closure cancel;
+    GURL origin;
   };
   std::vector<PendingPermission> pending_permissions_;
-
-  scoped_ptr<GeolocationProvider::Subscription> geolocation_subscription_;
 
   base::WeakPtrFactory<GeolocationDispatcherHost> weak_factory_;
 

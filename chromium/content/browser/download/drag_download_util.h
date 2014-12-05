@@ -45,11 +45,11 @@ class PromiseFileFinalizer : public ui::DownloadFileObserver {
   explicit PromiseFileFinalizer(DragDownloadFile* drag_file_downloader);
 
   // DownloadFileObserver methods.
-  virtual void OnDownloadCompleted(const base::FilePath& file_path) OVERRIDE;
-  virtual void OnDownloadAborted() OVERRIDE;
+  void OnDownloadCompleted(const base::FilePath& file_path) override;
+  void OnDownloadAborted() override;
 
  protected:
-  virtual ~PromiseFileFinalizer();
+  ~PromiseFileFinalizer() override;
 
  private:
   void Cleanup();

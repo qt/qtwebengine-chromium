@@ -24,49 +24,46 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/rendering/RenderFlexibleBox.h"
 
-namespace WebCore {
+namespace blink {
 
 // RenderButtons are just like normal flexboxes except that they will generate an anonymous block child.
 // For inputs, they will also generate an anonymous RenderText and keep its style and content up
 // to date as the button changes.
-class RenderButton FINAL : public RenderFlexibleBox {
+class RenderButton final : public RenderFlexibleBox {
 public:
     explicit RenderButton(Element*);
     virtual ~RenderButton();
 
-    virtual const char* renderName() const OVERRIDE { return "RenderButton"; }
-    virtual bool isRenderButton() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderButton"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderButton || RenderFlexibleBox::isOfType(type); }
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->rendererIsEditable(); }
-    virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return true; }
+    virtual bool canBeSelectionLeaf() const override { return node() && node()->hasEditableStyle(); }
+    virtual bool canCollapseAnonymousBlockChild() const override { return true; }
 
-    virtual void addChild(RenderObject* newChild, RenderObject *beforeChild = 0) OVERRIDE;
-    virtual void removeChild(RenderObject*) OVERRIDE;
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) OVERRIDE { }
-    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
-
-    void setupInnerStyle(RenderStyle*);
+    virtual void addChild(RenderObject* newChild, RenderObject *beforeChild = 0) override;
+    virtual void removeChild(RenderObject*) override;
+    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override { }
+    virtual bool createsAnonymousWrapper() const override { return true; }
 
     // <button> should allow whitespace even though RenderFlexibleBox doesn't.
-    virtual bool canHaveWhitespaceChildren() const OVERRIDE { return true; }
+    virtual bool canHaveWhitespaceChildren() const override { return true; }
 
-    virtual bool canHaveGeneratedChildren() const OVERRIDE;
-    virtual bool hasControlClip() const OVERRIDE { return true; }
-    virtual LayoutRect controlClipRect(const LayoutPoint&) const OVERRIDE;
+    virtual bool canHaveGeneratedChildren() const override;
+    virtual bool hasControlClip() const override { return true; }
+    virtual LayoutRect controlClipRect(const LayoutPoint&) const override;
 
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode) const OVERRIDE;
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode) const override;
 
 private:
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void updateAnonymousChildStyle(const RenderObject* child, RenderStyle* childStyle) const override;
 
-    virtual bool hasLineIfEmpty() const OVERRIDE { return isHTMLInputElement(node()); }
+    virtual bool hasLineIfEmpty() const override { return isHTMLInputElement(node()); }
 
     RenderBlock* m_inner;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderButton, isRenderButton());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderButton_h

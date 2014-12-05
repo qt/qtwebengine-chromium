@@ -34,7 +34,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class LocalFrame;
@@ -43,21 +43,28 @@ class Image;
 class KURL;
 class Node;
 class RenderObject;
+class PositionWithAffinity;
 class Scrollbar;
 
 class HitTestResult {
+    DISALLOW_ALLOCATION();
 public:
     typedef WillBeHeapListHashSet<RefPtrWillBeMember<Node> > NodeSet;
 
     HitTestResult();
     HitTestResult(const LayoutPoint&);
-    // Pass non-negative padding values to perform a rect-based hit test.
+    // Pass positive padding values to perform a rect-based hit test.
     HitTestResult(const LayoutPoint& centerPoint, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding);
     HitTestResult(const HitTestLocation&);
     HitTestResult(const HitTestResult&);
     ~HitTestResult();
     HitTestResult& operator=(const HitTestResult&);
+    void trace(Visitor*);
 
+    // For point-based hit tests, these accessors provide information about the node
+    // under the point. For rect-based hit tests they are meaningless (reflect the
+    // last candidate node observed in the rect).
+    // FIXME: Make these less error-prone for rect-based hit tests (center point or fail).
     Node* innerNode() const { return m_innerNode.get(); }
     Node* innerPossiblyPseudoNode() const { return m_innerPossiblyPseudoNode.get(); }
     Element* innerElement() const;
@@ -82,9 +89,9 @@ public:
     const LayoutPoint& localPoint() const { return m_localPoint; }
     void setLocalPoint(const LayoutPoint& p) { m_localPoint = p; }
 
+    PositionWithAffinity position() const;
     RenderObject* renderer() const;
 
-    void setToNodesInDocumentTreeScope();
     void setToShadowHostIfInUserAgentShadowRoot();
 
     const HitTestLocation& hitTestLocation() const { return m_hitTestLocation; }
@@ -122,7 +129,8 @@ public:
     // the same thing as mutableRectBasedTestResult(), but here the return value is const.
     const NodeSet& rectBasedTestResult() const;
 
-    Node* targetNode() const;
+    // Collapse the rect-based test result into a single target at the specified location.
+    void resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPoint& resolvedPointInMainFrame);
 
 private:
     NodeSet& mutableRectBasedTestResult(); // See above.
@@ -130,20 +138,21 @@ private:
 
     HitTestLocation m_hitTestLocation;
 
-    RefPtrWillBePersistent<Node> m_innerNode;
-    RefPtrWillBePersistent<Node> m_innerPossiblyPseudoNode;
-    RefPtrWillBePersistent<Node> m_innerNonSharedNode;
+    RefPtrWillBeMember<Node> m_innerNode;
+    RefPtrWillBeMember<Node> m_innerPossiblyPseudoNode;
+    RefPtrWillBeMember<Node> m_innerNonSharedNode;
+    // FIXME: Nothing changes this to a value different from m_hitTestLocation!
     LayoutPoint m_pointInInnerNodeFrame; // The hit-tested point in innerNode frame coordinates.
     LayoutPoint m_localPoint; // A point in the local coordinate space of m_innerNonSharedNode's renderer. Allows us to efficiently
                               // determine where inside the renderer we hit on subsequent operations.
-    RefPtrWillBePersistent<Element> m_innerURLElement;
-    RefPtr<Scrollbar> m_scrollbar;
-    bool m_isOverWidget; // Returns true if we are over a widget (and not in the border/padding area of a RenderWidget for example).
+    RefPtrWillBeMember<Element> m_innerURLElement;
+    RefPtrWillBeMember<Scrollbar> m_scrollbar;
+    bool m_isOverWidget; // Returns true if we are over a widget (and not in the border/padding area of a RenderPart for example).
     bool m_isFirstLetter;
 
-    mutable OwnPtrWillBePersistent<NodeSet> m_rectBasedTestResult;
+    mutable OwnPtrWillBeMember<NodeSet> m_rectBasedTestResult;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HitTestResult_h

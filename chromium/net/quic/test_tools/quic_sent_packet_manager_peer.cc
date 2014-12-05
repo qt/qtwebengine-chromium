@@ -14,9 +14,35 @@ namespace net {
 namespace test {
 
 // static
+size_t QuicSentPacketManagerPeer::GetMaxTailLossProbes(
+    QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->max_tail_loss_probes_;
+}
+
+// static
 void QuicSentPacketManagerPeer::SetMaxTailLossProbes(
     QuicSentPacketManager* sent_packet_manager, size_t max_tail_loss_probes) {
   sent_packet_manager->max_tail_loss_probes_ = max_tail_loss_probes;
+}
+
+// static
+QuicByteCount QuicSentPacketManagerPeer::GetReceiveWindow(
+    QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->receive_buffer_bytes_;
+}
+
+// static
+void QuicSentPacketManagerPeer::SetIsServer(
+    QuicSentPacketManager* sent_packet_manager,
+    bool is_server) {
+  sent_packet_manager->is_server_ = is_server;
+}
+
+// static
+const SendAlgorithmInterface*
+    QuicSentPacketManagerPeer::GetSendAlgorithm(
+    const QuicSentPacketManager& sent_packet_manager) {
+  return sent_packet_manager.send_algorithm_.get();
 }
 
 // static
@@ -82,7 +108,7 @@ bool QuicSentPacketManagerPeer::IsRetransmission(
   DCHECK(sent_packet_manager->HasRetransmittableFrames(sequence_number));
   return sent_packet_manager->HasRetransmittableFrames(sequence_number) &&
       sent_packet_manager->unacked_packets_.GetTransmissionInfo(
-          sequence_number).all_transmissions->size() > 1;
+          sequence_number).all_transmissions != nullptr;
 }
 
 // static
@@ -113,7 +139,7 @@ size_t QuicSentPacketManagerPeer::GetNumRetransmittablePackets(
   for (QuicUnackedPacketMap::const_iterator it =
            sent_packet_manager->unacked_packets_.begin();
        it != sent_packet_manager->unacked_packets_.end(); ++it) {
-    if (it->second.retransmittable_frames != NULL) {
+    if (it->retransmittable_frames != nullptr) {
       ++num_unacked_packets;
     }
   }
@@ -124,6 +150,19 @@ size_t QuicSentPacketManagerPeer::GetNumRetransmittablePackets(
 QuicByteCount QuicSentPacketManagerPeer::GetBytesInFlight(
     const QuicSentPacketManager* sent_packet_manager) {
   return sent_packet_manager->unacked_packets_.bytes_in_flight();
+}
+
+// static
+QuicSentPacketManager::NetworkChangeVisitor*
+    QuicSentPacketManagerPeer::GetNetworkChangeVisitor(
+        const QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->network_change_visitor_;
+}
+
+// static
+QuicSustainedBandwidthRecorder& QuicSentPacketManagerPeer::GetBandwidthRecorder(
+    QuicSentPacketManager* sent_packet_manager) {
+  return sent_packet_manager->sustained_bandwidth_recorder_;
 }
 
 }  // namespace test

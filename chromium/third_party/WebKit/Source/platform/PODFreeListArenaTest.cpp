@@ -29,11 +29,10 @@
 #include "platform/testing/ArenaTestHelpers.h"
 #include "wtf/FastMalloc.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 using ArenaTestHelpers::TrackedAllocator;
 
@@ -168,4 +167,4 @@ TEST_F(PODFreeListArenaTest, ReusesPreviouslyFreedObjects)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -27,9 +27,21 @@
 #include "core/css/StyleSheetContents.h"
 #include "platform/NotImplemented.h"
 
-namespace WebCore {
+namespace blink {
 
-struct SameSizeAsCSSRule : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSRule> {
+// VC++ 2013 doesn't support EBCO (Empty Base Class Optimization), and having
+// multiple empty base classes makes the size of CSSRule bloat (Note that both
+// of GarbageCollectedFinalized and ScriptWrappableBase are empty classes).
+// See the following article for details.
+// http://social.msdn.microsoft.com/forums/vstudio/en-US/504c6598-6076-4acf-96b6-e6acb475d302/vc-multiple-inheritance-empty-base-classes-bloats-object-size
+//
+// FIXME: Remove ScriptWrappableBase from the base class list once VC++'s issue
+// gets fixed.
+// Note that we're going to split CSSRule class into two classes; CSSOMRule
+// (assumed name) which derives ScriptWrappable and CSSRule (new one) which
+// doesn't derive ScriptWrappable or ScriptWrappableBase. Then, we can safely
+// remove ScriptWrappableBase from the base class list.
+struct SameSizeAsCSSRule : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsCSSRule>, public ScriptWrappableBase {
     virtual ~SameSizeAsCSSRule();
     unsigned char bitfields;
     void* pointerUnion;
@@ -52,6 +64,7 @@ const CSSParserContext& CSSRule::parserContext() const
 
 void CSSRule::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     // This makes the parent link strong, which is different from the
     // pre-oilpan world, where the parent link is mysteriously zeroed under
     // some circumstances.
@@ -59,6 +72,7 @@ void CSSRule::trace(Visitor* visitor)
         visitor->trace(m_parentRule);
     else
         visitor->trace(m_parentStyleSheet);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -32,14 +32,15 @@
 #include "core/XLinkNames.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/html/parser/HTMLDocumentParser.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/html/parser/XSSAuditorDelegate.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/DocumentLoader.h"
-#include "core/frame/Settings.h"
 #include "platform/JSONValues.h"
 #include "platform/network/FormData.h"
 #include "platform/text/DecodeEscapeSequences.h"
@@ -53,7 +54,7 @@ const char kURLWithUniqueOrigin[] = "data:,";
 
 } // namespace
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -64,11 +65,15 @@ static bool isNonCanonicalCharacter(UChar c)
     // Note, we don't remove backslashes like PHP stripslashes(), which among other things converts "\\0" to the \0 character.
     // Instead, we remove backslashes and zeros (since the string "\\0" =(remove backslashes)=> "0"). However, this has the
     // adverse effect that we remove any legitimate zeros from a string.
+    //
     // We also remove forward-slash, because it is common for some servers to collapse successive path components, eg,
     // a//b becomes a/b.
     //
-    // For instance: new String("http://localhost:8000") => new String("http:localhost:8").
-    return (c == '\\' || c == '0' || c == '\0' || c == '/' || c >= 127);
+    // We also remove the questionmark character, since some severs replace invalid high-bytes with a questionmark. We
+    // are already stripping the high-bytes so we also strip the questionmark to match.
+    //
+    // For instance: new String("http://localhost:8000?x") => new String("http:localhost:8x").
+    return (c == '\\' || c == '0' || c == '\0' || c == '/' || c == '?' || c >= 127);
 }
 
 static bool isRequiredForInjection(UChar c)
@@ -341,7 +346,7 @@ void XSSAuditor::init(Document* document, XSSAuditorDelegate* auditorDelegate)
             }
         }
         if (xssProtectionHeader == ReflectedXSSInvalid)
-            document->addConsoleMessage(SecurityMessageSource, ErrorMessageLevel, "Error parsing header X-XSS-Protection: " + headerValue + ": "  + errorDetails + " at character position " + String::format("%u", errorPosition) + ". The default protections will be applied.");
+            document->addConsoleMessage(ConsoleMessage::create(SecurityMessageSource, ErrorMessageLevel, "Error parsing header X-XSS-Protection: " + headerValue + ": "  + errorDetails + " at character position " + String::format("%u", errorPosition) + ". The default protections will be applied."));
 
         ReflectedXSSDisposition cspHeader = document->contentSecurityPolicy()->reflectedXSSDisposition();
         m_didSendValidCSPHeader = cspHeader != ReflectedXSSUnset && cspHeader != ReflectedXSSInvalid;
@@ -439,6 +444,8 @@ bool XSSAuditor::filterStartToken(const FilterTokenRequest& request)
         didBlockScript |= filterInputToken(request);
     else if (hasName(request.token, buttonTag))
         didBlockScript |= filterButtonToken(request);
+    else if (hasName(request.token, linkTag))
+        didBlockScript |= filterLinkToken(request);
 
     return didBlockScript;
 }
@@ -595,6 +602,22 @@ bool XSSAuditor::filterButtonToken(const FilterTokenRequest& request)
     return eraseAttributeIfInjected(request, formactionAttr, kURLWithUniqueOrigin, SrcLikeAttributeTruncation);
 }
 
+bool XSSAuditor::filterLinkToken(const FilterTokenRequest& request)
+{
+    ASSERT(request.token.type() == HTMLToken::StartTag);
+    ASSERT(hasName(request.token, linkTag));
+
+    size_t indexOfAttribute = 0;
+    if (!findAttributeWithName(request.token, relAttr, indexOfAttribute))
+        return false;
+
+    const HTMLToken::Attribute& attribute = request.token.attributes().at(indexOfAttribute);
+    if (!equalIgnoringCase(String(attribute.value), "import"))
+        return false;
+
+    return eraseAttributeIfInjected(request, hrefAttr, kURLWithUniqueOrigin, SrcLikeAttributeTruncation, AllowSameOriginHref);
+}
+
 bool XSSAuditor::eraseDangerousAttributesIfInjected(const FilterTokenRequest& request)
 {
     DEFINE_STATIC_LOCAL(String, safeJavaScriptURL, ("javascript:void(0)"));
@@ -628,7 +651,7 @@ bool XSSAuditor::eraseDangerousAttributesIfInjected(const FilterTokenRequest& re
     return didBlockScript;
 }
 
-bool XSSAuditor::eraseAttributeIfInjected(const FilterTokenRequest& request, const QualifiedName& attributeName, const String& replacementValue, TruncationKind treatment)
+bool XSSAuditor::eraseAttributeIfInjected(const FilterTokenRequest& request, const QualifiedName& attributeName, const String& replacementValue, TruncationKind treatment, HrefRestriction restriction)
 {
     size_t indexOfAttribute = 0;
     if (!findAttributeWithName(request.token, attributeName, indexOfAttribute))
@@ -638,7 +661,7 @@ bool XSSAuditor::eraseAttributeIfInjected(const FilterTokenRequest& request, con
     if (!isContainedInRequest(canonicalize(snippetFromAttribute(request, attribute), treatment)))
         return false;
 
-    if (threadSafeMatch(attributeName, srcAttr)) {
+    if (threadSafeMatch(attributeName, srcAttr) || (restriction == AllowSameOriginHref && threadSafeMatch(attributeName, hrefAttr))) {
         if (isLikelySafeResource(String(attribute.value)))
             return false;
     } else if (threadSafeMatch(attributeName, http_equivAttr)) {
@@ -806,4 +829,4 @@ bool XSSAuditor::isSafeToSendToAnotherThread() const
         && m_httpBodyAsString.isSafeToSendToAnotherThread();
 }
 
-} // namespace WebCore
+} // namespace blink

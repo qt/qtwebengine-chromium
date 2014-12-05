@@ -4,17 +4,17 @@
 
 #include "base/command_line.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/window.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/touch/touch_editing_controller.h"
 #include "ui/base/ui_base_switches.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/render_text.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/textfield/textfield.h"
 #include "ui/views/controls/textfield/textfield_test_api.h"
 #include "ui/views/test/views_test_base.h"
@@ -71,11 +71,11 @@ class TouchSelectionControllerImplTest : public ViewsTestBase {
     ui::TouchSelectionControllerFactory::SetInstance(views_tsc_factory_.get());
   }
 
-  virtual ~TouchSelectionControllerImplTest() {
+  ~TouchSelectionControllerImplTest() override {
     ui::TouchSelectionControllerFactory::SetInstance(NULL);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     if (textfield_widget_ && !textfield_widget_->IsClosed())
       textfield_widget_->Close();
     if (widget_ && !widget_->IsClosed())
@@ -252,8 +252,9 @@ TEST_F(TouchSelectionControllerImplTest, SelectionInTextfieldTest) {
   CreateTextfield();
   textfield_->SetText(ASCIIToUTF16("some text"));
   // Tap the textfield to invoke touch selection.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, 0, 0, base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f), 0);
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(1);
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(), details);
   textfield_->OnGestureEvent(&tap);
 
   // Test selecting a range.
@@ -284,8 +285,9 @@ TEST_F(TouchSelectionControllerImplTest, SelectionInBidiTextfieldTest) {
   CreateTextfield();
   textfield_->SetText(WideToUTF16(L"abc\x05d0\x05d1\x05d2"));
   // Tap the textfield to invoke touch selection.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, 0, 0, base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f), 0);
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(1);
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(), details);
   textfield_->OnGestureEvent(&tap);
 
   // Test cursor at run boundary and with empty selection.
@@ -332,8 +334,9 @@ TEST_F(TouchSelectionControllerImplTest, SelectRectCallbackTest) {
   CreateTextfield();
   textfield_->SetText(ASCIIToUTF16("textfield with selected text"));
   // Tap the textfield to invoke touch selection.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, 0, 0, base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f), 0);
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(1);
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(), details);
   textfield_->OnGestureEvent(&tap);
   textfield_->SelectRange(gfx::Range(3, 7));
 
@@ -370,8 +373,9 @@ TEST_F(TouchSelectionControllerImplTest, SelectRectInBidiCallbackTest) {
   CreateTextfield();
   textfield_->SetText(WideToUTF16(L"abc\x05e1\x05e2\x05e3" L"def"));
   // Tap the textfield to invoke touch selection.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, 0, 0, base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f), 0);
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(1);
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(), details);
   textfield_->OnGestureEvent(&tap);
 
   // Select [c] from left to right.
@@ -499,8 +503,9 @@ TEST_F(TouchSelectionControllerImplTest,
   textfield_->SetText(ASCIIToUTF16(textfield_text));
 
   // Tap the textfield to invoke selection.
-  ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, 0, 0, base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 1.0f, 0.0f), 0);
+  ui::GestureEventDetails details(ui::ET_GESTURE_TAP);
+  details.set_tap_count(1);
+  ui::GestureEvent tap(0, 0, 0, base::TimeDelta(), details);
   textfield_->OnGestureEvent(&tap);
 
   // Select some text such that one handle is hidden.
@@ -528,7 +533,7 @@ TEST_F(TouchSelectionControllerImplTest,
        DoubleTapInTextfieldWithCursorHandleShouldSelectText) {
   CreateTextfield();
   textfield_->SetText(ASCIIToUTF16("some text"));
-  aura::test::EventGenerator generator(
+  ui::test::EventGenerator generator(
       textfield_->GetWidget()->GetNativeView()->GetRootWindow());
 
   // Tap the textfield to invoke touch selection.
@@ -565,64 +570,50 @@ class TestTouchEditable : public ui::TouchEditable {
     cursor_rect_ = cursor_rect;
   }
 
-  virtual ~TestTouchEditable() {}
+  ~TestTouchEditable() override {}
 
  private:
   // Overridden from ui::TouchEditable.
-  virtual void SelectRect(
-      const gfx::Point& start, const gfx::Point& end) OVERRIDE {
+  void SelectRect(const gfx::Point& start, const gfx::Point& end) override {
     NOTREACHED();
   }
-  virtual void MoveCaretTo(const gfx::Point& point) OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) OVERRIDE {
+  void MoveCaretTo(const gfx::Point& point) override { NOTREACHED(); }
+  void GetSelectionEndPoints(gfx::Rect* p1, gfx::Rect* p2) override {
     *p1 = *p2 = cursor_rect_;
   }
-  virtual gfx::Rect GetBounds() OVERRIDE {
-    return gfx::Rect(bounds_.size());
-  }
-  virtual gfx::NativeView GetNativeView() const OVERRIDE {
-    return window_;
-  }
-  virtual void ConvertPointToScreen(gfx::Point* point) OVERRIDE {
+  gfx::Rect GetBounds() override { return gfx::Rect(bounds_.size()); }
+  gfx::NativeView GetNativeView() const override { return window_; }
+  void ConvertPointToScreen(gfx::Point* point) override {
     aura::client::ScreenPositionClient* screen_position_client =
         aura::client::GetScreenPositionClient(window_->GetRootWindow());
     if (screen_position_client)
       screen_position_client->ConvertPointToScreen(window_, point);
   }
-  virtual void ConvertPointFromScreen(gfx::Point* point) OVERRIDE {
+  void ConvertPointFromScreen(gfx::Point* point) override {
     aura::client::ScreenPositionClient* screen_position_client =
         aura::client::GetScreenPositionClient(window_->GetRootWindow());
     if (screen_position_client)
       screen_position_client->ConvertPointFromScreen(window_, point);
   }
-  virtual bool DrawsHandles() OVERRIDE {
-    return false;
-  }
-  virtual void OpenContextMenu(const gfx::Point& anchor) OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void DestroyTouchSelection() OVERRIDE {
-    NOTREACHED();
-  }
+  bool DrawsHandles() override { return false; }
+  void OpenContextMenu(const gfx::Point& anchor) override { NOTREACHED(); }
+  void DestroyTouchSelection() override { NOTREACHED(); }
 
   // Overridden from ui::SimpleMenuModel::Delegate.
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE {
+  bool IsCommandIdChecked(int command_id) const override {
     NOTREACHED();
     return false;
   }
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+  bool IsCommandIdEnabled(int command_id) const override {
     NOTREACHED();
     return false;
   }
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE {
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override {
     NOTREACHED();
     return false;
   }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     NOTREACHED();
   }
 
@@ -725,21 +716,19 @@ TEST_F(TouchSelectionControllerImplTest, HandlesStackAboveParent) {
 class TestTouchEditingMenuController : public TouchEditingMenuController {
  public:
   TestTouchEditingMenuController() {}
-  virtual ~TestTouchEditingMenuController() {}
+  ~TestTouchEditingMenuController() override {}
 
   // Overriden from TouchEditingMenuController.
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE {
+  bool IsCommandIdEnabled(int command_id) const override {
     // Return true, since we want the menu to have all |kMenuCommandCount|
     // available commands.
     return true;
   }
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE {
+  void ExecuteCommand(int command_id, int event_flags) override {
     NOTREACHED();
   }
-  virtual void OpenContextMenu() OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void OnMenuClosed(TouchEditingMenuView* menu) OVERRIDE {}
+  void OpenContextMenu() override { NOTREACHED(); }
+  void OnMenuClosed(TouchEditingMenuView* menu) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TestTouchEditingMenuController);
@@ -789,7 +778,7 @@ TEST_F(TouchSelectionControllerImplTest, MouseEventDeactivatesTouchSelection) {
   CreateTextfield();
   EXPECT_FALSE(GetSelectionController());
 
-  aura::test::EventGenerator generator(
+  ui::test::EventGenerator generator(
       textfield_widget_->GetNativeView()->GetRootWindow());
 
   generator.set_current_location(gfx::Point(5, 5));
@@ -830,7 +819,7 @@ TEST_F(TouchSelectionControllerImplTest, KeyEventDeactivatesTouchSelection) {
   CreateTextfield();
   EXPECT_FALSE(GetSelectionController());
 
-  aura::test::EventGenerator generator(
+  ui::test::EventGenerator generator(
       textfield_widget_->GetNativeView()->GetRootWindow());
 
   RunPendingMessages();

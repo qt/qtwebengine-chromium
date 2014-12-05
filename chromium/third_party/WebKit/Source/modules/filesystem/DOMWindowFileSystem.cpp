@@ -38,7 +38,7 @@
 #include "platform/FileSystemType.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowFileSystem::DOMWindowFileSystem()
 {
@@ -48,7 +48,7 @@ DOMWindowFileSystem::~DOMWindowFileSystem()
 {
 }
 
-void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int type, long long size, FileSystemCallback* successCallback, ErrorCallback* errorCallback)
 {
     if (!window.isCurrentlyDisplayedInFrame())
         return;
@@ -71,7 +71,7 @@ void DOMWindowFileSystem::webkitRequestFileSystem(LocalDOMWindow& window, int ty
     LocalFileSystem::from(*document)->requestFileSystem(document, fileSystemType, size, FileSystemCallbacks::create(successCallback, errorCallback, document, fileSystemType));
 }
 
-void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window, const String& url, EntryCallback* successCallback, ErrorCallback* errorCallback)
 {
     if (!window.isCurrentlyDisplayedInFrame())
         return;
@@ -98,4 +98,4 @@ void DOMWindowFileSystem::webkitResolveLocalFileSystemURL(LocalDOMWindow& window
 COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::TEMPORARY) == static_cast<int>(FileSystemTypeTemporary), enum_mismatch);
 COMPILE_ASSERT(static_cast<int>(DOMWindowFileSystem::PERSISTENT) == static_cast<int>(FileSystemTypePersistent), enum_mismatch);
 
-} // namespace WebCore
+} // namespace blink

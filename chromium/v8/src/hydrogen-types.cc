@@ -4,6 +4,7 @@
 
 #include "src/hydrogen-types.h"
 
+#include "src/ostreams.h"
 #include "src/types-inl.h"
 
 
@@ -41,27 +42,32 @@ HType HType::FromType<HeapType>(Handle<HeapType> type);
 HType HType::FromValue(Handle<Object> value) {
   if (value->IsSmi()) return HType::Smi();
   if (value->IsNull()) return HType::Null();
-  if (value->IsHeapNumber()) return HType::HeapNumber();
+  if (value->IsHeapNumber()) {
+    double n = Handle<v8::internal::HeapNumber>::cast(value)->value();
+    return IsSmiDouble(n) ? HType::Smi() : HType::HeapNumber();
+  }
   if (value->IsString()) return HType::String();
   if (value->IsBoolean()) return HType::Boolean();
   if (value->IsUndefined()) return HType::Undefined();
   if (value->IsJSArray()) return HType::JSArray();
   if (value->IsJSObject()) return HType::JSObject();
-  ASSERT(value->IsHeapObject());
+  DCHECK(value->IsHeapObject());
   return HType::HeapObject();
 }
 
 
-const char* HType::ToString() const {
+std::ostream& operator<<(std::ostream& os, const HType& t) {
   // Note: The c1visualizer syntax for locals allows only a sequence of the
   // following characters: A-Za-z0-9_-|:
-  switch (kind_) {
-    #define DEFINE_CASE(Name, mask) case k##Name: return #Name;
+  switch (t.kind_) {
+#define DEFINE_CASE(Name, mask) \
+  case HType::k##Name:          \
+    return os << #Name;
     HTYPE_LIST(DEFINE_CASE)
-    #undef DEFINE_CASE
+#undef DEFINE_CASE
   }
   UNREACHABLE();
-  return NULL;
+  return os;
 }
 
 } }  // namespace v8::internal

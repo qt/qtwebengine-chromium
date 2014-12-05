@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/svg/SVGStaticStringList.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGStaticStringList::SVGStaticStringList(SVGElement* contextElement, const QualifiedName& attributeName)
-    : SVGAnimatedPropertyBase(AnimatedStringList, contextElement, attributeName)
+    : SVGAnimatedPropertyBase(AnimatedUnknown, contextElement, attributeName)
     , m_value(SVGStringList::create())
 {
     ASSERT(contextElement);

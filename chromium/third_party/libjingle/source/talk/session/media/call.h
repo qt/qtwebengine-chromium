@@ -33,18 +33,18 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/messagequeue.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/base/screencastid.h"
 #include "talk/media/base/streamparams.h"
 #include "talk/media/base/videocommon.h"
-#include "talk/p2p/base/session.h"
-#include "talk/p2p/client/socketmonitor.h"
+#include "webrtc/p2p/base/session.h"
+#include "webrtc/p2p/client/socketmonitor.h"
 #include "talk/session/media/audiomonitor.h"
 #include "talk/session/media/currentspeakermonitor.h"
 #include "talk/session/media/mediamessages.h"
 #include "talk/session/media/mediasession.h"
-#include "talk/xmpp/jid.h"
+#include "webrtc/libjingle/xmpp/jid.h"
+#include "webrtc/base/messagequeue.h"
 
 namespace cricket {
 
@@ -80,7 +80,7 @@ class AudioSourceProxy: public AudioSourceContext, public sigslot::has_slots<> {
   Call* call_;
 };
 
-class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
+class Call : public rtc::MessageHandler, public sigslot::has_slots<> {
  public:
   explicit Call(MediaSessionClient* session_client);
   ~Call();
@@ -96,7 +96,6 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void Terminate();
   bool SendViewRequest(Session* session,
                        const ViewRequest& view_request);
-  void SetLocalRenderer(VideoRenderer* renderer);
   void SetVideoRenderer(Session* session, uint32 ssrc,
                         VideoRenderer* renderer);
   void StartConnectionMonitor(Session* session, int cms);
@@ -110,12 +109,12 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void MuteVideo(bool mute);
   bool SendData(Session* session,
                 const SendDataParams& params,
-                const talk_base::Buffer& payload,
+                const rtc::Buffer& payload,
                 SendDataResult* result);
   void PressDTMF(int event);
   bool StartScreencast(Session* session,
                        const std::string& stream_name, uint32 ssrc,
-                       const ScreencastId& screencastid, int fps);
+                       const ScreencastId& screenid, int fps);
   bool StopScreencast(Session* session,
                       const std::string& stream_name, uint32 ssrc);
 
@@ -187,12 +186,12 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
                    const MediaStreams&> SignalMediaStreamsUpdate;
   sigslot::signal3<Call*,
                    const ReceiveDataParams&,
-                   const talk_base::Buffer&> SignalDataReceived;
+                   const rtc::Buffer&> SignalDataReceived;
 
   AudioSourceProxy* GetAudioSourceProxy();
 
  private:
-  void OnMessage(talk_base::Message* message);
+  void OnMessage(rtc::Message* message);
   void OnSessionState(BaseSession* base_session, BaseSession::State state);
   void OnSessionError(BaseSession* base_session, Session::Error error);
   void OnSessionInfoMessage(
@@ -219,7 +218,7 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   void OnMediaMonitor(VideoChannel* channel, const VideoMediaInfo& info);
   void OnDataReceived(DataChannel* channel,
                       const ReceiveDataParams& params,
-                      const talk_base::Buffer& payload);
+                      const rtc::Buffer& payload);
   MediaStreams* GetMediaStreams(Session* session) const;
   void UpdateRemoteMediaStreams(Session* session,
                                 const ContentInfos& updated_contents,
@@ -284,7 +283,6 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
   MediaSessionMap media_session_map_;
 
   std::map<std::string, CurrentSpeakerMonitor*> speaker_monitor_map_;
-  VideoRenderer* local_renderer_;
   bool has_video_;
   bool has_data_;
   bool muted_;
@@ -300,7 +298,7 @@ class Call : public talk_base::MessageHandler, public sigslot::has_slots<> {
 
   VoiceMediaInfo last_voice_media_info_;
 
-  talk_base::scoped_ptr<AudioSourceProxy> audio_source_proxy_;
+  rtc::scoped_ptr<AudioSourceProxy> audio_source_proxy_;
 
   friend class MediaSessionClient;
 };

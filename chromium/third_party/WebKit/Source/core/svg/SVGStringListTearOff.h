@@ -31,12 +31,14 @@
 #ifndef SVGStringListTearOff_h
 #define SVGStringListTearOff_h
 
+#include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGStringList.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGStringListTearOff : public SVGPropertyTearOff<SVGStringList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtr<SVGStringListTearOff> create(PassRefPtr<SVGStringList> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
     {
@@ -142,6 +144,6 @@ protected:
     SVGStringListTearOff(PassRefPtr<SVGStringList>, SVGElement*, PropertyIsAnimValType, const QualifiedName&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGStringListTearOff_h_
+#endif // SVGStringListTearOff_h

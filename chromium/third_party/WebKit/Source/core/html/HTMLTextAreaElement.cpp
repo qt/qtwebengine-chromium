@@ -26,8 +26,8 @@
 #include "config.h"
 #include "core/html/HTMLTextAreaElement.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
@@ -43,6 +43,7 @@
 #include "core/frame/LocalFrame.h"
 #include "core/html/FormDataList.h"
 #include "core/html/forms/FormController.h"
+#include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/html/shadow/TextControlInnerElements.h"
 #include "core/page/Chrome.h"
@@ -52,7 +53,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -85,7 +86,6 @@ HTMLTextAreaElement::HTMLTextAreaElement(Document& document, HTMLFormElement* fo
     , m_isDirty(false)
     , m_valueIsUpToDate(true)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLTextAreaElement> HTMLTextAreaElement::create(Document& document, HTMLFormElement* form)
@@ -116,9 +116,9 @@ void HTMLTextAreaElement::restoreFormControlState(const FormControlState& state)
     setValue(state[0]);
 }
 
-void HTMLTextAreaElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLTextAreaElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLElement::childrenChanged(change);
     setLastChangeWasNotUserEdit();
     if (m_isDirty)
         setInnerEditorValue(value());
@@ -190,9 +190,11 @@ void HTMLTextAreaElement::parseAttribute(const QualifiedName& name, const Atomic
         }
     } else if (name == accesskeyAttr) {
         // ignore for the moment
-    } else if (name == maxlengthAttr)
+    } else if (name == maxlengthAttr) {
         setNeedsValidityCheck();
-    else
+    } else if (name == minlengthAttr) {
+        setNeedsValidityCheck();
+    } else
         HTMLTextFormControlElement::parseAttribute(name, value);
 }
 
@@ -270,6 +272,7 @@ void HTMLTextAreaElement::subtreeHasChanged()
     setChangedSinceLastFormControlChangeEvent(true);
     m_valueIsUpToDate = false;
     setNeedsValidityCheck();
+    setAutofilled(false);
 
     if (!focused())
         return;
@@ -300,7 +303,12 @@ void HTMLTextAreaElement::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent*
     // If the text field has no focus, we don't need to take account of the
     // selection length. The selection is the source of text drag-and-drop in
     // that case, and nothing in the text field will be removed.
-    unsigned selectionLength = focused() ? computeLengthForSubmission(plainText(document().frame()->selection().selection().toNormalizedRange().get())) : 0;
+    unsigned selectionLength = 0;
+    if (focused()) {
+        Position start, end;
+        document().frame()->selection().selection().toNormalizedPositions(start, end);
+        selectionLength = computeLengthForSubmission(plainText(start, end));
+    }
     ASSERT(currentLength >= selectionLength);
     unsigned baseLength = currentLength - selectionLength;
     unsigned appendableLength = unsignedMaxLength > baseLength ? unsignedMaxLength - baseLength : 0;
@@ -319,7 +327,6 @@ void HTMLTextAreaElement::updateValue() const
     if (m_valueIsUpToDate)
         return;
 
-    ASSERT(renderer());
     m_value = innerEditorValue();
     const_cast<HTMLTextAreaElement*>(this)->m_valueIsUpToDate = true;
     const_cast<HTMLTextAreaElement*>(this)->notifyFormStateChanged();
@@ -338,19 +345,17 @@ void HTMLTextAreaElement::setValue(const String& value, TextFieldEventBehavior e
     RefPtrWillBeRawPtr<HTMLTextAreaElement> protector(this);
     setValueCommon(value, eventBehavior);
     m_isDirty = true;
-    setNeedsValidityCheck();
     if (document().focusedElement() == this)
         document().frameHost()->chrome().client().didUpdateTextOfFocusedElementByNonUserInput();
 }
 
 void HTMLTextAreaElement::setNonDirtyValue(const String& value)
 {
-    setValueCommon(value, DispatchNoEvent);
+    setValueCommon(value, DispatchNoEvent, SetSeletion);
     m_isDirty = false;
-    setNeedsValidityCheck();
 }
 
-void HTMLTextAreaElement::setValueCommon(const String& newValue, TextFieldEventBehavior eventBehavior)
+void HTMLTextAreaElement::setValueCommon(const String& newValue, TextFieldEventBehavior eventBehavior, SetValueCommonOption setValueOption)
 {
     // Code elsewhere normalizes line endings added by the user via the keyboard or pasting.
     // We normalize line endings coming from JavaScript here.
@@ -358,23 +363,34 @@ void HTMLTextAreaElement::setValueCommon(const String& newValue, TextFieldEventB
     normalizedValue.replace("\r\n", "\n");
     normalizedValue.replace('\r', '\n');
 
-    // Return early because we don't want to move the caret or trigger other side effects
-    // when the value isn't changing. This matches Firefox behavior, at least.
-    if (normalizedValue == value())
+    // Return early because we don't want to trigger other side effects
+    // when the value isn't changing.
+    // FIXME: Simple early return doesn't match the Firefox ever.
+    // Remove these lines.
+    if (normalizedValue == value()) {
+        if (setValueOption == SetSeletion) {
+            setNeedsValidityCheck();
+            if (isFinishedParsingChildren()) {
+                // Set the caret to the end of the text value except for initialize.
+                unsigned endOfString = m_value.length();
+                setSelectionRange(endOfString, endOfString, SelectionHasNoDirection, ChangeSelectionIfFocused);
+            }
+        }
         return;
+    }
 
     m_value = normalizedValue;
     setInnerEditorValue(m_value);
     if (eventBehavior == DispatchNoEvent)
         setLastChangeWasNotUserEdit();
     updatePlaceholderVisibility(false);
-    setNeedsStyleRecalc(SubtreeStyleChange);
+    setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ControlValue));
     m_suggestedValue = String();
-
-    // Set the caret to the end of the text value.
-    if (document().focusedElement() == this) {
+    setNeedsValidityCheck();
+    if (isFinishedParsingChildren()) {
+        // Set the caret to the end of the text value except for initialize.
         unsigned endOfString = m_value.length();
-        setSelectionRange(endOfString, endOfString);
+        setSelectionRange(endOfString, endOfString, SelectionHasNoDirection, ChangeSelectionIfFocused);
     }
 
     notifyFormStateChanged();
@@ -411,7 +427,7 @@ void HTMLTextAreaElement::setDefaultValue(const String& defaultValue)
     RefPtrWillBeRawPtr<Node> protectFromMutationEvents(this);
 
     // To preserve comments, remove only the text nodes, then add a single text node.
-    WillBeHeapVector<RefPtrWillBeMember<Node> > textNodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> textNodes;
     for (Node* n = firstChild(); n; n = n->nextSibling()) {
         if (n->isTextNode())
             textNodes.append(n);
@@ -433,17 +449,40 @@ void HTMLTextAreaElement::setDefaultValue(const String& defaultValue)
 
 int HTMLTextAreaElement::maxLength() const
 {
-    bool ok;
-    int value = getAttribute(maxlengthAttr).string().toInt(&ok);
-    return ok && value >= 0 ? value : -1;
+    int value;
+    if (!parseHTMLInteger(getAttribute(maxlengthAttr), value))
+        return -1;
+    return value >= 0 ? value : -1;
+}
+
+int HTMLTextAreaElement::minLength() const
+{
+    int value;
+    if (!parseHTMLInteger(getAttribute(minlengthAttr), value))
+        return -1;
+    return value >= 0 ? value : -1;
 }
 
 void HTMLTextAreaElement::setMaxLength(int newValue, ExceptionState& exceptionState)
 {
+    int min = minLength();
     if (newValue < 0)
         exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(newValue) + ") is not positive or 0.");
+    else if (min >= 0 && newValue < min)
+        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMinimumBound("maxLength", newValue, min));
     else
         setIntegralAttribute(maxlengthAttr, newValue);
+}
+
+void HTMLTextAreaElement::setMinLength(int newValue, ExceptionState& exceptionState)
+{
+    int max = maxLength();
+    if (newValue < 0)
+        exceptionState.throwDOMException(IndexSizeError, "The value provided (" + String::number(newValue) + ") is not positive or 0.");
+    else if (max >= 0 && newValue > max)
+        exceptionState.throwDOMException(IndexSizeError, ExceptionMessages::indexExceedsMaximumBound("minLength", newValue, max));
+    else
+        setIntegralAttribute(minlengthAttr, newValue);
 }
 
 String HTMLTextAreaElement::suggestedValue() const
@@ -460,7 +499,7 @@ void HTMLTextAreaElement::setSuggestedValue(const String& value)
     else
         setInnerEditorValue(m_value);
     updatePlaceholderVisibility(false);
-    setNeedsStyleRecalc(SubtreeStyleChange);
+    setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ControlValue));
 }
 
 String HTMLTextAreaElement::validationMessage() const
@@ -477,20 +516,36 @@ String HTMLTextAreaElement::validationMessage() const
     if (tooLong())
         return locale().validationMessageTooLongText(computeLengthForSubmission(value()), maxLength());
 
+    if (tooShort())
+        return locale().validationMessageTooShortText(computeLengthForSubmission(value()), minLength());
+
     return String();
 }
 
 bool HTMLTextAreaElement::valueMissing() const
 {
-    return willValidate() && valueMissing(value());
+    // We should not call value() for performance.
+    return willValidate() && valueMissing(0);
+}
+
+bool HTMLTextAreaElement::valueMissing(const String* value) const
+{
+    return isRequiredFormControl() && !isDisabledOrReadOnly() && (value ? *value : this->value()).isEmpty();
 }
 
 bool HTMLTextAreaElement::tooLong() const
 {
-    return willValidate() && tooLong(value(), CheckDirtyFlag);
+    // We should not call value() for performance.
+    return willValidate() && tooLong(0, CheckDirtyFlag);
 }
 
-bool HTMLTextAreaElement::tooLong(const String& value, NeedsToCheckDirtyFlag check) const
+bool HTMLTextAreaElement::tooShort() const
+{
+    // We should not call value() for performance.
+    return willValidate() && tooShort(0, CheckDirtyFlag);
+}
+
+bool HTMLTextAreaElement::tooLong(const String* value, NeedsToCheckDirtyFlag check) const
 {
     // Return false for the default value or value set by script even if it is
     // longer than maxLength.
@@ -500,12 +555,27 @@ bool HTMLTextAreaElement::tooLong(const String& value, NeedsToCheckDirtyFlag che
     int max = maxLength();
     if (max < 0)
         return false;
-    return computeLengthForSubmission(value) > static_cast<unsigned>(max);
+    return computeLengthForSubmission(value ? *value : this->value()) > static_cast<unsigned>(max);
+}
+
+bool HTMLTextAreaElement::tooShort(const String* value, NeedsToCheckDirtyFlag check) const
+{
+    // Return false for the default value or value set by script even if it is
+    // shorter than minLength.
+    if (check == CheckDirtyFlag && !lastChangeWasUserEdit())
+        return false;
+
+    int min = minLength();
+    if (min <= 0)
+        return false;
+    // An empty string is excluded from minlength check.
+    unsigned len = computeLengthForSubmission(value ? *value : this->value());
+    return len > 0 && len < static_cast<unsigned>(min);
 }
 
 bool HTMLTextAreaElement::isValidValue(const String& candidate) const
 {
-    return !valueMissing(candidate) && !tooLong(candidate, IgnoreDirtyFlag);
+    return !valueMissing(&candidate) && !tooLong(&candidate, IgnoreDirtyFlag) && !tooShort(&candidate, IgnoreDirtyFlag);
 }
 
 void HTMLTextAreaElement::accessKeyAction(bool)
@@ -521,11 +591,6 @@ void HTMLTextAreaElement::setCols(int cols)
 void HTMLTextAreaElement::setRows(int rows)
 {
     setIntegralAttribute(rowsAttr, rows);
-}
-
-bool HTMLTextAreaElement::shouldUseInputMethod()
-{
-    return true;
 }
 
 bool HTMLTextAreaElement::matchesReadOnlyPseudoClass() const

@@ -11,12 +11,12 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContentSecurityPolicy;
 class KURL;
 
-class SourceListDirective FINAL : public CSPDirective {
+class SourceListDirective final : public CSPDirective {
     WTF_MAKE_NONCOPYABLE(SourceListDirective);
 public:
     SourceListDirective(const String& name, const String& value, ContentSecurityPolicy*);
@@ -33,6 +33,6 @@ private:
     CSPSourceList m_sourceList;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

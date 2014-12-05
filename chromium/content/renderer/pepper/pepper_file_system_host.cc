@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "content/child/child_thread.h"
 #include "content/child/fileapi/file_system_dispatcher.h"
+#include "content/common/pepper_file_util.h"
 #include "content/renderer/pepper/pepper_plugin_instance_impl.h"
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
@@ -17,10 +18,10 @@
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/file_system_util.h"
 #include "ppapi/shared_impl/file_type_conversion.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "third_party/WebKit/public/web/WebDocument.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebView.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
 namespace content {
 
@@ -91,9 +92,9 @@ int32_t PepperFileSystemHost::OnHostMsgOpen(
     return PP_ERROR_INPROGRESS;
   called_open_ = true;
 
-  fileapi::FileSystemType file_system_type =
-      ppapi::PepperFileSystemTypeToFileSystemType(type_);
-  if (file_system_type == fileapi::kFileSystemTypeUnknown)
+  storage::FileSystemType file_system_type =
+      PepperFileSystemTypeToFileSystemType(type_);
+  if (file_system_type == storage::kFileSystemTypeUnknown)
     return PP_ERROR_FAILED;
 
   GURL document_url = renderer_ppapi_host_->GetDocumentURL(pp_instance());
@@ -123,7 +124,7 @@ int32_t PepperFileSystemHost::OnHostMsgInitIsolatedFileSystem(
   called_open_ = true;
 
   // Do a sanity check.
-  if (!fileapi::ValidateIsolatedFileSystemId(fsid))
+  if (!storage::ValidateIsolatedFileSystemId(fsid))
     return PP_ERROR_BADARGUMENT;
 
   RenderView* view =
@@ -135,7 +136,7 @@ int32_t PepperFileSystemHost::OnHostMsgInitIsolatedFileSystem(
   const std::string root_name = ppapi::IsolatedFileSystemTypeToRootName(type);
   if (root_name.empty())
     return PP_ERROR_BADARGUMENT;
-  root_url_ = GURL(fileapi::GetIsolatedFileSystemRootURIString(
+  root_url_ = GURL(storage::GetIsolatedFileSystemRootURIString(
       url.GetOrigin(), fsid, root_name));
   opened_ = true;
   return PP_OK;

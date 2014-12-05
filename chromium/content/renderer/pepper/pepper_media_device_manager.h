@@ -8,30 +8,30 @@
 #include <map>
 
 #include "base/memory/weak_ptr.h"
+#include "content/public/renderer/render_frame_observer.h"
+#include "content/public/renderer/render_frame_observer_tracker.h"
 #include "content/renderer/media/media_stream_dispatcher_eventhandler.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
-#include "content/public/renderer/render_view_observer_tracker.h"
-#include "content/public/renderer/render_view_observer.h"
 
 namespace content {
-class RenderViewImpl;
+class MediaStreamDispatcher;
 
 class PepperMediaDeviceManager
     : public MediaStreamDispatcherEventHandler,
       public PepperDeviceEnumerationHostHelper::Delegate,
-      public RenderViewObserver,
-      public RenderViewObserverTracker<PepperMediaDeviceManager>,
+      public RenderFrameObserver,
+      public RenderFrameObserverTracker<PepperMediaDeviceManager>,
       public base::SupportsWeakPtr<PepperMediaDeviceManager> {
  public:
-  static PepperMediaDeviceManager* GetForRenderView(RenderView* render_view);
-  virtual ~PepperMediaDeviceManager();
+  static base::WeakPtr<PepperMediaDeviceManager> GetForRenderFrame(
+      RenderFrame* render_frame);
+  ~PepperMediaDeviceManager() override;
 
   // PepperDeviceEnumerationHostHelper::Delegate implementation:
-  virtual int EnumerateDevices(PP_DeviceType_Dev type,
-                               const GURL& document_url,
-                               const EnumerateDevicesCallback& callback)
-      OVERRIDE;
-  virtual void StopEnumerateDevices(int request_id) OVERRIDE;
+  int EnumerateDevices(PP_DeviceType_Dev type,
+                       const GURL& document_url,
+                       const EnumerateDevicesCallback& callback) override;
+  void StopEnumerateDevices(int request_id) override;
 
   typedef base::Callback<void(int /* request_id */,
                               bool /* succeeded */,
@@ -55,36 +55,40 @@ class PepperMediaDeviceManager
   int GetSessionID(PP_DeviceType_Dev type, const std::string& label);
 
   // MediaStreamDispatcherEventHandler implementation.
-  virtual void OnStreamGenerated(
+  void OnStreamGenerated(
       int request_id,
       const std::string& label,
       const StreamDeviceInfoArray& audio_device_array,
-      const StreamDeviceInfoArray& video_device_array) OVERRIDE;
-  virtual void OnStreamGenerationFailed(
+      const StreamDeviceInfoArray& video_device_array) override;
+  void OnStreamGenerationFailed(
       int request_id,
-      content::MediaStreamRequestResult result) OVERRIDE;
-  virtual void OnDeviceStopped(const std::string& label,
-                               const StreamDeviceInfo& device_info) OVERRIDE;
-  virtual void OnDevicesEnumerated(int request_id,
-                                   const StreamDeviceInfoArray& device_array)
-      OVERRIDE;
-  virtual void OnDeviceOpened(int request_id,
-                              const std::string& label,
-                              const StreamDeviceInfo& device_info) OVERRIDE;
-  virtual void OnDeviceOpenFailed(int request_id) OVERRIDE;
+      content::MediaStreamRequestResult result) override;
+  void OnDeviceStopped(const std::string& label,
+                       const StreamDeviceInfo& device_info) override;
+  void OnDevicesEnumerated(int request_id,
+                           const StreamDeviceInfoArray& device_array) override;
+  void OnDeviceOpened(int request_id,
+                      const std::string& label,
+                      const StreamDeviceInfo& device_info) override;
+  void OnDeviceOpenFailed(int request_id) override;
 
   // Stream type conversion.
   static MediaStreamType FromPepperDeviceType(PP_DeviceType_Dev type);
   static PP_DeviceType_Dev FromMediaStreamType(MediaStreamType type);
 
  private:
-  PepperMediaDeviceManager(RenderView* render_view);
+  explicit PepperMediaDeviceManager(RenderFrame* render_frame);
+
+  // Called by StopEnumerateDevices() after returing to the event loop, to avoid
+  // a reentrancy problem.
+  void StopEnumerateDevicesDelayed(int request_id);
 
   void NotifyDeviceOpened(int request_id,
                           bool succeeded,
                           const std::string& label);
 
-  RenderViewImpl* GetRenderViewImpl();
+
+  MediaStreamDispatcher* GetMediaStreamDispatcher() const;
 
   int next_id_;
 

@@ -5,11 +5,10 @@
 #include "config.h"
 #include "modules/push_messaging/NavigatorPushManager.h"
 
-#include "core/dom/Document.h"
 #include "core/frame/Navigator.h"
 #include "modules/push_messaging/PushManager.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorPushManager::NavigatorPushManager()
 {
@@ -52,4 +51,4 @@ void NavigatorPushManager::trace(Visitor* visitor)
     WillBeHeapSupplement<Navigator>::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

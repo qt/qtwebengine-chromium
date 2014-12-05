@@ -33,7 +33,7 @@
 #include "modules/webdatabase/sqlite/SQLiteStatement.h"
 #include "modules/webdatabase/DatabaseAuthorizer.h"
 
-namespace WebCore {
+namespace blink {
 
 const int SQLResultDone = SQLITE_DONE;
 const int SQLResultOk = SQLITE_OK;
@@ -50,7 +50,6 @@ SQLiteDatabase::SQLiteDatabase()
     , m_transactionInProgress(false)
     , m_sharable(false)
     , m_openingThread(0)
-    , m_interrupted(false)
     , m_openError(SQLITE_ERROR)
     , m_openErrorMessage()
     , m_lastChangesCount(0)
@@ -62,11 +61,11 @@ SQLiteDatabase::~SQLiteDatabase()
     close();
 }
 
-bool SQLiteDatabase::open(const String& filename, bool forWebSQLDatabase)
+bool SQLiteDatabase::open(const String& filename)
 {
     close();
 
-    m_openError = SQLiteFileSystem::openDatabase(filename, &m_db, forWebSQLDatabase);
+    m_openError = SQLiteFileSystem::openDatabase(filename, &m_db);
     if (m_openError != SQLITE_OK) {
         m_openErrorMessage = m_db ? sqlite3_errmsg(m_db) : "sqlite_open returned null";
         WTF_LOG_ERROR("SQLite database failed to load from %s\nCause - %s", filename.ascii().data(),
@@ -112,26 +111,6 @@ void SQLiteDatabase::close()
     m_openingThread = 0;
     m_openError = SQLITE_ERROR;
     m_openErrorMessage = CString();
-}
-
-void SQLiteDatabase::interrupt()
-{
-    m_interrupted = true;
-    while (!m_lockingMutex.tryLock()) {
-        MutexLocker locker(m_databaseClosingMutex);
-        if (!m_db)
-            return;
-        sqlite3_interrupt(m_db);
-        yield();
-    }
-
-    m_lockingMutex.unlock();
-}
-
-bool SQLiteDatabase::isInterrupted()
-{
-    ASSERT(!m_lockingMutex.tryLock());
-    return m_interrupted;
 }
 
 void SQLiteDatabase::setMaximumSize(int64_t size)
@@ -426,4 +405,4 @@ void SQLiteDatabase::trace(Visitor* visitor)
     visitor->trace(m_authorizer);
 }
 
-} // namespace WebCore
+} // namespace blink

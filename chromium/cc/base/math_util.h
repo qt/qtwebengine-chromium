@@ -7,17 +7,24 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
-#include "ui/gfx/box_f.h"
-#include "ui/gfx/point3_f.h"
-#include "ui/gfx/point_f.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/box_f.h"
+#include "ui/gfx/geometry/point3_f.h"
+#include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/scroll_offset.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/transform.h"
 
-namespace base { class Value; }
+namespace base {
+class Value;
+namespace debug {
+class TracedValue;
+}
+}
 
 namespace gfx {
 class QuadF;
@@ -109,6 +116,12 @@ class CC_EXPORT MathUtil {
   static gfx::RectF ProjectClippedRect(const gfx::Transform& transform,
                                        const gfx::RectF& rect);
 
+  // This function is only valid when the transform preserves 2d axis
+  // alignment and the resulting rect will not be clipped.
+  static gfx::Rect MapEnclosedRectWith2dAxisAlignedTransform(
+      const gfx::Transform& transform,
+      const gfx::Rect& rect);
+
   // Returns an array of vertices that represent the clipped polygon. After
   // returning, indexes from 0 to num_vertices_in_clipped_quad are valid in the
   // clipped_quad array. Note that num_vertices_in_clipped_quad may be zero,
@@ -118,6 +131,10 @@ class CC_EXPORT MathUtil {
                              const gfx::QuadF& src_quad,
                              gfx::PointF clipped_quad[8],
                              int* num_vertices_in_clipped_quad);
+  static bool MapClippedQuad3d(const gfx::Transform& transform,
+                               const gfx::QuadF& src_quad,
+                               gfx::Point3F clipped_quad[8],
+                               int* num_vertices_in_clipped_quad);
 
   static gfx::RectF ComputeEnclosingRectOfVertices(const gfx::PointF vertices[],
                                                    int num_vertices);
@@ -132,6 +149,10 @@ class CC_EXPORT MathUtil {
   static gfx::QuadF MapQuad(const gfx::Transform& transform,
                             const gfx::QuadF& quad,
                             bool* clipped);
+  static gfx::QuadF MapQuad3d(const gfx::Transform& transform,
+                              const gfx::QuadF& q,
+                              gfx::Point3F* p,
+                              bool* clipped);
   static gfx::PointF MapPoint(const gfx::Transform& transform,
                               const gfx::PointF& point,
                               bool* clipped);
@@ -174,21 +195,39 @@ class CC_EXPORT MathUtil {
 
   // Conversion to value.
   static scoped_ptr<base::Value> AsValue(const gfx::Size& s);
-  static scoped_ptr<base::Value> AsValue(const gfx::SizeF& s);
   static scoped_ptr<base::Value> AsValue(const gfx::Rect& r);
   static bool FromValue(const base::Value*, gfx::Rect* out_rect);
   static scoped_ptr<base::Value> AsValue(const gfx::PointF& q);
-  static scoped_ptr<base::Value> AsValue(const gfx::Point3F&);
-  static scoped_ptr<base::Value> AsValue(const gfx::Vector2d& v);
-  static scoped_ptr<base::Value> AsValue(const gfx::QuadF& q);
-  static scoped_ptr<base::Value> AsValue(const gfx::RectF& rect);
-  static scoped_ptr<base::Value> AsValue(const gfx::Transform& transform);
-  static scoped_ptr<base::Value> AsValue(const gfx::BoxF& box);
+
+  static void AddToTracedValue(const gfx::Size& s,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::SizeF& s,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::Rect& r,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::PointF& q,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::Point3F&,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::Vector2d& v,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::Vector2dF& v,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::ScrollOffset& v,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::QuadF& q,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::RectF& rect,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::Transform& transform,
+                               base::debug::TracedValue* res);
+  static void AddToTracedValue(const gfx::BoxF& box,
+                               base::debug::TracedValue* res);
 
   // Returns a base::Value representation of the floating point value.
   // If the value is inf, returns max double/float representation.
-  static scoped_ptr<base::Value> AsValueSafely(double value);
-  static scoped_ptr<base::Value> AsValueSafely(float value);
+  static double AsDoubleSafely(double value);
+  static float AsFloatSafely(float value);
 };
 
 }  // namespace cc

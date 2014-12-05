@@ -24,10 +24,10 @@
 
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleVisualData::StyleVisualData()
-    : hasClip(false)
+    : hasAutoClip(true)
     , textDecoration(RenderStyle::initialTextDecoration())
     , m_zoom(RenderStyle::initialZoom())
 {
@@ -40,10 +40,10 @@ StyleVisualData::~StyleVisualData()
 StyleVisualData::StyleVisualData(const StyleVisualData& o)
     : RefCounted<StyleVisualData>()
     , clip(o.clip)
-    , hasClip(o.hasClip)
+    , hasAutoClip(o.hasAutoClip)
     , textDecoration(o.textDecoration)
     , m_zoom(RenderStyle::initialZoom())
 {
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -30,11 +30,11 @@ QuicHttpStream::QuicHttpStream(const base::WeakPtr<QuicClientSession>& session)
       session_(session),
       session_error_(OK),
       was_handshake_confirmed_(session->IsCryptoHandshakeConfirmed()),
-      stream_(NULL),
-      request_info_(NULL),
-      request_body_stream_(NULL),
+      stream_(nullptr),
+      request_info_(nullptr),
+      request_body_stream_(nullptr),
       priority_(MINIMUM_PRIORITY),
-      response_info_(NULL),
+      response_info_(nullptr),
       response_status_(OK),
       response_headers_received_(false),
       read_buf_(new GrowableIOBuffer()),
@@ -62,7 +62,8 @@ int QuicHttpStream::InitializeStream(const HttpRequestInfo* request_info,
 
   if (request_info->url.SchemeIsSecure()) {
     SSLInfo ssl_info;
-    bool secure_session = session_->GetSSLInfo(&ssl_info) && ssl_info.cert;
+    bool secure_session =
+        session_->GetSSLInfo(&ssl_info) && ssl_info.cert.get();
     UMA_HISTOGRAM_BOOLEAN("Net.QuicSession.SecureResourceSecureSession",
                           secure_session);
     if (!secure_session)
@@ -102,17 +103,20 @@ void QuicHttpStream::OnStreamReady(int rv) {
 int QuicHttpStream::SendRequest(const HttpRequestHeaders& request_headers,
                                 HttpResponseInfo* response,
                                 const CompletionCallback& callback) {
-  CHECK(stream_);
   CHECK(!request_body_stream_);
   CHECK(!response_info_);
   CHECK(!callback.is_null());
   CHECK(response);
 
+   if (!stream_) {
+    return ERR_CONNECTION_CLOSED;
+  }
+
   QuicPriority priority = ConvertRequestPriorityToQuicPriority(priority_);
   stream_->set_priority(priority);
   // Store the serialized request headers.
   CreateSpdyHeadersFromHttpRequest(*request_info_, request_headers,
-                                   &request_headers_, SPDY3, /*direct=*/true);
+                                   SPDY3, /*direct=*/true, &request_headers_);
 
   // Store the request body.
   request_body_stream_ = request_info_->upload_data_stream;
@@ -151,7 +155,7 @@ UploadProgress QuicHttpStream::GetUploadProgress() const {
 int QuicHttpStream::ReadResponseHeaders(const CompletionCallback& callback) {
   CHECK(!callback.is_null());
 
-  if (stream_ == NULL)
+  if (stream_ == nullptr)
     return response_status_;
 
   // Check if we already have the response headers. If so, return synchronously.
@@ -212,14 +216,16 @@ void QuicHttpStream::Close(bool not_reusable) {
   // Note: the not_reusable flag has no meaning for SPDY streams.
   if (stream_) {
     closed_stream_received_bytes_ = stream_->stream_bytes_read();
-    stream_->SetDelegate(NULL);
+    stream_->SetDelegate(nullptr);
     stream_->Reset(QUIC_STREAM_CANCELLED);
-    stream_ = NULL;
+    stream_ = nullptr;
+    response_status_ = was_handshake_confirmed_ ?
+        ERR_CONNECTION_CLOSED : ERR_QUIC_HANDSHAKE_FAILED;
   }
 }
 
 HttpStream* QuicHttpStream::RenewStreamForAuth() {
-  return NULL;
+  return nullptr;
 }
 
 bool QuicHttpStream::IsResponseBodyComplete() const {
@@ -315,7 +321,7 @@ int QuicHttpStream::OnDataReceived(const char* data, int length) {
     length = user_buffer_len_;
   }
 
-  user_buffer_ = NULL;
+  user_buffer_ = nullptr;
   user_buffer_len_ = 0;
   DoCallback(length);
   return OK;
@@ -330,13 +336,13 @@ void QuicHttpStream::OnClose(QuicErrorCode error) {
   }
 
   closed_stream_received_bytes_ = stream_->stream_bytes_read();
-  stream_ = NULL;
+  stream_ = nullptr;
   if (!callback_.is_null())
     DoCallback(response_status_);
 }
 
 void QuicHttpStream::OnError(int error) {
-  stream_ = NULL;
+  stream_ = nullptr;
   response_status_ = was_handshake_confirmed_ ?
       error : ERR_QUIC_HANDSHAKE_FAILED;
   if (!callback_.is_null())
@@ -352,6 +358,7 @@ void QuicHttpStream::OnCryptoHandshakeConfirmed() {
 }
 
 void QuicHttpStream::OnSessionClosed(int error) {
+  Close(false);
   session_error_ = error;
   session_.reset();
 }
@@ -427,10 +434,10 @@ int QuicHttpStream::DoSendHeaders() {
       base::Bind(&QuicRequestNetLogCallback, stream_->id(), &request_headers_,
                  priority_));
 
-  bool has_upload_data = request_body_stream_ != NULL;
+  bool has_upload_data = request_body_stream_ != nullptr;
 
   next_state_ = STATE_SEND_HEADERS_COMPLETE;
-  int rv = stream_->WriteHeaders(request_headers_, !has_upload_data, NULL);
+  int rv = stream_->WriteHeaders(request_headers_, !has_upload_data, nullptr);
   request_headers_.clear();
   return rv;
 }

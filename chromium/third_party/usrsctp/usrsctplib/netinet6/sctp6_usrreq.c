@@ -32,7 +32,7 @@
 
 #ifdef __FreeBSD__
 #include <sys/cdefs.h>
-__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 257555 2013-11-02 20:12:19Z tuexen $");
+__FBSDID("$FreeBSD: head/sys/netinet6/sctp6_usrreq.c 271221 2014-09-07 09:06:26Z tuexen $");
 #endif
 
 #include <netinet/sctp_os.h>
@@ -246,7 +246,7 @@ sctp6_input(struct mbuf **i_pak, int *offp, int proto)
 #if defined(__APPLE__)
 	/* XXX: This code should also be used on Apple */
 #endif
- 	if (in6_setscope(&src.sin6_addr, m->m_pkthdr.rcvif, NULL) != 0) {
+	if (in6_setscope(&src.sin6_addr, m->m_pkthdr.rcvif, NULL) != 0) {
 		goto out;
 	}
 #endif
@@ -261,7 +261,7 @@ sctp6_input(struct mbuf **i_pak, int *offp, int proto)
 #if defined(__APPLE__)
 	/* XXX: This code should also be used on Apple */
 #endif
- 	if (in6_setscope(&dst.sin6_addr, m->m_pkthdr.rcvif, NULL) != 0) {
+	if (in6_setscope(&dst.sin6_addr, m->m_pkthdr.rcvif, NULL) != 0) {
 		goto out;
 	}
 #endif
@@ -1184,7 +1184,7 @@ sctp6_connect(struct socket *so, struct mbuf *nam, struct proc *p)
 #ifdef INET
 	struct in6pcb *inp6;
 	struct sockaddr_in6 *sin6;
-	struct sockaddr_storage ss;
+	union sctp_sockstore store;
 #endif
 
 #ifdef INET
@@ -1273,8 +1273,8 @@ sctp6_connect(struct socket *so, struct mbuf *nam, struct proc *p)
 	}
 	if (IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) {
 		/* convert v4-mapped into v4 addr */
-		in6_sin6_2_sin((struct sockaddr_in *)&ss, sin6);
-		addr = (struct sockaddr *)&ss;
+		in6_sin6_2_sin(&store.sin, sin6);
+		addr = &store.sa;
 	}
 #endif				/* INET */
 	/* Now do we connect? */
@@ -1424,7 +1424,7 @@ sctp6_getaddr(struct socket *so, struct mbuf *nam)
 			if (laddr->ifa->address.sa.sa_family == AF_INET6) {
 				struct sockaddr_in6 *sin_a;
 
-				sin_a = (struct sockaddr_in6 *)&laddr->ifa->address.sin6;
+				sin_a = &laddr->ifa->address.sin6;
 				sin6->sin6_addr = sin_a->sin6_addr;
 				fnd = 1;
 				break;
@@ -1729,7 +1729,7 @@ struct pr_usrreqs sctp6_usrreqs = {
 	.pru_sockaddr = sctp6_in6getaddr,
 	.pru_sosend = sctp_sosend,
 	.pru_soreceive = sctp_soreceive,
- 	.pru_sopoll = sopoll
+	.pru_sopoll = sopoll
 #elif defined(__Windows__)
 	sctp6_abort,
 	sctp_accept,

@@ -15,9 +15,9 @@
 
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
@@ -99,10 +99,8 @@ GpuPerformanceStats RetrieveGpuPerformanceStats() {
   }
 
   std::string current_results_string = current_results.MaybeAsASCII();
-  if (current_results_string.empty()) {
-    LOG(ERROR) << "Can't retrieve a valid WinSAT assessment.";
+  if (current_results_string.empty())
     return stats;
-  }
 
   // Get relevant scores from results file. XML schema at:
   // http://msdn.microsoft.com/en-us/library/windows/desktop/aa969210.aspx
@@ -156,12 +154,17 @@ GpuPerformanceStats RetrieveGpuPerformanceStatsWithHistograms() {
 
   UMA_HISTOGRAM_TIMES("GPU.WinSAT.ReadResultsFileTime",
                       base::TimeTicks::Now() - start_time);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.WinSAT.OverallScore2",
-                              stats.overall * 10, 10, 200, 50);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.WinSAT.GraphicsScore2",
-                              stats.graphics * 10, 10, 200, 50);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.WinSAT.GamingScore2",
-                              stats.gaming * 10, 10, 200, 50);
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "GPU.WinSAT.OverallScore2",
+      static_cast<base::HistogramBase::Sample>(stats.overall * 10), 10, 200,
+      50);
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "GPU.WinSAT.GraphicsScore2",
+      static_cast<base::HistogramBase::Sample>(stats.graphics * 10), 10, 200,
+      50);
+  UMA_HISTOGRAM_CUSTOM_COUNTS(
+      "GPU.WinSAT.GamingScore2",
+      static_cast<base::HistogramBase::Sample>(stats.gaming * 10), 10, 200, 50);
   UMA_HISTOGRAM_BOOLEAN(
       "GPU.WinSAT.HasResults",
       stats.overall != 0.0 && stats.graphics != 0.0 && stats.gaming != 0.0);
@@ -362,19 +365,19 @@ void CollectD3D11Support() {
 }
 }  // namespace anonymous
 
-#if !defined(GOOGLE_CHROME_BUILD)
+#if defined(GOOGLE_CHROME_BUILD) && defined(OFFICIAL_BUILD)
+// This function has a real implementation for official builds that can
+// be found in src/third_party/amd.
+void GetAMDVideocardInfo(GPUInfo* gpu_info);
+#else
 void GetAMDVideocardInfo(GPUInfo* gpu_info) {
   DCHECK(gpu_info);
   return;
 }
-#else
-// This function has a real implementation for official builds that can
-// be found in src/third_party/amd.
-void GetAMDVideocardInfo(GPUInfo* gpu_info);
 #endif
 
-bool CollectDriverInfoD3D(const std::wstring& device_id,
-                          GPUInfo* gpu_info) {
+CollectInfoResult CollectDriverInfoD3D(const std::wstring& device_id,
+                                       GPUInfo* gpu_info) {
   TRACE_EVENT0("gpu", "CollectDriverInfoD3D");
 
   // create device info for the display device
@@ -383,7 +386,7 @@ bool CollectDriverInfoD3D(const std::wstring& device_id,
       DIGCF_PRESENT | DIGCF_PROFILE | DIGCF_ALLCLASSES);
   if (device_info == INVALID_HANDLE_VALUE) {
     LOG(ERROR) << "Creating device info failed";
-    return false;
+    return kCollectInfoNonFatalFailure;
   }
 
   DWORD index = 0;
@@ -455,7 +458,7 @@ bool CollectDriverInfoD3D(const std::wstring& device_id,
     }
   }
   SetupDiDestroyDeviceInfoList(device_info);
-  return found;
+  return found ? kCollectInfoSuccess : kCollectInfoNonFatalFailure;
 }
 
 CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
@@ -468,13 +471,16 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
         CommandLine::ForCurrentProcess()->GetSwitchValueASCII(switches::kUseGL);
     if (requested_implementation_name == "swiftshader") {
       gpu_info->software_rendering = true;
+      gpu_info->context_info_state = kCollectInfoNonFatalFailure;
       return kCollectInfoNonFatalFailure;
     }
   }
 
   CollectInfoResult result = CollectGraphicsInfoGL(gpu_info);
-  if (result != kCollectInfoSuccess)
+  if (result != kCollectInfoSuccess) {
+    gpu_info->context_info_state = result;
     return result;
+  }
 
   // ANGLE's renderer strings are of the form:
   // ANGLE (<adapter_identifier> Direct3D<version> vs_x_x ps_x_x)
@@ -518,16 +524,16 @@ CollectInfoResult CollectContextGraphicsInfo(GPUInfo* gpu_info) {
                       RE2::Hex(&gpu_info->adapter_luid));
 
     // DirectX diagnostics are collected asynchronously because it takes a
-    // couple of seconds. Do not mark gpu_info as complete until that is done.
-    gpu_info->finalized = false;
+    // couple of seconds.
   } else {
-    gpu_info->finalized = true;
+    gpu_info->dx_diagnostics_info_state = kCollectInfoNonFatalFailure;
   }
 
+  gpu_info->context_info_state = kCollectInfoSuccess;
   return kCollectInfoSuccess;
 }
 
-GpuIDResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
+CollectInfoResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
   DCHECK(vendor_id && device_id);
   *vendor_id = 0;
   *device_id = 0;
@@ -552,9 +558,9 @@ GpuIDResult CollectGpuID(uint32* vendor_id, uint32* device_id) {
     *vendor_id = vendor;
     *device_id = device;
     if (*vendor_id != 0 && *device_id != 0)
-      return kGpuIDSuccess;
+      return kCollectInfoSuccess;
   }
-  return kGpuIDFailure;
+  return kCollectInfoNonFatalFailure;
 }
 
 CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
@@ -597,8 +603,10 @@ CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
     }
   }
 
-  if (id.length() <= 20)
+  if (id.length() <= 20) {
+    gpu_info->basic_info_state = kCollectInfoNonFatalFailure;
     return kCollectInfoNonFatalFailure;
+  }
 
   int vendor_id = 0, device_id = 0;
   base::string16 vendor_id_string = id.substr(8, 4);
@@ -608,8 +616,10 @@ CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
   gpu_info->gpu.vendor_id = vendor_id;
   gpu_info->gpu.device_id = device_id;
   // TODO(zmo): we only need to call CollectDriverInfoD3D() if we use ANGLE.
-  if (!CollectDriverInfoD3D(id, gpu_info))
+  if (!CollectDriverInfoD3D(id, gpu_info)) {
+    gpu_info->basic_info_state = kCollectInfoNonFatalFailure;
     return kCollectInfoNonFatalFailure;
+  }
 
   // Collect basic information about supported D3D11 features. Delay for 45
   // seconds so as not to regress performance tests.
@@ -631,6 +641,7 @@ CollectInfoResult CollectBasicGraphicsInfo(GPUInfo* gpu_info) {
     }
   }
 
+  gpu_info->basic_info_state = kCollectInfoSuccess;
   return kCollectInfoSuccess;
 }
 

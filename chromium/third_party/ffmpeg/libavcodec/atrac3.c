@@ -888,7 +888,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
 
     q->decoded_bytes_buffer = av_mallocz(FFALIGN(avctx->block_align, 4) +
                                          FF_INPUT_BUFFER_PADDING_SIZE);
-    if (q->decoded_bytes_buffer == NULL)
+    if (!q->decoded_bytes_buffer)
         return AVERROR(ENOMEM);
 
     avctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
@@ -918,7 +918,7 @@ static av_cold int atrac3_decode_init(AVCodecContext *avctx)
     avpriv_float_dsp_init(&q->fdsp, avctx->flags & CODEC_FLAG_BITEXACT);
     ff_fmt_convert_init(&q->fmt_conv, avctx);
 
-    q->units = av_mallocz(sizeof(*q->units) * avctx->channels);
+    q->units = av_mallocz_array(avctx->channels, sizeof(*q->units));
     if (!q->units) {
         atrac3_decode_close(avctx);
         return AVERROR(ENOMEM);

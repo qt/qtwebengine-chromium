@@ -28,7 +28,7 @@
 #include "core/dom/NodeRareData.h"
 #include "core/html/LabelsNodeList.h"
 
-namespace WebCore {
+namespace blink {
 
 LabelableElement::LabelableElement(const QualifiedName& tagName, Document& document)
     : HTMLElement(tagName, document)
@@ -44,7 +44,7 @@ PassRefPtrWillBeRawPtr<LabelsNodeList> LabelableElement::labels()
     if (!supportLabels())
         return nullptr;
 
-    return ensureRareData().ensureNodeLists().addCache<LabelsNodeList>(*this, LabelsNodeListType);
+    return ensureCachedCollection<LabelsNodeList>(LabelsNodeListType);
 }
 
 void LabelableElement::trace(Visitor* visitor)
@@ -52,4 +52,4 @@ void LabelableElement::trace(Visitor* visitor)
     HTMLElement::trace(visitor);
 }
 
-} // namespace Webcore
+} // namespace blink

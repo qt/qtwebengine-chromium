@@ -50,8 +50,7 @@ void ScopedProcessInformationTest::DoCreateProcess(
   STARTUPINFO startup_info = {};
   startup_info.cb = sizeof(startup_info);
 
-  EXPECT_TRUE(::CreateProcess(NULL,
-                              const_cast<wchar_t*>(cmd_line.c_str()),
+  EXPECT_TRUE(::CreateProcess(NULL, &cmd_line[0],
                               NULL, NULL, false, 0, NULL, NULL,
                               &startup_info, process_handle));
 }
@@ -70,7 +69,7 @@ TEST_F(ScopedProcessInformationTest, Receive) {
   EXPECT_EQ(kThreadId, process_info.thread_id());
   EXPECT_EQ(kProcessHandle, process_info.process_handle());
   EXPECT_EQ(kThreadHandle, process_info.thread_handle());
-  PROCESS_INFORMATION to_discard = process_info.Take();
+  process_info.Take();
 }
 
 TEST_F(ScopedProcessInformationTest, TakeProcess) {
@@ -82,7 +81,7 @@ TEST_F(ScopedProcessInformationTest, TakeProcess) {
   EXPECT_EQ(NULL, process_info.process_handle());
   EXPECT_EQ(0, process_info.process_id());
   EXPECT_TRUE(process_info.IsValid());
-  PROCESS_INFORMATION to_discard = process_info.Take();
+  process_info.Take();
 }
 
 TEST_F(ScopedProcessInformationTest, TakeThread) {
@@ -94,17 +93,17 @@ TEST_F(ScopedProcessInformationTest, TakeThread) {
   EXPECT_EQ(NULL, process_info.thread_handle());
   EXPECT_EQ(0, process_info.thread_id());
   EXPECT_TRUE(process_info.IsValid());
-  PROCESS_INFORMATION to_discard = process_info.Take();
+  process_info.Take();
 }
 
 TEST_F(ScopedProcessInformationTest, TakeBoth) {
   base::win::ScopedProcessInformation process_info;
   MockCreateProcess(&process_info);
 
-  HANDLE process = process_info.TakeProcessHandle();
-  HANDLE thread = process_info.TakeThreadHandle();
+  process_info.TakeProcessHandle();
+  process_info.TakeThreadHandle();
   EXPECT_FALSE(process_info.IsValid());
-  PROCESS_INFORMATION to_discard = process_info.Take();
+  process_info.Take();
 }
 
 TEST_F(ScopedProcessInformationTest, TakeWholeStruct) {

@@ -3,9 +3,11 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/stringprintf.h"
+#include "content/browser/appcache/appcache_database.h"
+#include "content/browser/appcache/appcache_entry.h"
 #include "sql/connection.h"
 #include "sql/meta_table.h"
 #include "sql/statement.h"
@@ -14,14 +16,6 @@
 #include "sql/transaction.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/sqlite/sqlite3.h"
-#include "webkit/browser/appcache/appcache_database.h"
-#include "webkit/browser/appcache/appcache_entry.h"
-
-using appcache::AppCacheDatabase;
-using appcache::AppCacheEntry;
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::APPCACHE_INTERCEPT_NAMESPACE;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
 
 namespace {
 
@@ -873,8 +867,8 @@ TEST(AppCacheDatabaseTest, UpgradeSchema3to5) {
         true },
     };
 
-    const int kTableCount3 = ARRAYSIZE_UNSAFE(kTables3);
-    const int kIndexCount3 = ARRAYSIZE_UNSAFE(kIndexes3);
+    const int kTableCount3 = arraysize(kTables3);
+    const int kIndexCount3 = arraysize(kIndexes3);
 
     sql::Connection connection;
     EXPECT_TRUE(connection.Open(kDbFile));
@@ -1103,8 +1097,8 @@ TEST(AppCacheDatabaseTest, UpgradeSchema4to5) {
         true },
     };
 
-    const int kTableCount4 = ARRAYSIZE_UNSAFE(kTables4);
-    const int kIndexCount4 = ARRAYSIZE_UNSAFE(kIndexes4);
+    const int kTableCount4 = arraysize(kTables4);
+    const int kIndexCount4 = arraysize(kIndexes4);
 
     sql::Connection connection;
     EXPECT_TRUE(connection.Open(kDbFile));

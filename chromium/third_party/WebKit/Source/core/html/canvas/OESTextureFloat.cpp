@@ -27,12 +27,11 @@
 
 #include "core/html/canvas/OESTextureFloat.h"
 
-namespace WebCore {
+namespace blink {
 
 OESTextureFloat::OESTextureFloat(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     if (context->extensionsUtil()->ensureExtensionEnabled("GL_OES_texture_float")) {
         // Implicitly enable rendering to float textures
         context->extensionsUtil()->ensureExtensionEnabled("GL_CHROMIUM_color_buffer_float_rgba");
@@ -49,9 +48,9 @@ WebGLExtensionName OESTextureFloat::name() const
     return OESTextureFloatName;
 }
 
-PassRefPtr<OESTextureFloat> OESTextureFloat::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<OESTextureFloat> OESTextureFloat::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new OESTextureFloat(context));
+    return adoptRefWillBeNoop(new OESTextureFloat(context));
 }
 
 bool OESTextureFloat::supported(WebGLRenderingContextBase* context)
@@ -64,4 +63,4 @@ const char* OESTextureFloat::extensionName()
     return "OES_texture_float";
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,25 +26,26 @@
 #ifndef EXTTextureFilterAnisotropic_h
 #define EXTTextureFilterAnisotropic_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLExtension.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class EXTTextureFilterAnisotropic FINAL : public WebGLExtension, public ScriptWrappable {
+class EXTTextureFilterAnisotropic final : public WebGLExtension, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<EXTTextureFilterAnisotropic> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<EXTTextureFilterAnisotropic> create(WebGLRenderingContextBase*);
     static bool supported(WebGLRenderingContextBase*);
     static const char* extensionName();
 
     virtual ~EXTTextureFilterAnisotropic();
-    virtual WebGLExtensionName name() const OVERRIDE;
+    virtual WebGLExtensionName name() const override;
 
 private:
-    EXTTextureFilterAnisotropic(WebGLRenderingContextBase*);
+    explicit EXTTextureFilterAnisotropic(WebGLRenderingContextBase*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EXTTextureFilterAnisotropic_h

@@ -1,31 +1,37 @@
 // Main binary for DM.
 // For a high-level overview, please see dm/README.
 
-#include "Benchmark.h"
 #include "CrashHandler.h"
-#include "SkCommandLineFlags.h"
+#include "LazyDecodeBitmap.h"
+#include "SkCommonFlags.h"
 #include "SkForceLinking.h"
 #include "SkGraphics.h"
+#include "SkOSFile.h"
 #include "SkPicture.h"
 #include "SkString.h"
+#include "SkTaskGroup.h"
 #include "Test.h"
 #include "gm.h"
+#include "sk_tool_utils.h"
+#include "sk_tool_utils_flags.h"
 
-#include "DMBenchTask.h"
 #include "DMCpuGMTask.h"
 #include "DMGpuGMTask.h"
 #include "DMGpuSupport.h"
+#include "DMJsonWriter.h"
 #include "DMPDFTask.h"
 #include "DMReporter.h"
 #include "DMSKPTask.h"
 #include "DMTask.h"
 #include "DMTaskRunner.h"
 #include "DMTestTask.h"
-#include "DMWriteTask.h"
 
 #ifdef SK_BUILD_POPPLER
 #  include "SkPDFRasterizer.h"
 #  define RASTERIZE_PDF_PROC SkPopplerRasterizePDF
+#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#  include "SkCGUtils.h"
+#  define RASTERIZE_PDF_PROC SkPDFDocumentToBitmap
 #else
 #  define RASTERIZE_PDF_PROC NULL
 #endif
@@ -37,34 +43,13 @@ using skiagm::GMRegistry;
 using skiatest::Test;
 using skiatest::TestRegistry;
 
-DEFINE_int32(threads, -1, "Threads for CPU work. Default NUM_CPUS.");
-DEFINE_int32(gpuThreads, 1, "Threads for GPU work.");
-DEFINE_string2(expectations, r, "",
-               "If a directory, compare generated images against images under this path. "
-               "If a file, compare generated images against JSON expectations at this path."
-);
-DEFINE_string2(resources, i, "resources", "Path to resources directory.");
-DEFINE_string(match, "",  "[~][^]substring[$] [...] of GM name to run.\n"
-                          "Multiple matches may be separated by spaces.\n"
-                          "~ causes a matching GM to always be skipped\n"
-                          "^ requires the start of the GM to match\n"
-                          "$ requires the end of the GM to match\n"
-                          "^ and $ requires an exact match\n"
-                          "If a GM does not match any list entry,\n"
-                          "it is skipped unless some list entry starts with ~");
-DEFINE_string(config, "565 8888 pdf gpu nonrendering",
-              "Options: 565 8888 pdf gpu nonrendering msaa4 msaa16 nvprmsaa4 nvprmsaa16 "
-              "gpunull gpudebug angle mesa");
-DEFINE_bool(dryRun, false,
-            "Just print the tests that would be run, without actually running them.");
-DEFINE_bool(leaks, false, "Print leaked instance-counted objects at exit?");
-DEFINE_string(skps, "", "Directory to read skps from.");
+static const char kGpuAPINameGL[] = "gl";
+static const char kGpuAPINameGLES[] = "gles";
 
 DEFINE_bool(gms, true, "Run GMs?");
-DEFINE_bool(benches, true, "Run benches?  Does not run GMs-as-benches.");
 DEFINE_bool(tests, true, "Run tests?");
-
-DECLARE_bool(verbose);
+DEFINE_bool(reportUsedChars, false, "Output test font construction data to be pasted into"
+                                    " create_test_font.cpp.");
 
 __SK_FORCE_IMAGE_DECODER_LINKING;
 
@@ -77,25 +62,19 @@ static SkString lowercase(SkString s) {
 }
 
 static const GrContextFactory::GLContextType native = GrContextFactory::kNative_GLContextType;
-static const GrContextFactory::GLContextType nvpr = GrContextFactory::kNVPR_GLContextType;
+static const GrContextFactory::GLContextType nvpr   = GrContextFactory::kNVPR_GLContextType;
 static const GrContextFactory::GLContextType null   = GrContextFactory::kNull_GLContextType;
 static const GrContextFactory::GLContextType debug  = GrContextFactory::kDebug_GLContextType;
-static const GrContextFactory::GLContextType angle  =
 #if SK_ANGLE
-GrContextFactory::kANGLE_GLContextType;
-#else
-native;
+static const GrContextFactory::GLContextType angle  = GrContextFactory::kANGLE_GLContextType;
 #endif
-static const GrContextFactory::GLContextType mesa   =
 #if SK_MESA
-GrContextFactory::kMESA_GLContextType;
-#else
-native;
+static const GrContextFactory::GLContextType mesa   = GrContextFactory::kMESA_GLContextType;
 #endif
 
 static void kick_off_gms(const SkTDArray<GMRegistry::Factory>& gms,
                          const SkTArray<SkString>& configs,
-                         const DM::Expectations& expectations,
+                         GrGLStandard gpuAPI,
                          DM::Reporter* reporter,
                          DM::TaskRunner* tasks) {
 #define START(name, type, ...)                                                              \
@@ -104,45 +83,23 @@ static void kick_off_gms(const SkTDArray<GMRegistry::Factory>& gms,
     }
     for (int i = 0; i < gms.count(); i++) {
         for (int j = 0; j < configs.count(); j++) {
-            START("565",        CpuGMTask, expectations, kRGB_565_SkColorType);
-            START("8888",       CpuGMTask, expectations, kN32_SkColorType);
-            START("gpu",        GpuGMTask, expectations, native, 0);
-            START("msaa4",      GpuGMTask, expectations, native, 4);
-            START("msaa16",     GpuGMTask, expectations, native, 16);
-            START("nvprmsaa4",  GpuGMTask, expectations, nvpr,   4);
-            START("nvprmsaa16", GpuGMTask, expectations, nvpr,   16);
-            START("gpunull",    GpuGMTask, expectations, null,   0);
-            START("gpudebug",   GpuGMTask, expectations, debug,  0);
-            START("angle",      GpuGMTask, expectations, angle,  0);
-            START("mesa",       GpuGMTask, expectations, mesa,   0);
-            START("pdf",        PDFTask,   RASTERIZE_PDF_PROC);
-        }
-    }
-#undef START
-}
 
-static void kick_off_benches(const SkTDArray<BenchRegistry::Factory>& benches,
-                             const SkTArray<SkString>& configs,
-                             DM::Reporter* reporter,
-                             DM::TaskRunner* tasks) {
-#define START(name, type, ...)                                                                 \
-    if (lowercase(configs[j]).equals(name)) {                                                  \
-        tasks->add(SkNEW_ARGS(DM::type, (name, reporter, tasks, benches[i], ## __VA_ARGS__))); \
-    }
-    for (int i = 0; i < benches.count(); i++) {
-        for (int j = 0; j < configs.count(); j++) {
-            START("nonrendering", NonRenderingBenchTask);
-            START("565",          CpuBenchTask, kRGB_565_SkColorType);
-            START("8888",         CpuBenchTask, kN32_SkColorType);
-            START("gpu",          GpuBenchTask, native, 0);
-            START("msaa4",        GpuBenchTask, native, 4);
-            START("msaa16",       GpuBenchTask, native, 16);
-            START("nvprmsaa4",    GpuBenchTask, nvpr,   4);
-            START("nvprmsaa16",   GpuBenchTask, nvpr,   16);
-            START("gpunull",      GpuBenchTask, null,   0);
-            START("gpudebug",     GpuBenchTask, debug,  0);
-            START("angle",        GpuBenchTask, angle,  0);
-            START("mesa",         GpuBenchTask, mesa,   0);
+            START("565",        CpuGMTask, kRGB_565_SkColorType);
+            START("8888",       CpuGMTask, kN32_SkColorType);
+            START("gpu",        GpuGMTask, native, gpuAPI, 0);
+            START("msaa4",      GpuGMTask, native, gpuAPI, 4);
+            START("msaa16",     GpuGMTask, native, gpuAPI, 16);
+            START("nvprmsaa4",  GpuGMTask, nvpr,   gpuAPI, 4);
+            START("nvprmsaa16", GpuGMTask, nvpr,   gpuAPI, 16);
+            START("gpunull",    GpuGMTask, null,   gpuAPI, 0);
+            START("gpudebug",   GpuGMTask, debug,  gpuAPI, 0);
+#if SK_ANGLE
+            START("angle",      GpuGMTask, angle,  gpuAPI, 0);
+#endif
+#if SK_MESA
+            START("mesa",       GpuGMTask, mesa,   gpuAPI, 0);
+#endif
+            START("pdf",        PDFTask,   RASTERIZE_PDF_PROC);
         }
     }
 #undef START
@@ -161,7 +118,7 @@ static void kick_off_tests(const SkTDArray<TestRegistry::Factory>& tests,
     }
 }
 
-static void kick_off_skps(DM::Reporter* reporter, DM::TaskRunner* tasks) {
+static void find_skps(SkTArray<SkString>* skps) {
     if (FLAGS_skps.isEmpty()) {
         return;
     }
@@ -169,26 +126,31 @@ static void kick_off_skps(DM::Reporter* reporter, DM::TaskRunner* tasks) {
     SkOSFile::Iter it(FLAGS_skps[0], ".skp");
     SkString filename;
     while (it.next(&filename)) {
-        if (SkCommandLineFlags::ShouldSkip(FLAGS_match, filename.c_str())) {
-            continue;
+        if (!SkCommandLineFlags::ShouldSkip(FLAGS_match, filename.c_str())) {
+            skps->push_back(SkOSPath::Join(FLAGS_skps[0], filename.c_str()));
         }
+    }
+}
 
-        const SkString path = SkOSPath::SkPathJoin(FLAGS_skps[0], filename.c_str());
-
-        SkAutoTDelete<SkStream> stream(SkStream::NewFromFile(path.c_str()));
+static void kick_off_skps(const SkTArray<SkString>& skps,
+                          DM::Reporter* reporter,
+                          DM::TaskRunner* tasks) {
+    for (int i = 0; i < skps.count(); ++i) {
+        SkAutoTUnref<SkStream> stream(SkStream::NewFromFile(skps[i].c_str()));
         if (stream.get() == NULL) {
-            SkDebugf("Could not read %s.\n", path.c_str());
+            SkDebugf("Could not read %s.\n", skps[i].c_str());
             exit(1);
         }
-        SkAutoTUnref<SkPicture> pic(SkPicture::CreateFromStream(stream.get()));
+        SkAutoTUnref<SkPicture> pic(
+                SkPicture::CreateFromStream(stream.get(), &sk_tools::LazyDecodeBitmap));
         if (pic.get() == NULL) {
-            SkDebugf("Could not read %s as an SkPicture.\n", path.c_str());
+            SkDebugf("Could not read %s as an SkPicture.\n", skps[i].c_str());
             exit(1);
         }
 
-        tasks->add(SkNEW_ARGS(DM::SKPTask, (reporter, tasks, pic->clone(), filename)));
-        tasks->add(SkNEW_ARGS(DM::PDFTask, (reporter, tasks, pic->clone(), filename,
-                                            RASTERIZE_PDF_PROC)));
+        SkString filename = SkOSPath::Basename(skps[i].c_str());
+        tasks->add(SkNEW_ARGS(DM::SKPTask, (reporter, tasks, pic, filename)));
+        tasks->add(SkNEW_ARGS(DM::PDFTask, (reporter, tasks, pic, filename, RASTERIZE_PDF_PROC)));
     }
 }
 
@@ -204,6 +166,16 @@ static void report_failures(const SkTArray<SkString>& failures) {
     SkDebugf("%d failures.\n", failures.count());
 }
 
+static GrGLStandard get_gl_standard() {
+  if (FLAGS_gpuAPI.contains(kGpuAPINameGL)) {
+      return kGL_GrGLStandard;
+  }
+  if (FLAGS_gpuAPI.contains(kGpuAPINameGLES)) {
+      return kGLES_GrGLStandard;
+  }
+  return kNone_GrGLStandard;
+}
+
 template <typename T, typename Registry>
 static void append_matching_factories(Registry* head, SkTDArray<typename Registry::Factory>* out) {
     for (const Registry* reg = head; reg != NULL; reg = reg->next()) {
@@ -214,13 +186,13 @@ static void append_matching_factories(Registry* head, SkTDArray<typename Registr
     }
 }
 
-int tool_main(int argc, char** argv);
-int tool_main(int argc, char** argv) {
+int dm_main();
+int dm_main() {
     SetupCrashHandler();
     SkAutoGraphics ag;
-    SkCommandLineFlags::Parse(argc, argv);
+    SkTaskGroup::Enabler enabled(FLAGS_threads);
 
-    if (FLAGS_dryRun) {
+    if (FLAGS_dryRun || FLAGS_veryVerbose) {
         FLAGS_verbose = true;
     }
 #if SK_ENABLE_INST_COUNT
@@ -232,24 +204,11 @@ int tool_main(int argc, char** argv) {
         SkStrSplit(FLAGS_config[i], ", ", &configs);
     }
 
+    GrGLStandard gpuAPI = get_gl_standard();
+
     SkTDArray<GMRegistry::Factory> gms;
-    SkAutoTDelete<DM::Expectations> expectations(SkNEW(DM::NoExpectations));
     if (FLAGS_gms) {
         append_matching_factories<GM>(GMRegistry::Head(), &gms);
-
-        if (FLAGS_expectations.count() > 0) {
-            const char* path = FLAGS_expectations[0];
-            if (sk_isdir(path)) {
-                expectations.reset(SkNEW_ARGS(DM::WriteTask::Expectations, (path)));
-            } else {
-                expectations.reset(SkNEW_ARGS(DM::JsonExpectations, (path)));
-            }
-        }
-    }
-
-    SkTDArray<BenchRegistry::Factory> benches;
-    if (FLAGS_benches) {
-        append_matching_factories<Benchmark>(BenchRegistry::Head(), &benches);
     }
 
     SkTDArray<TestRegistry::Factory> tests;
@@ -257,17 +216,27 @@ int tool_main(int argc, char** argv) {
         append_matching_factories<Test>(TestRegistry::Head(), &tests);
     }
 
-    SkDebugf("(%d GMs, %d benches) x %d configs, %d tests\n",
-             gms.count(), benches.count(), configs.count(), tests.count());
+    SkTArray<SkString> skps;
+    find_skps(&skps);
+
+    SkDebugf("%d GMs x %d configs, %d tests, %d pictures\n",
+             gms.count(), configs.count(), tests.count(), skps.count());
     DM::Reporter reporter;
-    DM::TaskRunner tasks(FLAGS_threads, FLAGS_gpuThreads);
-    kick_off_gms(gms, configs, *expectations, &reporter, &tasks);
-    kick_off_benches(benches, configs, &reporter, &tasks);
+
+    DM::TaskRunner tasks;
     kick_off_tests(tests, &reporter, &tasks);
-    kick_off_skps(&reporter, &tasks);
+    kick_off_gms(gms, configs, gpuAPI, &reporter, &tasks);
+    kick_off_skps(skps, &reporter, &tasks);
     tasks.wait();
 
+    DM::JsonWriter::DumpJson();
+
     SkDebugf("\n");
+#ifdef SK_DEBUG
+    if (FLAGS_portableFonts && FLAGS_reportUsedChars) {
+        sk_tool_utils::report_used_chars();
+    }
+#endif
 
     SkTArray<SkString> failures;
     reporter.getFailures(&failures);
@@ -277,6 +246,7 @@ int tool_main(int argc, char** argv) {
 
 #if !defined(SK_BUILD_FOR_IOS) && !defined(SK_BUILD_FOR_NACL)
 int main(int argc, char** argv) {
-    return tool_main(argc, argv);
+    SkCommandLineFlags::Parse(argc, argv);
+    return dm_main();
 }
 #endif

@@ -37,11 +37,12 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/graphics/ImageBufferClient.h"
 #include "platform/heap/Handle.h"
+#include "public/platform/WebThread.h"
 #include "wtf/Forward.h"
 
 #define CanvasDefaultInterpolationQuality InterpolationLow
 
-namespace WebCore {
+namespace blink {
 
 class AffineTransform;
 class CanvasContextAttributes;
@@ -54,6 +55,7 @@ class ImageData;
 class ImageBuffer;
 class ImageBufferSurface;
 class IntSize;
+class RecordingImageBufferFallbackSurfaceFactory;
 
 class CanvasObserver : public WillBeGarbageCollectedMixin {
     DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(CanvasObserver);
@@ -67,7 +69,8 @@ public:
     virtual void trace(Visitor*) { }
 };
 
-class HTMLCanvasElement FINAL : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient {
+class HTMLCanvasElement final : public HTMLElement, public DocumentVisibilityObserver, public CanvasImageSource, public ImageBufferClient, public blink::WebThread::TaskObserver {
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLCanvasElement);
 public:
     DECLARE_NODE_FACTORY(HTMLCanvasElement);
@@ -137,39 +140,49 @@ public:
 
     bool shouldAccelerate(const IntSize&) const;
 
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
+    virtual const AtomicString imageSourceURL() const override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
     // DocumentVisibilityObserver implementation
-    virtual void didChangeVisibilityState(PageVisibilityState) OVERRIDE;
+    virtual void didChangeVisibilityState(PageVisibilityState) override;
 
     // CanvasImageSource implementation
-    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const OVERRIDE;
-    virtual bool wouldTaintOrigin(SecurityOrigin*) const OVERRIDE;
-    virtual FloatSize sourceSize() const OVERRIDE;
+    virtual PassRefPtr<Image> getSourceImageForCanvas(SourceImageMode, SourceImageStatus*) const override;
+    virtual bool wouldTaintOrigin(SecurityOrigin*) const override;
+    virtual FloatSize sourceSize() const override;
 
     // ImageBufferClient implementation
-    virtual void notifySurfaceInvalid() OVERRIDE;
+    virtual void notifySurfaceInvalid() override;
+    virtual bool isDirty() override { return !m_dirtyRect.isEmpty(); }
+    virtual void didFinalizeFrame() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    // Implementation of WebThread::TaskObserver methods
+    virtual void willProcessTask() override;
+    virtual void didProcessTask() override;
+
+    virtual void trace(Visitor*) override;
 
 protected:
-    virtual void didMoveToNewDocument(Document& oldDocument) OVERRIDE;
+    virtual void didMoveToNewDocument(Document& oldDocument) override;
 
 private:
     explicit HTMLCanvasElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
 
     void reset();
 
+    PassOwnPtr<RecordingImageBufferFallbackSurfaceFactory> createSurfaceFactory(const IntSize& deviceSize, int* msaaSampleCount) const;
     PassOwnPtr<ImageBufferSurface> createImageBufferSurface(const IntSize& deviceSize, int* msaaSampleCount);
     void createImageBuffer();
     void createImageBufferInternal();
     void clearImageBuffer();
+    bool shouldUseDisplayList(const IntSize& deviceSize);
+
+    void resetDirtyRect();
 
     void setSurfaceSize(const IntSize&);
 
@@ -179,7 +192,7 @@ private:
 
     String toDataURLInternal(const String& mimeType, const double* quality, bool isSaving = false) const;
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver> > m_observers;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<CanvasObserver>> m_observers;
 
     IntSize m_size;
 
@@ -204,6 +217,6 @@ private:
     mutable RefPtr<Image> m_copiedImage; // FIXME: This is temporary for platforms that have to copy the image buffer to render (and for CSSCanvasValue).
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLCanvasElement_h

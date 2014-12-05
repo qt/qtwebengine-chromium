@@ -28,6 +28,9 @@ AURA_EXPORT extern const WindowProperty<bool>* const kAnimationsDisabledKey;
 // A property key to store the can-maximize flag.
 AURA_EXPORT extern const WindowProperty<bool>* const kCanMaximizeKey;
 
+// A property key to store the can-minimize flag.
+AURA_EXPORT extern const WindowProperty<bool>* const kCanMinimizeKey;
+
 // A property key to store the can-resize flag.
 AURA_EXPORT extern const WindowProperty<bool>* const kCanResizeKey;
 
@@ -37,6 +40,10 @@ AURA_EXPORT extern const WindowProperty<bool>* const kConstrainedWindowKey;
 // A property key to indicate that a window should show that it deserves
 // attention.
 AURA_EXPORT extern const aura::WindowProperty<bool>* const kDrawAttentionKey;
+
+// A property key to store the host window of a window. This lets
+// WebContentsViews find the windows that should constrain NPAPI plugins.
+AURA_EXPORT extern const WindowProperty<Window*>* const kHostWindowKey;
 
 // A property key to store the window modality.
 AURA_EXPORT extern const WindowProperty<ui::ModalType>* const kModalKey;

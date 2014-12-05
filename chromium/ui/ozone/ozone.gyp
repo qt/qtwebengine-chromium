@@ -5,16 +5,21 @@
 {
   'variables': {
     'chromium_code': 1,
-    'external_ozone_platforms': [],
-    'external_ozone_platform_files': [],
-    'external_ozone_platform_deps': [],
-    'external_ozone_platform_unittest_deps': [],
+    # Normally, the external_ozone_platform* variables below can be
+    # overridden by supplement.gypi which must exist exactly one level
+    # below the top-level src directory. They can now also be set in
+    # $GYP_DEFINES
+    'external_ozone_platforms%': [],
+    'external_ozone_platform_files%': [],
+    'external_ozone_platform_deps%': [],
+    'external_ozone_platform_unittest_deps%': [],
     'internal_ozone_platforms': [],
     'internal_ozone_platform_deps': [],
     'internal_ozone_platform_unittest_deps': [],
   },
   'targets': [
     {
+      # GN version: //ui/ozone:ozone_base
       'target_name': 'ozone_base',
       'type': '<(component)',
       'dependencies': [
@@ -28,12 +33,11 @@
       'sources': [
         'public/cursor_factory_ozone.cc',
         'public/cursor_factory_ozone.h',
-        'public/event_factory_ozone.cc',
-        'public/event_factory_ozone.h',
         'public/gpu_platform_support.cc',
         'public/gpu_platform_support.h',
         'public/gpu_platform_support_host.cc',
         'public/gpu_platform_support_host.h',
+        'public/native_pixmap.h',
         'public/overlay_candidates_ozone.cc',
         'public/overlay_candidates_ozone.h',
         'public/surface_factory_ozone.cc',
@@ -43,15 +47,19 @@
       ],
     },
     {
+      # GN version: //ui/ozone
       'target_name': 'ozone',
       'type': '<(component)',
       'dependencies': [
         '<(DEPTH)/base/base.gyp:base',
+        '<(DEPTH)/ipc/ipc.gyp:ipc',
+        '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/display/display.gyp:display_types',
         '<(DEPTH)/ui/events/events.gyp:events',
         '<(DEPTH)/ui/events/ozone/events_ozone.gyp:events_ozone',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx',
         '<(DEPTH)/ui/gfx/gfx.gyp:gfx_geometry',
-        '<(DEPTH)/skia/skia.gyp:skia',
+        '<(DEPTH)/ui/gfx/ipc/gfx_ipc.gyp:gfx_ipc',
         '<@(external_ozone_platform_deps)',
         '<@(internal_ozone_platform_deps)',
         'ozone_base',
@@ -77,23 +85,32 @@
         '<(platform_list_h_file)',
         '<(constructor_list_cc_file)',
 
-        # common/chromeos files are excluded automatically when building with
-        # chromeos=0, by exclusion rules in filename_rules.gypi due to the
-        # 'chromeos' folder name.
-        'common/chromeos/native_display_delegate_ozone.cc',
-        'common/chromeos/native_display_delegate_ozone.h',
-        'common/chromeos/touchscreen_device_manager_ozone.cc',
-        'common/chromeos/touchscreen_device_manager_ozone.h',
-        'ozone_platform.cc',
-        'ozone_platform.h',
-        'ozone_switches.cc',
-        'ozone_switches.h',
+        'common/display_mode_proxy.cc',
+        'common/display_mode_proxy.h',
+        'common/display_snapshot_proxy.cc',
+        'common/display_snapshot_proxy.h',
+        'common/display_util.cc',
+        'common/display_util.h',
+        'common/gpu/ozone_gpu_message_generator.cc',
+        'common/gpu/ozone_gpu_message_generator.h',
+        'common/gpu/ozone_gpu_message_params.cc',
+        'common/gpu/ozone_gpu_message_params.h',
+        'common/gpu/ozone_gpu_messages.h',
+        'common/native_display_delegate_ozone.cc',
+        'common/native_display_delegate_ozone.h',
+        'public/ozone_platform.cc',
+        'public/ozone_platform.h',
+        'public/ozone_switches.cc',
+        'public/ozone_switches.h',
+        'public/ui_thread_gpu.cc',
+        'public/ui_thread_gpu.h',
         'platform_selection.cc',
         'platform_selection.h',
         '<@(external_ozone_platform_files)',
       ],
       'actions': [
         {
+          # GN version: //ui/ozone:generate_ozone_platform_list
           'action_name': 'generate_ozone_platform_list',
           'variables': {
             'generator_path': 'generate_ozone_platform_list.py',
@@ -117,6 +134,7 @@
           ],
         },
         {
+          # GN version: //ui/ozone:generate_constructor_list
           'action_name': 'generate_constructor_list',
           'variables': {
             'generator_path': 'generate_constructor_list.py',
@@ -135,7 +153,7 @@
             '--output_cc=<(constructor_list_cc_file)',
             '--namespace=ui',
             '--typename=OzonePlatform',
-            '--include="ui/ozone/ozone_platform.h"'
+            '--include="ui/ozone/public/ozone_platform.h"'
           ],
         },
       ],
@@ -143,11 +161,6 @@
         ['use_udev == 0', {
           'sources/': [
             ['exclude', '_udev\\.(h|cc)$'],
-          ],
-        }],
-        ['chromeos==1', {
-          'dependencies': [
-            '<(DEPTH)/ui/display/display.gyp:display_types',
           ],
         }],
       ],
@@ -159,7 +172,6 @@
         'run_all_unittests.cc',
       ],
       'dependencies': [
-        'ozone',
         'ozone_base',
         '../../base/base.gyp:base',
         '../../base/base.gyp:test_support_base',

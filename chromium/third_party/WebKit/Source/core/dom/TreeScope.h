@@ -31,7 +31,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
 class DOMSelection;
@@ -40,10 +40,9 @@ class Element;
 class HTMLLabelElement;
 class HTMLMapElement;
 class HitTestResult;
-class LayoutPoint;
 class IdTargetObserverRegistry;
+class ScopedStyleResolver;
 class Node;
-class RenderObject;
 
 // A class which inherits both Node and TreeScope must call clearRareData() in its destructor
 // so that the Node destructor no longer does problematic NodeList cache manipulation in
@@ -57,8 +56,8 @@ public:
 
     Element* adjustedFocusedElement() const;
     Element* getElementById(const AtomicString&) const;
-    const Vector<Element*>& getAllElementsById(const AtomicString&) const;
-    bool hasElementWithId(StringImpl* id) const;
+    const WillBeHeapVector<RawPtrWillBeMember<Element> >& getAllElementsById(const AtomicString&) const;
+    bool hasElementWithId(const AtomicString& id) const;
     bool containsMultipleElementsWithId(const AtomicString& id) const;
     void addElementById(const AtomicString& elementId, Element*);
     void removeElementById(const AtomicString& elementId, Element*);
@@ -92,12 +91,10 @@ public:
     // quirks mode for historical compatibility reasons.
     Element* findAnchor(const String& name);
 
-    bool applyAuthorStyles() const;
-
     // Used by the basic DOM mutation methods (e.g., appendChild()).
     void adoptIfNeeded(Node&);
 
-    Node& rootNode() const { return *m_rootNode; }
+    ContainerNode& rootNode() const { return *m_rootNode; }
 
     IdTargetObserverRegistry& idTargetObserverRegistry() const { return *m_idTargetObserverRegistry.get(); }
 
@@ -138,6 +135,10 @@ public:
 
     virtual void trace(Visitor*);
 
+    ScopedStyleResolver* scopedStyleResolver() const { return m_scopedStyleResolver.get(); }
+    ScopedStyleResolver& ensureScopedStyleResolver();
+    void clearScopedStyleResolver();
+
 protected:
     TreeScope(ContainerNode&, Document&);
     TreeScope(Document&);
@@ -162,7 +163,7 @@ private:
 #if !ENABLE(OILPAN)
     int refCount() const;
 
-#if SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
     bool deletionHasBegun();
     void beginDeletion();
 #else
@@ -173,7 +174,7 @@ private:
 
     bool rootNodeHasTreeSharedParent() const;
 
-    RawPtrWillBeMember<Node> m_rootNode;
+    RawPtrWillBeMember<ContainerNode> m_rootNode;
     RawPtrWillBeMember<Document> m_document;
     RawPtrWillBeMember<TreeScope> m_parentTreeScope;
 
@@ -181,36 +182,33 @@ private:
     int m_guardRefCount;
 #endif
 
-    OwnPtr<DocumentOrderedMap> m_elementsById;
-    OwnPtr<DocumentOrderedMap> m_imageMapsByName;
-    OwnPtr<DocumentOrderedMap> m_labelsByForAttribute;
+    OwnPtrWillBeMember<DocumentOrderedMap> m_elementsById;
+    OwnPtrWillBeMember<DocumentOrderedMap> m_imageMapsByName;
+    OwnPtrWillBeMember<DocumentOrderedMap> m_labelsByForAttribute;
 
     OwnPtrWillBeMember<IdTargetObserverRegistry> m_idTargetObserverRegistry;
+
+    OwnPtrWillBeMember<ScopedStyleResolver> m_scopedStyleResolver;
 
     mutable RefPtrWillBeMember<DOMSelection> m_selection;
 };
 
-inline bool TreeScope::hasElementWithId(StringImpl* id) const
+inline bool TreeScope::hasElementWithId(const AtomicString& id) const
 {
-    ASSERT(id);
+    ASSERT(!id.isNull());
     return m_elementsById && m_elementsById->contains(id);
 }
 
 inline bool TreeScope::containsMultipleElementsWithId(const AtomicString& id) const
 {
-    return m_elementsById && m_elementsById->containsMultiple(id.impl());
+    return m_elementsById && m_elementsById->containsMultiple(id);
 }
 
-inline bool operator==(const TreeScope& a, const TreeScope& b) { return &a == &b; }
-inline bool operator==(const TreeScope& a, const TreeScope* b) { return &a == b; }
-inline bool operator==(const TreeScope* a, const TreeScope& b) { return a == &b; }
-inline bool operator!=(const TreeScope& a, const TreeScope& b) { return !(a == b); }
-inline bool operator!=(const TreeScope& a, const TreeScope* b) { return !(a == b); }
-inline bool operator!=(const TreeScope* a, const TreeScope& b) { return !(a == b); }
+DEFINE_COMPARISON_OPERATORS_WITH_REFERENCES(TreeScope)
 
 HitTestResult hitTestInDocument(const Document*, int x, int y);
 TreeScope* commonTreeScope(Node*, Node*);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TreeScope_h

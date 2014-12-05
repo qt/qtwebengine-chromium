@@ -16,11 +16,11 @@ namespace {
 void SimpleModifyWorldTransform(HDC context,
                                 int offset_x,
                                 int offset_y,
-                                double shrink_factor) {
+                                float shrink_factor) {
   XFORM xform = { 0 };
   xform.eDx = static_cast<float>(offset_x);
   xform.eDy = static_cast<float>(offset_y);
-  xform.eM11 = xform.eM22 = static_cast<float>(1. / shrink_factor);
+  xform.eM11 = xform.eM22 = 1.f / shrink_factor;
   BOOL res = ModifyWorldTransform(context, &xform, MWT_LEFTMULTIPLY);
   DCHECK_NE(res, 0);
 }
@@ -69,9 +69,11 @@ void PrintedDocument::RenderPrintedPage(
         content_area.y() - page_setup.printable_area().y(),
         page.shrink_factor());
 
+    ::StartPage(context);
     if (!page.metafile()->SafePlayback(context)) {
       NOTREACHED();
     }
+    ::EndPage(context);
 
     BOOL res = RestoreDC(context, saved_state);
     DCHECK_NE(res, 0);

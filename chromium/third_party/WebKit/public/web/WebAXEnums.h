@@ -34,7 +34,7 @@
 namespace blink {
 
 // Accessibility events sent from Blink to the embedder.
-// These values must match WebCore::AXObjectCache::AXNotification values.
+// These values must match blink::AXObjectCache::AXNotification values.
 // Enforced in AssertMatchingEnums.cpp.
 enum WebAXEvent {
     WebAXEventActiveDescendantChanged,
@@ -68,7 +68,7 @@ enum WebAXEvent {
 };
 
 // Accessibility roles.
-// These values must match WebCore::AccessibilityRole values.
+// These values must match blink::AccessibilityRole values.
 // Enforced in AssertMatchingEnums.cpp.
 enum WebAXRole {
     WebAXRoleAlertDialog = 1,
@@ -77,6 +77,7 @@ enum WebAXRole {
     WebAXRoleApplication,
     WebAXRoleArticle,
     WebAXRoleBanner,
+    WebAXRoleBlockquote,
     WebAXRoleBrowser,
     WebAXRoleBusyIndicator,
     WebAXRoleButton,
@@ -89,9 +90,13 @@ enum WebAXRole {
     WebAXRoleComboBox,
     WebAXRoleComplementary,
     WebAXRoleContentInfo,
+    WebAXRoleDate,
+    WebAXRoleDateTime,
     WebAXRoleDefinition,
     WebAXRoleDescriptionListDetail,
+    WebAXRoleDescriptionList,
     WebAXRoleDescriptionListTerm,
+    WebAXRoleDetails,
     WebAXRoleDialog,
     WebAXRoleDirectory,
     WebAXRoleDisclosureTriangle,
@@ -100,6 +105,8 @@ enum WebAXRole {
     WebAXRoleDrawer,
     WebAXRoleEditableText,
     WebAXRoleEmbeddedObject,
+    WebAXRoleFigcaption,
+    WebAXRoleFigure,
     WebAXRoleFooter,
     WebAXRoleForm,
     WebAXRoleGrid,
@@ -132,14 +139,19 @@ enum WebAXRole {
     WebAXRoleMenuBar,
     WebAXRoleMenuButton,
     WebAXRoleMenuItem,
+    WebAXRoleMenuItemCheckBox,
+    WebAXRoleMenuItemRadio,
     WebAXRoleMenuListOption,
     WebAXRoleMenuListPopup,
     WebAXRoleMenu,
+    WebAXRoleMeter,
     WebAXRoleNavigation,
+    WebAXRoleNone,
     WebAXRoleNote,
     WebAXRoleOutline,
     WebAXRoleParagraph,
     WebAXRolePopUpButton,
+    WebAXRolePre,
     WebAXRolePresentational,
     WebAXRoleProgressIndicator,
     WebAXRoleRadioButton,
@@ -173,6 +185,7 @@ enum WebAXRole {
     WebAXRoleTable,
     WebAXRoleTextArea,
     WebAXRoleTextField,
+    WebAXRoleTime,
     WebAXRoleTimer,
     WebAXRoleToggleButton,
     WebAXRoleToolbar,
@@ -190,7 +203,6 @@ enum WebAXRole {
 enum WebAXState {
     WebAXStateBusy,
     WebAXStateChecked,
-    WebAXStateCollapsed,
     WebAXStateEnabled,
     WebAXStateExpanded,
     WebAXStateFocusable,
@@ -218,6 +230,15 @@ enum WebAXTextDirection {
     WebAXTextDirectionRL,
     WebAXTextDirectionTB,
     WebAXTextDirectionBT
+};
+
+// Expanded State.
+// These values must match blink::AccessibilityExpanded values.
+// Enforced in AssertMatchingEnums.cpp.
+enum WebAXExpanded {
+    WebAXExpandedUndefined = 0,
+    WebAXExpandedCollapsed,
+    WebAXExpandedExpanded
 };
 
 } // namespace blink

@@ -18,7 +18,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
 {
   "name": "software rendering list",
   // Please update the version number whenever you change this file.
-  "version": "8.8",
+  "version": "9.12",
   "entries": [
     {
       "id": 1,
@@ -42,10 +42,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "software"
-      },
+      "gl_renderer": "(?i).*software.*",
       "features": [
         "all"
       ]
@@ -76,10 +73,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "vendor_id": "0x1002",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "contains",
-            "value": "AMD"
-          },
+          "driver_vendor": ".*AMD.*",
           "driver_version": {
             "op": ">=",
             "style": "lexical",
@@ -87,10 +81,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           }
         },
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "10.0.4"
@@ -150,10 +141,11 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           }
         },
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "osmesa"
-          }
+          "driver_vendor": "osmesa"
+        },
+        {
+          "vendor_id": "0x1414",
+          "device_id": ["0x02c1"]
         }
       ],
       "features": [
@@ -168,10 +160,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "type": "linux"
       },
       "vendor_id": "0x8086",
-      "driver_vendor": {
-        "op": "=",
-        "value": "Mesa"
-      },
+      "driver_vendor": "Mesa",
       "driver_version": {
         "op": "<",
         "value": "10.1"
@@ -236,20 +225,14 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "driver_vendor": {
-        "op": "=",
-        "value": "Mesa"
-      },
+      "driver_vendor": "Mesa",
       "driver_version": {
         "op": "<",
         "value": "7.11"
       },
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "osmesa"
-          }
+          "driver_vendor": "osmesa"
         }
       ],
       "features": [
@@ -273,16 +256,10 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "ATI"
-      },
+      "gl_vendor": "ATI.*",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "contains",
-            "value": "AMD"
-          },
+          "driver_vendor": ".*AMD.*",
           "driver_version": {
             "op": ">=",
             "style": "lexical",
@@ -290,10 +267,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           }
         },
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "10.0.4"
@@ -311,20 +285,11 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "X.Org"
-      },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "AMD"
-      },
+      "gl_vendor": "X\\.Org.*",
+      "gl_renderer": ".*AMD.*",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "10.0.4"
@@ -342,20 +307,11 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "X.Org"
-      },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "ATI"
-      },
+      "gl_vendor": "X\\.Org.*",
+      "gl_renderer": ".*ATI.*",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "10.0.4"
@@ -374,10 +330,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "type": "linux"
       },
       "vendor_id": "0x10de",
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "nouveau"
-      },
+      "gl_vendor": "(?i)nouveau.*",
       "features": [
         "all"
       ]
@@ -401,10 +354,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
           }
         },
         {
-          "cpu_info": {
-            "op": "contains",
-            "value": "Atom"
-          }
+          "cpu_info": "(?i).*Atom.*"
         }
       ],
       "features": [
@@ -445,18 +395,12 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "multi_gpu_style": "optimus",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "10.1"
           },
-          "gl_vendor": {
-            "op": "beginwith",
-            "value": "Intel"
-          }
+          "gl_vendor": "Intel.*"
         }
       ],
       "features": [
@@ -553,10 +497,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "type": "linux"
       },
       "vendor_id": "0x10de",
-      "driver_vendor": {
-        "op": "=",
-        "value": "NVIDIA"
-      },
+      "driver_vendor": "NVIDIA",
       "driver_version": {
         "op": "<",
         "value": "295"
@@ -617,24 +558,15 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "linux"
       },
-      "gl_vendor": {
-        "op": "beginwith",
-        "value": "VMware"
-      },
+      "gl_vendor": "VMware.*",
       "exceptions": [
         {
-          "driver_vendor": {
-            "op": "=",
-            "value": "Mesa"
-          },
+          "driver_vendor": "Mesa",
           "driver_version": {
             "op": ">=",
             "value": "9.2.1"
           },
-          "gl_renderer": {
-            "op": "contains",
-            "value": "SVGA3D"
-          }
+          "gl_renderer": ".*SVGA3D.*"
         }
       ],
       "features": [
@@ -652,37 +584,6 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       ]
     },
     {
-      "id": 55,
-      "description": "Drivers older than 2007-01 on Windows are assumed to be buggy",
-      "cr_bugs": [72979, 89802],
-      "os": {
-        "type": "win"
-      },
-      "driver_date": {
-        "op": "<",
-        "value": "2007.1"
-      },
-      "exceptions": [
-        {
-          "vendor_id": "0x8086",
-          "device_id": ["0x29a2"],
-          "driver_version": {
-            "op": ">=",
-            "value": "7.15.10.1624"
-          }
-        },
-        {
-          "driver_vendor": {
-            "op": "=",
-            "value": "osmesa"
-          }
-        }
-      ],
-      "features": [
-        "all"
-      ]
-    },
-    {
       "id": 56,
       "description": "NVIDIA linux drivers are unstable when using multiple Open GL contexts and with low memory",
       "cr_bugs": [145600],
@@ -690,10 +591,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
         "type": "linux"
       },
       "vendor_id": "0x10de",
-      "driver_vendor": {
-        "op": "=",
-        "value": "NVIDIA"
-      },
+      "driver_vendor": "NVIDIA",
       "features": [
         "accelerated_video_decode",
         "flash_3d",
@@ -743,10 +641,7 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "android"
       },
-      "gl_renderer": {
-        "op": "contains",
-        "value": "Adreno"
-      },
+      "gl_renderer": ".*Adreno.*",
       "driver_version": {
         "op": "<",
         "value": "4.1"
@@ -875,10 +770,13 @@ const char kSoftwareRenderingListJson[] = LONG_STRING_CONST(
       "os": {
         "type": "win"
       },
-      "driver_vendor": {
-        "op": "=",
-        "value": "Microsoft"
-      },
+      "driver_vendor": "Microsoft",
+      "exceptions": [
+        {
+          "vendor_id": "0x1414",
+          "device_id": ["0x02c1"]
+        }
+      ],
       "features": [
         "all"
       ]
@@ -897,6 +795,10 @@ LONG_STRING_CONST(
             "op": "=",
             "value": "33362"
           }
+        },
+        {
+          "gl_renderer": "Mali-400.*",
+          "gl_extensions": ".*EXT_robustness.*"
         }
       ],
       "features": [
@@ -963,28 +865,32 @@ LONG_STRING_CONST(
     },
     {
       "id": 83,
-      "description": "Samsung Gaxlaxy NOTE II is too buggy to use for video decoding",
+      "description": "Samsung Galaxy NOTE is too buggy to use for video decoding",
       "cr_bugs": [308721],
       "os": {
         "type": "android",
         "version": {
-          "op": "<=",
-          "value": "4.1.2"
+          "op": "<",
+          "value": "4.4"
         }
       },
-      "machine_model_name": ["GT-N7100"],
+      "machine_model_name": ["GT-.*"],
       "features": [
         "accelerated_video_decode"
       ]
     },
     {
       "id": 85,
-      "description": "Samsung Gaxlaxy S4 is too buggy to use for video decoding",
+      "description": "Samsung Galaxy S4 is too buggy to use for video decoding",
       "cr_bugs": [329072],
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
       },
-      "machine_model_name": ["SCH-I545"],
+      "machine_model_name": ["SCH-.*"],
       "features": [
         "accelerated_video_decode"
       ]
@@ -1133,10 +1039,7 @@ LONG_STRING_CONST(
         "type": "linux"
       },
       "vendor_id": "0x1002",
-      "driver_vendor": {
-        "op": "contains",
-        "value": "AMD"
-      },
+      "driver_vendor": ".*AMD.*",
       "driver_version": {
         "op": "=",
         "value": "13.101"
@@ -1147,16 +1050,23 @@ LONG_STRING_CONST(
     },
     {
       "id": 96,
-      "description": "GPU rasterization is whitelisted on N4, N5, N7 and Moto X",
+      "description": "GPU rasterization is whitelisted on select devices on Android",
       "cr_bugs": [362779],
+      "os": {
+        "type": "android"
+      },
       "exceptions": [
         {
-          "os": {
-            "type": "android"
-          },
           "machine_model_name": ["Nexus 4", "Nexus 5", "Nexus 7",
                                  "XT1049", "XT1050", "XT1052", "XT1053",
-                                 "XT1055", "XT1056", "XT1058", "XT1060"]
+                                 "XT1055", "XT1056", "XT1058", "XT1060",
+                                 "HTC One",
+                                 "C5303", "C6603", "C6903",
+                                 "GT-I9195",
+                                 "GT-I9505",
+                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
+                                 "SM-N900", "SM-N9005", "SPH-L720",
+                                 "XT907", "XT1032", "XT1033", "XT1080"]
         },
         {
           "os": {
@@ -1166,6 +1076,20 @@ LONG_STRING_CONST(
               "value": "4.4.99"
             }
           }
+        },
+        {
+          "os": {
+            "type": "android",
+            "version": {
+              "op": ">=",
+              "value": "4.4"
+            }
+          },
+          "gl_type": "gles",
+          "gl_version": {
+            "op": ">=",
+            "value": "3.0"
+          }
         }
       ],
       "features": [
@@ -1173,25 +1097,73 @@ LONG_STRING_CONST(
       ]
     },
     {
-      "id": 97,
-      "description": "Additional GPU rasterization whitelist for field trial",
-      "cr_bugs": [380694],
+      "id": 99,
+      "description": "GPU rasterization is blacklisted on non-Android",
+      "cr_bugs": [362779],
       "exceptions": [
         {
           "os": {
             "type": "android"
-          },
-          "machine_model_name": ["HTC One",
-                                 "C5303", "C6603", "C6903",
-                                 "GT-I8262", "GT-I8552", "GT-I9195", "GT-I9300",
-                                 "GT-I9500", "GT-I9505", "GT-N7100",
-                                 "SAMSUNG-SCH-I337", "SCH-I545", "SGH-M919",
-                                 "SM-N900", "SM-N9005", "SPH-L720",
-                                 "XT907", "XT1032", "XT1033", "XT1080"]
+          }
         }
       ],
       "features": [
-        "gpu_rasterization_field_trial"
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 100,
+      "description": "GPU rasterization is blacklisted on Nexus 10",
+      "cr_bugs": [407144],
+      "gl_renderer": ".*Mali-T604.*",
+      "features": [
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 101,
+      "description": "Samsung Galaxy Tab is too buggy to use for video decoding",
+      "cr_bugs": [408353],
+      "os": {
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "4.4"
+        }
+      },
+      "machine_model_name": ["SM-.*"],
+      "features": [
+        "accelerated_video_decode"
+      ]
+    },
+    {
+      "id": 102,
+      "description": "Accelerated 2D canvas and Ganesh broken on Galaxy Tab 2",
+      "cr_bugs": [416910],
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": "PowerVR SGX 540",
+      "features": [
+        "accelerated_2d_canvas",
+        "gpu_rasterization"
+      ]
+    },
+    {
+      "id": 103,
+      "description": "Intel GM965/GL960 crash often on Mac OS 10.6",
+      "cr_bugs": [421641],
+      "os": {
+        "type": "macosx",
+        "version": {
+          "op": "=",
+          "value": "10.6"
+        }
+      },
+      "vendor_id": "0x8086",
+      "device_id": ["0x2a02"],
+      "features": [
+        "all"
       ]
     }
   ]

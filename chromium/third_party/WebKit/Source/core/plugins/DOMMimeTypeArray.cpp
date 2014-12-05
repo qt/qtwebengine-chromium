@@ -23,18 +23,19 @@
 #include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
 #include "platform/plugins/PluginData.h"
+#include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMMimeTypeArray::DOMMimeTypeArray(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
-    ScriptWrappable::init(this);
 }
 
-DOMMimeTypeArray::~DOMMimeTypeArray()
+void DOMMimeTypeArray::trace(Visitor* visitor)
 {
+    DOMWindowProperty::trace(visitor);
 }
 
 unsigned DOMMimeTypeArray::length() const
@@ -92,4 +93,4 @@ PluginData* DOMMimeTypeArray::getPluginData() const
     return p->pluginData();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -31,18 +31,17 @@
 #include "config.h"
 #include "public/web/WebDocument.h"
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8ElementRegistrationOptions.h"
 #include "core/accessibility/AXObjectCache.h"
-#include "core/css/CSSParserMode.h"
 #include "core/css/StyleSheetContents.h"
 #include "core/dom/CSSSelectorWatch.h"
 #include "core/dom/Document.h"
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
-#include "core/dom/FullscreenElementStack.h"
+#include "core/dom/Fullscreen.h"
 #include "core/dom/StyleEngine.h"
 #include "core/html/HTMLAllCollection.h"
 #include "core/html/HTMLBodyElement.h"
@@ -50,6 +49,7 @@
 #include "core/html/HTMLElement.h"
 #include "core/html/HTMLFormElement.h"
 #include "core/html/HTMLHeadElement.h"
+#include "core/html/HTMLLinkElement.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/rendering/RenderObject.h"
 #include "core/rendering/RenderView.h"
@@ -65,8 +65,6 @@
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/PassRefPtr.h"
 #include <v8.h>
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -230,14 +228,13 @@ void WebDocument::watchCSSSelectors(const WebVector<WebString>& webSelectors)
 
 void WebDocument::cancelFullScreen()
 {
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*unwrap<Document>()))
-        fullscreen->webkitCancelFullScreen();
+    Fullscreen::fullyExitFullscreen(*unwrap<Document>());
 }
 
 WebElement WebDocument::fullScreenElement() const
 {
     Element* fullScreenElement = 0;
-    if (FullscreenElementStack* fullscreen = FullscreenElementStack::fromIfExists(*const_cast<WebDocument*>(this)->unwrap<Document>()))
+    if (Fullscreen* fullscreen = Fullscreen::fromIfExists(*const_cast<WebDocument*>(this)->unwrap<Document>()))
         fullScreenElement = fullscreen->webkitCurrentFullScreenElement();
     return WebElement(fullScreenElement);
 }
@@ -265,16 +262,52 @@ WebElement WebDocument::createElement(const WebString& tagName)
     return element;
 }
 
+WebSize WebDocument::scrollOffset() const
+{
+    if (FrameView* view = constUnwrap<Document>()->view())
+        return view->scrollOffset();
+    return WebSize();
+}
+
+WebSize WebDocument::minimumScrollOffset() const
+{
+    if (FrameView* view = constUnwrap<Document>()->view())
+        return toIntSize(view->minimumScrollPosition());
+    return WebSize();
+}
+
+WebSize WebDocument::maximumScrollOffset() const
+{
+    if (FrameView* view = constUnwrap<Document>()->view())
+        return toIntSize(view->maximumScrollPosition());
+    return WebSize();
+}
+
+void WebDocument::setIsTransitionDocument()
+{
+    // This ensures the transition UA stylesheet gets applied.
+    unwrap<Document>()->setIsTransitionDocument();
+}
+
+void WebDocument::beginExitTransition(const WebString& cssSelector)
+{
+    RefPtrWillBeRawPtr<Document> document = unwrap<Document>();
+    document->hideTransitionElements(cssSelector);
+    document->styleEngine()->enableExitTransitionStylesheets();
+}
+
 WebAXObject WebDocument::accessibilityObject() const
 {
     const Document* document = constUnwrap<Document>();
-    return WebAXObject(document->axObjectCache()->getOrCreate(document->renderView()));
+    AXObjectCache* cache = document->axObjectCache();
+    return cache ? WebAXObject(cache->getOrCreateAXObjectFromRenderView(document->renderView())) : WebAXObject();
 }
 
 WebAXObject WebDocument::accessibilityObjectFromID(int axID) const
 {
     const Document* document = constUnwrap<Document>();
-    return WebAXObject(document->axObjectCache()->objectFromAXID(axID));
+    AXObjectCache* cache = document->axObjectCache();
+    return cache ? WebAXObject(cache->objectFromAXID(axID)) : WebAXObject();
 }
 
 WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
@@ -287,7 +320,7 @@ WebVector<WebDraggableRegion> WebDocument::draggableRegions() const
         for (size_t i = 0; i < regions.size(); i++) {
             const AnnotatedRegionValue& value = regions[i];
             draggableRegions[i].draggable = value.draggable;
-            draggableRegions[i].bounds = WebCore::IntRect(value.bounds);
+            draggableRegions[i].bounds = IntRect(value.bounds);
         }
     }
     return draggableRegions;
@@ -297,13 +330,25 @@ v8::Handle<v8::Value> WebDocument::registerEmbedderCustomElement(const WebString
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     Document* document = unwrap<Document>();
-    Dictionary dictionary(options, isolate);
     TrackExceptionState exceptionState;
-    ScriptValue constructor = document->registerElement(ScriptState::current(isolate), name, dictionary, exceptionState, CustomElement::EmbedderNames);
+    ElementRegistrationOptions registrationOptions;
+    V8ElementRegistrationOptions::toImpl(isolate, options, registrationOptions, exceptionState);
+    if (exceptionState.hadException())
+        return v8::Handle<v8::Value>();
+    ScriptValue constructor = document->registerElement(ScriptState::current(isolate), name, registrationOptions, exceptionState, CustomElement::EmbedderNames);
     ec = exceptionState.code();
     if (exceptionState.hadException())
         return v8::Handle<v8::Value>();
     return constructor.v8Value();
+}
+
+WebURL WebDocument::manifestURL() const
+{
+    const Document* document = constUnwrap<Document>();
+    HTMLLinkElement* linkElement = document->linkManifest();
+    if (!linkElement)
+        return WebURL();
+    return linkElement->href();
 }
 
 WebDocument::WebDocument(const PassRefPtrWillBeRawPtr<Document>& elem)

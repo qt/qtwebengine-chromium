@@ -24,9 +24,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLTitleElement FINAL : public HTMLElement {
+class HTMLTitleElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLTitleElement);
 
@@ -36,13 +37,13 @@ public:
 private:
     explicit HTMLTitleElement(Document&);
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
     bool m_ignoreTitleUpdatesWhenChildrenChange;
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLTitleElement_h

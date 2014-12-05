@@ -115,23 +115,23 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     }
 
     if (lavfi->graph_filename) {
-        uint8_t *file_buf, *graph_buf;
-        size_t file_bufsize;
-        ret = av_file_map(lavfi->graph_filename,
-                          &file_buf, &file_bufsize, 0, avctx);
+        AVBPrint graph_file_pb;
+        AVIOContext *avio = NULL;
+        ret = avio_open(&avio, lavfi->graph_filename, AVIO_FLAG_READ);
         if (ret < 0)
-            goto end;
-
-        /* create a 0-terminated string based on the read file */
-        graph_buf = av_malloc(file_bufsize + 1);
-        if (!graph_buf) {
-            av_file_unmap(file_buf, file_bufsize);
-            FAIL(AVERROR(ENOMEM));
+            FAIL(ret);
+        av_bprint_init(&graph_file_pb, 0, AV_BPRINT_SIZE_UNLIMITED);
+        ret = avio_read_to_bprint(avio, &graph_file_pb, INT_MAX);
+        avio_close(avio);
+        av_bprint_chars(&graph_file_pb, '\0', 1);
+        if (!ret && !av_bprint_is_complete(&graph_file_pb))
+            ret = AVERROR(ENOMEM);
+        if (ret) {
+            av_bprint_finalize(&graph_file_pb, NULL);
+            FAIL(ret);
         }
-        memcpy(graph_buf, file_buf, file_bufsize);
-        graph_buf[file_bufsize] = 0;
-        av_file_unmap(file_buf, file_bufsize);
-        lavfi->graph_str = graph_buf;
+        if ((ret = av_bprint_finalize(&graph_file_pb, &lavfi->graph_str)))
+            FAIL(ret);
     }
 
     if (!lavfi->graph_str)
@@ -184,14 +184,6 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
             FAIL(AVERROR(EINVAL));
         }
 
-        /* is an audio or video output? */
-        type = inout->filter_ctx->output_pads[inout->pad_idx].type;
-        if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO) {
-            av_log(avctx,  AV_LOG_ERROR,
-                   "Output '%s' is not a video or audio output, not yet supported\n", inout->name);
-            FAIL(AVERROR(EINVAL));
-        }
-
         if (lavfi->stream_sink_map[stream_idx] != -1) {
             av_log(avctx,  AV_LOG_ERROR,
                    "An output with stream index %d was already specified\n",
@@ -211,7 +203,7 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
     }
 
     /* create a sink for each output and connect them to the graph */
-    lavfi->sinks = av_malloc(sizeof(AVFilterContext *) * avctx->nb_streams);
+    lavfi->sinks = av_malloc_array(avctx->nb_streams, sizeof(AVFilterContext *));
     if (!lavfi->sinks)
         FAIL(AVERROR(ENOMEM));
 
@@ -252,6 +244,10 @@ av_cold static int lavfi_read_header(AVFormatContext *avctx)
                                  AV_OPT_SEARCH_CHILDREN);
             if (ret < 0)
                 goto end;
+        } else {
+            av_log(avctx,  AV_LOG_ERROR,
+                   "Output '%s' is not a video or audio output, not yet supported\n", inout->name);
+            FAIL(AVERROR(EINVAL));
         }
 
         lavfi->sinks[i] = sink;

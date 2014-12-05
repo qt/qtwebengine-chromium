@@ -38,6 +38,20 @@ class PacketSavingConnection;
 
 class CryptoTestUtils {
  public:
+  // An interface for a source of callbacks. This is used for invoking
+  // callbacks asynchronously.
+  //
+  // Call the RunPendingCallbacks method regularly to run the callbacks from
+  // this source.
+  class CallbackSource {
+   public:
+    virtual ~CallbackSource() {}
+
+    // Runs pending callbacks from this source. If there is no pending
+    // callback, does nothing.
+    virtual void RunPendingCallbacks() = 0;
+  };
+
   // FakeClientOptions bundles together a number of options for configuring
   // HandshakeWithFakeClient.
   struct FakeClientOptions {
@@ -50,6 +64,10 @@ class CryptoTestUtils {
     // If channel_id_enabled is true then the client will attempt to send a
     // ChannelID.
     bool channel_id_enabled;
+
+    // If channel_id_source_async is true then the client will use an async
+    // ChannelIDSource for testing. Ignored if channel_id_enabled is false.
+    bool channel_id_source_async;
   };
 
   // returns: the number of client hellos that the client sent.
@@ -76,6 +94,18 @@ class CryptoTestUtils {
                                            PacketSavingConnection* b_conn,
                                            QuicCryptoStream* b);
 
+  // CommunicateHandshakeMessagesAndRunCallbacks moves messages from |a| to |b|
+  // and back until |a|'s handshake has completed. If |callback_source| is not
+  // nullptr, CommunicateHandshakeMessagesAndRunCallbacks also runs callbacks
+  // from
+  // |callback_source| between processing messages.
+  static void CommunicateHandshakeMessagesAndRunCallbacks(
+      PacketSavingConnection* a_conn,
+      QuicCryptoStream* a,
+      PacketSavingConnection* b_conn,
+      QuicCryptoStream* b,
+      CallbackSource* callback_source);
+
   // AdvanceHandshake attempts to moves messages from |a| to |b| and |b| to |a|.
   // Returns the number of messages moved.
   static std::pair<size_t, size_t> AdvanceHandshake(
@@ -100,6 +130,15 @@ class CryptoTestUtils {
   // returned by |ProofVerifierForTesting|.
   static ProofVerifyContext* ProofVerifyContextForTesting();
 
+  // These functions return a fake |ProofSource|, |ProofVerifier|, or
+  // |ProofVerifyContext| that works with each other. These are suitable for
+  // unit tests that aren't concerned with |ProofSource| and |ProofVerifier|.
+  // TODO(wtc): delete these when Chromium has a working
+  // ProofSourceForTesting().
+  static ProofSource* FakeProofSourceForTesting();
+  static ProofVerifier* FakeProofVerifierForTesting();
+  static ProofVerifyContext* FakeProofVerifyContextForTesting();
+
   // MockCommonCertSets returns a CommonCertSets that contains a single set with
   // hash |hash|, consisting of the certificate |cert| at index |index|.
   static CommonCertSets* MockCommonCertSets(base::StringPiece cert,
@@ -113,7 +152,7 @@ class CryptoTestUtils {
 
   // Message constructs a handshake message from a variable number of
   // arguments. |message_tag| is passed to |ParseTag| and used as the tag of
-  // the resulting message. The arguments are taken in pairs and NULL
+  // the resulting message. The arguments are taken in pairs and nullptr
   // terminated. The first of each pair is the tag of a tag/value and is given
   // as an argument to |ParseTag|. The second is the value of the tag/value
   // pair and is either a hex dump, preceeded by a '#', or a raw value.
@@ -122,7 +161,7 @@ class CryptoTestUtils {
   //       "CHLO",
   //       "NOCE", "#11223344",
   //       "SNI", "www.example.com",
-  //       NULL);
+  //       nullptr);
   static CryptoHandshakeMessage Message(const char* message_tag, ...);
 
   // BuildMessage is the same as |Message|, but takes the variable arguments

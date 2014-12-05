@@ -41,11 +41,12 @@ typedef unrestricted float GLfloat;
 typedef unrestricted float GLclampf;
 
 [
-    // FIXME: [DoNotCheckConstants] and [TypeChecking=Interface|Nullable] should be applied
+    // FIXME: [DoNotCheckConstants] and [TypeChecking=(Interface,Unrestricted)] should be applied
     // to members and not need to be put on implementing interface
     // DoNotCheckConstants, // need to put on implementing interface
     NoInterfaceObject, // Always used on target of 'implements'
-    // TypeChecking=Interface|Nullable|Unrestricted, // need to put on implementing interface
+    // TypeChecking=(Interface,Unrestricted), // need to put on implementing interface
+    WillBeGarbageCollected,
 ] interface WebGLRenderingContextBase {
 
     readonly attribute HTMLCanvasElement canvas;
@@ -545,7 +546,7 @@ typedef unrestricted float GLclampf;
     WebGLActiveInfo getActiveAttrib(WebGLProgram? program, GLuint index);
     WebGLActiveInfo getActiveUniform(WebGLProgram? program, GLuint index);
 
-    [Custom] void getAttachedShaders(WebGLProgram? program);
+    sequence<WebGLShader>? getAttachedShaders(WebGLProgram? program);
 
     GLint getAttribLocation(WebGLProgram? program, DOMString name);
 
@@ -561,21 +562,21 @@ typedef unrestricted float GLclampf;
     [Custom] any getFramebufferAttachmentParameter(GLenum target, GLenum attachment, GLenum pname);
     [Custom] any getParameter(GLenum pname);
     [Custom] any getProgramParameter(WebGLProgram? program, GLenum pname);
-    [TreatReturnedNullStringAs=Null] DOMString getProgramInfoLog(WebGLProgram? program);
+    DOMString? getProgramInfoLog(WebGLProgram? program);
     [Custom] any getRenderbufferParameter(GLenum target, GLenum pname);
     [Custom] any getShaderParameter(WebGLShader? shader, GLenum pname);
 
-    [TreatReturnedNullStringAs=Null] DOMString    getShaderInfoLog(WebGLShader? shader);
+    DOMString?   getShaderInfoLog(WebGLShader? shader);
 
     WebGLShaderPrecisionFormat getShaderPrecisionFormat(GLenum shadertype, GLenum precisiontype);
 
-    [TreatReturnedNullStringAs=Null] DOMString    getShaderSource(WebGLShader? shader);
+    DOMString?   getShaderSource(WebGLShader? shader);
 
-    [Custom] sequence<DOMString> getSupportedExtensions();
+    sequence<DOMString>? getSupportedExtensions();
 
     [Custom] any getTexParameter(GLenum target, GLenum pname);
 
-    [Custom] any getUniform(WebGLProgram? program, WebGLUniformLocation location);
+    [Custom] any getUniform(WebGLProgram? program, WebGLUniformLocation? location);
 
     WebGLUniformLocation getUniformLocation(WebGLProgram? program, DOMString name);
 

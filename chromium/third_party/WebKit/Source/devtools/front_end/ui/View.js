@@ -27,11 +27,19 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
+ * @param {boolean=} isWebComponent
  */
-WebInspector.View = function()
+WebInspector.View = function(isWebComponent)
 {
-    this.element = document.createElement("div");
-    this.element.className = "view";
+    this.contentElement = createElementWithClass("div", "view");
+    if (isWebComponent) {
+        WebInspector.installComponentRootStyles(this.contentElement);
+        this.element = createElementWithClass("div", "vbox flex-auto");
+        this._shadowRoot = this.element.createShadowRoot();
+        this._shadowRoot.appendChild(this.contentElement);
+    } else {
+        this.element = this.contentElement;
+    }
     this.element.__view = this;
     this._visible = true;
     this._isRoot = false;
@@ -41,10 +49,6 @@ WebInspector.View = function()
     this._cssFiles = [];
     this._notificationDepth = 0;
 }
-
-WebInspector.View._cssFileToVisibleViewCount = {};
-WebInspector.View._cssFileToStyleElement = {};
-WebInspector.View._cssUnloadTimeout = 2000;
 
 WebInspector.View._buildSourceURL = function(cssFile)
 {
@@ -57,17 +61,24 @@ WebInspector.View._buildSourceURL = function(cssFile)
  */
 WebInspector.View.createStyleElement = function(cssFile)
 {
-    var styleElement = document.createElement("style");
+    var content = Runtime.cachedResources[cssFile];
+    if (!content) {
+        if (Runtime.isReleaseMode())
+            console.error(cssFile + " not preloaded, loading from the remote. Check module.json");
+        content = loadResource(cssFile) + WebInspector.View._buildSourceURL(cssFile);
+        Runtime.cachedResources[cssFile] = content;
+    }
+    var styleElement = createElement("style");
     styleElement.type = "text/css";
-    styleElement.textContent = loadResource(cssFile) + WebInspector.View._buildSourceURL(cssFile);
-    document.head.insertBefore(styleElement, document.head.firstChild);
+    styleElement.textContent = content;
     return styleElement;
 }
 
 WebInspector.View.prototype = {
     markAsRoot: function()
     {
-        WebInspector.View._assert(!this.element.parentElement, "Attempt to mark as root attached node");
+        WebInspector.installComponentRootStyles(this.element);
+        WebInspector.View.__assert(!this.element.parentElement, "Attempt to mark as root attached node");
         this._isRoot = true;
     },
 
@@ -93,6 +104,20 @@ WebInspector.View.prototype = {
     isShowing: function()
     {
         return this._isShowing;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    _shouldHideOnDetach: function()
+    {
+        if (this._hideOnDetach)
+            return true;
+        for (var child of this._children) {
+            if (child._shouldHideOnDetach())
+                return true;
+        }
+        return false;
     },
 
     setHideOnDetach: function()
@@ -129,7 +154,6 @@ WebInspector.View.prototype = {
 
     _processWillShow: function()
     {
-        this._loadCSSIfNeeded();
         this._callOnVisibleChildren(this._processWillShow);
         this._isShowing = true;
     },
@@ -156,7 +180,6 @@ WebInspector.View.prototype = {
 
     _processWasHidden: function()
     {
-        this._disableCSSIfNeeded();
         this._callOnVisibleChildren(this._processWasHidden);
     },
 
@@ -205,7 +228,7 @@ WebInspector.View.prototype = {
      */
     show: function(parentElement, insertBefore)
     {
-        WebInspector.View._assert(parentElement, "Attempt to attach view with no parent element");
+        WebInspector.View.__assert(parentElement, "Attempt to attach view with no parent element");
 
         // Update view hierarchy
         if (this.element.parentElement !== parentElement) {
@@ -214,14 +237,14 @@ WebInspector.View.prototype = {
 
             var currentParent = parentElement;
             while (currentParent && !currentParent.__view)
-                currentParent = currentParent.parentElement;
+                currentParent = currentParent.parentElementOrShadowHost();
 
             if (currentParent) {
                 this._parentView = currentParent.__view;
                 this._parentView._children.push(this);
                 this._isRoot = false;
             } else
-                WebInspector.View._assert(this._isRoot, "Attempt to attach view to orphan node");
+                WebInspector.View.__assert(this._isRoot, "Attempt to attach view to orphan node");
         } else if (this._visible) {
             return;
         }
@@ -263,7 +286,7 @@ WebInspector.View.prototype = {
         if (this._parentIsShowing())
             this._processWillHide();
 
-        if (this._hideOnDetach && !overrideHideOnDetach) {
+        if (!overrideHideOnDetach && this._shouldHideOnDetach()) {
             this.element.classList.remove("visible");
             this._visible = false;
             if (this._parentIsShowing())
@@ -284,14 +307,14 @@ WebInspector.View.prototype = {
         // Update view hierarchy
         if (this._parentView) {
             var childIndex = this._parentView._children.indexOf(this);
-            WebInspector.View._assert(childIndex >= 0, "Attempt to remove non-child view");
+            WebInspector.View.__assert(childIndex >= 0, "Attempt to remove non-child view");
             this._parentView._children.splice(childIndex, 1);
             var parent = this._parentView;
             this._parentView = null;
             if (this._hasNonZeroConstraints())
                 parent.invalidateConstraints();
         } else
-            WebInspector.View._assert(this._isRoot, "Removing non-root view from DOM");
+            WebInspector.View.__assert(this._isRoot, "Removing non-root view from DOM");
     },
 
     detachChildViews: function()
@@ -350,55 +373,7 @@ WebInspector.View.prototype = {
 
     registerRequiredCSS: function(cssFile)
     {
-        this._cssFiles.push(cssFile);
-    },
-
-    _loadCSSIfNeeded: function()
-    {
-        for (var i = 0; i < this._cssFiles.length; ++i) {
-            var cssFile = this._cssFiles[i];
-
-            var viewsWithCSSFile = WebInspector.View._cssFileToVisibleViewCount[cssFile];
-            WebInspector.View._cssFileToVisibleViewCount[cssFile] = (viewsWithCSSFile || 0) + 1;
-            if (!viewsWithCSSFile)
-                this._doLoadCSS(cssFile);
-        }
-    },
-
-    _doLoadCSS: function(cssFile)
-    {
-        var styleElement = WebInspector.View._cssFileToStyleElement[cssFile];
-        if (styleElement) {
-            styleElement.disabled = false;
-            return;
-        }
-        styleElement = WebInspector.View.createStyleElement(cssFile);
-        WebInspector.View._cssFileToStyleElement[cssFile] = styleElement;
-    },
-
-    _disableCSSIfNeeded: function()
-    {
-        var scheduleUnload = !!WebInspector.View._cssUnloadTimer;
-
-        for (var i = 0; i < this._cssFiles.length; ++i) {
-            var cssFile = this._cssFiles[i];
-
-            if (!--WebInspector.View._cssFileToVisibleViewCount[cssFile])
-                scheduleUnload = true;
-        }
-
-        function doUnloadCSS()
-        {
-            delete WebInspector.View._cssUnloadTimer;
-
-            for (cssFile in WebInspector.View._cssFileToVisibleViewCount) {
-                if (WebInspector.View._cssFileToVisibleViewCount.hasOwnProperty(cssFile) && !WebInspector.View._cssFileToVisibleViewCount[cssFile])
-                    WebInspector.View._cssFileToStyleElement[cssFile].disabled = true;
-            }
-        }
-
-        if (scheduleUnload && !WebInspector.View._cssUnloadTimer)
-            WebInspector.View._cssUnloadTimer = setTimeout(doUnloadCSS, WebInspector.View._cssUnloadTimeout);
+        this.element.appendChild(WebInspector.View.createStyleElement(cssFile));
     },
 
     printViewHierarchy: function()
@@ -438,7 +413,7 @@ WebInspector.View.prototype = {
     focus: function()
     {
         var element = this.defaultFocusedElement();
-        if (!element || element.isAncestor(document.activeElement))
+        if (!element || element.isAncestor(this.element.ownerDocument.activeElement))
             return;
 
         WebInspector.setCurrentFocusElement(element);
@@ -449,7 +424,7 @@ WebInspector.View.prototype = {
      */
     hasFocus: function()
     {
-        var activeElement = document.activeElement;
+        var activeElement = this.element.ownerDocument.activeElement;
         return activeElement && activeElement.isSelfOrDescendant(this.element);
     },
 
@@ -458,13 +433,12 @@ WebInspector.View.prototype = {
      */
     measurePreferredSize: function()
     {
-        this._loadCSSIfNeeded();
+        var document = this.element.ownerDocument;
         WebInspector.View._originalAppendChild.call(document.body, this.element);
         this.element.positionAt(0, 0);
         var result = new Size(this.element.offsetWidth, this.element.offsetHeight);
         this.element.positionAt(undefined, undefined);
         WebInspector.View._originalRemoveChild.call(document.body, this.element);
-        this._disableCSSIfNeeded();
         return result;
     },
 
@@ -546,7 +520,7 @@ WebInspector.View._incrementViewCounter = function(parentElement, childElement)
 
     while (parentElement) {
         parentElement.__viewCounter = (parentElement.__viewCounter || 0) + count;
-        parentElement = parentElement.parentElement;
+        parentElement = parentElement.parentElementOrShadowHost();
     }
 }
 
@@ -558,11 +532,11 @@ WebInspector.View._decrementViewCounter = function(parentElement, childElement)
 
     while (parentElement) {
         parentElement.__viewCounter -= count;
-        parentElement = parentElement.parentElement;
+        parentElement = parentElement.parentElementOrShadowHost();
     }
 }
 
-WebInspector.View._assert = function(condition, message)
+WebInspector.View.__assert = function(condition, message)
 {
     if (!condition) {
         console.trace();
@@ -573,11 +547,12 @@ WebInspector.View._assert = function(condition, message)
 /**
  * @constructor
  * @extends {WebInspector.View}
+ * @param {boolean=} isWebComponent
  */
-WebInspector.VBox = function()
+WebInspector.VBox = function(isWebComponent)
 {
-    WebInspector.View.call(this);
-    this.element.classList.add("vbox");
+    WebInspector.View.call(this, isWebComponent);
+    this.contentElement.classList.add("vbox");
 };
 
 WebInspector.VBox.prototype = {
@@ -609,11 +584,12 @@ WebInspector.VBox.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.View}
+ * @param {boolean=} isWebComponent
  */
-WebInspector.HBox = function()
+WebInspector.HBox = function(isWebComponent)
 {
-    WebInspector.View.call(this);
-    this.element.classList.add("hbox");
+    WebInspector.View.call(this, isWebComponent);
+    this.contentElement.classList.add("hbox");
 };
 
 WebInspector.HBox.prototype = {
@@ -669,35 +645,35 @@ WebInspector.VBoxWithResizeCallback.prototype = {
  */
 Element.prototype.appendChild = function(child)
 {
-    WebInspector.View._assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
+    WebInspector.View.__assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
     return WebInspector.View._originalAppendChild.call(this, child);
 }
 
 /**
  * @param {?Node} child
  * @param {?Node} anchor
- * @return {?Node}
+ * @return {!Node}
  * @suppress {duplicate}
  */
 Element.prototype.insertBefore = function(child, anchor)
 {
-    WebInspector.View._assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
+    WebInspector.View.__assert(!child.__view || child.parentElement === this, "Attempt to add view via regular DOM operation.");
     return WebInspector.View._originalInsertBefore.call(this, child, anchor);
 }
 
 /**
  * @param {?Node} child
- * @return {?Node}
+ * @return {!Node}
  * @suppress {duplicate}
  */
 Element.prototype.removeChild = function(child)
 {
-    WebInspector.View._assert(!child.__viewCounter && !child.__view, "Attempt to remove element containing view via regular DOM operation");
+    WebInspector.View.__assert(!child.__viewCounter && !child.__view, "Attempt to remove element containing view via regular DOM operation");
     return WebInspector.View._originalRemoveChild.call(this, child);
 }
 
 Element.prototype.removeChildren = function()
 {
-    WebInspector.View._assert(!this.__viewCounter, "Attempt to remove element containing view via regular DOM operation");
+    WebInspector.View.__assert(!this.__viewCounter, "Attempt to remove element containing view via regular DOM operation");
     WebInspector.View._originalRemoveChildren.call(this);
 }

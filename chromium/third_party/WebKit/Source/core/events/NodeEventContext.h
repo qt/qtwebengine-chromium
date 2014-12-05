@@ -31,7 +31,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class EventTarget;
 class Node;
@@ -39,10 +39,10 @@ class TouchEventContext;
 
 class NodeEventContext {
     ALLOW_ONLY_INLINE_ALLOCATION();
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NodeEventContext);
 public:
     // FIXME: Use ContainerNode instead of Node.
     NodeEventContext(PassRefPtrWillBeRawPtr<Node>, PassRefPtrWillBeRawPtr<EventTarget> currentTarget);
-    ~NodeEventContext();
     void trace(Visitor*);
 
     Node* node() const { return m_node.get(); }
@@ -63,8 +63,8 @@ private:
     RefPtrWillBeMember<TreeScopeEventContext> m_treeScopeEventContext;
 };
 
-}
+} // namespace blink
 
-WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(WebCore::NodeEventContext);
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::NodeEventContext);
 
 #endif // NodeEventContext_h

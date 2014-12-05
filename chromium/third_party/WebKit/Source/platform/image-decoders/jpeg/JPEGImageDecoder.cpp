@@ -97,7 +97,7 @@ const unsigned scaleDenominator = 8;
 
 } // namespace
 
-namespace WebCore {
+namespace blink {
 
 struct decoder_error_mgr {
     struct jpeg_error_mgr pub; // "public" fields for IJG library
@@ -111,6 +111,16 @@ enum jstate {
     JPEG_DECOMPRESS_SEQUENTIAL,  // Output sequential pixels
     JPEG_DONE,
     JPEG_ERROR
+};
+
+enum yuv_subsampling {
+    YUV_UNKNOWN,
+    YUV_410,
+    YUV_411,
+    YUV_420,
+    YUV_422,
+    YUV_440,
+    YUV_444
 };
 
 void init_source(j_decompress_ptr jd);
@@ -242,6 +252,63 @@ static void readColorProfile(jpeg_decompress_struct* info, ColorProfile& colorPr
 }
 #endif
 
+static IntSize computeYUVSize(const jpeg_decompress_struct* info, int component, ImageDecoder::SizeType sizeType)
+{
+    if (sizeType == ImageDecoder::SizeForMemoryAllocation) {
+        return IntSize(info->cur_comp_info[component]->width_in_blocks * DCTSIZE, info->cur_comp_info[component]->height_in_blocks * DCTSIZE);
+    }
+    return IntSize(info->cur_comp_info[component]->downsampled_width, info->cur_comp_info[component]->downsampled_height);
+}
+
+static yuv_subsampling yuvSubsampling(const jpeg_decompress_struct& info)
+{
+    if ((DCTSIZE == 8)
+        && (info.num_components == 3)
+        && (info.comps_in_scan >= info.num_components)
+        && (info.scale_denom <= 8)
+        && (info.cur_comp_info[0])
+        && (info.cur_comp_info[1])
+        && (info.cur_comp_info[2])
+        && (info.cur_comp_info[1]->h_samp_factor == 1)
+        && (info.cur_comp_info[1]->v_samp_factor == 1)
+        && (info.cur_comp_info[2]->h_samp_factor == 1)
+        && (info.cur_comp_info[2]->v_samp_factor == 1)) {
+        int h = info.cur_comp_info[0]->h_samp_factor;
+        int v = info.cur_comp_info[0]->v_samp_factor;
+        // 4:4:4 : (h == 1) && (v == 1)
+        // 4:4:0 : (h == 1) && (v == 2)
+        // 4:2:2 : (h == 2) && (v == 1)
+        // 4:2:0 : (h == 2) && (v == 2)
+        // 4:1:1 : (h == 4) && (v == 1)
+        // 4:1:0 : (h == 4) && (v == 2)
+        if (v == 1) {
+            switch (h) {
+            case 1:
+                return YUV_444;
+            case 2:
+                return YUV_422;
+            case 4:
+                return YUV_411;
+            default:
+                break;
+            }
+        } else if (v == 2) {
+            switch (h) {
+            case 1:
+                return YUV_440;
+            case 2:
+                return YUV_420;
+            case 4:
+                return YUV_410;
+            default:
+                break;
+            }
+        }
+    }
+
+    return YUV_UNKNOWN;
+}
+
 class JPEGImageReader {
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -305,9 +372,7 @@ public:
         m_info.src = 0;
 
 #if USE(QCMSLIB)
-        if (m_transform)
-            qcms_transform_release(m_transform);
-        m_transform = 0;
+        clearColorTransform();
 #endif
         jpeg_destroy_decompress(&m_info);
     }
@@ -340,6 +405,7 @@ public:
         if (setjmp(m_err.setjmp_buffer))
             return m_decoder->setFailed();
 
+        J_COLOR_SPACE overrideColorSpace = JCS_UNKNOWN;
         switch (m_state) {
         case JPEG_HEADER:
             // Read file parameters with jpeg_read_header().
@@ -347,10 +413,15 @@ public:
                 return false; // I/O suspension.
 
             switch (m_info.jpeg_color_space) {
+            case JCS_YCbCr:
+                // libjpeg can convert YCbCr image pixels to RGB.
+                m_info.out_color_space = rgbOutputColorSpace();
+                if (m_decoder->hasImagePlanes() && (yuvSubsampling(m_info) != YUV_UNKNOWN))
+                    overrideColorSpace = JCS_YCbCr;
+                break;
             case JCS_GRAYSCALE:
             case JCS_RGB:
-            case JCS_YCbCr:
-                // libjpeg can convert GRAYSCALE and YCbCr image pixels to RGB.
+                // libjpeg can convert GRAYSCALE image pixels to RGB.
                 m_info.out_color_space = rgbOutputColorSpace();
 #if defined(TURBO_JPEG_RGB_SWIZZLE)
                 if (m_info.saw_JFIF_marker)
@@ -391,14 +462,23 @@ public:
                 ColorProfile colorProfile;
                 readColorProfile(info(), colorProfile);
                 createColorTransform(colorProfile, colorSpaceHasAlpha(m_info.out_color_space));
+                if (m_transform) {
+                    overrideColorSpace = JCS_UNKNOWN;
 #if defined(TURBO_JPEG_RGB_SWIZZLE)
-                // Input RGBA data to qcms. Note: restored to BGRA on output.
-                if (m_transform && m_info.out_color_space == JCS_EXT_BGRA)
-                    m_info.out_color_space = JCS_EXT_RGBA;
+                    // Input RGBA data to qcms. Note: restored to BGRA on output.
+                    if (m_info.out_color_space == JCS_EXT_BGRA)
+                        m_info.out_color_space = JCS_EXT_RGBA;
 #endif
+                }
                 m_decoder->setHasColorProfile(!!m_transform);
             }
 #endif
+            if (overrideColorSpace == JCS_YCbCr) {
+                m_info.out_color_space = JCS_YCbCr;
+                m_info.raw_data_out = TRUE;
+                m_uvSize = computeYUVSize(&m_info, 1, ImageDecoder::SizeForMemoryAllocation); // U size and V size have to be the same if we got here
+            }
+
             // Don't allocate a giant and superfluous memory buffer when the
             // image is a sequential JPEG.
             m_info.buffered_image = jpeg_has_multiple_scans(&m_info);
@@ -427,7 +507,7 @@ public:
             // to jpeg_start_compress().
             // FIXME: note that some output color spaces do not need the samples
             // buffer. Remove this allocation for those color spaces.
-            m_samples = (*m_info.mem->alloc_sarray)(reinterpret_cast<j_common_ptr>(&m_info), JPOOL_IMAGE, m_info.output_width * 4, 1);
+            m_samples = (*m_info.mem->alloc_sarray)(reinterpret_cast<j_common_ptr>(&m_info), JPOOL_IMAGE, m_info.output_width * 4, m_info.out_color_space == JCS_YCbCr ? 2 : 1);
 
             // Start decompressor.
             if (!jpeg_start_decompress(&m_info))
@@ -518,14 +598,20 @@ public:
     jpeg_decompress_struct* info() { return &m_info; }
     JSAMPARRAY samples() const { return m_samples; }
     JPEGImageDecoder* decoder() { return m_decoder; }
+    IntSize uvSize() const { return m_uvSize; }
 #if USE(QCMSLIB)
     qcms_transform* colorTransform() const { return m_transform; }
 
-    void createColorTransform(const ColorProfile& colorProfile, bool hasAlpha)
+    void clearColorTransform()
     {
         if (m_transform)
             qcms_transform_release(m_transform);
         m_transform = 0;
+    }
+
+    void createColorTransform(const ColorProfile& colorProfile, bool hasAlpha)
+    {
+        clearColorTransform();
 
         if (colorProfile.isEmpty())
             return;
@@ -554,6 +640,8 @@ private:
     jstate m_state;
 
     JSAMPARRAY m_samples;
+
+    IntSize m_uvSize;
 
 #if USE(QCMSLIB)
     qcms_transform* m_transform;
@@ -629,6 +717,15 @@ void JPEGImageDecoder::setDecodedSize(unsigned width, unsigned height)
     m_decodedSize = IntSize(width, height);
 }
 
+IntSize JPEGImageDecoder::decodedYUVSize(int component, ImageDecoder::SizeType sizeType) const
+{
+    ASSERT((component >= 0) && (component <= 2) && m_reader);
+    const jpeg_decompress_struct* info = m_reader->info();
+
+    ASSERT(info->out_color_space == JCS_YCbCr);
+    return computeYUVSize(info, component, sizeType);
+}
+
 unsigned JPEGImageDecoder::desiredScaleNumerator() const
 {
     size_t originalBytes = size().width() * size().height() * 4;
@@ -642,6 +739,23 @@ unsigned JPEGImageDecoder::desiredScaleNumerator() const
         static_cast<float>(m_maxDecodedBytes * scaleDenominator * scaleDenominator / originalBytes))));
 
     return scaleNumerator;
+}
+
+bool JPEGImageDecoder::canDecodeToYUV() const
+{
+    ASSERT(ImageDecoder::isSizeAvailable() && m_reader);
+
+    return m_reader->info()->out_color_space == JCS_YCbCr;
+}
+
+bool JPEGImageDecoder::decodeToYUV()
+{
+    if (!hasImagePlanes())
+        return false;
+    PlatformInstrumentation::willDecodeImage("JPEG");
+    decode(false);
+    PlatformInstrumentation::didDecodeImage();
+    return !failed();
 }
 
 ImageFrame* JPEGImageDecoder::frameBufferAtIndex(size_t index)
@@ -671,28 +785,37 @@ bool JPEGImageDecoder::setFailed()
     return ImageDecoder::setFailed();
 }
 
+void JPEGImageDecoder::setImagePlanes(PassOwnPtr<ImagePlanes> imagePlanes)
+{
+    m_imagePlanes = imagePlanes;
+}
+
 template <J_COLOR_SPACE colorSpace> void setPixel(ImageFrame& buffer, ImageFrame::PixelData* pixel, JSAMPARRAY samples, int column)
 {
-    JSAMPLE* jsample = *samples + column * (colorSpace == JCS_RGB ? 3 : 4);
+    ASSERT_NOT_REACHED();
+}
 
-    switch (colorSpace) {
-    case JCS_RGB:
-        buffer.setRGBARaw(pixel, jsample[0], jsample[1], jsample[2], 255);
-        break;
-    case JCS_CMYK:
-        // Source is 'Inverted CMYK', output is RGB.
-        // See: http://www.easyrgb.com/math.php?MATH=M12#text12
-        // Or: http://www.ilkeratalay.com/colorspacesfaq.php#rgb
-        // From CMYK to CMY:
-        // X =   X    * (1 -   K   ) +   K  [for X = C, M, or Y]
-        // Thus, from Inverted CMYK to CMY is:
-        // X = (1-iX) * (1 - (1-iK)) + (1-iK) => 1 - iX*iK
-        // From CMY (0..1) to RGB (0..1):
-        // R = 1 - C => 1 - (1 - iC*iK) => iC*iK  [G and B similar]
-        unsigned k = jsample[3];
-        buffer.setRGBARaw(pixel, jsample[0] * k / 255, jsample[1] * k / 255, jsample[2] * k / 255, 255);
-        break;
-    }
+template <> void setPixel<JCS_RGB>(ImageFrame& buffer, ImageFrame::PixelData* pixel, JSAMPARRAY samples, int column)
+{
+    JSAMPLE* jsample = *samples + column * 3;
+    buffer.setRGBARaw(pixel, jsample[0], jsample[1], jsample[2], 255);
+}
+
+template <> void setPixel<JCS_CMYK>(ImageFrame& buffer, ImageFrame::PixelData* pixel, JSAMPARRAY samples, int column)
+{
+    JSAMPLE* jsample = *samples + column * 4;
+
+    // Source is 'Inverted CMYK', output is RGB.
+    // See: http://www.easyrgb.com/math.php?MATH=M12#text12
+    // Or: http://www.ilkeratalay.com/colorspacesfaq.php#rgb
+    // From CMYK to CMY:
+    // X =   X    * (1 -   K   ) +   K  [for X = C, M, or Y]
+    // Thus, from Inverted CMYK to CMY is:
+    // X = (1-iX) * (1 - (1-iK)) + (1-iK) => 1 - iX*iK
+    // From CMY (0..1) to RGB (0..1):
+    // R = 1 - C => 1 - (1 - iC*iK) => iC*iK  [G and B similar]
+    unsigned k = jsample[3];
+    buffer.setRGBARaw(pixel, jsample[0] * k / 255, jsample[1] * k / 255, jsample[2] * k / 255, 255);
 }
 
 template <J_COLOR_SPACE colorSpace> bool outputRows(JPEGImageReader* reader, ImageFrame& buffer)
@@ -721,8 +844,90 @@ template <J_COLOR_SPACE colorSpace> bool outputRows(JPEGImageReader* reader, Ima
     return true;
 }
 
+static bool outputRawData(JPEGImageReader* reader, ImagePlanes* imagePlanes)
+{
+    JSAMPARRAY samples = reader->samples();
+    jpeg_decompress_struct* info = reader->info();
+    JSAMPARRAY bufferraw[3];
+    JSAMPROW bufferraw2[32];
+    bufferraw[0] = &bufferraw2[0]; // Y channel rows (8 or 16)
+    bufferraw[1] = &bufferraw2[16]; // U channel rows (8)
+    bufferraw[2] = &bufferraw2[24]; // V channel rows (8)
+    int yWidth = info->output_width;
+    int yHeight = info->output_height;
+    int yMaxH = yHeight - 1;
+    int v = info->cur_comp_info[0]->v_samp_factor;
+    IntSize uvSize = reader->uvSize();
+    int uvMaxH = uvSize.height() - 1;
+    JSAMPROW outputY = static_cast<JSAMPROW>(imagePlanes->plane(0));
+    JSAMPROW outputU = static_cast<JSAMPROW>(imagePlanes->plane(1));
+    JSAMPROW outputV = static_cast<JSAMPROW>(imagePlanes->plane(2));
+    size_t rowBytesY = imagePlanes->rowBytes(0);
+    size_t rowBytesU = imagePlanes->rowBytes(1);
+    size_t rowBytesV = imagePlanes->rowBytes(2);
+
+    int yScanlinesToRead = DCTSIZE * v;
+    JSAMPROW yLastRow = *samples;
+    JSAMPROW uLastRow = yLastRow + 2 * yWidth;
+    JSAMPROW vLastRow = uLastRow + 2 * yWidth;
+    JSAMPROW dummyRow = vLastRow + 2 * yWidth;
+
+    while (info->output_scanline < info->output_height) {
+        // Request 8 or 16 scanlines: returns 0 or more scanlines.
+        bool hasYLastRow(false), hasUVLastRow(false);
+        // Assign 8 or 16 rows of memory to read the Y channel.
+        for (int i = 0; i < yScanlinesToRead; ++i) {
+            int scanline = (info->output_scanline + i);
+            if (scanline < yMaxH) {
+                bufferraw2[i] = &outputY[scanline * rowBytesY];
+            } else if (scanline == yMaxH) {
+                bufferraw2[i] = yLastRow;
+                hasYLastRow = true;
+            } else {
+                bufferraw2[i] = dummyRow;
+            }
+        }
+        int scaledScanline = info->output_scanline / v;
+        // Assign 8 rows of memory to read the U and V channels.
+        for (int i = 0; i < 8; ++i) {
+            int scanline = (scaledScanline + i);
+            if (scanline < uvMaxH) {
+                bufferraw2[16 + i] = &outputU[scanline * rowBytesU];
+                bufferraw2[24 + i] = &outputV[scanline * rowBytesV];
+            } else if (scanline == uvMaxH) {
+                bufferraw2[16 + i] = uLastRow;
+                bufferraw2[24 + i] = vLastRow;
+                hasUVLastRow = true;
+            } else {
+                bufferraw2[16 + i] = dummyRow;
+                bufferraw2[24 + i] = dummyRow;
+            }
+        }
+        JDIMENSION scanlinesRead = jpeg_read_raw_data(info, bufferraw, yScanlinesToRead);
+
+        if (scanlinesRead == 0)
+            return false;
+
+        if (hasYLastRow) {
+            memcpy(&outputY[yMaxH * rowBytesY], yLastRow, yWidth);
+        }
+        if (hasUVLastRow) {
+            memcpy(&outputU[uvMaxH * rowBytesU], uLastRow, uvSize.width());
+            memcpy(&outputV[uvMaxH * rowBytesV], vLastRow, uvSize.width());
+        }
+    }
+
+    info->output_scanline = std::min(info->output_scanline, info->output_height);
+
+    return true;
+}
+
 bool JPEGImageDecoder::outputScanlines()
 {
+    if (hasImagePlanes()) {
+        return outputRawData(m_reader.get(), m_imagePlanes.get());
+    }
+
     if (m_frameBufferCache.isEmpty())
         return false;
 
@@ -800,7 +1005,7 @@ void JPEGImageDecoder::decode(bool onlySize)
         setFailed();
     // If we're done decoding the image, we don't need the JPEGImageReader
     // anymore.  (If we failed, |m_reader| has already been cleared.)
-    else if (!m_frameBufferCache.isEmpty() && (m_frameBufferCache[0].status() == ImageFrame::FrameComplete))
+    else if ((!m_frameBufferCache.isEmpty() && (m_frameBufferCache[0].status() == ImageFrame::FrameComplete)) || (hasImagePlanes() && !onlySize))
         m_reader.clear();
 }
 

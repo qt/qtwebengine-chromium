@@ -29,7 +29,7 @@
 #include "core/svg/RadialGradientAttributes.h"
 #include "core/svg/SVGTransformList.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     : SVGGradientElement(SVGNames::radialGradientTag, document)
@@ -40,8 +40,6 @@ inline SVGRadialGradientElement::SVGRadialGradientElement(Document& document)
     , m_fy(SVGAnimatedLength::create(this, SVGNames::fyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_fr(SVGAnimatedLength::create(this, SVGNames::frAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
 {
-    ScriptWrappable::init(this);
-
     // Spec: If the cx/cy/r attribute is not specified, the effect is as if a value of "50%" were specified.
     m_cx->setDefaultValueAsString("50%");
     m_cy->setDefaultValueAsString("50%");
@@ -76,26 +74,7 @@ bool SVGRadialGradientElement::isSupportedAttribute(const QualifiedName& attrNam
 
 void SVGRadialGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGGradientElement::parseAttribute(name, value);
-    else if (name == SVGNames::cxAttr)
-        m_cx->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::cyAttr)
-        m_cy->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::rAttr)
-        m_r->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::fxAttr)
-        m_fx->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::fyAttr)
-        m_fy->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::frAttr)
-        m_fr->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGRadialGradientElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -167,7 +146,7 @@ bool SVGRadialGradientElement::collectGradientAttributes(RadialGradientAttribute
     if (!renderer())
         return false;
 
-    HashSet<SVGGradientElement*> processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);
@@ -213,4 +192,4 @@ bool SVGRadialGradientElement::selfHasRelativeLengths() const
         || m_fr->currentValue()->isRelative();
 }
 
-}
+} // namespace blink

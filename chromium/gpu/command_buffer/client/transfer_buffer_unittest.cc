@@ -36,8 +36,8 @@ class TransferBufferTest : public testing::Test {
       : transfer_buffer_id_(0) {
   }
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   virtual void Initialize(unsigned int size_to_flush) {
     ASSERT_TRUE(transfer_buffer_->Initialize(
@@ -185,7 +185,7 @@ TEST_F(TransferBufferTest, MemoryAlignmentAfterZeroAllocation) {
   Initialize(32u);
   void* ptr = transfer_buffer_->Alloc(0);
   EXPECT_EQ((reinterpret_cast<uintptr_t>(ptr) & (kAlignment - 1)), 0u);
-  transfer_buffer_->FreePendingToken(ptr, -1);
+  transfer_buffer_->FreePendingToken(ptr, static_cast<unsigned int>(-1));
   // Check that the pointer is aligned on the following allocation.
   ptr = transfer_buffer_->Alloc(4);
   EXPECT_EQ((reinterpret_cast<uintptr_t>(ptr) & (kAlignment - 1)), 0u);
@@ -248,8 +248,8 @@ class TransferBufferExpandContractTest : public testing::Test {
       : transfer_buffer_id_(0) {
   }
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   MockClientCommandBufferCanFail* command_buffer() const {
     return command_buffer_.get();

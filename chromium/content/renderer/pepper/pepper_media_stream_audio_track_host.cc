@@ -16,6 +16,7 @@
 #include "ppapi/c/ppb_audio_buffer.h"
 #include "ppapi/host/dispatch_host_message.h"
 #include "ppapi/host/host_message_context.h"
+#include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/media_stream_audio_track_shared.h"
 #include "ppapi/shared_impl/media_stream_buffer.h"
@@ -26,8 +27,9 @@ using ppapi::MediaStreamAudioTrackShared;
 
 namespace {
 
-// Max audio buffer duration in milliseconds.
-const uint32_t kMaxDuration = 10;
+// Audio buffer durations in milliseconds.
+const uint32_t kMinDuration = 10;
+const uint32_t kDefaultDuration = 10;
 
 const int32_t kDefaultNumberOfBuffers = 4;
 const int32_t kMaxNumberOfBuffers = 1000;  // 10 sec
@@ -65,10 +67,15 @@ PepperMediaStreamAudioTrackHost::AudioSink::AudioSink(
     PepperMediaStreamAudioTrackHost* host)
     : host_(host),
       buffer_data_size_(0),
+      active_buffer_index_(-1),
+      active_buffers_generation_(0),
+      active_buffer_offset_(0),
+      buffers_generation_(0),
       main_message_loop_proxy_(base::MessageLoopProxy::current()),
-      weak_factory_(this),
       number_of_buffers_(kDefaultNumberOfBuffers),
-      bytes_per_second_(0) {}
+      bytes_per_second_(0),
+      user_buffer_duration_(kDefaultDuration),
+      weak_factory_(this) {}
 
 PepperMediaStreamAudioTrackHost::AudioSink::~AudioSink() {
   DCHECK_EQ(main_message_loop_proxy_, base::MessageLoopProxy::current());
@@ -82,51 +89,108 @@ void PepperMediaStreamAudioTrackHost::AudioSink::EnqueueBuffer(int32_t index) {
   buffers_.push_back(index);
 }
 
-void PepperMediaStreamAudioTrackHost::AudioSink::Configure(
-    int32_t number_of_buffers) {
+int32_t PepperMediaStreamAudioTrackHost::AudioSink::Configure(
+    int32_t number_of_buffers, int32_t duration,
+    const ppapi::host::ReplyMessageContext& context) {
   DCHECK_EQ(main_message_loop_proxy_, base::MessageLoopProxy::current());
+
+  if (pending_configure_reply_.is_valid()) {
+    return PP_ERROR_INPROGRESS;
+  }
+  pending_configure_reply_ = context;
+
   bool changed = false;
   if (number_of_buffers != number_of_buffers_)
     changed = true;
+  if (duration != 0 && duration != user_buffer_duration_) {
+    user_buffer_duration_ = duration;
+    changed = true;
+  }
   number_of_buffers_ = number_of_buffers;
 
-  // Initialize later in OnSetFormat if bytes_per_second_ is not know yet.
-  if (changed && bytes_per_second_ > 0)
-    InitBuffers();
+  if (changed) {
+    // Initialize later in OnSetFormat if bytes_per_second_ is not known yet.
+    if (bytes_per_second_ > 0 && bytes_per_frame_ > 0)
+      InitBuffers();
+  } else {
+    SendConfigureReply(PP_OK);
+  }
+  return PP_OK_COMPLETIONPENDING;
+}
+
+void PepperMediaStreamAudioTrackHost::AudioSink::SendConfigureReply(
+    int32_t result) {
+  if (pending_configure_reply_.is_valid()) {
+    pending_configure_reply_.params.set_result(result);
+    host_->host()->SendReply(
+        pending_configure_reply_,
+        PpapiPluginMsg_MediaStreamAudioTrack_ConfigureReply());
+    pending_configure_reply_ = ppapi::host::ReplyMessageContext();
+  }
 }
 
 void PepperMediaStreamAudioTrackHost::AudioSink::SetFormatOnMainThread(
-    int bytes_per_second) {
+    int bytes_per_second, int bytes_per_frame) {
   bytes_per_second_ = bytes_per_second;
+  bytes_per_frame_ = bytes_per_frame;
   InitBuffers();
 }
 
 void PepperMediaStreamAudioTrackHost::AudioSink::InitBuffers() {
   DCHECK_EQ(main_message_loop_proxy_, base::MessageLoopProxy::current());
+  {
+    base::AutoLock lock(lock_);
+    // Clear |buffers_|, so the audio thread will drop all incoming audio data.
+    buffers_.clear();
+    buffers_generation_++;
+  }
+  int32_t frame_rate = bytes_per_second_ / bytes_per_frame_;
+  base::CheckedNumeric<int32_t> frames_per_buffer = user_buffer_duration_;
+  frames_per_buffer *= frame_rate;
+  frames_per_buffer /= base::Time::kMillisecondsPerSecond;
+  base::CheckedNumeric<int32_t> buffer_audio_size =
+      frames_per_buffer * bytes_per_frame_;
   // The size is slightly bigger than necessary, because 8 extra bytes are
-  // added into the struct. Also see |MediaStreamBuffer|.
-  base::CheckedNumeric<int32_t> buffer_size = bytes_per_second_;
-  buffer_size *= kMaxDuration;
-  buffer_size /= base::Time::kMillisecondsPerSecond;
+  // added into the struct. Also see |MediaStreamBuffer|. Also, the size of the
+  // buffer may be larger than requested, since the size of each buffer will be
+  // 4-byte aligned.
+  base::CheckedNumeric<int32_t> buffer_size = buffer_audio_size;
   buffer_size += sizeof(ppapi::MediaStreamBuffer::Audio);
+  DCHECK_GT(buffer_size.ValueOrDie(), 0);
+
+  // We don't need to hold |lock_| during |host->InitBuffers()| call, because
+  // we just cleared |buffers_| , so the audio thread will drop all incoming
+  // audio data, and not use buffers in |host_|.
   bool result = host_->InitBuffers(number_of_buffers_,
                                    buffer_size.ValueOrDie(),
                                    kRead);
-  // TODO(penghuang): Send PP_ERROR_NOMEMORY to plugin.
-  CHECK(result);
+  if (!result) {
+    SendConfigureReply(PP_ERROR_NOMEMORY);
+    return;
+  }
+
+  // Fill the |buffers_|, so the audio thread can continue receiving audio data.
   base::AutoLock lock(lock_);
-  buffers_.clear();
+  output_buffer_size_ = buffer_audio_size.ValueOrDie();
   for (int32_t i = 0; i < number_of_buffers_; ++i) {
     int32_t index = host_->buffer_manager()->DequeueBuffer();
     DCHECK_GE(index, 0);
     buffers_.push_back(index);
   }
+
+  SendConfigureReply(PP_OK);
 }
 
 void PepperMediaStreamAudioTrackHost::AudioSink::
-    SendEnqueueBufferMessageOnMainThread(int32_t index) {
+    SendEnqueueBufferMessageOnMainThread(int32_t index,
+                                         int32_t buffers_generation) {
   DCHECK_EQ(main_message_loop_proxy_, base::MessageLoopProxy::current());
-  host_->SendEnqueueBufferMessageToPlugin(index);
+  // If |InitBuffers()| is called after this task being posted from the audio
+  // thread, the buffer should become invalid already. We should ignore it.
+  // And because only the main thread modifies the |buffers_generation_|,
+  // so we don't need to lock |lock_| here (main thread).
+  if (buffers_generation == buffers_generation_)
+    host_->SendEnqueueBufferMessageToPlugin(index);
 }
 
 void PepperMediaStreamAudioTrackHost::AudioSink::OnData(const int16* audio_data,
@@ -137,34 +201,76 @@ void PepperMediaStreamAudioTrackHost::AudioSink::OnData(const int16* audio_data,
   DCHECK(audio_data);
   DCHECK_EQ(sample_rate, audio_params_.sample_rate());
   DCHECK_EQ(number_of_channels, audio_params_.channels());
+  // Here, |number_of_frames| and |audio_params_.frames_per_buffer()| refer to
+  // the incomming audio buffer. However, this doesn't necessarily equal
+  // |buffer->number_of_samples|, which is configured by the user when they set
+  // buffer duration.
   DCHECK_EQ(number_of_frames, audio_params_.frames_per_buffer());
-  int32_t index = -1;
-  {
-    base::AutoLock lock(lock_);
-    if (!buffers_.empty()) {
-      index = buffers_.front();
+
+  const uint32_t bytes_per_frame = number_of_channels *
+      audio_params_.bits_per_sample() / 8;
+
+  int frames_remaining = number_of_frames;
+  base::TimeDelta timestamp_offset;
+
+  base::AutoLock lock(lock_);
+  while (frames_remaining) {
+    if (active_buffers_generation_ != buffers_generation_) {
+      // Buffers have changed, so drop the active buffer.
+      active_buffer_index_ = -1;
+    }
+    if (active_buffer_index_ == -1 && !buffers_.empty()) {
+      active_buffers_generation_ = buffers_generation_;
+      active_buffer_offset_ = 0;
+      active_buffer_index_ = buffers_.front();
       buffers_.pop_front();
     }
-  }
+    if (active_buffer_index_ == -1) {
+      // Eek! We're dropping frames. Bad, bad, bad!
+      break;
+    }
 
-  if (index != -1) {
     // TODO(penghuang): support re-sampling, etc.
     ppapi::MediaStreamBuffer::Audio* buffer =
-        &(host_->buffer_manager()->GetBufferPointer(index)->audio);
-    buffer->header.size = host_->buffer_manager()->buffer_size();
-    buffer->header.type = ppapi::MediaStreamBuffer::TYPE_AUDIO;
-    buffer->timestamp = timestamp_.InMillisecondsF();
-    buffer->sample_rate = static_cast<PP_AudioBuffer_SampleRate>(sample_rate);
-    buffer->number_of_channels = number_of_channels;
-    buffer->number_of_samples = number_of_channels * number_of_frames;
-    buffer->data_size = buffer_data_size_;
-    memcpy(buffer->data, audio_data, buffer_data_size_);
+        &(host_->buffer_manager()->GetBufferPointer(active_buffer_index_)
+          ->audio);
+    if (active_buffer_offset_ == 0) {
+      // The active buffer is new, so initialise the header and metadata fields.
+      buffer->header.size = host_->buffer_manager()->buffer_size();
+      buffer->header.type = ppapi::MediaStreamBuffer::TYPE_AUDIO;
+      buffer->timestamp = (timestamp_ + timestamp_offset).InMillisecondsF();
+      buffer->sample_rate = static_cast<PP_AudioBuffer_SampleRate>(sample_rate);
+      buffer->data_size = output_buffer_size_;
+      buffer->number_of_channels = number_of_channels;
+      buffer->number_of_samples = buffer->data_size * number_of_channels /
+          bytes_per_frame;
+    }
+    uint32_t buffer_bytes_remaining =
+        buffer->data_size - active_buffer_offset_;
+    DCHECK_EQ(buffer_bytes_remaining % bytes_per_frame, 0U);
+    uint32_t incoming_bytes_remaining = frames_remaining * bytes_per_frame;
+    uint32_t bytes_to_copy = std::min(buffer_bytes_remaining,
+                                      incoming_bytes_remaining);
+    uint32_t frames_to_copy = bytes_to_copy / bytes_per_frame;
+    DCHECK_EQ(bytes_to_copy % bytes_per_frame, 0U);
+    memcpy(buffer->data + active_buffer_offset_,
+           audio_data, bytes_to_copy);
+    active_buffer_offset_ += bytes_to_copy;
+    audio_data += bytes_to_copy / sizeof(*audio_data);
+    frames_remaining -= frames_to_copy;
+    timestamp_offset += base::TimeDelta::FromMilliseconds(
+        frames_to_copy * base::Time::kMillisecondsPerSecond / sample_rate);
 
-    main_message_loop_proxy_->PostTask(
-        FROM_HERE,
-        base::Bind(&AudioSink::SendEnqueueBufferMessageOnMainThread,
-                   weak_factory_.GetWeakPtr(),
-                   index));
+    DCHECK_LE(active_buffer_offset_, buffer->data_size);
+    if (active_buffer_offset_ == buffer->data_size) {
+      main_message_loop_proxy_->PostTask(
+          FROM_HERE,
+          base::Bind(&AudioSink::SendEnqueueBufferMessageOnMainThread,
+                     weak_factory_.GetWeakPtr(),
+                     active_buffer_index_,
+                     buffers_generation_));
+      active_buffer_index_ = -1;
+    }
   }
   timestamp_ += buffer_duration_;
 }
@@ -172,7 +278,12 @@ void PepperMediaStreamAudioTrackHost::AudioSink::OnData(const int16* audio_data,
 void PepperMediaStreamAudioTrackHost::AudioSink::OnSetFormat(
     const AudioParameters& params) {
   DCHECK(params.IsValid());
-  DCHECK_LE(params.GetBufferDuration().InMilliseconds(), kMaxDuration);
+  // TODO(amistry): How do you handle the case where the user configures a
+  // duration that's shorter than the received buffer duration? One option is to
+  // double buffer, where the size of the intermediate ring buffer is at least
+  // max(user requested duration, received buffer duration). There are other
+  // ways of dealing with it, but which one is "correct"?
+  DCHECK_LE(params.GetBufferDuration().InMilliseconds(), kMinDuration);
   DCHECK_EQ(params.bits_per_sample(), 16);
   DCHECK_NE(GetPPSampleRate(params.sample_rate()),
             PP_AUDIOBUFFER_SAMPLERATE_UNKNOWN);
@@ -192,11 +303,13 @@ void PepperMediaStreamAudioTrackHost::AudioSink::OnSetFormat(
     audio_thread_checker_.DetachFromThread();
     original_audio_params_ = params;
 
+    int bytes_per_frame = params.channels() * params.bits_per_sample() / 8;
     main_message_loop_proxy_->PostTask(
         FROM_HERE,
         base::Bind(&AudioSink::SetFormatOnMainThread,
                    weak_factory_.GetWeakPtr(),
-                   params.GetBytesPerSecond()));
+                   params.GetBytesPerSecond(),
+                   bytes_per_frame));
   }
 }
 
@@ -236,10 +349,8 @@ int32_t PepperMediaStreamAudioTrackHost::OnHostMsgConfigure(
   int32_t buffers = attributes.buffers
                         ? std::min(kMaxNumberOfBuffers, attributes.buffers)
                         : kDefaultNumberOfBuffers;
-  audio_sink_.Configure(buffers);
-
-  context->reply_msg = PpapiPluginMsg_MediaStreamAudioTrack_ConfigureReply();
-  return PP_OK;
+  return audio_sink_.Configure(buffers, attributes.duration,
+                               context->MakeReplyMessageContext());
 }
 
 void PepperMediaStreamAudioTrackHost::OnClose() {
@@ -247,6 +358,7 @@ void PepperMediaStreamAudioTrackHost::OnClose() {
     MediaStreamAudioSink::RemoveFromAudioTrack(&audio_sink_, track_);
     connected_ = false;
   }
+  audio_sink_.SendConfigureReply(PP_ERROR_ABORTED);
 }
 
 void PepperMediaStreamAudioTrackHost::OnNewBufferEnqueued() {

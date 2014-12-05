@@ -44,9 +44,6 @@
 #include "public/web/WebViewClient.h"
 #include "web/WebDevToolsAgentImpl.h"
 #include "web/WebViewImpl.h"
-#include "wtf/Vector.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -72,7 +69,7 @@ void InspectorClientImpl::hideHighlight()
         agent->hideHighlight();
 }
 
-void InspectorClientImpl::sendMessageToFrontend(PassRefPtr<WebCore::JSONObject> message)
+void InspectorClientImpl::sendMessageToFrontend(PassRefPtr<JSONObject> message)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
         agent->sendMessageToFrontend(message);
@@ -90,10 +87,10 @@ void InspectorClientImpl::updateInspectorStateCookie(const WTF::String& inspecto
         agent->updateInspectorStateCookie(inspectorState);
 }
 
-void InspectorClientImpl::setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool emulateViewport, bool fitWindow)
+void InspectorClientImpl::setDeviceMetricsOverride(int width, int height, float deviceScaleFactor, bool mobile, bool fitWindow, float scale, float offsetX, float offsetY)
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->setDeviceMetricsOverride(width, height, deviceScaleFactor, emulateViewport, fitWindow);
+        agent->setDeviceMetricsOverride(width, height, deviceScaleFactor, mobile, fitWindow, scale, offsetX, offsetY);
 }
 
 void InspectorClientImpl::clearDeviceMetricsOverride()
@@ -138,22 +135,29 @@ void InspectorClientImpl::setShowScrollBottleneckRects(bool show)
     m_inspectedWebView->setShowScrollBottleneckRects(show);
 }
 
-void InspectorClientImpl::requestPageScaleFactor(float scale, const IntPoint& origin)
+void InspectorClientImpl::resetScrollAndPageScaleFactor()
 {
-    m_inspectedWebView->setPageScaleFactor(scale);
-    m_inspectedWebView->setMainFrameScrollOffset(origin);
+    m_inspectedWebView->resetScrollAndScaleState();
 }
 
-void InspectorClientImpl::getAllocatedObjects(HashSet<const void*>& set)
+float InspectorClientImpl::minimumPageScaleFactor()
 {
-    if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->getAllocatedObjects(set);
+    return m_inspectedWebView->minimumPageScaleFactor();
 }
 
-void InspectorClientImpl::dumpUncountedAllocatedObjects(const HashMap<const void*, size_t>& map)
+float InspectorClientImpl::maximumPageScaleFactor()
 {
-    if (WebDevToolsAgentImpl* agent = devToolsAgent())
-        agent->dumpUncountedAllocatedObjects(map);
+    return m_inspectedWebView->maximumPageScaleFactor();
+}
+
+void InspectorClientImpl::setPageScaleFactor(float pageScaleFactor)
+{
+    m_inspectedWebView->setPageScaleFactor(pageScaleFactor);
+}
+
+void InspectorClientImpl::showContextMenu(float x, float y, PassRefPtrWillBeRawPtr<ContextMenuProvider> menuProvider)
+{
+    m_inspectedWebView->showContextMenuAtPoint(x, y, menuProvider);
 }
 
 void InspectorClientImpl::dispatchKeyEvent(const PlatformKeyboardEvent& event)
@@ -202,6 +206,12 @@ void InspectorClientImpl::stopGPUEventsRecording()
 {
     if (WebDevToolsAgentImpl* agent = devToolsAgent())
         agent->stopGPUEventsRecording();
+}
+
+void InspectorClientImpl::resumeStartup()
+{
+    if (WebDevToolsAgentImpl* agent = devToolsAgent())
+        agent->resumeStartup();
 }
 
 WebDevToolsAgentImpl* InspectorClientImpl::devToolsAgent()

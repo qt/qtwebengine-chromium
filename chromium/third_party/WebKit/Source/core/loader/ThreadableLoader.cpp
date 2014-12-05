@@ -38,10 +38,9 @@
 #include "core/loader/WorkerLoaderClientBridge.h"
 #include "core/loader/WorkerThreadableLoader.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerRunLoop.h"
 #include "core/workers/WorkerThread.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<ThreadableLoader> ThreadableLoader::create(ExecutionContext& context, ThreadableLoaderClient* client, const ResourceRequest& request, const ThreadableLoaderOptions& options, const ResourceLoaderOptions& resourceLoaderOptions)
 {
@@ -67,4 +66,4 @@ void ThreadableLoader::loadResourceSynchronously(ExecutionContext& context, cons
     DocumentThreadableLoader::loadResourceSynchronously(toDocument(context), request, client, options, resourceLoaderOptions);
 }
 
-} // namespace WebCore
+} // namespace blink

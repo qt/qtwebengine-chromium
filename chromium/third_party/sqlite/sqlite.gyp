@@ -10,8 +10,6 @@
   'target_defaults': {
     'defines': [
       'SQLITE_CORE',
-      'SQLITE_ENABLE_BROKEN_FTS2',
-      'SQLITE_ENABLE_FTS2',
       'SQLITE_ENABLE_FTS3',
       'SQLITE_ENABLE_ICU',
       'SQLITE_ENABLE_MEMORY_MANAGEMENT',
@@ -81,17 +79,6 @@
           'sources': [
             'amalgamation/sqlite3.h',
             'amalgamation/sqlite3.c',
-            # fts2.c currently has a lot of conflicts when added to
-            # the amalgamation.  It is probably not worth fixing that.
-            'src/ext/fts2/fts2.c',
-            'src/ext/fts2/fts2.h',
-            'src/ext/fts2/fts2_hash.c',
-            'src/ext/fts2/fts2_hash.h',
-            'src/ext/fts2/fts2_icu.c',
-            'src/ext/fts2/fts2_porter.c',
-            'src/ext/fts2/fts2_tokenizer.c',
-            'src/ext/fts2/fts2_tokenizer.h',
-            'src/ext/fts2/fts2_tokenizer1.c',
           ],
 
           # TODO(shess): Previously fts1 and rtree files were
@@ -103,8 +90,6 @@
 
           'include_dirs': [
             'amalgamation',
-            # Needed for fts2 to build.
-            'src/src',
           ],
           'dependencies': [
             '../icu/icu.gyp:icui18n',
@@ -119,6 +104,14 @@
           'msvs_disabled_warnings': [
             4018, 4244, 4267,
           ],
+          'variables': {
+            'clang_warning_flags': [
+              # sqlite does `if (*a++ && *b++);` in a non-buggy way.
+              '-Wno-empty-body',
+              # sqlite has some `unsigned < 0` checks.
+              '-Wno-tautological-compare',
+            ],
+          },
           'conditions': [
             ['OS=="linux"', {
               'link_settings': {
@@ -153,22 +146,41 @@
                 '-Wno-pointer-to-int-cast',
               ],
             }],
-            ['clang==1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  # sqlite does `if (*a++ && *b++);` in a non-buggy way.
-                  '-Wno-empty-body',
-                  # sqlite has some `unsigned < 0` checks.
-                  '-Wno-tautological-compare',
-                ],
+            # Enable feedback-directed optimisation for sqlite when building in android.
+            ['android_webview_build == 1', {
+              'aosp_build_settings': {
+                'LOCAL_FDO_SUPPORT': 'true',
               },
-              'cflags': [
-                '-Wno-empty-body',
-                '-Wno-tautological-compare',
+            }],
+            ['sqlite_enable_fts2', {
+              'defines': [
+                'SQLITE_ENABLE_BROKEN_FTS2',
+                'SQLITE_ENABLE_FTS2',
+              ],
+              'sources': [
+                # fts2.c currently has a lot of conflicts when added to
+                # the amalgamation.  It is probably not worth fixing that.
+                'src/ext/fts2/fts2.c',
+                'src/ext/fts2/fts2.h',
+                'src/ext/fts2/fts2_hash.c',
+                'src/ext/fts2/fts2_hash.h',
+                'src/ext/fts2/fts2_icu.c',
+                'src/ext/fts2/fts2_porter.c',
+                'src/ext/fts2/fts2_tokenizer.c',
+                'src/ext/fts2/fts2_tokenizer.h',
+                'src/ext/fts2/fts2_tokenizer1.c',
+              ],
+              'include_dirs': [
+                'src/src',
               ],
             }],
           ],
         }],
+      ],
+      'includes': [
+        # Disable LTO due to ELF section name out of range
+        # crbug.com/422251
+        '../../build/android/disable_lto.gypi',
       ],
     },
   ],

@@ -257,8 +257,8 @@ Window::~Window() {
   if (delegate_)
     delegate_->OnWindowDestroyed(this);
   ObserverListBase<WindowObserver>::Iterator iter(observers_);
-  WindowObserver* observer;
-  while ((observer = iter.GetNext())) {
+  for (WindowObserver* observer = iter.GetNext(); observer;
+       observer = iter.GetNext()) {
     RemoveObserver(observer);
     observer->OnWindowDestroyed(this);
   }
@@ -303,6 +303,13 @@ void Window::SetName(const std::string& name) {
 
   if (layer())
     UpdateLayerName();
+}
+
+void Window::SetTitle(const base::string16& title) {
+  title_ = title;
+  FOR_EACH_OBSERVER(WindowObserver,
+                    observers_,
+                    OnWindowTitleChanged(this));
 }
 
 void Window::SetTransparent(bool transparent) {
@@ -402,6 +409,7 @@ void Window::SetTransform(const gfx::Transform& transform) {
   layer()->SetTransform(transform);
   FOR_EACH_OBSERVER(WindowObserver, observers_,
                     OnWindowTransformed(this));
+  NotifyAncestorWindowTransformed(this);
 }
 
 void Window::SetLayoutManager(LayoutManager* layout_manager) {
@@ -484,9 +492,8 @@ void Window::SchedulePaintInRect(const gfx::Rect& rect) {
       parent_rect.Offset(bounds().origin().OffsetFromOrigin());
       parent_->SchedulePaintInRect(parent_rect);
     }
-  } else if (layer() && layer()->SchedulePaint(rect)) {
-    FOR_EACH_OBSERVER(
-        WindowObserver, observers_, OnWindowPaintScheduled(this, rect));
+  } else if (layer()) {
+    layer()->SchedulePaint(rect);
   }
 }
 
@@ -746,12 +753,18 @@ void Window::SetCapture() {
   Window* root_window = GetRootWindow();
   if (!root_window)
     return;
+  client::CaptureClient* capture_client = client::GetCaptureClient(root_window);
+  if (!capture_client)
+    return;
   client::GetCaptureClient(root_window)->SetCapture(this);
 }
 
 void Window::ReleaseCapture() {
   Window* root_window = GetRootWindow();
   if (!root_window)
+    return;
+  client::CaptureClient* capture_client = client::GetCaptureClient(root_window);
+  if (!capture_client)
     return;
   client::GetCaptureClient(root_window)->ReleaseCapture(this);
 }
@@ -782,8 +795,6 @@ void* Window::GetNativeWindowProperty(const char* key) const {
 
 void Window::OnDeviceScaleFactorChanged(float device_scale_factor) {
   ScopedCursorHider hider(this);
-  if (IsRootWindow())
-    host_->OnDeviceScaleFactorChanged(device_scale_factor);
   if (delegate_)
     delegate_->OnDeviceScaleFactorChanged(device_scale_factor);
 }
@@ -1301,9 +1312,20 @@ bool Window::NotifyWindowVisibilityChangedDown(aura::Window* target,
 
 void Window::NotifyWindowVisibilityChangedUp(aura::Window* target,
                                              bool visible) {
-  for (Window* window = this; window; window = window->parent()) {
+  // Start with the parent as we already notified |this|
+  // in NotifyWindowVisibilityChangedDown.
+  for (Window* window = parent(); window; window = window->parent()) {
     bool ret = window->NotifyWindowVisibilityChangedAtReceiver(target, visible);
     DCHECK(ret);
+  }
+}
+
+void Window::NotifyAncestorWindowTransformed(Window* source) {
+  FOR_EACH_OBSERVER(WindowObserver, observers_,
+                    OnAncestorWindowTransformed(source, this));
+  for (Window::Windows::const_iterator it = children_.begin();
+       it != children_.end(); ++it) {
+    (*it)->NotifyAncestorWindowTransformed(source);
   }
 }
 
@@ -1343,6 +1365,13 @@ bool Window::CleanupGestureState() {
 
 void Window::OnPaintLayer(gfx::Canvas* canvas) {
   Paint(canvas);
+}
+
+void Window::OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) {
+  DCHECK(layer());
+  FOR_EACH_OBSERVER(WindowObserver,
+                    observers_,
+                    OnDelegatedFrameDamage(this, damage_rect_in_dip));
 }
 
 base::Closure Window::PrepareForLayerBoundsChange() {
@@ -1414,16 +1443,6 @@ void Window::UpdateLayerName() {
 
   layer()->set_name(layer_name);
 #endif
-}
-
-bool Window::ContainsMouse() {
-  bool contains_mouse = false;
-  if (IsVisible()) {
-    WindowTreeHost* host = GetHost();
-    contains_mouse = host &&
-        ContainsPointInRoot(host->dispatcher()->GetLastMouseLocationInRoot());
-  }
-  return contains_mouse;
 }
 
 const Window* Window::GetAncestorWithLayer(gfx::Vector2d* offset) const {

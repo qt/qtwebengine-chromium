@@ -5,20 +5,22 @@
 #include "content/browser/renderer_host/sandbox_ipc_linux.h"
 
 #include <fcntl.h>
-#include <fontconfig/fontconfig.h>
 #include <sys/poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include "base/basictypes.h"
 #include "base/command_line.h"
 #include "base/files/scoped_file.h"
 #include "base/linux_util.h"
+#include "base/macros.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/shared_memory.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/posix/unix_domain_socket_linux.h"
 #include "base/process/launch.h"
 #include "base/strings/string_number_conversions.h"
+#include "content/browser/renderer_host/font_utils_linux.h"
 #include "content/common/font_config_ipc_linux.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/common/set_process_title.h"
@@ -28,122 +30,52 @@
 #include "third_party/WebKit/public/web/WebKit.h"
 #include "third_party/npapi/bindings/npapi_extensions.h"
 #include "third_party/skia/include/ports/SkFontConfigInterface.h"
-#include "ui/gfx/font_render_params_linux.h"
+#include "ui/gfx/font.h"
+#include "ui/gfx/font_render_params.h"
 
 using blink::WebCString;
 using blink::WebFontInfo;
 using blink::WebUChar;
 using blink::WebUChar32;
 
+namespace content {
+
 namespace {
 
-// MSCharSetToFontconfig translates a Microsoft charset identifier to a
-// fontconfig language set by appending to |langset|.
-// Returns true if |langset| is Latin/Greek/Cyrillic.
-bool MSCharSetToFontconfig(FcLangSet* langset, unsigned fdwCharSet) {
-  // We have need to translate raw fdwCharSet values into terms that
-  // fontconfig can understand. (See the description of fdwCharSet in the MSDN
-  // documentation for CreateFont:
-  // http://msdn.microsoft.com/en-us/library/dd183499(VS.85).aspx )
-  //
-  // Although the argument is /called/ 'charset', the actual values conflate
-  // character sets (which are sets of Unicode code points) and character
-  // encodings (which are algorithms for turning a series of bits into a
-  // series of code points.) Sometimes the values will name a language,
-  // sometimes they'll name an encoding. In the latter case I'm assuming that
-  // they mean the set of code points in the domain of that encoding.
-  //
-  // fontconfig deals with ISO 639-1 language codes:
-  //   http://en.wikipedia.org/wiki/List_of_ISO_639-1_codes
-  //
-  // So, for each of the documented fdwCharSet values I've had to take a
-  // guess at the set of ISO 639-1 languages intended.
-
-  bool is_lgc = false;
-  switch (fdwCharSet) {
-    case NPCharsetAnsi:
-    // These values I don't really know what to do with, so I'm going to map
-    // them to English also.
-    case NPCharsetDefault:
-    case NPCharsetMac:
-    case NPCharsetOEM:
-    case NPCharsetSymbol:
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("en"));
-      break;
-    case NPCharsetBaltic:
-      // The three baltic languages.
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("et"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("lv"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("lt"));
-      break;
-    case NPCharsetChineseBIG5:
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("zh-tw"));
-      break;
-    case NPCharsetGB2312:
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("zh-cn"));
-      break;
-    case NPCharsetEastEurope:
-      // A scattering of eastern European languages.
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("pl"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("cs"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("sk"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("hu"));
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("hr"));
-      break;
-    case NPCharsetGreek:
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("el"));
-      break;
-    case NPCharsetHangul:
-    case NPCharsetJohab:
-      // Korean
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("ko"));
-      break;
-    case NPCharsetRussian:
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("ru"));
-      break;
-    case NPCharsetShiftJIS:
-      // Japanese
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("ja"));
-      break;
-    case NPCharsetTurkish:
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("tr"));
-      break;
-    case NPCharsetVietnamese:
-      is_lgc = true;
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("vi"));
-      break;
-    case NPCharsetArabic:
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("ar"));
-      break;
-    case NPCharsetHebrew:
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("he"));
-      break;
-    case NPCharsetThai:
-      FcLangSetAdd(langset, reinterpret_cast<const FcChar8*>("th"));
-      break;
-      // default:
-      // Don't add any languages in that case that we don't recognise the
-      // constant.
+// Converts gfx::FontRenderParams::Hinting to WebFontRenderStyle::hintStyle.
+// Returns an int for serialization, but the underlying Blink type is a char.
+int ConvertHinting(gfx::FontRenderParams::Hinting hinting) {
+  switch (hinting) {
+    case gfx::FontRenderParams::HINTING_NONE:   return 0;
+    case gfx::FontRenderParams::HINTING_SLIGHT: return 1;
+    case gfx::FontRenderParams::HINTING_MEDIUM: return 2;
+    case gfx::FontRenderParams::HINTING_FULL:   return 3;
   }
-  return is_lgc;
+  NOTREACHED() << "Unexpected hinting value " << hinting;
+  return 0;
+}
+
+// Converts gfx::FontRenderParams::SubpixelRendering to
+// WebFontRenderStyle::useSubpixelRendering. Returns an int for serialization,
+// but the underlying Blink type is a char.
+int ConvertSubpixelRendering(
+    gfx::FontRenderParams::SubpixelRendering rendering) {
+  switch (rendering) {
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_NONE: return 0;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_RGB:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_BGR:  return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VRGB: return 1;
+    case gfx::FontRenderParams::SUBPIXEL_RENDERING_VBGR: return 1;
+  }
+  NOTREACHED() << "Unexpected subpixel rendering value " << rendering;
+  return 0;
 }
 
 }  // namespace
 
-namespace content {
-
 SandboxIPCHandler::SandboxIPCHandler(int lifeline_fd, int browser_socket)
-    : lifeline_fd_(lifeline_fd), browser_socket_(browser_socket) {
-  // FontConfig doesn't provide a standard property to control subpixel
-  // positioning, so we pass the current setting through to WebKit.
-  WebFontInfo::setSubpixelPositioning(
-      gfx::GetDefaultWebkitSubpixelPositioning());
+    : lifeline_fd_(lifeline_fd),
+      browser_socket_(browser_socket) {
 }
 
 void SandboxIPCHandler::Run() {
@@ -331,6 +263,9 @@ void SandboxIPCHandler::HandleGetFallbackFontForChar(
   blink::WebFallbackFont fallbackFont;
   WebFontInfo::fallbackFontForChar(c, preferred_locale.c_str(), &fallbackFont);
 
+  int pathIndex = FindOrAddPath(SkString(fallbackFont.filename.data()));
+  fallbackFont.fontconfigInterfaceId = pathIndex;
+
   Pickle reply;
   if (fallbackFont.name.data()) {
     reply.WriteString(fallbackFont.name.data());
@@ -342,6 +277,7 @@ void SandboxIPCHandler::HandleGetFallbackFontForChar(
   } else {
     reply.WriteString(std::string());
   }
+  reply.WriteInt(fallbackFont.fontconfigInterfaceId);
   reply.WriteInt(fallbackFont.ttcIndex);
   reply.WriteBool(fallbackFont.isBold);
   reply.WriteBool(fallbackFont.isItalic);
@@ -354,25 +290,35 @@ void SandboxIPCHandler::HandleGetStyleForStrike(
     PickleIterator iter,
     const std::vector<base::ScopedFD*>& fds) {
   std::string family;
-  int sizeAndStyle;
+  bool bold, italic;
+  uint16 pixel_size;
 
   if (!pickle.ReadString(&iter, &family) ||
-      !pickle.ReadInt(&iter, &sizeAndStyle)) {
+      !pickle.ReadBool(&iter, &bold) ||
+      !pickle.ReadBool(&iter, &italic) ||
+      !pickle.ReadUInt16(&iter, &pixel_size)) {
     return;
   }
 
   EnsureWebKitInitialized();
-  blink::WebFontRenderStyle style;
-  WebFontInfo::renderStyleForStrike(family.c_str(), sizeAndStyle, &style);
 
+  gfx::FontRenderParamsQuery query(true);
+  query.families.push_back(family);
+  query.pixel_size = pixel_size;
+  query.style = gfx::Font::NORMAL |
+      (bold ? gfx::Font::BOLD : 0) | (italic ? gfx::Font::ITALIC : 0);
+  const gfx::FontRenderParams params = gfx::GetFontRenderParams(query, NULL);
+
+  // These are passed as ints since they're interpreted as tri-state chars in
+  // Blink.
   Pickle reply;
-  reply.WriteInt(style.useBitmaps);
-  reply.WriteInt(style.useAutoHint);
-  reply.WriteInt(style.useHinting);
-  reply.WriteInt(style.hintStyle);
-  reply.WriteInt(style.useAntiAlias);
-  reply.WriteInt(style.useSubpixelRendering);
-  reply.WriteInt(style.useSubpixelPositioning);
+  reply.WriteInt(params.use_bitmaps);
+  reply.WriteInt(params.autohinter);
+  reply.WriteInt(params.hinting != gfx::FontRenderParams::HINTING_NONE);
+  reply.WriteInt(ConvertHinting(params.hinting));
+  reply.WriteInt(params.antialiasing);
+  reply.WriteInt(ConvertSubpixelRendering(params.subpixel_rendering));
+  reply.WriteInt(params.subpixel_positioning);
 
   SendRendererReply(fds, reply, -1);
 }
@@ -435,10 +381,6 @@ void SandboxIPCHandler::HandleMatchWithFallback(
     const Pickle& pickle,
     PickleIterator iter,
     const std::vector<base::ScopedFD*>& fds) {
-  // Unlike the other calls, for which we are an indirection in front of
-  // WebKit or Skia, this call is always made via this sandbox helper
-  // process. Therefore the fontconfig code goes in here directly.
-
   std::string face;
   bool is_bold, is_italic;
   uint32 charset, fallback_family;
@@ -451,138 +393,8 @@ void SandboxIPCHandler::HandleMatchWithFallback(
     return;
   }
 
-  FcLangSet* langset = FcLangSetCreate();
-  bool is_lgc = MSCharSetToFontconfig(langset, charset);
-
-  FcPattern* pattern = FcPatternCreate();
-  FcPatternAddString(
-      pattern, FC_FAMILY, reinterpret_cast<const FcChar8*>(face.c_str()));
-
-  // TODO(thestig) Check if we can access Chrome's per-script font preference
-  // here and select better default fonts for non-LGC case.
-  std::string generic_font_name;
-  if (is_lgc) {
-    switch (fallback_family) {
-      case PP_BROWSERFONT_TRUSTED_FAMILY_SERIF:
-        generic_font_name = "Times New Roman";
-        break;
-      case PP_BROWSERFONT_TRUSTED_FAMILY_SANSSERIF:
-        generic_font_name = "Arial";
-        break;
-      case PP_BROWSERFONT_TRUSTED_FAMILY_MONOSPACE:
-        generic_font_name = "Courier New";
-        break;
-    }
-  }
-  if (!generic_font_name.empty()) {
-    const FcChar8* fc_generic_font_name =
-        reinterpret_cast<const FcChar8*>(generic_font_name.c_str());
-    FcPatternAddString(pattern, FC_FAMILY, fc_generic_font_name);
-  }
-
-  if (is_bold)
-    FcPatternAddInteger(pattern, FC_WEIGHT, FC_WEIGHT_BOLD);
-  if (is_italic)
-    FcPatternAddInteger(pattern, FC_SLANT, FC_SLANT_ITALIC);
-  FcPatternAddLangSet(pattern, FC_LANG, langset);
-  FcPatternAddBool(pattern, FC_SCALABLE, FcTrue);
-  FcConfigSubstitute(NULL, pattern, FcMatchPattern);
-  FcDefaultSubstitute(pattern);
-
-  FcResult result;
-  FcFontSet* font_set = FcFontSort(0, pattern, 0, 0, &result);
-  int font_fd = -1;
-  int good_enough_index = -1;
-  bool good_enough_index_set = false;
-
-  if (font_set) {
-    for (int i = 0; i < font_set->nfont; ++i) {
-      FcPattern* current = font_set->fonts[i];
-
-      // Older versions of fontconfig have a bug where they cannot select
-      // only scalable fonts so we have to manually filter the results.
-      FcBool is_scalable;
-      if (FcPatternGetBool(current, FC_SCALABLE, 0, &is_scalable) !=
-              FcResultMatch ||
-          !is_scalable) {
-        continue;
-      }
-
-      FcChar8* c_filename;
-      if (FcPatternGetString(current, FC_FILE, 0, &c_filename) !=
-          FcResultMatch) {
-        continue;
-      }
-
-      // We only want to return sfnt (TrueType) based fonts. We don't have a
-      // very good way of detecting this so we'll filter based on the
-      // filename.
-      bool is_sfnt = false;
-      static const char kSFNTExtensions[][5] = {".ttf", ".otc", ".TTF", ".ttc",
-                                                ""};
-      const size_t filename_len = strlen(reinterpret_cast<char*>(c_filename));
-      for (unsigned j = 0;; j++) {
-        if (kSFNTExtensions[j][0] == 0) {
-          // None of the extensions matched.
-          break;
-        }
-        const size_t ext_len = strlen(kSFNTExtensions[j]);
-        if (filename_len > ext_len &&
-            memcmp(c_filename + filename_len - ext_len,
-                   kSFNTExtensions[j],
-                   ext_len) == 0) {
-          is_sfnt = true;
-          break;
-        }
-      }
-
-      if (!is_sfnt)
-        continue;
-
-      // This font is good enough to pass muster, but we might be able to do
-      // better with subsequent ones.
-      if (!good_enough_index_set) {
-        good_enough_index = i;
-        good_enough_index_set = true;
-      }
-
-      FcValue matrix;
-      bool have_matrix = FcPatternGet(current, FC_MATRIX, 0, &matrix) == 0;
-
-      if (is_italic && have_matrix) {
-        // we asked for an italic font, but fontconfig is giving us a
-        // non-italic font with a transformation matrix.
-        continue;
-      }
-
-      FcValue embolden;
-      const bool have_embolden =
-          FcPatternGet(current, FC_EMBOLDEN, 0, &embolden) == 0;
-
-      if (is_bold && have_embolden) {
-        // we asked for a bold font, but fontconfig gave us a non-bold font
-        // and asked us to apply fake bolding.
-        continue;
-      }
-
-      font_fd = open(reinterpret_cast<char*>(c_filename), O_RDONLY);
-      if (font_fd >= 0)
-        break;
-    }
-  }
-
-  if (font_fd == -1 && good_enough_index_set) {
-    // We didn't find a font that we liked, so we fallback to something
-    // acceptable.
-    FcPattern* current = font_set->fonts[good_enough_index];
-    FcChar8* c_filename;
-    FcPatternGetString(current, FC_FILE, 0, &c_filename);
-    font_fd = open(reinterpret_cast<char*>(c_filename), O_RDONLY);
-  }
-
-  if (font_set)
-    FcFontSetDestroy(font_set);
-  FcPatternDestroy(pattern);
+  int font_fd = MatchFontFaceWithFallback(
+      face, is_bold, is_italic, charset, fallback_family);
 
   Pickle reply;
   SendRendererReply(fds, reply, font_fd);
@@ -631,7 +443,7 @@ void SandboxIPCHandler::SendRendererReply(
 
 SandboxIPCHandler::~SandboxIPCHandler() {
   paths_.deleteAll();
-  if (webkit_platform_support_)
+  if (blink_platform_impl_)
     blink::shutdownWithoutV8();
 
   if (IGNORE_EINTR(close(lifeline_fd_)) < 0)
@@ -641,10 +453,10 @@ SandboxIPCHandler::~SandboxIPCHandler() {
 }
 
 void SandboxIPCHandler::EnsureWebKitInitialized() {
-  if (webkit_platform_support_)
+  if (blink_platform_impl_)
     return;
-  webkit_platform_support_.reset(new BlinkPlatformImpl);
-  blink::initializeWithoutV8(webkit_platform_support_.get());
+  blink_platform_impl_.reset(new BlinkPlatformImpl);
+  blink::initializeWithoutV8(blink_platform_impl_.get());
 }
 
 }  // namespace content

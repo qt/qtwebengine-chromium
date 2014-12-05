@@ -54,16 +54,26 @@
 #include "public/web/WebNode.h"
 #include "wtf/text/StringBuilder.h"
 
-using namespace WebCore;
-
 namespace blink {
+
+#if ENABLE(ASSERT)
+// It's not safe to call some WebAXObject APIs if a layout is pending.
+// Clients should call updateLayoutAndCheckValidity first.
+static bool isLayoutClean(Document* document)
+{
+    if (!document || !document->view())
+        return false;
+    return document->lifecycle().state() >= DocumentLifecycle::LayoutClean
+        || (document->lifecycle().state() == DocumentLifecycle::StyleClean && !document->view()->needsLayout());
+}
+#endif
 
 void WebAXObject::reset()
 {
     m_private.reset();
 }
 
-void WebAXObject::assign(const blink::WebAXObject& other)
+void WebAXObject::assign(const WebAXObject& other)
 {
     m_private = other.m_private;
 }
@@ -71,24 +81,6 @@ void WebAXObject::assign(const blink::WebAXObject& other)
 bool WebAXObject::equals(const WebAXObject& n) const
 {
     return m_private.get() == n.m_private.get();
-}
-
-// static
-void WebAXObject::enableAccessibility()
-{
-    AXObjectCache::enableAccessibility();
-}
-
-// static
-bool WebAXObject::accessibilityEnabled()
-{
-    return AXObjectCache::accessibilityEnabled();
-}
-
-// static
-void WebAXObject::enableInlineTextBoxAccessibility()
-{
-    AXObjectCache::setInlineTextBoxAccessibility(true);
 }
 
 bool WebAXObject::isDetached() const
@@ -129,6 +121,8 @@ WebString WebAXObject::accessibilityDescription() const
 {
     if (isDetached())
         return WebString();
+
+    ASSERT(isLayoutClean(m_private->document()));
 
     return m_private->accessibilityDescription();
 }
@@ -278,6 +272,14 @@ bool WebAXObject::isEnabled() const
         return 0;
 
     return m_private->isEnabled();
+}
+
+WebAXExpanded WebAXObject::isExpanded() const
+{
+    if (isDetached())
+        return WebAXExpandedUndefined;
+
+    return static_cast<WebAXExpanded>(m_private->isExpanded());
 }
 
 bool WebAXObject::isFocused() const
@@ -496,36 +498,76 @@ bool WebAXObject::ariaLabelledby(WebVector<WebAXObject>& labelledbyElements) con
     return true;
 }
 
-bool WebAXObject::ariaLiveRegionAtomic() const
+bool WebAXObject::isInLiveRegion() const
+{
+    if (isDetached())
+        return false;
+
+    return 0 != m_private->liveRegionRoot();
+}
+
+bool WebAXObject::liveRegionAtomic() const
 {
     if (isDetached())
         return 0;
 
-    return m_private->ariaLiveRegionAtomic();
+    return m_private->liveRegionAtomic();
 }
 
-bool WebAXObject::ariaLiveRegionBusy() const
+bool WebAXObject::liveRegionBusy() const
 {
     if (isDetached())
         return 0;
 
-    return m_private->ariaLiveRegionBusy();
+    return m_private->liveRegionBusy();
 }
 
-WebString WebAXObject::ariaLiveRegionRelevant() const
+WebString WebAXObject::liveRegionRelevant() const
 {
     if (isDetached())
         return WebString();
 
-    return m_private->ariaLiveRegionRelevant();
+    return m_private->liveRegionRelevant();
 }
 
-WebString WebAXObject::ariaLiveRegionStatus() const
+WebString WebAXObject::liveRegionStatus() const
 {
     if (isDetached())
         return WebString();
 
-    return m_private->ariaLiveRegionStatus();
+    return m_private->liveRegionStatus();
+}
+
+bool WebAXObject::containerLiveRegionAtomic() const
+{
+    if (isDetached())
+        return false;
+
+    return m_private->containerLiveRegionAtomic();
+}
+
+bool WebAXObject::containerLiveRegionBusy() const
+{
+    if (isDetached())
+        return false;
+
+    return m_private->containerLiveRegionBusy();
+}
+
+WebString WebAXObject::containerLiveRegionRelevant() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->containerLiveRegionRelevant();
+}
+
+WebString WebAXObject::containerLiveRegionStatus() const
+{
+    if (isDetached())
+        return WebString();
+
+    return m_private->containerLiveRegionStatus();
 }
 
 bool WebAXObject::ariaOwns(WebVector<WebAXObject>& ownsElements) const
@@ -544,23 +586,11 @@ bool WebAXObject::ariaOwns(WebVector<WebAXObject>& ownsElements) const
     return true;
 }
 
-#if ASSERT_ENABLED
-static bool isLayoutClean(Document* document)
-{
-    if (!document || !document->view())
-        return false;
-    return document->lifecycle().state() >= DocumentLifecycle::LayoutClean
-        || (document->lifecycle().state() == DocumentLifecycle::StyleClean && !document->view()->needsLayout());
-}
-#endif
-
 WebRect WebAXObject::boundingBoxRect() const
 {
     if (isDetached())
         return WebRect();
 
-    // It's not safe to call boundingBoxRect if a layout is pending.
-    // Clients should call updateLayoutAndCheckValidity first.
     ASSERT(isLayoutClean(m_private->document()));
 
     return pixelSnappedIntRect(m_private->elementRect());
@@ -712,7 +742,7 @@ bool WebAXObject::press() const
 WebAXRole WebAXObject::role() const
 {
     if (isDetached())
-        return blink::WebAXRoleUnknown;
+        return WebAXRoleUnknown;
 
     return static_cast<WebAXRole>(m_private->roleValue());
 }
@@ -771,6 +801,14 @@ void WebAXObject::setSelectedTextRange(int selectionStart, int selectionEnd) con
     m_private->setSelectedTextRange(AXObject::PlainTextRange(selectionStart, selectionEnd - selectionStart));
 }
 
+void WebAXObject::setValue(WebString value) const
+{
+    if (isDetached())
+        return;
+
+    m_private->setValue(value);
+}
+
 WebString WebAXObject::stringValue() const
 {
     if (isDetached())
@@ -783,6 +821,8 @@ WebString WebAXObject::title() const
 {
     if (isDetached())
         return WebString();
+
+    ASSERT(isLayoutClean(m_private->document()));
 
     return m_private->title();
 }
@@ -931,6 +971,14 @@ bool WebAXObject::lineBreaks(WebVector<int>& result) const
     return true;
 }
 
+WebString WebAXObject::textInputType() const
+{
+    if (isDetached())
+        return WebString();
+
+    return WebString(m_private->textInputType());
+}
+
 unsigned WebAXObject::columnCount() const
 {
     if (isDetached())
@@ -961,8 +1009,8 @@ WebAXObject WebAXObject::cellForColumnAndRow(unsigned column, unsigned row) cons
     if (!m_private->isAXTable())
         return WebAXObject();
 
-    WebCore::AXTableCell* cell = toAXTable(m_private.get())->cellForColumnAndRow(column, row);
-    return WebAXObject(static_cast<WebCore::AXObject*>(cell));
+    AXTableCell* cell = toAXTable(m_private.get())->cellForColumnAndRow(column, row);
+    return WebAXObject(static_cast<AXObject*>(cell));
 }
 
 WebAXObject WebAXObject::headerContainerObject() const
@@ -1014,7 +1062,7 @@ unsigned WebAXObject::rowIndex() const
     if (!m_private->isTableRow())
         return 0;
 
-    return WebCore::toAXTableRow(m_private.get())->rowIndex();
+    return toAXTableRow(m_private.get())->rowIndex();
 }
 
 WebAXObject WebAXObject::rowHeader() const
@@ -1025,7 +1073,7 @@ WebAXObject WebAXObject::rowHeader() const
     if (!m_private->isTableRow())
         return WebAXObject();
 
-    return WebAXObject(WebCore::toAXTableRow(m_private.get())->headerObject());
+    return WebAXObject(toAXTableRow(m_private.get())->headerObject());
 }
 
 unsigned WebAXObject::columnIndex() const
@@ -1036,7 +1084,7 @@ unsigned WebAXObject::columnIndex() const
     if (m_private->roleValue() != ColumnRole)
         return 0;
 
-    return WebCore::toAXTableColumn(m_private.get())->columnIndex();
+    return toAXTableColumn(m_private.get())->columnIndex();
 }
 
 WebAXObject WebAXObject::columnHeader() const
@@ -1047,7 +1095,7 @@ WebAXObject WebAXObject::columnHeader() const
     if (m_private->roleValue() != ColumnRole)
         return WebAXObject();
 
-    return WebAXObject(WebCore::toAXTableColumn(m_private.get())->headerObject());
+    return WebAXObject(toAXTableColumn(m_private.get())->headerObject());
 }
 
 unsigned WebAXObject::cellColumnIndex() const
@@ -1059,7 +1107,7 @@ unsigned WebAXObject::cellColumnIndex() const
         return 0;
 
     pair<unsigned, unsigned> columnRange;
-    WebCore::toAXTableCell(m_private.get())->columnIndexRange(columnRange);
+    toAXTableCell(m_private.get())->columnIndexRange(columnRange);
     return columnRange.first;
 }
 
@@ -1072,7 +1120,7 @@ unsigned WebAXObject::cellColumnSpan() const
         return 0;
 
     pair<unsigned, unsigned> columnRange;
-    WebCore::toAXTableCell(m_private.get())->columnIndexRange(columnRange);
+    toAXTableCell(m_private.get())->columnIndexRange(columnRange);
     return columnRange.second;
 }
 
@@ -1085,7 +1133,7 @@ unsigned WebAXObject::cellRowIndex() const
         return 0;
 
     pair<unsigned, unsigned> rowRange;
-    WebCore::toAXTableCell(m_private.get())->rowIndexRange(rowRange);
+    toAXTableCell(m_private.get())->rowIndexRange(rowRange);
     return rowRange.first;
 }
 
@@ -1098,8 +1146,16 @@ unsigned WebAXObject::cellRowSpan() const
         return 0;
 
     pair<unsigned, unsigned> rowRange;
-    WebCore::toAXTableCell(m_private.get())->rowIndexRange(rowRange);
+    toAXTableCell(m_private.get())->rowIndexRange(rowRange);
     return rowRange.second;
+}
+
+void WebAXObject::loadInlineTextBoxes() const
+{
+    if (isDetached())
+        return;
+
+    m_private->loadInlineTextBoxes();
 }
 
 WebAXTextDirection WebAXObject::textDirection() const
@@ -1161,18 +1217,18 @@ void WebAXObject::scrollToGlobalPoint(const WebPoint& point) const
         m_private->scrollToGlobalPoint(point);
 }
 
-WebAXObject::WebAXObject(const WTF::PassRefPtr<WebCore::AXObject>& object)
+WebAXObject::WebAXObject(const WTF::PassRefPtr<AXObject>& object)
     : m_private(object)
 {
 }
 
-WebAXObject& WebAXObject::operator=(const WTF::PassRefPtr<WebCore::AXObject>& object)
+WebAXObject& WebAXObject::operator=(const WTF::PassRefPtr<AXObject>& object)
 {
     m_private = object;
     return *this;
 }
 
-WebAXObject::operator WTF::PassRefPtr<WebCore::AXObject>() const
+WebAXObject::operator WTF::PassRefPtr<AXObject>() const
 {
     return m_private.get();
 }

@@ -14,7 +14,7 @@
 #define JINGLE_NOTIFIER_PUSH_NOTIFICATIONS_LISTENER_LISTEN_TASK_H_
 
 #include "base/compiler_specific.h"
-#include "talk/xmpp/xmpptask.h"
+#include "webrtc/libjingle/xmpp/xmpptask.h"
 
 namespace buzz {
 class XmlElement;
@@ -36,12 +36,12 @@ class PushNotificationsListenTask : public buzz::XmppTask {
 
   PushNotificationsListenTask(buzz::XmppTaskParentInterface* parent,
                               Delegate* delegate);
-  virtual ~PushNotificationsListenTask();
+  ~PushNotificationsListenTask() override;
 
   // Overriden from buzz::XmppTask.
-  virtual int ProcessStart() OVERRIDE;
-  virtual int ProcessResponse() OVERRIDE;
-  virtual bool HandleStanza(const buzz::XmlElement* stanza) OVERRIDE;
+  int ProcessStart() override;
+  int ProcessResponse() override;
+  bool HandleStanza(const buzz::XmlElement* stanza) override;
 
  private:
   bool IsValidNotification(const buzz::XmlElement* stanza);

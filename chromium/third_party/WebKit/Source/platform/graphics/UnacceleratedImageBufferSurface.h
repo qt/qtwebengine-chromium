@@ -34,21 +34,24 @@
 #include "platform/graphics/ImageBufferSurface.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+class SkSurface;
+
+namespace blink {
 
 class PLATFORM_EXPORT UnacceleratedImageBufferSurface : public ImageBufferSurface {
     WTF_MAKE_NONCOPYABLE(UnacceleratedImageBufferSurface); WTF_MAKE_FAST_ALLOCATED;
 public:
     UnacceleratedImageBufferSurface(const IntSize&, OpacityMode = NonOpaque);
-    virtual ~UnacceleratedImageBufferSurface() { }
+    virtual ~UnacceleratedImageBufferSurface();
 
-    virtual SkCanvas* canvas() const OVERRIDE { return m_canvas.get(); }
-    virtual bool isValid() const OVERRIDE { return m_canvas; }
+    virtual SkCanvas* canvas() const override;
+    virtual bool isValid() const override;
 
+    virtual PassRefPtr<SkImage> newImageSnapshot() const override;
 private:
-    RefPtr<SkCanvas> m_canvas;
+    RefPtr<SkSurface> m_surface;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

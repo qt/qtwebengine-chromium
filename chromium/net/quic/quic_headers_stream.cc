@@ -26,11 +26,11 @@ class QuicHeadersStream::SpdyFramerVisitor
   explicit SpdyFramerVisitor(QuicHeadersStream* stream) : stream_(stream) {}
 
   // SpdyFramerVisitorInterface implementation
-  virtual void OnSynStream(SpdyStreamId stream_id,
-                           SpdyStreamId associated_stream_id,
-                           SpdyPriority priority,
-                           bool fin,
-                           bool unidirectional) OVERRIDE {
+  void OnSynStream(SpdyStreamId stream_id,
+                   SpdyStreamId associated_stream_id,
+                   SpdyPriority priority,
+                   bool fin,
+                   bool unidirectional) override {
     if (!stream_->IsConnected()) {
       return;
     }
@@ -48,7 +48,7 @@ class QuicHeadersStream::SpdyFramerVisitor
     stream_->OnSynStream(stream_id, priority, fin);
   }
 
-  virtual void OnSynReply(SpdyStreamId stream_id, bool fin) OVERRIDE {
+  void OnSynReply(SpdyStreamId stream_id, bool fin) override {
     if (!stream_->IsConnected()) {
       return;
     }
@@ -56,9 +56,9 @@ class QuicHeadersStream::SpdyFramerVisitor
     stream_->OnSynReply(stream_id, fin);
   }
 
-  virtual bool OnControlFrameHeaderData(SpdyStreamId stream_id,
-                                        const char* header_data,
-                                        size_t len) OVERRIDE {
+  bool OnControlFrameHeaderData(SpdyStreamId stream_id,
+                                const char* header_data,
+                                size_t len) override {
     if (!stream_->IsConnected()) {
       return false;
     }
@@ -66,10 +66,10 @@ class QuicHeadersStream::SpdyFramerVisitor
     return true;
   }
 
-  virtual void OnStreamFrameData(SpdyStreamId stream_id,
-                                 const char* data,
-                                 size_t len,
-                                 bool fin) OVERRIDE {
+  void OnStreamFrameData(SpdyStreamId stream_id,
+                         const char* data,
+                         size_t len,
+                         bool fin) override {
     if (fin && len == 0) {
       // The framer invokes OnStreamFrameData with zero-length data and
       // fin = true after processing a SYN_STREAM or SYN_REPLY frame
@@ -79,73 +79,80 @@ class QuicHeadersStream::SpdyFramerVisitor
     CloseConnection("SPDY DATA frame received.");
   }
 
-  virtual void OnError(SpdyFramer* framer) OVERRIDE {
+  void OnError(SpdyFramer* framer) override {
     CloseConnection("SPDY framing error.");
   }
 
-  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
-                                 size_t length,
-                                 bool fin) OVERRIDE {
+  void OnDataFrameHeader(SpdyStreamId stream_id,
+                         size_t length,
+                         bool fin) override {
     CloseConnection("SPDY DATA frame received.");
   }
 
-  virtual void OnRstStream(SpdyStreamId stream_id,
-                           SpdyRstStreamStatus status) OVERRIDE {
+  void OnRstStream(SpdyStreamId stream_id,
+                   SpdyRstStreamStatus status) override {
     CloseConnection("SPDY RST_STREAM frame received.");
   }
 
-  virtual void OnSetting(SpdySettingsIds id,
-                         uint8 flags,
-                         uint32 value) OVERRIDE {
+  void OnSetting(SpdySettingsIds id, uint8 flags, uint32 value) override {
     CloseConnection("SPDY SETTINGS frame received.");
   }
 
-  virtual void OnSettingsAck() OVERRIDE {
+  void OnSettingsAck() override {
     CloseConnection("SPDY SETTINGS frame received.");
   }
 
-  virtual void OnSettingsEnd() OVERRIDE {
+  void OnSettingsEnd() override {
     CloseConnection("SPDY SETTINGS frame received.");
   }
 
-  virtual void OnPing(SpdyPingId unique_id, bool is_ack) OVERRIDE {
+  void OnPing(SpdyPingId unique_id, bool is_ack) override {
     CloseConnection("SPDY PING frame received.");
   }
 
-  virtual void OnGoAway(SpdyStreamId last_accepted_stream_id,
-                        SpdyGoAwayStatus status) OVERRIDE {
+  void OnGoAway(SpdyStreamId last_accepted_stream_id,
+                SpdyGoAwayStatus status) override {
     CloseConnection("SPDY GOAWAY frame received.");
   }
 
-  virtual void OnHeaders(SpdyStreamId stream_id, bool fin, bool end) OVERRIDE {
+  void OnHeaders(SpdyStreamId stream_id,
+                 bool has_priority,
+                 SpdyPriority priority,
+                 bool fin,
+                 bool end) override {
     CloseConnection("SPDY HEADERS frame received.");
   }
 
-  virtual void OnWindowUpdate(SpdyStreamId stream_id,
-                              uint32 delta_window_size) OVERRIDE {
+  void OnWindowUpdate(SpdyStreamId stream_id,
+                      uint32 delta_window_size) override {
     CloseConnection("SPDY WINDOW_UPDATE frame received.");
   }
 
-  virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id,
-                             bool end) OVERRIDE {
+  void OnPushPromise(SpdyStreamId stream_id,
+                     SpdyStreamId promised_stream_id,
+                     bool end) override {
     LOG(DFATAL) << "PUSH_PROMISE frame received from a SPDY/3 framer";
     CloseConnection("SPDY PUSH_PROMISE frame received.");
   }
 
-  virtual void OnContinuation(SpdyStreamId stream_id, bool end) OVERRIDE {
+  void OnContinuation(SpdyStreamId stream_id, bool end) override {
     CloseConnection("SPDY CONTINUATION frame received.");
   }
 
-  // SpdyFramerDebugVisitorInterface implementation
-  virtual void OnSendCompressedFrame(SpdyStreamId stream_id,
-                                     SpdyFrameType type,
-                                     size_t payload_len,
-                                     size_t frame_len) OVERRIDE {}
+  bool OnUnknownFrame(SpdyStreamId stream_id, int frame_type) override {
+    CloseConnection("SPDY unknown frame received.");
+    return false;
+  }
 
-  virtual void OnReceiveCompressedFrame(SpdyStreamId stream_id,
-                                        SpdyFrameType type,
-                                        size_t frame_len) OVERRIDE {
+  // SpdyFramerDebugVisitorInterface implementation
+  void OnSendCompressedFrame(SpdyStreamId stream_id,
+                             SpdyFrameType type,
+                             size_t payload_len,
+                             size_t frame_len) override {}
+
+  void OnReceiveCompressedFrame(SpdyStreamId stream_id,
+                                SpdyFrameType type,
+                                size_t frame_len) override {
     if (stream_->IsConnected()) {
       stream_->OnCompressedFrameSize(frame_len);
     }
@@ -174,8 +181,13 @@ QuicHeadersStream::QuicHeadersStream(QuicSession* session)
       spdy_framer_visitor_(new SpdyFramerVisitor(this)) {
   spdy_framer_.set_visitor(spdy_framer_visitor_.get());
   spdy_framer_.set_debug_visitor(spdy_framer_visitor_.get());
-  // TODO(jri): Set headers to be always FEC protected.
-  DisableFlowControl();
+  if (version() < QUIC_VERSION_21) {
+    // Prior to QUIC_VERSION_21 the headers stream is not subject to any flow
+    // control.
+    DisableFlowControl();
+  }
+  // The headers stream is exempt from connection level flow control.
+  DisableConnectionFlowControlForThisStream();
 }
 
 QuicHeadersStream::~QuicHeadersStream() {}

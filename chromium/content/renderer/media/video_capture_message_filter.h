@@ -38,6 +38,7 @@ class CONTENT_EXPORT VideoCaptureMessageFilter : public IPC::MessageFilter {
     // Called when a video frame buffer is received from the browser process.
     virtual void OnBufferReceived(int buffer_id,
                                   const media::VideoCaptureFormat& format,
+                                  const gfx::Rect& visible_rect,
                                   base::TimeTicks timestamp) = 0;
 
     // Called when a video mailbox buffer is received from the browser process.
@@ -79,13 +80,13 @@ class CONTENT_EXPORT VideoCaptureMessageFilter : public IPC::MessageFilter {
   virtual bool Send(IPC::Message* message);
 
   // IPC::MessageFilter override. Called on IO thread.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelClosing() override;
 
  protected:
-  virtual ~VideoCaptureMessageFilter();
+  ~VideoCaptureMessageFilter() override;
 
  private:
   typedef std::map<int32, Delegate*> Delegates;
@@ -104,6 +105,7 @@ class CONTENT_EXPORT VideoCaptureMessageFilter : public IPC::MessageFilter {
   void OnBufferReceived(int device_id,
                         int buffer_id,
                         const media::VideoCaptureFormat& format,
+                        const gfx::Rect& visible_rect,
                         base::TimeTicks timestamp);
 
   // Receive a filled texture mailbox buffer from browser process.

@@ -11,7 +11,10 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_SOURCE_H_
 #define WEBRTC_MODULES_AUDIO_CODING_NETEQ_TOOLS_PACKET_SOURCE_H_
 
+#include <bitset>
+
 #include "webrtc/base/constructormagic.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
 namespace test {
@@ -21,12 +24,27 @@ class Packet;
 // Interface class for an object delivering RTP packets to test applications.
 class PacketSource {
  public:
-  PacketSource() {}
+  PacketSource() : use_ssrc_filter_(false), ssrc_(0) {}
   virtual ~PacketSource() {}
 
   // Returns a pointer to the next packet. Returns NULL if the source is
   // depleted, or if an error occurred.
   virtual Packet* NextPacket() = 0;
+
+  virtual void FilterOutPayloadType(uint8_t payload_type) {
+    filter_.set(payload_type, true);
+  }
+
+  virtual void SelectSsrc(uint32_t ssrc) {
+    use_ssrc_filter_ = true;
+    ssrc_ = ssrc;
+  }
+
+ protected:
+  std::bitset<128> filter_;  // Payload type is 7 bits in the RFC.
+  // If SSRC filtering discards all packet that do not match the SSRC.
+  bool use_ssrc_filter_;  // True when SSRC filtering is active.
+  uint32_t ssrc_;  // The selected SSRC. All other SSRCs will be discarded.
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PacketSource);

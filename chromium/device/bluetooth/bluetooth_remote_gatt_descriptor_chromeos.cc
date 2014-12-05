@@ -72,7 +72,7 @@ device::BluetoothGattCharacteristic::Permissions
 BluetoothRemoteGattDescriptorChromeOS::GetPermissions() const {
   // TODO(armansito): Once BlueZ defines the permissions, return the correct
   // values here.
-  return device::BluetoothGattCharacteristic::kPermissionNone;
+  return device::BluetoothGattCharacteristic::PERMISSION_NONE;
 }
 
 void BluetoothRemoteGattDescriptorChromeOS::ReadRemoteDescriptor(
@@ -131,7 +131,9 @@ void BluetoothRemoteGattDescriptorChromeOS::OnError(
     const std::string& error_message) {
   VLOG(1) << "Operation failed: " << error_name
           << ", message: " << error_message;
-  error_callback.Run();
+
+  error_callback.Run(
+      BluetoothRemoteGattServiceChromeOS::DBusErrorToServiceError(error_name));
 }
 
 }  // namespace chromeos

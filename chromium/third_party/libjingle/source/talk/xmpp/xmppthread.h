@@ -28,16 +28,16 @@
 #ifndef TALK_XMPP_XMPPTHREAD_H_
 #define TALK_XMPP_XMPPTHREAD_H_
 
-#include "talk/base/thread.h"
-#include "talk/xmpp/xmppclientsettings.h"
-#include "talk/xmpp/xmppengine.h"
-#include "talk/xmpp/xmpppump.h"
-#include "talk/xmpp/xmppsocket.h"
+#include "webrtc/libjingle/xmpp/xmppclientsettings.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/libjingle/xmpp/xmpppump.h"
+#include "webrtc/libjingle/xmpp/xmppsocket.h"
+#include "webrtc/base/thread.h"
 
 namespace buzz {
 
 class XmppThread:
-    public talk_base::Thread, buzz::XmppPumpNotify, talk_base::MessageHandler {
+    public rtc::Thread, buzz::XmppPumpNotify, rtc::MessageHandler {
 public:
   XmppThread();
   ~XmppThread();
@@ -53,7 +53,7 @@ private:
   buzz::XmppPump* pump_;
 
   void OnStateChange(buzz::XmppEngine::State state);
-  void OnMessage(talk_base::Message* pmsg);
+  void OnMessage(rtc::Message* pmsg);
 };
 
 }  // namespace buzz

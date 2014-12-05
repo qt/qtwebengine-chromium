@@ -38,7 +38,7 @@ class NET_EXPORT URLRequestThrottlerManager
       public NetworkChangeNotifier::ConnectionTypeObserver {
  public:
   URLRequestThrottlerManager();
-  virtual ~URLRequestThrottlerManager();
+  ~URLRequestThrottlerManager() override;
 
   // Must be called for every request, returns the URL request throttler entry
   // associated with the URL. The caller must inform this entry of some events.
@@ -78,11 +78,11 @@ class NET_EXPORT URLRequestThrottlerManager
   NetLog* net_log() const;
 
   // IPAddressObserver interface.
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
   // ConnectionTypeObserver interface.
-  virtual void OnConnectionTypeChanged(
-      NetworkChangeNotifier::ConnectionType type) OVERRIDE;
+  void OnConnectionTypeChanged(
+      NetworkChangeNotifier::ConnectionType type) override;
 
   // Method that allows us to transform a URL into an ID that can be used in our
   // map. Resulting IDs will be lowercase and consist of the scheme, host, port

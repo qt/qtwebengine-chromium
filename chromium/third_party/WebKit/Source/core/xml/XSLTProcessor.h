@@ -23,7 +23,7 @@
 #ifndef XSLTProcessor_h
 #define XSLTProcessor_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/Node.h"
 #include "core/xml/XSLStyleSheet.h"
 #include "platform/RuntimeEnabledFeatures.h"
@@ -33,18 +33,19 @@
 #include <libxml/parserInternals.h>
 #include <libxslt/documents.h>
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class Document;
 class DocumentFragment;
 
 class XSLTProcessor : public RefCountedWillBeGarbageCollectedFinalized<XSLTProcessor>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<XSLTProcessor> create()
+    static PassRefPtrWillBeRawPtr<XSLTProcessor> create(Document& document)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRefWillBeNoop(new XSLTProcessor);
+        return adoptRefWillBeNoop(new XSLTProcessor(document));
     }
     ~XSLTProcessor();
 
@@ -79,16 +80,16 @@ public:
     void trace(Visitor*);
 
 private:
-    XSLTProcessor()
-    {
-        ScriptWrappable::init(this);
-    }
+    XSLTProcessor(Document& document)
+        : m_document(&document)
+    { }
 
     RefPtrWillBeMember<XSLStyleSheet> m_stylesheet;
     RefPtrWillBeMember<Node> m_stylesheetRootNode;
+    RefPtrWillBeMember<Document> m_document;
     ParameterMap m_parameters;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // XSLTProcessor_h

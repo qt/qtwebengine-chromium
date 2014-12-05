@@ -31,20 +31,18 @@
 #ifndef DatabaseClient_h
 #define DatabaseClient_h
 
-#include "core/page/Page.h"
-#include "core/workers/WorkerClients.h"
+#include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Database;
 class ExecutionContext;
 class InspectorDatabaseAgent;
-class WorkerClients;
+class Page;
 
-class GC_PLUGIN_IGNORE("http://crbug.com/367712") DatabaseClient;
-class DatabaseClient : public WillBeHeapSupplement<Page>, public WillBeHeapSupplement<WorkerClients> {
+class DatabaseClient : public WillBeHeapSupplement<Page> {
     WTF_MAKE_NONCOPYABLE(DatabaseClient);
 public:
     DatabaseClient();
@@ -52,7 +50,7 @@ public:
 
     virtual bool allowDatabase(ExecutionContext*, const String& name, const String& displayName, unsigned long estimatedSize) = 0;
 
-    void didOpenDatabase(PassRefPtrWillBeRawPtr<Database>, const String& domain, const String& name, const String& version);
+    void didOpenDatabase(Database*, const String& domain, const String& name, const String& version);
 
     static DatabaseClient* from(ExecutionContext*);
     static const char* supplementName();
@@ -64,8 +62,7 @@ private:
 };
 
 void provideDatabaseClientTo(Page&, PassOwnPtrWillBeRawPtr<DatabaseClient>);
-void provideDatabaseClientToWorker(WorkerClients*, PassOwnPtrWillBeRawPtr<DatabaseClient>);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DatabaseClient_h

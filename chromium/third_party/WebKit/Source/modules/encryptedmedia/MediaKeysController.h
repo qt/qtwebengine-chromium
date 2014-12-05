@@ -9,23 +9,20 @@
 #include "wtf/PassOwnPtr.h"
 
 namespace blink {
-class WebContentDecryptionModule;
-}
-
-namespace WebCore {
 
 class ExecutionContext;
 class MediaKeysClient;
+class WebContentDecryptionModule;
 
-class MediaKeysController FINAL : public NoBaseWillBeGarbageCollected<MediaKeysController>, public WillBeHeapSupplement<Page> {
+class MediaKeysController final : public NoBaseWillBeGarbageCollected<MediaKeysController>, public WillBeHeapSupplement<Page> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaKeysController);
 public:
-    PassOwnPtr<blink::WebContentDecryptionModule> createContentDecryptionModule(ExecutionContext*, const String& keySystem);
+    PassOwnPtr<WebContentDecryptionModule> createContentDecryptionModule(ExecutionContext*, const String& keySystem);
 
     static void provideMediaKeysTo(Page&, MediaKeysClient*);
     static MediaKeysController* from(Page* page) { return static_cast<MediaKeysController*>(WillBeHeapSupplement<Page>::from(page, supplementName())); }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Page>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<Page>::trace(visitor); }
 
 private:
     explicit MediaKeysController(MediaKeysClient*);
@@ -33,7 +30,7 @@ private:
     MediaKeysClient* m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaKeysController_h
 

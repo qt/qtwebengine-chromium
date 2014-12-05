@@ -10,6 +10,7 @@
 #include "google_apis/gcm/engine/connection_handler_impl.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
+#include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_request_headers.h"
@@ -44,14 +45,16 @@ bool ShouldRestorePreviousBackoff(const base::TimeTicks& login_time,
 ConnectionFactoryImpl::ConnectionFactoryImpl(
     const std::vector<GURL>& mcs_endpoints,
     const net::BackoffEntry::Policy& backoff_policy,
-    scoped_refptr<net::HttpNetworkSession> network_session,
+    const scoped_refptr<net::HttpNetworkSession>& gcm_network_session,
+    const scoped_refptr<net::HttpNetworkSession>& http_network_session,
     net::NetLog* net_log,
     GCMStatsRecorder* recorder)
   : mcs_endpoints_(mcs_endpoints),
     next_endpoint_(0),
     last_successful_endpoint_(0),
     backoff_policy_(backoff_policy),
-    network_session_(network_session),
+    gcm_network_session_(gcm_network_session),
+    http_network_session_(http_network_session),
     bound_net_log_(
         net::BoundNetLog::Make(net_log, net::NetLog::SOURCE_SOCKET)),
     pac_request_(NULL),
@@ -63,12 +66,15 @@ ConnectionFactoryImpl::ConnectionFactoryImpl(
     listener_(NULL),
     weak_ptr_factory_(this) {
   DCHECK_GE(mcs_endpoints_.size(), 1U);
+  DCHECK(!http_network_session_.get() ||
+         (gcm_network_session_.get() != http_network_session_.get()));
 }
 
 ConnectionFactoryImpl::~ConnectionFactoryImpl() {
+  CloseSocket();
   net::NetworkChangeNotifier::RemoveNetworkChangeObserver(this);
   if (pac_request_) {
-    network_session_->proxy_service()->CancelPacRequest(pac_request_);
+    gcm_network_session_->proxy_service()->CancelPacRequest(pac_request_);
     pac_request_ = NULL;
   }
 }
@@ -279,12 +285,15 @@ void ConnectionFactoryImpl::ConnectImpl() {
   connecting_ = true;
   GURL current_endpoint = GetCurrentEndpoint();
   recorder_->RecordConnectionInitiated(current_endpoint.host());
-  int status = network_session_->proxy_service()->ResolveProxy(
+  RebuildNetworkSessionAuthCache();
+  int status = gcm_network_session_->proxy_service()->ResolveProxy(
       current_endpoint,
+      net::LOAD_NORMAL,
       &proxy_info_,
       base::Bind(&ConnectionFactoryImpl::OnProxyResolveDone,
                  weak_ptr_factory_.GetWeakPtr()),
       &pac_request_,
+      NULL,
       bound_net_log_);
   if (status != net::ERR_IO_PENDING)
     OnProxyResolveDone(status);
@@ -422,10 +431,10 @@ void ConnectionFactoryImpl::OnProxyResolveDone(int status) {
   DVLOG(1) << "Resolved proxy with PAC:" << proxy_info_.ToPacString();
 
   net::SSLConfig ssl_config;
-  network_session_->ssl_config_service()->GetSSLConfig(&ssl_config);
+  gcm_network_session_->ssl_config_service()->GetSSLConfig(&ssl_config);
   status = net::InitSocketHandleForTlsConnect(
       net::HostPortPair::FromURL(GetCurrentEndpoint()),
-      network_session_.get(),
+      gcm_network_session_.get(),
       proxy_info_,
       ssl_config,
       ssl_config,
@@ -491,17 +500,18 @@ int ConnectionFactoryImpl::ReconsiderProxyAfterError(int error) {
   }
 
   net::SSLConfig ssl_config;
-  network_session_->ssl_config_service()->GetSSLConfig(&ssl_config);
+  gcm_network_session_->ssl_config_service()->GetSSLConfig(&ssl_config);
   if (proxy_info_.is_https() && ssl_config.send_client_cert) {
-    network_session_->ssl_client_auth_cache()->Remove(
+    gcm_network_session_->ssl_client_auth_cache()->Remove(
         proxy_info_.proxy_server().host_port_pair());
   }
 
-  int status = network_session_->proxy_service()->ReconsiderProxyAfterError(
-      GetCurrentEndpoint(), error, &proxy_info_,
+  int status = gcm_network_session_->proxy_service()->ReconsiderProxyAfterError(
+      GetCurrentEndpoint(), net::LOAD_NORMAL, error, &proxy_info_,
       base::Bind(&ConnectionFactoryImpl::OnProxyResolveDone,
                  weak_ptr_factory_.GetWeakPtr()),
       &pac_request_,
+      NULL,
       bound_net_log_);
   if (status == net::OK || status == net::ERR_IO_PENDING) {
     CloseSocket();
@@ -525,8 +535,8 @@ int ConnectionFactoryImpl::ReconsiderProxyAfterError(int error) {
 }
 
 void ConnectionFactoryImpl::ReportSuccessfulProxyConnection() {
-  if (network_session_ && network_session_->proxy_service())
-    network_session_->proxy_service()->ReportSuccess(proxy_info_);
+  if (gcm_network_session_.get() && gcm_network_session_->proxy_service())
+    gcm_network_session_->proxy_service()->ReportSuccess(proxy_info_, NULL);
 }
 
 void ConnectionFactoryImpl::CloseSocket() {
@@ -538,6 +548,14 @@ void ConnectionFactoryImpl::CloseSocket() {
   if (socket_handle_.socket() && socket_handle_.socket()->IsConnected())
     socket_handle_.socket()->Disconnect();
   socket_handle_.Reset();
+}
+
+void ConnectionFactoryImpl::RebuildNetworkSessionAuthCache() {
+  if (!http_network_session_.get() || !http_network_session_->http_auth_cache())
+    return;
+
+  gcm_network_session_->http_auth_cache()->UpdateAllFrom(
+      *http_network_session_->http_auth_cache());
 }
 
 }  // namespace gcm

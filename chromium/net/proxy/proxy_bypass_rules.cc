@@ -6,10 +6,11 @@
 
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
-#include "base/strings/string_util.h"
-#include "base/strings/stringprintf.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "net/base/host_port_pair.h"
 #include "net/base/net_util.h"
 
 namespace net {
@@ -21,12 +22,12 @@ class HostnamePatternRule : public ProxyBypassRules::Rule {
   HostnamePatternRule(const std::string& optional_scheme,
                       const std::string& hostname_pattern,
                       int optional_port)
-      : optional_scheme_(StringToLowerASCII(optional_scheme)),
-        hostname_pattern_(StringToLowerASCII(hostname_pattern)),
+      : optional_scheme_(base::StringToLowerASCII(optional_scheme)),
+        hostname_pattern_(base::StringToLowerASCII(hostname_pattern)),
         optional_port_(optional_port) {
   }
 
-  virtual bool Matches(const GURL& url) const OVERRIDE {
+  bool Matches(const GURL& url) const override {
     if (optional_port_ != -1 && url.EffectiveIntPort() != optional_port_)
       return false;  // Didn't match port expectation.
 
@@ -35,10 +36,11 @@ class HostnamePatternRule : public ProxyBypassRules::Rule {
 
     // Note it is necessary to lower-case the host, since GURL uses capital
     // letters for percent-escaped characters.
-    return MatchPattern(StringToLowerASCII(url.host()), hostname_pattern_);
+    return MatchPattern(base::StringToLowerASCII(url.host()),
+                        hostname_pattern_);
   }
 
-  virtual std::string ToString() const OVERRIDE {
+  std::string ToString() const override {
     std::string str;
     if (!optional_scheme_.empty())
       base::StringAppendF(&str, "%s://", optional_scheme_.c_str());
@@ -48,7 +50,7 @@ class HostnamePatternRule : public ProxyBypassRules::Rule {
     return str;
   }
 
-  virtual Rule* Clone() const OVERRIDE {
+  Rule* Clone() const override {
     return new HostnamePatternRule(optional_scheme_,
                                    hostname_pattern_,
                                    optional_port_);
@@ -62,20 +64,16 @@ class HostnamePatternRule : public ProxyBypassRules::Rule {
 
 class BypassLocalRule : public ProxyBypassRules::Rule {
  public:
-  virtual bool Matches(const GURL& url) const OVERRIDE {
+  bool Matches(const GURL& url) const override {
     const std::string& host = url.host();
     if (host == "127.0.0.1" || host == "[::1]")
       return true;
     return host.find('.') == std::string::npos;
   }
 
-  virtual std::string ToString() const OVERRIDE {
-    return "<local>";
-  }
+  std::string ToString() const override { return "<local>"; }
 
-  virtual Rule* Clone() const OVERRIDE {
-    return new BypassLocalRule();
-  }
+  Rule* Clone() const override { return new BypassLocalRule(); }
 };
 
 // Rule for matching a URL that is an IP address, if that IP address falls
@@ -94,7 +92,7 @@ class BypassIPBlockRule : public ProxyBypassRules::Rule {
         prefix_length_in_bits_(prefix_length_in_bits) {
   }
 
-  virtual bool Matches(const GURL& url) const OVERRIDE {
+  bool Matches(const GURL& url) const override {
     if (!url.HostIsIPAddress())
       return false;
 
@@ -111,11 +109,9 @@ class BypassIPBlockRule : public ProxyBypassRules::Rule {
                                  prefix_length_in_bits_);
   }
 
-  virtual std::string ToString() const OVERRIDE {
-    return description_;
-  }
+  std::string ToString() const override { return description_; }
 
-  virtual Rule* Clone() const OVERRIDE {
+  Rule* Clone() const override {
     return new BypassIPBlockRule(description_,
                                  optional_scheme_,
                                  ip_prefix_,
@@ -130,6 +126,7 @@ class BypassIPBlockRule : public ProxyBypassRules::Rule {
 };
 
 // Returns true if the given string represents an IP address.
+// IPv6 addresses are expected to be bracketed.
 bool IsIPAddress(const std::string& domain) {
   // From GURL::HostIsIPAddress()
   url::RawCanonOutputT<char, 128> ignored_output;
@@ -304,9 +301,12 @@ bool ProxyBypassRules::AddRuleFromStringInternal(
   std::string host;
   int port;
   if (ParseHostAndPort(raw, &host, &port)) {
-    if (IsIPAddress(host)) {
+    // Note that HostPortPair is used to merely to convert any IPv6 literals to
+    // a URL-safe format that can be used by canonicalization below.
+    std::string bracketed_host = HostPortPair(host, 80).HostForURL();
+    if (IsIPAddress(bracketed_host)) {
       // Canonicalize the IP literal before adding it as a string pattern.
-      GURL tmp_url("http://" + host);
+      GURL tmp_url("http://" + bracketed_host);
       return AddRuleForHostname(scheme, tmp_url.host(), port);
     }
   }

@@ -28,6 +28,7 @@
 #include "talk/app/webrtc/videosource.h"
 
 #include <vector>
+#include <cstdlib>
 
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
 #include "talk/session/media/channelmanager.h"
@@ -93,10 +94,10 @@ void SetUpperLimitFromConstraint(
     const MediaConstraintsInterface::Constraint& constraint,
     cricket::VideoFormat* format_upper_limit) {
   if (constraint.key == MediaConstraintsInterface::kMaxWidth) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     SetUpperLimit(value, &(format_upper_limit->width));
   } else if (constraint.key == MediaConstraintsInterface::kMaxHeight) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     SetUpperLimit(value, &(format_upper_limit->height));
   }
 }
@@ -131,22 +132,22 @@ bool NewFormatWithConstraints(
   *format_out = format_in;
 
   if (constraint.key == MediaConstraintsInterface::kMinWidth) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     return (value <= format_in.width);
   } else if (constraint.key == MediaConstraintsInterface::kMaxWidth) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     return (value >= format_in.width);
   } else if (constraint.key == MediaConstraintsInterface::kMinHeight) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     return (value <= format_in.height);
   } else if (constraint.key == MediaConstraintsInterface::kMaxHeight) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     return (value >= format_in.height);
   } else if (constraint.key == MediaConstraintsInterface::kMinFrameRate) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     return (value <= cricket::VideoFormat::IntervalToFps(format_in.interval));
   } else if (constraint.key == MediaConstraintsInterface::kMaxFrameRate) {
-    int value = talk_base::FromString<int>(constraint.value);
+    int value = rtc::FromString<int>(constraint.value);
     if (value == 0) {
       if (mandatory) {
         // TODO(ronghuawu): Convert the constraint value to float when sub-1fps
@@ -163,7 +164,7 @@ bool NewFormatWithConstraints(
       return false;
     }
   } else if (constraint.key == MediaConstraintsInterface::kMinAspectRatio) {
-    double value = talk_base::FromString<double>(constraint.value);
+    double value = rtc::FromString<double>(constraint.value);
     // The aspect ratio in |constraint.value| has been converted to a string and
     // back to a double, so it may have a rounding error.
     // E.g if the value 1/3 is converted to a string, the string will not have
@@ -173,15 +174,12 @@ bool NewFormatWithConstraints(
     double ratio = static_cast<double>(format_in.width) / format_in.height;
     return  (value <= ratio + kRoundingTruncation);
   } else if (constraint.key == MediaConstraintsInterface::kMaxAspectRatio) {
-    double value = talk_base::FromString<double>(constraint.value);
+    double value = rtc::FromString<double>(constraint.value);
     double ratio = static_cast<double>(format_in.width) / format_in.height;
     // Subtract 0.0005 to avoid rounding problems. Same as above.
     const double kRoundingTruncation = 0.0005;
     return  (value >= ratio - kRoundingTruncation);
-  } else if (constraint.key == MediaConstraintsInterface::kNoiseReduction ||
-             constraint.key == MediaConstraintsInterface::kLeakyBucket ||
-             constraint.key ==
-                 MediaConstraintsInterface::kTemporalLayeredScreencast) {
+  } else if (constraint.key == MediaConstraintsInterface::kNoiseReduction) {
     // These are actually options, not constraints, so they can be satisfied
     // regardless of the format.
     return true;
@@ -254,11 +252,15 @@ const cricket::VideoFormat& GetBestCaptureFormat(
 
   std::vector<cricket::VideoFormat>::const_iterator it = formats.begin();
   std::vector<cricket::VideoFormat>::const_iterator best_it = formats.begin();
-  int best_diff = abs(default_area - it->width* it->height);
+  int best_diff_area = std::abs(default_area - it->width * it->height);
+  int64 best_diff_interval = kDefaultFormat.interval;
   for (; it != formats.end(); ++it) {
-    int diff = abs(default_area - it->width* it->height);
-    if (diff < best_diff) {
-      best_diff = diff;
+    int diff_area = std::abs(default_area - it->width * it->height);
+    int64 diff_interval = std::abs(kDefaultFormat.interval - it->interval);
+    if (diff_area < best_diff_area ||
+        (diff_area == best_diff_area && diff_interval < best_diff_interval)) {
+      best_diff_area = diff_area;
+      best_diff_interval = diff_interval;
       best_it = it;
     }
   }
@@ -289,12 +291,6 @@ bool ExtractVideoOptions(const MediaConstraintsInterface* all_constraints,
   all_valid &= ExtractOption(all_constraints,
       MediaConstraintsInterface::kNoiseReduction,
       &(options->video_noise_reduction));
-  all_valid &= ExtractOption(all_constraints,
-      MediaConstraintsInterface::kLeakyBucket,
-      &(options->video_leaky_bucket));
-  all_valid &= ExtractOption(all_constraints,
-      MediaConstraintsInterface::kTemporalLayeredScreencast,
-      &(options->video_temporal_layer_screencast));
 
   return all_valid;
 }
@@ -337,14 +333,14 @@ class FrameInputWrapper : public cricket::VideoRenderer {
 
 namespace webrtc {
 
-talk_base::scoped_refptr<VideoSource> VideoSource::Create(
+rtc::scoped_refptr<VideoSource> VideoSource::Create(
     cricket::ChannelManager* channel_manager,
     cricket::VideoCapturer* capturer,
     const webrtc::MediaConstraintsInterface* constraints) {
   ASSERT(channel_manager != NULL);
   ASSERT(capturer != NULL);
-  talk_base::scoped_refptr<VideoSource> source(
-      new talk_base::RefCountedObject<VideoSource>(channel_manager,
+  rtc::scoped_refptr<VideoSource> source(
+      new rtc::RefCountedObject<VideoSource>(channel_manager,
                                                    capturer));
   source->Initialize(constraints);
   return source;

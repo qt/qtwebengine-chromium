@@ -26,9 +26,10 @@
 #include "core/svg/SVGAnimatedNumberList.h"
 #include "core/svg/SVGTextContentElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGTextPositioningElement : public SVGTextContentElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static SVGTextPositioningElement* elementFromRenderer(RenderObject*);
 
@@ -42,9 +43,9 @@ protected:
     SVGTextPositioningElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
-    virtual bool isTextPositioning() const OVERRIDE FINAL { return true; }
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
+    virtual void svgAttributeChanged(const QualifiedName&) override final;
+    virtual bool isTextPositioning() const override final { return true; }
 
     RefPtr<SVGAnimatedLengthList> m_x;
     RefPtr<SVGAnimatedLengthList> m_y;
@@ -53,13 +54,13 @@ protected:
     RefPtr<SVGAnimatedNumberList> m_rotate;
 };
 
-inline bool isSVGTextPositioningElement(const Node& node)
+inline bool isSVGTextPositioningElement(const SVGElement& element)
 {
-    return node.isSVGElement() && toSVGElement(node).isTextPositioning();
+    return element.isTextPositioning();
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextPositioningElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGTextPositioningElement);
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGTextPositioningElement_h

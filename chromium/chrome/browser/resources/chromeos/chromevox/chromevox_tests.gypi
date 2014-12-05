@@ -40,10 +40,20 @@
       'rules': [
         {
           # A JavaScript test that runs in an environment similar to a webui
-          # browser test.
+          # browser test.  This is meant for unit tests that test individual
+          # components without depending on the ChromeVox extension.
           'rule_name': 'js2webui',
-          'extension': 'js',
+          'extension': 'unitjs',
           'msvs_external_rule': 1,
+          'variables': {
+            'conditions': [
+              ['v8_use_external_startup_data==1', {
+                'external_v8': 'y',
+              }, {
+                'external_v8': 'n',
+              }],
+            ],
+          },
           'inputs': [
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
@@ -51,6 +61,7 @@
             '<(test_api_js)',
             '<(js2gtest)',
             '<(chromevox_test_deps_js_file)',
+            'testing/assert_additions.js',
             'testing/chromevox_unittest_base.js',
           ],
           'outputs': [
@@ -63,12 +74,13 @@
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
             '--deps_js', '<(chromevox_test_deps_js_file)',
+            '--external', '<(external_v8)',
             '<(mock_js)',
             '<(test_api_js)',
             '<(js2gtest)',
             'webui',
             '<(RULE_INPUT_PATH)',
-            'chrome/browser/resources/chromeos/chromevox/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).js',
+            'chrome/browser/resources/chromeos/chromevox/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).unitjs',
             '<@(_outputs)',
           ],
         },
@@ -78,13 +90,23 @@
           'rule_name': 'js2extension',
           'extension': 'extjs',
           'msvs_external_rule': 1,
+          'variables': {
+            'conditions': [
+              ['v8_use_external_startup_data==1', {
+                'external_v8': 'y',
+              }, {
+                'external_v8': 'n',
+              }],
+            ],
+          },
           'inputs': [
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
             '<(mock_js)',
             '<(test_api_js)',
             '<(js2gtest)',
-            'testing/chromevox_unittest_base.js',
+            'testing/chromevox_e2e_test_base.js',
+            'testing/assert_additions.js',
           ],
           'outputs': [
             '<(INTERMEDIATE_DIR)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT)-gen.cc',
@@ -95,6 +117,7 @@
             'python',
             '<(gypv8sh)',
             '<(PRODUCT_DIR)/d8<(EXECUTABLE_SUFFIX)',
+            '--external', '<(external_v8)',
             '<(mock_js)',
             '<(test_api_js)',
             '<(js2gtest)',
@@ -122,23 +145,43 @@
         '<(DEPTH)/chrome/browser/extensions/browsertest_util.cc',
         '<(DEPTH)/chrome/browser/extensions/browsertest_util.h',
 
-        'common/aria_util_test.js',
-        'common/braille_util_test.js',
-        'common/command_store_test.js',
-        'common/cursor_selection_test.js',
-        'common/editable_text_area_shadow_test.js',
-        'common/editable_text_test.js',
-        'common/find_util_test.js',
-        'common/key_sequence_test.js',
-        'common/math_semantic_tree_test.js',
-        'common/page_selection_test.js',
-        'common/selection_util_test.js',
-        'common/spannable_test.js',
-      ],
-      'conditions': [
-        ['use_chromevox_next==1', {
-          'sources': ['../chromevox2/cvox2/background/background.extjs'],
-        }],
+        'common/aria_util_test.unitjs',
+        'common/braille_text_handler_test.unitjs',
+        'common/braille_util_test.unitjs',
+        'common/command_store_test.unitjs',
+        'common/content_editable_extractor_test.unitjs',
+        'common/cursor_selection_test.unitjs',
+        'common/dom_util_test.unitjs',
+        'common/editable_text_area_shadow_test.unitjs',
+        'common/editable_text_test.unitjs',
+        'common/find_util_test.unitjs',
+        'common/key_sequence_test.unitjs',
+        'common/math_semantic_tree_test.unitjs',
+        'common/page_selection_test.unitjs',
+        'common/selection_util_test.unitjs',
+        'common/spannable_test.unitjs',
+        'chromevox/injected/event_watcher_test.unitjs',
+        'chromevox/injected/live_regions_test.unitjs',
+        'chromevox/injected/user_commands_test.unitjs',
+        'chromevox/injected/navigation_manager_test.unitjs',
+        'cvox2/background/background_test.extjs',
+        'cvox2/background/cursors_test.extjs',
+        'host/chrome/braille_display_manager_test.unitjs',
+        'host/chrome/braille_input_handler_test.unitjs',
+        'host/chrome/braille_integration_test.unitjs',
+        'host/chrome/braille_table_test.extjs',
+        'host/chrome/expanding_braille_translator_test.unitjs',
+        'host/chrome/tts_background_test.extjs',
+        'liblouis_nacl/liblouis_test.extjs',
+        'walkers/character_walker_test.unitjs',
+        'walkers/group_walker_test.unitjs',
+        'walkers/object_walker_test.unitjs',
+        'walkers/layout_line_walker_test.unitjs',
+        'walkers/math_shifter_test.unitjs',
+        'walkers/sentence_walker_test.unitjs',
+        'walkers/structural_line_walker_test.unitjs',
+        'walkers/table_walker_test.unitjs',
+        'walkers/word_walker_test.unitjs',
       ],
     },  # target chromevox_tests
     {

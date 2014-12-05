@@ -4,11 +4,10 @@
 
 #include "content/renderer/web_ui_runner.h"
 
+#include "content/public/renderer/render_frame.h"
 #include "gin/modules/module_registry.h"
 #include "gin/per_context_data.h"
 #include "gin/public/context_holder.h"
-#include "mojo/bindings/js/core.h"
-#include "mojo/bindings/js/support.h"
 #include "third_party/WebKit/public/web/WebFrame.h"
 #include "third_party/WebKit/public/web/WebScriptSource.h"
 
@@ -34,19 +33,6 @@ WebUIRunner::WebUIRunner(blink::WebFrame* frame,
 }
 
 WebUIRunner::~WebUIRunner() {
-}
-
-void WebUIRunner::RegisterBuiltinModules() {
-  gin::ModuleRegistry* registry =
-      gin::ModuleRegistry::From(context_holder_->context());
-  registry->AddBuiltinModule(context_holder_->isolate(),
-                             mojo::js::Core::kModuleName,
-                             mojo::js::Core::GetModule(
-                                 context_holder_->isolate()));
-  registry->AddBuiltinModule(context_holder_->isolate(),
-                             mojo::js::Support::kModuleName,
-                             mojo::js::Support::GetModule(
-                                 context_holder_->isolate()));
 }
 
 void WebUIRunner::Run(const std::string& source,

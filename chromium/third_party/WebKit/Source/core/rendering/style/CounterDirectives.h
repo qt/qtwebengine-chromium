@@ -31,7 +31,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class CounterDirectives {
 public:
@@ -68,7 +68,7 @@ public:
     int incrementValue() const { return m_incrementValue; }
     void addIncrementValue(int value)
     {
-        m_incrementValue = clampToInteger((double)m_incrementValue + value);
+        m_incrementValue = clampTo<int>((double)m_incrementValue + value);
         m_isIncrementSet = true;
     }
     void clearIncrement()
@@ -106,6 +106,6 @@ typedef HashMap<AtomicString, CounterDirectives> CounterDirectiveMap;
 
 PassOwnPtr<CounterDirectiveMap> clone(const CounterDirectiveMap&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CounterDirectives_h

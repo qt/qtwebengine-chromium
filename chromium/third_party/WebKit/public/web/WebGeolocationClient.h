@@ -27,24 +27,23 @@
 #define WebGeolocationClient_h
 
 namespace blink {
+
 class WebGeolocationController;
 class WebGeolocationPermissionRequest;
 class WebGeolocationPosition;
 
 class WebGeolocationClient {
 public:
-    virtual ~WebGeolocationClient() {}
+    virtual ~WebGeolocationClient() { }
 
     virtual void startUpdating() = 0;
     virtual void stopUpdating() = 0;
     virtual void setEnableHighAccuracy(bool) = 0;
-    virtual void geolocationDestroyed() = 0;
     virtual bool lastPosition(WebGeolocationPosition&) = 0;
 
     virtual void requestPermission(const WebGeolocationPermissionRequest&) = 0;
     virtual void cancelPermissionRequest(const WebGeolocationPermissionRequest&) = 0;
 
-    // The controller is valid until geolocationDestroyed() is invoked.
     // Ownership of the WebGeolocationController is transferred to the client.
     virtual void setController(WebGeolocationController*) = 0;
 };

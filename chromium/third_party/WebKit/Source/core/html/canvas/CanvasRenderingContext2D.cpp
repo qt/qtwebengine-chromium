@@ -33,18 +33,21 @@
 #include "config.h"
 #include "core/html/canvas/CanvasRenderingContext2D.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSPropertyNames.h"
-#include "core/accessibility/AXObjectCache.h"
 #include "core/css/CSSFontSelector.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/StyleEngine.h"
+#include "core/events/Event.h"
 #include "core/fetch/ImageResource.h"
 #include "core/frame/ImageBitmap.h"
+#include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLCanvasElement.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLMediaElement.h"
@@ -69,22 +72,27 @@
 #include "wtf/Uint8ClampedArray.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static const int defaultFontSize = 10;
 static const char defaultFontFamily[] = "sans-serif";
 static const char defaultFont[] = "10px sans-serif";
+static const char inherit[] = "inherit";
+static const char rtl[] = "rtl";
+static const char ltr[] = "ltr";
 static const double TryRestoreContextInterval = 0.5;
 static const unsigned MaxTryRestoreContextAttempts = 4;
+static const unsigned FetchedFontsCacheLimit = 50;
 
 static bool contextLostRestoredEventsEnabled()
 {
     return RuntimeEnabledFeatures::experimentalCanvasFeaturesEnabled();
 }
 
-CanvasRenderingContext2D::CanvasRenderingContext2D(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, bool usesCSSCompatibilityParseMode)
+CanvasRenderingContext2D::CanvasRenderingContext2D(HTMLCanvasElement* canvas, const Canvas2DContextAttributes* attrs, Document& document)
     : CanvasRenderingContext(canvas)
-    , m_usesCSSCompatibilityParseMode(usesCSSCompatibilityParseMode)
+    , m_usesCSSCompatibilityParseMode(document.inQuirksMode())
+    , m_clipAntialiasing(GraphicsContext::NotAntiAliased)
     , m_hasAlpha(!attrs || attrs->alpha())
     , m_isContextLost(false)
     , m_contextRestorable(true)
@@ -94,8 +102,9 @@ CanvasRenderingContext2D::CanvasRenderingContext2D(HTMLCanvasElement* canvas, co
     , m_dispatchContextRestoredEventTimer(this, &CanvasRenderingContext2D::dispatchContextRestoredEvent)
     , m_tryRestoreContextEventTimer(this, &CanvasRenderingContext2D::tryRestoreContextEvent)
 {
+    if (document.settings() && document.settings()->antialiasedClips2dCanvasEnabled())
+        m_clipAntialiasing = GraphicsContext::AntiAliased;
     m_stateStack.append(adoptPtrWillBeNoop(new State()));
-    ScriptWrappable::init(this);
 }
 
 void CanvasRenderingContext2D::unwindStateStack()
@@ -114,9 +123,9 @@ CanvasRenderingContext2D::~CanvasRenderingContext2D()
 
 void CanvasRenderingContext2D::validateStateStack()
 {
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     GraphicsContext* context = canvas()->existingDrawingContext();
-    if (context && !context->contextDisabled())
+    if (context && !context->contextDisabled() && !m_isContextLost)
         ASSERT(context->saveCount() == m_stateStack.size());
 #endif
 }
@@ -166,6 +175,7 @@ void CanvasRenderingContext2D::trace(Visitor* visitor)
 #if ENABLE(OILPAN)
     visitor->trace(m_stateStack);
     visitor->trace(m_fetchedFonts);
+    visitor->trace(m_hitRegionManager);
 #endif
     CanvasRenderingContext::trace(visitor);
 }
@@ -197,7 +207,7 @@ void CanvasRenderingContext2D::tryRestoreContextEvent(Timer<CanvasRenderingConte
     }
     if (canvas()->hasImageBuffer() && canvas()->buffer()->restoreSurface()) {
         m_tryRestoreContextEventTimer.stop();
-        dispatchContextRestoredEvent(0);
+        dispatchContextRestoredEvent(nullptr);
     }
 
     if (++m_tryRestoreContextAttemptCount > MaxTryRestoreContextAttempts)
@@ -207,7 +217,7 @@ void CanvasRenderingContext2D::tryRestoreContextEvent(Timer<CanvasRenderingConte
         // final attempt: allocate a brand new image buffer instead of restoring
         timer->stop();
         if (canvas()->buffer())
-            dispatchContextRestoredEvent(0);
+            dispatchContextRestoredEvent(nullptr);
     }
 }
 
@@ -249,14 +259,16 @@ CanvasRenderingContext2D::State::State()
     , m_shadowColor(Color::transparent)
     , m_globalAlpha(1)
     , m_globalComposite(CompositeSourceOver)
-    , m_globalBlend(blink::WebBlendModeNormal)
+    , m_globalBlend(WebBlendModeNormal)
     , m_invertibleCTM(true)
     , m_lineDashOffset(0)
     , m_imageSmoothingEnabled(true)
     , m_textAlign(StartTextAlign)
     , m_textBaseline(AlphabeticTextBaseline)
+    , m_direction(DirectionInherit)
     , m_unparsedFont(defaultFont)
     , m_realizedFont(false)
+    , m_hasClip(false)
 {
 }
 
@@ -283,9 +295,11 @@ CanvasRenderingContext2D::State::State(const State& other)
     , m_imageSmoothingEnabled(other.m_imageSmoothingEnabled)
     , m_textAlign(other.m_textAlign)
     , m_textBaseline(other.m_textBaseline)
+    , m_direction(other.m_direction)
     , m_unparsedFont(other.m_unparsedFont)
     , m_font(other.m_font)
     , m_realizedFont(other.m_realizedFont)
+    , m_hasClip(other.m_hasClip)
 {
     if (m_realizedFont)
         static_cast<CSSFontSelector*>(m_font.fontSelector())->registerForInvalidationCallbacks(this);
@@ -321,9 +335,11 @@ CanvasRenderingContext2D::State& CanvasRenderingContext2D::State::operator=(cons
     m_imageSmoothingEnabled = other.m_imageSmoothingEnabled;
     m_textAlign = other.m_textAlign;
     m_textBaseline = other.m_textBaseline;
+    m_direction = other.m_direction;
     m_unparsedFont = other.m_unparsedFont;
     m_font = other.m_font;
     m_realizedFont = other.m_realizedFont;
+    m_hasClip = other.m_hasClip;
 
     if (m_realizedFont)
         static_cast<CSSFontSelector*>(m_font.fontSelector())->registerForInvalidationCallbacks(this);
@@ -347,7 +363,14 @@ void CanvasRenderingContext2D::State::fontsNeedUpdate(CSSFontSelector* fontSelec
     m_font.update(fontSelector);
 }
 
-void CanvasRenderingContext2D::realizeSaves()
+void CanvasRenderingContext2D::State::trace(Visitor* visitor)
+{
+    visitor->trace(m_strokeStyle);
+    visitor->trace(m_fillStyle);
+    CSSFontSelectorClient::trace(visitor);
+}
+
+void CanvasRenderingContext2D::realizeSaves(GraphicsContext* context)
 {
     validateStateStack();
     if (state().m_unrealizedSaveCount) {
@@ -361,7 +384,8 @@ void CanvasRenderingContext2D::realizeSaves()
         // by the Vector operations copy the unrealized count from the previous state (in
         // turn necessary to support correct resizing and unwinding of the stack).
         m_stateStack.last()->m_unrealizedSaveCount = 0;
-        GraphicsContext* context = drawingContext();
+        if (!context)
+            context = drawingContext();
         if (context)
             context->save();
         validateStateStack();
@@ -393,9 +417,9 @@ CanvasStyle* CanvasRenderingContext2D::strokeStyle() const
     return state().m_strokeStyle.get();
 }
 
-void CanvasRenderingContext2D::setStrokeStyle(PassRefPtr<CanvasStyle> prpStyle)
+void CanvasRenderingContext2D::setStrokeStyle(PassRefPtrWillBeRawPtr<CanvasStyle> prpStyle)
 {
-    RefPtr<CanvasStyle> style = prpStyle;
+    RefPtrWillBeRawPtr<CanvasStyle> style = prpStyle;
 
     if (!style)
         return;
@@ -412,9 +436,9 @@ void CanvasRenderingContext2D::setStrokeStyle(PassRefPtr<CanvasStyle> prpStyle)
         canvas()->setOriginTainted();
     }
 
-    realizeSaves();
-    modifiableState().m_strokeStyle = style.release();
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_strokeStyle = style.release();
     if (!c)
         return;
     state().m_strokeStyle->applyStrokeColor(c);
@@ -426,9 +450,9 @@ CanvasStyle* CanvasRenderingContext2D::fillStyle() const
     return state().m_fillStyle.get();
 }
 
-void CanvasRenderingContext2D::setFillStyle(PassRefPtr<CanvasStyle> prpStyle)
+void CanvasRenderingContext2D::setFillStyle(PassRefPtrWillBeRawPtr<CanvasStyle> prpStyle)
 {
-    RefPtr<CanvasStyle> style = prpStyle;
+    RefPtrWillBeRawPtr<CanvasStyle> style = prpStyle;
 
     if (!style)
         return;
@@ -445,9 +469,9 @@ void CanvasRenderingContext2D::setFillStyle(PassRefPtr<CanvasStyle> prpStyle)
         canvas()->setOriginTainted();
     }
 
-    realizeSaves();
-    modifiableState().m_fillStyle = style.release();
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_fillStyle = style.release();
     if (!c)
         return;
     state().m_fillStyle->applyFillColor(c);
@@ -461,13 +485,13 @@ float CanvasRenderingContext2D::lineWidth() const
 
 void CanvasRenderingContext2D::setLineWidth(float width)
 {
-    if (!(std::isfinite(width) && width > 0))
+    if (!std::isfinite(width) || width <= 0)
         return;
     if (state().m_lineWidth == width)
         return;
-    realizeSaves();
-    modifiableState().m_lineWidth = width;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_lineWidth = width;
     if (!c)
         return;
     c->setStrokeThickness(width);
@@ -485,9 +509,9 @@ void CanvasRenderingContext2D::setLineCap(const String& s)
         return;
     if (state().m_lineCap == cap)
         return;
-    realizeSaves();
-    modifiableState().m_lineCap = cap;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_lineCap = cap;
     if (!c)
         return;
     c->setLineCap(cap);
@@ -505,9 +529,9 @@ void CanvasRenderingContext2D::setLineJoin(const String& s)
         return;
     if (state().m_lineJoin == join)
         return;
-    realizeSaves();
-    modifiableState().m_lineJoin = join;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_lineJoin = join;
     if (!c)
         return;
     c->setLineJoin(join);
@@ -520,13 +544,13 @@ float CanvasRenderingContext2D::miterLimit() const
 
 void CanvasRenderingContext2D::setMiterLimit(float limit)
 {
-    if (!(std::isfinite(limit) && limit > 0))
+    if (!std::isfinite(limit) || limit <= 0)
         return;
     if (state().m_miterLimit == limit)
         return;
-    realizeSaves();
-    modifiableState().m_miterLimit = limit;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_miterLimit = limit;
     if (!c)
         return;
     c->setMiterLimit(limit);
@@ -543,7 +567,7 @@ void CanvasRenderingContext2D::setShadowOffsetX(float x)
         return;
     if (state().m_shadowOffset.width() == x)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_shadowOffset.setWidth(x);
     applyShadow();
 }
@@ -559,7 +583,7 @@ void CanvasRenderingContext2D::setShadowOffsetY(float y)
         return;
     if (state().m_shadowOffset.height() == y)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_shadowOffset.setHeight(y);
     applyShadow();
 }
@@ -571,11 +595,11 @@ float CanvasRenderingContext2D::shadowBlur() const
 
 void CanvasRenderingContext2D::setShadowBlur(float blur)
 {
-    if (!(std::isfinite(blur) && blur >= 0))
+    if (!std::isfinite(blur) || blur < 0)
         return;
     if (state().m_shadowBlur == blur)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_shadowBlur = blur;
     applyShadow();
 }
@@ -592,7 +616,7 @@ void CanvasRenderingContext2D::setShadowColor(const String& color)
         return;
     if (state().m_shadowColor == rgba)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_shadowColor = rgba;
     applyShadow();
 }
@@ -616,7 +640,7 @@ void CanvasRenderingContext2D::setLineDash(const Vector<float>& dash)
     if (!lineDashSequenceIsValid(dash))
         return;
 
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_lineDash = dash;
     // Spec requires the concatenation of two copies the dash list when the
     // number of elements is odd
@@ -636,7 +660,7 @@ void CanvasRenderingContext2D::setLineDashOffset(float offset)
     if (!std::isfinite(offset) || state().m_lineDashOffset == offset)
         return;
 
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_lineDashOffset = offset;
     applyLineDash();
 }
@@ -663,9 +687,9 @@ void CanvasRenderingContext2D::setGlobalAlpha(float alpha)
         return;
     if (state().m_globalAlpha == alpha)
         return;
-    realizeSaves();
-    modifiableState().m_globalAlpha = alpha;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_globalAlpha = alpha;
     if (!c)
         return;
     c->setAlphaAsFloat(alpha);
@@ -679,15 +703,18 @@ String CanvasRenderingContext2D::globalCompositeOperation() const
 void CanvasRenderingContext2D::setGlobalCompositeOperation(const String& operation)
 {
     CompositeOperator op = CompositeSourceOver;
-    blink::WebBlendMode blendMode = blink::WebBlendModeNormal;
+    WebBlendMode blendMode = WebBlendModeNormal;
     if (!parseCompositeAndBlendOperator(operation, op, blendMode))
         return;
+    // crbug.com/425628: Count the use of "darker" to remove it.
+    if (op == CompositePlusDarker)
+        UseCounter::count(canvas()->document(), UseCounter::CanvasRenderingContext2DCompositeOperationDarker);
     if ((state().m_globalComposite == op) && (state().m_globalBlend == blendMode))
         return;
-    realizeSaves();
+    GraphicsContext* c = drawingContext();
+    realizeSaves(c);
     modifiableState().m_globalComposite = op;
     modifiableState().m_globalBlend = blendMode;
-    GraphicsContext* c = drawingContext();
     if (!c)
         return;
     c->setCompositeOperation(op, blendMode);
@@ -708,7 +735,7 @@ void CanvasRenderingContext2D::scale(float sx, float sy)
     if (!state().m_invertibleCTM)
         return;
 
-    if (!std::isfinite(sx) | !std::isfinite(sy))
+    if (!std::isfinite(sx) || !std::isfinite(sy))
         return;
 
     AffineTransform newTransform = state().m_transform;
@@ -716,7 +743,7 @@ void CanvasRenderingContext2D::scale(float sx, float sy)
     if (state().m_transform == newTransform)
         return;
 
-    realizeSaves();
+    realizeSaves(c);
 
     if (!newTransform.isInvertible()) {
         modifiableState().m_invertibleCTM = false;
@@ -744,7 +771,7 @@ void CanvasRenderingContext2D::rotate(float angleInRadians)
     if (state().m_transform == newTransform)
         return;
 
-    realizeSaves();
+    realizeSaves(c);
 
     if (!newTransform.isInvertible()) {
         modifiableState().m_invertibleCTM = false;
@@ -764,7 +791,7 @@ void CanvasRenderingContext2D::translate(float tx, float ty)
     if (!state().m_invertibleCTM)
         return;
 
-    if (!std::isfinite(tx) | !std::isfinite(ty))
+    if (!std::isfinite(tx) || !std::isfinite(ty))
         return;
 
     AffineTransform newTransform = state().m_transform;
@@ -772,7 +799,7 @@ void CanvasRenderingContext2D::translate(float tx, float ty)
     if (state().m_transform == newTransform)
         return;
 
-    realizeSaves();
+    realizeSaves(c);
 
     if (!newTransform.isInvertible()) {
         modifiableState().m_invertibleCTM = false;
@@ -792,7 +819,7 @@ void CanvasRenderingContext2D::transform(float m11, float m12, float m21, float 
     if (!state().m_invertibleCTM)
         return;
 
-    if (!std::isfinite(m11) | !std::isfinite(m21) | !std::isfinite(dx) | !std::isfinite(m12) | !std::isfinite(m22) | !std::isfinite(dy))
+    if (!std::isfinite(m11) || !std::isfinite(m21) || !std::isfinite(dx) || !std::isfinite(m12) || !std::isfinite(m22) || !std::isfinite(dy))
         return;
 
     AffineTransform transform(m11, m12, m21, m22, dx, dy);
@@ -800,7 +827,7 @@ void CanvasRenderingContext2D::transform(float m11, float m12, float m21, float 
     if (state().m_transform == newTransform)
         return;
 
-    realizeSaves();
+    realizeSaves(c);
 
     modifiableState().m_transform = newTransform;
     if (!newTransform.isInvertible()) {
@@ -825,7 +852,7 @@ void CanvasRenderingContext2D::resetTransform()
     if (ctm.isIdentity() && invertibleCTM)
         return;
 
-    realizeSaves();
+    realizeSaves(c);
     // resetTransform() resolves the non-invertible CTM state.
     modifiableState().m_transform.makeIdentity();
     modifiableState().m_invertibleCTM = true;
@@ -843,7 +870,7 @@ void CanvasRenderingContext2D::setTransform(float m11, float m12, float m21, flo
     if (!c)
         return;
 
-    if (!std::isfinite(m11) | !std::isfinite(m21) | !std::isfinite(dx) | !std::isfinite(m12) | !std::isfinite(m22) | !std::isfinite(dy))
+    if (!std::isfinite(m11) || !std::isfinite(m21) || !std::isfinite(dx) || !std::isfinite(m12) || !std::isfinite(m22) || !std::isfinite(dy))
         return;
 
     resetTransform();
@@ -854,7 +881,7 @@ void CanvasRenderingContext2D::setStrokeColor(const String& color)
 {
     if (color == state().m_unparsedStrokeColor)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     setStrokeStyle(CanvasStyle::createFromString(color));
     modifiableState().m_unparsedStrokeColor = color;
 }
@@ -896,7 +923,7 @@ void CanvasRenderingContext2D::setFillColor(const String& color)
 {
     if (color == state().m_unparsedFillColor)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     setFillStyle(CanvasStyle::createFromString(color));
     modifiableState().m_unparsedFillColor = color;
 }
@@ -941,7 +968,7 @@ void CanvasRenderingContext2D::beginPath()
 
 static bool validateRectForCanvas(float& x, float& y, float& width, float& height)
 {
-    if (!std::isfinite(x) | !std::isfinite(y) | !std::isfinite(width) | !std::isfinite(height))
+    if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(width) || !std::isfinite(height))
         return false;
 
     if (!width && !height)
@@ -1006,11 +1033,13 @@ void CanvasRenderingContext2D::fillInternal(const Path& path, const String& wind
     c->setFillRule(parseWinding(windingRuleString));
 
     if (isFullCanvasCompositeMode(state().m_globalComposite)) {
-        fullCanvasCompositedFill(path);
+        fullCanvasCompositedDraw(bind(&GraphicsContext::fillPath, c, path));
         didDraw(clipBounds);
     } else if (state().m_globalComposite == CompositeCopy) {
         clearCanvas();
+        c->clearShadow();
         c->fillPath(path);
+        applyShadow(DrawShadowAndForeground);
         didDraw(clipBounds);
     } else {
         FloatRect dirtyRect;
@@ -1056,11 +1085,13 @@ void CanvasRenderingContext2D::strokeInternal(const Path& path)
     }
 
     if (isFullCanvasCompositeMode(state().m_globalComposite)) {
-        fullCanvasCompositedStroke(path);
+        fullCanvasCompositedDraw(bind(&GraphicsContext::strokePath, c, path));
         didDraw(clipBounds);
     } else if (state().m_globalComposite == CompositeCopy) {
         clearCanvas();
+        c->clearShadow();
         c->strokePath(path);
+        applyShadow(DrawShadowAndForeground);
         didDraw(clipBounds);
     } else {
         FloatRect bounds = path.boundingRect();
@@ -1093,8 +1124,9 @@ void CanvasRenderingContext2D::clipInternal(const Path& path, const String& wind
         return;
     }
 
-    realizeSaves();
-    c->canvasClip(path, parseWinding(windingRuleString));
+    realizeSaves(c);
+    c->canvasClip(path, parseWinding(windingRuleString), m_clipAntialiasing);
+    modifiableState().m_hasClip = true;
 }
 
 void CanvasRenderingContext2D::clip(const String& windingRuleString)
@@ -1126,10 +1158,10 @@ bool CanvasRenderingContext2D::isPointInPathInternal(const Path& path, const flo
         return false;
 
     FloatPoint point(x, y);
+    if (!std::isfinite(point.x()) || !std::isfinite(point.y()))
+        return false;
     AffineTransform ctm = state().m_transform;
     FloatPoint transformedPoint = ctm.inverse().mapPoint(point);
-    if (!std::isfinite(transformedPoint.x()) || !std::isfinite(transformedPoint.y()))
-        return false;
 
     return path.contains(transformedPoint, parseWinding(windingRuleString));
 }
@@ -1153,10 +1185,10 @@ bool CanvasRenderingContext2D::isPointInStrokeInternal(const Path& path, const f
         return false;
 
     FloatPoint point(x, y);
+    if (!std::isfinite(point.x()) || !std::isfinite(point.y()))
+        return false;
     AffineTransform ctm = state().m_transform;
     FloatPoint transformedPoint = ctm.inverse().mapPoint(point);
-    if (!std::isfinite(transformedPoint.x()) || !std::isfinite(transformedPoint.y()))
-        return false;
 
     StrokeData strokeData;
     strokeData.setThickness(lineWidth());
@@ -1179,7 +1211,9 @@ void CanvasRenderingContext2D::scrollPathIntoView(Path2D* path2d)
 
 void CanvasRenderingContext2D::scrollPathIntoViewInternal(const Path& path)
 {
-    if (!state().m_invertibleCTM || path.isEmpty())
+    RenderObject* renderer = canvas()->renderer();
+    RenderBox* renderBox = canvas()->renderBox();
+    if (!renderer || !renderBox || !state().m_invertibleCTM || path.isEmpty())
         return;
 
     canvas()->document().updateLayoutIgnorePendingStylesheets();
@@ -1189,18 +1223,13 @@ void CanvasRenderingContext2D::scrollPathIntoViewInternal(const Path& path)
     transformedPath.transform(state().m_transform);
     FloatRect boundingRect = transformedPath.boundingRect();
 
-    // Offset by the canvas rect (We should take border and padding into account).
-    RenderBoxModelObject* rbmo = canvas()->renderBoxModelObject();
-    IntRect canvasRect = canvas()->renderer()->absoluteBoundingBoxRect();
-    canvasRect.move(rbmo->borderLeft() + rbmo->paddingLeft(),
-        rbmo->borderTop() + rbmo->paddingTop());
-    LayoutRect pathRect = enclosingLayoutRect(boundingRect);
-    pathRect.moveBy(canvasRect.location());
+    // Offset by the canvas rect
+    LayoutRect pathRect(boundingRect);
+    IntRect canvasRect = renderBox->absoluteContentBox();
+    pathRect.move(canvasRect.x(), canvasRect.y());
 
-    if (canvas()->renderer()) {
-        canvas()->renderer()->scrollRectToVisible(
-            pathRect, ScrollAlignment::alignCenterAlways, ScrollAlignment::alignTopAlways);
-    }
+    renderer->scrollRectToVisible(
+        pathRect, ScrollAlignment::alignCenterAlways, ScrollAlignment::alignTopAlways);
 
     // TODO: should implement "inform the user" that the caret and/or
     // selection the specified rectangle of the canvas. See http://crbug.com/357987
@@ -1242,11 +1271,24 @@ void CanvasRenderingContext2D::clearRect(float x, float y, float width, float he
         context->setCompositeOperation(CompositeSourceOver);
     }
     context->clearRect(rect);
+    if (m_hitRegionManager)
+        m_hitRegionManager->removeHitRegionsInRect(rect, state().m_transform);
     if (saved)
         context->restore();
 
     validateStateStack();
     didDraw(dirtyRect);
+}
+
+// FIXME(crbug.com/425531): Funtional.h cannot handle override function signature.
+static void fillRectOnContext(GraphicsContext* context, const FloatRect& rect)
+{
+    context->fillRect(rect);
+}
+
+static void strokeRectOnContext(GraphicsContext* context, const FloatRect& rect)
+{
+    context->strokeRect(rect);
 }
 
 void CanvasRenderingContext2D::fillRect(float x, float y, float width, float height)
@@ -1275,11 +1317,13 @@ void CanvasRenderingContext2D::fillRect(float x, float y, float width, float hei
         c->fillRect(rect);
         didDraw(clipBounds);
     } else if (isFullCanvasCompositeMode(state().m_globalComposite)) {
-        fullCanvasCompositedFill(rect);
+        fullCanvasCompositedDraw(bind(&fillRectOnContext, c, rect));
         didDraw(clipBounds);
     } else if (state().m_globalComposite == CompositeCopy) {
         clearCanvas();
+        c->clearShadow();
         c->fillRect(rect);
+        applyShadow(DrawShadowAndForeground);
         didDraw(clipBounds);
     } else {
         FloatRect dirtyRect;
@@ -1313,13 +1357,14 @@ void CanvasRenderingContext2D::strokeRect(float x, float y, float width, float h
         return;
 
     FloatRect rect(x, y, width, height);
-
     if (isFullCanvasCompositeMode(state().m_globalComposite)) {
-        fullCanvasCompositedStroke(rect);
+        fullCanvasCompositedDraw(bind(&strokeRectOnContext, c, rect));
         didDraw(clipBounds);
     } else if (state().m_globalComposite == CompositeCopy) {
         clearCanvas();
+        c->clearShadow();
         c->strokeRect(rect);
+        applyShadow(DrawShadowAndForeground);
         didDraw(clipBounds);
     } else {
         FloatRect boundingRect = rect;
@@ -1383,7 +1428,7 @@ void CanvasRenderingContext2D::setShadow(const FloatSize& offset, float blur, RG
     if (state().m_shadowOffset == offset && state().m_shadowBlur == blur && state().m_shadowColor == color)
         return;
     bool wasDrawingShadows = shouldDrawShadows();
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_shadowOffset = offset;
     modifiableState().m_shadowBlur = blur;
     modifiableState().m_shadowColor = color;
@@ -1392,7 +1437,7 @@ void CanvasRenderingContext2D::setShadow(const FloatSize& offset, float blur, RG
     applyShadow();
 }
 
-void CanvasRenderingContext2D::applyShadow()
+void CanvasRenderingContext2D::applyShadow(ShadowMode shadowMode)
 {
     GraphicsContext* c = drawingContext();
     if (!c)
@@ -1400,7 +1445,7 @@ void CanvasRenderingContext2D::applyShadow()
 
     if (shouldDrawShadows()) {
         c->setShadow(state().m_shadowOffset, state().m_shadowBlur, state().m_shadowColor,
-            DrawLooperBuilder::ShadowIgnoresTransforms);
+            DrawLooperBuilder::ShadowIgnoresTransforms, DrawLooperBuilder::ShadowRespectsAlpha, shadowMode);
     } else {
         c->clearShadow();
     }
@@ -1440,34 +1485,52 @@ static inline void clipRectsToImageRect(const FloatRect& imageRect, FloatRect* s
 
 void CanvasRenderingContext2D::drawImage(CanvasImageSource* imageSource, float x, float y, ExceptionState& exceptionState)
 {
+    FloatSize sourceRectSize = imageSource->sourceSize();
     FloatSize destRectSize = imageSource->defaultDestinationSize();
-    drawImage(imageSource, x, y, destRectSize.width(), destRectSize.height(), exceptionState);
+    drawImageInternal(imageSource, 0, 0, sourceRectSize.width(), sourceRectSize.height(), x, y, destRectSize.width(), destRectSize.height(), exceptionState);
 }
 
 void CanvasRenderingContext2D::drawImage(CanvasImageSource* imageSource,
     float x, float y, float width, float height, ExceptionState& exceptionState)
 {
     FloatSize sourceRectSize = imageSource->sourceSize();
-    drawImage(imageSource, 0, 0, sourceRectSize.width(), sourceRectSize.height(), x, y, width, height, exceptionState);
+    drawImageInternal(imageSource, 0, 0, sourceRectSize.width(), sourceRectSize.height(), x, y, width, height, exceptionState);
 }
 
 void CanvasRenderingContext2D::drawImage(CanvasImageSource* imageSource,
     float sx, float sy, float sw, float sh,
     float dx, float dy, float dw, float dh, ExceptionState& exceptionState)
 {
-    GraphicsContext* c = drawingContext(); // Do not exit yet if !c because we may need to throw exceptions first
-    CompositeOperator op = c ? c->compositeOperation() : CompositeSourceOver;
-    blink::WebBlendMode blendMode = c ? c->blendModeOperation() : blink::WebBlendModeNormal;
-    drawImageInternal(imageSource, sx, sy, sw, sh, dx, dy, dw, dh, exceptionState, op, blendMode);
+    drawImageInternal(imageSource, sx, sy, sw, sh, dx, dy, dw, dh, exceptionState);
+}
+
+static void drawVideo(GraphicsContext* c, CanvasImageSource* imageSource, FloatRect srcRect, FloatRect dstRect)
+{
+    HTMLVideoElement* video = static_cast<HTMLVideoElement*>(imageSource);
+    GraphicsContextStateSaver stateSaver(*c);
+    c->clip(dstRect);
+    c->translate(dstRect.x(), dstRect.y());
+    c->scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
+    c->translate(-srcRect.x(), -srcRect.y());
+    video->paintCurrentFrameInContext(c, IntRect(IntPoint(), IntSize(video->videoWidth(), video->videoHeight())));
+    stateSaver.restore();
+}
+
+static void drawImageOnContext(GraphicsContext* c, CanvasImageSource* imageSource, Image* image, const FloatRect& srcRect, const FloatRect& dstRect)
+{
+    if (!imageSource->isVideoElement()) {
+        c->drawImage(image, dstRect, srcRect, c->compositeOperation(), c->blendModeOperation());
+    } else {
+        drawVideo(c, static_cast<HTMLVideoElement*>(imageSource), srcRect, dstRect);
+    }
 }
 
 void CanvasRenderingContext2D::drawImageInternal(CanvasImageSource* imageSource,
     float sx, float sy, float sw, float sh,
-    float dx, float dy, float dw, float dh, ExceptionState& exceptionState,
-    CompositeOperator op, blink::WebBlendMode blendMode)
+    float dx, float dy, float dw, float dh, ExceptionState& exceptionState)
 {
     RefPtr<Image> image;
-    SourceImageStatus sourceImageStatus;
+    SourceImageStatus sourceImageStatus = InvalidSourceImageStatus;
     if (!imageSource->isVideoElement()) {
         SourceImageMode mode = canvas() == imageSource ? CopySourceImageIfVolatile : DontCopySourceImage; // Thunking for ==
         image = imageSource->getSourceImageForCanvas(mode, &sourceImageStatus);
@@ -1503,45 +1566,34 @@ void CanvasRenderingContext2D::drawImageInternal(CanvasImageSource* imageSource,
     if (srcRect.isEmpty())
         return;
 
-    FloatRect dirtyRect = clipBounds;
-    if (imageSource->isVideoElement()) {
-        drawVideo(static_cast<HTMLVideoElement*>(imageSource), srcRect, dstRect);
-        computeDirtyRect(dstRect, clipBounds, &dirtyRect);
-    } else {
-        if (rectContainsTransformedRect(dstRect, clipBounds)) {
-            c->drawImage(image.get(), dstRect, srcRect, op, blendMode);
-        } else if (isFullCanvasCompositeMode(op)) {
-            fullCanvasCompositedDrawImage(image.get(), dstRect, srcRect, op);
-        } else if (op == CompositeCopy) {
-            clearCanvas();
-            c->drawImage(image.get(), dstRect, srcRect, op, blendMode);
-        } else {
-            FloatRect dirtyRect;
-            computeDirtyRect(dstRect, clipBounds, &dirtyRect);
-            c->drawImage(image.get(), dstRect, srcRect, op, blendMode);
-        }
+    if (imageSource->isVideoElement())
+        canvas()->buffer()->willDrawVideo();
 
-        if (sourceImageStatus == ExternalSourceImageStatus && isAccelerated() && canvas()->buffer())
-            canvas()->buffer()->flush();
+    CompositeOperator op = state().m_globalComposite;
+    if (rectContainsTransformedRect(dstRect, clipBounds)) {
+        drawImageOnContext(c, imageSource, image.get(), srcRect, dstRect);
+        didDraw(clipBounds);
+    } else if (isFullCanvasCompositeMode(op)) {
+        fullCanvasCompositedDraw(bind(&drawImageOnContext, c, imageSource, image.get(), srcRect, dstRect));
+        didDraw(clipBounds);
+    } else if (op == CompositeCopy) {
+        clearCanvas();
+        drawImageOnContext(c, imageSource, image.get(), srcRect, dstRect);
+        didDraw(clipBounds);
+    } else {
+        FloatRect dirtyRect;
+        if (computeDirtyRect(dstRect, clipBounds, &dirtyRect)) {
+            drawImageOnContext(c, imageSource, image.get(), srcRect, dstRect);
+            didDraw(dirtyRect);
+        }
     }
+    validateStateStack();
+
+    if (sourceImageStatus == ExternalSourceImageStatus && isAccelerated() && canvas()->buffer())
+        canvas()->buffer()->flush();
 
     if (canvas()->originClean() && wouldTaintOrigin(imageSource))
         canvas()->setOriginTainted();
-
-    didDraw(dirtyRect);
-}
-
-void CanvasRenderingContext2D::drawVideo(HTMLVideoElement* video, FloatRect srcRect, FloatRect dstRect)
-{
-    GraphicsContext* c = drawingContext();
-    GraphicsContextStateSaver stateSaver(*c);
-    c->clip(dstRect);
-    c->translate(dstRect.x(), dstRect.y());
-    c->scale(dstRect.width() / srcRect.width(), dstRect.height() / srcRect.height());
-    c->translate(-srcRect.x(), -srcRect.y());
-    video->paintCurrentFrameInContext(c, IntRect(IntPoint(), IntSize(video->videoWidth(), video->videoHeight())));
-    stateSaver.restore();
-    validateStateStack();
 }
 
 void CanvasRenderingContext2D::drawImageFromRect(HTMLImageElement* image,
@@ -1551,12 +1603,10 @@ void CanvasRenderingContext2D::drawImageFromRect(HTMLImageElement* image,
 {
     if (!image)
         return;
-    CompositeOperator op;
-    blink::WebBlendMode blendOp = blink::WebBlendModeNormal;
-    if (!parseCompositeAndBlendOperator(compositeOperation, op, blendOp) || blendOp != blink::WebBlendModeNormal)
-        op = CompositeSourceOver;
-
-    drawImageInternal(image, sx, sy, sw, sh, dx, dy, dw, dh, IGNORE_EXCEPTION, op, blendOp);
+    save();
+    setGlobalCompositeOperation(compositeOperation);
+    drawImageInternal(image, sx, sy, sw, sh, dx, dy, dw, dh, IGNORE_EXCEPTION);
+    restore();
 }
 
 void CanvasRenderingContext2D::setAlpha(float alpha)
@@ -1589,91 +1639,54 @@ bool CanvasRenderingContext2D::rectContainsTransformedRect(const FloatRect& rect
     return state().m_transform.mapQuad(quad).containsQuad(transformedQuad);
 }
 
-static void drawImageToContext(Image* image, GraphicsContext* context, const FloatRect& dest, const FloatRect& src, CompositeOperator op)
-{
-    context->drawImage(image, dest, src, op);
-}
-
-template<class T> void  CanvasRenderingContext2D::fullCanvasCompositedDrawImage(T* image, const FloatRect& dest, const FloatRect& src, CompositeOperator op)
-{
-    ASSERT(isFullCanvasCompositeMode(op));
-
-    GraphicsContext* c = drawingContext();
-    c->beginLayer(1, op);
-    drawImageToContext(image, c, dest, src, CompositeSourceOver);
-    c->endLayer();
-}
-
-static void fillPrimitive(const FloatRect& rect, GraphicsContext* context)
-{
-    context->fillRect(rect);
-}
-
-static void fillPrimitive(const Path& path, GraphicsContext* context)
-{
-    context->fillPath(path);
-}
-
-template<class T> void CanvasRenderingContext2D::fullCanvasCompositedFill(const T& area)
+void CanvasRenderingContext2D::fullCanvasCompositedDraw(const Closure& draw)
 {
     ASSERT(isFullCanvasCompositeMode(state().m_globalComposite));
 
     GraphicsContext* c = drawingContext();
     ASSERT(c);
-    c->beginLayer(1, state().m_globalComposite);
+
     CompositeOperator previousOperator = c->compositeOperation();
+    if (shouldDrawShadows()) {
+        // unroll into two independently composited passes if drawing shadows
+        c->beginLayer(1, state().m_globalComposite);
+        c->setCompositeOperation(CompositeSourceOver);
+        applyShadow(DrawShadowOnly);
+        draw();
+        c->setCompositeOperation(previousOperator);
+        c->endLayer();
+    }
+
+    c->beginLayer(1, state().m_globalComposite);
+    c->clearShadow();
     c->setCompositeOperation(CompositeSourceOver);
-    fillPrimitive(area, c);
+    draw();
     c->setCompositeOperation(previousOperator);
     c->endLayer();
+    applyShadow(DrawShadowAndForeground); // go back to normal shadows mode
 }
 
-static void strokePrimitive(const FloatRect& rect, GraphicsContext* context)
+PassRefPtrWillBeRawPtr<CanvasGradient> CanvasRenderingContext2D::createLinearGradient(float x0, float y0, float x1, float y1)
 {
-    context->strokeRect(rect);
-}
-
-static void strokePrimitive(const Path& path, GraphicsContext* context)
-{
-    context->strokePath(path);
-}
-
-template<class T> void CanvasRenderingContext2D::fullCanvasCompositedStroke(const T& area)
-{
-    ASSERT(isFullCanvasCompositeMode(state().m_globalComposite));
-
-    GraphicsContext* c = drawingContext();
-    ASSERT(c);
-    c->beginLayer(1, state().m_globalComposite);
-    CompositeOperator previousOperator = c->compositeOperation();
-    c->setCompositeOperation(CompositeSourceOver);
-    strokePrimitive(area, c);
-    c->setCompositeOperation(previousOperator);
-    c->endLayer();
-}
-
-PassRefPtr<CanvasGradient> CanvasRenderingContext2D::createLinearGradient(float x0, float y0, float x1, float y1)
-{
-    RefPtr<CanvasGradient> gradient = CanvasGradient::create(FloatPoint(x0, y0), FloatPoint(x1, y1));
+    RefPtrWillBeRawPtr<CanvasGradient> gradient = CanvasGradient::create(FloatPoint(x0, y0), FloatPoint(x1, y1));
     return gradient.release();
 }
 
-PassRefPtr<CanvasGradient> CanvasRenderingContext2D::createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState& exceptionState)
+PassRefPtrWillBeRawPtr<CanvasGradient> CanvasRenderingContext2D::createRadialGradient(float x0, float y0, float r0, float x1, float y1, float r1, ExceptionState& exceptionState)
 {
     if (r0 < 0 || r1 < 0) {
         exceptionState.throwDOMException(IndexSizeError, String::format("The %s provided is less than 0.", r0 < 0 ? "r0" : "r1"));
         return nullptr;
     }
 
-    RefPtr<CanvasGradient> gradient = CanvasGradient::create(FloatPoint(x0, y0), r0, FloatPoint(x1, y1), r1);
+    RefPtrWillBeRawPtr<CanvasGradient> gradient = CanvasGradient::create(FloatPoint(x0, y0), r0, FloatPoint(x1, y1), r1);
     return gradient.release();
 }
 
-PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(CanvasImageSource* imageSource,
+PassRefPtrWillBeRawPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(CanvasImageSource* imageSource,
     const String& repetitionType, ExceptionState& exceptionState)
 {
-    bool repeatX, repeatY;
-    CanvasPattern::parseRepetitionType(repetitionType, repeatX, repeatY, exceptionState);
+    Pattern::RepeatMode repeatMode = CanvasPattern::parseRepetitionType(repetitionType, exceptionState);
     if (exceptionState.hadException())
         return nullptr;
 
@@ -1703,7 +1716,7 @@ PassRefPtr<CanvasPattern> CanvasRenderingContext2D::createPattern(CanvasImageSou
 
     bool originClean = !wouldTaintOrigin(imageSource);
 
-    return CanvasPattern::create(imageForRendering.release(), repeatX, repeatY, originClean);
+    return CanvasPattern::create(imageForRendering.release(), repeatMode, originClean);
 }
 
 bool CanvasRenderingContext2D::computeDirtyRect(const FloatRect& localRect, FloatRect* dirtyRect)
@@ -1740,24 +1753,13 @@ void CanvasRenderingContext2D::didDraw(const FloatRect& dirtyRect)
     if (dirtyRect.isEmpty())
         return;
 
-    // If we are drawing to hardware and we have a composited layer, just call contentChanged().
-    if (isAccelerated()) {
-        RenderBox* renderBox = canvas()->renderBox();
-        if (renderBox && renderBox->hasAcceleratedCompositing()) {
-            renderBox->contentChanged(CanvasPixelsChanged);
-            canvas()->clearCopiedImage();
-            canvas()->notifyObserversCanvasChanged(dirtyRect);
-            return;
-        }
-    }
-
     canvas()->didDraw(dirtyRect);
 }
 
 GraphicsContext* CanvasRenderingContext2D::drawingContext() const
 {
     if (isContextLost())
-        return 0;
+        return nullptr;
     return canvas()->drawingContext();
 }
 
@@ -1828,7 +1830,7 @@ PassRefPtrWillBeRawPtr<ImageData> CanvasRenderingContext2D::getImageData(float s
     if (!buffer || isContextLost())
         return createEmptyImageData(imageDataRect.size());
 
-    RefPtr<Uint8ClampedArray> byteArray = buffer->getUnmultipliedImageData(imageDataRect);
+    RefPtr<Uint8ClampedArray> byteArray = buffer->getImageData(Unmultiplied, imageDataRect);
     if (!byteArray)
         return nullptr;
 
@@ -1915,15 +1917,23 @@ void CanvasRenderingContext2D::setFont(const String& newFont)
     if (!canvas()->document().frame())
         return;
 
+    RefPtrWillBeRawPtr<MutableStylePropertySet> parsedStyle;
     MutableStylePropertyMap::iterator i = m_fetchedFonts.find(newFont);
-    RefPtrWillBeRawPtr<MutableStylePropertySet> parsedStyle = i != m_fetchedFonts.end() ? i->value : nullptr;
-
-    if (!parsedStyle) {
+    if (i != m_fetchedFonts.end()) {
+        parsedStyle = i->value;
+        m_fetchedFontsLRUList.remove(newFont);
+    } else {
         parsedStyle = MutableStylePropertySet::create();
         CSSParserMode mode = m_usesCSSCompatibilityParseMode ? HTMLQuirksMode : HTMLStandardMode;
-        BisonCSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, newFont, true, mode, 0);
+        CSSParser::parseValue(parsedStyle.get(), CSSPropertyFont, newFont, true, mode, 0);
+        if (m_fetchedFonts.size() >= FetchedFontsCacheLimit) {
+            m_fetchedFonts.remove(m_fetchedFontsLRUList.first());
+            m_fetchedFontsLRUList.removeFirst();
+        }
         m_fetchedFonts.add(newFont, parsedStyle);
     }
+    m_fetchedFontsLRUList.add(newFont);
+
     if (parsedStyle->isEmpty())
         return;
 
@@ -1936,12 +1946,13 @@ void CanvasRenderingContext2D::setFont(const String& newFont)
 
     // The parse succeeded.
     String newFontSafeCopy(newFont); // Create a string copy since newFont can be deleted inside realizeSaves.
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_unparsedFont = newFontSafeCopy;
 
     // Map the <canvas> font into the text style. If the font uses keywords like larger/smaller, these will work
     // relative to the canvas.
     RefPtr<RenderStyle> newStyle = RenderStyle::create();
+    canvas()->document().updateRenderTreeIfNeeded();
     if (RenderStyle* computedStyle = canvas()->computedStyle()) {
         FontDescription elementFontDescription(computedStyle->fontDescription());
         // Reset the computed size to avoid inheriting the zoom factor from the <canvas> element.
@@ -1996,7 +2007,7 @@ void CanvasRenderingContext2D::setTextAlign(const String& s)
         return;
     if (state().m_textAlign == align)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_textAlign = align;
 }
 
@@ -2012,8 +2023,51 @@ void CanvasRenderingContext2D::setTextBaseline(const String& s)
         return;
     if (state().m_textBaseline == baseline)
         return;
-    realizeSaves();
+    realizeSaves(nullptr);
     modifiableState().m_textBaseline = baseline;
+}
+
+inline TextDirection CanvasRenderingContext2D::toTextDirection(Direction direction, RenderStyle** computedStyle) const
+{
+    RenderStyle* style = (computedStyle || direction == DirectionInherit) ? canvas()->computedStyle() : nullptr;
+    if (computedStyle)
+        *computedStyle = style;
+    switch (direction) {
+    case DirectionInherit:
+        return style ? style->direction() : LTR;
+    case DirectionRTL:
+        return RTL;
+    case DirectionLTR:
+        return LTR;
+    }
+    ASSERT_NOT_REACHED();
+    return LTR;
+}
+
+String CanvasRenderingContext2D::direction() const
+{
+    if (state().m_direction == DirectionInherit)
+        canvas()->document().updateRenderTreeIfNeeded();
+    return toTextDirection(state().m_direction) == RTL ? rtl : ltr;
+}
+
+void CanvasRenderingContext2D::setDirection(const String& directionString)
+{
+    Direction direction;
+    if (directionString == inherit)
+        direction = DirectionInherit;
+    else if (directionString == rtl)
+        direction = DirectionRTL;
+    else if (directionString == ltr)
+        direction = DirectionLTR;
+    else
+        return;
+
+    if (state().m_direction == direction)
+        return;
+
+    realizeSaves(nullptr);
+    modifiableState().m_direction = direction;
 }
 
 void CanvasRenderingContext2D::fillText(const String& text, float x, float y)
@@ -2036,35 +2090,9 @@ void CanvasRenderingContext2D::strokeText(const String& text, float x, float y, 
     drawTextInternal(text, x, y, false, maxWidth, true);
 }
 
-static inline bool isSpaceCharacter(UChar c)
+PassRefPtrWillBeRawPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text)
 {
-    // According to specification all space characters should be replaced with 0x0020 space character.
-    // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-canvas-element.html#text-preparation-algorithm
-    // The space characters according to specification are : U+0020, U+0009, U+000A, U+000C, and U+000D.
-    // http://www.whatwg.org/specs/web-apps/current-work/multipage/common-microsyntaxes.html#space-character
-    // This function returns true for 0x000B also, so that this is backward compatible.
-    // Otherwise, the test LayoutTests/canvas/philip/tests/2d.text.draw.space.collapse.space.html will fail
-    return c == 0x0009 || c == 0x000A || c == 0x000B || c == 0x000C || c == 0x000D;
-}
-
-static String normalizeSpaces(const String& text)
-{
-    unsigned textLength = text.length();
-    Vector<UChar> charVector(textLength);
-
-    for (unsigned i = 0; i < textLength; i++) {
-        if (isSpaceCharacter(text[i]))
-            charVector[i] = ' ';
-        else
-            charVector[i] = text[i];
-    }
-
-    return String(charVector);
-}
-
-PassRefPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text)
-{
-    RefPtr<TextMetrics> metrics = TextMetrics::create();
+    RefPtrWillBeRawPtr<TextMetrics> metrics = TextMetrics::create();
 
     // The style resolution required for rendering text is not available in frame-less documents.
     if (!canvas()->document().frame())
@@ -2073,8 +2101,7 @@ PassRefPtr<TextMetrics> CanvasRenderingContext2D::measureText(const String& text
     FontCachePurgePreventer fontCachePurgePreventer;
     canvas()->document().updateRenderTreeIfNeeded();
     const Font& font = accessFont();
-    String normalizedText = normalizeSpaces(text);
-    const TextRun textRun(normalizedText);
+    const TextRun textRun(text, 0, 0, TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, LTR, false, true, true);
     FloatRect textBounds = font.selectionRectForText(textRun, FloatPoint(), font.fontDescription().computedSize(), 0, -1, true);
 
     // x direction
@@ -2120,7 +2147,7 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
         return;
     if (!state().m_invertibleCTM)
         return;
-    if (!std::isfinite(x) | !std::isfinite(y))
+    if (!std::isfinite(x) || !std::isfinite(y))
         return;
     if (useMaxWidth && (!std::isfinite(maxWidth) || maxWidth <= 0))
         return;
@@ -2138,20 +2165,18 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
 
     const Font& font = accessFont();
     const FontMetrics& fontMetrics = font.fontMetrics();
-    String normalizedText = normalizeSpaces(text);
 
     // FIXME: Need to turn off font smoothing.
 
-    RenderStyle* computedStyle = canvas()->computedStyle();
-    TextDirection direction = computedStyle ? computedStyle->direction() : LTR;
+    RenderStyle* computedStyle;
+    TextDirection direction = toTextDirection(state().m_direction, &computedStyle);
     bool isRTL = direction == RTL;
     bool override = computedStyle ? isOverride(computedStyle->unicodeBidi()) : false;
 
-    TextRun textRun(normalizedText, 0, 0, TextRun::AllowTrailingExpansion, direction, override, true, TextRun::NoRounding);
+    TextRun textRun(text, 0, 0, TextRun::AllowTrailingExpansion, direction, override, true, true);
     // Draw the item text at the correct point.
     FloatPoint location(x, y + getFontBaseline(fontMetrics));
-
-    float fontWidth = font.width(TextRun(normalizedText, 0, 0, TextRun::AllowTrailingExpansion, direction, override));
+    float fontWidth = font.width(textRun);
 
     useMaxWidth = (useMaxWidth && maxWidth < fontWidth);
     float width = useMaxWidth ? maxWidth : fontWidth;
@@ -2198,16 +2223,13 @@ void CanvasRenderingContext2D::drawTextInternal(const String& text, float x, flo
     }
 
     if (isFullCanvasCompositeMode(state().m_globalComposite)) {
-        c->beginLayer(1, state().m_globalComposite);
-        CompositeOperator previousOperator = c->compositeOperation();
-        c->setCompositeOperation(CompositeSourceOver);
-        c->drawBidiText(font, textRunPaintInfo, location, Font::UseFallbackIfFontNotReady);
-        c->setCompositeOperation(previousOperator);
-        c->endLayer();
+        fullCanvasCompositedDraw(bind(&GraphicsContext::drawBidiText, c, font, textRunPaintInfo, location, Font::UseFallbackIfFontNotReady));
         didDraw(clipBounds);
     } else if (state().m_globalComposite == CompositeCopy) {
         clearCanvas();
+        c->clearShadow();
         c->drawBidiText(font, textRunPaintInfo, location, Font::UseFallbackIfFontNotReady);
+        applyShadow(DrawShadowAndForeground);
         didDraw(clipBounds);
     } else {
         FloatRect dirtyRect;
@@ -2264,7 +2286,14 @@ int CanvasRenderingContext2D::getFontBaseline(const FontMetrics& fontMetrics) co
     return 0;
 }
 
-blink::WebLayer* CanvasRenderingContext2D::platformLayer() const
+void CanvasRenderingContext2D::setIsHidden(bool hidden)
+{
+    ImageBuffer* buffer = canvas()->buffer();
+    if (buffer)
+        buffer->setIsHidden(hidden);
+}
+
+WebLayer* CanvasRenderingContext2D::platformLayer() const
 {
     return canvas()->buffer() ? canvas()->buffer()->platformLayer() : 0;
 }
@@ -2279,16 +2308,16 @@ void CanvasRenderingContext2D::setImageSmoothingEnabled(bool enabled)
     if (enabled == state().m_imageSmoothingEnabled)
         return;
 
-    realizeSaves();
-    modifiableState().m_imageSmoothingEnabled = enabled;
     GraphicsContext* c = drawingContext();
+    realizeSaves(c);
+    modifiableState().m_imageSmoothingEnabled = enabled;
     if (c)
         c->setImageInterpolationQuality(enabled ? CanvasDefaultInterpolationQuality : InterpolationNone);
 }
 
-PassRefPtr<Canvas2DContextAttributes> CanvasRenderingContext2D::getContextAttributes() const
+PassRefPtrWillBeRawPtr<Canvas2DContextAttributes> CanvasRenderingContext2D::getContextAttributes() const
 {
-    RefPtr<Canvas2DContextAttributes> attributes = Canvas2DContextAttributes::create();
+    RefPtrWillBeRawPtr<Canvas2DContextAttributes> attributes = Canvas2DContextAttributes::create();
     attributes->setAlpha(m_hasAlpha);
     return attributes.release();
 }
@@ -2350,11 +2379,79 @@ void CanvasRenderingContext2D::drawFocusRing(const Path& path)
     c->save();
     c->setAlphaAsFloat(1.0);
     c->clearShadow();
-    c->setCompositeOperation(CompositeSourceOver, blink::WebBlendModeNormal);
+    c->setCompositeOperation(CompositeSourceOver, WebBlendModeNormal);
     c->drawFocusRing(path, focusRingWidth, focusRingOutline, focusRingColor);
     c->restore();
     validateStateStack();
     didDraw(dirtyRect);
 }
 
-} // namespace WebCore
+void CanvasRenderingContext2D::addHitRegion(const HitRegionOptions& options, ExceptionState& exceptionState)
+{
+    if (options.id().isEmpty() && !options.control()) {
+        exceptionState.throwDOMException(NotSupportedError, "Both id and control are null.");
+        return;
+    }
+
+    Path hitRegionPath = options.hasPath() ? options.path()->path() : m_path;
+
+    FloatRect clipBounds;
+    GraphicsContext* context = drawingContext();
+
+    if (hitRegionPath.isEmpty() || !context || !state().m_invertibleCTM
+        || !context->getTransformedClipBounds(&clipBounds)) {
+        exceptionState.throwDOMException(NotSupportedError, "The specified path has no pixels.");
+        return;
+    }
+
+    hitRegionPath.transform(state().m_transform);
+
+    if (hasClip()) {
+        // FIXME: The hit regions should take clipping region into account.
+        // However, we have no way to get the region from canvas state stack by now.
+        // See http://crbug.com/387057
+        exceptionState.throwDOMException(NotSupportedError, "The specified path has no pixels.");
+        return;
+    }
+
+    if (!m_hitRegionManager)
+        m_hitRegionManager = HitRegionManager::create();
+
+    // Remove previous region (with id or control)
+    m_hitRegionManager->removeHitRegionById(options.id());
+    m_hitRegionManager->removeHitRegionByControl(options.control().get());
+
+    RefPtrWillBeRawPtr<HitRegion> hitRegion = HitRegion::create(hitRegionPath, options);
+    hitRegion->updateAccessibility(canvas());
+    m_hitRegionManager->addHitRegion(hitRegion.release());
+}
+
+void CanvasRenderingContext2D::removeHitRegion(const String& id)
+{
+    if (m_hitRegionManager)
+        m_hitRegionManager->removeHitRegionById(id);
+}
+
+void CanvasRenderingContext2D::clearHitRegions()
+{
+    if (m_hitRegionManager)
+        m_hitRegionManager->removeAllHitRegions();
+}
+
+HitRegion* CanvasRenderingContext2D::hitRegionAtPoint(const LayoutPoint& point)
+{
+    if (m_hitRegionManager)
+        return m_hitRegionManager->getHitRegionAtPoint(point);
+
+    return nullptr;
+}
+
+unsigned CanvasRenderingContext2D::hitRegionsCount() const
+{
+    if (m_hitRegionManager)
+        return m_hitRegionManager->getHitRegionsCount();
+
+    return 0;
+}
+
+} // namespace blink

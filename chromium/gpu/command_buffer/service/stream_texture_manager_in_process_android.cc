@@ -23,14 +23,20 @@ class GLImageImpl : public gfx::GLImage {
               const base::Closure& release_callback);
 
   // implement gfx::GLImage
-  virtual void Destroy() OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual bool BindTexImage(unsigned target) OVERRIDE;
-  virtual void ReleaseTexImage(unsigned target) OVERRIDE;
-  virtual void WillUseTexImage() OVERRIDE;
-  virtual void DidUseTexImage() OVERRIDE {}
-  virtual void WillModifyTexImage() OVERRIDE {}
-  virtual void DidModifyTexImage() OVERRIDE {}
+  virtual void Destroy(bool have_context) override;
+  virtual gfx::Size GetSize() override;
+  virtual bool BindTexImage(unsigned target) override;
+  virtual void ReleaseTexImage(unsigned target) override;
+  virtual bool CopyTexImage(unsigned target) override;
+  virtual void WillUseTexImage() override;
+  virtual void DidUseTexImage() override {}
+  virtual void WillModifyTexImage() override {}
+  virtual void DidModifyTexImage() override {}
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    gfx::OverlayTransform transform,
+                                    const gfx::Rect& bounds_rect,
+                                    const gfx::RectF& crop_rect) override;
 
  private:
   virtual ~GLImageImpl();
@@ -50,12 +56,12 @@ GLImageImpl::~GLImageImpl() {
   release_callback_.Run();
 }
 
-void GLImageImpl::Destroy() {
+void GLImageImpl::Destroy(bool have_context) {
   NOTREACHED();
 }
 
-void GLImageImpl::WillUseTexImage() {
-  surface_texture_->UpdateTexImage();
+gfx::Size GLImageImpl::GetSize() {
+  return gfx::Size();
 }
 
 bool GLImageImpl::BindTexImage(unsigned target) {
@@ -67,8 +73,21 @@ void GLImageImpl::ReleaseTexImage(unsigned target) {
   NOTREACHED();
 }
 
-gfx::Size GLImageImpl::GetSize() {
-  return gfx::Size();
+bool GLImageImpl::CopyTexImage(unsigned target) {
+  return false;
+}
+
+void GLImageImpl::WillUseTexImage() {
+  surface_texture_->UpdateTexImage();
+}
+
+bool GLImageImpl::ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                       int z_order,
+                                       gfx::OverlayTransform transform,
+                                       const gfx::Rect& bounds_rect,
+                                       const gfx::RectF& crop_rect) {
+  NOTREACHED();
+  return false;
 }
 
 }  // anonymous namespace
@@ -118,7 +137,8 @@ GLuint StreamTextureManagerInProcess::CreateStreamTexture(
                                 GL_RGBA,
                                 GL_UNSIGNED_BYTE,
                                 true);
-  texture_manager->SetLevelImage(texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image);
+  texture_manager->SetLevelImage(
+      texture, GL_TEXTURE_EXTERNAL_OES, 0, gl_image.get());
 
   {
     base::AutoLock lock(map_lock_);

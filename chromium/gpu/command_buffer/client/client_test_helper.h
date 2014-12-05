@@ -26,21 +26,22 @@ class MockCommandBufferBase : public CommandBufferServiceBase {
   static const int32 kMaxTransferBuffers = 6;
 
   MockCommandBufferBase();
-  virtual ~MockCommandBufferBase();
+  ~MockCommandBufferBase() override;
 
-  virtual bool Initialize() OVERRIDE;
-  virtual State GetLastState() OVERRIDE;
-  virtual int32 GetLastToken() OVERRIDE;
-  virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
-  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
-  virtual void SetGetBuffer(int transfer_buffer_id) OVERRIDE;
-  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
-  virtual scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
-                                                          int32* id) OVERRIDE;
-  virtual scoped_refptr<gpu::Buffer> GetTransferBuffer(int32 id) OVERRIDE;
-  virtual void SetToken(int32 token) OVERRIDE;
-  virtual void SetParseError(error::Error error) OVERRIDE;
-  virtual void SetContextLostReason(error::ContextLostReason reason) OVERRIDE;
+  bool Initialize() override;
+  State GetLastState() override;
+  int32 GetLastToken() override;
+  void WaitForTokenInRange(int32 start, int32 end) override;
+  void WaitForGetOffsetInRange(int32 start, int32 end) override;
+  void SetGetBuffer(int transfer_buffer_id) override;
+  void SetGetOffset(int32 get_offset) override;
+  scoped_refptr<gpu::Buffer> CreateTransferBuffer(size_t size,
+                                                  int32* id) override;
+  scoped_refptr<gpu::Buffer> GetTransferBuffer(int32 id) override;
+  void SetToken(int32 token) override;
+  void SetParseError(error::Error error) override;
+  void SetContextLostReason(error::ContextLostReason reason) override;
+  int32 GetPutOffset() override;
 
   // Get's the Id of the next transfer buffer that will be returned
   // by CreateTransferBuffer. This is useful for testing expected ids.
@@ -56,6 +57,7 @@ class MockCommandBufferBase : public CommandBufferServiceBase {
   CommandBufferEntry* ring_buffer_;
   scoped_refptr<Buffer> ring_buffer_buffer_;
   State state_;
+  int32 put_offset_;
 };
 
 class MockClientCommandBuffer : public MockCommandBufferBase {
@@ -67,7 +69,7 @@ class MockClientCommandBuffer : public MockCommandBufferBase {
   MOCK_METHOD0(OnFlush, void());
   MOCK_METHOD1(DestroyTransferBuffer, void(int32 id));
 
-  virtual void Flush(int32 put_offset) OVERRIDE;
+  virtual void Flush(int32 put_offset) override;
 
   void DelegateToFake();
 };
@@ -88,18 +90,21 @@ class MockClientGpuControl : public GpuControl {
   virtual ~MockClientGpuControl();
 
   MOCK_METHOD0(GetCapabilities, Capabilities());
-  MOCK_METHOD5(CreateGpuMemoryBuffer,
-               gfx::GpuMemoryBuffer*(size_t width,
-                                     size_t height,
-                                     unsigned internalformat,
-                                     unsigned usage,
-                                     int32* id));
-  MOCK_METHOD1(DestroyGpuMemoryBuffer, void(int32 id));
+  MOCK_METHOD4(CreateImage,
+               int32(ClientBuffer buffer,
+                     size_t width,
+                     size_t height,
+                     unsigned internalformat));
+  MOCK_METHOD1(DestroyImage, void(int32 id));
+  MOCK_METHOD4(CreateGpuMemoryBufferImage,
+               int32(size_t width,
+                     size_t height,
+                     unsigned internalformat,
+                     unsigned usage));
   MOCK_METHOD0(InsertSyncPoint, uint32());
-  MOCK_METHOD2(SignalSyncPoint, void(uint32 id,
-                                     const base::Closure& callback));
-  MOCK_METHOD1(Echo, void(const base::Closure& callback));
-
+  MOCK_METHOD0(InsertFutureSyncPoint, uint32());
+  MOCK_METHOD1(RetireSyncPoint, void(uint32 id));
+  MOCK_METHOD2(SignalSyncPoint, void(uint32 id, const base::Closure& callback));
   MOCK_METHOD2(SignalQuery, void(uint32 query, const base::Closure& callback));
   MOCK_METHOD1(SetSurfaceVisible, void(bool visible));
   MOCK_METHOD1(CreateStreamTexture, uint32(uint32));

@@ -31,6 +31,7 @@ SpdySessionPool::SpdySessionPool(
     HostResolver* resolver,
     SSLConfigService* ssl_config_service,
     const base::WeakPtr<HttpServerProperties>& http_server_properties,
+    TransportSecurityState* transport_security_state,
     bool force_single_domain,
     bool enable_compression,
     bool enable_ping_based_connection_checking,
@@ -41,6 +42,7 @@ SpdySessionPool::SpdySessionPool(
     SpdySessionPool::TimeFunc time_func,
     const std::string& trusted_spdy_proxy)
     : http_server_properties_(http_server_properties),
+      transport_security_state_(transport_security_state),
       ssl_config_service_(ssl_config_service),
       resolver_(resolver),
       verify_domain_authentication_(true),
@@ -53,7 +55,7 @@ SpdySessionPool::SpdySessionPool(
       // |default_protocol_|.
       default_protocol_(
           (default_protocol == kProtoUnknown) ?
-          kProtoSPDY3 : default_protocol),
+          kProtoSPDY31 : default_protocol),
       stream_initial_recv_window_size_(stream_initial_recv_window_size),
       initial_max_concurrent_streams_(initial_max_concurrent_streams),
       max_concurrent_streams_limit_(max_concurrent_streams_limit),
@@ -98,6 +100,7 @@ base::WeakPtr<SpdySession> SpdySessionPool::CreateAvailableSessionFromSocket(
   scoped_ptr<SpdySession> new_session(
       new SpdySession(key,
                       http_server_properties_,
+                      transport_security_state_,
                       verify_domain_authentication_,
                       enable_sending_initial_data_,
                       enable_compression_,

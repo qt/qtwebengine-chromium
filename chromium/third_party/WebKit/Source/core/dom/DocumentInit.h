@@ -36,7 +36,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementRegistrationContext;
 class Document;
@@ -44,7 +44,7 @@ class LocalFrame;
 class HTMLImportsController;
 class Settings;
 
-class DocumentInit FINAL {
+class DocumentInit final {
     STACK_ALLOCATED();
 public:
     explicit DocumentInit(const KURL& = KURL(), LocalFrame* = 0, WeakPtrWillBeRawPtr<Document> = nullptr, HTMLImportsController* = 0);
@@ -59,6 +59,7 @@ public:
     bool shouldTreatURLAsSrcdocDocument() const;
     bool shouldSetURL() const;
     bool isSeamlessAllowedFor(Document* child) const;
+    bool shouldReuseDefaultView() const { return m_shouldReuseDefaultView; }
     SandboxFlags sandboxFlags() const;
 
     Document* parent() const { return m_parent.get(); }
@@ -78,15 +79,25 @@ private:
     LocalFrame* frameForSecurityContext() const;
 
     KURL m_url;
-    LocalFrame* m_frame;
+    RawPtrWillBeMember<LocalFrame> m_frame;
     RefPtrWillBeMember<Document> m_parent;
     RefPtrWillBeMember<Document> m_owner;
     WeakPtrWillBeMember<Document> m_contextDocument;
     RawPtrWillBeMember<HTMLImportsController> m_importsController;
     RefPtrWillBeMember<CustomElementRegistrationContext> m_registrationContext;
     bool m_createNewRegistrationContext;
+
+    // In some rare cases, we'll re-use a LocalDOMWindow for a new Document. For example,
+    // when a script calls window.open("..."), the browser gives JavaScript a window
+    // synchronously but kicks off the load in the window asynchronously. Web sites
+    // expect that modifications that they make to the window object synchronously
+    // won't be blown away when the network load commits. To make that happen, we
+    // "securely transition" the existing LocalDOMWindow to the Document that results from
+    // the network load. See also SecurityContext::isSecureTransitionTo.
+    // FIXME: This is for DocumentWriter creation, not for one of Document.
+    bool m_shouldReuseDefaultView;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentInit_h

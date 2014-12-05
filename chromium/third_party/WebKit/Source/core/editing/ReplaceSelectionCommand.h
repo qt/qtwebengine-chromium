@@ -29,12 +29,12 @@
 #include "core/dom/NodeTraversal.h"
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentFragment;
 class ReplacementFragment;
 
-class ReplaceSelectionCommand FINAL : public CompositeEditCommand {
+class ReplaceSelectionCommand final : public CompositeEditCommand {
 public:
     enum CommandOption {
         SelectReplacement = 1 << 0,
@@ -52,13 +52,13 @@ public:
         return adoptRefWillBeNoop(new ReplaceSelectionCommand(document, fragment, options, action));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     ReplaceSelectionCommand(Document&, PassRefPtrWillBeRawPtr<DocumentFragment>, CommandOptions, EditAction);
 
-    virtual void doApply() OVERRIDE;
-    virtual EditAction editingAction() const OVERRIDE;
+    virtual void doApply() override;
+    virtual EditAction editingAction() const override;
 
     class InsertedNodes {
         STACK_ALLOCATED();
@@ -69,18 +69,18 @@ private:
         void didReplaceNode(Node&, Node& newNode);
 
         Node* firstNodeInserted() const { return m_firstNodeInserted.get(); }
-        Node* lastLeafInserted() const { return m_lastNodeInserted ? &m_lastNodeInserted->lastDescendantOrSelf() : 0; }
-        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(m_lastNodeInserted->lastDescendantOrSelf()) : 0; }
+        Node* lastLeafInserted() const { return m_lastNodeInserted ? &NodeTraversal::lastWithinOrSelf(*m_lastNodeInserted) : 0; }
+        Node* pastLastLeaf() const { return m_lastNodeInserted ? NodeTraversal::next(NodeTraversal::lastWithinOrSelf(*m_lastNodeInserted)) : 0; }
 
     private:
         RefPtrWillBeMember<Node> m_firstNodeInserted;
         RefPtrWillBeMember<Node> m_lastNodeInserted;
     };
 
-    Node* insertAsListItems(PassRefPtrWillBeRawPtr<HTMLElement> listElement, Node* insertionNode, const Position&, InsertedNodes&);
+    Node* insertAsListItems(PassRefPtrWillBeRawPtr<HTMLElement> listElement, Element* insertionBlock, const Position&, InsertedNodes&);
 
     void updateNodesInserted(Node*);
-    bool shouldRemoveEndBR(Node*, const VisiblePosition&);
+    bool shouldRemoveEndBR(HTMLBRElement*, const VisiblePosition&);
 
     bool shouldMergeStart(bool, bool, bool);
     bool shouldMergeEnd(bool selectionEndWasEndOfParagraph);
@@ -92,7 +92,7 @@ private:
 
     void removeRedundantStylesAndKeepStyleSpanInline(InsertedNodes&);
     void makeInsertedContentRoundTrippableWithHTMLTreeBuilder(const InsertedNodes&);
-    void moveNodeOutOfAncestor(PassRefPtrWillBeRawPtr<Node>, PassRefPtrWillBeRawPtr<Node> ancestor);
+    void moveElementOutOfAncestor(PassRefPtrWillBeRawPtr<Element>, PassRefPtrWillBeRawPtr<ContainerNode> ancestor);
     void handleStyleSpans(InsertedNodes&);
 
     VisiblePosition positionAtStartOfInsertedContent() const;
@@ -119,6 +119,6 @@ private:
     bool m_shouldMergeEnd;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ReplaceSelectionCommand_h

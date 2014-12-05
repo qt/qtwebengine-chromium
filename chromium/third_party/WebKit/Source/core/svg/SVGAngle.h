@@ -23,8 +23,9 @@
 #define SVGAngle_h
 
 #include "core/svg/SVGEnumeration.h"
+#include "core/svg/properties/SVGPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAngle;
 class SVGAngleTearOff;
@@ -32,9 +33,11 @@ class SVGAngleTearOff;
 enum SVGMarkerOrientType {
     SVGMarkerOrientUnknown = 0,
     SVGMarkerOrientAuto,
-    SVGMarkerOrientAngle
+    SVGMarkerOrientAngle,
+    SVGMarkerOrientAutoStartReverse
 };
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGMarkerOrientType>();
+template<> unsigned short getMaxExposedEnumValue<SVGMarkerOrientType>();
 
 class SVGMarkerOrientEnumeration : public SVGEnumeration<SVGMarkerOrientType> {
 public:
@@ -45,20 +48,20 @@ public:
 
     virtual ~SVGMarkerOrientEnumeration();
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float, unsigned, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float, unsigned, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, PassRefPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase>, SVGElement*) override;
 
 private:
     SVGMarkerOrientEnumeration(SVGAngle*);
 
-    virtual void notifyChange() OVERRIDE;
+    virtual void notifyChange() override;
 
     // FIXME: oilpan: This is kept as raw-ptr to avoid reference cycles. Should be Member in oilpan.
     SVGAngle* m_angle;
 };
 
-class SVGAngle : public SVGPropertyBase {
+class SVGAngle : public SVGPropertyHelper<SVGAngle> {
 public:
     typedef SVGAngleTearOff TearOffType;
 
@@ -90,25 +93,27 @@ public:
     void convertToSpecifiedUnits(SVGAngleType unitType, ExceptionState&);
 
     SVGEnumeration<SVGMarkerOrientType>* orientType() { return m_orientType.get(); }
+    const SVGEnumeration<SVGMarkerOrientType>* orientType() const { return m_orientType.get(); }
     void orientTypeChanged();
 
     // SVGPropertyBase:
 
     PassRefPtr<SVGAngle> clone() const;
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
 
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
     void setValueAsString(const String&, ExceptionState&);
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> from, PassRefPtr<SVGPropertyBase> to, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement* contextElement) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement* contextElement) override;
 
     static AnimatedPropertyType classType() { return AnimatedAngle; }
 
 private:
     SVGAngle();
     SVGAngle(SVGAngleType, float, SVGMarkerOrientType);
+
+    void assign(const SVGAngle&);
 
     SVGAngleType m_unitType;
     float m_valueInSpecifiedUnits;
@@ -122,6 +127,6 @@ inline PassRefPtr<SVGAngle> toSVGAngle(PassRefPtr<SVGPropertyBase> passBase)
     return static_pointer_cast<SVGAngle>(base.release());
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAngle_h

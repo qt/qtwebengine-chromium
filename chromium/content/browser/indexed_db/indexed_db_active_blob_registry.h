@@ -12,7 +12,7 @@
 #include "base/files/file_path.h"
 #include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
-#include "webkit/common/blob/shareable_file_reference.h"
+#include "storage/common/blob/shareable_file_reference.h"
 
 namespace content {
 
@@ -31,8 +31,9 @@ class CONTENT_EXPORT IndexedDBActiveBlobRegistry {
   // Use DatabaseMetaDataKey::AllBlobsKey for "the whole database".
   bool MarkDeletedCheckIfUsed(int64 database_id, int64 blob_key);
 
-  webkit_blob::ShareableFileReference::FinalReleaseCallback
-      GetFinalReleaseCallback(int64 database_id, int64 blob_key);
+  storage::ShareableFileReference::FinalReleaseCallback GetFinalReleaseCallback(
+      int64 database_id,
+      int64 blob_key);
   // This closure holds a raw pointer to the IndexedDBActiveBlobRegistry,
   // and may not be called after it is deleted.
   base::Closure GetAddBlobRefCallback(int64 database_id, int64 blob_key);
@@ -42,6 +43,13 @@ class CONTENT_EXPORT IndexedDBActiveBlobRegistry {
   void ForceShutdown();
 
  private:
+  // Maps blob_key -> IsDeleted; if the record's absent, it's not in active use
+  // and we don't care if it's deleted.
+  typedef std::map<int64, bool> SingleDBMap;
+  // Maps DB ID -> SingleDBMap
+  typedef std::map<int64, SingleDBMap> AllDBsMap;
+  typedef std::set<int64> DeletedDBSet;
+
   void AddBlobRef(int64 database_id, int64 blob_key);
   void ReleaseBlobRef(int64 database_id, int64 blob_key);
   static void ReleaseBlobRefThreadSafe(
@@ -50,13 +58,6 @@ class CONTENT_EXPORT IndexedDBActiveBlobRegistry {
       int64 database_id,
       int64 blob_key,
       const base::FilePath& unused);
-
-  // Maps blob_key -> IsDeleted; if the record's absent, it's not in active use
-  // and we don't care if it's deleted.
-  typedef std::map<int64, bool> SingleDBMap;
-  // Maps DB ID -> SingleDBMap
-  typedef std::map<int64, SingleDBMap> AllDBsMap;
-  typedef std::set<int64> DeletedDBSet;
 
   AllDBsMap use_tracker_;
   DeletedDBSet deleted_dbs_;

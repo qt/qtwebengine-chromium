@@ -35,6 +35,9 @@
 
 namespace blink {
 
+template <typename T>
+class WebVector;
+
 class WebGraphicsLayerDebugInfo {
 public:
     virtual void appendAsTraceFormat(WebString* out) const = 0;

@@ -964,7 +964,7 @@ static __inline void YuvPixel(uint8 y, uint8 u, uint8 v,
 }
 
 #if !defined(LIBYUV_DISABLE_NEON) && \
-    (defined(__ARM_NEON__) || defined(LIBYUV_NEON))
+    (defined(__ARM_NEON__) || defined(__aarch64__) || defined(LIBYUV_NEON))
 // C mimic assembly.
 // TODO(fbarchard): Remove subsampling from Neon.
 void I444ToARGBRow_C(const uint8* src_y,
@@ -1885,17 +1885,17 @@ void ARGBAffineRow_C(const uint8* src_argb, int src_argb_stride,
   }
 }
 
-// Blend 2 rows into 1 for conversions such as I422ToI420.
-void HalfRow_C(const uint8* src_uv, int src_uv_stride,
-               uint8* dst_uv, int pix) {
+// Blend 2 rows into 1.
+static void HalfRow_C(const uint8* src_uv, int src_uv_stride,
+                      uint8* dst_uv, int pix) {
   int x;
   for (x = 0; x < pix; ++x) {
     dst_uv[x] = (src_uv[x] + src_uv[src_uv_stride + x] + 1) >> 1;
   }
 }
 
-void HalfRow_16_C(const uint16* src_uv, int src_uv_stride,
-                  uint16* dst_uv, int pix) {
+static void HalfRow_16_C(const uint16* src_uv, int src_uv_stride,
+                         uint16* dst_uv, int pix) {
   int x;
   for (x = 0; x < pix; ++x) {
     dst_uv[x] = (src_uv[x] + src_uv[src_uv_stride + x] + 1) >> 1;
@@ -2137,19 +2137,6 @@ void YUY2ToARGBRow_SSSE3(const uint8* src_yuy2,
   free_aligned_buffer_64(row_y);
 }
 
-void YUY2ToARGBRow_Unaligned_SSSE3(const uint8* src_yuy2,
-                                   uint8* dst_argb,
-                                   int width) {
-  // Allocate a rows of yuv.
-  align_buffer_64(row_y, ((width + 63) & ~63) * 2);
-  uint8* row_u = row_y + ((width + 63) & ~63);
-  uint8* row_v = row_u + ((width + 63) & ~63) / 2;
-  YUY2ToUV422Row_Unaligned_SSE2(src_yuy2, row_u, row_v, width);
-  YUY2ToYRow_Unaligned_SSE2(src_yuy2, row_y, width);
-  I422ToARGBRow_Unaligned_SSSE3(row_y, row_u, row_v, dst_argb, width);
-  free_aligned_buffer_64(row_y);
-}
-
 void UYVYToARGBRow_SSSE3(const uint8* src_uyvy,
                          uint8* dst_argb,
                          int width) {
@@ -2160,19 +2147,6 @@ void UYVYToARGBRow_SSSE3(const uint8* src_uyvy,
   UYVYToUV422Row_SSE2(src_uyvy, row_u, row_v, width);
   UYVYToYRow_SSE2(src_uyvy, row_y, width);
   I422ToARGBRow_SSSE3(row_y, row_u, row_v, dst_argb, width);
-  free_aligned_buffer_64(row_y);
-}
-
-void UYVYToARGBRow_Unaligned_SSSE3(const uint8* src_uyvy,
-                                   uint8* dst_argb,
-                                   int width) {
-  // Allocate a rows of yuv.
-  align_buffer_64(row_y, ((width + 63) & ~63) * 2);
-  uint8* row_u = row_y + ((width + 63) & ~63);
-  uint8* row_v = row_u + ((width + 63) & ~63) / 2;
-  UYVYToUV422Row_Unaligned_SSE2(src_uyvy, row_u, row_v, width);
-  UYVYToYRow_Unaligned_SSE2(src_uyvy, row_y, width);
-  I422ToARGBRow_Unaligned_SSSE3(row_y, row_u, row_v, dst_argb, width);
   free_aligned_buffer_64(row_y);
 }
 

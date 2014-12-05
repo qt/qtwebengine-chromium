@@ -20,19 +20,13 @@
  */
 
 #include "config.h"
-
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 
-#include "core/rendering/PaintInfo.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
-
 #include "wtf/TemporaryChange.h"
 
-namespace WebCore {
-
-const RenderSVGResourceType RenderSVGResourceMarker::s_resourceType = MarkerResourceType;
+namespace blink {
 
 RenderSVGResourceMarker::RenderSVGResourceMarker(SVGMarkerElement* node)
     : RenderSVGResourceContainer(node)
@@ -53,7 +47,7 @@ void RenderSVGResourceMarker::layout()
 
     // RenderSVGHiddenContainer overwrites layout(). We need the
     // layouting of RenderSVGContainer for calculating  local
-    // transformations and repaint.
+    // transformations and paint invalidation.
     RenderSVGContainer::layout();
 
     clearInvalidationMask();
@@ -70,17 +64,11 @@ void RenderSVGResourceMarker::removeClientFromCache(RenderObject* client, bool m
     markClientForInvalidation(client, markForInvalidation ? BoundariesInvalidation : ParentOnlyInvalidation);
 }
 
-void RenderSVGResourceMarker::applyViewportClip(PaintInfo& paintInfo)
-{
-    if (SVGRenderSupport::isOverflowHidden(this))
-        paintInfo.context->clip(m_viewport);
-}
-
 FloatRect RenderSVGResourceMarker::markerBoundaries(const AffineTransform& markerTransformation) const
 {
     FloatRect coordinates = RenderSVGContainer::paintInvalidationRectInLocalCoordinates();
 
-    // Map repaint rect into parent coordinate space, in which the marker boundaries have to be evaluated
+    // Map paint invalidation rect into parent coordinate space, in which the marker boundaries have to be evaluated
     coordinates = localToParentTransform().mapRect(coordinates);
 
     return markerTransformation.mapRect(coordinates);
@@ -128,25 +116,6 @@ AffineTransform RenderSVGResourceMarker::markerTransformation(const FloatPoint& 
     transform.rotate(markerAngle == -1 ? autoAngle : markerAngle);
     transform = markerContentTransformation(transform, referencePoint(), useStrokeWidth ? strokeWidth : -1);
     return transform;
-}
-
-void RenderSVGResourceMarker::draw(PaintInfo& paintInfo, const AffineTransform& transform)
-{
-    clearInvalidationMask();
-
-    // An empty viewBox disables rendering.
-    SVGMarkerElement* marker = toSVGMarkerElement(element());
-    ASSERT(marker);
-    if (marker->hasAttribute(SVGNames::viewBoxAttr) && marker->viewBox()->currentValue()->isValid() && marker->viewBox()->currentValue()->value().isEmpty())
-        return;
-
-    PaintInfo info(paintInfo);
-    GraphicsContextStateSaver stateSaver(*info.context, false);
-    if (!transform.isIdentity()) {
-        stateSaver.save();
-        info.applyTransform(transform, false);
-    }
-    RenderSVGContainer::paint(info, IntPoint());
 }
 
 AffineTransform RenderSVGResourceMarker::markerContentTransformation(const AffineTransform& contentTransformation, const FloatPoint& origin, float strokeWidth) const

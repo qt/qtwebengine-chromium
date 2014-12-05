@@ -11,7 +11,7 @@
 #include "modules/device_orientation/DeviceMotionDispatcher.h"
 #include "modules/device_orientation/DeviceMotionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceMotionController::DeviceMotionController(Document& document)
     : DeviceSingleWindowEventController(document)
@@ -20,7 +20,9 @@ DeviceMotionController::DeviceMotionController(Document& document)
 
 DeviceMotionController::~DeviceMotionController()
 {
+#if !ENABLE(OILPAN)
     stopUpdating();
+#endif
 }
 
 const char* DeviceMotionController::supplementName()
@@ -69,4 +71,10 @@ const AtomicString& DeviceMotionController::eventTypeName() const
     return EventTypeNames::devicemotion;
 }
 
-} // namespace WebCore
+void DeviceMotionController::trace(Visitor* visitor)
+{
+    DeviceSingleWindowEventController::trace(visitor);
+    DocumentSupplement::trace(visitor);
+}
+
+} // namespace blink

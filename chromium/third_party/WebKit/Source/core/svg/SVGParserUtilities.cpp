@@ -23,14 +23,14 @@
 #include "config.h"
 #include "core/svg/SVGParserUtilities.h"
 
-#include "core/dom/Document.h"
 #include "core/svg/SVGPointList.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/ASCIICType.h"
+#include "wtf/text/StringHash.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
 template <typename FloatType>
 static inline bool isValidRange(const FloatType& x)
@@ -145,18 +145,6 @@ static bool genericParseNumber(const CharType*& ptr, const CharType* end, FloatT
     return true;
 }
 
-template <typename CharType>
-bool parseSVGNumber(CharType* begin, size_t length, double& number)
-{
-    const CharType* ptr = begin;
-    const CharType* end = ptr + length;
-    return genericParseNumber(ptr, end, number, AllowLeadingAndTrailingWhitespace);
-}
-
-// Explicitly instantiate the two flavors of parseSVGNumber() to satisfy external callers
-template bool parseSVGNumber(LChar* begin, size_t length, double&);
-template bool parseSVGNumber(UChar* begin, size_t length, double&);
-
 bool parseNumber(const LChar*& ptr, const LChar* end, float& number, WhitespaceMode mode)
 {
     return genericParseNumber(ptr, end, number, mode);
@@ -261,198 +249,6 @@ bool parseNumberOrPercentage(const String& string, float& number)
     const UChar* ptr = string.characters16();
     const UChar* end = ptr + string.length();
     return genericParseNumberOrPercentage(ptr, end, number);
-}
-
-template<typename CharType>
-static bool parseGlyphName(const CharType*& ptr, const CharType* end, HashSet<String>& values)
-{
-    skipOptionalSVGSpaces(ptr, end);
-
-    while (ptr < end) {
-        // Leading and trailing white space, and white space before and after separators, will be ignored.
-        const CharType* inputStart = ptr;
-        while (ptr < end && *ptr != ',')
-            ++ptr;
-
-        if (ptr == inputStart)
-            break;
-
-        // walk backwards from the ; to ignore any whitespace
-        const CharType* inputEnd = ptr - 1;
-        while (inputStart < inputEnd && isHTMLSpace<CharType>(*inputEnd))
-            --inputEnd;
-
-        values.add(String(inputStart, inputEnd - inputStart + 1));
-        skipOptionalSVGSpacesOrDelimiter(ptr, end, ',');
-    }
-
-    return true;
-}
-
-bool parseGlyphName(const String& input, HashSet<String>& values)
-{
-    // FIXME: Parsing error detection is missing.
-    values.clear();
-    if (input.isEmpty())
-        return true;
-    if (input.is8Bit()) {
-        const LChar* ptr = input.characters8();
-        const LChar* end = ptr + input.length();
-        return parseGlyphName(ptr, end, values);
-    }
-    const UChar* ptr = input.characters16();
-    const UChar* end = ptr + input.length();
-    return parseGlyphName(ptr, end, values);
-}
-
-template<typename CharType>
-static bool parseUnicodeRange(const CharType* characters, unsigned length, UnicodeRange& range)
-{
-    if (length < 2 || characters[0] != 'U' || characters[1] != '+')
-        return false;
-
-    // Parse the starting hex number (or its prefix).
-    unsigned startRange = 0;
-    unsigned startLength = 0;
-
-    const CharType* ptr = characters + 2;
-    const CharType* end = characters + length;
-    while (ptr < end) {
-        if (!isASCIIHexDigit(*ptr))
-            break;
-        ++startLength;
-        if (startLength > 6)
-            return false;
-        startRange = (startRange << 4) | toASCIIHexValue(*ptr);
-        ++ptr;
-    }
-
-    // Handle the case of ranges separated by "-" sign.
-    if (2 + startLength < length && *ptr == '-') {
-        if (!startLength)
-            return false;
-
-        // Parse the ending hex number (or its prefix).
-        unsigned endRange = 0;
-        unsigned endLength = 0;
-        ++ptr;
-        while (ptr < end) {
-            if (!isASCIIHexDigit(*ptr))
-                break;
-            ++endLength;
-            if (endLength > 6)
-                return false;
-            endRange = (endRange << 4) | toASCIIHexValue(*ptr);
-            ++ptr;
-        }
-
-        if (!endLength)
-            return false;
-
-        range.first = startRange;
-        range.second = endRange;
-        return true;
-    }
-
-    // Handle the case of a number with some optional trailing question marks.
-    unsigned endRange = startRange;
-    while (ptr < end) {
-        if (*ptr != '?')
-            break;
-        ++startLength;
-        if (startLength > 6)
-            return false;
-        startRange <<= 4;
-        endRange = (endRange << 4) | 0xF;
-        ++ptr;
-    }
-
-    if (!startLength)
-        return false;
-
-    range.first = startRange;
-    range.second = endRange;
-    return true;
-}
-
-template<typename CharType>
-static bool genericParseKerningUnicodeString(const CharType*& ptr, const CharType* end, UnicodeRanges& rangeList, HashSet<String>& stringList)
-{
-    while (ptr < end) {
-        const CharType* inputStart = ptr;
-        while (ptr < end && *ptr != ',')
-            ++ptr;
-
-        if (ptr == inputStart)
-            break;
-
-        // Try to parse unicode range first
-        UnicodeRange range;
-        if (parseUnicodeRange(inputStart, ptr - inputStart, range))
-            rangeList.append(range);
-        else
-            stringList.add(String(inputStart, ptr - inputStart));
-        ++ptr;
-    }
-
-    return true;
-}
-
-bool parseKerningUnicodeString(const String& input, UnicodeRanges& rangeList, HashSet<String>& stringList)
-{
-    // FIXME: Parsing error detection is missing.
-    if (input.isEmpty())
-        return true;
-    if (input.is8Bit()) {
-        const LChar* ptr = input.characters8();
-        const LChar* end = ptr + input.length();
-        return genericParseKerningUnicodeString(ptr, end, rangeList, stringList);
-    }
-    const UChar* ptr = input.characters16();
-    const UChar* end = ptr + input.length();
-    return genericParseKerningUnicodeString(ptr, end, rangeList, stringList);
-}
-
-template<typename CharType>
-static Vector<String> genericParseDelimitedString(const CharType*& ptr, const CharType* end, const char seperator)
-{
-    Vector<String> values;
-
-    skipOptionalSVGSpaces(ptr, end);
-
-    while (ptr < end) {
-        // Leading and trailing white space, and white space before and after semicolon separators, will be ignored.
-        const CharType* inputStart = ptr;
-        while (ptr < end && *ptr != seperator) // careful not to ignore whitespace inside inputs
-            ptr++;
-
-        if (ptr == inputStart)
-            break;
-
-        // walk backwards from the ; to ignore any whitespace
-        const CharType* inputEnd = ptr - 1;
-        while (inputStart < inputEnd && isHTMLSpace<CharType>(*inputEnd))
-            inputEnd--;
-
-        values.append(String(inputStart, inputEnd - inputStart + 1));
-        skipOptionalSVGSpacesOrDelimiter(ptr, end, seperator);
-    }
-
-    return values;
-}
-
-Vector<String> parseDelimitedString(const String& input, const char seperator)
-{
-    if (input.isEmpty())
-        return Vector<String>();
-    if (input.is8Bit()) {
-        const LChar* ptr = input.characters8();
-        const LChar* end = ptr + input.length();
-        return genericParseDelimitedString(ptr, end, seperator);
-    }
-    const UChar* ptr = input.characters16();
-    const UChar* end = ptr + input.length();
-    return genericParseDelimitedString(ptr, end, seperator);
 }
 
 template <typename CharType>

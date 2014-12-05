@@ -31,7 +31,7 @@ void OnFinishCopyOutputRequest(
   }
 
   scoped_ptr<SkBitmap> bitmap = copy_output_result->TakeBitmap();
-  result_callback.Run(true, *bitmap.Pass());
+  result_callback.Run(true, *bitmap);
 }
 
 }  // anonymous namespace
@@ -54,7 +54,7 @@ void ContentReadbackHandler::GetContentBitmap(JNIEnv* env,
                                               jobject obj,
                                               jint readback_id,
                                               jfloat scale,
-                                              jobject config,
+                                              jobject color_type,
                                               jfloat x,
                                               jfloat y,
                                               jfloat width,
@@ -69,8 +69,9 @@ void ContentReadbackHandler::GetContentBitmap(JNIEnv* env,
                  weak_factory_.GetWeakPtr(),
                  readback_id);
 
+  SkColorType sk_color_type = gfx::ConvertToSkiaColorType(color_type);
   view->GetScaledContentBitmap(
-      scale, config, gfx::Rect(x, y, width, height), result_callback);
+      scale, sk_color_type, gfx::Rect(x, y, width, height), result_callback);
 }
 
 void ContentReadbackHandler::GetCompositorBitmap(JNIEnv* env,
@@ -112,7 +113,7 @@ void ContentReadbackHandler::OnFinishReadback(int readback_id,
     java_bitmap = gfx::ConvertToJavaBitmap(&bitmap);
 
   Java_ContentReadbackHandler_notifyGetBitmapFinished(
-      env, java_obj_.obj(), readback_id, success, java_bitmap.obj());
+      env, java_obj_.obj(), readback_id, java_bitmap.obj());
 }
 
 // static

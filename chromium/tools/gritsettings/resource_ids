@@ -10,14 +10,12 @@
 # The first entry in the file, SRCDIR, is special: It is a relative path from
 # this file to the base of your checkout.
 #
-# http://msdn.microsoft.com/en-us/library/t2zechd4(VS.71).aspx says that the
-# range for IDR_ is 1 to 28,671 and the range for IDS_ is 1 to 32,767 and
-# common convention starts practical use of IDs at 100 or 101.
+# The range of ID values, which is used by pak files, is from 0 to 2^16 - 1.
 {
   "SRCDIR": "../..",
 
   "chrome/browser/browser_resources.grd": {
-    "includes": [500],
+    "includes": [400],
     "structures": [750],
   },
   "chrome/browser/resources/component_extension_resources.grd": {
@@ -44,7 +42,7 @@
   "ui/resources/ui_unscaled_resources.grd": {
     "includes": [4500],
   },
-  "webkit/glue/resources/webkit_resources.grd": {
+  "content/app/resources/content_resources.grd": {
     "structures": [4700],
   },
   "ui/resources/ui_resources.grd": {
@@ -54,11 +52,17 @@
     "includes": [6100],
     "structures": [6150],
   },
+  "athena/resources/athena_resources.grd": {
+    "structures": [6400],
+  },
+  "athena/strings/athena_strings.grd": {
+    "messages": [6500],
+  },
   "chrome/app/theme/theme_resources.grd": {
-    "structures": [6500],
+    "structures": [7000],
   },
   "chrome/app/theme/chrome_unscaled_resources.grd": {
-    "includes": [7500],
+    "includes": [8000],
   },
   "ui/strings/app_locale_settings.grd": {
     "messages": [9000],
@@ -102,10 +106,7 @@
     "structures": [12000],
     "messages": [12500],
   },
-  "webkit/glue/inspector_strings.grd": {
-    "messages": [17500],
-  },
-  "webkit/glue/webkit_strings.grd": {
+  "content/app/strings/content_strings.grd": {
     "messages": [18500],
   },
   "components/policy/resources/policy_templates.grd": {
@@ -162,19 +163,29 @@
   "ash/ash_strings.grd": {
     "messages": [26000],
   },
+  "ui/chromeos/resources/ui_chromeos_resources.grd": {
+    "structures": [26200],
+  },
+  "ui/chromeos/ui_chromeos_strings.grd": {
+    "messages": [26300],
+  },
   "chrome/common/extensions_api_resources.grd": {
     "includes": [26400],
   },
   "extensions/extensions_resources.grd": {
     "includes": [26600],
   },
+  "extensions/browser/resources/extensions_browser_resources.grd": {
+    "structures": [26800],
+  },
   "extensions/renderer/resources/extensions_renderer_resources.grd": {
-    "includes": [26800],
+    "includes": [26850],
+    "structures": [26950],
   },
   "extensions/extensions_strings.grd": {
     "messages": [27000],
   },
-  "apps/shell/app_shell_resources.grd": {
+  "extensions/shell/app_shell_resources.grd": {
     "includes": [27400],
   },
   "chrome/browser/resources/memory_internals_resources.grd": {
@@ -192,17 +203,20 @@
   "ui/file_manager/file_manager_resources.grd": {
     "includes": [28100],
   },
+  "ui/login/login_resources.grd": {
+    "includes": [28300],
+  },
   "chrome/browser/resources/translate_internals_resources.grd": {
     "includes": [28500],
   },
   "chrome/browser/resources/sync_file_system_internals_resources.grd": {
     "includes": [29000],
   },
-  "third_party/libaddressinput/chromium/cpp/res/libaddressinput_strings.grd": {
-    "messages": [29050],
-  },
   "chrome/app/address_input_strings.grd": {
     "messages": [29100],
+  },
+  "remoting/resources/remoting_strings.grd": {
+    "messages": [29550],
   },
   "components/components_strings.grd": {
     "messages": [30000],
@@ -216,5 +230,14 @@
   "third_party/WebKit/public/blink_resources.grd": {
     "includes": [30500],
   },
+
+  # These files don't need to reserve resource ids, but are listed here so that
+  # translation scripts know of their existence.
+  "android_webview/java/strings/android_webview_strings.grd": {},
+  "chrome/android/java/strings/android_chrome_strings.grd": {},
+  "content/public/android/java/strings/android_content_strings.grd": {},
+  "ui/accessibility/extensions/strings/accessibility_extensions_strings.grd": {},
+  "ui/android/java/strings/android_ui_strings.grd": {},
+
   # Resource ids starting at 31000 are reserved for projects built on Chromium.
 }

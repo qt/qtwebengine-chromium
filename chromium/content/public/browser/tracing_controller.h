@@ -9,11 +9,9 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/debug/trace_event.h"
+#include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
-
-namespace base {
-class FilePath;
-};
 
 namespace content {
 
@@ -25,14 +23,38 @@ class TracingController;
 // the UI thread.
 class TracingController {
  public:
-  enum Options {
-    DEFAULT_OPTIONS = 0,
-    ENABLE_SYSTRACE = 1 << 0,
-    ENABLE_SAMPLING = 1 << 1,
-    RECORD_CONTINUOUSLY = 1 << 2,  // For EnableRecording() only.
-  };
 
   CONTENT_EXPORT static TracingController* GetInstance();
+
+  // An interface for trace data consumer. An implemnentation of this interface
+  // is passed to either DisableTracing() or CaptureMonitoringSnapshot() and
+  // receives the trace data followed by a notification that all child processes
+  // have completed tracing and the data collection is over.
+  // All methods are called on the UI thread.
+  // Close method will be called exactly once and no methods will be
+  // called after that.
+  class CONTENT_EXPORT TraceDataSink
+      : public base::RefCountedThreadSafe<TraceDataSink> {
+   public:
+    virtual void AddTraceChunk(const std::string& chunk) {}
+    virtual void SetSystemTrace(const std::string& data) {}
+    virtual void Close() {}
+
+   protected:
+    friend class base::RefCountedThreadSafe<TraceDataSink>;
+    virtual ~TraceDataSink() {}
+  };
+
+  // Create a trace sink that may be supplied to DisableRecording or
+  // CaptureMonitoringSnapshot to capture the trace data as a string.
+  CONTENT_EXPORT static scoped_refptr<TraceDataSink> CreateStringSink(
+      const base::Callback<void(base::RefCountedString*)>& callback);
+
+  // Create a trace sink that may be supplied to DisableRecording or
+  // CaptureMonitoringSnapshot to dump the trace data to a file.
+  CONTENT_EXPORT static scoped_refptr<TraceDataSink> CreateFileSink(
+      const base::FilePath& file_path,
+      const base::Closure& callback);
 
   // Get a set of category groups. The category groups can change as
   // new code paths are reached.
@@ -65,8 +87,8 @@ class TracingController {
   // |options| controls what kind of tracing is enabled.
   typedef base::Callback<void()> EnableRecordingDoneCallback;
   virtual bool EnableRecording(
-      const std::string& category_filter,
-      TracingController::Options options,
+      const base::debug::CategoryFilter& category_filter,
+      const base::debug::TraceOptions& trace_options,
       const EnableRecordingDoneCallback& callback) = 0;
 
   // Stop recording on all processes.
@@ -81,15 +103,12 @@ class TracingController {
   // TracingFileResultCallback will be called back with a file that contains
   // the traced data.
   //
-  // Trace data will be written into |result_file_path| if it is not empty, or
-  // into a temporary file. The actual file path will be passed to |callback| if
-  // it's not null.
+  // If |trace_data_sink| is not null, it will receive chunks of trace data
+  // as a comma-separated sequences of JSON-stringified events, followed by
+  // a notification that the trace collection is finished.
   //
-  // If |result_file_path| is empty and |callback| is null, trace data won't be
-  // written to any file.
-  typedef base::Callback<void(const base::FilePath&)> TracingFileResultCallback;
-  virtual bool DisableRecording(const base::FilePath& result_file_path,
-                                const TracingFileResultCallback& callback) = 0;
+  virtual bool DisableRecording(
+      const scoped_refptr<TraceDataSink>& trace_data_sink) = 0;
 
   // Start monitoring on all processes.
   //
@@ -105,8 +124,8 @@ class TracingController {
   // |options| controls what kind of tracing is enabled.
   typedef base::Callback<void()> EnableMonitoringDoneCallback;
   virtual bool EnableMonitoring(
-      const std::string& category_filter,
-      TracingController::Options options,
+      const base::debug::CategoryFilter& category_filter,
+      const base::debug::TraceOptions& trace_options,
       const EnableMonitoringDoneCallback& callback) = 0;
 
   // Stop monitoring on all processes.
@@ -118,9 +137,10 @@ class TracingController {
       const DisableMonitoringDoneCallback& callback) = 0;
 
   // Get the current monitoring configuration.
-  virtual void GetMonitoringStatus(bool* out_enabled,
-                                   std::string* out_category_filter,
-                                   TracingController::Options* out_options) = 0;
+  virtual void GetMonitoringStatus(
+      bool* out_enabled,
+      base::debug::CategoryFilter* out_category_filter,
+      base::debug::TraceOptions* out_trace_options) = 0;
 
   // Get the current monitoring traced data.
   //
@@ -134,14 +154,11 @@ class TracingController {
   // request, TracingFileResultCallback will be called back with a file that
   // contains the traced data.
   //
-  // Trace data will be written into |result_file_path| if it is not empty, or
-  // into a temporary file. The actual file path will be passed to |callback|.
-  //
-  // If |result_file_path| is empty and |callback| is null, trace data won't be
-  // written to any file.
+  // If |trace_data_sink| is not null, it will receive chunks of trace data
+  // as a comma-separated sequences of JSON-stringified events, followed by
+  // a notification that the trace collection is finished.
   virtual bool CaptureMonitoringSnapshot(
-      const base::FilePath& result_file_path,
-      const TracingFileResultCallback& callback) = 0;
+      const scoped_refptr<TraceDataSink>& trace_data_sink) = 0;
 
   // Get the maximum across processes of trace buffer percent full state.
   // When the TraceBufferPercentFull value is determined, the callback is

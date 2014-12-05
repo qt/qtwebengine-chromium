@@ -19,7 +19,7 @@ namespace internal {
 template<class Config>
 TypeImpl<Config>* TypeImpl<Config>::cast(typename Config::Base* object) {
   TypeImpl* t = static_cast<TypeImpl*>(object);
-  ASSERT(t->IsBitset() || t->IsClass() || t->IsConstant() ||
+  DCHECK(t->IsBitset() || t->IsClass() || t->IsConstant() || t->IsRange() ||
          t->IsUnion() || t->IsArray() || t->IsFunction() || t->IsContext());
   return t;
 }
@@ -56,6 +56,13 @@ bool TypeImpl<Config>::NowContains(i::Object* value) {
 
 // static
 template<class T>
+T* ZoneTypeConfig::null_handle() {
+  return NULL;
+}
+
+
+// static
+template<class T>
 T* ZoneTypeConfig::handle(T* type) {
   return type;
 }
@@ -70,7 +77,7 @@ T* ZoneTypeConfig::cast(Type* type) {
 
 // static
 bool ZoneTypeConfig::is_bitset(Type* type) {
-  return reinterpret_cast<intptr_t>(type) & 1;
+  return reinterpret_cast<uintptr_t>(type) & 1;
 }
 
 
@@ -87,15 +94,15 @@ bool ZoneTypeConfig::is_class(Type* type) {
 
 
 // static
-int ZoneTypeConfig::as_bitset(Type* type) {
-  ASSERT(is_bitset(type));
-  return static_cast<int>(reinterpret_cast<intptr_t>(type) >> 1);
+ZoneTypeConfig::Type::bitset ZoneTypeConfig::as_bitset(Type* type) {
+  DCHECK(is_bitset(type));
+  return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type) ^ 1u);
 }
 
 
 // static
 ZoneTypeConfig::Struct* ZoneTypeConfig::as_struct(Type* type) {
-  ASSERT(!is_bitset(type));
+  DCHECK(!is_bitset(type));
   return reinterpret_cast<Struct*>(type);
 }
 
@@ -108,13 +115,14 @@ i::Handle<i::Map> ZoneTypeConfig::as_class(Type* type) {
 
 
 // static
-ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(int bitset) {
-  return reinterpret_cast<Type*>((bitset << 1) | 1);
+ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(Type::bitset bitset) {
+  return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset | 1u));
 }
 
 
 // static
-ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(int bitset, Zone* Zone) {
+ZoneTypeConfig::Type* ZoneTypeConfig::from_bitset(
+    Type::bitset bitset, Zone* Zone) {
   return from_bitset(bitset);
 }
 
@@ -145,7 +153,7 @@ ZoneTypeConfig::Struct* ZoneTypeConfig::struct_create(
 
 // static
 void ZoneTypeConfig::struct_shrink(Struct* structure, int length) {
-  ASSERT(0 <= length && length <= struct_length(structure));
+  DCHECK(0 <= length && length <= struct_length(structure));
   structure[1] = reinterpret_cast<void*>(length);
 }
 
@@ -164,14 +172,14 @@ int ZoneTypeConfig::struct_length(Struct* structure) {
 
 // static
 Type* ZoneTypeConfig::struct_get(Struct* structure, int i) {
-  ASSERT(0 <= i && i <= struct_length(structure));
+  DCHECK(0 <= i && i <= struct_length(structure));
   return static_cast<Type*>(structure[2 + i]);
 }
 
 
 // static
 void ZoneTypeConfig::struct_set(Struct* structure, int i, Type* x) {
-  ASSERT(0 <= i && i <= struct_length(structure));
+  DCHECK(0 <= i && i <= struct_length(structure));
   structure[2 + i] = x;
 }
 
@@ -179,7 +187,7 @@ void ZoneTypeConfig::struct_set(Struct* structure, int i, Type* x) {
 // static
 template<class V>
 i::Handle<V> ZoneTypeConfig::struct_get_value(Struct* structure, int i) {
-  ASSERT(0 <= i && i <= struct_length(structure));
+  DCHECK(0 <= i && i <= struct_length(structure));
   return i::Handle<V>(static_cast<V**>(structure[2 + i]));
 }
 
@@ -188,13 +196,20 @@ i::Handle<V> ZoneTypeConfig::struct_get_value(Struct* structure, int i) {
 template<class V>
 void ZoneTypeConfig::struct_set_value(
     Struct* structure, int i, i::Handle<V> x) {
-  ASSERT(0 <= i && i <= struct_length(structure));
+  DCHECK(0 <= i && i <= struct_length(structure));
   structure[2 + i] = x.location();
 }
 
 
 // -----------------------------------------------------------------------------
 // HeapTypeConfig
+
+// static
+template<class T>
+i::Handle<T> HeapTypeConfig::null_handle() {
+  return i::Handle<T>();
+}
+
 
 // static
 template<class T>
@@ -229,8 +244,9 @@ bool HeapTypeConfig::is_struct(Type* type, int tag) {
 
 
 // static
-int HeapTypeConfig::as_bitset(Type* type) {
-  return i::Smi::cast(type)->value();
+HeapTypeConfig::Type::bitset HeapTypeConfig::as_bitset(Type* type) {
+  // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
+  return static_cast<Type::bitset>(reinterpret_cast<uintptr_t>(type));
 }
 
 
@@ -247,14 +263,15 @@ i::Handle<HeapTypeConfig::Struct> HeapTypeConfig::as_struct(Type* type) {
 
 
 // static
-HeapTypeConfig::Type* HeapTypeConfig::from_bitset(int bitset) {
-  return Type::cast(i::Smi::FromInt(bitset));
+HeapTypeConfig::Type* HeapTypeConfig::from_bitset(Type::bitset bitset) {
+  // TODO(rossberg): Breaks the Smi abstraction. Fix once there is a better way.
+  return reinterpret_cast<Type*>(static_cast<uintptr_t>(bitset));
 }
 
 
 // static
 i::Handle<HeapTypeConfig::Type> HeapTypeConfig::from_bitset(
-    int bitset, Isolate* isolate) {
+    Type::bitset bitset, Isolate* isolate) {
   return i::handle(from_bitset(bitset), isolate);
 }
 

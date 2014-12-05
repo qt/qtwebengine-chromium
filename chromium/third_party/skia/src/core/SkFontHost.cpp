@@ -67,6 +67,15 @@ SkFontStyle::SkFontStyle(int weight, int width, Slant slant) {
     fUnion.fR.fSlant = SkPin32(slant, kUpright_Slant, kItalic_Slant);
 }
 
+SkFontStyle::SkFontStyle(unsigned oldStyle) {
+    fUnion.fU32 = 0;
+    fUnion.fR.fWeight = (oldStyle & SkTypeface::kBold) ? SkFontStyle::kBold_Weight
+                                                       : SkFontStyle::kNormal_Weight;
+    fUnion.fR.fWidth = SkFontStyle::kNormal_Width;
+    fUnion.fR.fSlant = (oldStyle & SkTypeface::kItalic) ? SkFontStyle::kItalic_Slant
+                                                        : SkFontStyle::kUpright_Slant;
+}
+
 #include "SkFontMgr.h"
 
 class SkEmptyFontStyleSet : public SkFontStyleSet {
@@ -110,10 +119,18 @@ protected:
                                            const SkFontStyle&) const SK_OVERRIDE {
         return NULL;
     }
+#ifdef SK_FM_NEW_MATCH_FAMILY_STYLE_CHARACTER
     virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
                                                     const SkFontStyle& style,
-                                                    const char bpc47[],
-                                                    uint32_t character) const SK_OVERRIDE {
+                                                    const char* bcp47[],
+                                                    int bcp47Count,
+                                                    SkUnichar character) const SK_OVERRIDE {
+#else
+    virtual SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
+                                                    const SkFontStyle& style,
+                                                    const char bcp47[],
+                                                    SkUnichar character) const SK_OVERRIDE {
+#endif
         return NULL;
     }
     virtual SkTypeface* onMatchFaceStyle(const SkTypeface*,
@@ -162,10 +179,18 @@ SkTypeface* SkFontMgr::matchFamilyStyle(const char familyName[],
     return this->onMatchFamilyStyle(familyName, fs);
 }
 
+#ifdef SK_FM_NEW_MATCH_FAMILY_STYLE_CHARACTER
 SkTypeface* SkFontMgr::matchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
-                                                 const char bpc47[], uint32_t character) const {
-    return this->onMatchFamilyStyleCharacter(familyName, style, bpc47, character);
+                                                 const char* bcp47[], int bcp47Count,
+                                                 SkUnichar character) const {
+    return this->onMatchFamilyStyleCharacter(familyName, style, bcp47, bcp47Count, character);
 }
+#else
+SkTypeface* SkFontMgr::matchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
+                                                 const char bcp47[], SkUnichar character) const {
+    return this->onMatchFamilyStyleCharacter(familyName, style, bcp47, character);
+}
+#endif
 
 SkTypeface* SkFontMgr::matchFaceStyle(const SkTypeface* face,
                                       const SkFontStyle& fs) const {
@@ -198,59 +223,14 @@ SkTypeface* SkFontMgr::legacyCreateTypeface(const char familyName[],
     return this->onLegacyCreateTypeface(familyName, styleBits);
 }
 
-SkFontMgr* SkFontMgr::CreateDefault() {
+// As a template argument this must have external linkage.
+SkFontMgr* sk_fontmgr_create_default() {
     SkFontMgr* fm = SkFontMgr::Factory();
     return fm ? fm : SkNEW(SkEmptyFontMgr);
 }
 
+SK_DECLARE_STATIC_LAZY_PTR(SkFontMgr, singleton, sk_fontmgr_create_default);
+
 SkFontMgr* SkFontMgr::RefDefault() {
-    SK_DECLARE_STATIC_LAZY_PTR(SkFontMgr, singleton, CreateDefault);
     return SkRef(singleton.get());
 }
-
-//////////////////////////////////////////////////////////////////////////
-
-#ifndef SK_FONTHOST_DOES_NOT_USE_FONTMGR
-
-#if 0
-static SkFontStyle TypefaceStyleBitsToFontStyle(SkTypeface::Style styleBits) {
-    SkFontStyle::Weight weight = (styleBits & SkTypeface::kBold) ?
-                                     SkFontStyle::kBold_Weight :
-                                     SkFontStyle::kNormal_Weight;
-    SkFontStyle::Width width = SkFontStyle::kNormal_Width;
-    SkFontStyle::Slant slant = (styleBits & SkTypeface::kItalic) ?
-                                     SkFontStyle::kUpright_Slant :
-                                     SkFontStyle::kItalic_Slant;
-    return SkFontStyle(weight, width, slant);
-}
-#endif
-
-SkTypeface* SkFontHost::CreateTypeface(const SkTypeface* familyFace,
-                                       const char familyName[],
-                                       SkTypeface::Style style) {
-    SkAutoTUnref<SkFontMgr> fm(SkFontMgr::RefDefault());
-    if (familyFace) {
-        bool bold = style & SkTypeface::kBold;
-        bool italic = style & SkTypeface::kItalic;
-        SkFontStyle newStyle = SkFontStyle(bold ? SkFontStyle::kBold_Weight
-                                                : SkFontStyle::kNormal_Weight,
-                                           SkFontStyle::kNormal_Width,
-                                           italic ? SkFontStyle::kItalic_Slant
-                                                  : SkFontStyle::kUpright_Slant);
-        return fm->matchFaceStyle(familyFace, newStyle);
-    } else {
-        return fm->legacyCreateTypeface(familyName, style);
-    }
-}
-
-SkTypeface* SkFontHost::CreateTypefaceFromFile(const char path[]) {
-    SkAutoTUnref<SkFontMgr> fm(SkFontMgr::RefDefault());
-    return fm->createFromFile(path);
-}
-
-SkTypeface* SkFontHost::CreateTypefaceFromStream(SkStream* stream) {
-    SkAutoTUnref<SkFontMgr> fm(SkFontMgr::RefDefault());
-    return fm->createFromStream(stream);
-}
-
-#endif

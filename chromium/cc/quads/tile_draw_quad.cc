@@ -4,6 +4,7 @@
 
 #include "cc/quads/tile_draw_quad.h"
 
+#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
 #include "base/values.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -15,10 +16,6 @@ TileDrawQuad::TileDrawQuad()
 }
 
 TileDrawQuad::~TileDrawQuad() {
-}
-
-scoped_ptr<TileDrawQuad> TileDrawQuad::Create() {
-  return make_scoped_ptr(new TileDrawQuad);
 }
 
 void TileDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
@@ -65,7 +62,7 @@ const TileDrawQuad* TileDrawQuad::MaterialCast(const DrawQuad* quad) {
   return static_cast<const TileDrawQuad*>(quad);
 }
 
-void TileDrawQuad::ExtendValue(base::DictionaryValue* value) const {
+void TileDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
   ContentDrawQuadBase::ExtendValue(value);
   value->SetInteger("resource_id", resource_id);
 }

@@ -47,8 +47,8 @@ class BASE_EXPORT TraceMemoryController
   virtual ~TraceMemoryController();
 
   // base::debug::TraceLog::EnabledStateChangedObserver overrides:
-  virtual void OnTraceLogEnabled() OVERRIDE;
-  virtual void OnTraceLogDisabled() OVERRIDE;
+  void OnTraceLogEnabled() override;
+  void OnTraceLogDisabled() override;
 
   // Starts heap memory profiling.
   void StartProfiling();

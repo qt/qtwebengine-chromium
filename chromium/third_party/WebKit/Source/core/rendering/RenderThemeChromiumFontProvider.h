@@ -27,14 +27,15 @@
 #define RenderThemeChromiumFontProvider_h
 
 #include "core/CSSValueKeywords.h"
+#include "platform/fonts/FontTraits.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontDescription;
 
 class RenderThemeChromiumFontProvider {
 public:
-    static void systemFont(CSSValueID, FontDescription&);
+    static void systemFont(CSSValueID systemFontID, FontStyle&, FontWeight&, float& fontSize, AtomicString& fontFamily);
     static void setDefaultFontSize(int);
 
 protected:
@@ -43,6 +44,6 @@ protected:
     static float s_defaultFontSize;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderThemeChromiumFontProvider_h

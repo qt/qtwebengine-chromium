@@ -32,19 +32,19 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                                                     int id) {
     return make_scoped_ptr(new HeadsUpDisplayLayerImpl(tree_impl, id));
   }
-  virtual ~HeadsUpDisplayLayerImpl();
+  ~HeadsUpDisplayLayerImpl() override;
 
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
 
-  virtual bool WillDraw(DrawMode draw_mode,
-                        ResourceProvider* resource_provider) OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  bool WillDraw(DrawMode draw_mode,
+                ResourceProvider* resource_provider) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
   void UpdateHudTexture(DrawMode draw_mode,
                         ResourceProvider* resource_provider);
 
-  virtual void ReleaseResources() OVERRIDE;
+  void ReleaseResources() override;
 
   bool IsAnimatingHUDContents() const { return fade_step_ > 0; }
 
@@ -69,9 +69,9 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
 
   HeadsUpDisplayLayerImpl(LayerTreeImpl* tree_impl, int id);
 
-  virtual const char* LayerTypeAsString() const OVERRIDE;
+  const char* LayerTypeAsString() const override;
 
-  virtual void AsValueInto(base::DictionaryValue* dict) const OVERRIDE;
+  void AsValueInto(base::debug::TracedValue* dict) const override;
 
   void UpdateHudContents();
   void DrawHudContents(SkCanvas* canvas);
@@ -110,7 +110,7 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                               int top,
                               int right) const;
   void DrawDebugRect(SkCanvas* canvas,
-                     SkPaint& paint,
+                     SkPaint* paint,
                      const DebugRect& rect,
                      SkColor stroke_color,
                      SkColor fill_color,
@@ -118,7 +118,10 @@ class CC_EXPORT HeadsUpDisplayLayerImpl : public LayerImpl {
                      const std::string& label_text) const;
   void DrawDebugRects(SkCanvas* canvas, DebugRectHistory* debug_rect_history);
 
-  scoped_ptr<ScopedResource> hud_resource_;
+  void AcquireResource(ResourceProvider* resource_provider);
+  void ReleaseUnmatchedSizeResources(ResourceProvider* resource_provider);
+
+  ScopedPtrVector<ScopedResource> resources_;
   scoped_ptr<SkCanvas> hud_canvas_;
 
   skia::RefPtr<SkTypeface> typeface_;

@@ -45,7 +45,7 @@
 #include "media/audio/agc_audio_stream.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
-#include "media/base/seekable_buffer.h"
+#include "media/base/audio_block_fifo.h"
 
 namespace media {
 
@@ -59,27 +59,29 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   // the audio manager who is creating this object.
   AUAudioInputStream(AudioManagerMac* manager,
                      const AudioParameters& input_params,
-                     const AudioParameters& output_params,
                      AudioDeviceID audio_device_id);
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioInputStream::Close().
-  virtual ~AUAudioInputStream();
+  ~AUAudioInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool IsMuted() override;
 
   // Returns the current hardware sample rate for the default input device.
   MEDIA_EXPORT static int HardwareSampleRate();
 
   bool started() const { return started_; }
-  AudioUnit audio_unit() { return audio_unit_; }
+  AudioUnit audio_unit() const { return audio_unit_; }
   AudioBufferList* audio_buffer_list() { return &audio_buffer_list_; }
+  AudioDeviceID device_id() const { return input_device_id_; }
+  size_t requested_buffer_size() const { return number_of_frames_; }
 
  private:
   // AudioOutputUnit callback.
@@ -115,7 +117,7 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   AudioManagerMac* manager_;
 
   // Contains the desired number of audio frames in each callback.
-  size_t number_of_frames_;
+  const size_t number_of_frames_;
 
   // Pointer to the object that will receive the recorded audio samples.
   AudioInputCallback* sink_;
@@ -145,30 +147,15 @@ class AUAudioInputStream : public AgcAudioStream<AudioInputStream> {
   // Fixed capture hardware latency in frames.
   double hardware_latency_frames_;
 
-  // Delay due to the FIFO in bytes.
-  int fifo_delay_bytes_;
-
   // The number of channels in each frame of audio data, which is used
   // when querying the volume of each channel.
   int number_of_channels_in_frame_;
 
-  // Accumulates recorded data packets until the requested size has been stored.
-  scoped_ptr<media::SeekableBuffer> fifo_;
-
-   // Intermediate storage of data from the FIFO before sending it to the
-   // client using the OnData() callback.
-  scoped_refptr<media::DataBuffer> data_;
-
-  // The client requests that the recorded data shall be delivered using
-  // OnData() callbacks where each callback contains this amount of bytes.
-  int requested_size_bytes_;
+  // FIFO used to accumulates recorded data.
+  media::AudioBlockFifo fifo_;
 
   // Used to defer Start() to workaround http://crbug.com/160920.
   base::CancelableClosure deferred_start_cb_;
-
-  // Extra audio bus used for storage of deinterleaved data for the OnData
-  // callback.
-  scoped_ptr<media::AudioBus> audio_bus_;
 
   DISALLOW_COPY_AND_ASSIGN(AUAudioInputStream);
 };

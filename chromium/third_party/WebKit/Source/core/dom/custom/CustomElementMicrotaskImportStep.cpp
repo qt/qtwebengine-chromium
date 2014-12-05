@@ -37,7 +37,7 @@
 #include "core/html/imports/HTMLImportLoader.h"
 #include <stdio.h>
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep> CustomElementMicrotaskImportStep::create(HTMLImportChild* import)
 {
@@ -59,7 +59,7 @@ CustomElementMicrotaskImportStep::~CustomElementMicrotaskImportStep()
 {
 }
 
-void CustomElementMicrotaskImportStep::parentWasChanged()
+void CustomElementMicrotaskImportStep::invalidate()
 {
     m_queue = CustomElementSyncMicrotaskQueue::create();
     m_import.clear();
@@ -102,4 +102,4 @@ void CustomElementMicrotaskImportStep::show(unsigned indent)
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
 import("//build/config/ui.gni")
 if (is_mac) {
   import("//build/config/mac/mac_sdk.gni")
@@ -9,8 +10,6 @@ if (is_mac) {
 if (is_android) {
   import("//build/config/android/rules.gni")
 }
-
-use_cups = ((is_linux && !is_chromeos) || is_mac)
 
 component("printing") {
   sources = [
@@ -29,8 +28,8 @@ component("printing") {
     "image_linux.cc",
     "image_mac.cc",
     "image_win.cc",
+    "metafile.cc",
     "metafile.h",
-    "metafile_impl.h",
     "metafile_skia_wrapper.cc",
     "metafile_skia_wrapper.h",
     "page_number.cc",
@@ -44,8 +43,6 @@ component("printing") {
     "pdf_metafile_cg_mac.h",
     "pdf_metafile_skia.cc",
     "pdf_metafile_skia.h",
-    "print_destination_interface.h",
-    "print_destination_none.cc",
     "print_dialog_gtk_interface.h",
     "print_job_constants.cc",
     "print_job_constants.h",
@@ -88,7 +85,7 @@ component("printing") {
   ]
 
   if (use_aura) {
-    # deps += [ "//ui/aura" ]  TODO(GYP)
+    deps += [ "//ui/aura" ]
   }
 
   if (is_mac) {
@@ -126,12 +123,12 @@ component("printing") {
   }
 
   if (use_cups) {
-    cups_version = exec_script("cups_config_helper.py", [ "--api-version" ],
-                               "trim string")
-
     configs += [ ":cups" ]
 
     if (is_linux) {
+      cups_version = exec_script("cups_config_helper.py", [ "--api-version" ],
+                                 "trim string")
+
       if (cups_version == "1.6" || cups_version == "1.7") {
         cflags += [
           # CUPS 1.6 deprecated the PPD APIs, but we will stay with this
@@ -217,6 +214,7 @@ test("printing_unittests") {
     "//testing/gtest",
     "//ui/base",
     "//ui/gfx",
+    "//ui/gfx:test_support",
     "//ui/gfx/geometry",
   ]
 }
@@ -226,7 +224,7 @@ if (use_cups) {
     defines = [ "USE_CUPS" ]
 
     if (is_mac) {
-      libs = [ "libcups.dylib" ]
+      ldflags = [ "$mac_sdk_path/usr/lib/libcups.dylib" ]
     } else {
       libs = exec_script("cups_config_helper.py", [ "--libs-for-gn" ], "value")
     }
@@ -234,6 +232,7 @@ if (use_cups) {
 }
 
 if (is_android) {
+  # GYP: //printing/printing.gyp:printing_jni_headers
   generate_jni("printing_jni_headers") {
     sources = [
       "android/java/src/org/chromium/printing/PrintingContext.java",
@@ -241,16 +240,11 @@ if (is_android) {
     jni_package = "printing"
   }
 
-  # TODO(GYP)
-  #{
-  #  'target_name': 'printing_java',
-  #  'type': 'none',
-  #  'variables': {
-  #    'java_in_dir': '../printing/android/java',
-  #  },
-  #  'dependencies': [
-  #    '../base/base.gyp:base_java',
-  #  ],
-  #  'includes': [ '../build/java.gypi'  ],
-  #}
+  # GYP: //printing/printing.gyp:printing_java
+  android_library("printing_java") {
+    deps = [
+      "//base:base_java"
+    ]
+    DEPRECATED_java_in_dir = "android/java/src"
+  }
 }

@@ -46,19 +46,25 @@
           'CPU_CISC',
         ],
       }],
-      ['target_arch=="arm" or target_arch=="armv7" or target_arch=="arm64"', {
+      ['target_arch=="arm" or target_arch=="armv7" or target_arch=="arm64" \
+       or target_arch=="mipsel" or target_arch=="mips64el"', {
         'defines': [
-          # TODO(leozwang): CPU_RISC doesn't work properly on android/arm
-          # platform for unknown reasons, need to investigate the root cause
-          # of it. CPU_RISC is used for optimization only, and CPU_CISC should
-          # just work just fine, it has been tested on android/arm with srtp
-          # test applications and libjingle.
+          # TODO(leozwang): CPU_RISC doesn't work properly on android/arm and
+          # mips platforms for unknown reasons, need to investigate the root
+          # cause of it. CPU_RISC is used for optimization only, and CPU_CISC
+          # should just work just fine, it has been tested on android/arm with
+          # srtp test applications and libjingle.
           'CPU_CISC',
         ],
       }],
-      ['target_arch=="mipsel"', {
+      ['target_arch=="mipsel" or target_arch=="arm" or target_arch=="armv7" or target_arch=="ia32"', {
         'defines': [
-          'CPU_RISC',
+          # Define FORCE_64BIT_ALIGN to avoid alignment-related-crashes like
+          # crbug/414919. Without this, aes_cbc_alloc will allocate an
+          # aes_cbc_ctx_t not 64-bit aligned and the v128_t members of
+          # aes_cbc_ctx_t will not be 64-bit aligned, which breaks the
+          # compiler optimizations that assume 64-bit alignment of v128_t.
+          'FORCE_64BIT_ALIGN',
         ],
       }],
     ],
@@ -96,11 +102,6 @@
         ['target_arch=="x64" or target_arch=="ia32"', {
           'defines': [
             'CPU_CISC',
-          ],
-        }],
-        ['target_arch=="mipsel"', {
-          'defines': [
-            'CPU_RISC',
           ],
         }],
       ],

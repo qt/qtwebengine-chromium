@@ -6,87 +6,37 @@
 WebInspector.TimelineJSProfileProcessor = { };
 
 /**
- * @param {!WebInspector.TimelineModelImpl} timelineModel
+ * @param {!WebInspector.TracingTimelineModel} timelineModel
  * @param {!ProfilerAgent.CPUProfile} jsProfile
+ * @return {!Array.<!WebInspector.TracingModel.Event>}
  */
-WebInspector.TimelineJSProfileProcessor.mergeJSProfileIntoTimeline = function(timelineModel, jsProfile)
+WebInspector.TimelineJSProfileProcessor.generateTracingEventsFromCpuProfile = function(timelineModel, jsProfile)
 {
     if (!jsProfile.samples)
-        return;
+        return [];
     var jsProfileModel = new WebInspector.CPUProfileDataModel(jsProfile);
     var idleNode = jsProfileModel.idleNode;
     var programNode = jsProfileModel.programNode;
     var gcNode = jsProfileModel.gcNode;
-
-    /**
-     * @param {!WebInspector.TimelineModel.Record} record
-     */
-    function processRecord(record)
-    {
-        if (record.type() !== WebInspector.TimelineModel.RecordType.FunctionCall &&
-            record.type() !== WebInspector.TimelineModel.RecordType.EvaluateScript)
-            return;
-        var recordStartTime = record.startTime();
-        var recordEndTime = record.endTime();
-        var originalChildren = record.children().splice(0);
-        var childIndex = 0;
-
-        /**
-         * @param {number} depth
-         * @param {!ProfilerAgent.CPUProfileNode} node
-         * @param {number} startTime
-         */
-        function onOpenFrame(depth, node, startTime)
-        {
-            if (node === idleNode || node === programNode || node === gcNode)
-                return;
-            var event = {
-                type: "JSFrame",
-                data: node,
-                startTime: startTime
-            };
-            putOriginalChildrenUpToTime(startTime);
-            record = new WebInspector.TimelineModel.RecordImpl(timelineModel, event, record);
+    var samples = jsProfileModel.samples;
+    var timestamps = jsProfileModel.timestamps;
+    var jsEvents = [];
+    var mainThread = timelineModel.mainThreadEvents()[0].thread;
+    for (var i = 0; i < samples.length; ++i) {
+        var node = jsProfileModel.nodeByIndex(i);
+        if (node === programNode || node === gcNode || node === idleNode)
+            continue;
+        var stackTrace = node._stackTraceArray;
+        if (!stackTrace) {
+            stackTrace = /** @type {!ConsoleAgent.StackTrace} */ (new Array(node.depth + 1));
+            node._stackTraceArray = stackTrace;
+            for (var j = 0; node.parent; node = node.parent)
+                stackTrace[j++] = /** @type {!ConsoleAgent.CallFrame} */ (node);
         }
-
-        /**
-         * @param {number} depth
-         * @param {!ProfilerAgent.CPUProfileNode} node
-         * @param {number} startTime
-         * @param {number} totalTime
-         * @param {number} selfTime
-         */
-        function onCloseFrame(depth, node, startTime, totalTime, selfTime)
-        {
-            if (node === idleNode || node === programNode || node === gcNode)
-                return;
-            record.setEndTime(Math.min(startTime + totalTime, recordEndTime));
-            record._selfTime = record.endTime() - record.startTime();
-            putOriginalChildrenUpToTime(record.endTime());
-            var deoptReason = node.deoptReason;
-            if (deoptReason && deoptReason !== "no reason")
-                record.addWarning(deoptReason);
-            record = record.parent;
-        }
-
-        /**
-         * @param {number} endTime
-         */
-        function putOriginalChildrenUpToTime(endTime)
-        {
-            for (; childIndex < originalChildren.length; ++childIndex)  {
-                var child = originalChildren[childIndex];
-                var midTime = (child.startTime() + child.endTime()) / 2;
-                if (midTime >= endTime)
-                    break;
-                child.parent = record;
-                record.children().push(child);
-            }
-        }
-
-        jsProfileModel.forEachFrame(onOpenFrame, onCloseFrame, recordStartTime, recordEndTime);
-        putOriginalChildrenUpToTime(recordEndTime);
+        var jsEvent = new WebInspector.TracingModel.Event(WebInspector.TracingModel.DevToolsMetadataEventCategory, WebInspector.TracingTimelineModel.RecordType.JSSample,
+            WebInspector.TracingModel.Phase.Instant, timestamps[i], mainThread);
+        jsEvent.stackTrace = stackTrace;
+        jsEvents.push(jsEvent);
     }
-
-    timelineModel.forAllRecords(processRecord);
+    return jsEvents;
 }

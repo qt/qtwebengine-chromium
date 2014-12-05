@@ -33,7 +33,7 @@
 #include "platform/geometry/FloatPoint3D.h"
 #include <cmath>
 
-namespace WebCore {
+namespace blink {
 
 class FloatBox {
 public:
@@ -175,6 +175,6 @@ inline bool operator!=(const FloatBox& a, const FloatBox& b)
     return !(a == b);
 }
 
-} // namespace WebKit
+} // namespace blink
 
 #endif

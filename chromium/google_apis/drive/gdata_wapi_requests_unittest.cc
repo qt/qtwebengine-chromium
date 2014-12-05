@@ -5,7 +5,6 @@
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "base/values.h"
 #include "google_apis/drive/dummy_auth_service.h"
 #include "google_apis/drive/gdata_wapi_parser.h"
 #include "google_apis/drive/gdata_wapi_requests.h"
@@ -27,7 +26,7 @@ const char kTestUserAgent[] = "test-user-agent";
 
 class GDataWapiRequestsTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     request_context_getter_ = new net::TestURLRequestContextGetter(
         message_loop_.message_loop_proxy());
 
@@ -57,7 +56,7 @@ class GDataWapiRequestsTest : public testing::Test {
     if (!test_util::RemovePrefix(absolute_url.path(),
                                  "/feeds/default/private/full",
                                  &remaining_path)) {
-      return scoped_ptr<net::test_server::HttpResponse>();
+      return nullptr;
     }
 
     // Process a feed for a single resource ID.
@@ -67,7 +66,7 @@ class GDataWapiRequestsTest : public testing::Test {
       scoped_ptr<net::test_server::BasicHttpResponse> result(
           test_util::CreateHttpResponseFromFile(
               test_util::GetTestFilePath("gdata/file_entry.json")));
-      return result.PassAs<net::test_server::HttpResponse>();
+      return result.Pass();
     } else if (resource_id == "invalid_resource_id") {
       // Check if this is an authorization request for an app.
       // This emulates to return invalid formatted result from the server.
@@ -75,12 +74,12 @@ class GDataWapiRequestsTest : public testing::Test {
           request.content.find("<docs:authorizedApp>") != std::string::npos) {
         scoped_ptr<net::test_server::BasicHttpResponse> result(
             test_util::CreateHttpResponseFromFile(
-                test_util::GetTestFilePath("gdata/testfile.txt")));
-        return result.PassAs<net::test_server::HttpResponse>();
+                test_util::GetTestFilePath("drive/testfile.txt")));
+        return result.Pass();
       }
     }
 
-    return scoped_ptr<net::test_server::HttpResponse>();
+    return nullptr;
   }
 
   base::MessageLoopForIO message_loop_;  // Test server needs IO thread.
@@ -99,7 +98,7 @@ class GDataWapiRequestsTest : public testing::Test {
 
 TEST_F(GDataWapiRequestsTest, GetResourceEntryRequest_ValidResourceId) {
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result_data;
+  scoped_ptr<ResourceEntry> result_data;
 
   {
     base::RunLoop run_loop;
@@ -120,16 +119,14 @@ TEST_F(GDataWapiRequestsTest, GetResourceEntryRequest_ValidResourceId) {
   EXPECT_EQ("/feeds/default/private/full/file%3A2_file_resource_id"
             "?v=3&alt=json&showroot=true",
             http_request_.relative_url);
-  scoped_ptr<base::Value> expected_json =
-      test_util::LoadJSONFile("gdata/file_entry.json");
-  ASSERT_TRUE(expected_json);
   EXPECT_TRUE(result_data);
-  EXPECT_TRUE(base::Value::Equals(expected_json.get(), result_data.get()));
+  EXPECT_EQ("File 1.mp3", result_data->filename());
+  EXPECT_EQ("3b4382ebefec6e743578c76bbd0575ce", result_data->file_md5());
 }
 
 TEST_F(GDataWapiRequestsTest, GetResourceEntryRequest_InvalidResourceId) {
   GDataErrorCode result_code = GDATA_OTHER_ERROR;
-  scoped_ptr<base::Value> result_data;
+  scoped_ptr<ResourceEntry> result_data;
 
   {
     base::RunLoop run_loop;

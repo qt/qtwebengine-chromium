@@ -4,7 +4,12 @@
 
 #include "base/memory/shared_memory.h"
 
+#include <aclapi.h>
+
 #include "base/logging.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/rand_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 
 namespace {
@@ -114,10 +119,31 @@ bool SharedMemory::Create(const SharedMemoryCreateOptions& options) {
 
   size_t rounded_size = (options.size + kSectionMask) & ~kSectionMask;
   name_ = ASCIIToWide(options.name_deprecated == NULL ? "" :
-                          *options.name_deprecated);
-  mapped_file_ = CreateFileMapping(INVALID_HANDLE_VALUE, NULL,
-      PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size),
-      name_.empty() ? NULL : name_.c_str());
+                      *options.name_deprecated);
+  SECURITY_ATTRIBUTES sa = { sizeof(sa), NULL, FALSE };
+  SECURITY_DESCRIPTOR sd;
+  ACL dacl;
+
+  if (options.share_read_only && name_.empty()) {
+    // Add an empty DACL to enforce anonymous read-only sections.
+    sa.lpSecurityDescriptor = &sd;
+    if (!InitializeAcl(&dacl, sizeof(dacl), ACL_REVISION))
+      return false;
+    if (!InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION))
+      return false;
+    if (!SetSecurityDescriptorDacl(&sd, TRUE, &dacl, FALSE))
+      return false;
+
+    // Windows ignores DACLs on certain unnamed objects (like shared sections).
+    // So, we generate a random name when we need to enforce read-only.
+    uint64_t rand_values[4];
+    base::RandBytes(&rand_values, sizeof(rand_values));
+    name_ = base::StringPrintf(L"CrSharedMem_%016x%016x%016x%016x",
+                               rand_values[0], rand_values[1],
+                               rand_values[2], rand_values[3]);
+  }
+  mapped_file_ = CreateFileMapping(INVALID_HANDLE_VALUE, &sa,
+      PAGE_READWRITE, 0, static_cast<DWORD>(rounded_size), name_.c_str());
   if (!mapped_file_)
     return false;
 

@@ -25,14 +25,14 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/p2p/base/stunserver.h"
+#include "webrtc/p2p/base/stunserver.h"
 
-#include "talk/base/bytebuffer.h"
-#include "talk/base/logging.h"
+#include "webrtc/base/bytebuffer.h"
+#include "webrtc/base/logging.h"
 
 namespace cricket {
 
-StunServer::StunServer(talk_base::AsyncUDPSocket* socket) : socket_(socket) {
+StunServer::StunServer(rtc::AsyncUDPSocket* socket) : socket_(socket) {
   socket_->SignalReadPacket.connect(this, &StunServer::OnPacket);
 }
 
@@ -41,11 +41,11 @@ StunServer::~StunServer() {
 }
 
 void StunServer::OnPacket(
-    talk_base::AsyncPacketSocket* socket, const char* buf, size_t size,
-    const talk_base::SocketAddress& remote_addr,
-    const talk_base::PacketTime& packet_time) {
+    rtc::AsyncPacketSocket* socket, const char* buf, size_t size,
+    const rtc::SocketAddress& remote_addr,
+    const rtc::PacketTime& packet_time) {
   // Parse the STUN message; eat any messages that fail to parse.
-  talk_base::ByteBuffer bbuf(buf, size);
+  rtc::ByteBuffer bbuf(buf, size);
   StunMessage msg;
   if (!msg.Read(&bbuf)) {
     return;
@@ -66,26 +66,14 @@ void StunServer::OnPacket(
 }
 
 void StunServer::OnBindingRequest(
-    StunMessage* msg, const talk_base::SocketAddress& remote_addr) {
+    StunMessage* msg, const rtc::SocketAddress& remote_addr) {
   StunMessage response;
-  response.SetType(STUN_BINDING_RESPONSE);
-  response.SetTransactionID(msg->transaction_id());
-
-  // Tell the user the address that we received their request from.
-  StunAddressAttribute* mapped_addr;
-  if (!msg->IsLegacy()) {
-    mapped_addr = StunAttribute::CreateAddress(STUN_ATTR_MAPPED_ADDRESS);
-  } else {
-    mapped_addr = StunAttribute::CreateXorAddress(STUN_ATTR_XOR_MAPPED_ADDRESS);
-  }
-  mapped_addr->SetAddress(remote_addr);
-  response.AddAttribute(mapped_addr);
-
+  GetStunBindReqponse(msg, remote_addr, &response);
   SendResponse(response, remote_addr);
 }
 
 void StunServer::SendErrorResponse(
-    const StunMessage& msg, const talk_base::SocketAddress& addr,
+    const StunMessage& msg, const rtc::SocketAddress& addr,
     int error_code, const char* error_desc) {
   StunMessage err_msg;
   err_msg.SetType(GetStunErrorResponseType(msg.type()));
@@ -100,12 +88,29 @@ void StunServer::SendErrorResponse(
 }
 
 void StunServer::SendResponse(
-    const StunMessage& msg, const talk_base::SocketAddress& addr) {
-  talk_base::ByteBuffer buf;
+    const StunMessage& msg, const rtc::SocketAddress& addr) {
+  rtc::ByteBuffer buf;
   msg.Write(&buf);
-  talk_base::PacketOptions options;
+  rtc::PacketOptions options;
   if (socket_->SendTo(buf.Data(), buf.Length(), addr, options) < 0)
     LOG_ERR(LS_ERROR) << "sendto";
+}
+
+void StunServer::GetStunBindReqponse(StunMessage* request,
+                                     const rtc::SocketAddress& remote_addr,
+                                     StunMessage* response) const {
+  response->SetType(STUN_BINDING_RESPONSE);
+  response->SetTransactionID(request->transaction_id());
+
+  // Tell the user the address that we received their request from.
+  StunAddressAttribute* mapped_addr;
+  if (!request->IsLegacy()) {
+    mapped_addr = StunAttribute::CreateAddress(STUN_ATTR_MAPPED_ADDRESS);
+  } else {
+    mapped_addr = StunAttribute::CreateXorAddress(STUN_ATTR_XOR_MAPPED_ADDRESS);
+  }
+  mapped_addr->SetAddress(remote_addr);
+  response->AddAttribute(mapped_addr);
 }
 
 }  // namespace cricket

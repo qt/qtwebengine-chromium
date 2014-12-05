@@ -32,11 +32,12 @@
 
 #include "core/rendering/RenderRuby.h"
 
+#include "core/frame/UseCounter.h"
 #include "core/rendering/RenderRubyRun.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 //=== generic helper functions to avoid excessive code duplication ===
 
@@ -111,6 +112,7 @@ static inline RenderRubyRun* findRubyRunParent(RenderObject* child)
 RenderRubyAsInline::RenderRubyAsInline(Element* element)
     : RenderInline(element)
 {
+    UseCounter::count(document(), UseCounter::RenderRuby);
 }
 
 RenderRubyAsInline::~RenderRubyAsInline()
@@ -165,11 +167,13 @@ void RenderRubyAsInline::addChild(RenderObject* child, RenderObject* beforeChild
 
     if (beforeChild && !isAfterContent(beforeChild)) {
         // insert child into run
-        ASSERT(!beforeChild->isRubyRun());
         RenderObject* run = beforeChild;
         while (run && !run->isRubyRun())
             run = run->parent();
         if (run) {
+            if (beforeChild == run)
+                beforeChild = toRenderRubyRun(beforeChild)->firstChild();
+            ASSERT(!beforeChild || beforeChild->isDescendantOf(run));
             run->addChild(child, beforeChild);
             return;
         }
@@ -217,6 +221,7 @@ void RenderRubyAsInline::removeChild(RenderObject* child)
 RenderRubyAsBlock::RenderRubyAsBlock(Element* element)
     : RenderBlockFlow(element)
 {
+    UseCounter::count(document(), UseCounter::RenderRuby);
 }
 
 RenderRubyAsBlock::~RenderRubyAsBlock()
@@ -271,11 +276,13 @@ void RenderRubyAsBlock::addChild(RenderObject* child, RenderObject* beforeChild)
 
     if (beforeChild && !isAfterContent(beforeChild)) {
         // insert child into run
-        ASSERT(!beforeChild->isRubyRun());
         RenderObject* run = beforeChild;
         while (run && !run->isRubyRun())
             run = run->parent();
         if (run) {
+            if (beforeChild == run)
+                beforeChild = toRenderRubyRun(beforeChild)->firstChild();
+            ASSERT(!beforeChild || beforeChild->isDescendantOf(run));
             run->addChild(child, beforeChild);
             return;
         }
@@ -318,4 +325,4 @@ void RenderRubyAsBlock::removeChild(RenderObject* child)
     run->removeChild(child);
 }
 
-} // namespace WebCore
+} // namespace blink

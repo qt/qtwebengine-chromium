@@ -28,6 +28,21 @@ gfx::Range ClampRange(gfx::Range range, size_t max) {
   return range;
 }
 
+// A Label with a clamped preferred width to demonstrate wrapping.
+class PreferredSizeLabel : public Label {
+ public:
+  PreferredSizeLabel() : Label() {}
+  ~PreferredSizeLabel() override {}
+
+  // Label:
+  gfx::Size GetPreferredSize() const override {
+    return gfx::Size(50, Label::GetPreferredSize().height());
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(PreferredSizeLabel);
+};
+
 }  // namespace
 
 // A simple View that hosts a RenderText object.
@@ -40,12 +55,12 @@ class MultilineExample::RenderTextView : public View {
     SetBorder(Border::CreateSolidBorder(2, SK_ColorGRAY));
   }
 
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnPaint(gfx::Canvas* canvas) override {
     View::OnPaint(canvas);
     render_text_->Draw(canvas);
   }
 
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
+  gfx::Size GetPreferredSize() const override {
     // Turn off multiline mode to get the single-line text size, which is the
     // preferred size for this view.
     render_text_->SetMultiline(false);
@@ -56,7 +71,7 @@ class MultilineExample::RenderTextView : public View {
     return size;
   }
 
-  virtual int GetHeightForWidth(int w) const OVERRIDE {
+  int GetHeightForWidth(int w) const override {
     // TODO(ckocagil): Why does this happen?
     if (w == 0)
       return View::GetHeightForWidth(w);
@@ -89,7 +104,7 @@ class MultilineExample::RenderTextView : public View {
   }
 
  private:
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE {
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override {
     gfx::Rect bounds = GetLocalBounds();
     bounds.Inset(GetInsets());
     render_text_->SetDisplayRect(bounds);
@@ -119,7 +134,7 @@ void MultilineExample::CreateExampleView(View* container) {
   render_text_view_ = new RenderTextView();
   render_text_view_->SetText(kTestString);
 
-  label_ = new Label();
+  label_ = new PreferredSizeLabel();
   label_->SetText(kTestString);
   label_->SetMultiLine(true);
   label_->SetBorder(Border::CreateSolidBorder(2, SK_ColorCYAN));
@@ -162,11 +177,6 @@ void MultilineExample::ContentsChanged(Textfield* sender,
     label_->SetText(new_contents);
   container()->Layout();
   container()->SchedulePaint();
-}
-
-bool MultilineExample::HandleKeyEvent(Textfield* sender,
-                                      const ui::KeyEvent& key_event) {
-  return false;
 }
 
 void MultilineExample::ButtonPressed(Button* sender, const ui::Event& event) {

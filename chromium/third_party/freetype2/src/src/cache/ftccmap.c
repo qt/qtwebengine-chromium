@@ -4,7 +4,8 @@
 /*                                                                         */
 /*    FreeType CharMap cache (body)                                        */
 /*                                                                         */
-/*  Copyright 2000-2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009 by */
+/*  Copyright 2000-2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,   */
+/*            2010, 2011 by                                                */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -21,6 +22,7 @@
 #include FT_CACHE_H
 #include "ftcmanag.h"
 #include FT_INTERNAL_MEMORY_H
+#include FT_INTERNAL_OBJECTS_H
 #include FT_INTERNAL_DEBUG_H
 
 #include "ftccback.h"
@@ -86,7 +88,7 @@
 
   /* compute a query/node hash */
 #define FTC_CMAP_HASH( faceid, index, charcode )         \
-          ( FTC_FACE_ID_HASH( faceid ) + 211 * (index) + \
+          ( _FTC_FACE_ID_HASH( faceid ) + 211 * (index) + \
             ( (charcode) / FTC_CMAP_INDICES_MAX )      )
 
   /* the charmap query */
@@ -153,7 +155,7 @@
     FTC_CMapQuery  query  = (FTC_CMapQuery)ftcquery;
     FT_Error       error;
     FT_Memory      memory = cache->memory;
-    FTC_CMapNode   node;
+    FTC_CMapNode   node   = NULL;
     FT_UInt        nn;
 
 
@@ -189,13 +191,16 @@
   FT_CALLBACK_DEF( FT_Bool )
   ftc_cmap_node_compare( FTC_Node    ftcnode,
                          FT_Pointer  ftcquery,
-                         FTC_Cache   cache )
+                         FTC_Cache   cache,
+                         FT_Bool*    list_changed )
   {
     FTC_CMapNode   node  = (FTC_CMapNode)ftcnode;
     FTC_CMapQuery  query = (FTC_CMapQuery)ftcquery;
     FT_UNUSED( cache );
 
 
+    if ( list_changed )
+      *list_changed = FALSE;
     if ( node->face_id    == query->face_id    &&
          node->cmap_index == query->cmap_index )
     {
@@ -212,12 +217,16 @@
   FT_CALLBACK_DEF( FT_Bool )
   ftc_cmap_node_remove_faceid( FTC_Node    ftcnode,
                                FT_Pointer  ftcface_id,
-                               FTC_Cache   cache )
+                               FTC_Cache   cache,
+                               FT_Bool*    list_changed )
   {
     FTC_CMapNode  node    = (FTC_CMapNode)ftcnode;
     FTC_FaceID    face_id = (FTC_FaceID)ftcface_id;
     FT_UNUSED( cache );
 
+
+    if ( list_changed )
+      *list_changed = FALSE;
     return FT_BOOL( node->face_id == face_id );
   }
 
@@ -286,7 +295,7 @@
     FTC_Node          node;
     FT_Error          error;
     FT_UInt           gindex = 0;
-    FT_UInt32         hash;
+    FT_PtrDist        hash;
     FT_Int            no_cmap_change = 0;
 
 
@@ -310,19 +319,11 @@
 #ifdef FT_CONFIG_OPTION_OLD_INTERNALS
 
     /*
-     *  Detect a call from a rogue client that thinks it is linking
-     *  to FreeType 2.1.7.  This is possible because the third parameter
-     *  is then a character code, and we have never seen any font with
-     *  more than a few charmaps, so if the index is very large...
-     *
-     *  It is also very unlikely that a rogue client is interested
-     *  in Unicode values 0 to 15.
-     *
-     *  NOTE: The original threshold was 4, but we found a font from the
-     *        Adobe Acrobat Reader Pack, named `KozMinProVI-Regular.otf',
-     *        which contains more than 5 charmaps.
+     * If cmap_index is greater than the maximum number of cachable
+     * charmaps, we assume the request is from a legacy rogue client 
+     * using old internal header. See include/config/ftoption.h.
      */
-    if ( cmap_index >= 16 && !no_cmap_change )
+    if ( cmap_index > FT_MAX_CHARMAP_CACHEABLE && !no_cmap_change )
     {
       FTC_OldCMapDesc  desc = (FTC_OldCMapDesc) face_id;
 
@@ -384,7 +385,7 @@
     /* something rotten can happen with rogue clients */
     if ( (FT_UInt)( char_code - FTC_CMAP_NODE( node )->first >=
                     FTC_CMAP_INDICES_MAX ) )
-      return 0;
+      return 0; /* XXX: should return appropriate error */
 
     gindex = FTC_CMAP_NODE( node )->indices[char_code -
                                             FTC_CMAP_NODE( node )->first];
@@ -400,6 +401,12 @@
                                       &face );
       if ( error )
         goto Exit;
+
+#ifdef FT_MAX_CHARMAP_CACHEABLE
+      /* something rotten can happen with rogue clients */
+      if ( cmap_index > FT_MAX_CHARMAP_CACHEABLE )
+        return 0; /* XXX: should return appropriate error */
+#endif
 
       if ( (FT_UInt)cmap_index < (FT_UInt)face->num_charmaps )
       {

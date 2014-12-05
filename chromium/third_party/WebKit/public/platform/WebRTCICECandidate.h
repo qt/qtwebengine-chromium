@@ -35,10 +35,6 @@
 #include "WebPrivatePtr.h"
 #include "WebString.h"
 
-namespace WebCore {
-class RTCIceCandidateDescriptor;
-}
-
 namespace blink {
 
 class WebString;

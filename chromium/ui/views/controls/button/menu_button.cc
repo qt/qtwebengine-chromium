@@ -5,18 +5,19 @@
 #include "ui/views/controls/button/menu_button.h"
 
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/text_constants.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/mouse_constants.h"
@@ -39,6 +40,22 @@ const int MenuButton::kMenuMarkerPaddingRight = -1;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
+// MenuButton::PressedLock
+//
+////////////////////////////////////////////////////////////////////////////////
+
+MenuButton::PressedLock::PressedLock(MenuButton* menu_button)
+    : menu_button_(menu_button->weak_factory_.GetWeakPtr()) {
+  menu_button_->IncrementPressedLocked();
+}
+
+MenuButton::PressedLock::~PressedLock() {
+  if (menu_button_.get())
+    menu_button_->DecrementPressedLocked();
+}
+
+////////////////////////////////////////////////////////////////////////////////
+//
 // MenuButton - constructors, destructors, initialization
 //
 ////////////////////////////////////////////////////////////////////////////////
@@ -48,13 +65,14 @@ MenuButton::MenuButton(ButtonListener* listener,
                        MenuButtonListener* menu_button_listener,
                        bool show_menu_marker)
     : LabelButton(listener, text),
-      menu_visible_(false),
       menu_offset_(kDefaultMenuOffsetX, kDefaultMenuOffsetY),
       listener_(menu_button_listener),
       show_menu_marker_(show_menu_marker),
       menu_marker_(ui::ResourceBundle::GetSharedInstance().GetImageNamed(
           IDR_MENU_DROPARROW).ToImageSkia()),
-      destroyed_flag_(NULL) {
+      destroyed_flag_(NULL),
+      pressed_lock_count_(0),
+      weak_factory_(this) {
   SetHorizontalAlignment(gfx::ALIGN_LEFT);
 }
 
@@ -100,10 +118,11 @@ bool MenuButton::Activate() {
     static_cast<internal::RootView*>(GetWidget()->GetRootView())->
         SetMouseHandler(NULL);
 
-    menu_visible_ = true;
-
     bool destroyed = false;
     destroyed_flag_ = &destroyed;
+
+    // We don't set our state here. It's handled in the MenuController code or
+    // by our click listener.
 
     listener_->OnMenuButtonClicked(this, menu_position);
 
@@ -114,17 +133,7 @@ bool MenuButton::Activate() {
 
     destroyed_flag_ = NULL;
 
-    menu_visible_ = false;
     menu_closed_time_ = TimeTicks::Now();
-
-    // Now that the menu has closed, we need to manually reset state to
-    // "normal" since the menu modal loop will have prevented normal
-    // mouse move messages from getting to this View. We set "normal"
-    // and not "hot" because the likelihood is that the mouse is now
-    // somewhere else (user clicked elsewhere on screen to close the menu
-    // or selected an item) and we will inevitably refresh the hot state
-    // in the event the mouse _is_ over the view.
-    SetState(STATE_NORMAL);
 
     // We must return false here so that the RootView does not get stuck
     // sending all mouse pressed events to us instead of the appropriate
@@ -163,52 +172,57 @@ const char* MenuButton::GetClassName() const {
 
 bool MenuButton::OnMousePressed(const ui::MouseEvent& event) {
   RequestFocus();
-  if (state() != STATE_DISABLED) {
-    // If we're draggable (GetDragOperations returns a non-zero value), then
-    // don't pop on press, instead wait for release.
-    if (event.IsOnlyLeftMouseButton() &&
-        HitTestPoint(event.location()) &&
-        GetDragOperations(event.location()) == ui::DragDropTypes::DRAG_NONE) {
-      TimeDelta delta = TimeTicks::Now() - menu_closed_time_;
-      if (delta.InMilliseconds() > kMinimumMsBetweenButtonClicks)
-        return Activate();
-    }
+  if (state() != STATE_DISABLED && ShouldEnterPushedState(event) &&
+      HitTestPoint(event.location())) {
+    TimeDelta delta = TimeTicks::Now() - menu_closed_time_;
+    if (delta.InMilliseconds() > kMinimumMsBetweenButtonClicks)
+      return Activate();
   }
   return true;
 }
 
 void MenuButton::OnMouseReleased(const ui::MouseEvent& event) {
-  // Explicitly test for left mouse button to show the menu. If we tested for
-  // !IsTriggerableEvent it could lead to a situation where we end up showing
-  // the menu and context menu (this would happen if the right button is not
-  // triggerable and there's a context menu).
-  if (GetDragOperations(event.location()) != ui::DragDropTypes::DRAG_NONE &&
-      state() != STATE_DISABLED && !InDrag() && event.IsOnlyLeftMouseButton() &&
-      HitTestPoint(event.location())) {
+  if (state() != STATE_DISABLED && ShouldEnterPushedState(event) &&
+      HitTestPoint(event.location()) && !InDrag()) {
     Activate();
   } else {
     LabelButton::OnMouseReleased(event);
   }
 }
 
-// The reason we override View::OnMouseExited is because we get this event when
-// we display the menu. If we don't override this method then
-// BaseButton::OnMouseExited will get the event and will set the button's state
-// to STATE_NORMAL instead of keeping the state BM_PUSHED. This, in turn, will
-// cause the button to appear depressed while the menu is displayed.
+void MenuButton::OnMouseEntered(const ui::MouseEvent& event) {
+  if (pressed_lock_count_ == 0)  // Ignore mouse movement if state is locked.
+    LabelButton::OnMouseEntered(event);
+}
+
 void MenuButton::OnMouseExited(const ui::MouseEvent& event) {
-  if ((state_ != STATE_DISABLED) && (!menu_visible_) && (!InDrag())) {
-    SetState(STATE_NORMAL);
-  }
+  if (pressed_lock_count_ == 0)  // Ignore mouse movement if state is locked.
+    LabelButton::OnMouseExited(event);
+}
+
+void MenuButton::OnMouseMoved(const ui::MouseEvent& event) {
+  if (pressed_lock_count_ == 0)  // Ignore mouse movement if state is locked.
+    LabelButton::OnMouseMoved(event);
 }
 
 void MenuButton::OnGestureEvent(ui::GestureEvent* event) {
-  if (state() != STATE_DISABLED && event->type() == ui::ET_GESTURE_TAP &&
-      !Activate()) {
-    // When |Activate()| returns |false|, it means that a menu is shown and
-    // has handled the gesture event. So, there is no need to further process
-    // the gesture event here.
-    return;
+  if (state() != STATE_DISABLED) {
+    if (ShouldEnterPushedState(*event) && !Activate()) {
+      // When |Activate()| returns |false|, it means that a menu is shown and
+      // has handled the gesture event. So, there is no need to further process
+      // the gesture event here.
+      return;
+    }
+    if (switches::IsTouchFeedbackEnabled()) {
+      if (event->type() == ui::ET_GESTURE_TAP_DOWN) {
+        event->SetHandled();
+        SetState(Button::STATE_HOVERED);
+      } else if (state() == Button::STATE_HOVERED &&
+                 (event->type() == ui::ET_GESTURE_TAP_CANCEL ||
+                  event->type() == ui::ET_GESTURE_END)) {
+        SetState(Button::STATE_NORMAL);
+      }
+    }
   }
   LabelButton::OnGestureEvent(event);
 }
@@ -253,10 +267,8 @@ void MenuButton::GetAccessibleState(ui::AXViewState* state) {
 void MenuButton::PaintMenuMarker(gfx::Canvas* canvas) {
   gfx::Insets insets = GetInsets();
 
-  // We can not use the views' mirroring infrastructure for mirroring a
-  // MenuButton control (see TextButton::OnPaint() for a detailed explanation
-  // regarding why we can not flip the canvas). Therefore, we need to
-  // manually mirror the position of the down arrow.
+  // Using the Views mirroring infrastructure incorrectly flips icon content.
+  // Instead, manually mirror the position of the down arrow.
   gfx::Rect arrow_bounds(width() - insets.right() -
                          menu_marker_->width() - kMenuMarkerPaddingRight,
                          height() / 2 - menu_marker_->height() / 2,
@@ -275,6 +287,43 @@ gfx::Rect MenuButton::GetChildAreaBounds() {
   }
 
   return gfx::Rect(s);
+}
+
+bool MenuButton::ShouldEnterPushedState(const ui::Event& event) {
+  if (event.IsMouseEvent()) {
+    const ui::MouseEvent& mouseev = static_cast<const ui::MouseEvent&>(event);
+    // Active on left mouse button only, to prevent a menu from being activated
+    // when a right-click would also activate a context menu.
+    if (!mouseev.IsOnlyLeftMouseButton())
+      return false;
+    // If dragging is supported activate on release, otherwise activate on
+    // pressed.
+    ui::EventType active_on =
+        GetDragOperations(mouseev.location()) == ui::DragDropTypes::DRAG_NONE
+            ? ui::ET_MOUSE_PRESSED
+            : ui::ET_MOUSE_RELEASED;
+    return event.type() == active_on;
+  }
+
+  return event.type() == ui::ET_GESTURE_TAP;
+}
+
+void MenuButton::IncrementPressedLocked() {
+  ++pressed_lock_count_;
+  SetState(STATE_PRESSED);
+}
+
+void MenuButton::DecrementPressedLocked() {
+  --pressed_lock_count_;
+  DCHECK_GE(pressed_lock_count_, 0);
+
+  // If this was the last lock, manually reset state to "normal". We set
+  // "normal" and not "hot" because the likelihood is that the mouse is now
+  // somewhere else (user clicked elsewhere on screen to close the menu or
+  // selected an item) and we will inevitably refresh the hot state in the event
+  // the mouse _is_ over the view.
+  if (pressed_lock_count_ == 0)
+    SetState(STATE_NORMAL);
 }
 
 int MenuButton::GetMaximumScreenXCoordinate() {

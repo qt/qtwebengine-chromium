@@ -44,7 +44,7 @@ class InputMethodDelegate;
 //
 class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
  public:
-  virtual ~NativeWidgetPrivate() {}
+  ~NativeWidgetPrivate() override {}
 
   // Creates an appropriate default NativeWidgetPrivate implementation for the
   // current OS/circumstance.
@@ -70,9 +70,6 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
 
   // Returns true if any mouse button is currently down.
   static bool IsMouseButtonDown();
-
-  // Returns true if any touch device is currently down.
-  static bool IsTouchDown();
 
   static gfx::FontList GetWindowTitleFontList();
 
@@ -102,10 +99,9 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
   // Returns the Compositor, or NULL if there isn't one associated with this
   // NativeWidget.
   virtual const ui::Compositor* GetCompositor() const = 0;
-  virtual ui::Compositor* GetCompositor() = 0;
 
   // Returns the NativeWidget's layer, if any.
-  virtual ui::Layer* GetLayer() = 0;
+  virtual const ui::Layer* GetLayer() const = 0;
 
   // Reorders the widget's child NativeViews which are associated to the view
   // tree (eg via a NativeViewHost) to match the z-order of the views in the
@@ -225,15 +221,20 @@ class VIEWS_EXPORT NativeWidgetPrivate : public NativeWidget {
       Widget::MoveLoopEscapeBehavior escape_behavior) = 0;
   virtual void EndMoveLoop() = 0;
   virtual void SetVisibilityChangedAnimationsEnabled(bool value) = 0;
+  virtual void SetVisibilityAnimationDuration(
+      const base::TimeDelta& duration) = 0;
+  virtual void SetVisibilityAnimationTransition(
+      Widget::VisibilityTransition transition) = 0;
   virtual ui::NativeTheme* GetNativeTheme() const = 0;
-  virtual void OnRootViewLayout() const = 0;
+  virtual void OnRootViewLayout() = 0;
   virtual bool IsTranslucentWindowOpacitySupported() const = 0;
+  virtual void OnSizeConstraintsChanged() = 0;
 
   // Repost an unhandled event to the native widget for default OS processing.
   virtual void RepostNativeEvent(gfx::NativeEvent native_event) = 0;
 
   // Overridden from NativeWidget:
-  virtual internal::NativeWidgetPrivate* AsNativeWidgetPrivate() OVERRIDE;
+  internal::NativeWidgetPrivate* AsNativeWidgetPrivate() override;
 };
 
 }  // namespace internal

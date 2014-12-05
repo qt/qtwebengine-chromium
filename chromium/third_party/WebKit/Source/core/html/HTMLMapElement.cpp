@@ -25,19 +25,21 @@
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
+#include "core/dom/NodeListsNodeData.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLAreaElement.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLImageElement.h"
 #include "core/rendering/HitTestResult.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLMapElement::HTMLMapElement(Document& document)
     : HTMLElement(mapTag, document)
 {
-    ScriptWrappable::init(this);
+    UseCounter::count(document, UseCounter::MapElement);
 }
 
 DEFINE_NODE_FACTORY(HTMLMapElement)
@@ -49,11 +51,11 @@ HTMLMapElement::~HTMLMapElement()
 bool HTMLMapElement::mapMouseEvent(LayoutPoint location, const LayoutSize& size, HitTestResult& result)
 {
     HTMLAreaElement* defaultArea = 0;
-    for (HTMLAreaElement* area = Traversal<HTMLAreaElement>::firstWithin(*this); area; area = Traversal<HTMLAreaElement>::next(*area, this)) {
-        if (area->isDefault()) {
+    for (HTMLAreaElement& area : Traversal<HTMLAreaElement>::descendantsOf(*this)) {
+        if (area.isDefault()) {
             if (!defaultArea)
-                defaultArea = area;
-        } else if (area->mapMouseEvent(location, size, result)) {
+                defaultArea = &area;
+        } else if (area.mapMouseEvent(location, size, result)) {
             return true;
         }
     }
@@ -79,7 +81,7 @@ HTMLImageElement* HTMLMapElement::imageElement()
             return &imageElement;
     }
 
-    return 0;
+    return nullptr;
 }
 
 void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
@@ -111,7 +113,7 @@ void HTMLMapElement::parseAttribute(const QualifiedName& name, const AtomicStrin
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLMapElement::areas()
 {
-    return ensureCachedHTMLCollection(MapAreas);
+    return ensureCachedCollection<HTMLCollection>(MapAreas);
 }
 
 Node::InsertionNotificationRequest HTMLMapElement::insertedInto(ContainerNode* insertionPoint)

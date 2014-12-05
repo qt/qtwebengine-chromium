@@ -23,23 +23,22 @@ class BucketRanges;
 class BASE_EXPORT_PRIVATE SampleVector : public HistogramSamples {
  public:
   explicit SampleVector(const BucketRanges* bucket_ranges);
-  virtual ~SampleVector();
+  ~SampleVector() override;
 
   // HistogramSamples implementation:
-  virtual void Accumulate(HistogramBase::Sample value,
-                          HistogramBase::Count count) OVERRIDE;
-  virtual HistogramBase::Count GetCount(
-      HistogramBase::Sample value) const OVERRIDE;
-  virtual HistogramBase::Count TotalCount() const OVERRIDE;
-  virtual scoped_ptr<SampleCountIterator> Iterator() const OVERRIDE;
+  void Accumulate(HistogramBase::Sample value,
+                  HistogramBase::Count count) override;
+  HistogramBase::Count GetCount(HistogramBase::Sample value) const override;
+  HistogramBase::Count TotalCount() const override;
+  scoped_ptr<SampleCountIterator> Iterator() const override;
 
   // Get count of a specific bucket.
   HistogramBase::Count GetCountAtIndex(size_t bucket_index) const;
 
  protected:
-  virtual bool AddSubtractImpl(
+  bool AddSubtractImpl(
       SampleCountIterator* iter,
-      HistogramSamples::Operator op) OVERRIDE;  // |op| is ADD or SUBTRACT.
+      HistogramSamples::Operator op) override;  // |op| is ADD or SUBTRACT.
 
   virtual size_t GetBucketIndex(HistogramBase::Sample value) const;
 
@@ -58,17 +57,17 @@ class BASE_EXPORT_PRIVATE SampleVectorIterator : public SampleCountIterator {
  public:
   SampleVectorIterator(const std::vector<HistogramBase::AtomicCount>* counts,
                        const BucketRanges* bucket_ranges);
-  virtual ~SampleVectorIterator();
+  ~SampleVectorIterator() override;
 
   // SampleCountIterator implementation:
-  virtual bool Done() const OVERRIDE;
-  virtual void Next() OVERRIDE;
-  virtual void Get(HistogramBase::Sample* min,
-                   HistogramBase::Sample* max,
-                   HistogramBase::Count* count) const OVERRIDE;
+  bool Done() const override;
+  void Next() override;
+  void Get(HistogramBase::Sample* min,
+           HistogramBase::Sample* max,
+           HistogramBase::Count* count) const override;
 
   // SampleVector uses predefined buckets, so iterator can return bucket index.
-  virtual bool GetBucketIndex(size_t* index) const OVERRIDE;
+  bool GetBucketIndex(size_t* index) const override;
 
  private:
   void SkipEmptyBuckets();

@@ -16,7 +16,10 @@ scoped_refptr<HeadsUpDisplayLayer> HeadsUpDisplayLayer::Create() {
   return make_scoped_refptr(new HeadsUpDisplayLayer());
 }
 
-HeadsUpDisplayLayer::HeadsUpDisplayLayer() {}
+HeadsUpDisplayLayer::HeadsUpDisplayLayer() {
+  SetIsDrawable(true);
+  UpdateDrawsContent(HasDrawableContent());
+}
 
 HeadsUpDisplayLayer::~HeadsUpDisplayLayer() {}
 
@@ -47,12 +50,13 @@ void HeadsUpDisplayLayer::PrepareForCalculateDrawProperties(
   SetTransform(matrix);
 }
 
-bool HeadsUpDisplayLayer::DrawsContent() const { return true; }
+bool HeadsUpDisplayLayer::HasDrawableContent() const {
+  return true;
+}
 
 scoped_ptr<LayerImpl> HeadsUpDisplayLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_).
-      PassAs<LayerImpl>();
+  return HeadsUpDisplayLayerImpl::Create(tree_impl, layer_id_);
 }
 
 }  // namespace cc

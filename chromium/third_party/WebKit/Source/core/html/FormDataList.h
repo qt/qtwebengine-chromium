@@ -28,16 +28,17 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
-class FormDataList {
+class FormDataList : public RefCountedWillBeGarbageCollected<FormDataList> {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(FormDataList);
 public:
     class Item {
         ALLOW_ONLY_INLINE_ALLOCATION();
     public:
         Item() { }
         Item(const WTF::CString& data) : m_data(data) { }
-        Item(PassRefPtrWillBeRawPtr<Blob> blob, const String& filename) : m_blob(blob), m_filename(filename) { }
+        Item(Blob* blob, const String& filename) : m_blob(blob), m_filename(filename) { }
 
         const WTF::CString& data() const { return m_data; }
         Blob* blob() const { return m_blob.get(); }
@@ -47,11 +48,16 @@ public:
 
     private:
         WTF::CString m_data;
-        RefPtrWillBeMember<Blob> m_blob;
+        Member<Blob> m_blob;
         String m_filename;
     };
 
-    FormDataList(const WTF::TextEncoding&);
+    static PassRefPtrWillBeRawPtr<FormDataList> create(const WTF::TextEncoding& encoding)
+    {
+        return adoptRefWillBeNoop(new FormDataList(encoding));
+    }
+
+    typedef PersistentHeapVectorWillBeHeapVector<FormDataList::Item> FormDataListItems;
 
     void appendData(const String& key, const String& value)
     {
@@ -68,33 +74,36 @@ public:
         appendString(key);
         appendString(String::number(value));
     }
-    void appendBlob(const String& key, PassRefPtrWillBeRawPtr<Blob> blob, const String& filename = String())
+    void appendBlob(const String& key, Blob* blob, const String& filename = String())
     {
         appendString(key);
         appendBlob(blob, filename);
     }
 
-    const WillBeHeapVector<Item>& items() const { return m_items; }
+    const FormDataListItems& items() const { return m_items; }
     const WTF::TextEncoding& encoding() const { return m_encoding; }
 
     PassRefPtr<FormData> createFormData(FormData::EncodingType = FormData::FormURLEncoded);
     PassRefPtr<FormData> createMultiPartFormData();
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*);
+
+protected:
+    explicit FormDataList(const WTF::TextEncoding&);
 
 private:
     void appendKeyValuePairItemsTo(FormData*, const WTF::TextEncoding&, bool isMultiPartForm, FormData::EncodingType = FormData::FormURLEncoded);
 
     void appendString(const CString&);
     void appendString(const String&);
-    void appendBlob(PassRefPtrWillBeRawPtr<Blob>, const String& filename);
+    void appendBlob(Blob*, const String& filename);
 
     WTF::TextEncoding m_encoding;
-    WillBeHeapVector<Item> m_items;
+    FormDataListItems m_items;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::FormDataList::Item);
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::FormDataList::Item);
 
 #endif // FormDataList_h

@@ -54,50 +54,49 @@ class NET_EXPORT_PRIVATE SpdyProxyClientSocket : public ProxyClientSocket,
 
 
   // On destruction Disconnect() is called.
-  virtual ~SpdyProxyClientSocket();
+  ~SpdyProxyClientSocket() override;
 
   // ProxyClientSocket methods:
-  virtual const HttpResponseInfo* GetConnectResponseInfo() const OVERRIDE;
-  virtual HttpStream* CreateConnectResponseStream() OVERRIDE;
-  virtual const scoped_refptr<HttpAuthController>& GetAuthController() const
-      OVERRIDE;
-  virtual int RestartWithAuth(const CompletionCallback& callback) OVERRIDE;
-  virtual bool IsUsingSpdy() const OVERRIDE;
-  virtual NextProto GetProtocolNegotiated() const OVERRIDE;
+  const HttpResponseInfo* GetConnectResponseInfo() const override;
+  HttpStream* CreateConnectResponseStream() override;
+  const scoped_refptr<HttpAuthController>& GetAuthController() const override;
+  int RestartWithAuth(const CompletionCallback& callback) override;
+  bool IsUsingSpdy() const override;
+  NextProto GetProtocolNegotiated() const override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
 
   // SpdyStream::Delegate implementation.
-  virtual void OnRequestHeadersSent() OVERRIDE;
-  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
-      const SpdyHeaderBlock& response_headers) OVERRIDE;
-  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent() OVERRIDE;
-  virtual void OnClose(int status) OVERRIDE;
+  void OnRequestHeadersSent() override;
+  SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) override;
+  void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) override;
+  void OnDataSent() override;
+  void OnClose(int status) override;
 
  private:
   enum State {

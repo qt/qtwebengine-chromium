@@ -29,14 +29,14 @@ class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
   virtual ~MessageLoopResource();
 
   // Resource overrides.
-  virtual thunk::PPB_MessageLoop_API* AsPPB_MessageLoop_API() OVERRIDE;
+  virtual thunk::PPB_MessageLoop_API* AsPPB_MessageLoop_API() override;
 
   // PPB_MessageLoop_API implementation.
-  virtual int32_t AttachToCurrentThread() OVERRIDE;
-  virtual int32_t Run() OVERRIDE;
+  virtual int32_t AttachToCurrentThread() override;
+  virtual int32_t Run() override;
   virtual int32_t PostWork(PP_CompletionCallback callback,
-                           int64_t delay_ms) OVERRIDE;
-  virtual int32_t PostQuit(PP_Bool should_destroy) OVERRIDE;
+                           int64_t delay_ms) override;
+  virtual int32_t PostQuit(PP_Bool should_destroy) override;
 
   static MessageLoopResource* GetCurrent();
   void DetachFromThread();
@@ -46,6 +46,10 @@ class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
 
   const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy() {
     return loop_proxy_;
+  }
+
+  void set_currently_handling_blocking_message(bool handling_blocking_message) {
+    currently_handling_blocking_message_ = handling_blocking_message;
   }
 
  private:
@@ -58,6 +62,8 @@ class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
   // Returns true if the object is associated with the current thread.
   bool IsCurrent() const;
 
+  // MessageLoopShared implementation.
+  //
   // Handles posting to the message loop if there is one, or the pending queue
   // if there isn't.
   // NOTE: The given closure will be run *WITHOUT* acquiring the Proxy lock.
@@ -65,9 +71,9 @@ class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
   //       proxy operations (e.g., MessageLoop::QuitClosure).
   virtual void PostClosure(const tracked_objects::Location& from_here,
                            const base::Closure& closure,
-                           int64 delay_ms) OVERRIDE;
-
-  virtual base::MessageLoopProxy* GetMessageLoopProxy() OVERRIDE;
+                           int64 delay_ms) override;
+  virtual base::MessageLoopProxy* GetMessageLoopProxy() override;
+  virtual bool CurrentlyHandlingBlockingMessage() override;
 
   // TLS destructor function.
   static void ReleaseMessageLoop(void* value);
@@ -91,6 +97,8 @@ class PPAPI_PROXY_EXPORT MessageLoopResource : public MessageLoopShared {
   bool should_destroy_;
 
   bool is_main_thread_loop_;
+
+  bool currently_handling_blocking_message_;
 
   // Since we allow tasks to be posted before the message loop is actually
   // created (when it's associated with a thread), we keep tasks posted here

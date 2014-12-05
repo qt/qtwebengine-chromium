@@ -2,30 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/quota/quota_reservation_manager.h"
+#include "storage/browser/fileapi/quota/quota_reservation_manager.h"
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "storage/browser/fileapi/quota/open_file_handle.h"
+#include "storage/browser/fileapi/quota/quota_reservation.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/quota/open_file_handle.h"
-#include "webkit/browser/fileapi/quota/quota_reservation.h"
 
-using fileapi::kFileSystemTypeTemporary;
-using fileapi::OpenFileHandle;
-using fileapi::QuotaReservation;
-using fileapi::QuotaReservationManager;
+using storage::kFileSystemTypeTemporary;
+using storage::OpenFileHandle;
+using storage::QuotaReservation;
+using storage::QuotaReservationManager;
 
 namespace content {
 
 namespace {
 
 const char kOrigin[] = "http://example.com";
-const fileapi::FileSystemType kType = kFileSystemTypeTemporary;
+const storage::FileSystemType kType = kFileSystemTypeTemporary;
 const int64 kInitialFileSize = 1;
 
 typedef QuotaReservationManager::ReserveQuotaCallback ReserveQuotaCallback;
@@ -47,12 +47,12 @@ class FakeBackend : public QuotaReservationManager::QuotaBackend {
   FakeBackend()
       : on_memory_usage_(kInitialFileSize),
         on_disk_usage_(kInitialFileSize) {}
-  virtual ~FakeBackend() {}
+  ~FakeBackend() override {}
 
-  virtual void ReserveQuota(const GURL& origin,
-                            fileapi::FileSystemType type,
-                            int64 delta,
-                            const ReserveQuotaCallback& callback) OVERRIDE {
+  void ReserveQuota(const GURL& origin,
+                    storage::FileSystemType type,
+                    int64 delta,
+                    const ReserveQuotaCallback& callback) override {
     EXPECT_EQ(GURL(kOrigin), origin);
     EXPECT_EQ(kType, type);
     on_memory_usage_ += delta;
@@ -61,28 +61,28 @@ class FakeBackend : public QuotaReservationManager::QuotaBackend {
         base::Bind(base::IgnoreResult(callback), base::File::FILE_OK, delta));
   }
 
-  virtual void ReleaseReservedQuota(const GURL& origin,
-                                    fileapi::FileSystemType type,
-                                    int64 size) OVERRIDE {
+  void ReleaseReservedQuota(const GURL& origin,
+                            storage::FileSystemType type,
+                            int64 size) override {
     EXPECT_LE(0, size);
     EXPECT_EQ(GURL(kOrigin), origin);
     EXPECT_EQ(kType, type);
     on_memory_usage_ -= size;
   }
 
-  virtual void CommitQuotaUsage(const GURL& origin,
-                                fileapi::FileSystemType type,
-                                int64 delta) OVERRIDE {
+  void CommitQuotaUsage(const GURL& origin,
+                        storage::FileSystemType type,
+                        int64 delta) override {
     EXPECT_EQ(GURL(kOrigin), origin);
     EXPECT_EQ(kType, type);
     on_disk_usage_ += delta;
     on_memory_usage_ += delta;
   }
 
-  virtual void IncrementDirtyCount(const GURL& origin,
-                                   fileapi::FileSystemType type) OVERRIDE {}
-  virtual void DecrementDirtyCount(const GURL& origin,
-                                   fileapi::FileSystemType type) OVERRIDE {}
+  void IncrementDirtyCount(const GURL& origin,
+                           storage::FileSystemType type) override {}
+  void DecrementDirtyCount(const GURL& origin,
+                           storage::FileSystemType type) override {}
 
   int64 on_memory_usage() { return on_memory_usage_; }
   int64 on_disk_usage() { return on_disk_usage_; }
@@ -180,9 +180,9 @@ void RefreshReservation(QuotaReservation* reservation, int64 size) {
 class QuotaReservationManagerTest : public testing::Test {
  public:
   QuotaReservationManagerTest() {}
-  virtual ~QuotaReservationManagerTest() {}
+  ~QuotaReservationManagerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(work_dir_.CreateUniqueTempDir());
     file_path_ = work_dir_.path().Append(FILE_PATH_LITERAL("hoge"));
     SetFileSize(file_path_, kInitialFileSize);
@@ -191,9 +191,7 @@ class QuotaReservationManagerTest : public testing::Test {
     reservation_manager_.reset(new QuotaReservationManager(backend.Pass()));
   }
 
-  virtual void TearDown() OVERRIDE {
-    reservation_manager_.reset();
-  }
+  void TearDown() override { reservation_manager_.reset(); }
 
   FakeBackend* fake_backend() {
     return static_cast<FakeBackend*>(reservation_manager_->backend_.get());
@@ -294,12 +292,12 @@ TEST_F(QuotaReservationManagerTest, MultipleWriter) {
 TEST_F(QuotaReservationManagerTest, MultipleClient) {
   scoped_refptr<QuotaReservation> reservation1 =
       reservation_manager()->CreateReservation(GURL(kOrigin), kType);
-  RefreshReservation(reservation1, 10);
+  RefreshReservation(reservation1.get(), 10);
   int64 cached_reserved_quota1 = reservation1->remaining_quota();
 
   scoped_refptr<QuotaReservation> reservation2 =
       reservation_manager()->CreateReservation(GURL(kOrigin), kType);
-  RefreshReservation(reservation2, 20);
+  RefreshReservation(reservation2.get(), 20);
   int64 cached_reserved_quota2 = reservation2->remaining_quota();
 
   scoped_ptr<FakeWriter> writer1(

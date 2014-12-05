@@ -8,7 +8,7 @@
 #include <string>
 
 #include "content/common/content_export.h"
-#include "webkit/common/resource_type.h"
+#include "content/public/common/resource_type.h"
 
 class GURL;
 
@@ -22,15 +22,13 @@ class CONTENT_EXPORT ResourceDispatcherDelegate {
  public:
   virtual ~ResourceDispatcherDelegate() {}
 
-  virtual RequestPeer* OnRequestComplete(
-      RequestPeer* current_peer,
-      ResourceType::Type resource_type,
-      int error_code) = 0;
+  virtual RequestPeer* OnRequestComplete(RequestPeer* current_peer,
+                                         ResourceType resource_type,
+                                         int error_code) = 0;
 
-  virtual RequestPeer* OnReceivedResponse(
-      RequestPeer* current_peer,
-      const std::string& mime_type,
-      const GURL& url) = 0;
+  virtual RequestPeer* OnReceivedResponse(RequestPeer* current_peer,
+                                          const std::string& mime_type,
+                                          const GURL& url) = 0;
 };
 
 }  // namespace content

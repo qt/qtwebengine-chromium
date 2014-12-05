@@ -31,11 +31,14 @@
 #ifndef StorageQuotaCallback_h
 #define StorageQuotaCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
 
-class StorageQuotaCallback {
+namespace blink {
+
+class StorageQuotaCallback : public GarbageCollectedFinalized<StorageQuotaCallback> {
 public:
     virtual ~StorageQuotaCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(unsigned long long grantedQuotaInBytes) = 0;
 };
 

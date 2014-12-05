@@ -80,7 +80,8 @@ def _TargetFromSpec(old_spec, params):
 
   if 'configurations' in old_spec:
     for config in old_spec['configurations'].iterkeys():
-      old_xcode_settings = old_spec['configurations'][config]['xcode_settings']
+      old_xcode_settings = \
+        old_spec['configurations'][config].get('xcode_settings', {})
       if 'IPHONEOS_DEPLOYMENT_TARGET' in old_xcode_settings:
         new_xcode_settings['CODE_SIGNING_REQUIRED'] = "NO"
         new_xcode_settings['IPHONEOS_DEPLOYMENT_TARGET'] = \
@@ -90,6 +91,7 @@ def _TargetFromSpec(old_spec, params):
           new_xcode_settings
 
   ninja_target['mac_bundle'] = old_spec.get('mac_bundle', 0)
+  ninja_target['ios_app_extension'] = old_spec.get('ios_app_extension', 0)
   ninja_target['type'] = old_spec['type']
   if ninja_toplevel:
     ninja_target['actions'] = [

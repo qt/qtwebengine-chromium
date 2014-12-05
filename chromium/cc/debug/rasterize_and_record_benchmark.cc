@@ -17,7 +17,7 @@
 #include "cc/layers/picture_layer.h"
 #include "cc/trees/layer_tree_host.h"
 #include "cc/trees/layer_tree_host_common.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace cc {
 
@@ -26,7 +26,9 @@ namespace {
 const int kDefaultRecordRepeatCount = 100;
 
 const char* kModeSuffixes[Picture::RECORDING_MODE_COUNT] = {
-    "", "_sk_null_canvas", "_painting_disabled", "_skrecord"};
+    "",
+    "_sk_null_canvas",
+    "_painting_disabled"};
 
 }  // namespace
 
@@ -37,9 +39,9 @@ RasterizeAndRecordBenchmark::RasterizeAndRecordBenchmark(
       record_repeat_count_(kDefaultRecordRepeatCount),
       settings_(value.Pass()),
       main_thread_benchmark_done_(false),
-      host_(NULL),
+      host_(nullptr),
       weak_ptr_factory_(this) {
-  base::DictionaryValue* settings = NULL;
+  base::DictionaryValue* settings = nullptr;
   settings_->GetAsDictionary(&settings);
   if (!settings)
     return;
@@ -74,18 +76,18 @@ void RasterizeAndRecordBenchmark::RecordRasterResults(
     scoped_ptr<base::Value> results_value) {
   DCHECK(main_thread_benchmark_done_);
 
-  base::DictionaryValue* results = NULL;
+  base::DictionaryValue* results = nullptr;
   results_value->GetAsDictionary(&results);
   DCHECK(results);
 
   results_->MergeDictionary(results);
 
-  NotifyDone(results_.PassAs<base::Value>());
+  NotifyDone(results_.Pass());
 }
 
 scoped_ptr<MicroBenchmarkImpl> RasterizeAndRecordBenchmark::CreateBenchmarkImpl(
     scoped_refptr<base::MessageLoopProxy> origin_loop) {
-  return scoped_ptr<MicroBenchmarkImpl>(new RasterizeAndRecordBenchmarkImpl(
+  return make_scoped_ptr(new RasterizeAndRecordBenchmarkImpl(
       origin_loop,
       settings_.get(),
       base::Bind(&RasterizeAndRecordBenchmark::RecordRasterResults,
@@ -130,7 +132,7 @@ void RasterizeAndRecordBenchmark::RunOnLayer(PictureLayer* layer) {
                      kTimeCheckInterval);
       do {
         scoped_refptr<Picture> picture = Picture::Create(
-            visible_content_rect, painter, tile_grid_info, false, 0, mode);
+            visible_content_rect, painter, tile_grid_info, false, mode);
         timer.NextLap();
       } while (!timer.HasTimeLimitExpired());
       base::TimeDelta duration =

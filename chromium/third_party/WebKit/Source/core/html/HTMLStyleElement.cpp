@@ -26,15 +26,12 @@
 
 #include "core/HTMLNames.h"
 #include "core/css/MediaList.h"
-#include "core/css/StyleSheetContents.h"
-#include "core/dom/ContextFeatures.h"
 #include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/events/EventSender.h"
-#include "core/dom/StyleEngine.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -50,7 +47,6 @@ inline HTMLStyleElement::HTMLStyleElement(Document& document, bool createdByPars
     , m_firedLoad(false)
     , m_loadedSheet(false)
 {
-    ScriptWrappable::init(this);
 }
 
 HTMLStyleElement::~HTMLStyleElement()
@@ -88,29 +84,14 @@ void HTMLStyleElement::finishParsingChildren()
 Node::InsertionNotificationRequest HTMLStyleElement::insertedInto(ContainerNode* insertionPoint)
 {
     HTMLElement::insertedInto(insertionPoint);
-    if (insertionPoint->inDocument() && isInShadowTree()) {
-        if (ShadowRoot* scope = containingShadowRoot())
-            scope->registerScopedHTMLStyleChild();
-    }
+    StyleElement::insertedInto(this, insertionPoint);
     return InsertionShouldCallDidNotifySubtreeInsertions;
 }
 
 void HTMLStyleElement::removedFrom(ContainerNode* insertionPoint)
 {
     HTMLElement::removedFrom(insertionPoint);
-
-    if (!insertionPoint->inDocument())
-        return;
-
-    ShadowRoot* scopingNode = containingShadowRoot();
-    if (!scopingNode)
-        scopingNode = insertionPoint->containingShadowRoot();
-
-    if (scopingNode)
-        scopingNode->unregisterScopedHTMLStyleChild();
-
-    TreeScope* containingScope = containingShadowRoot();
-    StyleElement::removedFromDocument(document(), this, scopingNode, containingScope ? *containingScope : insertionPoint->treeScope());
+    StyleElement::removedFrom(this, insertionPoint);
 }
 
 void HTMLStyleElement::didNotifySubtreeInsertionsToDocument()
@@ -118,9 +99,9 @@ void HTMLStyleElement::didNotifySubtreeInsertionsToDocument()
     StyleElement::processStyleSheet(document(), this);
 }
 
-void HTMLStyleElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLStyleElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLElement::childrenChanged(change);
     StyleElement::childrenChanged(this);
 }
 
@@ -137,7 +118,7 @@ const AtomicString& HTMLStyleElement::type() const
 ContainerNode* HTMLStyleElement::scopingNode()
 {
     if (!inDocument())
-        return 0;
+        return nullptr;
 
     if (isInShadowTree())
         return containingShadowRoot();

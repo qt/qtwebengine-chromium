@@ -20,7 +20,7 @@
     'pkg-config': '<(pkg-config)',
 
     'conditions': [
-      ['OS=="linux" and (buildtype!="Official" or chromeos==1)', {
+      ['OS=="linux" and (buildtype!="Official" or chromeos==1) and embedded==0', {
         # Since version 1.31.0, pangoft2 which we depend on pulls in harfbuzz
         # anyways. However, we want to have control of the version of harfbuzz
         # we use, so don't use system harfbuzz for official builds, unless we
@@ -145,17 +145,10 @@
           'dependencies': [
             '../../third_party/icu/icu.gyp:icuuc',
           ],
+          'variables': {
+            'clang_warning_flags': [ '-Wno-unused-value', ],
+          },
           'conditions': [
-            ['clang==1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  '-Wno-unused-value',
-                ],
-              },
-              'cflags': [
-                '-Wno-unused-value',
-              ]
-            }],
             ['OS=="win"', {
               # TODO(eae): C4267 on amd64. size_t -> int, size_t -> unsigned int
               'msvs_disabled_warnings': [4267, 4334],

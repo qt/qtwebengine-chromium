@@ -30,40 +30,41 @@
 #ifndef Screen_h
 #define Screen_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-    class LocalFrame;
+class LocalFrame;
 
-    class Screen FINAL : public RefCountedWillBeGarbageCollectedFinalized<Screen>, public ScriptWrappable, public DOMWindowProperty, public WillBeHeapSupplementable<Screen> {
-        WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Screen);
-    public:
-        static PassRefPtrWillBeRawPtr<Screen> create(LocalFrame* frame)
-        {
-            return adoptRefWillBeNoop(new Screen(frame));
-        }
+class Screen final : public RefCountedWillBeGarbageCollected<Screen>, public ScriptWrappable, public DOMWindowProperty, public WillBeHeapSupplementable<Screen> {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Screen);
+public:
+    static PassRefPtrWillBeRawPtr<Screen> create(LocalFrame* frame)
+    {
+        return adoptRefWillBeNoop(new Screen(frame));
+    }
 
-        unsigned height() const;
-        unsigned width() const;
-        unsigned colorDepth() const;
-        unsigned pixelDepth() const;
-        int availLeft() const;
-        int availTop() const;
-        unsigned availHeight() const;
-        unsigned availWidth() const;
+    unsigned height() const;
+    unsigned width() const;
+    unsigned colorDepth() const;
+    unsigned pixelDepth() const;
+    int availLeft() const;
+    int availTop() const;
+    unsigned availHeight() const;
+    unsigned availWidth() const;
 
-        void trace(Visitor*);
+    virtual void trace(Visitor*) override;
 
-    private:
-        explicit Screen(LocalFrame*);
-    };
+private:
+    explicit Screen(LocalFrame*);
+};
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Screen_h

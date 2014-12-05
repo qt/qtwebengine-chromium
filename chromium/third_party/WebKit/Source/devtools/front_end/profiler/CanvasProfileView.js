@@ -36,7 +36,7 @@
 WebInspector.CanvasProfileView = function(profile)
 {
     WebInspector.VBox.call(this);
-    this.registerRequiredCSS("canvasProfiler.css");
+    this.registerRequiredCSS("profiler/canvasProfiler.css");
     this.element.classList.add("canvas-profile-view");
 
     this._profile = profile;
@@ -50,14 +50,15 @@ WebInspector.CanvasProfileView = function(profile)
     this._imageSplitView = new WebInspector.SplitView(false, true, "canvasProfileViewSplitViewState", 300);
     this._imageSplitView.show(this._replayInfoSplitView.mainElement());
 
-    var replayImageContainerView = new WebInspector.VBox();
+    var replayImageContainerView = new WebInspector.VBoxWithResizeCallback(this._onReplayImageResize.bind(this));
     replayImageContainerView.setMinimumSize(50, 28);
     replayImageContainerView.show(this._imageSplitView.mainElement());
 
-    // NOTE: The replayImageContainer can NOT be a flex div (e.g. VBox or SplitView elements)!
-    var replayImageContainer = replayImageContainerView.element.createChild("div");
+    var replayImageContainer = replayImageContainerView.element;
     replayImageContainer.id = "canvas-replay-image-container";
-    this._replayImageElement = replayImageContainer.createChild("img", "canvas-replay-image");
+    var replayImageParent = replayImageContainer.createChild("div", "canvas-replay-image-parent");
+    replayImageParent.createChild("span"); // Helps to align the image vertically.
+    this._replayImageElement = replayImageParent.createChild("img");
     this._debugInfoElement = replayImageContainer.createChild("div", "canvas-debug-info hidden");
     this._spinnerIcon = replayImageContainer.createChild("div", "spinner-icon small hidden");
 
@@ -129,6 +130,13 @@ WebInspector.CanvasProfileView.prototype = {
         return this._profile;
     },
 
+    _onReplayImageResize: function()
+    {
+        var parent = this._replayImageElement.parentElement;
+        this._replayImageElement.style.maxWidth = parent.clientWidth + "px";
+        this._replayImageElement.style.maxHeight = parent.clientHeight + "px";
+    },
+
     /**
      * @override
      * @return {!Array.<!Element>}
@@ -160,7 +168,7 @@ WebInspector.CanvasProfileView.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onMouseClick: function(event)
     {
@@ -476,7 +484,7 @@ WebInspector.CanvasProfileView.prototype = {
      */
     _createCallNode: function(index, call)
     {
-        var callViewElement = document.createElement("div");
+        var callViewElement = createElement("div");
 
         var data = {};
         data[0] = index + 1;
@@ -486,7 +494,7 @@ WebInspector.CanvasProfileView.prototype = {
             // FIXME(62725): stack trace line/column numbers are one-based.
             var lineNumber = Math.max(0, call.lineNumber - 1) || 0;
             var columnNumber = Math.max(0, call.columnNumber - 1) || 0;
-            data[2] = this._linkifier.linkifyLocation(this.profile.target(), call.sourceURL, lineNumber, columnNumber);
+            data[2] = this._linkifier.linkifyScriptLocation(this.profile.target(), null, call.sourceURL, lineNumber, columnNumber);
         }
 
         callViewElement.createChild("span", "canvas-function-name").textContent = call.functionName || "context." + call.property;
@@ -519,11 +527,16 @@ WebInspector.CanvasProfileView.prototype = {
         return node;
     },
 
+    /**
+     * @param {!Element} element
+     * @param {!Event} event
+     * @return {!Element|!AnchorBox|undefined}
+     */
     _popoverAnchor: function(element, event)
     {
         var argumentElement = element.enclosingNodeOrSelfWithClass("canvas-call-argument");
         if (!argumentElement || argumentElement.__suppressPopover)
-            return null;
+            return;
         return argumentElement;
     },
 
@@ -611,6 +624,7 @@ WebInspector.CanvasProfileView.prototype = {
 
 /**
  * @constructor
+ * @implements {WebInspector.TargetManager.Observer}
  * @extends {WebInspector.ProfileType}
  */
 WebInspector.CanvasProfileType = function()
@@ -634,15 +648,12 @@ WebInspector.CanvasProfileType = function()
     this._frameSelector.element.title = WebInspector.UIString("Frame containing the canvases to capture.");
     this._frameSelector.element.classList.add("hidden");
 
-    this._target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-    this._target.resourceTreeModel.frames().forEach(this._addFrame, this);
-    this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
-    this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameRemoved, this);
+    this._target = null;
+    WebInspector.targetManager.observeTargets(this);
 
-    this._dispatcher = new WebInspector.CanvasDispatcher(this);
     this._canvasAgentEnabled = false;
 
-    this._decorationElement = document.createElement("div");
+    this._decorationElement = createElement("div");
     this._decorationElement.className = "profile-canvas-decoration";
     this._updateDecorationElement();
 }
@@ -650,6 +661,34 @@ WebInspector.CanvasProfileType = function()
 WebInspector.CanvasProfileType.TypeId = "CANVAS_PROFILE";
 
 WebInspector.CanvasProfileType.prototype = {
+    /**
+     * @override
+     * @param {!WebInspector.Target} target
+     */
+    targetAdded: function(target)
+    {
+        if (this._target || target !== WebInspector.targetManager.mainTarget())
+            return;
+        this._target = target;
+        this._target.resourceTreeModel.frames().forEach(this._addFrame, this);
+        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
+        this._target.resourceTreeModel.addEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameRemoved, this);
+        new WebInspector.CanvasDispatcher(this._target, this);
+    },
+
+    /**
+     * @override
+     * @param {!WebInspector.Target} target
+     */
+    targetRemoved: function(target)
+    {
+        if (this._target !== target)
+            return;
+        this._target = null;
+        this._target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameAdded, this._frameAdded, this);
+        this._target.resourceTreeModel.removeEventListener(WebInspector.ResourceTreeModel.EventTypes.FrameDetached, this._frameRemoved, this);
+    },
+
     get statusBarItems()
     {
         return [this._capturingModeSelector.element, this._frameSelector.element];
@@ -687,22 +726,22 @@ WebInspector.CanvasProfileType.prototype = {
     _runSingleFrameCapturing: function()
     {
         var frameId = this._selectedFrameId();
-        this._target.profilingLock.acquire();
+        WebInspector.targetManager.suspendAllTargets();
         CanvasAgent.captureFrame(frameId, this._didStartCapturingFrame.bind(this, frameId));
-        this._target.profilingLock.release();
+        WebInspector.targetManager.resumeAllTargets();
     },
 
     _startFrameCapturing: function()
     {
         var frameId = this._selectedFrameId();
-        this._target.profilingLock.acquire();
+        WebInspector.targetManager.suspendAllTargets();
         CanvasAgent.startCapturing(frameId, this._didStartCapturingFrame.bind(this, frameId));
     },
 
     _stopFrameCapturing: function()
     {
         if (!this._lastProfileHeader) {
-            this._target.profilingLock.release();
+            WebInspector.targetManager.resumeAllTargets();
             return;
         }
         var profileHeader = this._lastProfileHeader;
@@ -713,7 +752,7 @@ WebInspector.CanvasProfileType.prototype = {
             profileHeader._updateCapturingStatus();
         }
         CanvasAgent.stopCapturing(traceLogId, didStopCapturing);
-        this._target.profilingLock.release();
+        WebInspector.targetManager.resumeAllTargets();
     },
 
     /**
@@ -768,13 +807,16 @@ WebInspector.CanvasProfileType.prototype = {
     {
         this._decorationElement.removeChildren();
         this._decorationElement.createChild("div", "warning-icon-small");
-        this._decorationElement.appendChild(document.createTextNode(this._canvasAgentEnabled ? WebInspector.UIString("Canvas Profiler is enabled.") : WebInspector.UIString("Canvas Profiler is disabled.")));
-        var button = this._decorationElement.createChild("button");
+        this._decorationElement.createTextChild(this._canvasAgentEnabled ? WebInspector.UIString("Canvas Profiler is enabled.") : WebInspector.UIString("Canvas Profiler is disabled."));
+        var button = this._decorationElement.createChild("button", "text-button");
         button.type = "button";
         button.textContent = this._canvasAgentEnabled ? WebInspector.UIString("Disable") : WebInspector.UIString("Enable");
         button.addEventListener("click", this._onProfilerEnableButtonClick.bind(this, !this._canvasAgentEnabled), false);
 
         var target = this._target;
+        if (!target)
+            return;
+
         /**
          * @param {?Protocol.Error} error
          * @param {boolean} result
@@ -787,7 +829,7 @@ WebInspector.CanvasProfileType.prototype = {
 
         if (forcePageReload) {
             if (this._canvasAgentEnabled) {
-                CanvasAgent.hasUninstrumentedCanvases(hasUninstrumentedCanvasesCallback);
+                target.canvasAgent().hasUninstrumentedCanvases(hasUninstrumentedCanvasesCallback);
             } else {
                 for (var frameId in this._framesWithCanvases) {
                     if (this._framesWithCanvases.hasOwnProperty(frameId)) {
@@ -848,7 +890,7 @@ WebInspector.CanvasProfileType.prototype = {
     _addFrame: function(frame)
     {
         var frameId = frame.id;
-        var option = document.createElement("option");
+        var option = createElement("option");
         option.text = frame.displayName();
         option.title = frame.url;
         option.value = frameId;
@@ -953,12 +995,13 @@ WebInspector.CanvasProfileType.prototype = {
 /**
  * @constructor
  * @implements {CanvasAgent.Dispatcher}
+ * @param {!WebInspector.Target} target
  * @param {!WebInspector.CanvasProfileType} profileType
  */
-WebInspector.CanvasDispatcher = function(profileType)
+WebInspector.CanvasDispatcher = function(target, profileType)
 {
     this._profileType = profileType;
-    InspectorBackend.registerCanvasDispatcher(this);
+    target.registerCanvasDispatcher(this);
 }
 
 WebInspector.CanvasDispatcher.prototype = {
@@ -983,14 +1026,14 @@ WebInspector.CanvasDispatcher.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.ProfileHeader}
- * @param {!WebInspector.Target} target
+ * @param {?WebInspector.Target} target
  * @param {!WebInspector.CanvasProfileType} type
  * @param {!CanvasAgent.TraceLogId=} traceLogId
  * @param {!PageAgent.FrameId=} frameId
  */
 WebInspector.CanvasProfileHeader = function(target, type, traceLogId, frameId)
 {
-    WebInspector.ProfileHeader.call(this, target, type, WebInspector.UIString("Trace Log %d", type._nextProfileUid));
+    WebInspector.ProfileHeader.call(this, target, type, WebInspector.UIString("Trace Log %d", type.nextProfileUid()));
     /** @type {!CanvasAgent.TraceLogId} */
     this._traceLogId = traceLogId || "";
     this._frameId = frameId;
@@ -1105,7 +1148,7 @@ WebInspector.CanvasProfileDataGridHelper = {
     {
         if (callArgument.enumName)
             return WebInspector.CanvasProfileDataGridHelper.createEnumValueElement(callArgument.enumName, +callArgument.description);
-        var element = document.createElement("span");
+        var element = createElement("span");
         element.className = "canvas-call-argument";
         var description = callArgument.description;
         if (callArgument.type === "string") {
@@ -1141,7 +1184,7 @@ WebInspector.CanvasProfileDataGridHelper = {
      */
     createEnumValueElement: function(enumName, enumValue)
     {
-        var element = document.createElement("span");
+        var element = createElement("span");
         element.className = "canvas-call-argument canvas-formatted-number";
         element.textContent = enumName;
         element.__evalResult = WebInspector.runtimeModel.createRemoteObjectFromPrimitiveValue(enumValue);

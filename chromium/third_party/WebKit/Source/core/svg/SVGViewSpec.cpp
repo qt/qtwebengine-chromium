@@ -20,15 +20,14 @@
 #include "config.h"
 #include "core/svg/SVGViewSpec.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/SVGNames.h"
-#include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGAnimatedTransformList.h"
 #include "core/svg/SVGParserUtilities.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGViewSpec::SVGViewSpec(SVGSVGElement* contextElement)
     // Note: addToPropertyMap is not needed, as SVGViewSpec do not correspond to an element.
@@ -41,7 +40,6 @@ SVGViewSpec::SVGViewSpec(SVGSVGElement* contextElement)
     , m_transform(SVGAnimatedTransformList::create(contextElement, SVGNames::transformAttr, SVGTransformList::create()))
 {
     ASSERT(m_contextElement);
-    ScriptWrappable::init(this);
 
     viewBox()->setReadOnly();
     preserveAspectRatio()->setReadOnly();

@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/message_center
       'target_name': 'message_center',
       'type': '<(component)',
       'dependencies': [
@@ -26,6 +27,7 @@
         'MESSAGE_CENTER_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'cocoa/notification_controller.h',
         'cocoa/notification_controller.mm',
         'cocoa/opaque_views.h',
@@ -55,6 +57,8 @@
         'message_center_observer.h',
         'message_center_style.cc',
         'message_center_style.h',
+        'message_center_switches.cc',
+        'message_center_switches.h',
         'message_center_tray.cc',
         'message_center_tray.h',
         'message_center_tray_delegate.h',
@@ -72,6 +76,8 @@
         'views/bounded_label.cc',
         'views/bounded_label.h',
         'views/constants.h',
+        'views/desktop_popup_alignment_delegate.cc',
+        'views/desktop_popup_alignment_delegate.h',
         'views/message_bubble_base.cc',
         'views/message_bubble_base.h',
         'views/message_center_controller.h',
@@ -95,6 +101,8 @@
         'views/notification_view.h',
         'views/padded_button.cc',
         'views/padded_button.h',
+        'views/popup_alignment_delegate.cc',
+        'views/popup_alignment_delegate.h',
         'views/proportional_image_view.cc',
         'views/proportional_image_view.h',
         'views/toast_contents_view.cc',
@@ -106,12 +114,14 @@
         # This condition is for Windows 8 Metro mode support.  We need to
         # specify a particular desktop during widget creation in that case.
         # This is done using the desktop aura native widget framework.
-        ['use_ash==1 and OS=="win"', {
+        ['OS=="win"', {
           'dependencies': [
             '../aura/aura.gyp:aura',
           ],
         }],
-        ['toolkit_views==1', {
+        # On Mac, toolkit-views builds still use the Cocoa UI. Keep this in sync
+        # with message_center_unittests below.
+        ['toolkit_views==1 and OS!="mac"', {
           'dependencies': [
             '../events/events.gyp:events',
             '../views/views.gyp:views',
@@ -128,8 +138,6 @@
             'views/message_bubble_base.h',
             'views/message_center_bubble.cc',
             'views/message_center_bubble.h',
-            'views/message_popup_bubble.cc',
-            'views/message_popup_bubble.h',
           ],
         }],
         # iOS disables notifications altogether, Android implements its own
@@ -139,7 +147,7 @@
             # Exclude everything except dummy impl.
             ['exclude', '\\.(cc|mm)$'],
             ['include', '^dummy_message_center\\.cc$'],
-            ['include', '^message_center_switches\\.cc$'],
+            ['include', '^notification_delegate\\.cc$'],
           ],
         }, {  # notifications==1
           'sources!': [ 'dummy_message_center.cc' ],
@@ -148,13 +156,13 @@
         ['OS=="android"', {
           'sources/': [
             ['include', '^notification\\.cc$'],
-            ['include', '^notification_delegate\\.cc$'],
             ['include', '^notifier_settings\\.cc$'],
           ],
         }],
       ],
     },  # target_name: message_center
     {
+      # GN version: //ui/message_center:test_support
       'target_name': 'message_center_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -167,6 +175,7 @@
         'message_center',
       ],
       'sources': [
+        # Note: sources list duplicated in GN build.
         'fake_message_center.h',
         'fake_message_center.cc',
         'fake_message_center_tray_delegate.h',
@@ -176,6 +185,7 @@
       ],
     },  # target_name: message_center_test_support
     {
+      # GN version: //ui/message_center:message_center_unittests
       'target_name': 'message_center_unittests',
       'type': 'executable',
       'dependencies': [
@@ -193,6 +203,7 @@
         'message_center_test_support',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'cocoa/notification_controller_unittest.mm',
         'cocoa/popup_collection_unittest.mm',
         'cocoa/popup_controller_unittest.mm',
@@ -212,7 +223,7 @@
             '../gfx/gfx.gyp:gfx_test_support',
           ],
         }],
-        ['toolkit_views==1', {
+        ['toolkit_views==1 and OS!="mac"', {
           'dependencies': [
             # Compositor is needed by message_center_view_unittest.cc
             # and for the fonts used by bounded_label_unittest.cc.

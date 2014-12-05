@@ -180,6 +180,14 @@ class APIKeyCache {
     return client_secrets_[client];
   }
 
+  std::string GetSpdyProxyAuthValue() {
+#if defined(SPDY_PROXY_AUTH_VALUE)
+    return SPDY_PROXY_AUTH_VALUE;
+#else
+    return std::string();
+#endif
+  }
+
  private:
   // Gets a value for a key.  In priority order, this will be the value
   // provided via a command-line switch, the value provided via an
@@ -258,6 +266,10 @@ std::string GetOAuth2ClientID(OAuth2Client client) {
 
 std::string GetOAuth2ClientSecret(OAuth2Client client) {
   return g_api_key_cache.Get().GetClientSecret(client);
+}
+
+std::string GetSpdyProxyAuthValue() {
+  return g_api_key_cache.Get().GetSpdyProxyAuthValue();
 }
 
 bool IsGoogleChromeAPIKeyUsed() {

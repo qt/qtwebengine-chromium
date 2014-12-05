@@ -4,6 +4,7 @@
 
 #include "net/test/embedded_test_server/embedded_test_server.h"
 
+#include "base/path_service.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread.h"
 #include "net/http/http_response_headers.h"
@@ -49,7 +50,7 @@ class EmbeddedTestServerTest: public testing::Test,
         io_thread_("io_thread") {
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     base::Thread::Options thread_options;
     thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(io_thread_.StartWithOptions(thread_options));
@@ -61,12 +62,12 @@ class EmbeddedTestServerTest: public testing::Test,
     ASSERT_TRUE(server_->InitializeAndWaitUntilReady());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     ASSERT_TRUE(server_->ShutdownAndWaitUntilComplete());
   }
 
   // URLFetcherDelegate override.
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const URLFetcher* source) override {
     ++num_responses_received_;
     if (num_responses_received_ == num_responses_expected_)
       base::MessageLoop::current()->Quit();
@@ -95,10 +96,10 @@ class EmbeddedTestServerTest: public testing::Test,
       http_response->set_code(code);
       http_response->set_content(content);
       http_response->set_content_type(content_type);
-      return http_response.PassAs<HttpResponse>();
+      return http_response.Pass();
     }
 
-    return scoped_ptr<HttpResponse>();
+    return nullptr;
   }
 
  protected:
@@ -119,6 +120,12 @@ TEST_F(EmbeddedTestServerTest, GetURL) {
   EXPECT_EQ(base::StringPrintf("http://127.0.0.1:%d/path?query=foo",
                                server_->port()),
             server_->GetURL("/path?query=foo").spec());
+}
+
+TEST_F(EmbeddedTestServerTest, GetURLWithHostname) {
+  EXPECT_EQ(base::StringPrintf("http://foo.com:%d/path?query=foo",
+                               server_->port()),
+            server_->GetURL("foo.com", "/path?query=foo").spec());
 }
 
 TEST_F(EmbeddedTestServerTest, RegisterRequestHandler) {
@@ -260,7 +267,7 @@ class EmbeddedTestServerThreadingTestDelegate
         message_loop_present_on_shutdown_(message_loop_present_on_shutdown) {}
 
   // base::PlatformThread::Delegate:
-  virtual void ThreadMain() OVERRIDE {
+  void ThreadMain() override {
     scoped_refptr<base::SingleThreadTaskRunner> io_thread_runner;
     base::Thread io_thread("io_thread");
     base::Thread::Options thread_options;
@@ -298,7 +305,7 @@ class EmbeddedTestServerThreadingTestDelegate
   }
 
   // URLFetcherDelegate override.
-  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
+  void OnURLFetchComplete(const URLFetcher* source) override {
     base::MessageLoop::current()->Quit();
   }
 

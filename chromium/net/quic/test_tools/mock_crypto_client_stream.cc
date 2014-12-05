@@ -81,13 +81,16 @@ void MockCryptoClientStream::SendOnCryptoHandshakeEvent(
 void MockCryptoClientStream::SetConfigNegotiated() {
   ASSERT_FALSE(session()->config()->negotiated());
   QuicTagVector cgst;
-  cgst.push_back(kINAR);
+  // TODO(rtenneti): Enable the following code after BBR code is checked in.
+#if 0
+  cgst.push_back(kTBBR);
+#endif
   cgst.push_back(kQBIC);
-  session()->config()->set_congestion_feedback(cgst, kQBIC);
-  session()->config()->set_idle_connection_state_lifetime(
-      QuicTime::Delta::FromSeconds(2 * kDefaultTimeoutSecs),
-      QuicTime::Delta::FromSeconds(kDefaultTimeoutSecs));
-  session()->config()->set_max_streams_per_connection(
+  session()->config()->SetCongestionFeedback(cgst, kQBIC);
+  session()->config()->SetIdleConnectionStateLifetime(
+      QuicTime::Delta::FromSeconds(2 * kMaximumIdleTimeoutSecs),
+      QuicTime::Delta::FromSeconds(kMaximumIdleTimeoutSecs));
+  session()->config()->SetMaxStreamsPerConnection(
       2 * kDefaultMaxStreamsPerConnection, kDefaultMaxStreamsPerConnection);
 
   CryptoHandshakeMessage msg;

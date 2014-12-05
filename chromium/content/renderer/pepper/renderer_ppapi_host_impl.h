@@ -36,7 +36,7 @@ class PluginModule;
 // This class is attached to a PluginModule which manages our lifetime.
 class RendererPpapiHostImpl : public RendererPpapiHost {
  public:
-  virtual ~RendererPpapiHostImpl();
+  ~RendererPpapiHostImpl() override;
 
   // Factory functions to create in process or out-of-process host impls. The
   // host will be created and associated with the given module, which must not
@@ -76,34 +76,30 @@ class RendererPpapiHostImpl : public RendererPpapiHost {
   bool IsExternalPluginHost() const;
 
   // RendererPpapiHost implementation.
-  virtual ppapi::host::PpapiHost* GetPpapiHost() OVERRIDE;
-  virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
-  virtual PepperPluginInstance* GetPluginInstance(PP_Instance instance) const
-      OVERRIDE;
-  virtual RenderFrame* GetRenderFrameForInstance(PP_Instance instance) const
-      OVERRIDE;
-  virtual RenderView* GetRenderViewForInstance(PP_Instance instance) const
-      OVERRIDE;
-  virtual blink::WebPluginContainer* GetContainerForInstance(
-      PP_Instance instance) const OVERRIDE;
-  virtual base::ProcessId GetPluginPID() const OVERRIDE;
-  virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
-  virtual int GetRoutingIDForWidget(PP_Instance instance) const OVERRIDE;
-  virtual gfx::Point PluginPointToRenderFrame(PP_Instance instance,
-                                              const gfx::Point& pt) const
-      OVERRIDE;
-  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+  ppapi::host::PpapiHost* GetPpapiHost() override;
+  bool IsValidInstance(PP_Instance instance) const override;
+  PepperPluginInstance* GetPluginInstance(PP_Instance instance) const override;
+  RenderFrame* GetRenderFrameForInstance(PP_Instance instance) const override;
+  RenderView* GetRenderViewForInstance(PP_Instance instance) const override;
+  blink::WebPluginContainer* GetContainerForInstance(
+      PP_Instance instance) const override;
+  base::ProcessId GetPluginPID() const override;
+  bool HasUserGesture(PP_Instance instance) const override;
+  int GetRoutingIDForWidget(PP_Instance instance) const override;
+  gfx::Point PluginPointToRenderFrame(PP_Instance instance,
+                                      const gfx::Point& pt) const override;
+  IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
-      bool should_close_source) OVERRIDE;
-  virtual bool IsRunningInProcess() const OVERRIDE;
-  virtual std::string GetPluginName() const OVERRIDE;
-  virtual void SetToExternalPluginHost() OVERRIDE;
-  virtual void CreateBrowserResourceHosts(
+      bool should_close_source) override;
+  bool IsRunningInProcess() const override;
+  std::string GetPluginName() const override;
+  void SetToExternalPluginHost() override;
+  void CreateBrowserResourceHosts(
       PP_Instance instance,
       const std::vector<IPC::Message>& nested_msgs,
-      const base::Callback<void(const std::vector<int>&)>& callback) const
-      OVERRIDE;
-  virtual GURL GetDocumentURL(PP_Instance instance) const OVERRIDE;
+      const base::Callback<void(const std::vector<int>&)>& callback)
+      const override;
+  GURL GetDocumentURL(PP_Instance instance) const override;
 
  private:
   RendererPpapiHostImpl(PluginModule* module,

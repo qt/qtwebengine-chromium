@@ -121,7 +121,7 @@ void WebContentsViewAndroid::CreateView(
 }
 
 RenderWidgetHostViewBase* WebContentsViewAndroid::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host, bool is_guest_view_hack) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -163,6 +163,7 @@ void WebContentsViewAndroid::ShowContextMenu(
 }
 
 void WebContentsViewAndroid::ShowPopupMenu(
+    RenderFrameHost* render_frame_host,
     const gfx::Rect& bounds,
     int item_height,
     double item_font_size,
@@ -171,8 +172,11 @@ void WebContentsViewAndroid::ShowPopupMenu(
     bool right_aligned,
     bool allow_multiple_selection) {
   if (content_view_core_) {
-    content_view_core_->ShowSelectPopupMenu(
-        bounds, items, selected_item, allow_multiple_selection);
+    content_view_core_->ShowSelectPopupMenu(render_frame_host,
+                                            bounds,
+                                            items,
+                                            selected_item,
+                                            allow_multiple_selection);
   }
 }
 

@@ -33,27 +33,27 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderRubyRun;
 
-class RenderRubyBase FINAL : public RenderBlockFlow {
+class RenderRubyBase final : public RenderBlockFlow {
 public:
     virtual ~RenderRubyBase();
 
     static RenderRubyBase* createAnonymous(Document*);
 
-    virtual const char* renderName() const OVERRIDE { return "RenderRubyBase (anonymous)"; }
+    virtual const char* renderName() const override { return "RenderRubyBase (anonymous)"; }
 
-    virtual bool isRubyBase() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRubyBase || RenderBlockFlow::isOfType(type); }
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
 
 private:
     RenderRubyBase();
 
-    virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const OVERRIDE;
-    virtual void adjustInlineDirectionLineBounds(unsigned expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const OVERRIDE;
+    virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const override;
+    virtual void adjustInlineDirectionLineBounds(unsigned expansionOpportunityCount, float& logicalLeft, float& logicalWidth) const override;
 
     void moveChildren(RenderRubyBase* toBase, RenderObject* beforeChild = 0);
     void moveInlineChildren(RenderRubyBase* toBase, RenderObject* beforeChild = 0);
@@ -63,6 +63,6 @@ private:
     friend class RenderRubyRun;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderRubyBase_h

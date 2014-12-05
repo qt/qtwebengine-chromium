@@ -32,11 +32,14 @@ class CC_EXPORT UniqueNotifier {
  private:
   void Notify();
 
+  // TODO(dcheng): How come this doesn't need to hold a ref to the task runner?
   base::SequencedTaskRunner* task_runner_;
   base::Closure closure_;
   bool notification_pending_;
 
   base::WeakPtrFactory<UniqueNotifier> weak_ptr_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(UniqueNotifier);
 };
 
 }  // namespace cc

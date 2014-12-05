@@ -6,8 +6,8 @@
 
 #include <string>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "net/base/net_log.h"
 #include "net/base/test_completion_callback.h"
 #include "net/base/test_data_directory.h"
@@ -20,7 +20,7 @@ namespace net {
 
 class CtSerializationTest : public ::testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     test_digitally_signed_ = ct::GetTestDigitallySigned();
   }
 

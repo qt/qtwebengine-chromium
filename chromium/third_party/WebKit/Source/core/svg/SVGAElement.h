@@ -26,10 +26,11 @@
 #include "core/svg/SVGGraphicsElement.h"
 #include "core/svg/SVGURIReference.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGAElement FINAL : public SVGGraphicsElement,
+class SVGAElement final : public SVGGraphicsElement,
                           public SVGURIReference {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGAElement);
     SVGAnimatedString* svgTarget() { return m_svgTarget.get(); }
@@ -37,28 +38,32 @@ public:
 private:
     explicit SVGAElement(Document&);
 
-    virtual String title() const OVERRIDE;
+    virtual String title() const override;
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
 
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual bool isMouseFocusable() const OVERRIDE;
-    virtual bool isKeyboardFocusable() const OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual bool canStartSelection() const OVERRIDE;
-    virtual short tabIndex() const OVERRIDE;
+    virtual bool isLiveLink() const override { return isLink(); }
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE;
+    virtual bool supportsFocus() const override;
+    virtual bool shouldHaveFocusAppearance() const override final;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override;
+    virtual bool isMouseFocusable() const override;
+    virtual bool isKeyboardFocusable() const override;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual bool canStartSelection() const override;
+    virtual short tabIndex() const override;
+
+    virtual bool willRespondToMouseClickEvents() override;
 
     RefPtr<SVGAnimatedString> m_svgTarget;
+    bool m_wasFocusedByMouse;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAElement_h

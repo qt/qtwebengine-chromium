@@ -17,10 +17,14 @@
  */
 class GrDrawTargetCaps : public SkRefCnt {
 public:
-    SK_DECLARE_INST_COUNT(Caps)
+    SK_DECLARE_INST_COUNT(GrDrawTargetCaps)
 
-    GrDrawTargetCaps() { this->reset(); }
-    GrDrawTargetCaps(const GrDrawTargetCaps& other) : INHERITED() { *this = other; }
+    GrDrawTargetCaps() : fUniqueID(CreateUniqueID()) {
+        this->reset();
+    }
+    GrDrawTargetCaps(const GrDrawTargetCaps& other) : INHERITED(), fUniqueID(CreateUniqueID()) {
+        *this = other;
+    }
     GrDrawTargetCaps& operator= (const GrDrawTargetCaps&);
 
     virtual void reset();
@@ -40,6 +44,9 @@ public:
     bool dstReadInShaderSupport() const { return fDstReadInShaderSupport; }
     bool discardRenderTargetSupport() const { return fDiscardRenderTargetSupport; }
     bool gpuTracingSupport() const { return fGpuTracingSupport; }
+    bool compressedTexSubImageSupport() const { return fCompressedTexSubImageSupport; }
+
+    bool useDrawInsteadOfClear() const { return fUseDrawInsteadOfClear; }
 
     /**
      * Indicates whether GPU->CPU memory mapping for GPU resources such as vertex buffers and
@@ -76,6 +83,13 @@ public:
         return fConfigTextureSupport[config];
     }
 
+    /**
+     * Gets an id that is unique for this GrDrawTargetCaps object. It is static in that it does
+     * not change when the content of the GrDrawTargetCaps object changes. This will never return
+     * 0.
+     */
+    uint32_t getUniqueID() const { return fUniqueID; }
+
 protected:
     bool fNPOTTextureTileSupport    : 1;
     bool fMipMapSupport             : 1;
@@ -90,6 +104,10 @@ protected:
     bool fDiscardRenderTargetSupport: 1;
     bool fReuseScratchTextures      : 1;
     bool fGpuTracingSupport         : 1;
+    bool fCompressedTexSubImageSupport : 1;
+
+    // Driver workaround
+    bool fUseDrawInsteadOfClear     : 1;
 
     uint32_t fMapBufferFlags;
 
@@ -100,6 +118,11 @@ protected:
     // The first entry for each config is without msaa and the second is with.
     bool fConfigRenderSupport[kGrPixelConfigCnt][2];
     bool fConfigTextureSupport[kGrPixelConfigCnt];
+
+private:
+    static uint32_t CreateUniqueID();
+
+    const uint32_t          fUniqueID;
 
     typedef SkRefCnt INHERITED;
 };

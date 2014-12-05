@@ -31,15 +31,15 @@
 #ifndef SVGPointList_h
 #define SVGPointList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGPoint.h"
 #include "core/svg/properties/SVGListPropertyHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPointListTearOff;
 
-class SVGPointList FINAL : public SVGListPropertyHelper<SVGPointList, SVGPoint> {
+class SVGPointList final : public SVGListPropertyHelper<SVGPointList, SVGPoint> {
 public:
     typedef SVGPointListTearOff TearOffType;
 
@@ -50,29 +50,24 @@ public:
 
     virtual ~SVGPointList();
 
-    PassRefPtr<SVGPointList> clone();
-
     void setValueAsString(const String&, ExceptionState&);
 
     // SVGPropertyBase:
-    virtual PassRefPtr<SVGPropertyBase> cloneForAnimation(const String&) const OVERRIDE;
-    virtual String valueAsString() const OVERRIDE;
+    virtual String valueAsString() const override;
 
-    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) OVERRIDE;
-    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) OVERRIDE;
-    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) OVERRIDE;
+    virtual void add(PassRefPtrWillBeRawPtr<SVGPropertyBase>, SVGElement*) override;
+    virtual void calculateAnimatedValue(SVGAnimationElement*, float percentage, unsigned repeatCount, PassRefPtr<SVGPropertyBase> fromValue, PassRefPtr<SVGPropertyBase> toValue, PassRefPtr<SVGPropertyBase> toAtEndOfDurationValue, SVGElement*) override;
+    virtual float calculateDistance(PassRefPtr<SVGPropertyBase> to, SVGElement*) override;
 
     static AnimatedPropertyType classType() { return AnimatedPoints; }
 
 private:
     SVGPointList();
 
-    bool adjustFromToListValues(PassRefPtr<SVGPointList> fromList, PassRefPtr<SVGPointList> toList, float percentage, bool isToAnimation, bool resizeAnimatedListIfNeeded);
-
     template <typename CharType>
     bool parse(const CharType*& ptr, const CharType* end);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGPointList_h

@@ -208,7 +208,7 @@ void HttpResponseHeaders::Persist(Pickle* pickle, PersistOptions options) {
     --k;
 
     std::string header_name(parsed_[i].name_begin, parsed_[i].name_end);
-    StringToLowerASCII(&header_name);
+    base::StringToLowerASCII(&header_name);
 
     if (filter_headers.find(header_name) == filter_headers.end()) {
       // Make sure there is a null after the value.
@@ -251,7 +251,7 @@ void HttpResponseHeaders::Update(const HttpResponseHeaders& new_headers) {
     const std::string::const_iterator& name_end = new_parsed[i].name_end;
     if (ShouldUpdateHeader(name_begin, name_end)) {
       std::string name(name_begin, name_end);
-      StringToLowerASCII(&name);
+      base::StringToLowerASCII(&name);
       updated_headers.insert(name);
 
       // Preserve this header line in the merged result, making sure there is
@@ -279,7 +279,7 @@ void HttpResponseHeaders::MergeWithHeaders(const std::string& raw_headers,
     --k;
 
     std::string name(parsed_[i].name_begin, parsed_[i].name_end);
-    StringToLowerASCII(&name);
+    base::StringToLowerASCII(&name);
     if (headers_to_remove.find(name) == headers_to_remove.end()) {
       // It's ok to preserve this header in the final result.
       new_raw_headers.append(parsed_[i].name_begin, parsed_[k].value_end);
@@ -302,7 +302,7 @@ void HttpResponseHeaders::RemoveHeader(const std::string& name) {
   new_raw_headers.push_back('\0');
 
   std::string lowercase_name(name);
-  StringToLowerASCII(&lowercase_name);
+  base::StringToLowerASCII(&lowercase_name);
   HeaderSet to_remove;
   to_remove.insert(lowercase_name);
   MergeWithHeaders(new_raw_headers, to_remove);
@@ -311,7 +311,7 @@ void HttpResponseHeaders::RemoveHeader(const std::string& name) {
 void HttpResponseHeaders::RemoveHeaderLine(const std::string& name,
                                            const std::string& value) {
   std::string name_lowercase(name);
-  StringToLowerASCII(&name_lowercase);
+  base::StringToLowerASCII(&name_lowercase);
 
   std::string new_raw_headers(GetStatusLine());
   new_raw_headers.push_back('\0');
@@ -323,7 +323,7 @@ void HttpResponseHeaders::RemoveHeaderLine(const std::string& name,
   std::string old_header_value;
   while (EnumerateHeaderLines(&iter, &old_header_name, &old_header_value)) {
     std::string old_header_name_lowercase(name);
-    StringToLowerASCII(&old_header_name_lowercase);
+    base::StringToLowerASCII(&old_header_name_lowercase);
 
     if (name_lowercase == old_header_name_lowercase &&
         value == old_header_value)
@@ -474,7 +474,7 @@ void HttpResponseHeaders::GetNormalizedHeaders(std::string* output) const {
     DCHECK(!parsed_[i].is_continuation());
 
     std::string name(parsed_[i].name_begin, parsed_[i].name_end);
-    std::string lower_name = StringToLowerASCII(name);
+    std::string lower_name = base::StringToLowerASCII(name);
 
     iter = headers_map.find(lower_name);
     if (iter == headers_map.end()) {
@@ -753,6 +753,32 @@ size_t HttpResponseHeaders::FindHeader(size_t from,
   return std::string::npos;
 }
 
+bool HttpResponseHeaders::GetCacheControlDirective(const StringPiece& directive,
+                                                   TimeDelta* result) const {
+  StringPiece name("cache-control");
+  std::string value;
+
+  size_t directive_size = directive.size();
+
+  void* iter = NULL;
+  while (EnumerateHeader(&iter, name, &value)) {
+    if (value.size() > directive_size + 1 &&
+        LowerCaseEqualsASCII(value.begin(),
+                             value.begin() + directive_size,
+                             directive.begin()) &&
+        value[directive_size] == '=') {
+      int64 seconds;
+      base::StringToInt64(
+          StringPiece(value.begin() + directive_size + 1, value.end()),
+          &seconds);
+      *result = TimeDelta::FromSeconds(seconds);
+      return true;
+    }
+  }
+
+  return false;
+}
+
 void HttpResponseHeaders::AddHeader(std::string::const_iterator name_begin,
                                     std::string::const_iterator name_end,
                                     std::string::const_iterator values_begin,
@@ -824,7 +850,7 @@ void HttpResponseHeaders::AddNonCacheableHeaders(HeaderSet* result) const {
       // assuming the header is not empty, lowercase and insert into set
       if (item_end > item) {
         std::string name(&*item, item_end - item);
-        StringToLowerASCII(&name);
+        base::StringToLowerASCII(&name);
         result->insert(name);
       }
 
@@ -930,15 +956,28 @@ bool HttpResponseHeaders::IsRedirectResponseCode(int response_code) {
 // Of course, there are other factors that can force a response to always be
 // validated or re-fetched.
 //
-bool HttpResponseHeaders::RequiresValidation(const Time& request_time,
-                                             const Time& response_time,
-                                             const Time& current_time) const {
-  TimeDelta lifetime =
-      GetFreshnessLifetime(response_time);
-  if (lifetime == TimeDelta())
-    return true;
+// From RFC 5861 section 3, a stale response may be used while revalidation is
+// performed in the background if
+//
+//   freshness_lifetime + stale_while_revalidate > current_age
+//
+ValidationType HttpResponseHeaders::RequiresValidation(
+    const Time& request_time,
+    const Time& response_time,
+    const Time& current_time) const {
+  FreshnessLifetimes lifetimes = GetFreshnessLifetimes(response_time);
+  if (lifetimes.freshness == TimeDelta() && lifetimes.staleness == TimeDelta())
+    return VALIDATION_SYNCHRONOUS;
 
-  return lifetime <= GetCurrentAge(request_time, response_time, current_time);
+  TimeDelta age = GetCurrentAge(request_time, response_time, current_time);
+
+  if (lifetimes.freshness > age)
+    return VALIDATION_NONE;
+
+  if (lifetimes.freshness + lifetimes.staleness > age)
+    return VALIDATION_ASYNCHRONOUS;
+
+  return VALIDATION_SYNCHRONOUS;
 }
 
 // From RFC 2616 section 13.2.4:
@@ -961,25 +1000,36 @@ bool HttpResponseHeaders::RequiresValidation(const Time& request_time,
 //
 //   freshness_lifetime = (date_value - last_modified_value) * 0.10
 //
-TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
-    const Time& response_time) const {
+// If the stale-while-revalidate directive is present, then it is used to set
+// the |staleness| time, unless it overridden by another directive.
+//
+HttpResponseHeaders::FreshnessLifetimes
+HttpResponseHeaders::GetFreshnessLifetimes(const Time& response_time) const {
+  FreshnessLifetimes lifetimes;
   // Check for headers that force a response to never be fresh.  For backwards
   // compat, we treat "Pragma: no-cache" as a synonym for "Cache-Control:
   // no-cache" even though RFC 2616 does not specify it.
   if (HasHeaderValue("cache-control", "no-cache") ||
       HasHeaderValue("cache-control", "no-store") ||
       HasHeaderValue("pragma", "no-cache") ||
-      HasHeaderValue("vary", "*"))  // see RFC 2616 section 13.6
-    return TimeDelta();  // not fresh
+      // Vary: * is never usable: see RFC 2616 section 13.6.
+      HasHeaderValue("vary", "*")) {
+    return lifetimes;
+  }
+
+  // Cache-Control directive must_revalidate overrides stale-while-revalidate.
+  bool must_revalidate = HasHeaderValue("cache-control", "must-revalidate");
+
+  if (must_revalidate || !GetStaleWhileRevalidateValue(&lifetimes.staleness)) {
+    DCHECK_EQ(TimeDelta(), lifetimes.staleness);
+  }
 
   // NOTE: "Cache-Control: max-age" overrides Expires, so we only check the
-  // Expires header after checking for max-age in GetFreshnessLifetime.  This
+  // Expires header after checking for max-age in GetFreshnessLifetimes.  This
   // is important since "Expires: <date in the past>" means not fresh, but
   // it should not trump a max-age value.
-
-  TimeDelta max_age_value;
-  if (GetMaxAgeValue(&max_age_value))
-    return max_age_value;
+  if (GetMaxAgeValue(&lifetimes.freshness))
+    return lifetimes;
 
   // If there is no Date header, then assume that the server response was
   // generated at the time when we received the response.
@@ -990,10 +1040,13 @@ TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
   Time expires_value;
   if (GetExpiresValue(&expires_value)) {
     // The expires value can be a date in the past!
-    if (expires_value > date_value)
-      return expires_value - date_value;
+    if (expires_value > date_value) {
+      lifetimes.freshness = expires_value - date_value;
+      return lifetimes;
+    }
 
-    return TimeDelta();  // not fresh
+    DCHECK_EQ(TimeDelta(), lifetimes.freshness);
+    return lifetimes;
   }
 
   // From RFC 2616 section 13.4:
@@ -1021,24 +1074,31 @@ TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
   // experimental RFC that adds 308 permanent redirect as well, for which "any
   // future references ... SHOULD use one of the returned URIs."
   if ((response_code_ == 200 || response_code_ == 203 ||
-       response_code_ == 206) &&
-      !HasHeaderValue("cache-control", "must-revalidate")) {
+       response_code_ == 206) && !must_revalidate) {
     // TODO(darin): Implement a smarter heuristic.
     Time last_modified_value;
     if (GetLastModifiedValue(&last_modified_value)) {
-      // The last-modified value can be a date in the past!
-      if (last_modified_value <= date_value)
-        return (date_value - last_modified_value) / 10;
+      // The last-modified value can be a date in the future!
+      if (last_modified_value <= date_value) {
+        lifetimes.freshness = (date_value - last_modified_value) / 10;
+        return lifetimes;
+      }
     }
   }
 
   // These responses are implicitly fresh (unless otherwise overruled):
   if (response_code_ == 300 || response_code_ == 301 || response_code_ == 308 ||
       response_code_ == 410) {
-    return TimeDelta::Max();
+    lifetimes.freshness = TimeDelta::Max();
+    lifetimes.staleness = TimeDelta();  // It should never be stale.
+    return lifetimes;
   }
 
-  return TimeDelta();  // not fresh
+  // Our heuristic freshness estimate for this resource is 0 seconds, in
+  // accordance with common browser behaviour. However, stale-while-revalidate
+  // may still apply.
+  DCHECK_EQ(TimeDelta(), lifetimes.freshness);
+  return lifetimes;
 }
 
 // From RFC 2616 section 13.2.3:
@@ -1092,29 +1152,7 @@ TimeDelta HttpResponseHeaders::GetCurrentAge(const Time& request_time,
 }
 
 bool HttpResponseHeaders::GetMaxAgeValue(TimeDelta* result) const {
-  std::string name = "cache-control";
-  std::string value;
-
-  const char kMaxAgePrefix[] = "max-age=";
-  const size_t kMaxAgePrefixLen = arraysize(kMaxAgePrefix) - 1;
-
-  void* iter = NULL;
-  while (EnumerateHeader(&iter, name, &value)) {
-    if (value.size() > kMaxAgePrefixLen) {
-      if (LowerCaseEqualsASCII(value.begin(),
-                               value.begin() + kMaxAgePrefixLen,
-                               kMaxAgePrefix)) {
-        int64 seconds;
-        base::StringToInt64(StringPiece(value.begin() + kMaxAgePrefixLen,
-                                        value.end()),
-                            &seconds);
-        *result = TimeDelta::FromSeconds(seconds);
-        return true;
-      }
-    }
-  }
-
-  return false;
+  return GetCacheControlDirective("max-age", result);
 }
 
 bool HttpResponseHeaders::GetAgeValue(TimeDelta* result) const {
@@ -1140,6 +1178,11 @@ bool HttpResponseHeaders::GetExpiresValue(Time* result) const {
   return GetTimeValuedHeader("Expires", result);
 }
 
+bool HttpResponseHeaders::GetStaleWhileRevalidateValue(
+    TimeDelta* result) const {
+  return GetCacheControlDirective("stale-while-revalidate", result);
+}
+
 bool HttpResponseHeaders::GetTimeValuedHeader(const std::string& name,
                                               Time* result) const {
   std::string value;
@@ -1160,28 +1203,40 @@ bool HttpResponseHeaders::GetTimeValuedHeader(const std::string& name,
   return Time::FromUTCString(value.c_str(), result);
 }
 
+// We accept the first value of "close" or "keep-alive" in a Connection or
+// Proxy-Connection header, in that order. Obeying "keep-alive" in HTTP/1.1 or
+// "close" in 1.0 is not strictly standards-compliant, but we'd like to
+// avoid looking at the Proxy-Connection header whenever it is reasonable to do
+// so.
+// TODO(ricea): Measure real-world usage of the "Proxy-Connection" header,
+// with a view to reducing support for it in order to make our Connection header
+// handling more RFC 7230 compliant.
 bool HttpResponseHeaders::IsKeepAlive() const {
-  if (http_version_ < HttpVersion(1, 0))
-    return false;
-
   // NOTE: It is perhaps risky to assume that a Proxy-Connection header is
   // meaningful when we don't know that this response was from a proxy, but
   // Mozilla also does this, so we'll do the same.
-  std::string connection_val;
-  if (!EnumerateHeader(NULL, "connection", &connection_val))
-    EnumerateHeader(NULL, "proxy-connection", &connection_val);
+  static const char* kConnectionHeaders[] = {"connection", "proxy-connection"};
+  struct KeepAliveToken {
+    const char* token;
+    bool keep_alive;
+  };
+  static const KeepAliveToken kKeepAliveTokens[] = {{"keep-alive", true},
+                                                    {"close", false}};
 
-  bool keep_alive;
+  if (http_version_ < HttpVersion(1, 0))
+    return false;
 
-  if (http_version_ == HttpVersion(1, 0)) {
-    // HTTP/1.0 responses default to NOT keep-alive
-    keep_alive = LowerCaseEqualsASCII(connection_val, "keep-alive");
-  } else {
-    // HTTP/1.1 responses default to keep-alive
-    keep_alive = !LowerCaseEqualsASCII(connection_val, "close");
+  for (const char* header : kConnectionHeaders) {
+    void* iterator = nullptr;
+    std::string token;
+    while (EnumerateHeader(&iterator, header, &token)) {
+      for (const KeepAliveToken& keep_alive_token : kKeepAliveTokens) {
+        if (LowerCaseEqualsASCII(token, keep_alive_token.token))
+          return keep_alive_token.keep_alive;
+      }
+    }
   }
-
-  return keep_alive;
+  return http_version_ != HttpVersion(1, 0);
 }
 
 bool HttpResponseHeaders::HasStrongValidators() const {
@@ -1346,9 +1401,12 @@ base::Value* HttpResponseHeaders::NetLogCallback(
   std::string value;
   while (EnumerateHeaderLines(&iterator, &name, &value)) {
     std::string log_value = ElideHeaderValueForNetLog(log_level, name, value);
+    std::string escaped_name = EscapeNonASCII(name);
+    std::string escaped_value = EscapeNonASCII(log_value);
     headers->Append(
       new base::StringValue(
-          base::StringPrintf("%s: %s", name.c_str(), log_value.c_str())));
+          base::StringPrintf("%s: %s", escaped_name.c_str(),
+                             escaped_value.c_str())));
   }
   dict->Set("headers", headers);
   return dict;

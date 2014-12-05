@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/track/vtt/VTTRegionList.h"
 
-namespace WebCore {
+namespace blink {
 
 VTTRegionList::VTTRegionList()
 {
@@ -42,20 +42,20 @@ VTTRegion* VTTRegionList::item(unsigned index) const
     if (index < m_list.size())
         return m_list[index].get();
 
-    return 0;
+    return nullptr;
 }
 
 VTTRegion* VTTRegionList::getRegionById(const String& id) const
 {
     if (id.isEmpty())
-        return 0;
+        return nullptr;
 
     for (size_t i = 0; i < m_list.size(); ++i) {
         if (m_list[i]->id() == id)
             return m_list[i].get();
     }
 
-    return 0;
+    return nullptr;
 }
 
 void VTTRegionList::add(PassRefPtrWillBeRawPtr<VTTRegion> region)
@@ -78,4 +78,4 @@ void VTTRegionList::trace(Visitor* visitor)
     visitor->trace(m_list);
 }
 
-} // namespace WebCore
+} // namespace blink

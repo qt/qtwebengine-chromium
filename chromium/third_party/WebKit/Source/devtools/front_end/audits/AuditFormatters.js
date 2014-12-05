@@ -43,7 +43,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     text: function(text)
     {
-        return document.createTextNode(text);
+        return createTextNode(text);
     },
 
     /**
@@ -52,7 +52,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     snippet: function(snippetText)
     {
-        var div = document.createElement("div");
+        var div = createElement("div");
         div.textContent = snippetText;
         div.className = "source-code";
         return div;
@@ -63,7 +63,7 @@ WebInspector.AuditFormatters.Registry = {
      */
     concat: function()
     {
-        var parent = document.createElement("span");
+        var parent = createElement("span");
         for (var arg = 0; arg < arguments.length; ++arg)
             parent.appendChild(WebInspector.auditFormatters.apply(arguments[arg]));
         return parent;
@@ -72,18 +72,11 @@ WebInspector.AuditFormatters.Registry = {
     /**
      * @param {string} url
      * @param {string=} displayText
-     * @param {boolean=} allowExternalNavigation
      * @return {!Element}
      */
-    url: function(url, displayText, allowExternalNavigation)
+    url: function(url, displayText)
     {
-        var a = document.createElement("a");
-        a.href = sanitizeHref(url);
-        a.title = url;
-        a.textContent = displayText || url;
-        if (allowExternalNavigation)
-            a.target = "_blank";
-        return a;
+        return WebInspector.createExternalAnchor(url, displayText);
     },
 
     /**

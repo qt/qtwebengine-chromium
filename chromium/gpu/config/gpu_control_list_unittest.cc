@@ -32,7 +32,7 @@ class GpuControlListTest : public testing::Test {
  public:
   GpuControlListTest() { }
 
-  virtual ~GpuControlListTest() { }
+  ~GpuControlListTest() override {}
 
   const GPUInfo& gpu_info() const {
     return gpu_info_;
@@ -47,7 +47,7 @@ class GpuControlListTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     gpu_info_.gpu.vendor_id = kNvidiaVendorId;
     gpu_info_.gpu.device_id = 0x0640;
     gpu_info_.driver_vendor = "NVIDIA";
@@ -62,8 +62,7 @@ class GpuControlListTest : public testing::Test {
     gpu_info_.performance_stats.overall = 5.0;
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  private:
   GPUInfo gpu_info_;
@@ -289,6 +288,52 @@ TEST_F(GpuControlListTest, DisabledEntry) {
   EXPECT_EQ(1u, flag_entries.size());
 }
 
+TEST_F(GpuControlListTest, NeedsMoreInfo) {
+  const std::string json = LONG_STRING_CONST(
+      {
+        "name": "gpu control list",
+        "version": "0.1",
+        "entries": [
+          {
+            "id": 1,
+            "os": {
+              "type": "win"
+            },
+            "vendor_id": "0x10de",
+            "driver_version": {
+              "op": "<",
+              "value": "12"
+            },
+            "features": [
+              "test_feature_0"
+            ]
+          }
+        ]
+      }
+  );
+  GPUInfo gpu_info;
+  gpu_info.gpu.vendor_id = kNvidiaVendorId;
+
+  scoped_ptr<GpuControlList> control_list(Create());
+  EXPECT_TRUE(control_list->LoadList(json, GpuControlList::kAllOs));
+
+  std::set<int> features = control_list->MakeDecision(
+      GpuControlList::kOsWin, kOsVersion, gpu_info);
+  EXPECT_EMPTY_SET(features);
+  EXPECT_TRUE(control_list->needs_more_info());
+  std::vector<uint32> decision_entries;
+  control_list->GetDecisionEntries(&decision_entries, false);
+  EXPECT_EQ(0u, decision_entries.size());
+
+  gpu_info.driver_version = "11";
+  features = control_list->MakeDecision(
+      GpuControlList::kOsWin, kOsVersion, gpu_info);
+  EXPECT_SINGLE_FEATURE(features, TEST_FEATURE_0);
+  EXPECT_FALSE(control_list->needs_more_info());
+  control_list->GetDecisionEntries(&decision_entries, false);
+  EXPECT_EQ(1u, decision_entries.size());
+}
+
 TEST_F(GpuControlListTest, NeedsMoreInfoForExceptions) {
   const std::string json = LONG_STRING_CONST(
       {
@@ -303,10 +348,7 @@ TEST_F(GpuControlListTest, NeedsMoreInfoForExceptions) {
             "vendor_id": "0x8086",
             "exceptions": [
               {
-                "gl_renderer": {
-                  "op": "contains",
-                  "value": "mesa"
-                }
+                "gl_renderer": ".*mesa.*"
               }
             ],
             "features": [

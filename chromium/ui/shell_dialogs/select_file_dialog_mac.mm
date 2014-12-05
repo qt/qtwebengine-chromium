@@ -11,7 +11,7 @@
 #include <set>
 #include <vector>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
@@ -20,9 +20,9 @@
 #import "base/mac/scoped_nsobject.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
-#include "grit/ui_strings.h"
 #import "ui/base/cocoa/nib_loading.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "ui/strings/grit/ui_strings.h"
 
 namespace {
 
@@ -52,7 +52,7 @@ class SelectFileDialogImpl;
       parentWindow:(NSWindow*)parentWindow;
 
 // NSSavePanel delegate method
-- (BOOL)panel:(id)sender shouldShowFilename:(NSString *)filename;
+- (BOOL)panel:(id)sender shouldEnableURL:(NSURL *)url;
 
 @end
 
@@ -64,8 +64,8 @@ class SelectFileDialogImpl : public ui::SelectFileDialog {
                                 ui::SelectFilePolicy* policy);
 
   // BaseShellDialog implementation.
-  virtual bool IsRunning(gfx::NativeWindow parent_window) const OVERRIDE;
-  virtual void ListenerDestroyed() OVERRIDE;
+  bool IsRunning(gfx::NativeWindow parent_window) const override;
+  void ListenerDestroyed() override;
 
   // Callback from ObjC bridge.
   void FileWasSelected(NSSavePanel* dialog,
@@ -75,29 +75,26 @@ class SelectFileDialogImpl : public ui::SelectFileDialog {
                        const std::vector<base::FilePath>& files,
                        int index);
 
-  bool ShouldEnableFilename(NSSavePanel* dialog, NSString* filename);
-
  protected:
   // SelectFileDialog implementation.
   // |params| is user data we pass back via the Listener interface.
-  virtual void SelectFileImpl(
-      Type type,
-      const base::string16& title,
-      const base::FilePath& default_path,
-      const FileTypeInfo* file_types,
-      int file_type_index,
-      const base::FilePath::StringType& default_extension,
-      gfx::NativeWindow owning_window,
-      void* params) OVERRIDE;
+  void SelectFileImpl(Type type,
+                      const base::string16& title,
+                      const base::FilePath& default_path,
+                      const FileTypeInfo* file_types,
+                      int file_type_index,
+                      const base::FilePath::StringType& default_extension,
+                      gfx::NativeWindow owning_window,
+                      void* params) override;
 
  private:
-  virtual ~SelectFileDialogImpl();
+  ~SelectFileDialogImpl() override;
 
   // Gets the accessory view for the save dialog.
   NSView* GetAccessoryView(const FileTypeInfo* file_types,
                            int file_type_index);
 
-  virtual bool HasMultipleFileTypeChoicesImpl() OVERRIDE;
+  bool HasMultipleFileTypeChoicesImpl() override;
 
   // The bridge for results from Cocoa to return to us.
   base::scoped_nsobject<SelectFileDialogBridge> bridge_;
@@ -157,15 +154,6 @@ void SelectFileDialogImpl::FileWasSelected(
       listener_->FileSelected(files[0], index, params);
     }
   }
-}
-
-bool SelectFileDialogImpl::ShouldEnableFilename(NSSavePanel* dialog,
-                                                NSString* filename) {
-  // If this is a single open file dialog, disable selecting packages.
-  if (type_map_[dialog] != SELECT_OPEN_FILE)
-    return true;
-
-  return ![[NSWorkspace sharedWorkspace] isFilePackageAtPath:filename];
 }
 
 void SelectFileDialogImpl::SelectFileImpl(
@@ -425,8 +413,8 @@ bool SelectFileDialogImpl::HasMultipleFileTypeChoicesImpl() {
   [panel release];
 }
 
-- (BOOL)panel:(id)sender shouldShowFilename:(NSString *)filename {
-  return selectFileDialogImpl_->ShouldEnableFilename(sender, filename);
+- (BOOL)panel:(id)sender shouldEnableURL:(NSURL *)url {
+  return [url isFileURL];
 }
 
 @end

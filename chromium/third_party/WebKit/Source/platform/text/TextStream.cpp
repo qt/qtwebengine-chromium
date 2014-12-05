@@ -35,9 +35,7 @@
 #include "wtf/StringExtras.h"
 #include "wtf/text/WTFString.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 static const size_t printBufferSize = 100; // large enough for any integer or floating point value in string format, including trailing null character
 

@@ -56,23 +56,24 @@ RasterTask::~RasterTask() {}
 
 RasterTask* RasterTask::AsRasterTask() { return this; }
 
-RasterTaskQueue::Item::Item(RasterTask* task, bool required_for_activation)
-    : task(task), required_for_activation(required_for_activation) {}
+RasterTaskQueue::Item::Item(RasterTask* task,
+                            const TaskSetCollection& task_sets)
+    : task(task), task_sets(task_sets) {
+  DCHECK(task_sets.any());
+}
 
 RasterTaskQueue::Item::~Item() {}
 
-RasterTaskQueue::RasterTaskQueue() : required_for_activation_count(0u) {}
+RasterTaskQueue::RasterTaskQueue() {
+}
 
 RasterTaskQueue::~RasterTaskQueue() {}
 
 void RasterTaskQueue::Swap(RasterTaskQueue* other) {
   items.swap(other->items);
-  std::swap(required_for_activation_count,
-            other->required_for_activation_count);
 }
 
 void RasterTaskQueue::Reset() {
-  required_for_activation_count = 0u;
   items.clear();
 }
 

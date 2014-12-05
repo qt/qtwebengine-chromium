@@ -10,7 +10,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "content/common/view_message_enums.h"
+#include "content/common/accessibility_mode_enums.h"
 #include "content/public/browser/browser_accessibility_state.h"
 
 namespace content {
@@ -40,14 +40,14 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
 
   static BrowserAccessibilityStateImpl* GetInstance();
 
-  virtual void EnableAccessibility() OVERRIDE;
-  virtual void DisableAccessibility() OVERRIDE;
-  virtual void ResetAccessibilityMode() OVERRIDE;
-  virtual void OnScreenReaderDetected() OVERRIDE;
-  virtual bool IsAccessibleBrowser() OVERRIDE;
-  virtual void AddHistogramCallback(base::Closure callback) OVERRIDE;
+  void EnableAccessibility() override;
+  void DisableAccessibility() override;
+  void ResetAccessibilityMode() override;
+  void OnScreenReaderDetected() override;
+  bool IsAccessibleBrowser() override;
+  void AddHistogramCallback(base::Closure callback) override;
 
-  virtual void UpdateHistogramsForTesting() OVERRIDE;
+  void UpdateHistogramsForTesting() override;
 
   AccessibilityMode accessibility_mode() const { return accessibility_mode_; };
 
@@ -72,13 +72,13 @@ class CONTENT_EXPORT BrowserAccessibilityStateImpl
   void UpdateHistograms();
 
   // Leaky singleton, destructor generally won't be called.
-  virtual ~BrowserAccessibilityStateImpl();
+  ~BrowserAccessibilityStateImpl() override;
 
   void UpdatePlatformSpecificHistograms();
 
-  // Updates the accessibility mode of all render widgets, including swapped out
+  // Updates the accessibility mode of all web contents, including swapped out
   // ones. |add| specifies whether the mode should be added or removed.
-  void AddOrRemoveFromRenderWidgets(AccessibilityMode mode, bool add);
+  void AddOrRemoveFromAllWebContents(AccessibilityMode mode, bool add);
 
   AccessibilityMode accessibility_mode_;
 

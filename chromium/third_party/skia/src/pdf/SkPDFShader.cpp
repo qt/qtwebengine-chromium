@@ -659,22 +659,20 @@ SkPDFObject* SkPDFShader::GetPDFShader(const SkShader& shader,
 
 // static
 SkTDArray<SkPDFShader::ShaderCanonicalEntry>& SkPDFShader::CanonicalShaders() {
-    // This initialization is only thread safe with gcc.
+    SkPDFShader::CanonicalShadersMutex().assertHeld();
     static SkTDArray<ShaderCanonicalEntry> gCanonicalShaders;
     return gCanonicalShaders;
 }
 
+SK_DECLARE_STATIC_MUTEX(gCanonicalShadersMutex);
 // static
 SkBaseMutex& SkPDFShader::CanonicalShadersMutex() {
-    // This initialization is only thread safe with gcc or when
-    // POD-style mutex initialization is used.
-    SK_DECLARE_STATIC_MUTEX(gCanonicalShadersMutex);
     return gCanonicalShadersMutex;
 }
 
 // static
 SkPDFObject* SkPDFFunctionShader::RangeObject() {
-    // This initialization is only thread safe with gcc.
+    SkPDFShader::CanonicalShadersMutex().assertHeld();
     static SkPDFArray* range = NULL;
     // This method is only used with CanonicalShadersMutex, so it's safe to
     // populate domain.
@@ -1162,10 +1160,8 @@ SkPDFImageShader::SkPDFImageShader(SkPDFShader::State* state) : fState(state) {
     fState.get()->fImage.unlockPixels();
 }
 
-SkPDFStream* SkPDFFunctionShader::makePSFunction(const SkString& psCode,
-                                                 SkPDFArray* domain) {
-    SkAutoDataUnref funcData(SkData::NewWithCopy(psCode.c_str(),
-                                                 psCode.size()));
+SkPDFStream* SkPDFFunctionShader::makePSFunction(const SkString& psCode, SkPDFArray* domain) {
+    SkAutoDataUnref funcData(SkData::NewWithCopy(psCode.c_str(), psCode.size()));
     SkPDFStream* result = new SkPDFStream(funcData.get());
     result->insertInt("FunctionType", 4);
     result->insert("Domain", domain);
@@ -1173,14 +1169,12 @@ SkPDFStream* SkPDFFunctionShader::makePSFunction(const SkString& psCode,
     return result;
 }
 
-SkPDFShader::ShaderCanonicalEntry::ShaderCanonicalEntry(SkPDFObject* pdfShader,
-                                                        const State* state)
-    : fPDFShader(pdfShader),
-      fState(state) {
-}
+SkPDFShader::ShaderCanonicalEntry::ShaderCanonicalEntry(SkPDFObject* pdfShader, const State* state)
+    : fPDFShader(pdfShader)
+    , fState(state)
+{}
 
-bool SkPDFShader::ShaderCanonicalEntry::operator==(
-        const ShaderCanonicalEntry& b) const {
+bool SkPDFShader::ShaderCanonicalEntry::operator==(const ShaderCanonicalEntry& b) const {
     return fPDFShader == b.fPDFShader ||
            (fState != NULL && b.fState != NULL && *fState == *b.fState);
 }

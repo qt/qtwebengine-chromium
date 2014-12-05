@@ -6,7 +6,6 @@
 #define CONTENT_COMMON_SANDBOX_LINUX_ANDROID_SANDBOX_BPF_BASE_POLICY_ANDROID_H_
 
 #include "content/common/sandbox_linux/sandbox_bpf_base_policy_linux.h"
-#include "sandbox/linux/seccomp-bpf/errorcode.h"
 
 namespace content {
 
@@ -19,9 +18,8 @@ class SandboxBPFBasePolicyAndroid : public SandboxBPFBasePolicy {
   virtual ~SandboxBPFBasePolicyAndroid();
 
   // sandbox::SandboxBPFPolicy:
-  virtual sandbox::ErrorCode EvaluateSyscall(
-      sandbox::SandboxBPF* sandbox_compiler,
-      int system_call_number) const OVERRIDE;
+  virtual sandbox::bpf_dsl::ResultExpr EvaluateSyscall(
+      int system_call_number) const override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SandboxBPFBasePolicyAndroid);

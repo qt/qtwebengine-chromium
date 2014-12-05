@@ -170,6 +170,28 @@ WebInspector.Geometry.radToDeg = function(rad)
     return rad * 180 / Math.PI;
 }
 
+/**
+ * @param {!CSSMatrix} matrix
+ * @param {!Array.<number>} points
+ * @param {{minX: number, maxX: number, minY: number, maxY: number}=} aggregateBounds
+ * @return {!{minX: number, maxX: number, minY: number, maxY: number}}
+ */
+WebInspector.Geometry.boundsForTransformedPoints = function(matrix, points, aggregateBounds)
+{
+    if (!aggregateBounds)
+        aggregateBounds = {minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity};
+    if (points.length % 3)
+        console.assert("Invalid size of points array");
+    for (var p = 0; p < points.length; p += 3) {
+        var vector = new WebInspector.Geometry.Vector(points[p], points[p + 1], points[p + 2]);
+        vector = WebInspector.Geometry.multiplyVectorByMatrixAndNormalize(vector, matrix);
+        aggregateBounds.minX = Math.min(aggregateBounds.minX, vector.x);
+        aggregateBounds.maxX = Math.max(aggregateBounds.maxX, vector.x);
+        aggregateBounds.minY = Math.min(aggregateBounds.minY, vector.y);
+        aggregateBounds.maxY = Math.max(aggregateBounds.maxY, vector.y);
+    }
+    return aggregateBounds;
+}
 
 /**
  * @constructor
@@ -226,3 +248,78 @@ Size.prototype.addHeight = function(size)
 {
     return new Size(this.width, this.height + (typeof size === "number" ? size : size.height));
 };
+
+
+/**
+ * @constructor
+ * @param {!Size} minimum
+ * @param {?Size=} preferred
+ */
+function Constraints(minimum, preferred)
+{
+    /**
+     * @type {!Size}
+     */
+    this.minimum = minimum;
+
+    /**
+     * @type {!Size}
+     */
+    this.preferred = preferred || minimum;
+
+    if (this.minimum.width > this.preferred.width || this.minimum.height > this.preferred.height)
+        throw new Error("Minimum size is greater than preferred.");
+}
+
+/**
+ * @param {?Constraints} constraints
+ * @return {boolean}
+ */
+Constraints.prototype.isEqual = function(constraints)
+{
+    return !!constraints && this.minimum.isEqual(constraints.minimum) && this.preferred.isEqual(constraints.preferred);
+}
+
+/**
+ * @param {!Constraints|number} value
+ * @return {!Constraints}
+ */
+Constraints.prototype.widthToMax = function(value)
+{
+    if (typeof value === "number")
+        return new Constraints(this.minimum.widthToMax(value), this.preferred.widthToMax(value));
+    return new Constraints(this.minimum.widthToMax(value.minimum), this.preferred.widthToMax(value.preferred));
+}
+
+/**
+ * @param {!Constraints|number} value
+ * @return {!Constraints}
+ */
+Constraints.prototype.addWidth = function(value)
+{
+    if (typeof value === "number")
+        return new Constraints(this.minimum.addWidth(value), this.preferred.addWidth(value));
+    return new Constraints(this.minimum.addWidth(value.minimum), this.preferred.addWidth(value.preferred));
+}
+
+/**
+ * @param {!Constraints|number} value
+ * @return {!Constraints}
+ */
+Constraints.prototype.heightToMax = function(value)
+{
+    if (typeof value === "number")
+        return new Constraints(this.minimum.heightToMax(value), this.preferred.heightToMax(value));
+    return new Constraints(this.minimum.heightToMax(value.minimum), this.preferred.heightToMax(value.preferred));
+}
+
+/**
+ * @param {!Constraints|number} value
+ * @return {!Constraints}
+ */
+Constraints.prototype.addHeight = function(value)
+{
+    if (typeof value === "number")
+        return new Constraints(this.minimum.addHeight(value), this.preferred.addHeight(value));
+    return new Constraints(this.minimum.addHeight(value.minimum), this.preferred.addHeight(value.preferred));
+}

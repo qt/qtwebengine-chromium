@@ -37,7 +37,7 @@
 
 namespace blink {
 
-WebMIDIPermissionRequest::WebMIDIPermissionRequest(WebCore::MIDIAccessInitializer* initializer)
+WebMIDIPermissionRequest::WebMIDIPermissionRequest(MIDIAccessInitializer* initializer)
     : m_initializer(initializer)
 {
 }
@@ -54,7 +54,7 @@ WebSecurityOrigin WebMIDIPermissionRequest::securityOrigin() const
 
 void WebMIDIPermissionRequest::setIsAllowed(bool allowed)
 {
-    m_initializer->setSysexEnabled(allowed);
+    m_initializer->resolveSysexPermission(allowed);
 }
 
 } // namespace blink

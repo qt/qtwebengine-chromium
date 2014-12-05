@@ -5,41 +5,49 @@
 #include "config.h"
 #include "modules/serviceworkers/RespondWithObserver.h"
 
-#include "V8Response.h"
-#include "bindings/v8/ScriptFunction.h"
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptValue.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ScriptFunction.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptValue.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/modules/v8/V8Response.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
+#include "platform/RuntimeEnabledFeatures.h"
+#include "public/platform/WebServiceWorkerResponse.h"
 #include "wtf/Assertions.h"
 #include "wtf/RefPtr.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
-class RespondWithObserver::ThenFunction FINAL : public ScriptFunction {
+class RespondWithObserver::ThenFunction final : public ScriptFunction {
 public:
     enum ResolveType {
         Fulfilled,
         Rejected,
     };
 
-    static PassOwnPtr<ScriptFunction> create(PassRefPtr<RespondWithObserver> observer, ResolveType type)
+    static v8::Handle<v8::Function> createFunction(ScriptState* scriptState, RespondWithObserver* observer, ResolveType type)
     {
-        ExecutionContext* executionContext = observer->executionContext();
-        return adoptPtr(new ThenFunction(toIsolate(executionContext), observer, type));
+        ThenFunction* self = new ThenFunction(scriptState, observer, type);
+        return self->bindToV8Function();
+    }
+
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_observer);
+        ScriptFunction::trace(visitor);
     }
 
 private:
-    ThenFunction(v8::Isolate* isolate, PassRefPtr<RespondWithObserver> observer, ResolveType type)
-        : ScriptFunction(isolate)
+    ThenFunction(ScriptState* scriptState, RespondWithObserver* observer, ResolveType type)
+        : ScriptFunction(scriptState)
         , m_observer(observer)
         , m_resolveType(type)
     {
     }
 
-    virtual ScriptValue call(ScriptValue value) OVERRIDE
+    virtual ScriptValue call(ScriptValue value) override
     {
         ASSERT(m_observer);
         ASSERT(m_resolveType == Fulfilled || m_resolveType == Rejected);
@@ -51,18 +59,13 @@ private:
         return value;
     }
 
-    RefPtr<RespondWithObserver> m_observer;
+    Member<RespondWithObserver> m_observer;
     ResolveType m_resolveType;
 };
 
-PassRefPtr<RespondWithObserver> RespondWithObserver::create(ExecutionContext* context, int eventID)
+RespondWithObserver* RespondWithObserver::create(ExecutionContext* context, int eventID, WebURLRequest::FetchRequestMode requestMode, WebURLRequest::FrameType frameType)
 {
-    return adoptRef(new RespondWithObserver(context, eventID));
-}
-
-RespondWithObserver::~RespondWithObserver()
-{
-    ASSERT(m_state == Done);
+    return new RespondWithObserver(context, eventID, requestMode, frameType);
 }
 
 void RespondWithObserver::contextDestroyed()
@@ -73,52 +76,70 @@ void RespondWithObserver::contextDestroyed()
 
 void RespondWithObserver::didDispatchEvent()
 {
-    if (m_state == Initial)
-        sendResponse(nullptr);
-}
-
-void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValue& value)
-{
+    ASSERT(executionContext());
     if (m_state != Initial)
         return;
+    ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID);
+    m_state = Done;
+}
+
+void RespondWithObserver::respondWith(ScriptState* scriptState, const ScriptValue& value, ExceptionState& exceptionState)
+{
+    ASSERT(RuntimeEnabledFeatures::serviceWorkerOnFetchEnabled());
+    if (m_state != Initial) {
+        exceptionState.throwDOMException(InvalidStateError, "respondWith is already called.");
+        return;
+    }
 
     m_state = Pending;
     ScriptPromise::cast(scriptState, value).then(
-        ThenFunction::create(this, ThenFunction::Fulfilled),
-        ThenFunction::create(this, ThenFunction::Rejected));
-}
-
-void RespondWithObserver::sendResponse(PassRefPtr<Response> response)
-{
-    if (!executionContext())
-        return;
-    ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, response);
-    m_state = Done;
+        ThenFunction::createFunction(scriptState, this, ThenFunction::Fulfilled),
+        ThenFunction::createFunction(scriptState, this, ThenFunction::Rejected));
 }
 
 void RespondWithObserver::responseWasRejected()
 {
-    // FIXME: Throw a NetworkError to service worker's execution context.
-    sendResponse(nullptr);
+    ASSERT(executionContext());
+    // The default value of WebServiceWorkerResponse's status is 0, which maps
+    // to a network error.
+    WebServiceWorkerResponse webResponse;
+    ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
+    m_state = Done;
 }
 
 void RespondWithObserver::responseWasFulfilled(const ScriptValue& value)
 {
-    if (!executionContext())
-        return;
+    ASSERT(executionContext());
     if (!V8Response::hasInstance(value.v8Value(), toIsolate(executionContext()))) {
         responseWasRejected();
         return;
     }
-    v8::Handle<v8::Object> object = v8::Handle<v8::Object>::Cast(value.v8Value());
-    sendResponse(V8Response::toNative(object));
+    Response* response = V8Response::toImplWithTypeCheck(toIsolate(executionContext()), value.v8Value());
+    // "If either |response|'s type is |opaque| and |request|'s mode is not
+    // |no CORS| or |response|'s type is |error|, return a network error."
+    const FetchResponseData::Type responseType = response->response()->type();
+    if ((responseType == FetchResponseData::OpaqueType && m_requestMode != WebURLRequest::FetchRequestModeNoCORS) || responseType == FetchResponseData::ErrorType) {
+        responseWasRejected();
+        return;
+    }
+    // Treat the opaque response as a network error for frame loading.
+    if (responseType == FetchResponseData::OpaqueType && m_frameType != WebURLRequest::FrameTypeNone) {
+        responseWasRejected();
+        return;
+    }
+    WebServiceWorkerResponse webResponse;
+    response->populateWebServiceWorkerResponse(webResponse);
+    ServiceWorkerGlobalScopeClient::from(executionContext())->didHandleFetchEvent(m_eventID, webResponse);
+    m_state = Done;
 }
 
-RespondWithObserver::RespondWithObserver(ExecutionContext* context, int eventID)
+RespondWithObserver::RespondWithObserver(ExecutionContext* context, int eventID, WebURLRequest::FetchRequestMode requestMode, WebURLRequest::FrameType frameType)
     : ContextLifecycleObserver(context)
     , m_eventID(eventID)
+    , m_requestMode(requestMode)
+    , m_frameType(frameType)
     , m_state(Initial)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

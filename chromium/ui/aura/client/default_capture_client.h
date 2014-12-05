@@ -16,14 +16,14 @@ namespace client {
 class AURA_EXPORT DefaultCaptureClient : public client::CaptureClient {
  public:
   explicit DefaultCaptureClient(Window* root_window);
-  virtual ~DefaultCaptureClient();
+  ~DefaultCaptureClient() override;
 
  private:
   // Overridden from client::CaptureClient:
-  virtual void SetCapture(Window* window) OVERRIDE;
-  virtual void ReleaseCapture(Window* window) OVERRIDE;
-  virtual Window* GetCaptureWindow() OVERRIDE;
-  virtual Window* GetGlobalCaptureWindow() OVERRIDE;
+  void SetCapture(Window* window) override;
+  void ReleaseCapture(Window* window) override;
+  Window* GetCaptureWindow() override;
+  Window* GetGlobalCaptureWindow() override;
 
   Window* root_window_;
   Window* capture_window_;

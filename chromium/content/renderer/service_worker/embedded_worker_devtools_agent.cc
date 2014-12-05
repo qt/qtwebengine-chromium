@@ -36,20 +36,19 @@ bool EmbeddedWorkerDevToolsAgent::OnMessageReceived(
   IPC_MESSAGE_HANDLER(DevToolsAgentMsg_Detach, OnDetach)
   IPC_MESSAGE_HANDLER(DevToolsAgentMsg_DispatchOnInspectorBackend,
                       OnDispatchOnInspectorBackend)
-  IPC_MESSAGE_HANDLER(DevToolsAgentMsg_ResumeWorkerContext,
-                      OnResumeWorkerContext)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
 }
 
 void EmbeddedWorkerDevToolsAgent::OnAttach(const std::string& host_id) {
-  webworker_->attachDevTools();
+  webworker_->attachDevTools(WebString::fromUTF8(host_id));
 }
 
 void EmbeddedWorkerDevToolsAgent::OnReattach(const std::string& host_id,
                                              const std::string& state) {
-  webworker_->reattachDevTools(WebString::fromUTF8(state));
+  webworker_->reattachDevTools(WebString::fromUTF8(host_id),
+                               WebString::fromUTF8(state));
 }
 
 void EmbeddedWorkerDevToolsAgent::OnDetach() {
@@ -59,10 +58,6 @@ void EmbeddedWorkerDevToolsAgent::OnDetach() {
 void EmbeddedWorkerDevToolsAgent::OnDispatchOnInspectorBackend(
     const std::string& message) {
   webworker_->dispatchDevToolsMessage(WebString::fromUTF8(message));
-}
-
-void EmbeddedWorkerDevToolsAgent::OnResumeWorkerContext() {
-  webworker_->resumeWorkerContext();
 }
 
 }  // namespace content

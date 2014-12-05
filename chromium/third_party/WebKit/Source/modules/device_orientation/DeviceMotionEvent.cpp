@@ -30,7 +30,7 @@
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "modules/device_orientation/DeviceRotationRate.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceMotionEvent::~DeviceMotionEvent()
 {
@@ -39,14 +39,12 @@ DeviceMotionEvent::~DeviceMotionEvent()
 DeviceMotionEvent::DeviceMotionEvent()
     : m_deviceMotionData(DeviceMotionData::create())
 {
-    ScriptWrappable::init(this);
 }
 
 DeviceMotionEvent::DeviceMotionEvent(const AtomicString& eventType, DeviceMotionData* deviceMotionData)
     : Event(eventType, false, false) // Can't bubble, not cancelable
     , m_deviceMotionData(deviceMotionData)
 {
-    ScriptWrappable::init(this);
 }
 
 void DeviceMotionEvent::initDeviceMotionEvent(const AtomicString& type, bool bubbles, bool cancelable, DeviceMotionData* deviceMotionData)
@@ -118,4 +116,4 @@ void DeviceMotionEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

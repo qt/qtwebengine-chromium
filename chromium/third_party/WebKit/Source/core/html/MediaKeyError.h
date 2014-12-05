@@ -26,13 +26,15 @@
 #ifndef MediaKeyError_h
 #define MediaKeyError_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class MediaKeyError : public RefCounted<MediaKeyError>, public ScriptWrappable {
+class MediaKeyError final : public RefCountedWillBeGarbageCollectedFinalized<MediaKeyError>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum {
         MEDIA_KEYERR_UNKNOWN = 1,
@@ -44,21 +46,24 @@ public:
     };
     typedef unsigned short Code;
 
-    static PassRefPtr<MediaKeyError> create(Code code, unsigned long systemCode = 0) { return adoptRef(new MediaKeyError(code, systemCode)); }
+    static PassRefPtrWillBeRawPtr<MediaKeyError> create(Code code, unsigned long systemCode = 0)
+    {
+        return adoptRefWillBeNoop(new MediaKeyError(code, systemCode));
+    }
 
     Code code() const { return m_code; }
     unsigned long systemCode() { return m_systemCode; }
 
+    void trace(Visitor*) { }
+
 private:
-    explicit MediaKeyError(Code code, unsigned long systemCode) : m_code(code), m_systemCode(systemCode)
-    {
-        ScriptWrappable::init(this);
-    }
+    MediaKeyError(Code code, unsigned long systemCode)
+        : m_code(code), m_systemCode(systemCode) { }
 
     Code m_code;
     unsigned long m_systemCode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // MediaKeyError_h

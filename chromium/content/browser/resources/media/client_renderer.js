@@ -122,6 +122,67 @@ var ClientRenderer = (function() {
       }
     },
 
+    createVideoCaptureFormatTable: function(formats) {
+      if (!formats || formats.length == 0)
+        return document.createTextNode('No formats');
+
+      var table = document.createElement('table');
+      var thead = document.createElement('thead');
+      var theadRow = document.createElement('tr');
+      for (var key in formats[0]) {
+        var th = document.createElement('th');
+        th.appendChild(document.createTextNode(key));
+        theadRow.appendChild(th);
+      }
+      thead.appendChild(theadRow);
+      table.appendChild(thead);
+      var tbody = document.createElement('tbody');
+      for (var i=0; i < formats.length; ++i) {
+        var tr = document.createElement('tr')
+        for (var key in formats[i]) {
+          var td = document.createElement('td');
+          td.appendChild(document.createTextNode(formats[i][key]));
+          tr.appendChild(td);
+        }
+        tbody.appendChild(tr);
+      }
+      table.appendChild(tbody);
+      table.classList.add('video-capture-formats-table');
+      return table;
+    },
+
+    redrawVideoCaptureCapabilities: function(videoCaptureCapabilities, keys) {
+      var copyButtonElement =
+          document.getElementById('video-capture-capabilities-copy-button');
+      copyButtonElement.onclick = function() {
+        window.prompt('Copy to clipboard: Ctrl+C, Enter',
+                      JSON.stringify(videoCaptureCapabilities))
+      }
+
+      var videoTableBodyElement  =
+          document.getElementById('video-capture-capabilities-tbody');
+      removeChildren(videoTableBodyElement);
+
+      for (var component in videoCaptureCapabilities) {
+        var tableRow =  document.createElement('tr');
+        var device = videoCaptureCapabilities[ component ];
+        for (var i in keys) {
+          var value = device[keys[i]];
+          var tableCell = document.createElement('td');
+          var cellElement;
+          if ((typeof value) == (typeof [])) {
+            cellElement = this.createVideoCaptureFormatTable(value);
+          } else {
+            cellElement = document.createTextNode(
+                ((typeof value) == 'undefined') ? 'n/a' : value);
+          }
+          tableCell.appendChild(cellElement)
+          tableRow.appendChild(tableCell);
+        }
+        videoTableBodyElement.appendChild(tableRow);
+      }
+    },
+
     redrawAudioComponentList_: function(componentType, components) {
       function redrawList(renderer, baseName, element) {
         var fragment = document.createDocumentFragment();

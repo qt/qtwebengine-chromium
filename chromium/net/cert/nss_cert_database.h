@@ -20,7 +20,6 @@
 #include "net/cert/x509_certificate.h"
 
 namespace base {
-template <typename T> struct DefaultLazyInstanceTraits;
 class TaskRunner;
 }
 template <class ObserverType> class ObserverListThreadSafe;
@@ -31,9 +30,10 @@ class CryptoModule;
 typedef std::vector<scoped_refptr<CryptoModule> > CryptoModuleList;
 
 // Provides functions to manipulate the NSS certificate stores.
+// Forwards notifications about certificate changes to the global CertDatabase
+// singleton.
 class NET_EXPORT NSSCertDatabase {
  public:
-
   class NET_EXPORT Observer {
    public:
     virtual ~Observer() {}
@@ -100,8 +100,18 @@ class NET_EXPORT NSSCertDatabase {
 
   typedef base::Callback<void(bool)> DeleteCertCallback;
 
-  // DEPRECATED: See http://crbug.com/329735.
-  static NSSCertDatabase* GetInstance();
+  // Creates a NSSCertDatabase that will store public information (such as
+  // certificates and trust records) in |public_slot|, and private information
+  // (such as keys) in |private_slot|.
+  // In general, code should avoid creating an NSSCertDatabase directly,
+  // as doing so requires making opinionated decisions about where to store
+  // data, and instead prefer to be passed an existing NSSCertDatabase
+  // instance.
+  // |public_slot| must not be NULL, |private_slot| can be NULL. Both slots can
+  // be identical.
+  NSSCertDatabase(crypto::ScopedPK11Slot public_slot,
+                  crypto::ScopedPK11Slot private_slot);
+  virtual ~NSSCertDatabase();
 
   // Get a list of unique certificates in the certificate database (one
   // instance of all certificates).
@@ -121,11 +131,22 @@ class NET_EXPORT NSSCertDatabase {
   virtual void ListCertsInSlot(const ListCertsCallback& callback,
                                PK11SlotInfo* slot);
 
+#if defined(OS_CHROMEOS)
+  // Get the slot for system-wide key data. May be NULL if the system token was
+  // not explicitly set.
+  // Note: The System slot is set after the NSSCertDatabase is constructed and
+  // this call returns synchronously. Thus, it is possible to call this function
+  // before SetSystemSlot is called and get a NULL result.
+  // See https://crbug.com/399554 .
+  virtual crypto::ScopedPK11Slot GetSystemSlot() const;
+#endif
+
   // Get the default slot for public key data.
-  virtual crypto::ScopedPK11Slot GetPublicSlot() const;
+  crypto::ScopedPK11Slot GetPublicSlot() const;
 
   // Get the default slot for private key or mixed private/public key data.
-  virtual crypto::ScopedPK11Slot GetPrivateSlot() const;
+  // Can return NULL.
+  crypto::ScopedPK11Slot GetPrivateSlot() const;
 
   // Get the default module for public key data.
   // The returned pointer must be stored in a scoped_refptr<CryptoModule>.
@@ -225,27 +246,11 @@ class NET_EXPORT NSSCertDatabase {
   // Check whether cert is stored in a hardware slot.
   bool IsHardwareBacked(const X509Certificate* cert) const;
 
-  // Registers |observer| to receive notifications of certificate changes.  The
-  // thread on which this is called is the thread on which |observer| will be
-  // called back with notifications.
-  // NOTE: CertDatabase::AddObserver should be preferred. Observers registered
-  // here will only receive notifications generated directly through the
-  // NSSCertDatabase, but not those from the CertDatabase. The CertDatabase
-  // observers will receive both.
-  void AddObserver(Observer* observer);
-
-  // Unregisters |observer| from receiving notifications.  This must be called
-  // on the same thread on which AddObserver() was called.
-  void RemoveObserver(Observer* observer);
-
   // Overrides task runner that's used for running slow tasks.
   void SetSlowTaskRunnerForTest(
       const scoped_refptr<base::TaskRunner>& task_runner);
 
  protected:
-  NSSCertDatabase();
-  virtual ~NSSCertDatabase();
-
   // Certificate listing implementation used by |ListCerts*| and
   // |ListCertsSync|. Static so it may safely be used on the worker thread.
   // If |slot| is NULL, obtains the certs of all slots, otherwise only of
@@ -259,7 +264,17 @@ class NET_EXPORT NSSCertDatabase {
   scoped_refptr<base::TaskRunner> GetSlowTaskRunner() const;
 
  private:
-  friend struct base::DefaultLazyInstanceTraits<NSSCertDatabase>;
+  // Registers |observer| to receive notifications of certificate changes.  The
+  // thread on which this is called is the thread on which |observer| will be
+  // called back with notifications.
+  // NOTE: Observers registered here will only receive notifications generated
+  // directly through the NSSCertDatabase, but not those from the CertDatabase.
+  // CertDatabase observers will receive all certificate notifications.
+  void AddObserver(Observer* observer);
+
+  // Unregisters |observer| from receiving notifications.  This must be called
+  // on the same thread on which AddObserver() was called.
+  void RemoveObserver(Observer* observer);
 
   // Notifies observers of the removal of |cert| and calls |callback| with
   // |success| as argument.
@@ -275,6 +290,12 @@ class NET_EXPORT NSSCertDatabase {
   // Certificate removal implementation used by |DeleteCertAndKey*|. Static so
   // it may safely be used on the worker thread.
   static bool DeleteCertAndKeyImpl(scoped_refptr<X509Certificate> cert);
+
+  crypto::ScopedPK11Slot public_slot_;
+  crypto::ScopedPK11Slot private_slot_;
+
+  // A helper observer that forwards events from this database to CertDatabase.
+  scoped_ptr<Observer> cert_notification_forwarder_;
 
   // Task runner that should be used in tests if set.
   scoped_refptr<base::TaskRunner> slow_task_runner_for_test_;

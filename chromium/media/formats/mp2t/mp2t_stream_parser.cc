@@ -16,6 +16,7 @@
 #include "media/formats/mp2t/es_parser.h"
 #include "media/formats/mp2t/es_parser_adts.h"
 #include "media/formats/mp2t/es_parser_h264.h"
+#include "media/formats/mp2t/es_parser_mpeg1audio.h"
 #include "media/formats/mp2t/mp2t_common.h"
 #include "media/formats/mp2t/ts_packet.h"
 #include "media/formats/mp2t/ts_section.h"
@@ -157,8 +158,7 @@ Mp2tStreamParser::Mp2tStreamParser(bool sbr_in_mimetype)
     selected_audio_pid_(-1),
     selected_video_pid_(-1),
     is_initialized_(false),
-    segment_started_(false),
-    first_video_frame_in_segment_(true) {
+    segment_started_(false) {
 }
 
 Mp2tStreamParser::~Mp2tStreamParser() {
@@ -210,8 +210,6 @@ void Mp2tStreamParser::Flush() {
   // Note: does not need to invoke |end_of_segment_cb_| since flushing the
   // stream parser already involves the end of the current segment.
   segment_started_ = false;
-  first_video_frame_in_segment_ = true;
-  discarded_frames_dts_.clear();
 
   // Remove any bytes left in the TS buffer.
   // (i.e. any partial TS packet => less than 188 bytes).
@@ -220,6 +218,9 @@ void Mp2tStreamParser::Flush() {
   // Reset the selected PIDs.
   selected_audio_pid_ = -1;
   selected_video_pid_ = -1;
+
+  // Reset the timestamp unroller.
+  timestamp_unroller_.Reset();
 }
 
 bool Mp2tStreamParser::Parse(const uint8* buf, int size) {
@@ -352,6 +353,17 @@ void Mp2tStreamParser::RegisterPes(int pmt_pid,
                        pes_pid),
             sbr_in_mimetype_));
     is_audio = true;
+  } else if (stream_type == kStreamTypeMpeg1Audio) {
+    es_parser.reset(
+        new EsParserMpeg1Audio(
+            base::Bind(&Mp2tStreamParser::OnAudioConfigChanged,
+                       base::Unretained(this),
+                       pes_pid),
+            base::Bind(&Mp2tStreamParser::OnEmitAudioBuffer,
+                       base::Unretained(this),
+                       pes_pid),
+            log_cb_));
+    is_audio = true;
   } else {
     return;
   }
@@ -359,7 +371,7 @@ void Mp2tStreamParser::RegisterPes(int pmt_pid,
   // Create the PES state here.
   DVLOG(1) << "Create a new PES state";
   scoped_ptr<TsSection> pes_section_parser(
-      new TsSectionPes(es_parser.Pass()));
+      new TsSectionPes(es_parser.Pass(), &timestamp_unroller_));
   PidState::PidType pid_type =
       is_audio ? PidState::kPidAudioPes : PidState::kPidVideoPes;
   scoped_ptr<PidState> pes_pid_state(
@@ -417,13 +429,20 @@ void Mp2tStreamParser::OnVideoConfigChanged(
   DCHECK_EQ(pes_pid, selected_video_pid_);
   DCHECK(video_decoder_config.IsValidConfig());
 
-  // Create a new entry in |buffer_queue_chain_| with the updated configs.
-  BufferQueueWithConfig buffer_queue_with_config(
-      false,
-      buffer_queue_chain_.empty()
-      ? AudioDecoderConfig() : buffer_queue_chain_.back().audio_config,
-      video_decoder_config);
-  buffer_queue_chain_.push_back(buffer_queue_with_config);
+  if (!buffer_queue_chain_.empty() &&
+      !buffer_queue_chain_.back().video_config.IsValidConfig()) {
+    // No video has been received so far, can reuse the existing video queue.
+    DCHECK(buffer_queue_chain_.back().video_queue.empty());
+    buffer_queue_chain_.back().video_config = video_decoder_config;
+  } else {
+    // Create a new entry in |buffer_queue_chain_| with the updated configs.
+    BufferQueueWithConfig buffer_queue_with_config(
+        false,
+        buffer_queue_chain_.empty()
+        ? AudioDecoderConfig() : buffer_queue_chain_.back().audio_config,
+        video_decoder_config);
+    buffer_queue_chain_.push_back(buffer_queue_with_config);
+  }
 
   // Replace any non valid config with the 1st valid entry.
   // This might happen if there was no available config before.
@@ -442,13 +461,20 @@ void Mp2tStreamParser::OnAudioConfigChanged(
   DCHECK_EQ(pes_pid, selected_audio_pid_);
   DCHECK(audio_decoder_config.IsValidConfig());
 
-  // Create a new entry in |buffer_queue_chain_| with the updated configs.
-  BufferQueueWithConfig buffer_queue_with_config(
-      false,
-      audio_decoder_config,
-      buffer_queue_chain_.empty()
-      ? VideoDecoderConfig() : buffer_queue_chain_.back().video_config);
-  buffer_queue_chain_.push_back(buffer_queue_with_config);
+  if (!buffer_queue_chain_.empty() &&
+      !buffer_queue_chain_.back().audio_config.IsValidConfig()) {
+    // No audio has been received so far, can reuse the existing audio queue.
+    DCHECK(buffer_queue_chain_.back().audio_queue.empty());
+    buffer_queue_chain_.back().audio_config = audio_decoder_config;
+  } else {
+    // Create a new entry in |buffer_queue_chain_| with the updated configs.
+    BufferQueueWithConfig buffer_queue_with_config(
+        false,
+        audio_decoder_config,
+        buffer_queue_chain_.empty()
+        ? VideoDecoderConfig() : buffer_queue_chain_.back().video_config);
+    buffer_queue_chain_.push_back(buffer_queue_with_config);
+  }
 
   // Replace any non valid config with the 1st valid entry.
   // This might happen if there was no available config before.
@@ -505,15 +531,13 @@ void Mp2tStreamParser::OnEmitAudioBuffer(
       << " dts="
       << stream_parser_buffer->GetDecodeTimestamp().InMilliseconds()
       << " pts="
-      << stream_parser_buffer->timestamp().InMilliseconds();
-  stream_parser_buffer->set_timestamp(
-      stream_parser_buffer->timestamp() - time_offset_);
-  stream_parser_buffer->SetDecodeTimestamp(
-      stream_parser_buffer->GetDecodeTimestamp() - time_offset_);
+      << stream_parser_buffer->timestamp().InMilliseconds()
+      << " dur="
+      << stream_parser_buffer->duration().InMilliseconds();
 
   // Ignore the incoming buffer if it is not associated with any config.
   if (buffer_queue_chain_.empty()) {
-    DVLOG(1) << "Ignoring audio buffer with no corresponding audio config";
+    NOTREACHED() << "Cannot provide buffers before configs";
     return;
   }
 
@@ -533,36 +557,17 @@ void Mp2tStreamParser::OnEmitVideoBuffer(
       << stream_parser_buffer->GetDecodeTimestamp().InMilliseconds()
       << " pts="
       << stream_parser_buffer->timestamp().InMilliseconds()
+      << " dur="
+      << stream_parser_buffer->duration().InMilliseconds()
       << " IsKeyframe="
       << stream_parser_buffer->IsKeyframe();
-  stream_parser_buffer->set_timestamp(
-      stream_parser_buffer->timestamp() - time_offset_);
-  stream_parser_buffer->SetDecodeTimestamp(
-      stream_parser_buffer->GetDecodeTimestamp() - time_offset_);
 
-  // Discard the incoming buffer:
-  // - if it is not associated with any config,
-  // - or if only non-key frames have been added to a new segment.
-  if (buffer_queue_chain_.empty() ||
-      (first_video_frame_in_segment_ && !stream_parser_buffer->IsKeyframe())) {
-    DVLOG(1) << "Discard video buffer:"
-             << " keyframe=" << stream_parser_buffer->IsKeyframe()
-             << " dts="
-             << stream_parser_buffer->GetDecodeTimestamp().InMilliseconds();
-    if (discarded_frames_dts_.empty() ||
-        discarded_frames_min_pts_ > stream_parser_buffer->timestamp()) {
-      discarded_frames_min_pts_ = stream_parser_buffer->timestamp();
-    }
-    discarded_frames_dts_.push_back(
-        stream_parser_buffer->GetDecodeTimestamp());
+  // Ignore the incoming buffer if it is not associated with any config.
+  if (buffer_queue_chain_.empty()) {
+    NOTREACHED() << "Cannot provide buffers before configs";
     return;
   }
 
-  // Fill the gap created by frames that have been discarded.
-  if (!discarded_frames_dts_.empty())
-    FillVideoGap(stream_parser_buffer);
-
-  first_video_frame_in_segment_ = false;
   buffer_queue_chain_.back().video_queue.push_back(stream_parser_buffer);
 }
 
@@ -628,34 +633,6 @@ bool Mp2tStreamParser::EmitRemainingBuffers() {
   buffer_queue_chain_.push_back(queue_with_config);
 
   return true;
-}
-
-void Mp2tStreamParser::FillVideoGap(
-    const scoped_refptr<StreamParserBuffer>& stream_parser_buffer) {
-  DCHECK(!buffer_queue_chain_.empty());
-  DCHECK(!discarded_frames_dts_.empty());
-  DCHECK(stream_parser_buffer->IsKeyframe());
-
-  // PTS is interpolated between the min PTS of discarded frames
-  // and the PTS of the first valid buffer.
-  base::TimeDelta pts = discarded_frames_min_pts_;
-  base::TimeDelta pts_delta =
-      (stream_parser_buffer->timestamp() - pts) / discarded_frames_dts_.size();
-
-  while (!discarded_frames_dts_.empty()) {
-    scoped_refptr<StreamParserBuffer> frame =
-        StreamParserBuffer::CopyFrom(
-            stream_parser_buffer->data(),
-            stream_parser_buffer->data_size(),
-            stream_parser_buffer->IsKeyframe(),
-            stream_parser_buffer->type(),
-            stream_parser_buffer->track_id());
-    frame->SetDecodeTimestamp(discarded_frames_dts_.front());
-    frame->set_timestamp(pts);
-    buffer_queue_chain_.back().video_queue.push_back(frame);
-    pts += pts_delta;
-    discarded_frames_dts_.pop_front();
-  }
 }
 
 }  // namespace mp2t

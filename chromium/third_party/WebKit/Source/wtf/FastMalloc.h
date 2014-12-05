@@ -22,7 +22,6 @@
 #define WTF_FastMalloc_h
 
 #include "wtf/WTFExport.h"
-#include <cstddef>
 
 namespace WTF {
 
@@ -36,15 +35,6 @@ WTF_EXPORT void* fastRealloc(void*, size_t);
 WTF_EXPORT char* fastStrDup(const char*);
 
 WTF_EXPORT void fastFree(void*);
-
-WTF_EXPORT void releaseFastMallocFreeMemory();
-
-struct FastMallocStatistics {
-    size_t reservedVMBytes;
-    size_t committedVMBytes;
-    size_t freeListBytes;
-};
-WTF_EXPORT FastMallocStatistics fastMallocStatistics();
 
 } // namespace WTF
 

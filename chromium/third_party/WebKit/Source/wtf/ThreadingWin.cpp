@@ -95,7 +95,6 @@
 #include "wtf/MathExtras.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/ThreadFunctionInvocation.h"
 #include "wtf/ThreadSpecific.h"
 #include "wtf/ThreadingPrimitives.h"
 #include "wtf/WTFThreadData.h"
@@ -119,20 +118,6 @@ typedef struct tagTHREADNAME_INFO {
 } THREADNAME_INFO;
 #pragma pack(pop)
 
-void initializeCurrentThreadInternal(const char* szThreadName)
-{
-    THREADNAME_INFO info;
-    info.dwType = 0x1000;
-    info.szName = szThreadName;
-    info.dwThreadID = GetCurrentThreadId();
-    info.dwFlags = 0;
-
-    __try {
-        RaiseException(MS_VC_EXCEPTION, 0, sizeof(info)/sizeof(ULONG_PTR), reinterpret_cast<ULONG_PTR*>(&info));
-    } __except (EXCEPTION_CONTINUE_EXECUTION) {
-    }
-}
-
 static Mutex* atomicallyInitializedStaticMutex;
 
 void lockAtomicallyInitializedStaticMutex()
@@ -146,12 +131,6 @@ void unlockAtomicallyInitializedStaticMutex()
     atomicallyInitializedStaticMutex->unlock();
 }
 
-static Mutex& threadMapMutex()
-{
-    static Mutex mutex;
-    return mutex;
-}
-
 void initializeThreading()
 {
     // This should only be called once.
@@ -160,103 +139,14 @@ void initializeThreading()
     // StringImpl::empty() does not construct its static string in a threadsafe fashion,
     // so ensure it has been initialized from here.
     StringImpl::empty();
+    StringImpl::empty16Bit();
     atomicallyInitializedStaticMutex = new Mutex;
-    threadMapMutex();
     wtfThreadData();
     s_dtoaP5Mutex = new Mutex;
     initializeDates();
-}
-
-static HashMap<DWORD, HANDLE>& threadMap()
-{
-    static HashMap<DWORD, HANDLE>* gMap;
-    if (!gMap)
-        gMap = new HashMap<DWORD, HANDLE>();
-    return *gMap;
-}
-
-static void storeThreadHandleByIdentifier(DWORD threadID, HANDLE threadHandle)
-{
-    MutexLocker locker(threadMapMutex());
-    ASSERT(!threadMap().contains(threadID));
-    threadMap().add(threadID, threadHandle);
-}
-
-static HANDLE threadHandleForIdentifier(ThreadIdentifier id)
-{
-    MutexLocker locker(threadMapMutex());
-    return threadMap().get(id);
-}
-
-static void clearThreadHandleForIdentifier(ThreadIdentifier id)
-{
-    MutexLocker locker(threadMapMutex());
-    ASSERT(threadMap().contains(id));
-    threadMap().remove(id);
-}
-
-static unsigned __stdcall wtfThreadEntryPoint(void* param)
-{
-    OwnPtr<ThreadFunctionInvocation> invocation = adoptPtr(static_cast<ThreadFunctionInvocation*>(param));
-    invocation->function(invocation->data);
-
-    // Do the TLS cleanup.
-    ThreadSpecificThreadExit();
-
-    return 0;
-}
-
-ThreadIdentifier createThreadInternal(ThreadFunction entryPoint, void* data, const char* threadName)
-{
-    unsigned threadIdentifier = 0;
-    ThreadIdentifier threadID = 0;
-    OwnPtr<ThreadFunctionInvocation> invocation = adoptPtr(new ThreadFunctionInvocation(entryPoint, data));
-    HANDLE threadHandle = reinterpret_cast<HANDLE>(_beginthreadex(0, 0, wtfThreadEntryPoint, invocation.get(), 0, &threadIdentifier));
-    if (!threadHandle) {
-        WTF_LOG_ERROR("Failed to create thread at entry point %p with data %p: %ld", entryPoint, data, errno);
-        return 0;
-    }
-
-    // The thread will take ownership of invocation.
-    ThreadFunctionInvocation* leakedInvocation ALLOW_UNUSED = invocation.leakPtr();
-
-    threadID = static_cast<ThreadIdentifier>(threadIdentifier);
-    storeThreadHandleByIdentifier(threadIdentifier, threadHandle);
-
-    return threadID;
-}
-
-int waitForThreadCompletion(ThreadIdentifier threadID)
-{
-    ASSERT(threadID);
-
-    HANDLE threadHandle = threadHandleForIdentifier(threadID);
-    if (!threadHandle)
-        WTF_LOG_ERROR("ThreadIdentifier %u did not correspond to an active thread when trying to quit", threadID);
-
-    DWORD joinResult = WaitForSingleObject(threadHandle, INFINITE);
-    if (joinResult == WAIT_FAILED)
-        WTF_LOG_ERROR("ThreadIdentifier %u was found to be deadlocked trying to quit", threadID);
-
-    CloseHandle(threadHandle);
-    clearThreadHandleForIdentifier(threadID);
-
-    return joinResult;
-}
-
-void detachThread(ThreadIdentifier threadID)
-{
-    ASSERT(threadID);
-
-    HANDLE threadHandle = threadHandleForIdentifier(threadID);
-    if (threadHandle)
-        CloseHandle(threadHandle);
-    clearThreadHandleForIdentifier(threadID);
-}
-
-void yield()
-{
-    ::Sleep(1);
+    // Force initialization of static DoubleToStringConverter converter variable
+    // inside EcmaScriptConverter function while we are in single thread mode.
+    double_conversion::DoubleToStringConverter::EcmaScriptConverter();
 }
 
 ThreadIdentifier currentThread()
@@ -264,21 +154,28 @@ ThreadIdentifier currentThread()
     return static_cast<ThreadIdentifier>(GetCurrentThreadId());
 }
 
-Mutex::Mutex()
+MutexBase::MutexBase(bool recursive)
 {
     m_mutex.m_recursionCount = 0;
     InitializeCriticalSection(&m_mutex.m_internalMutex);
 }
 
-Mutex::~Mutex()
+MutexBase::~MutexBase()
 {
     DeleteCriticalSection(&m_mutex.m_internalMutex);
 }
 
-void Mutex::lock()
+void MutexBase::lock()
 {
     EnterCriticalSection(&m_mutex.m_internalMutex);
     ++m_mutex.m_recursionCount;
+}
+
+void MutexBase::unlock()
+{
+    ASSERT(m_mutex.m_recursionCount);
+    --m_mutex.m_recursionCount;
+    LeaveCriticalSection(&m_mutex.m_internalMutex);
 }
 
 bool Mutex::tryLock()
@@ -292,14 +189,16 @@ bool Mutex::tryLock()
     DWORD result = TryEnterCriticalSection(&m_mutex.m_internalMutex);
 
     if (result != 0) {       // We got the lock
-        // If this thread already had the lock, we must unlock and
-        // return false so that we mimic the behavior of POSIX's
-        // pthread_mutex_trylock:
+        // If this thread already had the lock, we must unlock and return
+        // false since this is a non-recursive mutex. This is to mimic the
+        // behavior of POSIX's pthread_mutex_trylock. We don't do this
+        // check in the lock method (presumably due to performance?). This
+        // means lock() will succeed even if the current thread has already
+        // entered the critical section.
         if (m_mutex.m_recursionCount > 0) {
             LeaveCriticalSection(&m_mutex.m_internalMutex);
             return false;
         }
-
         ++m_mutex.m_recursionCount;
         return true;
     }
@@ -307,11 +206,16 @@ bool Mutex::tryLock()
     return false;
 }
 
-void Mutex::unlock()
+bool RecursiveMutex::tryLock()
 {
-    ASSERT(m_mutex.m_recursionCount);
-    --m_mutex.m_recursionCount;
-    LeaveCriticalSection(&m_mutex.m_internalMutex);
+    // CRITICAL_SECTION is recursive/reentrant so TryEnterCriticalSection will
+    // succeed if the current thread is already in the critical section.
+    DWORD result = TryEnterCriticalSection(&m_mutex.m_internalMutex);
+    if (result == 0) { // We didn't get the lock.
+        return false;
+    }
+    ++m_mutex.m_recursionCount;
+    return true;
 }
 
 bool PlatformCondition::timedWait(PlatformMutex& mutex, DWORD durationMilliseconds)
@@ -444,12 +348,12 @@ ThreadCondition::~ThreadCondition()
     CloseHandle(m_condition.m_unblockLock);
 }
 
-void ThreadCondition::wait(Mutex& mutex)
+void ThreadCondition::wait(MutexBase& mutex)
 {
     m_condition.timedWait(mutex.impl(), INFINITE);
 }
 
-bool ThreadCondition::timedWait(Mutex& mutex, double absoluteTime)
+bool ThreadCondition::timedWait(MutexBase& mutex, double absoluteTime)
 {
     DWORD interval = absoluteTimeToWaitTimeoutInterval(absoluteTime);
 

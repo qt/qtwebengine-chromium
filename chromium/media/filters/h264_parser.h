@@ -10,12 +10,16 @@
 #include <sys/types.h>
 
 #include <map>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "media/base/media_export.h"
+#include "media/base/ranges.h"
 #include "media/filters/h264_bit_reader.h"
 
 namespace media {
+
+struct SubsampleEntry;
 
 // For explanations of each struct and its members, see H.264 specification
 // at http://www.itu.int/rec/T-REC-H.264.
@@ -62,6 +66,26 @@ enum {
 
 struct MEDIA_EXPORT H264SPS {
   H264SPS();
+
+  enum H264ProfileIDC {
+    kProfileIDCBaseline = 66,
+    kProfileIDCConstrainedBaseline = kProfileIDCBaseline,
+    kProfileIDCMain = 77,
+    kProfileIDCHigh = 100,
+  };
+
+  enum AspectRatioIdc {
+    kExtendedSar = 255,
+  };
+
+  enum {
+    // Constants for HRD parameters (spec ch. E.2.2).
+    kBitRateScaleConstantTerm = 6,  // Equation E-37.
+    kCPBSizeScaleConstantTerm = 4,  // Equation E-38.
+    kDefaultInitialCPBRemovalDelayLength = 24,
+    kDefaultDPBOutputDelayLength = 24,
+    kDefaultTimeOffsetLength = 24,
+  };
 
   int profile_idc;
   bool constraint_set0_flag;
@@ -111,6 +135,25 @@ struct MEDIA_EXPORT H264SPS {
   bool bitstream_restriction_flag;
   int max_num_reorder_frames;
   int max_dec_frame_buffering;
+  bool timing_info_present_flag;
+  int num_units_in_tick;
+  int time_scale;
+  bool fixed_frame_rate_flag;
+
+  // TODO(posciak): actually parse these instead of ParseAndIgnoreHRDParameters.
+  bool nal_hrd_parameters_present_flag;
+  int cpb_cnt_minus1;
+  int bit_rate_scale;
+  int cpb_size_scale;
+  int bit_rate_value_minus1[32];
+  int cpb_size_value_minus1[32];
+  bool cbr_flag[32];
+  int initial_cpb_removal_delay_length_minus_1;
+  int cpb_removal_delay_length_minus1;
+  int dpb_output_delay_length_minus1;
+  int time_offset_length;
+
+  bool low_delay_hrd_flag;
 
   int chroma_array_type;
 };
@@ -298,7 +341,11 @@ class MEDIA_EXPORT H264Parser {
   void Reset();
   // Set current stream pointer to |stream| of |stream_size| in bytes,
   // |stream| owned by caller.
+  // |subsamples| contains information about what parts of |stream| are
+  // encrypted.
   void SetStream(const uint8* stream, off_t stream_size);
+  void SetEncryptedStream(const uint8* stream, off_t stream_size,
+                          const std::vector<SubsampleEntry>& subsamples);
 
   // Read the stream to find the next NALU, identify it and return
   // that information in |*nalu|. This advances the stream to the beginning
@@ -353,6 +400,12 @@ class MEDIA_EXPORT H264Parser {
   // - the size in bytes of the start code is returned in |*start_code_size|.
   bool LocateNALU(off_t* nalu_size, off_t* start_code_size);
 
+  // Wrapper for FindStartCode() that skips over start codes that
+  // may appear inside of |encrypted_ranges_|.
+  // Returns true if a start code was found. Otherwise returns false.
+  bool FindStartCodeInClearRanges(const uint8* data, off_t data_size,
+                                  off_t* offset, off_t* start_code_size);
+
   // Exp-Golomb code parsing as specified in chapter 9.1 of the spec.
   // Read one unsigned exp-Golomb code from the stream and return in |*val|.
   Result ReadUE(int* val);
@@ -401,6 +454,10 @@ class MEDIA_EXPORT H264Parser {
   typedef std::map<int, H264PPS*> PPSById;
   SPSById active_SPSes_;
   PPSById active_PPSes_;
+
+  // Ranges of encrypted bytes in the buffer passed to
+  // SetEncryptedStream().
+  Ranges<const uint8*> encrypted_ranges_;
 
   DISALLOW_COPY_AND_ASSIGN(H264Parser);
 };

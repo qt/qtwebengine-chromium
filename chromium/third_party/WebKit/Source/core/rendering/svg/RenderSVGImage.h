@@ -26,60 +26,61 @@
 
 #include "core/rendering/svg/RenderSVGModelObject.h"
 
-namespace WebCore {
+namespace blink {
 
+class DisplayList;
 class RenderImageResource;
 class SVGImageElement;
 
-class RenderSVGImage FINAL : public RenderSVGModelObject {
+class RenderSVGImage final : public RenderSVGModelObject {
 public:
     explicit RenderSVGImage(SVGImageElement*);
     virtual ~RenderSVGImage();
+    virtual void destroy() override;
 
     bool updateImageViewport();
-    virtual void setNeedsBoundariesUpdate() OVERRIDE { m_needsBoundariesUpdate = true; }
-    virtual void setNeedsTransformUpdate() OVERRIDE { m_needsTransformUpdate = true; }
+    virtual void setNeedsBoundariesUpdate() override { m_needsBoundariesUpdate = true; }
+    virtual void setNeedsTransformUpdate() override { m_needsTransformUpdate = true; }
 
     RenderImageResource* imageResource() { return m_imageResource.get(); }
 
-    // Note: Assumes the PaintInfo context has had all local transforms applied.
-    void paintForeground(PaintInfo&);
+    virtual const AffineTransform& localToParentTransform() const override { return m_localTransform; }
+    RefPtr<DisplayList>& bufferedForeground() { return m_bufferedForeground; }
+
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const override { return m_paintInvalidationBoundingBox; }
+    virtual FloatRect objectBoundingBox() const override { return m_objectBoundingBox; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGImage || RenderSVGModelObject::isOfType(type); }
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGImage"; }
-    virtual bool isSVGImage() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderSVGImage"; }
 
-    virtual const AffineTransform& localToParentTransform() const OVERRIDE { return m_localTransform; }
+    virtual FloatRect strokeBoundingBox() const override { return m_objectBoundingBox; }
 
-    virtual FloatRect objectBoundingBox() const OVERRIDE { return m_objectBoundingBox; }
-    virtual FloatRect strokeBoundingBox() const OVERRIDE { return m_objectBoundingBox; }
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE { return m_repaintBoundingBox; }
+    virtual void addFocusRingRects(Vector<LayoutRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer) const override;
 
-    virtual void addFocusRingRects(Vector<IntRect>&, const LayoutPoint& additionalOffset, const RenderLayerModelObject* paintContainer = 0) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
+    virtual void layout() override;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
 
-    virtual void layout() OVERRIDE;
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    FloatSize computeImageViewportSize(ImageResource&) const;
 
-    void invalidateBufferedForeground();
+    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) override;
 
-    virtual bool nodeAtFloatPoint(const HitTestRequest&, HitTestResult&, const FloatPoint& pointInParent, HitTestAction) OVERRIDE;
-
-    virtual AffineTransform localTransform() const OVERRIDE { return m_localTransform; }
+    virtual AffineTransform localTransform() const override { return m_localTransform; }
 
     bool m_needsBoundariesUpdate : 1;
     bool m_needsTransformUpdate : 1;
     AffineTransform m_localTransform;
     FloatRect m_objectBoundingBox;
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     OwnPtr<RenderImageResource> m_imageResource;
 
-    OwnPtr<ImageBuffer> m_bufferedForeground;
+    RefPtr<DisplayList> m_bufferedForeground;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGImage, isSVGImage());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderSVGImage_h

@@ -33,25 +33,8 @@
     [InitializedByEventConstructor] readonly attribute double deltaZ;
     [InitializedByEventConstructor] readonly attribute unsigned long deltaMode;
 
-    // Non standard API.
-    [InitializedByEventConstructor] readonly attribute long wheelDeltaX;
-    [InitializedByEventConstructor] readonly attribute long wheelDeltaY;
-    readonly attribute long wheelDelta;
-
-    // WebKit Extension
-    [MeasureAs=PrefixedWheelEventDirectionInvertedFromDevice]
-    readonly attribute boolean webkitDirectionInvertedFromDevice;
-
-    [MeasureAs=PrefixedWheelEventInit]
-    void initWebKitWheelEvent([Default=Undefined] optional long wheelDeltaX,
-                              [Default=Undefined] optional long wheelDeltaY,
-                              [Default=Undefined] optional Window view,
-                              [Default=Undefined] optional long screenX,
-                              [Default=Undefined] optional long screenY,
-                              [Default=Undefined] optional long clientX,
-                              [Default=Undefined] optional long clientY,
-                              [Default=Undefined] optional boolean ctrlKey,
-                              [Default=Undefined] optional boolean altKey,
-                              [Default=Undefined] optional boolean shiftKey,
-                              [Default=Undefined] optional boolean metaKey);
+    // Non-standard API.
+    [InitializedByEventConstructor, MeasureAs=WheelEventWheelDeltaX] readonly attribute long wheelDeltaX;
+    [InitializedByEventConstructor, MeasureAs=WheelEventWheelDeltaY] readonly attribute long wheelDeltaY;
+    [MeasureAs=WheelEventWheelDelta] readonly attribute long wheelDelta;
 };

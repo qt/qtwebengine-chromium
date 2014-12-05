@@ -32,12 +32,13 @@
 #include "core/dom/shadow/InsertionPoint.h"
 
 #include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/QualifiedName.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/shadow/ElementShadow.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -119,10 +120,10 @@ void InsertionPoint::detach(const AttachContext& context)
 
 void InsertionPoint::willRecalcStyle(StyleRecalcChange change)
 {
-    if (change < Inherit)
+    if (change < Inherit && styleChangeType() < SubtreeStyleChange)
         return;
     for (size_t i = 0; i < m_distribution.size(); ++i)
-        m_distribution.at(i)->setNeedsStyleRecalc(SubtreeStyleChange);
+        m_distribution.at(i)->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::PropagateInheritChangeToDistributedNodes));
 }
 
 bool InsertionPoint::shouldUseFallbackElements() const
@@ -134,11 +135,7 @@ bool InsertionPoint::canBeActive() const
 {
     if (!isInShadowTree())
         return false;
-    for (Node* node = parentNode(); node; node = node->parentNode()) {
-        if (node->isInsertionPoint())
-            return false;
-    }
-    return true;
+    return !Traversal<InsertionPoint>::firstAncestor(*this);
 }
 
 bool InsertionPoint::isActive() const
@@ -188,9 +185,9 @@ bool InsertionPoint::rendererIsNeeded(const RenderStyle& style)
     return !isActive() && HTMLElement::rendererIsNeeded(style);
 }
 
-void InsertionPoint::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void InsertionPoint::childrenChanged(const ChildrenChange& change)
 {
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    HTMLElement::childrenChanged(change);
     if (ShadowRoot* root = containingShadowRoot()) {
         if (ElementShadow* rootOwner = root->owner())
             rootOwner->setNeedsDistributionRecalc();
@@ -291,4 +288,4 @@ void collectDestinationInsertionPoints(const Node& node, WillBeHeapVector<RawPtr
     }
 }
 
-} // namespace WebCore
+} // namespace blink

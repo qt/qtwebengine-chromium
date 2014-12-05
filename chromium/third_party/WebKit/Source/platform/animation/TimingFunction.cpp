@@ -7,7 +7,7 @@
 
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 String LinearTimingFunction::toString() const
 {
@@ -17,6 +17,10 @@ String LinearTimingFunction::toString() const
 double LinearTimingFunction::evaluate(double fraction, double) const
 {
     return fraction;
+}
+
+void LinearTimingFunction::range(double* minValue, double* maxValue) const
+{
 }
 
 String CubicBezierTimingFunction::toString() const
@@ -47,47 +51,110 @@ double CubicBezierTimingFunction::evaluate(double fraction, double accuracy) con
     return m_bezier->solve(fraction, accuracy);
 }
 
+// This works by taking taking the derivative of the cubic bezier, on the y
+// axis. We can then solve for where the derivative is zero to find the min
+// and max distace along the line. We the have to solve those in terms of time
+// rather than distance on the x-axis
+void CubicBezierTimingFunction::range(double* minValue, double* maxValue) const
+{
+    if (0 <= m_y1 && m_y2 < 1 && 0 <= m_y2 && m_y2 <= 1) {
+        return;
+    }
+
+    double a = 3.0 * (m_y1 - m_y2) + 1.0;
+    double b = 2.0 * (m_y2 - 2.0 * m_y1);
+    double c = m_y1;
+
+    if (std::abs(a) < std::numeric_limits<double>::epsilon()
+        && std::abs(b) < std::numeric_limits<double>::epsilon()) {
+        return;
+    }
+
+    double t1 = 0.0;
+    double t2 = 0.0;
+
+    if (std::abs(a) < std::numeric_limits<double>::epsilon()) {
+        t1 = -c / b;
+    } else {
+        double discriminant = b * b - 4 * a * c;
+        if (discriminant < 0)
+            return;
+        double discriminantSqrt = sqrt(discriminant);
+        t1 = (-b + discriminantSqrt) / (2 * a);
+        t2 = (-b - discriminantSqrt) / (2 * a);
+    }
+
+    double solution1 = 0.0;
+    double solution2 = 0.0;
+
+    // If the solution is in the range [0,1] then we include it, otherwise we
+    // ignore it.
+    if (!m_bezier)
+        m_bezier = adoptPtr(new UnitBezier(m_x1, m_y1, m_x2, m_y2));
+
+    // An interesting fact about these beziers is that they are only
+    // actually evaluated in [0,1]. After that we take the tangent at that point
+    // and linearly project it out.
+    if (0 < t1 && t1 < 1)
+        solution1= m_bezier->sampleCurveY(t1);
+
+    if (0 < t2 && t2 < 1)
+        solution2 = m_bezier->sampleCurveY(t2);
+
+    // Since our input values can be out of the range 0->1 so we must also
+    // consider the minimum and maximum points.
+    double solutionMin = m_bezier->solve(*minValue, std::numeric_limits<double>::epsilon());
+    double solutionMax = m_bezier->solve(*maxValue, std::numeric_limits<double>::epsilon());
+    *minValue = std::min(std::min(solutionMin, solutionMax), 0.0);
+    *maxValue = std::max(std::max(solutionMin, solutionMax), 1.0);
+    *minValue = std::min(std::min(*minValue, solution1), solution2);
+    *maxValue = std::max(std::max(*maxValue, solution1), solution2);
+}
+
 String StepsTimingFunction::toString() const
 {
-    StringBuilder builder;
-    switch (this->subType()) {
-    case StepsTimingFunction::Start:
-        return "step-start";
-    case StepsTimingFunction::Middle:
-        return "step-middle";
-    case StepsTimingFunction::End:
-        return "step-end";
-    case StepsTimingFunction::Custom:
-        builder.append("steps(" + String::numberToStringECMAScript(this->numberOfSteps()) + ", ");
-
-        if (this->stepAtPosition() == StepsTimingFunction::StepAtStart)
-            builder.append("start");
-        else if (this->stepAtPosition() == StepsTimingFunction::StepAtMiddle)
-            builder.append("middle");
-        else if (this->stepAtPosition() == StepsTimingFunction::StepAtEnd)
-            builder.append("end");
-        else
-            ASSERT_NOT_REACHED();
-
-        builder.append(")");
+    const char* positionString = nullptr;
+    switch (stepAtPosition()) {
+    case Start:
+        positionString = "start";
         break;
-    default:
-        ASSERT_NOT_REACHED();
+    case Middle:
+        positionString = "middle";
+        break;
+    case End:
+        positionString = "end";
+        break;
+    }
+
+    StringBuilder builder;
+    if (this->numberOfSteps() == 1) {
+        builder.append("step-");
+        builder.append(positionString);
+    } else {
+        builder.append("steps(" + String::numberToStringECMAScript(this->numberOfSteps()) + ", ");
+        builder.append(positionString);
+        builder.append(')');
     }
     return builder.toString();
+}
+
+void StepsTimingFunction::range(double* minValue, double* maxValue) const
+{
+    *minValue = 0;
+    *maxValue = 1;
 }
 
 double StepsTimingFunction::evaluate(double fraction, double) const
 {
     double startOffset = 0;
     switch (m_stepAtPosition) {
-    case StepAtStart:
+    case Start:
         startOffset = 1;
         break;
-    case StepAtMiddle:
+    case Middle:
         startOffset = 0.5;
         break;
-    case StepAtEnd:
+    case End:
         startOffset = 0;
         break;
     default:
@@ -121,10 +188,7 @@ bool operator==(const StepsTimingFunction& lhs, const TimingFunction& rhs)
         return false;
 
     const StepsTimingFunction& stf = toStepsTimingFunction(rhs);
-    if ((lhs.subType() == StepsTimingFunction::Custom) && (stf.subType() == StepsTimingFunction::Custom))
-        return (lhs.numberOfSteps() == stf.numberOfSteps()) && (lhs.stepAtPosition() == stf.stepAtPosition());
-
-    return lhs.subType() == stf.subType();
+    return (lhs.numberOfSteps() == stf.numberOfSteps()) && (lhs.stepAtPosition() == stf.stepAtPosition());
 }
 
 // The generic operator== *must* come after the
@@ -156,4 +220,4 @@ bool operator!=(const TimingFunction& lhs, const TimingFunction& rhs)
     return !(lhs == rhs);
 }
 
-} // namespace WebCore
+} // namespace blink

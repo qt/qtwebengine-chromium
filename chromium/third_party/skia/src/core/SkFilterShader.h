@@ -30,6 +30,11 @@ public:
         virtual void shadeSpan(int x, int y, SkPMColor[], int count) SK_OVERRIDE;
         virtual void shadeSpan16(int x, int y, uint16_t[], int count) SK_OVERRIDE;
 
+        virtual void set3DMask(const SkMask* mask) SK_OVERRIDE {
+            // forward to our proxy
+            fShaderContext->set3DMask(mask);
+        }
+
     private:
         SkShader::Context* fShaderContext;
 
@@ -40,7 +45,9 @@ public:
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkFilterShader)
 
 protected:
-    SkFilterShader(SkReadBuffer& );
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+    SkFilterShader(SkReadBuffer&);
+#endif
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
     virtual Context* onCreateContext(const ContextRec&, void* storage) const SK_OVERRIDE;
 

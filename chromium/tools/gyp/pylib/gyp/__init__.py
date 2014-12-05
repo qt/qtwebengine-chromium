@@ -496,11 +496,9 @@ def gyp_main(args):
               'root_targets': options.root_targets}
 
     # Start with the default variables from the command line.
-    [generator, flat_list, targets, data] = Load(build_files, format,
-                                                 cmdline_default_variables,
-                                                 includes, options.depth,
-                                                 params, options.check,
-                                                 options.circular_check)
+    [generator, flat_list, targets, data] = Load(
+        build_files, format, cmdline_default_variables, includes, options.depth,
+        params, options.check, options.circular_check)
 
     # TODO(mark): Pass |data| for now because the generator needs a list of
     # build files that came in.  In the future, maybe it should just accept

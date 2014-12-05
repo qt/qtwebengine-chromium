@@ -41,7 +41,6 @@
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/GraphicsContext.h"
 #include "platform/graphics/skia/SkiaUtils.h"
-#include "platform/scroll/FramelessScrollView.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebContentLayer.h"
@@ -56,8 +55,6 @@
 #include "web/PopupMenuChromium.h"
 #include "web/WebInputEventConversion.h"
 #include <skia/ext/platform_canvas.h>
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -91,7 +88,7 @@ void WebPopupMenuImpl::willCloseLayerTreeView()
     m_layerTreeView = 0;
 }
 
-void WebPopupMenuImpl::initialize(FramelessScrollView* widget, const WebRect& bounds)
+void WebPopupMenuImpl::initialize(PopupContainer* widget, const WebRect& bounds)
 {
     m_widget = widget;
     m_widget->setClient(this);
@@ -121,7 +118,7 @@ void WebPopupMenuImpl::handleMouseMove(const WebMouseEvent& event)
 
         // We cannot call setToolTipText() in PopupContainer, because PopupContainer is in WebCore, and we cannot refer to WebKit from Webcore.
         PopupContainer* container = static_cast<PopupContainer*>(m_widget);
-        client()->setToolTipText(container->getSelectedItemToolTip(), container->menuStyle().textDirection() == WebCore::RTL ? WebTextDirectionRightToLeft : WebTextDirectionLeftToRight);
+        client()->setToolTipText(container->getSelectedItemToolTip(), toWebTextDirection(container->menuStyle().textDirection()));
     }
 }
 
@@ -204,7 +201,7 @@ void WebPopupMenuImpl::willEndLiveResize()
 {
 }
 
-void WebPopupMenuImpl::animate(double)
+void WebPopupMenuImpl::beginFrame(const WebBeginFrameArgs&)
 {
 }
 
@@ -212,8 +209,7 @@ void WebPopupMenuImpl::layout()
 {
 }
 
-void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebFloatRect&,
-    WebContentLayerClient::GraphicsContextStatus contextStatus)
+void WebPopupMenuImpl::paintContents(WebCanvas* canvas, const WebRect& rect, bool, WebContentLayerClient::GraphicsContextStatus contextStatus)
 {
     if (!m_widget)
         return;
@@ -252,23 +248,23 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     // whether keyboard events are processed).
     switch (inputEvent.type) {
     case WebInputEvent::MouseMove:
-        handleMouseMove(*static_cast<const WebMouseEvent*>(&inputEvent));
+        handleMouseMove(static_cast<const WebMouseEvent&>(inputEvent));
         return true;
 
     case WebInputEvent::MouseLeave:
-        handleMouseLeave(*static_cast<const WebMouseEvent*>(&inputEvent));
+        handleMouseLeave(static_cast<const WebMouseEvent&>(inputEvent));
         return true;
 
     case WebInputEvent::MouseWheel:
-        handleMouseWheel(*static_cast<const WebMouseWheelEvent*>(&inputEvent));
+        handleMouseWheel(static_cast<const WebMouseWheelEvent&>(inputEvent));
         return true;
 
     case WebInputEvent::MouseDown:
-        handleMouseDown(*static_cast<const WebMouseEvent*>(&inputEvent));
+        handleMouseDown(static_cast<const WebMouseEvent&>(inputEvent));
         return true;
 
     case WebInputEvent::MouseUp:
-        handleMouseUp(*static_cast<const WebMouseEvent*>(&inputEvent));
+        handleMouseUp(static_cast<const WebMouseEvent&>(inputEvent));
         return true;
 
     // In Windows, RawKeyDown only has information about the physical key, but
@@ -283,13 +279,13 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::KeyDown:
     case WebInputEvent::KeyUp:
     case WebInputEvent::Char:
-        return handleKeyEvent(*static_cast<const WebKeyboardEvent*>(&inputEvent));
+        return handleKeyEvent(static_cast<const WebKeyboardEvent&>(inputEvent));
 
     case WebInputEvent::TouchStart:
     case WebInputEvent::TouchMove:
     case WebInputEvent::TouchEnd:
     case WebInputEvent::TouchCancel:
-        return handleTouchEvent(*static_cast<const WebTouchEvent*>(&inputEvent));
+        return handleTouchEvent(static_cast<const WebTouchEvent&>(inputEvent));
 
     case WebInputEvent::GestureScrollBegin:
     case WebInputEvent::GestureScrollEnd:
@@ -309,7 +305,7 @@ bool WebPopupMenuImpl::handleInputEvent(const WebInputEvent& inputEvent)
     case WebInputEvent::GesturePinchBegin:
     case WebInputEvent::GesturePinchEnd:
     case WebInputEvent::GesturePinchUpdate:
-        return handleGestureEvent(*static_cast<const WebGestureEvent*>(&inputEvent));
+        return handleGestureEvent(static_cast<const WebGestureEvent&>(inputEvent));
 
     case WebInputEvent::Undefined:
     case WebInputEvent::MouseEnter:
@@ -367,7 +363,7 @@ void WebPopupMenuImpl::setTextDirection(WebTextDirection)
 
 
 //-----------------------------------------------------------------------------
-// WebCore::HostWindow
+// HostWindow
 
 void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
 {
@@ -376,7 +372,7 @@ void WebPopupMenuImpl::invalidateContentsAndRootView(const IntRect& paintRect)
     if (m_client)
         m_client->didInvalidateRect(paintRect);
     if (m_rootLayer)
-        m_rootLayer->layer()->invalidateRect(FloatRect(paintRect));
+        m_rootLayer->layer()->invalidateRect(paintRect);
 }
 
 void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect)
@@ -386,17 +382,6 @@ void WebPopupMenuImpl::invalidateContentsForSlowScroll(const IntRect& updateRect
 
 void WebPopupMenuImpl::scheduleAnimation()
 {
-}
-
-void WebPopupMenuImpl::scroll(const IntSize& scrollDelta, const IntRect& scrollRect, const IntRect& clipRect)
-{
-    if (m_client) {
-        int dx = scrollDelta.width();
-        int dy = scrollDelta.height();
-        m_client->didScrollRect(dx, dy, clipRect);
-    }
-    if (m_rootLayer)
-        m_rootLayer->layer()->invalidateRect(FloatRect(clipRect));
 }
 
 IntRect WebPopupMenuImpl::rootViewToScreen(const IntRect& rect) const
@@ -410,10 +395,7 @@ WebScreenInfo WebPopupMenuImpl::screenInfo() const
     return WebScreenInfo();
 }
 
-//-----------------------------------------------------------------------------
-// WebCore::FramelessScrollViewClient
-
-void WebPopupMenuImpl::popupClosed(FramelessScrollView* widget)
+void WebPopupMenuImpl::popupClosed(PopupContainer* widget)
 {
     ASSERT(widget == m_widget);
     if (m_widget) {

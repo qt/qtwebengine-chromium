@@ -23,11 +23,11 @@
 #ifndef FEComposite_h
 #define FEComposite_h
 
-#include "platform/graphics/filters/Filter.h"
+#include "SkXfermode.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 enum CompositeOperationType {
     FECOMPOSITE_OPERATOR_UNKNOWN    = 0,
@@ -58,22 +58,19 @@ public:
     float k4() const;
     bool setK4(float);
 
-    virtual void correctFilterResultIfNeeded() OVERRIDE;
+    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) override;
 
-    virtual FloatRect determineAbsolutePaintRect(const FloatRect& requestedRect) OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
-
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
-    virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
+    virtual PassRefPtr<SkImageFilter> createImageFilterWithoutValidation(SkiaImageFilterBuilder*) override;
 
 protected:
-    virtual bool mayProduceInvalidPreMultipliedPixels() OVERRIDE { return m_type == FECOMPOSITE_OPERATOR_ARITHMETIC; }
+    virtual bool mayProduceInvalidPreMultipliedPixels() override { return m_type == FECOMPOSITE_OPERATOR_ARITHMETIC; }
 
 private:
     FEComposite(Filter*, const CompositeOperationType&, float, float, float, float);
 
-    virtual void applySoftware() OVERRIDE;
     PassRefPtr<SkImageFilter> createImageFilterInternal(SkiaImageFilterBuilder*, bool requiresPMColorValidation);
 
     inline void platformArithmeticSoftware(Uint8ClampedArray* source, Uint8ClampedArray* destination,
@@ -91,6 +88,6 @@ private:
     float m_k4;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FEComposite_h

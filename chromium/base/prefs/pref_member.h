@@ -33,9 +33,9 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/prefs/base_prefs_export.h"
 #include "base/prefs/pref_observer.h"
+#include "base/single_thread_task_runner.h"
 #include "base/values.h"
 
 class PrefService;
@@ -66,7 +66,7 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
                      const base::Closure& callback) const;
 
     void MoveToThread(
-        const scoped_refptr<base::MessageLoopProxy>& message_loop);
+        const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
     // See PrefMember<> for description.
     bool IsManaged() const {
@@ -92,7 +92,7 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
 
     bool IsOnCorrectThread() const;
 
-    scoped_refptr<base::MessageLoopProxy> thread_loop_;
+    scoped_refptr<base::SingleThreadTaskRunner> thread_loop_;
     mutable bool is_managed_;
     mutable bool is_user_modifiable_;
 
@@ -112,11 +112,12 @@ class BASE_PREFS_EXPORT PrefMemberBase : public PrefObserver {
   // See PrefMember<> for description.
   void Destroy();
 
-  void MoveToThread(const scoped_refptr<base::MessageLoopProxy>& message_loop);
+  void MoveToThread(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   // PrefObserver
-  virtual void OnPreferenceChanged(PrefService* service,
-                                   const std::string& pref_name) OVERRIDE;
+  void OnPreferenceChanged(PrefService* service,
+                           const std::string& pref_name) override;
 
   void VerifyValuePrefName() const {
     DCHECK(!pref_name_.empty());
@@ -197,8 +198,9 @@ class PrefMember : public subtle::PrefMemberBase {
   // via PostTask.
   // This method should only be used from the thread the PrefMember is currently
   // on, which is the UI thread by default.
-  void MoveToThread(const scoped_refptr<base::MessageLoopProxy>& message_loop) {
-    subtle::PrefMemberBase::MoveToThread(message_loop);
+  void MoveToThread(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner) {
+    subtle::PrefMemberBase::MoveToThread(task_runner);
   }
 
   // Check whether the pref is managed, i.e. controlled externally through
@@ -262,7 +264,7 @@ class PrefMember : public subtle::PrefMemberBase {
     virtual ~Internal() {}
 
     virtual BASE_PREFS_EXPORT bool UpdateValueInternal(
-        const base::Value& value) const OVERRIDE;
+        const base::Value& value) const override;
 
     // We cache the value of the pref so we don't have to keep walking the pref
     // tree.
@@ -271,8 +273,8 @@ class PrefMember : public subtle::PrefMemberBase {
     DISALLOW_COPY_AND_ASSIGN(Internal);
   };
 
-  virtual Internal* internal() const OVERRIDE { return internal_.get(); }
-  virtual void CreateInternal() const OVERRIDE { internal_ = new Internal(); }
+  virtual Internal* internal() const override { return internal_.get(); }
+  virtual void CreateInternal() const override { internal_ = new Internal(); }
 
   // This method is used to do the actual sync with pref of the specified type.
   void BASE_PREFS_EXPORT UpdatePref(const ValueType& value);

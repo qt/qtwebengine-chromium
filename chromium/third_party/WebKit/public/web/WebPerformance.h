@@ -39,9 +39,9 @@
 #include "platform/heap/Handle.h"
 #endif
 
-namespace WebCore { class Performance; }
-
 namespace blink {
+
+class Performance;
 
 class WebPerformance {
 public:
@@ -86,12 +86,12 @@ public:
     BLINK_EXPORT double loadEventEnd() const;
 
 #if BLINK_IMPLEMENTATION
-    WebPerformance(const PassRefPtrWillBeRawPtr<WebCore::Performance>&);
-    WebPerformance& operator=(const PassRefPtrWillBeRawPtr<WebCore::Performance>&);
+    WebPerformance(const PassRefPtrWillBeRawPtr<Performance>&);
+    WebPerformance& operator=(const PassRefPtrWillBeRawPtr<Performance>&);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::Performance> m_private;
+    WebPrivatePtr<Performance> m_private;
 };
 
 } // namespace blink

@@ -34,7 +34,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Widget;
 
@@ -59,7 +59,6 @@ public:
     virtual ScrollbarOverlayStyle scrollbarOverlayStyle() const = 0;
     virtual void getTickmarks(Vector<IntRect>&) const = 0;
     virtual bool isScrollableAreaActive() const = 0;
-    virtual bool isScrollViewScrollbar() const = 0;
 
     virtual IntPoint convertFromContainingWindow(const IntPoint& windowPoint) = 0;
 
@@ -91,6 +90,6 @@ protected:
     virtual ~ScrollbarThemeClient() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScollbarThemeClient_h

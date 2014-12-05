@@ -42,6 +42,7 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_pump_libevent.h"
+#include "device/udev_linux/scoped_udev.h"
 
 extern "C" {
 struct udev;
@@ -70,21 +71,20 @@ class UdevLinux : public base::MessagePumpLibevent::Watcher {
   // Calls |callback| upon device change events.
   UdevLinux(const std::vector<UdevMonitorFilter>& filters,
             const UdevNotificationCallback& callback);
-  virtual ~UdevLinux();
-
+  ~UdevLinux() override;
 
   // Returns the udev handle to be passed into other udev_*() functions.
   udev* udev_handle();
 
  private:
   // base::MessagePump:Libevent::Watcher implementation.
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE;
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE;
+  void OnFileCanReadWithoutBlocking(int fd) override;
+  void OnFileCanWriteWithoutBlocking(int fd) override;
 
   // libudev-related items, the main context, and the monitoring context to be
   // notified about changes to device states.
-  udev* udev_;
-  udev_monitor* monitor_;
+  device::ScopedUdevPtr udev_;
+  device::ScopedUdevMonitorPtr monitor_;
   int monitor_fd_;
   base::MessagePumpLibevent::FileDescriptorWatcher monitor_watcher_;
   UdevNotificationCallback callback_;

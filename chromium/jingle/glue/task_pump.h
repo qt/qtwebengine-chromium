@@ -8,20 +8,20 @@
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "third_party/libjingle/source/talk/base/taskrunner.h"
+#include "third_party/webrtc/base/taskrunner.h"
 
 namespace jingle_glue {
 
-// talk_base::TaskRunner implementation that works on chromium threads.
-class TaskPump : public talk_base::TaskRunner, public base::NonThreadSafe {
+// rtc::TaskRunner implementation that works on chromium threads.
+class TaskPump : public rtc::TaskRunner, public base::NonThreadSafe {
  public:
   TaskPump();
 
-  virtual ~TaskPump();
+  ~TaskPump() override;
 
-  // talk_base::TaskRunner implementation.
-  virtual void WakeTasks() OVERRIDE;
-  virtual int64 CurrentTime() OVERRIDE;
+  // rtc::TaskRunner implementation.
+  void WakeTasks() override;
+  int64 CurrentTime() override;
 
   // No tasks will be processed after this is called, even if
   // WakeTasks() is called.

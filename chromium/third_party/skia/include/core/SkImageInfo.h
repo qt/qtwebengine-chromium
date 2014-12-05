@@ -9,10 +9,11 @@
 #define SkImageInfo_DEFINED
 
 #include "SkMath.h"
+#include "SkRect.h"
 #include "SkSize.h"
 
-class SkWriteBuffer;
 class SkReadBuffer;
+class SkWriteBuffer;
 
 /**
  *  Describes how to interpret the alpha compoent of a pixel.
@@ -67,6 +68,10 @@ static inline bool SkAlphaTypeIsValid(unsigned value) {
 
 /**
  *  Describes how to interpret the components of a pixel.
+ *
+ *  kN32_SkColorType is an alias for whichever 32bit ARGB format is the "native"
+ *  form for skia's blitters. Use this if you don't have a swizzle preference
+ *  for 32bit pixels.
  */
 enum SkColorType {
     kUnknown_SkColorType,
@@ -120,39 +125,57 @@ static inline bool SkColorTypeIsValid(unsigned value) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
+ *  Return true if alphaType is supported by colorType. If there is a canonical
+ *  alphaType for this colorType, return it in canonical.
+ */
+bool SkColorTypeValidateAlphaType(SkColorType colorType, SkAlphaType alphaType,
+                                  SkAlphaType* canonical = NULL);
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
+ *  Describes the color space a YUV pixel.
+ */
+enum SkYUVColorSpace {
+    /** Standard JPEG color space. */
+    kJPEG_SkYUVColorSpace,
+    /** SDTV standard Rec. 601 color space. Uses "studio swing" [16, 235] color
+       range. See http://en.wikipedia.org/wiki/Rec._601 for details. */
+    kRec601_SkYUVColorSpace,
+
+    kLastEnum_SkYUVColorSpace = kRec601_SkYUVColorSpace
+};
+
+///////////////////////////////////////////////////////////////////////////////
+
+/**
  *  Describe an image's dimensions and pixel type.
  */
 struct SkImageInfo {
-    int         fWidth;
-    int         fHeight;
-    SkColorType fColorType;
-    SkAlphaType fAlphaType;
+public:
+    SkImageInfo()
+        : fWidth(0)
+        , fHeight(0)
+        , fColorType(kUnknown_SkColorType)
+        , fAlphaType(kIgnore_SkAlphaType)
+    {}
 
     static SkImageInfo Make(int width, int height, SkColorType ct, SkAlphaType at) {
-        SkImageInfo info = {
-            width, height, ct, at
-        };
-        return info;
+        return SkImageInfo(width, height, ct, at);
     }
 
     /**
      *  Sets colortype to the native ARGB32 type.
      */
     static SkImageInfo MakeN32(int width, int height, SkAlphaType at) {
-        SkImageInfo info = {
-            width, height, kN32_SkColorType, at
-        };
-        return info;
+        return SkImageInfo(width, height, kN32_SkColorType, at);
     }
 
     /**
      *  Sets colortype to the native ARGB32 type, and the alphatype to premul.
      */
     static SkImageInfo MakeN32Premul(int width, int height) {
-        SkImageInfo info = {
-            width, height, kN32_SkColorType, kPremul_SkAlphaType
-        };
-        return info;
+        return SkImageInfo(width, height, kN32_SkColorType, kPremul_SkAlphaType);
     }
 
     /**
@@ -163,24 +186,15 @@ struct SkImageInfo {
     }
 
     static SkImageInfo MakeA8(int width, int height) {
-        SkImageInfo info = {
-            width, height, kAlpha_8_SkColorType, kPremul_SkAlphaType
-        };
-        return info;
+        return SkImageInfo(width, height, kAlpha_8_SkColorType, kPremul_SkAlphaType);
     }
 
     static SkImageInfo MakeUnknown(int width, int height) {
-        SkImageInfo info = {
-            width, height, kUnknown_SkColorType, kIgnore_SkAlphaType
-        };
-        return info;
+        return SkImageInfo(width, height, kUnknown_SkColorType, kIgnore_SkAlphaType);
     }
 
     static SkImageInfo MakeUnknown() {
-        SkImageInfo info = {
-            0, 0, kUnknown_SkColorType, kIgnore_SkAlphaType
-        };
-        return info;
+        return SkImageInfo();
     }
 
     int width() const { return fWidth; }
@@ -194,6 +208,7 @@ struct SkImageInfo {
         return SkAlphaTypeIsOpaque(fAlphaType);
     }
 
+    SkIRect bounds() const { return SkIRect::MakeWH(fWidth, fHeight); }
     SkISize dimensions() const { return SkISize::Make(fWidth, fHeight); }
 
     /**
@@ -204,6 +219,14 @@ struct SkImageInfo {
         return SkImageInfo::Make(newWidth, newHeight, fColorType, fAlphaType);
     }
 
+    SkImageInfo makeAlphaType(SkAlphaType newAlphaType) const {
+        return SkImageInfo::Make(fWidth, fHeight, fColorType, newAlphaType);
+    }
+    
+    SkImageInfo makeColorType(SkColorType newColorType) const {
+        return SkImageInfo::Make(fWidth, fHeight, newColorType, fAlphaType);
+    }
+    
     int bytesPerPixel() const {
         return SkColorTypeBytesPerPixel(fColorType);
     }
@@ -243,6 +266,24 @@ struct SkImageInfo {
     }
 
     SkDEBUGCODE(void validate() const;)
+
+#ifdef SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
+public:
+#else
+private:
+#endif
+    int         fWidth;
+    int         fHeight;
+    SkColorType fColorType;
+    SkAlphaType fAlphaType;
+
+private:
+    SkImageInfo(int width, int height, SkColorType ct, SkAlphaType at)
+        : fWidth(width)
+        , fHeight(height)
+        , fColorType(ct)
+        , fAlphaType(at)
+    {}
 };
 
 #endif

@@ -21,7 +21,7 @@
 
 namespace media {
 class AudioBus;
-class AudioFifo;
+class AudioBlockFifo;
 class AudioOutputDevice;
 class AudioParameters;
 }
@@ -58,39 +58,38 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
 
   // MediaStreamAudioRenderer implementation.
   // Called on the main thread.
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Play() OVERRIDE;
-  virtual void Pause() OVERRIDE;
-  virtual void SetVolume(float volume) OVERRIDE;
-  virtual base::TimeDelta GetCurrentRenderTime() const OVERRIDE;
-  virtual bool IsLocalRenderer() const OVERRIDE;
+  void Start() override;
+  void Stop() override;
+  void Play() override;
+  void Pause() override;
+  void SetVolume(float volume) override;
+  base::TimeDelta GetCurrentRenderTime() const override;
+  bool IsLocalRenderer() const override;
 
   const base::TimeDelta& total_render_time() const {
     return total_render_time_;
   }
 
  protected:
-  virtual ~WebRtcLocalAudioRenderer();
+  ~WebRtcLocalAudioRenderer() override;
 
  private:
   // MediaStreamAudioSink implementation.
 
   // Called on the AudioInputDevice worker thread.
-  virtual void OnData(const int16* audio_data,
-                      int sample_rate,
-                      int number_of_channels,
-                      int number_of_frames) OVERRIDE;
+  void OnData(const int16* audio_data,
+              int sample_rate,
+              int number_of_channels,
+              int number_of_frames) override;
 
   // Called on the AudioInputDevice worker thread.
-  virtual void OnSetFormat(const media::AudioParameters& params) OVERRIDE;
+  void OnSetFormat(const media::AudioParameters& params) override;
 
   // media::AudioRendererSink::RenderCallback implementation.
   // Render() is called on the AudioOutputDevice thread and OnRenderError()
   // on the IO thread.
-  virtual int Render(media::AudioBus* audio_bus,
-                     int audio_delay_milliseconds) OVERRIDE;
-  virtual void OnRenderError() OVERRIDE;
+  int Render(media::AudioBus* audio_bus, int audio_delay_milliseconds) override;
+  void OnRenderError() override;
 
   // Initializes and starts the |sink_| if
   //  we have received valid |source_params_| &&
@@ -124,7 +123,7 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
   scoped_refptr<media::AudioOutputDevice> sink_;
 
   // Contains copies of captured audio frames.
-  scoped_ptr<media::AudioFifo> loopback_fifo_;
+  scoped_ptr<media::AudioBlockFifo> loopback_fifo_;
 
   // Stores last time a render callback was received. The time difference
   // between a new time stamp and this value can be used to derive the
@@ -135,9 +134,11 @@ class CONTENT_EXPORT WebRtcLocalAudioRenderer
   base::TimeDelta total_render_time_;
 
   // The audio parameters of the capture source.
+  // Must only be touched on the main thread.
   media::AudioParameters source_params_;
 
   // The audio parameters used by the sink.
+  // Must only be touched on the main thread.
   media::AudioParameters sink_params_;
 
   // Set when playing, cleared when paused.

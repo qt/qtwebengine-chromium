@@ -5,6 +5,7 @@
 #ifndef MEDIA_AUDIO_PULSE_PULSE_INPUT_H_
 #define MEDIA_AUDIO_PULSE_PULSE_INPUT_H_
 
+#include <pulse/pulseaudio.h>
 #include <string>
 
 #include "base/threading/thread_checker.h"
@@ -12,16 +13,11 @@
 #include "media/audio/audio_device_name.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
-
-struct pa_context;
-struct pa_source_info;
-struct pa_stream;
-struct pa_threaded_mainloop;
+#include "media/base/audio_block_fifo.h"
 
 namespace media {
 
 class AudioManagerPulse;
-class SeekableBuffer;
 
 class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
  public:
@@ -31,16 +27,17 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
                         pa_threaded_mainloop* mainloop,
                         pa_context* context);
 
-  virtual ~PulseAudioInputStream();
+  ~PulseAudioInputStream() override;
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
+  bool Open() override;
+  void Start(AudioInputCallback* callback) override;
+  void Stop() override;
+  void Close() override;
+  double GetMaxVolume() override;
+  void SetVolume(double volume) override;
+  double GetVolume() override;
+  bool IsMuted() override;
 
  private:
   // PulseAudio Callbacks.
@@ -48,9 +45,16 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
   static void StreamNotifyCallback(pa_stream* stream, void* user_data);
   static void VolumeCallback(pa_context* context, const pa_source_info* info,
                              int error, void* user_data);
+  static void MuteCallback(pa_context* context,
+                           const pa_source_info* info,
+                           int error,
+                           void* user_data);
 
   // Helper for the ReadCallback.
   void ReadData();
+
+  // Utility method used by GetVolume() and IsMuted().
+  bool GetSourceInformation(pa_source_info_cb_t callback);
 
   AudioManagerPulse* audio_manager_;
   AudioInputCallback* callback_;
@@ -60,12 +64,12 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
   double volume_;
   bool stream_started_;
 
-  // Holds the data from the OS.
-  scoped_ptr<media::SeekableBuffer> buffer_;
+  // Set to true in IsMuted() if user has muted the selected microphone in the
+  // sound settings UI.
+  bool muted_;
 
-  // Temporary storage for recorded data. It gets a packet of data from
-  // |buffer_| and deliver the data to OnData() callback.
-  scoped_ptr<uint8[]> audio_data_buffer_;
+  // Holds the data from the OS.
+  AudioBlockFifo fifo_;
 
   // PulseAudio API structs.
   pa_threaded_mainloop* pa_mainloop_; // Weak.
@@ -74,8 +78,6 @@ class PulseAudioInputStream : public AgcAudioStream<AudioInputStream> {
 
   // Flag indicating the state of the context has been changed.
   bool context_state_changed_;
-
-  scoped_ptr<AudioBus> audio_bus_;
 
   base::ThreadChecker thread_checker_;
 

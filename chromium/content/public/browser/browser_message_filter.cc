@@ -27,29 +27,27 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
   explicit Internal(BrowserMessageFilter* filter) : filter_(filter) {}
 
  private:
-  virtual ~Internal() {}
+  ~Internal() override {}
 
   // IPC::MessageFilter implementation:
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
+  void OnFilterAdded(IPC::Sender* sender) override {
     filter_->sender_ = sender;
     filter_->OnFilterAdded(sender);
   }
 
-  virtual void OnFilterRemoved() OVERRIDE {
-    filter_->OnFilterRemoved();
-  }
+  void OnFilterRemoved() override { filter_->OnFilterRemoved(); }
 
-  virtual void OnChannelClosing() OVERRIDE {
+  void OnChannelClosing() override {
     filter_->sender_ = NULL;
     filter_->OnChannelClosing();
   }
 
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE {
+  void OnChannelConnected(int32 peer_pid) override {
     filter_->peer_pid_ = peer_pid;
     filter_->OnChannelConnected(peer_pid);
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& message) override {
     BrowserThread::ID thread = BrowserThread::IO;
     filter_->OverrideThreadForMessage(message, &thread);
 
@@ -67,7 +65,7 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
     }
 
     if (thread == BrowserThread::UI &&
-        !BrowserMessageFilter::CheckCanDispatchOnUI(message, filter_)) {
+        !BrowserMessageFilter::CheckCanDispatchOnUI(message, filter_.get())) {
       return true;
     }
 
@@ -78,8 +76,8 @@ class BrowserMessageFilter::Internal : public IPC::MessageFilter {
     return true;
   }
 
-  virtual bool GetSupportedMessageClasses(
-      std::vector<uint32>* supported_message_classes) const OVERRIDE {
+  bool GetSupportedMessageClasses(
+      std::vector<uint32>* supported_message_classes) const override {
     supported_message_classes->assign(
         filter_->message_classes_to_filter().begin(),
         filter_->message_classes_to_filter().end());

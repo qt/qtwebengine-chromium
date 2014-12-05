@@ -15,17 +15,13 @@
 #include "media/base/decryptor.h"
 #include "media/base/media_keys.h"
 
-#if defined(ENABLE_PEPPER_CDMS)
-#include "content/renderer/media/crypto/pepper_cdm_wrapper.h"
-#endif
-
 class GURL;
 
-namespace content {
+namespace media {
+class CdmFactory;
+}
 
-#if defined(ENABLE_BROWSER_CDMS)
-class RendererCdmManager;
-#endif  // defined(ENABLE_BROWSER_CDMS)
+namespace content {
 
 // ProxyDecryptor is for EME v0.1b only. It should not be used for the WD API.
 // A decryptor proxy that creates a real decryptor object on demand and
@@ -46,15 +42,9 @@ class ProxyDecryptor {
                               const std::vector<uint8>& message,
                               const GURL& destination_url)> KeyMessageCB;
 
-  ProxyDecryptor(
-#if defined(ENABLE_PEPPER_CDMS)
-      const CreatePepperCdmCB& create_pepper_cdm_cb,
-#elif defined(ENABLE_BROWSER_CDMS)
-      RendererCdmManager* manager,
-#endif  // defined(ENABLE_PEPPER_CDMS)
-      const KeyAddedCB& key_added_cb,
-      const KeyErrorCB& key_error_cb,
-      const KeyMessageCB& key_message_cb);
+  ProxyDecryptor(const KeyAddedCB& key_added_cb,
+                 const KeyErrorCB& key_error_cb,
+                 const KeyMessageCB& key_message_cb);
   virtual ~ProxyDecryptor();
 
   // Returns the Decryptor associated with this object. May be NULL if no
@@ -68,11 +58,12 @@ class ProxyDecryptor {
 #endif
 
   // Only call this once.
-  bool InitializeCDM(const std::string& key_system,
+  bool InitializeCDM(media::CdmFactory* cdm_factory,
+                     const std::string& key_system,
                      const GURL& security_origin);
 
   // May only be called after InitializeCDM() succeeds.
-  bool GenerateKeyRequest(const std::string& type,
+  bool GenerateKeyRequest(const std::string& init_data_type,
                           const uint8* init_data,
                           int init_data_length);
   void AddKey(const uint8* key, int key_length,
@@ -82,13 +73,19 @@ class ProxyDecryptor {
 
  private:
   // Helper function to create MediaKeys to handle the given |key_system|.
-  scoped_ptr<media::MediaKeys> CreateMediaKeys(const std::string& key_system,
-                                               const GURL& security_origin);
+  scoped_ptr<media::MediaKeys> CreateMediaKeys(
+      media::CdmFactory* cdm_factory,
+      const std::string& key_system,
+      const GURL& security_origin);
 
   // Callbacks for firing session events.
   void OnSessionMessage(const std::string& web_session_id,
                         const std::vector<uint8>& message,
                         const GURL& default_url);
+  void OnSessionKeysChange(const std::string& web_session_id,
+                           bool has_additional_usable_key);
+  void OnSessionExpirationUpdate(const std::string& web_session_id,
+                                 const base::Time& new_expiry_time);
   void OnSessionReady(const std::string& web_session_id);
   void OnSessionClosed(const std::string& web_session_id);
   void OnSessionError(const std::string& web_session_id,
@@ -96,16 +93,15 @@ class ProxyDecryptor {
                       uint32 system_code,
                       const std::string& error_message);
 
-  // Called when a session is actually created or loaded.
-  void SetSessionId(bool persistent, const std::string& web_session_id);
+  enum SessionCreationType {
+    TemporarySession,
+    PersistentSession,
+    LoadSession
+  };
 
-#if defined(ENABLE_PEPPER_CDMS)
-  // Callback to create the Pepper plugin.
-  CreatePepperCdmCB create_pepper_cdm_cb_;
-#elif defined(ENABLE_BROWSER_CDMS)
-  RendererCdmManager* manager_;
-  int cdm_id_;
-#endif  // defined(ENABLE_PEPPER_CDMS)
+  // Called when a session is actually created or loaded.
+  void SetSessionId(SessionCreationType session_type,
+                    const std::string& web_session_id);
 
   // The real MediaKeys that manages key operations for the ProxyDecryptor.
   scoped_ptr<media::MediaKeys> media_keys_;
@@ -119,6 +115,10 @@ class ProxyDecryptor {
   base::hash_map<std::string, bool> active_sessions_;
 
   bool is_clear_key_;
+
+#if defined(ENABLE_BROWSER_CDMS)
+  int cdm_id_;
+#endif
 
   // NOTE: Weak pointers must be invalidated before all other member variables.
   base::WeakPtrFactory<ProxyDecryptor> weak_ptr_factory_;

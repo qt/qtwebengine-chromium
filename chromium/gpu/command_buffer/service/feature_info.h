@@ -59,6 +59,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool enable_shader_name_hashing;
     bool enable_samplers;
     bool ext_draw_buffers;
+    bool nv_draw_buffers;
     bool ext_frag_depth;
     bool ext_shader_texture_lod;
     bool use_async_readpixels;
@@ -69,6 +70,9 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool is_swiftshader;
     bool angle_texture_usage;
     bool ext_texture_storage;
+    bool chromium_path_rendering;
+    bool blend_equation_advanced;
+    bool blend_equation_advanced_coherent;
   };
 
   struct Workarounds {
@@ -125,7 +129,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
   ~FeatureInfo();
 
-  void AddExtensionString(const std::string& str);
+  void AddExtensionString(const char* s);
   void InitializeBasicState(const base::CommandLine& command_line);
   void InitializeFeatures();
 

@@ -27,15 +27,13 @@
 #include "core/svg/SVGParserUtilities.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEGaussianBlurElement::SVGFEGaussianBlurElement(Document& document)
     : SVGFilterPrimitiveStandardAttributes(SVGNames::feGaussianBlurTag, document)
     , m_stdDeviation(SVGAnimatedNumberOptionalNumber::create(this, SVGNames::stdDeviationAttr, 0, 0))
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_stdDeviation);
     addToPropertyMap(m_in1);
 }
@@ -61,21 +59,7 @@ bool SVGFEGaussianBlurElement::isSupportedAttribute(const QualifiedName& attrNam
 
 void SVGFEGaussianBlurElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::stdDeviationAttr)
-        m_stdDeviation->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGFEGaussianBlurElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -110,4 +94,4 @@ PassRefPtr<FilterEffect> SVGFEGaussianBlurElement::build(SVGFilterBuilder* filte
     return effect.release();
 }
 
-}
+} // namespace blink

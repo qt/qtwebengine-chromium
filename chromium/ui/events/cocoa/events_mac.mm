@@ -6,6 +6,8 @@
 
 #include <Cocoa/Cocoa.h>
 
+#import "base/mac/mac_util.h"
+#import "base/mac/sdk_forward_declarations.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -130,14 +132,24 @@ int GetChangedMouseButtonFlagsFromNative(
 }
 
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& event) {
-  // Empirically, a value of 0.1 is typical for one mousewheel click. Positive
-  // values when scrolling up or to the left. Scrolling quickly results in a
-  // higher delta per click, up to about 15.0. (Quartz documentation suggests
-  // +/-10).
-  // Multiply by 1000 to vaguely approximate WHEEL_DELTA on Windows (120).
-  const CGFloat kWheelDeltaMultiplier = 1000;
-  return gfx::Vector2d(kWheelDeltaMultiplier * [event deltaX],
-                       kWheelDeltaMultiplier * [event deltaY]);
+  if ([event respondsToSelector:@selector(hasPreciseScrollingDeltas)] &&
+      [event hasPreciseScrollingDeltas]) {
+    // Handle continuous scrolling devices such as a Magic Mouse or a trackpad.
+    // -scrollingDelta{X|Y} have float return types but they return values that
+    // are already rounded to integers.
+    // The values are the same as the values returned from calling
+    // CGEventGetIntegerValueField(kCGScrollWheelEventPointDeltaAxis{1|2}).
+    return gfx::Vector2d([event scrollingDeltaX], [event scrollingDeltaY]);
+  } else {
+    // Empirically, a value of 0.1 is typical for one mousewheel click. Positive
+    // values when scrolling up or to the left. Scrolling quickly results in a
+    // higher delta per click, up to about 15.0. (Quartz documentation suggests
+    // +/-10).
+    // Multiply by 1000 to vaguely approximate WHEEL_DELTA on Windows (120).
+    const CGFloat kWheelDeltaMultiplier = 1000;
+    return gfx::Vector2d(kWheelDeltaMultiplier * [event deltaX],
+                         kWheelDeltaMultiplier * [event deltaY]);
+  }
 }
 
 base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
@@ -146,6 +158,10 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
   [event release];
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& native_event) {
+  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& native_event) {
@@ -197,27 +213,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
   return false;
 }
 
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& native_event) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
   return KeyboardCodeFromNSEvent(native_event);
 }
@@ -228,6 +223,52 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return native_event.keyCode;
+}
+
+uint32 WindowsKeycodeFromNative(const base::NativeEvent& native_event) {
+  return static_cast<uint32>(KeyboardCodeFromNSEvent(native_event));
+}
+
+uint16 TextFromNative(const base::NativeEvent& native_event) {
+  NSString* text = @"";
+  if ([native_event type] != NSFlagsChanged)
+    text = [native_event characters];
+
+  // These exceptions are based on WebInputEventFactoryMac.mm:
+  uint32 windows_keycode = WindowsKeycodeFromNative(native_event);
+  if (windows_keycode == '\r')
+    text = @"\r";
+  if ([text isEqualToString:@"\x7F"])
+    text = @"\x8";
+  if (windows_keycode == 9)
+    text = @"\x9";
+
+  uint16 return_value;
+  [text getCharacters:&return_value];
+  return return_value;
+}
+
+uint16 UnmodifiedTextFromNative(const base::NativeEvent& native_event) {
+  NSString* text = @"";
+  if ([native_event type] != NSFlagsChanged)
+    text = [native_event charactersIgnoringModifiers];
+
+  // These exceptions are based on WebInputEventFactoryMac.mm:
+  uint32 windows_keycode = WindowsKeycodeFromNative(native_event);
+  if (windows_keycode == '\r')
+    text = @"\r";
+  if ([text isEqualToString:@"\x7F"])
+    text = @"\x8";
+  if (windows_keycode == 9)
+    text = @"\x9";
+
+  uint16 return_value;
+  [text getCharacters:&return_value];
+  return return_value;
+}
+
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  return false;
 }
 
 }  // namespace ui

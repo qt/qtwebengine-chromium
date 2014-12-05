@@ -26,6 +26,8 @@
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLInputElement.h"
+#include "core/html/forms/ColorChooser.h"
+#include "core/html/forms/DateTimeChooser.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/FrameTree.h"
@@ -34,16 +36,15 @@
 #include "core/page/ScopedPageLoadDeferrer.h"
 #include "core/page/WindowFeatures.h"
 #include "core/rendering/HitTestResult.h"
-#include "platform/ColorChooser.h"
-#include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
+#include "platform/Logging.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/network/DNS.h"
 #include "public/platform/WebScreenInfo.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -71,12 +72,6 @@ void Chrome::invalidateContentsAndRootView(const IntRect& updateRect)
 void Chrome::invalidateContentsForSlowScroll(const IntRect& updateRect)
 {
     m_client->invalidateContentsForSlowScroll(updateRect);
-}
-
-void Chrome::scroll(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect)
-{
-    m_client->scroll(scrollDelta, rectToScroll, clipRect);
-    InspectorInstrumentation::didScroll(m_page);
 }
 
 IntRect Chrome::rootViewToScreen(const IntRect& rect) const
@@ -335,13 +330,13 @@ void Chrome::enumerateChosenDirectory(FileChooser* fileChooser)
     m_client->enumerateChosenDirectory(fileChooser);
 }
 
-PassOwnPtr<ColorChooser> Chrome::createColorChooser(LocalFrame* frame, ColorChooserClient* client, const Color& initialColor)
+PassOwnPtrWillBeRawPtr<ColorChooser> Chrome::createColorChooser(LocalFrame* frame, ColorChooserClient* client, const Color& initialColor)
 {
     notifyPopupOpeningObservers();
     return m_client->createColorChooser(frame, client, initialColor);
 }
 
-PassRefPtrWillBeRawPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
+PassRefPtr<DateTimeChooser> Chrome::openDateTimeChooser(DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     notifyPopupOpeningObservers();
     return m_client->openDateTimeChooser(client, parameters);
@@ -382,7 +377,7 @@ bool Chrome::hasOpenedPopup() const
     return m_client->hasOpenedPopup();
 }
 
-PassRefPtr<PopupMenu> Chrome::createPopupMenu(LocalFrame& frame, PopupMenuClient* client) const
+PassRefPtrWillBeRawPtr<PopupMenu> Chrome::createPopupMenu(LocalFrame& frame, PopupMenuClient* client) const
 {
     notifyPopupOpeningObservers();
     return m_client->createPopupMenu(frame, client);
@@ -413,4 +408,4 @@ void Chrome::willBeDestroyed()
     m_client->chromeDestroyed();
 }
 
-} // namespace WebCore
+} // namespace blink

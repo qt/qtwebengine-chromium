@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/debug/trace_event.h"
+#include "base/files/file.h"
 #include "base/pickle.h"
 #include "ipc/ipc_export.h"
 
@@ -19,10 +20,6 @@
 #if defined(OS_POSIX)
 #include "base/memory/ref_counted.h"
 #endif
-
-namespace base {
-struct FileDescriptor;
-}
 
 class FileDescriptorSet;
 
@@ -53,7 +50,7 @@ class IPC_EXPORT Message : public Pickle {
     HAS_SENT_TIME_BIT = 0x80,
   };
 
-  virtual ~Message();
+  ~Message() override;
 
   Message();
 
@@ -178,12 +175,12 @@ class IPC_EXPORT Message : public Pickle {
   // This is used to pass a file descriptor to the peer of an IPC channel.
 
   // Add a descriptor to the end of the set. Returns false if the set is full.
-  bool WriteFileDescriptor(const base::FileDescriptor& descriptor);
+  bool WriteFile(base::ScopedFD descriptor);
+  bool WriteBorrowingFile(const base::PlatformFile& descriptor);
 
   // Get a file descriptor from the message. Returns false on error.
   //   iter: a Pickle iterator to the current location in the message.
-  bool ReadFileDescriptor(PickleIterator* iter,
-                          base::FileDescriptor* descriptor) const;
+  bool ReadFile(PickleIterator* iter, base::ScopedFD* file) const;
 
   // Returns true if there are any file descriptors in this message.
   bool HasFileDescriptors() const;
@@ -222,6 +219,7 @@ class IPC_EXPORT Message : public Pickle {
 
  protected:
   friend class Channel;
+  friend class ChannelMojo;
   friend class ChannelNacl;
   friend class ChannelPosix;
   friend class ChannelWin;

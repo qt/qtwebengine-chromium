@@ -59,15 +59,18 @@ class AUHALStream : public AudioOutputStream {
               AudioDeviceID device);
   // The dtor is typically called by the AudioManager only and it is usually
   // triggered by calling AudioOutputStream::Close().
-  virtual ~AUHALStream();
+  ~AUHALStream() override;
 
   // Implementation of AudioOutputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual void Start(AudioSourceCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual void GetVolume(double* volume) OVERRIDE;
+  bool Open() override;
+  void Close() override;
+  void Start(AudioSourceCallback* callback) override;
+  void Stop() override;
+  void SetVolume(double volume) override;
+  void GetVolume(double* volume) override;
+
+  AudioDeviceID device_id() const { return device_; }
+  size_t requested_buffer_size() const { return number_of_frames_; }
 
  private:
   // AUHAL callback.

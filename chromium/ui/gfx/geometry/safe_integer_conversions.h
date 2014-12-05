@@ -30,12 +30,29 @@ inline int ToCeiledInt(float value) {
   return ClampToInt(std::ceil(value));
 }
 
+inline int ToFlooredInt(double value) {
+  return ClampToInt(std::floor(value));
+}
+
+inline int ToCeiledInt(double value) {
+  return ClampToInt(std::ceil(value));
+}
+
 inline int ToRoundedInt(float value) {
   float rounded;
   if (value >= 0.0f)
     rounded = std::floor(value + 0.5f);
   else
     rounded = std::ceil(value - 0.5f);
+  return ClampToInt(rounded);
+}
+
+inline int ToRoundedInt(double value) {
+  double rounded;
+  if (value >= 0.0)
+    rounded = std::floor(value + 0.5);
+  else
+    rounded = std::ceil(value - 0.5);
   return ClampToInt(rounded);
 }
 

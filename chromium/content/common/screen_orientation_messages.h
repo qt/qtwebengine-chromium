@@ -7,7 +7,7 @@
 
 #include "content/common/content_export.h"
 #include "ipc/ipc_message_macros.h"
-#include "third_party/WebKit/public/platform/WebLockOrientationCallback.h"
+#include "third_party/WebKit/public/platform/WebLockOrientationError.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationType.h"
 
@@ -21,11 +21,11 @@ IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScreenOrientationType,
                               blink::WebScreenOrientationLandscapeSecondary)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(blink::WebScreenOrientationLockType,
                               blink::WebScreenOrientationLockDefault,
-                              blink::WebScreenOrientationLockPortrait)
+                              blink::WebScreenOrientationLockNatural)
 IPC_ENUM_TRAITS_MIN_MAX_VALUE(
-      blink::WebLockOrientationCallback::ErrorType,
-      blink::WebLockOrientationCallback::ErrorTypeNotAvailable,
-      blink::WebLockOrientationCallback::ErrorTypeCanceled)
+      blink::WebLockOrientationError,
+      blink::WebLockOrientationErrorNotAvailable,
+      blink::WebLockOrientationErrorCanceled)
 
 // The browser process informs the renderer process that the screen orientation
 // has changed. |orientation| contains the new screen orientation in degrees.
@@ -34,13 +34,11 @@ IPC_MESSAGE_CONTROL1(ScreenOrientationMsg_OrientationChange,
                      blink::WebScreenOrientationType /* orientation */ )
 
 // The browser process' response to a ScreenOrientationHostMsg_LockRequest when
-// the lock actually succeeded. The message includes the new |angle| and |type|
-// of orientation. The |request_id| passed when receiving the request is passed
-// back so the renderer process can associate the response to the right request.
-IPC_MESSAGE_ROUTED3(ScreenOrientationMsg_LockSuccess,
-                    int, /* request_id */
-                    unsigned, /* angle */
-                    blink::WebScreenOrientationType /* type */)
+// the lock actually succeeded. The |request_id| passed when receiving the
+// request is passed back so the renderer process can associate the response to
+// the right request.
+IPC_MESSAGE_ROUTED1(ScreenOrientationMsg_LockSuccess,
+                    int /* request_id */)
 
 // The browser process' response to a ScreenOrientationHostMsg_LockRequest when
 // the lock actually failed. The message includes the |error| type. The
@@ -48,7 +46,7 @@ IPC_MESSAGE_ROUTED3(ScreenOrientationMsg_LockSuccess,
 // process can associate the response to the right request.
 IPC_MESSAGE_ROUTED2(ScreenOrientationMsg_LockError,
                     int, /* request_id */
-                    blink::WebLockOrientationCallback::ErrorType /* error */);
+                    blink::WebLockOrientationError /* error */)
 
 // The renderer process requests the browser process to lock the screen
 // orientation to the specified |orientations|. The request contains a
@@ -62,3 +60,17 @@ IPC_MESSAGE_ROUTED2(ScreenOrientationHostMsg_LockRequest,
 // The renderer process requests the browser process to unlock the screen
 // orientation.
 IPC_MESSAGE_ROUTED0(ScreenOrientationHostMsg_Unlock)
+
+// The renderer process is now using the Screen Orientation API and informs the
+// browser process that it should start accurately listening to the screen
+// orientation if it wasn't already.
+// This is only expected to be acted upon when the underlying platform requires
+// heavy work in order to accurately know the screen orientation.
+IPC_MESSAGE_CONTROL0(ScreenOrientationHostMsg_StartListening)
+
+// The renderer process is no longer using the Screen Orientation API and
+// informs the browser process that it can stop accurately listening to the
+// screen orientation if no other process cares about it.
+// This is only expected to be acted upon when the underlying platform requires
+// heavy work in order to accurately know the screen orientation.
+IPC_MESSAGE_CONTROL0(ScreenOrientationHostMsg_StopListening)

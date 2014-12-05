@@ -12,6 +12,7 @@
 <translation id="3885155851504623709">Bucak</translation>
 <translation id="8184169487503545976">Posta kodu biçimi tanınmadı.</translation>
 <translation id="7602447984296396718">Posta kodu, bu adresin geri kalan kısmıyla eşleşmiyor gibi görünüyor.</translation>
+<translation id="6247152910634872706">Kuruluş</translation>
 <translation id="2053553514270667976">Posta kodu</translation>
 <translation id="7087282848513945231">İlçe</translation>
 <translation id="2096368010154057602">Bölüm</translation>
@@ -28,11 +29,12 @@
 <translation id="43113324827158664">Bunu boş bırakamazsınız.</translation>
 <translation id="3050787670591910834">Bir posta kodu sağlamalısınız (örneğin, <ph name="EXAMPLE"/>).</translation>
 <translation id="6282194474023008486">Posta kodu</translation>
+<translation id="5937097533660449554">Oblast</translation>
 <translation id="4376888869070172068">Posta kodu biçimi tanınmadı.</translation>
 <translation id="8446364922515257065">Do/Si</translation>
 <translation id="4518701284698680367">Bir posta kodu sağlamalısınız (örneğin, <ph name="EXAMPLE"/>). Posta kodunuzu bilmiyor musunuz? <ph name="BEGIN_LINK"/>Buradan<ph name="END_LINK"/> bulabilirsiniz.</translation>
 <translation id="3882422586004212847">Bu posta kodu biçimi tanınmadı. Geçerli bir posta kodu örneği: <ph name="EXAMPLE"/>.</translation>
 <translation id="9104066683700680171">Posta kodu, bu adresin geri kalan kısmıyla eşleşmiyor gibi görünüyor.</translation>
 <translation id="5095208057601539847">Bölge</translation>
-<translation id="5327248766486351172">Adı</translation>
+<translation id="5327248766486351172">Ad</translation>
 </translationbundle>

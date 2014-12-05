@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLDimension;
 class HTMLFrameSetElement;
@@ -53,10 +53,11 @@ private:
     Vector<bool> m_allowBorder;
 };
 
-class RenderFrameSet FINAL : public RenderBox {
+class RenderFrameSet final : public RenderBox {
 public:
     RenderFrameSet(HTMLFrameSetElement*);
     virtual ~RenderFrameSet();
+    virtual void trace(Visitor*) override;
 
     RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
     RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
@@ -94,16 +95,17 @@ private:
         int m_splitResizeOffset;
     };
 
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
+    virtual RenderObjectChildList* virtualChildren() override { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const OVERRIDE { return "RenderFrameSet"; }
-    virtual bool isFrameSet() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderFrameSet"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectFrameSet || RenderBox::isOfType(type); }
 
-    virtual void layout() OVERRIDE;
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
-    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const OVERRIDE;
+    virtual void layout() override;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void computePreferredLogicalWidths() override;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
+    virtual CursorDirective getCursor(const LayoutPoint&, Cursor&) const override;
 
     inline HTMLFrameSetElement* frameSet() const;
 
@@ -134,6 +136,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFrameSet, isFrameSet());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFrameSet_h

@@ -450,13 +450,35 @@ const LogSeverity LOG_0 = LOG_ERROR;
 
 #else
 
+#if defined(_PREFAST_) && defined(OS_WIN)
+// Use __analysis_assume to tell the VC++ static analysis engine that
+// assert conditions are true, to suppress warnings.  The LAZY_STREAM
+// parameter doesn't reference 'condition' in /analyze builds because
+// this evaluation confuses /analyze. The !! before condition is because
+// __analysis_assume gets confused on some conditions:
+// http://randomascii.wordpress.com/2011/09/13/analyze-for-visual-studio-the-ugly-part-5/
+
+#define CHECK(condition)                \
+  __analysis_assume(!!(condition)),     \
+  LAZY_STREAM(LOG_STREAM(FATAL), false) \
+  << "Check failed: " #condition ". "
+
+#define PCHECK(condition)                \
+  __analysis_assume(!!(condition)),      \
+  LAZY_STREAM(PLOG_STREAM(FATAL), false) \
+  << "Check failed: " #condition ". "
+
+#else  // _PREFAST_
+
 #define CHECK(condition)                       \
   LAZY_STREAM(LOG_STREAM(FATAL), !(condition)) \
   << "Check failed: " #condition ". "
 
-#define PCHECK(condition) \
+#define PCHECK(condition)                       \
   LAZY_STREAM(PLOG_STREAM(FATAL), !(condition)) \
   << "Check failed: " #condition ". "
+
+#endif  // _PREFAST_
 
 // Helper macro for binary operators.
 // Don't use this macro directly in your code, use CHECK_EQ et al below.
@@ -483,8 +505,6 @@ std::string* MakeCheckOpString(const t1& v1, const t2& v2, const char* names) {
   return msg;
 }
 
-// MSVC doesn't like complex extern templates and DLLs.
-#if !defined(COMPILER_MSVC)
 // Commonly used instantiations of MakeCheckOpString<>. Explicitly instantiated
 // in logging.cc.
 extern template BASE_EXPORT std::string* MakeCheckOpString<int, int>(
@@ -501,7 +521,6 @@ std::string* MakeCheckOpString<unsigned int, unsigned long>(
 extern template BASE_EXPORT
 std::string* MakeCheckOpString<std::string, std::string>(
     const std::string&, const std::string&, const char* name);
-#endif
 
 // Helper functions for CHECK_OP macro.
 // The (int, int) specialization works around the issue that the compiler
@@ -532,6 +551,7 @@ DEFINE_CHECK_OP_IMPL(GT, > )
 #define CHECK_LT(val1, val2) CHECK_OP(LT, < , val1, val2)
 #define CHECK_GE(val1, val2) CHECK_OP(GE, >=, val1, val2)
 #define CHECK_GT(val1, val2) CHECK_OP(GT, > , val1, val2)
+#define CHECK_IMPLIES(val1, val2) CHECK(!(val1) || (val2))
 
 #if defined(NDEBUG)
 #define ENABLE_DLOG 0
@@ -618,13 +638,30 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 // variable warnings if the only use of a variable is in a DCHECK.
 // This behavior is different from DLOG_IF et al.
 
-#define DCHECK(condition)                                         \
-  LAZY_STREAM(LOG_STREAM(DCHECK), DCHECK_IS_ON && !(condition))   \
+#if defined(_PREFAST_) && defined(OS_WIN)
+// See comments on the previous use of __analysis_assume.
+
+#define DCHECK(condition)                                               \
+  __analysis_assume(!!(condition)),                                     \
+  LAZY_STREAM(LOG_STREAM(DCHECK), false)                                \
   << "Check failed: " #condition ". "
 
-#define DPCHECK(condition)                                        \
-  LAZY_STREAM(PLOG_STREAM(DCHECK), DCHECK_IS_ON && !(condition))  \
+#define DPCHECK(condition)                                              \
+  __analysis_assume(!!(condition)),                                     \
+  LAZY_STREAM(PLOG_STREAM(DCHECK), false)                               \
   << "Check failed: " #condition ". "
+
+#else  // _PREFAST_
+
+#define DCHECK(condition)                                               \
+  LAZY_STREAM(LOG_STREAM(DCHECK), DCHECK_IS_ON ? !(condition) : false)  \
+  << "Check failed: " #condition ". "
+
+#define DPCHECK(condition)                                              \
+  LAZY_STREAM(PLOG_STREAM(DCHECK), DCHECK_IS_ON ? !(condition) : false) \
+  << "Check failed: " #condition ". "
+
+#endif  // _PREFAST_
 
 // Helper macro for binary operators.
 // Don't use this macro directly in your code, use DCHECK_EQ et al below.
@@ -662,8 +699,9 @@ const LogSeverity LOG_DCHECK = LOG_INFO;
 #define DCHECK_LT(val1, val2) DCHECK_OP(LT, < , val1, val2)
 #define DCHECK_GE(val1, val2) DCHECK_OP(GE, >=, val1, val2)
 #define DCHECK_GT(val1, val2) DCHECK_OP(GT, > , val1, val2)
+#define DCHECK_IMPLIES(val1, val2) DCHECK(!(val1) || (val2))
 
-#if defined(NDEBUG) && defined(OS_CHROMEOS)
+#if !DCHECK_IS_ON && defined(OS_CHROMEOS)
 #define NOTREACHED() LOG(ERROR) << "NOTREACHED() hit in " << \
     __FUNCTION__ << ". "
 #else
@@ -827,6 +865,15 @@ BASE_EXPORT std::wstring GetLogFileFullPath();
 
 }  // namespace logging
 
+// Note that "The behavior of a C++ program is undefined if it adds declarations
+// or definitions to namespace std or to a namespace within namespace std unless
+// otherwise specified." --C++11[namespace.std]
+//
+// We've checked that this particular definition has the intended behavior on
+// our implementations, but it's prone to breaking in the future, and please
+// don't imitate this in your own definitions without checking with some
+// standard library experts.
+namespace std {
 // These functions are provided as a convenience for logging, which is where we
 // use streams (it is against Google style to use streams in other places). It
 // is designed to allow you to emit non-ASCII Unicode strings to the log file,
@@ -837,6 +884,7 @@ BASE_EXPORT std::ostream& operator<<(std::ostream& out, const wchar_t* wstr);
 inline std::ostream& operator<<(std::ostream& out, const std::wstring& wstr) {
   return out << wstr.c_str();
 }
+}  // namespace std
 
 // The NOTIMPLEMENTED() macro annotates codepaths which have
 // not been implemented yet.

@@ -34,7 +34,7 @@
 #include "modules/EventModules.h"
 #include "modules/webmidi/MIDIPort.h"
 
-namespace WebCore {
+namespace blink {
 
 struct MIDIConnectionEventInit : public EventInit {
     MIDIConnectionEventInit()
@@ -42,29 +42,30 @@ struct MIDIConnectionEventInit : public EventInit {
     {
     }
 
-    RefPtrWillBeMember<MIDIPort> port;
+    Member<MIDIPort> port;
 };
 
-class MIDIConnectionEvent FINAL : public Event {
+class MIDIConnectionEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create();
-    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, PassRefPtrWillBeRawPtr<MIDIPort>);
+    static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, MIDIPort*);
     static PassRefPtrWillBeRawPtr<MIDIConnectionEvent> create(const AtomicString&, const MIDIConnectionEventInit&);
 
-    PassRefPtrWillBeRawPtr<MIDIPort> port() { return m_port; }
+    MIDIPort* port() { return m_port; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::MIDIConnectionEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::MIDIConnectionEvent; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MIDIConnectionEvent();
-    MIDIConnectionEvent(const AtomicString&, PassRefPtrWillBeRawPtr<MIDIPort>);
+    MIDIConnectionEvent(const AtomicString&, MIDIPort*);
     MIDIConnectionEvent(const AtomicString&, const MIDIConnectionEventInit&);
 
-    RefPtrWillBeMember<MIDIPort> m_port;
+    PersistentWillBeMember<MIDIPort> m_port;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIConnectionEvent_h

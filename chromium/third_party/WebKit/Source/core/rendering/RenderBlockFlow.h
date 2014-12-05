@@ -41,7 +41,7 @@
 #include "core/rendering/line/TrailingObjects.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
-namespace WebCore {
+namespace blink {
 
 class MarginInfo;
 class LineBreaker;
@@ -52,15 +52,17 @@ class RenderBlockFlow : public RenderBlock {
 public:
     explicit RenderBlockFlow(ContainerNode*);
     virtual ~RenderBlockFlow();
+    virtual void trace(Visitor*) override;
 
     static RenderBlockFlow* createAnonymous(Document*);
 
-    virtual bool isRenderBlockFlow() const OVERRIDE FINAL { return true; }
+    virtual bool isRenderBlockFlow() const override final { return true; }
 
-    virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
+    virtual void layoutBlock(bool relayoutChildren) override;
 
-    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false) OVERRIDE;
-    virtual void deleteLineBoxTree() OVERRIDE FINAL;
+    virtual void computeOverflow(LayoutUnit oldClientAfterEdge, bool recomputeFloats = false) override;
+
+    virtual void deleteLineBoxTree() override final;
 
     LayoutUnit availableLogicalWidthForLine(LayoutUnit position, bool shouldIndentText, LayoutUnit logicalHeight = 0) const
     {
@@ -85,22 +87,28 @@ public:
             : logicalWidth() - logicalRightOffsetForLine(position, shouldIndentText, logicalHeight);
     }
 
-    virtual LayoutUnit logicalLeftSelectionOffset(RenderBlock* rootBlock, LayoutUnit position) OVERRIDE;
-    virtual LayoutUnit logicalRightSelectionOffset(RenderBlock* rootBlock, LayoutUnit position) OVERRIDE;
+    // FIXME-BLOCKFLOW: Move this into RenderBlockFlow once there are no calls
+    // in RenderBlock. http://crbug.com/393945, http://crbug.com/302024
+    using RenderBlock::lineBoxes;
+    using RenderBlock::firstLineBox;
+    using RenderBlock::lastLineBox;
+    using RenderBlock::firstRootBox;
+    using RenderBlock::lastRootBox;
 
-    LayoutUnit computeStartPositionDeltaForChildAvoidingFloats(const RenderBox* child, LayoutUnit childMarginStart);
+    virtual LayoutUnit logicalLeftSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const override;
+    virtual LayoutUnit logicalRightSelectionOffset(const RenderBlock* rootBlock, LayoutUnit position) const override;
 
     RootInlineBox* createAndAppendRootInlineBox();
 
     void markAllDescendantsWithFloatsForLayout(RenderBox* floatToRemove = 0, bool inLayout = true);
     void markSiblingsWithFloatsForLayout(RenderBox* floatToRemove = 0);
 
-    virtual bool containsFloats() const OVERRIDE FINAL { return m_floatingObjects && !m_floatingObjects->set().isEmpty(); }
+    bool containsFloats() const { return m_floatingObjects && !m_floatingObjects->set().isEmpty(); }
     bool containsFloat(RenderBox*) const;
 
     void removeFloatingObjects();
 
-    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) OVERRIDE;
+    virtual void addChild(RenderObject* newChild, RenderObject* beforeChild = 0) override;
 
     void moveAllChildrenIncludingFloatsTo(RenderBlock* toBlock, bool fullRemoveInsert);
 
@@ -150,7 +158,7 @@ public:
 
     LayoutUnit startAlignedOffsetForLine(LayoutUnit position, bool shouldIndentText);
 
-    void setStaticInlinePositionForChild(RenderBox*, LayoutUnit blockOffset, LayoutUnit inlinePosition);
+    void setStaticInlinePositionForChild(RenderBox*, LayoutUnit inlinePosition);
     void updateStaticInlinePositionForChild(RenderBox*, LayoutUnit logicalTop);
 
     static bool shouldSkipCreatingRunsForObject(RenderObject* obj)
@@ -158,36 +166,11 @@ public:
         return obj->isFloating() || (obj->isOutOfFlowPositioned() && !obj->style()->isOriginalDisplayInlineType() && !obj->container()->isRenderInline());
     }
 
-    // Direction resolved from string value.
-    static TextRun constructTextRun(RenderObject* context, const Font&, const String&, RenderStyle*,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, TextRunFlags = DefaultTextRunFlags);
-    static TextRun constructTextRun(RenderObject* context, const Font&, const RenderText*, unsigned offset, unsigned length, RenderStyle*,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    // Explicit direction.
-    static TextRun constructTextRun(RenderObject* context, const Font&, const String&, RenderStyle*, TextDirection,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion, TextRunFlags = DefaultTextRunFlags);
-
-    static TextRun constructTextRun(RenderObject* context, const Font&, const RenderText*, RenderStyle*, TextDirection,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    static TextRun constructTextRun(RenderObject* context, const Font&, const RenderText*, unsigned offset, unsigned length, RenderStyle*, TextDirection,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    static TextRun constructTextRun(RenderObject* context, const Font&, const RenderText*, unsigned offset, RenderStyle*,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    static TextRun constructTextRun(RenderObject* context, const Font&, const LChar* characters, int length, RenderStyle*, TextDirection,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    static TextRun constructTextRun(RenderObject* context, const Font&, const UChar* characters, int length, RenderStyle*, TextDirection,
-        TextRun::ExpansionBehavior = TextRun::AllowTrailingExpansion | TextRun::ForbidLeadingExpansion);
-
-    RenderMultiColumnFlowThread* multiColumnFlowThread() const { return m_rareData ? m_rareData->m_multiColumnFlowThread : 0; }
+    RenderMultiColumnFlowThread* multiColumnFlowThread() const { return m_rareData ? m_rareData->m_multiColumnFlowThread.get() : 0; }
     void resetMultiColumnFlowThread()
     {
         if (m_rareData)
-            m_rareData->m_multiColumnFlowThread = 0;
+            m_rareData->m_multiColumnFlowThread = nullptr;
     }
 
     void addOverflowFromInlineChildren();
@@ -195,46 +178,13 @@ public:
     // FIXME: This should be const to avoid a const_cast, but can modify child dirty bits and RenderCombineText
     void computeInlinePreferredLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth);
 
-    GapRects inlineSelectionGaps(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
-        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*);
-protected:
-    void rebuildFloatsFromIntruding();
-    void layoutInlineChildren(bool relayoutChildren, LayoutUnit& repaintLogicalTop, LayoutUnit& repaintLogicalBottom, LayoutUnit afterEdge);
+    GapRects inlineSelectionGaps(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock,
+        LayoutUnit& lastLogicalTop, LayoutUnit& lastLogicalLeft, LayoutUnit& lastLogicalRight, const PaintInfo*) const;
 
-    void createFloatingObjects();
+    LayoutUnit paginationStrut() const { return m_rareData ? m_rareData->m_paginationStrut : LayoutUnit(); }
+    void setPaginationStrut(LayoutUnit);
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
-
-    void addOverflowFromFloats();
-
-    LayoutUnit logicalRightOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
-    {
-        return adjustLogicalRightOffsetForLine(logicalRightFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
-    }
-    LayoutUnit logicalLeftOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
-    {
-        return adjustLogicalLeftOffsetForLine(logicalLeftFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
-    }
-
-    virtual RenderObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&);
-    virtual bool updateLogicalWidthAndColumnWidth() OVERRIDE;
-
-    // These functions optionally update LayoutState's layoutDelta, which is used to ensure they're repainted correctly when moved
-    enum ApplyLayoutDeltaMode { ApplyLayoutDelta, DoNotApplyLayoutDelta };
-    void setLogicalLeftForChild(RenderBox* child, LayoutUnit logicalLeft, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
-    void setLogicalTopForChild(RenderBox* child, LayoutUnit logicalTop, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
-    void determineLogicalLeftPositionForChild(RenderBox* child, ApplyLayoutDeltaMode = DoNotApplyLayoutDelta);
-
-private:
-    bool layoutBlockFlow(bool relayoutChildren, LayoutUnit& pageLogicalHeight, SubtreeLayoutScope&);
-    void layoutBlockChildren(bool relayoutChildren, SubtreeLayoutScope&, LayoutUnit beforeEdge, LayoutUnit afterEdge);
-
-    void layoutBlockChild(RenderBox* child, MarginInfo&, LayoutUnit& previousFloatLogicalBottom);
-    void adjustPositionedBlock(RenderBox* child, const MarginInfo&);
-    void adjustFloatingBlock(const MarginInfo&);
-
-    LayoutPoint flipFloatForWritingModeForChild(const FloatingObject*, const LayoutPoint&) const;
+    virtual bool avoidsFloats() const override;
 
     LayoutUnit xPositionForFloatIncludingMargin(const FloatingObject* child) const
     {
@@ -251,6 +201,43 @@ private:
 
         return child->y() + child->renderer()->marginTop();
     }
+
+    LayoutPoint flipFloatForWritingModeForChild(const FloatingObject*, const LayoutPoint&) const;
+
+protected:
+    void rebuildFloatsFromIntruding();
+    void layoutInlineChildren(bool relayoutChildren, LayoutUnit& paintInvalidationLogicalTop, LayoutUnit& paintInvalidationLogicalBottom, LayoutUnit afterEdge);
+
+    void createFloatingObjects();
+
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+
+    void addOverflowFromFloats();
+
+    LayoutUnit logicalRightOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
+    {
+        return adjustLogicalRightOffsetForLine(logicalRightFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
+    }
+    LayoutUnit logicalLeftOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, bool applyTextIndent, LayoutUnit logicalHeight = 0) const
+    {
+        return adjustLogicalLeftOffsetForLine(logicalLeftFloatOffsetForLine(logicalTop, fixedOffset, logicalHeight), applyTextIndent);
+    }
+
+    virtual RenderObject* layoutSpecialExcludedChild(bool /*relayoutChildren*/, SubtreeLayoutScope&);
+    virtual bool updateLogicalWidthAndColumnWidth() override;
+
+    void setLogicalLeftForChild(RenderBox* child, LayoutUnit logicalLeft);
+    void setLogicalTopForChild(RenderBox* child, LayoutUnit logicalTop);
+    void determineLogicalLeftPositionForChild(RenderBox* child);
+
+private:
+    bool layoutBlockFlow(bool relayoutChildren, LayoutUnit& pageLogicalHeight, SubtreeLayoutScope&);
+    void layoutBlockChildren(bool relayoutChildren, SubtreeLayoutScope&, LayoutUnit beforeEdge, LayoutUnit afterEdge);
+
+    void layoutBlockChild(RenderBox* child, MarginInfo&, LayoutUnit& previousFloatLogicalBottom);
+    void adjustPositionedBlock(RenderBox* child, const MarginInfo&);
+    void adjustFloatingBlock(const MarginInfo&);
 
     LayoutPoint computeLogicalLocationForFloat(const FloatingObject*, LayoutUnit logicalTopOffset) const;
 
@@ -272,12 +259,12 @@ private:
     LayoutUnit lowestFloatLogicalBottom(FloatingObject::Type = FloatingObject::FloatLeftRight) const;
     LayoutUnit nextFloatLogicalBottomBelow(LayoutUnit, ShapeOutsideFloatOffsetMode = ShapeOutsideFloatMarginBoxOffset) const;
 
-    virtual bool hitTestFloats(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset) OVERRIDE FINAL;
+    virtual bool hitTestFloats(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset) override final;
 
-    virtual void repaintOverhangingFloats(bool paintAllDescendants) OVERRIDE FINAL;
-    virtual void invalidatePaintForOverflow() OVERRIDE FINAL;
-    virtual void paintFloats(PaintInfo&, const LayoutPoint&, bool preservePhase = false) OVERRIDE FINAL;
-    virtual void clipOutFloatingObjects(RenderBlock*, const PaintInfo*, const LayoutPoint&, const LayoutSize&) OVERRIDE;
+    virtual void invalidatePaintForOverhangingFloats(bool paintAllDescendants) override final;
+    virtual void invalidatePaintForOverflow() override final;
+    virtual void paintFloats(PaintInfo&, const LayoutPoint&, bool preservePhase = false) override final;
+    virtual void clipOutFloatingObjects(const RenderBlock*, const PaintInfo*, const LayoutPoint&, const LayoutSize&) const override;
     void clearFloats(EClear);
 
     LayoutUnit logicalRightFloatOffsetForLine(LayoutUnit logicalTop, LayoutUnit fixedOffset, LayoutUnit logicalHeight) const;
@@ -289,16 +276,33 @@ private:
     LayoutUnit adjustLogicalRightOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
     LayoutUnit adjustLogicalLeftOffsetForLine(LayoutUnit offsetFromFloats, bool applyTextIndent) const;
 
-    virtual void adjustForBorderFit(LayoutUnit x, LayoutUnit& left, LayoutUnit& right) const OVERRIDE; // Helper function for borderFitAdjust
-
     virtual RootInlineBox* createRootInlineBox(); // Subclassed by SVG
 
-    void createOrDestroyMultiColumnFlowThreadIfNeeded();
+    bool isPagedOverflow(const RenderStyle*);
+
+    enum FlowThreadType {
+        NoFlowThread,
+        MultiColumnFlowThread,
+        PagedFlowThread
+    };
+
+    FlowThreadType flowThreadType(const RenderStyle*);
+
+    RenderMultiColumnFlowThread* createMultiColumnFlowThread(FlowThreadType);
+    void createOrDestroyMultiColumnFlowThreadIfNeeded(const RenderStyle* oldStyle);
 
     void updateLogicalWidthForAlignment(const ETextAlign&, const RootInlineBox*, BidiRun* trailingSpaceRun, float& logicalLeft, float& totalLogicalWidth, float& availableLogicalWidth, unsigned expansionOpportunityCount);
     void checkForPaginationLogicalHeightChange(LayoutUnit& pageLogicalHeight, bool& pageLogicalHeightChanged, bool& hasSpecifiedPageLogicalHeight);
     bool shouldRelayoutForPagination(LayoutUnit& pageLogicalHeight, LayoutUnit layoutOverflowLogicalBottom) const;
     void setColumnCountAndHeight(unsigned count, LayoutUnit pageLogicalHeight);
+
+    bool shouldBreakAtLineToAvoidWidow() const { return m_rareData && m_rareData->m_lineBreakToAvoidWidow >= 0; }
+    void clearShouldBreakAtLineToAvoidWidow() const;
+    int lineBreakToAvoidWidow() const { return m_rareData ? m_rareData->m_lineBreakToAvoidWidow : -1; }
+    void setBreakAtLineToAvoidWidow(int);
+    void clearDidBreakAtLineToAvoidWidow();
+    void setDidBreakAtLineToAvoidWidow();
+    bool didBreakAtLineToAvoidWidow() const { return m_rareData && m_rareData->m_didBreakAtLineToAvoidWidow; }
 
 public:
     struct FloatWithRect {
@@ -342,16 +346,20 @@ public:
     MarginValues marginValuesForChild(RenderBox* child) const;
 
     // Allocated only when some of these fields have non-default values
-    struct RenderBlockFlowRareData {
-        WTF_MAKE_NONCOPYABLE(RenderBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED;
+    struct RenderBlockFlowRareData : public NoBaseWillBeGarbageCollected<RenderBlockFlowRareData> {
+        WTF_MAKE_NONCOPYABLE(RenderBlockFlowRareData); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     public:
         RenderBlockFlowRareData(const RenderBlockFlow* block)
             : m_margins(positiveMarginBeforeDefault(block), negativeMarginBeforeDefault(block), positiveMarginAfterDefault(block), negativeMarginAfterDefault(block))
-            , m_multiColumnFlowThread(0)
+            , m_paginationStrut(0)
+            , m_multiColumnFlowThread(nullptr)
+            , m_lineBreakToAvoidWidow(-1)
+            , m_didBreakAtLineToAvoidWidow(false)
             , m_discardMarginBefore(false)
             , m_discardMarginAfter(false)
         {
         }
+        void trace(Visitor*);
 
         static LayoutUnit positiveMarginBeforeDefault(const RenderBlockFlow* block)
         {
@@ -371,13 +379,19 @@ public:
         }
 
         MarginValues m_margins;
+        LayoutUnit m_paginationStrut;
 
-        RenderMultiColumnFlowThread* m_multiColumnFlowThread;
+        RawPtrWillBeMember<RenderMultiColumnFlowThread> m_multiColumnFlowThread;
 
+        int m_lineBreakToAvoidWidow;
+        bool m_didBreakAtLineToAvoidWidow : 1;
         bool m_discardMarginBefore : 1;
         bool m_discardMarginAfter : 1;
     };
     LayoutUnit marginOffsetForSelfCollapsingBlock();
+
+    FloatingObjects* floatingObjects() { return m_floatingObjects.get(); }
+
 
 protected:
     LayoutUnit maxPositiveMarginBefore() const { return m_rareData ? m_rareData->m_margins.positiveMarginBefore() : RenderBlockFlowRareData::positiveMarginBeforeDefault(this); }
@@ -413,8 +427,8 @@ protected:
 
     virtual ETextAlign textAlignmentForLine(bool endsWithSoftBreak) const;
 private:
-    virtual LayoutUnit collapsedMarginBefore() const OVERRIDE FINAL { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
-    virtual LayoutUnit collapsedMarginAfter() const OVERRIDE FINAL { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
+    virtual LayoutUnit collapsedMarginBefore() const override final { return maxPositiveMarginBefore() - maxNegativeMarginBefore(); }
+    virtual LayoutUnit collapsedMarginAfter() const override final { return maxPositiveMarginAfter() - maxNegativeMarginAfter(); }
 
     LayoutUnit collapseMargins(RenderBox* child, MarginInfo&, bool childIsSelfCollapsing);
     LayoutUnit clearFloatsIfNeeded(RenderBox* child, MarginInfo&, LayoutUnit oldTopPosMargin, LayoutUnit oldTopNegMargin, LayoutUnit yPos, bool childIsSelfCollapsing);
@@ -427,18 +441,23 @@ private:
     LayoutUnit applyAfterBreak(RenderBox* child, LayoutUnit logicalOffset, MarginInfo&); // If the child has an after break, then return a new offset that shifts to the top of the next page/column.
 
     LayoutUnit adjustBlockChildForPagination(LayoutUnit logicalTopAfterClear, LayoutUnit estimateWithoutPagination, RenderBox* child, bool atBeforeSideOfBlock);
+    // Computes a deltaOffset value that put a line at the top of the next page if it doesn't fit on the current page.
+    void adjustLinePositionForPagination(RootInlineBox*, LayoutUnit& deltaOffset, RenderFlowThread*);
+    // If the child is unsplittable and can't fit on the current page, return the top of the next page/column.
+    LayoutUnit adjustForUnsplittableChild(RenderBox*, LayoutUnit logicalOffset, bool includeMargins = false);
 
     // Used to store state between styleWillChange and styleDidChange
     static bool s_canPropagateFloatIntoSibling;
 
     RenderBlockFlowRareData& ensureRareData();
 
-    LayoutUnit m_repaintLogicalTop;
-    LayoutUnit m_repaintLogicalBottom;
+    LayoutUnit m_paintInvalidationLogicalTop;
+    LayoutUnit m_paintInvalidationLogicalBottom;
 
-    virtual bool isSelfCollapsingBlock() const OVERRIDE;
+    virtual bool isSelfCollapsingBlock() const override;
+
 protected:
-    OwnPtr<RenderBlockFlowRareData> m_rareData;
+    OwnPtrWillBeMember<RenderBlockFlowRareData> m_rareData;
     OwnPtr<FloatingObjects> m_floatingObjects;
 
     friend class BreakingContext; // FIXME: It uses insertFloatingObject and positionNewFloatOnLine, if we move those out from the private scope/add a helper to LineBreaker, we can remove this friend
@@ -458,15 +477,15 @@ private:
     BidiRun* computeInlineDirectionPositionsForSegment(RootInlineBox*, const LineInfo&, ETextAlign, float& logicalLeft,
         float& availableLogicalWidth, BidiRun* firstRun, BidiRun* trailingSpaceRun, GlyphOverflowAndFallbackFontsMap& textBoxDataMap, VerticalPositionCache&, WordMeasurements&);
     void computeBlockDirectionPositionsForLine(RootInlineBox*, BidiRun*, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&);
-    BidiRun* handleTrailingSpaces(BidiRunList<BidiRun>&, BidiContext*);
     void appendFloatingObjectToLastLine(FloatingObject*);
     // Helper function for layoutInlineChildren()
     RootInlineBox* createLineBoxesFromBidiRuns(unsigned bidiLevel, BidiRunList<BidiRun>&, const InlineIterator& end, LineInfo&, VerticalPositionCache&, BidiRun* trailingSpaceRun, WordMeasurements&);
     void layoutRunsAndFloats(LineLayoutState&);
     const InlineIterator& restartLayoutRunsAndFloatsInRange(LayoutUnit oldLogicalHeight, LayoutUnit newLogicalHeight,  FloatingObject* lastFloatFromPreviousLine, InlineBidiResolver&,  const InlineIterator&);
-    void layoutRunsAndFloatsInRange(LineLayoutState&, InlineBidiResolver&, const InlineIterator& cleanLineStart, const BidiStatus& cleanLineBidiStatus, unsigned consecutiveHyphenatedLines);
+    void layoutRunsAndFloatsInRange(LineLayoutState&, InlineBidiResolver&,
+        const InlineIterator& cleanLineStart, const BidiStatus& cleanLineBidiStatus);
     void linkToEndLineIfNeeded(LineLayoutState&);
-    static void repaintDirtyFloats(Vector<FloatWithRect>& floats);
+    static void markDirtyFloatsForPaintInvalidation(Vector<FloatWithRect>& floats);
     void checkFloatsInCleanLine(RootInlineBox*, Vector<FloatWithRect>&, size_t& floatIndex, bool& encounteredNewFloat, bool& dirtiedByFloat);
     RootInlineBox* determineStartPosition(LineLayoutState&, InlineBidiResolver&);
     void determineEndPosition(LineLayoutState&, RootInlineBox* startBox, InlineIterator& cleanLineStart, BidiStatus& cleanLineBidiStatus);
@@ -477,7 +496,7 @@ private:
     // Positions new floats and also adjust all floats encountered on the line if any of them
     // have to move to the next page/column.
     bool positionNewFloatOnLine(FloatingObject* newFloat, FloatingObject* lastFloatFromPreviousLine, LineInfo&, LineWidth&);
-
+    void positionDialog();
 
 // END METHODS DEFINED IN RenderBlockLineLayout
 
@@ -485,6 +504,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderBlockFlow, isRenderBlockFlow());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderBlockFlow_h

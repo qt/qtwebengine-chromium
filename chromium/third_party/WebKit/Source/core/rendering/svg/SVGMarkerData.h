@@ -24,7 +24,7 @@
 #include "platform/graphics/Path.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 enum SVGMarkerType {
     StartMarker,
@@ -45,11 +45,14 @@ struct MarkerPosition {
     float angle;
 };
 
+class RenderSVGResourceMarker;
+
 class SVGMarkerData {
 public:
-    SVGMarkerData(Vector<MarkerPosition>& positions)
+    SVGMarkerData(Vector<MarkerPosition>& positions, bool autoStartReverse)
         : m_positions(positions)
         , m_elementIndex(0)
+        , m_autoStartReverse(autoStartReverse)
     {
     }
 
@@ -76,6 +79,21 @@ public:
         m_positions.append(MarkerPosition(EndMarker, m_origin, currentAngle(EndMarker)));
     }
 
+    static inline RenderSVGResourceMarker* markerForType(const SVGMarkerType& type, RenderSVGResourceMarker* markerStart, RenderSVGResourceMarker* markerMid, RenderSVGResourceMarker* markerEnd)
+    {
+        switch (type) {
+        case StartMarker:
+            return markerStart;
+        case MidMarker:
+            return markerMid;
+        case EndMarker:
+            return markerEnd;
+        }
+
+        ASSERT_NOT_REACHED();
+        return 0;
+    }
+
 private:
     float currentAngle(SVGMarkerType type) const
     {
@@ -88,6 +106,8 @@ private:
 
         switch (type) {
         case StartMarker:
+            if (m_autoStartReverse)
+                outAngle += 180;
             return narrowPrecisionToFloat(outAngle);
         case MidMarker:
             // WK193015: Prevent bugs due to angles being non-continuous.
@@ -147,6 +167,7 @@ private:
     FloatPoint m_subpathStart;
     FloatPoint m_inslopePoints[2];
     FloatPoint m_outslopePoints[2];
+    bool m_autoStartReverse;
 };
 
 }

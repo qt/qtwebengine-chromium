@@ -29,6 +29,9 @@
 #
 
 {
+    'variables': {
+      'blink_web_output_dir': '<(SHARED_INTERMEDIATE_DIR)/blink/web',
+    },
     'includes': [
         '../bindings/bindings.gypi',
         '../core/core.gypi',
@@ -40,6 +43,11 @@
         '../wtf/wtf.gypi',
         'web.gypi',
     ],
+    'target_defaults': {
+        'variables': {
+            'clang_warning_flags': ['-Wglobal-constructors'],
+        },
+    },
     'targets': [
         {
             'target_name': 'blink_web',
@@ -51,7 +59,7 @@
                 '../core/core.gyp:webcore',
                 '../modules/modules.gyp:modules',
                 '<(DEPTH)/skia/skia.gyp:skia',
-                '<(angle_path)/src/build_angle.gyp:translator',
+                '<(angle_path)/src/angle.gyp:translator',
                 '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
                 '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
                 '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
@@ -101,11 +109,17 @@
                         '<(DEPTH)/url/url.gyp:url_lib',
                         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                     ],
+                    'variables': {
+                      'clang_warning_flags_unset': [
+                        # FIXME: It would be nice to enable this in shared builds too,
+                        # but the test files have global constructors from the GTEST macro
+                        # and we pull in the test files into the blink_web target in the
+                        # shared build.
+                        '-Wglobal-constructors',
+                      ],
+                    },
                     'sources': [
                         # Compile Blink unittest files into blink_web.dll in component build mode
-                        # since there're methods that are tested but not exported.
-                        # WebUnitTests.* exports an API that runs all the unittests inside
-                        # blink_web.dll.
                         '<@(bindings_unittest_files)',
                         '<@(core_unittest_files)',
                         '<@(modules_unittest_files)',
@@ -113,23 +127,12 @@
                         '<@(platform_web_unittest_files)',
                         '<@(web_unittest_files)',
                         'WebTestingSupport.cpp',
-                        'tests/WebUnitTests.cpp',   # Components test runner support.
                     ],
                     'conditions': [
-                        ['OS=="win" or OS=="mac"', {
+                        ['use_openssl==0 and (OS=="win" or OS=="mac")', {
                             'dependencies': [
                                 '<(DEPTH)/third_party/nss/nss.gyp:*',
                             ],
-                        }],
-                        ['clang==1', {
-                            # FIXME: It would be nice to enable this in shared builds too,
-                            # but the test files have global constructors from the GTEST macro
-                            # and we pull in the test files into the blink_web target in the
-                            # shared build.
-                            'cflags!': ['-Wglobal-constructors'],
-                            'xcode_settings': {
-                              'WARNING_CFLAGS!': ['-Wglobal-constructors'],
-                            },
                         }],
                     ],
                     'msvs_settings': {
@@ -201,88 +204,9 @@
                     ],
                 }],
             ],
-            'actions': [
-                {
-                    'action_name': 'PickerCommon',
-                    'process_outputs_as_sources': 1,
-                    'variables': {
-                        'resources': [
-                            'resources/pickerCommon.css',
-                            'resources/pickerCommon.js',
-                        ],
-                    },
-                    'inputs': [
-                        '../build/scripts/make-file-arrays.py',
-                        '<@(resources)',
-                    ],
-                    'outputs': [
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
-                        ],
-                    'action': [
-                        'python',
-                        '../build/scripts/make-file-arrays.py',
-                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.h',
-                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/PickerCommon.cpp',
-                        '<@(resources)',
-                    ],
-                },
-                {
-                    'action_name': 'CalendarPicker',
-                    'process_outputs_as_sources': 1,
-                    'variables': {
-                        'resources': [
-                            'resources/calendarPicker.css',
-                            'resources/calendarPicker.js',
-                            'resources/pickerButton.css',
-                            'resources/suggestionPicker.css',
-                            'resources/suggestionPicker.js',
-                        ],
-                    },
-                    'inputs': [
-                        '../build/scripts/make-file-arrays.py',
-                        '<@(resources)'
-                    ],
-                    'outputs': [
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
-                    ],
-                    'action': [
-                        'python',
-                        '../build/scripts/make-file-arrays.py',
-                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.h',
-                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/CalendarPicker.cpp',
-                        '<@(resources)',
-                    ],
-               },
-                {
-                    'action_name': 'ColorSuggestionPicker',
-                    'process_outputs_as_sources': 1,
-                    'variables': {
-                        'resources': [
-                            'resources/colorSuggestionPicker.css',
-                            'resources/colorSuggestionPicker.js',
-                        ],
-                    },
-                    'inputs': [
-                        '../build/scripts/make-file-arrays.py',
-                        '<@(resources)',
-                    ],
-                    'outputs': [
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
-                        '<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
-                    ],
-                    'action': [
-                        'python',
-                        '../build/scripts/make-file-arrays.py',
-                        '--out-h=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.h',
-                        '--out-cpp=<(SHARED_INTERMEDIATE_DIR)/blink/ColorSuggestionPicker.cpp',
-                        '<@(resources)',
-                    ],
-                },
-            ],
         },
         {
+            # GN version: //third_party/WebKit/Source/web:test_support
             'target_name': 'blink_web_test_support',
             'conditions': [
                 ['component=="shared_library"', {
@@ -291,13 +215,16 @@
                     'type': 'static_library',
                     'dependencies': [
                         '../config.gyp:config',
+                        '../core/core.gyp:webcore_generated',
                         '../core/core.gyp:webcore_testing',
                         '../modules/modules.gyp:modules_testing',
                         '../wtf/wtf.gyp:wtf',
                         '<(DEPTH)/skia/skia.gyp:skia',
+                        '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
                     ],
                     'include_dirs': [
                         '../../',
+                        '<(SHARED_INTERMEDIATE_DIR)/blink',  # gen/blink
                     ],
                     'sources': [
                         'WebTestingSupport.cpp',
@@ -326,14 +253,6 @@
                     }],
                 },
             ],
-        }],
-        ['clang==1', {
-            'target_defaults': {
-                'cflags': ['-Wglobal-constructors'],
-                'xcode_settings': {
-                    'WARNING_CFLAGS': ['-Wglobal-constructors'],
-                },
-            },
         }],
     ], # conditions
 }

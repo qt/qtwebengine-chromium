@@ -25,16 +25,17 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "xmppclient.h"
+#include "webrtc/libjingle/xmpp/xmppclient.h"
+
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/plainsaslhandler.h"
+#include "webrtc/libjingle/xmpp/prexmppauth.h"
+#include "webrtc/libjingle/xmpp/saslplainmechanism.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/sigslot.h"
+#include "webrtc/base/stringutils.h"
 #include "xmpptask.h"
-#include "talk/base/logging.h"
-#include "talk/base/sigslot.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/stringutils.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/saslplainmechanism.h"
-#include "talk/xmpp/prexmppauth.h"
-#include "talk/xmpp/plainsaslhandler.h"
 
 namespace buzz {
 
@@ -64,13 +65,13 @@ public:
   XmppClient* const client_;
 
   // the two main objects
-  talk_base::scoped_ptr<AsyncSocket> socket_;
-  talk_base::scoped_ptr<XmppEngine> engine_;
-  talk_base::scoped_ptr<PreXmppAuth> pre_auth_;
-  talk_base::CryptString pass_;
+  rtc::scoped_ptr<AsyncSocket> socket_;
+  rtc::scoped_ptr<XmppEngine> engine_;
+  rtc::scoped_ptr<PreXmppAuth> pre_auth_;
+  rtc::CryptString pass_;
   std::string auth_mechanism_;
   std::string auth_token_;
-  talk_base::SocketAddress server_;
+  rtc::SocketAddress server_;
   std::string proxy_host_;
   int proxy_port_;
   XmppEngine::Error pre_engine_error_;
@@ -103,7 +104,7 @@ public:
 bool IsTestServer(const std::string& server_name,
                   const std::string& test_server_domain) {
   return (!test_server_domain.empty() &&
-          talk_base::ends_with(server_name.c_str(),
+          rtc::ends_with(server_name.c_str(),
                                test_server_domain.c_str()));
 }
 

@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.net.layouttestresults import LayoutTestResults
 from webkitpy.common.net.buildbot import BuildBot, Builder, Build
@@ -96,6 +96,16 @@ class BuilderTest(unittest.TestCase):
             return build_dictionary
         buildbot._fetch_build_dictionary = mock_fetch_build_dictionary
         self.assertIsNotNone(builder._fetch_build(1))
+
+    def test_results_url(self):
+        builder = BuildBot().builder_with_name('WebKit Mac10.8 (dbg)')
+        self.assertEqual(builder.results_url(),
+                         'https://storage.googleapis.com/chromium-layout-test-archives/WebKit_Mac10_8__dbg_')
+
+    def test_accumulated_results_url(self):
+        builder = BuildBot().builder_with_name('WebKit Mac10.8 (dbg)')
+        self.assertEqual(builder.accumulated_results_url(),
+                         'https://storage.googleapis.com/chromium-layout-test-archives/WebKit_Mac10_8__dbg_/results/layout-test-results')
 
 
 class BuildBotTest(unittest.TestCase):
@@ -179,9 +189,9 @@ class BuildBotTest(unittest.TestCase):
 
         builder = buildbot.builder_with_name("Test Builder")
         self.assertEqual(builder.name(), "Test Builder")
-        self.assertEqual(builder.url(), "http://build.webkit.org/builders/Test%20Builder")
+        self.assertEqual(builder.url(), "http://build.chromium.org/p/chromium.webkit/builders/Test%20Builder")
         self.assertEqual(builder.url_encoded_name(), "Test%20Builder")
-        self.assertEqual(builder.results_url(), "http://build.webkit.org/results/Test%20Builder")
+        self.assertEqual(builder.results_url(), "https://storage.googleapis.com/chromium-layout-test-archives/Test_Builder")
 
         # Override _fetch_build_dictionary function to not touch the network.
         def mock_fetch_build_dictionary(self, build_number):
@@ -197,15 +207,15 @@ class BuildBotTest(unittest.TestCase):
 
         build = builder.build(10)
         self.assertEqual(build.builder(), builder)
-        self.assertEqual(build.url(), "http://build.webkit.org/builders/Test%20Builder/builds/10")
-        self.assertEqual(build.results_url(), "http://build.webkit.org/results/Test%20Builder/r20%20%2810%29")
+        self.assertEqual(build.url(), "http://build.chromium.org/p/chromium.webkit/builders/Test%20Builder/builds/10")
+        self.assertEqual(build.results_url(), "https://storage.googleapis.com/chromium-layout-test-archives/Test_Builder/r20%20%2810%29")
         self.assertEqual(build.revision(), 20)
         self.assertTrue(build.is_green())
 
         build = build.previous_build()
         self.assertEqual(build.builder(), builder)
-        self.assertEqual(build.url(), "http://build.webkit.org/builders/Test%20Builder/builds/9")
-        self.assertEqual(build.results_url(), "http://build.webkit.org/results/Test%20Builder/r18%20%289%29")
+        self.assertEqual(build.url(), "http://build.chromium.org/p/chromium.webkit/builders/Test%20Builder/builds/9")
+        self.assertEqual(build.results_url(), "https://storage.googleapis.com/chromium-layout-test-archives/Test_Builder/r18%20%289%29")
         self.assertEqual(build.revision(), 18)
         self.assertFalse(build.is_green())
 

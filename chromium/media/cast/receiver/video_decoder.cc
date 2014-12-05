@@ -30,7 +30,7 @@ class VideoDecoder::ImplBase
     : public base::RefCountedThreadSafe<VideoDecoder::ImplBase> {
  public:
   ImplBase(const scoped_refptr<CastEnvironment>& cast_environment,
-           transport::VideoCodec codec)
+           Codec codec)
       : cast_environment_(cast_environment),
         codec_(codec),
         cast_initialization_status_(STATUS_VIDEO_UNINITIALIZED),
@@ -40,7 +40,7 @@ class VideoDecoder::ImplBase
     return cast_initialization_status_;
   }
 
-  void DecodeFrame(scoped_ptr<transport::EncodedFrame> encoded_frame,
+  void DecodeFrame(scoped_ptr<EncodedFrame> encoded_frame,
                    const DecodeFrameCallback& callback) {
     DCHECK_EQ(cast_initialization_status_, STATUS_VIDEO_INITIALIZED);
 
@@ -77,7 +77,7 @@ class VideoDecoder::ImplBase
   virtual scoped_refptr<VideoFrame> Decode(uint8* data, int len) = 0;
 
   const scoped_refptr<CastEnvironment> cast_environment_;
-  const transport::VideoCodec codec_;
+  const Codec codec_;
 
   // Subclass' ctor is expected to set this to STATUS_VIDEO_INITIALIZED.
   CastInitializationStatus cast_initialization_status_;
@@ -92,7 +92,7 @@ class VideoDecoder::ImplBase
 class VideoDecoder::Vp8Impl : public VideoDecoder::ImplBase {
  public:
   explicit Vp8Impl(const scoped_refptr<CastEnvironment>& cast_environment)
-      : ImplBase(cast_environment, transport::kVp8) {
+      : ImplBase(cast_environment, CODEC_VIDEO_VP8) {
     if (ImplBase::cast_initialization_status_ != STATUS_VIDEO_UNINITIALIZED)
       return;
 
@@ -114,12 +114,12 @@ class VideoDecoder::Vp8Impl : public VideoDecoder::ImplBase {
   }
 
  private:
-  virtual ~Vp8Impl() {
+  ~Vp8Impl() override {
     if (ImplBase::cast_initialization_status_ == STATUS_VIDEO_INITIALIZED)
       CHECK_EQ(VPX_CODEC_OK, vpx_codec_destroy(&context_));
   }
 
-  virtual scoped_refptr<VideoFrame> Decode(uint8* data, int len) OVERRIDE {
+  scoped_refptr<VideoFrame> Decode(uint8* data, int len) override {
     if (len <= 0 || vpx_codec_decode(&context_,
                                      data,
                                      static_cast<unsigned int>(len),
@@ -150,15 +150,15 @@ class VideoDecoder::Vp8Impl : public VideoDecoder::ImplBase {
     CopyYPlane(image->planes[VPX_PLANE_Y],
                image->stride[VPX_PLANE_Y],
                image->d_h,
-               decoded_frame);
+               decoded_frame.get());
     CopyUPlane(image->planes[VPX_PLANE_U],
                image->stride[VPX_PLANE_U],
                (image->d_h + 1) / 2,
-               decoded_frame);
+               decoded_frame.get());
     CopyVPlane(image->planes[VPX_PLANE_V],
                image->stride[VPX_PLANE_V],
                (image->d_h + 1) / 2,
-               decoded_frame);
+               decoded_frame.get());
     return decoded_frame;
   }
 
@@ -173,7 +173,7 @@ class VideoDecoder::Vp8Impl : public VideoDecoder::ImplBase {
 class VideoDecoder::FakeImpl : public VideoDecoder::ImplBase {
  public:
   explicit FakeImpl(const scoped_refptr<CastEnvironment>& cast_environment)
-      : ImplBase(cast_environment, transport::kFakeSoftwareVideo),
+      : ImplBase(cast_environment, CODEC_VIDEO_FAKE),
         last_decoded_id_(-1) {
     if (ImplBase::cast_initialization_status_ != STATUS_VIDEO_UNINITIALIZED)
       return;
@@ -181,12 +181,17 @@ class VideoDecoder::FakeImpl : public VideoDecoder::ImplBase {
   }
 
  private:
-  virtual ~FakeImpl() {}
+  ~FakeImpl() override {}
 
-  virtual scoped_refptr<VideoFrame> Decode(uint8* data, int len) OVERRIDE {
+  scoped_refptr<VideoFrame> Decode(uint8* data, int len) override {
+    // Make sure this is a JSON string.
+    if (!len || data[0] != '{')
+      return NULL;
     base::JSONReader reader;
     scoped_ptr<base::Value> values(
-        reader.Read(base::StringPiece(reinterpret_cast<char*>(data))));
+        reader.Read(base::StringPiece(reinterpret_cast<char*>(data), len)));
+    if (!values)
+      return NULL;
     base::DictionaryValue* dict = NULL;
     values->GetAsDictionary(&dict);
 
@@ -209,18 +214,18 @@ class VideoDecoder::FakeImpl : public VideoDecoder::ImplBase {
 
 VideoDecoder::VideoDecoder(
     const scoped_refptr<CastEnvironment>& cast_environment,
-    transport::VideoCodec codec)
+    Codec codec)
     : cast_environment_(cast_environment) {
   switch (codec) {
 #ifndef OFFICIAL_BUILD
-    case transport::kFakeSoftwareVideo:
+    case CODEC_VIDEO_FAKE:
       impl_ = new FakeImpl(cast_environment);
       break;
 #endif
-    case transport::kVp8:
+    case CODEC_VIDEO_VP8:
       impl_ = new Vp8Impl(cast_environment);
       break;
-    case transport::kH264:
+    case CODEC_VIDEO_H264:
       // TODO(miu): Need implementation.
       NOTIMPLEMENTED();
       break;
@@ -233,17 +238,18 @@ VideoDecoder::VideoDecoder(
 VideoDecoder::~VideoDecoder() {}
 
 CastInitializationStatus VideoDecoder::InitializationResult() const {
-  if (impl_)
+  if (impl_.get())
     return impl_->InitializationResult();
   return STATUS_UNSUPPORTED_VIDEO_CODEC;
 }
 
 void VideoDecoder::DecodeFrame(
-    scoped_ptr<transport::EncodedFrame> encoded_frame,
+    scoped_ptr<EncodedFrame> encoded_frame,
     const DecodeFrameCallback& callback) {
   DCHECK(encoded_frame.get());
   DCHECK(!callback.is_null());
-  if (!impl_ || impl_->InitializationResult() != STATUS_VIDEO_INITIALIZED) {
+  if (!impl_.get() ||
+      impl_->InitializationResult() != STATUS_VIDEO_INITIALIZED) {
     callback.Run(make_scoped_refptr<VideoFrame>(NULL), false);
     return;
   }

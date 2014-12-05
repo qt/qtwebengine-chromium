@@ -25,7 +25,7 @@
 
 #include "platform/graphics/filters/LightSource.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT PointLightSource : public LightSource {
 public:
@@ -34,21 +34,19 @@ public:
         return adoptRef(new PointLightSource(position));
     }
 
-    virtual PassRefPtr<LightSource> create(const FloatPoint3D& scale, const FloatSize& offset) const OVERRIDE
+    virtual PassRefPtr<LightSource> create(const FloatPoint3D& scale, const FloatSize& offset) const override
     {
         FloatPoint3D position(m_position.x() * scale.x() - offset.width(), m_position.y() * scale.y() - offset.height(), m_position.z() * scale.z());
         return adoptRef(new PointLightSource(position));
     }
 
     const FloatPoint3D& position() const { return m_position; }
-    virtual bool setX(float) OVERRIDE;
-    virtual bool setY(float) OVERRIDE;
-    virtual bool setZ(float) OVERRIDE;
+    virtual bool setPosition(const FloatPoint3D&) override;
 
-    virtual void initPaintingData(PaintingData&) const OVERRIDE;
-    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const OVERRIDE;
+    virtual void initPaintingData(PaintingData&) const override;
+    virtual void updatePaintingData(PaintingData&, int x, int y, float z) const override;
 
-    virtual TextStream& externalRepresentation(TextStream&) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&) const override;
 
 private:
     PointLightSource(const FloatPoint3D& position)
@@ -60,6 +58,6 @@ private:
     FloatPoint3D m_position;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PointLightSource_h

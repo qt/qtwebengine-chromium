@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # Copyright (C) 2013 Adobe Systems Incorporated. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -28,7 +26,7 @@
 # SUCH DAMAGE.
 
 import os
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.w3c.test_parser import TestParser
@@ -133,8 +131,8 @@ class TestParserTest(unittest.TestCase):
         self.assertTrue('test' in test_info.keys(), 'did not find a test file')
         self.assertTrue('reference' in test_info.keys(), 'did not find a reference file')
         self.assertTrue(test_info['reference'].startswith(test_path), 'reference path is not correct')
-        self.assertTrue('refsupport' in test_info.keys(), 'there should be refsupport files for this test')
-        self.assertEquals(len(test_info['refsupport']), 3, 'there should be 3 support files in this reference')
+        self.assertTrue('reference_support_info' in test_info.keys(), 'there should be reference_support_info for this test')
+        self.assertEquals(len(test_info['reference_support_info']['files']), 3, 'there should be 3 support files in this reference')
         self.assertFalse('jstest' in test_info.keys(), 'test should not have been analyzed as a jstest')
 
     def test_analyze_jstest(self):

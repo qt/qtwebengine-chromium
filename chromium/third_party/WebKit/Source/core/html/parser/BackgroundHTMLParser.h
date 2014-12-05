@@ -38,10 +38,9 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLDocumentParser;
-class SharedBuffer;
 class XSSAuditor;
 
 class BackgroundHTMLParser {
@@ -55,7 +54,7 @@ public:
         OwnPtr<TextResourceDecoder> decoder;
     };
 
-    static void start(PassRefPtr<WeakReference<BackgroundHTMLParser> >, PassOwnPtr<Configuration>);
+    static void start(PassRefPtr<WeakReference<BackgroundHTMLParser>>, PassOwnPtr<Configuration>);
 
     struct Checkpoint {
         WeakPtr<HTMLDocumentParser> parser;
@@ -69,7 +68,7 @@ public:
 
     void appendRawBytesFromParserThread(const char* data, int dataLength);
 
-    void appendRawBytesFromMainThread(PassOwnPtr<Vector<char> >);
+    void appendRawBytesFromMainThread(PassOwnPtr<Vector<char>>);
     void setDecoder(PassOwnPtr<TextResourceDecoder>);
     void flush();
     void resumeFrom(PassOwnPtr<Checkpoint>);
@@ -80,7 +79,7 @@ public:
     void forcePlaintextForTextDocument();
 
 private:
-    BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser> >, PassOwnPtr<Configuration>);
+    BackgroundHTMLParser(PassRefPtr<WeakReference<BackgroundHTMLParser>>, PassOwnPtr<Configuration>);
     ~BackgroundHTMLParser();
 
     void appendDecodedBytes(const String&);

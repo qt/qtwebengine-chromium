@@ -19,7 +19,7 @@ namespace content {
 IndexedDBCursor::IndexedDBCursor(
     scoped_ptr<IndexedDBBackingStore::Cursor> cursor,
     indexed_db::CursorType cursor_type,
-    IndexedDBDatabase::TaskType task_type,
+    blink::WebIDBTaskType task_type,
     IndexedDBTransaction* transaction)
     : task_type_(task_type),
       cursor_type_(cursor_type),
@@ -170,7 +170,7 @@ void IndexedDBCursor::CursorPrefetchIterationOperation(
   }
 
   callbacks->OnSuccessWithPrefetch(
-      found_keys, found_primary_keys, found_values);
+      found_keys, found_primary_keys, &found_values);
 }
 
 leveldb::Status IndexedDBCursor::PrefetchReset(int used_prefetches,

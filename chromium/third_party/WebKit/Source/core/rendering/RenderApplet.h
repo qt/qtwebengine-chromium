@@ -24,19 +24,19 @@
 
 #include "core/rendering/RenderEmbeddedObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLAppletElement;
 
-class RenderApplet FINAL : public RenderEmbeddedObject {
+class RenderApplet final : public RenderEmbeddedObject {
 public:
     explicit RenderApplet(HTMLAppletElement*);
     virtual ~RenderApplet();
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderApplet"; }
+    virtual const char* renderName() const override { return "RenderApplet"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderApplet_h

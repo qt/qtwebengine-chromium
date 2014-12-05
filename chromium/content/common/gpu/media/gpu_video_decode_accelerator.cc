@@ -76,20 +76,18 @@ class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
   MessageFilter(GpuVideoDecodeAccelerator* owner, int32 host_route_id)
       : owner_(owner), host_route_id_(host_route_id) {}
 
-  virtual void OnChannelError() OVERRIDE { sender_ = NULL; }
+  void OnChannelError() override { sender_ = NULL; }
 
-  virtual void OnChannelClosing() OVERRIDE { sender_ = NULL; }
+  void OnChannelClosing() override { sender_ = NULL; }
 
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE {
-    sender_ = sender;
-  }
+  void OnFilterAdded(IPC::Sender* sender) override { sender_ = sender; }
 
-  virtual void OnFilterRemoved() OVERRIDE {
+  void OnFilterRemoved() override {
     // This will delete |owner_| and |this|.
     owner_->OnFilterRemoved();
   }
 
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
+  bool OnMessageReceived(const IPC::Message& msg) override {
     if (msg.routing_id() != host_route_id_)
       return false;
 
@@ -111,7 +109,7 @@ class GpuVideoDecodeAccelerator::MessageFilter : public IPC::MessageFilter {
   }
 
  protected:
-  virtual ~MessageFilter() {}
+  ~MessageFilter() override {}
 
  private:
   GpuVideoDecodeAccelerator* owner_;
@@ -212,7 +210,8 @@ void GpuVideoDecodeAccelerator::PictureReady(
   if (!Send(new AcceleratedVideoDecoderHostMsg_PictureReady(
           host_route_id_,
           picture.picture_buffer_id(),
-          picture.bitstream_buffer_id()))) {
+          picture.bitstream_buffer_id(),
+          picture.visible_rect()))) {
     DLOG(ERROR) << "Send(AcceleratedVideoDecoderHostMsg_PictureReady) failed";
   }
 }
@@ -258,7 +257,8 @@ void GpuVideoDecodeAccelerator::Initialize(
 #elif defined(OS_MACOSX)
   video_decode_accelerator_.reset(new VTVideoDecodeAccelerator(
       static_cast<CGLContextObj>(
-          stub_->decoder()->GetGLContext()->GetHandle())));
+          stub_->decoder()->GetGLContext()->GetHandle()),
+      make_context_current_));
 #elif defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL) && defined(USE_X11)
   scoped_ptr<V4L2Device> device = V4L2Device::Create(V4L2Device::kDecoder);
   if (!device.get()) {
@@ -370,11 +370,12 @@ void GpuVideoDecodeAccelerator::OnAssignPictureBuffers(
       NotifyError(media::VideoDecodeAccelerator::INVALID_ARGUMENT);
       return;
     }
-    if (texture_target_ == GL_TEXTURE_EXTERNAL_OES) {
-      // GL_TEXTURE_EXTERNAL_OES textures have their dimensions defined by the
-      // underlying EGLImage.  Use |texture_dimensions_| for this size.
+    if (texture_target_ == GL_TEXTURE_EXTERNAL_OES ||
+        texture_target_ == GL_TEXTURE_RECTANGLE) {
+      // These textures have their dimensions defined by the underlying storage.
+      // Use |texture_dimensions_| for this size.
       texture_manager->SetLevelInfo(texture_ref,
-                                    GL_TEXTURE_EXTERNAL_OES,
+                                    texture_target_,
                                     0,
                                     0,
                                     texture_dimensions_.width(),
@@ -494,7 +495,7 @@ void GpuVideoDecodeAccelerator::SetTextureCleared(
   gpu::gles2::TextureManager* texture_manager =
       stub_->decoder()->GetContextGroup()->texture_manager();
   DCHECK(!texture_ref->texture()->IsLevelCleared(target, 0));
-  texture_manager->SetLevelCleared(texture_ref, target, 0, true);
+  texture_manager->SetLevelCleared(texture_ref.get(), target, 0, true);
   uncleared_textures_.erase(it);
 }
 

@@ -6,7 +6,7 @@
 
 #include <errno.h>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted_memory.h"
@@ -85,8 +85,15 @@ bool DataPack::LoadFromPath(const base::FilePath& path) {
 }
 
 bool DataPack::LoadFromFile(base::File file) {
+  return LoadFromFileRegion(file.Pass(),
+                            base::MemoryMappedFile::Region::kWholeFile);
+}
+
+bool DataPack::LoadFromFileRegion(
+    base::File file,
+    const base::MemoryMappedFile::Region& region) {
   mmap_.reset(new base::MemoryMappedFile);
-  if (!mmap_->Initialize(file.Pass())) {
+  if (!mmap_->Initialize(file.Pass(), region)) {
     DLOG(ERROR) << "Failed to mmap datapack";
     UMA_HISTOGRAM_ENUMERATION("DataPack.Load", INIT_FAILED_FROM_FILE,
                               LOAD_ERRORS_COUNT);
@@ -255,7 +262,7 @@ bool DataPack::WritePack(const base::FilePath& path,
     return false;
   }
 
-  uint8 write_buffer = textEncodingType;
+  uint8 write_buffer = static_cast<uint8>(textEncodingType);
   if (fwrite(&write_buffer, sizeof(uint8), 1, file) != 1) {
     LOG(ERROR) << "Failed to write file text resources encoding";
     base::CloseFile(file);

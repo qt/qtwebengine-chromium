@@ -31,7 +31,7 @@
 //
 // Example usage:
 //
-// class TestInterface : public talk_base::RefCountInterface {
+// class TestInterface : public rtc::RefCountInterface {
 //  public:
 //   std::string FooA() = 0;
 //   std::string FooB(bool arg1) const = 0;
@@ -55,7 +55,8 @@
 #ifndef TALK_APP_WEBRTC_PROXY_H_
 #define TALK_APP_WEBRTC_PROXY_H_
 
-#include "talk/base/thread.h"
+#include "webrtc/base/event.h"
+#include "webrtc/base/thread.h"
 
 namespace webrtc {
 
@@ -92,20 +93,48 @@ class ReturnType<void> {
   void value() {}
 };
 
+namespace internal {
+
+class SynchronousMethodCall
+    : public rtc::MessageData,
+      public rtc::MessageHandler {
+ public:
+  SynchronousMethodCall(rtc::MessageHandler* proxy)
+      : e_(), proxy_(proxy) {}
+  ~SynchronousMethodCall() {}
+
+  void Invoke(rtc::Thread* t) {
+    if (t->IsCurrent()) {
+      proxy_->OnMessage(NULL);
+    } else {
+      e_.reset(new rtc::Event(false, false));
+      t->Post(this, 0);
+      e_->Wait(rtc::kForever);
+    }
+  }
+
+ private:
+  void OnMessage(rtc::Message*) { proxy_->OnMessage(NULL); e_->Set(); }
+  rtc::scoped_ptr<rtc::Event> e_;
+  rtc::MessageHandler* proxy_;
+};
+
+}  // internal
+
 template <typename C, typename R>
-class MethodCall0 : public talk_base::Message,
-                    public talk_base::MessageHandler {
+class MethodCall0 : public rtc::Message,
+                    public rtc::MessageHandler {
  public:
   typedef R (C::*Method)();
   MethodCall0(C* c, Method m) : c_(c), m_(m) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) {  r_.Invoke(c_, m_);}
+  void OnMessage(rtc::Message*) {  r_.Invoke(c_, m_); }
 
   C* c_;
   Method m_;
@@ -113,19 +142,19 @@ class MethodCall0 : public talk_base::Message,
 };
 
 template <typename C, typename R>
-class ConstMethodCall0 : public talk_base::Message,
-                         public talk_base::MessageHandler {
+class ConstMethodCall0 : public rtc::Message,
+                         public rtc::MessageHandler {
  public:
   typedef R (C::*Method)() const;
   ConstMethodCall0(C* c, Method m) : c_(c), m_(m) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) { r_.Invoke(c_, m_); }
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_); }
 
   C* c_;
   Method m_;
@@ -133,19 +162,19 @@ class ConstMethodCall0 : public talk_base::Message,
 };
 
 template <typename C, typename R,  typename T1>
-class MethodCall1 : public talk_base::Message,
-                    public talk_base::MessageHandler {
+class MethodCall1 : public rtc::Message,
+                    public rtc::MessageHandler {
  public:
   typedef R (C::*Method)(T1 a1);
   MethodCall1(C* c, Method m, T1 a1) : c_(c), m_(m), a1_(a1) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) { r_.Invoke(c_, m_, a1_); }
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_); }
 
   C* c_;
   Method m_;
@@ -154,19 +183,19 @@ class MethodCall1 : public talk_base::Message,
 };
 
 template <typename C, typename R,  typename T1>
-class ConstMethodCall1 : public talk_base::Message,
-                         public talk_base::MessageHandler {
+class ConstMethodCall1 : public rtc::Message,
+                         public rtc::MessageHandler {
  public:
   typedef R (C::*Method)(T1 a1) const;
   ConstMethodCall1(C* c, Method m, T1 a1) : c_(c), m_(m), a1_(a1) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) { r_.Invoke(c_, m_, a1_); }
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_); }
 
   C* c_;
   Method m_;
@@ -175,19 +204,19 @@ class ConstMethodCall1 : public talk_base::Message,
 };
 
 template <typename C, typename R, typename T1, typename T2>
-class MethodCall2 : public talk_base::Message,
-                    public talk_base::MessageHandler {
+class MethodCall2 : public rtc::Message,
+                    public rtc::MessageHandler {
  public:
   typedef R (C::*Method)(T1 a1, T2 a2);
   MethodCall2(C* c, Method m, T1 a1, T2 a2) : c_(c), m_(m), a1_(a1), a2_(a2) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) { r_.Invoke(c_, m_, a1_, a2_); }
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_, a2_); }
 
   C* c_;
   Method m_;
@@ -197,20 +226,20 @@ class MethodCall2 : public talk_base::Message,
 };
 
 template <typename C, typename R, typename T1, typename T2, typename T3>
-class MethodCall3 : public talk_base::Message,
-                    public talk_base::MessageHandler {
+class MethodCall3 : public rtc::Message,
+                    public rtc::MessageHandler {
  public:
   typedef R (C::*Method)(T1 a1, T2 a2, T3 a3);
   MethodCall3(C* c, Method m, T1 a1, T2 a2, T3 a3)
       : c_(c), m_(m), a1_(a1), a2_(a2), a3_(a3) {}
 
-  R Marshal(talk_base::Thread* t) {
-    t->Send(this, 0);
+  R Marshal(rtc::Thread* t) {
+    internal::SynchronousMethodCall(this).Invoke(t);
     return r_.value();
   }
 
  private:
-  void OnMessage(talk_base::Message*) { r_.Invoke(c_, m_, a1_, a2_, a3_); }
+  void OnMessage(rtc::Message*) { r_.Invoke(c_, m_, a1_, a2_, a3_); }
 
   C* c_;
   Method m_;
@@ -224,7 +253,7 @@ class MethodCall3 : public talk_base::Message,
   class c##Proxy : public c##Interface {\
    protected:\
     typedef c##Interface C;\
-    c##Proxy(talk_base::Thread* thread, C* c)\
+    c##Proxy(rtc::Thread* thread, C* c)\
       : owner_thread_(thread), \
         c_(c)  {}\
     ~c##Proxy() {\
@@ -232,9 +261,9 @@ class MethodCall3 : public talk_base::Message,
       call.Marshal(owner_thread_);\
     }\
    public:\
-    static talk_base::scoped_refptr<C> Create(talk_base::Thread* thread, \
+    static rtc::scoped_refptr<C> Create(rtc::Thread* thread, \
                                               C* c) {\
-      return new talk_base::RefCountedObject<c##Proxy>(thread, c);\
+      return new rtc::RefCountedObject<c##Proxy>(thread, c);\
     }\
 
 #define PROXY_METHOD0(r, method)\
@@ -278,8 +307,8 @@ class MethodCall3 : public talk_base::Message,
     void Release_s() {\
       c_ = NULL;\
     }\
-    mutable talk_base::Thread* owner_thread_;\
-    talk_base::scoped_refptr<C> c_;\
+    mutable rtc::Thread* owner_thread_;\
+    rtc::scoped_refptr<C> c_;\
   };\
 
 }  // namespace webrtc

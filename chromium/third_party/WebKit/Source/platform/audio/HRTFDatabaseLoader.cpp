@@ -36,29 +36,29 @@
 #include "public/platform/Platform.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
-// Singleton
-HRTFDatabaseLoader::LoaderMap* HRTFDatabaseLoader::s_loaderMap = 0;
+typedef HeapHashMap<double, WeakMember<HRTFDatabaseLoader> > LoaderMap;
 
-PassRefPtr<HRTFDatabaseLoader> HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(float sampleRate)
+static LoaderMap& loaderMap()
+{
+    DEFINE_STATIC_LOCAL(Persistent<LoaderMap>, map, (new LoaderMap));
+    return *map;
+}
+
+HRTFDatabaseLoader* HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(float sampleRate)
 {
     ASSERT(isMainThread());
 
-    if (!s_loaderMap)
-        s_loaderMap = adoptPtr(new LoaderMap()).leakPtr();
-
-    RefPtr<HRTFDatabaseLoader> loader = s_loaderMap->get(sampleRate);
+    HRTFDatabaseLoader* loader = loaderMap().get(sampleRate);
     if (loader) {
         ASSERT(sampleRate == loader->databaseSampleRate());
         return loader;
     }
 
-    loader = adoptRef(new HRTFDatabaseLoader(sampleRate));
-    s_loaderMap->add(sampleRate, loader.get());
-
+    loader = new HRTFDatabaseLoader(sampleRate);
+    loaderMap().add(sampleRate, loader);
     loader->loadAsynchronously();
-
     return loader;
 }
 
@@ -72,17 +72,15 @@ HRTFDatabaseLoader::~HRTFDatabaseLoader()
 {
     ASSERT(isMainThread());
 
+    MutexLocker locker(m_lock);
     waitForLoaderThreadCompletion();
     m_hrtfDatabase.clear();
-
-    // Remove ourself from the map.
-    if (s_loaderMap)
-        s_loaderMap->remove(m_databaseSampleRate);
 }
 
 void HRTFDatabaseLoader::load()
 {
     ASSERT(!isMainThread());
+    MutexLocker locker(m_lock);
     if (!m_hrtfDatabase) {
         // Load the default HRTF database.
         m_hrtfDatabase = HRTFDatabase::create(m_databaseSampleRate);
@@ -93,26 +91,25 @@ void HRTFDatabaseLoader::loadAsynchronously()
 {
     ASSERT(isMainThread());
 
-    MutexLocker locker(m_threadLock);
-
+    MutexLocker locker(m_lock);
     if (!m_hrtfDatabase && !m_databaseLoaderThread) {
         // Start the asynchronous database loading process.
-        m_databaseLoaderThread = adoptPtr(blink::Platform::current()->createThread("HRTF database loader"));
+        m_databaseLoaderThread = adoptPtr(Platform::current()->createThread("HRTF database loader"));
         m_databaseLoaderThread->postTask(new Task(WTF::bind(&HRTFDatabaseLoader::load, this)));
     }
 }
 
-bool HRTFDatabaseLoader::isLoaded() const
+bool HRTFDatabaseLoader::isLoaded()
 {
+    MutexLocker locker(m_lock);
     return m_hrtfDatabase;
 }
 
 void HRTFDatabaseLoader::waitForLoaderThreadCompletion()
 {
-    MutexLocker locker(m_threadLock);
     m_databaseLoaderThread.clear();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

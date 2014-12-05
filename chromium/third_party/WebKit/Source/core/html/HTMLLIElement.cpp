@@ -29,14 +29,13 @@
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/rendering/RenderListItem.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLLIElement::HTMLLIElement(Document& document)
     : HTMLElement(liTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLLIElement)

@@ -32,29 +32,30 @@ class ServiceWorkerUnregisterJob : public ServiceWorkerRegisterJobBase {
 
   ServiceWorkerUnregisterJob(base::WeakPtr<ServiceWorkerContextCore> context,
                              const GURL& pattern);
-  virtual ~ServiceWorkerUnregisterJob();
+  ~ServiceWorkerUnregisterJob() override;
 
   // Registers a callback to be called when the job completes (whether
   // successfully or not). Multiple callbacks may be registered.
   void AddCallback(const UnregistrationCallback& callback);
 
   // ServiceWorkerRegisterJobBase implementation:
-  virtual void Start() OVERRIDE;
-  virtual void Abort() OVERRIDE;
-  virtual bool Equals(ServiceWorkerRegisterJobBase* job) OVERRIDE;
-  virtual RegistrationJobType GetType() OVERRIDE;
+  void Start() override;
+  void Abort() override;
+  bool Equals(ServiceWorkerRegisterJobBase* job) override;
+  RegistrationJobType GetType() override;
 
  private:
-  void DeleteExistingRegistration(
+  void OnRegistrationFound(
       ServiceWorkerStatusCode status,
       const scoped_refptr<ServiceWorkerRegistration>& registration);
   void Complete(ServiceWorkerStatusCode status);
   void CompleteInternal(ServiceWorkerStatusCode status);
+  void ResolvePromise(ServiceWorkerStatusCode status);
 
-  // The ServiceWorkerStorage object should always outlive this.
   base::WeakPtr<ServiceWorkerContextCore> context_;
   const GURL pattern_;
   std::vector<UnregistrationCallback> callbacks_;
+  bool is_promise_resolved_;
   base::WeakPtrFactory<ServiceWorkerUnregisterJob> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ServiceWorkerUnregisterJob);

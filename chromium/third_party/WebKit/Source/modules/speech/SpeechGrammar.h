@@ -26,16 +26,17 @@
 #ifndef SpeechGrammar_h
 #define SpeechGrammar_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
-class SpeechGrammar FINAL : public GarbageCollectedFinalized<SpeechGrammar>, public ScriptWrappable {
+class SpeechGrammar final : public GarbageCollectedFinalized<SpeechGrammar>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static SpeechGrammar* create(); // FIXME: The spec is not clear on what the constructor should look like.
     static SpeechGrammar* create(const KURL& src, double weight);
@@ -57,6 +58,6 @@ private:
     double m_weight;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechGrammar_h

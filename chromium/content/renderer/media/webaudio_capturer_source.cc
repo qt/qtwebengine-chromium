@@ -48,7 +48,7 @@ void WebAudioCapturerSource::setFormat(
   // as buffer size since that is the native buffer size of WebRtc packet
   // running on.
   params_.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                channel_layout, number_of_channels, 0, sample_rate, 16,
+                channel_layout, number_of_channels, sample_rate, 16,
                 sample_rate / 100);
   audio_format_changed_ = true;
 
@@ -127,7 +127,7 @@ void WebAudioCapturerSource::consumeAudio(
                                 params_.bits_per_sample() / 8,
                                 audio_data_.get());
     track_->Capture(audio_data_.get(), delay, volume, key_pressed,
-                    need_audio_processing);
+                    need_audio_processing, false);
   }
 }
 

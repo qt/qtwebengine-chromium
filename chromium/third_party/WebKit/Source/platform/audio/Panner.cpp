@@ -34,21 +34,20 @@
 
 #include "platform/audio/EqualPowerPanner.h"
 #include "platform/audio/HRTFPanner.h"
-#include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-PassOwnPtr<Panner> Panner::create(PanningModel model, float sampleRate, HRTFDatabaseLoader* databaseLoader)
+Panner* Panner::create(PanningModel model, float sampleRate, HRTFDatabaseLoader* databaseLoader)
 {
-    OwnPtr<Panner> panner;
+    Panner* panner;
 
     switch (model) {
     case PanningModelEqualPower:
-        panner = adoptPtr(new EqualPowerPanner(sampleRate));
+        panner = new EqualPowerPanner(sampleRate);
         break;
 
     case PanningModelHRTF:
-        panner = adoptPtr(new HRTFPanner(sampleRate, databaseLoader));
+        panner = new HRTFPanner(sampleRate, databaseLoader);
         break;
 
     default:
@@ -56,9 +55,9 @@ PassOwnPtr<Panner> Panner::create(PanningModel model, float sampleRate, HRTFData
         return nullptr;
     }
 
-    return panner.release();
+    return panner;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

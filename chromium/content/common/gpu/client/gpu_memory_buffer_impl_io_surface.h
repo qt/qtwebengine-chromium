@@ -15,23 +15,47 @@ namespace content {
 // Implementation of GPU memory buffer based on IO surfaces.
 class GpuMemoryBufferImplIOSurface : public GpuMemoryBufferImpl {
  public:
-  GpuMemoryBufferImplIOSurface(const gfx::Size& size, unsigned internalformat);
-  virtual ~GpuMemoryBufferImplIOSurface();
+  static void Create(gfx::GpuMemoryBufferId id,
+                     const gfx::Size& size,
+                     Format format,
+                     int client_id,
+                     const CreationCallback& callback);
 
-  static bool IsFormatSupported(unsigned internalformat);
-  static bool IsUsageSupported(unsigned usage);
-  static bool IsConfigurationSupported(unsigned internalformat, unsigned usage);
-  static uint32 PixelFormat(unsigned internalformat);
+  static void AllocateForChildProcess(gfx::GpuMemoryBufferId id,
+                                      const gfx::Size& size,
+                                      Format format,
+                                      int child_client_id,
+                                      const AllocationCallback& callback);
 
-  bool InitializeFromHandle(gfx::GpuMemoryBufferHandle handle);
+  static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
+      const gfx::GpuMemoryBufferHandle& handle,
+      const gfx::Size& size,
+      Format format,
+      const DestructionCallback& callback);
+
+  static void DeletedByChildProcess(gfx::GpuMemoryBufferId id,
+                                    int child_client_id,
+                                    uint32_t sync_point);
+
+  static bool IsFormatSupported(Format format);
+  static bool IsUsageSupported(Usage usage);
+  static bool IsConfigurationSupported(Format format, Usage usage);
+  static uint32 PixelFormat(Format format);
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual void* Map() OVERRIDE;
-  virtual void Unmap() OVERRIDE;
-  virtual uint32 GetStride() const OVERRIDE;
-  virtual gfx::GpuMemoryBufferHandle GetHandle() const OVERRIDE;
+  void* Map() override;
+  void Unmap() override;
+  uint32 GetStride() const override;
+  gfx::GpuMemoryBufferHandle GetHandle() const override;
 
  private:
+  GpuMemoryBufferImplIOSurface(gfx::GpuMemoryBufferId id,
+                               const gfx::Size& size,
+                               Format format,
+                               const DestructionCallback& callback,
+                               IOSurfaceRef io_surface);
+  ~GpuMemoryBufferImplIOSurface() override;
+
   base::ScopedCFTypeRef<IOSurfaceRef> io_surface_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryBufferImplIOSurface);

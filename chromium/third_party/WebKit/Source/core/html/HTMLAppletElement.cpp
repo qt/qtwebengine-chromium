@@ -25,6 +25,7 @@
 #include "core/html/HTMLAppletElement.h"
 
 #include "core/HTMLNames.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLParamElement.h"
 #include "core/loader/FrameLoader.h"
@@ -32,20 +33,20 @@
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
+#include "core/plugins/PluginPlaceholder.h"
 #include "core/rendering/RenderApplet.h"
+#include "core/rendering/RenderBlockFlow.h"
 #include "platform/Widget.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 HTMLAppletElement::HTMLAppletElement(Document& document, bool createdByParser)
     : HTMLPlugInElement(appletTag, document, createdByParser, ShouldNotPreferPlugInsForImages)
 {
-    ScriptWrappable::init(this);
-
     m_serviceType = "application/x-java-applet";
 }
 
@@ -94,24 +95,26 @@ RenderObject* HTMLAppletElement::createRenderer(RenderStyle* style)
     if (!canEmbedJava() || hasAuthorShadowRoot())
         return RenderObject::createObject(this, style);
 
+    if (usePlaceholderContent())
+        return new RenderBlockFlow(this);
+
     return new RenderApplet(this);
 }
 
-RenderWidget* HTMLAppletElement::renderWidgetForJSBindings() const
+RenderPart* HTMLAppletElement::renderPartForJSBindings() const
 {
     if (!canEmbedJava())
-        return 0;
-    return HTMLPlugInElement::renderWidgetForJSBindings();
+        return nullptr;
+    return HTMLPlugInElement::renderPartForJSBindings();
 }
 
-RenderWidget* HTMLAppletElement::existingRenderWidget() const
+RenderPart* HTMLAppletElement::existingRenderPart() const
 {
     return renderPart();
 }
 
 void HTMLAppletElement::updateWidgetInternal()
 {
-    ASSERT(!m_isDelayingLoadEvent);
     setNeedsWidgetUpdate(false);
     // FIXME: This should ASSERT isFinishedParsingChildren() instead.
     if (!isFinishedParsingChildren())
@@ -180,17 +183,25 @@ void HTMLAppletElement::updateWidgetInternal()
         paramValues.append(param->value());
     }
 
-    RefPtr<Widget> widget;
-    if (frame->loader().allowPlugins(AboutToInstantiatePlugin))
-        widget = frame->loader().client()->createJavaAppletWidget(this, baseURL, paramNames, paramValues);
+    OwnPtrWillBeRawPtr<PluginPlaceholder> placeholder = nullptr;
+    RefPtrWillBeRawPtr<Widget> widget = nullptr;
+    if (frame->loader().allowPlugins(AboutToInstantiatePlugin)) {
+        placeholder = frame->loader().client()->createPluginPlaceholder(document(), KURL(), paramNames, paramValues, m_serviceType, false);
+        if (!placeholder)
+            widget = frame->loader().client()->createJavaAppletWidget(this, baseURL, paramNames, paramValues);
+    }
 
-    if (!widget) {
+    if (!placeholder && !widget) {
         if (!renderer->showsUnavailablePluginIndicator())
             renderer->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginMissing);
-        return;
+        setPlaceholder(nullptr);
+    } else if (placeholder) {
+        setPlaceholder(placeholder.release());
+    } else if (widget) {
+        document().setContainsPlugins();
+        setWidget(widget);
+        setPlaceholder(nullptr);
     }
-    document().setContainsPlugins();
-    setWidget(widget);
 }
 
 bool HTMLAppletElement::canEmbedJava() const
@@ -210,15 +221,13 @@ bool HTMLAppletElement::canEmbedJava() const
 
 bool HTMLAppletElement::canEmbedURL(const KURL& url) const
 {
-    DEFINE_STATIC_LOCAL(String, appletMimeType, ("application/x-java-applet"));
-
     if (!document().securityOrigin()->canDisplay(url)) {
         FrameLoader::reportLocalLoadFailed(document().frame(), url.string());
         return false;
     }
 
     if (!document().contentSecurityPolicy()->allowObjectFromSource(url)
-        || !document().contentSecurityPolicy()->allowPluginType(appletMimeType, appletMimeType, url)) {
+        || !document().contentSecurityPolicy()->allowPluginType(m_serviceType, m_serviceType, url)) {
         renderEmbeddedObject()->setPluginUnavailabilityReason(RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy);
         return false;
     }

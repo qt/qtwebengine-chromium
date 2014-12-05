@@ -33,8 +33,10 @@
 
 #include "../platform/WebCanvas.h"
 #include "../platform/WebCommon.h"
+#include "../platform/WebPoint.h"
 #include "../platform/WebRect.h"
 #include "../platform/WebSize.h"
+#include "WebBeginFrameArgs.h"
 #include "WebCompositionUnderline.h"
 #include "WebTextDirection.h"
 #include "WebTextInputInfo.h"
@@ -45,7 +47,9 @@ class WebCompositeAndReadbackAsyncCallback;
 class WebInputEvent;
 class WebLayerTreeView;
 class WebMouseEvent;
+class WebPagePopup;
 class WebString;
+class WebWidgetClient;
 struct WebPoint;
 struct WebRenderingStats;
 template <typename T> class WebVector;
@@ -88,7 +92,17 @@ public:
 
     // Called to update imperative animation state. This should be called before
     // paint, although the client can rate-limit these calls.
-    virtual void animate(double monotonicFrameBeginTime) { }
+    // FIXME: Remove this function once Chrome side patch lands.
+    void animate(double monotonicFrameBeginTime)
+    {
+        beginFrame(WebBeginFrameArgs(monotonicFrameBeginTime));
+    }
+    virtual void beginFrame(const WebBeginFrameArgs& frameTime) { }
+
+    // Called to notify that a previously begun frame was finished and
+    // committed to the compositor. This is used to schedule lower priority
+    // work after tasks such as input processing and painting.
+    virtual void didCommitFrameToCompositor() { }
 
     // Called to layout the WebWidget. This MUST be called before Paint,
     // and it may result in calls to WebWidgetClient::didInvalidateRect.
@@ -132,11 +146,20 @@ public:
     // Check whether the given point hits any registered touch event handlers.
     virtual bool hasTouchEventHandlersAt(const WebPoint&) { return true; }
 
-    // Applies a scroll delta to the root layer, which is bundled with a page
-    // scale factor that may apply a CSS transform on the whole document (used
-    // for mobile-device pinch zooming). This is triggered by events sent to the
-    // compositor thread.
-    virtual void applyScrollAndScale(const WebSize& scrollDelta, float scaleFactor) { }
+    // Applies viewport related properties during a commit from the compositor
+    // thread.
+    virtual void applyViewportDeltas(
+        const WebSize& scrollDelta,
+        float scaleFactor,
+        float topControlsDelta) { }
+
+    // Applies viewport related properties during a commit from the compositor
+    // thread.
+    virtual void applyViewportDeltas(
+        const WebSize& pinchViewportDelta,
+        const WebSize& mainFrameDelta,
+        float scaleFactor,
+        float topControlsDelta) { }
 
     // Called to inform the WebWidget that mouse capture was lost.
     virtual void mouseCaptureLost() { }
@@ -242,6 +265,13 @@ public:
     // The page background color. Can be used for filling in areas without
     // content.
     virtual WebColor backgroundColor() const { return 0xFFFFFFFF; /* SK_ColorWHITE */ }
+
+    // The currently open page popup, which are calendar and datalist pickers
+    // but not the select popup.
+    virtual WebPagePopup* pagePopup() const { return 0; }
+
+    // Sets the height subtracted from the Widget to accomodate the top controls.
+    virtual void setTopControlsLayoutHeight(float) { }
 
 protected:
     ~WebWidget() { }

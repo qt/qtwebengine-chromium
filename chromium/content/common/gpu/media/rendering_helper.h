@@ -6,52 +6,81 @@
 #define CONTENT_COMMON_GPU_MEDIA_RENDERING_HELPER_H_
 
 #include <map>
+#include <queue>
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/cancelable_callback.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context.h"
+#include "ui/gl/gl_surface.h"
 
 namespace base {
 class MessageLoop;
 class WaitableEvent;
 }
 
-#if !defined(OS_WIN) && defined(ARCH_CPU_X86_FAMILY)
-#define GL_VARIANT_GLX 1
-typedef GLXContext NativeContextType;
-#else
-#define GL_VARIANT_EGL 1
-typedef EGLContext NativeContextType;
-#endif
-
 namespace content {
 
-struct RenderingHelperParams;
+class VideoFrameTexture : public base::RefCounted<VideoFrameTexture> {
+ public:
+  uint32 texture_id() const { return texture_id_; }
+  uint32 texture_target() const { return texture_target_; }
+
+  VideoFrameTexture(uint32 texture_target,
+                    uint32 texture_id,
+                    const base::Closure& no_longer_needed_cb);
+
+ private:
+  friend class base::RefCounted<VideoFrameTexture>;
+
+  uint32 texture_target_;
+  uint32 texture_id_;
+  base::Closure no_longer_needed_cb_;
+
+  ~VideoFrameTexture();
+};
+
+struct RenderingHelperParams {
+  RenderingHelperParams();
+  ~RenderingHelperParams();
+
+  // The rendering FPS.
+  int rendering_fps;
+
+  // The number of empty frames rendered when the rendering helper is
+  // initialized.
+  int warm_up_iterations;
+
+  // The desired size of each window. We play each stream in its own window
+  // on the screen.
+  std::vector<gfx::Size> window_sizes;
+
+  // The members below are only used for the thumbnail mode where all frames
+  // are rendered in sequence onto one FBO for comparison/verification purposes.
+
+  // Whether the frames are rendered as scaled thumbnails within a
+  // larger FBO that is in turn rendered to the window.
+  bool render_as_thumbnails;
+  // The size of the FBO containing all visible thumbnails.
+  gfx::Size thumbnails_page_size;
+  // The size of each thumbnail within the FBO.
+  gfx::Size thumbnail_size;
+};
 
 // Creates and draws textures used by the video decoder.
 // This class is not thread safe and thus all the methods of this class
 // (except for ctor/dtor) ensure they're being run on a single thread.
 class RenderingHelper {
  public:
-  // Interface for the content provider of the RenderingHelper.
-  class Client {
-   public:
-    // Callback to tell client to render the content.
-    virtual void RenderContent(RenderingHelper* helper) = 0;
-
-    // Callback to get the desired window size of the client.
-    virtual const gfx::Size& GetWindowSize() = 0;
-
-   protected:
-    virtual ~Client() {}
-  };
 
   RenderingHelper();
   ~RenderingHelper();
+
+  static bool InitializeOneOff();
 
   // Create the render context and windows by the specified dimensions.
   void Initialize(const RenderingHelperParams& params,
@@ -71,9 +100,13 @@ class RenderingHelper {
   // |texture_target|.
   void RenderThumbnail(uint32 texture_target, uint32 texture_id);
 
-  // Render |texture_id| to the current view port of the screen using target
-  // |texture_target|.
-  void RenderTexture(uint32 texture_target, uint32 texture_id);
+  // Queues the |video_frame| for rendering.
+  void QueueVideoFrame(size_t window_id,
+                       scoped_refptr<VideoFrameTexture> video_frame);
+
+  // Flushes the pending frames. Notify the rendering_helper there won't be
+  // more video frames.
+  void Flush(size_t window_id);
 
   // Delete |texture_id|.
   void DeleteTexture(uint32 texture_id);
@@ -82,7 +115,7 @@ class RenderingHelper {
   void* GetGLDisplay();
 
   // Get the platform specific handle to the OpenGL context.
-  NativeContextType GetGLContext();
+  void* GetGLContext();
 
   // Get rendered thumbnails as RGB.
   // Sets alpha_solid to true if the alpha channel is entirely 0xff.
@@ -91,38 +124,56 @@ class RenderingHelper {
                           base::WaitableEvent* done);
 
  private:
+  struct RenderedVideo {
+    // The rect on the screen where the video will be rendered.
+    gfx::Rect render_area;
+
+    // True if there won't be any new video frames comming.
+    bool is_flushing;
+
+    // The number of frames need to be dropped to catch up the rendering. We
+    // always keep the last remaining frame in pending_frames even after it
+    // has been rendered, so that we have something to display if the client
+    // is falling behind on providing us with new frames during timer-driven
+    // playback.
+    int frames_to_drop;
+
+    // The video frames pending for rendering.
+    std::queue<scoped_refptr<VideoFrameTexture> > pending_frames;
+
+    RenderedVideo();
+    ~RenderedVideo();
+  };
+
   void Clear();
 
   void RenderContent();
 
-  void LayoutRenderingAreas();
+  void WarmUpRendering(int warm_up_iterations);
 
-  // Timer to trigger the RenderContent() repeatly.
-  base::RepeatingTimer<RenderingHelper> render_timer_;
+  void LayoutRenderingAreas(const std::vector<gfx::Size>& window_sizes);
+
+  void UpdateVSyncParameters(base::WaitableEvent* done,
+                             const base::TimeTicks timebase,
+                             const base::TimeDelta interval);
+
+  void DropOneFrameForAllVideos();
+  void ScheduleNextRenderContent();
+
+  // Render |texture_id| to the current view port of the screen using target
+  // |texture_target|.
+  void RenderTexture(uint32 texture_target, uint32 texture_id);
+
   base::MessageLoop* message_loop_;
 
-  NativeContextType gl_context_;
+  scoped_refptr<gfx::GLContext> gl_context_;
+  scoped_refptr<gfx::GLSurface> gl_surface_;
 
-#if defined(GL_VARIANT_EGL)
-  EGLDisplay gl_display_;
-  EGLSurface gl_surface_;
-#else
-  XVisualInfo* x_visual_;
-#endif
-
-#if defined(OS_WIN)
-  HWND window_;
-#else
-  Display* x_display_;
-  Window x_window_;
-#endif
+  gfx::AcceleratedWidget window_;
 
   gfx::Size screen_size_;
 
-  // The rendering area of each window on the screen.
-  std::vector<gfx::Rect> render_areas_;
-
-  std::vector<base::WeakPtr<Client> > clients_;
+  std::vector<RenderedVideo> videos_;
 
   bool render_as_thumbnails_;
   int frame_count_;
@@ -132,28 +183,14 @@ class RenderingHelper {
   gfx::Size thumbnail_size_;
   GLuint program_;
   base::TimeDelta frame_duration_;
+  base::TimeTicks scheduled_render_time_;
+  base::CancelableClosure render_task_;
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderingHelper);
 };
 
-struct RenderingHelperParams {
-  RenderingHelperParams();
-  ~RenderingHelperParams();
-
-  // The rendering FPS.
-  int rendering_fps;
-
-  // The clients who provide the content for rendering.
-  std::vector<base::WeakPtr<RenderingHelper::Client> > clients;
-
-  // Whether the frames are rendered as scaled thumbnails within a
-  // larger FBO that is in turn rendered to the window.
-  bool render_as_thumbnails;
-  // The size of the FBO containing all visible thumbnails.
-  gfx::Size thumbnails_page_size;
-  // The size of each thumbnail within the FBO.
-  gfx::Size thumbnail_size;
-};
 }  // namespace content
 
 #endif  // CONTENT_COMMON_GPU_MEDIA_RENDERING_HELPER_H_

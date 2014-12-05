@@ -26,7 +26,7 @@
 #ifndef HTMLParserOptions_h
 #define HTMLParserOptions_h
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
@@ -34,7 +34,6 @@ class HTMLParserOptions {
 public:
     bool scriptEnabled;
     bool pluginsEnabled;
-    bool useThreading;
 
     explicit HTMLParserOptions(Document* = 0);
 };

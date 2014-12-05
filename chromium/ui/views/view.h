@@ -26,13 +26,13 @@
 #include "ui/compositor/layer_owner.h"
 #include "ui/events/event.h"
 #include "ui/events/event_target.h"
-#include "ui/events/event_targeter.h"
 #include "ui/gfx/geometry/r_tree.h"
 #include "ui/gfx/insets.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 #include "ui/views/cull_set.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/views_export.h"
 
 #if defined(OS_WIN)
@@ -110,19 +110,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
  public:
   typedef std::vector<View*> Views;
 
-  // TODO(tdanderson): Becomes obsolete with the refactoring of the event
-  //                   targeting logic for views and windows. See
-  //                   crbug.com/355425.
-  // Specifies the source of the region used in a hit test.
-  // HIT_TEST_SOURCE_MOUSE indicates the hit test is being performed with a
-  // single point and HIT_TEST_SOURCE_TOUCH indicates the hit test is being
-  // performed with a rect larger than a single point. This value can be used,
-  // for example, to add extra padding or change the shape of the hit test mask.
-  enum HitTestSource {
-    HIT_TEST_SOURCE_MOUSE,
-    HIT_TEST_SOURCE_TOUCH
-  };
-
   struct ViewHierarchyChangedDetails {
     ViewHierarchyChangedDetails()
         : is_add(false),
@@ -158,7 +145,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Creation and lifetime -----------------------------------------------------
 
   View();
-  virtual ~View();
+  ~View() override;
 
   // By default a View is owned by its parent unless specified otherwise here.
   void set_owned_by_client() { owned_by_client_ = true; }
@@ -284,7 +271,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // as with Labels).
   virtual int GetHeightForWidth(int w) const;
 
-  // Set whether this view is visible. Painting is scheduled as needed.
+  // Sets whether this view is visible. Painting is scheduled as needed. Also,
+  // clears focus if the focused view or one of its ancestors is set to be
+  // hidden.
   virtual void SetVisible(bool visible);
 
   // Return whether a view is visible
@@ -295,7 +284,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Set whether this view is enabled. A disabled view does not receive keyboard
   // or mouse inputs. If |enabled| differs from the current value, SchedulePaint
-  // is invoked.
+  // is invoked. Also, clears focus if the focused view is disabled.
   void SetEnabled(bool enabled);
 
   // Returns whether the view is enabled.
@@ -392,6 +381,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // deleted, or when a new LayoutManager is installed.
   LayoutManager* GetLayoutManager() const;
   void SetLayoutManager(LayoutManager* layout);
+
+  // Adjust the layer's offset so that it snaps to the physical pixel boundary.
+  // This has no effect if the view does not have an associated layer.
+  void SnapLayerToPixelBoundary();
 
   // Attributes ----------------------------------------------------------------
 
@@ -560,23 +553,15 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // The points, rects, mouse locations, and touch locations in the following
   // functions are in the view's coordinates, except for a RootView.
 
-  // TODO(tdanderson): GetEventHandlerForPoint() and GetEventHandlerForRect()
-  //                   will be removed once their logic is moved into
-  //                   ViewTargeter and its derived classes. See
-  //                   crbug.com/355425.
-
-  // Convenience functions which calls into GetEventHandler() with
-  // a 1x1 rect centered at |point|.
+  // A convenience function which calls into GetEventHandlerForRect() with
+  // a 1x1 rect centered at |point|. |point| is in the local coordinate
+  // space of |this|.
   View* GetEventHandlerForPoint(const gfx::Point& point);
 
-  // If point-based targeting should be used, return the deepest visible
-  // descendant that contains the center point of |rect|.
-  // If rect-based targeting (i.e., fuzzing) should be used, return the
-  // closest visible descendant having at least kRectTargetOverlap of
-  // its area covered by |rect|. If no such descendant exists, return the
-  // deepest visible descendant that contains the center point of |rect|.
-  // See http://goo.gl/3Jp2BD for more information about rect-based targeting.
-  virtual View* GetEventHandlerForRect(const gfx::Rect& rect);
+  // Returns the View that should be the target of an event having |rect| as
+  // its location, or NULL if no such target exists. |rect| is in the local
+  // coordinate space of |this|.
+  View* GetEventHandlerForRect(const gfx::Rect& rect);
 
   // Returns the deepest visible descendant that contains the specified point
   // and supports tooltips. If the view does not contain the point, returns
@@ -590,16 +575,14 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // the cursor is a shared resource.
   virtual gfx::NativeCursor GetCursor(const ui::MouseEvent& event);
 
-  // TODO(tdanderson): HitTestPoint() and HitTestRect() will be removed once
-  //                   their logic is moved into ViewTargeter and its
-  //                   derived classes. See crbug.com/355425.
-
   // A convenience function which calls HitTestRect() with a rect of size
-  // 1x1 and an origin of |point|.
+  // 1x1 and an origin of |point|. |point| is in the local coordinate space
+  // of |this|.
   bool HitTestPoint(const gfx::Point& point) const;
 
-  // Tests whether |rect| intersects this view's bounds.
-  virtual bool HitTestRect(const gfx::Rect& rect) const;
+  // Returns true if |rect| intersects this view's bounds. |rect| is in the
+  // local coordinate space of |this|.
+  bool HitTestRect(const gfx::Rect& rect) const;
 
   // Returns true if this view or any of its descendants are permitted to
   // be the target of an event.
@@ -719,27 +702,31 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual InputMethod* GetInputMethod();
   virtual const InputMethod* GetInputMethod() const;
 
-  // Sets a new event-targeter for the view, and returns the previous
-  // event-targeter.
-  scoped_ptr<ui::EventTargeter> SetEventTargeter(
-      scoped_ptr<ui::EventTargeter> targeter);
+  // Sets a new ViewTargeter for the view, and returns the previous
+  // ViewTargeter.
+  scoped_ptr<ViewTargeter> SetEventTargeter(scoped_ptr<ViewTargeter> targeter);
+
+  // Returns the ViewTargeter installed on |this| if one exists,
+  // otherwise returns the ViewTargeter installed on our root view.
+  // The return value is guaranteed to be non-null.
+  ViewTargeter* GetEffectiveViewTargeter() const;
+
+  ViewTargeter* targeter() const { return targeter_.get(); }
 
   // Overridden from ui::EventTarget:
-  virtual bool CanAcceptEvent(const ui::Event& event) OVERRIDE;
-  virtual ui::EventTarget* GetParentTarget() OVERRIDE;
-  virtual scoped_ptr<ui::EventTargetIterator> GetChildIterator() const OVERRIDE;
-  virtual ui::EventTargeter* GetEventTargeter() OVERRIDE;
-  virtual void ConvertEventToTarget(ui::EventTarget* target,
-                                    ui::LocatedEvent* event) OVERRIDE;
-
-  const ui::EventTargeter* GetEventTargeter() const;
+  bool CanAcceptEvent(const ui::Event& event) override;
+  ui::EventTarget* GetParentTarget() override;
+  scoped_ptr<ui::EventTargetIterator> GetChildIterator() const override;
+  ui::EventTargeter* GetEventTargeter() override;
+  void ConvertEventToTarget(ui::EventTarget* target,
+                            ui::LocatedEvent* event) override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE FINAL;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnTouchEvent(ui::TouchEvent* event) final;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Accelerators --------------------------------------------------------------
 
@@ -757,12 +744,12 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual void ResetAccelerators();
 
   // Overridden from AcceleratorTarget:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
 
   // Returns whether accelerators are enabled for this view. Accelerators are
   // enabled if the containing widget is visible and the view is enabled() and
   // IsDrawn()
-  virtual bool CanHandleAccelerators() const OVERRIDE;
+  bool CanHandleAccelerators() const override;
 
   // Focus ---------------------------------------------------------------------
 
@@ -783,20 +770,22 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // IMPORTANT NOTE: loops in the focus hierarchy are not supported.
   void SetNextFocusableView(View* view);
 
-  // Sets whether this view is capable of taking focus.
+  // Sets whether this view is capable of taking focus. It will clear focus if
+  // the focused view is set to be non-focusable.
   // Note that this is false by default so that a view used as a container does
   // not get the focus.
   void SetFocusable(bool focusable);
 
   // Returns true if this view is |focusable_|, |enabled_| and drawn.
-  virtual bool IsFocusable() const;
+  bool IsFocusable() const;
 
   // Return whether this view is focusable when the user requires full keyboard
   // access, even though it may not be normally focusable.
   bool IsAccessibilityFocusable() const;
 
   // Set whether this view can be made focusable if the user requires
-  // full keyboard access, even though it's not normally focusable.
+  // full keyboard access, even though it's not normally focusable. It will
+  // clear focus if the focused view is set to be non-focusable.
   // Note that this is false by default.
   void SetAccessibilityFocusable(bool accessibility_focusable);
 
@@ -1038,7 +1027,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Override returning true when the view needs to be notified when its visible
   // bounds relative to the root view may have changed. Only used by
   // NativeViewHost.
-  virtual bool NeedsNotificationWhenVisibleBoundsChange() const;
+  virtual bool GetNeedsNotificationWhenVisibleBoundsChange() const;
 
   // Notification that this View's visible bounds relative to the root view may
   // have changed. The visible bounds are the region of the View not clipped by
@@ -1128,9 +1117,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   void UpdateChildLayerBounds(const gfx::Vector2d& offset);
 
   // Overridden from ui::LayerDelegate:
-  virtual void OnPaintLayer(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual base::Closure PrepareForLayerBoundsChange() OVERRIDE;
+  void OnPaintLayer(gfx::Canvas* canvas) override;
+  void OnDelegatedFrameDamage(const gfx::Rect& damage_rect_in_dip) override;
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
+  base::Closure PrepareForLayerBoundsChange() override;
 
   // Finds the layer that this view paints to (it may belong to an ancestor
   // view), then reorders the immediate children of that layer to match the
@@ -1146,16 +1136,6 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   virtual void ReorderChildLayers(ui::Layer* parent_layer);
 
   // Input ---------------------------------------------------------------------
-
-  // Called by HitTestRect() to see if this View has a custom hit test mask. If
-  // the return value is true, GetHitTestMask() will be called to obtain the
-  // mask. Default value is false, in which case the View will hit-test against
-  // its bounds.
-  virtual bool HasHitTestMask() const;
-
-  // Called by HitTestRect() to retrieve a mask for hit-testing against.
-  // Subclasses override to provide custom shaped hit test regions.
-  virtual void GetHitTestMask(HitTestSource source, gfx::Path* mask) const;
 
   virtual DragInfo* GetDragInfo();
 
@@ -1437,6 +1417,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // to the view at the specified index.
   void InitFocusSiblings(View* view, int index);
 
+  // Helper function to advance focus, in case the currently focused view has
+  // become unfocusable.
+  void AdvanceFocusIfNecessary();
+
   // System events -------------------------------------------------------------
 
   // Used to propagate theme changed notifications from the root view to all
@@ -1550,6 +1534,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Views. The default is absolute positioning according to bounds_.
   scoped_ptr<LayoutManager> layout_manager_;
 
+  // Whether this View's layer should be snapped to the pixel boundary.
+  bool snap_layer_to_pixel_boundary_;
+
   // Painting ------------------------------------------------------------------
 
   // Background
@@ -1606,7 +1593,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Input  --------------------------------------------------------------------
 
-  scoped_ptr<ui::EventTargeter> targeter_;
+  scoped_ptr<ViewTargeter> targeter_;
 
   // Accessibility -------------------------------------------------------------
 

@@ -21,27 +21,27 @@
 #ifndef DOMPluginArray_h
 #define DOMPluginArray_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/plugins/DOMPlugin.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class PluginData;
 
-class DOMPluginArray FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMPluginArray>, public ScriptWrappable, public DOMWindowProperty {
+class DOMPluginArray final : public RefCountedWillBeGarbageCollected<DOMPluginArray>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DOMPluginArray);
 public:
     static PassRefPtrWillBeRawPtr<DOMPluginArray> create(LocalFrame* frame)
     {
         return adoptRefWillBeNoop(new DOMPluginArray(frame));
     }
-    virtual ~DOMPluginArray();
 
     unsigned length() const;
     PassRefPtrWillBeRawPtr<DOMPlugin> item(unsigned index);
@@ -50,13 +50,13 @@ public:
 
     void refresh(bool reload);
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit DOMPluginArray(LocalFrame*);
     PluginData* pluginData() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PluginArray_h

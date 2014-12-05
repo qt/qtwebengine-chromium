@@ -34,13 +34,12 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSComputedStyleDeclaration;
 class Element;
 class InlineBox;
 class Node;
-class Range;
 class RenderObject;
 class Text;
 
@@ -170,11 +169,6 @@ public:
     bool atStartOfTree() const;
     bool atEndOfTree() const;
 
-    // FIXME: Make these non-member functions and put them somewhere in the editing directory.
-    // These aren't really basic "position" operations. More high level editing helper functions.
-    Position leadingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
-    Position trailingWhitespacePosition(EAffinity, bool considerNonCollapsibleWhitespace = false) const;
-
     // These return useful visually equivalent positions.
     Position upstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
     Position downstream(EditingBoundaryCrossingRule = CannotCrossEditingBoundary) const;
@@ -210,8 +204,6 @@ private:
     int offsetForPositionAfterAnchor() const;
 
     int renderedOffset() const;
-
-    Position previousCharacterPosition(EAffinity) const;
 
     static AnchorType anchorTypeForLegacyEditingPosition(Node* anchorNode, int offset);
 
@@ -318,39 +310,12 @@ inline bool offsetIsBeforeLastNodeOffset(int offset, Node* anchorNode)
     return offset < currentOffset;
 }
 
-class PositionWithAffinity {
-    DISALLOW_ALLOCATION();
-public:
-    PositionWithAffinity()
-        : m_affinity(DOWNSTREAM)
-    {
-    }
-
-    PositionWithAffinity(const Position& position, EAffinity affinity = DOWNSTREAM)
-        : m_position(position)
-        , m_affinity(affinity)
-    {
-    }
-
-    EAffinity affinity() const { return m_affinity; }
-    const Position& position() const { return m_position; }
-
-    void trace(Visitor* visitor)
-    {
-        visitor->trace(m_position);
-    }
-
-private:
-    Position m_position;
-    EAffinity m_affinity;
-};
-
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::Position&);
-void showTree(const WebCore::Position*);
+void showTree(const blink::Position&);
+void showTree(const blink::Position*);
 #endif
 
 #endif // Position_h

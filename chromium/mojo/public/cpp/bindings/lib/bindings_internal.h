@@ -6,13 +6,21 @@
 #define MOJO_PUBLIC_CPP_BINDINGS_LIB_BINDINGS_INTERNAL_H_
 
 #include "mojo/public/cpp/bindings/lib/template_util.h"
+#include "mojo/public/cpp/bindings/struct_ptr.h"
 #include "mojo/public/cpp/system/core.h"
 
 namespace mojo {
 class String;
 
+template <typename T>
+class Array;
+
+template <typename K, typename V>
+class Map;
+
 namespace internal {
-template <typename T> class Array_Data;
+template <typename T>
+class Array_Data;
 
 #pragma pack(push, 1)
 
@@ -20,33 +28,33 @@ struct StructHeader {
   uint32_t num_bytes;
   uint32_t num_fields;
 };
-MOJO_COMPILE_ASSERT(sizeof(StructHeader) == 8, bad_sizeof_StructHeader);
+static_assert(sizeof(StructHeader) == 8, "Bad sizeof(StructHeader)");
 
 struct ArrayHeader {
   uint32_t num_bytes;
   uint32_t num_elements;
 };
-MOJO_COMPILE_ASSERT(sizeof(ArrayHeader) == 8, bad_sizeof_ArrayHeader);
+static_assert(sizeof(ArrayHeader) == 8, "Bad_sizeof(ArrayHeader)");
 
 template <typename T>
 union StructPointer {
   uint64_t offset;
   T* ptr;
 };
-MOJO_COMPILE_ASSERT(sizeof(StructPointer<char>) == 8, bad_sizeof_StructPointer);
+static_assert(sizeof(StructPointer<char>) == 8, "Bad_sizeof(StructPointer)");
 
 template <typename T>
 union ArrayPointer {
   uint64_t offset;
   Array_Data<T>* ptr;
 };
-MOJO_COMPILE_ASSERT(sizeof(ArrayPointer<char>) == 8, bad_sizeof_ArrayPointer);
+static_assert(sizeof(ArrayPointer<char>) == 8, "Bad_sizeof(ArrayPointer)");
 
 union StringPointer {
   uint64_t offset;
   Array_Data<char>* ptr;
 };
-MOJO_COMPILE_ASSERT(sizeof(StringPointer) == 8, bad_sizeof_StringPointer);
+static_assert(sizeof(StringPointer) == 8, "Bad_sizeof(StringPointer)");
 
 #pragma pack(pop)
 
@@ -63,21 +71,56 @@ T FetchAndReset(T* ptr) {
   return temp;
 }
 
-template <typename H> struct IsHandle {
-  static const bool value = IsBaseOf<Handle, H>::value;
+template <typename H>
+struct IsHandle {
+  enum { value = IsBaseOf<Handle, H>::value };
 };
 
 template <typename T, bool move_only = IsMoveOnlyType<T>::value>
 struct WrapperTraits;
 
-template <typename T> struct WrapperTraits<T, false> {
+template <typename T>
+struct WrapperTraits<T, false> {
   typedef T DataType;
 };
-template <typename H> struct WrapperTraits<ScopedHandleBase<H>, true> {
+template <typename H>
+struct WrapperTraits<ScopedHandleBase<H>, true> {
   typedef H DataType;
 };
-template <typename S> struct WrapperTraits<S, true> {
+template <typename S>
+struct WrapperTraits<StructPtr<S>, true> {
   typedef typename S::Data_* DataType;
+};
+template <typename S>
+struct WrapperTraits<InlinedStructPtr<S>, true> {
+  typedef typename S::Data_* DataType;
+};
+template <typename S>
+struct WrapperTraits<S, true> {
+  typedef typename S::Data_* DataType;
+};
+
+template <typename T, typename Enable = void>
+struct ValueTraits {
+  static bool Equals(const T& a, const T& b) { return a == b; }
+};
+
+template <typename T>
+struct ValueTraits<
+    T,
+    typename EnableIf<IsSpecializationOf<Array, T>::value ||
+                      IsSpecializationOf<Map, T>::value ||
+                      IsSpecializationOf<StructPtr, T>::value ||
+                      IsSpecializationOf<InlinedStructPtr, T>::value>::type> {
+  static bool Equals(const T& a, const T& b) { return a.Equals(b); }
+};
+
+template <typename T>
+struct ValueTraits<ScopedHandleBase<T>> {
+  static bool Equals(const ScopedHandleBase<T>& a,
+                     const ScopedHandleBase<T>& b) {
+    return a.get().value() == b.get().value();
+  }
 };
 
 }  // namespace internal

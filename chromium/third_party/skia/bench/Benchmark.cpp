@@ -7,6 +7,7 @@
 
 #include "Benchmark.h"
 
+#include "SkCanvas.h"
 #include "SkPaint.h"
 #include "SkParse.h"
 
@@ -16,14 +17,16 @@ template BenchRegistry* BenchRegistry::gHead;
 
 Benchmark::Benchmark() {
     fForceAlpha = 0xFF;
-    fForceAA = true;
-    fForceFilter = false;
     fDither = SkTriState::kDefault;
     fOrMask = fClearMask = 0;
 }
 
 const char* Benchmark::getName() {
     return this->onGetName();
+}
+
+const char* Benchmark::getUniqueName() {
+    return this->onGetUniqueName();
 }
 
 SkIPoint Benchmark::getSize() {
@@ -35,14 +38,14 @@ void Benchmark::preDraw() {
 }
 
 void Benchmark::draw(const int loops, SkCanvas* canvas) {
+    SkAutoCanvasRestore ar(canvas, true/*save now*/);
     this->onDraw(loops, canvas);
 }
 
 void Benchmark::setupPaint(SkPaint* paint) {
     paint->setAlpha(fForceAlpha);
-    paint->setAntiAlias(fForceAA);
-    paint->setFilterLevel(fForceFilter ? SkPaint::kLow_FilterLevel
-                                       : SkPaint::kNone_FilterLevel);
+    paint->setAntiAlias(true);
+    paint->setFilterLevel(SkPaint::kNone_FilterLevel);
 
     paint->setFlags((paint->getFlags() & ~fClearMask) | fOrMask);
 

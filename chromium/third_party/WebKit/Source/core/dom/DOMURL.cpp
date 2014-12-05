@@ -27,8 +27,8 @@
 #include "config.h"
 #include "core/dom/DOMURL.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fetch/MemoryCache.h"
@@ -38,11 +38,10 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMURL::DOMURL(const String& url, const KURL& base, ExceptionState& exceptionState)
 {
-    ScriptWrappable::init(this);
     if (!base.isValid())
         exceptionState.throwDOMException(SyntaxError, "Invalid base URL");
 
@@ -103,4 +102,4 @@ void DOMURL::revokeObjectUUID(ExecutionContext* executionContext, const String& 
     executionContext->publicURLManager().revoke(uuid);
 }
 
-} // namespace WebCore
+} // namespace blink

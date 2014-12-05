@@ -48,7 +48,7 @@ TYPE_NAME_FIX_MAP = {
 
 
 TYPES_WITH_RUNTIME_CAST_SET = frozenset(["Runtime.RemoteObject", "Runtime.PropertyDescriptor", "Runtime.InternalPropertyDescriptor",
-                                         "Debugger.FunctionDetails", "Debugger.CallFrame", "Debugger.Location",
+                                         "Debugger.FunctionDetails", "Debugger.CollectionEntry", "Debugger.CallFrame", "Debugger.Location",
                                          "Canvas.TraceLog", "Canvas.ResourceState"])
 
 TYPES_WITH_OPEN_FIELD_LIST_SET = frozenset([
@@ -56,8 +56,6 @@ TYPES_WITH_OPEN_FIELD_LIST_SET = frozenset([
                                             "CSS.CSSProperty",
                                             # InspectorResourceAgent needs to update mime-type.
                                             "Network.Response"])
-
-EXACTLY_INT_SUPPORTED = False
 
 cmdline_parser = optparse.OptionParser()
 cmdline_parser.add_option("--output_dir")
@@ -117,58 +115,15 @@ class Capitalizer:
         str = possible_abbreviation.lower() + str[pos:]
         return str
 
-    @staticmethod
-    def camel_case_to_capitalized_with_underscores(str):
-        if len(str) == 0:
-            return str
-        output = Capitalizer.split_camel_case_(str)
-        return "_".join(output).upper()
-
-    @staticmethod
-    def split_camel_case_(str):
-        output = []
-        pos_being = 0
-        pos = 1
-        has_oneletter = False
-        while pos < len(str):
-            if str[pos].isupper():
-                output.append(str[pos_being:pos].upper())
-                if pos - pos_being == 1:
-                    has_oneletter = True
-                pos_being = pos
-            pos += 1
-        output.append(str[pos_being:])
-        if has_oneletter:
-            array_pos = 0
-            while array_pos < len(output) - 1:
-                if len(output[array_pos]) == 1:
-                    array_pos_end = array_pos + 1
-                    while array_pos_end < len(output) and len(output[array_pos_end]) == 1:
-                        array_pos_end += 1
-                    if array_pos_end - array_pos > 1:
-                        possible_abbreviation = "".join(output[array_pos:array_pos_end])
-                        if possible_abbreviation.upper() in Capitalizer.ABBREVIATION:
-                            output[array_pos:array_pos_end] = [possible_abbreviation]
-                        else:
-                            array_pos = array_pos_end - 1
-                array_pos += 1
-        return output
-
     ABBREVIATION = frozenset(["XHR", "DOM", "CSS"])
 
-VALIDATOR_IFDEF_NAME = "ASSERT_ENABLED"
+VALIDATOR_IFDEF_NAME = "ENABLE(ASSERT)"
 
 
 class DomainNameFixes:
-    @classmethod
-    def get_fixed_data(cls, domain_name):
-        field_name_res = Capitalizer.upper_camel_case_to_lower(domain_name) + "Agent"
-
-        class Res(object):
-            agent_field_name = field_name_res
-
-        return Res
-
+    @staticmethod
+    def get_fixed_data(domain_name):
+        return Capitalizer.upper_camel_case_to_lower(domain_name) + "Agent"
 
 class RawTypes(object):
     @staticmethod
@@ -190,41 +145,14 @@ class RawTypes(object):
         else:
             raise Exception("Unknown type: %s" % json_type)
 
-    # For output parameter all values are passed by pointer except RefPtr-based types.
-    class OutputPassModel:
-        class ByPointer:
-            @staticmethod
-            def get_argument_prefix():
-                return "&"
-
-            @staticmethod
-            def get_parameter_type_suffix():
-                return "*"
-
-        class ByReference:
-            @staticmethod
-            def get_argument_prefix():
-                return ""
-
-            @staticmethod
-            def get_parameter_type_suffix():
-                return "&"
-
     class BaseType(object):
-        need_internal_runtime_cast_ = False
-
-        @classmethod
-        def request_raw_internal_runtime_cast(cls):
-            if not cls.need_internal_runtime_cast_:
-                cls.need_internal_runtime_cast_ = True
-
         @classmethod
         def get_raw_validator_call_text(cls):
-            return "RuntimeCastHelper::assertType<JSONValue::Type%s>" % cls.get_validate_method_params().template_type
+            return "RuntimeCastHelper::assertType<JSONValue::Type%s>" % cls.get_getter_name()
 
         @staticmethod
-        def get_validate_method_params():
-            raise Exception("Abstract method")
+        def get_getter_name():
+            raise Exception("Unsupported")
 
     class String(BaseType):
         @staticmethod
@@ -236,20 +164,6 @@ class RawTypes(object):
         @staticmethod
         def get_constructor_pattern():
             return "InspectorString::create(%s)"
-
-        @staticmethod
-        def get_c_initializer():
-            return "\"\""
-
-        @staticmethod
-        def get_validate_method_params():
-            class ValidateMethodParams:
-                template_type = "String"
-            return ValidateMethodParams
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByPointer
 
         @staticmethod
         def is_heavy_value():
@@ -276,17 +190,9 @@ class RawTypes(object):
         def get_constructor_pattern():
             return "InspectorBasicValue::create(%s)"
 
-        @staticmethod
-        def get_c_initializer():
-            return "0"
-
         @classmethod
         def get_raw_validator_call_text(cls):
             return "RuntimeCastHelper::assertInt"
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByPointer
 
         @staticmethod
         def is_heavy_value():
@@ -314,18 +220,8 @@ class RawTypes(object):
             return "InspectorBasicValue::create(%s)"
 
         @staticmethod
-        def get_c_initializer():
-            return "0"
-
-        @staticmethod
-        def get_validate_method_params():
-            class ValidateMethodParams:
-                template_type = "Number"
-            return ValidateMethodParams
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByPointer
+        def get_raw_validator_call_text():
+            return "RuntimeCastHelper::assertType<JSONValue::TypeNumber>"
 
         @staticmethod
         def is_heavy_value():
@@ -349,20 +245,6 @@ class RawTypes(object):
         @staticmethod
         def get_constructor_pattern():
             return "InspectorBasicValue::create(%s)"
-
-        @staticmethod
-        def get_c_initializer():
-            return "false"
-
-        @staticmethod
-        def get_validate_method_params():
-            class ValidateMethodParams:
-                template_type = "Boolean"
-            return ValidateMethodParams
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByPointer
 
         @staticmethod
         def is_heavy_value():
@@ -390,22 +272,8 @@ class RawTypes(object):
             return "%s"
 
         @staticmethod
-        def get_c_initializer():
-            return "JSONObject::create()"
-
-        @staticmethod
         def get_output_argument_prefix():
             return ""
-
-        @staticmethod
-        def get_validate_method_params():
-            class ValidateMethodParams:
-                template_type = "Object"
-            return ValidateMethodParams
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByReference
 
         @staticmethod
         def is_heavy_value():
@@ -427,20 +295,12 @@ class RawTypes(object):
         get_setter_name = get_getter_name
 
         @staticmethod
-        def get_c_initializer():
-            raise Exception("Unsupported")
-
-        @staticmethod
         def get_constructor_pattern():
             raise Exception("Unsupported")
 
         @staticmethod
         def get_raw_validator_call_text():
             return "RuntimeCastHelper::assertAny"
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByReference
 
         @staticmethod
         def is_heavy_value():
@@ -468,22 +328,8 @@ class RawTypes(object):
             return "%s"
 
         @staticmethod
-        def get_c_initializer():
-            return "JSONArray::create()"
-
-        @staticmethod
         def get_output_argument_prefix():
             return ""
-
-        @staticmethod
-        def get_validate_method_params():
-            class ValidateMethodParams:
-                template_type = "Array"
-            return ValidateMethodParams
-
-        @staticmethod
-        def get_output_pass_model():
-            return RawTypes.OutputPassModel.ByReference
 
         @staticmethod
         def is_heavy_value():
@@ -669,23 +515,10 @@ class TypeModel:
             def get_event_setter_expression_pattern():
                 return "*%s"
 
-    class ExactlyInt(ValueType):
-        def __init__(self):
-            TypeModel.ValueType.__init__(self, "int", False)
-
-        def get_input_param_type_text(self):
-            return "TypeBuilder::ExactlyInt"
-
-        def get_opt_output_type_(self):
-            return "TypeBuilder::ExactlyInt"
-
     @classmethod
     def init_class(cls):
         cls.Bool = cls.ValueType("bool", False)
-        if EXACTLY_INT_SUPPORTED:
-            cls.Int = cls.ExactlyInt()
-        else:
-            cls.Int = cls.ValueType("int", False)
+        cls.Int = cls.ValueType("int", False)
         cls.Number = cls.ValueType("double", False)
         cls.String = cls.ValueType("String", True,)
         cls.Object = cls.RefPtrBased("JSONObject")
@@ -753,9 +586,6 @@ class Writer:
 
     def get_indent(self):
         return self.indent
-
-    def get_indented(self, additional_indent):
-        return Writer(self.output, self.indent + additional_indent)
 
     def insert_writer(self, additional_indent):
         new_output = []
@@ -859,8 +689,6 @@ class TypeBindings:
 
                     @classmethod
                     def get_code_generator(enum_binding_cls):
-                        #FIXME: generate ad-hoc enums too once we figure out how to better implement them in C++.
-                        comment_out = helper.is_ad_hoc
 
                         class CodeGenerator:
                             @staticmethod
@@ -895,8 +723,6 @@ class TypeBindings:
                                     writer.append("#endif  // %s\n" % VALIDATOR_IFDEF_NAME)
 
                                     validator_writer = generate_context.validator_writer
-
-                                    domain_fixes = DomainNameFixes.get_fixed_data(context_domain_name)
 
                                     validator_writer.newline("void %s%s::assertCorrectValue(JSONValue* value)\n" % (helper.full_name_prefix_for_impl, enum_name))
                                     validator_writer.newline("{\n")
@@ -1003,7 +829,7 @@ class TypeBindings:
 
                         @staticmethod
                         def request_internal_runtime_cast():
-                            RawTypes.String.request_raw_internal_runtime_cast()
+                            pass
 
                         @staticmethod
                         def get_code_generator():
@@ -1196,7 +1022,6 @@ class TypeBindings:
                                 for prop_data in resolve_data.main_properties:
                                     prop_name = prop_data.p["name"]
                                     param_type_binding = prop_data.param_type_binding
-                                    raw_type = param_type_binding.reduce_to_raw_type()
                                     if isinstance(param_type_binding.get_type_model(), TypeModel.ValueType):
                                         writer.append_multiline("\n    void %s" % prop_name)
                                         writer.append("(%s value)\n" % param_type_binding.get_type_model().get_command_return_pass_model().get_output_parameter_type())
@@ -1243,8 +1068,6 @@ class TypeBindings:
                                     closed_field_set = (context_domain_name + "." + class_name) not in TYPES_WITH_OPEN_FIELD_LIST_SET
 
                                     validator_writer = generate_context.validator_writer
-
-                                    domain_fixes = DomainNameFixes.get_fixed_data(context_domain_name)
 
                                     validator_writer.newline("void %s%s::assertCorrectValue(JSONValue* value)\n" % (helper.full_name_prefix_for_impl, class_name))
                                     validator_writer.newline("{\n")
@@ -1369,7 +1192,7 @@ class TypeBindings:
 
                     @staticmethod
                     def request_internal_runtime_cast():
-                        RawTypes.Object.request_raw_internal_runtime_cast()
+                        pass
 
                     @staticmethod
                     def get_code_generator():
@@ -1516,7 +1339,7 @@ class RawTypeBinding:
         raise Exception("Unsupported")
 
     def request_internal_runtime_cast(self):
-        self.raw_type_.request_raw_internal_runtime_cast()
+        pass
 
     def get_code_generator(self):
         return None
@@ -1803,30 +1626,11 @@ class Generator:
     def go():
         Generator.process_types(type_map)
 
-        first_cycle_guardable_list_list = [
-            Generator.backend_method_declaration_list,
-            Generator.backend_method_implementation_list,
-            Generator.backend_method_name_declaration_list,
-            Generator.backend_method_name_declaration_index_list,
-            Generator.backend_agent_interface_list,
-            Generator.frontend_class_field_lines,
-            Generator.frontend_constructor_init_list,
-            Generator.frontend_domain_class_lines,
-            Generator.frontend_method_list,
-            Generator.method_handler_list,
-            Generator.method_name_enum_list,
-            Generator.backend_constructor_init_list,
-            Generator.backend_virtual_setters_list,
-            Generator.backend_setters_list,
-            Generator.backend_field_list]
-
         for json_domain in json_api["domains"]:
             domain_name = json_domain["domain"]
             domain_name_lower = domain_name.lower()
 
-            domain_fixes = DomainNameFixes.get_fixed_data(domain_name)
-
-            agent_field_name = domain_fixes.agent_field_name
+            agent_field_name = DomainNameFixes.get_fixed_data(domain_name)
 
             frontend_method_declaration_lines = []
 
@@ -1914,7 +1718,6 @@ class Generator:
 
         method_in_code = ""
         method_out_code = ""
-        result_object_declaration = ""
         agent_call_param_list = ["&error"]
         agent_call_params_declaration_list = ["    ErrorString error;"]
         send_response_call_params_list = ["error"]
@@ -1947,10 +1750,6 @@ class Generator:
                 optional = json_parameter.get("optional")
 
                 non_optional_type_model = param_raw_type.get_raw_type_model()
-                if optional:
-                    type_model = non_optional_type_model.get_optional()
-                else:
-                    type_model = non_optional_type_model
 
                 if optional:
                     code = ("    bool %s_valueFound = false;\n"
@@ -1988,7 +1787,7 @@ class Generator:
 
             callback_writer.newline("class " + callback_name + " : public CallbackBase {\n")
             callback_writer.newline("public:\n")
-            callback_writer.newline("    " + callback_name + "(PassRefPtr<InspectorBackendDispatcherImpl>, int id);\n")
+            callback_writer.newline("    " + callback_name + "(PassRefPtrWillBeRawPtr<InspectorBackendDispatcherImpl>, int id);\n")
             callback_writer.newline("    void sendSuccess(" + ", ".join(decl_parameter_list) + ");\n")
             error_part_writer = callback_writer.insert_writer("")
             callback_writer.newline("};\n")
@@ -2009,12 +1808,12 @@ class Generator:
 
             ad_hoc_type_output.append(callback_output)
 
-            method_out_code += "    RefPtr<" + agent_interface_name + "::" + callback_name + "> callback = adoptRef(new " + agent_interface_name + "::" + callback_name + "(this, callId));\n"
+            method_out_code += "    RefPtrWillBeRawPtr<" + agent_interface_name + "::" + callback_name + "> callback = adoptRefWillBeNoop(new " + agent_interface_name + "::" + callback_name + "(this, callId));\n"
             agent_call_param_list.append("callback")
             normal_response_cook_text += "    if (!error.length()) \n"
             normal_response_cook_text += "        return;\n"
             normal_response_cook_text += "    callback->disable();\n"
-            backend_agent_interface_list.append(", PassRefPtr<%s> callback" % callback_name)
+            backend_agent_interface_list.append(", PassRefPtrWillBeRawPtr<%s> callback" % callback_name)
         else:
             if "returns" in json_command:
                 method_out_code += "\n"
@@ -2031,7 +1830,6 @@ class Generator:
 
                     raw_type = return_type_binding.reduce_to_raw_type()
                     setter_type = raw_type.get_setter_name()
-                    initializer = raw_type.get_c_initializer()
 
                     type_model = return_type_binding.get_type_model()
                     if optional:
@@ -2070,8 +1868,7 @@ class Generator:
         # Redirect to another agent's implementation.
         agent_field = "m_" + agent_field_name
         if "redirect" in json_command:
-            domain_fixes = DomainNameFixes.get_fixed_data(json_command.get("redirect"))
-            agent_field = "m_" + domain_fixes.agent_field_name
+            agent_field = "m_" + DomainNameFixes.get_fixed_data(json_command.get("redirect"))
 
         Generator.backend_method_implementation_list.append(Templates.backend_method.substitute(None,
             domainName=domain_name, methodName=json_command_name,
@@ -2211,8 +2008,6 @@ class Generator:
         def generate_all_domains_code(out, type_data_callback):
             writer = Writer(out, "")
             for domain_data in type_map.domains():
-                domain_fixes = DomainNameFixes.get_fixed_data(domain_data.name())
-
                 namespace_declared = []
 
                 def namespace_lazy_generator():
@@ -2272,40 +2067,8 @@ def flatten_list(input):
     fill_recursive(input)
     return res
 
-
-# A writer that only updates file if it actually changed to better support incremental build.
-class SmartOutput:
-    def __init__(self, file_name):
-        self.file_name_ = file_name
-        self.output_ = ""
-
-    def write(self, text):
-        self.output_ += text
-
-    def close(self):
-        text_changed = True
-
-        try:
-            read_file = open(self.file_name_, "r")
-            old_text = read_file.read()
-            read_file.close()
-            text_changed = old_text != self.output_
-        except:
-            # Ignore, just overwrite by default
-            pass
-
-        if text_changed:
-            out_file = open(self.file_name_, "w")
-            out_file.write(self.output_)
-            out_file.close()
-
-
 def output_file(file_name):
-    # For now, disable the incremental build optimisation in all cases.
-    if False:
-        return SmartOutput(file_name)
-    else:
-        return open(file_name, "w")
+    return open(file_name, "w")
 
 
 Generator.go()

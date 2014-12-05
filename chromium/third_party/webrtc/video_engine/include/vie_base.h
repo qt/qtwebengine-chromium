@@ -21,10 +21,6 @@
 
 #include "webrtc/common_types.h"
 
-#if defined(ANDROID) && !defined(WEBRTC_CHROMIUM_BUILD)
-#include <jni.h>
-#endif
-
 namespace webrtc {
 
 class Config;
@@ -43,34 +39,17 @@ class CpuOveruseObserver {
   virtual ~CpuOveruseObserver() {}
 };
 
-// Limits on standard deviation for under/overuse.
-#ifdef WEBRTC_ANDROID
-const float kOveruseStdDevMs = 32.0f;
-const float kNormalUseStdDevMs = 27.0f;
-#elif WEBRTC_LINUX
-const float kOveruseStdDevMs = 20.0f;
-const float kNormalUseStdDevMs = 14.0f;
-#elif WEBRTC_MAC
-const float kOveruseStdDevMs = 27.0f;
-const float kNormalUseStdDevMs = 21.0f;
-#elif WEBRTC_WIN
-const float kOveruseStdDevMs = 20.0f;
-const float kNormalUseStdDevMs = 14.0f;
-#else
-const float kOveruseStdDevMs = 30.0f;
-const float kNormalUseStdDevMs = 20.0f;
-#endif
-
 struct CpuOveruseOptions {
   CpuOveruseOptions()
       : enable_capture_jitter_method(true),
-        low_capture_jitter_threshold_ms(kNormalUseStdDevMs),
-        high_capture_jitter_threshold_ms(kOveruseStdDevMs),
+        low_capture_jitter_threshold_ms(20.0f),
+        high_capture_jitter_threshold_ms(30.0f),
         enable_encode_usage_method(false),
         low_encode_usage_threshold_percent(60),
         high_encode_usage_threshold_percent(90),
         low_encode_time_rsd_threshold(-1),
         high_encode_time_rsd_threshold(-1),
+        enable_extended_processing_usage(true),
         frame_timeout_interval_ms(1500),
         min_frame_samples(120),
         min_process_count(3),
@@ -84,12 +63,17 @@ struct CpuOveruseOptions {
   bool enable_encode_usage_method;
   int low_encode_usage_threshold_percent;  // Threshold for triggering underuse.
   int high_encode_usage_threshold_percent; // Threshold for triggering overuse.
+  // TODO(asapersson): Remove options, not used.
   int low_encode_time_rsd_threshold;   // Additional threshold for triggering
                                        // underuse (used in addition to
                                        // threshold above if configured).
   int high_encode_time_rsd_threshold;  // Additional threshold for triggering
                                        // overuse (used in addition to
                                        // threshold above if configured).
+  bool enable_extended_processing_usage;  // Include a larger time span (in
+                                          // addition to encode time) for
+                                          // measuring the processing time of a
+                                          // frame.
   // General settings.
   int frame_timeout_interval_ms;  // The maximum allowed interval between two
                                   // frames before resetting estimations.
@@ -112,6 +96,8 @@ struct CpuOveruseOptions {
         o.high_encode_usage_threshold_percent &&
         low_encode_time_rsd_threshold == o.low_encode_time_rsd_threshold &&
         high_encode_time_rsd_threshold == o.high_encode_time_rsd_threshold &&
+        enable_extended_processing_usage ==
+        o.enable_extended_processing_usage &&
         frame_timeout_interval_ms == o.frame_timeout_interval_ms &&
         min_frame_samples == o.min_frame_samples &&
         min_process_count == o.min_process_count &&
@@ -132,6 +118,7 @@ struct CpuOveruseMetrics {
   int avg_encode_time_ms;   // The average encode time in ms.
   int encode_usage_percent; // The average encode time divided by the average
                             // time difference between incoming captured frames.
+  // TODO(asapersson): Remove metric, not used.
   int encode_rsd;           // The relative std dev of encode time of frames.
   int capture_queue_delay_ms_per_s;  // The current time delay between an
                                      // incoming captured frame until the frame
@@ -159,11 +146,6 @@ class WEBRTC_DLLEXPORT VideoEngine {
   // Installs the TraceCallback implementation to ensure that the VideoEngine
   // user receives callbacks for generated trace messages.
   static int SetTraceCallback(TraceCallback* callback);
-
-#if defined(ANDROID) && !defined(WEBRTC_CHROMIUM_BUILD)
-  // Android specific.
-  static int SetAndroidObjects(JavaVM* java_vm, jobject context);
-#endif
 
  protected:
   VideoEngine() {}
@@ -216,26 +198,18 @@ class WEBRTC_DLLEXPORT ViEBase {
                                          CpuOveruseObserver* observer) = 0;
 
   // Sets options for cpu overuse detector.
-  // TODO(asapersson): Remove default implementation.
   virtual int SetCpuOveruseOptions(int channel,
-                                   const CpuOveruseOptions& options) {
-    return -1;
-  }
+                                   const CpuOveruseOptions& options) = 0;
 
   // Gets cpu overuse measures.
-  // TODO(asapersson): Remove default implementation.
-  virtual int GetCpuOveruseMetrics(int channel,
-                                   CpuOveruseMetrics* metrics) {
-    return -1;
-  }
-  // TODO(asapersson): Remove this function when libjingle has been updated.
-  virtual int CpuOveruseMeasures(int channel,
-                                 int* capture_jitter_ms,
-                                 int* avg_encode_time_ms,
-                                 int* encode_usage_percent,
-                                 int* capture_queue_delay_ms_per_s) {
-    return -1;
-  }
+  virtual int GetCpuOveruseMetrics(int channel, CpuOveruseMetrics* metrics) = 0;
+
+  // Registers a callback which is called when send-side delay statistics has
+  // been updated.
+  // TODO(holmer): Remove the default implementation when fakevideoengine.h has
+  // been updated.
+  virtual void RegisterSendSideDelayObserver(
+      int channel, SendSideDelayObserver* observer) {}
 
   // Specifies the VoiceEngine and VideoEngine channel pair to use for
   // audio/video synchronization.

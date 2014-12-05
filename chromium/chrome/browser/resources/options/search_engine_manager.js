@@ -3,24 +3,26 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /**
    * Encapsulated handling of search engine management page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function SearchEngineManager() {
     this.activeNavTab = null;
-    OptionsPage.call(this, 'searchEngines',
-                     loadTimeData.getString('searchEngineManagerPageTabTitle'),
-                     'search-engine-manager-page');
+    Page.call(this, 'searchEngines',
+              loadTimeData.getString('searchEngineManagerPageTabTitle'),
+              'search-engine-manager-page');
   }
 
   cr.addSingletonGetter(SearchEngineManager);
 
   SearchEngineManager.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * List for default search engine options.
@@ -40,9 +42,9 @@ cr.define('options', function() {
      */
     extensionList_: null,
 
-    /** inheritDoc */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       this.defaultsList_ = $('default-search-engine-list');
       this.setUpList_(this.defaultsList_);
@@ -54,13 +56,13 @@ cr.define('options', function() {
       this.setUpList_(this.extensionList_);
 
       $('search-engine-manager-confirm').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
     },
 
     /**
      * Sets up the given list as a search engine list
-     * @param {List} list The list to set up.
+     * @param {HTMLElement} list The list to set up.
      * @private
      */
     setUpList_: function(list) {
@@ -71,9 +73,9 @@ cr.define('options', function() {
     /**
      * Updates the search engine list with the given entries.
      * @private
-     * @param {Array} defaultEngines List of possible default search engines.
-     * @param {Array} otherEngines List of other search engines.
-     * @param {Array} keywords List of keywords from extensions.
+     * @param {!Array} defaultEngines List of possible default search engines.
+     * @param {!Array} otherEngines List of other search engines.
+     * @param {!Array} keywords List of keywords from extensions.
      */
     updateSearchEngineList_: function(defaultEngines, otherEngines, keywords) {
       this.defaultsList_.dataModel = new ArrayDataModel(defaultEngines);

@@ -56,7 +56,7 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
 
   // Note that any trailing whitespace in |text| will be trimmed.
   StyledLabel(const base::string16& text, StyledLabelListener* listener);
-  virtual ~StyledLabel();
+  ~StyledLabel() override;
 
   // Sets the text to be displayed, and clears any previous styling.
   void SetText(const base::string16& text);
@@ -73,6 +73,11 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
   // a range set by AddStyleRange.
   void SetDefaultStyle(const RangeStyleInfo& style_info);
 
+  // Get or set the distance in pixels between baselines of multi-line text.
+  // Default is 0, indicating the distance between lines should be the standard
+  // one for the label's text, font list, and platform.
+  void SetLineHeight(int height);
+
   // Sets the color of the background on which the label is drawn. This won't
   // be explicitly drawn, but the label will force the text color to be
   // readable over it.
@@ -86,13 +91,13 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
   }
 
   // View implementation:
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual int GetHeightForWidth(int w) const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void PreferredSizeChanged() OVERRIDE;
+  gfx::Insets GetInsets() const override;
+  int GetHeightForWidth(int w) const override;
+  void Layout() override;
+  void PreferredSizeChanged() override;
 
   // LinkListener implementation:
-  virtual void LinkClicked(Link* source, int event_flags) OVERRIDE;
+  void LinkClicked(Link* source, int event_flags) override;
 
  private:
   struct StyleRange {
@@ -121,6 +126,9 @@ class VIEWS_EXPORT StyledLabel : public View, public LinkListener {
 
   // Fonts used to display text. Can be augmented by RangeStyleInfo.
   gfx::FontList font_list_;
+
+  // Line height.
+  int specified_line_height_;
 
   // The default style to use for any part of the text that isn't within
   // a range in |style_ranges_|.

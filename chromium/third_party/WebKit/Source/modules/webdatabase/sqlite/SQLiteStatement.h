@@ -30,7 +30,7 @@
 
 struct sqlite3_stmt;
 
-namespace WebCore {
+namespace blink {
 
 class SQLValue;
 
@@ -71,11 +71,11 @@ private:
     SQLiteDatabase& m_database;
     String m_query;
     sqlite3_stmt* m_statement;
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_isPrepared;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLiteStatement_h

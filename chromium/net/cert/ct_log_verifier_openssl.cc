@@ -9,6 +9,7 @@
 
 #include "base/logging.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "crypto/sha2.h"
 #include "net/cert/signed_tree_head.h"
 
@@ -55,7 +56,7 @@ bool CTLogVerifier::Init(const base::StringPiece& public_key,
                          const base::StringPiece& description) {
   crypto::OpenSSLErrStackTracer err_tracer(FROM_HERE);
 
-  crypto::ScopedOpenSSL<BIO, BIO_free_all> bio(
+  crypto::ScopedBIO bio(
       BIO_new_mem_buf(const_cast<char*>(public_key.data()), public_key.size()));
   if (!bio.get())
     return false;
@@ -111,7 +112,7 @@ bool CTLogVerifier::VerifySignature(const base::StringPiece& data_to_sign,
           &ctx, data_to_sign.data(), data_to_sign.size()) &&
       1 == EVP_DigestVerifyFinal(
           &ctx,
-          reinterpret_cast<unsigned char*>(const_cast<char*>(signature.data())),
+          reinterpret_cast<const uint8_t*>(signature.data()),
           signature.size()));
 
   EVP_MD_CTX_cleanup(&ctx);

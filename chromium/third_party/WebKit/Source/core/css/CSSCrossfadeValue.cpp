@@ -32,7 +32,7 @@
 #include "platform/graphics/CrossfadeGeneratedImage.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool subimageIsPending(CSSValue* value)
 {
@@ -189,9 +189,8 @@ PassRefPtr<Image> CSSCrossfadeValue::image(RenderObject* renderer, const IntSize
 
 void CSSCrossfadeValue::crossfadeChanged(const IntRect&)
 {
-    RenderObjectSizeCountMap::const_iterator end = clients().end();
-    for (RenderObjectSizeCountMap::const_iterator curr = clients().begin(); curr != end; ++curr) {
-        RenderObject* client = const_cast<RenderObject*>(curr->key);
+    for (const auto& curr : clients()) {
+        RenderObject* client = const_cast<RenderObject*>(curr.key);
         client->imageChanged(static_cast<WrappedImagePtr>(this));
     }
 }
@@ -226,4 +225,4 @@ void CSSCrossfadeValue::traceAfterDispatch(Visitor* visitor)
     CSSImageGeneratorValue::traceAfterDispatch(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

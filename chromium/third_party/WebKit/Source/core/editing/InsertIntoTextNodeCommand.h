@@ -28,30 +28,30 @@
 
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class Text;
 
-class InsertIntoTextNodeCommand FINAL : public SimpleEditCommand {
+class InsertIntoTextNodeCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<InsertIntoTextNodeCommand> create(PassRefPtrWillBeRawPtr<Text> node, unsigned offset, const String& text)
     {
         return adoptRefWillBeNoop(new InsertIntoTextNodeCommand(node, offset, text));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     InsertIntoTextNodeCommand(PassRefPtrWillBeRawPtr<Text> node, unsigned offset, const String& text);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     RefPtrWillBeMember<Text> m_node;
     unsigned m_offset;
     String m_text;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InsertIntoTextNodeCommand_h

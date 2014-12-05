@@ -9,6 +9,11 @@
       'type': 'none',
       'dependencies': [ 'chrome_initial', ],
       'conditions': [
+        ['OS=="linux" and clang_type_profiler==1', {
+          'dependencies!': [
+            '<(DEPTH)/base/allocator/allocator.gyp:type_profiler',
+          ],
+        }],
         ['OS == "win"', {
           'actions': [
             {
@@ -42,6 +47,7 @@
       ],
     },
     {
+      # GN version: //chrome
       'target_name': 'chrome_initial',
       'type': 'executable',
       # Name the exe chrome.exe, not chrome_initial.exe.
@@ -60,6 +66,8 @@
         'app/client_util.h',
         'app/signature_validator_win.cc',
         'app/signature_validator_win.h',
+        # Note that due to InitializeSandboxInfo, this must be directly linked
+        # into chrome.exe, not into a dependent.
         '<(DEPTH)/content/app/startup_helper_win.cc',
         '<(DEPTH)/content/public/common/content_switches.cc',
       ],
@@ -89,15 +97,6 @@
                 '-Wl,-section-ordering-file=<(order_text_section)' ],
             }],
           ]
-        }],
-        ['OS == "win"', {
-          'sources!': [
-            # We still want the _win entry point for sandbox, etc.
-            'app/chrome_exe_main_aura.cc',
-          ],
-          'dependencies': [
-            '../ui/gfx/gfx.gyp:gfx',
-          ],
         }],
         ['OS == "android"', {
           # Don't put the 'chrome' target in 'all' on android
@@ -275,7 +274,6 @@
             '../components/components.gyp:chrome_manifest_bundle',
             'helper_app',
             'infoplist_strings_tool',
-            'interpose_dependency_shim',
             # On Mac, make sure we've built chrome_dll, which contains all of
             # the library code with Chromium functionality.
             'chrome_dll',
@@ -332,7 +330,6 @@
               'destination': '<(PRODUCT_DIR)/<(mac_product_name).app/Contents/Versions/<(version_full)',
               'files': [
                 '<(PRODUCT_DIR)/<(mac_product_name) Helper.app',
-                '<(PRODUCT_DIR)/libplugin_carbon_interpose.dylib',
               ],
             },
           ],
@@ -471,7 +468,8 @@
               'dependencies': [
                 '../native_client/src/trusted/service_runtime/linux/nacl_bootstrap.gyp:nacl_helper_bootstrap',
                 '../components/nacl.gyp:nacl_helper',
-                ],
+                '../components/nacl_nonsfi.gyp:nacl_helper_nonsfi',
+              ],
             }],
           ],
           'dependencies': [
@@ -487,19 +485,27 @@
             'installer_util',
             'image_pre_reader',
             '../base/base.gyp:base',
+            '../crypto/crypto.gyp:crypto',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../breakpad/breakpad.gyp:breakpad_sender',
             '../chrome_elf/chrome_elf.gyp:chrome_elf',
-            '../components/components.gyp:breakpad_component',
+            '../components/components.gyp:crash_component',
             '../sandbox/sandbox.gyp:sandbox',
+            '../ui/gfx/gfx.gyp:gfx',
+            '../win8/metro_driver/metro_driver.gyp:metro_driver',
+            '../win8/delegate_execute/delegate_execute.gyp:*',
           ],
           'sources': [
-            'app/chrome_breakpad_client.cc',
-            'app/chrome_breakpad_client.h',
+            'app/chrome_crash_reporter_client.cc',
+            'app/chrome_crash_reporter_client.h',
             'app/chrome_exe.rc',
             'common/crash_keys.cc',
             'common/crash_keys.h',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/chrome_exe_version.rc',
+          ],
+          'sources!': [
+            # We still want the _win entry point for sandbox, etc.
+            'app/chrome_exe_main_aura.cc',
           ],
           'msvs_settings': {
             'VCLinkerTool': {
@@ -512,7 +518,10 @@
                 'ole32.dll',
                 'oleaut32.dll',
               ],
-              'AdditionalDependencies': [ 'wintrust.lib' ],
+              'AdditionalDependencies': [
+                'wintrust.lib',
+                'crypt32.lib'
+              ],
               'conditions': [
                 ['asan==0', {
                   # Set /SUBSYSTEM:WINDOWS for chrome.exe itself, except for the
@@ -568,12 +577,6 @@
         ['OS=="win" and component=="shared_library"', {
           'defines': ['COMPILE_CONTENT_STATICALLY'],
         }],
-        ['OS=="win"', {
-          'dependencies': [
-            '../win8/metro_driver/metro_driver.gyp:metro_driver',
-            '../win8/delegate_execute/delegate_execute.gyp:*',
-          ],
-        }],
       ],
     },
   ],
@@ -600,7 +603,7 @@
               'type': 'executable',
               'product_name': 'nacl64',
               'sources': [
-                'app/chrome_breakpad_client.cc',
+                'app/chrome_crash_reporter_client.cc',
                 'common/crash_keys.cc',
                 'nacl/nacl_exe_win_64.cc',
                 '../content/app/startup_helper_win.cc',
@@ -671,10 +674,11 @@
           'type': 'none',
           'dependencies': [
             'chrome',
+            # Runtime dependencies
+            '../third_party/mesa/mesa.gyp:osmesa',
           ],
           'includes': [
             '../build/isolate.gypi',
-            'chrome.isolate',
           ],
           'sources': [
             'chrome.isolate',

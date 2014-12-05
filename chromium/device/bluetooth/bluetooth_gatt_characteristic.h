@@ -11,12 +11,12 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
+#include "device/bluetooth/bluetooth_gatt_service.h"
 #include "device/bluetooth/bluetooth_uuid.h"
 
 namespace device {
 
 class BluetoothGattDescriptor;
-class BluetoothGattService;
 class BluetoothGattNotifySession;
 
 // BluetoothGattCharacteristic represents a local or remote GATT characteristic.
@@ -25,7 +25,7 @@ class BluetoothGattNotifySession;
 // with a BluetoothGattService. There are two ways in which this class is used:
 //
 //   1. To represent GATT characteristics that belong to a service hosted by a
-//      a remote device. In this case the characteristic will be constructed by
+//      remote device. In this case the characteristic will be constructed by
 //      the subsystem.
 //   2. To represent GATT characteristics that belong to a locally hosted
 //      service. To achieve this, users can construct instances of
@@ -33,27 +33,30 @@ class BluetoothGattNotifySession;
 //      BluetoothGattService instance that represents a local service.
 class BluetoothGattCharacteristic {
  public:
+  // TODO(jamuraa): per chromium.org/developers/coding-style these should
+  // be MACRO_STYLE instead of kCamelCase. (crbug.com/418696)
+
   // Values representing the possible properties of a characteristic, which
   // define how the characteristic can be used. Each of these properties serve
   // a role as defined in the Bluetooth Specification.
-  // |kPropertyExtendedProperties| is a special property that, if present,
+  // |PROPERTY_EXTENDED_PROPERTIES| is a special property that, if present,
   // indicates that there is a characteristic descriptor (namely the
   // "Characteristic Extended Properties Descriptor" with UUID 0x2900) that
   // contains additional properties pertaining to the characteristic.
   // The properties "ReliableWrite| and |WriteAuxiliaries| are retrieved from
   // that characteristic.
   enum Property {
-    kPropertyNone = 0,
-    kPropertyBroadcast = 1 << 0,
-    kPropertyRead = 1 << 1,
-    kPropertyWriteWithoutResponse = 1 << 2,
-    kPropertyWrite = 1 << 3,
-    kPropertyNotify = 1 << 4,
-    kPropertyIndicate = 1 << 5,
-    kPropertyAuthenticatedSignedWrites = 1 << 6,
-    kPropertyExtendedProperties = 1 << 7,
-    kPropertyReliableWrite = 1 << 8,
-    kPropertyWritableAuxiliaries = 1 << 9
+    PROPERTY_NONE = 0,
+    PROPERTY_BROADCAST = 1 << 0,
+    PROPERTY_READ = 1 << 1,
+    PROPERTY_WRITE_WITHOUT_RESPONSE = 1 << 2,
+    PROPERTY_WRITE = 1 << 3,
+    PROPERTY_NOTIFY = 1 << 4,
+    PROPERTY_INDICATE = 1 << 5,
+    PROPERTY_AUTHENTICATED_SIGNED_WRITES = 1 << 6,
+    PROPERTY_EXTENDED_PROPERTIES = 1 << 7,
+    PROPERTY_RELIABLE_WRITE = 1 << 8,
+    PROPERTY_WRITABLE_AUXILIARIES = 1 << 9
   };
   typedef uint32 Properties;
 
@@ -63,22 +66,23 @@ class BluetoothGattCharacteristic {
   // value permissions are left up to the higher-level profile.
   //
   // Attribute permissions are distinct from the characteristic properties. For
-  // example, a characteristic may have the property |kPropertyRead| to make
+  // example, a characteristic may have the property |PROPERTY_READ| to make
   // clients know that it is possible to read the characteristic value and have
-  // the permission |kPermissionReadEncrypted| to require a secure connection.
+  // the permission |PERMISSION_READ_ENCRYPTED| to require a secure connection.
   // It is up to the application to properly specify the permissions and
   // properties for a local characteristic.
   enum Permission {
-    kPermissionNone = 0,
-    kPermissionRead = 1 << 0,
-    kPermissionWrite = 1 << 1,
-    kPermissionReadEncrypted = 1 << 2,
-    kPermissionWriteEncrypted = 1 << 3
+    PERMISSION_NONE = 0,
+    PERMISSION_READ = 1 << 0,
+    PERMISSION_WRITE = 1 << 1,
+    PERMISSION_READ_ENCRYPTED = 1 << 2,
+    PERMISSION_WRITE_ENCRYPTED = 1 << 3
   };
   typedef uint32 Permissions;
 
   // The ErrorCallback is used by methods to asynchronously report errors.
-  typedef base::Closure ErrorCallback;
+  typedef base::Callback<void(BluetoothGattService::GattErrorCode)>
+      ErrorCallback;
 
   // The ValueCallback is used to return the value of a remote characteristic
   // upon a read request.
@@ -102,11 +106,11 @@ class BluetoothGattCharacteristic {
   // BluetoothGattService instance, in which case the delegate will handle read
   // and write requests.
   //
-  // NOTE: Don't explicitly set |kPropertyExtendedProperties| in |properties|.
+  // NOTE: Don't explicitly set |PROPERTY_EXTENDED_PROPERTIES| in |properties|.
   // Instead, create and add a BluetoothGattDescriptor that represents the
   // "Characteristic Extended Properties" descriptor and this will automatically
   // set the correspoding bit in the characteristic's properties field. If
-  // |properties| has |kPropertyExtendedProperties| set, it will be ignored.
+  // |properties| has |PROPERTY_EXTENDED_PROPERTIES| set, it will be ignored.
   static BluetoothGattCharacteristic* Create(const BluetoothUUID& uuid,
                                              const std::vector<uint8>& value,
                                              Properties properties,

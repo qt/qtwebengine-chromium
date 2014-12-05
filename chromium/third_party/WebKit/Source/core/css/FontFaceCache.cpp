@@ -39,7 +39,7 @@
 #include "platform/fonts/FontDescription.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 FontFaceCache::FontFaceCache()
     : m_version(0)
@@ -62,7 +62,7 @@ void FontFaceCache::addFontFace(CSSFontSelector* cssFontSelector, PassRefPtrWill
     if (!traitsResult.storedValue->value)
         traitsResult.storedValue->value = adoptPtrWillBeNoop(new TraitsMap);
 
-    TraitsMap::AddResult segmentedFontFaceResult = traitsResult.storedValue->value->add(fontFace->traits().mask(), nullptr);
+    TraitsMap::AddResult segmentedFontFaceResult = traitsResult.storedValue->value->add(fontFace->traits().bitfield(), nullptr);
     if (!segmentedFontFaceResult.storedValue->value)
         segmentedFontFaceResult.storedValue->value = CSSSegmentedFontFace::create(cssFontSelector, fontFace->traits());
 
@@ -89,7 +89,7 @@ void FontFaceCache::removeFontFace(FontFace* fontFace, bool cssConnected)
         return;
     TraitsMap* familyFontFaces = fontFacesIter->value.get();
 
-    TraitsMap::iterator familyFontFacesIter = familyFontFaces->find(fontFace->traits().mask());
+    TraitsMap::iterator familyFontFacesIter = familyFontFaces->find(fontFace->traits().bitfield());
     if (familyFontFacesIter == familyFontFaces->end())
         return;
     RefPtrWillBeRawPtr<CSSSegmentedFontFace> segmentedFontFace = familyFontFacesIter->value;
@@ -107,11 +107,23 @@ void FontFaceCache::removeFontFace(FontFace* fontFace, bool cssConnected)
     ++m_version;
 }
 
-void FontFaceCache::clear()
+void FontFaceCache::clearCSSConnected()
 {
-    for (StyleRuleToFontFace::iterator it = m_styleRuleToFontFace.begin(); it != m_styleRuleToFontFace.end(); ++it)
-        removeFontFace(it->value.get(), true);
+    for (const auto& item : m_styleRuleToFontFace)
+        removeFontFace(item.value.get(), true);
     m_styleRuleToFontFace.clear();
+}
+
+void FontFaceCache::clearAll()
+{
+    if (m_fontFaces.isEmpty())
+        return;
+
+    m_fontFaces.clear();
+    m_fonts.clear();
+    m_styleRuleToFontFace.clear();
+    m_cssConnectedFontFaces.clear();
+    ++m_version;
 }
 
 static inline bool compareFontFaces(CSSSegmentedFontFace* first, CSSSegmentedFontFace* second, FontTraits desiredTraits)
@@ -198,10 +210,10 @@ CSSSegmentedFontFace* FontFaceCache::get(const FontDescription& fontDescription,
         traitsResult.storedValue->value = adoptPtrWillBeNoop(new TraitsMap);
 
     FontTraits traits = fontDescription.traits();
-    TraitsMap::AddResult faceResult = traitsResult.storedValue->value->add(traits.mask(), nullptr);
+    TraitsMap::AddResult faceResult = traitsResult.storedValue->value->add(traits.bitfield(), nullptr);
     if (!faceResult.storedValue->value) {
-        for (TraitsMap::const_iterator i = familyFontFaces->begin(); i != familyFontFaces->end(); ++i) {
-            CSSSegmentedFontFace* candidate = i->value.get();
+        for (const auto& item : *familyFontFaces) {
+            CSSSegmentedFontFace* candidate = item.value.get();
             FontTraits candidateTraits = candidate->traits();
             if (traits.style() == FontStyleNormal && candidateTraits.style() != FontStyleNormal)
                 continue;
@@ -216,10 +228,12 @@ CSSSegmentedFontFace* FontFaceCache::get(const FontDescription& fontDescription,
 
 void FontFaceCache::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_fontFaces);
     visitor->trace(m_fonts);
     visitor->trace(m_styleRuleToFontFace);
     visitor->trace(m_cssConnectedFontFaces);
+#endif
 }
 
 }

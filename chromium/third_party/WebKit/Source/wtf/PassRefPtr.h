@@ -58,7 +58,6 @@ namespace WTF {
     }
 
     template<typename T> class PassRefPtr {
-        WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(PassRefPtr);
     public:
         PassRefPtr() : m_ptr(0) { }
         PassRefPtr(std::nullptr_t) : m_ptr(0) { }
@@ -183,7 +182,7 @@ namespace WTF {
         return a.get() != b.get();
     }
 
-    template<typename T> inline PassRefPtr<T> adoptRef(T* p)
+    template<typename T> PassRefPtr<T> adoptRef(T* p)
     {
         adopted(p);
         return PassRefPtr<T>(p, PassRefPtr<T>::AdoptRef);

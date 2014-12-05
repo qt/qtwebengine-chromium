@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/id_map.h"
 #include "content/public/browser/browser_message_filter.h"
-#include "webkit/common/quota/quota_types.h"
+#include "storage/common/quota/quota_types.h"
 
 class GURL;
 
@@ -16,7 +16,7 @@ namespace IPC {
 class Message;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManager;
 }
 
@@ -27,30 +27,29 @@ struct StorageQuotaParams;
 class QuotaDispatcherHost : public BrowserMessageFilter {
  public:
   QuotaDispatcherHost(int process_id,
-                      quota::QuotaManager* quota_manager,
+                      storage::QuotaManager* quota_manager,
                       QuotaPermissionContext* permission_context);
 
   // BrowserMessageFilter:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  protected:
-  virtual ~QuotaDispatcherHost();
+  ~QuotaDispatcherHost() override;
 
  private:
   class RequestDispatcher;
   class QueryUsageAndQuotaDispatcher;
   class RequestQuotaDispatcher;
 
-  void OnQueryStorageUsageAndQuota(
-      int request_id,
-      const GURL& origin_url,
-      quota::StorageType type);
+  void OnQueryStorageUsageAndQuota(int request_id,
+                                   const GURL& origin_url,
+                                   storage::StorageType type);
   void OnRequestStorageQuota(const StorageQuotaParams& params);
 
   // The ID of this process.
   int process_id_;
 
-  quota::QuotaManager* quota_manager_;
+  storage::QuotaManager* quota_manager_;
   scoped_refptr<QuotaPermissionContext> permission_context_;
 
   IDMap<RequestDispatcher, IDMapOwnPointer> outstanding_requests_;

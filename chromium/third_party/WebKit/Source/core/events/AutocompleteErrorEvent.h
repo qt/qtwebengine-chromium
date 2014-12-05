@@ -27,13 +27,14 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 struct AutocompleteErrorEventInit : public EventInit {
     String reason;
 };
 
-class AutocompleteErrorEvent FINAL : public Event {
+class AutocompleteErrorEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<AutocompleteErrorEvent> create()
     {
@@ -52,33 +53,24 @@ public:
 
     const String& reason() const { return m_reason; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::AutocompleteErrorEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::AutocompleteErrorEvent; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE { Event::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { Event::trace(visitor); }
 
 private:
-    AutocompleteErrorEvent()
-    {
-        ScriptWrappable::init(this);
-    }
+    AutocompleteErrorEvent() { }
 
     AutocompleteErrorEvent(const String& reason)
         : Event(EventTypeNames::autocompleteerror, true, false)
-        , m_reason(reason)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_reason(reason) { }
 
     AutocompleteErrorEvent(const AtomicString& eventType, const AutocompleteErrorEventInit& initializer)
         : Event(eventType, initializer)
-        , m_reason(initializer.reason)
-    {
-        ScriptWrappable::init(this);
-    }
+        , m_reason(initializer.reason) { }
 
     String m_reason;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AutocompleteErrorEvent_h

@@ -28,6 +28,7 @@
 
 namespace net {
 class CertVerifier;
+class ChannelIDService;
 class CookieStore;
 class CTVerifier;
 class FraudulentCertificateReporter;
@@ -37,7 +38,6 @@ class HttpTransactionFactory;
 class HttpUserAgentSettings;
 class NetworkDelegate;
 class SdchManager;
-class ServerBoundCertService;
 class ProxyService;
 class URLRequest;
 class URLRequestJobFactory;
@@ -59,9 +59,8 @@ class NET_EXPORT URLRequestContext
   // May return NULL if this context doesn't have an associated network session.
   const HttpNetworkSession::Params* GetNetworkSessionParams() const;
 
-  // Creates a URLRequest. |cookie_store| optionally specifies a cookie store
-  // to be used rather than the one represented by the context, or NULL
-  // otherwise.
+  // Creates a URLRequest. If |cookie_store| is non-NULL, it will be used
+  // instead of the context's cookie store.
   scoped_ptr<URLRequest> CreateRequest(const GURL& url,
                                        RequestPriority priority,
                                        URLRequest::Delegate* delegate,
@@ -91,13 +90,13 @@ class NET_EXPORT URLRequestContext
     cert_verifier_ = cert_verifier;
   }
 
-  ServerBoundCertService* server_bound_cert_service() const {
-    return server_bound_cert_service_;
+  ChannelIDService* channel_id_service() const {
+    return channel_id_service_;
   }
 
-  void set_server_bound_cert_service(
-      ServerBoundCertService* server_bound_cert_service) {
-    server_bound_cert_service_ = server_bound_cert_service;
+  void set_channel_id_service(
+      ChannelIDService* channel_id_service) {
+    channel_id_service_ = channel_id_service;
   }
 
   FraudulentCertificateReporter* fraudulent_certificate_reporter() const {
@@ -199,6 +198,9 @@ class NET_EXPORT URLRequestContext
     return url_requests_.get();
   }
 
+  // CHECKs that no URLRequests using this context remain. Subclasses should
+  // additionally call AssertNoURLRequests() within their own destructor,
+  // prior to implicit destruction of subclass-owned state.
   void AssertNoURLRequests() const;
 
   // Get the underlying |HttpUserAgentSettings| implementation that provides
@@ -222,7 +224,7 @@ class NET_EXPORT URLRequestContext
   NetLog* net_log_;
   HostResolver* host_resolver_;
   CertVerifier* cert_verifier_;
-  ServerBoundCertService* server_bound_cert_service_;
+  ChannelIDService* channel_id_service_;
   FraudulentCertificateReporter* fraudulent_certificate_reporter_;
   HttpAuthHandlerFactory* http_auth_handler_factory_;
   ProxyService* proxy_service_;

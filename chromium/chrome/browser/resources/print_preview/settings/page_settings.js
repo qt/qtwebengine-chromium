@@ -11,10 +11,10 @@ cr.define('print_preview', function() {
    * @param {!print_preview.ticket_items.PageRange} pageRangeTicketItem Used to
    *     read and write page range settings.
    * @constructor
-   * @extends {print_preview.Component}
+   * @extends {print_preview.SettingsSection}
    */
   function PageSettings(pageRangeTicketItem) {
-    print_preview.Component.call(this);
+    print_preview.SettingsSection.call(this);
 
     /**
      * Used to read and write page range settings.
@@ -79,8 +79,19 @@ cr.define('print_preview', function() {
   PageSettings.CUSTOM_INPUT_DELAY_ = 500;
 
   PageSettings.prototype = {
-    __proto__: print_preview.Component.prototype,
+    __proto__: print_preview.SettingsSection.prototype,
 
+    /** @override */
+    isAvailable: function() {
+      return this.pageRangeTicketItem_.isCapabilityAvailable();
+    },
+
+    /** @override */
+    hasCollapsibleContent: function() {
+      return false;
+    },
+
+    /** @override */
     set isEnabled(isEnabled) {
       this.customInput_.disabled = !isEnabled;
       this.allRadio_.disabled = !isEnabled;
@@ -89,8 +100,7 @@ cr.define('print_preview', function() {
 
     /** @override */
     enterDocument: function() {
-      print_preview.Component.prototype.enterDocument.call(this);
-      fadeOutOption(this.getElement(), true);
+      print_preview.SettingsSection.prototype.enterDocument.call(this);
       this.tracker.add(
           this.allRadio_, 'click', this.onAllRadioClick_.bind(this));
       this.tracker.add(
@@ -111,7 +121,7 @@ cr.define('print_preview', function() {
 
     /** @override */
     exitDocument: function() {
-      print_preview.Component.prototype.exitDocument.call(this);
+      print_preview.SettingsSection.prototype.exitDocument.call(this);
       this.customInput_ = null;
       this.customRadio_ = null;
       this.allRadio_ = null;
@@ -128,24 +138,22 @@ cr.define('print_preview', function() {
           PageSettings.Classes_.CUSTOM_RADIO)[0];
       this.customHintEl_ = this.getElement().getElementsByClassName(
           PageSettings.Classes_.CUSTOM_HINT)[0];
-      this.customHintEl_.textContent = localStrings.getStringF(
+      this.customHintEl_.textContent = loadTimeData.getStringF(
           'pageRangeInstruction',
-          localStrings.getString('examplePageRangeText'));
+          loadTimeData.getString('examplePageRangeText'));
     },
 
     /**
-     * @param {boolean} Whether the custom hint is visible.
+     * @param {boolean} isVisible Whether the custom hint is visible.
      * @private
      */
     setInvalidStateVisible_: function(isVisible) {
       if (isVisible) {
         this.customInput_.classList.add('invalid');
-        this.customHintEl_.setAttribute('aria-hidden', 'false');
         fadeInElement(this.customHintEl_);
       } else {
         this.customInput_.classList.remove('invalid');
         fadeOutElement(this.customHintEl_);
-        this.customHintEl_.setAttribute('aria-hidden', 'true');
       }
     },
 
@@ -170,8 +178,9 @@ cr.define('print_preview', function() {
      * the custom input is empty.
      * @private
      */
-    onCustomInputBlur_: function() {
-      if (this.customInput_.value == '') {
+    onCustomInputBlur_: function(event) {
+      if (this.customInput_.value == '' &&
+          event.relatedTarget != this.customRadio_) {
         this.allRadio_.checked = true;
       }
     },
@@ -234,7 +243,7 @@ cr.define('print_preview', function() {
      * @private
      */
     onPageRangeTicketItemChange_: function() {
-      if (this.pageRangeTicketItem_.isCapabilityAvailable()) {
+      if (this.isAvailable()) {
         var pageRangeStr = this.pageRangeTicketItem_.getValue();
         if (pageRangeStr || this.customRadio_.checked) {
           if (!document.hasFocus() ||
@@ -247,10 +256,8 @@ cr.define('print_preview', function() {
           this.allRadio_.checked = true;
           this.setInvalidStateVisible_(false);
         }
-        fadeInOption(this.getElement());
-      } else {
-        fadeOutOption(this.getElement());
       }
+      this.updateUiStateInternal();
     }
   };
 

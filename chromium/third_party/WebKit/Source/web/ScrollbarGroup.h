@@ -30,56 +30,53 @@
 
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
-class FrameView;
-}
-
 namespace blink {
 
+class FrameView;
 class WebPluginScrollbarImpl;
 
-class ScrollbarGroup FINAL : public WebCore::ScrollableArea {
+class ScrollbarGroup final : public ScrollableArea {
 public:
-    ScrollbarGroup(WebCore::FrameView*, const WebCore::IntRect& frameRect);
+    ScrollbarGroup(FrameView*, const IntRect& frameRect);
     virtual ~ScrollbarGroup();
 
     void scrollbarCreated(WebPluginScrollbarImpl*);
     void scrollbarDestroyed(WebPluginScrollbarImpl*);
-    void setLastMousePosition(const WebCore::IntPoint&);
-    void setFrameRect(const WebCore::IntRect&);
+    void setLastMousePosition(const IntPoint&);
+    void setFrameRect(const IntRect&);
 
-    // WebCore::ScrollableArea methods
-    virtual int scrollSize(WebCore::ScrollbarOrientation) const OVERRIDE;
-    virtual void setScrollOffset(const WebCore::IntPoint&) OVERRIDE;
-    virtual void invalidateScrollbarRect(WebCore::Scrollbar*, const WebCore::IntRect&) OVERRIDE;
-    virtual void invalidateScrollCornerRect(const WebCore::IntRect&) OVERRIDE;
-    virtual bool isActive() const OVERRIDE;
-    virtual WebCore::IntRect scrollCornerRect() const OVERRIDE { return WebCore::IntRect(); }
-    virtual bool isScrollCornerVisible() const OVERRIDE;
-    virtual void getTickmarks(Vector<WebCore::IntRect>&) const OVERRIDE;
-    virtual WebCore::IntPoint convertFromContainingViewToScrollbar(const WebCore::Scrollbar*, const WebCore::IntPoint& parentPoint) const OVERRIDE;
-    virtual WebCore::Scrollbar* horizontalScrollbar() const OVERRIDE;
-    virtual WebCore::Scrollbar* verticalScrollbar() const OVERRIDE;
-    virtual WebCore::IntPoint scrollPosition() const OVERRIDE;
-    virtual WebCore::IntPoint minimumScrollPosition() const OVERRIDE;
-    virtual WebCore::IntPoint maximumScrollPosition() const OVERRIDE;
-    virtual int visibleHeight() const OVERRIDE;
-    virtual int visibleWidth() const OVERRIDE;
-    virtual WebCore::IntSize contentsSize() const OVERRIDE;
-    virtual WebCore::IntSize overhangAmount() const OVERRIDE;
-    virtual WebCore::IntPoint lastKnownMousePosition() const OVERRIDE;
-    virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
-    virtual void scrollbarStyleChanged() OVERRIDE;
-    virtual bool scrollbarsCanBeActive() const OVERRIDE;
-    virtual WebCore::IntRect scrollableAreaBoundingBox() const OVERRIDE;
-    virtual bool userInputScrollable(WebCore::ScrollbarOrientation) const OVERRIDE;
-    virtual bool shouldPlaceVerticalScrollbarOnLeft() const OVERRIDE;
-    virtual int pageStep(WebCore::ScrollbarOrientation) const OVERRIDE;
+    // ScrollableArea methods
+    virtual int scrollSize(ScrollbarOrientation) const override;
+    virtual void setScrollOffset(const IntPoint&) override;
+    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
+    virtual void invalidateScrollCornerRect(const IntRect&) override;
+    virtual bool isActive() const override;
+    virtual IntRect scrollCornerRect() const override { return IntRect(); }
+    virtual bool isScrollCornerVisible() const override;
+    virtual void getTickmarks(Vector<IntRect>&) const override;
+    virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint& parentPoint) const override;
+    virtual Scrollbar* horizontalScrollbar() const override;
+    virtual Scrollbar* verticalScrollbar() const override;
+    virtual IntPoint scrollPosition() const override;
+    virtual IntPoint minimumScrollPosition() const override;
+    virtual IntPoint maximumScrollPosition() const override;
+    virtual int visibleHeight() const override;
+    virtual int visibleWidth() const override;
+    virtual IntSize contentsSize() const override;
+    virtual IntSize overhangAmount() const override;
+    virtual IntPoint lastKnownMousePosition() const override;
+    virtual bool shouldSuspendScrollAnimations() const override;
+    virtual void scrollbarStyleChanged() override;
+    virtual bool scrollbarsCanBeActive() const override;
+    virtual IntRect scrollableAreaBoundingBox() const override;
+    virtual bool userInputScrollable(ScrollbarOrientation) const override;
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const override;
+    virtual int pageStep(ScrollbarOrientation) const override;
 
 private:
-    WebCore::FrameView* m_frameView;
-    WebCore::IntPoint m_lastMousePosition;
-    WebCore::IntRect m_frameRect;
+    FrameView* m_frameView;
+    IntPoint m_lastMousePosition;
+    IntRect m_frameRect;
     WebPluginScrollbarImpl* m_horizontalScrollbar;
     WebPluginScrollbarImpl* m_verticalScrollbar;
 };

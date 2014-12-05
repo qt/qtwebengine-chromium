@@ -10,7 +10,9 @@
 #include "base/bind.h"
 #include "content/child/child_thread.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
+#include "content/common/gpu/client/gl_helper.h"
 #include "content/common/gpu/client/gpu_channel_host.h"
+#include "content/common/gpu/client/gpu_video_encode_accelerator_host.h"
 #include "content/common/gpu/client/webgraphicscontext3d_command_buffer_impl.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
@@ -25,14 +27,14 @@ namespace content {
 scoped_refptr<RendererGpuVideoAcceleratorFactories>
 RendererGpuVideoAcceleratorFactories::Create(
     GpuChannelHost* gpu_channel_host,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider) {
   scoped_refptr<RendererGpuVideoAcceleratorFactories> factories =
       new RendererGpuVideoAcceleratorFactories(
-          gpu_channel_host, message_loop_proxy, context_provider);
+          gpu_channel_host, task_runner, context_provider);
   // Post task from outside constructor, since AddRef()/Release() is unsafe from
   // within.
-  message_loop_proxy->PostTask(
+  task_runner->PostTask(
       FROM_HERE,
       base::Bind(&RendererGpuVideoAcceleratorFactories::BindContext,
                  factories));
@@ -41,9 +43,9 @@ RendererGpuVideoAcceleratorFactories::Create(
 
 RendererGpuVideoAcceleratorFactories::RendererGpuVideoAcceleratorFactories(
     GpuChannelHost* gpu_channel_host,
-    const scoped_refptr<base::MessageLoopProxy>& message_loop_proxy,
+    const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
     const scoped_refptr<ContextProviderCommandBuffer>& context_provider)
-    : task_runner_(message_loop_proxy),
+    : task_runner_(task_runner),
       gpu_channel_host_(gpu_channel_host),
       context_provider_(context_provider),
       thread_safe_sender_(ChildThread::current()->thread_safe_sender()) {}
@@ -59,14 +61,27 @@ void RendererGpuVideoAcceleratorFactories::BindContext() {
 WebGraphicsContext3DCommandBufferImpl*
 RendererGpuVideoAcceleratorFactories::GetContext3d() {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  if (!context_provider_)
+  if (!context_provider_.get())
     return NULL;
   if (context_provider_->IsContextLost()) {
     context_provider_->VerifyContexts();
     context_provider_ = NULL;
+    gl_helper_.reset(NULL);
     return NULL;
   }
   return context_provider_->WebContext3D();
+}
+
+GLHelper* RendererGpuVideoAcceleratorFactories::GetGLHelper() {
+  if (!GetContext3d())
+    return NULL;
+
+  if (gl_helper_.get() == NULL) {
+    gl_helper_.reset(new GLHelper(GetContext3d()->GetImplementation(),
+                                  GetContext3d()->GetContextSupport()));
+  }
+
+  return gl_helper_.get();
 }
 
 scoped_ptr<media::VideoDecodeAccelerator>
@@ -178,59 +193,29 @@ void RendererGpuVideoAcceleratorFactories::ReadPixels(
     const SkBitmap& pixels) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
+  GLHelper* gl_helper = GetGLHelper();
   WebGraphicsContext3DCommandBufferImpl* context = GetContext3d();
-  if (!context)
+
+  if (!gl_helper || !context)
     return;
 
-  gpu::gles2::GLES2Implementation* gles2 = context->GetImplementation();
-
+  // Copy texture from texture_id to tmp_texture as texture might be external
+  // (GL_TEXTURE_EXTERNAL_OES)
   GLuint tmp_texture;
-  gles2->GenTextures(1, &tmp_texture);
-  gles2->BindTexture(GL_TEXTURE_2D, tmp_texture);
-  gles2->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  gles2->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  gles2->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  gles2->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  tmp_texture = gl_helper->CreateTexture();
   context->copyTextureCHROMIUM(
       GL_TEXTURE_2D, texture_id, tmp_texture, 0, GL_RGBA, GL_UNSIGNED_BYTE);
 
-  GLuint fb;
-  gles2->GenFramebuffers(1, &fb);
-  gles2->BindFramebuffer(GL_FRAMEBUFFER, fb);
-  gles2->FramebufferTexture2D(
-      GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, tmp_texture, 0);
-  gles2->PixelStorei(GL_PACK_ALIGNMENT, 4);
+  unsigned char* pixel_data =
+      static_cast<unsigned char*>(pixels.pixelRef()->pixels());
 
-#if SK_B32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_R32_SHIFT == 16 && \
-    SK_A32_SHIFT == 24
-  GLenum skia_format = GL_BGRA_EXT;
-  GLenum read_format = GL_BGRA_EXT;
-  GLint supported_format = 0;
-  GLint supported_type = 0;
-  gles2->GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_FORMAT, &supported_format);
-  gles2->GetIntegerv(GL_IMPLEMENTATION_COLOR_READ_TYPE, &supported_type);
-  if (supported_format != GL_BGRA_EXT || supported_type != GL_UNSIGNED_BYTE) {
-    read_format = GL_RGBA;
-  }
-#elif SK_R32_SHIFT == 0 && SK_G32_SHIFT == 8 && SK_B32_SHIFT == 16 && \
-    SK_A32_SHIFT == 24
-  GLenum skia_format = GL_RGBA;
-  GLenum read_format = GL_RGBA;
-#else
-#error Unexpected Skia ARGB_8888 layout!
-#endif
-  gles2->ReadPixels(visible_rect.x(),
-                    visible_rect.y(),
-                    visible_rect.width(),
-                    visible_rect.height(),
-                    read_format,
-                    GL_UNSIGNED_BYTE,
-                    pixels.pixelRef()->pixels());
-  gles2->DeleteFramebuffers(1, &fb);
-  gles2->DeleteTextures(1, &tmp_texture);
+  if (gl_helper->IsReadbackConfigSupported(pixels.colorType())) {
+    gl_helper->ReadbackTextureSync(
+        tmp_texture, visible_rect, pixel_data, pixels.colorType());
+  } else if (pixels.colorType() == kN32_SkColorType) {
+    gl_helper->ReadbackTextureSync(
+        tmp_texture, visible_rect, pixel_data, kRGBA_8888_SkColorType);
 
-  if (skia_format != read_format) {
-    DCHECK(read_format == GL_RGBA);
     int pixel_count = visible_rect.width() * visible_rect.height();
     uint32_t* pixels_ptr = static_cast<uint32_t*>(pixels.pixelRef()->pixels());
     for (int i = 0; i < pixel_count; ++i) {
@@ -243,9 +228,11 @@ void RendererGpuVideoAcceleratorFactories::ReadPixels(
                         (b << SK_B32_SHIFT) |
                         (a << SK_A32_SHIFT);
     }
+  } else {
+    NOTREACHED();
   }
 
-  DCHECK_EQ(gles2->GetError(), static_cast<GLenum>(GL_NO_ERROR));
+  gl_helper->DeleteTexture(tmp_texture);
 }
 
 base::SharedMemory* RendererGpuVideoAcceleratorFactories::CreateSharedMemory(
@@ -257,6 +244,14 @@ base::SharedMemory* RendererGpuVideoAcceleratorFactories::CreateSharedMemory(
 scoped_refptr<base::SingleThreadTaskRunner>
 RendererGpuVideoAcceleratorFactories::GetTaskRunner() {
   return task_runner_;
+}
+
+std::vector<media::VideoEncodeAccelerator::SupportedProfile>
+RendererGpuVideoAcceleratorFactories::
+    GetVideoEncodeAcceleratorSupportedProfiles() {
+  return GpuVideoEncodeAcceleratorHost::ConvertGpuToMediaProfiles(
+      gpu_channel_host_->gpu_info()
+          .video_encode_accelerator_supported_profiles);
 }
 
 }  // namespace content

@@ -8,29 +8,22 @@ cr.define('options', function() {
   /**
    * PointerOverlay class
    * Dialog that allows users to set pointer settings (touchpad/mouse).
-   * @extends {SettingsDialog}
+   * @constructor
+   * @extends {options.SettingsDialog}
    */
   function PointerOverlay() {
     // The title is updated dynamically in the setTitle method as pointer
     // devices are discovered or removed.
     SettingsDialog.call(this, 'pointer-overlay',
-                        '', 'pointer-overlay',
-                        $('pointer-overlay-confirm'),
-                        $('pointer-overlay-cancel'));
+        '', 'pointer-overlay',
+        assertInstanceof($('pointer-overlay-confirm'), HTMLButtonElement),
+        assertInstanceof($('pointer-overlay-cancel'), HTMLButtonElement));
   }
 
   cr.addSingletonGetter(PointerOverlay);
 
   PointerOverlay.prototype = {
     __proto__: SettingsDialog.prototype,
-
-    /**
-     * Initialize the page.
-     */
-    initializePage: function() {
-      // Call base class implementation to start preference initialization.
-      SettingsDialog.prototype.initializePage.call(this);
-    },
   };
 
   /**

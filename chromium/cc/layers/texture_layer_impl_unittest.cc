@@ -12,7 +12,10 @@
 namespace cc {
 namespace {
 
-void IgnoreCallback(uint32 sync_point, bool lost) {}
+void IgnoreCallback(uint32 sync_point,
+                    bool lost,
+                    BlockingTaskRunner* main_thread_task_runner) {
+}
 
 TEST(TextureLayerImplTest, Occlusion) {
   gfx::Size layer_size(1000, 1000);
@@ -32,7 +35,7 @@ TEST(TextureLayerImplTest, Occlusion) {
   texture_layer_impl->SetDrawsContent(true);
   texture_layer_impl->SetTextureMailbox(
       texture_mailbox,
-      SingleReleaseCallback::Create(base::Bind(&IgnoreCallback)));
+      SingleReleaseCallbackImpl::Create(base::Bind(&IgnoreCallback)));
 
   impl.CalcDrawProps(viewport_size);
 
@@ -61,11 +64,8 @@ TEST(TextureLayerImplTest, Occlusion) {
     impl.AppendQuadsWithOcclusion(texture_layer_impl, occluded);
 
     size_t partially_occluded_count = 0;
-    LayerTestCommon::VerifyQuadsCoverRectWithOcclusion(
-        impl.quad_list(),
-        gfx::Rect(layer_size),
-        occluded,
-        &partially_occluded_count);
+    LayerTestCommon::VerifyQuadsAreOccluded(
+        impl.quad_list(), occluded, &partially_occluded_count);
     // The layer outputs one quad, which is partially occluded.
     EXPECT_EQ(1u, impl.quad_list().size());
     EXPECT_EQ(1u, partially_occluded_count);

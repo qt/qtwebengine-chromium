@@ -29,57 +29,48 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/android/increase_size_for_speed.gypi',
+        # Disable LTO due to compiler error
+        # in mems_in_disjoint_alias_sets_p, at alias.c:393
+        # crbug.com/422255
+        '../build/android/disable_lto.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
         '../third_party/skia/src/opts',
+        '../third_party/skia/src/utils',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and \
            target_arch != "arm" and target_arch != "arm64" and \
-           target_arch != "mipsel"', {
+           target_arch != "mipsel" and target_arch != "mips64el"', {
           'cflags': [
             '-msse2',
           ],
         }],
         [ 'target_arch != "arm" and target_arch != "mipsel" and \
-           target_arch != "arm64"', {
+           target_arch != "arm64" and target_arch != "mips64el"', {
           'sources': [
+            '../third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRect_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkBlurImage_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_SSE2.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_SSE2.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_SSE2.cpp',
-            '../third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp',
-            '../third_party/skia/src/opts/SkMorphology_opts_SSE2.cpp',
-            '../third_party/skia/src/opts/SkBlurImage_opts_SSE2.cpp',
           ],
           'dependencies': [
             'skia_opts_ssse3',
+            'skia_opts_sse4',
           ],
         }],
         [ 'target_arch == "arm"', {
           'conditions': [
-            [ 'arm_version >= 7 and arm_neon == 1', {
-              'defines': [
-                '__ARM_HAVE_NEON',
-              ],
-            }],
-            [ 'arm_version >= 7 and arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
-              ],
-            }],
             [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
-              'cflags': [
-                # The neon assembly contains conditional instructions which
-                # aren't enclosed in an IT block. The assembler complains
-                # without this option.
-                # See #86592.
-                '-Wa,-mimplicit-it=always',
-              ],
               'dependencies': [
                 'skia_opts_neon',
               ]
@@ -101,7 +92,7 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_arm.cpp',
           ],
         }],
-        [ 'target_arch == "arm" and (arm_version < 7 or (arm_neon == 0 and arm_neon_optional == 1))', {
+        [ 'target_arch == "arm" and (arm_version < 7 or arm_neon == 0)', {
           'sources': [
             '../third_party/skia/src/opts/memset.arm.S',
           ],
@@ -110,10 +101,11 @@
           'sources': [
             '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
-            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
-            '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
           ],
         }],
         [ 'target_arch == "arm" and arm_version >= 6', {
@@ -123,11 +115,12 @@
             '../third_party/skia/src/opts/SkBlitRow_opts_arm.h',
             '../third_party/skia/src/opts/SkBlurImage_opts_arm.cpp',
             '../third_party/skia/src/opts/SkMorphology_opts_arm.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_arm.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_arm.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
           ],
         }],
-        [ 'target_arch == "mipsel"',{
+        [ 'target_arch == "mipsel" or target_arch == "mips64el"',{
           'cflags': [
             '-fomit-frame-pointer',
           ],
@@ -135,10 +128,11 @@
             '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+            '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
+            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_none.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
-            '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
-            '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
           ],
         }],
         [ 'target_arch == "arm64"', {
@@ -153,6 +147,8 @@
             '../third_party/skia/src/opts/SkBlurImage_opts_neon.cpp',
             '../third_party/skia/src/opts/SkMorphology_opts_arm.cpp',
             '../third_party/skia/src/opts/SkMorphology_opts_neon.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_arm.cpp',
+            '../third_party/skia/src/opts/SkTextureCompression_opts_neon.cpp',
             '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_arm.cpp',
             '../third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp',
@@ -169,6 +165,7 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/android/increase_size_for_speed.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
@@ -186,6 +183,13 @@
             'GCC_ENABLE_SUPPLEMENTAL_SSE3_INSTRUCTIONS': 'YES',
           },
         }],
+        [ 'OS == "win" and clang == 1', {
+          # cl.exe's /arch flag doesn't have a setting for SSSE3, and cl.exe
+          # doesn't need it for intrinsics. clang-cl does need it, though.
+          'msvs_settings': {
+            'VCCLCompilerTool': { 'AdditionalOptions': [ '-mssse3' ] },
+          },
+        }],
         [ 'OS == "win"', {
           'include_dirs': [
             'config/win',
@@ -195,11 +199,67 @@
               'config/win',
             ],
           },
+          'defines' : [
+            'SK_CPU_SSE_LEVEL=31'
+          ],
         }],
         [ 'target_arch != "arm" and target_arch != "arm64" and \
-           target_arch != "mipsel"', {
+           target_arch != "mipsel" and target_arch != "mips64el"', {
           'sources': [
             '../third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp',
+          ],
+        }],
+      ],
+    },
+    # For the same lame reasons as what is done for skia_opts, we also have to
+    # create another target specifically for SSE4 code as we would not want
+    # to compile the SSE2 code with -msse4 which would potentially allow
+    # gcc to generate SSE4 code.
+    {
+      'target_name': 'skia_opts_sse4',
+      'type': 'static_library',
+      'includes': [
+        'skia_common.gypi',
+        '../build/android/increase_size_for_speed.gypi',
+      ],
+      'include_dirs': [
+        '../third_party/skia/include/core',
+        '../third_party/skia/src/core',
+      ],
+      'sources': [
+        '../third_party/skia/src/opts/SkBlurImage_opts_SSE4.cpp',
+      ],
+      'conditions': [
+        [ 'OS in ["linux", "freebsd", "openbsd", "solaris", "android"]', {
+          'cflags': [
+            '-msse4.1',
+          ],
+        }],
+        [ 'OS == "mac"', {
+          'xcode_settings': {
+            'GCC_ENABLE_SSE41_EXTENSIONS': 'YES',
+          },
+        }],
+        [ 'OS == "win" and clang == 1', {
+          # cl.exe's /arch flag doesn't have a setting for SSE4.1, and cl.exe
+          # doesn't need it for intrinsics. clang-cl does need it, though.
+          'msvs_settings': {
+            'VCCLCompilerTool': { 'AdditionalOptions': [ '-msse4.1' ] },
+          },
+        }],
+        [ 'OS == "win"', {
+          'defines' : [
+            'SK_CPU_SSE_LEVEL=41'
+          ],
+        }],
+        [ 'target_arch == "x64"', {
+          'sources': [
+            '../third_party/skia/src/opts/SkBlitRow_opts_SSE4_x64_asm.S',
+          ],
+        }],
+        [ 'target_arch == "ia32"', {
+          'sources': [
+            '../third_party/skia/src/opts/SkBlitRow_opts_SSE4_asm.S',
           ],
         }],
       ],
@@ -209,20 +269,23 @@
       'type': 'static_library',
       'includes': [
         'skia_common.gypi',
+        '../build/android/increase_size_for_speed.gypi',
       ],
       'include_dirs': [
         '../third_party/skia/include/core',
         '../third_party/skia/include/effects',
         '../third_party/skia/src/core',
+        '../third_party/skia/src/utils',
       ],
       'sources': [
         '../third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp',
         '../third_party/skia/src/opts/SkBlitMask_opts_none.cpp',
         '../third_party/skia/src/opts/SkBlitRow_opts_none.cpp',
+        '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
+        '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
+        '../third_party/skia/src/opts/SkTextureCompression_opts_none.cpp',
         '../third_party/skia/src/opts/SkUtils_opts_none.cpp',
         '../third_party/skia/src/opts/SkXfermode_opts_none.cpp',
-        '../third_party/skia/src/opts/SkMorphology_opts_none.cpp',
-        '../third_party/skia/src/opts/SkBlurImage_opts_none.cpp',
       ],
     },
   ],
@@ -238,12 +301,17 @@
           'type': 'static_library',
           'includes': [
             'skia_common.gypi',
+            '../build/android/increase_size_for_speed.gypi',
+            # Disable LTO due to Neon issues
+            # crbug.com/408997
+            '../build/android/disable_lto.gypi',
           ],
           'include_dirs': [
             '../third_party/skia/include/core',
             '../third_party/skia/include/effects',
             '../third_party/skia/src/core',
             '../third_party/skia/src/opts',
+            '../third_party/skia/src/utils',
           ],
           'cflags!': [
             '-fno-omit-frame-pointer',
@@ -260,29 +328,18 @@
             '-Wl,--fix-cortex-a8',
           ],
           'sources': [
-            '../third_party/skia/src/opts/memset16_neon.S',
-            '../third_party/skia/src/opts/memset32_neon.S',
             '../third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp',
             '../third_party/skia/src/opts/SkBitmapProcState_matrixProcs_neon.cpp',
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h',
             '../third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h',
             '../third_party/skia/src/opts/SkBlitMask_opts_arm_neon.cpp',
             '../third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp',
-            '../third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp',
             '../third_party/skia/src/opts/SkBlurImage_opts_neon.cpp',
             '../third_party/skia/src/opts/SkMorphology_opts_neon.cpp',
-          ],
-          'conditions': [
-            ['arm_neon == 1', {
-              'defines': [
-                '__ARM_HAVE_NEON',
-              ],
-            }],
-            ['arm_neon_optional == 1', {
-              'defines': [
-                '__ARM_HAVE_OPTIONAL_NEON_SUPPORT',
-              ],
-            }],
+            '../third_party/skia/src/opts/SkTextureCompression_opts_neon.cpp',
+            '../third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp',
+            '../third_party/skia/src/opts/memset16_neon.S',
+            '../third_party/skia/src/opts/memset32_neon.S',
           ],
         },
       ],

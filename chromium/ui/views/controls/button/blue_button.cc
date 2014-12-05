@@ -4,17 +4,10 @@
 
 #include "ui/views/controls/button/blue_button.h"
 
-#include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/sys_color_change_listener.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/controls/button/label_button_border.h"
-
-namespace {
-
-// Default shadow color for the blue button.
-const SkColor kBlueButtonShadowColor = SkColorSetRGB(0x53, 0x8C, 0xEA);
-
-}  // namespace
 
 namespace views {
 
@@ -38,13 +31,17 @@ void BlueButton::ResetColorsFromNativeTheme() {
     SetTextColor(STATE_HOVERED, GetNativeTheme()->
         GetSystemColor(ui::NativeTheme::kColorId_BlueButtonHoverColor));
     SetTextColor(STATE_PRESSED, GetNativeTheme()->
-        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonHighlightColor));
+        GetSystemColor(ui::NativeTheme::kColorId_BlueButtonPressedColor));
     SetTextColor(STATE_DISABLED, GetNativeTheme()->
         GetSystemColor(ui::NativeTheme::kColorId_BlueButtonDisabledColor));
 
-    // TODO(estade): this is not great on system themes.
-    label()->set_shadows(gfx::ShadowValues(1,
-        gfx::ShadowValue(gfx::Point(0, 1), 0, kBlueButtonShadowColor)));
+    label()->SetShadows(gfx::ShadowValues(
+        1,
+        gfx::ShadowValue(
+            gfx::Point(0, 1),
+            0,
+            GetNativeTheme()->GetSystemColor(
+                ui::NativeTheme::kColorId_BlueButtonShadowColor))));
   }
 }
 

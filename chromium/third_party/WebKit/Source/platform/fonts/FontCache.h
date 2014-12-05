@@ -32,11 +32,11 @@
 
 #include <limits.h>
 #include "platform/PlatformExport.h"
+#include "platform/fonts/FontFaceCreationParams.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 #include "wtf/unicode/Unicode.h"
@@ -55,11 +55,11 @@ struct IDWriteFactory;
 
 class SkTypeface;
 
-namespace WebCore {
+namespace blink {
 
 class FontCacheClient;
+class FontFaceCreationParams;
 class FontPlatformData;
-class FontData;
 class FontDescription;
 class OpenTypeVerticalData;
 class SimpleFontData;
@@ -104,8 +104,10 @@ public:
     bool useSubpixelPositioning() const { return s_useSubpixelPositioning; }
     SkFontMgr* fontManager() { return m_fontManager.get(); }
     static bool useDirectWrite() { return s_useDirectWrite; }
+    static float deviceScaleFactor() { return s_deviceScaleFactor; }
     static void setUseDirectWrite(bool useDirectWrite) { s_useDirectWrite = useDirectWrite; }
     static void setDirectWriteFactory(IDWriteFactory* factory) { s_directWriteFactory = factory; }
+    static void setDeviceScaleFactor(float deviceScaleFactor) { s_deviceScaleFactor = deviceScaleFactor; }
     static void setUseSubpixelPositioning(bool useSubpixelPositioning) { s_useSubpixelPositioning = useSubpixelPositioning; }
     static void addSideloadedFontForTesting(SkTypeface*);
 #endif
@@ -116,11 +118,12 @@ public:
 #endif
 
 #if OS(ANDROID)
-    static AtomicString getGenericFamilyNameForScript(const AtomicString& familyName, UScriptCode);
+    static AtomicString getGenericFamilyNameForScript(const AtomicString& familyName, const FontDescription&);
 #else
     struct PlatformFallbackFont {
         String name;
         CString filename;
+        int fontconfigInterfaceId;
         int ttcIndex;
         bool isBold;
         bool isItalic;
@@ -143,15 +146,16 @@ private:
     }
 
     // FIXME: This method should eventually be removed.
-    FontPlatformData* getFontPlatformData(const FontDescription&, const AtomicString& family, bool checkingAlternateName = false);
+    FontPlatformData* getFontPlatformData(const FontDescription&, const FontFaceCreationParams&, bool checkingAlternateName = false);
 
     // These methods are implemented by each platform.
-    FontPlatformData* createFontPlatformData(const FontDescription&, const AtomicString& family, float fontSize);
+    FontPlatformData* createFontPlatformData(const FontDescription&, const FontFaceCreationParams&, float fontSize);
 
     // Implemented on skia platforms.
-    PassRefPtr<SkTypeface> createTypeface(const FontDescription&, const AtomicString& family, CString& name);
+    PassRefPtr<SkTypeface> createTypeface(const FontDescription&, const FontFaceCreationParams&, CString& name);
 
     PassRefPtr<SimpleFontData> fontDataFromFontPlatformData(const FontPlatformData*, ShouldRetain = Retain);
+    PassRefPtr<SimpleFontData> fallbackOnStandardFontStyle(const FontDescription&, UChar32);
 
     // Don't purge if this count is > 0;
     int m_purgePreventCount;
@@ -160,8 +164,9 @@ private:
     OwnPtr<SkFontMgr> m_fontManager;
     static bool s_useDirectWrite;
     static IDWriteFactory* s_directWriteFactory;
+    static float s_deviceScaleFactor;
     static bool s_useSubpixelPositioning;
-    static HashMap<String, SkTypeface*>* s_sideloadedFonts;
+    static HashMap<String, RefPtr<SkTypeface> >* s_sideloadedFonts;
 #endif
 
 #if OS(MACOSX) || OS(ANDROID)
@@ -177,6 +182,6 @@ public:
     ~FontCachePurgePreventer() { FontCache::fontCache()->enablePurging(); }
 };
 
-}
+} // namespace blink
 
 #endif

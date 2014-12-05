@@ -4,7 +4,7 @@
 
 #include "net/base/upload_file_element_reader.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
@@ -18,7 +18,7 @@ namespace net {
 
 class UploadFileElementReaderTest : public PlatformTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     PlatformTest::SetUp();
     // Some tests (*.ReadPartially) rely on bytes_.size() being even.
     const char kData[] = "123456789abcdefghi";
@@ -46,7 +46,7 @@ class UploadFileElementReaderTest : public PlatformTest {
     EXPECT_FALSE(reader_->IsInMemory());
   }
 
-  virtual ~UploadFileElementReaderTest() {
+  ~UploadFileElementReaderTest() override {
     reader_.reset();
     base::RunLoop().RunUntilIdle();
   }

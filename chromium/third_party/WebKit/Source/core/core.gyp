@@ -35,8 +35,6 @@
     '../build/scripts/scripts.gypi',
     '../bindings/core/core.gypi',  # core can depend on bindings/core, but not on bindings
     'core.gypi',
-    '../modules/modules_generated.gypi', # FIXME: Required by <(blink_modules_output_dir) below.
-    '../platform/platform_generated.gypi', # FIXME: Required by <(blink_platform_output_dir) below.
   ],
 
   'variables': {
@@ -44,13 +42,6 @@
 
     'webcore_include_dirs': [
       '..',  # WebKit/Source
-      # FIXME: Remove these once core scripts generate qualified
-      # includes correctly: http://crbug.com/380054
-      '<(blink_core_output_dir)',
-      '<(blink_modules_output_dir)',
-      '<(bindings_core_v8_output_dir)',
-      '<(bindings_modules_v8_output_dir)',
-      # Needed to include the generated binding headers.
       '<(SHARED_INTERMEDIATE_DIR)/blink',  # gen/blink
     ],
 
@@ -172,50 +163,6 @@
       ]
     },
     {
-      # GN version: //third_party/WebKit/Source/core/inspector:inspector_overlay_page
-      'target_name': 'inspector_overlay_page',
-      'type': 'none',
-      'variables': {
-        'input_file_path': 'inspector/InspectorOverlayPage.html',
-        'output_file_path': '<(blink_core_output_dir)/InspectorOverlayPage.h',
-        'character_array_name': 'InspectorOverlayPage_html',
-      },
-      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
-    },
-    {
-      # GN version: //third_party/WebKit/Source/core/inspector:injected_canvas_script_source
-      'target_name': 'injected_canvas_script_source',
-      'type': 'none',
-      'variables': {
-        'input_file_path': 'inspector/InjectedScriptCanvasModuleSource.js',
-        'output_file_path': '<(blink_core_output_dir)/InjectedScriptCanvasModuleSource.h',
-        'character_array_name': 'InjectedScriptCanvasModuleSource_js',
-      },
-      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
-    },
-    {
-      # GN version: //third_party/WebKit/Source/core/inspector:injected_script_source
-      'target_name': 'injected_script_source',
-      'type': 'none',
-      'variables': {
-        'input_file_path': 'inspector/InjectedScriptSource.js',
-        'output_file_path': '<(blink_core_output_dir)/InjectedScriptSource.h',
-        'character_array_name': 'InjectedScriptSource_js',
-      },
-      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
-    },
-    {
-      # GN version: //third_party/WebKit/Source/core/inspector:debugger_script_source
-      'target_name': 'debugger_script_source',
-      'type': 'none',
-      'variables': {
-        'input_file_path': '<(bindings_v8_dir)/DebuggerScript.js',
-        'output_file_path': '<(blink_core_output_dir)/DebuggerScriptSource.h',
-        'character_array_name': 'DebuggerScriptSource_js',
-      },
-      'includes': [ '../build/ConvertFileToHeaderWithCharacterArray.gypi' ],
-    },
-    {
       # GN version: //third_party/WebKit/Source/core:core_generated
       'target_name': 'webcore_generated',
       'type': 'static_library',
@@ -223,12 +170,8 @@
       'dependencies': [
         'webcore_prerequisites',
         'core_generated.gyp:make_core_generated',
-        'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
-        'injected_canvas_script_source',
-        'injected_script_source',
-        'debugger_script_source',
         '../bindings/core/v8/generated.gyp:bindings_core_v8_generated',
         # FIXME: don't depend on bindings_modules http://crbug.com/358074
         '../bindings/modules/generated.gyp:modules_event_generated',
@@ -253,10 +196,11 @@
       ],
       'sources': [
         # FIXME: should be bindings_core_v8_files http://crbug.com/358074
-        '<@(bindings_v8_files)',
+        '<@(bindings_core_v8_files)',
         # These files include all the .cpp files generated from the .idl files
         # in webcore_files.
         '<@(bindings_core_v8_generated_aggregate_files)',
+        '<@(bindings_core_v8_generated_union_type_files)',
 
         # Additional .cpp files for HashTools.h
         '<(blink_core_output_dir)/CSSPropertyNames.cpp',
@@ -265,11 +209,8 @@
         # Additional .cpp files from make_core_generated actions.
         '<(blink_core_output_dir)/Event.cpp',
         '<(blink_core_output_dir)/EventHeaders.h',
-        '<(blink_core_output_dir)/EventInterfaces.h',
         '<(blink_core_output_dir)/EventNames.cpp',
         '<(blink_core_output_dir)/EventNames.h',
-        '<(blink_core_output_dir)/EventTargetHeaders.h',
-        '<(blink_core_output_dir)/EventTargetInterfaces.h',
         '<(blink_core_output_dir)/EventTargetNames.cpp',
         '<(blink_core_output_dir)/EventTargetNames.h',
         '<(blink_core_output_dir)/EventTypeNames.cpp',
@@ -285,7 +226,6 @@
         '<(blink_core_output_dir)/MathMLNames.cpp',
         '<(blink_core_output_dir)/SVGNames.cpp',
         '<(blink_core_output_dir)/UserAgentStyleSheetsData.cpp',
-        '<(blink_core_output_dir)/V8HTMLElementWrapperFactory.cpp',
         '<(blink_core_output_dir)/XLinkNames.cpp',
         '<(blink_core_output_dir)/XMLNSNames.cpp',
         '<(blink_core_output_dir)/XMLNames.cpp',
@@ -299,8 +239,8 @@
         # Generated from MediaTypeNames.in
         '<(blink_core_output_dir)/MediaTypeNames.cpp',
 
-        # Generated from CSSTokenizer-in.cpp
-        '<(blink_core_output_dir)/CSSTokenizer.cpp',
+        # Generated from BisonCSSTokenizer-in.cpp
+        '<(blink_core_output_dir)/BisonCSSTokenizer.cpp',
 
         # Generated from BisonCSSParser-in.cpp
         '<(blink_core_output_dir)/BisonCSSParser.cpp',
@@ -327,7 +267,6 @@
 
         # Additional .cpp files for SVG.
         '<(blink_core_output_dir)/SVGElementFactory.cpp',
-        '<(blink_core_output_dir)/V8SVGElementWrapperFactory.cpp',
 
         # Generated from make_style_shorthands.py
         '<(blink_core_output_dir)/StylePropertyShorthand.cpp',
@@ -335,6 +274,12 @@
         # Generated from make_style_builder.py
         '<(blink_core_output_dir)/StyleBuilder.cpp',
         '<(blink_core_output_dir)/StyleBuilderFunctions.cpp',
+
+        # Generated from make_css_property_metadata.py
+        '<(blink_core_output_dir)/CSSPropertyMetadata.cpp',
+
+        # IDL dictionary impl files generated by IDL compiler
+        '<@(generated_core_dictionary_files)',
       ],
       'conditions': [
         ['OS=="win" and component=="shared_library"', {
@@ -345,9 +290,9 @@
         ['OS=="win"', {
           # In generated bindings code: 'switch contains default but no case'.
           # Disable c4267 warnings until we fix size_t to int truncations.
-          # 4702 is disabled because of issues in Bison-generated
+          # 4701 and 4702 are disabled because of issues in Bison-generated
           # XPathGrammar.cpp and CSSGrammar.cpp.
-          'msvs_disabled_warnings': [ 4065, 4267, 4702 ],
+          'msvs_disabled_warnings': [ 4065, 4267, 4701, 4702 ],
         }],
         ['OS in ("linux", "android") and "WTF_USE_WEBAUDIO_IPP=1" in feature_defines', {
           'cflags': [
@@ -363,10 +308,6 @@
       'target_name': 'webcore_prerequisites',
       'type': 'none',
       'dependencies': [
-        'debugger_script_source',
-        'injected_canvas_script_source',
-        'injected_script_source',
-        'inspector_overlay_page',
         'inspector_protocol_sources',
         'inspector_instrumentation_sources',
         'core_generated.gyp:make_core_generated',
@@ -378,7 +319,7 @@
         '../platform/blink_platform.gyp:blink_platform',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(angle_path)/src/build_angle.gyp:translator',
+        '<(angle_path)/src/angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -397,7 +338,7 @@
         '../config.gyp:config',
         '<(DEPTH)/gpu/gpu.gyp:gles2_c_lib',
         '<(DEPTH)/skia/skia.gyp:skia',
-        '<(angle_path)/src/build_angle.gyp:translator',
+        '<(angle_path)/src/angle.gyp:translator',
         '<(DEPTH)/third_party/iccjpeg/iccjpeg.gyp:iccjpeg',
         '<(DEPTH)/third_party/libpng/libpng.gyp:libpng',
         '<(DEPTH)/third_party/libwebp/libwebp.gyp:libwebp',
@@ -424,8 +365,7 @@
         'xcode_settings': {
           # Some Mac-specific parts of WebKit won't compile without having this
           # prefix header injected.
-          # FIXME: make this a first-class setting.
-          'GCC_PREFIX_HEADER': 'WebCorePrefixMac.h',
+          'GCC_PREFIX_HEADER': '<(DEPTH)/third_party/WebKit/Source/build/mac/Prefix.h',
         },
       },
       'conditions': [
@@ -497,7 +437,7 @@
                   'class_whitelist_regex':
                       'ChromiumWebCoreObjC|TCMVisibleView|RTCMFlippedView|ScrollerStyleObserver',
                   'category_whitelist_regex':
-                      'TCMInterposing|ScrollAnimatorChromiumMacExt|WebCoreTheme',
+                      'WebCoreFocusRingDrawing|WebCoreTheme',
                 },
                 'action': [
                   '../build/scripts/check_objc_rename.sh',
@@ -603,8 +543,6 @@
         ['exclude', '.*'],
         ['include', 'rendering/'],
 
-        # FIXME: Figure out how to store these patterns in a variable.
-        ['exclude', '(cf|cg|mac|opentype|svg|win)/'],
         ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
         # Previous rule excludes things like ChromiumFooWin, include those.
         ['include', 'rendering/.*Chromium.*\\.(cpp|mm?)$'],
@@ -680,14 +618,12 @@
       'sources/': [
         ['exclude', 'rendering/'],
 
-        # FIXME: Figure out how to store these patterns in a variable.
-        ['exclude', '(cf|cg|mac|opentype|svg|win)/'],
         ['exclude', '(?<!Chromium)(CF|CG|Mac|Win)\\.(cpp|mm?)$'],
       ],
       'conditions': [
-        # Shard this taret into parts to work around linker limitations.
+        # Shard this target into parts to work around linker limitations.
         # on link time code generation builds.
-        ['OS=="win" and buildtype=="Official"', {
+        ['OS=="win" and (buildtype=="Official" or (fastbuild==0 and win_z7==1))', {
           'msvs_shard': 19,
         }],
         ['OS != "linux"', {
@@ -754,6 +690,7 @@
         'webcore_svg',
         # Exported.
         'webcore_generated',
+        '../platform/blink_platform.gyp:blink_platform',
         '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
@@ -762,8 +699,9 @@
         '<(DEPTH)/v8/tools/gyp/v8.gyp:v8',
       ],
       'export_dependent_settings': [
-        '../wtf/wtf.gyp:wtf',
         'webcore_generated',
+        '../platform/blink_platform.gyp:blink_platform',
+        '../wtf/wtf.gyp:wtf',
         '<(DEPTH)/skia/skia.gyp:skia',
         '<(DEPTH)/third_party/npapi/npapi.gyp:npapi',
         '<(DEPTH)/third_party/qcms/qcms.gyp:qcms',
@@ -798,29 +736,39 @@
       ],
     },
     {
+      # GN version: //third_party/WebKit/Source/core:testing
       'target_name': 'webcore_testing',
       'type': 'static_library',
       'dependencies': [
         '../config.gyp:config',
         'webcore',
+        'webcore_generated',
       ],
       'defines': [
         'BLINK_IMPLEMENTATION=1',
         'INSIDE_BLINK',
       ],
       'include_dirs': [
-        '<(bindings_v8_dir)',  # FIXME: Remove once http://crbug.com/236119 is fixed.
+        '<(bindings_core_v8_dir)',  # FIXME: Remove once http://crbug.com/236119 is fixed.
         'testing',
         'testing/v8',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
+        '<@(generated_core_testing_dictionary_files)',
         '<@(webcore_testing_files)',
+        '<(bindings_core_v8_output_dir)/V8DictionaryTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8DictionaryTest.h',
+        '<(bindings_core_v8_output_dir)/V8GarbageCollectedScriptWrappable.cpp',
+        '<(bindings_core_v8_output_dir)/V8GarbageCollectedScriptWrappable.h',
         '<(bindings_core_v8_output_dir)/V8GCObservation.cpp',
         '<(bindings_core_v8_output_dir)/V8GCObservation.h',
-        '<(bindings_core_v8_output_dir)/V8MallocStatistics.cpp',
-        '<(bindings_core_v8_output_dir)/V8MallocStatistics.h',
+        '<(bindings_core_v8_output_dir)/V8PrivateScriptTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8PrivateScriptTest.h',
         '<(bindings_core_v8_output_dir)/V8TypeConversions.cpp',
         '<(bindings_core_v8_output_dir)/V8TypeConversions.h',
+        '<(bindings_core_v8_output_dir)/V8UnionTypesTest.cpp',
+        '<(bindings_core_v8_output_dir)/V8UnionTypesTest.h',
         '<(bindings_core_v8_output_dir)/V8Internals.cpp',
         '<(bindings_core_v8_output_dir)/V8Internals.h',
         '<(bindings_core_v8_output_dir)/V8InternalProfilers.cpp',
@@ -835,6 +783,10 @@
         '<(bindings_core_v8_output_dir)/V8LayerRect.h',
         '<(bindings_core_v8_output_dir)/V8LayerRectList.cpp',
         '<(bindings_core_v8_output_dir)/V8LayerRectList.h',
+        '<(bindings_core_v8_output_dir)/V8RefCountedScriptWrappable.cpp',
+        '<(bindings_core_v8_output_dir)/V8RefCountedScriptWrappable.h',
+        '<(bindings_core_v8_output_dir)/V8InternalDictionary.cpp',
+        '<(bindings_core_v8_output_dir)/V8InternalDictionary.h',
       ],
       'sources/': [
         ['exclude', 'testing/js'],

@@ -36,7 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 class CSSParserValueList;
 
 struct MediaQueryExpValue {
@@ -49,7 +49,6 @@ struct MediaQueryExpValue {
     bool isID;
     bool isValue;
     bool isRatio;
-    bool isInteger;
 
     MediaQueryExpValue()
         : id(CSSValueInvalid)
@@ -60,7 +59,6 @@ struct MediaQueryExpValue {
         , isID(false)
         , isValue(false)
         , isRatio(false)
-        , isInteger(false)
     {
     }
 

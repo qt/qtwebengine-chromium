@@ -26,11 +26,11 @@
 #include "core/css/CSSGroupingRule.h"
 #include "core/css/MediaList.h"
 
-namespace WebCore {
+namespace blink {
 
 class StyleRuleMedia;
 
-class CSSMediaRule FINAL : public CSSGroupingRule {
+class CSSMediaRule final : public CSSGroupingRule {
 public:
     static PassRefPtrWillBeRawPtr<CSSMediaRule> create(StyleRuleMedia* rule, CSSStyleSheet* sheet)
     {
@@ -39,13 +39,13 @@ public:
 
     virtual ~CSSMediaRule();
 
-    virtual CSSRule::Type type() const OVERRIDE { return MEDIA_RULE; }
-    virtual void reattach(StyleRuleBase*) OVERRIDE;
-    virtual String cssText() const OVERRIDE;
+    virtual CSSRule::Type type() const override { return MEDIA_RULE; }
+    virtual void reattach(StyleRuleBase*) override;
+    virtual String cssText() const override;
 
     MediaList* media() const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     CSSMediaRule(StyleRuleMedia*, CSSStyleSheet*);
@@ -57,6 +57,6 @@ private:
 
 DEFINE_CSS_RULE_TYPE_CASTS(CSSMediaRule, MEDIA_RULE);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSMediaRule_h

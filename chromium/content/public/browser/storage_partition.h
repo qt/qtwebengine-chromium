@@ -8,15 +8,18 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
+#include "base/time/time.h"
+#include "content/common/content_export.h"
 
 class GURL;
 
-namespace appcache {
-class AppCacheService;
+namespace base {
+class Time;
 }
 
-namespace fileapi {
+namespace storage {
 class FileSystemContext;
 }
 
@@ -24,20 +27,22 @@ namespace net {
 class URLRequestContextGetter;
 }
 
-namespace quota {
+namespace storage {
 class QuotaManager;
 class SpecialStoragePolicy;
 }
 
-namespace webkit_database {
+namespace storage {
 class DatabaseTracker;
 }
 
 namespace content {
 
+class AppCacheService;
 class BrowserContext;
-class IndexedDBContext;
 class DOMStorageContext;
+class GeofencingManager;
+class IndexedDBContext;
 class ServiceWorkerContext;
 
 // Defines what persistent state a child process can access.
@@ -46,49 +51,46 @@ class ServiceWorkerContext;
 // persistent state inside the BrowserContext. This is used to implement
 // isolated storage where a renderer with isolated storage cannot see
 // the cookies, localStorage, etc., that normal web renderers have access to.
-class StoragePartition {
+class CONTENT_EXPORT StoragePartition {
  public:
   virtual base::FilePath GetPath() = 0;
   virtual net::URLRequestContextGetter* GetURLRequestContext() = 0;
   virtual net::URLRequestContextGetter* GetMediaURLRequestContext() = 0;
-  virtual quota::QuotaManager* GetQuotaManager() = 0;
-  virtual appcache::AppCacheService* GetAppCacheService() = 0;
-  virtual fileapi::FileSystemContext* GetFileSystemContext() = 0;
-  virtual webkit_database::DatabaseTracker* GetDatabaseTracker() = 0;
+  virtual storage::QuotaManager* GetQuotaManager() = 0;
+  virtual AppCacheService* GetAppCacheService() = 0;
+  virtual storage::FileSystemContext* GetFileSystemContext() = 0;
+  virtual storage::DatabaseTracker* GetDatabaseTracker() = 0;
   virtual DOMStorageContext* GetDOMStorageContext() = 0;
   virtual IndexedDBContext* GetIndexedDBContext() = 0;
   virtual ServiceWorkerContext* GetServiceWorkerContext() = 0;
+  virtual GeofencingManager* GetGeofencingManager() = 0;
 
-  enum RemoveDataMask {
-    REMOVE_DATA_MASK_APPCACHE = 1 << 0,
-    REMOVE_DATA_MASK_COOKIES = 1 << 1,
-    REMOVE_DATA_MASK_FILE_SYSTEMS = 1 << 2,
-    REMOVE_DATA_MASK_INDEXEDDB = 1 << 3,
-    REMOVE_DATA_MASK_LOCAL_STORAGE = 1 << 4,
-    REMOVE_DATA_MASK_SHADER_CACHE = 1 << 5,
-    REMOVE_DATA_MASK_WEBSQL = 1 << 6,
-    REMOVE_DATA_MASK_WEBRTC_IDENTITY = 1 << 7,
-    REMOVE_DATA_MASK_ALL = -1
-  };
+  static const uint32 REMOVE_DATA_MASK_APPCACHE        = 1 << 0;
+  static const uint32 REMOVE_DATA_MASK_COOKIES         = 1 << 1;
+  static const uint32 REMOVE_DATA_MASK_FILE_SYSTEMS    = 1 << 2;
+  static const uint32 REMOVE_DATA_MASK_INDEXEDDB       = 1 << 3;
+  static const uint32 REMOVE_DATA_MASK_LOCAL_STORAGE   = 1 << 4;
+  static const uint32 REMOVE_DATA_MASK_SHADER_CACHE    = 1 << 5;
+  static const uint32 REMOVE_DATA_MASK_WEBSQL          = 1 << 6;
+  static const uint32 REMOVE_DATA_MASK_WEBRTC_IDENTITY = 1 << 7;
+  static const uint32 REMOVE_DATA_MASK_SERVICE_WORKERS = 1 << 8;
+  static const uint32 REMOVE_DATA_MASK_ALL             = 0xFFFFFFFF;
 
-  enum QuotaManagedStorageMask {
-    // Corresponds to quota::kStorageTypeTemporary.
-    QUOTA_MANAGED_STORAGE_MASK_TEMPORARY = 1 << 0,
-
-    // Corresponds to quota::kStorageTypePersistent.
-    QUOTA_MANAGED_STORAGE_MASK_PERSISTENT = 1 << 1,
-
-    // Corresponds to quota::kStorageTypeSyncable.
-    QUOTA_MANAGED_STORAGE_MASK_SYNCABLE = 1 << 2,
-
-    QUOTA_MANAGED_STORAGE_MASK_ALL = -1
-  };
+  // Corresponds to storage::kStorageTypeTemporary.
+  static const uint32 QUOTA_MANAGED_STORAGE_MASK_TEMPORARY  = 1 << 0;
+  // Corresponds to storage::kStorageTypePersistent.
+  static const uint32 QUOTA_MANAGED_STORAGE_MASK_PERSISTENT = 1 << 1;
+  // Corresponds to storage::kStorageTypeSyncable.
+  static const uint32 QUOTA_MANAGED_STORAGE_MASK_SYNCABLE   = 1 << 2;
+  static const uint32 QUOTA_MANAGED_STORAGE_MASK_ALL        = 0xFFFFFFFF;
 
   // Starts an asynchronous task that does a best-effort clear the data
   // corresponding to the given |remove_mask| and |quota_storage_remove_mask|
   // inside this StoragePartition for the given |storage_origin|.
   // Note session dom storage is not cleared even if you specify
   // REMOVE_DATA_MASK_LOCAL_STORAGE.
+  // |callback| is called when data deletion is done or at least the deletion is
+  // scheduled.
   //
   // TODO(ajwong): Right now, the embedder may have some
   // URLRequestContextGetter objects that the StoragePartition does not know
@@ -98,13 +100,13 @@ class StoragePartition {
   virtual void ClearDataForOrigin(uint32 remove_mask,
                                   uint32 quota_storage_remove_mask,
                                   const GURL& storage_origin,
-                                  net::URLRequestContextGetter* rq_context) = 0;
+                                  net::URLRequestContextGetter* rq_context,
+                                  const base::Closure& callback) = 0;
 
   // A callback type to check if a given origin matches a storage policy.
   // Can be passed empty/null where used, which means the origin will always
   // match.
-  typedef base::Callback<bool(const GURL&,
-                              quota::SpecialStoragePolicy*)>
+  typedef base::Callback<bool(const GURL&, storage::SpecialStoragePolicy*)>
       OriginMatcherFunction;
 
   // Similar to ClearDataForOrigin().

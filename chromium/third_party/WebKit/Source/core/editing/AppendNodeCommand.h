@@ -28,27 +28,27 @@
 
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
-class AppendNodeCommand FINAL : public SimpleEditCommand {
+class AppendNodeCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<AppendNodeCommand> create(PassRefPtrWillBeRawPtr<ContainerNode> parent, PassRefPtrWillBeRawPtr<Node> node)
     {
         return adoptRefWillBeNoop(new AppendNodeCommand(parent, node));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     AppendNodeCommand(PassRefPtrWillBeRawPtr<ContainerNode> parent, PassRefPtrWillBeRawPtr<Node>);
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     RefPtrWillBeMember<ContainerNode> m_parent;
     RefPtrWillBeMember<Node> m_node;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AppendNodeCommand_h

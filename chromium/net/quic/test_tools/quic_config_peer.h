@@ -18,8 +18,8 @@ class QuicConfigPeer {
   static void SetReceivedInitialWindow(QuicConfig* config,
                                        size_t initial_window);
 
-  static void SetReceivedLossDetection(QuicConfig* config,
-                                       QuicTag loss_detection);
+  static void SetReceivedSocketReceiveBuffer(QuicConfig* config,
+                                             uint32 receive_buffer_bytes);
 
   // TODO(rjshade): Remove when removing QUIC_VERSION_19.
   static void SetReceivedInitialFlowControlWindow(QuicConfig* config,
@@ -30,6 +30,11 @@ class QuicConfigPeer {
 
   static void SetReceivedInitialSessionFlowControlWindow(QuicConfig* config,
                                                          uint32 window_bytes);
+
+  static void SetReceivedConnectionOptions(QuicConfig* config,
+                                           const QuicTagVector& options);
+
+  static void SetReceivedBytesForConnectionId(QuicConfig* config, uint32 bytes);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicConfigPeer);

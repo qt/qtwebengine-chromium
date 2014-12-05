@@ -19,9 +19,9 @@ const int kDefaultSamplePeriodMs = 50;
 class TestPowerDataProvider : public PowerDataProvider {
  public:
   TestPowerDataProvider(int count) : num_events_to_send_(count) {}
-  virtual ~TestPowerDataProvider() {}
+  ~TestPowerDataProvider() override {}
 
-  virtual PowerEventVector GetData() OVERRIDE {
+  PowerEventVector GetData() override {
     PowerEventVector events;
     if (num_events_to_send_ == 0)
       return events;
@@ -36,9 +36,11 @@ class TestPowerDataProvider : public PowerDataProvider {
     return events;
   }
 
-  virtual base::TimeDelta GetSamplingRate() OVERRIDE {
+  base::TimeDelta GetSamplingRate() override {
     return base::TimeDelta::FromMilliseconds(kDefaultSamplePeriodMs);
   }
+
+  AccuracyLevel GetAccuracyLevel() override { return High; }
 
  private:
   int num_events_to_send_;
@@ -50,9 +52,9 @@ class TestPowerProfilerObserver : public PowerProfilerObserver {
   TestPowerProfilerObserver()
       : valid_event_count_(0),
         total_num_events_received_(0) {}
-  virtual ~TestPowerProfilerObserver() {}
+  ~TestPowerProfilerObserver() override {}
 
-  virtual void OnPowerEvent(const PowerEventVector& events) OVERRIDE {
+  void OnPowerEvent(const PowerEventVector& events) override {
     if (IsValidEvent(events[0]))
       ++valid_event_count_;
 
@@ -109,7 +111,7 @@ class PowerProfilerServiceTest : public testing::Test {
 
  protected:
   PowerProfilerServiceTest() : ui_thread_(BrowserThread::UI, &message_loop_) {}
-  virtual ~PowerProfilerServiceTest() {}
+  ~PowerProfilerServiceTest() override {}
 
   void RegisterQuitClosure(base::Closure closure) {
     observer_.set_quit_closure(closure);

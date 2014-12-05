@@ -5,10 +5,9 @@
 #ifndef InternalsNavigatorContentUtils_h
 #define InternalsNavigatorContentUtils_h
 
-namespace WebCore {
+namespace blink {
 
 class Document;
-class NavigatorContentUtilsClientMock;
 class Internals;
 
 class InternalsNavigatorContentUtils {
@@ -16,6 +15,6 @@ public:
     static void setNavigatorContentUtilsClientMock(Internals&, Document*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InternalsNavigatorContentUtils_h

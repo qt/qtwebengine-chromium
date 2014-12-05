@@ -31,7 +31,6 @@
 #include "config.h"
 #include "modules/filesystem/DOMFileSystem.h"
 
-#include "core/fileapi/File.h"
 #include "modules/filesystem/DOMFilePath.h"
 #include "modules/filesystem/DirectoryEntry.h"
 #include "modules/filesystem/ErrorCallback.h"
@@ -51,7 +50,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
 DOMFileSystem* DOMFileSystem::create(ExecutionContext* context, const String& name, FileSystemType type, const KURL& rootURL)
@@ -68,19 +67,19 @@ DOMFileSystem* DOMFileSystem::createIsolatedFileSystem(ExecutionContext* context
 
     StringBuilder filesystemName;
     filesystemName.append(createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
-    filesystemName.append(":Isolated_");
+    filesystemName.appendLiteral(":Isolated_");
     filesystemName.append(filesystemId);
 
     // The rootURL created here is going to be attached to each filesystem request and
     // is to be validated each time the request is being handled.
     StringBuilder rootURL;
-    rootURL.append("filesystem:");
+    rootURL.appendLiteral("filesystem:");
     rootURL.append(context->securityOrigin()->toString());
-    rootURL.append("/");
+    rootURL.append('/');
     rootURL.append(isolatedPathPrefix);
-    rootURL.append("/");
+    rootURL.append('/');
     rootURL.append(filesystemId);
-    rootURL.append("/");
+    rootURL.append('/');
 
     return DOMFileSystem::create(context, filesystemName.toString(), FileSystemTypeIsolated, KURL(ParsedURLString, rootURL.toString()));
 }
@@ -90,7 +89,6 @@ DOMFileSystem::DOMFileSystem(ExecutionContext* context, const String& name, File
     , ActiveDOMObject(context)
     , m_numberOfPendingCallbacks(0)
 {
-    ScriptWrappable::init(this);
 }
 
 DirectoryEntry* DOMFileSystem::root()
@@ -115,7 +113,7 @@ bool DOMFileSystem::hasPendingActivity() const
     return m_numberOfPendingCallbacks;
 }
 
-void DOMFileSystem::reportError(PassOwnPtr<ErrorCallback> errorCallback, PassRefPtrWillBeRawPtr<FileError> fileError)
+void DOMFileSystem::reportError(ErrorCallback* errorCallback, FileError* fileError)
 {
     scheduleCallback(errorCallback, fileError);
 }
@@ -124,9 +122,15 @@ namespace {
 
 class ConvertToFileWriterCallback : public FileWriterBaseCallback {
 public:
-    static PassOwnPtr<ConvertToFileWriterCallback> create(PassOwnPtr<FileWriterCallback> callback)
+    static ConvertToFileWriterCallback* create(FileWriterCallback* callback)
     {
-        return adoptPtr(new ConvertToFileWriterCallback(callback));
+        return new ConvertToFileWriterCallback(callback);
+    }
+
+    void trace(Visitor* visitor)
+    {
+        visitor->trace(m_callback);
+        FileWriterBaseCallback::trace(visitor);
     }
 
     void handleEvent(FileWriterBase* fileWriterBase)
@@ -134,81 +138,39 @@ public:
         m_callback->handleEvent(static_cast<FileWriter*>(fileWriterBase));
     }
 private:
-    ConvertToFileWriterCallback(PassOwnPtr<FileWriterCallback> callback)
+    explicit ConvertToFileWriterCallback(FileWriterCallback* callback)
         : m_callback(callback)
     {
     }
-    OwnPtr<FileWriterCallback> m_callback;
+    Member<FileWriterCallback> m_callback;
 };
 
 }
 
-void DOMFileSystem::createWriter(const FileEntry* fileEntry, PassOwnPtr<FileWriterCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMFileSystem::createWriter(const FileEntry* fileEntry, FileWriterCallback* successCallback, ErrorCallback* errorCallback)
 {
     ASSERT(fileEntry);
 
+    if (!fileSystem()) {
+        reportError(errorCallback, FileError::create(FileError::ABORT_ERR));
+        return;
+    }
+
     FileWriter* fileWriter = FileWriter::create(executionContext());
-    OwnPtr<FileWriterBaseCallback> conversionCallback = ConvertToFileWriterCallback::create(successCallback);
-    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, conversionCallback.release(), errorCallback, m_context);
+    FileWriterBaseCallback* conversionCallback = ConvertToFileWriterCallback::create(successCallback);
+    OwnPtr<AsyncFileSystemCallbacks> callbacks = FileWriterBaseCallbacks::create(fileWriter, conversionCallback, errorCallback, m_context);
     fileSystem()->createFileWriter(createFileSystemURL(fileEntry), fileWriter, callbacks.release());
 }
 
-namespace {
-
-class SnapshotFileCallback : public FileSystemCallbacksBase {
-public:
-    static PassOwnPtr<AsyncFileSystemCallbacks> create(DOMFileSystem* filesystem, const String& name, const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback, ExecutionContext* context)
-    {
-        return adoptPtr(static_cast<AsyncFileSystemCallbacks*>(new SnapshotFileCallback(filesystem, name, url, successCallback, errorCallback, context)));
-    }
-
-    virtual void didCreateSnapshotFile(const FileMetadata& metadata, PassRefPtr<BlobDataHandle> snapshot)
-    {
-        if (!m_successCallback)
-            return;
-
-        // We can't directly use the snapshot blob data handle because the content type on it hasn't been set.
-        // The |snapshot| param is here to provide a a chain of custody thru thread bridging that is held onto until
-        // *after* we've coined a File with a new handle that has the correct type set on it. This allows the
-        // blob storage system to track when a temp file can and can't be safely deleted.
-
-        // For regular filesystem types (temporary or persistent), we should not cache file metadata as it could change File semantics.
-        // For other filesystem types (which could be platform-specific ones), there's a chance that the files are on remote filesystem. If the port has returned metadata just pass it to File constructor (so we may cache the metadata).
-        // FIXME: We should use the snapshot metadata for all files.
-        // https://www.w3.org/Bugs/Public/show_bug.cgi?id=17746
-        if (m_fileSystem->type() == FileSystemTypeTemporary || m_fileSystem->type() == FileSystemTypePersistent) {
-            m_successCallback->handleEvent(File::createWithName(metadata.platformPath, m_name).get());
-        } else if (!metadata.platformPath.isEmpty()) {
-            // If the platformPath in the returned metadata is given, we create a File object for the path.
-            m_successCallback->handleEvent(File::createForFileSystemFile(m_name, metadata).get());
-        } else {
-            // Otherwise create a File from the FileSystem URL.
-            m_successCallback->handleEvent(File::createForFileSystemFile(m_url, metadata).get());
-        }
-
-        m_successCallback.release();
-    }
-
-private:
-    SnapshotFileCallback(DOMFileSystem* filesystem, const String& name, const KURL& url, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback, ExecutionContext* context)
-        : FileSystemCallbacksBase(errorCallback, filesystem, context)
-        , m_name(name)
-        , m_url(url)
-        , m_successCallback(successCallback)
-    {
-    }
-
-    String m_name;
-    KURL m_url;
-    OwnPtr<FileCallback> m_successCallback;
-};
-
-} // namespace
-
-void DOMFileSystem::createFile(const FileEntry* fileEntry, PassOwnPtr<FileCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DOMFileSystem::createFile(const FileEntry* fileEntry, FileCallback* successCallback, ErrorCallback* errorCallback)
 {
     KURL fileSystemURL = createFileSystemURL(fileEntry);
+    if (!fileSystem()) {
+        reportError(errorCallback, FileError::create(FileError::ABORT_ERR));
+        return;
+    }
+
     fileSystem()->createSnapshotFileAndReadMetadata(fileSystemURL, SnapshotFileCallback::create(this, fileEntry->name(), fileSystemURL, successCallback, errorCallback, m_context));
 }
 
-} // namespace WebCore
+} // namespace blink

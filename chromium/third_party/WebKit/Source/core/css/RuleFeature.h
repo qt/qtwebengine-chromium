@@ -28,15 +28,12 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSSelectorList;
 class DescendantInvalidationSet;
-class Document;
-class Node;
 class QualifiedName;
 class RuleData;
-class ShadowRoot;
 class SpaceSplitString;
 class StyleRule;
 
@@ -61,7 +58,6 @@ public:
     void add(const RuleFeatureSet&);
     void clear();
 
-    void collectFeaturesFromSelector(const CSSSelector&);
     void collectFeaturesFromRuleData(const RuleData&);
 
     bool usesSiblingRules() const { return !siblingRules.isEmpty(); }
@@ -70,22 +66,20 @@ public:
     unsigned maxDirectAdjacentSelectors() const { return m_metadata.maxDirectAdjacentSelectors; }
     void setMaxDirectAdjacentSelectors(unsigned value)  { m_metadata.maxDirectAdjacentSelectors = std::max(value, m_metadata.maxDirectAdjacentSelectors); }
 
-    inline bool hasSelectorForAttribute(const AtomicString& attributeName) const
+    bool hasSelectorForAttribute(const AtomicString& attributeName) const
     {
         ASSERT(!attributeName.isEmpty());
         return m_attributeInvalidationSets.contains(attributeName);
     }
 
-    inline bool hasSelectorForClass(const AtomicString& classValue) const
+    bool hasSelectorForClass(const AtomicString& classValue) const
     {
         ASSERT(!classValue.isEmpty());
         return m_classInvalidationSets.contains(classValue);
     }
 
-    inline bool hasSelectorForId(const AtomicString& idValue) const
-    {
-        return m_idInvalidationSets.contains(idValue);
-    }
+    bool hasSelectorForId(const AtomicString& idValue) const { return m_idInvalidationSets.contains(idValue); }
+    bool hasSelectorForPseudoType(CSSSelector::PseudoType pseudo) const { return m_pseudoInvalidationSets.contains(pseudo); }
 
     void scheduleStyleInvalidationForClassChange(const SpaceSplitString& changedClasses, Element&);
     void scheduleStyleInvalidationForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses, Element&);
@@ -109,6 +103,9 @@ public:
 
     WillBeHeapVector<RuleFeature> siblingRules;
     WillBeHeapVector<RuleFeature> uncommonAttributeRules;
+
+protected:
+    DescendantInvalidationSet* invalidationSetForSelector(const CSSSelector&);
 
 private:
     typedef WillBeHeapHashMap<AtomicString, RefPtrWillBeMember<DescendantInvalidationSet> > InvalidationSetMap;
@@ -143,7 +140,6 @@ private:
     DescendantInvalidationSet& ensureAttributeInvalidationSet(const AtomicString& attributeName);
     DescendantInvalidationSet& ensureIdInvalidationSet(const AtomicString& attributeName);
     DescendantInvalidationSet& ensurePseudoInvalidationSet(CSSSelector::PseudoType);
-    DescendantInvalidationSet* invalidationSetForSelector(const CSSSelector&);
 
     InvalidationSetMode updateInvalidationSets(const CSSSelector&);
 
@@ -151,7 +147,8 @@ private:
         InvalidationSetFeatures()
             : customPseudoElement(false)
             , treeBoundaryCrossing(false)
-            , wholeSubtree(false)
+            , adjacent(false)
+            , insertionPointCrossing(false)
         { }
         Vector<AtomicString> classes;
         Vector<AtomicString> attributes;
@@ -159,11 +156,14 @@ private:
         AtomicString tagName;
         bool customPseudoElement;
         bool treeBoundaryCrossing;
-        bool wholeSubtree;
+        bool adjacent;
+        bool insertionPointCrossing;
     };
 
     static void extractInvalidationSetFeature(const CSSSelector&, InvalidationSetFeatures&);
-    const CSSSelector* extractInvalidationSetFeatures(const CSSSelector&, InvalidationSetFeatures&);
+    const CSSSelector* extractInvalidationSetFeatures(const CSSSelector&, InvalidationSetFeatures&, bool negated);
+
+    void addFeaturesToInvalidationSet(DescendantInvalidationSet&, const InvalidationSetFeatures&);
     void addFeaturesToInvalidationSets(const CSSSelector&, InvalidationSetFeatures&);
 
     void addClassToInvalidationSet(const AtomicString& className, Element&);
@@ -173,21 +173,10 @@ private:
     InvalidationSetMap m_attributeInvalidationSets;
     InvalidationSetMap m_idInvalidationSets;
     PseudoTypeInvalidationSetMap m_pseudoInvalidationSets;
-    bool m_targetedStyleRecalcEnabled;
     StyleInvalidator m_styleInvalidator;
 };
 
 
-} // namespace WebCore
-
-namespace WTF {
-
-template <> struct VectorTraits<WebCore::RuleFeature> : VectorTraitsBase<WebCore::RuleFeature> {
-    static const bool needsDestruction = false;
-    static const bool canInitializeWithMemset = true;
-    static const bool canMoveWithMemcpy = true;
-};
-
-} // namespace WTF
+} // namespace blink
 
 #endif // RuleFeature_h

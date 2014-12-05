@@ -28,29 +28,30 @@
 #include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 class RTCIceCandidate;
 
-class RTCIceCandidateEvent FINAL : public Event {
+class RTCIceCandidateEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~RTCIceCandidateEvent();
 
     static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create();
-    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
+    static PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> create(bool canBubble, bool cancelable, RTCIceCandidate*);
 
     RTCIceCandidate* candidate() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RTCIceCandidateEvent();
-    RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate>);
+    RTCIceCandidateEvent(bool canBubble, bool cancelable, RTCIceCandidate*);
 
-    RefPtrWillBeMember<RTCIceCandidate> m_candidate;
+    PersistentWillBeMember<RTCIceCandidate> m_candidate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCIceCandidateEvent_h

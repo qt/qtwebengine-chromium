@@ -17,7 +17,7 @@ cr.define('options', function() {
    * @param {Object} entry A dictionary describing the handlers for a given
    *     protocol.
    * @constructor
-   * @extends {cr.ui.DeletableItemList}
+   * @extends {options.DeletableItem}
    */
   function IgnoredHandlersListItem(entry) {
     var el = cr.doc.createElement('div');
@@ -49,12 +49,19 @@ cr.define('options', function() {
     },
   };
 
-
+  /**
+   * @constructor
+   * @extends {options.DeletableItemList}
+   */
   var IgnoredHandlersList = cr.ui.define('list');
 
   IgnoredHandlersList.prototype = {
     __proto__: DeletableItemList.prototype,
 
+    /**
+     * @override
+     * @param {Object} entry
+     */
     createItem: function(entry) {
       return new IgnoredHandlersListItem(entry);
     },
@@ -75,14 +82,12 @@ cr.define('options', function() {
      * IgnoredHandlersListItem for an example of the format the list should
      * take.
      *
-     * @param {Object} list A list of ignored protocol handlers.
+     * @param {!Array} list A list of ignored protocol handlers.
      */
     setHandlers: function(list) {
       this.dataModel = new ArrayDataModel(list);
     },
   };
-
-
 
   /**
    * Creates a new protocol / content handler list item.
@@ -110,6 +115,11 @@ cr.define('options', function() {
   HandlerListItem.prototype = {
     __proto__: ListItem.prototype,
 
+    /**
+     * @param {Handlers} data
+     * @param {{removeHandler: Function, setDefault: Function,
+     *          clearDefault: Function}} delegate
+     */
     buildWidget_: function(data, delegate) {
       // Protocol.
       var protocolElement = document.createElement('div');
@@ -151,16 +161,46 @@ cr.define('options', function() {
         this.classList.add('none');
       this.appendChild(handlerElement);
 
-      // Remove link.
-      var removeElement = document.createElement('div');
-      removeElement.textContent =
-          loadTimeData.getString('handlers_remove_link');
-      removeElement.addEventListener('click', function(e) {
-        var value = selectElement ? selectElement.value : 0;
-        delegate.removeHandler(value, data.handlers[value]);
-      });
-      removeElement.className = 'handlers-remove-column handlers-remove-link';
-      this.appendChild(removeElement);
+      if (data.has_policy_recommendations) {
+        // Create an indicator to show that the handler has policy
+        // recommendations.
+        var indicator = new options.ControlledSettingIndicator();
+        if (data.is_default_handler_set_by_user || data.default_handler == -1) {
+          // The default handler is registered by the user or set to none, which
+          // indicates that the user setting has overridden a policy
+          // recommendation. Show the appropriate bubble.
+          indicator.controlledBy = 'hasRecommendation';
+          indicator.resetHandler = function() {
+            // If there is a policy recommendation, data.handlers.length >= 1.
+            // Setting the default handler to 0 ensures that it won't be 'none',
+            // and there *is* a user registered handler created by setDefault,
+            // which is required for a change notification.
+            // The user-registered handlers are removed in a loop. Note that if
+            // a handler is installed by policy, removeHandler does nothing.
+            delegate.setDefault(data.handlers[0]);
+            for (var i = 0; i < data.handlers.length; ++i) {
+              delegate.removeHandler(i, data.handlers[i]);
+            }
+          };
+        } else {
+          indicator.controlledBy = 'recommended';
+        }
+        this.appendChild(indicator);
+      }
+
+      if (data.registered_by_user) {
+        // Remove link.
+        var removeElement = document.createElement('div');
+        removeElement.textContent =
+            loadTimeData.getString('handlers_remove_link');
+        removeElement.addEventListener('click', function(e) {
+          var value = selectElement ? selectElement.value : 0;
+          delegate.removeHandler(value, data.handlers[value]);
+        });
+        removeElement.className =
+            'handlers-remove-column handlers-remove-link';
+        this.appendChild(removeElement);
+      }
     },
 
     /** @override */
@@ -193,7 +233,10 @@ cr.define('options', function() {
   HandlersList.prototype = {
     __proto__: List.prototype,
 
-    /** @override */
+    /**
+     * @override
+     * @param {Object} entry
+     */
     createItem: function(entry) {
       return new HandlerListItem(entry);
     },
@@ -209,7 +252,7 @@ cr.define('options', function() {
      * Set the protocol handlers displayed by this list.
      * See HandlerListItem for an example of the format the list should take.
      *
-     * @param {Object} list A list of protocols with their registered handlers.
+     * @param {!Array} list A list of protocols with their registered handlers.
      */
     setHandlers: function(list) {
       this.dataModel = new ArrayDataModel(list);

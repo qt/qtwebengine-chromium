@@ -34,63 +34,17 @@
 #include "core/css/RuleFeature.h"
 #include "core/dom/Element.h"
 
-namespace WebCore {
+namespace blink {
 
-class Element;
 class SpaceSplitString;
 
-class SelectRuleFeatureSet {
+class SelectRuleFeatureSet : public RuleFeatureSet {
     DISALLOW_ALLOCATION();
 public:
-    SelectRuleFeatureSet();
-
-    void add(const SelectRuleFeatureSet&);
-    void clear();
     void collectFeaturesFromSelector(const CSSSelector&);
-
-    bool hasSelectorForId(const AtomicString&) const;
-    bool hasSelectorForClass(const AtomicString&) const;
-    bool hasSelectorForAttribute(const AtomicString&) const;
-
-    bool hasSelectorForChecked() const { return hasSelectorFor(AffectedSelectorChecked); }
-    bool hasSelectorForEnabled() const { return hasSelectorFor(AffectedSelectorEnabled); }
-    bool hasSelectorForDisabled() const { return hasSelectorFor(AffectedSelectorDisabled); }
-    bool hasSelectorForIndeterminate() const { return hasSelectorFor(AffectedSelectorIndeterminate); }
-    bool hasSelectorForLink() const { return hasSelectorFor(AffectedSelectorLink); }
-    bool hasSelectorForTarget() const { return hasSelectorFor(AffectedSelectorTarget); }
-    bool hasSelectorForVisited() const { return hasSelectorFor(AffectedSelectorVisited); }
-
-    bool hasSelectorFor(AffectedSelectorMask features) const { return m_featureFlags & features; }
-
     bool checkSelectorsForClassChange(const SpaceSplitString& changedClasses) const;
     bool checkSelectorsForClassChange(const SpaceSplitString& oldClasses, const SpaceSplitString& newClasses) const;
-
-    void trace(Visitor* visitor) { visitor->trace(m_cssRuleFeatureSet); }
-
-private:
-    void setSelectRuleFeature(AffectedSelectorType feature) { m_featureFlags |= feature; }
-
-    RuleFeatureSet m_cssRuleFeatureSet;
-    int m_featureFlags;
 };
-
-inline bool SelectRuleFeatureSet::hasSelectorForId(const AtomicString& idValue) const
-{
-    ASSERT(!idValue.isEmpty());
-    return m_cssRuleFeatureSet.hasSelectorForId(idValue);
-}
-
-inline bool SelectRuleFeatureSet::hasSelectorForClass(const AtomicString& classValue) const
-{
-    ASSERT(!classValue.isEmpty());
-    return m_cssRuleFeatureSet.hasSelectorForClass(classValue);
-}
-
-inline bool SelectRuleFeatureSet::hasSelectorForAttribute(const AtomicString& attributeName) const
-{
-    ASSERT(!attributeName.isEmpty());
-    return m_cssRuleFeatureSet.hasSelectorForAttribute(attributeName);
-}
 
 }
 

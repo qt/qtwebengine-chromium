@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/texture_manager.h"
 
+#include <utility>
+
 #include "base/memory/scoped_ptr.h"
 #include "gpu/command_buffer/service/error_state_mock.h"
 #include "gpu/command_buffer/service/feature_info.h"
@@ -15,6 +17,7 @@
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "ui/gl/gl_image_stub.h"
 #include "ui/gl/gl_mock.h"
 
 using ::testing::AtLeast;
@@ -52,11 +55,10 @@ class TextureManagerTest : public GpuServiceTest {
 
   TextureManagerTest() : feature_info_(new FeatureInfo()) {}
 
-  virtual ~TextureManagerTest() {
-  }
+  ~TextureManagerTest() override {}
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     GpuServiceTest::SetUp();
     manager_.reset(new TextureManager(NULL,
                                       feature_info_.get(),
@@ -69,7 +71,7 @@ class TextureManagerTest : public GpuServiceTest {
     error_state_.reset(new ::testing::StrictMock<gles2::MockErrorState>());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     manager_->Destroy(false);
     manager_.reset();
     GpuServiceTest::TearDown();
@@ -218,7 +220,7 @@ TEST_F(TextureManagerTest, TextureUsageExt) {
   ASSERT_TRUE(texture_ref != NULL);
   TestHelper::SetTexParameteriWithExpectations(
       gl_.get(), error_state_.get(), &manager, texture_ref,
-      GL_TEXTURE_USAGE_ANGLE, GL_FRAMEBUFFER_ATTACHMENT_ANGLE,GL_NO_ERROR);
+      GL_TEXTURE_USAGE_ANGLE, GL_FRAMEBUFFER_ATTACHMENT_ANGLE, GL_NO_ERROR);
   EXPECT_EQ(static_cast<GLenum>(GL_FRAMEBUFFER_ATTACHMENT_ANGLE),
             texture_ref->texture()->usage());
   manager.Destroy(false);
@@ -394,9 +396,7 @@ class TextureTestBase : public GpuServiceTest {
   TextureTestBase()
       : feature_info_(new FeatureInfo()) {
   }
-  virtual ~TextureTestBase() {
-    texture_ref_ = NULL;
-  }
+  ~TextureTestBase() override { texture_ref_ = NULL; }
 
  protected:
   void SetUpBase(MemoryTracker* memory_tracker, std::string extensions) {
@@ -419,7 +419,7 @@ class TextureTestBase : public GpuServiceTest {
     ASSERT_TRUE(texture_ref_.get() != NULL);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     if (texture_ref_.get()) {
       // If it's not in the manager then setting texture_ref_ to NULL will
       // delete the texture.
@@ -453,14 +453,12 @@ class TextureTestBase : public GpuServiceTest {
 
 class TextureTest : public TextureTestBase {
  protected:
-  virtual void SetUp() {
-    SetUpBase(NULL, std::string());
-  }
+  void SetUp() override { SetUpBase(NULL, std::string()); }
 };
 
 class TextureMemoryTrackerTest : public TextureTestBase {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     mock_memory_tracker_ = new StrictMock<MockMemoryTracker>();
     SetUpBase(mock_memory_tracker_.get(), std::string());
   }
@@ -1060,8 +1058,8 @@ TEST_F(TextureTest, GetLevelType) {
                          GL_RGBA,
                          GL_UNSIGNED_BYTE,
                          true);
-  GLenum type = -1;
-  GLenum format = -1;
+  GLenum type = 0;
+  GLenum format = 0;
   Texture* texture = texture_ref_->texture();
   EXPECT_FALSE(texture->GetLevelType(GL_TEXTURE_2D, -1, &type, &format));
   EXPECT_FALSE(texture->GetLevelType(GL_TEXTURE_2D, 1000, &type, &format));
@@ -1632,18 +1630,13 @@ TEST_F(TextureTest, GetLevelImage) {
   Texture* texture = texture_ref_->texture();
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
   // Set image.
-  manager_->SetLevelImage(texture_ref_.get(),
-                          GL_TEXTURE_2D,
-                          1,
-                          gfx::GLImage::CreateGLImage(0).get());
+  scoped_refptr<gfx::GLImage> image(new gfx::GLImageStub);
+  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get());
   EXPECT_FALSE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
   // Remove it.
   manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, NULL);
   EXPECT_TRUE(texture->GetLevelImage(GL_TEXTURE_2D, 1) == NULL);
-  manager_->SetLevelImage(texture_ref_.get(),
-                          GL_TEXTURE_2D,
-                          1,
-                          gfx::GLImage::CreateGLImage(0).get());
+  manager_->SetLevelImage(texture_ref_.get(), GL_TEXTURE_2D, 1, image.get());
   // Image should be reset when SetLevelInfo is called.
   manager_->SetLevelInfo(texture_ref_.get(),
                          GL_TEXTURE_2D,
@@ -1873,7 +1866,7 @@ TEST_F(TextureTest, AddToSignature) {
 class ProduceConsumeTextureTest : public TextureTest,
                                   public ::testing::WithParamInterface<GLenum> {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     TextureTest::SetUpBase(NULL, "GL_OES_EGL_image_external");
     manager_->CreateTexture(kClient2Id, kService2Id);
     texture2_ = manager_->GetTexture(kClient2Id);
@@ -1882,7 +1875,7 @@ class ProduceConsumeTextureTest : public TextureTest,
       .WillRepeatedly(Return(error_state_.get()));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     if (texture2_.get()) {
       // If it's not in the manager then setting texture2_ to NULL will
       // delete the texture.
@@ -2091,7 +2084,7 @@ TEST_P(ProduceConsumeTextureTest, ProduceConsumeTextureWithImage) {
   manager_->SetTarget(texture_ref_.get(), target);
   Texture* texture = texture_ref_->texture();
   EXPECT_EQ(static_cast<GLenum>(target), texture->target());
-  scoped_refptr<gfx::GLImage> image(gfx::GLImage::CreateGLImage(0));
+  scoped_refptr<gfx::GLImage> image(new gfx::GLImageStub);
   manager_->SetLevelInfo(texture_ref_.get(),
                          target,
                          0,
@@ -2103,7 +2096,7 @@ TEST_P(ProduceConsumeTextureTest, ProduceConsumeTextureWithImage) {
                          GL_RGBA,
                          GL_UNSIGNED_BYTE,
                          true);
-  manager_->SetLevelImage(texture_ref_.get(), target, 0, image);
+  manager_->SetLevelImage(texture_ref_.get(), target, 0, image.get());
   GLuint service_id = texture->service_id();
   Texture* produced_texture = Produce(texture_ref_.get());
 
@@ -2169,16 +2162,14 @@ class CountingMemoryTracker : public MemoryTracker {
     current_size_[1] = 0;
   }
 
-  virtual void TrackMemoryAllocatedChange(size_t old_size,
-                                          size_t new_size,
-                                          Pool pool)  OVERRIDE {
+  void TrackMemoryAllocatedChange(size_t old_size,
+                                  size_t new_size,
+                                  Pool pool) override {
     DCHECK_LT(static_cast<size_t>(pool), arraysize(current_size_));
     current_size_[pool] += new_size - old_size;
   }
 
-  virtual bool EnsureGPUMemoryAvailable(size_t size_needed) OVERRIDE {
-    return true;
-  }
+  bool EnsureGPUMemoryAvailable(size_t size_needed) override { return true; }
 
   size_t GetSize(Pool pool) {
     DCHECK_LT(static_cast<size_t>(pool), arraysize(current_size_));
@@ -2186,7 +2177,7 @@ class CountingMemoryTracker : public MemoryTracker {
   }
 
  private:
-  virtual ~CountingMemoryTracker() {}
+  ~CountingMemoryTracker() override {}
 
   size_t current_size_[2];
   DISALLOW_COPY_AND_ASSIGN(CountingMemoryTracker);
@@ -2198,10 +2189,9 @@ class SharedTextureTest : public GpuServiceTest {
 
   SharedTextureTest() : feature_info_(new FeatureInfo()) {}
 
-  virtual ~SharedTextureTest() {
-  }
+  ~SharedTextureTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     GpuServiceTest::SetUp();
     memory_tracker1_ = new CountingMemoryTracker;
     texture_manager1_.reset(
@@ -2225,7 +2215,7 @@ class SharedTextureTest : public GpuServiceTest {
     texture_manager2_->Initialize();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     texture_manager2_->Destroy(false);
     texture_manager2_.reset();
     texture_manager1_->Destroy(false);
@@ -2472,18 +2462,14 @@ TEST_F(SharedTextureTest, Images) {
   EXPECT_FALSE(ref2->texture()->HasImages());
   EXPECT_FALSE(texture_manager1_->HaveImages());
   EXPECT_FALSE(texture_manager2_->HaveImages());
-  texture_manager1_->SetLevelImage(ref1.get(),
-                                   GL_TEXTURE_2D,
-                                   1,
-                                   gfx::GLImage::CreateGLImage(0).get());
+  scoped_refptr<gfx::GLImage> image1(new gfx::GLImageStub);
+  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image1.get());
   EXPECT_TRUE(ref1->texture()->HasImages());
   EXPECT_TRUE(ref2->texture()->HasImages());
   EXPECT_TRUE(texture_manager1_->HaveImages());
   EXPECT_TRUE(texture_manager2_->HaveImages());
-  texture_manager1_->SetLevelImage(ref1.get(),
-                                   GL_TEXTURE_2D,
-                                   1,
-                                   gfx::GLImage::CreateGLImage(0).get());
+  scoped_refptr<gfx::GLImage> image2(new gfx::GLImageStub);
+  texture_manager1_->SetLevelImage(ref1.get(), GL_TEXTURE_2D, 1, image2.get());
   EXPECT_TRUE(ref1->texture()->HasImages());
   EXPECT_TRUE(ref2->texture()->HasImages());
   EXPECT_TRUE(texture_manager1_->HaveImages());

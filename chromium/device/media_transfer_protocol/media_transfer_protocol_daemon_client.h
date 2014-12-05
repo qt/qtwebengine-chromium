@@ -54,19 +54,19 @@ class MediaTransferProtocolDaemonClient {
   // A callback to handle the result of CloseStorage.
   typedef base::Closure CloseStorageCallback;
 
-  // A callback to handle the result of ReadDirectoryByPath/Id.
+  // A callback to handle the result of ReadDirectoryEntryIds.
+  // The argument is a vector of file ids.
+  typedef base::Callback<void(const std::vector<uint32>& file_ids)
+                         > ReadDirectoryEntryIdsCallback;
+
+  // A callback to handle the result of GetFileInfo.
   // The argument is a vector of file entries.
   typedef base::Callback<void(const std::vector<MtpFileEntry>& file_entries)
-                         > ReadDirectoryCallback;
+                         > GetFileInfoCallback;
 
-  // A callback to handle the result of ReadFileChunkByPath/Id.
+  // A callback to handle the result of ReadFileChunkById.
   // The argument is a string containing the file data.
   typedef base::Callback<void(const std::string& data)> ReadFileCallback;
-
-  // A callback to handle the result of GetFileInfoByPath/Id.
-  // The argument is a file entry.
-  typedef base::Callback<void(const MtpFileEntry& file_entry)
-                         > GetFileInfoCallback;
 
   // A callback to handle storage attach/detach events.
   // The first argument is true for attach, false for detach.
@@ -104,58 +104,38 @@ class MediaTransferProtocolDaemonClient {
                             const CloseStorageCallback& callback,
                             const ErrorCallback& error_callback) = 0;
 
-  // Calls ReadDirectoryByPath method. |callback| is called after the method
-  // call succeeds, otherwise, |error_callback| is called.
-  virtual void ReadDirectoryByPath(const std::string& handle,
-                                   const std::string& path,
-                                   const ReadDirectoryCallback& callback,
-                                   const ErrorCallback& error_callback) = 0;
-
-  // Calls ReadDirectoryById method. |callback| is called after the method
+  // Calls ReadDirectoryEntryIds method. |callback| is called after the method
   // call succeeds, otherwise, |error_callback| is called.
   // |file_id| is a MTP-device specific id for a file.
-  virtual void ReadDirectoryById(const std::string& handle,
-                                 uint32 file_id,
-                                 const ReadDirectoryCallback& callback,
-                                 const ErrorCallback& error_callback) = 0;
+  virtual void ReadDirectoryEntryIds(
+      const std::string& handle,
+      uint32 file_id,
+      const ReadDirectoryEntryIdsCallback& callback,
+      const ErrorCallback& error_callback) = 0;
 
-  // Calls ReadFileChunkByPath method. |callback| is called after the method
+  // Calls GetFileInfo method. |callback| is called after the method
   // call succeeds, otherwise, |error_callback| is called.
-  // |bytes_to_read| cannot exceed 1 MiB.
-  virtual void ReadFileChunkByPath(const std::string& handle,
-                                   const std::string& path,
-                                   uint32 offset,
-                                   uint32 bytes_to_read,
-                                   const ReadFileCallback& callback,
-                                   const ErrorCallback& error_callback) = 0;
+  // |file_ids| is a list of MTP-device specific file ids.
+  // |offset| is the index into |file_ids| to read from.
+  // |entries_to_read| is the maximum number of file entries to read.
+  virtual void GetFileInfo(const std::string& handle,
+                           const std::vector<uint32>& file_ids,
+                           size_t offset,
+                           size_t entries_to_read,
+                           const GetFileInfoCallback& callback,
+                           const ErrorCallback& error_callback) = 0;
 
-  // TODO(thestig) Remove this in the near future if we don't see anyone using
-  // it.
-  // Calls ReadFilePathById method. |callback| is called after the method call
+  // Calls ReadFileChunk method. |callback| is called after the method call
   // succeeds, otherwise, |error_callback| is called.
   // |file_id| is a MTP-device specific id for a file.
+  // |offset| is the offset into the file.
   // |bytes_to_read| cannot exceed 1 MiB.
-  virtual void ReadFileChunkById(const std::string& handle,
-                                 uint32 file_id,
-                                 uint32 offset,
-                                 uint32 bytes_to_read,
-                                 const ReadFileCallback& callback,
-                                 const ErrorCallback& error_callback) = 0;
-
-  // Calls GetFileInfoByPath method. |callback| is called after the method
-  // call succeeds, otherwise, |error_callback| is called.
-  virtual void GetFileInfoByPath(const std::string& handle,
-                                 const std::string& path,
-                                 const GetFileInfoCallback& callback,
-                                 const ErrorCallback& error_callback) = 0;
-
-  // Calls GetFileInfoById method. |callback| is called after the method
-  // call succeeds, otherwise, |error_callback| is called.
-  // |file_id| is a MTP-device specific id for a file.
-  virtual void GetFileInfoById(const std::string& handle,
-                               uint32 file_id,
-                               const GetFileInfoCallback& callback,
-                               const ErrorCallback& error_callback) = 0;
+  virtual void ReadFileChunk(const std::string& handle,
+                             uint32 file_id,
+                             uint32 offset,
+                             uint32 bytes_to_read,
+                             const ReadFileCallback& callback,
+                             const ErrorCallback& error_callback) = 0;
 
   // Registers given callback for events. Should only be called once.
   // |storage_event_handler| is called when a mtp storage attach or detach

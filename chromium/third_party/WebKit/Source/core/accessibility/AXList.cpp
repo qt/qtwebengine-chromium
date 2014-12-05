@@ -33,7 +33,7 @@
 #include "core/rendering/RenderObject.h"
 
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -56,4 +56,20 @@ bool AXList::computeAccessibilityIsIgnored() const
     return accessibilityIsIgnoredByDefault();
 }
 
-} // namespace WebCore
+bool AXList::isDescriptionList() const
+{
+    if (!m_renderer)
+        return false;
+
+    Node* node = m_renderer->node();
+    return node && node->hasTagName(dlTag);
+}
+
+AccessibilityRole AXList::roleValue() const
+{
+    if (isDescriptionList())
+        return DescriptionListRole;
+
+    return ListRole;
+}
+} // namespace blink

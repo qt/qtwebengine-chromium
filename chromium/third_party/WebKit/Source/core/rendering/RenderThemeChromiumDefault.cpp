@@ -39,11 +39,11 @@
 #include "public/platform/WebThemeEngine.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool useMockTheme()
 {
-    return isRunningLayoutTest();
+    return LayoutTestSupport::isRunningLayoutTest();
 }
 
 unsigned RenderThemeChromiumDefault::m_activeSelectionBackgroundColor =
@@ -59,20 +59,20 @@ double RenderThemeChromiumDefault::m_caretBlinkInterval;
 
 static const unsigned defaultButtonBackgroundColor = 0xffdddddd;
 
-static blink::WebThemeEngine::State getWebThemeState(const RenderTheme* theme, const RenderObject* o)
+static WebThemeEngine::State getWebThemeState(const RenderTheme* theme, const RenderObject* o)
 {
     if (!theme->isEnabled(o))
-        return blink::WebThemeEngine::StateDisabled;
+        return WebThemeEngine::StateDisabled;
     if (useMockTheme() && theme->isReadOnlyControl(o))
-        return blink::WebThemeEngine::StateReadonly;
+        return WebThemeEngine::StateReadonly;
     if (theme->isPressed(o))
-        return blink::WebThemeEngine::StatePressed;
+        return WebThemeEngine::StatePressed;
     if (useMockTheme() && theme->isFocused(o))
-        return blink::WebThemeEngine::StateFocused;
+        return WebThemeEngine::StateFocused;
     if (theme->isHovered(o))
-        return blink::WebThemeEngine::StateHover;
+        return WebThemeEngine::StateHover;
 
-    return blink::WebThemeEngine::StateNormal;
+    return WebThemeEngine::StateNormal;
 }
 
 PassRefPtr<RenderTheme> RenderThemeChromiumDefault::create()
@@ -127,19 +127,19 @@ Color RenderThemeChromiumDefault::systemColor(CSSValueID cssValueId) const
 
 String RenderThemeChromiumDefault::extraDefaultStyleSheet()
 {
+    // FIXME: We should not have OS() branches here.
+    // We should have something like RenderThemeWin, RenderThemeLinux, or
+    // should concatenate UA stylesheets on build time.
 #if !OS(WIN)
-    return RenderTheme::extraDefaultStyleSheet() +
-        RenderThemeChromiumSkia::extraDefaultStyleSheet() +
-        String(themeChromiumLinuxUserAgentStyleSheet, sizeof(themeChromiumLinuxUserAgentStyleSheet));
-#else
-    return RenderTheme::extraDefaultStyleSheet() +
-        RenderThemeChromiumSkia::extraDefaultStyleSheet();
+    return RenderThemeChromiumSkia::extraDefaultStyleSheet() +
+#if !OS(ANDROID)
+        String(themeInputMultipleFieldsCss, sizeof(themeInputMultipleFieldsCss)) +
 #endif
-}
-
-bool RenderThemeChromiumDefault::controlSupportsTints(const RenderObject* o) const
-{
-    return isEnabled(o);
+        String(themeChromiumLinuxCss, sizeof(themeChromiumLinuxCss));
+#else
+    return RenderThemeChromiumSkia::extraDefaultStyleSheet() +
+        String(themeInputMultipleFieldsCss, sizeof(themeInputMultipleFieldsCss));
+#endif
 }
 
 Color RenderThemeChromiumDefault::activeListBoxSelectionBackgroundColor() const
@@ -206,7 +206,7 @@ int RenderThemeChromiumDefault::sliderTickOffsetFromTrackCenter() const
 
 void RenderThemeChromiumDefault::adjustSliderThumbSize(RenderStyle* style, Element* element) const
 {
-    IntSize size = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartSliderThumb);
+    IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartSliderThumb);
 
     // FIXME: Mock theme doesn't handle zoomed sliders.
     float zoomLevel = useMockTheme() ? 1 : style->effectiveZoom();
@@ -244,10 +244,8 @@ void RenderThemeChromiumDefault::setSelectionColors(
 
 bool RenderThemeChromiumDefault::paintCheckbox(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);
     extraParams.button.indeterminate = isIndeterminate(o);
 
@@ -263,7 +261,7 @@ bool RenderThemeChromiumDefault::paintCheckbox(RenderObject* o, const PaintInfo&
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartCheckbox, getWebThemeState(this, o), blink::WebRect(unzoomedRect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartCheckbox, getWebThemeState(this, o), WebRect(unzoomedRect), &extraParams);
     return false;
 }
 
@@ -273,7 +271,7 @@ void RenderThemeChromiumDefault::setCheckboxSize(RenderStyle* style) const
     if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
         return;
 
-    IntSize size = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartCheckbox);
+    IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartCheckbox);
     float zoomLevel = style->effectiveZoom();
     size.setWidth(size.width() * zoomLevel);
     size.setHeight(size.height() * zoomLevel);
@@ -282,13 +280,11 @@ void RenderThemeChromiumDefault::setCheckboxSize(RenderStyle* style) const
 
 bool RenderThemeChromiumDefault::paintRadio(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.button.checked = isChecked(o);
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartRadio, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartRadio, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
@@ -298,7 +294,7 @@ void RenderThemeChromiumDefault::setRadioSize(RenderStyle* style) const
     if (!style->width().isIntrinsicOrAuto() && !style->height().isAuto())
         return;
 
-    IntSize size = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartRadio);
+    IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartRadio);
     float zoomLevel = style->effectiveZoom();
     size.setWidth(size.width() * zoomLevel);
     size.setHeight(size.height() * zoomLevel);
@@ -307,16 +303,14 @@ void RenderThemeChromiumDefault::setRadioSize(RenderStyle* style) const
 
 bool RenderThemeChromiumDefault::paintButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.button.hasBorder = true;
     extraParams.button.backgroundColor = useMockTheme() ? 0xffc0c0c0 : defaultButtonBackgroundColor;
     if (o->hasBackground())
         extraParams.button.backgroundColor = o->resolveColor(CSSPropertyBackgroundColor).rgb();
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartButton, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartButton, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
@@ -326,33 +320,31 @@ bool RenderThemeChromiumDefault::paintTextField(RenderObject* o, const PaintInfo
     // so return true to draw CSS border and background.
     if (o->style()->hasBorderRadius() || o->style()->hasBackgroundImage())
         return true;
-    if (i.context->paintingDisabled())
-        return false;
 
     ControlPart part = o->style()->appearance();
 
-    blink::WebThemeEngine::ExtraParams extraParams;
+    WebThemeEngine::ExtraParams extraParams;
     extraParams.textField.isTextArea = part == TextAreaPart;
     extraParams.textField.isListbox = part == ListboxPart;
 
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context->canvas();
 
     Color backgroundColor = o->resolveColor(CSSPropertyBackgroundColor);
     extraParams.textField.backgroundColor = backgroundColor.rgb();
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartTextField, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartTextField, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
 bool RenderThemeChromiumDefault::paintMenuList(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (!o->isBox() || i.context->paintingDisabled())
+    if (!o->isBox())
         return false;
 
     const int right = rect.x() + rect.width();
     const int middle = rect.y() + rect.height() / 2;
 
-    blink::WebThemeEngine::ExtraParams extraParams;
+    WebThemeEngine::ExtraParams extraParams;
     extraParams.menuList.arrowY = middle;
     const RenderBox* box = toRenderBox(o);
     // Match Chromium Win behaviour of showing all borders if any are shown.
@@ -383,21 +375,21 @@ bool RenderThemeChromiumDefault::paintMenuList(RenderObject* o, const PaintInfo&
         extraParams.menuList.arrowX = (o->style()->direction() == RTL) ? rect.x() + 7 : right - 13;
     }
 
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context->canvas();
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartMenuList, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartMenuList, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
 bool RenderThemeChromiumDefault::paintMenuListButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (!o->isBox() || i.context->paintingDisabled())
+    if (!o->isBox())
         return false;
 
     const int right = rect.x() + rect.width();
     const int middle = rect.y() + rect.height() / 2;
 
-    blink::WebThemeEngine::ExtraParams extraParams;
+    WebThemeEngine::ExtraParams extraParams;
     extraParams.menuList.arrowY = middle;
     extraParams.menuList.hasBorder = false;
     extraParams.menuList.hasBorderRadius = o->style()->hasBorderRadius();
@@ -417,18 +409,16 @@ bool RenderThemeChromiumDefault::paintMenuListButton(RenderObject* o, const Pain
         extraParams.menuList.arrowX = (o->style()->direction() == RTL) ? rect.x() + 7 : right - 13;
     }
 
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebCanvas* canvas = i.context->canvas();
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartMenuList, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartMenuList, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
 bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.slider.vertical = o->style()->appearance() == SliderVerticalPart;
 
     paintSliderTicks(o, i, rect);
@@ -446,17 +436,15 @@ bool RenderThemeChromiumDefault::paintSliderTrack(RenderObject* o, const PaintIn
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartSliderTrack, getWebThemeState(this, o), blink::WebRect(unzoomedRect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartSliderTrack, getWebThemeState(this, o), WebRect(unzoomedRect), &extraParams);
 
     return false;
 }
 
 bool RenderThemeChromiumDefault::paintSliderThumb(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.slider.vertical = o->style()->appearance() == SliderThumbVerticalPart;
     extraParams.slider.inDrag = isPressed(o);
 
@@ -473,13 +461,13 @@ bool RenderThemeChromiumDefault::paintSliderThumb(RenderObject* o, const PaintIn
         i.context->translate(-unzoomedRect.x(), -unzoomedRect.y());
     }
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartSliderThumb, getWebThemeState(this, o), blink::WebRect(unzoomedRect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartSliderThumb, getWebThemeState(this, o), WebRect(unzoomedRect), &extraParams);
     return false;
 }
 
 void RenderThemeChromiumDefault::adjustInnerSpinButtonStyle(RenderStyle* style, Element*) const
 {
-    IntSize size = blink::Platform::current()->themeEngine()->getSize(blink::WebThemeEngine::PartInnerSpinButton);
+    IntSize size = Platform::current()->themeEngine()->getSize(WebThemeEngine::PartInnerSpinButton);
 
     style->setWidth(Length(size.width(), Fixed));
     style->setMinWidth(Length(size.width(), Fixed));
@@ -487,14 +475,12 @@ void RenderThemeChromiumDefault::adjustInnerSpinButtonStyle(RenderStyle* style, 
 
 bool RenderThemeChromiumDefault::paintInnerSpinButton(RenderObject* o, const PaintInfo& i, const IntRect& rect)
 {
-    if (i.context->paintingDisabled())
-        return false;
-    blink::WebThemeEngine::ExtraParams extraParams;
-    blink::WebCanvas* canvas = i.context->canvas();
+    WebThemeEngine::ExtraParams extraParams;
+    WebCanvas* canvas = i.context->canvas();
     extraParams.innerSpin.spinUp = (controlStatesForRenderer(o) & SpinUpControlState);
     extraParams.innerSpin.readOnly = isReadOnlyControl(o);
 
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartInnerSpinButton, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartInnerSpinButton, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
@@ -502,13 +488,11 @@ bool RenderThemeChromiumDefault::paintProgressBar(RenderObject* o, const PaintIn
 {
     if (!o->isProgress())
         return true;
-    if (i.context->paintingDisabled())
-        return false;
 
     RenderProgress* renderProgress = toRenderProgress(o);
     IntRect valueRect = progressValueRectFor(renderProgress, rect);
 
-    blink::WebThemeEngine::ExtraParams extraParams;
+    WebThemeEngine::ExtraParams extraParams;
     extraParams.progressBar.determinate = renderProgress->isDeterminate();
     extraParams.progressBar.valueRectX = valueRect.x();
     extraParams.progressBar.valueRectY = valueRect.y();
@@ -516,8 +500,8 @@ bool RenderThemeChromiumDefault::paintProgressBar(RenderObject* o, const PaintIn
     extraParams.progressBar.valueRectHeight = valueRect.height();
 
     DirectionFlippingScope scope(o, i, rect);
-    blink::WebCanvas* canvas = i.context->canvas();
-    blink::Platform::current()->themeEngine()->paint(canvas, blink::WebThemeEngine::PartProgressBar, getWebThemeState(this, o), blink::WebRect(rect), &extraParams);
+    WebCanvas* canvas = i.context->canvas();
+    Platform::current()->themeEngine()->paint(canvas, WebThemeEngine::PartProgressBar, getWebThemeState(this, o), WebRect(rect), &extraParams);
     return false;
 }
 
@@ -537,4 +521,4 @@ bool RenderThemeChromiumDefault::shouldUseFallbackTheme(RenderStyle* style) cons
     return RenderTheme::shouldUseFallbackTheme(style);
 }
 
-} // namespace WebCore
+} // namespace blink

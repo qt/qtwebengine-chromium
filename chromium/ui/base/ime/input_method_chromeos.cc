@@ -123,7 +123,7 @@ bool InputMethodChromeOS::DispatchKeyEvent(const ui::KeyEvent& event) {
   // normal input field (not a password field).
   // Note: We need to send the key event to ibus even if the |context_| is not
   // enabled, so that ibus can have a chance to enable the |context_|.
-  if (!IsInputFieldFocused() || !GetEngine()) {
+  if (!IsNonPasswordInputFieldFocused() || !GetEngine()) {
     if (event.type() == ET_KEY_PRESSED) {
       if (ExecuteCharacterComposer(event)) {
         // Treating as PostIME event if character composer handles key event and
@@ -167,7 +167,7 @@ void InputMethodChromeOS::OnTextInputTypeChanged(
     // The focus in to or out from password field should also notify engine.
     engine->FocusOut();
     chromeos::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
     engine->FocusIn(context);
   }
 
@@ -178,13 +178,21 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
   if (!IsInputFieldFocused() || !IsTextInputClientFocused(client))
     return;
 
+  NotifyTextInputCaretBoundsChanged(client);
+
+  if (!IsNonPasswordInputFieldFocused())
+    return;
+
   // The current text input type should not be NONE if |context_| is focused.
+  DCHECK(client == GetTextInputClient());
   DCHECK(!IsTextInputTypeNone());
-  const gfx::Rect rect = GetTextInputClient()->GetCaretBounds();
+  const gfx::Rect rect = client->GetCaretBounds();
 
   gfx::Rect composition_head;
-  if (!GetTextInputClient()->GetCompositionCharacterBounds(0,
-                                                           &composition_head)) {
+  if (client->GetCompositionCharacterBounds(0, &composition_head)) {
+    if (GetEngine())
+      GetEngine()->SetCompositionBounds(composition_head);
+  } else {
     composition_head = rect;
   }
 
@@ -197,9 +205,9 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
   gfx::Range text_range;
   gfx::Range selection_range;
   base::string16 surrounding_text;
-  if (!GetTextInputClient()->GetTextRange(&text_range) ||
-      !GetTextInputClient()->GetTextFromRange(text_range, &surrounding_text) ||
-      !GetTextInputClient()->GetSelectionRange(&selection_range)) {
+  if (!client->GetTextRange(&text_range) ||
+      !client->GetTextFromRange(text_range, &surrounding_text) ||
+      !client->GetSelectionRange(&selection_range)) {
     previous_surrounding_text_.clear();
     previous_selection_range_ = gfx::Range::InvalidRange();
     return;
@@ -230,7 +238,7 @@ void InputMethodChromeOS::OnCaretBoundsChanged(const TextInputClient* client) {
 }
 
 void InputMethodChromeOS::CancelComposition(const TextInputClient* client) {
-  if (IsInputFieldFocused() && IsTextInputClientFocused(client))
+  if (IsNonPasswordInputFieldFocused() && IsTextInputClientFocused(client))
     ResetContext();
 }
 
@@ -271,7 +279,7 @@ void InputMethodChromeOS::OnDidChangeFocusedClient(
 
   if (GetEngine()) {
     chromeos::IMEEngineHandlerInterface::InputContext context(
-        GetTextInputType(), GetTextInputMode());
+        GetTextInputType(), GetTextInputMode(), GetTextInputFlags());
     GetEngine()->FocusIn(context);
   }
 }
@@ -285,7 +293,7 @@ void InputMethodChromeOS::ConfirmCompositionText() {
 }
 
 void InputMethodChromeOS::ResetContext() {
-  if (!IsInputFieldFocused() || !GetTextInputClient())
+  if (!IsNonPasswordInputFieldFocused() || !GetTextInputClient())
     return;
 
   DCHECK(system_toplevel_window_focused());
@@ -319,7 +327,7 @@ void InputMethodChromeOS::UpdateContextFocusState() {
   chromeos::IMECandidateWindowHandlerInterface* candidate_window =
       chromeos::IMEBridge::Get()->GetCandidateWindowHandler();
   if (candidate_window)
-    candidate_window->FocusStateChanged(IsInputFieldFocused());
+    candidate_window->FocusStateChanged(IsNonPasswordInputFieldFocused());
 
   chromeos::IMEBridge::Get()->SetCurrentTextInputType(GetTextInputType());
 
@@ -367,8 +375,7 @@ void InputMethodChromeOS::ProcessFilteredKeyPressEvent(
   } else {
     const ui::KeyEvent fabricated_event(ET_KEY_PRESSED,
                                         VKEY_PROCESSKEY,
-                                        event.flags(),
-                                        false);  // is_char
+                                        event.flags());
     DispatchKeyEventPostIME(fabricated_event);
   }
 }
@@ -444,8 +451,7 @@ void InputMethodChromeOS::SendFakeProcessKeyEvent(bool pressed) const {
     return;
   KeyEvent evt(pressed ? ET_KEY_PRESSED : ET_KEY_RELEASED,
                pressed ? VKEY_PROCESSKEY : VKEY_UNKNOWN,
-               EF_IME_FABRICATED_KEY,
-               false);  // is_char
+               EF_IME_FABRICATED_KEY);
   DispatchKeyEventPostIME(evt);
 }
 
@@ -619,6 +625,9 @@ void InputMethodChromeOS::ExtractCompositionText(
       else if (underline_attributes[i].type ==
                chromeos::CompositionText::COMPOSITION_TEXT_UNDERLINE_ERROR)
         underline.color = SK_ColorRED;
+      else if (underline_attributes[i].type ==
+               chromeos::CompositionText::COMPOSITION_TEXT_UNDERLINE_NONE)
+        underline.color = SK_ColorTRANSPARENT;
       out_composition->underlines.push_back(underline);
     }
   }
@@ -653,9 +662,13 @@ void InputMethodChromeOS::ExtractCompositionText(
   }
 }
 
-bool InputMethodChromeOS::IsInputFieldFocused() {
+bool InputMethodChromeOS::IsNonPasswordInputFieldFocused() {
   TextInputType type = GetTextInputType();
   return (type != TEXT_INPUT_TYPE_NONE) && (type != TEXT_INPUT_TYPE_PASSWORD);
+}
+
+bool InputMethodChromeOS::IsInputFieldFocused() {
+  return GetTextInputType() != TEXT_INPUT_TYPE_NONE;
 }
 
 }  // namespace ui

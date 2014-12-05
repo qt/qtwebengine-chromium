@@ -4,11 +4,16 @@
 
 #include "content/browser/service_worker/embedded_worker_instance.h"
 
+#include <algorithm>
+#include <utility>
+
 #include "base/bind_helpers.h"
+#include "base/debug/trace_event.h"
 #include "content/browser/devtools/embedded_worker_devtools_manager.h"
 #include "content/browser/service_worker/embedded_worker_registry.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/common/service_worker/embedded_worker_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_process_host.h"
 #include "ipc/ipc_message.h"
@@ -26,16 +31,17 @@ struct SecondGreater {
   }
 };
 
-void NotifyWorkerContextStarted(int worker_process_id, int worker_route_id) {
+void NotifyWorkerReadyForInspection(int worker_process_id,
+                                    int worker_route_id) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(
-            NotifyWorkerContextStarted, worker_process_id, worker_route_id));
+    BrowserThread::PostTask(BrowserThread::UI,
+                            FROM_HERE,
+                            base::Bind(NotifyWorkerReadyForInspection,
+                                       worker_process_id,
+                                       worker_route_id));
     return;
   }
-  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerContextStarted(
+  EmbeddedWorkerDevToolsManager::GetInstance()->WorkerReadyForInspection(
       worker_process_id, worker_route_id);
 }
 
@@ -53,36 +59,43 @@ void NotifyWorkerDestroyed(int worker_process_id, int worker_route_id) {
 
 void RegisterToWorkerDevToolsManager(
     int process_id,
-    const ServiceWorkerContextCore* const service_worker_context,
+    const ServiceWorkerContextCore* service_worker_context,
+    base::WeakPtr<ServiceWorkerContextCore> service_worker_context_weak,
     int64 service_worker_version_id,
+    const GURL& url,
     const base::Callback<void(int worker_devtools_agent_route_id,
-                              bool pause_on_start)>& callback) {
+                              bool wait_for_debugger)>& callback) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     BrowserThread::PostTask(BrowserThread::UI,
                             FROM_HERE,
                             base::Bind(RegisterToWorkerDevToolsManager,
                                        process_id,
                                        service_worker_context,
+                                       service_worker_context_weak,
                                        service_worker_version_id,
+                                       url,
                                        callback));
     return;
   }
   int worker_devtools_agent_route_id = MSG_ROUTING_NONE;
-  bool pause_on_start = false;
+  bool wait_for_debugger = false;
   if (RenderProcessHost* rph = RenderProcessHost::FromID(process_id)) {
     // |rph| may be NULL in unit tests.
     worker_devtools_agent_route_id = rph->GetNextRoutingID();
-    pause_on_start =
+    wait_for_debugger =
         EmbeddedWorkerDevToolsManager::GetInstance()->ServiceWorkerCreated(
             process_id,
             worker_devtools_agent_route_id,
             EmbeddedWorkerDevToolsManager::ServiceWorkerIdentifier(
-                service_worker_context, service_worker_version_id));
+                service_worker_context,
+                service_worker_context_weak,
+                service_worker_version_id,
+                url));
   }
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(callback, worker_devtools_agent_route_id, pause_on_start));
+      base::Bind(callback, worker_devtools_agent_route_id, wait_for_debugger));
 }
 
 }  // namespace
@@ -100,7 +113,7 @@ EmbeddedWorkerInstance::~EmbeddedWorkerInstance() {
 void EmbeddedWorkerInstance::Start(int64 service_worker_version_id,
                                    const GURL& scope,
                                    const GURL& script_url,
-                                   const std::vector<int>& possible_process_ids,
+                                   bool pause_after_download,
                                    const StatusCallback& callback) {
   if (!context_) {
     callback.Run(SERVICE_WORKER_ERROR_ABORT);
@@ -110,15 +123,21 @@ void EmbeddedWorkerInstance::Start(int64 service_worker_version_id,
   status_ = STARTING;
   scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params(
       new EmbeddedWorkerMsg_StartWorker_Params());
+  TRACE_EVENT_ASYNC_BEGIN2("ServiceWorker",
+                           "EmbeddedWorkerInstance::ProcessAllocate",
+                           params.get(),
+                           "Scope", scope.spec(),
+                           "Script URL", script_url.spec());
   params->embedded_worker_id = embedded_worker_id_;
   params->service_worker_version_id = service_worker_version_id;
   params->scope = scope;
   params->script_url = script_url;
   params->worker_devtools_agent_route_id = MSG_ROUTING_NONE;
-  params->pause_on_start = false;
+  params->pause_after_download = pause_after_download;
+  params->wait_for_debugger = false;
   context_->process_manager()->AllocateWorkerProcess(
       embedded_worker_id_,
-      SortProcesses(possible_process_ids),
+      scope,
       script_url,
       base::Bind(&EmbeddedWorkerInstance::RunProcessAllocated,
                  weak_factory_.GetWeakPtr(),
@@ -136,29 +155,21 @@ ServiceWorkerStatusCode EmbeddedWorkerInstance::Stop() {
   return status;
 }
 
+void EmbeddedWorkerInstance::ResumeAfterDownload() {
+  DCHECK_EQ(STARTING, status_);
+  registry_->Send(
+      process_id_,
+      new EmbeddedWorkerMsg_ResumeAfterDownload(embedded_worker_id_));
+}
+
 ServiceWorkerStatusCode EmbeddedWorkerInstance::SendMessage(
     const IPC::Message& message) {
-  DCHECK(status_ == RUNNING);
+  DCHECK_NE(kInvalidEmbeddedWorkerThreadId, thread_id_);
+  if (status_ != RUNNING && status_ != STARTING)
+    return SERVICE_WORKER_ERROR_IPC_FAILED;
   return registry_->Send(process_id_,
                          new EmbeddedWorkerContextMsg_MessageToWorker(
                              thread_id_, embedded_worker_id_, message));
-}
-
-void EmbeddedWorkerInstance::AddProcessReference(int process_id) {
-  ProcessRefMap::iterator found = process_refs_.find(process_id);
-  if (found == process_refs_.end())
-    found = process_refs_.insert(std::make_pair(process_id, 0)).first;
-  ++found->second;
-}
-
-void EmbeddedWorkerInstance::ReleaseProcessReference(int process_id) {
-  ProcessRefMap::iterator found = process_refs_.find(process_id);
-  if (found == process_refs_.end()) {
-    NOTREACHED() << "Releasing unknown process ref " << process_id;
-    return;
-  }
-  if (--found->second == 0)
-    process_refs_.erase(found);
 }
 
 EmbeddedWorkerInstance::EmbeddedWorkerInstance(
@@ -169,7 +180,7 @@ EmbeddedWorkerInstance::EmbeddedWorkerInstance(
       embedded_worker_id_(embedded_worker_id),
       status_(STOPPED),
       process_id_(-1),
-      thread_id_(-1),
+      thread_id_(kInvalidEmbeddedWorkerThreadId),
       worker_devtools_agent_route_id_(MSG_ROUTING_NONE),
       weak_factory_(this) {
 }
@@ -204,6 +215,10 @@ void EmbeddedWorkerInstance::ProcessAllocated(
     int process_id,
     ServiceWorkerStatusCode status) {
   DCHECK_EQ(process_id_, -1);
+  TRACE_EVENT_ASYNC_END1("ServiceWorker",
+                         "EmbeddedWorkerInstance::ProcessAllocate",
+                         params.get(),
+                         "Status", status);
   if (status != SERVICE_WORKER_OK) {
     status_ = STOPPED;
     callback.Run(status);
@@ -211,10 +226,13 @@ void EmbeddedWorkerInstance::ProcessAllocated(
   }
   const int64 service_worker_version_id = params->service_worker_version_id;
   process_id_ = process_id;
+  GURL script_url(params->script_url);
   RegisterToWorkerDevToolsManager(
       process_id,
       context_.get(),
+      context_,
       service_worker_version_id,
+      script_url,
       base::Bind(&EmbeddedWorkerInstance::SendStartWorker,
                  weak_factory_.GetWeakPtr(),
                  base::Passed(&params),
@@ -225,28 +243,46 @@ void EmbeddedWorkerInstance::SendStartWorker(
     scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
     const StatusCallback& callback,
     int worker_devtools_agent_route_id,
-    bool pause_on_start) {
+    bool wait_for_debugger) {
   worker_devtools_agent_route_id_ = worker_devtools_agent_route_id;
   params->worker_devtools_agent_route_id = worker_devtools_agent_route_id;
-  params->pause_on_start = pause_on_start;
-  registry_->SendStartWorker(params.Pass(), callback, process_id_);
+  params->wait_for_debugger = wait_for_debugger;
+  ServiceWorkerStatusCode status =
+      registry_->SendStartWorker(params.Pass(), process_id_);
+  if (status != SERVICE_WORKER_OK) {
+    callback.Run(status);
+    return;
+  }
+  DCHECK(start_callback_.is_null());
+  start_callback_ = callback;
 }
 
-void EmbeddedWorkerInstance::OnScriptLoaded() {
+void EmbeddedWorkerInstance::OnReadyForInspection() {
   if (worker_devtools_agent_route_id_ != MSG_ROUTING_NONE)
-    NotifyWorkerContextStarted(process_id_, worker_devtools_agent_route_id_);
+    NotifyWorkerReadyForInspection(process_id_,
+                                   worker_devtools_agent_route_id_);
+}
+
+void EmbeddedWorkerInstance::OnScriptLoaded(int thread_id) {
+  thread_id_ = thread_id;
 }
 
 void EmbeddedWorkerInstance::OnScriptLoadFailed() {
 }
 
-void EmbeddedWorkerInstance::OnStarted(int thread_id) {
+void EmbeddedWorkerInstance::OnScriptEvaluated(bool success) {
+  DCHECK(!start_callback_.is_null());
+  start_callback_.Run(success ? SERVICE_WORKER_OK
+                              : SERVICE_WORKER_ERROR_START_WORKER_FAILED);
+  start_callback_.Reset();
+}
+
+void EmbeddedWorkerInstance::OnStarted() {
   // Stop is requested before OnStarted is sent back from the worker.
   if (status_ == STOPPING)
     return;
   DCHECK(status_ == STARTING);
   status_ = RUNNING;
-  thread_id_ = thread_id;
   FOR_EACH_OBSERVER(Listener, listener_list_, OnStarted());
 }
 
@@ -259,7 +295,16 @@ void EmbeddedWorkerInstance::OnStopped() {
   process_id_ = -1;
   thread_id_ = -1;
   worker_devtools_agent_route_id_ = MSG_ROUTING_NONE;
+  start_callback_.Reset();
   FOR_EACH_OBSERVER(Listener, listener_list_, OnStopped());
+}
+
+void EmbeddedWorkerInstance::OnPausedAfterDownload() {
+  // Stop can be requested before getting this far.
+  if (status_ == STOPPING)
+    return;
+  DCHECK(status_ == STARTING);
+  FOR_EACH_OBSERVER(Listener, listener_list_, OnPausedAfterDownload());
 }
 
 bool EmbeddedWorkerInstance::OnMessageReceived(const IPC::Message& message) {
@@ -301,28 +346,6 @@ void EmbeddedWorkerInstance::AddListener(Listener* listener) {
 
 void EmbeddedWorkerInstance::RemoveListener(Listener* listener) {
   listener_list_.RemoveObserver(listener);
-}
-
-std::vector<int> EmbeddedWorkerInstance::SortProcesses(
-    const std::vector<int>& possible_process_ids) const {
-  // Add the |possible_process_ids| to the existing process_refs_ since each one
-  // is likely to take a reference once the SW starts up.
-  ProcessRefMap refs_with_new_ids = process_refs_;
-  for (std::vector<int>::const_iterator it = possible_process_ids.begin();
-       it != possible_process_ids.end();
-       ++it) {
-    refs_with_new_ids[*it]++;
-  }
-
-  std::vector<std::pair<int, int> > counted(refs_with_new_ids.begin(),
-                                            refs_with_new_ids.end());
-  // Sort descending by the reference count.
-  std::sort(counted.begin(), counted.end(), SecondGreater());
-
-  std::vector<int> result(counted.size());
-  for (size_t i = 0; i < counted.size(); ++i)
-    result[i] = counted[i].first;
-  return result;
 }
 
 }  // namespace content

@@ -26,16 +26,19 @@
 #ifndef PositionCallback_h
 #define PositionCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
     class Geoposition;
 
-    class PositionCallback {
+    class PositionCallback : public GarbageCollectedFinalized<PositionCallback> {
     public:
         virtual ~PositionCallback() { }
+        virtual void trace(Visitor*) { }
         virtual void handleEvent(Geoposition*) = 0;
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PositionCallback_h

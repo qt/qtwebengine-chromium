@@ -34,10 +34,10 @@
 #include "modules/webmidi/MIDIClient.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: This belongs in Source/testing/runner, not compiled into shipping Blink!
-class MIDIClientMock FINAL : public MIDIClient {
+class MIDIClientMock final : public MIDIClient {
 public:
     MIDIClientMock();
     virtual ~MIDIClientMock();
@@ -46,13 +46,13 @@ public:
     void resetMock();
 
     // MIDIClient
-    virtual void requestSysexPermission(MIDIAccessInitializer*) OVERRIDE;
-    virtual void cancelSysexPermissionRequest(MIDIAccessInitializer*) OVERRIDE;
+    virtual void requestSysexPermission(MIDIAccessInitializer*) override;
+    virtual void cancelSysexPermissionRequest(MIDIAccessInitializer*) override;
 
 private:
     bool m_allowed;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIClient_h

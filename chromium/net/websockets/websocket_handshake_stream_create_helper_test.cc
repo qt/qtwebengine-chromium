@@ -59,19 +59,19 @@ class MockClientSocketHandleFactory {
 
 class TestConnectDelegate : public WebSocketStream::ConnectDelegate {
  public:
-  virtual ~TestConnectDelegate() {}
+  ~TestConnectDelegate() override {}
 
-  virtual void OnSuccess(scoped_ptr<WebSocketStream> stream) OVERRIDE {}
-  virtual void OnFailure(const std::string& failure_message) OVERRIDE {}
-  virtual void OnStartOpeningHandshake(
-      scoped_ptr<WebSocketHandshakeRequestInfo> request) OVERRIDE {}
-  virtual void OnFinishOpeningHandshake(
-      scoped_ptr<WebSocketHandshakeResponseInfo> response) OVERRIDE {}
-  virtual void OnSSLCertificateError(
+  void OnSuccess(scoped_ptr<WebSocketStream> stream) override {}
+  void OnFailure(const std::string& failure_message) override {}
+  void OnStartOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeRequestInfo> request) override {}
+  void OnFinishOpeningHandshake(
+      scoped_ptr<WebSocketHandshakeResponseInfo> response) override {}
+  void OnSSLCertificateError(
       scoped_ptr<WebSocketEventInterface::SSLErrorCallbacks>
           ssl_error_callbacks,
       const SSLInfo& ssl_info,
-      bool fatal) OVERRIDE {}
+      bool fatal) override {}
 };
 
 class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
@@ -119,7 +119,7 @@ class WebSocketHandshakeStreamCreateHelperTest : public ::testing::Test {
     headers.SetHeader("Origin", origin);
     headers.SetHeader("Sec-WebSocket-Version", "13");
     headers.SetHeader("User-Agent", "");
-    headers.SetHeader("Accept-Encoding", "gzip,deflate");
+    headers.SetHeader("Accept-Encoding", "gzip, deflate");
     headers.SetHeader("Accept-Language", "en-us,fr");
 
     HttpResponseInfo response;

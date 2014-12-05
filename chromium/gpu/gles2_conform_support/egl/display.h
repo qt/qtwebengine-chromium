@@ -12,7 +12,6 @@
 #include "gpu/command_buffer/client/gpu_control.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
-#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_context.h"
@@ -39,7 +38,7 @@ class Surface;
 class Display : private gpu::GpuControl {
  public:
   explicit Display(EGLNativeDisplayType display_id);
-  virtual ~Display();
+  ~Display() override;
 
   void SetCreateOffscreen(int width, int height) {
     create_offscreen_ = true;
@@ -75,21 +74,24 @@ class Display : private gpu::GpuControl {
   bool MakeCurrent(EGLSurface draw, EGLSurface read, EGLContext ctx);
 
   // GpuControl implementation.
-  virtual gpu::Capabilities GetCapabilities() OVERRIDE;
-  virtual gfx::GpuMemoryBuffer* CreateGpuMemoryBuffer(size_t width,
-                                                      size_t height,
-                                                      unsigned internalformat,
-                                                      unsigned usage,
-                                                      int32* id) OVERRIDE;
-  virtual void DestroyGpuMemoryBuffer(int32 id) OVERRIDE;
-  virtual uint32 InsertSyncPoint() OVERRIDE;
-  virtual void SignalSyncPoint(uint32 sync_point,
-                               const base::Closure& callback) OVERRIDE;
-  virtual void SignalQuery(uint32 query,
-                           const base::Closure& callback) OVERRIDE;
-  virtual void SetSurfaceVisible(bool visible) OVERRIDE;
-  virtual void Echo(const base::Closure& callback) OVERRIDE;
-  virtual uint32 CreateStreamTexture(uint32 texture_id) OVERRIDE;
+  gpu::Capabilities GetCapabilities() override;
+  int32_t CreateImage(ClientBuffer buffer,
+                      size_t width,
+                      size_t height,
+                      unsigned internalformat) override;
+  void DestroyImage(int32_t id) override;
+  int32_t CreateGpuMemoryBufferImage(size_t width,
+                                     size_t height,
+                                     unsigned internalformat,
+                                     unsigned usage) override;
+  uint32 InsertSyncPoint() override;
+  uint32 InsertFutureSyncPoint() override;
+  void RetireSyncPoint(uint32 sync_point) override;
+  void SignalSyncPoint(uint32 sync_point,
+                       const base::Closure& callback) override;
+  void SignalQuery(uint32 query, const base::Closure& callback) override;
+  void SetSurfaceVisible(bool visible) override;
+  uint32 CreateStreamTexture(uint32 texture_id) override;
 
  private:
   EGLNativeDisplayType display_id_;
@@ -103,7 +105,6 @@ class Display : private gpu::GpuControl {
   scoped_ptr<gpu::CommandBufferService> command_buffer_;
   scoped_ptr<gpu::GpuScheduler> gpu_scheduler_;
   scoped_ptr<gpu::gles2::GLES2Decoder> decoder_;
-  scoped_ptr<gpu::GpuControlService> gpu_control_service_;
   scoped_refptr<gfx::GLContext> gl_context_;
   scoped_refptr<gfx::GLSurface> gl_surface_;
   scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_cmd_helper_;

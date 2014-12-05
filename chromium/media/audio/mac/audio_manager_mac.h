@@ -5,6 +5,7 @@
 #ifndef MEDIA_AUDIO_MAC_AUDIO_MANAGER_MAC_H_
 #define MEDIA_AUDIO_MAC_AUDIO_MANAGER_MAC_H_
 
+#include <AudioUnit/AudioUnit.h>
 #include <CoreAudio/AudioHardware.h>
 #include <list>
 #include <string>
@@ -16,6 +17,9 @@
 
 namespace media {
 
+class AUAudioInputStream;
+class AUHALStream;
+
 // Mac OS X implementation of the AudioManager singleton. This class is internal
 // to the audio output and only internal users can call methods not exposed by
 // the AudioManager class.
@@ -24,32 +28,32 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   AudioManagerMac(AudioLogFactory* audio_log_factory);
 
   // Implementation of AudioManager.
-  virtual bool HasAudioOutputDevices() OVERRIDE;
-  virtual bool HasAudioInputDevices() OVERRIDE;
-  virtual void GetAudioInputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual void GetAudioOutputDeviceNames(
-      AudioDeviceNames* device_names) OVERRIDE;
-  virtual AudioParameters GetInputStreamParameters(
-      const std::string& device_id) OVERRIDE;
-  virtual std::string GetAssociatedOutputDeviceID(
-      const std::string& input_device_id) OVERRIDE;
+  bool HasAudioOutputDevices() override;
+  bool HasAudioInputDevices() override;
+  void GetAudioInputDeviceNames(AudioDeviceNames* device_names) override;
+  void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) override;
+  AudioParameters GetInputStreamParameters(
+      const std::string& device_id) override;
+  std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) override;
 
   // Implementation of AudioManagerBase.
-  virtual AudioOutputStream* MakeLinearOutputStream(
-      const AudioParameters& params) OVERRIDE;
-  virtual AudioOutputStream* MakeLowLatencyOutputStream(
+  AudioOutputStream* MakeLinearOutputStream(
+      const AudioParameters& params) override;
+  AudioOutputStream* MakeLowLatencyOutputStream(
       const AudioParameters& params,
-      const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLinearInputStream(
-      const AudioParameters& params, const std::string& device_id) OVERRIDE;
-  virtual AudioInputStream* MakeLowLatencyInputStream(
-      const AudioParameters& params, const std::string& device_id) OVERRIDE;
-  virtual std::string GetDefaultOutputDeviceID() OVERRIDE;
+      const std::string& device_id) override;
+  AudioInputStream* MakeLinearInputStream(
+      const AudioParameters& params,
+      const std::string& device_id) override;
+  AudioInputStream* MakeLowLatencyInputStream(
+      const AudioParameters& params,
+      const std::string& device_id) override;
+  std::string GetDefaultOutputDeviceID() override;
 
   // Used to track destruction of input and output streams.
-  virtual void ReleaseOutputStream(AudioOutputStream* stream) OVERRIDE;
-  virtual void ReleaseInputStream(AudioInputStream* stream) OVERRIDE;
+  void ReleaseOutputStream(AudioOutputStream* stream) override;
+  void ReleaseInputStream(AudioInputStream* stream) override;
 
   static bool GetDefaultInputDevice(AudioDeviceID* device);
   static bool GetDefaultOutputDevice(AudioDeviceID* device);
@@ -75,18 +79,33 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
   enum { kStartDelayInSecsForPowerEvents = 1 };
   bool ShouldDeferStreamStart();
 
- protected:
-  virtual ~AudioManagerMac();
+  // Changes the buffer size for |device_id| if there are no active input or
+  // output streams on the device or |desired_buffer_size| is lower than the
+  // current device buffer size.
+  //
+  // Returns false if an error occurred. There is no indication if the buffer
+  // size was changed or not.
+  // |element| is 0 for output streams and 1 for input streams.
+  // TODO(dalecurtis): we could change the the last parameter to an input/output
+  // pointer so it can be updated if the buffer size is not changed.
+  // See http://crbug.com/428706 for details.
+  bool MaybeChangeBufferSize(AudioDeviceID device_id,
+                             AudioUnit audio_unit,
+                             AudioUnitElement element,
+                             size_t desired_buffer_size);
 
-  virtual AudioParameters GetPreferredOutputStreamParameters(
+ protected:
+  ~AudioManagerMac() override;
+
+  AudioParameters GetPreferredOutputStreamParameters(
       const std::string& output_device_id,
-      const AudioParameters& input_params) OVERRIDE;
+      const AudioParameters& input_params) override;
 
  private:
   void InitializeOnAudioThread();
   void ShutdownOnAudioThread();
 
-  int ChooseBufferSize(int output_sample_rate);
+  int ChooseBufferSize(bool is_input, int sample_rate);
 
   // Notify streams of a device change if the default output device or its
   // sample rate has changed, otherwise does nothing.
@@ -107,8 +126,9 @@ class MEDIA_EXPORT AudioManagerMac : public AudioManagerBase {
 
   // Tracks all constructed input and output streams so they can be stopped at
   // shutdown.  See ShutdownOnAudioThread() for more details.
-  std::list<AudioInputStream*> input_streams_;
-  std::list<AudioOutputStream*> output_streams_;
+  std::list<AudioInputStream*> basic_input_streams_;
+  std::list<AUAudioInputStream*> low_latency_input_streams_;
+  std::list<AUHALStream*> output_streams_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioManagerMac);
 };

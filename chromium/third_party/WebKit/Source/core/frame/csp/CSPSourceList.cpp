@@ -14,7 +14,7 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isSourceListNone(const UChar* begin, const UChar* end)
 {
@@ -35,6 +35,7 @@ static bool isSourceListNone(const UChar* begin, const UChar* end)
 CSPSourceList::CSPSourceList(ContentSecurityPolicy* policy, const String& directiveName)
     : m_policy(policy)
     , m_directiveName(directiveName)
+    , m_allowSelf(false)
     , m_allowStar(false)
     , m_allowInline(false)
     , m_allowEval(false)
@@ -48,6 +49,9 @@ bool CSPSourceList::matches(const KURL& url) const
         return true;
 
     KURL effectiveURL = SecurityOrigin::shouldUseInnerURL(url) ? SecurityOrigin::extractInnerURL(url) : url;
+
+    if (m_allowSelf && m_policy->urlMatchesSelf(effectiveURL))
+        return true;
 
     for (size_t i = 0; i < m_list.size(); ++i) {
         if (m_list[i].matches(effectiveURL))
@@ -107,10 +111,10 @@ void CSPSourceList::parse(const UChar* begin, const UChar* end)
 
         String scheme, host, path;
         int port = 0;
-        bool hostHasWildcard = false;
-        bool portHasWildcard = false;
+        CSPSource::WildcardDisposition hostWildcard = CSPSource::NoWildcard;
+        CSPSource::WildcardDisposition portWildcard = CSPSource::NoWildcard;
 
-        if (parseSource(beginSource, position, scheme, host, port, path, hostHasWildcard, portHasWildcard)) {
+        if (parseSource(beginSource, position, scheme, host, port, path, hostWildcard, portWildcard)) {
             // Wildcard hosts and keyword sources ('self', 'unsafe-inline',
             // etc.) aren't stored in m_list, but as attributes on the source
             // list itself.
@@ -118,7 +122,7 @@ void CSPSourceList::parse(const UChar* begin, const UChar* end)
                 continue;
             if (m_policy->isDirectiveName(host))
                 m_policy->reportDirectiveAsSourceExpression(m_directiveName, host);
-            m_list.append(CSPSource(m_policy, scheme, host, port, path, hostHasWildcard, portHasWildcard));
+            m_list.append(CSPSource(m_policy, scheme, host, port, path, hostWildcard, portWildcard));
         } else {
             m_policy->reportInvalidSourceExpression(m_directiveName, String(beginSource, position - beginSource));
         }
@@ -130,7 +134,7 @@ void CSPSourceList::parse(const UChar* begin, const UChar* end)
 // source            = scheme ":"
 //                   / ( [ scheme "://" ] host [ port ] [ path ] )
 //                   / "'self'"
-bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& scheme, String& host, int& port, String& path, bool& hostHasWildcard, bool& portHasWildcard)
+bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& scheme, String& host, int& port, String& path, CSPSource::WildcardDisposition& hostWildcard, CSPSource::WildcardDisposition& portWildcard)
 {
     if (begin == end)
         return false;
@@ -187,13 +191,13 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
     if (position == end) {
         // host
         //     ^
-        return parseHost(beginHost, position, host, hostHasWildcard);
+        return parseHost(beginHost, position, host, hostWildcard);
     }
 
     if (position < end && *position == '/') {
         // host/path || host/ || /
         //     ^            ^    ^
-        return parseHost(beginHost, position, host, hostHasWildcard) && parsePath(position, end, path);
+        return parseHost(beginHost, position, host, hostWildcard) && parsePath(position, end, path);
     }
 
     if (position < end && *position == ':') {
@@ -212,7 +216,7 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
                 || !skipExactly<UChar>(position, end, '/'))
                 return false;
             if (position == end)
-                return true;
+                return false;
             beginHost = position;
             skipWhile<UChar, isNotColonOrSlash>(position, end);
         }
@@ -233,11 +237,11 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
         beginPath = position;
     }
 
-    if (!parseHost(beginHost, beginPort ? beginPort : beginPath, host, hostHasWildcard))
+    if (!parseHost(beginHost, beginPort ? beginPort : beginPath, host, hostWildcard))
         return false;
 
     if (beginPort) {
-        if (!parsePort(beginPort, beginPath, port, portHasWildcard))
+        if (!parsePort(beginPort, beginPath, port, portWildcard))
             return false;
     } else {
         port = 0;
@@ -256,18 +260,20 @@ bool CSPSourceList::parseSource(const UChar* begin, const UChar* end, String& sc
 //
 bool CSPSourceList::parseNonce(const UChar* begin, const UChar* end, String& nonce)
 {
-    DEFINE_STATIC_LOCAL(const String, noncePrefix, ("'nonce-"));
+    size_t nonceLength = end - begin;
+    const char* prefix = "'nonce-";
 
-    if (!equalIgnoringCase(noncePrefix.characters8(), begin, noncePrefix.length()))
+    if (nonceLength <= strlen(prefix) || !equalIgnoringCase(prefix, begin, strlen(prefix)))
         return true;
 
-    const UChar* position = begin + noncePrefix.length();
+    const UChar* position = begin + strlen(prefix);
     const UChar* nonceBegin = position;
 
+    ASSERT(position < end);
     skipWhile<UChar, isNonceCharacter>(position, end);
     ASSERT(nonceBegin <= position);
 
-    if ((position + 1) != end || *position != '\'' || !(position - nonceBegin))
+    if (position + 1 != end || *position != '\'' || position == nonceBegin)
         return false;
 
     nonce = String(nonceBegin, position - nonceBegin);
@@ -284,7 +290,7 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
     // respective entries in the kAlgorithmMap array in checkDigest().
     static const struct {
         const char* prefix;
-        ContentSecurityPolicyHashAlgorithm algorithm;
+        ContentSecurityPolicyHashAlgorithm type;
     } kSupportedPrefixes[] = {
         { "'sha1-", ContentSecurityPolicyHashAlgorithmSha1 },
         { "'sha256-", ContentSecurityPolicyHashAlgorithmSha256 },
@@ -294,17 +300,12 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
 
     String prefix;
     hashAlgorithm = ContentSecurityPolicyHashAlgorithmNone;
+    size_t hashLength = end - begin;
 
-    // Instead of this sizeof() calculation to get the length of this array,
-    // it would be preferable to use WTF_ARRAY_LENGTH for simplicity and to
-    // guarantee a compile time calculation. Unfortunately, on some
-    // compliers, the call to WTF_ARRAY_LENGTH fails on arrays of anonymous
-    // stucts, so, for now, it is necessary to resort to this sizeof
-    // calculation.
-    for (size_t i = 0; i < (sizeof(kSupportedPrefixes) / sizeof(kSupportedPrefixes[0])); i++) {
-        if (equalIgnoringCase(kSupportedPrefixes[i].prefix, begin, strlen(kSupportedPrefixes[i].prefix))) {
-            prefix = kSupportedPrefixes[i].prefix;
-            hashAlgorithm = kSupportedPrefixes[i].algorithm;
+    for (const auto& algorithm : kSupportedPrefixes) {
+        if (hashLength > strlen(algorithm.prefix) && equalIgnoringCase(algorithm.prefix, begin, strlen(algorithm.prefix))) {
+            prefix = algorithm.prefix;
+            hashAlgorithm = algorithm.type;
             break;
         }
     }
@@ -315,14 +316,17 @@ bool CSPSourceList::parseHash(const UChar* begin, const UChar* end, DigestValue&
     const UChar* position = begin + prefix.length();
     const UChar* hashBegin = position;
 
+    ASSERT(position < end);
     skipWhile<UChar, isBase64EncodedCharacter>(position, end);
     ASSERT(hashBegin <= position);
 
     // Base64 encodings may end with exactly one or two '=' characters
-    skipExactly<UChar>(position, position + 1, '=');
-    skipExactly<UChar>(position, position + 1, '=');
+    if (position < end)
+        skipExactly<UChar>(position, position + 1, '=');
+    if (position < end)
+        skipExactly<UChar>(position, position + 1, '=');
 
-    if ((position + 1) != end || *position != '\'' || !(position - hashBegin))
+    if (position + 1 != end || *position != '\'' || position == hashBegin)
         return false;
 
     Vector<char> hashVector;
@@ -362,11 +366,11 @@ bool CSPSourceList::parseScheme(const UChar* begin, const UChar* end, String& sc
 //                   / "*"
 // host-char         = ALPHA / DIGIT / "-"
 //
-bool CSPSourceList::parseHost(const UChar* begin, const UChar* end, String& host, bool& hostHasWildcard)
+bool CSPSourceList::parseHost(const UChar* begin, const UChar* end, String& host, CSPSource::WildcardDisposition& hostWildcard)
 {
     ASSERT(begin <= end);
     ASSERT(host.isEmpty());
-    ASSERT(!hostHasWildcard);
+    ASSERT(hostWildcard == CSPSource::NoWildcard);
 
     if (begin == end)
         return false;
@@ -374,7 +378,7 @@ bool CSPSourceList::parseHost(const UChar* begin, const UChar* end, String& host
     const UChar* position = begin;
 
     if (skipExactly<UChar>(position, end, '*')) {
-        hostHasWildcard = true;
+        hostWildcard = CSPSource::HasWildcard;
 
         if (position == end)
             return true;
@@ -421,11 +425,11 @@ bool CSPSourceList::parsePath(const UChar* begin, const UChar* end, String& path
 
 // port              = ":" ( 1*DIGIT / "*" )
 //
-bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, bool& portHasWildcard)
+bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, CSPSource::WildcardDisposition& portWildcard)
 {
     ASSERT(begin <= end);
     ASSERT(!port);
-    ASSERT(!portHasWildcard);
+    ASSERT(portWildcard == CSPSource::NoWildcard);
 
     if (!skipExactly<UChar>(begin, end, ':'))
         ASSERT_NOT_REACHED();
@@ -435,7 +439,7 @@ bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, b
 
     if (end - begin == 1 && *begin == '*') {
         port = 0;
-        portHasWildcard = true;
+        portWildcard = CSPSource::HasWildcard;
         return true;
     }
 
@@ -452,7 +456,7 @@ bool CSPSourceList::parsePort(const UChar* begin, const UChar* end, int& port, b
 
 void CSPSourceList::addSourceSelf()
 {
-    m_list.append(CSPSource(m_policy, m_policy->securityOrigin()->protocol(), m_policy->securityOrigin()->host(), m_policy->securityOrigin()->port(), String(), false, false));
+    m_allowSelf = true;
 }
 
 void CSPSourceList::addSourceStar()
@@ -482,4 +486,4 @@ void CSPSourceList::addSourceHash(const ContentSecurityPolicyHashAlgorithm& algo
 }
 
 
-} // namespace WebCore
+} // namespace blink

@@ -5,6 +5,7 @@
 {
   'targets': [
     {
+      # GN version: //components/signin/core/common
       'target_name': 'signin_core_common',
       'type': 'static_library',
       'include_dirs': [
@@ -20,10 +21,13 @@
       ],
     },
     {
+      # GN version: //components/signin/core/browser
       'target_name': 'signin_core_browser',
       'type': 'static_library',
       'dependencies': [
         '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
+        '../base/base.gyp:base_prefs',
         '../crypto/crypto.gyp:crypto',
         '../google_apis/google_apis.gyp:google_apis',
         '../net/net.gyp:net',
@@ -39,12 +43,15 @@
         '..',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'signin/core/browser/about_signin_internals.cc',
         'signin/core/browser/about_signin_internals.h',
         'signin/core/browser/account_reconcilor.cc',
         'signin/core/browser/account_reconcilor.h',
         'signin/core/browser/account_service_flag_fetcher.cc',
         'signin/core/browser/account_service_flag_fetcher.h',
+        'signin/core/browser/account_tracker_service.cc',
+        'signin/core/browser/account_tracker_service.h',
         'signin/core/browser/mutable_profile_oauth2_token_service.cc',
         'signin/core/browser/mutable_profile_oauth2_token_service.h',
         'signin/core/browser/profile_oauth2_token_service.cc',
@@ -74,9 +81,9 @@
         'signin/core/browser/webdata/token_web_data.h',
       ],
       'conditions': [
-        ['OS=="android"', {
+        ['OS=="android" or OS=="ios"', {
           'sources!': [
-            # Not used on Android.
+            # Not used on Android nor iOS.
             'signin/core/browser/mutable_profile_oauth2_token_service.cc',
             'signin/core/browser/mutable_profile_oauth2_token_service.h',
           ],
@@ -91,6 +98,7 @@
       'msvs_disabled_warnings': [4267, ],
     },
     {
+      # GN version: //components/signin/core/browser:test_support
       'target_name': 'signin_core_browser_test_support',
       'type': 'static_library',
       'dependencies': [
@@ -101,6 +109,7 @@
         '..',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'signin/core/browser/fake_auth_status_provider.cc',
         'signin/core/browser/fake_auth_status_provider.h',
         'signin/core/browser/test_signin_client.cc',
@@ -112,6 +121,7 @@
     ['OS == "ios"', {
       'targets': [
         {
+          # GN version: //components/signin/core/browser:ios
           'target_name': 'signin_ios_browser',
           'type': 'static_library',
           'dependencies': [
@@ -122,6 +132,9 @@
             '..',
           ],
           'sources': [
+            # Note: file list duplicated in GN build.
+            'signin/ios/browser/oauth2_token_service_observer_bridge.h',
+            'signin/ios/browser/oauth2_token_service_observer_bridge.mm',
             'signin/ios/browser/profile_oauth2_token_service_ios.h',
             'signin/ios/browser/profile_oauth2_token_service_ios.mm',
           ],

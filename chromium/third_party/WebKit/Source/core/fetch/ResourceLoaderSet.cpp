@@ -33,24 +33,34 @@
 
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
+
+PassOwnPtrWillBeRawPtr<ResourceLoaderSet> ResourceLoaderSet::create()
+{
+    return adoptPtrWillBeNoop(new ResourceLoaderSet);
+}
+
+void ResourceLoaderSet::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_set);
+#endif
+}
 
 void ResourceLoaderSet::cancelAll()
 {
-    Vector<RefPtr<ResourceLoader> > loadersCopy;
+    WillBeHeapVector<RefPtrWillBeMember<ResourceLoader>> loadersCopy;
     copyToVector(m_set, loadersCopy);
-    size_t size = loadersCopy.size();
-    for (size_t i = 0; i < size; ++i)
-        loadersCopy[i]->cancel();
+    for (const auto& loader : loadersCopy)
+        loader->cancel();
 }
 
 void ResourceLoaderSet::setAllDefersLoading(bool defers)
 {
-    Vector<RefPtr<ResourceLoader> > loadersCopy;
+    WillBeHeapVector<RefPtrWillBeMember<ResourceLoader>> loadersCopy;
     copyToVector(m_set, loadersCopy);
-    size_t size = loadersCopy.size();
-    for (size_t i = 0; i < size; ++i)
-        loadersCopy[i]->setDefersLoading(defers);
+    for (const auto& loader : loadersCopy)
+        loader->setDefersLoading(defers);
 }
 
 }

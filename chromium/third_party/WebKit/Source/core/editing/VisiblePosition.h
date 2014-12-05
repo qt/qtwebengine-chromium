@@ -26,12 +26,12 @@
 #ifndef VisiblePosition_h
 #define VisiblePosition_h
 
-#include "core/dom/Position.h"
 #include "core/editing/EditingBoundary.h"
+#include "core/editing/PositionWithAffinity.h"
 #include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 
-namespace WebCore {
+namespace blink {
 
 // VisiblePosition default affinity is downstream because
 // the callers do not really care (they just want the
@@ -47,9 +47,9 @@ namespace WebCore {
 #define VP_UPSTREAM_IF_POSSIBLE UPSTREAM
 
 class InlineBox;
-class Node;
+class Range;
 
-class VisiblePosition FINAL {
+class VisiblePosition final {
     DISALLOW_ALLOCATION();
 public:
     // NOTE: UPSTREAM affinity will be used only if pos is at end of a wrapped line,
@@ -65,6 +65,7 @@ public:
     bool isOrphan() const { return m_deepPosition.isOrphan(); }
 
     Position deepEquivalent() const { return m_deepPosition; }
+    Position toParentAnchoredPosition() const { return deepEquivalent().parentAnchoredEquivalent(); }
     EAffinity affinity() const { ASSERT(m_affinity == UPSTREAM || m_affinity == DOWNSTREAM); return m_affinity; }
     void setAffinity(EAffinity affinity) { m_affinity = affinity; }
 
@@ -137,15 +138,15 @@ VisiblePosition startVisiblePosition(const Range*, EAffinity);
 
 Element* enclosingBlockFlowElement(const VisiblePosition&);
 
-bool isFirstVisiblePositionInNode(const VisiblePosition&, const Node*);
-bool isLastVisiblePositionInNode(const VisiblePosition&, const Node*);
+bool isFirstVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);
+bool isLastVisiblePositionInNode(const VisiblePosition&, const ContainerNode*);
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::VisiblePosition*);
-void showTree(const WebCore::VisiblePosition&);
+void showTree(const blink::VisiblePosition*);
+void showTree(const blink::VisiblePosition&);
 #endif
 
 #endif // VisiblePosition_h

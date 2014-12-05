@@ -28,7 +28,7 @@ class ReadErrorHandler : public PersistentPrefStore::ReadErrorDelegate {
   ReadErrorHandler(base::Callback<void(PersistentPrefStore::PrefReadError)> cb)
       : callback_(cb) {}
 
-  virtual void OnError(PersistentPrefStore::PrefReadError error) OVERRIDE {
+  void OnError(PersistentPrefStore::PrefReadError error) override {
     callback_.Run(error);
   }
 
@@ -432,6 +432,7 @@ base::Value* PrefService::GetMutableUserPref(const char* path,
 }
 
 void PrefService::ReportUserPrefChanged(const std::string& key) {
+  DCHECK(CalledOnValidThread());
   user_pref_store_->ReportValueChanged(key);
 }
 

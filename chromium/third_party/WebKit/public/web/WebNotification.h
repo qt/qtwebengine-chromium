@@ -36,14 +36,13 @@
 #include "../platform/WebString.h"
 #include "WebTextDirection.h"
 
-namespace WebCore { class Notification; }
-
 #if BLINK_IMPLEMENTATION
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
 namespace blink {
 
+class Notification;
 class WebURL;
 
 // Represents access to a desktop notification.
@@ -93,12 +92,12 @@ public:
     void dispatchDisplayEvent() { dispatchShowEvent(); }
 
 #if BLINK_IMPLEMENTATION
-    WebNotification(WebCore::Notification*);
-    WebNotification& operator=(WebCore::Notification*);
+    WebNotification(Notification*);
+    WebNotification& operator=(Notification*);
 #endif
 
 private:
-    WebPrivatePtr<WebCore::Notification> m_private;
+    WebPrivatePtr<Notification> m_private;
 };
 
 inline bool operator==(const WebNotification& a, const WebNotification& b)

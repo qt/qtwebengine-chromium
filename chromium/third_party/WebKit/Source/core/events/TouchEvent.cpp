@@ -31,12 +31,12 @@
 #include "core/events/EventDispatcher.h"
 #include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
+#include "core/inspector/ConsoleMessage.h"
 
-namespace WebCore {
+namespace blink {
 
 TouchEvent::TouchEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 TouchEvent::TouchEvent(TouchList* touches, TouchList* targetTouches,
@@ -49,7 +49,6 @@ TouchEvent::TouchEvent(TouchList* touches, TouchList* targetTouches,
     , m_targetTouches(targetTouches)
     , m_changedTouches(changedTouches)
 {
-    ScriptWrappable::init(this);
 }
 
 TouchEvent::~TouchEvent()
@@ -98,8 +97,8 @@ void TouchEvent::preventDefault()
     // scrolling by consuming a touchmove event. Generate a warning if this
     // event is uncancelable.
     if (!cancelable() && view() && view()->frame()) {
-        view()->frame()->console().addMessage(JSMessageSource, WarningMessageLevel,
-            "Ignored attempt to cancel a " + type() + " event with cancelable=false, for example because scrolling is in progress and cannot be interrupted.");
+        view()->frame()->console().addMessage(ConsoleMessage::create(JSMessageSource, WarningMessageLevel,
+            "Ignored attempt to cancel a " + type() + " event with cancelable=false, for example because scrolling is in progress and cannot be interrupted."));
     }
 }
 void TouchEvent::trace(Visitor* visitor)
@@ -131,4 +130,4 @@ bool TouchEventDispatchMediator::dispatchEvent(EventDispatcher* dispatcher) cons
     return dispatcher->dispatch();
 }
 
-} // namespace WebCore
+} // namespace blink

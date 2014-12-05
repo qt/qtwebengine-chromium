@@ -12,7 +12,7 @@
 
 IPC_STRUCT_BEGIN(PeerConnectionInfo)
   IPC_STRUCT_MEMBER(int, lid)
-  IPC_STRUCT_MEMBER(std::string, servers)
+  IPC_STRUCT_MEMBER(std::string, rtc_configuration)
   IPC_STRUCT_MEMBER(std::string, constraints)
   IPC_STRUCT_MEMBER(std::string, url)
 IPC_STRUCT_END()
@@ -40,3 +40,4 @@ IPC_MESSAGE_CONTROL5(PeerConnectionTrackerHost_GetUserMedia,
 
 // Messages sent to PeerConnectionTracker.
 IPC_MESSAGE_CONTROL0(PeerConnectionTracker_GetAllStats)
+IPC_MESSAGE_CONTROL0(PeerConnectionTracker_OnSuspend)

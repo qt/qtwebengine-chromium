@@ -26,17 +26,16 @@
 #ifndef MediaDeviceInfo_h
 #define MediaDeviceInfo_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebMediaDeviceInfo.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class MediaDeviceInfo FINAL : public RefCountedWillBeGarbageCollectedFinalized<MediaDeviceInfo> {
+class MediaDeviceInfo final : public GarbageCollectedFinalized<MediaDeviceInfo>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<MediaDeviceInfo> create(const blink::WebMediaDeviceInfo&);
+    static MediaDeviceInfo* create(const WebMediaDeviceInfo&);
 
     String deviceId() const;
     String kind() const;
@@ -46,13 +45,13 @@ public:
     void trace(Visitor*) { }
 
 private:
-    explicit MediaDeviceInfo(const blink::WebMediaDeviceInfo&);
+    explicit MediaDeviceInfo(const WebMediaDeviceInfo&);
 
-    blink::WebMediaDeviceInfo m_webMediaDeviceInfo;
+    WebMediaDeviceInfo m_webMediaDeviceInfo;
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<MediaDeviceInfo> > MediaDeviceInfoVector;
+typedef HeapVector<Member<MediaDeviceInfo> > MediaDeviceInfoVector;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaDeviceInfo_h

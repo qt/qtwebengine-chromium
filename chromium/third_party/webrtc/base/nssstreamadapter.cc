@@ -486,6 +486,8 @@ int NSSStreamAdapter::BeginSSL() {
       return -1;
     }
 
+    // TODO(juberti): Check for client_auth_enabled()
+
     rv = SSL_OptionSet(ssl_fd_, SSL_REQUIRE_CERTIFICATE, PR_TRUE);
     if (rv != SECSuccess) {
       Error("BeginSSL", -1, false);
@@ -952,17 +954,11 @@ NSSContext *NSSContext::global_nss_context;
 // Static initialization and shutdown
 NSSContext *NSSContext::Instance() {
   if (!global_nss_context) {
-    NSSContext *new_ctx = new NSSContext();
-
-    if (!(new_ctx->slot_ = PK11_GetInternalSlot())) {
-      delete new_ctx;
-      goto fail;
-    }
-
-    global_nss_context = new_ctx;
+    scoped_ptr<NSSContext> new_ctx(new NSSContext());
+    new_ctx->slot_ = PK11_GetInternalSlot();
+    if (new_ctx->slot_)
+      global_nss_context = new_ctx.release();
   }
-
- fail:
   return global_nss_context;
 }
 

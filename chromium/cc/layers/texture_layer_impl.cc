@@ -7,13 +7,13 @@
 #include <vector>
 
 #include "base/strings/stringprintf.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/renderer.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/resources/platform_color.h"
 #include "cc/resources/scoped_resource.h"
-#include "cc/resources/single_release_callback.h"
+#include "cc/resources/single_release_callback_impl.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/occlusion.h"
 
 namespace cc {
 
@@ -37,7 +37,7 @@ TextureLayerImpl::~TextureLayerImpl() { FreeTextureMailbox(); }
 
 void TextureLayerImpl::SetTextureMailbox(
     const TextureMailbox& mailbox,
-    scoped_ptr<SingleReleaseCallback> release_callback) {
+    scoped_ptr<SingleReleaseCallbackImpl> release_callback) {
   DCHECK_EQ(mailbox.IsValid(), !!release_callback);
   FreeTextureMailbox();
   texture_mailbox_ = mailbox;
@@ -49,7 +49,7 @@ void TextureLayerImpl::SetTextureMailbox(
 
 scoped_ptr<LayerImpl> TextureLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return TextureLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return TextureLayerImpl::Create(tree_impl, id());
 }
 
 void TextureLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -83,7 +83,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
           resource_provider->CreateResourceFromTextureMailbox(
               texture_mailbox_, release_callback_.Pass());
       DCHECK(external_texture_resource_);
-      texture_copy_.reset();
+      texture_copy_ = nullptr;
       valid_texture_copy_ = false;
     }
     if (external_texture_resource_)
@@ -103,7 +103,7 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
 
     if (!texture_copy_->id()) {
       texture_copy_->Allocate(texture_mailbox_.shared_memory_size(),
-                              ResourceProvider::TextureUsageAny,
+                              ResourceProvider::TextureHintImmutable,
                               resource_provider->best_texture_format());
     }
 
@@ -139,15 +139,17 @@ bool TextureLayerImpl::WillDraw(DrawMode draw_mode,
          LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
+void TextureLayerImpl::AppendQuads(RenderPass* render_pass,
+                                   const Occlusion& occlusion_in_content_space,
                                    AppendQuadsData* append_quads_data) {
   DCHECK(external_texture_resource_ || valid_texture_copy_);
 
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
   AppendDebugBorderQuad(
-      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   SkColor bg_color = blend_background_color_ ?
       background_color() : SK_ColorTRANSPARENT;
@@ -155,12 +157,13 @@ void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect = opaque ? quad_rect : gfx::Rect();
-  gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_in_content_space.GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
-  scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+  TextureDrawQuad* quad =
+      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   ResourceProvider::ResourceId id =
       valid_texture_copy_ ? texture_copy_->id() : external_texture_resource_;
   quad->SetNew(shared_quad_state,
@@ -174,22 +177,21 @@ void TextureLayerImpl::AppendQuads(QuadSink* quad_sink,
                bg_color,
                vertex_opacity_,
                flipped_);
-  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
-Region TextureLayerImpl::VisibleContentOpaqueRegion() const {
+SimpleEnclosedRegion TextureLayerImpl::VisibleContentOpaqueRegion() const {
   if (contents_opaque())
-    return visible_content_rect();
+    return SimpleEnclosedRegion(visible_content_rect());
 
   if (blend_background_color_ && (SkColorGetA(background_color()) == 0xFF))
-    return visible_content_rect();
+    return SimpleEnclosedRegion(visible_content_rect());
 
-  return Region();
+  return SimpleEnclosedRegion();
 }
 
 void TextureLayerImpl::ReleaseResources() {
   FreeTextureMailbox();
-  texture_copy_.reset();
+  texture_copy_ = nullptr;
   external_texture_resource_ = 0;
   valid_texture_copy_ = false;
 }
@@ -237,10 +239,13 @@ const char* TextureLayerImpl::LayerTypeAsString() const {
 void TextureLayerImpl::FreeTextureMailbox() {
   if (own_mailbox_) {
     DCHECK(!external_texture_resource_);
-    if (release_callback_)
-      release_callback_->Run(texture_mailbox_.sync_point(), false);
+    if (release_callback_) {
+      release_callback_->Run(texture_mailbox_.sync_point(),
+                             false,
+                             layer_tree_impl()->BlockingMainThreadTaskRunner());
+    }
     texture_mailbox_ = TextureMailbox();
-    release_callback_.reset();
+    release_callback_ = nullptr;
   } else if (external_texture_resource_) {
     DCHECK(!own_mailbox_);
     ResourceProvider* resource_provider =

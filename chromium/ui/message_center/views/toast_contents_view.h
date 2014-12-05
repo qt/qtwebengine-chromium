@@ -43,7 +43,7 @@ class ToastContentsView : public views::WidgetDelegateView,
 
   ToastContentsView(const std::string& notification_id,
                     base::WeakPtr<MessagePopupCollection> collection);
-  virtual ~ToastContentsView();
+  ~ToastContentsView() override;
 
   // Sets the inner view of the toast. If it has contents already,
   // |a11y_feedback_for_updates| causes the view to notify that the
@@ -71,34 +71,34 @@ class ToastContentsView : public views::WidgetDelegateView,
   const std::string& id() { return id_; }
 
   // Overridden from views::View:
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  private:
   // Overridden from MessageCenterController:
-  virtual void ClickOnNotification(const std::string& notification_id) OVERRIDE;
-  virtual void RemoveNotification(const std::string& notification_id,
-                                  bool by_user) OVERRIDE;
-  virtual scoped_ptr<ui::MenuModel> CreateMenuModel(
+  void ClickOnNotification(const std::string& notification_id) override;
+  void RemoveNotification(const std::string& notification_id,
+                          bool by_user) override;
+  scoped_ptr<ui::MenuModel> CreateMenuModel(
       const NotifierId& notifier_id,
-      const base::string16& display_source) OVERRIDE;
-  virtual bool HasClickedListener(const std::string& notification_id) OVERRIDE;
-  virtual void ClickOnNotificationButton(const std::string& notification_id,
-                                         int button_index) OVERRIDE;
+      const base::string16& display_source) override;
+  bool HasClickedListener(const std::string& notification_id) override;
+  void ClickOnNotificationButton(const std::string& notification_id,
+                                 int button_index) override;
 
   // Overridden from gfx::AnimationDelegate:
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
+  void AnimationProgressed(const gfx::Animation* animation) override;
+  void AnimationEnded(const gfx::Animation* animation) override;
+  void AnimationCanceled(const gfx::Animation* animation) override;
 
   // Overridden from views::WidgetDelegate:
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual void WindowClosing() OVERRIDE;
-  virtual void OnDisplayChanged() OVERRIDE;
-  virtual void OnWorkAreaChanged() OVERRIDE;
+  views::View* GetContentsView() override;
+  void WindowClosing() override;
+  void OnDisplayChanged() override;
+  void OnWorkAreaChanged() override;
 
   // Initialization and update.
   void CreateWidget(gfx::NativeView parent);

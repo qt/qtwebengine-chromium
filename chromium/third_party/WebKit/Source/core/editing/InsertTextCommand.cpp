@@ -33,8 +33,9 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/LocalFrame.h"
+#include "core/html/HTMLSpanElement.h"
 
-namespace WebCore {
+namespace blink {
 
 InsertTextCommand::InsertTextCommand(Document& document, const String& text, bool selectInsertedText, RebalanceType rebalanceType)
     : CompositeEditCommand(document)
@@ -47,8 +48,8 @@ InsertTextCommand::InsertTextCommand(Document& document, const String& text, boo
 Position InsertTextCommand::positionInsideTextNode(const Position& p)
 {
     Position pos = p;
-    if (isTabSpanTextNode(pos.anchorNode())) {
-        RefPtrWillBeRawPtr<Node> textNode = document().createEditingTextNode("");
+    if (isTabHTMLSpanElementTextNode(pos.anchorNode())) {
+        RefPtrWillBeRawPtr<Text> textNode = document().createEditingTextNode("");
         insertNodeAtTabSpanPosition(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -56,7 +57,7 @@ Position InsertTextCommand::positionInsideTextNode(const Position& p)
     // Prepare for text input by looking at the specified position.
     // It may be necessary to insert a text node to receive characters.
     if (!pos.containerNode()->isTextNode()) {
-        RefPtrWillBeRawPtr<Node> textNode = document().createEditingTextNode("");
+        RefPtrWillBeRawPtr<Text> textNode = document().createEditingTextNode("");
         insertNodeAt(textNode.get(), pos);
         return firstPositionInNode(textNode.get());
     }
@@ -236,22 +237,22 @@ Position InsertTextCommand::insertTab(const Position& pos)
     unsigned offset = node->isTextNode() ? insertPos.offsetInContainerNode() : 0;
 
     // keep tabs coalesced in tab span
-    if (isTabSpanTextNode(node)) {
+    if (isTabHTMLSpanElementTextNode(node)) {
         RefPtrWillBeRawPtr<Text> textNode = toText(node);
         insertTextIntoNode(textNode, offset, "\t");
         return Position(textNode.release(), offset + 1);
     }
 
     // create new tab span
-    RefPtrWillBeRawPtr<Element> spanNode = createTabSpanElement(document());
+    RefPtrWillBeRawPtr<HTMLSpanElement> spanElement = createTabSpanElement(document());
 
     // place it
     if (!node->isTextNode()) {
-        insertNodeAt(spanNode.get(), insertPos);
+        insertNodeAt(spanElement.get(), insertPos);
     } else {
         RefPtrWillBeRawPtr<Text> textNode = toText(node);
         if (offset >= textNode->length())
-            insertNodeAfter(spanNode, textNode.release());
+            insertNodeAfter(spanElement, textNode.release());
         else {
             // split node to make room for the span
             // NOTE: splitTextNode uses textNode for the
@@ -259,12 +260,12 @@ Position InsertTextCommand::insertTab(const Position& pos)
             // insert the span before it.
             if (offset > 0)
                 splitTextNode(textNode, offset);
-            insertNodeBefore(spanNode, textNode.release());
+            insertNodeBefore(spanElement, textNode.release());
         }
     }
 
     // return the position following the new tab
-    return lastPositionInNode(spanNode.get());
+    return lastPositionInNode(spanElement.get());
 }
 
 }

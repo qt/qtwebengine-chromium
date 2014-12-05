@@ -36,13 +36,14 @@
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/fileapi/FileReaderLoaderClient.h"
-#include "core/fileapi/Stream.h"
 #include "core/html/parser/TextResourceDecoder.h"
 #include "core/loader/ThreadableLoader.h"
+#include "core/streams/Stream.h"
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
@@ -50,7 +51,7 @@
 #include "wtf/text/Base64.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 FileReaderLoader::FileReaderLoader(ReadType readType, FileReaderLoaderClient* client)
     : m_readType(readType)
@@ -98,6 +99,10 @@ void FileReaderLoader::startInternal(ExecutionContext& executionContext, const S
 
     // Construct and load the request.
     ResourceRequest request(m_urlForReading);
+
+    // FIXME: Should this really be 'internal'? Do we know anything about the actual request that generated this fetch?
+    request.setRequestContext(WebURLRequest::RequestContextInternal);
+
     request.setHTTPMethod("GET");
     if (m_hasRange)
         request.setHTTPHeaderField("Range", AtomicString(String::format("bytes=%d-%d", m_rangeStart, m_rangeEnd)));
@@ -166,8 +171,9 @@ void FileReaderLoader::cleanup()
     }
 }
 
-void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse& response)
+void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse& response, PassOwnPtr<WebDataConsumerHandle> handle)
 {
+    ASSERT_UNUSED(handle, !handle);
     if (response.httpStatusCode() != 200) {
         failed(httpStatusCodeToErrorCode(response.httpStatusCode()));
         return;
@@ -222,10 +228,9 @@ void FileReaderLoader::didReceiveResponse(unsigned long, const ResourceResponse&
         m_client->didStartLoading();
 }
 
-void FileReaderLoader::didReceiveData(const char* data, int dataLength)
+void FileReaderLoader::didReceiveData(const char* data, unsigned dataLength)
 {
     ASSERT(data);
-    ASSERT(dataLength > 0);
 
     // Bail out if we already encountered an error.
     if (m_errorCode)
@@ -239,7 +244,7 @@ void FileReaderLoader::didReceiveData(const char* data, int dataLength)
         return;
     }
 
-    unsigned bytesAppended = m_rawData->append(data, static_cast<unsigned>(dataLength));
+    unsigned bytesAppended = m_rawData->append(data, dataLength);
     if (!bytesAppended) {
         m_rawData.clear();
         m_bytesLoaded = 0;
@@ -377,7 +382,7 @@ void FileReaderLoader::convertToDataURL()
     m_isRawDataConverted = true;
 
     StringBuilder builder;
-    builder.append("data:");
+    builder.appendLiteral("data:");
 
     if (!m_bytesLoaded) {
         m_stringResult = builder.toString();
@@ -385,7 +390,7 @@ void FileReaderLoader::convertToDataURL()
     }
 
     builder.append(m_dataType);
-    builder.append(";base64,");
+    builder.appendLiteral(";base64,");
 
     Vector<char> out;
     base64Encode(static_cast<const char*>(m_rawData->data()), m_rawData->byteLength(), out);
@@ -401,4 +406,4 @@ void FileReaderLoader::setEncoding(const String& encoding)
         m_encoding = WTF::TextEncoding(encoding);
 }
 
-} // namespace WebCore
+} // namespace blink

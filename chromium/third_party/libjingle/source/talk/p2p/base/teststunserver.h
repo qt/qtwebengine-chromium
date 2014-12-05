@@ -25,31 +25,51 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TESTSTUNSERVER_H_
-#define TALK_P2P_BASE_TESTSTUNSERVER_H_
+#ifndef WEBRTC_P2P_BASE_TESTSTUNSERVER_H_
+#define WEBRTC_P2P_BASE_TESTSTUNSERVER_H_
 
-#include "talk/base/socketaddress.h"
-#include "talk/base/thread.h"
-#include "talk/p2p/base/stunserver.h"
+#include "webrtc/p2p/base/stunserver.h"
+#include "webrtc/base/socketaddress.h"
+#include "webrtc/base/thread.h"
 
 namespace cricket {
 
 // A test STUN server. Useful for unit tests.
-class TestStunServer {
+class TestStunServer : StunServer {
  public:
-  TestStunServer(talk_base::Thread* thread,
-                 const talk_base::SocketAddress& addr)
-      : socket_(thread->socketserver()->CreateAsyncSocket(addr.family(),
-                                                          SOCK_DGRAM)),
-        udp_socket_(talk_base::AsyncUDPSocket::Create(socket_, addr)),
-        server_(udp_socket_) {
+  static TestStunServer* Create(rtc::Thread* thread,
+                                const rtc::SocketAddress& addr) {
+    rtc::AsyncSocket* socket =
+        thread->socketserver()->CreateAsyncSocket(addr.family(), SOCK_DGRAM);
+    rtc::AsyncUDPSocket* udp_socket =
+        rtc::AsyncUDPSocket::Create(socket, addr);
+
+    return new TestStunServer(udp_socket);
   }
+
+  // Set a fake STUN address to return to the client.
+  void set_fake_stun_addr(const rtc::SocketAddress& addr) {
+    fake_stun_addr_ = addr;
+  }
+
  private:
-  talk_base::AsyncSocket* socket_;
-  talk_base::AsyncUDPSocket* udp_socket_;
-  cricket::StunServer server_;
+  explicit TestStunServer(rtc::AsyncUDPSocket* socket) : StunServer(socket) {}
+
+  void OnBindingRequest(StunMessage* msg,
+                        const rtc::SocketAddress& remote_addr) OVERRIDE {
+    if (fake_stun_addr_.IsNil()) {
+      StunServer::OnBindingRequest(msg, remote_addr);
+    } else {
+      StunMessage response;
+      GetStunBindReqponse(msg, fake_stun_addr_, &response);
+      SendResponse(response, remote_addr);
+    }
+  }
+
+ private:
+  rtc::SocketAddress fake_stun_addr_;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TESTSTUNSERVER_H_
+#endif  // WEBRTC_P2P_BASE_TESTSTUNSERVER_H_

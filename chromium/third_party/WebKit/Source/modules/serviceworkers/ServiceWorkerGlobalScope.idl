@@ -31,19 +31,23 @@
 // https://slightlyoff.github.io/ServiceWorker/spec/service_worker/index.html#service-worker-global-scope-interface
 [
     Exposed=ServiceWorker,
-    Global=Worker&ServiceWorker,
+    Global=(Worker,ServiceWorker),
     RuntimeEnabled=ServiceWorker,
+    TypeChecking=Interface,
 ] interface ServiceWorkerGlobalScope : WorkerGlobalScope {
 
   readonly attribute ServiceWorkerClients clients;
-  [CallWith=ExecutionContext, Unforgeable] readonly attribute ScalarValueString scope;
+  [CallWith=ExecutionContext, Unforgeable] readonly attribute USVString scope;
+  [CallWith=ExecutionContext, Unforgeable, RuntimeEnabled=ServiceWorkerCache] readonly attribute CacheStorage caches;
 
-  [CallWith=ScriptState] Promise fetch(ScalarValueString request);
-  [CallWith=ScriptState] Promise fetch(Request request);
+  [CallWith=ScriptState] Promise fetch(DOMString request, optional Dictionary requestInitDict);
+  [CallWith=ScriptState] Promise fetch(Request request, optional Dictionary requestInitDict);
+
+  [RaisesException] void close();
 
   attribute EventHandler onactivate;
-  attribute EventHandler onfetch;
+  [RuntimeEnabled=ServiceWorkerOnFetch] attribute EventHandler onfetch;
   attribute EventHandler oninstall;
   attribute EventHandler onmessage;
-  attribute EventHandler onsync;
+  [RuntimeEnabled=BackgroundSync] attribute EventHandler onsync;
 };

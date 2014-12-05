@@ -28,7 +28,7 @@
 
 #include "modules/webaudio/AudioNode.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/webaudio/AudioContext.h"
 #include "modules/webaudio/AudioNodeInput.h"
@@ -41,40 +41,41 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
+
+unsigned AudioNode::s_instanceCount = 0;
 
 AudioNode::AudioNode(AudioContext* context, float sampleRate)
     : m_isInitialized(false)
     , m_nodeType(NodeTypeUnknown)
     , m_context(context)
     , m_sampleRate(sampleRate)
-#if ENABLE(OILPAN)
-    , m_keepAlive(adoptPtr(new Persistent<AudioNode>(this)))
-#endif
     , m_lastProcessingTime(-1)
     , m_lastNonSilentTime(-1)
-    , m_normalRefCount(1) // start out with normal refCount == 1 (like WTF::RefCounted class)
     , m_connectionRefCount(0)
-    , m_isMarkedForDeletion(false)
     , m_isDisabled(false)
     , m_channelCount(2)
     , m_channelCountMode(Max)
     , m_channelInterpretation(AudioBus::Speakers)
+    , m_newChannelCountMode(Max)
 {
-    ScriptWrappable::init(this);
+    m_context->registerLiveNode(*this);
 #if DEBUG_AUDIONODE_REFERENCES
     if (!s_isNodeCountInitialized) {
         s_isNodeCountInitialized = true;
         atexit(AudioNode::printNodeCounts);
     }
 #endif
+    ++s_instanceCount;
 }
 
 AudioNode::~AudioNode()
 {
+    --s_instanceCount;
 #if DEBUG_AUDIONODE_REFERENCES
     --s_nodeCount[nodeType()];
-    fprintf(stderr, "%p: %d: AudioNode::~AudioNode() %d %d\n", this, nodeType(), m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %2d: AudioNode::~AudioNode() %d [%d]\n",
+        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
 #endif
 }
 
@@ -86,6 +87,22 @@ void AudioNode::initialize()
 void AudioNode::uninitialize()
 {
     m_isInitialized = false;
+}
+
+void AudioNode::clearInternalStateWhenDisabled()
+{
+}
+
+void AudioNode::dispose()
+{
+    ASSERT(isMainThread());
+    ASSERT(context()->isGraphOwner());
+
+    context()->removeChangedChannelCountMode(this);
+    context()->removeAutomaticPullNode(this);
+    context()->disposeOutputs(*this);
+    for (unsigned i = 0; i < m_outputs.size(); ++i)
+        output(i)->disconnectAll();
 }
 
 String AudioNode::nodeTypeName() const
@@ -139,15 +156,16 @@ void AudioNode::setNodeType(NodeType type)
 
 #if DEBUG_AUDIONODE_REFERENCES
     ++s_nodeCount[type];
+    fprintf(stderr, "%p: %2d: AudioNode::AudioNode [%3d]\n", this, nodeType(), s_nodeCount[nodeType()]);
 #endif
 }
 
-void AudioNode::addInput(PassOwnPtr<AudioNodeInput> input)
+void AudioNode::addInput()
 {
-    m_inputs.append(input);
+    m_inputs.append(AudioNodeInput::create(*this));
 }
 
-void AudioNode::addOutput(PassOwnPtr<AudioNodeOutput> output)
+void AudioNode::addOutput(AudioNodeOutput* output)
 {
     m_outputs.append(output);
 }
@@ -201,8 +219,7 @@ void AudioNode::connect(AudioNode* destination, unsigned outputIndex, unsigned i
     }
 
     AudioNodeInput* input = destination->input(inputIndex);
-    AudioNodeOutput* output = this->output(outputIndex);
-    input->connect(output);
+    input->connect(*output(outputIndex));
 
     // Let context know that a connection has been made.
     context()->incrementConnectionCount();
@@ -234,8 +251,7 @@ void AudioNode::connect(AudioParam* param, unsigned outputIndex, ExceptionState&
         return;
     }
 
-    AudioNodeOutput* output = this->output(outputIndex);
-    param->connect(output);
+    param->connect(*output(outputIndex));
 }
 
 void AudioNode::disconnect(unsigned outputIndex, ExceptionState& exceptionState)
@@ -300,17 +316,17 @@ void AudioNode::setChannelCountMode(const String& mode, ExceptionState& exceptio
     ChannelCountMode oldMode = m_channelCountMode;
 
     if (mode == "max") {
-        m_channelCountMode = Max;
+        m_newChannelCountMode = Max;
     } else if (mode == "clamped-max") {
-        m_channelCountMode = ClampedMax;
+        m_newChannelCountMode = ClampedMax;
     } else if (mode == "explicit") {
-        m_channelCountMode = Explicit;
+        m_newChannelCountMode = Explicit;
     } else {
         ASSERT_NOT_REACHED();
     }
 
-    if (m_channelCountMode != oldMode)
-        updateChannelsForInputs();
+    if (m_newChannelCountMode != oldMode)
+        context()->addChangedChannelCountMode(this);
 }
 
 String AudioNode::channelInterpretation()
@@ -446,7 +462,7 @@ void AudioNode::enableOutputsIfNecessary()
 void AudioNode::disableOutputsIfNecessary()
 {
     // Disable outputs if appropriate. We do this if the number of connections is 0 or 1. The case
-    // of 0 is from finishDeref() where there are no connections left. The case of 1 is from
+    // of 0 is from deref() where there are no connections left. The case of 1 is from
     // AudioNodeInput::disable() where we want to disable outputs when there's only one connection
     // left because we're ready to go away, but can't quite yet.
     if (m_connectionRefCount <= 1 && !m_isDisabled) {
@@ -463,109 +479,63 @@ void AudioNode::disableOutputsIfNecessary()
         // longer any active connections.
         if (nodeType() != NodeTypeConvolver && nodeType() != NodeTypeDelay) {
             m_isDisabled = true;
+            clearInternalStateWhenDisabled();
             for (unsigned i = 0; i < m_outputs.size(); ++i)
                 output(i)->disable();
         }
     }
 }
 
-void AudioNode::ref(RefType refType)
+void AudioNode::makeConnection()
 {
-#if ENABLE(OILPAN)
-    ASSERT(m_keepAlive);
-#endif
-    switch (refType) {
-    case RefTypeNormal:
-        atomicIncrement(&m_normalRefCount);
-        break;
-    case RefTypeConnection:
-        atomicIncrement(&m_connectionRefCount);
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-    }
+    atomicIncrement(&m_connectionRefCount);
 
 #if DEBUG_AUDIONODE_REFERENCES
-    fprintf(stderr, "%p: %d: AudioNode::ref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %2d: AudioNode::ref   %3d [%3d]\n",
+        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
 #endif
-
-    // See the disabling code in finishDeref() below. This handles the case where a node
-    // is being re-connected after being used at least once and disconnected.
-    // In this case, we need to re-enable.
-    if (refType == RefTypeConnection)
-        enableOutputsIfNecessary();
+    // See the disabling code in disableOutputsIfNecessary(). This handles
+    // the case where a node is being re-connected after being used at least
+    // once and disconnected. In this case, we need to re-enable.
+    enableOutputsIfNecessary();
 }
 
-void AudioNode::deref(RefType refType)
+void AudioNode::breakConnection()
 {
-    // The actually work for deref happens completely within the audio context's graph lock.
-    // In the case of the audio thread, we must use a tryLock to avoid glitches.
+    // The actual work for deref happens completely within the audio context's
+    // graph lock. In the case of the audio thread, we must use a tryLock to
+    // avoid glitches.
     bool hasLock = false;
-    bool mustReleaseLock = false;
-
     if (context()->isAudioThread()) {
         // Real-time audio thread must not contend lock (to avoid glitches).
-        hasLock = context()->tryLock(mustReleaseLock);
+        hasLock = context()->tryLock();
     } else {
-        context()->lock(mustReleaseLock);
+        context()->lock();
         hasLock = true;
     }
 
     if (hasLock) {
-        // This is where the real deref work happens.
-        finishDeref(refType);
-
-        if (mustReleaseLock)
-            context()->unlock();
+        breakConnectionWithLock();
+        context()->unlock();
     } else {
-        // We were unable to get the lock, so put this in a list to finish up later.
+        // We were unable to get the lock, so put this in a list to finish up
+        // later.
         ASSERT(context()->isAudioThread());
-        ASSERT(refType == RefTypeConnection);
-        context()->addDeferredFinishDeref(this);
+        context()->addDeferredBreakConnection(*this);
     }
-
-    // Once AudioContext::uninitialize() is called there's no more chances for deleteMarkedNodes() to get called, so we call here.
-    // We can't call in AudioContext::~AudioContext() since it will never be called as long as any AudioNode is alive
-    // because AudioNodes keep a reference to the context.
-    if (!context()->isInitialized())
-        context()->deleteMarkedNodes();
 }
 
-void AudioNode::finishDeref(RefType refType)
+void AudioNode::breakConnectionWithLock()
 {
-    ASSERT(context()->isGraphOwner());
-
-    switch (refType) {
-    case RefTypeNormal:
-        ASSERT(m_normalRefCount > 0);
-        atomicDecrement(&m_normalRefCount);
-        break;
-    case RefTypeConnection:
-        ASSERT(m_connectionRefCount > 0);
-        atomicDecrement(&m_connectionRefCount);
-        break;
-    default:
-        ASSERT_NOT_REACHED();
-    }
+    atomicDecrement(&m_connectionRefCount);
 
 #if DEBUG_AUDIONODE_REFERENCES
-    fprintf(stderr, "%p: %d: AudioNode::deref(%d) %d %d\n", this, nodeType(), refType, m_normalRefCount, m_connectionRefCount);
+    fprintf(stderr, "%p: %2d: AudioNode::deref %3d [%3d]\n",
+        this, nodeType(), m_connectionRefCount, s_nodeCount[nodeType()]);
 #endif
 
-    if (!m_connectionRefCount) {
-        if (!m_normalRefCount) {
-            if (!m_isMarkedForDeletion) {
-                // All references are gone - we need to go away.
-                for (unsigned i = 0; i < m_outputs.size(); ++i)
-                    output(i)->disconnectAll(); // This will deref() nodes we're connected to.
-
-                // Mark for deletion at end of each render quantum or when context shuts down.
-                context()->markForDeletion(this);
-                m_isMarkedForDeletion = true;
-            }
-        } else if (refType == RefTypeConnection)
-            disableOutputsIfNecessary();
-    }
+    if (!m_connectionRefCount)
+        disableOutputsIfNecessary();
 }
 
 #if DEBUG_AUDIONODE_REFERENCES
@@ -581,7 +551,7 @@ void AudioNode::printNodeCounts()
     fprintf(stderr, "===========================\n");
 
     for (unsigned i = 0; i < NodeTypeEnd; ++i)
-        fprintf(stderr, "%d: %d\n", i, s_nodeCount[i]);
+        fprintf(stderr, "%2d: %d\n", i, s_nodeCount[i]);
 
     fprintf(stderr, "===========================\n\n\n");
 }
@@ -591,22 +561,17 @@ void AudioNode::printNodeCounts()
 void AudioNode::trace(Visitor* visitor)
 {
     visitor->trace(m_context);
+    visitor->trace(m_inputs);
+    visitor->trace(m_outputs);
     EventTargetWithInlineData::trace(visitor);
 }
 
-#if ENABLE(OILPAN)
-void AudioNode::clearKeepAlive()
+void AudioNode::updateChannelCountMode()
 {
-    // It is safe to drop the self-persistent when the ref count
-    // of a AudioNode reaches zero. At that point, the
-    // AudioNode node is removed from the AudioContext and
-    // it cannot be reattached. Therefore, the reference count
-    // will not go above zero again.
-    ASSERT(m_keepAlive);
-    m_keepAlive = nullptr;
+    m_channelCountMode = m_newChannelCountMode;
+    updateChannelsForInputs();
 }
-#endif
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

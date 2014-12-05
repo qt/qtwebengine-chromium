@@ -32,28 +32,29 @@ class CONTENT_EXPORT P2PSocketHostTcpBase : public P2PSocketHost {
                        int socket_id,
                        P2PSocketType type,
                        net::URLRequestContextGetter* url_context);
-  virtual ~P2PSocketHostTcpBase();
+  ~P2PSocketHostTcpBase() override;
 
   bool InitAccepted(const net::IPEndPoint& remote_address,
                     net::StreamSocket* socket);
 
   // P2PSocketHost overrides.
-  virtual bool Init(const net::IPEndPoint& local_address,
-                    const P2PHostAndIPEndPoint& remote_address) OVERRIDE;
-  virtual void Send(const net::IPEndPoint& to,
-                    const std::vector<char>& data,
-                    const talk_base::PacketOptions& options,
-                    uint64 packet_id) OVERRIDE;
-  virtual P2PSocketHost* AcceptIncomingTcpConnection(
-      const net::IPEndPoint& remote_address, int id) OVERRIDE;
-  virtual bool SetOption(P2PSocketOption option, int value) OVERRIDE;
+  bool Init(const net::IPEndPoint& local_address,
+            const P2PHostAndIPEndPoint& remote_address) override;
+  void Send(const net::IPEndPoint& to,
+            const std::vector<char>& data,
+            const rtc::PacketOptions& options,
+            uint64 packet_id) override;
+  P2PSocketHost* AcceptIncomingTcpConnection(
+      const net::IPEndPoint& remote_address,
+      int id) override;
+  bool SetOption(P2PSocketOption option, int value) override;
 
  protected:
   // Derived classes will provide the implementation.
   virtual int ProcessInput(char* input, int input_len) = 0;
   virtual void DoSend(const net::IPEndPoint& to,
                       const std::vector<char>& data,
-                      const talk_base::PacketOptions& options) = 0;
+                      const rtc::PacketOptions& options) = 0;
 
   void WriteOrQueue(scoped_refptr<net::DrainableIOBuffer>& buffer);
   void OnPacket(const std::vector<char>& data);
@@ -80,7 +81,7 @@ class CONTENT_EXPORT P2PSocketHostTcpBase : public P2PSocketHost {
 
   // Helper method to send socket create message and start read.
   void OnOpen();
-  void DoSendSocketCreateMsg();
+  bool DoSendSocketCreateMsg();
 
   P2PHostAndIPEndPoint remote_address_;
 
@@ -104,13 +105,14 @@ class CONTENT_EXPORT P2PSocketHostTcp : public P2PSocketHostTcpBase {
                    int socket_id,
                    P2PSocketType type,
                    net::URLRequestContextGetter* url_context);
-  virtual ~P2PSocketHostTcp();
+  ~P2PSocketHostTcp() override;
 
  protected:
-  virtual int ProcessInput(char* input, int input_len) OVERRIDE;
-  virtual void DoSend(const net::IPEndPoint& to,
-                      const std::vector<char>& data,
-                      const talk_base::PacketOptions& options) OVERRIDE;
+  int ProcessInput(char* input, int input_len) override;
+  void DoSend(const net::IPEndPoint& to,
+              const std::vector<char>& data,
+              const rtc::PacketOptions& options) override;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(P2PSocketHostTcp);
 };
@@ -126,13 +128,14 @@ class CONTENT_EXPORT P2PSocketHostStunTcp : public P2PSocketHostTcpBase {
                        P2PSocketType type,
                        net::URLRequestContextGetter* url_context);
 
-  virtual ~P2PSocketHostStunTcp();
+  ~P2PSocketHostStunTcp() override;
 
  protected:
-  virtual int ProcessInput(char* input, int input_len) OVERRIDE;
-  virtual void DoSend(const net::IPEndPoint& to,
-                      const std::vector<char>& data,
-                      const talk_base::PacketOptions& options) OVERRIDE;
+  int ProcessInput(char* input, int input_len) override;
+  void DoSend(const net::IPEndPoint& to,
+              const std::vector<char>& data,
+              const rtc::PacketOptions& options) override;
+
  private:
   int GetExpectedPacketSize(const char* data, int len, int* pad_bytes);
 

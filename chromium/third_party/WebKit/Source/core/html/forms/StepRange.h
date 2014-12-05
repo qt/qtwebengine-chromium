@@ -24,9 +24,7 @@
 #include "platform/Decimal.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
-
-class HTMLInputElement;
+namespace blink {
 
 enum AnyStepHandling { RejectAny, AnyIsDefaultStep };
 

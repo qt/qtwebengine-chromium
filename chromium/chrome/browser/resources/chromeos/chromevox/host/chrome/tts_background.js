@@ -44,7 +44,6 @@ cvox.Utterance.nextUtteranceId_ = 1;
 cvox.TtsBackground = function(opt_enableMath) {
   opt_enableMath = opt_enableMath == undefined ? true : opt_enableMath;
   goog.base(this);
-  this.currentVoice = localStorage['voiceName'] || '';
 
   this.ttsProperties['rate'] = (parseFloat(localStorage['rate']) ||
       this.propertyDefault['rate']);
@@ -61,11 +60,6 @@ cvox.TtsBackground = function(opt_enableMath) {
   }
 
   this.lastEventType = 'end';
-
-  this.setPreferredVoice_();
-  if (!this.currentVoice) {
-    this.setDefaultVoiceName_();
-  }
 
   /** @private {number} */
   this.currentPunctuationEcho_ =
@@ -164,6 +158,24 @@ cvox.TtsBackground = function(opt_enableMath) {
    * @private
    */
   this.utteranceQueue_ = [];
+
+  // TODO(dtseng): Done while migrating away from using localStorage.
+  if (localStorage['voiceName']) {
+    chrome.storage.local.set({voiceName: localStorage['voiceName']});
+    delete localStorage['voiceName'];
+  }
+
+  window.speechSynthesis.onvoiceschanged = function() {
+    chrome.storage.local.get({voiceName: ''}, function(items) {
+      this.updateVoice_(items.voiceName);
+    }.bind(this));
+  }.bind(this);
+
+  chrome.storage.onChanged.addListener(function(changes, namespace) {
+    if (changes.voiceName) {
+      this.updateVoice_(changes.voiceName.newValue);
+    }
+  }.bind(this));
 };
 goog.inherits(cvox.TtsBackground, cvox.ChromeTtsBase);
 
@@ -197,24 +209,6 @@ cvox.TtsBackground.ALLOWED_PROPERTIES_ = [
     'voiceName',
     'volume'];
 
-/**
- * Sets the current voice to the one that the user selected on the options page
- * if that voice exists.
- * @private
- */
-cvox.TtsBackground.prototype.setPreferredVoice_ = function() {
-  var self = this;
-  chrome.tts.getVoices(
-      function(voices) {
-        for (var i = 0, v; v = voices[i]; i++) {
-          if (v['voiceName'] == localStorage['voiceName']) {
-            self.currentVoice = v['voiceName'];
-            return;
-          }
-        }
-      });
-};
-
 
 /** @override */
 cvox.TtsBackground.prototype.speak = function(
@@ -223,9 +217,6 @@ cvox.TtsBackground.prototype.speak = function(
 
   if (!properties) {
     properties = {};
-  }
-  if (queueMode === undefined) {
-    queueMode = cvox.AbstractTts.QUEUE_MODE_QUEUE;
   }
 
   // Chunk to improve responsiveness. Use a replace/split pattern in order to
@@ -247,7 +238,7 @@ cvox.TtsBackground.prototype.speak = function(
       propertiesCopy['endCallback'] =
           i == (splitTextString.length - 1) ? endCallback : null;
       this.speak(splitTextString[i], queueMode, propertiesCopy);
-      queueMode = cvox.AbstractTts.QUEUE_MODE_QUEUE;
+      queueMode = cvox.QueueMode.QUEUE;
     }
     return this;
   }
@@ -274,7 +265,7 @@ cvox.TtsBackground.prototype.speak = function(
       } catch (e) {
       }
     }
-    if (queueMode === cvox.AbstractTts.QUEUE_MODE_FLUSH) {
+    if (queueMode === cvox.QueueMode.FLUSH) {
       this.stop();
     }
     return this;
@@ -282,17 +273,13 @@ cvox.TtsBackground.prototype.speak = function(
 
   var mergedProperties = this.mergeProperties(properties);
 
-  if (this.currentVoice && (this.currentVoice == localStorage['voiceName'])) {
+  if (this.currentVoice) {
     mergedProperties['voiceName'] = this.currentVoice;
   }
-  if (localStorage['voiceName'] &&
-      this.currentVoice != localStorage['voiceName']) {
-    this.setPreferredVoice_();
-  }
 
-  if (queueMode == cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH &&
+  if (queueMode == cvox.QueueMode.CATEGORY_FLUSH &&
       !mergedProperties['category']) {
-    queueMode = cvox.AbstractTts.QUEUE_MODE_FLUSH;
+    queueMode = cvox.QueueMode.FLUSH;
   }
 
   var utterance = new cvox.Utterance(textString, mergedProperties);
@@ -302,15 +289,15 @@ cvox.TtsBackground.prototype.speak = function(
 /**
  * Use the speech queue to handle the given speech request.
  * @param {cvox.Utterance} utterance The utterance to speak.
- * @param {number} queueMode The queue mode.
+ * @param {cvox.QueueMode} queueMode The queue mode.
  * @private
  */
 cvox.TtsBackground.prototype.speakUsingQueue_ = function(utterance, queueMode) {
   // First, take care of removing the current utterance and flushing
   // anything from the queue we need to. If we remove the current utterance,
   // make a note that we're going to stop speech.
-  if (queueMode == cvox.AbstractTts.QUEUE_MODE_FLUSH ||
-      queueMode == cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH) {
+  if (queueMode == cvox.QueueMode.FLUSH ||
+      queueMode == cvox.QueueMode.CATEGORY_FLUSH) {
     if (this.shouldCancel_(this.currentUtterance_, utterance, queueMode)) {
       this.cancelUtterance_(this.currentUtterance_);
       this.currentUtterance_ = null;
@@ -346,6 +333,12 @@ cvox.TtsBackground.prototype.startSpeakingNextItemInQueue_ = function() {
   }
 
   if (this.utteranceQueue_.length == 0) {
+    return;
+  }
+
+  // There is no voice to speak with (e.g. the tts system has not fully
+  // initialized).
+  if (!this.currentVoice) {
     return;
   }
 
@@ -426,7 +419,7 @@ cvox.TtsBackground.prototype.onTtsEvent_ = function(event, utteranceId) {
  *
  * @param {cvox.Utterance} utteranceToCancel The utterance in question.
  * @param {cvox.Utterance} newUtterance The new utterance we're enqueueing.
- * @param {number} queueMode The queue mode.
+ * @param {cvox.QueueMode} queueMode The queue mode.
  * @return {boolean} True if this utterance should be canceled.
  * @private
  */
@@ -439,11 +432,11 @@ cvox.TtsBackground.prototype.shouldCancel_ =
     return false;
   }
   switch (queueMode) {
-    case cvox.AbstractTts.QUEUE_MODE_QUEUE:
+    case cvox.QueueMode.QUEUE:
       return false;
-    case cvox.AbstractTts.QUEUE_MODE_FLUSH:
+    case cvox.QueueMode.FLUSH:
       return true;
-    case cvox.AbstractTts.QUEUE_MODE_CATEGORY_FLUSH:
+    case cvox.QueueMode.CATEGORY_FLUSH:
       return (utteranceToCancel.properties['category'] ==
           newUtterance.properties['category']);
   }
@@ -503,8 +496,7 @@ cvox.TtsBackground.prototype.addCapturingEventListener = function(listener) {
  * @private
  */
 cvox.TtsBackground.prototype.onError_ = function(errorMessage) {
-  // Reset voice related parameters.
-  delete localStorage['voiceName'];
+  this.updateVoice_(this.currentVoice);
 };
 
 /**
@@ -660,7 +652,7 @@ cvox.TtsBackground.prototype.pronouncePhonetically_ = function(text) {
     this.clearTimeout_();
     var self = this;
     this.timeoutId_ = setTimeout(function() {
-      self.speak(text, 1);
+      self.speak(text, cvox.QueueMode.QUEUE);
     }, cvox.TtsBackground.PHONETIC_DELAY_MS_);
     return true;
   }
@@ -679,14 +671,24 @@ cvox.TtsBackground.prototype.clearTimeout_ = function() {
   }
 };
 
+
 /**
- * Sets the name of a voice appropriate for the current locale preferring
- * non-remote voices.
+ * Update the current voice used to speak based upon values in storage. If that
+ * does not succeed, fallback to use system locale when picking a voice.
+ * @param {string} voiceName Voice name to set.
  * @private
  */
-cvox.TtsBackground.prototype.setDefaultVoiceName_ = function() {
+cvox.TtsBackground.prototype.updateVoice_ = function(voiceName) {
   chrome.tts.getVoices(
       goog.bind(function(voices) {
+        for (var i = 0, v; v = voices[i]; i++) {
+          if (v['voiceName'] == voiceName) {
+            this.currentVoice = v['voiceName'];
+            this.startSpeakingNextItemInQueue_();
+            return;
+          }
+        }
+
         var currentLocale =
             chrome.i18n.getMessage('@@ui_locale').replace('_', '-');
         voices.sort(function(v1, v2) {
@@ -705,8 +707,8 @@ cvox.TtsBackground.prototype.setDefaultVoiceName_ = function() {
           return 0;
         });
         if (voices[0]) {
-          var voiceName = voices[0].voiceName;
-          this.currentVoice = voiceName;
+          this.currentVoice = voices[0].voiceName;
+          this.startSpeakingNextItemInQueue_();
         }
       }, this));
 };

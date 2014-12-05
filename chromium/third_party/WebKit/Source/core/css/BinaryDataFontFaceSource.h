@@ -8,23 +8,23 @@
 #include "core/css/CSSFontFaceSource.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class FontCustomPlatformData;
 class SharedBuffer;
 
-class BinaryDataFontFaceSource FINAL : public CSSFontFaceSource {
+class BinaryDataFontFaceSource final : public CSSFontFaceSource {
 public:
     explicit BinaryDataFontFaceSource(SharedBuffer*);
     virtual ~BinaryDataFontFaceSource();
-    virtual bool isValid() const OVERRIDE;
+    virtual bool isValid() const override;
 
 private:
-    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) OVERRIDE;
+    virtual PassRefPtr<SimpleFontData> createFontData(const FontDescription&) override;
 
     OwnPtr<FontCustomPlatformData> m_customPlatformData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

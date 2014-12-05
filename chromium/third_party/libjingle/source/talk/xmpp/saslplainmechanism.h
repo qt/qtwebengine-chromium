@@ -28,15 +28,15 @@
 #ifndef TALK_XMPP_SASLPLAINMECHANISM_H_
 #define TALK_XMPP_SASLPLAINMECHANISM_H_
 
-#include "talk/base/cryptstring.h"
-#include "talk/xmpp/saslmechanism.h"
+#include "webrtc/libjingle/xmpp/saslmechanism.h"
+#include "webrtc/base/cryptstring.h"
 
 namespace buzz {
 
 class SaslPlainMechanism : public SaslMechanism {
 
 public:
-  SaslPlainMechanism(const buzz::Jid user_jid, const talk_base::CryptString & password) :
+  SaslPlainMechanism(const buzz::Jid user_jid, const rtc::CryptString & password) :
     user_jid_(user_jid), password_(password) {}
 
   virtual std::string GetMechanismName() { return "PLAIN"; }
@@ -46,7 +46,7 @@ public:
     XmlElement * el = new XmlElement(QN_SASL_AUTH, true);
     el->AddAttr(QN_MECHANISM, "PLAIN");
 
-    talk_base::FormatCryptString credential;
+    rtc::FormatCryptString credential;
     credential.Append("\0", 1);
     credential.Append(user_jid_.node());
     credential.Append("\0", 1);
@@ -57,7 +57,7 @@ public:
 
 private:
   Jid user_jid_;
-  talk_base::CryptString password_;
+  rtc::CryptString password_;
 };
 
 }

@@ -25,6 +25,7 @@
 #include "core/rendering/RenderTextControlSingleLine.h"
 
 #include "core/CSSValueKeywords.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/editing/FrameSelection.h"
 #include "core/frame/LocalFrame.h"
@@ -35,9 +36,7 @@
 #include "platform/PlatformKeyboardEvent.h"
 #include "platform/fonts/SimpleFontData.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -177,7 +176,6 @@ void RenderTextControlSingleLine::layout()
         placeholderBox->style()->setWidth(Length(innerEditorSize.width() - placeholderBox->borderAndPaddingWidth(), Fixed));
         placeholderBox->style()->setHeight(Length(innerEditorSize.height() - placeholderBox->borderAndPaddingHeight(), Fixed));
         bool neededLayout = placeholderBox->needsLayout();
-        bool placeholderBoxHadLayout = placeholderBox->everHadLayout();
         placeholderBox->layoutIfNeeded();
         LayoutPoint textOffset;
         if (innerEditorRenderer)
@@ -188,11 +186,6 @@ void RenderTextControlSingleLine::layout()
             textOffset += toLayoutSize(containerRenderer->location());
         placeholderBox->setLocation(textOffset);
 
-        if (!placeholderBoxHadLayout && placeholderBox->checkForPaintInvalidationDuringLayout()) {
-            // This assumes a shadow tree without floats. If floats are added, the
-            // logic should be shared with RenderBlockFlow::layoutBlockChild.
-            placeholderBox->paintInvalidationForWholeRenderer();
-        }
         // The placeholder gets layout last, after the parent text control and its other children,
         // so in order to get the correct overflow from the placeholder we need to recompute it now.
         if (neededLayout)
@@ -261,11 +254,11 @@ void RenderTextControlSingleLine::capsLockStateMayHaveChanged()
     bool shouldDrawCapsLockIndicator = false;
 
     if (LocalFrame* frame = document().frame())
-        shouldDrawCapsLockIndicator = inputElement()->isPasswordField() && frame->selection().isFocusedAndActive() && document().focusedElement() == node() && PlatformKeyboardEvent::currentCapsLockState();
+        shouldDrawCapsLockIndicator = inputElement()->type() == InputTypeNames::password && frame->selection().isFocusedAndActive() && document().focusedElement() == node() && PlatformKeyboardEvent::currentCapsLockState();
 
     if (shouldDrawCapsLockIndicator != m_shouldDrawCapsLockIndicator) {
         m_shouldDrawCapsLockIndicator = shouldDrawCapsLockIndicator;
-        paintInvalidationForWholeRenderer();
+        setShouldDoFullPaintInvalidation();
     }
 }
 

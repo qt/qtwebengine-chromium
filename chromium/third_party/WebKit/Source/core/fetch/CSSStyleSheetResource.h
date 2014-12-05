@@ -30,36 +30,37 @@
 #include "core/fetch/StyleSheetResource.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSParserContext;
 class ResourceClient;
 class StyleSheetContents;
-class TextResourceDecoder;
 
-class CSSStyleSheetResource FINAL : public StyleSheetResource {
+class CSSStyleSheetResource final : public StyleSheetResource {
 public:
     CSSStyleSheetResource(const ResourceRequest&, const String& charset);
     virtual ~CSSStyleSheetResource();
+    virtual void trace(Visitor*) override;
 
     const String sheetText(bool enforceMIMEType = true, bool* hasValidMIMEType = 0) const;
 
-    virtual void didAddClient(ResourceClient*) OVERRIDE;
+    virtual void didAddClient(ResourceClient*) override;
 
     PassRefPtrWillBeRawPtr<StyleSheetContents> restoreParsedStyleSheet(const CSSParserContext&);
     void saveParsedStyleSheet(PassRefPtrWillBeRawPtr<StyleSheetContents>);
 
 protected:
-    virtual bool isSafeToUnlock() const OVERRIDE;
-    virtual void destroyDecodedDataIfPossible() OVERRIDE;
+    virtual bool isSafeToUnlock() const override;
+    virtual void destroyDecodedDataIfPossible() override;
 
 private:
     bool canUseSheet(bool enforceMIMEType, bool* hasValidMIMEType) const;
-    virtual void checkNotify() OVERRIDE;
+    virtual void dispose() override;
+    virtual void checkNotify() override;
 
     String m_decodedSheetText;
 
-    RefPtrWillBePersistent<StyleSheetContents> m_parsedStyleSheetCache;
+    RefPtrWillBeMember<StyleSheetContents> m_parsedStyleSheetCache;
 };
 
 DEFINE_RESOURCE_TYPE_CASTS(CSSStyleSheet);

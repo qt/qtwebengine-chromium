@@ -35,7 +35,7 @@ class VIEWS_EXPORT DesktopNativeCursorManager
  public:
   DesktopNativeCursorManager(
       scoped_ptr<DesktopCursorLoaderUpdater> cursor_loader_updater);
-  virtual ~DesktopNativeCursorManager();
+  ~DesktopNativeCursorManager() override;
 
   // Builds a cursor and sets the internal platform representation.
   gfx::NativeCursor GetInitializedCursor(int type);
@@ -48,21 +48,17 @@ class VIEWS_EXPORT DesktopNativeCursorManager
 
  private:
   // Overridden from wm::NativeCursorManager:
-  virtual void SetDisplay(
-      const gfx::Display& display,
-      wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetCursor(
-      gfx::NativeCursor cursor,
-      wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetVisibility(
-      bool visible,
-      wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetCursorSet(
-      ui::CursorSetType cursor_set,
-      wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
-  virtual void SetMouseEventsEnabled(
+  void SetDisplay(const gfx::Display& display,
+                  wm::NativeCursorManagerDelegate* delegate) override;
+  void SetCursor(gfx::NativeCursor cursor,
+                 wm::NativeCursorManagerDelegate* delegate) override;
+  void SetVisibility(bool visible,
+                     wm::NativeCursorManagerDelegate* delegate) override;
+  void SetCursorSet(ui::CursorSetType cursor_set,
+                    wm::NativeCursorManagerDelegate* delegate) override;
+  void SetMouseEventsEnabled(
       bool enabled,
-      wm::NativeCursorManagerDelegate* delegate) OVERRIDE;
+      wm::NativeCursorManagerDelegate* delegate) override;
 
   // The set of hosts to notify of changes in cursor state.
   typedef std::set<aura::WindowTreeHost*> Hosts;

@@ -20,21 +20,18 @@ class BrowserPluginMessageFilter : public BrowserMessageFilter {
   BrowserPluginMessageFilter(int render_process_id);
 
   // BrowserMessageFilter implementation.
-  virtual void OverrideThreadForMessage(
-    const IPC::Message& message,
-    BrowserThread::ID* thread) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
+  void OverrideThreadForMessage(const IPC::Message& message,
+                                BrowserThread::ID* thread) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnDestruct() const override;
 
  private:
   friend class BrowserThread;
   friend class base::DeleteHelper<BrowserPluginMessageFilter>;
 
-  virtual ~BrowserPluginMessageFilter();
+  ~BrowserPluginMessageFilter() override;
 
   void ForwardMessageToGuest(const IPC::Message& message);
-
-  void OnSwapBuffersACK(const FrameHostMsg_BuffersSwappedACK_Params& params);
 
   int render_process_id_;
 

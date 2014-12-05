@@ -5,18 +5,16 @@
 #include "net/socket/tcp_socket.h"
 
 #include <errno.h>
-#include <fcntl.h>
-#include <netdb.h>
-#include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <sys/socket.h>
 
-#include "base/callback_helpers.h"
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/posix/eintr_wrapper.h"
-#include "build/build_config.h"
+#include "base/task_runner_util.h"
+#include "base/threading/worker_pool.h"
 #include "net/base/address_list.h"
 #include "net/base/connection_type_histograms.h"
 #include "net/base/io_buffer.h"
@@ -24,6 +22,7 @@
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
+#include "net/socket/socket_libevent.h"
 #include "net/socket/socket_net_log_params.h"
 
 // If we don't have a definition for TCPI_OPT_SYN_DATA, create one.
@@ -34,6 +33,14 @@
 namespace net {
 
 namespace {
+
+// True if OS supports TCP FastOpen.
+bool g_tcp_fastopen_supported = false;
+// True if TCP FastOpen is user-enabled for all connections.
+// TODO(jri): Change global variable to param in HttpNetworkSession::Params.
+bool g_tcp_fastopen_user_enabled = false;
+// True if TCP FastOpen connect-with-write has failed at least once.
+bool g_tcp_fastopen_has_failed = false;
 
 // SetTCPNoDelay turns on/off buffering in the kernel. By default, TCP sockets
 // will wait up to 200ms for more data to complete a packet before transmitting.
@@ -72,90 +79,61 @@ bool SetTCPKeepAlive(int fd, bool enable, int delay) {
   return true;
 }
 
-int MapAcceptError(int os_error) {
-  switch (os_error) {
-    // If the client aborts the connection before the server calls accept,
-    // POSIX specifies accept should fail with ECONNABORTED. The server can
-    // ignore the error and just call accept again, so we map the error to
-    // ERR_IO_PENDING. See UNIX Network Programming, Vol. 1, 3rd Ed., Sec.
-    // 5.11, "Connection Abort before accept Returns".
-    case ECONNABORTED:
-      return ERR_IO_PENDING;
-    default:
-      return MapSystemError(os_error);
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+// Checks if the kernel supports TCP FastOpen.
+bool SystemSupportsTCPFastOpen() {
+  const base::FilePath::CharType kTCPFastOpenProcFilePath[] =
+      "/proc/sys/net/ipv4/tcp_fastopen";
+  std::string system_supports_tcp_fastopen;
+  if (!base::ReadFileToString(base::FilePath(kTCPFastOpenProcFilePath),
+                              &system_supports_tcp_fastopen)) {
+    return false;
   }
+  // The read from /proc should return '1' if TCP FastOpen is enabled in the OS.
+  if (system_supports_tcp_fastopen.empty() ||
+      (system_supports_tcp_fastopen[0] != '1')) {
+    return false;
+  }
+  return true;
 }
 
-int MapConnectError(int os_error) {
-  switch (os_error) {
-    case EACCES:
-      return ERR_NETWORK_ACCESS_DENIED;
-    case ETIMEDOUT:
-      return ERR_CONNECTION_TIMED_OUT;
-    default: {
-      int net_error = MapSystemError(os_error);
-      if (net_error == ERR_FAILED)
-        return ERR_CONNECTION_FAILED;  // More specific than ERR_FAILED.
-
-      // Give a more specific error when the user is offline.
-      if (net_error == ERR_ADDRESS_UNREACHABLE &&
-          NetworkChangeNotifier::IsOffline()) {
-        return ERR_INTERNET_DISCONNECTED;
-      }
-      return net_error;
-    }
-  }
+void RegisterTCPFastOpenIntentAndSupport(bool user_enabled,
+                                         bool system_supported) {
+  g_tcp_fastopen_supported = system_supported;
+  g_tcp_fastopen_user_enabled = user_enabled;
 }
+#endif
 
 }  // namespace
 
 //-----------------------------------------------------------------------------
 
-TCPSocketLibevent::Watcher::Watcher(
-    const base::Closure& read_ready_callback,
-    const base::Closure& write_ready_callback)
-    : read_ready_callback_(read_ready_callback),
-      write_ready_callback_(write_ready_callback) {
+bool IsTCPFastOpenSupported() {
+  return g_tcp_fastopen_supported;
 }
 
-TCPSocketLibevent::Watcher::~Watcher() {
+bool IsTCPFastOpenUserEnabled() {
+  return g_tcp_fastopen_user_enabled;
 }
 
-void TCPSocketLibevent::Watcher::OnFileCanReadWithoutBlocking(int /* fd */) {
-  if (!read_ready_callback_.is_null())
-    read_ready_callback_.Run();
-  else
-    NOTREACHED();
-}
-
-void TCPSocketLibevent::Watcher::OnFileCanWriteWithoutBlocking(int /* fd */) {
-  if (!write_ready_callback_.is_null())
-    write_ready_callback_.Run();
-  else
-    NOTREACHED();
+// This is asynchronous because it needs to do file IO, and it isn't allowed to
+// do that on the IO thread.
+void CheckSupportAndMaybeEnableTCPFastOpen(bool user_enabled) {
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+  base::PostTaskAndReplyWithResult(
+      base::WorkerPool::GetTaskRunner(/*task_is_slow=*/false).get(),
+      FROM_HERE,
+      base::Bind(SystemSupportsTCPFastOpen),
+      base::Bind(RegisterTCPFastOpenIntentAndSupport, user_enabled));
+#endif
 }
 
 TCPSocketLibevent::TCPSocketLibevent(NetLog* net_log,
                                      const NetLog::Source& source)
-    : socket_(kInvalidSocket),
-      accept_watcher_(base::Bind(&TCPSocketLibevent::DidCompleteAccept,
-                                 base::Unretained(this)),
-                      base::Closure()),
-      accept_socket_(NULL),
-      accept_address_(NULL),
-      read_watcher_(base::Bind(&TCPSocketLibevent::DidCompleteRead,
-                               base::Unretained(this)),
-                    base::Closure()),
-      write_watcher_(base::Closure(),
-                     base::Bind(&TCPSocketLibevent::DidCompleteConnectOrWrite,
-                                base::Unretained(this))),
-      read_buf_len_(0),
-      write_buf_len_(0),
-      use_tcp_fastopen_(IsTCPFastOpenEnabled()),
+    : use_tcp_fastopen_(false),
+      tcp_fastopen_write_attempted_(false),
       tcp_fastopen_connected_(false),
-      fast_open_status_(FAST_OPEN_STATUS_UNKNOWN),
-      waiting_connect_(false),
-      connect_os_error_(0),
+      tcp_fastopen_status_(TCP_FASTOPEN_STATUS_UNKNOWN),
       logging_multiple_connect_attempts_(false),
       net_log_(BoundNetLog::Make(net_log, NetLog::SOURCE_SOCKET)) {
   net_log_.BeginEvent(NetLog::TYPE_SOCKET_ALIVE,
@@ -164,274 +142,173 @@ TCPSocketLibevent::TCPSocketLibevent(NetLog* net_log,
 
 TCPSocketLibevent::~TCPSocketLibevent() {
   net_log_.EndEvent(NetLog::TYPE_SOCKET_ALIVE);
-  if (tcp_fastopen_connected_) {
-    UMA_HISTOGRAM_ENUMERATION("Net.TcpFastOpenSocketConnection",
-                              fast_open_status_, FAST_OPEN_MAX_VALUE);
-  }
   Close();
 }
 
 int TCPSocketLibevent::Open(AddressFamily family) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(socket_, kInvalidSocket);
-
-  socket_ = CreatePlatformSocket(ConvertAddressFamily(family), SOCK_STREAM,
-                                 IPPROTO_TCP);
-  if (socket_ < 0) {
-    PLOG(ERROR) << "CreatePlatformSocket() returned an error";
-    return MapSystemError(errno);
-  }
-
-  if (SetNonBlocking(socket_)) {
-    int result = MapSystemError(errno);
-    Close();
-    return result;
-  }
-
-  return OK;
+  DCHECK(!socket_);
+  socket_.reset(new SocketLibevent);
+  int rv = socket_->Open(ConvertAddressFamily(family));
+  if (rv != OK)
+    socket_.reset();
+  return rv;
 }
 
-int TCPSocketLibevent::AdoptConnectedSocket(int socket,
+int TCPSocketLibevent::AdoptConnectedSocket(int socket_fd,
                                             const IPEndPoint& peer_address) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_EQ(socket_, kInvalidSocket);
+  DCHECK(!socket_);
 
-  socket_ = socket;
-
-  if (SetNonBlocking(socket_)) {
-    int result = MapSystemError(errno);
-    Close();
-    return result;
+  SockaddrStorage storage;
+  if (!peer_address.ToSockAddr(storage.addr, &storage.addr_len) &&
+      // For backward compatibility, allows the empty address.
+      !(peer_address == IPEndPoint())) {
+    return ERR_ADDRESS_INVALID;
   }
 
-  peer_address_.reset(new IPEndPoint(peer_address));
-
-  return OK;
+  socket_.reset(new SocketLibevent);
+  int rv = socket_->AdoptConnectedSocket(socket_fd, storage);
+  if (rv != OK)
+    socket_.reset();
+  return rv;
 }
 
 int TCPSocketLibevent::Bind(const IPEndPoint& address) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_NE(socket_, kInvalidSocket);
+  DCHECK(socket_);
 
   SockaddrStorage storage;
   if (!address.ToSockAddr(storage.addr, &storage.addr_len))
     return ERR_ADDRESS_INVALID;
 
-  int result = bind(socket_, storage.addr, storage.addr_len);
-  if (result < 0) {
-    PLOG(ERROR) << "bind() returned an error";
-    return MapSystemError(errno);
-  }
-
-  return OK;
+  return socket_->Bind(storage);
 }
 
 int TCPSocketLibevent::Listen(int backlog) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_GT(backlog, 0);
-  DCHECK_NE(socket_, kInvalidSocket);
-
-  int result = listen(socket_, backlog);
-  if (result < 0) {
-    PLOG(ERROR) << "listen() returned an error";
-    return MapSystemError(errno);
-  }
-
-  return OK;
+  DCHECK(socket_);
+  return socket_->Listen(backlog);
 }
 
-int TCPSocketLibevent::Accept(scoped_ptr<TCPSocketLibevent>* socket,
+int TCPSocketLibevent::Accept(scoped_ptr<TCPSocketLibevent>* tcp_socket,
                               IPEndPoint* address,
                               const CompletionCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(socket);
-  DCHECK(address);
+  DCHECK(tcp_socket);
   DCHECK(!callback.is_null());
-  DCHECK(accept_callback_.is_null());
+  DCHECK(socket_);
+  DCHECK(!accept_socket_);
 
   net_log_.BeginEvent(NetLog::TYPE_TCP_ACCEPT);
 
-  int result = AcceptInternal(socket, address);
-
-  if (result == ERR_IO_PENDING) {
-    if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
-            socket_, true, base::MessageLoopForIO::WATCH_READ,
-            &accept_socket_watcher_, &accept_watcher_)) {
-      PLOG(ERROR) << "WatchFileDescriptor failed on read";
-      return MapSystemError(errno);
-    }
-
-    accept_socket_ = socket;
-    accept_address_ = address;
-    accept_callback_ = callback;
-  }
-
-  return result;
+  int rv = socket_->Accept(
+      &accept_socket_,
+      base::Bind(&TCPSocketLibevent::AcceptCompleted,
+                 base::Unretained(this), tcp_socket, address, callback));
+  if (rv != ERR_IO_PENDING)
+    rv = HandleAcceptCompleted(tcp_socket, address, rv);
+  return rv;
 }
 
 int TCPSocketLibevent::Connect(const IPEndPoint& address,
                                const CompletionCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_NE(socket_, kInvalidSocket);
-  DCHECK(!waiting_connect_);
-
-  // |peer_address_| will be non-NULL if Connect() has been called. Unless
-  // Close() is called to reset the internal state, a second call to Connect()
-  // is not allowed.
-  // Please note that we don't allow a second Connect() even if the previous
-  // Connect() has failed. Connecting the same |socket_| again after a
-  // connection attempt failed results in unspecified behavior according to
-  // POSIX.
-  DCHECK(!peer_address_);
+  DCHECK(socket_);
 
   if (!logging_multiple_connect_attempts_)
     LogConnectBegin(AddressList(address));
 
-  peer_address_.reset(new IPEndPoint(address));
+  net_log_.BeginEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT,
+                      CreateNetLogIPEndPointCallback(&address));
 
-  int rv = DoConnect();
-  if (rv == ERR_IO_PENDING) {
-    // Synchronous operation not supported.
-    DCHECK(!callback.is_null());
-    write_callback_ = callback;
-    waiting_connect_ = true;
-  } else {
-    DoConnectComplete(rv);
+  SockaddrStorage storage;
+  if (!address.ToSockAddr(storage.addr, &storage.addr_len))
+    return ERR_ADDRESS_INVALID;
+
+  if (use_tcp_fastopen_) {
+    // With TCP FastOpen, we pretend that the socket is connected.
+    DCHECK(!tcp_fastopen_write_attempted_);
+    socket_->SetPeerAddress(storage);
+    return OK;
   }
 
+  int rv = socket_->Connect(storage,
+                            base::Bind(&TCPSocketLibevent::ConnectCompleted,
+                                       base::Unretained(this), callback));
+  if (rv != ERR_IO_PENDING)
+    rv = HandleConnectCompleted(rv);
   return rv;
 }
 
 bool TCPSocketLibevent::IsConnected() const {
-  DCHECK(CalledOnValidThread());
-
-  if (socket_ == kInvalidSocket || waiting_connect_)
+  if (!socket_)
     return false;
 
-  if (use_tcp_fastopen_ && !tcp_fastopen_connected_ && peer_address_) {
+  if (use_tcp_fastopen_ && !tcp_fastopen_write_attempted_ &&
+      socket_->HasPeerAddress()) {
     // With TCP FastOpen, we pretend that the socket is connected.
     // This allows GetPeerAddress() to return peer_address_.
     return true;
   }
 
-  // Check if connection is alive.
-  char c;
-  int rv = HANDLE_EINTR(recv(socket_, &c, 1, MSG_PEEK));
-  if (rv == 0)
-    return false;
-  if (rv == -1 && errno != EAGAIN && errno != EWOULDBLOCK)
-    return false;
-
-  return true;
+  return socket_->IsConnected();
 }
 
 bool TCPSocketLibevent::IsConnectedAndIdle() const {
-  DCHECK(CalledOnValidThread());
-
-  if (socket_ == kInvalidSocket || waiting_connect_)
-    return false;
-
   // TODO(wtc): should we also handle the TCP FastOpen case here,
   // as we do in IsConnected()?
-
-  // Check if connection is alive and we haven't received any data
-  // unexpectedly.
-  char c;
-  int rv = HANDLE_EINTR(recv(socket_, &c, 1, MSG_PEEK));
-  if (rv >= 0)
-    return false;
-  if (errno != EAGAIN && errno != EWOULDBLOCK)
-    return false;
-
-  return true;
+  return socket_ && socket_->IsConnectedAndIdle();
 }
 
 int TCPSocketLibevent::Read(IOBuffer* buf,
                             int buf_len,
                             const CompletionCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_NE(kInvalidSocket, socket_);
-  DCHECK(!waiting_connect_);
-  DCHECK(read_callback_.is_null());
-  // Synchronous operation not supported
+  DCHECK(socket_);
   DCHECK(!callback.is_null());
-  DCHECK_GT(buf_len, 0);
 
-  int nread = HANDLE_EINTR(read(socket_, buf->data(), buf_len));
-  if (nread >= 0) {
-    base::StatsCounter read_bytes("tcp.read_bytes");
-    read_bytes.Add(nread);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED, nread,
-                                  buf->data());
-    RecordFastOpenStatus();
-    return nread;
-  }
-  if (errno != EAGAIN && errno != EWOULDBLOCK) {
-    int net_error = MapSystemError(errno);
-    net_log_.AddEvent(NetLog::TYPE_SOCKET_READ_ERROR,
-                      CreateNetLogSocketErrorCallback(net_error, errno));
-    return net_error;
-  }
-
-  if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
-          socket_, true, base::MessageLoopForIO::WATCH_READ,
-          &read_socket_watcher_, &read_watcher_)) {
-    DVLOG(1) << "WatchFileDescriptor failed on read, errno " << errno;
-    return MapSystemError(errno);
-  }
-
-  read_buf_ = buf;
-  read_buf_len_ = buf_len;
-  read_callback_ = callback;
-  return ERR_IO_PENDING;
+  int rv = socket_->Read(
+      buf, buf_len,
+      base::Bind(&TCPSocketLibevent::ReadCompleted,
+                 // Grab a reference to |buf| so that ReadCompleted() can still
+                 // use it when Read() completes, as otherwise, this transfers
+                 // ownership of buf to socket.
+                 base::Unretained(this), make_scoped_refptr(buf), callback));
+  if (rv != ERR_IO_PENDING)
+    rv = HandleReadCompleted(buf, rv);
+  return rv;
 }
 
 int TCPSocketLibevent::Write(IOBuffer* buf,
                              int buf_len,
                              const CompletionCallback& callback) {
-  DCHECK(CalledOnValidThread());
-  DCHECK_NE(kInvalidSocket, socket_);
-  DCHECK(!waiting_connect_);
-  DCHECK(write_callback_.is_null());
-  // Synchronous operation not supported
+  DCHECK(socket_);
   DCHECK(!callback.is_null());
-  DCHECK_GT(buf_len, 0);
 
-  int nwrite = InternalWrite(buf, buf_len);
-  if (nwrite >= 0) {
-    base::StatsCounter write_bytes("tcp.write_bytes");
-    write_bytes.Add(nwrite);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, nwrite,
-                                  buf->data());
-    return nwrite;
-  }
-  if (errno != EAGAIN && errno != EWOULDBLOCK) {
-    int net_error = MapSystemError(errno);
-    net_log_.AddEvent(NetLog::TYPE_SOCKET_WRITE_ERROR,
-                      CreateNetLogSocketErrorCallback(net_error, errno));
-    return net_error;
+  CompletionCallback write_callback =
+      base::Bind(&TCPSocketLibevent::WriteCompleted,
+                 // Grab a reference to |buf| so that WriteCompleted() can still
+                 // use it when Write() completes, as otherwise, this transfers
+                 // ownership of buf to socket.
+                 base::Unretained(this), make_scoped_refptr(buf), callback);
+  int rv;
+
+  if (use_tcp_fastopen_ && !tcp_fastopen_write_attempted_) {
+    rv = TcpFastOpenWrite(buf, buf_len, write_callback);
+  } else {
+    rv = socket_->Write(buf, buf_len, write_callback);
   }
 
-  if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
-          socket_, true, base::MessageLoopForIO::WATCH_WRITE,
-          &write_socket_watcher_, &write_watcher_)) {
-    DVLOG(1) << "WatchFileDescriptor failed on write, errno " << errno;
-    return MapSystemError(errno);
-  }
-
-  write_buf_ = buf;
-  write_buf_len_ = buf_len;
-  write_callback_ = callback;
-  return ERR_IO_PENDING;
+  if (rv != ERR_IO_PENDING)
+    rv = HandleWriteCompleted(buf, rv);
+  return rv;
 }
 
 int TCPSocketLibevent::GetLocalAddress(IPEndPoint* address) const {
-  DCHECK(CalledOnValidThread());
   DCHECK(address);
 
+  if (!socket_)
+    return ERR_SOCKET_NOT_CONNECTED;
+
   SockaddrStorage storage;
-  if (getsockname(socket_, storage.addr, &storage.addr_len) < 0)
-    return MapSystemError(errno);
+  int rv = socket_->GetLocalAddress(&storage);
+  if (rv != OK)
+    return rv;
+
   if (!address->FromSockAddr(storage.addr, storage.addr_len))
     return ERR_ADDRESS_INVALID;
 
@@ -439,25 +316,34 @@ int TCPSocketLibevent::GetLocalAddress(IPEndPoint* address) const {
 }
 
 int TCPSocketLibevent::GetPeerAddress(IPEndPoint* address) const {
-  DCHECK(CalledOnValidThread());
   DCHECK(address);
+
   if (!IsConnected())
     return ERR_SOCKET_NOT_CONNECTED;
-  *address = *peer_address_;
+
+  SockaddrStorage storage;
+  int rv = socket_->GetPeerAddress(&storage);
+  if (rv != OK)
+    return rv;
+
+  if (!address->FromSockAddr(storage.addr, storage.addr_len))
+    return ERR_ADDRESS_INVALID;
+
   return OK;
 }
 
 int TCPSocketLibevent::SetDefaultOptionsForServer() {
-  DCHECK(CalledOnValidThread());
+  DCHECK(socket_);
   return SetAddressReuse(true);
 }
 
 void TCPSocketLibevent::SetDefaultOptionsForClient() {
-  DCHECK(CalledOnValidThread());
+  DCHECK(socket_);
 
   // This mirrors the behaviour on Windows. See the comment in
   // tcp_socket_win.cc after searching for "NODELAY".
-  SetTCPNoDelay(socket_, true);  // If SetTCPNoDelay fails, we don't care.
+  // If SetTCPNoDelay fails, we don't care.
+  SetTCPNoDelay(socket_->socket_fd(), true);
 
   // TCP keep alive wakes up the radio, which is expensive on mobile. Do not
   // enable it there. It's useful to prevent TCP middleboxes from timing out
@@ -473,12 +359,12 @@ void TCPSocketLibevent::SetDefaultOptionsForClient() {
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   const int kTCPKeepAliveSeconds = 45;
 
-  SetTCPKeepAlive(socket_, true, kTCPKeepAliveSeconds);
+  SetTCPKeepAlive(socket_->socket_fd(), true, kTCPKeepAliveSeconds);
 #endif
 }
 
 int TCPSocketLibevent::SetAddressReuse(bool allow) {
-  DCHECK(CalledOnValidThread());
+  DCHECK(socket_);
 
   // SO_REUSEADDR is useful for server sockets to bind to a recently unbound
   // port. When a socket is closed, the end point changes its state to TIME_WAIT
@@ -494,80 +380,72 @@ int TCPSocketLibevent::SetAddressReuse(bool allow) {
   //
   // SO_REUSEPORT is provided in MacOS X and iOS.
   int boolean_value = allow ? 1 : 0;
-  int rv = setsockopt(socket_, SOL_SOCKET, SO_REUSEADDR, &boolean_value,
-                      sizeof(boolean_value));
+  int rv = setsockopt(socket_->socket_fd(), SOL_SOCKET, SO_REUSEADDR,
+                      &boolean_value, sizeof(boolean_value));
   if (rv < 0)
     return MapSystemError(errno);
   return OK;
 }
 
 int TCPSocketLibevent::SetReceiveBufferSize(int32 size) {
-  DCHECK(CalledOnValidThread());
-  int rv = setsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
+  DCHECK(socket_);
+  int rv = setsockopt(socket_->socket_fd(), SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
   return (rv == 0) ? OK : MapSystemError(errno);
 }
 
 int TCPSocketLibevent::SetSendBufferSize(int32 size) {
-  DCHECK(CalledOnValidThread());
-  int rv = setsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
+  DCHECK(socket_);
+  int rv = setsockopt(socket_->socket_fd(), SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
   return (rv == 0) ? OK : MapSystemError(errno);
 }
 
 bool TCPSocketLibevent::SetKeepAlive(bool enable, int delay) {
-  DCHECK(CalledOnValidThread());
-  return SetTCPKeepAlive(socket_, enable, delay);
+  DCHECK(socket_);
+  return SetTCPKeepAlive(socket_->socket_fd(), enable, delay);
 }
 
 bool TCPSocketLibevent::SetNoDelay(bool no_delay) {
-  DCHECK(CalledOnValidThread());
-  return SetTCPNoDelay(socket_, no_delay);
+  DCHECK(socket_);
+  return SetTCPNoDelay(socket_->socket_fd(), no_delay);
 }
 
 void TCPSocketLibevent::Close() {
-  DCHECK(CalledOnValidThread());
+  socket_.reset();
 
-  bool ok = accept_socket_watcher_.StopWatchingFileDescriptor();
-  DCHECK(ok);
-  ok = read_socket_watcher_.StopWatchingFileDescriptor();
-  DCHECK(ok);
-  ok = write_socket_watcher_.StopWatchingFileDescriptor();
-  DCHECK(ok);
-
-  if (socket_ != kInvalidSocket) {
-    if (IGNORE_EINTR(close(socket_)) < 0)
-      PLOG(ERROR) << "close";
-    socket_ = kInvalidSocket;
+  // Record and reset TCP FastOpen state.
+  if (tcp_fastopen_write_attempted_ ||
+      tcp_fastopen_status_ == TCP_FASTOPEN_PREVIOUSLY_FAILED) {
+    UMA_HISTOGRAM_ENUMERATION("Net.TcpFastOpenSocketConnection",
+                              tcp_fastopen_status_, TCP_FASTOPEN_MAX_VALUE);
   }
-
-  if (!accept_callback_.is_null()) {
-    accept_socket_ = NULL;
-    accept_address_ = NULL;
-    accept_callback_.Reset();
-  }
-
-  if (!read_callback_.is_null()) {
-    read_buf_ = NULL;
-    read_buf_len_ = 0;
-    read_callback_.Reset();
-  }
-
-  if (!write_callback_.is_null()) {
-    write_buf_ = NULL;
-    write_buf_len_ = 0;
-    write_callback_.Reset();
-  }
-
+  use_tcp_fastopen_ = false;
   tcp_fastopen_connected_ = false;
-  fast_open_status_ = FAST_OPEN_STATUS_UNKNOWN;
-  waiting_connect_ = false;
-  peer_address_.reset();
-  connect_os_error_ = 0;
+  tcp_fastopen_write_attempted_ = false;
+  tcp_fastopen_status_ = TCP_FASTOPEN_STATUS_UNKNOWN;
 }
 
 bool TCPSocketLibevent::UsingTCPFastOpen() const {
   return use_tcp_fastopen_;
+}
+
+void TCPSocketLibevent::EnableTCPFastOpenIfSupported() {
+  if (!IsTCPFastOpenSupported())
+    return;
+
+  // Do not enable TCP FastOpen if it had previously failed.
+  // This check conservatively avoids middleboxes that may blackhole
+  // TCP FastOpen SYN+Data packets; on such a failure, subsequent sockets
+  // should not use TCP FastOpen.
+  if(!g_tcp_fastopen_has_failed)
+    use_tcp_fastopen_ = true;
+  else
+    tcp_fastopen_status_ = TCP_FASTOPEN_PREVIOUSLY_FAILED;
+}
+
+bool TCPSocketLibevent::IsValid() const {
+  return socket_ != NULL && socket_->socket_fd() != kInvalidSocket;
 }
 
 void TCPSocketLibevent::StartLoggingMultipleConnectAttempts(
@@ -589,98 +467,76 @@ void TCPSocketLibevent::EndLoggingMultipleConnectAttempts(int net_error) {
   }
 }
 
-int TCPSocketLibevent::AcceptInternal(scoped_ptr<TCPSocketLibevent>* socket,
-                                      IPEndPoint* address) {
-  SockaddrStorage storage;
-  int new_socket = HANDLE_EINTR(accept(socket_,
-                                       storage.addr,
-                                       &storage.addr_len));
-  if (new_socket < 0) {
-    int net_error = MapAcceptError(errno);
-    if (net_error != ERR_IO_PENDING)
-      net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_ACCEPT, net_error);
-    return net_error;
+void TCPSocketLibevent::AcceptCompleted(
+    scoped_ptr<TCPSocketLibevent>* tcp_socket,
+    IPEndPoint* address,
+    const CompletionCallback& callback,
+    int rv) {
+  DCHECK_NE(ERR_IO_PENDING, rv);
+  callback.Run(HandleAcceptCompleted(tcp_socket, address, rv));
+}
+
+int TCPSocketLibevent::HandleAcceptCompleted(
+    scoped_ptr<TCPSocketLibevent>* tcp_socket,
+    IPEndPoint* address,
+    int rv) {
+  if (rv == OK)
+    rv = BuildTcpSocketLibevent(tcp_socket, address);
+
+  if (rv == OK) {
+    net_log_.EndEvent(NetLog::TYPE_TCP_ACCEPT,
+                      CreateNetLogIPEndPointCallback(address));
+  } else {
+    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_ACCEPT, rv);
   }
 
-  IPEndPoint ip_end_point;
-  if (!ip_end_point.FromSockAddr(storage.addr, storage.addr_len)) {
-    NOTREACHED();
-    if (IGNORE_EINTR(close(new_socket)) < 0)
-      PLOG(ERROR) << "close";
-    int net_error = ERR_ADDRESS_INVALID;
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_ACCEPT, net_error);
-    return net_error;
+  return rv;
+}
+
+int TCPSocketLibevent::BuildTcpSocketLibevent(
+    scoped_ptr<TCPSocketLibevent>* tcp_socket,
+    IPEndPoint* address) {
+  DCHECK(accept_socket_);
+
+  SockaddrStorage storage;
+  if (accept_socket_->GetPeerAddress(&storage) != OK ||
+      !address->FromSockAddr(storage.addr, storage.addr_len)) {
+    accept_socket_.reset();
+    return ERR_ADDRESS_INVALID;
   }
-  scoped_ptr<TCPSocketLibevent> tcp_socket(new TCPSocketLibevent(
-      net_log_.net_log(), net_log_.source()));
-  int adopt_result = tcp_socket->AdoptConnectedSocket(new_socket, ip_end_point);
-  if (adopt_result != OK) {
-    net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_ACCEPT, adopt_result);
-    return adopt_result;
-  }
-  *socket = tcp_socket.Pass();
-  *address = ip_end_point;
-  net_log_.EndEvent(NetLog::TYPE_TCP_ACCEPT,
-                    CreateNetLogIPEndPointCallback(&ip_end_point));
+
+  tcp_socket->reset(new TCPSocketLibevent(net_log_.net_log(),
+                                          net_log_.source()));
+  (*tcp_socket)->socket_.reset(accept_socket_.release());
   return OK;
 }
 
-int TCPSocketLibevent::DoConnect() {
-  DCHECK_EQ(0, connect_os_error_);
-
-  net_log_.BeginEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT,
-                      CreateNetLogIPEndPointCallback(peer_address_.get()));
-
-  // Connect the socket.
-  if (!use_tcp_fastopen_) {
-    SockaddrStorage storage;
-    if (!peer_address_->ToSockAddr(storage.addr, &storage.addr_len))
-      return ERR_ADDRESS_INVALID;
-
-    if (!HANDLE_EINTR(connect(socket_, storage.addr, storage.addr_len))) {
-      // Connected without waiting!
-      return OK;
-    }
-  } else {
-    // With TCP FastOpen, we pretend that the socket is connected.
-    DCHECK(!tcp_fastopen_connected_);
-    return OK;
-  }
-
-  // Check if the connect() failed synchronously.
-  connect_os_error_ = errno;
-  if (connect_os_error_ != EINPROGRESS)
-    return MapConnectError(connect_os_error_);
-
-  // Otherwise the connect() is going to complete asynchronously, so watch
-  // for its completion.
-  if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
-          socket_, true, base::MessageLoopForIO::WATCH_WRITE,
-          &write_socket_watcher_, &write_watcher_)) {
-    connect_os_error_ = errno;
-    DVLOG(1) << "WatchFileDescriptor failed: " << connect_os_error_;
-    return MapSystemError(connect_os_error_);
-  }
-
-  return ERR_IO_PENDING;
+void TCPSocketLibevent::ConnectCompleted(const CompletionCallback& callback,
+                                         int rv) const {
+  DCHECK_NE(ERR_IO_PENDING, rv);
+  callback.Run(HandleConnectCompleted(rv));
 }
 
-void TCPSocketLibevent::DoConnectComplete(int result) {
+int TCPSocketLibevent::HandleConnectCompleted(int rv) const {
   // Log the end of this attempt (and any OS error it threw).
-  int os_error = connect_os_error_;
-  connect_os_error_ = 0;
-  if (result != OK) {
+  if (rv != OK) {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT,
-                      NetLog::IntegerCallback("os_error", os_error));
+                      NetLog::IntegerCallback("os_error", errno));
   } else {
     net_log_.EndEvent(NetLog::TYPE_TCP_CONNECT_ATTEMPT);
   }
 
+  // Give a more specific error when the user is offline.
+  if (rv == ERR_ADDRESS_UNREACHABLE && NetworkChangeNotifier::IsOffline())
+    rv = ERR_INTERNET_DISCONNECTED;
+
   if (!logging_multiple_connect_attempts_)
-    LogConnectEnd(result);
+    LogConnectEnd(rv);
+
+  return rv;
 }
 
-void TCPSocketLibevent::LogConnectBegin(const AddressList& addresses) {
+void TCPSocketLibevent::LogConnectBegin(const AddressList& addresses) const {
   base::StatsCounter connects("tcp.connect");
   connects.Increment();
 
@@ -688,19 +544,18 @@ void TCPSocketLibevent::LogConnectBegin(const AddressList& addresses) {
                       addresses.CreateNetLogCallback());
 }
 
-void TCPSocketLibevent::LogConnectEnd(int net_error) {
-  if (net_error == OK)
-    UpdateConnectionTypeHistograms(CONNECTION_ANY);
-
+void TCPSocketLibevent::LogConnectEnd(int net_error) const {
   if (net_error != OK) {
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_CONNECT, net_error);
     return;
   }
 
+  UpdateConnectionTypeHistograms(CONNECTION_ANY);
+
   SockaddrStorage storage;
-  int rv = getsockname(socket_, storage.addr, &storage.addr_len);
-  if (rv != 0) {
-    PLOG(ERROR) << "getsockname() [rv: " << rv << "] error: ";
+  int rv = socket_->GetLocalAddress(&storage);
+  if (rv != OK) {
+    PLOG(ERROR) << "GetLocalAddress() [rv: " << rv << "] error: ";
     NOTREACHED();
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_TCP_CONNECT, rv);
     return;
@@ -711,191 +566,179 @@ void TCPSocketLibevent::LogConnectEnd(int net_error) {
                                                       storage.addr_len));
 }
 
-void TCPSocketLibevent::DidCompleteRead() {
-  RecordFastOpenStatus();
-  if (read_callback_.is_null())
+void TCPSocketLibevent::ReadCompleted(const scoped_refptr<IOBuffer>& buf,
+                                      const CompletionCallback& callback,
+                                      int rv) {
+  DCHECK_NE(ERR_IO_PENDING, rv);
+  callback.Run(HandleReadCompleted(buf.get(), rv));
+}
+
+int TCPSocketLibevent::HandleReadCompleted(IOBuffer* buf, int rv) {
+  if (tcp_fastopen_write_attempted_ && !tcp_fastopen_connected_) {
+    // A TCP FastOpen connect-with-write was attempted. This read was a
+    // subsequent read, which either succeeded or failed. If the read
+    // succeeded, the socket is considered connected via TCP FastOpen.
+    // If the read failed, TCP FastOpen is (conservatively) turned off for all
+    // subsequent connections. TCP FastOpen status is recorded in both cases.
+    // TODO (jri): This currently results in conservative behavior, where TCP
+    // FastOpen is turned off on _any_ error. Implement optimizations,
+    // such as turning off TCP FastOpen on more specific errors, and
+    // re-attempting TCP FastOpen after a certain amount of time has passed.
+    if (rv >= 0)
+      tcp_fastopen_connected_ = true;
+    else
+      g_tcp_fastopen_has_failed = true;
+    UpdateTCPFastOpenStatusAfterRead();
+  }
+
+  if (rv < 0) {
+    net_log_.AddEvent(NetLog::TYPE_SOCKET_READ_ERROR,
+                      CreateNetLogSocketErrorCallback(rv, errno));
+    return rv;
+  }
+
+  base::StatsCounter read_bytes("tcp.read_bytes");
+  read_bytes.Add(rv);
+  net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED, rv,
+                                buf->data());
+  return rv;
+}
+
+void TCPSocketLibevent::WriteCompleted(const scoped_refptr<IOBuffer>& buf,
+                                       const CompletionCallback& callback,
+                                       int rv) {
+  DCHECK_NE(ERR_IO_PENDING, rv);
+  callback.Run(HandleWriteCompleted(buf.get(), rv));
+}
+
+int TCPSocketLibevent::HandleWriteCompleted(IOBuffer* buf, int rv) {
+  if (rv < 0) {
+    if (tcp_fastopen_write_attempted_ && !tcp_fastopen_connected_) {
+      // TCP FastOpen connect-with-write was attempted, and the write failed
+      // for unknown reasons. Record status and (conservatively) turn off
+      // TCP FastOpen for all subsequent connections.
+      // TODO (jri): This currently results in conservative behavior, where TCP
+      // FastOpen is turned off on _any_ error. Implement optimizations,
+      // such as turning off TCP FastOpen on more specific errors, and
+      // re-attempting TCP FastOpen after a certain amount of time has passed.
+      tcp_fastopen_status_ = TCP_FASTOPEN_ERROR;
+      g_tcp_fastopen_has_failed = true;
+    }
+    net_log_.AddEvent(NetLog::TYPE_SOCKET_WRITE_ERROR,
+                      CreateNetLogSocketErrorCallback(rv, errno));
+    return rv;
+  }
+
+  base::StatsCounter write_bytes("tcp.write_bytes");
+  write_bytes.Add(rv);
+  net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, rv,
+                                buf->data());
+  return rv;
+}
+
+int TCPSocketLibevent::TcpFastOpenWrite(
+    IOBuffer* buf,
+    int buf_len,
+    const CompletionCallback& callback) {
+  SockaddrStorage storage;
+  int rv = socket_->GetPeerAddress(&storage);
+  if (rv != OK)
+    return rv;
+
+  int flags = 0x20000000;  // Magic flag to enable TCP_FASTOPEN.
+#if defined(OS_LINUX) || defined(OS_ANDROID)
+  // sendto() will fail with EPIPE when the system doesn't implement TCP
+  // FastOpen, and with EOPNOTSUPP when the system implements TCP FastOpen
+  // but it is disabled. Theoretically these shouldn't happen
+  // since the caller should check for system support on startup, but
+  // users may dynamically disable TCP FastOpen via sysctl.
+  flags |= MSG_NOSIGNAL;
+#endif // defined(OS_LINUX) || defined(OS_ANDROID)
+  rv = HANDLE_EINTR(sendto(socket_->socket_fd(),
+                           buf->data(),
+                           buf_len,
+                           flags,
+                           storage.addr,
+                           storage.addr_len));
+  tcp_fastopen_write_attempted_ = true;
+
+  if (rv >= 0) {
+    tcp_fastopen_status_ = TCP_FASTOPEN_FAST_CONNECT_RETURN;
+    return rv;
+  }
+
+  DCHECK_NE(EPIPE, errno);
+
+  // If errno == EINPROGRESS, that means the kernel didn't have a cookie
+  // and would block. The kernel is internally doing a connect() though.
+  // Remap EINPROGRESS to EAGAIN so we treat this the same as our other
+  // asynchronous cases. Note that the user buffer has not been copied to
+  // kernel space.
+  if (errno == EINPROGRESS) {
+    rv = ERR_IO_PENDING;
+  } else {
+    rv = MapSystemError(errno);
+  }
+
+  if (rv != ERR_IO_PENDING) {
+    // TCP FastOpen connect-with-write was attempted, and the write failed
+    // since TCP FastOpen was not implemented or disabled in the OS.
+    // Record status and turn off TCP FastOpen for all subsequent connections.
+    // TODO (jri): This is almost certainly too conservative, since it blanket
+    // turns off TCP FastOpen on any write error. Two things need to be done
+    // here: (i) record a histogram of write errors; in particular, record
+    // occurrences of EOPNOTSUPP and EPIPE, and (ii) afterwards, consider
+    // turning off TCP FastOpen on more specific errors.
+    tcp_fastopen_status_ = TCP_FASTOPEN_ERROR;
+    g_tcp_fastopen_has_failed = true;
+    return rv;
+  }
+
+  tcp_fastopen_status_ = TCP_FASTOPEN_SLOW_CONNECT_RETURN;
+  return socket_->WaitForWrite(buf, buf_len, callback);
+}
+
+void TCPSocketLibevent::UpdateTCPFastOpenStatusAfterRead() {
+  DCHECK(tcp_fastopen_status_ == TCP_FASTOPEN_FAST_CONNECT_RETURN ||
+         tcp_fastopen_status_ == TCP_FASTOPEN_SLOW_CONNECT_RETURN);
+
+  if (tcp_fastopen_write_attempted_ && !tcp_fastopen_connected_) {
+    // TCP FastOpen connect-with-write was attempted, and failed.
+    tcp_fastopen_status_ =
+        (tcp_fastopen_status_ == TCP_FASTOPEN_FAST_CONNECT_RETURN ?
+            TCP_FASTOPEN_FAST_CONNECT_READ_FAILED :
+            TCP_FASTOPEN_SLOW_CONNECT_READ_FAILED);
     return;
-
-  int bytes_transferred;
-  bytes_transferred = HANDLE_EINTR(read(socket_, read_buf_->data(),
-                                        read_buf_len_));
-
-  int result;
-  if (bytes_transferred >= 0) {
-    result = bytes_transferred;
-    base::StatsCounter read_bytes("tcp.read_bytes");
-    read_bytes.Add(bytes_transferred);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_RECEIVED, result,
-                                  read_buf_->data());
-  } else {
-    result = MapSystemError(errno);
-    if (result != ERR_IO_PENDING) {
-      net_log_.AddEvent(NetLog::TYPE_SOCKET_READ_ERROR,
-                        CreateNetLogSocketErrorCallback(result, errno));
-    }
   }
 
-  if (result != ERR_IO_PENDING) {
-    read_buf_ = NULL;
-    read_buf_len_ = 0;
-    bool ok = read_socket_watcher_.StopWatchingFileDescriptor();
-    DCHECK(ok);
-    base::ResetAndReturn(&read_callback_).Run(result);
-  }
-}
-
-void TCPSocketLibevent::DidCompleteWrite() {
-  if (write_callback_.is_null())
-    return;
-
-  int bytes_transferred;
-  bytes_transferred = HANDLE_EINTR(write(socket_, write_buf_->data(),
-                                         write_buf_len_));
-
-  int result;
-  if (bytes_transferred >= 0) {
-    result = bytes_transferred;
-    base::StatsCounter write_bytes("tcp.write_bytes");
-    write_bytes.Add(bytes_transferred);
-    net_log_.AddByteTransferEvent(NetLog::TYPE_SOCKET_BYTES_SENT, result,
-                                  write_buf_->data());
-  } else {
-    result = MapSystemError(errno);
-    if (result != ERR_IO_PENDING) {
-      net_log_.AddEvent(NetLog::TYPE_SOCKET_WRITE_ERROR,
-                        CreateNetLogSocketErrorCallback(result, errno));
-    }
-  }
-
-  if (result != ERR_IO_PENDING) {
-    write_buf_ = NULL;
-    write_buf_len_ = 0;
-    write_socket_watcher_.StopWatchingFileDescriptor();
-    base::ResetAndReturn(&write_callback_).Run(result);
-  }
-}
-
-void TCPSocketLibevent::DidCompleteConnect() {
-  DCHECK(waiting_connect_);
-
-  // Get the error that connect() completed with.
-  int os_error = 0;
-  socklen_t len = sizeof(os_error);
-  if (getsockopt(socket_, SOL_SOCKET, SO_ERROR, &os_error, &len) < 0)
-    os_error = errno;
-
-  int result = MapConnectError(os_error);
-  connect_os_error_ = os_error;
-  if (result != ERR_IO_PENDING) {
-    DoConnectComplete(result);
-    waiting_connect_ = false;
-    write_socket_watcher_.StopWatchingFileDescriptor();
-    base::ResetAndReturn(&write_callback_).Run(result);
-  }
-}
-
-void TCPSocketLibevent::DidCompleteConnectOrWrite() {
-  if (waiting_connect_)
-    DidCompleteConnect();
-  else
-    DidCompleteWrite();
-}
-
-void TCPSocketLibevent::DidCompleteAccept() {
-  DCHECK(CalledOnValidThread());
-
-  int result = AcceptInternal(accept_socket_, accept_address_);
-  if (result != ERR_IO_PENDING) {
-    accept_socket_ = NULL;
-    accept_address_ = NULL;
-    bool ok = accept_socket_watcher_.StopWatchingFileDescriptor();
-    DCHECK(ok);
-    CompletionCallback callback = accept_callback_;
-    accept_callback_.Reset();
-    callback.Run(result);
-  }
-}
-
-int TCPSocketLibevent::InternalWrite(IOBuffer* buf, int buf_len) {
-  int nwrite;
-  if (use_tcp_fastopen_ && !tcp_fastopen_connected_) {
-    SockaddrStorage storage;
-    if (!peer_address_->ToSockAddr(storage.addr, &storage.addr_len)) {
-      // Set errno to EADDRNOTAVAIL so that MapSystemError will map it to
-      // ERR_ADDRESS_INVALID later.
-      errno = EADDRNOTAVAIL;
-      return -1;
-    }
-
-    int flags = 0x20000000; // Magic flag to enable TCP_FASTOPEN.
-#if defined(OS_LINUX)
-    // sendto() will fail with EPIPE when the system doesn't support TCP Fast
-    // Open. Theoretically that shouldn't happen since the caller should check
-    // for system support on startup, but users may dynamically disable TCP Fast
-    // Open via sysctl.
-    flags |= MSG_NOSIGNAL;
-#endif // defined(OS_LINUX)
-    nwrite = HANDLE_EINTR(sendto(socket_,
-                                 buf->data(),
-                                 buf_len,
-                                 flags,
-                                 storage.addr,
-                                 storage.addr_len));
-    tcp_fastopen_connected_ = true;
-
-    if (nwrite < 0) {
-      DCHECK_NE(EPIPE, errno);
-
-      // If errno == EINPROGRESS, that means the kernel didn't have a cookie
-      // and would block. The kernel is internally doing a connect() though.
-      // Remap EINPROGRESS to EAGAIN so we treat this the same as our other
-      // asynchronous cases. Note that the user buffer has not been copied to
-      // kernel space.
-      if (errno == EINPROGRESS) {
-        errno = EAGAIN;
-        fast_open_status_ = FAST_OPEN_SLOW_CONNECT_RETURN;
-      } else {
-        fast_open_status_ = FAST_OPEN_ERROR;
-      }
-    } else {
-      fast_open_status_ = FAST_OPEN_FAST_CONNECT_RETURN;
-    }
-  } else {
-    nwrite = HANDLE_EINTR(write(socket_, buf->data(), buf_len));
-  }
-  return nwrite;
-}
-
-void TCPSocketLibevent::RecordFastOpenStatus() {
-  if (use_tcp_fastopen_ &&
-      (fast_open_status_ == FAST_OPEN_FAST_CONNECT_RETURN ||
-       fast_open_status_ == FAST_OPEN_SLOW_CONNECT_RETURN)) {
-    DCHECK_NE(FAST_OPEN_STATUS_UNKNOWN, fast_open_status_);
-    bool getsockopt_success(false);
-    bool server_acked_data(false);
+  bool getsockopt_success = false;
+  bool server_acked_data = false;
 #if defined(TCP_INFO)
-    // Probe to see the if the socket used TCP Fast Open.
-    tcp_info info;
-    socklen_t info_len = sizeof(tcp_info);
-    getsockopt_success =
-        getsockopt(socket_, IPPROTO_TCP, TCP_INFO, &info, &info_len) == 0 &&
-        info_len == sizeof(tcp_info);
-    server_acked_data = getsockopt_success &&
-        (info.tcpi_options & TCPI_OPT_SYN_DATA);
+  // Probe to see the if the socket used TCP FastOpen.
+  tcp_info info;
+  socklen_t info_len = sizeof(tcp_info);
+  getsockopt_success = getsockopt(socket_->socket_fd(), IPPROTO_TCP, TCP_INFO,
+                                  &info, &info_len) == 0 &&
+                       info_len == sizeof(tcp_info);
+  server_acked_data = getsockopt_success &&
+                      (info.tcpi_options & TCPI_OPT_SYN_DATA);
 #endif
-    if (getsockopt_success) {
-      if (fast_open_status_ == FAST_OPEN_FAST_CONNECT_RETURN) {
-        fast_open_status_ = (server_acked_data ? FAST_OPEN_SYN_DATA_ACK :
-                             FAST_OPEN_SYN_DATA_NACK);
-      } else {
-        fast_open_status_ = (server_acked_data ? FAST_OPEN_NO_SYN_DATA_ACK :
-                             FAST_OPEN_NO_SYN_DATA_NACK);
-      }
+
+  if (getsockopt_success) {
+    if (tcp_fastopen_status_ == TCP_FASTOPEN_FAST_CONNECT_RETURN) {
+      tcp_fastopen_status_ = (server_acked_data ?
+                              TCP_FASTOPEN_SYN_DATA_ACK :
+                              TCP_FASTOPEN_SYN_DATA_NACK);
     } else {
-      fast_open_status_ = (fast_open_status_ == FAST_OPEN_FAST_CONNECT_RETURN ?
-                           FAST_OPEN_SYN_DATA_FAILED :
-                           FAST_OPEN_NO_SYN_DATA_FAILED);
+      tcp_fastopen_status_ = (server_acked_data ?
+                              TCP_FASTOPEN_NO_SYN_DATA_ACK :
+                              TCP_FASTOPEN_NO_SYN_DATA_NACK);
     }
+  } else {
+    tcp_fastopen_status_ =
+        (tcp_fastopen_status_ == TCP_FASTOPEN_FAST_CONNECT_RETURN ?
+         TCP_FASTOPEN_SYN_DATA_GETSOCKOPT_FAILED :
+         TCP_FASTOPEN_NO_SYN_DATA_GETSOCKOPT_FAILED);
   }
 }
 

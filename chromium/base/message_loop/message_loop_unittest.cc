@@ -333,7 +333,7 @@ void RunTest_RecursiveDenial2(MessageLoop::Type message_loop_type) {
                                              &order,
                                              false));
   // Let the other thread execute.
-  WaitForSingleObject(event, INFINITE);
+  WaitForSingleObject(event.Get(), INFINITE);
   MessageLoop::current()->Run();
 
   ASSERT_EQ(order.Size(), 17);
@@ -377,7 +377,7 @@ void RunTest_RecursiveSupport2(MessageLoop::Type message_loop_type) {
                                              &order,
                                              true));
   // Let the other thread execute.
-  WaitForSingleObject(event, INFINITE);
+  WaitForSingleObject(event.Get(), INFINITE);
   MessageLoop::current()->Run();
 
   ASSERT_EQ(order.Size(), 18);
@@ -425,7 +425,7 @@ class DispatcherImpl : public MessagePumpDispatcher {
  public:
   DispatcherImpl() : dispatch_count_(0) {}
 
-  virtual uint32_t Dispatch(const NativeEvent& msg) OVERRIDE {
+  virtual uint32_t Dispatch(const NativeEvent& msg) override {
     ::TranslateMessage(&msg);
     ::DispatchMessage(&msg);
     // Do not count WM_TIMER since it is not what we post and it will cause
@@ -517,10 +517,10 @@ TestIOHandler::TestIOHandler(const wchar_t* name, HANDLE signal, bool wait)
 }
 
 void TestIOHandler::Init() {
-  MessageLoopForIO::current()->RegisterIOHandler(file_, this);
+  MessageLoopForIO::current()->RegisterIOHandler(file_.Get(), this);
 
   DWORD read;
-  EXPECT_FALSE(ReadFile(file_, buffer_, size(), &read, context()));
+  EXPECT_FALSE(ReadFile(file_.Get(), buffer_, size(), &read, context()));
   EXPECT_EQ(ERROR_IO_PENDING, GetLastError());
   if (wait_)
     WaitForIO();
@@ -554,7 +554,7 @@ void RunTest_IOHandler() {
   MessageLoop* thread_loop = thread.message_loop();
   ASSERT_TRUE(NULL != thread_loop);
 
-  TestIOHandler handler(kPipeName, callback_called, false);
+  TestIOHandler handler(kPipeName, callback_called.Get(), false);
   thread_loop->PostTask(FROM_HERE, Bind(&TestIOHandler::Init,
                                               Unretained(&handler)));
   // Make sure the thread runs and sleeps for lack of work.
@@ -562,9 +562,9 @@ void RunTest_IOHandler() {
 
   const char buffer[] = "Hello there!";
   DWORD written;
-  EXPECT_TRUE(WriteFile(server, buffer, sizeof(buffer), &written, NULL));
+  EXPECT_TRUE(WriteFile(server.Get(), buffer, sizeof(buffer), &written, NULL));
 
-  DWORD result = WaitForSingleObject(callback_called, 1000);
+  DWORD result = WaitForSingleObject(callback_called.Get(), 1000);
   EXPECT_EQ(WAIT_OBJECT_0, result);
 
   thread.Stop();
@@ -595,8 +595,8 @@ void RunTest_WaitForIO() {
   MessageLoop* thread_loop = thread.message_loop();
   ASSERT_TRUE(NULL != thread_loop);
 
-  TestIOHandler handler1(kPipeName1, callback1_called, false);
-  TestIOHandler handler2(kPipeName2, callback2_called, true);
+  TestIOHandler handler1(kPipeName1, callback1_called.Get(), false);
+  TestIOHandler handler2(kPipeName2, callback2_called.Get(), true);
   thread_loop->PostTask(FROM_HERE, Bind(&TestIOHandler::Init,
                                               Unretained(&handler1)));
   // TODO(ajwong): Do we really need such long Sleeps in ths function?
@@ -612,12 +612,12 @@ void RunTest_WaitForIO() {
 
   const char buffer[] = "Hello there!";
   DWORD written;
-  EXPECT_TRUE(WriteFile(server1, buffer, sizeof(buffer), &written, NULL));
+  EXPECT_TRUE(WriteFile(server1.Get(), buffer, sizeof(buffer), &written, NULL));
   PlatformThread::Sleep(2 * delay);
-  EXPECT_EQ(WAIT_TIMEOUT, WaitForSingleObject(callback1_called, 0)) <<
+  EXPECT_EQ(WAIT_TIMEOUT, WaitForSingleObject(callback1_called.Get(), 0)) <<
       "handler1 has not been called";
 
-  EXPECT_TRUE(WriteFile(server2, buffer, sizeof(buffer), &written, NULL));
+  EXPECT_TRUE(WriteFile(server2.Get(), buffer, sizeof(buffer), &written, NULL));
 
   HANDLE objects[2] = { callback1_called.Get(), callback2_called.Get() };
   DWORD result = WaitForMultipleObjects(2, objects, TRUE, 1000);
@@ -664,16 +664,16 @@ class DummyTaskObserver : public MessageLoop::TaskObserver {
         num_tasks_processed_(0),
         num_tasks_(num_tasks) {}
 
-  virtual ~DummyTaskObserver() {}
+  ~DummyTaskObserver() override {}
 
-  virtual void WillProcessTask(const PendingTask& pending_task) OVERRIDE {
+  void WillProcessTask(const PendingTask& pending_task) override {
     num_tasks_started_++;
     EXPECT_TRUE(pending_task.time_posted != TimeTicks());
     EXPECT_LE(num_tasks_started_, num_tasks_);
     EXPECT_EQ(num_tasks_started_, num_tasks_processed_ + 1);
   }
 
-  virtual void DidProcessTask(const PendingTask& pending_task) OVERRIDE {
+  void DidProcessTask(const PendingTask& pending_task) override {
     num_tasks_processed_++;
     EXPECT_TRUE(pending_task.time_posted != TimeTicks());
     EXPECT_LE(num_tasks_started_, num_tasks_);
@@ -726,34 +726,26 @@ TEST(MessageLoopTest, WaitForIO) {
 
 TEST(MessageLoopTest, HighResolutionTimer) {
   MessageLoop loop;
+  Time::EnableHighResolutionTimer(true);
 
   const TimeDelta kFastTimer = TimeDelta::FromMilliseconds(5);
   const TimeDelta kSlowTimer = TimeDelta::FromMilliseconds(100);
 
-  EXPECT_FALSE(loop.IsHighResolutionTimerEnabledForTesting());
-
+  EXPECT_FALSE(loop.HasHighResolutionTasks());
   // Post a fast task to enable the high resolution timers.
   loop.PostDelayedTask(FROM_HERE, Bind(&PostNTasksThenQuit, 1),
                        kFastTimer);
+  EXPECT_TRUE(loop.HasHighResolutionTasks());
   loop.Run();
-  EXPECT_TRUE(loop.IsHighResolutionTimerEnabledForTesting());
-
-  // Post a slow task and verify high resolution timers
-  // are still enabled.
+  EXPECT_FALSE(loop.HasHighResolutionTasks());
+  EXPECT_FALSE(Time::IsHighResolutionTimerInUse());
+  // Check that a slow task does not trigger the high resolution logic.
   loop.PostDelayedTask(FROM_HERE, Bind(&PostNTasksThenQuit, 1),
                        kSlowTimer);
+  EXPECT_FALSE(loop.HasHighResolutionTasks());
   loop.Run();
-  EXPECT_TRUE(loop.IsHighResolutionTimerEnabledForTesting());
-
-  // Wait for a while so that high-resolution mode elapses.
-  PlatformThread::Sleep(TimeDelta::FromMilliseconds(
-      MessageLoop::kHighResolutionTimerModeLeaseTimeMs));
-
-  // Post a slow task to disable the high resolution timers.
-  loop.PostDelayedTask(FROM_HERE, Bind(&PostNTasksThenQuit, 1),
-                       kSlowTimer);
-  loop.Run();
-  EXPECT_FALSE(loop.IsHighResolutionTimerEnabledForTesting());
+  EXPECT_FALSE(loop.HasHighResolutionTasks());
+  Time::EnableHighResolutionTimer(false);
 }
 
 #endif  // defined(OS_WIN)
@@ -764,10 +756,10 @@ namespace {
 
 class QuitDelegate : public MessageLoopForIO::Watcher {
  public:
-  virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE {
+  void OnFileCanWriteWithoutBlocking(int fd) override {
     MessageLoop::current()->QuitWhenIdle();
   }
-  virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE {
+  void OnFileCanReadWithoutBlocking(int fd) override {
     MessageLoop::current()->QuitWhenIdle();
   }
 };
@@ -865,7 +857,7 @@ class MLDestructionObserver : public MessageLoop::DestructionObserver {
         destruction_observer_called_(destruction_observer_called),
         task_destroyed_before_message_loop_(false) {
   }
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE {
+  void WillDestroyCurrentMessageLoop() override {
     task_destroyed_before_message_loop_ = *task_destroyed_;
     *destruction_observer_called_ = true;
   }

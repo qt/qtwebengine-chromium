@@ -11,7 +11,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContentSecurityPolicy;
 class KURL;
@@ -33,10 +33,10 @@ public:
     bool isHashOrNoncePresent() const;
 
 private:
-    bool parseSource(const UChar* begin, const UChar* end, String& scheme, String& host, int& port, String& path, bool& hostHasWildcard, bool& portHasWildcard);
+    bool parseSource(const UChar* begin, const UChar* end, String& scheme, String& host, int& port, String& path, CSPSource::WildcardDisposition&, CSPSource::WildcardDisposition&);
     bool parseScheme(const UChar* begin, const UChar* end, String& scheme);
-    bool parseHost(const UChar* begin, const UChar* end, String& host, bool& hostHasWildcard);
-    bool parsePort(const UChar* begin, const UChar* end, int& port, bool& portHasWildcard);
+    bool parseHost(const UChar* begin, const UChar* end, String& host, CSPSource::WildcardDisposition&);
+    bool parsePort(const UChar* begin, const UChar* end, int& port, CSPSource::WildcardDisposition&);
     bool parsePath(const UChar* begin, const UChar* end, String& path);
     bool parseNonce(const UChar* begin, const UChar* end, String& nonce);
     bool parseHash(const UChar* begin, const UChar* end, DigestValue& hash, ContentSecurityPolicyHashAlgorithm&);
@@ -51,6 +51,7 @@ private:
     ContentSecurityPolicy* m_policy;
     Vector<CSPSource> m_list;
     String m_directiveName;
+    bool m_allowSelf;
     bool m_allowStar;
     bool m_allowInline;
     bool m_allowEval;
@@ -60,6 +61,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

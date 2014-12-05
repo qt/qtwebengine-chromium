@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/sha1.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "crypto/sha2.h"
 #include "net/base/net_errors.h"
 #include "net/cert/asn1_util.h"
@@ -100,7 +101,7 @@ void GetCertChainInfo(X509_STORE_CTX* store_ctx,
   STACK_OF(X509)* chain = X509_STORE_CTX_get_chain(store_ctx);
   X509* verified_cert = NULL;
   std::vector<X509*> verified_chain;
-  for (int i = 0; i < sk_X509_num(chain); ++i) {
+  for (size_t i = 0; i < sk_X509_num(chain); ++i) {
     X509* cert = sk_X509_value(chain, i);
     if (i == 0) {
       verified_cert = cert;
@@ -110,14 +111,20 @@ void GetCertChainInfo(X509_STORE_CTX* store_ctx,
 
     // Only check the algorithm status for certificates that are not in the
     // trust store.
-    if (i < store_ctx->last_untrusted) {
+    if (i < static_cast<size_t>(store_ctx->last_untrusted)) {
       int sig_alg = OBJ_obj2nid(cert->sig_alg->algorithm);
       if (sig_alg == NID_md2WithRSAEncryption) {
         verify_result->has_md2 = true;
       } else if (sig_alg == NID_md4WithRSAEncryption) {
         verify_result->has_md4 = true;
-      } else if (sig_alg == NID_md5WithRSAEncryption) {
+      } else if (sig_alg == NID_md5WithRSAEncryption ||
+                 sig_alg == NID_md5WithRSA) {
         verify_result->has_md5 = true;
+      } else if (sig_alg == NID_sha1WithRSAEncryption ||
+                 sig_alg == NID_dsaWithSHA || sig_alg == NID_dsaWithSHA1 ||
+                 sig_alg == NID_dsaWithSHA1_2 || sig_alg == NID_sha1WithRSA ||
+                 sig_alg == NID_ecdsa_with_SHA1) {
+        verify_result->has_sha1 = true;
       }
     }
   }
@@ -150,7 +157,7 @@ void GetCertChainInfo(X509_STORE_CTX* store_ctx,
 void AppendPublicKeyHashes(X509_STORE_CTX* store_ctx,
                            HashValueVector* hashes) {
   STACK_OF(X509)* chain = X509_STORE_CTX_get_chain(store_ctx);
-  for (int i = 0; i < sk_X509_num(chain); ++i) {
+  for (size_t i = 0; i < sk_X509_num(chain); ++i) {
     X509* cert = sk_X509_value(chain, i);
 
     std::string der_data;
@@ -197,10 +204,10 @@ int CertVerifyProcOpenSSL::VerifyInternal(
     verify_result->cert_status |= CERT_STATUS_COMMON_NAME_INVALID;
   }
 
-  crypto::ScopedOpenSSL<X509_STORE_CTX, X509_STORE_CTX_free> ctx(
+  crypto::ScopedOpenSSL<X509_STORE_CTX, X509_STORE_CTX_free>::Type ctx(
       X509_STORE_CTX_new());
 
-  crypto::ScopedOpenSSL<STACK_OF(X509), sk_X509_free_fn> intermediates(
+  crypto::ScopedOpenSSL<STACK_OF(X509), sk_X509_free_fn>::Type intermediates(
       sk_X509_new_null());
   if (!intermediates.get())
     return ERR_OUT_OF_MEMORY;

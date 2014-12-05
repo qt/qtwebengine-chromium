@@ -34,7 +34,7 @@
 #include "platform/weborigin/KURL.h"
 #include <gtest/gtest.h>
 
-using WebCore::SecurityOrigin;
+using blink::SecurityOrigin;
 
 namespace {
 
@@ -44,7 +44,7 @@ TEST(SecurityOriginTest, InvalidPortsCreateUniqueOrigins)
 {
     int ports[] = { -100, -1, MaxAllowedPort + 1, 1000000 };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(ports); ++i) {
+    for (size_t i = 0; i < arraysize(ports); ++i) {
         RefPtr<SecurityOrigin> origin = SecurityOrigin::create("http", "example.com", ports[i]);
         EXPECT_TRUE(origin->isUnique()) << "Port " << ports[i] << " should have generated a unique origin.";
     }
@@ -54,7 +54,7 @@ TEST(SecurityOriginTest, ValidPortsCreateNonUniqueOrigins)
 {
     int ports[] = { 0, 80, 443, 5000, MaxAllowedPort };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(ports); ++i) {
+    for (size_t i = 0; i < arraysize(ports); ++i) {
         RefPtr<SecurityOrigin> origin = SecurityOrigin::create("http", "example.com", ports[i]);
         EXPECT_FALSE(origin->isUnique()) << "Port " << ports[i] << " should not have generated a unique origin.";
     }
@@ -124,15 +124,19 @@ TEST(SecurityOriginTest, CanAccessFeatureRequringSecureOrigin)
         { false, "filesystem:ftp://evil:99/foo" },
     };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(inputs); ++i) {
+    for (size_t i = 0; i < arraysize(inputs); ++i) {
         SCOPED_TRACE(i);
         RefPtr<SecurityOrigin> origin = SecurityOrigin::createFromString(inputs[i].url);
-        EXPECT_EQ(inputs[i].accessGranted, origin->canAccessFeatureRequiringSecureOrigin());
+        String errorMessage;
+        EXPECT_EQ(inputs[i].accessGranted, origin->canAccessFeatureRequiringSecureOrigin(errorMessage));
+        EXPECT_EQ(inputs[i].accessGranted, errorMessage.isEmpty());
     }
 
     // Unique origins are not considered secure.
     RefPtr<SecurityOrigin> uniqueOrigin = SecurityOrigin::createUnique();
-    EXPECT_FALSE(uniqueOrigin->canAccessFeatureRequiringSecureOrigin());
+    String errorMessage;
+    EXPECT_FALSE(uniqueOrigin->canAccessFeatureRequiringSecureOrigin(errorMessage));
+    EXPECT_EQ("Only secure origins are allowed. http://goo.gl/lq4gCo", errorMessage);
 }
 
 } // namespace

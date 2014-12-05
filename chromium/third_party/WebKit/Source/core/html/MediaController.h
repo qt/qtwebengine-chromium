@@ -26,21 +26,21 @@
 #ifndef MediaController_h
 #define MediaController_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/html/HTMLMediaElement.h"
 #include "wtf/LinkedHashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Clock;
 class ExceptionState;
 class ExecutionContext;
 class GenericEventQueue;
 
-class MediaController FINAL : public RefCountedWillBeRefCountedGarbageCollected<MediaController>, public ScriptWrappable, public EventTargetWithInlineData {
+class MediaController final : public RefCountedWillBeGarbageCollectedFinalized<MediaController>, public EventTargetWithInlineData {
+    DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(MediaController);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaController);
 public:
@@ -50,13 +50,13 @@ public:
     void addMediaElement(HTMLMediaElement*);
     void removeMediaElement(HTMLMediaElement*);
 
-    PassRefPtr<TimeRanges> buffered() const;
-    PassRefPtr<TimeRanges> seekable() const;
-    PassRefPtr<TimeRanges> played();
+    PassRefPtrWillBeRawPtr<TimeRanges> buffered() const;
+    PassRefPtrWillBeRawPtr<TimeRanges> seekable() const;
+    PassRefPtrWillBeRawPtr<TimeRanges> played();
 
     double duration() const;
     double currentTime() const;
-    void setCurrentTime(double, ExceptionState&);
+    void setCurrentTime(double);
 
     bool paused() const { return m_paused; }
     void play();
@@ -88,7 +88,7 @@ public:
     void clearExecutionContext() { m_executionContext = nullptr; }
 #endif
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaController(ExecutionContext*);
@@ -105,8 +105,8 @@ private:
     void startTimeupdateTimer();
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE { return m_executionContext; }
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override { return m_executionContext; }
 
     friend class HTMLMediaElement;
     friend class MediaControllerEventListener;
@@ -114,7 +114,7 @@ private:
     // unreferenced slaved media element alive. When Oilpan is
     // enabled by default, consider making the hash set references
     // strong to accomplish that. crbug.com/383072
-    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<HTMLMediaElement> > MediaElementSequence;
+    typedef WillBeHeapLinkedHashSet<RawPtrWillBeWeakMember<HTMLMediaElement>> MediaElementSequence;
     MediaElementSequence m_mediaElements;
     bool m_paused;
     double m_defaultPlaybackRate;
@@ -131,6 +131,6 @@ private:
     double m_previousTimeupdateTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // MediaController_h

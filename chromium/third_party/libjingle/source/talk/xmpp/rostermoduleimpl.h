@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _rostermoduleimpl_h_
-#define _rostermoduleimpl_h_
+#ifndef TALK_XMPP_XMPPTHREAD_H_
+#define TALK_XMPP_XMPPTHREAD_H_
 
-#include "talk/xmpp/moduleimpl.h"
-#include "talk/xmpp/rostermodule.h"
+#include "webrtc/libjingle/xmpp/moduleimpl.h"
+#include "webrtc/libjingle/xmpp/rostermodule.h"
 
 namespace buzz {
 
@@ -103,7 +103,7 @@ private:
 
   // Store everything in the XML element. If this becomes a perf issue we can
   // cache the data.
-  talk_base::scoped_ptr<XmlElement> raw_xml_;
+  rtc::scoped_ptr<XmlElement> raw_xml_;
 };
 
 //! A contact as given by the server
@@ -168,7 +168,7 @@ private:
   int group_count_;
   int group_index_returned_;
   XmlElement * group_returned_;
-  talk_base::scoped_ptr<XmlElement> raw_xml_;
+  rtc::scoped_ptr<XmlElement> raw_xml_;
 };
 
 //! An XmppModule for handle roster and presence functionality
@@ -290,13 +290,13 @@ private:
 
   typedef std::vector<XmppPresenceImpl*> PresenceVector;
   typedef std::map<Jid, PresenceVector*> JidPresenceVectorMap;
-  talk_base::scoped_ptr<JidPresenceVectorMap> incoming_presence_map_;
-  talk_base::scoped_ptr<PresenceVector> incoming_presence_vector_;
+  rtc::scoped_ptr<JidPresenceVectorMap> incoming_presence_map_;
+  rtc::scoped_ptr<PresenceVector> incoming_presence_vector_;
 
   typedef std::vector<XmppRosterContactImpl*> ContactVector;
-  talk_base::scoped_ptr<ContactVector> contacts_;
+  rtc::scoped_ptr<ContactVector> contacts_;
 };
 
 }
 
-#endif
+#endif  // TALK_XMPP_XMPPTHREAD_H_

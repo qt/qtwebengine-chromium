@@ -26,25 +26,25 @@
 #include "core/rendering/RenderFrameSet.h"
 #include "core/rendering/RenderPart.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLFrameElement;
 
-class RenderFrame FINAL : public RenderPart {
+class RenderFrame final : public RenderPart {
 public:
     explicit RenderFrame(HTMLFrameElement*);
 
     FrameEdgeInfo edgeInfo() const;
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderFrame"; }
-    virtual bool isFrame() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderFrame"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectFrame || RenderPart::isOfType(type); }
 
-    virtual void updateFromElement() OVERRIDE;
+    virtual void updateFromElement() override;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFrame, isFrame());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFrame_h

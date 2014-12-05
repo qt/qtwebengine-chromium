@@ -1,4 +1,3 @@
-{%- set namespace_as_string = namespace|replace(".","::") %}
 {%- for method in interface.methods %}
   var k{{interface.name}}_{{method.name}}_Name = {{method.ordinal}};
 {%- endfor %}
@@ -6,8 +5,6 @@
   function {{interface.name}}Proxy(receiver) {
     this.receiver_ = receiver;
   }
-
-  {{interface.name}}Proxy.NAME_ = '{{namespace_as_string}}::{{interface.name}}';
 
 {%- for method in interface.methods %}
   {{interface.name}}Proxy.prototype.{{method.name|stylize_method}} = function(
@@ -35,17 +32,14 @@
           codec.kMessageExpectsResponse, 0);
       builder.encodeStruct({{interface.name}}_{{method.name}}_Params, params);
       var message = builder.finish();
-      this.receiver_.acceptWithResponder(message, {
-          accept: function(message) {
-            var reader = new codec.MessageReader(message);
-            var responseParams =
-                reader.decodeStruct({{interface.name}}_{{method.name}}_ResponseParams);
-            resolve(responseParams);
-          },
-          reject: function(result) {
-            reject(Error("Connection error: " + result));
-          },
-      }).catch(reject);
+      this.receiver_.acceptAndExpectResponse(message).then(function(message) {
+        var reader = new codec.MessageReader(message);
+        var responseParams =
+            reader.decodeStruct({{interface.name}}_{{method.name}}_ResponseParams);
+        resolve(responseParams);
+      }).catch(function(result) {
+        reject(Error("Connection error: " + result));
+      });
     }.bind(this));
 {%- endif %}
   };
@@ -53,8 +47,6 @@
 
   function {{interface.name}}Stub() {
   }
-
-  {{interface.name}}Stub.NAME_ = '{{namespace_as_string}}::{{interface.name}}';
 
   {{interface.name}}Stub.prototype.accept = function(message) {
     var reader = new codec.MessageReader(message);
@@ -108,15 +100,97 @@ params.{{parameter.name}}{% if not loop.last %}, {% endif -%}
     }
   };
 
-{#--- Enums #}
-{%  from "enum_definition.tmpl" import enum_def -%}
-{%  for enum in interface.enums %}
-  {{enum_def("%sProxy.%s"|format(interface.name, enum.name), enum, module)}}
-  {{interface.name}}Stub.{{enum.name}} = {{interface.name}}Proxy.{{enum.name}};
-{%-  endfor %}
+  function {{interface.name}}DelegatingStub() {
+  }
 
-{#--- Constants. #}
-{%  for constant in interface.constants %}
-  {{interface.name}}Proxy.{{constant.name}} = {{constant.value|expression_to_text}};
-  {{interface.name}}Stub.{{constant.name}} = {{interface.name}}Proxy.{{constant.name}};
-{%  endfor %}
+  {{interface.name}}DelegatingStub.prototype =
+      Object.create({{interface.name}}Stub.prototype);
+
+  {{interface.name}}DelegatingStub.prototype.callDelegateMethod$ = function(methodName, args) {
+    var method = this.delegate$ && this.delegate$[methodName];
+    return method && method.apply(this.delegate$, args);
+  }
+
+{%- for method in interface.methods %}
+{%-   set method_name = method.name|stylize_method %}
+  {{interface.name}}DelegatingStub.prototype.{{method_name}} = function() {
+    return this.callDelegateMethod$("{{method_name}}", arguments);
+  }
+{%- endfor %}
+
+{#--- Validation #}
+
+  function validate{{interface.name}}Request(messageValidator) {
+{%- if not(interface.methods) %}
+    return validator.validationError.NONE;
+{%- else %}
+    var message = messageValidator.message;
+    var paramsClass = null;
+    switch (message.getName()) {
+{%-   for method in interface.methods %}
+      case k{{interface.name}}_{{method.name}}_Name:
+{%-     if method.response_parameters == None %}
+        if (!message.expectsResponse() && !message.isResponse())
+          paramsClass = {{interface.name}}_{{method.name}}_Params;
+{%-     else %}
+        if (message.expectsResponse())
+          paramsClass = {{interface.name}}_{{method.name}}_Params;
+{%-     endif %}
+      break;
+{%-   endfor %}
+    }
+    if (paramsClass === null)
+      return validator.validationError.NONE;
+    return paramsClass.validate(messageValidator, messageValidator.message.getHeaderNumBytes());
+{%- endif %}
+  }
+
+  function validate{{interface.name}}Response(messageValidator) {
+{%- if not(interface|has_callbacks) %}
+    return validator.validationError.NONE;
+{%- else %}
+   var message = messageValidator.message;
+   var paramsClass = null;
+   switch (message.getName()) {
+{%-   for method in interface.methods %}
+{%-     if method.response_parameters != None %}
+      case k{{interface.name}}_{{method.name}}_Name:
+        if (message.isResponse())
+          paramsClass = {{interface.name}}_{{method.name}}_ResponseParams;
+        break;
+{%-     endif %}
+{%-   endfor %}
+    }
+    if (paramsClass === null)
+      return validator.validationError.NONE;
+    return paramsClass.validate(messageValidator, messageValidator.message.getHeaderNumBytes());
+{%- endif %}
+  }
+
+  var {{interface.name}} = {
+    name: '{{namespace|replace(".","::")}}::{{interface.name}}',
+    proxyClass: {{interface.name}}Proxy,
+    stubClass: {{interface.name}}Stub,
+    delegatingStubClass: {{interface.name}}DelegatingStub,
+    validateRequest: validate{{interface.name}}Request,
+{%- if interface|has_callbacks %}
+    validateResponse: validate{{interface.name}}Response,
+{%- else %}
+    validateResponse: null,
+{%- endif %}
+  };
+{#--- Interface Constants #}
+{%- for constant in interface.constants %}
+  {{interface.name}}.{{constant.name}} = {{constant.value|expression_to_text}},
+{%-   endfor %}
+{#--- Interface Enums #}
+{%- from "enum_definition.tmpl" import enum_def -%}
+{%- for enum in interface.enums %}
+  {{ enum_def("%s.%s"|format(interface.name, enum.name), enum) }}
+{%-  endfor %}
+  {{interface.name}}Stub.prototype.validator = validate{{interface.name}}Request;
+{%- if interface|has_callbacks %}
+  {{interface.name}}Proxy.prototype.validator = validate{{interface.name}}Response;
+{%- else %}
+  {{interface.name}}Proxy.prototype.validator = null;
+{%- endif %}

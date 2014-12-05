@@ -33,27 +33,23 @@
 
 #include "core/StylePropertyShorthand.h"
 #include "core/animation/AnimationNode.h"
+#include "platform/geometry/FloatBox.h"
+#include "platform/transforms/TransformationMatrix.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 PropertySet KeyframeEffectModelBase::properties() const
 {
     PropertySet result;
-    if (!m_keyframes.size()) {
-        return result;
-    }
-    result = m_keyframes[0]->properties();
-    for (size_t i = 1; i < m_keyframes.size(); i++) {
-        PropertySet extras = m_keyframes[i]->properties();
-        for (PropertySet::const_iterator it = extras.begin(); it != extras.end(); ++it) {
-            result.add(*it);
-        }
+    for (const auto& keyframe : m_keyframes) {
+        for (const auto& property : keyframe->properties())
+            result.add(property);
     }
     return result;
 }
 
-PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration) const
+PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation>>> KeyframeEffectModelBase::sample(int iteration, double fraction, double iterationDuration) const
 {
     ASSERT(iteration >= 0);
     ASSERT(!isNull(fraction));
@@ -65,65 +61,42 @@ PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > Ke
 
 KeyframeEffectModelBase::KeyframeVector KeyframeEffectModelBase::normalizedKeyframes(const KeyframeVector& keyframes)
 {
-    // keyframes [beginIndex, endIndex) will remain after removing all keyframes if they are not
-    // loosely sorted by offset, and after removing keyframes with positional offset outide [0, 1].
-    size_t beginIndex = 0;
-    size_t endIndex = keyframes.size();
+    double lastOffset = 0;
+    KeyframeVector result;
+    result.reserveCapacity(keyframes.size());
 
-    // Becomes the most recent keyframe with an explicit offset.
-    size_t lastIndex = endIndex;
-    double lastOffset = std::numeric_limits<double>::quiet_NaN();
-
-    for (size_t i = 0; i < keyframes.size(); ++i) {
-        double offset = keyframes[i]->offset();
+    for (const auto& keyframe : keyframes) {
+        double offset = keyframe->offset();
         if (!isNull(offset)) {
-            if (lastIndex < i && offset < lastOffset) {
-                // The keyframes are not loosely sorted by offset. Exclude all.
-                endIndex = beginIndex;
-                break;
-            }
+            ASSERT(offset >= 0);
+            ASSERT(offset <= 1);
+            ASSERT(offset >= lastOffset);
+            lastOffset = offset;
+        }
+        result.append(keyframe->clone());
+    }
 
-            if (offset < 0) {
-                // Remove all keyframes up to and including this keyframe.
-                beginIndex = i + 1;
-            } else if (offset > 1) {
-                // Remove all keyframes from this keyframe onwards. Note we must complete our checking
-                // that the keyframes are loosely sorted by offset, so we can't exit the loop early.
-                endIndex = std::min(i, endIndex);
-            }
+    if (result.isEmpty())
+        return result;
 
+    if (isNull(result.last()->offset()))
+        result.last()->setOffset(1);
+
+    if (result.size() > 1 && isNull(result[0]->offset()))
+        result.first()->setOffset(0);
+
+    size_t lastIndex = 0;
+    lastOffset = result.first()->offset();
+    for (size_t i = 1; i < result.size(); ++i) {
+        double offset = result[i]->offset();
+        if (!isNull(offset)) {
+            for (size_t j = 1; j < i - lastIndex; ++j)
+                result[lastIndex + j]->setOffset(lastOffset + (offset - lastOffset) * j / (i - lastIndex));
             lastIndex = i;
             lastOffset = offset;
         }
     }
 
-    KeyframeVector result;
-    if (beginIndex != endIndex) {
-        result.reserveCapacity(endIndex - beginIndex);
-        for (size_t i = beginIndex; i < endIndex; ++i) {
-            result.append(keyframes[i]->clone());
-        }
-
-        if (isNull(result[result.size() - 1]->offset()))
-            result[result.size() - 1]->setOffset(1);
-
-        if (result.size() > 1 && isNull(result[0]->offset()))
-            result[0]->setOffset(0);
-
-        lastIndex = 0;
-        lastOffset = result[0]->offset();
-        for (size_t i = 1; i < result.size(); ++i) {
-            double offset = result[i]->offset();
-            if (!isNull(offset)) {
-                if (lastIndex + 1 < i) {
-                    for (size_t j = 1; j < i - lastIndex; ++j)
-                        result[lastIndex + j]->setOffset(lastOffset + (offset - lastOffset) * j / (i - lastIndex));
-                }
-                lastIndex = i;
-                lastOffset = offset;
-            }
-        }
-    }
     return result;
 }
 
@@ -134,13 +107,9 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
         return;
 
     m_keyframeGroups = adoptPtrWillBeNoop(new KeyframeGroupMap);
-    const KeyframeVector keyframes = normalizedKeyframes(getFrames());
-    for (KeyframeVector::const_iterator keyframeIter = keyframes.begin(); keyframeIter != keyframes.end(); ++keyframeIter) {
-        const Keyframe* keyframe = keyframeIter->get();
-        PropertySet keyframeProperties = keyframe->properties();
-        for (PropertySet::const_iterator propertyIter = keyframeProperties.begin(); propertyIter != keyframeProperties.end(); ++propertyIter) {
-            CSSPropertyID property = *propertyIter;
-            ASSERT_WITH_MESSAGE(!isExpandedShorthand(property), "Web Animations: Encountered shorthand CSS property (%d) in normalized keyframes.", property);
+    for (const auto& keyframe : normalizedKeyframes(getFrames())) {
+        for (CSSPropertyID property : keyframe->properties()) {
+            ASSERT_WITH_MESSAGE(!isShorthandProperty(property), "Web Animations: Encountered shorthand CSS property (%d) in normalized keyframes.", property);
             KeyframeGroupMap::iterator groupIter = m_keyframeGroups->find(property);
             PropertySpecificKeyframeGroup* group;
             if (groupIter == m_keyframeGroups->end())
@@ -153,9 +122,9 @@ void KeyframeEffectModelBase::ensureKeyframeGroups() const
     }
 
     // Add synthetic keyframes.
-    for (KeyframeGroupMap::iterator iter = m_keyframeGroups->begin(); iter != m_keyframeGroups->end(); ++iter) {
-        iter->value->addSyntheticKeyframeIfRequired(this);
-        iter->value->removeRedundantKeyframes();
+    for (const auto& entry : *m_keyframeGroups) {
+        entry.value->addSyntheticKeyframeIfRequired(this);
+        entry.value->removeRedundantKeyframes();
     }
 }
 
@@ -165,8 +134,8 @@ void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element) const
         return;
     m_interpolationEffect = InterpolationEffect::create();
 
-    for (KeyframeGroupMap::const_iterator iter = m_keyframeGroups->begin(); iter != m_keyframeGroups->end(); ++iter) {
-        const PropertySpecificKeyframeVector& keyframes = iter->value->keyframes();
+    for (const auto& entry : *m_keyframeGroups) {
+        const PropertySpecificKeyframeVector& keyframes = entry.value->keyframes();
         ASSERT(keyframes[0]->composite() == AnimationEffect::CompositeReplace);
         for (size_t i = 0; i < keyframes.size() - 1; i++) {
             ASSERT(keyframes[i + 1]->composite() == AnimationEffect::CompositeReplace);
@@ -175,8 +144,8 @@ void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element) const
             if (applyTo == 1)
                 applyTo = std::numeric_limits<double>::infinity();
 
-            m_interpolationEffect->addInterpolation(keyframes[i]->createInterpolation(iter->key, keyframes[i + 1].get(), element),
-                keyframes[i]->easing(), keyframes[i]->offset(), keyframes[i + 1]->offset(), applyFrom, applyTo);
+            m_interpolationEffect->addInterpolation(keyframes[i]->createInterpolation(entry.key, keyframes[i + 1].get(), element),
+                &keyframes[i]->easing(), keyframes[i]->offset(), keyframes[i + 1]->offset(), applyFrom, applyTo);
         }
     }
 }
@@ -184,10 +153,9 @@ void KeyframeEffectModelBase::ensureInterpolationEffect(Element* element) const
 bool KeyframeEffectModelBase::isReplaceOnly()
 {
     ensureKeyframeGroups();
-    for (KeyframeGroupMap::iterator iter = m_keyframeGroups->begin(); iter != m_keyframeGroups->end(); ++iter) {
-        const PropertySpecificKeyframeVector& keyframeVector = iter->value->keyframes();
-        for (size_t i = 0; i < keyframeVector.size(); ++i) {
-            if (keyframeVector[i]->composite() != AnimationEffect::CompositeReplace)
+    for (const auto& entry : *m_keyframeGroups) {
+        for (const auto& keyframe : entry.value->keyframes()) {
+            if (keyframe->composite() != AnimationEffect::CompositeReplace)
                 return false;
         }
     }

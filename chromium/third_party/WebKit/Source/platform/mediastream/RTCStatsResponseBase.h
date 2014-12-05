@@ -25,23 +25,21 @@
 #ifndef RTCStatsResponseBase_h
 #define RTCStatsResponseBase_h
 
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCStatsResponseBase : public RefCountedWillBeGarbageCollectedFinalized<RTCStatsResponseBase> {
+class RTCStatsResponseBase : public GarbageCollectedFinalized<RTCStatsResponseBase> {
 public:
     virtual ~RTCStatsResponseBase() { }
 
-    virtual size_t addReport(String id, String type, double timestamp) = 0;
-    virtual void addStatistic(size_t report, String name, String value) = 0;
+    virtual size_t addReport(const String& id, const String& type, double timestamp) = 0;
+    virtual void addStatistic(size_t report, const String& name, const String& value) = 0;
 
     virtual void trace(Visitor*) { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCStatsResponseBase_h
 

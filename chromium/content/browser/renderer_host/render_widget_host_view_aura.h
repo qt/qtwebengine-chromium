@@ -35,8 +35,6 @@
 #include "ui/wm/public/activation_change_observer.h"
 #include "ui/wm/public/activation_delegate.h"
 
-struct ViewHostMsg_TextInputState_Params;
-
 namespace aura {
 class WindowTracker;
 namespace client {
@@ -116,6 +114,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     // Notifies the client that a gesture event ack was received.
     virtual void GestureEventAck(int gesture_event_type) = 0;
 
+    // Notifies the client that the fling has ended, so it can activate touch
+    // editing if needed.
+    virtual void DidStopFlinging() = 0;
+
     // This is called when the view is destroyed, so that the client can
     // perform any necessary clean-up.
     virtual void OnViewDestroyed() = 0;
@@ -128,192 +130,193 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
     touch_editing_client_ = client;
   }
 
-  explicit RenderWidgetHostViewAura(RenderWidgetHost* host);
+  // When |is_guest_view_hack| is true, this view isn't really the view for
+  // the |widget|, a RenderWidgetHostViewGuest is.
+  //
+  // TODO(lazyboy): Remove |is_guest_view_hack| once BrowserPlugin has migrated
+  // to use RWHVChildFrame (http://crbug.com/330264).
+  RenderWidgetHostViewAura(RenderWidgetHost* host, bool is_guest_view_hack);
 
   // RenderWidgetHostView implementation.
-  virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
-  virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
-  virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual ui::TextInputClient* GetTextInputClient() OVERRIDE;
-  virtual bool HasFocus() const OVERRIDE;
-  virtual bool IsSurfaceAvailableForCopy() const OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual bool IsShowing() OVERRIDE;
-  virtual gfx::Rect GetViewBounds() const OVERRIDE;
-  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
-  virtual gfx::Size GetVisibleViewportSize() const OVERRIDE;
-  virtual void SetInsets(const gfx::Insets& insets) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void InitAsChild(gfx::NativeView parent_view) override;
+  RenderWidgetHost* GetRenderWidgetHost() const override;
+  void SetSize(const gfx::Size& size) override;
+  void SetBounds(const gfx::Rect& rect) override;
+  gfx::Vector2dF GetLastScrollOffset() const override;
+  gfx::NativeView GetNativeView() const override;
+  gfx::NativeViewId GetNativeViewId() const override;
+  gfx::NativeViewAccessible GetNativeViewAccessible() override;
+  ui::TextInputClient* GetTextInputClient() override;
+  bool HasFocus() const override;
+  bool IsSurfaceAvailableForCopy() const override;
+  void Show() override;
+  void Hide() override;
+  bool IsShowing() override;
+  gfx::Rect GetViewBounds() const override;
+  void SetBackgroundColor(SkColor color) override;
+  gfx::Size GetVisibleViewportSize() const override;
+  void SetInsets(const gfx::Insets& insets) override;
 
   // Overridden from RenderWidgetHostViewBase:
-  virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
-                           const gfx::Rect& pos) OVERRIDE;
-  virtual void InitAsFullscreen(
-      RenderWidgetHostView* reference_host_view) OVERRIDE;
-  virtual void WasShown() OVERRIDE;
-  virtual void WasHidden() OVERRIDE;
-  virtual void MovePluginWindows(
-      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
-  virtual void Focus() OVERRIDE;
-  virtual void Blur() OVERRIDE;
-  virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
-  virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
-  virtual void ImeCancelComposition() OVERRIDE;
-  virtual void ImeCompositionRangeChanged(
+  void InitAsPopup(RenderWidgetHostView* parent_host_view,
+                   const gfx::Rect& pos) override;
+  void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
+  void WasShown() override;
+  void WasHidden() override;
+  void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
+  void Focus() override;
+  void Blur() override;
+  void UpdateCursor(const WebCursor& cursor) override;
+  void SetIsLoading(bool is_loading) override;
+  void TextInputTypeChanged(ui::TextInputType type,
+                            ui::TextInputMode input_mode,
+                            bool can_compose_inline,
+                            int flags) override;
+  void ImeCancelComposition() override;
+  void ImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
-  virtual void RenderProcessGone(base::TerminationStatus status,
-                                 int error_code) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const base::string16& text,
-                                size_t offset,
-                                const gfx::Range& range) OVERRIDE;
-  virtual gfx::Size GetRequestedRendererSize() const OVERRIDE;
-  virtual void SelectionBoundsChanged(
-      const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
-  virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual void CopyFromCompositingSurface(
-      const gfx::Rect& src_subrect,
-      const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config) OVERRIDE;
-  virtual void CopyFromCompositingSurfaceToVideoFrame(
+      const std::vector<gfx::Rect>& character_bounds) override;
+  void RenderProcessGone(base::TerminationStatus status,
+                         int error_code) override;
+  void Destroy() override;
+  void SetTooltipText(const base::string16& tooltip_text) override;
+  void SelectionChanged(const base::string16& text,
+                        size_t offset,
+                        const gfx::Range& range) override;
+  gfx::Size GetRequestedRendererSize() const override;
+  void SelectionBoundsChanged(
+      const ViewHostMsg_SelectionBounds_Params& params) override;
+  void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
+                                  const gfx::Size& dst_size,
+                                  CopyFromCompositingSurfaceCallback& callback,
+                                  const SkColorType color_type) override;
+  void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual bool CanSubscribeFrame() const OVERRIDE;
-  virtual void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
-  virtual void EndFrameSubscription() OVERRIDE;
-  virtual void AcceleratedSurfaceInitialized(int host_id,
-                                             int route_id) OVERRIDE;
-  virtual void AcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params_in_pixel,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params_in_pixel,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfaceSuspend() OVERRIDE;
-  virtual void AcceleratedSurfaceRelease() OVERRIDE;
-  virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
-  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
-  virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
-                             InputEventAckState ack_result) OVERRIDE;
-  virtual void GestureEventAck(const blink::WebGestureEvent& event,
-                               InputEventAckState ack_result) OVERRIDE;
-  virtual void ProcessAckedTouchEvent(
-      const TouchEventWithLatencyInfo& touch,
-      InputEventAckState ack_result) OVERRIDE;
-  virtual scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
-      OVERRIDE;
-  virtual InputEventAckState FilterInputEvent(
-      const blink::WebInputEvent& input_event) OVERRIDE;
-  virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
-  virtual bool LockMouse() OVERRIDE;
-  virtual void UnlockMouse() OVERRIDE;
-  virtual void OnSwapCompositorFrame(
-      uint32 output_surface_id,
-      scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
+      const base::Callback<void(bool)>& callback) override;
+  bool CanCopyToVideoFrame() const override;
+  bool CanSubscribeFrame() const override;
+  void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
+  void EndFrameSubscription() override;
+  bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
+  void GetScreenInfo(blink::WebScreenInfo* results) override;
+  gfx::Rect GetBoundsInRootWindow() override;
+  void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                     InputEventAckState ack_result) override;
+  void GestureEventAck(const blink::WebGestureEvent& event,
+                       InputEventAckState ack_result) override;
+  void ProcessAckedTouchEvent(const TouchEventWithLatencyInfo& touch,
+                              InputEventAckState ack_result) override;
+  scoped_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget() override;
+  InputEventAckState FilterInputEvent(
+      const blink::WebInputEvent& input_event) override;
+  gfx::GLSurfaceHandle GetCompositingSurface() override;
+  BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) override;
+  gfx::AcceleratedWidget AccessibilityGetAcceleratedWidget() override;
+  gfx::NativeViewAccessible AccessibilityGetNativeViewAccessible() override;
+  void ShowDisambiguationPopup(const gfx::Rect& rect_pixels,
+                               const SkBitmap& zoomed_bitmap) override;
+  bool LockMouse() override;
+  void UnlockMouse() override;
+  void OnSwapCompositorFrame(uint32 output_surface_id,
+                             scoped_ptr<cc::CompositorFrame> frame) override;
+  void DidStopFlinging() override;
 
 #if defined(OS_WIN)
+  void SetLegacyRenderWidgetHostHWND(LegacyRenderWidgetHostHWND* legacy_hwnd);
   virtual void SetParentNativeViewAccessible(
-      gfx::NativeViewAccessible accessible_parent) OVERRIDE;
-  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const OVERRIDE;
+      gfx::NativeViewAccessible accessible_parent) override;
+  virtual gfx::NativeViewId GetParentForWindowlessPlugin() const override;
 #endif
 
   // Overridden from ui::TextInputClient:
-  virtual void SetCompositionText(
-      const ui::CompositionText& composition) OVERRIDE;
-  virtual void ConfirmCompositionText() OVERRIDE;
-  virtual void ClearCompositionText() OVERRIDE;
-  virtual void InsertText(const base::string16& text) OVERRIDE;
-  virtual void InsertChar(base::char16 ch, int flags) OVERRIDE;
-  virtual gfx::NativeWindow GetAttachedWindow() const OVERRIDE;
-  virtual ui::TextInputType GetTextInputType() const OVERRIDE;
-  virtual ui::TextInputMode GetTextInputMode() const OVERRIDE;
-  virtual bool CanComposeInline() const OVERRIDE;
-  virtual gfx::Rect GetCaretBounds() const OVERRIDE;
-  virtual bool GetCompositionCharacterBounds(uint32 index,
-                                             gfx::Rect* rect) const OVERRIDE;
-  virtual bool HasCompositionText() const OVERRIDE;
-  virtual bool GetTextRange(gfx::Range* range) const OVERRIDE;
-  virtual bool GetCompositionTextRange(gfx::Range* range) const OVERRIDE;
-  virtual bool GetSelectionRange(gfx::Range* range) const OVERRIDE;
-  virtual bool SetSelectionRange(const gfx::Range& range) OVERRIDE;
-  virtual bool DeleteRange(const gfx::Range& range) OVERRIDE;
-  virtual bool GetTextFromRange(const gfx::Range& range,
-                                base::string16* text) const OVERRIDE;
-  virtual void OnInputMethodChanged() OVERRIDE;
-  virtual bool ChangeTextDirectionAndLayoutAlignment(
-      base::i18n::TextDirection direction) OVERRIDE;
-  virtual void ExtendSelectionAndDelete(size_t before, size_t after) OVERRIDE;
-  virtual void EnsureCaretInRect(const gfx::Rect& rect) OVERRIDE;
-  virtual void OnCandidateWindowShown() OVERRIDE;
-  virtual void OnCandidateWindowUpdated() OVERRIDE;
-  virtual void OnCandidateWindowHidden() OVERRIDE;
-  virtual bool IsEditingCommandEnabled(int command_id) OVERRIDE;
-  virtual void ExecuteEditingCommand(int command_id) OVERRIDE;
+  void SetCompositionText(const ui::CompositionText& composition) override;
+  void ConfirmCompositionText() override;
+  void ClearCompositionText() override;
+  void InsertText(const base::string16& text) override;
+  void InsertChar(base::char16 ch, int flags) override;
+  gfx::NativeWindow GetAttachedWindow() const override;
+  ui::TextInputType GetTextInputType() const override;
+  ui::TextInputMode GetTextInputMode() const override;
+  int GetTextInputFlags() const override;
+  bool CanComposeInline() const override;
+  gfx::Rect GetCaretBounds() const override;
+  bool GetCompositionCharacterBounds(uint32 index,
+                                     gfx::Rect* rect) const override;
+  bool HasCompositionText() const override;
+  bool GetTextRange(gfx::Range* range) const override;
+  bool GetCompositionTextRange(gfx::Range* range) const override;
+  bool GetSelectionRange(gfx::Range* range) const override;
+  bool SetSelectionRange(const gfx::Range& range) override;
+  bool DeleteRange(const gfx::Range& range) override;
+  bool GetTextFromRange(const gfx::Range& range,
+                        base::string16* text) const override;
+  void OnInputMethodChanged() override;
+  bool ChangeTextDirectionAndLayoutAlignment(
+      base::i18n::TextDirection direction) override;
+  void ExtendSelectionAndDelete(size_t before, size_t after) override;
+  void EnsureCaretInRect(const gfx::Rect& rect) override;
+  void OnCandidateWindowShown() override;
+  void OnCandidateWindowUpdated() override;
+  void OnCandidateWindowHidden() override;
+  bool IsEditingCommandEnabled(int command_id) override;
+  void ExecuteEditingCommand(int command_id) override;
 
   // Overridden from gfx::DisplayObserver:
-  virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
-  virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
-  virtual void OnDisplayMetricsChanged(const gfx::Display& display,
-                                       uint32_t metrics) OVERRIDE;
+  void OnDisplayAdded(const gfx::Display& new_display) override;
+  void OnDisplayRemoved(const gfx::Display& old_display) override;
+  void OnDisplayMetricsChanged(const gfx::Display& display,
+                               uint32_t metrics) override;
 
   // Overridden from aura::WindowDelegate:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
-  virtual void OnBoundsChanged(const gfx::Rect& old_bounds,
-                               const gfx::Rect& new_bounds) OVERRIDE;
-  virtual gfx::NativeCursor GetCursor(const gfx::Point& point) OVERRIDE;
-  virtual int GetNonClientComponent(const gfx::Point& point) const OVERRIDE;
-  virtual bool ShouldDescendIntoChildForEventHandling(
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
+  void OnBoundsChanged(const gfx::Rect& old_bounds,
+                       const gfx::Rect& new_bounds) override;
+  gfx::NativeCursor GetCursor(const gfx::Point& point) override;
+  int GetNonClientComponent(const gfx::Point& point) const override;
+  bool ShouldDescendIntoChildForEventHandling(
       aura::Window* child,
-      const gfx::Point& location) OVERRIDE;
-  virtual bool CanFocus() OVERRIDE;
-  virtual void OnCaptureLost() OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
-  virtual void OnWindowTargetVisibilityChanged(bool visible) OVERRIDE;
-  virtual bool HasHitTestMask() const OVERRIDE;
-  virtual void GetHitTestMask(gfx::Path* mask) const OVERRIDE;
+      const gfx::Point& location) override;
+  bool CanFocus() override;
+  void OnCaptureLost() override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  void OnDeviceScaleFactorChanged(float device_scale_factor) override;
+  void OnWindowDestroying(aura::Window* window) override;
+  void OnWindowDestroyed(aura::Window* window) override;
+  void OnWindowTargetVisibilityChanged(bool visible) override;
+  bool HasHitTestMask() const override;
+  void GetHitTestMask(gfx::Path* mask) const override;
 
   // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnScrollEvent(ui::ScrollEvent* event) override;
+  void OnTouchEvent(ui::TouchEvent* event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // Overridden from aura::client::ActivationDelegate:
-  virtual bool ShouldActivate() const OVERRIDE;
+  bool ShouldActivate() const override;
 
   // Overridden from aura::client::ActivationChangeObserver:
-  virtual void OnWindowActivated(aura::Window* gained_activation,
-                                 aura::Window* lost_activation) OVERRIDE;
+  void OnWindowActivated(aura::Window* gained_activation,
+                         aura::Window* lost_activation) override;
 
   // Overridden from aura::client::CursorClientObserver:
-  virtual void OnCursorVisibilityChanged(bool is_visible) OVERRIDE;
+  void OnCursorVisibilityChanged(bool is_visible) override;
 
   // Overridden from aura::client::FocusChangeObserver:
-  virtual void OnWindowFocused(aura::Window* gained_focus,
-                               aura::Window* lost_focus) OVERRIDE;
+  void OnWindowFocused(aura::Window* gained_focus,
+                       aura::Window* lost_focus) override;
 
   // Overridden from aura::WindowTreeHostObserver:
-  virtual void OnHostMoved(const aura::WindowTreeHost* host,
-                           const gfx::Point& new_origin) OVERRIDE;
+  void OnHostMoved(const aura::WindowTreeHost* host,
+                   const gfx::Point& new_origin) override;
+
+  void OnTextInputStateChanged(const ViewHostMsg_TextInputState_Params& params);
 
 #if defined(OS_WIN)
   // Sets the cutout rects from constrained windows. These are rectangles that
@@ -325,6 +328,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void UpdateMouseLockRegion();
 #endif
 
+  void DisambiguationPopupRendered(bool success, const SkBitmap& result);
+
+  void HideDisambiguationPopup();
+
+  void ProcessDisambiguationGesture(ui::GestureEvent* event);
+
+  void ProcessDisambiguationMouse(ui::MouseEvent* event);
+
   // Method to indicate if this instance is shutting down or closing.
   // TODO(shrikant): Discuss around to see if it makes sense to add this method
   // as part of RenderWidgetHostView.
@@ -333,25 +344,30 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   // Sets whether the overscroll controller should be enabled for this page.
   void SetOverscrollControllerEnabled(bool enabled);
 
+  void SnapToPhysicalPixelBoundary();
+
   OverscrollController* overscroll_controller() const {
     return overscroll_controller_.get();
   }
 
  protected:
-  virtual ~RenderWidgetHostViewAura();
+  ~RenderWidgetHostViewAura() override;
 
   // Exposed for tests.
   aura::Window* window() { return window_; }
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
-  virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
+  SkColorType PreferredReadbackFormat() override;
+  DelegatedFrameHost* GetDelegatedFrameHost() const override;
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           PopupRetainsCaptureAfterMouseRelease);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SetCompositionText);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventState);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            TouchEventPositionsArentRounded);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, TouchEventSyncAsync);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, SwapNotifiesWindow);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, RecreateLayers);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            SkippedDelegatedFrames);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest, OutputSurfaceIdChange);
@@ -368,13 +384,19 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
                            VisibleViewportTest);
   FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
                            OverscrollResetsOnBlur);
+  FRIEND_TEST_ALL_PREFIXES(RenderWidgetHostViewAuraTest,
+                           FinishCompositionByMouse);
+  FRIEND_TEST_ALL_PREFIXES(WebContentsViewAuraTest,
+                           WebContentsViewReparent);
 
   class WindowObserver;
   friend class WindowObserver;
 
   void UpdateCursorIfOverSelf();
 
-  void SnapToPhysicalPixelBoundary();
+  // Tracks whether SnapToPhysicalPixelBoundary() has been called.
+  bool has_snapped_to_boundary() { return has_snapped_to_boundary_; }
+  void ResetHasSnappedToBoundary() { has_snapped_to_boundary_ = false; }
 
   // Set the bounds of the window and handle size changes.  Assumes the caller
   // has already adjusted the origin of |rect| to conform to whatever coordinate
@@ -387,8 +409,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   ui::InputMethod* GetInputMethod() const;
 
+  // Sends shutdown request.
+  void Shutdown();
+
   // Returns whether the widget needs an input grab to work properly.
   bool NeedsInputGrab();
+
+  // Returns whether the widget needs to grab mouse capture to work properly.
+  bool NeedsMouseCapture();
 
   // Confirm existing composition text in the webpage and ask the input method
   // to cancel its ongoing composition session.
@@ -417,17 +445,14 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   void RemovingFromRootWindow();
 
   // DelegatedFrameHostClient implementation.
-  virtual ui::Compositor* GetCompositor() const OVERRIDE;
-  virtual ui::Layer* GetLayer() OVERRIDE;
-  virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
-  virtual void SchedulePaintInRect(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
-  virtual bool IsVisible() OVERRIDE;
-  virtual scoped_ptr<ResizeLock> CreateResizeLock(
-      bool defer_compositor_lock) OVERRIDE;
-  virtual gfx::Size DesiredFrameSize() OVERRIDE;
-  virtual float CurrentDeviceScaleFactor() OVERRIDE;
-  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
+  ui::Compositor* GetCompositor() const override;
+  ui::Layer* GetLayer() override;
+  RenderWidgetHostImpl* GetHost() override;
+  bool IsVisible() override;
+  scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock) override;
+  gfx::Size DesiredFrameSize() override;
+  float CurrentDeviceScaleFactor() override;
+  gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) override;
 
   // Detaches |this| from the input method object.
   void DetachFromInputMethod();
@@ -497,6 +522,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   ui::TextInputType text_input_type_;
   // The current text input mode corresponding to HTML5 inputmode attribute.
   ui::TextInputMode text_input_mode_;
+  // The current text input flags.
+  int text_input_flags_;
   bool can_compose_inline_;
 
   // Rectangles for the selection anchor and focus.
@@ -531,7 +558,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
   gfx::Point unlocked_global_mouse_position_;
   // Last cursor position relative to screen. Used to compute movementX/Y.
   gfx::Point global_mouse_position_;
-  // In mouse locked mode, we syntheticaly move the mouse cursor to the center
+  // In mouse locked mode, we synthetically move the mouse cursor to the center
   // of the window when it reaches the window borders to avoid it going outside.
   // This flag is used to differentiate between these synthetic mouse move
   // events vs. normal mouse move events.
@@ -557,15 +584,26 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   typedef std::map<HWND, WebPluginGeometry> PluginWindowMoves;
   // Contains information about each windowed plugin's clip and cutout rects (
-  // from the renderer). This is needed because when the transient windoiws
+  // from the renderer). This is needed because when the transient windows
   // over this view changes, we need this information in order to create a new
   // region for the HWND.
   PluginWindowMoves plugin_window_moves_;
+
+  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
+  // for accessibility, as the container for windowless plugins like
+  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
+  // etc.
+  content::LegacyRenderWidgetHostHWND* legacy_render_widget_host_HWND_;
 #endif
+
+  bool has_snapped_to_boundary_;
 
   TouchEditingClient* touch_editing_client_;
 
   scoped_ptr<OverscrollController> overscroll_controller_;
+
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
 
   gfx::Insets insets_;
 
@@ -573,16 +611,19 @@ class CONTENT_EXPORT RenderWidgetHostViewAura
 
   scoped_ptr<aura::client::ScopedTooltipDisabler> tooltip_disabler_;
 
+  // True when this view acts as a platform view hack for a
+  // RenderWidgetHostViewGuest.
+  bool is_guest_view_hack_;
+
   base::WeakPtrFactory<RenderWidgetHostViewAura> weak_ptr_factory_;
 
-#if defined(OS_WIN)
-  // The LegacyRenderWidgetHostHWND class provides a dummy HWND which is used
-  // for accessibility, as the container for windowless plugins like
-  // Flash/Silverlight, etc and for legacy drivers for trackpoints/trackpads,
-  // etc.
-  scoped_ptr<content::LegacyRenderWidgetHostHWND>
-      legacy_render_widget_host_HWND_;
-#endif
+  gfx::Rect disambiguation_target_rect_;
+
+  // The last scroll offset when we start to render the link disambiguation
+  // view, so we can ensure the window hasn't moved between copying from the
+  // compositing surface and showing the disambiguation popup.
+  gfx::Vector2dF disambiguation_scroll_offset_;
+
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewAura);
 };
 

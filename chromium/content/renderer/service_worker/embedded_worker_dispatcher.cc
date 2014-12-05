@@ -52,6 +52,8 @@ bool EmbeddedWorkerDispatcher::OnMessageReceived(
   IPC_BEGIN_MESSAGE_MAP(EmbeddedWorkerDispatcher, message)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StartWorker, OnStartWorker)
     IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_StopWorker, OnStopWorker)
+    IPC_MESSAGE_HANDLER(EmbeddedWorkerMsg_ResumeAfterDownload,
+                        OnResumeAfterDownload)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -67,6 +69,7 @@ void EmbeddedWorkerDispatcher::WorkerContextDestroyed(
 void EmbeddedWorkerDispatcher::OnStartWorker(
     const EmbeddedWorkerMsg_StartWorker_Params& params) {
   DCHECK(!workers_.Lookup(params.embedded_worker_id));
+  TRACE_EVENT0("ServiceWorker", "EmbeddedWorkerDispatcher::OnStartWorker");
   RenderThread::Get()->EnsureWebKitInitialized();
   scoped_ptr<WorkerWrapper> wrapper(
       new WorkerWrapper(blink::WebEmbeddedWorker::create(
@@ -82,15 +85,21 @@ void EmbeddedWorkerDispatcher::OnStartWorker(
   blink::WebEmbeddedWorkerStartData start_data;
   start_data.scriptURL = params.script_url;
   start_data.userAgent = base::UTF8ToUTF16(GetContentClient()->GetUserAgent());
-  start_data.startMode =
-      params.pause_on_start ? blink::WebEmbeddedWorkerStartModePauseOnStart
-                            : blink::WebEmbeddedWorkerStartModeDontPauseOnStart;
+  start_data.pauseAfterDownloadMode =
+      params.pause_after_download ?
+          blink::WebEmbeddedWorkerStartData::PauseAfterDownload :
+          blink::WebEmbeddedWorkerStartData::DontPauseAfterDownload;
+  start_data.waitForDebuggerMode =
+      params.wait_for_debugger ?
+          blink::WebEmbeddedWorkerStartData::WaitForDebugger :
+          blink::WebEmbeddedWorkerStartData::DontWaitForDebugger;
 
   wrapper->worker()->startWorkerContext(start_data);
   workers_.AddWithID(wrapper.release(), params.embedded_worker_id);
 }
 
 void EmbeddedWorkerDispatcher::OnStopWorker(int embedded_worker_id) {
+  TRACE_EVENT0("ServiceWorker", "EmbeddedWorkerDispatcher::OnStopWorker");
   WorkerWrapper* wrapper = workers_.Lookup(embedded_worker_id);
   if (!wrapper) {
     LOG(WARNING) << "Got OnStopWorker for nonexistent worker";
@@ -101,6 +110,17 @@ void EmbeddedWorkerDispatcher::OnStopWorker(int embedded_worker_id) {
   // a delayed task to forcibly abort the worker context if we find it
   // necessary)
   wrapper->worker()->terminateWorkerContext();
+}
+
+void EmbeddedWorkerDispatcher::OnResumeAfterDownload(int embedded_worker_id) {
+  TRACE_EVENT0("ServiceWorker",
+               "EmbeddedWorkerDispatcher::OnResumeAfterDownload");
+  WorkerWrapper* wrapper = workers_.Lookup(embedded_worker_id);
+  if (!wrapper) {
+    LOG(WARNING) << "Got OnResumeAfterDownload for nonexistent worker";
+    return;
+  }
+  wrapper->worker()->resumeAfterDownload();
 }
 
 }  // namespace content

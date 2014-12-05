@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/hu.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/hu.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/hu.xml
+ * ICU <specials> source: <path>/common/main/hu.xml
  */
 hu{
     Countries{
@@ -28,7 +28,7 @@ hu{
         AT{"Ausztria"}
         AU{"Ausztrália"}
         AW{"Aruba"}
-        AX{"Aland-szigetek"}
+        AX{"Åland-szigetek"}
         AZ{"Azerbajdzsán"}
         BA{"Bosznia-Hercegovina"}
         BB{"Barbados"}
@@ -43,6 +43,7 @@ hu{
         BM{"Bermuda"}
         BN{"Brunei"}
         BO{"Bolívia"}
+        BQ{"Holland Karib-térség"}
         BR{"Brazília"}
         BS{"Bahama-szigetek"}
         BT{"Bhután"}
@@ -64,10 +65,10 @@ hu{
         CO{"Kolumbia"}
         CP{"Clipperton-sziget"}
         CR{"Costa Rica"}
-        CS{"Szerbia és Montenegró"}
         CU{"Kuba"}
         CV{"Zöld-foki Köztársaság"}
-        CX{"Karácsony-szigetek"}
+        CW{"Curaçao"}
+        CX{"Karácsony-sziget"}
         CY{"Ciprus"}
         CZ{"Csehország"}
         DE{"Németország"}
@@ -87,7 +88,7 @@ hu{
         ET{"Etiópia"}
         EU{"Európai Unió"}
         FI{"Finnország"}
-        FJ{"Fidzsi"}
+        FJ{"Fidzsi-szigetek"}
         FK{"Falkland-szigetek"}
         FM{"Mikronézia"}
         FO{"Feröer-szigetek"}
@@ -106,13 +107,13 @@ hu{
         GP{"Guadeloupe"}
         GQ{"Egyenlítői-Guinea"}
         GR{"Görögország"}
-        GS{"Dél Grúzia és a Déli Szendvics-szigetek"}
+        GS{"Déli-Georgia és Déli-Sandwich-szigetek"}
         GT{"Guatemala"}
         GU{"Guam"}
         GW{"Guinea-Bissau"}
         GY{"Guyana"}
         HK{"Hongkong SAR Kína"}
-        HM{"Heard és McDonald Szigetek"}
+        HM{"Heard-sziget és McDonald-szigetek"}
         HN{"Honduras"}
         HR{"Horvátország"}
         HT{"Haiti"}
@@ -163,7 +164,7 @@ hu{
         MH{"Marshall-szigetek"}
         MK{"Macedónia"}
         ML{"Mali"}
-        MM{"Mianmar [Burma]"}
+        MM{"Mianmar (Burma)"}
         MN{"Mongólia"}
         MO{"Makaó SAR Kína"}
         MP{"Északi Mariana-szigetek"}
@@ -209,7 +210,7 @@ hu{
         RE{"Reunion"}
         RO{"Románia"}
         RS{"Szerbia"}
-        RU{"Oroszországi Föderáció"}
+        RU{"Oroszország"}
         RW{"Ruanda"}
         SA{"Szaúd-Arábia"}
         SB{"Salamon-szigetek"}
@@ -217,7 +218,7 @@ hu{
         SD{"Szudán"}
         SE{"Svédország"}
         SG{"Szingapúr"}
-        SH{"Szent Helena"}
+        SH{"Szent Ilona"}
         SI{"Szlovénia"}
         SJ{"Spitzbergák és Jan Mayen-szigetek"}
         SK{"Szlovákia"}
@@ -226,8 +227,10 @@ hu{
         SN{"Szenegál"}
         SO{"Szomália"}
         SR{"Suriname"}
+        SS{"Dél-Szudán"}
         ST{"Sao Tomé és Príncipe"}
         SV{"Salvador"}
+        SX{"Sint Maarten"}
         SY{"Szíria"}
         SZ{"Szváziföld"}
         TA{"Tristan da Cunha"}
@@ -236,7 +239,7 @@ hu{
         TF{"Francia Déli Területek"}
         TG{"Togo"}
         TH{"Thaiföld"}
-        TJ{"Tadzsikisztán"}
+        TJ{"Tádzsikisztán"}
         TK{"Tokelau"}
         TL{"Kelet-Timor"}
         TM{"Türkmenisztán"}
@@ -262,12 +265,20 @@ hu{
         VU{"Vanuatu"}
         WF{"Wallis- és Futuna-szigetek"}
         WS{"Szamoa"}
+        XK{"Koszovó"}
         YE{"Jemen"}
         YT{"Mayotte"}
         ZA{"Dél-afrikai Köztársaság"}
         ZM{"Zambia"}
         ZW{"Zimbabwe"}
-        ZZ{"Ismeretlen vagy érvénytelen körzet"}
+        ZZ{"Ismeretlen körzet"}
     }
-    Version{"2.0.50.94"}
+    CountriesShort{
+        GB{"UK"}
+        HK{"Hongkong"}
+        MO{"Makaó"}
+        PS{"Palesztina"}
+        US{"USA"}
+    }
+    Version{"2.0.93.17"}
 }

@@ -46,17 +46,18 @@ class CONTENT_EXPORT PpFrameWriter
   // FrameWriterInterface implementation.
   // This method will be called by the Pepper host from render thread.
   virtual void PutFrame(PPB_ImageData_Impl* image_data,
-                        int64 time_stamp_ns) OVERRIDE;
+                        int64 time_stamp_ns) override;
  protected:
   // MediaStreamVideoSource implementation.
-  virtual void GetCurrentSupportedFormats(
+  void GetCurrentSupportedFormats(
       int max_requested_width,
       int max_requested_height,
-      const VideoCaptureDeviceFormatsCB& callback) OVERRIDE;
-  virtual void StartSourceImpl(
-      const media::VideoCaptureParams& params,
-      const VideoCaptureDeliverFrameCB& frame_callback) OVERRIDE;
-  virtual void StopSourceImpl() OVERRIDE;
+      double max_requested_frame_rate,
+      const VideoCaptureDeviceFormatsCB& callback) override;
+  void StartSourceImpl(
+      const media::VideoCaptureFormat& format,
+      const VideoCaptureDeliverFrameCB& frame_callback) override;
+  void StopSourceImpl() override;
 
  private:
   media::VideoFramePool frame_pool_;
@@ -89,4 +90,3 @@ class CONTENT_EXPORT VideoDestinationHandler {
 }  // namespace content
 
 #endif  // CONTENT_RENDERER_MEDIA_VIDEO_DESTINATION_HANDLER_H_
-

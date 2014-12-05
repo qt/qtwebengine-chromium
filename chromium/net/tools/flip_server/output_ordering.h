@@ -53,14 +53,14 @@ class OutputOrdering {
     BeginOutputtingAlarm(OutputOrdering* oo,
                          OutputOrdering::PriorityMapPointer* pmp,
                          const MemCacheIter& mci);
-    virtual ~BeginOutputtingAlarm();
+    ~BeginOutputtingAlarm() override;
 
     // EpollAlarmCallbackInterface:
-    virtual int64 OnAlarm() OVERRIDE;
-    virtual void OnRegistration(const EpollServer::AlarmRegToken& tok,
-                                EpollServer* eps) OVERRIDE;
-    virtual void OnUnregistration() OVERRIDE;
-    virtual void OnShutdown(EpollServer* eps) OVERRIDE;
+    int64 OnAlarm() override;
+    void OnRegistration(const EpollServer::AlarmRegToken& tok,
+                        EpollServer* eps) override;
+    void OnUnregistration() override;
+    void OnShutdown(EpollServer* eps) override;
 
    private:
     OutputOrdering* output_ordering_;

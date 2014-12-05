@@ -77,26 +77,38 @@ class NET_EXPORT_PRIVATE EntryImplV3
   const net::BoundNetLog& net_log() const;
 
   // Entry interface.
-  virtual void Doom() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual std::string GetKey() const OVERRIDE;
-  virtual base::Time GetLastUsed() const OVERRIDE;
-  virtual base::Time GetLastModified() const OVERRIDE;
-  virtual int32 GetDataSize(int index) const OVERRIDE;
-  virtual int ReadData(int index, int offset, IOBuffer* buf, int buf_len,
-                       const CompletionCallback& callback) OVERRIDE;
-  virtual int WriteData(int index, int offset, IOBuffer* buf, int buf_len,
-                        const CompletionCallback& callback,
-                        bool truncate) OVERRIDE;
-  virtual int ReadSparseData(int64 offset, IOBuffer* buf, int buf_len,
-                             const CompletionCallback& callback) OVERRIDE;
-  virtual int WriteSparseData(int64 offset, IOBuffer* buf, int buf_len,
-                              const CompletionCallback& callback) OVERRIDE;
-  virtual int GetAvailableRange(int64 offset, int len, int64* start,
-                                const CompletionCallback& callback) OVERRIDE;
-  virtual bool CouldBeSparse() const OVERRIDE;
-  virtual void CancelSparseIO() OVERRIDE;
-  virtual int ReadyForSparseIO(const CompletionCallback& callback) OVERRIDE;
+  void Doom() override;
+  void Close() override;
+  std::string GetKey() const override;
+  base::Time GetLastUsed() const override;
+  base::Time GetLastModified() const override;
+  int32 GetDataSize(int index) const override;
+  int ReadData(int index,
+               int offset,
+               IOBuffer* buf,
+               int buf_len,
+               const CompletionCallback& callback) override;
+  int WriteData(int index,
+                int offset,
+                IOBuffer* buf,
+                int buf_len,
+                const CompletionCallback& callback,
+                bool truncate) override;
+  int ReadSparseData(int64 offset,
+                     IOBuffer* buf,
+                     int buf_len,
+                     const CompletionCallback& callback) override;
+  int WriteSparseData(int64 offset,
+                      IOBuffer* buf,
+                      int buf_len,
+                      const CompletionCallback& callback) override;
+  int GetAvailableRange(int64 offset,
+                        int len,
+                        int64* start,
+                        const CompletionCallback& callback) override;
+  bool CouldBeSparse() const override;
+  void CancelSparseIO() override;
+  int ReadyForSparseIO(const CompletionCallback& callback) override;
 
  private:
   enum {
@@ -104,7 +116,7 @@ class NET_EXPORT_PRIVATE EntryImplV3
   };
   class UserBuffer;
 
-  virtual ~EntryImplV3();
+  ~EntryImplV3() override;
 
   // Do all the work for ReadDataImpl and WriteDataImpl.  Implemented as
   // separate functions to make logging of results simpler.

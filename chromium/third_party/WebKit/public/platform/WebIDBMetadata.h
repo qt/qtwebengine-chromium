@@ -31,11 +31,9 @@
 #include "WebString.h"
 #include "WebVector.h"
 
-namespace WebCore {
-struct IDBDatabaseMetadata;
-}
-
 namespace blink {
+
+struct IDBDatabaseMetadata;
 
 struct WebIDBMetadata {
     enum {
@@ -81,11 +79,10 @@ struct WebIDBMetadata {
     };
 
 #if BLINK_IMPLEMENTATION
-    WebIDBMetadata(const WebCore::IDBDatabaseMetadata&);
-    operator WebCore::IDBDatabaseMetadata() const;
+    WebIDBMetadata(const IDBDatabaseMetadata&);
+    operator IDBDatabaseMetadata() const;
 #endif
 };
-
 
 } // namespace blink
 

@@ -29,17 +29,17 @@
 #ifndef SQLResultSetRowList_h
 #define SQLResultSetRowList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/webdatabase/sqlite/SQLValue.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class SQLResultSetRowList : public RefCountedWillBeGarbageCollectedFinalized<SQLResultSetRowList>, public ScriptWrappable {
+class SQLResultSetRowList : public GarbageCollectedFinalized<SQLResultSetRowList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<SQLResultSetRowList> create() { return adoptRefWillBeNoop(new SQLResultSetRowList); }
+    static SQLResultSetRowList* create() { return new SQLResultSetRowList; }
     void trace(Visitor*) { }
 
     const Vector<String>& columnNames() const { return m_columns; }
@@ -51,15 +51,12 @@ public:
     unsigned length() const;
 
 private:
-    SQLResultSetRowList()
-    {
-        ScriptWrappable::init(this);
-    }
+    SQLResultSetRowList() { }
 
     Vector<String> m_columns;
     Vector<SQLValue> m_result;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // SQLResultSetRowList_h

@@ -78,9 +78,9 @@ NTSTATUS ResolveSymbolicLink(const base::string16& directory_name,
     return status;
   }
 
-  target_path.Buffer = new wchar_t[target_length + 1];
   target_path.Length = 0;
-  target_path.MaximumLength = target_length;
+  target_path.MaximumLength = static_cast<USHORT>(target_length);
+  target_path.Buffer = new wchar_t[target_path.MaximumLength + 1];
   status = NtQuerySymbolicLinkObject(symbolic_link, &target_path,
                                      &target_length);
   if (status == STATUS_SUCCESS) {
@@ -155,8 +155,8 @@ bool SyncPolicy::GenerateRules(const wchar_t* name,
   if (TargetPolicy::EVENTS_ALLOW_READONLY == semantics) {
     // We consider all flags that are not known to be readonly as potentially
     // used for write.
-    DWORD allowed_flags = SYNCHRONIZE | GENERIC_READ | READ_CONTROL;
-    DWORD restricted_flags = ~allowed_flags;
+    uint32 allowed_flags = SYNCHRONIZE | GENERIC_READ | READ_CONTROL;
+    uint32 restricted_flags = ~allowed_flags;
     open.AddNumberMatch(IF_NOT, OpenEventParams::ACCESS, restricted_flags, AND);
   }
 
@@ -176,12 +176,12 @@ bool SyncPolicy::GenerateRules(const wchar_t* name,
   return true;
 }
 
-DWORD SyncPolicy::CreateEventAction(EvalResult eval_result,
-                                    const ClientInfo& client_info,
-                                    const base::string16 &event_name,
-                                    uint32 event_type,
-                                    uint32 initial_state,
-                                    HANDLE *handle) {
+NTSTATUS SyncPolicy::CreateEventAction(EvalResult eval_result,
+                                       const ClientInfo& client_info,
+                                       const base::string16 &event_name,
+                                       uint32 event_type,
+                                       uint32 initial_state,
+                                       HANDLE *handle) {
   NtCreateEventFunction NtCreateEvent = NULL;
   ResolveNTFunctionPtr("NtCreateEvent", &NtCreateEvent);
 
@@ -202,7 +202,8 @@ DWORD SyncPolicy::CreateEventAction(EvalResult eval_result,
 
   HANDLE local_handle = NULL;
   status = NtCreateEvent(&local_handle, EVENT_ALL_ACCESS, &object_attributes,
-                         static_cast<EVENT_TYPE>(event_type), initial_state);
+                         static_cast<EVENT_TYPE>(event_type),
+                         static_cast<BOOLEAN>(initial_state));
   if (NULL == local_handle)
     return status;
 
@@ -214,11 +215,11 @@ DWORD SyncPolicy::CreateEventAction(EvalResult eval_result,
   return status;
 }
 
-DWORD SyncPolicy::OpenEventAction(EvalResult eval_result,
-                                  const ClientInfo& client_info,
-                                  const base::string16 &event_name,
-                                  uint32 desired_access,
-                                  HANDLE *handle) {
+NTSTATUS SyncPolicy::OpenEventAction(EvalResult eval_result,
+                                     const ClientInfo& client_info,
+                                     const base::string16 &event_name,
+                                     uint32 desired_access,
+                                     HANDLE *handle) {
   NtOpenEventFunction NtOpenEvent = NULL;
   ResolveNTFunctionPtr("NtOpenEvent", &NtOpenEvent);
 

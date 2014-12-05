@@ -9,6 +9,7 @@
 #include <GLES2/gl2extchromium.h>
 
 #include "base/atomicops.h"
+#include "base/numerics/safe_conversions.h"
 #include "gpu/command_buffer/client/gles2_cmd_helper.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/mapped_memory.h"
@@ -126,11 +127,11 @@ void QueryTracker::Query::End(GLES2Implementation* gl) {
     case GL_GET_ERROR_QUERY_CHROMIUM: {
       GLenum error = gl->GetClientSideGLError();
       if (error == GL_NO_ERROR) {
-        // There was no error so start the query on the serivce.
+        // There was no error so start the query on the service.
         // it will end immediately.
         gl->helper()->BeginQueryEXT(target(), id(), shm_id(), shm_offset());
       } else {
-        // There's an error on the client, no need to bother the service. just
+        // There's an error on the client, no need to bother the service. Just
         // set the query as completed and return the error.
         if (error != GL_NO_ERROR) {
           state_ = kComplete;
@@ -153,18 +154,18 @@ bool QueryTracker::Query::CheckResultsAvailable(
         helper->IsContextLost()) {
       switch (target()) {
         case GL_COMMANDS_ISSUED_CHROMIUM:
-          result_ = std::min(info_.sync->result,
-                             static_cast<uint64>(0xFFFFFFFFL));
+          result_ = base::saturated_cast<uint32>(info_.sync->result);
           break;
         case GL_LATENCY_QUERY_CHROMIUM:
-          DCHECK(info_.sync->result >= client_begin_time_us_);
-          result_ = std::min(info_.sync->result - client_begin_time_us_,
-                             static_cast<uint64>(0xFFFFFFFFL));
+          // Disabled DCHECK because of http://crbug.com/419236.
+          //DCHECK(info_.sync->result >= client_begin_time_us_);
+          result_ = base::saturated_cast<uint32>(
+              info_.sync->result - client_begin_time_us_);
           break;
         case GL_ASYNC_PIXEL_UNPACK_COMPLETED_CHROMIUM:
         case GL_ASYNC_PIXEL_PACK_COMPLETED_CHROMIUM:
         default:
-          result_ = info_.sync->result;
+          result_ = static_cast<uint32>(info_.sync->result);
           break;
       }
       state_ = kComplete;

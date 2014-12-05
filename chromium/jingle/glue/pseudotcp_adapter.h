@@ -10,10 +10,9 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/timer/timer.h"
 #include "net/base/net_log.h"
 #include "net/socket/stream_socket.h"
-#include "third_party/libjingle/source/talk/p2p/base/pseudotcp.h"
+#include "third_party/webrtc/p2p/base/pseudotcp.h"
 
 namespace jingle_glue {
 
@@ -26,32 +25,34 @@ class PseudoTcpAdapter : public net::StreamSocket, base::NonThreadSafe {
  public:
   // Creates an adapter for the supplied Socket.  |socket| should already
   // be ready for use, and ownership of it will be assumed by the adapter.
-  PseudoTcpAdapter(net::Socket* socket);
-  virtual ~PseudoTcpAdapter();
+  explicit PseudoTcpAdapter(net::Socket* socket);
+  ~PseudoTcpAdapter() override;
 
   // net::Socket implementation.
-  virtual int Read(net::IOBuffer* buffer, int buffer_size,
-                   const net::CompletionCallback& callback) OVERRIDE;
-  virtual int Write(net::IOBuffer* buffer, int buffer_size,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(net::IOBuffer* buffer,
+           int buffer_size,
+           const net::CompletionCallback& callback) override;
+  int Write(net::IOBuffer* buffer,
+            int buffer_size,
+            const net::CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // net::StreamSocket implementation.
-  virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(net::IPEndPoint* address) const OVERRIDE;
-  virtual const net::BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE;
-  virtual void SetOmniboxSpeculation() OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
-  virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const net::CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(net::IPEndPoint* address) const override;
+  int GetLocalAddress(net::IPEndPoint* address) const override;
+  const net::BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override;
+  void SetOmniboxSpeculation() override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  net::NextProto GetNegotiatedProtocol() const override;
+  bool GetSSLInfo(net::SSLInfo* ssl_info) override;
 
   // Set the delay for sending ACK.
   void SetAckDelay(int delay_ms);
@@ -89,4 +90,4 @@ class PseudoTcpAdapter : public net::StreamSocket, base::NonThreadSafe {
 
 }  // namespace jingle_glue
 
-#endif  // JINGLE_GLUE_STREAM_SOCKET_ADAPTER_H_
+#endif  // JINGLE_GLUE_PSEUDOTCP_ADAPTER_H_

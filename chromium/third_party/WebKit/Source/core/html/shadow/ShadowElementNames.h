@@ -33,7 +33,7 @@
 
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace ShadowElementNames {
 
@@ -49,8 +49,8 @@ const AtomicString& placeholder();
 const AtomicString& searchDecoration();
 const AtomicString& sliderThumb();
 const AtomicString& sliderTrack();
-const AtomicString& speechButton();
 const AtomicString& textFieldContainer();
+const AtomicString& optGroupLabel();
 
 }
 

@@ -31,25 +31,25 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/TemporaryChange.h"
 
-namespace WebCore {
+namespace blink {
 
 class Page;
 class LocalFrame;
 
-class PageLifecycleNotifier FINAL : public LifecycleNotifier<Page> {
+class PageLifecycleNotifier final : public LifecycleNotifier<Page> {
 public:
     static PassOwnPtr<PageLifecycleNotifier> create(Page*);
 
     void notifyPageVisibilityChanged();
     void notifyDidCommitLoad(LocalFrame*);
 
-    virtual void addObserver(Observer*) OVERRIDE;
-    virtual void removeObserver(Observer*) OVERRIDE;
+    virtual void addObserver(Observer*) override;
+    virtual void removeObserver(Observer*) override;
 
 private:
     explicit PageLifecycleNotifier(Page*);
 
-    typedef HashSet<PageLifecycleObserver*> PageObserverSet;
+    using PageObserverSet = HashSet<PageLifecycleObserver*>;
     PageObserverSet m_pageObservers;
 };
 
@@ -61,17 +61,17 @@ inline PassOwnPtr<PageLifecycleNotifier> PageLifecycleNotifier::create(Page* con
 inline void PageLifecycleNotifier::notifyPageVisibilityChanged()
 {
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverPageObservers);
-    for (PageObserverSet::iterator it = m_pageObservers.begin(); it != m_pageObservers.end(); ++it)
-        (*it)->pageVisibilityChanged();
+    for (PageLifecycleObserver* pageObserver : m_pageObservers)
+        pageObserver->pageVisibilityChanged();
 }
 
 inline void PageLifecycleNotifier::notifyDidCommitLoad(LocalFrame* frame)
 {
     TemporaryChange<IterationType> scope(this->m_iterating, IteratingOverPageObservers);
-    for (PageObserverSet::iterator it = m_pageObservers.begin(); it != m_pageObservers.end(); ++it)
-        (*it)->didCommitLoad(frame);
+    for (PageLifecycleObserver* pageObserver : m_pageObservers)
+        pageObserver->didCommitLoad(frame);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PageLifecycleNotifier_h

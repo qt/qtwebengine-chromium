@@ -26,9 +26,9 @@ class TcpLossAlgorithmTest : public ::testing::Test {
 
   void SendDataPacket(QuicPacketSequenceNumber sequence_number) {
     SerializedPacket packet(sequence_number, PACKET_1BYTE_SEQUENCE_NUMBER,
-                            NULL, 0, new RetransmittableFrames());
-    unacked_packets_.AddPacket(packet);
-    unacked_packets_.SetSent(sequence_number, clock_.Now(), 1000, true);
+                            nullptr, 0, new RetransmittableFrames());
+    unacked_packets_.AddSentPacket(packet, 0, NOT_RETRANSMISSION, clock_.Now(),
+                                   1000, true);
   }
 
   void VerifyLosses(QuicPacketSequenceNumber largest_observed,
@@ -58,11 +58,11 @@ TEST_F(TcpLossAlgorithmTest, NackRetransmit1Packet) {
   // No loss on one ack.
   unacked_packets_.RemoveFromInFlight(2);
   unacked_packets_.NackPacket(1, 1);
-  VerifyLosses(2, NULL, 0);
+  VerifyLosses(2, nullptr, 0);
   // No loss on two acks.
   unacked_packets_.RemoveFromInFlight(3);
   unacked_packets_.NackPacket(1, 2);
-  VerifyLosses(3, NULL, 0);
+  VerifyLosses(3, nullptr, 0);
   // Loss on three acks.
   unacked_packets_.RemoveFromInFlight(4);
   unacked_packets_.NackPacket(1, 3);
@@ -117,8 +117,8 @@ TEST_F(TcpLossAlgorithmTest, EarlyRetransmit1Packet) {
   // Early retransmit when the final packet gets acked and the first is nacked.
   unacked_packets_.RemoveFromInFlight(2);
   unacked_packets_.NackPacket(1, 1);
-  VerifyLosses(2, NULL, 0);
-  EXPECT_EQ(clock_.Now().Add(rtt_stats_.SmoothedRtt().Multiply(1.25)),
+  VerifyLosses(2, nullptr, 0);
+  EXPECT_EQ(clock_.Now().Add(rtt_stats_.smoothed_rtt().Multiply(1.25)),
             loss_algorithm_.GetLossTimeout());
 
   clock_.AdvanceTime(rtt_stats_.latest_rtt().Multiply(1.25));
@@ -133,7 +133,7 @@ TEST_F(TcpLossAlgorithmTest, EarlyRetransmitAllPackets) {
     SendDataPacket(i);
     // Advance the time 1/4 RTT between 3 and 4.
     if (i == 3) {
-      clock_.AdvanceTime(rtt_stats_.SmoothedRtt().Multiply(0.25));
+      clock_.AdvanceTime(rtt_stats_.smoothed_rtt().Multiply(0.25));
     }
   }
 
@@ -148,15 +148,15 @@ TEST_F(TcpLossAlgorithmTest, EarlyRetransmitAllPackets) {
   VerifyLosses(kNumSentPackets, lost, arraysize(lost));
   // The time has already advanced 1/4 an RTT, so ensure the timeout is set
   // 1.25 RTTs after the earliest pending packet(3), not the last(4).
-  EXPECT_EQ(clock_.Now().Add(rtt_stats_.SmoothedRtt()),
+  EXPECT_EQ(clock_.Now().Add(rtt_stats_.smoothed_rtt()),
             loss_algorithm_.GetLossTimeout());
 
-  clock_.AdvanceTime(rtt_stats_.SmoothedRtt());
+  clock_.AdvanceTime(rtt_stats_.smoothed_rtt());
   QuicPacketSequenceNumber lost2[] = { 1, 2, 3 };
   VerifyLosses(kNumSentPackets, lost2, arraysize(lost2));
-  EXPECT_EQ(clock_.Now().Add(rtt_stats_.SmoothedRtt().Multiply(0.25)),
+  EXPECT_EQ(clock_.Now().Add(rtt_stats_.smoothed_rtt().Multiply(0.25)),
             loss_algorithm_.GetLossTimeout());
-  clock_.AdvanceTime(rtt_stats_.SmoothedRtt().Multiply(0.25));
+  clock_.AdvanceTime(rtt_stats_.smoothed_rtt().Multiply(0.25));
   QuicPacketSequenceNumber lost3[] = { 1, 2, 3, 4 };
   VerifyLosses(kNumSentPackets, lost3, arraysize(lost3));
   EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
@@ -175,7 +175,7 @@ TEST_F(TcpLossAlgorithmTest, DontEarlyRetransmitNeuteredPacket) {
   unacked_packets_.IncreaseLargestObserved(2);
   unacked_packets_.RemoveFromInFlight(2);
   unacked_packets_.NackPacket(1, 1);
-  VerifyLosses(2, NULL, 0);
+  VerifyLosses(2, nullptr, 0);
   EXPECT_EQ(QuicTime::Zero(), loss_algorithm_.GetLossTimeout());
 }
 

@@ -37,7 +37,7 @@
 #include "core/events/EventTarget.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 ScopedEventQueue* ScopedEventQueue::s_instance = 0;
 
@@ -69,7 +69,7 @@ void ScopedEventQueue::enqueueEventDispatchMediator(PassRefPtrWillBeRawPtr<Event
 
 void ScopedEventQueue::dispatchAllEvents()
 {
-    WillBeHeapVector<RefPtrWillBeMember<EventDispatchMediator> > queuedEventDispatchMediators;
+    WillBeHeapVector<RefPtrWillBeMember<EventDispatchMediator>> queuedEventDispatchMediators;
     queuedEventDispatchMediators.swap(m_queuedEventDispatchMediators);
 
     for (size_t i = 0; i < queuedEventDispatchMediators.size(); i++)

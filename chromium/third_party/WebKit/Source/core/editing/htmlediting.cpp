@@ -26,8 +26,8 @@
 #include "config.h"
 #include "core/editing/htmlediting.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLElementFactory.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
@@ -50,6 +50,7 @@
 #include "core/html/HTMLLIElement.h"
 #include "core/html/HTMLOListElement.h"
 #include "core/html/HTMLParagraphElement.h"
+#include "core/html/HTMLSpanElement.h"
 #include "core/html/HTMLTableCellElement.h"
 #include "core/html/HTMLUListElement.h"
 #include "core/rendering/RenderObject.h"
@@ -58,7 +59,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -113,22 +114,21 @@ int comparePositions(const VisiblePosition& a, const VisiblePosition& b)
     return comparePositions(a.deepEquivalent(), b.deepEquivalent());
 }
 
-Node* highestEditableRoot(const Position& position, EditableType editableType)
+ContainerNode* highestEditableRoot(const Position& position, EditableType editableType)
 {
-    Node* node = position.deprecatedNode();
-    if (!node)
+    if (position.isNull())
         return 0;
 
-    Node* highestRoot = editableRootForPosition(position, editableType);
+    ContainerNode* highestRoot = editableRootForPosition(position, editableType);
     if (!highestRoot)
         return 0;
 
     if (isHTMLBodyElement(*highestRoot))
         return highestRoot;
 
-    node = highestRoot->parentNode();
+    ContainerNode* node = highestRoot->parentNode();
     while (node) {
-        if (node->rendererIsEditable(editableType))
+        if (node->hasEditableStyle(editableType))
             highestRoot = node;
         if (isHTMLBodyElement(*node))
             break;
@@ -138,10 +138,10 @@ Node* highestEditableRoot(const Position& position, EditableType editableType)
     return highestRoot;
 }
 
-Node* lowestEditableAncestor(Node* node)
+Element* lowestEditableAncestor(Node* node)
 {
     while (node) {
-        if (node->rendererIsEditable())
+        if (node->hasEditableStyle())
             return node->rootEditableElement();
         if (isHTMLBodyElement(*node))
             break;
@@ -161,10 +161,10 @@ bool isEditablePosition(const Position& p, EditableType editableType, EUpdateSty
     else
         ASSERT(updateStyle == DoNotUpdateStyle);
 
-    if (isRenderedTableElement(node))
+    if (isRenderedHTMLTableElement(node))
         node = node->parentNode();
 
-    return node->rendererIsEditable(editableType);
+    return node->hasEditableStyle(editableType);
 }
 
 bool isAtUnsplittableElement(const Position& pos)
@@ -180,7 +180,7 @@ bool isRichlyEditablePosition(const Position& p, EditableType editableType)
     if (!node)
         return false;
 
-    if (isRenderedTableElement(node))
+    if (isRenderedHTMLTableElement(node))
         node = node->parentNode();
 
     return node->rendererIsRichlyEditable(editableType);
@@ -192,7 +192,7 @@ Element* editableRootForPosition(const Position& p, EditableType editableType)
     if (!node)
         return 0;
 
-    if (isRenderedTableElement(node))
+    if (isRenderedHTMLTableElement(node))
         node = node->parentNode();
 
     return node->rootEditableElement(editableType);
@@ -258,10 +258,10 @@ Position previousVisuallyDistinctCandidate(const Position& position)
     return Position();
 }
 
-VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& position, Node* highestRoot)
+VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& position, ContainerNode* highestRoot)
 {
     // position falls before highestRoot.
-    if (comparePositions(position, firstPositionInNode(highestRoot)) == -1 && highestRoot->rendererIsEditable())
+    if (comparePositions(position, firstPositionInNode(highestRoot)) == -1 && highestRoot->hasEditableStyle())
         return VisiblePosition(firstPositionInNode(highestRoot));
 
     Position editablePosition = position;
@@ -283,7 +283,7 @@ VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position& 
     return VisiblePosition(editablePosition);
 }
 
-VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position& position, Node* highestRoot)
+VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position& position, ContainerNode* highestRoot)
 {
     return VisiblePosition(lastEditablePositionBeforePositionInRoot(position, highestRoot));
 }
@@ -334,12 +334,29 @@ Element* enclosingBlock(Node* node, EditingBoundaryCrossingRule rule)
     return enclosingNode && enclosingNode->isElementNode() ? toElement(enclosingNode) : 0;
 }
 
+Element* enclosingBlockFlowElement(Node& node)
+{
+    if (isBlockFlowElement(node))
+        return &toElement(node);
+
+    for (Node* n = node.parentNode(); n; n = n->parentNode()) {
+        if (isBlockFlowElement(*n) || isHTMLBodyElement(*n))
+            return toElement(n);
+    }
+    return 0;
+}
+
+bool inSameContainingBlockFlowElement(Node* a, Node* b)
+{
+    return a && b && enclosingBlockFlowElement(*a) == enclosingBlockFlowElement(*b);
+}
+
 TextDirection directionOfEnclosingBlock(const Position& position)
 {
-    Node* enclosingBlockNode = enclosingBlock(position.containerNode());
-    if (!enclosingBlockNode)
+    Element* enclosingBlockElement = enclosingBlock(position.containerNode());
+    if (!enclosingBlockElement)
         return LTR;
-    RenderObject* renderer = enclosingBlockNode->renderer();
+    RenderObject* renderer = enclosingBlockElement->renderer();
     return renderer ? renderer->style()->direction() : LTR;
 }
 
@@ -408,18 +425,15 @@ const String& nonBreakingSpaceString()
 }
 
 // FIXME: need to dump this
-bool isSpecialElement(const Node *n)
+static bool isSpecialHTMLElement(const Node& n)
 {
-    if (!n)
+    if (!n.isHTMLElement())
         return false;
 
-    if (!n->isHTMLElement())
-        return false;
-
-    if (n->isLink())
+    if (n.isLink())
         return true;
 
-    RenderObject* renderer = n->renderer();
+    RenderObject* renderer = n.renderer();
     if (!renderer)
         return false;
 
@@ -432,39 +446,43 @@ bool isSpecialElement(const Node *n)
     return false;
 }
 
-static Node* firstInSpecialElement(const Position& pos)
+static HTMLElement* firstInSpecialElement(const Position& pos)
 {
-    Node* rootEditableElement = pos.containerNode()->rootEditableElement();
-    for (Node* n = pos.deprecatedNode(); n && n->rootEditableElement() == rootEditableElement; n = n->parentNode())
-        if (isSpecialElement(n)) {
+    Element* rootEditableElement = pos.containerNode()->rootEditableElement();
+    for (Node* n = pos.deprecatedNode(); n && n->rootEditableElement() == rootEditableElement; n = n->parentNode()) {
+        if (isSpecialHTMLElement(*n)) {
+            HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = VisiblePosition(pos, DOWNSTREAM);
-            VisiblePosition firstInElement = VisiblePosition(firstPositionInOrBeforeNode(n), DOWNSTREAM);
-            if (isRenderedTable(n) && vPos == firstInElement.next())
-                return n;
+            VisiblePosition firstInElement = VisiblePosition(firstPositionInOrBeforeNode(specialElement), DOWNSTREAM);
+            if (isRenderedTableElement(specialElement) && vPos == firstInElement.next())
+                return specialElement;
             if (vPos == firstInElement)
-                return n;
+                return specialElement;
         }
+    }
     return 0;
 }
 
-static Node* lastInSpecialElement(const Position& pos)
+static HTMLElement* lastInSpecialElement(const Position& pos)
 {
-    Node* rootEditableElement = pos.containerNode()->rootEditableElement();
-    for (Node* n = pos.deprecatedNode(); n && n->rootEditableElement() == rootEditableElement; n = n->parentNode())
-        if (isSpecialElement(n)) {
+    Element* rootEditableElement = pos.containerNode()->rootEditableElement();
+    for (Node* n = pos.deprecatedNode(); n && n->rootEditableElement() == rootEditableElement; n = n->parentNode()) {
+        if (isSpecialHTMLElement(*n)) {
+            HTMLElement* specialElement = toHTMLElement(n);
             VisiblePosition vPos = VisiblePosition(pos, DOWNSTREAM);
-            VisiblePosition lastInElement = VisiblePosition(lastPositionInOrAfterNode(n), DOWNSTREAM);
-            if (isRenderedTable(n) && vPos == lastInElement.previous())
-                return n;
+            VisiblePosition lastInElement = VisiblePosition(lastPositionInOrAfterNode(specialElement), DOWNSTREAM);
+            if (isRenderedTableElement(specialElement) && vPos == lastInElement.previous())
+                return specialElement;
             if (vPos == lastInElement)
-                return n;
+                return specialElement;
         }
+    }
     return 0;
 }
 
-Position positionBeforeContainingSpecialElement(const Position& pos, Node** containingSpecialElement)
+Position positionBeforeContainingSpecialElement(const Position& pos, HTMLElement** containingSpecialElement)
 {
-    Node* n = firstInSpecialElement(pos);
+    HTMLElement* n = firstInSpecialElement(pos);
     if (!n)
         return pos;
     Position result = positionInParentBeforeNode(*n);
@@ -475,9 +493,9 @@ Position positionBeforeContainingSpecialElement(const Position& pos, Node** cont
     return result;
 }
 
-Position positionAfterContainingSpecialElement(const Position& pos, Node **containingSpecialElement)
+Position positionAfterContainingSpecialElement(const Position& pos, HTMLElement** containingSpecialElement)
 {
-    Node* n = lastInSpecialElement(pos);
+    HTMLElement* n = lastInSpecialElement(pos);
     if (!n)
         return pos;
     Position result = positionInParentAfterNode(*n);
@@ -488,20 +506,20 @@ Position positionAfterContainingSpecialElement(const Position& pos, Node **conta
     return result;
 }
 
-Node* isFirstPositionAfterTable(const VisiblePosition& visiblePosition)
+Element* isFirstPositionAfterTable(const VisiblePosition& visiblePosition)
 {
     Position upstream(visiblePosition.deepEquivalent().upstream());
-    if (isRenderedTable(upstream.deprecatedNode()) && upstream.atLastEditingPositionForNode())
-        return upstream.deprecatedNode();
+    if (isRenderedTableElement(upstream.deprecatedNode()) && upstream.atLastEditingPositionForNode())
+        return toElement(upstream.deprecatedNode());
 
     return 0;
 }
 
-Node* isLastPositionBeforeTable(const VisiblePosition& visiblePosition)
+Element* isLastPositionBeforeTable(const VisiblePosition& visiblePosition)
 {
     Position downstream(visiblePosition.deepEquivalent().downstream());
-    if (isRenderedTable(downstream.deprecatedNode()) && downstream.atFirstEditingPositionForNode())
-        return downstream.deprecatedNode();
+    if (isRenderedTableElement(downstream.deprecatedNode()) && downstream.atFirstEditingPositionForNode())
+        return toElement(downstream.deprecatedNode());
 
     return 0;
 }
@@ -538,7 +556,7 @@ PassRefPtrWillBeRawPtr<Range> createRange(Document& document, const VisiblePosit
     return selectedRange.release();
 }
 
-bool isListElement(Node* n)
+bool isHTMLListElement(Node* n)
 {
     return (n && (isHTMLUListElement(*n) || isHTMLOListElement(*n) || isHTMLDListElement(*n)));
 }
@@ -548,18 +566,19 @@ bool isListItem(const Node* n)
     return n && n->renderer() && n->renderer()->isListItem();
 }
 
-Node* enclosingNodeWithTag(const Position& p, const QualifiedName& tagName)
+Element* enclosingElementWithTag(const Position& p, const QualifiedName& tagName)
 {
     if (p.isNull())
         return 0;
 
-    Node* root = highestEditableRoot(p);
-    for (Node* n = p.deprecatedNode(); n; n = n->parentNode()) {
-        if (root && !n->rendererIsEditable())
+    ContainerNode* root = highestEditableRoot(p);
+    Element* ancestor = p.deprecatedNode()->isElementNode() ? toElement(p.deprecatedNode()) : p.deprecatedNode()->parentElement();
+    for (; ancestor; ancestor = ancestor->parentElement()) {
+        if (root && !ancestor->hasEditableStyle())
             continue;
-        if (n->hasTagName(tagName))
-            return n;
-        if (n == root)
+        if (ancestor->hasTagName(tagName))
+            return ancestor;
+        if (ancestor == root)
             return 0;
     }
 
@@ -573,11 +592,11 @@ Node* enclosingNodeOfType(const Position& p, bool (*nodeIsOfType)(const Node*), 
     if (p.isNull())
         return 0;
 
-    Node* root = rule == CannotCrossEditingBoundary ? highestEditableRoot(p) : 0;
+    ContainerNode* root = rule == CannotCrossEditingBoundary ? highestEditableRoot(p) : 0;
     for (Node* n = p.deprecatedNode(); n; n = n->parentNode()) {
         // Don't return a non-editable node if the input position was editable, since
         // the callers from editing will no doubt want to perform editing inside the returned node.
-        if (root && !n->rendererIsEditable())
+        if (root && !n->hasEditableStyle())
             continue;
         if (nodeIsOfType(n))
             return n;
@@ -590,10 +609,10 @@ Node* enclosingNodeOfType(const Position& p, bool (*nodeIsOfType)(const Node*), 
 
 Node* highestEnclosingNodeOfType(const Position& p, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule rule, Node* stayWithin)
 {
-    Node* highest = 0;
-    Node* root = rule == CannotCrossEditingBoundary ? highestEditableRoot(p) : 0;
+    Node* highest = nullptr;
+    ContainerNode* root = rule == CannotCrossEditingBoundary ? highestEditableRoot(p) : nullptr;
     for (Node* n = p.containerNode(); n && n != stayWithin; n = n->parentNode()) {
-        if (root && !n->rendererIsEditable())
+        if (root && !n->hasEditableStyle())
             continue;
         if (nodeIsOfType(n))
             highest = n;
@@ -620,8 +639,8 @@ static bool hasARenderedDescendant(Node* node, Node* excludedNode)
 
 Node* highestNodeToRemoveInPruning(Node* node, Node* excludeNode)
 {
-    Node* previousNode = 0;
-    Node* rootEditableElement = node ? node->rootEditableElement() : 0;
+    Node* previousNode = nullptr;
+    Element* rootEditableElement = node ? node->rootEditableElement() : nullptr;
     for (; node; node = node->parentNode()) {
         if (RenderObject* renderer = node->renderer()) {
             if (!renderer->canHaveChildren() || hasARenderedDescendant(node, previousNode) || rootEditableElement == node || excludeNode == node)
@@ -632,7 +651,7 @@ Node* highestNodeToRemoveInPruning(Node* node, Node* excludeNode)
     return 0;
 }
 
-Node* enclosingTableCell(const Position& p)
+Element* enclosingTableCell(const Position& p)
 {
     return toElement(enclosingNodeOfType(p, isTableCell));
 }
@@ -642,10 +661,11 @@ Element* enclosingAnchorElement(const Position& p)
     if (p.isNull())
         return 0;
 
-    Node* node = p.deprecatedNode();
-    while (node && !(node->isElementNode() && node->isLink()))
-        node = node->parentNode();
-    return toElement(node);
+    for (Element* ancestor = ElementTraversal::firstAncestorOrSelf(*p.deprecatedNode()); ancestor; ancestor = ElementTraversal::firstAncestor(*ancestor)) {
+        if (ancestor->isLink())
+            return ancestor;
+    }
+    return 0;
 }
 
 HTMLElement* enclosingList(Node* node)
@@ -653,7 +673,7 @@ HTMLElement* enclosingList(Node* node)
     if (!node)
         return 0;
 
-    Node* root = highestEditableRoot(firstPositionInOrBeforeNode(node));
+    ContainerNode* root = highestEditableRoot(firstPositionInOrBeforeNode(node));
 
     for (ContainerNode* n = node->parentNode(); n; n = n->parentNode()) {
         if (isHTMLUListElement(*n) || isHTMLOListElement(*n))
@@ -671,11 +691,11 @@ Node* enclosingListChild(Node *node)
         return 0;
     // Check for a list item element, or for a node whose parent is a list element. Such a node
     // will appear visually as a list item (but without a list marker)
-    Node* root = highestEditableRoot(firstPositionInOrBeforeNode(node));
+    ContainerNode* root = highestEditableRoot(firstPositionInOrBeforeNode(node));
 
     // FIXME: This function is inappropriately named if it starts with node instead of node->parentNode()
     for (Node* n = node; n && n->parentNode(); n = n->parentNode()) {
-        if (isHTMLLIElement(*n) || (isListElement(n->parentNode()) && n != root))
+        if (isHTMLLIElement(*n) || (isHTMLListElement(n->parentNode()) && n != root))
             return n;
         if (n == root || isTableCell(n))
             return 0;
@@ -701,7 +721,7 @@ Node* enclosingEmptyListItem(const VisiblePosition& visiblePos)
     return listChildNode;
 }
 
-HTMLElement* outermostEnclosingList(Node* node, Node* rootList)
+HTMLElement* outermostEnclosingList(Node* node, HTMLElement* rootList)
 {
     HTMLElement* list = enclosingList(node);
     if (!list)
@@ -722,18 +742,18 @@ bool canMergeLists(Element* firstList, Element* secondList)
         return false;
 
     return firstList->hasTagName(secondList->tagQName()) // make sure the list types match (ol vs. ul)
-    && firstList->rendererIsEditable() && secondList->rendererIsEditable() // both lists are editable
+    && firstList->hasEditableStyle() && secondList->hasEditableStyle() // both lists are editable
     && firstList->rootEditableElement() == secondList->rootEditableElement() // don't cross editing boundaries
     && isVisiblyAdjacent(positionInParentAfterNode(*firstList), positionInParentBeforeNode(*secondList));
     // Make sure there is no visible content between this li and the previous list
 }
 
-bool isRenderedTableElement(const Node* node)
+bool isRenderedHTMLTableElement(const Node* node)
 {
     return isHTMLTableElement(*node) && node->renderer();
 }
 
-bool isRenderedTable(const Node* node)
+bool isRenderedTableElement(const Node* node)
 {
     if (!node || !node->isElementNode())
         return false;
@@ -795,22 +815,22 @@ PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document& docu
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<HTMLElement> createBreakElement(Document& document)
+PassRefPtrWillBeRawPtr<HTMLBRElement> createBreakElement(Document& document)
 {
     return HTMLBRElement::create(document);
 }
 
-PassRefPtrWillBeRawPtr<HTMLElement> createOrderedListElement(Document& document)
+PassRefPtrWillBeRawPtr<HTMLOListElement> createOrderedListElement(Document& document)
 {
     return HTMLOListElement::create(document);
 }
 
-PassRefPtrWillBeRawPtr<HTMLElement> createUnorderedListElement(Document& document)
+PassRefPtrWillBeRawPtr<HTMLUListElement> createUnorderedListElement(Document& document)
 {
     return HTMLUListElement::create(document);
 }
 
-PassRefPtrWillBeRawPtr<HTMLElement> createListItemElement(Document& document)
+PassRefPtrWillBeRawPtr<HTMLLIElement> createListItemElement(Document& document)
 {
     return HTMLLIElement::create(document);
 }
@@ -825,30 +845,30 @@ PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document& document, const 
     return HTMLElementFactory::createHTMLElement(tagName, document, 0, false);
 }
 
-bool isTabSpanNode(const Node* node)
+bool isTabHTMLSpanElement(const Node* node)
 {
-    if (!isHTMLSpanElement(node) || toElement(node)->getAttribute(classAttr) != AppleTabSpanClass)
+    if (!isHTMLSpanElement(node) || toHTMLSpanElement(node)->getAttribute(classAttr) != AppleTabSpanClass)
         return false;
     UseCounter::count(node->document(), UseCounter::EditingAppleTabSpanClass);
     return true;
 }
 
-bool isTabSpanTextNode(const Node* node)
+bool isTabHTMLSpanElementTextNode(const Node* node)
 {
-    return node && node->isTextNode() && node->parentNode() && isTabSpanNode(node->parentNode());
+    return node && node->isTextNode() && node->parentNode() && isTabHTMLSpanElement(node->parentNode());
 }
 
-Node* tabSpanNode(const Node* node)
+HTMLSpanElement* tabSpanElement(const Node* node)
 {
-    return isTabSpanTextNode(node) ? node->parentNode() : 0;
+    return isTabHTMLSpanElementTextNode(node) ? toHTMLSpanElement(node->parentNode()) : 0;
 }
 
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document& document, PassRefPtrWillBeRawPtr<Node> prpTabTextNode)
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& document, PassRefPtrWillBeRawPtr<Text> prpTabTextNode)
 {
-    RefPtrWillBeRawPtr<Node> tabTextNode = prpTabTextNode;
+    RefPtrWillBeRawPtr<Text> tabTextNode = prpTabTextNode;
 
     // Make the span to hold the tab.
-    RefPtrWillBeRawPtr<Element> spanElement = document.createElement(spanTag, false);
+    RefPtrWillBeRawPtr<HTMLSpanElement> spanElement = toHTMLSpanElement(document.createElement(spanTag, false).get());
     spanElement->setAttribute(classAttr, AppleTabSpanClass);
     spanElement->setAttribute(styleAttr, "white-space:pre");
 
@@ -861,14 +881,19 @@ PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document& document, PassRef
     return spanElement.release();
 }
 
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document& document, const String& tabText)
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& document, const String& tabText)
 {
     return createTabSpanElement(document, document.createTextNode(tabText));
 }
 
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document& document)
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document& document)
 {
-    return createTabSpanElement(document, PassRefPtrWillBeRawPtr<Node>(nullptr));
+    return createTabSpanElement(document, PassRefPtrWillBeRawPtr<Text>(nullptr));
+}
+
+PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document& document)
+{
+    return toHTMLBRElement(document.createElement(brTag, false).get());
 }
 
 bool isNodeRendered(const Node *node)
@@ -883,11 +908,78 @@ bool isNodeRendered(const Node *node)
     return renderer->style()->visibility() == VISIBLE;
 }
 
+// return first preceding DOM position rendered at a different location, or "this"
+static Position previousCharacterPosition(const Position& position, EAffinity affinity)
+{
+    if (position.isNull())
+        return Position();
+
+    Element* fromRootEditableElement = position.anchorNode()->rootEditableElement();
+
+    bool atStartOfLine = isStartOfLine(VisiblePosition(position, affinity));
+    bool rendered = position.isCandidate();
+
+    Position currentPos = position;
+    while (!currentPos.atStartOfTree()) {
+        currentPos = currentPos.previous();
+
+        if (currentPos.anchorNode()->rootEditableElement() != fromRootEditableElement)
+            return position;
+
+        if (atStartOfLine || !rendered) {
+            if (currentPos.isCandidate())
+                return currentPos;
+        } else if (position.rendersInDifferentPosition(currentPos)) {
+            return currentPos;
+        }
+    }
+
+    return position;
+}
+
+// This assumes that it starts in editable content.
+Position leadingWhitespacePosition(const Position& position, EAffinity affinity, WhitespacePositionOption option)
+{
+    ASSERT(isEditablePosition(position, ContentIsEditable, DoNotUpdateStyle));
+    if (position.isNull())
+        return Position();
+
+    if (isHTMLBRElement(*position.upstream().anchorNode()))
+        return Position();
+
+    Position prev = previousCharacterPosition(position, affinity);
+    if (prev != position && inSameContainingBlockFlowElement(prev.anchorNode(), position.anchorNode()) && prev.anchorNode()->isTextNode()) {
+        String string = toText(prev.anchorNode())->data();
+        UChar previousCharacter = string[prev.deprecatedEditingOffset()];
+        bool isSpace = option == ConsiderNonCollapsibleWhitespace ? (isSpaceOrNewline(previousCharacter) || previousCharacter == noBreakSpace) : isCollapsibleWhitespace(previousCharacter);
+        if (isSpace && isEditablePosition(prev))
+            return prev;
+    }
+
+    return Position();
+}
+
+// This assumes that it starts in editable content.
+Position trailingWhitespacePosition(const Position& position, EAffinity, WhitespacePositionOption option)
+{
+    ASSERT(isEditablePosition(position, ContentIsEditable, DoNotUpdateStyle));
+    if (position.isNull())
+        return Position();
+
+    VisiblePosition visiblePosition(position);
+    UChar characterAfterVisiblePosition = visiblePosition.characterAfter();
+    bool isSpace = option == ConsiderNonCollapsibleWhitespace ? (isSpaceOrNewline(characterAfterVisiblePosition) || characterAfterVisiblePosition == noBreakSpace) : isCollapsibleWhitespace(characterAfterVisiblePosition);
+    // The space must not be in another paragraph and it must be editable.
+    if (isSpace && !isEndOfParagraph(visiblePosition) && visiblePosition.next(CannotCrossEditingBoundary).isNotNull())
+        return position;
+    return Position();
+}
+
 unsigned numEnclosingMailBlockquotes(const Position& p)
 {
     unsigned num = 0;
     for (Node* n = p.deprecatedNode(); n; n = n->parentNode())
-        if (isMailBlockquote(n))
+        if (isMailHTMLBlockquoteElement(n))
             num++;
 
     return num;
@@ -923,12 +1015,13 @@ void updatePositionForNodeRemoval(Position& position, Node& node)
     }
 }
 
-bool isMailBlockquote(const Node *node)
+bool isMailHTMLBlockquoteElement(const Node* node)
 {
-    if (!node || !node->hasTagName(blockquoteTag))
+    if (!node || !node->isHTMLElement())
         return false;
 
-    return toElement(node)->getAttribute("type") == "cite";
+    const HTMLElement& element = toHTMLElement(*node);
+    return element.hasTagName(blockquoteTag) && element.getAttribute("type") == "cite";
 }
 
 int caretMinOffset(const Node* n)
@@ -986,7 +1079,7 @@ VisibleSelection selectionForParagraphIteration(const VisibleSelection& original
     // if the start of the selection is inside that table, then the last paragraph
     // that we'll want modify is the last one inside the table, not the table itself
     // (a table is itself a paragraph).
-    if (Node* table = isFirstPositionAfterTable(endOfSelection))
+    if (Element* table = isFirstPositionAfterTable(endOfSelection))
         if (startOfSelection.deepEquivalent().deprecatedNode()->isDescendantOf(table))
             newSelection = VisibleSelection(startOfSelection, endOfSelection.previous(CannotCrossEditingBoundary));
 
@@ -994,7 +1087,7 @@ VisibleSelection selectionForParagraphIteration(const VisibleSelection& original
     // and if the end of the selection is inside that table, then the first paragraph
     // we'll want to modify is the first one inside the table, not the paragraph
     // containing the table itself.
-    if (Node* table = isLastPositionBeforeTable(startOfSelection))
+    if (Element* table = isLastPositionBeforeTable(startOfSelection))
         if (endOfSelection.deepEquivalent().deprecatedNode()->isDescendantOf(table))
             newSelection = VisibleSelection(startOfSelection.next(CannotCrossEditingBoundary), endOfSelection);
 
@@ -1087,17 +1180,27 @@ bool areIdenticalElements(const Node* first, const Node* second)
 
 bool isNonTableCellHTMLBlockElement(const Node* node)
 {
-    return node->hasTagName(listingTag)
-        || node->hasTagName(olTag)
-        || node->hasTagName(preTag)
-        || node->hasTagName(tableTag)
-        || node->hasTagName(ulTag)
-        || node->hasTagName(xmpTag)
-        || node->hasTagName(h1Tag)
-        || node->hasTagName(h2Tag)
-        || node->hasTagName(h3Tag)
-        || node->hasTagName(h4Tag)
-        || node->hasTagName(h5Tag);
+    if (!node->isHTMLElement())
+        return false;
+
+    const HTMLElement& element = toHTMLElement(*node);
+    return element.hasTagName(listingTag)
+        || element.hasTagName(olTag)
+        || element.hasTagName(preTag)
+        || element.hasTagName(tableTag)
+        || element.hasTagName(ulTag)
+        || element.hasTagName(xmpTag)
+        || element.hasTagName(h1Tag)
+        || element.hasTagName(h2Tag)
+        || element.hasTagName(h3Tag)
+        || element.hasTagName(h4Tag)
+        || element.hasTagName(h5Tag);
+}
+
+bool isBlockFlowElement(const Node& node)
+{
+    RenderObject* renderer = node.renderer();
+    return node.isElementNode() && renderer && renderer->isRenderBlockFlow();
 }
 
 Position adjustedSelectionStartForStyleComputation(const VisibleSelection& selection)
@@ -1125,4 +1228,4 @@ Position adjustedSelectionStartForStyleComputation(const VisibleSelection& selec
     return visiblePosition.deepEquivalent().downstream();
 }
 
-} // namespace WebCore
+} // namespace blink

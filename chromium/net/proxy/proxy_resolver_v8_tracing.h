@@ -42,20 +42,19 @@ class NET_EXPORT_PRIVATE ProxyResolverV8Tracing
                          ProxyResolverErrorObserver* error_observer,
                          NetLog* net_log);
 
-  virtual ~ProxyResolverV8Tracing();
+  ~ProxyResolverV8Tracing() override;
 
   // ProxyResolver implementation:
-  virtual int GetProxyForURL(const GURL& url,
-                             ProxyInfo* results,
-                             const CompletionCallback& callback,
-                             RequestHandle* request,
-                             const BoundNetLog& net_log) OVERRIDE;
-  virtual void CancelRequest(RequestHandle request) OVERRIDE;
-  virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE;
-  virtual void CancelSetPacScript() OVERRIDE;
-  virtual int SetPacScript(
-      const scoped_refptr<ProxyResolverScriptData>& script_data,
-      const CompletionCallback& callback) OVERRIDE;
+  int GetProxyForURL(const GURL& url,
+                     ProxyInfo* results,
+                     const CompletionCallback& callback,
+                     RequestHandle* request,
+                     const BoundNetLog& net_log) override;
+  void CancelRequest(RequestHandle request) override;
+  LoadState GetLoadState(RequestHandle request) const override;
+  void CancelSetPacScript() override;
+  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& script_data,
+                   const CompletionCallback& callback) override;
 
  private:
   class Job;

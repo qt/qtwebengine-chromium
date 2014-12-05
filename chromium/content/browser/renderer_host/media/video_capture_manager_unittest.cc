@@ -48,19 +48,20 @@ class MockFrameObserver : public VideoCaptureControllerEventHandler {
 
   virtual void OnBufferCreated(const VideoCaptureControllerID& id,
                                base::SharedMemoryHandle handle,
-                               int length, int buffer_id) OVERRIDE {}
+                               int length, int buffer_id) override {}
   virtual void OnBufferDestroyed(const VideoCaptureControllerID& id,
-                               int buffer_id) OVERRIDE {}
+                               int buffer_id) override {}
   virtual void OnBufferReady(const VideoCaptureControllerID& id,
                              int buffer_id,
                              const media::VideoCaptureFormat& format,
-                             base::TimeTicks timestamp) OVERRIDE {}
+                             const gfx::Rect& visible_rect,
+                             base::TimeTicks timestamp) override {}
   virtual void OnMailboxBufferReady(const VideoCaptureControllerID& id,
                                     int buffer_id,
                                     const gpu::MailboxHolder& mailbox_holder,
                                     const media::VideoCaptureFormat& format,
-                                    base::TimeTicks timestamp) OVERRIDE {}
-  virtual void OnEnded(const VideoCaptureControllerID& id) OVERRIDE {}
+                                    base::TimeTicks timestamp) override {}
+  virtual void OnEnded(const VideoCaptureControllerID& id) override {}
 
   void OnGotControllerCallback(VideoCaptureControllerID) {}
 };
@@ -69,10 +70,10 @@ class MockFrameObserver : public VideoCaptureControllerEventHandler {
 class VideoCaptureManagerTest : public testing::Test {
  public:
   VideoCaptureManagerTest() : next_client_id_(1) {}
-  virtual ~VideoCaptureManagerTest() {}
+  ~VideoCaptureManagerTest() override {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     listener_.reset(new MockMediaStreamProviderListener());
     message_loop_.reset(new base::MessageLoopForIO);
     io_thread_.reset(new BrowserThreadImpl(BrowserThread::IO,
@@ -88,7 +89,7 @@ class VideoCaptureManagerTest : public testing::Test {
     frame_observer_.reset(new MockFrameObserver());
   }
 
-  virtual void TearDown() OVERRIDE {}
+  void TearDown() override {}
 
   void OnGotControllerCallback(
       VideoCaptureControllerID id,

@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/html/forms/SearchInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/events/KeyboardEvent.h"
@@ -42,7 +42,7 @@
 #include "core/rendering/RenderSearchField.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -73,11 +73,6 @@ const AtomicString& SearchInputType::formControlType() const
 }
 
 bool SearchInputType::shouldRespectSpeechAttribute()
-{
-    return true;
-}
-
-bool SearchInputType::isSearchField() const
 {
     return true;
 }
@@ -184,4 +179,4 @@ bool SearchInputType::supportsInputModeAttribute() const
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

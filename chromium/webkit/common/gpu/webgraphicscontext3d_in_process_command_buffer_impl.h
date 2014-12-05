@@ -22,12 +22,12 @@ class ContextSupport;
 namespace gles2 {
 class GLES2Interface;
 class GLES2Implementation;
+struct ContextCreationAttribHelper;
 }
 }
 
 namespace gpu {
 class GLInProcessContext;
-struct GLInProcessContextAttribs;
 }
 
 namespace webkit {
@@ -36,6 +36,10 @@ namespace gpu {
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
     : public WebGraphicsContext3DImpl {
  public:
+  enum MappedMemoryReclaimLimit {
+    kNoLimit = 0,
+  };
+
   static scoped_ptr<WebGraphicsContext3DInProcessCommandBufferImpl>
       CreateViewContext(
           const blink::WebGraphicsContext3D::Attributes& attributes,
@@ -54,16 +58,12 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
 
   virtual ~WebGraphicsContext3DInProcessCommandBufferImpl();
 
-  // Convert WebGL context creation attributes into GLInProcessContext / EGL
-  // size requests.
-  static void ConvertAttributes(
-      const blink::WebGraphicsContext3D::Attributes& attributes,
-      ::gpu::GLInProcessContextAttribs* output_attribs);
+  size_t GetMappedMemoryLimit();
+
+  bool InitializeOnCurrentThread();
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
-  virtual bool makeContextCurrent();
-
   virtual bool isContextLost();
 
   virtual WGC3Denum getGraphicsResetStatusARB();
@@ -90,7 +90,7 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DInProcessCommandBufferImpl
   // instead of going through WebGraphicsContext3D.
   void ClearContext();
 
-  ::gpu::GLInProcessContextAttribs attribs_;
+  ::gpu::gles2::ContextCreationAttribHelper attribs_;
   bool share_resources_;
   bool webgl_context_;
 

@@ -11,21 +11,25 @@
 namespace tracked_objects {
 
 
-ScopedProfile::ScopedProfile(const Location& location)
-    : birth_(ThreadData::TallyABirthIfActive(location)),
-      start_of_run_(ThreadData::NowForStartOfRun(birth_)) {
+ScopedProfile::ScopedProfile(const Location& location, Mode mode)
+    : birth_(NULL) {
+  if (mode == DISABLED)
+    return;
+
+  birth_ = ThreadData::TallyABirthIfActive(location);
+  if (!birth_)
+    return;
+
+  ThreadData::PrepareForStartOfRun(birth_);
+  stopwatch_.Start();
 }
 
 ScopedProfile::~ScopedProfile() {
-  StopClockAndTally();
-}
-
-void ScopedProfile::StopClockAndTally() {
   if (!birth_)
     return;
-  ThreadData::TallyRunInAScopedRegionIfTracking(birth_, start_of_run_,
-                                                ThreadData::NowForEndOfRun());
-  birth_ = NULL;
+
+  stopwatch_.Stop();
+  ThreadData::TallyRunInAScopedRegionIfTracking(birth_, stopwatch_);
 }
 
 }  // namespace tracked_objects

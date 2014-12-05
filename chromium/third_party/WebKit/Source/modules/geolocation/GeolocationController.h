@@ -33,14 +33,13 @@
 #include "wtf/HashSet.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
-class GeolocationInspectorAgent;
 class GeolocationClient;
 class GeolocationError;
 class GeolocationPosition;
 
-class GeolocationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
+class GeolocationController final : public NoBaseWillBeGarbageCollectedFinalized<GeolocationController>, public WillBeHeapSupplement<LocalFrame>, public PageLifecycleObserver {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(GeolocationController);
     WTF_MAKE_NONCOPYABLE(GeolocationController);
 public:
@@ -64,15 +63,13 @@ public:
     GeolocationClient* client() { return m_client; }
 
     // Inherited from PageLifecycleObserver.
-    virtual void pageVisibilityChanged() OVERRIDE;
+    virtual void pageVisibilityChanged() override;
 
     static const char* supplementName();
     static GeolocationController* from(LocalFrame* frame) { return static_cast<GeolocationController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
 
     // Inherited from Supplement.
-    virtual void trace(Visitor*) OVERRIDE;
-    virtual void willBeDestroyed() OVERRIDE;
-    virtual void persistentHostHasBeenDestroyed() OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     GeolocationController(LocalFrame&, GeolocationClient*);
@@ -80,7 +77,7 @@ private:
     void startUpdatingIfNeeded();
     void stopUpdatingIfNeeded();
 
-    GeolocationClient* m_client;
+    RawPtrWillBeMember<GeolocationClient> m_client;
     bool m_hasClientForTest;
 
     PersistentWillBeMember<GeolocationPosition> m_lastPosition;
@@ -89,9 +86,8 @@ private:
     ObserversSet m_observers;
     ObserversSet m_highAccuracyObservers;
     bool m_isClientUpdating;
-    GeolocationInspectorAgent* m_inspectorAgent;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GeolocationController_h

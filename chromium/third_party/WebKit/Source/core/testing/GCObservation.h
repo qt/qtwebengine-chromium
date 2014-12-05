@@ -31,21 +31,22 @@
 #ifndef GCObservation_h
 #define GCObservation_h
 
-#include "bindings/v8/ScopedPersistent.h"
+#include "bindings/core/v8/ScopedPersistent.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
-class GCObservation : public RefCountedWillBeGarbageCollectedFinalized<GCObservation> {
+class GCObservation final : public GarbageCollectedFinalized<GCObservation>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<GCObservation> create(v8::Handle<v8::Value> observedValue)
+    static GCObservation* create(v8::Handle<v8::Value> observedValue)
     {
-        return adoptRefWillBeNoop(new GCObservation(observedValue));
+        return new GCObservation(observedValue);
     }
-    ~GCObservation() { }
 
     // Caution: It is only feasible to determine whether an object was
     // "near death"; it may have been kept alive through a weak
@@ -63,6 +64,6 @@ private:
     bool m_collected;
 };
 
-}
+} // namespace blink
 
 #endif // GCObservation_h

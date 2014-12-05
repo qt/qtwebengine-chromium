@@ -8,6 +8,8 @@
 
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/message_loop/message_loop.h"
+#include "content/browser/compositor/test/no_transport_image_transport_factory.h"
+#include "content/browser/gpu/compositor_util.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/input_messages.h"
@@ -70,7 +72,7 @@ bool CheckObjectRespondsToEditCommands(NSArray* edit_commands, id test_obj) {
 class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
  public:
   MockRenderWidgetHostDelegate() {}
-  virtual ~MockRenderWidgetHostDelegate() {}
+  ~MockRenderWidgetHostDelegate() override {}
 };
 
 // Create a RenderWidget for which we can filter messages.
@@ -84,7 +86,7 @@ class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
       edit_command_message_count_(0) {
   }
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     if (message->type() == InputMsg_ExecuteEditCommand::ID)
       edit_command_message_count_++;
     return RenderWidgetHostImpl::Send(message);
@@ -94,6 +96,18 @@ class RenderWidgetHostEditCommandCounter : public RenderWidgetHostImpl {
 };
 
 class RenderWidgetHostViewMacEditCommandHelperTest : public PlatformTest {
+ protected:
+  virtual void SetUp() {
+    if (IsDelegatedRendererEnabled()) {
+      ImageTransportFactory::InitializeForUnitTests(
+          scoped_ptr<ImageTransportFactory>(
+              new NoTransportImageTransportFactory));
+    }
+  }
+  virtual void TearDown() {
+    if (IsDelegatedRendererEnabled())
+      ImageTransportFactory::Terminate();
+  }
 };
 
 }  // namespace
@@ -119,7 +133,7 @@ TEST_F(RenderWidgetHostViewMacEditCommandHelperTest,
 
   // Owned by its |cocoa_view()|, i.e. |rwhv_cocoa|.
   RenderWidgetHostViewMac* rwhv_mac = new RenderWidgetHostViewMac(
-      render_widget);
+      render_widget, false);
   base::scoped_nsobject<RenderWidgetHostViewCocoa> rwhv_cocoa(
       [rwhv_mac->cocoa_view() retain]);
 

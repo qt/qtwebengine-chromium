@@ -24,35 +24,32 @@
 #define RenderSVGRoot_h
 
 #include "core/rendering/RenderReplaced.h"
-#include "platform/geometry/FloatRect.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
-class RenderSVGRoot FINAL : public RenderReplaced {
+class RenderSVGRoot final : public RenderReplaced {
 public:
     explicit RenderSVGRoot(SVGElement*);
     virtual ~RenderSVGRoot();
+    virtual void trace(Visitor*) override;
 
     bool isEmbeddedThroughSVGImage() const;
     bool isEmbeddedThroughFrameContainingSVGDocument() const;
 
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE;
-
-    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
-    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override;
 
     // If you have a RenderSVGRoot, use firstChild or lastChild instead.
     void slowFirstChild() const WTF_DELETED_FUNCTION;
     void slowLastChild() const WTF_DELETED_FUNCTION;
 
-    const RenderObjectChildList* children() const { return &m_children; }
-    RenderObjectChildList* children() { return &m_children; }
+    RenderObject* firstChild() const { ASSERT(children() == virtualChildren()); return children()->firstChild(); }
+    RenderObject* lastChild() const { ASSERT(children() == virtualChildren()); return children()->lastChild(); }
 
     bool isLayoutSizeChanged() const { return m_isLayoutSizeChanged; }
-    virtual void setNeedsBoundariesUpdate() OVERRIDE { m_needsBoundariesOrTransformUpdate = true; }
-    virtual void setNeedsTransformUpdate() OVERRIDE { m_needsBoundariesOrTransformUpdate = true; }
+    virtual void setNeedsBoundariesUpdate() override { m_needsBoundariesOrTransformUpdate = true; }
+    virtual void setNeedsTransformUpdate() override { m_needsBoundariesOrTransformUpdate = true; }
 
     IntSize containerSize() const { return m_containerSize; }
     void setContainerSize(const IntSize& containerSize)
@@ -67,48 +64,52 @@ public:
 
     // localToBorderBoxTransform maps local SVG viewport coordinates to local CSS box coordinates.
     const AffineTransform& localToBorderBoxTransform() const { return m_localToBorderBoxTransform; }
+    bool shouldApplyViewportClip() const;
+
+
 
 private:
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
+    const RenderObjectChildList* children() const { return &m_children; }
+    RenderObjectChildList* children() { return &m_children; }
 
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGRoot"; }
-    virtual bool isSVGRoot() const OVERRIDE { return true; }
-    virtual bool isSVG() const OVERRIDE { return true; }
+    virtual RenderObjectChildList* virtualChildren() override { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const OVERRIDE;
-    virtual LayoutUnit computeReplacedLogicalHeight() const OVERRIDE;
-    virtual void layout() OVERRIDE;
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual const char* renderName() const override { return "RenderSVGRoot"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVG || type == RenderObjectSVGRoot || RenderReplaced::isOfType(type); }
 
-    virtual void willBeDestroyed() OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
-    virtual void removeChild(RenderObject*) OVERRIDE;
-    virtual bool canHaveWhitespaceChildren() const OVERRIDE { return false; }
+    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const override;
+    virtual LayoutUnit computeReplacedLogicalHeight() const override;
+    virtual void layout() override;
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) override;
 
-    virtual void insertedIntoTree() OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
+    virtual void willBeDestroyed() override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override;
+    virtual void removeChild(RenderObject*) override;
+    virtual bool canHaveWhitespaceChildren() const override { return false; }
 
-    virtual const AffineTransform& localToParentTransform() const OVERRIDE;
+    virtual void insertedIntoTree() override;
+    virtual void willBeRemovedFromTree() override;
 
-    virtual FloatRect objectBoundingBox() const OVERRIDE { return m_objectBoundingBox; }
-    virtual FloatRect strokeBoundingBox() const OVERRIDE { return m_strokeBoundingBox; }
-    virtual FloatRect paintInvalidationRectInLocalCoordinates() const OVERRIDE { return m_repaintBoundingBox; }
+    virtual const AffineTransform& localToParentTransform() const override;
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual FloatRect objectBoundingBox() const override { return m_objectBoundingBox; }
+    virtual FloatRect strokeBoundingBox() const override { return m_strokeBoundingBox; }
+    virtual FloatRect paintInvalidationRectInLocalCoordinates() const override { return m_paintInvalidationBoundingBox; }
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
-    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, bool fixed) const OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
-    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+    virtual void computeFloatRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, FloatRect& paintInvalidationRect, const PaintInvalidationState* = 0) const override;
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return false; }
-    virtual bool canHaveChildren() const OVERRIDE { return true; }
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
+    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const override;
 
-    bool shouldApplyViewportClip() const;
+    virtual bool canBeSelectionLeaf() const override { return false; }
+    virtual bool canHaveChildren() const override { return true; }
+
     void updateCachedBoundaries();
     void buildLocalToBorderBoxTransform();
 
@@ -117,16 +118,16 @@ private:
     FloatRect m_objectBoundingBox;
     bool m_objectBoundingBoxValid;
     FloatRect m_strokeBoundingBox;
-    FloatRect m_repaintBoundingBox;
+    FloatRect m_paintInvalidationBoundingBox;
     mutable AffineTransform m_localToParentTransform;
     AffineTransform m_localToBorderBoxTransform;
     bool m_isLayoutSizeChanged : 1;
     bool m_needsBoundariesOrTransformUpdate : 1;
-    bool m_hasBoxDecorations : 1;
+    bool m_hasBoxDecorationBackground : 1;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderSVGRoot, isSVGRoot());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderSVGRoot_h

@@ -36,11 +36,10 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 class EventDispatcher;
-class Node;
 
 class EventDispatchMediator : public RefCountedWillBeGarbageCollectedFinalized<EventDispatchMediator> {
 public:
@@ -59,6 +58,6 @@ private:
     RefPtrWillBeMember<Event> m_event;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventDispatchMediator_h

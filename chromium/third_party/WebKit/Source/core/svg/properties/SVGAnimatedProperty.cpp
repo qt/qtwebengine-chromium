@@ -33,7 +33,7 @@
 
 #include "core/svg/SVGElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGAnimatedPropertyBase::SVGAnimatedPropertyBase(AnimatedPropertyType type, SVGElement* contextElement, const QualifiedName& attributeName)
     : m_type(type)
@@ -43,9 +43,6 @@ SVGAnimatedPropertyBase::SVGAnimatedPropertyBase(AnimatedPropertyType type, SVGE
 {
     ASSERT(m_contextElement);
     ASSERT(m_attributeName != QualifiedName::null());
-    // FIXME: setContextElement should be delayed until V8 wrapper is created.
-    // FIXME: oilpan: or we can remove this backref ptr hack in oilpan.
-    m_contextElement->setContextElement();
 }
 
 SVGAnimatedPropertyBase::~SVGAnimatedPropertyBase()
@@ -68,4 +65,4 @@ bool SVGAnimatedPropertyBase::isSpecified() const
     return isAnimating() || contextElement()->hasAttribute(attributeName());
 }
 
-} // namespace WebCore
+} // namespace blink

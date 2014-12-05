@@ -28,7 +28,7 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
 // FIXME : This class has a WebKit prefix on purpose so we can use the EventAliases system. When the
 // runtime flag of unprefixed animation will be removed we can rename that class and do the same as
@@ -40,7 +40,8 @@ struct WebKitAnimationEventInit : public EventInit {
     double elapsedTime;
 };
 
-class WebKitAnimationEvent FINAL : public Event {
+class WebKitAnimationEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<WebKitAnimationEvent> create()
     {
@@ -60,9 +61,9 @@ public:
     const String& animationName() const;
     double elapsedTime() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     WebKitAnimationEvent();
@@ -73,6 +74,6 @@ private:
     double m_elapsedTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebKitAnimationEvent_h

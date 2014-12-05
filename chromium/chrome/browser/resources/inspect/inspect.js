@@ -29,13 +29,6 @@ function sendTargetCommand(command, target) {
   sendCommand(command, target.source, target.id);
 }
 
-function sendServiceWorkerCommand(action, worker) {
-  $('serviceworker-internals').contentWindow.postMessage({
-    'action': action,
-    'worker': worker
-  },'chrome://serviceworker-internals');
-}
-
 function removeChildren(element_id) {
   var element = $(element_id);
   element.textContent = '';
@@ -58,15 +51,6 @@ function onload() {
   onHashChange();
   initSettings();
   sendCommand('init-ui');
-  window.addEventListener('message', onMessage.bind(this), false);
-}
-
-function onMessage(event) {
-  if (event.origin != 'chrome://serviceworker-internals') {
-    return;
-  }
-  populateServiceWorkers(event.data.partition_id,
-                         event.data.workers);
 }
 
 function onHashChange() {
@@ -103,77 +87,49 @@ function selectTab(id) {
   return true;
 }
 
-function populateServiceWorkers(partition_id, workers) {
-  var list = $('service-workers-list-' + partition_id);
-  if (workers.length == 0) {
-    if (list) {
-        list.parentNode.removeChild(list);
-    }
-    return;
-  }
-  if (list) {
-    list.textContent = '';
-  } else {
-    list = document.createElement('div');
-    list.id = 'service-workers-list-' + partition_id;
-    list.className = 'list';
-    $('service-workers-list').appendChild(list);
-  }
-  for (var i = 0; i < workers.length; i++) {
-    var worker = workers[i];
-    worker.hasCustomInspectAction = true;
-    var row = addTargetToList(worker, list, ['scope', 'url']);
-    addActionLink(
-        row,
-        'inspect',
-        sendServiceWorkerCommand.bind(null, 'inspect', worker),
-        false);
-    addActionLink(
-        row,
-        'terminate',
-        sendServiceWorkerCommand.bind(null, 'stop', worker),
-        false);
-  }
-}
-
 function populateTargets(source, data) {
-  if (source == 'renderers')
-    populateWebContentsTargets(data);
-  else if (source == 'workers')
-    populateWorkerTargets(data);
-  else if (source == 'adb')
+  if (source == 'local')
+    populateLocalTargets(data);
+  else if (source == 'remote')
     populateRemoteTargets(data);
   else
     console.error('Unknown source type: ' + source);
 }
 
-function populateWebContentsTargets(data) {
+function populateLocalTargets(data) {
   removeChildren('pages-list');
   removeChildren('extensions-list');
   removeChildren('apps-list');
   removeChildren('others-list');
+  removeChildren('workers-list');
+  removeChildren('service-workers-list');
 
-  for (var i = 0; i < data.length; i++) {
+    for (var i = 0; i < data.length; i++) {
     if (data[i].type === 'page')
       addToPagesList(data[i]);
     else if (data[i].type === 'background_page')
       addToExtensionsList(data[i]);
     else if (data[i].type === 'app')
       addToAppsList(data[i]);
+    else if (data[i].type === 'worker')
+      addToWorkersList(data[i]);
+    else if (data[i].type === 'service_worker')
+      addToServiceWorkersList(data[i]);
     else
       addToOthersList(data[i]);
   }
 }
 
-function populateWorkerTargets(data) {
-  removeChildren('workers-list');
-
-  for (var i = 0; i < data.length; i++)
-    addToWorkersList(data[i]);
-}
-
 function showIncognitoWarning() {
   $('devices-incognito').hidden = false;
+}
+
+function alreadyDisplayed(element, data) {
+  var json = JSON.stringify(data);
+  if (element.cachedJSON == json)
+    return true;
+  element.cachedJSON = json;
+  return false;
 }
 
 function populateRemoteTargets(devices) {
@@ -183,14 +139,6 @@ function populateRemoteTargets(devices) {
   if (window.modal) {
     window.holdDevices = devices;
     return;
-  }
-
-  function alreadyDisplayed(element, data) {
-    var json = JSON.stringify(data);
-    if (element.cachedJSON == json)
-      return true;
-    element.cachedJSON = json;
-    return false;
   }
 
   function insertChildSortedById(parent, child) {
@@ -300,14 +248,7 @@ function populateRemoteTargets(devices) {
           browserName.textContent += ' (' + browser.adbBrowserVersion + ')';
         browserSection.appendChild(browserHeader);
 
-        if (incompatibleVersion) {
-          var warningSection = document.createElement('div');
-          warningSection.className = 'warning';
-          warningSection.textContent =
-            'You may need a newer version of desktop Chrome. ' +
-            'Please try Chrome ' + browser.adbBrowserVersion + ' or later.';
-          browserHeader.appendChild(warningSection);
-        } else if (majorChromeVersion >= MIN_VERSION_NEW_TAB) {
+        if (!incompatibleVersion && majorChromeVersion >= MIN_VERSION_NEW_TAB) {
           var newPage = document.createElement('div');
           newPage.className = 'open';
 
@@ -332,6 +273,22 @@ function populateRemoteTargets(devices) {
           newPageButton.addEventListener('click', openHandler, true);
 
           browserHeader.appendChild(newPage);
+        }
+
+        var portForwardingInfo = document.createElement('div');
+        portForwardingInfo.className = 'used-for-port-forwarding';
+        portForwardingInfo.hidden = true;
+        portForwardingInfo.title = 'This browser is used for port ' +
+            'forwarding. Closing it will drop current connections.';
+        browserHeader.appendChild(portForwardingInfo);
+
+        if (incompatibleVersion) {
+          var warningSection = document.createElement('div');
+          warningSection.className = 'warning';
+          warningSection.textContent =
+            'You may need a newer version of desktop Chrome. ' +
+            'Please try Chrome ' + browser.adbBrowserVersion + ' or later.';
+          browserSection.appendChild(warningSection);
         }
 
         var browserInspector;
@@ -426,6 +383,13 @@ function addToWorkersList(data) {
       addTargetToList(data, $('workers-list'), ['name', 'description', 'url']);
   addActionLink(row, 'terminate',
       sendTargetCommand.bind(null, 'close', data), false);
+}
+
+function addToServiceWorkersList(data) {
+    var row = addTargetToList(
+        data, $('service-workers-list'), ['name', 'description', 'url']);
+    addActionLink(row, 'terminate',
+        sendTargetCommand.bind(null, 'close', data), false);
 }
 
 function addToOthersList(data) {
@@ -550,6 +514,7 @@ function addWebViewThumbnail(row, webview, screenWidth, screenHeight) {
 function addTargetToList(data, list, properties) {
   var row = document.createElement('div');
   row.className = 'row';
+  row.targetId = data.id;
 
   var propertiesBox = document.createElement('div');
   propertiesBox.className = 'properties-box';
@@ -898,13 +863,17 @@ function populatePortStatus(devicesStatusMap) {
   for (var deviceId in devicesStatusMap) {
     if (!devicesStatusMap.hasOwnProperty(deviceId))
       continue;
-    var deviceStatusMap = devicesStatusMap[deviceId];
+    var deviceStatus = devicesStatusMap[deviceId];
+    var deviceStatusMap = deviceStatus.ports;
 
     var deviceSection = $(deviceId);
     if (!deviceSection)
       continue;
 
     var devicePorts = deviceSection.querySelector('.device-ports');
+    if (alreadyDisplayed(devicePorts, deviceStatus))
+      continue;
+
     devicePorts.textContent = '';
     for (var port in deviceStatusMap) {
       if (!deviceStatusMap.hasOwnProperty(port))
@@ -931,6 +900,15 @@ function populatePortStatus(devicesStatusMap) {
         portNumber.textContent += '(' + status + ')';
       devicePorts.appendChild(portNumber);
     }
+
+    function updatePortForwardingInfo(browserSection) {
+      var icon = browserSection.querySelector('.used-for-port-forwarding');
+      if (icon)
+        icon.hidden = (browserSection.id !== deviceStatus.browserId);
+    }
+
+    Array.prototype.forEach.call(
+        deviceSection.querySelectorAll('.browser'), updatePortForwardingInfo);
   }
 
   function clearPorts(deviceSection) {

@@ -25,25 +25,26 @@
 #ifndef WaveShaperNode_h
 #define WaveShaperNode_h
 
+#include "core/dom/DOMTypedArray.h"
 #include "modules/webaudio/AudioBasicProcessorNode.h"
 #include "modules/webaudio/BiquadProcessor.h"
 #include "modules/webaudio/WaveShaperProcessor.h"
-#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class WaveShaperNode FINAL : public AudioBasicProcessorNode {
+class WaveShaperNode final : public AudioBasicProcessorNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<WaveShaperNode> create(AudioContext* context)
+    static WaveShaperNode* create(AudioContext* context)
     {
-        return adoptRefWillBeNoop(new WaveShaperNode(context));
+        return new WaveShaperNode(context);
     }
 
     // setCurve() is called on the main thread.
-    void setCurve(Float32Array*);
-    Float32Array* curve();
+    void setCurve(DOMFloat32Array*);
+    DOMFloat32Array* curve();
 
     void setOversample(const String& , ExceptionState&);
     String oversample() const;
@@ -54,6 +55,6 @@ private:
     WaveShaperProcessor* waveShaperProcessor() { return static_cast<WaveShaperProcessor*>(processor()); }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WaveShaperNode_h

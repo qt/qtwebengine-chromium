@@ -10,42 +10,11 @@
 #define GrGLTexture_DEFINED
 
 #include "GrGpu.h"
-#include "GrGLRenderTarget.h"
-
-/**
- * A ref counted tex id that deletes the texture in its destructor.
- */
-class GrGLTexID : public SkRefCnt {
-public:
-    SK_DECLARE_INST_COUNT(GrGLTexID)
-
-    GrGLTexID(const GrGLInterface* gl, GrGLuint texID, bool isWrapped)
-        : fGL(gl)
-        , fTexID(texID)
-        , fIsWrapped(isWrapped) {
-    }
-
-    virtual ~GrGLTexID() {
-        if (0 != fTexID && !fIsWrapped) {
-            GR_GL_CALL(fGL, DeleteTextures(1, &fTexID));
-        }
-    }
-
-    void abandon() { fTexID = 0; }
-    GrGLuint id() const { return fTexID; }
-
-private:
-    const GrGLInterface* fGL;
-    GrGLuint             fTexID;
-    bool                 fIsWrapped;
-
-    typedef SkRefCnt INHERITED;
-};
-
-////////////////////////////////////////////////////////////////////////////////
+#include "GrTexture.h"
+#include "GrGLUtil.h"
 
 
-class GrGLTexture : public GrTextureImpl {
+class GrGLTexture : public GrTexture {
 
 public:
     struct TexParams {
@@ -57,19 +26,12 @@ public:
         void invalidate() { memset(this, 0xff, sizeof(TexParams)); }
     };
 
-    struct Desc : public GrTextureDesc {
+    struct IDDesc {
         GrGLuint        fTextureID;
         bool            fIsWrapped;
     };
 
-    // creates a texture that is also an RT
-    GrGLTexture(GrGpuGL* gpu,
-                const Desc& textureDesc,
-                const GrGLRenderTarget::Desc& rtDesc);
-
-    // creates a non-RT texture
-    GrGLTexture(GrGpuGL* gpu,
-                const Desc& textureDesc);
+    GrGLTexture(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&);
 
     virtual ~GrGLTexture() { this->release(); }
 
@@ -89,23 +51,26 @@ public:
         fTexParamsTimestamp = timestamp;
     }
 
-    GrGLuint textureID() const { return (NULL != fTexIDObj.get()) ? fTexIDObj->id() : 0; }
+    GrGLuint textureID() const { return fTextureID; }
 
 protected:
-    // overrides of GrTexture
+    // The public constructor registers this object with the cache. However, only the most derived
+    // class should register with the cache. This constructor does not do the registration and
+    // rather moves that burden onto the derived class.
+    enum Derived { kDerived };
+    GrGLTexture(GrGpuGL*, const GrSurfaceDesc&, const IDDesc&, Derived);
+
+    void init(const GrSurfaceDesc&, const IDDesc&);
+
     virtual void onAbandon() SK_OVERRIDE;
     virtual void onRelease() SK_OVERRIDE;
 
 private:
     TexParams                       fTexParams;
     GrGpu::ResetTimestamp           fTexParamsTimestamp;
-    SkAutoTUnref<GrGLTexID>         fTexIDObj;
+    GrGLuint                        fTextureID;
 
-    void init(GrGpuGL* gpu,
-              const Desc& textureDesc,
-              const GrGLRenderTarget::Desc* rtDesc);
-
-    typedef GrTextureImpl INHERITED;
+    typedef GrTexture INHERITED;
 };
 
 #endif

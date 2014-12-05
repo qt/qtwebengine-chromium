@@ -8,8 +8,6 @@
 #include "public/web/WebViewClient.h"
 #include "web/WebViewImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 PassOwnPtr<NavigatorContentUtilsClientImpl> NavigatorContentUtilsClientImpl::create(WebViewImpl* webView)
@@ -22,19 +20,19 @@ NavigatorContentUtilsClientImpl::NavigatorContentUtilsClientImpl(WebViewImpl* we
 {
 }
 
-void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url, const String& title)
+void NavigatorContentUtilsClientImpl::registerProtocolHandler(const String& scheme, const KURL& url, const String& title)
 {
-    m_webView->client()->registerProtocolHandler(scheme, baseURL, url, title);
+    m_webView->client()->registerProtocolHandler(scheme, url, title);
 }
 
-NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientImpl::isProtocolHandlerRegistered(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
+NavigatorContentUtilsClient::CustomHandlersState NavigatorContentUtilsClientImpl::isProtocolHandlerRegistered(const String& scheme, const KURL& url)
 {
-    return static_cast<NavigatorContentUtilsClient::CustomHandlersState>(m_webView->client()->isProtocolHandlerRegistered(scheme, baseURL, url));
+    return static_cast<NavigatorContentUtilsClient::CustomHandlersState>(m_webView->client()->isProtocolHandlerRegistered(scheme, url));
 }
 
-void NavigatorContentUtilsClientImpl::unregisterProtocolHandler(const String& scheme, const WebCore::KURL& baseURL, const WebCore::KURL& url)
+void NavigatorContentUtilsClientImpl::unregisterProtocolHandler(const String& scheme, const KURL& url)
 {
-    m_webView->client()->unregisterProtocolHandler(scheme, baseURL, url);
+    m_webView->client()->unregisterProtocolHandler(scheme, url);
 }
 
 } // namespace blink

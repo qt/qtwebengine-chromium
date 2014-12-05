@@ -26,9 +26,10 @@ namespace content {
 // thread. This is important since when we're blocked on a sync message to a
 // hung plugin, the main thread is frozen.
 //
-// NOTE: This class is refcounted (via SyncMessageStatusReceiver).
+// NOTE: This class is refcounted (via IPC::MessageFilter).
 class PepperHungPluginFilter
-    : public ppapi::proxy::HostDispatcher::SyncMessageStatusReceiver {
+    : public ppapi::proxy::HostDispatcher::SyncMessageStatusObserver,
+      public IPC::MessageFilter {
  public:
   // The |frame_routing_id| is the ID of the render_frame so that this class can
   // send messages to the browser via that frame's route. The |plugin_child_id|
@@ -39,17 +40,17 @@ class PepperHungPluginFilter
                          int plugin_child_id);
 
   // SyncMessageStatusReceiver implementation.
-  virtual void BeginBlockOnSyncMessage() OVERRIDE;
-  virtual void EndBlockOnSyncMessage() OVERRIDE;
+  void BeginBlockOnSyncMessage() override;
+  void EndBlockOnSyncMessage() override;
 
   // MessageFilter implementation.
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelError() override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  protected:
-  virtual ~PepperHungPluginFilter();
+  ~PepperHungPluginFilter() override;
 
  private:
   // Makes sure that the hung timer is scheduled.

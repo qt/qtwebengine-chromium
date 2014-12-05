@@ -6,16 +6,21 @@
 
 #include <vector>
 
+#include "base/command_line.h"
 #include "base/debug/asan_invalid_access.h"
 #include "base/debug/profiler.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cc/base/switches.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
-#include "content/browser/ppapi_plugin_process_host.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/url_constants.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "url/gurl.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/browser/ppapi_plugin_process_host.h"
+#endif
 
 namespace content {
 
@@ -105,18 +110,22 @@ bool HandleAsanDebugURL(const GURL& url) {
 
 }  // namespace
 
-bool HandleDebugURL(const GURL& url, PageTransition transition) {
-  // Ensure that the user explicitly navigated to this URL.
-  if (!(transition & PAGE_TRANSITION_FROM_ADDRESS_BAR))
-    return false;
+bool HandleDebugURL(const GURL& url, ui::PageTransition transition) {
+  // Ensure that the user explicitly navigated to this URL, unless
+  // kEnableGpuBenchmarking is enabled by Telemetry.
+  bool is_telemetry_navigation =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          cc::switches::kEnableGpuBenchmarking) &&
+      (transition & ui::PAGE_TRANSITION_TYPED);
 
-  // NOTE: when you add handling of any URLs to this function, also
-  // update IsDebugURL, below.
+  if (!(transition & ui::PAGE_TRANSITION_FROM_ADDRESS_BAR) &&
+      !is_telemetry_navigation)
+    return false;
 
   if (IsAsanDebugURL(url))
     return HandleAsanDebugURL(url);
 
-  if (url.host() == kChromeUIBrowserCrashHost) {
+  if (url == GURL(kChromeUIBrowserCrashURL)) {
     // Induce an intentional crash in the browser process.
     CHECK(false);
     return true;
@@ -151,19 +160,6 @@ bool HandleDebugURL(const GURL& url, PageTransition transition) {
   }
 
   return false;
-}
-
-bool IsDebugURL(const GURL& url) {
-  // NOTE: when you add any URLs to this list, also update
-  // HandleDebugURL, above.
-  return IsRendererDebugURL(url) || IsAsanDebugURL(url) ||
-      (url.is_valid() &&
-       (url.host() == kChromeUIBrowserCrashHost ||
-        url == GURL(kChromeUIGpuCleanURL) ||
-        url == GURL(kChromeUIGpuCrashURL) ||
-        url == GURL(kChromeUIGpuHangURL) ||
-        url == GURL(kChromeUIPpapiFlashCrashURL) ||
-        url == GURL(kChromeUIPpapiFlashHangURL)));
 }
 
 bool IsRendererDebugURL(const GURL& url) {

@@ -7,7 +7,7 @@
 #include "content/common/mojo/mojo_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_sender.h"
-#include "mojo/embedder/platform_channel_pair.h"
+#include "mojo/edk/embedder/platform_channel_pair.h"
 
 namespace content {
 namespace {
@@ -24,13 +24,17 @@ base::PlatformFile PlatformFileFromScopedPlatformHandle(
 }  // namespace
 
 MojoApplicationHost::MojoApplicationHost() : did_activate_(false) {
+#if defined(OS_ANDROID)
+  service_registry_android_.reset(
+      new ServiceRegistryAndroid(&service_registry_));
+#endif
 }
 
 MojoApplicationHost::~MojoApplicationHost() {
 }
 
 bool MojoApplicationHost::Init() {
-  DCHECK(!child_service_provider_.get()) << "Already initialized!";
+  DCHECK(!client_handle_.is_valid()) << "Already initialized!";
 
   mojo::embedder::PlatformChannelPair channel_pair;
 
@@ -43,12 +47,11 @@ bool MojoApplicationHost::Init() {
   // Forward this to the client once we know its process handle.
   client_handle_ = channel_pair.PassClientHandle();
 
-  child_service_provider_.reset(
-      BindToPipe(new ServiceProviderImpl(), message_pipe.Pass()));
+  service_registry_.BindRemoteServiceProvider(message_pipe.Pass());
   return true;
 }
 
-bool MojoApplicationHost::Activate(IPC::Sender* sender,
+void MojoApplicationHost::Activate(IPC::Sender* sender,
                                    base::ProcessHandle process_handle) {
   DCHECK(!did_activate_);
   DCHECK(client_handle_.is_valid());
@@ -57,15 +60,10 @@ bool MojoApplicationHost::Activate(IPC::Sender* sender,
       PlatformFileFromScopedPlatformHandle(client_handle_.Pass());
   did_activate_ = sender->Send(new MojoMsg_Activate(
       IPC::GetFileHandleForProcess(client_file, process_handle, true)));
-  return did_activate_;
 }
 
-void MojoApplicationHost::ServiceProviderImpl::ConnectToService(
-    const mojo::String& service_url,
-    const mojo::String& service_name,
-    mojo::ScopedMessagePipeHandle handle,
-    const mojo::String& requestor_url) {
-  // TODO(darin): Provide something meaningful here.
+void MojoApplicationHost::WillDestroySoon() {
+  channel_init_.WillDestroySoon();
 }
 
 }  // namespace content

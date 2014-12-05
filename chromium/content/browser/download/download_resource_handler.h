@@ -9,7 +9,6 @@
 
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/timer/timer.h"
 #include "content/browser/loader/resource_handler.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_manager.h"
@@ -46,36 +45,35 @@ class CONTENT_EXPORT DownloadResourceHandler
       const DownloadUrlParameters::OnStartedCallback& started_cb,
       scoped_ptr<DownloadSaveInfo> save_info);
 
-  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
+  bool OnUploadProgress(uint64 position, uint64 size) override;
 
-  virtual bool OnRequestRedirected(const GURL& url,
-                                   ResourceResponse* response,
-                                   bool* defer) OVERRIDE;
+  bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
+                           ResourceResponse* response,
+                           bool* defer) override;
 
   // Send the download creation information to the download thread.
-  virtual bool OnResponseStarted(ResourceResponse* response,
-                                 bool* defer) OVERRIDE;
+  bool OnResponseStarted(ResourceResponse* response, bool* defer) override;
 
   // Pass-through implementation.
-  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
+  bool OnWillStart(const GURL& url, bool* defer) override;
 
   // Pass-through implementation.
-  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
+  bool OnBeforeNetworkStart(const GURL& url, bool* defer) override;
 
   // Create a new buffer, which will be handed to the download thread for file
   // writing and deletion.
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
 
-  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
 
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& security_info,
-                                   bool* defer) OVERRIDE;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& security_info,
+                           bool* defer) override;
 
   // N/A to this flavor of DownloadHandler.
-  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
+  void OnDataDownloaded(int bytes_downloaded) override;
 
   void PauseRequest();
   void ResumeRequest();
@@ -86,7 +84,7 @@ class CONTENT_EXPORT DownloadResourceHandler
   std::string DebugString() const;
 
  private:
-  virtual ~DownloadResourceHandler();
+  ~DownloadResourceHandler() override;
 
   // Arrange for started_cb_ to be called on the UI thread with the
   // below values, nulling out started_cb_.  Should only be called

@@ -35,10 +35,10 @@
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 template <typename TargetClass>
-class AsyncMethodRunner FINAL {
+class AsyncMethodRunner final {
     WTF_MAKE_NONCOPYABLE(AsyncMethodRunner);
     WTF_MAKE_FAST_ALLOCATED;
 public:
@@ -74,7 +74,8 @@ public:
     // ActiveDOMObject::suspend().
     void suspend()
     {
-        ASSERT(!m_suspended);
+        if (m_suspended)
+            return;
         m_suspended = true;
 
         if (!m_timer.isActive())
@@ -87,7 +88,8 @@ public:
     // Resumes pending method run.
     void resume()
     {
-        ASSERT(m_suspended);
+        if (!m_suspended)
+            return;
         m_suspended = false;
 
         if (!m_runWhenResumed)

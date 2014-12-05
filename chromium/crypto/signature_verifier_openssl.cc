@@ -13,6 +13,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/stl_util.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 
 namespace crypto {
 
@@ -25,13 +26,13 @@ const EVP_MD* ToOpenSSLDigest(SignatureVerifier::HashAlgorithm hash_alg) {
     case SignatureVerifier::SHA256:
       return EVP_sha256();
   }
-  return EVP_md_null();
+  return NULL;
 }
 
 }  // namespace
 
 struct SignatureVerifier::VerifyContext {
-  ScopedOpenSSL<EVP_MD_CTX, EVP_MD_CTX_destroy> ctx;
+  ScopedEVP_MD_CTX ctx;
 };
 
 SignatureVerifier::SignatureVerifier()
@@ -49,7 +50,7 @@ bool SignatureVerifier::VerifyInit(const uint8* signature_algorithm,
                                    const uint8* public_key_info,
                                    int public_key_info_len) {
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  ScopedOpenSSL<X509_ALGOR, X509_ALGOR_free> algorithm(
+  ScopedOpenSSL<X509_ALGOR, X509_ALGOR_free>::Type algorithm(
       d2i_X509_ALGOR(NULL, &signature_algorithm, signature_algorithm_len));
   if (!algorithm.get())
     return false;
@@ -79,8 +80,11 @@ bool SignatureVerifier::VerifyInitRSAPSS(HashAlgorithm hash_alg,
                                          const uint8* public_key_info,
                                          int public_key_info_len) {
   OpenSSLErrStackTracer err_tracer(FROM_HERE);
-  const EVP_MD* digest = ToOpenSSLDigest(hash_alg);
+  const EVP_MD* const digest = ToOpenSSLDigest(hash_alg);
   DCHECK(digest);
+  if (!digest) {
+    return false;
+  }
 
   EVP_PKEY_CTX* pkey_ctx;
   if (!CommonInit(digest, signature, signature_len, public_key_info,
@@ -91,8 +95,12 @@ bool SignatureVerifier::VerifyInitRSAPSS(HashAlgorithm hash_alg,
   int rv = EVP_PKEY_CTX_set_rsa_padding(pkey_ctx, RSA_PKCS1_PSS_PADDING);
   if (rv != 1)
     return false;
-  rv = EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx,
-                                    ToOpenSSLDigest(mask_hash_alg));
+  const EVP_MD* const mgf_digest = ToOpenSSLDigest(mask_hash_alg);
+  DCHECK(mgf_digest);
+  if (!mgf_digest) {
+    return false;
+  }
+  rv = EVP_PKEY_CTX_set_rsa_mgf1_md(pkey_ctx, mgf_digest);
   if (rv != 1)
     return false;
   rv = EVP_PKEY_CTX_set_rsa_pss_saltlen(pkey_ctx, salt_len);
@@ -135,13 +143,11 @@ bool SignatureVerifier::CommonInit(const EVP_MD* digest,
 
   // BIO_new_mem_buf is not const aware, but it does not modify the buffer.
   char* data = reinterpret_cast<char*>(const_cast<uint8*>(public_key_info));
-  ScopedOpenSSL<BIO, BIO_free_all> bio(BIO_new_mem_buf(data,
-                                                       public_key_info_len));
+  ScopedBIO bio(BIO_new_mem_buf(data, public_key_info_len));
   if (!bio.get())
     return false;
 
-  ScopedOpenSSL<EVP_PKEY, EVP_PKEY_free> public_key(
-      d2i_PUBKEY_bio(bio.get(), NULL));
+  ScopedEVP_PKEY public_key(d2i_PUBKEY_bio(bio.get(), NULL));
   if (!public_key.get())
     return false;
 

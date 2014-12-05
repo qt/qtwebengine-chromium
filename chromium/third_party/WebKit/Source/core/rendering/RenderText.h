@@ -1,7 +1,7 @@
 /*
  * (C) 1999 Lars Knoll (knoll@kde.org)
  * (C) 2000 Dirk Mueller (mueller@kde.org)
- * Copyright (C) 2004, 2005, 2006, 2007, 2008, 2009 Apple Inc. All rights reserved.
+ * Copyright (C) 2004-2009, 2013 Apple Inc. All rights reserved.
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -23,13 +23,14 @@
 #ifndef RenderText_h
 #define RenderText_h
 
+#include "core/dom/Text.h"
 #include "core/rendering/RenderObject.h"
 #include "platform/LengthFunctions.h"
 #include "platform/text/TextPath.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AbstractInlineTextBox;
 class InlineTextBox;
@@ -40,11 +41,11 @@ public:
     // not the content of the Text node, updating text-transform property
     // doesn't re-transform the string.
     RenderText(Node*, PassRefPtr<StringImpl>);
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     virtual ~RenderText();
 #endif
 
-    virtual const char* renderName() const OVERRIDE;
+    virtual const char* renderName() const override;
 
     virtual bool isTextFragment() const;
     virtual bool isWordBreak() const;
@@ -59,25 +60,24 @@ public:
     virtual unsigned textStartOffset() const { return 0; }
     String plainText() const;
 
-    InlineTextBox* createInlineTextBox();
+    InlineTextBox* createInlineTextBox(int start, unsigned short length);
     void dirtyLineBoxes(bool fullLayout);
 
-    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE FINAL;
+    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override final;
     void absoluteRectsForRange(Vector<IntRect>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
 
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE FINAL;
+    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override final;
     void absoluteQuadsForRange(Vector<FloatQuad>&, unsigned startOffset = 0, unsigned endOffset = INT_MAX, bool useSelectionHeight = false, bool* wasFixed = 0);
 
     enum ClippingOption { NoClipping, ClipToEllipsis };
     void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed = 0, ClippingOption = NoClipping) const;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     bool is8Bit() const { return m_text.is8Bit(); }
     const LChar* characters8() const { return m_text.impl()->characters8(); }
     const UChar* characters16() const { return m_text.impl()->characters16(); }
     bool hasEmptyText() const { return m_text.isEmpty(); }
-    String substring(unsigned position, unsigned length) const { return m_text.substring(position, length); }
     UChar characterAt(unsigned) const;
     UChar uncheckedCharacterAt(unsigned) const;
     UChar operator[](unsigned i) const { return uncheckedCharacterAt(i); }
@@ -110,58 +110,50 @@ public:
 
     virtual void transformText();
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return true; }
-    virtual void setSelectionState(SelectionState s) OVERRIDE FINAL;
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent = true) OVERRIDE;
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) OVERRIDE;
-
-    LayoutUnit marginLeft() const { return minimumValueForLength(style()->marginLeft(), 0); }
-    LayoutUnit marginRight() const { return minimumValueForLength(style()->marginRight(), 0); }
-
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE FINAL;
+    virtual bool canBeSelectionLeaf() const override { return true; }
+    virtual void setSelectionState(SelectionState) override final;
+    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
 
     InlineTextBox* firstTextBox() const { return m_firstTextBox; }
     InlineTextBox* lastTextBox() const { return m_lastTextBox; }
 
-    virtual int caretMinOffset() const OVERRIDE;
-    virtual int caretMaxOffset() const OVERRIDE;
+    virtual int caretMinOffset() const override;
+    virtual int caretMaxOffset() const override;
     unsigned renderedTextLength() const;
 
-    virtual int previousOffset(int current) const OVERRIDE FINAL;
-    virtual int previousOffsetForBackwardDeletion(int current) const OVERRIDE FINAL;
-    virtual int nextOffset(int current) const OVERRIDE FINAL;
+    virtual int previousOffset(int current) const override final;
+    virtual int previousOffsetForBackwardDeletion(int current) const override final;
+    virtual int nextOffset(int current) const override final;
 
     bool containsReversedText() const { return m_containsReversedText; }
 
     bool isSecure() const { return style()->textSecurity() != TSNONE; }
     void momentarilyRevealLastTypedCharacter(unsigned lastTypedCharacterOffset);
 
-    void checkConsistency() const;
-
     bool isAllCollapsibleWhitespace() const;
 
     bool canUseSimpleFontCodePath() const { return m_canUseSimpleFontCodePath; }
-    bool knownToHaveNoOverflowAndNoFallbackFonts() const { return m_knownToHaveNoOverflowAndNoFallbackFonts; }
 
     void removeAndDestroyTextBoxes();
 
     PassRefPtr<AbstractInlineTextBox> firstAbstractInlineTextBox();
 
 protected:
-    virtual void computePreferredLogicalWidths(float leadWidth);
-    virtual void willBeDestroyed() OVERRIDE;
+    virtual void willBeDestroyed() override;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle&) OVERRIDE FINAL { }
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle&) override final { }
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
     virtual void setTextInternal(PassRefPtr<StringImpl>);
     virtual UChar previousCharacter() const;
 
-    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const OVERRIDE;
+    virtual void addLayerHitTestRects(LayerHitTestRects&, const RenderLayer* currentLayer, const LayoutPoint& layerOffset, const LayoutRect& containerRect) const override;
 
-    virtual InlineTextBox* createTextBox(); // Subclassed by SVG.
+    virtual InlineTextBox* createTextBox(int start, unsigned short length); // Subclassed by SVG.
 
 private:
+    void computePreferredLogicalWidths(float leadWidth);
     void computePreferredLogicalWidths(float leadWidth, HashSet<const SimpleFontData*>& fallbackFonts, GlyphOverflow&);
 
     bool computeCanUseSimpleFontCodePath() const;
@@ -169,11 +161,11 @@ private:
     // Make length() private so that callers that have a RenderText*
     // will use the more efficient textLength() instead, while
     // callers with a RenderObject* can continue to use length().
-    virtual unsigned length() const OVERRIDE FINAL { return textLength(); }
+    virtual unsigned length() const override final { return textLength(); }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE FINAL { ASSERT_NOT_REACHED(); }
-    virtual void layout() OVERRIDE FINAL { ASSERT_NOT_REACHED(); }
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction) OVERRIDE FINAL { ASSERT_NOT_REACHED(); return false; }
+    virtual void paint(PaintInfo&, const LayoutPoint&) override final { ASSERT_NOT_REACHED(); }
+    virtual void layout() override final { ASSERT_NOT_REACHED(); }
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation&, const LayoutPoint&, HitTestAction) override final { ASSERT_NOT_REACHED(); return false; }
 
     void deleteTextBoxes();
     bool containsOnlyWhitespace(unsigned from, unsigned len) const;
@@ -181,6 +173,12 @@ private:
     bool isAllASCII() const { return m_isAllASCII; }
 
     void secureText(UChar mask);
+
+    bool isText() const WTF_DELETED_FUNCTION; // This will catch anyone doing an unnecessary check.
+
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
+
+    void checkConsistency() const;
 
     // We put the bitfield first to minimize padding on 64-bit.
     bool m_hasBreakableChar : 1; // Whether or not we can be broken into multiple lines.
@@ -225,14 +223,19 @@ inline UChar RenderText::characterAt(unsigned i) const
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderText, isText());
 
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 inline void RenderText::checkConsistency() const
 {
 }
 #endif
 
+inline RenderText* Text::renderer() const
+{
+    return toRenderText(CharacterData::renderer());
+}
+
 void applyTextTransform(const RenderStyle*, String&, UChar);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderText_h

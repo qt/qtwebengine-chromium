@@ -35,13 +35,13 @@
 #include "config.h"
 #include "core/html/canvas/CanvasPathMethods.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 void CanvasPathMethods::closePath()
 {

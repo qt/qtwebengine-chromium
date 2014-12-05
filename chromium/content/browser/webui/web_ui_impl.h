@@ -23,7 +23,7 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
                                  public base::SupportsWeakPtr<WebUIImpl> {
  public:
   explicit WebUIImpl(WebContents* contents);
-  virtual ~WebUIImpl();
+  ~WebUIImpl() override;
 
   // Called by WebContentsImpl when the RenderView is first created. This is
   // *not* called for every page load because in some cases
@@ -31,47 +31,45 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   void RenderViewCreated(RenderViewHost* render_view_host);
 
   // WebUI implementation:
-  virtual WebContents* GetWebContents() const OVERRIDE;
-  virtual WebUIController* GetController() const OVERRIDE;
-  virtual void SetController(WebUIController* controller) OVERRIDE;
-  virtual float GetDeviceScaleFactor() const OVERRIDE;
-  virtual const base::string16& GetOverriddenTitle() const OVERRIDE;
-  virtual void OverrideTitle(const base::string16& title) OVERRIDE;
-  virtual PageTransition GetLinkTransitionType() const OVERRIDE;
-  virtual void SetLinkTransitionType(PageTransition type) OVERRIDE;
-  virtual int GetBindings() const OVERRIDE;
-  virtual void SetBindings(int bindings) OVERRIDE;
-  virtual void OverrideJavaScriptFrame(const std::string& frame_name) OVERRIDE;
-  virtual void AddMessageHandler(WebUIMessageHandler* handler) OVERRIDE;
+  WebContents* GetWebContents() const override;
+  WebUIController* GetController() const override;
+  void SetController(WebUIController* controller) override;
+  float GetDeviceScaleFactor() const override;
+  const base::string16& GetOverriddenTitle() const override;
+  void OverrideTitle(const base::string16& title) override;
+  ui::PageTransition GetLinkTransitionType() const override;
+  void SetLinkTransitionType(ui::PageTransition type) override;
+  int GetBindings() const override;
+  void SetBindings(int bindings) override;
+  void OverrideJavaScriptFrame(const std::string& frame_name) override;
+  void AddMessageHandler(WebUIMessageHandler* handler) override;
   typedef base::Callback<void(const base::ListValue*)> MessageCallback;
-  virtual void RegisterMessageCallback(
-      const std::string& message,
-      const MessageCallback& callback) OVERRIDE;
-  virtual void ProcessWebUIMessage(const GURL& source_url,
-                                   const std::string& message,
-                                   const base::ListValue& args) OVERRIDE;
-  virtual void CallJavascriptFunction(
-      const std::string& function_name) OVERRIDE;
-  virtual void CallJavascriptFunction(const std::string& function_name,
-                                      const base::Value& arg) OVERRIDE;
-  virtual void CallJavascriptFunction(const std::string& function_name,
-                                      const base::Value& arg1,
-                                      const base::Value& arg2) OVERRIDE;
-  virtual void CallJavascriptFunction(const std::string& function_name,
-                                      const base::Value& arg1,
-                                      const base::Value& arg2,
-                                      const base::Value& arg3) OVERRIDE;
-  virtual void CallJavascriptFunction(const std::string& function_name,
-                                      const base::Value& arg1,
-                                      const base::Value& arg2,
-                                      const base::Value& arg3,
-                                      const base::Value& arg4) OVERRIDE;
-  virtual void CallJavascriptFunction(
+  void RegisterMessageCallback(const std::string& message,
+                               const MessageCallback& callback) override;
+  void ProcessWebUIMessage(const GURL& source_url,
+                           const std::string& message,
+                           const base::ListValue& args) override;
+  void CallJavascriptFunction(const std::string& function_name) override;
+  void CallJavascriptFunction(const std::string& function_name,
+                              const base::Value& arg) override;
+  void CallJavascriptFunction(const std::string& function_name,
+                              const base::Value& arg1,
+                              const base::Value& arg2) override;
+  void CallJavascriptFunction(const std::string& function_name,
+                              const base::Value& arg1,
+                              const base::Value& arg2,
+                              const base::Value& arg3) override;
+  void CallJavascriptFunction(const std::string& function_name,
+                              const base::Value& arg1,
+                              const base::Value& arg2,
+                              const base::Value& arg3,
+                              const base::Value& arg4) override;
+  void CallJavascriptFunction(
       const std::string& function_name,
-      const std::vector<const base::Value*>& args) OVERRIDE;
+      const std::vector<const base::Value*>& args) override;
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
  private:
   // IPC message handling.
@@ -99,7 +97,7 @@ class CONTENT_EXPORT WebUIImpl : public WebUI,
   // Options that may be overridden by individual Web UI implementations. The
   // bool options default to false. See the public getters for more information.
   base::string16 overridden_title_;  // Defaults to empty string.
-  PageTransition link_transition_type_;  // Defaults to LINK.
+  ui::PageTransition link_transition_type_;  // Defaults to LINK.
   int bindings_;  // The bindings from BindingsPolicy that should be enabled for
                   // this page.
 

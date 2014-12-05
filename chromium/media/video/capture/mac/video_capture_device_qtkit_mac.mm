@@ -29,9 +29,15 @@
       });
 
   for (QTCaptureDevice* device in captureDevices) {
-    if (![[device attributeForKey:QTCaptureDeviceSuspendedAttribute] boolValue])
-      [deviceNames setObject:[device localizedDisplayName]
-                      forKey:[device uniqueID]];
+    if ([[device attributeForKey:QTCaptureDeviceSuspendedAttribute] boolValue])
+      continue;
+    DeviceNameAndTransportType* nameAndTransportType =
+        [[[DeviceNameAndTransportType alloc]
+             initWithName:[device localizedDisplayName]
+            transportType:media::kIOAudioDeviceTransportTypeUnknown]
+            autorelease];
+    [deviceNames setObject:nameAndTransportType
+                    forKey:[device uniqueID]];
   }
 }
 
@@ -111,6 +117,7 @@
     QTCaptureDecompressedVideoOutput *captureDecompressedOutput =
         [[[QTCaptureDecompressedVideoOutput alloc] init] autorelease];
     [captureDecompressedOutput setDelegate:self];
+    [captureDecompressedOutput setAutomaticallyDropsLateVideoFrames:YES];
     if (![captureSession_ addOutput:captureDecompressedOutput error:&error]) {
       [self sendErrorString:[NSString
           stringWithFormat:@"Could not connect video capture output (%@): %@",
@@ -134,32 +141,14 @@
   } else {
     // Remove the previously set capture device.
     if (!captureDeviceInput_) {
-      [self sendErrorString:[NSString
+      // Being here means stopping a device that never started OK in the first
+      // place, log it.
+      [self sendLogString:[NSString
           stringWithUTF8String:"No video capture device set, on removal."]];
       return YES;
     }
-    if ([[captureSession_ inputs] count] > 0) {
-      // The device is still running.
-      [self stopCapture];
-    }
-    if ([[captureSession_ outputs] count] > 0) {
-      // Only one output is set for |captureSession_|.
-      DCHECK_EQ([[captureSession_ outputs] count], 1u);
-      id output = [[captureSession_ outputs] objectAtIndex:0];
-      [output setDelegate:nil];
-
-      // TODO(shess): QTKit achieves thread safety by posting messages to the
-      // main thread.  As part of -addOutput:, it posts a message to the main
-      // thread which in turn posts a notification which will run in a future
-      // spin after the original method returns.  -removeOutput: can post a
-      // main-thread message in between while holding a lock which the
-      // notification handler  will need.  Posting either -addOutput: or
-      // -removeOutput: to the main thread should fix it, remove is likely
-      // safer. http://crbug.com/152757
-      [captureSession_ performSelectorOnMainThread:@selector(removeOutput:)
-                                        withObject:output
-                                     waitUntilDone:YES];
-    }
+    // Tear down input and output, stop the capture and deregister observers.
+    [self stopCapture];
     [captureSession_ release];
     captureSession_ = nil;
     [captureDeviceInput_ release];
@@ -168,7 +157,9 @@
   }
 }
 
-- (BOOL)setCaptureHeight:(int)height width:(int)width frameRate:(int)frameRate {
+- (BOOL)setCaptureHeight:(int)height
+                   width:(int)width
+               frameRate:(float)frameRate {
   if (!captureDeviceInput_) {
     [self sendErrorString:[NSString
         stringWithUTF8String:"No video capture device set."]];
@@ -179,7 +170,7 @@
         stringWithUTF8String:"Video capture capabilities already set."]];
     return NO;
   }
-  if (frameRate <= 0) {
+  if (frameRate <= 0.0f) {
     [self sendErrorString:[NSString stringWithUTF8String: "Wrong frame rate."]];
     return NO;
   }
@@ -199,7 +190,7 @@
   };
   [output setPixelBufferAttributes:videoSettingsDictionary];
 
-  [output setMinimumVideoFrameInterval:(NSTimeInterval)1/(float)frameRate];
+  [output setMinimumVideoFrameInterval:(NSTimeInterval)1/frameRate];
   return YES;
 }
 
@@ -232,12 +223,30 @@
 }
 
 - (void)stopCapture {
-  if ([[captureSession_ inputs] count] == 1) {
+  // QTKit achieves thread safety and asynchronous execution by posting messages
+  // to the main thread, e.g. -addOutput:. Both -removeOutput: and -removeInput:
+  // post a message to the main thread while holding a lock that the
+  // notification handler might need. To avoid a deadlock, we perform those
+  // tasks in the main thread. See bugs http://crbug.com/152757 and
+  // http://crbug.com/399792.
+  [self performSelectorOnMainThread:@selector(stopCaptureOnUIThread:)
+                         withObject:nil
+                      waitUntilDone:YES];
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+}
+
+- (void)stopCaptureOnUIThread:(id)dummy {
+  if ([[captureSession_ inputs] count] > 0) {
+    DCHECK_EQ([[captureSession_ inputs] count], 1u);
     [captureSession_ removeInput:captureDeviceInput_];
     [captureSession_ stopRunning];
   }
-
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  if ([[captureSession_ outputs] count] > 0) {
+    DCHECK_EQ([[captureSession_ outputs] count], 1u);
+    id output = [[captureSession_ outputs] objectAtIndex:0];
+    [output setDelegate:nil];
+    [captureSession_ removeOutput:output];
+  }
 }
 
 // |captureOutput| is called by the capture device to deliver a new frame.
@@ -334,6 +343,14 @@
   [lock_ lock];
   if (frameReceiver_)
     frameReceiver_->ReceiveError([error UTF8String]);
+  [lock_ unlock];
+}
+
+- (void)sendLogString:(NSString*)message {
+  DVLOG(1) << [message UTF8String];
+  [lock_ lock];
+  if (frameReceiver_)
+    frameReceiver_->LogMessage([message UTF8String]);
   [lock_ unlock];
 }
 

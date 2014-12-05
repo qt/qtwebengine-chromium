@@ -37,7 +37,7 @@ class CC_EXPORT ColorKeyframe : public Keyframe {
       double time,
       SkColor value,
       scoped_ptr<TimingFunction> timing_function);
-  virtual ~ColorKeyframe();
+  ~ColorKeyframe() override;
 
   SkColor Value() const;
 
@@ -57,7 +57,7 @@ class CC_EXPORT FloatKeyframe : public Keyframe {
       double time,
       float value,
       scoped_ptr<TimingFunction> timing_function);
-  virtual ~FloatKeyframe();
+  ~FloatKeyframe() override;
 
   float Value() const;
 
@@ -77,7 +77,7 @@ class CC_EXPORT TransformKeyframe : public Keyframe {
       double time,
       const TransformOperations& value,
       scoped_ptr<TimingFunction> timing_function);
-  virtual ~TransformKeyframe();
+  ~TransformKeyframe() override;
 
   const TransformOperations& Value() const;
 
@@ -98,7 +98,7 @@ class CC_EXPORT FilterKeyframe : public Keyframe {
       double time,
       const FilterOperations& value,
       scoped_ptr<TimingFunction> timing_function);
-  virtual ~FilterKeyframe();
+  ~FilterKeyframe() override;
 
   const FilterOperations& Value() const;
 
@@ -118,16 +118,19 @@ class CC_EXPORT KeyframedColorAnimationCurve : public ColorAnimationCurve {
   // It is required that the keyframes be sorted by time.
   static scoped_ptr<KeyframedColorAnimationCurve> Create();
 
-  virtual ~KeyframedColorAnimationCurve();
+  ~KeyframedColorAnimationCurve() override;
 
   void AddKeyframe(scoped_ptr<ColorKeyframe> keyframe);
+  void SetTimingFunction(scoped_ptr<TimingFunction> timing_function) {
+    timing_function_ = timing_function.Pass();
+  }
 
   // AnimationCurve implementation
-  virtual double Duration() const OVERRIDE;
-  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
+  double Duration() const override;
+  scoped_ptr<AnimationCurve> Clone() const override;
 
   // BackgrounColorAnimationCurve implementation
-  virtual SkColor GetValue(double t) const OVERRIDE;
+  SkColor GetValue(double t) const override;
 
  private:
   KeyframedColorAnimationCurve();
@@ -135,6 +138,7 @@ class CC_EXPORT KeyframedColorAnimationCurve : public ColorAnimationCurve {
   // Always sorted in order of increasing time. No two keyframes have the
   // same time.
   ScopedPtrVector<ColorKeyframe> keyframes_;
+  scoped_ptr<TimingFunction> timing_function_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyframedColorAnimationCurve);
 };
@@ -144,16 +148,19 @@ class CC_EXPORT KeyframedFloatAnimationCurve : public FloatAnimationCurve {
   // It is required that the keyframes be sorted by time.
   static scoped_ptr<KeyframedFloatAnimationCurve> Create();
 
-  virtual ~KeyframedFloatAnimationCurve();
+  ~KeyframedFloatAnimationCurve() override;
 
   void AddKeyframe(scoped_ptr<FloatKeyframe> keyframe);
+  void SetTimingFunction(scoped_ptr<TimingFunction> timing_function) {
+    timing_function_ = timing_function.Pass();
+  }
 
   // AnimationCurve implementation
-  virtual double Duration() const OVERRIDE;
-  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
+  double Duration() const override;
+  scoped_ptr<AnimationCurve> Clone() const override;
 
   // FloatAnimationCurve implementation
-  virtual float GetValue(double t) const OVERRIDE;
+  float GetValue(double t) const override;
 
  private:
   KeyframedFloatAnimationCurve();
@@ -161,6 +168,7 @@ class CC_EXPORT KeyframedFloatAnimationCurve : public FloatAnimationCurve {
   // Always sorted in order of increasing time. No two keyframes have the
   // same time.
   ScopedPtrVector<FloatKeyframe> keyframes_;
+  scoped_ptr<TimingFunction> timing_function_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyframedFloatAnimationCurve);
 };
@@ -171,21 +179,25 @@ class CC_EXPORT KeyframedTransformAnimationCurve
   // It is required that the keyframes be sorted by time.
   static scoped_ptr<KeyframedTransformAnimationCurve> Create();
 
-  virtual ~KeyframedTransformAnimationCurve();
+  ~KeyframedTransformAnimationCurve() override;
 
   void AddKeyframe(scoped_ptr<TransformKeyframe> keyframe);
+  void SetTimingFunction(scoped_ptr<TimingFunction> timing_function) {
+    timing_function_ = timing_function.Pass();
+  }
 
   // AnimationCurve implementation
-  virtual double Duration() const OVERRIDE;
-  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
+  double Duration() const override;
+  scoped_ptr<AnimationCurve> Clone() const override;
 
   // TransformAnimationCurve implementation
-  virtual gfx::Transform GetValue(double t) const OVERRIDE;
-  virtual bool AnimatedBoundsForBox(const gfx::BoxF& box,
-                                    gfx::BoxF* bounds) const OVERRIDE;
-  virtual bool AffectsScale() const OVERRIDE;
-  virtual bool IsTranslation() const OVERRIDE;
-  virtual bool MaximumScale(float* max_scale) const OVERRIDE;
+  gfx::Transform GetValue(double t) const override;
+  bool AnimatedBoundsForBox(const gfx::BoxF& box,
+                            gfx::BoxF* bounds) const override;
+  bool AffectsScale() const override;
+  bool IsTranslation() const override;
+  bool MaximumTargetScale(bool forward_direction,
+                          float* max_scale) const override;
 
  private:
   KeyframedTransformAnimationCurve();
@@ -193,6 +205,7 @@ class CC_EXPORT KeyframedTransformAnimationCurve
   // Always sorted in order of increasing time. No two keyframes have the
   // same time.
   ScopedPtrVector<TransformKeyframe> keyframes_;
+  scoped_ptr<TimingFunction> timing_function_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyframedTransformAnimationCurve);
 };
@@ -203,17 +216,20 @@ class CC_EXPORT KeyframedFilterAnimationCurve
   // It is required that the keyframes be sorted by time.
   static scoped_ptr<KeyframedFilterAnimationCurve> Create();
 
-  virtual ~KeyframedFilterAnimationCurve();
+  ~KeyframedFilterAnimationCurve() override;
 
   void AddKeyframe(scoped_ptr<FilterKeyframe> keyframe);
+  void SetTimingFunction(scoped_ptr<TimingFunction> timing_function) {
+    timing_function_ = timing_function.Pass();
+  }
 
   // AnimationCurve implementation
-  virtual double Duration() const OVERRIDE;
-  virtual scoped_ptr<AnimationCurve> Clone() const OVERRIDE;
+  double Duration() const override;
+  scoped_ptr<AnimationCurve> Clone() const override;
 
   // FilterAnimationCurve implementation
-  virtual FilterOperations GetValue(double t) const OVERRIDE;
-  virtual bool HasFilterThatMovesPixels() const OVERRIDE;
+  FilterOperations GetValue(double t) const override;
+  bool HasFilterThatMovesPixels() const override;
 
  private:
   KeyframedFilterAnimationCurve();
@@ -221,6 +237,7 @@ class CC_EXPORT KeyframedFilterAnimationCurve
   // Always sorted in order of increasing time. No two keyframes have the
   // same time.
   ScopedPtrVector<FilterKeyframe> keyframes_;
+  scoped_ptr<TimingFunction> timing_function_;
 
   DISALLOW_COPY_AND_ASSIGN(KeyframedFilterAnimationCurve);
 };

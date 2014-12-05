@@ -60,10 +60,8 @@ WebInspector.SuggestBox = function(suggestBoxDelegate, maxItemsHeight)
     this._selectedIndex = -1;
     this._selectedElement = null;
     this._maxItemsHeight = maxItemsHeight;
-    this._bodyElement = document.body;
     this._maybeHideBound = this._maybeHide.bind(this);
-    this._element = document.createElement("div");
-    this._element.className = "suggest-box";
+    this._element = createElementWithClass("div", "suggest-box");
     this._element.addEventListener("mousedown", this._onBoxMouseDown.bind(this), true);
 }
 
@@ -122,7 +120,7 @@ WebInspector.SuggestBox.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onBoxMouseDown: function(event)
     {
@@ -139,11 +137,16 @@ WebInspector.SuggestBox.prototype = {
             this._hideTimeoutId = window.setTimeout(this.hide.bind(this), 0);
     },
 
+    /**
+     * // FIXME: make SuggestBox work for multiple documents.
+     * @suppressGlobalPropertiesCheck
+     */
     _show: function()
     {
         if (this.visible())
             return;
         this._overlay = new WebInspector.SuggestBox.Overlay();
+        this._bodyElement = document.body;
         this._bodyElement.addEventListener("mousedown", this._maybeHideBound, true);
 
         this._leftSpacerElement = this._overlay.element.createChild("div", "suggest-box-left-spacer");
@@ -159,6 +162,7 @@ WebInspector.SuggestBox.prototype = {
             return;
 
         this._bodyElement.removeEventListener("mousedown", this._maybeHideBound, true);
+        delete this._bodyElement;
         this._element.remove();
         this._overlay.dispose();
         delete this._overlay;
@@ -229,7 +233,7 @@ WebInspector.SuggestBox.prototype = {
     },
 
     /**
-     * @param {?Event} event
+     * @param {!Event} event
      */
     _onItemMouseDown: function(event)
     {
@@ -244,17 +248,13 @@ WebInspector.SuggestBox.prototype = {
      */
     _createItemElement: function(prefix, text)
     {
-        var element = document.createElement("div");
-        element.className = "suggest-box-content-item source-code";
+        var element = createElementWithClass("div", "suggest-box-content-item source-code");
         element.tabIndex = -1;
         if (prefix && prefix.length && !text.indexOf(prefix)) {
-            var prefixElement = element.createChild("span", "prefix");
-            prefixElement.textContent = prefix;
-            var suffixElement = element.createChild("span", "suffix");
-            suffixElement.textContent = text.substring(prefix.length);
+            element.createChild("span", "prefix").textContent = prefix;
+            element.createChild("span", "suffix").textContent = text.substring(prefix.length);
         } else {
-            var suffixElement = element.createChild("span", "suffix");
-            suffixElement.textContent = text;
+            element.createChild("span", "suffix").textContent = text;
         }
         element.createChild("span", "spacer");
         element.addEventListener("mousedown", this._onItemMouseDown.bind(this), false);
@@ -415,11 +415,12 @@ WebInspector.SuggestBox.prototype = {
 
 /**
  * @constructor
+ * // FIXME: make SuggestBox work for multiple documents.
+ * @suppressGlobalPropertiesCheck
  */
 WebInspector.SuggestBox.Overlay = function()
 {
-    this.element = document.createElement("div");
-    this.element.classList.add("suggest-box-overlay");
+    this.element = createElementWithClass("div", "suggest-box-overlay");
     this._resize();
     document.body.appendChild(this.element);
 }

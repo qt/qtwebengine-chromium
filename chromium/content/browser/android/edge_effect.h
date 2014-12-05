@@ -5,63 +5,53 @@
 #ifndef CONTENT_BROWSER_ANDROID_EDGE_EFFECT_H_
 #define CONTENT_BROWSER_ANDROID_EDGE_EFFECT_H_
 
-#include "base/basictypes.h"
-#include "base/memory/ref_counted.h"
-#include "base/time/time.h"
-#include "ui/gfx/size_f.h"
+#include "base/memory/scoped_ptr.h"
+#include "content/browser/android/edge_effect_base.h"
 
 namespace cc {
 class Layer;
 }
 
+namespace ui {
+class SystemUIResourceManager;
+}
+
 namespace content {
 
-/* |EdgeEffect| mirrors its Android counterpart, EdgeEffect.java.
- * The primary difference is ownership; the Android version manages render
- * resources directly, while this version simply applies the effect to
- * existing resources. Conscious tradeoffs were made to align this as closely
- * as possible with the original Android java version.
- * All coordinates and dimensions are in device pixels.
- */
-class EdgeEffect {
-public:
-  enum Edge {
-    EDGE_TOP = 0,
-    EDGE_LEFT,
-    EDGE_BOTTOM,
-    EDGE_RIGHT,
-    EDGE_COUNT
-  };
+// |EdgeEffect| mirrors its Android counterpart, EdgeEffect.java.
+// Conscious tradeoffs were made to align this as closely as possible with the
+// the original Android java version.
+// All coordinates and dimensions are in device pixels.
+class EdgeEffect : public EdgeEffectBase {
+ public:
+  explicit EdgeEffect(ui::SystemUIResourceManager* resource_manager,
+                      float device_scale_factor);
+  virtual ~EdgeEffect();
 
-  EdgeEffect(scoped_refptr<cc::Layer> edge, scoped_refptr<cc::Layer> glow);
-  ~EdgeEffect();
+  virtual void Pull(base::TimeTicks current_time,
+                    float delta_distance,
+                    float displacement) override;
+  virtual void Absorb(base::TimeTicks current_time, float velocity) override;
+  virtual bool Update(base::TimeTicks current_time) override;
+  virtual void Release(base::TimeTicks current_time) override;
 
-  void Pull(base::TimeTicks current_time, float delta_distance);
-  void Absorb(base::TimeTicks current_time, float velocity);
-  bool Update(base::TimeTicks current_time);
-  void Release(base::TimeTicks current_time);
+  virtual void Finish() override;
+  virtual bool IsFinished() const override;
 
-  void Finish();
-  bool IsFinished() const;
+  virtual void ApplyToLayers(const gfx::SizeF& size,
+                             const gfx::Transform& transform) override;
+  virtual void SetParent(cc::Layer* parent) override;
 
-  void ApplyToLayers(gfx::SizeF window_size,
-                     Edge edge,
-                     float edge_height,
-                     float glow_height,
-                     float offset);
+  // Thread-safe trigger to load resources.
+  static void PreloadResources(ui::SystemUIResourceManager* resource_manager);
 
-private:
+ private:
+  class EffectLayer;
+  scoped_ptr<EffectLayer> edge_;
+  scoped_ptr<EffectLayer> glow_;
 
-  enum State {
-    STATE_IDLE = 0,
-    STATE_PULL,
-    STATE_ABSORB,
-    STATE_RECEDE,
-    STATE_PULL_DECAY
-  };
-
-  scoped_refptr<cc::Layer> edge_;
-  scoped_refptr<cc::Layer> glow_;
+  float base_edge_height_;
+  float base_glow_height_;
 
   float edge_alpha_;
   float edge_scale_y_;

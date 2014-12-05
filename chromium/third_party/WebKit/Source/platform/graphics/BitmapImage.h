@@ -36,7 +36,7 @@
 #include "platform/graphics/ImageSource.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class NativeImageSkia;
 template <typename T> class Timer;
@@ -47,44 +47,44 @@ class PLATFORM_EXPORT BitmapImage : public Image {
     friend class GradientGeneratedImage;
     friend class GraphicsContext;
 public:
-    static PassRefPtr<BitmapImage> create(PassRefPtr<NativeImageSkia> nativeImage, ImageObserver* observer = 0)
-    {
-        return adoptRef(new BitmapImage(nativeImage, observer));
-    }
+    static PassRefPtr<BitmapImage> create(PassRefPtr<NativeImageSkia>, ImageObserver* = 0);
+
     static PassRefPtr<BitmapImage> create(ImageObserver* observer = 0)
     {
         return adoptRef(new BitmapImage(observer));
     }
+
     virtual ~BitmapImage();
 
-    virtual bool isBitmapImage() const OVERRIDE;
+    virtual bool isBitmapImage() const override;
 
-    virtual bool currentFrameHasSingleSecurityOrigin() const OVERRIDE { return true; };
+    virtual bool currentFrameHasSingleSecurityOrigin() const override;
 
-    virtual IntSize size() const OVERRIDE;
+    virtual IntSize size() const override;
     IntSize sizeRespectingOrientation() const;
-    IntSize currentFrameSize() const;
-    virtual bool getHotSpot(IntPoint&) const OVERRIDE;
+    virtual bool getHotSpot(IntPoint&) const override;
+    virtual String filenameExtension() const override;
+    virtual bool dataChanged(bool allDataReceived) override;
 
-    virtual bool dataChanged(bool allDataReceived) OVERRIDE;
-    bool isAllDataReceived() const;
+    bool isAllDataReceived() const { return m_allDataReceived; }
     bool hasColorProfile() const;
-    virtual String filenameExtension() const OVERRIDE;
+    void resetDecoder();
 
-    // It may look unusual that there is no start animation call as public API.  This is because
-    // we start and stop animating lazily.  Animation begins whenever someone draws the image.  It will
-    // automatically pause once all observers no longer want to render the image anywhere.
-    virtual void stopAnimation() OVERRIDE;
-    virtual void resetAnimation() OVERRIDE;
-    virtual bool maybeAnimated() OVERRIDE;
+    // It may look unusual that there's no start animation call as public API.
+    // This because we start and stop animating lazily. Animation starts when
+    // the image is rendered, and automatically pauses once all observers no
+    // longer want to render the image.
+    virtual void stopAnimation() override;
+    virtual void resetAnimation() override;
+    virtual bool maybeAnimated() override;
 
-    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() OVERRIDE;
-    virtual bool currentFrameKnownToBeOpaque() OVERRIDE;
-
+    virtual PassRefPtr<NativeImageSkia> nativeImageForCurrentFrame() override;
+    virtual PassRefPtr<Image> imageForDefaultFrame() override;
+    virtual bool currentFrameKnownToBeOpaque() override;
     ImageOrientation currentFrameOrientation();
 
-#if ASSERT_ENABLED
-    virtual bool notSolidColor() OVERRIDE;
+#if ENABLE(ASSERT)
+    virtual bool notSolidColor() override;
 #endif
 
 private:
@@ -102,12 +102,14 @@ protected:
     BitmapImage(PassRefPtr<NativeImageSkia>, ImageObserver* = 0);
     BitmapImage(ImageObserver* = 0);
 
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode) OVERRIDE;
-    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, blink::WebBlendMode, RespectImageOrientationEnum) OVERRIDE;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode) override;
+    virtual void draw(GraphicsContext*, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator, WebBlendMode, RespectImageOrientationEnum) override;
 
     size_t currentFrame() const { return m_currentFrame; }
     size_t frameCount();
+
     PassRefPtr<NativeImageSkia> frameAtIndex(size_t);
+
     bool frameIsCompleteAtIndex(size_t);
     float frameDurationAtIndex(size_t);
     bool frameHasAlphaAtIndex(size_t);
@@ -115,6 +117,7 @@ protected:
 
     // Decodes and caches a frame. Never accessed except internally.
     void cacheFrame(size_t index);
+
     // Called before accessing m_frames[index]. Returns false on index out of bounds.
     bool ensureFrameIsCached(size_t index);
 
@@ -125,7 +128,7 @@ protected:
     // frame; this is used while animating large images to keep memory footprint
     // low; the decoder should preserve the current frame and may preserve some
     // other frames to avoid redecoding the whole image on every frame.
-    virtual void destroyDecodedData(bool destroyAll) OVERRIDE;
+    virtual void destroyDecodedData(bool destroyAll) override;
 
     // If the image is large enough, calls destroyDecodedData().
     void destroyDecodedDataIfNecessary();
@@ -141,7 +144,7 @@ protected:
     // Animation.
     int repetitionCount(bool imageKnownToBeComplete);  // |imageKnownToBeComplete| should be set if the caller knows the entire image has been decoded.
     bool shouldAnimate();
-    virtual void startAnimation(CatchUpAnimation = CatchUp) OVERRIDE;
+    virtual void startAnimation(CatchUpAnimation = CatchUp) override;
     void advanceAnimation(Timer<BitmapImage>*);
 
     // Function that does the real work of advancing the animation.  When
@@ -156,9 +159,10 @@ protected:
     // changed.
     void checkForSolidColor();
 
-    virtual bool mayFillWithSolidColor() OVERRIDE;
-    virtual Color solidColor() const OVERRIDE;
+    virtual bool mayFillWithSolidColor() override;
+    virtual Color solidColor() const override;
 
+private:
     ImageSource m_source;
     mutable IntSize m_size; // The size to use for the overall image (will just be the size of the first image).
     mutable IntSize m_sizeRespectingOrientation;
@@ -190,6 +194,6 @@ protected:
 
 DEFINE_IMAGE_TYPE_CASTS(BitmapImage);
 
-}
+} // namespace blink
 
 #endif

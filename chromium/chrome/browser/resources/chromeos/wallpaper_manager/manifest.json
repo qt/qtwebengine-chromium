@@ -12,13 +12,14 @@
   },
   "permissions": [
     "alarms",
+    "app.window.alpha",
     "experimental",
     "storage",
     "unlimitedStorage",
     {"fileSystem": ["write"]},
     "wallpaperPrivate",
-    "https://commondatastorage.googleapis.com/",
-    "https://storage.googleapis.com/"
+    "https://storage.googleapis.com/",
+    "syncFileSystem"
   ],
   "app": {
     "background": {

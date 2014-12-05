@@ -1613,29 +1613,30 @@ struct kernel_statfs {
       void (**entrypoint)(void);
       asm volatile(".bss\n"
                    ".align 8\n"
-                   ".globl "SYS_SYSCALL_ENTRYPOINT"\n"
-                   ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"
+                   ".globl " SYS_SYSCALL_ENTRYPOINT "\n"
+                   ".common " SYS_SYSCALL_ENTRYPOINT ",8,8\n"
                    ".previous\n"
                    /* This logically does 'lea "SYS_SYSCALL_ENTRYPOINT", %0' */
                    "call 0f\n"
                  "0:pop  %0\n"
                    "add  $_GLOBAL_OFFSET_TABLE_+[.-0b], %0\n"
-                   "mov  "SYS_SYSCALL_ENTRYPOINT"@GOT(%0), %0\n"
+                   "mov  " SYS_SYSCALL_ENTRYPOINT "@GOT(%0), %0\n"
                    : "=r"(entrypoint));
       return entrypoint;
     }
 
     #define LSS_ENTRYPOINT ".bss\n"                                           \
                            ".align 8\n"                                       \
-                           ".globl "SYS_SYSCALL_ENTRYPOINT"\n"                \
-                           ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"           \
+                           ".globl " SYS_SYSCALL_ENTRYPOINT "\n"              \
+                           ".common " SYS_SYSCALL_ENTRYPOINT ",8,8\n"         \
                            ".previous\n"                                      \
                            /* Check the SYS_SYSCALL_ENTRYPOINT vector      */ \
                            "push %%eax\n"                                     \
                            "call 10000f\n"                                    \
                      "10000:pop  %%eax\n"                                     \
                            "add  $_GLOBAL_OFFSET_TABLE_+[.-10000b], %%eax\n"  \
-                           "mov  "SYS_SYSCALL_ENTRYPOINT"@GOT(%%eax), %%eax\n"\
+                           "mov  " SYS_SYSCALL_ENTRYPOINT                     \
+                                 "@GOT(%%eax), %%eax\n"                       \
                            "mov  0(%%eax), %%eax\n"                           \
                            "test %%eax, %%eax\n"                              \
                            "jz   10002f\n"                                    \
@@ -1907,10 +1908,10 @@ struct kernel_statfs {
       void (**entrypoint)(void);
       asm volatile(".bss\n"
                    ".align 8\n"
-                   ".globl "SYS_SYSCALL_ENTRYPOINT"\n"
-                   ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"
+                   ".globl " SYS_SYSCALL_ENTRYPOINT "\n"
+                   ".common " SYS_SYSCALL_ENTRYPOINT ",8,8\n"
                    ".previous\n"
-                   "mov "SYS_SYSCALL_ENTRYPOINT"@GOTPCREL(%%rip), %0\n"
+                   "mov " SYS_SYSCALL_ENTRYPOINT "@GOTPCREL(%%rip), %0\n"
                    : "=r"(entrypoint));
       return entrypoint;
     }
@@ -1918,10 +1919,10 @@ struct kernel_statfs {
     #define LSS_ENTRYPOINT                                                    \
               ".bss\n"                                                        \
               ".align 8\n"                                                    \
-              ".globl "SYS_SYSCALL_ENTRYPOINT"\n"                             \
-              ".common "SYS_SYSCALL_ENTRYPOINT",8,8\n"                        \
+              ".globl " SYS_SYSCALL_ENTRYPOINT "\n"                           \
+              ".common " SYS_SYSCALL_ENTRYPOINT ",8,8\n"                      \
               ".previous\n"                                                   \
-              "mov "SYS_SYSCALL_ENTRYPOINT"@GOTPCREL(%%rip), %%rcx\n"         \
+              "mov " SYS_SYSCALL_ENTRYPOINT "@GOTPCREL(%%rip), %%rcx\n"       \
               "mov  0(%%rcx), %%rcx\n"                                        \
               "test %%rcx, %%rcx\n"                                           \
               "jz   10001f\n"                                                 \
@@ -2370,7 +2371,7 @@ struct kernel_statfs {
                               *   return -EINVAL;
                               */
 #ifdef __thumb2__
-			     "push  {r7}\n"
+                             "push  {r7}\n"
 #endif
                              "cmp   %2,#0\n"
                              "it    ne\n"
@@ -2428,7 +2429,7 @@ struct kernel_statfs {
                              "swi 0x0\n"
                            "1:\n"
 #ifdef __thumb2__
-			     "pop {r7}"
+                             "pop {r7}"
 #endif
                              : "=r" (__res)
                              : "i"(-EINVAL),
@@ -2436,7 +2437,7 @@ struct kernel_statfs {
                                "r"(__ptid), "r"(__tls), "r"(__ctid),
                                "i"(__NR_clone), "i"(__NR_exit)
 #ifdef __thumb2__
-			     : "cc", "lr", "memory");
+                             : "cc", "lr", "memory");
 #else
                              : "cc", "r7", "lr", "memory");
 #endif
@@ -2565,14 +2566,22 @@ struct kernel_statfs {
     #define LSS_REG(r,a) register unsigned long __r##r __asm__("$"#r) =       \
                                  (unsigned long)(a)
     #undef  LSS_BODY
+    #undef LSS_SYSCALL_CLOBBERS
+    #if _MIPS_SIM == _MIPS_SIM_ABI32
+    #define LSS_SYSCALL_CLOBBERS "$1", "$3", "$8", "$9", "$10",               \
+                                 "$11", "$12", "$13", "$14", "$15",           \
+                                 "$24", "$25", "hi", "lo", "memory"
+    #else
+    #define LSS_SYSCALL_CLOBBERS "$1", "$3", "$10", "$11", "$12",             \
+                                 "$13", "$14", "$15", "$24", "$25",           \
+                                 "hi", "lo", "memory"
+    #endif
     #define LSS_BODY(type,name,r7,...)                                        \
           register unsigned long __v0 __asm__("$2") = __NR_##name;            \
           __asm__ __volatile__ ("syscall\n"                                   \
                                 : "+r"(__v0), r7 (__r7)                       \
                                 : "0"(__v0), ##__VA_ARGS__                    \
-                                : "$8", "$9", "$10", "$11", "$12",            \
-                                  "$13", "$14", "$15", "$24", "$25",          \
-                                  "memory");                                  \
+                                : LSS_SYSCALL_CLOBBERS);                      \
           LSS_RETURN(type, __v0, __r7)
     #undef _syscall0
     #define _syscall0(type, name)                                             \

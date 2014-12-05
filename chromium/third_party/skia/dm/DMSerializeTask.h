@@ -14,9 +14,7 @@ namespace DM {
 class SerializeTask : public CpuTask {
 
 public:
-    SerializeTask(const Task& parent,
-                  skiagm::GM*,
-                  SkBitmap reference);
+    SerializeTask(const Task& parent, skiagm::GM*, SkBitmap reference);
 
     virtual void draw() SK_OVERRIDE;
     virtual bool shouldSkip() const SK_OVERRIDE;

@@ -7,6 +7,10 @@
 #include "base/stl_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_host.h"
+#include "content/browser/appcache/appcache_response.h"
+#include "content/browser/appcache/appcache_update_job.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -15,35 +19,6 @@
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_update_job.h"
-
-using appcache::AppCache;
-using appcache::AppCacheEntry;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheHost;
-using appcache::AppCacheGroup;
-using appcache::AppCacheResponseInfo;
-using appcache::AppCacheUpdateJob;
-using appcache::AppCacheResponseWriter;
-using appcache::APPCACHE_CACHED_EVENT;
-using appcache::APPCACHE_CHECKING_EVENT;
-using appcache::APPCACHE_DOWNLOADING_EVENT;
-using appcache::APPCACHE_ERROR_EVENT;
-using appcache::AppCacheEventID;
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::HttpResponseInfoIOBuffer;
-using appcache::kAppCacheNoCacheId;
-using appcache::kAppCacheNoResponseId;
-using appcache::Namespace;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
-using appcache::APPCACHE_NO_UPDATE_EVENT;
-using appcache::APPCACHE_OBSOLETE_EVENT;
-using appcache::APPCACHE_PROGRESS_EVENT;
-using appcache::APPCACHE_UPDATE_READY_EVENT;
-using appcache::AppCacheStatus;
 
 namespace content {
 class AppCacheUpdateJobTest;
@@ -220,14 +195,15 @@ class MockHttpServer {
 class MockHttpServerJobFactory
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return MockHttpServer::JobFactory(request, network_delegate);
   }
 };
 
-inline bool operator==(const Namespace& lhs, const Namespace& rhs) {
+inline bool operator==(const AppCacheNamespace& lhs,
+    const AppCacheNamespace& rhs) {
   return lhs.type == rhs.type &&
          lhs.namespace_url == rhs.namespace_url &&
          lhs.target_url == rhs.target_url;
@@ -243,16 +219,13 @@ class MockFrontend : public AppCacheFrontend {
         start_update_trigger_(APPCACHE_CHECKING_EVENT), update_(NULL) {
   }
 
-  virtual void OnCacheSelected(
-      int host_id, const appcache::AppCacheInfo& info) OVERRIDE {
-  }
+  void OnCacheSelected(int host_id, const AppCacheInfo& info) override {}
 
-  virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                               AppCacheStatus status) OVERRIDE {
-  }
+  void OnStatusChanged(const std::vector<int>& host_ids,
+                       AppCacheStatus status) override {}
 
-  virtual void OnEventRaised(const std::vector<int>& host_ids,
-                             AppCacheEventID event_id) OVERRIDE {
+  void OnEventRaised(const std::vector<int>& host_ids,
+                     AppCacheEventID event_id) override {
     raised_events_.push_back(RaisedEvent(host_ids, event_id));
 
     // Trigger additional updates if requested.
@@ -267,17 +240,16 @@ class MockFrontend : public AppCacheFrontend {
     }
   }
 
-  virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                  const appcache::AppCacheErrorDetails& details)
-      OVERRIDE {
+  void OnErrorEventRaised(const std::vector<int>& host_ids,
+                          const AppCacheErrorDetails& details) override {
     error_message_ = details.message;
     OnEventRaised(host_ids, APPCACHE_ERROR_EVENT);
   }
 
-  virtual void OnProgressEventRaised(const std::vector<int>& host_ids,
-                                     const GURL& url,
-                                     int num_total,
-                                     int num_complete) OVERRIDE {
+  void OnProgressEventRaised(const std::vector<int>& host_ids,
+                             const GURL& url,
+                             int num_total,
+                             int num_complete) override {
     if (!ignore_progress_events_)
       OnEventRaised(host_ids, APPCACHE_PROGRESS_EVENT);
 
@@ -305,14 +277,11 @@ class MockFrontend : public AppCacheFrontend {
     }
   }
 
-  virtual void OnLogMessage(int host_id,
-                            appcache::AppCacheLogLevel log_level,
-                            const std::string& message) OVERRIDE {
-  }
+  void OnLogMessage(int host_id,
+                    AppCacheLogLevel log_level,
+                    const std::string& message) override {}
 
-  virtual void OnContentBlocked(int host_id,
-                                const GURL& manifest_url) OVERRIDE {
-  }
+  void OnContentBlocked(int host_id, const GURL& manifest_url) override {}
 
   void AddExpectedEvent(const std::vector<int>& host_ids,
       AppCacheEventID event_id) {
@@ -369,9 +338,9 @@ class MockFrontend : public AppCacheFrontend {
 // Helper factories to simulate redirected URL responses for tests.
 class RedirectFactory : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new net::URLRequestTestJob(
         request,
         network_delegate,
@@ -423,10 +392,10 @@ class RetryRequestTestJob : public net::URLRequestTestJob {
     }
   }
 
-  virtual int GetResponseCode() const OVERRIDE { return response_code_; }
+  int GetResponseCode() const override { return response_code_; }
 
  private:
-  virtual ~RetryRequestTestJob() {}
+  ~RetryRequestTestJob() override {}
 
   static std::string retry_headers() {
     const char no_retry_after[] =
@@ -485,9 +454,9 @@ class RetryRequestTestJob : public net::URLRequestTestJob {
 class RetryRequestTestJobFactory
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return RetryRequestTestJob::RetryFactory(request, network_delegate);
   }
 };
@@ -545,7 +514,7 @@ class HttpHeadersRequestTestJob : public net::URLRequestTestJob {
   }
 
  protected:
-  virtual ~HttpHeadersRequestTestJob() {}
+  ~HttpHeadersRequestTestJob() override {}
 
  private:
   static std::string expect_if_modified_since_;
@@ -565,9 +534,9 @@ bool HttpHeadersRequestTestJob::already_checked_ = false;
 class IfModifiedSinceJobFactory
     : public net::URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual net::URLRequestJob* MaybeCreateJob(
+  net::URLRequestJob* MaybeCreateJob(
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return HttpHeadersRequestTestJob::IfModifiedSinceFactory(
         request, network_delegate);
   }
@@ -579,9 +548,7 @@ class IOThread : public base::Thread {
       : base::Thread(name) {
   }
 
-  virtual ~IOThread() {
-    Stop();
-  }
+  ~IOThread() override { Stop(); }
 
   net::URLRequestContext* request_context() {
     return request_context_.get();
@@ -593,7 +560,7 @@ class IOThread : public base::Thread {
     request_context_->set_job_factory(job_factory_.get());
   }
 
-  virtual void Init() OVERRIDE {
+  void Init() override {
     scoped_ptr<net::URLRequestJobFactoryImpl> factory(
         new net::URLRequestJobFactoryImpl());
     factory->SetProtocolHandler("http", new MockHttpServerJobFactory);
@@ -603,7 +570,7 @@ class IOThread : public base::Thread {
     request_context_->set_job_factory(job_factory_.get());
   }
 
-  virtual void CleanUp() OVERRIDE {
+  void CleanUp() override {
     request_context_.reset();
     job_factory_.reset();
   }
@@ -3041,8 +3008,8 @@ class AppCacheUpdateJobTest : public testing::Test,
       group_->AddUpdateObserver(this);
   }
 
-  virtual void OnUpdateComplete(AppCacheGroup* group) OVERRIDE {
-    ASSERT_EQ(group_, group);
+  void OnUpdateComplete(AppCacheGroup* group) override {
+    ASSERT_EQ(group_.get(), group);
     protect_newest_cache_ = group->newest_complete_cache();
     UpdateFinished();
   }
@@ -3216,7 +3183,7 @@ class AppCacheUpdateJobTest : public testing::Test,
     if (tested_manifest_) {
       AppCache* cache = group_->newest_complete_cache();
       ASSERT_TRUE(cache != NULL);
-      EXPECT_EQ(group_, cache->owning_group());
+      EXPECT_EQ(group_.get(), cache->owning_group());
       EXPECT_TRUE(cache->is_complete());
 
       switch (tested_manifest_) {
@@ -3273,7 +3240,7 @@ class AppCacheUpdateJobTest : public testing::Test,
     expected = 1;
     ASSERT_EQ(expected, cache->fallback_namespaces_.size());
     EXPECT_TRUE(cache->fallback_namespaces_[0] ==
-                    Namespace(
+                    AppCacheNamespace(
                         APPCACHE_FALLBACK_NAMESPACE,
                         MockHttpServer::GetMockUrl("files/fallback1"),
                         MockHttpServer::GetMockUrl("files/fallback1a"),
@@ -3301,7 +3268,7 @@ class AppCacheUpdateJobTest : public testing::Test,
     expected = 1;
     ASSERT_EQ(expected, cache->fallback_namespaces_.size());
     EXPECT_TRUE(cache->fallback_namespaces_[0] ==
-                    Namespace(
+                    AppCacheNamespace(
                         APPCACHE_FALLBACK_NAMESPACE,
                         MockHttpServer::GetMockUrl("files/fallback1"),
                         MockHttpServer::GetMockUrl("files/explicit1"),
@@ -3309,7 +3276,7 @@ class AppCacheUpdateJobTest : public testing::Test,
 
     EXPECT_EQ(expected, cache->online_whitelist_namespaces_.size());
     EXPECT_TRUE(cache->online_whitelist_namespaces_[0] ==
-                    Namespace(
+                    AppCacheNamespace(
                         APPCACHE_NETWORK_NAMESPACE,
                         MockHttpServer::GetMockUrl("files/online1"),
                         GURL(), false));
@@ -3498,7 +3465,7 @@ TEST_F(AppCacheUpdateJobTest, AlreadyDownloading) {
 
   EXPECT_EQ(expected, events[1].first.size());
   EXPECT_EQ(host.host_id(), events[1].first[0]);
-  EXPECT_EQ(appcache::APPCACHE_DOWNLOADING_EVENT, events[1].second);
+  EXPECT_EQ(APPCACHE_DOWNLOADING_EVENT, events[1].second);
 
   EXPECT_EQ(AppCacheGroup::DOWNLOADING, group->update_status());
 }

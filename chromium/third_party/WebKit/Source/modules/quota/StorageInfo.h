@@ -31,12 +31,13 @@
 #ifndef StorageInfo_h
 #define StorageInfo_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class StorageInfo FINAL : public GarbageCollectedFinalized<StorageInfo>, public ScriptWrappable {
+class StorageInfo final : public GarbageCollected<StorageInfo>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static StorageInfo* create(unsigned long long usage, unsigned long long quota)
     {
@@ -45,8 +46,6 @@ public:
 
     unsigned long long usage() const { return m_usage; }
     unsigned long long quota() const { return m_quota; }
-
-    ~StorageInfo();
 
     void trace(Visitor*) { }
 
@@ -57,6 +56,6 @@ private:
     unsigned long long m_quota;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageInfo_h

@@ -27,7 +27,7 @@
 
 #include "modules/webaudio/AudioNode.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
@@ -39,16 +39,16 @@ public:
     AudioBasicInspectorNode(AudioContext*, float sampleRate, unsigned outputChannelCount);
 
     // AudioNode
-    virtual void pullInputs(size_t framesToProcess) OVERRIDE FINAL;
-    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&) OVERRIDE FINAL;
-    virtual void disconnect(unsigned outputIndex, ExceptionState&) OVERRIDE FINAL;
-    virtual void checkNumberOfChannelsForInput(AudioNodeInput*) OVERRIDE FINAL;
+    virtual void pullInputs(size_t framesToProcess) override final;
+    virtual void connect(AudioNode*, unsigned outputIndex, unsigned inputIndex, ExceptionState&) override final;
+    virtual void disconnect(unsigned outputIndex, ExceptionState&) override final;
+    virtual void checkNumberOfChannelsForInput(AudioNodeInput*) override final;
 
 private:
     void updatePullStatus();
     bool m_needAutomaticPull; // When setting to true, AudioBasicInspectorNode will be pulled automaticlly by AudioContext before the end of each render quantum.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioBasicInspectorNode_h

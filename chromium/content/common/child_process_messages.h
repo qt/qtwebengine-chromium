@@ -60,29 +60,20 @@ IPC_STRUCT_TRAITS_END()
 IPC_ENUM_TRAITS_MAX_VALUE(gfx::GpuMemoryBufferType,
                           gfx::GPU_MEMORY_BUFFER_TYPE_LAST)
 
-#if defined(OS_ANDROID)
-IPC_STRUCT_TRAITS_BEGIN(gfx::SurfaceTextureId)
-  IPC_STRUCT_TRAITS_MEMBER(primary_id)
-  IPC_STRUCT_TRAITS_MEMBER(secondary_id)
-IPC_STRUCT_TRAITS_END()
-#endif
-
-IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferId)
-  IPC_STRUCT_TRAITS_MEMBER(primary_id)
-  IPC_STRUCT_TRAITS_MEMBER(secondary_id)
-IPC_STRUCT_TRAITS_END()
-
 IPC_STRUCT_TRAITS_BEGIN(gfx::GpuMemoryBufferHandle)
+  IPC_STRUCT_TRAITS_MEMBER(id)
   IPC_STRUCT_TRAITS_MEMBER(type)
   IPC_STRUCT_TRAITS_MEMBER(handle)
-  IPC_STRUCT_TRAITS_MEMBER(global_id)
 #if defined(OS_MACOSX)
   IPC_STRUCT_TRAITS_MEMBER(io_surface_id)
 #endif
-#if defined(OS_ANDROID)
-  IPC_STRUCT_TRAITS_MEMBER(surface_texture_id)
-#endif
 IPC_STRUCT_TRAITS_END()
+
+IPC_ENUM_TRAITS_MAX_VALUE(gfx::GpuMemoryBuffer::Format,
+                          gfx::GpuMemoryBuffer::FORMAT_LAST)
+
+IPC_ENUM_TRAITS_MAX_VALUE(gfx::GpuMemoryBuffer::Usage,
+                          gfx::GpuMemoryBuffer::USAGE_LAST)
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -194,6 +185,18 @@ IPC_MESSAGE_CONTROL1(ChildProcessHostMsg_TcmallocStats,
 IPC_SYNC_MESSAGE_CONTROL4_1(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
                             uint32 /* width */,
                             uint32 /* height */,
-                            uint32 /* internalformat */,
-                            uint32 /* usage */,
+                            gfx::GpuMemoryBuffer::Format,
+                            gfx::GpuMemoryBuffer::Usage,
                             gfx::GpuMemoryBufferHandle)
+
+// Informs the browser that the child deleted a gpu memory buffer.
+IPC_MESSAGE_CONTROL2(ChildProcessHostMsg_DeletedGpuMemoryBuffer,
+                     gfx::GpuMemoryBufferId,
+                     uint32 /* sync_point */)
+
+// Asks the browser to create a block of discardable shared memory for the
+// child process.
+IPC_SYNC_MESSAGE_CONTROL1_1(
+    ChildProcessHostMsg_SyncAllocateLockedDiscardableSharedMemory,
+    uint32 /* size */,
+    base::SharedMemoryHandle)

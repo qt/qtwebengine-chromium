@@ -31,17 +31,12 @@
 #include "core/rendering/RenderView.h"
 #include "platform/Partitions.h"
 
-namespace WebCore {
+namespace blink {
 
 LayoutState::LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, RenderView& view)
-    : m_clipped(false)
-    , m_isPaginated(pageLogicalHeight)
+    : m_isPaginated(pageLogicalHeight)
     , m_pageLogicalHeightChanged(pageLogicalHeightChanged)
-    , m_cachedOffsetsEnabled(true)
-#if ASSERT_ENABLED
-    , m_layoutDeltaXSaturated(false)
-    , m_layoutDeltaYSaturated(false)
-#endif
+    , m_containingBlockLogicalWidthChanged(false)
     , m_columnInfo(0)
     , m_next(0)
     , m_pageLogicalHeight(pageLogicalHeight)
@@ -51,57 +46,33 @@ LayoutState::LayoutState(LayoutUnit pageLogicalHeight, bool pageLogicalHeightCha
     view.pushLayoutState(*this);
 }
 
-LayoutState::LayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, ColumnInfo* columnInfo)
-    : m_columnInfo(columnInfo)
+LayoutState::LayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUnit pageLogicalHeight, bool pageLogicalHeightChanged, ColumnInfo* columnInfo, bool containingBlockLogicalWidthChanged)
+    : m_containingBlockLogicalWidthChanged(containingBlockLogicalWidthChanged)
+    , m_columnInfo(columnInfo)
     , m_next(renderer.view()->layoutState())
     , m_renderer(renderer)
 {
     renderer.view()->pushLayoutState(*this);
-    m_cachedOffsetsEnabled = m_next->m_cachedOffsetsEnabled && renderer.supportsLayoutStateCachedOffsets();
     bool fixed = renderer.isOutOfFlowPositioned() && renderer.style()->position() == FixedPosition;
     if (fixed) {
         // FIXME: This doesn't work correctly with transforms.
         FloatPoint fixedOffset = renderer.view()->localToAbsolute(FloatPoint(), IsFixed);
-        m_paintOffset = LayoutSize(fixedOffset.x(), fixedOffset.y()) + offset;
+        m_layoutOffset = LayoutSize(fixedOffset.x(), fixedOffset.y()) + offset;
     } else {
-        m_paintOffset = m_next->m_paintOffset + offset;
+        m_layoutOffset = m_next->m_layoutOffset + offset;
     }
 
     if (renderer.isOutOfFlowPositioned() && !fixed) {
         if (RenderObject* container = renderer.container()) {
-            if (container->isInFlowPositioned() && container->isRenderInline())
-                m_paintOffset += toRenderInline(container)->offsetForInFlowPositionedInline(renderer);
+            if (container->style()->hasInFlowPosition() && container->isRenderInline())
+                m_layoutOffset += toRenderInline(container)->offsetForInFlowPositionedInline(renderer);
         }
     }
-
-    m_layoutOffset = m_paintOffset;
-
-    if (renderer.isInFlowPositioned() && renderer.hasLayer())
-        m_paintOffset += renderer.layer()->offsetForInFlowPosition();
-
-    m_clipped = !fixed && m_next->m_clipped;
-    if (m_clipped)
-        m_clipRect = m_next->m_clipRect;
-
-    if (renderer.hasOverflowClip()) {
-        LayoutSize deltaSize = RuntimeEnabledFeatures::repaintAfterLayoutEnabled() ? LayoutSize() : renderer.view()->layoutDelta();
-
-        LayoutRect clipRect(toPoint(m_paintOffset) + deltaSize, renderer.cachedSizeForOverflowClip());
-        if (m_clipped)
-            m_clipRect.intersect(clipRect);
-        else {
-            m_clipRect = clipRect;
-            m_clipped = true;
-        }
-
-        m_paintOffset -= renderer.scrolledContentOffset();
-    }
-
     // If we establish a new page height, then cache the offset to the top of the first page.
     // We can compare this later on to figure out what part of the page we're actually on,
     if (pageLogicalHeight || m_columnInfo || renderer.isRenderFlowThread()) {
         m_pageLogicalHeight = pageLogicalHeight;
-        bool isFlipped = renderer.style()->isFlippedBlocksWritingMode();
+        bool isFlipped = renderer.style()->slowIsFlippedBlocksWritingMode();
         m_pageOffset = LayoutSize(m_layoutOffset.width() + (!isFlipped ? renderer.borderLeft() + renderer.paddingLeft() : renderer.borderRight() + renderer.paddingRight()),
             m_layoutOffset.height() + (!isFlipped ? renderer.borderTop() + renderer.paddingTop() : renderer.borderBottom() + renderer.paddingBottom()));
         m_pageLogicalHeightChanged = pageLogicalHeightChanged;
@@ -125,37 +96,13 @@ LayoutState::LayoutState(RenderBox& renderer, const LayoutSize& offset, LayoutUn
     if (!m_columnInfo)
         m_columnInfo = m_next->m_columnInfo;
 
-    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
-        m_layoutDelta = m_next->m_layoutDelta;
-#if ASSERT_ENABLED
-        m_layoutDeltaXSaturated = m_next->m_layoutDeltaXSaturated;
-        m_layoutDeltaYSaturated = m_next->m_layoutDeltaYSaturated;
-#endif
-    }
-
     // FIXME: <http://bugs.webkit.org/show_bug.cgi?id=13443> Apply control clip if present.
 }
 
-inline static bool shouldDisableLayoutStateForSubtree(RenderObject& renderer)
-{
-    RenderObject* object = &renderer;
-    while (object) {
-        if (object->supportsLayoutStateCachedOffsets())
-            return true;
-        object = object->container();
-    }
-    return false;
-}
-
 LayoutState::LayoutState(RenderObject& root)
-    : m_clipped(false)
-    , m_isPaginated(false)
+    : m_isPaginated(false)
     , m_pageLogicalHeightChanged(false)
-    , m_cachedOffsetsEnabled(shouldDisableLayoutStateForSubtree(root))
-#if ASSERT_ENABLED
-    , m_layoutDeltaXSaturated(false)
-    , m_layoutDeltaYSaturated(false)
-#endif
+    , m_containingBlockLogicalWidthChanged(false)
     , m_columnInfo(0)
     , m_next(root.view()->layoutState())
     , m_pageLogicalHeight(0)
@@ -171,14 +118,7 @@ LayoutState::LayoutState(RenderObject& root)
 
     RenderObject* container = root.container();
     FloatPoint absContentPoint = container->localToAbsolute(FloatPoint(), UseTransforms);
-    m_paintOffset = LayoutSize(absContentPoint.x(), absContentPoint.y());
-
-    if (container->hasOverflowClip()) {
-        m_clipped = true;
-        RenderBox* containerBox = toRenderBox(container);
-        m_clipRect = LayoutRect(toPoint(m_paintOffset), containerBox->cachedSizeForOverflowClip());
-        m_paintOffset -= containerBox->scrolledContentOffset();
-    }
+    m_layoutOffset = LayoutSize(absContentPoint.x(), absContentPoint.y());
 }
 
 LayoutState::~LayoutState()
@@ -210,4 +150,4 @@ void LayoutState::addForcedColumnBreak(const RenderBox& child, const LayoutUnit&
     m_columnInfo->addForcedBreak(pageLogicalOffset(child, childLogicalOffset));
 }
 
-} // namespace WebCore
+} // namespace blink

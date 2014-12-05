@@ -17,21 +17,27 @@ class CC_EXPORT SolidColorLayerImpl : public LayerImpl {
                                                 int id) {
     return make_scoped_ptr(new SolidColorLayerImpl(tree_impl, id));
   }
-  virtual ~SolidColorLayerImpl();
+
+  static void AppendSolidQuads(RenderPass* render_pass,
+                               const Occlusion& occlusion_in_content_space,
+                               SharedQuadState* shared_quad_state,
+                               const gfx::Rect& visible_content_rect,
+                               SkColor color,
+                               AppendQuadsData* append_quads_data);
+
+  ~SolidColorLayerImpl() override;
 
   // LayerImpl overrides.
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl)
-      OVERRIDE;
-  virtual void AppendQuads(QuadSink* quad_sink,
-                           AppendQuadsData* append_quads_data) OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void AppendQuads(RenderPass* render_pass,
+                   const Occlusion& occlusion_in_content_space,
+                   AppendQuadsData* append_quads_data) override;
 
  protected:
   SolidColorLayerImpl(LayerTreeImpl* tree_impl, int id);
 
  private:
-  virtual const char* LayerTypeAsString() const OVERRIDE;
-
-  const int tile_size_;
+  const char* LayerTypeAsString() const override;
 
   DISALLOW_COPY_AND_ASSIGN(SolidColorLayerImpl);
 };

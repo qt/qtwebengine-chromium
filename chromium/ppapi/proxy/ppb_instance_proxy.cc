@@ -6,6 +6,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "build/build_config.h"
+#include "media/base/limits.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/pp_time.h"
 #include "ppapi/c/pp_var.h"
@@ -34,9 +35,11 @@
 #include "ppapi/proxy/serialized_var.h"
 #include "ppapi/proxy/truetype_font_singleton_resource.h"
 #include "ppapi/proxy/uma_private_resource.h"
+#include "ppapi/shared_impl/array_var.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 #include "ppapi/shared_impl/ppb_url_util_shared.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
+#include "ppapi/shared_impl/scoped_pp_var.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
 #include "ppapi/thunk/ppb_compositor_api.h"
@@ -179,10 +182,16 @@ bool PPB_Instance_Proxy::OnMessageReceived(const IPC::Message& msg) {
                         OnHostMsgPromiseResolved)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_PromiseResolvedWithSession,
                         OnHostMsgPromiseResolvedWithSession)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_PromiseResolvedWithKeyIds,
+                        OnHostMsgPromiseResolvedWithKeyIds)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_PromiseRejected,
                         OnHostMsgPromiseRejected)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_SessionMessage,
                         OnHostMsgSessionMessage)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_SessionKeysChange,
+                        OnHostMsgSessionKeysChange)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_SessionExpirationChange,
+                        OnHostMsgSessionExpirationChange)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_SessionReady,
                         OnHostMsgSessionReady)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_PPBInstance_SessionClosed,
@@ -216,37 +225,28 @@ PP_Bool PPB_Instance_Proxy::BindGraphics(PP_Instance instance,
                                          PP_Resource device) {
   // If device is 0, pass a null HostResource. This signals the host to unbind
   // all devices.
-  HostResource host_resource;
   PP_Resource pp_resource = 0;
   if (device) {
     Resource* resource =
         PpapiGlobals::Get()->GetResourceTracker()->GetResource(device);
     if (!resource || resource->pp_instance() != instance)
       return PP_FALSE;
-    host_resource = resource->host_resource();
-    pp_resource = resource->pp_resource();
-  } else {
-    // Passing 0 means unbinding all devices.
-    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
-        API_ID_PPB_INSTANCE, instance, 0));
-    return PP_TRUE;
+    // We need to pass different resource to Graphics 2D, 3D and Compositor
+    // right now.  Once 3D is migrated to the new design, we should be able to
+    // unify this.
+    if (resource->AsPPB_Graphics3D_API()) {
+      pp_resource = resource->host_resource().host_resource();
+    } else if (resource->AsPPB_Graphics2D_API() ||
+               resource->AsPPB_Compositor_API()) {
+      pp_resource = resource->pp_resource();
+    } else {
+      // A bad resource.
+      return PP_FALSE;
+    }
   }
-
-  // We need to pass different resource to Graphics 2D and 3D right now.  Once
-  // 3D is migrated to the new design, we should be able to unify this.
-  EnterResourceNoLock<PPB_Compositor_API> enter_compositor(device, false);
-  EnterResourceNoLock<PPB_Graphics2D_API> enter_2d(device, false);
-  EnterResourceNoLock<PPB_Graphics3D_API> enter_3d(device, false);
-  if (enter_compositor.succeeded() || enter_2d.succeeded()) {
-    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
+  dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
         API_ID_PPB_INSTANCE, instance, pp_resource));
-    return PP_TRUE;
-  } else if (enter_3d.succeeded()) {
-    dispatcher()->Send(new PpapiHostMsg_PPBInstance_BindGraphics(
-        API_ID_PPB_INSTANCE, instance, host_resource.host_resource()));
-    return PP_TRUE;
-  }
-  return PP_FALSE;
+  return PP_TRUE;
 }
 
 PP_Bool PPB_Instance_Proxy::IsFullFrame(PP_Instance instance) {
@@ -507,7 +507,7 @@ void PPB_Instance_Proxy::ZoomLimitsChanged(PP_Instance instance,
 PP_Var PPB_Instance_Proxy::GetDocumentURL(PP_Instance instance,
                                           PP_URLComponents_Dev* components) {
   ReceiveSerializedVarReturnValue result;
-  PP_URLComponents_Dev url_components;
+  PP_URLComponents_Dev url_components = {{0}};
   dispatcher()->Send(new PpapiHostMsg_PPBInstance_GetDocumentURL(
       API_ID_PPB_INSTANCE, instance, &url_components, &result));
   if (components)
@@ -586,6 +586,35 @@ void PPB_Instance_Proxy::PromiseResolvedWithSession(PP_Instance instance,
       SerializedVarSendInput(dispatcher(), web_session_id_var)));
 }
 
+void PPB_Instance_Proxy::PromiseResolvedWithKeyIds(PP_Instance instance,
+                                                   uint32 promise_id,
+                                                   PP_Var key_ids_var) {
+  ArrayVar* key_ids_array = ArrayVar::FromPPVar(key_ids_var);
+  if (!key_ids_array ||
+      key_ids_array->GetLength() > media::limits::kMaxKeyIds) {
+    NOTREACHED();
+    return;
+  }
+
+  std::vector<std::vector<uint8_t> > key_ids;
+  for (size_t i = 0; i < key_ids_array->GetLength(); ++i) {
+    ArrayBufferVar* key_id = ArrayBufferVar::FromPPVar(key_ids_array->Get(i));
+    if (!key_id || key_id->ByteLength() < media::limits::kMinKeyIdLength ||
+        key_id->ByteLength() > media::limits::kMaxKeyIdLength) {
+      NOTREACHED();
+      continue;
+    }
+
+    const uint8_t* key_id_ptr = static_cast<const uint8_t*>(key_id->Map());
+    const uint32_t key_id_size = key_id->ByteLength();
+    std::vector<uint8_t> key_id_vector(key_id_ptr, key_id_ptr + key_id_size);
+    key_ids.push_back(key_id_vector);
+  }
+
+  dispatcher()->Send(new PpapiHostMsg_PPBInstance_PromiseResolvedWithKeyIds(
+      API_ID_PPB_INSTANCE, instance, promise_id, key_ids));
+}
+
 void PPB_Instance_Proxy::PromiseRejected(PP_Instance instance,
                                          uint32 promise_id,
                                          PP_CdmExceptionCode exception_code,
@@ -610,6 +639,37 @@ void PPB_Instance_Proxy::SessionMessage(PP_Instance instance,
       SerializedVarSendInput(dispatcher(), web_session_id_var),
       SerializedVarSendInput(dispatcher(), message_var),
       SerializedVarSendInput(dispatcher(), destination_url_var)));
+}
+
+void PPB_Instance_Proxy::SessionKeysChange(PP_Instance instance,
+                                           PP_Var web_session_id_var,
+                                           PP_Bool has_additional_usable_key) {
+  StringVar* session_id = StringVar::FromPPVar(web_session_id_var);
+  if (!session_id ||
+      session_id->value().length() > media::limits::kMaxWebSessionIdLength) {
+    NOTREACHED();
+    return;
+  }
+
+  dispatcher()->Send(new PpapiHostMsg_PPBInstance_SessionKeysChange(
+      API_ID_PPB_INSTANCE,
+      instance,
+      session_id->value(),
+      has_additional_usable_key));
+}
+
+void PPB_Instance_Proxy::SessionExpirationChange(PP_Instance instance,
+                                                 PP_Var web_session_id_var,
+                                                 PP_Time new_expiry_time) {
+  StringVar* session_id = StringVar::FromPPVar(web_session_id_var);
+  if (!session_id ||
+      session_id->value().length() > media::limits::kMaxWebSessionIdLength) {
+    NOTREACHED();
+    return;
+  }
+
+  dispatcher()->Send(new PpapiHostMsg_PPBInstance_SessionExpirationChange(
+      API_ID_PPB_INSTANCE, instance, session_id->value(), new_expiry_time));
 }
 
 void PPB_Instance_Proxy::SessionReady(PP_Instance instance,
@@ -778,7 +838,7 @@ void PPB_Instance_Proxy::PostMessage(PP_Instance instance,
 int32_t PPB_Instance_Proxy::RegisterMessageHandler(
     PP_Instance instance,
     void* user_data,
-    const PPP_MessageHandler_0_1* handler,
+    const PPP_MessageHandler_0_2* handler,
     PP_Resource message_loop) {
   InstanceData* data =
       static_cast<PluginDispatcher*>(dispatcher())->GetInstanceData(instance);
@@ -787,6 +847,25 @@ int32_t PPB_Instance_Proxy::RegisterMessageHandler(
 
   int32_t result = PP_ERROR_FAILED;
   scoped_ptr<MessageHandler> message_handler = MessageHandler::Create(
+      instance, handler, user_data, message_loop, &result);
+  if (message_handler)
+    data->message_handler = message_handler.Pass();
+  return result;
+}
+
+// TODO(dmichael): Remove this. crbug.com/414398
+int32_t PPB_Instance_Proxy::RegisterMessageHandler_1_1_Deprecated(
+    PP_Instance instance,
+    void* user_data,
+    const PPP_MessageHandler_0_1_Deprecated* handler,
+    PP_Resource message_loop) {
+  InstanceData* data =
+      static_cast<PluginDispatcher*>(dispatcher())->GetInstanceData(instance);
+  if (!data)
+    return PP_ERROR_BADARGUMENT;
+
+  int32_t result = PP_ERROR_FAILED;
+  scoped_ptr<MessageHandler> message_handler = MessageHandler::CreateDeprecated(
       instance, handler, user_data, message_loop, &result);
   if (message_handler)
     data->message_handler = message_handler.Pass();
@@ -1207,6 +1286,40 @@ void PPB_Instance_Proxy::OnHostMsgPromiseResolvedWithSession(
   }
 }
 
+void PPB_Instance_Proxy::OnHostMsgPromiseResolvedWithKeyIds(
+    PP_Instance instance,
+    uint32_t promise_id,
+    const std::vector<std::vector<uint8_t> >& key_ids) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
+  if (key_ids.size() > media::limits::kMaxKeyIds) {
+    NOTREACHED();
+    return;
+  }
+
+  scoped_refptr<ArrayVar> key_ids_array = new ArrayVar();
+  key_ids_array->SetLength(key_ids.size());
+  for (size_t i = 0; i < key_ids.size(); ++i) {
+    const std::vector<uint8_t>& entry = key_ids[i];
+    if (entry.size() < media::limits::kMinKeyIdLength ||
+        entry.size() > media::limits::kMaxKeyIdLength) {
+      NOTREACHED();
+      continue;
+    }
+    key_ids_array->Set(
+        i,
+        PpapiGlobals::Get()->GetVarTracker()->MakeArrayBufferPPVar(entry.size(),
+                                                                   &entry[0]));
+  }
+
+  EnterInstanceNoLock enter(instance);
+  if (enter.succeeded()) {
+    ScopedPPVar key_ids_var(ScopedPPVar::PassRef(), key_ids_array->GetPPVar());
+    enter.functions()->PromiseResolvedWithKeyIds(
+        instance, promise_id, key_ids_var.get());
+  }
+}
+
 void PPB_Instance_Proxy::OnHostMsgPromiseRejected(
     PP_Instance instance,
     uint32_t promise_id,
@@ -1238,6 +1351,36 @@ void PPB_Instance_Proxy::OnHostMsgSessionMessage(
                                       web_session_id.Get(dispatcher()),
                                       message.Get(dispatcher()),
                                       destination_url.Get(dispatcher()));
+  }
+}
+
+void PPB_Instance_Proxy::OnHostMsgSessionKeysChange(
+    PP_Instance instance,
+    const std::string& web_session_id,
+    PP_Bool has_additional_usable_key) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
+  EnterInstanceNoLock enter(instance);
+  if (enter.succeeded()) {
+    ScopedPPVar web_session_id_var(ScopedPPVar::PassRef(),
+                                   StringVar::StringToPPVar(web_session_id));
+    enter.functions()->SessionKeysChange(
+        instance, web_session_id_var.get(), has_additional_usable_key);
+  }
+}
+
+void PPB_Instance_Proxy::OnHostMsgSessionExpirationChange(
+    PP_Instance instance,
+    const std::string& web_session_id,
+    PP_Time new_expiry_time) {
+  if (!dispatcher()->permissions().HasPermission(PERMISSION_PRIVATE))
+    return;
+  EnterInstanceNoLock enter(instance);
+  if (enter.succeeded()) {
+    ScopedPPVar web_session_id_var(ScopedPPVar::PassRef(),
+                                   StringVar::StringToPPVar(web_session_id));
+    enter.functions()->SessionExpirationChange(
+        instance, web_session_id_var.get(), new_expiry_time);
   }
 }
 

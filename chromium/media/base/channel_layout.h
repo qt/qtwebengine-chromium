@@ -105,8 +105,11 @@ enum ChannelLayout {
   // of that.
   CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC = 30,
 
+  // Front L, Front R, Side L, Side R, LFE
+  CHANNEL_LAYOUT_4_1_QUAD_SIDE = 31,
+
   // Max value, must always equal the largest entry ever logged.
-  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC
+  CHANNEL_LAYOUT_MAX = CHANNEL_LAYOUT_4_1_QUAD_SIDE
 };
 
 enum Channels {
@@ -126,7 +129,7 @@ enum Channels {
 
 // Returns the expected channel position in an interleaved stream.  Values of -1
 // mean the channel at that index is not used for that layout.  Values range
-// from 0 to CHANNELS_MAX - 1.
+// from 0 to ChannelLayoutToChannelCount(layout) - 1.
 MEDIA_EXPORT int ChannelOrder(ChannelLayout layout, Channels channel);
 
 // Returns the number of channels in a given ChannelLayout.

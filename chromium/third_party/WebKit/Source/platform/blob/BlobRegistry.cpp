@@ -39,7 +39,6 @@
 #include "public/platform/WebBlobData.h"
 #include "public/platform/WebBlobRegistry.h"
 #include "public/platform/WebString.h"
-#include "public/platform/WebThreadSafeData.h"
 #include "wtf/Assertions.h"
 #include "wtf/HashMap.h"
 #include "wtf/MainThread.h"
@@ -49,17 +48,12 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-using blink::WebBlobData;
-using blink::WebBlobRegistry;
-using blink::WebThreadSafeData;
-using WTF::ThreadSpecific;
-
-namespace WebCore {
+namespace blink {
 
 class BlobOriginCache : public SecurityOriginCache {
 public:
     BlobOriginCache();
-    virtual SecurityOrigin* cachedOrigin(const KURL&) OVERRIDE;
+    virtual SecurityOrigin* cachedOrigin(const KURL&) override;
 };
 
 struct BlobRegistryContext {
@@ -104,7 +98,7 @@ public:
 
 static WebBlobRegistry* blobRegistry()
 {
-    return blink::Platform::current()->blobRegistry();
+    return Platform::current()->blobRegistry();
 }
 
 typedef HashMap<String, RefPtr<SecurityOrigin> > BlobURLOriginMap;
@@ -135,7 +129,7 @@ static void removeFromOriginMap(const KURL& url)
 
 void BlobRegistry::registerBlobData(const String& uuid, PassOwnPtr<BlobData> data)
 {
-    blobRegistry()->registerBlobData(uuid, blink::WebBlobData(data));
+    blobRegistry()->registerBlobData(uuid, WebBlobData(data));
 }
 
 void BlobRegistry::addBlobDataRef(const String& uuid)
@@ -202,18 +196,16 @@ static void addDataToStreamTask(void* context)
 {
     OwnPtr<BlobRegistryContext> blobRegistryContext = adoptPtr(static_cast<BlobRegistryContext*>(context));
     if (WebBlobRegistry* registry = blobRegistry()) {
-        WebThreadSafeData webThreadSafeData(blobRegistryContext->streamData);
-        registry->addDataToStream(blobRegistryContext->url, webThreadSafeData);
+        RefPtr<RawData> data(blobRegistryContext->streamData);
+        registry->addDataToStream(blobRegistryContext->url, data->data(), data->length());
     }
 }
 
 void BlobRegistry::addDataToStream(const KURL& url, PassRefPtr<RawData> streamData)
 {
     if (isMainThread()) {
-        if (WebBlobRegistry* registry = blobRegistry()) {
-            WebThreadSafeData webThreadSafeData(streamData);
-            registry->addDataToStream(url, webThreadSafeData);
-        }
+        if (WebBlobRegistry* registry = blobRegistry())
+            registry->addDataToStream(url, streamData->data(), streamData->length());
     } else {
         OwnPtr<BlobRegistryContext> context = adoptPtr(new BlobRegistryContext(url, streamData));
         callOnMainThread(&addDataToStreamTask, context.leakPtr());
@@ -288,4 +280,4 @@ SecurityOrigin* BlobOriginCache::cachedOrigin(const KURL& url)
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

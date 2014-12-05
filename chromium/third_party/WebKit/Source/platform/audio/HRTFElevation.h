@@ -39,7 +39,7 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 // HRTFElevation contains all of the HRTFKernels (one left ear and one right ear per azimuth angle) for a particular elevation.
 
@@ -86,12 +86,6 @@ public:
     static bool calculateKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
                                                     RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR);
 
-    // Given a specific azimuth and elevation angle, returns the left and right HRTFKernel in kernelL and kernelR.
-    // This method averages the measured response using symmetry of azimuth (for example by averaging the -30.0 and +30.0 azimuth responses).
-    // Returns true on success.
-    static bool calculateSymmetricKernelsForAzimuthElevation(int azimuth, int elevation, float sampleRate, const String& subjectName,
-                                                             RefPtr<HRTFKernel>& kernelL, RefPtr<HRTFKernel>& kernelR);
-
 private:
     HRTFElevation(PassOwnPtr<HRTFKernelList> kernelListL, PassOwnPtr<HRTFKernelList> kernelListR, int elevation, float sampleRate)
         : m_kernelListL(kernelListL)
@@ -107,6 +101,6 @@ private:
     float m_sampleRate;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HRTFElevation_h

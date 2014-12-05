@@ -44,6 +44,10 @@
  background: rgb(255, 255, 204);
 }
 
+#typeInfo .disabled {
+ background: rgb(224, 224, 224);
+}
+
 #typeInfo .ok {
  background: rgb(204, 255, 204);
 }
@@ -87,6 +91,14 @@
   margin-right: auto;
   text-align: center;
   width: 300px;
+}
+
+#dump-status {
+  margin: 2px;
+}
+
+#import-status {
+  margin: 2px;
 }
 
 #traffic-event-container {

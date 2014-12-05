@@ -42,9 +42,7 @@
 #include <emmintrin.h>
 #endif
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 //
 // Supporting Math Functions
@@ -261,7 +259,7 @@ static void v4MulPointByMatrix(const Vector4 p, const TransformationMatrix::Matr
 
 static double v3Length(Vector3 a)
 {
-    return sqrt((a[0] * a[0]) + (a[1] * a[1]) + (a[2] * a[2]));
+    return std::sqrt((a[0] * a[0]) + (a[1] * a[1]) + (a[2] * a[2]));
 }
 
 static void v3Scale(Vector3 v, double desiredLength)
@@ -437,25 +435,25 @@ static bool decompose(const TransformationMatrix::Matrix4& mat, TransformationMa
     t = row[0][0] + row[1][1] + row[2][2] + 1.0;
 
     if (t > 1e-4) {
-        s = 0.5 / sqrt(t);
+        s = 0.5 / std::sqrt(t);
         w = 0.25 / s;
         x = (row[2][1] - row[1][2]) * s;
         y = (row[0][2] - row[2][0]) * s;
         z = (row[1][0] - row[0][1]) * s;
     } else if (row[0][0] > row[1][1] && row[0][0] > row[2][2]) {
-        s = sqrt (1.0 + row[0][0] - row[1][1] - row[2][2]) * 2.0; // S=4*qx
+        s = std::sqrt(1.0 + row[0][0] - row[1][1] - row[2][2]) * 2.0; // S=4*qx
         x = 0.25 * s;
         y = (row[0][1] + row[1][0]) / s;
         z = (row[0][2] + row[2][0]) / s;
         w = (row[2][1] - row[1][2]) / s;
     } else if (row[1][1] > row[2][2]) {
-        s = sqrt (1.0 + row[1][1] - row[0][0] - row[2][2]) * 2.0; // S=4*qy
+        s = std::sqrt(1.0 + row[1][1] - row[0][0] - row[2][2]) * 2.0; // S=4*qy
         x = (row[0][1] + row[1][0]) / s;
         y = 0.25 * s;
         z = (row[1][2] + row[2][1]) / s;
         w = (row[0][2] - row[2][0]) / s;
     } else {
-        s = sqrt(1.0 + row[2][2] - row[0][0] - row[1][1]) * 2.0; // S=4*qz
+        s = std::sqrt(1.0 + row[2][2] - row[0][0] - row[1][1]) * 2.0; // S=4*qz
         x = (row[0][2] + row[2][0]) / s;
         y = (row[1][2] + row[2][1]) / s;
         z = 0.25 * s;
@@ -493,10 +491,10 @@ static void slerp(double qa[4], const double qb[4], double t)
 
     if (angle + 1.0 > .05) {
         if (1.0 - angle >= .05) {
-            th = acos (angle);
-            invth = 1.0 / sin (th);
-            scale = sin (th * (1.0 - t)) * invth;
-            invscale = sin (th * t) * invth;
+            th = std::acos(angle);
+            invth = 1.0 / std::sin(th);
+            scale = std::sin(th * (1.0 - t)) * invth;
+            invscale = std::sin(th * t) * invth;
         } else {
             scale = 1.0 - t;
             invscale = t;
@@ -506,8 +504,8 @@ static void slerp(double qa[4], const double qb[4], double t)
         by = ax;
         bz = -aw;
         bw = az;
-        scale = sin(piDouble * (.5 - t));
-        invscale = sin (piDouble * t);
+        scale = std::sin(piDouble * (.5 - t));
+        invscale = std::sin(piDouble * t);
     }
 
     cx = ax * scale + bx * invscale;
@@ -622,7 +620,7 @@ FloatQuad TransformationMatrix::projectQuad(const FloatQuad& q, bool* clamped) c
 static float clampEdgeValue(float f)
 {
     ASSERT(!std::isnan(f));
-    return min<float>(max<float>(f, (-LayoutUnit::max() / 2).toFloat()), (LayoutUnit::max() / 2).toFloat());
+    return std::min<float>(std::max<float>(f, (-LayoutUnit::max() / 2).toFloat()), (LayoutUnit::max() / 2).toFloat());
 }
 
 LayoutRect TransformationMatrix::clampedBoundsOfProjectedQuad(const FloatQuad& q) const
@@ -761,7 +759,7 @@ TransformationMatrix& TransformationMatrix::scale3d(double sx, double sy, double
 TransformationMatrix& TransformationMatrix::rotate3d(double x, double y, double z, double angle)
 {
     // Normalize the axis of rotation
-    double length = sqrt(x * x + y * y + z * z);
+    double length = std::sqrt(x * x + y * y + z * z);
     if (length == 0) {
         // A direction vector that cannot be normalized, such as [0, 0, 0], will cause the rotation to not be applied.
         return *this;
@@ -774,8 +772,8 @@ TransformationMatrix& TransformationMatrix::rotate3d(double x, double y, double 
     // Angles are in degrees. Switch to radians.
     angle = deg2rad(angle);
 
-    double sinTheta = sin(angle);
-    double cosTheta = cos(angle);
+    double sinTheta = std::sin(angle);
+    double cosTheta = std::cos(angle);
 
     TransformationMatrix mat;
 
@@ -854,8 +852,8 @@ TransformationMatrix& TransformationMatrix::rotate3d(double rx, double ry, doubl
 
     TransformationMatrix mat;
 
-    double sinTheta = sin(rz);
-    double cosTheta = cos(rz);
+    double sinTheta = std::sin(rz);
+    double cosTheta = std::cos(rz);
 
     mat.m_matrix[0][0] = cosTheta;
     mat.m_matrix[0][1] = sinTheta;
@@ -872,8 +870,8 @@ TransformationMatrix& TransformationMatrix::rotate3d(double rx, double ry, doubl
 
     TransformationMatrix rmat(mat);
 
-    sinTheta = sin(ry);
-    cosTheta = cos(ry);
+    sinTheta = std::sin(ry);
+    cosTheta = std::cos(ry);
 
     mat.m_matrix[0][0] = cosTheta;
     mat.m_matrix[0][1] = 0.0;
@@ -890,8 +888,8 @@ TransformationMatrix& TransformationMatrix::rotate3d(double rx, double ry, doubl
 
     rmat.multiply(mat);
 
-    sinTheta = sin(rx);
-    cosTheta = cos(rx);
+    sinTheta = std::sin(rx);
+    cosTheta = std::cos(rx);
 
     mat.m_matrix[0][0] = 1.0;
     mat.m_matrix[0][1] = 0.0;
@@ -969,8 +967,8 @@ TransformationMatrix& TransformationMatrix::skew(double sx, double sy)
     sy = deg2rad(sy);
 
     TransformationMatrix mat;
-    mat.m_matrix[0][1] = tan(sy); // note that the y shear goes in the first row
-    mat.m_matrix[1][0] = tan(sx); // and the x shear in the second row
+    mat.m_matrix[0][1] = std::tan(sy); // note that the y shear goes in the first row
+    mat.m_matrix[1][0] = std::tan(sx); // and the x shear in the second row
 
     multiply(mat);
     return *this;
@@ -999,7 +997,68 @@ TransformationMatrix TransformationMatrix::rectToRect(const FloatRect& from, con
 // this = mat * this.
 TransformationMatrix& TransformationMatrix::multiply(const TransformationMatrix& mat)
 {
-#if CPU(APPLE_ARMV7S)
+#if CPU(ARM64)
+    double* rightMatrix = &(m_matrix[0][0]);
+    const double* leftMatrix = &(mat.m_matrix[0][0]);
+    asm volatile(
+        // Load mat.m_matrix to v16 - v23.
+        // Load this.m_matrix to v24 - v31.
+        // Result: this = mat * this
+        // | v0, v1 |   | v16, v17 |   | v24, v25 |
+        // | v2, v3 | = | v18, v19 | * | v26, v27 |
+        // | v4, v5 |   | v20, v21 |   | v28, v29 |
+        // | v6, v7 |   | v22, v23 |   | v30, v31 |
+        "mov x9, %[rightMatrix]   \t\n"
+        "ld1 {v16.2d - v19.2d}, [%[leftMatrix]], 64  \t\n"
+        "ld1 {v20.2d - v23.2d}, [%[leftMatrix]]      \t\n"
+        "ld1 {v24.2d - v27.2d}, [%[rightMatrix]], 64 \t\n"
+        "ld1 {v28.2d - v31.2d}, [%[rightMatrix]]     \t\n"
+
+        "fmul v0.2d, v24.2d, v16.d[0]  \t\n"
+        "fmul v1.2d, v25.2d, v16.d[0]  \t\n"
+        "fmul v2.2d, v24.2d, v18.d[0]  \t\n"
+        "fmul v3.2d, v25.2d, v18.d[0]  \t\n"
+        "fmul v4.2d, v24.2d, v20.d[0]  \t\n"
+        "fmul v5.2d, v25.2d, v20.d[0]  \t\n"
+        "fmul v6.2d, v24.2d, v22.d[0]  \t\n"
+        "fmul v7.2d, v25.2d, v22.d[0]  \t\n"
+
+        "fmla v0.2d, v26.2d, v16.d[1]  \t\n"
+        "fmla v1.2d, v27.2d, v16.d[1]  \t\n"
+        "fmla v2.2d, v26.2d, v18.d[1]  \t\n"
+        "fmla v3.2d, v27.2d, v18.d[1]  \t\n"
+        "fmla v4.2d, v26.2d, v20.d[1]  \t\n"
+        "fmla v5.2d, v27.2d, v20.d[1]  \t\n"
+        "fmla v6.2d, v26.2d, v22.d[1]  \t\n"
+        "fmla v7.2d, v27.2d, v22.d[1]  \t\n"
+
+        "fmla v0.2d, v28.2d, v17.d[0]  \t\n"
+        "fmla v1.2d, v29.2d, v17.d[0]  \t\n"
+        "fmla v2.2d, v28.2d, v19.d[0]  \t\n"
+        "fmla v3.2d, v29.2d, v19.d[0]  \t\n"
+        "fmla v4.2d, v28.2d, v21.d[0]  \t\n"
+        "fmla v5.2d, v29.2d, v21.d[0]  \t\n"
+        "fmla v6.2d, v28.2d, v23.d[0]  \t\n"
+        "fmla v7.2d, v29.2d, v23.d[0]  \t\n"
+
+        "fmla v0.2d, v30.2d, v17.d[1]  \t\n"
+        "fmla v1.2d, v31.2d, v17.d[1]  \t\n"
+        "fmla v2.2d, v30.2d, v19.d[1]  \t\n"
+        "fmla v3.2d, v31.2d, v19.d[1]  \t\n"
+        "fmla v4.2d, v30.2d, v21.d[1]  \t\n"
+        "fmla v5.2d, v31.2d, v21.d[1]  \t\n"
+        "fmla v6.2d, v30.2d, v23.d[1]  \t\n"
+        "fmla v7.2d, v31.2d, v23.d[1]  \t\n"
+
+        "st1 {v0.2d - v3.2d}, [x9], 64 \t\n"
+        "st1 {v4.2d - v7.2d}, [x9]     \t\n"
+        : [leftMatrix]"+r"(leftMatrix), [rightMatrix]"+r"(rightMatrix)
+        :
+        : "memory", "x9", "v16", "v17", "v18", "v19", "v20", "v21", "v22",
+            "v23", "v24", "v25", "v26", "v27", "v28", "v29", "v30", "v31",
+            "v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"
+    );
+#elif CPU(APPLE_ARMV7S)
     double* leftMatrix = &(m_matrix[0][0]);
     const double* rightMatrix = &(mat.m_matrix[0][0]);
     asm volatile (// First row of leftMatrix.
@@ -1297,7 +1356,7 @@ bool TransformationMatrix::isInvertible() const
     if (isIdentityOrTranslation())
         return true;
 
-    double det = WebCore::determinant4x4(m_matrix);
+    double det = blink::determinant4x4(m_matrix);
 
     if (fabs(det) < SMALL_NUMBER)
         return false;
@@ -1320,7 +1379,7 @@ TransformationMatrix TransformationMatrix::inverse() const
     }
 
     TransformationMatrix invMat;
-    bool inverted = WebCore::inverse(m_matrix, invMat.m_matrix);
+    bool inverted = blink::inverse(m_matrix, invMat.m_matrix);
     if (!inverted)
         return TransformationMatrix();
 
@@ -1401,7 +1460,7 @@ bool TransformationMatrix::decompose(DecomposedType& decomp) const
         decomp.scaleZ = 1;
     }
 
-    if (!WebCore::decompose(m_matrix, decomp))
+    if (!blink::decompose(m_matrix, decomp))
         return false;
     return true;
 }
@@ -1503,34 +1562,6 @@ void TransformationMatrix::toColumnMajorFloatArray(FloatMatrix4& result) const
     result[13] = m42();
     result[14] = m43();
     result[15] = m44();
-}
-
-bool TransformationMatrix::isBackFaceVisible() const
-{
-    // Back-face visibility is determined by transforming the normal vector (0, 0, 1) and
-    // checking the sign of the resulting z component. However, normals cannot be
-    // transformed by the original matrix, they require being transformed by the
-    // inverse-transpose.
-    //
-    // Since we know we will be using (0, 0, 1), and we only care about the z-component of
-    // the transformed normal, then we only need the m33() element of the
-    // inverse-transpose. Therefore we do not need the transpose.
-    //
-    // Additionally, if we only need the m33() element, we do not need to compute a full
-    // inverse. Instead, knowing the inverse of a matrix is adjoint(matrix) / determinant,
-    // we can simply compute the m33() of the adjoint (adjugate) matrix, without computing
-    // the full adjoint.
-
-    double determinant = WebCore::determinant4x4(m_matrix);
-
-    // If the matrix is not invertible, then we assume its backface is not visible.
-    if (fabs(determinant) < SMALL_NUMBER)
-        return false;
-
-    double cofactor33 = determinant3x3(m11(), m12(), m14(), m21(), m22(), m24(), m41(), m42(), m44());
-    double zComponentOfTransformedNormal = cofactor33 / determinant;
-
-    return zComponentOfTransformedNormal < 0;
 }
 
 SkMatrix44 TransformationMatrix::toSkMatrix44(const TransformationMatrix& matrix)

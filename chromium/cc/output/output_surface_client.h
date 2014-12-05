@@ -11,7 +11,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/output/begin_frame_args.h"
 #include "cc/output/context_provider.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace gfx {
 class Transform;
@@ -38,10 +38,13 @@ class CC_EXPORT OutputSurfaceClient {
   virtual void DidSwapBuffersComplete() = 0;
   virtual void ReclaimResources(const CompositorFrameAck* ack) = 0;
   virtual void DidLoseOutputSurface() = 0;
-  virtual void SetExternalDrawConstraints(const gfx::Transform& transform,
-                                          const gfx::Rect& viewport,
-                                          const gfx::Rect& clip,
-                                          bool valid_for_tile_management) = 0;
+  virtual void SetExternalDrawConstraints(
+      const gfx::Transform& transform,
+      const gfx::Rect& viewport,
+      const gfx::Rect& clip,
+      const gfx::Rect& viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority,
+      bool resourceless_software_draw) = 0;
   virtual void SetMemoryPolicy(const ManagedMemoryPolicy& policy) = 0;
   // If set, |callback| will be called subsequent to each new tree activation,
   // regardless of the compositor visibility or damage. |callback| must remain

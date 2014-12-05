@@ -29,14 +29,6 @@
 
 #include <string>
 
-#include "talk/base/helpers.h"
-#include "talk/base/logging.h"
-#include "talk/base/network.h"
-#include "talk/base/socketaddress.h"
-#include "talk/base/stringencode.h"
-#include "talk/base/stringutils.h"
-#include "talk/base/thread.h"
-#include "talk/base/windowpickerfactory.h"
 #include "talk/examples/call/console.h"
 #include "talk/examples/call/friendinvitesendtask.h"
 #include "talk/examples/call/muc.h"
@@ -47,23 +39,31 @@
 #include "talk/media/base/mediaengine.h"
 #include "talk/media/base/rtpdataengine.h"
 #include "talk/media/base/screencastid.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/network.h"
+#include "webrtc/base/socketaddress.h"
+#include "webrtc/base/stringencode.h"
+#include "webrtc/base/stringutils.h"
+#include "webrtc/base/thread.h"
+#include "webrtc/base/windowpickerfactory.h"
 #ifdef HAVE_SCTP
 #include "talk/media/sctp/sctpdataengine.h"
 #endif
 #include "talk/media/base/videorenderer.h"
 #include "talk/media/devices/devicemanager.h"
 #include "talk/media/devices/videorendererfactory.h"
-#include "talk/p2p/base/sessionmanager.h"
-#include "talk/p2p/client/basicportallocator.h"
-#include "talk/p2p/client/sessionmanagertask.h"
+#include "webrtc/p2p/base/sessionmanager.h"
+#include "webrtc/p2p/client/basicportallocator.h"
+#include "webrtc/p2p/client/sessionmanagertask.h"
 #include "talk/session/media/mediamessages.h"
 #include "talk/session/media/mediasessionclient.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/hangoutpubsubclient.h"
-#include "talk/xmpp/mucroomconfigtask.h"
-#include "talk/xmpp/mucroomlookuptask.h"
-#include "talk/xmpp/presenceouttask.h"
-#include "talk/xmpp/pingtask.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/hangoutpubsubclient.h"
+#include "webrtc/libjingle/xmpp/mucroomconfigtask.h"
+#include "webrtc/libjingle/xmpp/mucroomlookuptask.h"
+#include "webrtc/libjingle/xmpp/pingtask.h"
+#include "webrtc/libjingle/xmpp/presenceouttask.h"
 
 namespace {
 
@@ -94,7 +94,7 @@ std::string GetWord(const std::vector<std::string>& words,
 
 int GetInt(const std::vector<std::string>& words, size_t index, int def) {
   int val;
-  if (words.size() > index && talk_base::FromString(words[index], &val)) {
+  if (words.size() > index && rtc::FromString(words[index], &val)) {
     return val;
   } else {
     return def;
@@ -251,7 +251,7 @@ void CallClient::ParseLine(const std::string& line) {
         console_->PrintLine("Can't screencast twice.  Unscreencast first.");
       } else {
         std::string streamid = "screencast";
-        screencast_ssrc_ = talk_base::CreateRandomId();
+        screencast_ssrc_ = rtc::CreateRandomId();
         int fps = GetInt(words, 1, 5);  // Default to 5 fps.
 
         cricket::ScreencastId screencastid;
@@ -478,7 +478,7 @@ void CallClient::OnStateChange(buzz::XmppEngine::State state) {
 }
 
 void CallClient::InitMedia() {
-  worker_thread_ = new talk_base::Thread();
+  worker_thread_ = new rtc::Thread();
   // The worker thread must be started here since initialization of
   // the ChannelManager will generate messages that need to be
   // dispatched by it.
@@ -486,13 +486,15 @@ void CallClient::InitMedia() {
 
   // TODO: It looks like we are leaking many objects. E.g.
   // |network_manager_| is never deleted.
-  network_manager_ = new talk_base::BasicNetworkManager();
+  network_manager_ = new rtc::BasicNetworkManager();
 
   // TODO: Decide if the relay address should be specified here.
-  talk_base::SocketAddress stun_addr("stun.l.google.com", 19302);
+  rtc::SocketAddress stun_addr("stun.l.google.com", 19302);
+  cricket::ServerAddresses stun_servers;
+  stun_servers.insert(stun_addr);
   port_allocator_ =  new cricket::BasicPortAllocator(
-      network_manager_, stun_addr, talk_base::SocketAddress(),
-      talk_base::SocketAddress(), talk_base::SocketAddress());
+      network_manager_, stun_servers, rtc::SocketAddress(),
+      rtc::SocketAddress(), rtc::SocketAddress());
 
   if (portallocator_flags_ != 0) {
     port_allocator_->set_flags(portallocator_flags_);
@@ -683,7 +685,7 @@ void CallClient::InitPresence() {
 
 void CallClient::StartXmppPing() {
   buzz::PingTask* ping = new buzz::PingTask(
-      xmpp_client_, talk_base::Thread::Current(),
+      xmpp_client_, rtc::Thread::Current(),
       kPingPeriodMillis, kPingTimeoutMillis);
   ping->SignalTimeout.connect(this, &CallClient::OnPingTimeout);
   ping->Start();
@@ -739,7 +741,7 @@ void CallClient::PrintRoster() {
 void CallClient::SendChat(const std::string& to, const std::string msg) {
   buzz::XmlElement* stanza = new buzz::XmlElement(buzz::QN_MESSAGE);
   stanza->AddAttr(buzz::QN_TO, to);
-  stanza->AddAttr(buzz::QN_ID, talk_base::CreateRandomString(16));
+  stanza->AddAttr(buzz::QN_ID, rtc::CreateRandomString(16));
   stanza->AddAttr(buzz::QN_TYPE, "chat");
   buzz::XmlElement* body = new buzz::XmlElement(buzz::QN_BODY);
   body->SetBodyText(msg);
@@ -779,7 +781,7 @@ void CallClient::SendData(const std::string& streamid,
 
   cricket::SendDataParams params;
   params.ssrc = stream.first_ssrc();
-  talk_base::Buffer payload(text.data(), text.length());
+  rtc::Buffer payload(text.data(), text.length());
   cricket::SendDataResult result;
   bool sent = call_->SendData(session, params, payload, &result);
   if (!sent) {
@@ -854,7 +856,7 @@ bool CallClient::FindJid(const std::string& name, buzz::Jid* found_jid,
 
 void CallClient::OnDataReceived(cricket::Call*,
                                 const cricket::ReceiveDataParams& params,
-                                const talk_base::Buffer& payload) {
+                                const rtc::Buffer& payload) {
   // TODO(mylesj): Support receiving data on sessions other than the first.
   cricket::Session* session = GetFirstSession();
   if (!session)
@@ -887,10 +889,8 @@ bool CallClient::PlaceCall(const std::string& name,
     AddSession(call_->InitiateSession(jid, media_client_->jid(), options));
   }
   media_client_->SetFocus(call_);
-  if (call_->has_video() && render_) {
-    if (!options.is_muc) {
-      call_->SetLocalRenderer(local_renderer_);
-    }
+  if (call_->has_video() && render_ && !options.is_muc) {
+    // TODO(pthatcher): Hookup local_render_ to the local capturer.
   }
   if (options.is_muc) {
     const std::string& nick = mucs_[jid]->local_jid().resource();
@@ -1084,7 +1084,7 @@ void CallClient::Accept(const cricket::CallOptions& options) {
   call_->AcceptSession(session, options);
   media_client_->SetFocus(call_);
   if (call_->has_video() && render_) {
-    call_->SetLocalRenderer(local_renderer_);
+    // TODO(pthatcher): Hookup local_render_ to the local capturer.
     RenderAllStreams(call_, session, true);
   }
   SetupAcceptedCall();
@@ -1104,7 +1104,7 @@ void CallClient::Reject() {
 }
 
 void CallClient::Quit() {
-  talk_base::Thread::Current()->Quit();
+  rtc::Thread::Current()->Quit();
 }
 
 void CallClient::SetNick(const std::string& muc_nick) {
@@ -1283,8 +1283,9 @@ void CallClient::OnMucStatusUpdate(const buzz::Jid& jid,
     return;
   }
 
-  if (!status.available()) {
-    // Remove them from the room.
+  if (status.available()) {
+    muc->members()[status.jid().resource()] = status;
+  } else {
     muc->members().erase(status.jid().resource());
   }
 }
@@ -1562,7 +1563,7 @@ buzz::Jid CallClient::GenerateRandomMucJid() {
     }
   }
 
-  talk_base::sprintfn(guid_room,
+  rtc::sprintfn(guid_room,
                       ARRAY_SIZE(guid_room),
                       "private-chat-%s@%s",
                       guid,
@@ -1572,19 +1573,19 @@ buzz::Jid CallClient::GenerateRandomMucJid() {
 
 bool CallClient::SelectFirstDesktopScreencastId(
     cricket::ScreencastId* screencastid) {
-  if (!talk_base::WindowPickerFactory::IsSupported()) {
+  if (!rtc::WindowPickerFactory::IsSupported()) {
     LOG(LS_WARNING) << "Window picker not suported on this OS.";
     return false;
   }
 
-  talk_base::WindowPicker* picker =
-      talk_base::WindowPickerFactory::CreateWindowPicker();
+  rtc::WindowPicker* picker =
+      rtc::WindowPickerFactory::CreateWindowPicker();
   if (!picker) {
     LOG(LS_WARNING) << "Could not create a window picker.";
     return false;
   }
 
-  talk_base::DesktopDescriptionList desktops;
+  rtc::DesktopDescriptionList desktops;
   if (!picker->GetDesktopList(&desktops) || desktops.empty()) {
     LOG(LS_WARNING) << "Could not get a list of desktops.";
     return false;

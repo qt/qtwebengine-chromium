@@ -31,12 +31,12 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 class LocalFrame;
+class MediaQuery;
 class MediaQueryExp;
 class MediaQueryResult;
 class MediaQuerySet;
-class RenderStyle;
 class MediaValues;
 
 typedef WillBeHeapVector<RefPtrWillBeMember<MediaQueryResult> > MediaQueryResultList;
@@ -57,35 +57,38 @@ class MediaQueryEvaluator {
 public:
     // Creates evaluator which evaluates only simple media queries
     // Evaluator returns true for "all", and returns value of \mediaFeatureResult
-    // for any media features
+    // for any media features.
 
     explicit MediaQueryEvaluator(bool mediaFeatureResult = false);
 
     // Creates evaluator which evaluates only simple media queries
     // Evaluator  returns true for acceptedMediaType and returns value of \mediafeatureResult
-    // for any media features
+    // for any media features.
 
-    MediaQueryEvaluator(const String& acceptedMediaType, bool mediaFeatureResult = false);
     MediaQueryEvaluator(const char* acceptedMediaType, bool mediaFeatureResult = false);
 
-    // Creates evaluator which evaluates full media queries
-    MediaQueryEvaluator(const String& acceptedMediaType, LocalFrame*);
+    // Creates evaluator which evaluates full media queries.
+    explicit MediaQueryEvaluator(LocalFrame*);
 
-    // Creates evaluator which evaluates in a thread-safe manner a subset of media values
-    MediaQueryEvaluator(const String& acceptedMediaType, const MediaValues&);
+    // Creates evaluator which evaluates in a thread-safe manner a subset of media values.
+    explicit MediaQueryEvaluator(const MediaValues&);
 
     ~MediaQueryEvaluator();
 
     bool mediaTypeMatch(const String& mediaTypeToMatch) const;
-    bool mediaTypeMatchSpecific(const char* mediaTypeToMatch) const;
 
-    // Evaluates a list of media queries
+    // Evaluates a list of media queries.
     bool eval(const MediaQuerySet*, MediaQueryResultList* = 0) const;
 
-    // Evaluates media query subexpression, ie "and (media-feature: value)" part
+    // Evaluates media query.
+    bool eval(const MediaQuery*, MediaQueryResultList*) const;
+
+    // Evaluates media query subexpression, ie "and (media-feature: value)" part.
     bool eval(const MediaQueryExp*) const;
 
 private:
+    const String mediaType() const;
+
     String m_mediaType;
     bool m_expectedResult;
     RefPtr<MediaValues> m_mediaValues;

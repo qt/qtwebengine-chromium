@@ -30,12 +30,12 @@
 #include <libxml/tree.h>
 #include <libxslt/transform.h>
 
-namespace WebCore {
+namespace blink {
 
 class ResourceFetcher;
 class XSLImportRule;
 
-class XSLStyleSheet FINAL : public StyleSheet {
+class XSLStyleSheet final : public StyleSheet {
 public:
     static PassRefPtrWillBeRawPtr<XSLStyleSheet> create(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL)
     {
@@ -56,10 +56,10 @@ public:
     // Taking an arbitrary node is unsafe, because owner node pointer can become
     // stale. XSLTProcessor ensures that the stylesheet doesn't outlive its
     // parent, in part by not exposing it to JavaScript.
-    static PassRefPtrWillBeRawPtr<XSLStyleSheet> createForXSLTProcessor(Node* parentNode, const String& originalURL, const KURL& finalURL)
+    static PassRefPtrWillBeRawPtr<XSLStyleSheet> createForXSLTProcessor(Document* document, Node* stylesheetRootNode, const String& originalURL, const KURL& finalURL)
     {
         ASSERT(RuntimeEnabledFeatures::xsltEnabled());
-        return adoptRefWillBeNoop(new XSLStyleSheet(parentNode, originalURL, finalURL, false));
+        return adoptRefWillBeNoop(new XSLStyleSheet(document, stylesheetRootNode, originalURL, finalURL, false));
     }
 
     virtual ~XSLStyleSheet();
@@ -76,7 +76,7 @@ public:
     ResourceFetcher* fetcher();
 
     Document* ownerDocument();
-    virtual XSLStyleSheet* parentStyleSheet() const OVERRIDE { return m_parentStyleSheet; }
+    virtual XSLStyleSheet* parentStyleSheet() const override { return m_parentStyleSheet; }
     void setParentStyleSheet(XSLStyleSheet*);
 
     xmlDocPtr document();
@@ -88,21 +88,22 @@ public:
     void markAsProcessed();
     bool processed() const { return m_processed; }
 
-    virtual String type() const OVERRIDE { return "text/xml"; }
-    virtual bool disabled() const OVERRIDE { return m_isDisabled; }
-    virtual void setDisabled(bool b) OVERRIDE { m_isDisabled = b; }
-    virtual Node* ownerNode() const OVERRIDE { return m_ownerNode; }
-    virtual String href() const OVERRIDE { return m_originalURL; }
-    virtual String title() const OVERRIDE { return emptyString(); }
+    virtual String type() const override { return "text/xml"; }
+    virtual bool disabled() const override { return m_isDisabled; }
+    virtual void setDisabled(bool b) override { m_isDisabled = b; }
+    virtual Node* ownerNode() const override { return m_ownerNode; }
+    virtual String href() const override { return m_originalURL; }
+    virtual String title() const override { return emptyString(); }
 
-    virtual void clearOwnerNode() OVERRIDE { m_ownerNode = nullptr; }
-    virtual KURL baseURL() const OVERRIDE { return m_finalURL; }
-    virtual bool isLoading() const OVERRIDE;
+    virtual void clearOwnerNode() override { m_ownerNode = nullptr; }
+    virtual KURL baseURL() const override { return m_finalURL; }
+    virtual bool isLoading() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     XSLStyleSheet(Node* parentNode, const String& originalURL, const KURL& finalURL, bool embedded);
+    XSLStyleSheet(Document* ownerDocument, Node* styleSheetRootNode, const String& originalURL, const KURL& finalURL, bool embedded);
     XSLStyleSheet(XSLImportRule* parentImport, const String& originalURL, const KURL& finalURL);
 
     RawPtrWillBeMember<Node> m_ownerNode;
@@ -120,10 +121,11 @@ private:
     bool m_compilationFailed;
 
     RawPtrWillBeMember<XSLStyleSheet> m_parentStyleSheet;
+    RefPtrWillBeMember<Document> m_ownerDocument;
 };
 
 DEFINE_TYPE_CASTS(XSLStyleSheet, StyleSheet, sheet, !sheet->isCSSStyleSheet(), !sheet.isCSSStyleSheet());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // XSLStyleSheet_h

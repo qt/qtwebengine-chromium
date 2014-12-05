@@ -27,15 +27,13 @@
 #ifndef TextTrack_h
 #define TextTrack_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/html/track/TrackBase.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class Document;
 class ExceptionState;
 class HTMLMediaElement;
 class TextTrack;
@@ -45,20 +43,21 @@ class TextTrackList;
 class VTTRegion;
 class VTTRegionList;
 
-class TextTrack : public TrackBase, public ScriptWrappable, public EventTargetWithInlineData {
+class TextTrack : public TrackBase, public EventTargetWithInlineData {
+    DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(TrackBase);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TextTrack);
 public:
-    static PassRefPtrWillBeRawPtr<TextTrack> create(Document& document, const AtomicString& kind, const AtomicString& label, const AtomicString& language)
+    static PassRefPtrWillBeRawPtr<TextTrack> create(const AtomicString& kind, const AtomicString& label, const AtomicString& language)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new TextTrack(document, kind, label, language, emptyAtom, AddTrack));
+        return adoptRefWillBeNoop(new TextTrack(kind, label, language, emptyAtom, AddTrack));
     }
     virtual ~TextTrack();
 
     virtual void setTrackList(TextTrackList*);
     TextTrackList* trackList() { return m_trackList; }
 
-    virtual void setKind(const AtomicString&) OVERRIDE;
+    virtual void setKind(const AtomicString&) override;
 
     static const AtomicString& subtitlesKeyword();
     static const AtomicString& captionsKeyword();
@@ -114,16 +113,16 @@ public:
     void removeAllCues();
 
     // EventTarget methods
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
-    TextTrack(Document&, const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
+    TextTrack(const AtomicString& kind, const AtomicString& label, const AtomicString& language, const AtomicString& id, TextTrackType);
 
-    virtual bool isValidKind(const AtomicString& kind) const OVERRIDE { return isValidKindKeyword(kind); }
-    virtual AtomicString defaultKind() const OVERRIDE { return subtitlesKeyword(); }
+    virtual bool isValidKind(const AtomicString& kind) const override { return isValidKindKeyword(kind); }
+    virtual AtomicString defaultKind() const override { return subtitlesKeyword(); }
 
     RefPtrWillBeMember<TextTrackCueList> m_cues;
 
@@ -142,6 +141,8 @@ private:
     bool m_hasBeenConfigured;
 };
 
-} // namespace WebCore
+DEFINE_TRACK_TYPE_CASTS(TextTrack, TrackBase::TextTrack);
 
-#endif
+} // namespace blink
+
+#endif // TextTrack_h

@@ -2,17 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/command_line.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/child_process_messages.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
+
+#if defined(OS_WIN)
+#include "base/win/windows_version.h"
+#endif
 
 namespace content {
 namespace {
@@ -36,13 +42,12 @@ class RenderProcessHostTest : public ContentBrowserTest,
 
  protected:
   // RenderProcessHostObserver:
-  virtual void RenderProcessExited(RenderProcessHost* host,
-                                   base::ProcessHandle handle,
-                                   base::TerminationStatus status,
-                                   int exit_code) OVERRIDE {
+  void RenderProcessExited(RenderProcessHost* host,
+                           base::TerminationStatus status,
+                           int exit_code) override {
     ++process_exits_;
   }
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE {
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override {
     ++host_destructions_;
   }
 
@@ -115,15 +120,14 @@ class ShellCloser : public RenderProcessHostObserver {
 
  protected:
   // RenderProcessHostObserver:
-  virtual void RenderProcessExited(RenderProcessHost* host,
-                                   base::ProcessHandle handle,
-                                   base::TerminationStatus status,
-                                   int exit_code) OVERRIDE {
+  void RenderProcessExited(RenderProcessHost* host,
+                           base::TerminationStatus status,
+                           int exit_code) override {
     logging_string_->append("ShellCloser::RenderProcessExited ");
     shell_->Close();
   }
 
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE {
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override {
     logging_string_->append("ShellCloser::RenderProcessHostDestroyed ");
   }
 
@@ -140,14 +144,13 @@ class ObserverLogger : public RenderProcessHostObserver {
 
  protected:
   // RenderProcessHostObserver:
-  virtual void RenderProcessExited(RenderProcessHost* host,
-                                   base::ProcessHandle handle,
-                                   base::TerminationStatus status,
-                                   int exit_code) OVERRIDE {
+  void RenderProcessExited(RenderProcessHost* host,
+                           base::TerminationStatus status,
+                           int exit_code) override {
     logging_string_->append("ObserverLogger::RenderProcessExited ");
   }
 
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE {
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override {
     logging_string_->append("ObserverLogger::RenderProcessHostDestroyed ");
     host_destroyed_ = true;
   }
@@ -191,6 +194,43 @@ IN_PROC_BROWSER_TEST_F(RenderProcessHostTest,
     rph->RemoveObserver(&observer_logger);
   }
 }
+
+#if defined(OS_WIN)
+// Provides functionality to test renderer processes with the Win32K lockdown
+// process mitigation.
+class Win32KLockdownRendererProcessHostTest : public RenderProcessHostTest {
+ public:
+  Win32KLockdownRendererProcessHostTest() {}
+
+  virtual ~Win32KLockdownRendererProcessHostTest() {}
+
+ protected:
+  virtual void SetUp() override {
+    base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
+    command_line->AppendSwitch(switches::kEnableWin32kRendererLockDown);
+    RenderProcessHostTest::SetUp();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Win32KLockdownRendererProcessHostTest);
+};
+
+// Tests whether navigation requests with the Win32K lockdown mitigation set
+// work correctly.
+IN_PROC_BROWSER_TEST_F(Win32KLockdownRendererProcessHostTest,
+                       RendererWin32KLockdownNavigationTest) {
+  if (base::win::GetVersion() < base::win::VERSION_WIN8)
+    return;
+
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  NavigateToURL(shell(), test_url);
+
+  EXPECT_EQ(1, RenderProcessHostCount());
+  EXPECT_EQ(0, process_exits_);
+}
+#endif
 
 }  // namespace
 }  // namespace content

@@ -39,6 +39,7 @@ import collections
 import functools
 import multiprocessing
 import os.path
+import pipes
 import subprocess
 import sys
 
@@ -81,6 +82,7 @@ def _ExtractEditsFromStdout(build_directory, stdout):
   for line in lines[start_index + 1:end_index]:
     try:
       edit_type, path, offset, length, replacement = line.split(':', 4)
+      replacement = replacement.replace("\0", "\n");
       # Normalize the file path emitted by the clang tool to be relative to the
       # current working directory.
       path = os.path.relpath(os.path.join(build_directory, path))
@@ -214,8 +216,11 @@ def _ApplyEdits(edits, clang_format_diff_path):
       f.truncate()
       f.write(contents)
     if clang_format_diff_path:
-      if subprocess.call('git diff -U0 %s | python %s -style=Chromium' % (
-          k, clang_format_diff_path), shell=True) != 0:
+      # TODO(dcheng): python3.3 exposes this publicly as shlex.quote, but Chrome
+      # uses python2.7. Use the deprecated interface until Chrome uses a newer
+      # Python.
+      if subprocess.call('git diff -U0 %s | python %s -i -p1 -style=file ' % (
+          pipes.quote(k), clang_format_diff_path), shell=True) != 0:
         print 'clang-format failed for %s' % k
   print 'Applied %d edits to %d files' % (edit_count, len(edits))
 

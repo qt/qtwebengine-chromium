@@ -21,9 +21,7 @@ class CC_EXPORT ContentLayerPainter : public LayerPainter {
  public:
   static scoped_ptr<ContentLayerPainter> Create(ContentLayerClient* client);
 
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE;
+  void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) override;
 
  private:
   explicit ContentLayerPainter(ContentLayerClient* client);
@@ -38,34 +36,34 @@ class CC_EXPORT ContentLayer : public TiledLayer {
  public:
   static scoped_refptr<ContentLayer> Create(ContentLayerClient* client);
 
-  void ClearClient() { client_ = NULL; }
+  void ClearClient();
 
-  virtual bool DrawsContent() const OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* layer_tree_host) OVERRIDE;
-  virtual void SetTexturePriorities(const PriorityCalculator& priority_calc)
-      OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual bool NeedMoreUpdates() OVERRIDE;
+  void SetLayerTreeHost(LayerTreeHost* layer_tree_host) override;
+  void SetTexturePriorities(const PriorityCalculator& priority_calc) override;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  bool NeedMoreUpdates() override;
 
-  virtual void SetContentsOpaque(bool contents_opaque) OVERRIDE;
+  void SetContentsOpaque(bool contents_opaque) override;
 
-  virtual bool SupportsLCDText() const OVERRIDE;
+  bool SupportsLCDText() const override;
 
-  virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
+  skia::RefPtr<SkPicture> GetPicture() const override;
 
-  virtual void OnOutputSurfaceCreated() OVERRIDE;
+  void OnOutputSurfaceCreated() override;
 
  protected:
   explicit ContentLayer(ContentLayerClient* client);
-  virtual ~ContentLayer();
+  ~ContentLayer() override;
+
+  bool HasDrawableContent() const override;
 
   // TiledLayer implementation.
-  virtual LayerUpdater* Updater() const OVERRIDE;
+  LayerUpdater* Updater() const override;
 
  private:
   // TiledLayer implementation.
-  virtual void CreateUpdaterIfNeeded() OVERRIDE;
+  void CreateUpdaterIfNeeded() override;
 
   void UpdateCanUseLCDText();
 

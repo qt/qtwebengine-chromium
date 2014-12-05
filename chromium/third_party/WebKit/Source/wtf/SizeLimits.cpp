@@ -42,14 +42,14 @@
 
 namespace WTF {
 
-#if !defined(NDEBUG) || SECURITY_ASSERT_ENABLED
+#if ENABLE(ASSERT) || ENABLE(SECURITY_ASSERT)
 // The debug/assertion version may get bigger.
 struct SameSizeAsRefCounted {
     int a;
-#if SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
     bool b;
 #endif
-#if !defined(NDEBUG)
+#if ENABLE(ASSERT)
     bool c;
     ThreadRestrictionVerifier d;
 #endif

@@ -11,13 +11,16 @@
 namespace content {
 
 // How long to wait before we consider a renderer hung.
-CONTENT_EXPORT extern const int kHungRendererDelayMs;
+CONTENT_EXPORT extern const int64 kHungRendererDelayMs;
 
 // The maximum plugin width and height.
 extern const uint16 kMaxPluginSideLength;
 // The maximum plugin size, defined as the number of pixels occupied by the
 // plugin.
 extern const uint32 kMaxPluginSize;
+
+// The maximum length of string as data url.
+extern const size_t kMaxLengthOfDataURLString;
 
 // Constants used to organize content processes in about:tracing.
 CONTENT_EXPORT extern const int kTraceEventBrowserProcessSortIndex;

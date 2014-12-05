@@ -7,9 +7,29 @@
 
 #include <vector>
 
+#include "src/bailout-reason.h"
 #include "src/globals.h"
 
 #include "src/arm64/assembler-arm64-inl.h"
+#include "src/base/bits.h"
+
+// Simulator specific helpers.
+#if USE_SIMULATOR
+  // TODO(all): If possible automatically prepend an indicator like
+  // UNIMPLEMENTED or LOCATION.
+  #define ASM_UNIMPLEMENTED(message)                                         \
+  __ Debug(message, __LINE__, NO_PARAM)
+  #define ASM_UNIMPLEMENTED_BREAK(message)                                   \
+  __ Debug(message, __LINE__,                                                \
+           FLAG_ignore_asm_unimplemented_break ? NO_PARAM : BREAK)
+  #define ASM_LOCATION(message)                                              \
+  __ Debug("LOCATION: " message, __LINE__, NO_PARAM)
+#else
+  #define ASM_UNIMPLEMENTED(message)
+  #define ASM_UNIMPLEMENTED_BREAK(message)
+  #define ASM_LOCATION(message)
+#endif
+
 
 namespace v8 {
 namespace internal {
@@ -24,6 +44,11 @@ namespace internal {
   V(Ldr, CPURegister&, rt, LoadOpFor(rt))                     \
   V(Str, CPURegister&, rt, StoreOpFor(rt))                    \
   V(Ldrsw, Register&, rt, LDRSW_x)
+
+#define LSPAIR_MACRO_LIST(V)                             \
+  V(Ldp, CPURegister&, rt, rt2, LoadPairOpFor(rt, rt2))  \
+  V(Stp, CPURegister&, rt, rt2, StorePairOpFor(rt, rt2)) \
+  V(Ldpsw, CPURegister&, rt, rt2, LDPSW_x)
 
 
 // ----------------------------------------------------------------------------
@@ -202,6 +227,18 @@ class MacroAssembler : public Assembler {
   static bool IsImmMovz(uint64_t imm, unsigned reg_size);
   static unsigned CountClearHalfWords(uint64_t imm, unsigned reg_size);
 
+  // Try to move an immediate into the destination register in a single
+  // instruction. Returns true for success, and updates the contents of dst.
+  // Returns false, otherwise.
+  bool TryOneInstrMoveImmediate(const Register& dst, int64_t imm);
+
+  // Move an immediate into register dst, and return an Operand object for use
+  // with a subsequent instruction that accepts a shift. The value moved into
+  // dst is not necessarily equal to imm; it may have had a shifting operation
+  // applied to it that will be subsequently undone by the shift applied in the
+  // Operand.
+  Operand MoveImmediateForShiftedOp(const Register& dst, int64_t imm);
+
   // Conditional macros.
   inline void Ccmp(const Register& rn,
                    const Operand& operand,
@@ -230,6 +267,14 @@ class MacroAssembler : public Assembler {
   void LoadStoreMacro(const CPURegister& rt,
                       const MemOperand& addr,
                       LoadStoreOp op);
+
+#define DECLARE_FUNCTION(FN, REGTYPE, REG, REG2, OP) \
+  inline void FN(const REGTYPE REG, const REGTYPE REG2, const MemOperand& addr);
+  LSPAIR_MACRO_LIST(DECLARE_FUNCTION)
+#undef DECLARE_FUNCTION
+
+  void LoadStorePairMacro(const CPURegister& rt, const CPURegister& rt2,
+                          const MemOperand& addr, LoadStorePairOp op);
 
   // V8-specific load/store helpers.
   void Load(const Register& rt, const MemOperand& addr, Representation r);
@@ -354,7 +399,7 @@ class MacroAssembler : public Assembler {
   // Provide a template to allow other types to be converted automatically.
   template<typename T>
   void Fmov(FPRegister fd, T imm) {
-    ASSERT(allow_macro_instructions_);
+    DCHECK(allow_macro_instructions_);
     Fmov(fd, static_cast<double>(imm));
   }
   inline void Fmov(Register rd, FPRegister fn);
@@ -377,6 +422,7 @@ class MacroAssembler : public Assembler {
   inline void Frinta(const FPRegister& fd, const FPRegister& fn);
   inline void Frintm(const FPRegister& fd, const FPRegister& fn);
   inline void Frintn(const FPRegister& fd, const FPRegister& fn);
+  inline void Frintp(const FPRegister& fd, const FPRegister& fn);
   inline void Frintz(const FPRegister& fd, const FPRegister& fn);
   inline void Fsqrt(const FPRegister& fd, const FPRegister& fn);
   inline void Fsub(const FPRegister& fd,
@@ -388,12 +434,6 @@ class MacroAssembler : public Assembler {
   inline void Ldnp(const CPURegister& rt,
                    const CPURegister& rt2,
                    const MemOperand& src);
-  inline void Ldp(const CPURegister& rt,
-                  const CPURegister& rt2,
-                  const MemOperand& src);
-  inline void Ldpsw(const Register& rt,
-                    const Register& rt2,
-                    const MemOperand& src);
   // Load a literal from the inline constant pool.
   inline void Ldr(const CPURegister& rt, const Immediate& imm);
   // Helper function for double immediate.
@@ -450,12 +490,10 @@ class MacroAssembler : public Assembler {
   inline void Smulh(const Register& rd,
                     const Register& rn,
                     const Register& rm);
+  inline void Umull(const Register& rd, const Register& rn, const Register& rm);
   inline void Stnp(const CPURegister& rt,
                    const CPURegister& rt2,
                    const MemOperand& dst);
-  inline void Stp(const CPURegister& rt,
-                  const CPURegister& rt2,
-                  const MemOperand& dst);
   inline void Sxtb(const Register& rd, const Register& rn);
   inline void Sxth(const Register& rd, const Register& rn);
   inline void Sxtw(const Register& rd, const Register& rn);
@@ -531,6 +569,7 @@ class MacroAssembler : public Assembler {
             const CPURegister& src6 = NoReg, const CPURegister& src7 = NoReg);
   void Pop(const CPURegister& dst0, const CPURegister& dst1 = NoReg,
            const CPURegister& dst2 = NoReg, const CPURegister& dst3 = NoReg);
+  void Push(const Register& src0, const FPRegister& src1);
 
   // Alternative forms of Push and Pop, taking a RegList or CPURegList that
   // specifies the registers that are to be pushed or popped. Higher-numbered
@@ -606,7 +645,7 @@ class MacroAssembler : public Assembler {
     explicit PushPopQueue(MacroAssembler* masm) : masm_(masm), size_(0) { }
 
     ~PushPopQueue() {
-      ASSERT(queued_.empty());
+      DCHECK(queued_.empty());
     }
 
     void Queue(const CPURegister& rt) {
@@ -758,7 +797,7 @@ class MacroAssembler : public Assembler {
 
   // Set the current stack pointer, but don't generate any code.
   inline void SetStackPointer(const Register& stack_pointer) {
-    ASSERT(!TmpList()->IncludesAliasOf(stack_pointer));
+    DCHECK(!TmpList()->IncludesAliasOf(stack_pointer));
     sp_ = stack_pointer;
   }
 
@@ -772,8 +811,8 @@ class MacroAssembler : public Assembler {
   inline void AlignAndSetCSPForFrame() {
     int sp_alignment = ActivationFrameAlignment();
     // AAPCS64 mandates at least 16-byte alignment.
-    ASSERT(sp_alignment >= 16);
-    ASSERT(IsPowerOf2(sp_alignment));
+    DCHECK(sp_alignment >= 16);
+    DCHECK(base::bits::IsPowerOfTwo32(sp_alignment));
     Bic(csp, StackPointer(), sp_alignment - 1);
     SetStackPointer(csp);
   }
@@ -828,7 +867,7 @@ class MacroAssembler : public Assembler {
     if (object->IsHeapObject()) {
       LoadHeapObject(result, Handle<HeapObject>::cast(object));
     } else {
-      ASSERT(object->IsSmi());
+      DCHECK(object->IsSmi());
       Mov(result, Operand(object));
     }
   }
@@ -874,11 +913,6 @@ class MacroAssembler : public Assembler {
   inline void SmiTagAndPush(Register src);
   inline void SmiTagAndPush(Register src1, Register src2);
 
-  // Compute the absolute value of 'smi' and leave the result in 'smi'
-  // register. If 'smi' is the most negative SMI, the absolute value cannot
-  // be represented as a SMI and a jump to 'slow' is done.
-  void SmiAbs(const Register& smi, Label* slow);
-
   inline void JumpIfSmi(Register value,
                         Label* smi_label,
                         Label* not_smi_label = NULL);
@@ -915,16 +949,10 @@ class MacroAssembler : public Assembler {
   // Abort execution if argument is not a string, enabled via --debug-code.
   void AssertString(Register object);
 
-  void JumpForHeapNumber(Register object,
-                         Register heap_number_map,
-                         Label* on_heap_number,
-                         Label* on_not_heap_number = NULL);
-  void JumpIfHeapNumber(Register object,
-                        Label* on_heap_number,
-                        Register heap_number_map = NoReg);
-  void JumpIfNotHeapNumber(Register object,
-                           Label* on_not_heap_number,
-                           Register heap_number_map = NoReg);
+  void JumpIfHeapNumber(Register object, Label* on_heap_number,
+                        SmiCheckType smi_check_type = DONT_DO_SMI_CHECK);
+  void JumpIfNotHeapNumber(Register object, Label* on_not_heap_number,
+                           SmiCheckType smi_check_type = DONT_DO_SMI_CHECK);
 
   // Sets the vs flag if the input is -0.0.
   void TestForMinusZero(DoubleRegister input);
@@ -968,7 +996,7 @@ class MacroAssembler : public Assembler {
                                  FPRegister scratch_d,
                                  Label* on_successful_conversion = NULL,
                                  Label* on_failed_conversion = NULL) {
-    ASSERT(as_int.Is32Bits());
+    DCHECK(as_int.Is32Bits());
     TryRepresentDoubleAsInt(as_int, value, scratch_d, on_successful_conversion,
                             on_failed_conversion);
   }
@@ -983,7 +1011,7 @@ class MacroAssembler : public Assembler {
                                  FPRegister scratch_d,
                                  Label* on_successful_conversion = NULL,
                                  Label* on_failed_conversion = NULL) {
-    ASSERT(as_int.Is64Bits());
+    DCHECK(as_int.Is64Bits());
     TryRepresentDoubleAsInt(as_int, value, scratch_d, on_successful_conversion,
                             on_failed_conversion);
   }
@@ -1020,41 +1048,30 @@ class MacroAssembler : public Assembler {
   // ---- String Utilities ----
 
 
-  // Jump to label if either object is not a sequential ASCII string.
+  // Jump to label if either object is not a sequential one-byte string.
   // Optionally perform a smi check on the objects first.
-  void JumpIfEitherIsNotSequentialAsciiStrings(
-      Register first,
-      Register second,
-      Register scratch1,
-      Register scratch2,
-      Label* failure,
-      SmiCheckType smi_check = DO_SMI_CHECK);
+  void JumpIfEitherIsNotSequentialOneByteStrings(
+      Register first, Register second, Register scratch1, Register scratch2,
+      Label* failure, SmiCheckType smi_check = DO_SMI_CHECK);
 
-  // Check if instance type is sequential ASCII string and jump to label if
+  // Check if instance type is sequential one-byte string and jump to label if
   // it is not.
-  void JumpIfInstanceTypeIsNotSequentialAscii(Register type,
-                                              Register scratch,
-                                              Label* failure);
+  void JumpIfInstanceTypeIsNotSequentialOneByte(Register type, Register scratch,
+                                                Label* failure);
 
-  // Checks if both instance types are sequential ASCII strings and jumps to
+  // Checks if both instance types are sequential one-byte strings and jumps to
   // label if either is not.
-  void JumpIfEitherInstanceTypeIsNotSequentialAscii(
-      Register first_object_instance_type,
-      Register second_object_instance_type,
-      Register scratch1,
-      Register scratch2,
-      Label* failure);
+  void JumpIfEitherInstanceTypeIsNotSequentialOneByte(
+      Register first_object_instance_type, Register second_object_instance_type,
+      Register scratch1, Register scratch2, Label* failure);
 
-  // Checks if both instance types are sequential ASCII strings and jumps to
+  // Checks if both instance types are sequential one-byte strings and jumps to
   // label if either is not.
-  void JumpIfBothInstanceTypesAreNotSequentialAscii(
-      Register first_object_instance_type,
-      Register second_object_instance_type,
-      Register scratch1,
-      Register scratch2,
-      Label* failure);
+  void JumpIfBothInstanceTypesAreNotSequentialOneByte(
+      Register first_object_instance_type, Register second_object_instance_type,
+      Register scratch1, Register scratch2, Label* failure);
 
-  void JumpIfNotUniqueName(Register type, Label* not_unique_name);
+  void JumpIfNotUniqueNameInstanceType(Register type, Label* not_unique_name);
 
   // ---- Calling / Jumping helpers ----
 
@@ -1334,32 +1351,25 @@ class MacroAssembler : public Assembler {
                              Register scratch2,
                              Register scratch3,
                              Label* gc_required);
-  void AllocateAsciiString(Register result,
-                           Register length,
-                           Register scratch1,
-                           Register scratch2,
-                           Register scratch3,
-                           Label* gc_required);
+  void AllocateOneByteString(Register result, Register length,
+                             Register scratch1, Register scratch2,
+                             Register scratch3, Label* gc_required);
   void AllocateTwoByteConsString(Register result,
                                  Register length,
                                  Register scratch1,
                                  Register scratch2,
                                  Label* gc_required);
-  void AllocateAsciiConsString(Register result,
-                               Register length,
-                               Register scratch1,
-                               Register scratch2,
-                               Label* gc_required);
+  void AllocateOneByteConsString(Register result, Register length,
+                                 Register scratch1, Register scratch2,
+                                 Label* gc_required);
   void AllocateTwoByteSlicedString(Register result,
                                    Register length,
                                    Register scratch1,
                                    Register scratch2,
                                    Label* gc_required);
-  void AllocateAsciiSlicedString(Register result,
-                                 Register length,
-                                 Register scratch1,
-                                 Register scratch2,
-                                 Label* gc_required);
+  void AllocateOneByteSlicedString(Register result, Register length,
+                                   Register scratch1, Register scratch2,
+                                   Label* gc_required);
 
   // Allocates a heap number or jumps to the gc_required label if the young
   // space is full and a scavenge is needed.
@@ -1371,7 +1381,8 @@ class MacroAssembler : public Assembler {
                           Register scratch1,
                           Register scratch2,
                           CPURegister value = NoFPReg,
-                          CPURegister heap_number_map = NoReg);
+                          CPURegister heap_number_map = NoReg,
+                          MutableMode mode = IMMUTABLE);
 
   // ---------------------------------------------------------------------------
   // Support functions.
@@ -1434,9 +1445,11 @@ class MacroAssembler : public Assembler {
 
   // Compare an object's map with the specified map. Condition flags are set
   // with result of map compare.
-  void CompareMap(Register obj,
-                  Register scratch,
-                  Handle<Map> map);
+  void CompareObjectMap(Register obj, Heap::RootListIndex index);
+
+  // Compare an object's map with the specified map. Condition flags are set
+  // with result of map compare.
+  void CompareObjectMap(Register obj, Register scratch, Handle<Map> map);
 
   // As above, but the map of the object is already loaded into the register
   // which is preserved by the code generated.
@@ -1616,6 +1629,7 @@ class MacroAssembler : public Assembler {
 
   // Activation support.
   void EnterFrame(StackFrame::Type type);
+  void EnterFrame(StackFrame::Type type, bool load_constant_pool_pointer_reg);
   void LeaveFrame(StackFrame::Type type);
 
   // Returns map with validated enum cache in object register.
@@ -2165,7 +2179,7 @@ class MacroAssembler : public Assembler {
 // emitted is what you specified when creating the scope.
 class InstructionAccurateScope BASE_EMBEDDED {
  public:
-  InstructionAccurateScope(MacroAssembler* masm, size_t count = 0)
+  explicit InstructionAccurateScope(MacroAssembler* masm, size_t count = 0)
       : masm_(masm)
 #ifdef DEBUG
         ,
@@ -2190,7 +2204,7 @@ class InstructionAccurateScope BASE_EMBEDDED {
     masm_->EndBlockPools();
 #ifdef DEBUG
     if (start_.is_bound()) {
-      ASSERT(masm_->SizeOfCodeGeneratedSince(&start_) == size_);
+      DCHECK(masm_->SizeOfCodeGeneratedSince(&start_) == size_);
     }
     masm_->set_allow_macro_instructions(previous_allow_macro_instructions_);
 #endif
@@ -2220,8 +2234,8 @@ class UseScratchRegisterScope {
         availablefp_(masm->FPTmpList()),
         old_available_(available_->list()),
         old_availablefp_(availablefp_->list()) {
-    ASSERT(available_->type() == CPURegister::kRegister);
-    ASSERT(availablefp_->type() == CPURegister::kFPRegister);
+    DCHECK(available_->type() == CPURegister::kRegister);
+    DCHECK(availablefp_->type() == CPURegister::kFPRegister);
   }
 
   ~UseScratchRegisterScope();

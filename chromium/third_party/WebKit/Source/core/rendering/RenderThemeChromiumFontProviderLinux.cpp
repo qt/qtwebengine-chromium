@@ -32,7 +32,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
 void RenderThemeChromiumFontProvider::setDefaultFontSize(int fontSize)
@@ -41,11 +41,14 @@ void RenderThemeChromiumFontProvider::setDefaultFontSize(int fontSize)
 }
 
 // static
-void RenderThemeChromiumFontProvider::systemFont(CSSValueID valueID, FontDescription& fontDescription)
+void RenderThemeChromiumFontProvider::systemFont(CSSValueID systemFontID, FontStyle& fontStyle, FontWeight& fontWeight, float& fontSize, AtomicString& fontFamily)
 {
-    float fontSize = s_defaultFontSize;
+    fontWeight = FontWeightNormal;
+    fontStyle = FontStyleNormal;
+    fontSize = s_defaultFontSize;
+    fontFamily = defaultGUIFont();
 
-    switch (valueID) {
+    switch (systemFontID) {
     case CSSValueWebkitMiniControl:
     case CSSValueWebkitSmallControl:
     case CSSValueWebkitControl:
@@ -59,13 +62,6 @@ void RenderThemeChromiumFontProvider::systemFont(CSSValueID valueID, FontDescrip
     default:
         break;
     }
-
-    fontDescription.firstFamily().setFamily(defaultGUIFont());
-    fontDescription.setSpecifiedSize(fontSize);
-    fontDescription.setIsAbsoluteSize(true);
-    fontDescription.setGenericFamily(FontDescription::NoFamily);
-    fontDescription.setWeight(FontWeightNormal);
-    fontDescription.setStyle(FontStyleNormal);
 }
 
-} // namespace WebCore
+} // namespace blink

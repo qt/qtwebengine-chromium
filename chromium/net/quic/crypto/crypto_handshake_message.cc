@@ -109,7 +109,7 @@ QuicErrorCode CryptoHandshakeMessage::GetTaglist(QuicTag tag,
   }
 
   if (ret != QUIC_NO_ERROR) {
-    *out_tags = NULL;
+    *out_tags = nullptr;
     *out_len = 0;
     return ret;
   }
@@ -259,7 +259,6 @@ string CryptoHandshakeMessage::DebugStringInternal(size_t indent) const {
       case kAEAD:
       case kCGST:
       case kCOPT:
-      case kLOSS:
       case kPDMD:
       case kVER:
         // tag lists

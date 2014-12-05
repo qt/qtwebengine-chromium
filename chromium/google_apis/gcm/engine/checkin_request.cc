@@ -9,6 +9,7 @@
 #include "base/metrics/histogram.h"
 #include "google_apis/gcm/monitoring/gcm_stats_recorder.h"
 #include "google_apis/gcm/protocol/checkin.pb.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
@@ -80,10 +81,12 @@ void RecordCheckinStatusAndReportUMA(CheckinRequestStatus status,
 CheckinRequest::RequestInfo::RequestInfo(
     uint64 android_id,
     uint64 security_token,
+    const std::map<std::string, std::string>& account_tokens,
     const std::string& settings_digest,
     const checkin_proto::ChromeBuildProto& chrome_build_proto)
     : android_id(android_id),
       security_token(security_token),
+      account_tokens(account_tokens),
       settings_digest(settings_digest),
       chrome_build_proto(chrome_build_proto) {
 }
@@ -127,6 +130,16 @@ void CheckinRequest::Start() {
   checkin->set_type(checkin_proto::DEVICE_CHROME_BROWSER);
 #endif
 
+  // Pack a map of email -> token mappings into a repeated field, where odd
+  // entries are email addresses, while even ones are respective OAuth2 tokens.
+  for (std::map<std::string, std::string>::const_iterator iter =
+           request_info_.account_tokens.begin();
+       iter != request_info_.account_tokens.end();
+       ++iter) {
+    request.add_account_cookie(iter->first);
+    request.add_account_cookie(iter->second);
+  }
+
   std::string upload_data;
   CHECK(request.SerializeToString(&upload_data));
 
@@ -134,6 +147,8 @@ void CheckinRequest::Start() {
       net::URLFetcher::Create(checkin_url_, net::URLFetcher::POST, this));
   url_fetcher_->SetRequestContext(request_context_getter_);
   url_fetcher_->SetUploadData(kRequestContentType, upload_data);
+  url_fetcher_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                             net::LOAD_DO_NOT_SAVE_COOKIES);
   recorder_->RecordCheckinInitiated(request_info_.android_id);
   request_start_time_ = base::TimeTicks::Now();
   url_fetcher_->Start();

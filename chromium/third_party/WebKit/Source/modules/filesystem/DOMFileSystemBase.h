@@ -41,15 +41,16 @@ namespace blink {
 class WebFileSystem;
 }
 
-namespace WebCore {
+namespace blink {
 
-class DirectoryEntry;
 class DirectoryReaderBase;
 class EntriesCallback;
 class EntryBase;
 class EntryCallback;
 class ErrorCallback;
+class File;
 class FileError;
+struct FileMetadata;
 class MetadataCallback;
 class ExecutionContext;
 class SecurityOrigin;
@@ -79,7 +80,7 @@ public:
     virtual void removePendingCallbacks() { }
 
     // Overridden by subclasses to handle sync vs async error-handling.
-    virtual void reportError(PassOwnPtr<ErrorCallback>, PassRefPtrWillBeRawPtr<FileError>) = 0;
+    virtual void reportError(ErrorCallback*, FileError*) = 0;
 
     const String& name() const { return m_name; }
     FileSystemType type() const { return m_type; }
@@ -101,17 +102,18 @@ public:
     KURL createFileSystemURL(const String& fullPath) const;
     static bool pathToAbsolutePath(FileSystemType, const EntryBase*, String path, String& absolutePath);
     static bool pathPrefixToFileSystemType(const String& pathPrefix, FileSystemType&);
+    static File* createFile(const FileMetadata&, const KURL& fileSystemURL, FileSystemType, const String name);
 
     // Actual FileSystem API implementations. All the validity checks on virtual paths are done at this level.
-    void getMetadata(const EntryBase*, PassOwnPtr<MetadataCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void move(const EntryBase* source, EntryBase* parent, const String& name, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void copy(const EntryBase* source, EntryBase* parent, const String& name, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void remove(const EntryBase*, PassOwnPtr<VoidCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void removeRecursively(const EntryBase*, PassOwnPtr<VoidCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void getParent(const EntryBase*, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>);
-    void getFile(const EntryBase*, const String& path, const FileSystemFlags&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    void getDirectory(const EntryBase*, const String& path, const FileSystemFlags&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
-    int readDirectory(DirectoryReaderBase*, const String& path, PassOwnPtr<EntriesCallback>, PassOwnPtr<ErrorCallback>, SynchronousType = Asynchronous);
+    void getMetadata(const EntryBase*, MetadataCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void move(const EntryBase* source, EntryBase* parent, const String& name, EntryCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void copy(const EntryBase* source, EntryBase* parent, const String& name, EntryCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void remove(const EntryBase*, VoidCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void removeRecursively(const EntryBase*, VoidCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void getParent(const EntryBase*, EntryCallback*, ErrorCallback*);
+    void getFile(const EntryBase*, const String& path, const FileSystemFlags&, EntryCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    void getDirectory(const EntryBase*, const String& path, const FileSystemFlags&, EntryCallback*, ErrorCallback*, SynchronousType = Asynchronous);
+    int readDirectory(DirectoryReaderBase*, const String& path, EntriesCallback*, ErrorCallback*, SynchronousType = Asynchronous);
     bool waitForAdditionalResult(int callbacksId);
 
     virtual void trace(Visitor*) { }
@@ -129,6 +131,6 @@ protected:
 
 inline bool operator==(const DOMFileSystemBase& a, const DOMFileSystemBase& b) { return a.name() == b.name() && a.type() == b.type() && a.rootURL() == b.rootURL(); }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMFileSystemBase_h

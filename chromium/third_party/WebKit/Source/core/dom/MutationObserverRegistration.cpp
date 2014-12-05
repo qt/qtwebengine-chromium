@@ -35,7 +35,7 @@
 #include "core/dom/Node.h"
 #include "core/dom/QualifiedName.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<MutationObserverRegistration> MutationObserverRegistration::create(MutationObserver& observer, Node* registrationNode, MutationObserverOptions options, const HashSet<AtomicString>& attributeFilter)
 {
@@ -131,7 +131,7 @@ bool MutationObserverRegistration::shouldReceiveMutationFrom(Node& node, Mutatio
     return m_attributeFilter.contains(attributeName->localName());
 }
 
-void MutationObserverRegistration::addRegistrationNodesToSet(HashSet<Node*>& nodes) const
+void MutationObserverRegistration::addRegistrationNodesToSet(WillBeHeapHashSet<RawPtrWillBeMember<Node> >& nodes) const
 {
     ASSERT(m_registrationNode);
     nodes.add(m_registrationNode.get());
@@ -151,4 +151,4 @@ void MutationObserverRegistration::trace(Visitor* visitor)
 #endif
 }
 
-} // namespace WebCore
+} // namespace blink

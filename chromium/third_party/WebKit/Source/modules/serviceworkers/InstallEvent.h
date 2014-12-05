@@ -31,33 +31,29 @@
 #ifndef InstallEvent_h
 #define InstallEvent_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "modules/serviceworkers/InstallPhaseEvent.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "modules/serviceworkers/ExtendableEvent.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class ExecutionContext;
-
-class InstallEvent FINAL : public InstallPhaseEvent {
+class InstallEvent final : public ExtendableEvent {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<InstallEvent> create();
-    static PassRefPtrWillBeRawPtr<InstallEvent> create(const AtomicString& type, const EventInit&, PassRefPtr<WaitUntilObserver>);
-    virtual ~InstallEvent() { }
+    static PassRefPtrWillBeRawPtr<InstallEvent> create(const AtomicString& type, const EventInit&, WaitUntilObserver*);
 
     void replace();
 
-    ScriptPromise reloadAll(ScriptState*);
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     InstallEvent();
-    InstallEvent(const AtomicString& type, const EventInit&, PassRefPtr<WaitUntilObserver>);
+    InstallEvent(const AtomicString& type, const EventInit&, WaitUntilObserver*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InstallEvent_h

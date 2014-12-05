@@ -28,7 +28,7 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FETurbulence.h"
 
-namespace WebCore {
+namespace blink {
 
 enum SVGStitchOptions {
     SVG_STITCHTYPE_UNKNOWN  = 0,
@@ -39,7 +39,8 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGStitchOp
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<TurbulenceType>();
 
-class SVGFETurbulenceElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFETurbulenceElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFETurbulenceElement);
 
@@ -54,10 +55,10 @@ private:
     explicit SVGFETurbulenceElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtr<SVGAnimatedNumberOptionalNumber> m_baseFrequency;
     RefPtr<SVGAnimatedNumber> m_seed;
@@ -66,6 +67,6 @@ private:
     RefPtr<SVGAnimatedInteger> m_numOctaves;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFETurbulenceElement_h

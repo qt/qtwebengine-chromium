@@ -5,23 +5,20 @@
 #ifndef MIDIAccessInitializer_h
 #define MIDIAccessInitializer_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
 #include "modules/webmidi/MIDIAccessor.h"
 #include "modules/webmidi/MIDIAccessorClient.h"
-#include "modules/webmidi/MIDIOptions.h"
 #include "modules/webmidi/MIDIPort.h"
 #include "wtf/OwnPtr.h"
-#include "wtf/RawPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class MIDIAccess;
-class Navigator;
+class MIDIOptions;
 class ScriptState;
 
-class MIDIAccessInitializer : public ScriptPromiseResolverWithContext, public MIDIAccessorClient {
+class MIDIAccessInitializer : public ScriptPromiseResolver, public MIDIAccessorClient {
 public:
     struct PortDescriptor {
         String id;
@@ -29,13 +26,15 @@ public:
         String name;
         MIDIPort::MIDIPortTypeCode type;
         String version;
+        bool isActive;
 
-        PortDescriptor(const String& id, const String& manufacturer, const String& name, MIDIPort::MIDIPortTypeCode type, const String& version)
+        PortDescriptor(const String& id, const String& manufacturer, const String& name, MIDIPort::MIDIPortTypeCode type, const String& version, bool isActive)
             : id(id)
             , manufacturer(manufacturer)
             , name(name)
             , type(type)
-            , version(version) { }
+            , version(version)
+            , isActive(isActive) { }
     };
 
     static ScriptPromise start(ScriptState* scriptState, const MIDIOptions& options)
@@ -49,12 +48,14 @@ public:
     virtual ~MIDIAccessInitializer();
 
     // MIDIAccessorClient
-    virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version) OVERRIDE;
-    virtual void didStartSession(bool success, const String& error, const String& message) OVERRIDE;
-    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) OVERRIDE { }
+    virtual void didAddInputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
+    virtual void didAddOutputPort(const String& id, const String& manufacturer, const String& name, const String& version, bool isActive) override;
+    virtual void didSetInputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didSetOutputPortState(unsigned portIndex, bool isActive) override;
+    virtual void didStartSession(bool success, const String& error, const String& message) override;
+    virtual void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp) override { }
 
-    void setSysexEnabled(bool value);
+    void resolveSysexPermission(bool allowed);
     SecurityOrigin* securityOrigin() const;
 
 private:
@@ -65,12 +66,11 @@ private:
     ExecutionContext* executionContext() const;
 
     OwnPtr<MIDIAccessor> m_accessor;
-    MIDIOptions m_options;
-    bool m_sysexEnabled;
+    bool m_requestSysex;
     Vector<PortDescriptor> m_portDescriptors;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // MIDIAccessInitializer_h

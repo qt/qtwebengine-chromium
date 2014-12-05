@@ -15,6 +15,7 @@
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/browser/browser_thread_delegate.h"
+#include "net/disk_cache/simple/simple_backend_impl.h"
 
 #if defined(OS_ANDROID)
 #include "base/android/jni_android.h"
@@ -44,26 +45,25 @@ class BrowserThreadMessageLoopProxy : public base::MessageLoopProxy {
   }
 
   // MessageLoopProxy implementation.
-  virtual bool PostDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task, base::TimeDelta delay) OVERRIDE {
+  bool PostDelayedTask(const tracked_objects::Location& from_here,
+                       const base::Closure& task,
+                       base::TimeDelta delay) override {
     return BrowserThread::PostDelayedTask(id_, from_here, task, delay);
   }
 
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE {
+  bool PostNonNestableDelayedTask(const tracked_objects::Location& from_here,
+                                  const base::Closure& task,
+                                  base::TimeDelta delay) override {
     return BrowserThread::PostNonNestableDelayedTask(id_, from_here, task,
                                                      delay);
   }
 
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE {
+  bool RunsTasksOnCurrentThread() const override {
     return BrowserThread::CurrentlyOn(id_);
   }
 
  protected:
-  virtual ~BrowserThreadMessageLoopProxy() {}
+  ~BrowserThreadMessageLoopProxy() override {}
 
  private:
   BrowserThread::ID id_;
@@ -141,11 +141,12 @@ void BrowserThreadImpl::ShutdownThreadPool() {
 }
 
 // static
-void BrowserThreadImpl::FlushThreadPoolHelper() {
+void BrowserThreadImpl::FlushThreadPoolHelperForTesting() {
   // We don't want to create a pool if none exists.
   if (g_globals == NULL)
     return;
   g_globals.Get().blocking_pool->FlushForTesting();
+  disk_cache::SimpleBackendImpl::FlushWorkerPoolForTesting();
 }
 
 void BrowserThreadImpl::Init() {

@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
 #include "net/base/cache_type.h"
+#include "net/disk_cache/disk_cache.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -37,7 +38,7 @@ class SimpleBackendImpl;
 class DiskCacheTest : public PlatformTest {
  protected:
   DiskCacheTest();
-  virtual ~DiskCacheTest();
+  ~DiskCacheTest() override;
 
   // Copies a set of cache files from the data folder to the test folder.
   bool CopyTestCache(const std::string& name);
@@ -45,7 +46,7 @@ class DiskCacheTest : public PlatformTest {
   // Deletes the contents of |cache_path_|.
   bool CleanupCacheDir();
 
-  virtual void TearDown() OVERRIDE;
+  void TearDown() override;
 
   base::FilePath cache_path_;
 
@@ -57,8 +58,19 @@ class DiskCacheTest : public PlatformTest {
 // Provides basic support for cache related tests.
 class DiskCacheTestWithCache : public DiskCacheTest {
  protected:
+  class TestIterator {
+   public:
+    explicit TestIterator(scoped_ptr<disk_cache::Backend::Iterator> iterator);
+    ~TestIterator();
+
+    int OpenNextEntry(disk_cache::Entry** next_entry);
+
+   private:
+    scoped_ptr<disk_cache::Backend::Iterator> iterator_;
+  };
+
   DiskCacheTestWithCache();
-  virtual ~DiskCacheTestWithCache();
+  ~DiskCacheTestWithCache() override;
 
   void CreateBackend(uint32 flags, base::Thread* thread);
 
@@ -117,7 +129,7 @@ class DiskCacheTestWithCache : public DiskCacheTest {
   int DoomEntriesBetween(const base::Time initial_time,
                          const base::Time end_time);
   int DoomEntriesSince(const base::Time initial_time);
-  int OpenNextEntry(void** iter, disk_cache::Entry** next_entry);
+  scoped_ptr<TestIterator> CreateIterator();
   void FlushQueueForTest();
   void RunTaskForTest(const base::Closure& closure);
   int ReadData(disk_cache::Entry* entry, int index, int offset,
@@ -142,7 +154,7 @@ class DiskCacheTestWithCache : public DiskCacheTest {
   void AddDelay();
 
   // DiskCacheTest:
-  virtual void TearDown() OVERRIDE;
+  void TearDown() override;
 
   // cache_ will always have a valid object, regardless of how the cache was
   // initialized. The implementation pointers can be NULL.

@@ -95,13 +95,14 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   virtual ~WASAPIAudioInputStream();
 
   // Implementation of AudioInputStream.
-  virtual bool Open() OVERRIDE;
-  virtual void Start(AudioInputCallback* callback) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Close() OVERRIDE;
-  virtual double GetMaxVolume() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual double GetVolume() OVERRIDE;
+  virtual bool Open() override;
+  virtual void Start(AudioInputCallback* callback) override;
+  virtual void Stop() override;
+  virtual void Close() override;
+  virtual double GetMaxVolume() override;
+  virtual void SetVolume(double volume) override;
+  virtual double GetVolume() override;
+  virtual bool IsMuted() override;
 
   bool started() const { return started_; }
 
@@ -110,7 +111,7 @@ class MEDIA_EXPORT WASAPIAudioInputStream
 
  private:
   // DelegateSimpleThread::Delegate implementation.
-  virtual void Run() OVERRIDE;
+  virtual void Run() override;
 
   // Issues the OnError() callback to the |sink_|.
   void HandleError(HRESULT err);
@@ -157,8 +158,10 @@ class MEDIA_EXPORT WASAPIAudioInputStream
   // Length of the audio endpoint buffer.
   uint32 endpoint_buffer_size_frames_;
 
-  // A copy of the supplied AudioParameter's |effects|.
-  const int effects_;
+  // A copy of the supplied AudioParameter's |effects|.  If ducking was
+  // specified (desired device=communications) but we ended up not being
+  // able to open the communications device, this flag will be cleared.
+  int effects_;
 
   // Contains the unique name of the selected endpoint device.
   // Note that AudioManagerBase::kDefaultDeviceId represents the default

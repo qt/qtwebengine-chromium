@@ -9,10 +9,11 @@ namespace net {
 class NetworkDelegate;
 class URLRequest;
 class URLRequestJob;
-}  // namespace net
-namespace webkit_blob {
+}
+
+namespace storage {
 class BlobStorageContext;
-}  // webkit_blob
+}
 
 class GURL;
 
@@ -24,7 +25,7 @@ class ViewBlobInternalsJobFactory {
   static net::URLRequestJob* CreateJobForRequest(
       net::URLRequest* request,
       net::NetworkDelegate* network_delegate,
-      webkit_blob::BlobStorageContext* blob_storage_context);
+      storage::BlobStorageContext* blob_storage_context);
 };
 
 }  // namespace content

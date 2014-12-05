@@ -219,7 +219,7 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
       base::TimeDelta used_idle_socket_timeout,
       ConnectJobFactory* connect_job_factory);
 
-  virtual ~ClientSocketPoolBaseHelper();
+  ~ClientSocketPoolBaseHelper() override;
 
   // Adds a lower layered pool to |this|, and adds |this| as a higher layered
   // pool on top of |lower_pool|.
@@ -327,10 +327,10 @@ class NET_EXPORT_PRIVATE ClientSocketPoolBaseHelper
   void EnableConnectBackupJobs();
 
   // ConnectJob::Delegate methods:
-  virtual void OnConnectJobComplete(int result, ConnectJob* job) OVERRIDE;
+  void OnConnectJobComplete(int result, ConnectJob* job) override;
 
   // NetworkChangeNotifier::IPAddressObserver methods:
-  virtual void OnIPAddressChanged() OVERRIDE;
+  void OnIPAddressChanged() override;
 
  private:
   friend class base::RefCounted<ClientSocketPoolBaseHelper>;
@@ -741,10 +741,7 @@ class ClientSocketPoolBase {
                     internal::ClientSocketPoolBaseHelper::NORMAL,
                     params->ignore_limits(),
                     params, net_log));
-    return helper_.RequestSocket(
-        group_name,
-        request.template PassAs<
-            const internal::ClientSocketPoolBaseHelper::Request>());
+    return helper_.RequestSocket(group_name, request.Pass());
   }
 
   // RequestSockets bundles up the parameters into a Request and then forwards
@@ -856,7 +853,7 @@ class ClientSocketPoolBase {
     virtual scoped_ptr<ConnectJob> NewConnectJob(
         const std::string& group_name,
         const internal::ClientSocketPoolBaseHelper::Request& request,
-        ConnectJob::Delegate* delegate) const OVERRIDE {
+        ConnectJob::Delegate* delegate) const override {
       const Request& casted_request = static_cast<const Request&>(request);
       return connect_job_factory_->NewConnectJob(
           group_name, casted_request, delegate);

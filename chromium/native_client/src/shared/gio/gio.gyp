@@ -9,13 +9,7 @@
   'variables': {
     'common_sources': [
       'gio.c',
-      'gio_mem.c',
       'gprintf.c',
-      'gio_mem_snapshot.c',
-    ],
-    'trusted_sources': [
-      '<@(common_sources)',
-      'gio_pio.c',
     ],
   },
   'targets': [
@@ -25,7 +19,7 @@
       # tls_edit relies on gio which is always built for the host platform.
       'toolsets': ['host', 'target'],
       'sources': [
-        '<@(trusted_sources)',
+        '<@(common_sources)',
       ],
     },
     {
@@ -38,6 +32,7 @@
         'build_newlib': 1,
         'build_pnacl_newlib': 1,
         'build_irt': 1,
+        'build_nonsfi_helper': 1,
         'sources': ['<@(common_sources)']
       },
       'dependencies': [
@@ -52,7 +47,7 @@
           'target_name': 'gio64',
           'type': 'static_library',
             'sources': [
-              '<@(trusted_sources)',
+              '<@(common_sources)',
             ],
           'variables': {
             'win_target': 'x64',

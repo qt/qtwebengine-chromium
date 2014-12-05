@@ -9,8 +9,8 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
@@ -40,6 +40,18 @@
 using namespace net::test_server;
 
 namespace {
+
+const char kTestAuthCode[] = "fake-auth-code";
+const char kTestGaiaUberToken[] = "fake-uber-token";
+const char kTestAuthLoginAccessToken[] = "fake-access-token";
+const char kTestRefreshToken[] = "fake-refresh-token";
+const char kTestSessionSIDCookie[] = "fake-session-SID-cookie";
+const char kTestSessionLSIDCookie[] = "fake-session-LSID-cookie";
+const char kTestOAuthLoginSID[] = "fake-oauth-SID-cookie";
+const char kTestOAuthLoginLSID[] = "fake-oauth-LSID-cookie";
+const char kTestOAuthLoginAuthCode[] = "fake-oauth-auth-code";
+
+const char kDefaultGaiaId[]  ="12345";
 
 const base::FilePath::CharType kServiceLogin[] =
     FILE_PATH_LITERAL("google_apis/test/service_login.html");
@@ -102,10 +114,10 @@ void SetCookies(BasicHttpResponse* http_response,
                 const std::string& lsid_cookie) {
   http_response->AddCustomHeader(
       "Set-Cookie",
-      base::StringPrintf("SID=%s; Path=/; HttpOnly;", sid_cookie.c_str()));
+      base::StringPrintf("SID=%s; Path=/; HttpOnly", sid_cookie.c_str()));
   http_response->AddCustomHeader(
       "Set-Cookie",
-      base::StringPrintf("LSID=%s; Path=/; HttpOnly;", lsid_cookie.c_str()));
+      base::StringPrintf("LSID=%s; Path=/; HttpOnly", lsid_cookie.c_str()));
 }
 
 }  // namespace
@@ -131,9 +143,50 @@ FakeGaia::FakeGaia() {
 
 FakeGaia::~FakeGaia() {}
 
+void FakeGaia::SetFakeMergeSessionParams(
+    const std::string& email,
+    const std::string& auth_sid_cookie,
+    const std::string& auth_lsid_cookie) {
+  FakeGaia::MergeSessionParams params;
+  params.auth_sid_cookie = auth_sid_cookie;
+  params.auth_lsid_cookie = auth_lsid_cookie;
+  params.auth_code = kTestAuthCode;
+  params.refresh_token = kTestRefreshToken;
+  params.access_token = kTestAuthLoginAccessToken;
+  params.gaia_uber_token = kTestGaiaUberToken;
+  params.session_sid_cookie = kTestSessionSIDCookie;
+  params.session_lsid_cookie = kTestSessionLSIDCookie;
+  params.email = email;
+  SetMergeSessionParams(params);
+}
+
 void FakeGaia::SetMergeSessionParams(
     const MergeSessionParams& params) {
   merge_session_params_ = params;
+}
+
+void FakeGaia::MapEmailToGaiaId(const std::string& email,
+                                const std::string& gaia_id) {
+  DCHECK(!email.empty());
+  DCHECK(!gaia_id.empty());
+  email_to_gaia_id_map_[email] = gaia_id;
+}
+
+std::string FakeGaia::GetGaiaIdOfEmail(const std::string& email) const {
+  DCHECK(!email.empty());
+  auto it = email_to_gaia_id_map_.find(email);
+  return it == email_to_gaia_id_map_.end() ? std::string(kDefaultGaiaId) :
+      it->second;
+}
+
+void FakeGaia::AddGoogleAccountsSigninHeader(
+    net::test_server::BasicHttpResponse* http_response,
+    const std::string& email) const {
+  DCHECK(!email.empty());
+  http_response->AddCustomHeader("google-accounts-signin",
+      base::StringPrintf(
+          "email=\"%s\", obfuscatedid=\"%s\", sessionindex=0",
+          email.c_str(), GetGaiaIdOfEmail(email).c_str()));
 }
 
 void FakeGaia::Initialize() {
@@ -175,7 +228,11 @@ void FakeGaia::Initialize() {
 
   // Handles /ListAccounts GAIA call.
   REGISTER_RESPONSE_HANDLER(
-      gaia_urls->list_accounts_url(), HandleListAccounts);
+      gaia_urls->ListAccountsURLWithSource(std::string()), HandleListAccounts);
+
+  // Handles /GetUserInfo GAIA call.
+  REGISTER_RESPONSE_HANDLER(
+      gaia_urls->get_user_info_url(), HandleGetUserInfo);
 }
 
 scoped_ptr<HttpResponse> FakeGaia::HandleRequest(const HttpRequest& request) {
@@ -193,7 +250,7 @@ scoped_ptr<HttpResponse> FakeGaia::HandleRequest(const HttpRequest& request) {
     return scoped_ptr<HttpResponse>();      // Request not understood.
   }
 
-  return http_response.PassAs<HttpResponse>();
+  return http_response.Pass();
 }
 
 void FakeGaia::IssueOAuthToken(const std::string& auth_token,
@@ -345,7 +402,8 @@ void FakeGaia::HandleOAuthLogin(const HttpRequest& request,
   }
 
   std::string access_token;
-  if (!GetAccessToken(request, kAuthHeaderOAuth, &access_token)) {
+  if (!GetAccessToken(request, kAuthHeaderBearer, &access_token) &&
+      !GetAccessToken(request, kAuthHeaderOAuth, &access_token)) {
     LOG(ERROR) << "/OAuthLogin missing access token in the header";
     return;
   }
@@ -354,7 +412,8 @@ void FakeGaia::HandleOAuthLogin(const HttpRequest& request,
   std::string request_query = request_url.query();
 
   std::string source;
-  if (!GetQueryParameter(request_query, "source", &source)) {
+  if (!GetQueryParameter(request_query, "source", &source) &&
+      !GetQueryParameter(request.content, "source", &source)) {
     LOG(ERROR) << "Missing 'source' param in /OAuthLogin call";
     return;
   }
@@ -366,7 +425,10 @@ void FakeGaia::HandleOAuthLogin(const HttpRequest& request,
     http_response->set_code(net::HTTP_OK);
     // Issue GAIA uber token.
   } else {
-    LOG(FATAL) << "/OAuthLogin for SID/LSID is not supported";
+    http_response->set_content(base::StringPrintf(
+        "SID=%s\nLSID=%s\nAuth=%s",
+        kTestOAuthLoginSID, kTestOAuthLoginLSID, kTestOAuthLoginAuthCode));
+    http_response->set_code(net::HTTP_OK);
   }
 }
 
@@ -379,12 +441,16 @@ void FakeGaia::HandleServiceLoginAuth(const HttpRequest& request,
   std::string redirect_url = continue_url;
 
   std::string email;
-  if (GetQueryParameter(request.content, "Email", &email) &&
-      saml_account_idp_map_.find(email) != saml_account_idp_map_.end()) {
+  const bool is_saml =
+      GetQueryParameter(request.content, "Email", &email) &&
+      saml_account_idp_map_.find(email) != saml_account_idp_map_.end();
+
+  if (is_saml) {
     GURL url(saml_account_idp_map_[email]);
     url = net::AppendQueryParameter(url, "SAMLRequest", "fake_request");
     url = net::AppendQueryParameter(url, "RelayState", continue_url);
     redirect_url = url.spec();
+    http_response->AddCustomHeader("Google-Accounts-SAML", "Start");
   } else if (!merge_session_params_.auth_sid_cookie.empty() &&
              !merge_session_params_.auth_lsid_cookie.empty()) {
     SetCookies(http_response,
@@ -394,6 +460,12 @@ void FakeGaia::HandleServiceLoginAuth(const HttpRequest& request,
 
   http_response->set_code(net::HTTP_TEMPORARY_REDIRECT);
   http_response->AddCustomHeader("Location", redirect_url);
+
+  // SAML sign-ins complete in HandleSSO().
+  if (is_saml)
+    return;
+
+  AddGoogleAccountsSigninHeader(http_response, email);
 }
 
 void FakeGaia::HandleSSO(const HttpRequest& request,
@@ -409,18 +481,18 @@ void FakeGaia::HandleSSO(const HttpRequest& request,
   std::string redirect_url = relay_state;
   http_response->set_code(net::HTTP_TEMPORARY_REDIRECT);
   http_response->AddCustomHeader("Location", redirect_url);
+  http_response->AddCustomHeader("Google-Accounts-SAML", "End");
+
+  if (!merge_session_params_.email.empty())
+    AddGoogleAccountsSigninHeader(http_response, merge_session_params_.email);
 }
 
 void FakeGaia::HandleAuthToken(const HttpRequest& request,
                                BasicHttpResponse* http_response) {
-  std::string grant_type;
-  std::string refresh_token;
-  std::string client_id;
   std::string scope;
-  std::string auth_code;
-  const AccessTokenInfo* token_info = NULL;
   GetQueryParameter(request.content, "scope", &scope);
 
+  std::string grant_type;
   if (!GetQueryParameter(request.content, "grant_type", &grant_type)) {
     http_response->set_code(net::HTTP_BAD_REQUEST);
     LOG(ERROR) << "No 'grant_type' param in /o/oauth2/token";
@@ -428,6 +500,7 @@ void FakeGaia::HandleAuthToken(const HttpRequest& request,
   }
 
   if (grant_type == "authorization_code") {
+    std::string auth_code;
     if (!GetQueryParameter(request.content, "code", &auth_code) ||
         auth_code != merge_session_params_.auth_code) {
       http_response->set_code(net::HTTP_BAD_REQUEST);
@@ -448,26 +521,29 @@ void FakeGaia::HandleAuthToken(const HttpRequest& request,
                             merge_session_params_.access_token);
     response_dict.SetInteger("expires_in", 3600);
     FormatJSONResponse(response_dict, http_response);
-  } else if (GetQueryParameter(request.content,
-                               "refresh_token",
-                               &refresh_token) &&
-             GetQueryParameter(request.content,
-                               "client_id",
-                               &client_id) &&
-             (token_info = FindAccessTokenInfo(refresh_token,
-                                              client_id,
-                                              scope))) {
-    base::DictionaryValue response_dict;
-    response_dict.SetString("access_token", token_info->token);
-    response_dict.SetInteger("expires_in", 3600);
-    FormatJSONResponse(response_dict, http_response);
-  } else {
-    LOG(ERROR) << "Bad request for /o/oauth2/token - "
-               << "refresh_token = " << refresh_token
-               << ", scope = " << scope
-               << ", client_id = " << client_id;
-    http_response->set_code(net::HTTP_BAD_REQUEST);
+    return;
   }
+
+  std::string refresh_token;
+  std::string client_id;
+  if (GetQueryParameter(request.content, "refresh_token", &refresh_token) &&
+      GetQueryParameter(request.content, "client_id", &client_id)) {
+    const AccessTokenInfo* token_info =
+        FindAccessTokenInfo(refresh_token, client_id, scope);
+    if (token_info) {
+      base::DictionaryValue response_dict;
+      response_dict.SetString("access_token", token_info->token);
+      response_dict.SetInteger("expires_in", 3600);
+      FormatJSONResponse(response_dict, http_response);
+      return;
+    }
+  }
+
+  LOG(ERROR) << "Bad request for /o/oauth2/token - "
+              << "refresh_token = " << refresh_token
+              << ", scope = " << scope
+              << ", client_id = " << client_id;
+  http_response->set_code(net::HTTP_BAD_REQUEST);
 }
 
 void FakeGaia::HandleTokenInfo(const HttpRequest& request,
@@ -507,25 +583,37 @@ void FakeGaia::HandleIssueToken(const HttpRequest& request,
   std::string access_token;
   std::string scope;
   std::string client_id;
-  const AccessTokenInfo* token_info = NULL;
   if (GetAccessToken(request, kAuthHeaderBearer, &access_token) &&
       GetQueryParameter(request.content, "scope", &scope) &&
-      GetQueryParameter(request.content, "client_id", &client_id) &&
-      (token_info = FindAccessTokenInfo(access_token, client_id, scope))) {
-    base::DictionaryValue response_dict;
-    response_dict.SetString("issueAdvice", "auto");
-    response_dict.SetString("expiresIn",
-                            base::IntToString(token_info->expires_in));
-    response_dict.SetString("token", token_info->token);
-    FormatJSONResponse(response_dict, http_response);
-  } else {
-    http_response->set_code(net::HTTP_BAD_REQUEST);
+      GetQueryParameter(request.content, "client_id", &client_id)) {
+    const AccessTokenInfo* token_info =
+        FindAccessTokenInfo(access_token, client_id, scope);
+    if (token_info) {
+      base::DictionaryValue response_dict;
+      response_dict.SetString("issueAdvice", "auto");
+      response_dict.SetString("expiresIn",
+                              base::IntToString(token_info->expires_in));
+      response_dict.SetString("token", token_info->token);
+      FormatJSONResponse(response_dict, http_response);
+      return;
+    }
   }
+  http_response->set_code(net::HTTP_BAD_REQUEST);
 }
 
 void FakeGaia::HandleListAccounts(const HttpRequest& request,
-                                 BasicHttpResponse* http_response) {
+                                  BasicHttpResponse* http_response) {
   http_response->set_content(base::StringPrintf(
       kListAccountsResponseFormat, merge_session_params_.email.c_str()));
   http_response->set_code(net::HTTP_OK);
 }
+
+void FakeGaia::HandleGetUserInfo(const HttpRequest& request,
+                                 BasicHttpResponse* http_response) {
+  http_response->set_content(base::StringPrintf(
+      "email=%s\ndisplayEmail=%s",
+      merge_session_params_.email.c_str(),
+      merge_session_params_.email.c_str()));
+  http_response->set_code(net::HTTP_OK);
+}
+

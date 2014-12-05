@@ -32,7 +32,7 @@
 
 #include "platform/TestingPlatformSupport.h"
 
-namespace WebCore {
+namespace blink {
 
 TestingDiscardableMemory::TestingDiscardableMemory(size_t size) : m_data(size), m_isLocked(true)
 {
@@ -65,17 +65,17 @@ void TestingDiscardableMemory::unlock()
 
 TestingPlatformSupport::TestingPlatformSupport(const Config& config)
     : m_config(config)
-    , m_oldPlatform(blink::Platform::current())
+    , m_oldPlatform(Platform::current())
 {
-    blink::Platform::initialize(this);
+    Platform::initialize(this);
 }
 
 TestingPlatformSupport::~TestingPlatformSupport()
 {
-    blink::Platform::initialize(m_oldPlatform);
+    Platform::initialize(m_oldPlatform);
 }
 
-blink::WebDiscardableMemory* TestingPlatformSupport::allocateAndLockDiscardableMemory(size_t bytes)
+WebDiscardableMemory* TestingPlatformSupport::allocateAndLockDiscardableMemory(size_t bytes)
 {
     return !m_config.hasDiscardableMemorySupport ? 0 : new TestingDiscardableMemory(bytes);
 }
@@ -90,4 +90,4 @@ const unsigned char* TestingPlatformSupport::getTraceCategoryEnabledFlag(const c
     return &tracingIsDisabled;
 }
 
-} // namespace WebCore
+} // namespace blink

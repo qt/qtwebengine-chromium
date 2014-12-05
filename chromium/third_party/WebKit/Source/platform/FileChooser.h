@@ -30,12 +30,14 @@
 #ifndef FileChooser_h
 #define FileChooser_h
 
+#include "platform/FileMetadata.h"
 #include "platform/PlatformExport.h"
+#include "platform/weborigin/KURL.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class FileChooser;
 
@@ -46,8 +48,17 @@ struct FileChooserFileInfo {
     {
     }
 
+    FileChooserFileInfo(const KURL& fileSystemURL, const FileMetadata metadata) : fileSystemURL(fileSystemURL), metadata(metadata)
+    {
+    }
+
+    // Members for native files.
     const String path;
     const String displayName;
+
+    // Members for file system API files.
+    const KURL fileSystemURL;
+    const FileMetadata metadata;
 };
 
 struct FileChooserSettings {
@@ -56,9 +67,7 @@ struct FileChooserSettings {
     Vector<String> acceptMIMETypes;
     Vector<String> acceptFileExtensions;
     Vector<String> selectedFiles;
-#if ENABLE(MEDIA_CAPTURE)
     bool useMediaCapture;
-#endif
 
     // Returns a combined vector of acceptMIMETypes and acceptFileExtensions.
     Vector<String> PLATFORM_EXPORT acceptTypes() const;
@@ -100,6 +109,6 @@ private:
     FileChooserSettings m_settings;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FileChooser_h

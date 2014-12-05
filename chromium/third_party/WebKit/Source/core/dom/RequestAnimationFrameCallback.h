@@ -31,11 +31,14 @@
 #ifndef RequestAnimationFrameCallback_h
 #define RequestAnimationFrameCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
 
-class RequestAnimationFrameCallback {
+namespace blink {
+
+class RequestAnimationFrameCallback : public GarbageCollectedFinalized<RequestAnimationFrameCallback> {
 public:
     virtual ~RequestAnimationFrameCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(double highResTimeMs) = 0;
 
     int m_id;

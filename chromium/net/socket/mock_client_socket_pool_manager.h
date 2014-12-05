@@ -14,7 +14,7 @@ namespace net {
 class MockClientSocketPoolManager : public ClientSocketPoolManager {
  public:
   MockClientSocketPoolManager();
-  virtual ~MockClientSocketPoolManager();
+  ~MockClientSocketPoolManager() override;
 
   // Sets "override" socket pools that get used instead.
   void SetTransportSocketPool(TransportClientSocketPool* pool);
@@ -27,17 +27,17 @@ class MockClientSocketPoolManager : public ClientSocketPoolManager {
                                     SSLClientSocketPool* pool);
 
   // ClientSocketPoolManager methods:
-  virtual void FlushSocketPoolsWithError(int error) OVERRIDE;
-  virtual void CloseIdleSockets() OVERRIDE;
-  virtual TransportClientSocketPool* GetTransportSocketPool() OVERRIDE;
-  virtual SSLClientSocketPool* GetSSLSocketPool() OVERRIDE;
-  virtual SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
-      const HostPortPair& socks_proxy) OVERRIDE;
-  virtual HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
-      const HostPortPair& http_proxy) OVERRIDE;
-  virtual SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
-      const HostPortPair& proxy_server) OVERRIDE;
-  virtual base::Value* SocketPoolInfoToValue() const OVERRIDE;
+  void FlushSocketPoolsWithError(int error) override;
+  void CloseIdleSockets() override;
+  TransportClientSocketPool* GetTransportSocketPool() override;
+  SSLClientSocketPool* GetSSLSocketPool() override;
+  SOCKSClientSocketPool* GetSocketPoolForSOCKSProxy(
+      const HostPortPair& socks_proxy) override;
+  HttpProxyClientSocketPool* GetSocketPoolForHTTPProxy(
+      const HostPortPair& http_proxy) override;
+  SSLClientSocketPool* GetSocketPoolForSSLWithProxy(
+      const HostPortPair& proxy_server) override;
+  base::Value* SocketPoolInfoToValue() const override;
 
  private:
   typedef internal::OwnedPoolMap<HostPortPair, TransportClientSocketPool*>

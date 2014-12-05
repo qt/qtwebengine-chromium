@@ -20,7 +20,7 @@ class SkCanvas;
 
 namespace ui {
 
-typedef intptr_t NativeBufferOzone;
+class NativePixmap;
 class OverlayCandidatesOzone;
 class SurfaceOzoneCanvas;
 class SurfaceOzoneEGL;
@@ -58,19 +58,13 @@ class SurfaceOzoneEGL;
 // modes (See comments bellow for descriptions).
 class OZONE_BASE_EXPORT SurfaceFactoryOzone {
  public:
-  // Describes the state of the hardware after initialization.
-  enum HardwareState {
-    UNINITIALIZED,
-    INITIALIZED,
-    FAILED,
-  };
-
   // Describes overlay buffer format.
   // TODO: this is a placeholder for now and will be populated with more
   // formats once we know what sorts of content, video, etc. we can support.
   enum BufferFormat {
     UNKNOWN,
     RGBA_8888,
+    RGBX_8888,
     RGB_888,
   };
 
@@ -85,22 +79,9 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // Returns the singleton instance.
   static SurfaceFactoryOzone* GetInstance();
 
-  // Configures the display hardware. Must be called from within the GPU
-  // process before the sandbox has been activated.
-  virtual HardwareState InitializeHardware() = 0;
-
-  // Cleans up display hardware state. Call this from within the GPU process.
-  // This method must be safe to run inside of the sandbox.
-  virtual void ShutdownHardware() = 0;
-
   // Returns native platform display handle. This is used to obtain the EGL
   // display connection for the native display.
   virtual intptr_t GetNativeDisplay();
-
-  // Obtains an AcceleratedWidget backed by a native Linux framebuffer.
-  // The  returned AcceleratedWidget is an opaque token that must realized
-  // before it can be used to create a GL surface.
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() = 0;
 
   // Create SurfaceOzoneEGL for the specified gfx::AcceleratedWidget.
   //
@@ -108,6 +89,12 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   // platform must support creation of SurfaceOzoneEGL from the GPU process
   // using only the handle contained in gfx::AcceleratedWidget.
   virtual scoped_ptr<SurfaceOzoneEGL> CreateEGLSurfaceForWidget(
+      gfx::AcceleratedWidget widget);
+
+  // Create an EGL surface that isn't backed by any buffers, and is used
+  // for overlay-only displays. This will return NULL if this mode is
+  // not supported.
+  virtual scoped_ptr<SurfaceOzoneEGL> CreateSurfacelessEGLSurfaceForWidget(
       gfx::AcceleratedWidget widget);
 
   // Create SurfaceOzoneCanvas for the specified gfx::AcceleratedWidget.
@@ -134,25 +121,33 @@ class OZONE_BASE_EXPORT SurfaceFactoryOzone {
   virtual OverlayCandidatesOzone* GetOverlayCandidates(
       gfx::AcceleratedWidget w);
 
+  // Cleate a single native buffer to be used for overlay planes.
+  virtual scoped_refptr<NativePixmap> CreateNativePixmap(
+      gfx::Size size,
+      BufferFormat format);
+
   // Sets the overlay plane to switch to at the next page flip.
+  // |w| specifies the screen to display this overlay plane on.
   // |plane_z_order| specifies the stacking order of the plane relative to the
   // main framebuffer located at index 0.
   // |plane_transform| specifies how the buffer is to be transformed during.
   // composition.
   // |buffer| to be presented by the overlay.
   // |display_bounds| specify where it is supposed to be on the screen.
-  // |crop_rect| specifies the region within the buffer to be placed inside
-  // |display_bounds|.
-  virtual void ScheduleOverlayPlane(gfx::AcceleratedWidget w,
+  // |crop_rect| specifies the region within the buffer to be placed
+  // inside |display_bounds|. This is specified in texture coordinates, in the
+  // range of [0,1].
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
                                     int plane_z_order,
                                     gfx::OverlayTransform plane_transform,
-                                    ui::NativeBufferOzone buffer,
+                                    scoped_refptr<NativePixmap> buffer,
                                     const gfx::Rect& display_bounds,
-                                    gfx::RectF crop_rect);
+                                    const gfx::RectF& crop_rect);
 
-  // Cleate a single native buffer to be used for overlay planes.
-  virtual ui::NativeBufferOzone CreateNativeBuffer(gfx::Size size,
-                                                   BufferFormat format);
+  // Returns true if overlays can be shown at z-index 0, replacing the main
+  // surface. Combined with surfaceless extensions, it allows for an
+  // overlay-only mode.
+  virtual bool CanShowPrimaryPlaneAsOverlay();
 
  private:
   static SurfaceFactoryOzone* impl_;  // not owned

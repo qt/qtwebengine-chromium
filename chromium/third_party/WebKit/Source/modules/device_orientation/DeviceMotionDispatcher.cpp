@@ -35,12 +35,12 @@
 #include "modules/device_orientation/DeviceMotionData.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceMotionDispatcher& DeviceMotionDispatcher::instance()
 {
-    DEFINE_STATIC_LOCAL(DeviceMotionDispatcher, deviceMotionDispatcher, ());
-    return deviceMotionDispatcher;
+    DEFINE_STATIC_LOCAL(Persistent<DeviceMotionDispatcher>, deviceMotionDispatcher, (new DeviceMotionDispatcher()));
+    return *deviceMotionDispatcher;
 }
 
 DeviceMotionDispatcher::DeviceMotionDispatcher()
@@ -51,18 +51,24 @@ DeviceMotionDispatcher::~DeviceMotionDispatcher()
 {
 }
 
+void DeviceMotionDispatcher::trace(Visitor* visitor)
+{
+    visitor->trace(m_lastDeviceMotionData);
+    PlatformEventDispatcher::trace(visitor);
+}
+
 void DeviceMotionDispatcher::startListening()
 {
-    blink::Platform::current()->setDeviceMotionListener(this);
+    Platform::current()->startListening(WebPlatformEventDeviceMotion, this);
 }
 
 void DeviceMotionDispatcher::stopListening()
 {
-    blink::Platform::current()->setDeviceMotionListener(0);
+    Platform::current()->stopListening(WebPlatformEventDeviceMotion);
     m_lastDeviceMotionData.clear();
 }
 
-void DeviceMotionDispatcher::didChangeDeviceMotion(const blink::WebDeviceMotionData& motion)
+void DeviceMotionDispatcher::didChangeDeviceMotion(const WebDeviceMotionData& motion)
 {
     m_lastDeviceMotionData = DeviceMotionData::create(motion);
     notifyControllers();
@@ -73,4 +79,4 @@ DeviceMotionData* DeviceMotionDispatcher::latestDeviceMotionData()
     return m_lastDeviceMotionData.get();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -42,7 +42,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class KURL;
 class SharedBuffer;
@@ -68,14 +68,14 @@ public:
     void clearAll();
     // Returns null if an item already exists with the provided type.
     PassRefPtrWillBeRawPtr<DataObjectItem> add(const String& data, const String& type);
-    PassRefPtrWillBeRawPtr<DataObjectItem> add(PassRefPtrWillBeRawPtr<File>);
+    PassRefPtrWillBeRawPtr<DataObjectItem> add(File*);
 
     // WebCore helpers.
     void clearData(const String& type);
 
     ListHashSet<String> types() const;
     String getData(const String& type) const;
-    bool setData(const String& type, const String& data);
+    void setData(const String& type, const String& data);
 
     void urlAndTitle(String& url, String* title = 0) const;
     void setURLAndTitle(const String& url, const String& title);
@@ -114,6 +114,6 @@ private:
     String m_filesystemId;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

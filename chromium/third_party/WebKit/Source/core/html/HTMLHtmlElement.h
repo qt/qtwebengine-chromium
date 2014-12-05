@@ -26,9 +26,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLHtmlElement FINAL : public HTMLElement {
+class HTMLHtmlElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLHtmlElement);
 
@@ -37,9 +38,9 @@ public:
 private:
     explicit HTMLHtmlElement(Document&);
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLHtmlElement_h

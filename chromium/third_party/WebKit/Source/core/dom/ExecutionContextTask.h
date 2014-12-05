@@ -31,8 +31,9 @@
 #include "wtf/Functional.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/PassOwnPtr.h"
+#include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
@@ -45,20 +46,36 @@ public:
     virtual void performTask(ExecutionContext*) = 0;
     // Certain tasks get marked specially so that they aren't discarded, and are executed, when the context is shutting down its message queue.
     virtual bool isCleanupTask() const { return false; }
+    virtual String taskNameForInstrumentation() const { return String(); }
 };
 
-class CallClosureTask FINAL : public ExecutionContextTask {
+class CallClosureTask final : public ExecutionContextTask {
 public:
+    // Do not use |create| other than in createCrossThreadTask and
+    // createSameThreadTask.
+    // See http://crbug.com/390851
     static PassOwnPtr<CallClosureTask> create(const Closure& closure)
     {
         return adoptPtr(new CallClosureTask(closure));
     }
-    virtual void performTask(ExecutionContext*) OVERRIDE { m_closure(); }
+    virtual void performTask(ExecutionContext*) override { m_closure(); }
 
 private:
     explicit CallClosureTask(const Closure& closure) : m_closure(closure) { }
     Closure m_closure;
 };
+
+// Create tasks passed within a single thread.
+// When posting tasks within a thread, use |createSameThreadTask| instead
+// of using |bind| directly to state explicitly that there is no need to care
+// about thread safety when posting the task.
+// When posting tasks across threads, use |createCrossThreadTask|.
+template<typename FunctionType, typename... P>
+PassOwnPtr<ExecutionContextTask> createSameThreadTask(
+    FunctionType function, const P&... parameters)
+{
+    return CallClosureTask::create(bind(function, parameters...));
+}
 
 } // namespace
 

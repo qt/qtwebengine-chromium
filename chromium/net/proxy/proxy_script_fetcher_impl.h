@@ -36,7 +36,7 @@ class NET_EXPORT ProxyScriptFetcherImpl : public ProxyScriptFetcher,
   // fetcher and the context; you can break such cycles by calling Cancel().
   explicit ProxyScriptFetcherImpl(URLRequestContext* url_request_context);
 
-  virtual ~ProxyScriptFetcherImpl();
+  ~ProxyScriptFetcherImpl() override;
 
   // Used by unit-tests to modify the default limits.
   base::TimeDelta SetTimeoutConstraint(base::TimeDelta timeout);
@@ -45,19 +45,20 @@ class NET_EXPORT ProxyScriptFetcherImpl : public ProxyScriptFetcher,
   void OnResponseCompleted(URLRequest* request);
 
   // ProxyScriptFetcher methods:
-  virtual int Fetch(const GURL& url, base::string16* text,
-                    const net::CompletionCallback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual URLRequestContext* GetRequestContext() const OVERRIDE;
+  int Fetch(const GURL& url,
+            base::string16* text,
+            const net::CompletionCallback& callback) override;
+  void Cancel() override;
+  URLRequestContext* GetRequestContext() const override;
 
   // URLRequest::Delegate methods:
-  virtual void OnAuthRequired(URLRequest* request,
-                              AuthChallengeInfo* auth_info) OVERRIDE;
-  virtual void OnSSLCertificateError(URLRequest* request,
-                                     const SSLInfo& ssl_info,
-                                     bool is_hsts_ok) OVERRIDE;
-  virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(URLRequest* request, int num_bytes) OVERRIDE;
+  void OnAuthRequired(URLRequest* request,
+                      AuthChallengeInfo* auth_info) override;
+  void OnSSLCertificateError(URLRequest* request,
+                             const SSLInfo& ssl_info,
+                             bool is_hsts_ok) override;
+  void OnResponseStarted(URLRequest* request) override;
+  void OnReadCompleted(URLRequest* request, int num_bytes) override;
 
  private:
   enum { kBufSize = 4096 };
@@ -78,10 +79,6 @@ class NET_EXPORT ProxyScriptFetcherImpl : public ProxyScriptFetcher,
 
   // Callback for time-out task of request with id |id|.
   void OnTimeout(int id);
-
-  // Factory for creating the time-out task. This takes care of revoking
-  // outstanding tasks when |this| is deleted.
-  base::WeakPtrFactory<ProxyScriptFetcherImpl> weak_factory_;
 
   // The context used for making network requests.
   URLRequestContext* const url_request_context_;
@@ -118,6 +115,10 @@ class NET_EXPORT ProxyScriptFetcherImpl : public ProxyScriptFetcher,
 
   // The maximum amount of time to wait for download to complete.
   base::TimeDelta max_duration_;
+
+  // Factory for creating the time-out task. This takes care of revoking
+  // outstanding tasks when |this| is deleted.
+  base::WeakPtrFactory<ProxyScriptFetcherImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyScriptFetcherImpl);
 };

@@ -43,17 +43,17 @@ class CONTENT_EXPORT PepperHostResolverMessageFilter
                                   bool private_api);
 
  protected:
-  virtual ~PepperHostResolverMessageFilter();
+  ~PepperHostResolverMessageFilter() override;
 
  private:
   typedef std::vector<PP_NetAddress_Private> NetAddressList;
 
   // ppapi::host::ResourceMessageFilter overrides.
-  virtual scoped_refptr<base::TaskRunner> OverrideTaskRunnerForMessage(
-      const IPC::Message& message) OVERRIDE;
-  virtual int32_t OnResourceMessageReceived(
+  scoped_refptr<base::TaskRunner> OverrideTaskRunnerForMessage(
+      const IPC::Message& message) override;
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   int32_t OnMsgResolve(const ppapi::host::HostMessageContext* context,
                        const ppapi::HostPortPair& host_port,

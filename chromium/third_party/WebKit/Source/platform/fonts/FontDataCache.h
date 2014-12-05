@@ -36,7 +36,7 @@
 #include "wtf/HashMap.h"
 #include "wtf/ListHashSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class SimpleFontData;
 
@@ -62,7 +62,7 @@ struct FontDataCacheKeyTraits : WTF::GenericHashTraits<FontPlatformData> {
         DEFINE_STATIC_LOCAL(FontPlatformData, key, (0.f, false, false));
         return key;
     }
-    static void constructDeletedValue(FontPlatformData& slot)
+    static void constructDeletedValue(FontPlatformData& slot, bool)
     {
         new (NotNull, &slot) FontPlatformData(WTF::HashTableDeletedValue);
     }
@@ -94,6 +94,6 @@ private:
     ListHashSet<RefPtr<SimpleFontData> > m_inactiveFontData;
 };
 
-}
+} // namespace blink
 
 #endif

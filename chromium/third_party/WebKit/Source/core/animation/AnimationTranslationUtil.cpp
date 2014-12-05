@@ -40,9 +40,7 @@
 #include "platform/transforms/TranslateTransformOperation.h"
 #include "public/platform/WebTransformOperations.h"
 
-using namespace blink;
-
-namespace WebCore {
+namespace blink {
 
 void toWebTransformOperations(const TransformOperations& transformOperations, WebTransformOperations* webTransformOperations)
 {
@@ -116,12 +114,12 @@ void toWebTransformOperations(const TransformOperations& transformOperations, We
     } // for each operation
 }
 
-bool toWebFilterOperations(const FilterOperations& inOperations, WebFilterOperations* outOperations)
+void toWebFilterOperations(const FilterOperations& inOperations, WebFilterOperations* outOperations)
 {
     SkiaImageFilterBuilder builder;
     FilterOutsets outsets = inOperations.outsets();
     builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
-    return builder.buildFilterOperations(inOperations, outOperations);
+    builder.buildFilterOperations(inOperations, outOperations);
 }
 
-} // namespace WebCore
+} // namespace blink

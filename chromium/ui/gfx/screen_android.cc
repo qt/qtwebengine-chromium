@@ -15,28 +15,32 @@ class ScreenAndroid : public Screen {
  public:
   ScreenAndroid() {}
 
-  virtual bool IsDIPEnabled() OVERRIDE { return true; }
+  virtual gfx::Point GetCursorScreenPoint() override { return gfx::Point(); }
 
-  virtual gfx::Point GetCursorScreenPoint() OVERRIDE { return gfx::Point(); }
-
-  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+  virtual gfx::NativeWindow GetWindowUnderCursor() override {
     NOTIMPLEMENTED();
     return NULL;
   }
 
   virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
-      OVERRIDE {
+      override {
     NOTIMPLEMENTED();
     return NULL;
   }
 
-  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+  virtual gfx::Display GetPrimaryDisplay() const override {
     gfx::DeviceDisplayInfo device_info;
     const float device_scale_factor = device_info.GetDIPScale();
+    // Note: GetPhysicalDisplayWidth/Height() does not subtract window
+    // decorations etc. Use it instead of GetDisplayWidth/Height() when
+    // available.
     const gfx::Rect bounds_in_pixels =
-        gfx::Rect(
-            device_info.GetDisplayWidth(),
-            device_info.GetDisplayHeight());
+        gfx::Rect(device_info.GetPhysicalDisplayWidth()
+                      ? device_info.GetPhysicalDisplayWidth()
+                      : device_info.GetDisplayWidth(),
+                  device_info.GetPhysicalDisplayHeight()
+                      ? device_info.GetPhysicalDisplayHeight()
+                      : device_info.GetDisplayHeight());
     const gfx::Rect bounds_in_dip =
         gfx::Rect(gfx::ToCeiledSize(gfx::ScaleSize(
             bounds_in_pixels.size(), 1.0f / device_scale_factor)));
@@ -48,31 +52,31 @@ class ScreenAndroid : public Screen {
   }
 
   virtual gfx::Display GetDisplayNearestWindow(
-      gfx::NativeView view) const OVERRIDE {
+      gfx::NativeView view) const override {
     return GetPrimaryDisplay();
   }
 
   virtual gfx::Display GetDisplayNearestPoint(
-      const gfx::Point& point) const OVERRIDE {
+      const gfx::Point& point) const override {
     return GetPrimaryDisplay();
   }
 
-  virtual int GetNumDisplays() const OVERRIDE { return 1; }
+  virtual int GetNumDisplays() const override { return 1; }
 
-  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+  virtual std::vector<gfx::Display> GetAllDisplays() const override {
     return std::vector<gfx::Display>(1, GetPrimaryDisplay());
   }
 
   virtual gfx::Display GetDisplayMatching(
-      const gfx::Rect& match_rect) const OVERRIDE {
+      const gfx::Rect& match_rect) const override {
     return GetPrimaryDisplay();
   }
 
-  virtual void AddObserver(DisplayObserver* observer) OVERRIDE {
+  virtual void AddObserver(DisplayObserver* observer) override {
     // no display change on Android.
   }
 
-  virtual void RemoveObserver(DisplayObserver* observer) OVERRIDE {
+  virtual void RemoveObserver(DisplayObserver* observer) override {
     // no display change on Android.
   }
 

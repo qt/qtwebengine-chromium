@@ -17,47 +17,48 @@ namespace gles2 {
 class ErrorStateImpl : public ErrorState {
  public:
   explicit ErrorStateImpl(ErrorStateClient* client, Logger* logger);
-  virtual ~ErrorStateImpl();
+  ~ErrorStateImpl() override;
 
-  virtual uint32 GetGLError() OVERRIDE;
+  uint32 GetGLError() override;
 
-  virtual void SetGLError(
-      const char* filename,
-      int line,
-      unsigned int error,
-      const char* function_name,
-      const char* msg) OVERRIDE;
-  virtual void SetGLErrorInvalidEnum(
-      const char* filename,
-      int line,
-      const char* function_name,
-      unsigned int value,
-      const char* label) OVERRIDE;
-  virtual void SetGLErrorInvalidParami(
-      const char* filename,
-      int line,
-      unsigned int error,
-      const char* function_name,
-      unsigned int pname,
-      int param) OVERRIDE;
-  virtual void SetGLErrorInvalidParamf(
-      const char* filename,
-      int line,
-      unsigned int error,
-      const char* function_name,
-      unsigned int pname,
-      float param) OVERRIDE;
+  void SetGLError(const char* filename,
+                  int line,
+                  unsigned int error,
+                  const char* function_name,
+                  const char* msg) override;
+  void SetGLErrorInvalidEnum(const char* filename,
+                             int line,
+                             const char* function_name,
+                             unsigned int value,
+                             const char* label) override;
+  void SetGLErrorInvalidParami(const char* filename,
+                               int line,
+                               unsigned int error,
+                               const char* function_name,
+                               unsigned int pname,
+                               int param) override;
+  void SetGLErrorInvalidParamf(const char* filename,
+                               int line,
+                               unsigned int error,
+                               const char* function_name,
+                               unsigned int pname,
+                               float param) override;
 
-  virtual unsigned int PeekGLError(
-      const char* filename, int line, const char* function_name) OVERRIDE;
+  unsigned int PeekGLError(const char* filename,
+                           int line,
+                           const char* function_name) override;
 
-  virtual void CopyRealGLErrorsToWrapper(
-      const char* filename, int line, const char* function_name) OVERRIDE;
+  void CopyRealGLErrorsToWrapper(const char* filename,
+                                 int line,
+                                 const char* function_name) override;
 
-  virtual void ClearRealGLErrors(
-      const char* filename, int line, const char* function_name) OVERRIDE;
+  void ClearRealGLErrors(const char* filename,
+                         int line,
+                         const char* function_name) override;
 
  private:
+  GLenum GetErrorHandleContextLoss();
+
   // The last error message set.
   std::string last_error_;
   // Current GL error bits.
@@ -84,7 +85,7 @@ ErrorStateImpl::~ErrorStateImpl() {}
 
 uint32 ErrorStateImpl::GetGLError() {
   // Check the GL error first, then our wrapped error.
-  GLenum error = glGetError();
+  GLenum error = GetErrorHandleContextLoss();
   if (error == GL_NO_ERROR && error_bits_ != 0) {
     for (uint32 mask = 1; mask != 0; mask = mask << 1) {
       if ((error_bits_ & mask) != 0) {
@@ -101,9 +102,21 @@ uint32 ErrorStateImpl::GetGLError() {
   return error;
 }
 
+GLenum ErrorStateImpl::GetErrorHandleContextLoss() {
+  GLenum error = glGetError();
+  if (error == GL_CONTEXT_LOST_KHR) {
+    client_->OnContextLostError();
+    // Do not expose GL_CONTEXT_LOST_KHR, as the version of the robustness
+    // extension that introduces the error is not exposed by the command
+    // buffer.
+    error = GL_NO_ERROR;
+  }
+  return error;
+}
+
 unsigned int ErrorStateImpl::PeekGLError(
     const char* filename, int line, const char* function_name) {
-  GLenum error = glGetError();
+  GLenum error = GetErrorHandleContextLoss();
   if (error != GL_NO_ERROR) {
     SetGLError(filename, line, error, function_name, "");
   }
@@ -177,7 +190,7 @@ void ErrorStateImpl::SetGLErrorInvalidParamf(
 void ErrorStateImpl::CopyRealGLErrorsToWrapper(
     const char* filename, int line, const char* function_name) {
   GLenum error;
-  while ((error = glGetError()) != GL_NO_ERROR) {
+  while ((error = GetErrorHandleContextLoss()) != GL_NO_ERROR) {
     SetGLError(filename, line, error, function_name,
                "<- error from previous GL command");
   }
@@ -188,7 +201,7 @@ void ErrorStateImpl::ClearRealGLErrors(
   // Clears and logs all current gl errors.
   GLenum error;
   while ((error = glGetError()) != GL_NO_ERROR) {
-    if (error != GL_OUT_OF_MEMORY) {
+    if (error != GL_CONTEXT_LOST_KHR && error != GL_OUT_OF_MEMORY) {
       // GL_OUT_OF_MEMORY can legally happen on lost device.
       logger_->LogMessage(
           filename, line,

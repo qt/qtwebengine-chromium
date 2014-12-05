@@ -78,20 +78,32 @@ header {
   width: 13px;
 }
 
-.two-column h1 {
+.left-column {
   -webkit-padding-end: 20px;
   -webkit-padding-start: 20px;
-  color: #646464;
   display: table-cell;
-  font-size: 12px;
   min-width: 70px;
+  vertical-align: middle;
 }
 
-.two-column.visible h1,
+.left-column h1 {
+  color: #646464;
+  font-size: 12px;
+  margin-bottom: 0;
+  margin-top: 0;
+}
+
+.two-column.visible .left-column,
 .two-column.visible .right-column {
-  border-bottom: 1px solid #e9e9e9;
-  padding-bottom: 7px;
-  padding-top: 7px;
+  padding-bottom: 5px;
+  padding-top: 5px;
+}
+
+.two-column:not(.visible) .left-column,
+.two-column:not(.visible) .right-column {
+  -webkit-transition: padding-bottom 150ms, padding-top 150ms;
+  padding-bottom: 0;
+  padding-top: 0;
 }
 
 .two-column:not(.visible) select {
@@ -112,22 +124,13 @@ h1 {
 }
 
 #print-preview .navbar-link {
-  -webkit-margin-start: 20px;
-  min-height: 32px;
-  outline: 0;
-  padding: 0;
-  text-align: start;
-  text-decoration: none;
+  margin: 8px 20px;
 }
 
-#print-preview .navbar-link:hover:not(:disabled) {
-  text-decoration: underline;
-}
-
-#print-preview .navbar-link:disabled {
+#print-preview .navbar-link.disabled {
   color: rgba(0, 0, 0, .5);
   cursor: default;
-  text-shadow: none;
+  pointer-events: none;
 }
 
 button.loading {
@@ -175,6 +178,7 @@ span.hint.closing {
 
 .collapsible {
   height: 0;
+  position: relative;
 }
 
 .collapsible.visible {
@@ -188,6 +192,10 @@ span.hint.closing {
   height: 0 !important;
   opacity: 0;
   overflow: hidden;
+}
+
+.collapsible.closing > * {
+  position: absolute;
 }
 
 select {
@@ -266,11 +274,7 @@ span.jumping-dots > span:nth-child(3) {
   -webkit-animation-delay: 300ms;
 }
 
-/* TODO(estade): unfork this code. */
 #print-header .button-strip {
-<if expr="not chromeos and not is_win">
-  -webkit-box-direction: reverse;
-</if>
   -webkit-box-orient: horizontal;
   -webkit-box-pack: end;
   display: -webkit-box;
@@ -287,6 +291,16 @@ span.jumping-dots > span:nth-child(3) {
   margin: 7px 0;
 }
 
+#link-container > div {
+  display: flex;
+}
+
+#link-container > div > .throbber {
+  margin: 8px;
+  min-height: 16px;
+  min-width: 16px;
+}
+
 #main-container {
   -webkit-border-start: 1px solid #dcdcdc;
   -webkit-box-flex: 1;
@@ -299,11 +313,11 @@ span.jumping-dots > span:nth-child(3) {
 html:not(.focus-outline-visible)
 :enabled:focus:-webkit-any(input[type='checkbox'],
                            input[type='radio'],
-                           button):not(.link-button) {
+                           button) {
   /* Cancel border-color for :focus specified in widgets.css. */
   border-color: rgba(0,0,0,0.25);
 }
 
-html:not(.focus-outline-visible) button:focus.link-button {
+html:not(.focus-outline-visible) [is='action-link']:focus {
   outline: none;
 }

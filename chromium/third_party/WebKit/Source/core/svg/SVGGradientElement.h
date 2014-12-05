@@ -30,7 +30,7 @@
 #include "core/svg/SVGUnitTypes.h"
 #include "platform/graphics/Gradient.h"
 
-namespace WebCore {
+namespace blink {
 
 enum SVGSpreadMethodType {
     SVGSpreadMethodUnknown = 0,
@@ -42,6 +42,7 @@ template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGSpreadMe
 
 class SVGGradientElement : public SVGElement,
                            public SVGURIReference {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum {
         SVG_SPREADMETHOD_UNKNOWN = SVGSpreadMethodUnknown,
@@ -60,26 +61,26 @@ protected:
     SVGGradientElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
 private:
-    virtual bool needsPendingResourceHandling() const OVERRIDE FINAL { return false; }
+    virtual bool needsPendingResourceHandling() const override final { return false; }
 
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE FINAL;
+    virtual void childrenChanged(const ChildrenChange&) override final;
 
     RefPtr<SVGAnimatedTransformList> m_gradientTransform;
     RefPtr<SVGAnimatedEnumeration<SVGSpreadMethodType> > m_spreadMethod;
     RefPtr<SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType> > m_gradientUnits;
 };
 
-inline bool isSVGGradientElement(const Node& node)
+inline bool isSVGGradientElement(const SVGElement& element)
 {
-    return node.hasTagName(SVGNames::radialGradientTag) || node.hasTagName(SVGNames::linearGradientTag);
+    return element.hasTagName(SVGNames::radialGradientTag) || element.hasTagName(SVGNames::linearGradientTag);
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGGradientElement);
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGGradientElement_h

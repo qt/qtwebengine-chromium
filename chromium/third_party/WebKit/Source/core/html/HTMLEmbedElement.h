@@ -25,9 +25,10 @@
 
 #include "core/html/HTMLPlugInElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLEmbedElement FINAL : public HTMLPlugInElement {
+class HTMLEmbedElement final : public HTMLPlugInElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLEmbedElement> create(Document&, bool createdByParser = false);
 
@@ -36,26 +37,25 @@ public:
 private:
     HTMLEmbedElement(Document&, bool createdByParser);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool isPresentationAttribute(const QualifiedName&) const OVERRIDE;
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool isPresentationAttribute(const QualifiedName&) const override;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
 
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual const QualifiedName& subResourceAttributeName() const OVERRIDE;
-    virtual const AtomicString imageSourceURL() const OVERRIDE;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual const QualifiedName& subResourceAttributeName() const override;
 
-    virtual RenderWidget* existingRenderWidget() const OVERRIDE;
+    virtual RenderPart* existingRenderPart() const override;
 
-    virtual void updateWidgetInternal() OVERRIDE;
+    virtual void updateWidgetInternal() override;
 
     void parametersForPlugin(Vector<String>& paramNames, Vector<String>& paramValues);
 
-    virtual bool shouldRegisterAsNamedItem() const OVERRIDE { return true; }
-    virtual bool isInteractiveContent() const OVERRIDE;
+    virtual bool shouldRegisterAsNamedItem() const override { return true; }
+    virtual bool isInteractiveContent() const override;
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // HTMLEmbedElement_h

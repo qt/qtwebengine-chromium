@@ -35,16 +35,14 @@
 #include "modules/quota/DeprecatedStorageQuota.h"
 #include "modules/quota/StorageQuota.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorStorageQuota::NavigatorStorageQuota(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
 
-NavigatorStorageQuota::~NavigatorStorageQuota()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorStorageQuota);
 
 const char* NavigatorStorageQuota::supplementName()
 {
@@ -103,6 +101,7 @@ void NavigatorStorageQuota::trace(Visitor* visitor)
     visitor->trace(m_temporaryStorage);
     visitor->trace(m_persistentStorage);
     WillBeHeapSupplement<Navigator>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -2,9 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// MSVC++ requires this to be set before any other includes to get M_PI.
+#define _USE_MATH_DEFINES
+
 #include "content/browser/renderer_host/input/motion_event_web.h"
 
+#include <cmath>
+
 #include "base/logging.h"
+#include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/common/input/web_touch_event_traits.h"
 
 using blink::WebInputEvent;
@@ -102,9 +108,33 @@ float MotionEventWeb::GetRawY(size_t pointer_index) const {
 
 float MotionEventWeb::GetTouchMajor(size_t pointer_index) const {
   DCHECK_LT(pointer_index, GetPointerCount());
-  // TODO(jdduke): We should be a bit more careful about axes here.
   return 2.f * std::max(event_.touches[pointer_index].radiusX,
                         event_.touches[pointer_index].radiusY);
+}
+
+float MotionEventWeb::GetTouchMinor(size_t pointer_index) const {
+  DCHECK_LT(pointer_index, GetPointerCount());
+  return 2.f * std::min(event_.touches[pointer_index].radiusX,
+                        event_.touches[pointer_index].radiusY);
+}
+
+float MotionEventWeb::GetOrientation(size_t pointer_index) const {
+  DCHECK_LT(pointer_index, GetPointerCount());
+
+  float rotation_angle_rad = event_.touches[pointer_index].rotationAngle
+      * M_PI / 180.f;
+  DCHECK(0 <= rotation_angle_rad && rotation_angle_rad <= M_PI_2)
+      << "Unexpected touch rotation angle";
+
+  if (event_.touches[pointer_index].radiusX
+      > event_.touches[pointer_index].radiusY) {
+    // The case radiusX == radiusY is omitted from here on purpose: for circles,
+    // we want to pass the angle (which could be any value in such cases but
+    // always seem to be set to zero) unchanged.
+    rotation_angle_rad -= (float) M_PI_2;
+  }
+
+  return rotation_angle_rad;
 }
 
 float MotionEventWeb::GetPressure(size_t pointer_index) const {
@@ -117,44 +147,19 @@ base::TimeTicks MotionEventWeb::GetEventTime() const {
                                            base::Time::kMicrosecondsPerSecond);
 }
 
-size_t MotionEventWeb::GetHistorySize() const { return 0; }
-
-base::TimeTicks MotionEventWeb::GetHistoricalEventTime(
-    size_t historical_index) const {
-  NOTIMPLEMENTED();
-  return base::TimeTicks();
+ui::MotionEvent::ToolType MotionEventWeb::GetToolType(
+    size_t pointer_index) const {
+  // TODO(jdduke): Plumb tool type from the platform event, crbug.com/404128.
+  DCHECK_LT(pointer_index, GetPointerCount());
+  return TOOL_TYPE_UNKNOWN;
 }
 
-float MotionEventWeb::GetHistoricalTouchMajor(size_t pointer_index,
-                                              size_t historical_index) const {
-  NOTIMPLEMENTED();
-  return 0.f;
+int MotionEventWeb::GetButtonState() const {
+  return 0;
 }
 
-float MotionEventWeb::GetHistoricalX(size_t pointer_index,
-                                     size_t historical_index) const {
-  NOTIMPLEMENTED();
-  return 0.f;
-}
-
-float MotionEventWeb::GetHistoricalY(size_t pointer_index,
-                                     size_t historical_index) const {
-  NOTIMPLEMENTED();
-  return 0.f;
-}
-
-scoped_ptr<ui::MotionEvent> MotionEventWeb::Clone() const {
-  return scoped_ptr<MotionEvent>(new MotionEventWeb(event_));
-}
-
-scoped_ptr<ui::MotionEvent> MotionEventWeb::Cancel() const {
-  WebTouchEvent cancel_event(event_);
-  WebTouchEventTraits::ResetTypeAndTouchStates(
-      blink::WebInputEvent::TouchCancel,
-      // TODO(rbyers): Shouldn't we use a fresh timestamp?
-      event_.timeStampSeconds,
-      &cancel_event);
-  return scoped_ptr<MotionEvent>(new MotionEventWeb(cancel_event));
+int MotionEventWeb::GetFlags() const {
+  return WebEventModifiersToEventFlags(event_.modifiers);
 }
 
 }  // namespace content

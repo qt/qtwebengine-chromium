@@ -4,6 +4,7 @@
 
 #include "google_apis/drive/request_sender.h"
 
+#include "base/sequenced_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "google_apis/drive/base_requests.h"
 #include "google_apis/drive/dummy_auth_service.h"
@@ -30,8 +31,7 @@ class TestAuthService : public DummyAuthService {
  public:
   TestAuthService() : auth_try_count_(0) {}
 
-  virtual void StartAuthentication(
-      const AuthStatusCallback& callback) OVERRIDE {
+  void StartAuthentication(const AuthStatusCallback& callback) override {
     // RequestSender should clear the rejected access token before starting
     // to request another one.
     EXPECT_FALSE(HasAccessToken());
@@ -94,9 +94,9 @@ class TestRequest : public AuthenticatedRequestInterface {
     return passed_reauth_callback_;
   }
 
-  virtual void Start(const std::string& access_token,
-                     const std::string& custom_user_agent,
-                     const ReAuthenticateCallback& callback) OVERRIDE {
+  void Start(const std::string& access_token,
+             const std::string& custom_user_agent,
+             const ReAuthenticateCallback& callback) override {
     *start_called_ = true;
     passed_access_token_ = access_token;
     passed_reauth_callback_ = callback;
@@ -105,18 +105,18 @@ class TestRequest : public AuthenticatedRequestInterface {
     // Each test case should respond properly by using the above methods.
   }
 
-  virtual void Cancel() OVERRIDE {
+  void Cancel() override {
     EXPECT_TRUE(*start_called_);
     *finish_reason_ = CANCEL;
     sender_->RequestFinished(this);
   }
 
-  virtual void OnAuthFailed(GDataErrorCode code) OVERRIDE {
+  void OnAuthFailed(GDataErrorCode code) override {
     *finish_reason_ = AUTH_FAILURE;
     sender_->RequestFinished(this);
   }
 
-  virtual base::WeakPtr<AuthenticatedRequestInterface> GetWeakPtr() OVERRIDE {
+  base::WeakPtr<AuthenticatedRequestInterface> GetWeakPtr() override {
     return weak_ptr_factory_.GetWeakPtr();
   }
 

@@ -31,29 +31,29 @@
 #include "config.h"
 #include "platform/LayoutTestSupport.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool s_isRunningLayoutTest = false;
 static bool s_isFontAntialiasingEnabled = false;
 
-bool isRunningLayoutTest()
+bool LayoutTestSupport::isRunningLayoutTest()
 {
     return s_isRunningLayoutTest;
 }
 
-void setIsRunningLayoutTest(bool value)
+void LayoutTestSupport::setIsRunningLayoutTest(bool value)
 {
     s_isRunningLayoutTest = value;
 }
 
-bool isFontAntialiasingEnabledForTest()
+bool LayoutTestSupport::isFontAntialiasingEnabledForTest()
 {
     return s_isFontAntialiasingEnabled;
 }
 
-void setFontAntialiasingEnabledForTest(bool value)
+void LayoutTestSupport::setFontAntialiasingEnabledForTest(bool value)
 {
     s_isFontAntialiasingEnabled = value;
 }
 
-} // namespace WebCore
+} // namespace blink

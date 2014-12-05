@@ -68,7 +68,6 @@
         'outputs': [
           '<(blink_modules_output_dir)/EventModules.cpp',
           '<(blink_modules_output_dir)/EventModulesHeaders.h',
-          '<(blink_modules_output_dir)/EventModulesInterfaces.h',
         ],
         'action': [
           'python',
@@ -93,25 +92,6 @@
           'python',
           '../../build/scripts/make_names.py',
           '<(blink_modules_output_dir)/EventModulesInterfaces.in',
-          '--output_dir',
-          '<(blink_modules_output_dir)',
-        ],
-      },
-      {
-        # GN version: //third_party/WebKit/Source/bindings/modules:bindings_modules_generated_event_target_modules_factory
-        'action_name': 'EventTargetModulesFactory',
-        'inputs': [
-          '<@(make_event_factory_files)',
-          '../../modules/EventTargetModulesFactory.in',
-        ],
-        'outputs': [
-          '<(blink_modules_output_dir)/EventTargetModulesHeaders.h',
-          '<(blink_modules_output_dir)/EventTargetModulesInterfaces.h',
-        ],
-        'action': [
-          'python',
-          '../../build/scripts/make_event_factory.py',
-          '../../modules/EventTargetModulesFactory.in',
           '--output_dir',
           '<(blink_modules_output_dir)',
         ],
@@ -162,7 +142,10 @@
       'modules_global_objects',
     ],
     'variables': {
-      'idl_files': '<(core_idl_files)',
+      'idl_files': [
+        '<@(core_idl_files)',
+        '<@(core_idl_with_modules_dependency_files)',
+      ],
       'global_objects_file':
         '<(bindings_modules_output_dir)/GlobalObjectsModules.pickle',
       'global_names_idl_files': [
@@ -207,15 +190,18 @@
   {
     'target_name': 'interfaces_info_individual_modules',
     'dependencies': [
+      '<(bindings_scripts_dir)/scripts.gyp:cached_lex_yacc_tables',
       'modules_core_global_constructors_idls',
       'modules_global_constructors_idls',
     ],
     'variables': {
+      'cache_directory': '<(bindings_modules_output_dir)/../scripts',
       'static_idl_files': '<(modules_static_idl_files)',
       'generated_idl_files': '<(modules_generated_idl_files)',
-      'component_dir': 'modules',
-      'output_file':
-        '<(bindings_modules_output_dir)/InterfacesInfoModulesIndividual.pickle',
+      'interfaces_info_file':
+        '<(bindings_modules_output_dir)/InterfacesInfoOverallIndividual.pickle',
+      'component_info_file':
+        '<(bindings_modules_output_dir)/ComponentInfoModules.pickle',
     },
     'includes': ['../../bindings/scripts/interfaces_info_individual.gypi'],
   },
@@ -230,10 +216,10 @@
     'variables': {
       'input_files': [
         '<(bindings_core_output_dir)/InterfacesInfoCoreIndividual.pickle',
-        '<(bindings_modules_output_dir)/InterfacesInfoModulesIndividual.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverallIndividual.pickle',
       ],
       'output_file':
-        '<(bindings_modules_output_dir)/InterfacesInfoModules.pickle',
+        '<(bindings_modules_output_dir)/InterfacesInfoOverall.pickle',
     },
     'includes': ['../../bindings/scripts/interfaces_info_overall.gypi'],
   },

@@ -40,6 +40,7 @@ WebInspector.UISourceCodeFrame = function(uiSourceCode)
 
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyChanged, this._onWorkingCopyChanged, this);
     this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.WorkingCopyCommitted, this._onWorkingCopyCommitted, this);
+    this._uiSourceCode.addEventListener(WebInspector.UISourceCode.Events.SavedStateUpdated, this._onSavedStateUpdated, this);
     this._updateStyle();
 }
 
@@ -61,14 +62,14 @@ WebInspector.UISourceCodeFrame.prototype = {
     {
         WebInspector.SourceFrame.prototype.wasShown.call(this);
         this._boundWindowFocused = this._windowFocused.bind(this);
-        window.addEventListener("focus", this._boundWindowFocused, false);
+        this.element.ownerDocument.defaultView.addEventListener("focus", this._boundWindowFocused, false);
         this._checkContentUpdated();
     },
 
     willHide: function()
     {
         WebInspector.SourceFrame.prototype.willHide.call(this);
-        window.removeEventListener("focus", this._boundWindowFocused, false);
+        this.element.ownerDocument.defaultView.removeEventListener("focus", this._boundWindowFocused, false);
         delete this._boundWindowFocused;
         this._uiSourceCode.removeWorkingCopyGetter();
     },
@@ -79,7 +80,7 @@ WebInspector.UISourceCodeFrame.prototype = {
     canEditSource: function()
     {
         var projectType = this._uiSourceCode.project().type();
-        if (projectType === WebInspector.projectTypes.Debugger || projectType === WebInspector.projectTypes.Formatter)
+        if (projectType === WebInspector.projectTypes.Service || projectType === WebInspector.projectTypes.Debugger || projectType === WebInspector.projectTypes.Formatter)
             return false;
         if (projectType === WebInspector.projectTypes.Network && this._uiSourceCode.contentType() === WebInspector.resourceTypes.Document)
             return false;
@@ -104,7 +105,7 @@ WebInspector.UISourceCodeFrame.prototype = {
             return;
 
         this._muteSourceCodeEvents = true;
-        this._uiSourceCode.commitWorkingCopy(this._didEditContent.bind(this));
+        this._uiSourceCode.commitWorkingCopy();
         delete this._muteSourceCodeEvents;
     },
 
@@ -119,14 +120,6 @@ WebInspector.UISourceCodeFrame.prototype = {
         else
             this._uiSourceCode.setWorkingCopyGetter(this._textEditor.text.bind(this._textEditor));
         delete this._muteSourceCodeEvents;
-    },
-
-    _didEditContent: function(error)
-    {
-        if (error) {
-            WebInspector.messageSink.addErrorMessage(error, true);
-            return;
-        }
     },
 
     /**
@@ -150,6 +143,18 @@ WebInspector.UISourceCodeFrame.prototype = {
             this.onUISourceCodeContentChanged();
         }
         this._textEditor.markClean();
+        this._updateStyle();
+        WebInspector.notifications.dispatchEventToListeners(WebInspector.UserMetrics.UserAction, {
+            action: WebInspector.UserMetrics.UserActionNames.FileSaved,
+            url: this._uiSourceCode.url
+        });
+    },
+
+    /**
+     * @param {!WebInspector.Event} event
+     */
+    _onSavedStateUpdated: function(event)
+    {
         this._updateStyle();
     },
 
@@ -179,6 +184,21 @@ WebInspector.UISourceCodeFrame.prototype = {
         contextMenu.appendSeparator();
     },
 
+    /**
+     * @param {!Array.<!WebInspector.UISourceCodeFrame.Infobar|undefined>} infobars
+     */
+    attachInfobars: function(infobars)
+    {
+        for (var i = infobars.length - 1; i >= 0; --i) {
+            var infobar = infobars[i];
+            if (!infobar)
+                continue;
+            this.element.insertBefore(infobar.element, this.element.children[0]);
+            infobar._attached(this);
+        }
+        this.doResize();
+    },
+
     dispose: function()
     {
         WebInspector.settings.textEditorAutocompletion.removeChangeListener(this._enableAutocompletionIfNeeded, this);
@@ -187,4 +207,93 @@ WebInspector.UISourceCodeFrame.prototype = {
     },
 
     __proto__: WebInspector.SourceFrame.prototype
+}
+
+/**
+ * @constructor
+ * @param {!WebInspector.UISourceCodeFrame.Infobar.Level} level
+ * @param {string} message
+ * @param {function()=} onDispose
+ */
+WebInspector.UISourceCodeFrame.Infobar = function(level, message, onDispose)
+{
+    this.element = createElementWithClass("div", "source-frame-infobar source-frame-infobar-" + level);
+    this._mainRow = this.element.createChild("div", "source-frame-infobar-main-row");
+    this._detailsContainer = this.element.createChild("span", "source-frame-infobar-details-container");
+
+    this._mainRow.createChild("span", "source-frame-infobar-icon");
+    this._mainRow.createChild("span", "source-frame-infobar-row-message").textContent = message;
+
+    this._toggleElement = this._mainRow.createChild("div", "source-frame-infobar-toggle link");
+    this._toggleElement.addEventListener("click", this._onToggleDetails.bind(this), false);
+
+    this._closeElement = this._mainRow.createChild("div", "close-button");
+    this._closeElement.addEventListener("click", this._onClose.bind(this), false);
+    this._onDispose = onDispose;
+
+    this._updateToggleElement();
+}
+
+/**
+ * @enum {string}
+ */
+WebInspector.UISourceCodeFrame.Infobar.Level = {
+    Info: "info",
+    Warning: "warning",
+    Error: "error",
+};
+
+WebInspector.UISourceCodeFrame.Infobar.prototype = {
+    _onResize: function()
+    {
+        if (this._uiSourceCodeFrame)
+            this._uiSourceCodeFrame.doResize();
+    },
+
+    _onToggleDetails: function()
+    {
+        this._toggled = !this._toggled;
+        this._updateToggleElement();
+        this._onResize();
+    },
+
+    _onClose: function()
+    {
+        this.dispose();
+    },
+
+    _updateToggleElement: function()
+    {
+        this._toggleElement.textContent = this._toggled ? WebInspector.UIString("less") : WebInspector.UIString("more");
+        this._detailsContainer.classList.toggle("hidden", !this._toggled);
+    },
+
+    /**
+     * @param {!WebInspector.UISourceCodeFrame} uiSourceCodeFrame
+     */
+    _attached: function(uiSourceCodeFrame)
+    {
+        this._uiSourceCodeFrame = uiSourceCodeFrame;
+    },
+
+    /**
+     * @param {string=} message
+     * @return {!Element}
+     */
+    createDetailsRowMessage: function(message)
+    {
+        var infobarDetailsRow = this._detailsContainer.createChild("div", "source-frame-infobar-details-row");
+        var detailsRowMessage = infobarDetailsRow.createChild("span", "source-frame-infobar-row-message");
+        detailsRowMessage.textContent = message || "";
+        return detailsRowMessage;
+    },
+
+    dispose: function()
+    {
+        this.element.remove();
+        this._onResize();
+        delete this._uiSourceCodeFrame;
+        if (this._onDispose)
+            this._onDispose();
+    }
 }

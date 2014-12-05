@@ -43,8 +43,9 @@ public:
     virtual bool prepareMailbox(WebExternalTextureMailbox*, WebExternalBitmap* = 0) = 0;
 
     // Notifies the client when a mailbox is no longer in use by the compositor and provides
-    // a sync point to wait on before the mailbox could be consumes again by the client.
-    virtual void mailboxReleased(const WebExternalTextureMailbox&) = 0;
+    // a sync point to wait on before the mailbox could be consumes again by the client. The
+    // boolean flag indicates if the mailbox resource is treated as lost by client.
+    virtual void mailboxReleased(const WebExternalTextureMailbox&, bool lostResource) = 0;
 
 protected:
     virtual ~WebExternalTextureLayerClient() { }

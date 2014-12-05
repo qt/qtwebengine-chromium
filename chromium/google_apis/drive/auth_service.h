@@ -37,21 +37,21 @@ class AuthService : public AuthServiceInterface,
               const std::string& account_id,
               net::URLRequestContextGetter* url_request_context_getter,
               const std::vector<std::string>& scopes);
-  virtual ~AuthService();
+  ~AuthService() override;
 
   // Overriden from AuthServiceInterface:
-  virtual void AddObserver(AuthServiceObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(AuthServiceObserver* observer) OVERRIDE;
-  virtual void StartAuthentication(const AuthStatusCallback& callback) OVERRIDE;
-  virtual bool HasAccessToken() const OVERRIDE;
-  virtual bool HasRefreshToken() const OVERRIDE;
-  virtual const std::string& access_token() const OVERRIDE;
-  virtual void ClearAccessToken() OVERRIDE;
-  virtual void ClearRefreshToken() OVERRIDE;
+  void AddObserver(AuthServiceObserver* observer) override;
+  void RemoveObserver(AuthServiceObserver* observer) override;
+  void StartAuthentication(const AuthStatusCallback& callback) override;
+  bool HasAccessToken() const override;
+  bool HasRefreshToken() const override;
+  const std::string& access_token() const override;
+  void ClearAccessToken() override;
+  void ClearRefreshToken() override;
 
   // Overridden from OAuth2TokenService::Observer:
-  virtual void OnRefreshTokenAvailable(const std::string& account_id) OVERRIDE;
-  virtual void OnRefreshTokenRevoked(const std::string& account_id) OVERRIDE;
+  void OnRefreshTokenAvailable(const std::string& account_id) override;
+  void OnRefreshTokenRevoked(const std::string& account_id) override;
 
  private:
   // Called when the state of the refresh token changes.

@@ -81,26 +81,6 @@ class BluetoothDevice {
     ERROR_UNSUPPORTED_DEVICE
   };
 
-  // Interface for observing changes from bluetooth devices.
-  class Observer {
-   public:
-    virtual ~Observer() {}
-
-    // Called when a new GATT service |service| is added to the device |device|,
-    // as the service is received from the device. Don't cache |service|. Store
-    // its identifier instead (i.e. BluetoothGattService::GetIdentifier).
-    virtual void GattServiceAdded(BluetoothDevice* device,
-                                  BluetoothGattService* service) {}
-
-    // Called when the GATT service |service| is removed from the device
-    // |device|. This can happen if the attribute database of the remote device
-    // changes or when |device| gets removed.
-    virtual void GattServiceRemoved(BluetoothDevice* device,
-                                    BluetoothGattService* service) {}
-
-    // TODO(keybuk): add observers for pairing and connection.
-  };
-
   // Interface for negotiating pairing of bluetooth devices.
   class PairingDelegate {
    public:
@@ -189,12 +169,6 @@ class BluetoothDevice {
   };
 
   virtual ~BluetoothDevice();
-
-  // Adds and removes observers for events on this Bluetooth device. If
-  // monitoring multiple devices, check the |device| parameter of the observer
-  // methods to determine which device is issuing the event.
-  virtual void AddObserver(Observer* observer) = 0;
-  virtual void RemoveObserver(Observer* observer) = 0;
 
   // Returns the Bluetooth class of the device, used by GetDeviceType()
   // and metrics logging,
@@ -382,6 +356,19 @@ class BluetoothDevice {
       const ConnectToServiceCallback& callback,
       const ConnectToServiceErrorCallback& error_callback) = 0;
 
+  // Attempts to initiate an insecure outgoing L2CAP or RFCOMM connection to the
+  // advertised service on this device matching |uuid|, performing an SDP lookup
+  // if necessary to determine the correct protocol and channel for the
+  // connection. Unlike ConnectToService, the outgoing connection will request
+  // no bonding rather than general bonding. |callback| will be called on a
+  // successful connection with a BluetoothSocket instance that is to be owned
+  // by the receiver. |error_callback| will be called on failure with a message
+  // indicating the cause.
+  virtual void ConnectToServiceInsecurely(
+    const device::BluetoothUUID& uuid,
+    const ConnectToServiceCallback& callback,
+    const ConnectToServiceErrorCallback& error_callback) = 0;
+
   // Opens a new GATT connection to this device. On success, a new
   // BluetoothGattConnection will be handed to the caller via |callback|. On
   // error, |error_callback| will be called. The connection will be kept alive,
@@ -411,7 +398,7 @@ class BluetoothDevice {
   virtual BluetoothGattService* GetGattService(
       const std::string& identifier) const;
 
-  // Returns the |address| in the canoncial format: XX:XX:XX:XX:XX:XX, where
+  // Returns the |address| in the canonical format: XX:XX:XX:XX:XX:XX, where
   // each 'X' is a hex digit.  If the input |address| is invalid, returns an
   // empty string.
   static std::string CanonicalizeAddress(const std::string& address);

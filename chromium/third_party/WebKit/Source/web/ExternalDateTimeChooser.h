@@ -27,21 +27,18 @@
 #define ExternalDateTimeChooser_h
 
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
-#include "platform/DateTimeChooser.h"
-
-namespace WebCore {
-class DateTimeChooserClient;
-}
+#include "core/html/forms/DateTimeChooser.h"
 
 namespace blink {
 
 class ChromeClientImpl;
+class DateTimeChooserClient;
 class WebString;
 class WebViewClient;
 
-class ExternalDateTimeChooser FINAL : public WebCore::DateTimeChooser {
+class ExternalDateTimeChooser final : public DateTimeChooser {
 public:
-    static PassRefPtr<ExternalDateTimeChooser> create(ChromeClientImpl*, WebViewClient*, WebCore::DateTimeChooserClient*, const WebCore::DateTimeChooserParameters&);
+    static PassRefPtr<ExternalDateTimeChooser> create(ChromeClientImpl*, WebViewClient*, DateTimeChooserClient*, const DateTimeChooserParameters&);
     virtual ~ExternalDateTimeChooser();
 
     // The following functions are for DateTimeChooserCompletion.
@@ -50,13 +47,14 @@ public:
     void didCancelChooser();
 
 private:
-    ExternalDateTimeChooser(WebCore::DateTimeChooserClient*);
-    bool openDateTimeChooser(ChromeClientImpl*, WebViewClient*, const WebCore::DateTimeChooserParameters&);
+    ExternalDateTimeChooser(DateTimeChooserClient*);
+    bool openDateTimeChooser(ChromeClientImpl*, WebViewClient*, const DateTimeChooserParameters&);
 
     // DateTimeChooser function:
-    virtual void endChooser() OVERRIDE;
+    virtual void endChooser() override;
+    virtual AXObject* rootAXObject() override;
 
-    WebCore::DateTimeChooserClient* m_client;
+    DateTimeChooserClient* m_client;
 };
 
 }

@@ -7,7 +7,7 @@
 
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DescendantInvalidationSet;
 class Document;
@@ -29,16 +29,12 @@ public:
     void trace(Visitor*);
 
 private:
-    bool invalidate(Element&);
-    bool invalidateChildren(Element&);
-
-    bool checkInvalidationSetsAgainstElement(Element&);
-
     struct RecursionData {
         RecursionData()
             : m_invalidateCustomPseudo(false)
             , m_wholeSubtreeInvalid(false)
             , m_treeBoundaryCrossing(false)
+            , m_insertionPointCrossing(false)
         { }
 
         void pushInvalidationSet(const DescendantInvalidationSet&);
@@ -49,13 +45,19 @@ private:
         void setWholeSubtreeInvalid() { m_wholeSubtreeInvalid = true; }
 
         bool treeBoundaryCrossing() const { return m_treeBoundaryCrossing; }
+        bool insertionPointCrossing() const { return m_insertionPointCrossing; }
 
         typedef Vector<const DescendantInvalidationSet*, 16> InvalidationSets;
         InvalidationSets m_invalidationSets;
         bool m_invalidateCustomPseudo;
         bool m_wholeSubtreeInvalid;
         bool m_treeBoundaryCrossing;
+        bool m_insertionPointCrossing;
     };
+
+    bool invalidate(Element&, RecursionData&);
+    bool invalidateChildren(Element&, RecursionData&);
+    bool checkInvalidationSetsAgainstElement(Element&, RecursionData&);
 
     class RecursionCheckpoint {
     public:
@@ -64,6 +66,7 @@ private:
             , m_prevInvalidateCustomPseudo(data->m_invalidateCustomPseudo)
             , m_prevWholeSubtreeInvalid(data->m_wholeSubtreeInvalid)
             , m_treeBoundaryCrossing(data->m_treeBoundaryCrossing)
+            , m_insertionPointCrossing(data->m_insertionPointCrossing)
             , m_data(data)
         { }
         ~RecursionCheckpoint()
@@ -72,6 +75,7 @@ private:
             m_data->m_invalidateCustomPseudo = m_prevInvalidateCustomPseudo;
             m_data->m_wholeSubtreeInvalid = m_prevWholeSubtreeInvalid;
             m_data->m_treeBoundaryCrossing = m_treeBoundaryCrossing;
+            m_data->m_insertionPointCrossing = m_insertionPointCrossing;
         }
 
     private:
@@ -79,6 +83,7 @@ private:
         bool m_prevInvalidateCustomPseudo;
         bool m_prevWholeSubtreeInvalid;
         bool m_treeBoundaryCrossing;
+        bool m_insertionPointCrossing;
         RecursionData* m_data;
     };
 
@@ -88,9 +93,8 @@ private:
     InvalidationList& ensurePendingInvalidationList(Element&);
 
     PendingInvalidationMap m_pendingInvalidationMap;
-    RecursionData m_recursionData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StyleInvalidator_h

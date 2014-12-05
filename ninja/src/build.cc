@@ -488,7 +488,9 @@ void RealCommandRunner::Abort() {
 }
 
 bool RealCommandRunner::CanRunMore() {
-  return ((int)subprocs_.running_.size()) < config_.parallelism
+  size_t subproc_number =
+      subprocs_.running_.size() + subprocs_.finished_.size();
+  return (int)subproc_number < config_.parallelism
     && ((subprocs_.running_.empty() || config_.max_load_average <= 0.0f)
         || GetLoadAverage() < config_.max_load_average);
 }
@@ -541,7 +543,7 @@ void Builder::Cleanup() {
 
     for (vector<Edge*>::iterator i = active_edges.begin();
          i != active_edges.end(); ++i) {
-      string depfile = (*i)->GetBinding("depfile");
+      string depfile = (*i)->GetUnescapedDepfile();
       for (vector<Node*>::iterator ni = (*i)->outputs_.begin();
            ni != (*i)->outputs_.end(); ++ni) {
         // Only delete this output if it was actually modified.  This is
@@ -696,7 +698,7 @@ bool Builder::StartEdge(Edge* edge, string* err) {
 
   // Create response file, if needed
   // XXX: this may also block; do we care?
-  string rspfile = edge->GetBinding("rspfile");
+  string rspfile = edge->GetUnescapedRspfile();
   if (!rspfile.empty()) {
     string content = edge->GetBinding("rspfile_content");
     if (!disk_interface_->WriteFile(rspfile, content))
@@ -772,7 +774,7 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
           restat_mtime = input_mtime;
       }
 
-      string depfile = edge->GetBinding("depfile");
+      string depfile = edge->GetUnescapedDepfile();
       if (restat_mtime != 0 && deps_type.empty() && !depfile.empty()) {
         TimeStamp depfile_mtime = disk_interface_->Stat(depfile);
         if (depfile_mtime > restat_mtime)
@@ -788,7 +790,7 @@ bool Builder::FinishCommand(CommandRunner::Result* result, string* err) {
   plan_.EdgeFinished(edge);
 
   // Delete any left over response file.
-  string rspfile = edge->GetBinding("rspfile");
+  string rspfile = edge->GetUnescapedRspfile();
   if (!rspfile.empty() && !g_keep_rsp)
     disk_interface_->RemoveFile(rspfile);
 
@@ -823,12 +825,16 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
     result->output = parser.Parse(result->output, deps_prefix);
     for (set<string>::iterator i = parser.includes_.begin();
          i != parser.includes_.end(); ++i) {
-      deps_nodes->push_back(state_->GetNode(*i));
+      // ~0 is assuming that with MSVC-parsed headers, it's ok to always make
+      // all backslashes (as some of the slashes will certainly be backslashes
+      // anyway). This could be fixed if necessary with some additional
+      // complexity in IncludesNormalize::Relativize.
+      deps_nodes->push_back(state_->GetNode(*i, ~0u));
     }
   } else
 #endif
   if (deps_type == "gcc") {
-    string depfile = result->edge->GetBinding("depfile");
+    string depfile = result->edge->GetUnescapedDepfile();
     if (depfile.empty()) {
       *err = string("edge with deps=gcc but no depfile makes no sense");
       return false;
@@ -848,9 +854,11 @@ bool Builder::ExtractDeps(CommandRunner::Result* result,
     deps_nodes->reserve(deps.ins_.size());
     for (vector<StringPiece>::iterator i = deps.ins_.begin();
          i != deps.ins_.end(); ++i) {
-      if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, err))
+      unsigned int slash_bits;
+      if (!CanonicalizePath(const_cast<char*>(i->str_), &i->len_, &slash_bits,
+                            err))
         return false;
-      deps_nodes->push_back(state_->GetNode(*i));
+      deps_nodes->push_back(state_->GetNode(*i, slash_bits));
     }
 
     if (disk_interface_->RemoveFile(depfile) < 0) {

@@ -23,8 +23,8 @@
 #include "config.h"
 #include "core/dom/Attr.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Text.h"
@@ -33,7 +33,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -43,7 +43,6 @@ Attr::Attr(Element& element, const QualifiedName& name)
     , m_name(name)
     , m_ignoreChildrenChanged(0)
 {
-    ScriptWrappable::init(this);
 }
 
 Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& standaloneValue)
@@ -53,7 +52,6 @@ Attr::Attr(Document& document, const QualifiedName& name, const AtomicString& st
     , m_standaloneValueOrAttachedLocalName(standaloneValue)
     , m_ignoreChildrenChanged(0)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<Attr> Attr::create(Element& element, const QualifiedName& name)
@@ -165,7 +163,7 @@ bool Attr::childTypeAllowed(NodeType type) const
     return TEXT_NODE == type;
 }
 
-void Attr::childrenChanged(bool, Node*, Node*, int)
+void Attr::childrenChanged(const ChildrenChange&)
 {
     if (m_ignoreChildrenChanged > 0)
         return;
@@ -203,7 +201,7 @@ Attribute& Attr::elementAttribute()
 {
     ASSERT(m_element);
     ASSERT(m_element->elementData());
-    return *m_element->ensureUniqueElementData().findAttributeByName(qualifiedName());
+    return *m_element->ensureUniqueElementData().attributes().find(qualifiedName());
 }
 
 void Attr::detachFromElementWithValue(const AtomicString& value)

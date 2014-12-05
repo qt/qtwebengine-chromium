@@ -198,8 +198,12 @@ VpxVideoDecoder::VpxVideoDecoder(
       vpx_codec_alpha_(NULL) {}
 
 VpxVideoDecoder::~VpxVideoDecoder() {
-  DCHECK_EQ(kUninitialized, state_);
+  DCHECK(task_runner_->BelongsToCurrentThread());
   CloseDecoder();
+}
+
+std::string VpxVideoDecoder::GetDisplayName() const {
+  return "VpxVideoDecoder";
 }
 
 void VpxVideoDecoder::Initialize(const VideoDecoderConfig& config,
@@ -267,7 +271,7 @@ bool VpxVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config) {
     if (vpx_codec_set_frame_buffer_functions(vpx_codec_,
                                              &MemoryPool::GetVP9FrameBuffer,
                                              &MemoryPool::ReleaseVP9FrameBuffer,
-                                             memory_pool_)) {
+                                             memory_pool_.get())) {
       LOG(ERROR) << "Failed to configure external buffers.";
       return false;
     }
@@ -327,19 +331,13 @@ void VpxVideoDecoder::Reset(const base::Closure& closure) {
   task_runner_->PostTask(FROM_HERE, closure);
 }
 
-void VpxVideoDecoder::Stop() {
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  state_ = kUninitialized;
-}
-
 void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK_NE(state_, kUninitialized);
   DCHECK_NE(state_, kDecodeFinished);
   DCHECK_NE(state_, kError);
   DCHECK(!decode_cb_.is_null());
-  DCHECK(buffer);
+  DCHECK(buffer.get());
 
   // Transition to kDecodeFinished on the first end of stream buffer.
   if (state_ == kNormal && buffer->end_of_stream()) {
@@ -357,7 +355,7 @@ void VpxVideoDecoder::DecodeBuffer(const scoped_refptr<DecoderBuffer>& buffer) {
 
   base::ResetAndReturn(&decode_cb_).Run(kOk);
 
-  if (video_frame)
+  if (video_frame.get())
     output_cb_.Run(video_frame);
 }
 
@@ -455,7 +453,7 @@ void VpxVideoDecoder::CopyVpxImageTo(const vpx_image* vpx_image,
 
   gfx::Size size(vpx_image->d_w, vpx_image->d_h);
 
-  if (!vpx_codec_alpha_ && memory_pool_) {
+  if (!vpx_codec_alpha_ && memory_pool_.get()) {
     *video_frame = VideoFrame::WrapExternalYuvData(
         codec_format,
         size, gfx::Rect(size), config_.natural_size(),

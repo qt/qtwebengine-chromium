@@ -40,42 +40,48 @@ class ClearKeyCdm : public ClearKeyCdmInterface {
                              uint32 init_data_type_size,
                              const uint8* init_data,
                              uint32 init_data_size,
-                             cdm::SessionType session_type) OVERRIDE;
+                             cdm::SessionType session_type) override;
   virtual void LoadSession(uint32 promise_id,
                            const char* web_session_id,
-                           uint32_t web_session_id_length) OVERRIDE;
+                           uint32_t web_session_id_length) override;
   virtual void UpdateSession(uint32 promise_id,
                              const char* web_session_id,
                              uint32_t web_session_id_length,
                              const uint8* response,
-                             uint32 response_size) OVERRIDE;
-  virtual void ReleaseSession(uint32 promise_id,
-                              const char* web_session_id,
-                              uint32_t web_session_id_length) OVERRIDE;
+                             uint32 response_size) override;
+  virtual void CloseSession(uint32 promise_id,
+                            const char* web_session_id,
+                            uint32_t web_session_id_length) override;
+  virtual void RemoveSession(uint32 promise_id,
+                             const char* web_session_id,
+                             uint32_t web_session_id_length) override;
+  virtual void GetUsableKeyIds(uint32_t promise_id,
+                               const char* web_session_id,
+                               uint32_t web_session_id_length) override;
   virtual void SetServerCertificate(
       uint32 promise_id,
       const uint8_t* server_certificate_data,
-      uint32_t server_certificate_data_size) OVERRIDE;
-  virtual void TimerExpired(void* context) OVERRIDE;
+      uint32_t server_certificate_data_size) override;
+  virtual void TimerExpired(void* context) override;
   virtual cdm::Status Decrypt(const cdm::InputBuffer& encrypted_buffer,
-                              cdm::DecryptedBlock* decrypted_block) OVERRIDE;
+                              cdm::DecryptedBlock* decrypted_block) override;
   virtual cdm::Status InitializeAudioDecoder(
-      const cdm::AudioDecoderConfig& audio_decoder_config) OVERRIDE;
+      const cdm::AudioDecoderConfig& audio_decoder_config) override;
   virtual cdm::Status InitializeVideoDecoder(
-      const cdm::VideoDecoderConfig& video_decoder_config) OVERRIDE;
-  virtual void DeinitializeDecoder(cdm::StreamType decoder_type) OVERRIDE;
-  virtual void ResetDecoder(cdm::StreamType decoder_type) OVERRIDE;
+      const cdm::VideoDecoderConfig& video_decoder_config) override;
+  virtual void DeinitializeDecoder(cdm::StreamType decoder_type) override;
+  virtual void ResetDecoder(cdm::StreamType decoder_type) override;
   virtual cdm::Status DecryptAndDecodeFrame(
       const cdm::InputBuffer& encrypted_buffer,
-      cdm::VideoFrame* video_frame) OVERRIDE;
+      cdm::VideoFrame* video_frame) override;
   virtual cdm::Status DecryptAndDecodeSamples(
       const cdm::InputBuffer& encrypted_buffer,
-      cdm::AudioFrames* audio_frames) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
+      cdm::AudioFrames* audio_frames) override;
+  virtual void Destroy() override;
   virtual void OnPlatformChallengeResponse(
-      const cdm::PlatformChallengeResponse& response) OVERRIDE;
+      const cdm::PlatformChallengeResponse& response) override;
   virtual void OnQueryOutputProtectionStatus(
-      uint32_t link_mask, uint32_t output_protection_mask) OVERRIDE;
+      uint32_t link_mask, uint32_t output_protection_mask) override;
 
  private:
   // Emulates a session stored for |session_id_for_emulated_loadsession_|. This
@@ -86,6 +92,8 @@ class ClearKeyCdm : public ClearKeyCdmInterface {
   void OnSessionMessage(const std::string& web_session_id,
                         const std::vector<uint8>& message,
                         const GURL& destination_url);
+  void OnSessionKeysChange(const std::string& web_session_id,
+                           bool has_additional_usable_key);
   void OnSessionClosed(const std::string& web_session_id);
 
   // Handle the success/failure of a promise. These methods are responsible for
@@ -93,7 +101,8 @@ class ClearKeyCdm : public ClearKeyCdmInterface {
   void OnSessionCreated(uint32 promise_id, const std::string& web_session_id);
   void OnSessionLoaded(uint32 promise_id, const std::string& web_session_id);
   void OnSessionUpdated(uint32 promise_id, const std::string& web_session_id);
-  void OnSessionReleased(uint32 promise_id, const std::string& web_session_id);
+  void OnUsableKeyIdsObtained(uint32 promise_id, const KeyIdsVector& key_ids);
+  void OnPromiseResolved(uint32 promise_id);
   void OnPromiseFailed(uint32 promise_id,
                        MediaKeys::Exception exception_code,
                        uint32 system_code,
@@ -145,6 +154,16 @@ class ClearKeyCdm : public ClearKeyCdmInterface {
   std::string last_session_id_;
   std::string next_heartbeat_message_;
 
+  // In order to simulate LoadSession(), CreateSession() and then
+  // UpdateSession() will be called to create a session with known keys.
+  // |session_id_for_emulated_loadsession_| is used to keep track of the
+  // session_id allocated by aes_decryptor, as the session_id will be returned
+  // as |kLoadableWebSessionId|. Future requests for this simulated session
+  // need to use |session_id_for_emulated_loadsession_| for all calls
+  // to aes_decryptor.
+  // |promise_id_for_emulated_loadsession_| is used to keep track of the
+  // original LoadSession() promise, as it is not resolved until the
+  // UpdateSession() call succeeds.
   // TODO(xhwang): Extract testing code from main implementation.
   // See http://crbug.com/341751
   std::string session_id_for_emulated_loadsession_;

@@ -28,8 +28,9 @@
 #include "platform/weborigin/SchemeRegistry.h"
 
 #include "wtf/MainThread.h"
+#include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static URLSchemesMap& localURLSchemes()
 {
@@ -139,6 +140,18 @@ static URLSchemesMap& CORSEnabledSchemes()
     }
 
     return CORSEnabledSchemes;
+}
+
+static URLSchemesMap& LegacySchemes()
+{
+    DEFINE_STATIC_LOCAL(URLSchemesMap, LegacySchemes, ());
+
+    if (LegacySchemes.isEmpty()) {
+        LegacySchemes.add("ftp");
+        LegacySchemes.add("gopher");
+    }
+
+    return LegacySchemes;
 }
 
 static URLSchemesMap& ContentSecurityPolicyBypassingSchemes()
@@ -256,6 +269,35 @@ bool SchemeRegistry::shouldTreatURLSchemeAsCORSEnabled(const String& scheme)
     return CORSEnabledSchemes().contains(scheme);
 }
 
+String SchemeRegistry::listOfCORSEnabledURLSchemes()
+{
+    StringBuilder builder;
+    const URLSchemesMap& corsEnabledSchemes = CORSEnabledSchemes();
+
+    bool addSeparator = false;
+    for (URLSchemesMap::const_iterator it = corsEnabledSchemes.begin(); it != corsEnabledSchemes.end(); ++it) {
+        if (addSeparator)
+            builder.appendLiteral(", ");
+        else
+            addSeparator = true;
+
+        builder.append(*it);
+    }
+    return builder.toString();
+}
+
+void SchemeRegistry::registerURLSchemeAsLegacy(const String& scheme)
+{
+    LegacySchemes().add(scheme);
+}
+
+bool SchemeRegistry::shouldTreatURLSchemeAsLegacy(const String& scheme)
+{
+    if (scheme.isEmpty())
+        return false;
+    return LegacySchemes().contains(scheme);
+}
+
 void SchemeRegistry::registerURLSchemeAsBypassingContentSecurityPolicy(const String& scheme)
 {
     ContentSecurityPolicyBypassingSchemes().add(scheme);
@@ -273,4 +315,4 @@ bool SchemeRegistry::schemeShouldBypassContentSecurityPolicy(const String& schem
     return ContentSecurityPolicyBypassingSchemes().contains(scheme);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -45,10 +45,9 @@ namespace test {
 class FramerVisitorCapturingPublicReset : public NoOpFramerVisitor {
  public:
   FramerVisitorCapturingPublicReset() {}
-  virtual ~FramerVisitorCapturingPublicReset() OVERRIDE {}
+  ~FramerVisitorCapturingPublicReset() override {}
 
-  virtual void OnPublicResetPacket(
-      const QuicPublicResetPacket& public_reset) OVERRIDE {
+  void OnPublicResetPacket(const QuicPublicResetPacket& public_reset) override {
     public_reset_packet_ = public_reset;
   }
 
@@ -96,9 +95,9 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
         client_address_(net::test::TestPeerIPAddress(), kTestPort),
         writer_is_blocked_(false) {}
 
-  virtual ~QuicTimeWaitListManagerTest() OVERRIDE {}
+  virtual ~QuicTimeWaitListManagerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     EXPECT_CALL(writer_, IsWriteBlocked())
         .WillRepeatedly(ReturnPointee(&writer_is_blocked_));
     EXPECT_CALL(writer_, IsWriteBlockedDataBuffered())
@@ -106,7 +105,7 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
   }
 
   void AddConnectionId(QuicConnectionId connection_id) {
-    AddConnectionId(connection_id, QuicVersionMax(), NULL);
+    AddConnectionId(connection_id, QuicVersionMax(), nullptr);
   }
 
   void AddConnectionId(QuicConnectionId connection_id,
@@ -122,7 +121,7 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
 
   void ProcessPacket(QuicConnectionId connection_id,
                      QuicPacketSequenceNumber sequence_number) {
-    QuicEncryptedPacket packet(NULL, 0);
+    QuicEncryptedPacket packet(nullptr, 0);
     time_wait_list_manager_.ProcessPacket(server_address_,
                                           client_address_,
                                           connection_id,
@@ -152,11 +151,11 @@ class QuicTimeWaitListManagerTest : public ::testing::Test {
     frames.push_back(frame);
     scoped_ptr<QuicPacket> packet(
         BuildUnsizedDataPacket(&framer_, header, frames).packet);
-    EXPECT_TRUE(packet != NULL);
+    EXPECT_TRUE(packet != nullptr);
     QuicEncryptedPacket* encrypted = framer_.EncryptPacket(ENCRYPTION_NONE,
                                                            sequence_number,
                                                            *packet);
-    EXPECT_TRUE(encrypted != NULL);
+    EXPECT_TRUE(encrypted != nullptr);
     return encrypted;
   }
 
@@ -181,7 +180,7 @@ class ValidatePublicResetPacketPredicate
 
   virtual bool MatchAndExplain(
       const std::tr1::tuple<const char*, int> packet_buffer,
-      testing::MatchResultListener* /* listener */) const OVERRIDE {
+      testing::MatchResultListener* /* listener */) const override {
     FramerVisitorCapturingPublicReset visitor;
     QuicFramer framer(QuicSupportedVersions(),
                       QuicTime::Zero(),
@@ -198,9 +197,9 @@ class ValidatePublicResetPacketPredicate
         kTestPort == packet.client_address.port();
   }
 
-  virtual void DescribeTo(::std::ostream* os) const OVERRIDE {}
+  virtual void DescribeTo(::std::ostream* os) const override {}
 
-  virtual void DescribeNegationTo(::std::ostream* os) const OVERRIDE {}
+  virtual void DescribeNegationTo(::std::ostream* os) const override {}
 
  private:
   QuicConnectionId connection_id_;
@@ -377,9 +376,9 @@ TEST_F(QuicTimeWaitListManagerTest, GetQuicVersionFromMap) {
   const int kConnectionId2 = 456;
   const int kConnectionId3 = 789;
 
-  AddConnectionId(kConnectionId1, QuicVersionMin(), NULL);
-  AddConnectionId(kConnectionId2, QuicVersionMax(), NULL);
-  AddConnectionId(kConnectionId3, QuicVersionMax(), NULL);
+  AddConnectionId(kConnectionId1, QuicVersionMin(), nullptr);
+  AddConnectionId(kConnectionId2, QuicVersionMax(), nullptr);
+  AddConnectionId(kConnectionId3, QuicVersionMax(), nullptr);
 
   EXPECT_EQ(QuicVersionMin(),
             QuicTimeWaitListManagerPeer::GetQuicVersionFromConnectionId(

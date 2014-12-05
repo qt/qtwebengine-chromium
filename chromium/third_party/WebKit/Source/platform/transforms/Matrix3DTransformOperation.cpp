@@ -28,9 +28,7 @@
 
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<TransformOperation> Matrix3DTransformOperation::blend(const TransformOperation* from, double progress, bool blendToIdentity)
 {
@@ -53,4 +51,4 @@ PassRefPtr<TransformOperation> Matrix3DTransformOperation::blend(const Transform
     return Matrix3DTransformOperation::create(toT);
 }
 
-} // namespace WebCore
+} // namespace blink

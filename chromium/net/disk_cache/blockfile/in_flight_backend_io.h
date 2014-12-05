@@ -8,11 +8,13 @@
 #include <list>
 #include <string>
 
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/memory/ref_counted.h"
+#include "base/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/disk_cache/blockfile/in_flight_io.h"
+#include "net/disk_cache/blockfile/rankings.h"
 
 namespace disk_cache {
 
@@ -54,9 +56,8 @@ class BackendIO : public BackgroundIO {
   void DoomEntriesBetween(const base::Time initial_time,
                           const base::Time end_time);
   void DoomEntriesSince(const base::Time initial_time);
-  void OpenNextEntry(void** iter, Entry** next_entry);
-  void OpenPrevEntry(void** iter, Entry** prev_entry);
-  void EndEnumeration(void* iterator);
+  void OpenNextEntry(Rankings::Iterator* iterator, Entry** next_entry);
+  void EndEnumeration(scoped_ptr<Rankings::Iterator> iterator);
   void OnExternalCacheHit(const std::string& key);
   void CloseEntryImpl(EntryImpl* entry);
   void DoomEntryImpl(EntryImpl* entry);
@@ -90,7 +91,6 @@ class BackendIO : public BackgroundIO {
     OP_DOOM_BETWEEN,
     OP_DOOM_SINCE,
     OP_OPEN_NEXT,
-    OP_OPEN_PREV,
     OP_END_ENUMERATION,
     OP_ON_EXTERNAL_CACHE_HIT,
     OP_CLOSE_ENTRY,
@@ -107,7 +107,7 @@ class BackendIO : public BackgroundIO {
     OP_IS_READY
   };
 
-  virtual ~BackendIO();
+  ~BackendIO() override;
 
   // Returns true if this operation returns an entry.
   bool ReturnsEntry();
@@ -127,8 +127,8 @@ class BackendIO : public BackgroundIO {
   Entry** entry_ptr_;
   base::Time initial_time_;
   base::Time end_time_;
-  void** iter_ptr_;
-  void* iter_;
+  Rankings::Iterator* iterator_;
+  scoped_ptr<Rankings::Iterator> scoped_iterator_;
   EntryImpl* entry_;
   int index_;
   int offset_;
@@ -146,9 +146,10 @@ class BackendIO : public BackgroundIO {
 // The specialized controller that keeps track of current operations.
 class InFlightBackendIO : public InFlightIO {
  public:
-  InFlightBackendIO(BackendImpl* backend,
-                    base::MessageLoopProxy* background_thread);
-  virtual ~InFlightBackendIO();
+  InFlightBackendIO(
+      BackendImpl* backend,
+      const scoped_refptr<base::SingleThreadTaskRunner>& background_thread);
+  ~InFlightBackendIO() override;
 
   // Proxied operations.
   void Init(const net::CompletionCallback& callback);
@@ -164,11 +165,9 @@ class InFlightBackendIO : public InFlightIO {
                           const net::CompletionCallback& callback);
   void DoomEntriesSince(const base::Time initial_time,
                         const net::CompletionCallback& callback);
-  void OpenNextEntry(void** iter, Entry** next_entry,
+  void OpenNextEntry(Rankings::Iterator* iterator, Entry** next_entry,
                      const net::CompletionCallback& callback);
-  void OpenPrevEntry(void** iter, Entry** prev_entry,
-                     const net::CompletionCallback& callback);
-  void EndEnumeration(void* iterator);
+  void EndEnumeration(scoped_ptr<Rankings::Iterator> iterator);
   void OnExternalCacheHit(const std::string& key);
   void CloseEntryImpl(EntryImpl* entry);
   void DoomEntryImpl(EntryImpl* entry);
@@ -193,26 +192,25 @@ class InFlightBackendIO : public InFlightIO {
   // Blocks until all operations are cancelled or completed.
   void WaitForPendingIO();
 
-  scoped_refptr<base::MessageLoopProxy> background_thread() {
+  scoped_refptr<base::SingleThreadTaskRunner> background_thread() {
     return background_thread_;
   }
 
   // Returns true if the current thread is the background thread.
   bool BackgroundIsCurrentThread() {
-    return background_thread_->BelongsToCurrentThread();
+    return background_thread_->RunsTasksOnCurrentThread();
   }
 
   base::WeakPtr<InFlightBackendIO> GetWeakPtr();
 
  protected:
-  virtual void OnOperationComplete(BackgroundIO* operation,
-                                   bool cancel) OVERRIDE;
+  void OnOperationComplete(BackgroundIO* operation, bool cancel) override;
 
  private:
   void PostOperation(BackendIO* operation);
 
   BackendImpl* backend_;
-  scoped_refptr<base::MessageLoopProxy> background_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> background_thread_;
   base::WeakPtrFactory<InFlightBackendIO> ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(InFlightBackendIO);

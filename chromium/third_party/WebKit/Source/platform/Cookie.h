@@ -29,7 +29,7 @@
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 // This struct is currently only used to provide more cookies information
 // to the Web Inspector.
@@ -72,12 +72,11 @@ struct CookieHash {
         return a.name == b.name && a.domain == b.domain && a.path == b.path && a.secure == b.secure;
     }
 };
-}
+} // namespace blink
 
 namespace WTF {
-template<typename T> struct DefaultHash;
-template<> struct DefaultHash<WebCore::Cookie> {
-    typedef WebCore::CookieHash Hash;
+template<> struct DefaultHash<blink::Cookie> {
+    typedef blink::CookieHash Hash;
 };
 }
 

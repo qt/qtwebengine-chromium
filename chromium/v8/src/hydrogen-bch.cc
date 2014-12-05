@@ -44,7 +44,7 @@ class InductionVariableBlocksTable BASE_EMBEDDED {
      * induction variable).
      */
     void InitializeLoop(InductionVariableData* data) {
-      ASSERT(data->limit() != NULL);
+      DCHECK(data->limit() != NULL);
       HLoopInformation* loop = data->phi()->block()->current_loop();
       is_start_ = (block() == loop->loop_header());
       is_proper_exit_ = (block() == data->induction_exit_target());
@@ -55,7 +55,7 @@ class InductionVariableBlocksTable BASE_EMBEDDED {
     // Utility methods to iterate over dominated blocks.
     void ResetCurrentDominatedBlock() { current_dominated_block_ = kNoBlock; }
     HBasicBlock* CurrentDominatedBlock() {
-      ASSERT(current_dominated_block_ != kNoBlock);
+      DCHECK(current_dominated_block_ != kNoBlock);
       return current_dominated_block_ < block()->dominated_blocks()->length() ?
           block()->dominated_blocks()->at(current_dominated_block_) : NULL;
     }
@@ -181,7 +181,7 @@ class InductionVariableBlocksTable BASE_EMBEDDED {
       Element element;
       element.set_block(graph->blocks()->at(i));
       elements_.Add(element, graph->zone());
-      ASSERT(at(i)->block()->block_id() == i);
+      DCHECK(at(i)->block()->block_id() == i);
     }
   }
 
@@ -237,14 +237,13 @@ class InductionVariableBlocksTable BASE_EMBEDDED {
     // constant limit we will use that instead of the induction limit.
     bool has_upper_constant_limit = true;
     int32_t upper_constant_limit =
-        check != NULL && check->HasUpperLimit() ? check->upper_limit() : 0;
+        check->HasUpperLimit() ? check->upper_limit() : 0;
     for (InductionVariableData::InductionVariableCheck* current_check = check;
          current_check != NULL;
          current_check = current_check->next()) {
       has_upper_constant_limit =
-          has_upper_constant_limit &&
-          check->HasUpperLimit() &&
-          check->upper_limit() == upper_constant_limit;
+          has_upper_constant_limit && current_check->HasUpperLimit() &&
+          current_check->upper_limit() == upper_constant_limit;
       counters()->bounds_checks_eliminated()->Increment();
       current_check->check()->set_skip_check();
     }

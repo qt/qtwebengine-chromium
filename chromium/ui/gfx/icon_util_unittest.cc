@@ -4,7 +4,7 @@
 
 #include "ui/gfx/icon_util.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
@@ -26,8 +26,9 @@ static const char kTempIconFilename[] = "temp_test_icon.ico";
 
 class IconUtilTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
-    PathService::Get(gfx::DIR_TEST_DATA, &test_data_directory_);
+  virtual void SetUp() override {
+    gfx::RegisterPathProvider();
+    ASSERT_TRUE(PathService::Get(gfx::DIR_TEST_DATA, &test_data_directory_));
     temp_directory_.CreateUniqueTempDir();
   }
 
@@ -280,7 +281,7 @@ TEST_F(IconUtilTest, TestCreateSkBitmapFromHICON) {
   ASSERT_NE(bitmap.get(), static_cast<SkBitmap*>(NULL));
   EXPECT_EQ(bitmap->width(), small_icon_size.width());
   EXPECT_EQ(bitmap->height(), small_icon_size.height());
-  EXPECT_EQ(bitmap->colorType(), kPMColor_SkColorType);
+  EXPECT_EQ(bitmap->colorType(), kN32_SkColorType);
   ::DestroyIcon(small_icon);
 
   base::FilePath large_icon_filename = test_data_directory_.AppendASCII(
@@ -294,7 +295,7 @@ TEST_F(IconUtilTest, TestCreateSkBitmapFromHICON) {
   ASSERT_NE(bitmap.get(), static_cast<SkBitmap*>(NULL));
   EXPECT_EQ(bitmap->width(), large_icon_size.width());
   EXPECT_EQ(bitmap->height(), large_icon_size.height());
-  EXPECT_EQ(bitmap->colorType(), kPMColor_SkColorType);
+  EXPECT_EQ(bitmap->colorType(), kN32_SkColorType);
   ::DestroyIcon(large_icon);
 }
 

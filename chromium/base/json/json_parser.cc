@@ -37,7 +37,7 @@ class DictionaryHiddenRootValue : public base::DictionaryValue {
     DictionaryValue::Swap(static_cast<DictionaryValue*>(root));
   }
 
-  virtual void Swap(DictionaryValue* other) OVERRIDE {
+  void Swap(DictionaryValue* other) override {
     DVLOG(1) << "Swap()ing a DictionaryValue inefficiently.";
 
     // First deep copy to convert JSONStringValue to std::string and swap that
@@ -55,8 +55,8 @@ class DictionaryHiddenRootValue : public base::DictionaryValue {
   // Not overriding DictionaryValue::Remove because it just calls through to
   // the method below.
 
-  virtual bool RemoveWithoutPathExpansion(const std::string& key,
-                                          scoped_ptr<Value>* out) OVERRIDE {
+  bool RemoveWithoutPathExpansion(const std::string& key,
+                                  scoped_ptr<Value>* out) override {
     // If the caller won't take ownership of the removed value, just call up.
     if (!out)
       return DictionaryValue::RemoveWithoutPathExpansion(key, out);
@@ -87,7 +87,7 @@ class ListHiddenRootValue : public base::ListValue {
     ListValue::Swap(static_cast<ListValue*>(root));
   }
 
-  virtual void Swap(ListValue* other) OVERRIDE {
+  void Swap(ListValue* other) override {
     DVLOG(1) << "Swap()ing a ListValue inefficiently.";
 
     // First deep copy to convert JSONStringValue to std::string and swap that
@@ -102,7 +102,7 @@ class ListHiddenRootValue : public base::ListValue {
     ListValue::Swap(copy.get());
   }
 
-  virtual bool Remove(size_t index, scoped_ptr<Value>* out) OVERRIDE {
+  bool Remove(size_t index, scoped_ptr<Value>* out) override {
     // If the caller won't take ownership of the removed value, just call up.
     if (!out)
       return ListValue::Remove(index, out);
@@ -137,18 +137,18 @@ class JSONStringValue : public base::Value {
   }
 
   // Overridden from base::Value:
-  virtual bool GetAsString(std::string* out_value) const OVERRIDE {
+  bool GetAsString(std::string* out_value) const override {
     string_piece_.CopyToString(out_value);
     return true;
   }
-  virtual bool GetAsString(string16* out_value) const OVERRIDE {
+  bool GetAsString(string16* out_value) const override {
     *out_value = UTF8ToUTF16(string_piece_);
     return true;
   }
-  virtual Value* DeepCopy() const OVERRIDE {
+  Value* DeepCopy() const override {
     return new StringValue(string_piece_.as_string());
   }
-  virtual bool Equals(const Value* other) const OVERRIDE {
+  bool Equals(const Value* other) const override {
     std::string other_string;
     return other->IsType(TYPE_STRING) && other->GetAsString(&other_string) &&
         StringPiece(other_string) == string_piece_;
@@ -652,7 +652,7 @@ bool JSONParser::ConsumeStringRaw(StringBuilder* out) {
           NextChar();
 
           if (hex_digit < kExtendedASCIIStart)
-            string.Append(hex_digit);
+            string.Append(static_cast<char>(hex_digit));
           else
             DecodeUTF8(hex_digit, &string);
           break;
@@ -714,7 +714,7 @@ bool JSONParser::ConsumeStringRaw(StringBuilder* out) {
       return true;
     } else {
       if (next_char < kExtendedASCIIStart)
-        string.Append(next_char);
+        string.Append(static_cast<char>(next_char));
       else
         DecodeUTF8(next_char, &string);
     }
@@ -791,7 +791,7 @@ void JSONParser::DecodeUTF8(const int32& point, StringBuilder* dest) {
   // Anything outside of the basic ASCII plane will need to be decoded from
   // int32 to a multi-byte sequence.
   if (point < kExtendedASCIIStart) {
-    dest->Append(point);
+    dest->Append(static_cast<char>(point));
   } else {
     char utf8_units[4] = { 0 };
     int offset = 0;
@@ -901,7 +901,7 @@ bool JSONParser::ReadInt(bool allow_leading_zeros) {
 Value* JSONParser::ConsumeLiteral() {
   switch (*pos_) {
     case 't': {
-      const char* kTrueLiteral = "true";
+      const char kTrueLiteral[] = "true";
       const int kTrueLen = static_cast<int>(strlen(kTrueLiteral));
       if (!CanConsume(kTrueLen - 1) ||
           !StringsAreEqual(pos_, kTrueLiteral, kTrueLen)) {
@@ -912,7 +912,7 @@ Value* JSONParser::ConsumeLiteral() {
       return new FundamentalValue(true);
     }
     case 'f': {
-      const char* kFalseLiteral = "false";
+      const char kFalseLiteral[] = "false";
       const int kFalseLen = static_cast<int>(strlen(kFalseLiteral));
       if (!CanConsume(kFalseLen - 1) ||
           !StringsAreEqual(pos_, kFalseLiteral, kFalseLen)) {
@@ -923,7 +923,7 @@ Value* JSONParser::ConsumeLiteral() {
       return new FundamentalValue(false);
     }
     case 'n': {
-      const char* kNullLiteral = "null";
+      const char kNullLiteral[] = "null";
       const int kNullLen = static_cast<int>(strlen(kNullLiteral));
       if (!CanConsume(kNullLen - 1) ||
           !StringsAreEqual(pos_, kNullLiteral, kNullLen)) {

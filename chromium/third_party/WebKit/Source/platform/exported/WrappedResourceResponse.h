@@ -45,25 +45,25 @@ public:
 
     WrappedResourceResponse() { }
 
-    WrappedResourceResponse(WebCore::ResourceResponse& resourceResponse)
+    WrappedResourceResponse(ResourceResponse& resourceResponse)
     {
         bind(resourceResponse);
     }
 
-    WrappedResourceResponse(const WebCore::ResourceResponse& resourceResponse)
+    WrappedResourceResponse(const ResourceResponse& resourceResponse)
     {
         bind(resourceResponse);
     }
 
-    void bind(WebCore::ResourceResponse& resourceResponse)
+    void bind(ResourceResponse& resourceResponse)
     {
         m_handle.m_resourceResponse = &resourceResponse;
         assign(&m_handle);
     }
 
-    void bind(const WebCore::ResourceResponse& resourceResponse)
+    void bind(const ResourceResponse& resourceResponse)
     {
-        bind(*const_cast<WebCore::ResourceResponse*>(&resourceResponse));
+        bind(*const_cast<ResourceResponse*>(&resourceResponse));
     }
 
 private:

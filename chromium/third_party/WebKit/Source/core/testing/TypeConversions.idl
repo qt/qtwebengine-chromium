@@ -24,7 +24,7 @@
  */
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
 ] interface TypeConversions {
     attribute long testLong;
     [EnforceRange, ImplementedAs=testLong] attribute long testEnforceRangeLong;
@@ -49,16 +49,16 @@
     attribute ByteString testByteString;
     [ImplementedAs=testByteString, TreatReturnedNullStringAs=Null] attribute ByteString testByteStringTreatReturnedNullStringAsNullAttribute;
     [ImplementedAs=testByteString, TreatReturnedNullStringAs=Undefined] attribute ByteString testByteStringTreatReturnedNullStringAsUndefinedAttribute;
-    [ImplementedAs=testByteString, TreatReturnedNullStringAs=Null] ByteString getTestByteStringTreatReturnedNullStringAsNullMethod();
+    [ImplementedAs=testByteString] ByteString? getTestByteStringTreatReturnedNullStringAsNullMethod();
     [ImplementedAs=testByteString, TreatReturnedNullStringAs=Undefined] ByteString getTestByteStringTreatReturnedNullStringAsUndefinedMethod();
     void setTestByteString(ByteString byteString);
     [ImplementedAs=setTestByteString] void setTestByteStringDefaultNull(optional ByteString byteString = null);
 
-    attribute ScalarValueString testScalarValueString;
-    [ImplementedAs=testScalarValueString, TreatReturnedNullStringAs=Null] attribute ScalarValueString testScalarValueStringTreatReturnedNullStringAsNullAttribute;
-    [ImplementedAs=testScalarValueString, TreatReturnedNullStringAs=Undefined] attribute ScalarValueString testScalarValueStringTreatReturnedNullStringAsUndefinedAttribute;
-    [ImplementedAs=testScalarValueString, TreatReturnedNullStringAs=Null] ScalarValueString getTestScalarValueStringTreatReturnedNullStringAsNullMethod();
-    [ImplementedAs=testScalarValueString, TreatReturnedNullStringAs=Undefined] ScalarValueString getTestScalarValueStringTreatReturnedNullStringAsUndefinedMethod();
-    void setTestScalarValueString(ScalarValueString scalarValueString);
-    [ImplementedAs=setTestScalarValueString] void setTestScalarValueStringDefaultNull(optional ScalarValueString scalarValueString = null);
+    attribute USVString testUSVString;
+    [ImplementedAs=testUSVString, TreatReturnedNullStringAs=Null] attribute USVString testUSVStringTreatReturnedNullStringAsNullAttribute;
+    [ImplementedAs=testUSVString, TreatReturnedNullStringAs=Undefined] attribute USVString testUSVStringTreatReturnedNullStringAsUndefinedAttribute;
+    [ImplementedAs=testUSVString] USVString? getTestUSVStringTreatReturnedNullStringAsNullMethod();
+    [ImplementedAs=testUSVString, TreatReturnedNullStringAs=Undefined] USVString getTestUSVStringTreatReturnedNullStringAsUndefinedMethod();
+    void setTestUSVString(USVString usvString);
+    [ImplementedAs=setTestUSVString] void setTestUSVStringDefaultNull(optional USVString usvString = null);
 };

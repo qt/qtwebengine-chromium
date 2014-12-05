@@ -66,10 +66,10 @@ class TestTableModel2 : public ui::TableModel {
   void ChangeRow(int row, int c1_value, int c2_value);
 
   // ui::TableModel:
-  virtual int RowCount() OVERRIDE;
-  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
-  virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
-  virtual int CompareValues(int row1, int row2, int column_id) OVERRIDE;
+  int RowCount() override;
+  base::string16 GetText(int row, int column_id) override;
+  void SetObserver(ui::TableModelObserver* observer) override;
+  int CompareValues(int row1, int row2, int column_id) override;
 
  private:
   ui::TableModelObserver* observer_;
@@ -157,7 +157,7 @@ class TestTableView : public TableView {
   }
 
   // View overrides:
-  virtual bool HasFocus() const OVERRIDE {
+  bool HasFocus() const override {
     // Overriden so key processing works.
     return true;
   }
@@ -172,7 +172,7 @@ class TableViewTest : public testing::Test {
  public:
   TableViewTest() : table_(NULL) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     model_.reset(new TestTableModel2);
     std::vector<ui::TableColumn> columns(2);
     columns[0].title = base::ASCIIToUTF16("Title Column 0");
@@ -198,10 +198,8 @@ class TableViewTest : public testing::Test {
 
   void TapOnRow(int row) {
     const int y = row * table_->row_height();
-    const ui::GestureEventDetails event_details(ui::ET_GESTURE_TAP,
-                                                .0f, .0f);
-    ui::GestureEvent tap(ui::ET_GESTURE_TAP, 0, y, 0, base::TimeDelta(),
-                         event_details, 1);
+    const ui::GestureEventDetails event_details(ui::ET_GESTURE_TAP);
+    ui::GestureEvent tap(0, y, 0, base::TimeDelta(), event_details);
     table_->OnGestureEvent(&tap);
   }
 
@@ -223,7 +221,7 @@ class TableViewTest : public testing::Test {
   }
 
   void PressKey(ui::KeyboardCode code) {
-    ui::KeyEvent event(ui::ET_KEY_PRESSED, code, 0, false);
+    ui::KeyEvent event(ui::ET_KEY_PRESSED, code, ui::EF_NONE);
     table_->OnKeyPressed(event);
   }
 
@@ -308,13 +306,19 @@ TEST_F(TableViewTest, ResizeViaGesture) {
   const int x = table_->visible_columns()[0].width;
   EXPECT_NE(0, x);
   // Drag the mouse 1 pixel to the left.
-  const ui::GestureEventDetails event_details(ui::ET_GESTURE_SCROLL_BEGIN,
-                                              .0f, .0f);
-  ui::GestureEvent scroll_begin(ui::ET_GESTURE_SCROLL_BEGIN, x, 0, 0,
-                                base::TimeDelta(), event_details, 1);
+  ui::GestureEvent scroll_begin(
+      x,
+      0,
+      0,
+      base::TimeDelta(),
+      ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN));
   helper_->header()->OnGestureEvent(&scroll_begin);
-  ui::GestureEvent scroll_update(ui::ET_GESTURE_SCROLL_UPDATE, x - 1, 0,
-                                 0, base::TimeDelta(), event_details, 1);
+  ui::GestureEvent scroll_update(
+      x - 1,
+      0,
+      0,
+      base::TimeDelta(),
+      ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE));
   helper_->header()->OnGestureEvent(&scroll_update);
 
   // This should shrink the first column and pull the second column in.
@@ -406,7 +410,7 @@ class TableGrouperImpl : public TableGrouper {
   }
 
   // TableGrouper overrides:
-  virtual void GetGroupRange(int model_index, GroupRange* range) OVERRIDE {
+  void GetGroupRange(int model_index, GroupRange* range) override {
     int offset = 0;
     size_t range_index = 0;
     for (; range_index < ranges_.size() && offset < model_index; ++range_index)
@@ -510,9 +514,7 @@ class TableViewObserverImpl : public TableViewObserver {
   }
 
   // TableViewObserver overrides:
-  virtual void OnSelectionChanged() OVERRIDE {
-    selection_changed_count_++;
-  }
+  void OnSelectionChanged() override { selection_changed_count_++; }
 
  private:
   int selection_changed_count_;

@@ -17,7 +17,7 @@
 #include "ppapi/host/ppapi_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/file_ref_util.h"
-#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "storage/browser/fileapi/file_permission_policy.h"
 
 using ppapi::host::ResourceHost;
 
@@ -109,10 +109,10 @@ PP_FileSystemType PepperFileRefHost::GetFileSystemType() const {
   return fs_type_;
 }
 
-fileapi::FileSystemURL PepperFileRefHost::GetFileSystemURL() const {
+storage::FileSystemURL PepperFileRefHost::GetFileSystemURL() const {
   if (backend_)
     return backend_->GetFileSystemURL();
-  return fileapi::FileSystemURL();
+  return storage::FileSystemURL();
 }
 
 base::FilePath PepperFileRefHost::GetExternalFilePath() const {

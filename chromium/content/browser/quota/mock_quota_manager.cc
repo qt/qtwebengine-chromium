@@ -10,7 +10,7 @@
 #include "base/single_thread_task_runner.h"
 #include "url/gurl.h"
 
-using quota::kQuotaStatusOk;
+using storage::kQuotaStatusOk;
 
 namespace content {
 
@@ -33,20 +33,23 @@ MockQuotaManager::StorageInfo::~StorageInfo() {}
 MockQuotaManager::MockQuotaManager(
     bool is_incognito,
     const base::FilePath& profile_path,
-    base::SingleThreadTaskRunner* io_thread,
-    base::SequencedTaskRunner* db_thread,
-    SpecialStoragePolicy* special_storage_policy)
-    : QuotaManager(is_incognito, profile_path, io_thread, db_thread,
-        special_storage_policy),
+    const scoped_refptr<base::SingleThreadTaskRunner>& io_thread,
+    const scoped_refptr<base::SequencedTaskRunner>& db_thread,
+    const scoped_refptr<SpecialStoragePolicy>& special_storage_policy)
+    : QuotaManager(is_incognito,
+                   profile_path,
+                   io_thread,
+                   db_thread,
+                   special_storage_policy),
       weak_factory_(this) {
 }
 
 void MockQuotaManager::GetUsageAndQuota(
     const GURL& origin,
-    quota::StorageType type,
+    storage::StorageType type,
     const GetUsageAndQuotaCallback& callback) {
   StorageInfo& info = usage_and_quota_map_[std::make_pair(origin, type)];
-  callback.Run(quota::kQuotaStatusOk, info.usage, info.quota);
+  callback.Run(storage::kQuotaStatusOk, info.usage, info.quota);
 }
 
 void MockQuotaManager::SetQuota(const GURL& origin, StorageType type,

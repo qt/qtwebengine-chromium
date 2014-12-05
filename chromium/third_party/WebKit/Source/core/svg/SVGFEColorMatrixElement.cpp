@@ -26,7 +26,7 @@
 #include "platform/graphics/filters/FilterEffect.h"
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<ColorMatrixType>()
 {
@@ -46,8 +46,6 @@ inline SVGFEColorMatrixElement::SVGFEColorMatrixElement(Document& document)
     , m_in1(SVGAnimatedString::create(this, SVGNames::inAttr, SVGString::create()))
     , m_type(SVGAnimatedEnumeration<ColorMatrixType>::create(this, SVGNames::typeAttr, FECOLORMATRIX_TYPE_MATRIX))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_values);
     addToPropertyMap(m_in1);
     addToPropertyMap(m_type);
@@ -68,23 +66,7 @@ bool SVGFEColorMatrixElement::isSupportedAttribute(const QualifiedName& attrName
 
 void SVGFEColorMatrixElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGFilterPrimitiveStandardAttributes::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::inAttr)
-        m_in1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::valuesAttr)
-        m_values->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::typeAttr)
-        m_type->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFEColorMatrixElement::setFilterEffectAttribute(FilterEffect* effect, const QualifiedName& attrName)
@@ -164,4 +146,4 @@ PassRefPtr<FilterEffect> SVGFEColorMatrixElement::build(SVGFilterBuilder* filter
     return effect.release();
 }
 
-} // namespace WebCore
+} // namespace blink

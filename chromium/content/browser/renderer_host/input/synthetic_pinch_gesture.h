@@ -18,11 +18,11 @@ namespace content {
 class CONTENT_EXPORT SyntheticPinchGesture : public SyntheticGesture {
  public:
   explicit SyntheticPinchGesture(const SyntheticPinchGestureParams& params);
-  virtual ~SyntheticPinchGesture();
+  ~SyntheticPinchGesture() override;
 
-  virtual SyntheticGesture::Result ForwardInputEvents(
+  SyntheticGesture::Result ForwardInputEvents(
       const base::TimeTicks& timestamp,
-      SyntheticGestureTarget* target) OVERRIDE;
+      SyntheticGestureTarget* target) override;
 
  private:
   enum GestureState {

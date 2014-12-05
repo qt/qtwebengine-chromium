@@ -33,8 +33,9 @@
 
 #include "core/dom/Node.h"
 #include "core/frame/LocalFrame.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class SmartClipData {
 public:
@@ -50,7 +51,8 @@ public:
     {
     }
 
-    String toString();
+    IntRect rect() const;
+    const String& clipData() const;
 
 private:
     bool m_isEmpty;
@@ -64,8 +66,9 @@ private:
 // trying to do a poor-mans implementation of columnar
 // selection followed by a copy operation.
 class SmartClip {
+    STACK_ALLOCATED();
 public:
-    explicit SmartClip(PassRefPtr<LocalFrame>);
+    explicit SmartClip(PassRefPtrWillBeRawPtr<LocalFrame>);
 
     SmartClipData dataForRect(const IntRect&);
 
@@ -79,9 +82,9 @@ private:
     IntRect convertRectToWindow(const IntRect& nodeRect);
     String extractTextFromNode(Node*);
 
-    RefPtr<LocalFrame> m_frame;
+    RefPtrWillBeMember<LocalFrame> m_frame;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SmartClip_h

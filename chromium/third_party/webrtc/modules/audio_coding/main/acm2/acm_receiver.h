@@ -13,6 +13,7 @@
 
 #include <vector>
 
+#include "webrtc/base/thread_annotations.h"
 #include "webrtc/common_audio/vad/include/webrtc_vad.h"
 #include "webrtc/engine_configurations.h"
 #include "webrtc/modules/audio_coding/main/interface/audio_coding_module.h"
@@ -23,14 +24,12 @@
 #include "webrtc/modules/audio_coding/neteq/interface/neteq.h"
 #include "webrtc/modules/interface/module_common_types.h"
 #include "webrtc/system_wrappers/interface/scoped_ptr.h"
-#include "webrtc/system_wrappers/interface/thread_annotations.h"
 #include "webrtc/typedefs.h"
 
 namespace webrtc {
 
 struct CodecInst;
 class CriticalSectionWrapper;
-class RWLockWrapper;
 class NetEq;
 
 namespace acm2 {
@@ -210,13 +209,6 @@ class AcmReceiver {
   bool vad_enabled() const { return vad_enabled_; }
 
   //
-  // Get the decode lock used to protect decoder instances while decoding.
-  //
-  // Return value             : Pointer to the decode lock.
-  //
-  RWLockWrapper* DecodeLock() const { return decode_lock_; }
-
-  //
   // Flushes the NetEq packet and speech buffers.
   //
   void FlushBuffers();
@@ -316,12 +308,6 @@ class AcmReceiver {
   std::vector<uint16_t> GetNackList(int round_trip_time_ms) const;
 
   //
-  // Returns the background noise mode. This is only for testing and ACM is not
-  // calling this function. Used in acm_receiver_unittest.cc.
-  //
-  NetEqBackgroundNoiseMode BackgroundNoiseModeForTest() const;
-
-  //
   // Get statistics of calls to GetAudio().
   void GetDecodingCallStatistics(AudioDecodingCallStats* stats) const;
 
@@ -348,15 +334,16 @@ class AcmReceiver {
   ACMResampler resampler_ GUARDED_BY(crit_sect_);
   // Used in GetAudio, declared as member to avoid allocating every 10ms.
   // TODO(henrik.lundin) Stack-allocate in GetAudio instead?
-  int16_t audio_buffer_[AudioFrame::kMaxDataSizeSamples] GUARDED_BY(crit_sect_);
+  scoped_ptr<int16_t[]> audio_buffer_ GUARDED_BY(crit_sect_);
+  scoped_ptr<int16_t[]> last_audio_buffer_ GUARDED_BY(crit_sect_);
   scoped_ptr<Nack> nack_ GUARDED_BY(crit_sect_);
   bool nack_enabled_ GUARDED_BY(crit_sect_);
   CallStatistics call_stats_ GUARDED_BY(crit_sect_);
   NetEq* neteq_;
   Decoder decoders_[ACMCodecDB::kMaxNumCodecs];
-  RWLockWrapper* decode_lock_;
   bool vad_enabled_;
   Clock* clock_;  // TODO(henrik.lundin) Make const if possible.
+  bool resampled_last_output_frame_ GUARDED_BY(crit_sect_);
 
   // Indicates if a non-zero initial delay is set, and the receiver is in
   // AV-sync mode.

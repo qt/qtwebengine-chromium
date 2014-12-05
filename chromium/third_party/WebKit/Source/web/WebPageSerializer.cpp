@@ -41,6 +41,7 @@
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/page/Page.h"
 #include "core/page/PageSerializer.h"
 #include "platform/SerializedResource.h"
 #include "platform/mhtml/MHTMLArchive.h"
@@ -58,7 +59,7 @@
 #include "wtf/Vector.h"
 #include "wtf/text/StringConcatenate.h"
 
-using namespace WebCore;
+namespace blink {
 
 namespace {
 
@@ -108,11 +109,11 @@ void retrieveResourcesForElement(Element* element,
 }
 
 void retrieveResourcesForFrame(LocalFrame* frame,
-                               const blink::WebVector<blink::WebCString>& supportedSchemes,
-                               Vector<LocalFrame*>* visitedFrames,
-                               Vector<LocalFrame*>* framesToVisit,
-                               Vector<KURL>* frameURLs,
-                               Vector<KURL>* resourceURLs)
+    const WebVector<WebCString>& supportedSchemes,
+    Vector<LocalFrame*>* visitedFrames,
+    Vector<LocalFrame*>* framesToVisit,
+    Vector<KURL>* frameURLs,
+    Vector<KURL>* resourceURLs)
 {
     KURL frameURL = frame->loader().documentLoader()->request().url();
 
@@ -149,8 +150,6 @@ void retrieveResourcesForFrame(LocalFrame* frame,
 }
 
 } // namespace
-
-namespace blink {
 
 void WebPageSerializer::serialize(WebView* view, WebVector<WebPageSerializer::Resource>* resourcesParam)
 {

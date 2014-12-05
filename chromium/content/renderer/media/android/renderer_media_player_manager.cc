@@ -55,10 +55,15 @@ bool RendererMediaPlayerManager::OnMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidExitFullscreen, OnDidExitFullscreen)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPlay, OnPlayerPlay)
     IPC_MESSAGE_HANDLER(MediaPlayerMsg_DidMediaPlayerPause, OnPlayerPause)
-    IPC_MESSAGE_HANDLER(MediaPlayerMsg_PauseVideo, OnPauseVideo)
+    IPC_MESSAGE_HANDLER(MediaPlayerMsg_RemoteRouteAvailabilityChanged,
+                        OnRemoteRouteAvailabilityChanged)
   IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
+}
+
+void RendererMediaPlayerManager::WasHidden() {
+  ReleaseVideoResources();
 }
 
 void RendererMediaPlayerManager::Initialize(
@@ -67,8 +72,8 @@ void RendererMediaPlayerManager::Initialize(
     const GURL& url,
     const GURL& first_party_for_cookies,
     int demuxer_client_id,
-    const GURL& frame_url) {
-
+    const GURL& frame_url,
+    bool allow_credentials) {
   MediaPlayerHostMsg_Initialize_Params media_player_params;
   media_player_params.type = type;
   media_player_params.player_id = player_id;
@@ -76,6 +81,7 @@ void RendererMediaPlayerManager::Initialize(
   media_player_params.url = url;
   media_player_params.first_party_for_cookies = first_party_for_cookies;
   media_player_params.frame_url = frame_url;
+  media_player_params.allow_credentials = allow_credentials;
 
   Send(new MediaPlayerHostMsg_Initialize(routing_id(), media_player_params));
 }
@@ -111,6 +117,15 @@ void RendererMediaPlayerManager::ReleaseResources(int player_id) {
 
 void RendererMediaPlayerManager::DestroyPlayer(int player_id) {
   Send(new MediaPlayerHostMsg_DestroyMediaPlayer(routing_id(), player_id));
+}
+
+void RendererMediaPlayerManager::RequestRemotePlayback(int player_id) {
+  Send(new MediaPlayerHostMsg_RequestRemotePlayback(routing_id(), player_id));
+}
+
+void RendererMediaPlayerManager::RequestRemotePlaybackControl(int player_id) {
+  Send(new MediaPlayerHostMsg_RequestRemotePlaybackControl(routing_id(),
+                                                           player_id));
 }
 
 void RendererMediaPlayerManager::OnMediaMetadataChanged(
@@ -167,11 +182,13 @@ void RendererMediaPlayerManager::OnVideoSizeChanged(int player_id,
     player->OnVideoSizeChanged(width, height);
 }
 
-void RendererMediaPlayerManager::OnTimeUpdate(int player_id,
-                                              base::TimeDelta current_time) {
+void RendererMediaPlayerManager::OnTimeUpdate(
+    int player_id,
+    base::TimeDelta current_timestamp,
+    base::TimeTicks current_time_ticks) {
   WebMediaPlayerAndroid* player = GetMediaPlayer(player_id);
   if (player)
-    player->OnTimeUpdate(current_time);
+    player->OnTimeUpdate(current_timestamp, current_time_ticks);
 }
 
 void RendererMediaPlayerManager::OnMediaPlayerReleased(int player_id) {
@@ -223,8 +240,12 @@ void RendererMediaPlayerManager::OnRequestFullscreen(int player_id) {
     player->OnRequestFullscreen();
 }
 
-void RendererMediaPlayerManager::OnPauseVideo() {
-  ReleaseVideoResources();
+void RendererMediaPlayerManager::OnRemoteRouteAvailabilityChanged(
+    int player_id,
+    bool routes_available) {
+  WebMediaPlayerAndroid* player = GetMediaPlayer(player_id);
+  if (player)
+    player->OnRemoteRouteAvailabilityChanged(routes_available);
 }
 
 void RendererMediaPlayerManager::EnterFullscreen(int player_id,
@@ -240,7 +261,7 @@ void RendererMediaPlayerManager::ExitFullscreen(int player_id) {
 }
 
 void RendererMediaPlayerManager::SetCdm(int player_id, int cdm_id) {
-  if (cdm_id == RendererCdmManager::kInvalidCdmId) {
+  if (cdm_id == media::MediaKeys::kInvalidCdmId) {
     NOTREACHED();
     return;
   }

@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/html/canvas/DataView.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/CheckedInt.h"
 #include "wtf/CPU.h"
@@ -41,7 +41,7 @@ union Value {
 
 }
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<DataView> DataView::create(unsigned length)
 {
@@ -67,7 +67,6 @@ DataView::DataView(PassRefPtr<ArrayBuffer> buffer, unsigned byteOffset, unsigned
     : ArrayBufferView(buffer, byteOffset)
     , m_byteLength(byteLength)
 {
-    ScriptWrappable::init(this);
 }
 
 static bool needToFlipBytes(bool littleEndian)
@@ -245,4 +244,4 @@ void DataView::neuter()
     m_byteLength = 0;
 }
 
-}
+} // namespace blink

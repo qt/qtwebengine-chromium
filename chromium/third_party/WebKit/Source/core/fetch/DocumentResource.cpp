@@ -28,7 +28,7 @@
 #include "platform/SharedBuffer.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 DocumentResource::DocumentResource(const ResourceRequest& request, Type type)
     : Resource(request, type)
@@ -40,6 +40,12 @@ DocumentResource::DocumentResource(const ResourceRequest& request, Type type)
 
 DocumentResource::~DocumentResource()
 {
+}
+
+void DocumentResource::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
+    Resource::trace(visitor);
 }
 
 void DocumentResource::setEncoding(const String& chs)

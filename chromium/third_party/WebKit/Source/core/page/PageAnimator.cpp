@@ -6,17 +6,17 @@
 #include "core/page/PageAnimator.h"
 
 #include "core/animation/DocumentAnimations.h"
-#include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/page/Chrome.h"
 #include "core/page/ChromeClient.h"
 #include "core/page/Page.h"
 #include "core/svg/SVGDocumentExtensions.h"
+#include "platform/Logging.h"
 
-namespace WebCore {
+namespace blink {
 
-PageAnimator::PageAnimator(Page* page)
+PageAnimator::PageAnimator(Page& page)
     : m_page(page)
     , m_animationFramePending(false)
     , m_servicingAnimations(false)
@@ -24,25 +24,42 @@ PageAnimator::PageAnimator(Page* page)
 {
 }
 
+PassRefPtrWillBeRawPtr<PageAnimator> PageAnimator::create(Page& page)
+{
+    return adoptRefWillBeNoop(new PageAnimator(page));
+}
+
+void PageAnimator::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+}
+
 void PageAnimator::serviceScriptedAnimations(double monotonicAnimationStartTime)
 {
+    RefPtrWillBeRawPtr<PageAnimator> protector(this);
     m_animationFramePending = false;
     TemporaryChange<bool> servicing(m_servicingAnimations, true);
 
-    for (RefPtr<Frame> frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
-        if (frame->isLocalFrame()) {
-            RefPtr<LocalFrame> localFrame = toLocalFrame(frame.get());
-            localFrame->view()->serviceScrollAnimations();
-
-            DocumentAnimations::updateAnimationTimingForAnimationFrame(*localFrame->document(), monotonicAnimationStartTime);
-            SVGDocumentExtensions::serviceOnAnimationFrame(*localFrame->document(), monotonicAnimationStartTime);
-        }
-    }
-
-    WillBeHeapVector<RefPtrWillBeMember<Document> > documents;
+    WillBeHeapVector<RefPtrWillBeMember<Document>> documents;
     for (Frame* frame = m_page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
         if (frame->isLocalFrame())
             documents.append(toLocalFrame(frame)->document());
+    }
+
+    for (size_t i = 0; i < documents.size(); ++i) {
+        if (documents[i]->frame()) {
+            documents[i]->view()->serviceScrollAnimations(monotonicAnimationStartTime);
+
+            if (const FrameView::ScrollableAreaSet* scrollableAreas = documents[i]->view()->scrollableAreas()) {
+                for (ScrollableArea* scrollableArea : *scrollableAreas)
+                    scrollableArea->serviceScrollAnimations(monotonicAnimationStartTime);
+            }
+        }
+    }
+
+    for (size_t i = 0; i < documents.size(); ++i) {
+        DocumentAnimations::updateAnimationTimingForAnimationFrame(*documents[i], monotonicAnimationStartTime);
+        SVGDocumentExtensions::serviceOnAnimationFrame(*documents[i], monotonicAnimationStartTime);
     }
 
     for (size_t i = 0; i < documents.size(); ++i)
@@ -57,12 +74,9 @@ void PageAnimator::scheduleVisualUpdate()
     m_page->chrome().scheduleAnimation();
 }
 
-void PageAnimator::updateLayoutAndStyleForPainting()
+void PageAnimator::updateLayoutAndStyleForPainting(LocalFrame* rootFrame)
 {
-    if (!m_page->mainFrame()->isLocalFrame())
-        return;
-
-    RefPtr<FrameView> view = m_page->deprecatedLocalMainFrame()->view();
+    RefPtrWillBeRawPtr<FrameView> view = rootFrame->view();
 
     TemporaryChange<bool> servicing(m_updatingLayoutAndStyleForPainting, true);
 

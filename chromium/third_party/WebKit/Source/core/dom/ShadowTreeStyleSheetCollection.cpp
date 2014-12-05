@@ -32,10 +32,11 @@
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
 #include "core/dom/StyleEngine.h"
+#include "core/dom/StyleSheetCandidate.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLStyleElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -46,44 +47,26 @@ ShadowTreeStyleSheetCollection::ShadowTreeStyleSheetCollection(ShadowRoot& shado
 
 void ShadowTreeStyleSheetCollection::collectStyleSheets(StyleEngine* engine, StyleSheetCollection& collection)
 {
-    DocumentOrderedList::iterator begin = m_styleSheetCandidateNodes.begin();
-    DocumentOrderedList::iterator end = m_styleSheetCandidateNodes.end();
-    for (DocumentOrderedList::iterator it = begin; it != end; ++it) {
-        Node* node = *it;
-        StyleSheet* sheet = 0;
-        CSSStyleSheet* activeSheet = 0;
+    for (Node* n : m_styleSheetCandidateNodes) {
+        StyleSheetCandidate candidate(*n);
+        ASSERT(!candidate.isXSL());
 
-        if (!isHTMLStyleElement(*node))
+        if (!candidate.isCSSStyle())
             continue;
 
-        HTMLStyleElement* element = toHTMLStyleElement(node);
-        const AtomicString& title = element->fastGetAttribute(titleAttr);
-        bool enabledViaScript = false;
-
-        sheet = element->sheet();
-        if (sheet && !sheet->disabled() && sheet->isCSSStyleSheet())
-            activeSheet = toCSSStyleSheet(sheet);
+        StyleSheet* sheet = candidate.sheet();
+        if (!sheet)
+            continue;
 
         // FIXME: clarify how PREFERRED or ALTERNATE works in shadow trees.
         // Should we set preferred/selected stylesheets name in shadow trees and
         // use the name in document?
-        if (!enabledViaScript && sheet && !title.isEmpty()) {
-            if (engine->preferredStylesheetSetName().isEmpty()) {
-                engine->setPreferredStylesheetSetName(title);
-                engine->setSelectedStylesheetSetName(title);
-            }
-            if (title != engine->preferredStylesheetSetName())
-                activeSheet = 0;
-        }
+        if (candidate.hasPreferrableName(engine->preferredStylesheetSetName()))
+            engine->selectStylesheetSetName(candidate.title());
 
-        const AtomicString& rel = element->fastGetAttribute(relAttr);
-        if (rel.contains("alternate") && title.isEmpty())
-            activeSheet = 0;
-
-        if (sheet)
-            collection.appendSheetForList(sheet);
-        if (activeSheet)
-            collection.appendActiveStyleSheet(activeSheet);
+        collection.appendSheetForList(sheet);
+        if (candidate.canBeActivated(engine->preferredStylesheetSetName()))
+            collection.appendActiveStyleSheet(toCSSStyleSheet(sheet));
     }
 }
 
@@ -96,13 +79,10 @@ void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
     analyzeStyleSheetChange(updateMode, collection, change);
 
     if (StyleResolver* styleResolver = engine->resolver()) {
-        // FIXME: We might have already had styles in child treescope. In this case, we cannot use buildScopedStyleTreeInDocumentOrder.
-        // Need to change "false" to some valid condition.
-        styleResolver->setBuildScopedStyleTreeInDocumentOrder(false);
         if (change.styleResolverUpdateType != Additive) {
             // We should not destroy StyleResolver when we find any stylesheet update in a shadow tree.
             // In this case, we will reset rulesets created from style elements in the shadow tree.
-            resetAllRuleSetsInTreeScope(styleResolver);
+            styleResolver->resetAuthorStyle(treeScope());
             styleResolver->removePendingAuthorStyleSheets(m_activeAuthorStyleSheets);
             styleResolver->lazyAppendAuthorStyleSheets(0, collection.activeAuthorStyleSheets());
         } else {
@@ -110,9 +90,8 @@ void ShadowTreeStyleSheetCollection::updateActiveStyleSheets(StyleEngine* engine
         }
     }
     if (change.requiresFullStyleRecalc)
-        toShadowRoot(m_treeScope.rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange);
+        toShadowRoot(treeScope().rootNode()).host()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ActiveStylesheetsUpdate));
 
-    m_scopingNodesForStyleScoped.didRemoveScopingNodes();
     collection.swap(*this);
     updateUsesRemUnits();
 }

@@ -10,6 +10,7 @@
 #include "base/logging.h"
 #include "base/strings/stringprintf.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -19,18 +20,19 @@
 // |s| is the target SSL connection handle.
 // |session| is non-0 to ask for the creation of a new session. If 0,
 // this will set an empty session with no ID instead.
-extern "C" int ssl_get_new_session(SSL* s, int session);
+extern "C" OPENSSL_EXPORT int ssl_get_new_session(SSL* s, int session);
 
 // This is an internal OpenSSL function which is used internally to add
 // a new session to the cache. It is normally triggered by a succesful
 // connection. However, this unit test does not use the network at all.
-extern "C" void ssl_update_cache(SSL* s, int mode);
+extern "C" OPENSSL_EXPORT void ssl_update_cache(SSL* s, int mode);
 
 namespace net {
 
 namespace {
 
-typedef crypto::ScopedOpenSSL<SSL, SSL_free> ScopedSSL;
+typedef crypto::ScopedOpenSSL<SSL, SSL_free>::Type ScopedSSL;
+typedef crypto::ScopedOpenSSL<SSL_CTX, SSL_CTX_free>::Type ScopedSSL_CTX;
 
 // Helper class used to associate arbitrary std::string keys with SSL objects.
 class SSLKeyHelper {
@@ -73,8 +75,8 @@ class SSLKeyHelper {
   // Called when an SSL object is copied through SSL_dup(). This needs to copy
   // the value as well.
   static int KeyDup(CRYPTO_EX_DATA* to,
-                    CRYPTO_EX_DATA* from,
-                    void* from_fd,
+                    const CRYPTO_EX_DATA* from,
+                    void** from_fd,
                     int idx,
                     long argl,
                     void* argp) {
@@ -142,7 +144,7 @@ class SSLSessionCacheOpenSSLTest : public testing::Test {
   static const SSLSessionCacheOpenSSL::Config kDefaultConfig;
 
  protected:
-  crypto::ScopedOpenSSL<SSL_CTX, SSL_CTX_free> ctx_;
+  ScopedSSL_CTX ctx_;
   // |cache_| must be destroyed before |ctx_| and thus appears after it.
   SSLSessionCacheOpenSSL cache_;
 };

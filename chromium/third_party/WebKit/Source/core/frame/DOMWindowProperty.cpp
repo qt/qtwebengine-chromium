@@ -27,53 +27,69 @@
 #include "config.h"
 #include "core/frame/DOMWindowProperty.h"
 
-#include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowProperty::DOMWindowProperty(LocalFrame* frame)
     : m_frame(frame)
-    , m_associatedDOMWindow(0)
+#if !ENABLE(OILPAN)
+    , m_associatedDOMWindow(nullptr)
+#endif
 {
     // FIXME: For now it *is* acceptable for a DOMWindowProperty to be created with a null frame.
     // See fast/dom/navigator-detached-no-crash.html for the recipe.
     // We should fix that.  <rdar://problem/11567132>
     if (m_frame) {
+#if ENABLE(OILPAN)
+        m_frame->domWindow()->registerProperty(this);
+#else
         m_associatedDOMWindow = m_frame->domWindow();
         m_associatedDOMWindow->registerProperty(this);
+#endif
     }
 }
 
+#if !ENABLE(OILPAN)
 DOMWindowProperty::~DOMWindowProperty()
 {
     if (m_associatedDOMWindow)
         m_associatedDOMWindow->unregisterProperty(this);
-
-    m_associatedDOMWindow = 0;
-    m_frame = 0;
 }
+#endif
 
 void DOMWindowProperty::willDestroyGlobalObjectInFrame()
 {
-    // If the property is getting this callback it must have been created with a LocalFrame/LocalDOMWindow and it should still have them.
+    // If the property is getting this callback it must have been
+    // created with a LocalFrame and it should still have it.
     ASSERT(m_frame);
-    ASSERT(m_associatedDOMWindow);
+    m_frame = nullptr;
 
-    // DOMWindowProperty lifetime isn't tied directly to the LocalDOMWindow itself so it is important that it unregister
-    // itself from any LocalDOMWindow it is associated with if that LocalDOMWindow is going away.
-    if (m_associatedDOMWindow)
-        m_associatedDOMWindow->unregisterProperty(this);
-    m_associatedDOMWindow = 0;
-    m_frame = 0;
+#if !ENABLE(OILPAN)
+    // LocalDOMWindow will along with notifying DOMWindowProperty objects of
+    // impending destruction, unilaterally clear out its registered set.
+    // Consequently, no explicit unregisteration required by DOMWindowProperty;
+    // here or when destructed.
+    ASSERT(m_associatedDOMWindow);
+    m_associatedDOMWindow = nullptr;
+#endif
 }
 
 void DOMWindowProperty::willDetachGlobalObjectFromFrame()
 {
-    // If the property is getting this callback it must have been created with a LocalFrame/LocalDOMWindow and it should still have them.
+    // If the property is getting this callback it must have been
+    // created with a LocalFrame and it should still have it.
     ASSERT(m_frame);
+#if !ENABLE(OILPAN)
+    // Ditto for its associated LocalDOMWindow.
     ASSERT(m_associatedDOMWindow);
+#endif
 }
 
+void DOMWindowProperty::trace(Visitor* visitor)
+{
+    visitor->trace(m_frame);
 }
+
+} // namespace blink

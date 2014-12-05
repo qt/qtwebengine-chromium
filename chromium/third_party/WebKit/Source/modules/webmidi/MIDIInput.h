@@ -34,31 +34,30 @@
 #include "modules/EventTargetModules.h"
 #include "modules/webmidi/MIDIPort.h"
 
-namespace WebCore {
+namespace blink {
 
 class MIDIAccess;
 
-class MIDIInput FINAL : public MIDIPort {
+class MIDIInput final : public MIDIPort {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<MIDIInput> create(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version);
+    static MIDIInput* create(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive);
     virtual ~MIDIInput() { }
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(midimessage);
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventTargetNames::MIDIInput; }
+    virtual const AtomicString& interfaceName() const override { return EventTargetNames::MIDIInput; }
 
     // |timeStamp| is a DOMHighResTimeStamp in the time coordinate system of performance.now().
     void didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    MIDIInput(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version);
+    MIDIInput(MIDIAccess*, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive);
 };
 
-typedef WillBeHeapVector<RefPtrWillBeMember<MIDIInput> > MIDIInputVector;
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIDIInput_h

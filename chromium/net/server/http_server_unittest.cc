@@ -2,11 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <algorithm>
 #include <utility>
 #include <vector>
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
 #include "base/memory/ref_counted.h"
@@ -24,11 +26,14 @@
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
+#include "net/http/http_response_headers.h"
+#include "net/http/http_util.h"
 #include "net/server/http_server.h"
 #include "net/server/http_server_request_info.h"
 #include "net/socket/tcp_client_socket.h"
-#include "net/socket/tcp_listen_socket.h"
+#include "net/socket/tcp_server_socket.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
@@ -90,10 +95,6 @@ class TestHttpClient {
     Write();
   }
 
-  bool Read(std::string* message) {
-    return Read(message, 1);
-  }
-
   bool Read(std::string* message, int expected_bytes) {
     int total_bytes_received = 0;
     message->clear();
@@ -106,6 +107,18 @@ class TestHttpClient {
 
       total_bytes_received += bytes_received;
       message->append(read_buffer_->data(), bytes_received);
+    }
+    return true;
+  }
+
+  bool ReadResponse(std::string* message) {
+    if (!Read(message, 1))
+      return false;
+    while (!IsCompleteResponse(*message)) {
+      std::string chunk;
+      if (!Read(&chunk, 1))
+        return false;
+      message->append(chunk);
     }
     return true;
   }
@@ -134,11 +147,25 @@ class TestHttpClient {
 
   void ReadInternal(const net::CompletionCallback& callback) {
     read_buffer_ = new IOBufferWithSize(kMaxExpectedResponseLength);
-    int result = socket_->Read(read_buffer_,
-                               kMaxExpectedResponseLength,
-                               callback);
+    int result =
+        socket_->Read(read_buffer_.get(), kMaxExpectedResponseLength, callback);
     if (result != ERR_IO_PENDING)
       callback.Run(result);
+  }
+
+  bool IsCompleteResponse(const std::string& response) {
+    // Check end of headers first.
+    int end_of_headers = HttpUtil::LocateEndOfHeaders(response.data(),
+                                                      response.size());
+    if (end_of_headers < 0)
+      return false;
+
+    // Return true if response has data equal to or more than content length.
+    int64 body_size = static_cast<int64>(response.size()) - end_of_headers;
+    DCHECK_LE(0, body_size);
+    scoped_refptr<HttpResponseHeaders> headers(new HttpResponseHeaders(
+        HttpUtil::AssembleRawHeaders(response.data(), end_of_headers)));
+    return body_size >= headers->GetContentLength();
   }
 
   scoped_refptr<IOBufferWithSize> read_buffer_;
@@ -154,30 +181,33 @@ class HttpServerTest : public testing::Test,
  public:
   HttpServerTest() : quit_after_request_count_(0) {}
 
-  virtual void SetUp() OVERRIDE {
-    TCPListenSocketFactory socket_factory("127.0.0.1", 0);
-    server_ = new HttpServer(socket_factory, this);
+  void SetUp() override {
+    scoped_ptr<ServerSocket> server_socket(
+        new TCPServerSocket(NULL, net::NetLog::Source()));
+    server_socket->ListenWithAddressAndPort("127.0.0.1", 0, 1);
+    server_.reset(new HttpServer(server_socket.Pass(), this));
     ASSERT_EQ(OK, server_->GetLocalAddress(&server_address_));
   }
 
-  virtual void OnHttpRequest(int connection_id,
-                             const HttpServerRequestInfo& info) OVERRIDE {
+  void OnConnect(int connection_id) override {}
+
+  void OnHttpRequest(int connection_id,
+                     const HttpServerRequestInfo& info) override {
     requests_.push_back(std::make_pair(info, connection_id));
     if (requests_.size() == quit_after_request_count_)
       run_loop_quit_func_.Run();
   }
 
-  virtual void OnWebSocketRequest(int connection_id,
-                                  const HttpServerRequestInfo& info) OVERRIDE {
+  void OnWebSocketRequest(int connection_id,
+                          const HttpServerRequestInfo& info) override {
     NOTREACHED();
   }
 
-  virtual void OnWebSocketMessage(int connection_id,
-                                  const std::string& data) OVERRIDE {
+  void OnWebSocketMessage(int connection_id, const std::string& data) override {
     NOTREACHED();
   }
 
-  virtual void OnClose(int connection_id) OVERRIDE {}
+  void OnClose(int connection_id) override {}
 
   bool RunUntilRequestsReceived(size_t count) {
     quit_after_request_count_ = count;
@@ -199,8 +229,13 @@ class HttpServerTest : public testing::Test,
     return requests_[request_index].second;
   }
 
+  void HandleAcceptResult(scoped_ptr<StreamSocket> socket) {
+    server_->accepted_socket_.reset(socket.release());
+    server_->HandleAcceptResult(OK);
+  }
+
  protected:
-  scoped_refptr<HttpServer> server_;
+  scoped_ptr<HttpServer> server_;
   IPEndPoint server_address_;
   base::Closure run_loop_quit_func_;
   std::vector<std::pair<HttpServerRequestInfo, int> > requests_;
@@ -209,19 +244,20 @@ class HttpServerTest : public testing::Test,
   size_t quit_after_request_count_;
 };
 
+namespace {
+
 class WebSocketTest : public HttpServerTest {
-  virtual void OnHttpRequest(int connection_id,
-                             const HttpServerRequestInfo& info) OVERRIDE {
+  void OnHttpRequest(int connection_id,
+                     const HttpServerRequestInfo& info) override {
     NOTREACHED();
   }
 
-  virtual void OnWebSocketRequest(int connection_id,
-                                  const HttpServerRequestInfo& info) OVERRIDE {
+  void OnWebSocketRequest(int connection_id,
+                          const HttpServerRequestInfo& info) override {
     HttpServerTest::OnHttpRequest(connection_id, info);
   }
 
-  virtual void OnWebSocketMessage(int connection_id,
-                                  const std::string& data) OVERRIDE {
+  void OnWebSocketMessage(int connection_id, const std::string& data) override {
   }
 };
 
@@ -262,7 +298,7 @@ TEST_F(HttpServerTest, RequestWithHeaders) {
   ASSERT_EQ("", GetRequest(0).data);
 
   for (size_t i = 0; i < arraysize(kHeaders); ++i) {
-    std::string field = StringToLowerASCII(std::string(kHeaders[i][0]));
+    std::string field = base::StringToLowerASCII(std::string(kHeaders[i][0]));
     std::string value = kHeaders[i][2];
     ASSERT_EQ(1u, GetRequest(0).headers.count(field)) << field;
     ASSERT_EQ(value, GetRequest(0).headers[field]) << kHeaders[i][0];
@@ -290,7 +326,7 @@ TEST_F(HttpServerTest, RequestWithDuplicateHeaders) {
   ASSERT_EQ("", GetRequest(0).data);
 
   for (size_t i = 0; i < arraysize(kHeaders); ++i) {
-    std::string field = StringToLowerASCII(std::string(kHeaders[i][0]));
+    std::string field = base::StringToLowerASCII(std::string(kHeaders[i][0]));
     std::string value = (field == "duplicateheader") ? "2,4" : kHeaders[i][2];
     ASSERT_EQ(1u, GetRequest(0).headers.count(field)) << field;
     ASSERT_EQ(value, GetRequest(0).headers[field]) << kHeaders[i][0];
@@ -369,9 +405,9 @@ TEST_F(HttpServerTest, RequestWithTooLargeBody) {
    public:
     TestURLFetcherDelegate(const base::Closure& quit_loop_func)
         : quit_loop_func_(quit_loop_func) {}
-    virtual ~TestURLFetcherDelegate() {}
+    ~TestURLFetcherDelegate() override {}
 
-    virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE {
+    void OnURLFetchComplete(const URLFetcher* source) override {
       EXPECT_EQ(HTTP_INTERNAL_SERVER_ERROR, source->GetResponseCode());
       quit_loop_func_.Run();
     }
@@ -407,7 +443,7 @@ TEST_F(HttpServerTest, Send200) {
   server_->Send200(GetConnectionId(0), "Response!", "text/plain");
 
   std::string response;
-  ASSERT_TRUE(client.Read(&response));
+  ASSERT_TRUE(client.ReadResponse(&response));
   ASSERT_TRUE(StartsWithASCII(response, "HTTP/1.1 200 OK", true));
   ASSERT_TRUE(EndsWith(response, "Response!", true));
 }
@@ -427,25 +463,99 @@ TEST_F(HttpServerTest, SendRaw) {
   ASSERT_EQ(expected_response, response);
 }
 
-namespace {
-
-class MockStreamListenSocket : public StreamListenSocket {
+class MockStreamSocket : public StreamSocket {
  public:
-  MockStreamListenSocket(StreamListenSocket::Delegate* delegate)
-      : StreamListenSocket(kInvalidSocket, delegate) {}
+  MockStreamSocket()
+      : connected_(true),
+        read_buf_(NULL),
+        read_buf_len_(0) {}
 
-  virtual void Accept() OVERRIDE { NOTREACHED(); }
+  // StreamSocket
+  int Connect(const CompletionCallback& callback) override {
+    return ERR_NOT_IMPLEMENTED;
+  }
+  void Disconnect() override {
+    connected_ = false;
+    if (!read_callback_.is_null()) {
+      read_buf_ = NULL;
+      read_buf_len_ = 0;
+      base::ResetAndReturn(&read_callback_).Run(ERR_CONNECTION_CLOSED);
+    }
+  }
+  bool IsConnected() const override { return connected_; }
+  bool IsConnectedAndIdle() const override { return IsConnected(); }
+  int GetPeerAddress(IPEndPoint* address) const override {
+    return ERR_NOT_IMPLEMENTED;
+  }
+  int GetLocalAddress(IPEndPoint* address) const override {
+    return ERR_NOT_IMPLEMENTED;
+  }
+  const BoundNetLog& NetLog() const override { return net_log_; }
+  void SetSubresourceSpeculation() override {}
+  void SetOmniboxSpeculation() override {}
+  bool WasEverUsed() const override { return true; }
+  bool UsingTCPFastOpen() const override { return false; }
+  bool WasNpnNegotiated() const override { return false; }
+  NextProto GetNegotiatedProtocol() const override { return kProtoUnknown; }
+  bool GetSSLInfo(SSLInfo* ssl_info) override { return false; }
+
+  // Socket
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override {
+    if (!connected_) {
+      return ERR_SOCKET_NOT_CONNECTED;
+    }
+    if (pending_read_data_.empty()) {
+      read_buf_ = buf;
+      read_buf_len_ = buf_len;
+      read_callback_ = callback;
+      return ERR_IO_PENDING;
+    }
+    DCHECK_GT(buf_len, 0);
+    int read_len = std::min(static_cast<int>(pending_read_data_.size()),
+                            buf_len);
+    memcpy(buf->data(), pending_read_data_.data(), read_len);
+    pending_read_data_.erase(0, read_len);
+    return read_len;
+  }
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override {
+    return ERR_NOT_IMPLEMENTED;
+  }
+  int SetReceiveBufferSize(int32 size) override { return ERR_NOT_IMPLEMENTED; }
+  int SetSendBufferSize(int32 size) override { return ERR_NOT_IMPLEMENTED; }
+
+  void DidRead(const char* data, int data_len) {
+    if (!read_buf_.get()) {
+      pending_read_data_.append(data, data_len);
+      return;
+    }
+    int read_len = std::min(data_len, read_buf_len_);
+    memcpy(read_buf_->data(), data, read_len);
+    pending_read_data_.assign(data + read_len, data_len - read_len);
+    read_buf_ = NULL;
+    read_buf_len_ = 0;
+    base::ResetAndReturn(&read_callback_).Run(read_len);
+  }
 
  private:
-  virtual ~MockStreamListenSocket() {}
+  ~MockStreamSocket() override {}
+
+  bool connected_;
+  scoped_refptr<IOBuffer> read_buf_;
+  int read_buf_len_;
+  CompletionCallback read_callback_;
+  std::string pending_read_data_;
+  BoundNetLog net_log_;
+
+  DISALLOW_COPY_AND_ASSIGN(MockStreamSocket);
 };
 
-}  // namespace
-
 TEST_F(HttpServerTest, RequestWithBodySplitAcrossPackets) {
-  StreamListenSocket* socket =
-      new MockStreamListenSocket(server_.get());
-  server_->DidAccept(NULL, make_scoped_ptr(socket));
+  MockStreamSocket* socket = new MockStreamSocket();
+  HandleAcceptResult(make_scoped_ptr<StreamSocket>(socket));
   std::string body("body");
   std::string request_text = base::StringPrintf(
       "GET /test HTTP/1.1\r\n"
@@ -453,9 +563,9 @@ TEST_F(HttpServerTest, RequestWithBodySplitAcrossPackets) {
       "Content-Length: %" PRIuS "\r\n\r\n%s",
       body.length(),
       body.c_str());
-  server_->DidRead(socket, request_text.c_str(), request_text.length() - 2);
+  socket->DidRead(request_text.c_str(), request_text.length() - 2);
   ASSERT_EQ(0u, requests_.size());
-  server_->DidRead(socket, request_text.c_str() + request_text.length() - 2, 2);
+  socket->DidRead(request_text.c_str() + request_text.length() - 2, 2);
   ASSERT_EQ(1u, requests_.size());
   ASSERT_EQ(body, GetRequest(0).data);
 }
@@ -477,7 +587,7 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   int client_connection_id = GetConnectionId(0);
   server_->Send200(client_connection_id, "Content for /test", "text/plain");
   std::string response1;
-  ASSERT_TRUE(client.Read(&response1));
+  ASSERT_TRUE(client.ReadResponse(&response1));
   ASSERT_TRUE(StartsWithASCII(response1, "HTTP/1.1 200 OK", true));
   ASSERT_TRUE(EndsWith(response1, "Content for /test", true));
 
@@ -488,7 +598,7 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   ASSERT_EQ(client_connection_id, GetConnectionId(1));
   server_->Send404(client_connection_id);
   std::string response2;
-  ASSERT_TRUE(client.Read(&response2));
+  ASSERT_TRUE(client.ReadResponse(&response2));
   ASSERT_TRUE(StartsWithASCII(response2, "HTTP/1.1 404 Not Found", true));
 
   client.Send("GET /test3 HTTP/1.1\r\n\r\n");
@@ -498,9 +608,31 @@ TEST_F(HttpServerTest, MultipleRequestsOnSameConnection) {
   ASSERT_EQ(client_connection_id, GetConnectionId(2));
   server_->Send200(client_connection_id, "Content for /test3", "text/plain");
   std::string response3;
-  ASSERT_TRUE(client.Read(&response3));
+  ASSERT_TRUE(client.ReadResponse(&response3));
   ASSERT_TRUE(StartsWithASCII(response3, "HTTP/1.1 200 OK", true));
   ASSERT_TRUE(EndsWith(response3, "Content for /test3", true));
 }
+
+class CloseOnConnectHttpServerTest : public HttpServerTest {
+ public:
+  void OnConnect(int connection_id) override {
+    connection_ids_.push_back(connection_id);
+    server_->Close(connection_id);
+  }
+
+ protected:
+  std::vector<int> connection_ids_;
+};
+
+TEST_F(CloseOnConnectHttpServerTest, ServerImmediatelyClosesConnection) {
+  TestHttpClient client;
+  ASSERT_EQ(OK, client.ConnectAndWait(server_address_));
+  client.Send("GET / HTTP/1.1\r\n\r\n");
+  ASSERT_FALSE(RunUntilRequestsReceived(1));
+  ASSERT_EQ(1ul, connection_ids_.size());
+  ASSERT_EQ(0ul, requests_.size());
+}
+
+}  // namespace
 
 }  // namespace net

@@ -25,9 +25,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLHeadingElement FINAL : public HTMLElement {
+class HTMLHeadingElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLHeadingElement);
 
@@ -35,6 +36,6 @@ private:
     HTMLHeadingElement(const QualifiedName&, Document&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLHeadingElement_h

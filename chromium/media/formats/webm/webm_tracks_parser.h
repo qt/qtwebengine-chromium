@@ -28,7 +28,7 @@ namespace media {
 class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
  public:
   explicit WebMTracksParser(const LogCB& log_cb, bool ignore_text_tracks);
-  virtual ~WebMTracksParser();
+  ~WebMTracksParser() override;
 
   // Parses a WebM Tracks element in |buf|.
   //
@@ -75,16 +75,15 @@ class MEDIA_EXPORT WebMTracksParser : public WebMParserClient {
 
  private:
   // WebMParserClient implementation.
-  virtual WebMParserClient* OnListStart(int id) OVERRIDE;
-  virtual bool OnListEnd(int id) OVERRIDE;
-  virtual bool OnUInt(int id, int64 val) OVERRIDE;
-  virtual bool OnFloat(int id, double val) OVERRIDE;
-  virtual bool OnBinary(int id, const uint8* data, int size) OVERRIDE;
-  virtual bool OnString(int id, const std::string& str) OVERRIDE;
+  WebMParserClient* OnListStart(int id) override;
+  bool OnListEnd(int id) override;
+  bool OnUInt(int id, int64 val) override;
+  bool OnFloat(int id, double val) override;
+  bool OnBinary(int id, const uint8* data, int size) override;
+  bool OnString(int id, const std::string& str) override;
 
   int64 track_type_;
   int64 track_num_;
-  int64 track_uid_;
   std::string track_name_;
   std::string track_language_;
   std::string codec_id_;

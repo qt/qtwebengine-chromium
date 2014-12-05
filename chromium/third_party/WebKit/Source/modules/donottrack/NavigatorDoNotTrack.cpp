@@ -35,15 +35,19 @@
 #include "core/frame/Navigator.h"
 #include "core/loader/FrameLoaderClient.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorDoNotTrack::NavigatorDoNotTrack(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
 }
 
-NavigatorDoNotTrack::~NavigatorDoNotTrack()
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorDoNotTrack);
+
+void NavigatorDoNotTrack::trace(Visitor* visitor)
 {
+    WillBeHeapSupplement<Navigator>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
 const char* NavigatorDoNotTrack::supplementName()
@@ -73,4 +77,4 @@ String NavigatorDoNotTrack::doNotTrack()
     return frame()->loader().client()->doNotTrackValue();
 }
 
-} // namespace WebCore
+} // namespace blink

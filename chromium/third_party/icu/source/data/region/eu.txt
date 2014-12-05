@@ -1,18 +1,18 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/eu.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/eu.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/eu.xml
+ * ICU <specials> source: <path>/common/main/eu.xml
  */
 eu{
     Countries{
         419{"Latinoamerika"}
-        AC{"Ascension Uhartea"}
+        AC{"Ascension uhartea"}
         AD{"Andorra"}
         AE{"Arabiar Emirrerri Batuak"}
         AF{"Afganistan"}
@@ -27,27 +27,35 @@ eu{
         AS{"Amerikar Samoa"}
         AT{"Austria"}
         AU{"Australia"}
-        AX{"Aland Uharteak"}
+        AW{"Aruba"}
+        AX{"Aland uharteak"}
         AZ{"Azerbaijan"}
         BA{"Bosnia-Herzegovina"}
+        BB{"Barbados"}
         BD{"Bangladesh"}
         BE{"Belgika"}
         BF{"Burkina Faso"}
         BG{"Bulgaria"}
+        BH{"Bahrain"}
         BI{"Burundi"}
         BJ{"Benin"}
-        BO{"Bolibia"}
+        BL{"San Bartolome"}
+        BM{"Bermuda"}
+        BN{"Brunei"}
+        BO{"Bolivia"}
+        BQ{"Karibeko Herbehereak"}
         BR{"Brasil"}
         BS{"Bahamak"}
         BT{"Bhutan"}
         BV{"Bouvet Uhartea"}
         BW{"Botswana"}
         BY{"Bielorrusia"}
+        BZ{"Belize"}
         CA{"Kanada"}
-        CC{"Cocos uharteak"}
+        CC{"Cocos (Keeling) uharteak"}
         CD{"Kongoko Errepublika Demokratikoa"}
         CF{"Afrika Erdiko Errepublika"}
-        CG{"Kongo"}
+        CG{"Kongo (Brazzaville)"}
         CH{"Suitza"}
         CI{"Boli Kosta"}
         CK{"Cook uharteak"}
@@ -55,15 +63,16 @@ eu{
         CM{"Kamerun"}
         CN{"Txina"}
         CO{"Kolonbia"}
-        CP{"CP"}
-        CS{"Serbia eta Montenegro"}
+        CP{"Clipperton uhartea"}
+        CR{"Costa Rica"}
         CU{"Kuba"}
         CV{"Cabo Verde"}
+        CW{"Curaçao"}
         CX{"Christmas uhartea"}
         CY{"Zipre"}
-        CZ{"Txekiar errepublika"}
+        CZ{"Txekiar Errepublika"}
         DE{"Alemania"}
-        DG{"DG"}
+        DG{"Diego Garcia"}
         DJ{"Djibuti"}
         DK{"Danimarka"}
         DM{"Dominika"}
@@ -77,13 +86,16 @@ eu{
         ER{"Eritrea"}
         ES{"Espainia"}
         ET{"Etiopia"}
+        EU{"Europar Batasuna"}
         FI{"Finlandia"}
+        FJ{"Fiji"}
         FK{"Malvinak"}
         FM{"Mikronesia"}
-        FO{"Faroe Uharteak"}
+        FO{"Faroe uharteak"}
         FR{"Frantzia"}
         GA{"Gabon"}
         GB{"Erresuma Batua"}
+        GD{"Grenada"}
         GE{"Georgia"}
         GF{"Guyana Frantsesa"}
         GG{"Guernsey"}
@@ -96,9 +108,12 @@ eu{
         GQ{"Ekuatore Ginea"}
         GR{"Grezia"}
         GS{"Hegoaldeko Georgia eta Hegoaldeko Sandwich uharteak"}
+        GT{"Guatemala"}
+        GU{"Guam"}
         GW{"Ginea-Bissau"}
-        HK{"HK"}
-        HM{"Heard eta McDonald Uharteak"}
+        GY{"Guyana"}
+        HK{"Hong Kong AEB Txina"}
+        HM{"Heard eta McDonald uharteak"}
         HN{"Honduras"}
         HR{"Kroazia"}
         HT{"Haiti"}
@@ -109,7 +124,7 @@ eu{
         IL{"Israel"}
         IM{"Man uhartea"}
         IN{"India"}
-        IO{"Indiako Ozeanoko Britainiar Lurraldea"}
+        IO{"Indiako Ozeanoko lurralde britainiarra"}
         IQ{"Irak"}
         IR{"Iran"}
         IS{"Islandia"}
@@ -118,7 +133,7 @@ eu{
         JM{"Jamaika"}
         JO{"Jordania"}
         JP{"Japonia"}
-        KE{"Kenia"}
+        KE{"Kenya"}
         KG{"Kirgizistan"}
         KH{"Kanbodia"}
         KI{"Kiribati"}
@@ -126,7 +141,8 @@ eu{
         KN{"Saint Kitts eta Nevis"}
         KP{"Ipar Korea"}
         KR{"Hego Korea"}
-        KY{"Kaiman Uharteak"}
+        KW{"Kuwait"}
+        KY{"Kaiman uharteak"}
         KZ{"Kazakhstan"}
         LA{"Laos"}
         LB{"Libano"}
@@ -143,21 +159,24 @@ eu{
         MC{"Monako"}
         MD{"Moldavia"}
         ME{"Montenegro"}
+        MF{"Saint Martin"}
         MG{"Madagaskar"}
         MH{"Marshall uharteak"}
         MK{"Mazedonia"}
         ML{"Mali"}
-        MM{"Birmania"}
+        MM{"Myanmar"}
         MN{"Mongolia"}
-        MO{"Makau"}
+        MO{"Macau AEB Txina"}
         MP{"Iparraldeko Mariana uharteak"}
         MQ{"Martinika"}
         MR{"Mauritania"}
+        MS{"Montserrat"}
+        MT{"Malta"}
         MU{"Maurizio"}
         MV{"Maldivak"}
         MW{"Malawi"}
         MX{"Mexiko"}
-        MY{"Malasia"}
+        MY{"Malaysia"}
         MZ{"Mozambike"}
         NA{"Namibia"}
         NC{"Kaledonia Berria"}
@@ -168,8 +187,11 @@ eu{
         NL{"Herbehereak"}
         NO{"Norvegia"}
         NP{"Nepal"}
+        NR{"Nauru"}
+        NU{"Niue"}
         NZ{"Zeelanda Berria"}
         OM{"Oman"}
+        PA{"Panama"}
         PE{"Peru"}
         PF{"Polinesia Frantsesa"}
         PG{"Papua Ginea Berria"}
@@ -177,10 +199,15 @@ eu{
         PK{"Pakistan"}
         PL{"Polonia"}
         PM{"Saint-Pierre eta Mikelune"}
-        PS{"Palestina"}
+        PN{"Pitcairn uharteak"}
+        PR{"Puerto Rico"}
+        PS{"Palestinako Lurraldeak"}
         PT{"Portugal"}
+        PW{"Palau"}
         PY{"Paraguai"}
-        QA{"Katar"}
+        QA{"Qatar"}
+        QO{"Mugaz kanpoko Ozeania"}
+        RE{"Reunion"}
         RO{"Errumania"}
         RS{"Serbia"}
         RU{"Errusia"}
@@ -200,16 +227,18 @@ eu{
         SN{"Senegal"}
         SO{"Somalia"}
         SR{"Surinam"}
-        ST{"Sao Tomé eta Principe"}
+        SS{"Hego Sudan"}
+        ST{"Sao Tome eta Principe"}
         SV{"El Salvador"}
+        SX{"Sint Maarten"}
         SY{"Siria"}
         SZ{"Swazilandia"}
-        TA{"TA"}
+        TA{"Tristan da Cunha"}
         TC{"Turk eta Caicos uharteak"}
         TD{"Txad"}
-        TF{"Frantziaren Lurralde Australak"}
+        TF{"Hegoaldeko lurralde frantsesak"}
         TG{"Togo"}
-        TH{"Tailandia"}
+        TH{"Thailandia"}
         TJ{"Tadjikistan"}
         TK{"Tokelau"}
         TL{"Ekialdeko Timor"}
@@ -223,7 +252,7 @@ eu{
         TZ{"Tanzania"}
         UA{"Ukraina"}
         UG{"Uganda"}
-        UM{"Estatu Batuetatik urruti dauden uharte txikiak"}
+        UM{"Ameriketako Estatu Batuetako Kanpoaldeko Uharte Txikiak"}
         US{"Ameriketako Estatu Batuak"}
         UY{"Uruguai"}
         UZ{"Uzbekistan"}
@@ -236,11 +265,19 @@ eu{
         VU{"Vanuatu"}
         WF{"Wallis eta Futuna"}
         WS{"Samoa"}
+        XK{"Kosovo"}
         YE{"Yemen"}
+        YT{"Mayotte"}
         ZA{"Hegoafrika"}
         ZM{"Zambia"}
         ZW{"Zimbabwe"}
-        ZZ{"ZZ"}
+        ZZ{"Eskualde ezezaguna"}
     }
-    Version{"2.0.50.95"}
+    CountriesShort{
+        HK{"Hong Kong"}
+        MO{"Macau"}
+        PS{"Palestina"}
+        US{"AEB"}
+    }
+    Version{"2.0.92.87"}
 }

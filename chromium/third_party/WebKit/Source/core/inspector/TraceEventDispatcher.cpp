@@ -37,30 +37,32 @@
 #include "wtf/MainThread.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 void TraceEventDispatcher::dispatchEventOnAnyThread(char phase, const unsigned char*, const char* name, unsigned long long id,
     int numArgs, const char* const* argNames, const unsigned char* argTypes, const unsigned long long* argValues,
     unsigned char flags, double timestamp)
 {
-    if (phase == TRACE_EVENT_PHASE_INSTANT_WITH_SCOPE)
-        phase = TRACE_EVENT_PHASE_INSTANT;
     TraceEventDispatcher* self = instance();
     {
         MutexLocker locker(self->m_mutex);
-        if (self->m_handlers.find(std::make_pair(name, phase)) == self->m_handlers.end())
+        if (self->m_listeners->find(std::make_pair(name, phase)) == self->m_listeners->end())
             return;
     }
-    self->enqueueEvent(TraceEvent(timestamp, phase, name, id, currentThread(), numArgs, argNames, argTypes, argValues));
+    self->enqueueEvent(timestamp, phase, name, id, currentThread(), numArgs, argNames, argTypes, argValues);
     if (isMainThread())
         self->processBackgroundEvents();
 }
 
-void TraceEventDispatcher::enqueueEvent(const TraceEvent& event)
+void TraceEventDispatcher::enqueueEvent(double timestamp, char phase, const char* name, unsigned long long id, ThreadIdentifier threadIdentifier,
+    int argumentCount, const char* const* argumentNames, const unsigned char* argumentTypes, const unsigned long long* argumentValues)
 {
     const float eventProcessingThresholdInSeconds = 0.1;
     {
         MutexLocker locker(m_mutex);
+        // TraceEvent object is created here, rather than created in the callers of enqueEvent and passed as an argument of enqueEvent.
+        // http://crbug.com/394706
+        TraceEvent event(timestamp, phase, name, id, threadIdentifier, argumentCount, argumentNames, argumentTypes, argumentValues);
         m_backgroundEvents.append(event);
         if (m_processEventsTaskInFlight || event.timestamp() - m_lastEventProcessingTime <= eventProcessingThresholdInSeconds)
             return;
@@ -89,52 +91,52 @@ void TraceEventDispatcher::processBackgroundEvents()
     }
     for (size_t eventIndex = 0, size = events.size(); eventIndex < size; ++eventIndex) {
         const TraceEvent& event = events[eventIndex];
-        HandlersMap::iterator it = m_handlers.find(std::make_pair(event.name(), event.phase()));
-        if (it == m_handlers.end())
+        ListenersMap::iterator it = m_listeners->find(std::make_pair(event.name(), event.phase()));
+        if (it == m_listeners->end())
             continue;
-        Vector<BoundTraceEventHandler>& handlers = it->value;
-        for (size_t handlerIndex = 0; handlerIndex < handlers.size(); ++handlerIndex)
-            (handlers[handlerIndex].instance->*(handlers[handlerIndex].method))(event);
+        WillBeHeapVector<OwnPtrWillBeMember<TraceEventListener> >& listeners = *it->value.get();
+        for (size_t listenerIndex = 0; listenerIndex < listeners.size(); ++listenerIndex)
+            listeners[listenerIndex]->call(event);
     }
 }
 
-void TraceEventDispatcher::innerAddListener(const char* name, char phase, TraceEventTargetBase* instance, TraceEventHandlerMethod method, InspectorClient* client)
+void TraceEventDispatcher::addListener(const char* name, char phase, PassOwnPtrWillBeRawPtr<TraceEventListener> listener, InspectorClient* client)
 {
     static const char CategoryFilter[] = "-*," TRACE_DISABLED_BY_DEFAULT("devtools.timeline") "," TRACE_DISABLED_BY_DEFAULT("devtools.timeline.frame");
 
     ASSERT(isMainThread());
     MutexLocker locker(m_mutex);
-    if (m_handlers.isEmpty())
+    if (m_listeners->isEmpty())
         client->setTraceEventCallback(CategoryFilter, dispatchEventOnAnyThread);
-    HandlersMap::iterator it = m_handlers.find(std::make_pair(name, phase));
-    if (it == m_handlers.end())
-        m_handlers.add(std::make_pair(name, phase), Vector<BoundTraceEventHandler>()).storedValue->value.append(BoundTraceEventHandler(instance, method));
+    ListenersMap::iterator it = m_listeners->find(std::make_pair(name, phase));
+    if (it == m_listeners->end())
+        m_listeners->add(std::make_pair(name, phase), adoptPtrWillBeNoop(new WillBeHeapVector<OwnPtrWillBeMember<TraceEventListener> >())).storedValue->value->append(listener);
     else
-        it->value.append(BoundTraceEventHandler(instance, method));
+        it->value->append(listener);
 }
 
-void TraceEventDispatcher::removeAllListeners(TraceEventTargetBase* instance, InspectorClient* client)
+void TraceEventDispatcher::removeAllListeners(void* eventTarget, InspectorClient* client)
 {
     ASSERT(isMainThread());
     processBackgroundEvents();
     {
         MutexLocker locker(m_mutex);
 
-        HandlersMap remainingHandlers;
-        for (HandlersMap::iterator it = m_handlers.begin(); it != m_handlers.end(); ++it) {
-            Vector<BoundTraceEventHandler>& handlers = it->value;
-            for (size_t j = 0; j < handlers.size();) {
-                if (handlers[j].instance == instance)
-                    handlers.remove(j);
+        ListenersMap remainingListeners;
+        for (ListenersMap::iterator it = m_listeners->begin(); it != m_listeners->end(); ++it) {
+            WillBeHeapVector<OwnPtrWillBeMember<TraceEventListener> >& listeners = *it->value.get();
+            for (size_t j = 0; j < listeners.size();) {
+                if (listeners[j]->target() == eventTarget)
+                    listeners.remove(j);
                 else
                     ++j;
             }
-            if (!handlers.isEmpty())
-                remainingHandlers.add(it->key, it->value);
+            if (!listeners.isEmpty())
+                remainingListeners.add(it->key, it->value.release());
         }
-        m_handlers.swap(remainingHandlers);
+        m_listeners->swap(remainingListeners);
     }
-    if (m_handlers.isEmpty())
+    if (m_listeners->isEmpty())
         client->resetTraceEventCallback();
 }
 
@@ -149,7 +151,7 @@ size_t TraceEventDispatcher::TraceEvent::findParameter(const char* name) const
 
 const TraceEvent::TraceValueUnion& TraceEventDispatcher::TraceEvent::parameter(const char* name, unsigned char expectedType) const
 {
-    static WebCore::TraceEvent::TraceValueUnion missingValue;
+    static blink::TraceEvent::TraceValueUnion missingValue;
     size_t index = findParameter(name);
     ASSERT(isMainThread());
     if (index == kNotFound || m_argumentTypes[index] != expectedType) {
@@ -159,5 +161,5 @@ const TraceEvent::TraceValueUnion& TraceEventDispatcher::TraceEvent::parameter(c
     return m_argumentValues[index];
 }
 
-} // namespace WebCore
+} // namespace blink
 

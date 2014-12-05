@@ -1,11 +1,12 @@
 include_rules = [
+  "+mojo/converters/geometry",
   "+mojo/geometry",
-  "+third_party/skia",
   "+ui/gfx",
 ]
 
 specific_include_rules = {
   "view_manager_test_suite.cc": [
+    "+mojo/services/native_viewport/native_viewport.h",
     "+ui/gl",
   ],
 }

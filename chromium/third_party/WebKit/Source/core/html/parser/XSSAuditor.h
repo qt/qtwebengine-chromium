@@ -33,10 +33,9 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
-class HTMLDocumentParser;
 class HTMLSourceTracker;
 class XSSInfo;
 class XSSAuditorDelegate;
@@ -83,6 +82,11 @@ private:
         ScriptLikeAttributeTruncation
     };
 
+    enum HrefRestriction {
+        ProhibitSameOriginHref,
+        AllowSameOriginHref
+    };
+
     bool filterStartToken(const FilterTokenRequest&);
     void filterEndToken(const FilterTokenRequest&);
     bool filterCharacterToken(const FilterTokenRequest&);
@@ -97,9 +101,10 @@ private:
     bool filterFormToken(const FilterTokenRequest&);
     bool filterInputToken(const FilterTokenRequest&);
     bool filterButtonToken(const FilterTokenRequest&);
+    bool filterLinkToken(const FilterTokenRequest&);
 
     bool eraseDangerousAttributesIfInjected(const FilterTokenRequest&);
-    bool eraseAttributeIfInjected(const FilterTokenRequest&, const QualifiedName&, const String& replacementValue = String(), TruncationKind treatment = NormalAttributeTruncation);
+    bool eraseAttributeIfInjected(const FilterTokenRequest&, const QualifiedName&, const String& replacementValue = String(), TruncationKind = NormalAttributeTruncation, HrefRestriction = ProhibitSameOriginHref);
 
     String canonicalizedSnippetForTagName(const FilterTokenRequest&);
     String canonicalizedSnippetForJavaScript(const FilterTokenRequest&);
@@ -120,7 +125,7 @@ private:
     String m_decodedURL;
     String m_decodedHTTPBody;
     String m_httpBodyAsString;
-    OwnPtr<SuffixTree<ASCIICodebook> > m_decodedHTTPBodySuffixTree;
+    OwnPtr<SuffixTree<ASCIICodebook>> m_decodedHTTPBodySuffixTree;
 
     State m_state;
     bool m_scriptTagFoundInRequest;

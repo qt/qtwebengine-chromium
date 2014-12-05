@@ -31,7 +31,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -136,14 +136,14 @@ private:
 
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/parsing.html#list-of-active-formatting-elements
     // These functions enforce the "Noah's Ark" condition, which removes redundant mis-nested elements.
-    void tryToEnsureNoahsArkConditionQuickly(HTMLStackItem*, WillBeHeapVector<RawPtrWillBeMember<HTMLStackItem> >& remainingCandiates);
+    void tryToEnsureNoahsArkConditionQuickly(HTMLStackItem*, WillBeHeapVector<RawPtrWillBeMember<HTMLStackItem>>& remainingCandiates);
     void ensureNoahsArkCondition(HTMLStackItem*);
 
     WillBeHeapVector<Entry> m_entries;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::HTMLFormattingElementList::Entry);
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::HTMLFormattingElementList::Entry);
 
 #endif // HTMLFormattingElementList_h

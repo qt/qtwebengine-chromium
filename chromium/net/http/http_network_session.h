@@ -30,6 +30,7 @@ class Value;
 namespace net {
 
 class CertVerifier;
+class ChannelIDService;
 class ClientSocketFactory;
 class ClientSocketPoolManager;
 class CTVerifier;
@@ -42,7 +43,7 @@ class HttpResponseBodyDrainer;
 class HttpServerProperties;
 class NetLog;
 class NetworkDelegate;
-class ServerBoundCertService;
+class ProxyDelegate;
 class ProxyService;
 class QuicClock;
 class QuicCryptoClientStreamFactory;
@@ -65,7 +66,7 @@ class NET_EXPORT HttpNetworkSession
     ClientSocketFactory* client_socket_factory;
     HostResolver* host_resolver;
     CertVerifier* cert_verifier;
-    ServerBoundCertService* server_bound_cert_service;
+    ChannelIDService* channel_id_service;
     TransportSecurityState* transport_security_state;
     CTVerifier* cert_transparency_verifier;
     ProxyService* proxy_service;
@@ -76,9 +77,12 @@ class NET_EXPORT HttpNetworkSession
     base::WeakPtr<HttpServerProperties> http_server_properties;
     NetLog* net_log;
     HostMappingRules* host_mapping_rules;
+    bool enable_ssl_connect_job_waiting;
     bool ignore_certificate_errors;
+    bool use_stale_while_revalidate;
     uint16 testing_fixed_http_port;
     uint16 testing_fixed_https_port;
+    bool enable_tcp_fast_open_for_ssl;
 
     bool force_spdy_single_domain;
     bool enable_spdy_compression;
@@ -104,14 +108,14 @@ class NET_EXPORT HttpNetworkSession
     // Noe: Using this in the case of NPN for HTTP only results in the browser
     // trying SSL and then falling back to http.
     bool use_alternate_protocols;
+    double alternate_protocol_probability_threshold;
     bool enable_websocket_over_spdy;
 
     bool enable_quic;
-    bool enable_quic_https;
     bool enable_quic_port_selection;
-    bool enable_quic_pacing;
-    bool enable_quic_time_based_loss_detection;
-    bool enable_quic_persist_server_info;
+    bool quic_always_require_handshake_confirmation;
+    bool quic_disable_connection_pooling;
+    int quic_load_server_info_timeout_ms;
     HostPortPair origin_to_force_quic_on;
     QuicClock* quic_clock;  // Will be owned by QuicStreamFactory.
     QuicRandom* quic_random;
@@ -120,6 +124,8 @@ class NET_EXPORT HttpNetworkSession
     bool enable_user_alternate_protocol_ports;
     QuicCryptoClientStreamFactory* quic_crypto_client_stream_factory;
     QuicVersionVector quic_supported_versions;
+    QuicTagVector quic_connection_options;
+    ProxyDelegate* proxy_delegate;
   };
 
   enum SocketPoolType {

@@ -32,11 +32,12 @@
 
 #include "core/fetch/ImageResource.h"
 #include "core/rendering/style/BasicShapes.h"
+#include "core/rendering/style/DataEquivalency.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 #include "core/rendering/style/StyleImage.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ShapeValue : public RefCounted<ShapeValue> {
 public:
@@ -122,11 +123,11 @@ inline bool ShapeValue::operator==(const ShapeValue& other) const
 
     switch (type()) {
     case Shape:
-        return shape() == other.shape() && cssBox() == other.cssBox();
+        return dataEquivalent(shape(), other.shape()) && cssBox() == other.cssBox();
     case Box:
         return cssBox() == other.cssBox();
     case Image:
-        return image() == other.image();
+        return dataEquivalent(image(), other.image());
     }
 
     ASSERT_NOT_REACHED();

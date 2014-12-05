@@ -33,7 +33,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
     class Document;
     class HTMLFormElement;
@@ -43,7 +43,7 @@ namespace WebCore {
         NotSubmittedByJavaScript
     };
 
-    class FormState FINAL : public RefCountedWillBeGarbageCollected<FormState> {
+    class FormState final : public RefCountedWillBeGarbageCollected<FormState> {
     public:
         static PassRefPtrWillBeRawPtr<FormState> create(HTMLFormElement&, FormSubmissionTrigger);
         void trace(Visitor*);

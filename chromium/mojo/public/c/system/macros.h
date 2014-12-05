@@ -9,12 +9,9 @@
 
 // Annotate a variable indicating it's okay if it's unused.
 // Use like:
-//   int x MOJO_ALLOW_UNUSED = ...;
-#if defined(__GNUC__)
-#define MOJO_ALLOW_UNUSED __attribute__((unused))
-#else
-#define MOJO_ALLOW_UNUSED
-#endif
+//   int x = ...;
+//   MOJO_ALLOW_UNUSED_LOCAL(x);
+#define MOJO_ALLOW_UNUSED_LOCAL(x) false ? (void)x : (void)0
 
 // Annotate a function indicating that the caller must examine the return value.
 // Use like:
@@ -26,18 +23,28 @@
 #define MOJO_WARN_UNUSED_RESULT
 #endif
 
+#ifdef __cplusplus
+// Used to explicitly mark the return value of a function as unused. If you are
+// really sure you don't want to do anything with the return value of a function
+// that has been marked WARN_UNUSED_RESULT, wrap it with this. Example:
+//
+//   scoped_ptr<MyType> my_var = ...;
+//   if (TakeOwnership(my_var.get()) == SUCCESS)
+//     mojo_ignore_result(my_var.release());
+//
+template <typename T>
+inline void mojo_ignore_result(const T&) {
+}
+#endif
+
 // Assert things at compile time. (|msg| should be a valid identifier name.)
 // This macro is currently C++-only, but we want to use it in the C core.h.
 // Use like:
-//   MOJO_COMPILE_ASSERT(sizeof(Foo) == 12, Foo_has_invalid_size);
-#if __cplusplus >= 201103L
-#define MOJO_COMPILE_ASSERT(expr, msg) static_assert(expr, #msg)
-#elif defined(__cplusplus)
-namespace mojo { template <bool> struct CompileAssert {}; }
-#define MOJO_COMPILE_ASSERT(expr, msg) \
-    typedef ::mojo::CompileAssert<(bool(expr))> msg[bool(expr) ? 1 : -1]
+//   MOJO_STATIC_ASSERT(sizeof(Foo) == 12, "Foo has invalid size");
+#if defined(__cplusplus)
+#define MOJO_STATIC_ASSERT(expr, msg) static_assert(expr, msg)
 #else
-#define MOJO_COMPILE_ASSERT(expr, msg)
+#define MOJO_STATIC_ASSERT(expr, msg)
 #endif
 
 // Like the C++11 |alignof| operator.

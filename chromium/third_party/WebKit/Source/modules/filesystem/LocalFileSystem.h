@@ -36,7 +36,7 @@
 #include "wtf/Forward.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 class AsyncFileSystemCallbacks;
 class CallbackWrapper;
@@ -44,8 +44,9 @@ class FileSystemClient;
 class ExecutionContext;
 class KURL;
 class LocalFrame;
+class WebFileSystem;
 
-class LocalFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<LocalFrame>, public WillBeHeapSupplement<WorkerClients> {
+class LocalFileSystem final : public NoBaseWillBeGarbageCollectedFinalized<LocalFileSystem>, public WillBeHeapSupplement<LocalFrame>, public WillBeHeapSupplement<WorkerClients> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(LocalFileSystem);
     WTF_MAKE_NONCOPYABLE(LocalFileSystem);
 public:
@@ -61,7 +62,7 @@ public:
     static const char* supplementName();
     static LocalFileSystem* from(ExecutionContext&);
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         WillBeHeapSupplement<LocalFrame>::trace(visitor);
         WillBeHeapSupplement<WorkerClients>::trace(visitor);
@@ -71,14 +72,16 @@ protected:
     explicit LocalFileSystem(PassOwnPtr<FileSystemClient>);
 
 private:
+    WebFileSystem* fileSystem() const;
     void requestFileSystemAccessInternal(ExecutionContext*, const Closure& allowed, const Closure& denied);
-    void fileSystemNotAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, PassRefPtr<CallbackWrapper>);
-    void fileSystemAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
-    void resolveURLInternal(const KURL&, PassRefPtr<CallbackWrapper>);
-    void deleteFileSystemInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, PassRefPtr<CallbackWrapper>);
+    void fileSystemNotAvailable(PassRefPtrWillBeRawPtr<ExecutionContext>, CallbackWrapper*);
+    void fileSystemNotAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, CallbackWrapper*);
+    void fileSystemAllowedInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, CallbackWrapper*);
+    void resolveURLInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, const KURL&, CallbackWrapper*);
+    void deleteFileSystemInternal(PassRefPtrWillBeRawPtr<ExecutionContext>, FileSystemType, CallbackWrapper*);
     OwnPtr<FileSystemClient> m_client;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LocalFileSystem_h

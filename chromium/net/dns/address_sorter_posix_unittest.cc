@@ -33,36 +33,32 @@ class TestUDPClientSocket : public DatagramClientSocket {
   explicit TestUDPClientSocket(const AddressMapping* mapping)
       : mapping_(mapping), connected_(false)  {}
 
-  virtual ~TestUDPClientSocket() {}
+  ~TestUDPClientSocket() override {}
 
-  virtual int Read(IOBuffer*, int, const CompletionCallback&) OVERRIDE {
+  int Read(IOBuffer*, int, const CompletionCallback&) override {
     NOTIMPLEMENTED();
     return OK;
   }
-  virtual int Write(IOBuffer*, int, const CompletionCallback&) OVERRIDE {
+  int Write(IOBuffer*, int, const CompletionCallback&) override {
     NOTIMPLEMENTED();
     return OK;
   }
-  virtual int SetReceiveBufferSize(int32) OVERRIDE {
-    return OK;
-  }
-  virtual int SetSendBufferSize(int32) OVERRIDE {
-    return OK;
-  }
+  int SetReceiveBufferSize(int32) override { return OK; }
+  int SetSendBufferSize(int32) override { return OK; }
 
-  virtual void Close() OVERRIDE {}
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE {
+  void Close() override {}
+  int GetPeerAddress(IPEndPoint* address) const override {
     NOTIMPLEMENTED();
     return OK;
   }
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE {
+  int GetLocalAddress(IPEndPoint* address) const override {
     if (!connected_)
       return ERR_UNEXPECTED;
     *address = local_endpoint_;
     return OK;
   }
 
-  virtual int Connect(const IPEndPoint& remote) OVERRIDE {
+  int Connect(const IPEndPoint& remote) override {
     if (connected_)
       return ERR_UNEXPECTED;
     AddressMapping::const_iterator it = mapping_->find(remote.address());
@@ -73,9 +69,7 @@ class TestUDPClientSocket : public DatagramClientSocket {
     return OK;
   }
 
-  virtual const BoundNetLog& NetLog() const OVERRIDE {
-    return net_log_;
-  }
+  const BoundNetLog& NetLog() const override { return net_log_; }
 
  private:
   BoundNetLog net_log_;
@@ -90,33 +84,31 @@ class TestUDPClientSocket : public DatagramClientSocket {
 class TestSocketFactory : public ClientSocketFactory {
  public:
   TestSocketFactory() {}
-  virtual ~TestSocketFactory() {}
+  ~TestSocketFactory() override {}
 
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType,
       const RandIntCallback&,
       NetLog*,
-      const NetLog::Source&) OVERRIDE {
+      const NetLog::Source&) override {
     return scoped_ptr<DatagramClientSocket>(new TestUDPClientSocket(&mapping_));
   }
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+  scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList&,
       NetLog*,
-      const NetLog::Source&) OVERRIDE {
+      const NetLog::Source&) override {
     NOTIMPLEMENTED();
     return scoped_ptr<StreamSocket>();
   }
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<ClientSocketHandle>,
       const HostPortPair&,
       const SSLConfig&,
-      const SSLClientSocketContext&) OVERRIDE {
+      const SSLClientSocketContext&) override {
     NOTIMPLEMENTED();
     return scoped_ptr<SSLClientSocket>();
   }
-  virtual void ClearSSLSessionCache() OVERRIDE {
-    NOTIMPLEMENTED();
-  }
+  void ClearSSLSessionCache() override { NOTIMPLEMENTED(); }
 
   void AddMapping(const IPAddressNumber& dst, const IPAddressNumber& src) {
     mapping_[dst] = src;

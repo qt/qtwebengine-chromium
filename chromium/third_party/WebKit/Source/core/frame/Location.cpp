@@ -29,7 +29,7 @@
 #include "config.h"
 #include "core/frame/Location.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/DOMURLUtilsReadOnly.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
@@ -39,12 +39,16 @@
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 Location::Location(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
-    ScriptWrappable::init(this);
+}
+
+void Location::trace(Visitor* visitor)
+{
+    DOMWindowProperty::trace(visitor);
 }
 
 inline const KURL& Location::url() const
@@ -239,7 +243,7 @@ void Location::reload(LocalDOMWindow* callingWindow)
         return;
     if (protocolIsJavaScript(m_frame->document()->url()))
         return;
-    m_frame->navigationScheduler().scheduleRefresh();
+    m_frame->navigationScheduler().scheduleReload();
 }
 
 void Location::setLocation(const String& url, LocalDOMWindow* callingWindow, LocalDOMWindow* enteredWindow)
@@ -251,4 +255,4 @@ void Location::setLocation(const String& url, LocalDOMWindow* callingWindow, Loc
     frame->domWindow()->setLocation(url, callingWindow, enteredWindow);
 }
 
-} // namespace WebCore
+} // namespace blink

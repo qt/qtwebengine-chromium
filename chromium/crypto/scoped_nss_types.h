@@ -16,17 +16,17 @@ namespace crypto {
 
 template <typename Type, void (*Destroyer)(Type*)>
 struct NSSDestroyer {
+  typedef void AllowSelfReset;
   void operator()(Type* ptr) const {
-    if (ptr)
-      Destroyer(ptr);
+    Destroyer(ptr);
   }
 };
 
 template <typename Type, void (*Destroyer)(Type*, PRBool), PRBool freeit>
 struct NSSDestroyer1 {
+  typedef void AllowSelfReset;
   void operator()(Type* ptr) const {
-    if (ptr)
-      Destroyer(ptr, freeit);
+    Destroyer(ptr, freeit);
   }
 };
 

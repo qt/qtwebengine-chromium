@@ -26,17 +26,18 @@
 #ifndef WebGLRenderbuffer_h
 #define WebGLRenderbuffer_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLSharedObject.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLRenderbuffer FINAL : public WebGLSharedObject, public ScriptWrappable {
+class WebGLRenderbuffer final : public WebGLSharedObject, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~WebGLRenderbuffer();
 
-    static PassRefPtr<WebGLRenderbuffer> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLRenderbuffer> create(WebGLRenderingContextBase*);
 
     void setInternalFormat(GLenum internalformat)
     {
@@ -56,26 +57,28 @@ public:
 
     void setHasEverBeenBound() { m_hasEverBeenBound = true; }
 
-    void setEmulatedStencilBuffer(PassRefPtr<WebGLRenderbuffer> buffer) { m_emulatedStencilBuffer = buffer; }
+    void setEmulatedStencilBuffer(PassRefPtrWillBeRawPtr<WebGLRenderbuffer> buffer) { m_emulatedStencilBuffer = buffer; }
     WebGLRenderbuffer* emulatedStencilBuffer() const { return m_emulatedStencilBuffer.get(); }
     void deleteEmulatedStencilBuffer(blink::WebGraphicsContext3D* context3d);
 
-protected:
-    WebGLRenderbuffer(WebGLRenderingContextBase*);
+    virtual void trace(Visitor*) override;
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
+protected:
+    explicit WebGLRenderbuffer(WebGLRenderingContextBase*);
+
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
 
 private:
-    virtual bool isRenderbuffer() const OVERRIDE { return true; }
+    virtual bool isRenderbuffer() const override { return true; }
 
     GLenum m_internalFormat;
     GLsizei m_width, m_height;
 
     bool m_hasEverBeenBound;
 
-    RefPtr<WebGLRenderbuffer> m_emulatedStencilBuffer;
+    RefPtrWillBeMember<WebGLRenderbuffer> m_emulatedStencilBuffer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLRenderbuffer_h

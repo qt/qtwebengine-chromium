@@ -106,12 +106,34 @@ bool PickleIterator::ReadUInt64(uint64* result) {
   return ReadBuiltinType(result);
 }
 
+bool PickleIterator::ReadSizeT(size_t* result) {
+  // Always read size_t as a 64-bit value to ensure compatibility between 32-bit
+  // and 64-bit processes.
+  uint64 result_uint64 = 0;
+  bool success = ReadBuiltinType(&result_uint64);
+  *result = static_cast<size_t>(result_uint64);
+  // Fail if the cast above truncates the value.
+  return success && (*result == result_uint64);
+}
+
 bool PickleIterator::ReadFloat(float* result) {
   // crbug.com/315213
   // The source data may not be properly aligned, and unaligned float reads
   // cause SIGBUS on some ARM platforms, so force using memcpy to copy the data
   // into the result.
   const char* read_from = GetReadPointerAndAdvance<float>();
+  if (!read_from)
+    return false;
+  memcpy(result, read_from, sizeof(*result));
+  return true;
+}
+
+bool PickleIterator::ReadDouble(double* result) {
+  // crbug.com/315213
+  // The source data may not be properly aligned, and unaligned double reads
+  // cause SIGBUS on some ARM platforms, so force using memcpy to copy the data
+  // into the result.
+  const char* read_from = GetReadPointerAndAdvance<double>();
   if (!read_from)
     return false;
   memcpy(result, read_from, sizeof(*result));

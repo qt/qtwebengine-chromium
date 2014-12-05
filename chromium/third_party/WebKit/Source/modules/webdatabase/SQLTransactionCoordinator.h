@@ -36,28 +36,29 @@
 #include "wtf/Deque.h"
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
-#include "wtf/RefPtr.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class SQLTransactionBackend;
 
-class SQLTransactionCoordinator : public NoBaseWillBeGarbageCollected<SQLTransactionCoordinator> {
+class SQLTransactionCoordinator : public GarbageCollected<SQLTransactionCoordinator> {
     WTF_MAKE_NONCOPYABLE(SQLTransactionCoordinator);
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     SQLTransactionCoordinator();
     void trace(Visitor*);
     void acquireLock(SQLTransactionBackend*);
     void releaseLock(SQLTransactionBackend*);
     void shutdown();
+
 private:
-    typedef Deque<RefPtrWillBeMember<SQLTransactionBackend> > TransactionsQueue;
+    typedef HeapDeque<Member<SQLTransactionBackend> > TransactionsQueue;
     struct CoordinationInfo {
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
         TransactionsQueue pendingTransactions;
-        WillBeHeapHashSet<RefPtrWillBeMember<SQLTransactionBackend> > activeReadTransactions;
-        RefPtrWillBeMember<SQLTransactionBackend> activeWriteTransaction;
+        HeapHashSet<Member<SQLTransactionBackend> > activeReadTransactions;
+        Member<SQLTransactionBackend> activeWriteTransaction;
 
         void trace(Visitor* visitor)
         {
@@ -65,16 +66,15 @@ private:
             visitor->trace(activeReadTransactions);
             visitor->trace(activeWriteTransaction);
         }
-        ALLOW_ONLY_INLINE_ALLOCATION();
     };
     // Maps database names to information about pending transactions
-    typedef WillBeHeapHashMap<String, CoordinationInfo> CoordinationInfoHeapMap;
+    typedef HeapHashMap<String, CoordinationInfo> CoordinationInfoHeapMap;
     CoordinationInfoHeapMap m_coordinationInfoMap;
     bool m_isShuttingDown;
 
     void processPendingTransactions(CoordinationInfo&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLTransactionCoordinator_h

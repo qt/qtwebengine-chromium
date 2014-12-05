@@ -9,6 +9,7 @@
 #include "base/stl_util.h"
 #include "base/threading/thread.h"
 #include "base/timer/timer.h"
+#include "content/common/device_sensors/device_light_hardware_buffer.h"
 #include "content/common/device_sensors/device_motion_hardware_buffer.h"
 #include "content/common/device_sensors/device_orientation_hardware_buffer.h"
 
@@ -22,6 +23,8 @@ static size_t GetConsumerSharedMemoryBufferSize(ConsumerType consumer_type) {
       return sizeof(DeviceMotionHardwareBuffer);
     case CONSUMER_TYPE_ORIENTATION:
       return sizeof(DeviceOrientationHardwareBuffer);
+    case CONSUMER_TYPE_LIGHT:
+      return sizeof(DeviceLightHardwareBuffer);
     default:
       NOTREACHED();
   }
@@ -33,7 +36,7 @@ static size_t GetConsumerSharedMemoryBufferSize(ConsumerType consumer_type) {
 class DataFetcherSharedMemoryBase::PollingThread : public base::Thread {
  public:
   PollingThread(const char* name, DataFetcherSharedMemoryBase* fetcher);
-  virtual ~PollingThread();
+  ~PollingThread() override;
 
   void AddConsumer(ConsumerType consumer_type, void* buffer);
   void RemoveConsumer(ConsumerType consumer_type);
@@ -104,8 +107,7 @@ DataFetcherSharedMemoryBase::DataFetcherSharedMemoryBase()
 }
 
 DataFetcherSharedMemoryBase::~DataFetcherSharedMemoryBase() {
-  StopFetchingDeviceData(CONSUMER_TYPE_MOTION);
-  StopFetchingDeviceData(CONSUMER_TYPE_ORIENTATION);
+  DCHECK_EQ(0u, started_consumers_);
 
   // make sure polling thread stops asap.
   if (polling_thread_)
@@ -163,6 +165,12 @@ bool DataFetcherSharedMemoryBase::StopFetchingDeviceData(
   return true;
 }
 
+void DataFetcherSharedMemoryBase::StopFetchingAllDeviceData() {
+  StopFetchingDeviceData(CONSUMER_TYPE_MOTION);
+  StopFetchingDeviceData(CONSUMER_TYPE_ORIENTATION);
+  StopFetchingDeviceData(CONSUMER_TYPE_LIGHT);
+}
+
 base::SharedMemoryHandle
 DataFetcherSharedMemoryBase::GetSharedMemoryHandleForProcess(
     ConsumerType consumer_type, base::ProcessHandle process) {
@@ -199,7 +207,7 @@ DataFetcherSharedMemoryBase::GetType() const {
 }
 
 base::TimeDelta DataFetcherSharedMemoryBase::GetInterval() const {
-  return base::TimeDelta::FromMilliseconds(kInertialSensorIntervalMillis);
+  return base::TimeDelta::FromMicroseconds(kInertialSensorIntervalMicroseconds);
 }
 
 base::SharedMemory* DataFetcherSharedMemoryBase::GetSharedMemory(
@@ -239,6 +247,5 @@ base::MessageLoop* DataFetcherSharedMemoryBase::GetPollingMessageLoop() const {
 bool DataFetcherSharedMemoryBase::IsPollingTimerRunningForTesting() const {
   return polling_thread_ ? polling_thread_->IsTimerRunning() : false;
 }
-
 
 }  // namespace content

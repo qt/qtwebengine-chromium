@@ -47,12 +47,10 @@ namespace WTF {
 
 template<typename T>
 class RawPtr {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(RawPtr);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(RawPtr);
 public:
     RawPtr()
     {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         m_ptr = reinterpret_cast<T*>(rawPtrZapValue);
 #endif
     }
@@ -84,6 +82,12 @@ public:
         return tmp;
     }
     T* leakRef()
+    {
+        T* ptr = m_ptr;
+        m_ptr = 0;
+        return ptr;
+    }
+    T* leakPtr()
     {
         T* ptr = m_ptr;
         m_ptr = 0;

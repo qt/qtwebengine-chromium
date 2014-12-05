@@ -8,7 +8,6 @@
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/test/aura_test_base.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
@@ -17,6 +16,7 @@
 #include "ui/compositor/test/layer_animator_test_controller.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/frame_time.h"
 
 namespace content {
@@ -72,11 +72,11 @@ class NoEventWindowDelegate : public aura::test::TestWindowDelegate {
  public:
   NoEventWindowDelegate() {
   }
-  virtual ~NoEventWindowDelegate() {}
+  ~NoEventWindowDelegate() override {}
 
  private:
   // Overridden from aura::WindowDelegate:
-  virtual bool HasHitTestMask() const OVERRIDE { return true; }
+  bool HasHitTestMask() const override { return true; }
 
   DISALLOW_COPY_AND_ASSIGN(NoEventWindowDelegate);
 };
@@ -92,7 +92,7 @@ class WindowSliderDelegateTest : public WindowSlider::Delegate {
         slide_aborted_(false),
         slider_destroyed_(false) {
   }
-  virtual ~WindowSliderDelegateTest() {
+  ~WindowSliderDelegateTest() override {
     // Make sure slide_completed() gets called if slide_completing() was called.
     CHECK(!slide_completing_ || slide_completed_);
   }
@@ -127,35 +127,29 @@ class WindowSliderDelegateTest : public WindowSlider::Delegate {
   }
 
   // Overridden from WindowSlider::Delegate:
-  virtual ui::Layer* CreateBackLayer() OVERRIDE {
+  ui::Layer* CreateBackLayer() override {
     if (!can_create_layer_)
       return NULL;
     created_back_layer_ = true;
     return CreateLayerForTest();
   }
 
-  virtual ui::Layer* CreateFrontLayer() OVERRIDE {
+  ui::Layer* CreateFrontLayer() override {
     if (!can_create_layer_)
       return NULL;
     created_front_layer_ = true;
     return CreateLayerForTest();
   }
 
-  virtual void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) OVERRIDE {
+  void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) override {
     slide_completed_ = true;
   }
 
-  virtual void OnWindowSlideCompleting() OVERRIDE {
-    slide_completing_ = true;
-  }
+  void OnWindowSlideCompleting() override { slide_completing_ = true; }
 
-  virtual void OnWindowSlideAborted() OVERRIDE {
-    slide_aborted_ = true;
-  }
+  void OnWindowSlideAborted() override { slide_aborted_ = true; }
 
-  virtual void OnWindowSliderDestroyed() OVERRIDE {
-    slider_destroyed_ = true;
-  }
+  void OnWindowSliderDestroyed() override { slider_destroyed_ = true; }
 
  private:
   bool can_create_layer_;
@@ -175,11 +169,11 @@ class WindowSliderDeleteOwnerOnDestroy : public WindowSliderDelegateTest {
   explicit WindowSliderDeleteOwnerOnDestroy(aura::Window* owner)
       : owner_(owner) {
   }
-  virtual ~WindowSliderDeleteOwnerOnDestroy() {}
+  ~WindowSliderDeleteOwnerOnDestroy() override {}
 
  private:
   // Overridden from WindowSlider::Delegate:
-  virtual void OnWindowSliderDestroyed() OVERRIDE {
+  void OnWindowSliderDestroyed() override {
     WindowSliderDelegateTest::OnWindowSliderDestroyed();
     delete owner_;
   }
@@ -194,11 +188,11 @@ class WindowSliderDeleteOwnerOnComplete : public WindowSliderDelegateTest {
   explicit WindowSliderDeleteOwnerOnComplete(aura::Window* owner)
       : owner_(owner) {
   }
-  virtual ~WindowSliderDeleteOwnerOnComplete() {}
+  ~WindowSliderDeleteOwnerOnComplete() override {}
 
  private:
   // Overridden from WindowSlider::Delegate:
-  virtual void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) OVERRIDE {
+  void OnWindowSlideCompleted(scoped_ptr<ui::Layer> layer) override {
     WindowSliderDelegateTest::OnWindowSlideCompleted(layer.Pass());
     delete owner_;
   }
@@ -214,7 +208,7 @@ TEST_F(WindowSliderTest, WindowSlideUsingGesture) {
   window->SetBounds(gfx::Rect(0, 0, 400, 400));
   WindowSliderDelegateTest slider_delegate;
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // Generate a horizontal overscroll.
   WindowSlider* slider =
@@ -300,17 +294,14 @@ TEST_F(WindowSliderTest, WindowSlideIsCancelledOnEvent) {
                        gfx::Point(55, 10),
                        gfx::Point(55, 10),
                        0, 0),
-    new ui::KeyEvent(ui::ET_KEY_PRESSED,
-                     ui::VKEY_A,
-                     0,
-                     true),
+    new ui::KeyEvent('a', ui::VKEY_A, ui::EF_NONE),
     NULL
   };
 
   new WindowSlider(&slider_delegate, root_window(), window.get());
   for (int i = 0; events[i]; ++i) {
     // Generate a horizontal overscroll.
-    aura::test::EventGenerator generator(root_window());
+    ui::test::EventGenerator generator(root_window());
     generator.GestureScrollSequenceWithCallback(
         gfx::Point(10, 10),
         gfx::Point(80, 10),
@@ -352,7 +343,7 @@ TEST_F(WindowSliderTest, WindowSlideInterruptedThenContinues) {
                                  gfx::Point(55, 10),
                                  0, 0);
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // Start the scroll sequence. Scroll forward so that |window|'s layer is the
   // one animating.
@@ -452,7 +443,7 @@ TEST_F(WindowSliderTest, OwnerWindowChangesDuringWindowSlide) {
 
   // Generate a horizontal scroll, and change the owner in the middle of the
   // scroll.
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
   aura::Window* old_window = window.get();
   generator.GestureScrollSequenceWithCallback(
       gfx::Point(10, 10),
@@ -484,7 +475,7 @@ TEST_F(WindowSliderTest, NoSlideWhenLayerCantBeCreated) {
   WindowSlider* slider =
       new WindowSlider(&slider_delegate, root_window(), window.get());
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // No slide in progress should be reported during scroll since the layer
   // wasn't created.
@@ -530,7 +521,7 @@ TEST_F(WindowSliderTest, OwnerIsDestroyedOnSliderDestroy) {
   EXPECT_EQ(child_windows + 1, root_window()->children().size());
 
   WindowSliderDeleteOwnerOnDestroy slider_delegate(window);
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // Generate a horizontal overscroll.
   scoped_ptr<WindowSlider> slider(
@@ -561,7 +552,7 @@ TEST_F(WindowSliderTest, OwnerIsDestroyedOnSlideComplete) {
   EXPECT_EQ(child_windows + 1, root_window()->children().size());
 
   WindowSliderDeleteOwnerOnComplete slider_delegate(window);
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // Generate a horizontal overscroll.
   new WindowSlider(&slider_delegate, root_window(), window);
@@ -592,13 +583,14 @@ TEST_F(WindowSliderTest, SwipeDuringSwipeAnimation) {
   WindowSliderDelegateTest slider_delegate;
   new WindowSlider(&slider_delegate, root_window(), window.get());
 
-  ui::ScopedAnimationDurationScaleMode normal_duration_(
+  // This test uses explicit durations so needs a normal duration.
+  ui::ScopedAnimationDurationScaleMode normal_duration(
       ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
   ui::LayerAnimator* animator = window->layer()->GetAnimator();
   animator->set_disable_timer_for_test(true);
   ui::LayerAnimatorTestController test_controller(animator);
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
 
   // Swipe forward so that |window|'s layer is the one animating.
   generator.GestureScrollSequence(

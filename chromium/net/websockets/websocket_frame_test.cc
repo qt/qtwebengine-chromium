@@ -5,28 +5,16 @@
 #include "net/websockets/websocket_frame.h"
 
 #include <algorithm>
-#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/command_line.h"
-#include "base/logging.h"
 #include "base/memory/aligned_memory.h"
-#include "base/strings/string_number_conversions.h"
-#include "base/strings/stringprintf.h"
-#include "base/time/time.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-// Run
-//   out/Release/net_unittests --websocket-mask-iterations=100000
-//      --gtest_filter='WebSocketFrameTestMaskBenchmark.*'
-// to benchmark the MaskWebSocketFramePayload() function.
-static const char kBenchmarkIterations[] = "websocket-mask-iterations";
-static const int kDefaultIterations = 10;
-static const int kLongPayloadSize = 1 << 16;
-
 namespace net {
+
+namespace {
 
 TEST(WebSocketFrameHeaderTest, FrameLengths) {
   struct TestCase {
@@ -43,7 +31,7 @@ TEST(WebSocketFrameHeaderTest, FrameLengths) {
     { "\x81\x7F\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF", 10,
       GG_UINT64_C(0x7FFFFFFFFFFFFFFF) }
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   for (int i = 0; i < kNumTests; ++i) {
     WebSocketFrameHeader header(WebSocketFrameHeader::kOpCodeText);
@@ -63,7 +51,7 @@ TEST(WebSocketFrameHeaderTest, FrameLengths) {
 
 TEST(WebSocketFrameHeaderTest, FrameLengthsWithMasking) {
   static const char kMaskingKey[] = "\xDE\xAD\xBE\xEF";
-  COMPILE_ASSERT(ARRAYSIZE_UNSAFE(kMaskingKey) - 1 ==
+  COMPILE_ASSERT(arraysize(kMaskingKey) - 1 ==
                      WebSocketFrameHeader::kMaskingKeyLength,
                  incorrect_masking_key_size);
 
@@ -82,7 +70,7 @@ TEST(WebSocketFrameHeaderTest, FrameLengthsWithMasking) {
     { "\x81\xFF\x7F\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xDE\xAD\xBE\xEF", 14,
       GG_UINT64_C(0x7FFFFFFFFFFFFFFF) }
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   WebSocketMaskingKey masking_key;
   std::copy(kMaskingKey,
@@ -131,7 +119,7 @@ TEST(WebSocketFrameHeaderTest, FrameOpCodes) {
     { "\x8E\x00", 2, 0xE },
     { "\x8F\x00", 2, 0xF }
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   for (int i = 0; i < kNumTests; ++i) {
     WebSocketFrameHeader header(kTests[i].opcode);
@@ -167,7 +155,7 @@ TEST(WebSocketFrameHeaderTest, FinalBitAndReservedBits) {
     { "\x71\x00", 2, false, true, true, true },
     { "\xF1\x00", 2, true, true, true, true }
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   for (int i = 0; i < kNumTests; ++i) {
     WebSocketFrameHeader header(WebSocketFrameHeader::kOpCodeText);
@@ -208,7 +196,7 @@ TEST(WebSocketFrameHeaderTest, InsufficientBufferSize) {
     { GG_UINT64_C(0x10000), true, 14u },
     { GG_UINT64_C(0x7FFFFFFFFFFFFFFF), true, 14u }
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   for (int i = 0; i < kNumTests; ++i) {
     WebSocketFrameHeader header(WebSocketFrameHeader::kOpCodeText);
@@ -247,7 +235,7 @@ TEST(WebSocketFrameTest, MaskPayload) {
     { "\x00\x00\x00\x00", 0, "FooBar", "FooBar", 6 },
     { "\xFF\xFF\xFF\xFF", 0, "FooBar", "\xB9\x90\x90\xBD\x9E\x8D", 6 },
   };
-  static const int kNumTests = ARRAYSIZE_UNSAFE(kTests);
+  static const int kNumTests = arraysize(kTests);
 
   for (int i = 0; i < kNumTests; ++i) {
     WebSocketMaskingKey masking_key;
@@ -342,64 +330,6 @@ TEST(WebSocketFrameTest, MaskPayloadAlignment) {
   }
 }
 
-class WebSocketFrameTestMaskBenchmark : public testing::Test {
- public:
-  WebSocketFrameTestMaskBenchmark() : iterations_(kDefaultIterations) {}
-
-  virtual void SetUp() {
-    std::string iterations(
-        base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
-            kBenchmarkIterations));
-    int benchmark_iterations = 0;
-    if (!iterations.empty() &&
-        base::StringToInt(iterations, &benchmark_iterations)) {
-      iterations_ = benchmark_iterations;
-    }
-  }
-
-  void Benchmark(const char* const payload, size_t size) {
-    std::vector<char> scratch(payload, payload + size);
-    static const char kMaskingKey[] = "\xFE\xED\xBE\xEF";
-    COMPILE_ASSERT(
-        arraysize(kMaskingKey) == WebSocketFrameHeader::kMaskingKeyLength + 1,
-        incorrect_masking_key_size);
-    WebSocketMaskingKey masking_key;
-    std::copy(kMaskingKey,
-              kMaskingKey + WebSocketFrameHeader::kMaskingKeyLength,
-              masking_key.key);
-    LOG(INFO) << "Benchmarking MaskWebSocketFramePayload() for " << iterations_
-              << " iterations";
-    using base::TimeTicks;
-    TimeTicks start = TimeTicks::HighResNow();
-    for (int x = 0; x < iterations_; ++x) {
-      MaskWebSocketFramePayload(
-          masking_key, x % size, &scratch.front(), scratch.size());
-    }
-    double total_time_ms =
-        1000 * (TimeTicks::HighResNow() - start).InMillisecondsF() /
-        iterations_;
-    LOG(INFO) << "Payload size " << size
-              << base::StringPrintf(" took %.03f microseconds per iteration",
-                                    total_time_ms);
-  }
-
- private:
-  int iterations_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebSocketFrameTestMaskBenchmark);
-};
-
-TEST_F(WebSocketFrameTestMaskBenchmark, BenchmarkMaskShortPayload) {
-  static const char kShortPayload[] = "Short Payload";
-  Benchmark(kShortPayload, arraysize(kShortPayload));
-}
-
-TEST_F(WebSocketFrameTestMaskBenchmark, BenchmarkMaskLongPayload) {
-  scoped_ptr<char[]> payload(new char[kLongPayloadSize]);
-  std::fill(payload.get(), payload.get() + kLongPayloadSize, 'a');
-  Benchmark(payload.get(), kLongPayloadSize);
-}
-
 // "IsKnownDataOpCode" is currently implemented in an "obviously correct"
 // manner, but we test is anyway in case it changes to a more complex
 // implementation in future.
@@ -458,5 +388,7 @@ TEST(WebSocketFrameHeaderTest, IsKnownControlOpCode) {
   EXPECT_FALSE(Frame::IsKnownControlOpCode(-1));
   EXPECT_FALSE(Frame::IsKnownControlOpCode(0xFF));
 }
+
+}  // namespace
 
 }  // namespace net

@@ -18,7 +18,7 @@
 
 namespace content {
 
-void SetContentCommandLineFlags(int max_render_process_count,
+void SetContentCommandLineFlags(bool single_process,
                                 const std::string& plugin_descriptor) {
   // May be called multiple times, to cover all possible program entry points.
   static bool already_initialized = false;
@@ -26,7 +26,8 @@ void SetContentCommandLineFlags(int max_render_process_count,
     return;
   already_initialized = true;
 
-  CommandLine* parsed_command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* parsed_command_line =
+      base::CommandLine::ForCurrentProcess();
 
   int command_line_renderer_limit = -1;
   if (parsed_command_line->HasSwitch(switches::kRendererProcessLimit)) {
@@ -34,9 +35,7 @@ void SetContentCommandLineFlags(int max_render_process_count,
         switches::kRendererProcessLimit);
     int value;
     if (base::StringToInt(limit, &value)) {
-      command_line_renderer_limit = value;
-      if (value <= 0)
-        max_render_process_count = 0;
+      command_line_renderer_limit = std::max(0, value);
     }
   }
 
@@ -44,29 +43,22 @@ void SetContentCommandLineFlags(int max_render_process_count,
     int limit = std::min(command_line_renderer_limit,
                          static_cast<int>(kMaxRendererProcessCount));
     RenderProcessHost::SetMaxRendererProcessCount(limit);
-  } else if (max_render_process_count <= 0) {
+  }
+
+  if (single_process || command_line_renderer_limit == 0) {
     // Need to ensure the command line flag is consistent as a lot of chrome
     // internal code checks this directly, but it wouldn't normally get set when
     // we are implementing an embedded WebView.
     parsed_command_line->AppendSwitch(switches::kSingleProcess);
-  } else {
-    int default_maximum = RenderProcessHost::GetMaxRendererProcessCount();
-    DCHECK(default_maximum <= static_cast<int>(kMaxRendererProcessCount));
-    if (max_render_process_count < default_maximum)
-      RenderProcessHost::SetMaxRendererProcessCount(max_render_process_count);
   }
 
-  parsed_command_line->AppendSwitch(switches::kEnableThreadedCompositing);
-  parsed_command_line->AppendSwitch(
-      switches::kEnableCompositingForFixedPosition);
-  parsed_command_line->AppendSwitch(switches::kEnableAcceleratedOverflowScroll);
   parsed_command_line->AppendSwitch(switches::kEnableBeginFrameScheduling);
 
-  parsed_command_line->AppendSwitch(switches::kEnableGestureTapHighlight);
   parsed_command_line->AppendSwitch(switches::kEnablePinch);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayFullscreenVideo);
   parsed_command_line->AppendSwitch(switches::kEnableOverlayScrollbar);
   parsed_command_line->AppendSwitch(switches::kEnableOverscrollNotifications);
+  parsed_command_line->AppendSwitch(switches::kValidateInputEventStream);
 
   // Run the GPU service as a thread in the browser instead of as a
   // standalone process.

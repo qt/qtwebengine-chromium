@@ -43,8 +43,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
-
 #include "vpx/vp8dx.h"
 #include "vpx/vpx_decoder.h"
 
@@ -86,9 +84,9 @@ int main(int argc, char **argv) {
   if (!decoder)
     die("Unknown input codec.");
 
-  printf("Using %s\n", vpx_codec_iface_name(decoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(decoder->codec_interface()));
 
-  res = vpx_codec_dec_init(&codec, decoder->interface(), NULL,
+  res = vpx_codec_dec_init(&codec, decoder->codec_interface(), NULL,
                            VPX_CODEC_USE_POSTPROC);
   if (res == VPX_CODEC_INCAPABLE)
     die_codec(&codec, "Postproc not supported by this decoder.");

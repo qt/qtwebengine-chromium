@@ -25,8 +25,6 @@
 #include "ipc/ipc_sender.h"
 
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
 namespace ui {
 struct LatencyInfo;
@@ -66,13 +64,13 @@ class GpuProcessHostUIShim : public IPC::Listener,
   CONTENT_EXPORT static GpuProcessHostUIShim* GetOneInstance();
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   // IPC::Listener implementation.
   // The GpuProcessHost causes this to be called on the UI thread to
   // dispatch the incoming messages from the GPU process, which are
   // actually received on the IO thread.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   CONTENT_EXPORT void SimulateRemoveAllContext();
   CONTENT_EXPORT void SimulateCrash();
@@ -80,7 +78,7 @@ class GpuProcessHostUIShim : public IPC::Listener,
 
  private:
   explicit GpuProcessHostUIShim(int host_id);
-  virtual ~GpuProcessHostUIShim();
+  ~GpuProcessHostUIShim() override;
 
   // Message handlers.
   bool OnControlMessageReceived(const IPC::Message& message);
@@ -93,17 +91,8 @@ class GpuProcessHostUIShim : public IPC::Listener,
   void OnAcceleratedSurfaceInitialized(int32 surface_id, int32 route_id);
   void OnAcceleratedSurfaceBuffersSwapped(
       const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params);
-  void OnAcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params);
-  void OnAcceleratedSurfaceSuspend(int32 surface_id);
-  void OnAcceleratedSurfaceRelease(
-      const GpuHostMsg_AcceleratedSurfaceRelease_Params& params);
   void OnVideoMemoryUsageStatsReceived(
       const GPUVideoMemoryUsageStats& video_memory_usage_stats);
-  void OnUpdateVSyncParameters(int surface_id,
-                               base::TimeTicks timebase,
-                               base::TimeDelta interval);
-  void OnFrameDrawn(const std::vector<ui::LatencyInfo>& latency_info);
 
   // The serial number of the GpuProcessHost / GpuProcessHostUIShim pair.
   int host_id_;

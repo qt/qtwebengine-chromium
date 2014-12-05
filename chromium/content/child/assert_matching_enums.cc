@@ -8,7 +8,8 @@
 #include "base/macros.h"
 #include "cc/animation/animation.h"
 #include "content/public/common/screen_orientation_values.h"
-#include "third_party/WebKit/public/platform/WebAnimation.h"
+#include "net/base/mime_util.h"
+#include "third_party/WebKit/public/platform/WebCompositorAnimation.h"
 #include "third_party/WebKit/public/platform/WebMimeRegistry.h"
 #include "third_party/WebKit/public/platform/WebScreenOrientationLockType.h"
 
@@ -19,32 +20,44 @@ namespace content {
 
 // ScreenOrientationValues
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockDefault,
-    DEFAULT);
+    SCREEN_ORIENTATION_VALUES_DEFAULT);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitPrimary,
-    PORTRAIT_PRIMARY);
+    SCREEN_ORIENTATION_VALUES_PORTRAIT_PRIMARY);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortraitSecondary,
-    PORTRAIT_SECONDARY);
+    SCREEN_ORIENTATION_VALUES_PORTRAIT_SECONDARY);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapePrimary,
-    LANDSCAPE_PRIMARY);
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE_PRIMARY);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscapeSecondary,
-    LANDSCAPE_SECONDARY);
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE_SECONDARY);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockAny,
-    ANY);
+    SCREEN_ORIENTATION_VALUES_ANY);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockLandscape,
-    LANDSCAPE);
+    SCREEN_ORIENTATION_VALUES_LANDSCAPE);
 COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockPortrait,
-    PORTRAIT);
+    SCREEN_ORIENTATION_VALUES_PORTRAIT);
+COMPILE_ASSERT_MATCHING_ENUM(blink::WebScreenOrientationLockNatural,
+    SCREEN_ORIENTATION_VALUES_NATURAL);
+
+// SupportsType
+COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsNotSupported,
+    net::IsNotSupported);
+COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::IsSupported,
+    net::IsSupported);
+COMPILE_ASSERT_MATCHING_ENUM(blink::WebMimeRegistry::MayBeSupported,
+    net::MayBeSupported);
 
 // TargetProperty
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyTransform,
+COMPILE_ASSERT_MATCHING_ENUM(
+    blink::WebCompositorAnimation::TargetPropertyTransform,
     cc::Animation::Transform);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyOpacity,
+COMPILE_ASSERT_MATCHING_ENUM(
+    blink::WebCompositorAnimation::TargetPropertyOpacity,
     cc::Animation::Opacity);
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyFilter,
+COMPILE_ASSERT_MATCHING_ENUM(
+    blink::WebCompositorAnimation::TargetPropertyFilter,
     cc::Animation::Filter);
-#if WEB_SCROLL_OFFSET_ANIMATION_CURVE_IS_DEFINED
-COMPILE_ASSERT_MATCHING_ENUM(blink::WebAnimation::TargetPropertyScrollOffset,
+COMPILE_ASSERT_MATCHING_ENUM(
+    blink::WebCompositorAnimation::TargetPropertyScrollOffset,
     cc::Animation::ScrollOffset);
-#endif
 
 } // namespace content

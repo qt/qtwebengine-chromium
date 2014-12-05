@@ -14,11 +14,10 @@
 #include "SkDevice.h"
 #include "SkXfermode.h"
 
-SkDebugCanvas::SkDebugCanvas(int width, int height)
-        : INHERITED(width, height)
+SkDebugCanvas::SkDebugCanvas(int windowWidth, int windowHeight)
+        : INHERITED(windowWidth, windowHeight)
         , fPicture(NULL)
-        , fWidth(width)
-        , fHeight(height)
+        , fWindowSize(SkISize::Make(windowWidth, windowHeight))
         , fFilter(false)
         , fMegaVizMode(false)
         , fIndex(0)
@@ -28,6 +27,7 @@ SkDebugCanvas::SkDebugCanvas(int width, int height)
         , fTexOverrideFilter(NULL)
         , fOutstandingSaveCount(0) {
     fUserMatrix.reset();
+    fDrawNeedsReset = false;
 
     // SkPicturePlayback uses the base-class' quickReject calls to cull clipped
     // operations. This can lead to problems in the debugger which expects all
@@ -61,6 +61,8 @@ void SkDebugCanvas::addDrawCommand(SkDrawCommand* command) {
 }
 
 void SkDebugCanvas::draw(SkCanvas* canvas) {
+    fDrawNeedsReset = true;
+
     if (!fCommandVector.isEmpty()) {
         this->drawTo(canvas, fCommandVector.count() - 1);
     }
@@ -76,12 +78,13 @@ int SkDebugCanvas::getCommandAtPoint(int x, int y, int index) {
 
     SkCanvas canvas(bitmap);
     canvas.translate(SkIntToScalar(-x), SkIntToScalar(-y));
-    applyUserTransform(&canvas);
+    this->applyUserTransform(&canvas);
 
     int layer = 0;
     SkColor prev = bitmap.getColor(0,0);
     for (int i = 0; i < index; i++) {
         if (fCommandVector[i]->isVisible()) {
+            fCommandVector[i]->setUserMatrix(fUserMatrix);
             fCommandVector[i]->execute(&canvas);
         }
         if (prev != bitmap.getColor(0,0)) {
@@ -247,7 +250,7 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
     // and restores.
     // The visibility filter also requires a full re-draw - otherwise we can
     // end up drawing the filter repeatedly.
-    if (fIndex < index && !fFilter && !fMegaVizMode && !pathOpsMode) {
+    if (fIndex < index && !fFilter && !fMegaVizMode && !pathOpsMode && !fDrawNeedsReset) {
         i = fIndex + 1;
     } else {
         for (int j = 0; j < fOutstandingSaveCount; j++) {
@@ -255,10 +258,11 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
         }
         canvas->clear(SK_ColorTRANSPARENT);
         canvas->resetMatrix();
-        SkRect rect = SkRect::MakeWH(SkIntToScalar(fWidth),
-                                     SkIntToScalar(fHeight));
-        canvas->clipRect(rect, SkRegion::kReplace_Op );
-        applyUserTransform(canvas);
+        SkRect rect = SkRect::MakeWH(SkIntToScalar(fWindowSize.fWidth),
+                                     SkIntToScalar(fWindowSize.fHeight));
+        canvas->clipRect(rect, SkRegion::kReplace_Op);
+        this->applyUserTransform(canvas);
+        fDrawNeedsReset = false;
         fOutstandingSaveCount = 0;
     }
 
@@ -292,17 +296,7 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
 
     for (; i <= index; i++) {
         if (i == index && fFilter) {
-            SkPaint p;
-            p.setColor(0xAAFFFFFF);
-            canvas->save();
-            canvas->resetMatrix();
-            SkRect mask;
-            mask.set(SkIntToScalar(0), SkIntToScalar(0),
-                    SkIntToScalar(fWidth), SkIntToScalar(fHeight));
-            canvas->clipRect(mask, SkRegion::kReplace_Op, false);
-            canvas->drawRectCoords(SkIntToScalar(0), SkIntToScalar(0),
-                    SkIntToScalar(fWidth), SkIntToScalar(fHeight), p);
-            canvas->restore();
+            canvas->clear(0xAAFFFFFF);
         }
 
         if (fCommandVector[i]->isVisible()) {
@@ -313,6 +307,7 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
                 //     All active culls draw their cull box
                 fCommandVector[i]->vizExecute(canvas);
             } else {
+                fCommandVector[i]->setUserMatrix(fUserMatrix);
                 fCommandVector[i]->execute(canvas);
             }
 
@@ -321,12 +316,13 @@ void SkDebugCanvas::drawTo(SkCanvas* canvas, int index) {
     }
 
     if (fMegaVizMode) {
-        SkRect r = SkRect::MakeWH(SkIntToScalar(fWidth), SkIntToScalar(fHeight));
+        SkRect r = SkRect::MakeWH(SkIntToScalar(fWindowSize.fWidth), 
+                                  SkIntToScalar(fWindowSize.fHeight));
         r.outset(SK_Scalar1, SK_Scalar1);
 
         canvas->save();
         // nuke the CTM
-        canvas->setMatrix(SkMatrix::I());
+        canvas->resetMatrix();
         // turn off clipping
         canvas->clipRect(r, SkRegion::kReplace_Op);
 
@@ -519,8 +515,10 @@ void SkDebugCanvas::drawPath(const SkPath& path, const SkPaint& paint) {
     this->addDrawCommand(new SkDrawPathCommand(path, paint));
 }
 
-void SkDebugCanvas::onDrawPicture(const SkPicture* picture) {
-    this->addDrawCommand(new SkDrawPictureCommand(picture));
+void SkDebugCanvas::onDrawPicture(const SkPicture* picture, 
+                                  const SkMatrix* matrix, 
+                                  const SkPaint* paint) {
+    this->addDrawCommand(new SkDrawPictureCommand(picture, matrix, paint));
 }
 
 void SkDebugCanvas::drawPoints(PointMode mode, size_t count,
@@ -569,6 +567,11 @@ void SkDebugCanvas::onDrawTextOnPath(const void* text, size_t byteLength, const 
         new SkDrawTextOnPathCommand(text, byteLength, path, matrix, paint));
 }
 
+void SkDebugCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
+                                   const SkPaint& paint) {
+    this->addDrawCommand(new SkDrawTextBlobCommand(blob, x, y, paint));
+}
+
 void SkDebugCanvas::drawVertices(VertexMode vmode, int vertexCount,
         const SkPoint vertices[], const SkPoint texs[], const SkColor colors[],
         SkXfermode*, const uint16_t indices[], int indexCount,
@@ -590,9 +593,9 @@ void SkDebugCanvas::willRestore() {
     this->INHERITED::willRestore();
 }
 
-void SkDebugCanvas::willSave(SaveFlags flags) {
-    this->addDrawCommand(new SkSaveCommand(flags));
-    this->INHERITED::willSave(flags);
+void SkDebugCanvas::willSave() {
+    this->addDrawCommand(new SkSaveCommand());
+    this->INHERITED::willSave();
 }
 
 SkCanvas::SaveLayerStrategy SkDebugCanvas::willSaveLayer(const SkRect* bounds, const SkPaint* paint,

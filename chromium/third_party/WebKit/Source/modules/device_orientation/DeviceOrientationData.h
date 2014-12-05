@@ -27,19 +27,16 @@
 #define DeviceOrientationData_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/RefCounted.h"
 
 namespace blink {
+
 class WebDeviceOrientationData;
-}
 
-namespace WebCore {
-
-class DeviceOrientationData : public RefCountedWillBeGarbageCollected<DeviceOrientationData> {
+class DeviceOrientationData final : public GarbageCollected<DeviceOrientationData> {
 public:
-    static PassRefPtrWillBeRawPtr<DeviceOrientationData> create();
-    static PassRefPtrWillBeRawPtr<DeviceOrientationData> create(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma, bool canProvideAbsolute = false, bool absolute = false);
-    static PassRefPtrWillBeRawPtr<DeviceOrientationData> create(const blink::WebDeviceOrientationData&);
+    static DeviceOrientationData* create();
+    static DeviceOrientationData* create(bool canProvideAlpha, double alpha, bool canProvideBeta, double beta, bool canProvideGamma, double gamma, bool canProvideAbsolute = false, bool absolute = false);
+    static DeviceOrientationData* create(const WebDeviceOrientationData&);
     void trace(Visitor*) { }
 
     double alpha() const;
@@ -67,6 +64,6 @@ private:
     bool m_absolute;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceOrientationData_h

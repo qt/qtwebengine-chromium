@@ -12,7 +12,7 @@
 
 IPC_STRUCT_TRAITS_BEGIN(content::ShowDesktopNotificationHostMsgParams)
   IPC_STRUCT_TRAITS_MEMBER(origin)
-  IPC_STRUCT_TRAITS_MEMBER(icon_url)
+  IPC_STRUCT_TRAITS_MEMBER(icon)
   IPC_STRUCT_TRAITS_MEMBER(title)
   IPC_STRUCT_TRAITS_MEMBER(body)
   IPC_STRUCT_TRAITS_MEMBER(direction)
@@ -26,11 +26,6 @@ IPC_STRUCT_TRAITS_END()
 IPC_MESSAGE_ROUTED1(DesktopNotificationMsg_PostDisplay,
                     int /* notification_id */)
 
-// Used to inform the renderer that the browser has encountered an error
-// trying to display a notification.
-IPC_MESSAGE_ROUTED1(DesktopNotificationMsg_PostError,
-                    int /* notification_id */)
-
 // Informs the renderer that the one if its notifications has closed.
 IPC_MESSAGE_ROUTED2(DesktopNotificationMsg_PostClose,
                     int /* notification_id */,
@@ -40,10 +35,6 @@ IPC_MESSAGE_ROUTED2(DesktopNotificationMsg_PostClose,
 IPC_MESSAGE_ROUTED1(DesktopNotificationMsg_PostClick,
                     int /* notification_id */)
 
-// Informs the renderer that the one if its notifications has closed.
-IPC_MESSAGE_ROUTED1(DesktopNotificationMsg_PermissionRequestDone,
-                    int /* request_id */)
-
 // Messages sent from the renderer to the browser.
 
 IPC_MESSAGE_ROUTED2(DesktopNotificationHostMsg_Show,
@@ -52,10 +43,6 @@ IPC_MESSAGE_ROUTED2(DesktopNotificationHostMsg_Show,
 
 IPC_MESSAGE_ROUTED1(DesktopNotificationHostMsg_Cancel,
                     int /* notification_id */)
-
-IPC_MESSAGE_ROUTED2(DesktopNotificationHostMsg_RequestPermission,
-                    GURL /* origin */,
-                    int /* callback_context */)
 
 IPC_SYNC_MESSAGE_ROUTED1_1(DesktopNotificationHostMsg_CheckPermission,
                            GURL /* origin */,

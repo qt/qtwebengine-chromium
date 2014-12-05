@@ -28,11 +28,11 @@
 
 #include "core/rendering/RenderMedia.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLVideoElement;
 
-class RenderVideo FINAL : public RenderMedia {
+class RenderVideo final : public RenderMedia {
 public:
     RenderVideo(HTMLVideoElement*);
     virtual ~RenderVideo();
@@ -44,45 +44,45 @@ public:
     bool supportsAcceleratedRendering() const;
 
     bool shouldDisplayVideo() const;
+    HTMLVideoElement* videoElement() const;
+    bool acceleratedRenderingInUse();
 
 private:
-    virtual void updateFromElement() OVERRIDE;
-    inline HTMLVideoElement* videoElement() const;
+    virtual void updateFromElement() override;
 
-    virtual void intrinsicSizeChanged() OVERRIDE;
+    virtual void intrinsicSizeChanged() override;
     LayoutSize calculateIntrinsicSize();
     void updateIntrinsicSize();
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect*) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect*) override;
 
-    virtual const char* renderName() const OVERRIDE { return "RenderVideo"; }
+    virtual const char* renderName() const override { return "RenderVideo"; }
 
-    virtual bool isVideo() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectVideo || RenderMedia::isOfType(type); }
 
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) override;
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const OVERRIDE;
-    virtual LayoutUnit computeReplacedLogicalHeight() const OVERRIDE;
-    virtual LayoutUnit minimumReplacedHeight() const OVERRIDE;
+    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const override;
+    virtual LayoutUnit computeReplacedLogicalHeight() const override;
+    virtual LayoutUnit minimumReplacedHeight() const override;
 
-    virtual LayoutUnit offsetLeft() const OVERRIDE;
-    virtual LayoutUnit offsetTop() const OVERRIDE;
-    virtual LayoutUnit offsetWidth() const OVERRIDE;
-    virtual LayoutUnit offsetHeight() const OVERRIDE;
+    virtual LayoutUnit offsetLeft() const override;
+    virtual LayoutUnit offsetTop() const override;
+    virtual LayoutUnit offsetWidth() const override;
+    virtual LayoutUnit offsetHeight() const override;
 
-    virtual CompositingReasons additionalCompositingReasons(CompositingTriggerFlags) const OVERRIDE;
+    virtual CompositingReasons additionalCompositingReasons() const override;
 
     void updatePlayer();
 
-    bool acceleratedRenderingInUse();
 
     LayoutSize m_cachedImageSize;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderVideo, isVideo());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderVideo_h

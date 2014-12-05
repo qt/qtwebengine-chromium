@@ -7,6 +7,7 @@
 
 #include "SkDiscardableMemory.h"
 #include "SkDiscardableMemoryPool.h"
+#include "SkImageGenerator.h"
 #include "SkLazyPtr.h"
 #include "SkTInternalLList.h"
 #include "SkThread.h"
@@ -154,7 +155,7 @@ void DiscardableMemoryPool::dumpDownTo(size_t budget) {
     typedef SkTInternalLList<PoolDiscardableMemory>::Iter Iter;
     Iter iter;
     PoolDiscardableMemory* cur = iter.init(fList, Iter::kTail_IterStart);
-    while ((fUsed > budget) && (NULL != cur)) {
+    while ((fUsed > budget) && (cur)) {
         if (!cur->fLocked) {
             PoolDiscardableMemory* dm = cur;
             SkASSERT(dm->fPointer != NULL);
@@ -259,13 +260,10 @@ SkDiscardableMemoryPool* SkDiscardableMemoryPool::Create(size_t size, SkBaseMute
     return SkNEW_ARGS(DiscardableMemoryPool, (size, mutex));
 }
 
+SK_DECLARE_STATIC_LAZY_PTR(SkDiscardableMemoryPool, global, create_global_pool);
+
 SkDiscardableMemoryPool* SkGetGlobalDiscardableMemoryPool() {
-    SK_DECLARE_STATIC_LAZY_PTR(SkDiscardableMemoryPool, global, create_global_pool);
     return global.get();
 }
 
-// defined in SkImageGenerator.h
-void SkPurgeGlobalDiscardableMemoryPool() {
-    SkGetGlobalDiscardableMemoryPool()->dumpPool();
-}
 ////////////////////////////////////////////////////////////////////////////////

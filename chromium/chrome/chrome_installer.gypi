@@ -150,6 +150,7 @@
           'msvs_disabled_warnings': [ 4267, ],
         },
         {
+          # GN version: //chrome/installer/util:strings
           'target_name': 'installer_util_strings',
           'type': 'none',
           'actions': [
@@ -216,10 +217,10 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
-            'launcher_support',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
             '../chrome/common_constants.gyp:common_constants',
+            '../chrome_elf/chrome_elf.gyp:chrome_elf_constants',
             '../rlz/rlz.gyp:rlz_lib',
             '../third_party/zlib/zlib.gyp:zlib',
           ],
@@ -330,7 +331,6 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
-            'launcher_support',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
@@ -439,7 +439,8 @@
           'installer/linux/debian/changelog.template',
           'installer/linux/debian/control.template',
           'installer/linux/debian/debian.menu',
-          'installer/linux/debian/expected_deps',
+          'installer/linux/debian/expected_deps_ia32',
+          'installer/linux/debian/expected_deps_x64',
           'installer/linux/debian/postinst',
           'installer/linux/debian/postrm',
           'installer/linux/debian/prerm',
@@ -457,7 +458,6 @@
           '<(PRODUCT_DIR)/chrome_sandbox',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libpdf.so',
-          '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
           '<(PRODUCT_DIR)/xdg-mime',
           '<(PRODUCT_DIR)/xdg-settings',
           '<(PRODUCT_DIR)/locales/en-US.pak',

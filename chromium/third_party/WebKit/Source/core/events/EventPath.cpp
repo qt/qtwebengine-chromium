@@ -28,20 +28,15 @@
 #include "core/events/EventPath.h"
 
 #include "core/EventNames.h"
-#include "core/SVGNames.h"
-#include "core/dom/FullscreenElementStack.h"
+#include "core/dom/Document.h"
 #include "core/dom/Touch.h"
 #include "core/dom/TouchList.h"
 #include "core/dom/shadow/InsertionPoint.h"
 #include "core/dom/shadow/ShadowRoot.h"
-#include "core/events/FocusEvent.h"
-#include "core/events/MouseEvent.h"
 #include "core/events/TouchEvent.h"
 #include "core/events/TouchEventContext.h"
-#include "core/svg/SVGUseElement.h"
-#include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
 {
@@ -53,18 +48,13 @@ EventTarget* EventPath::eventTargetRespectingTargetRules(Node* referenceNode)
     return referenceNode;
 }
 
-static inline bool inTheSameScope(ShadowRoot* shadowRoot, EventTarget* target)
-{
-    return target->toNode() && target->toNode()->treeScope().rootNode() == shadowRoot;
-}
-
-static inline EventDispatchBehavior determineDispatchBehavior(Event* event, ShadowRoot* shadowRoot, EventTarget* target)
+static inline bool shouldStopAtShadowRoot(Event& event, ShadowRoot& shadowRoot, EventTarget& target)
 {
     // WebKit never allowed selectstart event to cross the the shadow DOM boundary.
     // Changing this breaks existing sites.
     // See https://bugs.webkit.org/show_bug.cgi?id=52195 for details.
-    const AtomicString eventType = event->type();
-    if (inTheSameScope(shadowRoot, target)
+    const AtomicString eventType = event.type();
+    return target.toNode() && target.toNode()->shadowHost() == shadowRoot.host()
         && (eventType == EventTypeNames::abort
             || eventType == EventTypeNames::change
             || eventType == EventTypeNames::error
@@ -73,10 +63,7 @@ static inline EventDispatchBehavior determineDispatchBehavior(Event* event, Shad
             || eventType == EventTypeNames::resize
             || eventType == EventTypeNames::scroll
             || eventType == EventTypeNames::select
-            || eventType == EventTypeNames::selectstart))
-        return StayInsideShadowDOM;
-
-    return RetargetEvent;
+            || eventType == EventTypeNames::selectstart);
 }
 
 EventPath::EventPath(Event* event)
@@ -119,13 +106,12 @@ void EventPath::calculatePath()
     if (!m_node->inDocument())
         return;
     while (current) {
-        if (current->isShadowRoot() && m_event && determineDispatchBehavior(m_event, toShadowRoot(current), m_node) == StayInsideShadowDOM)
+        if (m_event && current->keepEventInNode(m_event))
             break;
         WillBeHeapVector<RawPtrWillBeMember<InsertionPoint>, 8> insertionPoints;
         collectDestinationInsertionPoints(*current, insertionPoints);
         if (!insertionPoints.isEmpty()) {
-            for (size_t i = 0; i < insertionPoints.size(); ++i) {
-                InsertionPoint* insertionPoint = insertionPoints[i];
+            for (const auto& insertionPoint : insertionPoints) {
                 if (insertionPoint->isShadowInsertionPoint()) {
                     ShadowRoot* containingShadowRoot = insertionPoint->containingShadowRoot();
                     ASSERT(containingShadowRoot);
@@ -138,6 +124,8 @@ void EventPath::calculatePath()
             continue;
         }
         if (current->isShadowRoot()) {
+            if (m_event && shouldStopAtShadowRoot(*m_event, *toShadowRoot(current), *m_node))
+                break;
             current = current->shadowHost();
             addNodeEventContext(current);
         } else {
@@ -153,22 +141,21 @@ void EventPath::calculateTreeScopePrePostOrderNumbers()
     // Precondition:
     //   - TreeScopes in m_treeScopeEventContexts must be *connected* in the same tree of trees.
     //   - The root tree must be included.
-    WillBeHeapHashMap<RawPtrWillBeMember<const TreeScope>, RawPtrWillBeMember<TreeScopeEventContext> > treeScopeEventContextMap;
-    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i)
-        treeScopeEventContextMap.add(&m_treeScopeEventContexts[i]->treeScope(), m_treeScopeEventContexts[i].get());
+    WillBeHeapHashMap<RawPtrWillBeMember<const TreeScope>, RawPtrWillBeMember<TreeScopeEventContext>> treeScopeEventContextMap;
+    for (const auto& treeScopeEventContext : m_treeScopeEventContexts)
+        treeScopeEventContextMap.add(&treeScopeEventContext->treeScope(), treeScopeEventContext.get());
     TreeScopeEventContext* rootTree = 0;
-    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
-        TreeScopeEventContext* treeScopeEventContext = m_treeScopeEventContexts[i].get();
+    for (const auto& treeScopeEventContext : m_treeScopeEventContexts) {
         // Use olderShadowRootOrParentTreeScope here for parent-child relationships.
         // See the definition of trees of trees in the Shado DOM spec: http://w3c.github.io/webcomponents/spec/shadow/
-        TreeScope* parent = treeScopeEventContext->treeScope().olderShadowRootOrParentTreeScope();
+        TreeScope* parent = treeScopeEventContext.get()->treeScope().olderShadowRootOrParentTreeScope();
         if (!parent) {
             ASSERT(!rootTree);
-            rootTree = treeScopeEventContext;
+            rootTree = treeScopeEventContext.get();
             continue;
         }
         ASSERT(treeScopeEventContextMap.find(parent) != treeScopeEventContextMap.end());
-        treeScopeEventContextMap.find(parent)->value->addChild(*treeScopeEventContext);
+        treeScopeEventContextMap.find(parent)->value->addChild(*treeScopeEventContext.get());
     }
     ASSERT(rootTree);
     rootTree->calculatePrePostOrderNumber(0);
@@ -182,7 +169,8 @@ TreeScopeEventContext* EventPath::ensureTreeScopeEventContext(Node* currentTarge
     bool isNewEntry;
     {
         TreeScopeEventContextMap::AddResult addResult = treeScopeEventContextMap.add(treeScope, nullptr);
-        if ((isNewEntry = addResult.isNewEntry))
+        isNewEntry = addResult.isNewEntry;
+        if (isNewEntry)
             addResult.storedValue->value = TreeScopeEventContext::create(*treeScope);
         treeScopeEventContext = addResult.storedValue->value.get();
     }
@@ -264,11 +252,10 @@ void EventPath::adjustForRelatedTarget(Node* target, EventTarget* relatedTarget)
     RelatedTargetMap relatedNodeMap;
     buildRelatedNodeMap(relatedNode, relatedNodeMap);
 
-    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
-        TreeScopeEventContext* treeScopeEventContext = m_treeScopeEventContexts[i].get();
-        EventTarget* adjustedRelatedTarget = findRelatedNode(&treeScopeEventContext->treeScope(), relatedNodeMap);
+    for (const auto& treeScopeEventContext : m_treeScopeEventContexts) {
+        EventTarget* adjustedRelatedTarget = findRelatedNode(&treeScopeEventContext.get()->treeScope(), relatedNodeMap);
         ASSERT(adjustedRelatedTarget);
-        treeScopeEventContext->setRelatedTarget(adjustedRelatedTarget);
+        treeScopeEventContext.get()->setRelatedTarget(adjustedRelatedTarget);
     }
 
     shrinkIfNeeded(target, relatedTarget);
@@ -295,27 +282,27 @@ void EventPath::shrinkIfNeeded(const Node* target, const EventTarget* relatedTar
 
 void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
 {
-    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouches;
-    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTargetTouches;
-    WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedChangedTouches;
-    WillBeHeapVector<RawPtrWillBeMember<TreeScope> > treeScopes;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTargetTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedChangedTouches;
+    WillBeHeapVector<RawPtrWillBeMember<TreeScope>> treeScopes;
 
-    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
-        TouchEventContext* touchEventContext = m_treeScopeEventContexts[i]->ensureTouchEventContext();
+    for (const auto& treeScopeEventContext : m_treeScopeEventContexts) {
+        TouchEventContext* touchEventContext = treeScopeEventContext->ensureTouchEventContext();
         adjustedTouches.append(&touchEventContext->touches());
         adjustedTargetTouches.append(&touchEventContext->targetTouches());
         adjustedChangedTouches.append(&touchEventContext->changedTouches());
-        treeScopes.append(&m_treeScopeEventContexts[i]->treeScope());
+        treeScopes.append(&treeScopeEventContext->treeScope());
     }
 
     adjustTouchList(node, touchEvent.touches(), adjustedTouches, treeScopes);
     adjustTouchList(node, touchEvent.targetTouches(), adjustedTargetTouches, treeScopes);
     adjustTouchList(node, touchEvent.changedTouches(), adjustedChangedTouches, treeScopes);
 
-#ifndef NDEBUG
-    for (size_t i = 0; i < m_treeScopeEventContexts.size(); ++i) {
-        TreeScope& treeScope = m_treeScopeEventContexts[i]->treeScope();
-        TouchEventContext* touchEventContext = m_treeScopeEventContexts[i]->touchEventContext();
+#if ENABLE(ASSERT)
+    for (const auto& treeScopeEventContext : m_treeScopeEventContexts) {
+        TreeScope& treeScope = treeScopeEventContext->treeScope();
+        TouchEventContext* touchEventContext = treeScopeEventContext->touchEventContext();
         checkReachability(treeScope, touchEventContext->touches());
         checkReachability(treeScope, touchEventContext->targetTouches());
         checkReachability(treeScope, touchEventContext->changedTouches());
@@ -323,7 +310,7 @@ void EventPath::adjustForTouchEvent(Node* node, TouchEvent& touchEvent)
 #endif
 }
 
-void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, WillBeHeapVector<RawPtrWillBeMember<TouchList> > adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope> >& treeScopes)
+void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, WillBeHeapVector<RawPtrWillBeMember<TouchList>> adjustedTouchList, const WillBeHeapVector<RawPtrWillBeMember<TreeScope>>& treeScopes)
 {
     if (!touchList)
         return;
@@ -337,7 +324,7 @@ void EventPath::adjustTouchList(const Node* node, const TouchList* touchList, Wi
     }
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 void EventPath::checkReachability(TreeScope& treeScope, TouchList& touchList)
 {
     for (size_t i = 0; i < touchList.length(); ++i)

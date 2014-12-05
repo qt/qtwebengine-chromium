@@ -4,6 +4,7 @@
 
 #include "media/cdm/ppapi/cdm_adapter.h"
 
+#include "media/base/limits.h"
 #include "media/cdm/ppapi/cdm_file_io_impl.h"
 #include "media/cdm/ppapi/cdm_helpers.h"
 #include "media/cdm/ppapi/cdm_logging.h"
@@ -17,6 +18,12 @@
 #endif  // defined(CHECK_DOCUMENT_URL)
 
 namespace {
+
+// Constants for UMA reporting of file size (in KB) via HistogramCustomCounts().
+// Note that the histogram is log-scaled (rather than linear).
+const uint32_t kSizeKBMin = 1;
+const uint32_t kSizeKBMax = 512 * 1024;  // 512MB
+const uint32_t kSizeKBBuckets = 100;
 
 #if !defined(NDEBUG)
   #define DLOG_TO_CONSOLE(message) LogToConsole(message);
@@ -255,7 +262,6 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
 #if defined(OS_CHROMEOS)
       output_protection_(this),
       platform_verification_(this),
-      challenge_in_progress_(false),
       output_link_mask_(0),
       output_protection_mask_(0),
       query_output_protection_in_progress_(false),
@@ -267,7 +273,9 @@ CdmAdapter::CdmAdapter(PP_Instance instance, pp::Module* module)
       deferred_initialize_audio_decoder_(false),
       deferred_audio_decoder_config_id_(0),
       deferred_initialize_video_decoder_(false),
-      deferred_video_decoder_config_id_(0) {
+      deferred_video_decoder_config_id_(0),
+      last_read_file_size_kb_(0),
+      file_size_uma_reported_(false) {
   callback_factory_.Initialize(this);
 }
 
@@ -322,6 +330,35 @@ void CdmAdapter::Initialize(const std::string& key_system) {
 
   PP_DCHECK(cdm_);
   key_system_ = key_system;
+}
+
+void CdmAdapter::SetServerCertificate(uint32_t promise_id,
+                                      pp::VarArrayBuffer server_certificate) {
+  const uint8_t* server_certificate_ptr =
+      static_cast<const uint8_t*>(server_certificate.Map());
+  const uint32_t server_certificate_size = server_certificate.ByteLength();
+
+  if (!server_certificate_ptr ||
+      server_certificate_size < media::limits::kMinCertificateLength ||
+      server_certificate_size > media::limits::kMaxCertificateLength) {
+    RejectPromise(
+        promise_id, cdm::kInvalidAccessError, 0, "Incorrect certificate.");
+    return;
+  }
+
+  // Initialize() doesn't report an error, so SetServerCertificate() can be
+  // called even if Initialize() failed.
+  // TODO(jrummell): Remove this code when prefixed EME gets removed.
+  if (!cdm_) {
+    RejectPromise(promise_id,
+                  cdm::kInvalidStateError,
+                  0,
+                  "CDM has not been initialized.");
+    return;
+  }
+
+  cdm_->SetServerCertificate(
+      promise_id, server_certificate_ptr, server_certificate_size);
 }
 
 void CdmAdapter::CreateSession(uint32_t promise_id,
@@ -384,9 +421,21 @@ void CdmAdapter::UpdateSession(uint32_t promise_id,
                       response_size);
 }
 
-void CdmAdapter::ReleaseSession(uint32_t promise_id,
-                                const std::string& web_session_id) {
-  cdm_->ReleaseSession(
+void CdmAdapter::CloseSession(uint32_t promise_id,
+                              const std::string& web_session_id) {
+  cdm_->CloseSession(
+      promise_id, web_session_id.data(), web_session_id.length());
+}
+
+void CdmAdapter::RemoveSession(uint32_t promise_id,
+                               const std::string& web_session_id) {
+  cdm_->RemoveSession(
+      promise_id, web_session_id.data(), web_session_id.length());
+}
+
+void CdmAdapter::GetUsableKeyIds(uint32_t promise_id,
+                                 const std::string& web_session_id) {
+  cdm_->GetUsableKeyIds(
       promise_id, web_session_id.data(), web_session_id.length());
 }
 
@@ -584,99 +633,8 @@ void CdmAdapter::TimerExpired(int32_t result, void* context) {
   cdm_->TimerExpired(context);
 }
 
-// cdm::Host_4 methods
-
-double CdmAdapter::GetCurrentWallTimeInSeconds() {
-  return GetCurrentTime();
-}
-
-void CdmAdapter::OnSessionCreated(uint32_t session_id,
-                                  const char* web_session_id,
-                                  uint32_t web_session_id_length) {
-  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
-  cdm_->AssignWebSessionId(session_id, web_session_id, web_session_id_length);
-  OnResolveNewSessionPromise(promise_id, web_session_id, web_session_id_length);
-}
-
-void CdmAdapter::OnSessionMessage(uint32_t session_id,
-                                  const char* message,
-                                  uint32_t message_length,
-                                  const char* destination_url,
-                                  uint32_t destination_url_length) {
-  std::string web_session_id = cdm_->LookupWebSessionId(session_id);
-  OnSessionMessage(web_session_id.data(),
-                   web_session_id.length(),
-                   message,
-                   message_length,
-                   destination_url,
-                   destination_url_length);
-}
-
-void CdmAdapter::OnSessionReady(uint32_t session_id) {
-  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
-  if (promise_id) {
-    OnResolvePromise(promise_id);
-  } else {
-    std::string web_session_id = cdm_->LookupWebSessionId(session_id);
-    OnSessionReady(web_session_id.data(), web_session_id.length());
-  }
-}
-
-void CdmAdapter::OnSessionClosed(uint32_t session_id) {
-  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
-  std::string web_session_id = cdm_->LookupWebSessionId(session_id);
-  cdm_->DropWebSessionId(web_session_id);
-  if (promise_id) {
-    OnResolvePromise(promise_id);
-  } else {
-    OnSessionClosed(web_session_id.data(), web_session_id.length());
-  }
-}
-
-void CdmAdapter::OnSessionError(uint32_t session_id,
-                                cdm::MediaKeyError error_code,
-                                uint32_t system_code) {
-  uint32_t promise_id = cdm_->LookupPromiseId(session_id);
-
-  // Existing cdm::MediaKeyError don't map to DOM error names. Convert them
-  // into non-standard names so that the prefixed API can extract them.
-  // TODO(jrummell): Remove this conversion and the inverse when CDM4 is gone.
-  cdm::Error error;
-  switch (error_code) {
-    case cdm::kPrefixedClientError:
-      error = cdm::kClientError;
-      break;
-    case cdm::kPrefixedOutputError:
-      error = cdm::kOutputError;
-      break;
-    case cdm::kPrefixedUnknownError:
-    default:
-      error = cdm::kUnknownError;
-      break;
-  }
-
-  if (promise_id) {
-    RejectPromise(promise_id, error, system_code, std::string());
-  } else {
-    std::string web_session_id = cdm_->LookupWebSessionId(session_id);
-    OnSessionError(web_session_id.data(),
-                   web_session_id.length(),
-                   error,
-                   system_code,
-                   NULL,
-                   0);
-  }
-}
-
-// cdm::Host_5 methods
-
-cdm::Time CdmAdapter::GetCurrentTime() {
+cdm::Time CdmAdapter::GetCurrentWallTime() {
   return pp::Module::Get()->core()->GetTime();
-}
-
-void CdmAdapter::OnResolvePromise(uint32_t promise_id) {
-  PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendPromiseResolvedInternal, promise_id));
 }
 
 void CdmAdapter::OnResolveNewSessionPromise(uint32_t promise_id,
@@ -688,11 +646,42 @@ void CdmAdapter::OnResolveNewSessionPromise(uint32_t promise_id,
       std::string(web_session_id, web_session_id_length)));
 }
 
+void CdmAdapter::OnResolvePromise(uint32_t promise_id) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseResolvedInternal, promise_id));
+}
+
+void CdmAdapter::OnResolveKeyIdsPromise(uint32_t promise_id,
+                                        const cdm::BinaryData* usable_key_ids,
+                                        uint32_t usable_key_ids_length) {
+  std::vector<std::vector<uint8> > key_ids;
+  for (uint32_t i = 0; i < usable_key_ids_length; ++i) {
+    key_ids.push_back(
+        std::vector<uint8>(usable_key_ids[i].data,
+                           usable_key_ids[i].data + usable_key_ids[i].length));
+  }
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendPromiseResolvedWithUsableKeyIdsInternal,
+      promise_id,
+      key_ids));
+}
+
 void CdmAdapter::OnRejectPromise(uint32_t promise_id,
                                  cdm::Error error,
                                  uint32_t system_code,
                                  const char* error_message,
                                  uint32_t error_message_length) {
+  // UMA to investigate http://crbug.com/410630
+  // TODO(xhwang): Remove after bug is fixed.
+  if (system_code == 0x27) {
+    pp::UMAPrivate uma_interface(this);
+    uma_interface.HistogramCustomCounts("Media.EME.CdmFileIO.FileSizeKBOnError",
+                                        last_read_file_size_kb_,
+                                        kSizeKBMin,
+                                        kSizeKBMax,
+                                        kSizeKBBuckets);
+  }
+
   RejectPromise(promise_id,
                 error,
                 system_code,
@@ -722,27 +711,22 @@ void CdmAdapter::OnSessionMessage(const char* web_session_id,
       std::string(destination_url, destination_url_length)));
 }
 
-void CdmAdapter::OnSessionKeysChange(const char* web_session_id,
-                                     uint32_t web_session_id_length,
-                                     bool has_additional_usable_key) {
-  // TODO(jrummell): Implement this event in subsequent CL
-  // (http://crbug.com/370251).
-  PP_NOTREACHED();
+void CdmAdapter::OnSessionUsableKeysChange(const char* web_session_id,
+                                           uint32_t web_session_id_length,
+                                           bool has_additional_usable_key) {
+  PostOnMain(callback_factory_.NewCallback(
+      &CdmAdapter::SendSessionUsableKeysChangeInternal,
+      std::string(web_session_id, web_session_id_length),
+      has_additional_usable_key));
 }
 
 void CdmAdapter::OnExpirationChange(const char* web_session_id,
                                     uint32_t web_session_id_length,
                                     cdm::Time new_expiry_time) {
-  // TODO(jrummell): Implement this event in subsequent CL
-  // (http://crbug.com/370251).
-  PP_NOTREACHED();
-}
-
-void CdmAdapter::OnSessionReady(const char* web_session_id,
-                                uint32_t web_session_id_length) {
   PostOnMain(callback_factory_.NewCallback(
-      &CdmAdapter::SendSessionReadyInternal,
-      std::string(web_session_id, web_session_id_length)));
+      &CdmAdapter::SendExpirationChangeInternal,
+      std::string(web_session_id, web_session_id_length),
+      new_expiry_time));
 }
 
 void CdmAdapter::OnSessionClosed(const char* web_session_id,
@@ -781,6 +765,14 @@ void CdmAdapter::SendPromiseResolvedWithSessionInternal(
   PP_DCHECK(result == PP_OK);
   pp::ContentDecryptor_Private::PromiseResolvedWithSession(promise_id,
                                                            web_session_id);
+}
+
+void CdmAdapter::SendPromiseResolvedWithUsableKeyIdsInternal(
+    int32_t result,
+    uint32_t promise_id,
+    std::vector<std::vector<uint8> > key_ids) {
+  PP_DCHECK(result == PP_OK);
+  pp::ContentDecryptor_Private::PromiseResolvedWithKeyIds(promise_id, key_ids);
 }
 
 void CdmAdapter::SendPromiseRejectedInternal(int32_t result,
@@ -831,6 +823,23 @@ void CdmAdapter::SendSessionErrorInternal(int32_t result,
       CdmExceptionTypeToPpCdmExceptionType(error.error),
       error.system_code,
       error.error_description);
+}
+
+void CdmAdapter::SendSessionUsableKeysChangeInternal(
+    int32_t result,
+    const std::string& web_session_id,
+    bool has_additional_usable_key) {
+  PP_DCHECK(result == PP_OK);
+  pp::ContentDecryptor_Private::SessionKeysChange(web_session_id,
+                                                  has_additional_usable_key);
+}
+
+void CdmAdapter::SendExpirationChangeInternal(int32_t result,
+                                              const std::string& web_session_id,
+                                              cdm::Time new_expiry_time) {
+  PP_DCHECK(result == PP_OK);
+  pp::ContentDecryptor_Private::SessionExpirationChange(web_session_id,
+                                                        new_expiry_time);
 }
 
 void CdmAdapter::DeliverBlock(int32_t result,
@@ -996,6 +1005,25 @@ bool CdmAdapter::IsValidVideoFrame(const LinkedVideoFrame& video_frame) {
   return true;
 }
 
+void CdmAdapter::OnFirstFileRead(int32_t file_size_bytes) {
+  PP_DCHECK(IsMainThread());
+  PP_DCHECK(file_size_bytes >= 0);
+
+  last_read_file_size_kb_ = file_size_bytes / 1024;
+
+  if (file_size_uma_reported_)
+    return;
+
+  pp::UMAPrivate uma_interface(this);
+  uma_interface.HistogramCustomCounts(
+      "Media.EME.CdmFileIO.FileSizeKBOnFirstRead",
+      last_read_file_size_kb_,
+      kSizeKBMin,
+      kSizeKBMax,
+      kSizeKBBuckets);
+  file_size_uma_reported_ = true;
+}
+
 #if !defined(NDEBUG)
 void CdmAdapter::LogToConsole(const pp::Var& value) {
   PP_DCHECK(IsMainThread());
@@ -1009,34 +1037,33 @@ void CdmAdapter::SendPlatformChallenge(
     const char* service_id, uint32_t service_id_length,
     const char* challenge, uint32_t challenge_length) {
 #if defined(OS_CHROMEOS)
-  PP_DCHECK(!challenge_in_progress_);
-
-  // Ensure member variables set by the callback are in a clean state.
-  signed_data_output_ = pp::Var();
-  signed_data_signature_output_ = pp::Var();
-  platform_key_certificate_output_ = pp::Var();
-
   pp::VarArrayBuffer challenge_var(challenge_length);
   uint8_t* var_data = static_cast<uint8_t*>(challenge_var.Map());
   memcpy(var_data, challenge, challenge_length);
 
   std::string service_id_str(service_id, service_id_length);
+
+  linked_ptr<PepperPlatformChallengeResponse> response(
+      new PepperPlatformChallengeResponse());
+
   int32_t result = platform_verification_.ChallengePlatform(
-      pp::Var(service_id_str), challenge_var, &signed_data_output_,
-      &signed_data_signature_output_, &platform_key_certificate_output_,
-      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone));
+      pp::Var(service_id_str),
+      challenge_var,
+      &response->signed_data,
+      &response->signed_data_signature,
+      &response->platform_key_certificate,
+      callback_factory_.NewCallback(&CdmAdapter::SendPlatformChallengeDone,
+                                    response));
   challenge_var.Unmap();
-  if (result == PP_OK_COMPLETIONPENDING) {
-    challenge_in_progress_ = true;
+  if (result == PP_OK_COMPLETIONPENDING)
     return;
-  }
 
   // Fall through on error and issue an empty OnPlatformChallengeResponse().
   PP_DCHECK(result != PP_OK);
 #endif
 
-  cdm::PlatformChallengeResponse response = {};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm::PlatformChallengeResponse platform_challenge_response = {};
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 }
 
 void CdmAdapter::EnableOutputProtection(uint32_t desired_protection_mask) {
@@ -1104,13 +1131,16 @@ void CdmAdapter::OnDeferredInitializationDone(cdm::StreamType stream_type,
 
 // The CDM owns the returned object and must call FileIO::Close() to release it.
 cdm::FileIO* CdmAdapter::CreateFileIO(cdm::FileIOClient* client) {
-  return new CdmFileIOImpl(client, pp_instance());
+  return new CdmFileIOImpl(
+      client,
+      pp_instance(),
+      callback_factory_.NewCallback(&CdmAdapter::OnFirstFileRead));
 }
 
 #if defined(OS_CHROMEOS)
 void CdmAdapter::ReportOutputProtectionUMA(OutputProtectionStatus status) {
-  pp::UMAPrivate uma_interface_(this);
-  uma_interface_.HistogramEnumeration(
+  pp::UMAPrivate uma_interface(this);
+  uma_interface.HistogramEnumeration(
       "Media.EME.OutputProtection", status, OUTPUT_PROTECTION_MAX);
 }
 
@@ -1154,29 +1184,29 @@ void CdmAdapter::ReportOutputProtectionQueryResult() {
   // queries and success results.
 }
 
-void CdmAdapter::SendPlatformChallengeDone(int32_t result) {
-  challenge_in_progress_ = false;
-
+void CdmAdapter::SendPlatformChallengeDone(
+    int32_t result,
+    const linked_ptr<PepperPlatformChallengeResponse>& response) {
   if (result != PP_OK) {
     CDM_DLOG() << __FUNCTION__ << ": Platform challenge failed!";
-    cdm::PlatformChallengeResponse response = {};
-    cdm_->OnPlatformChallengeResponse(response);
+    cdm::PlatformChallengeResponse platform_challenge_response = {};
+    cdm_->OnPlatformChallengeResponse(platform_challenge_response);
     return;
   }
 
-  pp::VarArrayBuffer signed_data_var(signed_data_output_);
-  pp::VarArrayBuffer signed_data_signature_var(signed_data_signature_output_);
+  pp::VarArrayBuffer signed_data_var(response->signed_data);
+  pp::VarArrayBuffer signed_data_signature_var(response->signed_data_signature);
   std::string platform_key_certificate_string =
-      platform_key_certificate_output_.AsString();
+      response->platform_key_certificate.AsString();
 
-  cdm::PlatformChallengeResponse response = {
+  cdm::PlatformChallengeResponse platform_challenge_response = {
       static_cast<uint8_t*>(signed_data_var.Map()),
       signed_data_var.ByteLength(),
       static_cast<uint8_t*>(signed_data_signature_var.Map()),
       signed_data_signature_var.ByteLength(),
       reinterpret_cast<const uint8_t*>(platform_key_certificate_string.data()),
       static_cast<uint32_t>(platform_key_certificate_string.length())};
-  cdm_->OnPlatformChallengeResponse(response);
+  cdm_->OnPlatformChallengeResponse(platform_challenge_response);
 
   signed_data_var.Unmap();
   signed_data_signature_var.Unmap();
@@ -1216,7 +1246,7 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
     return NULL;
 
   COMPILE_ASSERT(
-      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_5::kVersion,
+      cdm::ContentDecryptionModule::Host::kVersion == cdm::Host_6::kVersion,
       update_code_below);
 
   // Ensure IsSupportedCdmHostVersion matches implementation of this function.
@@ -1226,22 +1256,19 @@ void* GetCdmHost(int host_interface_version, void* user_data) {
 
   PP_DCHECK(
       // Future version is not supported.
-      !IsSupportedCdmHostVersion(cdm::Host_5::kVersion + 1) &&
+      !IsSupportedCdmHostVersion(cdm::Host_6::kVersion + 1) &&
       // Current version is supported.
-      IsSupportedCdmHostVersion(cdm::Host_5::kVersion) &&
+      IsSupportedCdmHostVersion(cdm::Host_6::kVersion) &&
       // Include all previous supported versions (if any) here.
-      IsSupportedCdmHostVersion(cdm::Host_4::kVersion) &&
       // One older than the oldest supported version is not supported.
-      !IsSupportedCdmHostVersion(cdm::Host_4::kVersion - 1));
+      !IsSupportedCdmHostVersion(cdm::Host_6::kVersion - 1));
   PP_DCHECK(IsSupportedCdmHostVersion(host_interface_version));
 
   CdmAdapter* cdm_adapter = static_cast<CdmAdapter*>(user_data);
   CDM_DLOG() << "Create CDM Host with version " << host_interface_version;
   switch (host_interface_version) {
-    case cdm::Host_4::kVersion:
-      return static_cast<cdm::Host_4*>(cdm_adapter);
-    case cdm::Host_5::kVersion:
-      return static_cast<cdm::Host_5*>(cdm_adapter);
+    case cdm::Host_6::kVersion:
+      return static_cast<cdm::Host_6*>(cdm_adapter);
     default:
       PP_NOTREACHED();
       return NULL;

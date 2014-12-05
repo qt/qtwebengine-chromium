@@ -26,17 +26,19 @@
 #ifndef TypeConversions_h
 #define TypeConversions_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/FastMalloc.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class TypeConversions : public RefCountedWillBeGarbageCollectedFinalized<TypeConversions> {
+class TypeConversions final : public GarbageCollectedFinalized<TypeConversions>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<TypeConversions> create()
+    static TypeConversions* create()
     {
-        return adoptRefWillBeNoop(new TypeConversions());
+        return new TypeConversions();
     }
 
     long testLong() { return m_long; }
@@ -62,15 +64,22 @@ public:
     const String& testByteString() const { return m_byteString; }
     void setTestByteString(const String& value) { m_byteString = value; }
 
-    const String& testScalarValueString() const { return m_scalarValueString; }
-    void setTestScalarValueString(const String& value) { m_scalarValueString = value; }
+    const String& testUSVString() const { return m_usvString; }
+    void setTestUSVString(const String& value) { m_usvString = value; }
 
     void trace(Visitor*) { }
 
 private:
     TypeConversions()
-    {
-    }
+        : m_long(0)
+        , m_unsignedLong(0)
+        , m_longLong(0)
+        , m_unsignedLongLong(0)
+        , m_byte(0)
+        , m_octet(0)
+        , m_short(0)
+        , m_unsignedShort(0)
+    { }
 
     long m_long;
     unsigned long m_unsignedLong;
@@ -81,9 +90,9 @@ private:
     int16_t m_short;
     uint16_t m_unsignedShort;
     String m_byteString;
-    String m_scalarValueString;
+    String m_usvString;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // TypeConversions_h

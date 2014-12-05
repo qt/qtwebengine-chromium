@@ -31,7 +31,7 @@
 
 #include "core/html/shadow/MediaControlElementTypes.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/CSSValueKeywords.h"
 #include "core/HTMLNames.h"
 #include "core/css/StylePropertySet.h"
@@ -39,7 +39,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/shadow/MediaControls.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -48,12 +48,12 @@ class Event;
 HTMLMediaElement* toParentMediaElement(Node* node)
 {
     if (!node)
-        return 0;
+        return nullptr;
     Node* mediaNode = node->shadowHost();
     if (!mediaNode)
-        mediaNode = node;
+        return nullptr;
     if (!isHTMLMediaElement(mediaNode))
-        return 0;
+        return nullptr;
 
     return toHTMLMediaElement(mediaNode);
 }
@@ -96,7 +96,12 @@ void MediaControlElement::setDisplayType(MediaControlElementType displayType)
 
     m_displayType = displayType;
     if (RenderObject* object = m_element->renderer())
-        object->paintInvalidationForWholeRenderer();
+        object->setShouldDoFullPaintInvalidation();
+}
+
+void MediaControlElement::trace(Visitor* visitor)
+{
+    visitor->trace(m_element);
 }
 
 // ----------------------------
@@ -105,6 +110,12 @@ MediaControlDivElement::MediaControlDivElement(MediaControls& mediaControls, Med
     : HTMLDivElement(mediaControls.document())
     , MediaControlElement(mediaControls, displayType, this)
 {
+}
+
+void MediaControlDivElement::trace(Visitor* visitor)
+{
+    MediaControlElement::trace(visitor);
+    HTMLDivElement::trace(visitor);
 }
 
 // ----------------------------
@@ -120,6 +131,12 @@ bool MediaControlInputElement::isMouseFocusable() const
     return false;
 }
 
+void MediaControlInputElement::trace(Visitor* visitor)
+{
+    MediaControlElement::trace(visitor);
+    HTMLInputElement::trace(visitor);
+}
+
 // ----------------------------
 
 MediaControlTimeDisplayElement::MediaControlTimeDisplayElement(MediaControls& mediaControls, MediaControlElementType displayType)
@@ -133,4 +150,4 @@ void MediaControlTimeDisplayElement::setCurrentValue(double time)
     m_currentValue = time;
 }
 
-} // namespace WebCore
+} // namespace blink

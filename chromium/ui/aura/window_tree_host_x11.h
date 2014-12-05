@@ -35,30 +35,28 @@ class AURA_EXPORT WindowTreeHostX11 : public WindowTreeHost,
 
  public:
   explicit WindowTreeHostX11(const gfx::Rect& bounds);
-  virtual ~WindowTreeHostX11();
+  ~WindowTreeHostX11() override;
 
   // ui::PlatformEventDispatcher:
-  virtual bool CanDispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
-  virtual uint32_t DispatchEvent(const ui::PlatformEvent& event) OVERRIDE;
+  bool CanDispatchEvent(const ui::PlatformEvent& event) override;
+  uint32_t DispatchEvent(const ui::PlatformEvent& event) override;
 
   // WindowTreeHost:
-  virtual ui::EventSource* GetEventSource() OVERRIDE;
-  virtual gfx::AcceleratedWidget GetAcceleratedWidget() OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual gfx::Rect GetBounds() const OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& bounds) OVERRIDE;
-  virtual gfx::Point GetLocationOnNativeScreen() const OVERRIDE;
-  virtual void SetCapture() OVERRIDE;
-  virtual void ReleaseCapture() OVERRIDE;
-  virtual void PostNativeEvent(const base::NativeEvent& event) OVERRIDE;
-  virtual void OnDeviceScaleFactorChanged(float device_scale_factor) OVERRIDE;
-  virtual void SetCursorNative(gfx::NativeCursor cursor_type) OVERRIDE;
-  virtual void MoveCursorToNative(const gfx::Point& location) OVERRIDE;
-  virtual void OnCursorVisibilityChangedNative(bool show) OVERRIDE;
+  ui::EventSource* GetEventSource() override;
+  gfx::AcceleratedWidget GetAcceleratedWidget() override;
+  void Show() override;
+  void Hide() override;
+  gfx::Rect GetBounds() const override;
+  void SetBounds(const gfx::Rect& bounds) override;
+  gfx::Point GetLocationOnNativeScreen() const override;
+  void SetCapture() override;
+  void ReleaseCapture() override;
+  void SetCursorNative(gfx::NativeCursor cursor_type) override;
+  void MoveCursorToNative(const gfx::Point& location) override;
+  void OnCursorVisibilityChangedNative(bool show) override;
 
   // ui::EventSource overrides.
-  virtual ui::EventProcessor* GetEventProcessor() OVERRIDE;
+  ui::EventProcessor* GetEventProcessor() override;
 
  protected:
   // Called when X Configure Notify event is recevied.

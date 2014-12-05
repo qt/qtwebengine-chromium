@@ -28,31 +28,32 @@
 #include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class MediaStreamTrack;
 
-class MediaStreamTrackEvent FINAL : public Event {
+class MediaStreamTrackEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~MediaStreamTrackEvent();
 
     static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create();
-    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack>);
+    static PassRefPtrWillBeRawPtr<MediaStreamTrackEvent> create(const AtomicString& type, bool canBubble, bool cancelable, MediaStreamTrack*);
 
     MediaStreamTrack* track() const;
 
     // Event
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaStreamTrackEvent();
-    MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<MediaStreamTrack>);
+    MediaStreamTrackEvent(const AtomicString& type, bool canBubble, bool cancelable, MediaStreamTrack*);
 
-    RefPtrWillBeMember<MediaStreamTrack> m_track;
+    PersistentWillBeMember<MediaStreamTrack> m_track;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaStreamTrackEvent_h

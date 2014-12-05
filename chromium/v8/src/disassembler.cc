@@ -19,21 +19,6 @@ namespace internal {
 
 #ifdef ENABLE_DISASSEMBLER
 
-void Disassembler::Dump(FILE* f, byte* begin, byte* end) {
-  for (byte* pc = begin; pc < end; pc++) {
-    if (f == NULL) {
-      PrintF("%" V8PRIxPTR "  %4" V8PRIdPTR "  %02x\n",
-             reinterpret_cast<intptr_t>(pc),
-             pc - begin,
-             *pc);
-    } else {
-      PrintF(f, "%" V8PRIxPTR "  %4" V8PRIdPTR "  %02x\n",
-             reinterpret_cast<uintptr_t>(pc), pc - begin, *pc);
-    }
-  }
-}
-
-
 class V8NameConverter: public disasm::NameConverter {
  public:
   explicit V8NameConverter(Code* code) : code_(code) {}
@@ -74,12 +59,8 @@ const char* V8NameConverter::NameInCode(byte* addr) const {
 }
 
 
-static void DumpBuffer(FILE* f, StringBuilder* out) {
-  if (f == NULL) {
-    PrintF("%s\n", out->Finalize());
-  } else {
-    PrintF(f, "%s\n", out->Finalize());
-  }
+static void DumpBuffer(std::ostream* os, StringBuilder* out) {
+  (*os) << out->Finalize() << std::endl;
   out->Reset();
 }
 
@@ -87,15 +68,11 @@ static void DumpBuffer(FILE* f, StringBuilder* out) {
 static const int kOutBufferSize = 2048 + String::kMaxShortPrintLength;
 static const int kRelocInfoPosition = 57;
 
-static int DecodeIt(Isolate* isolate,
-                    FILE* f,
-                    const V8NameConverter& converter,
-                    byte* begin,
-                    byte* end) {
+static int DecodeIt(Isolate* isolate, std::ostream* os,
+                    const V8NameConverter& converter, byte* begin, byte* end) {
   SealHandleScope shs(isolate);
   DisallowHeapAllocation no_alloc;
   ExternalReferenceEncoder ref_encoder(isolate);
-  Heap* heap = isolate->heap();
 
   v8::internal::EmbeddedVector<char, 128> decode_buffer;
   v8::internal::EmbeddedVector<char, kOutBufferSize> out_buffer;
@@ -165,7 +142,7 @@ static int DecodeIt(Isolate* isolate,
     // Comments.
     for (int i = 0; i < comments.length(); i++) {
       out.AddFormatted("                  %s", comments[i]);
-      DumpBuffer(f, &out);
+      DumpBuffer(os, &out);
     }
 
     // Instruction address and instruction offset.
@@ -185,7 +162,7 @@ static int DecodeIt(Isolate* isolate,
         out.AddPadding(' ', kRelocInfoPosition - out.position());
       } else {
         // Additional reloc infos are printed on separate lines.
-        DumpBuffer(f, &out);
+        DumpBuffer(os, &out);
         out.AddPadding(' ', kRelocInfoPosition);
       }
 
@@ -215,7 +192,8 @@ static int DecodeIt(Isolate* isolate,
         Code::Kind kind = code->kind();
         if (code->is_inline_cache_stub()) {
           if (kind == Code::LOAD_IC &&
-              LoadIC::GetContextualMode(code->extra_ic_state()) == CONTEXTUAL) {
+              LoadICState::GetContextualMode(code->extra_ic_state()) ==
+                  CONTEXTUAL) {
             out.AddFormatted(" contextual,");
           }
           InlineCacheState ic_state = code->ic_state();
@@ -226,29 +204,21 @@ static int DecodeIt(Isolate* isolate,
             out.AddFormatted(", %s", Code::StubType2String(type));
           }
         } else if (kind == Code::STUB || kind == Code::HANDLER) {
-          // Reverse lookup required as the minor key cannot be retrieved
-          // from the code object.
-          Object* obj = heap->code_stubs()->SlowReverseLookup(code);
-          if (obj != heap->undefined_value()) {
-            ASSERT(obj->IsSmi());
-            // Get the STUB key and extract major and minor key.
-            uint32_t key = Smi::cast(obj)->value();
-            uint32_t minor_key = CodeStub::MinorKeyFromKey(key);
-            CodeStub::Major major_key = CodeStub::GetMajorKey(code);
-            ASSERT(major_key == CodeStub::MajorKeyFromKey(key));
-            out.AddFormatted(" %s, %s, ",
-                             Code::Kind2String(kind),
-                             CodeStub::MajorName(major_key, false));
-            switch (major_key) {
-              case CodeStub::CallFunction: {
-                int argc =
-                    CallFunctionStub::ExtractArgcFromMinorKey(minor_key);
-                out.AddFormatted("argc = %d", argc);
-                break;
-              }
-              default:
-                out.AddFormatted("minor: %d", minor_key);
+          // Get the STUB key and extract major and minor key.
+          uint32_t key = code->stub_key();
+          uint32_t minor_key = CodeStub::MinorKeyFromKey(key);
+          CodeStub::Major major_key = CodeStub::GetMajorKey(code);
+          DCHECK(major_key == CodeStub::MajorKeyFromKey(key));
+          out.AddFormatted(" %s, %s, ", Code::Kind2String(kind),
+                           CodeStub::MajorName(major_key, false));
+          switch (major_key) {
+            case CodeStub::CallFunction: {
+              int argc = CallFunctionStub::ExtractArgcFromMinorKey(minor_key);
+              out.AddFormatted("argc = %d", argc);
+              break;
             }
+            default:
+              out.AddFormatted("minor: %d", minor_key);
           }
         } else {
           out.AddFormatted(" %s", Code::Kind2String(kind));
@@ -286,7 +256,7 @@ static int DecodeIt(Isolate* isolate,
         out.AddFormatted("    ;; %s", RelocInfo::RelocModeName(rmode));
       }
     }
-    DumpBuffer(f, &out);
+    DumpBuffer(os, &out);
   }
 
   // Emit comments following the last instruction (if any).
@@ -295,7 +265,7 @@ static int DecodeIt(Isolate* isolate,
       if (RelocInfo::IsComment(it->rinfo()->rmode())) {
         out.AddFormatted("                  %s",
                          reinterpret_cast<const char*>(it->rinfo()->data()));
-        DumpBuffer(f, &out);
+        DumpBuffer(os, &out);
       }
     }
   }
@@ -305,39 +275,18 @@ static int DecodeIt(Isolate* isolate,
 }
 
 
-int Disassembler::Decode(Isolate* isolate, FILE* f, byte* begin, byte* end) {
-  V8NameConverter defaultConverter(NULL);
-  return DecodeIt(isolate, f, defaultConverter, begin, end);
-}
-
-
-// Called by Code::CodePrint.
-void Disassembler::Decode(FILE* f, Code* code) {
-  Isolate* isolate = code->GetIsolate();
-  int decode_size = code->is_crankshafted()
-      ? static_cast<int>(code->safepoint_table_offset())
-      : code->instruction_size();
-  // If there might be a back edge table, stop before reaching it.
-  if (code->kind() == Code::FUNCTION) {
-    decode_size =
-        Min(decode_size, static_cast<int>(code->back_edge_table_offset()));
-  }
-
-  byte* begin = code->instruction_start();
-  byte* end = begin + decode_size;
+int Disassembler::Decode(Isolate* isolate, std::ostream* os, byte* begin,
+                         byte* end, Code* code) {
   V8NameConverter v8NameConverter(code);
-  DecodeIt(isolate, f, v8NameConverter, begin, end);
+  return DecodeIt(isolate, os, v8NameConverter, begin, end);
 }
 
 #else  // ENABLE_DISASSEMBLER
 
-void Disassembler::Dump(FILE* f, byte* begin, byte* end) {}
-int Disassembler::Decode(Isolate* isolate, FILE* f, byte* begin, byte* end) {
+int Disassembler::Decode(Isolate* isolate, std::ostream* os, byte* begin,
+                         byte* end, Code* code) {
   return 0;
 }
-
-
-void Disassembler::Decode(FILE* f, Code* code) {}
 
 #endif  // ENABLE_DISASSEMBLER
 

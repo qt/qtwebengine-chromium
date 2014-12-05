@@ -5,16 +5,17 @@
 #ifndef AudioTrack_h
 #define AudioTrack_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/track/TrackBase.h"
 
-namespace WebCore {
+namespace blink {
 
-class AudioTrack FINAL : public TrackBase, public ScriptWrappable {
+class AudioTrack final : public TrackBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<AudioTrack> create(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool enabled)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new AudioTrack(id, kind, label, language, enabled));
+        return adoptRefWillBeNoop(new AudioTrack(id, kind, label, language, enabled));
     }
     virtual ~AudioTrack();
 
@@ -33,12 +34,14 @@ private:
     AudioTrack(const String& id, const AtomicString& kind, const AtomicString& label, const AtomicString& language, bool enabled);
 
     // TrackBase
-    virtual bool isValidKind(const AtomicString&) const OVERRIDE;
-    virtual AtomicString defaultKind() const OVERRIDE;
+    virtual bool isValidKind(const AtomicString&) const override;
+    virtual AtomicString defaultKind() const override;
 
     bool m_enabled;
 };
 
-}
+DEFINE_TRACK_TYPE_CASTS(AudioTrack, TrackBase::AudioTrack);
 
-#endif
+} // namespace blink
+
+#endif // AudioTrack_h

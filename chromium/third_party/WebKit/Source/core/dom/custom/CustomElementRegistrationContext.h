@@ -41,15 +41,9 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
-class CustomElementConstructorBuilder;
-class CustomElementDefinition;
-class Document;
-class Element;
-class ExceptionState;
-
-class CustomElementRegistrationContext FINAL : public RefCountedWillBeGarbageCollectedFinalized<CustomElementRegistrationContext> {
+class CustomElementRegistrationContext final : public RefCountedWillBeGarbageCollectedFinalized<CustomElementRegistrationContext> {
 public:
     static PassRefPtrWillBeRawPtr<CustomElementRegistrationContext> create()
     {
@@ -84,7 +78,7 @@ private:
     OwnPtrWillBeMember<CustomElementUpgradeCandidateMap> m_candidates;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementRegistrationContext_h
 

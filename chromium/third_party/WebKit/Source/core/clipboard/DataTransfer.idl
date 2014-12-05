@@ -27,7 +27,6 @@
  */
 
 [
-    ImplementedAs=Clipboard,
     WillBeGarbageCollected
 ] interface DataTransfer {
              [TreatReturnedNullStringAs=Undefined] attribute DOMString dropEffect;
@@ -37,7 +36,7 @@
 
     void clearData(optional DOMString type);
     DOMString getData(DOMString type);
-    boolean setData(DOMString type, DOMString data);
+    void setData(DOMString type, DOMString data);
     [RaisesException] void setDragImage(Element image, long x, long y);
 
     readonly attribute DataTransferItemList items;

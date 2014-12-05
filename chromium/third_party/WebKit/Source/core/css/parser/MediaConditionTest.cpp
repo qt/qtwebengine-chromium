@@ -6,14 +6,14 @@
 
 #include "core/css/MediaList.h"
 #include "core/css/MediaQuery.h"
+#include "core/css/parser/CSSTokenizer.h"
 #include "core/css/parser/MediaQueryParser.h"
-#include "core/css/parser/MediaQueryTokenizer.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/StringBuilder.h"
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 typedef struct {
     const char* input;
@@ -35,13 +35,15 @@ TEST(MediaConditionParserTest, Basic)
         {"(min-width: 100px) and print", "not all"},
         {"(min-width: 100px) and (max-width: 900px)", "(max-width: 900px) and (min-width: 100px)"},
         {"(min-width: [100px) and (max-width: 900px)", "not all"},
+        {"not (min-width: 900px)", "not all and (min-width: 900px)"},
+        {"not (blabla)", "not all"},
         {0, 0} // Do not remove the terminator line.
     };
 
     for (unsigned i = 0; testCases[i].input; ++i) {
-        Vector<MediaQueryToken> tokens;
-        MediaQueryTokenizer::tokenize(testCases[i].input, tokens);
-        MediaQueryTokenIterator endToken;
+        Vector<CSSParserToken> tokens;
+        CSSTokenizer::tokenize(testCases[i].input, tokens);
+        CSSParserTokenIterator endToken;
         // Stop the input once we hit a comma token
         for (endToken = tokens.begin(); endToken != tokens.end() && endToken->type() != CommaToken; ++endToken) { }
         RefPtrWillBeRawPtr<MediaQuerySet> mediaConditionQuerySet = MediaQueryParser::parseMediaCondition(tokens.begin(), endToken);

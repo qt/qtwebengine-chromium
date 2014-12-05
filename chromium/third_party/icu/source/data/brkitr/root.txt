@@ -1,9 +1,9 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/xml/brkitr/root.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/xml/brkitr/root.xml
 // *
 // ***************************************************************************
 root{
@@ -16,9 +16,11 @@ root{
         word:process(dependency){"word.brk"}
     }
     dictionaries{
-        Thai:process(dependency){"thaidict.ctd"}
-        Hani:process(dependency){"cjdict.ctd"}
-        Hira:process(dependency){"cjdict.ctd"}
-        Kata:process(dependency){"cjdict.ctd"}
+        Hani:process(dependency){"cjdict.dict"}
+        Hira:process(dependency){"cjdict.dict"}
+        Kata:process(dependency){"cjdict.dict"}
+        Khmr:process(dependency){"khmerdict.dict"}
+        Laoo:process(dependency){"laodict.dict"}
+        Thai:process(dependency){"thaidict.dict"}
     }
 }

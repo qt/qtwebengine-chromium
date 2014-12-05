@@ -151,6 +151,10 @@ EventType EventTypeFromNative(const base::NativeEvent& native_event) {
     case WM_SYSKEYDOWN:
     case WM_CHAR:
       return ET_KEY_PRESSED;
+    // The WM_DEADCHAR message is posted to the window with the keyboard focus
+    // when a WM_KEYUP message is translated. This happens for special keyboard
+    // sequences.
+    case WM_DEADCHAR:
     case WM_KEYUP:
     case WM_SYSKEYUP:
       return ET_KEY_RELEASED;
@@ -241,13 +245,14 @@ gfx::Point EventLocationFromNative(const base::NativeEvent& native_event) {
 
 gfx::Point EventSystemLocationFromNative(
     const base::NativeEvent& native_event) {
-  // TODO(ben): Needs to always return screen position here. Returning normal
-  // origin for now since that's obviously wrong.
-  return gfx::Point(0, 0);
+  POINT global_point = { static_cast<short>(LOWORD(native_event.lParam)),
+                         static_cast<short>(HIWORD(native_event.lParam)) };
+  ClientToScreen(native_event.hwnd, &global_point);
+  return gfx::Point(global_point);
 }
 
 KeyboardCode KeyboardCodeFromNative(const base::NativeEvent& native_event) {
-  return KeyboardCodeForWindowsKeyCode(native_event.wParam);
+  return KeyboardCodeForWindowsKeyCode(static_cast<WORD>(native_event.wParam));
 }
 
 const char* CodeFromNative(const base::NativeEvent& native_event) {
@@ -257,6 +262,10 @@ const char* CodeFromNative(const base::NativeEvent& native_event) {
 
 uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return static_cast<uint32>(native_event.wParam);
+}
+
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  return native_event.message == WM_CHAR;
 }
 
 int GetChangedMouseButtonFlagsFromNative(
@@ -288,6 +297,10 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& event) {
+  NOTIMPLEMENTED();
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -339,29 +352,6 @@ bool GetFlingData(const base::NativeEvent& native_event,
                   float* vy_ordinal,
                   bool* is_cancel) {
   // Not supported in Windows.
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  // Not supported in Windows.
-  *start_time = 0;
-  *end_time = 0;
-  return false;
-}
-
-void SetNaturalScroll(bool enabled) {
-  NOTIMPLEMENTED();
-}
-
-bool IsNaturalScrollEnabled() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool IsTouchpadEvent(const base::NativeEvent& event) {
   NOTIMPLEMENTED();
   return false;
 }

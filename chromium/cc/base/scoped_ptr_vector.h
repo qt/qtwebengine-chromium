@@ -72,19 +72,19 @@ class ScopedPtrVector {
 
   scoped_ptr<T> take(iterator position) {
     if (position == end())
-      return scoped_ptr<T>();
+      return nullptr;
     DCHECK(position < end());
 
     typename std::vector<T*>::iterator writable_position = position;
     scoped_ptr<T> ret(*writable_position);
-    *writable_position = NULL;
+    *writable_position = nullptr;
     return ret.Pass();
   }
 
   scoped_ptr<T> take_back() {
     DCHECK(!empty());
     if (empty())
-      return scoped_ptr<T>(NULL);
+      return nullptr;
     return take(end() - 1);
   }
 
@@ -129,13 +129,11 @@ class ScopedPtrVector {
     data_.insert(position, item.release());
   }
 
-  void insert_and_take(iterator position,
-                       ScopedPtrVector<T>& other) {
+  void insert_and_take(iterator position, ScopedPtrVector<T>* other) {
     std::vector<T*> tmp_data;
-    for (ScopedPtrVector<T>::iterator it = other.begin();
-         it != other.end();
+    for (ScopedPtrVector<T>::iterator it = other->begin(); it != other->end();
          ++it) {
-      tmp_data.push_back(other.take(it).release());
+      tmp_data.push_back(other->take(it).release());
     }
     data_.insert(position, tmp_data.begin(), tmp_data.end());
   }
@@ -164,6 +162,21 @@ class ScopedPtrVector {
   template<class Compare>
   inline void sort(Compare comp) {
     std::sort(data_.begin(), data_.end(), comp);
+  }
+
+  template <class Compare>
+  inline void make_heap(Compare comp) {
+    std::make_heap(data_.begin(), data_.end(), comp);
+  }
+
+  template <class Compare>
+  inline void push_heap(Compare comp) {
+    std::push_heap(data_.begin(), data_.end(), comp);
+  }
+
+  template <class Compare>
+  inline void pop_heap(Compare comp) {
+    std::pop_heap(data_.begin(), data_.end(), comp);
   }
 
   iterator begin() { return static_cast<iterator>(data_.begin()); }

@@ -7,10 +7,9 @@
 
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContentSecurityPolicy;
-class KURL;
 
 class CSPDirective {
     WTF_MAKE_NONCOPYABLE(CSPDirective);
@@ -25,7 +24,7 @@ public:
     const String& text() const { return m_text; }
 
 protected:
-    const ContentSecurityPolicy* policy() const { return m_policy; }
+    ContentSecurityPolicy* policy() const { return m_policy; }
 
 private:
     String m_name;
@@ -33,6 +32,6 @@ private:
     ContentSecurityPolicy* m_policy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

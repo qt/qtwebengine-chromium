@@ -18,11 +18,11 @@ class RenderProcess;
 class InProcessRendererThread : public base::Thread {
  public:
   explicit InProcessRendererThread(const std::string& channel_id);
-  virtual ~InProcessRendererThread();
+  ~InProcessRendererThread() override;
 
  protected:
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
   std::string channel_id_;

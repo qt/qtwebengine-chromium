@@ -25,12 +25,15 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLHeadElement.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 #define DEFINE_ARRAY_FOR_MATCHING(name, source, maxMatchLength) \
 const UChar* name; \
@@ -51,7 +54,6 @@ using namespace HTMLNames;
 inline HTMLMetaElement::HTMLMetaElement(Document& document)
     : HTMLElement(metaTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLMetaElement)
@@ -128,7 +130,7 @@ void HTMLMetaElement::parseContentAttribute(const String& content, KeyValuePairC
     }
     if (error) {
         String message = "Error parsing a meta element's content: ';' is not a valid key-value pair separator. Please use ',' instead.";
-        document().addConsoleMessage(RenderingMessageSource, WarningMessageLevel, message);
+        document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, WarningMessageLevel, message));
     }
 }
 
@@ -392,7 +394,7 @@ void HTMLMetaElement::reportViewportWarning(ViewportErrorCode errorCode, const S
         message.replace("%replacement2", replacement2);
 
     // FIXME: This message should be moved off the console once a solution to https://bugs.webkit.org/show_bug.cgi?id=103274 exists.
-    document().addConsoleMessage(RenderingMessageSource, viewportErrorMessageLevel(errorCode), message);
+    document().addConsoleMessage(ConsoleMessage::create(RenderingMessageSource, viewportErrorMessageLevel(errorCode), message));
 }
 
 void HTMLMetaElement::processViewportContentAttribute(const String& content, ViewportDescription::Type origin)
@@ -447,11 +449,7 @@ static bool inDocumentHead(HTMLMetaElement* element)
     if (!element->inDocument())
         return false;
 
-    for (Element* current = element; current; current = current->parentElement()) {
-        if (isHTMLHeadElement(*current))
-            return true;
-    }
-    return false;
+    return Traversal<HTMLHeadElement>::firstAncestor(*element);
 }
 
 void HTMLMetaElement::process()
@@ -474,7 +472,7 @@ void HTMLMetaElement::process()
             processViewportContentAttribute("width=device-width", ViewportDescription::HandheldFriendlyMeta);
         else if (equalIgnoringCase(nameValue, "mobileoptimized"))
             processViewportContentAttribute("width=device-width, initial-scale=1", ViewportDescription::MobileOptimizedMeta);
-        else if (RuntimeEnabledFeatures::themeColorEnabled() && equalIgnoringCase(nameValue, "theme-color") && document().frame())
+        else if (equalIgnoringCase(nameValue, "theme-color") && document().frame())
             document().frame()->loader().client()->dispatchDidChangeThemeColor();
     }
 

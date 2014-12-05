@@ -32,9 +32,8 @@
 #define InspectorFrontendClient_h
 
 #include "wtf/Forward.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class InspectorFrontendClient {
 public:
@@ -47,8 +46,10 @@ public:
     virtual void sendMessageToEmbedder(const String&) = 0;
 
     virtual bool isUnderTest() = 0;
+
+    virtual void dispose() = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

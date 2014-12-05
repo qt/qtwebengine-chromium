@@ -29,15 +29,14 @@ class MockMessageCenter : public message_center::FakeMessageCenter {
         remove_count_(0),
         last_clicked_index_(-1) {}
 
-  virtual void RemoveNotification(const std::string& id,
-                                  bool by_user) OVERRIDE {
+  void RemoveNotification(const std::string& id, bool by_user) override {
     last_removed_id_ = id;
     last_removed_by_user_ = by_user;
     ++remove_count_;
   }
 
-  virtual void ClickOnNotificationButton(const std::string& id,
-                                         int button_index) OVERRIDE {
+  void ClickOnNotificationButton(const std::string& id,
+                                 int button_index) override {
     last_clicked_id_ = id;
     last_clicked_index_ = button_index;
   }
@@ -405,8 +404,7 @@ TEST_F(NotificationControllerTest, MessageSize) {
 
   // Message, image and no title: 2 lines.
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 2, 2);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(2, 2);
   bitmap.eraseColor(SK_ColorGREEN);
   notification->set_title(ASCIIToUTF16(""));
   notification->set_image(gfx::Image::CreateFrom1xBitmap(bitmap));

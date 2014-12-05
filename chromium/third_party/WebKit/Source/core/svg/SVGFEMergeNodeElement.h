@@ -25,9 +25,10 @@
 #include "core/svg/SVGAnimatedString.h"
 #include "core/svg/SVGElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEMergeNodeElement FINAL : public SVGElement {
+class SVGFEMergeNodeElement final : public SVGElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEMergeNodeElement);
     SVGAnimatedString* in1() { return m_in1.get(); }
@@ -35,15 +36,14 @@ public:
 private:
     explicit SVGFEMergeNodeElement(Document&);
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 
     RefPtr<SVGAnimatedString> m_in1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEMergeNodeElement_h

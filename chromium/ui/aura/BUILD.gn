@@ -50,6 +50,7 @@ component("aura") {
     "window_event_dispatcher.h",
     "window_delegate.h",
     "window_layer_type.h",
+    "window_observer.cc",
     "window_observer.h",
     "window_targeter.cc",
     "window_targeter.h",
@@ -86,6 +87,7 @@ component("aura") {
     "../wm/public/transient_window_client.h",
     "../wm/public/window_move_client.cc",
     "../wm/public/window_move_client.h",
+    "../wm/public/window_types.h",
   ]
 
   defines = [
@@ -113,6 +115,11 @@ component("aura") {
     deps += [
       "//ui/events/platform/x11",
     ]
+  } else {
+    sources -= [
+      "window_tree_host_x11.cc",
+      "window_tree_host_x11.h",
+    ]
   }
 
   if (is_win) {
@@ -132,15 +139,15 @@ component("aura") {
       "window_tree_host_ozone.h",
     ]
 
-    # TODO(GYP) enable when these targets exist.
-    #deps += [
-    #  "//ui/events/ozone",
-    #  "//ui/ozone",
-    #]
+    deps += [
+      "//ui/events/ozone:events_ozone",
+      "//ui/ozone",
+    ]
   }
 }
 
-source_set("aura_test_support") {
+source_set("test_support") {
+  testonly = true
   sources = [
     "test/aura_test_base.cc",
     "test/aura_test_base.h",
@@ -149,8 +156,8 @@ source_set("aura_test_support") {
     "test/aura_test_utils.cc",
     "test/aura_test_utils.h",
     "test/env_test_helper.h",
-    "test/event_generator.cc",
-    "test/event_generator.h",
+    "test/event_generator_delegate_aura.cc",
+    "test/event_generator_delegate_aura.h",
     "test/test_cursor_client.cc",
     "test/test_cursor_client.h",
     "test/test_focus_client.cc",
@@ -164,22 +171,28 @@ source_set("aura_test_support") {
     "test/test_window_delegate.cc",
     "test/test_window_delegate.h",
     "test/ui_controls_factory_aura.h",
+    "test/window_event_dispatcher_test_api.cc",
+    "test/window_event_dispatcher_test_api.h",
     "test/window_test_api.cc",
     "test/window_test_api.h",
+    "test/x11_event_sender.cc",
+    "test/x11_event_sender.h",
   ]
 
-  deps = [
+  public_deps = [
     ":aura",
+  ]
+  deps = [
     "//skia",
     "//testing/gtest",
-    "//ui/base",
-    "//ui/base:ui_base_test_support",
+    "//ui/base:test_support",
     "//ui/compositor:test_support",
     "//ui/events",
     "//ui/events:events_base",
-    "//ui/events:events_test_support",
+    "//ui/events:test_support",
     "//ui/gfx",
     "//ui/gfx/geometry",
+    "//ui/wm",
   ]
 
   if (is_win) {
@@ -203,101 +216,96 @@ source_set("aura_test_support") {
   }
 }
 
-#TODO(GYP): Enable this when everything it depends links.
-#executable("aura_demo") {
-#  sources = [
-#    "demo/demo_main.cc",
-#  ]
-#
-#  deps = [
-#    ":aura",
-#    ":aura_test_support",
-#    "//base",
-#    "//base:i18n",
-#    "//skia",
-#    "//third_party/icu",
-#    "//ui/base",
-#    "//ui/compositor",
-#    "//ui/compositor:test_support",
-#    "//ui/events",
-#    "//ui/gfx",
-#    "//ui/gfx/geometry",
-#  ]
-#
-#  if (use_x11) {
-#    deps += [
-#      "//ui/gfx/x",
-#    ]
-#  }
-#}
+executable("demo") {
+  output_name = "aura_demo"
+  testonly = true
 
-#TODO(GYP): Enable this when everything it depends links.
-#executable("aura_bench") {
-#  sources = [
-#    "bench/bench_main.cc",
-#  ]
-#
-#  deps = [
-#    ":aura",
-#    ":aura_test_support",
-#    "//base",
-#    "//base:i18n",
-#    "//cc",
-#    "//skia",
-#    "//third_party/icu",
-#    "//ui/base",
-#    "//ui/compositor",
-#    "//ui/compositor:test_support",
-#    "//ui/events",
-#    "//ui/gfx",
-#    "//ui/gfx/geometry",
-#  ]
-#
-#  if (use_x11) {
-#    deps += [
-#      "//ui/gfx/x",
-#    ]
-#  }
-#}
+  sources = [
+    "demo/demo_main.cc",
+  ]
 
-#TODO(GYP): Enable this when everything it depends links.
-#test("aura_unittests") {
-#  sources = [
-#    "gestures/gesture_recognizer_unittest.cc",
-#    "test/run_all_unittests.cc",
-#    "window_event_dispatcher_unittest.cc",
-#    "window_targeter_unittest.cc",
-#    "window_unittest.cc",
-#  ]
-#
-#  deps = [
-#    ":aura",
-#    ":aura_test_support",
-#   "//base/test:test_support",
-#    "//skia",
-#    "//testing/gtest",
-#    "//ui/base",
-#    "//ui/base:ui_base_test_support",
-#    "//ui/compositor",
-#    "//ui/compositor:test_support",
-#    "//ui/events",
-#    "//ui/events:events_base",
-#    "//ui/events:gesture_detection",
-#    "//ui/gfx",
-#    "//ui/gfx/geometry",
-#    "//ui/gl",
-#  ]
-#
-#  if (is_linux) {
-#    deps += [
-#      #"<(DEPTH)/third_party/mesa/mesa.gyp:osmesa",
-#    ]
-#  }
-#
-#  if (is_linux) { # && use_allocator != "none") {
-#    deps += [
-#      # See http://crbug.com/162998#c4 for why this is needed.
-#      "//base/allocator",
-#    ]
-#  }
-#}
+  deps = [
+    ":aura",
+    ":test_support",
+    "//base",
+    "//base:i18n",
+    "//skia",
+    "//third_party/icu",
+    "//ui/base",
+    "//ui/compositor",
+    "//ui/compositor:test_support",
+    "//ui/events",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/gl",
+  ]
+
+  if (use_x11) {
+    deps += [
+      "//ui/gfx/x",
+    ]
+  }
+}
+
+executable("bench") {
+  output_name = "aura_bench"
+  testonly = true
+
+  sources = [
+    "bench/bench_main.cc",
+  ]
+
+  deps = [
+    ":test_support",
+    "//base",
+    "//base:i18n",
+    "//cc",
+    "//gpu/command_buffer/client:gles2_interface",
+    "//skia",
+    "//third_party/icu",
+    "//ui/base",
+    "//ui/compositor",
+    "//ui/compositor:test_support",
+    "//ui/events",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/gl",
+  ]
+
+  if (use_x11) {
+    deps += [
+      "//ui/gfx/x",
+    ]
+  }
+}
+
+test("aura_unittests") {
+  sources = [
+    "gestures/gesture_recognizer_unittest.cc",
+    "test/run_all_unittests.cc",
+    "window_event_dispatcher_unittest.cc",
+    "window_targeter_unittest.cc",
+    "window_unittest.cc",
+  ]
+
+  deps = [
+    ":test_support",
+    "//base/allocator",
+    "//base/test:test_support",
+    "//skia",
+    "//testing/gtest",
+    "//ui/base:test_support",
+    "//ui/compositor:test_support",
+    "//ui/events:test_support",
+    "//ui/events:gesture_detection",
+    "//ui/gfx",
+    "//ui/gfx/geometry",
+    "//ui/gl",
+  ]
+
+  if (is_linux) {
+    deps += [
+      "//third_party/mesa",
+    ]
+  }
+}

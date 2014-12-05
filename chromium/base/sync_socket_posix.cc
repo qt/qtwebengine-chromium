@@ -16,7 +16,7 @@
 #include <sys/filio.h>
 #endif
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/threading/thread_restrictions.h"
 
@@ -36,8 +36,9 @@ size_t SendHelper(SyncSocket::Handle handle,
   DCHECK_LE(length, kMaxMessageLength);
   DCHECK_NE(handle, SyncSocket::kInvalidHandle);
   const char* charbuffer = static_cast<const char*>(buffer);
-  const int len = WriteFileDescriptor(handle, charbuffer, length);
-  return len < 0 ? 0 : static_cast<size_t>(len);
+  return WriteFileDescriptor(handle, charbuffer, length)
+             ? static_cast<size_t>(length)
+             : 0;
 }
 
 bool CloseHandle(SyncSocket::Handle handle) {
@@ -94,6 +95,19 @@ bool SyncSocket::CreatePair(SyncSocket* socket_a, SyncSocket* socket_b) {
   socket_b->handle_ = handles[1];
 
   return true;
+}
+
+// static
+SyncSocket::Handle SyncSocket::UnwrapHandle(
+    const TransitDescriptor& descriptor) {
+  return descriptor.fd;
+}
+
+bool SyncSocket::PrepareTransitDescriptor(ProcessHandle peer_process_handle,
+                                          TransitDescriptor* descriptor) {
+  descriptor->fd = handle();
+  descriptor->auto_close = false;
+  return descriptor->fd != kInvalidHandle;
 }
 
 bool SyncSocket::Close() {

@@ -31,25 +31,23 @@
 #ifndef WorkerPerformance_h
 #define WorkerPerformance_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class MemoryInfo;
 
-class WorkerPerformance : public GarbageCollectedFinalized<WorkerPerformance>, public ScriptWrappable {
+class WorkerPerformance final : public GarbageCollected<WorkerPerformance>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static WorkerPerformance* create()
     {
         return new WorkerPerformance();
     }
-    ~WorkerPerformance();
 
     double now(ExecutionContext*) const;
     PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
@@ -60,6 +58,6 @@ private:
     WorkerPerformance();
 };
 
-}
+} // namespace blink
 
 #endif // WorkerPerformance_h

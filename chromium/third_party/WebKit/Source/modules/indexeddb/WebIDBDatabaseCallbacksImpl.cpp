@@ -28,7 +28,7 @@
 
 #include "core/dom/DOMError.h"
 
-namespace WebCore {
+namespace blink {
 
 // static
 PassOwnPtr<WebIDBDatabaseCallbacksImpl> WebIDBDatabaseCallbacksImpl::create(IDBDatabaseCallbacks* callbacks)
@@ -55,7 +55,7 @@ void WebIDBDatabaseCallbacksImpl::onVersionChange(long long oldVersion, long lon
     m_callbacks->onVersionChange(oldVersion, newVersion);
 }
 
-void WebIDBDatabaseCallbacksImpl::onAbort(long long transactionId, const blink::WebIDBDatabaseError& error)
+void WebIDBDatabaseCallbacksImpl::onAbort(long long transactionId, const WebIDBDatabaseError& error)
 {
     m_callbacks->onAbort(transactionId, error);
 }
@@ -65,4 +65,4 @@ void WebIDBDatabaseCallbacksImpl::onComplete(long long transactionId)
     m_callbacks->onComplete(transactionId);
 }
 
-} // namespace WebCore
+} // namespace blink

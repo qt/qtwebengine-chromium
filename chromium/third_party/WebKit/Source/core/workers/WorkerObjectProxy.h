@@ -36,8 +36,9 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
+class ConsoleMessage;
 class ExecutionContext;
 class ExecutionContextTask;
 class WorkerMessagingProxy;
@@ -48,7 +49,7 @@ class WorkerMessagingProxy;
 // WorkerMessagingProxy on the worker object thread.
 //
 // Used only by Dedicated Worker.
-class WorkerObjectProxy FINAL : public WorkerReportingProxy {
+class WorkerObjectProxy final : public WorkerReportingProxy {
 public:
     static PassOwnPtr<WorkerObjectProxy> create(ExecutionContext*, WorkerMessagingProxy*);
     virtual ~WorkerObjectProxy() { }
@@ -59,14 +60,14 @@ public:
     void reportPendingActivity(bool hasPendingActivity);
 
     // WorkerReportingProxy overrides.
-    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) OVERRIDE;
-    virtual void reportConsoleMessage(MessageSource, MessageLevel, const String& message, int lineNumber, const String& sourceURL) OVERRIDE;
-    virtual void postMessageToPageInspector(const String&) OVERRIDE;
-    virtual void updateInspectorStateCookie(const String&) OVERRIDE;
-    virtual void workerGlobalScopeStarted(WorkerGlobalScope*) OVERRIDE { }
-    virtual void workerGlobalScopeClosed() OVERRIDE;
-    virtual void workerGlobalScopeDestroyed() OVERRIDE;
-    virtual void willDestroyWorkerGlobalScope() OVERRIDE { }
+    virtual void reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL) override;
+    virtual void reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage>) override;
+    virtual void postMessageToPageInspector(const String&) override;
+    virtual void didEvaluateWorkerScript(bool success) override { };
+    virtual void workerGlobalScopeStarted(WorkerGlobalScope*) override { }
+    virtual void workerGlobalScopeClosed() override;
+    virtual void workerThreadTerminated() override;
+    virtual void willDestroyWorkerGlobalScope() override { }
 
 private:
     WorkerObjectProxy(ExecutionContext*, WorkerMessagingProxy*);
@@ -76,6 +77,6 @@ private:
     WorkerMessagingProxy* m_messagingProxy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerObjectProxy_h

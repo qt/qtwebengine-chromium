@@ -14,7 +14,7 @@ IndexedDBConnection::IndexedDBConnection(
 IndexedDBConnection::~IndexedDBConnection() {}
 
 void IndexedDBConnection::Close() {
-  if (!callbacks_)
+  if (!callbacks_.get())
     return;
   database_->Close(this, false /* forced */);
   database_ = NULL;
@@ -22,12 +22,18 @@ void IndexedDBConnection::Close() {
 }
 
 void IndexedDBConnection::ForceClose() {
-  if (!callbacks_)
+  if (!callbacks_.get())
     return;
   database_->Close(this, true /* forced */);
   database_ = NULL;
   callbacks_->OnForcedClose();
   callbacks_ = NULL;
+}
+
+void IndexedDBConnection::VersionChangeIgnored() {
+  if (!database_.get())
+    return;
+  database_->VersionChangeIgnored();
 }
 
 bool IndexedDBConnection::IsConnected() {

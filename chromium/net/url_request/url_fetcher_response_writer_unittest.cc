@@ -4,7 +4,7 @@
 
 #include "net/url_request/url_fetcher_response_writer.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
@@ -23,7 +23,7 @@ const char kData[] = "Hello!";
 
 class URLFetcherStringWriterTest : public PlatformTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     writer_.reset(new URLFetcherStringWriter);
     buf_ = new StringIOBuffer(kData);
   }
@@ -54,7 +54,7 @@ TEST_F(URLFetcherStringWriterTest, Basic) {
 
 class URLFetcherFileWriterTest : public PlatformTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     file_path_ = temp_dir_.path().AppendASCII("test.txt");
     writer_.reset(new URLFetcherFileWriter(
@@ -144,7 +144,7 @@ TEST_F(URLFetcherFileWriterTest, DisownFile) {
 
 class URLFetcherFileWriterTemporaryFileTest : public PlatformTest {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     writer_.reset(new URLFetcherFileWriter(
         base::MessageLoopProxy::current(), base::FilePath()));
     buf_ = new StringIOBuffer(kData);

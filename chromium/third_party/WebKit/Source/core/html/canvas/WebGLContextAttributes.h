@@ -27,24 +27,24 @@
 #ifndef WebGLContextAttributes_h
 #define WebGLContextAttributes_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/CanvasContextAttributes.h"
 #include "public/platform/WebGraphicsContext3D.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Settings;
 
-class WebGLContextAttributes FINAL : public CanvasContextAttributes, public ScriptWrappable {
+class WebGLContextAttributes final : public CanvasContextAttributes, public ScriptWrappable {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(WebGLContextAttributes);
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~WebGLContextAttributes();
-
     // Create a new attributes object
-    static PassRefPtr<WebGLContextAttributes> create();
+    static PassRefPtrWillBeRawPtr<WebGLContextAttributes> create();
 
     // Create a copy of this object.
-    PassRefPtr<WebGLContextAttributes> clone() const;
+    PassRefPtrWillBeRawPtr<WebGLContextAttributes> clone() const;
 
     // Whether or not the drawing buffer has an alpha channel; default=true
     bool alpha() const;
@@ -81,7 +81,7 @@ public:
     // Set up the attributes that can be used to initialize a WebGraphicsContext3D.
     // It's mostly based on WebGLContextAttributes, but would be adjusted based
     // on settings.
-    blink::WebGraphicsContext3D::Attributes attributes(const blink::WebString&, Settings*) const;
+    blink::WebGraphicsContext3D::Attributes attributes(const blink::WebString&, Settings*, unsigned webGLVersion) const;
 
 protected:
     WebGLContextAttributes();
@@ -97,6 +97,6 @@ private:
     bool m_failIfMajorPerformanceCaveat;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLContextAttributes_h

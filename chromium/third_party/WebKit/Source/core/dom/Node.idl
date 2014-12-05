@@ -19,7 +19,6 @@
  */
 
 [
-    Custom=Wrap,
     DependentLifetime,
 ] interface Node : EventTarget {
     // NodeType
@@ -38,7 +37,7 @@
 
     readonly attribute DOMString nodeName;
 
-    [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, CustomElementCallbacks] attribute DOMString nodeValue;
+    [CustomElementCallbacks] attribute DOMString? nodeValue;
 
     readonly attribute unsigned short   nodeType;
     [PerWorldBindings] readonly attribute Node             parentNode;
@@ -49,29 +48,29 @@
     [PerWorldBindings] readonly attribute Node             nextSibling;
     [PerWorldBindings] readonly attribute Document         ownerDocument;
 
-    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node insertBefore(Node newChild, Node refChild);
-    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node replaceChild(Node newChild, Node oldChild);
-    [Custom, CustomElementCallbacks, RaisesException] Node removeChild(Node oldChild);
-    [Custom, CustomElementCallbacks, PerWorldBindings, LogActivity, RaisesException] Node appendChild(Node newChild);
+    [CustomElementCallbacks, PerWorldBindings, RaisesException, TypeChecking=Interface] Node insertBefore(Node newChild, Node? refChild);
+    [CustomElementCallbacks, PerWorldBindings, RaisesException, TypeChecking=Interface] Node replaceChild(Node newChild, Node oldChild);
+    [CustomElementCallbacks, RaisesException, TypeChecking=Interface] Node removeChild(Node oldChild);
+    [CustomElementCallbacks, PerWorldBindings, RaisesException, TypeChecking=Interface] Node appendChild(Node newChild);
 
     [ImplementedAs=hasChildren] boolean hasChildNodes();
     [CustomElementCallbacks] Node cloneNode(optional boolean deep);
     [CustomElementCallbacks] void normalize();
 
     // Introduced in DOM Level 2:
-    [TreatReturnedNullStringAs=Null, MeasureAs=NodeNamespaceURI] readonly attribute DOMString namespaceURI; // Moved to Element and Attr in DOM4.
-    [TreatReturnedNullStringAs=Null, MeasureAs=NodeLocalName] readonly attribute DOMString localName; // Moved to Element and Attr in DOM4.
+    [MeasureAs=NodeNamespaceURI] readonly attribute DOMString? namespaceURI; // Moved to Element and Attr in DOM4.
+    [MeasureAs=NodeLocalName] readonly attribute DOMString? localName; // Moved to Element and Attr in DOM4.
 
     // Introduced in DOM Level 3:
-    [TreatReturnedNullStringAs=Null] readonly attribute DOMString baseURI;
+    readonly attribute DOMString? baseURI;
 
     [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, TreatUndefinedAs=NullString, CustomElementCallbacks] attribute DOMString textContent;
 
     [MeasureAs=NodeIsSameNode] boolean isSameNode([Default=Undefined] optional Node other); // Removed in DOM4.
     boolean isEqualNode(Node other);
-    [TreatReturnedNullStringAs=Null] DOMString lookupPrefix([TreatNullAs=NullString] DOMString namespaceURI);
-    boolean isDefaultNamespace([TreatNullAs=NullString] DOMString namespaceURI);
-    [TreatReturnedNullStringAs=Null] DOMString lookupNamespaceURI([TreatNullAs=NullString] DOMString prefix);
+    DOMString? lookupPrefix(DOMString? namespaceURI);
+    boolean isDefaultNamespace(DOMString? namespaceURI);
+    DOMString? lookupNamespaceURI(DOMString? prefix);
 
     // DocumentPosition
     const unsigned short      DOCUMENT_POSITION_DISCONNECTED = 0x01;

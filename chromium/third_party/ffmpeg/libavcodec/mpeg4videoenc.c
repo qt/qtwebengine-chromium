@@ -110,11 +110,11 @@ static inline void restore_ac_coeffs(MpegEncContext *s, int16_t block[6][64],
         if (dir[n]) {
             /* top prediction */
             for (i = 1; i < 8; i++)
-                block[n][s->dsp.idct_permutation[i]] = ac_val[i + 8];
+                block[n][s->idsp.idct_permutation[i]] = ac_val[i + 8];
         } else {
             /* left prediction */
             for (i = 1; i < 8; i++)
-                block[n][s->dsp.idct_permutation[i << 3]] = ac_val[i];
+                block[n][s->idsp.idct_permutation[i << 3]] = ac_val[i];
         }
     }
 }
@@ -152,17 +152,17 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
             if (s->mb_y == 0 || s->qscale == qscale_table[xy] || n == 2 || n == 3) {
                 /* same qscale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i]];
-                    block[n][s->dsp.idct_permutation[i]] = level - ac_val[i + 8];
-                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i << 3]];
+                    const int level = block[n][s->idsp.idct_permutation[i]];
+                    block[n][s->idsp.idct_permutation[i]] = level - ac_val[i + 8];
+                    ac_val1[i]     = block[n][s->idsp.idct_permutation[i << 3]];
                     ac_val1[i + 8] = level;
                 }
             } else {
                 /* different qscale, we must rescale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i]];
-                    block[n][s->dsp.idct_permutation[i]] = level - ROUNDED_DIV(ac_val[i + 8] * qscale_table[xy], s->qscale);
-                    ac_val1[i]     = block[n][s->dsp.idct_permutation[i << 3]];
+                    const int level = block[n][s->idsp.idct_permutation[i]];
+                    block[n][s->idsp.idct_permutation[i]] = level - ROUNDED_DIV(ac_val[i + 8] * qscale_table[xy], s->qscale);
+                    ac_val1[i]     = block[n][s->idsp.idct_permutation[i << 3]];
                     ac_val1[i + 8] = level;
                 }
             }
@@ -174,18 +174,18 @@ static inline int decide_ac_pred(MpegEncContext *s, int16_t block[6][64],
             if (s->mb_x == 0 || s->qscale == qscale_table[xy] || n == 1 || n == 3) {
                 /* same qscale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i << 3]];
-                    block[n][s->dsp.idct_permutation[i << 3]] = level - ac_val[i];
+                    const int level = block[n][s->idsp.idct_permutation[i << 3]];
+                    block[n][s->idsp.idct_permutation[i << 3]] = level - ac_val[i];
                     ac_val1[i]     = level;
-                    ac_val1[i + 8] = block[n][s->dsp.idct_permutation[i]];
+                    ac_val1[i + 8] = block[n][s->idsp.idct_permutation[i]];
                 }
             } else {
                 /* different qscale, we must rescale */
                 for (i = 1; i < 8; i++) {
-                    const int level = block[n][s->dsp.idct_permutation[i << 3]];
-                    block[n][s->dsp.idct_permutation[i << 3]] = level - ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
+                    const int level = block[n][s->idsp.idct_permutation[i << 3]];
+                    block[n][s->idsp.idct_permutation[i << 3]] = level - ROUNDED_DIV(ac_val[i] * qscale_table[xy], s->qscale);
                     ac_val1[i]     = level;
-                    ac_val1[i + 8] = block[n][s->dsp.idct_permutation[i]];
+                    ac_val1[i + 8] = block[n][s->idsp.idct_permutation[i]];
                 }
             }
             st[n] = s->intra_v_scantable.permutated;
@@ -485,7 +485,7 @@ static inline int get_b_cbp(MpegEncContext *s, int16_t block[6][64],
         for (i = 0; i < 6; i++) {
             if (s->block_last_index[i] >= 0 && ((cbp >> (5 - i)) & 1) == 0) {
                 s->block_last_index[i] = -1;
-                s->dsp.clear_block(s->block[i]);
+                s->bdsp.clear_block(s->block[i]);
             }
         }
     } else {
@@ -698,7 +698,7 @@ void ff_mpeg4_encode_mb(MpegEncContext *s, int16_t block[6][64],
                             }
                             diff = diff * 256 / (xe * ye);
                         } else {
-                            diff = s->dsp.sad[0](NULL, p_pic, b_pic, s->linesize, 16);
+                            diff = s->mecc.sad[0](NULL, p_pic, b_pic, s->linesize, 16);
                         }
                         if (diff > s->qscale * 70) {  // FIXME check that 70 is optimal
                             s->mb_skipped = 0;
@@ -1300,7 +1300,7 @@ static av_cold int encode_init(AVCodecContext *avctx)
         return AVERROR(EINVAL);
     }
 
-    if ((ret = ff_MPV_encode_init(avctx)) < 0)
+    if ((ret = ff_mpv_encode_init(avctx)) < 0)
         return ret;
 
     if (!done) {
@@ -1414,8 +1414,8 @@ AVCodec ff_mpeg4_encoder = {
     .id             = AV_CODEC_ID_MPEG4,
     .priv_data_size = sizeof(MpegEncContext),
     .init           = encode_init,
-    .encode2        = ff_MPV_encode_picture,
-    .close          = ff_MPV_encode_end,
+    .encode2        = ff_mpv_encode_picture,
+    .close          = ff_mpv_encode_end,
     .pix_fmts       = (const enum AVPixelFormat[]) { AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
     .capabilities   = CODEC_CAP_DELAY | CODEC_CAP_SLICE_THREADS,
     .priv_class     = &mpeg4enc_class,

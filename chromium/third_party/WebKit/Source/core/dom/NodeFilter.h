@@ -25,14 +25,15 @@
 #ifndef NodeFilter_h
 #define NodeFilter_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/NodeFilterCondition.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class NodeFilter FINAL : public RefCountedWillBeGarbageCollectedFinalized<NodeFilter>, public ScriptWrappable {
+class NodeFilter final : public RefCountedWillBeGarbageCollected<NodeFilter>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     /**
      * The following constants are returned by the acceptNode()
@@ -86,19 +87,13 @@ public:
     void trace(Visitor*);
 
 private:
-    explicit NodeFilter(PassRefPtrWillBeRawPtr<NodeFilterCondition> condition) : m_condition(condition)
-    {
-        ScriptWrappable::init(this);
-    }
+    explicit NodeFilter(PassRefPtrWillBeRawPtr<NodeFilterCondition> condition) : m_condition(condition) { }
 
-    NodeFilter()
-    {
-        ScriptWrappable::init(this);
-    }
+    NodeFilter() { }
 
     RefPtrWillBeMember<NodeFilterCondition> m_condition;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeFilter_h

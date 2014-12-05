@@ -32,6 +32,7 @@
 #include "core/loader/FrameFetchContext.h"
 
 #include "core/dom/Document.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/LocalFrame.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "core/inspector/InspectorTraceEvents.h"
@@ -43,7 +44,7 @@
 #include "core/frame/Settings.h"
 #include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
 FrameFetchContext::FrameFetchContext(LocalFrame* frame)
     : m_frame(frame)
@@ -60,22 +61,20 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
     bool isMainResource = type == FetchMainResource;
     if (!isMainResource) {
         String outgoingReferrer;
+        ReferrerPolicy referrerPolicy;
         String outgoingOrigin;
         if (request.httpReferrer().isNull()) {
             outgoingReferrer = document->outgoingReferrer();
+            referrerPolicy = document->referrerPolicy();
             outgoingOrigin = document->outgoingOrigin();
         } else {
             outgoingReferrer = request.httpReferrer();
+            referrerPolicy = request.referrerPolicy();
             outgoingOrigin = SecurityOrigin::createFromString(outgoingReferrer)->toString();
         }
 
-        outgoingReferrer = SecurityPolicy::generateReferrerHeader(document->referrerPolicy(), request.url(), outgoingReferrer);
-        if (outgoingReferrer.isEmpty())
-            request.clearHTTPReferrer();
-        else if (!request.httpReferrer())
-            request.setHTTPReferrer(Referrer(outgoingReferrer, document->referrerPolicy()));
-
-        FrameLoader::addHTTPOriginIfNeeded(request, AtomicString(outgoingOrigin));
+        request.setHTTPReferrer(SecurityPolicy::generateReferrer(referrerPolicy, request.url(), outgoingReferrer));
+        request.addHTTPOriginIfNeeded(AtomicString(outgoingOrigin));
     }
 
     // The remaining modifications are only necessary for HTTP and HTTPS.
@@ -83,9 +82,6 @@ void FrameFetchContext::addAdditionalRequestHeaders(Document* document, Resource
         return;
 
     m_frame->loader().applyUserAgent(request);
-
-    // Default to sending an empty Origin header if one hasn't been set yet.
-    FrameLoader::addHTTPOriginIfNeeded(request, nullAtom);
 }
 
 void FrameFetchContext::setFirstPartyForCookies(ResourceRequest& request)
@@ -155,7 +151,10 @@ void FrameFetchContext::dispatchDidReceiveResponse(DocumentLoader* loader, unsig
     m_frame->loader().client()->dispatchDidReceiveResponse(loader, identifier, r);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceReceiveResponse", "data", InspectorReceiveResponseEvent::data(identifier, m_frame, r));
     // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
-    InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, ensureLoader(loader), r, resourceLoader);
+    DocumentLoader* documentLoader = ensureLoader(loader);
+    InspectorInstrumentation::didReceiveResourceResponse(m_frame, identifier, documentLoader, r, resourceLoader);
+    // It is essential that inspector gets resource response BEFORE console.
+    m_frame->console().reportResourceResponseReceived(documentLoader, identifier, r);
 }
 
 void FrameFetchContext::dispatchDidReceiveData(DocumentLoader*, unsigned long identifier, const char* data, int dataLength, int encodedDataLength)
@@ -184,12 +183,16 @@ void FrameFetchContext::dispatchDidFinishLoading(DocumentLoader* loader, unsigne
     InspectorInstrumentation::didFinishLoading(m_frame, identifier, ensureLoader(loader), finishTime, encodedDataLength);
 }
 
-void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long identifier, const ResourceError& error)
+void FrameFetchContext::dispatchDidFail(DocumentLoader* loader, unsigned long identifier, const ResourceError& error, bool isInternalRequest)
 {
     m_frame->loader().progress().completeProgress(identifier);
+    m_frame->loader().client()->dispatchDidFinishLoading(loader, identifier);
     TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "ResourceFinish", "data", InspectorResourceFinishEvent::data(identifier, 0, true));
     // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::didFailLoading(m_frame, identifier, error);
+    // Notification to FrameConsole should come AFTER InspectorInstrumentation call, DevTools front-end relies on this.
+    if (!isInternalRequest)
+        m_frame->console().didFailLoading(identifier, error);
 }
 
 void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, unsigned long identifier, const ResourceResponse& response, int dataLength)
@@ -203,4 +206,10 @@ void FrameFetchContext::sendRemainingDelegateMessages(DocumentLoader* loader, un
     dispatchDidFinishLoading(ensureLoader(loader), identifier, 0, 0);
 }
 
-} // namespace WebCore
+void FrameFetchContext::trace(Visitor* visitor)
+{
+    visitor->trace(m_frame);
+    FetchContext::trace(visitor);
+}
+
+} // namespace blink

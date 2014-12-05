@@ -23,6 +23,8 @@ class TransientWindowObserver;
 //   or transient parent is destroyed.
 // . If a transient child and its transient parent share the same parent, then
 //   transient children are always ordered above the transient parent.
+// . If a transient parent is hidden, it hides all transient children.
+//   For show operation, please refer to |set_parent_controls_visibility(bool)|.
 // Transient windows are typically used for popups and menus.
 // TODO(sky): when we nuke TransientWindowClient rename this to
 // TransientWindowController.
@@ -30,7 +32,7 @@ class WM_EXPORT TransientWindowManager : public aura::WindowObserver {
  public:
   typedef std::vector<aura::Window*> Windows;
 
-  virtual ~TransientWindowManager();
+  ~TransientWindowManager() override;
 
   // Returns the TransientWindowManager for |window|. This never returns NULL.
   static TransientWindowManager* Get(aura::Window* window);
@@ -45,6 +47,14 @@ class WM_EXPORT TransientWindowManager : public aura::WindowObserver {
   // Adds or removes a transient child.
   void AddTransientChild(aura::Window* child);
   void RemoveTransientChild(aura::Window* child);
+
+  // Setting true lets the transient parent show this transient
+  // child when the parent is shown. If this was shown when the
+  // transient parent is hidden, it remains hidden and gets shown
+  // when the transient parent is shown. This is false by default.
+  void set_parent_controls_visibility(bool parent_controls_visibility) {
+    parent_controls_visibility_ = parent_controls_visibility;
+  }
 
   const Windows& transient_children() const { return transient_children_; }
 
@@ -65,13 +75,17 @@ class WM_EXPORT TransientWindowManager : public aura::WindowObserver {
   // above it.
   void RestackTransientDescendants();
 
+  // Update the window's visibility following the transient parent's
+  // visibility. See |set_parent_controls_visibility(bool)| for more details.
+  void UpdateTransientChildVisibility(bool visible);
+
   // WindowObserver:
-  virtual void OnWindowParentChanged(aura::Window* window,
-                                     aura::Window* parent) OVERRIDE;
-  virtual void OnWindowVisibilityChanging(aura::Window* window,
-                                          bool visible) OVERRIDE;
-  virtual void OnWindowStackingChanged(aura::Window* window) OVERRIDE;
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE;
+  void OnWindowParentChanged(aura::Window* window,
+                             aura::Window* parent) override;
+  void OnWindowVisibilityChanging(aura::Window* window, bool visible) override;
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override;
+  void OnWindowStackingChanged(aura::Window* window) override;
+  void OnWindowDestroying(aura::Window* window) override;
 
   aura::Window* window_;
   aura::Window* transient_parent_;
@@ -80,6 +94,10 @@ class WM_EXPORT TransientWindowManager : public aura::WindowObserver {
   // If non-null we're actively restacking transient as the result of a
   // transient ancestor changing.
   aura::Window* stacking_target_;
+
+  bool parent_controls_visibility_;
+  bool show_on_parent_visible_;
+  bool ignore_visibility_changed_event_;
 
   ObserverList<TransientWindowObserver> observers_;
 

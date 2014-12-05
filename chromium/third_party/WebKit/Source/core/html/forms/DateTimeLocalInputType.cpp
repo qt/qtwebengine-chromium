@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/html/forms/DateTimeLocalInputType.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/html/HTMLInputElement.h"
@@ -41,7 +41,7 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
@@ -95,11 +95,6 @@ bool DateTimeLocalInputType::setMillisecondToDateComponents(double value, DateCo
 {
     ASSERT(date);
     return date->setMillisecondsSinceEpochForDateTimeLocal(value);
-}
-
-bool DateTimeLocalInputType::isDateTimeLocalField() const
-{
-    return true;
 }
 
 #if ENABLE(INPUT_MULTIPLE_FIELDS_UI)
@@ -164,4 +159,4 @@ bool DateTimeLocalInputType::isValidFormat(bool hasYear, bool hasMonth, bool has
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

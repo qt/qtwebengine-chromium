@@ -29,39 +29,37 @@
 #if !ENABLE(INPUT_MULTIPLE_FIELDS_UI)
 #include "core/html/forms/BaseClickableWithKeyInputType.h"
 #include "core/html/forms/BaseDateAndTimeInputType.h"
-#include "platform/DateTimeChooser.h"
-#include "platform/DateTimeChooserClient.h"
+#include "core/html/forms/DateTimeChooser.h"
+#include "core/html/forms/DateTimeChooserClient.h"
 
-namespace WebCore {
+namespace blink {
 
 class BaseChooserOnlyDateAndTimeInputType : public BaseDateAndTimeInputType, public DateTimeChooserClient {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BaseChooserOnlyDateAndTimeInputType);
 protected:
-    explicit BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
+    BaseChooserOnlyDateAndTimeInputType(HTMLInputElement& element) : BaseDateAndTimeInputType(element) { }
     virtual ~BaseChooserOnlyDateAndTimeInputType();
-
-    virtual void trace(Visitor*) OVERRIDE;
 
 private:
     void closeDateTimeChooser();
 
     // InputType functions:
-    virtual void createShadowSubtree() OVERRIDE;
-    virtual void closePopupView() OVERRIDE;
-    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) OVERRIDE;
-    virtual void handleDOMActivateEvent(Event*) OVERRIDE;
-    virtual void handleKeydownEvent(KeyboardEvent*) OVERRIDE;
-    virtual void handleKeypressEvent(KeyboardEvent*) OVERRIDE;
-    virtual void handleKeyupEvent(KeyboardEvent*) OVERRIDE;
-    virtual void accessKeyAction(bool sendMouseEvents) OVERRIDE;
-    virtual void updateView() OVERRIDE;
+    virtual void createShadowSubtree() override;
+    virtual void closePopupView() override;
+    virtual void setValue(const String&, bool valueChanged, TextFieldEventBehavior) override;
+    virtual void handleDOMActivateEvent(Event*) override;
+    virtual void handleKeydownEvent(KeyboardEvent*) override;
+    virtual void handleKeypressEvent(KeyboardEvent*) override;
+    virtual void handleKeyupEvent(KeyboardEvent*) override;
+    virtual void accessKeyAction(bool sendMouseEvents) override;
+    virtual void updateView() override;
 
     // DateTimeChooserClient functions:
-    virtual void didChooseValue(const String&) OVERRIDE;
-    virtual void didChooseValue(double) OVERRIDE;
-    virtual void didEndChooser() OVERRIDE;
+    virtual Element& ownerElement() const override;
+    virtual void didChooseValue(const String&) override;
+    virtual void didChooseValue(double) override;
+    virtual void didEndChooser() override;
 
-    RefPtrWillBeMember<DateTimeChooser> m_dateTimeChooser;
+    RefPtr<DateTimeChooser> m_dateTimeChooser;
 };
 
 }

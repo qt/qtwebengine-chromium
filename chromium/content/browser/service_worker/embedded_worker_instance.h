@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/callback_forward.h"
 #include "base/gtest_prod_util.h"
 #include "base/logging.h"
@@ -48,8 +49,9 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   class Listener {
    public:
     virtual ~Listener() {}
-    virtual void OnStarted() = 0;
-    virtual void OnStopped() = 0;
+    virtual void OnStarted() {}
+    virtual void OnStopped() {}
+    virtual void OnPausedAfterDownload() {}
     virtual void OnReportException(const base::string16& error_message,
                                    int line_number,
                                    int column_number,
@@ -74,7 +76,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void Start(int64 service_worker_version_id,
              const GURL& scope,
              const GURL& script_url,
-             const std::vector<int>& possible_process_ids,
+             bool pause_after_download,
              const StatusCallback& callback);
 
   // Stops the worker. It is invalid to call this when the worker is
@@ -87,11 +89,7 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   // It is invalid to call this while the worker is not in RUNNING status.
   ServiceWorkerStatusCode SendMessage(const IPC::Message& message);
 
-  // Add or remove |process_id| to the internal process set where this
-  // worker can be started.
-  void AddProcessReference(int process_id);
-  void ReleaseProcessReference(int process_id);
-  bool HasProcessToRun() const { return !process_refs_.empty(); }
+  void ResumeAfterDownload();
 
   int embedded_worker_id() const { return embedded_worker_id_; }
   Status status() const { return status_; }
@@ -109,9 +107,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
 
   friend class EmbeddedWorkerRegistry;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, StartAndStop);
-  FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerInstanceTest, SortProcesses);
-
-  typedef std::map<int, int> ProcessRefMap;
 
   // Constructor is called via EmbeddedWorkerRegistry::CreateWorker().
   // This instance holds a ref of |registry|.
@@ -136,21 +131,30 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   void SendStartWorker(scoped_ptr<EmbeddedWorkerMsg_StartWorker_Params> params,
                        const StatusCallback& callback,
                        int worker_devtools_agent_route_id,
-                       bool pause_on_start);
+                       bool wait_for_debugger);
 
   // Called back from Registry when the worker instance has ack'ed that
-  // it finished loading the script.
-  void OnScriptLoaded();
+  // it is ready for inspection.
+  void OnReadyForInspection();
+
+  // Called back from Registry when the worker instance has ack'ed that
+  // it finished loading the script and has started a worker thread.
+  void OnScriptLoaded(int thread_id);
 
   // Called back from Registry when the worker instance has ack'ed that
   // it failed to load the script.
   void OnScriptLoadFailed();
 
   // Called back from Registry when the worker instance has ack'ed that
-  // its WorkerGlobalScope is actually started and parsed on |thread_id| in the
-  // child process.
+  // it finished evaluating the script.
+  void OnScriptEvaluated(bool success);
+
+  // Called back from Registry when the worker instance has ack'ed that
+  // its WorkerGlobalScope is actually started and parsed.
   // This will change the internal status from STARTING to RUNNING.
-  void OnStarted(int thread_id);
+  void OnStarted();
+
+  void OnPausedAfterDownload();
 
   // Called back from Registry when the worker instance has ack'ed that
   // its WorkerGlobalScope is actually stopped in the child process.
@@ -176,11 +180,6 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
                               int line_number,
                               const GURL& source_url);
 
-  // Chooses a list of processes to try to start this worker in, ordered by how
-  // many clients are currently in those processes.
-  std::vector<int> SortProcesses(
-      const std::vector<int>& possible_process_ids) const;
-
   base::WeakPtr<ServiceWorkerContextCore> context_;
   scoped_refptr<EmbeddedWorkerRegistry> registry_;
   const int embedded_worker_id_;
@@ -191,7 +190,8 @@ class CONTENT_EXPORT EmbeddedWorkerInstance {
   int thread_id_;
   int worker_devtools_agent_route_id_;
 
-  ProcessRefMap process_refs_;
+  StatusCallback start_callback_;
+
   ListenerList listener_list_;
 
   base::WeakPtrFactory<EmbeddedWorkerInstance> weak_factory_;

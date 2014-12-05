@@ -26,16 +26,18 @@
 #include "config.h"
 #include "core/html/HTMLDialogElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/accessibility/AXObjectCache.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
+#include "core/events/Event.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/HTMLFormControlElement.h"
 #include "core/frame/FrameView.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -86,7 +88,7 @@ static void inertSubtreesChanged(Document& document)
     Document& topDocument = document.topDocument();
     topDocument.clearAXObjectCache();
     if (AXObjectCache* cache = topDocument.axObjectCache())
-        cache->childrenChanged(cache->getOrCreate(&topDocument));
+        cache->childrenChanged(&topDocument);
 }
 
 inline HTMLDialogElement::HTMLDialogElement(Document& document)
@@ -95,7 +97,7 @@ inline HTMLDialogElement::HTMLDialogElement(Document& document)
     , m_centeredPosition(0)
     , m_returnValue("")
 {
-    ScriptWrappable::init(this);
+    UseCounter::count(document, UseCounter::DialogElement);
 }
 
 DEFINE_NODE_FACTORY(HTMLDialogElement)
@@ -202,4 +204,4 @@ void HTMLDialogElement::defaultEventHandler(Event* event)
     HTMLElement::defaultEventHandler(event);
 }
 
-} // namespace WebCore
+} // namespace blink

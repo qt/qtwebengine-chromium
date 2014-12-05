@@ -26,19 +26,10 @@
 #include "config.h"
 #include "core/css/CSSFunctionValue.h"
 
-#include "core/css/CSSParserValues.h"
 #include "core/css/CSSValueList.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
-
-CSSFunctionValue::CSSFunctionValue(CSSParserFunction* function)
-    : CSSValue(FunctionClass)
-    , m_name(function->name)
-{
-    if (function->args)
-        m_args = CSSValueList::createFromParserValueList(function->args.get());
-}
+namespace blink {
 
 CSSFunctionValue::CSSFunctionValue(String name, PassRefPtrWillBeRawPtr<CSSValueList> args)
     : CSSValue(FunctionClass)

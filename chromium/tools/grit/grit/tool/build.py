@@ -63,6 +63,20 @@ option).
 
 Options:
 
+  -a FILE           Assert that the given file is an output. There can be
+                    multiple "-a" flags listed for multiple outputs. If a "-a"
+                    or "--assert-file-list" argument is present, then the list
+                    of asserted files must match the output files or the tool
+                    will fail. The use-case is for the build system to maintain
+                    separate lists of output files and to catch errors if the
+                    build system's list and the grit list are out-of-sync.
+
+  --assert-file-list  Provide a file listing multiple asserted output files.
+                    There is one file name per line. This acts like specifying
+                    each file with "-a" on the command line, but without the
+                    possibility of running into OS line-length limits for very
+                    long lists.
+
   -o OUTPUTDIR      Specify what directory output paths are relative to.
                     Defaults to the current directory.
 
@@ -90,6 +104,11 @@ Options:
                     and {numeric_id}. E.g. "#define {textual_id} {numeric_id}"
                     Otherwise it will use the default "#define SYMBOL 1234"
 
+  --output-all-resource-defines
+  --no-output-all-resource-defines  If specified, overrides the value of the
+                    output_all_resource_defines attribute of the root <grit>
+                    element of the input .grd file.
+
 Conditional inclusion of resources only affects the output of files which
 control which resources get linked into a binary, e.g. it affects .rc files
 meant for compilation but it does not affect resource header files (that define
@@ -104,13 +123,23 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.output_directory = '.'
     first_ids_file = None
     whitelist_filenames = []
+    assert_output_files = []
     target_platform = None
     depfile = None
     depdir = None
     rc_header_format = None
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:h:', ('depdir=','depfile='))
+    output_all_resource_defines = None
+    (own_opts, args) = getopt.getopt(args, 'a:o:D:E:f:w:t:h:',
+        ('depdir=','depfile=','assert-file-list=',
+         'output-all-resource-defines',
+         'no-output-all-resource-defines',))
     for (key, val) in own_opts:
-      if key == '-o':
+      if key == '-a':
+        assert_output_files.append(val)
+      elif key == '--assert-file-list':
+        with open(val) as f:
+          assert_output_files += f.read().splitlines()
+      elif key == '-o':
         self.output_directory = val
       elif key == '-D':
         name, val = util.ParseDefine(val)
@@ -125,6 +154,10 @@ are exported to translation interchange files (e.g. XMB files), etc.
         first_ids_file = val
       elif key == '-w':
         whitelist_filenames.append(val)
+      elif key == '--output-all-resource-defines':
+        output_all_resource_defines = True
+      elif key == '--no-output-all-resource-defines':
+        output_all_resource_defines = False
       elif key == '-t':
         target_platform = val
       elif key == '-h':
@@ -157,6 +190,12 @@ are exported to translation interchange files (e.g. XMB files), etc.
                                 first_ids_file=first_ids_file,
                                 defines=self.defines,
                                 target_platform=target_platform)
+
+    # If the output_all_resource_defines option is specified, override the value
+    # found in the grd file.
+    if output_all_resource_defines is not None:
+      self.res.SetShouldOutputAllResourceDefines(output_all_resource_defines)
+
     # Set an output context so that conditionals can use defines during the
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
@@ -166,8 +205,12 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.res.RunGatherers()
     self.Process()
 
+    if assert_output_files:
+      if not self.CheckAssertedOutputFiles(assert_output_files):
+        return 2
+
     if depfile and depdir:
-      self.GenerateDepfile(opts.input, depfile, depdir)
+      self.GenerateDepfile(depfile, depdir)
 
     return 0
 
@@ -199,11 +242,13 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # be written into the target files (skip markers).
     from grit.node import include
     from grit.node import message
+    from grit.node import structure
     for node in start_node:
       # Same trick data_pack.py uses to see what nodes actually result in
       # real items.
       if (isinstance(node, include.IncludeNode) or
-          isinstance(node, message.MessageNode)):
+          isinstance(node, message.MessageNode) or
+          isinstance(node, structure.StructureNode)):
         text_ids = node.GetTextualIds()
         # Mark the item to be skipped if it wasn't in the whitelist.
         if text_ids and text_ids[0] not in whitelist_names:
@@ -324,7 +369,40 @@ are exported to translation interchange files (e.g. XMB files), etc.
       print self.res.UberClique().missing_translations_
       sys.exit(-1)
 
-  def GenerateDepfile(self, input_filename, depfile, depdir):
+
+  def CheckAssertedOutputFiles(self, assert_output_files):
+    '''Checks that the asserted output files are specified in the given list.
+
+    Returns true if the asserted files are present. If they are not, returns
+    False and prints the failure.
+    '''
+    # Compare the absolute path names, sorted.
+    asserted = sorted([os.path.abspath(i) for i in assert_output_files])
+    actual = sorted([
+        os.path.abspath(os.path.join(self.output_directory, i.GetFilename()))
+        for i in self.res.GetOutputFiles()])
+
+    if asserted != actual:
+      missing = list(set(actual) - set(asserted))
+      extra = list(set(asserted) - set(actual))
+      error = '''Asserted file list does not match.
+
+Expected output files:
+%s
+Actual output files:
+%s
+Missing output files:
+%s
+Extra output files:
+%s
+'''
+      print error % ('\n'.join(asserted), '\n'.join(actual), '\n'.join(missing),
+          '\n'.join(extra))
+      return False
+    return True
+
+
+  def GenerateDepfile(self, depfile, depdir):
     '''Generate a depfile that contains the imlicit dependencies of the input
     grd. The depfile will be in the same format as a makefile, and will contain
     references to files relative to |depdir|. It will be put in |depfile|.
@@ -343,19 +421,27 @@ are exported to translation interchange files (e.g. XMB files), etc.
     from the directory src/ we will generate a depfile ../out/gen/blah.grd.d
     that has the contents
 
-      gen/blah.grd.d: ../src/input1.xtb ../src/input2.xtb
+      gen/blah.h: ../src/input1.xtb ../src/input2.xtb
+
+    Where "gen/blah.h" is the first output (Ninja expects the .d file to list
+    the first output in cases where there is more than one).
 
     Note that all paths in the depfile are relative to ../out, the depdir.
     '''
     depfile = os.path.abspath(depfile)
     depdir = os.path.abspath(depdir)
+    infiles = self.res.GetInputFiles()
+
+    # Get the first output file relative to the depdir.
+    outputs = self.res.GetOutputFiles()
+    output_file = os.path.relpath(os.path.join(
+          self.output_directory, outputs[0].GetFilename()), depdir)
+
     # The path prefix to prepend to dependencies in the depfile.
     prefix = os.path.relpath(os.getcwd(), depdir)
-    # The path that the depfile refers to itself by.
-    self_ref_depfile = os.path.relpath(depfile, depdir)
-    infiles = self.res.GetInputFiles()
     deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])
-    depfile_contents = self_ref_depfile + ': ' + deps_text
+
+    depfile_contents = output_file + ': ' + deps_text
     self.MakeDirectoriesTo(depfile)
     outfile = self.fo_create(depfile, 'wb')
     outfile.writelines(depfile_contents)

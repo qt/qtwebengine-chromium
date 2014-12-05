@@ -30,7 +30,6 @@
 #include "wtf/HashSet.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 #include "wtf/WTFExport.h"
 
 namespace WTF {
@@ -63,14 +62,23 @@ public:
     bool transfer(ArrayBufferContents&);
     bool isNeutered() { return m_isNeutered; }
 
-    void setDeallocationObserver(ArrayBufferDeallocationObserver* observer) { m_contents.setDeallocationObserver(observer); }
+    void setDeallocationObserver(ArrayBufferDeallocationObserver* observer)
+    {
+        m_contents.setDeallocationObserver(observer);
+    }
+    void setDeallocationObserverWithoutAllocationNotification(ArrayBufferDeallocationObserver* observer)
+    {
+        m_contents.setDeallocationObserverWithoutAllocationNotification(observer);
+    }
 
     ~ArrayBuffer() { }
+
+protected:
+    inline explicit ArrayBuffer(ArrayBufferContents&);
 
 private:
     static inline PassRefPtr<ArrayBuffer> create(unsigned numElements, unsigned elementByteSize, ArrayBufferContents::InitializationPolicy);
 
-    inline ArrayBuffer(ArrayBufferContents&);
     inline PassRefPtr<ArrayBuffer> sliceImpl(unsigned begin, unsigned end) const;
     inline unsigned clampIndex(int index) const;
     static inline int clampValue(int x, int left, int right);

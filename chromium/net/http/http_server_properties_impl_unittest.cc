@@ -243,9 +243,9 @@ typedef HttpServerPropertiesImplTest AlternateProtocolServerPropertiesTest;
 TEST_F(AlternateProtocolServerPropertiesTest, Basic) {
   HostPortPair test_host_port_pair("foo", 80);
   EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
-  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, 1);
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
-  const PortAlternateProtocolPair alternate =
+  const AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair);
   EXPECT_EQ(443, alternate.port);
   EXPECT_EQ(NPN_SPDY_3, alternate.protocol);
@@ -254,23 +254,50 @@ TEST_F(AlternateProtocolServerPropertiesTest, Basic) {
   EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
 }
 
+TEST_F(AlternateProtocolServerPropertiesTest, DefaultProbabilityExcluded) {
+  HostPortPair test_host_port_pair("foo", 80);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, .99);
+
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, Probability) {
+  impl_.SetAlternateProtocolProbabilityThreshold(.25);
+
+  HostPortPair test_host_port_pair("foo", 80);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, .5);
+
+  ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
+  const AlternateProtocolInfo alternate =
+      impl_.GetAlternateProtocol(test_host_port_pair);
+  EXPECT_EQ(443, alternate.port);
+  EXPECT_EQ(NPN_SPDY_3, alternate.protocol);
+  EXPECT_EQ(.5, alternate.probability);
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, ProbabilityExcluded) {
+  impl_.SetAlternateProtocolProbabilityThreshold(.75);
+
+  HostPortPair test_host_port_pair("foo", 80);
+
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, .5);
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
+}
+
 TEST_F(AlternateProtocolServerPropertiesTest, Initialize) {
   HostPortPair test_host_port_pair1("foo1", 80);
+  impl_.SetAlternateProtocol(test_host_port_pair1, 443, NPN_SPDY_3, 1);
   impl_.SetBrokenAlternateProtocol(test_host_port_pair1);
   HostPortPair test_host_port_pair2("foo2", 80);
-  impl_.SetAlternateProtocol(test_host_port_pair2, 443, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair2, 443, NPN_SPDY_3, 1);
 
   AlternateProtocolMap alternate_protocol_map(
       AlternateProtocolMap::NO_AUTO_EVICT);
-  PortAlternateProtocolPair port_alternate_protocol_pair;
-  port_alternate_protocol_pair.port = 123;
-  port_alternate_protocol_pair.protocol = NPN_SPDY_3;
-  alternate_protocol_map.Put(test_host_port_pair2,
-                             port_alternate_protocol_pair);
+  AlternateProtocolInfo alternate(123, NPN_SPDY_3, 1);
+  alternate_protocol_map.Put(test_host_port_pair2, alternate);
   HostPortPair test_host_port_pair3("foo3", 80);
-  port_alternate_protocol_pair.port = 1234;
-  alternate_protocol_map.Put(test_host_port_pair3,
-                             port_alternate_protocol_pair);
+  alternate.port = 1234;
+  alternate_protocol_map.Put(test_host_port_pair3, alternate);
   impl_.InitializeAlternateProtocolServers(&alternate_protocol_map);
 
   // Verify test_host_port_pair3 is the MRU server.
@@ -283,20 +310,18 @@ TEST_F(AlternateProtocolServerPropertiesTest, Initialize) {
 
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair1));
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair2));
-  port_alternate_protocol_pair =
-      impl_.GetAlternateProtocol(test_host_port_pair1);
-  EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, port_alternate_protocol_pair.protocol);
-  port_alternate_protocol_pair =
-      impl_.GetAlternateProtocol(test_host_port_pair2);
-  EXPECT_EQ(123, port_alternate_protocol_pair.port);
-  EXPECT_EQ(NPN_SPDY_3, port_alternate_protocol_pair.protocol);
+  alternate = impl_.GetAlternateProtocol(test_host_port_pair1);
+  EXPECT_TRUE(alternate.is_broken);
+  alternate = impl_.GetAlternateProtocol(test_host_port_pair2);
+  EXPECT_EQ(123, alternate.port);
+  EXPECT_EQ(NPN_SPDY_3, alternate.protocol);
 }
 
 TEST_F(AlternateProtocolServerPropertiesTest, MRUOfHasAlternateProtocol) {
   HostPortPair test_host_port_pair1("foo1", 80);
-  impl_.SetAlternateProtocol(test_host_port_pair1, 443, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair1, 443, NPN_SPDY_3, 1);
   HostPortPair test_host_port_pair2("foo2", 80);
-  impl_.SetAlternateProtocol(test_host_port_pair2, 1234, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair2, 1234, NPN_SPDY_3, 1);
 
   const net::AlternateProtocolMap& map = impl_.alternate_protocol_map();
   net::AlternateProtocolMap::const_iterator it = map.begin();
@@ -314,9 +339,9 @@ TEST_F(AlternateProtocolServerPropertiesTest, MRUOfHasAlternateProtocol) {
 
 TEST_F(AlternateProtocolServerPropertiesTest, MRUOfGetAlternateProtocol) {
   HostPortPair test_host_port_pair1("foo1", 80);
-  impl_.SetAlternateProtocol(test_host_port_pair1, 443, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair1, 443, NPN_SPDY_3, 1);
   HostPortPair test_host_port_pair2("foo2", 80);
-  impl_.SetAlternateProtocol(test_host_port_pair2, 1234, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair2, 1234, NPN_SPDY_3, 1);
 
   const net::AlternateProtocolMap& map = impl_.alternate_protocol_map();
   net::AlternateProtocolMap::const_iterator it = map.begin();
@@ -325,7 +350,7 @@ TEST_F(AlternateProtocolServerPropertiesTest, MRUOfGetAlternateProtocol) {
   EXPECT_EQ(NPN_SPDY_3, it->second.protocol);
 
   // GetAlternateProtocol should reoder the AlternateProtocol map.
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair1);
   EXPECT_EQ(443, alternate.port);
   EXPECT_EQ(NPN_SPDY_3, alternate.protocol);
@@ -337,28 +362,30 @@ TEST_F(AlternateProtocolServerPropertiesTest, MRUOfGetAlternateProtocol) {
 
 TEST_F(AlternateProtocolServerPropertiesTest, SetBroken) {
   HostPortPair test_host_port_pair("foo", 80);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, 1);
   impl_.SetBrokenAlternateProtocol(test_host_port_pair);
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair);
-  EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol);
+  EXPECT_TRUE(alternate.is_broken);
 
   impl_.SetAlternateProtocol(
       test_host_port_pair,
       1234,
-      NPN_SPDY_3);
+      NPN_SPDY_3,
+      1);
   alternate = impl_.GetAlternateProtocol(test_host_port_pair);
-  EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol)
-      << "Second attempt should be ignored.";
+  EXPECT_TRUE(alternate.is_broken) << "Second attempt should be ignored.";
 }
 
 TEST_F(AlternateProtocolServerPropertiesTest, ClearBroken) {
   HostPortPair test_host_port_pair("foo", 80);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, 1);
   impl_.SetBrokenAlternateProtocol(test_host_port_pair);
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair);
-  EXPECT_EQ(ALTERNATE_PROTOCOL_BROKEN, alternate.protocol);
+  EXPECT_TRUE(alternate.is_broken);
   impl_.ClearAlternateProtocol(test_host_port_pair);
   EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
 }
@@ -366,21 +393,19 @@ TEST_F(AlternateProtocolServerPropertiesTest, ClearBroken) {
 TEST_F(AlternateProtocolServerPropertiesTest, Forced) {
   // Test forced alternate protocols.
 
-  PortAlternateProtocolPair default_protocol;
-  default_protocol.port = 1234;
-  default_protocol.protocol = NPN_SPDY_3;
+  AlternateProtocolInfo default_protocol(1234, NPN_SPDY_3, 1);
   HttpServerPropertiesImpl::ForceAlternateProtocol(default_protocol);
 
   // Verify the forced protocol.
   HostPortPair test_host_port_pair("foo", 80);
   EXPECT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair);
   EXPECT_EQ(default_protocol.port, alternate.port);
   EXPECT_EQ(default_protocol.protocol, alternate.protocol);
 
   // Verify the real protocol overrides the forced protocol.
-  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3);
+  impl_.SetAlternateProtocol(test_host_port_pair, 443, NPN_SPDY_3, 1);
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
   alternate = impl_.GetAlternateProtocol(test_host_port_pair);
   EXPECT_EQ(443, alternate.port);
@@ -402,16 +427,15 @@ TEST_F(AlternateProtocolServerPropertiesTest, Canonical) {
   HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
   EXPECT_FALSE(impl_.HasAlternateProtocol(canonical_port_pair));
 
-  PortAlternateProtocolPair canonical_protocol;
-  canonical_protocol.port = 1234;
-  canonical_protocol.protocol = QUIC;
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 1);
 
   impl_.SetAlternateProtocol(canonical_port_pair,
                              canonical_protocol.port,
-                             canonical_protocol.protocol);
+                             canonical_protocol.protocol,
+                             1);
   // Verify the forced protocol.
   ASSERT_TRUE(impl_.HasAlternateProtocol(test_host_port_pair));
-  PortAlternateProtocolPair alternate =
+  AlternateProtocolInfo alternate =
       impl_.GetAlternateProtocol(test_host_port_pair);
   EXPECT_EQ(canonical_protocol.port, alternate.port);
   EXPECT_EQ(canonical_protocol.protocol, alternate.protocol);
@@ -419,6 +443,51 @@ TEST_F(AlternateProtocolServerPropertiesTest, Canonical) {
   // Verify the canonical suffix.
   EXPECT_EQ(".c.youtube.com", impl_.GetCanonicalSuffix(test_host_port_pair));
   EXPECT_EQ(".c.youtube.com", impl_.GetCanonicalSuffix(canonical_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, ClearCanonical) {
+  HostPortPair test_host_port_pair("foo.c.youtube.com", 80);
+  HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
+
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 1);
+
+  impl_.SetAlternateProtocol(canonical_port_pair,
+                             canonical_protocol.port,
+                             canonical_protocol.protocol,
+                             canonical_protocol.probability);
+
+  impl_.ClearAlternateProtocol(canonical_port_pair);
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, CanonicalBroken) {
+  HostPortPair test_host_port_pair("foo.c.youtube.com", 80);
+  HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
+
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 1);
+
+  impl_.SetAlternateProtocol(canonical_port_pair,
+                             canonical_protocol.port,
+                             canonical_protocol.protocol,
+                             canonical_protocol.probability);
+
+  impl_.SetBrokenAlternateProtocol(canonical_port_pair);
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
+}
+
+TEST_F(AlternateProtocolServerPropertiesTest, ClearWithCanonical) {
+  HostPortPair test_host_port_pair("foo.c.youtube.com", 80);
+  HostPortPair canonical_port_pair("bar.c.youtube.com", 80);
+
+  AlternateProtocolInfo canonical_protocol(1234, QUIC, 1);
+
+  impl_.SetAlternateProtocol(canonical_port_pair,
+                             canonical_protocol.port,
+                             canonical_protocol.protocol,
+                             canonical_protocol.probability);
+
+  impl_.Clear();
+  EXPECT_FALSE(impl_.HasAlternateProtocol(test_host_port_pair));
 }
 
 typedef HttpServerPropertiesImplTest SpdySettingsServerPropertiesTest;
@@ -608,6 +677,43 @@ TEST_F(SpdySettingsServerPropertiesTest, MRUOfGetSpdySettings) {
   EXPECT_EQ(value1, flags_and_value1_ret.second);
 }
 
+typedef HttpServerPropertiesImplTest SupportsQuicServerPropertiesTest;
+
+TEST_F(SupportsQuicServerPropertiesTest, Initialize) {
+  HostPortPair quic_server_google("www.google.com", 443);
+
+  // Check by initializing empty SupportsQuic.
+  SupportsQuicMap supports_quic_map;
+  impl_.InitializeSupportsQuic(&supports_quic_map);
+  SupportsQuic supports_quic = impl_.GetSupportsQuic(quic_server_google);
+  EXPECT_FALSE(supports_quic.used_quic);
+  EXPECT_EQ("", supports_quic.address);
+
+  // Check by initializing with www.google.com:443.
+  SupportsQuic supports_quic1(true, "foo");
+  supports_quic_map.insert(std::make_pair(quic_server_google, supports_quic1));
+  impl_.InitializeSupportsQuic(&supports_quic_map);
+
+  SupportsQuic supports_quic2 = impl_.GetSupportsQuic(quic_server_google);
+  EXPECT_TRUE(supports_quic2.used_quic);
+  EXPECT_EQ("foo", supports_quic2.address);
+}
+
+TEST_F(SupportsQuicServerPropertiesTest, SetSupportsQuic) {
+  HostPortPair test_host_port_pair("foo", 80);
+  SupportsQuic supports_quic = impl_.GetSupportsQuic(test_host_port_pair);
+  EXPECT_FALSE(supports_quic.used_quic);
+  EXPECT_EQ("", supports_quic.address);
+  impl_.SetSupportsQuic(test_host_port_pair, true, "foo");
+  SupportsQuic supports_quic1 = impl_.GetSupportsQuic(test_host_port_pair);
+  EXPECT_TRUE(supports_quic1.used_quic);
+  EXPECT_EQ("foo", supports_quic1.address);
+
+  impl_.Clear();
+  SupportsQuic supports_quic2 = impl_.GetSupportsQuic(test_host_port_pair);
+  EXPECT_FALSE(supports_quic2.used_quic);
+  EXPECT_EQ("", supports_quic2.address);
+}
 }  // namespace
 
 }  // namespace net

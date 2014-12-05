@@ -27,7 +27,7 @@
 #include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/LightSource.h"
 
-namespace WebCore {
+namespace blink {
 
 class Filter;
 
@@ -35,6 +35,9 @@ class SVGFELightElement : public SVGElement {
 public:
     virtual PassRefPtr<LightSource> lightSource(Filter*) const = 0;
     static SVGFELightElement* findLightElement(const SVGElement&);
+
+    FloatPoint3D position() const;
+    FloatPoint3D pointsAt() const;
 
     SVGAnimatedNumber* azimuth() { return m_azimuth.get(); }
     const SVGAnimatedNumber* azimuth() const { return m_azimuth.get(); }
@@ -62,11 +65,11 @@ protected:
 
 private:
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE FINAL;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
+    virtual void svgAttributeChanged(const QualifiedName&) override final;
+    virtual void childrenChanged(const ChildrenChange&) override final;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 
     RefPtr<SVGAnimatedNumber> m_azimuth;
     RefPtr<SVGAnimatedNumber> m_elevation;
@@ -80,13 +83,13 @@ private:
     RefPtr<SVGAnimatedNumber> m_limitingConeAngle;
 };
 
-inline bool isSVGFELightElement(const Node& node)
+inline bool isSVGFELightElement(const SVGElement& element)
 {
-    return node.hasTagName(SVGNames::feDistantLightTag) || node.hasTagName(SVGNames::fePointLightTag) || node.hasTagName(SVGNames::feSpotLightTag);
+    return element.hasTagName(SVGNames::feDistantLightTag) || element.hasTagName(SVGNames::fePointLightTag) || element.hasTagName(SVGNames::feSpotLightTag);
 }
 
-DEFINE_ELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGFELightElement);
+DEFINE_SVGELEMENT_TYPE_CASTS_WITH_FUNCTION(SVGFELightElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

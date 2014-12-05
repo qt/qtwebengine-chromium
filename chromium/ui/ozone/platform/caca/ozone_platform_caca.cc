@@ -4,16 +4,12 @@
 
 #include "ui/ozone/platform/caca/ozone_platform_caca.h"
 
-#include "ui/ozone/ozone_platform.h"
-#include "ui/ozone/platform/caca/caca_connection.h"
-#include "ui/ozone/platform/caca/caca_event_factory.h"
-#include "ui/ozone/platform/caca/caca_surface_factory.h"
+#include "ui/ozone/common/native_display_delegate_ozone.h"
+#include "ui/ozone/platform/caca/caca_event_source.h"
+#include "ui/ozone/platform/caca/caca_window.h"
+#include "ui/ozone/platform/caca/caca_window_manager.h"
 #include "ui/ozone/public/cursor_factory_ozone.h"
-
-#if defined(OS_CHROMEOS)
-#include "ui/ozone/common/chromeos/native_display_delegate_ozone.h"
-#include "ui/ozone/common/chromeos/touchscreen_device_manager_ozone.h"
-#endif
+#include "ui/ozone/public/ozone_platform.h"
 
 namespace ui {
 
@@ -22,49 +18,45 @@ namespace {
 class OzonePlatformCaca : public OzonePlatform {
  public:
   OzonePlatformCaca() {}
-  virtual ~OzonePlatformCaca() {}
+  ~OzonePlatformCaca() override {}
 
   // OzonePlatform:
-  virtual ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() OVERRIDE {
-    return surface_factory_ozone_.get();
+  ui::SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
+    return window_manager_.get();
   }
-  virtual EventFactoryOzone* GetEventFactoryOzone() OVERRIDE {
-    return event_factory_ozone_.get();
-  }
-  virtual CursorFactoryOzone* GetCursorFactoryOzone() OVERRIDE {
+  CursorFactoryOzone* GetCursorFactoryOzone() override {
     return cursor_factory_ozone_.get();
   }
-  virtual GpuPlatformSupport* GetGpuPlatformSupport() OVERRIDE {
+  GpuPlatformSupport* GetGpuPlatformSupport() override {
     return NULL;  // no GPU support
   }
-  virtual GpuPlatformSupportHost* GetGpuPlatformSupportHost() OVERRIDE {
+  GpuPlatformSupportHost* GetGpuPlatformSupportHost() override {
     return NULL;  // no GPU support
   }
-
-#if defined(OS_CHROMEOS)
-  virtual scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate()
-      OVERRIDE {
+  scoped_ptr<PlatformWindow> CreatePlatformWindow(
+      PlatformWindowDelegate* delegate,
+      const gfx::Rect& bounds) override {
+    scoped_ptr<CacaWindow> caca_window(new CacaWindow(
+        delegate, window_manager_.get(), event_source_.get(), bounds));
+    if (!caca_window->Initialize())
+      return nullptr;
+    return caca_window.Pass();
+  }
+  scoped_ptr<NativeDisplayDelegate> CreateNativeDisplayDelegate() override {
     return scoped_ptr<NativeDisplayDelegate>(new NativeDisplayDelegateOzone());
   }
-  virtual scoped_ptr<TouchscreenDeviceManager>
-      CreateTouchscreenDeviceManager() OVERRIDE {
-    return scoped_ptr<TouchscreenDeviceManager>(
-        new TouchscreenDeviceManagerOzone());
-  }
-#endif
 
-  virtual void InitializeUI() OVERRIDE {
-    surface_factory_ozone_.reset(new CacaSurfaceFactory(&connection_));
-    event_factory_ozone_.reset(new CacaEventFactory(&connection_));
+  void InitializeUI() override {
+    window_manager_.reset(new CacaWindowManager);
+    event_source_.reset(new CacaEventSource());
     cursor_factory_ozone_.reset(new CursorFactoryOzone());
   }
 
-  virtual void InitializeGPU() OVERRIDE {}
+  void InitializeGPU() override {}
 
  private:
-  CacaConnection connection_;
-  scoped_ptr<CacaSurfaceFactory> surface_factory_ozone_;
-  scoped_ptr<CacaEventFactory> event_factory_ozone_;
+  scoped_ptr<CacaWindowManager> window_manager_;
+  scoped_ptr<CacaEventSource> event_source_;
   scoped_ptr<CursorFactoryOzone> cursor_factory_ozone_;
 
   DISALLOW_COPY_AND_ASSIGN(OzonePlatformCaca);

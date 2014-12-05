@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "jwk.h"
+#include "content/child/webcrypto/jwk.h"
 
-#include <algorithm>
-#include <functional>
-#include <map>
-
+#include "base/base64.h"
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
-#include "base/lazy_instance.h"
+#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
-#include "base/strings/stringprintf.h"
 #include "content/child/webcrypto/crypto_data.h"
-#include "content/child/webcrypto/platform_crypto.h"
-#include "content/child/webcrypto/shared_crypto.h"
 #include "content/child/webcrypto/status.h"
 #include "content/child/webcrypto/webcrypto_util.h"
-#include "third_party/WebKit/public/platform/WebCryptoKeyAlgorithm.h"
+
+// TODO(eroman): The algorithm-specific logic in this file for AES and RSA
+// should be moved into the corresponding AlgorithmImplementation file. It
+// exists in this file to avoid duplication between OpenSSL and NSS
+// implementations.
 
 // JSON Web Key Format (JWK)
 // http://tools.ietf.org/html/draft-ietf-jose-json-web-key-21
@@ -44,7 +42,7 @@
 // Web Crypto Key type            <-- (deduced)
 // Web Crypto Key extractable     <-- JWK ext + input extractable
 // Web Crypto Key algorithm       <-- JWK alg + input algorithm
-// Web Crypto Key keyUsage        <-- JWK use, key_ops + input usage_mask
+// Web Crypto Key keyUsage        <-- JWK use, key_ops + input usages
 // Web Crypto Key keying material <-- kty-specific parameters
 //
 // Values for each JWK entry are case-sensitive and defined in
@@ -181,7 +179,7 @@
 //   +-------+--------------------------------------------------------------+
 //
 // Consistency and conflict resolution
-// The 'algorithm', 'extractable', and 'usage_mask' input parameters
+// The 'algorithm', 'extractable', and 'usages' input parameters
 // may be different than the corresponding values inside the JWK. The Web
 // Crypto spec says that if a JWK value is present but is inconsistent with
 // the input value, it is an error and the operation must fail. If no
@@ -197,10 +195,10 @@
 //   false but the input parameter is true, it is an inconsistency. If both
 //   are true or both are false, use that value.
 //
-// usage_mask
-//   The input usage_mask must be a strict subset of the interpreted JWK use
-//   value, else it is judged inconsistent. In all cases the input usage_mask
-//   is used as the final usage_mask.
+// usages
+//   The input usages must be a strict subset of the interpreted JWK use
+//   value, else it is judged inconsistent. In all cases the input usages
+//   is used as the final usages.
 //
 
 namespace content {
@@ -208,22 +206,6 @@ namespace content {
 namespace webcrypto {
 
 namespace {
-
-// Creates an RSASSA-PKCS1-v1_5 algorithm. It is an error to call this with a
-// hash_id that is not a SHA*.
-blink::WebCryptoAlgorithm CreateRsaSsaImportAlgorithm(
-    blink::WebCryptoAlgorithmId hash_id) {
-  return CreateRsaHashedImportAlgorithm(
-      blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5, hash_id);
-}
-
-// Creates an RSA-OAEP algorithm. It is an error to call this with a hash_id
-// that is not a SHA*.
-blink::WebCryptoAlgorithm CreateRsaOaepImportAlgorithm(
-    blink::WebCryptoAlgorithmId hash_id) {
-  return CreateRsaHashedImportAlgorithm(blink::WebCryptoAlgorithmIdRsaOaep,
-                                        hash_id);
-}
 
 // Web Crypto equivalent usage mask for JWK 'use' = 'enc'.
 const blink::WebCryptoKeyUsageMask kJwkEncUsage =
@@ -234,656 +216,29 @@ const blink::WebCryptoKeyUsageMask kJwkEncUsage =
 const blink::WebCryptoKeyUsageMask kJwkSigUsage =
     blink::WebCryptoKeyUsageSign | blink::WebCryptoKeyUsageVerify;
 
-typedef blink::WebCryptoAlgorithm (*AlgorithmCreationFunc)();
-
-class JwkAlgorithmInfo {
- public:
-  JwkAlgorithmInfo()
-      : creation_func_(NULL),
-        required_key_length_bytes_(NO_KEY_SIZE_REQUIREMENT) {}
-
-  explicit JwkAlgorithmInfo(AlgorithmCreationFunc algorithm_creation_func)
-      : creation_func_(algorithm_creation_func),
-        required_key_length_bytes_(NO_KEY_SIZE_REQUIREMENT) {}
-
-  JwkAlgorithmInfo(AlgorithmCreationFunc algorithm_creation_func,
-                   unsigned int required_key_length_bits)
-      : creation_func_(algorithm_creation_func),
-        required_key_length_bytes_(required_key_length_bits / 8) {
-    DCHECK_EQ(0u, required_key_length_bits % 8);
-  }
-
-  bool CreateImportAlgorithm(blink::WebCryptoAlgorithm* algorithm) const {
-    *algorithm = creation_func_();
-    return !algorithm->isNull();
-  }
-
-  bool IsInvalidKeyByteLength(size_t byte_length) const {
-    if (required_key_length_bytes_ == NO_KEY_SIZE_REQUIREMENT)
-      return false;
-    return required_key_length_bytes_ != byte_length;
-  }
-
- private:
-  enum { NO_KEY_SIZE_REQUIREMENT = UINT_MAX };
-
-  AlgorithmCreationFunc creation_func_;
-
-  // The expected key size for the algorithm or NO_KEY_SIZE_REQUIREMENT.
-  unsigned int required_key_length_bytes_;
-};
-
-typedef std::map<std::string, JwkAlgorithmInfo> JwkAlgorithmInfoMap;
-
-class JwkAlgorithmRegistry {
- public:
-  JwkAlgorithmRegistry() {
-    // TODO(eroman):
-    // http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-20
-    // says HMAC with SHA-2 should have a key size at least as large as the
-    // hash output.
-    alg_to_info_["HS1"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateHmacImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha1>);
-    alg_to_info_["HS256"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateHmacImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha256>);
-    alg_to_info_["HS384"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateHmacImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha384>);
-    alg_to_info_["HS512"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateHmacImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha512>);
-    alg_to_info_["RS1"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaSsaImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha1>);
-    alg_to_info_["RS256"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaSsaImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha256>);
-    alg_to_info_["RS384"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaSsaImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha384>);
-    alg_to_info_["RS512"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaSsaImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha512>);
-    alg_to_info_["RSA-OAEP"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha1>);
-    alg_to_info_["RSA-OAEP-256"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha256>);
-    alg_to_info_["RSA-OAEP-384"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha384>);
-    alg_to_info_["RSA-OAEP-512"] =
-        JwkAlgorithmInfo(&BindAlgorithmId<CreateRsaOaepImportAlgorithm,
-                                          blink::WebCryptoAlgorithmIdSha512>);
-    alg_to_info_["A128KW"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesKw>,
-        128);
-    alg_to_info_["A192KW"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesKw>,
-        192);
-    alg_to_info_["A256KW"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesKw>,
-        256);
-    alg_to_info_["A128GCM"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesGcm>,
-        128);
-    alg_to_info_["A192GCM"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesGcm>,
-        192);
-    alg_to_info_["A256GCM"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesGcm>,
-        256);
-    alg_to_info_["A128CBC"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesCbc>,
-        128);
-    alg_to_info_["A192CBC"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesCbc>,
-        192);
-    alg_to_info_["A256CBC"] = JwkAlgorithmInfo(
-        &BindAlgorithmId<CreateAlgorithm, blink::WebCryptoAlgorithmIdAesCbc>,
-        256);
-  }
-
-  // Returns NULL if the algorithm name was not registered.
-  const JwkAlgorithmInfo* GetAlgorithmInfo(const std::string& jwk_alg) const {
-    const JwkAlgorithmInfoMap::const_iterator pos = alg_to_info_.find(jwk_alg);
-    if (pos == alg_to_info_.end())
-      return NULL;
-    return &pos->second;
-  }
-
- private:
-  // Binds a WebCryptoAlgorithmId value to a compatible factory function.
-  typedef blink::WebCryptoAlgorithm (*FuncWithWebCryptoAlgIdArg)(
-      blink::WebCryptoAlgorithmId);
-  template <FuncWithWebCryptoAlgIdArg func,
-            blink::WebCryptoAlgorithmId algorithm_id>
-  static blink::WebCryptoAlgorithm BindAlgorithmId() {
-    return func(algorithm_id);
-  }
-
-  JwkAlgorithmInfoMap alg_to_info_;
-};
-
-base::LazyInstance<JwkAlgorithmRegistry> jwk_alg_registry =
-    LAZY_INSTANCE_INITIALIZER;
-
-bool ImportAlgorithmsConsistent(const blink::WebCryptoAlgorithm& alg1,
-                                const blink::WebCryptoAlgorithm& alg2) {
-  DCHECK(!alg1.isNull());
-  DCHECK(!alg2.isNull());
-  if (alg1.id() != alg2.id())
-    return false;
-  if (alg1.paramsType() != alg2.paramsType())
-    return false;
-  switch (alg1.paramsType()) {
-    case blink::WebCryptoAlgorithmParamsTypeNone:
-      return true;
-    case blink::WebCryptoAlgorithmParamsTypeRsaHashedImportParams:
-      return ImportAlgorithmsConsistent(alg1.rsaHashedImportParams()->hash(),
-                                        alg2.rsaHashedImportParams()->hash());
-    case blink::WebCryptoAlgorithmParamsTypeHmacImportParams:
-      return ImportAlgorithmsConsistent(alg1.hmacImportParams()->hash(),
-                                        alg2.hmacImportParams()->hash());
-    default:
-      return false;
-  }
-}
-
-// Extracts the required string property with key |path| from |dict| and saves
-// the result to |*result|. If the property does not exist or is not a string,
-// returns an error.
-Status GetJwkString(base::DictionaryValue* dict,
-                    const std::string& path,
-                    std::string* result) {
-  base::Value* value = NULL;
-  if (!dict->Get(path, &value))
-    return Status::ErrorJwkPropertyMissing(path);
-  if (!value->GetAsString(result))
-    return Status::ErrorJwkPropertyWrongType(path, "string");
-  return Status::Success();
-}
-
-// Extracts the optional string property with key |path| from |dict| and saves
-// the result to |*result| if it was found. If the property exists and is not a
-// string, returns an error. Otherwise returns success, and sets
-// |*property_exists| if it was found.
-Status GetOptionalJwkString(base::DictionaryValue* dict,
-                            const std::string& path,
-                            std::string* result,
-                            bool* property_exists) {
-  *property_exists = false;
-  base::Value* value = NULL;
-  if (!dict->Get(path, &value))
-    return Status::Success();
-
-  if (!value->GetAsString(result))
-    return Status::ErrorJwkPropertyWrongType(path, "string");
-
-  *property_exists = true;
-  return Status::Success();
-}
-
-// Extracts the optional array property with key |path| from |dict| and saves
-// the result to |*result| if it was found. If the property exists and is not an
-// array, returns an error. Otherwise returns success, and sets
-// |*property_exists| if it was found. Note that |*result| is owned by |dict|.
-Status GetOptionalJwkList(base::DictionaryValue* dict,
-                          const std::string& path,
-                          base::ListValue** result,
-                          bool* property_exists) {
-  *property_exists = false;
-  base::Value* value = NULL;
-  if (!dict->Get(path, &value))
-    return Status::Success();
-
-  if (!value->GetAsList(result))
-    return Status::ErrorJwkPropertyWrongType(path, "list");
-
-  *property_exists = true;
-  return Status::Success();
-}
-
-// Extracts the required string property with key |path| from |dict| and saves
-// the base64url-decoded bytes to |*result|. If the property does not exist or
-// is not a string, or could not be base64url-decoded, returns an error.
-Status GetJwkBytes(base::DictionaryValue* dict,
-                   const std::string& path,
-                   std::string* result) {
-  std::string base64_string;
-  Status status = GetJwkString(dict, path, &base64_string);
-  if (status.IsError())
-    return status;
-
-  if (!Base64DecodeUrlSafe(base64_string, result))
-    return Status::ErrorJwkBase64Decode(path);
-
-  return Status::Success();
-}
-
-// Extracts the optional string property with key |path| from |dict| and saves
-// the base64url-decoded bytes to |*result|. If the property exist and is not a
-// string, or could not be base64url-decoded, returns an error. In the case
-// where the property does not exist, |result| is guaranteed to be empty.
-Status GetOptionalJwkBytes(base::DictionaryValue* dict,
-                           const std::string& path,
-                           std::string* result,
-                           bool* property_exists) {
-  std::string base64_string;
-  Status status =
-      GetOptionalJwkString(dict, path, &base64_string, property_exists);
-  if (status.IsError())
-    return status;
-
-  if (!*property_exists) {
-    result->clear();
-    return Status::Success();
-  }
-
-  if (!Base64DecodeUrlSafe(base64_string, result))
-    return Status::ErrorJwkBase64Decode(path);
-
-  return Status::Success();
-}
-
-// Extracts the optional boolean property with key |path| from |dict| and saves
-// the result to |*result| if it was found. If the property exists and is not a
-// boolean, returns an error. Otherwise returns success, and sets
-// |*property_exists| if it was found.
-Status GetOptionalJwkBool(base::DictionaryValue* dict,
-                          const std::string& path,
-                          bool* result,
-                          bool* property_exists) {
-  *property_exists = false;
-  base::Value* value = NULL;
-  if (!dict->Get(path, &value))
-    return Status::Success();
-
-  if (!value->GetAsBoolean(result))
-    return Status::ErrorJwkPropertyWrongType(path, "boolean");
-
-  *property_exists = true;
-  return Status::Success();
-}
-
-// Writes a secret/symmetric key to a JWK dictionary.
-void WriteSecretKey(const std::vector<uint8>& raw_key,
-                    base::DictionaryValue* jwk_dict) {
-  DCHECK(jwk_dict);
-  jwk_dict->SetString("kty", "oct");
-  // For a secret/symmetric key, the only extra JWK field is 'k', containing the
-  // base64url encoding of the raw key.
-  const base::StringPiece key_str(
-      reinterpret_cast<const char*>(Uint8VectorStart(raw_key)), raw_key.size());
-  jwk_dict->SetString("k", Base64EncodeUrlSafe(key_str));
-}
-
-// Writes an RSA public key to a JWK dictionary
-void WriteRsaPublicKey(const std::vector<uint8>& modulus,
-                       const std::vector<uint8>& public_exponent,
-                       base::DictionaryValue* jwk_dict) {
-  DCHECK(jwk_dict);
-  DCHECK(modulus.size());
-  DCHECK(public_exponent.size());
-  jwk_dict->SetString("kty", "RSA");
-  jwk_dict->SetString("n", Base64EncodeUrlSafe(modulus));
-  jwk_dict->SetString("e", Base64EncodeUrlSafe(public_exponent));
-}
-
-// Writes an RSA private key to a JWK dictionary
-Status ExportRsaPrivateKeyJwk(const blink::WebCryptoKey& key,
-                              base::DictionaryValue* jwk_dict) {
-  platform::PrivateKey* private_key;
-  Status status = ToPlatformPrivateKey(key, &private_key);
-  if (status.IsError())
-    return status;
-
-  // TODO(eroman): Copying the key properties to temporary vectors is
-  // inefficient. Once there aren't two implementations of platform_crypto this
-  // and other code will be easier to streamline.
-  std::vector<uint8> modulus;
-  std::vector<uint8> public_exponent;
-  std::vector<uint8> private_exponent;
-  std::vector<uint8> prime1;
-  std::vector<uint8> prime2;
-  std::vector<uint8> exponent1;
-  std::vector<uint8> exponent2;
-  std::vector<uint8> coefficient;
-
-  status = platform::ExportRsaPrivateKey(private_key,
-                                         &modulus,
-                                         &public_exponent,
-                                         &private_exponent,
-                                         &prime1,
-                                         &prime2,
-                                         &exponent1,
-                                         &exponent2,
-                                         &coefficient);
-  if (status.IsError())
-    return status;
-
-  jwk_dict->SetString("kty", "RSA");
-  jwk_dict->SetString("n", Base64EncodeUrlSafe(modulus));
-  jwk_dict->SetString("e", Base64EncodeUrlSafe(public_exponent));
-  jwk_dict->SetString("d", Base64EncodeUrlSafe(private_exponent));
-  // Although these are "optional" in the JWA, WebCrypto spec requires them to
-  // be emitted.
-  jwk_dict->SetString("p", Base64EncodeUrlSafe(prime1));
-  jwk_dict->SetString("q", Base64EncodeUrlSafe(prime2));
-  jwk_dict->SetString("dp", Base64EncodeUrlSafe(exponent1));
-  jwk_dict->SetString("dq", Base64EncodeUrlSafe(exponent2));
-  jwk_dict->SetString("qi", Base64EncodeUrlSafe(coefficient));
-
-  return Status::Success();
-}
-
-// Writes a Web Crypto usage mask to a JWK dictionary.
-void WriteKeyOps(blink::WebCryptoKeyUsageMask key_usages,
-                 base::DictionaryValue* jwk_dict) {
-  jwk_dict->Set("key_ops", CreateJwkKeyOpsFromWebCryptoUsages(key_usages));
-}
-
-// Writes a Web Crypto extractable value to a JWK dictionary.
-void WriteExt(bool extractable, base::DictionaryValue* jwk_dict) {
-  jwk_dict->SetBoolean("ext", extractable);
-}
-
-// Writes a Web Crypto algorithm to a JWK dictionary.
-Status WriteAlg(const blink::WebCryptoKeyAlgorithm& algorithm,
-                base::DictionaryValue* jwk_dict) {
-  switch (algorithm.paramsType()) {
-    case blink::WebCryptoKeyAlgorithmParamsTypeAes: {
-      DCHECK(algorithm.aesParams());
-      const char* aes_prefix = "";
-      switch (algorithm.aesParams()->lengthBits()) {
-        case 128:
-          aes_prefix = "A128";
-          break;
-        case 192:
-          aes_prefix = "A192";
-          break;
-        case 256:
-          aes_prefix = "A256";
-          break;
-        default:
-          NOTREACHED();  // bad key length means algorithm was built improperly
-          return Status::ErrorUnexpected();
-      }
-      const char* aes_suffix = "";
-      switch (algorithm.id()) {
-        case blink::WebCryptoAlgorithmIdAesCbc:
-          aes_suffix = "CBC";
-          break;
-        case blink::WebCryptoAlgorithmIdAesCtr:
-          aes_suffix = "CTR";
-          break;
-        case blink::WebCryptoAlgorithmIdAesGcm:
-          aes_suffix = "GCM";
-          break;
-        case blink::WebCryptoAlgorithmIdAesKw:
-          aes_suffix = "KW";
-          break;
-        default:
-          return Status::ErrorUnsupported();
-      }
-      jwk_dict->SetString("alg",
-                          base::StringPrintf("%s%s", aes_prefix, aes_suffix));
-      break;
-    }
-    case blink::WebCryptoKeyAlgorithmParamsTypeHmac: {
-      DCHECK(algorithm.hmacParams());
-      switch (algorithm.hmacParams()->hash().id()) {
-        case blink::WebCryptoAlgorithmIdSha1:
-          jwk_dict->SetString("alg", "HS1");
-          break;
-        case blink::WebCryptoAlgorithmIdSha256:
-          jwk_dict->SetString("alg", "HS256");
-          break;
-        case blink::WebCryptoAlgorithmIdSha384:
-          jwk_dict->SetString("alg", "HS384");
-          break;
-        case blink::WebCryptoAlgorithmIdSha512:
-          jwk_dict->SetString("alg", "HS512");
-          break;
-        default:
-          NOTREACHED();
-          return Status::ErrorUnexpected();
-      }
-      break;
-    }
-    case blink::WebCryptoKeyAlgorithmParamsTypeRsaHashed:
-      switch (algorithm.id()) {
-        case blink::WebCryptoAlgorithmIdRsaSsaPkcs1v1_5: {
-          switch (algorithm.rsaHashedParams()->hash().id()) {
-            case blink::WebCryptoAlgorithmIdSha1:
-              jwk_dict->SetString("alg", "RS1");
-              break;
-            case blink::WebCryptoAlgorithmIdSha256:
-              jwk_dict->SetString("alg", "RS256");
-              break;
-            case blink::WebCryptoAlgorithmIdSha384:
-              jwk_dict->SetString("alg", "RS384");
-              break;
-            case blink::WebCryptoAlgorithmIdSha512:
-              jwk_dict->SetString("alg", "RS512");
-              break;
-            default:
-              NOTREACHED();
-              return Status::ErrorUnexpected();
-          }
-          break;
-        }
-        case blink::WebCryptoAlgorithmIdRsaOaep: {
-          switch (algorithm.rsaHashedParams()->hash().id()) {
-            case blink::WebCryptoAlgorithmIdSha1:
-              jwk_dict->SetString("alg", "RSA-OAEP");
-              break;
-            case blink::WebCryptoAlgorithmIdSha256:
-              jwk_dict->SetString("alg", "RSA-OAEP-256");
-              break;
-            case blink::WebCryptoAlgorithmIdSha384:
-              jwk_dict->SetString("alg", "RSA-OAEP-384");
-              break;
-            case blink::WebCryptoAlgorithmIdSha512:
-              jwk_dict->SetString("alg", "RSA-OAEP-512");
-              break;
-            default:
-              NOTREACHED();
-              return Status::ErrorUnexpected();
-          }
-          break;
-        }
-        default:
-          NOTREACHED();
-          return Status::ErrorUnexpected();
-      }
-      break;
-    default:
-      return Status::ErrorUnsupported();
-  }
-  return Status::Success();
-}
-
-bool IsRsaKey(const blink::WebCryptoKey& key) {
-  return IsAlgorithmRsa(key.algorithm().id());
-}
-
-Status ImportRsaKey(base::DictionaryValue* dict,
-                    const blink::WebCryptoAlgorithm& algorithm,
-                    bool extractable,
-                    blink::WebCryptoKeyUsageMask usage_mask,
-                    blink::WebCryptoKey* key) {
-  // An RSA public key must have an "n" (modulus) and an "e" (exponent) entry
-  // in the JWK, while an RSA private key must have those, plus at least a "d"
-  // (private exponent) entry.
-  // See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18,
-  // section 6.3.
-  std::string jwk_n_value;
-  Status status = GetJwkBytes(dict, "n", &jwk_n_value);
-  if (status.IsError())
-    return status;
-  std::string jwk_e_value;
-  status = GetJwkBytes(dict, "e", &jwk_e_value);
-  if (status.IsError())
-    return status;
-
-  bool is_public_key = !dict->HasKey("d");
-
-  // Now that the key type is known, do an additional check on the usages to
-  // make sure they are all applicable for this algorithm + key type.
-  status = CheckKeyUsages(algorithm.id(),
-                          is_public_key ? blink::WebCryptoKeyTypePublic
-                                        : blink::WebCryptoKeyTypePrivate,
-                          usage_mask);
-
-  if (status.IsError())
-    return status;
-
-  if (is_public_key) {
-    return platform::ImportRsaPublicKey(algorithm,
-                                        extractable,
-                                        usage_mask,
-                                        CryptoData(jwk_n_value),
-                                        CryptoData(jwk_e_value),
-                                        key);
-  }
-
-  std::string jwk_d_value;
-  status = GetJwkBytes(dict, "d", &jwk_d_value);
-  if (status.IsError())
-    return status;
-
-  // The "p", "q", "dp", "dq", and "qi" properties are optional. Treat these
-  // properties the same if they are unspecified, as if they were specified-but
-  // empty, since ImportRsaPrivateKey() doesn't do validation checks anyway.
-
-  std::string jwk_p_value;
-  bool has_p;
-  status = GetOptionalJwkBytes(dict, "p", &jwk_p_value, &has_p);
-  if (status.IsError())
-    return status;
-
-  std::string jwk_q_value;
-  bool has_q;
-  status = GetOptionalJwkBytes(dict, "q", &jwk_q_value, &has_q);
-  if (status.IsError())
-    return status;
-
-  std::string jwk_dp_value;
-  bool has_dp;
-  status = GetOptionalJwkBytes(dict, "dp", &jwk_dp_value, &has_dp);
-  if (status.IsError())
-    return status;
-
-  std::string jwk_dq_value;
-  bool has_dq;
-  status = GetOptionalJwkBytes(dict, "dq", &jwk_dq_value, &has_dq);
-  if (status.IsError())
-    return status;
-
-  std::string jwk_qi_value;
-  bool has_qi;
-  status = GetOptionalJwkBytes(dict, "qi", &jwk_qi_value, &has_qi);
-  if (status.IsError())
-    return status;
-
-  int num_optional_properties = has_p + has_q + has_dp + has_dq + has_qi;
-  if (num_optional_properties != 0 && num_optional_properties != 5)
-    return Status::ErrorJwkIncompleteOptionalRsaPrivateKey();
-
-  return platform::ImportRsaPrivateKey(
-      algorithm,
-      extractable,
-      usage_mask,
-      CryptoData(jwk_n_value),   // modulus
-      CryptoData(jwk_e_value),   // public_exponent
-      CryptoData(jwk_d_value),   // private_exponent
-      CryptoData(jwk_p_value),   // prime1
-      CryptoData(jwk_q_value),   // prime2
-      CryptoData(jwk_dp_value),  // exponent1
-      CryptoData(jwk_dq_value),  // exponent2
-      CryptoData(jwk_qi_value),  // coefficient
-      key);
-}
-
-}  // namespace
-
-// TODO(eroman): Split this up into smaller functions.
-Status ImportKeyJwk(const CryptoData& key_data,
-                    const blink::WebCryptoAlgorithm& algorithm,
-                    bool extractable,
-                    blink::WebCryptoKeyUsageMask usage_mask,
-                    blink::WebCryptoKey* key) {
-  if (!key_data.byte_length())
-    return Status::ErrorImportEmptyKeyData();
-  DCHECK(key);
-
-  // Parse the incoming JWK JSON.
-  base::StringPiece json_string(reinterpret_cast<const char*>(key_data.bytes()),
-                                key_data.byte_length());
-  scoped_ptr<base::Value> value(base::JSONReader::Read(json_string));
-  // Note, bare pointer dict_value is ok since it points into scoped value.
-  base::DictionaryValue* dict_value = NULL;
-  if (!value.get() || !value->GetAsDictionary(&dict_value) || !dict_value)
-    return Status::ErrorJwkNotDictionary();
-
-  // JWK "kty". Exit early if this required JWK parameter is missing.
-  std::string jwk_kty_value;
-  Status status = GetJwkString(dict_value, "kty", &jwk_kty_value);
-  if (status.IsError())
-    return status;
-
+// Checks that the "ext" member of the JWK is consistent with
+// "expected_extractable".
+Status VerifyExt(const JwkReader& jwk, bool expected_extractable) {
   // JWK "ext" (optional) --> extractable parameter
-  {
-    bool jwk_ext_value = false;
-    bool has_jwk_ext;
-    status =
-        GetOptionalJwkBool(dict_value, "ext", &jwk_ext_value, &has_jwk_ext);
-    if (status.IsError())
-      return status;
-    if (has_jwk_ext && !jwk_ext_value && extractable)
-      return Status::ErrorJwkExtInconsistent();
-  }
-
-  // JWK "alg" --> algorithm parameter
-  // 1. JWK alg present but unrecognized: error
-  // 2. JWK alg valid and inconsistent with input algorithm: error
-  // 3. JWK alg valid and consistent with input algorithm: use input value
-  // 4. JWK alg is missing: use input value
-  const JwkAlgorithmInfo* algorithm_info = NULL;
-  std::string jwk_alg_value;
-  bool has_jwk_alg;
-  status =
-      GetOptionalJwkString(dict_value, "alg", &jwk_alg_value, &has_jwk_alg);
+  bool jwk_ext_value = false;
+  bool has_jwk_ext;
+  Status status = jwk.GetOptionalBool("ext", &jwk_ext_value, &has_jwk_ext);
   if (status.IsError())
     return status;
+  if (has_jwk_ext && expected_extractable && !jwk_ext_value)
+    return Status::ErrorJwkExtInconsistent();
+  return Status::Success();
+}
 
-  if (has_jwk_alg) {
-    // JWK alg present
-
-    // TODO(padolph): Validate alg vs kty. For example kty="RSA" implies alg can
-    // only be from the RSA family.
-
-    blink::WebCryptoAlgorithm jwk_algorithm =
-        blink::WebCryptoAlgorithm::createNull();
-    algorithm_info = jwk_alg_registry.Get().GetAlgorithmInfo(jwk_alg_value);
-    if (!algorithm_info ||
-        !algorithm_info->CreateImportAlgorithm(&jwk_algorithm))
-      return Status::ErrorJwkUnrecognizedAlgorithm();
-
-    if (!ImportAlgorithmsConsistent(jwk_algorithm, algorithm))
-      return Status::ErrorJwkAlgorithmInconsistent();
-  }
-  DCHECK(!algorithm.isNull());
-
-  // JWK "key_ops" (optional) --> usage_mask parameter
+// Checks that the usages ("use" and "key_ops") of the JWK is consistent with
+// "expected_usages".
+Status VerifyUsages(const JwkReader& jwk,
+                    blink::WebCryptoKeyUsageMask expected_usages) {
+  // JWK "key_ops" (optional) --> usages parameter
   base::ListValue* jwk_key_ops_value = NULL;
   bool has_jwk_key_ops;
-  status = GetOptionalJwkList(
-      dict_value, "key_ops", &jwk_key_ops_value, &has_jwk_key_ops);
+  Status status =
+      jwk.GetOptionalList("key_ops", &jwk_key_ops_value, &has_jwk_key_ops);
   if (status.IsError())
     return status;
   blink::WebCryptoKeyUsageMask jwk_key_ops_mask = 0;
@@ -892,16 +247,15 @@ Status ImportKeyJwk(const CryptoData& key_data,
         GetWebCryptoUsagesFromJwkKeyOps(jwk_key_ops_value, &jwk_key_ops_mask);
     if (status.IsError())
       return status;
-    // The input usage_mask must be a subset of jwk_key_ops_mask.
-    if (!ContainsKeyUsages(jwk_key_ops_mask, usage_mask))
+    // The input usages must be a subset of jwk_key_ops_mask.
+    if (!ContainsKeyUsages(jwk_key_ops_mask, expected_usages))
       return Status::ErrorJwkKeyopsInconsistent();
   }
 
-  // JWK "use" (optional) --> usage_mask parameter
+  // JWK "use" (optional) --> usages parameter
   std::string jwk_use_value;
   bool has_jwk_use;
-  status =
-      GetOptionalJwkString(dict_value, "use", &jwk_use_value, &has_jwk_use);
+  status = jwk.GetOptionalString("use", &jwk_use_value, &has_jwk_use);
   if (status.IsError())
     return status;
   blink::WebCryptoKeyUsageMask jwk_use_mask = 0;
@@ -912,8 +266,8 @@ Status ImportKeyJwk(const CryptoData& key_data,
       jwk_use_mask = kJwkSigUsage;
     else
       return Status::ErrorJwkUnrecognizedUse();
-    // The input usage_mask must be a subset of jwk_use_mask.
-    if (!ContainsKeyUsages(jwk_use_mask, usage_mask))
+    // The input usages must be a subset of jwk_use_mask.
+    if (!ContainsKeyUsages(jwk_use_mask, expected_usages))
       return Status::ErrorJwkUseInconsistent();
   }
 
@@ -922,95 +276,434 @@ Status ImportKeyJwk(const CryptoData& key_data,
       !ContainsKeyUsages(jwk_use_mask, jwk_key_ops_mask))
     return Status::ErrorJwkUseAndKeyopsInconsistent();
 
-  // JWK keying material --> ImportKeyInternal()
-  if (jwk_kty_value == "oct") {
-    std::string jwk_k_value;
-    status = GetJwkBytes(dict_value, "k", &jwk_k_value);
-    if (status.IsError())
-      return status;
-
-    // Some JWK alg ID's embed information about the key length in the alg ID
-    // string. For example "A128CBC" implies the JWK carries 128 bits
-    // of key material. For such keys validate that enough bytes were provided.
-    // If this validation is not done, then it would be possible to select a
-    // different algorithm by passing a different lengthed key, since that is
-    // how WebCrypto interprets things.
-    if (algorithm_info &&
-        algorithm_info->IsInvalidKeyByteLength(jwk_k_value.size())) {
-      return Status::ErrorJwkIncorrectKeyLength();
-    }
-
-    return ImportKey(blink::WebCryptoKeyFormatRaw,
-                     CryptoData(jwk_k_value),
-                     algorithm,
-                     extractable,
-                     usage_mask,
-                     key);
-  }
-
-  if (jwk_kty_value == "RSA")
-    return ImportRsaKey(dict_value, algorithm, extractable, usage_mask, key);
-
-  return Status::ErrorJwkUnrecognizedKty();
+  return Status::Success();
 }
 
-Status ExportKeyJwk(const blink::WebCryptoKey& key,
-                    std::vector<uint8>* buffer) {
-  DCHECK(key.extractable());
-  base::DictionaryValue jwk_dict;
-  Status status = Status::OperationError();
+}  // namespace
 
-  switch (key.type()) {
-    case blink::WebCryptoKeyTypeSecret: {
-      std::vector<uint8> exported_key;
-      status = ExportKey(blink::WebCryptoKeyFormatRaw, key, &exported_key);
-      if (status.IsError())
-        return status;
-      WriteSecretKey(exported_key, &jwk_dict);
-      break;
-    }
-    case blink::WebCryptoKeyTypePublic: {
-      // TODO(eroman): Update when there are asymmetric keys other than RSA.
-      if (!IsRsaKey(key))
-        return Status::ErrorUnsupported();
-      platform::PublicKey* public_key;
-      status = ToPlatformPublicKey(key, &public_key);
-      if (status.IsError())
-        return status;
-      std::vector<uint8> modulus;
-      std::vector<uint8> public_exponent;
-      status =
-          platform::ExportRsaPublicKey(public_key, &modulus, &public_exponent);
-      if (status.IsError())
-        return status;
-      WriteRsaPublicKey(modulus, public_exponent, &jwk_dict);
-      break;
-    }
-    case blink::WebCryptoKeyTypePrivate: {
-      // TODO(eroman): Update when there are asymmetric keys other than RSA.
-      if (!IsRsaKey(key))
-        return Status::ErrorUnsupported();
+JwkReader::JwkReader() {
+}
 
-      status = ExportRsaPrivateKeyJwk(key, &jwk_dict);
-      if (status.IsError())
-        return status;
-      break;
-    }
+JwkReader::~JwkReader() {
+}
 
-    default:
-      return Status::ErrorUnsupported();
-  }
+Status JwkReader::Init(const CryptoData& bytes,
+                       bool expected_extractable,
+                       blink::WebCryptoKeyUsageMask expected_usages,
+                       const std::string& expected_kty,
+                       const std::string& expected_alg) {
+  if (!bytes.byte_length())
+    return Status::ErrorImportEmptyKeyData();
 
-  WriteKeyOps(key.usages(), &jwk_dict);
-  WriteExt(key.extractable(), &jwk_dict);
-  status = WriteAlg(key.algorithm(), &jwk_dict);
+  // Parse the incoming JWK JSON.
+  base::StringPiece json_string(reinterpret_cast<const char*>(bytes.bytes()),
+                                bytes.byte_length());
+
+  scoped_ptr<base::Value> value(base::JSONReader::Read(json_string));
+  base::DictionaryValue* dict_value = NULL;
+
+  if (!value.get() || !value->GetAsDictionary(&dict_value) || !dict_value)
+    return Status::ErrorJwkNotDictionary();
+
+  // Release |value|, as ownership will be transferred to |dict| via
+  // |dict_value|, which points to the same object as |value|.
+  ignore_result(value.release());
+  dict_.reset(dict_value);
+
+  // JWK "kty". Exit early if this required JWK parameter is missing.
+  std::string kty;
+  Status status = GetString("kty", &kty);
   if (status.IsError())
     return status;
 
-  std::string json;
-  base::JSONWriter::Write(&jwk_dict, &json);
-  buffer->assign(json.data(), json.data() + json.size());
+  if (kty != expected_kty)
+    return Status::ErrorJwkUnexpectedKty(expected_kty);
+
+  status = VerifyExt(*this, expected_extractable);
+  if (status.IsError())
+    return status;
+
+  status = VerifyUsages(*this, expected_usages);
+  if (status.IsError())
+    return status;
+
+  // Verify the algorithm if an expectation was provided.
+  if (!expected_alg.empty()) {
+    status = VerifyAlg(expected_alg);
+    if (status.IsError())
+      return status;
+  }
+
   return Status::Success();
+}
+
+bool JwkReader::HasMember(const std::string& member_name) const {
+  return dict_->HasKey(member_name);
+}
+
+Status JwkReader::GetString(const std::string& member_name,
+                            std::string* result) const {
+  base::Value* value = NULL;
+  if (!dict_->Get(member_name, &value))
+    return Status::ErrorJwkPropertyMissing(member_name);
+  if (!value->GetAsString(result))
+    return Status::ErrorJwkPropertyWrongType(member_name, "string");
+  return Status::Success();
+}
+
+Status JwkReader::GetOptionalString(const std::string& member_name,
+                                    std::string* result,
+                                    bool* member_exists) const {
+  *member_exists = false;
+  base::Value* value = NULL;
+  if (!dict_->Get(member_name, &value))
+    return Status::Success();
+
+  if (!value->GetAsString(result))
+    return Status::ErrorJwkPropertyWrongType(member_name, "string");
+
+  *member_exists = true;
+  return Status::Success();
+}
+
+Status JwkReader::GetOptionalList(const std::string& member_name,
+                                  base::ListValue** result,
+                                  bool* member_exists) const {
+  *member_exists = false;
+  base::Value* value = NULL;
+  if (!dict_->Get(member_name, &value))
+    return Status::Success();
+
+  if (!value->GetAsList(result))
+    return Status::ErrorJwkPropertyWrongType(member_name, "list");
+
+  *member_exists = true;
+  return Status::Success();
+}
+
+Status JwkReader::GetBytes(const std::string& member_name,
+                           std::string* result) const {
+  std::string base64_string;
+  Status status = GetString(member_name, &base64_string);
+  if (status.IsError())
+    return status;
+
+  if (!Base64DecodeUrlSafe(base64_string, result))
+    return Status::ErrorJwkBase64Decode(member_name);
+
+  return Status::Success();
+}
+
+Status JwkReader::GetBigInteger(const std::string& member_name,
+                                std::string* result) const {
+  Status status = GetBytes(member_name, result);
+  if (status.IsError())
+    return status;
+
+  if (result->empty())
+    return Status::ErrorJwkEmptyBigInteger(member_name);
+
+  // The JWA spec says that "The octet sequence MUST utilize the minimum number
+  // of octets to represent the value." This means there shouldn't be any
+  // leading zeros.
+  if (result->size() > 1 && (*result)[0] == 0)
+    return Status::ErrorJwkBigIntegerHasLeadingZero(member_name);
+
+  return Status::Success();
+}
+
+Status JwkReader::GetOptionalBool(const std::string& member_name,
+                                  bool* result,
+                                  bool* member_exists) const {
+  *member_exists = false;
+  base::Value* value = NULL;
+  if (!dict_->Get(member_name, &value))
+    return Status::Success();
+
+  if (!value->GetAsBoolean(result))
+    return Status::ErrorJwkPropertyWrongType(member_name, "boolean");
+
+  *member_exists = true;
+  return Status::Success();
+}
+
+Status JwkReader::GetAlg(std::string* alg, bool* has_alg) const {
+  return GetOptionalString("alg", alg, has_alg);
+}
+
+Status JwkReader::VerifyAlg(const std::string& expected_alg) const {
+  bool has_jwk_alg;
+  std::string jwk_alg_value;
+  Status status = GetAlg(&jwk_alg_value, &has_jwk_alg);
+  if (status.IsError())
+    return status;
+
+  if (has_jwk_alg && jwk_alg_value != expected_alg)
+    return Status::ErrorJwkAlgorithmInconsistent();
+
+  return Status::Success();
+}
+
+JwkWriter::JwkWriter(const std::string& algorithm,
+                     bool extractable,
+                     blink::WebCryptoKeyUsageMask usages,
+                     const std::string& kty) {
+  dict_.SetString("alg", algorithm);
+  dict_.Set("key_ops", CreateJwkKeyOpsFromWebCryptoUsages(usages));
+  dict_.SetBoolean("ext", extractable);
+  dict_.SetString("kty", kty);
+}
+
+void JwkWriter::SetString(const std::string& member_name,
+                          const std::string& value) {
+  dict_.SetString(member_name, value);
+}
+
+void JwkWriter::SetBytes(const std::string& member_name,
+                         const CryptoData& value) {
+  dict_.SetString(
+      member_name,
+      Base64EncodeUrlSafe(base::StringPiece(
+          reinterpret_cast<const char*>(value.bytes()), value.byte_length())));
+}
+
+void JwkWriter::ToJson(std::vector<uint8_t>* utf8_bytes) const {
+  std::string json;
+  base::JSONWriter::Write(&dict_, &json);
+  utf8_bytes->assign(json.begin(), json.end());
+}
+
+Status ReadSecretKeyNoExpectedAlg(const CryptoData& key_data,
+                                  bool expected_extractable,
+                                  blink::WebCryptoKeyUsageMask expected_usages,
+                                  std::vector<uint8_t>* raw_key_data,
+                                  JwkReader* jwk) {
+  Status status = jwk->Init(
+      key_data, expected_extractable, expected_usages, "oct", std::string());
+  if (status.IsError())
+    return status;
+
+  std::string jwk_k_value;
+  status = jwk->GetBytes("k", &jwk_k_value);
+  if (status.IsError())
+    return status;
+  raw_key_data->assign(jwk_k_value.begin(), jwk_k_value.end());
+
+  return Status::Success();
+}
+
+void WriteSecretKeyJwk(const CryptoData& raw_key_data,
+                       const std::string& algorithm,
+                       bool extractable,
+                       blink::WebCryptoKeyUsageMask usages,
+                       std::vector<uint8_t>* jwk_key_data) {
+  JwkWriter writer(algorithm, extractable, usages, "oct");
+  writer.SetBytes("k", raw_key_data);
+  writer.ToJson(jwk_key_data);
+}
+
+Status ReadSecretKeyJwk(const CryptoData& key_data,
+                        const std::string& expected_alg,
+                        bool expected_extractable,
+                        blink::WebCryptoKeyUsageMask expected_usages,
+                        std::vector<uint8_t>* raw_key_data) {
+  JwkReader jwk;
+  Status status = ReadSecretKeyNoExpectedAlg(
+      key_data, expected_extractable, expected_usages, raw_key_data, &jwk);
+  if (status.IsError())
+    return status;
+  return jwk.VerifyAlg(expected_alg);
+}
+
+std::string MakeJwkAesAlgorithmName(const std::string& suffix,
+                                    unsigned int keylen_bytes) {
+  if (keylen_bytes == 16)
+    return std::string("A128") + suffix;
+  if (keylen_bytes == 24)
+    return std::string("A192") + suffix;
+  if (keylen_bytes == 32)
+    return std::string("A256") + suffix;
+  return std::string();
+}
+
+Status ReadAesSecretKeyJwk(const CryptoData& key_data,
+                           const std::string& algorithm_name_suffix,
+                           bool expected_extractable,
+                           blink::WebCryptoKeyUsageMask expected_usages,
+                           std::vector<uint8_t>* raw_key_data) {
+  JwkReader jwk;
+  Status status = ReadSecretKeyNoExpectedAlg(
+      key_data, expected_extractable, expected_usages, raw_key_data, &jwk);
+  if (status.IsError())
+    return status;
+
+  bool has_jwk_alg;
+  std::string jwk_alg;
+  status = jwk.GetAlg(&jwk_alg, &has_jwk_alg);
+  if (status.IsError())
+    return status;
+
+  if (has_jwk_alg) {
+    std::string expected_algorithm_name =
+        MakeJwkAesAlgorithmName(algorithm_name_suffix, raw_key_data->size());
+
+    if (jwk_alg != expected_algorithm_name) {
+      // Give a different error message if the key length was wrong.
+      if (jwk_alg == MakeJwkAesAlgorithmName(algorithm_name_suffix, 16) ||
+          jwk_alg == MakeJwkAesAlgorithmName(algorithm_name_suffix, 24) ||
+          jwk_alg == MakeJwkAesAlgorithmName(algorithm_name_suffix, 32)) {
+        return Status::ErrorJwkIncorrectKeyLength();
+      }
+      return Status::ErrorJwkAlgorithmInconsistent();
+    }
+  }
+
+  return Status::Success();
+}
+
+// Writes an RSA public key to a JWK dictionary
+void WriteRsaPublicKeyJwk(const CryptoData& n,
+                          const CryptoData& e,
+                          const std::string& algorithm,
+                          bool extractable,
+                          blink::WebCryptoKeyUsageMask usages,
+                          std::vector<uint8_t>* jwk_key_data) {
+  JwkWriter writer(algorithm, extractable, usages, "RSA");
+  writer.SetBytes("n", n);
+  writer.SetBytes("e", e);
+  writer.ToJson(jwk_key_data);
+}
+
+// Writes an RSA private key to a JWK dictionary
+void WriteRsaPrivateKeyJwk(const CryptoData& n,
+                           const CryptoData& e,
+                           const CryptoData& d,
+                           const CryptoData& p,
+                           const CryptoData& q,
+                           const CryptoData& dp,
+                           const CryptoData& dq,
+                           const CryptoData& qi,
+                           const std::string& algorithm,
+                           bool extractable,
+                           blink::WebCryptoKeyUsageMask usages,
+                           std::vector<uint8_t>* jwk_key_data) {
+  JwkWriter writer(algorithm, extractable, usages, "RSA");
+
+  writer.SetBytes("n", n);
+  writer.SetBytes("e", e);
+  writer.SetBytes("d", d);
+  // Although these are "optional" in the JWA, WebCrypto spec requires them to
+  // be emitted.
+  writer.SetBytes("p", p);
+  writer.SetBytes("q", q);
+  writer.SetBytes("dp", dp);
+  writer.SetBytes("dq", dq);
+  writer.SetBytes("qi", qi);
+  writer.ToJson(jwk_key_data);
+}
+
+JwkRsaInfo::JwkRsaInfo() : is_private_key(false) {
+}
+
+JwkRsaInfo::~JwkRsaInfo() {
+}
+
+Status ReadRsaKeyJwk(const CryptoData& key_data,
+                     const std::string& expected_alg,
+                     bool expected_extractable,
+                     blink::WebCryptoKeyUsageMask expected_usages,
+                     JwkRsaInfo* result) {
+  JwkReader jwk;
+  Status status = jwk.Init(
+      key_data, expected_extractable, expected_usages, "RSA", expected_alg);
+  if (status.IsError())
+    return status;
+
+  // An RSA public key must have an "n" (modulus) and an "e" (exponent) entry
+  // in the JWK, while an RSA private key must have those, plus at least a "d"
+  // (private exponent) entry.
+  // See http://tools.ietf.org/html/draft-ietf-jose-json-web-algorithms-18,
+  // section 6.3.
+  status = jwk.GetBigInteger("n", &result->n);
+  if (status.IsError())
+    return status;
+  status = jwk.GetBigInteger("e", &result->e);
+  if (status.IsError())
+    return status;
+
+  result->is_private_key = jwk.HasMember("d");
+  if (!result->is_private_key)
+    return Status::Success();
+
+  status = jwk.GetBigInteger("d", &result->d);
+  if (status.IsError())
+    return status;
+
+  // The "p", "q", "dp", "dq", and "qi" properties are optional in the JWA
+  // spec. However they are required by Chromium's WebCrypto implementation.
+
+  status = jwk.GetBigInteger("p", &result->p);
+  if (status.IsError())
+    return status;
+
+  status = jwk.GetBigInteger("q", &result->q);
+  if (status.IsError())
+    return status;
+
+  status = jwk.GetBigInteger("dp", &result->dp);
+  if (status.IsError())
+    return status;
+
+  status = jwk.GetBigInteger("dq", &result->dq);
+  if (status.IsError())
+    return status;
+
+  status = jwk.GetBigInteger("qi", &result->qi);
+  if (status.IsError())
+    return status;
+
+  return Status::Success();
+}
+
+const char* GetJwkHmacAlgorithmName(blink::WebCryptoAlgorithmId hash) {
+  switch (hash) {
+    case blink::WebCryptoAlgorithmIdSha1:
+      return "HS1";
+    case blink::WebCryptoAlgorithmIdSha256:
+      return "HS256";
+    case blink::WebCryptoAlgorithmIdSha384:
+      return "HS384";
+    case blink::WebCryptoAlgorithmIdSha512:
+      return "HS512";
+    default:
+      return NULL;
+  }
+}
+
+// TODO(eroman): This accepts invalid inputs. http://crbug.com/378034
+bool Base64DecodeUrlSafe(const std::string& input, std::string* output) {
+  std::string base64_encoded_text(input);
+  std::replace(
+      base64_encoded_text.begin(), base64_encoded_text.end(), '-', '+');
+  std::replace(
+      base64_encoded_text.begin(), base64_encoded_text.end(), '_', '/');
+  base64_encoded_text.append((4 - base64_encoded_text.size() % 4) % 4, '=');
+  return base::Base64Decode(base64_encoded_text, output);
+}
+
+std::string Base64EncodeUrlSafe(const base::StringPiece& input) {
+  std::string output;
+  base::Base64Encode(input, &output);
+  std::replace(output.begin(), output.end(), '+', '-');
+  std::replace(output.begin(), output.end(), '/', '_');
+  output.erase(std::remove(output.begin(), output.end(), '='), output.end());
+  return output;
+}
+
+std::string Base64EncodeUrlSafe(const std::vector<uint8_t>& input) {
+  const base::StringPiece string_piece(
+      reinterpret_cast<const char*>(vector_as_array(&input)), input.size());
+  return Base64EncodeUrlSafe(string_piece);
 }
 
 }  // namespace webcrypto

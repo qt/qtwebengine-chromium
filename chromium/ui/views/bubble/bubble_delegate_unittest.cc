@@ -22,7 +22,7 @@ class TestBubbleDelegateView : public BubbleDelegateView {
     view_->SetFocusable(true);
     AddChildView(view_);
   }
-  virtual ~TestBubbleDelegateView() {}
+  ~TestBubbleDelegateView() override {}
 
   void SetAnchorRectForTest(gfx::Rect rect) {
     SetAnchorRect(rect);
@@ -33,10 +33,8 @@ class TestBubbleDelegateView : public BubbleDelegateView {
   }
 
   // BubbleDelegateView overrides:
-  virtual View* GetInitiallyFocusedView() OVERRIDE { return view_; }
-  virtual gfx::Size GetPreferredSize() const OVERRIDE {
-    return gfx::Size(200, 200);
-  }
+  View* GetInitiallyFocusedView() override { return view_; }
+  gfx::Size GetPreferredSize() const override { return gfx::Size(200, 200); }
 
  private:
   View* view_;
@@ -47,7 +45,7 @@ class TestBubbleDelegateView : public BubbleDelegateView {
 class BubbleDelegateTest : public ViewsTestBase {
  public:
   BubbleDelegateTest() {}
-  virtual ~BubbleDelegateTest() {}
+  ~BubbleDelegateTest() override {}
 
   // Creates a test widget that owns its native widget.
   Widget* CreateTestWidget() {
@@ -229,7 +227,7 @@ TEST_F(BubbleDelegateTest, NonClientHitTest) {
     { 1000,        HTNOWHERE },
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+  for (size_t i = 0; i < arraysize(cases); ++i) {
     gfx::Point point(cases[i].point, cases[i].point);
     EXPECT_EQ(cases[i].hit, frame->NonClientHitTest(point))
         << " with border: " << border << ", at point " << cases[i].point;
@@ -248,6 +246,18 @@ TEST_F(BubbleDelegateTest, VisibleWhenAnchorWidgetBoundsChanged) {
   EXPECT_TRUE(bubble_widget->IsVisible());
   anchor_widget->SetBounds(gfx::Rect(10, 10, 100, 100));
   EXPECT_TRUE(bubble_widget->IsVisible());
+}
+
+// Test that setting WidgetDelegate::set_can_activate() to false makes the
+// widget created via BubbleDelegateView::CreateBubble() not activatable.
+TEST_F(BubbleDelegateTest, NotActivatable) {
+  scoped_ptr<Widget> anchor_widget(CreateTestWidget());
+  BubbleDelegateView* bubble_delegate = new BubbleDelegateView(
+      anchor_widget->GetContentsView(), BubbleBorder::NONE);
+  bubble_delegate->set_can_activate(false);
+  Widget* bubble_widget = BubbleDelegateView::CreateBubble(bubble_delegate);
+  bubble_widget->Show();
+  EXPECT_FALSE(bubble_widget->CanActivate());
 }
 
 }  // namespace views

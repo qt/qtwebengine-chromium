@@ -89,20 +89,40 @@ WebInspector.RequestTimingView.prototype = {
  */
 WebInspector.RequestTimingView.createTimingTable = function(request)
 {
-    var tableElement = document.createElement("table");
-    tableElement.className = "network-timing-table";
-    var rows = [];
+    var tableElement = createElementWithClass("table", "network-timing-table");
+    tableElement.createChild("colgroup").createChild("col", "labels");
 
+    /**
+     * @param {string} title
+     * @param {string} className
+     * @param {number} start
+     * @param {number} end
+     */
     function addRow(title, className, start, end)
     {
-        var row = {};
-        row.title = title;
-        row.className = className;
-        row.start = start;
-        row.end = end;
-        rows.push(row);
+        if ((start === -1) || (start >= end))
+            return;
+        var tr = tableElement.createChild("tr");
+        tr.createChild("td").createTextChild(title);
+        var row = tr.createChild("td").createChild("div", "network-timing-row");
+
+        var bar = row.createChild("span", "network-timing-bar " + className);
+        bar.style.left = (scale * start) + "%";
+        bar.style.right = (scale * (total - end)) + "%";
+        bar.textContent = "\u200B"; // Important for 0-time items to have 0 width.
+
+        var label = row.createChild("span", "network-timing-bar-title");
+        if (total - end < start)
+            label.style.right = (scale * (total - end)) + "%";
+        else
+            label.style.left = (scale * start) + "%";
+        label.textContent = Number.secondsToString((end - start) / 1000, true);
     }
 
+    /**
+     * @param {!Array.<number>} numbers
+     * @return {number|undefined}
+     */
     function firstPositive(numbers)
     {
         for (var i = 0; i < numbers.length; ++i) {
@@ -112,75 +132,48 @@ WebInspector.RequestTimingView.createTimingTable = function(request)
         return undefined;
     }
 
+    function createCommunicationTimingTable()
+    {
+        addRow(WebInspector.UIString("Stalled"), "blocking", 0, blocking || 0);
+        addRow(WebInspector.UIString("Proxy negotiation"), "proxy", timing.proxyStart, timing.proxyEnd);
+        addRow(WebInspector.UIString("DNS Lookup"), "dns", timing.dnsStart, timing.dnsEnd);
+        addRow(WebInspector.UIString("Initial connection"), "connecting", timing.connectStart, timing.connectEnd);
+        addRow(WebInspector.UIString("SSL"), "ssl", timing.sslStart, timing.sslEnd);
+        addRow(WebInspector.UIString("Request sent"), "sending", timing.sendStart, timing.sendEnd);
+        addRow(WebInspector.UIString("Waiting (TTFB)"), "waiting", timing.sendEnd, timing.receiveHeadersEnd);
+    }
+
+    function createServiceWorkerTimingTable()
+    {
+        addRow(WebInspector.UIString("Stalled"), "blocking", 0, timing.serviceWorkerFetchStart);
+        addRow(WebInspector.UIString("Request to ServiceWorker"), "serviceworker", timing.serviceWorkerFetchStart, timing.serviceWorkerFetchEnd);
+        addRow(WebInspector.UIString("ServiceWorker Preparation"), "serviceworker", timing.serviceWorkerFetchStart, timing.serviceWorkerFetchReady);
+        addRow(WebInspector.UIString("Waiting (TTFB)"), "waiting", timing.serviceWorkerFetchEnd, timing.receiveHeadersEnd);
+    }
+
     var timing = request.timing;
     var blocking = firstPositive([timing.dnsStart, timing.connectStart, timing.sendStart]);
     var endTime = firstPositive([request.endTime, request.responseReceivedTime, timing.requestTime]);
     var total = (endTime - timing.requestTime) * 1000;
+    var scale = 100 / total;
 
-    if (blocking > 0)
-        addRow(WebInspector.UIString("Blocking"), "blocking", 0, blocking);
-
-    if (timing.proxyStart !== -1)
-        addRow(WebInspector.UIString("Proxy"), "proxy", timing.proxyStart, timing.proxyEnd);
-
-    if (timing.dnsStart !== -1)
-        addRow(WebInspector.UIString("DNS Lookup"), "dns", timing.dnsStart, timing.dnsEnd);
-
-    if (timing.connectStart !== -1)
-        addRow(WebInspector.UIString("Connecting"), "connecting", timing.connectStart, timing.connectEnd);
-
-    if (timing.sslStart !== -1)
-        addRow(WebInspector.UIString("SSL"), "ssl", timing.sslStart, timing.sslEnd);
-
-    addRow(WebInspector.UIString("Sending"), "sending", timing.sendStart, timing.sendEnd);
-    addRow(WebInspector.UIString("Waiting"), "waiting", timing.sendEnd, timing.receiveHeadersEnd);
-
+    addRow(WebInspector.UIString("Total"), "total", 0, total);
+    if (request.fetchedViaServiceWorker)
+        createServiceWorkerTimingTable();
+    else
+        createCommunicationTimingTable();
     if (request.endTime !== -1)
-        addRow(WebInspector.UIString("Receiving"), "receiving", (request.responseReceivedTime - timing.requestTime) * 1000, total);
-
-    const chartWidth = 200;
-    var scale = chartWidth / total;
-
-    for (var i = 0; i < rows.length; ++i) {
-        var tr = document.createElement("tr");
-        tableElement.appendChild(tr);
-
-        var td = document.createElement("td");
-        td.textContent = rows[i].title;
-        tr.appendChild(td);
-
-        td = document.createElement("td");
-        td.width = chartWidth + "px";
-
-        var row = document.createElement("div");
-        row.className = "network-timing-row";
-        td.appendChild(row);
-
-        var bar = document.createElement("span");
-        bar.className = "network-timing-bar " + rows[i].className;
-        bar.style.left = Math.floor(scale * rows[i].start) + "px";
-        bar.style.right = Math.floor(scale * (total - rows[i].end)) + "px";
-        bar.style.backgroundColor = rows[i].color;
-        bar.textContent = "\u200B"; // Important for 0-time items to have 0 width.
-        row.appendChild(bar);
-
-        var title = document.createElement("span");
-        title.className = "network-timing-bar-title";
-        if (total - rows[i].end < rows[i].start)
-            title.style.right = (scale * (total - rows[i].end) + 3) + "px";
-        else
-            title.style.left = (scale * rows[i].start + 3) + "px";
-        title.textContent = Number.secondsToString((rows[i].end - rows[i].start) / 1000, true);
-        row.appendChild(title);
-
-        tr.appendChild(td);
-    }
+        addRow(WebInspector.UIString("Content Download"), "receiving", (request.responseReceivedTime - timing.requestTime) * 1000, total);
 
     if (!request.finished) {
         var cell = tableElement.createChild("tr").createChild("td", "caution");
         cell.colSpan = 2;
         cell.createTextChild(WebInspector.UIString("CAUTION: request is not finished yet!"));
     }
+
+    var note = tableElement.createChild("tr").createChild("td", "footnote");
+    note.colSpan = 2;
+    note.appendChild(WebInspector.createDocumentationAnchor("network#resource-network-timing", WebInspector.UIString("Explanation of resource timing")));
 
     return tableElement;
 }

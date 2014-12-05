@@ -57,19 +57,19 @@ class MockSimpleIndexFile : public SimpleIndexFile,
         load_index_entries_calls_(0),
         disk_writes_(0) {}
 
-  virtual void LoadIndexEntries(
-      base::Time cache_last_modified,
-      const base::Closure& callback,
-      SimpleIndexLoadResult* out_load_result) OVERRIDE {
+  void LoadIndexEntries(base::Time cache_last_modified,
+                        const base::Closure& callback,
+                        SimpleIndexLoadResult* out_load_result) override {
     load_callback_ = callback;
     load_result_ = out_load_result;
     ++load_index_entries_calls_;
   }
 
-  virtual void WriteToDisk(const SimpleIndex::EntrySet& entry_set,
-                           uint64 cache_size,
-                           const base::TimeTicks& start,
-                           bool app_on_background) OVERRIDE {
+  void WriteToDisk(const SimpleIndex::EntrySet& entry_set,
+                   uint64 cache_size,
+                   const base::TimeTicks& start,
+                   bool app_on_background,
+                   const base::Closure& callback) override {
     disk_writes_++;
     disk_write_entry_set_ = entry_set;
   }
@@ -102,11 +102,11 @@ class SimpleIndexTest  : public testing::Test, public SimpleIndexDelegate {
         base::StringPrintf("key%d", static_cast<int>(hash_index)));
   }
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     scoped_ptr<MockSimpleIndexFile> index_file(new MockSimpleIndexFile());
     index_file_ = index_file->AsWeakPtr();
-    index_.reset(new SimpleIndex(NULL, this, net::DISK_CACHE,
-                                 index_file.PassAs<SimpleIndexFile>()));
+    index_.reset(
+        new SimpleIndex(NULL, this, net::DISK_CACHE, index_file.Pass()));
 
     index_->Initialize(base::Time());
   }
@@ -120,8 +120,8 @@ class SimpleIndexTest  : public testing::Test, public SimpleIndexDelegate {
   }
 
   // From SimpleIndexDelegate:
-  virtual void DoomEntries(std::vector<uint64>* entry_hashes,
-                           const net::CompletionCallback& callback) OVERRIDE {
+  void DoomEntries(std::vector<uint64>* entry_hashes,
+                   const net::CompletionCallback& callback) override {
     std::for_each(entry_hashes->begin(), entry_hashes->end(),
                   std::bind1st(std::mem_fun(&SimpleIndex::Remove),
                                index_.get()));

@@ -19,14 +19,14 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
                                         public RenderProcessHostObserver {
  public:
   // SiteInstance interface overrides.
-  virtual int32 GetId() OVERRIDE;
-  virtual bool HasProcess() const OVERRIDE;
-  virtual RenderProcessHost* GetProcess() OVERRIDE;
-  virtual BrowserContext* GetBrowserContext() const OVERRIDE;
-  virtual const GURL& GetSiteURL() const OVERRIDE;
-  virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
-  virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;
-  virtual size_t GetRelatedActiveContentsCount() OVERRIDE;
+  int32 GetId() override;
+  bool HasProcess() const override;
+  RenderProcessHost* GetProcess() override;
+  BrowserContext* GetBrowserContext() const override;
+  const GURL& GetSiteURL() const override;
+  SiteInstance* GetRelatedSiteInstance(const GURL& url) override;
+  bool IsRelatedSiteInstance(const SiteInstance* instance) override;
+  size_t GetRelatedActiveContentsCount() override;
 
   // Set the web site that this SiteInstance is rendering pages for.
   // This includes the scheme and registered domain, but not the port.  If the
@@ -45,28 +45,27 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // navigating to the URL.
   bool HasWrongProcessForURL(const GURL& url);
 
-  // Increase the number of active views in this SiteInstance. This is
-  // increased when a view is created, or a currently swapped out view
+  // Increase the number of active frames in this SiteInstance. This is
+  // increased when a frame is created, or a currently swapped out frame
   // is swapped in.
-  void increment_active_view_count() { active_view_count_++; }
+  void increment_active_frame_count() { active_frame_count_++; }
 
-  // Decrease the number of active views in this SiteInstance. This is
-  // decreased when a view is destroyed, or a currently active view is
+  // Decrease the number of active frames in this SiteInstance. This is
+  // decreased when a frame is destroyed, or a currently active frame is
   // swapped out.
-  void decrement_active_view_count() { active_view_count_--; }
+  void decrement_active_frame_count() { active_frame_count_--; }
 
-  // Get the number of active views which belong to this
-  // SiteInstance. If there is no active view left in this
-  // SiteInstance, all view in this SiteInstance can be safely
-  // discarded to save memory.
-  size_t active_view_count() { return active_view_count_; }
+  // Get the number of active frames which belong to this SiteInstance.  If
+  // there are no active frames left, all frames in this SiteInstance can be
+  // safely discarded.
+  size_t active_frame_count() { return active_frame_count_; }
 
   // Increase the number of active WebContentses using this SiteInstance. Note
-  // that, unlike active_view_count, this does not count pending RVHs.
+  // that, unlike active_frame_count, this does not count pending RFHs.
   void IncrementRelatedActiveContentsCount();
 
   // Decrease the number of active WebContentses using this SiteInstance. Note
-  // that, unlike active_view_count, this does not count pending RVHs.
+  // that, unlike active_frame_count, this does not count pending RFHs.
   void DecrementRelatedActiveContentsCount();
 
   // Sets the global factory used to create new RenderProcessHosts.  It may be
@@ -90,7 +89,7 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   friend class SiteInstance;
 
   // Virtual to allow tests to extend it.
-  virtual ~SiteInstanceImpl();
+  ~SiteInstanceImpl() override;
 
   // Create a new SiteInstance.  Protected to give access to BrowsingInstance
   // and tests; most callers should use Create or GetRelatedSiteInstance
@@ -99,7 +98,7 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
 
  private:
   // RenderProcessHostObserver implementation.
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE;
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override;
 
   // Used to restrict a process' origin access rights.
   void LockToOrigin();
@@ -113,8 +112,8 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // A unique ID for this SiteInstance.
   int32 id_;
 
-  // The number of active views under this SiteInstance.
-  size_t active_view_count_;
+  // The number of active frames in this SiteInstance.
+  size_t active_frame_count_;
 
   // BrowsingInstance to which this SiteInstance belongs.
   scoped_refptr<BrowsingInstance> browsing_instance_;

@@ -30,16 +30,14 @@
 #else
 #include "wtf/ThreadSafeRefCounted.h"
 
-namespace WebCore {
+namespace blink {
 class AudioBus : public ThreadSafeRefCounted<AudioBus> {
 };
-} // namespace WebCore
+} // namespace blink
 #endif
 
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 

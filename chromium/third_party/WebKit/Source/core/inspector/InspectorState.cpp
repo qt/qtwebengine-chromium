@@ -33,7 +33,7 @@
 #include "core/inspector/JSONParser.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 InspectorState::InspectorState(InspectorStateUpdateListener* listener, PassRefPtr<JSONObject> properties)
     : m_listener(listener)
@@ -121,13 +121,18 @@ PassRefPtr<JSONObject> InspectorState::getObject(const String& propertyName)
     return it->value->asObject();
 }
 
+void InspectorState::trace(Visitor* visitor)
+{
+    visitor->trace(m_listener);
+}
+
 InspectorState* InspectorCompositeState::createAgentState(const String& agentName)
 {
     ASSERT(m_stateObject->find(agentName) == m_stateObject->end());
     ASSERT(m_inspectorStateMap.find(agentName) == m_inspectorStateMap.end());
     RefPtr<JSONObject> stateProperties = JSONObject::create();
     m_stateObject->setObject(agentName, stateProperties);
-    OwnPtr<InspectorState> statePtr = adoptPtr(new InspectorState(this, stateProperties));
+    OwnPtrWillBeRawPtr<InspectorState> statePtr = adoptPtrWillBeNoop(new InspectorState(this, stateProperties));
     InspectorState* state = statePtr.get();
     m_inspectorStateMap.add(agentName, statePtr.release());
     return state;
@@ -168,5 +173,12 @@ void InspectorCompositeState::inspectorStateUpdated()
         m_client->updateInspectorStateCookie(m_stateObject->toJSONString());
 }
 
-} // namespace WebCore
+void InspectorCompositeState::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_inspectorStateMap);
+#endif
+}
+
+} // namespace blink
 

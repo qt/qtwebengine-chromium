@@ -36,36 +36,27 @@
 #include "wtf/Forward.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-    class KURL;
-    class Worker;
+class KURL;
+class Worker;
 
-    // A proxy to talk to the worker global scope.
-    class WorkerGlobalScopeProxy {
-    public:
-        virtual ~WorkerGlobalScopeProxy() { }
+// A proxy to talk to the worker global scope.
+class WorkerGlobalScopeProxy {
+public:
+    virtual ~WorkerGlobalScopeProxy() { }
 
-        virtual void startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode) = 0;
+    virtual void startWorkerGlobalScope(const KURL& scriptURL, const String& userAgent, const String& sourceCode, WorkerThreadStartMode) = 0;
 
-        virtual void terminateWorkerGlobalScope() = 0;
+    virtual void terminateWorkerGlobalScope() = 0;
 
-        virtual void postMessageToWorkerGlobalScope(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>) = 0;
+    virtual void postMessageToWorkerGlobalScope(PassRefPtr<SerializedScriptValue>, PassOwnPtr<MessagePortChannelArray>) = 0;
 
-        virtual bool hasPendingActivity() const = 0;
+    virtual bool hasPendingActivity() const = 0;
 
-        virtual void workerObjectDestroyed() = 0;
+    virtual void workerObjectDestroyed() = 0;
+};
 
-        class PageInspector {
-        public:
-            virtual ~PageInspector() { }
-            virtual void dispatchMessageFromWorker(const String&) = 0;
-        };
-        virtual void connectToInspector(PageInspector*) { }
-        virtual void disconnectFromInspector() { }
-        virtual void sendMessageToInspector(const String&) { }
-    };
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerGlobalScopeProxy_h

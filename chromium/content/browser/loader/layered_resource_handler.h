@@ -21,27 +21,25 @@ class CONTENT_EXPORT LayeredResourceHandler : public ResourceHandler {
  public:
   LayeredResourceHandler(net::URLRequest* request,
                          scoped_ptr<ResourceHandler> next_handler);
-  virtual ~LayeredResourceHandler();
+  ~LayeredResourceHandler() override;
 
   // ResourceHandler implementation:
-  virtual void SetController(ResourceController* controller) OVERRIDE;
-  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
-  virtual bool OnRequestRedirected(const GURL& url,
-                                   ResourceResponse* response,
-                                   bool* defer) OVERRIDE;
-  virtual bool OnResponseStarted(ResourceResponse* response,
-                                 bool* defer) OVERRIDE;
-  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
-  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
-  virtual bool OnReadCompleted(int bytes_read,
-                               bool* defer) OVERRIDE;
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& security_info,
-                                   bool* defer) OVERRIDE;
-  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
+  void SetController(ResourceController* controller) override;
+  bool OnUploadProgress(uint64 position, uint64 size) override;
+  bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
+                           ResourceResponse* response,
+                           bool* defer) override;
+  bool OnResponseStarted(ResourceResponse* response, bool* defer) override;
+  bool OnWillStart(const GURL& url, bool* defer) override;
+  bool OnBeforeNetworkStart(const GURL& url, bool* defer) override;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& security_info,
+                           bool* defer) override;
+  void OnDataDownloaded(int bytes_downloaded) override;
 
   scoped_ptr<ResourceHandler> next_handler_;
 };

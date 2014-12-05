@@ -9,18 +9,6 @@ cr.define('options', function() {
   /** @const */ var GridSelectionController = cr.ui.GridSelectionController;
   /** @const */ var ListSingleSelectionModel = cr.ui.ListSingleSelectionModel;
 
-  /**
-   * Number of frames recorded by takeVideo().
-   * @const
-   */
-  var RECORD_FRAMES = 48;
-
-  /**
-   * FPS at which camera stream is recorded.
-   * @const
-   */
-  var RECORD_FPS = 16;
-
    /**
     * Dimensions for camera capture.
     * @const
@@ -38,9 +26,10 @@ cr.define('options', function() {
 
   /**
    * Creates a new user images grid item.
-   * @param {{url: string, title: string=, decorateFn: function=,
-   *     clickHandler: function=}} imageInfo User image URL, optional title,
-   *     decorator callback and click handler.
+   * @param {{url: string, title: (string|undefined),
+   *     decorateFn: (!Function|undefined),
+   *     clickHandler: (!Function|undefined)}} imageInfo User image URL,
+   *     optional title, decorator callback and click handler.
    * @constructor
    * @extends {cr.ui.GridItem}
    */
@@ -136,7 +125,8 @@ cr.define('options', function() {
     decorate: function() {
       Grid.prototype.decorate.call(this);
       this.dataModel = new ArrayDataModel([]);
-      this.itemConstructor = UserImagesGridItem;
+      this.itemConstructor = /** @type {function(new:cr.ui.ListItem, *)} */(
+          UserImagesGridItem);
       this.selectionModel = new ListSingleSelectionModel();
       this.inProgramSelection_ = false;
       this.addEventListener('dblclick', this.handleDblClick_.bind(this));
@@ -253,8 +243,9 @@ cr.define('options', function() {
      * Handles successful camera check.
      * @param {function(): boolean} onAvailable Callback to call. If it returns
      *     |true|, capture is started immediately.
-     * @param {MediaStream} stream Stream object as returned by getUserMedia.
+     * @param {!MediaStream} stream Stream object as returned by getUserMedia.
      * @private
+     * @suppress {deprecated}
      */
     handleCameraAvailable_: function(onAvailable, stream) {
       if (this.cameraStartInProgress_ && onAvailable()) {
@@ -316,7 +307,7 @@ cr.define('options', function() {
             document.activeElement.tagName == 'BODY') {
           $('user-image-grid').focus();
         }
-      }
+      };
       // Timeout guarantees processing AFTER style changes display attribute.
       setTimeout(setFocusIfLost, 0);
     },
@@ -324,7 +315,7 @@ cr.define('options', function() {
     /**
      * Current image captured from camera as data URL. Setting to null will
      * return to the live camera stream.
-     * @type {string=}
+     * @type {(string|undefined)}
      */
     get cameraImage() {
       return this.cameraImage_;
@@ -472,11 +463,14 @@ cr.define('options', function() {
     takePhoto: function() {
       if (!this.cameraOnline)
         return false;
-      var canvas = document.createElement('canvas');
+      var canvas = /** @type {HTMLCanvasElement} */(
+          document.createElement('canvas'));
       canvas.width = CAPTURE_SIZE.width;
       canvas.height = CAPTURE_SIZE.height;
       this.captureFrame_(
-          this.cameraVideo_, canvas.getContext('2d'), CAPTURE_SIZE);
+          this.cameraVideo_,
+          /** @type {CanvasRenderingContext2D} */(canvas.getContext('2d')),
+          CAPTURE_SIZE);
       // Preload image before displaying it.
       var previewImg = new Image();
       previewImg.addEventListener('load', function(e) {
@@ -488,29 +482,6 @@ cr.define('options', function() {
       e.dataURL = this.flipPhoto ? this.flipFrame_(canvas) : previewImg.src;
       this.dispatchEvent(e);
       return true;
-    },
-
-    /**
-     * Performs video capture from the live camera stream.
-     * @param {function=} opt_callback Callback that receives taken video as
-     *     data URL of a vertically stacked PNG sprite.
-     */
-    takeVideo: function(opt_callback) {
-      var canvas = document.createElement('canvas');
-      canvas.width = CAPTURE_SIZE.width;
-      canvas.height = CAPTURE_SIZE.height * RECORD_FRAMES;
-      var ctx = canvas.getContext('2d');
-      // Force canvas initialization to prevent FPS lag on the first frame.
-      ctx.fillRect(0, 0, 1, 1);
-      var captureData = {
-        callback: opt_callback,
-        canvas: canvas,
-        ctx: ctx,
-        frameNo: 0,
-        lastTimestamp: new Date().getTime()
-      };
-      captureData.timer = window.setInterval(
-          this.captureVideoFrame_.bind(this, captureData), 1000 / RECORD_FPS);
     },
 
     /**
@@ -570,34 +541,13 @@ cr.define('options', function() {
     },
 
     /**
-     * Capture next frame of the video being recorded after a takeVideo() call.
-     * @param {Object} data Property bag with the recorder details.
-     * @private
-     */
-    captureVideoFrame_: function(data) {
-      var lastTimestamp = new Date().getTime();
-      var delayMs = lastTimestamp - data.lastTimestamp;
-      console.error('Delay: ' + delayMs + ' (' + (1000 / delayMs + ' FPS)'));
-      data.lastTimestamp = lastTimestamp;
-
-      this.captureFrame_(this.cameraVideo_, data.ctx, CAPTURE_SIZE);
-      data.ctx.translate(0, CAPTURE_SIZE.height);
-
-      if (++data.frameNo == RECORD_FRAMES) {
-        window.clearTimeout(data.timer);
-        if (data.callback && typeof data.callback == 'function')
-          data.callback(data.canvas.toDataURL('image/png'));
-      }
-    },
-
-    /**
      * Adds new image to the user image grid.
-     * @param {string} src Image URL.
+     * @param {string} url Image URL.
      * @param {string=} opt_title Image tooltip.
-     * @param {function=} opt_clickHandler Image click handler.
+     * @param {Function=} opt_clickHandler Image click handler.
      * @param {number=} opt_position If given, inserts new image into
      *     that position (0-based) in image list.
-     * @param {function=} opt_decorateFn Function called with the list element
+     * @param {Function=} opt_decorateFn Function called with the list element
      *     as argument to do any final decoration.
      * @return {!Object} Image data inserted into the data model.
      */
@@ -647,7 +597,7 @@ cr.define('options', function() {
           imageIndex,
           imageInfo.decorateFn);
       // Update image data with the reset of the keys from the old data.
-      for (k in imageInfo) {
+      for (var k in imageInfo) {
         if (!(k in newInfo))
           newInfo[k] = imageInfo[k];
       }

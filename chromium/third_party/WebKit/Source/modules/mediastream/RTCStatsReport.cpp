@@ -24,15 +24,13 @@
  */
 
 #include "config.h"
-
 #include "modules/mediastream/RTCStatsReport.h"
 
+namespace blink {
 
-namespace WebCore {
-
-PassRefPtrWillBeRawPtr<RTCStatsReport> RTCStatsReport::create(const String& id, const String& type, double timestamp)
+RTCStatsReport* RTCStatsReport::create(const String& id, const String& type, double timestamp)
 {
-    return adoptRefWillBeNoop(new RTCStatsReport(id, type, timestamp));
+    return new RTCStatsReport(id, type, timestamp);
 }
 
 RTCStatsReport::RTCStatsReport(const String& id, const String& type, double timestamp)
@@ -40,7 +38,6 @@ RTCStatsReport::RTCStatsReport(const String& id, const String& type, double time
     , m_type(type)
     , m_timestamp(timestamp)
 {
-    ScriptWrappable::init(this);
 }
 
 Vector<String> RTCStatsReport::names() const
@@ -52,12 +49,12 @@ Vector<String> RTCStatsReport::names() const
     return result;
 }
 
-const PassRefPtrWillBeRawPtr<RTCStatsReport> RTCStatsReport::local()
+RTCStatsReport* RTCStatsReport::local()
 {
     return this;
 }
 
-const PassRefPtrWillBeRawPtr<RTCStatsReport> RTCStatsReport::remote()
+RTCStatsReport* RTCStatsReport::remote()
 {
     return this;
 }
@@ -67,4 +64,4 @@ void RTCStatsReport::addStatistic(const String& name, const String& value)
     m_stats.add(name, value);
 }
 
-} // namespace WebCore
+} // namespace blink

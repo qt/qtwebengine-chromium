@@ -14,8 +14,10 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "cc/blink/web_layer_impl.h"
 #include "cc/layers/io_surface_layer.h"
 #include "content/child/appcache/web_application_cache_host_impl.h"
+#include "content/child/multipart_response_delegate.h"
 #include "content/child/npapi/plugin_host.h"
 #include "content/child/npapi/plugin_instance.h"
 #include "content/child/npapi/webplugin_delegate_impl.h"
@@ -24,7 +26,6 @@
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/renderer/content_renderer_client.h"
-#include "content/renderer/compositor_bindings/web_layer_impl.h"
 #include "content/renderer/npapi/webplugin_delegate_proxy.h"
 #include "content/renderer/render_frame_impl.h"
 #include "content/renderer/render_process.h"
@@ -57,12 +58,11 @@
 #include "ui/gfx/rect.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
-#include "webkit/child/multipart_response_delegate.h"
 
+using blink::WebCString;
 using blink::WebCanvas;
 using blink::WebConsoleMessage;
 using blink::WebCookieJar;
-using blink::WebCString;
 using blink::WebCursorInfo;
 using blink::WebData;
 using blink::WebDataSource;
@@ -85,7 +85,6 @@ using blink::WebURLRequest;
 using blink::WebURLResponse;
 using blink::WebVector;
 using blink::WebView;
-using webkit_glue::MultipartResponseDelegate;
 
 namespace content {
 
@@ -545,10 +544,10 @@ WebPluginImpl::WebPluginImpl(
       ignore_response_error_(false),
       file_path_(file_path),
       mime_type_(base::UTF16ToASCII(params.mimeType)),
-      weak_factory_(this),
-      loader_client_(this) {
+      loader_client_(this),
+      weak_factory_(this) {
   DCHECK_EQ(params.attributeNames.size(), params.attributeValues.size());
-  StringToLowerASCII(&mime_type_);
+  base::StringToLowerASCII(&mime_type_);
 
   for (size_t i = 0; i < params.attributeNames.size(); ++i) {
     arg_names_.push_back(params.attributeNames[i].utf8());
@@ -735,6 +734,8 @@ WebPluginImpl::RoutingStatus WebPluginImpl::RouteToFrame(
   request.setFirstPartyForCookies(
       webframe_->document().firstPartyForCookies());
   request.setHasUserGesture(popups_allowed);
+  // ServiceWorker is disabled for NPAPI.
+  request.setSkipServiceWorker(true);
   if (len > 0) {
     if (!SetPostData(&request, buf, len)) {
       // Uhoh - we're in trouble.  There isn't a good way
@@ -852,7 +853,7 @@ void WebPluginImpl::AcceleratedPluginSwappedIOSurface() {
     if (next_io_surface_id_) {
       if (!io_surface_layer_.get()) {
         io_surface_layer_ = cc::IOSurfaceLayer::Create();
-        web_layer_.reset(new WebLayerImpl(io_surface_layer_));
+        web_layer_.reset(new cc_blink::WebLayerImpl(io_surface_layer_));
         container_->setWebLayer(web_layer_.get());
       }
       io_surface_layer_->SetIOSurfaceProperties(
@@ -1048,7 +1049,7 @@ void WebPluginImpl::didReceiveResponse(WebURLLoader* loader,
   // destroy the stream and invoke the NPP_DestroyStream function on the
   // plugin if the HTTP request fails.
   const GURL& url = response.url();
-  if (url.SchemeIs("http") || url.SchemeIs("https")) {
+  if (url.SchemeIs(url::kHttpScheme) || url.SchemeIs(url::kHttpsScheme)) {
     if (response.httpStatusCode() < 100 || response.httpStatusCode() >= 400) {
       // The plugin instance could be in the process of deletion here.
       // Verify if the WebPluginResourceClient instance still exists before
@@ -1171,7 +1172,7 @@ void WebPluginImpl::HandleURLRequestInternal(const char* url,
   // in which case we route the output to the plugin rather than routing it
   // to the plugin's frame.
   bool is_javascript_url =
-      url::FindAndCompareScheme(url, strlen(url), "javascript", NULL);
+      url::FindAndCompareScheme(url, strlen(url), url::kJavaScriptScheme, NULL);
   RoutingStatus routing_status = RouteToFrame(
       url, is_javascript_url, popups_allowed, method, target, buf, len,
       notify_id, referrer_flag);
@@ -1284,8 +1285,13 @@ bool WebPluginImpl::InitiateHTTPRequest(unsigned long resource_id,
   info.request.setFirstPartyForCookies(
       webframe_->document().firstPartyForCookies());
   info.request.setRequestorProcessID(delegate_->GetProcessId());
-  info.request.setTargetType(WebURLRequest::TargetIsObject);
+  // TODO(mkwst): Is this a request for a plugin object itself
+  // (RequestContextObject), or a request that the plugin makes
+  // (RequestContextPlugin)?
+  info.request.setRequestContext(WebURLRequest::RequestContextPlugin);
   info.request.setHTTPMethod(WebString::fromUTF8(method));
+  // ServiceWorker is disabled for NPAPI.
+  info.request.setSkipServiceWorker(true);
   info.pending_failure_notification = false;
   info.notify_redirects = notify_redirects;
   info.is_plugin_src_load = is_plugin_src_load;

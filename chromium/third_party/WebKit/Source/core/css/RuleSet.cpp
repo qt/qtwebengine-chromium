@@ -45,7 +45,7 @@
 
 #include "wtf/TerminatedArrayBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -57,10 +57,8 @@ static inline bool isSelectorMatchingHTMLBasedOnRuleHash(const CSSSelector& sele
         const AtomicString& selectorNamespace = selector.tagQName().namespaceURI();
         if (selectorNamespace != starAtom && selectorNamespace != xhtmlNamespaceURI)
             return false;
-        if (selector.relation() == CSSSelector::SubSelector) {
-            ASSERT(selector.tagHistory());
+        if (selector.relation() == CSSSelector::SubSelector && selector.tagHistory())
             return isSelectorMatchingHTMLBasedOnRuleHash(*selector.tagHistory());
-        }
         return true;
     }
     if (SelectorChecker::isCommonPseudoClassSelector(selector))
@@ -131,7 +129,7 @@ RuleData::RuleData(StyleRule* rule, unsigned selectorIndex, unsigned position, A
     , m_specificity(selector().specificity())
     , m_hasMultipartSelector(!!selector().tagHistory())
     , m_hasRightmostSelectorMatchingHTMLBasedOnRuleHash(isSelectorMatchingHTMLBasedOnRuleHash(selector()))
-    , m_containsUncommonAttributeSelector(WebCore::containsUncommonAttributeSelector(selector()))
+    , m_containsUncommonAttributeSelector(blink::containsUncommonAttributeSelector(selector()))
     , m_linkMatchType(SelectorChecker::determineLinkMatchType(selector()))
     , m_hasDocumentSecurityOrigin(addRuleFlags & RuleHasDocumentSecurityOrigin)
     , m_propertyWhitelistType(determinePropertyWhitelistType(addRuleFlags, selector()))
@@ -181,10 +179,8 @@ bool RuleSet::findBestRuleSetAndAdd(const CSSSelector& component, RuleData& rule
 #endif
 
     const CSSSelector* it = &component;
-    for (; it && it->relation() == CSSSelector::SubSelector; it = it->tagHistory()) {
+    for (; it && it->relation() == CSSSelector::SubSelector; it = it->tagHistory())
         extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
-    }
-    // FIXME: this null check should not be necessary. See crbug.com/358475
     if (it)
         extractValuesforSelector(it, id, className, customPseudoElementName, tagName);
 
@@ -308,7 +304,7 @@ void RuleSet::addChildRules(const WillBeHeapVector<RefPtrWillBeMember<StyleRuleB
 
 void RuleSet::addRulesFromSheet(StyleSheetContents* sheet, const MediaQueryEvaluator& medium, AddRuleFlags addRuleFlags)
 {
-    TRACE_EVENT0("webkit", "RuleSet::addRulesFromSheet");
+    TRACE_EVENT0("blink", "RuleSet::addRulesFromSheet");
 
     ASSERT(sheet);
 
@@ -331,10 +327,9 @@ void RuleSet::addStyleRule(StyleRule* rule, AddRuleFlags addRuleFlags)
 
 void RuleSet::compactPendingRules(PendingRuleMap& pendingMap, CompactRuleMap& compactMap)
 {
-    PendingRuleMap::iterator end = pendingMap.end();
-    for (PendingRuleMap::iterator it = pendingMap.begin(); it != end; ++it) {
-        OwnPtrWillBeRawPtr<WillBeHeapLinkedStack<RuleData> > pendingRules = it->value.release();
-        CompactRuleMap::ValueType* compactRules = compactMap.add(it->key, nullptr).storedValue;
+    for (auto& item : pendingMap) {
+        OwnPtrWillBeRawPtr<WillBeHeapLinkedStack<RuleData> > pendingRules = item.value.release();
+        CompactRuleMap::ValueType* compactRules = compactMap.add(item.key, nullptr).storedValue;
 
         WillBeHeapTerminatedArrayBuilder<RuleData> builder(compactRules->value.release());
         builder.grow(pendingRules->size());
@@ -379,10 +374,12 @@ void RuleData::trace(Visitor* visitor)
 
 void RuleSet::PendingRuleMaps::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(idRules);
     visitor->trace(classRules);
     visitor->trace(tagRules);
     visitor->trace(shadowPseudoElementRules);
+#endif
 }
 
 void RuleSet::trace(Visitor* visitor)
@@ -414,9 +411,9 @@ void RuleSet::trace(Visitor* visitor)
 #ifndef NDEBUG
 void RuleSet::show()
 {
-    for (WillBeHeapVector<RuleData>::const_iterator it = m_allRules.begin(); it != m_allRules.end(); ++it)
-        it->selector().show();
+    for (const auto& rule: m_allRules)
+        rule.selector().show();
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

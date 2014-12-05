@@ -29,7 +29,6 @@
 #ifndef Pattern_h
 #define Pattern_h
 
-#include "SkShader.h"
 #include "platform/PlatformExport.h"
 #include "platform/graphics/Image.h"
 #include "platform/transforms/AffineTransform.h"
@@ -38,37 +37,52 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+class SkShader;
 
-class AffineTransform;
+namespace blink {
+
+class DisplayList;
 
 class PLATFORM_EXPORT Pattern : public RefCounted<Pattern> {
 public:
-    static PassRefPtr<Pattern> create(PassRefPtr<Image> tileImage, bool repeatX, bool repeatY)
-    {
-        return adoptRef(new Pattern(tileImage, repeatX, repeatY));
-    }
-    ~Pattern();
+    enum RepeatMode {
+        RepeatModeX    = 1 << 0,
+        RepeatModeY    = 1 << 1,
+
+        RepeatModeNone = 0,
+        RepeatModeXY   = RepeatModeX | RepeatModeY
+    };
+
+    static PassRefPtr<Pattern> createBitmapPattern(PassRefPtr<Image> tileImage,
+        RepeatMode = RepeatModeXY);
+    static PassRefPtr<Pattern> createDisplayListPattern(PassRefPtr<DisplayList>,
+        RepeatMode = RepeatModeXY);
+    virtual ~Pattern();
 
     SkShader* shader();
 
     void setPatternSpaceTransform(const AffineTransform& patternSpaceTransformation);
-    const AffineTransform& getPatternSpaceTransform() { return m_patternSpaceTransformation; };
+    const AffineTransform& patternSpaceTransform() const { return m_patternSpaceTransformation; }
 
-    bool repeatX() const { return m_repeatX; }
-    bool repeatY() const { return m_repeatY; }
+    bool isRepeatX() { return m_repeatMode & RepeatModeX; }
+    bool isRepeatY() { return m_repeatMode & RepeatModeY; }
+    bool isRepeatXY() { return m_repeatMode == RepeatModeXY; }
+
+protected:
+    virtual PassRefPtr<SkShader> createShader() = 0;
+
+    void adjustExternalMemoryAllocated(int64_t delta);
+
+    RepeatMode m_repeatMode;
+    AffineTransform m_patternSpaceTransformation;
+
+    Pattern(RepeatMode, int64_t externalMemoryAllocated = 0);
 
 private:
-    Pattern(PassRefPtr<Image>, bool repeatX, bool repeatY);
-
-    RefPtr<NativeImageSkia> m_tileImage;
-    bool m_repeatX;
-    bool m_repeatY;
-    AffineTransform m_patternSpaceTransformation;
     RefPtr<SkShader> m_pattern;
-    int m_externalMemoryAllocated;
+    int64_t m_externalMemoryAllocated;
 };
 
-} //namespace
+} // namespace blink
 
 #endif

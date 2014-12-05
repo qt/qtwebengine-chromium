@@ -17,9 +17,6 @@ namespace content {
 // flags, or platform default).
 CONTENT_EXPORT bool IsPinchVirtualViewportEnabled();
 
-// Returns true if the threaded compositor is on (via flags or field trial).
-CONTENT_EXPORT bool IsThreadedCompositingEnabled();
-
 // Returns true if delegated-renderer is on (via flags, or platform default).
 CONTENT_EXPORT bool IsDelegatedRendererEnabled();
 
@@ -32,6 +29,16 @@ CONTENT_EXPORT bool IsGpuRasterizationEnabled();
 
 // Returns true if force-gpu-rasterization is on (via flags) for the renderer.
 CONTENT_EXPORT bool IsForceGpuRasterizationEnabled();
+
+// Returns the number of raster threads to use for compositing.
+CONTENT_EXPORT int NumberOfRendererRasterThreads();
+
+// Returns the number of raster threads to use for compositing that are forced
+// by the command line.
+CONTENT_EXPORT int ForceNumberOfRendererRasterThreads();
+
+// Returns true if using cc Surfaces is allowed.
+CONTENT_EXPORT bool UseSurfacesEnabled();
 
 CONTENT_EXPORT base::Value* GetFeatureStatus();
 CONTENT_EXPORT base::Value* GetProblems();

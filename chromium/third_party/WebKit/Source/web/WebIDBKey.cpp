@@ -30,8 +30,6 @@
 
 #include "modules/indexeddb/IDBKey.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 WebIDBKey WebIDBKey::createArray(const WebVector<WebIDBKey>& array)

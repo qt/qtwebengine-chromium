@@ -32,20 +32,20 @@
 #define AudioDestinationConsumer_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/RefCounted.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 
-class PLATFORM_EXPORT AudioDestinationConsumer : public RefCounted<AudioDestinationConsumer> {
+class PLATFORM_EXPORT AudioDestinationConsumer : public GarbageCollected<AudioDestinationConsumer> {
 public:
-    virtual ~AudioDestinationConsumer();
-
     virtual void setFormat(size_t numberOfChannels, float sampleRate) = 0;
     virtual void consumeAudio(AudioBus*, size_t numberOfFrames) = 0;
+
+    virtual void trace(Visitor*) { }
 };
 
-} // WebCore
+} // namespace blink
 
 #endif // AudioDestinationConsumer_h

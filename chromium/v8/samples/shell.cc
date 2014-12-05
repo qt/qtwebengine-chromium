@@ -25,12 +25,15 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <v8.h>
+#include <include/v8.h>
+
+#include <include/libplatform/libplatform.h>
+
 #include <assert.h>
 #include <fcntl.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #ifdef COMPRESS_STARTUP_DATA_BZ2
 #error Using compressed startup data is not supported for this sample
@@ -78,6 +81,9 @@ class ShellArrayBufferAllocator : public v8::ArrayBuffer::Allocator {
 
 int main(int argc, char* argv[]) {
   v8::V8::InitializeICU();
+  v8::Platform* platform = v8::platform::CreateDefaultPlatform();
+  v8::V8::InitializePlatform(platform);
+  v8::V8::Initialize();
   v8::V8::SetFlagsFromCommandLine(&argc, argv, true);
   ShellArrayBufferAllocator array_buffer_allocator;
   v8::V8::SetArrayBufferAllocator(&array_buffer_allocator);
@@ -97,6 +103,8 @@ int main(int argc, char* argv[]) {
     if (run_shell) RunShell(context);
   }
   v8::V8::Dispose();
+  v8::V8::ShutdownPlatform();
+  delete platform;
   return result;
 }
 
@@ -358,7 +366,7 @@ void ReportException(v8::Isolate* isolate, v8::TryCatch* try_catch) {
     fprintf(stderr, "%s\n", exception_string);
   } else {
     // Print (filename):(line number): (message).
-    v8::String::Utf8Value filename(message->GetScriptResourceName());
+    v8::String::Utf8Value filename(message->GetScriptOrigin().ResourceName());
     const char* filename_string = ToCString(filename);
     int linenum = message->GetLineNumber();
     fprintf(stderr, "%s:%i: %s\n", filename_string, linenum, exception_string);

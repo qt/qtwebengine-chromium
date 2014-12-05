@@ -29,7 +29,7 @@
 #include "platform/graphics/Color.h"
 #include "platform/scroll/ScrollbarTheme.h"
 
-namespace WebCore {
+namespace blink {
 
 // This scrollbar theme is used to get overlay scrollbar for platforms other
 // than Mac. Mac's overlay scrollbars are in ScrollbarThemeMac*.
@@ -41,22 +41,23 @@ public:
     ScrollbarThemeOverlay(int thumbThickness, int scrollbarMargin, HitTestBehavior, Color);
     virtual ~ScrollbarThemeOverlay() { }
 
-    virtual int scrollbarThickness(ScrollbarControlSize) OVERRIDE;
-    virtual bool usesOverlayScrollbars() const OVERRIDE;
+    virtual int scrollbarThickness(ScrollbarControlSize) override;
+    virtual int scrollbarMargin() const override;
+    virtual bool usesOverlayScrollbars() const override;
 
-    virtual int thumbPosition(ScrollbarThemeClient*) OVERRIDE;
-    virtual int thumbLength(ScrollbarThemeClient*) OVERRIDE;
+    virtual int thumbPosition(ScrollbarThemeClient*) override;
+    virtual int thumbLength(ScrollbarThemeClient*) override;
 
-    virtual bool hasButtons(ScrollbarThemeClient*) OVERRIDE { return false; };
-    virtual bool hasThumb(ScrollbarThemeClient*) OVERRIDE;
+    virtual bool hasButtons(ScrollbarThemeClient*) override { return false; };
+    virtual bool hasThumb(ScrollbarThemeClient*) override;
 
-    virtual IntRect backButtonRect(ScrollbarThemeClient*, ScrollbarPart, bool painting = false) OVERRIDE;
-    virtual IntRect forwardButtonRect(ScrollbarThemeClient*, ScrollbarPart, bool painting = false) OVERRIDE;
-    virtual IntRect trackRect(ScrollbarThemeClient*, bool painting = false) OVERRIDE;
-    virtual int thumbThickness(ScrollbarThemeClient*) OVERRIDE;
+    virtual IntRect backButtonRect(ScrollbarThemeClient*, ScrollbarPart, bool painting = false) override;
+    virtual IntRect forwardButtonRect(ScrollbarThemeClient*, ScrollbarPart, bool painting = false) override;
+    virtual IntRect trackRect(ScrollbarThemeClient*, bool painting = false) override;
+    virtual int thumbThickness(ScrollbarThemeClient*) override;
 
-    virtual void paintThumb(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) OVERRIDE;
-    virtual ScrollbarPart hitTest(ScrollbarThemeClient*, const IntPoint&) OVERRIDE;
+    virtual void paintThumb(GraphicsContext*, ScrollbarThemeClient*, const IntRect&) override;
+    virtual ScrollbarPart hitTest(ScrollbarThemeClient*, const IntPoint&) override;
 
 private:
     int m_thumbThickness;
@@ -66,6 +67,6 @@ private:
     const bool m_useSolidColor;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

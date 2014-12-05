@@ -31,8 +31,8 @@ G*     * Redistributions in binary form must reproduce the above
 #ifndef SVGAnimatedProperty_h
 #define SVGAnimatedProperty_h
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/svg/SVGParsingError.h"
 #include "core/svg/properties/SVGPropertyInfo.h"
@@ -41,11 +41,11 @@ G*     * Redistributions in binary form must reproduce the above
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGElement;
 
-class SVGAnimatedPropertyBase : public RefCounted<SVGAnimatedPropertyBase> {
+class SVGAnimatedPropertyBase : public RefCounted<SVGAnimatedPropertyBase>, public ScriptWrappableBase {
 public:
     virtual ~SVGAnimatedPropertyBase();
 
@@ -56,6 +56,7 @@ public:
     virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase>) = 0;
     virtual void animationEnded();
 
+    virtual void setBaseValueAsString(const String& value, SVGParsingError& parseError) = 0;
     virtual bool needsSynchronizeAttribute() = 0;
     virtual void synchronizeAttribute();
 
@@ -119,17 +120,17 @@ public:
         return const_cast<SVGAnimatedPropertyCommon*>(this)->currentValue();
     }
 
-    virtual SVGPropertyBase* currentValueBase() OVERRIDE
+    virtual SVGPropertyBase* currentValueBase() override
     {
         return currentValue();
     }
 
-    virtual bool isAnimating() const OVERRIDE
+    virtual bool isAnimating() const override
     {
         return m_currentValue;
     }
 
-    void setBaseValueAsString(const String& value, SVGParsingError& parseError)
+    void setBaseValueAsString(const String& value, SVGParsingError& parseError) override
     {
         TrackExceptionState es;
 
@@ -139,19 +140,19 @@ public:
             parseError = ParsingAttributeFailedError;
     }
 
-    virtual PassRefPtr<SVGPropertyBase> createAnimatedValue() OVERRIDE
+    virtual PassRefPtr<SVGPropertyBase> createAnimatedValue() override
     {
         return m_baseValue->clone();
     }
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase> passValue) OVERRIDE
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase> passValue) override
     {
         RefPtr<SVGPropertyBase> value = passValue;
         ASSERT(value->type() == Property::classType());
         m_currentValue = static_pointer_cast<Property>(value.release());
     }
 
-    virtual void animationEnded() OVERRIDE
+    virtual void animationEnded() override
     {
         m_currentValue.clear();
 
@@ -176,14 +177,14 @@ private:
 template <typename Property, typename TearOffType = typename Property::TearOffType, typename PrimitiveType = typename Property::PrimitiveType>
 class SVGAnimatedProperty : public SVGAnimatedPropertyCommon<Property> {
 public:
-    virtual bool needsSynchronizeAttribute() OVERRIDE
+    virtual bool needsSynchronizeAttribute() override
     {
         // DOM attribute synchronization is only needed if tear-off is being touched from javascript or the property is being animated.
         // This prevents unnecessary attribute creation on target element.
         return m_baseValueUpdated || this->isAnimating();
     }
 
-    virtual void synchronizeAttribute() OVERRIDE
+    virtual void synchronizeAttribute() override
     {
         SVGAnimatedPropertyBase::synchronizeAttribute();
         m_baseValueUpdated = false;
@@ -198,7 +199,7 @@ public:
         return this->baseValue()->value();
     }
 
-    void setBaseVal(PrimitiveType value, WebCore::ExceptionState& exceptionState)
+    void setBaseVal(PrimitiveType value, blink::ExceptionState& exceptionState)
     {
         if (this->isReadOnly()) {
             exceptionState.throwDOMException(NoModificationAllowedError, "The attribute is read-only.");
@@ -240,19 +241,19 @@ public:
         return adoptRef(new SVGAnimatedProperty<Property>(contextElement, attributeName, initialValue));
     }
 
-    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase> value) OVERRIDE
+    virtual void setAnimatedValue(PassRefPtr<SVGPropertyBase> value) override
     {
         SVGAnimatedPropertyCommon<Property>::setAnimatedValue(value);
         updateAnimValTearOffIfNeeded();
     }
 
-    virtual void animationEnded() OVERRIDE
+    virtual void animationEnded() override
     {
         SVGAnimatedPropertyCommon<Property>::animationEnded();
         updateAnimValTearOffIfNeeded();
     }
 
-    virtual bool needsSynchronizeAttribute() OVERRIDE
+    virtual bool needsSynchronizeAttribute() override
     {
         // DOM attribute synchronization is only needed if tear-off is being touched from javascript or the property is being animated.
         // This prevents unnecessary attribute creation on target element.

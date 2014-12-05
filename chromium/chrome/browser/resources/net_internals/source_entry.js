@@ -45,7 +45,7 @@ var SourceEntry = (function() {
         if (netErrorCode) {
           // Ignore error code caused by not finding an entry in the cache.
           if (logEntry.type != EventType.HTTP_CACHE_OPEN_ENTRY ||
-              netErrorCode != NetError.FAILED) {
+              netErrorCode != NetError.ERR_FAILED) {
             this.isError_ = true;
           }
         }
@@ -81,6 +81,7 @@ var SourceEntry = (function() {
         case EventSourceType.URL_REQUEST:
         case EventSourceType.SOCKET_STREAM:
         case EventSourceType.HTTP_STREAM_JOB:
+        case EventSourceType.ASYNC_REVALIDATION:
           this.description_ = e.params.url;
           break;
         case EventSourceType.CONNECT_JOB:

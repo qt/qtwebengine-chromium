@@ -37,20 +37,33 @@ def validate_injected_script(fileName):
     lines = f.readlines()
     f.close()
 
-    array_proto_functions = "|".join(["concat", "every", "filter", "forEach", "indexOf", "join", "lastIndexOf", "map", "pop", "push", "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice", "toLocaleString", "toString", "unshift"])
+    proto_functions = "|".join([
+        # Array.prototype.*
+        "concat", "every", "filter", "forEach", "indexOf", "join", "lastIndexOf", "map", "pop",
+        "push", "reduce", "reduceRight", "reverse", "shift", "slice", "some", "sort", "splice", "toLocaleString", "toString", "unshift",
+        # Function.prototype.*
+        "apply", "bind", "call", "isGenerator", "toSource",
+    ])
+
+    global_functions = "|".join([
+        "eval", "uneval", "isFinite", "isNaN", "parseFloat", "parseInt", "decodeURI", "decodeURIComponent",
+        "encodeURI", "encodeURIComponent", "escape", "unescape",
+    ])
 
     # Black list:
-    # - Function.prototype.bind()
+    # - instanceof, since e.g. "obj instanceof Error" may throw if Error is overridden and is not a function
     # - Object.prototype.toString()
     # - Array.prototype.*
+    # - Function.prototype.*
     # - Math.*
-    black_list_call_regex = re.compile(r"\bMath\.\w+\(|\.(bind|toString|" + array_proto_functions + r")\(")
+    # - Global functions
+    black_list_call_regex = re.compile(r"\sinstanceof\s+\w*|\bMath\.\w+\(|\.(toString|" + proto_functions + r")\(|[^\.]\b(" + global_functions + r")\(")
 
     errors_found = False
     for i, line in enumerate(lines):
         for match in re.finditer(black_list_call_regex, line):
             errors_found = True
-            print "ERROR: Black list function call in %s at line %02d column %02d: %s" % (os.path.basename(fileName), i + 1, match.start(), match.group(0))
+            print "ERROR: Black listed expression in %s at line %02d column %02d: %s" % (os.path.basename(fileName), i + 1, match.start(), match.group(0))
 
     if not errors_found:
         print "OK"

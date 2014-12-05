@@ -19,6 +19,17 @@
 
 namespace webrtc {
 
+class MockRtpData : public RtpData {
+ public:
+  MOCK_METHOD3(OnReceivedPayloadData,
+               int32_t(const uint8_t* payloadData,
+                       const uint16_t payloadSize,
+                       const WebRtcRTPHeader* rtpHeader));
+
+  MOCK_METHOD2(OnRecoveredPacket,
+               bool(const uint8_t* packet, int packet_length));
+};
+
 class MockRtpRtcp : public RtpRtcp {
  public:
   MOCK_METHOD1(ChangeUniqueId,
@@ -74,6 +85,9 @@ class MockRtpRtcp : public RtpRtcp {
       uint16_t());
   MOCK_METHOD1(SetSequenceNumber,
       int32_t(const uint16_t seq));
+  MOCK_METHOD2(SetRtpStateForSsrc,
+               void(uint32_t ssrc, const RtpState& rtp_state));
+  MOCK_METHOD2(GetRtpStateForSsrc, bool(uint32_t ssrc, RtpState* rtp_state));
   MOCK_CONST_METHOD0(SSRC,
       uint32_t());
   MOCK_METHOD1(SetSSRC,
@@ -132,8 +146,6 @@ class MockRtpRtcp : public RtpRtcp {
       int32_t(const RTCPMethod method));
   MOCK_METHOD1(SetCNAME,
       int32_t(const char cName[RTCP_CNAME_SIZE]));
-  MOCK_METHOD1(CNAME,
-      int32_t(char cName[RTCP_CNAME_SIZE]));
   MOCK_CONST_METHOD2(RemoteCNAME,
       int32_t(const uint32_t remoteSSRC,
               char cName[RTCP_CNAME_SIZE]));

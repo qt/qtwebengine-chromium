@@ -11,17 +11,19 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/events/ozone/evdev/cursor_delegate_evdev.h"
+#include "ui/events/ozone/evdev/event_device_util.h"
+#include "ui/events/ozone/evdev/event_dispatch_callback.h"
 #include "ui/events/ozone/evdev/events_ozone_evdev_export.h"
 #include "ui/events/ozone/evdev/libgestures_glue/event_reader_libevdev_cros.h"
 
 namespace ui {
 
-class Event;
 class EventDeviceInfo;
 class EventModifiersEvdev;
 class CursorDelegateEvdev;
-
-typedef base::Callback<void(Event*)> EventDispatchCallback;
+class KeyboardEvdev;
+class GestureDeviceProperties;
+class GesturePropertyProvider;
 
 // Convert libevdev-cros events to ui::Events using libgestures.
 //
@@ -39,28 +41,47 @@ typedef base::Callback<void(Event*)> EventDispatchCallback;
 class EVENTS_OZONE_EVDEV_EXPORT GestureInterpreterLibevdevCros
     : public EventReaderLibevdevCros::Delegate {
  public:
-  GestureInterpreterLibevdevCros(EventModifiersEvdev* modifiers,
+  GestureInterpreterLibevdevCros(int id,
+                                 EventModifiersEvdev* modifiers,
                                  CursorDelegateEvdev* cursor,
+                                 KeyboardEvdev* keyboard,
+                                 GesturePropertyProvider* property_provider,
                                  const EventDispatchCallback& callback);
-  virtual ~GestureInterpreterLibevdevCros();
+  ~GestureInterpreterLibevdevCros() override;
 
   // Overriden from ui::EventReaderLibevdevCros::Delegate
-  virtual void OnLibEvdevCrosOpen(Evdev* evdev,
-                                  EventStateRec* evstate) OVERRIDE;
-  virtual void OnLibEvdevCrosEvent(Evdev* evdev,
-                                   EventStateRec* evstate,
-                                   const timeval& time) OVERRIDE;
+  void OnLibEvdevCrosOpen(Evdev* evdev, EventStateRec* evstate) override;
+  void OnLibEvdevCrosEvent(Evdev* evdev,
+                           EventStateRec* evstate,
+                           const timeval& time) override;
 
   // Handler for gesture events generated from libgestures.
   void OnGestureReady(const Gesture* gesture);
+
+  // Accessors.
+  int id() { return id_; }
+  GesturePropertyProvider* property_provider() { return property_provider_; }
+  Evdev* evdev() { return evdev_; }
 
  private:
   void OnGestureMove(const Gesture* gesture, const GestureMove* move);
   void OnGestureScroll(const Gesture* gesture, const GestureScroll* move);
   void OnGestureButtonsChange(const Gesture* gesture,
                               const GestureButtonsChange* move);
-  void Dispatch(Event* event);
+  void OnGestureContactInitiated(const Gesture* gesture);
+  void OnGestureFling(const Gesture* gesture, const GestureFling* fling);
+  void OnGestureSwipe(const Gesture* gesture, const GestureSwipe* swipe);
+  void OnGestureSwipeLift(const Gesture* gesture,
+                          const GestureSwipeLift* swipelift);
+  void OnGesturePinch(const Gesture* gesture, const GesturePinch* pinch);
+  void OnGestureMetrics(const Gesture* gesture, const GestureMetrics* metrics);
+
+  void Dispatch(scoped_ptr<Event> event);
   void DispatchMouseButton(unsigned int modifier, bool down);
+  void DispatchChangedKeys(Evdev* evdev, const timeval& time);
+
+  // The unique device id.
+  int id_;
 
   // Shared modifier state.
   EventModifiersEvdev* modifiers_;
@@ -68,11 +89,26 @@ class EVENTS_OZONE_EVDEV_EXPORT GestureInterpreterLibevdevCros
   // Shared cursor state.
   CursorDelegateEvdev* cursor_;
 
+  // Shared keyboard state.
+  KeyboardEvdev* keyboard_;
+
+  // Shared gesture property provider.
+  GesturePropertyProvider* property_provider_;
+
   // Callback for dispatching events.
   EventDispatchCallback dispatch_callback_;
 
   // Gestures interpretation state.
   gestures::GestureInterpreter* interpreter_;
+
+  // Last key state from libevdev.
+  unsigned long prev_key_state_[EVDEV_BITS_TO_LONGS(KEY_CNT)];
+
+  // Device pointer.
+  Evdev* evdev_;
+
+  // Gesture lib device properties.
+  scoped_ptr<GestureDeviceProperties> device_properties_;
 
   DISALLOW_COPY_AND_ASSIGN(GestureInterpreterLibevdevCros);
 };

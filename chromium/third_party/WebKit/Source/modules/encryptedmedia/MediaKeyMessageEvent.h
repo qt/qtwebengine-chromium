@@ -30,16 +30,19 @@
 #include "core/html/MediaKeyError.h"
 #include "modules/EventModules.h"
 
-namespace WebCore {
+namespace blink {
+
+class DOMArrayBuffer;
 
 struct MediaKeyMessageEventInit : public EventInit {
     MediaKeyMessageEventInit();
 
-    RefPtr<Uint8Array> message;
+    RefPtr<DOMArrayBuffer> message;
     String destinationURL;
 };
 
-class MediaKeyMessageEvent FINAL : public Event {
+class MediaKeyMessageEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~MediaKeyMessageEvent();
 
@@ -53,21 +56,21 @@ public:
         return adoptRefWillBeNoop(new MediaKeyMessageEvent(type, initializer));
     }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    Uint8Array* message() const { return m_message.get(); }
+    DOMArrayBuffer* message() const { return m_message.get(); }
     String destinationURL() const { return m_destinationURL; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaKeyMessageEvent();
     MediaKeyMessageEvent(const AtomicString& type, const MediaKeyMessageEventInit& initializer);
 
-    RefPtr<Uint8Array> m_message;
+    RefPtr<DOMArrayBuffer> m_message;
     String m_destinationURL;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // MediaKeyMessageEvent_h

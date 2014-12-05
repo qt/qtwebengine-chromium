@@ -6,13 +6,13 @@
 
 #include "base/observer_list.h"
 #include "base/strings/utf_string_conversions.h"
-#include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_tray_delegate.h"
 #include "ui/message_center/message_center_types.h"
 #include "ui/message_center/notification_blocker.h"
+#include "ui/strings/grit/ui_strings.h"
 
 namespace message_center {
 
@@ -29,15 +29,14 @@ class NotificationMenuModel : public ui::SimpleMenuModel,
   NotificationMenuModel(MessageCenterTray* tray,
                         const NotifierId& notifier_id,
                         const base::string16& display_source);
-  virtual ~NotificationMenuModel();
+  ~NotificationMenuModel() override;
 
   // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
  private:
   MessageCenterTray* tray_;

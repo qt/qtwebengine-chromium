@@ -70,6 +70,16 @@ class HpackEncoderPeer {
       out->push_back(tmp[i].second);
     }
   }
+  static void DecomposeRepresentation(StringPiece value,
+                                      std::vector<StringPiece>* out) {
+    Representations tmp;
+    HpackEncoder::DecomposeRepresentation(make_pair("foobar", value), &tmp);
+
+    out->clear();
+    for (size_t i = 0; i != tmp.size(); ++i) {
+      out->push_back(tmp[i].second);
+    }
+  }
 
  private:
   HpackEncoder* encoder_;
@@ -88,10 +98,10 @@ class HpackEncoderTest : public ::testing::Test {
 
   HpackEncoderTest()
       : encoder_(ObtainHpackHuffmanTable()),
-        peer_(&encoder_) {}
+        peer_(&encoder_),
+        static_(peer_.table()->GetByIndex(1)) {}
 
-  virtual void SetUp() {
-    static_ = peer_.table()->GetByIndex(1);
+  void SetUp() override {
     // Populate dynamic entries into the table fixture. For simplicity each
     // entry has name.size() + value.size() == 10.
     key_1_ = peer_.table()->TryAddEntry("key1", "value1");
@@ -110,7 +120,7 @@ class HpackEncoderTest : public ::testing::Test {
     expected_.AppendPrefix(kIndexedOpcode);
     expected_.AppendUint32(index);
   }
-  void ExpectIndexedLiteral(HpackEntry* key_entry, StringPiece value) {
+  void ExpectIndexedLiteral(const HpackEntry* key_entry, StringPiece value) {
     expected_.AppendPrefix(kLiteralIncrementalIndexOpcode);
     expected_.AppendUint32(IndexOf(key_entry));
     expected_.AppendPrefix(kStringLiteralIdentityEncoded);
@@ -146,15 +156,18 @@ class HpackEncoderTest : public ::testing::Test {
   size_t IndexOf(HpackEntry* entry) {
     return peer_.table()->IndexOf(entry);
   }
+  size_t IndexOf(const HpackEntry* entry) {
+    return peer_.table()->IndexOf(entry);
+  }
 
   HpackEncoder encoder_;
   test::HpackEncoderPeer peer_;
 
-  HpackEntry* static_;
-  HpackEntry* key_1_;
-  HpackEntry* key_2_;
-  HpackEntry* cookie_a_;
-  HpackEntry* cookie_c_;
+  const HpackEntry* static_;
+  const HpackEntry* key_1_;
+  const HpackEntry* key_2_;
+  const HpackEntry* cookie_a_;
+  const HpackEntry* cookie_c_;
 
   HpackOutputStream expected_;
 };
@@ -165,9 +178,6 @@ TEST_F(HpackEncoderTest, SingleDynamicIndex) {
   map<string, string> headers;
   headers[key_2_->name()] = key_2_->value();
   CompareWithExpectedEncoding(headers);
-
-  // |key_2_| was added to the reference set.
-  EXPECT_THAT(peer_.table()->reference_set(), ElementsAre(key_2_));
 }
 
 TEST_F(HpackEncoderTest, SingleStaticIndex) {
@@ -176,13 +186,6 @@ TEST_F(HpackEncoderTest, SingleStaticIndex) {
   map<string, string> headers;
   headers[static_->name()] = static_->value();
   CompareWithExpectedEncoding(headers);
-
-  // A new entry copying |static_| was inserted and added to the reference set.
-  HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
-  EXPECT_NE(static_, new_entry);
-  EXPECT_EQ(static_->name(), new_entry->name());
-  EXPECT_EQ(static_->value(), new_entry->value());
-  EXPECT_THAT(peer_.table()->reference_set(), ElementsAre(new_entry));
 }
 
 TEST_F(HpackEncoderTest, SingleStaticIndexTooLarge) {
@@ -194,7 +197,6 @@ TEST_F(HpackEncoderTest, SingleStaticIndexTooLarge) {
   CompareWithExpectedEncoding(headers);
 
   EXPECT_EQ(0u, peer_.table_peer().dynamic_entries()->size());
-  EXPECT_EQ(0u, peer_.table()->reference_set().size());
 }
 
 TEST_F(HpackEncoderTest, SingleLiteralWithIndexName) {
@@ -208,7 +210,6 @@ TEST_F(HpackEncoderTest, SingleLiteralWithIndexName) {
   HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
   EXPECT_EQ(new_entry->name(), key_2_->name());
   EXPECT_EQ(new_entry->value(), "value3");
-  EXPECT_THAT(peer_.table()->reference_set(), ElementsAre(new_entry));
 }
 
 TEST_F(HpackEncoderTest, SingleLiteralWithLiteralName) {
@@ -218,11 +219,9 @@ TEST_F(HpackEncoderTest, SingleLiteralWithLiteralName) {
   headers["key3"] = "value3";
   CompareWithExpectedEncoding(headers);
 
-  // A new entry was inserted and added to the reference set.
   HpackEntry* new_entry = &peer_.table_peer().dynamic_entries()->front();
   EXPECT_EQ(new_entry->name(), "key3");
   EXPECT_EQ(new_entry->value(), "value3");
-  EXPECT_THAT(peer_.table()->reference_set(), ElementsAre(new_entry));
 }
 
 TEST_F(HpackEncoderTest, SingleLiteralTooLarge) {
@@ -237,55 +236,6 @@ TEST_F(HpackEncoderTest, SingleLiteralTooLarge) {
   CompareWithExpectedEncoding(headers);
 
   EXPECT_EQ(0u, peer_.table_peer().dynamic_entries()->size());
-  EXPECT_EQ(0u, peer_.table()->reference_set().size());
-}
-
-TEST_F(HpackEncoderTest, SingleInReferenceSet) {
-  peer_.table()->Toggle(key_2_);
-
-  // Nothing is emitted.
-  map<string, string> headers;
-  headers[key_2_->name()] = key_2_->value();
-  CompareWithExpectedEncoding(headers);
-}
-
-TEST_F(HpackEncoderTest, ExplicitToggleOff) {
-  peer_.table()->Toggle(key_1_);
-  peer_.table()->Toggle(key_2_);
-
-  // |key_1_| is explicitly toggled off.
-  ExpectIndex(IndexOf(key_1_));
-
-  map<string, string> headers;
-  headers[key_2_->name()] = key_2_->value();
-  CompareWithExpectedEncoding(headers);
-}
-
-TEST_F(HpackEncoderTest, ImplicitToggleOff) {
-  peer_.table()->Toggle(key_1_);
-  peer_.table()->Toggle(key_2_);
-
-  // |key_1_| is evicted. No explicit toggle required.
-  ExpectIndexedLiteral("key3", "value3");
-
-  map<string, string> headers;
-  headers[key_2_->name()] = key_2_->value();
-  headers["key3"] = "value3";
-  CompareWithExpectedEncoding(headers);
-}
-
-TEST_F(HpackEncoderTest, ExplicitDoubleToggle) {
-  peer_.table()->Toggle(key_1_);
-
-  // |key_1_| is double-toggled prior to being evicted.
-  ExpectIndex(IndexOf(key_1_));
-  ExpectIndex(IndexOf(key_1_));
-  ExpectIndexedLiteral("key3", "value3");
-
-  map<string, string> headers;
-  headers[key_1_->name()] = key_1_->value();
-  headers["key3"] = "value3";
-  CompareWithExpectedEncoding(headers);
 }
 
 TEST_F(HpackEncoderTest, EmitThanEvict) {
@@ -301,10 +251,7 @@ TEST_F(HpackEncoderTest, EmitThanEvict) {
 }
 
 TEST_F(HpackEncoderTest, CookieHeaderIsCrumbled) {
-  peer_.table()->Toggle(cookie_a_);
-
-  // |cookie_a_| is already in the reference set. |cookie_c_| is
-  // toggled, and "e=ff" is emitted with an indexed name.
+  ExpectIndex(IndexOf(cookie_a_));
   ExpectIndex(IndexOf(cookie_c_));
   ExpectIndexedLiteral(peer_.table()->GetByName("cookie"), "e=ff");
 
@@ -320,7 +267,7 @@ TEST_F(HpackEncoderTest, StringsDynamicallySelectHuffmanCoding) {
   peer_.EmitString("feedbeef");
   expected_.AppendPrefix(kStringLiteralHuffmanEncoded);
   expected_.AppendUint32(6);
-  expected_.AppendBytes("\xE0\xB5\xD3\xBDk\xE1");
+  expected_.AppendBytes("\x94\xA5\x92""2\x96_");
 
   // Non-compactable. Uses identity coding.
   peer_.EmitString("@@@@@@");
@@ -354,7 +301,7 @@ TEST_F(HpackEncoderTest, EncodingWithoutCompression) {
 }
 
 TEST_F(HpackEncoderTest, MultipleEncodingPasses) {
-  // Pass 1: key_1_ and cookie_a_ are toggled on.
+  // Pass 1.
   {
     map<string, string> headers;
     headers["key1"] = "value1";
@@ -364,40 +311,71 @@ TEST_F(HpackEncoderTest, MultipleEncodingPasses) {
     ExpectIndex(IndexOf(key_1_));
     CompareWithExpectedEncoding(headers);
   }
-  // Pass 2: |key_1_| is double-toggled and evicted.
-  // |key_2_| & |cookie_c_| are toggled on.
-  // |cookie_a_| is toggled off.
-  // A new cookie entry is added.
+  // Header table is:
+  // 65: key1: value1
+  // 64: key2: value2
+  // 63: cookie: a=bb
+  // 62: cookie: c=dd
+  // Pass 2.
   {
     map<string, string> headers;
     headers["key1"] = "value1";
     headers["key2"] = "value2";
     headers["cookie"] = "c=dd; e=ff";
 
-    ExpectIndex(IndexOf(cookie_c_));  // Toggle on.
-    ExpectIndex(IndexOf(key_1_));  // Double-toggle before eviction.
-    ExpectIndex(IndexOf(key_1_));
+    ExpectIndex(IndexOf(cookie_c_));
+    // key1 by index.
+    ExpectIndex(65);
+    // key2 by index.
+    ExpectIndex(64);
+    // This cookie evicts |key1| from the header table.
     ExpectIndexedLiteral(peer_.table()->GetByName("cookie"), "e=ff");
 
-    ExpectIndex(IndexOf(key_2_) + 1);  // Toggle on. Add 1 to reflect insertion.
-    ExpectIndex(IndexOf(cookie_a_) + 1);  // Toggle off.
     CompareWithExpectedEncoding(headers);
   }
-  // Pass 3: |key_2_| is evicted and implicitly toggled off.
-  // |cookie_c_| is explicitly toggled off.
-  // "key1" is re-inserted.
+  // Header table is:
+  // 65: key2: value2
+  // 64: cookie: a=bb
+  // 63: cookie: c=dd
+  // 62: cookie: e=ff
+  // Pass 3.
   {
     map<string, string> headers;
     headers["key1"] = "value1";
     headers["key3"] = "value3";
     headers["cookie"] = "e=ff";
 
+    // cookie: e=ff by index.
+    ExpectIndex(62);
     ExpectIndexedLiteral("key1", "value1");
     ExpectIndexedLiteral("key3", "value3");
-    ExpectIndex(IndexOf(cookie_c_) + 2);  // Toggle off. Add 1 for insertion.
 
     CompareWithExpectedEncoding(headers);
   }
+}
+
+TEST_F(HpackEncoderTest, PseudoHeadersFirst) {
+  map<string, string> headers;
+  // A pseudo-header to be indexed.
+  headers[":authority"] = "www.example.com";
+  // A pseudo-header that should not be indexed.
+  headers[":path"] = "/spam/eggs.html";
+  // A regular header which precedes ":" alphabetically, should still be encoded
+  // after pseudo-headers.
+  headers["-foo"] = "bar";
+  headers["foo"] = "bar";
+  headers["cookie"] = "c=dd";
+
+  // Pseudo-headers are encoded in alphabetical order.
+  ExpectIndexedLiteral(peer_.table()->GetByName(":authority"),
+                       "www.example.com");
+  ExpectNonIndexedLiteral(":path", "/spam/eggs.html");
+  // Regular headers in the header table are encoded first.
+  ExpectIndex(IndexOf(cookie_a_));
+  // Regular headers not in the header table are encoded, in alphabetical order.
+  ExpectIndexedLiteral("-foo", "bar");
+  ExpectIndexedLiteral("foo", "bar");
+  CompareWithExpectedEncoding(headers);
 }
 
 TEST_F(HpackEncoderTest, CookieToCrumbs) {
@@ -446,6 +424,45 @@ TEST_F(HpackEncoderTest, UpdateCharacterCounts) {
 
   EXPECT_EQ(expect, counts);
   EXPECT_EQ(9u, total_counts);
+}
+
+TEST_F(HpackEncoderTest, DecomposeRepresentation) {
+  test::HpackEncoderPeer peer(NULL);
+  std::vector<StringPiece> out;
+
+  peer.DecomposeRepresentation("", &out);
+  EXPECT_THAT(out, ElementsAre(""));
+
+  peer.DecomposeRepresentation("foobar", &out);
+  EXPECT_THAT(out, ElementsAre("foobar"));
+
+  peer.DecomposeRepresentation(StringPiece("foo\0bar", 7), &out);
+  EXPECT_THAT(out, ElementsAre("foo", "bar"));
+
+  peer.DecomposeRepresentation(StringPiece("\0foo\0bar", 8), &out);
+  EXPECT_THAT(out, ElementsAre("", "foo", "bar"));
+
+  peer.DecomposeRepresentation(StringPiece("foo\0bar\0", 8), &out);
+  EXPECT_THAT(out, ElementsAre("foo", "bar", ""));
+
+  peer.DecomposeRepresentation(StringPiece("\0foo\0bar\0", 9), &out);
+  EXPECT_THAT(out, ElementsAre("", "foo", "bar", ""));
+}
+
+// Test that encoded headers do not have \0-delimited multiple values, as this
+// became disallowed in HTTP/2 draft-14.
+TEST_F(HpackEncoderTest, CrumbleNullByteDelimitedValue) {
+  map<string, string> headers;
+  // A header field to be crumbled: "spam: foo\0bar".
+  headers["spam"] = string("foo\0bar", 7);
+
+  ExpectIndexedLiteral("spam", "foo");
+  expected_.AppendPrefix(kLiteralIncrementalIndexOpcode);
+  expected_.AppendUint32(62);
+  expected_.AppendPrefix(kStringLiteralIdentityEncoded);
+  expected_.AppendUint32(3);
+  expected_.AppendBytes("bar");
+  CompareWithExpectedEncoding(headers);
 }
 
 }  // namespace

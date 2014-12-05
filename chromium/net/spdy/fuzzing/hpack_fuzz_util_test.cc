@@ -7,8 +7,8 @@
 #include <map>
 
 #include "base/base_paths.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "net/spdy/spdy_test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -94,8 +94,9 @@ TEST(HpackFuzzUtilTest, SerializedHeaderBlockPrefixes) {
 }
 
 TEST(HpackFuzzUtilTest, PassValidInputThroughAllStages) {
-  // Example lifted from HpackDecoderTest.SectionD3RequestHuffmanExamples.
-  string input = a2b_hex("828786448ce7cf9bebe89b6fb16fa9b6ff");
+  // Example lifted from HpackDecoderTest.SectionD4RequestHuffmanExamples.
+  string input = a2b_hex("828684418cf1e3c2e5f23a6ba0ab90f4"
+                         "ff");
 
   HpackFuzzUtil::FuzzerContext context;
   HpackFuzzUtil::InitializeFuzzerContext(&context);

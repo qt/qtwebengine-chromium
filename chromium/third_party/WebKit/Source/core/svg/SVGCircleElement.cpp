@@ -19,14 +19,12 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGCircleElement.h"
 
 #include "core/rendering/svg/RenderSVGEllipse.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/svg/SVGLength.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGCircleElement::SVGCircleElement(Document& document)
     : SVGGeometryElement(SVGNames::circleTag, document)
@@ -34,8 +32,6 @@ inline SVGCircleElement::SVGCircleElement(Document& document)
     , m_cy(SVGAnimatedLength::create(this, SVGNames::cyAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_r(SVGAnimatedLength::create(this, SVGNames::rAttr, SVGLength::create(LengthModeOther), ForbidNegativeLengths))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_cx);
     addToPropertyMap(m_cy);
     addToPropertyMap(m_r);
@@ -56,20 +52,7 @@ bool SVGCircleElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGCircleElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGGeometryElement::parseAttribute(name, value);
-    else if (name == SVGNames::cxAttr)
-        m_cx->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::cyAttr)
-        m_cy->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::rAttr)
-        m_r->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGCircleElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -94,7 +77,7 @@ void SVGCircleElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (isLengthAttribute) {
         renderer->setNeedsShapeUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 

@@ -31,23 +31,24 @@
 #ifndef SVGTransformTearOff_h
 #define SVGTransformTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGMatrixTearOff.h"
 #include "core/svg/SVGTransform.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGTransformTearOff FINAL : public SVGPropertyTearOff<SVGTransform>, public ScriptWrappable {
+class SVGTransformTearOff final : public SVGPropertyTearOff<SVGTransform>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum SVGTransformType {
-        SVG_TRANSFORM_UNKNOWN = WebCore::SVG_TRANSFORM_UNKNOWN,
-        SVG_TRANSFORM_MATRIX = WebCore::SVG_TRANSFORM_MATRIX,
-        SVG_TRANSFORM_TRANSLATE = WebCore::SVG_TRANSFORM_TRANSLATE,
-        SVG_TRANSFORM_SCALE = WebCore::SVG_TRANSFORM_SCALE,
-        SVG_TRANSFORM_ROTATE = WebCore::SVG_TRANSFORM_ROTATE,
-        SVG_TRANSFORM_SKEWX = WebCore::SVG_TRANSFORM_SKEWX,
-        SVG_TRANSFORM_SKEWY = WebCore::SVG_TRANSFORM_SKEWY,
+        SVG_TRANSFORM_UNKNOWN = blink::SVG_TRANSFORM_UNKNOWN,
+        SVG_TRANSFORM_MATRIX = blink::SVG_TRANSFORM_MATRIX,
+        SVG_TRANSFORM_TRANSLATE = blink::SVG_TRANSFORM_TRANSLATE,
+        SVG_TRANSFORM_SCALE = blink::SVG_TRANSFORM_SCALE,
+        SVG_TRANSFORM_ROTATE = blink::SVG_TRANSFORM_ROTATE,
+        SVG_TRANSFORM_SKEWX = blink::SVG_TRANSFORM_SKEWX,
+        SVG_TRANSFORM_SKEWY = blink::SVG_TRANSFORM_SKEWY,
     };
 
     static PassRefPtr<SVGTransformTearOff> create(PassRefPtr<SVGTransform> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName = QualifiedName::null())
@@ -74,6 +75,6 @@ private:
     RefPtr<SVGMatrixTearOff> m_matrixTearoff;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGTransformTearOff_h_
+#endif // SVGTransformTearOff_h

@@ -12,6 +12,7 @@
 <translation id="3885155851504623709">Apylinkė</translation>
 <translation id="8184169487503545976">Šis pašto kodo formatas neatpažintas.</translation>
 <translation id="7602447984296396718">Panašu, kad šis pašto kodas neatitinka likusios adreso dalies.</translation>
+<translation id="6247152910634872706">Organizacija</translation>
 <translation id="2053553514270667976">Pašto kodas</translation>
 <translation id="7087282848513945231">Apygarda</translation>
 <translation id="2096368010154057602">Departamentas</translation>
@@ -28,11 +29,12 @@
 <translation id="43113324827158664">Šį lauką būtina užpildyti.</translation>
 <translation id="3050787670591910834">Turite nurodyti pašto kodą, pvz., <ph name="EXAMPLE"/>.</translation>
 <translation id="6282194474023008486">Pašto kodas</translation>
+<translation id="5937097533660449554">Sritis</translation>
 <translation id="4376888869070172068">Šis pašto kodo formatas neatpažintas.</translation>
 <translation id="8446364922515257065">Provincija / miestas</translation>
 <translation id="4518701284698680367">Turite nurodyti pašto kodą, pvz., <ph name="EXAMPLE"/>. Nežinote savo pašto kodo? Raskite jį <ph name="BEGIN_LINK"/>čia<ph name="END_LINK"/>.</translation>
 <translation id="3882422586004212847">Šis pašto kodo formatas neatpažintas. Tinkamo pašto kodo pavyzdys: <ph name="EXAMPLE"/>.</translation>
 <translation id="9104066683700680171">Panašu, kad šis pašto kodas neatitinka likusios adreso dalies.</translation>
 <translation id="5095208057601539847">Provincija</translation>
-<translation id="5327248766486351172">Vardas ir pavardė</translation>
+<translation id="5327248766486351172">Pavadinimas</translation>
 </translationbundle>

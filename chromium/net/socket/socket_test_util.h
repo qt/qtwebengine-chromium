@@ -47,8 +47,8 @@ enum {
 };
 
 class AsyncSocket;
+class ChannelIDService;
 class MockClientSocket;
-class ServerBoundCertService;
 class SSLClientSocket;
 class StreamSocket;
 
@@ -243,7 +243,7 @@ class StaticSocketDataProvider : public SocketDataProvider {
                            size_t reads_count,
                            MockWrite* writes,
                            size_t writes_count);
-  virtual ~StaticSocketDataProvider();
+  ~StaticSocketDataProvider() override;
 
   // These functions get access to the next available read and write data.
   const MockRead& PeekRead() const;
@@ -262,9 +262,9 @@ class StaticSocketDataProvider : public SocketDataProvider {
   virtual void CompleteRead() {}
 
   // SocketDataProvider implementation.
-  virtual MockRead GetNextRead() OVERRIDE;
-  virtual MockWriteResult OnWrite(const std::string& data) OVERRIDE;
-  virtual void Reset() OVERRIDE;
+  MockRead GetNextRead() override;
+  MockWriteResult OnWrite(const std::string& data) override;
+  void Reset() override;
 
  private:
   MockRead* reads_;
@@ -284,7 +284,7 @@ class StaticSocketDataProvider : public SocketDataProvider {
 class DynamicSocketDataProvider : public SocketDataProvider {
  public:
   DynamicSocketDataProvider();
-  virtual ~DynamicSocketDataProvider();
+  ~DynamicSocketDataProvider() override;
 
   int short_read_limit() const { return short_read_limit_; }
   void set_short_read_limit(int limit) { short_read_limit_ = limit; }
@@ -292,9 +292,9 @@ class DynamicSocketDataProvider : public SocketDataProvider {
   void allow_unconsumed_reads(bool allow) { allow_unconsumed_reads_ = allow; }
 
   // SocketDataProvider implementation.
-  virtual MockRead GetNextRead() OVERRIDE;
+  MockRead GetNextRead() override;
   virtual MockWriteResult OnWrite(const std::string& data) = 0;
-  virtual void Reset() OVERRIDE;
+  void Reset() override;
 
  protected:
   // The next time there is a read from this socket, it will return |data|.
@@ -326,15 +326,20 @@ struct SSLSocketDataProvider {
   MockConnect connect;
   SSLClientSocket::NextProtoStatus next_proto_status;
   std::string next_proto;
-  std::string server_protos;
   bool was_npn_negotiated;
   NextProto protocol_negotiated;
   bool client_cert_sent;
   SSLCertRequestInfo* cert_request_info;
   scoped_refptr<X509Certificate> cert;
   bool channel_id_sent;
-  ServerBoundCertService* server_bound_cert_service;
+  ChannelIDService* channel_id_service;
   int connection_status;
+  // Indicates that the socket should pause in the Connect method.
+  bool should_pause_on_connect;
+  // Whether or not the Socket should behave like there is a pre-existing
+  // session to resume. Whether or not such a session is reported as
+  // resumed is controlled by |connection_status|.
+  bool is_in_session_cache;
 };
 
 // A DataProvider where the client must write a request before the reads (e.g.
@@ -366,15 +371,15 @@ class DelayedSocketData : public StaticSocketDataProvider {
                     size_t reads_count,
                     MockWrite* writes,
                     size_t writes_count);
-  virtual ~DelayedSocketData();
+  ~DelayedSocketData() override;
 
   void ForceNextRead();
 
   // StaticSocketDataProvider:
-  virtual MockRead GetNextRead() OVERRIDE;
-  virtual MockWriteResult OnWrite(const std::string& data) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void CompleteRead() OVERRIDE;
+  MockRead GetNextRead() override;
+  MockWriteResult OnWrite(const std::string& data) override;
+  void Reset() override;
+  void CompleteRead() override;
 
  private:
   int write_delay_;
@@ -407,7 +412,7 @@ class OrderedSocketData : public StaticSocketDataProvider {
                     size_t reads_count,
                     MockWrite* writes,
                     size_t writes_count);
-  virtual ~OrderedSocketData();
+  ~OrderedSocketData() override;
 
   // |connect| the result for the connect phase.
   // |reads| the list of MockRead completions.
@@ -425,10 +430,10 @@ class OrderedSocketData : public StaticSocketDataProvider {
   void EndLoop();
 
   // StaticSocketDataProvider:
-  virtual MockRead GetNextRead() OVERRIDE;
-  virtual MockWriteResult OnWrite(const std::string& data) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void CompleteRead() OVERRIDE;
+  MockRead GetNextRead() override;
+  MockWriteResult OnWrite(const std::string& data) override;
+  void Reset() override;
+  void CompleteRead() override;
 
  private:
   int sequence_number_;
@@ -531,7 +536,7 @@ class DeterministicSocketData : public StaticSocketDataProvider {
                           size_t reads_count,
                           MockWrite* writes,
                           size_t writes_count);
-  virtual ~DeterministicSocketData();
+  ~DeterministicSocketData() override;
 
   // Consume all the data up to the give stop point (via SetStop()).
   void Run();
@@ -555,14 +560,14 @@ class DeterministicSocketData : public StaticSocketDataProvider {
 
   // When the socket calls Read(), that calls GetNextRead(), and expects either
   // ERR_IO_PENDING or data.
-  virtual MockRead GetNextRead() OVERRIDE;
+  MockRead GetNextRead() override;
 
   // When the socket calls Write(), it always completes synchronously. OnWrite()
   // checks to make sure the written data matches the expected data. The
   // callback will not be invoked until its sequence number is reached.
-  virtual MockWriteResult OnWrite(const std::string& data) OVERRIDE;
-  virtual void Reset() OVERRIDE;
-  virtual void CompleteRead() OVERRIDE {}
+  MockWriteResult OnWrite(const std::string& data) override;
+  void Reset() override;
+  void CompleteRead() override {}
 
  private:
   // Invoke the read and write callbacks, if the timing is appropriate.
@@ -628,7 +633,7 @@ class MockSSLClientSocket;
 class MockClientSocketFactory : public ClientSocketFactory {
  public:
   MockClientSocketFactory();
-  virtual ~MockClientSocketFactory();
+  ~MockClientSocketFactory() override;
 
   void AddSocketDataProvider(SocketDataProvider* socket);
   void AddSSLSocketDataProvider(SSLSocketDataProvider* socket);
@@ -638,26 +643,33 @@ class MockClientSocketFactory : public ClientSocketFactory {
     return mock_data_;
   }
 
+  // Note: this method is unsafe; the elements of the returned vector
+  // are not necessarily valid.
+  const std::vector<MockSSLClientSocket*>& ssl_client_sockets() const {
+    return ssl_client_sockets_;
+  }
+
   // ClientSocketFactory
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
-      const NetLog::Source& source) OVERRIDE;
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+      const NetLog::Source& source) override;
+  scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
-      const NetLog::Source& source) OVERRIDE;
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      const NetLog::Source& source) override;
+  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      const SSLClientSocketContext& context) OVERRIDE;
-  virtual void ClearSSLSessionCache() OVERRIDE;
+      const SSLClientSocketContext& context) override;
+  void ClearSSLSessionCache() override;
 
  private:
   SocketDataProviderArray<SocketDataProvider> mock_data_;
   SocketDataProviderArray<SSLSocketDataProvider> mock_ssl_data_;
+  std::vector<MockSSLClientSocket*> ssl_client_sockets_;
 };
 
 class MockClientSocket : public SSLClientSocket {
@@ -676,41 +688,42 @@ class MockClientSocket : public SSLClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) = 0;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // StreamSocket implementation.
   virtual int Connect(const CompletionCallback& callback) = 0;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
-  virtual void SetSubresourceSpeculation() OVERRIDE {}
-  virtual void SetOmniboxSpeculation() OVERRIDE {}
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
+  void SetSubresourceSpeculation() override {}
+  void SetOmniboxSpeculation() override {}
 
   // SSLClientSocket implementation.
-  virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info)
-      OVERRIDE;
-  virtual int ExportKeyingMaterial(const base::StringPiece& label,
-                                   bool has_context,
-                                   const base::StringPiece& context,
-                                   unsigned char* out,
-                                   unsigned int outlen) OVERRIDE;
-  virtual int GetTLSUniqueChannelBinding(std::string* out) OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  std::string GetSessionCacheKey() const override;
+  bool InSessionCache() const override;
+  void SetHandshakeCompletionCallback(const base::Closure& cb) override;
+  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
+  int ExportKeyingMaterial(const base::StringPiece& label,
+                           bool has_context,
+                           const base::StringPiece& context,
+                           unsigned char* out,
+                           unsigned int outlen) override;
+  int GetTLSUniqueChannelBinding(std::string* out) override;
+  NextProtoStatus GetNextProto(std::string* proto) override;
+  ChannelIDService* GetChannelIDService() const override;
 
  protected:
-  virtual ~MockClientSocket();
+  ~MockClientSocket() override;
   void RunCallbackAsync(const CompletionCallback& callback, int result);
   void RunCallback(const CompletionCallback& callback, int result);
 
   // SSLClientSocket implementation.
-  virtual scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
-      const OVERRIDE;
+  scoped_refptr<X509Certificate> GetUnverifiedServerCertificateChain()
+      const override;
 
   // True if Connect completed successfully and Disconnect hasn't been called.
   bool connected_;
@@ -720,6 +733,7 @@ class MockClientSocket : public SSLClientSocket {
 
   BoundNetLog net_log_;
 
+ private:
   base::WeakPtrFactory<MockClientSocket> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MockClientSocket);
@@ -730,32 +744,32 @@ class MockTCPClientSocket : public MockClientSocket, public AsyncSocket {
   MockTCPClientSocket(const AddressList& addresses,
                       net::NetLog* net_log,
                       SocketDataProvider* socket);
-  virtual ~MockTCPClientSocket();
+  ~MockTCPClientSocket() override;
 
   const AddressList& addresses() const { return addresses_; }
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // AsyncSocket:
-  virtual void OnReadComplete(const MockRead& data) OVERRIDE;
-  virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
+  void OnReadComplete(const MockRead& data) override;
+  void OnConnectComplete(const MockConnect& data) override;
 
  private:
   int CompleteRead();
@@ -836,36 +850,36 @@ class DeterministicMockUDPClientSocket
  public:
   DeterministicMockUDPClientSocket(net::NetLog* net_log,
                                    DeterministicSocketData* data);
-  virtual ~DeterministicMockUDPClientSocket();
+  ~DeterministicMockUDPClientSocket() override;
 
   // DeterministicSocketData::Delegate:
-  virtual bool WritePending() const OVERRIDE;
-  virtual bool ReadPending() const OVERRIDE;
-  virtual void CompleteWrite() OVERRIDE;
-  virtual int CompleteRead() OVERRIDE;
+  bool WritePending() const override;
+  bool ReadPending() const override;
+  void CompleteWrite() override;
+  int CompleteRead() override;
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // DatagramSocket implementation.
-  virtual void Close() OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
+  void Close() override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
 
   // DatagramClientSocket implementation.
-  virtual int Connect(const IPEndPoint& address) OVERRIDE;
+  int Connect(const IPEndPoint& address) override;
 
   // AsyncSocket implementation.
-  virtual void OnReadComplete(const MockRead& data) OVERRIDE;
-  virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
+  void OnReadComplete(const MockRead& data) override;
+  void OnConnectComplete(const MockConnect& data) override;
 
   void set_source_port(int port) { source_port_ = port; }
 
@@ -887,35 +901,35 @@ class DeterministicMockTCPClientSocket
  public:
   DeterministicMockTCPClientSocket(net::NetLog* net_log,
                                    DeterministicSocketData* data);
-  virtual ~DeterministicMockTCPClientSocket();
+  ~DeterministicMockTCPClientSocket() override;
 
   // DeterministicSocketData::Delegate:
-  virtual bool WritePending() const OVERRIDE;
-  virtual bool ReadPending() const OVERRIDE;
-  virtual void CompleteWrite() OVERRIDE;
-  virtual int CompleteRead() OVERRIDE;
+  bool WritePending() const override;
+  bool ReadPending() const override;
+  void CompleteWrite() override;
+  int CompleteRead() override;
 
   // Socket:
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
 
   // StreamSocket:
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool IsConnectedAndIdle() const OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool IsConnectedAndIdle() const override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  bool WasNpnNegotiated() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // AsyncSocket:
-  virtual void OnReadComplete(const MockRead& data) OVERRIDE;
-  virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
+  void OnReadComplete(const MockRead& data) override;
+  void OnConnectComplete(const MockConnect& data) override;
 
  private:
   DeterministicSocketHelper helper_;
@@ -929,54 +943,82 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
                       const HostPortPair& host_and_port,
                       const SSLConfig& ssl_config,
                       SSLSocketDataProvider* socket);
-  virtual ~MockSSLClientSocket();
+  ~MockSSLClientSocket() override;
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
 
   // StreamSocket implementation.
-  virtual int Connect(const CompletionCallback& callback) OVERRIDE;
-  virtual void Disconnect() OVERRIDE;
-  virtual bool IsConnected() const OVERRIDE;
-  virtual bool WasEverUsed() const OVERRIDE;
-  virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual bool WasNpnNegotiated() const OVERRIDE;
-  virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
+  int Connect(const CompletionCallback& callback) override;
+  void Disconnect() override;
+  bool IsConnected() const override;
+  bool WasEverUsed() const override;
+  bool UsingTCPFastOpen() const override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  bool WasNpnNegotiated() const override;
+  bool GetSSLInfo(SSLInfo* ssl_info) override;
 
   // SSLClientSocket implementation.
-  virtual void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info)
-      OVERRIDE;
-  virtual NextProtoStatus GetNextProto(std::string* proto,
-                                       std::string* server_protos) OVERRIDE;
-  virtual bool set_was_npn_negotiated(bool negotiated) OVERRIDE;
-  virtual void set_protocol_negotiated(NextProto protocol_negotiated) OVERRIDE;
-  virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
+  std::string GetSessionCacheKey() const override;
+  bool InSessionCache() const override;
+  void SetHandshakeCompletionCallback(const base::Closure& cb) override;
+  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override;
+  NextProtoStatus GetNextProto(std::string* proto) override;
+  bool set_was_npn_negotiated(bool negotiated) override;
+  void set_protocol_negotiated(NextProto protocol_negotiated) override;
+  NextProto GetNegotiatedProtocol() const override;
 
   // This MockSocket does not implement the manual async IO feature.
-  virtual void OnReadComplete(const MockRead& data) OVERRIDE;
-  virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
+  void OnReadComplete(const MockRead& data) override;
+  void OnConnectComplete(const MockConnect& data) override;
 
-  virtual bool WasChannelIDSent() const OVERRIDE;
-  virtual void set_channel_id_sent(bool channel_id_sent) OVERRIDE;
-  virtual ServerBoundCertService* GetServerBoundCertService() const OVERRIDE;
+  bool WasChannelIDSent() const override;
+  void set_channel_id_sent(bool channel_id_sent) override;
+  ChannelIDService* GetChannelIDService() const override;
+
+  bool reached_connect() const { return reached_connect_; }
+
+  // Resumes the connection of a socket that was paused for testing.
+  // |connect_callback_| should be set before invoking this method.
+  void RestartPausedConnect();
 
  private:
-  static void ConnectCallback(MockSSLClientSocket* ssl_client_socket,
-                              const CompletionCallback& callback,
-                              int rv);
+  enum ConnectState {
+    STATE_NONE,
+    STATE_SSL_CONNECT,
+    STATE_SSL_CONNECT_COMPLETE,
+  };
+
+  void OnIOComplete(int result);
+
+  // Runs the state transistion loop.
+  int DoConnectLoop(int result);
+
+  int DoSSLConnect();
+  int DoSSLConnectComplete(int result);
 
   scoped_ptr<ClientSocketHandle> transport_;
+  HostPortPair host_port_pair_;
   SSLSocketDataProvider* data_;
   bool is_npn_state_set_;
   bool new_npn_value_;
   bool is_protocol_negotiated_set_;
   NextProto protocol_negotiated_;
+
+  CompletionCallback connect_callback_;
+  // Indicates what state of Connect the socket should enter.
+  ConnectState next_connect_state_;
+  // True if the Connect method has been called on the socket.
+  bool reached_connect_;
+
+  base::Closure handshake_completion_callback_;
+
+  base::WeakPtrFactory<MockSSLClientSocket> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MockSSLClientSocket);
 };
@@ -984,30 +1026,30 @@ class MockSSLClientSocket : public MockClientSocket, public AsyncSocket {
 class MockUDPClientSocket : public DatagramClientSocket, public AsyncSocket {
  public:
   MockUDPClientSocket(SocketDataProvider* data, net::NetLog* net_log);
-  virtual ~MockUDPClientSocket();
+  ~MockUDPClientSocket() override;
 
   // Socket implementation.
-  virtual int Read(IOBuffer* buf,
-                   int buf_len,
-                   const CompletionCallback& callback) OVERRIDE;
-  virtual int Write(IOBuffer* buf,
-                    int buf_len,
-                    const CompletionCallback& callback) OVERRIDE;
-  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual int SetSendBufferSize(int32 size) OVERRIDE;
+  int Read(IOBuffer* buf,
+           int buf_len,
+           const CompletionCallback& callback) override;
+  int Write(IOBuffer* buf,
+            int buf_len,
+            const CompletionCallback& callback) override;
+  int SetReceiveBufferSize(int32 size) override;
+  int SetSendBufferSize(int32 size) override;
 
   // DatagramSocket implementation.
-  virtual void Close() OVERRIDE;
-  virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
-  virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
-  virtual const BoundNetLog& NetLog() const OVERRIDE;
+  void Close() override;
+  int GetPeerAddress(IPEndPoint* address) const override;
+  int GetLocalAddress(IPEndPoint* address) const override;
+  const BoundNetLog& NetLog() const override;
 
   // DatagramClientSocket implementation.
-  virtual int Connect(const IPEndPoint& address) OVERRIDE;
+  int Connect(const IPEndPoint& address) override;
 
   // AsyncSocket implementation.
-  virtual void OnReadComplete(const MockRead& data) OVERRIDE;
-  virtual void OnConnectComplete(const MockConnect& data) OVERRIDE;
+  void OnReadComplete(const MockRead& data) override;
+  void OnConnectComplete(const MockConnect& data) override;
 
   void set_source_port(int port) { source_port_ = port;}
 
@@ -1043,7 +1085,7 @@ class TestSocketRequest : public TestCompletionCallbackBase {
  public:
   TestSocketRequest(std::vector<TestSocketRequest*>* request_order,
                     size_t* completion_count);
-  virtual ~TestSocketRequest();
+  ~TestSocketRequest() override;
 
   ClientSocketHandle* handle() { return &handle_; }
 
@@ -1163,7 +1205,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
                                 ClientSocketPoolHistograms* histograms,
                                 ClientSocketFactory* socket_factory);
 
-  virtual ~MockTransportClientSocketPool();
+  ~MockTransportClientSocketPool() override;
 
   RequestPriority last_request_priority() const {
     return last_request_priority_;
@@ -1172,18 +1214,18 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
   int cancel_count() const { return cancel_count_; }
 
   // TransportClientSocketPool implementation.
-  virtual int RequestSocket(const std::string& group_name,
-                            const void* socket_params,
-                            RequestPriority priority,
-                            ClientSocketHandle* handle,
-                            const CompletionCallback& callback,
-                            const BoundNetLog& net_log) OVERRIDE;
+  int RequestSocket(const std::string& group_name,
+                    const void* socket_params,
+                    RequestPriority priority,
+                    ClientSocketHandle* handle,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) override;
 
-  virtual void CancelRequest(const std::string& group_name,
-                             ClientSocketHandle* handle) OVERRIDE;
-  virtual void ReleaseSocket(const std::string& group_name,
-                             scoped_ptr<StreamSocket> socket,
-                             int id) OVERRIDE;
+  void CancelRequest(const std::string& group_name,
+                     ClientSocketHandle* handle) override;
+  void ReleaseSocket(const std::string& group_name,
+                     scoped_ptr<StreamSocket> socket,
+                     int id) override;
 
  private:
   ClientSocketFactory* client_socket_factory_;
@@ -1198,7 +1240,7 @@ class MockTransportClientSocketPool : public TransportClientSocketPool {
 class DeterministicMockClientSocketFactory : public ClientSocketFactory {
  public:
   DeterministicMockClientSocketFactory();
-  virtual ~DeterministicMockClientSocketFactory();
+  ~DeterministicMockClientSocketFactory() override;
 
   void AddSocketDataProvider(DeterministicSocketData* socket);
   void AddSSLSocketDataProvider(SSLSocketDataProvider* socket);
@@ -1219,21 +1261,21 @@ class DeterministicMockClientSocketFactory : public ClientSocketFactory {
   }
 
   // ClientSocketFactory
-  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
+  scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
-      const NetLog::Source& source) OVERRIDE;
-  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
+      const NetLog::Source& source) override;
+  scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
-      const NetLog::Source& source) OVERRIDE;
-  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      const NetLog::Source& source) override;
+  scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
       scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
-      const SSLClientSocketContext& context) OVERRIDE;
-  virtual void ClearSSLSessionCache() OVERRIDE;
+      const SSLClientSocketContext& context) override;
+  void ClearSSLSessionCache() override;
 
  private:
   SocketDataProviderArray<DeterministicSocketData> mock_data_;
@@ -1254,21 +1296,21 @@ class MockSOCKSClientSocketPool : public SOCKSClientSocketPool {
                             ClientSocketPoolHistograms* histograms,
                             TransportClientSocketPool* transport_pool);
 
-  virtual ~MockSOCKSClientSocketPool();
+  ~MockSOCKSClientSocketPool() override;
 
   // SOCKSClientSocketPool implementation.
-  virtual int RequestSocket(const std::string& group_name,
-                            const void* socket_params,
-                            RequestPriority priority,
-                            ClientSocketHandle* handle,
-                            const CompletionCallback& callback,
-                            const BoundNetLog& net_log) OVERRIDE;
+  int RequestSocket(const std::string& group_name,
+                    const void* socket_params,
+                    RequestPriority priority,
+                    ClientSocketHandle* handle,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) override;
 
-  virtual void CancelRequest(const std::string& group_name,
-                             ClientSocketHandle* handle) OVERRIDE;
-  virtual void ReleaseSocket(const std::string& group_name,
-                             scoped_ptr<StreamSocket> socket,
-                             int id) OVERRIDE;
+  void CancelRequest(const std::string& group_name,
+                     ClientSocketHandle* handle) override;
+  void ReleaseSocket(const std::string& group_name,
+                     scoped_ptr<StreamSocket> socket,
+                     int id) override;
 
  private:
   TransportClientSocketPool* const transport_pool_;

@@ -19,7 +19,7 @@
 }
 
 #user-image-screen-description {
-  -webkit-margin-before: 0;
+  margin-top: 0;
 }
 
 #user-image-grid {
@@ -78,16 +78,16 @@
 /* White background for spinner styled like user image */
 #profile-image .spinner-bg {
   background-color: white;
+  display: none;
   height: 50px;
   left: 3px;
   position: absolute;
   top: 3px;
-  visibility: hidden;
   width: 50px;
 }
 
 .profile-image-loading #profile-image .spinner-bg {
-  visibility: visible;
+  display: block;
 }
 
 #profile-image .spinner {
@@ -236,8 +236,8 @@ html[dir=rtl] #flip-photo {
 }
 
 #user-image .step-contents {
-  -webkit-margin-after: 30px;
   -webkit-margin-start: 31px;
+  margin-bottom: 30px;
 }
 
 .user-image-stream-area .spinner {

@@ -33,21 +33,19 @@
 
 #include "core/dom/custom/CustomElementMicrotaskQueueBase.h"
 
-namespace WebCore {
-
-class CustomElementMicrotaskImportStep;
+namespace blink {
 
 class CustomElementAsyncImportMicrotaskQueue : public CustomElementMicrotaskQueueBase {
 public:
     static PassRefPtrWillBeRawPtr<CustomElementAsyncImportMicrotaskQueue> create() { return adoptRefWillBeNoop(new CustomElementAsyncImportMicrotaskQueue()); }
 
-    void enqueue(PassOwnPtrWillBeRawPtr<CustomElementMicrotaskImportStep>);
+    void enqueue(PassOwnPtrWillBeRawPtr<CustomElementMicrotaskStep>);
 
 private:
     CustomElementAsyncImportMicrotaskQueue() { }
-    virtual void doDispatch() OVERRIDE;
+    virtual void doDispatch() override;
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementAsyncImportMicrotaskQueue_h

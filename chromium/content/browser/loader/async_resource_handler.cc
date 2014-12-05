@@ -14,6 +14,7 @@
 #include "base/memory/shared_memory.h"
 #include "base/metrics/histogram.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "content/browser/devtools/devtools_netlog_observer.h"
 #include "content/browser/host_zoom_map_impl.h"
 #include "content/browser/loader/resource_buffer.h"
@@ -29,6 +30,7 @@
 #include "net/base/load_flags.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
+#include "net/url_request/redirect_info.h"
 
 using base::TimeTicks;
 
@@ -41,7 +43,7 @@ static int kMaxAllocationSize = 1024 * 32;
 
 void GetNumericArg(const std::string& name, int* result) {
   const std::string& value =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(name);
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(name);
   if (!value.empty())
     base::StringToInt(value, result);
 }
@@ -71,7 +73,7 @@ class DependentIOBuffer : public net::WrappedIOBuffer {
         backing_(backing) {
   }
  private:
-  virtual ~DependentIOBuffer() {}
+  ~DependentIOBuffer() override {}
   scoped_refptr<ResourceBuffer> backing_;
 };
 
@@ -112,6 +114,13 @@ void AsyncResourceHandler::OnFollowRedirect(int request_id) {
     return;
   }
 
+  if (!redirect_start_time_.is_null()) {
+    UMA_HISTOGRAM_TIMES("Net.AsyncResourceHandler_RedirectHopTime",
+                        TimeTicks::Now() - redirect_start_time_);
+    // Reset start time.
+    redirect_start_time_ = TimeTicks();
+  }
+
   ResumeIfDeferred();
 }
 
@@ -134,19 +143,22 @@ bool AsyncResourceHandler::OnUploadProgress(uint64 position,
       new ResourceMsg_UploadProgress(GetRequestID(), position, size));
 }
 
-bool AsyncResourceHandler::OnRequestRedirected(const GURL& new_url,
-                                               ResourceResponse* response,
-                                               bool* defer) {
+bool AsyncResourceHandler::OnRequestRedirected(
+    const net::RedirectInfo& redirect_info,
+    ResourceResponse* response,
+    bool* defer) {
   const ResourceRequestInfoImpl* info = GetRequestInfo();
   if (!info->filter())
     return false;
+
+  redirect_start_time_ = TimeTicks::Now();
 
   *defer = did_defer_ = true;
   OnDefer();
 
   if (rdh_->delegate()) {
     rdh_->delegate()->OnRequestRedirected(
-        new_url, request(), info->GetContext(), response);
+        redirect_info.new_url, request(), info->GetContext(), response);
   }
 
   DevToolsNetLogObserver::PopulateResponseInfo(request(), response);
@@ -159,8 +171,7 @@ bool AsyncResourceHandler::OnRequestRedirected(const GURL& new_url,
   // and hopefully those will eventually all be owned by the browser. It's
   // possible this is still needed while renderer-owned ones exist.
   return info->filter()->Send(new ResourceMsg_ReceivedRedirect(
-      GetRequestID(), new_url, request()->first_party_for_cookies(),
-      response->head));
+      GetRequestID(), redirect_info, response->head));
 }
 
 bool AsyncResourceHandler::OnResponseStarted(ResourceResponse* response,
@@ -185,7 +196,7 @@ bool AsyncResourceHandler::OnResponseStarted(ResourceResponse* response,
   HostZoomMap* host_zoom_map =
       GetHostZoomMapForResourceContext(info->GetContext());
 
-  if (info->GetResourceType() == ResourceType::MAIN_FRAME && host_zoom_map) {
+  if (info->GetResourceType() == RESOURCE_TYPE_MAIN_FRAME && host_zoom_map) {
     const GURL& request_url = request()->url();
     info->filter()->Send(new ViewMsg_SetZoomLevelForLoadingURL(
         info->GetRouteID(),

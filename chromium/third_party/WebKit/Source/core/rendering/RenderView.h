@@ -23,13 +23,16 @@
 #define RenderView_h
 
 #include "core/frame/FrameView.h"
+#include "core/paint/ViewDisplayList.h"
 #include "core/rendering/LayoutState.h"
+#include "core/rendering/PaintInvalidationState.h"
 #include "core/rendering/RenderBlockFlow.h"
 #include "platform/PODFreeListArena.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class FlowThreadController;
 class RenderLayerCompositor;
@@ -39,27 +42,31 @@ class RenderQuote;
 // It's dimensions match that of the logical viewport (which may be different from
 // the visible viewport in fixed-layout mode), and it is always at position (0,0)
 // relative to the document (and so isn't necessarily in view).
-class RenderView FINAL : public RenderBlockFlow {
+class RenderView final : public RenderBlockFlow {
 public:
     explicit RenderView(Document*);
     virtual ~RenderView();
+    virtual void trace(Visitor*) override;
 
     bool hitTest(const HitTestRequest&, HitTestResult&);
     bool hitTest(const HitTestRequest&, const HitTestLocation&, HitTestResult&);
 
-    virtual const char* renderName() const OVERRIDE { return "RenderView"; }
+    // Returns the total count of calls to HitTest, for testing.
+    unsigned hitTestCount() const { return m_hitTestCount; }
 
-    virtual bool isRenderView() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderView"; }
 
-    virtual LayerType layerTypeRequired() const OVERRIDE { return NormalLayer; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderView || RenderBlockFlow::isOfType(type); }
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual LayerType layerTypeRequired() const override { return NormalLayer; }
 
-    virtual void layout() OVERRIDE;
-    virtual void updateLogicalWidth() OVERRIDE;
-    virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const OVERRIDE;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
 
-    virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const OVERRIDE;
+    virtual void layout() override;
+    virtual void updateLogicalWidth() override;
+    virtual void computeLogicalHeight(LayoutUnit logicalHeight, LayoutUnit logicalTop, LogicalExtentComputedValues&) const override;
+
+    virtual LayoutUnit availableLogicalHeight(AvailableLogicalHeightType) const override;
 
     // The same as the FrameView's layoutHeight/layoutWidth but with null check guards.
     int viewHeight(IncludeScrollbarsInRect = ExcludeScrollbars) const;
@@ -75,68 +82,43 @@ public:
 
     FrameView* frameView() const { return m_frameView; }
 
-    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, bool fixed = false) const OVERRIDE;
-    void repaintViewRectangle(const LayoutRect&) const;
+    enum ViewportConstrainedPosition {
+        IsNotFixedPosition,
+        IsFixedPosition,
+    };
 
-    void repaintViewAndCompositedLayers();
+    static ViewportConstrainedPosition viewportConstrainedPosition(EPosition position) { return position == FixedPosition ? IsFixedPosition : IsNotFixedPosition; }
+    void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, ViewportConstrainedPosition, const PaintInvalidationState*) const;
+    virtual void mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect&, const PaintInvalidationState*) const override;
+    void adjustViewportConstrainedOffset(LayoutRect&, ViewportConstrainedPosition) const;
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    void invalidatePaintForRectangle(const LayoutRect&, PaintInvalidationReason) const;
 
-    enum SelectionRepaintMode { RepaintNewXOROld, RepaintNewMinusOld, RepaintNothing };
-    void setSelection(RenderObject* start, int startPos, RenderObject* end, int endPos, SelectionRepaintMode = RepaintNewXOROld);
-    void getSelection(RenderObject*& startRenderer, int& startOffset, RenderObject*& endRenderer, int& endOffset) const;
+    void invalidatePaintForViewAndCompositedLayers();
+
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) override;
+
+    enum SelectionPaintInvalidationMode { PaintInvalidationNewXOROld, PaintInvalidationNewMinusOld };
+    void setSelection(RenderObject* start, int startPos, RenderObject*, int endPos, SelectionPaintInvalidationMode = PaintInvalidationNewXOROld);
     void clearSelection();
     RenderObject* selectionStart() const { return m_selectionStart; }
     RenderObject* selectionEnd() const { return m_selectionEnd; }
-    IntRect selectionBounds(bool clipToVisibleContent = true) const;
+    IntRect selectionBounds() const;
     void selectionStartEnd(int& startPos, int& endPos) const;
-    void repaintSelection() const;
+    void invalidatePaintForSelection() const;
 
-    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const OVERRIDE;
-    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const OVERRIDE;
+    virtual void absoluteRects(Vector<IntRect>&, const LayoutPoint& accumulatedOffset) const override;
+    virtual void absoluteQuads(Vector<FloatQuad>&, bool* wasFixed) const override;
 
-    virtual LayoutRect viewRect() const OVERRIDE;
+    virtual LayoutRect viewRect() const override;
 
-    // layoutDelta is used transiently during layout to store how far an object has moved from its
-    // last layout location, in order to repaint correctly.
-    // If we're doing a full repaint m_layoutState will be 0, but in that case layoutDelta doesn't matter.
-    LayoutSize layoutDelta() const
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        return m_layoutState ? m_layoutState->layoutDelta() : LayoutSize();
-    }
-    void addLayoutDelta(const LayoutSize& delta)
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        if (m_layoutState)
-            m_layoutState->addLayoutDelta(delta);
-    }
+    bool shouldDoFullPaintInvalidationForNextLayout() const;
+    bool doingFullPaintInvalidation() const { return m_frameView->needsFullPaintInvalidation(); }
 
-#if ASSERT_ENABLED
-    bool layoutDeltaMatches(const LayoutSize& delta)
-    {
-        ASSERT(!RuntimeEnabledFeatures::repaintAfterLayoutEnabled());
-        if (!m_layoutState)
-            return false;
-        return (delta.width() == m_layoutState->layoutDelta().width() || m_layoutState->layoutDeltaXSaturated()) && (delta.height() == m_layoutState->layoutDelta().height() || m_layoutState->layoutDeltaYSaturated());
-    }
-#endif
-
-    bool shouldDoFullRepaintForNextLayout() const;
-    bool doingFullRepaint() const { return m_frameView->needsFullPaintInvalidation(); }
-
-    // Returns true if layoutState should be used for its cached offset and clip.
-    bool layoutStateCachedOffsetsEnabled() const { return m_layoutState && m_layoutState->cachedOffsetsEnabled(); }
     LayoutState* layoutState() const { return m_layoutState; }
 
-    bool canMapUsingLayoutStateForContainer(const RenderObject* repaintContainer) const
-    {
-        // FIXME: LayoutState should be enabled for other repaint containers than the RenderView. crbug.com/363834
-        return layoutStateCachedOffsetsEnabled() && (repaintContainer == this);
-    }
-
-    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
+    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
     LayoutUnit pageLogicalHeight() const { return m_pageLogicalHeight; }
     void setPageLogicalHeight(LayoutUnit height)
@@ -177,32 +159,33 @@ public:
     void removeRenderCounter() { ASSERT(m_renderCounterCount > 0); m_renderCounterCount--; }
     bool hasRenderCounters() { return m_renderCounterCount; }
 
-    virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const OVERRIDE;
+    virtual bool backgroundIsKnownToBeOpaqueInRect(const LayoutRect& localRect) const override;
 
     double layoutViewportWidth() const;
     double layoutViewportHeight() const;
 
     void pushLayoutState(LayoutState&);
     void popLayoutState();
+    virtual void invalidateTreeIfNeeded(const PaintInvalidationState&) override final;
+
+    ViewDisplayList& viewDisplayList()
+    {
+        ASSERT(RuntimeEnabledFeatures::slimmingPaintEnabled());
+        if (!m_viewDisplayList)
+            m_viewDisplayList = adoptPtr(new ViewDisplayList());
+        return *m_viewDisplayList;
+    }
+
 private:
-    virtual void mapLocalToContainer(const RenderLayerModelObject* repaintContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0) const OVERRIDE;
-    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const OVERRIDE;
-    virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const OVERRIDE;
-    virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const OVERRIDE;
-
-    virtual void invalidateTreeAfterLayout(const RenderLayerModelObject& paintInvalidationContainer) OVERRIDE FINAL;
-
-    bool shouldRepaint(const LayoutRect&) const;
-
-    bool rootFillsViewportBackground(RenderBox* rootBox) const;
+    virtual void mapLocalToContainer(const RenderLayerModelObject* paintInvalidationContainer, TransformState&, MapCoordinatesFlags = ApplyContainerFlip, bool* wasFixed = 0, const PaintInvalidationState* = 0) const override;
+    virtual const RenderObject* pushMappingToContainer(const RenderLayerModelObject* ancestorToStopAt, RenderGeometryMap&) const override;
+    virtual void mapAbsoluteToLocalPoint(MapCoordinatesFlags, TransformState&) const override;
+    virtual void computeSelfHitTestRects(Vector<LayoutRect>&, const LayoutPoint& layerOffset) const override;
 
     void layoutContent();
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void checkLayoutState();
 #endif
-
-    void positionDialog(RenderBox*);
-    void positionDialogs();
 
     friend class ForceHorriblySlowRectMapping;
 
@@ -212,8 +195,8 @@ private:
 
     FrameView* m_frameView;
 
-    RenderObject* m_selectionStart;
-    RenderObject* m_selectionEnd;
+    RawPtrWillBeMember<RenderObject> m_selectionStart;
+    RawPtrWillBeMember<RenderObject> m_selectionEnd;
 
     int m_selectionStartPos;
     int m_selectionEndPos;
@@ -225,45 +208,41 @@ private:
     OwnPtr<FlowThreadController> m_flowThreadController;
     RefPtr<IntervalArena> m_intervalArena;
 
-    RenderQuote* m_renderQuoteHead;
+    RawPtrWillBeMember<RenderQuote> m_renderQuoteHead;
     unsigned m_renderCounterCount;
+
+    unsigned m_hitTestCount;
+    OwnPtr<ViewDisplayList> m_viewDisplayList;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderView, isRenderView());
 
 // Suspends the LayoutState cached offset and clipRect optimization. Used under transforms
 // that cannot be represented by LayoutState (common in SVG) and when manipulating the render
-// tree during layout in ways that can trigger repaint of a non-child (e.g. when a list item
+// tree during layout in ways that can trigger paint invalidation of a non-child (e.g. when a list item
 // moves its list marker around). Note that even when disabled, LayoutState is still used to
 // store layoutDelta.
 class ForceHorriblySlowRectMapping {
     WTF_MAKE_NONCOPYABLE(ForceHorriblySlowRectMapping);
 public:
-    ForceHorriblySlowRectMapping(const RenderObject& root)
-        : m_view(*root.view())
-        , m_didDisable(m_view.layoutState() && m_view.layoutState()->cachedOffsetsEnabled())
+    ForceHorriblySlowRectMapping(const PaintInvalidationState* paintInvalidationState)
+        : m_paintInvalidationState(paintInvalidationState)
+        , m_didDisable(m_paintInvalidationState && m_paintInvalidationState->cachedOffsetsEnabled())
     {
-        if (m_view.layoutState())
-            m_view.layoutState()->m_cachedOffsetsEnabled = false;
-#if ASSERT_ENABLED
-        m_layoutState = m_view.layoutState();
-#endif
+        if (m_paintInvalidationState)
+            m_paintInvalidationState->m_cachedOffsetsEnabled = false;
     }
 
     ~ForceHorriblySlowRectMapping()
     {
-        ASSERT(m_view.layoutState() == m_layoutState);
         if (m_didDisable)
-            m_view.layoutState()->m_cachedOffsetsEnabled = true;
+            m_paintInvalidationState->m_cachedOffsetsEnabled = true;
     }
 private:
-    RenderView& m_view;
+    const PaintInvalidationState* m_paintInvalidationState;
     bool m_didDisable;
-#if ASSERT_ENABLED
-    LayoutState* m_layoutState;
-#endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderView_h

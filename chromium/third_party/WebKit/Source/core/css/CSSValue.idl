@@ -21,7 +21,9 @@
 [
     Custom=Wrap,
     DependentLifetime,
+    NotScriptWrappable,
     WillBeGarbageCollected,
+    RuntimeEnabled=CSSValue,
 ] interface CSSValue {
 
     // UnitTypes
@@ -30,7 +32,7 @@
     const unsigned short CSS_VALUE_LIST      = 2;
     const unsigned short CSS_CUSTOM          = 3;
 
-             [TreatReturnedNullStringAs=Null, TreatNullAs=NullString, RaisesException=Setter] attribute DOMString cssText;
+    [RaisesException=Setter] attribute DOMString? cssText;
 
     readonly attribute unsigned short cssValueType;
 

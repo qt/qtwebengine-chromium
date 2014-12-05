@@ -94,8 +94,6 @@
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/text/TextEncoding.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 // Maximum length of data buffer which is used to temporary save generated
@@ -158,7 +156,7 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
             result.append(WebPageSerializer::generateMarkOfTheWebDeclaration(param->url));
         } else if (isHTMLBaseElement(*element)) {
             // Comment the BASE tag when serializing dom.
-            result.append("<!--");
+            result.appendLiteral("<!--");
         }
     } else {
         // Write XML declaration.
@@ -170,13 +168,13 @@ String WebPageSerializerImpl::preActionBeforeSerializeOpenTag(
                 xmlEncoding = param->document->encodingName();
             if (xmlEncoding.isEmpty())
                 xmlEncoding = UTF8Encoding().name();
-            result.append("<?xml version=\"");
+            result.appendLiteral("<?xml version=\"");
             result.append(param->document->xmlVersion());
-            result.append("\" encoding=\"");
+            result.appendLiteral("\" encoding=\"");
             result.append(xmlEncoding);
             if (param->document->xmlStandalone())
-                result.append("\" standalone=\"yes");
-            result.append("\"?>\n");
+                result.appendLiteral("\" standalone=\"yes");
+            result.appendLiteral("\"?>\n");
         }
         // Add doc type declaration if original document has it.
         if (!param->haveSeenDocType) {
@@ -251,7 +249,7 @@ String WebPageSerializerImpl::postActionAfterSerializeEndTag(
         return result.toString();
     // Comment the BASE tag when serializing DOM.
     if (isHTMLBaseElement(*element)) {
-        result.append("-->");
+        result.appendLiteral("-->");
         // Append a new base tag declaration.
         result.append(WebPageSerializer::generateBaseTagDeclaration(
             param->document->baseTarget()));
@@ -302,49 +300,48 @@ void WebPageSerializerImpl::openTagToString(Element* element,
     result.append('<');
     result.append(element->nodeName().lower());
     // Go through all attributes and serialize them.
-    if (element->hasAttributes()) {
-        AttributeCollection attributes = element->attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-            result.append(' ');
-            // Add attribute pair
-            result.append(it->name().toString());
-            result.appendLiteral("=\"");
-            if (!it->value().isEmpty()) {
-                const String& attrValue = it->value();
+    AttributeCollection attributes = element->attributes();
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+        result.append(' ');
+        // Add attribute pair
+        result.append(it->name().toString());
+        result.appendLiteral("=\"");
+        if (!it->value().isEmpty()) {
+            const String& attrValue = it->value();
 
-                // Check whether we need to replace some resource links
-                // with local resource paths.
-                const QualifiedName& attrName = it->name();
-                if (element->hasLegalLinkAttribute(attrName)) {
-                    // For links start with "javascript:", we do not change it.
-                    if (attrValue.startsWith("javascript:", false))
-                        result.append(attrValue);
-                    else {
-                        // Get the absolute link
-                        WebLocalFrameImpl* subFrame = WebLocalFrameImpl::fromFrameOwnerElement(element);
-                        String completeURL = subFrame ? subFrame->frame()->document()->url() :
-                                                        param->document->completeURL(attrValue);
-                        // Check whether we have local files for those link.
-                        if (m_localLinks.contains(completeURL)) {
-                            if (!param->directoryName.isEmpty()) {
-                                result.appendLiteral("./");
-                                result.append(param->directoryName);
-                                result.append('/');
-                            }
-                            result.append(m_localLinks.get(completeURL));
-                        } else
-                            result.append(completeURL);
-                    }
+            // Check whether we need to replace some resource links
+            // with local resource paths.
+            const QualifiedName& attrName = it->name();
+            if (element->hasLegalLinkAttribute(attrName)) {
+                // For links start with "javascript:", we do not change it.
+                if (attrValue.startsWith("javascript:", false)) {
+                    result.append(attrValue);
                 } else {
-                    if (param->isHTMLDocument)
-                        result.append(m_htmlEntities.convertEntitiesInString(attrValue));
-                    else
-                        result.append(m_xmlEntities.convertEntitiesInString(attrValue));
+                    // Get the absolute link
+                    WebLocalFrameImpl* subFrame = WebLocalFrameImpl::fromFrameOwnerElement(element);
+                    String completeURL = subFrame ? subFrame->frame()->document()->url() :
+                                                    param->document->completeURL(attrValue);
+                    // Check whether we have local files for those link.
+                    if (m_localLinks.contains(completeURL)) {
+                        if (!param->directoryName.isEmpty()) {
+                            result.appendLiteral("./");
+                            result.append(param->directoryName);
+                            result.append('/');
+                        }
+                        result.append(m_localLinks.get(completeURL));
+                    } else {
+                        result.append(completeURL);
+                    }
                 }
+            } else {
+                if (param->isHTMLDocument)
+                    result.append(m_htmlEntities.convertEntitiesInString(attrValue));
+                else
+                    result.append(m_xmlEntities.convertEntitiesInString(attrValue));
             }
-            result.append('\"');
         }
+        result.append('\"');
     }
 
     // Do post action for open tag.

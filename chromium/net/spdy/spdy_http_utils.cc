@@ -20,6 +20,20 @@
 
 namespace net {
 
+namespace {
+
+void AddSpdyHeader(const std::string& name,
+                   const std::string& value,
+                   SpdyHeaderBlock* headers) {
+  if (headers->find(name) == headers->end()) {
+    (*headers)[name] = value;
+  } else {
+    (*headers)[name] += '\0' + value;
+  }
+}
+
+} // namespace
+
 bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
                                SpdyMajorVersion protocol_version,
                                HttpResponseInfo* response) {
@@ -85,25 +99,18 @@ bool SpdyHeadersToHttpResponse(const SpdyHeaderBlock& headers,
 
 void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
                                       const HttpRequestHeaders& request_headers,
-                                      SpdyHeaderBlock* headers,
                                       SpdyMajorVersion protocol_version,
-                                      bool direct) {
+                                      bool direct,
+                                      SpdyHeaderBlock* headers) {
 
   HttpRequestHeaders::Iterator it(request_headers);
   while (it.GetNext()) {
-    std::string name = StringToLowerASCII(it.name());
+    std::string name = base::StringToLowerASCII(it.name());
     if (name == "connection" || name == "proxy-connection" ||
         name == "transfer-encoding" || name == "host") {
       continue;
     }
-    if (headers->find(name) == headers->end()) {
-      (*headers)[name] = it.value();
-    } else {
-      std::string new_value = (*headers)[name];
-      new_value.append(1, '\0');  // +=() doesn't append 0's
-      new_value += it.value();
-      (*headers)[name] = new_value;
-    }
+    AddSpdyHeader(name, it.value(), headers);
   }
   static const char kHttpProtocolVersion[] = "HTTP/1.1";
 
@@ -128,6 +135,31 @@ void CreateSpdyHeadersFromHttpRequest(const HttpRequestInfo& info,
     (*headers)[":path"] = HttpUtil::PathForRequest(info.url);
   }
 }
+
+void CreateSpdyHeadersFromHttpResponse(
+    const HttpResponseHeaders& response_headers,
+    SpdyMajorVersion protocol_version,
+    SpdyHeaderBlock* headers) {
+  std::string status_key = (protocol_version >= SPDY3) ? ":status" : "status";
+  std::string version_key =
+      (protocol_version >= SPDY3) ? ":version" : "version";
+
+  const std::string status_line = response_headers.GetStatusLine();
+  std::string::const_iterator after_version =
+      std::find(status_line.begin(), status_line.end(), ' ');
+  if (protocol_version < SPDY4) {
+    (*headers)[version_key] = std::string(status_line.begin(), after_version);
+  }
+  (*headers)[status_key] = std::string(after_version + 1, status_line.end());
+
+  void* iter = NULL;
+  std::string raw_name, value;
+  while (response_headers.EnumerateHeaderLines(&iter, &raw_name, &value)) {
+    std::string name = base::StringToLowerASCII(raw_name);
+    AddSpdyHeader(name, value, headers);
+  }
+}
+
 
 COMPILE_ASSERT(HIGHEST - LOWEST < 4 &&
                HIGHEST - MINIMUM_PRIORITY < 5,

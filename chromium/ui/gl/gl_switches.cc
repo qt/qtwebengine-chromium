@@ -26,7 +26,6 @@ const char kDisableGpuVsync[]               = "disable-gpu-vsync";
 
 // Turns on GPU logging (debug build only).
 const char kEnableGPUServiceLogging[]       = "enable-gpu-service-logging";
-const char kEnableGPUClientLogging[]        = "enable-gpu-client-logging";
 
 // Turns on calling TRACE for every GL call.
 const char kEnableGPUServiceTracing[]       = "enable-gpu-service-tracing";
@@ -56,6 +55,9 @@ const char kTestGLLib[]                     = "test-gl-lib";
 // Use hardware gpu, if available, for tests.
 const char kUseGpuInTests[] = "use-gpu-in-tests";
 
+// On Windows only: use the WARP software rasterizer in the GPU process.
+const char kUseWarp[] = "use-warp";
+
 // Disables GL drawing operations which produce pixel output. With this
 // the GL output will not be correct but tests will run faster.
 const char kDisableGLDrawingForTests[] = "disable-gl-drawing-for-tests";
@@ -75,6 +77,7 @@ const char* kGLSwitchesCopiedFromGpuProcessHost[] = {
   kGpuNoContextLost,
   kDisableGLDrawingForTests,
   kOverrideUseGLWithOSMesaForTests,
+  kUseWarp
 };
 const int kGLSwitchesCopiedFromGpuProcessHostNumSwitches =
     arraysize(kGLSwitchesCopiedFromGpuProcessHost);

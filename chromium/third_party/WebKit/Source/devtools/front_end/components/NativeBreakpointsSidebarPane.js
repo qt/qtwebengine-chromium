@@ -35,12 +35,12 @@
 WebInspector.NativeBreakpointsSidebarPane = function(title)
 {
     WebInspector.SidebarPane.call(this, title);
-    this.registerRequiredCSS("breakpointsList.css");
+    this.registerRequiredCSS("components/breakpointsList.css");
 
-    this.listElement = document.createElement("ol");
+    this.listElement = createElement("ol");
     this.listElement.className = "breakpoint-list";
 
-    this.emptyElement = document.createElement("div");
+    this.emptyElement = createElement("div");
     this.emptyElement.className = "info";
     this.emptyElement.textContent = WebInspector.UIString("No Breakpoints");
 
@@ -48,11 +48,16 @@ WebInspector.NativeBreakpointsSidebarPane = function(title)
 }
 
 WebInspector.NativeBreakpointsSidebarPane.prototype = {
-    _addListElement: function(element, beforeElement)
+    /**
+     * @param {!Element} element
+     * @param {?Node=} beforeNode
+     * @protected
+     */
+    addListElement: function(element, beforeNode)
     {
-        if (beforeElement)
-            this.listElement.insertBefore(element, beforeElement);
-        else {
+        if (beforeNode) {
+            this.listElement.insertBefore(element, beforeNode);
+        } else {
             if (!this.listElement.firstChild) {
                 this.bodyElement.removeChild(this.emptyElement);
                 this.bodyElement.appendChild(this.listElement);
@@ -61,7 +66,11 @@ WebInspector.NativeBreakpointsSidebarPane.prototype = {
         }
     },
 
-    _removeListElement: function(element)
+    /**
+     * @param {!Element} element
+     * @protected
+     */
+    removeListElement: function(element)
     {
         this.listElement.removeChild(element);
         if (!this.listElement.firstChild) {
@@ -70,7 +79,10 @@ WebInspector.NativeBreakpointsSidebarPane.prototype = {
         }
     },
 
-    _reset: function()
+    /**
+     * @protected
+     */
+    reset: function()
     {
         this.listElement.removeChildren();
         if (this.listElement.parentElement) {

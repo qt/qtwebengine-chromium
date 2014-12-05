@@ -39,7 +39,7 @@
 #include "core/html/forms/FormController.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -75,7 +75,7 @@ bool HiddenInputType::supportsValidation() const
 RenderObject* HiddenInputType::createRenderer(RenderStyle*) const
 {
     ASSERT_NOT_REACHED();
-    return 0;
+    return nullptr;
 }
 
 void HiddenInputType::accessKeyAction(bool)
@@ -97,11 +97,6 @@ void HiddenInputType::setValue(const String& sanitizedValue, bool, TextFieldEven
     element().setAttribute(valueAttr, AtomicString(sanitizedValue));
 }
 
-bool HiddenInputType::isHiddenType() const
-{
-    return true;
-}
-
 bool HiddenInputType::appendFormData(FormDataList& encoding, bool isMultipartForm) const
 {
     if (equalIgnoringCase(element().name(), "_charset_")) {
@@ -116,4 +111,4 @@ bool HiddenInputType::shouldRespectHeightAndWidthAttributes()
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -31,9 +31,9 @@
 
 #include "core/accessibility/AXRenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXListBox FINAL : public AXRenderObject {
+class AXListBox final : public AXRenderObject {
 
 private:
     explicit AXListBox(RenderObject*);
@@ -41,15 +41,9 @@ public:
     static PassRefPtr<AXListBox> create(RenderObject*);
     virtual ~AXListBox();
 
-    virtual AccessibilityRole roleValue() const OVERRIDE { return ListBoxRole; }
-
-    virtual void addChildren() OVERRIDE;
-
-private:
-    AXObject* listBoxOptionAXObject(HTMLElement*) const;
-    virtual AXObject* elementAccessibilityHitTest(const IntPoint&) const OVERRIDE;
+    virtual AccessibilityRole roleValue() const override { return ListBoxRole; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXListBox_h

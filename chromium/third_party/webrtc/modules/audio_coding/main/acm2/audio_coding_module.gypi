@@ -117,6 +117,44 @@
     ['include_tests==1', {
       'targets': [
         {
+          'target_name': 'acm_receive_test',
+          'type': 'static_library',
+          'defines': [
+            '<@(audio_coding_defines)',
+          ],
+          'dependencies': [
+            '<@(audio_coding_dependencies)',
+            'audio_coding_module',
+            'neteq_unittest_tools',
+            '<(DEPTH)/testing/gtest.gyp:gtest',
+          ],
+          'sources': [
+            'acm_receive_test.cc',
+            'acm_receive_test.h',
+            'acm_receive_test_oldapi.cc',
+            'acm_receive_test_oldapi.h',
+          ],
+        }, # acm_receive_test
+        {
+          'target_name': 'acm_send_test',
+          'type': 'static_library',
+          'defines': [
+            '<@(audio_coding_defines)',
+          ],
+          'dependencies': [
+            '<@(audio_coding_dependencies)',
+            'audio_coding_module',
+            'neteq_unittest_tools',
+            '<(DEPTH)/testing/gtest.gyp:gtest',
+          ],
+          'sources': [
+            'acm_send_test.cc',
+            'acm_send_test.h',
+            'acm_send_test_oldapi.cc',
+            'acm_send_test_oldapi.h',
+          ],
+        }, # acm_send_test
+        {
           'target_name': 'delay_test',
           'type': 'executable',
           'dependencies': [
@@ -124,7 +162,7 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [
@@ -142,7 +180,7 @@
             '<(DEPTH)/testing/gtest.gyp:gtest',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
-            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:field_trial_default',
+            '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers_default',
             '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
           ],
           'sources': [

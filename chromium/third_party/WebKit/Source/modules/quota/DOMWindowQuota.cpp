@@ -31,22 +31,19 @@
 #include "config.h"
 #include "modules/quota/DOMWindowQuota.h"
 
-#include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "modules/quota/DeprecatedStorageInfo.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowQuota::DOMWindowQuota(LocalDOMWindow& window)
     : DOMWindowProperty(window.frame())
 {
 }
 
-DOMWindowQuota::~DOMWindowQuota()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowQuota);
 
 const char* DOMWindowQuota::supplementName()
 {
@@ -81,6 +78,7 @@ void DOMWindowQuota::trace(Visitor* visitor)
 {
     visitor->trace(m_storageInfo);
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

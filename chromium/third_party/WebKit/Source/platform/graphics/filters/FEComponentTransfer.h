@@ -23,11 +23,10 @@
 #ifndef FEComponentTransfer_h
 #define FEComponentTransfer_h
 
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ComponentTransferType {
     FECOMPONENTTRANSFER_TYPE_UNKNOWN  = 0,
@@ -77,17 +76,15 @@ public:
     ComponentTransferFunction alphaFunction() const;
     void setAlphaFunction(const ComponentTransferFunction&);
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FEComponentTransfer(Filter*, const ComponentTransferFunction& redFunc, const ComponentTransferFunction& greenFunc,
         const ComponentTransferFunction& blueFunc, const ComponentTransferFunction& alphaFunc);
 
-    virtual void applySoftware() OVERRIDE;
-
-    virtual bool affectsTransparentPixels() OVERRIDE;
+    virtual bool affectsTransparentPixels() override;
 
     void getValues(unsigned char rValues[256], unsigned char gValues[256], unsigned char bValues[256], unsigned char aValues[256]);
 
@@ -97,6 +94,6 @@ private:
     ComponentTransferFunction m_alphaFunc;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FEComponentTransfer_h

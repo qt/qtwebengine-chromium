@@ -44,10 +44,6 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   // and false if otherwise.
   static bool ChildSendTaskPortToParent();
 
-  // Returns the Mach port name to use when sending or receiving messages.
-  // Does the Right Thing in the browser and in child processes.
-  static std::string GetMachPortName();
-
   // Returns the global MachBroker.
   static MachBroker* GetInstance();
 
@@ -68,25 +64,25 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   void AddPlaceholderForPid(base::ProcessHandle pid);
 
   // Implement |ProcessMetrics::PortProvider|.
-  virtual mach_port_t TaskForPid(base::ProcessHandle process) const OVERRIDE;
+  mach_port_t TaskForPid(base::ProcessHandle process) const override;
 
   // Implement |BrowserChildProcessObserver|.
-  virtual void BrowserChildProcessHostDisconnected(
-      const ChildProcessData& data) OVERRIDE;
-  virtual void BrowserChildProcessCrashed(
-      const ChildProcessData& data) OVERRIDE;
+  void BrowserChildProcessHostDisconnected(
+      const ChildProcessData& data) override;
+  void BrowserChildProcessCrashed(const ChildProcessData& data) override;
 
   // Implement |NotificationObserver|.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
+
  private:
   friend class MachBrokerTest;
   friend class MachListenerThreadDelegate;
   friend struct DefaultSingletonTraits<MachBroker>;
 
   MachBroker();
-  virtual ~MachBroker();
+  ~MachBroker() override;
 
   // Updates the mapping for |pid| to include the given |mach_info|.  Does
   // nothing if PlaceholderForPid() has not already been called for the given
@@ -97,6 +93,9 @@ class CONTENT_EXPORT MachBroker : public base::ProcessMetrics::PortProvider,
   // Removes all mappings belonging to |pid| from the broker.
   void InvalidatePid(base::ProcessHandle pid);
 
+  // Returns the Mach port name to use when sending or receiving messages.
+  // Does the Right Thing in the browser and in child processes.
+  static std::string GetMachPortName();
   // Callback used to register notifications on the UI thread.
   void RegisterNotifications();
 

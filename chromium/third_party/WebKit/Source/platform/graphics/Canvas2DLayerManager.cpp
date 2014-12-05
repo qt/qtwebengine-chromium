@@ -28,8 +28,6 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "public/platform/Platform.h"
 #include "wtf/StdLibExtras.h"
 
-using blink::WebThread;
-
 namespace {
 
 enum {
@@ -39,7 +37,7 @@ enum {
 
 } // unnamed namespace
 
-namespace WebCore {
+namespace blink {
 
 Canvas2DLayerManager::Canvas2DLayerManager()
     : m_bytesAllocated(0)
@@ -62,7 +60,7 @@ void Canvas2DLayerManager::init(size_t maxBytesAllocated, size_t targetBytesAllo
     m_maxBytesAllocated = maxBytesAllocated;
     m_targetBytesAllocated = targetBytesAllocated;
     if (m_taskObserverActive) {
-        blink::Platform::current()->currentThread()->removeTaskObserver(this);
+        Platform::current()->currentThread()->removeTaskObserver(this);
         m_taskObserverActive = false;
     }
 }
@@ -81,7 +79,7 @@ void Canvas2DLayerManager::didProcessTask()
 {
     // Called after the script action for the current frame has been processed.
     ASSERT(m_taskObserverActive);
-    blink::Platform::current()->currentThread()->removeTaskObserver(this);
+    Platform::current()->currentThread()->removeTaskObserver(this);
     m_taskObserverActive = false;
     Canvas2DLayerBridge* layer = m_layerList.head();
     while (layer) {
@@ -105,7 +103,7 @@ void Canvas2DLayerManager::layerDidDraw(Canvas2DLayerBridge* layer)
     if (!m_taskObserverActive) {
         m_taskObserverActive = true;
         // Schedule a call to didProcessTask() after completion of the current script task.
-        blink::Platform::current()->currentThread()->addTaskObserver(this);
+        Platform::current()->currentThread()->addTaskObserver(this);
     }
 }
 
@@ -149,17 +147,10 @@ void Canvas2DLayerManager::freeMemoryIfNecessary()
     }
 }
 
-void Canvas2DLayerManager::removeLayerFromList(Canvas2DLayerBridge* layer)
-{
-    ASSERT(isInList(layer));
-    ASSERT(!layer->hasTransientResources());
-
-}
-
 bool Canvas2DLayerManager::isInList(Canvas2DLayerBridge* layer) const
 {
     return layer->prev() || m_layerList.head() == layer;
 }
 
-}
+} // namespace blink
 

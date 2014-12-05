@@ -25,14 +25,13 @@
 
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLDirectoryElement::HTMLDirectoryElement(Document& document)
     : HTMLElement(dirTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLDirectoryElement)

@@ -5,37 +5,38 @@
 #ifndef BatteryDispatcher_h
 #define BatteryDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "modules/battery/BatteryManager.h"
 #include "modules/battery/BatteryStatus.h"
 #include "public/platform/WebBatteryStatusListener.h"
 
 namespace blink {
+
 class WebBatteryStatus;
-}
 
-namespace WebCore {
-
-class BatteryDispatcher FINAL : public DeviceEventDispatcherBase, public blink::WebBatteryStatusListener {
+class BatteryDispatcher final : public GarbageCollectedFinalized<BatteryDispatcher>, public PlatformEventDispatcher, public WebBatteryStatusListener {
+    USING_GARBAGE_COLLECTED_MIXIN(BatteryDispatcher);
 public:
     static BatteryDispatcher& instance();
     virtual ~BatteryDispatcher();
 
     BatteryStatus* latestData();
 
-    // Inherited from blink::WebBatteryStatusListener.
-    virtual void updateBatteryStatus(const blink::WebBatteryStatus&) OVERRIDE;
+    // Inherited from WebBatteryStatusListener.
+    virtual void updateBatteryStatus(const WebBatteryStatus&) override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     BatteryDispatcher();
 
-    // Inherited from DeviceEventDispatcherBase.
-    virtual void startListening() OVERRIDE;
-    virtual void stopListening() OVERRIDE;
+    // Inherited from PlatformEventDispatcher.
+    virtual void startListening() override;
+    virtual void stopListening() override;
 
-    RefPtrWillBePersistent<BatteryStatus> m_batteryStatus;
+    Member<BatteryStatus> m_batteryStatus;
 };
 
-}
+} // namespace blink
 
 #endif // BatteryDispatcher_h

@@ -8,34 +8,33 @@
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/Supplementable.h"
 
-namespace WebCore {
+namespace blink {
 
 class Navigator;
 class NetworkInformation;
 
-class NavigatorNetworkInformation FINAL
-    : public NoBaseWillBeGarbageCollectedFinalized<NavigatorNetworkInformation>
+class NavigatorNetworkInformation final
+    : public NoBaseWillBeGarbageCollected<NavigatorNetworkInformation>
     , public WillBeHeapSupplement<Navigator>
     , DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorNetworkInformation);
-
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(NavigatorNetworkInformation);
 public:
-    virtual ~NavigatorNetworkInformation();
     static NavigatorNetworkInformation& from(Navigator&);
     static NavigatorNetworkInformation* toNavigatorNetworkInformation(Navigator&);
     static const char* supplementName();
 
     static NetworkInformation* connection(Navigator&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit NavigatorNetworkInformation(Navigator&);
     NetworkInformation* connection();
 
-    RefPtrWillBeMember<NetworkInformation> m_connection;
+    PersistentWillBeMember<NetworkInformation> m_connection;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorNetworkInformation_h

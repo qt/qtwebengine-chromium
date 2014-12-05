@@ -15,6 +15,7 @@
 #include "webrtc/base/physicalsocketserver.h"
 #include "webrtc/base/socketaddress.h"
 #include "webrtc/base/thread.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 #if defined(WEBRTC_WIN)
 #include <comdef.h>  // NOLINT
@@ -105,6 +106,13 @@ class CustomThread : public rtc::Thread {
   CustomThread() {}
   virtual ~CustomThread() { Stop(); }
   bool Start() { return false; }
+
+  bool WrapCurrent() {
+    return Thread::WrapCurrent();
+  }
+  void UnwrapCurrent() {
+    Thread::UnwrapCurrent();
+  }
 };
 
 
@@ -269,6 +277,100 @@ TEST(ThreadTest, Invoke) {
   };
   EXPECT_EQ(999, thread.Invoke<int>(&LocalFuncs::Func1));
   thread.Invoke<void>(&LocalFuncs::Func2);
+}
+
+// Verifies that two threads calling Invoke on each other at the same time does
+// not deadlock.
+TEST(ThreadTest, TwoThreadsInvokeNoDeadlock) {
+  AutoThread thread;
+  Thread* current_thread = Thread::Current();
+  ASSERT_TRUE(current_thread != NULL);
+
+  Thread other_thread;
+  other_thread.Start();
+
+  struct LocalFuncs {
+    static void Set(bool* out) { *out = true; }
+    static void InvokeSet(Thread* thread, bool* out) {
+      thread->Invoke<void>(Bind(&Set, out));
+    }
+  };
+
+  bool called = false;
+  other_thread.Invoke<void>(
+      Bind(&LocalFuncs::InvokeSet, current_thread, &called));
+
+  EXPECT_TRUE(called);
+}
+
+// Verifies that if thread A invokes a call on thread B and thread C is trying
+// to invoke A at the same time, thread A does not handle C's invoke while
+// invoking B.
+TEST(ThreadTest, ThreeThreadsInvoke) {
+  AutoThread thread;
+  Thread* thread_a = Thread::Current();
+  Thread thread_b, thread_c;
+  thread_b.Start();
+  thread_c.Start();
+
+  class LockedBool {
+   public:
+    explicit LockedBool(bool value) : value_(value) {}
+
+    void Set(bool value) {
+      CritScope lock(&crit_);
+      value_ = value;
+    }
+
+    bool Get() {
+      CritScope lock(&crit_);
+      return value_;
+    }
+
+   private:
+    CriticalSection crit_;
+    bool value_ GUARDED_BY(crit_);
+  };
+
+  struct LocalFuncs {
+    static void Set(LockedBool* out) { out->Set(true); }
+    static void InvokeSet(Thread* thread, LockedBool* out) {
+      thread->Invoke<void>(Bind(&Set, out));
+    }
+
+    // Set |out| true and call InvokeSet on |thread|.
+    static void SetAndInvokeSet(LockedBool* out,
+                                Thread* thread,
+                                LockedBool* out_inner) {
+      out->Set(true);
+      InvokeSet(thread, out_inner);
+    }
+
+    // Asynchronously invoke SetAndInvokeSet on |thread1| and wait until
+    // |thread1| starts the call.
+    static void AsyncInvokeSetAndWait(
+        Thread* thread1, Thread* thread2, LockedBool* out) {
+      CriticalSection crit;
+      LockedBool async_invoked(false);
+
+      AsyncInvoker invoker;
+      invoker.AsyncInvoke<void>(
+          thread1, Bind(&SetAndInvokeSet, &async_invoked, thread2, out));
+
+      EXPECT_TRUE_WAIT(async_invoked.Get(), 2000);
+    }
+  };
+
+  LockedBool thread_a_called(false);
+
+  // Start the sequence A --(invoke)--> B --(async invoke)--> C --(invoke)--> A.
+  // Thread B returns when C receives the call and C should be blocked until A
+  // starts to process messages.
+  thread_b.Invoke<void>(Bind(&LocalFuncs::AsyncInvokeSetAndWait,
+                             &thread_c, thread_a, &thread_a_called));
+  EXPECT_FALSE(thread_a_called.Get());
+
+  EXPECT_TRUE_WAIT(thread_a_called.Get(), 2000);
 }
 
 class AsyncInvokeTest : public testing::Test {

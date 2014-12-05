@@ -31,13 +31,13 @@
 #ifndef DirectoryReaderSync_h
 #define DirectoryReaderSync_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/fileapi/FileError.h"
 #include "modules/filesystem/DirectoryReaderBase.h"
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class EntrySync;
 class ExceptionState;
@@ -45,6 +45,7 @@ class ExceptionState;
 typedef HeapVector<Member<EntrySync> > EntrySyncHeapVector;
 
 class DirectoryReaderSync : public DirectoryReaderBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static DirectoryReaderSync* create(DOMFileSystemBase* fileSystem, const String& fullPath)
     {
@@ -65,7 +66,7 @@ public:
         m_errorCode = code;
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     class EntriesCallbackHelper;
@@ -78,6 +79,6 @@ private:
     FileError::ErrorCode m_errorCode;
 };
 
-} // namespace
+} // namespace blink
 
 #endif // DirectoryReaderSync_h

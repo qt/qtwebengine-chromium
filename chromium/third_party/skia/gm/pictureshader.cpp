@@ -30,14 +30,12 @@ public:
 
         // Build the picture.
         SkPictureRecorder recorder;
-        SkCanvas* pictureCanvas = recorder.beginRecording(SkScalarRoundToInt(tileSize),
-                                                          SkScalarRoundToInt(tileSize),
-                                                          NULL, 0);
+        SkCanvas* pictureCanvas = recorder.beginRecording(tileSize, tileSize, NULL, 0);
         this->drawTile(pictureCanvas);
         fPicture.reset(recorder.endRecording());
 
         // Build a reference bitmap.
-        fBitmap.allocN32Pixels(SkScalarRoundToInt(tileSize), SkScalarRoundToInt(tileSize));
+        fBitmap.allocN32Pixels(SkScalarCeilToInt(tileSize), SkScalarCeilToInt(tileSize));
         fBitmap.eraseColor(SK_ColorTRANSPARENT);
         SkCanvas bitmapCanvas(fBitmap);
         this->drawTile(&bitmapCanvas);
@@ -135,7 +133,8 @@ private:
                     fPicture,
                     kTileConfigs[tileMode].tmx,
                     kTileConfigs[tileMode].tmy,
-                    &localMatrix));
+                    &localMatrix,
+                    NULL));
         paint.setShader(pictureShader.get());
         canvas->drawRect(SkRect::MakeWH(fSceneSize, fSceneSize), paint);
 

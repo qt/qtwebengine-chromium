@@ -34,11 +34,9 @@
 #include "core/CSSPropertyNames.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSValue;
-class Document;
-class RenderStyle;
 class StyleResolverState;
 
 class StyleBuilder {

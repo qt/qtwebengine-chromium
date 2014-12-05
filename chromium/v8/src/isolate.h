@@ -11,30 +11,36 @@
 #include "src/base/atomicops.h"
 #include "src/builtins.h"
 #include "src/contexts.h"
+#include "src/date.h"
 #include "src/execution.h"
 #include "src/frames.h"
-#include "src/date.h"
 #include "src/global-handles.h"
 #include "src/handles.h"
 #include "src/hashmap.h"
-#include "src/heap.h"
+#include "src/heap/heap.h"
 #include "src/optimizing-compiler-thread.h"
 #include "src/regexp-stack.h"
+#include "src/runtime/runtime.h"
 #include "src/runtime-profiler.h"
-#include "src/runtime.h"
 #include "src/zone.h"
 
 namespace v8 {
+
+namespace base {
+class RandomNumberGenerator;
+}
+
 namespace internal {
 
+class BasicBlockProfiler;
 class Bootstrapper;
-struct CallInterfaceDescriptor;
+class CallInterfaceDescriptorData;
 class CodeGenerator;
 class CodeRange;
-struct CodeStubInterfaceDescriptor;
+class CodeStubDescriptor;
 class CodeTracer;
 class CompilationCache;
-class ConsStringIteratorOp;
+class CompilationStatistics;
 class ContextSlotCache;
 class Counters;
 class CpuFeatures;
@@ -53,9 +59,7 @@ class HTracer;
 class InlineRuntimeFunctionsTable;
 class InnerPointerToCodeCache;
 class MaterializedObjectStore;
-class NoAllocationStringAllocator;
 class CodeAgingHelper;
-class RandomNumberGenerator;
 class RegExpStack;
 class SaveContext;
 class StringTracker;
@@ -75,10 +79,12 @@ typedef void* ExternalReferenceRedirectorPointer();
 
 class Debug;
 class Debugger;
+class PromiseOnStack;
 
 #if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
 class Redirection;
 class Simulator;
 #endif
@@ -102,19 +108,22 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 
 // Macros for MaybeHandle.
 
-#define RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, T)  \
-  do {                                                       \
-    Isolate* __isolate__ = (isolate);                        \
-    if (__isolate__->has_scheduled_exception()) {            \
-      __isolate__->PromoteScheduledException();              \
-      return MaybeHandle<T>();                               \
-    }                                                        \
+#define RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, value) \
+  do {                                                      \
+    Isolate* __isolate__ = (isolate);                       \
+    if (__isolate__->has_scheduled_exception()) {           \
+      __isolate__->PromoteScheduledException();             \
+      return value;                                         \
+    }                                                       \
   } while (false)
+
+#define RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, T) \
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, MaybeHandle<T>())
 
 #define ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, dst, call, value)  \
   do {                                                               \
     if (!(call).ToHandle(&dst)) {                                    \
-      ASSERT((isolate)->has_pending_exception());                    \
+      DCHECK((isolate)->has_pending_exception());                    \
       return value;                                                  \
     }                                                                \
   } while (false)
@@ -126,10 +135,26 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 #define ASSIGN_RETURN_ON_EXCEPTION(isolate, dst, call, T)  \
   ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, dst, call, MaybeHandle<T>())
 
+#define THROW_NEW_ERROR(isolate, call, T)                                    \
+  do {                                                                       \
+    Handle<Object> __error__;                                                \
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, __error__, isolate->factory()->call, \
+                               T);                                           \
+    return isolate->Throw<T>(__error__);                                     \
+  } while (false)
+
+#define THROW_NEW_ERROR_RETURN_FAILURE(isolate, call)             \
+  do {                                                            \
+    Handle<Object> __error__;                                     \
+    ASSIGN_RETURN_FAILURE_ON_EXCEPTION(isolate, __error__,        \
+                                       isolate->factory()->call); \
+    return isolate->Throw(*__error__);                            \
+  } while (false)
+
 #define RETURN_ON_EXCEPTION_VALUE(isolate, call, value)            \
   do {                                                             \
     if ((call).is_null()) {                                        \
-      ASSERT((isolate)->has_pending_exception());                  \
+      DCHECK((isolate)->has_pending_exception());                  \
       return value;                                                \
     }                                                              \
   } while (false)
@@ -144,6 +169,7 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 #define FOR_EACH_ISOLATE_ADDRESS_NAME(C)                \
   C(Handler, handler)                                   \
   C(CEntryFP, c_entry_fp)                               \
+  C(CFunction, c_function)                              \
   C(Context, context)                                   \
   C(PendingException, pending_exception)                \
   C(ExternalCaughtException, external_caught_exception) \
@@ -154,7 +180,12 @@ typedef ZoneList<Handle<Object> > ZoneObjectList;
 class ThreadId {
  public:
   // Creates an invalid ThreadId.
-  ThreadId() : id_(kInvalidId) {}
+  ThreadId() { base::NoBarrier_Store(&id_, kInvalidId); }
+
+  ThreadId& operator=(const ThreadId& other) {
+    base::NoBarrier_Store(&id_, base::NoBarrier_Load(&other.id_));
+    return *this;
+  }
 
   // Returns ThreadId for current thread.
   static ThreadId Current() { return ThreadId(GetCurrentThreadId()); }
@@ -164,17 +195,17 @@ class ThreadId {
 
   // Compares ThreadIds for equality.
   INLINE(bool Equals(const ThreadId& other) const) {
-    return id_ == other.id_;
+    return base::NoBarrier_Load(&id_) == base::NoBarrier_Load(&other.id_);
   }
 
   // Checks whether this ThreadId refers to any thread.
   INLINE(bool IsValid() const) {
-    return id_ != kInvalidId;
+    return base::NoBarrier_Load(&id_) != kInvalidId;
   }
 
   // Converts ThreadId to an integer representation
   // (required for public API: V8::V8::GetCurrentThreadId).
-  int ToInteger() const { return id_; }
+  int ToInteger() const { return static_cast<int>(base::NoBarrier_Load(&id_)); }
 
   // Converts ThreadId to an integer representation
   // (required for public API: V8::V8::TerminateExecution).
@@ -183,13 +214,13 @@ class ThreadId {
  private:
   static const int kInvalidId = -1;
 
-  explicit ThreadId(int id) : id_(id) {}
+  explicit ThreadId(int id) { base::NoBarrier_Store(&id_, id); }
 
   static int AllocateThreadId();
 
   static int GetCurrentThreadId();
 
-  int id_;
+  base::Atomic32 id_;
 
   static base::Atomic32 highest_thread_id_;
 
@@ -233,11 +264,7 @@ class ThreadLocalTop BASE_EMBEDDED {
         v8::TryCatch::JSStackComparableAddress(try_catch_handler()));
   }
 
-  void Free() {
-    ASSERT(!has_pending_message_);
-    ASSERT(!external_caught_exception_);
-    ASSERT(try_catch_handler_ == NULL);
-  }
+  void Free();
 
   Isolate* isolate_;
   // The context where the current execution method is created and for variable
@@ -262,6 +289,12 @@ class ThreadLocalTop BASE_EMBEDDED {
   // Stack.
   Address c_entry_fp_;  // the frame pointer of the top c entry frame
   Address handler_;   // try-blocks are chained through the stack
+  Address c_function_;  // C function that was called at c entry.
+
+  // Throwing an exception may cause a Promise rejection.  For this purpose
+  // we keep track of a stack of nested promises and the corresponding
+  // try-catch handlers.
+  PromiseOnStack* promise_on_stack_;
 
 #ifdef USE_SIMULATOR
   Simulator* simulator_;
@@ -290,7 +323,8 @@ class ThreadLocalTop BASE_EMBEDDED {
 
 #if V8_TARGET_ARCH_ARM && !defined(__arm__) || \
     V8_TARGET_ARCH_ARM64 && !defined(__aarch64__) || \
-    V8_TARGET_ARCH_MIPS && !defined(__mips__)
+    V8_TARGET_ARCH_MIPS && !defined(__mips__) || \
+    V8_TARGET_ARCH_MIPS64 && !defined(__mips__)
 
 #define ISOLATE_INIT_SIMULATOR_LIST(V)                                         \
   V(bool, simulator_initialized, false)                                        \
@@ -332,8 +366,6 @@ typedef List<HeapObject*> DebugObjectCache;
   V(int, serialize_partial_snapshot_cache_capacity, 0)                         \
   V(Object**, serialize_partial_snapshot_cache, NULL)                          \
   /* Assembler state. */                                                       \
-  /* A previously allocated buffer of kMinimalBufferSize bytes, or NULL. */    \
-  V(byte*, assembler_spare_buffer, NULL)                                       \
   V(FatalErrorCallback, exception_behavior, NULL)                              \
   V(LogEventCallback, event_logger, NULL)                                      \
   V(AllowCodeGenerationFromStringsCallback, allow_code_gen_callback, NULL)     \
@@ -349,12 +381,10 @@ typedef List<HeapObject*> DebugObjectCache;
   V(Object*, string_stream_current_security_token, NULL)                       \
   /* Serializer state. */                                                      \
   V(ExternalReferenceTable*, external_reference_table, NULL)                   \
-  /* AstNode state. */                                                         \
-  V(int, ast_node_id, 0)                                                       \
-  V(unsigned, ast_node_count, 0)                                               \
   V(int, pending_microtask_count, 0)                                           \
   V(bool, autorun_microtasks, true)                                            \
   V(HStatistics*, hstatistics, NULL)                                           \
+  V(CompilationStatistics*, turbo_statistics, NULL)                            \
   V(HTracer*, htracer, NULL)                                                   \
   V(CodeTracer*, code_tracer, NULL)                                            \
   V(bool, fp_stubs_generated, false)                                           \
@@ -362,6 +392,7 @@ typedef List<HeapObject*> DebugObjectCache;
   V(uint32_t, per_isolate_assert_data, 0xFFFFFFFFu)                            \
   V(InterruptCallback, api_interrupt_callback, NULL)                           \
   V(void*, api_interrupt_callback_data, NULL)                                  \
+  V(PromiseRejectCallback, promise_reject_callback, NULL)                      \
   ISOLATE_INIT_SIMULATOR_LIST(V)
 
 #define THREAD_LOCAL_TOP_ACCESSOR(type, name)                        \
@@ -389,7 +420,8 @@ class Isolate {
           thread_state_(NULL),
 #if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
           simulator_(NULL),
 #endif
           next_(NULL),
@@ -403,7 +435,8 @@ class Isolate {
 
 #if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     FIELD_ACCESSOR(Simulator*, simulator)
 #endif
 
@@ -419,7 +452,8 @@ class Isolate {
 
 #if !defined(__arm__) && V8_TARGET_ARCH_ARM || \
     !defined(__aarch64__) && V8_TARGET_ARCH_ARM64 || \
-    !defined(__mips__) && V8_TARGET_ARCH_MIPS
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS || \
+    !defined(__mips__) && V8_TARGET_ARCH_MIPS64
     Simulator* simulator_;
 #endif
 
@@ -441,23 +475,33 @@ class Isolate {
     kIsolateAddressCount
   };
 
+  static void InitializeOncePerProcess();
+
   // Returns the PerIsolateThreadData for the current thread (or NULL if one is
   // not currently set).
   static PerIsolateThreadData* CurrentPerIsolateThreadData() {
     return reinterpret_cast<PerIsolateThreadData*>(
-        Thread::GetThreadLocal(per_isolate_thread_data_key_));
+        base::Thread::GetThreadLocal(per_isolate_thread_data_key_));
   }
 
   // Returns the isolate inside which the current thread is running.
   INLINE(static Isolate* Current()) {
     Isolate* isolate = reinterpret_cast<Isolate*>(
-        Thread::GetExistingThreadLocal(isolate_key_));
-    ASSERT(isolate != NULL);
+        base::Thread::GetExistingThreadLocal(isolate_key_));
+    DCHECK(isolate != NULL);
     return isolate;
   }
 
   INLINE(static Isolate* UncheckedCurrent()) {
-    return reinterpret_cast<Isolate*>(Thread::GetThreadLocal(isolate_key_));
+    return reinterpret_cast<Isolate*>(
+        base::Thread::GetThreadLocal(isolate_key_));
+  }
+
+  // Like UncheckedCurrent, but skips the check that |isolate_key_| was
+  // initialized. Callers have to ensure that themselves.
+  INLINE(static Isolate* UnsafeCurrent()) {
+    return reinterpret_cast<Isolate*>(
+        base::Thread::GetThreadLocal(isolate_key_));
   }
 
   // Usually called by Init(), but can be called early e.g. to allow
@@ -469,8 +513,6 @@ class Isolate {
 
   bool Init(Deserializer* des);
 
-  bool IsInitialized() { return state_ == INITIALIZED; }
-
   // True if at least one thread Enter'ed this isolate.
   bool IsInUse() { return entry_stack_ != NULL; }
 
@@ -480,13 +522,6 @@ class Isolate {
   void TearDown();
 
   static void GlobalTearDown();
-
-  static void SetCrashIfDefaultIsolateInitialized();
-  // Ensures that process-wide resources and the default isolate have been
-  // allocated. It is only necessary to call this method in rare cases, for
-  // example if you are using V8 from within the body of a static initializer.
-  // Safe to call multiple times.
-  static void EnsureDefaultIsolate();
 
   // Find the PerThread for this particular (isolate, thread) combination
   // If one does not yet exist, return null.
@@ -499,26 +534,26 @@ class Isolate {
   // Returns the key used to store the pointer to the current isolate.
   // Used internally for V8 threads that do not execute JavaScript but still
   // are part of the domain of an isolate (like the context switcher).
-  static Thread::LocalStorageKey isolate_key() {
+  static base::Thread::LocalStorageKey isolate_key() {
     return isolate_key_;
   }
 
   // Returns the key used to store process-wide thread IDs.
-  static Thread::LocalStorageKey thread_id_key() {
+  static base::Thread::LocalStorageKey thread_id_key() {
     return thread_id_key_;
   }
 
-  static Thread::LocalStorageKey per_isolate_thread_data_key();
+  static base::Thread::LocalStorageKey per_isolate_thread_data_key();
 
   // Mutex for serializing access to break control structures.
-  RecursiveMutex* break_access() { return &break_access_; }
+  base::RecursiveMutex* break_access() { return &break_access_; }
 
   Address get_address_from_id(AddressId id);
 
   // Access to top context (where the current function object was created).
   Context* context() { return thread_local_top_.context_; }
   void set_context(Context* context) {
-    ASSERT(context == NULL || context->IsContext());
+    DCHECK(context == NULL || context->IsContext());
     thread_local_top_.context_ = context;
   }
   Context** context_address() { return &thread_local_top_.context_; }
@@ -530,18 +565,18 @@ class Isolate {
 
   // Interface to pending exception.
   Object* pending_exception() {
-    ASSERT(has_pending_exception());
-    ASSERT(!thread_local_top_.pending_exception_->IsException());
+    DCHECK(has_pending_exception());
+    DCHECK(!thread_local_top_.pending_exception_->IsException());
     return thread_local_top_.pending_exception_;
   }
 
   void set_pending_exception(Object* exception_obj) {
-    ASSERT(!exception_obj->IsException());
+    DCHECK(!exception_obj->IsException());
     thread_local_top_.pending_exception_ = exception_obj;
   }
 
   void clear_pending_exception() {
-    ASSERT(!thread_local_top_.pending_exception_->IsException());
+    DCHECK(!thread_local_top_.pending_exception_->IsException());
     thread_local_top_.pending_exception_ = heap_.the_hole_value();
   }
 
@@ -550,7 +585,7 @@ class Isolate {
   }
 
   bool has_pending_exception() {
-    ASSERT(!thread_local_top_.pending_exception_->IsException());
+    DCHECK(!thread_local_top_.pending_exception_->IsException());
     return !thread_local_top_.pending_exception_->IsTheHole();
   }
 
@@ -591,16 +626,16 @@ class Isolate {
   }
 
   Object* scheduled_exception() {
-    ASSERT(has_scheduled_exception());
-    ASSERT(!thread_local_top_.scheduled_exception_->IsException());
+    DCHECK(has_scheduled_exception());
+    DCHECK(!thread_local_top_.scheduled_exception_->IsException());
     return thread_local_top_.scheduled_exception_;
   }
   bool has_scheduled_exception() {
-    ASSERT(!thread_local_top_.scheduled_exception_->IsException());
+    DCHECK(!thread_local_top_.scheduled_exception_->IsException());
     return thread_local_top_.scheduled_exception_ != heap_.the_hole_value();
   }
   void clear_scheduled_exception() {
-    ASSERT(!thread_local_top_.scheduled_exception_->IsException());
+    DCHECK(!thread_local_top_.scheduled_exception_->IsException());
     thread_local_top_.scheduled_exception_ = heap_.the_hole_value();
   }
 
@@ -619,11 +654,15 @@ class Isolate {
     return thread->c_entry_fp_;
   }
   static Address handler(ThreadLocalTop* thread) { return thread->handler_; }
+  Address c_function() { return thread_local_top_.c_function_; }
 
   inline Address* c_entry_fp_address() {
     return &thread_local_top_.c_entry_fp_;
   }
   inline Address* handler_address() { return &thread_local_top_.handler_; }
+  inline Address* c_function_address() {
+    return &thread_local_top_.c_function_;
+  }
 
   // Bottom JS entry.
   Address js_entry_sp() {
@@ -643,7 +682,7 @@ class Isolate {
   }
 
   // Returns the global proxy object of the current context.
-  Object* global_proxy() {
+  JSObject* global_proxy() {
     return context()->global_proxy();
   }
 
@@ -659,6 +698,11 @@ class Isolate {
   // handler the exception is scheduled to be rethrown when we return to running
   // JavaScript code.  If an exception is scheduled true is returned.
   bool OptionalRescheduleException(bool is_bottom_call);
+
+  // Push and pop a promise and the current try-catch handler.
+  void PushPromise(Handle<JSObject> promise);
+  void PopPromise();
+  Handle<Object> GetPromiseOnStackOnThrow();
 
   class ExceptionScope {
    public:
@@ -697,11 +741,14 @@ class Isolate {
   Handle<JSArray> CaptureCurrentStackTrace(
       int frame_limit,
       StackTrace::StackTraceOptions options);
-
-  Handle<JSArray> CaptureSimpleStackTrace(Handle<JSObject> error_object,
-                                          Handle<Object> caller,
-                                          int limit);
+  Handle<Object> CaptureSimpleStackTrace(Handle<JSObject> error_object,
+                                         Handle<Object> caller);
   void CaptureAndSetDetailedStackTrace(Handle<JSObject> error_object);
+  void CaptureAndSetSimpleStackTrace(Handle<JSObject> error_object,
+                                     Handle<Object> caller);
+  Handle<JSArray> GetDetailedStackTrace(Handle<JSObject> error_object);
+  Handle<JSArray> GetDetailedFromSimpleStackTrace(
+      Handle<JSObject> error_object);
 
   // Returns if the top context may access the given global object. If
   // the result is false, the pending exception is guaranteed to be
@@ -736,11 +783,12 @@ class Isolate {
   // Re-set pending message, script and positions reported to the TryCatch
   // back to the TLS for re-use when rethrowing.
   void RestorePendingMessageFromTryCatch(v8::TryCatch* handler);
+  // Un-schedule an exception that was caught by a TryCatch handler.
+  void CancelScheduledExceptionFromTryCatch(v8::TryCatch* handler);
   void ReportPendingMessages();
   // Return pending location if any or unfilled structure.
   MessageLocation GetMessageLocation();
   Object* ThrowIllegalOperation();
-  Object* ThrowInvalidStringLength();
 
   // Promote a scheduled exception to pending. Asserts has_scheduled_exception.
   Object* PromoteScheduledException();
@@ -753,6 +801,11 @@ class Isolate {
   // Attempts to compute the current source location, storing the
   // result in the target out parameter.
   void ComputeLocation(MessageLocation* target);
+  bool ComputeLocationFromStackTrace(MessageLocation* target,
+                                     Handle<Object> exception);
+
+  Handle<JSMessageObject> CreateMessage(Handle<Object> exception,
+                                        MessageLocation* location);
 
   // Out of resource exception helpers.
   Object* StackOverflow();
@@ -790,11 +843,11 @@ class Isolate {
   // Accessors.
 #define GLOBAL_ACCESSOR(type, name, initialvalue)                       \
   inline type name() const {                                            \
-    ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
+    DCHECK(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
     return name##_;                                                     \
   }                                                                     \
   inline void set_##name(type value) {                                  \
-    ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
+    DCHECK(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
     name##_ = value;                                                    \
   }
   ISOLATE_INIT_LIST(GLOBAL_ACCESSOR)
@@ -802,7 +855,7 @@ class Isolate {
 
 #define GLOBAL_ARRAY_ACCESSOR(type, name, length)                       \
   inline type* name() {                                                 \
-    ASSERT(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
+    DCHECK(OFFSET_OF(Isolate, name##_) == name##_debug_offset_);        \
     return &(name##_)[0];                                               \
   }
   ISOLATE_INIT_ARRAY_LIST(GLOBAL_ARRAY_ACCESSOR)
@@ -810,10 +863,10 @@ class Isolate {
 
 #define NATIVE_CONTEXT_FIELD_ACCESSOR(index, type, name)            \
   Handle<type> name() {                                             \
-    return Handle<type>(context()->native_context()->name(), this); \
+    return Handle<type>(native_context()->name(), this);            \
   }                                                                 \
   bool is_##name(type* value) {                                     \
-    return context()->native_context()->is_##name(value);           \
+    return native_context()->is_##name(value);                      \
   }
   NATIVE_CONTEXT_FIELDS(NATIVE_CONTEXT_FIELD_ACCESSOR)
 #undef NATIVE_CONTEXT_FIELD_ACCESSOR
@@ -822,7 +875,7 @@ class Isolate {
   Counters* counters() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
-    ASSERT(counters_ != NULL);
+    DCHECK(counters_ != NULL);
     return counters_;
   }
   CodeRange* code_range() { return code_range_; }
@@ -831,7 +884,7 @@ class Isolate {
   Logger* logger() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
-    ASSERT(logger_ != NULL);
+    DCHECK(logger_ != NULL);
     return logger_;
   }
   StackGuard* stack_guard() { return &stack_guard_; }
@@ -864,7 +917,7 @@ class Isolate {
   HandleScopeData* handle_scope_data() { return &handle_scope_data_; }
 
   HandleScopeImplementer* handle_scope_implementer() {
-    ASSERT(handle_scope_implementer_);
+    DCHECK(handle_scope_implementer_);
     return handle_scope_implementer_;
   }
   Zone* runtime_zone() { return &runtime_zone_; }
@@ -876,8 +929,6 @@ class Isolate {
   InnerPointerToCodeCache* inner_pointer_to_code_cache() {
     return inner_pointer_to_code_cache_;
   }
-
-  ConsStringIteratorOp* write_iterator() { return write_iterator_; }
 
   GlobalHandles* global_handles() { return global_handles_; }
 
@@ -893,18 +944,6 @@ class Isolate {
 
   unibrow::Mapping<unibrow::CanonicalizationRange>* jsregexp_canonrange() {
     return &jsregexp_canonrange_;
-  }
-
-  ConsStringIteratorOp* objects_string_compare_iterator_a() {
-    return &objects_string_compare_iterator_a_;
-  }
-
-  ConsStringIteratorOp* objects_string_compare_iterator_b() {
-    return &objects_string_compare_iterator_b_;
-  }
-
-  StaticResource<ConsStringIteratorOp>* objects_string_iterator() {
-    return &objects_string_iterator_;
   }
 
   RuntimeState* runtime_state() { return &runtime_state_; }
@@ -953,21 +992,15 @@ class Isolate {
   THREAD_LOCAL_TOP_ACCESSOR(StateTag, current_vm_state)
 
   void SetData(uint32_t slot, void* data) {
-    ASSERT(slot < Internals::kNumIsolateDataSlots);
+    DCHECK(slot < Internals::kNumIsolateDataSlots);
     embedder_data_[slot] = data;
   }
   void* GetData(uint32_t slot) {
-    ASSERT(slot < Internals::kNumIsolateDataSlots);
+    DCHECK(slot < Internals::kNumIsolateDataSlots);
     return embedder_data_[slot];
   }
 
   THREAD_LOCAL_TOP_ACCESSOR(LookupResult*, top_lookup_result)
-
-  void enable_serializer() {
-    // The serializer can only be enabled before the isolate init.
-    ASSERT(state_ != INITIALIZED);
-    serializer_enabled_ = true;
-  }
 
   bool serializer_enabled() const { return serializer_enabled_; }
 
@@ -979,7 +1012,7 @@ class Isolate {
   bool initialized_from_snapshot() { return initialized_from_snapshot_; }
 
   double time_millis_since_init() {
-    return OS::TimeCurrentMillis() - time_millis_at_init_;
+    return base::OS::TimeCurrentMillis() - time_millis_at_init_;
   }
 
   DateCache* date_cache() {
@@ -997,19 +1030,7 @@ class Isolate {
 
   bool IsFastArrayConstructorPrototypeChainIntact();
 
-  CodeStubInterfaceDescriptor*
-      code_stub_interface_descriptor(int index);
-
-  enum CallDescriptorKey {
-    KeyedCall,
-    NamedCall,
-    CallHandler,
-    ArgumentAdaptorCall,
-    ApiFunctionCall,
-    NUMBER_OF_CALL_DESCRIPTORS
-  };
-
-  CallInterfaceDescriptor* call_descriptor(CallDescriptorKey index);
+  CallInterfaceDescriptorData* call_descriptor_data(int index);
 
   void IterateDeferredHandles(ObjectVisitor* visitor);
   void LinkDeferredHandles(DeferredHandles* deferred_handles);
@@ -1021,14 +1042,14 @@ class Isolate {
 
   bool concurrent_recompilation_enabled() {
     // Thread is only available with flag enabled.
-    ASSERT(optimizing_compiler_thread_ == NULL ||
+    DCHECK(optimizing_compiler_thread_ == NULL ||
            FLAG_concurrent_recompilation);
     return optimizing_compiler_thread_ != NULL;
   }
 
   bool concurrent_osr_enabled() const {
     // Thread is only available with flag enabled.
-    ASSERT(optimizing_compiler_thread_ == NULL ||
+    DCHECK(optimizing_compiler_thread_ == NULL ||
            FLAG_concurrent_recompilation);
     return optimizing_compiler_thread_ != NULL && FLAG_concurrent_osr;
   }
@@ -1037,17 +1058,10 @@ class Isolate {
     return optimizing_compiler_thread_;
   }
 
-  int num_sweeper_threads() const {
-    return num_sweeper_threads_;
-  }
-
-  SweeperThread** sweeper_threads() {
-    return sweeper_thread_;
-  }
-
   int id() const { return static_cast<int>(id_); }
 
   HStatistics* GetHStatistics();
+  CompilationStatistics* GetTurboStatistics();
   HTracer* GetHTracer();
   CodeTracer* GetCodeTracer();
 
@@ -1058,7 +1072,7 @@ class Isolate {
 
   void* stress_deopt_count_address() { return &stress_deopt_count_; }
 
-  inline RandomNumberGenerator* random_number_generator();
+  inline base::RandomNumberGenerator* random_number_generator();
 
   // Given an address occupied by a live code object, return that object.
   Object* FindCodeObject(Address a);
@@ -1078,26 +1092,34 @@ class Isolate {
   void RemoveCallCompletedCallback(CallCompletedCallback callback);
   void FireCallCompletedCallback();
 
+  void SetPromiseRejectCallback(PromiseRejectCallback callback);
+  void ReportPromiseReject(Handle<JSObject> promise, Handle<Object> value,
+                           v8::PromiseRejectEvent event);
+
   void EnqueueMicrotask(Handle<Object> microtask);
   void RunMicrotasks();
 
+  void SetUseCounterCallback(v8::Isolate::UseCounterCallback callback);
+  void CountUsage(v8::Isolate::UseCounterFeature feature);
+
+  BasicBlockProfiler* GetOrCreateBasicBlockProfiler();
+  BasicBlockProfiler* basic_block_profiler() { return basic_block_profiler_; }
+
+  static Isolate* NewForTesting() { return new Isolate(false); }
+
+  std::string GetTurboCfgFileName();
+
  private:
-  Isolate();
+  explicit Isolate(bool enable_serializer);
 
   friend struct GlobalState;
   friend struct InitializeGlobalState;
-
-  enum State {
-    UNINITIALIZED,    // Some components may not have been allocated.
-    INITIALIZED       // All components are fully initialized.
-  };
 
   // These fields are accessed through the API, offsets must be kept in sync
   // with v8::internal::Internals (in include/v8.h) constants. This is also
   // verified in Isolate::Init() using runtime checks.
   void* embedder_data_[Internals::kNumIsolateDataSlots];
   Heap heap_;
-  State state_;  // Will be padded to kApiPointerSize.
 
   // The per-process lock should be acquired before the ThreadDataTable is
   // modified.
@@ -1140,12 +1162,11 @@ class Isolate {
     DISALLOW_COPY_AND_ASSIGN(EntryStackItem);
   };
 
-  // This mutex protects highest_thread_id_ and thread_data_table_.
-  static Mutex process_wide_mutex_;
+  static base::LazyMutex thread_data_table_mutex_;
 
-  static Thread::LocalStorageKey per_isolate_thread_data_key_;
-  static Thread::LocalStorageKey isolate_key_;
-  static Thread::LocalStorageKey thread_id_key_;
+  static base::Thread::LocalStorageKey per_isolate_thread_data_key_;
+  static base::Thread::LocalStorageKey isolate_key_;
+  static base::Thread::LocalStorageKey thread_id_key_;
   static ThreadDataTable* thread_data_table_;
 
   // A global counter for all generated Isolates, might overflow.
@@ -1199,7 +1220,7 @@ class Isolate {
   CompilationCache* compilation_cache_;
   Counters* counters_;
   CodeRange* code_range_;
-  RecursiveMutex break_access_;
+  base::RecursiveMutex break_access_;
   base::Atomic32 debugger_initialized_;
   Logger* logger_;
   StackGuard stack_guard_;
@@ -1221,7 +1242,6 @@ class Isolate {
   UnicodeCache* unicode_cache_;
   Zone runtime_zone_;
   InnerPointerToCodeCache* inner_pointer_to_code_cache_;
-  ConsStringIteratorOp* write_iterator_;
   GlobalHandles* global_handles_;
   EternalHandles* eternal_handles_;
   ThreadManager* thread_manager_;
@@ -1231,17 +1251,13 @@ class Isolate {
   StringTracker* string_tracker_;
   unibrow::Mapping<unibrow::Ecma262UnCanonicalize> jsregexp_uncanonicalize_;
   unibrow::Mapping<unibrow::CanonicalizationRange> jsregexp_canonrange_;
-  ConsStringIteratorOp objects_string_compare_iterator_a_;
-  ConsStringIteratorOp objects_string_compare_iterator_b_;
-  StaticResource<ConsStringIteratorOp> objects_string_iterator_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize>
       regexp_macro_assembler_canonicalize_;
   RegExpStack* regexp_stack_;
   DateCache* date_cache_;
   unibrow::Mapping<unibrow::Ecma262Canonicalize> interp_canonicalize_mapping_;
-  CodeStubInterfaceDescriptor* code_stub_interface_descriptors_;
-  CallInterfaceDescriptor* call_descriptors_;
-  RandomNumberGenerator* random_number_generator_;
+  CallInterfaceDescriptorData* call_descriptor_data_;
+  base::RandomNumberGenerator* random_number_generator_;
 
   // Whether the isolate has been created for snapshotting.
   bool serializer_enabled_;
@@ -1289,8 +1305,6 @@ class Isolate {
 
   DeferredHandles* deferred_handles_head_;
   OptimizingCompilerThread* optimizing_compiler_thread_;
-  SweeperThread** sweeper_thread_;
-  int num_sweeper_threads_;
 
   // Counts deopt points if deopt_every_n_times is enabled.
   unsigned int stress_deopt_count_;
@@ -1299,6 +1313,9 @@ class Isolate {
 
   // List of callbacks when a Call completes.
   List<CallCompletedCallback> call_completed_callbacks_;
+
+  v8::Isolate::UseCounterCallback use_counter_callback_;
+  BasicBlockProfiler* basic_block_profiler_;
 
   friend class ExecutionAccess;
   friend class HandleScopeImplementer;
@@ -1321,6 +1338,22 @@ class Isolate {
 
 #undef FIELD_ACCESSOR
 #undef THREAD_LOCAL_TOP_ACCESSOR
+
+
+class PromiseOnStack {
+ public:
+  PromiseOnStack(StackHandler* handler, Handle<JSObject> promise,
+                 PromiseOnStack* prev)
+      : handler_(handler), promise_(promise), prev_(prev) {}
+  StackHandler* handler() { return handler_; }
+  Handle<JSObject> promise() { return promise_; }
+  PromiseOnStack* prev() { return prev_; }
+
+ private:
+  StackHandler* handler_;
+  Handle<JSObject> promise_;
+  PromiseOnStack* prev_;
+};
 
 
 // If the GCC version is 4.1.x or 4.2.x an additional field is added to the
@@ -1358,7 +1391,7 @@ class AssertNoContextChange BASE_EMBEDDED {
     : isolate_(isolate),
       context_(isolate->context(), isolate) { }
   ~AssertNoContextChange() {
-    ASSERT(isolate_->context() == *context_);
+    DCHECK(isolate_->context() == *context_);
   }
 
  private:
@@ -1398,7 +1431,7 @@ class StackLimitCheck BASE_EMBEDDED {
   // Use this to check for stack-overflows in C++ code.
   inline bool HasOverflowed() const {
     StackGuard* stack_guard = isolate_->stack_guard();
-    return reinterpret_cast<uintptr_t>(this) < stack_guard->real_climit();
+    return GetCurrentStackPosition() < stack_guard->real_climit();
   }
 
   // Use this to check for stack-overflow when entering runtime from JS code.
@@ -1415,26 +1448,33 @@ class StackLimitCheck BASE_EMBEDDED {
 // account.
 class PostponeInterruptsScope BASE_EMBEDDED {
  public:
-  explicit PostponeInterruptsScope(Isolate* isolate)
-      : stack_guard_(isolate->stack_guard()), isolate_(isolate) {
-    ExecutionAccess access(isolate_);
-    stack_guard_->thread_local_.postpone_interrupts_nesting_++;
-    stack_guard_->DisableInterrupts();
+  PostponeInterruptsScope(Isolate* isolate,
+                          int intercept_mask = StackGuard::ALL_INTERRUPTS)
+      : stack_guard_(isolate->stack_guard()),
+        intercept_mask_(intercept_mask),
+        intercepted_flags_(0) {
+    stack_guard_->PushPostponeInterruptsScope(this);
   }
 
   ~PostponeInterruptsScope() {
-    ExecutionAccess access(isolate_);
-    if (--stack_guard_->thread_local_.postpone_interrupts_nesting_ == 0) {
-      stack_guard_->EnableInterrupts();
-    }
+    stack_guard_->PopPostponeInterruptsScope();
   }
+
+  // Find the bottom-most scope that intercepts this interrupt.
+  // Return whether the interrupt has been intercepted.
+  bool Intercept(StackGuard::InterruptFlag flag);
+
  private:
   StackGuard* stack_guard_;
-  Isolate* isolate_;
+  int intercept_mask_;
+  int intercepted_flags_;
+  PostponeInterruptsScope* prev_;
+
+  friend class StackGuard;
 };
 
 
-class CodeTracer V8_FINAL : public Malloced {
+class CodeTracer FINAL : public Malloced {
  public:
   explicit CodeTracer(int isolate_id)
       : file_(NULL),
@@ -1447,7 +1487,7 @@ class CodeTracer V8_FINAL : public Malloced {
     if (FLAG_redirect_code_traces_to == NULL) {
       SNPrintF(filename_,
                "code-%d-%d.asm",
-               OS::GetCurrentProcessId(),
+               base::OS::GetCurrentProcessId(),
                isolate_id);
     } else {
       StrNCpy(filename_, FLAG_redirect_code_traces_to, filename_.length());
@@ -1473,7 +1513,7 @@ class CodeTracer V8_FINAL : public Malloced {
     }
 
     if (file_ == NULL) {
-      file_ = OS::FOpen(filename_.start(), "a");
+      file_ = base::OS::FOpen(filename_.start(), "a");
     }
 
     scope_depth_++;

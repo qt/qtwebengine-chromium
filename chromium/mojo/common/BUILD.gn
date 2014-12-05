@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# GYP version: mojo/mojo.gyp:mojo_common_lib
+# GYP version: mojo/mojo_base.gyp:mojo_common_lib
 component("common") {
   output_name = "mojo_common_lib"
 
@@ -25,6 +25,29 @@ component("common") {
   deps = [
     "//base",
     "//base/third_party/dynamic_annotations",
-    "//mojo/system",
+    "//mojo/public/c/system:for_component",
+    "//url",
+  ]
+}
+
+# GYP version: mojo/mojo_base.gyp:mojo_common_unittests
+test("mojo_common_unittests") {
+  deps = [
+    ":common",
+    "//base",
+    "//base:message_loop_tests",
+    "//mojo/edk/test:run_all_unittests",
+    "//mojo/edk/test:test_support",
+    "//mojo/environment:chromium",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/test_support:test_utils",
+    "//testing/gtest",
+    "//url",
+  ]
+
+  sources = [
+    "common_type_converters_unittest.cc",
+    "handle_watcher_unittest.cc",
+    "message_pump_mojo_unittest.cc",
   ]
 }

@@ -2,28 +2,36 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// <include src="../../assert.js">
+
+cr.exportPath('cr.ui');
+
+/**
+ * Enum for type of hide. Delayed is used when called by clicking on a
+ * checkable menu item.
+ * @enum {number}
+ */
+cr.ui.HideType = {
+  INSTANT: 0,
+  DELAYED: 1
+};
+
 cr.define('cr.ui', function() {
   /** @const */
   var Menu = cr.ui.Menu;
 
   /** @const */
-  var positionPopupAroundElement = cr.ui.positionPopupAroundElement;
+  var HideType = cr.ui.HideType;
 
-   /**
-    * Enum for type of hide. Delayed is used when called by clicking on a
-    * checkable menu item.
-    * @enum {number}
-    */
-   var HideType = {
-     INSTANT: 0,
-     DELAYED: 1
-   };
+  /** @const */
+  var positionPopupAroundElement = cr.ui.positionPopupAroundElement;
 
   /**
    * Creates a new menu button element.
    * @param {Object=} opt_propertyBag Optional properties.
    * @constructor
    * @extends {HTMLButtonElement}
+   * @implements {EventListener}
    */
   var MenuButton = cr.ui.define('button');
 
@@ -63,7 +71,7 @@ cr.define('cr.ui', function() {
     },
     set menu(menu) {
       if (typeof menu == 'string' && menu[0] == '#') {
-        menu = this.ownerDocument.getElementById(menu.slice(1));
+        menu = assert(this.ownerDocument.getElementById(menu.slice(1)));
         cr.ui.decorate(menu, Menu);
       }
 
@@ -73,6 +81,11 @@ cr.define('cr.ui', function() {
           this.setAttribute('menu', '#' + menu.id);
       }
     },
+
+    /**
+     * Whether to show the menu on press of the Up or Down arrow keys.
+     */
+    respondToArrowKeys: true,
 
     /**
      * Handles event callbacks.
@@ -85,10 +98,12 @@ cr.define('cr.ui', function() {
       switch (e.type) {
         case 'mousedown':
           if (e.currentTarget == this.ownerDocument) {
-            if (!this.contains(e.target) && !this.menu.contains(e.target))
+            if (e.target instanceof Node && !this.contains(e.target) &&
+                !this.menu.contains(e.target)) {
               this.hideMenu();
-            else
+            } else {
               e.preventDefault();
+            }
           } else {
             if (this.isMenuShown()) {
               this.hideMenu();
@@ -118,7 +133,8 @@ cr.define('cr.ui', function() {
           this.classList.remove('using-mouse');
           break;
         case 'focus':
-          if (!this.contains(e.target) && !this.menu.contains(e.target)) {
+          if (e.target instanceof Node && !this.contains(e.target) &&
+              !this.menu.contains(e.target)) {
             this.hideMenu();
             // Show the focus ring on focus - if it's come from a mouse event,
             // the focus ring will be hidden in the mousedown event handler,
@@ -181,8 +197,8 @@ cr.define('cr.ui', function() {
     /**
      * Hides the menu. If your menu can go out of scope, make sure to call this
      * first.
-     * @param {HideType=} opt_hideType Type of hide.
-     *     default: HideType.INSTANT.
+     * @param {cr.ui.HideType=} opt_hideType Type of hide.
+     *     default: cr.ui.HideType.INSTANT.
      */
     hideMenu: function(opt_hideType) {
       if (!this.isMenuShown())
@@ -223,6 +239,8 @@ cr.define('cr.ui', function() {
       switch (e.keyIdentifier) {
         case 'Down':
         case 'Up':
+          if (!this.respondToArrowKeys)
+            break;
         case 'Enter':
         case 'U+0020': // Space
           if (!this.isMenuShown())
@@ -266,27 +284,26 @@ cr.define('cr.ui', function() {
    * Create the images used to style drop-down-style MenuButtons.
    * This should be called before creating any MenuButtons that will have the
    * CSS class 'drop-down'. If no colors are specified, defaults will be used.
-   * @param {=string} normalColor CSS color for the default button state.
-   * @param {=string} hoverColor CSS color for the hover button state.
-   * @param {=string} activeColor CSS color for the active button state.
+   * @param {string=} opt_normalColor CSS color for the default button state.
+   * @param {string=} opt_hoverColor CSS color for the hover button state.
+   * @param {string=} opt_activeColor CSS color for the active button state.
    */
   MenuButton.createDropDownArrows = function(
-      normalColor, hoverColor, activeColor) {
-    normalColor = normalColor || 'rgb(192, 195, 198)';
-    hoverColor = hoverColor || 'rgb(48, 57, 66)';
-    activeColor = activeColor || 'white';
+      opt_normalColor, opt_hoverColor, opt_activeColor) {
+    opt_normalColor = opt_normalColor || 'rgb(192, 195, 198)';
+    opt_hoverColor = opt_hoverColor || 'rgb(48, 57, 66)';
+    opt_activeColor = opt_activeColor || 'white';
 
     createDropDownArrowCanvas(
-        'drop-down-arrow', ARROW_WIDTH, ARROW_HEIGHT, normalColor);
+        'drop-down-arrow', ARROW_WIDTH, ARROW_HEIGHT, opt_normalColor);
     createDropDownArrowCanvas(
-        'drop-down-arrow-hover', ARROW_WIDTH, ARROW_HEIGHT, hoverColor);
+        'drop-down-arrow-hover', ARROW_WIDTH, ARROW_HEIGHT, opt_hoverColor);
     createDropDownArrowCanvas(
-        'drop-down-arrow-active', ARROW_WIDTH, ARROW_HEIGHT, activeColor);
+        'drop-down-arrow-active', ARROW_WIDTH, ARROW_HEIGHT, opt_activeColor);
   };
 
   // Export
   return {
     MenuButton: MenuButton,
-    HideType: HideType
   };
 });

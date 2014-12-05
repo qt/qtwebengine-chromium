@@ -26,9 +26,7 @@
 #include "config.h"
 #include "core/html/MediaKeyEvent.h"
 
-#include "wtf/Uint8Array.h"
-
-namespace WebCore {
+namespace blink {
 
 MediaKeyEventInit::MediaKeyEventInit()
     : systemCode(0)
@@ -37,7 +35,6 @@ MediaKeyEventInit::MediaKeyEventInit()
 
 MediaKeyEvent::MediaKeyEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 MediaKeyEvent::MediaKeyEvent(const AtomicString& type, const MediaKeyEventInit& initializer)
@@ -50,7 +47,6 @@ MediaKeyEvent::MediaKeyEvent(const AtomicString& type, const MediaKeyEventInit& 
     , m_errorCode(initializer.errorCode)
     , m_systemCode(initializer.systemCode)
 {
-    ScriptWrappable::init(this);
 }
 
 MediaKeyEvent::~MediaKeyEvent()
@@ -64,7 +60,8 @@ const AtomicString& MediaKeyEvent::interfaceName() const
 
 void MediaKeyEvent::trace(Visitor* visitor)
 {
+    visitor->trace(m_errorCode);
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,7 +26,6 @@
 #ifndef SpeechRecognition_h
 #define SpeechRecognition_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
 #include "modules/speech/SpeechGrammarList.h"
@@ -35,20 +34,23 @@
 #include "wtf/Compiler.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class ExecutionContext;
+class MediaStreamTrack;
 class SpeechRecognitionController;
 class SpeechRecognitionError;
 
-class SpeechRecognition FINAL : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+class SpeechRecognition final : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<SpeechRecognition>, public ActiveDOMObject, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<SpeechRecognition>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(SpeechRecognition);
 public:
     static SpeechRecognition* create(ExecutionContext*);
     virtual ~SpeechRecognition();
 
+    // SpeechRecognition.idl implemementation.
     // Attributes.
     SpeechGrammarList* grammars() { return m_grammars; }
     void setGrammars(SpeechGrammarList* grammars) { m_grammars = grammars; }
@@ -60,6 +62,8 @@ public:
     void setInterimResults(bool interimResults) { m_interimResults = interimResults; }
     unsigned long maxAlternatives() { return m_maxAlternatives; }
     void setMaxAlternatives(unsigned long maxAlternatives) { m_maxAlternatives = maxAlternatives; }
+    MediaStreamTrack* audioTrack() { return m_audioTrack; }
+    void setAudioTrack(MediaStreamTrack* audioTrack) { m_audioTrack = audioTrack; }
 
     // Callable by the user.
     void start(ExceptionState&);
@@ -80,12 +84,12 @@ public:
     void didEnd();
 
     // EventTarget.
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject.
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void stop() override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(audiostart);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(soundstart);
@@ -99,12 +103,13 @@ public:
     DEFINE_ATTRIBUTE_EVENT_LISTENER(start);
     DEFINE_ATTRIBUTE_EVENT_LISTENER(end);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit SpeechRecognition(ExecutionContext*);
 
     Member<SpeechGrammarList> m_grammars;
+    Member<MediaStreamTrack> m_audioTrack;
     String m_lang;
     bool m_continuous;
     bool m_interimResults;
@@ -117,6 +122,6 @@ private:
     HeapVector<Member<SpeechRecognitionResult> > m_finalResults;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechRecognition_h

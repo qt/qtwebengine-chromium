@@ -33,12 +33,12 @@ class TimeoutAlarm;
 class QuicEpollConnectionHelper : public QuicConnectionHelperInterface {
  public:
   explicit QuicEpollConnectionHelper(EpollServer* eps);
-  virtual ~QuicEpollConnectionHelper();
+  ~QuicEpollConnectionHelper() override;
 
   // QuicEpollConnectionHelperInterface
-  virtual const QuicClock* GetClock() const OVERRIDE;
-  virtual QuicRandom* GetRandomGenerator() OVERRIDE;
-  virtual QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) OVERRIDE;
+  const QuicClock* GetClock() const override;
+  QuicRandom* GetRandomGenerator() override;
+  QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) override;
 
   EpollServer* epoll_server() { return epoll_server_; }
 

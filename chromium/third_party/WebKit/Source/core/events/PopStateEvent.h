@@ -30,14 +30,15 @@
 #include "core/events/Event.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class History;
 class SerializedScriptValue;
 
 typedef EventInit PopStateEventInit;
 
-class PopStateEvent FINAL : public Event {
+class PopStateEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~PopStateEvent();
     static PassRefPtrWillBeRawPtr<PopStateEvent> create();
@@ -52,9 +53,9 @@ public:
     }
     History* history() const { return m_history.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     PopStateEvent();
@@ -65,6 +66,6 @@ private:
     RefPtrWillBeMember<History> m_history;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PopStateEvent_h

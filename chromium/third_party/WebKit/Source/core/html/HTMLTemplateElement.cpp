@@ -36,14 +36,13 @@
 #include "core/dom/DocumentFragment.h"
 #include "core/dom/TemplateContentDocumentFragment.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLTemplateElement::HTMLTemplateElement(Document& document)
     : HTMLElement(templateTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLTemplateElement)
@@ -89,4 +88,4 @@ void HTMLTemplateElement::trace(Visitor* visitor)
     HTMLElement::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

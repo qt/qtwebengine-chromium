@@ -28,9 +28,9 @@
 #include "core/dom/LiveNodeList.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class LabelsNodeList FINAL : public LiveNodeList {
+class LabelsNodeList final : public LiveNodeList {
 public:
     static PassRefPtrWillBeRawPtr<LabelsNodeList> create(ContainerNode& ownerNode, CollectionType type)
     {
@@ -43,9 +43,9 @@ public:
 protected:
     explicit LabelsNodeList(ContainerNode&);
 
-    virtual bool elementMatches(const Element&) const OVERRIDE;
+    virtual bool elementMatches(const Element&) const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LabelsNodeList_h

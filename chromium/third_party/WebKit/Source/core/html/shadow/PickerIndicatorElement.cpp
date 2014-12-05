@@ -33,15 +33,18 @@
 #include "core/html/shadow/PickerIndicatorElement.h"
 
 #include "core/events/Event.h"
+#include "core/events/KeyboardEvent.h"
+#include "core/frame/Settings.h"
 #include "core/html/shadow/ShadowElementNames.h"
 #include "core/page/Chrome.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderDetailsMarker.h"
+#include "platform/LayoutTestSupport.h"
 #include "wtf/TemporaryChange.h"
 
 using namespace WTF::Unicode;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -62,6 +65,8 @@ PassRefPtrWillBeRawPtr<PickerIndicatorElement> PickerIndicatorElement::create(Do
 
 PickerIndicatorElement::~PickerIndicatorElement()
 {
+    closePopup();
+    ASSERT(!m_chooser);
 }
 
 RenderObject* PickerIndicatorElement::createRenderer(RenderStyle*)
@@ -79,6 +84,12 @@ void PickerIndicatorElement::defaultEventHandler(Event* event)
     if (event->type() == EventTypeNames::click) {
         openPopup();
         event->setDefaultHandled();
+    } else if (event->type() == EventTypeNames::keypress && event->isKeyboardEvent()) {
+        int charCode = toKeyboardEvent(event)->charCode();
+        if (charCode == ' ' || charCode == '\r') {
+            openPopup();
+            event->setDefaultHandled();
+        }
     }
 
     if (!event->defaultHandled())
@@ -131,6 +142,12 @@ void PickerIndicatorElement::openPopup()
     m_chooser = document().page()->chrome().openDateTimeChooser(this, parameters);
 }
 
+Element& PickerIndicatorElement::ownerElement() const
+{
+    ASSERT(m_pickerIndicatorOwner);
+    return m_pickerIndicatorOwner->pickerOwnerElement();
+}
+
 void PickerIndicatorElement::closePopup()
 {
     if (!m_chooser)
@@ -144,17 +161,40 @@ void PickerIndicatorElement::detach(const AttachContext& context)
     HTMLDivElement::detach(context);
 }
 
+AXObject* PickerIndicatorElement::popupRootAXObject() const
+{
+    return m_chooser ? m_chooser->rootAXObject() : 0;
+}
+
 bool PickerIndicatorElement::isPickerIndicatorElement() const
 {
     return true;
 }
 
+Node::InsertionNotificationRequest PickerIndicatorElement::insertedInto(ContainerNode* insertionPoint)
+{
+    HTMLDivElement::insertedInto(insertionPoint);
+    return InsertionShouldCallDidNotifySubtreeInsertions;
+}
+
+void PickerIndicatorElement::didNotifySubtreeInsertionsToDocument()
+{
+    if (!document().settings() || !document().settings()->accessibilityEnabled())
+        return;
+    // Don't make this focusable if we are in layout tests in order to avoid to
+    // break existing tests.
+    // FIXME: We should have a way to disable accessibility in layout tests.
+    if (LayoutTestSupport::isRunningLayoutTest())
+        return;
+    setAttribute(tabindexAttr, "0");
+    setAttribute(aria_haspopupAttr, "true");
+    setAttribute(roleAttr, "button");
+}
+
 void PickerIndicatorElement::trace(Visitor* visitor)
 {
     visitor->trace(m_pickerIndicatorOwner);
-    visitor->trace(m_chooser);
     HTMLDivElement::trace(visitor);
-    DateTimeChooserClient::trace(visitor);
 }
 
 }

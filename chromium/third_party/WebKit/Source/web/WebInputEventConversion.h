@@ -38,109 +38,105 @@
 #include "platform/PlatformWheelEvent.h"
 #include "public/web/WebInputEvent.h"
 
-namespace WebCore {
+namespace blink {
+
 class GestureEvent;
 class KeyboardEvent;
 class MouseEvent;
 class RenderObject;
-class ScrollView;
 class TouchEvent;
-class WheelEvent;
-class Widget;
-}
-
-namespace blink {
-
 class WebMouseEvent;
 class WebMouseWheelEvent;
 class WebKeyboardEvent;
 class WebTouchEvent;
 class WebGestureEvent;
+class WheelEvent;
+class Widget;
 
 // These classes are used to convert from WebInputEvent subclasses to
 // corresponding WebCore events.
 
-class PlatformMouseEventBuilder : public WebCore::PlatformMouseEvent {
+class PlatformMouseEventBuilder : public PlatformMouseEvent {
 public:
-    PlatformMouseEventBuilder(WebCore::Widget*, const WebMouseEvent&);
+    PlatformMouseEventBuilder(Widget*, const WebMouseEvent&);
 };
 
-class PlatformWheelEventBuilder : public WebCore::PlatformWheelEvent {
+class PlatformWheelEventBuilder : public PlatformWheelEvent {
 public:
-    PlatformWheelEventBuilder(WebCore::Widget*, const WebMouseWheelEvent&);
+    PlatformWheelEventBuilder(Widget*, const WebMouseWheelEvent&);
 };
 
-class PlatformGestureEventBuilder : public WebCore::PlatformGestureEvent {
+class PlatformGestureEventBuilder : public PlatformGestureEvent {
 public:
-    PlatformGestureEventBuilder(WebCore::Widget*, const WebGestureEvent&);
+    PlatformGestureEventBuilder(Widget*, const WebGestureEvent&);
 };
 
-class PlatformKeyboardEventBuilder : public WebCore::PlatformKeyboardEvent {
+class PlatformKeyboardEventBuilder : public PlatformKeyboardEvent {
 public:
     PlatformKeyboardEventBuilder(const WebKeyboardEvent&);
     void setKeyType(Type);
     bool isCharacterKey() const;
 };
 
-// Converts a WebTouchPoint to a WebCore::PlatformTouchPoint.
-class PlatformTouchPointBuilder : public WebCore::PlatformTouchPoint {
+// Converts a WebTouchPoint to a PlatformTouchPoint.
+class PlatformTouchPointBuilder : public PlatformTouchPoint {
 public:
-    PlatformTouchPointBuilder(WebCore::Widget*, const WebTouchPoint&);
+    PlatformTouchPointBuilder(Widget*, const WebTouchPoint&);
 };
 
-// Converts a WebTouchEvent to a WebCore::PlatformTouchEvent.
-class PlatformTouchEventBuilder : public WebCore::PlatformTouchEvent {
+// Converts a WebTouchEvent to a PlatformTouchEvent.
+class PlatformTouchEventBuilder : public PlatformTouchEvent {
 public:
-    PlatformTouchEventBuilder(WebCore::Widget*, const WebTouchEvent&);
+    PlatformTouchEventBuilder(Widget*, const WebTouchEvent&);
 };
 
 class WebMouseEventBuilder : public WebMouseEvent {
 public:
-    // Converts a WebCore::MouseEvent to a corresponding WebMouseEvent.
+    // Converts a MouseEvent to a corresponding WebMouseEvent.
     // NOTE: This is only implemented for mousemove, mouseover, mouseout,
     // mousedown and mouseup. If the event mapping fails, the event type will
     // be set to Undefined.
-    WebMouseEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::MouseEvent&);
-    WebMouseEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::TouchEvent&);
+    WebMouseEventBuilder(const Widget*, const RenderObject*, const MouseEvent&);
+    WebMouseEventBuilder(const Widget*, const RenderObject*, const TouchEvent&);
 
-    // Converts a WebCore::PlatformMouseEvent to a corresponding WebMouseEvent.
+    // Converts a PlatformMouseEvent to a corresponding WebMouseEvent.
     // NOTE: This is only implemented for mousepressed, mousereleased, and
     // mousemoved. If the event mapping fails, the event type will be set to
     // Undefined.
-    WebMouseEventBuilder(const WebCore::Widget*, const WebCore::PlatformMouseEvent&);
+    WebMouseEventBuilder(const Widget*, const PlatformMouseEvent&);
 };
 
-// Converts a WebCore::WheelEvent to a corresponding WebMouseWheelEvent.
+// Converts a WheelEvent to a corresponding WebMouseWheelEvent.
 // If the event mapping fails, the event type will be set to Undefined.
 class WebMouseWheelEventBuilder : public WebMouseWheelEvent {
 public:
-    WebMouseWheelEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::WheelEvent&);
+    WebMouseWheelEventBuilder(const Widget*, const RenderObject*, const WheelEvent&);
 };
 
-// Converts a WebCore::KeyboardEvent or WebCore::PlatformKeyboardEvent to a
+// Converts a KeyboardEvent or PlatformKeyboardEvent to a
 // corresponding WebKeyboardEvent.
-// NOTE: For WebCore::KeyboardEvent, this is only implemented for keydown,
+// NOTE: For KeyboardEvent, this is only implemented for keydown,
 // keyup, and keypress. If the event mapping fails, the event type will be set
 // to Undefined.
 class WebKeyboardEventBuilder : public WebKeyboardEvent {
 public:
-    WebKeyboardEventBuilder(const WebCore::KeyboardEvent&);
-    WebKeyboardEventBuilder(const WebCore::PlatformKeyboardEvent&);
+    WebKeyboardEventBuilder(const KeyboardEvent&);
+    WebKeyboardEventBuilder(const PlatformKeyboardEvent&);
 };
 
-// Converts a WebCore::TouchEvent to a corresponding WebTouchEvent.
+// Converts a TouchEvent to a corresponding WebTouchEvent.
 // NOTE: WebTouchEvents have a cap on the number of WebTouchPoints. Any points
 // exceeding that cap will be dropped.
 class WebTouchEventBuilder : public WebTouchEvent {
 public:
-    WebTouchEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::TouchEvent&);
+    WebTouchEventBuilder(const Widget*, const RenderObject*, const TouchEvent&);
 };
 
-// Converts WebCore::GestureEvent to a corresponding WebGestureEvent.
+// Converts GestureEvent to a corresponding WebGestureEvent.
 // NOTE: If event mapping fails, the type will be set to Undefined.
 class WebGestureEventBuilder : public WebGestureEvent {
 public:
-    WebGestureEventBuilder(const WebCore::Widget*, const WebCore::RenderObject*, const WebCore::GestureEvent&);
+    WebGestureEventBuilder(const Widget*, const RenderObject*, const GestureEvent&);
 };
 
 } // namespace blink

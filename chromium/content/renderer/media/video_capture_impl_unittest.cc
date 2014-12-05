@@ -40,10 +40,10 @@ class VideoCaptureImplTest : public ::testing::Test {
                          VideoCaptureMessageFilter* filter)
         : VideoCaptureImpl(id, filter) {
     }
-    virtual ~MockVideoCaptureImpl() {}
+    ~MockVideoCaptureImpl() override {}
 
     // Override Send() to mimic device to send events.
-    virtual void Send(IPC::Message* message) OVERRIDE {
+    void Send(IPC::Message* message) override {
       CHECK(message);
 
       // In this method, messages are sent to the according handlers as if
@@ -80,7 +80,7 @@ class VideoCaptureImplTest : public ::testing::Test {
 
     void DeviceReceiveEmptyBuffer(int device_id,
                                   int buffer_id,
-                                  const std::vector<uint32>& sync_points) {}
+                                  uint32 sync_point) {}
 
     void DeviceGetSupportedFormats(int device_id,
                                    media::VideoCaptureSessionId session_id) {

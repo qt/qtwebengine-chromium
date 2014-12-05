@@ -58,6 +58,7 @@ void WebView::SetWebContents(content::WebContents* replacement) {
   DetachWebContents();
   WebContentsObserver::Observe(replacement);
   // web_contents() now returns |replacement| from here onwards.
+  SetFocusable(!!web_contents());
   if (wc_owner_ != replacement)
     wc_owner_.reset();
   if (embed_fullscreen_widget_mode_enabled_) {
@@ -78,7 +79,7 @@ void WebView::SetEmbedFullscreenWidgetMode(bool enable) {
 
 void WebView::LoadInitialURL(const GURL& url) {
   GetWebContents()->GetController().LoadURL(
-      url, content::Referrer(), content::PAGE_TRANSITION_AUTO_TOPLEVEL,
+      url, content::Referrer(), ui::PAGE_TRANSITION_AUTO_TOPLEVEL,
       std::string());
 }
 
@@ -120,6 +121,18 @@ ui::TextInputClient* WebView::GetTextInputClient() {
       return host_view->GetTextInputClient();
   }
   return NULL;
+}
+
+scoped_ptr<content::WebContents> WebView::SwapWebContents(
+    scoped_ptr<content::WebContents> new_web_contents) {
+  if (wc_owner_)
+    wc_owner_->SetDelegate(NULL);
+  scoped_ptr<content::WebContents> old_web_contents(wc_owner_.Pass());
+  wc_owner_ = new_web_contents.Pass();
+  if (wc_owner_)
+    wc_owner_->SetDelegate(this);
+  SetWebContents(wc_owner_.get());
+  return old_web_contents.Pass();
 }
 
 void WebView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
@@ -186,23 +199,9 @@ bool WebView::SkipDefaultKeyEventProcessing(const ui::KeyEvent& event) {
   return web_contents() && !web_contents()->IsCrashed();
 }
 
-bool WebView::IsFocusable() const {
-  // We need to be focusable when our contents is not a view hierarchy, as
-  // clicking on the contents needs to focus us.
-  return !!web_contents();
-}
-
 void WebView::OnFocus() {
-  if (!web_contents())
-    return;
-  if (is_embedding_fullscreen_widget_) {
-    content::RenderWidgetHostView* const current_fs_view =
-        web_contents()->GetFullscreenRenderWidgetHostView();
-    if (current_fs_view)
-      current_fs_view->Focus();
-  } else {
+  if (web_contents())
     web_contents()->Focus();
-  }
 }
 
 void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
@@ -211,7 +210,7 @@ void WebView::AboutToRequestFocusFromTabTraversal(bool reverse) {
 }
 
 void WebView::GetAccessibleState(ui::AXViewState* state) {
-  state->role = ui::AX_ROLE_GROUP;
+  state->role = ui::AX_ROLE_WEB_VIEW;
 }
 
 gfx::NativeViewAccessible WebView::GetNativeViewAccessible() {
@@ -252,6 +251,10 @@ void WebView::RenderViewDeleted(content::RenderViewHost* render_view_host) {
   NotifyMaybeTextInputClientChanged();
 }
 
+void WebView::RenderProcessGone(base::TerminationStatus status) {
+  NotifyMaybeTextInputClientChanged();
+}
+
 void WebView::RenderViewHostChanged(content::RenderViewHost* old_host,
                                     content::RenderViewHost* new_host) {
   FocusManager* const focus_manager = GetFocusManager();
@@ -275,6 +278,14 @@ void WebView::DidToggleFullscreenModeForTab(bool entered_fullscreen) {
     ReattachForFullscreenChange(entered_fullscreen);
 }
 
+void WebView::DidAttachInterstitialPage() {
+  NotifyMaybeTextInputClientChanged();
+}
+
+void WebView::DidDetachInterstitialPage() {
+  NotifyMaybeTextInputClientChanged();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // WebView, private:
 
@@ -290,6 +301,7 @@ void WebView::AttachWebContents() {
   OnBoundsChanged(bounds());
   if (holder_->native_view() == view_to_attach)
     return;
+
   holder_->Attach(view_to_attach);
 
   // The view will not be focused automatically when it is attached, so we need

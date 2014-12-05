@@ -144,7 +144,7 @@
 //   class MyData : public base::debug::ConvertableToTraceFormat {
 //    public:
 //     MyData() {}
-//     virtual void AppendAsTraceFormat(std::string* out) const OVERRIDE {
+//     virtual void AppendAsTraceFormat(std::string* out) const override {
 //       out->append("{\"foo\":1}");
 //     }
 //    private:
@@ -510,7 +510,9 @@
         value1_name, static_cast<int>(value1_val), \
         value2_name, static_cast<int>(value2_val))
 
-
+// ASYNC_STEP_* APIs should be only used by legacy code. New code should
+// consider using NESTABLE_ASYNC_* APIs to describe substeps within an async
+// event.
 // Records a single ASYNC_BEGIN event called "name" immediately, with 0, 1 or 2
 // associated arguments. If the category is not enabled, then this
 // does nothing.
@@ -559,6 +561,15 @@
     INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_ASYNC_BEGIN, \
         category_group, name, id, TRACE_EVENT_FLAG_COPY, \
         arg1_name, arg1_val, arg2_name, arg2_val)
+
+// Similar to TRACE_EVENT_ASYNC_BEGINx but with a custom |at| timestamp
+// provided.
+#define TRACE_EVENT_ASYNC_BEGIN_WITH_TIMESTAMP0(category_group, \
+        name, id, timestamp) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID_TID_AND_TIMESTAMP( \
+        TRACE_EVENT_PHASE_ASYNC_BEGIN, category_group, name, id, \
+        static_cast<int>(base::PlatformThread::CurrentId()), \
+        timestamp, TRACE_EVENT_FLAG_NONE)
 
 // Records a single ASYNC_STEP_INTO event for |step| immediately. If the
 // category is not enabled, then this does nothing. The |name| and |id| must
@@ -617,6 +628,52 @@
         category_group, name, id, TRACE_EVENT_FLAG_COPY, \
         arg1_name, arg1_val, arg2_name, arg2_val)
 
+// Similar to TRACE_EVENT_ASYNC_ENDx but with a custom |at| timestamp provided.
+#define TRACE_EVENT_ASYNC_END_WITH_TIMESTAMP0(category_group, \
+        name, id, timestamp) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID_TID_AND_TIMESTAMP( \
+        TRACE_EVENT_PHASE_ASYNC_END, category_group, name, id, \
+        static_cast<int>(base::PlatformThread::CurrentId()), \
+        timestamp, TRACE_EVENT_FLAG_NONE)
+
+// NESTABLE_ASYNC_* APIs are used to describe an async operation, which can
+// be nested within a NESTABLE_ASYNC event and/or have inner NESTABLE_ASYNC
+// events.
+// - category and name strings must have application lifetime (statics or
+//   literals). They may not include " chars.
+// - |id| is used to match the NESTABLE_ASYNC_BEGIN event with the
+//   NESTABLE_ASYNC_END event. Events are considered to match if their
+//   category_group, name and id values all match. |id| must either be a
+//   pointer or an integer value up to 64 bits. If it's a pointer, the bits
+//   will be xored with a hash of the process ID so that the same pointer on two
+//   different processes will not collide.
+//
+// Unmatched NESTABLE_ASYNC_END event will be parsed as an instant event,
+// and unmatched NESTABLE_ASYNC_BEGIN event will be parsed as an event that
+// ends at the last NESTABLE_ASYNC_END event of that |id|.
+
+// Records a single NESTABLE_ASYNC_BEGIN event called "name" immediately, with 2
+// associated arguments. If the category is not enabled, then this does nothing.
+#define TRACE_EVENT_NESTABLE_ASYNC_BEGIN2(category_group, name, id, arg1_name, \
+        arg1_val, arg2_name, arg2_val) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_NESTABLE_ASYNC_BEGIN, \
+        category_group, name, id, TRACE_EVENT_FLAG_NONE, arg1_name, arg1_val, \
+        arg2_name, arg2_val)
+// Records a single NESTABLE_ASYNC_END event called "name" immediately, with 2
+// associated arguments. If the category is not enabled, then this does nothing.
+#define TRACE_EVENT_NESTABLE_ASYNC_END2(category_group, name, id, arg1_name, \
+        arg1_val, arg2_name, arg2_val) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_NESTABLE_ASYNC_END, \
+        category_group, name, id, TRACE_EVENT_FLAG_NONE, arg1_name, arg1_val, \
+        arg2_name, arg2_val)
+// Records a single NESTABLE_ASYNC_INSTANT event called "name" immediately,
+// with 2 associated arguments. If the category is not enabled, then this
+// does nothing.
+#define TRACE_EVENT_NESTABLE_ASYNC_INSTANT2(category_group, name, id, \
+        arg1_name, arg1_val, arg2_name, arg2_val) \
+    INTERNAL_TRACE_EVENT_ADD_WITH_ID(TRACE_EVENT_PHASE_NESTABLE_ASYNC_INSTANT, \
+        category_group, name, id, TRACE_EVENT_FLAG_NONE, arg1_name, arg1_val, \
+        arg2_name, arg2_val)
 
 // Records a single FLOW_BEGIN event called "name" immediately, with 0, 1 or 2
 // associated arguments. If the category is not enabled, then this
@@ -942,11 +999,14 @@ TRACE_EVENT_API_CLASS_EXPORT extern \
 #define TRACE_EVENT_PHASE_BEGIN    ('B')
 #define TRACE_EVENT_PHASE_END      ('E')
 #define TRACE_EVENT_PHASE_COMPLETE ('X')
-#define TRACE_EVENT_PHASE_INSTANT  ('i')
+#define TRACE_EVENT_PHASE_INSTANT  ('I')
 #define TRACE_EVENT_PHASE_ASYNC_BEGIN ('S')
 #define TRACE_EVENT_PHASE_ASYNC_STEP_INTO  ('T')
 #define TRACE_EVENT_PHASE_ASYNC_STEP_PAST  ('p')
 #define TRACE_EVENT_PHASE_ASYNC_END   ('F')
+#define TRACE_EVENT_PHASE_NESTABLE_ASYNC_BEGIN ('b')
+#define TRACE_EVENT_PHASE_NESTABLE_ASYNC_END ('e')
+#define TRACE_EVENT_PHASE_NESTABLE_ASYNC_INSTANT ('n')
 #define TRACE_EVENT_PHASE_FLOW_BEGIN ('s')
 #define TRACE_EVENT_PHASE_FLOW_STEP  ('t')
 #define TRACE_EVENT_PHASE_FLOW_END   ('f')
@@ -1003,7 +1063,7 @@ class TraceID {
    public:
     explicit DontMangle(const void* id)
         : data_(static_cast<unsigned long long>(
-              reinterpret_cast<unsigned long>(id))) {}
+              reinterpret_cast<uintptr_t>(id))) {}
     explicit DontMangle(unsigned long long id) : data_(id) {}
     explicit DontMangle(unsigned long id) : data_(id) {}
     explicit DontMangle(unsigned int id) : data_(id) {}
@@ -1045,10 +1105,9 @@ class TraceID {
    private:
     unsigned long long data_;
   };
-
   TraceID(const void* id, unsigned char* flags)
       : data_(static_cast<unsigned long long>(
-              reinterpret_cast<unsigned long>(id))) {
+              reinterpret_cast<uintptr_t>(id))) {
     *flags |= TRACE_EVENT_FLAG_MANGLE_ID;
   }
   TraceID(ForceMangle id, unsigned char* flags) : data_(id.data()) {

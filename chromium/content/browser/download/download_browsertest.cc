@@ -6,9 +6,10 @@
 // in a pure content context.  Over time tests should be migrated here.
 
 #include "base/command_line.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/ref_counted.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/platform_thread.h"
@@ -19,7 +20,6 @@
 #include "content/browser/download/download_item_impl.h"
 #include "content/browser/download/download_manager_impl.h"
 #include "content/browser/download/download_resource_handler.h"
-#include "content/browser/plugin_service_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/power_save_blocker.h"
 #include "content/public/common/content_switches.h"
@@ -34,15 +34,19 @@
 #include "content/shell/browser/shell_browser_context.h"
 #include "content/shell/browser/shell_download_manager_delegate.h"
 #include "content/shell/browser/shell_network_delegate.h"
-#include "content/test/net/url_request_mock_http_job.h"
 #include "content/test/net/url_request_slow_download_job.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/url_request/url_request_mock_http_job.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
+
+#if defined(ENABLE_PLUGINS)
+#include "content/browser/plugin_service_impl.h"
+#endif
 
 using ::net::test_server::EmbeddedTestServer;
 using ::testing::AllOf;
@@ -118,17 +122,15 @@ class DownloadFileWithDelay : public DownloadFileImpl {
       base::WeakPtr<DownloadDestinationObserver> observer,
       base::WeakPtr<DownloadFileWithDelayFactory> owner);
 
-  virtual ~DownloadFileWithDelay();
+  ~DownloadFileWithDelay() override;
 
   // Wraps DownloadFileImpl::Rename* and intercepts the return callback,
   // storing it in the factory that produced this object for later
   // retrieval.
-  virtual void RenameAndUniquify(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
-  virtual void RenameAndAnnotate(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
+  void RenameAndUniquify(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
+  void RenameAndAnnotate(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
 
  private:
   static void RenameCallbackWrapper(
@@ -151,10 +153,10 @@ class DownloadFileWithDelay : public DownloadFileImpl {
 class DownloadFileWithDelayFactory : public DownloadFileFactory {
  public:
   DownloadFileWithDelayFactory();
-  virtual ~DownloadFileWithDelayFactory();
+  ~DownloadFileWithDelayFactory() override;
 
   // DownloadFileFactory interface.
-  virtual DownloadFile* CreateFile(
+  DownloadFile* CreateFile(
       scoped_ptr<DownloadSaveInfo> save_info,
       const base::FilePath& default_download_directory,
       const GURL& url,
@@ -162,7 +164,7 @@ class DownloadFileWithDelayFactory : public DownloadFileFactory {
       bool calculate_hash,
       scoped_ptr<ByteStreamReader> stream,
       const net::BoundNetLog& bound_net_log,
-      base::WeakPtr<DownloadDestinationObserver> observer) OVERRIDE;
+      base::WeakPtr<DownloadDestinationObserver> observer) override;
 
   void AddRenameCallback(base::Closure callback);
   void GetAllRenameCallbacks(std::vector<base::Closure>* results);
@@ -288,12 +290,12 @@ class CountingDownloadFile : public DownloadFileImpl {
                          url, referrer_url, calculate_hash,
                          stream.Pass(), bound_net_log, observer) {}
 
-  virtual ~CountingDownloadFile() {
+  ~CountingDownloadFile() override {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     active_files_--;
   }
 
-  virtual void Initialize(const InitializeCallback& callback) OVERRIDE {
+  void Initialize(const InitializeCallback& callback) override {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
     active_files_++;
     return DownloadFileImpl::Initialize(callback);
@@ -327,18 +329,18 @@ int CountingDownloadFile::active_files_ = 0;
 class CountingDownloadFileFactory : public DownloadFileFactory {
  public:
   CountingDownloadFileFactory() {}
-  virtual ~CountingDownloadFileFactory() {}
+  ~CountingDownloadFileFactory() override {}
 
   // DownloadFileFactory interface.
-  virtual DownloadFile* CreateFile(
-    scoped_ptr<DownloadSaveInfo> save_info,
-    const base::FilePath& default_downloads_directory,
-    const GURL& url,
-    const GURL& referrer_url,
-    bool calculate_hash,
-    scoped_ptr<ByteStreamReader> stream,
-    const net::BoundNetLog& bound_net_log,
-    base::WeakPtr<DownloadDestinationObserver> observer) OVERRIDE {
+  DownloadFile* CreateFile(
+      scoped_ptr<DownloadSaveInfo> save_info,
+      const base::FilePath& default_downloads_directory,
+      const GURL& url,
+      const GURL& referrer_url,
+      bool calculate_hash,
+      scoped_ptr<ByteStreamReader> stream,
+      const net::BoundNetLog& bound_net_log,
+      base::WeakPtr<DownloadDestinationObserver> observer) override {
     scoped_ptr<PowerSaveBlocker> psb(
         PowerSaveBlocker::Create(
             PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
@@ -354,11 +356,11 @@ class TestShellDownloadManagerDelegate : public ShellDownloadManagerDelegate {
  public:
   TestShellDownloadManagerDelegate()
       : delay_download_open_(false) {}
-  virtual ~TestShellDownloadManagerDelegate() {}
+  ~TestShellDownloadManagerDelegate() override {}
 
-  virtual bool ShouldOpenDownload(
+  bool ShouldOpenDownload(
       DownloadItem* item,
-      const DownloadOpenDelayedCallback& callback) OVERRIDE {
+      const DownloadOpenDelayedCallback& callback) override {
     if (delay_download_open_) {
       delayed_callbacks_.push_back(callback);
       return false;
@@ -396,9 +398,7 @@ class RecordingDownloadObserver : DownloadItem::Observer {
     download_->AddObserver(this);
   }
 
-  virtual ~RecordingDownloadObserver() {
-    RemoveObserver();
-  }
+  ~RecordingDownloadObserver() override { RemoveObserver(); }
 
   void CompareToExpectedRecord(const RecordStruct expected[], size_t size) {
     EXPECT_EQ(size, record_.size());
@@ -411,7 +411,7 @@ class RecordingDownloadObserver : DownloadItem::Observer {
   }
 
  private:
-  virtual void OnDownloadUpdated(DownloadItem* download) OVERRIDE {
+  void OnDownloadUpdated(DownloadItem* download) override {
     DCHECK_EQ(download_, download);
     DownloadItem::DownloadState state = download->GetState();
     int bytes = download->GetReceivedBytes();
@@ -422,7 +422,7 @@ class RecordingDownloadObserver : DownloadItem::Observer {
     }
   }
 
-  virtual void OnDownloadDestroyed(DownloadItem* download) OVERRIDE {
+  void OnDownloadDestroyed(DownloadItem* download) override {
     DCHECK_EQ(download_, download);
     RemoveObserver();
   }
@@ -449,20 +449,20 @@ class DownloadCreateObserver : DownloadManager::Observer {
     manager_->AddObserver(this);
   }
 
-  virtual ~DownloadCreateObserver() {
+  ~DownloadCreateObserver() override {
     if (manager_)
       manager_->RemoveObserver(this);
     manager_ = NULL;
   }
 
-  virtual void ManagerGoingDown(DownloadManager* manager) OVERRIDE {
+  void ManagerGoingDown(DownloadManager* manager) override {
     DCHECK_EQ(manager_, manager);
     manager_->RemoveObserver(this);
     manager_ = NULL;
   }
 
-  virtual void OnDownloadCreated(DownloadManager* manager,
-                                 DownloadItem* download) OVERRIDE {
+  void OnDownloadCreated(DownloadManager* manager,
+                         DownloadItem* download) override {
     if (!item_)
       item_ = download;
 
@@ -518,7 +518,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleRequestAndSendRedirectResponse(
     response->set_code(net::HTTP_FOUND);
     response->AddCustomHeader("Location", target_url.spec());
   }
-  return response.PassAs<net::test_server::HttpResponse>();
+  return response.Pass();
 }
 
 // Creates a request handler for EmbeddedTestServer that responds with a HTTP
@@ -542,7 +542,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleRequestAndSendBasicResponse(
     response->set_content_type(content_type);
     response->set_content(body);
   }
-  return response.PassAs<net::test_server::HttpResponse>();
+  return response.Pass();
 }
 
 // Creates a request handler for an EmbeddedTestServer that response with an
@@ -570,7 +570,7 @@ class DownloadContentTest : public ContentBrowserTest {
        ByteStreamWriter::kFractionBufferBeforeSending) + 1;
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ASSERT_TRUE(downloads_directory_.CreateUniqueTempDir());
 
     test_delegate_.reset(new TestShellDownloadManagerDelegate());
@@ -585,8 +585,12 @@ class DownloadContentTest : public ContentBrowserTest {
         base::Bind(&URLRequestSlowDownloadJob::AddUrlHandler));
     base::FilePath mock_base(GetTestFilePath("download", ""));
     BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(&URLRequestMockHTTPJob::AddUrlHandler, mock_base));
+        BrowserThread::IO,
+        FROM_HERE,
+        base::Bind(
+            &net::URLRequestMockHTTPJob::AddUrlHandler,
+            mock_base,
+            make_scoped_refptr(content::BrowserThread::GetBlockingPool())));
   }
 
   TestShellDownloadManagerDelegate* GetDownloadManagerDelegate() {
@@ -798,7 +802,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, MultiDownload) {
 
   // Start the second download and wait until it's done.
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  GURL url(URLRequestMockHTTPJob::GetMockUrl(file));
+  GURL url(net::URLRequestMockHTTPJob::GetMockUrl(file));
   // Download the file and wait.
   NavigateToURLAndWaitForDownload(shell(), url, DownloadItem::COMPLETE);
 
@@ -853,7 +857,8 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadOctetStream) {
   PluginServiceImpl::GetInstance()->RegisterInternalPlugin(plugin_info, false);
 
   // The following is served with a Content-Type of application/octet-stream.
-  GURL url(URLRequestMockHTTPJob::GetMockUrl(base::FilePath(kTestFilePath)));
+  GURL url(
+      net::URLRequestMockHTTPJob::GetMockUrl(base::FilePath(kTestFilePath)));
   NavigateToURLAndWaitForDownload(shell(), url, DownloadItem::COMPLETE);
 }
 #endif
@@ -870,7 +875,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelAtFinalRename) {
 
   // Create a download
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  NavigateToURL(shell(), URLRequestMockHTTPJob::GetMockUrl(file));
+  NavigateToURL(shell(), net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Wait until the first (intermediate file) rename and execute the callback.
   file_factory->WaitForSomeCallback();
@@ -919,7 +924,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelAtRelease) {
 
   // Create a download
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  NavigateToURL(shell(), URLRequestMockHTTPJob::GetMockUrl(file));
+  NavigateToURL(shell(), net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Wait until the first (intermediate file) rename and execute the callback.
   file_factory->WaitForSomeCallback();
@@ -1029,7 +1034,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ShutdownAtRelease) {
 
   // Create a download
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  NavigateToURL(shell(), URLRequestMockHTTPJob::GetMockUrl(file));
+  NavigateToURL(shell(), net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Wait until the first (intermediate file) rename and execute the callback.
   file_factory->WaitForSomeCallback();
@@ -1070,7 +1075,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ShutdownAtRelease) {
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1137,7 +1142,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownload) {
 
 // Confirm restart fallback happens if a range request is bounced.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownloadNoRange) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1186,7 +1191,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeInterruptedDownloadNoRange) {
 // Confirm restart fallback happens if a precondition is failed.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest,
                        ResumeInterruptedDownloadBadPrecondition) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1238,7 +1243,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 // Confirm we don't try to resume if we don't have a verifier.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest,
                        ResumeInterruptedDownloadNoVerifiers) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1282,7 +1287,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithDeletedFile) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1333,10 +1338,10 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithDeletedFile) {
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileInitError) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  GURL url(URLRequestMockHTTPJob::GetMockUrl(file));
+  GURL url(net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Setup the error injector.
   scoped_refptr<TestFileErrorInjector> injector(
@@ -1384,10 +1389,10 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileInitError) {
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest,
                        ResumeWithFileIntermediateRenameError) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  GURL url(URLRequestMockHTTPJob::GetMockUrl(file));
+  GURL url(net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Setup the error injector.
   scoped_refptr<TestFileErrorInjector> injector(
@@ -1436,10 +1441,10 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileFinalRenameError) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   base::FilePath file(FILE_PATH_LITERAL("download-test.lib"));
-  GURL url(URLRequestMockHTTPJob::GetMockUrl(file));
+  GURL url(net::URLRequestMockHTTPJob::GetMockUrl(file));
 
   // Setup the error injector.
   scoped_refptr<TestFileErrorInjector> injector(
@@ -1489,7 +1494,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, ResumeWithFileFinalRenameError) {
 // An interrupted download should remove the intermediate file when it is
 // cancelled.
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelInterruptedDownload) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1519,7 +1524,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelInterruptedDownload) {
 }
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveDownload) {
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1554,7 +1559,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveDownload) {
   {
     // Start the second download and wait until it's done.
     base::FilePath file2(FILE_PATH_LITERAL("download-test.lib"));
-    GURL url2(URLRequestMockHTTPJob::GetMockUrl(file2));
+    GURL url2(net::URLRequestMockHTTPJob::GetMockUrl(file2));
     scoped_ptr<DownloadTestObserver> completion_observer(
         CreateWaiter(shell(), 1));
     DownloadItem* download(StartDownloadAndReturnItem(url2));
@@ -1574,7 +1579,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveDownload) {
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumingDownload) {
   SetupEnsureNoPendingDownloads();
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 
@@ -1621,7 +1626,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, RemoveResumingDownload) {
 
 IN_PROC_BROWSER_TEST_F(DownloadContentTest, CancelResumingDownload) {
   SetupEnsureNoPendingDownloads();
-  CommandLine::ForCurrentProcess()->AppendSwitch(
+  base::CommandLine::ForCurrentProcess()->AppendSwitch(
       switches::kEnableDownloadResumption);
   ASSERT_TRUE(test_server()->Start());
 

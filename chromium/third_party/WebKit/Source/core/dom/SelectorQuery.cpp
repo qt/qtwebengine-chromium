@@ -27,10 +27,10 @@
 #include "config.h"
 #include "core/dom/SelectorQuery.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "core/css/parser/BisonCSSParser.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/css/SelectorChecker.h"
 #include "core/css/SiblingTraversalStrategies.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/Node.h"
@@ -38,7 +38,7 @@
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SingleElementSelectorQueryTrait {
     typedef Element* OutputType;
@@ -51,9 +51,9 @@ struct SingleElementSelectorQueryTrait {
 };
 
 struct AllElementsSelectorQueryTrait {
-    typedef WillBeHeapVector<RefPtrWillBeMember<Node> > OutputType;
+    typedef WillBeHeapVector<RefPtrWillBeMember<Element> > OutputType;
     static const bool shouldOnlyMatchFirstElement = false;
-    ALWAYS_INLINE static void appendElement(OutputType& output, Node& element)
+    ALWAYS_INLINE static void appendElement(OutputType& output, Element& element)
     {
         output.append(&element);
     }
@@ -119,10 +119,9 @@ inline bool SelectorDataList::selectorMatches(const CSSSelector& selector, Eleme
 {
     SelectorChecker selectorChecker(element.document(), SelectorChecker::QueryingRules);
     SelectorChecker::SelectorCheckingContext selectorCheckingContext(selector, &element, SelectorChecker::VisitedMatchDisabled);
-    selectorCheckingContext.behaviorAtBoundary = SelectorChecker::StaysWithinTreeScope;
     selectorCheckingContext.scope = !rootNode.isDocumentNode() ? &rootNode : 0;
     if (selectorCheckingContext.scope)
-        selectorCheckingContext.behaviorAtBoundary = static_cast<SelectorChecker::BehaviorAtBoundary>(SelectorChecker::StaysWithinTreeScope | SelectorChecker::ScopeContainsLastMatchedElement);
+        selectorCheckingContext.scopeContainsLastMatchedElement = true;
     return selectorChecker.match(selectorCheckingContext, DOMSiblingTraversalStrategy()) == SelectorChecker::SelectorMatches;
 }
 
@@ -137,11 +136,11 @@ bool SelectorDataList::matches(Element& targetElement) const
     return false;
 }
 
-PassRefPtrWillBeRawPtr<StaticNodeList> SelectorDataList::queryAll(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<StaticElementList> SelectorDataList::queryAll(ContainerNode& rootNode) const
 {
-    WillBeHeapVector<RefPtrWillBeMember<Node> > result;
+    WillBeHeapVector<RefPtrWillBeMember<Element> > result;
     execute<AllElementsSelectorQueryTrait>(rootNode, result);
-    return StaticNodeList::adopt(result);
+    return StaticElementList::adopt(result);
 }
 
 PassRefPtrWillBeRawPtr<Element> SelectorDataList::queryFirst(ContainerNode& rootNode) const
@@ -154,9 +153,9 @@ PassRefPtrWillBeRawPtr<Element> SelectorDataList::queryFirst(ContainerNode& root
 template <typename SelectorQueryTrait>
 void SelectorDataList::collectElementsByClassName(ContainerNode& rootNode, const AtomicString& className,  typename SelectorQueryTrait::OutputType& output) const
 {
-    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
-        if (element->hasClass() && element->classNames().contains(className)) {
-            SelectorQueryTrait::appendElement(output, *element);
+    for (Element& element : ElementTraversal::descendantsOf(rootNode)) {
+        if (element.hasClass() && element.classNames().contains(className)) {
+            SelectorQueryTrait::appendElement(output, element);
             if (SelectorQueryTrait::shouldOnlyMatchFirstElement)
                 return;
         }
@@ -166,9 +165,9 @@ void SelectorDataList::collectElementsByClassName(ContainerNode& rootNode, const
 template <typename SelectorQueryTrait>
 void SelectorDataList::collectElementsByTagName(ContainerNode& rootNode, const QualifiedName& tagName,  typename SelectorQueryTrait::OutputType& output) const
 {
-    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
-        if (SelectorChecker::tagMatches(*element, tagName)) {
-            SelectorQueryTrait::appendElement(output, *element);
+    for (Element& element : ElementTraversal::descendantsOf(rootNode)) {
+        if (SelectorChecker::tagMatches(element, tagName)) {
+            SelectorQueryTrait::appendElement(output, element);
             if (SelectorQueryTrait::shouldOnlyMatchFirstElement)
                 return;
         }
@@ -273,9 +272,9 @@ void SelectorDataList::executeForTraverseRoot(const CSSSelector& selector, Conta
         return;
     }
 
-    for (Element* element = ElementTraversal::firstWithin(*traverseRoot); element; element = ElementTraversal::next(*element, traverseRoot)) {
-        if (selectorMatches(selector, *element, rootNode)) {
-            SelectorQueryTrait::appendElement(output, *element);
+    for (Element& element : ElementTraversal::descendantsOf(*traverseRoot)) {
+        if (selectorMatches(selector, element, rootNode)) {
+            SelectorQueryTrait::appendElement(output, element);
             if (SelectorQueryTrait::shouldOnlyMatchFirstElement)
                 return;
         }
@@ -301,10 +300,9 @@ void SelectorDataList::executeForTraverseRoots(const CSSSelector& selector, Simp
     }
 
     while (!traverseRoots.isEmpty()) {
-        Element& traverseRoot = *traverseRoots.next();
-        for (Element* element = ElementTraversal::firstWithin(traverseRoot); element; element = ElementTraversal::next(*element, &traverseRoot)) {
-            if (selectorMatches(selector, *element, rootNode)) {
-                SelectorQueryTrait::appendElement(output, *element);
+        for (Element& element : ElementTraversal::descendantsOf(*traverseRoots.next())) {
+            if (selectorMatches(selector, element, rootNode)) {
+                SelectorQueryTrait::appendElement(output, element);
                 if (SelectorQueryTrait::shouldOnlyMatchFirstElement)
                     return;
             }
@@ -327,8 +325,8 @@ bool SelectorDataList::selectorListMatches(ContainerNode& rootNode, Element& ele
 template <typename SelectorQueryTrait>
 void SelectorDataList::executeSlow(ContainerNode& rootNode, typename SelectorQueryTrait::OutputType& output) const
 {
-    for (Element* element = ElementTraversal::firstWithin(rootNode); element; element = ElementTraversal::next(*element, &rootNode)) {
-        if (selectorListMatches<SelectorQueryTrait>(rootNode, *element, output) && SelectorQueryTrait::shouldOnlyMatchFirstElement)
+    for (Element& element : ElementTraversal::descendantsOf(rootNode)) {
+        if (selectorListMatches<SelectorQueryTrait>(rootNode, element, output) && SelectorQueryTrait::shouldOnlyMatchFirstElement)
             return;
     }
 }
@@ -428,7 +426,7 @@ void SelectorDataList::execute(ContainerNode& rootNode, typename SelectorQueryTr
     if (const CSSSelector* idSelector = selectorForIdLookup(firstSelector)) {
         const AtomicString& idToMatch = idSelector->value();
         if (rootNode.treeScope().containsMultipleElementsWithId(idToMatch)) {
-            const Vector<Element*>& elements = rootNode.treeScope().getAllElementsById(idToMatch);
+            const WillBeHeapVector<RawPtrWillBeMember<Element> >& elements = rootNode.treeScope().getAllElementsById(idToMatch);
             size_t count = elements.size();
             for (size_t i = 0; i < count; ++i) {
                 Element& element = *elements[i];
@@ -483,7 +481,7 @@ bool SelectorQuery::matches(Element& element) const
     return m_selectors.matches(element);
 }
 
-PassRefPtrWillBeRawPtr<StaticNodeList> SelectorQuery::queryAll(ContainerNode& rootNode) const
+PassRefPtrWillBeRawPtr<StaticElementList> SelectorQuery::queryAll(ContainerNode& rootNode) const
 {
     return m_selectors.queryAll(rootNode);
 }
@@ -499,7 +497,7 @@ SelectorQuery* SelectorQueryCache::add(const AtomicString& selectors, const Docu
     if (it != m_entries.end())
         return it->value.get();
 
-    BisonCSSParser parser(CSSParserContext(document, 0));
+    CSSParser parser(CSSParserContext(document, 0));
     CSSSelectorList selectorList;
     parser.parseSelector(selectors, selectorList);
 

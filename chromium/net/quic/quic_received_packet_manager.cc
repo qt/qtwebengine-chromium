@@ -4,14 +4,19 @@
 
 #include "net/quic/quic_received_packet_manager.h"
 
+#include <limits>
+#include <utility>
+
 #include "base/logging.h"
 #include "base/stl_util.h"
 #include "net/base/linked_hash_map.h"
+#include "net/quic/crypto/crypto_protocol.h"
 #include "net/quic/quic_connection_stats.h"
 
 using std::make_pair;
 using std::max;
 using std::min;
+using std::numeric_limits;
 
 namespace net {
 
@@ -42,22 +47,12 @@ QuicPacketEntropyHash QuicReceivedPacketManager::EntropyTracker::EntropyHash(
   }
 
   DCHECK_GE(sequence_number, first_gap_);
-  ReceivedEntropyMap::const_iterator it =
-      packets_entropy_.upper_bound(sequence_number);
-  // When this map is empty we should only query entropy for
-  // largest_observed_, since no other entropy can be correctly
-  // calculated, because we're not storing the entropy for any prior packets.
-  // TODO(rtenneti): add support for LOG_IF_EVERY_N_SEC to chromium.
-  // LOG_IF_EVERY_N_SEC(DFATAL, it == packets_entropy_.end(), 10)
-  LOG_IF(DFATAL, it == packets_entropy_.end())
-      << "EntropyHash may be unknown. largest_received: "
-      << largest_observed_
-      << " sequence_number: " << sequence_number;
-
-  // TODO(satyamshekhar): Make this O(1).
+  DCHECK_EQ(first_gap_ + packets_entropy_.size() - 1, largest_observed_);
   QuicPacketEntropyHash hash = packets_entropy_hash_;
-  for (; it != packets_entropy_.end(); ++it) {
-    hash ^= it->second;
+  ReceivedEntropyHashes::const_reverse_iterator it = packets_entropy_.rbegin();
+  for (QuicPacketSequenceNumber i = 0;
+           i < (largest_observed_ - sequence_number); ++i, ++it) {
+    hash ^= it->first;
   }
   return hash;
 }
@@ -71,19 +66,35 @@ void QuicReceivedPacketManager::EntropyTracker::RecordPacketEntropyHash(
              << first_gap_;
     return;
   }
-
-  if (sequence_number > largest_observed_) {
-    largest_observed_ = sequence_number;
-  }
+  // RecordPacketEntropyHash is only intended to be called once per packet.
+  DCHECK(sequence_number > largest_observed_ ||
+         !packets_entropy_[sequence_number - first_gap_].second);
 
   packets_entropy_hash_ ^= entropy_hash;
+
+  // Optimize the typical case of no gaps.
+  if (sequence_number == largest_observed_ + 1 && packets_entropy_.empty()) {
+    ++first_gap_;
+    largest_observed_ = sequence_number;
+    return;
+  }
+  if (sequence_number > largest_observed_) {
+    for (QuicPacketSequenceNumber i = 0;
+         i < (sequence_number - largest_observed_ - 1); ++i) {
+      packets_entropy_.push_back(make_pair(0, false));
+    }
+    packets_entropy_.push_back(make_pair(entropy_hash, true));
+    largest_observed_ = sequence_number;
+  } else {
+    packets_entropy_[sequence_number - first_gap_] =
+        make_pair(entropy_hash, true);
+    AdvanceFirstGapAndGarbageCollectEntropyMap();
+  }
+
   DVLOG(2) << "setting cumulative received entropy hash to: "
            << static_cast<int>(packets_entropy_hash_)
            << " updated with sequence number " << sequence_number
            << " entropy hash: " << static_cast<int>(entropy_hash);
-
-  packets_entropy_.insert(make_pair(sequence_number, entropy_hash));
-  AdvanceFirstGapAndGarbageCollectEntropyMap();
 }
 
 void QuicReceivedPacketManager::EntropyTracker::SetCumulativeEntropyUpTo(
@@ -95,19 +106,19 @@ void QuicReceivedPacketManager::EntropyTracker::SetCumulativeEntropyUpTo(
              << " less than first_gap_:" << first_gap_;
     return;
   }
-  // Compute the current entropy based on the hash.
-  packets_entropy_hash_ = entropy_hash;
-  ReceivedEntropyMap::iterator it =
-      packets_entropy_.lower_bound(sequence_number);
-  // TODO(satyamshekhar): Make this O(1).
-  for (; it != packets_entropy_.end(); ++it) {
-    packets_entropy_hash_ ^= it->second;
+  while (first_gap_ < sequence_number) {
+    ++first_gap_;
+    if (!packets_entropy_.empty()) {
+      packets_entropy_.pop_front();
+    }
   }
-  // Update first_gap_ and discard old entropies.
-  first_gap_ = sequence_number;
-  packets_entropy_.erase(
-      packets_entropy_.begin(),
-      packets_entropy_.lower_bound(sequence_number));
+  // Compute the current entropy by XORing in all entropies received including
+  // and since sequence_number.
+  packets_entropy_hash_ = entropy_hash;
+  for (ReceivedEntropyHashes::const_iterator it = packets_entropy_.begin();
+           it != packets_entropy_.end(); ++it) {
+    packets_entropy_hash_ ^= it->first;
+  }
 
   // Garbage collect entries from the beginning of the map.
   AdvanceFirstGapAndGarbageCollectEntropyMap();
@@ -115,28 +126,20 @@ void QuicReceivedPacketManager::EntropyTracker::SetCumulativeEntropyUpTo(
 
 void QuicReceivedPacketManager::EntropyTracker::
 AdvanceFirstGapAndGarbageCollectEntropyMap() {
-  while (!packets_entropy_.empty()) {
-    ReceivedEntropyMap::iterator it = packets_entropy_.begin();
-    if (it->first != first_gap_) {
-      DCHECK_GT(it->first, first_gap_);
-      break;
-    }
-    packets_entropy_.erase(it);
+  while (!packets_entropy_.empty() && packets_entropy_.front().second) {
     ++first_gap_;
+    packets_entropy_.pop_front();
   }
 }
 
 QuicReceivedPacketManager::QuicReceivedPacketManager(
-    CongestionFeedbackType congestion_type,
     QuicConnectionStats* stats)
-    : peer_largest_observed_packet_(0),
-      least_packet_awaited_by_peer_(1),
-      peer_least_packet_awaiting_ack_(0),
+    : peer_least_packet_awaiting_ack_(0),
       time_largest_observed_(QuicTime::Zero()),
-      receive_algorithm_(ReceiveAlgorithmInterface::Create(congestion_type)),
+      receive_algorithm_(ReceiveAlgorithmInterface::Create(kTCP)),
       stats_(stats) {
-  received_info_.largest_observed = 0;
-  received_info_.entropy_hash = 0;
+  ack_frame_.largest_observed = 0;
+  ack_frame_.entropy_hash = 0;
 }
 
 QuicReceivedPacketManager::~QuicReceivedPacketManager() {}
@@ -149,28 +152,28 @@ void QuicReceivedPacketManager::RecordPacketReceived(
   DCHECK(IsAwaitingPacket(sequence_number));
 
   InsertMissingPacketsBetween(
-      &received_info_,
-      max(received_info_.largest_observed + 1, peer_least_packet_awaiting_ack_),
+      &ack_frame_,
+      max(ack_frame_.largest_observed + 1, peer_least_packet_awaiting_ack_),
       sequence_number);
 
-  if (received_info_.largest_observed > sequence_number) {
+  if (ack_frame_.largest_observed > sequence_number) {
     // We've gotten one of the out of order packets - remove it from our
     // "missing packets" list.
     DVLOG(1) << "Removing " << sequence_number << " from missing list";
-    received_info_.missing_packets.erase(sequence_number);
+    ack_frame_.missing_packets.erase(sequence_number);
 
     // Record how out of order stats.
     ++stats_->packets_reordered;
-    uint32 sequence_gap = received_info_.largest_observed - sequence_number;
+    uint32 sequence_gap = ack_frame_.largest_observed - sequence_number;
     stats_->max_sequence_reordering =
         max(stats_->max_sequence_reordering, sequence_gap);
-    uint32 reordering_time_us =
+    int64 reordering_time_us =
         receipt_time.Subtract(time_largest_observed_).ToMicroseconds();
     stats_->max_time_reordering_us = max(stats_->max_time_reordering_us,
                                          reordering_time_us);
   }
-  if (sequence_number > received_info_.largest_observed) {
-    received_info_.largest_observed = sequence_number;
+  if (sequence_number > ack_frame_.largest_observed) {
+    ack_frame_.largest_observed = sequence_number;
     time_largest_observed_ = receipt_time;
   }
   entropy_tracker_.RecordPacketEntropyHash(sequence_number,
@@ -178,44 +181,65 @@ void QuicReceivedPacketManager::RecordPacketReceived(
 
   receive_algorithm_->RecordIncomingPacket(
       bytes, sequence_number, receipt_time);
+
+  received_packet_times_.push_back(
+      std::make_pair(sequence_number, receipt_time));
+
+  ack_frame_.revived_packets.erase(sequence_number);
 }
 
 void QuicReceivedPacketManager::RecordPacketRevived(
     QuicPacketSequenceNumber sequence_number) {
   LOG_IF(DFATAL, !IsAwaitingPacket(sequence_number));
-  received_info_.revived_packets.insert(sequence_number);
+  ack_frame_.revived_packets.insert(sequence_number);
 }
 
 bool QuicReceivedPacketManager::IsMissing(
     QuicPacketSequenceNumber sequence_number) {
-  return ContainsKey(received_info_.missing_packets, sequence_number);
+  return ContainsKey(ack_frame_.missing_packets, sequence_number);
 }
 
 bool QuicReceivedPacketManager::IsAwaitingPacket(
     QuicPacketSequenceNumber sequence_number) {
-  return ::net::IsAwaitingPacket(received_info_, sequence_number);
+  return ::net::IsAwaitingPacket(ack_frame_, sequence_number);
 }
 
+namespace {
+struct isTooLarge {
+  explicit isTooLarge(QuicPacketSequenceNumber n) : largest_observed_(n) {}
+  QuicPacketSequenceNumber largest_observed_;
+
+  // Return true if the packet in p is too different from largest_observed_
+  // to express.
+  bool operator() (
+      const std::pair<QuicPacketSequenceNumber, QuicTime>& p) const {
+    return largest_observed_ - p.first >= numeric_limits<uint8>::max();
+  }
+};
+}  // namespace
+
 void QuicReceivedPacketManager::UpdateReceivedPacketInfo(
-    ReceivedPacketInfo* received_info,
-    QuicTime approximate_now) {
-  *received_info = received_info_;
-  received_info->entropy_hash = EntropyHash(received_info_.largest_observed);
+    QuicAckFrame* ack_frame, QuicTime approximate_now) {
+  *ack_frame = ack_frame_;
+  ack_frame->entropy_hash = EntropyHash(ack_frame_.largest_observed);
 
   if (time_largest_observed_ == QuicTime::Zero()) {
     // We have received no packets.
-    received_info->delta_time_largest_observed = QuicTime::Delta::Infinite();
+    ack_frame->delta_time_largest_observed = QuicTime::Delta::Infinite();
     return;
   }
 
-  if (approximate_now < time_largest_observed_) {
-    // Approximate now may well be "in the past".
-    received_info->delta_time_largest_observed = QuicTime::Delta::Zero();
-    return;
-  }
+  // Ensure the delta is zero if approximate now is "in the past".
+  ack_frame->delta_time_largest_observed =
+      approximate_now < time_largest_observed_ ?
+          QuicTime::Delta::Zero() :
+          approximate_now.Subtract(time_largest_observed_);
 
-  received_info->delta_time_largest_observed =
-      approximate_now.Subtract(time_largest_observed_);
+  // Remove all packets that are too far from largest_observed to express.
+  received_packet_times_.remove_if(isTooLarge(ack_frame_.largest_observed));
+
+  ack_frame->received_packet_times = received_packet_times_;
+  received_packet_times_.clear();
 }
 
 bool QuicReceivedPacketManager::GenerateCongestionFeedback(
@@ -228,29 +252,16 @@ QuicPacketEntropyHash QuicReceivedPacketManager::EntropyHash(
   return entropy_tracker_.EntropyHash(sequence_number);
 }
 
-void QuicReceivedPacketManager::UpdatePacketInformationReceivedByPeer(
-    const ReceivedPacketInfo& received_info) {
-  // ValidateAck should fail if largest_observed ever shrinks.
-  DCHECK_LE(peer_largest_observed_packet_, received_info.largest_observed);
-  peer_largest_observed_packet_ = received_info.largest_observed;
-
-  if (received_info.missing_packets.empty()) {
-    least_packet_awaited_by_peer_ = peer_largest_observed_packet_ + 1;
-  } else {
-    least_packet_awaited_by_peer_ = *(received_info.missing_packets.begin());
-  }
-}
-
 bool QuicReceivedPacketManager::DontWaitForPacketsBefore(
     QuicPacketSequenceNumber least_unacked) {
-  received_info_.revived_packets.erase(
-      received_info_.revived_packets.begin(),
-      received_info_.revived_packets.lower_bound(least_unacked));
-  size_t missing_packets_count = received_info_.missing_packets.size();
-  received_info_.missing_packets.erase(
-      received_info_.missing_packets.begin(),
-      received_info_.missing_packets.lower_bound(least_unacked));
-  return missing_packets_count != received_info_.missing_packets.size();
+  ack_frame_.revived_packets.erase(
+      ack_frame_.revived_packets.begin(),
+      ack_frame_.revived_packets.lower_bound(least_unacked));
+  size_t missing_packets_count = ack_frame_.missing_packets.size();
+  ack_frame_.missing_packets.erase(
+      ack_frame_.missing_packets.begin(),
+      ack_frame_.missing_packets.lower_bound(least_unacked));
+  return missing_packets_count != ack_frame_.missing_packets.size();
 }
 
 void QuicReceivedPacketManager::UpdatePacketInformationSentByPeer(
@@ -268,19 +279,19 @@ void QuicReceivedPacketManager::UpdatePacketInformationSentByPeer(
     }
     peer_least_packet_awaiting_ack_ = stop_waiting.least_unacked;
   }
-  DCHECK(received_info_.missing_packets.empty() ||
-         *received_info_.missing_packets.begin() >=
+  DCHECK(ack_frame_.missing_packets.empty() ||
+         *ack_frame_.missing_packets.begin() >=
              peer_least_packet_awaiting_ack_);
 }
 
-bool QuicReceivedPacketManager::HasMissingPackets() {
-  return !received_info_.missing_packets.empty();
+bool QuicReceivedPacketManager::HasNewMissingPackets() const {
+  return !ack_frame_.missing_packets.empty() &&
+      (ack_frame_.largest_observed -
+       *ack_frame_.missing_packets.rbegin()) <= kMaxPacketsAfterNewMissing;
 }
 
-bool QuicReceivedPacketManager::HasNewMissingPackets() {
-  return HasMissingPackets() &&
-      (received_info_.largest_observed -
-       *received_info_.missing_packets.rbegin()) <= kMaxPacketsAfterNewMissing;
+size_t QuicReceivedPacketManager::NumTrackedPackets() const {
+  return entropy_tracker_.size();
 }
 
 }  // namespace net

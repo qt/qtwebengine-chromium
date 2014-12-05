@@ -28,13 +28,13 @@
 
 #include "modules/webaudio/DefaultAudioDestinationNode.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/Logging.h"
 #include "wtf/MainThread.h"
 
-namespace WebCore {
+namespace blink {
 
 DefaultAudioDestinationNode::DefaultAudioDestinationNode(AudioContext* context)
     : AudioDestinationNode(context, AudioDestination::hardwareSampleRate())
@@ -48,7 +48,13 @@ DefaultAudioDestinationNode::DefaultAudioDestinationNode(AudioContext* context)
 
 DefaultAudioDestinationNode::~DefaultAudioDestinationNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void DefaultAudioDestinationNode::dispose()
+{
     uninitialize();
+    AudioDestinationNode::dispose();
 }
 
 void DefaultAudioDestinationNode::initialize()
@@ -119,6 +125,6 @@ void DefaultAudioDestinationNode::setChannelCount(unsigned long channelCount, Ex
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

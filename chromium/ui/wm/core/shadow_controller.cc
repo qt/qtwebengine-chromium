@@ -13,7 +13,6 @@
 #include "ui/aura/env.h"
 #include "ui/aura/env_observer.h"
 #include "ui/aura/window.h"
-#include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_observer.h"
 #include "ui/compositor/layer.h"
 #include "ui/wm/core/shadow.h"
@@ -51,12 +50,25 @@ bool ShouldUseSmallShadowForWindow(aura::Window* window) {
   return false;
 }
 
+bool IsShadowAlwaysActive(aura::Window* window) {
+  return GetShadowType(window) == SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE;
+}
+
+Shadow::Style GetShadowStyleForWindow(aura::Window* window) {
+  return ShouldUseSmallShadowForWindow(window) ? Shadow::STYLE_SMALL :
+      ((IsActiveWindow(window) || IsShadowAlwaysActive(window)) ?
+       Shadow::STYLE_ACTIVE : Shadow::STYLE_INACTIVE);
+}
+
 // Returns the shadow style to be applied to |losing_active| when it is losing
 // active to |gaining_active|. |gaining_active| may be of a type that hides when
 // inactive, and as such we do not want to render |losing_active| as inactive.
 Shadow::Style GetShadowStyleForWindowLosingActive(
     aura::Window* losing_active,
     aura::Window* gaining_active) {
+  if (IsShadowAlwaysActive(losing_active))
+    return Shadow::STYLE_ACTIVE;
+
   if (gaining_active && aura::client::GetHideOnDeactivate(gaining_active)) {
     aura::Window::Windows::const_iterator it =
         std::find(GetTransientChildren(losing_active).begin(),
@@ -85,16 +97,16 @@ class ShadowController::Impl :
   static Impl* GetInstance();
 
   // aura::EnvObserver override:
-  virtual void OnWindowInitialized(aura::Window* window) OVERRIDE;
+  void OnWindowInitialized(aura::Window* window) override;
 
   // aura::WindowObserver overrides:
-  virtual void OnWindowPropertyChanged(
-      aura::Window* window, const void* key, intptr_t old) OVERRIDE;
-  virtual void OnWindowBoundsChanged(
-      aura::Window* window,
-      const gfx::Rect& old_bounds,
-      const gfx::Rect& new_bounds) OVERRIDE;
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
+  void OnWindowPropertyChanged(aura::Window* window,
+                               const void* key,
+                               intptr_t old) override;
+  void OnWindowBoundsChanged(aura::Window* window,
+                             const gfx::Rect& old_bounds,
+                             const gfx::Rect& new_bounds) override;
+  void OnWindowDestroyed(aura::Window* window) override;
 
  private:
   friend class base::RefCounted<Impl>;
@@ -104,7 +116,7 @@ class ShadowController::Impl :
   typedef std::map<aura::Window*, linked_ptr<Shadow> > WindowShadowMap;
 
   Impl();
-  virtual ~Impl();
+  ~Impl() override;
 
   // Forwarded from ShadowController.
   void OnWindowActivated(aura::Window* gained_active,
@@ -200,6 +212,7 @@ bool ShadowController::Impl::ShouldShowShadowForWindow(
     case SHADOW_TYPE_NONE:
       return false;
     case SHADOW_TYPE_RECTANGULAR:
+    case SHADOW_TYPE_RECTANGULAR_ALWAYS_ACTIVE:
       return true;
     default:
       NOTREACHED() << "Unknown shadow type " << type;
@@ -216,18 +229,18 @@ void ShadowController::Impl::HandlePossibleShadowVisibilityChange(
     aura::Window* window) {
   const bool should_show = ShouldShowShadowForWindow(window);
   Shadow* shadow = GetShadowForWindow(window);
-  if (shadow)
+  if (shadow) {
+    shadow->SetStyle(GetShadowStyleForWindow(window));
     shadow->layer()->SetVisible(should_show);
-  else if (should_show && !shadow)
+  } else if (should_show && !shadow) {
     CreateShadowForWindow(window);
+  }
 }
 
 void ShadowController::Impl::CreateShadowForWindow(aura::Window* window) {
   linked_ptr<Shadow> shadow(new Shadow());
   window_shadows_.insert(make_pair(window, shadow));
-
-  shadow->Init(ShouldUseSmallShadowForWindow(window) ?
-               Shadow::STYLE_SMALL : Shadow::STYLE_ACTIVE);
+  shadow->Init(GetShadowStyleForWindow(window));
   shadow->SetContentBounds(gfx::Rect(window->bounds().size()));
   shadow->layer()->SetVisible(ShouldShowShadowForWindow(window));
   window->layer()->Add(shadow->layer());

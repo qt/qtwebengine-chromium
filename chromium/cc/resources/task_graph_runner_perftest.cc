@@ -22,17 +22,17 @@ static const int kTimeCheckInterval = 10;
 
 class PerfTaskImpl : public Task {
  public:
-  typedef std::vector<scoped_refptr<PerfTaskImpl> > Vector;
+  typedef std::vector<scoped_refptr<PerfTaskImpl>> Vector;
 
   PerfTaskImpl() {}
 
   // Overridden from Task:
-  virtual void RunOnWorkerThread() OVERRIDE {}
+  void RunOnWorkerThread() override {}
 
   void Reset() { did_run_ = false; }
 
  private:
-  virtual ~PerfTaskImpl() {}
+  ~PerfTaskImpl() override {}
 
   DISALLOW_COPY_AND_ASSIGN(PerfTaskImpl);
 };
@@ -45,11 +45,11 @@ class TaskGraphRunnerPerfTest : public testing::Test {
                kTimeCheckInterval) {}
 
   // Overridden from testing::Test:
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     task_graph_runner_ = make_scoped_ptr(new TaskGraphRunner);
     namespace_token_ = task_graph_runner_->GetNamespaceToken();
   }
-  virtual void TearDown() OVERRIDE { task_graph_runner_.reset(); }
+  virtual void TearDown() override { task_graph_runner_ = nullptr; }
 
   void AfterTest(const std::string& test_name) {
     // Format matches chrome/test/perf/perf_test.h:PrintResult

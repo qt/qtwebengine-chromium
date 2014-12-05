@@ -34,7 +34,7 @@
 #include "platform/heap/Handle.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -43,7 +43,6 @@ public:
     virtual ~CustomElementObserver() { }
 
     // API for CustomElement to kick off notifications
-
     static void notifyElementDidFinishParsingChildren(Element*);
     static void notifyElementWasDestroyed(Element*);
 
@@ -59,6 +58,6 @@ protected:
     virtual void elementWasDestroyed(Element* element) { unobserve(element); }
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementObserver_h

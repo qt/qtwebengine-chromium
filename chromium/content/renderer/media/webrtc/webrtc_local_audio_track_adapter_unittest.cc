@@ -41,11 +41,11 @@ class WebRtcLocalAudioTrackAdapterTest : public ::testing::Test {
     capturer_ = WebRtcAudioCapturer::CreateCapturer(
         -1, StreamDeviceInfo(MEDIA_DEVICE_AUDIO_CAPTURE, "", ""),
         constraint_factory.CreateWebMediaConstraints(), NULL, NULL);
-    track_.reset(new WebRtcLocalAudioTrack(adapter_, capturer_, NULL));
+    track_.reset(new WebRtcLocalAudioTrack(adapter_.get(), capturer_, NULL));
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     track_->OnSetFormat(params_);
     EXPECT_TRUE(track_->GetAudioAdapter()->enabled());
   }
@@ -74,14 +74,14 @@ TEST_F(WebRtcLocalAudioTrackAdapterTest, AddAndRemoveSink) {
   EXPECT_CALL(*sink,
               OnData(_, 16, params_.sample_rate(), params_.channels(),
                      params_.frames_per_buffer()));
-  track_->Capture(data.get(), base::TimeDelta(), 255, false, false);
+  track_->Capture(data.get(), base::TimeDelta(), 255, false, false, false);
 
   // Remove the sink from the webrtc track.
   webrtc_track->RemoveSink(sink.get());
   sink.reset();
 
   // Verify that no more callback gets into the sink.
-  track_->Capture(data.get(), base::TimeDelta(), 255, false, false);
+  track_->Capture(data.get(), base::TimeDelta(), 255, false, false, false);
 }
 
 TEST_F(WebRtcLocalAudioTrackAdapterTest, GetSignalLevel) {

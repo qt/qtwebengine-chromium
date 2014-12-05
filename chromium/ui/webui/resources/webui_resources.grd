@@ -14,7 +14,6 @@ without changes to the corresponding grd file. -->
   <release seq="1">
     <includes>
       <include name="IDR_WEBUI_I18N_PROCESS_JS" file="js/i18n_process.js" type="BINDATA" />
-      <include name="IDR_WEBUI_I18N_TEMPLATE_JS" file="js/i18n_template.js" type="BINDATA" />
       <include name="IDR_WEBUI_I18N_TEMPLATE2_JS" file="js/i18n_template2.js" flattenhtml="true" type="BINDATA" />
       <include name="IDR_WEBUI_JSTEMPLATE_JS" file="js/jstemplate_compiled.js" flattenhtml="true" type="BINDATA" />
 
@@ -247,6 +246,10 @@ without changes to the corresponding grd file. -->
       <structure name="IDR_WEBUI_CSS_WIDGETS"
                  file="css/widgets.css" type="chrome_html"
                  flattenhtml="true" />
+      <structure name="IDR_WEBUI_JS_ACTION_LINK"
+                 file="js/action_link.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_ASSERT"
+                 file="js/assert.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR"
                  file="js/cr.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_EVENT_TARGET"
@@ -259,7 +262,7 @@ without changes to the corresponding grd file. -->
                  file="js/cr/ui/alert_overlay.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_ARRAY_DATA_MODEL"
                  file="js/cr/ui/array_data_model.js"
-                 type="chrome_html" />
+                 type="chrome_html" flattenhtml="true" />
       <structure name="IDR_WEBUI_JS_CR_UI_AUTOCOMPLETE_LIST"
                  file="js/cr/ui/autocomplete_list.js"
                  type="chrome_html" />
@@ -281,11 +284,15 @@ without changes to the corresponding grd file. -->
                  file="js/cr/ui/dialogs.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_DRAG_WRAPPER"
                  file="js/cr/ui/drag_wrapper.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_CR_UI_FOCUS_GRID"
+                 file="js/cr/ui/focus_grid.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_FOCUS_MANAGER"
                  file="js/cr/ui/focus_manager.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_FOCUS_OUTLINE_MANAGER"
                  file="js/cr/ui/focus_outline_manager.js"
                  type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_CR_UI_FOCUS_ROW"
+                 file="js/cr/ui/focus_row.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_LIST"
                  file="js/cr/ui/list.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_LIST_ITEM"
@@ -305,8 +312,15 @@ without changes to the corresponding grd file. -->
                  file="js/cr/ui/menu_button.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_MENU_ITEM"
                  file="js/cr/ui/menu_item.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_CR_UI_NODE_UTILS"
+                 file="js/cr/ui/node_utils.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_OVERLAY"
                  file="js/cr/ui/overlay.js" type="chrome_html" />
+      <structure name="IDR_WEBUI_JS_CR_UI_PAGE_MANAGER_PAGE"
+                 file="js/cr/ui/page_manager/page.js" type="chrome_html"
+                 flattenhtml="true" />
+      <structure name="IDR_WEBUI_JS_CR_UI_PAGE_MANAGER_PAGE_MANAGER"
+                 file="js/cr/ui/page_manager/page_manager.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_POSITION_UTIL"
                  file="js/cr/ui/position_util.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_CR_UI_SPLITTER"
@@ -346,8 +360,6 @@ without changes to the corresponding grd file. -->
                  type="chrome_html" />
       <structure name="IDR_WEBUI_JS_LOAD_TIME_DATA"
                  file="js/load_time_data.js" type="chrome_html" />
-      <structure name="IDR_WEBUI_JS_LOCAL_STRINGS"
-                 file="js/local_strings.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_MEDIA_COMMON"
                  file="js/media_common.js" type="chrome_html" />
       <structure name="IDR_WEBUI_JS_PARSE_HTML_SUBSET"

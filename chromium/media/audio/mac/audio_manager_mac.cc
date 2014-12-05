@@ -236,7 +236,7 @@ class AudioManagerMac::AudioPowerObserver : public base::PowerObserver {
     base::PowerMonitor::Get()->AddObserver(this);
   }
 
-  virtual ~AudioPowerObserver() {
+  ~AudioPowerObserver() override {
     DCHECK(thread_checker_.CalledOnValidThread());
     if (!is_monitoring_)
       return;
@@ -251,12 +251,12 @@ class AudioManagerMac::AudioPowerObserver : public base::PowerObserver {
   }
 
  private:
-  virtual void OnSuspend() OVERRIDE {
+  void OnSuspend() override {
     DCHECK(thread_checker_.CalledOnValidThread());
     is_suspending_ = true;
   }
 
-  virtual void OnResume() OVERRIDE {
+  void OnResume() override {
     DCHECK(thread_checker_.CalledOnValidThread());
     is_suspending_ = false;
     earliest_start_time_ = base::TimeTicks::Now() +
@@ -439,7 +439,7 @@ AudioParameters AudioManagerMac::GetInputStreamParameters(
     DLOG(ERROR) << "Invalid device " << device_id;
     return AudioParameters(
         AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-        kFallbackSampleRate, 16, ChooseBufferSize(kFallbackSampleRate));
+        kFallbackSampleRate, 16, ChooseBufferSize(true, kFallbackSampleRate));
   }
 
   int channels = 0;
@@ -459,7 +459,7 @@ AudioParameters AudioManagerMac::GetInputStreamParameters(
   // Due to the sharing of the input and output buffer sizes, we need to choose
   // the input buffer size based on the output sample rate.  See
   // http://crbug.com/154352.
-  const int buffer_size = ChooseBufferSize(sample_rate);
+  const int buffer_size = ChooseBufferSize(true, sample_rate);
 
   // TODO(xians): query the native channel layout for the specific device.
   return AudioParameters(
@@ -577,7 +577,7 @@ AudioOutputStream* AudioManagerMac::MakeLowLatencyOutputStream(
     current_sample_rate_ = params.sample_rate();
   }
 
-  AudioOutputStream* stream = new AUHALStream(this, params, device);
+  AUHALStream* stream = new AUHALStream(this, params, device);
   output_streams_.push_back(stream);
   return stream;
 }
@@ -613,7 +613,7 @@ AudioInputStream* AudioManagerMac::MakeLinearInputStream(
     const AudioParameters& params, const std::string& device_id) {
   DCHECK_EQ(AudioParameters::AUDIO_PCM_LINEAR, params.format());
   AudioInputStream* stream = new PCMQueueInAudioInputStream(this, params);
-  input_streams_.push_back(stream);
+  basic_input_streams_.push_back(stream);
   return stream;
 }
 
@@ -623,21 +623,10 @@ AudioInputStream* AudioManagerMac::MakeLowLatencyInputStream(
   // Gets the AudioDeviceID that refers to the AudioInputDevice with the device
   // unique id. This AudioDeviceID is used to set the device for Audio Unit.
   AudioDeviceID audio_device_id = GetAudioDeviceIdByUId(true, device_id);
-  AudioInputStream* stream = NULL;
+  AUAudioInputStream* stream = NULL;
   if (audio_device_id != kAudioObjectUnknown) {
-    // AUAudioInputStream needs to be fed the preferred audio output parameters
-    // of the matching device so that the buffer size of both input and output
-    // can be matched.  See constructor of AUAudioInputStream for more.
-    const std::string associated_output_device(
-        GetAssociatedOutputDeviceID(device_id));
-    const AudioParameters output_params =
-        GetPreferredOutputStreamParameters(
-            associated_output_device.empty() ?
-                AudioManagerBase::kDefaultDeviceId : associated_output_device,
-            params);
-    stream = new AUAudioInputStream(this, params, output_params,
-        audio_device_id);
-    input_streams_.push_back(stream);
+    stream = new AUAudioInputStream(this, params, audio_device_id);
+    low_latency_input_streams_.push_back(stream);
   }
 
   return stream;
@@ -651,7 +640,7 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
     DLOG(ERROR) << "Invalid output device " << output_device_id;
     return input_params.IsValid() ? input_params : AudioParameters(
         AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-        kFallbackSampleRate, 16, ChooseBufferSize(kFallbackSampleRate));
+        kFallbackSampleRate, 16, ChooseBufferSize(false, kFallbackSampleRate));
   }
 
   const bool has_valid_input_params = input_params.IsValid();
@@ -660,7 +649,7 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
   // Allow pass through buffer sizes.  If concurrent input and output streams
   // exist, they will use the smallest buffer size amongst them.  As such, each
   // stream must be able to FIFO requests appropriately when this happens.
-  int buffer_size = ChooseBufferSize(hardware_sample_rate);
+  int buffer_size = ChooseBufferSize(false, hardware_sample_rate);
   if (has_valid_input_params) {
     buffer_size =
         std::min(kMaximumInputOutputBufferSize,
@@ -685,20 +674,9 @@ AudioParameters AudioManagerMac::GetPreferredOutputStreamParameters(
       channel_layout = CHANNEL_LAYOUT_DISCRETE;
   }
 
-  const int input_channels =
-      has_valid_input_params ? input_params.input_channels() : 0;
-  if (input_channels > 0) {
-    // TODO(xians): given the limitations of the AudioOutputStream
-    // back-ends used with synchronized I/O, we hard-code to stereo.
-    // Specifically, this is a limitation of AudioSynchronizedStream which
-    // can be removed as part of the work to consolidate these back-ends.
-    channel_layout = CHANNEL_LAYOUT_STEREO;
-  }
-
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, output_channels,
-      input_channels, hardware_sample_rate, 16, buffer_size,
-      AudioParameters::NO_EFFECTS);
+      hardware_sample_rate, 16, buffer_size, AudioParameters::NO_EFFECTS);
 }
 
 void AudioManagerMac::InitializeOnAudioThread() {
@@ -720,7 +698,8 @@ void AudioManagerMac::ShutdownOnAudioThread() {
   // destruction is imminent.
   //
   // See http://crbug.com/354139 for crash details.
-  StopStreams(&input_streams_);
+  StopStreams(&basic_input_streams_);
+  StopStreams(&low_latency_input_streams_);
   StopStreams(&output_streams_);
 }
 
@@ -739,17 +718,26 @@ void AudioManagerMac::HandleDeviceChanges() {
   NotifyAllOutputDeviceChangeListeners();
 }
 
-int AudioManagerMac::ChooseBufferSize(int output_sample_rate) {
-  int buffer_size = kMinimumInputOutputBufferSize;
+int AudioManagerMac::ChooseBufferSize(bool is_input, int sample_rate) {
+  // kMinimumInputOutputBufferSize is too small for the output side because
+  // CoreAudio can get into under-run if the renderer fails delivering data
+  // to the browser within the allowed time by the OS. The workaround is to
+  // use 256 samples as the default output buffer size for sample rates
+  // smaller than 96KHz.
+  // TODO(xians): Remove this workaround after WebAudio supports user defined
+  // buffer size.  See https://github.com/WebAudio/web-audio-api/issues/348
+  // for details.
+  int buffer_size = is_input ?
+      kMinimumInputOutputBufferSize : 2 * kMinimumInputOutputBufferSize;
   const int user_buffer_size = GetUserBufferSize();
   if (user_buffer_size) {
     buffer_size = user_buffer_size;
-  } else if (output_sample_rate > 48000) {
+  } else if (sample_rate > 48000) {
     // The default buffer size is too small for higher sample rates and may lead
     // to glitching.  Adjust upwards by multiples of the default size.
-    if (output_sample_rate <= 96000)
+    if (sample_rate <= 96000)
       buffer_size = 2 * kMinimumInputOutputBufferSize;
-    else if (output_sample_rate <= 192000)
+    else if (sample_rate <= 192000)
       buffer_size = 4 * kMinimumInputOutputBufferSize;
   }
 
@@ -761,13 +749,83 @@ bool AudioManagerMac::ShouldDeferStreamStart() {
   return power_observer_->ShouldDeferStreamStart();
 }
 
+bool AudioManagerMac::MaybeChangeBufferSize(AudioDeviceID device_id,
+                                            AudioUnit audio_unit,
+                                            AudioUnitElement element,
+                                            size_t desired_buffer_size) {
+  UInt32 buffer_size = 0;
+  UInt32 property_size = sizeof(buffer_size);
+  OSStatus result = AudioUnitGetProperty(audio_unit,
+                                         kAudioDevicePropertyBufferFrameSize,
+                                         kAudioUnitScope_Output,
+                                         element,
+                                         &buffer_size,
+                                         &property_size);
+  if (result != noErr) {
+    OSSTATUS_DLOG(ERROR, result)
+        << "AudioUnitGetProperty(kAudioDevicePropertyBufferFrameSize) failed.";
+    return false;
+  }
+
+  // The lowest buffer size always wins.  For larger buffer sizes, we have
+  // to perform some checks to see if the size can actually be changed.
+  // If there is any other active streams on the same device, either input or
+  // output, a larger size than their requested buffer size can't be set.
+  // The reason is that an existing stream can't handle buffer size larger
+  // than its requested buffer size.
+  //
+  // See http://crbug.com/428706 for a reason why.
+  if (desired_buffer_size > buffer_size) {
+    // Do NOT set the buffer size if there is another output stream using
+    // the same device with a smaller requested buffer size.
+    // Note, for the caller stream, its requested_buffer_size() will be the same
+    // as |desired_buffer_size|, so it won't return true due to comparing with
+    // itself.
+    for (auto* stream : output_streams_) {
+      if (stream->device_id() == device_id &&
+          stream->requested_buffer_size() < desired_buffer_size) {
+        return true;
+      }
+    }
+
+    // Do NOT set the buffer size if there is another input stream using
+    // the same device with a smaller buffer size.
+    for (auto* stream : low_latency_input_streams_) {
+      if (stream->device_id() == device_id &&
+          stream->requested_buffer_size() < desired_buffer_size) {
+        return true;
+      }
+    }
+  }
+
+  buffer_size = desired_buffer_size;
+  result = AudioUnitSetProperty(audio_unit,
+                                kAudioDevicePropertyBufferFrameSize,
+                                kAudioUnitScope_Output,
+                                element,
+                                &buffer_size,
+                                sizeof(buffer_size));
+  OSSTATUS_DLOG_IF(ERROR, result != noErr, result)
+      << "AudioUnitSetProperty(kAudioDevicePropertyBufferFrameSize) failed.  "
+      << "Size:: " << buffer_size;
+
+  return (result == noErr);
+}
+
 void AudioManagerMac::ReleaseOutputStream(AudioOutputStream* stream) {
-  output_streams_.remove(stream);
+  output_streams_.remove(static_cast<AUHALStream*>(stream));
   AudioManagerBase::ReleaseOutputStream(stream);
 }
 
 void AudioManagerMac::ReleaseInputStream(AudioInputStream* stream) {
-  input_streams_.remove(stream);
+  auto stream_it = std::find(basic_input_streams_.begin(),
+                             basic_input_streams_.end(),
+                             stream);
+  if (stream_it == basic_input_streams_.end())
+    low_latency_input_streams_.remove(static_cast<AUAudioInputStream*>(stream));
+  else
+    basic_input_streams_.erase(stream_it);
+
   AudioManagerBase::ReleaseInputStream(stream);
 }
 

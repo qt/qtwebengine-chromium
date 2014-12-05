@@ -35,11 +35,10 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/FloatSize.h"
 #include "wtf/Assertions.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class RectangleShape FINAL : public Shape {
+class RectangleShape final : public Shape {
 public:
     RectangleShape(const FloatRect& bounds, const FloatSize& radii)
         : Shape()
@@ -48,10 +47,10 @@ public:
     {
     }
 
-    virtual LayoutRect shapeMarginLogicalBoundingBox() const OVERRIDE { return static_cast<LayoutRect>(shapeMarginBounds()); }
-    virtual bool isEmpty() const OVERRIDE { return m_bounds.isEmpty(); }
-    virtual void getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList&) const OVERRIDE;
-    virtual void buildDisplayPaths(DisplayPaths&) const OVERRIDE;
+    virtual LayoutRect shapeMarginLogicalBoundingBox() const override { return static_cast<LayoutRect>(shapeMarginBounds()); }
+    virtual bool isEmpty() const override { return m_bounds.isEmpty(); }
+    virtual LineSegment getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const override;
+    virtual void buildDisplayPaths(DisplayPaths&) const override;
 
 private:
     FloatRect shapeMarginBounds() const;
@@ -67,6 +66,6 @@ private:
     FloatSize m_radii;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RectangleShape_h

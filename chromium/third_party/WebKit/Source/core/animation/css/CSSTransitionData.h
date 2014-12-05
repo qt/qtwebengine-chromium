@@ -9,9 +9,9 @@
 #include "core/animation/css/CSSTimingData.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSTransitionData FINAL : public CSSTimingData {
+class CSSTransitionData final : public CSSTimingData {
 public:
     enum TransitionPropertyType {
         TransitionNone,
@@ -50,14 +50,14 @@ public:
         String propertyString;
     };
 
-    static PassOwnPtrWillBeRawPtr<CSSTransitionData> create()
+    static PassOwnPtr<CSSTransitionData> create()
     {
-        return adoptPtrWillBeNoop(new CSSTransitionData);
+        return adoptPtr(new CSSTransitionData);
     }
 
-    static PassOwnPtrWillBeRawPtr<CSSTransitionData> create(const CSSTransitionData& transitionData)
+    static PassOwnPtr<CSSTransitionData> create(const CSSTransitionData& transitionData)
     {
-        return adoptPtrWillBeNoop(new CSSTransitionData(transitionData));
+        return adoptPtr(new CSSTransitionData(transitionData));
     }
 
     bool transitionsMatchForStyleRecalc(const CSSTransitionData& other) const;
@@ -76,6 +76,6 @@ private:
     Vector<TransitionProperty> m_propertyList;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSTransitionData_h

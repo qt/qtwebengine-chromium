@@ -36,8 +36,8 @@ class BASE_EXPORT TraceEventSystemStatsMonitor
   virtual ~TraceEventSystemStatsMonitor();
 
   // base::debug::TraceLog::EnabledStateChangedObserver overrides:
-  virtual void OnTraceLogEnabled() OVERRIDE;
-  virtual void OnTraceLogDisabled() OVERRIDE;
+  void OnTraceLogEnabled() override;
+  void OnTraceLogDisabled() override;
 
   // Retrieves system profiling at the current time.
   void DumpSystemStats();

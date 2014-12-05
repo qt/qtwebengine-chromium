@@ -21,11 +21,11 @@
 #ifndef SVGPathSeg_h
 #define SVGPathSeg_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ListModification {
     ListModificationUnknown = 0,
@@ -58,17 +58,12 @@ enum SVGPathSegType {
     PathSegCurveToQuadraticSmoothRel = 19
 };
 
-enum SVGPathSegRole {
-    PathSegUnalteredRole = 0,
-    PathSegNormalizedRole = 1,
-    PathSegUndefinedRole = 2
-};
-
 class SVGPropertyBase;
 class SVGPathElement;
 class SVGElement;
 
 class SVGPathSeg : public RefCounted<SVGPathSeg>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // SVGPathSeg itself is used as a tear-off type.
     // FIXME: A tear-off type should be introduced to distinguish animVal/baseVal
@@ -123,6 +118,9 @@ public:
         m_contextElement = contextElement;
     }
 
+    static PassRefPtr<SVGPathSeg> create() { ASSERT_NOT_REACHED(); return nullptr; }
+    PassRefPtr<SVGPathSeg> clone() { ASSERT_NOT_REACHED(); return nullptr; }
+
 protected:
     void commitChange();
 
@@ -132,6 +130,6 @@ private:
     SVGElement* m_contextElement;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSeg_h

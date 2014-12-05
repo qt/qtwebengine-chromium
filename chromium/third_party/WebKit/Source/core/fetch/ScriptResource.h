@@ -26,16 +26,31 @@
 #ifndef ScriptResource_h
 #define ScriptResource_h
 
+#include "core/fetch/ResourceClient.h"
 #include "core/fetch/TextResource.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptResource FINAL : public TextResource {
+class ScriptResource;
+
+class ScriptResourceClient : public ResourceClient {
 public:
-    typedef ResourceClient ClientType;
+    virtual ~ScriptResourceClient() { }
+    static ResourceClientType expectedType() { return ScriptType; }
+    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
+
+    virtual void notifyAppendData(ScriptResource* resource) { }
+};
+
+class ScriptResource final : public TextResource {
+public:
+    typedef ScriptResourceClient ClientType;
 
     ScriptResource(const ResourceRequest&, const String& charset);
     virtual ~ScriptResource();
+
+    virtual void didAddClient(ResourceClient*) override;
+    virtual void appendData(const char*, unsigned) override;
 
     const String& script();
 

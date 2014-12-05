@@ -36,7 +36,7 @@
 #include "modules/geolocation/GeolocationError.h"
 #include "modules/geolocation/GeolocationPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 GeolocationClientMock::GeolocationClientMock()
     : m_hasError(false)
@@ -126,11 +126,6 @@ void GeolocationClientMock::permissionTimerFired(Timer<GeolocationClientMock>* t
     m_pendingPermissions.clear();
 }
 
-void GeolocationClientMock::geolocationDestroyed()
-{
-    ASSERT(!m_isActive);
-}
-
 void GeolocationClientMock::startUpdating()
 {
     ASSERT(!m_isActive);
@@ -184,4 +179,14 @@ void GeolocationClientMock::clearError()
     m_errorMessage = String();
 }
 
-} // WebCore
+void GeolocationClientMock::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_controllers);
+#endif
+    visitor->trace(m_lastPosition);
+    visitor->trace(m_pendingPermissions);
+    GeolocationClient::trace(visitor);
+}
+
+} // namespace blink

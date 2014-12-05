@@ -166,14 +166,17 @@ macro TO_STRING_INLINE(arg) = (IS_STRING(%IS_VAR(arg)) ? arg : NonStringToString
 macro TO_NUMBER_INLINE(arg) = (IS_NUMBER(%IS_VAR(arg)) ? arg : NonNumberToNumber(arg));
 macro TO_OBJECT_INLINE(arg) = (IS_SPEC_OBJECT(%IS_VAR(arg)) ? arg : ToObject(arg));
 macro JSON_NUMBER_TO_STRING(arg) = ((%_IsSmi(%IS_VAR(arg)) || arg - arg == 0) ? %_NumberToString(arg) : "null");
+macro HAS_OWN_PROPERTY(obj, index) = (%_CallFunction(obj, index, ObjectHasOwnProperty));
+macro SHOULD_CREATE_WRAPPER(functionName, receiver) = (!IS_SPEC_OBJECT(receiver) && %IsSloppyModeFunction(functionName));
 
 # Private names.
 # GET_PRIVATE should only be used if the property is known to exists on obj
 # itself (it should really use %GetOwnProperty, but that would be way slower).
-macro GLOBAL_PRIVATE(name) = (%CreateGlobalPrivateSymbol(name));
-macro NEW_PRIVATE(name) = (%CreatePrivateSymbol(name));
+macro GLOBAL_PRIVATE(name) = (%CreateGlobalPrivateOwnSymbol(name));
+macro NEW_PRIVATE_OWN(name) = (%CreatePrivateOwnSymbol(name));
 macro IS_PRIVATE(sym) = (%SymbolIsPrivate(sym));
 macro HAS_PRIVATE(obj, sym) = (%HasOwnProperty(obj, sym));
+macro HAS_DEFINED_PRIVATE(obj, sym) = (!IS_UNDEFINED(obj[sym]));
 macro GET_PRIVATE(obj, sym) = (obj[sym]);
 macro SET_PRIVATE(obj, sym, val) = (obj[sym] = val);
 macro DELETE_PRIVATE(obj, sym) = (delete obj[sym]);
@@ -252,7 +255,7 @@ macro OVERRIDE_SUBJECT(override) = ((override)[(override).length - 1]);
 macro OVERRIDE_CAPTURE(override, index) = ((override)[(index)]);
 
 # PropertyDescriptor return value indices - must match
-# PropertyDescriptorIndices in runtime.cc.
+# PropertyDescriptorIndices in runtime-object.cc.
 const IS_ACCESSOR_INDEX = 0;
 const VALUE_INDEX = 1;
 const GETTER_INDEX = 2;
@@ -285,3 +288,6 @@ const PROPERTY_ATTRIBUTES_PRIVATE_SYMBOL = 32;
 const ITERATOR_KIND_KEYS = 1;
 const ITERATOR_KIND_VALUES = 2;
 const ITERATOR_KIND_ENTRIES = 3;
+
+# Check whether debug is active.
+const DEBUG_IS_ACTIVE = (%_DebugIsActive() != 0);

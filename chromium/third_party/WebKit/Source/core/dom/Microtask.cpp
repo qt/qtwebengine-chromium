@@ -31,33 +31,43 @@
 #include "config.h"
 #include "core/dom/Microtask.h"
 
-#include "bindings/v8/V8PerIsolateData.h"
+#include "bindings/core/v8/V8PerIsolateData.h"
+#include "bindings/core/v8/V8RecursionScope.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/Task.h"
 #include "public/platform/WebThread.h"
-#include "wtf/Vector.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 void Microtask::performCheckpoint()
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     V8PerIsolateData* isolateData = V8PerIsolateData::from(isolate);
     ASSERT(isolateData);
-    if (isolateData->recursionLevel() || isolateData->performingMicrotaskCheckpoint())
+    if (isolateData->recursionLevel() || isolateData->performingMicrotaskCheckpoint() || isolateData->destructionPending() || ScriptForbiddenScope::isScriptForbidden())
         return;
     isolateData->setPerformingMicrotaskCheckpoint(true);
-    isolate->RunMicrotasks();
+    {
+        // Ensure that end-of-task-or-microtask actions are performed.
+        V8RecursionScope recursionScope(isolate);
+        isolate->RunMicrotasks();
+    }
     isolateData->setPerformingMicrotaskCheckpoint(false);
+}
+
+bool Microtask::performingCheckpoint(v8::Isolate* isolate)
+{
+    return V8PerIsolateData::from(isolate)->performingMicrotaskCheckpoint();
 }
 
 static void microtaskFunctionCallback(void* data)
 {
-    OwnPtr<blink::WebThread::Task> task = adoptPtr(static_cast<blink::WebThread::Task*>(data));
+    OwnPtr<WebThread::Task> task = adoptPtr(static_cast<WebThread::Task*>(data));
     task->run();
 }
 
-void Microtask::enqueueMicrotask(PassOwnPtr<blink::WebThread::Task> callback)
+void Microtask::enqueueMicrotask(PassOwnPtr<WebThread::Task> callback)
 {
     v8::Isolate* isolate = v8::Isolate::GetCurrent();
     isolate->EnqueueMicrotask(&microtaskFunctionCallback, callback.leakPtr());
@@ -68,4 +78,4 @@ void Microtask::enqueueMicrotask(const Closure& callback)
     enqueueMicrotask(adoptPtr(new Task(callback)));
 }
 
-} // namespace WebCore
+} // namespace blink

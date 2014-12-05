@@ -5,7 +5,6 @@
 #include "ui/views/controls/button/label_button_border.h"
 
 #include "base/logging.h"
-#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkPaint.h"
 #include "third_party/skia/include/effects/SkLerpXfermode.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -15,6 +14,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/sys_color_change_listener.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/resources/grit/ui_resources.h"
 #include "ui/views/border.h"
 #include "ui/views/controls/button/label_button.h"
 #include "ui/views/native_theme_delegate.h"
@@ -57,8 +57,8 @@ LabelButtonBorder::LabelButtonBorder(Button::ButtonStyle style)
                            kButtonInsets,
                            kButtonInsets);
 
+  set_insets(GetDefaultInsetsForStyle(style_));
   if (style == Button::STYLE_BUTTON) {
-    set_insets(gfx::Insets(8, 13, 8, 13));
     SetPainter(false, Button::STATE_NORMAL,
                Painter::CreateImagePainter(
                    *rb.GetImageSkiaNamed(IDR_BUTTON_NORMAL), insets));
@@ -84,7 +84,6 @@ LabelButtonBorder::LabelButtonBorder(Button::ButtonStyle style)
                Painter::CreateImagePainter(
                    *rb.GetImageSkiaNamed(IDR_BUTTON_DISABLED), insets));
   } else if (style == Button::STYLE_TEXTBUTTON) {
-    set_insets(gfx::Insets(5, 6, 5, 6));
     SetPainter(false, Button::STATE_HOVERED,
                Painter::CreateImageGridPainter(kTextHoveredImages));
     SetPainter(false, Button::STATE_PRESSED,
@@ -93,6 +92,20 @@ LabelButtonBorder::LabelButtonBorder(Button::ButtonStyle style)
 }
 
 LabelButtonBorder::~LabelButtonBorder() {}
+
+// static
+gfx::Insets LabelButtonBorder::GetDefaultInsetsForStyle(
+    Button::ButtonStyle style) {
+  gfx::Insets insets;
+  if (style == Button::STYLE_BUTTON) {
+    insets = gfx::Insets(8, 13, 8, 13);
+  } else if (style == Button::STYLE_TEXTBUTTON) {
+    insets = gfx::Insets(5, 6, 5, 6);
+  } else {
+    NOTREACHED();
+  }
+  return insets;
+}
 
 void LabelButtonBorder::Paint(const View& view, gfx::Canvas* canvas) {
   const NativeThemeDelegate* native_theme_delegate =

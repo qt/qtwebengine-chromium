@@ -23,13 +23,13 @@ class FakeAudioRendererSink : public AudioRendererSink {
 
   FakeAudioRendererSink();
 
-  virtual void Initialize(const AudioParameters& params,
-                          RenderCallback* callback) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Pause() OVERRIDE;
-  virtual void Play() OVERRIDE;
-  virtual bool SetVolume(double volume) OVERRIDE;
+  void Initialize(const AudioParameters& params,
+                  RenderCallback* callback) override;
+  void Start() override;
+  void Stop() override;
+  void Pause() override;
+  void Play() override;
+  bool SetVolume(double volume) override;
 
   // Attempts to call Render() on the callback provided to
   // Initialize() with |dest| and |audio_delay_milliseconds|.
@@ -45,7 +45,7 @@ class FakeAudioRendererSink : public AudioRendererSink {
   State state() const { return state_; }
 
  protected:
-  virtual ~FakeAudioRendererSink();
+  ~FakeAudioRendererSink() override;
 
  private:
   void ChangeState(State new_state);

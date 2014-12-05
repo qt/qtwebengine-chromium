@@ -2,19 +2,24 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <stdarg.h>
+#include "src/log.h"
+
+#include <cstdarg>
+#include <sstream>
 
 #include "src/v8.h"
 
+#include "src/bailout-reason.h"
+#include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
 #include "src/code-stubs.h"
 #include "src/cpu-profiler.h"
 #include "src/deoptimizer.h"
 #include "src/global-handles.h"
-#include "src/log.h"
+#include "src/log-inl.h"
 #include "src/log-utils.h"
 #include "src/macro-assembler.h"
-#include "src/platform.h"
+#include "src/perf-jit.h"
 #include "src/runtime-profiler.h"
 #include "src/serialize.h"
 #include "src/string-stream.h"
@@ -262,9 +267,10 @@ PerfBasicLogger::PerfBasicLogger()
   int size = SNPrintF(
       perf_dump_name,
       kFilenameFormatString,
-      OS::GetCurrentProcessId());
+      base::OS::GetCurrentProcessId());
   CHECK_NE(size, -1);
-  perf_output_handle_ = OS::FOpen(perf_dump_name.start(), OS::LogFileOpenMode);
+  perf_output_handle_ =
+      base::OS::FOpen(perf_dump_name.start(), base::OS::LogFileOpenMode);
   CHECK_NE(perf_output_handle_, NULL);
   setvbuf(perf_output_handle_, NULL, _IOFBF, kLogBufferSize);
 }
@@ -280,176 +286,11 @@ void PerfBasicLogger::LogRecordedBuffer(Code* code,
                                        SharedFunctionInfo*,
                                        const char* name,
                                        int length) {
-  ASSERT(code->instruction_start() == code->address() + Code::kHeaderSize);
+  DCHECK(code->instruction_start() == code->address() + Code::kHeaderSize);
 
-  OS::FPrint(perf_output_handle_, "%llx %x %.*s\n",
-      reinterpret_cast<uint64_t>(code->instruction_start()),
-      code->instruction_size(),
-      length, name);
-}
-
-
-// Linux perf tool logging support
-class PerfJitLogger : public CodeEventLogger {
- public:
-  PerfJitLogger();
-  virtual ~PerfJitLogger();
-
-  virtual void CodeMoveEvent(Address from, Address to) { }
-  virtual void CodeDisableOptEvent(Code* code, SharedFunctionInfo* shared) { }
-  virtual void CodeDeleteEvent(Address from) { }
-
- private:
-  virtual void LogRecordedBuffer(Code* code,
-                                 SharedFunctionInfo* shared,
-                                 const char* name,
-                                 int length);
-
-  // Extension added to V8 log file name to get the low-level log name.
-  static const char kFilenameFormatString[];
-  static const int kFilenameBufferPadding;
-
-  // File buffer size of the low-level log. We don't use the default to
-  // minimize the associated overhead.
-  static const int kLogBufferSize = 2 * MB;
-
-  void LogWriteBytes(const char* bytes, int size);
-  void LogWriteHeader();
-
-  static const uint32_t kJitHeaderMagic = 0x4F74496A;
-  static const uint32_t kJitHeaderVersion = 0x2;
-  static const uint32_t kElfMachIA32 = 3;
-  static const uint32_t kElfMachX64 = 62;
-  static const uint32_t kElfMachARM = 40;
-  static const uint32_t kElfMachMIPS = 10;
-  static const uint32_t kElfMachX87 = 3;
-
-  struct jitheader {
-    uint32_t magic;
-    uint32_t version;
-    uint32_t total_size;
-    uint32_t elf_mach;
-    uint32_t pad1;
-    uint32_t pid;
-    uint64_t timestamp;
-  };
-
-  enum jit_record_type {
-    JIT_CODE_LOAD = 0
-    // JIT_CODE_UNLOAD = 1,
-    // JIT_CODE_CLOSE = 2,
-    // JIT_CODE_DEBUG_INFO = 3,
-    // JIT_CODE_PAGE_MAP = 4,
-    // JIT_CODE_MAX = 5
-  };
-
-  struct jr_code_load {
-    uint32_t id;
-    uint32_t total_size;
-    uint64_t timestamp;
-    uint64_t vma;
-    uint64_t code_addr;
-    uint32_t code_size;
-    uint32_t align;
-  };
-
-  uint32_t GetElfMach() {
-#if V8_TARGET_ARCH_IA32
-    return kElfMachIA32;
-#elif V8_TARGET_ARCH_X64
-    return kElfMachX64;
-#elif V8_TARGET_ARCH_ARM
-    return kElfMachARM;
-#elif V8_TARGET_ARCH_MIPS
-    return kElfMachMIPS;
-#elif V8_TARGET_ARCH_X87
-    return kElfMachX87;
-#else
-    UNIMPLEMENTED();
-    return 0;
-#endif
-  }
-
-  FILE* perf_output_handle_;
-};
-
-const char PerfJitLogger::kFilenameFormatString[] = "/tmp/jit-%d.dump";
-
-// Extra padding for the PID in the filename
-const int PerfJitLogger::kFilenameBufferPadding = 16;
-
-PerfJitLogger::PerfJitLogger()
-    : perf_output_handle_(NULL) {
-  // Open the perf JIT dump file.
-  int bufferSize = sizeof(kFilenameFormatString) + kFilenameBufferPadding;
-  ScopedVector<char> perf_dump_name(bufferSize);
-  int size = SNPrintF(
-      perf_dump_name,
-      kFilenameFormatString,
-      OS::GetCurrentProcessId());
-  CHECK_NE(size, -1);
-  perf_output_handle_ = OS::FOpen(perf_dump_name.start(), OS::LogFileOpenMode);
-  CHECK_NE(perf_output_handle_, NULL);
-  setvbuf(perf_output_handle_, NULL, _IOFBF, kLogBufferSize);
-
-  LogWriteHeader();
-}
-
-
-PerfJitLogger::~PerfJitLogger() {
-  fclose(perf_output_handle_);
-  perf_output_handle_ = NULL;
-}
-
-
-void PerfJitLogger::LogRecordedBuffer(Code* code,
-                                      SharedFunctionInfo*,
-                                      const char* name,
-                                      int length) {
-  ASSERT(code->instruction_start() == code->address() + Code::kHeaderSize);
-  ASSERT(perf_output_handle_ != NULL);
-
-  const char* code_name = name;
-  uint8_t* code_pointer = reinterpret_cast<uint8_t*>(code->instruction_start());
-  uint32_t code_size = code->instruction_size();
-
-  static const char string_terminator[] = "\0";
-
-  jr_code_load code_load;
-  code_load.id = JIT_CODE_LOAD;
-  code_load.total_size = sizeof(code_load) + length + 1 + code_size;
-  code_load.timestamp =
-      static_cast<uint64_t>(OS::TimeCurrentMillis() * 1000.0);
-  code_load.vma = 0x0;  //  Our addresses are absolute.
-  code_load.code_addr = reinterpret_cast<uint64_t>(code->instruction_start());
-  code_load.code_size = code_size;
-  code_load.align = 0;
-
-  LogWriteBytes(reinterpret_cast<const char*>(&code_load), sizeof(code_load));
-  LogWriteBytes(code_name, length);
-  LogWriteBytes(string_terminator, 1);
-  LogWriteBytes(reinterpret_cast<const char*>(code_pointer), code_size);
-}
-
-
-void PerfJitLogger::LogWriteBytes(const char* bytes, int size) {
-  size_t rv = fwrite(bytes, 1, size, perf_output_handle_);
-  ASSERT(static_cast<size_t>(size) == rv);
-  USE(rv);
-}
-
-
-void PerfJitLogger::LogWriteHeader() {
-  ASSERT(perf_output_handle_ != NULL);
-  jitheader header;
-  header.magic = kJitHeaderMagic;
-  header.version = kJitHeaderVersion;
-  header.total_size = sizeof(jitheader);
-  header.pad1 = 0xdeadbeef;
-  header.elf_mach = GetElfMach();
-  header.pid = OS::GetCurrentProcessId();
-  header.timestamp = static_cast<uint64_t>(OS::TimeCurrentMillis() * 1000.0);
-  LogWriteBytes(reinterpret_cast<const char*>(&header), sizeof(header));
+  base::OS::FPrint(perf_output_handle_, "%llx %x %.*s\n",
+                   reinterpret_cast<uint64_t>(code->instruction_start()),
+                   code->instruction_size(), length, name);
 }
 
 
@@ -538,7 +379,8 @@ LowLevelLogger::LowLevelLogger(const char* name)
   ScopedVector<char> ll_name(static_cast<int>(len + sizeof(kLogExt)));
   MemCopy(ll_name.start(), name, len);
   MemCopy(ll_name.start() + len, kLogExt, sizeof(kLogExt));
-  ll_output_handle_ = OS::FOpen(ll_name.start(), OS::LogFileOpenMode);
+  ll_output_handle_ =
+      base::OS::FOpen(ll_name.start(), base::OS::LogFileOpenMode);
   setvbuf(ll_output_handle_, NULL, _IOFBF, kLogBufferSize);
 
   LogCodeInfo();
@@ -554,14 +396,18 @@ LowLevelLogger::~LowLevelLogger() {
 void LowLevelLogger::LogCodeInfo() {
 #if V8_TARGET_ARCH_IA32
   const char arch[] = "ia32";
-#elif V8_TARGET_ARCH_X64
+#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT
   const char arch[] = "x64";
+#elif V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT
+  const char arch[] = "x32";
 #elif V8_TARGET_ARCH_ARM
   const char arch[] = "arm";
 #elif V8_TARGET_ARCH_MIPS
   const char arch[] = "mips";
 #elif V8_TARGET_ARCH_X87
   const char arch[] = "x87";
+#elif V8_TARGET_ARCH_ARM64
+  const char arch[] = "arm64";
 #else
   const char arch[] = "unknown";
 #endif
@@ -576,7 +422,7 @@ void LowLevelLogger::LogRecordedBuffer(Code* code,
   CodeCreateStruct event;
   event.name_size = length;
   event.code_address = code->instruction_start();
-  ASSERT(event.code_address == code->address() + Code::kHeaderSize);
+  DCHECK(event.code_address == code->address() + Code::kHeaderSize);
   event.code_size = code->instruction_size();
   LogWriteStruct(event);
   LogWriteBytes(name, length);
@@ -611,7 +457,7 @@ void LowLevelLogger::SnapshotPositionEvent(Address addr, int pos) {
 
 void LowLevelLogger::LogWriteBytes(const char* bytes, int size) {
   size_t rv = fwrite(bytes, 1, size, ll_output_handle_);
-  ASSERT(static_cast<size_t>(size) == rv);
+  DCHECK(static_cast<size_t>(size) == rv);
   USE(rv);
 }
 
@@ -666,11 +512,11 @@ void JitLogger::LogRecordedBuffer(Code* code,
   event.type = JitCodeEvent::CODE_ADDED;
   event.code_start = code->instruction_start();
   event.code_len = code->instruction_size();
-  Handle<Script> script_handle;
+  Handle<SharedFunctionInfo> shared_function_handle;
   if (shared && shared->script()->IsScript()) {
-    script_handle = Handle<Script>(Script::cast(shared->script()));
+    shared_function_handle = Handle<SharedFunctionInfo>(shared);
   }
-  event.script = ToApiHandle<v8::Script>(script_handle);
+  event.script = ToApiHandle<v8::UnboundScript>(shared_function_handle);
   event.name.str = name;
   event.name.len = length;
   code_event_handler_(&event);
@@ -751,7 +597,7 @@ void JitLogger::EndCodePosInfoEvent(Code* code, void* jit_handler_data) {
 // An independent thread removes data and writes it to the log.
 // This design minimizes the time spent in the sampler.
 //
-class Profiler: public Thread {
+class Profiler: public base::Thread {
  public:
   explicit Profiler(Isolate* isolate);
   void Engage();
@@ -762,7 +608,7 @@ class Profiler: public Thread {
     if (paused_)
       return;
 
-    if (Succ(head_) == tail_) {
+    if (Succ(head_) == static_cast<int>(base::NoBarrier_Load(&tail_))) {
       overflow_ = true;
     } else {
       buffer_[head_] = *sample;
@@ -781,9 +627,10 @@ class Profiler: public Thread {
   // Waits for a signal and removes profiling data.
   bool Remove(TickSample* sample) {
     buffer_semaphore_.Wait();  // Wait for an element.
-    *sample = buffer_[tail_];
+    *sample = buffer_[base::NoBarrier_Load(&tail_)];
     bool result = overflow_;
-    tail_ = Succ(tail_);
+    base::NoBarrier_Store(&tail_, static_cast<base::Atomic32>(
+                                      Succ(base::NoBarrier_Load(&tail_))));
     overflow_ = false;
     return result;
   }
@@ -797,16 +644,16 @@ class Profiler: public Thread {
   static const int kBufferSize = 128;
   TickSample buffer_[kBufferSize];  // Buffer storage.
   int head_;  // Index to the buffer head.
-  int tail_;  // Index to the buffer tail.
+  base::Atomic32 tail_;             // Index to the buffer tail.
   bool overflow_;  // Tell whether a buffer overflow has occurred.
   // Sempahore used for buffer synchronization.
-  Semaphore buffer_semaphore_;
+  base::Semaphore buffer_semaphore_;
 
   // Tells whether profiler is engaged, that is, processing thread is stated.
   bool engaged_;
 
   // Tells whether worker thread should continue running.
-  bool running_;
+  base::Atomic32 running_;
 
   // Tells whether we are currently recording tick samples.
   bool paused_;
@@ -830,7 +677,7 @@ class Ticker: public Sampler {
   }
 
   void SetProfiler(Profiler* profiler) {
-    ASSERT(profiler_ == NULL);
+    DCHECK(profiler_ == NULL);
     profiler_ = profiler;
     IncreaseProfilingDepth();
     if (!IsActive()) Start();
@@ -851,15 +698,15 @@ class Ticker: public Sampler {
 // Profiler implementation.
 //
 Profiler::Profiler(Isolate* isolate)
-    : Thread("v8:Profiler"),
+    : base::Thread(Options("v8:Profiler")),
       isolate_(isolate),
       head_(0),
-      tail_(0),
       overflow_(false),
       buffer_semaphore_(0),
       engaged_(false),
-      running_(false),
       paused_(false) {
+  base::NoBarrier_Store(&tail_, 0);
+  base::NoBarrier_Store(&running_, 0);
 }
 
 
@@ -867,15 +714,15 @@ void Profiler::Engage() {
   if (engaged_) return;
   engaged_ = true;
 
-  std::vector<OS::SharedLibraryAddress> addresses =
-      OS::GetSharedLibraryAddresses();
+  std::vector<base::OS::SharedLibraryAddress> addresses =
+      base::OS::GetSharedLibraryAddresses();
   for (size_t i = 0; i < addresses.size(); ++i) {
     LOG(isolate_, SharedLibraryEvent(
         addresses[i].library_path, addresses[i].start, addresses[i].end));
   }
 
   // Start thread processing the profiler buffer.
-  running_ = true;
+  base::NoBarrier_Store(&running_, 1);
   Start();
 
   // Register to get ticks.
@@ -895,7 +742,7 @@ void Profiler::Disengage() {
   // Terminate the worker thread by setting running_ to false,
   // inserting a fake element in the queue and then wait for
   // the thread to terminate.
-  running_ = false;
+  base::NoBarrier_Store(&running_, 0);
   TickSample sample;
   // Reset 'paused_' flag, otherwise semaphore may not be signalled.
   resume();
@@ -909,7 +756,7 @@ void Profiler::Disengage() {
 void Profiler::Run() {
   TickSample sample;
   bool overflow = Remove(&sample);
-  while (running_) {
+  while (base::NoBarrier_Load(&running_)) {
     LOG(isolate_, TickEvent(&sample, overflow));
     overflow = Remove(&sample);
   }
@@ -942,13 +789,13 @@ Logger::~Logger() {
 
 
 void Logger::addCodeEventListener(CodeEventListener* listener) {
-  ASSERT(!hasCodeEventListener(listener));
+  DCHECK(!hasCodeEventListener(listener));
   listeners_.Add(listener);
 }
 
 
 void Logger::removeCodeEventListener(CodeEventListener* listener) {
-  ASSERT(hasCodeEventListener(listener));
+  DCHECK(hasCodeEventListener(listener));
   listeners_.RemoveElement(listener);
 }
 
@@ -961,7 +808,7 @@ bool Logger::hasCodeEventListener(CodeEventListener* listener) {
 void Logger::ProfilerBeginEvent() {
   if (!log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("profiler,\"begin\",%d\n", kSamplingIntervalMs);
+  msg.Append("profiler,\"begin\",%d", kSamplingIntervalMs);
   msg.WriteToLogFile();
 }
 
@@ -974,7 +821,7 @@ void Logger::StringEvent(const char* name, const char* value) {
 void Logger::UncheckedStringEvent(const char* name, const char* value) {
   if (!log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("%s,\"%s\"\n", name, value);
+  msg.Append("%s,\"%s\"", name, value);
   msg.WriteToLogFile();
 }
 
@@ -992,7 +839,7 @@ void Logger::IntPtrTEvent(const char* name, intptr_t value) {
 void Logger::UncheckedIntEvent(const char* name, int value) {
   if (!log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("%s,%d\n", name, value);
+  msg.Append("%s,%d", name, value);
   msg.WriteToLogFile();
 }
 
@@ -1000,7 +847,7 @@ void Logger::UncheckedIntEvent(const char* name, int value) {
 void Logger::UncheckedIntPtrTEvent(const char* name, intptr_t value) {
   if (!log_->IsEnabled()) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("%s,%" V8_PTR_PREFIX "d\n", name, value);
+  msg.Append("%s,%" V8_PTR_PREFIX "d", name, value);
   msg.WriteToLogFile();
 }
 
@@ -1008,7 +855,7 @@ void Logger::UncheckedIntPtrTEvent(const char* name, intptr_t value) {
 void Logger::HandleEvent(const char* name, Object** location) {
   if (!log_->IsEnabled() || !FLAG_log_handles) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("%s,0x%" V8PRIxPTR "\n", name, location);
+  msg.Append("%s,0x%" V8PRIxPTR, name, location);
   msg.WriteToLogFile();
 }
 
@@ -1017,7 +864,7 @@ void Logger::HandleEvent(const char* name, Object** location) {
 // caller's responsibility to ensure that log is enabled and that
 // FLAG_log_api is true.
 void Logger::ApiEvent(const char* format, ...) {
-  ASSERT(log_->IsEnabled() && FLAG_log_api);
+  DCHECK(log_->IsEnabled() && FLAG_log_api);
   Log::MessageBuilder msg(log_);
   va_list ap;
   va_start(ap, format);
@@ -1032,23 +879,21 @@ void Logger::ApiNamedSecurityCheck(Object* key) {
   if (key->IsString()) {
     SmartArrayPointer<char> str =
         String::cast(key)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    ApiEvent("api,check-security,\"%s\"\n", str.get());
+    ApiEvent("api,check-security,\"%s\"", str.get());
   } else if (key->IsSymbol()) {
     Symbol* symbol = Symbol::cast(key);
     if (symbol->name()->IsUndefined()) {
-      ApiEvent("api,check-security,symbol(hash %x)\n",
-               Symbol::cast(key)->Hash());
+      ApiEvent("api,check-security,symbol(hash %x)", Symbol::cast(key)->Hash());
     } else {
       SmartArrayPointer<char> str = String::cast(symbol->name())->ToCString(
           DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-      ApiEvent("api,check-security,symbol(\"%s\" hash %x)\n",
-               str.get(),
+      ApiEvent("api,check-security,symbol(\"%s\" hash %x)", str.get(),
                Symbol::cast(key)->Hash());
     }
   } else if (key->IsUndefined()) {
-    ApiEvent("api,check-security,undefined\n");
+    ApiEvent("api,check-security,undefined");
   } else {
-    ApiEvent("api,check-security,['no-name']\n");
+    ApiEvent("api,check-security,['no-name']");
   }
 }
 
@@ -1058,80 +903,71 @@ void Logger::SharedLibraryEvent(const std::string& library_path,
                                 uintptr_t end) {
   if (!log_->IsEnabled() || !FLAG_prof) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("shared-library,\"%s\",0x%08" V8PRIxPTR ",0x%08" V8PRIxPTR "\n",
-             library_path.c_str(),
-             start,
-             end);
+  msg.Append("shared-library,\"%s\",0x%08" V8PRIxPTR ",0x%08" V8PRIxPTR,
+             library_path.c_str(), start, end);
   msg.WriteToLogFile();
 }
 
 
 void Logger::CodeDeoptEvent(Code* code) {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
-  msg.Append("code-deopt,%ld,%d\n", since_epoch, code->CodeSize());
+  msg.Append("code-deopt,%ld,%d", since_epoch, code->CodeSize());
   msg.WriteToLogFile();
 }
 
 
 void Logger::CurrentTimeEvent() {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
-  msg.Append("current-time,%ld\n", since_epoch);
+  msg.Append("current-time,%ld", since_epoch);
   msg.WriteToLogFile();
 }
 
 
-void Logger::TimerEvent(StartEnd se, const char* name) {
+void Logger::TimerEvent(Logger::StartEnd se, const char* name) {
   if (!log_->IsEnabled()) return;
-  ASSERT(FLAG_log_internal_timer_events);
+  DCHECK(FLAG_log_internal_timer_events);
   Log::MessageBuilder msg(log_);
   int since_epoch = static_cast<int>(timer_.Elapsed().InMicroseconds());
-  const char* format = (se == START) ? "timer-event-start,\"%s\",%ld\n"
-                                     : "timer-event-end,\"%s\",%ld\n";
+  const char* format = (se == START) ? "timer-event-start,\"%s\",%ld"
+                                     : "timer-event-end,\"%s\",%ld";
   msg.Append(format, name, since_epoch);
   msg.WriteToLogFile();
 }
 
 
 void Logger::EnterExternal(Isolate* isolate) {
-  LOG(isolate, TimerEvent(START, TimerEventScope::v8_external));
-  ASSERT(isolate->current_vm_state() == JS);
+  LOG(isolate, TimerEvent(START, TimerEventExternal::name()));
+  DCHECK(isolate->current_vm_state() == JS);
   isolate->set_current_vm_state(EXTERNAL);
 }
 
 
 void Logger::LeaveExternal(Isolate* isolate) {
-  LOG(isolate, TimerEvent(END, TimerEventScope::v8_external));
-  ASSERT(isolate->current_vm_state() == EXTERNAL);
+  LOG(isolate, TimerEvent(END, TimerEventExternal::name()));
+  DCHECK(isolate->current_vm_state() == EXTERNAL);
   isolate->set_current_vm_state(JS);
 }
 
 
-void Logger::LogInternalEvents(const char* name, int se) {
-  Isolate* isolate = Isolate::Current();
-  LOG(isolate, TimerEvent(static_cast<StartEnd>(se), name));
+template <class TimerEvent>
+void TimerEventScope<TimerEvent>::LogTimerEvent(Logger::StartEnd se) {
+  Logger::CallEventLogger(isolate_, TimerEvent::name(), se,
+                          TimerEvent::expose_to_api());
 }
 
 
-void Logger::TimerEventScope::LogTimerEvent(StartEnd se) {
-  isolate_->event_logger()(name_, se);
-}
-
-
-const char* Logger::TimerEventScope::v8_recompile_synchronous =
-    "V8.RecompileSynchronous";
-const char* Logger::TimerEventScope::v8_recompile_concurrent =
-    "V8.RecompileConcurrent";
-const char* Logger::TimerEventScope::v8_compile_full_code =
-    "V8.CompileFullCode";
-const char* Logger::TimerEventScope::v8_execute = "V8.Execute";
-const char* Logger::TimerEventScope::v8_external = "V8.External";
-const char* Logger::TimerEventScope::v8_ic_miss = "V8.IcMiss";
+// Instantiate template methods.
+#define V(TimerName, expose)                                           \
+  template void TimerEventScope<TimerEvent##TimerName>::LogTimerEvent( \
+      Logger::StartEnd se);
+TIMER_EVENTS_LIST(V)
+#undef V
 
 
 void Logger::LogRegExpSource(Handle<JSRegExp> regexp) {
@@ -1185,21 +1021,21 @@ void Logger::RegExpCompileEvent(Handle<JSRegExp> regexp, bool in_cache) {
   Log::MessageBuilder msg(log_);
   msg.Append("regexp-compile,");
   LogRegExpSource(regexp);
-  msg.Append(in_cache ? ",hit\n" : ",miss\n");
+  msg.Append(in_cache ? ",hit" : ",miss");
   msg.WriteToLogFile();
 }
 
 
 void Logger::ApiIndexedSecurityCheck(uint32_t index) {
   if (!log_->IsEnabled() || !FLAG_log_api) return;
-  ApiEvent("api,check-security,%u\n", index);
+  ApiEvent("api,check-security,%u", index);
 }
 
 
 void Logger::ApiNamedPropertyAccess(const char* tag,
                                     JSObject* holder,
                                     Object* name) {
-  ASSERT(name->IsName());
+  DCHECK(name->IsName());
   if (!log_->IsEnabled() || !FLAG_log_api) return;
   String* class_name_obj = holder->class_name();
   SmartArrayPointer<char> class_name =
@@ -1207,18 +1043,18 @@ void Logger::ApiNamedPropertyAccess(const char* tag,
   if (name->IsString()) {
     SmartArrayPointer<char> property_name =
         String::cast(name)->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-    ApiEvent("api,%s,\"%s\",\"%s\"\n", tag, class_name.get(),
+    ApiEvent("api,%s,\"%s\",\"%s\"", tag, class_name.get(),
              property_name.get());
   } else {
     Symbol* symbol = Symbol::cast(name);
     uint32_t hash = symbol->Hash();
     if (symbol->name()->IsUndefined()) {
-      ApiEvent("api,%s,\"%s\",symbol(hash %x)\n", tag, class_name.get(), hash);
+      ApiEvent("api,%s,\"%s\",symbol(hash %x)", tag, class_name.get(), hash);
     } else {
       SmartArrayPointer<char> str = String::cast(symbol->name())->ToCString(
           DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-      ApiEvent("api,%s,\"%s\",symbol(\"%s\" hash %x)\n",
-               tag, class_name.get(), str.get(), hash);
+      ApiEvent("api,%s,\"%s\",symbol(\"%s\" hash %x)", tag, class_name.get(),
+               str.get(), hash);
     }
   }
 }
@@ -1230,7 +1066,7 @@ void Logger::ApiIndexedPropertyAccess(const char* tag,
   String* class_name_obj = holder->class_name();
   SmartArrayPointer<char> class_name =
       class_name_obj->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-  ApiEvent("api,%s,\"%s\",%u\n", tag, class_name.get(), index);
+  ApiEvent("api,%s,\"%s\",%u", tag, class_name.get(), index);
 }
 
 
@@ -1239,20 +1075,20 @@ void Logger::ApiObjectAccess(const char* tag, JSObject* object) {
   String* class_name_obj = object->class_name();
   SmartArrayPointer<char> class_name =
       class_name_obj->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
-  ApiEvent("api,%s,\"%s\"\n", tag, class_name.get());
+  ApiEvent("api,%s,\"%s\"", tag, class_name.get());
 }
 
 
 void Logger::ApiEntryCall(const char* name) {
   if (!log_->IsEnabled() || !FLAG_log_api) return;
-  ApiEvent("api,%s\n", name);
+  ApiEvent("api,%s", name);
 }
 
 
 void Logger::NewEvent(const char* name, void* object, size_t size) {
   if (!log_->IsEnabled() || !FLAG_log) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("new,%s,0x%" V8PRIxPTR ",%u\n", name, object,
+  msg.Append("new,%s,0x%" V8PRIxPTR ",%u", name, object,
              static_cast<unsigned int>(size));
   msg.WriteToLogFile();
 }
@@ -1261,7 +1097,7 @@ void Logger::NewEvent(const char* name, void* object, size_t size) {
 void Logger::DeleteEvent(const char* name, void* object) {
   if (!log_->IsEnabled() || !FLAG_log) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("delete,%s,0x%" V8PRIxPTR "\n", name, object);
+  msg.Append("delete,%s,0x%" V8PRIxPTR, name, object);
   msg.WriteToLogFile();
 }
 
@@ -1299,7 +1135,6 @@ void Logger::CallbackEventInternal(const char* prefix, Name* name,
                  symbol->Hash());
     }
   }
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1325,7 +1160,7 @@ void Logger::SetterCallbackEvent(Name* name, Address entry_point) {
 static void AppendCodeCreateHeader(Log::MessageBuilder* msg,
                                    Logger::LogEventsAndTags tag,
                                    Code* code) {
-  ASSERT(msg);
+  DCHECK(msg);
   msg->Append("%s,%s,%d,",
               kLogEventsNames[Logger::CODE_CREATION_EVENT],
               kLogEventsNames[tag],
@@ -1347,7 +1182,6 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   Log::MessageBuilder msg(log_);
   AppendCodeCreateHeader(&msg, tag, code);
   msg.AppendDoubleQuotedString(comment);
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1370,7 +1204,6 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   } else {
     msg.AppendSymbolName(Symbol::cast(name));
   }
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1386,8 +1219,7 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   CALL_LISTENERS(CodeCreateEvent(tag, code, shared, info, name));
 
   if (!FLAG_log_code || !log_->IsEnabled()) return;
-  if (code == isolate_->builtins()->builtin(Builtins::kCompileUnoptimized))
-    return;
+  if (code == isolate_->builtins()->builtin(Builtins::kCompileLazy)) return;
 
   Log::MessageBuilder msg(log_);
   AppendCodeCreateHeader(&msg, tag, code);
@@ -1401,7 +1233,6 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   msg.Append(',');
   msg.AppendAddress(shared->address());
   msg.Append(",%s", ComputeMarker(code));
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1436,7 +1267,6 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   msg.Append(":%d:%d\",", line, column);
   msg.AppendAddress(shared->address());
   msg.Append(",%s", ComputeMarker(code));
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1453,7 +1283,6 @@ void Logger::CodeCreateEvent(LogEventsAndTags tag,
   Log::MessageBuilder msg(log_);
   AppendCodeCreateHeader(&msg, tag, code);
   msg.Append("\"args_count: %d\"", args_count);
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1471,7 +1300,7 @@ void Logger::CodeDisableOptEvent(Code* code,
   SmartArrayPointer<char> name =
       shared->DebugName()->ToCString(DISALLOW_NULLS, ROBUST_STRING_TRAVERSAL);
   msg.Append("\"%s\",", name.get());
-  msg.Append("\"%s\"\n", GetBailoutReason(shared->DisableOptimizationReason()));
+  msg.Append("\"%s\"", GetBailoutReason(shared->DisableOptimizationReason()));
   msg.WriteToLogFile();
 }
 
@@ -1482,7 +1311,7 @@ void Logger::CodeMovingGCEvent() {
   if (!is_logging_code_events()) return;
   if (!log_->IsEnabled() || !FLAG_ll_prof) return;
   CALL_LISTENERS(CodeMovingGCEvent());
-  OS::SignalCodeMovingGC();
+  base::OS::SignalCodeMovingGC();
 }
 
 
@@ -1498,7 +1327,6 @@ void Logger::RegExpCodeCreateEvent(Code* code, String* source) {
   msg.Append('"');
   msg.AppendDetailed(source, false);
   msg.Append('"');
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1522,7 +1350,6 @@ void Logger::CodeDeleteEvent(Address from) {
   Log::MessageBuilder msg(log_);
   msg.Append("%s,", kLogEventsNames[CODE_DELETE_EVENT]);
   msg.AppendAddress(from);
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1565,7 +1392,6 @@ void Logger::CodeNameEvent(Address addr, int pos, const char* code_name) {
   Log::MessageBuilder msg(log_);
   msg.Append("%s,%d,", kLogEventsNames[SNAPSHOT_CODE_NAME_EVENT], pos);
   msg.AppendDoubleQuotedString(code_name);
-  msg.Append("\n");
   msg.WriteToLogFile();
 }
 
@@ -1578,7 +1404,6 @@ void Logger::SnapshotPositionEvent(Address addr, int pos) {
   msg.Append("%s,", kLogEventsNames[SNAPSHOT_POSITION_EVENT]);
   msg.AppendAddress(addr);
   msg.Append(",%d", pos);
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1600,7 +1425,6 @@ void Logger::MoveEventInternal(LogEventsAndTags event,
   msg.AppendAddress(from);
   msg.Append(',');
   msg.AppendAddress(to);
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1611,12 +1435,10 @@ void Logger::ResourceEvent(const char* name, const char* tag) {
   msg.Append("%s,%s,", name, tag);
 
   uint32_t sec, usec;
-  if (OS::GetUserTime(&sec, &usec) != -1) {
+  if (base::OS::GetUserTime(&sec, &usec) != -1) {
     msg.Append("%d,%d,", sec, usec);
   }
-  msg.Append("%.0f", OS::TimeCurrentMillis());
-
-  msg.Append('\n');
+  msg.Append("%.0f", base::OS::TimeCurrentMillis());
   msg.WriteToLogFile();
 }
 
@@ -1637,7 +1459,6 @@ void Logger::SuspectReadEvent(Name* name, Object* obj) {
   } else {
     msg.AppendSymbolName(Symbol::cast(name));
   }
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1647,8 +1468,8 @@ void Logger::HeapSampleBeginEvent(const char* space, const char* kind) {
   Log::MessageBuilder msg(log_);
   // Using non-relative system time in order to be able to synchronize with
   // external memory profiling events (e.g. DOM memory size).
-  msg.Append("heap-sample-begin,\"%s\",\"%s\",%.0f\n",
-             space, kind, OS::TimeCurrentMillis());
+  msg.Append("heap-sample-begin,\"%s\",\"%s\",%.0f", space, kind,
+             base::OS::TimeCurrentMillis());
   msg.WriteToLogFile();
 }
 
@@ -1656,7 +1477,7 @@ void Logger::HeapSampleBeginEvent(const char* space, const char* kind) {
 void Logger::HeapSampleEndEvent(const char* space, const char* kind) {
   if (!log_->IsEnabled() || !FLAG_log_gc) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("heap-sample-end,\"%s\",\"%s\"\n", space, kind);
+  msg.Append("heap-sample-end,\"%s\",\"%s\"", space, kind);
   msg.WriteToLogFile();
 }
 
@@ -1664,7 +1485,7 @@ void Logger::HeapSampleEndEvent(const char* space, const char* kind) {
 void Logger::HeapSampleItemEvent(const char* type, int number, int bytes) {
   if (!log_->IsEnabled() || !FLAG_log_gc) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("heap-sample-item,%s,%d,%d\n", type, number, bytes);
+  msg.Append("heap-sample-item,%s,%d,%d", type, number, bytes);
   msg.WriteToLogFile();
 }
 
@@ -1672,7 +1493,7 @@ void Logger::HeapSampleItemEvent(const char* type, int number, int bytes) {
 void Logger::DebugTag(const char* call_site_tag) {
   if (!log_->IsEnabled() || !FLAG_log) return;
   Log::MessageBuilder msg(log_);
-  msg.Append("debug-tag,%s\n", call_site_tag);
+  msg.Append("debug-tag,%s", call_site_tag);
   msg.WriteToLogFile();
 }
 
@@ -1685,10 +1506,8 @@ void Logger::DebugEvent(const char* event_type, Vector<uint16_t> parameter) {
   }
   char* parameter_string = s.Finalize();
   Log::MessageBuilder msg(log_);
-  msg.Append("debug-queue-event,%s,%15.3f,%s\n",
-             event_type,
-             OS::TimeCurrentMillis(),
-             parameter_string);
+  msg.Append("debug-queue-event,%s,%15.3f,%s", event_type,
+             base::OS::TimeCurrentMillis(), parameter_string);
   DeleteArray(parameter_string);
   msg.WriteToLogFile();
 }
@@ -1711,11 +1530,10 @@ void Logger::TickEvent(TickSample* sample, bool overflow) {
   if (overflow) {
     msg.Append(",overflow");
   }
-  for (int i = 0; i < sample->frames_count; ++i) {
+  for (unsigned i = 0; i < sample->frames_count; ++i) {
     msg.Append(',');
     msg.AppendAddress(sample->stack[i]);
   }
-  msg.Append('\n');
   msg.WriteToLogFile();
 }
 
@@ -1755,7 +1573,7 @@ class EnumerateOptimizedFunctionsVisitor: public OptimizedFunctionVisitor {
       sfis_[*count_] = Handle<SharedFunctionInfo>(sfi);
     }
     if (code_objects_ != NULL) {
-      ASSERT(function->code()->kind() == Code::OPTIMIZED_FUNCTION);
+      DCHECK(function->code()->kind() == Code::OPTIMIZED_FUNCTION);
       code_objects_[*count_] = Handle<Code>(function->code());
     }
     *count_ = *count_ + 1;
@@ -1934,8 +1752,7 @@ void Logger::LogCompiledFunctions() {
   // During iteration, there can be heap allocation due to
   // GetScriptLineNumber call.
   for (int i = 0; i < compiled_funcs_count; ++i) {
-    if (code_objects[i].is_identical_to(
-            isolate_->builtins()->CompileUnoptimized()))
+    if (code_objects[i].is_identical_to(isolate_->builtins()->CompileLazy()))
       continue;
     LogExistingFunction(sfis[i], code_objects[i]);
   }
@@ -1965,16 +1782,15 @@ void Logger::LogAccessorCallbacks() {
 }
 
 
-static void AddIsolateIdIfNeeded(Isolate* isolate, StringStream* stream) {
-  if (FLAG_logfile_per_isolate) stream->Add("isolate-%p-", isolate);
+static void AddIsolateIdIfNeeded(std::ostream& os,  // NOLINT
+                                 Isolate* isolate) {
+  if (FLAG_logfile_per_isolate) os << "isolate-" << isolate << "-";
 }
 
 
-static SmartArrayPointer<const char> PrepareLogFileName(
-    Isolate* isolate, const char* file_name) {
-  HeapStringAllocator allocator;
-  StringStream stream(&allocator);
-  AddIsolateIdIfNeeded(isolate, &stream);
+static void PrepareLogFileName(std::ostream& os,  // NOLINT
+                               Isolate* isolate, const char* file_name) {
+  AddIsolateIdIfNeeded(os, isolate);
   for (const char* p = file_name; *p; p++) {
     if (*p == '%') {
       p++;
@@ -1985,29 +1801,25 @@ static SmartArrayPointer<const char> PrepareLogFileName(
           p--;
           break;
         case 'p':
-          stream.Add("%d", OS::GetCurrentProcessId());
+          os << base::OS::GetCurrentProcessId();
           break;
-        case 't': {
+        case 't':
           // %t expands to the current time in milliseconds.
-          double time = OS::TimeCurrentMillis();
-          stream.Add("%.0f", FmtElm(time));
+          os << static_cast<int64_t>(base::OS::TimeCurrentMillis());
           break;
-        }
         case '%':
           // %% expands (contracts really) to %.
-          stream.Put('%');
+          os << '%';
           break;
         default:
           // All other %'s expand to themselves.
-          stream.Put('%');
-          stream.Put(*p);
+          os << '%' << *p;
           break;
       }
     } else {
-      stream.Put(*p);
+      os << *p;
     }
   }
-  return SmartArrayPointer<const char>(stream.ToCString());
 }
 
 
@@ -2021,9 +1833,9 @@ bool Logger::SetUp(Isolate* isolate) {
     FLAG_log_snapshot_positions = true;
   }
 
-  SmartArrayPointer<const char> log_file_name =
-      PrepareLogFileName(isolate, FLAG_logfile);
-  log_->Initialize(log_file_name.get());
+  std::ostringstream log_file_name;
+  PrepareLogFileName(log_file_name, isolate, FLAG_logfile);
+  log_->Initialize(log_file_name.str().c_str());
 
 
   if (FLAG_perf_basic_prof) {
@@ -2037,7 +1849,7 @@ bool Logger::SetUp(Isolate* isolate) {
   }
 
   if (FLAG_ll_prof) {
-    ll_logger_ = new LowLevelLogger(log_file_name.get());
+    ll_logger_ = new LowLevelLogger(log_file_name.str().c_str());
     addCodeEventListener(ll_logger_);
   }
 
@@ -2047,13 +1859,13 @@ bool Logger::SetUp(Isolate* isolate) {
     is_logging_ = true;
   }
 
+  if (FLAG_log_internal_timer_events || FLAG_prof) timer_.Start();
+
   if (FLAG_prof) {
     profiler_ = new Profiler(isolate);
     is_logging_ = true;
     profiler_->Engage();
   }
-
-  if (FLAG_log_internal_timer_events || FLAG_prof) timer_.Start();
 
   return true;
 }

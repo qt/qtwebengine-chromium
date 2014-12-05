@@ -5,18 +5,19 @@
 #include "config.h"
 #include "modules/beacon/NavigatorBeacon.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "core/dom/DOMArrayBufferView.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/fileapi/Blob.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/frame/UseCounter.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/DOMFormData.h"
 #include "core/loader/BeaconLoader.h"
-#include "wtf/ArrayBufferView.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorBeacon::NavigatorBeacon(Navigator& navigator)
     : m_transmittedBytes(0)
@@ -58,7 +59,7 @@ bool NavigatorBeacon::canSendBeacon(ExecutionContext* context, const KURL& url, 
     }
 
     // Do not allow sending Beacons over a Navigator that is detached.
-    if (!m_navigator.frame())
+    if (!m_navigator.frame() || !m_navigator.frame()->client())
         return false;
 
     return true;
@@ -76,10 +77,15 @@ int NavigatorBeacon::maxAllowance() const
     return m_transmittedBytes;
 }
 
-void NavigatorBeacon::updateTransmittedBytes(int length)
+bool NavigatorBeacon::beaconResult(ExecutionContext* context, bool allowed, int sentBytes)
 {
-    ASSERT(length >= 0);
-    m_transmittedBytes += length;
+    if (allowed) {
+        ASSERT(sentBytes >= 0);
+        m_transmittedBytes += sentBytes;
+    } else {
+        UseCounter::count(context, UseCounter::SendBeaconQuotaExceeded);
+    }
+    return allowed;
 }
 
 bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, const String& data, ExceptionState& exceptionState)
@@ -95,18 +101,31 @@ bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstr
 
     int bytes = 0;
     bool result = BeaconLoader::sendBeacon(m_navigator.frame(), maxAllowance(), url, data, bytes);
-    if (result)
-        updateTransmittedBytes(bytes);
-
-    return result;
+    return beaconResult(context, result, bytes);
 }
 
-bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, PassRefPtr<ArrayBufferView> data, ExceptionState& exceptionState)
+bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, PassRefPtr<DOMArrayBufferView> data, ExceptionState& exceptionState)
 {
     return NavigatorBeacon::from(navigator).sendBeacon(context, urlstring, data, exceptionState);
 }
 
-bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstring, PassRefPtr<ArrayBufferView> data, ExceptionState& exceptionState)
+bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstring, PassRefPtr<DOMArrayBufferView> data, ExceptionState& exceptionState)
+{
+    KURL url = context->completeURL(urlstring);
+    if (!canSendBeacon(context, url, exceptionState))
+        return false;
+
+    int bytes = 0;
+    bool result = BeaconLoader::sendBeacon(m_navigator.frame(), maxAllowance(), url, data->view(), bytes);
+    return beaconResult(context, result, bytes);
+}
+
+bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, Blob* data, ExceptionState& exceptionState)
+{
+    return NavigatorBeacon::from(navigator).sendBeacon(context, urlstring, data, exceptionState);
+}
+
+bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstring, Blob* data, ExceptionState& exceptionState)
 {
     KURL url = context->completeURL(urlstring);
     if (!canSendBeacon(context, url, exceptionState))
@@ -114,29 +133,7 @@ bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstr
 
     int bytes = 0;
     bool result = BeaconLoader::sendBeacon(m_navigator.frame(), maxAllowance(), url, data, bytes);
-    if (result)
-        updateTransmittedBytes(bytes);
-
-    return result;
-}
-
-bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, PassRefPtrWillBeRawPtr<Blob> data, ExceptionState& exceptionState)
-{
-    return NavigatorBeacon::from(navigator).sendBeacon(context, urlstring, data, exceptionState);
-}
-
-bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstring, PassRefPtrWillBeRawPtr<Blob> data, ExceptionState& exceptionState)
-{
-    KURL url = context->completeURL(urlstring);
-    if (!canSendBeacon(context, url, exceptionState))
-        return false;
-
-    int bytes = 0;
-    bool result = BeaconLoader::sendBeacon(m_navigator.frame(), maxAllowance(), url, data, bytes);
-    if (result)
-        updateTransmittedBytes(bytes);
-
-    return result;
+    return beaconResult(context, result, bytes);
 }
 
 bool NavigatorBeacon::sendBeacon(ExecutionContext* context, Navigator& navigator, const String& urlstring, PassRefPtrWillBeRawPtr<DOMFormData> data, ExceptionState& exceptionState)
@@ -152,10 +149,7 @@ bool NavigatorBeacon::sendBeacon(ExecutionContext* context, const String& urlstr
 
     int bytes = 0;
     bool result = BeaconLoader::sendBeacon(m_navigator.frame(), maxAllowance(), url, data, bytes);
-    if (result)
-        updateTransmittedBytes(bytes);
-
-    return result;
+    return beaconResult(context, result, bytes);
 }
 
-} // namespace WebCore
+} // namespace blink

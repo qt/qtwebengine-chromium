@@ -15,13 +15,13 @@ namespace internal {
 
 class Processor: public AstVisitor {
  public:
-  Processor(Variable* result, Zone* zone)
+  Processor(Variable* result, AstValueFactory* ast_value_factory)
       : result_(result),
         result_assigned_(false),
         is_set_(false),
         in_try_(false),
-        factory_(zone) {
-    InitializeAstVisitor(zone);
+        factory_(ast_value_factory) {
+    InitializeAstVisitor(ast_value_factory->zone());
   }
 
   virtual ~Processor() { }
@@ -59,8 +59,7 @@ class Processor: public AstVisitor {
   }
 
   // Node visitors.
-#define DEF_VISIT(type) \
-  virtual void Visit##type(type* node);
+#define DEF_VISIT(type) virtual void Visit##type(type* node) OVERRIDE;
   AST_NODE_LIST(DEF_VISIT)
 #undef DEF_VISIT
 
@@ -227,21 +226,23 @@ EXPRESSION_NODE_LIST(DEF_VISIT)
 // continue to be used in the case of failure.
 bool Rewriter::Rewrite(CompilationInfo* info) {
   FunctionLiteral* function = info->function();
-  ASSERT(function != NULL);
+  DCHECK(function != NULL);
   Scope* scope = function->scope();
-  ASSERT(scope != NULL);
+  DCHECK(scope != NULL);
   if (!scope->is_global_scope() && !scope->is_eval_scope()) return true;
 
   ZoneList<Statement*>* body = function->body();
   if (!body->is_empty()) {
-    Variable* result = scope->NewTemporary(
-        info->isolate()->factory()->dot_result_string());
-    Processor processor(result, info->zone());
+    Variable* result =
+        scope->NewTemporary(info->ast_value_factory()->dot_result_string());
+    // The name string must be internalized at this point.
+    DCHECK(!result->name().is_null());
+    Processor processor(result, info->ast_value_factory());
     processor.Process(body);
     if (processor.HasStackOverflow()) return false;
 
     if (processor.result_assigned()) {
-      ASSERT(function->end_position() != RelocInfo::kNoPosition);
+      DCHECK(function->end_position() != RelocInfo::kNoPosition);
       // Set the position of the assignment statement one character past the
       // source code, such that it definitely is not in the source code range
       // of an immediate inner scope. For example in
@@ -249,9 +250,8 @@ bool Rewriter::Rewrite(CompilationInfo* info) {
       // the end position of the function generated for executing the eval code
       // coincides with the end of the with scope which is the position of '1'.
       int pos = function->end_position();
-      VariableProxy* result_proxy = processor.factory()->NewVariableProxy(
-          result->name(), false, result->interface(), pos);
-      result_proxy->BindTo(result);
+      VariableProxy* result_proxy =
+          processor.factory()->NewVariableProxy(result, pos);
       Statement* result_statement =
           processor.factory()->NewReturnStatement(result_proxy, pos);
       body->Add(result_statement, info->zone());

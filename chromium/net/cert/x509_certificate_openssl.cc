@@ -5,10 +5,10 @@
 #include "net/cert/x509_certificate.h"
 
 #include <openssl/asn1.h>
+#include <openssl/bytestring.h>
 #include <openssl/crypto.h>
 #include <openssl/obj_mac.h>
 #include <openssl/pem.h>
-#include <openssl/pkcs7.h>
 #include <openssl/sha.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
@@ -17,8 +17,10 @@
 #include "base/pickle.h"
 #include "base/sha1.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
+#include "crypto/scoped_openssl_types.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/cert/x509_util_openssl.h"
@@ -32,31 +34,27 @@ namespace net {
 
 namespace {
 
+typedef crypto::ScopedOpenSSL<GENERAL_NAMES, GENERAL_NAMES_free>::Type
+    ScopedGENERAL_NAMES;
+
 void CreateOSCertHandlesFromPKCS7Bytes(
     const char* data, int length,
     X509Certificate::OSCertHandles* handles) {
   crypto::EnsureOpenSSLInit();
-  const unsigned char* der_data = reinterpret_cast<const unsigned char*>(data);
-  crypto::ScopedOpenSSL<PKCS7, PKCS7_free> pkcs7_cert(
-      d2i_PKCS7(NULL, &der_data, length));
-  if (!pkcs7_cert.get())
-    return;
+  crypto::OpenSSLErrStackTracer err_cleaner(FROM_HERE);
 
-  STACK_OF(X509)* certs = NULL;
-  int nid = OBJ_obj2nid(pkcs7_cert.get()->type);
-  if (nid == NID_pkcs7_signed) {
-    certs = pkcs7_cert.get()->d.sign->cert;
-  } else if (nid == NID_pkcs7_signedAndEnveloped) {
-    certs = pkcs7_cert.get()->d.signed_and_enveloped->cert;
-  }
+  CBS der_data;
+  CBS_init(&der_data, reinterpret_cast<const uint8_t*>(data), length);
+  STACK_OF(X509)* certs = sk_X509_new_null();
 
-  if (certs) {
-    for (int i = 0; i < sk_X509_num(certs); ++i) {
+  if (PKCS7_get_certificates(certs, &der_data)) {
+    for (size_t i = 0; i < sk_X509_num(certs); ++i) {
       X509* x509_cert =
           X509Certificate::DupOSCertHandle(sk_X509_value(certs, i));
       handles->push_back(x509_cert);
     }
   }
+  sk_X509_pop_free(certs, X509_free);
 }
 
 void ParsePrincipalValues(X509_NAME* name,
@@ -105,12 +103,12 @@ void ParseSubjectAltName(X509Certificate::OSCertHandle cert,
   if (!alt_name_ext)
     return;
 
-  crypto::ScopedOpenSSL<GENERAL_NAMES, GENERAL_NAMES_free> alt_names(
+  ScopedGENERAL_NAMES alt_names(
       reinterpret_cast<GENERAL_NAMES*>(X509V3_EXT_d2i(alt_name_ext)));
   if (!alt_names.get())
     return;
 
-  for (int i = 0; i < sk_GENERAL_NAME_num(alt_names.get()); ++i) {
+  for (size_t i = 0; i < sk_GENERAL_NAME_num(alt_names.get()); ++i) {
     const GENERAL_NAME* name = sk_GENERAL_NAME_value(alt_names.get(), i);
     if (name->type == GEN_DNS && dns_names) {
       const unsigned char* dns_name = ASN1_STRING_data(name->d.dNSName);
@@ -138,21 +136,6 @@ void ParseSubjectAltName(X509Certificate::OSCertHandle cert,
   }
 }
 
-struct DERCache {
-  unsigned char* data;
-  int data_length;
-};
-
-void DERCache_free(void* parent, void* ptr, CRYPTO_EX_DATA* ad, int idx,
-                   long argl, void* argp) {
-  DERCache* der_cache = static_cast<DERCache*>(ptr);
-  if (!der_cache)
-      return;
-  if (der_cache->data)
-      OPENSSL_free(der_cache->data);
-  OPENSSL_free(der_cache);
-}
-
 class X509InitSingleton {
  public:
   static X509InitSingleton* GetInstance() {
@@ -162,7 +145,6 @@ class X509InitSingleton {
     return Singleton<X509InitSingleton,
                      LeakySingletonTraits<X509InitSingleton> >::get();
   }
-  int der_cache_ex_index() const { return der_cache_ex_index_; }
   X509_STORE* store() const { return store_.get(); }
 
   void ResetCertStore() {
@@ -176,62 +158,13 @@ class X509InitSingleton {
   friend struct DefaultSingletonTraits<X509InitSingleton>;
   X509InitSingleton() {
     crypto::EnsureOpenSSLInit();
-    der_cache_ex_index_ = X509_get_ex_new_index(0, 0, 0, 0, DERCache_free);
-    DCHECK_NE(der_cache_ex_index_, -1);
     ResetCertStore();
   }
 
-  int der_cache_ex_index_;
-  crypto::ScopedOpenSSL<X509_STORE, X509_STORE_free> store_;
+  crypto::ScopedOpenSSL<X509_STORE, X509_STORE_free>::Type store_;
 
   DISALLOW_COPY_AND_ASSIGN(X509InitSingleton);
 };
-
-// Takes ownership of |data| (which must have been allocated by OpenSSL).
-DERCache* SetDERCache(X509Certificate::OSCertHandle cert,
-                      int x509_der_cache_index,
-                      unsigned char* data,
-                      int data_length) {
-  DERCache* internal_cache = static_cast<DERCache*>(
-      OPENSSL_malloc(sizeof(*internal_cache)));
-  if (!internal_cache) {
-    // We took ownership of |data|, so we must free if we can't add it to
-    // |cert|.
-    OPENSSL_free(data);
-    return NULL;
-  }
-
-  internal_cache->data = data;
-  internal_cache->data_length = data_length;
-  X509_set_ex_data(cert, x509_der_cache_index, internal_cache);
-  return internal_cache;
-}
-
-// Returns true if |der_cache| points to valid data, false otherwise.
-// (note: the DER-encoded data in |der_cache| is owned by |cert|, callers should
-// not free it).
-bool GetDERAndCacheIfNeeded(X509Certificate::OSCertHandle cert,
-                            DERCache* der_cache) {
-  int x509_der_cache_index =
-      X509InitSingleton::GetInstance()->der_cache_ex_index();
-
-  // Re-encoding the DER data via i2d_X509 is an expensive operation, but it's
-  // necessary for comparing two certificates. We re-encode at most once per
-  // certificate and cache the data within the X509 cert using X509_set_ex_data.
-  DERCache* internal_cache = static_cast<DERCache*>(
-      X509_get_ex_data(cert, x509_der_cache_index));
-  if (!internal_cache) {
-    unsigned char* data = NULL;
-    int data_length = i2d_X509(cert, &data);
-    if (data_length <= 0 || !data)
-      return false;
-    internal_cache = SetDERCache(cert, x509_der_cache_index, data, data_length);
-    if (!internal_cache)
-      return false;
-  }
-  *der_cache = *internal_cache;
-  return true;
-}
 
 // Used to free a list of X509_NAMEs and the objects it points to.
 void sk_X509_NAME_free_all(STACK_OF(X509_NAME)* sk) {
@@ -244,13 +177,7 @@ void sk_X509_NAME_free_all(STACK_OF(X509_NAME)* sk) {
 X509Certificate::OSCertHandle X509Certificate::DupOSCertHandle(
     OSCertHandle cert_handle) {
   DCHECK(cert_handle);
-  // Using X509_dup causes the entire certificate to be reparsed. This
-  // conversion, besides being non-trivial, drops any associated
-  // application-specific data set by X509_set_ex_data. Using CRYPTO_add
-  // just bumps up the ref-count for the cert, without causing any allocations
-  // or deallocations.
-  CRYPTO_add(&cert_handle->references, 1, CRYPTO_LOCK_X509);
-  return cert_handle;
+  return X509_up_ref(cert_handle);
 }
 
 // static
@@ -303,6 +230,16 @@ SHA1HashValue X509Certificate::CalculateFingerprint(OSCertHandle cert) {
 }
 
 // static
+SHA256HashValue X509Certificate::CalculateFingerprint256(OSCertHandle cert) {
+  SHA256HashValue sha256;
+  unsigned int sha256_size = static_cast<unsigned int>(sizeof(sha256.data));
+  int ret = X509_digest(cert, EVP_sha256(), sha256.data, &sha256_size);
+  CHECK(ret);
+  CHECK_EQ(sha256_size, sizeof(sha256.data));
+  return sha256;
+}
+
+// static
 SHA1HashValue X509Certificate::CalculateCAFingerprint(
     const OSCertHandles& intermediates) {
   SHA1HashValue sha1;
@@ -310,11 +247,11 @@ SHA1HashValue X509Certificate::CalculateCAFingerprint(
 
   SHA_CTX sha1_ctx;
   SHA1_Init(&sha1_ctx);
-  DERCache der_cache;
+  base::StringPiece der;
   for (size_t i = 0; i < intermediates.size(); ++i) {
-    if (!GetDERAndCacheIfNeeded(intermediates[i], &der_cache))
+    if (!x509_util::GetDER(intermediates[i], &der))
       return sha1;
-    SHA1_Update(&sha1_ctx, der_cache.data, der_cache.data_length);
+    SHA1_Update(&sha1_ctx, der.data(), der.length());
   }
   SHA1_Final(sha1.data, &sha1_ctx);
 
@@ -329,8 +266,8 @@ X509Certificate::OSCertHandle X509Certificate::CreateOSCertHandleFromBytes(
   crypto::EnsureOpenSSLInit();
   const unsigned char* d2i_data =
       reinterpret_cast<const unsigned char*>(data);
-  // Don't cache this data via SetDERCache as this wire format may be not be
-  // identical from the i2d_X509 roundtrip.
+  // Don't cache this data for x509_util::GetDER as this wire format
+  // may be not be identical from the i2d_X509 roundtrip.
   X509* cert = d2i_X509(NULL, &d2i_data, length);
   return cert;
 }
@@ -381,11 +318,10 @@ X509_STORE* X509Certificate::cert_store() {
 // static
 bool X509Certificate::GetDEREncoded(X509Certificate::OSCertHandle cert_handle,
                                     std::string* encoded) {
-  DERCache der_cache;
-  if (!GetDERAndCacheIfNeeded(cert_handle, &der_cache))
+  base::StringPiece der;
+  if (!cert_handle || !x509_util::GetDER(cert_handle, &der))
     return false;
-  encoded->assign(reinterpret_cast<const char*>(der_cache.data),
-                  der_cache.data_length);
+  encoded->assign(der.data(), der.length());
   return true;
 }
 
@@ -399,12 +335,11 @@ bool X509Certificate::IsSameOSCert(X509Certificate::OSCertHandle a,
   // X509_cmp only checks the fingerprint, but we want to compare the whole
   // DER data. Encoding it from OSCertHandle is an expensive operation, so we
   // cache the DER (if not already cached via X509_set_ex_data).
-  DERCache der_cache_a, der_cache_b;
+  base::StringPiece der_a, der_b;
 
-  return GetDERAndCacheIfNeeded(a, &der_cache_a) &&
-      GetDERAndCacheIfNeeded(b, &der_cache_b) &&
-      der_cache_a.data_length == der_cache_b.data_length &&
-      memcmp(der_cache_a.data, der_cache_b.data, der_cache_a.data_length) == 0;
+  return x509_util::GetDER(a, &der_a) &&
+      x509_util::GetDER(b, &der_b) &&
+      der_a == der_b;
 }
 
 // static
@@ -421,13 +356,11 @@ X509Certificate::ReadOSCertHandleFromPickle(PickleIterator* pickle_iter) {
 // static
 bool X509Certificate::WriteOSCertHandleToPickle(OSCertHandle cert_handle,
                                                 Pickle* pickle) {
-  DERCache der_cache;
-  if (!GetDERAndCacheIfNeeded(cert_handle, &der_cache))
+  base::StringPiece der;
+  if (!x509_util::GetDER(cert_handle, &der))
     return false;
 
-  return pickle->WriteData(
-      reinterpret_cast<const char*>(der_cache.data),
-      der_cache.data_length);
+  return pickle->WriteData(der.data(), der.length());
 }
 
 // static
@@ -437,8 +370,7 @@ void X509Certificate::GetPublicKeyInfo(OSCertHandle cert_handle,
   *type = kPublicKeyTypeUnknown;
   *size_bits = 0;
 
-  crypto::ScopedOpenSSL<EVP_PKEY, EVP_PKEY_free> scoped_key(
-      X509_get_pubkey(cert_handle));
+  crypto::ScopedEVP_PKEY scoped_key(X509_get_pubkey(cert_handle));
   if (!scoped_key.get())
     return;
 
@@ -472,7 +404,7 @@ bool X509Certificate::IsIssuedByEncoded(
 
   // Convert to a temporary list of X509_NAME objects.
   // It will own the objects it points to.
-  crypto::ScopedOpenSSL<STACK_OF(X509_NAME), sk_X509_NAME_free_all>
+  crypto::ScopedOpenSSL<STACK_OF(X509_NAME), sk_X509_NAME_free_all>::Type
       issuer_names(sk_X509_NAME_new_null());
   if (!issuer_names.get())
     return false;
@@ -506,7 +438,7 @@ bool X509Certificate::IsIssuedByEncoded(
 
   // and 'cert_names'.
   for (size_t n = 0; n < cert_names.size(); ++n) {
-    for (int m = 0; m < sk_X509_NAME_num(issuer_names.get()); ++m) {
+    for (size_t m = 0; m < sk_X509_NAME_num(issuer_names.get()); ++m) {
       X509_NAME* issuer = sk_X509_NAME_value(issuer_names.get(), m);
       if (X509_NAME_cmp(issuer, cert_names[n]) == 0) {
         return true;
@@ -515,6 +447,16 @@ bool X509Certificate::IsIssuedByEncoded(
   }
 
   return false;
+}
+
+// static
+bool X509Certificate::IsSelfSigned(OSCertHandle cert_handle) {
+  crypto::ScopedEVP_PKEY scoped_key(X509_get_pubkey(cert_handle));
+  if (!scoped_key)
+    return false;
+
+  // NOTE: X509_verify() returns 1 in case of success, 0 or -1 on error.
+  return X509_verify(cert_handle, scoped_key.get()) == 1;
 }
 
 }  // namespace net

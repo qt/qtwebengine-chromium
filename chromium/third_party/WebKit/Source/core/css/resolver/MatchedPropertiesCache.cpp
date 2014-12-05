@@ -33,7 +33,33 @@
 #include "core/css/resolver/StyleResolverState.h"
 #include "core/rendering/style/RenderStyle.h"
 
-namespace WebCore {
+namespace blink {
+
+#if ENABLE(OILPAN)
+bool CachedMatchedPropertiesHashTraits::traceInCollection(Visitor* visitor, Member<CachedMatchedProperties>& cachedProperties, WTF::ShouldWeakPointersBeMarkedStrongly strongify)
+{
+    // Only honor the cache's weakness semantics if the collection is traced
+    // with WeakPointersActWeak. Otherwise just trace the cachedProperties
+    // strongly, ie. call trace on it.
+    if (cachedProperties && strongify == WTF::WeakPointersActWeak) {
+        // A given cache entry is only kept alive if none of the MatchedProperties
+        // in the CachedMatchedProperties value contain a dead "properties" field.
+        // If there is a dead field the entire cache entry is removed.
+        for (const auto& matchedProperties : cachedProperties->matchedProperties) {
+            if (!visitor->isAlive(matchedProperties.properties)) {
+                // For now report the cache entry as dead. This might not
+                // be the final result if in a subsequent call for this entry,
+                // the "properties" field has been marked via another path.
+                return true;
+            }
+        }
+    }
+    // At this point none of the entries in the matchedProperties vector
+    // had a dead "properties" field so trace CachedMatchedProperties strongly.
+    visitor->trace(cachedProperties);
+    return false;
+}
+#endif
 
 void CachedMatchedProperties::set(const RenderStyle* style, const RenderStyle* parentStyle, const MatchResult& matchResult)
 {
@@ -54,8 +80,10 @@ void CachedMatchedProperties::clear()
 }
 
 MatchedPropertiesCache::MatchedPropertiesCache()
+#if !ENABLE(OILPAN)
     : m_additionsSinceLastSweep(0)
     , m_sweepTimer(this, &MatchedPropertiesCache::sweep)
+#endif
 {
 }
 
@@ -85,17 +113,19 @@ const CachedMatchedProperties* MatchedPropertiesCache::find(unsigned hash, const
 
 void MatchedPropertiesCache::add(const RenderStyle* style, const RenderStyle* parentStyle, unsigned hash, const MatchResult& matchResult)
 {
+#if !ENABLE(OILPAN)
     static const unsigned maxAdditionsBetweenSweeps = 100;
     if (++m_additionsSinceLastSweep >= maxAdditionsBetweenSweeps
         && !m_sweepTimer.isActive()) {
         static const unsigned sweepTimeInSeconds = 60;
         m_sweepTimer.startOneShot(sweepTimeInSeconds, FROM_HERE);
     }
+#endif
 
     ASSERT(hash);
     Cache::AddResult addResult = m_cache.add(hash, nullptr);
     if (addResult.isNewEntry)
-        addResult.storedValue->value = adoptPtr(new CachedMatchedProperties);
+        addResult.storedValue->value = adoptPtrWillBeNoop(new CachedMatchedProperties);
 
     CachedMatchedProperties* cacheItem = addResult.storedValue->value.get();
     if (!addResult.isNewEntry)
@@ -112,28 +142,27 @@ void MatchedPropertiesCache::clear()
 void MatchedPropertiesCache::clearViewportDependent()
 {
     Vector<unsigned, 16> toRemove;
-    for (Cache::iterator it = m_cache.begin(); it != m_cache.end(); ++it) {
-        CachedMatchedProperties* cacheItem = it->value.get();
+    for (const auto& cacheEntry : m_cache) {
+        CachedMatchedProperties* cacheItem = cacheEntry.value.get();
         if (cacheItem->renderStyle->hasViewportUnits())
-            toRemove.append(it->key);
+            toRemove.append(cacheEntry.key);
     }
     m_cache.removeAll(toRemove);
 }
 
+#if !ENABLE(OILPAN)
 void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
 {
     // Look for cache entries containing a style declaration with a single ref and remove them.
     // This may happen when an element attribute mutation causes it to generate a new inlineStyle()
     // or presentationAttributeStyle(), potentially leaving this cache with the last ref on the old one.
     Vector<unsigned, 16> toRemove;
-    Cache::iterator it = m_cache.begin();
-    Cache::iterator end = m_cache.end();
-    for (; it != end; ++it) {
-        CachedMatchedProperties* cacheItem = it->value.get();
+    for (const auto& cacheEntry : m_cache) {
+        CachedMatchedProperties* cacheItem = cacheEntry.value.get();
         Vector<MatchedProperties>& matchedProperties = cacheItem->matchedProperties;
         for (size_t i = 0; i < matchedProperties.size(); ++i) {
             if (matchedProperties[i].properties->hasOneRef()) {
-                toRemove.append(it->key);
+                toRemove.append(cacheEntry.key);
                 break;
             }
         }
@@ -141,6 +170,7 @@ void MatchedPropertiesCache::sweep(Timer<MatchedPropertiesCache>*)
     m_cache.removeAll(toRemove);
     m_additionsSinceLastSweep = 0;
 }
+#endif
 
 bool MatchedPropertiesCache::isCacheable(const Element* element, const RenderStyle* style, const RenderStyle* parentStyle)
 {
@@ -155,15 +185,17 @@ bool MatchedPropertiesCache::isCacheable(const Element* element, const RenderSty
         return false;
     if (style->writingMode() != RenderStyle::initialWritingMode())
         return false;
-    if (style->hasCurrentColor())
-        return false;
-    // CSSPropertyInternalCallback sets the rule's selector name into the RenderStyle, and that's not recalculated if the RenderStyle is loaded from the cache, so don't cache it.
-    if (!style->callbackSelectors().isEmpty())
-        return false;
     // The cache assumes static knowledge about which properties are inherited.
     if (parentStyle->hasExplicitlyInheritedProperties())
         return false;
     return true;
+}
+
+void MatchedPropertiesCache::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_cache);
+#endif
 }
 
 }

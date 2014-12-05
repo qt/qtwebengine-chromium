@@ -20,15 +20,15 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 
 #include "core/SVGNames.h"
-#include "platform/graphics/filters/FilterEffect.h"
+#include "core/rendering/svg/RenderSVGResourceContainer.h"
 #include "core/rendering/svg/RenderSVGResourceFilterPrimitive.h"
 #include "core/svg/SVGLength.h"
+#include "platform/graphics/filters/FilterEffect.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGFilterPrimitiveStandardAttributes::SVGFilterPrimitiveStandardAttributes(const QualifiedName& tagName, Document& document)
     : SVGElement(tagName, document)
@@ -68,24 +68,7 @@ bool SVGFilterPrimitiveStandardAttributes::isSupportedAttribute(const QualifiedN
 
 void SVGFilterPrimitiveStandardAttributes::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::xAttr)
-        m_x->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::yAttr)
-        m_y->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::widthAttr)
-        m_width->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::heightAttr)
-        m_height->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::resultAttr)
-        m_result->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 bool SVGFilterPrimitiveStandardAttributes::setFilterEffectAttribute(FilterEffect*, const QualifiedName&)
@@ -106,11 +89,11 @@ void SVGFilterPrimitiveStandardAttributes::svgAttributeChanged(const QualifiedNa
     invalidate();
 }
 
-void SVGFilterPrimitiveStandardAttributes::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGFilterPrimitiveStandardAttributes::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (!changedByParser)
+    if (!change.byParser)
         invalidate();
 }
 
@@ -143,6 +126,12 @@ bool SVGFilterPrimitiveStandardAttributes::rendererIsNeeded(const RenderStyle& s
     return false;
 }
 
+void SVGFilterPrimitiveStandardAttributes::invalidate()
+{
+    if (RenderObject* primitiveRenderer = renderer())
+        markForLayoutAndParentResourceInvalidation(primitiveRenderer);
+}
+
 void SVGFilterPrimitiveStandardAttributes::primitiveAttributeChanged(const QualifiedName& attribute)
 {
     if (RenderObject* primitiveRenderer = renderer())
@@ -163,7 +152,7 @@ void invalidateFilterPrimitiveParent(SVGElement* element)
     if (!renderer || !renderer->isSVGResourceFilterPrimitive())
         return;
 
-    RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer, false);
+    RenderSVGResourceContainer::markForLayoutAndParentResourceInvalidation(renderer, false);
 }
 
 }

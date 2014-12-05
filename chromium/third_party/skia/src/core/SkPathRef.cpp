@@ -29,14 +29,16 @@ SkPathRef::Editor::Editor(SkAutoTUnref<SkPathRef>* pathRef,
 
 //////////////////////////////////////////////////////////////////////////////
 
-SkPathRef* SkPathRef::CreateEmptyImpl() {
-    SkPathRef* p = SkNEW(SkPathRef);
-    p->computeBounds();   // Preemptively avoid a race to clear fBoundsIsDirty.
-    return p;
+// As a template argument, this must have external linkage.
+SkPathRef* sk_create_empty_pathref() {
+    SkPathRef* empty = SkNEW(SkPathRef);
+    empty->computeBounds();   // Avoids races later to be the first to do this.
+    return empty;
 }
 
+SK_DECLARE_STATIC_LAZY_PTR(SkPathRef, empty, sk_create_empty_pathref);
+
 SkPathRef* SkPathRef::CreateEmpty() {
-    SK_DECLARE_STATIC_LAZY_PTR(SkPathRef, empty, CreateEmptyImpl);
     return SkRef(empty.get());
 }
 
@@ -85,13 +87,13 @@ void SkPathRef::CreateTransformedCopy(SkAutoTUnref<SkPathRef>* dst,
     if (canXformBounds) {
         (*dst)->fBoundsIsDirty = false;
         if (src.fIsFinite) {
-            matrix.mapRect(&(*dst)->fBounds, src.fBounds);
-            if (!((*dst)->fIsFinite = (*dst)->fBounds.isFinite())) {
-                (*dst)->fBounds.setEmpty();
+            matrix.mapRect((*dst)->fBounds.get(), src.fBounds);
+            if (!((*dst)->fIsFinite = (*dst)->fBounds->isFinite())) {
+                (*dst)->fBounds->setEmpty();
             }
         } else {
             (*dst)->fIsFinite = false;
-            (*dst)->fBounds.setEmpty();
+            (*dst)->fBounds->setEmpty();
         }
     } else {
         (*dst)->fBoundsIsDirty = true;
@@ -345,7 +347,7 @@ SkPoint* SkPathRef::growForRepeatedVerb(int /*SkPath::Verb*/ verb,
     }
 
     if (SkPath::kConic_Verb == verb) {
-        SkASSERT(NULL != weights);
+        SkASSERT(weights);
         *weights = fConicWeights.append(numVbs);
     }
 
@@ -441,14 +443,14 @@ void SkPathRef::validate() const {
     SkASSERT(this->currSize() ==
                 fFreeSpace + sizeof(SkPoint) * fPointCnt + sizeof(uint8_t) * fVerbCnt);
 
-    if (!fBoundsIsDirty && !fBounds.isEmpty()) {
+    if (!fBoundsIsDirty && !fBounds->isEmpty()) {
         bool isFinite = true;
         for (int i = 0; i < fPointCnt; ++i) {
             SkASSERT(!fPoints[i].isFinite() || (
-                     fBounds.fLeft - fPoints[i].fX   < SK_ScalarNearlyZero &&
-                     fPoints[i].fX - fBounds.fRight  < SK_ScalarNearlyZero &&
-                     fBounds.fTop  - fPoints[i].fY   < SK_ScalarNearlyZero &&
-                     fPoints[i].fY - fBounds.fBottom < SK_ScalarNearlyZero));
+                     fBounds->fLeft - fPoints[i].fX   < SK_ScalarNearlyZero &&
+                     fPoints[i].fX - fBounds->fRight  < SK_ScalarNearlyZero &&
+                     fBounds->fTop  - fPoints[i].fY   < SK_ScalarNearlyZero &&
+                     fPoints[i].fY - fBounds->fBottom < SK_ScalarNearlyZero));
             if (!fPoints[i].isFinite()) {
                 isFinite = false;
             }

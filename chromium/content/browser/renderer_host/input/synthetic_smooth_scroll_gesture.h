@@ -28,11 +28,11 @@ class CONTENT_EXPORT SyntheticSmoothScrollGesture : public SyntheticGesture {
  public:
   explicit SyntheticSmoothScrollGesture(
       const SyntheticSmoothScrollGestureParams& params);
-  virtual ~SyntheticSmoothScrollGesture();
+  ~SyntheticSmoothScrollGesture() override;
 
-  virtual SyntheticGesture::Result ForwardInputEvents(
+  SyntheticGesture::Result ForwardInputEvents(
       const base::TimeTicks& timestamp,
-      SyntheticGestureTarget* target) OVERRIDE;
+      SyntheticGestureTarget* target) override;
 
  private:
   enum GestureState {

@@ -34,9 +34,8 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class Page;
 class Settings;
 
 class SettingsDelegate {
@@ -59,6 +58,8 @@ public:
         ScriptEnableChange,
         FontFamilyChange,
         AcceleratedCompositingChange,
+        MediaQueryChange,
+        AccessibilityStateChange,
     };
 
     virtual void settingsChanged(ChangeType) = 0;
@@ -67,6 +68,6 @@ protected:
     OwnPtr<Settings> const m_settings;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SettingsDelegate_h

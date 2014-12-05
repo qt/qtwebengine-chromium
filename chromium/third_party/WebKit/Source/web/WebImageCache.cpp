@@ -33,8 +33,6 @@
 
 #include "platform/graphics/ImageDecodingStore.h"
 
-using WebCore::ImageDecodingStore;
-
 namespace blink {
 
 void WebImageCache::setCacheLimitInBytes(size_t size)

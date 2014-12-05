@@ -71,19 +71,13 @@ class DefaultWidgetDelegate : public WidgetDelegate {
  public:
   explicit DefaultWidgetDelegate(Widget* widget) : widget_(widget) {
   }
-  virtual ~DefaultWidgetDelegate() {}
+  ~DefaultWidgetDelegate() override {}
 
   // Overridden from WidgetDelegate:
-  virtual void DeleteDelegate() OVERRIDE {
-    delete this;
-  }
-  virtual Widget* GetWidget() OVERRIDE {
-    return widget_;
-  }
-  virtual const Widget* GetWidget() const OVERRIDE {
-    return widget_;
-  }
-  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
+  void DeleteDelegate() override { delete this; }
+  Widget* GetWidget() override { return widget_; }
+  const Widget* GetWidget() const override { return widget_; }
+  bool ShouldAdvanceFocusToTopLevelWidget() const override {
     // In most situations where a Widget is used without a delegate the Widget
     // is used as a container, so that we want focus to advance to the top-level
     // widget. A good example of this is the find bar.
@@ -114,7 +108,6 @@ Widget::InitParams::InitParams()
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
-      double_buffer(false),
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
@@ -138,7 +131,6 @@ Widget::InitParams::InitParams(Type type)
       remove_standard_frame(false),
       use_system_default_icon(false),
       show_state(ui::SHOW_STATE_DEFAULT),
-      double_buffer(false),
       parent(NULL),
       native_widget(NULL),
       desktop_window_tree_host(NULL),
@@ -169,7 +161,7 @@ Widget::Widget()
       native_widget_initialized_(false),
       native_widget_destroyed_(false),
       is_mouse_button_pressed_(false),
-      is_touch_down_(false),
+      ignore_capture_loss_(false),
       last_mouse_event_was_move_(false),
       auto_release_capture_(true),
       root_layers_dirty_(false),
@@ -225,13 +217,13 @@ Widget* Widget::CreateWindowWithParentAndBounds(WidgetDelegate* delegate,
 
 // static
 Widget* Widget::CreateWindowWithContext(WidgetDelegate* delegate,
-                                        gfx::NativeView context) {
+                                        gfx::NativeWindow context) {
   return CreateWindowWithContextAndBounds(delegate, context, gfx::Rect());
 }
 
 // static
 Widget* Widget::CreateWindowWithContextAndBounds(WidgetDelegate* delegate,
-                                                 gfx::NativeView context,
+                                                 gfx::NativeWindow context,
                                                  const gfx::Rect& bounds) {
   Widget* widget = new Widget;
   Widget::InitParams params;
@@ -530,6 +522,14 @@ void Widget::SetVisibilityChangedAnimationsEnabled(bool value) {
   native_widget_->SetVisibilityChangedAnimationsEnabled(value);
 }
 
+void Widget::SetVisibilityAnimationDuration(const base::TimeDelta& duration) {
+  native_widget_->SetVisibilityAnimationDuration(duration);
+}
+
+void Widget::SetVisibilityAnimationTransition(VisibilityTransition transition) {
+  native_widget_->SetVisibilityAnimationTransition(transition);
+}
+
 Widget::MoveLoopResult Widget::RunMoveLoop(
     const gfx::Vector2d& drag_offset,
     MoveLoopSource source,
@@ -787,6 +787,7 @@ void Widget::RunShellDrag(View* view,
                           int operation,
                           ui::DragDropTypes::DragEventSource source) {
   dragged_view_ = view;
+  OnDragWillStart();
   native_widget_->RunShellDrag(view, data, location, operation, source);
   // If the view is removed during the drag operation, dragged_view_ is set to
   // NULL.
@@ -794,6 +795,7 @@ void Widget::RunShellDrag(View* view,
     dragged_view_ = NULL;
     view->OnDragDone();
   }
+  OnDragComplete();
 }
 
 void Widget::SchedulePaintInRect(const gfx::Rect& rect) {
@@ -910,11 +912,7 @@ const ui::Compositor* Widget::GetCompositor() const {
   return native_widget_->GetCompositor();
 }
 
-ui::Compositor* Widget::GetCompositor() {
-  return native_widget_->GetCompositor();
-}
-
-ui::Layer* Widget::GetLayer() {
+const ui::Layer* Widget::GetLayer() const {
   return native_widget_->GetLayer();
 }
 
@@ -938,13 +936,17 @@ NativeWidget* Widget::native_widget() {
 }
 
 void Widget::SetCapture(View* view) {
+  if (!native_widget_->HasCapture()) {
+    native_widget_->SetCapture();
+
+    // Early return if setting capture was unsuccessful.
+    if (!native_widget_->HasCapture())
+      return;
+  }
+
   if (internal::NativeWidgetPrivate::IsMouseButtonDown())
     is_mouse_button_pressed_ = true;
-  if (internal::NativeWidgetPrivate::IsTouchDown())
-    is_touch_down_ = true;
   root_view_->SetMouseHandler(view);
-  if (!native_widget_->HasCapture())
-    native_widget_->SetCapture();
 }
 
 void Widget::ReleaseCapture() {
@@ -983,6 +985,11 @@ void Widget::OnRootViewLayout() {
 
 bool Widget::IsTranslucentWindowOpacitySupported() const {
   return native_widget_->IsTranslucentWindowOpacitySupported();
+}
+
+void Widget::OnSizeConstraintsChanged() {
+  native_widget_->OnSizeConstraintsChanged();
+  non_client_view_->SizeConstraintsChanged();
 }
 
 void Widget::OnOwnerClosing() {
@@ -1121,15 +1128,15 @@ void Widget::OnNativeWidgetSizeChanged(const gfx::Size& new_size) {
         focused_view->GetInputMethod()->OnCaretBoundsChanged(focused_view);
     }
   }
-  // Size changed notifications can fire prior to full initialization
-  // i.e. during session restore.  Avoid saving session state during these
-  // startup procedures.
-  if (native_widget_initialized_)
-    SaveWindowPlacement();
+  SaveWindowPlacementIfInitialized();
 
   FOR_EACH_OBSERVER(WidgetObserver, observers_, OnWidgetBoundsChanged(
     this,
     GetWindowBoundsInScreen()));
+}
+
+void Widget::OnNativeWidgetWindowShowStateChanged() {
+  SaveWindowPlacementIfInitialized();
 }
 
 void Widget::OnNativeWidgetBeginUserBoundsChange() {
@@ -1213,8 +1220,10 @@ void Widget::OnMouseEvent(ui::MouseEvent* event) {
       last_mouse_event_was_move_ = false;
       is_mouse_button_pressed_ = false;
       // Release capture first, to avoid confusion if OnMouseReleased blocks.
-      if (auto_release_capture_ && native_widget_->HasCapture())
+      if (auto_release_capture_ && native_widget_->HasCapture()) {
+        base::AutoReset<bool> resetter(&ignore_capture_loss_, true);
         native_widget_->ReleaseCapture();
+      }
       if (root_view)
         root_view->OnMouseReleased(*event);
       if ((event->flags() & ui::EF_IS_NON_CLIENT) == 0)
@@ -1254,12 +1263,12 @@ void Widget::OnMouseEvent(ui::MouseEvent* event) {
 }
 
 void Widget::OnMouseCaptureLost() {
-  if (is_mouse_button_pressed_ || is_touch_down_) {
-    View* root_view = GetRootView();
-    if (root_view)
-      root_view->OnMouseCaptureLost();
-  }
-  is_touch_down_ = false;
+  if (ignore_capture_loss_)
+    return;
+
+  View* root_view = GetRootView();
+  if (root_view)
+    root_view->OnMouseCaptureLost();
   is_mouse_button_pressed_ = false;
 }
 
@@ -1275,22 +1284,9 @@ void Widget::OnScrollEvent(ui::ScrollEvent* event) {
 }
 
 void Widget::OnGestureEvent(ui::GestureEvent* event) {
-  switch (event->type()) {
-    case ui::ET_GESTURE_TAP_DOWN:
-      is_touch_down_ = true;
-      // We explicitly don't capture here. Not capturing enables multiple
-      // widgets to get tap events at the same time. Views (such as tab
-      // dragging) may explicitly capture.
-      break;
-
-    case ui::ET_GESTURE_END:
-      if (event->details().touch_points() == 1)
-        is_touch_down_ = false;
-      break;
-
-    default:
-      break;
-  }
+  // We explicitly do not capture here. Not capturing enables multiple widgets
+  // to get tap events at the same time. Views (such as tab dragging) may
+  // explicitly capture.
   SendEventToProcessor(event);
 }
 
@@ -1399,6 +1395,12 @@ void Widget::DestroyRootView() {
   input_method_.reset();
 }
 
+void Widget::OnDragWillStart() {
+}
+
+void Widget::OnDragComplete() {
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Widget, private:
 
@@ -1423,6 +1425,11 @@ void Widget::SaveWindowPlacement() {
   gfx::Rect bounds;
   native_widget_->GetWindowPlacement(&bounds, &show_state);
   widget_delegate_->SaveWindowPlacement(bounds, show_state);
+}
+
+void Widget::SaveWindowPlacementIfInitialized() {
+  if (native_widget_initialized_)
+    SaveWindowPlacement();
 }
 
 void Widget::SetInitialBounds(const gfx::Rect& bounds) {

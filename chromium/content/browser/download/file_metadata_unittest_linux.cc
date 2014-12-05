@@ -10,8 +10,8 @@
 #include <sstream>
 #include <string>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/strings/string_split.h"
@@ -50,7 +50,7 @@ class FileMetadataLinuxTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
     ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &test_file_));
     int result = setxattr(test_file_.value().c_str(),

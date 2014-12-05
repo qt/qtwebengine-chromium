@@ -3,21 +3,23 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var SettingsDialog = options.SettingsDialog;
 
   /**
    * HomePageOverlay class
    * Dialog that allows users to set the home page.
-   * @extends {SettingsDialog}
+   * @constructor
+   * @extends {options.SettingsDialog}
    */
   function ThirdPartyImeConfirmOverlay() {
     SettingsDialog.call(
         this, 'thirdPartyImeConfirm',
         loadTimeData.getString('thirdPartyImeConfirmOverlayTabTitle'),
         'third-party-ime-confirm-overlay',
-        $('third-party-ime-confirm-ok'),
-        $('third-party-ime-confirm-cancel'));
+        assertInstanceof($('third-party-ime-confirm-ok'), HTMLButtonElement),
+        assertInstanceof($('third-party-ime-confirm-cancel'),
+                         HTMLButtonElement));
   }
 
   cr.addSingletonGetter(ThirdPartyImeConfirmOverlay);
@@ -68,7 +70,7 @@ cr.define('options', function() {
       var message = loadTimeData.getStringF('thirdPartyImeConfirmMessage',
                                              data.extension);
       $('third-party-ime-confirm-text').textContent = message;
-      OptionsPage.showPageByName(this.name, false);
+      PageManager.showPageByName(this.name, false);
     },
   };
 

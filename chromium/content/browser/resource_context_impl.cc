@@ -94,8 +94,11 @@ StreamContext* GetStreamContextForResourceContext(
 
 HostZoomMap* GetHostZoomMapForResourceContext(ResourceContext* context) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return static_cast<NonOwningZoomData*>(
-      context->GetUserData(kHostZoomMapKeyName))->host_zoom_map();
+  NonOwningZoomData* result = static_cast<NonOwningZoomData*>(
+      context->GetUserData(kHostZoomMapKeyName));
+  if (!result)
+    return NULL;
+  return result->host_zoom_map();
 }
 
 URLDataManagerBackend* GetURLDataManagerForResourceContext(
@@ -128,7 +131,7 @@ void InitializeResourceContext(BrowserContext* browser_context) {
   resource_context->SetUserData(
       kHostZoomMapKeyName,
       new NonOwningZoomData(
-          HostZoomMap::GetForBrowserContext(browser_context)));
+          HostZoomMap::GetDefaultForBrowserContext(browser_context)));
 
   resource_context->DetachUserDataThread();
 }

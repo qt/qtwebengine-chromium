@@ -67,7 +67,7 @@ class BASE_EXPORT WaitableEventWatcher
  public:
   typedef Callback<void(WaitableEvent*)> EventCallback;
   WaitableEventWatcher();
-  virtual ~WaitableEventWatcher();
+  ~WaitableEventWatcher() override;
 
   // When @event is signaled, the given callback is called on the thread of the
   // current message loop when StartWatching is called.
@@ -92,11 +92,11 @@ class BASE_EXPORT WaitableEventWatcher
 
  private:
 #if defined(OS_WIN)
-  virtual void OnObjectSignaled(HANDLE h) OVERRIDE;
+  virtual void OnObjectSignaled(HANDLE h) override;
   win::ObjectWatcher watcher_;
 #else
   // Implementation of MessageLoop::DestructionObserver
-  virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
+  void WillDestroyCurrentMessageLoop() override;
 
   MessageLoop* message_loop_;
   scoped_refptr<Flag> cancel_flag_;

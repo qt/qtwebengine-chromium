@@ -12,9 +12,9 @@
 namespace base {
 namespace i18n {
 
-const size_t npos = -1;
+const size_t npos = static_cast<size_t>(-1);
 
-BreakIterator::BreakIterator(const string16& str, BreakType break_type)
+BreakIterator::BreakIterator(const StringPiece16& str, BreakType break_type)
     : iter_(NULL),
       string_(str),
       break_type_(break_type),
@@ -22,7 +22,7 @@ BreakIterator::BreakIterator(const string16& str, BreakType break_type)
       pos_(0) {
 }
 
-BreakIterator::BreakIterator(const string16& str, const string16& rules)
+BreakIterator::BreakIterator(const StringPiece16& str, const string16& rules)
     : iter_(NULL),
       string_(str),
       rules_(rules),
@@ -132,19 +132,20 @@ bool BreakIterator::SetText(const base::char16* text, const size_t length) {
     NOTREACHED() << "ubrk_setText failed";
     return false;
   }
+  string_ = StringPiece16(text, length);
   return true;
 }
 
 bool BreakIterator::IsWord() const {
   int32_t status = ubrk_getRuleStatus(static_cast<UBreakIterator*>(iter_));
   if (break_type_ != BREAK_WORD && break_type_ != RULE_BASED)
-      return false;
+    return false;
   return status != UBRK_WORD_NONE;
 }
 
 bool BreakIterator::IsEndOfWord(size_t position) const {
   if (break_type_ != BREAK_WORD && break_type_ != RULE_BASED)
-      return false;
+    return false;
 
   UBreakIterator* iter = static_cast<UBreakIterator*>(iter_);
   UBool boundary = ubrk_isBoundary(iter, static_cast<int32_t>(position));
@@ -154,7 +155,7 @@ bool BreakIterator::IsEndOfWord(size_t position) const {
 
 bool BreakIterator::IsStartOfWord(size_t position) const {
   if (break_type_ != BREAK_WORD && break_type_ != RULE_BASED)
-      return false;
+    return false;
 
   UBreakIterator* iter = static_cast<UBreakIterator*>(iter_);
   UBool boundary = ubrk_isBoundary(iter, static_cast<int32_t>(position));
@@ -163,7 +164,19 @@ bool BreakIterator::IsStartOfWord(size_t position) const {
   return (!!boundary && next_status != UBRK_WORD_NONE);
 }
 
+bool BreakIterator::IsGraphemeBoundary(size_t position) const {
+  if (break_type_ != BREAK_CHARACTER)
+    return false;
+
+  UBreakIterator* iter = static_cast<UBreakIterator*>(iter_);
+  return !!ubrk_isBoundary(iter, static_cast<int32_t>(position));
+}
+
 string16 BreakIterator::GetString() const {
+  return GetStringPiece().as_string();
+}
+
+StringPiece16 BreakIterator::GetStringPiece() const {
   DCHECK(prev_ != npos && pos_ != npos);
   return string_.substr(prev_, pos_ - prev_);
 }

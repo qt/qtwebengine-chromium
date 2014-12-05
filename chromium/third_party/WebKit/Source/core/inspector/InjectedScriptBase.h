@@ -31,12 +31,12 @@
 #ifndef InjectedScriptBase_h
 #define InjectedScriptBase_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "core/InspectorTypeBuilder.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class JSONValue;
 class ScriptFunctionCall;
@@ -66,7 +66,7 @@ protected:
     const ScriptValue& injectedScriptObject() const;
     ScriptValue callFunctionWithEvalEnabled(ScriptFunctionCall&, bool& hadException) const;
     void makeCall(ScriptFunctionCall&, RefPtr<JSONValue>* result);
-    void makeEvalCall(ErrorString*, ScriptFunctionCall&, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown);
+    void makeEvalCall(ErrorString*, ScriptFunctionCall&, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* = 0);
 
 private:
     String m_name;
@@ -75,6 +75,6 @@ private:
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

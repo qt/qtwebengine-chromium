@@ -20,11 +20,14 @@
 #ifndef SVGRenderingIntent_h
 #define SVGRenderingIntent_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGRenderingIntent : public RefCounted<SVGRenderingIntent> {
+class SVGRenderingIntent final : public RefCountedWillBeGarbageCollected<SVGRenderingIntent>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum SVGRenderingIntentType {
         RENDERING_INTENT_UNKNOWN                  = 0,
@@ -35,10 +38,12 @@ public:
         RENDERING_INTENT_ABSOLUTE_COLORIMETRIC    = 5
     };
 
+    void trace(Visitor*) { }
+
 private:
-    SVGRenderingIntent() { }
+    SVGRenderingIntent(); // No instantiation.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRenderingIntent_h

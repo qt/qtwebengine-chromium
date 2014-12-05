@@ -33,6 +33,7 @@
 #include "core/css/CSSPrimitiveValueMappings.h"
 #include "core/css/StylePropertySet.h"
 #include "core/dom/Element.h"
+#include "core/dom/ElementTraversal.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/rendering/svg/RenderSVGResourceFilter.h"
 #include "core/svg/SVGDocumentExtensions.h"
@@ -40,7 +41,7 @@
 #include "core/svg/graphics/filters/SVGFilterBuilder.h"
 #include "platform/graphics/filters/SourceAlpha.h"
 
-namespace WebCore {
+namespace blink {
 
 HashMap<const FilterOperation*, OwnPtr<DocumentResourceReference> >* ReferenceFilterBuilder::documentResourceReferences = 0;
 
@@ -75,7 +76,7 @@ static bool getSVGElementColorSpace(SVGElement* svgElement, ColorSpace& cs)
 
     const RenderObject* renderer = svgElement->renderer();
     const RenderStyle* style = renderer ? renderer->style() : 0;
-    const SVGRenderStyle* svgStyle = style ? style->svgStyle() : 0;
+    const SVGRenderStyle* svgStyle = style ? &style->svgStyle() : 0;
     EColorInterpolation eColorInterpolation = CI_AUTO;
     if (svgStyle) {
         // If a layout has been performed, then we can use the fast path to get this attribute
@@ -171,4 +172,4 @@ PassRefPtr<FilterEffect> ReferenceFilterBuilder::build(Filter* parentFilter, Ren
     return builder->lastEffect();
 }
 
-} // namespace WebCore
+} // namespace blink

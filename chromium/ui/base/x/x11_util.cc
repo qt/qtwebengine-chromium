@@ -38,17 +38,18 @@
 #include "third_party/skia/include/core/SkPostConfig.h"
 #include "ui/base/x/x11_menu_list.h"
 #include "ui/base/x/x11_util_internal.h"
+#include "ui/events/devices/x11/device_data_manager_x11.h"
+#include "ui/events/devices/x11/touch_factory_x11.h"
 #include "ui/events/event_utils.h"
 #include "ui/events/keycodes/keyboard_code_conversion_x.h"
-#include "ui/events/x/device_data_manager.h"
-#include "ui/events/x/touch_factory_x11.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/insets.h"
+#include "ui/gfx/geometry/point.h"
+#include "ui/gfx/geometry/point_conversions.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/size.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_rep.h"
-#include "ui/gfx/point.h"
-#include "ui/gfx/point_conversions.h"
-#include "ui/gfx/rect.h"
-#include "ui/gfx/size.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/x/x11_error_tracker.h"
 
@@ -84,9 +85,9 @@ int DefaultX11IOErrorHandler(XDisplay* d) {
 
 // Note: The caller should free the resulting value data.
 bool GetProperty(XID window, const std::string& property_name, long max_length,
-                 Atom* type, int* format, unsigned long* num_items,
+                 XAtom* type, int* format, unsigned long* num_items,
                  unsigned char** property) {
-  Atom property_atom = GetAtom(property_name.c_str());
+  XAtom property_atom = GetAtom(property_name.c_str());
   unsigned long remaining_bytes = 0;
   return XGetWindowProperty(gfx::GetXDisplay(),
                             window,
@@ -100,6 +101,59 @@ bool GetProperty(XID window, const std::string& property_name, long max_length,
                             num_items,
                             &remaining_bytes,
                             property);
+}
+
+bool SupportsEWMH() {
+  static bool supports_ewmh = false;
+  static bool supports_ewmh_cached = false;
+  if (!supports_ewmh_cached) {
+    supports_ewmh_cached = true;
+
+    int wm_window = 0u;
+    if (!GetIntProperty(GetX11RootWindow(),
+                        "_NET_SUPPORTING_WM_CHECK",
+                        &wm_window)) {
+      supports_ewmh = false;
+      return false;
+    }
+
+    // It's possible that a window manager started earlier in this X session
+    // left a stale _NET_SUPPORTING_WM_CHECK property when it was replaced by a
+    // non-EWMH window manager, so we trap errors in the following requests to
+    // avoid crashes (issue 23860).
+
+    // EWMH requires the supporting-WM window to also have a
+    // _NET_SUPPORTING_WM_CHECK property pointing to itself (to avoid a stale
+    // property referencing an ID that's been recycled for another window), so
+    // we check that too.
+    gfx::X11ErrorTracker err_tracker;
+    int wm_window_property = 0;
+    bool result = GetIntProperty(
+        wm_window, "_NET_SUPPORTING_WM_CHECK", &wm_window_property);
+    supports_ewmh = !err_tracker.FoundNewError() &&
+                    result &&
+                    wm_window_property == wm_window;
+  }
+
+  return supports_ewmh;
+}
+
+bool GetWindowManagerName(std::string* wm_name) {
+  DCHECK(wm_name);
+  if (!SupportsEWMH())
+    return false;
+
+  int wm_window = 0;
+  if (!GetIntProperty(GetX11RootWindow(),
+                      "_NET_SUPPORTING_WM_CHECK",
+                      &wm_window)) {
+    return false;
+  }
+
+  gfx::X11ErrorTracker err_tracker;
+  bool result = GetStringProperty(
+      static_cast<XID>(wm_window), "_NET_WM_NAME", wm_name);
+  return !err_tracker.FoundNewError() && result;
 }
 
 // A process wide singleton that manages the usage of X cursors.
@@ -227,7 +281,7 @@ class XCustomCursorCache {
 }  // namespace
 
 bool IsXInput2Available() {
-  return DeviceDataManager::GetInstance()->IsXInput2Available();
+  return DeviceDataManagerX11::GetInstance()->IsXInput2Available();
 }
 
 static SharedMemorySupport DoQuerySharedMemorySupport(XDisplay* dpy) {
@@ -329,7 +383,7 @@ void UnrefCustomXCursor(::Cursor cursor) {
 
 XcursorImage* SkBitmapToXcursorImage(const SkBitmap* cursor_image,
                                      const gfx::Point& hotspot) {
-  DCHECK(cursor_image->colorType() == kPMColor_SkColorType);
+  DCHECK(cursor_image->colorType() == kN32_SkColorType);
   gfx::Point hotspot_point = hotspot;
   SkBitmap scaled;
 
@@ -399,7 +453,7 @@ int CoalescePendingMotionEvents(const XEvent* xev,
 
     if (next_event.type == GenericEvent &&
         next_event.xgeneric.evtype == event_type &&
-        !ui::DeviceDataManager::GetInstance()->IsCMTGestureEvent(
+        !ui::DeviceDataManagerX11::GetInstance()->IsCMTGestureEvent(
             &next_event)) {
       XIDeviceEvent* next_xievent =
           static_cast<XIDeviceEvent*>(next_event.xcookie.data);
@@ -483,7 +537,7 @@ void SetUseOSWindowFrame(XID window, bool use_os_window_frame) {
   motif_hints.flags = (1L << 1);
   motif_hints.decorations = use_os_window_frame ? 1 : 0;
 
-  ::Atom hint_atom = GetAtom("_MOTIF_WM_HINTS");
+  XAtom hint_atom = GetAtom("_MOTIF_WM_HINTS");
   XChangeProperty(gfx::GetXDisplay(),
                   window,
                   hint_atom,
@@ -527,7 +581,7 @@ void ClearX11DefaultRootWindow() {
   XDisplay* display = gfx::GetXDisplay();
   XID root_window = GetX11RootWindow();
   gfx::Rect root_bounds;
-  if (!GetWindowRect(root_window, &root_bounds)) {
+  if (!GetOuterWindowBounds(root_window, &root_bounds)) {
     LOG(ERROR) << "Failed to get the bounds of the X11 root window";
     return;
   }
@@ -553,9 +607,9 @@ bool IsWindowVisible(XID window) {
     return false;
 
   // Minimized windows are not visible.
-  std::vector<Atom> wm_states;
+  std::vector<XAtom> wm_states;
   if (GetAtomArrayProperty(window, "_NET_WM_STATE", &wm_states)) {
-    Atom hidden_atom = GetAtom("_NET_WM_STATE_HIDDEN");
+    XAtom hidden_atom = GetAtom("_NET_WM_STATE_HIDDEN");
     if (std::find(wm_states.begin(), wm_states.end(), hidden_atom) !=
             wm_states.end()) {
       return false;
@@ -571,7 +625,7 @@ bool IsWindowVisible(XID window) {
           window_desktop == current_desktop);
 }
 
-bool GetWindowRect(XID window, gfx::Rect* rect) {
+bool GetInnerWindowBounds(XID window, gfx::Rect* rect) {
   Window root, child;
   int x, y;
   unsigned int width, height;
@@ -587,11 +641,31 @@ bool GetWindowRect(XID window, gfx::Rect* rect) {
 
   *rect = gfx::Rect(x, y, width, height);
 
+  return true;
+}
+
+bool GetWindowExtents(XID window, gfx::Insets* extents) {
   std::vector<int> insets;
-  if (GetIntArrayProperty(window, "_NET_FRAME_EXTENTS", &insets) &&
-      insets.size() == 4) {
-    rect->Inset(-insets[0], -insets[2], -insets[1], -insets[3]);
-  }
+  if (!GetIntArrayProperty(window, "_NET_FRAME_EXTENTS", &insets))
+    return false;
+  if (insets.size() != 4)
+    return false;
+
+  int left = insets[0];
+  int right = insets[1];
+  int top = insets[2];
+  int bottom = insets[3];
+  extents->Set(-top, -left, -bottom, -right);
+  return true;
+}
+
+bool GetOuterWindowBounds(XID window, gfx::Rect* rect) {
+  if (!GetInnerWindowBounds(window, rect))
+    return false;
+
+  gfx::Insets extents;
+  if (GetWindowExtents(window, &extents))
+    rect->Inset(extents);
   // Not all window managers support _NET_FRAME_EXTENTS so return true even if
   // requesting the property fails.
 
@@ -603,7 +677,7 @@ bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
   TRACE_EVENT0("ui", "WindowContainsPoint");
 
   gfx::Rect window_rect;
-  if (!GetWindowRect(window, &window_rect))
+  if (!GetOuterWindowBounds(window, &window_rect))
     return false;
 
   if (!window_rect.Contains(screen_loc))
@@ -663,7 +737,7 @@ bool WindowContainsPoint(XID window, gfx::Point screen_loc) {
 
 
 bool PropertyExists(XID window, const std::string& property_name) {
-  Atom type = None;
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* property = NULL;
@@ -678,15 +752,14 @@ bool PropertyExists(XID window, const std::string& property_name) {
 }
 
 bool GetRawBytesOfProperty(XID window,
-                           Atom property,
+                           XAtom property,
                            scoped_refptr<base::RefCountedMemory>* out_data,
-                           size_t* out_data_bytes,
                            size_t* out_data_items,
-                           Atom* out_type) {
+                           XAtom* out_type) {
   // Retrieve the data from our window.
   unsigned long nitems = 0;
   unsigned long nbytes = 0;
-  Atom prop_type = None;
+  XAtom prop_type = None;
   int prop_format = 0;
   unsigned char* property_data = NULL;
   if (XGetWindowProperty(gfx::GetXDisplay(), window, property,
@@ -718,9 +791,6 @@ bool GetRawBytesOfProperty(XID window,
       break;
   }
 
-  if (out_data_bytes)
-    *out_data_bytes = bytes;
-
   if (out_data)
     *out_data = new XRefcountedMemory(property_data, bytes);
   else
@@ -736,7 +806,7 @@ bool GetRawBytesOfProperty(XID window,
 }
 
 bool GetIntProperty(XID window, const std::string& property_name, int* value) {
-  Atom type = None;
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* property = NULL;
@@ -757,7 +827,7 @@ bool GetIntProperty(XID window, const std::string& property_name, int* value) {
 }
 
 bool GetXIDProperty(XID window, const std::string& property_name, XID* value) {
-  Atom type = None;
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* property = NULL;
@@ -780,7 +850,7 @@ bool GetXIDProperty(XID window, const std::string& property_name, XID* value) {
 bool GetIntArrayProperty(XID window,
                          const std::string& property_name,
                          std::vector<int>* value) {
-  Atom type = None;
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* properties = NULL;
@@ -807,8 +877,8 @@ bool GetIntArrayProperty(XID window,
 
 bool GetAtomArrayProperty(XID window,
                           const std::string& property_name,
-                          std::vector<Atom>* value) {
-  Atom type = None;
+                          std::vector<XAtom>* value) {
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* properties = NULL;
@@ -824,7 +894,7 @@ bool GetAtomArrayProperty(XID window,
     return false;
   }
 
-  Atom* atom_properties = reinterpret_cast<Atom*>(properties);
+  XAtom* atom_properties = reinterpret_cast<XAtom*>(properties);
   value->clear();
   value->insert(value->begin(), atom_properties, atom_properties + num_items);
   XFree(properties);
@@ -833,7 +903,7 @@ bool GetAtomArrayProperty(XID window,
 
 bool GetStringProperty(
     XID window, const std::string& property_name, std::string* value) {
-  Atom type = None;
+  XAtom type = None;
   int format = 0;  // size in bits of each item in 'property'
   unsigned long num_items = 0;
   unsigned char* property = NULL;
@@ -866,8 +936,8 @@ bool SetIntArrayProperty(XID window,
                          const std::string& type,
                          const std::vector<int>& value) {
   DCHECK(!value.empty());
-  Atom name_atom = GetAtom(name.c_str());
-  Atom type_atom = GetAtom(type.c_str());
+  XAtom name_atom = GetAtom(name.c_str());
+  XAtom type_atom = GetAtom(type.c_str());
 
   // XChangeProperty() expects values of type 32 to be longs.
   scoped_ptr<long[]> data(new long[value.size()]);
@@ -889,21 +959,21 @@ bool SetIntArrayProperty(XID window,
 bool SetAtomProperty(XID window,
                      const std::string& name,
                      const std::string& type,
-                     Atom value) {
-  std::vector<Atom> values(1, value);
+                     XAtom value) {
+  std::vector<XAtom> values(1, value);
   return SetAtomArrayProperty(window, name, type, values);
 }
 
 bool SetAtomArrayProperty(XID window,
                           const std::string& name,
                           const std::string& type,
-                          const std::vector<Atom>& value) {
+                          const std::vector<XAtom>& value) {
   DCHECK(!value.empty());
-  Atom name_atom = GetAtom(name.c_str());
-  Atom type_atom = GetAtom(type.c_str());
+  XAtom name_atom = GetAtom(name.c_str());
+  XAtom type_atom = GetAtom(type.c_str());
 
   // XChangeProperty() expects values of type 32 to be longs.
-  scoped_ptr<Atom[]> data(new Atom[value.size()]);
+  scoped_ptr<XAtom[]> data(new XAtom[value.size()]);
   for (size_t i = 0; i < value.size(); ++i)
     data[i] = value[i];
 
@@ -920,8 +990,8 @@ bool SetAtomArrayProperty(XID window,
 }
 
 bool SetStringProperty(XID window,
-                       Atom property,
-                       Atom type,
+                       XAtom property,
+                       XAtom type,
                        const std::string& value) {
   gfx::X11ErrorTracker err_tracker;
   XChangeProperty(gfx::GetXDisplay(),
@@ -935,7 +1005,7 @@ bool SetStringProperty(XID window,
   return !err_tracker.FoundNewError();
 }
 
-Atom GetAtom(const char* name) {
+XAtom GetAtom(const char* name) {
   // TODO(derat): Cache atoms to avoid round-trips to the server.
   return XInternAtom(gfx::GetXDisplay(), name, false);
 }
@@ -966,23 +1036,35 @@ void SetWindowRole(XDisplay* display, XID window, const std::string& role) {
 }
 
 bool GetCustomFramePrefDefault() {
-  // Ideally, we'd use the custom frame by default and just fall back on using
-  // system decorations for the few (?) tiling window managers where the custom
-  // frame doesn't make sense (e.g. awesome, ion3, ratpoison, xmonad, etc.) or
-  // other WMs where it has issues (e.g. Fluxbox -- see issue 19130).  The EWMH
-  // _NET_SUPPORTING_WM property makes it easy to look up a name for the current
-  // WM, but at least some of the WMs in the latter group don't set it.
-  // Instead, we default to using system decorations for all WMs and
-  // special-case the ones where the custom frame should be used.
-  ui::WindowManagerName wm_type = GuessWindowManager();
-  return (wm_type == WM_BLACKBOX ||
-          wm_type == WM_COMPIZ ||
-          wm_type == WM_ENLIGHTENMENT ||
-          wm_type == WM_METACITY ||
-          wm_type == WM_MUFFIN ||
-          wm_type == WM_MUTTER ||
-          wm_type == WM_OPENBOX ||
-          wm_type == WM_XFWM4);
+  // If the window manager doesn't support enough of EWMH to tell us its name,
+  // assume that it doesn't want custom frames. For example, _NET_WM_MOVERESIZE
+  // is needed for frame-drag-initiated window movement.
+  std::string wm_name;
+  if (!GetWindowManagerName(&wm_name))
+    return false;
+
+  // Also disable custom frames for (at-least-partially-)EWMH-supporting tiling
+  // window managers.
+  ui::WindowManagerName wm = GuessWindowManager();
+  if (wm == WM_AWESOME ||
+      wm == WM_I3 ||
+      wm == WM_ION3 ||
+      wm == WM_MATCHBOX ||
+      wm == WM_NOTION ||
+      wm == WM_QTILE ||
+      wm == WM_RATPOISON ||
+      wm == WM_STUMPWM ||
+      wm == WM_WMII)
+    return false;
+
+  // Handle a few more window managers that don't get along well with custom
+  // frames.
+  if (wm == WM_ICE_WM ||
+      wm == WM_KWIN)
+    return false;
+
+  // For everything else, use custom frames.
+  return true;
 }
 
 bool GetWindowDesktop(XID window, int* desktop) {
@@ -1159,68 +1241,61 @@ bool CopyAreaToCanvas(XID drawable,
   return true;
 }
 
-bool GetWindowManagerName(std::string* wm_name) {
-  DCHECK(wm_name);
-  int wm_window = 0;
-  if (!GetIntProperty(GetX11RootWindow(),
-                      "_NET_SUPPORTING_WM_CHECK",
-                      &wm_window)) {
-    return false;
-  }
-
-  // It's possible that a window manager started earlier in this X session left
-  // a stale _NET_SUPPORTING_WM_CHECK property when it was replaced by a
-  // non-EWMH window manager, so we trap errors in the following requests to
-  // avoid crashes (issue 23860).
-
-  // EWMH requires the supporting-WM window to also have a
-  // _NET_SUPPORTING_WM_CHECK property pointing to itself (to avoid a stale
-  // property referencing an ID that's been recycled for another window), so we
-  // check that too.
-  gfx::X11ErrorTracker err_tracker;
-  int wm_window_property = 0;
-  bool result = GetIntProperty(
-      wm_window, "_NET_SUPPORTING_WM_CHECK", &wm_window_property);
-  if (err_tracker.FoundNewError() || !result ||
-      wm_window_property != wm_window) {
-    return false;
-  }
-
-  result = GetStringProperty(
-      static_cast<XID>(wm_window), "_NET_WM_NAME", wm_name);
-  return !err_tracker.FoundNewError() && result;
-}
-
 WindowManagerName GuessWindowManager() {
   std::string name;
   if (GetWindowManagerName(&name)) {
     // These names are taken from the WMs' source code.
+    if (name == "awesome")
+      return WM_AWESOME;
     if (name == "Blackbox")
       return WM_BLACKBOX;
-    if (name == "chromeos-wm")
-      return WM_CHROME_OS;
     if (name == "Compiz" || name == "compiz")
       return WM_COMPIZ;
-    if (name == "e16")
+    if (name == "e16" || name == "Enlightenment")
       return WM_ENLIGHTENMENT;
+    if (name == "Fluxbox")
+      return WM_FLUXBOX;
+    if (name == "i3")
+      return WM_I3;
     if (StartsWithASCII(name, "IceWM", true))
       return WM_ICE_WM;
+    if (name == "ion3")
+      return WM_ION3;
     if (name == "KWin")
       return WM_KWIN;
+    if (name == "matchbox")
+      return WM_MATCHBOX;
     if (name == "Metacity")
       return WM_METACITY;
     if (name == "Mutter (Muffin)")
       return WM_MUFFIN;
     if (name == "GNOME Shell")
-      return WM_MUTTER; // GNOME Shell uses Mutter
+      return WM_MUTTER;  // GNOME Shell uses Mutter
     if (name == "Mutter")
       return WM_MUTTER;
+    if (name == "notion")
+      return WM_NOTION;
     if (name == "Openbox")
       return WM_OPENBOX;
+    if (name == "qtile")
+      return WM_QTILE;
+    if (name == "ratpoison")
+      return WM_RATPOISON;
+    if (name == "stumpwm")
+      return WM_STUMPWM;
+    if (name == "wmii")
+      return WM_WMII;
     if (name == "Xfwm4")
       return WM_XFWM4;
   }
   return WM_UNKNOWN;
+}
+
+std::string GuessWindowManagerName() {
+  std::string name;
+  if (GetWindowManagerName(&name))
+    return name;
+  return "Unknown";
 }
 
 void SetDefaultX11ErrorHandlers() {
@@ -1231,9 +1306,9 @@ bool IsX11WindowFullScreen(XID window) {
   // If _NET_WM_STATE_FULLSCREEN is in _NET_SUPPORTED, use the presence or
   // absence of _NET_WM_STATE_FULLSCREEN in _NET_WM_STATE to determine
   // whether we're fullscreen.
-  Atom fullscreen_atom = GetAtom("_NET_WM_STATE_FULLSCREEN");
+  XAtom fullscreen_atom = GetAtom("_NET_WM_STATE_FULLSCREEN");
   if (WmSupportsHint(fullscreen_atom)) {
-    std::vector<Atom> atom_properties;
+    std::vector<XAtom> atom_properties;
     if (GetAtomArrayProperty(window,
                              "_NET_WM_STATE",
                              &atom_properties)) {
@@ -1245,7 +1320,7 @@ bool IsX11WindowFullScreen(XID window) {
   }
 
   gfx::Rect window_rect;
-  if (!ui::GetWindowRect(window, &window_rect))
+  if (!ui::GetOuterWindowBounds(window, &window_rect))
     return false;
 
   // We can't use gfx::Screen here because we don't have an aura::Window. So
@@ -1260,8 +1335,11 @@ bool IsX11WindowFullScreen(XID window) {
   return window_rect.size() == gfx::Size(width, height);
 }
 
-bool WmSupportsHint(Atom atom) {
-  std::vector<Atom> supported_atoms;
+bool WmSupportsHint(XAtom atom) {
+  if (!SupportsEWMH())
+    return false;
+
+  std::vector<XAtom> supported_atoms;
   if (!GetAtomArrayProperty(GetX11RootWindow(),
                             "_NET_SUPPORTED",
                             &supported_atoms)) {

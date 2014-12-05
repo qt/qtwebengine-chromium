@@ -50,12 +50,12 @@ namespace {
 class FullscreenMouseLockDispatcher : public MouseLockDispatcher {
  public:
   explicit FullscreenMouseLockDispatcher(RenderWidgetFullscreenPepper* widget);
-  virtual ~FullscreenMouseLockDispatcher();
+  ~FullscreenMouseLockDispatcher() override;
 
  private:
   // MouseLockDispatcher implementation.
-  virtual void SendLockMouseRequest(bool unlocked_by_target) OVERRIDE;
-  virtual void SendUnlockMouseRequest() OVERRIDE;
+  void SendLockMouseRequest(bool unlocked_by_target) override;
+  void SendUnlockMouseRequest() override;
 
   RenderWidgetFullscreenPepper* widget_;
 
@@ -300,7 +300,6 @@ void RenderWidgetFullscreenPepper::InvalidateRect(const blink::WebRect& rect) {
 
 void RenderWidgetFullscreenPepper::ScrollRect(
     int dx, int dy, const blink::WebRect& rect) {
-  didScrollRect(dx, dy, rect);
 }
 
 void RenderWidgetFullscreenPepper::Destroy() {

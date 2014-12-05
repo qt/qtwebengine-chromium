@@ -16,6 +16,7 @@
 #include "webrtc/base/sharedexclusivelock.h"
 #include "webrtc/base/thread.h"
 #include "webrtc/base/timeutils.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 
@@ -132,7 +133,7 @@ class SharedExclusiveLockTest
 };
 
 // Flaky: https://code.google.com/p/webrtc/issues/detail?id=3318
-TEST_F(SharedExclusiveLockTest, DISABLED_TestSharedShared) {
+TEST_F(SharedExclusiveLockTest, TestSharedShared) {
   int value0, value1;
   bool done0, done1;
   ReadTask reader0(shared_exclusive_lock_.get(), &value_, &done0);

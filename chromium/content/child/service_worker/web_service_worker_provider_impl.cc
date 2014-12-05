@@ -10,7 +10,9 @@
 #include "content/child/service_worker/service_worker_dispatcher.h"
 #include "content/child/service_worker/service_worker_handle_reference.h"
 #include "content/child/service_worker/service_worker_provider_context.h"
+#include "content/child/service_worker/service_worker_registration_handle_reference.h"
 #include "content/child/service_worker/web_service_worker_impl.h"
+#include "content/child/service_worker/web_service_worker_registration_impl.h"
 #include "content/child/thread_safe_sender.h"
 #include "content/common/service_worker/service_worker_messages.h"
 #include "third_party/WebKit/public/platform/WebServiceWorkerProviderClient.h"
@@ -47,30 +49,55 @@ void WebServiceWorkerProviderImpl::setClient(
   // for more context)
   GetDispatcher()->AddScriptClient(provider_id_, client);
 
-  if (context_->waiting_handle_id() != kInvalidServiceWorkerHandleId) {
-    client->setWaiting(
-        GetDispatcher()->GetServiceWorker(context_->waiting()->info(), false));
+  if (!context_->registration()) {
+    // This provider is not associated with any registration.
+    return;
   }
 
-  if (context_->current_handle_id() != kInvalidServiceWorkerHandleId) {
-    client->setController(
-        GetDispatcher()->GetServiceWorker(context_->current()->info(), false));
+  // Set .ready if the associated registration has the active service worker.
+  if (context_->active_handle_id() != kInvalidServiceWorkerHandleId) {
+    WebServiceWorkerRegistrationImpl* registration =
+        GetDispatcher()->FindServiceWorkerRegistration(
+            context_->registration()->info(), false);
+    if (!registration) {
+      registration = GetDispatcher()->CreateServiceWorkerRegistration(
+          context_->registration()->info(), false);
+      ServiceWorkerVersionAttributes attrs = context_->GetVersionAttributes();
+      registration->SetInstalling(
+          GetDispatcher()->GetServiceWorker(attrs.installing, false));
+      registration->SetWaiting(
+          GetDispatcher()->GetServiceWorker(attrs.waiting, false));
+      registration->SetActive(
+          GetDispatcher()->GetServiceWorker(attrs.active, false));
+    }
+    client->setReadyRegistration(registration);
+  }
+
+  if (context_->controller_handle_id() != kInvalidServiceWorkerHandleId) {
+    client->setController(GetDispatcher()->GetServiceWorker(
+        context_->controller()->info(), false));
   }
 }
 
 void WebServiceWorkerProviderImpl::registerServiceWorker(
     const WebURL& pattern,
     const WebURL& script_url,
-    WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
   GetDispatcher()->RegisterServiceWorker(
       provider_id_, pattern, script_url, callbacks);
 }
 
 void WebServiceWorkerProviderImpl::unregisterServiceWorker(
     const WebURL& pattern,
-    WebServiceWorkerCallbacks* callbacks) {
+    WebServiceWorkerUnregistrationCallbacks* callbacks) {
   GetDispatcher()->UnregisterServiceWorker(
       provider_id_, pattern, callbacks);
+}
+
+void WebServiceWorkerProviderImpl::getRegistration(
+    const blink::WebURL& document_url,
+    WebServiceWorkerRegistrationCallbacks* callbacks) {
+  GetDispatcher()->GetRegistration(provider_id_, document_url, callbacks);
 }
 
 void WebServiceWorkerProviderImpl::RemoveScriptClient() {
@@ -84,7 +111,7 @@ void WebServiceWorkerProviderImpl::RemoveScriptClient() {
 
 ServiceWorkerDispatcher* WebServiceWorkerProviderImpl::GetDispatcher() {
   return ServiceWorkerDispatcher::GetOrCreateThreadSpecificInstance(
-      thread_safe_sender_);
+      thread_safe_sender_.get());
 }
 
 }  // namespace content

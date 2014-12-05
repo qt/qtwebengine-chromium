@@ -7,6 +7,7 @@
 
 #include <map>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
@@ -17,7 +18,7 @@
 #include "net/spdy/hpack_output_stream.h"
 
 // An HpackEncoder encodes header sets as outlined in
-// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-07
+// http://tools.ietf.org/html/draft-ietf-httpbis-header-compression-08
 
 namespace net {
 
@@ -65,11 +66,10 @@ class NET_EXPORT_PRIVATE HpackEncoder {
   typedef std::pair<base::StringPiece, base::StringPiece> Representation;
   typedef std::vector<Representation> Representations;
 
-  // Emits a static/dynamic indexed representation (Section 4.2).
-  void EmitDynamicIndex(HpackEntry* entry);
-  void EmitStaticIndex(HpackEntry* entry);
+  // Emits a static/dynamic indexed representation (Section 7.1).
+  void EmitIndex(const HpackEntry* entry);
 
-  // Emits a literal representation (Section 4.3).
+  // Emits a literal representation (Section 7.2).
   void EmitIndexedLiteral(const Representation& representation);
   void EmitNonIndexedLiteral(const Representation& representation);
   void EmitLiteral(const Representation& representation);
@@ -79,16 +79,13 @@ class NET_EXPORT_PRIVATE HpackEncoder {
 
   void UpdateCharacterCounts(base::StringPiece str);
 
-  // Determines the representation delta required to encode |header_set| in
-  // the current header table context. Entries in the reference set are
-  // enumerated and marked with membership in the current |header_set|.
-  // Representations which must be explicitly emitted are returned.
-  Representations DetermineEncodingDelta(
-      const std::map<std::string, std::string>& header_set);
-
   // Crumbles a cookie header into sorted, de-duplicated crumbs.
   static void CookieToCrumbs(const Representation& cookie,
                              Representations* crumbs_out);
+
+  // Crumbles other header field values at \0 delimiters.
+  static void DecomposeRepresentation(const Representation& header_field,
+                                      Representations* out);
 
   HpackHeaderTable header_table_;
   HpackOutputStream output_stream_;

@@ -86,7 +86,7 @@
 #define DEBUG_CHECK_TINY 1
 #define DEBUG_CONCIDENT 1
 #define DEBUG_CROSS 01
-#define DEBUG_CUBIC_BINARY_SEARCH 1
+#define DEBUG_CUBIC_BINARY_SEARCH 0
 #define DEBUG_DUPLICATES 1
 #define DEBUG_FLAT_QUADS 0
 #define DEBUG_FLOW 1
@@ -169,6 +169,7 @@ public:
         SkPathOpsDebug::DeleteNameStr)))
     static void BumpTestName(char* );
 #endif
+    static void ShowOnePath(const SkPath& path, const char* name, bool includeDeclaration);
     static void ShowPath(const SkPath& one, const SkPath& two, SkPathOp op, const char* name);
     static void DumpCoincidence(const SkTArray<class SkOpContour, true>& contours);
     static void DumpCoincidence(const SkTArray<class SkOpContour* , true>& contours);

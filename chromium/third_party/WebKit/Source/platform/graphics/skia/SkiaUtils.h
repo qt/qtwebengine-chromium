@@ -43,16 +43,12 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "platform/transforms/AffineTransform.h"
 #include "wtf/MathExtras.h"
-#include "wtf/PassRefPtr.h"
 
-class SkCanvas;
-class SkRegion;
-
-namespace WebCore {
+namespace blink {
 
 class GraphicsContext;
 
-PassRefPtr<SkXfermode> WebCoreCompositeToSkiaComposite(CompositeOperator, blink::WebBlendMode = blink::WebBlendModeNormal);
+SkXfermode::Mode PLATFORM_EXPORT WebCoreCompositeToSkiaComposite(CompositeOperator, WebBlendMode = WebBlendModeNormal);
 
 // move this guy into SkColor.h
 SkColor SkPMColorToColor(SkPMColor);
@@ -86,11 +82,30 @@ inline bool WebCoreFloatNearlyEqual(float a, float b)
     return SkScalarNearlyEqual(WebCoreFloatToSkScalar(a), WebCoreFloatToSkScalar(b));
 }
 
+inline SkPath::FillType WebCoreWindRuleToSkFillType(WindRule rule)
+{
+    return static_cast<SkPath::FillType>(rule);
+}
+
 // Determine if a given WebKit point is contained in a path
 bool PLATFORM_EXPORT SkPathContainsPoint(const SkPath&, const FloatPoint&, SkPath::FillType);
 
 SkMatrix PLATFORM_EXPORT affineTransformToSkMatrix(const AffineTransform&);
 
-}  // namespace WebCore
+bool nearlyIntegral(float value);
+
+InterpolationQuality limitInterpolationQuality(const GraphicsContext*, InterpolationQuality resampling);
+
+InterpolationQuality computeInterpolationQuality(
+    const SkMatrix&,
+    float srcWidth,
+    float srcHeight,
+    float destWidth,
+    float destHeight,
+    bool isDataComplete = true);
+
+bool shouldDrawAntiAliased(const GraphicsContext*, const SkRect& destRect);
+
+} // namespace blink
 
 #endif  // SkiaUtils_h

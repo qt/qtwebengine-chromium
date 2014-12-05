@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * AutofillEditCreditCardOverlay class
@@ -11,21 +12,19 @@ cr.define('options', function() {
    * @class
    */
   function AutofillEditCreditCardOverlay() {
-    OptionsPage.call(this, 'autofillEditCreditCard',
-                     loadTimeData.getString('autofillEditCreditCardTitle'),
-                     'autofill-edit-credit-card-overlay');
+    Page.call(this, 'autofillEditCreditCard',
+              loadTimeData.getString('autofillEditCreditCardTitle'),
+              'autofill-edit-credit-card-overlay');
   }
 
   cr.addSingletonGetter(AutofillEditCreditCardOverlay);
 
   AutofillEditCreditCardOverlay.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-    /**
-     * Initializes the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var self = this;
       $('autofill-edit-credit-card-cancel-button').onclick = function(event) {
@@ -59,7 +58,7 @@ cr.define('options', function() {
     dismissOverlay_: function() {
       this.clearInputFields_();
       this.guid_ = '';
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
     },
 
     /**
@@ -111,15 +110,10 @@ cr.define('options', function() {
       var expirationMonth = $('expiration-month');
       expirationMonth.options.length = 0;
       for (var i = 1; i <= 12; ++i) {
-        var text;
-        if (i < 10)
-          text = '0' + i;
-        else
-          text = i;
+        var text = (i < 10 ? '0' : '') + i;
 
         var option = document.createElement('option');
-        option.text = text;
-        option.value = text;
+        option.text = option.value = text;
         expirationMonth.add(option, null);
       }
 
@@ -128,11 +122,11 @@ cr.define('options', function() {
       expirationYear.options.length = 0;
 
       var date = new Date();
-      var year = parseInt(date.getFullYear());
+      var year = parseInt(date.getFullYear(), 10);
       for (var i = 0; i < 10; ++i) {
         var text = year + i;
         var option = document.createElement('option');
-        option.text = text;
+        option.text = String(text);
         option.value = text;
         expirationYear.add(option, null);
       }
@@ -154,6 +148,7 @@ cr.define('options', function() {
 
     /**
      * Sets the value of each input field according to |creditCard|
+     * @param {CreditCardData} creditCard
      * @private
      */
     setInputFields_: function(creditCard) {
@@ -169,9 +164,9 @@ cr.define('options', function() {
       var idx = parseInt(creditCard.expirationMonth, 10);
       $('expiration-month').selectedIndex = idx - 1;
 
-      expYear = creditCard.expirationYear;
+      var expYear = creditCard.expirationYear;
       var date = new Date();
-      var year = parseInt(date.getFullYear());
+      var year = parseInt(date.getFullYear(), 10);
       for (var i = 0; i < 10; ++i) {
         var text = year + i;
         if (expYear == String(text))
@@ -180,8 +175,18 @@ cr.define('options', function() {
     },
 
     /**
+     * Called to prepare the overlay when a new card is being added.
+     * @private
+     */
+    prepForNewCard_: function() {
+      // Focus the first element.
+      this.pageDiv.querySelector('input').focus();
+    },
+
+    /**
      * Loads the credit card data from |creditCard|, sets the input fields based
      * on this data and stores the GUID of the credit card.
+     * @param {CreditCardData} creditCard
      * @private
      */
     loadCreditCard_: function(creditCard) {
@@ -189,6 +194,10 @@ cr.define('options', function() {
       this.inputFieldChanged_();
       this.guid_ = creditCard.guid;
     },
+  };
+
+  AutofillEditCreditCardOverlay.prepForNewCard = function() {
+    AutofillEditCreditCardOverlay.getInstance().prepForNewCard_();
   };
 
   AutofillEditCreditCardOverlay.loadCreditCard = function(creditCard) {

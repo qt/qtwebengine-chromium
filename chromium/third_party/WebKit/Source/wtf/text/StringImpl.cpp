@@ -341,7 +341,7 @@ static StaticStringsTable& staticStrings()
     return staticStrings;
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 static bool s_allowCreationOfStaticStrings = true;
 #endif
 
@@ -354,7 +354,7 @@ void StringImpl::freezeStaticStrings()
 {
     ASSERT(isMainThread());
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     s_allowCreationOfStaticStrings = false;
 #endif
 }
@@ -385,7 +385,7 @@ StringImpl* StringImpl::createStatic(const char* string, unsigned length, unsign
     LChar* data = reinterpret_cast<LChar*>(impl + 1);
     impl = new (impl) StringImpl(length, hash, StaticString);
     memcpy(data, string, length * sizeof(LChar));
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     impl->assertHashIsCorrect();
 #endif
 
@@ -608,7 +608,7 @@ PassRefPtr<StringImpl> StringImpl::upper()
             LChar c = characters8()[i];
             if (UNLIKELY(c == smallLetterSharpS))
                 ++numberSharpSCharacters;
-            UChar upper = Unicode::toUpper(c);
+            UChar upper = static_cast<UChar>(Unicode::toUpper(c));
             if (UNLIKELY(upper > 0xff)) {
                 // Since this upper-cased character does not fit in an 8-bit string, we need to take the 16-bit path.
                 goto upconvert;
@@ -776,7 +776,7 @@ PassRefPtr<StringImpl> StringImpl::fill(UChar character)
         LChar* data;
         RefPtr<StringImpl> newImpl = createUninitialized(m_length, data);
         for (unsigned i = 0; i < m_length; ++i)
-            data[i] = character;
+            data[i] = static_cast<LChar>(character);
         return newImpl.release();
     }
     UChar* data;
@@ -1027,13 +1027,6 @@ uint64_t StringImpl::toUInt64Strict(bool* ok, int base)
     return charactersToUInt64Strict(characters16(), m_length, ok, base);
 }
 
-intptr_t StringImpl::toIntPtrStrict(bool* ok, int base)
-{
-    if (is8Bit())
-        return charactersToIntPtrStrict(characters8(), m_length, ok, base);
-    return charactersToIntPtrStrict(characters16(), m_length, ok, base);
-}
-
 int StringImpl::toInt(bool* ok)
 {
     if (is8Bit())
@@ -1060,13 +1053,6 @@ uint64_t StringImpl::toUInt64(bool* ok)
     if (is8Bit())
         return charactersToUInt64(characters8(), m_length, ok);
     return charactersToUInt64(characters16(), m_length, ok);
-}
-
-intptr_t StringImpl::toIntPtr(bool* ok)
-{
-    if (is8Bit())
-        return charactersToIntPtr(characters8(), m_length, ok);
-    return charactersToIntPtr(characters16(), m_length, ok);
 }
 
 double StringImpl::toDouble(bool* ok)

@@ -20,20 +20,23 @@ namespace net {
 // been received for a packet.  Also implements TCP's early retransmit(RFC5827).
 class NET_EXPORT_PRIVATE TCPLossAlgorithm : public LossDetectionInterface {
  public:
-  TCPLossAlgorithm();
-  virtual ~TCPLossAlgorithm() {}
+  // TCP retransmits after 3 nacks.
+  static const size_t kNumberOfNacksBeforeRetransmission = 3;
 
-  virtual LossDetectionType GetLossDetectionType() const OVERRIDE;
+  TCPLossAlgorithm();
+  ~TCPLossAlgorithm() override {}
+
+  LossDetectionType GetLossDetectionType() const override;
 
   // Uses nack counts to decide when packets are lost.
-  virtual SequenceNumberSet DetectLostPackets(
+  SequenceNumberSet DetectLostPackets(
       const QuicUnackedPacketMap& unacked_packets,
       const QuicTime& time,
       QuicPacketSequenceNumber largest_observed,
-      const RttStats& rtt_stats) OVERRIDE;
+      const RttStats& rtt_stats) override;
 
   // Returns a non-zero value when the early retransmit timer is active.
-  virtual QuicTime GetLossTimeout() const OVERRIDE;
+  QuicTime GetLossTimeout() const override;
 
  private:
   QuicTime loss_detection_timeout_;

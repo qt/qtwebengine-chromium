@@ -11,7 +11,7 @@ cr.define('options.browser_options', function() {
    * Creates a new startup page list item.
    * @param {Object} pageInfo The page this item represents.
    * @constructor
-   * @extends {cr.ui.ListItem}
+   * @extends {options.InlineEditableItem}
    */
   function StartupPageListItem(pageInfo) {
     var el = cr.doc.createElement('div');
@@ -68,7 +68,7 @@ cr.define('options.browser_options', function() {
       urlEl.classList.add('weakrtl');
       this.contentElement.appendChild(urlEl);
 
-      var urlField = urlEl.querySelector('input');
+      var urlField = /** @type {HTMLElement} */(urlEl.querySelector('input'));
       urlField.className = 'weakrtl';
       urlField.placeholder = loadTimeData.getString('startupPagesPlaceholder');
       this.urlField_ = urlField;
@@ -192,7 +192,7 @@ cr.define('options.browser_options', function() {
       }
     },
 
-    /*
+    /**
      * Handles the dragenter event.
      * @param {Event} e The dragenter event.
      * @private
@@ -201,7 +201,7 @@ cr.define('options.browser_options', function() {
       e.preventDefault();
     },
 
-    /*
+    /**
      * Handles the dragover event.
      * @param {Event} e The dragover event.
      * @private
@@ -226,7 +226,7 @@ cr.define('options.browser_options', function() {
       e.preventDefault();
     },
 
-    /*
+    /**
      * Handles the drop event.
      * @param {Event} e The drop event.
      * @private

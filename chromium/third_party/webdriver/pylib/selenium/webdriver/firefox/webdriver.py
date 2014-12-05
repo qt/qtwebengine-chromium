@@ -74,25 +74,11 @@ class WebDriver(RemoteWebDriver):
         self.binary.kill()
         try:
             shutil.rmtree(self.profile.path)
+            if self.profile.tempfolder is not None:
+                shutil.rmtree(self.profile.tempfolder)
         except Exception, e:
             print str(e)
 
     @property
     def firefox_profile(self):
         return self.profile
-
-    def save_screenshot(self, filename):
-        """
-        Gets the screenshot of the current window. Returns False if there is
-        any IOError, else returns True. Use full paths in your filename.
-        """
-        png = RemoteWebDriver.execute(self, Command.SCREENSHOT)['value']
-        try:
-            f = open(filename, 'wb')
-            f.write(base64.decodestring(png))
-            f.close()
-        except IOError:
-            return False
-        finally:
-            del png
-        return True

@@ -14,7 +14,7 @@
  * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
  * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL APPLE COMPUTER, INC. OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+* CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
  * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
  * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
@@ -27,14 +27,17 @@
 #include "core/editing/Caret.h"
 
 #include "core/dom/Document.h"
+#include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/Settings.h"
+#include "core/html/HTMLTextFormControlElement.h"
 #include "core/rendering/RenderBlock.h"
+#include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 CaretBase::CaretBase(CaretVisibility visibility)
     : m_caretRectNeedsUpdate(true)
@@ -59,19 +62,25 @@ bool DragCaretController::isContentRichlyEditable() const
 
 void DragCaretController::setCaretPosition(const VisiblePosition& position)
 {
+    // for querying RenderLayer::compositingState()
+    // This code is probably correct, since it doesn't occur in a stack that involves updating compositing state.
+    DisableCompositingQueryAsserts disabler;
+
     if (Node* node = m_position.deepEquivalent().deprecatedNode())
         invalidateCaretRect(node);
     m_position = position;
     setCaretRectNeedsUpdate();
-    Document* document = 0;
+    Document* document = nullptr;
     if (Node* node = m_position.deepEquivalent().deprecatedNode()) {
         invalidateCaretRect(node);
         document = &node->document();
     }
-    if (m_position.isNull() || m_position.isOrphan())
+    if (m_position.isNull() || m_position.isOrphan()) {
         clearCaretRect();
-    else
+    } else {
+        document->updateRenderTreeIfNeeded();
         updateCaretRect(document, m_position);
+    }
 }
 
 static bool removingNodeRemovesPosition(Node& node, const Position& position)
@@ -113,10 +122,10 @@ void CaretBase::clearCaretRect()
 
 static inline bool caretRendersInsideNode(Node* node)
 {
-    return node && !isRenderedTable(node) && !editingIgnoresContent(node);
+    return node && !isRenderedTableElement(node) && !editingIgnoresContent(node);
 }
 
-RenderObject* CaretBase::caretRenderer(Node* node)
+RenderBlock* CaretBase::caretRenderer(Node* node)
 {
     if (!node)
         return 0;
@@ -127,67 +136,80 @@ RenderObject* CaretBase::caretRenderer(Node* node)
 
     // if caretNode is a block and caret is inside it then caret should be painted by that block
     bool paintedByBlock = renderer->isRenderBlock() && caretRendersInsideNode(node);
-    return paintedByBlock ? renderer : renderer->containingBlock();
+    return paintedByBlock ? toRenderBlock(renderer) : renderer->containingBlock();
 }
 
-bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caretPosition)
+static void mapCaretRectToCaretPainter(RenderObject* caretRenderer, RenderBlock* caretPainter, LayoutRect& caretRect)
 {
-    document->updateRenderTreeIfNeeded();
-    m_caretLocalRect = LayoutRect();
+    // FIXME: This shouldn't be called on un-rooted subtrees.
+    // FIXME: This should probably just use mapLocalToContainer.
+    // Compute an offset between the caretRenderer and the caretPainter.
 
-    m_caretRectNeedsUpdate = false;
+    ASSERT(caretRenderer->isDescendantOf(caretPainter));
 
-    if (caretPosition.isNull())
-        return false;
-
-    ASSERT(caretPosition.deepEquivalent().deprecatedNode()->renderer());
-
-    // First compute a rect local to the renderer at the selection start.
-    RenderObject* renderer;
-    LayoutRect localRect = caretPosition.localCaretRect(renderer);
-
-    // Get the renderer that will be responsible for painting the caret
-    // (which is either the renderer we just found, or one of its containers).
-    RenderObject* caretPainter = caretRenderer(caretPosition.deepEquivalent().deprecatedNode());
-
-    // Compute an offset between the renderer and the caretPainter.
     bool unrooted = false;
-    while (renderer != caretPainter) {
-        RenderObject* containerObject = renderer->container();
+    while (caretRenderer != caretPainter) {
+        RenderObject* containerObject = caretRenderer->container();
         if (!containerObject) {
             unrooted = true;
             break;
         }
-        localRect.move(renderer->offsetFromContainer(containerObject, localRect.location()));
-        renderer = containerObject;
+        caretRect.move(caretRenderer->offsetFromContainer(containerObject, caretRect.location()));
+        caretRenderer = containerObject;
     }
 
-    if (!unrooted)
-        m_caretLocalRect = localRect;
+    if (unrooted)
+        caretRect = LayoutRect();
+}
+
+bool CaretBase::updateCaretRect(Document* document, const PositionWithAffinity& caretPosition)
+{
+    m_caretLocalRect = LayoutRect();
+
+    m_caretRectNeedsUpdate = false;
+
+    if (caretPosition.position().isNull())
+        return false;
+
+    ASSERT(caretPosition.position().deprecatedNode()->renderer());
+
+    // First compute a rect local to the renderer at the selection start.
+    RenderObject* renderer;
+    m_caretLocalRect = localCaretRectOfPosition(caretPosition, renderer);
+
+    // Get the renderer that will be responsible for painting the caret
+    // (which is either the renderer we just found, or one of its containers).
+    RenderBlock* caretPainter = caretRenderer(caretPosition.position().deprecatedNode());
+
+    mapCaretRectToCaretPainter(renderer, caretPainter, m_caretLocalRect);
 
     return true;
 }
 
-RenderObject* DragCaretController::caretRenderer() const
+bool CaretBase::updateCaretRect(Document* document, const VisiblePosition& caretPosition)
+{
+    return updateCaretRect(document, PositionWithAffinity(caretPosition.deepEquivalent(), caretPosition.affinity()));
+}
+
+RenderBlock* DragCaretController::caretRenderer() const
 {
     return CaretBase::caretRenderer(m_position.deepEquivalent().deprecatedNode());
 }
 
 IntRect CaretBase::absoluteBoundsForLocalRect(Node* node, const LayoutRect& rect) const
 {
-    RenderObject* caretPainter = caretRenderer(node);
+    RenderBlock* caretPainter = caretRenderer(node);
     if (!caretPainter)
         return IntRect();
 
     LayoutRect localRect(rect);
-    if (caretPainter->isBox())
-        toRenderBox(caretPainter)->flipForWritingMode(localRect);
+    caretPainter->flipForWritingMode(localRect);
     return caretPainter->localToAbsoluteQuad(FloatRect(localRect)).enclosingBoundingBox();
 }
 
-void CaretBase::repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
+void CaretBase::invalidateLocalCaretRect(Node* node, const LayoutRect& rect)
 {
-    RenderObject* caretPainter = caretRenderer(node);
+    RenderBlock* caretPainter = caretRenderer(node);
     if (!caretPainter)
         return;
 
@@ -195,6 +217,9 @@ void CaretBase::repaintCaretForLocalRect(Node* node, const LayoutRect& rect)
     // https://bugs.webkit.org/show_bug.cgi?id=108283
     LayoutRect inflatedRect = rect;
     inflatedRect.inflate(1);
+
+    // FIXME: We should use mapLocalToContainer() since we know we're not un-rooted.
+    mapCaretRectToCaretPainter(node->renderer(), caretPainter, inflatedRect);
 
     caretPainter->invalidatePaintRectangle(inflatedRect);
 }
@@ -230,7 +255,7 @@ void CaretBase::invalidateCaretRect(Node* node, bool caretRectChanged)
 
     if (RenderView* view = node->document().renderView()) {
         if (shouldRepaintCaret(view, node->isContentEditable(Node::UserSelectAllIsAlwaysNonEditable)))
-            repaintCaretForLocalRect(node, localCaretRectWithoutUpdate());
+            invalidateLocalCaretRect(node, localCaretRectWithoutUpdate());
     }
 }
 
@@ -240,9 +265,8 @@ void CaretBase::paintCaret(Node* node, GraphicsContext* context, const LayoutPoi
         return;
 
     LayoutRect drawingRect = localCaretRectWithoutUpdate();
-    RenderObject* renderer = caretRenderer(node);
-    if (renderer && renderer->isBox())
-        toRenderBox(renderer)->flipForWritingMode(drawingRect);
+    if (RenderBlock* renderer = caretRenderer(node))
+        renderer->flipForWritingMode(drawingRect);
     drawingRect.moveBy(roundedIntPoint(paintOffset));
     LayoutRect caret = intersection(drawingRect, clipRect);
     if (caret.isEmpty())

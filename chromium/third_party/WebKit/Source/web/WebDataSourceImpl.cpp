@@ -36,8 +36,6 @@
 #include "public/platform/WebURLError.h"
 #include "public/platform/WebVector.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 static OwnPtr<WebPluginLoadObserver>& nextPluginLoadObserver()

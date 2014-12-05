@@ -26,31 +26,11 @@
 #include "config.h"
 #include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 
-#include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBTransaction.h"
 
-namespace WebCore {
+namespace blink {
 
-const char* IDBPendingTransactionMonitor::supplementName()
-{
-    return "IDBPendingTransactionMonitor";
-}
-
-inline IDBPendingTransactionMonitor::IDBPendingTransactionMonitor()
-{
-}
-
-IDBPendingTransactionMonitor& IDBPendingTransactionMonitor::from(Supplementable<ExecutionContext>& context)
-{
-    IDBPendingTransactionMonitor* supplement = static_cast<IDBPendingTransactionMonitor*>(Supplement<ExecutionContext>::from(context, supplementName()));
-    if (!supplement) {
-        supplement = new IDBPendingTransactionMonitor();
-        provideTo(context, supplementName(), adoptPtr(supplement));
-    }
-    return *supplement;
-}
-
-IDBPendingTransactionMonitor::~IDBPendingTransactionMonitor()
+IDBPendingTransactionMonitor::IDBPendingTransactionMonitor()
 {
 }
 
@@ -67,4 +47,4 @@ void IDBPendingTransactionMonitor::deactivateNewTransactions()
     m_transactions.clear();
 }
 
-};
+} // namespace blink

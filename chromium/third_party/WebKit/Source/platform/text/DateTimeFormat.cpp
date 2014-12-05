@@ -29,7 +29,7 @@
 #include "wtf/ASCIICType.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static const DateTimeFormat::FieldType lowerCaseToFieldTypeMap[26] = {
     DateTimeFormat::FieldTypePeriod, // a
@@ -256,24 +256,24 @@ void DateTimeFormat::quoteAndAppendLiteral(const String& literal, StringBuilder&
     }
 
     if (literal.find('\'') == kNotFound) {
-        buffer.append("'");
+        buffer.append('\'');
         buffer.append(literal);
-        buffer.append("'");
+        buffer.append('\'');
         return;
     }
 
     for (unsigned i = 0; i < literal.length(); ++i) {
         if (literal[i] == '\'') {
-            buffer.append("''");
+            buffer.appendLiteral("''");
         } else {
             String escaped = literal.substring(i);
             escaped.replace("'", "''");
-            buffer.append("'");
+            buffer.append('\'');
             buffer.append(escaped);
-            buffer.append("'");
+            buffer.append('\'');
             return;
         }
     }
 }
 
-} // namespace WebCore
+} // namespace blink

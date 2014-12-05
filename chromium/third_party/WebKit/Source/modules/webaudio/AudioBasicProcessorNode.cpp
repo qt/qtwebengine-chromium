@@ -34,15 +34,32 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "modules/webaudio/AudioNodeOutput.h"
 
-namespace WebCore {
+namespace blink {
 
 AudioBasicProcessorNode::AudioBasicProcessorNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
 {
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 1)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, 1));
 
     // The subclass must create m_processor.
+}
+
+AudioBasicProcessorNode::~AudioBasicProcessorNode()
+{
+    ASSERT(!isInitialized());
+}
+
+void AudioBasicProcessorNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_processor);
+    AudioNode::trace(visitor);
+}
+
+void AudioBasicProcessorNode::dispose()
+{
+    uninitialize();
+    AudioNode::dispose();
 }
 
 void AudioBasicProcessorNode::initialize()
@@ -140,6 +157,6 @@ double AudioBasicProcessorNode::latencyTime() const
     return m_processor->latencyTime();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

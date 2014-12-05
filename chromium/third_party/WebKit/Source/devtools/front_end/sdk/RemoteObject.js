@@ -86,7 +86,7 @@ WebInspector.RemoteObject.prototype = {
     },
 
     /**
-     * @param {string} name
+     * @param {!RuntimeAgent.CallArgument} name
      * @param {function(string=)} callback
      */
     deleteProperty: function(name, callback)
@@ -130,15 +130,18 @@ WebInspector.RemoteObject.prototype = {
         return false;
     },
 
-    reveal: function()
+    /**
+     * @param {function(?WebInspector.DebuggerModel.FunctionDetails)} callback
+     */
+    functionDetails: function(callback)
     {
-        WebInspector.Revealer.reveal(this);
+        callback(null);
     },
 
     /**
-     * @param {function(?DebuggerAgent.FunctionDetails)} callback
+     * @param {function(?Array.<!DebuggerAgent.CollectionEntry>)} callback
      */
-    functionDetails: function(callback)
+    collectionEntries: function(callback)
     {
         callback(null);
     }
@@ -170,30 +173,51 @@ WebInspector.RemoteObject.type = function(remoteObject)
 }
 
 /**
- * @param {!RuntimeAgent.RemoteObject|!WebInspector.RemoteObject} remoteObject
+ * @param {!RuntimeAgent.RemoteObject|!WebInspector.RemoteObject|number|string|boolean|undefined|null} object
  * @return {!RuntimeAgent.CallArgument}
  */
-WebInspector.RemoteObject.toCallArgument = function(remoteObject)
+WebInspector.RemoteObject.toCallArgument = function(object)
 {
-    var type = /** @type {!RuntimeAgent.CallArgumentType.<string>} */ (remoteObject.type);
-    var value = remoteObject.value;
+    var type = typeof object;
+    var value = object;
+    var objectId = undefined;
+    var description = String(object);
+
+    if (type === "number" && value === 0 && 1 / value < 0)
+        description = "-0";
+
+    switch (type) {
+    case "number":
+    case "string":
+    case "boolean":
+    case "undefined":
+        break;
+    default:
+        if (object) {
+            type = object.type;
+            value = object.value;
+            objectId = object.objectId;
+            description = object.description;
+        }
+        break;
+    }
 
     // Handle special numbers: NaN, Infinity, -Infinity, -0.
     if (type === "number") {
-        switch (remoteObject.description) {
+        switch (description) {
         case "NaN":
         case "Infinity":
         case "-Infinity":
         case "-0":
-            value = remoteObject.description;
+            value = description;
             break;
         }
     }
 
     return {
         value: value,
-        objectId: remoteObject.objectId,
-        type: type
+        objectId: objectId,
+        type: /** @type {!RuntimeAgent.CallArgumentType.<string>} */ (type)
     };
 }
 
@@ -373,7 +397,7 @@ WebInspector.RemoteObjectImpl.prototype = {
     },
 
     /**
-     * @param {string} name
+     * @param {!RuntimeAgent.CallArgument} name
      * @param {string} value
      * @param {function(string=)} callback
      */
@@ -408,7 +432,7 @@ WebInspector.RemoteObjectImpl.prototype = {
 
     /**
      * @param {!RuntimeAgent.RemoteObject} result
-     * @param {string} name
+     * @param {!RuntimeAgent.CallArgument} name
      * @param {function(string=)} callback
      */
     doSetObjectPropertyValue: function(result, name, callback)
@@ -419,7 +443,7 @@ WebInspector.RemoteObjectImpl.prototype = {
         // where property was defined; so do we.
         var setPropertyValueFunction = "function(a, b) { this[a] = b; }";
 
-        var argv = [{ value: name }, WebInspector.RemoteObject.toCallArgument(result)]
+        var argv = [name, WebInspector.RemoteObject.toCallArgument(result)];
         this._runtimeAgent.callFunctionOn(this._objectId, setPropertyValueFunction, argv, true, undefined, undefined, propertySetCallback);
 
         /**
@@ -438,7 +462,7 @@ WebInspector.RemoteObjectImpl.prototype = {
     },
 
     /**
-     * @param {string} name
+     * @param {!RuntimeAgent.CallArgument} name
      * @param {function(string=)} callback
      */
     deleteProperty: function(name, callback)
@@ -449,7 +473,7 @@ WebInspector.RemoteObjectImpl.prototype = {
         }
 
         var deletePropertyFunction = "function(a) { delete this[a]; return !(a in this); }";
-        this._runtimeAgent.callFunctionOn(this._objectId, deletePropertyFunction, [{ value: name }], true, undefined, undefined, deletePropertyCallback);
+        this._runtimeAgent.callFunctionOn(this._objectId, deletePropertyFunction, [name], true, undefined, undefined, deletePropertyCallback);
 
         /**
          * @param {?Protocol.Error} error
@@ -574,11 +598,38 @@ WebInspector.RemoteObjectImpl.prototype = {
     },
 
     /**
-     * @param {function(?DebuggerAgent.FunctionDetails)} callback
+     * @param {function(?WebInspector.DebuggerModel.FunctionDetails)} callback
      */
     functionDetails: function(callback)
     {
         this._target.debuggerModel.functionDetails(this, callback)
+    },
+
+    /**
+     * @param {function(?Array.<!DebuggerAgent.CollectionEntry>)} callback
+     */
+    collectionEntries: function(callback)
+    {
+        if (!this._objectId) {
+            callback(null);
+            return;
+        }
+
+        this._target.debuggerAgent().getCollectionEntries(this._objectId, didGetCollectionEntries);
+
+        /**
+         * @param {?Protocol.Error} error
+         * @param {?Array.<!DebuggerAgent.CollectionEntry>} response
+         */
+        function didGetCollectionEntries(error, response)
+        {
+            if (error) {
+                console.error(error);
+                callback(null);
+                return;
+            }
+            callback(response);
+        }
     },
 
     __proto__: WebInspector.RemoteObject.prototype
@@ -817,24 +868,31 @@ WebInspector.LocalJSONObject.prototype = {
 
         /**
          * @param {!WebInspector.RemoteObjectProperty} property
+         * @return {string}
+         * @this {WebInspector.LocalJSONObject}
          */
         function formatArrayItem(property)
         {
-            return property.value.description;
+            return this._formatValue(property.value);
         }
 
         /**
          * @param {!WebInspector.RemoteObjectProperty} property
+         * @return {string}
+         * @this {WebInspector.LocalJSONObject}
          */
         function formatObjectItem(property)
         {
-            return property.name + ":" + property.value.description;
+            var name = property.name;
+            if (/^\s|\s$|^$|\n/.test(name))
+                name = "\"" + name.replace(/\n/g, "\u21B5") + "\"";
+            return name + ": " + this._formatValue(property.value);
         }
 
         if (this.type === "object") {
             switch (this.subtype) {
             case "array":
-                this._cachedDescription = this._concatenate("[", "]", formatArrayItem);
+                this._cachedDescription = this._concatenate("[", "]", formatArrayItem.bind(this));
                 break;
             case "date":
                 this._cachedDescription = "" + this._value;
@@ -843,23 +901,38 @@ WebInspector.LocalJSONObject.prototype = {
                 this._cachedDescription = "null";
                 break;
             default:
-                this._cachedDescription = this._concatenate("{", "}", formatObjectItem);
+                this._cachedDescription = this._concatenate("{", "}", formatObjectItem.bind(this));
             }
-        } else
+        } else {
             this._cachedDescription = String(this._value);
+        }
 
         return this._cachedDescription;
     },
 
     /**
+     * @param {?WebInspector.RemoteObject} value
+     * @return {string}
+     */
+    _formatValue: function(value)
+    {
+        if (!value)
+            return "undefined";
+        var description = value.description || "";
+        if (value.type === "string")
+            return "\"" + description.replace(/\n/g, "\u21B5") + "\"";
+        return description;
+    },
+
+    /**
      * @param {string} prefix
      * @param {string} suffix
-     * @param {function (!WebInspector.RemoteObjectProperty)} formatProperty
+     * @param {function(!WebInspector.RemoteObjectProperty)} formatProperty
      * @return {string}
      */
     _concatenate: function(prefix, suffix, formatProperty)
     {
-        const previewChars = 100;
+        var previewChars = 100;
 
         var buffer = prefix;
         var children = this._children();
@@ -943,14 +1016,17 @@ WebInspector.LocalJSONObject.prototype = {
 
         /**
          * @param {string} propName
-         * @this {WebInspector.LocalJSONObject}
+         * @return {!WebInspector.RemoteObjectProperty}
          */
         function buildProperty(propName)
         {
-            return new WebInspector.RemoteObjectProperty(propName, new WebInspector.LocalJSONObject(this._value[propName]));
+            var propValue = value[propName];
+            if (!(propValue instanceof WebInspector.RemoteObject))
+                propValue = WebInspector.RemoteObject.fromLocalObject(propValue);
+            return new WebInspector.RemoteObjectProperty(propName, propValue);
         }
         if (!this._cachedChildren)
-            this._cachedChildren = Object.keys(value).map(buildProperty.bind(this));
+            this._cachedChildren = Object.keys(value).map(buildProperty);
         return this._cachedChildren;
     },
 
@@ -978,7 +1054,7 @@ WebInspector.LocalJSONObject.prototype = {
     callFunction: function(functionDeclaration, args, callback)
     {
         var target = /** @type {?Object} */ (this._value);
-        var rawArgs = args ? args.map(function(arg) {return arg.value;}) : [];
+        var rawArgs = args ? args.map(function(arg) { return arg.value; }) : [];
 
         var result;
         var wasThrown = false;
@@ -1001,7 +1077,7 @@ WebInspector.LocalJSONObject.prototype = {
     callFunctionJSON: function(functionDeclaration, args, callback)
     {
         var target = /** @type {?Object} */ (this._value);
-        var rawArgs = args ? args.map(function(arg) {return arg.value;}) : [];
+        var rawArgs = args ? args.map(function(arg) { return arg.value; }) : [];
 
         var result;
         try {
@@ -1014,4 +1090,30 @@ WebInspector.LocalJSONObject.prototype = {
     },
 
     __proto__: WebInspector.RemoteObject.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.LocalJSONObject}
+ * @param {*} value
+ */
+WebInspector.MapEntryLocalJSONObject = function(value)
+{
+    WebInspector.LocalJSONObject.call(this, value);
+}
+
+WebInspector.MapEntryLocalJSONObject.prototype = {
+    /**
+     * @return {string}
+     */
+    get description()
+    {
+        if (!this._cachedDescription) {
+            var children = this._children();
+            this._cachedDescription = "{" + this._formatValue(children[0].value) + " => " + this._formatValue(children[1].value) + "}";
+        }
+        return this._cachedDescription;
+    },
+
+    __proto__: WebInspector.LocalJSONObject.prototype
 }

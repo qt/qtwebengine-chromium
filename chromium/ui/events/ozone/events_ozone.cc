@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ui/events/ozone/events_ozone.h"
+
 #include "ui/events/event.h"
 #include "ui/events/event_constants.h"
 #include "ui/events/event_utils.h"
@@ -42,7 +44,7 @@ int GetChangedMouseButtonFlagsFromNative(
     const base::NativeEvent& native_event) {
   const ui::MouseEvent* event =
       static_cast<const ui::MouseEvent*>(native_event);
-  DCHECK(event->IsMouseEvent());
+  DCHECK(event->IsMouseEvent() || event->IsScrollEvent());
   return event->changed_button_flags();
 }
 
@@ -64,6 +66,12 @@ uint32 PlatformKeycodeFromNative(const base::NativeEvent& native_event) {
   return event->platform_keycode();
 }
 
+bool IsCharFromNative(const base::NativeEvent& native_event) {
+  const ui::KeyEvent* event = static_cast<const ui::KeyEvent*>(native_event);
+  DCHECK(event->IsKeyEvent());
+  return event->is_char();
+}
+
 gfx::Vector2d GetMouseWheelOffset(const base::NativeEvent& native_event) {
   const ui::MouseWheelEvent* event =
       static_cast<const ui::MouseWheelEvent*>(native_event);
@@ -76,6 +84,9 @@ base::NativeEvent CopyNativeEvent(const base::NativeEvent& event) {
 }
 
 void ReleaseCopiedNativeEvent(const base::NativeEvent& event) {
+}
+
+void IncrementTouchIdRefCount(const base::NativeEvent& event) {
 }
 
 void ClearTouchIdIfReleased(const base::NativeEvent& xev) {
@@ -122,8 +133,21 @@ bool GetScrollOffsets(const base::NativeEvent& native_event,
                       float* x_offset_ordinal,
                       float* y_offset_ordinal,
                       int* finger_count) {
-  NOTIMPLEMENTED();
-  return false;
+  const ui::ScrollEvent* event =
+      static_cast<const ui::ScrollEvent*>(native_event);
+  DCHECK(event->IsScrollEvent());
+  if (x_offset)
+    *x_offset = event->x_offset();
+  if (y_offset)
+    *y_offset = event->y_offset();
+  if (x_offset_ordinal)
+    *x_offset_ordinal = event->x_offset_ordinal();
+  if (y_offset_ordinal)
+    *y_offset_ordinal = event->y_offset_ordinal();
+  if (finger_count)
+    *finger_count = event->finger_count();
+
+  return true;
 }
 
 bool GetFlingData(const base::NativeEvent& native_event,
@@ -132,30 +156,46 @@ bool GetFlingData(const base::NativeEvent& native_event,
                   float* vx_ordinal,
                   float* vy_ordinal,
                   bool* is_cancel) {
-  NOTIMPLEMENTED();
-  return false;
-}
+  const ui::ScrollEvent* event =
+      static_cast<const ui::ScrollEvent*>(native_event);
+  DCHECK(event->IsScrollEvent());
+  if (vx)
+    *vx = event->x_offset();
+  if (vy)
+    *vy = event->y_offset();
+  if (vx_ordinal)
+    *vx_ordinal = event->x_offset_ordinal();
+  if (vy_ordinal)
+    *vy_ordinal = event->y_offset_ordinal();
+  if (is_cancel)
+    *is_cancel = event->type() == ET_SCROLL_FLING_CANCEL;
 
-bool GetGestureTimes(const base::NativeEvent& native_event,
-                     double* start_time,
-                     double* end_time) {
-  *start_time = 0;
-  *end_time = 0;
-  return false;
-}
-
-void SetNaturalScroll(bool /* enabled */) { NOTIMPLEMENTED(); }
-
-bool IsNaturalScrollEnabled() { return false; }
-
-bool IsTouchpadEvent(const base::NativeEvent& event) {
-  NOTIMPLEMENTED();
-  return false;
+  return true;
 }
 
 int GetModifiersFromKeyState() {
   NOTIMPLEMENTED();
   return 0;
+}
+
+void DispatchEventFromNativeUiEvent(const base::NativeEvent& native_event,
+                                    base::Callback<void(ui::Event*)> callback) {
+  const ui::Event* native_ui_event = static_cast<ui::Event*>(native_event);
+  if (native_ui_event->IsKeyEvent()) {
+    ui::KeyEvent key_event(native_event);
+    callback.Run(&key_event);
+  } else if (native_ui_event->IsMouseEvent()) {
+    ui::MouseEvent mouse_event(native_event);
+    callback.Run(&mouse_event);
+  } else if (native_ui_event->IsTouchEvent()) {
+    ui::TouchEvent touch_event(native_event);
+    callback.Run(&touch_event);
+  } else if (native_ui_event->IsScrollEvent()) {
+    ui::ScrollEvent scroll_event(native_event);
+    callback.Run(&scroll_event);
+  } else {
+    NOTREACHED();
+  }
 }
 
 }  // namespace ui

@@ -7,25 +7,24 @@
 
 #include "platform/graphics/skia/SkiaUtils.h"
 
-namespace WebCore {
+namespace blink {
 
 GraphicsContextState::GraphicsContextState()
-    : m_fillColor(Color::black)
+    : m_strokeColor(Color::black)
+    , m_fillColor(Color::black)
     , m_fillRule(RULE_NONZERO)
     , m_textDrawingMode(TextModeFill)
     , m_alpha(256)
-    , m_xferMode(nullptr)
     , m_compositeOperator(CompositeSourceOver)
-    , m_blendMode(blink::WebBlendModeNormal)
+    , m_blendMode(WebBlendModeNormal)
     , m_interpolationQuality(InterpolationDefault)
     , m_saveCount(0)
     , m_shouldAntialias(true)
-    , m_shouldSmoothFonts(true)
     , m_shouldClampToSourceRect(true)
 {
     m_strokePaint.setStyle(SkPaint::kStroke_Style);
     m_strokePaint.setStrokeWidth(SkFloatToScalar(m_strokeData.thickness()));
-    m_strokePaint.setColor(applyAlpha(m_strokeData.color().rgb()));
+    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
     m_strokePaint.setStrokeCap(SkPaint::kDefault_Cap);
     m_strokePaint.setStrokeJoin(SkPaint::kDefault_Join);
     m_strokePaint.setStrokeMiter(SkFloatToScalar(m_strokeData.miterLimit()));
@@ -40,21 +39,23 @@ GraphicsContextState::GraphicsContextState(const GraphicsContextState& other)
     : m_strokePaint(other.m_strokePaint)
     , m_fillPaint(other.m_fillPaint)
     , m_strokeData(other.m_strokeData)
+    , m_strokeColor(other.m_strokeColor)
+    , m_strokeGradient(other.m_strokeGradient)
+    , m_strokePattern(other.m_strokePattern)
     , m_fillColor(other.m_fillColor)
     , m_fillRule(other.m_fillRule)
     , m_fillGradient(other.m_fillGradient)
     , m_fillPattern(other.m_fillPattern)
     , m_looper(other.m_looper)
+    , m_dropShadowImageFilter(other.m_dropShadowImageFilter)
     , m_textDrawingMode(other.m_textDrawingMode)
     , m_alpha(other.m_alpha)
-    , m_xferMode(other.m_xferMode)
     , m_colorFilter(other.m_colorFilter)
     , m_compositeOperator(other.m_compositeOperator)
     , m_blendMode(other.m_blendMode)
     , m_interpolationQuality(other.m_interpolationQuality)
     , m_saveCount(0)
     , m_shouldAntialias(other.m_shouldAntialias)
-    , m_shouldSmoothFonts(other.m_shouldSmoothFonts)
     , m_shouldClampToSourceRect(other.m_shouldClampToSourceRect) { }
 
 void GraphicsContextState::copy(const GraphicsContextState& source)
@@ -65,8 +66,8 @@ void GraphicsContextState::copy(const GraphicsContextState& source)
 
 const SkPaint& GraphicsContextState::strokePaint(int strokedPathLength) const
 {
-    if (m_strokeData.gradient() && m_strokeData.gradient()->shaderChanged())
-        m_strokePaint.setShader(m_strokeData.gradient()->shader());
+    if (m_strokeGradient && m_strokeGradient->shaderChanged())
+        m_strokePaint.setShader(m_strokeGradient->shader());
     m_strokeData.setupPaintDashPathEffect(&m_strokePaint, strokedPathLength);
     return m_strokePaint;
 }
@@ -91,43 +92,43 @@ void GraphicsContextState::setStrokeThickness(float thickness)
 
 void GraphicsContextState::setStrokeColor(const Color& color)
 {
-    m_strokeData.clearGradient();
-    m_strokeData.clearPattern();
-    m_strokeData.setColor(color);
+    m_strokeGradient.clear();
+    m_strokePattern.clear();
+    m_strokeColor = color;
     m_strokePaint.setColor(applyAlpha(color.rgb()));
     m_strokePaint.setShader(0);
 }
 
 void GraphicsContextState::setStrokeGradient(const PassRefPtr<Gradient> gradient)
 {
-    m_strokeData.setColor(Color::black);
-    m_strokeData.clearPattern();
-    m_strokeData.setGradient(gradient);
+    m_strokeColor = Color::black;
+    m_strokePattern.clear();
+    m_strokeGradient = gradient;
     m_strokePaint.setColor(applyAlpha(SK_ColorBLACK));
-    m_strokePaint.setShader(m_strokeData.gradient()->shader());
+    m_strokePaint.setShader(m_strokeGradient->shader());
 }
 
 void GraphicsContextState::clearStrokeGradient()
 {
-    m_strokeData.clearGradient();
-    ASSERT(!m_strokeData.pattern());
-    m_strokePaint.setColor(applyAlpha(m_strokeData.color().rgb()));
+    m_strokeGradient.clear();
+    ASSERT(!m_strokePattern);
+    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
 }
 
 void GraphicsContextState::setStrokePattern(const PassRefPtr<Pattern> pattern)
 {
-    m_strokeData.setColor(Color::black);
-    m_strokeData.clearGradient();
-    m_strokeData.setPattern(pattern);
+    m_strokeColor = Color::black;
+    m_strokeGradient.clear();
+    m_strokePattern = pattern;
     m_strokePaint.setColor(applyAlpha(SK_ColorBLACK));
-    m_strokePaint.setShader(m_strokeData.pattern()->shader());
+    m_strokePaint.setShader(m_strokePattern->shader());
 }
 
 void GraphicsContextState::clearStrokePattern()
 {
-    m_strokeData.clearPattern();
-    ASSERT(!m_strokeData.gradient());
-    m_strokePaint.setColor(applyAlpha(m_strokeData.color().rgb()));
+    m_strokePattern.clear();
+    ASSERT(!m_strokeGradient);
+    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
 }
 
 void GraphicsContextState::setLineCap(LineCap cap)
@@ -204,6 +205,16 @@ void GraphicsContextState::clearDrawLooper()
     m_fillPaint.setLooper(0);
 }
 
+void GraphicsContextState::setDropShadowImageFilter(PassRefPtr<SkImageFilter> dropShadowImageFilter)
+{
+    m_dropShadowImageFilter = dropShadowImageFilter;
+}
+
+void GraphicsContextState::clearDropShadowImageFilter()
+{
+    m_dropShadowImageFilter.clear();
+}
+
 void GraphicsContextState::setAlphaAsFloat(float alpha)
 {
     if (alpha < 0) {
@@ -213,7 +224,7 @@ void GraphicsContextState::setAlphaAsFloat(float alpha)
         if (m_alpha > 256)
             m_alpha = 256;
     }
-    m_strokePaint.setColor(applyAlpha(m_strokeData.color().rgb()));
+    m_strokePaint.setColor(applyAlpha(m_strokeColor.rgb()));
     m_fillPaint.setColor(applyAlpha(m_fillColor.rgb()));
 }
 
@@ -229,13 +240,13 @@ void GraphicsContextState::setColorFilter(PassRefPtr<SkColorFilter> colorFilter)
     m_fillPaint.setColorFilter(m_colorFilter.get());
 }
 
-void GraphicsContextState::setCompositeOperation(CompositeOperator compositeOperation, blink::WebBlendMode blendMode)
+void GraphicsContextState::setCompositeOperation(CompositeOperator compositeOperation, WebBlendMode blendMode)
 {
     m_compositeOperator = compositeOperation;
     m_blendMode = blendMode;
-    m_xferMode = WebCoreCompositeToSkiaComposite(compositeOperation, blendMode);
-    m_strokePaint.setXfermode(m_xferMode.get());
-    m_fillPaint.setXfermode(m_xferMode.get());
+    SkXfermode::Mode xferMode = WebCoreCompositeToSkiaComposite(compositeOperation, blendMode);
+    m_strokePaint.setXfermodeMode(xferMode);
+    m_fillPaint.setXfermodeMode(xferMode);
 }
 
 void GraphicsContextState::setInterpolationQuality(InterpolationQuality quality)
@@ -253,4 +264,4 @@ void GraphicsContextState::setShouldAntialias(bool shouldAntialias)
 }
 
 
-} // namespace WebCore
+} // namespace blink

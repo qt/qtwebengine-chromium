@@ -125,11 +125,11 @@ class MockHostResolverProc : public HostResolverProc {
     AddRule(hostname, ADDRESS_FAMILY_IPV6, result);
   }
 
-  virtual int Resolve(const std::string& hostname,
-                      AddressFamily address_family,
-                      HostResolverFlags host_resolver_flags,
-                      AddressList* addrlist,
-                      int* os_error) OVERRIDE {
+  int Resolve(const std::string& hostname,
+              AddressFamily address_family,
+              HostResolverFlags host_resolver_flags,
+              AddressList* addrlist,
+              int* os_error) override {
     base::AutoLock lock(lock_);
     capture_list_.push_back(ResolveKey(hostname, address_family));
     ++num_requests_waiting_;
@@ -166,7 +166,7 @@ class MockHostResolverProc : public HostResolverProc {
   }
 
  protected:
-  virtual ~MockHostResolverProc() {}
+  ~MockHostResolverProc() override {}
 
  private:
   mutable base::Lock lock_;
@@ -361,11 +361,11 @@ class LookupAttemptHostResolverProc : public HostResolverProc {
   int resolved_attempt_number() { return resolved_attempt_number_; }
 
   // HostResolverProc methods.
-  virtual int Resolve(const std::string& host,
-                      AddressFamily address_family,
-                      HostResolverFlags host_resolver_flags,
-                      AddressList* addrlist,
-                      int* os_error) OVERRIDE {
+  int Resolve(const std::string& host,
+              AddressFamily address_family,
+              HostResolverFlags host_resolver_flags,
+              AddressList* addrlist,
+              int* os_error) override {
     bool wait_for_right_attempt_to_complete = true;
     {
       base::AutoLock auto_lock(lock_);
@@ -401,7 +401,7 @@ class LookupAttemptHostResolverProc : public HostResolverProc {
   }
 
  protected:
-  virtual ~LookupAttemptHostResolverProc() {}
+  ~LookupAttemptHostResolverProc() override {}
 
  private:
   int attempt_number_to_resolve_;
@@ -439,7 +439,7 @@ class HostResolverImplTest : public testing::Test {
  protected:
   // A Request::Handler which is a proxy to the HostResolverImplTest fixture.
   struct Handler : public Request::Handler {
-    virtual ~Handler() {}
+    ~Handler() override {}
 
     // Proxy functions so that classes derived from Handler can access them.
     Request* CreateRequest(const HostResolver::RequestInfo& info,
@@ -460,11 +460,9 @@ class HostResolverImplTest : public testing::Test {
   };
 
   // testing::Test implementation:
-  virtual void SetUp() OVERRIDE {
-    CreateResolver();
-  }
+  void SetUp() override { CreateResolver(); }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     if (resolver_.get())
       EXPECT_EQ(0u, resolver_->num_running_dispatcher_jobs_for_tests());
     EXPECT_FALSE(proc_->HasBlockedRequests());
@@ -732,7 +730,7 @@ TEST_F(HostResolverImplTest, CanceledRequestsReleaseJobSlots) {
 
 TEST_F(HostResolverImplTest, CancelWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       // Port 80 is the first request that the callback will be invoked for.
       // While we are executing within that callback, cancel the other requests
       // in the job and start another request.
@@ -761,7 +759,7 @@ TEST_F(HostResolverImplTest, CancelWithinCallback) {
 
 TEST_F(HostResolverImplTest, DeleteWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       EXPECT_EQ("a", req->info().hostname());
       EXPECT_EQ(80, req->info().port());
 
@@ -787,7 +785,7 @@ TEST_F(HostResolverImplTest, DeleteWithinCallback) {
 
 TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       EXPECT_EQ("a", req->info().hostname());
       EXPECT_EQ(80, req->info().port());
 
@@ -827,7 +825,7 @@ TEST_F(HostResolverImplTest, DeleteWithinAbortedCallback) {
 
 TEST_F(HostResolverImplTest, StartWithinCallback) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       if (req->index() == 0) {
         // On completing the first request, start another request for "a".
         // Since caching is disabled, this will result in another async request.
@@ -858,7 +856,7 @@ TEST_F(HostResolverImplTest, StartWithinCallback) {
 
 TEST_F(HostResolverImplTest, BypassCache) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       if (req->index() == 0) {
         // On completing the first request, start another request for "a".
         // Since caching is enabled, this should complete synchronously.
@@ -956,7 +954,7 @@ TEST_F(HostResolverImplTest, ObeyPoolConstraintsAfterIPAddressChange) {
 // will not be aborted.
 TEST_F(HostResolverImplTest, AbortOnlyExistingRequestsOnIPAddressChange) {
   struct MyHandler : public Handler {
-    virtual void Handle(Request* req) OVERRIDE {
+    void Handle(Request* req) override {
       // Start new request for a different hostname to ensure that the order
       // of jobs in HostResolverImpl is not stable.
       std::string hostname;
@@ -1236,6 +1234,33 @@ TEST_F(HostResolverImplTest, SetDefaultAddressFamily_IPv6) {
   EXPECT_TRUE(requests_[2]->HasOneAddress("1.0.0.1", 80));
 }
 
+// Make sure that the address family parameter is respected when raw IPs are
+// passed in.
+TEST_F(HostResolverImplTest, AddressFamilyWithRawIPs) {
+  Request* request =
+      CreateRequest("127.0.0.1", 80,  MEDIUM, ADDRESS_FAMILY_IPV4);
+  EXPECT_EQ(OK, request->Resolve());
+  EXPECT_TRUE(request->HasOneAddress("127.0.0.1", 80));
+
+  request = CreateRequest("127.0.0.1", 80,  MEDIUM, ADDRESS_FAMILY_IPV6);
+  EXPECT_EQ(ERR_NAME_NOT_RESOLVED, request->Resolve());
+
+  request = CreateRequest("127.0.0.1", 80,  MEDIUM, ADDRESS_FAMILY_UNSPECIFIED);
+  EXPECT_EQ(OK, request->Resolve());
+  EXPECT_TRUE(request->HasOneAddress("127.0.0.1", 80));
+
+  request = CreateRequest("::1", 80,  MEDIUM, ADDRESS_FAMILY_IPV4);
+  EXPECT_EQ(ERR_NAME_NOT_RESOLVED, request->Resolve());
+
+  request = CreateRequest("::1", 80,  MEDIUM, ADDRESS_FAMILY_IPV6);
+  EXPECT_EQ(OK, request->Resolve());
+  EXPECT_TRUE(request->HasOneAddress("::1", 80));
+
+  request = CreateRequest("::1", 80,  MEDIUM, ADDRESS_FAMILY_UNSPECIFIED);
+  EXPECT_EQ(OK, request->Resolve());
+  EXPECT_TRUE(request->HasOneAddress("::1", 80));
+}
+
 TEST_F(HostResolverImplTest, ResolveFromCache) {
   proc_->AddRuleForAllFamilies("just.testing", "192.168.1.42");
   proc_->SignalMultiple(1u);  // Need only one.
@@ -1312,7 +1337,7 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
 
  protected:
   // testing::Test implementation:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AddDnsRule("nx", dns_protocol::kTypeA, MockDnsClientRule::FAIL, false);
     AddDnsRule("nx", dns_protocol::kTypeAAAA, MockDnsClientRule::FAIL, false);
     AddDnsRule("ok", dns_protocol::kTypeA, MockDnsClientRule::OK, false);
@@ -1352,9 +1377,9 @@ class HostResolverImplDnsTest : public HostResolverImplTest {
   }
 
   // HostResolverImplTest implementation:
-  virtual void CreateResolverWithLimitsAndParams(
+  void CreateResolverWithLimitsAndParams(
       size_t max_concurrent_resolves,
-      const HostResolverImpl::ProcTaskParams& params) OVERRIDE {
+      const HostResolverImpl::ProcTaskParams& params) override {
     HostResolverImpl::Options options = DefaultOptions();
     options.max_concurrent_resolves = max_concurrent_resolves;
     resolver_.reset(new HostResolverImpl(options, NULL));

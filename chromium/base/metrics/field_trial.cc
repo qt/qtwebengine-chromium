@@ -67,6 +67,7 @@ const int FieldTrial::kDefaultGroupNumber = 0;
 bool FieldTrial::enable_benchmarking_ = false;
 
 const char FieldTrialList::kPersistentStringSeparator('/');
+const char FieldTrialList::kActivationMarker('*');
 int FieldTrialList::kNoExpirationYear = 0;
 
 //------------------------------------------------------------------------------
@@ -320,8 +321,11 @@ FieldTrial* FieldTrialList::FactoryGetFieldTrialWithRandomizationSeed(
 
   double entropy_value;
   if (randomization_type == FieldTrial::ONE_TIME_RANDOMIZED) {
-    entropy_value = GetEntropyProviderForOneTimeRandomization()->
-          GetEntropyForTrial(trial_name, randomization_seed);
+    const FieldTrial::EntropyProvider* entropy_provider =
+        GetEntropyProviderForOneTimeRandomization();
+    CHECK(entropy_provider);
+    entropy_value = entropy_provider->GetEntropyForTrial(trial_name,
+                                                         randomization_seed);
   } else {
     DCHECK_EQ(FieldTrial::SESSION_RANDOMIZED, randomization_type);
     DCHECK_EQ(0U, randomization_seed);
@@ -414,9 +418,22 @@ bool FieldTrialList::CreateTrialsFromString(
       return false;
     size_t group_name_end = trials_string.find(kPersistentStringSeparator,
                                                name_end + 1);
-    if (group_name_end == trials_string.npos || name_end + 1 == group_name_end)
+    if (name_end + 1 == group_name_end)
       return false;
-    std::string name(trials_string, next_item, name_end - next_item);
+    if (group_name_end == trials_string.npos)
+      group_name_end = trials_string.length();
+
+    // Verify if the trial should be activated or not.
+    std::string name;
+    bool force_activation = false;
+    if (trials_string[next_item] == kActivationMarker) {
+      // Name cannot be only the indicator.
+      if (name_end - next_item == 1)
+        return false;
+      next_item++;
+      force_activation = true;
+    }
+    name.append(trials_string, next_item, name_end - next_item);
     std::string group_name(trials_string, name_end + 1,
                            group_name_end - name_end - 1);
     next_item = group_name_end + 1;
@@ -427,7 +444,7 @@ bool FieldTrialList::CreateTrialsFromString(
     FieldTrial* trial = CreateFieldTrial(name, group_name);
     if (!trial)
       return false;
-    if (mode == ACTIVATE_TRIALS) {
+    if (mode == ACTIVATE_TRIALS || force_activation) {
       // Call |group()| to mark the trial as "used" and notify observers, if
       // any. This is useful to ensure that field trials created in child
       // processes are properly reported in crash reports.

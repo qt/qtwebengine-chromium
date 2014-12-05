@@ -37,32 +37,15 @@
             'target_name': 'devtools_frontend_resources',
             'type': 'none',
             'dependencies': [
-                'devtools_html',
                 'supported_css_properties',
                 'frontend_protocol_sources',
-                'build_audits_module',
-                'build_core_module',
-                'build_console_module',
-                'build_devices_module',
-                'build_elements_module',
-                'build_extensions_module',
-                'build_layers_module',
-                'build_network_module',
-                'build_profiler_module',
-                'build_resources_module',
-                'build_search_module',
-                'build_settings_module',
-                'build_source_frame_module',
-                'build_sources_module',
-                'build_timeline_module',
-                'build_heap_snapshot_worker_module',
-                'build_script_formatter_worker_module',
-                'build_temp_storage_shared_worker_module',
+                'build_applications',
             ],
             'conditions': [
                 ['debug_devtools==0', {
                     'dependencies': [
                         'concatenated_devtools_css',
+                        'concatenated_toolbox_css',
                     ],
                 }],
             ],
@@ -76,26 +59,10 @@
             ],
         },
         {
-            'target_name': 'devtools_html',
-            'type': 'none',
-            'sources': ['<(PRODUCT_DIR)/resources/inspector/devtools.html'],
-            'actions': [{
-                'action_name': 'devtools_html',
-                'script_name': 'scripts/generate_devtools_html.py',
-                'input_page': 'front_end/inspector.html',
-                'inputs': [
-                    '<@(_script_name)',
-                    '<@(_input_page)',
-                ],
-                'outputs': ['<(PRODUCT_DIR)/resources/inspector/devtools.html'],
-                'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_outputs)', '<@(debug_devtools)'],
-            }],
-        },
-        {
             'target_name': 'devtools_extension_api',
             'type': 'none',
             'actions': [{
-                'action_name': 'devtools_html',
+                'action_name': 'devtools_extension_api',
                 'script_name': 'scripts/generate_devtools_extension_api.py',
                 'inputs': [
                     '<@(_script_name)',
@@ -109,7 +76,6 @@
             'target_name': 'generate_devtools_grd',
             'type': 'none',
             'dependencies': [
-                'devtools_html',
                 'devtools_extension_api',
                 'devtools_frontend_resources',
             ],
@@ -122,44 +88,48 @@
                             '<(PRODUCT_DIR)/resources/inspector',
                             'front_end'
                         ],
-                        'input_pages': [
-                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
-                            '<(PRODUCT_DIR)/resources/inspector/main/Main.js',
-                            '<(PRODUCT_DIR)/resources/inspector/search/AdvancedSearchView.js',
-                            '<(PRODUCT_DIR)/resources/inspector/console/ConsolePanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/elements/ElementsPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/extensions/ExtensionServer.js',
-                            '<(PRODUCT_DIR)/resources/inspector/resources/ResourcesPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/network/NetworkPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/settings/SettingsScreen.js',
-                            '<(PRODUCT_DIR)/resources/inspector/source_frame/SourceFrame.js',
-                            '<(PRODUCT_DIR)/resources/inspector/sources/SourcesPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/timeline/TimelinePanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/profiler/ProfilesPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/audits/AuditsPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/layers/LayersPanel.js',
-                            '<(PRODUCT_DIR)/resources/inspector/profiler/heap_snapshot_worker/HeapSnapshotWorker.js',
-                            '<(PRODUCT_DIR)/resources/inspector/script_formatter_worker/ScriptFormatterWorker.js',
-                            '<(PRODUCT_DIR)/resources/inspector/temp_storage_shared_worker/TempStorageSharedWorker.js',
-                            '<(PRODUCT_DIR)/resources/inspector/devices/DevicesView.js',
-                            '<(PRODUCT_DIR)/resources/inspector/inspector.css',
-                            '<(PRODUCT_DIR)/resources/inspector/devtools_extension_api.js',
-                            '<@(devtools_standalone_files)',
-                            '<@(devtools_cm_css_files)',
+                        'static_files': [
+                            # Intentionally empty. Should get rebuilt when switching from debug_devtools==1.
                         ],
-                        'images': [
-                            '<@(devtools_image_files)',
+                        'devtools_static_files_list': '<|(devtools_static_grd_files.tmp <@(_static_files))',
+                        'generated_files': [
+                            '<(PRODUCT_DIR)/resources/inspector/devtools.css',
+                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
+                            '<(PRODUCT_DIR)/resources/inspector/devtools.js',
+                            '<(PRODUCT_DIR)/resources/inspector/toolbox.css',
+                            '<(PRODUCT_DIR)/resources/inspector/toolbox.html',
+                            '<(PRODUCT_DIR)/resources/inspector/toolbox.js',
+                            '<(PRODUCT_DIR)/resources/inspector/audits_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/console_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/devices_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/documentation_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/elements_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/heap_snapshot_worker_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/layers_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/network_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/profiler_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/promises_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/resources_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/script_formatter_worker_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/settings_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/source_frame_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/sources_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/temp_storage_shared_worker_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/timeline_module.js',
+                            '<(PRODUCT_DIR)/resources/inspector/devtools_extension_api.js',
                         ],
                         'inputs': [
                             '<@(_script_name)',
-                            '<@(_input_pages)',
-                            '<@(_images)',
+                            '<@(_static_files)',
+                            '<@(_generated_files)',
+                            '<@(devtools_image_files)',
+                            '<(_devtools_static_files_list)',
                         ],
                         'images_path': [
                             'front_end/Images',
                         ],
                         'outputs': ['<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_pages)', '--relative_path_dirs', '<@(_relative_path_dirs)', '--images', '<@(_images_path)', '--output', '<@(_outputs)'],
+                        'action': ['python', '<@(_script_name)', '<@(_generated_files)', '--static_files_list', '<(_devtools_static_files_list)', '--relative_path_dirs', '<@(_relative_path_dirs)', '--images', '<@(_images_path)', '--output', '<@(_outputs)'],
                     }],
                 },
                 {
@@ -173,28 +143,31 @@
                         'relative_path_dirs': [
                             'front_end',
                             '<(PRODUCT_DIR)/resources/inspector',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink',
                         ],
-                        'input_pages': [
+                        'static_files': [
                             '<@(all_devtools_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
-                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
+                            'front_end/Runtime.js',
                         ],
-                        'images': [
-                            '<@(devtools_image_files)',
+                        'devtools_static_files_list': '<|(devtools_static_grd_files.tmp <@(_static_files))',
+                        'generated_files': [
+                            '<(PRODUCT_DIR)/resources/inspector/InspectorBackendCommands.js',
+                            '<(PRODUCT_DIR)/resources/inspector/SupportedCSSProperties.js',
+                            '<(PRODUCT_DIR)/resources/inspector/devtools.html',
+                            '<(PRODUCT_DIR)/resources/inspector/toolbox.html',
                         ],
                         'inputs': [
                             '<@(_script_name)',
-                            '<@(_input_pages)',
-                            '<@(_images)',
+                            '<@(_static_files)',
+                            '<@(_generated_files)',
+                            '<@(devtools_image_files)',
+                            '<(_devtools_static_files_list)',
                         ],
                         'images_path': [
                             'front_end/Images',
                         ],
                         # Note that other files are put under /devtools directory, together with declared devtools_resources.grd
                         'outputs': ['<(SHARED_INTERMEDIATE_DIR)/devtools/devtools_resources.grd'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_pages)', '--relative_path_dirs', '<@(_relative_path_dirs)', '--images', '<@(_images_path)', '--output', '<@(_outputs)'],
+                        'action': ['python', '<@(_script_name)', '<@(_generated_files)', '--static_files_list', '<(_devtools_static_files_list)', '--relative_path_dirs', '<@(_relative_path_dirs)', '--images', '<@(_images_path)', '--output', '<@(_outputs)'],
                     }],
                 }],
             ],
@@ -212,13 +185,13 @@
                 'protocol.json',
               ],
               'outputs': [
-                '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
+                '<(PRODUCT_DIR)/resources/inspector/InspectorBackendCommands.js',
               ],
               'action': [
                 'python',
                 'scripts/CodeGeneratorFrontend.py',
                 'protocol.json',
-                '--output_js_dir', '<(SHARED_INTERMEDIATE_DIR)/blink',
+                '--output_js_dir', '<(PRODUCT_DIR)/resources/inspector/',
               ],
               'message': 'Generating Inspector protocol frontend sources from protocol.json',
             },
@@ -234,12 +207,10 @@
                 # The python script in action below.
                 'scripts/generate_supported_css.py',
                 # Input files for the script.
-                '../core/css/CSSPropertyNames.in',
-                '../core/css/SVGCSSPropertyNames.in',
-                '../core/css/CSSShorthands.in',
+                '../core/css/CSSProperties.in',
               ],
               'outputs': [
-                '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
+                '<(PRODUCT_DIR)/resources/inspector/SupportedCSSProperties.js',
               ],
               'action': [
                 'python',
@@ -250,610 +221,93 @@
             },
           ]
         },
-        # Frontend modules.
+
+        # Frontend applications and modules.
         {
-            'target_name': 'build_core_module',
+            'target_name': 'build_applications',
             'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'dependencies': [
-                        'devtools_html',
-                        'supported_css_properties',
-                        'frontend_protocol_sources',
-                        'concatenated_module_descriptors',
-                    ],
-                    'actions': [{
-                        'action_name': 'build_core_module',
-                        'script_name': 'scripts/concatenate_js_files.py',
-                        'input_page': 'front_end/inspector.html',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_page)',
-                            '<@(devtools_core_js_files)',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
-                            '<(SHARED_INTERMEDIATE_DIR)/blink/common/modules.js',
+            'dependencies': [
+                'supported_css_properties',
+                'frontend_protocol_sources',
+            ],
+            'output_path': '<(PRODUCT_DIR)/resources/inspector/',
+            'actions': [{
+                'action_name': 'build_applications',
+                'script_name': 'scripts/build_applications.py',
+                'helper_scripts': [
+                    'scripts/modular_build.py',
+                    'scripts/concatenate_application_code.py',
+                ],
+                'inputs': [
+                    '<@(_script_name)',
+                    '<@(_helper_scripts)',
+                    '<@(all_devtools_files)',
+                    'front_end/devtools.html',
+                    'front_end/toolbox.html',
+                    '<(_output_path)/InspectorBackendCommands.js',
+                    '<(_output_path)/SupportedCSSProperties.js',
+                ],
+                'action': ['python', '<@(_script_name)', 'devtools', 'toolbox', '--input_path', 'front_end', '--output_path', '<@(_output_path)', '--debug', '<@(debug_devtools)'],
+                'conditions': [
+                    ['debug_devtools==0', { # Release
+                        'outputs': [
+                            '<(_output_path)/devtools.html',
+                            '<(_output_path)/devtools.js',
+                            '<(_output_path)/toolbox.html',
+                            '<(_output_path)/toolbox.js',
+                            '<(_output_path)/audits_module.js',
+                            '<(_output_path)/console_module.js',
+                            '<(_output_path)/devices_module.js',
+                            '<(_output_path)/documentation_module.js',
+                            '<(_output_path)/elements_module.js',
+                            '<(_output_path)/heap_snapshot_worker_module.js',
+                            '<(_output_path)/layers_module.js',
+                            '<(_output_path)/network_module.js',
+                            '<(_output_path)/profiler_module.js',
+                            '<(_output_path)/promises_module.js',
+                            '<(_output_path)/resources_module.js',
+                            '<(_output_path)/script_formatter_worker_module.js',
+                            '<(_output_path)/settings_module.js',
+                            '<(_output_path)/source_frame_module.js',
+                            '<(_output_path)/sources_module.js',
+                            '<(_output_path)/temp_storage_shared_worker_module.js',
+                            '<(_output_path)/timeline_module.js',
                         ],
-                        'search_path': [
-                            '<(SHARED_INTERMEDIATE_DIR)/blink',
-                            'front_end',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/main/Main.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_search_path)', '<@(_outputs)'],
+                    },
+                    { # Debug
+                        'outputs': [
+                            '<(_output_path)/devtools.html',
+                            '<(_output_path)/toolbox.html',
+                        ]
                     }]
+                ]
+            }],
+            'conditions': [
+                ['debug_devtools==0', { # Release
                 },
                 { # Debug
+                  # Copy runtime core and non-module directories here.
                     'copies': [
                         {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector',
+                            'destination': '<(_output_path)',
                             'files': [
-                                '<@(devtools_core_base_js_files)',
-                                '<(SHARED_INTERMEDIATE_DIR)/blink/InspectorBackendCommands.js',
-                                '<(SHARED_INTERMEDIATE_DIR)/blink/SupportedCSSProperties.js',
+                                '<@(devtools_core_base_files)',
+                                '<@(devtools_core_css_files)',
                             ],
                         },
                         {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/common',
+                            'destination': '<(_output_path)/UglifyJS',
                             'files': [
-                                '<@(devtools_common_js_files)',
+                                '<@(devtools_uglify_files)',
                             ],
                         },
                         {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/components',
-                            'files': [
-                                '<@(devtools_components_js_files)',
-                            ],
-                        },
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/sdk',
-                            'files': [
-                                '<@(devtools_sdk_js_files)',
-                            ],
-                        },
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/ui',
-                            'files': [
-                                '<@(devtools_ui_js_files)',
-                            ],
-                        },
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/main',
-                            'files': [
-                                '<@(devtools_main_js_files)',
-                                'front_end/main/module.json',
-                            ],
-                        },
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_console_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_console_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/console/ConsolePanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_console_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/console/ConsolePanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/console',
-                            'files': [
-                                '<@(devtools_console_js_files)',
-                                'front_end/console/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_search_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_search_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/search/AdvancedSearchView.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_search_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/search/AdvancedSearchView.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/search',
-                            'files': [
-                                '<@(devtools_search_js_files)',
-                                'front_end/search/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_devices_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_devices_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/devices/DevicesView.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_devices_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/devices/DevicesView.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/devices',
-                            'files': [
-                                '<@(devtools_devices_js_files)',
-                                'front_end/devices/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_elements_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_elements_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/elements/ElementsPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_elements_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/elements/ElementsPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/elements',
-                            'files': [
-                                '<@(devtools_elements_js_files)',
-                                'front_end/elements/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_resources_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_resources_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/resources/ResourcesPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_resources_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/resources/ResourcesPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/resources',
-                            'files': [
-                                '<@(devtools_resources_js_files)',
-                                'front_end/resources/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_network_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_network_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/network/NetworkPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_network_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/network/NetworkPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/network',
-                            'files': [
-                                '<@(devtools_network_js_files)',
-                                'front_end/network/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_extensions_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_extensions_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/extensions/ExtensionServer.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_extensions_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/extensions/ExtensionServer.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/extensions',
-                            'files': [
-                                '<@(devtools_extensions_js_files)',
-                                'front_end/extensions/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_source_frame_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_source_frame_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/source_frame/SourceFrame.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_source_frame_js_files)',
-                            '<@(devtools_cm_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/source_frame/SourceFrame.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/cm',
-                            'files': [
-                                '<@(devtools_cm_css_files)',
-                            ],
-                        }
-                    ],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/source_frame',
-                            'files': [
-                                '<@(devtools_source_frame_js_files)',
-                                'front_end/source_frame/module.json',
-                            ],
-                        },
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/cm',
+                            'destination': '<(_output_path)/cm',
                             'files': [
                                 '<@(devtools_cm_js_files)',
                                 '<@(devtools_cm_css_files)',
                             ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_sources_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_sources_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/sources/SourcesPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_sources_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/sources/SourcesPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/sources',
-                            'files': [
-                                '<@(devtools_sources_js_files)',
-                                'front_end/sources/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_timeline_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_timeline_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/timeline/TimelinePanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_timeline_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/timeline/TimelinePanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/timeline',
-                            'files': [
-                                '<@(devtools_timeline_js_files)',
-                                'front_end/timeline/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_profiler_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_profiler_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/profiler/ProfilesPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_profiler_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/profiler/ProfilesPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/profiler',
-                            'files': [
-                                '<@(devtools_profiler_js_files)',
-                                'front_end/profiler/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_audits_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_audits_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/audits/AuditsPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_audits_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/audits/AuditsPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/audits',
-                            'files': [
-                                '<@(devtools_audits_js_files)',
-                                'front_end/audits/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_settings_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_settings_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/settings/SettingsScreen.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_settings_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/settings/SettingsScreen.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/settings',
-                            'files': [
-                                '<@(devtools_settings_js_files)',
-                                'front_end/settings/module.json',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_heap_snapshot_worker_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_heap_snapshot_worker_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/profiler/heap_snapshot_worker/HeapSnapshotWorker.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_file)',
-                            '<@(devtools_heap_snapshot_worker_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/profiler/heap_snapshot_worker/HeapSnapshotWorker.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/profiler/heap_snapshot_worker',
-                            'files': [
-                                '<@(devtools_heap_snapshot_worker_js_files)',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_script_formatter_worker_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_script_formatter_worker_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/script_formatter_worker/ScriptFormatterWorker.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(_input_file)',
-                            '<@(devtools_uglify_files)'
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/script_formatter_worker/ScriptFormatterWorker.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/script_formatter_worker',
-                            'files': [
-                                '<@(devtools_script_formatter_worker_js_files)',
-                            ],
                         },
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/UglifyJS',
-                            'files': [
-                                '<@(devtools_uglify_files)',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_temp_storage_shared_worker_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_temp_storage_shared_worker_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/temp_storage_shared_worker/TempStorageSharedWorker.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_temp_storage_shared_worker_js_files)'
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/temp_storage_shared_worker/TempStorageSharedWorker.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/temp_storage_shared_worker',
-                            'files': [
-                                '<@(devtools_temp_storage_shared_worker_js_files)',
-                            ],
-                        }
-                    ]
-                }]
-            ]
-        },
-        {
-            'target_name': 'build_layers_module',
-            'type': 'none',
-            'conditions': [
-                ['debug_devtools==0', { # Release
-                    'actions': [{
-                        'action_name': 'build_layers_module',
-                        'script_name': 'scripts/inline_js_imports.py',
-                        'input_file': 'front_end/layers/LayersPanel.js',
-                        'inputs': [
-                            '<@(_script_name)',
-                            '<@(devtools_layers_js_files)',
-                        ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/layers/LayersPanel.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)'],
-                    }],
-                },
-                { # Debug
-                    'copies': [
-                        {
-                            'destination': '<(PRODUCT_DIR)/resources/inspector/layers',
-                            'files': [
-                                '<@(devtools_layers_js_files)',
-                                'front_end/layers/module.json',
-                            ],
-                        }
                     ]
                 }]
             ]
@@ -865,43 +319,35 @@
                 {
                     'target_name': 'concatenated_devtools_css',
                     'type': 'none',
-                    'dependencies': [
-                        'devtools_html'
-                    ],
                     'actions': [{
                         'action_name': 'concatenate_devtools_css',
                         'script_name': 'scripts/concatenate_css_files.py',
-                        'input_page': 'front_end/inspector.html',
+                        'input_stylesheet': 'front_end/devtools.css',
                         'inputs': [
                             '<@(_script_name)',
-                            '<@(_input_page)',
-                            '<@(all_devtools_files)',
+                            '<@(_input_stylesheet)',
+                            '<@(devtools_core_base_files)',
                         ],
                         'search_path': [ 'front_end' ],
-                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/inspector.css'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_page)', '<@(_search_path)', '<@(_outputs)'],
-                    }],
-                    'copies': [{
-                        'destination': '<(PRODUCT_DIR)/resources/inspector',
-                        'files': [
-                            '<@(devtools_standalone_files)',
-                        ],
+                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/devtools.css'],
+                        'action': ['python', '<@(_script_name)', '<@(_input_stylesheet)', '<@(_outputs)'],
                     }],
                 },
                 {
-                    'target_name': 'concatenated_module_descriptors',
+                    'target_name': 'concatenated_toolbox_css',
                     'type': 'none',
                     'actions': [{
-                        'action_name': 'concatenated_module_descriptors',
-                        'script_name': 'scripts/concatenate_module_descriptors.py',
-                        'input_file': ['front_end/common/modules.js'],
+                        'action_name': 'concatenate_toolbox_css',
+                        'script_name': 'scripts/concatenate_css_files.py',
+                        'input_stylesheet': 'front_end/toolbox.css',
                         'inputs': [
                             '<@(_script_name)',
-                            '<@(_input_file)',
-                            '<@(devtools_module_json_files)',
+                            '<@(_input_stylesheet)',
+                            '<@(devtools_core_base_files)',
                         ],
-                        'outputs': ['<(SHARED_INTERMEDIATE_DIR)/blink/common/modules.js'],
-                        'action': ['python', '<@(_script_name)', '<@(_input_file)', '<@(_outputs)', '<@(devtools_module_json_files)'],
+                        'search_path': [ 'front_end' ],
+                        'outputs': ['<(PRODUCT_DIR)/resources/inspector/toolbox.css'],
+                        'action': ['python', '<@(_script_name)', '<@(_input_stylesheet)', '<@(_outputs)'],
                     }],
                 },
             ],

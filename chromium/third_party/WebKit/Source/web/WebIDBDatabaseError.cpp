@@ -34,8 +34,6 @@
 #include "core/dom/DOMError.h"
 #include "public/platform/WebString.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebIDBDatabaseError::assign(const WebIDBDatabaseError& value)
@@ -58,7 +56,7 @@ void WebIDBDatabaseError::reset()
     m_private.reset();
 }
 
-WebIDBDatabaseError::operator PassRefPtrWillBeRawPtr<DOMError>() const
+WebIDBDatabaseError::operator DOMError*() const
 {
     return m_private.get();
 }

@@ -5,12 +5,12 @@
 #include "content/child/fileapi/file_system_dispatcher.h"
 
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/process/process.h"
 #include "content/child/child_thread.h"
 #include "content/common/fileapi/file_system_messages.h"
-#include "webkit/common/fileapi/file_system_info.h"
+#include "storage/common/fileapi/file_system_info.h"
 
 namespace content {
 
@@ -96,9 +96,8 @@ class FileSystemDispatcher::CallbackDispatcher {
     snapshot_callback_.Run(file_info, platform_path, request_id);
   }
 
-  void DidReadDirectory(
-      const std::vector<fileapi::DirectoryEntry>& entries,
-      bool has_more) {
+  void DidReadDirectory(const std::vector<storage::DirectoryEntry>& entries,
+                        bool has_more) {
     directory_callback_.Run(entries, has_more);
   }
 
@@ -107,7 +106,7 @@ class FileSystemDispatcher::CallbackDispatcher {
     filesystem_callback_.Run(name, root);
   }
 
-  void DidResolveURL(const fileapi::FileSystemInfo& info,
+  void DidResolveURL(const storage::FileSystemInfo& info,
                      const base::FilePath& file_path,
                      bool is_directory) {
     resolve_callback_.Run(info, file_path, is_directory);
@@ -115,12 +114,6 @@ class FileSystemDispatcher::CallbackDispatcher {
 
   void DidWrite(int64 bytes, bool complete) {
     write_callback_.Run(bytes, complete);
-  }
-
-  void DidOpenFile(base::PlatformFile file,
-                   int file_open_id,
-                   quota::QuotaLimitType quota_policy) {
-    open_callback_.Run(file, file_open_id, quota_policy);
   }
 
  private:
@@ -133,7 +126,6 @@ class FileSystemDispatcher::CallbackDispatcher {
   OpenFileSystemCallback filesystem_callback_;
   ResolveURLCallback resolve_callback_;
   WriteCallback write_callback_;
-  OpenFileCallback open_callback_;
 
   StatusCallback error_callback_;
 
@@ -167,7 +159,6 @@ bool FileSystemDispatcher::OnMessageReceived(const IPC::Message& msg) {
                         OnDidCreateSnapshotFile)
     IPC_MESSAGE_HANDLER(FileSystemMsg_DidFail, OnDidFail)
     IPC_MESSAGE_HANDLER(FileSystemMsg_DidWrite, OnDidWrite)
-    IPC_MESSAGE_HANDLER(FileSystemMsg_DidOpenFile, OnDidOpenFile)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -175,7 +166,7 @@ bool FileSystemDispatcher::OnMessageReceived(const IPC::Message& msg) {
 
 void FileSystemDispatcher::OpenFileSystem(
     const GURL& origin_url,
-    fileapi::FileSystemType type,
+    storage::FileSystemType type,
     const OpenFileSystemCallback& success_callback,
     const StatusCallback& error_callback) {
   int request_id = dispatchers_.Add(
@@ -194,10 +185,9 @@ void FileSystemDispatcher::ResolveURL(
           request_id, filesystem_url));
 }
 
-void FileSystemDispatcher::DeleteFileSystem(
-    const GURL& origin_url,
-    fileapi::FileSystemType type,
-    const StatusCallback& callback) {
+void FileSystemDispatcher::DeleteFileSystem(const GURL& origin_url,
+                                            storage::FileSystemType type,
+                                            const StatusCallback& callback) {
   int request_id = dispatchers_.Add(CallbackDispatcher::Create(callback));
   ChildThread::current()->Send(new FileSystemHostMsg_DeleteFileSystem(
           request_id, origin_url, type));
@@ -349,7 +339,7 @@ void FileSystemDispatcher::OnDidOpenFileSystem(int request_id,
 }
 
 void FileSystemDispatcher::OnDidResolveURL(int request_id,
-                                           const fileapi::FileSystemInfo& info,
+                                           const storage::FileSystemInfo& info,
                                            const base::FilePath& file_path,
                                            bool is_directory) {
   DCHECK(info.root_url.is_valid());
@@ -385,7 +375,7 @@ void FileSystemDispatcher::OnDidCreateSnapshotFile(
 
 void FileSystemDispatcher::OnDidReadDirectory(
     int request_id,
-    const std::vector<fileapi::DirectoryEntry>& entries,
+    const std::vector<storage::DirectoryEntry>& entries,
     bool has_more) {
   CallbackDispatcher* dispatcher = dispatchers_.Lookup(request_id);
   DCHECK(dispatcher);
@@ -409,19 +399,6 @@ void FileSystemDispatcher::OnDidWrite(
   dispatcher->DidWrite(bytes, complete);
   if (complete)
     dispatchers_.Remove(request_id);
-}
-
-void FileSystemDispatcher::OnDidOpenFile(
-    int request_id,
-    IPC::PlatformFileForTransit file,
-    int file_open_id,
-    quota::QuotaLimitType quota_policy) {
-  CallbackDispatcher* dispatcher = dispatchers_.Lookup(request_id);
-  DCHECK(dispatcher);
-  dispatcher->DidOpenFile(IPC::PlatformFileForTransitToPlatformFile(file),
-                          file_open_id,
-                          quota_policy);
-  dispatchers_.Remove(request_id);
 }
 
 }  // namespace content

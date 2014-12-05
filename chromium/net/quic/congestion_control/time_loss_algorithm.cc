@@ -36,25 +36,27 @@ SequenceNumberSet TimeLossAlgorithm::DetectLostPackets(
   loss_detection_timeout_ = QuicTime::Zero();
   QuicTime::Delta loss_delay = QuicTime::Delta::Max(
       QuicTime::Delta::FromMilliseconds(kMinLossDelayMs),
-      QuicTime::Delta::Max(rtt_stats.SmoothedRtt(), rtt_stats.latest_rtt())
+      QuicTime::Delta::Max(rtt_stats.smoothed_rtt(), rtt_stats.latest_rtt())
           .Multiply(kLossDelayMultiplier));
 
+  QuicPacketSequenceNumber sequence_number = unacked_packets.GetLeastUnacked();
   for (QuicUnackedPacketMap::const_iterator it = unacked_packets.begin();
-       it != unacked_packets.end() && it->first <= largest_observed; ++it) {
-    if (!it->second.in_flight) {
+       it != unacked_packets.end() && sequence_number <= largest_observed;
+       ++it, ++sequence_number) {
+    if (!it->in_flight) {
       continue;
     }
-    LOG_IF(DFATAL, it->second.nack_count == 0)
+    LOG_IF(DFATAL, it->nack_count == 0)
         << "All packets less than largest observed should have been nacked.";
 
     // Packets are sent in order, so break when we haven't waited long enough
     // to lose any more packets and leave the loss_time_ set for the timeout.
-    QuicTime when_lost = it->second.sent_time.Add(loss_delay);
+    QuicTime when_lost = it->sent_time.Add(loss_delay);
     if (time < when_lost) {
       loss_detection_timeout_ = when_lost;
       break;
     }
-    lost_packets.insert(it->first);
+    lost_packets.insert(sequence_number);
   }
 
   return lost_packets;

@@ -32,10 +32,10 @@
 
 #include "core/svg/SVGLengthTearOff.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -142,7 +142,6 @@ void SVGLengthTearOff::convertToSpecifiedUnits(unsigned short unitType, Exceptio
 SVGLengthTearOff::SVGLengthTearOff(PassRefPtr<SVGLength> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGLength>(target, contextElement, propertyIsAnimVal, attributeName)
 {
-    ScriptWrappable::init(this);
 }
 
 }

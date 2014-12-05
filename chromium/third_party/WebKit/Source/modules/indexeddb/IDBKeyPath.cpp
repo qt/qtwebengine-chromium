@@ -33,7 +33,7 @@
 
 using namespace WTF::Unicode;
 
-namespace WebCore {
+namespace blink {
 
 class IDBKeyPathLexer {
 public:
@@ -204,7 +204,7 @@ IDBKeyPath::IDBKeyPath(const Vector<String>& array)
     : m_type(ArrayType)
     , m_array(array)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     for (size_t i = 0; i < m_array.size(); ++i)
         ASSERT(!m_array[i].isNull());
 #endif
@@ -249,4 +249,4 @@ bool IDBKeyPath::operator==(const IDBKeyPath& other) const
     return false;
 }
 
-} // namespace WebCore
+} // namespace blink

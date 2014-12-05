@@ -25,7 +25,7 @@
 
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderListItem;
 
@@ -33,61 +33,68 @@ String listMarkerText(EListStyleType, int value);
 
 // Used to render the list item's marker.
 // The RenderListMarker always has to be a child of a RenderListItem.
-class RenderListMarker FINAL : public RenderBox {
+class RenderListMarker final : public RenderBox {
 public:
     static RenderListMarker* createAnonymous(RenderListItem*);
 
     virtual ~RenderListMarker();
+    virtual void destroy() override;
+    virtual void trace(Visitor*) override;
 
     const String& text() const { return m_text; }
-    String suffix() const;
 
     bool isInside() const;
 
     void updateMarginsAndContent();
 
+    IntRect getRelativeMarkerRect();
+    LayoutRect localSelectionRect();
+    virtual bool isImage() const override;
+    const StyleImage* image() { return m_image.get(); }
+    const RenderListItem* listItem() { return m_listItem.get(); }
+
+    static UChar listMarkerSuffix(EListStyleType, int value);
+
+    void listItemStyleDidChange();
+
 private:
     RenderListMarker(RenderListItem*);
 
-    virtual const char* renderName() const OVERRIDE { return "RenderListMarker"; }
-    virtual void computePreferredLogicalWidths() OVERRIDE;
+    virtual const char* renderName() const override { return "RenderListMarker"; }
+    virtual void computePreferredLogicalWidths() override;
 
-    virtual bool isListMarker() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectListMarker || RenderBox::isOfType(type); }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
-    virtual InlineBox* createInlineBox() OVERRIDE;
+    virtual InlineBox* createInlineBox() override;
 
-    virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
+    virtual LayoutUnit lineHeight(bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
 
-    virtual bool isImage() const OVERRIDE;
     bool isText() const { return !isImage(); }
 
-    virtual void setSelectionState(SelectionState) OVERRIDE;
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent = true) OVERRIDE;
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return true; }
+    virtual void setSelectionState(SelectionState) override;
+    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override;
+    virtual bool canBeSelectionLeaf() const override { return true; }
 
     void updateMargins();
     void updateContent();
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
-
-    IntRect getRelativeMarkerRect();
-    LayoutRect localSelectionRect();
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
     String m_text;
     RefPtr<StyleImage> m_image;
-    RenderListItem* m_listItem;
+    RawPtrWillBeMember<RenderListItem> m_listItem;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderListMarker, isListMarker());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderListMarker_h

@@ -8,7 +8,6 @@ This file emits the list of reasons why a particular build needs to be clobbered
 (or a list of 'landmines').
 """
 
-import optparse
 import sys
 
 import landmine_utils
@@ -21,16 +20,16 @@ gyp_msvs_version = landmine_utils.gyp_msvs_version
 platform = landmine_utils.platform
 
 
-def print_landmines(target):
+def print_landmines():
   """
   ALL LANDMINES ARE EMITTED FROM HERE.
-  target can be one of {'Release', 'Debug', 'Debug_x64', 'Release_x64'}.
   """
   if (distributor() == 'goma' and platform() == 'win32' and
       builder() == 'ninja'):
     print 'Need to clobber winja goma due to backend cwd cache fix.'
   if platform() == 'android':
-    print 'Clobber: build_size.jar needs to be deleted (issue 258633003)'
+    print 'Clobber: To delete newly generated mojo class files.'
+    print 'Clobber to ensure that recipe tests do not break (issue 680923002).'
   if platform() == 'win' and builder() == 'ninja':
     print 'Compile on cc_unittests fails due to symbols removed in r185063.'
   if platform() == 'linux' and builder() == 'ninja':
@@ -54,19 +53,18 @@ def print_landmines(target):
   if (platform() != 'ios'):
     print 'Clobber to get rid of obselete test plugin after r248358'
     print 'Clobber to rebuild GN files for V8'
+  print 'Need to clobber everything due to build_nexe change in nacl r13424'
+  print '[chromium-dev] PSA: clobber build needed for IDR_INSPECTOR_* compil...'
+  print 'blink_resources.grd changed: crbug.com/400860'
+  print 'ninja dependency cycle: crbug.com/408192'
+  if platform() == 'android':
+    print 'Delete stale generated .java files yet again. crbug.com/349592'
+    print 'Clobber to delete incompatible object binary format with NDK r10c'
+  print 'Clobber to fix missing NaCl gyp dependencies (crbug.com/427427).'
 
 
 def main():
-  parser = optparse.OptionParser()
-  parser.add_option('-t', '--target',
-                    help=='Target for which the landmines have to be emitted')
-
-  options, args = parser.parse_args()
-
-  if args:
-    parser.error('Unknown arguments %s' % args)
-
-  print_landmines(options.target)
+  print_landmines()
   return 0
 
 

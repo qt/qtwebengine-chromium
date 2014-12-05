@@ -29,8 +29,8 @@
 #define TALK_XMPP_JID_H_
 
 #include <string>
-#include "talk/base/basictypes.h"
-#include "talk/xmllite/xmlconstants.h"
+#include "webrtc/libjingle/xmllite/xmlconstants.h"
+#include "webrtc/base/basictypes.h"
 
 namespace buzz {
 

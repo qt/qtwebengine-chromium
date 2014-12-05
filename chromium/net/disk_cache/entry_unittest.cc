@@ -5,12 +5,11 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/platform_thread.h"
-#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -1617,10 +1616,10 @@ TEST_F(DiskCacheEntryTest, MemoryOnlyEnumerationWithSparseEntries) {
   parent_entry->Close();
 
   // Perform the enumerations.
-  void* iter = NULL;
+  scoped_ptr<TestIterator> iter = CreateIterator();
   disk_cache::Entry* entry = NULL;
   int count = 0;
-  while (OpenNextEntry(&iter, &entry) == net::OK) {
+  while (iter->OpenNextEntry(&entry) == net::OK) {
     ASSERT_TRUE(entry != NULL);
     ++count;
     disk_cache::MemEntryImpl* mem_entry =
@@ -2063,7 +2062,7 @@ class SparseTestCompletionCallback: public net::TestCompletionCallback {
   }
 
  private:
-  virtual void SetResult(int result) OVERRIDE {
+  void SetResult(int result) override {
     cache_.reset();
     TestCompletionCallback::SetResult(result);
   }
@@ -2217,10 +2216,10 @@ TEST_F(DiskCacheEntryTest, CleanupSparseEntry) {
   entry->Close();
   EXPECT_EQ(4, cache_->GetEntryCount());
 
-  void* iter = NULL;
+  scoped_ptr<TestIterator> iter = CreateIterator();
   int count = 0;
   std::string child_key[2];
-  while (OpenNextEntry(&iter, &entry) == net::OK) {
+  while (iter->OpenNextEntry(&entry) == net::OK) {
     ASSERT_TRUE(entry != NULL);
     // Writing to an entry will alter the LRU list and invalidate the iterator.
     if (entry->GetKey() != key && count < 2)
@@ -2330,11 +2329,6 @@ TEST_F(DiskCacheEntryTest, KeySanityCheck) {
   ASSERT_NE(net::OK, OpenEntry(key, &entry));
   DisableIntegrityCheck();
 }
-
-// The Simple Cache backend requires a few guarantees from the filesystem like
-// atomic renaming of recently open files. Those guarantees are not provided in
-// general on Windows.
-#if defined(OS_POSIX)
 
 TEST_F(DiskCacheEntryTest, SimpleCacheInternalAsyncIO) {
   SetSimpleCacheMode();
@@ -3179,6 +3173,38 @@ TEST_F(DiskCacheEntryTest, SimpleCacheDoomCreateDoom) {
   // This test passes if it doesn't crash.
 }
 
+TEST_F(DiskCacheEntryTest, SimpleCacheDoomCloseCreateCloseOpen) {
+  // Test sequence: Create, Doom, Close, Create, Close, Open.
+  SetSimpleCacheMode();
+  InitCache();
+
+  disk_cache::Entry* null = NULL;
+
+  const char key[] = "this is a key";
+
+  disk_cache::Entry* entry1 = NULL;
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry1));
+  ScopedEntryPtr entry1_closer(entry1);
+  EXPECT_NE(null, entry1);
+
+  entry1->Doom();
+  entry1_closer.reset();
+  entry1 = NULL;
+
+  disk_cache::Entry* entry2 = NULL;
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry2));
+  ScopedEntryPtr entry2_closer(entry2);
+  EXPECT_NE(null, entry2);
+
+  entry2_closer.reset();
+  entry2 = NULL;
+
+  disk_cache::Entry* entry3 = NULL;
+  ASSERT_EQ(net::OK, OpenEntry(key, &entry3));
+  ScopedEntryPtr entry3_closer(entry3);
+  EXPECT_NE(null, entry3);
+}
+
 // Checks that an optimistic Create would fail later on a racing Open.
 TEST_F(DiskCacheEntryTest, SimpleCacheOptimisticCreateFailsOnOpen) {
   SetSimpleCacheMode();
@@ -3727,7 +3753,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream2) {
   // should still be omitted, since the entry ignores writes that don't modify
   // data or change the length.
   ASSERT_EQ(net::OK, CreateEntry(key, &entry));
-  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer, 0, true));
+  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer.get(), 0, true));
   entry->Close();
   EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
 
@@ -3753,12 +3779,12 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream3) {
   // not be omitted, since it contains data.  Re-open entry and ensure there
   // are that many bytes in the third stream.
   ASSERT_EQ(net::OK, CreateEntry(key, &entry));
-  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1, kHalfSize, true));
+  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1.get(), kHalfSize, true));
   entry->Close();
   EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
 
   ASSERT_EQ(net::OK, OpenEntry(key, &entry));
-  EXPECT_EQ(kHalfSize, ReadData(entry, 2, 0, buffer2, kSize));
+  EXPECT_EQ(kHalfSize, ReadData(entry, 2, 0, buffer2.get(), kSize));
   EXPECT_EQ(0, memcmp(buffer1->data(), buffer2->data(), kHalfSize));
   entry->Close();
   EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
@@ -3789,14 +3815,14 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream4) {
   // removes it on open if it is empty.  Reopen, ensure that the file is
   // deleted, and that there's no data in the third stream.
   ASSERT_EQ(net::OK, CreateEntry(key, &entry));
-  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1, kHalfSize, true));
-  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer1, 0, true));
+  EXPECT_EQ(kHalfSize, WriteData(entry, 2, 0, buffer1.get(), kHalfSize, true));
+  EXPECT_EQ(0, WriteData(entry, 2, 0, buffer1.get(), 0, true));
   entry->Close();
   EXPECT_TRUE(SimpleCacheThirdStreamFileExists(key));
 
   ASSERT_EQ(net::OK, OpenEntry(key, &entry));
   EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
-  EXPECT_EQ(0, ReadData(entry, 2, 0, buffer2, kSize));
+  EXPECT_EQ(0, ReadData(entry, 2, 0, buffer2.get(), kSize));
   entry->Close();
   EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
 
@@ -3823,7 +3849,7 @@ TEST_F(DiskCacheEntryTest, SimpleCacheOmittedThirdStream5) {
   // that it doesn't cause the file to be created on disk.)
   ASSERT_EQ(net::OK, CreateEntry(key, &entry));
   entry->Doom();
-  WriteData(entry, 2, 0, buffer, kHalfSize, true);
+  WriteData(entry, 2, 0, buffer.get(), kHalfSize, true);
   entry->Close();
   EXPECT_FALSE(SimpleCacheThirdStreamFileExists(key));
 }
@@ -3876,6 +3902,70 @@ TEST_F(DiskCacheEntryTest, SimpleCacheDoomOptimisticWritesRace) {
     entry->Close();
     entry = NULL;
   }
+}
+
+// Tests for a regression in crbug.com/317138 , in which deleting an already
+// doomed entry was removing the active entry from the index.
+TEST_F(DiskCacheEntryTest, SimpleCachePreserveActiveEntries) {
+  SetSimpleCacheMode();
+  InitCache();
+
+  disk_cache::Entry* null = NULL;
+
+  const char key[] = "this is a key";
+
+  disk_cache::Entry* entry1 = NULL;
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry1));
+  ScopedEntryPtr entry1_closer(entry1);
+  EXPECT_NE(null, entry1);
+  entry1->Doom();
+
+  disk_cache::Entry* entry2 = NULL;
+  ASSERT_EQ(net::OK, CreateEntry(key, &entry2));
+  ScopedEntryPtr entry2_closer(entry2);
+  EXPECT_NE(null, entry2);
+  entry2_closer.reset();
+
+  // Closing then reopening entry2 insures that entry2 is serialized, and so
+  // it can be opened from files without error.
+  entry2 = NULL;
+  ASSERT_EQ(net::OK, OpenEntry(key, &entry2));
+  EXPECT_NE(null, entry2);
+  entry2_closer.reset(entry2);
+
+  scoped_refptr<disk_cache::SimpleEntryImpl>
+      entry1_refptr = static_cast<disk_cache::SimpleEntryImpl*>(entry1);
+
+  // If crbug.com/317138 has regressed, this will remove |entry2| from
+  // the backend's |active_entries_| while |entry2| is still alive and its
+  // files are still on disk.
+  entry1_closer.reset();
+  entry1 = NULL;
+
+  // Close does not have a callback. However, we need to be sure the close is
+  // finished before we continue the test. We can take advantage of how the ref
+  // counting of a SimpleEntryImpl works to fake out a callback: When the
+  // last Close() call is made to an entry, an IO operation is sent to the
+  // synchronous entry to close the platform files. This IO operation holds a
+  // ref pointer to the entry, which expires when the operation is done. So,
+  // we take a refpointer, and watch the SimpleEntry object until it has only
+  // one ref; this indicates the IO operation is complete.
+  while (!entry1_refptr->HasOneRef()) {
+    base::PlatformThread::YieldCurrentThread();
+    base::MessageLoop::current()->RunUntilIdle();
+  }
+  entry1_refptr = NULL;
+
+  // In the bug case, this new entry ends up being a duplicate object pointing
+  // at the same underlying files.
+  disk_cache::Entry* entry3 = NULL;
+  EXPECT_EQ(net::OK, OpenEntry(key, &entry3));
+  ScopedEntryPtr entry3_closer(entry3);
+  EXPECT_NE(null, entry3);
+
+  // The test passes if these two dooms do not crash.
+  entry2->Doom();
+  entry3->Doom();
 }
 
 TEST_F(DiskCacheEntryTest, SimpleCacheBasicSparseIO) {
@@ -3941,31 +4031,29 @@ TEST_F(DiskCacheEntryTest, SimpleCacheTruncateLargeSparseFile) {
   int ret;
 
   // Verify initial conditions.
-  ret = entry->ReadSparseData(0, buffer, kSize, callback.callback());
+  ret = entry->ReadSparseData(0, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(0, callback.GetResult(ret));
 
-  ret = entry->ReadSparseData(kSize, buffer, kSize, callback.callback());
+  ret = entry->ReadSparseData(kSize, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(0, callback.GetResult(ret));
 
   // Write a range and make sure it reads back.
-  ret = entry->WriteSparseData(0, buffer, kSize, callback.callback());
+  ret = entry->WriteSparseData(0, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(kSize, callback.GetResult(ret));
 
-  ret = entry->ReadSparseData(0, buffer, kSize, callback.callback());
+  ret = entry->ReadSparseData(0, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(kSize, callback.GetResult(ret));
 
   // Write another range and make sure it reads back.
-  ret = entry->WriteSparseData(kSize, buffer, kSize, callback.callback());
+  ret = entry->WriteSparseData(kSize, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(kSize, callback.GetResult(ret));
 
-  ret = entry->ReadSparseData(kSize, buffer, kSize, callback.callback());
+  ret = entry->ReadSparseData(kSize, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(kSize, callback.GetResult(ret));
 
   // Make sure the first range was removed when the second was written.
-  ret = entry->ReadSparseData(0, buffer, kSize, callback.callback());
+  ret = entry->ReadSparseData(0, buffer.get(), kSize, callback.callback());
   EXPECT_EQ(0, callback.GetResult(ret));
 
   entry->Close();
 }
-
-#endif  // defined(OS_POSIX)

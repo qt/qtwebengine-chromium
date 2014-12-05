@@ -28,38 +28,32 @@
 // Basic includes
 #include "include/v8.h"
 #include "include/v8-platform.h"
-#include "src/v8checks.h"
-#include "src/allocation.h"
-#include "src/assert-scope.h"
-#include "src/utils.h"
-#include "src/flags.h"
-#include "src/globals.h"
+#include "src/checks.h"  // NOLINT
+#include "src/allocation.h"  // NOLINT
+#include "src/assert-scope.h"  // NOLINT
+#include "src/utils.h"  // NOLINT
+#include "src/flags.h"  // NOLINT
+#include "src/globals.h"  // NOLINT
 
 // Objects & heap
-#include "src/objects-inl.h"
-#include "src/spaces-inl.h"
-#include "src/heap-inl.h"
-#include "src/incremental-marking-inl.h"
-#include "src/mark-compact-inl.h"
-#include "src/log-inl.h"
-#include "src/handles-inl.h"
-#include "src/types-inl.h"
-#include "src/zone-inl.h"
+#include "src/objects-inl.h"  // NOLINT
+#include "src/heap/spaces-inl.h"               // NOLINT
+#include "src/heap/heap-inl.h"                 // NOLINT
+#include "src/heap/incremental-marking-inl.h"  // NOLINT
+#include "src/heap/mark-compact-inl.h"         // NOLINT
+#include "src/log-inl.h"  // NOLINT
+#include "src/handles-inl.h"  // NOLINT
+#include "src/types-inl.h"  // NOLINT
+#include "src/zone-inl.h"  // NOLINT
 
 namespace v8 {
 namespace internal {
-
-class Deserializer;
 
 class V8 : public AllStatic {
  public:
   // Global actions.
 
-  // If Initialize is called with des == NULL, the initial state is
-  // created from scratch. If a non-null Deserializer is given, the
-  // initial state is created by reading the deserialized data into an
-  // empty heap.
-  static bool Initialize(Deserializer* des);
+  static bool Initialize();
   static void TearDown();
 
   // Report process out of memory. Implementation found in api.cc.

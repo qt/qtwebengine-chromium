@@ -33,11 +33,9 @@
 
 #include "WebFormControlElement.h"
 
-#if BLINK_IMPLEMENTATION
-namespace WebCore { class HTMLTextAreaElement; }
-#endif
-
 namespace blink {
+
+class HTMLTextAreaElement;
 
 // Provides access to some properties of a DOM textarea element node.
 class WebTextAreaElement : public WebFormControlElement {
@@ -53,9 +51,9 @@ public:
     void assign(const WebTextAreaElement& element) { WebFormControlElement::assign(element); }
 
 #if BLINK_IMPLEMENTATION
-    WebTextAreaElement(const PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>&);
-    WebTextAreaElement& operator=(const PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>&);
-    operator PassRefPtrWillBeRawPtr<WebCore::HTMLTextAreaElement>() const;
+    WebTextAreaElement(const PassRefPtrWillBeRawPtr<HTMLTextAreaElement>&);
+    WebTextAreaElement& operator=(const PassRefPtrWillBeRawPtr<HTMLTextAreaElement>&);
+    operator PassRefPtrWillBeRawPtr<HTMLTextAreaElement>() const;
 #endif
 };
 

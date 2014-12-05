@@ -8,11 +8,11 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/html/track/VideoTrack.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<VideoTrackList> VideoTrackList::create(HTMLMediaElement& mediaElement)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new VideoTrackList(mediaElement));
+    return adoptRefWillBeNoop(new VideoTrackList(mediaElement));
 }
 
 VideoTrackList::~VideoTrackList()
@@ -22,7 +22,6 @@ VideoTrackList::~VideoTrackList()
 VideoTrackList::VideoTrackList(HTMLMediaElement& mediaElement)
     : TrackListBase<VideoTrack>(&mediaElement)
 {
-    ScriptWrappable::init(this);
 }
 
 const AtomicString& VideoTrackList::interfaceName() const

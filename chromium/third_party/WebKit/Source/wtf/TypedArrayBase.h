@@ -34,7 +34,9 @@ namespace WTF {
 
 template <typename T>
 class TypedArrayBase : public ArrayBufferView {
-  public:
+public:
+    typedef T ValueType;
+
     T* data() const { return static_cast<T*>(baseAddress()); }
 
     bool set(TypedArrayBase<T>* array, unsigned offset)
@@ -60,7 +62,7 @@ class TypedArrayBase : public ArrayBufferView {
         return m_length;
     }
 
-    virtual unsigned byteLength() const OVERRIDE FINAL
+    virtual unsigned byteLength() const override final
     {
         return m_length * sizeof(T);
     }
@@ -137,7 +139,7 @@ protected:
         return create<Subclass>(buffer(), offset, length);
     }
 
-    virtual void neuter() OVERRIDE FINAL
+    virtual void neuter() override final
     {
         ArrayBufferView::neuter();
         m_length = 0;

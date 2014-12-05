@@ -31,46 +31,38 @@
 #ifndef WebDevToolsFrontendImpl_h
 #define WebDevToolsFrontendImpl_h
 
-#include "platform/Timer.h"
+#include "core/inspector/InspectorFrontendClient.h"
+#include "platform/heap/Handle.h"
 #include "public/web/WebDevToolsFrontend.h"
-#include "wtf/Deque.h"
-#include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
 
-class WebDevToolsClientDelegate;
+class InspectorFrontendHost;
 class WebViewImpl;
-struct WebDevToolsMessageData;
 
-using WTF::String;
-
-class WebDevToolsFrontendImpl FINAL : public blink::WebDevToolsFrontend {
+class WebDevToolsFrontendImpl final : public WebDevToolsFrontend, public InspectorFrontendClient {
     WTF_MAKE_NONCOPYABLE(WebDevToolsFrontendImpl);
 public:
-    WebDevToolsFrontendImpl(
-        blink::WebViewImpl* webViewImpl,
-        blink::WebDevToolsFrontendClient* client,
-        const String& applicationLocale);
+    WebDevToolsFrontendImpl(WebViewImpl*, WebDevToolsFrontendClient*);
     virtual ~WebDevToolsFrontendImpl();
 
-    // WebDevToolsFrontend implementation.
-    virtual void dispatchOnInspectorFrontend(const WebString& message) OVERRIDE;
+    // InspectorFrontendClient implementation.
+    virtual void windowObjectCleared() override;
+
+    virtual void sendMessageToBackend(const WTF::String&) override;
+
+    virtual void sendMessageToEmbedder(const WTF::String&) override;
+
+    virtual bool isUnderTest() override;
+
+    virtual void dispose() override;
 
 private:
-    class InspectorFrontendResumeObserver;
-    void resume();
-    void maybeDispatch(WebCore::Timer<WebDevToolsFrontendImpl>*);
-    void doDispatchOnInspectorFrontend(const WebString& message);
-
-    blink::WebViewImpl* m_webViewImpl;
-    blink::WebDevToolsFrontendClient* m_client;
-    String m_applicationLocale;
-    OwnPtr<InspectorFrontendResumeObserver> m_inspectorFrontendResumeObserver;
-    Deque<WebString> m_messages;
-    WebCore::Timer<WebDevToolsFrontendImpl> m_inspectorFrontendDispatchTimer;
+    WebViewImpl* m_webViewImpl;
+    WebDevToolsFrontendClient* m_client;
+    RefPtrWillBePersistent<InspectorFrontendHost> m_frontendHost;
 };
 
 } // namespace blink

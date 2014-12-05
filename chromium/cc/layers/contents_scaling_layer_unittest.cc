@@ -18,19 +18,19 @@ class MockContentsScalingLayer : public ContentsScalingLayer {
   MockContentsScalingLayer()
       : ContentsScalingLayer() {}
 
-  virtual void SetNeedsDisplayRect(const gfx::RectF& dirty_rect) OVERRIDE {
+  void SetNeedsDisplayRect(const gfx::Rect& dirty_rect) override {
     last_needs_display_rect_ = dirty_rect;
     ContentsScalingLayer::SetNeedsDisplayRect(dirty_rect);
   }
 
-  const gfx::RectF& LastNeedsDisplayRect() const {
+  const gfx::Rect& LastNeedsDisplayRect() const {
     return last_needs_display_rect_;
   }
 
  private:
-  virtual ~MockContentsScalingLayer() {}
+  ~MockContentsScalingLayer() override {}
 
-  gfx::RectF last_needs_display_rect_;
+  gfx::Rect last_needs_display_rect_;
 };
 
 static void CalcDrawProps(FakeLayerTreeHost* host, float device_scale_factor) {
@@ -42,7 +42,8 @@ static void CalcDrawProps(FakeLayerTreeHost* host, float device_scale_factor) {
 }
 
 TEST(ContentsScalingLayerTest, CheckContentsBounds) {
-  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create();
+  FakeLayerTreeHostClient client(FakeLayerTreeHostClient::DIRECT_3D);
+  scoped_ptr<FakeLayerTreeHost> host = FakeLayerTreeHost::Create(&client);
 
   scoped_refptr<MockContentsScalingLayer> test_layer =
       make_scoped_refptr(new MockContentsScalingLayer());

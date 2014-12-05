@@ -9,7 +9,7 @@ cr.define('options', function() {
   /**
    * Creates a new list item with support for inline editing.
    * @constructor
-   * @extends {options.DeletableListItem}
+   * @extends {options.DeletableItem}
    */
   function InlineEditableItem() {
     var el = cr.doc.createElement('div');
@@ -46,7 +46,7 @@ cr.define('options', function() {
 
     /**
      * Fields associated with edit mode.
-     * @type {array}
+     * @type {Array}
      * @private
      */
     editFields_: null,
@@ -236,8 +236,9 @@ cr.define('options', function() {
      * @private
      */
     createEditableTextCell: function(text) {
-      var container = this.ownerDocument.createElement('div');
-      var textEl;
+      var container = /** @type {HTMLElement} */(
+          this.ownerDocument.createElement('div'));
+      var textEl = null;
       if (!this.isPlaceholder) {
         textEl = this.ownerDocument.createElement('div');
         textEl.className = 'static-text';
@@ -406,6 +407,10 @@ cr.define('options', function() {
   }
   handleWindowBlurs();
 
+  /**
+   * @constructor
+   * @extends {options.DeletableItemList}
+   */
   var InlineEditableItemList = cr.ui.define('list');
 
   InlineEditableItemList.prototype = {
@@ -423,6 +428,9 @@ cr.define('options', function() {
       this.setAttribute('inlineeditable', '');
       this.addEventListener('hasElementFocusChange',
                             this.handleListFocusChange_);
+      // <list> isn't focusable by default, but cr.ui.List defaults tabindex to
+      // 0 if it's not set.
+      this.tabIndex = -1;
     },
 
     /**

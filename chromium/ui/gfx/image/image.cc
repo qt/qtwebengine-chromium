@@ -58,8 +58,7 @@ scoped_refptr<base::RefCountedMemory> Get1xPNGBytesFromImageSkia(
 // Caller takes ownership of returned ImageSkia.
 ImageSkia* GetErrorImageSkia() {
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(16, 16);
   bitmap.eraseARGB(0xff, 0xff, 0, 0);
   return new ImageSkia(ImageSkiaRep(bitmap, 1.0f));
 }
@@ -67,9 +66,9 @@ ImageSkia* GetErrorImageSkia() {
 class PNGImageSource : public ImageSkiaSource {
  public:
   PNGImageSource() {}
-  virtual ~PNGImageSource() {}
+  ~PNGImageSource() override {}
 
-  virtual ImageSkiaRep GetImageForScale(float scale) OVERRIDE {
+  ImageSkiaRep GetImageForScale(float scale) override {
     if (image_skia_reps_.empty())
       return ImageSkiaRep();
 
@@ -222,18 +221,13 @@ class ImageRepPNG : public ImageRep {
         image_png_reps_(image_png_reps) {
   }
 
-  virtual ~ImageRepPNG() {
-  }
+  ~ImageRepPNG() override {}
 
-  virtual int Width() const OVERRIDE {
-    return Size().width();
-  }
+  int Width() const override { return Size().width(); }
 
-  virtual int Height() const OVERRIDE {
-    return Size().height();
-  }
+  int Height() const override { return Size().height(); }
 
-  virtual gfx::Size Size() const OVERRIDE {
+  gfx::Size Size() const override {
     // Read the PNG data to get the image size, caching it.
     if (!size_cache_) {
       for (std::vector<ImagePNGRep>::const_iterator it = image_reps().begin();
@@ -268,20 +262,13 @@ class ImageRepSkia : public ImageRep {
         image_(image) {
   }
 
-  virtual ~ImageRepSkia() {
-  }
+  ~ImageRepSkia() override {}
 
-  virtual int Width() const OVERRIDE {
-    return image_->width();
-  }
+  int Width() const override { return image_->width(); }
 
-  virtual int Height() const OVERRIDE {
-    return image_->height();
-  }
+  int Height() const override { return image_->height(); }
 
-  virtual gfx::Size Size() const OVERRIDE {
-    return image_->size();
-  }
+  gfx::Size Size() const override { return image_->size(); }
 
   ImageSkia* image() { return image_.get(); }
 
@@ -305,15 +292,15 @@ class ImageRepCocoaTouch : public ImageRep {
     image_ = nil;
   }
 
-  virtual int Width() const OVERRIDE {
+  virtual int Width() const override {
     return Size().width();
   }
 
-  virtual int Height() const OVERRIDE {
+  virtual int Height() const override {
     return Size().height();
   }
 
-  virtual gfx::Size Size() const OVERRIDE {
+  virtual gfx::Size Size() const override {
     return internal::UIImageSize(image_);
   }
 
@@ -333,22 +320,16 @@ class ImageRepCocoa : public ImageRep {
     CHECK(image);
   }
 
-  virtual ~ImageRepCocoa() {
+  ~ImageRepCocoa() override {
     base::mac::NSObjectRelease(image_);
     image_ = nil;
   }
 
-  virtual int Width() const OVERRIDE {
-    return Size().width();
-  }
+  int Width() const override { return Size().width(); }
 
-  virtual int Height() const OVERRIDE {
-    return Size().height();
-  }
+  int Height() const override { return Size().height(); }
 
-  virtual gfx::Size Size() const OVERRIDE {
-    return internal::NSImageSize(image_);
-  }
+  gfx::Size Size() const override { return internal::NSImageSize(image_); }
 
   NSImage* image() const { return image_; }
 

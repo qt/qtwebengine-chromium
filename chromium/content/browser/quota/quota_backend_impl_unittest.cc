@@ -2,23 +2,23 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/quota/quota_backend_impl.h"
+#include "storage/browser/fileapi/quota/quota_backend_impl.h"
 
 #include <string>
 
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/obfuscated_file_util.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/env.h"
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/obfuscated_file_util.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
 
-using fileapi::FileSystemUsageCache;
-using fileapi::ObfuscatedFileUtil;
-using fileapi::QuotaBackendImpl;
-using fileapi::SandboxFileSystemBackendDelegate;
+using storage::FileSystemUsageCache;
+using storage::ObfuscatedFileUtil;
+using storage::QuotaBackendImpl;
+using storage::SandboxFileSystemBackendDelegate;
 
 namespace content {
 
@@ -38,7 +38,7 @@ bool DidReserveQuota(bool accepted,
   return accepted;
 }
 
-class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
+class MockQuotaManagerProxy : public storage::QuotaManagerProxy {
  public:
   MockQuotaManagerProxy()
       : QuotaManagerProxy(NULL, NULL),
@@ -46,29 +46,27 @@ class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
         usage_(0), quota_(0) {}
 
   // We don't mock them.
-  virtual void NotifyOriginInUse(const GURL& origin) OVERRIDE {}
-  virtual void NotifyOriginNoLongerInUse(const GURL& origin) OVERRIDE {}
-  virtual void SetUsageCacheEnabled(quota::QuotaClient::ID client_id,
-                                    const GURL& origin,
-                                    quota::StorageType type,
-                                    bool enabled) OVERRIDE {}
+  void NotifyOriginInUse(const GURL& origin) override {}
+  void NotifyOriginNoLongerInUse(const GURL& origin) override {}
+  void SetUsageCacheEnabled(storage::QuotaClient::ID client_id,
+                            const GURL& origin,
+                            storage::StorageType type,
+                            bool enabled) override {}
 
-  virtual void NotifyStorageModified(
-      quota::QuotaClient::ID client_id,
-      const GURL& origin,
-      quota::StorageType type,
-      int64 delta) OVERRIDE {
+  void NotifyStorageModified(storage::QuotaClient::ID client_id,
+                             const GURL& origin,
+                             storage::StorageType type,
+                             int64 delta) override {
     ++storage_modified_count_;
     usage_ += delta;
     ASSERT_LE(usage_, quota_);
   }
 
-  virtual void GetUsageAndQuota(
-      base::SequencedTaskRunner* original_task_runner,
-      const GURL& origin,
-      quota::StorageType type,
-      const GetUsageAndQuotaCallback& callback) OVERRIDE {
-    callback.Run(quota::kQuotaStatusOk, usage_, quota_);
+  void GetUsageAndQuota(base::SequencedTaskRunner* original_task_runner,
+                        const GURL& origin,
+                        storage::StorageType type,
+                        const GetUsageAndQuotaCallback& callback) override {
+    callback.Run(storage::kQuotaStatusOk, usage_, quota_);
   }
 
   int storage_modified_count() { return storage_modified_count_; }
@@ -77,7 +75,7 @@ class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
   void set_quota(int64 quota) { quota_ = quota; }
 
  protected:
-  virtual ~MockQuotaManagerProxy() {}
+  ~MockQuotaManagerProxy() override {}
 
  private:
   int storage_modified_count_;
@@ -95,7 +93,7 @@ class QuotaBackendImplTest : public testing::Test {
       : file_system_usage_cache_(file_task_runner()),
         quota_manager_proxy_(new MockQuotaManagerProxy) {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     in_memory_env_.reset(leveldb::NewMemEnv(leveldb::Env::Default()));
     file_util_.reset(ObfuscatedFileUtil::CreateForTesting(
@@ -106,7 +104,7 @@ class QuotaBackendImplTest : public testing::Test {
                                         quota_manager_proxy_.get()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     backend_.reset();
     quota_manager_proxy_ = NULL;
     file_util_.reset();
@@ -115,7 +113,7 @@ class QuotaBackendImplTest : public testing::Test {
 
  protected:
   void InitializeForOriginAndType(const GURL& origin,
-                                  fileapi::FileSystemType type) {
+                                  storage::FileSystemType type) {
     ASSERT_TRUE(file_util_->InitOriginDatabase(origin, true /* create */));
     ASSERT_TRUE(file_util_->origin_database_ != NULL);
 
@@ -135,7 +133,7 @@ class QuotaBackendImplTest : public testing::Test {
   }
 
   base::FilePath GetUsageCachePath(const GURL& origin,
-                                   fileapi::FileSystemType type) {
+                                   storage::FileSystemType type) {
     base::FilePath path;
     base::File::Error error =
         backend_->GetUsageCachePath(origin, type, &path);
@@ -157,7 +155,7 @@ class QuotaBackendImplTest : public testing::Test {
 };
 
 TEST_F(QuotaBackendImplTest, ReserveQuota_Basic) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   quota_manager_proxy_->set_quota(10000);
 
@@ -183,7 +181,7 @@ TEST_F(QuotaBackendImplTest, ReserveQuota_Basic) {
 }
 
 TEST_F(QuotaBackendImplTest, ReserveQuota_NoSpace) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   quota_manager_proxy_->set_quota(100);
 
@@ -201,7 +199,7 @@ TEST_F(QuotaBackendImplTest, ReserveQuota_NoSpace) {
 }
 
 TEST_F(QuotaBackendImplTest, ReserveQuota_Revert) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   quota_manager_proxy_->set_quota(10000);
 
@@ -219,7 +217,7 @@ TEST_F(QuotaBackendImplTest, ReserveQuota_Revert) {
 }
 
 TEST_F(QuotaBackendImplTest, ReleaseReservedQuota) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   const int64 kInitialUsage = 2000;
   quota_manager_proxy_->set_usage(kInitialUsage);
@@ -233,7 +231,7 @@ TEST_F(QuotaBackendImplTest, ReleaseReservedQuota) {
 }
 
 TEST_F(QuotaBackendImplTest, CommitQuotaUsage) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   quota_manager_proxy_->set_quota(10000);
   base::FilePath path = GetUsageCachePath(GURL(kOrigin), type);
@@ -256,7 +254,7 @@ TEST_F(QuotaBackendImplTest, CommitQuotaUsage) {
 }
 
 TEST_F(QuotaBackendImplTest, DirtyCount) {
-  fileapi::FileSystemType type = fileapi::kFileSystemTypeTemporary;
+  storage::FileSystemType type = storage::kFileSystemTypeTemporary;
   InitializeForOriginAndType(GURL(kOrigin), type);
   base::FilePath path = GetUsageCachePath(GURL(kOrigin), type);
 

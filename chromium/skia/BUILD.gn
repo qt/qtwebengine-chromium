@@ -9,7 +9,16 @@ if (cpu_arch == "arm") {
 }
 
 skia_support_gpu = !is_ios
-skia_support_pdf = !is_ios && enable_printing != 0
+skia_support_pdf = !is_ios && (enable_basic_printing || enable_print_preview)
+
+# The list of Skia defines that are to be set for blink.
+gypi_blink_skia_defines = exec_script(
+    "//build/gypi_to_gn.py",
+    [ rebase_path("//third_party/WebKit/public/blink_skia_config.gypi"),
+      "--replace=<(skia_include_path)=//third_party/skia/include",
+      "--replace=<(skia_src_path)=//third_party/skia/src" ],
+    "scope",
+    [ "//third_party/WebKit/public/blink_skia_config.gypi" ])
 
 # The list of Skia defines that are to be set for chromium.
 gypi_skia_defines = exec_script(
@@ -79,6 +88,7 @@ config("skia_config") {
   include_dirs = [
     "config",
     "ext",
+    "//third_party/skia/include/c",
     "//third_party/skia/include/config",
     "//third_party/skia/include/core",
     "//third_party/skia/include/effects",
@@ -98,7 +108,8 @@ config("skia_config") {
     "//third_party/skia/src/lazy",
   ]
 
-  defines = gypi_skia_defines.skia_for_chromium_defines
+  defines = gypi_blink_skia_defines.blink_skia_defines
+  defines += gypi_skia_defines.skia_for_chromium_defines
 
   defines += [
     "SK_ENABLE_INST_COUNT=0",
@@ -136,6 +147,10 @@ config("skia_config") {
       "USE_CHROMIUM_SKIA",
     ]
   }
+
+  if (is_mac) {
+    defines += [ "SK_BUILD_FOR_MAC" ]
+  }
 }
 
 # Internal-facing config for Skia library code.
@@ -164,21 +179,28 @@ config("skia_library_config") {
     # all filters used in Blink support the optimized path properly
     "SK_DISABLE_OFFSETIMAGEFILTER_OPTIMIZATION",
 
-    # Disable this check because it is too strict for some Chromium-specific
-    # subclasses of SkPixelRef. See bug: crbug.com/171776.
-    "SK_DISABLE_PIXELREF_LOCKCOUNT_BALANCE_CHECK",
-
     "IGNORE_ROT_AA_RECT_OPT",
 
     "SK_IGNORE_BLURRED_RRECT_OPT",
-
-    "SK_IGNORE_QUAD_RR_CORNERS_OPT",
 
     # this flag forces Skia not to use typographic metrics with GDI.
     "SK_GDI_ALWAYS_USE_TEXTMETRICS_FOR_FONT_METRICS",
 
     "SK_USE_DISCARDABLE_SCALEDIMAGECACHE",
   ]
+
+  if (component_mode == "shared_library") {
+    defines += [ "SKIA_IMPLEMENTATION=1" ]
+  }
+
+  if (cpu_arch == "arm") {
+    if (arm_use_neon) {
+      defines += [ "SK_ARM_HAS_NEON" ]
+    }
+    if (arm_optionally_use_neon) {
+      defines += [ "SK_ARM_HAS_OPTIONAL_NEON" ]
+    }
+  }
 
   # Settings for text blitting, chosen to approximate the system browser.
   if (is_linux) {
@@ -227,15 +249,15 @@ config("skia_library_config") {
     defines += [ "SK_FONTHOST_USES_FONTMGR" ]
 
     cflags = [
-      # TODO(brettw) comment what these are.
-      "/wd4244",
-      "/wd4267",
-      "/wd4341",
-      "/wd4345",
-      "/wd4390",
-      "/wd4554",
-      "/wd4748",
-      "/wd4800",
+      "/wd4244", # conversion from 'type1( __int64)' to 'type2 (unsigned int)'
+      "/wd4267", # conversion from 'size_t' (64 bit) to 'type'(32 bit).
+      "/wd4341", # signed value is out of range for enum constant.
+      "/wd4345", # Object is default-initialized if initialization is omitted.
+      "/wd4390", # ';'empty statement found in looping;is it what was intended?
+      "/wd4554", # 'operator' : check operator precedence for possible error
+      "/wd4748", # compiler will disable optimizations if a function has inline
+                 # assembly code contains flow control(jmp or jcc) statements.
+      "/wd4800", # forcing value to bool 'true/false'(assigning int to bool).
     ]
   }
 }
@@ -243,19 +265,12 @@ config("skia_library_config") {
 component("skia") {
   sources = [
     # Chrome sources.
+    "config/SkUserConfig.h",
     "ext/analysis_canvas.cc",
     "ext/analysis_canvas.h",
     "ext/benchmarking_canvas.cc",
     "ext/benchmarking_canvas.h",
     "ext/bitmap_platform_device.h",
-    "ext/bitmap_platform_device_cairo.cc",
-    "ext/bitmap_platform_device_cairo.h",
-    "ext/bitmap_platform_device_mac.cc",
-    "ext/bitmap_platform_device_mac.h",
-    #"ext/bitmap_platform_device_skia.cc",
-    #"ext/bitmap_platform_device_skia.h",
-    "ext/bitmap_platform_device_win.cc",
-    "ext/bitmap_platform_device_win.h",
     "ext/convolver.cc",
     "ext/convolver.h",
     "ext/event_tracer_impl.cc",
@@ -270,8 +285,6 @@ component("skia") {
     "ext/SkThread_chrome.cc",
     "ext/opacity_draw_filter.cc",
     "ext/opacity_draw_filter.h",
-    "ext/paint_simplifier.cc",
-    "ext/paint_simplifier.h",
     "ext/pixel_ref_utils.cc",
     "ext/pixel_ref_utils.h",
     "ext/platform_canvas.cc",
@@ -310,6 +323,13 @@ component("skia") {
   sources += gypi_skia_pdf.sources
   sources += gypi_values.skia_library_sources
 
+  if (cpu_arch == "arm") {
+    sources += [
+      "//third_party/skia/src/core/SkUtilsArm.cpp",
+      "//third_party/skia/src/core/SkUtilsArm.h",
+    ]
+  }
+
   # GPU
   if (skia_support_gpu) {
     sources += gypi_skia_gpu.skgpu_sources
@@ -318,13 +338,6 @@ component("skia") {
 
   # Remove unused util files include in utils.gypi
   sources -= [
-  "//third_party/skia/include/utils/SkCondVar.h",
-  "//third_party/skia/include/utils/SkCountdown.h",
-  "//third_party/skia/include/utils/SkRunnable.h",
-  "//third_party/skia/include/utils/SkThreadPool.h",
-  "//third_party/skia/src/utils/SkCondVar.cpp",
-  "//third_party/skia/src/utils/SkCountdown.cpp",
-
   "//third_party/skia/include/utils/SkBoundaryPatch.h",
   "//third_party/skia/include/utils/SkFrontBufferedStream.h",
   "//third_party/skia/include/utils/SkCamera.h",
@@ -369,26 +382,35 @@ component("skia") {
   "//third_party/skia/src/utils/SkPathUtils.cpp",
   "//third_party/skia/src/utils/SkSHA1.cpp",
   "//third_party/skia/src/utils/SkSHA1.h",
-  "//third_party/skia/src/utils/SkThreadUtils.h",
-  "//third_party/skia/src/utils/SkThreadUtils_pthread.cpp",
-  "//third_party/skia/src/utils/SkThreadUtils_pthread.h",
-  "//third_party/skia/src/utils/SkThreadUtils_pthread_linux.cpp",
-  "//third_party/skia/src/utils/SkThreadUtils_pthread_mach.cpp",
-  "//third_party/skia/src/utils/SkThreadUtils_pthread_other.cpp",
-  "//third_party/skia/src/utils/SkThreadUtils_win.cpp",
   "//third_party/skia/src/utils/SkTFitsIn.h",
   "//third_party/skia/src/utils/SkTLogic.h",
+
+  # We don't currently need to change thread affinity, so leave out this complexity for now.
+  "//third_party/skia/src/utils/SkThreadUtils_pthread_mach.cpp",
+  "//third_party/skia/src/utils/SkThreadUtils_pthread_linux.cpp",
 
   #testing
   "//third_party/skia/src/fonts/SkGScalerContext.cpp",
   "//third_party/skia/src/fonts/SkGScalerContext.h",
   ]
 
-  # need separate win section to handle chromes auto gn filter (build/config/BUILDCONFIG.gn)
   if (is_win) {
     sources -= [
-      "//third_party/skia/src/utils/SkThreadUtils_win.h",
+      # Keeping _win.cpp
+      "//third_party/skia/src/utils/SkThreadUtils_pthread.cpp",
+      "//third_party/skia/src/utils/SkThreadUtils_pthread_other.cpp",
+    ]
+  } else {
+    sources -= [
+      # Keeping _pthread.cpp and _pthread_other.cpp.
+      "//third_party/skia/src/utils/SkThreadUtils_win.cpp",
+    ]
+  }
 
+  # need separate win section to handle chromes auto gn filter
+  # (build/config/BUILDCONFIG.gn)
+  if (is_win) {
+    sources -= [
       #windows
       "//third_party/skia/include/utils/win/SkAutoCoInitialize.h",
       "//third_party/skia/include/utils/win/SkHRESULT.h",
@@ -410,7 +432,7 @@ component("skia") {
   if (is_win) {
     sources -= [ "ext/SkThread_chrome.cc" ]
   }
-  if (is_android && enable_printing == 0) {
+  if (is_android && (!enable_basic_printing && !enable_print_preview)) {
     sources -= [
       "ext/skia_utils_base.cc",
       "ext/vector_platform_device_skia.cc"
@@ -439,8 +461,8 @@ component("skia") {
   }
   if (!is_android) {
     sources -= [
-      "//third_party/skia/src/ports/SkFontConfigInterface_android.cpp",
       "//third_party/skia/src/ports/SkFontConfigParser_android.cpp",
+      "//third_party/skia/src/ports/SkFontMgr_android.cpp",
     ]
   }
   if (!is_mac) {
@@ -451,18 +473,39 @@ component("skia") {
 
   if (!is_linux) {
     sources -= [
+      "//third_party/skia/src/ports/SkFontHost_fontconfig.cpp",
       "//third_party/skia/src/fonts/SkFontMgr_fontconfig.cpp",
       "//third_party/skia/src/ports/SkFontConfigInterface_direct.cpp",
-      "//third_party/skia/src/ports/SkFontHost_fontconfig.cpp",
+    ]
+  }
+
+  if (!is_linux && !is_android) {
+    sources -= [
       "//third_party/skia/src/ports/SkFontHost_FreeType_common.cpp",
       "//third_party/skia/src/ports/SkFontHost_FreeType.cpp",
     ]
   }
 
-  if (!use_cairo) {
-    sources -= [
+  # Select the right BitmapPlatformDevice.
+  if (is_win) {
+    sources += [
+      "ext/bitmap_platform_device_win.cc",
+      "ext/bitmap_platform_device_win.h",
+    ]
+  } else if (is_mac) {
+    sources += [
+      "ext/bitmap_platform_device_mac.cc",
+      "ext/bitmap_platform_device_mac.h",
+    ]
+  } else if (use_cairo) {
+    sources += [
       "ext/bitmap_platform_device_cairo.cc",
       "ext/bitmap_platform_device_cairo.h",
+    ]
+  } else {
+    sources += [
+      "ext/bitmap_platform_device_skia.cc",
+      "ext/bitmap_platform_device_skia.h",
     ]
   }
 
@@ -478,7 +521,7 @@ component("skia") {
     ":skia_library_config",
     "//build/config/compiler:no_chromium_code"
   ]
-  direct_dependent_configs = [ ":skia_config" ]
+  public_configs = [ ":skia_config" ]
 
   deps = [
     ":skia_opts",
@@ -486,10 +529,6 @@ component("skia") {
     "//base/third_party/dynamic_annotations",
     "//third_party/zlib",
   ]
-
-  if (component_mode == "shared_library") {
-    defines = [ "SKIA_IMPLEMENTATION=1" ]
-  }
 
   if (is_win) {
     configs -= [
@@ -511,14 +550,25 @@ component("skia") {
   }
 
   if (is_android) {
+    set_sources_assignment_filter([])
+    sources += [
+      "ext/platform_device_linux.cc",
+    ]
+    set_sources_assignment_filter(sources_assignment_filter)
     deps += [
       "//third_party/expat",
       "//third_party/freetype",
+      "//third_party/android_tools:cpu_features",
     ]
   }
 
   if (skia_support_pdf) {
     deps += [ "//third_party/sfntly" ]
+  }
+
+  if (is_android && !is_debug) {
+    configs -= [ "//build/config/compiler:optimize" ]
+    configs += [ "//build/config/compiler:optimize_max" ]
   }
 }
 
@@ -529,6 +579,8 @@ source_set("skia_opts") {
 
   if (cpu_arch == "x86" || cpu_arch == "x64") {
     sources = [
+      "//third_party/skia/src/opts/SkTextureCompression_opts_none.cpp",
+
       # SSE 2
       "//third_party/skia/src/opts/opts_check_x86.cpp",
       "//third_party/skia/src/opts/SkBitmapFilter_opts_SSE2.cpp",
@@ -540,8 +592,11 @@ source_set("skia_opts") {
       "//third_party/skia/src/opts/SkUtils_opts_SSE2.cpp",
       "//third_party/skia/src/opts/SkXfermode_opts_SSE2.cpp",
 
-      # SSE 3
+      # SSSE 3
       "//third_party/skia/src/opts/SkBitmapProcState_opts_SSSE3.cpp",
+
+      # SSE 4
+      "//third_party/skia/src/opts/SkBlurImage_opts_SSE4.cpp",
 
       # Chrome-specific.
       "ext/convolver_SSE2.cc",
@@ -551,8 +606,19 @@ source_set("skia_opts") {
       "//third_party/skia/include/core/SkTypes.h",
     ]
 
+    if (!is_win) {
+      # SSE 4
+      if (cpu_arch == "x86") {
+        sources += [ "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_asm.S" ]
+      } else {  # x64
+        sources += [
+          "//third_party/skia/src/opts/SkBlitRow_opts_SSE4_x64_asm.S"
+        ]
+      }
+    }
+
     if (is_linux || is_mac) {
-      cflags += [ "-mssse3" ]  # Note third 's'.
+      cflags += [ "-msse4.1" ]
     }
   } else if (cpu_arch == "arm") {
     sources = [
@@ -566,46 +632,38 @@ source_set("skia_opts") {
     if (arm_version >= 7) {
       if (arm_use_neon || arm_optionally_use_neon) {
         sources += [
-          "//third_party/skia/src/opts/memset16_neon.S",
-          "//third_party/skia/src/opts/memset32_neon.S",
           "//third_party/skia/src/opts/SkBitmapProcState_arm_neon.cpp",
           "//third_party/skia/src/opts/SkBitmapProcState_matrixProcs_neon.cpp",
           "//third_party/skia/src/opts/SkBitmapProcState_matrix_clamp_neon.h",
           "//third_party/skia/src/opts/SkBitmapProcState_matrix_repeat_neon.h",
           "//third_party/skia/src/opts/SkBlitMask_opts_arm_neon.cpp",
           "//third_party/skia/src/opts/SkBlitRow_opts_arm_neon.cpp",
-          "//third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp",
           "//third_party/skia/src/opts/SkBlurImage_opts_neon.cpp",
           "//third_party/skia/src/opts/SkMorphology_opts_neon.cpp",
-        ]
-
-        cflags += [
-          # The neon assembly contains conditional instructions which aren't
-          # enclosed in an IT block. The assembler complains without this
-          # option. See #86592.
-          "-Wa,-mimplicit-it=always",
+          "//third_party/skia/src/opts/SkTextureCompression_opts_neon.cpp",
+          "//third_party/skia/src/opts/SkXfermode_opts_arm_neon.cpp",
+          "//third_party/skia/src/opts/memset16_neon.S",
+          "//third_party/skia/src/opts/memset32_neon.S",
         ]
 
         # Root build config sets -mfpu=$arm_fpu, which we expect to be neon
         # when running this.
-        assert(arm_fpu == "neon")
+        if (!arm_use_neon) {
+          configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
+          cflags += [
+            "-mfpu=neon"
+          ]
+        }
 
         #ldflags = [
         #  "-march=armv7-a",
         #  "-Wl,--fix-cortex-a8",
         #]
       }
-
-      if (arm_use_neon) {
-        defines += [ "__ARM_HAVE_NEON" ]
-      }
-      if (arm_optionally_use_neon) {
-        defines += [ "__ARM_HAVE_OPTIONAL_NEON_SUPPORT" ]
-      }
     }
 
     # Non-Neon ARM code.
-    if (arm_version < 7 || (!arm_use_neon && arm_optionally_use_neon)) {
+    if (arm_version < 7 || !arm_use_neon) {
       sources += [ "//third_party/skia/src/opts/memset.arm.S" ]
     }
 
@@ -613,10 +671,11 @@ source_set("skia_opts") {
       sources += [
         "//third_party/skia/src/opts/SkBlitMask_opts_none.cpp",
         "//third_party/skia/src/opts/SkBlitRow_opts_none.cpp",
+        "//third_party/skia/src/opts/SkBlurImage_opts_none.cpp",
+        "//third_party/skia/src/opts/SkMorphology_opts_none.cpp",
+        "//third_party/skia/src/opts/SkTextureCompression_opts_none.cpp",
         "//third_party/skia/src/opts/SkUtils_opts_none.cpp",
         "//third_party/skia/src/opts/SkXfermode_opts_none.cpp",
-        "//third_party/skia/src/opts/SkMorphology_opts_none.cpp",
-        "//third_party/skia/src/opts/SkBlurImage_opts_none.cpp",
       ]
     } else {
       # arm version >= 6.
@@ -626,19 +685,37 @@ source_set("skia_opts") {
         "//third_party/skia/src/opts/SkBlitRow_opts_arm.h",
         "//third_party/skia/src/opts/SkBlurImage_opts_arm.cpp",
         "//third_party/skia/src/opts/SkMorphology_opts_arm.cpp",
+        "//third_party/skia/src/opts/SkTextureCompression_opts_arm.cpp",
         "//third_party/skia/src/opts/SkUtils_opts_arm.cpp",
         "//third_party/skia/src/opts/SkXfermode_opts_none.cpp",
       ]
     }
 
-
+  } else if (cpu_arch == "mipsel") {
+    cflags += [ "-fomit-frame-pointer" ]
+    sources = [
+      "//third_party/skia/src/opts/SkBitmapProcState_opts_none.cpp",
+      "//third_party/skia/src/opts/SkBlitMask_opts_none.cpp",
+      "//third_party/skia/src/opts/SkBlitRow_opts_none.cpp",
+      "//third_party/skia/src/opts/SkBlurImage_opts_none.cpp",
+      "//third_party/skia/src/opts/SkMorphology_opts_none.cpp",
+      "//third_party/skia/src/opts/SkTextureCompression_opts_none.cpp",
+      "//third_party/skia/src/opts/SkUtils_opts_none.cpp",
+      "//third_party/skia/src/opts/SkXfermode_opts_none.cpp",
+    ]
   } else {
-    assert(false, "Need to port MIPS stuff from skia_library_opts.gyp")
+    assert(false, "Need to port cpu specific stuff from skia_library_opts.gyp")
+  }
+
+  if (is_android && !is_debug) {
+    configs -= [ "//build/config/compiler:optimize" ]
+    configs += [ "//build/config/compiler:optimize_max" ]
   }
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [
     ":skia_config",
+    ":skia_library_config",
     "//build/config/compiler:no_chromium_code"
   ]
 
@@ -646,5 +723,5 @@ source_set("skia_opts") {
     "//base",
   ]
 
-  visibility = ":skia"
+  visibility = [ ":skia" ]
 }

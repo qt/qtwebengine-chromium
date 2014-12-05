@@ -6,7 +6,7 @@
 #define CC_LAYERS_DRAW_PROPERTIES_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -23,10 +23,9 @@ struct CC_EXPORT DrawProperties {
         screen_space_transform_is_animating(false),
         can_use_lcd_text(false),
         is_clipped(false),
-        render_target(NULL),
+        render_target(nullptr),
         contents_scale_x(1.f),
         contents_scale_y(1.f),
-        num_descendants_that_draw_content(0),
         num_unclipped_descendants(0),
         layer_or_descendant_has_copy_request(false),
         layer_or_descendant_has_input_handler(false),
@@ -95,9 +94,6 @@ struct CC_EXPORT DrawProperties {
   float contents_scale_x;
   float contents_scale_y;
   gfx::Size content_bounds;
-
-  // Does not include this layer itself, only its children and descendants.
-  int num_descendants_that_draw_content;
 
   // Number of descendants with a clip parent that is our ancestor. NB - this
   // does not include our clip children because they are clipped by us.

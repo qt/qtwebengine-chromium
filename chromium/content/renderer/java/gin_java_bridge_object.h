@@ -5,7 +5,7 @@
 #ifndef CONTENT_RENDERER_JAVA_GIN_JAVA_BRIDGE_OBJECT_H_
 #define CONTENT_RENDERER_JAVA_GIN_JAVA_BRIDGE_OBJECT_H_
 
-#include <set>
+#include <map>
 
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
@@ -32,13 +32,13 @@ class GinJavaBridgeObject : public gin::Wrappable<GinJavaBridgeObject>,
 
   // gin::Wrappable.
   virtual gin::ObjectTemplateBuilder GetObjectTemplateBuilder(
-      v8::Isolate* isolate) OVERRIDE;
+      v8::Isolate* isolate) override;
 
   // gin::NamedPropertyInterceptor
   virtual v8::Local<v8::Value> GetNamedProperty(
-      v8::Isolate* isolate, const std::string& property) OVERRIDE;
+      v8::Isolate* isolate, const std::string& property) override;
   virtual std::vector<std::string> EnumerateNamedProperties(
-      v8::Isolate* isolate) OVERRIDE;
+      v8::Isolate* isolate) override;
 
   static GinJavaBridgeObject* InjectNamed(
       blink::WebFrame* frame,
@@ -61,6 +61,7 @@ class GinJavaBridgeObject : public gin::Wrappable<GinJavaBridgeObject>,
   base::WeakPtr<GinJavaBridgeDispatcher> dispatcher_;
   GinJavaBridgeDispatcher::ObjectID object_id_;
   scoped_ptr<GinJavaBridgeValueConverter> converter_;
+  std::map<std::string, bool> known_methods_;
 
   DISALLOW_COPY_AND_ASSIGN(GinJavaBridgeObject);
 };

@@ -15,18 +15,18 @@ class InputRouter;
 class MockInputAckHandler : public InputAckHandler {
  public:
   MockInputAckHandler();
-  virtual ~MockInputAckHandler();
+  ~MockInputAckHandler() override;
 
   // InputAckHandler
-  virtual void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
-                                  InputEventAckState ack_result) OVERRIDE;
-  virtual void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE;
-  virtual void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
-                               InputEventAckState ack_result) OVERRIDE;
-  virtual void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
-                                 InputEventAckState ack_result) OVERRIDE;
-  virtual void OnUnexpectedEventAck(UnexpectedEventAckType type) OVERRIDE;
+  void OnKeyboardEventAck(const NativeWebKeyboardEvent& event,
+                          InputEventAckState ack_result) override;
+  void OnWheelEventAck(const MouseWheelEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override;
+  void OnTouchEventAck(const TouchEventWithLatencyInfo& event,
+                       InputEventAckState ack_result) override;
+  void OnGestureEventAck(const GestureEventWithLatencyInfo& event,
+                         InputEventAckState ack_result) override;
+  void OnUnexpectedEventAck(UnexpectedEventAckType type) override;
 
   size_t GetAndResetAckCount();
 

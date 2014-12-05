@@ -10,11 +10,11 @@
 #include <objbase.h>
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "base/strings/stringprintf.h"
 #include "base/win/event_trace_controller.h"
 #include "base/win/event_trace_provider.h"
@@ -45,7 +45,7 @@ class TestConsumer: public EtwTraceConsumerBase<TestConsumer> {
   void ClearQueue() {
     for (EventQueue::const_iterator it(events_.begin()), end(events_.end());
          it != end; ++it) {
-      delete[] it->MofData;
+      delete[] reinterpret_cast<char*>(it->MofData);
     }
 
     events_.clear();
@@ -79,8 +79,7 @@ EventQueue TestConsumer::events_;
 class EtwTraceConsumerBaseTest: public testing::Test {
  public:
   EtwTraceConsumerBaseTest()
-      : session_name_(StringPrintf(L"TestSession-%d",
-                                   Process::Current().pid())) {
+      : session_name_(StringPrintf(L"TestSession-%d", GetCurrentProcId())) {
   }
 
   virtual void SetUp() {
@@ -149,13 +148,13 @@ class EtwTraceConsumerRealtimeTest: public EtwTraceConsumerBaseTest {
 
   HRESULT StartConsumerThread() {
     consumer_ready_.Set(::CreateEvent(NULL, TRUE, FALSE, NULL));
-    EXPECT_TRUE(consumer_ready_ != NULL);
+    EXPECT_TRUE(consumer_ready_.IsValid());
     consumer_thread_.Set(::CreateThread(NULL, 0, ConsumerThreadMainProc, this,
                                         0, NULL));
     if (consumer_thread_.Get() == NULL)
       return HRESULT_FROM_WIN32(::GetLastError());
 
-    HANDLE events[] = { consumer_ready_, consumer_thread_ };
+    HANDLE events[] = { consumer_ready_.Get(), consumer_thread_.Get() };
     DWORD result = ::WaitForMultipleObjects(arraysize(events), events,
                                             FALSE, INFINITE);
     switch (result) {
@@ -165,10 +164,10 @@ class EtwTraceConsumerRealtimeTest: public EtwTraceConsumerBaseTest {
       case WAIT_OBJECT_0 + 1: {
           // The thread finished. This may race with the event, so check
           // explicitly for the event here, before concluding there's trouble.
-          if (::WaitForSingleObject(consumer_ready_, 0) == WAIT_OBJECT_0)
+          if (::WaitForSingleObject(consumer_ready_.Get(), 0) == WAIT_OBJECT_0)
             return S_OK;
           DWORD exit_code = 0;
-          if (::GetExitCodeThread(consumer_thread_, &exit_code))
+          if (::GetExitCodeThread(consumer_thread_.Get(), &exit_code))
             return exit_code;
           return HRESULT_FROM_WIN32(::GetLastError());
         }
@@ -179,11 +178,13 @@ class EtwTraceConsumerRealtimeTest: public EtwTraceConsumerBaseTest {
 
   // Waits for consumer_ thread to exit, and returns its exit code.
   HRESULT JoinConsumerThread() {
-    if (::WaitForSingleObject(consumer_thread_, INFINITE) != WAIT_OBJECT_0)
+    if (::WaitForSingleObject(consumer_thread_.Get(), INFINITE) !=
+        WAIT_OBJECT_0) {
       return HRESULT_FROM_WIN32(::GetLastError());
+    }
 
     DWORD exit_code = 0;
-    if (::GetExitCodeThread(consumer_thread_, &exit_code))
+    if (::GetExitCodeThread(consumer_thread_.Get(), &exit_code))
       return exit_code;
 
     return HRESULT_FROM_WIN32(::GetLastError());
@@ -208,7 +209,7 @@ TEST_F(EtwTraceConsumerRealtimeTest, ConsumerReturnsWhenSessionClosed) {
   ASSERT_HRESULT_SUCCEEDED(StartConsumerThread());
 
   // Wait around for the consumer_ thread a bit.
-  ASSERT_EQ(WAIT_TIMEOUT, ::WaitForSingleObject(consumer_thread_, 50));
+  ASSERT_EQ(WAIT_TIMEOUT, ::WaitForSingleObject(consumer_thread_.Get(), 50));
   ASSERT_HRESULT_SUCCEEDED(controller.Stop(NULL));
 
   // The consumer_ returns success on session stop.
@@ -244,8 +245,8 @@ TEST_F(EtwTraceConsumerRealtimeTest, ConsumeEvent) {
 
   EtwMofEvent<1> event(kTestEventType, 1, TRACE_LEVEL_ERROR);
   EXPECT_EQ(ERROR_SUCCESS, provider.Log(&event.header));
-  EXPECT_EQ(WAIT_OBJECT_0, ::WaitForSingleObject(TestConsumer::sank_event_,
-                                                 INFINITE));
+  EXPECT_EQ(WAIT_OBJECT_0,
+            ::WaitForSingleObject(TestConsumer::sank_event_.Get(), INFINITE));
   ASSERT_HRESULT_SUCCEEDED(controller.Stop(NULL));
   ASSERT_HRESULT_SUCCEEDED(JoinConsumerThread());
   ASSERT_NE(0u, TestConsumer::events_.size());

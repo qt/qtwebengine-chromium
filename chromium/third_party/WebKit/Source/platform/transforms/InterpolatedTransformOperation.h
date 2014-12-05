@@ -34,7 +34,7 @@
 #include "platform/transforms/TransformOperation.h"
 #include "platform/transforms/TransformOperations.h"
 
-namespace WebCore {
+namespace blink {
 
 // This class is an implementation detail for deferred interpolations.
 class PLATFORM_EXPORT InterpolatedTransformOperation : public TransformOperation {
@@ -50,16 +50,14 @@ public:
     }
 
 private:
-    virtual bool isIdentity() const OVERRIDE { return false; }
+    virtual OperationType type() const override { return Interpolated; }
 
-    virtual OperationType type() const OVERRIDE { return Interpolated; }
+    virtual bool operator==(const TransformOperation&) const override;
+    virtual void apply(TransformationMatrix&, const FloatSize& borderBoxSize) const override;
 
-    virtual bool operator==(const TransformOperation&) const OVERRIDE;
-    virtual void apply(TransformationMatrix&, const FloatSize& borderBoxSize) const OVERRIDE;
+    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) override;
 
-    virtual PassRefPtr<TransformOperation> blend(const TransformOperation* from, double progress, bool blendToIdentity = false) OVERRIDE;
-
-    virtual bool dependsOnBoxSize() const OVERRIDE
+    virtual bool dependsOnBoxSize() const override
     {
         return from.dependsOnBoxSize() || to.dependsOnBoxSize();
     }
@@ -75,7 +73,7 @@ private:
     double progress;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // InterpolatedTransformOperation_h
 

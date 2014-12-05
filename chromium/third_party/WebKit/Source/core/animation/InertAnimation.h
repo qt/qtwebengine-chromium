@@ -35,9 +35,9 @@
 #include "core/animation/AnimationNode.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class InertAnimation FINAL : public AnimationNode {
+class InertAnimation final : public AnimationNode {
 public:
     static PassRefPtrWillBeRawPtr<InertAnimation> create(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
     PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > sample(double inheritedTime);
@@ -47,8 +47,8 @@ public:
     virtual void trace(Visitor*);
 
 protected:
-    virtual void updateChildrenAndEffects() const OVERRIDE { }
-    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const OVERRIDE;
+    virtual void updateChildrenAndEffects() const override { }
+    virtual double calculateTimeToEffectChange(bool forwards, double inheritedTime, double timeToNextIteration) const override;
 
 private:
     InertAnimation(PassRefPtrWillBeRawPtr<AnimationEffect>, const Timing&, bool paused);
@@ -56,6 +56,6 @@ private:
     bool m_paused;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

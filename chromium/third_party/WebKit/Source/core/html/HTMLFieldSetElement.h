@@ -26,35 +26,39 @@
 
 #include "core/html/HTMLFormControlElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class FormAssociatedElement;
-class HTMLCollection;
 class HTMLFormControlsCollection;
 
-class HTMLFieldSetElement FINAL : public HTMLFormControlElement {
+class HTMLFieldSetElement final : public HTMLFormControlElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLFieldSetElement> create(Document&, HTMLFormElement*);
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
     HTMLLegendElement* legend() const;
 
     PassRefPtrWillBeRawPtr<HTMLFormControlsCollection> elements();
 
     const FormAssociatedElement::List& associatedElements() const;
 
+    void setNeedsValidityCheck();
+
 protected:
-    virtual void disabledAttributeChanged() OVERRIDE;
+    virtual void disabledAttributeChanged() override;
 
 private:
     HTMLFieldSetElement(Document&, HTMLFormElement*);
 
-    virtual bool isEnumeratable() const OVERRIDE { return true; }
-    virtual bool supportsFocus() const OVERRIDE;
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual const AtomicString& formControlType() const OVERRIDE;
-    virtual bool recalcWillValidate() const OVERRIDE { return false; }
-    virtual void childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta) OVERRIDE;
-    virtual bool areAuthorShadowsAllowed() const OVERRIDE { return false; }
+    virtual bool isEnumeratable() const override { return true; }
+    virtual bool supportsFocus() const override;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual const AtomicString& formControlType() const override;
+    virtual bool recalcWillValidate() const override { return false; }
+    virtual bool matchesValidityPseudoClasses() const override final;
+    virtual bool isValidElement() override final;
+    virtual void childrenChanged(const ChildrenChange&) override;
+    virtual bool areAuthorShadowsAllowed() const override { return false; }
 
     static void invalidateDisabledStateUnder(Element&);
     void refreshElementsIfNeeded() const;
@@ -64,6 +68,6 @@ private:
     mutable uint64_t m_documentVersion;
 };
 
-} // namespace
+} // namespace blink
 
-#endif
+#endif // HTMLFieldSetElement_h

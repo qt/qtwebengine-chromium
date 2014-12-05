@@ -5,6 +5,7 @@
 #include "cc/resources/video_resource_updater.h"
 
 #include "base/bind.h"
+#include "base/debug/trace_event.h"
 #include "cc/output/gl_renderer.h"
 #include "cc/resources/resource_provider.h"
 #include "gpu/GLES2/gl2extchromium.h"
@@ -13,12 +14,31 @@
 #include "media/filters/skcanvas_video_renderer.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
-#include "ui/gfx/size_conversions.h"
+#include "ui/gfx/geometry/size_conversions.h"
 
 namespace cc {
 
+namespace {
+
 const ResourceFormat kYUVResourceFormat = LUMINANCE_8;
 const ResourceFormat kRGBResourceFormat = RGBA_8888;
+
+class SyncPointClientImpl : public media::VideoFrame::SyncPointClient {
+ public:
+  explicit SyncPointClientImpl(gpu::gles2::GLES2Interface* gl) : gl_(gl) {}
+  ~SyncPointClientImpl() override {}
+  uint32 InsertSyncPoint() override {
+    return GLC(gl_, gl_->InsertSyncPointCHROMIUM());
+  }
+  void WaitSyncPoint(uint32 sync_point) override {
+    GLC(gl_, gl_->WaitSyncPointCHROMIUM(sync_point));
+  }
+
+ private:
+  gpu::gles2::GLES2Interface* gl_;
+};
+
+}  // namespace
 
 VideoFrameExternalResources::VideoFrameExternalResources() : type(NONE) {}
 
@@ -97,6 +117,7 @@ static gfx::Size SoftwarePlaneDimension(
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     const scoped_refptr<media::VideoFrame>& video_frame) {
+  TRACE_EVENT0("cc", "VideoResourceUpdater::CreateForSoftwarePlanes");
   media::VideoFrame::Format input_frame_format = video_frame->format();
 
 #if defined(VIDEO_HOLE)
@@ -172,11 +193,11 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     if (resource_id == 0) {
       // TODO(danakj): Abstract out hw/sw resource create/delete from
       // ResourceProvider and stop using ResourceProvider in this class.
-      resource_id =
-          resource_provider_->CreateResource(output_plane_resource_size,
-                                             GL_CLAMP_TO_EDGE,
-                                             ResourceProvider::TextureUsageAny,
-                                             output_resource_format);
+      resource_id = resource_provider_->CreateResource(
+          output_plane_resource_size,
+          GL_CLAMP_TO_EDGE,
+          ResourceProvider::TextureHintImmutable,
+          output_resource_format);
 
       DCHECK(mailbox.IsZero());
 
@@ -188,9 +209,9 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
         GLC(gl, gl->GenMailboxCHROMIUM(mailbox.name));
         ResourceProvider::ScopedWriteLockGL lock(resource_provider_,
                                                  resource_id);
-        GLC(gl, gl->BindTexture(GL_TEXTURE_2D, lock.texture_id()));
-        GLC(gl, gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name));
-        GLC(gl, gl->BindTexture(GL_TEXTURE_2D, 0));
+        GLC(gl,
+            gl->ProduceTextureDirectCHROMIUM(
+                lock.texture_id(), GL_TEXTURE_2D, mailbox.name));
       }
 
       if (resource_id)
@@ -228,10 +249,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     {
       ResourceProvider::ScopedWriteLockSoftware lock(
           resource_provider_, plane_resources[0].resource_id);
-      video_renderer_->Paint(video_frame.get(),
-                             lock.sk_canvas(),
-                             video_frame->visible_rect(),
-                             0xff);
+      video_renderer_->Copy(video_frame, lock.sk_canvas());
     }
 
     RecycleResourceData recycle_data = {
@@ -283,14 +301,27 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
   return external_resources;
 }
 
-static void ReturnTexture(const scoped_refptr<media::VideoFrame>& frame,
-                          uint32 sync_point,
-                          bool lost_resource) {
-  frame->AppendReleaseSyncPoint(sync_point);
+// static
+void VideoResourceUpdater::ReturnTexture(
+    base::WeakPtr<VideoResourceUpdater> updater,
+    const scoped_refptr<media::VideoFrame>& video_frame,
+    uint32 sync_point,
+    bool lost_resource,
+    BlockingTaskRunner* main_thread_task_runner) {
+  // TODO(dshwang) this case should be forwarded to the decoder as lost
+  // resource.
+  if (lost_resource || !updater.get())
+    return;
+  // VideoFrame::UpdateReleaseSyncPoint() creates new sync point using the same
+  // GL context which created the given |sync_point|, so discard the
+  // |sync_point|.
+  SyncPointClientImpl client(updater->context_provider_->ContextGL());
+  video_frame->UpdateReleaseSyncPoint(&client);
 }
 
 VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
     const scoped_refptr<media::VideoFrame>& video_frame) {
+  TRACE_EVENT0("cc", "VideoResourceUpdater::CreateForHardwarePlanes");
   media::VideoFrame::Format frame_format = video_frame->format();
 
   DCHECK_EQ(frame_format, media::VideoFrame::NATIVE_TEXTURE);
@@ -323,7 +354,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
                      mailbox_holder->texture_target,
                      mailbox_holder->sync_point));
   external_resources.release_callbacks.push_back(
-      base::Bind(&ReturnTexture, video_frame));
+      base::Bind(&ReturnTexture, AsWeakPtr(), video_frame));
   return external_resources;
 }
 
@@ -332,7 +363,8 @@ void VideoResourceUpdater::RecycleResource(
     base::WeakPtr<VideoResourceUpdater> updater,
     RecycleResourceData data,
     uint32 sync_point,
-    bool lost_resource) {
+    bool lost_resource,
+    BlockingTaskRunner* main_thread_task_runner) {
   if (!updater.get()) {
     // Resource was already deleted.
     return;

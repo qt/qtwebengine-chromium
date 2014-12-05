@@ -7,7 +7,7 @@
     # specify the dependency for iOS here.
     ['icu_use_data_file_flag==1 and (OS=="linux" or OS=="win" or OS=="mac" or OS=="android")', {
       'variables': {
-        'isolate_dependency_tracked': [
+        'files': [
           '<(PRODUCT_DIR)/icudtl.dat',
         ],
       },
@@ -15,32 +15,8 @@
     # When icu data is not used, other platforms link it statically.
     ['icu_use_data_file_flag==0 and OS=="win"', {
       'variables': {
-          'isolate_dependency_tracked': [
+          'files': [
             '<(PRODUCT_DIR)/icudt.dll',
-        ],
-      },
-    }],
-    ['OS=="linux" and component=="shared_library"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/lib/libicui18n.so',
-          '<(PRODUCT_DIR)/lib/libicuuc.so',
-        ],
-      },
-    }],
-    ['OS=="mac" and component=="shared_library"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/libicui18n.dylib',
-          '<(PRODUCT_DIR)/libicuuc.dylib',
-        ],
-      },
-    }],
-    ['OS=="win" and component=="shared_library"', {
-      'variables': {
-        'isolate_dependency_tracked': [
-          '<(PRODUCT_DIR)/icui18n.dll',
-          '<(PRODUCT_DIR)/icuuc.dll',
         ],
       },
     }],

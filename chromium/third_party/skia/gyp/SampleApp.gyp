@@ -24,6 +24,7 @@
         'gmslides.gypi',
       ],
       'sources': [
+        '../gm/gm.cpp',
         '../samplecode/GMSampleView.h',
         '../samplecode/ClockFaceView.cpp',
         '../samplecode/OverView.cpp',
@@ -71,6 +72,7 @@
         '../samplecode/SampleHairCurves.cpp',
         '../samplecode/SampleHairline.cpp',
         '../samplecode/SampleHairModes.cpp',
+        '../samplecode/SampleIdentityScale.cpp',
         '../samplecode/SampleLayerMask.cpp',
         '../samplecode/SampleLayers.cpp',
         '../samplecode/SampleLCD.cpp',
@@ -134,9 +136,6 @@
         # Lua
         '../src/utils/SkLuaCanvas.cpp',
         '../src/utils/SkLua.cpp',
-
-        # tools
-        '../tools/sk_tool_utils.cpp',
       ],
       'sources!': [
         '../samplecode/SampleSkLayer.cpp', #relies on SkMatrix44 which doesn't compile
@@ -150,8 +149,9 @@
         'flags.gyp:flags',
         'lua.gyp:lua',
         'pdf.gyp:pdf',
-        'resources.gyp:resources',
         'skia_lib.gyp:skia_lib',
+        'tools.gyp:resources',
+        'tools.gyp:sk_tool_utils',
         'views.gyp:views',
         'views_animated.gyp:views_animated',
         'xml.gyp:xml',
@@ -213,6 +213,7 @@
           # TODO: This doesn't build properly yet, but it's getting there.
           'sources!': [
             '../samplecode/SampleDecode.cpp',
+            '../experimental/SimpleiOSApp/SimpleApp.mm',
           ],
           'sources': [
             '../src/views/mac/SkEventNotifier.mm',
@@ -239,7 +240,6 @@
             '../experimental/iOSSampleApp/iPhone/MainWindow_iPhone.xib',
 
             '../src/views/ios/SkOSWindow_iOS.mm',
-            '../src/utils/ios/SkImageDecoder_iOS.mm',
             '../src/utils/ios/SkStream_NSData.mm',
             # Not fully implemented yet
             # '../src/utils/ios/SkOSFile_iOS.mm',

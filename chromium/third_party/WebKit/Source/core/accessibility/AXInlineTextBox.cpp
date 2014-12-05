@@ -29,13 +29,13 @@
 #include "config.h"
 #include "core/accessibility/AXInlineTextBox.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/dom/Range.h"
 #include "core/rendering/RenderText.h"
 #include "platform/LayoutUnit.h"
 
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -43,7 +43,7 @@ AXInlineTextBox::AXInlineTextBox(PassRefPtr<AbstractInlineTextBox> inlineTextBox
     : m_inlineTextBox(inlineTextBox)
 {
     RenderText* renderText = m_inlineTextBox->renderText();
-    m_axObjectCache = renderText->document().axObjectCache();
+    m_axObjectCache = toAXObjectCacheImpl(renderText->document().axObjectCache());
 }
 
 AXInlineTextBox::~AXInlineTextBox()
@@ -122,7 +122,7 @@ String AXInlineTextBox::stringValue() const
     return m_inlineTextBox->text();
 }
 
-AXObject* AXInlineTextBox::parentObject() const
+AXObject* AXInlineTextBox::computeParent() const
 {
     if (!m_inlineTextBox || !m_axObjectCache)
         return 0;
@@ -150,4 +150,4 @@ AccessibilityTextDirection AXInlineTextBox::textDirection() const
     return AccessibilityTextDirectionLeftToRight;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -27,20 +27,20 @@ namespace content {
 class CompositorSoftwareOutputDevice
     : NON_EXPORTED_BASE(public cc::SoftwareOutputDevice),
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
-public:
+ public:
   CompositorSoftwareOutputDevice();
-  virtual ~CompositorSoftwareOutputDevice();
+  ~CompositorSoftwareOutputDevice() override;
 
-  virtual void Resize(const gfx::Size& pixel_size, float scale_factor) OVERRIDE;
+  void Resize(const gfx::Size& pixel_size, float scale_factor) override;
 
-  virtual SkCanvas* BeginPaint(const gfx::Rect& damage_rect) OVERRIDE;
-  virtual void EndPaint(cc::SoftwareFrameData* frame_data) OVERRIDE;
-  virtual void EnsureBackbuffer() OVERRIDE;
-  virtual void DiscardBackbuffer() OVERRIDE;
+  SkCanvas* BeginPaint(const gfx::Rect& damage_rect) override;
+  void EndPaint(cc::SoftwareFrameData* frame_data) override;
+  void EnsureBackbuffer() override;
+  void DiscardBackbuffer() override;
 
-  virtual void ReclaimSoftwareFrame(unsigned id) OVERRIDE;
+  void ReclaimSoftwareFrame(unsigned id) override;
 
-private:
+ private:
   // Internal buffer class that manages shared memory lifetime and ownership.
   // It also tracks buffers' history so we can calculate what's the minimum
   // damage rect difference between any two given buffers (see SetParent and

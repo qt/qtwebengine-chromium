@@ -274,8 +274,8 @@ const char* atomicCanonicalTextEncodingName(const CharacterType* characters, siz
     char buffer[maxEncodingNameLength + 1];
     size_t j = 0;
     for (size_t i = 0; i < length; ++i) {
-        CharacterType c = characters[i];
-        if (j == maxEncodingNameLength)
+        char c = static_cast<char>(characters[i]);
+        if (j == maxEncodingNameLength || c != characters[i])
             return 0;
         buffer[j++] = c;
     }
@@ -296,7 +296,7 @@ const char* atomicCanonicalTextEncodingName(const String& alias)
 
 bool noExtendedTextEncodingNameUsed()
 {
-    // If the calling thread did not use extended encoding names, it is fine for it to use a stale false value.
+    MutexLocker lock(encodingRegistryMutex());
     return !didExtendTextCodecMaps;
 }
 

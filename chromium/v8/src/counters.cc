@@ -4,9 +4,10 @@
 
 #include "src/v8.h"
 
+#include "src/base/platform/platform.h"
 #include "src/counters.h"
 #include "src/isolate.h"
-#include "src/platform.h"
+#include "src/log-inl.h"
 
 namespace v8 {
 namespace internal {
@@ -39,7 +40,7 @@ void HistogramTimer::Start() {
   if (Enabled()) {
     timer_.Start();
   }
-  isolate()->event_logger()(name(), Logger::START);
+  Logger::CallEventLogger(isolate(), name(), Logger::START, true);
 }
 
 
@@ -50,11 +51,16 @@ void HistogramTimer::Stop() {
     AddSample(static_cast<int>(timer_.Elapsed().InMilliseconds()));
     timer_.Stop();
   }
-  isolate()->event_logger()(name(), Logger::END);
+  Logger::CallEventLogger(isolate(), name(), Logger::END, true);
 }
 
 
 Counters::Counters(Isolate* isolate) {
+#define HR(name, caption, min, max, num_buckets) \
+  name##_ = Histogram(#caption, min, max, num_buckets, isolate);
+  HISTOGRAM_RANGE_LIST(HR)
+#undef HR
+
 #define HT(name, caption) \
     name##_ = HistogramTimer(#caption, 0, 10000, 50, isolate);
     HISTOGRAM_TIMER_LIST(HT)
@@ -142,6 +148,10 @@ void Counters::ResetCounters() {
 
 
 void Counters::ResetHistograms() {
+#define HR(name, caption, min, max, num_buckets) name##_.Reset();
+  HISTOGRAM_RANGE_LIST(HR)
+#undef HR
+
 #define HT(name, caption) name##_.Reset();
     HISTOGRAM_TIMER_LIST(HT)
 #undef HT

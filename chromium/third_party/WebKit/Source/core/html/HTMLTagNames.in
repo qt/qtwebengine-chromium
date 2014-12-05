@@ -38,7 +38,7 @@ del interfaceName=HTMLModElement
 details
 dfn interfaceName=HTMLElement
 dir interfaceName=HTMLDirectoryElement
-dialog contextConditional=dialogElement
+dialog
 div
 dl interfaceName=HTMLDListElement
 dt interfaceName=HTMLElement
@@ -71,7 +71,7 @@ input constructorNeedsFormElement, constructorNeedsCreatedByParser
 ins interfaceName=HTMLModElement
 kbd interfaceName=HTMLElement
 keygen constructorNeedsFormElement
-label
+label constructorNeedsFormElement
 layer interfaceName=HTMLElement
 legend
 li interfaceName=HTMLLIElement
@@ -82,6 +82,7 @@ map
 mark interfaceName=HTMLElement
 marquee
 menu
+menuitem interfaceName=HTMLMenuItemElement, runtimeEnabled=contextMenu
 meta
 meter interfaceName=HTMLMeterElement
 nav interfaceName=HTMLElement
@@ -102,8 +103,10 @@ plaintext interfaceName=HTMLElement
 pre
 progress interfaceName=HTMLProgressElement
 q interfaceName=HTMLQuoteElement
+rb interfaceName=HTMLUnknownElement
 rp interfaceName=HTMLElement
 rt interfaceName=HTMLRTElement, JSInterfaceName=HTMLElement
+rtc interfaceName=HTMLUnknownElement
 ruby interfaceName=HTMLRubyElement, JSInterfaceName=HTMLElement
 s interfaceName=HTMLElement
 samp interfaceName=HTMLElement

@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/events/CompositionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 CompositionEventInit::CompositionEventInit()
 {
@@ -37,7 +37,6 @@ CompositionEvent::CompositionEvent()
     : m_activeSegmentStart(0)
     , m_activeSegmentEnd(0)
 {
-    ScriptWrappable::init(this);
     initializeSegments();
 }
 
@@ -47,7 +46,6 @@ CompositionEvent::CompositionEvent(const AtomicString& type, PassRefPtrWillBeRaw
     , m_activeSegmentStart(0)
     , m_activeSegmentEnd(0)
 {
-    ScriptWrappable::init(this);
     initializeSegments(&underlines);
 }
 
@@ -57,7 +55,6 @@ CompositionEvent::CompositionEvent(const AtomicString& type, const CompositionEv
     , m_activeSegmentStart(0)
     , m_activeSegmentEnd(0)
 {
-    ScriptWrappable::init(this);
     initializeSegments();
 }
 
@@ -86,16 +83,16 @@ void CompositionEvent::initializeSegments(const Vector<CompositionUnderline>* un
         return;
     }
 
-    for (size_t i = 0; i < underlines->size(); ++i) {
-        if (underlines->at(i).thick) {
-            m_activeSegmentStart = underlines->at(i).startOffset;
-            m_activeSegmentEnd = underlines->at(i).endOffset;
+    for (const auto& underline : *underlines) {
+        if (underline.thick) {
+            m_activeSegmentStart = underline.startOffset;
+            m_activeSegmentEnd = underline.endOffset;
             break;
         }
     }
 
-    for (size_t i = 0; i < underlines->size(); ++i)
-        m_segments.append(underlines->at(i).startOffset);
+    for (const auto& underline : *underlines)
+        m_segments.append(underline.startOffset);
 }
 
 const AtomicString& CompositionEvent::interfaceName() const
@@ -108,4 +105,4 @@ void CompositionEvent::trace(Visitor* visitor)
     UIEvent::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

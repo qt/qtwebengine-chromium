@@ -11,19 +11,19 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "storage/browser/quota/quota_client.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_task.h"
+#include "storage/common/quota/quota_types.h"
 #include "url/gurl.h"
-#include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/quota_task.h"
-#include "webkit/common/quota/quota_types.h"
 
-using quota::GetOriginsCallback;
-using quota::QuotaClient;
-using quota::QuotaManager;
-using quota::QuotaStatusCode;
-using quota::SpecialStoragePolicy;
-using quota::StatusCallback;
-using quota::StorageType;
+using storage::GetOriginsCallback;
+using storage::QuotaClient;
+using storage::QuotaManager;
+using storage::QuotaStatusCode;
+using storage::SpecialStoragePolicy;
+using storage::StatusCallback;
+using storage::StorageType;
 
 namespace content {
 
@@ -40,28 +40,27 @@ namespace content {
 // origin data stored in the profile.
 class MockQuotaManager : public QuotaManager {
  public:
-  MockQuotaManager(bool is_incognito,
-                   const base::FilePath& profile_path,
-                   base::SingleThreadTaskRunner* io_thread,
-                   base::SequencedTaskRunner* db_thread,
-                   SpecialStoragePolicy* special_storage_policy);
+  MockQuotaManager(
+      bool is_incognito,
+      const base::FilePath& profile_path,
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread,
+      const scoped_refptr<base::SequencedTaskRunner>& db_thread,
+      const scoped_refptr<SpecialStoragePolicy>& special_storage_policy);
 
   // Overrides QuotaManager's implementation. The internal usage data is
   // updated when MockQuotaManagerProxy::NotifyStorageModified() is
   // called.  The internal quota value can be updated by calling
   // a helper method MockQuotaManagerProxy::SetQuota().
-  virtual void GetUsageAndQuota(
-      const GURL& origin,
-      quota::StorageType type,
-      const GetUsageAndQuotaCallback& callback) OVERRIDE;
+  void GetUsageAndQuota(const GURL& origin,
+                        storage::StorageType type,
+                        const GetUsageAndQuotaCallback& callback) override;
 
   // Overrides QuotaManager's implementation with a canned implementation that
   // allows clients to set up the origin database that should be queried. This
   // method will only search through the origins added explicitly via AddOrigin.
-  virtual void GetOriginsModifiedSince(
-      StorageType type,
-      base::Time modified_since,
-      const GetOriginsCallback& callback) OVERRIDE;
+  void GetOriginsModifiedSince(StorageType type,
+                               base::Time modified_since,
+                               const GetOriginsCallback& callback) override;
 
   // Removes an origin from the canned list of origins, but doesn't touch
   // anything on disk. The caller must provide |quota_client_mask| which
@@ -69,10 +68,10 @@ class MockQuotaManager : public QuotaManager {
   // origin as a bitmask built from QuotaClient::IDs. Setting the mask to
   // QuotaClient::kAllClientsMask will remove all clients from the origin,
   // regardless of type.
-  virtual void DeleteOriginData(const GURL& origin,
-                                StorageType type,
-                                int quota_client_mask,
-                                const StatusCallback& callback) OVERRIDE;
+  void DeleteOriginData(const GURL& origin,
+                        StorageType type,
+                        int quota_client_mask,
+                        const StatusCallback& callback) override;
 
   // Helper method for updating internal quota info.
   void SetQuota(const GURL& origin, StorageType type, int64 quota);
@@ -96,7 +95,7 @@ class MockQuotaManager : public QuotaManager {
                      QuotaClient::ID quota_client) const;
 
  protected:
-  virtual ~MockQuotaManager();
+  ~MockQuotaManager() override;
 
  private:
   friend class MockQuotaManagerProxy;

@@ -30,7 +30,7 @@
 #include "wtf/Forward.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBuffer;
 class AudioBufferCallback;
@@ -46,16 +46,16 @@ public:
     ~AsyncAudioDecoder();
 
     // Must be called on the main thread.
-    void decodeAsync(ArrayBuffer* audioData, float sampleRate, PassOwnPtr<AudioBufferCallback> successCallback, PassOwnPtr<AudioBufferCallback> errorCallback);
+    void decodeAsync(ArrayBuffer* audioData, float sampleRate, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback);
 
 private:
-    PassRefPtrWillBeRawPtr<AudioBuffer> createAudioBufferFromAudioBus(AudioBus*);
+    AudioBuffer* createAudioBufferFromAudioBus(AudioBus*);
     static void decode(ArrayBuffer* audioData, float sampleRate, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback);
     static void notifyComplete(ArrayBuffer* audioData, AudioBufferCallback* successCallback, AudioBufferCallback* errorCallback, AudioBus*);
 
-    OwnPtr<blink::WebThread> m_thread;
+    OwnPtr<WebThread> m_thread;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AsyncAudioDecoder_h

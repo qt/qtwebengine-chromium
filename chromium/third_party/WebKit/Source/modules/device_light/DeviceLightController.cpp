@@ -6,13 +6,12 @@
 #include "modules/device_light/DeviceLightController.h"
 
 #include "core/dom/Document.h"
-#include "core/frame/LocalDOMWindow.h"
-#include "core/page/Page.h"
+#include "modules/EventModules.h"
 #include "modules/device_light/DeviceLightDispatcher.h"
 #include "modules/device_light/DeviceLightEvent.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceLightController::DeviceLightController(Document& document)
     : DeviceSingleWindowEventController(document)
@@ -21,7 +20,9 @@ DeviceLightController::DeviceLightController(Document& document)
 
 DeviceLightController::~DeviceLightController()
 {
+#if !ENABLE(OILPAN)
     stopUpdating();
+#endif
 }
 
 const char* DeviceLightController::supplementName()
@@ -71,4 +72,11 @@ const AtomicString& DeviceLightController::eventTypeName() const
     return EventTypeNames::devicelight;
 }
 
-} // namespace WebCore
+void DeviceLightController::trace(Visitor* visitor)
+{
+    DeviceSingleWindowEventController::trace(visitor);
+    DocumentSupplement::trace(visitor);
+}
+
+
+} // namespace blink

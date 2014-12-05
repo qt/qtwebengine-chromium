@@ -62,7 +62,13 @@ DecoderSelector<StreamType>::DecoderSelector(
 template <DemuxerStream::Type StreamType>
 DecoderSelector<StreamType>::~DecoderSelector() {
   DVLOG(2) << __FUNCTION__;
-  DCHECK(select_decoder_cb_.is_null());
+  DCHECK(task_runner_->BelongsToCurrentThread());
+
+  if (!select_decoder_cb_.is_null())
+    ReturnNullDecoder();
+
+  decoder_.reset();
+  decrypted_stream_.reset();
 }
 
 template <DemuxerStream::Type StreamType>
@@ -109,40 +115,6 @@ void DecoderSelector<StreamType>::SelectDecoder(
       base::Bind(&DecoderSelector<StreamType>::DecryptingDecoderInitDone,
                  weak_ptr_factory_.GetWeakPtr()),
       output_cb_);
-}
-
-template <DemuxerStream::Type StreamType>
-void DecoderSelector<StreamType>::Abort() {
-  DVLOG(2) << __FUNCTION__;
-  DCHECK(task_runner_->BelongsToCurrentThread());
-
-  // This could happen when SelectDecoder() was not called or when
-  // |select_decoder_cb_| was already posted but not fired (e.g. in the
-  // message loop queue).
-  if (select_decoder_cb_.is_null())
-    return;
-
-  // We must be trying to initialize the |decoder_| or the
-  // |decrypted_stream_|. Invalid all weak pointers so that all initialization
-  // callbacks won't fire.
-  weak_ptr_factory_.InvalidateWeakPtrs();
-
-  if (decoder_) {
-    // |decrypted_stream_| is either NULL or already initialized. We don't
-    // need to Stop() |decrypted_stream_| in either case.
-    decoder_->Stop();
-    ReturnNullDecoder();
-    return;
-  }
-
-  if (decrypted_stream_) {
-    decrypted_stream_->Stop(
-        base::Bind(&DecoderSelector<StreamType>::ReturnNullDecoder,
-                   weak_ptr_factory_.GetWeakPtr()));
-    return;
-  }
-
-  NOTREACHED();
 }
 
 template <DemuxerStream::Type StreamType>

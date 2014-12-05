@@ -596,7 +596,7 @@ sub parselicense($) {
 	$license = "Apple MIT $license";
     }
 
-    if ($licensetext =~ /Permission is hereby granted, free of charge, to any person or organization obtaining a copy of the software and accompanying documentation covered by this license \(the \"Software\"\)/ or
+    if ($licensetext =~ /Permission is hereby granted, free of charge, to any person or organization obtaining a copy of the software and accompanying documentation covered by this license \([\"]?the Software[\"]?\)/ or
 	$licensetext =~ /Boost Software License([ ,-]+Version ([^ ]+)?(\.))/i) {
 	$license = "BSL " . ($1 ? "(v$2) " : '') . $license;
     }
@@ -641,6 +641,10 @@ sub parselicense($) {
 
     if ($licensetext =~ /Anti-Grain Geometry.*Permission to copy, use, modify, sell and distribute this software is granted provided this copyright notice appears in all copies. This software is provided as is without express or impl/) {
         $license = "Anti-Grain Geometry $license";
+    }
+
+    if ($licensetext =~ /Developed at SunSoft, a Sun Microsystems, Inc\. business\. Permission to use, copy, modify, and distribute this software is freely granted, provided that this notice is preserved\./) {
+        $license = "SunSoft (BSD like) $license";
     }
 
     $license = "UNKNOWN" unless $license;

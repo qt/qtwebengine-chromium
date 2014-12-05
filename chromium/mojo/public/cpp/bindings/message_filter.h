@@ -17,8 +17,8 @@ class MessageFilter : public MessageReceiver {
  public:
   // Doesn't take ownership of |sink|. Therefore |sink| has to stay alive while
   // this object is alive.
-  explicit MessageFilter(MessageReceiver* sink = NULL);
-  virtual ~MessageFilter();
+  explicit MessageFilter(MessageReceiver* sink = nullptr);
+  ~MessageFilter() override;
 
   void set_sink(MessageReceiver* sink) { sink_ = sink; }
 
@@ -29,9 +29,9 @@ class MessageFilter : public MessageReceiver {
 // A trivial filter that simply forwards every message it receives to |sink_|.
 class PassThroughFilter : public MessageFilter {
  public:
-  explicit PassThroughFilter(MessageReceiver* sink = NULL);
+  explicit PassThroughFilter(MessageReceiver* sink = nullptr);
 
-  virtual bool Accept(Message* message) MOJO_OVERRIDE;
+  bool Accept(Message* message) override;
 };
 
 }  // namespace mojo

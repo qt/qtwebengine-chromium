@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/nl.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/nl.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/nl.xml
+ * ICU <specials> source: <path>/common/main/nl.xml
  */
 nl{
     Countries{
@@ -28,7 +28,7 @@ nl{
         AT{"Oostenrijk"}
         AU{"Australië"}
         AW{"Aruba"}
-        AX{"Alandeilanden"}
+        AX{"Åland"}
         AZ{"Azerbeidzjan"}
         BA{"Bosnië en Herzegovina"}
         BB{"Barbados"}
@@ -43,6 +43,7 @@ nl{
         BM{"Bermuda"}
         BN{"Brunei"}
         BO{"Bolivia"}
+        BQ{"Caribisch Nederland"}
         BR{"Brazilië"}
         BS{"Bahama’s"}
         BT{"Bhutan"}
@@ -54,7 +55,7 @@ nl{
         CC{"Cocoseilanden"}
         CD{"Congo-Kinshasa"}
         CF{"Centraal-Afrikaanse Republiek"}
-        CG{"Congo"}
+        CG{"Congo-Brazzaville"}
         CH{"Zwitserland"}
         CI{"Ivoorkust"}
         CK{"Cookeilanden"}
@@ -64,9 +65,9 @@ nl{
         CO{"Colombia"}
         CP{"Clipperton"}
         CR{"Costa Rica"}
-        CS{"Servië en Montenegro"}
         CU{"Cuba"}
         CV{"Kaapverdië"}
+        CW{"Curaçao"}
         CX{"Christmaseiland"}
         CY{"Cyprus"}
         CZ{"Tsjechië"}
@@ -106,7 +107,7 @@ nl{
         GP{"Guadeloupe"}
         GQ{"Equatoriaal-Guinea"}
         GR{"Griekenland"}
-        GS{"Zuid-Georgië en Zuidelijke Sandwicheilanden"}
+        GS{"Zuid-Georgia en Zuidelijke Sandwicheilanden"}
         GT{"Guatemala"}
         GU{"Guam"}
         GW{"Guinee-Bissau"}
@@ -158,12 +159,12 @@ nl{
         MC{"Monaco"}
         MD{"Moldavië"}
         ME{"Montenegro"}
-        MF{"Sint-Maarten"}
+        MF{"Saint-Martin"}
         MG{"Madagaskar"}
         MH{"Marshalleilanden"}
         MK{"Macedonië"}
         ML{"Mali"}
-        MM{"Myanmar"}
+        MM{"Myanmar (Birma)"}
         MN{"Mongolië"}
         MO{"Macao SAR van China"}
         MP{"Noordelijke Marianeneilanden"}
@@ -197,15 +198,15 @@ nl{
         PH{"Filipijnen"}
         PK{"Pakistan"}
         PL{"Polen"}
-        PM{"Saint Pierre en Miquelon"}
-        PN{"Pitcairn"}
+        PM{"Saint-Pierre en Miquelon"}
+        PN{"Pitcairneilanden"}
         PR{"Puerto Rico"}
-        PS{"Palestijns Gebied"}
+        PS{"Palestijnse gebieden"}
         PT{"Portugal"}
         PW{"Palau"}
         PY{"Paraguay"}
         QA{"Qatar"}
-        QO{"Oceanië (overige)"}
+        QO{"Overig Oceanië"}
         RE{"Réunion"}
         RO{"Roemenië"}
         RS{"Servië"}
@@ -219,15 +220,17 @@ nl{
         SG{"Singapore"}
         SH{"Sint-Helena"}
         SI{"Slovenië"}
-        SJ{"Svalbard en Jan Mayen"}
+        SJ{"Spitsbergen en Jan Mayen"}
         SK{"Slowakije"}
         SL{"Sierra Leone"}
         SM{"San Marino"}
         SN{"Senegal"}
         SO{"Somalië"}
         SR{"Suriname"}
+        SS{"Zuid-Soedan"}
         ST{"Sao Tomé en Principe"}
         SV{"El Salvador"}
+        SX{"Sint-Maarten"}
         SY{"Syrië"}
         SZ{"Swaziland"}
         TA{"Tristan da Cunha"}
@@ -249,7 +252,7 @@ nl{
         TZ{"Tanzania"}
         UA{"Oekraïne"}
         UG{"Oeganda"}
-        UM{"Amerikaanse kleinere afgelegen eilanden"}
+        UM{"Kleine afgelegen eilanden van de Verenigde Staten"}
         US{"Verenigde Staten"}
         UY{"Uruguay"}
         UZ{"Oezbekistan"}
@@ -262,12 +265,20 @@ nl{
         VU{"Vanuatu"}
         WF{"Wallis en Futuna"}
         WS{"Samoa"}
+        XK{"Kosovo"}
         YE{"Jemen"}
         YT{"Mayotte"}
         ZA{"Zuid-Afrika"}
         ZM{"Zambia"}
         ZW{"Zimbabwe"}
-        ZZ{"Onbekend of onjuist gebied"}
+        ZZ{"Onbekend gebied"}
     }
-    Version{"2.0.51.59"}
+    CountriesShort{
+        GB{"VK"}
+        HK{"Hongkong"}
+        MO{"Macao"}
+        PS{"Palestina"}
+        US{"VS"}
+    }
+    Version{"2.0.93.8"}
 }

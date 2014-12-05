@@ -31,9 +31,11 @@
 #include "wtf/WeakPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class IncrementLoadEventDelayCount;
+class FetchRequest;
+class Document;
 
 class ImageLoaderClient : public WillBeGarbageCollectedMixin {
 public:
@@ -66,13 +68,24 @@ public:
         ForceLoadImmediately
     };
 
-    // This function should be called when the element is attached to a document; starts
-    // loading if a load hasn't already been started.
-    void updateFromElement(LoadType = LoadNormally);
+    enum UpdateFromElementBehavior {
+        // This should be the update behavior when the element is attached to a document, or when DOM mutations trigger a new load.
+        // Starts loading if a load hasn't already been started.
+        UpdateNormal,
+        // This should be the update behavior when the resource was changed (via 'src', 'srcset' or 'sizes').
+        // Starts a new load even if a previous load of the same resource have failed, to match Firefox's behavior.
+        // FIXME - Verify that this is the right behavior according to the spec.
+        UpdateIgnorePreviousError,
+        // This forces the image to update its intrinsic size, even if the image source has not changed.
+        UpdateSizeChanged
+    };
 
-    // This function should be called whenever the 'src' attribute is set, even if its value
-    // doesn't change; starts new load unconditionally (matches Firefox and Opera behavior).
-    void updateFromElementIgnoringPreviousError();
+    enum BypassMainWorldBehavior {
+        BypassMainWorldCSP,
+        DoNotBypassMainWorldCSP
+    };
+
+    void updateFromElement(UpdateFromElementBehavior = UpdateNormal, LoadType = LoadNormally);
 
     void elementDidMoveToNewDocument();
 
@@ -85,7 +98,7 @@ public:
     ImageResource* image() const { return m_image.get(); }
     void setImage(ImageResource*); // Cancels pending load events, and doesn't dispatch new ones.
 
-    void setLoadManually(bool loadManually) { m_loadManually = loadManually; }
+    void setLoadingImageDocument() { m_loadingImageDocument = true; }
 
     bool hasPendingActivity() const
     {
@@ -101,13 +114,13 @@ public:
     void removeClient(ImageLoaderClient*);
 
 protected:
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void notifyFinished(Resource*) override;
 
 private:
     class Task;
 
     // Called from the task or from updateFromElement to initiate the load.
-    void doUpdateFromElement(bool bypassMainWorldCSP = false);
+    void doUpdateFromElement(BypassMainWorldBehavior, UpdateFromElementBehavior);
 
     virtual void dispatchLoadEvent() = 0;
     virtual String sourceURI(const AtomicString&) const = 0;
@@ -123,14 +136,17 @@ private:
     void setImageWithoutConsideringPendingLoadEvent(ImageResource*);
     void sourceImageChanged();
     void clearFailedLoadURL();
+    void crossSiteOrCSPViolationOccured(AtomicString);
+    void enqueueImageLoadingMicroTask(UpdateFromElementBehavior);
+    static ResourcePtr<ImageResource> createImageResourceForImageDocument(Document&, FetchRequest&);
 
     void timerFired(Timer<ImageLoader>*);
 
-    KURL imageURL() const;
+    KURL imageSourceToKURL(AtomicString) const;
 
     // Used to determine whether to immediately initiate the load
     // or to schedule a microtask.
-    bool shouldLoadImmediately(const KURL&) const;
+    bool shouldLoadImmediately(const KURL&, LoadType) const;
 
     void willRemoveClient(ImageLoaderClient&);
 
@@ -164,12 +180,13 @@ private:
     Timer<ImageLoader> m_derefElementTimer;
     AtomicString m_failedLoadURL;
     WeakPtr<Task> m_pendingTask; // owned by Microtask
-    OwnPtr<IncrementLoadEventDelayCount> m_delayLoad;
+    OwnPtr<IncrementLoadEventDelayCount> m_loadDelayCounter;
     bool m_hasPendingLoadEvent : 1;
     bool m_hasPendingErrorEvent : 1;
     bool m_imageComplete : 1;
-    bool m_loadManually : 1;
+    bool m_loadingImageDocument : 1;
     bool m_elementIsProtected : 1;
+    bool m_suppressErrorEvents : 1;
     unsigned m_highPriorityClientCount;
 };
 

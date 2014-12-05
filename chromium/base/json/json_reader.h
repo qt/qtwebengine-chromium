@@ -36,14 +36,12 @@
 #include "base/strings/string_piece.h"
 
 namespace base {
+
 class Value;
 
 namespace internal {
 class JSONParser;
 }
-}
-
-namespace base {
 
 enum JSONParserOptions {
   // Parses the input strictly according to RFC 4627, except for where noted
@@ -77,14 +75,14 @@ class BASE_EXPORT JSONReader {
   };
 
   // String versions of parse error codes.
-  static const char* kInvalidEscape;
-  static const char* kSyntaxError;
-  static const char* kUnexpectedToken;
-  static const char* kTrailingComma;
-  static const char* kTooMuchNesting;
-  static const char* kUnexpectedDataAfterRoot;
-  static const char* kUnsupportedEncoding;
-  static const char* kUnquotedDictionaryKey;
+  static const char kInvalidEscape[];
+  static const char kSyntaxError[];
+  static const char kUnexpectedToken[];
+  static const char kTrailingComma[];
+  static const char kTooMuchNesting[];
+  static const char kUnexpectedDataAfterRoot[];
+  static const char kUnsupportedEncoding[];
+  static const char kUnquotedDictionaryKey[];
 
   // Constructs a reader with the default options, JSON_PARSE_RFC.
   JSONReader();

@@ -19,7 +19,7 @@ namespace content {
 class MHTMLGenerationManager::Job : public RenderProcessHostObserver {
  public:
   Job();
-  virtual ~Job();
+  ~Job() override;
 
   void SetWebContents(WebContents* web_contents);
 
@@ -33,12 +33,10 @@ class MHTMLGenerationManager::Job : public RenderProcessHostObserver {
   void set_callback(GenerateMHTMLCallback callback) { callback_ = callback; }
 
   // RenderProcessHostObserver:
-  virtual void RenderProcessExited(RenderProcessHost* host,
-                                   base::ProcessHandle handle,
-                                   base::TerminationStatus status,
-                                   int exit_code) OVERRIDE;
-  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE;
-
+  void RenderProcessExited(RenderProcessHost* host,
+                           base::TerminationStatus status,
+                           int exit_code) override;
+  void RenderProcessHostDestroyed(RenderProcessHost* host) override;
 
  private:
   // The handle to the file the MHTML is saved to for the browser process.
@@ -76,7 +74,6 @@ void MHTMLGenerationManager::Job::SetWebContents(WebContents* web_contents) {
 
 void MHTMLGenerationManager::Job::RenderProcessExited(
     RenderProcessHost* host,
-    base::ProcessHandle handle,
     base::TerminationStatus status,
     int exit_code) {
   MHTMLGenerationManager::GetInstance()->RenderProcessExited(this);

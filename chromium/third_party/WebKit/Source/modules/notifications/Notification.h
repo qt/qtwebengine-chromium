@@ -31,7 +31,6 @@
 #ifndef Notification_h
 #define Notification_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "modules/EventTargetModules.h"
 #include "modules/notifications/NotificationClient.h"
@@ -39,20 +38,21 @@
 #include "platform/heap/Handle.h"
 #include "platform/text/TextDirection.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/OwnPtr.h"
+#include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class Dictionary;
 class ExecutionContext;
+class NotificationOptions;
 class NotificationPermissionCallback;
 
-class Notification : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<Notification>, public ScriptWrappable, public ActiveDOMObject, public EventTargetWithInlineData {
+class Notification : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<Notification>, public ActiveDOMObject, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<Notification>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Notification);
 public:
-    static Notification* create(ExecutionContext*, const String& title, const Dictionary& options);
+    static Notification* create(ExecutionContext*, const String& title, const NotificationOptions&);
 
     virtual ~Notification();
 
@@ -80,16 +80,16 @@ public:
 
     static const String& permissionString(NotificationClient::Permission);
     static const String& permission(ExecutionContext*);
-    static void requestPermission(ExecutionContext*, PassOwnPtr<NotificationPermissionCallback> = nullptr);
+    static void requestPermission(ExecutionContext*, NotificationPermissionCallback* = nullptr);
 
     // EventTarget interface.
-    virtual ExecutionContext* executionContext() const OVERRIDE FINAL { return ActiveDOMObject::executionContext(); }
-    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE FINAL;
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const override final { return ActiveDOMObject::executionContext(); }
+    virtual bool dispatchEvent(PassRefPtrWillBeRawPtr<Event>) override final;
+    virtual const AtomicString& interfaceName() const override;
 
     // ActiveDOMObject interface.
-    virtual void stop() OVERRIDE;
-    virtual bool hasPendingActivity() const OVERRIDE;
+    virtual void stop() override;
+    virtual bool hasPendingActivity() const override;
 
 private:
     Notification(const String& title, ExecutionContext*, NotificationClient*);
@@ -117,18 +117,18 @@ private:
     KURL m_iconUrl;
 
     enum NotificationState {
-        Idle = 0,
-        Showing = 1,
-        Closed = 2,
+        NotificationStateIdle,
+        NotificationStateShowing,
+        NotificationStateClosed
     };
 
     NotificationState m_state;
 
     NotificationClient* m_client;
 
-    OwnPtr<AsyncMethodRunner<Notification> > m_asyncRunner;
+    AsyncMethodRunner<Notification> m_asyncRunner;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Notification_h

@@ -30,7 +30,7 @@
 #include "core/html/HTMLMediaElement.h"
 #include "core/rendering/RenderView.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderMedia::RenderMedia(HTMLMediaElement* video)
     : RenderImage(video)
@@ -40,6 +40,12 @@ RenderMedia::RenderMedia(HTMLMediaElement* video)
 
 RenderMedia::~RenderMedia()
 {
+}
+
+void RenderMedia::trace(Visitor* visitor)
+{
+    visitor->trace(m_children);
+    RenderImage::trace(visitor);
 }
 
 HTMLMediaElement* RenderMedia::mediaElement() const
@@ -71,8 +77,18 @@ void RenderMedia::layout()
     clearNeedsLayout();
 }
 
+bool RenderMedia::isChildAllowed(RenderObject* child, RenderStyle*) const
+{
+    // The only allowed child is the media controls. The user agent stylesheet
+    // (mediaControls.css) has ::-webkit-media-controls { display: flex; }. If
+    // author style sets display: inline we would get an inline renderer as a
+    // child of replaced content, which is not supposed to be possible. This
+    // check can be removed if ::-webkit-media-controls is made internal.
+    return child->isFlexibleBox();
+}
+
 void RenderMedia::paintReplaced(PaintInfo&, const LayoutPoint&)
 {
 }
 
-} // namespace WebCore
+} // namespace blink

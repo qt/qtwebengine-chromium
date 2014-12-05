@@ -6,24 +6,23 @@
 
 #include "src/assembler.h"
 #include "src/base/once.h"
-#include "src/isolate.h"
-#include "src/elements.h"
+#include "src/base/platform/platform.h"
 #include "src/bootstrapper.h"
+#include "src/compiler/pipeline.h"
 #include "src/debug.h"
 #include "src/deoptimizer.h"
+#include "src/elements.h"
 #include "src/frames.h"
+#include "src/heap/store-buffer.h"
 #include "src/heap-profiler.h"
 #include "src/hydrogen.h"
-#ifdef V8_USE_DEFAULT_PLATFORM
-#include "src/libplatform/default-platform.h"
-#endif
+#include "src/isolate.h"
 #include "src/lithium-allocator.h"
 #include "src/objects.h"
-#include "src/platform.h"
-#include "src/sampler.h"
 #include "src/runtime-profiler.h"
+#include "src/sampler.h"
 #include "src/serialize.h"
-#include "src/store-buffer.h"
+
 
 namespace v8 {
 namespace internal {
@@ -34,21 +33,9 @@ v8::ArrayBuffer::Allocator* V8::array_buffer_allocator_ = NULL;
 v8::Platform* V8::platform_ = NULL;
 
 
-bool V8::Initialize(Deserializer* des) {
+bool V8::Initialize() {
   InitializeOncePerProcess();
-  Isolate* isolate = Isolate::UncheckedCurrent();
-  if (isolate == NULL) return true;
-  if (isolate->IsDead()) return false;
-  if (isolate->IsInitialized()) return true;
-
-#ifdef V8_USE_DEFAULT_PLATFORM
-  DefaultPlatform* platform = static_cast<DefaultPlatform*>(platform_);
-  platform->SetThreadPoolSize(isolate->max_available_threads());
-  // We currently only start the threads early, if we know that we'll use them.
-  if (FLAG_job_based_sweeping) platform->EnsureInitialized();
-#endif
-
-  return isolate->Init(des);
+  return true;
 }
 
 
@@ -56,17 +43,12 @@ void V8::TearDown() {
   Bootstrapper::TearDownExtensions();
   ElementsAccessor::TearDown();
   LOperand::TearDownCaches();
+  compiler::Pipeline::TearDown();
   ExternalReference::TearDownMathExpData();
   RegisteredExtension::UnregisterAll();
   Isolate::GlobalTearDown();
-
   Sampler::TearDown();
-
-#ifdef V8_USE_DEFAULT_PLATFORM
-  DefaultPlatform* platform = static_cast<DefaultPlatform*>(platform_);
-  platform_ = NULL;
-  delete platform;
-#endif
+  FlagList::ResetAllFlags();  // Frees memory held by string arguments.
 }
 
 
@@ -90,9 +72,10 @@ void V8::InitializeOncePerProcessImpl() {
     FLAG_max_semi_space_size = 1;
   }
 
-#ifdef V8_USE_DEFAULT_PLATFORM
-  platform_ = new DefaultPlatform;
-#endif
+  base::OS::Initialize(FLAG_random_seed, FLAG_hard_abort, FLAG_gc_fake_mmap);
+
+  Isolate::InitializeOncePerProcess();
+
   Sampler::SetUp();
   CpuFeatures::Probe(false);
   init_memcopy_functions();
@@ -104,6 +87,7 @@ void V8::InitializeOncePerProcessImpl() {
 #endif
   ElementsAccessor::InitializeOncePerProcess();
   LOperand::SetUpCaches();
+  compiler::Pipeline::SetUp();
   SetUpJSCallerSavedCodeData();
   ExternalReference::SetUp();
   Bootstrapper::InitializeOncePerProcess();
@@ -116,20 +100,20 @@ void V8::InitializeOncePerProcess() {
 
 
 void V8::InitializePlatform(v8::Platform* platform) {
-  ASSERT(!platform_);
-  ASSERT(platform);
+  CHECK(!platform_);
+  CHECK(platform);
   platform_ = platform;
 }
 
 
 void V8::ShutdownPlatform() {
-  ASSERT(platform_);
+  CHECK(platform_);
   platform_ = NULL;
 }
 
 
 v8::Platform* V8::GetCurrentPlatform() {
-  ASSERT(platform_);
+  DCHECK(platform_);
   return platform_;
 }
 

@@ -22,7 +22,7 @@
     '../ui/gfx/gfx.gyp:gfx',
     '../ui/gfx/gfx.gyp:gfx_geometry',
     '../ui/gl/gl.gyp:gl',
-    '<(angle_path)/src/build_angle.gyp:translator',
+    '<(angle_path)/src/angle.gyp:translator',
   ],
   'sources': [
     'command_buffer/service/async_pixel_transfer_delegate.cc',
@@ -76,9 +76,6 @@
     'command_buffer/service/gl_state_restorer_impl.cc',
     'command_buffer/service/gl_state_restorer_impl.h',
     'command_buffer/service/gl_utils.h',
-    'command_buffer/service/gpu_control_service.cc',
-    'command_buffer/service/gpu_control_service.h',
-    'command_buffer/service/gpu_memory_buffer_manager.h',
     'command_buffer/service/gpu_scheduler.cc',
     'command_buffer/service/gpu_scheduler.h',
     'command_buffer/service/gpu_scheduler_mock.h',
@@ -90,16 +87,19 @@
     'command_buffer/service/gpu_tracer.h',
     'command_buffer/service/id_manager.h',
     'command_buffer/service/id_manager.cc',
+    'command_buffer/service/image_factory.cc',
+    'command_buffer/service/image_factory.h',
     'command_buffer/service/image_manager.cc',
     'command_buffer/service/image_manager.h',
     'command_buffer/service/in_process_command_buffer.cc',
     'command_buffer/service/in_process_command_buffer.h',
     'command_buffer/service/logger.cc',
     'command_buffer/service/logger.h',
-    'command_buffer/service/mailbox_manager.cc',
     'command_buffer/service/mailbox_manager.h',
-    'command_buffer/service/mailbox_synchronizer.cc',
-    'command_buffer/service/mailbox_synchronizer.h',
+    'command_buffer/service/mailbox_manager_impl.cc',
+    'command_buffer/service/mailbox_manager_impl.h',
+    'command_buffer/service/mailbox_manager_sync.cc',
+    'command_buffer/service/mailbox_manager_sync.h',
     'command_buffer/service/memory_program_cache.h',
     'command_buffer/service/memory_program_cache.cc',
     'command_buffer/service/mocks.h',
@@ -125,6 +125,8 @@
     'command_buffer/service/texture_manager.cc',
     'command_buffer/service/transfer_buffer_manager.cc',
     'command_buffer/service/transfer_buffer_manager.h',
+    'command_buffer/service/valuebuffer_manager.h',
+    'command_buffer/service/valuebuffer_manager.cc',
     'command_buffer/service/vertex_array_manager.h',
     'command_buffer/service/vertex_array_manager.cc',
     'command_buffer/service/vertex_attrib_manager.h',
@@ -142,12 +144,5 @@
         'command_buffer/service/async_pixel_transfer_manager_egl.h',
       ],
     }],
-    ['OS=="android"', {
-      'configurations': {
-        'Release': {
-          'cflags': ['-O2']
-        }
-      }
-    }]
   ],
 }

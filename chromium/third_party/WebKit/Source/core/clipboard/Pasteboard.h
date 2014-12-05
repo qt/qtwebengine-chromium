@@ -30,10 +30,9 @@
 #include "public/platform/WebClipboard.h"
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DataObject;
 class Image;
@@ -75,6 +74,6 @@ private:
     blink::WebClipboard::Buffer m_buffer;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Pasteboard_h

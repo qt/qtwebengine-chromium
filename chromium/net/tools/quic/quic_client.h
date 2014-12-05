@@ -61,7 +61,7 @@ class QuicClient : public EpollCallbackInterface,
              const QuicConfig& config,
              EpollServer* epoll_server);
 
-  virtual ~QuicClient();
+  ~QuicClient() override;
 
   // Initializes the client to create a connection. Should be called exactly
   // once before calling StartConnect or Connect. Returns true if the
@@ -105,19 +105,17 @@ class QuicClient : public EpollCallbackInterface,
   bool WaitForEvents();
 
   // From EpollCallbackInterface
-  virtual void OnRegistration(EpollServer* eps,
-                              int fd,
-                              int event_mask) OVERRIDE {}
-  virtual void OnModification(int fd, int event_mask) OVERRIDE {}
-  virtual void OnEvent(int fd, EpollEvent* event) OVERRIDE;
+  void OnRegistration(EpollServer* eps, int fd, int event_mask) override {}
+  void OnModification(int fd, int event_mask) override {}
+  void OnEvent(int fd, EpollEvent* event) override;
   // |fd_| can be unregistered without the client being disconnected. This
   // happens in b3m QuicProber where we unregister |fd_| to feed in events to
   // the client from the SelectServer.
-  virtual void OnUnregistration(int fd, bool replaced) OVERRIDE {}
-  virtual void OnShutdown(EpollServer* eps, int fd) OVERRIDE {}
+  void OnUnregistration(int fd, bool replaced) override {}
+  void OnShutdown(EpollServer* eps, int fd) override {}
 
   // QuicDataStream::Visitor
-  virtual void OnClose(QuicDataStream* stream) OVERRIDE;
+  void OnClose(QuicDataStream* stream) override;
 
   QuicClientSession* session() { return session_.get(); }
 
@@ -134,8 +132,6 @@ class QuicClient : public EpollCallbackInterface,
   const IPEndPoint& server_address() const { return server_address_; }
 
   const IPEndPoint& client_address() const { return client_address_; }
-
-  EpollServer* epoll_server() { return epoll_server_; }
 
   int fd() { return fd_; }
 
@@ -174,6 +170,8 @@ class QuicClient : public EpollCallbackInterface,
     response_listener_.reset(listener);
   }
 
+  QuicConfig* config() { return &config_; }
+
  protected:
   virtual QuicConnectionId GenerateConnectionId();
   virtual QuicEpollConnectionHelper* CreateQuicConnectionHelper();
@@ -184,8 +182,22 @@ class QuicClient : public EpollCallbackInterface,
                          IPEndPoint* server_address,
                          IPAddressNumber* client_ip);
 
+  EpollServer* epoll_server() { return epoll_server_; }
+
  private:
   friend class net::tools::test::QuicClientPeer;
+
+  // A packet writer factory that always returns the same writer
+  class DummyPacketWriterFactory : public QuicConnection::PacketWriterFactory {
+   public:
+    DummyPacketWriterFactory(QuicPacketWriter* writer);
+    ~DummyPacketWriterFactory() override;
+
+    QuicPacketWriter* Create(QuicConnection* connection) const override;
+
+   private:
+    QuicPacketWriter* writer_;
+  };
 
   // Used during initialization: creates the UDP socket FD, sets socket options,
   // and binds the socket to our address.
@@ -213,6 +225,10 @@ class QuicClient : public EpollCallbackInterface,
   // Local port to bind to. Initialize to 0.
   int local_port_;
 
+  // Writer used to actually send packets to the wire. Needs to outlive
+  // |session_|.
+  scoped_ptr<QuicPacketWriter> writer_;
+
   // Session which manages streams.
   scoped_ptr<QuicClientSession> session_;
   // Listens for events on the client socket.
@@ -225,9 +241,6 @@ class QuicClient : public EpollCallbackInterface,
 
   // Listens for full responses.
   scoped_ptr<ResponseListener> response_listener_;
-
-  // Writer used to actually send packets to the wire.
-  scoped_ptr<QuicPacketWriter> writer_;
 
   // Tracks if the client is initialized to connect.
   bool initialized_;

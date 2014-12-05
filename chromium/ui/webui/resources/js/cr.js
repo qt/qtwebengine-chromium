@@ -10,7 +10,7 @@
 var global = this;
 
 /** Platform, package, object property, and Event support. **/
-this.cr = (function() {
+var cr = function() {
   'use strict';
 
   /**
@@ -68,24 +68,27 @@ this.cr = (function() {
 
   /**
    * The kind of property to define in {@code defineProperty}.
-   * @enum {number}
+   * @enum {string}
    * @const
    */
   var PropertyKind = {
     /**
      * Plain old JS property where the backing data is stored as a "private"
      * field on the object.
+     * Use for properties of any type. Type will not be checked.
      */
     JS: 'js',
 
     /**
      * The property backing data is stored as an attribute on an element.
+     * Use only for properties of type {string}.
      */
     ATTR: 'attr',
 
     /**
      * The property backing data is stored as an attribute on an element. If the
      * element has the attribute then the value is true.
+     * Use only for properties of type {boolean}.
      */
     BOOL_ATTR: 'boolAttr'
   };
@@ -94,7 +97,7 @@ this.cr = (function() {
    * Helper function for defineProperty that returns the getter to use for the
    * property.
    * @param {string} name The name of the property.
-   * @param {cr.PropertyKind} kind The kind of the property.
+   * @param {PropertyKind} kind The kind of the property.
    * @return {function():*} The getter for the property.
    */
   function getGetter(name, kind) {
@@ -115,6 +118,10 @@ this.cr = (function() {
           return this.hasAttribute(attributeName);
         };
     }
+
+    // TODO(dbeam): replace with assertNotReached() in assert.js when I can coax
+    // the browser/unit tests to preprocess this file through grit.
+    throw 'not reached';
   }
 
   /**
@@ -122,10 +129,10 @@ this.cr = (function() {
    * kind.
    * @param {string} name The name of the property we are defining the setter
    *     for.
-   * @param {cr.PropertyKind} kind The kind of property we are getting the
+   * @param {PropertyKind} kind The kind of property we are getting the
    *     setter for.
-   * @param {function(*):void} opt_setHook A function to run after the property
-   *     is set, but before the propertyChange event is fired.
+   * @param {function(*, *):void=} opt_setHook A function to run after the
+   *     property is set, but before the propertyChange event is fired.
    * @return {function(*):void} The function to use as a setter.
    */
   function getSetter(name, kind, opt_setHook) {
@@ -172,6 +179,10 @@ this.cr = (function() {
           }
         };
     }
+
+    // TODO(dbeam): replace with assertNotReached() in assert.js when I can coax
+    // the browser/unit tests to preprocess this file through grit.
+    throw 'not reached';
   }
 
   /**
@@ -179,15 +190,15 @@ this.cr = (function() {
    * property change event with the type {@code name + 'Change'} is fired.
    * @param {!Object} obj The object to define the property for.
    * @param {string} name The name of the property.
-   * @param {cr.PropertyKind=} opt_kind What kind of underlying storage to use.
-   * @param {function(*):void} opt_setHook A function to run after the
+   * @param {PropertyKind=} opt_kind What kind of underlying storage to use.
+   * @param {function(*, *):void=} opt_setHook A function to run after the
    *     property is set, but before the propertyChange event is fired.
    */
   function defineProperty(obj, name, opt_kind, opt_setHook) {
     if (typeof obj == 'function')
       obj = obj.prototype;
 
-    var kind = opt_kind || PropertyKind.JS;
+    var kind = /** @type {PropertyKind} */ (opt_kind || PropertyKind.JS);
 
     if (!obj.__lookupGetter__(name))
       obj.__defineGetter__(name, getGetter(name, kind));
@@ -284,59 +295,21 @@ this.cr = (function() {
   }
 
   /**
-   * Initialization which must be deferred until run-time.
+   * Forwards public APIs to private implementations.
+   * @param {Function} ctor Constructor that have private implementations in its
+   *     prototype.
+   * @param {Array.<string>} methods List of public method names that have their
+   *     underscored counterparts in constructor's prototype.
+   * @param {string=} opt_target Selector for target node.
    */
-  function initialize() {
-    // If 'document' isn't defined, then we must be being pre-compiled,
-    // so set a trap so that we're initialized on first access at run-time.
-    if (!global.document) {
-      var originalCr = cr;
-
-      Object.defineProperty(global, 'cr', {
-        get: function() {
-          Object.defineProperty(global, 'cr', {value: originalCr});
-          originalCr.initialize();
-          return originalCr;
-        },
-        configurable: true
-      });
-
-      return;
-    }
-
-    cr.doc = document;
-
-    /**
-     * Whether we are using a Mac or not.
-     */
-    cr.isMac = /Mac/.test(navigator.platform);
-
-    /**
-     * Whether this is on the Windows platform or not.
-     */
-    cr.isWindows = /Win/.test(navigator.platform);
-
-    /**
-     * Whether this is on chromeOS or not.
-     */
-    cr.isChromeOS = /CrOS/.test(navigator.userAgent);
-
-    /**
-     * Whether this is on vanilla Linux (not chromeOS).
-     */
-    cr.isLinux = /Linux/.test(navigator.userAgent);
-
-    /**
-     * Whether this uses GTK or not.
-     */
-    cr.isGTK = typeof chrome.getVariableValue == 'function' &&
-        /GTK/.test(chrome.getVariableValue('toolkit'));
-
-    /**
-     * Whether this uses the views toolkit or not.
-     */
-    cr.isViews = typeof chrome.getVariableValue == 'function' &&
-        /views/.test(chrome.getVariableValue('toolkit'));
+  function makePublic(ctor, methods, opt_target) {
+    methods.forEach(function(method) {
+      ctor[method] = function() {
+        var target = opt_target ? document.getElementById(opt_target) :
+                     ctor.getInstance();
+        return target[method + '_'].apply(target, arguments);
+      };
+    });
   }
 
   return {
@@ -346,15 +319,39 @@ this.cr = (function() {
     defineProperty: defineProperty,
     dispatchPropertyChange: dispatchPropertyChange,
     dispatchSimpleEvent: dispatchSimpleEvent,
+    exportPath: exportPath,
     getUid: getUid,
-    initialize: initialize,
-    PropertyKind: PropertyKind
+    makePublic: makePublic,
+    PropertyKind: PropertyKind,
+
+    get doc() {
+      return document;
+    },
+
+    /** Whether we are using a Mac or not. */
+    get isMac() {
+      return /Mac/.test(navigator.platform);
+    },
+
+    /** Whether this is on the Windows platform or not. */
+    get isWindows() {
+      return /Win/.test(navigator.platform);
+    },
+
+    /** Whether this is on chromeOS or not. */
+    get isChromeOS() {
+      return /CrOS/.test(navigator.userAgent);
+    },
+
+    /** Whether this is on vanilla Linux (not chromeOS). */
+    get isLinux() {
+      return /Linux/.test(navigator.userAgent);
+    },
+
+    /** Whether this uses the views toolkit or not. */
+    get isViews() {
+      return typeof chrome.getVariableValue == 'function' &&
+          /views/.test(chrome.getVariableValue('toolkit'));
+    },
   };
-})();
-
-
-/**
- * TODO(kgr): Move this to another file which is to be loaded last.
- * This will be done as part of future work to make this code pre-compilable.
- */
-cr.initialize();
+}();

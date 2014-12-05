@@ -31,18 +31,19 @@
 #ifndef DeprecatedStorageQuota_h
 #define DeprecatedStorageQuota_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class StorageErrorCallback;
 class StorageQuotaCallback;
 class StorageUsageCallback;
 
-class DeprecatedStorageQuota : public GarbageCollectedFinalized<DeprecatedStorageQuota>, public ScriptWrappable {
+class DeprecatedStorageQuota final : public GarbageCollected<DeprecatedStorageQuota>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum Type {
         Temporary,
@@ -54,11 +55,9 @@ public:
         return new DeprecatedStorageQuota(type);
     }
 
-    void queryUsageAndQuota(ExecutionContext*, PassOwnPtr<StorageUsageCallback>, PassOwnPtr<StorageErrorCallback>);
+    void queryUsageAndQuota(ExecutionContext*, StorageUsageCallback*, StorageErrorCallback*);
 
-    void requestQuota(ExecutionContext*, unsigned long long newQuotaInBytes, PassOwnPtr<StorageQuotaCallback>, PassOwnPtr<StorageErrorCallback>);
-
-    ~DeprecatedStorageQuota();
+    void requestQuota(ExecutionContext*, unsigned long long newQuotaInBytes, StorageQuotaCallback*, StorageErrorCallback*);
 
     void trace(Visitor*) { }
 
@@ -67,6 +66,6 @@ private:
     Type m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeprecatedStorageQuota_h

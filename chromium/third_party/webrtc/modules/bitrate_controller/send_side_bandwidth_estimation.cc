@@ -13,6 +13,7 @@
 #include <cmath>
 
 #include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/metrics.h"
 
 namespace webrtc {
 namespace {
@@ -20,6 +21,8 @@ enum { kBweIncreaseIntervalMs = 1000 };
 enum { kBweDecreaseIntervalMs = 300 };
 enum { kLimitNumPackets = 20 };
 enum { kAvgPacketSizeBytes = 1000 };
+enum { kStartPhaseMs = 2000 };
+enum { kBweConverganceTimeMs = 20000 };
 
 // Calculate the rate that TCP-Friendly Rate Control (TFRC) would apply.
 // The formula in RFC 3448, Section 3.1, is used.
@@ -56,7 +59,12 @@ SendSideBandwidthEstimation::SendSideBandwidthEstimation()
       last_fraction_loss_(0),
       last_round_trip_time_ms_(0),
       bwe_incoming_(0),
-      time_last_decrease_ms_(0) {}
+      time_last_decrease_ms_(0),
+      first_report_time_ms_(-1),
+      initially_lost_packets_(0),
+      bitrate_at_2_seconds_kbps_(0),
+      uma_update_state_(kNoUpdate) {
+}
 
 SendSideBandwidthEstimation::~SendSideBandwidthEstimation() {}
 
@@ -88,7 +96,7 @@ void SendSideBandwidthEstimation::CurrentEstimate(uint32_t* bitrate,
 
 void SendSideBandwidthEstimation::UpdateReceiverEstimate(uint32_t bandwidth) {
   bwe_incoming_ = bandwidth;
-  CapBitrateToThresholds();
+  bitrate_ = CapBitrateToThresholds(bitrate_);
 }
 
 void SendSideBandwidthEstimation::UpdateReceiverBlock(uint8_t fraction_loss,
@@ -121,11 +129,52 @@ void SendSideBandwidthEstimation::UpdateReceiverBlock(uint8_t fraction_loss,
   }
   time_last_receiver_block_ms_ = now_ms;
   UpdateEstimate(now_ms);
+
+  if (first_report_time_ms_ == -1) {
+    first_report_time_ms_ = now_ms;
+  } else {
+    UpdateUmaStats(now_ms, rtt, (fraction_loss * number_of_packets) >> 8);
+  }
+}
+
+void SendSideBandwidthEstimation::UpdateUmaStats(int64_t now_ms,
+                                                 int rtt,
+                                                 int lost_packets) {
+  if (IsInStartPhase(now_ms)) {
+    initially_lost_packets_ += lost_packets;
+  } else if (uma_update_state_ == kNoUpdate) {
+    uma_update_state_ = kFirstDone;
+    bitrate_at_2_seconds_kbps_ = (bitrate_ + 500) / 1000;
+    RTC_HISTOGRAM_COUNTS(
+        "WebRTC.BWE.InitiallyLostPackets", initially_lost_packets_, 0, 100, 50);
+    RTC_HISTOGRAM_COUNTS("WebRTC.BWE.InitialRtt", rtt, 0, 2000, 50);
+    RTC_HISTOGRAM_COUNTS("WebRTC.BWE.InitialBandwidthEstimate",
+                         bitrate_at_2_seconds_kbps_,
+                         0,
+                         2000,
+                         50);
+  } else if (uma_update_state_ == kFirstDone &&
+             now_ms - first_report_time_ms_ >= kBweConverganceTimeMs) {
+    uma_update_state_ = kDone;
+    int bitrate_diff_kbps = std::max(
+        bitrate_at_2_seconds_kbps_ - static_cast<int>((bitrate_ + 500) / 1000),
+        0);
+    RTC_HISTOGRAM_COUNTS(
+        "WebRTC.BWE.InitialVsConvergedDiff", bitrate_diff_kbps, 0, 2000, 50);
+  }
 }
 
 void SendSideBandwidthEstimation::UpdateEstimate(uint32_t now_ms) {
+  // We trust the REMB during the first 2 seconds if we haven't had any
+  // packet loss reported, to allow startup bitrate probing.
+  if (last_fraction_loss_ == 0 && IsInStartPhase(now_ms) &&
+      bwe_incoming_ > bitrate_) {
+    bitrate_ = CapBitrateToThresholds(bwe_incoming_);
+    min_bitrate_history_.clear();
+    min_bitrate_history_.push_back(std::make_pair(now_ms, bitrate_));
+    return;
+  }
   UpdateMinHistory(now_ms);
-
   // Only start updating bitrate when receiving receiver blocks.
   if (time_last_receiver_block_ms_ != 0) {
     if (last_fraction_loss_ <= 5) {
@@ -172,7 +221,12 @@ void SendSideBandwidthEstimation::UpdateEstimate(uint32_t now_ms) {
       }
     }
   }
-  CapBitrateToThresholds();
+  bitrate_ = CapBitrateToThresholds(bitrate_);
+}
+
+bool SendSideBandwidthEstimation::IsInStartPhase(int64_t now_ms) const {
+  return first_report_time_ms_ == -1 ||
+         now_ms - first_report_time_ms_ < kStartPhaseMs;
 }
 
 void SendSideBandwidthEstimation::UpdateMinHistory(uint32_t now_ms) {
@@ -195,19 +249,20 @@ void SendSideBandwidthEstimation::UpdateMinHistory(uint32_t now_ms) {
   min_bitrate_history_.push_back(std::make_pair(now_ms, bitrate_));
 }
 
-void SendSideBandwidthEstimation::CapBitrateToThresholds() {
-  if (bwe_incoming_ > 0 && bitrate_ > bwe_incoming_) {
-    bitrate_ = bwe_incoming_;
+uint32_t SendSideBandwidthEstimation::CapBitrateToThresholds(uint32_t bitrate) {
+  if (bwe_incoming_ > 0 && bitrate > bwe_incoming_) {
+    bitrate = bwe_incoming_;
   }
-  if (bitrate_ > max_bitrate_configured_) {
-    bitrate_ = max_bitrate_configured_;
+  if (bitrate > max_bitrate_configured_) {
+    bitrate = max_bitrate_configured_;
   }
-  if (bitrate_ < min_bitrate_configured_) {
-    LOG(LS_WARNING) << "Estimated available bandwidth " << bitrate_ / 1000
+  if (bitrate < min_bitrate_configured_) {
+    LOG(LS_WARNING) << "Estimated available bandwidth " << bitrate / 1000
                     << " kbps is below configured min bitrate "
                     << min_bitrate_configured_ / 1000 << " kbps.";
-    bitrate_ = min_bitrate_configured_;
+    bitrate = min_bitrate_configured_;
   }
+  return bitrate;
 }
 
 }  // namespace webrtc

@@ -40,9 +40,8 @@
 #include "wtf/text/StringBuilder.h"
 
 using namespace icu;
-using namespace std;
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<Locale> Locale::create(const String& locale)
 {
@@ -424,5 +423,5 @@ const Vector<String>& LocaleICU::timeAMPMLabels()
     return m_timeAMPMLabels;
 }
 
-} // namespace WebCore
+} // namespace blink
 

@@ -18,10 +18,11 @@
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_sync_message_filter.h"
 #include "ui/gl/gl_implementation.h"
+#include "ui/gl/gpu_switching_manager.h"
 
 #if defined(USE_OZONE)
-#include "ui/ozone/ozone_platform.h"
 #include "ui/ozone/public/gpu_platform_support.h"
+#include "ui/ozone/public/ozone_platform.h"
 #endif
 
 namespace content {
@@ -61,7 +62,7 @@ GpuChildThread::GpuChildThread(GpuWatchdogThread* watchdog_thread,
 }
 
 GpuChildThread::GpuChildThread(const std::string& channel_id)
-    : ChildThread(channel_id),
+    : ChildThread(Options(channel_id, false)),
       dead_on_arrival_(false),
       in_browser_process_(true) {
 #if defined(OS_WIN)
@@ -112,6 +113,7 @@ bool GpuChildThread::OnControlMessageReceived(const IPC::Message& msg) {
     IPC_MESSAGE_HANDLER(GpuMsg_Crash, OnCrash)
     IPC_MESSAGE_HANDLER(GpuMsg_Hang, OnHang)
     IPC_MESSAGE_HANDLER(GpuMsg_DisableWatchdog, OnDisableWatchdog)
+    IPC_MESSAGE_HANDLER(GpuMsg_GpuSwitched, OnGpuSwitched)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
 
@@ -163,7 +165,8 @@ void GpuChildThread::OnInitialize() {
       new GpuChannelManager(GetRouter(),
                             watchdog_thread_.get(),
                             ChildProcess::current()->io_message_loop_proxy(),
-                            ChildProcess::current()->GetShutDownEvent()));
+                            ChildProcess::current()->GetShutDownEvent(),
+                            channel()));
 
 #if defined(USE_OZONE)
   ui::OzonePlatform::GetInstance()
@@ -197,6 +200,9 @@ void GpuChildThread::OnCollectGraphicsInfo() {
     case gpu::kCollectInfoNonFatalFailure:
       VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
       break;
+    case gpu::kCollectInfoNone:
+      NOTREACHED();
+      break;
     case gpu::kCollectInfoSuccess:
       break;
   }
@@ -207,7 +213,7 @@ void GpuChildThread::OnCollectGraphicsInfo() {
   // and GpuDataManager prevents us from sending multiple collecting requests,
   // so it's OK to be blocking.
   gpu::GetDxDiagnostics(&gpu_info_.dx_diagnostics);
-  gpu_info_.finalized = true;
+  gpu_info_.dx_diagnostics_info_state = gpu::kCollectInfoSuccess;
 #endif  // OS_WIN
 
   Send(new GpuHostMsg_GraphicsInfoCollected(gpu_info_));
@@ -259,6 +265,12 @@ void GpuChildThread::OnDisableWatchdog() {
     // Prevent rearming.
     watchdog_thread_->Stop();
   }
+}
+
+void GpuChildThread::OnGpuSwitched() {
+  VLOG(1) << "GPU: GPU has switched";
+  // Notify observers in the GPU process.
+  ui::GpuSwitchingManager::GetInstance()->NotifyGpuSwitched();
 }
 
 }  // namespace content

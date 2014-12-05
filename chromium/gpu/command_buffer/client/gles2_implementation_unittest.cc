@@ -93,7 +93,8 @@ class MockTransferBuffer : public TransferBufferInterface {
       CommandBuffer* command_buffer,
       unsigned int size,
       unsigned int result_size,
-      unsigned int alignment)
+      unsigned int alignment,
+      bool initialize_fail)
       : command_buffer_(command_buffer),
         size_(size),
         result_size_(result_size),
@@ -102,7 +103,8 @@ class MockTransferBuffer : public TransferBufferInterface {
         expected_buffer_index_(0),
         last_alloc_(NULL),
         expected_offset_(result_size),
-        actual_offset_(result_size) {
+        actual_offset_(result_size),
+        initialize_fail_(initialize_fail) {
     // We have to allocate the buffers here because
     // we need to know their address before GLES2Implementation::Initialize
     // is called.
@@ -114,25 +116,23 @@ class MockTransferBuffer : public TransferBufferInterface {
     }
   }
 
-  virtual ~MockTransferBuffer() { }
+  ~MockTransferBuffer() override {}
 
-  virtual bool Initialize(
-      unsigned int starting_buffer_size,
-      unsigned int result_size,
-      unsigned int /* min_buffer_size */,
-      unsigned int /* max_buffer_size */,
-      unsigned int alignment,
-      unsigned int size_to_flush) OVERRIDE;
-  virtual int GetShmId() OVERRIDE;
-  virtual void* GetResultBuffer() OVERRIDE;
-  virtual int GetResultOffset() OVERRIDE;
-  virtual void Free() OVERRIDE;
-  virtual bool HaveBuffer() const OVERRIDE;
-  virtual void* AllocUpTo(
-      unsigned int size, unsigned int* size_allocated) OVERRIDE;
-  virtual void* Alloc(unsigned int size) OVERRIDE;
-  virtual RingBuffer::Offset GetOffset(void* pointer) const OVERRIDE;
-  virtual void FreePendingToken(void* p, unsigned int /* token */) OVERRIDE;
+  bool Initialize(unsigned int starting_buffer_size,
+                  unsigned int result_size,
+                  unsigned int /* min_buffer_size */,
+                  unsigned int /* max_buffer_size */,
+                  unsigned int alignment,
+                  unsigned int size_to_flush) override;
+  int GetShmId() override;
+  void* GetResultBuffer() override;
+  int GetResultOffset() override;
+  void Free() override;
+  bool HaveBuffer() const override;
+  void* AllocUpTo(unsigned int size, unsigned int* size_allocated) override;
+  void* Alloc(unsigned int size) override;
+  RingBuffer::Offset GetOffset(void* pointer) const override;
+  void FreePendingToken(void* p, unsigned int /* token */) override;
 
   size_t MaxTransferBufferSize() {
     return size_ - result_size_;
@@ -222,6 +222,7 @@ class MockTransferBuffer : public TransferBufferInterface {
   void* last_alloc_;
   uint32 expected_offset_;
   uint32 actual_offset_;
+  bool initialize_fail_;
 
   DISALLOW_COPY_AND_ASSIGN(MockTransferBuffer);
 };
@@ -236,7 +237,7 @@ bool MockTransferBuffer::Initialize(
   // Just check they match.
   return size_ == starting_buffer_size &&
          result_size_ == result_size &&
-         alignment_ == alignment;
+         alignment_ == alignment && !initialize_fail_;
 };
 
 int MockTransferBuffer::GetShmId() {
@@ -385,6 +386,7 @@ class GLES2ImplementationTest : public testing::Test {
   static const GLuint kTexturesStartId = 1;
   static const GLuint kQueriesStartId = 1;
   static const GLuint kVertexArraysStartId = 1;
+  static const GLuint kValuebuffersStartId = 1;
 
   typedef MockTransferBuffer::ExpectedMemoryInfo ExpectedMemoryInfo;
 
@@ -393,8 +395,10 @@ class GLES2ImplementationTest : public testing::Test {
     TestContext() : commands_(NULL), token_(0) {}
 
     bool Initialize(ShareGroup* share_group,
-                    bool bind_generates_resource,
-                    bool lose_context_when_out_of_memory) {
+                    bool bind_generates_resource_client,
+                    bool bind_generates_resource_service,
+                    bool lose_context_when_out_of_memory,
+                    bool transfer_buffer_initialize_fail) {
       command_buffer_.reset(new StrictMock<MockClientCommandBuffer>());
       if (!command_buffer_->Initialize())
         return false;
@@ -403,7 +407,8 @@ class GLES2ImplementationTest : public testing::Test {
           new MockTransferBuffer(command_buffer_.get(),
                                  kTransferBufferSize,
                                  GLES2Implementation::kStartingOffset,
-                                 GLES2Implementation::kAlignment));
+                                 GLES2Implementation::kAlignment,
+                                 transfer_buffer_initialize_fail));
 
       helper_.reset(new GLES2CmdHelper(command_buffer()));
       helper_->Initialize(kCommandBufferSizeBytes);
@@ -428,7 +433,7 @@ class GLES2ImplementationTest : public testing::Test {
       int_state.num_compressed_texture_formats = kNumCompressedTextureFormats;
       int_state.num_shader_binary_formats = kNumShaderBinaryFormats;
       int_state.bind_generates_resource_chromium =
-          bind_generates_resource ? 1 : 0;
+          bind_generates_resource_service ? 1 : 0;
 
       // This just happens to work for now because IntState has 1 GLint per
       // state.
@@ -446,11 +451,13 @@ class GLES2ImplementationTest : public testing::Test {
             .RetiresOnSaturation();
         GetNextToken();  // eat the token that starting up will use.
 
+        const bool support_client_side_arrays = true;
         gl_.reset(new GLES2Implementation(helper_.get(),
                                           share_group,
                                           transfer_buffer_.get(),
-                                          bind_generates_resource,
+                                          bind_generates_resource_client,
                                           lose_context_when_out_of_memory,
+                                          support_client_side_arrays,
                                           gpu_control_.get()));
 
         if (!gl_->Initialize(kTransferBufferSize,
@@ -466,7 +473,7 @@ class GLES2ImplementationTest : public testing::Test {
 
       scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
       commands_ = static_cast<CommandBufferEntry*>(ring_buffer->memory()) +
-                  command_buffer()->GetLastState().put_offset;
+                  command_buffer()->GetPutOffset();
       ClearCommands();
       EXPECT_TRUE(transfer_buffer_->InSync());
 
@@ -505,8 +512,8 @@ class GLES2ImplementationTest : public testing::Test {
 
   GLES2ImplementationTest() : commands_(NULL) {}
 
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   bool NoCommandsWritten() {
     scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
@@ -528,22 +535,26 @@ class GLES2ImplementationTest : public testing::Test {
     ContextInitOptions()
         : bind_generates_resource_client(true),
           bind_generates_resource_service(true),
-          lose_context_when_out_of_memory(false) {}
+          lose_context_when_out_of_memory(false),
+          transfer_buffer_initialize_fail(false) {}
 
     bool bind_generates_resource_client;
     bool bind_generates_resource_service;
     bool lose_context_when_out_of_memory;
+    bool transfer_buffer_initialize_fail;
   };
 
   bool Initialize(const ContextInitOptions& init_options) {
     bool success = true;
-    share_group_ = new ShareGroup(init_options.bind_generates_resource_service);
+    share_group_ = new ShareGroup(init_options.bind_generates_resource_client);
 
     for (int i = 0; i < kNumTestContexts; i++) {
       if (!test_contexts_[i].Initialize(
               share_group_.get(),
               init_options.bind_generates_resource_client,
-              init_options.lose_context_when_out_of_memory))
+              init_options.bind_generates_resource_service,
+              init_options.lose_context_when_out_of_memory,
+              init_options.transfer_buffer_initialize_fail))
         success = false;
     }
 
@@ -628,12 +639,12 @@ void GLES2ImplementationTest::TearDown() {
 
 class GLES2ImplementationManualInitTest : public GLES2ImplementationTest {
  protected:
-  virtual void SetUp() OVERRIDE {}
+  void SetUp() override {}
 };
 
 class GLES2ImplementationStrictSharedTest : public GLES2ImplementationTest {
  protected:
-  virtual void SetUp() OVERRIDE;
+  void SetUp() override;
 
   template <class ResApi>
   void FlushGenerationTest() {
@@ -753,6 +764,7 @@ const GLuint GLES2ImplementationTest::kRenderbuffersStartId;
 const GLuint GLES2ImplementationTest::kTexturesStartId;
 const GLuint GLES2ImplementationTest::kQueriesStartId;
 const GLuint GLES2ImplementationTest::kVertexArraysStartId;
+const GLuint GLES2ImplementationTest::kValuebuffersStartId;
 #endif
 
 TEST_F(GLES2ImplementationTest, Basic) {
@@ -3367,9 +3379,9 @@ TEST_F(GLES2ImplementationManualInitTest, LoseContextOnOOM) {
   };
 
   GLsizei max = std::numeric_limits<GLsizei>::max();
-  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
-      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
-  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBufferImage(max, max, _, _))
+      .WillOnce(Return(-1));
+  gl_->CreateGpuMemoryBufferImageCHROMIUM(max, max, GL_RGBA, GL_MAP_CHROMIUM);
   // The context should be lost.
   Cmds expected;
   expected.cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_UNKNOWN_CONTEXT_RESET_ARB);
@@ -3385,9 +3397,9 @@ TEST_F(GLES2ImplementationManualInitTest, NoLoseContextOnOOM) {
   };
 
   GLsizei max = std::numeric_limits<GLsizei>::max();
-  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
-      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
-  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBufferImage(max, max, _, _))
+      .WillOnce(Return(-1));
+  gl_->CreateGpuMemoryBufferImageCHROMIUM(max, max, GL_RGBA, GL_MAP_CHROMIUM);
   // The context should not be lost.
   EXPECT_TRUE(NoCommandsWritten());
 }
@@ -3403,6 +3415,12 @@ TEST_F(GLES2ImplementationManualInitTest, FailInitOnBGRMismatch2) {
   ContextInitOptions init_options;
   init_options.bind_generates_resource_client = true;
   init_options.bind_generates_resource_service = false;
+  EXPECT_FALSE(Initialize(init_options));
+}
+
+TEST_F(GLES2ImplementationManualInitTest, FailInitOnTransferBufferFail) {
+  ContextInitOptions init_options;
+  init_options.transfer_buffer_initialize_fail = true;
   EXPECT_FALSE(Initialize(init_options));
 }
 

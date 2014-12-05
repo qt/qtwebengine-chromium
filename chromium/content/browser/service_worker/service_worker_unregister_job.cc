@@ -4,10 +4,13 @@
 
 #include "content/browser/service_worker/service_worker_unregister_job.h"
 
+#include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_job_coordinator.h"
 #include "content/browser/service_worker/service_worker_registration.h"
 #include "content/browser/service_worker/service_worker_storage.h"
+#include "content/browser/service_worker/service_worker_utils.h"
+#include "content/browser/service_worker/service_worker_version.h"
 
 namespace content {
 
@@ -18,7 +21,9 @@ ServiceWorkerUnregisterJob::ServiceWorkerUnregisterJob(
     const GURL& pattern)
     : context_(context),
       pattern_(pattern),
-      weak_factory_(this) {}
+      is_promise_resolved_(false),
+      weak_factory_(this) {
+}
 
 ServiceWorkerUnregisterJob::~ServiceWorkerUnregisterJob() {}
 
@@ -30,7 +35,7 @@ void ServiceWorkerUnregisterJob::AddCallback(
 void ServiceWorkerUnregisterJob::Start() {
   context_->storage()->FindRegistrationForPattern(
       pattern_,
-      base::Bind(&ServiceWorkerUnregisterJob::DeleteExistingRegistration,
+      base::Bind(&ServiceWorkerUnregisterJob::OnRegistrationFound,
                  weak_factory_.GetWeakPtr()));
 }
 
@@ -45,32 +50,31 @@ bool ServiceWorkerUnregisterJob::Equals(ServiceWorkerRegisterJobBase* job) {
 }
 
 RegistrationJobType ServiceWorkerUnregisterJob::GetType() {
-  return ServiceWorkerRegisterJobBase::UNREGISTRATION;
+  return UNREGISTRATION_JOB;
 }
 
-void ServiceWorkerUnregisterJob::DeleteExistingRegistration(
+void ServiceWorkerUnregisterJob::OnRegistrationFound(
     ServiceWorkerStatusCode status,
     const scoped_refptr<ServiceWorkerRegistration>& registration) {
-  if (status == SERVICE_WORKER_OK) {
-    DCHECK(registration);
-    // TODO(michaeln): Deactivate the live registration object and
-    // eventually call storage->DeleteVersionResources()
-    // when the version no longer has any controllees.
-    context_->storage()->DeleteRegistration(
-        registration->id(),
-        registration->script_url().GetOrigin(),
-        base::Bind(&ServiceWorkerUnregisterJob::Complete,
-                   weak_factory_.GetWeakPtr()));
-    return;
-  }
-
   if (status == SERVICE_WORKER_ERROR_NOT_FOUND) {
-    DCHECK(!registration);
-    Complete(SERVICE_WORKER_OK);
+    DCHECK(!registration.get());
+    Complete(SERVICE_WORKER_ERROR_NOT_FOUND);
     return;
   }
 
-  Complete(status);
+  if (status != SERVICE_WORKER_OK || registration->is_uninstalling()) {
+    Complete(status);
+    return;
+  }
+
+  // TODO: "7. If registration.updatePromise is not null..."
+
+  // "8. Resolve promise."
+  ResolvePromise(SERVICE_WORKER_OK);
+
+  registration->ClearWhenReady();
+
+  Complete(SERVICE_WORKER_OK);
 }
 
 void ServiceWorkerUnregisterJob::Complete(ServiceWorkerStatusCode status) {
@@ -80,6 +84,14 @@ void ServiceWorkerUnregisterJob::Complete(ServiceWorkerStatusCode status) {
 
 void ServiceWorkerUnregisterJob::CompleteInternal(
     ServiceWorkerStatusCode status) {
+  if (!is_promise_resolved_)
+    ResolvePromise(status);
+}
+
+void ServiceWorkerUnregisterJob::ResolvePromise(
+    ServiceWorkerStatusCode status) {
+  DCHECK(!is_promise_resolved_);
+  is_promise_resolved_ = true;
   for (std::vector<UnregistrationCallback>::iterator it = callbacks_.begin();
        it != callbacks_.end();
        ++it) {

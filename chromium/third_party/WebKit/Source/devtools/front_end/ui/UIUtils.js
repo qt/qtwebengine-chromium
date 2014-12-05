@@ -49,7 +49,7 @@ WebInspector.installDragHandle = function(element, elementDragStart, elementDrag
  * @param {function(!MouseEvent)} elementDrag
  * @param {?function(!MouseEvent)} elementDragEnd
  * @param {string} cursor
- * @param {?Event} event
+ * @param {!Event} event
  */
 WebInspector.elementDragStart = function(elementDragStart, elementDrag, elementDragEnd, cursor, event)
 {
@@ -78,15 +78,26 @@ WebInspector.elementDragStart = function(elementDragStart, elementDrag, elementD
     targetDocument.addEventListener("mouseup", WebInspector._elementDragEnd, true);
     targetDocument.addEventListener("mouseout", WebInspector._mouseOutWhileDragging, true);
 
-    targetDocument.body.style.cursor = cursor;
-
+    var targetElement = /** @type {!Element} */ (event.target);
+    if (typeof cursor === "string") {
+        WebInspector._restoreCursorAfterDrag = restoreCursor.bind(null, targetElement.style.cursor);
+        targetElement.style.cursor = cursor;
+        targetDocument.body.style.cursor = cursor;
+    }
+    function restoreCursor(oldCursor)
+    {
+        targetDocument.body.style.removeProperty("cursor");
+        targetElement.style.cursor = oldCursor;
+        WebInspector._restoreCursorAfterDrag = null;
+    }
     event.preventDefault();
 }
 
 WebInspector._mouseOutWhileDragging = function()
 {
+    var document = WebInspector._mouseOutWhileDraggingTargetDocument;
     WebInspector._unregisterMouseOutWhileDragging();
-    WebInspector._elementDraggingGlassPane = new WebInspector.GlassPane();
+    WebInspector._elementDraggingGlassPane = new WebInspector.GlassPane(document);
 }
 
 WebInspector._unregisterMouseOutWhileDragging = function()
@@ -116,7 +127,8 @@ WebInspector._cancelDragEvents = function(event)
     targetDocument.removeEventListener("mouseup", WebInspector._elementDragEnd, true);
     WebInspector._unregisterMouseOutWhileDragging();
 
-    targetDocument.body.style.removeProperty("cursor");
+    if (WebInspector._restoreCursorAfterDrag)
+        WebInspector._restoreCursorAfterDrag();
 
     if (WebInspector._elementDraggingGlassPane)
         WebInspector._elementDraggingGlassPane.dispose();
@@ -142,10 +154,11 @@ WebInspector._elementDragEnd = function(event)
 
 /**
  * @constructor
+ * @param {!Document} document
  */
-WebInspector.GlassPane = function()
+WebInspector.GlassPane = function(document)
 {
-    this.element = document.createElement("div");
+    this.element = createElement("div");
     this.element.style.cssText = "position:absolute;top:0;bottom:0;left:0;right:0;background-color:transparent;z-index:1000;";
     this.element.id = "glass-pane";
     document.body.appendChild(this.element);
@@ -157,13 +170,13 @@ WebInspector.GlassPane.prototype = {
     {
         delete WebInspector._glassPane;
         if (WebInspector.GlassPane.DefaultFocusedViewStack.length)
-            WebInspector.GlassPane.DefaultFocusedViewStack[0].focus();
+            WebInspector.GlassPane.DefaultFocusedViewStack.peekLast().focus();
         this.element.remove();
     }
 }
 
 /**
- * @type {!Array.<!WebInspector.View>}
+ * @type {!Array.<!WebInspector.View|!WebInspector.Dialog>}
  */
 WebInspector.GlassPane.DefaultFocusedViewStack = [];
 
@@ -185,9 +198,23 @@ WebInspector.isBeingEdited = function(node)
     while (element) {
         if (element.__editing)
             return true;
-        element = element.parentElement;
+        element = element.parentElementOrShadowHost();
     }
     return false;
+}
+
+/**
+ * @return {boolean}
+ */
+WebInspector.isEditing = function()
+{
+    if (WebInspector.__editingCount)
+        return true;
+
+    var element = WebInspector.currentFocusElement();
+    if (!element)
+        return false;
+    return element.classList.contains("text-prompt") || element.nodeName === "INPUT" || element.nodeName === "TEXTAREA";
 }
 
 /**
@@ -219,9 +246,9 @@ WebInspector.StyleValueDelimiters = " \xA0\t\n\"':;,/()";
 
 
 /**
-  * @param {!Event} event
-  * @return {?string}
-  */
+ * @param {!Event} event
+ * @return {?string}
+ */
 WebInspector._valueModificationDirection = function(event)
 {
     var direction = null;
@@ -313,15 +340,24 @@ WebInspector._modifiedFloatNumber = function(number, event)
 }
 
 /**
-  * @param {?Event} event
-  * @param {!Element} element
-  * @param {function(string,string)=} finishHandler
-  * @param {function(string)=} suggestionHandler
-  * @param {function(number):number=} customNumberHandler
-  * @return {boolean}
+ * @param {!Event} event
+ * @param {!Element} element
+ * @param {function(string,string)=} finishHandler
+ * @param {function(string)=} suggestionHandler
+ * @param {function(string, number, string):string=} customNumberHandler
+ * @return {boolean}
  */
 WebInspector.handleElementValueModifications = function(event, element, finishHandler, suggestionHandler, customNumberHandler)
 {
+    /**
+     * @return {?Range}
+     * @suppressGlobalPropertiesCheck
+     */
+    function createRange()
+    {
+        return document.createRange();
+    }
+
     var arrowKeyOrMouseWheelEvent = (event.keyIdentifier === "Up" || event.keyIdentifier === "Down" || event.type === "mousewheel");
     var pageKeyPressed = (event.keyIdentifier === "PageUp" || event.keyIdentifier === "PageDown");
     if (!arrowKeyOrMouseWheelEvent && !pageKeyPressed)
@@ -352,10 +388,7 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
         suffix = matches[3];
         number = WebInspector._modifiedHexValue(matches[2], event);
 
-        if (customNumberHandler)
-            number = customNumberHandler(number);
-
-        replacementString = prefix + number + suffix;
+        replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
     } else {
         matches = /(.*?)(-?(?:\d+(?:\.\d+)?|\.\d+))(.*)/.exec(wordString);
         if (matches && matches.length) {
@@ -367,20 +400,17 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
             if (number === null)
                 return false;
 
-            if (customNumberHandler)
-                number = customNumberHandler(number);
-
-            replacementString = prefix + number + suffix;
+            replacementString = customNumberHandler ? customNumberHandler(prefix, number, suffix) : prefix + number + suffix;
         }
     }
 
     if (replacementString) {
-        var replacementTextNode = document.createTextNode(replacementString);
+        var replacementTextNode = createTextNode(replacementString);
 
         wordRange.deleteContents();
         wordRange.insertNode(replacementTextNode);
 
-        var finalSelectionRange = document.createRange();
+        var finalSelectionRange = createRange();
         finalSelectionRange.setStart(replacementTextNode, 0);
         finalSelectionRange.setEnd(replacementTextNode, replacementString.length);
 
@@ -405,10 +435,28 @@ WebInspector.handleElementValueModifications = function(event, element, finishHa
  */
 Number.preciseMillisToString = function(ms, precision)
 {
-  precision = precision || 0;
-  var format = "%." + precision + "f\u2009ms";
-  return WebInspector.UIString(format, ms);
+    precision = precision || 0;
+    var format = "%." + precision + "f\u2009ms";
+    return WebInspector.UIString(format, ms);
 }
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._subMillisFormat = new WebInspector.UIStringFormat("%.3f\u2009ms");
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._millisFormat = new WebInspector.UIStringFormat("%.0f\u2009ms");
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._secondsFormat = new WebInspector.UIStringFormat("%.2f\u2009s");
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._minutesFormat = new WebInspector.UIStringFormat("%.1f\u2009min");
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._hoursFormat = new WebInspector.UIStringFormat("%.1f\u2009hrs");
+
+/** @type {!WebInspector.UIStringFormat} */
+WebInspector._daysFormat = new WebInspector.UIStringFormat("%.1f\u2009days");
 
 /**
  * @param {number} ms
@@ -424,24 +472,24 @@ Number.millisToString = function(ms, higherResolution)
         return "0";
 
     if (higherResolution && ms < 1000)
-        return WebInspector.UIString("%.3f\u2009ms", ms);
+        return WebInspector._subMillisFormat.format(ms);
     else if (ms < 1000)
-        return WebInspector.UIString("%.0f\u2009ms", ms);
+        return WebInspector._millisFormat.format(ms);
 
     var seconds = ms / 1000;
     if (seconds < 60)
-        return WebInspector.UIString("%.2f\u2009s", seconds);
+        return WebInspector._secondsFormat.format(seconds);
 
     var minutes = seconds / 60;
     if (minutes < 60)
-        return WebInspector.UIString("%.1f\u2009min", minutes);
+        return WebInspector._minutesFormat.format(minutes);
 
     var hours = minutes / 60;
     if (hours < 24)
-        return WebInspector.UIString("%.1f\u2009hrs", hours);
+        return WebInspector._hoursFormat.format(hours);
 
     var days = hours / 24;
-    return WebInspector.UIString("%.1f\u2009days", days);
+    return WebInspector._daysFormat.format(days);
 }
 
 /**
@@ -501,11 +549,11 @@ WebInspector.useLowerCaseMenuTitles = function()
 
 /**
  * @param {string} format
- * @param {?Array.<string>} substitutions
+ * @param {?ArrayLike} substitutions
  * @param {!Object.<string, function(string, ...):*>} formatters
  * @param {string} initialValue
  * @param {function(string, string): ?} append
- * @return {!{formattedResult: string, unusedSubstitutions: ?Array.<string>}};
+ * @return {!{formattedResult: string, unusedSubstitutions: ?ArrayLike}};
  */
 WebInspector.formatLocalized = function(format, substitutions, formatters, initialValue, append)
 {
@@ -528,24 +576,69 @@ WebInspector.copyLinkAddressLabel = function()
     return WebInspector.UIString(WebInspector.useLowerCaseMenuTitles() ? "Copy link address" : "Copy Link Address");
 }
 
-WebInspector.installPortStyles = function()
+/**
+ * @return {string}
+ */
+WebInspector.anotherProfilerActiveLabel = function()
 {
-    var platform = WebInspector.platform();
-    document.body.classList.add("platform-" + platform);
-    var flavor = WebInspector.platformFlavor();
-    if (flavor)
-        document.body.classList.add("platform-" + flavor);
-    var port = WebInspector.port();
-    document.body.classList.add("port-" + port);
+    return WebInspector.UIString("Another profiler is already active");
 }
 
-WebInspector._windowFocused = function(event)
+/**
+ * @param {string|undefined} description
+ * @return {string}
+ */
+WebInspector.asyncStackTraceLabel = function(description)
+{
+    if (description)
+        return description + " " + WebInspector.UIString("(async)");
+    return WebInspector.UIString("Async Call");
+}
+
+/**
+ * @return {string}
+ */
+WebInspector.manageBlackboxingButtonLabel = function()
+{
+    return WebInspector.UIString("Manage framework blackboxing...");
+}
+
+/**
+ * @param {!Element} element
+ * @return {boolean}
+ */
+WebInspector.installComponentRootStyles = function(element)
+{
+    var wasInstalled = element.classList.contains("component-root");
+    if (wasInstalled)
+        return false;
+    element.classList.add("component-root", "platform-" + WebInspector.platform());
+    return true;
+}
+
+/**
+ * @param {!Element} element
+ */
+WebInspector.uninstallComponentRootStyles = function(element)
+{
+    var wasInstalled = element.classList.remove("component-root", "platform-" + WebInspector.platform());
+}
+
+/**
+ * @param {!Document} document
+ * @param {!Event} event
+ */
+WebInspector._windowFocused = function(document, event)
 {
     if (event.target.document.nodeType === Node.DOCUMENT_NODE)
         document.body.classList.remove("inactive");
 }
 
-WebInspector._windowBlurred = function(event)
+/**
+ * @param {!Document} document
+ * @param {!Event} event
+ */
+WebInspector._windowBlurred = function(document, event)
 {
     if (event.target.document.nodeType === Node.DOCUMENT_NODE)
         document.body.classList.add("inactive");
@@ -567,12 +660,23 @@ WebInspector.currentFocusElement = function()
     return WebInspector._currentFocusElement;
 }
 
-WebInspector._focusChanged = function(event)
+/**
+ * @param {!Document} document
+ * @param {!Event} event
+ */
+WebInspector._focusChanged = function(document, event)
 {
-    WebInspector.setCurrentFocusElement(event.target);
+    var node = document.activeElement;
+    while (node && node.shadowRoot)
+        node = node.shadowRoot.activeElement;
+    WebInspector.setCurrentFocusElement(node);
 }
 
-WebInspector._documentBlurred = function(event)
+/**
+ * @param {!Document} document
+ * @param {!Event} event
+ */
+WebInspector._documentBlurred = function(document, event)
 {
     // We want to know when currentFocusElement loses focus to nowhere.
     // This is the case when event.relatedTarget is null (no element is being focused)
@@ -626,10 +730,15 @@ WebInspector.restoreFocusFromElement = function(element)
         WebInspector.setCurrentFocusElement(WebInspector.previousFocusElement());
 }
 
-WebInspector.setToolbarColors = function(backgroundColor, color)
+/**
+ * @param {!Document} document
+ * @param {string} backgroundColor
+ * @param {string} color
+ */
+WebInspector.setToolbarColors = function(document, backgroundColor, color)
 {
     if (!WebInspector._themeStyleElement) {
-        WebInspector._themeStyleElement = document.createElement("style");
+        WebInspector._themeStyleElement = createElement("style");
         document.head.appendChild(WebInspector._themeStyleElement);
     }
     var parsedColor = WebInspector.Color.parse(color);
@@ -637,19 +746,19 @@ WebInspector.setToolbarColors = function(backgroundColor, color)
     var prefix = WebInspector.isMac() ? "body:not(.undocked)" : "";
     WebInspector._themeStyleElement.textContent =
         String.sprintf(
-            "%s .toolbar-background {\
-                 background-image: none !important;\
-                 background-color: %s !important;\
-                 color: %s !important;\
-             }", prefix, backgroundColor, color) +
+            "%s .toolbar-colors {" +
+            "    background-image: none !important;" +
+            "    background-color: %s !important;" +
+            "    color: %s !important;" +
+            "}", prefix, backgroundColor, color) +
         String.sprintf(
-             "%s .toolbar-background button.status-bar-item .glyph, %s .toolbar-background button.status-bar-item .long-click-glyph {\
-                 background-color: %s;\
-             }", prefix, prefix, color) +
+             "%s .toolbar-colors button.status-bar-item .glyph, %s .toolbar-colors button.status-bar-item .long-click-glyph {" +
+             "   background-color: %s;" +
+             "}", prefix, prefix, color) +
         String.sprintf(
-             "%s .toolbar-background button.status-bar-item .glyph.shadow, %s .toolbar-background button.status-bar-item .long-click-glyph.shadow {\
-                 background-color: %s;\
-             }", prefix, prefix, shadowColor);
+             "%s .toolbar-colors button.status-bar-item .glyph.shadow, %s .toolbar-colors button.status-bar-item .long-click-glyph.shadow {" +
+             "   background-color: %s;" +
+             "}", prefix, prefix, shadowColor);
 }
 
 WebInspector.resetToolbarColors = function()
@@ -684,6 +793,18 @@ WebInspector.highlightSearchResults = function(element, resultRanges, changes)
 
 /**
  * @param {!Element} element
+ */
+WebInspector.removeSearchResultsHighlight = function(element)
+{
+    var highlightBits = element.querySelectorAll(".highlighted-search-result");
+    for (var i = 0; i < highlightBits.length; ++i) {
+        var span = highlightBits[i];
+        span.parentElement.replaceChild(createTextNode(span.textContent), span);
+    }
+}
+
+/**
+ * @param {!Element} element
  * @param {string} className
  */
 WebInspector.runCSSAnimationOnce = function(element, className)
@@ -691,13 +812,13 @@ WebInspector.runCSSAnimationOnce = function(element, className)
     function animationEndCallback()
     {
         element.classList.remove(className);
-        element.removeEventListener("animationend", animationEndCallback, false);
+        element.removeEventListener("webkitAnimationEnd", animationEndCallback, false);
     }
 
     if (element.classList.contains(className))
         element.classList.remove(className);
 
-    element.addEventListener("animationend", animationEndCallback, false);
+    element.addEventListener("webkitAnimationEnd", animationEndCallback, false);
     element.classList.add(className);
 }
 
@@ -818,6 +939,25 @@ WebInspector.revertDomChanges = function(domChanges)
 }
 
 /**
+ * @param {!Element} element
+ * @param {?Element=} containerElement
+ * @return {!Size}
+ */
+WebInspector.measurePreferredSize = function(element, containerElement)
+{
+    containerElement = containerElement || element.ownerDocument.body;
+    containerElement.appendChild(element);
+    var fakingComponentRoot = WebInspector.installComponentRootStyles(element);
+    element.positionAt(0, 0);
+    var result = new Size(element.offsetWidth, element.offsetHeight);
+    element.positionAt(undefined, undefined);
+    element.remove();
+    if (fakingComponentRoot)
+        WebInspector.uninstallComponentRootStyles(element);
+    return result;
+}
+
+/**
  * @constructor
  * @param {boolean} autoInvoke
  */
@@ -842,7 +982,7 @@ WebInspector.InvokeOnceHandlers.prototype = {
         var methods = this._handlers.get(object);
         if (!methods) {
             methods = new Set();
-            this._handlers.put(object, methods);
+            this._handlers.set(object, methods);
         }
         methods.add(method);
     },
@@ -857,10 +997,10 @@ WebInspector.InvokeOnceHandlers.prototype = {
     {
         var handlers = this._handlers;
         this._handlers = null;
-        var keys = handlers.keys();
+        var keys = handlers.keysArray();
         for (var i = 0; i < keys.length; ++i) {
             var object = keys[i];
-            var methods = handlers.get(object).values();
+            var methods = handlers.get(object).valuesArray();
             for (var j = 0; j < methods.length; ++j)
                 methods[j].call(object);
         }
@@ -895,17 +1035,196 @@ WebInspector.invokeOnceAfterBatchUpdate = function(object, method)
     WebInspector._postUpdateHandlers.add(object, method);
 }
 
-;(function() {
-
-function windowLoaded()
+/**
+ * @param {!Function} func
+ * @param {!Array.<{from:number, to:number}>} params
+ * @param {number} frames
+ * @param {function()=} animationComplete
+ * @return {function()}
+ */
+WebInspector.animateFunction = function(func, params, frames, animationComplete)
 {
-    window.addEventListener("focus", WebInspector._windowFocused, false);
-    window.addEventListener("blur", WebInspector._windowBlurred, false);
-    document.addEventListener("focus", WebInspector._focusChanged, true);
-    document.addEventListener("blur", WebInspector._documentBlurred, true);
-    window.removeEventListener("DOMContentLoaded", windowLoaded, false);
+    var values = new Array(params.length);
+    var deltas = new Array(params.length);
+    for (var i = 0; i < params.length; ++i) {
+        values[i] = params[i].from;
+        deltas[i] = (params[i].to - params[i].from) / frames;
+    }
+
+    var raf = requestAnimationFrame(animationStep);
+
+    var framesLeft = frames;
+
+    function animationStep()
+    {
+        if (--framesLeft < 0) {
+            if (animationComplete)
+                animationComplete();
+            return;
+        }
+        for (var i = 0; i < params.length; ++i) {
+            if (params[i].to > params[i].from)
+                values[i] = Number.constrain(values[i] + deltas[i], params[i].from, params[i].to);
+            else
+                values[i] = Number.constrain(values[i] + deltas[i], params[i].to, params[i].from);
+        }
+        func.apply(null, values);
+        raf = window.requestAnimationFrame(animationStep);
+    }
+
+    function cancelAnimation()
+    {
+        window.cancelAnimationFrame(raf);
+    }
+
+    return cancelAnimation;
 }
 
-window.addEventListener("DOMContentLoaded", windowLoaded, false);
+/**
+ * @constructor
+ * @extends {WebInspector.Object}
+ * @param {!Element} element
+ */
+WebInspector.LongClickController = function(element)
+{
+    this._element = element;
+}
 
-})();
+/**
+ * @enum {string}
+ */
+WebInspector.LongClickController.Events = {
+    LongClick: "LongClick",
+    LongPress: "LongPress"
+};
+
+WebInspector.LongClickController.prototype = {
+    reset: function()
+    {
+        if (this._longClickInterval) {
+            clearInterval(this._longClickInterval);
+            delete this._longClickInterval;
+        }
+    },
+
+    enable: function()
+    {
+        if (this._longClickData)
+            return;
+        var boundMouseDown = mouseDown.bind(this);
+        var boundMouseUp = mouseUp.bind(this);
+        var boundReset = this.reset.bind(this);
+
+        this._element.addEventListener("mousedown", boundMouseDown, false);
+        this._element.addEventListener("mouseout", boundReset, false);
+        this._element.addEventListener("mouseup", boundMouseUp, false);
+        this._element.addEventListener("click", boundReset, true);
+
+        var longClicks = 0;
+
+        this._longClickData = { mouseUp: boundMouseUp, mouseDown: boundMouseDown, reset: boundReset };
+
+        /**
+         * @param {!Event} e
+         * @this {WebInspector.LongClickController}
+         */
+        function mouseDown(e)
+        {
+            if (e.which !== 1)
+                return;
+            longClicks = 0;
+            this._longClickInterval = setInterval(longClicked.bind(this, e), 200);
+        }
+
+        /**
+         * @param {!Event} e
+         * @this {WebInspector.LongClickController}
+         */
+        function mouseUp(e)
+        {
+            if (e.which !== 1)
+                return;
+            this.reset();
+        }
+
+        /**
+         * @param {!Event} e
+         * @this {WebInspector.LongClickController}
+         */
+        function longClicked(e)
+        {
+            ++longClicks;
+            this.dispatchEventToListeners(longClicks === 1 ? WebInspector.LongClickController.Events.LongClick : WebInspector.LongClickController.Events.LongPress, e);
+        }
+    },
+
+    disable: function()
+    {
+        if (!this._longClickData)
+            return;
+        this._element.removeEventListener("mousedown", this._longClickData.mouseDown, false);
+        this._element.removeEventListener("mouseout", this._longClickData.reset, false);
+        this._element.removeEventListener("mouseup", this._longClickData.mouseUp, false);
+        this._element.addEventListener("click", this._longClickData.reset, true);
+        delete this._longClickData;
+    },
+
+    __proto__: WebInspector.Object.prototype
+}
+
+/**
+ * @param {string} url
+ * @param {string=} linkText
+ * @param {string=} classes
+ * @return {!Element}
+ */
+WebInspector.createExternalAnchor = function(url, linkText, classes)
+{
+    var anchor = createElementWithClass("a", "link");
+    var href = sanitizeHref(url);
+
+    if (href)
+        anchor.href = href;
+    anchor.title = url;
+
+    if (!linkText)
+        linkText = url;
+
+    anchor.className = classes;
+    anchor.textContent = linkText;
+    anchor.setAttribute("target", "_blank");
+
+    /**
+     * @param {!Event} event
+     */
+    function clickHandler(event)
+    {
+        event.consume(true);
+        InspectorFrontendHost.openInNewTab(anchor.href);
+    }
+
+    anchor.addEventListener("click", clickHandler, false);
+
+    return anchor;
+}
+
+/**
+ * @param {string} article
+ * @param {string} title
+ * @return {!Element}
+ */
+WebInspector.createDocumentationAnchor = function(article, title)
+{
+    return WebInspector.createExternalAnchor("https://developer.chrome.com/devtools/docs/" + article, title);
+}
+
+/**
+ * @param {!Window} window
+ */
+WebInspector.initializeUIUtils = function(window)
+{
+    window.addEventListener("focus", WebInspector._windowFocused.bind(WebInspector, window.document), false);
+    window.addEventListener("blur", WebInspector._windowBlurred.bind(WebInspector, window.document), false);
+    window.document.addEventListener("focus", WebInspector._focusChanged.bind(WebInspector, window.document), true);
+    window.document.addEventListener("blur", WebInspector._documentBlurred.bind(WebInspector, window.document), true);
+}

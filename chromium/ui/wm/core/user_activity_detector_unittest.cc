@@ -26,9 +26,7 @@ class TestUserActivityObserver : public UserActivityObserver {
   void reset_stats() { num_invocations_ = 0; }
 
   // UserActivityObserver implementation.
-  virtual void OnUserActivity(const ui::Event* event) OVERRIDE {
-    num_invocations_++;
-  }
+  void OnUserActivity(const ui::Event* event) override { num_invocations_++; }
 
  private:
   // Number of times that OnUserActivity() has been called.
@@ -40,9 +38,9 @@ class TestUserActivityObserver : public UserActivityObserver {
 class UserActivityDetectorTest : public aura::test::AuraTestBase {
  public:
   UserActivityDetectorTest() {}
-  virtual ~UserActivityDetectorTest() {}
+  ~UserActivityDetectorTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     AuraTestBase::SetUp();
     observer_.reset(new TestUserActivityObserver);
     detector_.reset(new UserActivityDetector);
@@ -52,7 +50,7 @@ class UserActivityDetectorTest : public aura::test::AuraTestBase {
     detector_->set_now_for_test(now_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     detector_->RemoveObserver(observer_.get());
     AuraTestBase::TearDown();
   }
@@ -76,7 +74,7 @@ class UserActivityDetectorTest : public aura::test::AuraTestBase {
 // Checks that the observer is notified in response to different types of input
 // events.
 TEST_F(UserActivityDetectorTest, Basic) {
-  ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE, false);
+  ui::KeyEvent key_event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
   detector_->OnKeyEvent(&key_event);
   EXPECT_FALSE(key_event.handled());
   EXPECT_EQ(now_.ToInternalValue(),
@@ -139,9 +137,11 @@ TEST_F(UserActivityDetectorTest, Basic) {
 
   AdvanceTime(advance_delta);
   ui::GestureEvent gesture_event(
-      ui::ET_GESTURE_TAP, 0, 0, ui::EF_NONE,
+      0,
+      0,
+      ui::EF_NONE,
       base::TimeDelta::FromMilliseconds(base::Time::Now().ToDoubleT() * 1000),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP, 0, 0), 0U);
+      ui::GestureEventDetails(ui::ET_GESTURE_TAP));
   detector_->OnGestureEvent(&gesture_event);
   EXPECT_FALSE(gesture_event.handled());
   EXPECT_EQ(now_.ToInternalValue(),
@@ -153,7 +153,7 @@ TEST_F(UserActivityDetectorTest, Basic) {
 // Checks that observers aren't notified too frequently.
 TEST_F(UserActivityDetectorTest, RateLimitNotifications) {
   // The observer should be notified about a key event.
-  ui::KeyEvent event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE, false);
+  ui::KeyEvent event(ui::ET_KEY_PRESSED, ui::VKEY_A, ui::EF_NONE);
   detector_->OnKeyEvent(&event);
   EXPECT_FALSE(event.handled());
   EXPECT_EQ(1, observer_->num_invocations());

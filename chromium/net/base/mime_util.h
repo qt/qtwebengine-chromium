@@ -94,12 +94,34 @@ NET_EXPORT void ParseCodecString(const std::string& codecs,
 // certain subset of codecs.
 NET_EXPORT bool IsStrictMediaMimeType(const std::string& mime_type);
 
-// Check to see if a particular MIME type is in our list which only supports a
-// certain subset of codecs. Returns true if and only if all codecs are
-// supported for that specific MIME type, false otherwise. If this returns
-// false you will still need to check if the media MIME tpyes and codecs are
-// supported.
-NET_EXPORT bool IsSupportedStrictMediaMimeType(
+// Indicates that the MIME type and (possible codec string) are supported by the
+// underlying platform.
+enum SupportsType {
+  // The underlying platform is known not to support the given MIME type and
+  // codec combination.
+  IsNotSupported,
+
+  // The underlying platform is known to support the given MIME type and codec
+  // combination.
+  IsSupported,
+
+  // The underlying platform is unsure whether the given MIME type and codec
+  // combination can be rendered or not before actually trying to play it.
+  MayBeSupported
+};
+
+// Checks the |mime_type| and |codecs| against the MIME types known to support
+// only a particular subset of codecs.
+// * Returns IsSupported if the |mime_type| is supported and all the codecs
+//   within the |codecs| are supported for the |mime_type|.
+// * Returns MayBeSupported if the |mime_type| is supported and is known to
+//   support only a subset of codecs, but |codecs| was empty. Also returned if
+//   all the codecs in |codecs| are supported, but additional codec parameters
+//   were supplied (such as profile) for which the support cannot be decided.
+// * Returns IsNotSupported if either the |mime_type| is not supported or the
+//   |mime_type| is supported but at least one of the codecs within |codecs| is
+//   not supported for the |mime_type|.
+NET_EXPORT SupportsType IsSupportedStrictMediaMimeType(
     const std::string& mime_type,
     const std::vector<std::string>& codecs);
 
@@ -125,10 +147,14 @@ NET_EXPORT void RemoveProprietaryMediaTypesAndCodecsForTests();
 NET_EXPORT const std::string GetIANAMediaType(const std::string& mime_type);
 
 // A list of supported certificate-related mime types.
+//
+// A Java counterpart will be generated for this enum.
+// GENERATED_JAVA_ENUM_PACKAGE: org.chromium.net
 enum CertificateMimeType {
-#define CERTIFICATE_MIME_TYPE(name, value) CERTIFICATE_MIME_TYPE_ ## name = value,
-#include "net/base/mime_util_certificate_type_list.h"
-#undef CERTIFICATE_MIME_TYPE
+  CERTIFICATE_MIME_TYPE_UNKNOWN,
+  CERTIFICATE_MIME_TYPE_X509_USER_CERT,
+  CERTIFICATE_MIME_TYPE_X509_CA_CERT,
+  CERTIFICATE_MIME_TYPE_PKCS12_ARCHIVE,
 };
 
 NET_EXPORT CertificateMimeType GetCertificateMimeTypeForMimeType(

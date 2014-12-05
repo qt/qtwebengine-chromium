@@ -15,7 +15,8 @@ goog.provide('cvox.BrailleTable');
  *   dots:string,
  *   id:string,
  *   grade:(string|undefined),
- *   fileName:string
+ *   variant:(string|undefined),
+ *   fileNames:string
  * }}
  */
 cvox.BrailleTable.Table;
@@ -28,10 +29,25 @@ cvox.BrailleTable.TABLE_PATH = 'chromevox/background/braille/tables.json';
 
 
 /**
+ * @const {string}
+ * @private
+ */
+cvox.BrailleTable.COMMON_DEFS_FILENAME_ = 'cvox-common.cti';
+
+
+/**
  * Retrieves a list of all available braille tables.
  * @param {function(!Array.<cvox.BrailleTable.Table>)} callback
+ *     Called asynchronously with an array of tables.
  */
 cvox.BrailleTable.getAll = function(callback) {
+  function appendCommonFilename(tables) {
+    // Append the common definitions to all table filenames.
+    tables.forEach(function(table) {
+      table.fileNames += (',' + cvox.BrailleTable.COMMON_DEFS_FILENAME_);
+    });
+    return tables;
+  }
   var url = chrome.extension.getURL(cvox.BrailleTable.TABLE_PATH);
   if (!url) {
     throw 'Invalid path: ' + cvox.BrailleTable.TABLE_PATH;
@@ -42,8 +58,10 @@ cvox.BrailleTable.getAll = function(callback) {
   xhr.onreadystatechange = function() {
     if (xhr.readyState == 4) {
       if (xhr.status == 200) {
-        callback(/** @type {!Array.<cvox.BrailleTable.Table>} */ (
-            JSON.parse(xhr.responseText)));
+        callback(
+            appendCommonFilename(
+                /** @type {!Array.<cvox.BrailleTable.Table>} */ (
+                    JSON.parse(xhr.responseText))));
       }
     }
   };
@@ -55,7 +73,7 @@ cvox.BrailleTable.getAll = function(callback) {
  * Finds a table in a list of tables by id.
  * @param {!Array.<cvox.BrailleTable.Table>} tables tables to search in.
  * @param {string} id id of table to find.
- * @return {cvox.BrailleTable.Table}
+ * @return {cvox.BrailleTable.Table} The found table, or null if not found.
  */
 cvox.BrailleTable.forId = function(tables, id) {
   return tables.filter(function(table) { return table.id === id })[0] || null;
@@ -90,4 +108,26 @@ cvox.BrailleTable.getUncontracted = function(tables, table) {
     return current;
   }
   return tables.reduce(mostUncontractedOf, table);
+};
+
+
+/**
+ * @param {!cvox.BrailleTable.Table} table Table to get name for.
+ * @return {string} Localized display name.
+ */
+cvox.BrailleTable.getDisplayName = function(table) {
+  var msgs = cvox.ChromeVox.msgs;
+  var localeName = msgs.getLocaleDisplayName(table.locale);
+  if (!table.grade && !table.variant) {
+    return localeName;
+  } else if (table.grade && !table.variant) {
+    return msgs.getMsg('braille_table_name_with_grade',
+                       [localeName, table.grade]);
+  } else if (!table.grade && table.variant) {
+    return msgs.getMsg('braille_table_name_with_variant',
+                       [localeName, table.variant]);
+  } else {
+    return msgs.getMsg('braille_table_name_with_variant_and_grade',
+                       [localeName, table.variant, table.grade]);
+  }
 };

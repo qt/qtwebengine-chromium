@@ -1,4 +1,3 @@
-#include "precompiled.h"
 //
 // Copyright (c) 2002-2013 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -17,6 +16,7 @@
 #include "libGLESv2/Texture.h"
 #include "libGLESv2/Sampler.h"
 #include "libGLESv2/Fence.h"
+#include "libGLESv2/renderer/Renderer.h"
 
 namespace gl
 {
@@ -92,13 +92,9 @@ GLuint ResourceManager::createShader(GLenum type)
 {
     GLuint handle = mProgramShaderHandleAllocator.allocate();
 
-    if (type == GL_VERTEX_SHADER)
+    if (type == GL_VERTEX_SHADER || type == GL_FRAGMENT_SHADER)
     {
-        mShaderMap[handle] = new VertexShader(this, mRenderer, handle);
-    }
-    else if (type == GL_FRAGMENT_SHADER)
-    {
-        mShaderMap[handle] = new FragmentShader(this, mRenderer, handle);
+        mShaderMap[handle] = new Shader(this, mRenderer->createShader(type), type, handle);
     }
     else UNREACHABLE();
 
@@ -150,7 +146,9 @@ GLuint ResourceManager::createFenceSync()
 {
     GLuint handle = mFenceSyncHandleAllocator.allocate();
 
-    mFenceSyncMap[handle] = new FenceSync(mRenderer, handle);
+    FenceSync *fenceSync = new FenceSync(mRenderer->createFenceSync(), handle);
+    fenceSync->addRef();
+    mFenceSyncMap[handle] = fenceSync;
 
     return handle;
 }
@@ -311,7 +309,7 @@ Program *ResourceManager::getProgram(unsigned int handle)
     }
 }
 
-FramebufferAttachment *ResourceManager::getRenderbuffer(unsigned int handle)
+Renderbuffer *ResourceManager::getRenderbuffer(unsigned int handle)
 {
     RenderbufferMap::iterator renderbuffer = mRenderbufferMap.find(handle);
 
@@ -353,7 +351,7 @@ FenceSync *ResourceManager::getFenceSync(unsigned int handle)
     }
 }
 
-void ResourceManager::setRenderbuffer(GLuint handle, FramebufferAttachment *buffer)
+void ResourceManager::setRenderbuffer(GLuint handle, Renderbuffer *buffer)
 {
     mRenderbufferMap[handle] = buffer;
 }
@@ -362,33 +360,33 @@ void ResourceManager::checkBufferAllocation(unsigned int buffer)
 {
     if (buffer != 0 && !getBuffer(buffer))
     {
-        Buffer *bufferObject = new Buffer(mRenderer, buffer);
+        Buffer *bufferObject = new Buffer(mRenderer->createBuffer(), buffer);
         mBufferMap[buffer] = bufferObject;
         bufferObject->addRef();
     }
 }
 
-void ResourceManager::checkTextureAllocation(GLuint texture, TextureType type)
+void ResourceManager::checkTextureAllocation(GLuint texture, GLenum type)
 {
     if (!getTexture(texture) && texture != 0)
     {
         Texture *textureObject;
 
-        if (type == TEXTURE_2D)
+        if (type == GL_TEXTURE_2D)
         {
-            textureObject = new Texture2D(mRenderer, texture);
+            textureObject = new Texture2D(mRenderer->createTexture(GL_TEXTURE_2D), texture);
         }
-        else if (type == TEXTURE_CUBE)
+        else if (type == GL_TEXTURE_CUBE_MAP)
         {
-            textureObject = new TextureCubeMap(mRenderer, texture);
+            textureObject = new TextureCubeMap(mRenderer->createTexture(GL_TEXTURE_CUBE_MAP), texture);
         }
-        else if (type == TEXTURE_3D)
+        else if (type == GL_TEXTURE_3D)
         {
-            textureObject = new Texture3D(mRenderer, texture);
+            textureObject = new Texture3D(mRenderer->createTexture(GL_TEXTURE_3D), texture);
         }
-        else if (type == TEXTURE_2D_ARRAY)
+        else if (type == GL_TEXTURE_2D_ARRAY)
         {
-            textureObject = new Texture2DArray(mRenderer, texture);
+            textureObject = new Texture2DArray(mRenderer->createTexture(GL_TEXTURE_2D_ARRAY), texture);
         }
         else
         {
@@ -405,7 +403,7 @@ void ResourceManager::checkRenderbufferAllocation(GLuint renderbuffer)
 {
     if (renderbuffer != 0 && !getRenderbuffer(renderbuffer))
     {
-        FramebufferAttachment *renderbufferObject = new FramebufferAttachment(mRenderer, renderbuffer, new Colorbuffer(mRenderer, 0, 0, GL_RGBA4, 0));
+        Renderbuffer *renderbufferObject = new Renderbuffer(renderbuffer, new Colorbuffer(mRenderer, 0, 0, GL_RGBA4, 0));
         mRenderbufferMap[renderbuffer] = renderbufferObject;
         renderbufferObject->addRef();
     }

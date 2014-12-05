@@ -15,7 +15,7 @@
 namespace {
 
 int g_atrace_fd = -1;
-const char* kATraceMarkerFile = "/sys/kernel/debug/tracing/trace_marker";
+const char kATraceMarkerFile[] = "/sys/kernel/debug/tracing/trace_marker";
 
 void WriteEvent(
     char phase,
@@ -97,8 +97,8 @@ void TraceLog::StartATrace() {
     return;
   }
   SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
-             base::debug::TraceLog::RECORDING_MODE,
-             RECORD_CONTINUOUSLY);
+             TraceLog::RECORDING_MODE,
+             TraceOptions(RECORD_CONTINUOUSLY));
 }
 
 void TraceLog::StopATrace() {

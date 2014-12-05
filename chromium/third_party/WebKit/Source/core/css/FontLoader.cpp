@@ -9,7 +9,7 @@
 #include "core/fetch/FontResource.h"
 #include "core/fetch/ResourceFetcher.h"
 
-namespace WebCore {
+namespace blink {
 
 FontLoader::FontLoader(CSSFontSelector* fontSelector, ResourceFetcher* resourceFetcher)
     : m_beginLoadingTimer(this, &FontLoader::beginLoadTimerFired)
@@ -26,25 +26,25 @@ FontLoader::~FontLoader()
         return;
     }
     m_beginLoadingTimer.stop();
-
-    // When the m_fontsToBeginLoading vector is destroyed it will decrement the
-    // request counts on the ResourceFetcher for all the fonts that were pending
-    // at the time the FontLoader dies.
+    // This will decrement the request counts on the ResourceFetcher for all the
+    // fonts that were pending at the time the FontLoader dies.
+    clearPendingFonts();
 #endif
 }
 
 void FontLoader::addFontToBeginLoading(FontResource* fontResource)
 {
-    if (!m_resourceFetcher || !fontResource->stillNeedsLoad())
+    if (!m_resourceFetcher || !fontResource->stillNeedsLoad() || fontResource->loadScheduled())
         return;
 
     m_fontsToBeginLoading.append(
         std::make_pair(fontResource, ResourceLoader::RequestCountTracker(m_resourceFetcher, fontResource)));
+    fontResource->didScheduleLoad();
     if (!m_beginLoadingTimer.isActive())
         m_beginLoadingTimer.startOneShot(0, FROM_HERE);
 }
 
-void FontLoader::beginLoadTimerFired(Timer<WebCore::FontLoader>*)
+void FontLoader::beginLoadTimerFired(Timer<blink::FontLoader>*)
 {
     loadPendingFonts();
 }
@@ -55,8 +55,8 @@ void FontLoader::loadPendingFonts()
 
     FontsToLoadVector fontsToBeginLoading;
     fontsToBeginLoading.swap(m_fontsToBeginLoading);
-    for (FontsToLoadVector::iterator it = fontsToBeginLoading.begin(); it != fontsToBeginLoading.end(); ++it) {
-        FontResource* fontResource = it->first.get();
+    for (const auto& item : fontsToBeginLoading) {
+        FontResource* fontResource = item.first.get();
         fontResource->beginLoadIfNeeded(m_resourceFetcher);
     }
 
@@ -80,11 +80,18 @@ void FontLoader::clearResourceFetcherAndFontSelector()
     }
 
     m_beginLoadingTimer.stop();
-    m_fontsToBeginLoading.clear();
+    clearPendingFonts();
     m_resourceFetcher = nullptr;
     m_fontSelector = nullptr;
 }
 #endif
+
+void FontLoader::clearPendingFonts()
+{
+    for (const auto& item : m_fontsToBeginLoading)
+        item.first->didUnscheduleLoad();
+    m_fontsToBeginLoading.clear();
+}
 
 void FontLoader::trace(Visitor* visitor)
 {
@@ -92,4 +99,4 @@ void FontLoader::trace(Visitor* visitor)
     visitor->trace(m_fontSelector);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -16,11 +16,13 @@
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread_bundle.h"
+#include "content/test/test_render_frame_host.h"
 #include "content/test/test_render_view_host.h"
 #include "content/test/test_web_contents.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
+
 namespace {
 
 // Appends a description of the structure of the frame tree to |result|.
@@ -49,7 +51,7 @@ class TreeWalkingWebContentsLogger : public WebContentsObserver {
   explicit TreeWalkingWebContentsLogger(WebContents* web_contents)
       : WebContentsObserver(web_contents) {}
 
-  virtual ~TreeWalkingWebContentsLogger() {
+  ~TreeWalkingWebContentsLogger() override {
     EXPECT_EQ("", log_) << "Activity logged that was not expected";
   }
 
@@ -61,15 +63,22 @@ class TreeWalkingWebContentsLogger : public WebContentsObserver {
   }
 
   // content::WebContentsObserver implementation.
-  virtual void RenderFrameCreated(RenderFrameHost* render_frame_host) OVERRIDE {
+  void RenderFrameCreated(RenderFrameHost* render_frame_host) override {
     LogWhatHappened("RenderFrameCreated", render_frame_host);
   }
 
-  virtual void RenderFrameDeleted(RenderFrameHost* render_frame_host) OVERRIDE {
+  void RenderFrameHostChanged(RenderFrameHost* old_host,
+                              RenderFrameHost* new_host) override {
+    if (old_host)
+      LogWhatHappened("RenderFrameChanged(old)", old_host);
+    LogWhatHappened("RenderFrameChanged(new)", new_host);
+  }
+
+  void RenderFrameDeleted(RenderFrameHost* render_frame_host) override {
     LogWhatHappened("RenderFrameDeleted", render_frame_host);
   }
 
-  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE {
+  void RenderProcessGone(base::TerminationStatus status) override {
     LogWhatHappened("RenderProcessGone");
   }
 
@@ -94,6 +103,8 @@ class TreeWalkingWebContentsLogger : public WebContentsObserver {
   DISALLOW_COPY_AND_ASSIGN(TreeWalkingWebContentsLogger);
 };
 
+}  // namespace
+
 class FrameTreeTest : public RenderViewHostImplTestHarness {
  protected:
   // Prints a FrameTree, for easy assertions of the tree hierarchy.
@@ -115,17 +126,18 @@ TEST_F(FrameTreeTest, Shape) {
 
   std::string no_children_node("no children node");
   std::string deep_subtree("node with deep subtree");
+  int process_id = root->current_frame_host()->GetProcess()->GetID();
 
   ASSERT_EQ("1: []", GetTreeState(frame_tree));
 
   // Simulate attaching a series of frames to build the frame tree.
-  frame_tree->AddFrame(root, 14, std::string());
-  frame_tree->AddFrame(root, 15, std::string());
-  frame_tree->AddFrame(root, 16, std::string());
+  frame_tree->AddFrame(root, process_id, 14, std::string());
+  frame_tree->AddFrame(root, process_id, 15, std::string());
+  frame_tree->AddFrame(root, process_id, 16, std::string());
 
-  frame_tree->AddFrame(root->child_at(0), 244, std::string());
-  frame_tree->AddFrame(root->child_at(1), 255, no_children_node);
-  frame_tree->AddFrame(root->child_at(0), 245, std::string());
+  frame_tree->AddFrame(root->child_at(0), process_id, 244, std::string());
+  frame_tree->AddFrame(root->child_at(1), process_id, 255, no_children_node);
+  frame_tree->AddFrame(root->child_at(0), process_id, 245, std::string());
 
   ASSERT_EQ("1: [14: [244: [], 245: []], "
                 "15: [255 'no children node': []], "
@@ -133,18 +145,19 @@ TEST_F(FrameTreeTest, Shape) {
             GetTreeState(frame_tree));
 
   FrameTreeNode* child_16 = root->child_at(2);
-  frame_tree->AddFrame(child_16, 264, std::string());
-  frame_tree->AddFrame(child_16, 265, std::string());
-  frame_tree->AddFrame(child_16, 266, std::string());
-  frame_tree->AddFrame(child_16, 267, deep_subtree);
-  frame_tree->AddFrame(child_16, 268, std::string());
+  frame_tree->AddFrame(child_16, process_id, 264, std::string());
+  frame_tree->AddFrame(child_16, process_id, 265, std::string());
+  frame_tree->AddFrame(child_16, process_id, 266, std::string());
+  frame_tree->AddFrame(child_16, process_id, 267, deep_subtree);
+  frame_tree->AddFrame(child_16, process_id, 268, std::string());
 
   FrameTreeNode* child_267 = child_16->child_at(3);
-  frame_tree->AddFrame(child_267, 365, std::string());
-  frame_tree->AddFrame(child_267->child_at(0), 455, std::string());
-  frame_tree->AddFrame(child_267->child_at(0)->child_at(0), 555, std::string());
-  frame_tree->AddFrame(child_267->child_at(0)->child_at(0)->child_at(0), 655,
+  frame_tree->AddFrame(child_267, process_id, 365, std::string());
+  frame_tree->AddFrame(child_267->child_at(0), process_id, 455, std::string());
+  frame_tree->AddFrame(child_267->child_at(0)->child_at(0), process_id, 555,
                        std::string());
+  frame_tree->AddFrame(child_267->child_at(0)->child_at(0)->child_at(0),
+                       process_id, 655, std::string());
 
   // Now that's it's fully built, verify the tree structure is as expected.
   ASSERT_EQ("1: [14: [244: [], 245: []], "
@@ -186,6 +199,8 @@ TEST_F(FrameTreeTest, ObserverWalksTreeDuringFrameCreation) {
   FrameTree* frame_tree = contents()->GetFrameTree();
   FrameTreeNode* root = frame_tree->root();
 
+  EXPECT_EQ("", activity.GetLog());
+
   // Simulate attaching a series of frames to build the frame tree.
   main_test_rfh()->OnCreateChildFrame(14, std::string());
   EXPECT_EQ("RenderFrameCreated(14) -> 1: [14: []]", activity.GetLog());
@@ -217,5 +232,18 @@ TEST_F(FrameTreeTest, ObserverWalksTreeAfterCrash) {
       activity.GetLog());
 }
 
-}  // namespace
+// Ensure that frames are not added to the tree, if the process passed in
+// is different than the process of the parent node.
+TEST_F(FrameTreeTest, FailAddFrameWithWrongProcessId) {
+  FrameTree* frame_tree = contents()->GetFrameTree();
+  FrameTreeNode* root = frame_tree->root();
+  int process_id = root->current_frame_host()->GetProcess()->GetID();
+
+  ASSERT_EQ("1: []", GetTreeState(frame_tree));
+
+  // Simulate attaching a frame from mismatched process id.
+  ASSERT_FALSE(frame_tree->AddFrame(root, process_id + 1, 1, std::string()));
+  ASSERT_EQ("1: []", GetTreeState(frame_tree));
+}
+
 }  // namespace content

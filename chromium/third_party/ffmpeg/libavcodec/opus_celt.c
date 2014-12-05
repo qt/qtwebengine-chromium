@@ -991,7 +991,7 @@ static inline int celt_pulses2bits(const uint8_t *cache, int pulses)
    return (pulses == 0) ? 0 : cache[pulses] + 1;
 }
 
-static inline void celt_normalize_residual(const int * restrict iy, float * restrict X,
+static inline void celt_normalize_residual(const int * av_restrict iy, float * av_restrict X,
                                            int N, float g)
 {
     int i;
@@ -1295,7 +1295,7 @@ static inline float celt_decode_pulses(OpusRangeCoder *rc, int *y, unsigned int 
 {
     unsigned int idx;
 #define CELT_PVQ_U(n, k) (celt_pvq_u_row[FFMIN(n, k)][FFMAX(n, k)])
-#define CELT_PVQ_V(n, k) (CELT_PVQ_U(n, k) + CELT_PVQ_U(n, k + 1))
+#define CELT_PVQ_V(n, k) (CELT_PVQ_U(n, k) + CELT_PVQ_U(n, (k) + 1))
     idx = opus_rc_unimodel(rc, CELT_PVQ_V(N, K));
     return celt_cwrsi(N, K, idx, y);
 }
@@ -1608,7 +1608,7 @@ static unsigned int celt_decode_band(CeltContext *s, OpusRangeCoder *rc,
                 for (j = 0; j < N; j++)
                     X[j] = 0.0f;
             } else {
-                if (lowband == NULL) {
+                if (!lowband) {
                     /* Noise */
                     for (j = 0; j < N; j++)
                         X[j] = (((int32_t)celt_rng(s)) >> 20);

@@ -92,7 +92,7 @@ html[dir=rtl] #slide-not-you {
   width: 100%;
 }
 
-.slide-buttons .link-button {
+.slide-buttons [is='action-link'] {
   width: 100%;
 }
 
@@ -148,13 +148,6 @@ html[dir=rtl] #slide-guests .arrow-down {
   height: 182px;
 }
 
-#slide-welcome .slide-image {
-  background-color: white;
-  background-image: url(
-      'chrome://theme/IDR_ICON_USER_MANAGER_TUTORIAL_WELCOME');
-  height: 156px;
-}
-
 #slide-your-chrome .slide-image {
   background-color: rgb(241, 202, 58);
   background-image: url(
@@ -176,4 +169,18 @@ html[dir=rtl] #slide-guests .arrow-down {
   background-color: white;
   background-image: url(
       'chrome://theme/IDR_ICON_USER_MANAGER_TUTORIAL_COMPLETE');
+}
+
+#slide-not-you #dismiss-bubble-button {
+  background-image: url('chrome://theme/IDR_CLOSE_1');
+  cursor: pointer;
+  height: 16px;
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  width: 16px;
+}
+
+html[dir=rtl] #slide-not-you #dismiss-bubble-button {
+  left: 5px;
 }

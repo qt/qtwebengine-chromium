@@ -205,7 +205,7 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
         return false;
     }
     if (maxPts > ((int)SK_MaxU16 + 1)) {
-        GrPrintf("Path not rendered, too many verts (%d)\n", maxPts);
+        SkDebugf("Path not rendered, too many verts (%d)\n", maxPts);
         return false;
     }
 
@@ -240,7 +240,7 @@ bool GrDefaultPathRenderer::createGeom(const SkPath& path,
     uint16_t subpathIdxStart = 0;
 
     SkPoint* base = reinterpret_cast<SkPoint*>(arg->vertices());
-    SkASSERT(NULL != base);
+    SkASSERT(base);
     SkPoint* vert = base;
 
     SkPoint pts[4];
@@ -361,7 +361,7 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
         return false;
     }
 
-    SkASSERT(NULL != target);
+    SkASSERT(target);
     GrDrawTarget::AutoStateRestore asr(target, GrDrawTarget::kPreserve_ASRInit);
     GrDrawState* drawState = target->drawState();
     bool colorWritesWereDisabled = drawState->isColorWriteDisabled();
@@ -465,7 +465,7 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
 
     for (int p = 0; p < passCount; ++p) {
         drawState->setDrawFace(drawFace[p]);
-        if (NULL != passes[p]) {
+        if (passes[p]) {
             *drawState->stencil() = *passes[p];
         }
 
@@ -476,7 +476,7 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
             SkRect bounds;
             GrDrawState::AutoViewMatrixRestore avmr;
             if (reverse) {
-                SkASSERT(NULL != drawState->getRenderTarget());
+                SkASSERT(drawState->getRenderTarget());
                 // draw over the dev bounds (which will be the whole dst surface for inv fill).
                 bounds = devBounds;
                 SkMatrix vmi;
@@ -491,7 +491,7 @@ bool GrDefaultPathRenderer::internalDrawPath(const SkPath& path,
                 bounds = path.getBounds();
             }
             GrDrawTarget::AutoGeometryAndStatePush agasp(target, GrDrawTarget::kPreserve_ASRInit);
-            target->drawSimpleRect(bounds, NULL);
+            target->drawSimpleRect(bounds);
         } else {
             if (passCount > 1) {
                 drawState->enableState(GrDrawState::kNoColorWrites_StateBit);
@@ -513,7 +513,7 @@ bool GrDefaultPathRenderer::canDrawPath(const SkPath& path,
                                         bool antiAlias) const {
     // this class can draw any path with any fill but doesn't do any anti-aliasing.
 
-    return !antiAlias &&
+    return !antiAlias && !(SkPath::kConic_SegmentMask & path.getSegmentMasks()) &&
         (stroke.isFillStyle() ||
          IsStrokeHairlineOrEquivalent(stroke, target->getDrawState().getViewMatrix(), NULL));
 }

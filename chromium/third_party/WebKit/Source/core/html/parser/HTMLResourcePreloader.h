@@ -31,7 +31,7 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/text/TextPosition.h"
 
-namespace WebCore {
+namespace blink {
 
 class PreloadRequest {
 public:
@@ -46,6 +46,8 @@ public:
 
     const String& charset() const { return m_charset; }
     double discoveryTime() const { return m_discoveryTime; }
+    FetchRequest::DeferOption defer() const { return m_defer; }
+    void setDefer(FetchRequest::DeferOption defer) { m_defer = defer; }
     void setCharset(const String& charset) { m_charset = charset.isolatedCopy(); }
     void setCrossOriginEnabled(StoredCredentials allowCredentials)
     {
@@ -65,6 +67,7 @@ private:
         , m_isCORSEnabled(false)
         , m_allowCredentials(DoNotAllowStoredCredentials)
         , m_discoveryTime(monotonicallyIncreasingTime())
+        , m_defer(FetchRequest::NoDefer)
     {
     }
 
@@ -79,23 +82,24 @@ private:
     bool m_isCORSEnabled;
     StoredCredentials m_allowCredentials;
     double m_discoveryTime;
+    FetchRequest::DeferOption m_defer;
 };
 
-typedef Vector<OwnPtr<PreloadRequest> > PreloadRequestStream;
+typedef Vector<OwnPtr<PreloadRequest>> PreloadRequestStream;
 
-class HTMLResourcePreloader {
-    WTF_MAKE_NONCOPYABLE(HTMLResourcePreloader); WTF_MAKE_FAST_ALLOCATED;
+class HTMLResourcePreloader final : public NoBaseWillBeGarbageCollected<HTMLResourcePreloader> {
+    WTF_MAKE_NONCOPYABLE(HTMLResourcePreloader); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    explicit HTMLResourcePreloader(Document* document)
-        : m_document(document)
-    {
-    }
+    static PassOwnPtrWillBeRawPtr<HTMLResourcePreloader> create(Document&);
+    void trace(Visitor*);
 
     void takeAndPreload(PreloadRequestStream&);
     void preload(PassOwnPtr<PreloadRequest>);
 
 private:
-    Document* m_document;
+    explicit HTMLResourcePreloader(Document&);
+
+    RawPtrWillBeMember<Document> m_document;
 };
 
 }

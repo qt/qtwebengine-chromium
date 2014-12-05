@@ -59,24 +59,26 @@ enum VideoFacingMode {
   MEDIA_VIDEO_FACING_NONE = 0,
   MEDIA_VIDEO_FACING_USER,
   MEDIA_VIDEO_FACING_ENVIRONMENT,
-  MEDIA_VIDEO_FACING_LEFT,
-  MEDIA_VIDEO_FACING_RIGHT,
 
   NUM_MEDIA_VIDEO_FACING_MODE
 };
 
+// Elements in this enum should not be deleted or rearranged; the only
+// permitted operation is to add new elements before NUM_MEDIA_REQUEST_RESULTS.
 enum MediaStreamRequestResult {
   MEDIA_DEVICE_OK = 0,
-  MEDIA_DEVICE_PERMISSION_DENIED,
-  MEDIA_DEVICE_PERMISSION_DISMISSED,
-  MEDIA_DEVICE_INVALID_STATE,
-  MEDIA_DEVICE_NO_HARDWARE,
-  MEDIA_DEVICE_INVALID_SECURITY_ORIGIN,
-  MEDIA_DEVICE_TAB_CAPTURE_FAILURE,
-  MEDIA_DEVICE_SCREEN_CAPTURE_FAILURE,
-  MEDIA_DEVICE_CAPTURE_FAILURE,
-  MEDIA_DEVICE_TRACK_START_FAILURE,
-
+  MEDIA_DEVICE_PERMISSION_DENIED = 1,
+  MEDIA_DEVICE_PERMISSION_DISMISSED = 2,
+  MEDIA_DEVICE_INVALID_STATE = 3,
+  MEDIA_DEVICE_NO_HARDWARE = 4,
+  MEDIA_DEVICE_INVALID_SECURITY_ORIGIN = 5,
+  MEDIA_DEVICE_TAB_CAPTURE_FAILURE = 6,
+  MEDIA_DEVICE_SCREEN_CAPTURE_FAILURE = 7,
+  MEDIA_DEVICE_CAPTURE_FAILURE = 8,
+  MEDIA_DEVICE_CONSTRAINT_NOT_SATISFIED = 9,
+  MEDIA_DEVICE_TRACK_START_FAILURE = 10,
+  MEDIA_DEVICE_NOT_SUPPORTED = 11,
+  MEDIA_DEVICE_FAILED_DUE_TO_SHUTDOWN = 12,
   NUM_MEDIA_REQUEST_RESULTS
 };
 
@@ -192,7 +194,7 @@ typedef std::map<MediaStreamType, MediaStreamDevices> MediaStreamDeviceMap;
 struct CONTENT_EXPORT MediaStreamRequest {
   MediaStreamRequest(
       int render_process_id,
-      int render_view_id,
+      int render_frame_id,
       int page_request_id,
       const GURL& security_origin,
       bool user_gesture,
@@ -209,12 +211,12 @@ struct CONTENT_EXPORT MediaStreamRequest {
   // displayed for this renderer.
   int render_process_id;
 
-  // This is the render view id for the renderer associated with generating
+  // This is the render frame id for the renderer associated with generating
   // frames for a MediaStream. Any indicators associated with a capture will be
   // displayed for this renderer.
-  int render_view_id;
+  int render_frame_id;
 
-  // The unique id combined with render_process_id and render_view_id for
+  // The unique id combined with render_process_id and render_frame_id for
   // identifying this request. This is used for cancelling request.
   int page_request_id;
 

@@ -5,6 +5,8 @@
 #ifndef MEDIA_BASE_VIDEO_DECODER_H_
 #define MEDIA_BASE_VIDEO_DECODER_H_
 
+#include <string>
+
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
@@ -39,7 +41,15 @@ class MEDIA_EXPORT VideoDecoder {
   typedef base::Callback<void(Status status)> DecodeCB;
 
   VideoDecoder();
+
+  // Fires any pending callbacks, stops and destroys the decoder.
+  // Note: Since this is a destructor, |this| will be destroyed after this call.
+  // Make sure the callbacks fired from this call doesn't post any task that
+  // depends on |this|.
   virtual ~VideoDecoder();
+
+  // Returns the name of the decoder for logging purpose.
+  virtual std::string GetDisplayName() const = 0;
 
   // Initializes a VideoDecoder with the given |config|, executing the
   // |status_cb| upon completion. |output_cb| is called for each output frame
@@ -48,9 +58,8 @@ class MEDIA_EXPORT VideoDecoder {
   // Note:
   // 1) The VideoDecoder will be reinitialized if it was initialized before.
   //    Upon reinitialization, all internal buffered frames will be dropped.
-  // 2) This method should not be called during pending decode, reset or stop.
-  // 3) No VideoDecoder calls except for Stop() should be made before
-  //    |status_cb| is executed.
+  // 2) This method should not be called during pending decode or reset.
+  // 3) No VideoDecoder calls should be made before |status_cb| is executed.
   virtual void Initialize(const VideoDecoderConfig& config,
                           bool low_delay,
                           const PipelineStatusCB& status_cb,
@@ -65,7 +74,7 @@ class MEDIA_EXPORT VideoDecoder {
   //
   // Implementations guarantee that the callback will not be called from within
   // this method and that |decode_cb| will not be blocked on the following
-  // Decode() calls (i.e. |decode_cb| will be called even Decode() is never
+  // Decode() calls (i.e. |decode_cb| will be called even if Decode() is never
   // called again).
   //
   // After decoding is finished the decoder calls |output_cb| specified in
@@ -74,7 +83,8 @@ class MEDIA_EXPORT VideoDecoder {
   //
   // If |buffer| is an EOS buffer then the decoder must be flushed, i.e.
   // |output_cb| must be called for each frame pending in the queue and
-  // |decode_cb| must be called after that.
+  // |decode_cb| must be called after that. Callers will not call Decode()
+  // again until after the flush completes.
   virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
                       const DecodeCB& decode_cb) = 0;
 
@@ -82,13 +92,6 @@ class MEDIA_EXPORT VideoDecoder {
   // aborted before |closure| is called.
   // Note: No VideoDecoder calls should be made before |closure| is executed.
   virtual void Reset(const base::Closure& closure) = 0;
-
-  // Stops decoder, fires any pending callbacks and sets the decoder to an
-  // uninitialized state. A VideoDecoder cannot be re-initialized after it has
-  // been stopped.
-  // Note that if Initialize() is pending or has finished successfully, Stop()
-  // must be called before destructing the decoder.
-  virtual void Stop() = 0;
 
   // Returns true if the decoder needs bitstream conversion before decoding.
   virtual bool NeedsBitstreamConversion() const;

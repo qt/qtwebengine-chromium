@@ -31,44 +31,45 @@
 #ifndef DataTransferItem_h
 #define DataTransferItem_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class DataObjectItem;
-class Clipboard;
+class DataTransfer;
 class File;
 class StringCallback;
 class ExecutionContext;
 
-class DataTransferItem : public RefCountedWillBeGarbageCollectedFinalized<DataTransferItem>, public ScriptWrappable {
+class DataTransferItem final : public RefCountedWillBeGarbageCollected<DataTransferItem>, public ScriptWrappable {
+    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DataTransferItem);
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DataTransferItem> create(PassRefPtrWillBeRawPtr<Clipboard>, PassRefPtrWillBeRawPtr<DataObjectItem>);
-    ~DataTransferItem();
+    static PassRefPtrWillBeRawPtr<DataTransferItem> create(PassRefPtrWillBeRawPtr<DataTransfer>, PassRefPtrWillBeRawPtr<DataObjectItem>);
 
     String kind() const;
     String type() const;
 
-    void getAsString(ExecutionContext*, PassOwnPtr<StringCallback>) const;
-    PassRefPtrWillBeRawPtr<Blob> getAsFile() const;
+    void getAsString(ExecutionContext*, StringCallback*) const;
+    Blob* getAsFile() const;
 
-    Clipboard* clipboard() { return m_clipboard.get(); }
+    DataTransfer* dataTransfer() { return m_dataTransfer.get(); }
     DataObjectItem* dataObjectItem() { return m_item.get(); }
 
     void trace(Visitor*);
 
 private:
-    DataTransferItem(PassRefPtrWillBeRawPtr<Clipboard>, PassRefPtrWillBeRawPtr<DataObjectItem>);
+    DataTransferItem(PassRefPtrWillBeRawPtr<DataTransfer>, PassRefPtrWillBeRawPtr<DataObjectItem>);
 
-    RefPtrWillBeMember<Clipboard> m_clipboard;
+    RefPtrWillBeMember<DataTransfer> m_dataTransfer;
     RefPtrWillBeMember<DataObjectItem> m_item;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DataTransferItem_h

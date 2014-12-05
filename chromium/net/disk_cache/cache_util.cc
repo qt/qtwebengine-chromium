@@ -4,8 +4,8 @@
 
 #include "net/disk_cache/cache_util.h"
 
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -145,15 +145,12 @@ int PreferredCacheSize(int64 available) {
   if (available < 0)
     return kDefaultCacheSize;
 
-  int64 max_size = PreferredCacheSizeInternal(available);
-
   // Limit cache size to somewhat less than kint32max to avoid potential
   // integer overflows in cache backend implementations.
-  DCHECK(kDefaultCacheSize * 4 < kint32max);
-  if (max_size > kDefaultCacheSize * 4)
-    max_size = kDefaultCacheSize * 4;
-
-  return implicit_cast<int32>(max_size);
+  DCHECK_LT(kDefaultCacheSize * 4, kint32max);
+  return static_cast<int32>(std::min(
+      PreferredCacheSizeInternal(available),
+      static_cast<int64>(kDefaultCacheSize * 4)));
 }
 
 }  // namespace disk_cache

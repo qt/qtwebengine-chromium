@@ -40,16 +40,16 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   DecryptingAudioDecoder(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
-  virtual ~DecryptingAudioDecoder();
+  ~DecryptingAudioDecoder() override;
 
   // AudioDecoder implementation.
-  virtual void Initialize(const AudioDecoderConfig& config,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const AudioDecoderConfig& config,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -64,11 +64,13 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
     kPendingDecode,
     kWaitingForKey,
     kDecodeFinished,
-    kStopped,
+    kError
   };
 
-  // Callback for DecryptorHost::RequestDecryptor().
-  void SetDecryptor(Decryptor* decryptor);
+  // Callback for DecryptorHost::RequestDecryptor(). |decryptor_attached_cb| is
+  // called when the decryptor has been completely attached to the pipeline.
+  void SetDecryptor(Decryptor* decryptor,
+                    const DecryptorAttachedCB& decryptor_attached_cb);
 
   // Initializes the audio decoder on the |decryptor_| with |config_|.
   void InitializeDecoder();
@@ -101,7 +103,6 @@ class MEDIA_EXPORT DecryptingAudioDecoder : public AudioDecoder {
   OutputCB output_cb_;
   DecodeCB decode_cb_;
   base::Closure reset_cb_;
-  base::Closure stop_cb_;
 
   // The current decoder configuration.
   AudioDecoderConfig config_;

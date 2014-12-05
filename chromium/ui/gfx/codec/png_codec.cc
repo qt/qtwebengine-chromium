@@ -33,16 +33,11 @@ void ConvertBetweenBGRAandRGBA(const unsigned char* input, int pixel_width,
 
 void ConvertRGBAtoRGB(const unsigned char* rgba, int pixel_width,
                       unsigned char* rgb, bool* is_opaque) {
-  for (int x = 0; x < pixel_width; x++) {
-    const unsigned char* pixel_in = &rgba[x * 4];
-    unsigned char* pixel_out = &rgb[x * 3];
-    pixel_out[0] = pixel_in[0];
-    pixel_out[1] = pixel_in[1];
-    pixel_out[2] = pixel_in[2];
-  }
+  for (int x = 0; x < pixel_width; x++)
+    memcpy(&rgb[x * 3], &rgba[x * 4], 3);
 }
 
-void ConvertSkiatoRGB(const unsigned char* skia, int pixel_width,
+void ConvertSkiaToRGB(const unsigned char* skia, int pixel_width,
                       unsigned char* rgb, bool* is_opaque) {
   for (int x = 0; x < pixel_width; x++) {
     const uint32_t pixel_in = *reinterpret_cast<const uint32_t*>(&skia[x * 4]);
@@ -62,7 +57,7 @@ void ConvertSkiatoRGB(const unsigned char* skia, int pixel_width,
   }
 }
 
-void ConvertSkiatoRGBA(const unsigned char* skia, int pixel_width,
+void ConvertSkiaToRGBA(const unsigned char* skia, int pixel_width,
                        unsigned char* rgba, bool* is_opaque) {
   gfx::ConvertSkiaToRGBA(skia, pixel_width, rgba);
 }
@@ -276,9 +271,7 @@ void DecodeInfoCallback(png_struct* png_ptr, png_info* info_ptr) {
   png_read_update_info(png_ptr, info_ptr);
 
   if (state->bitmap) {
-    state->bitmap->setConfig(SkBitmap::kARGB_8888_Config,
-                             state->width, state->height);
-    state->bitmap->allocPixels();
+    state->bitmap->allocN32Pixels(state->width, state->height);
   } else if (state->output) {
     state->output->resize(
         state->width * state->output_channels * state->height);
@@ -695,11 +688,11 @@ bool EncodeWithCompressionLevel(const unsigned char* input,
         if (discard_transparency) {
           output_color_components = 3;
           png_output_color_type = PNG_COLOR_TYPE_RGB;
-          converter = ConvertSkiatoRGB;
+          converter = ConvertSkiaToRGB;
         } else {
           output_color_components = 4;
           png_output_color_type = PNG_COLOR_TYPE_RGB_ALPHA;
-          converter = ConvertSkiatoRGBA;
+          converter = ConvertSkiaToRGBA;
         }
       }
       break;

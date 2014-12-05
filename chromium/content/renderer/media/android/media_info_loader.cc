@@ -22,6 +22,7 @@ using blink::WebURLResponse;
 namespace content {
 
 static const int kHttpOK = 200;
+static const int kHttpPartialContentOK = 206;
 
 MediaInfoLoader::MediaInfoLoader(
     const GURL& url,
@@ -29,6 +30,7 @@ MediaInfoLoader::MediaInfoLoader(
     const ReadyCB& ready_cb)
     : loader_failed_(false),
       url_(url),
+      allow_stored_credentials_(false),
       cors_mode_(cors_mode),
       single_origin_(true),
       ready_cb_(ready_cb) {}
@@ -41,11 +43,19 @@ void MediaInfoLoader::Start(blink::WebFrame* frame) {
   CHECK(frame);
 
   start_time_ = base::TimeTicks::Now();
+  first_party_url_ = frame->document().firstPartyForCookies();
 
   // Prepare the request.
   WebURLRequest request(url_);
-  request.setTargetType(WebURLRequest::TargetIsMedia);
+  // TODO(mkwst): Split this into video/audio.
+  request.setRequestContext(WebURLRequest::RequestContextVideo);
   frame->setReferrerForRequest(request, blink::WebURL());
+
+  // Since we don't actually care about the media data at this time, use a two
+  // byte range request to avoid unnecessarily downloading resources.  Not all
+  // servers support HEAD unfortunately, so use a range request; which is no
+  // worse than the previous request+cancel code.  See http://crbug.com/400788
+  request.addHTTPHeaderField("Range", "bytes=0-1");
 
   scoped_ptr<WebURLLoader> loader;
   if (test_loader_) {
@@ -56,21 +66,24 @@ void MediaInfoLoader::Start(blink::WebFrame* frame) {
       options.allowCredentials = true;
       options.crossOriginRequestPolicy =
           WebURLLoaderOptions::CrossOriginRequestPolicyAllow;
+      allow_stored_credentials_ = true;
     } else {
       options.exposeAllResponseHeaders = true;
       // The author header set is empty, no preflight should go ahead.
       options.preflightPolicy = WebURLLoaderOptions::PreventPreflight;
       options.crossOriginRequestPolicy =
           WebURLLoaderOptions::CrossOriginRequestPolicyUseAccessControl;
-      if (cors_mode_ == blink::WebMediaPlayer::CORSModeUseCredentials)
+      if (cors_mode_ == blink::WebMediaPlayer::CORSModeUseCredentials) {
         options.allowCredentials = true;
+        allow_stored_credentials_ = true;
+      }
     }
     loader.reset(frame->createAssociatedURLLoader(options));
   }
 
   // Start the resource loading.
   loader->loadAsynchronously(request, this);
-  active_loader_.reset(new ActiveLoader(loader.Pass()));
+  active_loader_.reset(new media::ActiveLoader(loader.Pass()));
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -92,6 +105,8 @@ void MediaInfoLoader::willSendRequest(
     single_origin_ = url_.GetOrigin() == GURL(newRequest.url()).GetOrigin();
 
   url_ = newRequest.url();
+  first_party_url_ = newRequest.firstPartyForCookies();
+  allow_stored_credentials_ = newRequest.allowStoredCredentials();
 }
 
 void MediaInfoLoader::didSendData(
@@ -111,11 +126,12 @@ void MediaInfoLoader::didReceiveResponse(
                "Unknown")
            << " " << response.httpStatusCode();
   DCHECK(active_loader_.get());
-  if (!url_.SchemeIs("http") && !url_.SchemeIs("https")) {
+  if (!url_.SchemeIs(url::kHttpScheme) && !url_.SchemeIs(url::kHttpsScheme)) {
       DidBecomeReady(kOk);
       return;
   }
-  if (response.httpStatusCode() == kHttpOK) {
+  if (response.httpStatusCode() == kHttpOK ||
+      response.httpStatusCode() == kHttpPartialContentOK) {
     DidBecomeReady(kOk);
     return;
   }
@@ -187,7 +203,8 @@ void MediaInfoLoader::DidBecomeReady(Status status) {
                       base::TimeTicks::Now() - start_time_);
   active_loader_.reset();
   if (!ready_cb_.is_null())
-    base::ResetAndReturn(&ready_cb_).Run(status);
+    base::ResetAndReturn(&ready_cb_).Run(status, url_, first_party_url_,
+                                         allow_stored_credentials_);
 }
 
 }  // namespace content

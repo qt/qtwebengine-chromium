@@ -26,21 +26,19 @@
 #include "core/dom/StyleElement.h"
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLStyleElement;
-class StyleSheet;
 
 template<typename T> class EventSender;
 typedef EventSender<HTMLStyleElement> StyleEventSender;
 
-class HTMLStyleElement FINAL : public HTMLElement, private StyleElement {
+class HTMLStyleElement final : public HTMLElement, private StyleElement {
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(HTMLStyleElement);
 public:
     static PassRefPtrWillBeRawPtr<HTMLStyleElement> create(Document&, bool createdByParser);
     virtual ~HTMLStyleElement();
-
-    void setType(const AtomicString&);
 
     ContainerNode* scopingNode();
 
@@ -52,31 +50,31 @@ public:
     void dispatchPendingEvent(StyleEventSender*);
     static void dispatchPendingLoadEvents();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     HTMLStyleElement(Document&, bool createdByParser);
 
     // overload from HTMLElement
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void didNotifySubtreeInsertionsToDocument() OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual void childrenChanged(bool changedByParser = false, Node* beforeChange = 0, Node* afterChange = 0, int childCountDelta = 0) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void didNotifySubtreeInsertionsToDocument() override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual void childrenChanged(const ChildrenChange&) override;
 
-    virtual void finishParsingChildren() OVERRIDE;
+    virtual void finishParsingChildren() override;
 
-    virtual bool sheetLoaded() OVERRIDE { return StyleElement::sheetLoaded(document()); }
-    virtual void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred) OVERRIDE;
-    virtual void startLoadingDynamicSheet() OVERRIDE { StyleElement::startLoadingDynamicSheet(document()); }
+    virtual bool sheetLoaded() override { return StyleElement::sheetLoaded(document()); }
+    virtual void notifyLoadedSheetAndAllCriticalSubresources(bool errorOccurred) override;
+    virtual void startLoadingDynamicSheet() override { StyleElement::startLoadingDynamicSheet(document()); }
 
-    virtual const AtomicString& media() const OVERRIDE;
-    virtual const AtomicString& type() const OVERRIDE;
+    virtual const AtomicString& media() const override;
+    virtual const AtomicString& type() const override;
 
     bool m_firedLoad;
     bool m_loadedSheet;
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLStyleElement_h

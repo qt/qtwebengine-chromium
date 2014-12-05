@@ -5,7 +5,7 @@
 #include "config.h"
 #include "core/dom/Range.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Element.h"
 #include "core/dom/NodeList.h"
 #include "core/dom/Text.h"
@@ -19,13 +19,13 @@
 #include "wtf/text/AtomicString.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
 class RangeTest : public ::testing::Test {
 protected:
-    virtual void SetUp() OVERRIDE;
+    virtual void SetUp() override;
 
     HTMLDocument& document() const;
 

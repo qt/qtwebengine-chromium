@@ -19,6 +19,9 @@ class QuicClientSessionPeer {
                                 size_t max_streams,
                                 size_t default_streams);
 
+  static void SetChannelIDSent(QuicClientSession* session,
+                               bool channel_id_sent);
+
  private:
   DISALLOW_COPY_AND_ASSIGN(QuicClientSessionPeer);
 };

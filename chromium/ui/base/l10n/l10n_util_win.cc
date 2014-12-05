@@ -11,13 +11,14 @@
 #include "base/i18n/rtl.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/win/i18n.h"
 #include "base/win/windows_version.h"
-#include "grit/app_locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/win/dpi.h"
+#include "ui/strings/grit/app_locale_settings.h"
 
 namespace {
 
@@ -53,14 +54,13 @@ bool IsFontPresent(const wchar_t* font_name) {
   HDC dc = GetDC(0);
   HGDIOBJ oldFont = static_cast<HFONT>(SelectObject(dc, hfont));
   WCHAR actual_font_name[LF_FACESIZE];
-  DWORD size_ret = GetTextFace(dc, LF_FACESIZE, actual_font_name);
-  actual_font_name[LF_FACESIZE - 1] = 0;
+  int size_ret = GetTextFace(dc, LF_FACESIZE, actual_font_name);
   SelectObject(dc, oldFont);
   DeleteObject(hfont);
   ReleaseDC(0, dc);
   // We don't have to worry about East Asian fonts with locale-dependent
   // names here.
-  return wcscmp(font_name, actual_font_name) == 0;
+  return (size_ret != 0) && wcscmp(font_name, actual_font_name) == 0;
 }
 
 class OverrideLocaleHolder {
@@ -153,10 +153,10 @@ bool NeedOverrideDefaultUIFont(base::string16* override_font_family,
 }
 
 void AdjustUIFont(LOGFONT* logfont) {
-  double dpi_scale = gfx::GetDPIScale();
+  float dpi_scale = gfx::GetDPIScale();
   if (gfx::Display::HasForceDeviceScaleFactor()) {
     // If the scale is forced, we don't need to adjust it here.
-    dpi_scale = 1.0;
+    dpi_scale = 1.0f;
   }
   AdjustUIFontForDIP(dpi_scale, logfont);
 }

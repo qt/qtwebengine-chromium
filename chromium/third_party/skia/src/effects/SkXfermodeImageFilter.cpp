@@ -21,10 +21,10 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 SkXfermodeImageFilter::SkXfermodeImageFilter(SkXfermode* mode,
-                                             SkImageFilter* background,
-                                             SkImageFilter* foreground,
-                                             const CropRect* cropRect)
-  : INHERITED(background, foreground, cropRect), fMode(mode) {
+                                             SkImageFilter* inputs[2],
+                                             const CropRect* cropRect,
+                                             uint32_t uniqueID)
+  : INHERITED(2, inputs, cropRect, uniqueID), fMode(mode) {
     SkSafeRef(fMode);
 }
 
@@ -32,9 +32,17 @@ SkXfermodeImageFilter::~SkXfermodeImageFilter() {
     SkSafeUnref(fMode);
 }
 
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkXfermodeImageFilter::SkXfermodeImageFilter(SkReadBuffer& buffer)
   : INHERITED(2, buffer) {
     fMode = buffer.readXfermode();
+}
+#endif
+
+SkFlattenable* SkXfermodeImageFilter::CreateProc(SkReadBuffer& buffer) {
+    SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 2);
+    SkAutoTUnref<SkXfermode> mode(buffer.readXfermode());
+    return Create(mode, common.getInput(0), common.getInput(1), &common.cropRect(), common.uniqueID());
 }
 
 void SkXfermodeImageFilter::flatten(SkWriteBuffer& buffer) const {
@@ -100,7 +108,7 @@ bool SkXfermodeImageFilter::onFilterImage(Proxy* proxy,
 #if SK_SUPPORT_GPU
 
 bool SkXfermodeImageFilter::canFilterImageGPU() const {
-    return fMode && fMode->asNewEffect(NULL, NULL) && !cropRectIsSet();
+    return fMode && fMode->asFragmentProcessor(NULL, NULL) && !cropRectIsSet();
 }
 
 bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
@@ -124,26 +132,27 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     GrTexture* foregroundTex = foreground.getTexture();
     GrContext* context = foregroundTex->getContext();
 
-    GrEffectRef* xferEffect = NULL;
+    GrFragmentProcessor* xferProcessor = NULL;
 
-    GrTextureDesc desc;
-    desc.fFlags = kRenderTarget_GrTextureFlagBit | kNoStencil_GrTextureFlagBit;
+    GrSurfaceDesc desc;
+    desc.fFlags = kRenderTarget_GrSurfaceFlag | kNoStencil_GrSurfaceFlag;
     desc.fWidth = src.width();
     desc.fHeight = src.height();
     desc.fConfig = kSkia8888_GrPixelConfig;
-
-    GrAutoScratchTexture ast(context, desc);
-    SkAutoTUnref<GrTexture> dst(ast.detach());
-
+    SkAutoTUnref<GrTexture> dst(
+        context->refScratchTexture(desc, GrContext::kApprox_ScratchTexMatch));
+    if (!dst) {
+        return false;
+    }
     GrContext::AutoRenderTarget art(context, dst->asRenderTarget());
 
-    if (!fMode || !fMode->asNewEffect(&xferEffect, backgroundTex)) {
+    if (!fMode || !fMode->asFragmentProcessor(&xferProcessor, backgroundTex)) {
         // canFilterImageGPU() should've taken care of this
         SkASSERT(false);
         return false;
     }
 
-    SkMatrix foregroundMatrix = GrEffect::MakeDivByTextureWHMatrix(foregroundTex);
+    SkMatrix foregroundMatrix = GrCoordTransform::MakeDivByTextureWHMatrix(foregroundTex);
     foregroundMatrix.preTranslate(SkIntToScalar(backgroundOffset.fX-foregroundOffset.fX),
                                   SkIntToScalar(backgroundOffset.fY-foregroundOffset.fY));
 
@@ -152,8 +161,8 @@ bool SkXfermodeImageFilter::filterImageGPU(Proxy* proxy,
     src.getBounds(&srcRect);
 
     GrPaint paint;
-    paint.addColorTextureEffect(foregroundTex, foregroundMatrix);
-    paint.addColorEffect(xferEffect)->unref();
+    paint.addColorTextureProcessor(foregroundTex, foregroundMatrix);
+    paint.addColorProcessor(xferProcessor)->unref();
     context->drawRect(paint, srcRect);
 
     offset->fX = backgroundOffset.fX;

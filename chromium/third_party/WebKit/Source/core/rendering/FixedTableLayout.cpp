@@ -69,9 +69,7 @@
   overflow content.
 */
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 FixedTableLayout::FixedTableLayout(RenderTable* table)
     : TableLayout(table)
@@ -140,6 +138,11 @@ int FixedTableLayout::calcWidthArray()
     RenderTableRow* firstRow = section->firstRow();
     for (RenderTableCell* cell = firstRow->firstCell(); cell; cell = cell->nextCell()) {
         Length logicalWidth = cell->styleOrColLogicalWidth();
+
+        // FIXME: calc() on tables should be handled consistently with other lengths. See bug: https://crbug.com/382725
+        if (logicalWidth.isCalculated())
+            logicalWidth = Length(); // Make it Auto
+
         unsigned span = cell->colSpan();
         int fixedBorderBoxLogicalWidth = 0;
         // FIXME: Support other length types. If the width is non-auto, it should probably just use
@@ -331,4 +334,4 @@ void FixedTableLayout::willChangeTableLayout()
     }
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -28,11 +28,11 @@
 
 #include "core/html/canvas/WebGLUniformLocation.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<WebGLUniformLocation> WebGLUniformLocation::create(WebGLProgram* program, GLint location)
+PassRefPtrWillBeRawPtr<WebGLUniformLocation> WebGLUniformLocation::create(WebGLProgram* program, GLint location)
 {
-    return adoptRef(new WebGLUniformLocation(program, location));
+    return adoptRefWillBeNoop(new WebGLUniformLocation(program, location));
 }
 
 WebGLUniformLocation::WebGLUniformLocation(WebGLProgram* program, GLint location)
@@ -40,7 +40,6 @@ WebGLUniformLocation::WebGLUniformLocation(WebGLProgram* program, GLint location
     , m_location(location)
 {
     ASSERT(m_program);
-    ScriptWrappable::init(this);
     m_linkCount = m_program->linkCount();
 }
 
@@ -59,6 +58,11 @@ GLint WebGLUniformLocation::location() const
     // longer valid.
     ASSERT(m_program->linkCount() == m_linkCount);
     return m_location;
+}
+
+void WebGLUniformLocation::trace(Visitor* visitor)
+{
+    visitor->trace(m_program);
 }
 
 }

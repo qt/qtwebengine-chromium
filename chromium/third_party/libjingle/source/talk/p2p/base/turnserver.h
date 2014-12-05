@@ -25,21 +25,21 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TURNSERVER_H_
-#define TALK_P2P_BASE_TURNSERVER_H_
+#ifndef WEBRTC_P2P_BASE_TURNSERVER_H_
+#define WEBRTC_P2P_BASE_TURNSERVER_H_
 
 #include <list>
 #include <map>
 #include <set>
 #include <string>
 
-#include "talk/base/asyncpacketsocket.h"
-#include "talk/base/messagequeue.h"
-#include "talk/base/sigslot.h"
-#include "talk/base/socketaddress.h"
-#include "talk/p2p/base/portinterface.h"
+#include "webrtc/p2p/base/portinterface.h"
+#include "webrtc/base/asyncpacketsocket.h"
+#include "webrtc/base/messagequeue.h"
+#include "webrtc/base/sigslot.h"
+#include "webrtc/base/socketaddress.h"
 
-namespace talk_base {
+namespace rtc {
 class ByteBuffer;
 class PacketSocketFactory;
 class Thread;
@@ -63,13 +63,21 @@ class TurnAuthInterface {
                       std::string* key) = 0;
 };
 
+// An interface enables Turn Server to control redirection behavior.
+class TurnRedirectInterface {
+ public:
+  virtual bool ShouldRedirect(const rtc::SocketAddress& address,
+                              rtc::SocketAddress* out) = 0;
+  virtual ~TurnRedirectInterface() {}
+};
+
 // The core TURN server class. Give it a socket to listen on via
 // AddInternalServerSocket, and a factory to create external sockets via
 // SetExternalSocketFactory, and it's ready to go.
 // Not yet wired up: TCP support.
 class TurnServer : public sigslot::has_slots<> {
  public:
-  explicit TurnServer(talk_base::Thread* thread);
+  explicit TurnServer(rtc::Thread* thread);
   ~TurnServer();
 
   // Gets/sets the realm value to use for the server.
@@ -83,54 +91,58 @@ class TurnServer : public sigslot::has_slots<> {
   // Sets the authentication callback; does not take ownership.
   void set_auth_hook(TurnAuthInterface* auth_hook) { auth_hook_ = auth_hook; }
 
+  void set_redirect_hook(TurnRedirectInterface* redirect_hook) {
+    redirect_hook_ = redirect_hook;
+  }
+
   void set_enable_otu_nonce(bool enable) { enable_otu_nonce_ = enable; }
 
   // Starts listening for packets from internal clients.
-  void AddInternalSocket(talk_base::AsyncPacketSocket* socket,
+  void AddInternalSocket(rtc::AsyncPacketSocket* socket,
                          ProtocolType proto);
   // Starts listening for the connections on this socket. When someone tries
   // to connect, the connection will be accepted and a new internal socket
   // will be added.
-  void AddInternalServerSocket(talk_base::AsyncSocket* socket,
+  void AddInternalServerSocket(rtc::AsyncSocket* socket,
                                ProtocolType proto);
   // Specifies the factory to use for creating external sockets.
-  void SetExternalSocketFactory(talk_base::PacketSocketFactory* factory,
-                                const talk_base::SocketAddress& address);
+  void SetExternalSocketFactory(rtc::PacketSocketFactory* factory,
+                                const rtc::SocketAddress& address);
 
  private:
   // Encapsulates the client's connection to the server.
   class Connection {
    public:
     Connection() : proto_(PROTO_UDP), socket_(NULL) {}
-    Connection(const talk_base::SocketAddress& src,
+    Connection(const rtc::SocketAddress& src,
                ProtocolType proto,
-               talk_base::AsyncPacketSocket* socket);
-    const talk_base::SocketAddress& src() const { return src_; }
-    talk_base::AsyncPacketSocket* socket() { return socket_; }
+               rtc::AsyncPacketSocket* socket);
+    const rtc::SocketAddress& src() const { return src_; }
+    rtc::AsyncPacketSocket* socket() { return socket_; }
     bool operator==(const Connection& t) const;
     bool operator<(const Connection& t) const;
     std::string ToString() const;
 
    private:
-    talk_base::SocketAddress src_;
-    talk_base::SocketAddress dst_;
+    rtc::SocketAddress src_;
+    rtc::SocketAddress dst_;
     cricket::ProtocolType proto_;
-    talk_base::AsyncPacketSocket* socket_;
+    rtc::AsyncPacketSocket* socket_;
   };
   class Allocation;
   class Permission;
   class Channel;
   typedef std::map<Connection, Allocation*> AllocationMap;
 
-  void OnInternalPacket(talk_base::AsyncPacketSocket* socket, const char* data,
-                        size_t size, const talk_base::SocketAddress& address,
-                        const talk_base::PacketTime& packet_time);
+  void OnInternalPacket(rtc::AsyncPacketSocket* socket, const char* data,
+                        size_t size, const rtc::SocketAddress& address,
+                        const rtc::PacketTime& packet_time);
 
-  void OnNewInternalConnection(talk_base::AsyncSocket* socket);
+  void OnNewInternalConnection(rtc::AsyncSocket* socket);
 
   // Accept connections on this server socket.
-  void AcceptConnection(talk_base::AsyncSocket* server_socket);
-  void OnInternalSocketClose(talk_base::AsyncPacketSocket* socket, int err);
+  void AcceptConnection(rtc::AsyncSocket* server_socket);
+  void OnInternalSocketClose(rtc::AsyncPacketSocket* socket, int err);
 
   void HandleStunMessage(Connection* conn, const char* data, size_t size);
   void HandleBindingRequest(Connection* conn, const StunMessage* msg);
@@ -155,33 +167,41 @@ class TurnServer : public sigslot::has_slots<> {
                                           const StunMessage* req,
                                           int code,
                                           const std::string& reason);
+
+  void SendErrorResponseWithAlternateServer(Connection* conn,
+                                            const StunMessage* req,
+                                            const rtc::SocketAddress& addr);
+
   void SendStun(Connection* conn, StunMessage* msg);
-  void Send(Connection* conn, const talk_base::ByteBuffer& buf);
+  void Send(Connection* conn, const rtc::ByteBuffer& buf);
 
   void OnAllocationDestroyed(Allocation* allocation);
-  void DestroyInternalSocket(talk_base::AsyncPacketSocket* socket);
+  void DestroyInternalSocket(rtc::AsyncPacketSocket* socket);
 
-  typedef std::map<talk_base::AsyncPacketSocket*,
+  typedef std::map<rtc::AsyncPacketSocket*,
                    ProtocolType> InternalSocketMap;
-  typedef std::map<talk_base::AsyncSocket*,
+  typedef std::map<rtc::AsyncSocket*,
                    ProtocolType> ServerSocketMap;
 
-  talk_base::Thread* thread_;
+  rtc::Thread* thread_;
   std::string nonce_key_;
   std::string realm_;
   std::string software_;
   TurnAuthInterface* auth_hook_;
+  TurnRedirectInterface* redirect_hook_;
   // otu - one-time-use. Server will respond with 438 if it's
   // sees the same nonce in next transaction.
   bool enable_otu_nonce_;
+
   InternalSocketMap server_sockets_;
   ServerSocketMap server_listen_sockets_;
-  talk_base::scoped_ptr<talk_base::PacketSocketFactory>
+  rtc::scoped_ptr<rtc::PacketSocketFactory>
       external_socket_factory_;
-  talk_base::SocketAddress external_addr_;
+  rtc::SocketAddress external_addr_;
+
   AllocationMap allocations_;
 };
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TURNSERVER_H_
+#endif  // WEBRTC_P2P_BASE_TURNSERVER_H_

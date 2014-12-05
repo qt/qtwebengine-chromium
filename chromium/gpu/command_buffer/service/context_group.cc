@@ -10,33 +10,30 @@
 #include "base/command_line.h"
 #include "base/strings/string_util.h"
 #include "base/sys_info.h"
-#include "gpu/command_buffer/common/id_allocator.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
-#include "gpu/command_buffer/service/image_manager.h"
-#include "gpu/command_buffer/service/mailbox_manager.h"
+#include "gpu/command_buffer/service/mailbox_manager_impl.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/program_manager.h"
 #include "gpu/command_buffer/service/renderbuffer_manager.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "gpu/command_buffer/service/transfer_buffer_manager.h"
+#include "gpu/command_buffer/service/valuebuffer_manager.h"
 #include "ui/gl/gl_implementation.h"
 
 namespace gpu {
 namespace gles2 {
 
 ContextGroup::ContextGroup(
-    MailboxManager* mailbox_manager,
-    ImageManager* image_manager,
-    MemoryTracker* memory_tracker,
-    ShaderTranslatorCache* shader_translator_cache,
-    FeatureInfo* feature_info,
+    const scoped_refptr<MailboxManager>& mailbox_manager,
+    const scoped_refptr<MemoryTracker>& memory_tracker,
+    const scoped_refptr<ShaderTranslatorCache>& shader_translator_cache,
+    const scoped_refptr<FeatureInfo>& feature_info,
     bool bind_generates_resource)
-    : mailbox_manager_(mailbox_manager ? mailbox_manager : new MailboxManager),
-      image_manager_(image_manager ? image_manager : new ImageManager),
+    : mailbox_manager_(mailbox_manager),
       memory_tracker_(memory_tracker),
       shader_translator_cache_(shader_translator_cache),
       enforce_gl_minimums_(CommandLine::ForCurrentProcess()->HasSwitch(
@@ -52,22 +49,17 @@ ContextGroup::ContextGroup(
       max_color_attachments_(1u),
       max_draw_buffers_(1u),
       program_cache_(NULL),
-      feature_info_(feature_info ? feature_info : new FeatureInfo),
+      feature_info_(feature_info),
       draw_buffer_(GL_BACK) {
   {
+    if (!mailbox_manager_.get())
+      mailbox_manager_ = new MailboxManagerImpl;
+    if (!feature_info.get())
+      feature_info_ = new FeatureInfo;
     TransferBufferManager* manager = new TransferBufferManager();
     transfer_buffer_manager_.reset(manager);
     manager->Initialize();
   }
-
-  id_namespaces_[id_namespaces::kBuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kFramebuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kProgramsAndShaders].reset(
-      new NonReusedIdAllocator);
-  id_namespaces_[id_namespaces::kRenderbuffers].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kTextures].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kQueries].reset(new IdAllocator);
-  id_namespaces_[id_namespaces::kVertexArrays].reset(new IdAllocator);
 }
 
 static void GetIntegerv(GLenum pname, uint32* var) {
@@ -130,6 +122,7 @@ bool ContextGroup::Initialize(
   renderbuffer_manager_.reset(new RenderbufferManager(
       memory_tracker_.get(), max_renderbuffer_size, max_samples,
       depth24_supported));
+  valuebuffer_manager_.reset(new ValuebufferManager());
   shader_manager_.reset(new ShaderManager());
 
   // Lookup GL things we need to know.
@@ -309,6 +302,11 @@ void ContextGroup::Destroy(GLES2Decoder* decoder, bool have_context) {
     renderbuffer_manager_.reset();
   }
 
+  if (valuebuffer_manager_ != NULL) {
+    valuebuffer_manager_->Destroy();
+    valuebuffer_manager_.reset();
+  }
+
   if (texture_manager_ != NULL) {
     texture_manager_->Destroy(have_context);
     texture_manager_.reset();
@@ -325,13 +323,6 @@ void ContextGroup::Destroy(GLES2Decoder* decoder, bool have_context) {
   }
 
   memory_tracker_ = NULL;
-}
-
-IdAllocatorInterface* ContextGroup::GetIdAllocator(unsigned namespace_id) {
-  if (namespace_id >= arraysize(id_namespaces_))
-    return NULL;
-
-  return id_namespaces_[namespace_id].get();
 }
 
 uint32 ContextGroup::GetMemRepresented() const {

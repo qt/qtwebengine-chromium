@@ -34,18 +34,18 @@ class NET_EXPORT_PRIVATE QuicConnectionHelper
   QuicConnectionHelper(base::TaskRunner* task_runner,
                        const QuicClock* clock,
                        QuicRandom* random_generator);
-  virtual ~QuicConnectionHelper();
+  ~QuicConnectionHelper() override;
 
   // QuicConnectionHelperInterface
-  virtual const QuicClock* GetClock() const OVERRIDE;
-  virtual QuicRandom* GetRandomGenerator() OVERRIDE;
-  virtual QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) OVERRIDE;
+  const QuicClock* GetClock() const override;
+  QuicRandom* GetRandomGenerator() override;
+  QuicAlarm* CreateAlarm(QuicAlarm::Delegate* delegate) override;
 
  private:
-  base::WeakPtrFactory<QuicConnectionHelper> weak_factory_;
   base::TaskRunner* task_runner_;
   const QuicClock* clock_;
   QuicRandom* random_generator_;
+  base::WeakPtrFactory<QuicConnectionHelper> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicConnectionHelper);
 };

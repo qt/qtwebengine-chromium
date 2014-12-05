@@ -31,63 +31,64 @@
 #ifndef ServiceWorkerContainer_h
 #define ServiceWorkerContainer_h
 
-#include "bindings/v8/ScriptPromise.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromiseProperty.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
+#include "modules/serviceworkers/RegistrationOptions.h"
 #include "modules/serviceworkers/ServiceWorker.h"
+#include "modules/serviceworkers/ServiceWorkerRegistration.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebServiceWorkerProviderClient.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/RefPtr.h"
 
 namespace blink {
-class WebServiceWorkerProvider;
-class WebServiceWorker;
-}
 
-namespace WebCore {
-
-class Dictionary;
 class ExecutionContext;
-class ServiceWorker;
+class WebServiceWorker;
+class WebServiceWorkerProvider;
+class WebServiceWorkerRegistration;
 
-class ServiceWorkerContainer FINAL :
-    public RefCounted<ServiceWorkerContainer>,
-    public ScriptWrappable,
-    public ContextLifecycleObserver,
-    public blink::WebServiceWorkerProviderClient {
+class ServiceWorkerContainer final
+    : public GarbageCollectedFinalized<ServiceWorkerContainer>
+    , public ScriptWrappable
+    , public ContextLifecycleObserver
+    , public WebServiceWorkerProviderClient {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<ServiceWorkerContainer> create(ExecutionContext*);
+    static ServiceWorkerContainer* create(ExecutionContext*);
     ~ServiceWorkerContainer();
 
-    void detachClient();
+    void willBeDetachedFromFrame();
 
-    PassRefPtrWillBeRawPtr<ServiceWorker> active() { return m_active.get(); }
+    void trace(Visitor*);
+
     PassRefPtrWillBeRawPtr<ServiceWorker> controller() { return m_controller.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> installing() { return m_installing.get(); }
-    PassRefPtrWillBeRawPtr<ServiceWorker> waiting() { return m_waiting.get(); }
     ScriptPromise ready(ScriptState*);
+    WebServiceWorkerProvider* provider() { return m_provider; }
 
-    ScriptPromise registerServiceWorker(ScriptState*, const String& pattern, const Dictionary&);
-    ScriptPromise unregisterServiceWorker(ScriptState*, const String& scope = String());
+    ScriptPromise registerServiceWorker(ScriptState*, const String& pattern, const RegistrationOptions&);
+    ScriptPromise getRegistration(ScriptState*, const String& documentURL);
 
     // WebServiceWorkerProviderClient overrides.
-    virtual void setActive(blink::WebServiceWorker*) OVERRIDE;
-    virtual void setController(blink::WebServiceWorker*) OVERRIDE;
-    virtual void setInstalling(blink::WebServiceWorker*) OVERRIDE;
-    virtual void setWaiting(blink::WebServiceWorker*) OVERRIDE;
-    virtual void dispatchMessageEvent(const blink::WebString& message, const blink::WebMessagePortChannelArray&) OVERRIDE;
+    virtual void setController(WebServiceWorker*) override;
+    virtual void setReadyRegistration(WebServiceWorkerRegistration*) override;
+    virtual void dispatchMessageEvent(const WebString& message, const WebMessagePortChannelArray&) override;
 
 private:
     explicit ServiceWorkerContainer(ExecutionContext*);
 
-    blink::WebServiceWorkerProvider* m_provider;
-    RefPtr<ServiceWorker> m_active;
-    RefPtr<ServiceWorker> m_controller;
-    RefPtr<ServiceWorker> m_installing;
-    RefPtr<ServiceWorker> m_waiting;
+    typedef ScriptPromiseProperty<Member<ServiceWorkerContainer>, Member<ServiceWorkerRegistration>, Member<ServiceWorkerRegistration> > ReadyProperty;
+    ReadyProperty* createReadyProperty();
+
+    WebServiceWorkerProvider* m_provider;
+    RefPtrWillBeMember<ServiceWorker> m_controller;
+    Member<ServiceWorkerRegistration> m_readyRegistration;
+    Member<ReadyProperty> m_ready;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ServiceWorkerContainer_h

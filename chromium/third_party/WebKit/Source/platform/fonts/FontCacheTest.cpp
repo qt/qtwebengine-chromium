@@ -10,13 +10,13 @@
 #include "public/platform/Platform.h"
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
-class EmptyPlatform : public blink::Platform {
+class EmptyPlatform : public Platform {
 public:
     EmptyPlatform() { }
     virtual ~EmptyPlatform() { }
-    virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) OVERRIDE { }
+    virtual void cryptographicallyRandomValues(unsigned char* buffer, size_t length) override { }
 };
 
 TEST(FontCache, getLastResortFallbackFont)
@@ -24,12 +24,9 @@ TEST(FontCache, getLastResortFallbackFont)
     FontCache* fontCache = FontCache::fontCache();
     ASSERT_TRUE(fontCache);
 
-    blink::Platform* oldPlatform = blink::Platform::current();
+    Platform* oldPlatform = Platform::current();
     OwnPtr<EmptyPlatform> platform = adoptPtr(new EmptyPlatform);
-    blink::Platform::initialize(platform.get());
-
-    if (emptyAtom.isNull())
-        AtomicString::init();
+    Platform::initialize(platform.get());
 
     FontDescription fontDescription;
     fontDescription.setGenericFamily(FontDescription::StandardFamily);
@@ -40,7 +37,7 @@ TEST(FontCache, getLastResortFallbackFont)
     fontData = fontCache->getLastResortFallbackFont(fontDescription, Retain);
     EXPECT_TRUE(fontData);
 
-    blink::Platform::initialize(oldPlatform);
+    Platform::initialize(oldPlatform);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -49,13 +49,12 @@ class TestShellContentRendererClient : public ShellContentRendererClient {
         latest_error_reason_(0),
         latest_error_stale_copy_in_cache_(false) {}
 
-  virtual void GetNavigationErrorStrings(
-      content::RenderView* render_view,
-      blink::WebFrame* frame,
-      const blink::WebURLRequest& failed_request,
-      const blink::WebURLError& error,
-      std::string* error_html,
-      base::string16* error_description) OVERRIDE {
+  void GetNavigationErrorStrings(content::RenderView* render_view,
+                                 blink::WebFrame* frame,
+                                 const blink::WebURLRequest& failed_request,
+                                 const blink::WebURLError& error,
+                                 std::string* error_html,
+                                 base::string16* error_description) override {
     if (error_html)
       *error_html = "A suffusion of yellow.";
     latest_error_valid_ = true;
@@ -88,8 +87,7 @@ void InterceptNetworkTransactions(net::URLRequestContextGetter* getter,
       new net::FailingHttpTransactionFactory(cache->GetSession(), error));
   // Throw away old version; since this is a browser test, there is no
   // need to restore the old state.
-  cache->SetHttpNetworkTransactionFactoryForTesting(
-      factory.PassAs<net::HttpTransactionFactory>());
+  cache->SetHttpNetworkTransactionFactoryForTesting(factory.Pass());
 }
 
 void CallOnUIThreadValidatingReturn(const base::Closure& callback,
@@ -139,13 +137,13 @@ class RenderViewBrowserTest : public ContentBrowserTest {
  public:
   RenderViewBrowserTest() {}
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  void SetUpCommandLine(CommandLine* command_line) override {
     // This method is needed to allow interaction with in-process renderer
     // and use of a test ContentRendererClient.
     command_line->AppendSwitch(switches::kSingleProcess);
   }
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     // Override setting of renderer client.
     renderer_client_ = new TestShellContentRendererClient();
     // Explicitly leaks ownership; this object will remain alive

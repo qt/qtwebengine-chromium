@@ -19,9 +19,10 @@ static const bool kGPUDisabled = false;
 
 static inline SkSurface* NewGpuSurface(GrContextFactory* grFactory,
                                        GrContextFactory::GLContextType type,
+                                       GrGLStandard gpuAPI,
                                        SkImageInfo info,
                                        int samples) {
-    return SkSurface::NewRenderTarget(grFactory->get(type), info, samples);
+    return SkSurface::NewRenderTarget(grFactory->get(type, gpuAPI), info, samples, NULL);
 }
 
 }  // namespace DM
@@ -29,6 +30,13 @@ static inline SkSurface* NewGpuSurface(GrContextFactory* grFactory,
 #else// !SK_SUPPORT_GPU
 
 // Ganesh is not available.  Fake it.
+
+enum GrGLStandard {
+    kNone_GrGLStandard,
+    kGL_GrGLStandard,
+    kGLES_GrGLStandard
+};
+static const int kGrGLStandardCnt = 3;
 
 class GrContextFactory {
 public:
@@ -40,6 +48,10 @@ public:
                                kNVPR_GLContextType   = 0,
                                kNative_GLContextType = 0,
                                kNull_GLContextType   = 0;
+    static const int kGLContextTypeCnt = 1;
+    void destroyContexts() {}
+
+    void abandonContexts() {}
 };
 
 namespace DM {
@@ -48,6 +60,7 @@ static const bool kGPUDisabled = true;
 
 static inline SkSurface* NewGpuSurface(GrContextFactory*,
                                        GrContextFactory::GLContextType,
+                                       GrGLStandard,
                                        SkImageInfo,
                                        int) {
     return NULL;

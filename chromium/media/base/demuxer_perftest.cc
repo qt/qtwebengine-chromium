@@ -17,28 +17,28 @@
 
 namespace media {
 
-static const int kBenchmarkIterations = 500;
+static const int kBenchmarkIterations = 100;
 
 class DemuxerHostImpl : public media::DemuxerHost {
  public:
   DemuxerHostImpl() {}
-  virtual ~DemuxerHostImpl() {}
+  ~DemuxerHostImpl() override {}
 
   // DemuxerHost implementation.
-  virtual void AddBufferedTimeRange(base::TimeDelta start,
-                                    base::TimeDelta end) OVERRIDE {}
-  virtual void SetDuration(base::TimeDelta duration) OVERRIDE {}
-  virtual void OnDemuxerError(media::PipelineStatus error) OVERRIDE {}
-  virtual void AddTextStream(media::DemuxerStream* text_stream,
-                             const media::TextTrackConfig& config) OVERRIDE {}
-  virtual void RemoveTextStream(media::DemuxerStream* text_stream) OVERRIDE {}
+  void AddBufferedTimeRange(base::TimeDelta start,
+                            base::TimeDelta end) override {}
+  void SetDuration(base::TimeDelta duration) override {}
+  void OnDemuxerError(media::PipelineStatus error) override {}
+  void AddTextStream(media::DemuxerStream* text_stream,
+                     const media::TextTrackConfig& config) override {}
+  void RemoveTextStream(media::DemuxerStream* text_stream) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DemuxerHostImpl);
 };
 
 static void QuitLoopWithStatus(base::MessageLoop* message_loop,
-                        media::PipelineStatus status) {
+                               media::PipelineStatus status) {
   CHECK_EQ(status, media::PIPELINE_OK);
   message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
 }
@@ -194,8 +194,8 @@ static void RunDemuxerBenchmark(const std::string& filename) {
     }
     base::TimeTicks end = base::TimeTicks::HighResNow();
     total_time += (end - start).InSecondsF();
-    demuxer.Stop(base::Bind(
-        &QuitLoopWithStatus, &message_loop, PIPELINE_OK));
+    demuxer.Stop();
+    QuitLoopWithStatus(&message_loop, PIPELINE_OK);
     message_loop.Run();
   }
 
@@ -207,7 +207,13 @@ static void RunDemuxerBenchmark(const std::string& filename) {
                          true);
 }
 
-TEST(DemuxerPerfTest, Demuxer) {
+#if defined(OS_WIN)
+// http://crbug.com/399002
+#define MAYBE_Demuxer DISABLED_Demuxer
+#else
+#define MAYBE_Demuxer Demuxer
+#endif
+TEST(DemuxerPerfTest, MAYBE_Demuxer) {
   RunDemuxerBenchmark("bear.ogv");
   RunDemuxerBenchmark("bear-640x360.webm");
   RunDemuxerBenchmark("sfx_s16le.wav");

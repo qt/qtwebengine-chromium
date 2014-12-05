@@ -8,7 +8,7 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/animation/tween.h"
-#include "ui/gfx/box_f.h"
+#include "ui/gfx/geometry/box_f.h"
 #include "ui/gfx/test/gfx_util.h"
 
 namespace cc {
@@ -29,8 +29,7 @@ TEST(KeyframedAnimationCurveTest, OneColorKeyFrame) {
   SkColor color = SkColorSetARGB(255, 255, 255, 255);
   scoped_ptr<KeyframedColorAnimationCurve> curve(
       KeyframedColorAnimationCurve::Create());
-  curve->AddKeyframe(
-      ColorKeyframe::Create(0.0, color, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(ColorKeyframe::Create(0.0, color, nullptr));
 
   EXPECT_SKCOLOR_EQ(color, curve->GetValue(-1.f));
   EXPECT_SKCOLOR_EQ(color, curve->GetValue(0.f));
@@ -46,10 +45,8 @@ TEST(KeyframedAnimationCurveTest, TwoColorKeyFrame) {
   SkColor color_midpoint = gfx::Tween::ColorValueBetween(0.5, color_a, color_b);
   scoped_ptr<KeyframedColorAnimationCurve> curve(
       KeyframedColorAnimationCurve::Create());
-  curve->AddKeyframe(
-      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(ColorKeyframe::Create(0.0, color_a, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(1.0, color_b, nullptr));
 
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
@@ -69,12 +66,9 @@ TEST(KeyframedAnimationCurveTest, ThreeColorKeyFrame) {
       gfx::Tween::ColorValueBetween(0.5, color_b, color_c);
   scoped_ptr<KeyframedColorAnimationCurve> curve(
       KeyframedColorAnimationCurve::Create());
-  curve->AddKeyframe(
-      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(2.0, color_c, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(ColorKeyframe::Create(0.0, color_a, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(1.0, color_b, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(2.0, color_c, nullptr));
 
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
@@ -92,14 +86,10 @@ TEST(KeyframedAnimationCurveTest, RepeatedColorKeyFrame) {
 
   scoped_ptr<KeyframedColorAnimationCurve> curve(
       KeyframedColorAnimationCurve::Create());
-  curve->AddKeyframe(
-      ColorKeyframe::Create(0.0, color_a, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(1.0, color_a, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(1.0, color_b, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      ColorKeyframe::Create(2.0, color_b, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(ColorKeyframe::Create(0.0, color_a, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(1.0, color_a, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(1.0, color_b, nullptr));
+  curve->AddKeyframe(ColorKeyframe::Create(2.0, color_b, nullptr));
 
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(-1.f));
   EXPECT_SKCOLOR_EQ(color_a, curve->GetValue(0.f));
@@ -120,8 +110,7 @@ TEST(KeyframedAnimationCurveTest, RepeatedColorKeyFrame) {
 TEST(KeyframedAnimationCurveTest, OneFloatKeyframe) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
-  curve->AddKeyframe(
-      FloatKeyframe::Create(0.0, 2.f, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 2.f, nullptr));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(-1.f));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(0.f));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(0.5f));
@@ -133,10 +122,8 @@ TEST(KeyframedAnimationCurveTest, OneFloatKeyframe) {
 TEST(KeyframedAnimationCurveTest, TwoFloatKeyframe) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
-  curve->AddKeyframe(
-      FloatKeyframe::Create(0.0, 2.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 4.f, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 2.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 4.f, nullptr));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(-1.f));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(0.f));
   EXPECT_FLOAT_EQ(3.f, curve->GetValue(0.5f));
@@ -148,12 +135,9 @@ TEST(KeyframedAnimationCurveTest, TwoFloatKeyframe) {
 TEST(KeyframedAnimationCurveTest, ThreeFloatKeyframe) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
-  curve->AddKeyframe(
-      FloatKeyframe::Create(0.0, 2.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 4.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(2.0, 8.f, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 2.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 4.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(2.0, 8.f, nullptr));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(-1.f));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(0.f));
   EXPECT_FLOAT_EQ(3.f, curve->GetValue(0.5f));
@@ -167,14 +151,10 @@ TEST(KeyframedAnimationCurveTest, ThreeFloatKeyframe) {
 TEST(KeyframedAnimationCurveTest, RepeatedFloatKeyTimes) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
-  curve->AddKeyframe(
-      FloatKeyframe::Create(0.0, 4.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 4.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 6.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(2.0, 6.f, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 4.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 4.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 6.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(2.0, 6.f, nullptr));
 
   EXPECT_FLOAT_EQ(4.f, curve->GetValue(-1.f));
   EXPECT_FLOAT_EQ(4.f, curve->GetValue(0.f));
@@ -195,8 +175,7 @@ TEST(KeyframedAnimationCurveTest, OneTransformKeyframe) {
       KeyframedTransformAnimationCurve::Create());
   TransformOperations operations;
   operations.AppendTranslate(2.f, 0.f, 0.f);
-  curve->AddKeyframe(
-      TransformKeyframe::Create(0.f, operations, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.f, operations, nullptr));
 
   ExpectTranslateX(2.f, curve->GetValue(-1.f));
   ExpectTranslateX(2.f, curve->GetValue(0.f));
@@ -214,10 +193,8 @@ TEST(KeyframedAnimationCurveTest, TwoTransformKeyframe) {
   TransformOperations operations2;
   operations2.AppendTranslate(4.f, 0.f, 0.f);
 
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(1.f, operations2, nullptr));
   ExpectTranslateX(2.f, curve->GetValue(-1.f));
   ExpectTranslateX(2.f, curve->GetValue(0.f));
   ExpectTranslateX(3.f, curve->GetValue(0.5f));
@@ -235,12 +212,9 @@ TEST(KeyframedAnimationCurveTest, ThreeTransformKeyframe) {
   operations2.AppendTranslate(4.f, 0.f, 0.f);
   TransformOperations operations3;
   operations3.AppendTranslate(8.f, 0.f, 0.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      2.f, operations3, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(1.f, operations2, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(2.f, operations3, nullptr));
   ExpectTranslateX(2.f, curve->GetValue(-1.f));
   ExpectTranslateX(2.f, curve->GetValue(0.f));
   ExpectTranslateX(3.f, curve->GetValue(0.5f));
@@ -264,14 +238,10 @@ TEST(KeyframedAnimationCurveTest, RepeatedTransformKeyTimes) {
   operations3.AppendTranslate(6.f, 0.f, 0.f);
   TransformOperations operations4;
   operations4.AppendTranslate(6.f, 0.f, 0.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.f, operations3, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(TransformKeyframe::Create(
-      2.f, operations4, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(1.f, operations2, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(1.f, operations3, nullptr));
+  curve->AddKeyframe(TransformKeyframe::Create(2.f, operations4, nullptr));
 
   ExpectTranslateX(4.f, curve->GetValue(-1.f));
   ExpectTranslateX(4.f, curve->GetValue(0.f));
@@ -293,8 +263,7 @@ TEST(KeyframedAnimationCurveTest, OneFilterKeyframe) {
       KeyframedFilterAnimationCurve::Create());
   FilterOperations operations;
   operations.Append(FilterOperation::CreateBrightnessFilter(2.f));
-  curve->AddKeyframe(
-      FilterKeyframe::Create(0.f, operations, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FilterKeyframe::Create(0.f, operations, nullptr));
 
   ExpectBrightness(2.f, curve->GetValue(-1.f));
   ExpectBrightness(2.f, curve->GetValue(0.f));
@@ -312,10 +281,8 @@ TEST(KeyframedAnimationCurveTest, TwoFilterKeyframe) {
   FilterOperations operations2;
   operations2.Append(FilterOperation::CreateBrightnessFilter(4.f));
 
-  curve->AddKeyframe(FilterKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FilterKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(1.f, operations2, nullptr));
   ExpectBrightness(2.f, curve->GetValue(-1.f));
   ExpectBrightness(2.f, curve->GetValue(0.f));
   ExpectBrightness(3.f, curve->GetValue(0.5f));
@@ -333,12 +300,9 @@ TEST(KeyframedAnimationCurveTest, ThreeFilterKeyframe) {
   operations2.Append(FilterOperation::CreateBrightnessFilter(4.f));
   FilterOperations operations3;
   operations3.Append(FilterOperation::CreateBrightnessFilter(8.f));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      2.f, operations3, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FilterKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(1.f, operations2, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(2.f, operations3, nullptr));
   ExpectBrightness(2.f, curve->GetValue(-1.f));
   ExpectBrightness(2.f, curve->GetValue(0.f));
   ExpectBrightness(3.f, curve->GetValue(0.5f));
@@ -362,14 +326,10 @@ TEST(KeyframedAnimationCurveTest, RepeatedFilterKeyTimes) {
   operations3.Append(FilterOperation::CreateBrightnessFilter(6.f));
   FilterOperations operations4;
   operations4.Append(FilterOperation::CreateBrightnessFilter(6.f));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      0.f, operations1, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      1.f, operations2, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      1.f, operations3, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(FilterKeyframe::Create(
-      2.f, operations4, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FilterKeyframe::Create(0.f, operations1, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(1.f, operations2, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(1.f, operations3, nullptr));
+  curve->AddKeyframe(FilterKeyframe::Create(2.f, operations4, nullptr));
 
   ExpectBrightness(4.f, curve->GetValue(-1.f));
   ExpectBrightness(4.f, curve->GetValue(0.f));
@@ -391,12 +351,9 @@ TEST(KeyframedAnimationCurveTest, RepeatedFilterKeyTimes) {
 TEST(KeyframedAnimationCurveTest, UnsortedKeyframes) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
-  curve->AddKeyframe(
-      FloatKeyframe::Create(2.0, 8.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(0.0, 2.f, scoped_ptr<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 4.f, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(FloatKeyframe::Create(2.0, 8.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 2.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 4.f, nullptr));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(-1.f));
   EXPECT_FLOAT_EQ(2.f, curve->GetValue(0.f));
   EXPECT_FLOAT_EQ(3.f, curve->GetValue(0.5f));
@@ -411,12 +368,8 @@ TEST(KeyframedAnimationCurveTest, CubicBezierTimingFunction) {
   scoped_ptr<KeyframedFloatAnimationCurve> curve(
       KeyframedFloatAnimationCurve::Create());
   curve->AddKeyframe(FloatKeyframe::Create(
-      0.0,
-      0.f,
-      CubicBezierTimingFunction::Create(0.25f, 0.f, 0.75f, 1.f)
-          .PassAs<TimingFunction>()));
-  curve->AddKeyframe(
-      FloatKeyframe::Create(1.0, 1.f, scoped_ptr<TimingFunction>()));
+      0.0, 0.f, CubicBezierTimingFunction::Create(0.25f, 0.f, 0.75f, 1.f)));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 1.f, nullptr));
 
   EXPECT_FLOAT_EQ(0.f, curve->GetValue(0.f));
   EXPECT_LT(0.f, curve->GetValue(0.25f));
@@ -433,11 +386,9 @@ TEST(KeyframedAnimationCurveTest, AnimatedBounds) {
       KeyframedTransformAnimationCurve::Create());
 
   TransformOperations operations1;
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.0, operations1, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.0, operations1, nullptr));
   operations1.AppendTranslate(2.0, 3.0, -1.0);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.5, operations1, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.5, operations1, nullptr));
   TransformOperations operations2;
   operations2.AppendTranslate(4.0, 1.0, 2.0);
   curve->AddKeyframe(TransformKeyframe::Create(
@@ -457,27 +408,23 @@ TEST(KeyframedAnimationCurveTest, AffectsScale) {
       KeyframedTransformAnimationCurve::Create());
 
   TransformOperations operations1;
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.0, operations1, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.0, operations1, nullptr));
   operations1.AppendTranslate(2.0, 3.0, -1.0);
   TransformOperations operations2;
   operations2.AppendTranslate(4.0, 1.0, 2.0);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.0, operations2, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(1.0, operations2, nullptr));
 
   EXPECT_FALSE(curve->AffectsScale());
 
   TransformOperations operations3;
   operations3.AppendScale(2.f, 2.f, 2.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      2.0, operations3, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(2.0, operations3, nullptr));
 
   EXPECT_TRUE(curve->AffectsScale());
 
   TransformOperations operations4;
   operations3.AppendTranslate(2.f, 2.f, 2.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      3.0, operations4, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(3.0, operations4, nullptr));
 
   EXPECT_TRUE(curve->AffectsScale());
 }
@@ -488,45 +435,40 @@ TEST(KeyframedAnimationCurveTest, IsTranslation) {
       KeyframedTransformAnimationCurve::Create());
 
   TransformOperations operations1;
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.0, operations1, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.0, operations1, nullptr));
   operations1.AppendTranslate(2.0, 3.0, -1.0);
   TransformOperations operations2;
   operations2.AppendTranslate(4.0, 1.0, 2.0);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      1.0, operations2, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(1.0, operations2, nullptr));
 
   EXPECT_TRUE(curve->IsTranslation());
 
   TransformOperations operations3;
   operations3.AppendScale(2.f, 2.f, 2.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      2.0, operations3, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(2.0, operations3, nullptr));
 
   EXPECT_FALSE(curve->IsTranslation());
 
   TransformOperations operations4;
   operations3.AppendTranslate(2.f, 2.f, 2.f);
-  curve->AddKeyframe(TransformKeyframe::Create(
-      3.0, operations4, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(3.0, operations4, nullptr));
 
   EXPECT_FALSE(curve->IsTranslation());
 }
 
-// Tests that maximum scale is computed as expected.
-TEST(KeyframedAnimationCurveTest, MaximumScale) {
+// Tests that maximum target scale is computed as expected.
+TEST(KeyframedAnimationCurveTest, MaximumTargetScale) {
   scoped_ptr<KeyframedTransformAnimationCurve> curve(
       KeyframedTransformAnimationCurve::Create());
 
   TransformOperations operations1;
-  curve->AddKeyframe(TransformKeyframe::Create(
-      0.0, operations1, scoped_ptr<TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(0.0, operations1, nullptr));
   operations1.AppendScale(2.f, -3.f, 1.f);
   curve->AddKeyframe(TransformKeyframe::Create(
       1.0, operations1, EaseTimingFunction::Create()));
 
   float maximum_scale = 0.f;
-  EXPECT_TRUE(curve->MaximumScale(&maximum_scale));
+  EXPECT_TRUE(curve->MaximumTargetScale(true, &maximum_scale));
   EXPECT_EQ(3.f, maximum_scale);
 
   TransformOperations operations2;
@@ -534,7 +476,7 @@ TEST(KeyframedAnimationCurveTest, MaximumScale) {
   curve->AddKeyframe(TransformKeyframe::Create(
       2.0, operations2, EaseTimingFunction::Create()));
 
-  EXPECT_TRUE(curve->MaximumScale(&maximum_scale));
+  EXPECT_TRUE(curve->MaximumTargetScale(true, &maximum_scale));
   EXPECT_EQ(6.f, maximum_scale);
 
   TransformOperations operations3;
@@ -542,7 +484,106 @@ TEST(KeyframedAnimationCurveTest, MaximumScale) {
   curve->AddKeyframe(TransformKeyframe::Create(
       3.0, operations3, EaseTimingFunction::Create()));
 
-  EXPECT_FALSE(curve->MaximumScale(&maximum_scale));
+  EXPECT_FALSE(curve->MaximumTargetScale(true, &maximum_scale));
+
+  // The original scale is not used in computing the max.
+  scoped_ptr<KeyframedTransformAnimationCurve> curve2(
+      KeyframedTransformAnimationCurve::Create());
+
+  TransformOperations operations4;
+  operations4.AppendScale(0.4f, 0.2f, 0.6f);
+  curve2->AddKeyframe(TransformKeyframe::Create(
+      0.0, operations4, EaseTimingFunction::Create()));
+  TransformOperations operations5;
+  operations5.AppendScale(0.5f, 0.3f, -0.8f);
+  curve2->AddKeyframe(TransformKeyframe::Create(
+      1.0, operations5, EaseTimingFunction::Create()));
+
+  EXPECT_TRUE(curve2->MaximumTargetScale(true, &maximum_scale));
+  EXPECT_EQ(0.8f, maximum_scale);
+
+  EXPECT_TRUE(curve2->MaximumTargetScale(false, &maximum_scale));
+  EXPECT_EQ(0.6f, maximum_scale);
+}
+
+// Tests that an animation with a curve timing function works as expected.
+TEST(KeyframedAnimationCurveTest, CurveTiming) {
+  scoped_ptr<KeyframedFloatAnimationCurve> curve(
+      KeyframedFloatAnimationCurve::Create());
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 0.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 1.f, nullptr));
+  curve->SetTimingFunction(
+      CubicBezierTimingFunction::Create(0.75f, 0.f, 0.25f, 1.f).Pass());
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(-1.f));
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(0.f));
+  EXPECT_NEAR(0.05f, curve->GetValue(0.25f), 0.005f);
+  EXPECT_FLOAT_EQ(0.5f, curve->GetValue(0.5f));
+  EXPECT_NEAR(0.95f, curve->GetValue(0.75f), 0.005f);
+  EXPECT_FLOAT_EQ(1.f, curve->GetValue(1.f));
+  EXPECT_FLOAT_EQ(1.f, curve->GetValue(2.f));
+}
+
+// Tests that an animation with a curve and keyframe timing function works as
+// expected.
+TEST(KeyframedAnimationCurveTest, CurveAndKeyframeTiming) {
+  scoped_ptr<KeyframedFloatAnimationCurve> curve(
+      KeyframedFloatAnimationCurve::Create());
+  curve->AddKeyframe(FloatKeyframe::Create(
+      0.0,
+      0.f,
+      CubicBezierTimingFunction::Create(0.35f, 0.f, 0.65f, 1.f).Pass()));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 1.f, nullptr));
+  // Curve timing function producing outputs outside of range [0,1].
+  curve->SetTimingFunction(
+      CubicBezierTimingFunction::Create(0.5f, -0.5f, 0.5f, 1.5f).Pass());
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(-1.f));
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(0.f));
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(0.25f));        // Clamped. c(.25) < 0
+  EXPECT_NEAR(0.17f, curve->GetValue(0.42f), 0.005f);  // c(.42)=.27, k(.27)=.17
+  EXPECT_FLOAT_EQ(0.5f, curve->GetValue(0.5f));
+  EXPECT_NEAR(0.83f, curve->GetValue(0.58f), 0.005f);  // c(.58)=.73, k(.73)=.83
+  EXPECT_FLOAT_EQ(1.f, curve->GetValue(0.75f));        // Clamped. c(.75) > 1
+  EXPECT_FLOAT_EQ(1.f, curve->GetValue(1.f));
+  EXPECT_FLOAT_EQ(1.f, curve->GetValue(2.f));
+}
+
+// Tests that an animation with a curve timing function and multiple keyframes
+// works as expected.
+TEST(KeyframedAnimationCurveTest, CurveTimingMultipleKeyframes) {
+  scoped_ptr<KeyframedFloatAnimationCurve> curve(
+      KeyframedFloatAnimationCurve::Create());
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 0.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 1.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(2.0, 3.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(3.0, 6.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(4.0, 9.f, nullptr));
+  curve->SetTimingFunction(
+      CubicBezierTimingFunction::Create(0.5f, 0.f, 0.5f, 1.f).Pass());
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(-1.f));
+  EXPECT_FLOAT_EQ(0.f, curve->GetValue(0.f));
+  EXPECT_NEAR(0.42f, curve->GetValue(1.f), 0.005f);
+  EXPECT_NEAR(1.f, curve->GetValue(1.455f), 0.005f);
+  EXPECT_FLOAT_EQ(3.f, curve->GetValue(2.f));
+  EXPECT_NEAR(8.72f, curve->GetValue(3.5f), 0.01f);
+  EXPECT_FLOAT_EQ(9.f, curve->GetValue(4.f));
+  EXPECT_FLOAT_EQ(9.f, curve->GetValue(5.f));
+}
+
+// Tests that an animation with a curve timing function that overshoots works as
+// expected.
+TEST(KeyframedAnimationCurveTest, CurveTimingOvershootMultipeKeyframes) {
+  scoped_ptr<KeyframedFloatAnimationCurve> curve(
+      KeyframedFloatAnimationCurve::Create());
+  curve->AddKeyframe(FloatKeyframe::Create(0.0, 0.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(1.0, 1.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(2.0, 3.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(3.0, 6.f, nullptr));
+  curve->AddKeyframe(FloatKeyframe::Create(4.0, 9.f, nullptr));
+  // Curve timing function producing outputs outside of range [0,1].
+  curve->SetTimingFunction(
+      CubicBezierTimingFunction::Create(0.5f, -0.5f, 0.5f, 1.5f).Pass());
+  EXPECT_LE(curve->GetValue(1.f), 0.f);  // c(.25) < 0
+  EXPECT_GE(curve->GetValue(3.f), 9.f);  // c(.75) > 1
 }
 
 }  // namespace

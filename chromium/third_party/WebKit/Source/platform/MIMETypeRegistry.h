@@ -28,11 +28,10 @@
 
 #include "platform/PlatformExport.h"
 #include "wtf/HashSet.h"
-#include "wtf/Vector.h"
 #include "wtf/text/StringHash.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT MIMETypeRegistry {
 public:
@@ -48,6 +47,9 @@ public:
     // Check to see if a mime type is suitable for being loaded as an image
     // document in a frame.
     static bool isSupportedImageResourceMIMEType(const String& mimeType);
+
+    // Check to see if a mime type is suitable for being displayed as an image.
+    static bool isSupportedImagePrefixedMIMEType(const String& mimeType);
 
     // Check to see if a mime type is suitable for being encoded.
     static bool isSupportedImageMIMETypeForEncoding(const String& mimeType);
@@ -70,6 +72,6 @@ public:
     static bool isJavaAppletMIMEType(const String& mimeType);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MIMETypeRegistry_h

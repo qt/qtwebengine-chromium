@@ -31,8 +31,8 @@
 #include "config.h"
 #include "core/inspector/InspectorInspectorAgent.h"
 
-#include "bindings/v8/DOMWrapperWorld.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/InspectorFrontend.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
@@ -46,7 +46,7 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace InspectorAgentState {
 static const char inspectorAgentEnabled[] = "inspectorAgentEnabled";
@@ -63,7 +63,16 @@ InspectorInspectorAgent::InspectorInspectorAgent(Page* page, InjectedScriptManag
 
 InspectorInspectorAgent::~InspectorInspectorAgent()
 {
+#if !ENABLE(OILPAN)
     m_instrumentingAgents->setInspectorInspectorAgent(0);
+#endif
+}
+
+void InspectorInspectorAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_inspectedPage);
+    visitor->trace(m_injectedScriptManager);
+    InspectorBaseAgent::trace(visitor);
 }
 
 void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
@@ -78,9 +87,9 @@ void InspectorInspectorAgent::didClearDocumentOfWindowObject(LocalFrame* frame)
     int injectedScriptId = m_injectedScriptManager->injectedScriptIdFor(ScriptState::forMainWorld(frame));
     StringBuilder scriptSource;
     scriptSource.append(script);
-    scriptSource.append("(");
+    scriptSource.append('(');
     scriptSource.appendNumber(injectedScriptId);
-    scriptSource.append(")");
+    scriptSource.append(')');
     frame->script().executeScriptInMainWorld(scriptSource.toString());
 }
 
@@ -91,7 +100,7 @@ void InspectorInspectorAgent::init()
 
 void InspectorInspectorAgent::setFrontend(InspectorFrontend* inspectorFrontend)
 {
-    m_frontend = inspectorFrontend;
+    m_frontend = inspectorFrontend->inspector();
 }
 
 void InspectorInspectorAgent::clearFrontend()
@@ -111,7 +120,7 @@ void InspectorInspectorAgent::enable(ErrorString*)
         inspect(m_pendingInspectData.first, m_pendingInspectData.second);
 
     for (Vector<pair<long, String> >::iterator it = m_pendingEvaluateTestCommands.begin(); m_frontend && it != m_pendingEvaluateTestCommands.end(); ++it)
-        m_frontend->inspector()->evaluateForTestInFrontend(static_cast<int>((*it).first), (*it).second);
+        m_frontend->evaluateForTestInFrontend(static_cast<int>((*it).first), (*it).second);
     m_pendingEvaluateTestCommands.clear();
 }
 
@@ -135,10 +144,12 @@ void InspectorInspectorAgent::domContentLoadedEventFired(LocalFrame* frame)
 
 void InspectorInspectorAgent::evaluateForTestInFrontend(long callId, const String& script)
 {
-    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled))
-        m_frontend->inspector()->evaluateForTestInFrontend(static_cast<int>(callId), script);
-    else
+    if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled)) {
+        m_frontend->evaluateForTestInFrontend(static_cast<int>(callId), script);
+        m_frontend->flush();
+    } else {
         m_pendingEvaluateTestCommands.append(pair<long, String>(callId, script));
+    }
 }
 
 void InspectorInspectorAgent::setInjectedScriptForOrigin(const String& origin, const String& source)
@@ -149,7 +160,7 @@ void InspectorInspectorAgent::setInjectedScriptForOrigin(const String& origin, c
 void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObject> objectToInspect, PassRefPtr<JSONObject> hints)
 {
     if (m_state->getBoolean(InspectorAgentState::inspectorAgentEnabled) && m_frontend) {
-        m_frontend->inspector()->inspect(objectToInspect, hints);
+        m_frontend->inspect(objectToInspect, hints);
         m_pendingInspectData.first = nullptr;
         m_pendingInspectData.second = nullptr;
         return;
@@ -158,4 +169,4 @@ void InspectorInspectorAgent::inspect(PassRefPtr<TypeBuilder::Runtime::RemoteObj
     m_pendingInspectData.second = hints;
 }
 
-} // namespace WebCore
+} // namespace blink

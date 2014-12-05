@@ -1,6 +1,6 @@
 /*
 *******************************************************************************
-* Copyright (C) 1997-2010, International Business Machines Corporation and
+* Copyright (C) 1997-2013, International Business Machines Corporation and
 * others. All Rights Reserved.
 *******************************************************************************
 *
@@ -94,7 +94,7 @@ BreakIterator::buildInstance(const Locale& loc, const char *type, int32_t kind, 
         // Use the string if we found it
         if (U_SUCCESS(status) && brkfname) {
             uprv_strncpy(actualLocale,
-                ures_getLocale(brkName, &status),
+                ures_getLocaleInternal(brkName, &status),
                 sizeof(actualLocale)/sizeof(actualLocale[0]));
 
             UChar* extStart=u_strchr(brkfname, 0x002e);
@@ -204,7 +204,6 @@ BreakIterator::getAvailableLocales(int32_t& count)
 
 BreakIterator::BreakIterator()
 {
-    fBufferClone = FALSE;
     *validLocale = *actualLocale = 0;
 }
 
@@ -222,11 +221,15 @@ BreakIterator::~BreakIterator()
 // -------------------------------------
 
 class ICUBreakIteratorFactory : public ICUResourceBundleFactory {
+public:
+    virtual ~ICUBreakIteratorFactory();
 protected:
     virtual UObject* handleCreate(const Locale& loc, int32_t kind, const ICUService* /*service*/, UErrorCode& status) const {
         return BreakIterator::makeInstance(loc, kind, status);
     }
 };
+
+ICUBreakIteratorFactory::~ICUBreakIteratorFactory() {}
 
 // -------------------------------------
 
@@ -238,6 +241,8 @@ public:
         UErrorCode status = U_ZERO_ERROR;
         registerFactory(new ICUBreakIteratorFactory(), status);
     }
+
+    virtual ~ICUBreakIteratorService();
 
     virtual UObject* cloneInstance(UObject* instance) const {
         return ((BreakIterator*)instance)->clone();
@@ -256,13 +261,17 @@ public:
     }
 };
 
+ICUBreakIteratorService::~ICUBreakIteratorService() {}
+
 // -------------------------------------
 
+// defined in ucln_cmn.h
 U_NAMESPACE_END
 
-// defined in ucln_cmn.h
+static icu::UInitOnce gInitOnce;
+static icu::ICULocaleService* gService = NULL;
 
-static U_NAMESPACE_QUALIFIER ICULocaleService* gService = NULL;
+
 
 /**
  * Release all static memory held by breakiterator.
@@ -274,40 +283,33 @@ static UBool U_CALLCONV breakiterator_cleanup(void) {
         delete gService;
         gService = NULL;
     }
+    gInitOnce.reset();
 #endif
     return TRUE;
 }
 U_CDECL_END
 U_NAMESPACE_BEGIN
 
+static void U_CALLCONV 
+initService(void) {
+    gService = new ICUBreakIteratorService();
+    ucln_common_registerCleanup(UCLN_COMMON_BREAKITERATOR, breakiterator_cleanup);
+}
+
 static ICULocaleService*
 getService(void)
 {
-    UBool needsInit;
-    UMTX_CHECK(NULL, (UBool)(gService == NULL), needsInit);
-
-    if (needsInit) {
-        ICULocaleService  *tService = new ICUBreakIteratorService();
-        umtx_lock(NULL);
-        if (gService == NULL) {
-            gService = tService;
-            tService = NULL;
-            ucln_common_registerCleanup(UCLN_COMMON_BREAKITERATOR, breakiterator_cleanup);
-        }
-        umtx_unlock(NULL);
-        delete tService;
-    }
+    umtx_initOnce(gInitOnce, &initService);
     return gService;
 }
+
 
 // -------------------------------------
 
 static inline UBool
 hasService(void)
 {
-    UBool retVal;
-    UMTX_CHECK(NULL, gService != NULL, retVal);
-    return retVal;
+    return !gInitOnce.isReset() && getService() != NULL;
 }
 
 // -------------------------------------
@@ -436,11 +438,27 @@ BreakIterator::getLocaleID(ULocDataLocaleType type, UErrorCode& status) const {
     return locBased.getLocaleID(type, status);
 }
 
+
 // This implementation of getRuleStatus is a do-nothing stub, here to
 // provide a default implementation for any derived BreakIterator classes that
 // do not implement it themselves.
 int32_t BreakIterator::getRuleStatus() const {
     return 0;
+}
+
+// This implementation of getRuleStatusVec is a do-nothing stub, here to
+// provide a default implementation for any derived BreakIterator classes that
+// do not implement it themselves.
+int32_t BreakIterator::getRuleStatusVec(int32_t *fillInVec, int32_t capacity, UErrorCode &status) {
+    if (U_FAILURE(status)) {
+        return 0;
+    }
+    if (capacity < 1) {
+        status = U_BUFFER_OVERFLOW_ERROR;
+        return 1;
+    }
+    *fillInVec = 0;
+    return 1;
 }
 
 U_NAMESPACE_END

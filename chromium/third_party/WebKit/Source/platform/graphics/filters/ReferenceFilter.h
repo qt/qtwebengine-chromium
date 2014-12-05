@@ -36,19 +36,19 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class SourceGraphic;
 class FilterEffect;
 
 class PLATFORM_EXPORT ReferenceFilter: public Filter {
 public:
-    static PassRefPtr<ReferenceFilter> create()
+    static PassRefPtr<ReferenceFilter> create(float scale)
     {
-        return adoptRef(new ReferenceFilter());
+        return adoptRef(new ReferenceFilter(scale));
     }
 
-    virtual IntRect sourceImageRect() const OVERRIDE { return IntRect(); };
+    virtual IntRect sourceImageRect() const override { return IntRect(); };
 
     void setLastEffect(PassRefPtr<FilterEffect>);
     FilterEffect* lastEffect() const { return m_lastEffect.get(); }
@@ -56,13 +56,13 @@ public:
     SourceGraphic* sourceGraphic() const { return m_sourceGraphic.get(); }
 
 private:
-    ReferenceFilter();
+    ReferenceFilter(float scale);
     virtual ~ReferenceFilter();
 
     RefPtr<SourceGraphic> m_sourceGraphic;
     RefPtr<FilterEffect> m_lastEffect;
 };
 
-}
+} // namespace blink
 
 #endif // ReferenceFilter_h

@@ -5,7 +5,7 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "sql/connection.h"
 #include "sql/statement.h"
@@ -63,10 +63,9 @@ TEST_F(SQLiteFeaturesTest, NoFTS1) {
       "CREATE VIRTUAL TABLE foo USING fts1(x)"));
 }
 
-#if !defined(OS_IOS)
+#if defined(SQLITE_ENABLE_FTS2)
 // fts2 is used for older history files, so we're signed on for keeping our
-// version up-to-date.  iOS does not include fts2, so this test does not run on
-// iOS.
+// version up-to-date.
 // TODO(shess): Think up a crazy way to get out from having to support
 // this forever.
 TEST_F(SQLiteFeaturesTest, FTS2) {

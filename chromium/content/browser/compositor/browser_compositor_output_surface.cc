@@ -5,12 +5,10 @@
 #include "content/browser/compositor/browser_compositor_output_surface.h"
 
 #include "base/bind.h"
-#include "base/command_line.h"
 #include "base/location.h"
 #include "base/strings/string_number_conversions.h"
 #include "content/browser/compositor/reflector_impl.h"
 #include "content/common/gpu/client/context_provider_command_buffer.h"
-#include "ui/compositor/compositor_switches.h"
 
 namespace content {
 
@@ -40,9 +38,9 @@ BrowserCompositorOutputSurface::BrowserCompositorOutputSurface(
 
 BrowserCompositorOutputSurface::~BrowserCompositorOutputSurface() {
   DCHECK(CalledOnValidThread());
-  if (reflector_)
+  if (reflector_.get())
     reflector_->DetachFromOutputSurface();
-  DCHECK(!reflector_);
+  DCHECK(!reflector_.get());
   if (!HasClient())
     return;
   output_surface_map_->Remove(surface_id_);
@@ -64,18 +62,10 @@ bool BrowserCompositorOutputSurface::BindToClient(
     return false;
 
   output_surface_map_->AddWithID(this, surface_id_);
-  if (reflector_)
+  if (reflector_.get())
     reflector_->OnSourceSurfaceReady(this);
   vsync_manager_->AddObserver(this);
   return true;
-}
-
-void BrowserCompositorOutputSurface::OnSwapBuffersComplete() {
-  // On Mac, delay acknowledging the swap to the output surface client until
-  // it has been drawn.
-#if !defined(OS_MACOSX)
-  cc::OutputSurface::OnSwapBuffersComplete();
-#endif
 }
 
 void BrowserCompositorOutputSurface::OnUpdateVSyncParameters(
@@ -97,11 +87,5 @@ void BrowserCompositorOutputSurface::OnUpdateVSyncParametersFromGpu(
 void BrowserCompositorOutputSurface::SetReflector(ReflectorImpl* reflector) {
   reflector_ = reflector;
 }
-
-#if defined(OS_MACOSX)
-void BrowserCompositorOutputSurface::OnSurfaceDisplayed() {
-  cc::OutputSurface::OnSwapBuffersComplete();
-}
-#endif
 
 }  // namespace content

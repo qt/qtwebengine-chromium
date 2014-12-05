@@ -6,6 +6,7 @@
 #define UI_EVENTS_GESTURE_DETECTION_UI_GESTURE_PROVIDER_H_
 
 #include "base/basictypes.h"
+#include "base/memory/scoped_vector.h"
 #include "ui/events/event.h"
 #include "ui/events/events_export.h"
 #include "ui/events/gesture_detection/filtered_gesture_provider.h"
@@ -26,7 +27,7 @@ class EVENTS_EXPORT GestureProviderAuraClient {
 class EVENTS_EXPORT GestureProviderAura : public GestureProviderClient {
  public:
   GestureProviderAura(GestureProviderAuraClient* client);
-  virtual ~GestureProviderAura();
+  ~GestureProviderAura() override;
 
   bool OnTouchEvent(const TouchEvent& event);
   void OnTouchEventAck(bool event_consumed);
@@ -34,7 +35,7 @@ class EVENTS_EXPORT GestureProviderAura : public GestureProviderClient {
   ScopedVector<GestureEvent>* GetAndResetPendingGestures();
 
   // GestureProviderClient implementation
-  virtual void OnGestureEvent(const GestureEventData& gesture) OVERRIDE;
+  void OnGestureEvent(const GestureEventData& gesture) override;
 
  private:
   bool IsConsideredDoubleTap(const GestureEventData& previous_tap,
@@ -46,7 +47,6 @@ class EVENTS_EXPORT GestureProviderAura : public GestureProviderClient {
   MotionEventAura pointer_state_;
   FilteredGestureProvider filtered_gesture_provider_;
 
-  int last_touch_event_flags_;
   ui::LatencyInfo last_touch_event_latency_info_;
   bool handling_event_;
   ScopedVector<GestureEvent> pending_gestures_;

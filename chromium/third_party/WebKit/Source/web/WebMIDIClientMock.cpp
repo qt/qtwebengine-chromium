@@ -39,7 +39,12 @@ namespace blink {
 
 WebMIDIClientMock::WebMIDIClientMock()
 {
-    m_clientMock.reset(new WebCore::MIDIClientMock());
+    m_clientMock.reset(new MIDIClientMock());
+}
+
+WebMIDIClientMock::~WebMIDIClientMock()
+{
+    m_clientMock.reset(0);
 }
 
 void WebMIDIClientMock::setSysexPermission(bool allowed)
@@ -62,9 +67,4 @@ void WebMIDIClientMock::cancelSysexPermissionRequest(const WebMIDIPermissionRequ
     m_clientMock->cancelSysexPermissionRequest(request.midiAccessInitializer());
 }
 
-void WebMIDIClientMock::reset()
-{
-    m_clientMock.reset(0);
-}
-
-} // blink
+} // namespace blink

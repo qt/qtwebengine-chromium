@@ -36,28 +36,28 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 class Navigator;
 
-class NavigatorDoNotTrack FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorDoNotTrack>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
+class NavigatorDoNotTrack final : public NoBaseWillBeGarbageCollected<NavigatorDoNotTrack>, public WillBeHeapSupplement<Navigator>, public DOMWindowProperty {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorDoNotTrack);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(NavigatorDoNotTrack);
 public:
-    virtual ~NavigatorDoNotTrack();
     static NavigatorDoNotTrack& from(Navigator&);
 
     static String doNotTrack(Navigator&);
 
     String doNotTrack();
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<Navigator>::trace(visitor); }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit NavigatorDoNotTrack(LocalFrame*);
     static const char* supplementName();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorDoNotTrack_h

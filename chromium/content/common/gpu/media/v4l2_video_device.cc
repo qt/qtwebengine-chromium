@@ -18,13 +18,13 @@ scoped_ptr<V4L2Device> V4L2Device::Create(Type type) {
 
   scoped_ptr<ExynosV4L2Device> exynos_device(new ExynosV4L2Device(type));
   if (exynos_device->Initialize())
-    return exynos_device.PassAs<V4L2Device>();
+    return exynos_device.Pass();
 
   scoped_ptr<TegraV4L2Device> tegra_device(new TegraV4L2Device(type));
   if (tegra_device->Initialize())
-    return tegra_device.PassAs<V4L2Device>();
+    return tegra_device.Pass();
 
-  DLOG(ERROR) << "Failed to create V4L2Device";
+  LOG(ERROR) << "Failed to create V4L2Device";
   return scoped_ptr<V4L2Device>();
 }
 
@@ -106,9 +106,14 @@ gfx::Size V4L2Device::CodedSizeFromV4L2Format(struct v4l2_format format) {
 
   int horiz_bpp =
       media::VideoFrame::PlaneHorizontalBitsPerPixel(frame_format, 0);
+  DVLOG(3) << __func__ << ": bytesperline=" << bytesperline
+           << ", sizeimage=" << sizeimage
+           << ", visible_size=" << visible_size.ToString() << ", frame_format="
+           << media::VideoFrame::FormatToString(frame_format)
+           << ", horiz_bpp=" << horiz_bpp;
   if (sizeimage == 0 || bytesperline == 0 || horiz_bpp == 0 ||
       (bytesperline * 8) % horiz_bpp != 0) {
-    DLOG(ERROR) << "Invalid format provided";
+    LOG(ERROR) << "Invalid format provided";
     return coded_size;
   }
 
@@ -118,6 +123,7 @@ gfx::Size V4L2Device::CodedSizeFromV4L2Format(struct v4l2_format format) {
   sizeimage = ((sizeimage + bytesperline - 1) / bytesperline) * bytesperline;
 
   coded_size.SetSize(bytesperline * 8 / horiz_bpp, sizeimage / bytesperline);
+  DVLOG(3) << "coded_size=" << coded_size.ToString();
 
   // Sanity checks. Calculated coded size has to contain given visible size
   // and fulfill buffer byte size requirements for each plane.
@@ -125,11 +131,9 @@ gfx::Size V4L2Device::CodedSizeFromV4L2Format(struct v4l2_format format) {
 
   if (V4L2_TYPE_IS_MULTIPLANAR(format.type)) {
     for (size_t i = 0; i < format.fmt.pix_mp.num_planes; ++i) {
-      DCHECK_LE(
-          format.fmt.pix_mp.plane_fmt[i].sizeimage,
-          media::VideoFrame::PlaneAllocationSize(frame_format, i, coded_size));
-      DCHECK_LE(format.fmt.pix_mp.plane_fmt[i].bytesperline,
-                base::checked_cast<__u32>(coded_size.width()));
+      DCHECK_EQ(format.fmt.pix_mp.plane_fmt[i].bytesperline,
+                base::checked_cast<__u32>(media::VideoFrame::RowBytes(
+                    i, frame_format, coded_size.width())));
     }
   }
 

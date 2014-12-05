@@ -31,17 +31,18 @@
 #include "config.h"
 #include "core/animation/AnimationStack.h"
 
+#include "core/animation/CompositorAnimations.h"
+#include "core/animation/StyleInterpolation.h"
 #include "core/animation/css/CSSAnimations.h"
-#include "core/animation/interpolation/StyleInterpolation.h"
 #include "wtf/BitArray.h"
 #include "wtf/NonCopyingSort.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<WebCore::Interpolation> >& source, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<WebCore::Interpolation> >& target)
+void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<blink::Interpolation> >& source, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<blink::Interpolation> >& target)
 {
     for (size_t i = 0; i < source.size(); ++i) {
         Interpolation* interpolation = source[i].get();
@@ -52,7 +53,7 @@ void copyToActiveInterpolationMap(const WillBeHeapVector<RefPtrWillBeMember<WebC
 bool compareEffects(const OwnPtrWillBeMember<SampledEffect>& effect1, const OwnPtrWillBeMember<SampledEffect>& effect2)
 {
     ASSERT(effect1 && effect2);
-    return effect1->sortInfo() < effect2->sortInfo();
+    return effect1->sequenceNumber() < effect2->sequenceNumber();
 }
 
 void copyNewAnimationsToActiveInterpolationMap(const WillBeHeapVector<RawPtrWillBeMember<InertAnimation> >& newAnimations, WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> >& result)
@@ -104,10 +105,6 @@ WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > AnimationSt
             const SampledEffect& effect = *effects[i];
             if (effect.priority() != priority || (cancelledAnimationPlayers && effect.animation() && cancelledAnimationPlayers->contains(effect.animation()->player())))
                 continue;
-            if (newAnimations && effect.sortInfo().startTime() > timelineCurrentTime) {
-                copyNewAnimationsToActiveInterpolationMap(*newAnimations, result);
-                newAnimations = 0;
-            }
             copyToActiveInterpolationMap(effect.interpolations(), result);
         }
     }
@@ -149,4 +146,25 @@ void AnimationStack::trace(Visitor* visitor)
     visitor->trace(m_effects);
 }
 
-} // namespace WebCore
+bool AnimationStack::getAnimatedBoundingBox(FloatBox& box, CSSPropertyID property) const
+{
+    FloatBox originalBox(box);
+    for (size_t i = 0; i < m_effects.size(); ++i) {
+        if (m_effects[i]->animation() && m_effects[i]->animation()->affects(property)) {
+            Animation* anim = m_effects[i]->animation();
+            if (!anim)
+                continue;
+            const Timing& timing = anim->specifiedTiming();
+            double startRange = 0;
+            double endRange = 1;
+            timing.timingFunction->range(&startRange, &endRange);
+            FloatBox expandingBox(originalBox);
+            if (!CompositorAnimations::instance()->getAnimatedBoundingBox(expandingBox, *anim->effect(), startRange, endRange))
+                return false;
+            box.expandTo(expandingBox);
+        }
+    }
+    return true;
+}
+
+} // namespace blink

@@ -31,19 +31,19 @@
 #include "config.h"
 #include "modules/filesystem/DirectoryEntrySync.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "modules/filesystem/DirectoryReaderSync.h"
 #include "modules/filesystem/FileEntrySync.h"
+#include "modules/filesystem/FileSystemFlags.h"
 #include "modules/filesystem/SyncCallbackHelper.h"
 
-namespace WebCore {
+namespace blink {
 
 DirectoryEntrySync::DirectoryEntrySync(DOMFileSystemBase* fileSystem, const String& fullPath)
     : EntrySync(fileSystem, fullPath)
 {
-    ScriptWrappable::init(this);
 }
 
 DirectoryReaderSync* DirectoryEntrySync::createReader()
@@ -51,25 +51,23 @@ DirectoryReaderSync* DirectoryEntrySync::createReader()
     return DirectoryReaderSync::create(m_fileSystem, m_fullPath);
 }
 
-FileEntrySync* DirectoryEntrySync::getFile(const String& path, const Dictionary& options, ExceptionState& exceptionState)
+FileEntrySync* DirectoryEntrySync::getFile(const String& path, const FileSystemFlags& options, ExceptionState& exceptionState)
 {
-    FileSystemFlags flags(options);
-    RefPtr<EntrySyncCallbackHelper> helper = EntrySyncCallbackHelper::create();
-    m_fileSystem->getFile(this, path, flags, helper->successCallback(), helper->errorCallback(), DOMFileSystemBase::Synchronous);
+    EntrySyncCallbackHelper* helper = EntrySyncCallbackHelper::create();
+    m_fileSystem->getFile(this, path, options, helper->successCallback(), helper->errorCallback(), DOMFileSystemBase::Synchronous);
     return static_cast<FileEntrySync*>(helper->getResult(exceptionState));
 }
 
-DirectoryEntrySync* DirectoryEntrySync::getDirectory(const String& path, const Dictionary& options, ExceptionState& exceptionState)
+DirectoryEntrySync* DirectoryEntrySync::getDirectory(const String& path, const FileSystemFlags& options, ExceptionState& exceptionState)
 {
-    FileSystemFlags flags(options);
-    RefPtr<EntrySyncCallbackHelper> helper = EntrySyncCallbackHelper::create();
-    m_fileSystem->getDirectory(this, path, flags, helper->successCallback(), helper->errorCallback(), DOMFileSystemBase::Synchronous);
+    EntrySyncCallbackHelper* helper = EntrySyncCallbackHelper::create();
+    m_fileSystem->getDirectory(this, path, options, helper->successCallback(), helper->errorCallback(), DOMFileSystemBase::Synchronous);
     return static_cast<DirectoryEntrySync*>(helper->getResult(exceptionState));
 }
 
 void DirectoryEntrySync::removeRecursively(ExceptionState& exceptionState)
 {
-    RefPtr<VoidSyncCallbackHelper> helper = VoidSyncCallbackHelper::create();
+    VoidSyncCallbackHelper* helper = VoidSyncCallbackHelper::create();
     m_fileSystem->removeRecursively(this, helper->successCallback(), helper->errorCallback(), DOMFileSystemBase::Synchronous);
     helper->getResult(exceptionState);
 }

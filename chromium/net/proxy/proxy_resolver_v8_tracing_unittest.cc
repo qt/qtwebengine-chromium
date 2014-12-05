@@ -4,7 +4,7 @@
 
 #include "net/proxy/proxy_resolver_v8_tracing.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "base/stl_util.h"
@@ -31,7 +31,7 @@ namespace {
 
 class ProxyResolverV8TracingTest : public testing::Test {
  public:
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // Drain any pending messages, which may be left over from cancellation.
     // This way they get reliably run as part of the current test, rather than
     // spilling into the next test's execution.
@@ -70,8 +70,7 @@ class MockErrorObserver : public ProxyResolverErrorObserver {
  public:
   MockErrorObserver() : event_(true, false) {}
 
-  virtual void OnPACScriptError(int line_number,
-                                const base::string16& error) OVERRIDE {
+  void OnPACScriptError(int line_number, const base::string16& error) override {
     {
       base::AutoLock l(lock_);
       output += base::StringPrintf("Error: line %d: %s\n", line_number,
@@ -763,12 +762,12 @@ class BlockableHostResolver : public HostResolver {
   BlockableHostResolver()
       : num_cancelled_requests_(0), waiting_for_resolve_(false) {}
 
-  virtual int Resolve(const RequestInfo& info,
-                      RequestPriority priority,
-                      AddressList* addresses,
-                      const CompletionCallback& callback,
-                      RequestHandle* out_req,
-                      const BoundNetLog& net_log) OVERRIDE {
+  int Resolve(const RequestInfo& info,
+              RequestPriority priority,
+              AddressList* addresses,
+              const CompletionCallback& callback,
+              RequestHandle* out_req,
+              const BoundNetLog& net_log) override {
     EXPECT_FALSE(callback.is_null());
     EXPECT_TRUE(out_req);
 
@@ -789,14 +788,14 @@ class BlockableHostResolver : public HostResolver {
     return ERR_IO_PENDING;
   }
 
-  virtual int ResolveFromCache(const RequestInfo& info,
-                               AddressList* addresses,
-                               const BoundNetLog& net_log) OVERRIDE {
+  int ResolveFromCache(const RequestInfo& info,
+                       AddressList* addresses,
+                       const BoundNetLog& net_log) override {
     NOTREACHED();
     return ERR_DNS_CACHE_MISS;
   }
 
-  virtual void CancelRequest(RequestHandle req) OVERRIDE {
+  void CancelRequest(RequestHandle req) override {
     EXPECT_EQ(reinterpret_cast<RequestHandle*>(1), req);
     num_cancelled_requests_++;
   }

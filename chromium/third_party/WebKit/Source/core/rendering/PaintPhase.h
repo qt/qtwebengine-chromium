@@ -26,7 +26,7 @@
 #ifndef PaintPhase_h
 #define PaintPhase_h
 
-namespace WebCore {
+namespace blink {
 
 /*
  *  The painting of a layer occurs in three distinct phases.  Each phase involves
@@ -38,19 +38,20 @@ namespace WebCore {
  */
 
 enum PaintPhase {
-    PaintPhaseBlockBackground,
-    PaintPhaseChildBlockBackground,
-    PaintPhaseChildBlockBackgrounds,
-    PaintPhaseFloat,
-    PaintPhaseForeground,
-    PaintPhaseOutline,
-    PaintPhaseChildOutlines,
-    PaintPhaseSelfOutline,
-    PaintPhaseSelection,
-    PaintPhaseCollapsedTableBorders,
-    PaintPhaseTextClip,
-    PaintPhaseMask,
-    PaintPhaseClippingMask,
+    PaintPhaseBlockBackground = 0,
+    PaintPhaseChildBlockBackground = 1,
+    PaintPhaseChildBlockBackgrounds = 2,
+    PaintPhaseFloat = 3,
+    PaintPhaseForeground = 4,
+    PaintPhaseOutline = 5,
+    PaintPhaseChildOutlines = 6,
+    PaintPhaseSelfOutline = 7,
+    PaintPhaseSelection = 8,
+    PaintPhaseCollapsedTableBorders = 9,
+    PaintPhaseTextClip = 10,
+    PaintPhaseMask = 11,
+    PaintPhaseClippingMask = 12,
+    // These values must be kept in sync with DisplayItem::Type.
 };
 
 enum PaintBehaviorFlags {
@@ -58,13 +59,13 @@ enum PaintBehaviorFlags {
     PaintBehaviorSelectionOnly = 1 << 0,
     PaintBehaviorForceBlackText = 1 << 1,
     PaintBehaviorFlattenCompositingLayers = 1 << 2,
-    PaintBehaviorRenderingSVGMask = 1 << 3,
+    PaintBehaviorRenderingClipPathAsMask = 1 << 3,
     PaintBehaviorSkipRootBackground = 1 << 4,
     PaintBehaviorRootBackgroundOnly = 1 << 5
 };
 
 typedef unsigned PaintBehavior;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PaintPhase_h

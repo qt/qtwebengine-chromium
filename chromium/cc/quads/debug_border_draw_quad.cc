@@ -4,6 +4,7 @@
 
 #include "cc/quads/debug_border_draw_quad.h"
 
+#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
 #include "base/values.h"
 
@@ -12,10 +13,6 @@ namespace cc {
 DebugBorderDrawQuad::DebugBorderDrawQuad()
     : color(0),
       width(0) {
-}
-
-scoped_ptr<DebugBorderDrawQuad> DebugBorderDrawQuad::Create() {
-  return make_scoped_ptr(new DebugBorderDrawQuad);
 }
 
 void DebugBorderDrawQuad::SetNew(const SharedQuadState* shared_quad_state,
@@ -53,7 +50,7 @@ const DebugBorderDrawQuad* DebugBorderDrawQuad::MaterialCast(
   return static_cast<const DebugBorderDrawQuad*>(quad);
 }
 
-void DebugBorderDrawQuad::ExtendValue(base::DictionaryValue* value) const {
+void DebugBorderDrawQuad::ExtendValue(base::debug::TracedValue* value) const {
   value->SetInteger("color", color);
   value->SetInteger("width", width);
 }

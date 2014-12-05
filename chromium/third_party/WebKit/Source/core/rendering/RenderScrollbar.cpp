@@ -34,11 +34,11 @@
 #include "core/rendering/RenderScrollbarTheme.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<Scrollbar> RenderScrollbar::createCustomScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, LocalFrame* owningFrame)
+PassRefPtrWillBeRawPtr<Scrollbar> RenderScrollbar::createCustomScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, LocalFrame* owningFrame)
 {
-    return adoptRef(new RenderScrollbar(scrollableArea, orientation, ownerNode, owningFrame));
+    return adoptRefWillBeNoop(new RenderScrollbar(scrollableArea, orientation, ownerNode, owningFrame));
 }
 
 RenderScrollbar::RenderScrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, Node* ownerNode, LocalFrame* owningFrame)
@@ -64,19 +64,43 @@ RenderScrollbar::RenderScrollbar(ScrollableArea* scrollableArea, ScrollbarOrient
         height = this->height();
 
     setFrameRect(IntRect(0, 0, width, height));
+
+#if ENABLE(OILPAN)
+    ThreadState::current()->registerPreFinalizer(*this);
+#endif
 }
 
 RenderScrollbar::~RenderScrollbar()
 {
-    if (!m_parts.isEmpty()) {
-        // When a scrollbar is detached from its parent (causing all parts removal) and
-        // ready to be destroyed, its destruction can be delayed because of RefPtr
-        // maintained in other classes such as EventHandler (m_lastScrollbarUnderMouse).
-        // Meanwhile, we can have a call to updateScrollbarPart which recreates the
-        // scrollbar part. So, we need to destroy these parts since we don't want them
-        // to call on a destroyed scrollbar. See webkit bug 68009.
-        updateScrollbarParts(true);
-    }
+    // Oilpan: to be able to access the hash map that's
+    // also on the heap, a pre-destruction finalizer is used.
+#if !ENABLE(OILPAN)
+    destroyParts();
+#endif
+}
+
+void RenderScrollbar::destroyParts()
+{
+    if (m_parts.isEmpty())
+        return;
+
+    // When a scrollbar is detached from its parent (causing all parts removal) and
+    // ready to be destroyed, its destruction can be delayed because of RefPtr
+    // maintained in other classes such as EventHandler (m_lastScrollbarUnderMouse).
+    // Meanwhile, we can have a call to updateScrollbarPart which recreates the
+    // scrollbar part. So, we need to destroy these parts since we don't want them
+    // to call on a destroyed scrollbar. See webkit bug 68009.
+    updateScrollbarParts(true);
+}
+
+void RenderScrollbar::trace(Visitor* visitor)
+{
+#if ENABLE(OILPAN)
+    visitor->trace(m_owner);
+    visitor->trace(m_owningFrame);
+    visitor->trace(m_parts);
+#endif
+    Scrollbar::trace(visitor);
 }
 
 RenderBox* RenderScrollbar::owningRenderer() const
@@ -108,15 +132,6 @@ void RenderScrollbar::setEnabled(bool e)
 void RenderScrollbar::styleChanged()
 {
     updateScrollbarParts();
-}
-
-void RenderScrollbar::paint(GraphicsContext* context, const IntRect& damageRect)
-{
-    if (context->updatingControlTints()) {
-        updateScrollbarParts();
-        return;
-    }
-    Scrollbar::paint(context, damageRect);
 }
 
 void RenderScrollbar::setHoveredPart(ScrollbarPart part)
@@ -155,7 +170,7 @@ PassRefPtr<RenderStyle> RenderScrollbar::getScrollbarPseudoStyle(ScrollbarPart p
     // Scrollbars for root frames should always have background color
     // unless explicitly specified as transparent. So we force it.
     // This is because WebKit assumes scrollbar to be always painted and missing background
-    // causes visual artifact like non-repainted dirty region.
+    // causes visual artifact like non-paint invalidated dirty region.
     if (result && m_owningFrame && m_owningFrame->view() && !m_owningFrame->view()->isTransparent() && !result->hasBackground())
         result->setBackgroundColor(StyleColor(Color::white));
 
@@ -263,14 +278,6 @@ void RenderScrollbar::updateScrollbarPart(ScrollbarPart partType, bool destroy)
 
     if (partRenderer)
         partRenderer->setStyle(partStyle.release());
-}
-
-void RenderScrollbar::paintPart(GraphicsContext* graphicsContext, ScrollbarPart partType, const IntRect& rect)
-{
-    RenderScrollbarPart* partRenderer = m_parts.get(partType);
-    if (!partRenderer)
-        return;
-    partRenderer->paintIntoRect(graphicsContext, location(), rect);
 }
 
 IntRect RenderScrollbar::buttonRect(ScrollbarPart partType)

@@ -22,10 +22,11 @@
 #define InlineFlowBox_h
 
 #include "core/rendering/InlineBox.h"
+#include "core/rendering/RenderObjectInlines.h"
 #include "core/rendering/RenderOverflow.h"
 #include "core/rendering/style/ShadowData.h"
 
-namespace WebCore {
+namespace blink {
 
 class HitTestRequest;
 class HitTestResult;
@@ -55,7 +56,7 @@ public:
         , m_lineBreakBidiStatusEor(WTF::Unicode::LeftToRight)
         , m_lineBreakBidiStatusLastStrong(WTF::Unicode::LeftToRight)
         , m_lineBreakBidiStatusLast(WTF::Unicode::LeftToRight)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         , m_hasBadChildList(false)
 #endif
     {
@@ -68,11 +69,13 @@ public:
         m_hasTextDescendants = m_hasTextChildren;
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     virtual ~InlineFlowBox();
+#endif
 
-    virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const RenderObject* = 0, int = 0) const OVERRIDE;
-    virtual const char* boxName() const OVERRIDE;
+#ifndef NDEBUG
+    virtual void showLineTreeAndMark(const InlineBox* = 0, const char* = 0, const InlineBox* = 0, const char* = 0, const RenderObject* = 0, int = 0) const override;
+    virtual const char* boxName() const override;
 #endif
 
     InlineFlowBox* prevLineBox() const { return m_prevLineBox; }
@@ -83,7 +86,7 @@ public:
     InlineBox* firstChild() const { checkConsistency(); return m_firstChild; }
     InlineBox* lastChild() const { checkConsistency(); return m_lastChild; }
 
-    virtual bool isLeaf() const OVERRIDE FINAL { return false; }
+    virtual bool isLeaf() const override final { return false; }
 
     InlineBox* firstLeafChild() const;
     InlineBox* lastLeafChild() const;
@@ -91,7 +94,7 @@ public:
     typedef void (*CustomInlineBoxRangeReverse)(void* userData, Vector<InlineBox*>::iterator first, Vector<InlineBox*>::iterator last);
     void collectLeafBoxesInLogicalOrder(Vector<InlineBox*>&, CustomInlineBoxRangeReverse customReverseImplementation = 0, void* userData = 0) const;
 
-    virtual void setConstructed() OVERRIDE FINAL
+    virtual void setConstructed() override final
     {
         InlineBox::setConstructed();
         for (InlineBox* child = firstChild(); child; child = child->nextOnLine())
@@ -99,26 +102,21 @@ public:
     }
 
     void addToLine(InlineBox* child);
-    virtual void deleteLine() OVERRIDE FINAL;
-    virtual void extractLine() OVERRIDE FINAL;
-    virtual void attachLine() OVERRIDE FINAL;
-    virtual void adjustPosition(float dx, float dy) OVERRIDE;
+    virtual void deleteLine() override final;
+    virtual void extractLine() override final;
+    virtual void attachLine() override final;
+    virtual void adjustPosition(float dx, float dy) override;
 
     virtual void extractLineBoxFromRenderObject();
     virtual void attachLineBoxToRenderObject();
     virtual void removeLineBoxFromRenderObject();
 
-    virtual void clearTruncation() OVERRIDE;
+    virtual void clearTruncation() override;
 
     IntRect roundedFrameRect() const;
 
-    void paintBoxDecorations(PaintInfo&, const LayoutPoint&);
-    void paintMask(PaintInfo&, const LayoutPoint&);
-    void paintFillLayers(const PaintInfo&, const Color&, const FillLayer*, const LayoutRect&, CompositeOperator = CompositeSourceOver);
-    void paintFillLayer(const PaintInfo&, const Color&, const FillLayer*, const LayoutRect&, CompositeOperator = CompositeSourceOver);
-    void paintBoxShadow(const PaintInfo&, RenderStyle*, ShadowStyle, const LayoutRect&);
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
     bool boxShadowCanBeAppliedToBackground(const FillLayer&) const;
 
@@ -175,8 +173,9 @@ public:
     // Helper functions used during line construction and placement.
     void determineSpacingForFlowBoxes(bool lastLine, bool isLogicallyLastRunWrapped, RenderObject* logicallyLastRunRenderer);
     LayoutUnit getFlowSpacingLogicalWidth();
-    float placeBoxesInInlineDirection(float logicalLeft, bool& needsWordSpacing, GlyphOverflowAndFallbackFontsMap&);
-    float placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild, float& logicalLeft, float& minLogicalLeft, float& maxLogicalRight, bool& needsWordSpacing, GlyphOverflowAndFallbackFontsMap&);
+    float placeBoxesInInlineDirection(float logicalLeft, bool& needsWordSpacing);
+    float placeBoxRangeInInlineDirection(InlineBox* firstChild, InlineBox* lastChild,
+        float& logicalLeft, float& minLogicalLeft, float& maxLogicalRight, bool& needsWordSpacing);
     void beginPlacingBoxRangesInInlineDirection(float logicalLeft) { setLogicalLeft(logicalLeft); }
     void endPlacingBoxRangesInInlineDirection(float logicalLeft, float logicalRight, float minLogicalLeft, float maxLogicalRight)
     {
@@ -190,7 +189,7 @@ public:
                                   bool strictMode, GlyphOverflowAndFallbackFontsMap&, FontBaseline, VerticalPositionCache&);
     void adjustMaxAscentAndDescent(int& maxAscent, int& maxDescent,
                                    int maxPositionTop, int maxPositionBottom);
-    void placeBoxesInBlockDirection(LayoutUnit logicalTop, LayoutUnit maxHeight, int maxAscent, bool strictMode, LayoutUnit& lineTop, LayoutUnit& lineBottom, bool& setLineTop,
+    void placeBoxesInBlockDirection(LayoutUnit logicalTop, LayoutUnit maxHeight, int maxAscent, bool strictMode, LayoutUnit& lineTop, LayoutUnit& lineBottom, LayoutUnit& selectionBottom, bool& setLineTop,
                                     LayoutUnit& lineTopIncludingMargins, LayoutUnit& lineBottomIncludingMargins, bool& hasAnnotationsBefore, bool& hasAnnotationsAfter, FontBaseline);
     void flipLinesInBlockDirection(LayoutUnit lineTop, LayoutUnit lineBottom);
     bool requiresIdeographicBaseline(const GlyphOverflowAndFallbackFontsMap&) const;
@@ -202,14 +201,13 @@ public:
 
     void removeChild(InlineBox* child, MarkLineBoxes);
 
-    virtual RenderObject::SelectionState selectionState() OVERRIDE;
+    virtual RenderObject::SelectionState selectionState() const override;
 
-    virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const OVERRIDE FINAL;
-    virtual float placeEllipsisBox(bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, float &truncatedWidth, bool&) OVERRIDE;
+    virtual bool canAccommodateEllipsis(bool ltr, int blockEdge, int ellipsisWidth) const override final;
+    virtual float placeEllipsisBox(bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, float &truncatedWidth, bool&) override;
 
     bool hasTextChildren() const { return m_hasTextChildren; }
     bool hasTextDescendants() const { return m_hasTextDescendants; }
-    void setHasTextChildren() { m_hasTextChildren = true; setHasTextDescendants(); }
     void setHasTextDescendants() { m_hasTextDescendants = true; }
 
     void checkConsistency() const;
@@ -221,16 +219,6 @@ public:
     LayoutRect layoutOverflowRect(LayoutUnit lineTop, LayoutUnit lineBottom) const
     {
         return m_overflow ? m_overflow->layoutOverflowRect() : enclosingLayoutRect(frameRectIncludingLineHeight(lineTop, lineBottom));
-    }
-    LayoutUnit logicalLeftLayoutOverflow() const
-    {
-        return m_overflow ? (isHorizontal() ? m_overflow->layoutOverflowRect().x() : m_overflow->layoutOverflowRect().y()) :
-                            static_cast<LayoutUnit>(logicalLeft());
-    }
-    LayoutUnit logicalRightLayoutOverflow() const
-    {
-        return m_overflow ? (isHorizontal() ? m_overflow->layoutOverflowRect().maxX() : m_overflow->layoutOverflowRect().maxY()) :
-                            static_cast<LayoutUnit>(ceilf(logicalRight()));
     }
     LayoutUnit logicalTopLayoutOverflow(LayoutUnit lineTop) const
     {
@@ -306,7 +294,6 @@ private:
     void addOutlineVisualOverflow(LayoutRect& logicalVisualOverflow);
     void addTextBoxVisualOverflow(InlineTextBox*, GlyphOverflowAndFallbackFontsMap&, LayoutRect& logicalVisualOverflow);
     void addReplacedChildOverflow(const InlineBox*, LayoutRect& logicalLayoutOverflow, LayoutRect& logicalVisualOverflow);
-    void constrainToLineTopAndBottomIfNeeded(LayoutRect&) const;
 
     void setLayoutOverflow(const LayoutRect&, const LayoutRect&);
     void setVisualOverflow(const LayoutRect&, const LayoutRect&);
@@ -314,7 +301,7 @@ private:
 protected:
     OwnPtr<RenderOverflow> m_overflow;
 
-    virtual bool isInlineFlowBox() const OVERRIDE FINAL { return true; }
+    virtual bool isInlineFlowBox() const override final { return true; }
 
     InlineBox* m_firstChild;
     InlineBox* m_lastChild;
@@ -349,7 +336,7 @@ protected:
 
     // End of RootInlineBox-specific members.
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 private:
     unsigned m_hasBadChildList : 1;
 #endif
@@ -357,7 +344,7 @@ private:
 
 DEFINE_INLINE_BOX_TYPE_CASTS(InlineFlowBox);
 
-#ifdef NDEBUG
+#if !ENABLE(ASSERT)
 inline void InlineFlowBox::checkConsistency() const
 {
 }
@@ -365,16 +352,16 @@ inline void InlineFlowBox::checkConsistency() const
 
 inline void InlineFlowBox::setHasBadChildList()
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     m_hasBadChildList = true;
 #endif
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::InlineFlowBox*);
+void showTree(const blink::InlineFlowBox*);
 #endif
 
 #endif // InlineFlowBox_h

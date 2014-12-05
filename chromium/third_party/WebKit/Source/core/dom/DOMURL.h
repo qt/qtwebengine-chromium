@@ -27,20 +27,21 @@
 #ifndef DOMURL_h
 #define DOMURL_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMURLUtils.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class ExceptionState;
 class ExecutionContext;
 class URLRegistrable;
 
-class DOMURL FINAL : public RefCountedWillBeGarbageCollectedFinalized<DOMURL>, public ScriptWrappable, public DOMURLUtils {
+class DOMURL final : public RefCountedWillBeGarbageCollectedFinalized<DOMURL>, public ScriptWrappable, public DOMURLUtils {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DOMURL> create(const String& url, ExceptionState& exceptionState)
     {
@@ -62,11 +63,11 @@ public:
     static String createPublicURL(ExecutionContext*, URLRegistrable*, const String& uuid = String());
     static void revokeObjectUUID(ExecutionContext*, const String&);
 
-    virtual KURL url() const OVERRIDE { return m_url; }
-    virtual void setURL(const KURL& url) OVERRIDE { m_url = url; }
+    virtual KURL url() const override { return m_url; }
+    virtual void setURL(const KURL& url) override { m_url = url; }
 
-    virtual String input() const OVERRIDE { return m_input; }
-    virtual void setInput(const String&) OVERRIDE;
+    virtual String input() const override { return m_input; }
+    virtual void setInput(const String&) override;
 
     void trace(Visitor*) { }
 
@@ -77,6 +78,6 @@ private:
     String m_input;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMURL_h

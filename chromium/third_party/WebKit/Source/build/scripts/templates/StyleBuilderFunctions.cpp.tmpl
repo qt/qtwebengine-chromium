@@ -26,15 +26,22 @@ void StyleBuilderFunctions::applyValue{{property_id}}(StyleResolverState& state,
 {%- endmacro %}
 {% macro set_value(property) %}
 {% if property.svg %}
-state.style()->accessSVGStyle()->{{property.setter}}
+state.style()->accessSVGStyle().{{property.setter}}
 {%- elif property.font %}
 state.fontBuilder().{{property.setter}}
 {%- else %}
 state.style()->{{property.setter}}
 {%- endif %}
 {% endmacro %}
+{% macro convert_and_set_value(property) %}
+{% if property.converter %}
+{{set_value(property)}}(StyleBuilderConverter::{{property.converter}}(state, value));
+{%- else %}
+{{set_value(property)}}(static_cast<{{property.type_name}}>(*toCSSPrimitiveValue(value)));
+{%- endif %}
+{% endmacro %}
 
-namespace WebCore {
+namespace blink {
 
 {% for property_id, property in properties.items() if property.should_declare_functions %}
 {% set apply_type = property.apply_type %}
@@ -55,7 +62,7 @@ namespace WebCore {
 {{declare_inherit_function(property_id)}}
 {
     {% if property.svg %}
-    {{set_value(property)}}(state.parentStyle()->svgStyle()->{{property.getter}}());
+    {{set_value(property)}}(state.parentStyle()->svgStyle().{{property.getter}}());
     {% elif property.font %}
     {{set_value(property)}}(state.parentFontDescription().{{property.getter}}());
     {% else %}
@@ -67,11 +74,7 @@ namespace WebCore {
 {% if not property.custom_value %}
 {{declare_value_function(property_id)}}
 {
-    {% if property.converter %}
-    {{set_value(property)}}(StyleBuilderConverter::{{property.converter}}(state, value));
-    {% else %}
-    {{set_value(property)}}(static_cast<{{property.type_name}}>(*toCSSPrimitiveValue(value)));
-    {% endif %}
+    {{convert_and_set_value(property)}}
 }
 
 {% endif %}
@@ -116,10 +119,10 @@ namespace WebCore {
 {{apply_animation('CSSPropertyWebkitTransitionProperty', 'Property', 'Transition')}}
 {{apply_animation('CSSPropertyWebkitTransitionTimingFunction', 'TimingFunction', 'Transition')}}
 
-{% macro apply_auto(property_id, auto_getter=none, auto_setter=none, auto_identity='CSSValueAuto', compute_length=false) %}
+{% macro apply_auto(property_id, auto_getter=none, auto_setter=none, auto_identity='CSSValueAuto') %}
 {% set property = properties[property_id] %}
-{% set auto_getter = auto_getter or 'hasAuto' + property.camel_case_name %}
-{% set auto_setter = auto_setter or 'setHasAuto' + property.camel_case_name %}
+{% set auto_getter = auto_getter or 'hasAuto' + property.name_for_methods %}
+{% set auto_setter = auto_setter or 'setHasAuto' + property.name_for_methods %}
 {{declare_initial_function(property_id)}}
 {
     state.style()->{{auto_setter}}();
@@ -142,17 +145,14 @@ namespace WebCore {
     if (primitiveValue->getValueID() == {{auto_identity}})
         state.style()->{{auto_setter}}();
     else
-        {% if compute_length %}
-        {{set_value(property)}}(primitiveValue->computeLength<{{property.type_name}}>(state.cssToLengthConversionData()));
-        {% else %}
-        {{set_value(property)}}(*primitiveValue);
-        {% endif %}
+        {{convert_and_set_value(property)}}
 }
 {% endmacro %}
+{{apply_auto('CSSPropertyClip')}}
 {{apply_auto('CSSPropertyOrphans')}}
 {{apply_auto('CSSPropertyWebkitColumnCount')}}
-{{apply_auto('CSSPropertyWebkitColumnGap', auto_getter='hasNormalColumnGap', auto_setter='setHasNormalColumnGap', auto_identity='CSSValueNormal', compute_length=true)}}
-{{apply_auto('CSSPropertyWebkitColumnWidth', compute_length=true)}}
+{{apply_auto('CSSPropertyWebkitColumnGap', auto_getter='hasNormalColumnGap', auto_setter='setHasNormalColumnGap', auto_identity='CSSValueNormal')}}
+{{apply_auto('CSSPropertyWebkitColumnWidth')}}
 {{apply_auto('CSSPropertyWidows')}}
 {{apply_auto('CSSPropertyZIndex')}}
 
@@ -281,7 +281,7 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {% macro apply_color(property_id, initial_color='StyleColor::currentColor') %}
 {% set property = properties[property_id] %}
-{% set visited_link_setter = 'setVisitedLink' + property.camel_case_name %}
+{% set visited_link_setter = 'setVisitedLink' + property.name_for_methods %}
 {{declare_initial_function(property_id)}}
 {
     StyleColor color = {{initial_color}}();
@@ -304,12 +304,10 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {{declare_value_function(property_id)}}
 {
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-
     if (state.applyPropertyToRegularStyle())
-        {{set_value(property)}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color()));
+        {{set_value(property)}}(StyleBuilderConverter::convertStyleColor(state, value));
     if (state.applyPropertyToVisitedLinkStyle())
-        state.style()->{{visited_link_setter}}(state.document().textLinkColors().colorFromPrimitiveValue(primitiveValue, state.style()->color(), true));
+        state.style()->{{visited_link_setter}}(StyleBuilderConverter::convertStyleColor(state, value, true));
 }
 {% endmacro %}
 {{apply_color('CSSPropertyBackgroundColor', initial_color='RenderStyle::initialBackgroundColor') }}
@@ -359,7 +357,7 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
     int length = list ? list->length() : 0;
     for (int i = 0; i < length; ++i) {
-        CSSValue* currValue = list->itemWithoutBoundsCheck(i);
+        CSSValue* currValue = list->item(i);
         if (!currValue->isPrimitiveValue())
             continue;
 
@@ -388,7 +386,7 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {% set map_fill = 'mapFill' + fill_type %}
 {{declare_initial_function(property_id)}}
 {
-    FillLayer* currChild = state.style()->{{access_layers}}();
+    FillLayer* currChild = &state.style()->{{access_layers}}();
     currChild->set{{fill_type}}(FillLayer::initialFill{{fill_type}}({{fill_layer_type}}));
     for (currChild = currChild->next(); currChild; currChild = currChild->next())
         currChild->clear{{fill_type}}();
@@ -396,15 +394,12 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {{declare_inherit_function(property_id)}}
 {
-    FillLayer* currChild = state.style()->{{access_layers}}();
+    FillLayer* currChild = &state.style()->{{access_layers}}();
     FillLayer* prevChild = 0;
-    const FillLayer* currParent = state.parentStyle()->{{layer_type|lower}}Layers();
+    const FillLayer* currParent = &state.parentStyle()->{{layer_type|lower}}Layers();
     while (currParent && currParent->is{{fill_type}}Set()) {
-        if (!currChild) {
-            /* Need to make a new layer.*/
-            currChild = new FillLayer({{fill_layer_type}});
-            prevChild->setNext(currChild);
-        }
+        if (!currChild)
+            currChild = prevChild->ensureNext();
         currChild->set{{fill_type}}(currParent->{{fill_type|lower_first}}());
         prevChild = currChild;
         currChild = prevChild->next();
@@ -420,23 +415,20 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {{declare_value_function(property_id)}}
 {
-    FillLayer* currChild = state.style()->{{access_layers}}();
+    FillLayer* currChild = &state.style()->{{access_layers}}();
     FillLayer* prevChild = 0;
     if (value->isValueList() && !value->isImageSetValue()) {
         /* Walk each value and put it into a layer, creating new layers as needed. */
         CSSValueList* valueList = toCSSValueList(value);
         for (unsigned int i = 0; i < valueList->length(); i++) {
-            if (!currChild) {
-                /* Need to make a new layer to hold this value */
-                currChild = new FillLayer({{fill_layer_type}});
-                prevChild->setNext(currChild);
-            }
-            state.styleMap().{{map_fill}}({{property_id}}, currChild, valueList->itemWithoutBoundsCheck(i));
+            if (!currChild)
+                currChild = prevChild->ensureNext();
+            state.styleMap().{{map_fill}}(currChild, valueList->item(i));
             prevChild = currChild;
             currChild = currChild->next();
         }
     } else {
-        state.styleMap().{{map_fill}}({{property_id}}, currChild, value);
+        state.styleMap().{{map_fill}}(currChild, value);
         currChild = currChild->next();
     }
     while (currChild) {
@@ -501,59 +493,20 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {{apply_grid_template('CSSPropertyGridTemplateColumns', 'Column')}}
 {{apply_grid_template('CSSPropertyGridTemplateRows', 'Row')}}
 
-{% macro apply_value_number(property_id, id_for_minus_one) %}
-{{declare_value_function(property_id)}}
-{
-    {% set property = properties[property_id] %}
-    if (!value->isPrimitiveValue())
-        return;
-
-    CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-    if (primitiveValue->getValueID() == {{id_for_minus_one}})
-        {{set_value(property)}}(-1);
-    else
-        {{set_value(property)}}(primitiveValue->getValue<{{property.type_name}}>(CSSPrimitiveValue::CSS_NUMBER));
-}
-{% endmacro %}
-{{apply_value_number('CSSPropertyInternalMarqueeRepetition', 'CSSValueInfinite')}}
-
-{% macro apply_value_shape(property_id) %}
-{{declare_value_function(property_id)}}
-{
-    {% set property = properties[property_id] %}
-    if (value->isPrimitiveValue()) {
-        CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
-        if (primitiveValue->getValueID() == CSSValueNone)
-            {{set_value(property)}}(nullptr);
-    } else if (value->isImageValue() || value->isImageGeneratorValue() || value->isImageSetValue()) {
-        {{set_value(property)}}(ShapeValue::createImageValue(state.styleImage({{property_id}}, value)));
-    } else if (value->isValueList()) {
-        RefPtr<BasicShape> shape;
-        CSSBoxType cssBox = BoxMissing;
-        CSSValueList* valueList = toCSSValueList(value);
-        for (unsigned i = 0; i < valueList->length(); ++i) {
-            CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(valueList->itemWithoutBoundsCheck(i));
-            if (primitiveValue->isShape())
-                shape = basicShapeForValue(state, primitiveValue->getShapeValue());
-            else if (primitiveValue->getValueID() == CSSValueContentBox
-                || primitiveValue->getValueID() == CSSValueBorderBox
-                || primitiveValue->getValueID() == CSSValuePaddingBox
-                || primitiveValue->getValueID() == CSSValueMarginBox)
-                cssBox = CSSBoxType(*primitiveValue);
-            else
-                return;
-        }
-
-        if (shape)
-            {{set_value(property)}}(ShapeValue::createShapeValue(shape.release(), cssBox));
-        else if (cssBox != BoxMissing)
-            {{set_value(property)}}(ShapeValue::createBoxShapeValue(cssBox));
-    }
-}
-{% endmacro %}
-{{apply_value_shape('CSSPropertyShapeOutside')}}
-
 {% macro apply_alignment(property_id, alignment_type) %}
+{% set property = properties[property_id] %}
+{{declare_initial_function(property_id)}}
+{
+    state.style()->set{{alignment_type}}(RenderStyle::initial{{alignment_type}}());
+    state.style()->set{{alignment_type}}OverflowAlignment(RenderStyle::initial{{alignment_type}}OverflowAlignment());
+}
+
+{{declare_inherit_function(property_id)}}
+{
+    state.style()->set{{alignment_type}}(state.parentStyle()->{{property.getter}}());
+    state.style()->set{{alignment_type}}OverflowAlignment(state.parentStyle()->{{property.getter}}OverflowAlignment());
+}
+
 {{declare_value_function(property_id)}}
 {
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(value);
@@ -562,8 +515,6 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
         state.style()->set{{alignment_type}}OverflowAlignment(*pairValue->second());
     } else {
         state.style()->set{{alignment_type}}(*primitiveValue);
-        // FIXME: We should clear the overflow-alignment mode here and probably
-        // also set it in the initial and inherit handlers
     }
 }
 {% endmacro %}
@@ -585,30 +536,51 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 
 {{declare_inherit_function(property_id)}}
 {
-    const SVGRenderStyle* svgParentStyle = state.parentStyle()->svgStyle();
+    const SVGRenderStyle& svgParentStyle = state.parentStyle()->svgStyle();
     {{set_value(property)}}(
-        svgParentStyle->{{paint_type|lower_first}}Type(),
-        svgParentStyle->{{paint_type|lower_first}}Color(),
-        svgParentStyle->{{paint_type|lower_first}}Uri(),
+        svgParentStyle.{{paint_type|lower_first}}Type(),
+        svgParentStyle.{{paint_type|lower_first}}Color(),
+        svgParentStyle.{{paint_type|lower_first}}Uri(),
         state.applyPropertyToRegularStyle(),
         state.applyPropertyToVisitedLinkStyle());
 }
 
 {{declare_value_function(property_id)}}
 {
-    if (value->isSVGPaint()) {
-        SVGPaint* svgPaint = toSVGPaint(value);
+    String url;
+    if (value->isValueList()) {
+        CSSValueList* list = toCSSValueList(value);
+        ASSERT(list->length() > 1);
 
-        Color color;
-        if (svgPaint->paintType() == SVGPaint::SVG_PAINTTYPE_CURRENTCOLOR
-                || svgPaint->paintType() == SVGPaint::SVG_PAINTTYPE_URI_CURRENTCOLOR)
-            color = state.style()->color();
-        else
-            color = svgPaint->color();
+        if (!list->item(0)->isPrimitiveValue())
+            return;
 
-        {{set_value(property)}}(svgPaint->paintType(),
-            color,
-            svgPaint->uri(),
+        CSSPrimitiveValue* pValue = toCSSPrimitiveValue(list->item(0));
+        if (!pValue->isURI())
+            return;
+
+        url = pValue->getStringValue();
+        value = list->item(1);
+    }
+    if (value->isPrimitiveValue()) {
+        CSSPrimitiveValue* pValue = toCSSPrimitiveValue(value);
+        Color c;
+        SVGPaintType ptype = SVG_PAINTTYPE_RGBCOLOR;
+        if (pValue->isRGBColor()) {
+            c = pValue->getRGBA32Value();
+            ptype = url.isEmpty() ? SVG_PAINTTYPE_RGBCOLOR : SVG_PAINTTYPE_URI_RGBCOLOR;
+        } else if (pValue->getValueID() == CSSValueCurrentcolor) {
+            c = state.style()->color();
+            ptype = url.isEmpty() ? SVG_PAINTTYPE_CURRENTCOLOR : SVG_PAINTTYPE_URI_CURRENTCOLOR;
+        } else if (pValue->getValueID() == CSSValueNone) {
+            ptype = url.isEmpty() ? SVG_PAINTTYPE_NONE : SVG_PAINTTYPE_URI_NONE;
+        } else if (pValue->isURI()) {
+            ptype = SVG_PAINTTYPE_URI;
+            url = pValue->getStringValue();
+        } else {
+            return;
+        }
+        {{set_value(property)}}(ptype, c, url,
             state.applyPropertyToRegularStyle(),
             state.applyPropertyToVisitedLinkStyle());
     }
@@ -616,4 +588,4 @@ static bool lengthTypeAndValueMatch(const BorderImageLengthBox& borderImageLengt
 {% endmacro %}
 {{apply_svg_paint('CSSPropertyFill', 'FillPaint')}}
 {{apply_svg_paint('CSSPropertyStroke', 'StrokePaint')}}
-} // namespace WebCore
+} // namespace blink

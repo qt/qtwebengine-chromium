@@ -25,21 +25,22 @@ namespace tools {
 
 class QuicClientSession : public QuicClientSessionBase {
  public:
-  QuicClientSession(const QuicServerId& server_id,
-                    const QuicConfig& config,
+  QuicClientSession(const QuicConfig& config,
                     QuicConnection* connection,
-                    QuicCryptoClientConfig* crypto_config);
-  virtual ~QuicClientSession();
+                    bool is_secure);
+  ~QuicClientSession() override;
 
-  // QuicClientSessionBase methods:
-  virtual void OnProofValid(
-      const QuicCryptoClientConfig::CachedState& cached) OVERRIDE;
-  virtual void OnProofVerifyDetailsAvailable(
-      const ProofVerifyDetails& verify_details) OVERRIDE;
+  void InitializeSession(const QuicServerId& server_id,
+                         QuicCryptoClientConfig* config);
 
   // QuicSession methods:
-  virtual QuicSpdyClientStream* CreateOutgoingDataStream() OVERRIDE;
-  virtual QuicCryptoClientStream* GetCryptoStream() OVERRIDE;
+  QuicSpdyClientStream* CreateOutgoingDataStream() override;
+  QuicCryptoClientStream* GetCryptoStream() override;
+
+  // QuicClientSessionBase methods:
+  void OnProofValid(const QuicCryptoClientConfig::CachedState& cached) override;
+  void OnProofVerifyDetailsAvailable(
+      const ProofVerifyDetails& verify_details) override;
 
   // Performs a crypto handshake with the server. Returns true if the crypto
   // handshake is started successfully.
@@ -52,10 +53,10 @@ class QuicClientSession : public QuicClientSessionBase {
 
  protected:
   // QuicSession methods:
-  virtual QuicDataStream* CreateIncomingDataStream(QuicStreamId id) OVERRIDE;
+  QuicDataStream* CreateIncomingDataStream(QuicStreamId id) override;
 
  private:
-  QuicCryptoClientStream crypto_stream_;
+  scoped_ptr<QuicCryptoClientStream> crypto_stream_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicClientSession);
 };

@@ -31,7 +31,6 @@
 #include "core/dom/Document.h"
 #include "core/dom/DocumentOrderedList.h"
 #include "core/dom/StyleSheetCollection.h"
-#include "core/dom/StyleSheetScopingNodeList.h"
 #include "core/dom/TreeScope.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/HashMap.h"
@@ -40,40 +39,33 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
-class DocumentStyleSheetCollector;
-class StyleEngine;
 class Node;
 class StyleSheetContents;
-class StyleSheetList;
 class StyleRuleFontFace;
 
 class TreeScopeStyleSheetCollection : public StyleSheetCollection {
 public:
     void addStyleSheetCandidateNode(Node*, bool createdByParser);
-    void removeStyleSheetCandidateNode(Node*, ContainerNode* scopingNode);
+    void removeStyleSheetCandidateNode(Node* node) { m_styleSheetCandidateNodes.remove(node); }
     bool hasStyleSheetCandidateNodes() const { return !m_styleSheetCandidateNodes.isEmpty(); }
 
     bool usesRemUnits() const { return m_usesRemUnits; }
 
     DocumentOrderedList& styleSheetCandidateNodes() { return m_styleSheetCandidateNodes; }
-    DocumentOrderedList* scopingNodesForStyleScoped() { return m_scopingNodesForStyleScoped.scopingNodes(); }
-    ListHashSet<Node*, 4>* scopingNodesRemoved() { return m_scopingNodesForStyleScoped.scopingNodesRemoved(); }
 
     void clearMediaQueryRuleSetStyleSheets();
     void enableExitTransitionStylesheets();
 
-    virtual void trace(Visitor* visitor) OVERRIDE
-    {
-        StyleSheetCollection::trace(visitor);
-    }
+    virtual void trace(Visitor*) override;
 
 protected:
     explicit TreeScopeStyleSheetCollection(TreeScope&);
 
-    Document& document() const { return m_treeScope.document(); }
+    Document& document() const { return treeScope().document(); }
+    TreeScope& treeScope() const { return *m_treeScope; }
 
     enum StyleResolverUpdateType {
         Reconstruct,
@@ -94,7 +86,6 @@ protected:
     };
 
     void analyzeStyleSheetChange(StyleResolverUpdateMode, const StyleSheetCollection&, StyleSheetChange&);
-    void resetAllRuleSetsInTreeScope(StyleResolver*);
     void updateUsesRemUnits();
 
 private:
@@ -102,15 +93,13 @@ private:
     bool activeLoadingStyleSheetLoaded(const WillBeHeapVector<RefPtrWillBeMember<CSSStyleSheet> >& newStyleSheets);
 
 protected:
-    TreeScope& m_treeScope;
+    RawPtrWillBeMember<TreeScope> m_treeScope;
     bool m_hadActiveLoadingStylesheet;
     bool m_usesRemUnits;
 
     DocumentOrderedList m_styleSheetCandidateNodes;
-    StyleSheetScopingNodeList m_scopingNodesForStyleScoped;
 };
 
 }
 
 #endif
-

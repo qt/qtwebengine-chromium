@@ -1,6 +1,6 @@
 /*
 ***************************************************************************
-*   Copyright (C) 1999-2010 International Business Machines Corporation
+*   Copyright (C) 1999-2013 International Business Machines Corporation
 *   and others. All rights reserved.
 ***************************************************************************
 */
@@ -10,7 +10,7 @@
 //                   class RuleBasedBreakIterator
 //
 
-#include "unicode/utypeinfo.h"  // for 'typeid' to work
+#include "utypeinfo.h"  // for 'typeid' to work
 
 #include "unicode/utypes.h"
 
@@ -85,6 +85,36 @@ RuleBasedBreakIterator::RuleBasedBreakIterator(const RBBIDataHeader* data, enum 
         return;
     }
 }
+
+
+//
+//  Construct from precompiled binary rules (tables).  This constructor is public API,
+//  taking the rules as a (const uint8_t *) to match the type produced by getBinaryRules().
+//
+RuleBasedBreakIterator::RuleBasedBreakIterator(const uint8_t *compiledRules,
+                       uint32_t       ruleLength,
+                       UErrorCode     &status) {
+    init();
+    if (U_FAILURE(status)) {
+        return;
+    }
+    if (compiledRules == NULL || ruleLength < sizeof(RBBIDataHeader)) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+    const RBBIDataHeader *data = (const RBBIDataHeader *)compiledRules;
+    if (data->fLength > ruleLength) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return;
+    }
+    fData = new RBBIDataWrapper(data, RBBIDataWrapper::kDontAdopt, status); 
+    if (U_FAILURE(status)) {return;}
+    if(fData == 0) {
+        status = U_MEMORY_ALLOCATION_ERROR;
+        return;
+    }
+}    
+
 
 //-------------------------------------------------------------------------------
 //
@@ -240,7 +270,6 @@ RuleBasedBreakIterator::operator=(const RuleBasedBreakIterator& that) {
 //-----------------------------------------------------------------------------
 void RuleBasedBreakIterator::init() {
     UErrorCode  status    = U_ZERO_ERROR;
-    fBufferClone          = FALSE;
     fText                 = utext_openUChars(NULL, NULL, 0, &status);
     fCharIter             = NULL;
     fSCharIter            = NULL;
@@ -456,6 +485,37 @@ RuleBasedBreakIterator::setText(const UnicodeString& newText) {
 }
 
 
+/**
+ *  Provide a new UText for the input text.  Must reference text with contents identical
+ *  to the original.
+ *  Intended for use with text data originating in Java (garbage collected) environments
+ *  where the data may be moved in memory at arbitrary times.
+ */
+RuleBasedBreakIterator &RuleBasedBreakIterator::refreshInputText(UText *input, UErrorCode &status) {
+    if (U_FAILURE(status)) {
+        return *this;
+    }
+    if (input == NULL) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+        return *this;
+    }
+    int64_t pos = utext_getNativeIndex(fText);
+    //  Shallow read-only clone of the new UText into the existing input UText
+    fText = utext_clone(fText, input, FALSE, TRUE, &status);
+    if (U_FAILURE(status)) {
+        return *this;
+    }
+    utext_setNativeIndex(fText, pos);
+    if (utext_getNativeIndex(fText) != pos) {
+        // Sanity check.  The new input utext is supposed to have the exact same
+        // contents as the old.  If we can't set to the same position, it doesn't.
+        // The contents underlying the old utext might be invalid at this point,
+        // so it's not safe to check directly.
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+    }
+    return *this;
+}
+
 
 /**
  * Sets the current iteration position to the beginning of the text.
@@ -591,7 +651,7 @@ int32_t RuleBasedBreakIterator::previous(void) {
 
     int32_t start = current();
 
-    UTEXT_PREVIOUS32(fText);
+    (void)UTEXT_PREVIOUS32(fText);
     int32_t lastResult    = handlePrevious(fData->fReverseTable);
     if (lastResult == UBRK_DONE) {
         lastResult = 0;
@@ -687,7 +747,7 @@ int32_t RuleBasedBreakIterator::following(int32_t offset) {
         // move forward one codepoint to prepare for moving back to a
         // safe point.
         // this handles offset being between a supplementary character
-        UTEXT_NEXT32(fText);
+        (void)UTEXT_NEXT32(fText);
         // handlePrevious will move most of the time to < 1 boundary away
         handlePrevious(fData->fSafeRevTable);
         int32_t result = next();
@@ -699,7 +759,7 @@ int32_t RuleBasedBreakIterator::following(int32_t offset) {
     if (fData->fSafeFwdTable != NULL) {
         // backup plan if forward safe table is not available
         utext_setNativeIndex(fText, offset);
-        UTEXT_PREVIOUS32(fText);
+        (void)UTEXT_PREVIOUS32(fText);
         // handle next will give result >= offset
         handleNext(fData->fSafeFwdTable);
         // previous will give result 0 or 1 boundary away from offset,
@@ -799,7 +859,7 @@ int32_t RuleBasedBreakIterator::preceding(int32_t offset) {
             //   indices to the containing code point.
             // For breakitereator::preceding only, these non-code-point indices need to be moved
             //   up to refer to the following codepoint.
-            UTEXT_NEXT32(fText);
+            (void)UTEXT_NEXT32(fText);
             offset = (int32_t)UTEXT_GETNATIVEINDEX(fText);
         }
 
@@ -808,7 +868,7 @@ int32_t RuleBasedBreakIterator::preceding(int32_t offset) {
         //        (Change would interact with safe rules.)
         // TODO:  change RBBI behavior for off-boundary indices to match that of UText?
         //        affects only preceding(), seems cleaner, but is slightly different.
-        UTEXT_PREVIOUS32(fText);
+        (void)UTEXT_PREVIOUS32(fText);
         handleNext(fData->fSafeFwdTable);
         int32_t result = (int32_t)UTEXT_GETNATIVEINDEX(fText);
         while (result >= offset) {
@@ -823,7 +883,7 @@ int32_t RuleBasedBreakIterator::preceding(int32_t offset) {
         //            if they use safe tables at all.  We have certainly never described
         //            to anyone how to work with just one safe table.
         utext_setNativeIndex(fText, offset);
-        UTEXT_NEXT32(fText);
+        (void)UTEXT_NEXT32(fText);
         
         // handle previous will give result <= offset
         handlePrevious(fData->fSafeRevTable);
@@ -927,7 +987,7 @@ enum RBBIRunMode {
 //-----------------------------------------------------------------------------------
 int32_t RuleBasedBreakIterator::handleNext(const RBBIStateTable *statetable) {
     int32_t             state;
-    int16_t             category        = 0;
+    uint16_t            category        = 0;
     RBBIRunMode         mode;
     
     RBBIStateTableRow  *row;
@@ -1022,7 +1082,7 @@ int32_t RuleBasedBreakIterator::handleNext(const RBBIStateTable *statetable) {
             }
         }
 
-        #ifdef RBBI_DEBUG
+       #ifdef RBBI_DEBUG
             if (fTrace) {
                 RBBIDebugPrintf("             %4ld   ", utext_getNativeIndex(fText));
                 if (0x20<=c && c<0x7f) {
@@ -1036,7 +1096,12 @@ int32_t RuleBasedBreakIterator::handleNext(const RBBIStateTable *statetable) {
 
         // State Transition - move machine to its next state
         //
-        state = row->fNextState[category];
+
+        // Note: fNextState is defined as uint16_t[2], but we are casting
+        // a generated RBBI table to RBBIStateTableRow and some tables
+        // actually have more than 2 categories.
+        U_ASSERT(category<fData->fHeader->fCatCount);
+        state = row->fNextState[category];  /*Not accessing beyond memory*/
         row = (RBBIStateTableRow *)
             // (statetable->fTableData + (statetable->fRowLen * state));
             (tableData + tableRowLen * state);
@@ -1139,7 +1204,7 @@ continueOn:
 //-----------------------------------------------------------------------------------
 int32_t RuleBasedBreakIterator::handlePrevious(const RBBIStateTable *statetable) {
     int32_t             state;
-    int16_t             category        = 0;
+    uint16_t            category        = 0;
     RBBIRunMode         mode;
     RBBIStateTableRow  *row;
     UChar32             c;
@@ -1203,7 +1268,7 @@ int32_t RuleBasedBreakIterator::handlePrevious(const RBBIStateTable *statetable)
                     // Ran off start, no match found.
                     // move one index one (towards the start, since we are doing a previous())
                     UTEXT_SETNATIVEINDEX(fText, initialPosition);
-                    UTEXT_PREVIOUS32(fText);   // TODO:  shouldn't be necessary.  We're already at beginning.  Check.
+                    (void)UTEXT_PREVIOUS32(fText);   // TODO:  shouldn't be necessary.  We're already at beginning.  Check.
                 }
                 break;
             }
@@ -1251,7 +1316,12 @@ int32_t RuleBasedBreakIterator::handlePrevious(const RBBIStateTable *statetable)
 
         // State Transition - move machine to its next state
         //
-        state = row->fNextState[category];
+
+        // Note: fNextState is defined as uint16_t[2], but we are casting
+        // a generated RBBI table to RBBIStateTableRow and some tables
+        // actually have more than 2 categories.
+        U_ASSERT(category<fData->fHeader->fCatCount);
+        state = row->fNextState[category];  /*Not accessing beyond memory*/
         row = (RBBIStateTableRow *)
             (statetable->fTableData + (statetable->fRowLen * state));
 
@@ -1444,19 +1514,7 @@ const uint8_t  *RuleBasedBreakIterator::getBinaryRules(uint32_t &length) {
 }
 
 
-
-
-//-------------------------------------------------------------------------------
-//
-//  BufferClone       TODO:  In my (Andy) opinion, this function should be deprecated.
-//                    Saving one heap allocation isn't worth the trouble.
-//                    Cloning shouldn't be done in tight loops, and
-//                    making the clone copy involves other heap operations anyway.
-//                    And the application code for correctly dealing with buffer
-//                    size problems and the eventual object destruction is ugly.
-//
-//-------------------------------------------------------------------------------
-BreakIterator *  RuleBasedBreakIterator::createBufferClone(void *stackBuffer,
+BreakIterator *  RuleBasedBreakIterator::createBufferClone(void * /*stackBuffer*/,
                                    int32_t &bufferSize,
                                    UErrorCode &status)
 {
@@ -1464,51 +1522,18 @@ BreakIterator *  RuleBasedBreakIterator::createBufferClone(void *stackBuffer,
         return NULL;
     }
 
-    //
-    //  If user buffer size is zero this is a preflight operation to
-    //    obtain the needed buffer size, allowing for worst case misalignment.
-    //
     if (bufferSize == 0) {
-        bufferSize = sizeof(RuleBasedBreakIterator) + U_ALIGNMENT_OFFSET_UP(0);
+        bufferSize = 1;  // preflighting for deprecated functionality
         return NULL;
     }
 
-
-    //
-    //  Check the alignment and size of the user supplied buffer.
-    //  Allocate heap memory if the user supplied memory is insufficient.
-    //
-    char    *buf   = (char *)stackBuffer;
-    uint32_t s      = bufferSize;
-
-    if (stackBuffer == NULL) {
-        s = 0;   // Ignore size, force allocation if user didn't give us a buffer.
+    BreakIterator *clonedBI = clone();
+    if (clonedBI == NULL) {
+        status = U_MEMORY_ALLOCATION_ERROR;
+    } else {
+        status = U_SAFECLONE_ALLOCATED_WARNING;
     }
-    if (U_ALIGNMENT_OFFSET(stackBuffer) != 0) {
-        uint32_t offsetUp = (uint32_t)U_ALIGNMENT_OFFSET_UP(buf);
-        s   -= offsetUp;
-        buf += offsetUp;
-    }
-    if (s < sizeof(RuleBasedBreakIterator)) {
-        // Not enough room in the caller-supplied buffer.
-        // Do a plain-vanilla heap based clone and return that, along with
-        //   a warning that the clone was allocated.
-        RuleBasedBreakIterator *clonedBI = new RuleBasedBreakIterator(*this);
-        if (clonedBI == 0) {
-            status = U_MEMORY_ALLOCATION_ERROR;
-        } else {
-            status = U_SAFECLONE_ALLOCATED_WARNING;
-        }
-        return clonedBI;
-    }
-
-    //
-    //  Clone the source BI into the caller-supplied buffer.
-    //
-    RuleBasedBreakIterator *clone = new(buf) RuleBasedBreakIterator(*this);
-    clone->fBufferClone = TRUE;   // Flag to prevent deleting storage on close (From C code)
-
-    return clone;
+    return (RuleBasedBreakIterator *)clonedBI;
 }
 
 
@@ -1717,11 +1742,13 @@ int32_t RuleBasedBreakIterator::checkDictionary(int32_t startPos,
     return (reverse ? startPos : endPos);
 }
 
-U_NAMESPACE_END
-
 // defined in ucln_cmn.h
 
-static U_NAMESPACE_QUALIFIER UStack *gLanguageBreakFactories = NULL;
+U_NAMESPACE_END
+
+
+static icu::UStack *gLanguageBreakFactories = NULL;
+static icu::UInitOnce gLanguageBreakFactoriesInitOnce = U_INITONCE_INITIALIZER;
 
 /**
  * Release all static memory held by breakiterator.  
@@ -1732,46 +1759,40 @@ static UBool U_CALLCONV breakiterator_cleanup_dict(void) {
         delete gLanguageBreakFactories;
         gLanguageBreakFactories = NULL;
     }
+    gLanguageBreakFactoriesInitOnce.reset();
     return TRUE;
 }
 U_CDECL_END
 
 U_CDECL_BEGIN
 static void U_CALLCONV _deleteFactory(void *obj) {
-    delete (U_NAMESPACE_QUALIFIER LanguageBreakFactory *) obj;
+    delete (icu::LanguageBreakFactory *) obj;
 }
 U_CDECL_END
 U_NAMESPACE_BEGIN
 
+static void U_CALLCONV initLanguageFactories() {
+    UErrorCode status = U_ZERO_ERROR;
+    U_ASSERT(gLanguageBreakFactories == NULL);
+    gLanguageBreakFactories = new UStack(_deleteFactory, NULL, status);
+    if (gLanguageBreakFactories != NULL && U_SUCCESS(status)) {
+        ICULanguageBreakFactory *builtIn = new ICULanguageBreakFactory(status);
+        gLanguageBreakFactories->push(builtIn, status);
+#ifdef U_LOCAL_SERVICE_HOOK
+        LanguageBreakFactory *extra = (LanguageBreakFactory *)uprv_svc_hook("languageBreakFactory", &status);
+        if (extra != NULL) {
+            gLanguageBreakFactories->push(extra, status);
+        }
+#endif
+    }
+    ucln_common_registerCleanup(UCLN_COMMON_BREAKITERATOR_DICT, breakiterator_cleanup_dict);
+}
+
+
 static const LanguageBreakEngine*
 getLanguageBreakEngineFromFactory(UChar32 c, int32_t breakType)
 {
-    UBool       needsInit;
-    UErrorCode  status = U_ZERO_ERROR;
-    UMTX_CHECK(NULL, (UBool)(gLanguageBreakFactories == NULL), needsInit);
-    
-    if (needsInit) {
-        UStack  *factories = new UStack(_deleteFactory, NULL, status);
-        if (factories != NULL && U_SUCCESS(status)) {
-            ICULanguageBreakFactory *builtIn = new ICULanguageBreakFactory(status);
-            factories->push(builtIn, status);
-#ifdef U_LOCAL_SERVICE_HOOK
-            LanguageBreakFactory *extra = (LanguageBreakFactory *)uprv_svc_hook("languageBreakFactory", &status);
-            if (extra != NULL) {
-                factories->push(extra, status);
-            }
-#endif
-        }
-        umtx_lock(NULL);
-        if (gLanguageBreakFactories == NULL) {
-            gLanguageBreakFactories = factories;
-            factories = NULL;
-            ucln_common_registerCleanup(UCLN_COMMON_BREAKITERATOR_DICT, breakiterator_cleanup_dict);
-        }
-        umtx_unlock(NULL);
-        delete factories;
-    }
-    
+    umtx_initOnce(gLanguageBreakFactoriesInitOnce, &initLanguageFactories);
     if (gLanguageBreakFactories == NULL) {
         return NULL;
     }
@@ -1792,7 +1813,7 @@ getLanguageBreakEngineFromFactory(UChar32 c, int32_t breakType)
 //-------------------------------------------------------------------------------
 //
 //  getLanguageBreakEngine  Find an appropriate LanguageBreakEngine for the
-//                          the characer c.
+//                          the character c.
 //
 //-------------------------------------------------------------------------------
 const LanguageBreakEngine *

@@ -32,56 +32,23 @@
 #include "core/dom/shadow/SelectRuleFeatureSet.h"
 
 #include "core/css/CSSSelector.h"
+#include "core/css/CSSSelectorList.h"
 
 #include "wtf/BitVector.h"
 
-namespace WebCore {
-
-SelectRuleFeatureSet::SelectRuleFeatureSet()
-    : m_featureFlags(0)
-{
-}
-
-void SelectRuleFeatureSet::add(const SelectRuleFeatureSet& featureSet)
-{
-    m_cssRuleFeatureSet.add(featureSet.m_cssRuleFeatureSet);
-    m_featureFlags |= featureSet.m_featureFlags;
-}
-
-void SelectRuleFeatureSet::clear()
-{
-    m_cssRuleFeatureSet.clear();
-    m_featureFlags = 0;
-}
+namespace blink {
 
 void SelectRuleFeatureSet::collectFeaturesFromSelector(const CSSSelector& selector)
 {
-    m_cssRuleFeatureSet.collectFeaturesFromSelector(selector);
+    for (const CSSSelector* current = &selector; current; current = current->tagHistory()) {
+        if (invalidationSetForSelector(*current))
+            continue;
 
-    switch (selector.pseudoType()) {
-    case CSSSelector::PseudoChecked:
-        setSelectRuleFeature(AffectedSelectorChecked);
-        break;
-    case CSSSelector::PseudoEnabled:
-        setSelectRuleFeature(AffectedSelectorEnabled);
-        break;
-    case CSSSelector::PseudoDisabled:
-        setSelectRuleFeature(AffectedSelectorDisabled);
-        break;
-    case CSSSelector::PseudoIndeterminate:
-        setSelectRuleFeature(AffectedSelectorIndeterminate);
-        break;
-    case CSSSelector::PseudoLink:
-        setSelectRuleFeature(AffectedSelectorLink);
-        break;
-    case CSSSelector::PseudoTarget:
-        setSelectRuleFeature(AffectedSelectorTarget);
-        break;
-    case CSSSelector::PseudoVisited:
-        setSelectRuleFeature(AffectedSelectorVisited);
-        break;
-    default:
-        break;
+        if (!current->selectorList())
+            continue;
+
+        for (const CSSSelector* selector = current->selectorList()->first(); selector; selector = CSSSelectorList::next(*selector))
+            collectFeaturesFromSelector(*selector);
     }
 }
 

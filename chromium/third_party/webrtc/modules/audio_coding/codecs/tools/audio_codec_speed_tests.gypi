@@ -26,9 +26,7 @@
       '<(webrtc_root)/modules/audio_coding/codecs/isac/fix/test/isac_speed_test.cc',
     ],
     'conditions': [
-      # TODO(henrike): remove build_with_chromium==1 when the bots are
-      # using Chromium's buildbots.
-      ['build_with_chromium==1 and OS=="android"', {
+      ['OS=="android"', {
         'dependencies': [
           '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
         ],
@@ -36,9 +34,7 @@
     ],
   }],
   'conditions': [
-    # TODO(henrike): remove build_with_chromium==1 when the bots are using
-    # Chromium's buildbots.
-    ['build_with_chromium==1 and OS=="android"', {
+    ['OS=="android"', {
       'targets': [
         {
           'target_name': 'audio_codec_speed_tests_apk_target',
@@ -59,7 +55,6 @@
           ],
           'includes': [
             '../../../../build/isolate.gypi',
-            'audio_codec_speed_tests.isolate',
           ],
           'sources': [
             'audio_codec_speed_tests.isolate',

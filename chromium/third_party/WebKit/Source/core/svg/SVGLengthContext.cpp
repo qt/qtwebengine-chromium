@@ -23,19 +23,18 @@
 #include "config.h"
 #include "core/svg/SVGLengthContext.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSHelper.h"
 #include "core/dom/ExceptionCode.h"
-#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/RenderSVGViewportContainer.h"
 #include "core/svg/SVGSVGElement.h"
 #include "platform/fonts/FontMetrics.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGLengthContext::SVGLengthContext(const SVGElement* context)
     : m_context(context)

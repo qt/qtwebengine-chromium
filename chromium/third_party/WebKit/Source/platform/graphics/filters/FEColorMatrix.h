@@ -23,11 +23,10 @@
 #ifndef FEColorMatrix_h
 #define FEColorMatrix_h
 
-#include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/FilterEffect.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ColorMatrixType {
     FECOLORMATRIX_TYPE_UNKNOWN          = 0,
@@ -47,9 +46,9 @@ public:
     const Vector<float>& values() const;
     bool setValues(const Vector<float>&);
 
-    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) OVERRIDE;
+    virtual PassRefPtr<SkImageFilter> createImageFilter(SkiaImageFilterBuilder*) override;
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
     static inline void calculateSaturateComponents(float* components, float value);
     static inline void calculateHueRotateComponents(float* components, float value);
@@ -57,14 +56,12 @@ public:
 private:
     FEColorMatrix(Filter*, ColorMatrixType, const Vector<float>&);
 
-    virtual void applySoftware() OVERRIDE;
-
-    virtual bool affectsTransparentPixels() OVERRIDE;
+    virtual bool affectsTransparentPixels() override;
 
     ColorMatrixType m_type;
     Vector<float> m_values;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FEColorMatrix_h

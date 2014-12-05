@@ -30,15 +30,18 @@
 #define HTMLTableRowsCollection_h
 
 #include "core/html/HTMLCollection.h"
+#include "core/html/HTMLTableRowElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTableElement;
 class HTMLTableRowElement;
 
-class HTMLTableRowsCollection FINAL : public HTMLCollection {
+class HTMLTableRowsCollection final : public HTMLCollection {
 public:
     static PassRefPtrWillBeRawPtr<HTMLTableRowsCollection> create(ContainerNode&, CollectionType);
+
+    HTMLTableRowElement* item(unsigned offset) const { return toHTMLTableRowElement(HTMLCollection::item(offset)); }
 
     static HTMLTableRowElement* rowAfter(HTMLTableElement&, HTMLTableRowElement*);
     static HTMLTableRowElement* lastRow(HTMLTableElement&);
@@ -46,7 +49,7 @@ public:
 private:
     explicit HTMLTableRowsCollection(ContainerNode&);
 
-    virtual Element* virtualItemAfter(Element*) const OVERRIDE;
+    virtual Element* virtualItemAfter(Element*) const override;
 };
 
 DEFINE_TYPE_CASTS(HTMLTableRowsCollection, LiveNodeListBase, collection, collection->type() == TableRows, collection.type() == TableRows);

@@ -23,7 +23,7 @@
 #include "core/rendering/style/SVGRenderStyleDefs.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class Font;
 class RenderObject;
@@ -37,10 +37,10 @@ class SVGTextLayoutEngineBaseline {
 public:
     SVGTextLayoutEngineBaseline(const Font&);
 
-    float calculateBaselineShift(const SVGRenderStyle*, SVGElement* lengthContext) const;
+    float calculateBaselineShift(const SVGRenderStyle&, SVGElement* lengthContext) const;
     float calculateAlignmentBaselineShift(bool isVerticalText, const RenderObject* textRenderer) const;
-    float calculateGlyphOrientationAngle(bool isVerticalText, const SVGRenderStyle*, const UChar& character) const;
-    float calculateGlyphAdvanceAndOrientation(bool isVerticalText, SVGTextMetrics&, float angle, float& xOrientationShift, float& yOrientationShift) const;
+    float calculateGlyphOrientationAngle(bool isVerticalText, const SVGRenderStyle&, const UChar& character) const;
+    float calculateGlyphAdvanceAndOrientation(bool isVerticalText, const SVGTextMetrics&, float angle, float& xOrientationShift, float& yOrientationShift) const;
 
 private:
     EAlignmentBaseline dominantBaselineToAlignmentBaseline(bool isVerticalText, const RenderObject* textRenderer) const;
@@ -48,6 +48,6 @@ private:
     const Font& m_font;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

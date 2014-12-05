@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "net/base/request_priority.h"
@@ -31,10 +32,10 @@ class MockSimpleJob : public URLRequestSimpleJob {
   }
 
  protected:
-  virtual int GetData(std::string* mime_type,
-                      std::string* charset,
-                      std::string* data,
-                      const CompletionCallback& callback) const OVERRIDE {
+  int GetData(std::string* mime_type,
+              std::string* charset,
+              std::string* data,
+              const CompletionCallback& callback) const override {
     mime_type->assign("text/plain");
     charset->assign("US-ASCII");
     data->assign(kTestData);
@@ -42,7 +43,7 @@ class MockSimpleJob : public URLRequestSimpleJob {
   }
 
  private:
-  virtual ~MockSimpleJob() {}
+  ~MockSimpleJob() override {}
 
   std::string data_;
 
@@ -52,9 +53,9 @@ class MockSimpleJob : public URLRequestSimpleJob {
 class SimpleJobProtocolHandler :
     public URLRequestJobFactory::ProtocolHandler {
  public:
-  virtual URLRequestJob* MaybeCreateJob(
+  URLRequestJob* MaybeCreateJob(
       URLRequest* request,
-      NetworkDelegate* network_delegate) const OVERRIDE {
+      NetworkDelegate* network_delegate) const override {
     return new MockSimpleJob(request, network_delegate);
   }
 };
@@ -66,8 +67,8 @@ class URLRequestSimpleJobTest : public ::testing::Test {
     context_.set_job_factory(&job_factory_);
     context_.Init();
 
-    request_.reset(new URLRequest(
-        GURL("data:test"), DEFAULT_PRIORITY, &delegate_, &context_));
+    request_ = context_.CreateRequest(
+        GURL("data:test"), DEFAULT_PRIORITY, &delegate_, NULL);
   }
 
   void StartRequest(const HttpRequestHeaders* headers) {

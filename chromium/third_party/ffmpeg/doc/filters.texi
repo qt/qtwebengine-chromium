@@ -491,7 +491,7 @@ aeval=val(ch)/2:c=same
 @item
 Invert phase of the second channel:
 @example
-eval=val(0)|-val(1)
+aeval=val(0)|-val(1)
 @end example
 @end itemize
 
@@ -517,27 +517,21 @@ volume as the input audio, at the end of the fade-out transition
 the output audio will be silence. Default is 44100.
 
 @item start_time, st
-Specify time for starting to apply the fade effect. Default is 0.
-The accepted syntax is:
-@example
-[-]HH[:MM[:SS[.m...]]]
-[-]S+[.m...]
-@end example
-See also the function @code{av_parse_time()}.
-If set this option is used instead of @var{start_sample} one.
+Specify the start time of the fade effect. Default is 0.
+The value must be specified as a time duration; see
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
+If set this option is used instead of @var{start_sample}.
 
 @item duration, d
-Specify the duration for which the fade effect has to last. Default is 0.
-The accepted syntax is:
-@example
-[-]HH[:MM[:SS[.m...]]]
-[-]S+[.m...]
-@end example
-See also the function @code{av_parse_time()}.
+Specify the duration of the fade effect. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 At the end of the fade-in effect the output audio will have the same
 volume as the input audio, at the end of the fade-out transition
 the output audio will be silence.
-If set this option is used instead of @var{nb_samples} one.
+By default the duration is determined by @var{nb_samples}.
+If set this option is used instead of @var{nb_samples}.
 
 @item curve
 Set curve for fade transition.
@@ -697,6 +691,11 @@ ffmpeg -i input.mkv -filter_complex "[0:1][0:2][0:3][0:4][0:5][0:6] amerge=input
 
 Mixes multiple audio inputs into a single output.
 
+Note that this filter only supports float samples (the @var{amerge}
+and @var{pan} audio filters support many formats). If the @var{amix}
+input has integer samples then @ref{aresample} will be automatically
+inserted to perform the conversion to float samples.
+
 For example
 @example
 ffmpeg -i INPUT1 -i INPUT2 -i INPUT3 -filter_complex amix=inputs=3:duration=first:dropout_transition=3 OUTPUT
@@ -737,8 +736,58 @@ Pass the audio source unchanged to the output.
 
 @section apad
 
-Pad the end of a audio stream with silence, this can be used together with
--shortest to extend audio streams to the same length as the video stream.
+Pad the end of an audio stream with silence.
+
+This can be used together with @command{ffmpeg} @option{-shortest} to
+extend audio streams to the same length as the video stream.
+
+A description of the accepted options follows.
+
+@table @option
+@item packet_size
+Set silence packet size. Default value is 4096.
+
+@item pad_len
+Set the number of samples of silence to add to the end. After the
+value is reached, the stream is terminated. This option is mutually
+exclusive with @option{whole_len}.
+
+@item whole_len
+Set the minimum total number of samples in the output audio stream. If
+the value is longer than the input audio length, silence is added to
+the end, until the value is reached. This option is mutually exclusive
+with @option{pad_len}.
+@end table
+
+If neither the @option{pad_len} nor the @option{whole_len} option is
+set, the filter will add silence to the end of the input stream
+indefinitely.
+
+@subsection Examples
+
+@itemize
+@item
+Add 1024 samples of silence to the end of the input:
+@example
+apad=pad_len=1024
+@end example
+
+@item
+Make sure the audio output will contain at least 10000 samples, pad
+the input with silence if required:
+@example
+apad=whole_len=10000
+@end example
+
+@item
+Use @command{ffmpeg} to pad the audio input with silence, so that the
+video stream will always result the shortest and will be converted
+until the end in the output file when using the @option{shortest}
+option:
+@example
+ffmpeg -i VIDEO -i AUDIO -filter_complex "[1:0]apad" -shortest OUTPUT
+@end example
+@end itemize
 
 @section aphaser
 Add a phasing effect to the input audio.
@@ -857,7 +906,7 @@ The input audio is not modified.
 The shown line contains a sequence of key/value pairs of the form
 @var{key}:@var{value}.
 
-It accepts the following parameters:
+The following values are shown in the output:
 
 @table @option
 @item n
@@ -1065,9 +1114,9 @@ The number of the first sample that should be output.
 The number of the first sample that should be dropped.
 @end table
 
-@option{start}, @option{end}, @option{duration} are expressed as time
-duration specifications, check the "Time duration" section in the
-ffmpeg-utils manual.
+@option{start}, @option{end}, and @option{duration} are expressed as time
+duration specifications; see
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}.
 
 Note that the first two sets of the start/end options and the @option{duration}
 option look at the frame timestamp, while the _sample options simply count the
@@ -1434,6 +1483,42 @@ equalizer=f=1000:width_type=q:width=1:g=2,equalizer=f=100:width_type=q:width=2:g
 @end example
 @end itemize
 
+@section flanger
+Apply a flanging effect to the audio.
+
+The filter accepts the following options:
+
+@table @option
+@item delay
+Set base delay in milliseconds. Range from 0 to 30. Default value is 0.
+
+@item depth
+Set added swep delay in milliseconds. Range from 0 to 10. Default value is 2.
+
+@item regen
+Set percentage regeneneration (delayed signal feedback). Range from -95 to 95.
+Default value is 0.
+
+@item width
+Set percentage of delayed signal mixed with original. Range from 0 to 100.
+Default valu is 71.
+
+@item speed
+Set sweeps per second (Hz). Range from 0.1 to 10. Default value is 0.5.
+
+@item shape
+Set swept wave shape, can be @var{triangular} or @var{sinusoidal}.
+Default value is @var{sinusoidal}.
+
+@item phase
+Set swept wave percentage-shift for multi channel. Range from 0 to 100.
+Default value is 25.
+
+@item interp
+Set delay-line interpolation, @var{linear} or @var{quadratic}.
+Default is @var{linear}.
+@end table
+
 @section highpass
 
 Apply a high-pass filter with 3dB point frequency.
@@ -1546,9 +1631,9 @@ Set the number of samples per channel per each output frame, default
 is 1024. Only used if plugin have zero inputs.
 
 @item duration, d
-Set the minimum duration of the sourced audio. See the function
-@code{av_parse_time()} for the accepted format, also check the "Time duration"
-section in the ffmpeg-utils manual.
+Set the minimum duration of the sourced audio. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 Note that the resulting duration may be greater than the specified duration,
 as the generated audio is always cut at the end of a complete frame.
 If not specified, or the expressed duration is negative, the audio is
@@ -1787,6 +1872,75 @@ Complete example with @command{ffmpeg} to detect silence with 0.0001 noise
 tolerance in @file{silence.mp3}:
 @example
 ffmpeg -i silence.mp3 -af silencedetect=noise=0.0001 -f null -
+@end example
+@end itemize
+
+@section silenceremove
+
+Remove silence from the beginning, middle or end of the audio.
+
+The filter accepts the following options:
+
+@table @option
+@item start_periods
+This value is used to indicate if audio should be trimmed at beginning of
+the audio. A value of zero indicates no silence should be trimmed from the
+beginning. When specifying a non-zero value, it trims audio up until it
+finds non-silence. Normally, when trimming silence from beginning of audio
+the @var{start_periods} will be @code{1} but it can be increased to higher
+values to trim all audio up to specific count of non-silence periods.
+Default value is @code{0}.
+
+@item start_duration
+Specify the amount of time that non-silence must be detected before it stops
+trimming audio. By increasing the duration, bursts of noises can be treated
+as silence and trimmed off. Default value is @code{0}.
+
+@item start_threshold
+This indicates what sample value should be treated as silence. For digital
+audio, a value of @code{0} may be fine but for audio recorded from analog,
+you may wish to increase the value to account for background noise.
+Can be specified in dB (in case "dB" is appended to the specified value)
+or amplitude ratio. Default value is @code{0}.
+
+@item stop_periods
+Set the count for trimming silence from the end of audio.
+To remove silence from the middle of a file, specify a @var{stop_periods}
+that is negative. This value is then threated as a positive value and is
+used to indicate the effect should restart processing as specified by
+@var{start_periods}, making it suitable for removing periods of silence
+in the middle of the audio.
+Default value is @code{0}.
+
+@item stop_duration
+Specify a duration of silence that must exist before audio is not copied any
+more. By specifying a higher duration, silence that is wanted can be left in
+the audio.
+Default value is @code{0}.
+
+@item stop_threshold
+This is the same as @option{start_threshold} but for trimming silence from
+the end of audio.
+Can be specified in dB (in case "dB" is appended to the specified value)
+or amplitude ratio. Default value is @code{0}.
+
+@item leave_silence
+This indicate that @var{stop_duration} length of audio should be left intact
+at the beginning of each period of silence.
+For example, if you want to remove long pauses between words but do not want
+to remove the pauses completely. Default value is @code{0}.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+The following example shows how this filter can be used to start a recording
+that does not contain the delay at the start which usually occurs between
+pressing the record button and the start of the performance:
+@example
+silenceremove=1:5:0.02
 @end example
 @end itemize
 
@@ -2098,8 +2252,9 @@ Set the channel layout. The number of channels in the specified layout
 must be equal to the number of specified expressions.
 
 @item duration, d
-Set the minimum duration of the sourced audio. See the function
-@code{av_parse_time()} for the accepted format.
+Set the minimum duration of the sourced audio. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 Note that the resulting duration may be greater than the specified
 duration, as the generated audio is always cut at the end of a
 complete frame.
@@ -2714,6 +2869,42 @@ boxblur=luma_radius=min(h\,w)/10:luma_power=1:chroma_radius=min(cw\,ch)/10:chrom
 @end example
 @end itemize
 
+@section codecview
+
+Visualize information exported by some codecs.
+
+Some codecs can export information through frames using side-data or other
+means. For example, some MPEG based codecs export motion vectors through the
+@var{export_mvs} flag in the codec @option{flags2} option.
+
+The filter accepts the following option:
+
+@table @option
+@item mv
+Set motion vectors to visualize.
+
+Available flags for @var{mv} are:
+
+@table @samp
+@item pf
+forward predicted MVs of P-frames
+@item bf
+forward predicted MVs of B-frames
+@item bb
+backward predicted MVs of B-frames
+@end table
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Visualizes multi-directionals MVs from P and B-Frames using @command{ffplay}:
+@example
+ffplay -flags2 +export_mvs input.mpg -vf codecview=mv=pf+bf+bb
+@end example
+@end itemize
+
 @section colorbalance
 Modify intensity of primary colors (red, green and blue) of input frames.
 
@@ -3178,7 +3369,7 @@ curves=psfile='MyCurvesPresets/purple.asv':green='0.45/0.53'
 
 Denoise frames using 2D DCT (frequency domain filtering).
 
-This filter is not designed for real time and can be extremely slow.
+This filter is not designed for real time.
 
 The filter accepts the following options:
 
@@ -3194,14 +3385,14 @@ If you need a more advanced filtering, see @option{expr}.
 Default is @code{0}.
 
 @item overlap
-Set number overlapping pixels for each block. Each block is of size
-@code{16x16}. Since the filter can be slow, you may want to reduce this value,
-at the cost of a less effective filter and the risk of various artefacts.
+Set number overlapping pixels for each block. Since the filter can be slow, you
+may want to reduce this value, at the cost of a less effective filter and the
+risk of various artefacts.
 
 If the overlapping value doesn't allow to process the whole input width or
 height, a warning will be displayed and according borders won't be denoised.
 
-Default value is @code{15}.
+Default value is @var{blocksize}-1, which is the best possible setting.
 
 @item expr, e
 Set the coefficient factor expression.
@@ -3213,6 +3404,15 @@ If this is option is set, the @option{sigma} option will be ignored.
 
 The absolute value of the coefficient can be accessed through the @var{c}
 variable.
+
+@item n
+Set the @var{blocksize} using the number of bits. @code{1<<@var{n}} defines the
+@var{blocksize}, which is the width and height of the processed blocks.
+
+The default value is @var{3} (8x8) and can be raised to @var{4} for a
+@var{blocksize} of 16x16. Note that changing this setting has huge consequences
+on the speed processing. Also, a larger block size does not necessarily means a
+better de-noising.
 @end table
 
 @subsection Examples
@@ -3225,6 +3425,11 @@ dctdnoiz=4.5
 The same operation can be achieved using the expression system:
 @example
 dctdnoiz=e='gte(c, 4.5*3)'
+@end example
+
+Violent denoise using a block size of @code{16x16}:
+@example
+dctdnoiz=15:n=4
 @end example
 
 @anchor{decimate}
@@ -3283,7 +3488,7 @@ The option available in this filter is:
 @item cycle
 Specify the length of the window over which the judder repeats.
 
-Accepts any interger greater than 1. Useful values are:
+Accepts any integer greater than 1. Useful values are:
 @table @samp
 
 @item 4
@@ -3612,6 +3817,8 @@ To enable compilation of this filter, you need to configure FFmpeg with
 @code{--enable-libfreetype}.
 To enable default font fallback and the @var{font} option you need to
 configure FFmpeg with @code{--enable-libfontconfig}.
+To enable the @var{text_shaping} option, you need to configure FFmpeg with
+@code{--enable-libfribidi}.
 
 @subsection Syntax
 
@@ -3655,6 +3862,11 @@ the "Color" section in the ffmpeg-utils manual.
 
 The default value of @var{fontcolor} is "black".
 
+@item fontcolor_expr
+String which is expanded the same way as @var{text} to obtain dynamic
+@var{fontcolor} value. By default this option has empty value and is not
+processed. When this option is set, it overrides @var{fontcolor} option.
+
 @item font
 The font family to be used for drawing text. By default Sans.
 
@@ -3665,6 +3877,12 @@ This parameter is mandatory if the fontconfig support is disabled.
 @item fontsize
 The font size to be used for drawing text.
 The default value of @var{fontsize} is 16.
+
+@item text_shaping
+If set to 1, attempt to shape the text (for example, reverse the order of
+right-to-left text and join Arabic characters) before drawing it.
+Otherwise, just draw the text exactly as given.
+By default 1 (if supported).
 
 @item ft_load_flags
 The flags to be used for loading the fonts.
@@ -3862,6 +4080,15 @@ example the text size is not known when evaluating the expression, so
 the constants @var{text_w} and @var{text_h} will have an undefined
 value.
 
+@item expr_int_format, eif
+Evaluate the expression's value and output as formatted integer.
+
+The first argument is the expression to be evaluated, just as for the @var{expr} function.
+The second argument specifies the output format. Allowed values are 'x', 'X', 'd' and
+'u'. They are treated exactly as in the printf function.
+The third parameter is optional and sets the number of positions taken by the output.
+It can be used to add padding with zeros from the left.
+
 @item gmtime
 The time at which the filter is running, expressed in UTC.
 It can accept an argument: a strftime() format string.
@@ -3961,6 +4188,17 @@ Print the date of a real-time encoding (see strftime(3)):
 drawtext='fontfile=FreeSans.ttf:text=%@{localtime:%a %b %d %Y@}'
 @end example
 
+@item
+Show text fading in and out (appearing/disappearing):
+@example
+#!/bin/sh
+DS=1.0 # display start
+DE=10.0 # display end
+FID=1.5 # fade in duration
+FOD=5 # fade out duration
+ffplay -f lavfi "color,drawtext=text=TEST:fontsize=50:fontfile=FreeSerif.ttf:fontcolor_expr=ff0000%@{eif\\\\: clip(255*(1*between(t\\, $DS + $FID\\, $DE - $FOD) + ((t - $DS)/$FID)*between(t\\, $DS\\, $DS + $FID) + (-(t - $DE)/$FOD)*between(t\\, $DE - $FOD\\, $DE) )\\, 0\\, 255) \\\\: x\\\\: 2 @}"
+@end example
+
 @end itemize
 
 For more information about libfreetype, check:
@@ -3968,6 +4206,9 @@ For more information about libfreetype, check:
 
 For more information about fontconfig, check:
 @url{http://freedesktop.org/software/fontconfig/fontconfig-user.html}.
+
+For more information about libfribidi, check:
+@url{http://fribidi.org/}.
 
 @section edgedetect
 
@@ -5198,6 +5439,20 @@ A floating point number which specifies chroma temporal strength. It defaults to
 @var{luma_tmp}*@var{chroma_spatial}/@var{luma_spatial}.
 @end table
 
+@section hqx
+
+Apply a high-quality magnification filter designed for pixel art. This filter
+was originally created by Maxim Stepin.
+
+It accepts the following option:
+
+@table @option
+@item n
+Set the scaling dimension: @code{2} for @code{hq2x}, @code{3} for
+@code{hq3x} and @code{4} for @code{hq4x}.
+Default is @code{3}.
+@end table
+
 @section hue
 
 Modify the hue and/or the saturation of the input.
@@ -5363,8 +5618,7 @@ Swap luma/chroma/alpha fields. Exchange even & odd lines. Default value is @code
 
 Simple interlacing filter from progressive contents. This interleaves upper (or
 lower) lines from odd frames with lower (or upper) lines from even frames,
-halving the frame rate and preserving image height. A vertical lowpass filter
-is always applied in order to avoid twitter effects and reduce moiré patterns.
+halving the frame rate and preserving image height.
 
 @example
    Original        Original             New Frame
@@ -5384,6 +5638,10 @@ It accepts the following optional parameters:
 @item scan
 This determines whether the interlaced frame is taken from the even
 (tff - default) or odd (bff) lines of the progressive frame.
+
+@item lowpass
+Enable (default) or disable the vertical lowpass filter to avoid twitter
+interlacing and reduce moire patterns.
 @end table
 
 @section kerndeint
@@ -5437,6 +5695,51 @@ Paint processed pixels in white:
 kerndeint=map=1
 @end example
 @end itemize
+
+@section lenscorrection
+
+Correct radial lens distortion
+
+This filter can be used to correct for radial distortion as can result from the use
+of wide angle lenses, and thereby re-rectify the image. To find the right parameters
+one can use tools available for example as part of opencv or simply trial-and-error.
+To use opencv use the calibration sample (under samples/cpp) from the opencv sources
+and extract the k1 and k2 coefficients from the resulting matrix.
+
+Note that effectively the same filter is available in the open-source tools Krita and
+Digikam from the KDE project.
+
+In contrast to the @ref{vignette} filter, which can also be used to compensate lens errors,
+this filter corrects the distortion of the image, whereas @ref{vignette} corrects the
+brightness distribution, so you may want to use both filters together in certain
+cases, though you will have to take care of ordering, i.e. whether vignetting should
+be applied before or after lens correction.
+
+@subsection Options
+
+The filter accepts the following options:
+
+@table @option
+@item cx
+Relative x-coordinate of the focal point of the image, and thereby the center of the
+distrortion. This value has a range [0,1] and is expressed as fractions of the image
+width.
+@item cy
+Relative y-coordinate of the focal point of the image, and thereby the center of the
+distrortion. This value has a range [0,1] and is expressed as fractions of the image
+height.
+@item k1
+Coefficient of the quadratic correction term. 0.5 means no correction.
+@item k2
+Coefficient of the double quadratic correction term. 0.5 means no correction.
+@end table
+
+The formula that generates the correction is:
+
+@var{r_src} = @var{r_tgt} * (1 + @var{k1} * (@var{r_tgt} / @var{r_0})^2 + @var{k2} * (@var{r_tgt} / @var{r_0})^4)
+
+where @var{r_0} is halve of the image diagonal and @var{r_src} and @var{r_tgt} are the
+distances from the focal point in the source and target images, respectively.
 
 @anchor{lut3d}
 @section lut3d
@@ -7447,7 +7750,7 @@ The input video is not modified.
 The shown line contains a sequence of key/value pairs of the form
 @var{key}:@var{value}.
 
-It accepts the following parameters:
+The following values are shown in the output:
 
 @table @option
 @item n
@@ -7526,6 +7829,188 @@ Swap the second and third planes of the input:
 @example
 ffmpeg -i INPUT -vf shuffleplanes=0:2:1:3 OUTPUT
 @end example
+
+@section signalstats
+Evaluate various visual metrics that assist in determining issues associated
+with the digitization of analog video media.
+
+By default the filter will log these metadata values:
+
+@table @option
+@item YMIN
+Display the minimal Y value contained within the input frame. Expressed in
+range of [0-255].
+
+@item YLOW
+Display the Y value at the 10% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item YAVG
+Display the average Y value within the input frame. Expressed in range of
+[0-255].
+
+@item YHIGH
+Display the Y value at the 90% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item YMAX
+Display the maximum Y value contained within the input frame. Expressed in
+range of [0-255].
+
+@item UMIN
+Display the minimal U value contained within the input frame. Expressed in
+range of [0-255].
+
+@item ULOW
+Display the U value at the 10% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item UAVG
+Display the average U value within the input frame. Expressed in range of
+[0-255].
+
+@item UHIGH
+Display the U value at the 90% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item UMAX
+Display the maximum U value contained within the input frame. Expressed in
+range of [0-255].
+
+@item VMIN
+Display the minimal V value contained within the input frame. Expressed in
+range of [0-255].
+
+@item VLOW
+Display the V value at the 10% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item VAVG
+Display the average V value within the input frame. Expressed in range of
+[0-255].
+
+@item VHIGH
+Display the V value at the 90% percentile within the input frame. Expressed in
+range of [0-255].
+
+@item VMAX
+Display the maximum V value contained within the input frame. Expressed in
+range of [0-255].
+
+@item SATMIN
+Display the minimal saturation value contained within the input frame.
+Expressed in range of [0-~181.02].
+
+@item SATLOW
+Display the saturation value at the 10% percentile within the input frame.
+Expressed in range of [0-~181.02].
+
+@item SATAVG
+Display the average saturation value within the input frame. Expressed in range
+of [0-~181.02].
+
+@item SATHIGH
+Display the saturation value at the 90% percentile within the input frame.
+Expressed in range of [0-~181.02].
+
+@item SATMAX
+Display the maximum saturation value contained within the input frame.
+Expressed in range of [0-~181.02].
+
+@item HUEMED
+Display the median value for hue within the input frame. Expressed in range of
+[0-360].
+
+@item HUEAVG
+Display the average value for hue within the input frame. Expressed in range of
+[0-360].
+
+@item YDIF
+Display the average of sample value difference between all values of the Y
+plane in the current frame and corresponding values of the previous input frame.
+Expressed in range of [0-255].
+
+@item UDIF
+Display the average of sample value difference between all values of the U
+plane in the current frame and corresponding values of the previous input frame.
+Expressed in range of [0-255].
+
+@item VDIF
+Display the average of sample value difference between all values of the V
+plane in the current frame and corresponding values of the previous input frame.
+Expressed in range of [0-255].
+@end table
+
+The filter accepts the following options:
+
+@table @option
+@item stat
+@item out
+
+@option{stat} specify an additional form of image analysis.
+@option{out} output video with the specified type of pixel highlighted.
+
+Both options accept the following values:
+
+@table @samp
+@item tout
+Identify @var{temporal outliers} pixels. A @var{temporal outlier} is a pixel
+unlike the neighboring pixels of the same field. Examples of temporal outliers
+include the results of video dropouts, head clogs, or tape tracking issues.
+
+@item vrep
+Identify @var{vertical line repetition}. Vertical line repetition includes
+similar rows of pixels within a frame. In born-digital video vertical line
+repetition is common, but this pattern is uncommon in video digitized from an
+analog source. When it occurs in video that results from the digitization of an
+analog source it can indicate concealment from a dropout compensator.
+
+@item brng
+Identify pixels that fall outside of legal broadcast range.
+@end table
+
+@item color, c
+Set the highlight color for the @option{out} option. The default color is
+yellow.
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Output data of various video metrics:
+@example
+ffprobe -f lavfi movie=example.mov,signalstats="stat=tout+vrep+brng" -show_frames
+@end example
+
+@item
+Output specific data about the minimum and maximum values of the Y plane per frame:
+@example
+ffprobe -f lavfi movie=example.mov,signalstats -show_entries frame_tags=lavfi.signalstats.YMAX,lavfi.signalstats.YMIN
+@end example
+
+@item
+Playback video while highlighting pixels that are outside of broadcast range in red.
+@example
+ffplay example.mov -vf signalstats="out=brng:color=red"
+@end example
+
+@item
+Playback video with signalstats metadata drawn over the frame.
+@example
+ffplay example.mov -vf signalstats=stat=brng+vrep+tout,drawtext=fontfile=FreeSerif.ttf:textfile=signalstat_drawtext.txt
+@end example
+
+The contents of signalstat_drawtext.txt used in the command are:
+@example
+time %@{pts:hms@}
+Y (%@{metadata:lavfi.signalstats.YMIN@}-%@{metadata:lavfi.signalstats.YMAX@})
+U (%@{metadata:lavfi.signalstats.UMIN@}-%@{metadata:lavfi.signalstats.UMAX@})
+V (%@{metadata:lavfi.signalstats.VMIN@}-%@{metadata:lavfi.signalstats.VMAX@})
+saturation maximum: %@{metadata:lavfi.signalstats.SATMAX@}
+
+@end example
+@end itemize
 
 @anchor{smartblur}
 @section smartblur
@@ -8125,9 +8610,10 @@ The number of the first frame that should be passed to the output.
 The number of the first frame that should be dropped.
 @end table
 
-@option{start}, @option{end}, @option{duration} are expressed as time
-duration specifications, check the "Time duration" section in the
-ffmpeg-utils manual.
+@option{start}, @option{end}, and @option{duration} are expressed as time
+duration specifications; see
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 
 Note that the first two sets of the start/end options and the @option{duration}
 option look at the frame timestamp, while the _frame variants simply count the
@@ -8468,6 +8954,7 @@ For example, to vertically flip a video with @command{ffmpeg}:
 ffmpeg -i in.avi -vf "vflip" out.avi
 @end example
 
+@anchor{vignette}
 @section vignette
 
 Make or reverse a natural vignetting effect.
@@ -8674,6 +9161,94 @@ Only deinterlace frames marked as interlaced.
 
 The default value is @code{all}.
 @end table
+
+@section zoompan
+
+Apply Zoom & Pan effect.
+
+This filter accepts the following options:
+
+@table @option
+@item zoom, z
+Set the zoom expression. Default is 1.
+
+@item x
+@item y
+Set the x and y expression. Default is 0.
+
+@item d
+Set the duration expression in number of frames.
+This sets for how many number of frames effect will last for
+single input image.
+
+@item s
+Set the output image size, default is 'hd720'.
+@end table
+
+Each expression can contain the following constants:
+
+@table @option
+@item in_w, iw
+Input width.
+
+@item in_h, ih
+Input height.
+
+@item out_w, ow
+Output width.
+
+@item out_h, oh
+Output height.
+
+@item in
+Input frame count.
+
+@item on
+Output frame count.
+
+@item x
+@item y
+Last calculated 'x' and 'y' position from 'x' and 'y' expression
+for current input frame.
+
+@item px
+@item py
+'x' and 'y' of last output frame of previous input frame or 0 when there was
+not yet such frame (first input frame).
+
+@item zoom
+Last calculated zoom from 'z' expression for current input frame.
+
+@item pzoom
+Last calculated zoom of last output frame of previous input frame.
+
+@item duration
+Number of output frames for current input frame. Calculated from 'd' expression
+for each input frame.
+
+@item pduration
+number of output frames created for previous input frame
+
+@item a
+Rational number: input width / input height
+
+@item sar
+sample aspect ratio
+
+@item dar
+display aspect ratio
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Zoom-in up to 1.5 and pan at same time to some spot near center of picture:
+@example
+zoompan=z='min(zoom+0.0015,1.5)':d=700:x='if(gte(zoom,1.5),x,x+1/a)':y='if(gte(zoom,1.5),y,y+1)':s=640x360
+@end example
+@end itemize
 
 @c man end VIDEO FILTERS
 
@@ -8949,12 +9524,9 @@ number or a valid video frame rate abbreviation. The default value is
 "25".
 
 @item duration, d
-Set the video duration of the sourced video. The accepted syntax is:
-@example
-[-]HH:MM:SS[.m...]
-[-]S+[.m...]
-@end example
-See also the function @code{av_parse_time()}.
+Set the duration of the sourced video. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 
 If not specified, or the expressed duration is negative, the video is
 supposed to be generated forever.
@@ -8982,7 +9554,7 @@ Default value is "all", which will cycle through the list of all tests.
 
 Some examples:
 @example
-testsrc=t=dc_luma
+mptestsrc=t=dc_luma
 @end example
 
 will generate a "dc_luma" test pattern.
@@ -9216,12 +9788,9 @@ number or a valid video frame rate abbreviation. The default value is
 Set the sample aspect ratio of the sourced video.
 
 @item duration, d
-Set the video duration of the sourced video. The accepted syntax is:
-@example
-[-]HH[:MM[:SS[.m...]]]
-[-]S+[.m...]
-@end example
-Also see the the @code{av_parse_time()} function.
+Set the duration of the sourced video. See
+@ref{time duration syntax,,the Time duration section in the ffmpeg-utils(1) manual,ffmpeg-utils}
+for the accepted syntax.
 
 If not specified, or the expressed duration is negative, the video is
 supposed to be generated forever.
@@ -9384,7 +9953,7 @@ Set the number of output video streams, that is also the number of video
 streams in each segment. Default is 1.
 
 @item a
-Set the number of output audio streams, that is also the number of video
+Set the number of output audio streams, that is also the number of audio
 streams in each segment. Default is 0.
 
 @item unsafe
@@ -10128,6 +10697,153 @@ settb=AVTB
 @end example
 @end itemize
 
+@section showcqt
+Convert input audio to a video output representing
+frequency spectrum logarithmically (using constant Q transform with
+Brown-Puckette algorithm), with musical tone scale, from E0 to D#10 (10 octaves).
+
+The filter accepts the following options:
+
+@table @option
+@item volume
+Specify transform volume (multiplier) expression. The expression can contain
+variables:
+@table @option
+@item frequency, freq, f
+the frequency where transform is evaluated
+@item timeclamp, tc
+value of timeclamp option
+@end table
+and functions:
+@table @option
+@item a_weighting(f)
+A-weighting of equal loudness
+@item b_weighting(f)
+B-weighting of equal loudness
+@item c_weighting(f)
+C-weighting of equal loudness
+@end table
+Default value is @code{16}.
+
+@item tlength
+Specify transform length expression. The expression can contain variables:
+@table @option
+@item frequency, freq, f
+the frequency where transform is evaluated
+@item timeclamp, tc
+value of timeclamp option
+@end table
+Default value is @code{384/f*tc/(384/f+tc)}.
+
+@item timeclamp
+Specify the transform timeclamp. At low frequency, there is trade-off between
+accuracy in time domain and frequency domain. If timeclamp is lower,
+event in time domain is represented more accurately (such as fast bass drum),
+otherwise event in frequency domain is represented more accurately
+(such as bass guitar). Acceptable value is [0.1, 1.0]. Default value is @code{0.17}.
+
+@item coeffclamp
+Specify the transform coeffclamp. If coeffclamp is lower, transform is
+more accurate, otherwise transform is faster. Acceptable value is [0.1, 10.0].
+Default value is @code{1.0}.
+
+@item gamma
+Specify gamma. Lower gamma makes the spectrum more contrast, higher gamma
+makes the spectrum having more range. Acceptable value is [1.0, 7.0].
+Default value is @code{3.0}.
+
+@item fontfile
+Specify font file for use with freetype. If not specified, use embedded font.
+
+@item fontcolor
+Specify font color expression. This is arithmetic expression that should return
+integer value 0xRRGGBB. The expression can contain variables:
+@table @option
+@item frequency, freq, f
+the frequency where transform is evaluated
+@item timeclamp, tc
+value of timeclamp option
+@end table
+and functions:
+@table @option
+@item midi(f)
+midi number of frequency f, some midi numbers: E0(16), C1(24), C2(36), A4(69)
+@item r(x), g(x), b(x)
+red, green, and blue value of intensity x
+@end table
+Default value is @code{st(0, (midi(f)-59.5)/12);
+st(1, if(between(ld(0),0,1), 0.5-0.5*cos(2*PI*ld(0)), 0));
+r(1-ld(1)) + b(ld(1))}
+
+@item fullhd
+If set to 1 (the default), the video size is 1920x1080 (full HD),
+if set to 0, the video size is 960x540. Use this option to make CPU usage lower.
+
+@item fps
+Specify video fps. Default value is @code{25}.
+
+@item count
+Specify number of transform per frame, so there are fps*count transforms
+per second. Note that audio data rate must be divisible by fps*count.
+Default value is @code{6}.
+
+@end table
+
+@subsection Examples
+
+@itemize
+@item
+Playing audio while showing the spectrum:
+@example
+ffplay -f lavfi 'amovie=a.mp3, asplit [a][out1]; [a] showcqt [out0]'
+@end example
+
+@item
+Same as above, but with frame rate 30 fps:
+@example
+ffplay -f lavfi 'amovie=a.mp3, asplit [a][out1]; [a] showcqt=fps=30:count=5 [out0]'
+@end example
+
+@item
+Playing at 960x540 and lower CPU usage:
+@example
+ffplay -f lavfi 'amovie=a.mp3, asplit [a][out1]; [a] showcqt=fullhd=0:count=3 [out0]'
+@end example
+
+@item
+A1 and its harmonics: A1, A2, (near)E3, A3:
+@example
+ffplay -f lavfi 'aevalsrc=0.1*sin(2*PI*55*t)+0.1*sin(4*PI*55*t)+0.1*sin(6*PI*55*t)+0.1*sin(8*PI*55*t),
+                 asplit[a][out1]; [a] showcqt [out0]'
+@end example
+
+@item
+Same as above, but with more accuracy in frequency domain (and slower):
+@example
+ffplay -f lavfi 'aevalsrc=0.1*sin(2*PI*55*t)+0.1*sin(4*PI*55*t)+0.1*sin(6*PI*55*t)+0.1*sin(8*PI*55*t),
+                 asplit[a][out1]; [a] showcqt=timeclamp=0.5 [out0]'
+@end example
+
+@item
+B-weighting of equal loudness
+@example
+volume=16*b_weighting(f)
+@end example
+
+@item
+Lower Q factor
+@example
+tlength=100/f*tc/(100/f+tc)
+@end example
+
+@item
+Custom fontcolor, C-note is colored green, others are colored blue
+@example
+fontcolor='if(mod(floor(midi(f)+0.5),12), 0x0000FF, g(1))'
+@end example
+
+@end itemize
+
 @section showspectrum
 
 Convert input audio to a video output, representing the audio frequency
@@ -10142,8 +10858,19 @@ the "Video size" section in the ffmpeg-utils manual. Default value is
 @code{640x512}.
 
 @item slide
-Specify if the spectrum should slide along the window. Default value is
-@code{0}.
+Specify how the spectrum should slide along the window.
+
+It accepts the following values:
+@table @samp
+@item replace
+the samples start again on the left when they reach the right
+@item scroll
+the samples scroll from right to left
+@item fullframe
+frames are only produced when the samples reach the right
+@end table
+
+Default value is @code{replace}.
 
 @item mode
 Specify display mode.
@@ -10254,6 +10981,12 @@ Draw a point for each sample.
 
 @item line
 Draw a vertical line for each sample.
+
+@item p2p
+Draw a point for each sample and a line between them.
+
+@item cline
+Draw a centered vertical line for each sample.
 @end table
 
 Default value is @code{point}.
@@ -10267,6 +11000,9 @@ is not explicitly specified.
 @item rate, r
 Set the (approximate) output frame rate. This is done by setting the
 option @var{n}. Default value is "25".
+
+@item split_channels
+Set if channels should be drawn separately or overlap. Default value is 0.
 
 @end table
 

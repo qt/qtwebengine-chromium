@@ -27,12 +27,13 @@ public:
 protected:
     explicit SkBitmapSource(const SkBitmap& bitmap);
     SkBitmapSource(const SkBitmap& bitmap, const SkRect& srcRect, const SkRect& dstRect);
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
     explicit SkBitmapSource(SkReadBuffer& buffer);
+#endif
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
     virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
                                SkBitmap* result, SkIPoint* offset) const SK_OVERRIDE;
-    virtual bool onFilterBounds(const SkIRect& src, const SkMatrix& ctm, SkIRect* dst) const SK_OVERRIDE;
 
 private:
     SkBitmap fBitmap;

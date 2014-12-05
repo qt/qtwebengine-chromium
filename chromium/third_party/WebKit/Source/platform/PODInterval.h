@@ -30,7 +30,7 @@
 #include "wtf/text/StringBuilder.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 // Class representing a closed interval which can hold an arbitrary
 // Plain Old Datatype (POD) as its endpoints and a piece of user
@@ -60,10 +60,10 @@ namespace WebCore {
 // enabled. This requires the following template specializations to be
 // available:
 //
-//   template<> struct WebCore::ValueToString<T> {
+//   template<> struct ValueToString<T> {
 //       static String string(const T& t);
 //   };
-//   template<> struct WebCore::ValueToString<UserData> {
+//   template<> struct ValueToString<UserData> {
 //       static String string(const UserData& t);
 //   };
 //
@@ -138,15 +138,15 @@ public:
     String toString() const
     {
         StringBuilder builder;
-        builder.append("[PODInterval (");
+        builder.appendLiteral("[PODInterval (");
         builder.append(ValueToString<T>::string(low()));
-        builder.append(", ");
+        builder.appendLiteral(", ");
         builder.append(ValueToString<T>::string(high()));
-        builder.append("), data=");
+        builder.appendLiteral("), data=");
         builder.append(ValueToString<UserData>::string(data()));
-        builder.append(", maxHigh=");
+        builder.appendLiteral(", maxHigh=");
         builder.append(ValueToString<T>::string(maxHigh()));
-        builder.append("]");
+        builder.append(']');
         return builder.toString();
     }
 #endif
@@ -158,6 +158,6 @@ private:
     T m_maxHigh;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PODInterval_h

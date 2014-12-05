@@ -8,10 +8,12 @@
 
 #include <string>
 
+#import "base/mac/mac_util.h"
 #import "base/mac/scoped_sending_event.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/message_loop/message_loop.h"
 #import "base/message_loop/message_pump_mac.h"
-#include "content/browser/renderer_host/popup_menu_helper_mac.h"
+#include "content/browser/frame_host/popup_menu_helper_mac.h"
 #include "content/browser/renderer_host/render_view_host_factory.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
@@ -68,6 +70,7 @@ COMPILE_ASSERT_MATCHING_ENUM(DragOperationEvery);
 @end
 
 namespace content {
+
 WebContentsView* CreateWebContentsView(
     WebContentsImpl* web_contents,
     WebContentsViewDelegate* delegate,
@@ -81,9 +84,7 @@ WebContentsViewMac::WebContentsViewMac(WebContentsImpl* web_contents,
                                        WebContentsViewDelegate* delegate)
     : web_contents_(web_contents),
       delegate_(delegate),
-      allow_overlapping_views_(false),
-      overlay_view_(NULL),
-      underlay_view_(NULL) {
+      allow_other_views_(false) {
 }
 
 WebContentsViewMac::~WebContentsViewMac() {
@@ -159,9 +160,18 @@ void WebContentsViewMac::SizeContents(const gfx::Size& size) {
   // previous implementation.
 }
 
+gfx::NativeView WebContentsViewMac::GetNativeViewForFocus() const {
+  RenderWidgetHostView* rwhv =
+      web_contents_->GetFullscreenRenderWidgetHostView();
+  if (!rwhv)
+    rwhv = web_contents_->GetRenderWidgetHostView();
+  return rwhv ? rwhv->GetNativeView() : nil;
+}
+
 void WebContentsViewMac::Focus() {
-  NSWindow* window = [cocoa_view_.get() window];
-  [window makeFirstResponder:GetContentNativeView()];
+  gfx::NativeView native_view = GetNativeViewForFocus();
+  NSWindow* window = [native_view window];
+  [window makeFirstResponder:native_view];
   if (![window isVisible])
     return;
   [window makeKeyAndOrderFront:nil];
@@ -171,21 +181,23 @@ void WebContentsViewMac::SetInitialFocus() {
   if (web_contents_->FocusLocationBarByDefault())
     web_contents_->SetFocusToLocationBar(false);
   else
-    [[cocoa_view_.get() window] makeFirstResponder:GetContentNativeView()];
+    Focus();
 }
 
 void WebContentsViewMac::StoreFocus() {
+  gfx::NativeView native_view = GetNativeViewForFocus();
   // We're explicitly being asked to store focus, so don't worry if there's
   // already a view saved.
   focus_tracker_.reset(
-      [[FocusTracker alloc] initWithWindow:[cocoa_view_ window]]);
+      [[FocusTracker alloc] initWithWindow:[native_view window]]);
 }
 
 void WebContentsViewMac::RestoreFocus() {
+  gfx::NativeView native_view = GetNativeViewForFocus();
   // TODO(avi): Could we be restoring a view that's no longer in the key view
   // chain?
   if (!(focus_tracker_.get() &&
-        [focus_tracker_ restoreFocusInWindow:[cocoa_view_ window]])) {
+        [focus_tracker_ restoreFocusInWindow:[native_view window]])) {
     // Fall back to the default focus behavior if we could not restore focus.
     // TODO(shess): If location-bar gets focus by default, this will
     // select-all in the field.  If there was a specific selection in
@@ -221,7 +233,7 @@ void WebContentsViewMac::TakeFocus(bool reverse) {
 }
 
 void WebContentsViewMac::ShowContextMenu(
-    content::RenderFrameHost* render_frame_host,
+    RenderFrameHost* render_frame_host,
     const ContextMenuParams& params) {
   // Allow delegates to handle the context menu operation first.
   if (web_contents_->GetDelegate() &&
@@ -235,8 +247,8 @@ void WebContentsViewMac::ShowContextMenu(
     DLOG(ERROR) << "Cannot show context menus without a delegate.";
 }
 
-// Display a popup menu for WebKit using Cocoa widgets.
 void WebContentsViewMac::ShowPopupMenu(
+    RenderFrameHost* render_frame_host,
     const gfx::Rect& bounds,
     int item_height,
     double item_font_size,
@@ -244,8 +256,7 @@ void WebContentsViewMac::ShowPopupMenu(
     const std::vector<MenuItem>& items,
     bool right_aligned,
     bool allow_multiple_selection) {
-  popup_menu_helper_.reset(
-      new PopupMenuHelper(web_contents_->GetRenderViewHost()));
+  popup_menu_helper_.reset(new PopupMenuHelper(render_frame_host));
   popup_menu_helper_->ShowPopupMenu(bounds, item_height, item_font_size,
                                     selected_item, items, right_aligned,
                                     allow_multiple_selection);
@@ -263,67 +274,19 @@ gfx::Rect WebContentsViewMac::GetViewBounds() const {
   return gfx::Rect();
 }
 
-void WebContentsViewMac::SetAllowOverlappingViews(bool overlapping) {
-  if (allow_overlapping_views_ == overlapping)
+void WebContentsViewMac::SetAllowOtherViews(bool allow) {
+  if (allow_other_views_ == allow)
     return;
 
-  allow_overlapping_views_ = overlapping;
+  allow_other_views_ = allow;
   RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
       web_contents_->GetRenderWidgetHostView());
   if (view)
-    view->SetAllowOverlappingViews(allow_overlapping_views_);
+    view->SetAllowPauseForResizeOrRepaint(!allow_other_views_);
 }
 
-bool WebContentsViewMac::GetAllowOverlappingViews() const {
-  return allow_overlapping_views_;
-}
-
-void WebContentsViewMac::SetOverlayView(
-    WebContentsView* overlay, const gfx::Point& offset) {
-  DCHECK(!underlay_view_);
-  if (overlay_view_)
-    RemoveOverlayView();
-
-  overlay_view_ = static_cast<WebContentsViewMac*>(overlay);
-  DCHECK(!overlay_view_->overlay_view_);
-  overlay_view_->underlay_view_ = this;
-  overlay_view_offset_ = offset;
-  UpdateRenderWidgetHostViewOverlay();
-}
-
-void WebContentsViewMac::RemoveOverlayView() {
-  DCHECK(overlay_view_);
-
-  RenderWidgetHostViewMac* rwhv = static_cast<RenderWidgetHostViewMac*>(
-      web_contents_->GetRenderWidgetHostView());
-  if (rwhv)
-    rwhv->RemoveOverlayView();
-
-  overlay_view_->underlay_view_ = NULL;
-  overlay_view_ = NULL;
-}
-
-void WebContentsViewMac::UpdateRenderWidgetHostViewOverlay() {
-  RenderWidgetHostViewMac* rwhv = static_cast<RenderWidgetHostViewMac*>(
-      web_contents_->GetRenderWidgetHostView());
-  if (!rwhv)
-    return;
-
-  if (overlay_view_) {
-    RenderWidgetHostViewMac* overlay_rwhv =
-        static_cast<RenderWidgetHostViewMac*>(
-            overlay_view_->web_contents_->GetRenderWidgetHostView());
-    if (overlay_rwhv)
-      rwhv->SetOverlayView(overlay_rwhv, overlay_view_offset_);
-  }
-
-  if (underlay_view_) {
-    RenderWidgetHostViewMac* underlay_rwhv =
-        static_cast<RenderWidgetHostViewMac*>(
-            underlay_view_->web_contents_->GetRenderWidgetHostView());
-    if (underlay_rwhv)
-      underlay_rwhv->SetOverlayView(rwhv, underlay_view_->overlay_view_offset_);
-  }
+bool WebContentsViewMac::GetAllowOtherViews() const {
+  return allow_other_views_;
 }
 
 void WebContentsViewMac::CreateView(
@@ -334,7 +297,7 @@ void WebContentsViewMac::CreateView(
 }
 
 RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host, bool is_guest_view_hack) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -347,7 +310,7 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
   }
 
   RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(
-      render_widget_host);
+      render_widget_host, is_guest_view_hack);
   if (delegate()) {
     base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate> >
         rw_delegate(
@@ -355,7 +318,7 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
 
     view->SetDelegate(rw_delegate.get());
   }
-  view->SetAllowOverlappingViews(allow_overlapping_views_);
+  view->SetAllowPauseForResizeOrRepaint(!allow_other_views_);
 
   // Fancy layout comes later; for now just make it our size and resize it
   // with us. In case there are other siblings of the content area, we want
@@ -381,7 +344,7 @@ RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForWidget(
 
 RenderWidgetHostViewBase* WebContentsViewMac::CreateViewForPopupWidget(
     RenderWidgetHost* render_widget_host) {
-  return new RenderWidgetHostViewMac(render_widget_host);
+  return new RenderWidgetHostViewMac(render_widget_host, false);
 }
 
 void WebContentsViewMac::SetPageTitle(const base::string16& title) {
@@ -397,7 +360,6 @@ void WebContentsViewMac::RenderViewCreated(RenderViewHost* host) {
 }
 
 void WebContentsViewMac::RenderViewSwappedIn(RenderViewHost* host) {
-  UpdateRenderWidgetHostViewOverlay();
 }
 
 void WebContentsViewMac::SetOverscrollControllerEnabled(bool enabled) {
@@ -632,6 +594,53 @@ void WebContentsViewMac::CloseTab() {
 - (void)resizeSubviewsWithOldSize:(NSSize)oldBoundsSize {
   for (NSView* subview in self.subviews)
     [subview setFrame:self.bounds];
+}
+
+- (void)viewWillMoveToWindow:(NSWindow*)newWindow {
+  NSWindow* oldWindow = [self window];
+
+  NSNotificationCenter* notificationCenter =
+      [NSNotificationCenter defaultCenter];
+
+  // Occlusion notification APIs are new in Mavericks.
+  bool supportsOcclusionAPIs = base::mac::IsOSMavericksOrLater();
+
+  // Use of occlusion APIs is causing bugs:
+  // http://crbug.com/430968: focus set incorrectly.
+  // http://crbug.com/431272: flashes of incorrect content.
+  // http://crbug.com/310374: white flashes (comment 22).
+  supportsOcclusionAPIs = false;
+
+  if (supportsOcclusionAPIs) {
+    if (oldWindow) {
+      [notificationCenter
+          removeObserver:self
+                    name:NSWindowDidChangeOcclusionStateNotification
+                  object:oldWindow];
+    }
+    if (newWindow) {
+      [notificationCenter
+          addObserver:self
+             selector:@selector(windowChangedOcclusionState:)
+                 name:NSWindowDidChangeOcclusionStateNotification
+               object:newWindow];
+    }
+  }
+}
+
+- (void)windowChangedOcclusionState:(NSNotification*)notification {
+  DCHECK(base::mac::IsOSMavericksOrLater());
+  NSWindow* window = [notification object];
+  WebContentsImpl* webContents = [self webContents];
+  if (window && webContents) {
+    if ([window occlusionState] & NSWindowOcclusionStateVisible) {
+      if (!webContents->should_normally_be_visible())
+        webContents->WasShown();
+    } else {
+      if (webContents->should_normally_be_visible())
+        webContents->WasHidden();
+    }
+  }
 }
 
 @end

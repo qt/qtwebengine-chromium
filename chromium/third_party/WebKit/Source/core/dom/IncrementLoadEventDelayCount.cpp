@@ -7,7 +7,12 @@
 
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
+
+PassOwnPtr<IncrementLoadEventDelayCount> IncrementLoadEventDelayCount::create(Document& document)
+{
+    return adoptPtr(new IncrementLoadEventDelayCount(document));
+}
 
 IncrementLoadEventDelayCount::IncrementLoadEventDelayCount(Document& document)
     : m_document(&document)

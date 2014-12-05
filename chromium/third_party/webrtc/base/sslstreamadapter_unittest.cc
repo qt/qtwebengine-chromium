@@ -21,6 +21,7 @@
 #include "webrtc/base/sslidentity.h"
 #include "webrtc/base/sslstreamadapter.h"
 #include "webrtc/base/stream.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 static const int kBlockSize = 4096;
 static const char kAES_CM_HMAC_SHA1_80[] = "AES_CM_128_HMAC_SHA1_80";
@@ -191,14 +192,6 @@ class SSLStreamAdapterTestBase : public testing::Test,
   ~SSLStreamAdapterTestBase() {
     // Put it back for the next test.
     rtc::SetRandomTestMode(false);
-  }
-
-  static void SetUpTestCase() {
-    rtc::InitializeSSL();
-  }
-
-  static void TearDownTestCase() {
-    rtc::CleanupSSL();
   }
 
   // Recreate the client/server identities with the specified validity period.
@@ -690,6 +683,13 @@ TEST_F(SSLStreamAdapterTestTLS, TestTLSConnect) {
   TestHandshake();
 };
 
+// Test that closing the connection on one side updates the other side.
+TEST_F(SSLStreamAdapterTestTLS, TestTLSClose) {
+  TestHandshake();
+  client_ssl_->Close();
+  EXPECT_EQ_WAIT(rtc::SS_CLOSED, server_ssl_->GetState(), handshake_wait_);
+};
+
 // Test transfer -- trivial
 TEST_F(SSLStreamAdapterTestTLS, TestTLSTransfer) {
   TestHandshake();
@@ -750,7 +750,8 @@ TEST_F(SSLStreamAdapterTestDTLS,
 };
 
 // Test a handshake with small MTU
-TEST_F(SSLStreamAdapterTestDTLS, TestDTLSConnectWithSmallMtu) {
+// Disabled due to https://code.google.com/p/webrtc/issues/detail?id=3910
+TEST_F(SSLStreamAdapterTestDTLS, DISABLED_TestDTLSConnectWithSmallMtu) {
   MAYBE_SKIP_TEST(HaveDtls);
   SetMtu(700);
   SetHandshakeWait(20000);

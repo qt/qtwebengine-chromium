@@ -24,7 +24,7 @@
  */
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     ActiveDOMObject,
     Conditional=WEB_AUDIO,
     Constructor,
@@ -32,7 +32,6 @@
     NoInterfaceObject,
     RaisesException=Constructor,
 ] interface AudioContext : EventTarget {
-    
     // All rendered audio ultimately connects to destination, which represents the audio hardware.
     readonly attribute AudioDestinationNode destination;
 
@@ -74,9 +73,4 @@
     // Channel splitting and merging
     [RaisesException] ChannelSplitterNode createChannelSplitter(optional unsigned long numberOfOutputs);
     [RaisesException] ChannelMergerNode createChannelMerger(optional unsigned long numberOfInputs);
-
-    // Offline rendering
-    // void prepareOfflineBufferRendering(unsigned long numberOfChannels, unsigned long numberOfFrames, float sampleRate);
-    attribute EventHandler oncomplete;
-    void startRendering();
 };

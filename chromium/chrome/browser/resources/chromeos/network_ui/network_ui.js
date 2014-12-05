@@ -10,6 +10,7 @@ var NetworkUI = (function() {
   // specified then the first non empty value is used.
   var NETWORK_STATE_FIELDS = [
     'GUID',
+    'service_path',
     'Name',
     'Type',
     'ConnectionState',
@@ -26,6 +27,7 @@ var NetworkUI = (function() {
 
   var FAVORITE_STATE_FIELDS = [
     'GUID',
+    'service_path',
     'Name',
     'Type',
     'profile_path',
@@ -255,12 +257,20 @@ var NetworkUI = (function() {
     detailCell.className = 'state-table-expanded-cell';
     detailCell.colSpan = baseRow.childNodes.length - 1;
     expandedRow.appendChild(detailCell);
-    networkConfig.getProperties(guid, function(state) {
+    var showDetail = function(state) {
       if (networkConfig.lastError)
         detailCell.textContent = networkConfig.lastError;
       else
         detailCell.textContent = JSON.stringify(state, null, '\t');
-    });
+    };
+    var selected = $('get-network-type').selectedIndex;
+    var selectedId = $('get-network-type').options[selected].id;
+    if (selectedId == 'shill')
+      networkConfig.getShillProperties(guid, showDetail);
+    else if (selectedId == 'managed')
+      networkConfig.getManagedProperties(guid, showDetail);
+    else
+      networkConfig.getProperties(guid, showDetail);
     return expandedRow;
   };
 

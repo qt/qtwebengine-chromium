@@ -32,7 +32,7 @@
 
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 class MarginIntervalGenerator {
 public:
@@ -142,7 +142,7 @@ const RasterShapeIntervals& RasterShape::marginIntervals() const
     if (!shapeMargin())
         return *m_intervals;
 
-    int shapeMarginInt = clampToPositiveInteger(ceil(shapeMargin()));
+    int shapeMarginInt = clampTo<int>(ceil(shapeMargin()), 0);
     int maxShapeMarginInt = std::max(m_marginRectSize.width(), m_marginRectSize.height()) * sqrtf(2);
     if (!m_marginIntervals)
         m_marginIntervals = m_intervals->computeShapeMarginIntervals(std::min(shapeMarginInt, maxShapeMarginInt));
@@ -150,29 +150,33 @@ const RasterShapeIntervals& RasterShape::marginIntervals() const
     return *m_marginIntervals;
 }
 
-void RasterShape::getExcludedIntervals(LayoutUnit logicalTop, LayoutUnit logicalHeight, SegmentList& result) const
+LineSegment RasterShape::getExcludedInterval(LayoutUnit logicalTop, LayoutUnit logicalHeight) const
 {
     const RasterShapeIntervals& intervals = marginIntervals();
     if (intervals.isEmpty())
-        return;
+        return LineSegment();
 
     int y1 = logicalTop;
     int y2 = logicalTop + logicalHeight;
     ASSERT(y2 >= y1);
     if (y2 < intervals.bounds().y() || y1 >= intervals.bounds().maxY())
-        return;
+        return LineSegment();
 
     y1 = std::max(y1, intervals.bounds().y());
     y2 = std::min(y2, intervals.bounds().maxY());
     IntShapeInterval excludedInterval;
 
-    for (int y = y1; y < y2;  y++)
-        excludedInterval.unite(intervals.intervalAt(y));
+    if (y1 == y2) {
+        excludedInterval = intervals.intervalAt(y1);
+    } else {
+        for (int y = y1; y < y2; y++)
+            excludedInterval.unite(intervals.intervalAt(y));
+    }
 
     // Note: |marginIntervals()| returns end-point exclusive
     // intervals. |excludedInterval.x2()| contains the left-most pixel
     // offset to the right of the calculated union.
-    result.append(LineSegment(excludedInterval.x1(), excludedInterval.x2()));
+    return LineSegment(excludedInterval.x1(), excludedInterval.x2());
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -44,7 +44,7 @@ class MaybeHandle {
     location_ = reinterpret_cast<T**>(maybe_handle.location_);
   }
 
-  INLINE(void Assert() const) { ASSERT(location_ != NULL); }
+  INLINE(void Assert() const) { DCHECK(location_ != NULL); }
   INLINE(void Check() const) { CHECK(location_ != NULL); }
 
   INLINE(Handle<T> ToHandleChecked()) const {
@@ -53,7 +53,8 @@ class MaybeHandle {
   }
 
   // Convert to a Handle with a type that can be upcasted to.
-  template <class S> INLINE(bool ToHandle(Handle<S>* out)) {
+  template <class S>
+  V8_INLINE bool ToHandle(Handle<S>* out) const {
     if (location_ == NULL) {
       *out = Handle<T>::null();
       return false;

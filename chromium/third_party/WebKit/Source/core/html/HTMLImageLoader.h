@@ -25,9 +25,9 @@
 
 #include "core/loader/ImageLoader.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLImageLoader FINAL : public ImageLoader {
+class HTMLImageLoader final : public ImageLoader {
 public:
     static PassOwnPtrWillBeRawPtr<HTMLImageLoader> create(Element* element)
     {
@@ -35,10 +35,10 @@ public:
     }
     virtual ~HTMLImageLoader();
 
-    virtual void dispatchLoadEvent() OVERRIDE;
-    virtual String sourceURI(const AtomicString&) const OVERRIDE;
+    virtual void dispatchLoadEvent() override;
+    virtual String sourceURI(const AtomicString&) const override;
 
-    virtual void notifyFinished(Resource*) OVERRIDE;
+    virtual void notifyFinished(Resource*) override;
 
 private:
     explicit HTMLImageLoader(Element*);

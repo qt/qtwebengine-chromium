@@ -27,9 +27,8 @@
 #include "core/dom/Document.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSStyleSheet;
 class Document;
 class DocumentInit;
 class DocumentType;
@@ -39,7 +38,8 @@ class HTMLDocument;
 class KURL;
 class XMLDocument;
 
-class DOMImplementation FINAL : public NoBaseWillBeGarbageCollectedFinalized<DOMImplementation>, public ScriptWrappable {
+class DOMImplementation final : public NoBaseWillBeGarbageCollected<DOMImplementation>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<DOMImplementation> create(Document& document)
@@ -78,6 +78,6 @@ private:
     RawPtrWillBeMember<Document> m_document;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // DOMImplementation_h

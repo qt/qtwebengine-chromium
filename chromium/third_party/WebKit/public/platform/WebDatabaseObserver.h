@@ -51,32 +51,27 @@ public:
     virtual void reportOpenDatabaseResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase,
         int errorSite, int webSqlErrorCode, int sqliteErrorCode) { }
     virtual void reportChangeVersionResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase,
         int errorSite, int webSqlErrorCode, int sqliteErrorCode) { }
     virtual void reportStartTransactionResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase,
         int errorSite, int webSqlErrorCode, int sqliteErrorCode) { }
     virtual void reportCommitTransactionResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase,
         int errorSite, int webSqlErrorCode, int sqliteErrorCode) { }
     virtual void reportExecuteStatementResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase,
         int errorSite, int webSqlErrorCode, int sqliteErrorCode) { }
     virtual void reportVacuumDatabaseResult(
         const WebString& databaseIdentifier,
         const WebString& databaseName,
-        bool isSyncDatabase, int sqliteErrorCode) { }
+        int sqliteErrorCode) { }
 
 protected:
     ~WebDatabaseObserver() { }

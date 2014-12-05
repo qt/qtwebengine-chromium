@@ -67,35 +67,29 @@
         <table class="option-control-table">
           <tr id="prefer-network">
             <td>
-              <div class="checkbox">
-                <span class="controlled-setting-with-label">
+              <div class="checkbox controlled-setting-with-label">
+                <label>
                   <input id="prefer-network-wifi" type="checkbox">
                   <span>
-                    <label for="prefer-network-wifi"
-                        i18n-content="inetPreferredNetwork">
-                    </label>
-                    <span class="controlled-setting-indicator" data="preferred"
-                        for="prefer-network-wifi">
-                    </span>
+                    <span i18n-content="inetPreferredNetwork"></span>
+                    <span class="controlled-setting-indicator"
+                          managed="Priority"></span>
                   </span>
-                </span>
+                </label>
               </div>
             </td>
           </tr>
           <tr class="auto-connect-network">
             <td>
-              <div class="checkbox">
-                <span class="controlled-setting-with-label">
+              <div class="checkbox controlled-setting-with-label">
+                <label>
                   <input id="auto-connect-network-wifi" type="checkbox">
                   <span>
-                    <label for="auto-connect-network-wifi"
-                        i18n-content="inetAutoConnectNetwork">
-                    </label>
+                    <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                        data="autoConnect" for="auto-connect-network-wifi">
-                    </span>
+                          managed="WiFi.AutoConnect"></span>
                   </span>
-                </span>
+                </label>
               </div>
             </td>
           </tr>
@@ -106,6 +100,11 @@
           <tr>
             <td class="option-name" i18n-content="connectionState"></td>
             <td id="wifi-connection-state" class="option-value"></td>
+          </tr>
+          <tr>
+            <td class="option-name" i18n-content="restrictedConnectivity"></td>
+            <td id="wifi-restricted-connectivity" class="option-value"></td>
+          </tr>
           <tr>
             <td class="option-name" i18n-content="inetSsid"></td>
             <td id="wifi-ssid" class="option-value"></td>
@@ -113,22 +112,6 @@
           <tr id="wifi-bssid-entry">
             <td class="option-name" i18n-content="inetBssid"></td>
             <td id="wifi-bssid" class="option-value"></td>
-          </tr>
-          <tr class="wifi-network-setting">
-            <td class="option-name" i18n-content="inetAddress"></td>
-            <td id="wifi-ip-address" class="option-value"></td>
-          </tr>
-          <tr class="wifi-network-setting">
-            <td class="option-name" i18n-content="inetNetmask"></td>
-            <td id="wifi-netmask" class="option-value"></td>
-          </tr>
-          <tr class="wifi-network-setting">
-            <td class="option-name" i18n-content="inetGateway"></td>
-            <td id="wifi-gateway" class="option-value"></td>
-          </tr>
-          <tr class="wifi-network-setting">
-            <td class="option-name" i18n-content="inetNameServers"></td>
-            <td id="wifi-name-servers" class="option-value"></td>
           </tr>
           <tr id="wifi-security-entry">
             <td class="options-name" i18n-content="inetEncryption"></td>
@@ -168,18 +151,15 @@
         <table class="option-control-table">
           <tr class="auto-connect-network">
             <td>
-              <div class="checkbox">
-                <span class="controlled-setting-with-label">
+              <div class="checkbox controlled-setting-with-label">
+                <label>
                   <input id="auto-connect-network-wimax" type="checkbox">
                   <span>
-                    <label for="auto-connect-network-wimax"
-                        i18n-content="inetAutoConnectNetwork">
-                    </label>
+                    <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                        data="autoConnect" for="auto-connect-network-wimax">
-                    </span>
+                          managed="WiMAX.AutoConnect"></span>
                   </span>
-                </span>
+                </label>
               </div>
             </td>
           </tr>
@@ -190,6 +170,10 @@
           <tr>
             <td class="option-name" i18n-content="connectionState"></td>
             <td id="wimax-connection-state" class="option-value"></td>
+          </tr>
+          <tr>
+            <td class="option-name" i18n-content="restrictedConnectivity"></td>
+            <td id="wimax-restricted-connectivity" class="option-value"></td>
           </tr>
           <tr id="wimax-eap-identity-entry">
             <td class="option-name" i18n-content="inetUsername"></td>
@@ -216,18 +200,15 @@
         <table class="option-control-table">
           <tr class="auto-connect-network">
             <td>
-              <div class="checkbox">
-                <span class="controlled-setting-with-label">
+              <div class="checkbox controlled-setting-with-label">
+                <label>
                   <input id="auto-connect-network-vpn" type="checkbox">
                   <span>
-                    <label for="auto-connect-network-vpn"
-                        i18n-content="inetAutoConnectNetwork">
-                    </label>
+                    <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                        data="autoConnect" for="auto-connect-network-vpn">
-                    </span>
+                          managed="VPN.AutoConnect"></span>
                   </span>
-                </span>
+                </label>
               </div>
             </td>
           </tr>
@@ -240,7 +221,7 @@
             <td>
               <input class="option-value" id="inet-server-hostname"></input>
               <span class="controlled-setting-indicator"
-                  data="serverHostname" for="inet-server-hostname"></span>
+                    managed="VPN.Host"></span>
             </td>
           </tr>
           <tr>
@@ -279,8 +260,8 @@
             <td id="roaming-state" class="option-value"></td>
           </tr>
           <tr>
-            <td class="option-name" i18n-content="restrictedPool"></td>
-            <td id="restricted-pool" class="option-value"></td>
+            <td class="option-name" i18n-content="restrictedConnectivity"></td>
+            <td id="cellular-restricted-connectivity" class="option-value"></td>
           </tr>
           <tr>
             <td class="option-name" i18n-content="operatorName"></td>
@@ -301,8 +282,8 @@
                 <option value="-1" i18n-content="cellularApnOther">
                 </option>
               </select>
-              <span class="controlled-setting-indicator" data="providerApnList"
-                  for="select-apn"></span>
+              <span class="controlled-setting-indicator"
+                    managed="Cellular.APN"></span>
             </td>
           </tr>
           <tr class="gsm-only apn-details-view">
@@ -336,18 +317,15 @@
           </tr>
           <tr>
             <td colspan="2">
-              <div class="checkbox">
-                <span class="controlled-setting-with-label">
+              <div class="checkbox controlled-setting-with-label">
+                <label>
                   <input id="auto-connect-network-cellular" type="checkbox">
                   <span>
-                    <label for="auto-connect-network-cellular"
-                        i18n-content="inetAutoConnectNetwork">
-                    </label>
+                    <span i18n-content="inetAutoConnectNetwork"></span>
                     <span class="controlled-setting-indicator"
-                        data="autoConnect" for="auto-connect-network-cellular">
-                    </span>
+                          managed="Cellular.AutoConnect"></span>
                   </span>
-                </span>
+                </label>
               </div>
             </td>
           </tr>
@@ -423,19 +401,17 @@
         </table>
       </section>
       <section id="ipconfig-section">
-        <div id="ip-automatic-configuration" class="checkbox">
-          <span class="controlled-setting-with-label">
+        <div id="ip-automatic-configuration"
+            class="checkbox controlled-setting-with-label">
+          <label>
             <input id="ip-automatic-configuration-checkbox"
                 type="checkbox">
             <span>
-              <label for="ip-automatic-configuration-checkbox"
-                  i18n-content="ipAutomaticConfiguration">
-              </label>
-              <span class="controlled-setting-indicator" data="ipconfigDHCP"
-                  for="ip-automatic-configuration">
-              </span>
+              <span i18n-content="ipAutomaticConfiguration"></span>
+              <span class="controlled-setting-indicator"
+                    managed="StaticIPConfig.IPAddress"></span>
             </span>
-          </span>
+          </label>
         </div>
         <div>
         <table id="ip-address-settings">
@@ -515,24 +491,22 @@
          class="subpages-tab-contents cellular-details gsm-only">
       <div id="cellular-security-options">
         <section>
-          <div id="sim-pin-lock" class="checkbox">
-            <span class="controlled-setting-with-label">
+          <div id="sim-pin-lock" class="checkbox controlled-setting-with-label">
+            <label>
               <input id="sim-card-lock-enabled" type="checkbox">
               <span>
-                <label for="sim-card-lock-enabled" i18n-content="lockSimCard">
-                </label>
+                <span i18n-content="lockSimCard"></span>
                 <span class="controlled-setting-indicator"
-                    data="simCardLockEnabled" for="sim-card-lock-enabled">
-                </span>
+                      managed="Cellular.SIMLockStatus.LockEnabled"></span>
               </span>
-            </span>
+            </label>
           </div>
         </section>
         <section>
           <div id="change-pin-area">
             <button id="change-pin" i18n-content="changePinButton"></button>
-            <span class="controlled-setting-indicator" data="simCardLockEnabled"
-                for="change-pin"></span>
+            <span class="controlled-setting-indicator"
+                  managed="Cellular.SIMLockStatus.LockType"></span>
           </div>
         </section>
       </div>
@@ -700,7 +674,6 @@
       <button id="details-internet-configure" i18n-content="configureButton">
       </button>
       <button id="activate-details" i18n-content="activateButton"></button>
-      <button id="buyplan-details" i18n-content="buyplanButton"></button>
       <button id="view-account-details" i18n-content="viewAccountButton">
       </button>
     </div>

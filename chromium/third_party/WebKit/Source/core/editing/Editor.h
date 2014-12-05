@@ -26,7 +26,7 @@
 #ifndef Editor_h
 #define Editor_h
 
-#include "core/clipboard/ClipboardAccessPolicy.h"
+#include "core/clipboard/DataTransferAccessPolicy.h"
 #include "core/dom/DocumentMarker.h"
 #include "core/editing/EditAction.h"
 #include "core/editing/EditingBehavior.h"
@@ -39,39 +39,31 @@
 #include "platform/PasteMode.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class Clipboard;
 class CompositeEditCommand;
-class EditCommand;
 class EditCommandComposition;
 class EditorClient;
 class EditorInternalCommand;
 class LocalFrame;
-class HTMLElement;
 class HitTestResult;
 class KillRing;
 class Pasteboard;
-class SharedBuffer;
-class SimpleFontData;
 class SpellChecker;
 class StylePropertySet;
-class Text;
 class TextEvent;
 class UndoStack;
 
 enum EditorCommandSource { CommandFromMenuOrKeyBinding, CommandFromDOM, CommandFromDOMWithUserInterface };
 enum EditorParagraphSeparator { EditorParagraphSeparatorIsDiv, EditorParagraphSeparatorIsP };
 
-class Editor FINAL : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
+class Editor final : public NoBaseWillBeGarbageCollectedFinalized<Editor> {
     WTF_MAKE_NONCOPYABLE(Editor);
 public:
     static PassOwnPtrWillBeRawPtr<Editor> create(LocalFrame&);
     ~Editor();
 
     EditorClient& client() const;
-
-    LocalFrame& frame() const { return m_frame; }
 
     CompositeEditCommand* lastEditCommand() { return m_lastEditCommand.get(); }
 
@@ -100,8 +92,6 @@ public:
     static void countEvent(ExecutionContext*, const Event*);
     void copyImage(const HitTestResult&);
 
-    void indent();
-    void outdent();
     void transpose();
 
     bool shouldDeleteRange(Range*) const;
@@ -111,9 +101,6 @@ public:
     bool selectionStartHasStyle(CSSPropertyID, const String& value) const;
     TriState selectionHasStyle(CSSPropertyID, const String& value) const;
     String selectionStartCSSPropertyValue(CSSPropertyID);
-
-    TriState selectionUnorderedListState() const;
-    TriState selectionOrderedListState() const;
 
     void removeFormattingAndStyle();
 
@@ -135,32 +122,44 @@ public:
     bool shouldStyleWithCSS() const { return m_shouldStyleWithCSS; }
 
     class Command {
+        STACK_ALLOCATED();
     public:
         Command();
-        Command(const EditorInternalCommand*, EditorCommandSource, PassRefPtr<LocalFrame>);
+        Command(const EditorInternalCommand*, EditorCommandSource, PassRefPtrWillBeRawPtr<LocalFrame>);
 
-        bool execute(const String& parameter = String(), Event* triggeringEvent = 0) const;
+        bool execute(const String& parameter = String(), Event* triggeringEvent = nullptr) const;
         bool execute(Event* triggeringEvent) const;
 
         bool isSupported() const;
-        bool isEnabled(Event* triggeringEvent = 0) const;
+        bool isEnabled(Event* triggeringEvent = nullptr) const;
 
-        TriState state(Event* triggeringEvent = 0) const;
-        String value(Event* triggeringEvent = 0) const;
+        TriState state(Event* triggeringEvent = nullptr) const;
+        String value(Event* triggeringEvent = nullptr) const;
 
         bool isTextInsertion() const;
 
         // Returns 0 if this Command is not supported.
         int idForHistogram() const;
     private:
+        LocalFrame& frame() const
+        {
+            ASSERT(m_frame);
+            return *m_frame;
+        }
+
         const EditorInternalCommand* m_command;
         EditorCommandSource m_source;
-        RefPtr<LocalFrame> m_frame;
+        RefPtrWillBeMember<LocalFrame> m_frame;
     };
     Command command(const String& commandName); // Command source is CommandFromMenuOrKeyBinding.
     Command command(const String& commandName, EditorCommandSource);
 
-    bool insertText(const String&, Event* triggeringEvent);
+    // |Editor::executeCommand| is implementation of |WebFrame::executeCommand|
+    // rather than |Document::execCommand|.
+    bool executeCommand(const String&);
+    bool executeCommand(const String& commandName, const String& value);
+
+    bool insertText(const String&, KeyboardEvent* triggeringEvent);
     bool insertTextWithoutSendingTextEvent(const String&, bool selectInsertedText, TextEvent* triggeringEvent);
     bool insertLineBreak();
     bool insertParagraphSeparator();
@@ -199,7 +198,7 @@ public:
     void pasteAsFragment(PassRefPtrWillBeRawPtr<DocumentFragment>, bool smartReplace, bool matchStyle);
     void pasteAsPlainText(const String&, bool smartReplace);
 
-    Node* findEventTargetFrom(const VisibleSelection&) const;
+    Element* findEventTargetFrom(const VisibleSelection&) const;
 
     bool findString(const String&, FindOptions);
     // FIXME: Switch callers over to the FindOptions version and retire this one.
@@ -238,7 +237,7 @@ public:
     void trace(Visitor*);
 
 private:
-    LocalFrame& m_frame;
+    RawPtrWillBeMember<LocalFrame> m_frame;
     RefPtrWillBeMember<CompositeEditCommand> m_lastEditCommand;
     int m_preventRevealSelection;
     bool m_shouldStartNewKillRingSequence;
@@ -250,6 +249,12 @@ private:
     bool m_overwriteModeEnabled;
 
     explicit Editor(LocalFrame&);
+
+    LocalFrame& frame() const
+    {
+        ASSERT(m_frame);
+        return *m_frame;
+    }
 
     bool canDeleteRange(Range*) const;
 
@@ -263,19 +268,19 @@ private:
     void pasteAsPlainTextWithPasteboard(Pasteboard*);
     void pasteWithPasteboard(Pasteboard*);
     void writeSelectionToPasteboard(Pasteboard*, Range*, const String& plainText);
-    bool dispatchCPPEvent(const AtomicString&, ClipboardAccessPolicy, PasteMode = AllMimeTypes);
+    bool dispatchCPPEvent(const AtomicString&, DataTransferAccessPolicy, PasteMode = AllMimeTypes);
 
     void revealSelectionAfterEditingOperation(const ScrollAlignment& = ScrollAlignment::alignCenterIfNeeded, RevealExtentOption = DoNotRevealExtent);
     void changeSelectionAfterCommand(const VisibleSelection& newSelection, FrameSelection::SetSelectionOptions);
     void notifyComponentsOnChangedSelection(const VisibleSelection& oldSelection, FrameSelection::SetSelectionOptions);
 
-    Node* findEventTargetFromSelection() const;
+    Element* findEventTargetFromSelection() const;
 
     PassRefPtrWillBeRawPtr<Range> rangeOfString(const String&, Range*, FindOptions);
 
     SpellChecker& spellChecker() const;
 
-    bool handleEditingKeyboardEvent(WebCore::KeyboardEvent*);
+    bool handleEditingKeyboardEvent(blink::KeyboardEvent*);
 };
 
 inline void Editor::setStartNewKillRingSequence(bool flag)
@@ -299,6 +304,6 @@ inline bool Editor::markedTextMatchesAreHighlighted() const
 }
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Editor_h

@@ -41,7 +41,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/TypeTraits.h"
 
-namespace WebCore {
+namespace blink {
 
 template<typename T> class HeapTerminatedArray;
 
@@ -57,31 +57,41 @@ struct IsGarbageCollectedMixin {
 
 #if COMPILER(MSVC)
     template<typename U> static TrueType hasAdjustAndMark(char[&U::adjustAndMark != 0]);
-    template<typename U> static TrueType hasIsAlive(char[&U::isAlive != 0]);
+    template<typename U> static TrueType hasIsHeapObjectAlive(char[&U::isHeapObjectAlive != 0]);
 #else
     template<size_t> struct F;
     template<typename U> static TrueType hasAdjustAndMark(F<sizeof(&U::adjustAndMark)>*);
-    template<typename U> static TrueType hasIsAlive(F<sizeof(&U::isAlive)>*);
+    template<typename U> static TrueType hasIsHeapObjectAlive(F<sizeof(&U::isHeapObjectAlive)>*);
 #endif
-    template<typename U> static FalseType hasIsAlive(...);
+    template<typename U> static FalseType hasIsHeapObjectAlive(...);
     template<typename U> static FalseType hasAdjustAndMark(...);
 
-    static bool const value = (sizeof(TrueType) == sizeof(hasAdjustAndMark<T>(0))) && (sizeof(TrueType) == sizeof(hasIsAlive<T>(0)));
+    static bool const value = (sizeof(TrueType) == sizeof(hasAdjustAndMark<T>(0))) && (sizeof(TrueType) == sizeof(hasIsHeapObjectAlive<T>(0)));
 };
 
 template <typename T>
 struct IsGarbageCollectedType {
+    typedef char TrueType;
+    struct FalseType {
+        char dummy[2];
+    };
+
     typedef typename WTF::RemoveConst<T>::Type NonConstType;
     typedef WTF::IsSubclassOfTemplate<NonConstType, GarbageCollected> GarbageCollectedSubclass;
     typedef IsGarbageCollectedMixin<NonConstType> GarbageCollectedMixinSubclass;
-    typedef WTF::IsSubclassOfTemplate3<NonConstType, HeapHashSet> HeapHashSetSubclass;
-    typedef WTF::IsSubclassOfTemplate3<NonConstType, HeapLinkedHashSet> HeapLinkedHashSetSubclass;
+    typedef WTF::IsSubclassOfTemplate<NonConstType, HeapHashSet> HeapHashSetSubclass;
+    typedef WTF::IsSubclassOfTemplate<NonConstType, HeapLinkedHashSet> HeapLinkedHashSetSubclass;
     typedef WTF::IsSubclassOfTemplateTypenameSizeTypename<NonConstType, HeapListHashSet> HeapListHashSetSubclass;
-    typedef WTF::IsSubclassOfTemplate5<NonConstType, HeapHashMap> HeapHashMapSubclass;
+    typedef WTF::IsSubclassOfTemplate<NonConstType, HeapHashMap> HeapHashMapSubclass;
     typedef WTF::IsSubclassOfTemplateTypenameSize<NonConstType, HeapVector> HeapVectorSubclass;
     typedef WTF::IsSubclassOfTemplateTypenameSize<NonConstType, HeapDeque> HeapDequeSubclass;
-    typedef WTF::IsSubclassOfTemplate3<NonConstType, HeapHashCountedSet> HeapHashCountedSetSubclass;
+    typedef WTF::IsSubclassOfTemplate<NonConstType, HeapHashCountedSet> HeapHashCountedSetSubclass;
     typedef WTF::IsSubclassOfTemplate<NonConstType, HeapTerminatedArray> HeapTerminatedArraySubclass;
+
+    template<typename U, size_t inlineCapacity> static TrueType listHashSetNodeIsHeapAllocated(WTF::ListHashSetNode<U, HeapListHashSetAllocator<U, inlineCapacity> >*);
+    static FalseType listHashSetNodeIsHeapAllocated(...);
+    static const bool isHeapAllocatedListHashSetNode = sizeof(TrueType) == sizeof(listHashSetNodeIsHeapAllocated(reinterpret_cast<NonConstType*>(0)));
+
     static const bool value =
         GarbageCollectedSubclass::value
         || GarbageCollectedMixinSubclass::value
@@ -92,7 +102,8 @@ struct IsGarbageCollectedType {
         || HeapVectorSubclass::value
         || HeapDequeSubclass::value
         || HeapHashCountedSetSubclass::value
-        || HeapTerminatedArraySubclass::value;
+        || HeapTerminatedArraySubclass::value
+        || isHeapAllocatedListHashSetNode;
 };
 
 #define COMPILE_ASSERT_IS_GARBAGE_COLLECTED(T, ErrorMessage) \
@@ -192,7 +203,7 @@ public:
 protected:
     inline PersistentBase()
         : PersistentNode(TraceMethodDelegate<Owner, &Owner::trace>::trampoline)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         , m_roots(RootsAccessor::roots())
 #endif
     {
@@ -205,10 +216,13 @@ protected:
 
     inline explicit PersistentBase(const PersistentBase& otherref)
         : PersistentNode(otherref.m_trace)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
         , m_roots(RootsAccessor::roots())
 #endif
     {
+        // We don't support allocation of thread local Persistents while doing
+        // thread shutdown/cleanup.
+        ASSERT(!ThreadState::current()->isTerminating());
         typename RootsAccessor::Lock lock;
         ASSERT(otherref.m_roots == m_roots); // Handles must belong to the same list.
         PersistentBase* other = const_cast<PersistentBase*>(&otherref);
@@ -220,7 +234,7 @@ protected:
 
     inline PersistentBase& operator=(const PersistentBase& otherref) { return *this; }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 private:
     PersistentNode* m_roots;
 #endif
@@ -234,6 +248,14 @@ public:
     {
         for (PersistentNode* current = m_next; current != this; current = current->m_next)
             current->trace(visitor);
+    }
+
+    int numberOfPersistents()
+    {
+        int numberOfPersistents = 0;
+        for (PersistentNode* current = m_next; current != this; current = current->m_next)
+            ++numberOfPersistents;
+        return numberOfPersistents;
     }
 
     virtual ~PersistentAnchor()
@@ -254,7 +276,7 @@ private:
     friend class ThreadState;
 };
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // For global persistent handles we cannot check that the
     // pointer is in the heap because that would involve
     // inspecting the heap of running threads.
@@ -284,8 +306,6 @@ class CrossThreadPersistent;
 // the same thread.
 template<typename T, typename RootsAccessor /* = ThreadLocalPersistents<ThreadingTrait<T>::Affinity > */ >
 class Persistent : public PersistentBase<RootsAccessor, Persistent<T, RootsAccessor> > {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(Persistent);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(Persistent);
 public:
     Persistent() : m_raw(0) { }
 
@@ -344,15 +364,15 @@ public:
     void trace(Visitor* visitor)
     {
         COMPILE_ASSERT_IS_GARBAGE_COLLECTED(T, NonGarbageCollectedObjectInPersistent);
-#if ENABLE(GC_TRACING)
+#if ENABLE(GC_PROFILE_MARKING)
         visitor->setHostInfo(this, m_tracingName.isEmpty() ? "Persistent" : m_tracingName);
 #endif
         visitor->mark(m_raw);
     }
 
-    T* release()
+    RawPtr<T> release()
     {
-        T* result = m_raw;
+        RawPtr<T> result = m_raw;
         m_raw = 0;
         return result;
     }
@@ -400,7 +420,7 @@ public:
     T* get() const { return m_raw; }
 
 private:
-#if ENABLE(GC_TRACING)
+#if ENABLE(GC_PROFILE_MARKING)
     void recordBacktrace()
     {
         if (m_raw)
@@ -420,8 +440,6 @@ private:
 // different from the construction thread.
 template<typename T>
 class CrossThreadPersistent : public Persistent<T, GlobalPersistents> {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(CrossThreadPersistent);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(CrossThreadPersistent);
 public:
     CrossThreadPersistent(T* raw) : Persistent<T, GlobalPersistents>(raw) { }
 
@@ -445,7 +463,7 @@ public:
 
     void trace(Visitor* visitor)
     {
-#if ENABLE(GC_TRACING)
+#if ENABLE(GC_PROFILE_MARKING)
         visitor->setHostInfo(this, "PersistentHeapCollectionBase");
 #endif
         visitor->trace(*static_cast<Collection*>(this));
@@ -512,8 +530,6 @@ public:
 // all Member fields of a live object will be traced marked as live as well.
 template<typename T>
 class Member {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(Member);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(Member);
 public:
     Member() : m_raw(0)
     {
@@ -621,7 +637,7 @@ protected:
 
     T* m_raw;
 
-    template<bool x, WTF::WeakHandlingFlag y, ShouldWeakPointersBeMarkedStrongly z, typename U, typename V> friend struct CollectionBackingTraceTrait;
+    template<bool x, WTF::WeakHandlingFlag y, WTF::ShouldWeakPointersBeMarkedStrongly z, typename U, typename V> friend struct CollectionBackingTraceTrait;
     friend class Visitor;
 };
 
@@ -650,25 +666,36 @@ class TraceTrait<OwnPtr<T> > {
 public:
     static void trace(Visitor* visitor, OwnPtr<T>* ptr)
     {
-        TraceTrait<T>::trace(visitor, ptr->get());
+        ASSERT_NOT_REACHED();
     }
 };
 
-template<bool needsTracing, typename T>
-struct StdPairHelper;
+template<typename T, bool needsTracing>
+struct TraceIfEnabled;
 
 template<typename T>
-struct StdPairHelper<false, T>  {
+struct TraceIfEnabled<T, false>  {
     static void trace(Visitor*, T*) { }
 };
 
 template<typename T>
-struct StdPairHelper<true, T> {
+struct TraceIfEnabled<T, true> {
     static void trace(Visitor* visitor, T* t)
     {
         visitor->trace(*t);
     }
 };
+
+template <typename T> struct RemoveHeapPointerWrapperTypes {
+    typedef typename WTF::RemoveTemplate<typename WTF::RemoveTemplate<typename WTF::RemoveTemplate<T, Member>::Type, WeakMember>::Type, RawPtr>::Type Type;
+};
+
+// FIXME: Oilpan: TraceIfNeeded should be implemented ala:
+// NeedsTracing<T>::value || IsWeakMember<T>::value. It should not need to test
+// raw pointer types. To remove these tests, we may need support for
+// instantiating a template with a RawPtrOrMember'ish template.
+template<typename T>
+struct TraceIfNeeded : public TraceIfEnabled<T, WTF::NeedsTracing<T>::value || blink::IsGarbageCollectedType<typename RemoveHeapPointerWrapperTypes<typename WTF::RemovePointer<T>::Type>::Type>::value> { };
 
 // This trace trait for std::pair will null weak members if their referent is
 // collected. If you have a collection that contain weakness it does not remove
@@ -680,8 +707,8 @@ public:
     static const bool secondNeedsTracing = WTF::NeedsTracing<U>::value || WTF::IsWeak<U>::value;
     static void trace(Visitor* visitor, std::pair<T, U>* pair)
     {
-        StdPairHelper<firstNeedsTracing, T>::trace(visitor, &pair->first);
-        StdPairHelper<secondNeedsTracing, U>::trace(visitor, &pair->second);
+        TraceIfEnabled<T, firstNeedsTracing>::trace(visitor, &pair->first);
+        TraceIfEnabled<U, secondNeedsTracing>::trace(visitor, &pair->second);
     }
 };
 
@@ -693,8 +720,6 @@ public:
 // time of GC the weak pointers will automatically be set to null.
 template<typename T>
 class WeakMember : public Member<T> {
-    WTF_DISALLOW_CONSTRUCTION_FROM_ZERO(WeakMember);
-    WTF_DISALLOW_ZERO_ASSIGNMENT(WeakMember);
 public:
     WeakMember() : Member<T>() { }
 
@@ -768,9 +793,9 @@ template<typename T, typename U> inline bool operator!=(const Persistent<T>& a, 
 // with GCC nor MSVC.) However, supporting both CPP defines and
 // template aliases is problematic from outside a WebCore namespace
 // when Oilpan is disabled: e.g.,
-// WebCore::RefCountedWillBeGarbageCollected as a template alias would
+// blink::RefCountedWillBeGarbageCollected as a template alias would
 // uniquely resolve from within any namespace, but if it is backed by
-// a CPP #define, it would expand to WebCore::RefCounted, and not the
+// a CPP #define, it would expand to blink::RefCounted, and not the
 // required WTF::RefCounted.
 //
 // Having the CPP expansion instead be fully namespace qualified, and the
@@ -779,98 +804,68 @@ template<typename T, typename U> inline bool operator!=(const Persistent<T>& a, 
 // commmon denominator of using CPP macros only.
 #if ENABLE(OILPAN)
 #define PassRefPtrWillBeRawPtr WTF::RawPtr
-#define RefCountedWillBeGarbageCollected WebCore::GarbageCollected
-#define RefCountedWillBeGarbageCollectedFinalized WebCore::GarbageCollectedFinalized
-#define RefCountedWillBeRefCountedGarbageCollected WebCore::RefCountedGarbageCollected
-#define RefCountedGarbageCollectedWillBeGarbageCollectedFinalized WebCore::GarbageCollectedFinalized
-#define ThreadSafeRefCountedWillBeGarbageCollected WebCore::GarbageCollected
-#define ThreadSafeRefCountedWillBeGarbageCollectedFinalized WebCore::GarbageCollectedFinalized
-#define ThreadSafeRefCountedWillBeThreadSafeRefCountedGarbageCollected WebCore::ThreadSafeRefCountedGarbageCollected
-#define PersistentWillBeMember WebCore::Member
-#define RefPtrWillBePersistent WebCore::Persistent
+#define RefCountedWillBeGarbageCollected blink::GarbageCollected
+#define RefCountedWillBeGarbageCollectedFinalized blink::GarbageCollectedFinalized
+#define RefCountedWillBeRefCountedGarbageCollected blink::RefCountedGarbageCollected
+#define RefCountedGarbageCollectedWillBeGarbageCollectedFinalized blink::GarbageCollectedFinalized
+#define ThreadSafeRefCountedWillBeGarbageCollected blink::GarbageCollected
+#define ThreadSafeRefCountedWillBeGarbageCollectedFinalized blink::GarbageCollectedFinalized
+#define PersistentWillBeMember blink::Member
+#define CrossThreadPersistentWillBeMember blink::Member
+#define RefPtrWillBePersistent blink::Persistent
 #define RefPtrWillBeRawPtr WTF::RawPtr
-#define RefPtrWillBeMember WebCore::Member
-#define RefPtrWillBeWeakMember WebCore::WeakMember
-#define RefPtrWillBeCrossThreadPersistent WebCore::CrossThreadPersistent
-#define RawPtrWillBeMember WebCore::Member
-#define RawPtrWillBeWeakMember WebCore::WeakMember
-#define OwnPtrWillBeMember WebCore::Member
-#define OwnPtrWillBePersistent WebCore::Persistent
+#define RefPtrWillBeMember blink::Member
+#define RefPtrWillBeWeakMember blink::WeakMember
+#define RefPtrWillBeCrossThreadPersistent blink::CrossThreadPersistent
+#define RawPtrWillBeMember blink::Member
+#define RawPtrWillBePersistent blink::Persistent
+#define RawPtrWillBeWeakMember blink::WeakMember
+#define OwnPtrWillBeMember blink::Member
+#define OwnPtrWillBePersistent blink::Persistent
 #define OwnPtrWillBeRawPtr WTF::RawPtr
 #define PassOwnPtrWillBeRawPtr WTF::RawPtr
-#define WeakPtrWillBeMember WebCore::Member
+#define WeakPtrWillBeMember blink::Member
 #define WeakPtrWillBeRawPtr WTF::RawPtr
-#define WeakPtrWillBeWeakMember WebCore::WeakMember
-#define NoBaseWillBeGarbageCollected WebCore::GarbageCollected
-#define NoBaseWillBeGarbageCollectedFinalized WebCore::GarbageCollectedFinalized
-#define NoBaseWillBeRefCountedGarbageCollected WebCore::RefCountedGarbageCollected
-#define WillBeHeapHashMap WebCore::HeapHashMap
-#define WillBePersistentHeapHashMap WebCore::PersistentHeapHashMap
-#define WillBeHeapHashSet WebCore::HeapHashSet
-#define WillBePersistentHeapHashSet WebCore::PersistentHeapHashSet
-#define WillBeHeapLinkedHashSet WebCore::HeapLinkedHashSet
-#define WillBePersistentHeapLinkedHashSet WebCore::PersistentHeapLinkedHashSet
-#define WillBeHeapListHashSet WebCore::HeapListHashSet
-#define WillBePersistentHeapListHashSet WebCore::PersistentHeapListHashSet
-#define WillBeHeapVector WebCore::HeapVector
-#define WillBePersistentHeapVector WebCore::PersistentHeapVector
-#define WillBeHeapDeque WebCore::HeapDeque
-#define WillBePersistentHeapDeque WebCore::PersistentHeapDeque
-#define WillBeHeapHashCountedSet WebCore::HeapHashCountedSet
-#define WillBePersistentHeapHashCountedSet WebCore::PersistentHeapHashCountedSet
-#define WillBeGarbageCollectedMixin WebCore::GarbageCollectedMixin
-#define WillBeHeapSupplement WebCore::HeapSupplement
-#define WillBeHeapSupplementable WebCore::HeapSupplementable
-#define WillBePersistentHeapSupplementable WebCore::PersistentHeapSupplementable
-#define WillBeHeapTerminatedArray WebCore::HeapTerminatedArray
-#define WillBeHeapTerminatedArrayBuilder WebCore::HeapTerminatedArrayBuilder
-#define WillBeHeapLinkedStack WebCore::HeapLinkedStack
-#define PersistentHeapHashSetWillBeHeapHashSet WebCore::HeapHashSet
+#define WeakPtrWillBeMember blink::Member
+#define WeakPtrWillBeWeakMember blink::WeakMember
+#define NoBaseWillBeGarbageCollected blink::GarbageCollected
+#define NoBaseWillBeGarbageCollectedFinalized blink::GarbageCollectedFinalized
+#define NoBaseWillBeRefCountedGarbageCollected blink::RefCountedGarbageCollected
+#define WillBeHeapHashMap blink::HeapHashMap
+#define WillBePersistentHeapHashMap blink::PersistentHeapHashMap
+#define WillBeHeapHashSet blink::HeapHashSet
+#define WillBePersistentHeapHashSet blink::PersistentHeapHashSet
+#define WillBeHeapLinkedHashSet blink::HeapLinkedHashSet
+#define WillBePersistentHeapLinkedHashSet blink::PersistentHeapLinkedHashSet
+#define WillBeHeapListHashSet blink::HeapListHashSet
+#define WillBePersistentHeapListHashSet blink::PersistentHeapListHashSet
+#define WillBeHeapVector blink::HeapVector
+#define WillBePersistentHeapVector blink::PersistentHeapVector
+#define WillBeHeapDeque blink::HeapDeque
+#define WillBePersistentHeapDeque blink::PersistentHeapDeque
+#define WillBeHeapHashCountedSet blink::HeapHashCountedSet
+#define WillBePersistentHeapHashCountedSet blink::PersistentHeapHashCountedSet
+#define WillBeGarbageCollectedMixin blink::GarbageCollectedMixin
+#define WillBeHeapSupplement blink::HeapSupplement
+#define WillBeHeapSupplementable blink::HeapSupplementable
+#define WillBeHeapTerminatedArray blink::HeapTerminatedArray
+#define WillBeHeapTerminatedArrayBuilder blink::HeapTerminatedArrayBuilder
+#define WillBeHeapLinkedStack blink::HeapLinkedStack
+#define PersistentHeapHashMapWillBeHeapHashMap blink::HeapHashMap
+#define PersistentHeapHashSetWillBeHeapHashSet blink::HeapHashSet
+#define PersistentHeapDequeWillBeHeapDeque blink::HeapDeque
+#define PersistentHeapVectorWillBeHeapVector blink::HeapVector
 
-template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeNoop(T* ptr)
+template<typename T> T* adoptRefWillBeNoop(T* ptr)
 {
-    static const bool notRefCountedGarbageCollected = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
     static const bool notRefCounted = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCounted>::value;
-    COMPILE_ASSERT(notRefCountedGarbageCollected, useAdoptRefCountedWillBeRefCountedGarbageCollected);
     COMPILE_ASSERT(notRefCounted, youMustAdopt);
-    return PassRefPtrWillBeRawPtr<T>(ptr);
+    return ptr;
 }
 
-template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeRefCountedGarbageCollected(T* ptr)
+template<typename T> T* adoptPtrWillBeNoop(T* ptr)
 {
-    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
-    COMPILE_ASSERT(isRefCountedGarbageCollected, useAdoptRefWillBeNoop);
-    return PassRefPtrWillBeRawPtr<T>(adoptRefCountedGarbageCollected(ptr));
-}
-
-template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeThreadSafeRefCountedGarbageCollected(T* ptr)
-{
-    static const bool isThreadSafeRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, ThreadSafeRefCountedGarbageCollected>::value;
-    COMPILE_ASSERT(isThreadSafeRefCountedGarbageCollected, useAdoptRefWillBeNoop);
-    return PassRefPtrWillBeRawPtr<T>(adoptRefCountedGarbageCollected(ptr));
-}
-
-template<typename T> PassOwnPtrWillBeRawPtr<T> adoptPtrWillBeNoop(T* ptr)
-{
-    static const bool notRefCountedGarbageCollected = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
     static const bool notRefCounted = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCounted>::value;
-    COMPILE_ASSERT(notRefCountedGarbageCollected, useAdoptRefCountedWillBeRefCountedGarbageCollected);
-    COMPILE_ASSERT(notRefCounted, youMustAdopt);
-    return PassOwnPtrWillBeRawPtr<T>(ptr);
-}
-
-template<typename T> T* adoptPtrWillBeRefCountedGarbageCollected(T* ptr)
-{
-    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
-    COMPILE_ASSERT(isRefCountedGarbageCollected, useAdoptRefWillBeNoop);
-    return adoptRefCountedGarbageCollected(ptr);
-}
-
-template<typename T> T* adoptRefCountedGarbageCollectedWillBeNoop(T* ptr)
-{
-    static const bool notRefCountedGarbageCollected = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
-    static const bool notRefCounted = !WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCounted>::value;
-    COMPILE_ASSERT(notRefCountedGarbageCollected, useAdoptRefCountedWillBeRefCountedGarbageCollected);
     COMPILE_ASSERT(notRefCounted, youMustAdopt);
     return ptr;
 }
@@ -881,7 +876,7 @@ template<typename T> T* adoptRefCountedGarbageCollectedWillBeNoop(T* ptr)
 #define DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) // do nothing
 
 #define DEFINE_STATIC_REF_WILL_BE_PERSISTENT(type, name, arguments) \
-    DEFINE_STATIC_LOCAL(Persistent<type>, name, arguments)
+    static type* name = (new Persistent<type>(arguments))->get();
 
 #else // !ENABLE(OILPAN)
 
@@ -892,25 +887,22 @@ public:
     ~DummyBase() { }
 };
 
-// Export this instance to support WillBeGarbageCollectedMixin
-// uses by code residing in non-webcore components.
-template class PLATFORM_EXPORT DummyBase<void>;
-
 #define PassRefPtrWillBeRawPtr WTF::PassRefPtr
 #define RefCountedWillBeGarbageCollected WTF::RefCounted
 #define RefCountedWillBeGarbageCollectedFinalized WTF::RefCounted
 #define RefCountedWillBeRefCountedGarbageCollected WTF::RefCounted
-#define RefCountedGarbageCollectedWillBeGarbageCollectedFinalized WebCore::RefCountedGarbageCollected
+#define RefCountedGarbageCollectedWillBeGarbageCollectedFinalized blink::RefCountedGarbageCollected
 #define ThreadSafeRefCountedWillBeGarbageCollected WTF::ThreadSafeRefCounted
 #define ThreadSafeRefCountedWillBeGarbageCollectedFinalized WTF::ThreadSafeRefCounted
-#define ThreadSafeRefCountedWillBeThreadSafeRefCountedGarbageCollected WTF::ThreadSafeRefCounted
-#define PersistentWillBeMember WebCore::Persistent
+#define PersistentWillBeMember blink::Persistent
+#define CrossThreadPersistentWillBeMember blink::CrossThreadPersistent
 #define RefPtrWillBePersistent WTF::RefPtr
 #define RefPtrWillBeRawPtr WTF::RefPtr
 #define RefPtrWillBeMember WTF::RefPtr
 #define RefPtrWillBeWeakMember WTF::RefPtr
 #define RefPtrWillBeCrossThreadPersistent WTF::RefPtr
 #define RawPtrWillBeMember WTF::RawPtr
+#define RawPtrWillBePersistent WTF::RawPtr
 #define RawPtrWillBeWeakMember WTF::RawPtr
 #define OwnPtrWillBeMember WTF::OwnPtr
 #define OwnPtrWillBePersistent WTF::OwnPtr
@@ -918,10 +910,11 @@ template class PLATFORM_EXPORT DummyBase<void>;
 #define PassOwnPtrWillBeRawPtr WTF::PassOwnPtr
 #define WeakPtrWillBeMember WTF::WeakPtr
 #define WeakPtrWillBeRawPtr WTF::WeakPtr
+#define WeakPtrWillBeMember WTF::WeakPtr
 #define WeakPtrWillBeWeakMember WTF::WeakPtr
-#define NoBaseWillBeGarbageCollected WebCore::DummyBase
-#define NoBaseWillBeGarbageCollectedFinalized WebCore::DummyBase
-#define NoBaseWillBeRefCountedGarbageCollected WebCore::DummyBase
+#define NoBaseWillBeGarbageCollected blink::DummyBase
+#define NoBaseWillBeGarbageCollectedFinalized blink::DummyBase
+#define NoBaseWillBeRefCountedGarbageCollected blink::DummyBase
 #define WillBeHeapHashMap WTF::HashMap
 #define WillBePersistentHeapHashMap WTF::HashMap
 #define WillBeHeapHashSet WTF::HashSet
@@ -934,30 +927,21 @@ template class PLATFORM_EXPORT DummyBase<void>;
 #define WillBePersistentHeapVector WTF::Vector
 #define WillBeHeapDeque WTF::Deque
 #define WillBePersistentHeapDeque WTF::Deque
-#define WillBeHeapHeapCountedSet WTF::HeapCountedSet
-#define WillBePersistentHeapHeapCountedSet WTF::HeapCountedSet
-#define WillBeGarbageCollectedMixin WebCore::DummyBase<void>
-#define WillBeHeapSupplement WebCore::Supplement
-#define WillBeHeapSupplementable WebCore::Supplementable
-#define WillBePersistentHeapSupplementable WebCore::Supplementable
+#define WillBeHeapHashCountedSet WTF::HashCountedSet
+#define WillBePersistentHeapHashCountedSet WTF::HashCountedSet
+#define WillBeGarbageCollectedMixin blink::DummyBase<void>
+#define WillBeHeapSupplement blink::Supplement
+#define WillBeHeapSupplementable blink::Supplementable
 #define WillBeHeapTerminatedArray WTF::TerminatedArray
 #define WillBeHeapTerminatedArrayBuilder WTF::TerminatedArrayBuilder
 #define WillBeHeapLinkedStack WTF::LinkedStack
-#define PersistentHeapHashSetWillBeHeapHashSet WebCore::PersistentHeapHashSet
+#define PersistentHeapHashMapWillBeHeapHashMap blink::PersistentHeapHashMap
+#define PersistentHeapHashSetWillBeHeapHashSet blink::PersistentHeapHashSet
+#define PersistentHeapDequeWillBeHeapDeque blink::PersistentHeapDeque
+#define PersistentHeapVectorWillBeHeapVector blink::PersistentHeapVector
 
 template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeNoop(T* ptr) { return adoptRef(ptr); }
-template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeRefCountedGarbageCollected(T* ptr) { return adoptRef(ptr); }
-template<typename T> PassRefPtrWillBeRawPtr<T> adoptRefWillBeThreadSafeRefCountedGarbageCollected(T* ptr) { return adoptRef(ptr); }
 template<typename T> PassOwnPtrWillBeRawPtr<T> adoptPtrWillBeNoop(T* ptr) { return adoptPtr(ptr); }
-template<typename T> PassOwnPtrWillBeRawPtr<T> adoptPtrWillBeRefCountedGarbageCollected(T* ptr) { return adoptPtr(ptr); }
-
-template<typename T> T* adoptRefCountedGarbageCollectedWillBeNoop(T* ptr)
-{
-    static const bool isRefCountedGarbageCollected = WTF::IsSubclassOfTemplate<typename WTF::RemoveConst<T>::Type, RefCountedGarbageCollected>::value;
-    COMPILE_ASSERT(isRefCountedGarbageCollected, useAdoptRefWillBeNoop);
-    return adoptRefCountedGarbageCollected(ptr);
-}
-
 
 #define WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED WTF_MAKE_FAST_ALLOCATED
 #define DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(type) \
@@ -977,47 +961,47 @@ template<typename T> T* adoptRefCountedGarbageCollectedWillBeNoop(T* ptr)
 
 #endif // ENABLE(OILPAN)
 
-} // namespace WebCore
+} // namespace blink
 
 namespace WTF {
 
-template <typename T> struct VectorTraits<WebCore::Member<T> > : VectorTraitsBase<WebCore::Member<T> > {
+template <typename T> struct VectorTraits<blink::Member<T> > : VectorTraitsBase<blink::Member<T> > {
     static const bool needsDestruction = false;
     static const bool canInitializeWithMemset = true;
     static const bool canMoveWithMemcpy = true;
 };
 
-template <typename T> struct VectorTraits<WebCore::WeakMember<T> > : VectorTraitsBase<WebCore::WeakMember<T> > {
+template <typename T> struct VectorTraits<blink::WeakMember<T> > : VectorTraitsBase<blink::WeakMember<T> > {
     static const bool needsDestruction = false;
     static const bool canInitializeWithMemset = true;
     static const bool canMoveWithMemcpy = true;
 };
 
-template <typename T> struct VectorTraits<WebCore::HeapVector<T, 0> > : VectorTraitsBase<WebCore::HeapVector<T, 0> > {
+template <typename T> struct VectorTraits<blink::HeapVector<T, 0> > : VectorTraitsBase<blink::HeapVector<T, 0> > {
     static const bool needsDestruction = false;
     static const bool canInitializeWithMemset = true;
     static const bool canMoveWithMemcpy = true;
 };
 
-template <typename T> struct VectorTraits<WebCore::HeapDeque<T, 0> > : VectorTraitsBase<WebCore::HeapDeque<T, 0> > {
+template <typename T> struct VectorTraits<blink::HeapDeque<T, 0> > : VectorTraitsBase<blink::HeapDeque<T, 0> > {
     static const bool needsDestruction = false;
     static const bool canInitializeWithMemset = true;
     static const bool canMoveWithMemcpy = true;
 };
 
-template <typename T, size_t inlineCapacity> struct VectorTraits<WebCore::HeapVector<T, inlineCapacity> > : VectorTraitsBase<WebCore::HeapVector<T, inlineCapacity> > {
+template <typename T, size_t inlineCapacity> struct VectorTraits<blink::HeapVector<T, inlineCapacity> > : VectorTraitsBase<blink::HeapVector<T, inlineCapacity> > {
     static const bool needsDestruction = VectorTraits<T>::needsDestruction;
     static const bool canInitializeWithMemset = VectorTraits<T>::canInitializeWithMemset;
     static const bool canMoveWithMemcpy = VectorTraits<T>::canMoveWithMemcpy;
 };
 
-template <typename T, size_t inlineCapacity> struct VectorTraits<WebCore::HeapDeque<T, inlineCapacity> > : VectorTraitsBase<WebCore::HeapDeque<T, inlineCapacity> > {
+template <typename T, size_t inlineCapacity> struct VectorTraits<blink::HeapDeque<T, inlineCapacity> > : VectorTraitsBase<blink::HeapDeque<T, inlineCapacity> > {
     static const bool needsDestruction = VectorTraits<T>::needsDestruction;
     static const bool canInitializeWithMemset = VectorTraits<T>::canInitializeWithMemset;
     static const bool canMoveWithMemcpy = VectorTraits<T>::canMoveWithMemcpy;
 };
 
-template<typename T> struct HashTraits<WebCore::Member<T> > : SimpleClassHashTraits<WebCore::Member<T> > {
+template<typename T> struct HashTraits<blink::Member<T> > : SimpleClassHashTraits<blink::Member<T> > {
     static const bool needsDestruction = false;
     // FIXME: The distinction between PeekInType and PassInType is there for
     // the sake of the reference counting handles. When they are gone the two
@@ -1026,9 +1010,9 @@ template<typename T> struct HashTraits<WebCore::Member<T> > : SimpleClassHashTra
     // in the marking Visitor.
     typedef RawPtr<T> PeekInType;
     typedef RawPtr<T> PassInType;
-    typedef WebCore::Member<T>* IteratorGetType;
-    typedef const WebCore::Member<T>* IteratorConstGetType;
-    typedef WebCore::Member<T>& IteratorReferenceType;
+    typedef blink::Member<T>* IteratorGetType;
+    typedef const blink::Member<T>* IteratorConstGetType;
+    typedef blink::Member<T>& IteratorReferenceType;
     typedef T* const IteratorConstReferenceType;
     static IteratorReferenceType getToReferenceConversion(IteratorGetType x) { return *x; }
     static IteratorConstReferenceType getToReferenceConstConversion(IteratorConstGetType x) { return x->get(); }
@@ -1038,13 +1022,13 @@ template<typename T> struct HashTraits<WebCore::Member<T> > : SimpleClassHashTra
     typedef T* PassOutType;
 
     template<typename U>
-    static void store(const U& value, WebCore::Member<T>& storage) { storage = value; }
+    static void store(const U& value, blink::Member<T>& storage) { storage = value; }
 
-    static PeekOutType peek(const WebCore::Member<T>& value) { return value; }
-    static PassOutType passOut(const WebCore::Member<T>& value) { return value; }
+    static PeekOutType peek(const blink::Member<T>& value) { return value; }
+    static PassOutType passOut(const blink::Member<T>& value) { return value; }
 };
 
-template<typename T> struct HashTraits<WebCore::WeakMember<T> > : SimpleClassHashTraits<WebCore::WeakMember<T> > {
+template<typename T> struct HashTraits<blink::WeakMember<T> > : SimpleClassHashTraits<blink::WeakMember<T> > {
     static const bool needsDestruction = false;
     // FIXME: The distinction between PeekInType and PassInType is there for
     // the sake of the reference counting handles. When they are gone the two
@@ -1053,9 +1037,9 @@ template<typename T> struct HashTraits<WebCore::WeakMember<T> > : SimpleClassHas
     // in the marking Visitor.
     typedef RawPtr<T> PeekInType;
     typedef RawPtr<T> PassInType;
-    typedef WebCore::WeakMember<T>* IteratorGetType;
-    typedef const WebCore::WeakMember<T>* IteratorConstGetType;
-    typedef WebCore::WeakMember<T>& IteratorReferenceType;
+    typedef blink::WeakMember<T>* IteratorGetType;
+    typedef const blink::WeakMember<T>* IteratorConstGetType;
+    typedef blink::WeakMember<T>& IteratorReferenceType;
     typedef T* const IteratorConstReferenceType;
     static IteratorReferenceType getToReferenceConversion(IteratorGetType x) { return *x; }
     static IteratorConstReferenceType getToReferenceConstConversion(IteratorConstGetType x) { return x->get(); }
@@ -1065,31 +1049,33 @@ template<typename T> struct HashTraits<WebCore::WeakMember<T> > : SimpleClassHas
     typedef T* PassOutType;
 
     template<typename U>
-    static void store(const U& value, WebCore::WeakMember<T>& storage) { storage = value; }
+    static void store(const U& value, blink::WeakMember<T>& storage) { storage = value; }
 
-    static PeekOutType peek(const WebCore::WeakMember<T>& value) { return value; }
-    static PassOutType passOut(const WebCore::WeakMember<T>& value) { return value; }
-    static bool shouldRemoveFromCollection(WebCore::Visitor* visitor, WebCore::WeakMember<T>& value) { return !visitor->isAlive(value); }
-    static void traceInCollection(WebCore::Visitor* visitor, WebCore::WeakMember<T>& weakMember, WebCore::ShouldWeakPointersBeMarkedStrongly strongify)
+    static PeekOutType peek(const blink::WeakMember<T>& value) { return value; }
+    static PassOutType passOut(const blink::WeakMember<T>& value) { return value; }
+    static bool traceInCollection(blink::Visitor* visitor, blink::WeakMember<T>& weakMember, ShouldWeakPointersBeMarkedStrongly strongify)
     {
-        if (strongify == WebCore::WeakPointersActStrong)
-            visitor->trace(reinterpret_cast<WebCore::Member<T>&>(weakMember)); // Strongified visit.
+        if (strongify == WeakPointersActStrong) {
+            visitor->trace(reinterpret_cast<blink::Member<T>&>(weakMember)); // Strongified visit.
+            return false;
+        }
+        return !visitor->isAlive(weakMember);
     }
 };
 
-template<typename T> struct PtrHash<WebCore::Member<T> > : PtrHash<T*> {
+template<typename T> struct PtrHash<blink::Member<T> > : PtrHash<T*> {
     template<typename U>
     static unsigned hash(const U& key) { return PtrHash<T*>::hash(key); }
-    static bool equal(T* a, const WebCore::Member<T>& b) { return a == b; }
-    static bool equal(const WebCore::Member<T>& a, T* b) { return a == b; }
+    static bool equal(T* a, const blink::Member<T>& b) { return a == b; }
+    static bool equal(const blink::Member<T>& a, T* b) { return a == b; }
     template<typename U, typename V>
     static bool equal(const U& a, const V& b) { return a == b; }
 };
 
-template<typename T> struct PtrHash<WebCore::WeakMember<T> > : PtrHash<WebCore::Member<T> > {
+template<typename T> struct PtrHash<blink::WeakMember<T> > : PtrHash<blink::Member<T> > {
 };
 
-template<typename P> struct PtrHash<WebCore::Persistent<P> > : PtrHash<P*> {
+template<typename P> struct PtrHash<blink::Persistent<P> > : PtrHash<P*> {
     using PtrHash<P*>::hash;
     static unsigned hash(const RefPtr<P>& key) { return hash(key.get()); }
     using PtrHash<P*>::equal;
@@ -1099,82 +1085,40 @@ template<typename P> struct PtrHash<WebCore::Persistent<P> > : PtrHash<P*> {
 };
 
 // PtrHash is the default hash for hash tables with members.
-template<typename T> struct DefaultHash<WebCore::Member<T> > {
-    typedef PtrHash<WebCore::Member<T> > Hash;
+template<typename T> struct DefaultHash<blink::Member<T> > {
+    typedef PtrHash<blink::Member<T> > Hash;
 };
 
-template<typename T> struct DefaultHash<WebCore::WeakMember<T> > {
-    typedef PtrHash<WebCore::WeakMember<T> > Hash;
+template<typename T> struct DefaultHash<blink::WeakMember<T> > {
+    typedef PtrHash<blink::WeakMember<T> > Hash;
 };
 
-template<typename T> struct DefaultHash<WebCore::Persistent<T> > {
-    typedef PtrHash<WebCore::Persistent<T> > Hash;
+template<typename T> struct DefaultHash<blink::Persistent<T> > {
+    typedef PtrHash<blink::Persistent<T> > Hash;
 };
 
 template<typename T>
-struct NeedsTracing<WebCore::Member<T> > {
+struct NeedsTracing<blink::Member<T> > {
     static const bool value = true;
 };
 
 template<typename T>
-struct IsWeak<WebCore::WeakMember<T> > {
+struct IsWeak<blink::WeakMember<T> > {
     static const bool value = true;
 };
 
-template<typename T> inline T* getPtr(const WebCore::Member<T>& p)
+template<typename T> inline T* getPtr(const blink::Member<T>& p)
 {
     return p.get();
 }
 
-template<typename T, typename U>
-struct NeedsTracing<std::pair<T, U> > {
-    static const bool value = NeedsTracing<T>::value || NeedsTracing<U>::value || IsWeak<T>::value || IsWeak<U>::value;
-};
-
-template<typename T>
-struct NeedsTracing<OwnPtr<T> > {
-    static const bool value = NeedsTracing<T>::value;
-};
-
-// We define specialization of the NeedsTracing trait for off heap collections
-// since we don't support tracing them.
-template<typename T, size_t N>
-struct NeedsTracing<Vector<T, N> > {
-    static const bool value = false;
-};
-
-template<typename T, size_t N>
-struct NeedsTracing<Deque<T, N> > {
-    static const bool value = false;
-};
-
-template<typename T, typename U, typename V>
-struct NeedsTracing<HashCountedSet<T, U, V> > {
-    static const bool value = false;
-};
-
-template<typename T, typename U, typename V>
-struct NeedsTracing<HashSet<T, U, V> > {
-    static const bool value = false;
-};
-
-template<typename T, size_t U, typename V>
-struct NeedsTracing<ListHashSet<T, U, V> > {
-    static const bool value = false;
-};
-
-template<typename T, typename U, typename V>
-struct NeedsTracing<LinkedHashSet<T, U, V> > {
-    static const bool value = false;
-};
-
-template<typename T, typename U, typename V, typename W, typename X>
-struct NeedsTracing<HashMap<T, U, V, W, X> > {
-    static const bool value = false;
-};
+template<typename T> inline T* getPtr(const blink::Persistent<T>& p)
+{
+    return p.get();
+}
 
 template<typename T, size_t inlineCapacity>
-struct NeedsTracing<ListHashSetNode<T, WebCore::HeapListHashSetAllocator<T, inlineCapacity> > *> {
+struct NeedsTracing<ListHashSetNode<T, blink::HeapListHashSetAllocator<T, inlineCapacity> > *> {
     // All heap allocated node pointers need visiting to keep the nodes alive,
     // regardless of whether they contain pointers to other heap allocated
     // objects.
@@ -1194,18 +1138,18 @@ struct PointerParamStorageTraits<T*, false> {
 
 template<typename T>
 struct PointerParamStorageTraits<T*, true> {
-    typedef WebCore::CrossThreadPersistent<T> StorageType;
+    typedef blink::CrossThreadPersistent<T> StorageType;
 
     static StorageType wrap(T* value) { return value; }
     static T* unwrap(const StorageType& value) { return value.get(); }
 };
 
 template<typename T>
-struct ParamStorageTraits<T*> : public PointerParamStorageTraits<T*, WebCore::IsGarbageCollectedType<T>::value> {
+struct ParamStorageTraits<T*> : public PointerParamStorageTraits<T*, blink::IsGarbageCollectedType<T>::value> {
 };
 
 template<typename T>
-struct ParamStorageTraits<RawPtr<T> > : public PointerParamStorageTraits<T*, WebCore::IsGarbageCollectedType<T>::value> {
+struct ParamStorageTraits<RawPtr<T> > : public PointerParamStorageTraits<T*, blink::IsGarbageCollectedType<T>::value> {
 };
 
 } // namespace WTF

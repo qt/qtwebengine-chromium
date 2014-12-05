@@ -8,6 +8,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "media/base/media_export.h"
+#include "media/base/video_rotation.h"
 
 namespace media {
 
@@ -68,7 +69,7 @@ class MEDIA_EXPORT DemuxerStream {
   // Returns the type of stream.
   virtual Type type() = 0;
 
-  virtual void EnableBitstreamConverter() = 0;
+  virtual void EnableBitstreamConverter();
 
   // Whether or not this DemuxerStream allows midstream configuration changes.
   //
@@ -79,6 +80,8 @@ class MEDIA_EXPORT DemuxerStream {
   // guaranteed to remain constant, and the client may make optimizations based
   // on this.
   virtual bool SupportsConfigChanges() = 0;
+
+  virtual VideoRotation video_rotation() = 0;
 
  protected:
   // Only allow concrete implementations to get deleted.

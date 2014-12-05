@@ -6,30 +6,28 @@
   <link rel="stylesheet" href="chrome://resources/css/chrome_shared.css">
   <!-- This has to come after chrome_shared.css -->
   <link rel="stylesheet" href="downloads.css">
+  <script src="chrome://resources/js/action_link.js"></script>
   <script src="chrome://resources/js/load_time_data.js"></script>
   <script src="chrome://resources/js/util.js"></script>
   <script src="chrome://downloads/downloads.js"></script>
 </head>
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
-  <div class="header">
-    <a id="search-link" href="">
-      <img src="../downloads_section.png"
-          width="32" height="32" class="logo" border="0">
-    </a>
+  <header>
+    <h1 i18n-content="downloads"></h1>
     <input id="term" type="search" tabindex=1
-        i18n-values="placeholder:searchbutton" class="form" autofocus incremental>
-  </div>
+        i18n-values="placeholder:searchbutton" autofocus incremental>
+  </header>
   <div class="main">
-    <div id="downloads-summary">
-      <span id="downloads-summary-text" i18n-content="downloads"></span>
+    <div class="summary" id="downloads-summary">
+      <span id="downloads-summary-text"></span>
       <span id="downloads-actions">
-        <a id="open-downloads-folder" href="#"
-            i18n-content="open_downloads_folder">
-        </a>
+        <a is="action-link" id="open-downloads-folder"
+            i18n-content="open_downloads_folder"></a>
         <span id="clear-all-holder"></span>
       </span>
     </div>
     <div id="downloads-display"></div>
+    <div id="no-downloads-or-results"></div>
   </div>
   <script src="chrome://downloads/strings.js"></script>
   <script src="chrome://resources/js/i18n_template2.js"></script>

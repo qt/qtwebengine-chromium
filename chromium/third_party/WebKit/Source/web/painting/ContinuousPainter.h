@@ -29,11 +29,8 @@
 #ifndef ContinuousPainter_h
 #define ContinuousPainter_h
 
-namespace WebCore {
-class GraphicsLayer;
-}
-
 namespace blink {
+class GraphicsLayer;
 class PageOverlayList;
 
 // This class is responsible for calling setNeedsDisplay on all
@@ -43,7 +40,7 @@ public:
     // Calls setNeedsDisplay on the layer, then recursively calls
     // on mask layers, replica layers and all child layers.
     // Overlays are excluded, because they impact the page paint time metric.
-    static void setNeedsDisplayRecursive(WebCore::GraphicsLayer*, PageOverlayList*);
+    static void setNeedsDisplayRecursive(GraphicsLayer*, PageOverlayList*);
 };
 
 } // namespace blink

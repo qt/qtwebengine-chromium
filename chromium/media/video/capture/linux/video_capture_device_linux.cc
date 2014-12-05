@@ -34,7 +34,7 @@ enum { kContinuousTimeoutLimit = 10 };
 // Time to wait in milliseconds before v4l2_thread_ reschedules OnCaptureTask
 // if an event is triggered (select) but no video frame is read.
 enum { kCaptureSelectWaitMs = 10 };
-// MJPEG is prefered if the width or height is larger than this.
+// MJPEG is preferred if the width or height is larger than this.
 enum { kMjpegWidth = 640 };
 enum { kMjpegHeight = 480 };
 // Typical framerate, in fps
@@ -43,7 +43,8 @@ enum { kTypicalFramerate = 30 };
 // V4L2 color formats VideoCaptureDeviceLinux support.
 static const int32 kV4l2RawFmts[] = {
   V4L2_PIX_FMT_YUV420,
-  V4L2_PIX_FMT_YUYV
+  V4L2_PIX_FMT_YUYV,
+  V4L2_PIX_FMT_UYVY
 };
 
 // USB VID and PID are both 4 bytes long.
@@ -81,6 +82,9 @@ VideoPixelFormat VideoCaptureDeviceLinux::V4l2ColorToVideoCaptureColorFormat(
       break;
     case V4L2_PIX_FMT_YUYV:
       result = PIXEL_FORMAT_YUY2;
+      break;
+    case V4L2_PIX_FMT_UYVY:
+      result = PIXEL_FORMAT_UYVY;
       break;
     case V4L2_PIX_FMT_MJPEG:
     case V4L2_PIX_FMT_JPEG:
@@ -130,7 +134,7 @@ const std::string VideoCaptureDevice::Name::GetModel() const {
 }
 
 VideoCaptureDeviceLinux::VideoCaptureDeviceLinux(const Name& device_name)
-    : state_(kIdle),
+    : is_capturing_(false),
       device_name_(device_name),
       v4l2_thread_("V4L2Thread"),
       buffer_pool_(NULL),
@@ -140,7 +144,6 @@ VideoCaptureDeviceLinux::VideoCaptureDeviceLinux(const Name& device_name)
 }
 
 VideoCaptureDeviceLinux::~VideoCaptureDeviceLinux() {
-  state_ = kIdle;
   // Check if the thread is running.
   // This means that the device have not been DeAllocated properly.
   DCHECK(!v4l2_thread_.IsRunning());
@@ -200,7 +203,7 @@ void VideoCaptureDeviceLinux::SetRotationOnV4L2Thread(int rotation) {
 
 void VideoCaptureDeviceLinux::OnAllocateAndStart(int width,
                                                  int height,
-                                                 int frame_rate,
+                                                 float frame_rate,
                                                  scoped_ptr<Client> client) {
   DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
 
@@ -256,7 +259,8 @@ void VideoCaptureDeviceLinux::OnAllocateAndStart(int width,
   video_fmt.fmt.pix.pixelformat = *best;
 
   if (HANDLE_EINTR(ioctl(device_fd_.get(), VIDIOC_S_FMT, &video_fmt)) < 0) {
-    SetErrorState("Failed to set camera format");
+    SetErrorState(
+        base::StringPrintf("Failed to set camera format: %s", strerror(errno)));
     return;
   }
 
@@ -322,7 +326,7 @@ void VideoCaptureDeviceLinux::OnAllocateAndStart(int width,
     return;
   }
 
-  state_ = kCapturing;
+  is_capturing_ = true;
   // Post task to start fetching frames from v4l2.
   v4l2_thread_.message_loop()->PostTask(
       FROM_HERE,
@@ -346,16 +350,14 @@ void VideoCaptureDeviceLinux::OnStopAndDeAllocate() {
   // Otherwise VIDIOC_S_FMT will return error
   // Sad but true.
   device_fd_.reset();
-  state_ = kIdle;
+  is_capturing_ = false;
   client_.reset();
 }
 
 void VideoCaptureDeviceLinux::OnCaptureTask() {
   DCHECK_EQ(v4l2_thread_.message_loop(), base::MessageLoop::current());
-
-  if (state_ != kCapturing) {
+  if (!is_capturing_)
     return;
-  }
 
   fd_set r_set;
   FD_ZERO(&r_set);
@@ -502,8 +504,7 @@ void VideoCaptureDeviceLinux::DeAllocateVideoBuffers() {
 void VideoCaptureDeviceLinux::SetErrorState(const std::string& reason) {
   DCHECK(!v4l2_thread_.IsRunning() ||
          v4l2_thread_.message_loop() == base::MessageLoop::current());
-  DVLOG(1) << reason;
-  state_ = kError;
+  is_capturing_ = false;
   client_->OnError(reason);
 }
 

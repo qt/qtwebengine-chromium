@@ -34,9 +34,9 @@
 #include "core/svg/SVGString.h"
 #include "core/svg/properties/SVGAnimatedProperty.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGAnimatedString FINAL : public SVGAnimatedProperty<SVGString> {
+class SVGAnimatedString final : public SVGAnimatedProperty<SVGString> {
 public:
     static PassRefPtr<SVGAnimatedString> create(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtr<SVGString> initialValue)
     {
@@ -50,6 +50,6 @@ protected:
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedString_h

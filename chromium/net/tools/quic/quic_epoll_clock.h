@@ -21,14 +21,14 @@ namespace tools {
 class QuicEpollClock : public QuicClock {
  public:
   explicit QuicEpollClock(EpollServer* epoll_server);
-  virtual ~QuicEpollClock();
+  ~QuicEpollClock() override;
 
   // Returns the approximate current time as a QuicTime object.
-  virtual QuicTime ApproximateNow() const OVERRIDE;
+  QuicTime ApproximateNow() const override;
 
   // Returns the current time as a QuicTime object.
   // Note: this use significant resources please use only if needed.
-  virtual QuicTime Now() const OVERRIDE;
+  QuicTime Now() const override;
 
  protected:
   EpollServer* epoll_server_;

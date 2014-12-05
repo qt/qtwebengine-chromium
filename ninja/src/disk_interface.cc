@@ -55,6 +55,82 @@ int MakeDir(const string& path) {
 #endif
 }
 
+#ifdef _WIN32
+TimeStamp TimeStampFromFileTime(const FILETIME& filetime) {
+  // FILETIME is in 100-nanosecond increments since the Windows epoch.
+  // We don't much care about epoch correctness but we do want the
+  // resulting value to fit in an integer.
+  uint64_t mtime = ((uint64_t)filetime.dwHighDateTime << 32) |
+    ((uint64_t)filetime.dwLowDateTime);
+  mtime /= 1000000000LL / 100; // 100ns -> s.
+  mtime -= 12622770400LL;  // 1600 epoch -> 2000 epoch (subtract 400 years).
+  return (TimeStamp)mtime;
+}
+
+TimeStamp StatSingleFile(const string& path, bool quiet) {
+  WIN32_FILE_ATTRIBUTE_DATA attrs;
+  if (!GetFileAttributesEx(path.c_str(), GetFileExInfoStandard, &attrs)) {
+    DWORD err = GetLastError();
+    if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+      return 0;
+    if (!quiet) {
+      Error("GetFileAttributesEx(%s): %s", path.c_str(),
+            GetLastErrorString().c_str());
+    }
+    return -1;
+  }
+  return TimeStampFromFileTime(attrs.ftLastWriteTime);
+}
+
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4996)  // GetVersionExA is deprecated post SDK 8.1.
+#endif
+bool IsWindows7OrLater() {
+  OSVERSIONINFO version_info = { sizeof(version_info) };
+  if (!GetVersionEx(&version_info))
+    Fatal("GetVersionEx: %s", GetLastErrorString().c_str());
+  return version_info.dwMajorVersion > 6 ||
+         (version_info.dwMajorVersion == 6 && version_info.dwMinorVersion >= 1);
+}
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
+
+bool StatAllFilesInDir(const string& dir, map<string, TimeStamp>* stamps,
+                       bool quiet) {
+  // FindExInfoBasic is 30% faster than FindExInfoStandard.
+  static bool can_use_basic_info = IsWindows7OrLater();
+  // This is not in earlier SDKs.
+  const FINDEX_INFO_LEVELS kFindExInfoBasic =
+      static_cast<FINDEX_INFO_LEVELS>(1);
+  FINDEX_INFO_LEVELS level =
+      can_use_basic_info ? kFindExInfoBasic : FindExInfoStandard;
+  WIN32_FIND_DATAA ffd;
+  HANDLE find_handle = FindFirstFileExA((dir + "\\*").c_str(), level, &ffd,
+                                        FindExSearchNameMatch, NULL, 0);
+
+  if (find_handle == INVALID_HANDLE_VALUE) {
+    DWORD err = GetLastError();
+    if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+      return true;
+    if (!quiet) {
+      Error("FindFirstFileExA(%s): %s", dir.c_str(),
+            GetLastErrorString().c_str());
+    }
+    return false;
+  }
+  do {
+    string lowername = ffd.cFileName;
+    transform(lowername.begin(), lowername.end(), lowername.begin(), ::tolower);
+    stamps->insert(make_pair(lowername,
+                             TimeStampFromFileTime(ffd.ftLastWriteTime)));
+  } while (FindNextFileA(find_handle, &ffd));
+  FindClose(find_handle);
+  return true;
+}
+#endif  // _WIN32
+
 }  // namespace
 
 // DiskInterface ---------------------------------------------------------------
@@ -78,7 +154,7 @@ bool DiskInterface::MakeDirs(const string& path) {
 
 // RealDiskInterface -----------------------------------------------------------
 
-TimeStamp RealDiskInterface::Stat(const string& path) {
+TimeStamp RealDiskInterface::Stat(const string& path) const {
 #ifdef _WIN32
   // MSDN: "Naming Files, Paths, and Namespaces"
   // http://msdn.microsoft.com/en-us/library/windows/desktop/aa365247(v=vs.85).aspx
@@ -89,26 +165,25 @@ TimeStamp RealDiskInterface::Stat(const string& path) {
     }
     return -1;
   }
-  WIN32_FILE_ATTRIBUTE_DATA attrs;
-  if (!GetFileAttributesEx(path.c_str(), GetFileExInfoStandard, &attrs)) {
-    DWORD err = GetLastError();
-    if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
-      return 0;
-    if (!quiet_) {
-      Error("GetFileAttributesEx(%s): %s", path.c_str(),
-            GetLastErrorString().c_str());
+  if (!use_cache_)
+    return StatSingleFile(path, quiet_);
+
+  string dir = DirName(path);
+  string base(path.substr(dir.size() ? dir.size() + 1 : 0));
+
+  transform(dir.begin(), dir.end(), dir.begin(), ::tolower);
+  transform(base.begin(), base.end(), base.begin(), ::tolower);
+
+  Cache::iterator ci = cache_.find(dir);
+  if (ci == cache_.end()) {
+    ci = cache_.insert(make_pair(dir, DirCache())).first;
+    if (!StatAllFilesInDir(dir.empty() ? "." : dir, &ci->second, quiet_)) {
+      cache_.erase(ci);
+      return -1;
     }
-    return -1;
   }
-  const FILETIME& filetime = attrs.ftLastWriteTime;
-  // FILETIME is in 100-nanosecond increments since the Windows epoch.
-  // We don't much care about epoch correctness but we do want the
-  // resulting value to fit in an integer.
-  uint64_t mtime = ((uint64_t)filetime.dwHighDateTime << 32) |
-    ((uint64_t)filetime.dwLowDateTime);
-  mtime /= 1000000000LL / 100; // 100ns -> s.
-  mtime -= 12622770400LL;  // 1600 epoch -> 2000 epoch (subtract 400 years).
-  return (TimeStamp)mtime;
+  DirCache::iterator di = ci->second.find(base);
+  return di != ci->second.end() ? di->second : 0;
 #else
   struct stat st;
   if (stat(path.c_str(), &st) < 0) {
@@ -180,4 +255,12 @@ int RealDiskInterface::RemoveFile(const string& path) {
   } else {
     return 0;
   }
+}
+
+void RealDiskInterface::AllowStatCache(bool allow) {
+#ifdef _WIN32
+  use_cache_ = allow;
+  if (!use_cache_)
+    cache_.clear();
+#endif
 }

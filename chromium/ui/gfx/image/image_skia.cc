@@ -32,10 +32,10 @@ gfx::ImageSkiaRep& NullImageRep() {
 std::vector<float>* g_supported_scales = NULL;
 
 // The difference to fall back to the smaller scale factor rather than the
-// larger one. For example, assume 1.25 is requested but only 1.0 and 2.0 are
+// larger one. For example, assume 1.20 is requested but only 1.0 and 2.0 are
 // supported. In that case, not fall back to 2.0 but 1.0, and then expand
 // the image to 1.25.
-const float kFallbackToSmallerScaleDiff = 0.25f;
+const float kFallbackToSmallerScaleDiff = 0.20f;
 
 }  // namespace
 
@@ -54,6 +54,19 @@ class Matcher {
  private:
   float scale_;
 };
+
+ImageSkiaRep ScaleImageSkiaRep(const ImageSkiaRep& rep, float target_scale) {
+  if (rep.is_null() || rep.scale() == target_scale)
+    return rep;
+
+  gfx::Size scaled_size = ToCeiledSize(
+      gfx::ScaleSize(rep.pixel_size(), target_scale / rep.scale()));
+  return ImageSkiaRep(skia::ImageOperations::Resize(
+      rep.sk_bitmap(),
+      skia::ImageOperations::RESIZE_LANCZOS3,
+      scaled_size.width(),
+      scaled_size.height()), target_scale);
+}
 
 }  // namespace
 
@@ -175,7 +188,7 @@ class ImageSkiaStorage : public base::RefCountedThreadSafe<ImageSkiaStorage>,
 
       ImageSkiaRep image;
       float resource_scale = scale;
-      if (ImageSkia::IsDSFScalingInImageSkiaEnabled() && g_supported_scales) {
+      if (g_supported_scales) {
         if (g_supported_scales->back() <= scale) {
           resource_scale = g_supported_scales->back();
         } else {
@@ -188,31 +201,18 @@ class ImageSkiaStorage : public base::RefCountedThreadSafe<ImageSkiaStorage>,
           }
         }
       }
-      if (ImageSkia::IsDSFScalingInImageSkiaEnabled() &&
-          scale != resource_scale) {
+      if (scale != resource_scale) {
         std::vector<ImageSkiaRep>::iterator iter = FindRepresentation(
             resource_scale, fetch_new_image);
-
         DCHECK(iter != image_reps_.end());
-
-        if (!iter->unscaled()) {
-          SkBitmap scaled_image;
-          gfx::Size unscaled_size(iter->pixel_width(), iter->pixel_height());
-          gfx::Size scaled_size = ToCeiledSize(
-              gfx::ScaleSize(unscaled_size, scale / iter->scale()));
-
-          image = ImageSkiaRep(skia::ImageOperations::Resize(
-              iter->sk_bitmap(),
-              skia::ImageOperations::RESIZE_LANCZOS3,
-              scaled_size.width(),
-              scaled_size.height()), scale);
-          DCHECK_EQ(image.pixel_width(), scaled_size.width());
-          DCHECK_EQ(image.pixel_height(), scaled_size.height());
-        } else {
-          image = *iter;
-        }
+        image = iter->unscaled() ? (*iter) : ScaleImageSkiaRep(*iter, scale);
       } else {
         image = source_->GetImageForScale(scale);
+        // Image may be missing for the specified scale in some cases, such like
+        // looking up 2x resources but the 2x resource pack is missing. Falls
+        // back to 1x and re-scale it.
+        if (image.is_null() && scale != 1.0f)
+          image = ScaleImageSkiaRep(source_->GetImageForScale(1.0f), scale);
       }
 
       // If the source returned the new image, store it.
@@ -315,12 +315,6 @@ float ImageSkia::GetMaxSupportedScale() {
 // static
 ImageSkia ImageSkia::CreateFrom1xBitmap(const SkBitmap& bitmap) {
   return ImageSkia(ImageSkiaRep(bitmap, 0.0f));
-}
-
-bool ImageSkia::IsDSFScalingInImageSkiaEnabled() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  return !command_line->HasSwitch(
-      switches::kDisableArbitraryScaleFactorInImageSkia);
 }
 
 scoped_ptr<ImageSkia> ImageSkia::DeepCopy() const {

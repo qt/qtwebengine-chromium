@@ -5,7 +5,7 @@
 #include "config.h"
 #include "modules/gamepad/GamepadEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 GamepadEventInit::GamepadEventInit()
 {
@@ -13,21 +13,18 @@ GamepadEventInit::GamepadEventInit()
 
 GamepadEvent::GamepadEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 GamepadEvent::GamepadEvent(const AtomicString& type, bool canBubble, bool cancelable, Gamepad* gamepad)
     : Event(type, canBubble, cancelable)
     , m_gamepad(gamepad)
 {
-    ScriptWrappable::init(this);
 }
 
 GamepadEvent::GamepadEvent(const AtomicString& type, const GamepadEventInit& initializer)
     : Event(type, initializer)
     , m_gamepad(initializer.gamepad)
 {
-    ScriptWrappable::init(this);
 }
 
 GamepadEvent::~GamepadEvent()
@@ -45,4 +42,4 @@ void GamepadEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

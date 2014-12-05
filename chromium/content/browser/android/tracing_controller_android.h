@@ -22,14 +22,14 @@ class TracingControllerAndroid {
   bool StartTracing(JNIEnv* env,
                     jobject obj,
                     jstring categories,
-                    jboolean record_continuously);
+                    jstring trace_options);
   void StopTracing(JNIEnv* env, jobject obj, jstring jfilepath);
   bool GetKnownCategoryGroupsAsync(JNIEnv* env, jobject obj);
   static void GenerateTracingFilePath(base::FilePath* file_path);
 
  private:
   ~TracingControllerAndroid();
-  void OnTracingStopped(const base::FilePath& file_path);
+  void OnTracingStopped();
   void OnKnownCategoriesReceived(
       const std::set<std::string>& categories_received);
 

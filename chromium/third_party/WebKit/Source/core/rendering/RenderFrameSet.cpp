@@ -37,7 +37,7 @@
 #include "platform/Cursor.h"
 #include "platform/graphics/GraphicsContext.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderFrameSet::RenderFrameSet(HTMLFrameSetElement* frameSet)
     : RenderBox(frameSet)
@@ -49,6 +49,12 @@ RenderFrameSet::RenderFrameSet(HTMLFrameSetElement* frameSet)
 
 RenderFrameSet::~RenderFrameSet()
 {
+}
+
+void RenderFrameSet::trace(Visitor* visitor)
+{
+    visitor->trace(m_children);
+    RenderBox::trace(visitor);
 }
 
 RenderFrameSet::GridAxis::GridAxis()
@@ -151,6 +157,13 @@ void RenderFrameSet::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
             yPos += borderThickness;
         }
     }
+}
+
+void RenderFrameSet::computePreferredLogicalWidths()
+{
+    m_minPreferredLogicalWidth = 0;
+    m_maxPreferredLogicalWidth = 0;
+    clearPreferredLogicalWidthsDirty();
 }
 
 void RenderFrameSet::GridAxis::resize(int size)
@@ -439,14 +452,6 @@ void RenderFrameSet::layout()
 {
     ASSERT(needsLayout());
 
-    bool doFullRepaint = selfNeedsLayout() && checkForPaintInvalidationDuringLayout();
-    LayoutRect oldBounds;
-    const RenderLayerModelObject* repaintContainer = 0;
-    if (doFullRepaint) {
-        repaintContainer = containerForPaintInvalidation();
-        oldBounds = boundsRectForPaintInvalidation(repaintContainer);
-    }
-
     if (!parent()->isFrameSet() && !document().printing()) {
         setWidth(view()->viewWidth());
         setHeight(view()->viewHeight());
@@ -471,13 +476,6 @@ void RenderFrameSet::layout()
     computeEdgeInfo();
 
     updateLayerTransformAfterLayout();
-
-    if (doFullRepaint) {
-        invalidatePaintUsingContainer(repaintContainer, pixelSnappedIntRect(oldBounds), InvalidationSelfLayout);
-        LayoutRect newBounds = boundsRectForPaintInvalidation(repaintContainer);
-        if (newBounds != oldBounds)
-            invalidatePaintUsingContainer(repaintContainer, pixelSnappedIntRect(newBounds), InvalidationSelfLayout);
-    }
 
     clearNeedsLayout();
 }
@@ -667,4 +665,4 @@ CursorDirective RenderFrameSet::getCursor(const LayoutPoint& point, Cursor& curs
     return RenderBox::getCursor(point, cursor);
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -71,6 +71,27 @@
         'genstring',
         're2c',
       ],
+      'variables': {
+        'clang_warning_flags': [
+          # yasm passes a `const elf_machine_sym*` through `void*`.
+          '-Wno-incompatible-pointer-types',
+        ],
+      },
+      'conditions': [
+        ['OS=="win"', {
+          # As of VS 2013 Update 3, building this project with /analyze hits an
+          # internal compiler error on elf-x86-amd64.c in release builds with
+          # the amd64_x86 compiler. This halts the build and prevents subsequent
+          # analysis. Therefore, /analyze is disabled for this project. See this
+          # bug for details:
+          # https://connect.microsoft.com/VisualStudio/feedback/details/1014799/internal-compiler-error-when-using-analyze
+          'msvs_settings': {
+            'VCCLCompilerTool': {
+              'AdditionalOptions!': [ '/analyze' ]
+            },
+          },
+        }],
+      ],
       'sources': [
          'source/patched-yasm/frontends/yasm/yasm-options.c',
          'source/patched-yasm/frontends/yasm/yasm.c',
@@ -158,19 +179,6 @@
       ],
       'defines': [ '<@(yasm_defines)' ],
       'cflags': [ '<@(yasm_cflags)', ],
-      'conditions': [
-        ['clang==1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              # yasm passes a `const elf_machine_sym*` through `void*`.
-              '-Wno-incompatible-pointer-types',
-            ],
-          },
-          'cflags': [
-            '-Wno-incompatible-pointer-types',
-          ],
-        }],
-      ],
       'msvs_disabled_warnings': [ 4267 ],
       'rules': [
         {
@@ -541,19 +549,10 @@
       'cflags': [
         '-std=gnu99',
       ],
-      'conditions': [
-        ['clang==1', {
-          'xcode_settings': {
-            'WARNING_CFLAGS': [
-              # re2c is missing CLOSEVOP from one switch.
-              '-Wno-switch',
-            ],
-          },
-          'cflags': [
-            '-Wno-switch',
-          ],
-        }],
-      ],
+      'variables': {
+          # re2c is missing CLOSEVOP from one switch.
+        'clang_warning_flags': [ '-Wno-switch' ],
+      },
       'msvs_disabled_warnings': [ 4267 ],
     },
     {

@@ -29,7 +29,7 @@ config("libpng_config") {
   }
 }
 
-static_library("libpng") {
+source_set("libpng_sources") {
   sources =  [
     "png.c",
     "png.h",
@@ -56,11 +56,25 @@ static_library("libpng") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
-  forward_dependent_configs_from = [ "//third_party/zlib" ]
+  if (is_win) {
+    cflags = [ "/wd4267" ]  # TODO(jschuh): http://crbug.com/167187
 
-  direct_dependent_configs = [ ":libpng_config" ]
+    if (component_mode == "shared_library") {
+      defines = [ "PNG_BUILD_DLL" ]
+    }
+  }
 
-  deps =  [
-    "//third_party/zlib",
-  ]
+  public_configs = [ ":libpng_config" ]
+
+  public_deps = [ "//third_party/zlib" ]
+}
+
+if (is_win) {
+  component("libpng") {
+    public_deps = [ ":libpng_sources" ]
+  }
+} else {
+  group("libpng") {
+    public_deps = [ ":libpng_sources" ]
+  }
 }

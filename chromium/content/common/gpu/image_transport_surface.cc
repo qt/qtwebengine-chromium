@@ -12,16 +12,12 @@
 #include "content/common/gpu/gpu_channel_manager.h"
 #include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/null_transport_surface.h"
 #include "content/common/gpu/sync_point_manager.h"
-#include "content/common/gpu/texture_image_transport_surface.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "ui/gfx/vsync_provider.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_switches.h"
-
-#if defined(OS_WIN)
-#include "ui/base/win/shell.h"
-#endif
 
 namespace content {
 
@@ -34,10 +30,15 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& handle) {
   scoped_refptr<gfx::GLSurface> surface;
-  if (handle.transport_type == gfx::TEXTURE_TRANSPORT)
-    surface = new TextureImageTransportSurface(manager, stub, handle);
-  else
+  if (handle.transport_type == gfx::NULL_TRANSPORT) {
+#if defined(OS_ANDROID)
+    surface = CreateTransportSurface(manager, stub, handle);
+#else
+    surface = new NullTransportSurface(manager, stub, handle);
+#endif
+  } else {
     surface = CreateNativeSurface(manager, stub, handle);
+  }
 
   if (!surface.get() || !surface->Initialize())
     return NULL;
@@ -83,13 +84,13 @@ bool ImageTransportHelper::Initialize() {
   return true;
 }
 
-void ImageTransportHelper::Destroy() {}
-
 bool ImageTransportHelper::OnMessageReceived(const IPC::Message& message) {
   bool handled = true;
   IPC_BEGIN_MESSAGE_MAP(ImageTransportHelper, message)
+#if defined(OS_MACOSX)
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_BufferPresented,
                         OnBufferPresented)
+#endif
     IPC_MESSAGE_HANDLER(AcceleratedSurfaceMsg_WakeUpGpu, OnWakeUpGpu);
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
@@ -108,19 +109,6 @@ void ImageTransportHelper::SendAcceleratedSurfaceBuffersSwapped(
   manager_->Send(new GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
 }
 
-void ImageTransportHelper::SendAcceleratedSurfacePostSubBuffer(
-    GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params) {
-  params.surface_id = stub_->surface_id();
-  params.route_id = route_id_;
-  manager_->Send(new GpuHostMsg_AcceleratedSurfacePostSubBuffer(params));
-}
-
-void ImageTransportHelper::SendAcceleratedSurfaceRelease() {
-  GpuHostMsg_AcceleratedSurfaceRelease_Params params;
-  params.surface_id = stub_->surface_id();
-  manager_->Send(new GpuHostMsg_AcceleratedSurfaceRelease(params));
-}
-
 void ImageTransportHelper::SendUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval) {
   manager_->Send(new GpuHostMsg_UpdateVSyncParameters(stub_->surface_id(),
@@ -128,9 +116,9 @@ void ImageTransportHelper::SendUpdateVSyncParameters(
                                                       interval));
 }
 
-void ImageTransportHelper::SendLatencyInfo(
+void ImageTransportHelper::SwapBuffersCompleted(
     const std::vector<ui::LatencyInfo>& latency_info) {
-  manager_->Send(new GpuHostMsg_FrameDrawn(latency_info));
+  stub_->SwapBuffersCompleted(latency_info);
 }
 
 void ImageTransportHelper::SetScheduled(bool is_scheduled) {
@@ -161,22 +149,10 @@ bool ImageTransportHelper::MakeCurrent() {
 }
 
 void ImageTransportHelper::SetSwapInterval(gfx::GLContext* context) {
-#if defined(OS_WIN)
-  // If Aero Glass is enabled, then the renderer will handle ratelimiting and
-  // there's no tearing, so waiting for vsync is unnecessary.
-  if (ui::win::IsAeroGlassEnabled()) {
-    context->SetSwapInterval(0);
-    return;
-  }
-#endif
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kDisableGpuVsync))
     context->SetSwapInterval(0);
   else
     context->SetSwapInterval(1);
-}
-
-void ImageTransportHelper::Suspend() {
-  manager_->Send(new GpuHostMsg_AcceleratedSurfaceSuspend(stub_->surface_id()));
 }
 
 gpu::GpuScheduler* ImageTransportHelper::Scheduler() {
@@ -191,10 +167,12 @@ gpu::gles2::GLES2Decoder* ImageTransportHelper::Decoder() {
   return stub_->decoder();
 }
 
+#if defined(OS_MACOSX)
 void ImageTransportHelper::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
   surface_->OnBufferPresented(params);
 }
+#endif
 
 void ImageTransportHelper::OnWakeUpGpu() {
   surface_->WakeUpGpu();
@@ -232,7 +210,6 @@ bool PassThroughImageTransportSurface::Initialize() {
 }
 
 void PassThroughImageTransportSurface::Destroy() {
-  helper_->Destroy();
   GLSurfaceAdapter::Destroy();
 }
 
@@ -246,13 +223,17 @@ bool PassThroughImageTransportSurface::SwapBuffers() {
   // GetVsyncValues before SwapBuffers to work around Mali driver bug:
   // crbug.com/223558.
   SendVSyncUpdateIfAvailable();
+  for (size_t i = 0; i < latency_info_.size(); ++i) {
+    latency_info_[i].AddLatencyNumber(
+        ui::INPUT_EVENT_GPU_SWAP_BUFFER_COMPONENT, 0, 0);
+  }
   bool result = gfx::GLSurfaceAdapter::SwapBuffers();
   for (size_t i = 0; i < latency_info_.size(); i++) {
     latency_info_[i].AddLatencyNumber(
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   }
 
-  helper_->SendLatencyInfo(latency_info_);
+  helper_->SwapBuffersCompleted(latency_info_);
   latency_info_.clear();
   return result;
 }
@@ -266,7 +247,7 @@ bool PassThroughImageTransportSurface::PostSubBuffer(
         ui::INPUT_EVENT_LATENCY_TERMINATED_FRAME_SWAP_COMPONENT, 0, 0);
   }
 
-  helper_->SendLatencyInfo(latency_info_);
+  helper_->SwapBuffersCompleted(latency_info_);
   latency_info_.clear();
   return result;
 }
@@ -279,10 +260,12 @@ bool PassThroughImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
   return true;
 }
 
+#if defined(OS_MACOSX)
 void PassThroughImageTransportSurface::OnBufferPresented(
     const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
   NOTREACHED();
 }
+#endif
 
 void PassThroughImageTransportSurface::OnResize(gfx::Size size,
                                                 float scale_factor) {
@@ -294,7 +277,7 @@ gfx::Size PassThroughImageTransportSurface::GetSize() {
 }
 
 void PassThroughImageTransportSurface::WakeUpGpu() {
-  NOTIMPLEMENTED();
+  NOTREACHED();
 }
 
 PassThroughImageTransportSurface::~PassThroughImageTransportSurface() {}

@@ -18,8 +18,50 @@
 #include "gpu/config/dx_diag_node.h"
 #include "gpu/config/gpu_performance_stats.h"
 #include "gpu/gpu_export.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace gpu {
+
+// Result for the various Collect*Info* functions below.
+// Fatal failures are for cases where we can't create a context at all or
+// something, making the use of the GPU impossible.
+// Non-fatal failures are for cases where we could gather most info, but maybe
+// some is missing (e.g. unable to parse a version string or to detect the exact
+// model).
+enum CollectInfoResult {
+  kCollectInfoNone = 0,
+  kCollectInfoSuccess = 1,
+  kCollectInfoNonFatalFailure = 2,
+  kCollectInfoFatalFailure = 3
+};
+
+// Video profile.  This *must* match media::VideoCodecProfile.
+enum VideoCodecProfile {
+  VIDEO_CODEC_PROFILE_UNKNOWN = -1,
+  VIDEO_CODEC_PROFILE_MIN = VIDEO_CODEC_PROFILE_UNKNOWN,
+  H264PROFILE_BASELINE = 0,
+  H264PROFILE_MAIN = 1,
+  H264PROFILE_EXTENDED = 2,
+  H264PROFILE_HIGH = 3,
+  H264PROFILE_HIGH10PROFILE = 4,
+  H264PROFILE_HIGH422PROFILE = 5,
+  H264PROFILE_HIGH444PREDICTIVEPROFILE = 6,
+  H264PROFILE_SCALABLEBASELINE = 7,
+  H264PROFILE_SCALABLEHIGH = 8,
+  H264PROFILE_STEREOHIGH = 9,
+  H264PROFILE_MULTIVIEWHIGH = 10,
+  VP8PROFILE_ANY = 11,
+  VP9PROFILE_ANY = 12,
+  VIDEO_CODEC_PROFILE_MAX = VP9PROFILE_ANY,
+};
+
+// Specification of an encoding profile supported by a hardware encoder.
+struct GPU_EXPORT VideoEncodeAcceleratorSupportedProfile {
+  VideoCodecProfile profile;
+  gfx::Size max_resolution;
+  uint32 max_framerate_numerator;
+  uint32 max_framerate_denominator;
+};
 
 struct GPU_EXPORT GPUInfo {
   struct GPU_EXPORT GPUDevice {
@@ -51,9 +93,6 @@ struct GPU_EXPORT GPUInfo {
   bool SupportsAccelerated2dCanvas() const {
     return !can_lose_context && !software_rendering;
   }
-
-  // Whether more GPUInfo fields might be collected in the future.
-  bool finalized;
 
   // The amount of time taken to get from the process starting to the message
   // loop being pumped.
@@ -153,10 +192,22 @@ struct GPU_EXPORT GPUInfo {
   // Whether the gpu process is running in a sandbox.
   bool sandboxed;
 
+  // Number of GPU process crashes recorded.
+  int process_crash_count;
+
+  // The state of whether the basic/context/DxDiagnostics info is collected and
+  // if the collection fails or not.
+  CollectInfoResult basic_info_state;
+  CollectInfoResult context_info_state;
 #if defined(OS_WIN)
+  CollectInfoResult dx_diagnostics_info_state;
+
   // The information returned by the DirectX Diagnostics Tool.
   DxDiagNode dx_diagnostics;
 #endif
+
+  std::vector<VideoEncodeAcceleratorSupportedProfile>
+      video_encode_accelerator_supported_profiles;
   // Note: when adding new members, please remember to update EnumerateFields
   // in gpu_info.cc.
 
@@ -180,6 +231,11 @@ struct GPU_EXPORT GPUInfo {
     // Markers indicating that a GPUDevice is being described.
     virtual void BeginGPUDevice() = 0;
     virtual void EndGPUDevice() = 0;
+
+    // Markers indicating that a VideoEncodeAcceleratorSupportedProfile is
+    // being described.
+    virtual void BeginVideoEncodeAcceleratorSupportedProfile() = 0;
+    virtual void EndVideoEncodeAcceleratorSupportedProfile() = 0;
 
     // Markers indicating that "auxiliary" attributes of the GPUInfo
     // (according to the DevTools protocol) are being described.

@@ -28,7 +28,7 @@
 
 #include "core/html/canvas/WebGLObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class WebGLContextGroup;
 class WebGLRenderingContextBase;
@@ -47,7 +47,7 @@ public:
     virtual bool isShader() const { return false; }
     virtual bool isTexture() const { return false; }
 
-    virtual bool validate(const WebGLContextGroup* contextGroup, const WebGLRenderingContextBase*) const OVERRIDE FINAL
+    virtual bool validate(const WebGLContextGroup* contextGroup, const WebGLRenderingContextBase*) const override final
     {
         return contextGroup == m_contextGroup;
     }
@@ -55,19 +55,19 @@ public:
     void detachContextGroup();
 
 protected:
-    WebGLSharedObject(WebGLRenderingContextBase*);
+    explicit WebGLSharedObject(WebGLRenderingContextBase*);
 
-    virtual bool hasGroupOrContext() const OVERRIDE FINAL
+    virtual bool hasGroupOrContext() const override final
     {
         return m_contextGroup;
     }
 
-    virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const OVERRIDE FINAL;
+    virtual blink::WebGraphicsContext3D* getAWebGraphicsContext3D() const override final;
 
 private:
     WebGLContextGroup* m_contextGroup;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLSharedObject_h

@@ -10,6 +10,7 @@
 #include "GrStencilAndCoverPathRenderer.h"
 #include "GrAAHairLinePathRenderer.h"
 #include "GrAAConvexPathRenderer.h"
+#include "GrAADistanceFieldPathRenderer.h"
 #if GR_STROKE_PATH_RENDERING
 #include "../../experimental/StrokePathRenderer/GrStrokePathRenderer.h"
 #endif
@@ -31,4 +32,5 @@ void GrPathRenderer::AddPathRenderers(GrContext* ctx, GrPathRendererChain* chain
         chain->addPathRenderer(pr)->unref();
     }
     chain->addPathRenderer(SkNEW(GrAAConvexPathRenderer))->unref();
+    chain->addPathRenderer(SkNEW_ARGS(GrAADistanceFieldPathRenderer, (ctx)))->unref();
 }

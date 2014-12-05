@@ -8,10 +8,10 @@
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/client/cursor_client.h"
 #include "ui/aura/client/window_tree_client.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_tree_host.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/widget.h"
@@ -251,7 +251,7 @@ class DesktopAuraTopLevelWindowTest
         owner_destroyed_(false),
         owned_window_destroyed_(false) {}
 
-  virtual ~DesktopAuraTopLevelWindowTest() {
+  ~DesktopAuraTopLevelWindowTest() override {
     EXPECT_TRUE(owner_destroyed_);
     EXPECT_TRUE(owned_window_destroyed_);
     top_level_widget_ = NULL;
@@ -259,9 +259,8 @@ class DesktopAuraTopLevelWindowTest
   }
 
   // views::TestViewsDelegate overrides.
-  virtual void OnBeforeWidgetInit(
-      Widget::InitParams* params,
-      internal::NativeWidgetDelegate* delegate) OVERRIDE {
+  void OnBeforeWidgetInit(Widget::InitParams* params,
+                          internal::NativeWidgetDelegate* delegate) override {
     if (!params->native_widget)
       params->native_widget = new views::DesktopNativeWidgetAura(delegate);
   }
@@ -311,7 +310,7 @@ class DesktopAuraTopLevelWindowTest
     top_level_widget_->CloseNow();
   }
 
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+  void OnWindowDestroying(aura::Window* window) override {
     window->RemoveObserver(this);
     if (window == owned_window_) {
       owned_window_destroyed_ = true;

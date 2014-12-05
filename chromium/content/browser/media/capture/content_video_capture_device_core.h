@@ -62,12 +62,13 @@ class ThreadSafeCaptureOracle
                               bool success)> CaptureFrameCallback;
 
   bool ObserveEventAndDecideCapture(VideoCaptureOracle::Event event,
+                                    const gfx::Rect& damage_rect,
                                     base::TimeTicks event_time,
                                     scoped_refptr<media::VideoFrame>* storage,
                                     CaptureFrameCallback* callback);
 
-  base::TimeDelta capture_period() const {
-    return oracle_->capture_period();
+  base::TimeDelta min_capture_period() const {
+    return oracle_->min_capture_period();
   }
 
   // Returns the current capture resolution.
@@ -118,11 +119,8 @@ class ThreadSafeCaptureOracle
 // UI BrowserThread.
 class VideoCaptureMachine {
  public:
-  VideoCaptureMachine() : started_(false) {}
+  VideoCaptureMachine() {}
   virtual ~VideoCaptureMachine() {}
-
-  // This should only be checked on the UI thread.
-  bool started() const { return started_; }
 
   // Starts capturing. Returns true if succeeded.
   // Must be run on the UI BrowserThread.
@@ -133,9 +131,6 @@ class VideoCaptureMachine {
   // |callback| is invoked after the capturing has stopped.
   virtual void Stop(const base::Closure& callback) = 0;
 
- protected:
-  bool started_;
-
  private:
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureMachine);
 };
@@ -144,7 +139,7 @@ class VideoCaptureMachine {
 //
 // Separating this from the "shell classes" WebContentsVideoCaptureDevice and
 // DesktopCaptureDeviceAura allows safe destruction without needing to block any
-// threads (e.g., the IO BrowserThread), as well as code sharing.
+// threads, as well as code sharing.
 //
 // ContentVideoCaptureDeviceCore manages a simple state machine and the pipeline
 // (see notes at top of this file).  It times the start of successive captures
@@ -172,8 +167,8 @@ class CONTENT_EXPORT ContentVideoCaptureDeviceCore
 
   void TransitionStateTo(State next_state);
 
-  // Called on the IO thread in response to StartCaptureMachine().
-  // |success| is true if capture machine succeeded to start.
+  // Called back in response to StartCaptureMachine().  |success| is true if
+  // capture machine succeeded to start.
   void CaptureStarted(bool success);
 
   // Stops capturing and notifies client_ of an error state.
@@ -192,7 +187,7 @@ class CONTENT_EXPORT ContentVideoCaptureDeviceCore
 
   // Our thread-safe capture oracle which serves as the gateway to the video
   // capture pipeline. Besides the VideoCaptureDevice itself, it is the only
-  // component of the/ system with direct access to |client_|.
+  // component of the system with direct access to |client_|.
   scoped_refptr<ThreadSafeCaptureOracle> oracle_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentVideoCaptureDeviceCore);

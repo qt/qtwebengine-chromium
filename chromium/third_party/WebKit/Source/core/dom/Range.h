@@ -25,8 +25,8 @@
 #ifndef Range_h
 #define Range_h
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/RangeBoundaryPoint.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/IntRect.h"
@@ -34,7 +34,7 @@
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClientRect;
 class ClientRectList;
@@ -47,7 +47,8 @@ class Node;
 class NodeWithIndex;
 class Text;
 
-class Range FINAL : public RefCountedWillBeGarbageCollectedFinalized<Range>, public ScriptWrappable {
+class Range final : public RefCountedWillBeGarbageCollectedFinalized<Range>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<Range> create(Document&);
     static PassRefPtrWillBeRawPtr<Range> create(Document&, Node* startContainer, int startOffset, Node* endContainer, int endOffset);
@@ -72,11 +73,12 @@ public:
     enum CompareResults { NODE_BEFORE, NODE_AFTER, NODE_BEFORE_AND_AFTER, NODE_INSIDE };
     CompareResults compareNode(Node* refNode, ExceptionState&) const;
     enum CompareHow { START_TO_START, START_TO_END, END_TO_END, END_TO_START };
-    short compareBoundaryPoints(CompareHow, const Range* sourceRange, ExceptionState&) const;
+    short compareBoundaryPoints(unsigned how, const Range* sourceRange, ExceptionState&) const;
     static short compareBoundaryPoints(Node* containerA, int offsetA, Node* containerB, int offsetB, ExceptionState&);
     static short compareBoundaryPoints(const RangeBoundaryPoint& boundaryA, const RangeBoundaryPoint& boundaryB, ExceptionState&);
     bool boundaryPointsValid() const;
     bool intersectsNode(Node* refNode, ExceptionState&);
+    static bool intersectsNode(Node* refNode, const Position& start, const Position& end, ExceptionState&);
     void deleteContents(ExceptionState&);
     PassRefPtrWillBeRawPtr<DocumentFragment> extractContents(ExceptionState&);
     PassRefPtrWillBeRawPtr<DocumentFragment> cloneContents(ExceptionState&);
@@ -96,6 +98,7 @@ public:
     void setEndAfter(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void selectNode(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
     void selectNodeContents(Node*, ExceptionState&);
+    static bool selectNodeContents(Node*, Position&, Position&);
     void surroundContents(PassRefPtrWillBeRawPtr<Node>, ExceptionState&);
     void setStartBefore(Node*, ExceptionState& = ASSERT_NO_EXCEPTION);
 
@@ -156,7 +159,7 @@ private:
 
     Node* checkNodeWOffset(Node*, int offset, ExceptionState&) const;
     void checkNodeBA(Node*, ExceptionState&) const;
-    void checkDeleteExtract(ExceptionState&);
+    void checkExtractPrecondition(ExceptionState&);
 
     enum ActionType { DELETE_CONTENTS, EXTRACT_CONTENTS, CLONE_CONTENTS };
     PassRefPtrWillBeRawPtr<DocumentFragment> processContents(ActionType, ExceptionState&);
@@ -174,11 +177,11 @@ PassRefPtrWillBeRawPtr<Range> rangeOfContents(Node*);
 
 bool areRangesEqual(const Range*, const Range*);
 
-} // namespace
+} // namespace blink
 
 #ifndef NDEBUG
 // Outside the WebCore namespace for ease of invocation from gdb.
-void showTree(const WebCore::Range*);
+void showTree(const blink::Range*);
 #endif
 
-#endif
+#endif // Range_h

@@ -31,7 +31,7 @@ class XMLFormattedWriter(template_writer.TemplateWriter):
 
     doc = parent.ownerDocument
     element = doc.createElement(name)
-    for key, value in attrs.iteritems():
+    for key, value in sorted(attrs.iteritems()):
       element.setAttribute(key, value)
     if text:
       element.appendChild(doc.createTextNode(text))

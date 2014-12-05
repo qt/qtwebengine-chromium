@@ -34,11 +34,9 @@
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceLoadPriority.h"
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
-class ResourceFetcher;
-class LocalFrame;
 class ResourceLoader;
 class ResourceRequest;
 class ResourceResponse;
@@ -49,10 +47,10 @@ class ResourceLoaderHost : public WillBeGarbageCollectedMixin {
 public:
     virtual void incrementRequestCount(const Resource*) = 0;
     virtual void decrementRequestCount(const Resource*) = 0;
-    virtual void didLoadResource(Resource*) = 0;
+    virtual void didLoadResource() = 0;
     virtual void redirectReceived(Resource*, const ResourceResponse&) = 0;
 
-    virtual void didFinishLoading(const Resource*, double finishTime, int64_t encodedDataLength) = 0;
+    virtual void didFinishLoading(Resource*, double finishTime, int64_t encodedDataLength) = 0;
     virtual void didChangeLoadingPriority(const Resource*, ResourceLoadPriority, int intraPriorityValue) = 0;
     virtual void didFailLoading(const Resource*, const ResourceError&) = 0;
 
@@ -68,6 +66,7 @@ public:
 
     virtual bool canAccessRedirect(Resource*, ResourceRequest&, const ResourceResponse&, ResourceLoaderOptions&) = 0;
     virtual bool canAccessResource(Resource*, SecurityOrigin* sourceOrigin, const KURL&) const = 0;
+    virtual bool isControlledByServiceWorker() const = 0;
     virtual bool defersLoading() const = 0;
     virtual bool isLoadedBy(ResourceLoaderHost*) const = 0;
 

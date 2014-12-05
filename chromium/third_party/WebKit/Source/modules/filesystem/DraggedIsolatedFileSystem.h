@@ -36,11 +36,11 @@
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMFileSystem;
 
-class DraggedIsolatedFileSystem FINAL : public NoBaseWillBeGarbageCollectedFinalized<DraggedIsolatedFileSystem>, public WillBeHeapSupplement<DataObject> {
+class DraggedIsolatedFileSystem final : public NoBaseWillBeGarbageCollectedFinalized<DraggedIsolatedFileSystem>, public WillBeHeapSupplement<DataObject> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(DraggedIsolatedFileSystem);
 public:
     virtual ~DraggedIsolatedFileSystem();
@@ -62,6 +62,6 @@ private:
     PersistentWillBeMember<DOMFileSystem> m_filesystem;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DraggedIsolatedFileSystem_h

@@ -31,37 +31,39 @@
 #ifndef WorkerDebuggerAgent_h
 #define WorkerDebuggerAgent_h
 
-#include "bindings/v8/WorkerScriptDebugServer.h"
+#include "bindings/core/v8/WorkerScriptDebugServer.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 
-namespace WebCore {
+namespace blink {
 
 class WorkerGlobalScope;
-class WorkerThread;
+class WorkerDebuggerAgent;
 
-class WorkerDebuggerAgent FINAL : public InspectorDebuggerAgent {
+class WorkerDebuggerAgent final : public InspectorDebuggerAgent {
     WTF_MAKE_NONCOPYABLE(WorkerDebuggerAgent);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassOwnPtr<WorkerDebuggerAgent> create(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
+    static PassOwnPtrWillBeRawPtr<WorkerDebuggerAgent> create(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
     virtual ~WorkerDebuggerAgent();
+    virtual void trace(Visitor*) override;
 
-    static void interruptAndDispatchInspectorCommands(WorkerThread*);
+    void interruptAndDispatchInspectorCommands();
 
 private:
+
     WorkerDebuggerAgent(WorkerScriptDebugServer*, WorkerGlobalScope*, InjectedScriptManager*);
 
-    virtual void startListeningScriptDebugServer() OVERRIDE;
-    virtual void stopListeningScriptDebugServer() OVERRIDE;
-    virtual WorkerScriptDebugServer& scriptDebugServer() OVERRIDE;
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
-    virtual void muteConsole() OVERRIDE;
-    virtual void unmuteConsole() OVERRIDE;
+    virtual void startListeningScriptDebugServer() override;
+    virtual void stopListeningScriptDebugServer() override;
+    virtual WorkerScriptDebugServer& scriptDebugServer() override;
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    virtual void muteConsole() override;
+    virtual void unmuteConsole() override;
 
     WorkerScriptDebugServer* m_scriptDebugServer;
-    WorkerGlobalScope* m_inspectedWorkerGlobalScope;
+    RawPtrWillBeMember<WorkerGlobalScope> m_inspectedWorkerGlobalScope;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(WorkerDebuggerAgent_h)

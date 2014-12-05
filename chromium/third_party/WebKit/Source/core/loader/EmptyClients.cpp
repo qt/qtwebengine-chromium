@@ -30,16 +30,18 @@
 
 #include "core/frame/LocalFrame.h"
 #include "core/html/HTMLFormElement.h"
+#include "core/html/forms/ColorChooser.h"
+#include "core/html/forms/DateTimeChooser.h"
 #include "core/loader/DocumentLoader.h"
+#include "core/plugins/PluginPlaceholder.h"
 #include "core/storage/StorageNamespace.h"
-#include "platform/ColorChooser.h"
-#include "platform/DateTimeChooser.h"
 #include "platform/FileChooser.h"
+#include "platform/Widget.h"
 #include "public/platform/WebApplicationCacheHost.h"
 #include "public/platform/WebServiceWorkerProvider.h"
 #include "public/platform/WebServiceWorkerProviderClient.h"
 
-namespace WebCore {
+namespace blink {
 
 void fillWithEmptyClients(Page::PageClients& pageClients)
 {
@@ -58,9 +60,6 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
     static InspectorClient* dummyInspectorClient = adoptPtr(new EmptyInspectorClient).leakPtr();
     pageClients.inspectorClient = dummyInspectorClient;
 
-    static BackForwardClient* dummyBackForwardClient = adoptPtr(new EmptyBackForwardClient).leakPtr();
-    pageClients.backForwardClient = dummyBackForwardClient;
-
     static SpellCheckerClient* dummySpellCheckerClient = adoptPtr(new EmptySpellCheckerClient).leakPtr();
     pageClients.spellCheckerClient = dummySpellCheckerClient;
 
@@ -70,25 +69,25 @@ void fillWithEmptyClients(Page::PageClients& pageClients)
 
 class EmptyPopupMenu : public PopupMenu {
 public:
-    virtual void show(const FloatQuad&, const IntSize&, int) OVERRIDE { }
-    virtual void hide() OVERRIDE { }
-    virtual void updateFromElement() OVERRIDE { }
-    virtual void disconnectClient() OVERRIDE { }
+    virtual void show(const FloatQuad&, const IntSize&, int) override { }
+    virtual void hide() override { }
+    virtual void updateFromElement() override { }
+    virtual void disconnectClient() override { }
 };
 
-PassRefPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
+PassRefPtrWillBeRawPtr<PopupMenu> EmptyChromeClient::createPopupMenu(LocalFrame&, PopupMenuClient*) const
 {
-    return adoptRef(new EmptyPopupMenu());
+    return adoptRefWillBeNoop(new EmptyPopupMenu());
 }
 
-PassOwnPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
+PassOwnPtrWillBeRawPtr<ColorChooser> EmptyChromeClient::createColorChooser(LocalFrame*, ColorChooserClient*, const Color&)
 {
     return nullptr;
 }
 
-PassRefPtrWillBeRawPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
+PassRefPtr<DateTimeChooser> EmptyChromeClient::openDateTimeChooser(DateTimeChooserClient*, const DateTimeChooserParameters&)
 {
-    return nullptr;
+    return PassRefPtr<DateTimeChooser>();
 }
 
 void EmptyChromeClient::openTextDataListChooser(HTMLInputElement&)
@@ -104,7 +103,7 @@ String EmptyChromeClient::acceptLanguages()
     return String();
 }
 
-NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy)
+NavigationPolicy EmptyFrameLoaderClient::decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy, bool isTransitionNavigation)
 {
     return NavigationPolicyIgnore;
 }
@@ -122,22 +121,27 @@ PassRefPtr<DocumentLoader> EmptyFrameLoaderClient::createDocumentLoader(LocalFra
     return DocumentLoader::create(frame, request, substituteData);
 }
 
-PassRefPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, const Referrer&, HTMLFrameOwnerElement*)
+PassRefPtrWillBeRawPtr<LocalFrame> EmptyFrameLoaderClient::createFrame(const KURL&, const AtomicString&, HTMLFrameOwnerElement*)
 {
     return nullptr;
 }
 
-PassRefPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy)
+PassOwnPtrWillBeRawPtr<PluginPlaceholder> EmptyFrameLoaderClient::createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually)
 {
     return nullptr;
 }
 
-PassRefPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
+PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool, DetachedPluginPolicy)
 {
     return nullptr;
 }
 
-void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtr<TextCheckingRequest>)
+PassRefPtrWillBeRawPtr<Widget> EmptyFrameLoaderClient::createJavaAppletWidget(HTMLAppletElement*, const KURL&, const Vector<String>&, const Vector<String>&)
+{
+    return nullptr;
+}
+
+void EmptyTextCheckerClient::requestCheckingOfString(PassRefPtrWillBeRawPtr<TextCheckingRequest>)
 {
 }
 

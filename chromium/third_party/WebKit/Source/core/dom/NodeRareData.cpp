@@ -32,9 +32,11 @@
 #include "core/dom/NodeRareData.h"
 #include "core/dom/Element.h"
 #include "core/dom/ElementRareData.h"
+#include "core/frame/FrameHost.h"
+#include "core/rendering/RenderObject.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsNodeRareData {
     void* m_pointer[2];
@@ -44,29 +46,11 @@ struct SameSizeAsNodeRareData {
 
 COMPILE_ASSERT(sizeof(NodeRareData) == sizeof(SameSizeAsNodeRareData), NodeRareDataShouldStaySmall);
 
-void NodeListsNodeData::invalidateCaches(const QualifiedName* attrName)
-{
-    NodeListAtomicNameCacheMap::const_iterator atomicNameCacheEnd = m_atomicNameCaches.end();
-    for (NodeListAtomicNameCacheMap::const_iterator it = m_atomicNameCaches.begin(); it != atomicNameCacheEnd; ++it)
-        it->value->invalidateCacheForAttribute(attrName);
-
-    if (attrName)
-        return;
-
-    TagCollectionCacheNS::iterator tagCacheEnd = m_tagCollectionCacheNS.end();
-    for (TagCollectionCacheNS::iterator it = m_tagCollectionCacheNS.begin(); it != tagCacheEnd; ++it)
-        it->value->invalidateCache();
-}
-
-void NodeListsNodeData::trace(Visitor* visitor)
-{
-    visitor->trace(m_childNodeList);
-    visitor->trace(m_atomicNameCaches);
-    visitor->trace(m_tagCollectionCacheNS);
-}
-
 void NodeRareData::traceAfterDispatch(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
+    visitor->trace(m_renderer);
+#endif
     visitor->trace(m_mutationObserverData);
     // Do not keep empty NodeListsNodeData objects around.
     if (m_nodeLists && m_nodeLists->isEmpty())
@@ -93,6 +77,6 @@ void NodeRareData::finalizeGarbageCollectedObject()
 }
 
 // Ensure the 10 bits reserved for the m_connectedFrameCount cannot overflow
-COMPILE_ASSERT(Page::maxNumberOfFrames < (1 << NodeRareData::ConnectedFrameCountBits), Frame_limit_should_fit_in_rare_data_count);
+static_assert(FrameHost::maxNumberOfFrames < (1 << NodeRareData::ConnectedFrameCountBits), "Frame limit should fit in rare data count");
 
-} // namespace WebCore
+} // namespace blink

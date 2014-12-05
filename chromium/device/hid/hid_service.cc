@@ -7,8 +7,8 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
-#include "base/threading/thread_restrictions.h"
 
 #if defined(OS_LINUX) && defined(USE_UDEV)
 #include "device/hid/hid_service_linux.h"
@@ -22,11 +22,57 @@ namespace device {
 
 namespace {
 
-// The instance will be reset when message loop destroys.
-base::LazyInstance<scoped_ptr<HidService> >::Leaky g_hid_service_ptr =
-    LAZY_INSTANCE_INITIALIZER;
+HidService* g_service = NULL;
 
 }  // namespace
+
+class HidService::Destroyer : public base::MessageLoop::DestructionObserver {
+ public:
+  explicit Destroyer(HidService* hid_service)
+      : hid_service_(hid_service) {}
+  ~Destroyer() override {}
+
+ private:
+  // base::MessageLoop::DestructionObserver implementation.
+  void WillDestroyCurrentMessageLoop() override {
+    base::MessageLoop::current()->RemoveDestructionObserver(this);
+    delete hid_service_;
+    delete this;
+    g_service = NULL;
+  }
+
+  HidService* hid_service_;
+};
+
+HidService* HidService::GetInstance(
+    scoped_refptr<base::SingleThreadTaskRunner> file_task_runner,
+    scoped_refptr<base::SingleThreadTaskRunner> ui_task_runner) {
+  if (g_service == NULL) {
+#if defined(OS_LINUX) && defined(USE_UDEV)
+    g_service = new HidServiceLinux(ui_task_runner);
+#elif defined(OS_MACOSX)
+    g_service = new HidServiceMac(file_task_runner);
+#elif defined(OS_WIN)
+    g_service = new HidServiceWin();
+#endif
+    if (g_service != nullptr) {
+      Destroyer* destroyer = new Destroyer(g_service);
+      base::MessageLoop::current()->AddDestructionObserver(destroyer);
+    }
+  }
+  return g_service;
+}
+
+void HidService::SetInstanceForTest(HidService* instance) {
+  DCHECK(!g_service);
+  g_service = instance;
+  Destroyer* destroyer = new Destroyer(g_service);
+  base::MessageLoop::current()->AddDestructionObserver(destroyer);
+}
+
+HidService::~HidService() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+}
 
 void HidService::GetDevices(std::vector<HidDeviceInfo>* devices) {
   DCHECK(thread_checker_.CalledOnValidThread());
@@ -48,32 +94,8 @@ bool HidService::GetDeviceInfo(const HidDeviceId& device_id,
   return true;
 }
 
-void HidService::WillDestroyCurrentMessageLoop() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  g_hid_service_ptr.Get().reset(NULL);
-}
-
 HidService::HidService() {
-  base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(thread_checker_.CalledOnValidThread());
-  base::MessageLoop::current()->AddDestructionObserver(this);
-}
-
-HidService::~HidService() {
-  DCHECK(thread_checker_.CalledOnValidThread());
-  base::MessageLoop::current()->RemoveDestructionObserver(this);
-}
-
-HidService* HidService::CreateInstance() {
-#if defined(OS_LINUX) && defined(USE_UDEV)
-    return new HidServiceLinux();
-#elif defined(OS_MACOSX)
-    return new HidServiceMac();
-#elif defined(OS_WIN)
-    return new HidServiceWin();
-#else
-    return NULL;
-#endif
 }
 
 void HidService::AddDevice(const HidDeviceInfo& info) {
@@ -88,12 +110,6 @@ void HidService::RemoveDevice(const HidDeviceId& device_id) {
   DeviceMap::iterator it = devices_.find(device_id);
   if (it != devices_.end())
     devices_.erase(it);
-}
-
-HidService* HidService::GetInstance() {
-  if (!g_hid_service_ptr.Get().get())
-    g_hid_service_ptr.Get().reset(CreateInstance());
-  return g_hid_service_ptr.Get().get();
 }
 
 }  // namespace device

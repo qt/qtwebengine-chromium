@@ -49,8 +49,7 @@ class SSLManagerSet : public base::SupportsUserData::Data {
 // static
 void SSLManager::OnSSLCertificateError(
     const base::WeakPtr<SSLErrorHandler::Delegate>& delegate,
-    const GlobalRequestID& id,
-    const ResourceType::Type resource_type,
+    const ResourceType resource_type,
     const GURL& url,
     int render_process_id,
     int render_frame_id,
@@ -58,10 +57,11 @@ void SSLManager::OnSSLCertificateError(
     bool fatal) {
   DCHECK(delegate.get());
   DVLOG(1) << "OnSSLCertificateError() cert_error: "
-           << net::MapCertStatusToNetError(ssl_info.cert_status) << " id: "
-           << id.child_id << "," << id.request_id << " resource_type: "
-           << resource_type << " url: " << url.spec() << " render_process_id: "
-           << render_process_id << " render_frame_id: " << render_frame_id
+           << net::MapCertStatusToNetError(ssl_info.cert_status)
+           << " resource_type: " << resource_type
+           << " url: " << url.spec()
+           << " render_process_id: " << render_process_id
+           << " render_frame_id: " << render_frame_id
            << " cert_status: " << std::hex << ssl_info.cert_status;
 
   // A certificate error occurred.  Construct a SSLCertErrorHandler object and
@@ -70,7 +70,6 @@ void SSLManager::OnSSLCertificateError(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&SSLCertErrorHandler::Dispatch,
                  new SSLCertErrorHandler(delegate,
-                                         id,
                                          resource_type,
                                          url,
                                          render_process_id,
@@ -171,7 +170,7 @@ void SSLManager::DidLoadFromMemoryCache(
   // resouces aren't cachable.
   scoped_refptr<SSLRequestInfo> info(new SSLRequestInfo(
       details.url,
-      ResourceType::SUB_RESOURCE,
+      RESOURCE_TYPE_SUB_RESOURCE,
       details.pid,
       details.cert_id,
       details.cert_status));

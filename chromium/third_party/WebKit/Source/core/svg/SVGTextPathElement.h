@@ -24,7 +24,7 @@
 #include "core/svg/SVGTextContentElement.h"
 #include "core/svg/SVGURIReference.h"
 
-namespace WebCore {
+namespace blink {
 
 enum SVGTextPathMethodType {
     SVGTextPathMethodUnknown = 0,
@@ -41,8 +41,9 @@ enum SVGTextPathSpacingType {
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathMethodType>();
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGTextPathSpacingType>();
 
-class SVGTextPathElement FINAL : public SVGTextContentElement,
+class SVGTextPathElement final : public SVGTextContentElement,
                                  public SVGURIReference {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // Forward declare enumerations in the W3C naming scheme, for IDL generation.
     enum {
@@ -67,24 +68,23 @@ private:
 
     void clearResourceReferences();
 
-    virtual void buildPendingResource() OVERRIDE;
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual void buildPendingResource() override;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
 
-    virtual bool selfHasRelativeLengths() const OVERRIDE;
+    virtual bool selfHasRelativeLengths() const override;
 
     RefPtr<SVGAnimatedLength> m_startOffset;
     RefPtr<SVGAnimatedEnumeration<SVGTextPathMethodType> > m_method;
     RefPtr<SVGAnimatedEnumeration<SVGTextPathSpacingType> > m_spacing;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGTextPathElement_h

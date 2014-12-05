@@ -16,7 +16,7 @@ namespace {
 // These tests deal with picture layers.
 class LayerTreeHostPictureTest : public LayerTreeTest {
  protected:
-  virtual void InitializeSettings(LayerTreeSettings* settings) OVERRIDE {
+  void InitializeSettings(LayerTreeSettings* settings) override {
     // PictureLayer can only be used with impl side painting enabled.
     settings->impl_side_painting = true;
   }
@@ -24,7 +24,7 @@ class LayerTreeHostPictureTest : public LayerTreeTest {
 
 class LayerTreeHostPictureTestTwinLayer
     : public LayerTreeHostPictureTest {
-  virtual void SetupTree() OVERRIDE {
+  void SetupTree() override {
     LayerTreeHostPictureTest::SetupTree();
 
     scoped_refptr<FakePictureLayer> picture =
@@ -32,12 +32,12 @@ class LayerTreeHostPictureTestTwinLayer
     layer_tree_host()->root_layer()->AddChild(picture);
   }
 
-  virtual void BeginTest() OVERRIDE {
+  void BeginTest() override {
     activates_ = 0;
     PostSetNeedsCommitToMainThread();
   }
 
-  virtual void DidCommit() OVERRIDE {
+  void DidCommit() override {
     switch (layer_tree_host()->source_frame_number()) {
       case 2:
         // Drop the picture layer from the tree.
@@ -52,7 +52,7 @@ class LayerTreeHostPictureTestTwinLayer
     }
   }
 
-  virtual void WillActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  void WillActivateTreeOnThread(LayerTreeHostImpl* impl) override {
     LayerImpl* pending_root_impl = impl->pending_tree()->root_layer();
     LayerImpl* active_root_impl = impl->active_tree()->root_layer();
 
@@ -66,13 +66,13 @@ class LayerTreeHostPictureTestTwinLayer
 
     if (!active_root_impl) {
       EXPECT_EQ(0, activates_);
-      EXPECT_EQ(NULL, pending_picture_impl->twin_layer());
+      EXPECT_EQ(nullptr, pending_picture_impl->GetPendingOrActiveTwinLayer());
       return;
     }
 
     if (active_root_impl->children().empty()) {
       EXPECT_EQ(3, activates_);
-      EXPECT_EQ(NULL, pending_picture_impl->twin_layer());
+      EXPECT_EQ(nullptr, pending_picture_impl->GetPendingOrActiveTwinLayer());
       return;
     }
 
@@ -84,20 +84,28 @@ class LayerTreeHostPictureTestTwinLayer
     // and the next commit will have a pending and active twin again.
     EXPECT_TRUE(activates_ == 1 || activates_ == 4);
 
-    EXPECT_EQ(pending_picture_impl, active_picture_impl->twin_layer());
-    EXPECT_EQ(active_picture_impl, pending_picture_impl->twin_layer());
+    EXPECT_EQ(pending_picture_impl,
+              active_picture_impl->GetPendingOrActiveTwinLayer());
+    EXPECT_EQ(active_picture_impl,
+              pending_picture_impl->GetPendingOrActiveTwinLayer());
+    EXPECT_EQ(nullptr, active_picture_impl->GetRecycledTwinLayer());
   }
 
-  virtual void DidActivateTreeOnThread(LayerTreeHostImpl* impl) OVERRIDE {
+  void DidActivateTreeOnThread(LayerTreeHostImpl* impl) override {
     LayerImpl* active_root_impl = impl->active_tree()->root_layer();
+    LayerImpl* recycle_root_impl = impl->recycle_tree()->root_layer();
 
     if (active_root_impl->children().empty()) {
       EXPECT_EQ(2, activates_);
     } else {
       FakePictureLayerImpl* active_picture_impl =
           static_cast<FakePictureLayerImpl*>(active_root_impl->children()[0]);
+      FakePictureLayerImpl* recycle_picture_impl =
+          static_cast<FakePictureLayerImpl*>(recycle_root_impl->children()[0]);
 
-      EXPECT_EQ(NULL, active_picture_impl->twin_layer());
+      EXPECT_EQ(nullptr, active_picture_impl->GetPendingOrActiveTwinLayer());
+      EXPECT_EQ(recycle_picture_impl,
+                active_picture_impl->GetRecycledTwinLayer());
     }
 
     ++activates_;
@@ -107,7 +115,7 @@ class LayerTreeHostPictureTestTwinLayer
       EndTest();
   }
 
-  virtual void AfterTest() OVERRIDE {}
+  void AfterTest() override {}
 
   FakeContentLayerClient client_;
   int activates_;

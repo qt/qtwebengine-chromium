@@ -33,7 +33,7 @@
 #include "core/editing/TextIterator.h"
 #include "core/editing/VisiblePosition.h"
 
-namespace WebCore {
+namespace blink {
 
 PlainTextRange::PlainTextRange()
     : m_start(kNotFound)
@@ -76,7 +76,8 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
     size_t docTextPosition = 0;
     bool startRangeFound = false;
 
-    RefPtrWillBeRawPtr<Range> textRunRange = nullptr;
+    Position textRunStartPosition;
+    Position textRunEndPosition;
 
     TextIteratorBehaviorFlags behaviorFlags = TextIteratorEmitsObjectReplacementCharacter;
     if (getRangeFor == ForSelection)
@@ -85,17 +86,16 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
 
     // FIXME: the atEnd() check shouldn't be necessary, workaround for <http://bugs.webkit.org/show_bug.cgi?id=6289>.
     if (!start() && !length() && it.atEnd()) {
-        textRunRange = it.range();
-
-        resultRange->setStart(textRunRange->startContainer(), 0, ASSERT_NO_EXCEPTION);
-        resultRange->setEnd(textRunRange->startContainer(), 0, ASSERT_NO_EXCEPTION);
-
+        resultRange->setStart(it.startContainer(), 0, ASSERT_NO_EXCEPTION);
+        resultRange->setEnd(it.startContainer(), 0, ASSERT_NO_EXCEPTION);
         return resultRange.release();
     }
 
     for (; !it.atEnd(); it.advance()) {
         int len = it.length();
-        textRunRange = it.range();
+
+        textRunStartPosition = it.startPosition();
+        textRunEndPosition = it.endPosition();
 
         bool foundStart = start() >= docTextPosition && start() <= docTextPosition + len;
         bool foundEnd = end() >= docTextPosition && end() <= docTextPosition + len;
@@ -103,45 +103,43 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
         // Fix textRunRange->endPosition(), but only if foundStart || foundEnd, because it is only
         // in those cases that textRunRange is used.
         if (foundEnd) {
-            // FIXME: This is a workaround for the fact that the end of a run is often at the wrong
-            // position for emitted '\n's.
-            if (len == 1 && it.characterAt(0) == '\n') {
-                scope.document().updateLayoutIgnorePendingStylesheets();
+            // FIXME: This is a workaround for the fact that the end of a run
+            // is often at the wrong position for emitted '\n's or if the
+            // renderer of the current node is a replaced element.
+            if (len == 1 && (it.characterAt(0) == '\n' || it.isInsideReplacedElement())) {
                 it.advance();
                 if (!it.atEnd()) {
-                    RefPtrWillBeRawPtr<Range> range = it.range();
-                    textRunRange->setEnd(range->startContainer(), range->startOffset(), ASSERT_NO_EXCEPTION);
+                    textRunEndPosition = it.startPosition();
                 } else {
-                    Position runStart = textRunRange->startPosition();
-                    Position runEnd = VisiblePosition(runStart).next().deepEquivalent();
+                    Position runEnd = VisiblePosition(textRunStartPosition).next().deepEquivalent();
                     if (runEnd.isNotNull())
-                        textRunRange->setEnd(runEnd.containerNode(), runEnd.computeOffsetInContainerNode(), ASSERT_NO_EXCEPTION);
+                        textRunEndPosition = createLegacyEditingPosition(runEnd.containerNode(), runEnd.computeOffsetInContainerNode());
                 }
             }
         }
 
         if (foundStart) {
             startRangeFound = true;
-            if (textRunRange->startContainer()->isTextNode()) {
+            if (textRunStartPosition.containerNode()->isTextNode()) {
                 int offset = start() - docTextPosition;
-                resultRange->setStart(textRunRange->startContainer(), offset + textRunRange->startOffset(), IGNORE_EXCEPTION);
+                resultRange->setStart(textRunStartPosition.containerNode(), offset + textRunStartPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
             } else {
                 if (start() == docTextPosition)
-                    resultRange->setStart(textRunRange->startContainer(), textRunRange->startOffset(), IGNORE_EXCEPTION);
+                    resultRange->setStart(textRunStartPosition.containerNode(), textRunStartPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
                 else
-                    resultRange->setStart(textRunRange->endContainer(), textRunRange->endOffset(), IGNORE_EXCEPTION);
+                    resultRange->setStart(textRunEndPosition.containerNode(), textRunEndPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
             }
         }
 
         if (foundEnd) {
-            if (textRunRange->startContainer()->isTextNode()) {
+            if (textRunStartPosition.containerNode()->isTextNode()) {
                 int offset = end() - docTextPosition;
-                resultRange->setEnd(textRunRange->startContainer(), offset + textRunRange->startOffset(), IGNORE_EXCEPTION);
+                resultRange->setEnd(textRunStartPosition.containerNode(), offset + textRunStartPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
             } else {
                 if (end() == docTextPosition)
-                    resultRange->setEnd(textRunRange->startContainer(), textRunRange->startOffset(), IGNORE_EXCEPTION);
+                    resultRange->setEnd(textRunStartPosition.containerNode(), textRunStartPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
                 else
-                    resultRange->setEnd(textRunRange->endContainer(), textRunRange->endOffset(), IGNORE_EXCEPTION);
+                    resultRange->setEnd(textRunEndPosition.containerNode(), textRunEndPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
             }
             docTextPosition += len;
             break;
@@ -153,13 +151,13 @@ PassRefPtrWillBeRawPtr<Range> PlainTextRange::createRangeFor(const ContainerNode
         return nullptr;
 
     if (length() && end() > docTextPosition) { // end() is out of bounds
-        resultRange->setEnd(textRunRange->endContainer(), textRunRange->endOffset(), IGNORE_EXCEPTION);
+        resultRange->setEnd(textRunEndPosition.containerNode(), textRunEndPosition.offsetInContainerNode(), IGNORE_EXCEPTION);
     }
 
     return resultRange.release();
 }
 
-PlainTextRange PlainTextRange::create(const Node& scope, const Range& range)
+PlainTextRange PlainTextRange::create(const ContainerNode& scope, const Range& range)
 {
     if (!range.startContainer())
         return PlainTextRange();
@@ -174,7 +172,7 @@ PlainTextRange PlainTextRange::create(const Node& scope, const Range& range)
     if (range.endContainer() != scope && !range.endContainer()->isDescendantOf(&scope))
         return PlainTextRange();
 
-    RefPtrWillBeRawPtr<Range> testRange = Range::create(scope.document(), const_cast<Node*>(&scope), 0, range.startContainer(), range.startOffset());
+    RefPtrWillBeRawPtr<Range> testRange = Range::create(scope.document(), const_cast<ContainerNode*>(&scope), 0, range.startContainer(), range.startOffset());
     ASSERT(testRange->startContainer() == &scope);
     size_t start = TextIterator::rangeLength(testRange.get());
 

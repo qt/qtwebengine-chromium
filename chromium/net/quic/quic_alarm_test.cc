@@ -32,12 +32,12 @@ class TestAlarm : public QuicAlarm {
   }
 
  protected:
-  virtual void SetImpl() OVERRIDE {
+  void SetImpl() override {
     DCHECK(deadline().IsInitialized());
     scheduled_ = true;
   }
 
-  virtual void CancelImpl() OVERRIDE {
+  void CancelImpl() override {
     DCHECK(!deadline().IsInitialized());
     scheduled_ = false;
   }
@@ -83,6 +83,25 @@ TEST_F(QuicAlarmTest, Cancel) {
   QuicTime deadline = QuicTime::Zero().Add(QuicTime::Delta::FromSeconds(7));
   alarm_.Set(deadline);
   alarm_.Cancel();
+  EXPECT_FALSE(alarm_.IsSet());
+  EXPECT_FALSE(alarm_.scheduled());
+  EXPECT_EQ(QuicTime::Zero(), alarm_.deadline());
+}
+
+TEST_F(QuicAlarmTest, Update) {
+  QuicTime deadline = QuicTime::Zero().Add(QuicTime::Delta::FromSeconds(7));
+  alarm_.Set(deadline);
+  QuicTime new_deadline = QuicTime::Zero().Add(QuicTime::Delta::FromSeconds(8));
+  alarm_.Update(new_deadline, QuicTime::Delta::Zero());
+  EXPECT_TRUE(alarm_.IsSet());
+  EXPECT_TRUE(alarm_.scheduled());
+  EXPECT_EQ(new_deadline, alarm_.deadline());
+}
+
+TEST_F(QuicAlarmTest, UpdateWithZero) {
+  QuicTime deadline = QuicTime::Zero().Add(QuicTime::Delta::FromSeconds(7));
+  alarm_.Set(deadline);
+  alarm_.Update(QuicTime::Zero(), QuicTime::Delta::Zero());
   EXPECT_FALSE(alarm_.IsSet());
   EXPECT_FALSE(alarm_.scheduled());
   EXPECT_EQ(QuicTime::Zero(), alarm_.deadline());

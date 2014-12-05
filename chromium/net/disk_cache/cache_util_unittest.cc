@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "net/disk_cache/cache_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -12,7 +12,7 @@ namespace disk_cache {
 
 class CacheUtilTest : public PlatformTest {
  public:
-  virtual void SetUp() {
+  void SetUp() override {
     PlatformTest::SetUp();
     ASSERT_TRUE(tmp_dir_.CreateUniqueTempDir());
     cache_dir_ = tmp_dir_.path().Append(FILE_PATH_LITERAL("Cache"));

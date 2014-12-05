@@ -31,7 +31,9 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   DecryptingDemuxerStream(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
-  virtual ~DecryptingDemuxerStream();
+
+  // Cancels all pending operations immediately and fires all pending callbacks.
+  ~DecryptingDemuxerStream() override;
 
   void Initialize(DemuxerStream* stream,
                   const PipelineStatusCB& status_cb);
@@ -42,20 +44,14 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
   // kUninitialized if |this| hasn't been initialized, or to kIdle otherwise.
   void Reset(const base::Closure& closure);
 
-  // Cancels all pending operations immediately and fires all pending callbacks
-  // and sets the state to kStopped. Does NOT wait for any pending operations.
-  // Note: During the teardown process, media pipeline will be waiting on the
-  // render main thread. If a Decryptor depends on the render main thread
-  // (e.g. PpapiDecryptor), the pending DecryptCB would not be satisfied.
-  void Stop(const base::Closure& closure);
-
   // DemuxerStream implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  Type type() override;
+  void EnableBitstreamConverter() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -68,12 +64,13 @@ class MEDIA_EXPORT DecryptingDemuxerStream : public DemuxerStream {
     kIdle,
     kPendingDemuxerRead,
     kPendingDecrypt,
-    kWaitingForKey,
-    kStopped
+    kWaitingForKey
   };
 
-  // Callback for DecryptorHost::RequestDecryptor().
-  void SetDecryptor(Decryptor* decryptor);
+  // Callback for DecryptorHost::RequestDecryptor(). |decryptor_attached_cb| is
+  // called when the decryptor has been completely attached to the pipeline.
+  void SetDecryptor(Decryptor* decryptor,
+                    const DecryptorAttachedCB& decryptor_attached_cb);
 
   // Callback for DemuxerStream::Read().
   void DecryptBuffer(DemuxerStream::Status status,

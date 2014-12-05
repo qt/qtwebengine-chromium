@@ -21,7 +21,7 @@
 #ifndef EditingBehaviorTypes_h
 #define EditingBehaviorTypes_h
 
-namespace WebCore {
+namespace blink {
 
 // There are multiple editing details that are different on Windows than Macintosh.
 // We use a single switch for all of them. Some examples:
@@ -43,6 +43,6 @@ enum EditingBehaviorType {
     EditingAndroidBehavior
 };
 
-} // WebCore namespace
+} // namespace blink
 
 #endif // EditingBehaviorTypes_h

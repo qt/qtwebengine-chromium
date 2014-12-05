@@ -29,13 +29,13 @@
 #include "config.h"
 #include "core/svg/graphics/SVGImageChromeClient.h"
 
-#include "core/dom/ScriptForbiddenScope.h"
 #include "core/frame/FrameView.h"
 #include "core/svg/graphics/SVGImage.h"
+#include "platform/ScriptForbiddenScope.h"
 #include "platform/graphics/ImageObserver.h"
 #include "wtf/CurrentTime.h"
 
-namespace WebCore {
+namespace blink {
 
 static const double animationFrameDelay = 0.025;
 

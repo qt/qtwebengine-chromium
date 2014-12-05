@@ -25,12 +25,13 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HitTestResult;
 class HTMLImageElement;
 
-class HTMLMapElement FINAL : public HTMLElement {
+class HTMLMapElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLMapElement);
     virtual ~HTMLMapElement();
@@ -45,14 +46,14 @@ public:
 private:
     explicit HTMLMapElement(Document&);
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
 
     AtomicString m_name;
 };
 
-} //namespace
+} // namespace blink
 
-#endif
+#endif // HTMLMapElement_h

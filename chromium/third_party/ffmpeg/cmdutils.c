@@ -66,6 +66,7 @@ AVDictionary *swr_opts;
 AVDictionary *format_opts, *codec_opts, *resample_opts;
 
 static FILE *report_file;
+static int report_file_level = AV_LOG_DEBUG;
 int hide_banner = 0;
 
 void init_opts(void)
@@ -104,8 +105,10 @@ static void log_callback_report(void *ptr, int level, const char *fmt, va_list v
     av_log_default_callback(ptr, level, fmt, vl);
     av_log_format_line(ptr, level, fmt, vl2, line, sizeof(line), &print_prefix);
     va_end(vl2);
-    fputs(line, report_file);
-    fflush(report_file);
+    if (report_file_level >= level) {
+        fputs(line, report_file);
+        fflush(report_file);
+    }
 }
 
 static void (*program_exit)(int ret);
@@ -163,7 +166,7 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
     int first;
 
     first = 1;
-    for (po = options; po->name != NULL; po++) {
+    for (po = options; po->name; po++) {
         char buf[64];
 
         if (((po->flags & req_flags) != req_flags) ||
@@ -202,7 +205,7 @@ static const OptionDef *find_option(const OptionDef *po, const char *name)
     const char *p = strchr(name, ':');
     int len = p ? p - name : strlen(name);
 
-    while (po->name != NULL) {
+    while (po->name) {
         if (!strncmp(name, po->name, len) && strlen(po->name) == len)
             break;
         po++;
@@ -251,7 +254,7 @@ static void prepare_app_arguments(int *argc_ptr, char ***argv_ptr)
 
     win32_argv_utf8 = av_mallocz(sizeof(char *) * (win32_argc + 1) + buffsize);
     argstr_flat     = (char *)win32_argv_utf8 + sizeof(char *) * (win32_argc + 1);
-    if (win32_argv_utf8 == NULL) {
+    if (!win32_argv_utf8) {
         LocalFree(argv_w);
         return;
     }
@@ -550,6 +553,11 @@ int opt_default(void *optctx, const char *opt, const char *arg)
             av_log(NULL, AV_LOG_ERROR, "Error setting option %s.\n", opt);
             return ret;
         }
+        consumed = 1;
+    }
+#else
+    if (!consumed && !strcmp(opt, "sws_flags")) {
+        av_log(NULL, AV_LOG_WARNING, "Ignoring %s %s, due to disabled swscale\n", opt, arg);
         consumed = 1;
     }
 #endif
@@ -926,6 +934,13 @@ static int init_report(const char *env)
             av_free(filename_template);
             filename_template = val;
             val = NULL;
+        } else if (!strcmp(key, "level")) {
+            char *tail;
+            report_file_level = strtol(val, &tail, 10);
+            if (*tail) {
+                av_log(NULL, AV_LOG_FATAL, "Invalid report file level\n");
+                exit_program(1);
+            }
         } else {
             av_log(NULL, AV_LOG_ERROR, "Unknown key '%s' in FFREPORT\n", key);
         }
@@ -1105,7 +1120,7 @@ void show_banner(int argc, char **argv, const OptionDef *options)
 int show_version(void *optctx, const char *opt, const char *arg)
 {
     av_log_set_callback(log_callback_help);
-    print_program_info (0           , AV_LOG_INFO);
+    print_program_info (SHOW_COPYRIGHT, AV_LOG_INFO);
     print_all_libs_info(SHOW_VERSION, AV_LOG_INFO);
 
     return 0;
@@ -1193,16 +1208,29 @@ int show_license(void *optctx, const char *opt, const char *arg)
     return 0;
 }
 
-int show_formats(void *optctx, const char *opt, const char *arg)
+static int is_device(const AVClass *avclass)
+{
+    if (!avclass)
+        return 0;
+    return avclass->category == AV_CLASS_CATEGORY_DEVICE_VIDEO_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_AUDIO_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_AUDIO_INPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_OUTPUT ||
+           avclass->category == AV_CLASS_CATEGORY_DEVICE_INPUT;
+}
+
+static int show_formats_devices(void *optctx, const char *opt, const char *arg, int device_only)
 {
     AVInputFormat *ifmt  = NULL;
     AVOutputFormat *ofmt = NULL;
     const char *last_name;
+    int is_dev;
 
-    printf("File formats:\n"
+    printf("%s\n"
            " D. = Demuxing supported\n"
            " .E = Muxing supported\n"
-           " --\n");
+           " --\n", device_only ? "Devices:" : "File formats:");
     last_name = "000";
     for (;;) {
         int decode = 0;
@@ -1211,7 +1239,10 @@ int show_formats(void *optctx, const char *opt, const char *arg)
         const char *long_name = NULL;
 
         while ((ofmt = av_oformat_next(ofmt))) {
-            if ((name == NULL || strcmp(ofmt->name, name) < 0) &&
+            is_dev = is_device(ofmt->priv_class);
+            if (!is_dev && device_only)
+                continue;
+            if ((!name || strcmp(ofmt->name, name) < 0) &&
                 strcmp(ofmt->name, last_name) > 0) {
                 name      = ofmt->name;
                 long_name = ofmt->long_name;
@@ -1219,7 +1250,10 @@ int show_formats(void *optctx, const char *opt, const char *arg)
             }
         }
         while ((ifmt = av_iformat_next(ifmt))) {
-            if ((name == NULL || strcmp(ifmt->name, name) < 0) &&
+            is_dev = is_device(ifmt->priv_class);
+            if (!is_dev && device_only)
+                continue;
+            if ((!name || strcmp(ifmt->name, name) < 0) &&
                 strcmp(ifmt->name, last_name) > 0) {
                 name      = ifmt->name;
                 long_name = ifmt->long_name;
@@ -1228,7 +1262,7 @@ int show_formats(void *optctx, const char *opt, const char *arg)
             if (name && strcmp(ifmt->name, name) == 0)
                 decode = 1;
         }
-        if (name == NULL)
+        if (!name)
             break;
         last_name = name;
 
@@ -1239,6 +1273,16 @@ int show_formats(void *optctx, const char *opt, const char *arg)
             long_name ? long_name:" ");
     }
     return 0;
+}
+
+int show_formats(void *optctx, const char *opt, const char *arg)
+{
+    return show_formats_devices(optctx, opt, arg, 0);
+}
+
+int show_devices(void *optctx, const char *opt, const char *arg)
+{
+    return show_formats_devices(optctx, opt, arg, 1);
 }
 
 #define PRINT_CODEC_SUPPORTED(codec, field, type, list_name, term, get_name) \
@@ -1595,19 +1639,19 @@ int show_layouts(void *optctx, const char *opt, const char *arg)
     const char *name, *descr;
 
     printf("Individual channels:\n"
-           "NAME        DESCRIPTION\n");
+           "NAME           DESCRIPTION\n");
     for (i = 0; i < 63; i++) {
         name = av_get_channel_name((uint64_t)1 << i);
         if (!name)
             continue;
         descr = av_get_channel_description((uint64_t)1 << i);
-        printf("%-12s%s\n", name, descr);
+        printf("%-14s %s\n", name, descr);
     }
     printf("\nStandard channel layouts:\n"
-           "NAME        DECOMPOSITION\n");
+           "NAME           DECOMPOSITION\n");
     for (i = 0; !av_get_standard_channel_layout(i, &layout, &name); i++) {
         if (name) {
-            printf("%-12s", name);
+            printf("%-14s ", name);
             for (j = 1; j; j <<= 1)
                 if ((layout & j))
                     printf("%s%s", (layout & (j - 1)) ? "+" : "", av_get_channel_name(j));

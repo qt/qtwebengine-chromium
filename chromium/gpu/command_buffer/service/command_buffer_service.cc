@@ -39,9 +39,7 @@ bool CommandBufferService::Initialize() {
 
 CommandBufferService::State CommandBufferService::GetLastState() {
   State state;
-  state.num_entries = num_entries_;
   state.get_offset = get_offset_;
-  state.put_offset = put_offset_;
   state.token = token_;
   state.error = error_;
   state.context_lost_reason = context_lost_reason_;
@@ -88,7 +86,7 @@ void CommandBufferService::SetGetBuffer(int32 transfer_buffer_id) {
   // This means ring_buffer_ can be NULL.
   ring_buffer_ = GetTransferBuffer(transfer_buffer_id);
   ring_buffer_id_ = transfer_buffer_id;
-  int32 size = ring_buffer_ ? ring_buffer_->size() : 0;
+  int32 size = ring_buffer_.get() ? ring_buffer_->size() : 0;
   num_entries_ = size / sizeof(CommandBufferEntry);
   put_offset_ = 0;
   SetGetOffset(0);
@@ -172,6 +170,10 @@ void CommandBufferService::SetParseError(error::Error error) {
 void CommandBufferService::SetContextLostReason(
     error::ContextLostReason reason) {
   context_lost_reason_ = reason;
+}
+
+int32 CommandBufferService::GetPutOffset() {
+  return put_offset_;
 }
 
 void CommandBufferService::SetPutOffsetChangeCallback(

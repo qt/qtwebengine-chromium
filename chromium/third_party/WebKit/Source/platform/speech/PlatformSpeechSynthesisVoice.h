@@ -30,9 +30,9 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class PLATFORM_EXPORT PlatformSpeechSynthesisVoice FINAL : public GarbageCollectedFinalized<PlatformSpeechSynthesisVoice> {
+class PLATFORM_EXPORT PlatformSpeechSynthesisVoice final : public GarbageCollectedFinalized<PlatformSpeechSynthesisVoice> {
 public:
     static PlatformSpeechSynthesisVoice* create(const String& voiceURI, const String& name, const String& lang, bool localService, bool isDefault);
     static PlatformSpeechSynthesisVoice* create();
@@ -65,6 +65,6 @@ private:
     bool m_default;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformSpeechSynthesisVoice_h

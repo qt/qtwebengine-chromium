@@ -8,23 +8,56 @@
     return false;
   }
 
-  const {{class_name}}* MOJO_ALLOW_UNUSED object =
-      static_cast<const {{class_name}}*>(data);
+  const {{class_name}}* object = static_cast<const {{class_name}}*>(data);
+  MOJO_ALLOW_UNUSED_LOCAL(object);
 
 {%-   for packed_field in struct.packed.packed_fields %}
 {%-     set name = packed_field.field.name %}
-{%-     if packed_field.field.kind|is_object_kind %}
-{%-       set wrapper_type = packed_field.field.kind|cpp_wrapper_type %}
+{%-     set kind = packed_field.field.kind %}
+{%-     if kind|is_object_kind %}
+{%-       set wrapper_type = kind|cpp_wrapper_type %}
+{%-       if not kind|is_nullable_kind %}
+  if (!object->{{name}}.offset) {
+    ReportValidationError(
+        mojo::internal::VALIDATION_ERROR_UNEXPECTED_NULL_POINTER,
+        "null {{name}} field in {{struct.name}} struct");
+    return false;
+  }
+{%-       endif %}
   if (!mojo::internal::ValidateEncodedPointer(&object->{{name}}.offset)) {
     ReportValidationError(mojo::internal::VALIDATION_ERROR_ILLEGAL_POINTER);
     return false;
   }
+{%-       if kind|is_array_kind or kind|is_string_kind %}
+  if (!{{wrapper_type}}::Data_::Validate<
+          {{kind|get_array_validate_params|indent(10)}}>(
+              mojo::internal::DecodePointerRaw(&object->{{name}}.offset),
+              bounds_checker)) {
+{%-       elif kind|is_map_kind %}
+  if (!{{wrapper_type}}::Data_::Validate<
+          {{kind.value_kind|get_map_validate_params|indent(10)}}>(
+              mojo::internal::DecodePointerRaw(&object->{{name}}.offset),
+              bounds_checker)) {
+{%-       elif kind|is_struct_kind %}
+  if (!{{kind|get_name_for_kind}}::Data_::Validate(
+          mojo::internal::DecodePointerRaw(&object->{{name}}.offset),
+          bounds_checker)) {
+{%-       else %}
   if (!{{wrapper_type}}::Data_::Validate(
           mojo::internal::DecodePointerRaw(&object->{{name}}.offset),
           bounds_checker)) {
+{%-       endif %}
     return false;
   }
-{%-     elif packed_field.field.kind|is_handle_kind %}
+{%-     elif kind|is_any_handle_kind %}
+{%-       if not kind|is_nullable_kind %}
+  if (object->{{name}}.value() == mojo::internal::kEncodedInvalidHandleValue) {
+    ReportValidationError(
+        mojo::internal::VALIDATION_ERROR_UNEXPECTED_INVALID_HANDLE,
+        "invalid {{name}} field in {{struct.name}} struct");
+    return false;
+  }
+{%-       endif %}
   if (!bounds_checker->ClaimHandle(object->{{name}})) {
     ReportValidationError(mojo::internal::VALIDATION_ERROR_ILLEGAL_HANDLE);
     return false;
@@ -74,7 +107,7 @@
 {%-   for pf in struct.packed.packed_fields %}
 {%-     if pf.field.kind|is_object_kind %}
 mojo::internal::Encode(&{{pf.field.name}}, handles);
-{%-     elif pf.field.kind|is_handle_kind %}
+{%-     elif pf.field.kind|is_any_handle_kind %}
 mojo::internal::EncodeHandle(&{{pf.field.name}}, handles);
 {%-     endif %}
 {%-   endfor %}
@@ -84,7 +117,7 @@ mojo::internal::EncodeHandle(&{{pf.field.name}}, handles);
 {%-   for pf in struct.packed.packed_fields %}
 {%-     if pf.field.kind|is_object_kind %}
 mojo::internal::Decode(&{{pf.field.name}}, handles);
-{%-     elif pf.field.kind|is_handle_kind %}
+{%-     elif pf.field.kind|is_any_handle_kind %}
 mojo::internal::DecodeHandle(&{{pf.field.name}}, handles);
 {%-     endif %}
 {%-   endfor %}

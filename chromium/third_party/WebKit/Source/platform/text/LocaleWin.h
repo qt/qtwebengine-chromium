@@ -37,30 +37,27 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
-
-class DateComponents;
-struct DateFormatToken;
+namespace blink {
 
 class PLATFORM_EXPORT LocaleWin : public Locale {
 public:
     static PassOwnPtr<LocaleWin> create(LCID, bool defaultsForLocale);
     ~LocaleWin();
-    virtual const Vector<String>& weekDayShortLabels() OVERRIDE;
-    virtual unsigned firstDayOfWeek() OVERRIDE;
-    virtual bool isRTL() OVERRIDE;
-    virtual String dateFormat() OVERRIDE;
-    virtual String monthFormat() OVERRIDE;
-    virtual String shortMonthFormat() OVERRIDE;
-    virtual String timeFormat() OVERRIDE;
-    virtual String shortTimeFormat() OVERRIDE;
-    virtual String dateTimeFormatWithSeconds() OVERRIDE;
-    virtual String dateTimeFormatWithoutSeconds() OVERRIDE;
-    virtual const Vector<String>& monthLabels() OVERRIDE;
-    virtual const Vector<String>& shortMonthLabels() OVERRIDE;
-    virtual const Vector<String>& standAloneMonthLabels() OVERRIDE;
-    virtual const Vector<String>& shortStandAloneMonthLabels() OVERRIDE;
-    virtual const Vector<String>& timeAMPMLabels() OVERRIDE;
+    virtual const Vector<String>& weekDayShortLabels() override;
+    virtual unsigned firstDayOfWeek() override;
+    virtual bool isRTL() override;
+    virtual String dateFormat() override;
+    virtual String monthFormat() override;
+    virtual String shortMonthFormat() override;
+    virtual String timeFormat() override;
+    virtual String shortTimeFormat() override;
+    virtual String dateTimeFormatWithSeconds() override;
+    virtual String dateTimeFormatWithoutSeconds() override;
+    virtual const Vector<String>& monthLabels() override;
+    virtual const Vector<String>& shortMonthLabels() override;
+    virtual const Vector<String>& standAloneMonthLabels() override;
+    virtual const Vector<String>& shortStandAloneMonthLabels() override;
+    virtual const Vector<String>& timeAMPMLabels() override;
 
     static String dateFormat(const String&);
 
@@ -72,7 +69,7 @@ private:
     void ensureMonthLabels();
     void ensureWeekDayShortLabels();
     // Locale function:
-    virtual void initializeLocaleData() OVERRIDE;
+    virtual void initializeLocaleData() override;
 
     LCID m_lcid;
     Vector<String> m_shortMonthLabels;
@@ -91,5 +88,5 @@ private:
     bool m_defaultsForLocale;
 };
 
-} // namespace WebCore
+} // namespace blink
 #endif

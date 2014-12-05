@@ -5,11 +5,13 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_EMBEDDED_WORKER_DEVTOOLS_MANAGER_H_
 #define CONTENT_BROWSER_DEVTOOLS_EMBEDDED_WORKER_DEVTOOLS_MANAGER_H_
 
+#include <map>
+
 #include "base/basictypes.h"
-#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/common/content_export.h"
@@ -17,6 +19,8 @@
 namespace content {
 
 class DevToolsAgentHost;
+class DevToolsAgentHostImpl;
+class EmbeddedWorkerDevToolsAgentHost;
 class ServiceWorkerContextCore;
 
 // EmbeddedWorkerDevToolsManager is used instead of WorkerDevToolsManager when
@@ -25,30 +29,38 @@ class ServiceWorkerContextCore;
 class CONTENT_EXPORT EmbeddedWorkerDevToolsManager {
  public:
   typedef std::pair<int, int> WorkerId;
-  class EmbeddedWorkerDevToolsAgentHost;
 
   class ServiceWorkerIdentifier {
    public:
     ServiceWorkerIdentifier(
-        const ServiceWorkerContextCore* const service_worker_context,
-        int64 service_worker_version_id);
-    explicit ServiceWorkerIdentifier(const ServiceWorkerIdentifier& other);
-    ~ServiceWorkerIdentifier() {}
+        const ServiceWorkerContextCore* context,
+        base::WeakPtr<ServiceWorkerContextCore> context_weak,
+        int64 version_id,
+        const GURL& url);
+    ServiceWorkerIdentifier(const ServiceWorkerIdentifier& other);
+    ~ServiceWorkerIdentifier();
 
     bool Matches(const ServiceWorkerIdentifier& other) const;
 
+    const ServiceWorkerContextCore* context() const;
+    base::WeakPtr<ServiceWorkerContextCore> context_weak() const;
+    int64 version_id() const;
+    GURL url() const;
+
    private:
-    const ServiceWorkerContextCore* const service_worker_context_;
-    const int64 service_worker_version_id_;
+    const ServiceWorkerContextCore* const context_;
+    const base::WeakPtr<ServiceWorkerContextCore> context_weak_;
+    const int64 version_id_;
+    const GURL url_;
   };
 
   // Returns the EmbeddedWorkerDevToolsManager singleton.
   static EmbeddedWorkerDevToolsManager* GetInstance();
 
-  DevToolsAgentHost* GetDevToolsAgentHostForWorker(int worker_process_id,
+  DevToolsAgentHostImpl* GetDevToolsAgentHostForWorker(int worker_process_id,
                                                    int worker_route_id);
-  DevToolsAgentHost* GetDevToolsAgentHostForServiceWorker(
-      const ServiceWorkerIdentifier& service_worker_id);
+
+  std::vector<scoped_refptr<DevToolsAgentHost> > GetOrCreateAllAgentHosts();
 
   // Returns true when the worker must be paused on start because a DevTool
   // window for the same former SharedWorkerInstance is still opened.
@@ -61,7 +73,7 @@ class CONTENT_EXPORT EmbeddedWorkerDevToolsManager {
   bool ServiceWorkerCreated(int worker_process_id,
                             int worker_route_id,
                             const ServiceWorkerIdentifier& service_worker_id);
-  void WorkerContextStarted(int worker_process_id, int worker_route_id);
+  void WorkerReadyForInspection(int worker_process_id, int worker_route_id);
   void WorkerDestroyed(int worker_process_id, int worker_route_id);
 
   void set_debug_service_worker_on_start(bool debug_on_start) {
@@ -73,60 +85,29 @@ class CONTENT_EXPORT EmbeddedWorkerDevToolsManager {
 
  private:
   friend struct DefaultSingletonTraits<EmbeddedWorkerDevToolsManager>;
+  friend class EmbeddedWorkerDevToolsAgentHost;
   friend class EmbeddedWorkerDevToolsManagerTest;
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerDevToolsManagerTest, BasicTest);
   FRIEND_TEST_ALL_PREFIXES(EmbeddedWorkerDevToolsManagerTest, AttachTest);
 
-  enum WorkerState {
-    WORKER_UNINSPECTED,
-    WORKER_INSPECTED,
-    WORKER_TERMINATED,
-    WORKER_PAUSED_FOR_DEBUG_ON_START,
-    WORKER_PAUSED_FOR_REATTACH,
-  };
-
-  class WorkerInfo {
-   public:
-    // Creates WorkerInfo for SharedWorker.
-    explicit WorkerInfo(const SharedWorkerInstance& instance);
-    // Creates WorkerInfo for ServiceWorker.
-    explicit WorkerInfo(const ServiceWorkerIdentifier& service_worker_id);
-    ~WorkerInfo();
-
-    WorkerState state() { return state_; }
-    void set_state(WorkerState new_state) { state_ = new_state; }
-    EmbeddedWorkerDevToolsAgentHost* agent_host() { return agent_host_; }
-    void set_agent_host(EmbeddedWorkerDevToolsAgentHost* agent_host) {
-      agent_host_ = agent_host;
-    }
-    bool Matches(const SharedWorkerInstance& other);
-    bool Matches(const ServiceWorkerIdentifier& other);
-
-   private:
-    scoped_ptr<SharedWorkerInstance> shared_worker_instance_;
-    scoped_ptr<ServiceWorkerIdentifier> service_worker_id_;
-    WorkerState state_;
-    EmbeddedWorkerDevToolsAgentHost* agent_host_;
-  };
-
-  typedef base::ScopedPtrHashMap<WorkerId, WorkerInfo> WorkerInfoMap;
+  typedef std::map<WorkerId, EmbeddedWorkerDevToolsAgentHost*> AgentHostMap;
 
   EmbeddedWorkerDevToolsManager();
   virtual ~EmbeddedWorkerDevToolsManager();
 
-  void RemoveInspectedWorkerData(EmbeddedWorkerDevToolsAgentHost* agent_host);
+  void RemoveInspectedWorkerData(WorkerId id);
 
-  WorkerInfoMap::iterator FindExistingSharedWorkerInfo(
+  AgentHostMap::iterator FindExistingSharedWorkerAgentHost(
       const SharedWorkerInstance& instance);
-  WorkerInfoMap::iterator FindExistingServiceWorkerInfo(
+  AgentHostMap::iterator FindExistingServiceWorkerAgentHost(
       const ServiceWorkerIdentifier& service_worker_id);
 
-  void MoveToPausedState(const WorkerId& id, const WorkerInfoMap::iterator& it);
+  void WorkerRestarted(const WorkerId& id, const AgentHostMap::iterator& it);
 
   // Resets to its initial state as if newly created.
   void ResetForTesting();
 
-  WorkerInfoMap workers_;
+  AgentHostMap workers_;
 
   bool debug_service_worker_on_start_;
 

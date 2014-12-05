@@ -31,14 +31,14 @@ class MenuScrollViewContainer : public View {
   void SetBubbleArrowOffset(int offset);
 
   // View overrides.
-  virtual void OnPaintBackground(gfx::Canvas* canvas) OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  void OnPaintBackground(gfx::Canvas* canvas) override;
+  void Layout() override;
+  gfx::Size GetPreferredSize() const override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
  protected:
   // View override.
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
 
  private:
   // Create the default border.

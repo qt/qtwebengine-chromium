@@ -26,7 +26,6 @@
 #include "webrtc/system_wrappers/interface/clock.h"
 #include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 #include "webrtc/system_wrappers/interface/logging.h"
-#include "webrtc/system_wrappers/interface/rw_lock_wrapper.h"
 #include "webrtc/system_wrappers/interface/tick_util.h"
 #include "webrtc/system_wrappers/interface/trace.h"
 
@@ -123,12 +122,14 @@ AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
       last_audio_decoder_(-1),  // Invalid value.
       previous_audio_activity_(AudioFrame::kVadPassive),
       current_sample_rate_hz_(config.neteq_config.sample_rate_hz),
+      audio_buffer_(new int16_t[AudioFrame::kMaxDataSizeSamples]),
+      last_audio_buffer_(new int16_t[AudioFrame::kMaxDataSizeSamples]),
       nack_(),
       nack_enabled_(false),
       neteq_(NetEq::Create(config.neteq_config)),
-      decode_lock_(RWLockWrapper::CreateRWLock()),
       vad_enabled_(true),
       clock_(config.clock),
+      resampled_last_output_frame_(true),
       av_sync_(false),
       initial_delay_manager_(),
       missing_packets_sync_stream_(),
@@ -145,11 +146,13 @@ AcmReceiver::AcmReceiver(const AudioCodingModule::Config& config)
     neteq_->EnableVad();
   else
     neteq_->DisableVad();
+
+  memset(audio_buffer_.get(), 0, AudioFrame::kMaxDataSizeSamples);
+  memset(last_audio_buffer_.get(), 0, AudioFrame::kMaxDataSizeSamples);
 }
 
 AcmReceiver::~AcmReceiver() {
   delete neteq_;
-  delete decode_lock_;
 }
 
 int AcmReceiver::SetMinimumDelay(int delay_ms) {
@@ -213,29 +216,25 @@ int AcmReceiver::current_sample_rate_hz() const {
 
 // TODO(turajs): use one set of enumerators, e.g. the one defined in
 // common_types.h
+// TODO(henrik.lundin): This method is not used any longer. The call hierarchy
+// stops in voe::Channel::SetNetEQPlayoutMode(). Remove it.
 void AcmReceiver::SetPlayoutMode(AudioPlayoutMode mode) {
   enum NetEqPlayoutMode playout_mode = kPlayoutOn;
-  enum NetEqBackgroundNoiseMode bgn_mode = kBgnOn;
   switch (mode) {
     case voice:
       playout_mode = kPlayoutOn;
-      bgn_mode = kBgnOn;
       break;
     case fax:  // No change to background noise mode.
       playout_mode = kPlayoutFax;
-      bgn_mode = neteq_->BackgroundNoiseMode();
       break;
     case streaming:
       playout_mode = kPlayoutStreaming;
-      bgn_mode = kBgnOff;
       break;
     case off:
       playout_mode = kPlayoutOff;
-      bgn_mode = kBgnOff;
       break;
   }
   neteq_->SetPlayoutMode(playout_mode);
-  neteq_->SetBackgroundNoiseMode(bgn_mode);
 }
 
 AudioPlayoutMode AcmReceiver::PlayoutMode() const {
@@ -331,29 +330,24 @@ int AcmReceiver::InsertPacket(const WebRtcRTPHeader& rtp_header,
     }
   }  // |crit_sect_| is released.
 
-  {
-    WriteLockScoped lock_codecs(*decode_lock_);  // Lock to prevent an encoding.
+  // If |missing_packets_sync_stream_| is allocated then we are in AV-sync and
+  // we may need to insert sync-packets. We don't check |av_sync_| as we are
+  // outside AcmReceiver's critical section.
+  if (missing_packets_sync_stream_.get()) {
+    InsertStreamOfSyncPackets(missing_packets_sync_stream_.get());
+  }
 
-    // If |missing_packets_sync_stream_| is allocated then we are in AV-sync and
-    // we may need to insert sync-packets. We don't check |av_sync_| as we are
-    // outside AcmReceiver's critical section.
-    if (missing_packets_sync_stream_.get()) {
-      InsertStreamOfSyncPackets(missing_packets_sync_stream_.get());
-    }
-
-    if (neteq_->InsertPacket(rtp_header, incoming_payload, length_payload,
-                             receive_timestamp) < 0) {
-      LOG_FERR1(LS_ERROR, "AcmReceiver::InsertPacket", header->payloadType) <<
-          " Failed to insert packet";
-      return -1;
-    }
+  if (neteq_->InsertPacket(rtp_header, incoming_payload, length_payload,
+                           receive_timestamp) < 0) {
+    LOG_FERR1(LS_ERROR, "AcmReceiver::InsertPacket", header->payloadType) <<
+        " Failed to insert packet";
+    return -1;
   }
   return 0;
 }
 
 int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   enum NetEqOutputType type;
-  int16_t* ptr_audio_buffer = audio_frame->data_;
   int samples_per_channel;
   int num_channels;
   bool return_silence = false;
@@ -370,42 +364,28 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
       initial_delay_manager_->LatePackets(timestamp_now,
                                           late_packets_sync_stream_.get());
     }
-
-    if (!return_silence) {
-      // This is our initial guess regarding whether a resampling will be
-      // required. It is based on previous sample rate of netEq. Most often,
-      // this is a correct guess, however, in case that incoming payload changes
-      // the resampling might might be needed. By doing so, we avoid an
-      // unnecessary memcpy().
-      if (desired_freq_hz != -1 &&
-          current_sample_rate_hz_ != desired_freq_hz) {
-        ptr_audio_buffer = audio_buffer_;
-      }
-    }
   }
 
-  {
-    WriteLockScoped lock_codecs(*decode_lock_);  // Lock to prevent an encoding.
-
-    // If |late_packets_sync_stream_| is allocated then we have been in AV-sync
-    // mode and we might have to insert sync-packets.
-    if (late_packets_sync_stream_.get()) {
-      InsertStreamOfSyncPackets(late_packets_sync_stream_.get());
-      if (return_silence)  // Silence generated, don't pull from NetEq.
-        return 0;
-    }
-
-    if (neteq_->GetAudio(AudioFrame::kMaxDataSizeSamples,
-                         ptr_audio_buffer,
-                         &samples_per_channel,
-                         &num_channels, &type) != NetEq::kOK) {
-      LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "NetEq Failed.";
-      return -1;
-    }
+  // If |late_packets_sync_stream_| is allocated then we have been in AV-sync
+  // mode and we might have to insert sync-packets.
+  if (late_packets_sync_stream_.get()) {
+    InsertStreamOfSyncPackets(late_packets_sync_stream_.get());
+    if (return_silence)  // Silence generated, don't pull from NetEq.
+      return 0;
   }
 
   // Accessing members, take the lock.
   CriticalSectionScoped lock(crit_sect_.get());
+
+  // Always write the output to |audio_buffer_| first.
+  if (neteq_->GetAudio(AudioFrame::kMaxDataSizeSamples,
+                       audio_buffer_.get(),
+                       &samples_per_channel,
+                       &num_channels,
+                       &type) != NetEq::kOK) {
+    LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "NetEq Failed.";
+    return -1;
+  }
 
   // Update NACK.
   int decoded_sequence_num = 0;
@@ -424,44 +404,52 @@ int AcmReceiver::GetAudio(int desired_freq_hz, AudioFrame* audio_frame) {
   bool need_resampling = (desired_freq_hz != -1) &&
       (current_sample_rate_hz_ != desired_freq_hz);
 
-  if (ptr_audio_buffer == audio_buffer_) {
-    // Data is written to local buffer.
-    if (need_resampling) {
-      samples_per_channel =
-          resampler_.Resample10Msec(audio_buffer_,
-                                    current_sample_rate_hz_,
-                                    desired_freq_hz,
-                                    num_channels,
-                                    AudioFrame::kMaxDataSizeSamples,
-                                    audio_frame->data_);
-      if (samples_per_channel < 0) {
-        LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "Resampler Failed.";
-        return -1;
-      }
-    } else {
-      // We might end up here ONLY if codec is changed.
-      memcpy(audio_frame->data_, audio_buffer_, samples_per_channel *
-             num_channels * sizeof(int16_t));
-    }
-  } else {
-    // Data is written into |audio_frame|.
-    if (need_resampling) {
-      // We might end up here ONLY if codec is changed.
-      samples_per_channel =
-          resampler_.Resample10Msec(audio_frame->data_,
-                                    current_sample_rate_hz_,
-                                    desired_freq_hz,
-                                    num_channels,
-                                    AudioFrame::kMaxDataSizeSamples,
-                                    audio_buffer_);
-      if (samples_per_channel < 0) {
-        LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio") << "Resampler Failed.";
-        return -1;
-      }
-      memcpy(audio_frame->data_, audio_buffer_, samples_per_channel *
-             num_channels * sizeof(int16_t));
+  if (need_resampling && !resampled_last_output_frame_) {
+    // Prime the resampler with the last frame.
+    int16_t temp_output[AudioFrame::kMaxDataSizeSamples];
+    samples_per_channel =
+        resampler_.Resample10Msec(last_audio_buffer_.get(),
+                                  current_sample_rate_hz_,
+                                  desired_freq_hz,
+                                  num_channels,
+                                  AudioFrame::kMaxDataSizeSamples,
+                                  temp_output);
+    if (samples_per_channel < 0) {
+      LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio")
+          << "Resampling last_audio_buffer_ failed.";
+      return -1;
     }
   }
+
+  // The audio in |audio_buffer_| is tansferred to |audio_frame_| below, either
+  // through resampling, or through straight memcpy.
+  // TODO(henrik.lundin) Glitches in the output may appear if the output rate
+  // from NetEq changes. See WebRTC issue 3923.
+  if (need_resampling) {
+    samples_per_channel =
+        resampler_.Resample10Msec(audio_buffer_.get(),
+                                  current_sample_rate_hz_,
+                                  desired_freq_hz,
+                                  num_channels,
+                                  AudioFrame::kMaxDataSizeSamples,
+                                  audio_frame->data_);
+    if (samples_per_channel < 0) {
+      LOG_FERR0(LS_ERROR, "AcmReceiver::GetAudio")
+          << "Resampling audio_buffer_ failed.";
+      return -1;
+    }
+    resampled_last_output_frame_ = true;
+  } else {
+    resampled_last_output_frame_ = false;
+    // We might end up here ONLY if codec is changed.
+    memcpy(audio_frame->data_,
+           audio_buffer_.get(),
+           samples_per_channel * num_channels * sizeof(int16_t));
+  }
+
+  // Swap buffers, so that the current audio is stored in |last_audio_buffer_|
+  // for next time.
+  audio_buffer_.swap(last_audio_buffer_);
 
   audio_frame->num_channels_ = num_channels;
   audio_frame->samples_per_channel_ = samples_per_channel;
@@ -809,10 +797,6 @@ bool AcmReceiver::GetSilence(int desired_sample_rate_hz, AudioFrame* frame) {
   int samples = frame->samples_per_channel_ * frame->num_channels_;
   memset(frame->data_, 0, samples * sizeof(int16_t));
   return true;
-}
-
-NetEqBackgroundNoiseMode AcmReceiver::BackgroundNoiseModeForTest() const {
-  return neteq_->BackgroundNoiseMode();
 }
 
 int AcmReceiver::RtpHeaderToCodecIndex(

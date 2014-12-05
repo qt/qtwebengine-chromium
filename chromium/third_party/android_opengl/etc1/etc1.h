@@ -35,4 +35,36 @@ bool etc1_encode_image(const unsigned char* pIn, unsigned int width, unsigned in
          unsigned int pixelSize, unsigned int stride, unsigned char* pOut, unsigned int outWidth,
          unsigned int outHeight);
 
+// Decode an entire image.
+// pIn - pointer to encoded data.
+// pOut - pointer to the image data. Will be written such that
+//        pixel (x,y) is at pIn + pixelSize * x + stride * y. Must be
+//        large enough to store entire image.
+// pixelSize can be 2 or 3. 2 is an GL_UNSIGNED_SHORT_5_6_5 image, 3 is a GL_BYTE RGB image.
+// returns false if there is an error.
+
+bool etc1_decode_image(const unsigned char* pIn, unsigned char* pOut,
+        unsigned int width, unsigned int height,
+        unsigned int pixelSize, unsigned int stride);
+
+// Size of a PKM header, in bytes.
+
+#define ETC_PKM_HEADER_SIZE 16
+
+// Format a PKM header
+
+void etc1_pkm_format_header(unsigned char* pHeader, unsigned int width, unsigned int height);
+
+// Check if a PKM header is correctly formatted.
+
+bool etc1_pkm_is_valid(const unsigned char* pHeader);
+
+// Read the image width from a PKM header
+
+unsigned int etc1_pkm_get_width(const unsigned char* pHeader);
+
+// Read the image height from a PKM header
+
+unsigned int etc1_pkm_get_height(const unsigned char* pHeader);
+
 #endif // THIRD_PARTY_ANDROID_OPENGL_ETC1_ETC1_H_

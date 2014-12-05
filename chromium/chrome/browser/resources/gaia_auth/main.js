@@ -48,6 +48,7 @@ Authenticator.getInstance = function() {
 
 Authenticator.prototype = {
   email_: null,
+  gaiaId_: null,
 
   // Depending on the key type chosen, this will contain the plain text password
   // or a credential derived from it along with the information required to
@@ -56,6 +57,9 @@ Authenticator.prototype = {
   // when support for key types other than plain text password is added.
   passwordBytes_: null,
 
+  chooseWhatToSync_: false,
+  skipForNow_: false,
+  sessionIndex_: null,
   attemptToken_: null,
 
   // Input params from extension initialization URL.
@@ -63,7 +67,7 @@ Authenticator.prototype = {
   intputEmail_: undefined,
 
   isSAMLFlow_: false,
-  isSAMLEnabled_: false,
+  gaiaLoaded_: false,
   supportChannel_: null,
 
   GAIA_URL: 'https://accounts.google.com/',
@@ -87,22 +91,21 @@ Authenticator.prototype = {
     this.initialFrameUrl_ = params.frameUrl || this.constructInitialFrameUrl_();
     this.initialFrameUrlWithoutParams_ = stripParams(this.initialFrameUrl_);
 
+    // For CrOS 'ServiceLogin' we assume that Gaia is loaded if we recieved
+    // 'clearOldAttempts' message. For other scenarios Gaia doesn't send this
+    // message so we have to rely on 'load' event.
+    // TODO(dzhioev): Do not rely on 'load' event after b/16313327 is fixed.
+    this.assumeLoadedOnLoadEvent_ =
+        this.gaiaPath_.indexOf('ServiceLogin') !== 0 ||
+        this.service_ !== 'chromeoslogin';
+
     document.addEventListener('DOMContentLoaded', this.onPageLoad_.bind(this));
-    if (!this.desktopMode_) {
-      // SAML is always enabled in desktop mode, thus no need to listen for
-      // enableSAML event.
-      document.addEventListener('enableSAML', this.onEnableSAML_.bind(this));
-    }
   },
 
   isGaiaMessage_: function(msg) {
     // Not quite right, but good enough.
     return this.gaiaUrl_.indexOf(msg.origin) == 0 ||
            this.GAIA_URL.indexOf(msg.origin) == 0;
-  },
-
-  isInternalMessage_: function(msg) {
-    return msg.origin == Authenticator.THIS_EXTENSION_ORIGIN;
   },
 
   isParentMessage_: function(msg) {
@@ -125,56 +128,67 @@ Authenticator.prototype = {
 
   onPageLoad_: function() {
     window.addEventListener('message', this.onMessage.bind(this), false);
+    this.initSupportChannel_();
 
     var gaiaFrame = $('gaia-frame');
     gaiaFrame.src = this.initialFrameUrl_;
 
-    if (this.desktopMode_) {
+    if (this.assumeLoadedOnLoadEvent_) {
       var handler = function() {
-        this.onLoginUILoaded_();
         gaiaFrame.removeEventListener('load', handler);
-
-        this.initDesktopChannel_();
+        if (!this.gaiaLoaded_) {
+          this.gaiaLoaded_ = true;
+          this.maybeInitialized_();
+        }
       }.bind(this);
       gaiaFrame.addEventListener('load', handler);
     }
   },
 
-  initDesktopChannel_: function() {
-    this.supportChannel_ = new Channel();
-    this.supportChannel_.connect('authMain');
+  initSupportChannel_: function() {
+    var supportChannel = new Channel();
+    supportChannel.connect('authMain');
 
-    var channelConnected = false;
-    this.supportChannel_.registerMessage('channelConnected', function() {
-      channelConnected = true;
+    supportChannel.registerMessage('channelConnected', function() {
+      if (this.supportChannel_) {
+        console.error('Support channel is already initialized.');
+        return;
+      }
+      this.supportChannel_ = supportChannel;
 
-      this.supportChannel_.send({
-        name: 'initDesktopFlow',
-        gaiaUrl: this.gaiaUrl_,
-        continueUrl: stripParams(this.continueUrl_),
-        isConstrainedWindow: this.isConstrainedWindow_
-      });
+      if (this.desktopMode_) {
+        this.supportChannel_.send({
+          name: 'initDesktopFlow',
+          gaiaUrl: this.gaiaUrl_,
+          continueUrl: stripParams(this.continueUrl_),
+          isConstrainedWindow: this.isConstrainedWindow_
+        });
+        this.supportChannel_.registerMessage(
+            'switchToFullTab', this.switchToFullTab_.bind(this));
+      }
       this.supportChannel_.registerMessage(
-          'switchToFullTab', this.switchToFullTab_.bind(this));
-      this.supportChannel_.registerMessage(
-          'completeLogin', this.completeLogin_.bind(this));
-
-      this.onEnableSAML_();
+          'completeLogin', this.onCompleteLogin_.bind(this));
+      this.initSAML_();
+      this.maybeInitialized_();
     }.bind(this));
 
     window.setTimeout(function() {
-      if (!channelConnected) {
+      if (!this.supportChannel_) {
         // Re-initialize the channel if it is not connected properly, e.g.
         // connect may be called before background script started running.
-        this.initDesktopChannel_();
+        this.initSupportChannel_();
       }
     }.bind(this), 200);
   },
 
   /**
-   * Invoked when the login UI is initialized or reset.
+   * Called when one of the initialization stages has finished. If all the
+   * needed parts are initialized, notifies parent about successfull
+   * initialization.
    */
-  onLoginUILoaded_: function() {
+  maybeInitialized_: function() {
+    if (!this.gaiaLoaded_ || !this.supportChannel_)
+      return;
     var msg = {
       'method': 'loginUILoaded'
     };
@@ -184,7 +198,7 @@ Authenticator.prototype = {
   /**
    * Invoked when the background script sends a message to indicate that the
    * current content does not fit in a constrained window.
-   * @param {Object=} opt_extraMsg Optional extra info to send.
+   * @param {Object=} msg Extra info to send.
    */
   switchToFullTab_: function(msg) {
     var parentMsg = {
@@ -206,26 +220,21 @@ Authenticator.prototype = {
                   this.passwordBytes_,
       'usingSAML': this.isSAMLFlow_,
       'chooseWhatToSync': this.chooseWhatToSync_ || false,
-      'skipForNow': opt_extraMsg && opt_extraMsg.skipForNow,
-      'sessionIndex': opt_extraMsg && opt_extraMsg.sessionIndex
+      'skipForNow': (opt_extraMsg && opt_extraMsg.skipForNow) ||
+                    this.skipForNow_,
+      'sessionIndex': (opt_extraMsg && opt_extraMsg.sessionIndex) ||
+                      this.sessionIndex_,
+      'gaiaId': (opt_extraMsg && opt_extraMsg.gaiaId) || this.gaiaId_
     };
     window.parent.postMessage(msg, this.parentPage_);
-    if (this.isSAMLEnabled_)
-      this.supportChannel_.send({name: 'resetAuth'});
+    this.supportChannel_.send({name: 'resetAuth'});
   },
 
   /**
-   * Invoked when 'enableSAML' event is received to initialize SAML support on
-   * Chrome OS, or when initDesktopChannel_ is called on desktop.
+   * Invoked when support channel is connected.
    */
-  onEnableSAML_: function() {
-    this.isSAMLEnabled_ = true;
+  initSAML_: function() {
     this.isSAMLFlow_ = false;
-
-    if (!this.supportChannel_) {
-      this.supportChannel_ = new Channel();
-      this.supportChannel_.connect('authMain');
-    }
 
     this.supportChannel_.registerMessage(
         'onAuthPageLoaded', this.onAuthPageLoaded_.bind(this));
@@ -254,14 +263,13 @@ Authenticator.prototype = {
    * @param {!Object} msg Details sent with the message.
    */
   onAuthPageLoaded_: function(msg) {
-    var isSAMLPage = msg.url.indexOf(this.gaiaUrl_) != 0;
-
-    if (isSAMLPage && !this.isSAMLFlow_) {
+    if (msg.isSAMLPage && !this.isSAMLFlow_) {
       // GAIA redirected to a SAML login page. The credentials provided to this
       // page will determine what user gets logged in. The credentials obtained
       // from the GAIA login form are no longer relevant and can be discarded.
       this.isSAMLFlow_ = true;
       this.email_ = null;
+      this.gaiaId_ = null;
       this.passwordBytes_ = null;
     }
 
@@ -310,8 +318,9 @@ Authenticator.prototype = {
         console.error('Authenticator.onAPICall_: unsupported key type');
         return;
       }
+      // Not setting |email_| and |gaiaId_| because this API call will
+      // eventually be followed by onCompleteLogin_() which does set it.
       this.apiToken_ = call.token;
-      this.email_ = call.user;
       this.passwordBytes_ = call.passwordBytes;
     } else if (call.method == 'confirm') {
       if (call.token != this.apiToken_)
@@ -336,21 +345,34 @@ Authenticator.prototype = {
     });
   },
 
-  onConfirmLogin_: function() {
-    if (!this.isSAMLFlow_) {
-      this.completeLogin_();
+  /**
+   * Callback invoked for 'completeLogin' message.
+   * @param {Object=} msg Message sent from background page.
+   */
+  onCompleteLogin_: function(msg) {
+    if (!msg.email || !msg.gaiaId || !msg.sessionIndex) {
+      console.error('Missing fields to complete login.');
+      window.parent.postMessage({method: 'missingGaiaInfo'}, this.parentPage_);
       return;
     }
 
-    var apiUsed = !!this.passwordBytes_;
+    // Skip SAML extra steps for desktop flow and non-SAML flow.
+    if (!this.isSAMLFlow_ || this.desktopMode_) {
+      this.completeLogin_(msg);
+      return;
+    }
 
-    // Retrieve the e-mail address of the user who just authenticated from GAIA.
-    window.parent.postMessage({method: 'retrieveAuthenticatedUserEmail',
-                               attemptToken: this.attemptToken_,
-                               apiUsed: apiUsed},
-                              this.parentPage_);
+    this.email_ = msg.email;
+    this.gaiaId_ = msg.gaiaId;
+    // Password from |msg| is not used because ChromeOS SAML flow
+    // gets password by asking user to confirm.
+    this.skipForNow_ = msg.skipForNow;
+    this.sessionIndex_ = msg.sessionIndex;
 
-    if (!apiUsed) {
+    if (this.passwordBytes_) {
+      window.parent.postMessage({method: 'samlApiUsed'}, this.parentPage_);
+      this.completeLogin_(msg);
+    } else {
       this.supportChannel_.sendWithCallback(
           {name: 'getScrapedPasswords'},
           function(passwords) {
@@ -368,13 +390,6 @@ Authenticator.prototype = {
     }
   },
 
-  maybeCompleteSAMLLogin_: function() {
-    // SAML login is complete when the user's e-mail address has been retrieved
-    // from GAIA and the user has successfully confirmed the password.
-    if (this.email_ !== null && this.passwordBytes_ !== null)
-      this.completeLogin_();
-  },
-
   onVerifyConfirmedPassword_: function(password) {
     this.supportChannel_.sendWithCallback(
         {name: 'getScrapedPasswords'},
@@ -382,7 +397,10 @@ Authenticator.prototype = {
           for (var i = 0; i < passwords.length; ++i) {
             if (passwords[i] == password) {
               this.passwordBytes_ = passwords[i];
-              this.maybeCompleteSAMLLogin_();
+              // SAML login is complete when the user has successfully
+              // confirmed the password.
+              if (this.passwordBytes_ !== null)
+                this.completeLogin_();
               return;
             }
           }
@@ -395,32 +413,31 @@ Authenticator.prototype = {
   onMessage: function(e) {
     var msg = e.data;
     if (msg.method == 'attemptLogin' && this.isGaiaMessage_(e)) {
+      // At this point GAIA does not yet know the gaiaId, so its not set here.
       this.email_ = msg.email;
       this.passwordBytes_ = msg.password;
       this.attemptToken_ = msg.attemptToken;
       this.chooseWhatToSync_ = msg.chooseWhatToSync;
       this.isSAMLFlow_ = false;
-      if (this.isSAMLEnabled_)
+      if (this.supportChannel_)
         this.supportChannel_.send({name: 'startAuth'});
+      else
+        console.error('Support channel is not initialized.');
     } else if (msg.method == 'clearOldAttempts' && this.isGaiaMessage_(e)) {
+      if (!this.gaiaLoaded_) {
+        this.gaiaLoaded_ = true;
+        this.maybeInitialized_();
+      }
       this.email_ = null;
+      this.gaiaId_ = null;
+      this.sessionIndex_ = false;
       this.passwordBytes_ = null;
       this.attemptToken_ = null;
       this.isSAMLFlow_ = false;
-      this.onLoginUILoaded_();
-      if (this.isSAMLEnabled_)
+      this.skipForNow_ = false;
+      this.chooseWhatToSync_ = false;
+      if (this.supportChannel_)
         this.supportChannel_.send({name: 'resetAuth'});
-    } else if (msg.method == 'setAuthenticatedUserEmail' &&
-               this.isParentMessage_(e)) {
-      if (this.attemptToken_ == msg.attemptToken) {
-        this.email_ = msg.email;
-        this.maybeCompleteSAMLLogin_();
-      }
-    } else if (msg.method == 'confirmLogin' && this.isInternalMessage_(e)) {
-      if (this.attemptToken_ == msg.attemptToken)
-        this.onConfirmLogin_();
-      else
-        console.error('Authenticator.onMessage: unexpected attemptToken!?');
     } else if (msg.method == 'verifyConfirmedPassword' &&
                this.isParentMessage_(e)) {
       this.onVerifyConfirmedPassword_(msg.password);

@@ -47,7 +47,6 @@
 #include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderTableCell.h"
 #include "core/rendering/RenderView.h"
-#include "core/rendering/RenderWidget.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/svg/RenderSVGContainer.h"
 #include "core/rendering/svg/RenderSVGGradientStop.h"
@@ -61,7 +60,7 @@
 #include "wtf/Vector.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -158,6 +157,11 @@ String quoteAndEscapeNonPrintables(const String& s)
     return result.toString();
 }
 
+TextStream& operator<<(TextStream& ts, const Color& c)
+{
+    return ts << c.nameForRenderTreeAsText();
+}
+
 void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, RenderAsTextBehavior behavior)
 {
     ts << o.renderName();
@@ -170,9 +174,6 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
 
     if (o.node()) {
         String tagName = getTagName(o.node());
-        // FIXME: Temporary hack to make tests pass by simulating the old generated content output.
-        if (o.isPseudoElement() || (o.parent() && o.parent()->isPseudoElement()))
-            tagName = emptyAtom;
         if (!tagName.isEmpty()) {
             ts << " {" << tagName << "}";
             // flag empty or unstyled AppleStyleSpan because we never
@@ -189,21 +190,21 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
     if (o.isText()) {
         // FIXME: Would be better to dump the bounding box x and y rather than the first run's x and y, but that would involve updating
         // many test results.
-        const RenderText& text = *toRenderText(&o);
+        const RenderText& text = toRenderText(o);
         IntRect linesBox = text.linesBoundingBox();
         r = IntRect(text.firstRunX(), text.firstRunY(), linesBox.width(), linesBox.height());
         if (adjustForTableCells && !text.firstTextBox())
             adjustForTableCells = false;
     } else if (o.isRenderInline()) {
         // FIXME: Would be better not to just dump 0, 0 as the x and y here.
-        const RenderInline& inlineFlow = *toRenderInline(&o);
+        const RenderInline& inlineFlow = toRenderInline(o);
         r = IntRect(0, 0, inlineFlow.linesBoundingBox().width(), inlineFlow.linesBoundingBox().height());
         adjustForTableCells = false;
     } else if (o.isTableCell()) {
         // FIXME: Deliberately dump the "inner" box of table cells, since that is what current results reflect.  We'd like
         // to clean up the results to dump both the outer box and the intrinsic padding so that both bits of information are
         // captured by the results.
-        const RenderTableCell& cell = *toRenderTableCell(&o);
+        const RenderTableCell& cell = toRenderTableCell(o);
         r = LayoutRect(cell.x(), cell.y() + cell.intrinsicPaddingBefore(), cell.width(), cell.height() - cell.intrinsicPaddingBefore() - cell.intrinsicPaddingAfter());
     } else if (o.isBox())
         r = toRenderBox(&o)->frameRect();
@@ -221,23 +222,23 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
         if (o.parent()) {
             Color color = o.resolveColor(CSSPropertyColor);
             if (o.parent()->resolveColor(CSSPropertyColor) != color)
-                ts << " [color=" << color.nameForRenderTreeAsText() << "]";
+                ts << " [color=" << color << "]";
 
             // Do not dump invalid or transparent backgrounds, since that is the default.
             Color backgroundColor = o.resolveColor(CSSPropertyBackgroundColor);
             if (o.parent()->resolveColor(CSSPropertyBackgroundColor) != backgroundColor
                 && backgroundColor.rgb())
-                ts << " [bgcolor=" << backgroundColor.nameForRenderTreeAsText() << "]";
+                ts << " [bgcolor=" << backgroundColor << "]";
 
             Color textFillColor = o.resolveColor(CSSPropertyWebkitTextFillColor);
             if (o.parent()->resolveColor(CSSPropertyWebkitTextFillColor) != textFillColor
                 && textFillColor != color && textFillColor.rgb())
-                ts << " [textFillColor=" << textFillColor.nameForRenderTreeAsText() << "]";
+                ts << " [textFillColor=" << textFillColor << "]";
 
             Color textStrokeColor = o.resolveColor(CSSPropertyWebkitTextStrokeColor);
             if (o.parent()->resolveColor(CSSPropertyWebkitTextStrokeColor) != textStrokeColor
                 && textStrokeColor != color && textStrokeColor.rgb())
-                ts << " [textStrokeColor=" << textStrokeColor.nameForRenderTreeAsText() << "]";
+                ts << " [textStrokeColor=" << textStrokeColor << "]";
 
             if (o.parent()->style()->textStrokeWidth() != o.style()->textStrokeWidth() && o.style()->textStrokeWidth() > 0)
                 ts << " [textStrokeWidth=" << o.style()->textStrokeWidth() << "]";
@@ -246,7 +247,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
         if (!o.isBoxModelObject())
             return;
 
-        const RenderBoxModelObject& box = *toRenderBoxModelObject(&o);
+        const RenderBoxModelObject& box = toRenderBoxModelObject(o);
         if (box.borderTop() || box.borderRight() || box.borderBottom() || box.borderLeft()) {
             ts << " [border:";
 
@@ -256,8 +257,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
             else {
                 ts << " (" << box.borderTop() << "px ";
                 printBorderStyle(ts, o.style()->borderTopStyle());
-                Color col = o.resolveColor(CSSPropertyBorderTopColor);
-                ts << col.nameForRenderTreeAsText() << ")";
+                ts << o.resolveColor(CSSPropertyBorderTopColor) << ")";
             }
 
             if (o.style()->borderRight() != prevBorder) {
@@ -267,8 +267,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderRight() << "px ";
                     printBorderStyle(ts, o.style()->borderRightStyle());
-                    Color col = o.resolveColor(CSSPropertyBorderRightColor);
-                    ts << col.nameForRenderTreeAsText() << ")";
+                    ts << o.resolveColor(CSSPropertyBorderRightColor) << ")";
                 }
             }
 
@@ -279,8 +278,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderBottom() << "px ";
                     printBorderStyle(ts, o.style()->borderBottomStyle());
-                    Color col = o.resolveColor(CSSPropertyBorderBottomColor);
-                    ts << col.nameForRenderTreeAsText() << ")";
+                    ts << o.resolveColor(CSSPropertyBorderBottomColor) << ")";
                 }
             }
 
@@ -291,8 +289,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
                 else {
                     ts << " (" << box.borderLeft() << "px ";
                     printBorderStyle(ts, o.style()->borderLeftStyle());
-                    Color col = o.resolveColor(CSSPropertyBorderLeftColor);
-                    ts << col.nameForRenderTreeAsText() << ")";
+                    ts << o.resolveColor(CSSPropertyBorderLeftColor) << ")";
                 }
             }
 
@@ -301,7 +298,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
     }
 
     if (o.isTableCell()) {
-        const RenderTableCell& c = *toRenderTableCell(&o);
+        const RenderTableCell& c = toRenderTableCell(o);
         ts << " [r=" << c.rowIndex() << " c=" << c.col() << " rs=" << c.rowSpan() << " cs=" << c.colSpan() << "]";
     }
 
@@ -324,7 +321,7 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
     }
 
     if (o.isListMarker()) {
-        String text = toRenderListMarker(&o)->text();
+        String text = toRenderListMarker(o).text();
         if (!text.isEmpty()) {
             if (text.length() != 1)
                 text = quoteAndEscapeNonPrintables(text);
@@ -348,17 +345,18 @@ void RenderTreeAsText::writeRenderObject(TextStream& ts, const RenderObject& o, 
     }
 
     if (behavior & RenderAsTextShowIDAndClass) {
-        if (Node* node = o.node()) {
-            if (node->hasID())
-                ts << " id=\"" + toElement(node)->getIdAttribute() + "\"";
+        Node* node = o.node();
+        if (node && node->isElementNode()) {
+            Element& element = toElement(*node);
+            if (element.hasID())
+                ts << " id=\"" + element.getIdAttribute() + "\"";
 
-            if (node->hasClass()) {
+            if (element.hasClass()) {
                 ts << " class=\"";
-                Element* element = toElement(node);
-                for (size_t i = 0; i < element->classNames().size(); ++i) {
+                for (size_t i = 0; i < element.classNames().size(); ++i) {
                     if (i > 0)
                         ts << " ";
-                    ts << element->classNames()[i];
+                    ts << element.classNames()[i];
                 }
                 ts << "\"";
             }
@@ -429,11 +427,11 @@ static void writeTextRun(TextStream& ts, const RenderText& o, const InlineTextBo
 void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavior behavior)
 {
     if (o.isSVGShape()) {
-        write(ts, *toRenderSVGShape(&o), indent);
+        write(ts, toRenderSVGShape(o), indent);
         return;
     }
     if (o.isSVGGradientStop()) {
-        writeSVGGradientStop(ts, *toRenderSVGGradientStop(&o), indent);
+        writeSVGGradientStop(ts, toRenderSVGGradientStop(o), indent);
         return;
     }
     if (o.isSVGResourceContainer()) {
@@ -445,19 +443,19 @@ void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavi
         return;
     }
     if (o.isSVGRoot()) {
-        write(ts, *toRenderSVGRoot(&o), indent);
+        write(ts, toRenderSVGRoot(o), indent);
         return;
     }
     if (o.isSVGText()) {
-        writeSVGText(ts, *toRenderSVGText(&o), indent);
+        writeSVGText(ts, toRenderSVGText(o), indent);
         return;
     }
     if (o.isSVGInlineText()) {
-        writeSVGInlineText(ts, *toRenderSVGInlineText(&o), indent);
+        writeSVGInlineText(ts, toRenderSVGInlineText(o), indent);
         return;
     }
     if (o.isSVGImage()) {
-        writeSVGImage(ts, *toRenderSVGImage(&o), indent);
+        writeSVGImage(ts, toRenderSVGImage(o), indent);
         return;
     }
 
@@ -467,7 +465,7 @@ void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavi
     ts << "\n";
 
     if (o.isText() && !o.isBR()) {
-        const RenderText& text = *toRenderText(&o);
+        const RenderText& text = toRenderText(o);
         for (InlineTextBox* box = text.firstTextBox(); box; box = box->nextTextBox()) {
             writeIndent(ts, indent + 1);
             writeTextRun(ts, text, *box);
@@ -480,11 +478,11 @@ void write(TextStream& ts, const RenderObject& o, int indent, RenderAsTextBehavi
         write(ts, *child, indent + 1, behavior);
     }
 
-    if (o.isWidget()) {
-        Widget* widget = toRenderWidget(&o)->widget();
+    if (o.isRenderPart()) {
+        Widget* widget = toRenderPart(o).widget();
         if (widget && widget->isFrameView()) {
             FrameView* view = toFrameView(widget);
-            RenderView* root = view->frame().contentRenderer();
+            RenderView* root = view->renderView();
             if (root) {
                 view->layout();
                 RenderLayer* l = root->layer();
@@ -549,10 +547,8 @@ static void write(TextStream& ts, RenderLayer& l,
     else if (paintPhase == LayerPaintPhaseForeground)
         ts << " layerType: foreground only";
 
-    if (l.blendInfo().childLayerHasBlendMode())
-        ts << " isolatesBlending";
-    if (l.blendInfo().hasBlendMode())
-        ts << " blendMode: " << compositeOperatorName(CompositeSourceOver, l.blendInfo().blendMode());
+    if (l.renderer()->hasBlendMode())
+        ts << " blendMode: " << compositeOperatorName(CompositeSourceOver, l.renderer()->style()->blendMode());
 
     if (behavior & RenderAsTextShowCompositedLayers) {
         if (l.hasCompositedLayerMapping()) {
@@ -560,8 +556,6 @@ static void write(TextStream& ts, RenderLayer& l,
                 << l.compositedLayerMapping()->compositedBounds()
                 << ", drawsContent="
                 << l.compositedLayerMapping()->mainGraphicsLayer()->drawsContent()
-                << ", paints into ancestor="
-                << l.compositedLayerMapping()->paintsIntoCompositedAncestor()
                 << (l.shouldIsolateCompositedDescendants() ? ", isolatesCompositedBlending" : "")
                 << ")";
         }
@@ -574,20 +568,23 @@ static void write(TextStream& ts, RenderLayer& l,
 }
 
 void RenderTreeAsText::writeLayers(TextStream& ts, const RenderLayer* rootLayer, RenderLayer* layer,
-                        const LayoutRect& paintRect, int indent, RenderAsTextBehavior behavior)
+    const LayoutRect& paintRect, int indent, RenderAsTextBehavior behavior)
 {
-    // FIXME: Apply overflow to the root layer to not break every test.  Complete hack.  Sigh.
+    // FIXME: Apply overflow to the root layer to not break every test. Complete hack. Sigh.
     LayoutRect paintDirtyRect(paintRect);
     if (rootLayer == layer) {
         paintDirtyRect.setWidth(max<LayoutUnit>(paintDirtyRect.width(), rootLayer->renderBox()->layoutOverflowRect().maxX()));
         paintDirtyRect.setHeight(max<LayoutUnit>(paintDirtyRect.height(), rootLayer->renderBox()->layoutOverflowRect().maxY()));
-        layer->setSize(layer->size().expandedTo(pixelSnappedIntSize(layer->renderBox()->maxLayoutOverflow(), LayoutPoint(0, 0))));
     }
 
     // Calculate the clip rects we should use.
     LayoutRect layerBounds;
     ClipRect damageRect, clipRectToApply, outlineRect;
-    layer->clipper().calculateRects(ClipRectsContext(rootLayer, TemporaryClipRects), paintDirtyRect, layerBounds, damageRect, clipRectToApply, outlineRect);
+    layer->clipper().calculateRects(ClipRectsContext(rootLayer, UncachedClipRects), paintDirtyRect, layerBounds, damageRect, clipRectToApply, outlineRect);
+
+    // FIXME: Apply overflow to the root layer to not break every test. Complete hack. Sigh.
+    if (rootLayer == layer)
+        layerBounds.setSize(layer->size().expandedTo(pixelSnappedIntSize(layer->renderBox()->maxLayoutOverflow(), LayoutPoint(0, 0))));
 
     // Ensure our lists are up-to-date.
     layer->stackingNode()->updateLayerListsIfNeeded();
@@ -636,7 +633,7 @@ void RenderTreeAsText::writeLayers(TextStream& ts, const RenderLayer* rootLayer,
     }
 }
 
-static String nodePosition(Node* node)
+String nodePositionAsStringForTesting(Node* node)
 {
     StringBuilder result;
 
@@ -683,13 +680,14 @@ static void writeSelection(TextStream& ts, const RenderObject* o)
 
     VisibleSelection selection = frame->selection().selection();
     if (selection.isCaret()) {
-        ts << "caret: position " << selection.start().deprecatedEditingOffset() << " of " << nodePosition(selection.start().deprecatedNode());
+        ts << "caret: position " << selection.start().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().deprecatedNode());
         if (selection.affinity() == UPSTREAM)
             ts << " (upstream affinity)";
         ts << "\n";
-    } else if (selection.isRange())
-        ts << "selection start: position " << selection.start().deprecatedEditingOffset() << " of " << nodePosition(selection.start().deprecatedNode()) << "\n"
-           << "selection end:   position " << selection.end().deprecatedEditingOffset() << " of " << nodePosition(selection.end().deprecatedNode()) << "\n";
+    } else if (selection.isRange()) {
+        ts << "selection start: position " << selection.start().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.start().deprecatedNode()) << "\n"
+            << "selection end:   position " << selection.end().deprecatedEditingOffset() << " of " << nodePositionAsStringForTesting(selection.end().deprecatedNode()) << "\n";
+    }
 }
 
 static String externalRepresentation(RenderBox* renderer, RenderAsTextBehavior behavior)
@@ -775,4 +773,4 @@ String markerTextForListItem(Element* element)
     return toRenderListItem(renderer)->markerText();
 }
 
-} // namespace WebCore
+} // namespace blink

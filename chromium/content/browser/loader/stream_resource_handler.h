@@ -8,8 +8,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/browser/loader/resource_handler.h"
-#include "content/browser/streams/stream_write_observer.h"
-#include "url/gurl.h"
+#include "content/browser/loader/stream_writer.h"
 
 namespace net {
 class URLRequest;
@@ -20,8 +19,7 @@ namespace content {
 class StreamRegistry;
 
 // Redirect this resource to a stream.
-class StreamResourceHandler : public StreamWriteObserver,
-                              public ResourceHandler {
+class StreamResourceHandler : public ResourceHandler {
  public:
   // |origin| will be used to construct the URL for the Stream. See
   // WebCore::BlobURL and and WebCore::SecurityOrigin in Blink to understand
@@ -29,44 +27,42 @@ class StreamResourceHandler : public StreamWriteObserver,
   StreamResourceHandler(net::URLRequest* request,
                         StreamRegistry* registry,
                         const GURL& origin);
-  virtual ~StreamResourceHandler();
+  ~StreamResourceHandler() override;
 
-  virtual bool OnUploadProgress(uint64 position, uint64 size) OVERRIDE;
+  void SetController(ResourceController* controller) override;
+
+  bool OnUploadProgress(uint64 position, uint64 size) override;
 
   // Not needed, as this event handler ought to be the final resource.
-  virtual bool OnRequestRedirected(const GURL& url,
-                                   ResourceResponse* resp,
-                                   bool* defer) OVERRIDE;
+  bool OnRequestRedirected(const net::RedirectInfo& redirect_info,
+                           ResourceResponse* resp,
+                           bool* defer) override;
 
-  virtual bool OnResponseStarted(ResourceResponse* resp,
-                                 bool* defer) OVERRIDE;
+  bool OnResponseStarted(ResourceResponse* resp, bool* defer) override;
 
-  virtual bool OnWillStart(const GURL& url, bool* defer) OVERRIDE;
+  bool OnWillStart(const GURL& url, bool* defer) override;
 
-  virtual bool OnBeforeNetworkStart(const GURL& url, bool* defer) OVERRIDE;
+  bool OnBeforeNetworkStart(const GURL& url, bool* defer) override;
 
   // Create a new buffer to store received data.
-  virtual bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
-                          int* buf_size,
-                          int min_size) OVERRIDE;
+  bool OnWillRead(scoped_refptr<net::IOBuffer>* buf,
+                  int* buf_size,
+                  int min_size) override;
 
   // A read was completed, forward the data to the Stream.
-  virtual bool OnReadCompleted(int bytes_read, bool* defer) OVERRIDE;
+  bool OnReadCompleted(int bytes_read, bool* defer) override;
 
-  virtual void OnResponseCompleted(const net::URLRequestStatus& status,
-                                   const std::string& sec_info,
-                                   bool* defer) OVERRIDE;
+  void OnResponseCompleted(const net::URLRequestStatus& status,
+                           const std::string& sec_info,
+                           bool* defer) override;
 
-  virtual void OnDataDownloaded(int bytes_downloaded) OVERRIDE;
+  void OnDataDownloaded(int bytes_downloaded) override;
 
-  Stream* stream() { return stream_.get(); }
+  Stream* stream() { return writer_.stream(); }
 
  private:
-  virtual void OnSpaceAvailable(Stream* stream) OVERRIDE;
-  virtual void OnClose(Stream* stream) OVERRIDE;
+  StreamWriter writer_;
 
-  scoped_refptr<Stream> stream_;
-  scoped_refptr<net::IOBuffer> read_buffer_;
   DISALLOW_COPY_AND_ASSIGN(StreamResourceHandler);
 };
 

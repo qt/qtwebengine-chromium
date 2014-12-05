@@ -457,12 +457,16 @@ int MockDiskCache::DoomEntriesSince(const base::Time initial_time,
   return net::ERR_NOT_IMPLEMENTED;
 }
 
-int MockDiskCache::OpenNextEntry(void** iter, disk_cache::Entry** next_entry,
-                                 const net::CompletionCallback& callback) {
-  return net::ERR_NOT_IMPLEMENTED;
-}
+class MockDiskCache::NotImplementedIterator : public Iterator {
+ public:
+  int OpenNextEntry(disk_cache::Entry** next_entry,
+                    const net::CompletionCallback& callback) override {
+    return net::ERR_NOT_IMPLEMENTED;
+  }
+};
 
-void MockDiskCache::EndEnumeration(void** iter) {
+scoped_ptr<disk_cache::Backend::Iterator> MockDiskCache::CreateIterator() {
+  return scoped_ptr<Iterator>(new NotImplementedIterator());
 }
 
 void MockDiskCache::GetStats(
@@ -514,6 +518,10 @@ MockDiskCache* MockHttpCache::disk_cache() {
 
 int MockHttpCache::CreateTransaction(scoped_ptr<net::HttpTransaction>* trans) {
   return http_cache_.CreateTransaction(net::DEFAULT_PRIORITY, trans);
+}
+
+void MockHttpCache::BypassCacheLock() {
+  http_cache_.BypassLockForTest();
 }
 
 bool MockHttpCache::ReadResponseInfo(disk_cache::Entry* disk_entry,

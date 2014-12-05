@@ -25,14 +25,16 @@
 #ifndef BiquadFilterNode_h
 #define BiquadFilterNode_h
 
+#include "core/dom/DOMTypedArray.h"
 #include "modules/webaudio/AudioBasicProcessorNode.h"
 #include "modules/webaudio/BiquadProcessor.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioParam;
 
-class BiquadFilterNode FINAL : public AudioBasicProcessorNode {
+class BiquadFilterNode final : public AudioBasicProcessorNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // These must be defined as in the .idl file and must match those in the BiquadProcessor class.
     enum {
@@ -46,9 +48,9 @@ public:
         ALLPASS = 7
     };
 
-    static PassRefPtrWillBeRawPtr<BiquadFilterNode> create(AudioContext* context, float sampleRate)
+    static BiquadFilterNode* create(AudioContext* context, float sampleRate)
     {
-        return adoptRefWillBeNoop(new BiquadFilterNode(context, sampleRate));
+        return new BiquadFilterNode(context, sampleRate);
     }
 
     String type() const;
@@ -61,9 +63,7 @@ public:
 
     // Get the magnitude and phase response of the filter at the given
     // set of frequencies (in Hz). The phase response is in radians.
-    void getFrequencyResponse(const Float32Array* frequencyHz,
-                              Float32Array* magResponse,
-                              Float32Array* phaseResponse);
+    void getFrequencyResponse(const DOMFloat32Array* frequencyHz, DOMFloat32Array* magResponse, DOMFloat32Array* phaseResponse);
 
 private:
     BiquadFilterNode(AudioContext*, float sampleRate);
@@ -72,6 +72,6 @@ private:
     bool setType(unsigned); // Returns true on success.
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BiquadFilterNode_h

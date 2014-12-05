@@ -34,15 +34,15 @@
 #include "core/dom/DOMError.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
-DeprecatedStorageQuotaCallbacksImpl::DeprecatedStorageQuotaCallbacksImpl(PassOwnPtr<StorageUsageCallback> usageCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+DeprecatedStorageQuotaCallbacksImpl::DeprecatedStorageQuotaCallbacksImpl(StorageUsageCallback* usageCallback, StorageErrorCallback* errorCallback)
     : m_usageCallback(usageCallback)
     , m_errorCallback(errorCallback)
 {
 }
 
-DeprecatedStorageQuotaCallbacksImpl::DeprecatedStorageQuotaCallbacksImpl(PassOwnPtr<StorageQuotaCallback> quotaCallback, PassOwnPtr<StorageErrorCallback> errorCallback)
+DeprecatedStorageQuotaCallbacksImpl::DeprecatedStorageQuotaCallbacksImpl(StorageQuotaCallback* quotaCallback, StorageErrorCallback* errorCallback)
     : m_quotaCallback(quotaCallback)
     , m_errorCallback(errorCallback)
 {
@@ -50,6 +50,14 @@ DeprecatedStorageQuotaCallbacksImpl::DeprecatedStorageQuotaCallbacksImpl(PassOwn
 
 DeprecatedStorageQuotaCallbacksImpl::~DeprecatedStorageQuotaCallbacksImpl()
 {
+}
+
+void DeprecatedStorageQuotaCallbacksImpl::trace(Visitor* visitor)
+{
+    visitor->trace(m_usageCallback);
+    visitor->trace(m_quotaCallback);
+    visitor->trace(m_errorCallback);
+    StorageQuotaCallbacks::trace(visitor);
 }
 
 void DeprecatedStorageQuotaCallbacksImpl::didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes)
@@ -64,10 +72,10 @@ void DeprecatedStorageQuotaCallbacksImpl::didGrantStorageQuota(unsigned long lon
         m_quotaCallback->handleEvent(grantedQuotaInBytes);
 }
 
-void DeprecatedStorageQuotaCallbacksImpl::didFail(blink::WebStorageQuotaError error)
+void DeprecatedStorageQuotaCallbacksImpl::didFail(WebStorageQuotaError error)
 {
     if (m_errorCallback)
-        m_errorCallback->handleEvent(DOMError::create(static_cast<ExceptionCode>(error)).get());
+        m_errorCallback->handleEvent(DOMError::create(static_cast<ExceptionCode>(error)));
 }
 
-} // namespace WebCore
+} // namespace blink

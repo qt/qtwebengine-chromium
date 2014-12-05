@@ -17,108 +17,74 @@ class TestBluetoothAdapter : public BluetoothAdapter {
   TestBluetoothAdapter() {
   }
 
-  virtual void AddObserver(BluetoothAdapter::Observer* observer) OVERRIDE {
-  }
+  void AddObserver(BluetoothAdapter::Observer* observer) override {}
 
-  virtual void RemoveObserver(BluetoothAdapter::Observer* observer) OVERRIDE {
+  void RemoveObserver(BluetoothAdapter::Observer* observer) override {}
 
-  }
+  std::string GetAddress() const override { return ""; }
 
-  virtual std::string GetAddress() const OVERRIDE {
-    return "";
-  }
+  std::string GetName() const override { return ""; }
 
-  virtual std::string GetName() const OVERRIDE {
-    return "";
-  }
+  void SetName(const std::string& name,
+               const base::Closure& callback,
+               const ErrorCallback& error_callback) override {}
 
-  virtual void SetName(const std::string& name,
+  bool IsInitialized() const override { return false; }
+
+  bool IsPresent() const override { return false; }
+
+  bool IsPowered() const override { return false; }
+
+  void SetPowered(bool powered,
+                  const base::Closure& callback,
+                  const ErrorCallback& error_callback) override {}
+
+  bool IsDiscoverable() const override { return false; }
+
+  void SetDiscoverable(bool discoverable,
                        const base::Closure& callback,
-                       const ErrorCallback& error_callback) OVERRIDE {
-  }
+                       const ErrorCallback& error_callback) override {}
 
-  virtual bool IsInitialized() const OVERRIDE {
-    return false;
-  }
+  bool IsDiscovering() const override { return false; }
 
-  virtual bool IsPresent() const OVERRIDE {
-    return false;
-  }
+  void StartDiscoverySession(const DiscoverySessionCallback& callback,
+                             const ErrorCallback& error_callback) override {}
 
-  virtual bool IsPowered() const OVERRIDE {
-    return false;
-  }
-
-  virtual void SetPowered(
-      bool powered,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-  }
-
-  virtual bool IsDiscoverable() const OVERRIDE {
-    return false;
-  }
-
-  virtual void SetDiscoverable(
-      bool discoverable,
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-  }
-
-  virtual bool IsDiscovering() const OVERRIDE {
-    return false;
-  }
-
-  virtual void StartDiscoverySession(
-      const DiscoverySessionCallback& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-  }
-
-  virtual void CreateRfcommService(
+  void CreateRfcommService(
       const BluetoothUUID& uuid,
-      int channel,
+      const ServiceOptions& options,
       const CreateServiceCallback& callback,
-      const CreateServiceErrorCallback& error_callback) OVERRIDE {
-  }
+      const CreateServiceErrorCallback& error_callback) override {}
 
-  virtual void CreateL2capService(
+  void CreateL2capService(
       const BluetoothUUID& uuid,
-      int psm,
+      const ServiceOptions& options,
       const CreateServiceCallback& callback,
-      const CreateServiceErrorCallback& error_callback) OVERRIDE {
-  }
+      const CreateServiceErrorCallback& error_callback) override {}
 
  protected:
-  virtual ~TestBluetoothAdapter() {}
+  ~TestBluetoothAdapter() override {}
 
-  virtual void AddDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-  }
+  void AddDiscoverySession(const base::Closure& callback,
+                           const ErrorCallback& error_callback) override {}
 
-  virtual void RemoveDiscoverySession(
-      const base::Closure& callback,
-      const ErrorCallback& error_callback) OVERRIDE {
-  }
+  void RemoveDiscoverySession(const base::Closure& callback,
+                              const ErrorCallback& error_callback) override {}
 
-  virtual void RemovePairingDelegateInternal(
-      BluetoothDevice::PairingDelegate* pairing_delegate) OVERRIDE {
-  }
+  void RemovePairingDelegateInternal(
+      BluetoothDevice::PairingDelegate* pairing_delegate) override {}
 };
 
 class TestPairingDelegate : public BluetoothDevice::PairingDelegate {
   public:
-   virtual void RequestPinCode(BluetoothDevice* device) OVERRIDE {}
-   virtual void RequestPasskey(BluetoothDevice* device) OVERRIDE {}
-   virtual void DisplayPinCode(BluetoothDevice* device,
-                               const std::string& pincode) OVERRIDE {}
-   virtual void DisplayPasskey(BluetoothDevice* device,
-                               uint32 passkey) OVERRIDE {}
-   virtual void KeysEntered(BluetoothDevice* device,
-                            uint32 entered) OVERRIDE {}
-   virtual void ConfirmPasskey(BluetoothDevice* device,
-                               uint32 passkey) OVERRIDE {}
-   virtual void AuthorizePairing(BluetoothDevice* device) OVERRIDE {}
+   void RequestPinCode(BluetoothDevice* device) override {}
+   void RequestPasskey(BluetoothDevice* device) override {}
+   void DisplayPinCode(BluetoothDevice* device,
+                       const std::string& pincode) override {}
+   void DisplayPasskey(BluetoothDevice* device, uint32 passkey) override {}
+   void KeysEntered(BluetoothDevice* device, uint32 entered) override {}
+   void ConfirmPasskey(BluetoothDevice* device, uint32 passkey) override {}
+   void AuthorizePairing(BluetoothDevice* device) override {}
 };
 
 

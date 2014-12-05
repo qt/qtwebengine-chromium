@@ -26,7 +26,7 @@ class DelegatedFrameProviderTest
     scoped_ptr<DelegatedFrameData> frame(new DelegatedFrameData);
 
     scoped_ptr<RenderPass> root_pass(RenderPass::Create());
-    root_pass->SetNew(RenderPass::Id(1, 1),
+    root_pass->SetNew(RenderPassId(1, 1),
                       root_output_rect,
                       root_damage_rect,
                       gfx::Transform());
@@ -46,7 +46,8 @@ class DelegatedFrameProviderTest
                       ResourceProvider::ResourceId resource_id) {
     SharedQuadState* sqs =
         frame->render_pass_list[0]->CreateAndAppendSharedQuadState();
-    scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+    TextureDrawQuad* quad =
+        frame->render_pass_list[0]->CreateAndAppendDrawQuad<TextureDrawQuad>();
     float vertex_opacity[4] = {1.f, 1.f, 1.f, 1.f};
     quad->SetNew(sqs,
                  gfx::Rect(0, 0, 10, 10),
@@ -59,17 +60,16 @@ class DelegatedFrameProviderTest
                  SK_ColorTRANSPARENT,
                  vertex_opacity,
                  false);
-    frame->render_pass_list[0]->quad_list.push_back(quad.PassAs<DrawQuad>());
   }
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     resource_collection_ = new DelegatedFrameResourceCollection;
     resource_collection_->SetClient(this);
   }
 
-  virtual void TearDown() OVERRIDE { resource_collection_->SetClient(NULL); }
+  virtual void TearDown() override { resource_collection_->SetClient(nullptr); }
 
-  virtual void UnusedResourcesAreAvailable() OVERRIDE {
+  void UnusedResourcesAreAvailable() override {
     resources_available_ = true;
     resource_collection_->TakeUnusedResourcesForChildCompositor(&resources_);
   }
@@ -106,7 +106,7 @@ TEST_F(DelegatedFrameProviderTest, SameResources) {
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());
   EXPECT_EQ(0u, resources_.size());
 
-  frame_provider_ = NULL;
+  frame_provider_ = nullptr;
 
   EXPECT_TRUE(ReturnAndResetResourcesAvailable());
   EXPECT_EQ(1u, resources_.size());
@@ -132,7 +132,7 @@ TEST_F(DelegatedFrameProviderTest, ReplaceResources) {
   EXPECT_EQ(444u, resources_[0].id);
   resources_.clear();
 
-  frame_provider_ = NULL;
+  frame_provider_ = nullptr;
 
   EXPECT_TRUE(ReturnAndResetResourcesAvailable());
   EXPECT_EQ(1u, resources_.size());
@@ -159,16 +159,16 @@ TEST_F(DelegatedFrameProviderTest, RefResources) {
   gfx::RectF damage;
 
   // Both observers get a full frame of damage on the first request.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF(5.f, 5.f).ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF(5.f, 5.f).ToString(), damage.ToString());
 
   // And both get no damage on the 2nd request. This adds a second ref to the
   // resources.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
 
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());
@@ -217,8 +217,8 @@ TEST_F(DelegatedFrameProviderTest, RefResourcesInFrameProvider) {
   gfx::RectF damage;
 
   // Take a ref on each observer.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
 
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());
 
@@ -259,8 +259,8 @@ TEST_F(DelegatedFrameProviderTest, RefResourcesInFrameProviderUntilDestroy) {
   gfx::RectF damage;
 
   // Take a ref on each observer.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
 
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());
 
@@ -272,11 +272,11 @@ TEST_F(DelegatedFrameProviderTest, RefResourcesInFrameProviderUntilDestroy) {
 
   // Releasing all references to the frame provider will release
   // the frame.
-  observer1 = NULL;
-  observer2 = NULL;
+  observer1 = nullptr;
+  observer2 = nullptr;
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());
 
-  frame_provider_ = NULL;
+  frame_provider_ = nullptr;
 
   EXPECT_TRUE(ReturnAndResetResourcesAvailable());
   EXPECT_EQ(1u, resources_.size());
@@ -303,15 +303,15 @@ TEST_F(DelegatedFrameProviderTest, Damage) {
   gfx::RectF damage;
 
   // Both observers get a full frame of damage on the first request.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF(5.f, 5.f).ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF(5.f, 5.f).ToString(), damage.ToString());
 
   // And both get no damage on the 2nd request.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
 
   frame = CreateFrameData(gfx::Rect(5, 5), gfx::Rect(2, 2));
@@ -320,15 +320,15 @@ TEST_F(DelegatedFrameProviderTest, Damage) {
   frame_provider_->SetFrameData(frame.Pass());
 
   // Both observers get the damage for the new frame.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF(2.f, 2.f).ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF(2.f, 2.f).ToString(), damage.ToString());
 
   // And both get no damage on the 2nd request.
-  frame_provider_->GetFrameDataAndRefResources(observer1, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer1.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
-  frame_provider_->GetFrameDataAndRefResources(observer2, &damage);
+  frame_provider_->GetFrameDataAndRefResources(observer2.get(), &damage);
   EXPECT_EQ(gfx::RectF().ToString(), damage.ToString());
 }
 
@@ -386,7 +386,7 @@ TEST_F(DelegatedFrameProviderTest, NothingReturnedAfterLoss) {
   EXPECT_TRUE(ReturnAndResetResourcesAvailable());
   resources_.clear();
 
-  frame_provider_ = NULL;
+  frame_provider_ = nullptr;
 
   // Nothing is returned twice.
   EXPECT_FALSE(ReturnAndResetResourcesAvailable());

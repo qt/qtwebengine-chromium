@@ -8,8 +8,12 @@ cr.define('options.autofillOptions', function() {
   /** @const */ var InlineEditableItem = options.InlineEditableItem;
   /** @const */ var InlineEditableItemList = options.InlineEditableItemList;
 
+  /**
+   * @return {!HTMLButtonElement}
+   */
   function AutofillEditProfileButton(guid, edit) {
-    var editButtonEl = document.createElement('button');
+    var editButtonEl = /** @type {HTMLButtonElement} */(
+        document.createElement('button'));
     editButtonEl.className = 'list-inline-button custom-appearance';
     editButtonEl.textContent =
         loadTimeData.getString('autofillEditProfileButton');
@@ -55,7 +59,7 @@ cr.define('options.autofillOptions', function() {
       this.contentElement.appendChild(label);
 
       // The 'Edit' button.
-      var editButtonEl = new AutofillEditProfileButton(
+      var editButtonEl = AutofillEditProfileButton(
         this.guid,
         AutofillOptions.loadAddressEditor);
       this.contentElement.appendChild(editButtonEl);
@@ -100,7 +104,7 @@ cr.define('options.autofillOptions', function() {
       this.contentElement.appendChild(icon);
 
       // The 'Edit' button.
-      var editButtonEl = new AutofillEditProfileButton(
+      var editButtonEl = AutofillEditProfileButton(
         this.guid,
         AutofillOptions.loadCreditCardEditor);
       this.contentElement.appendChild(editButtonEl);
@@ -109,7 +113,8 @@ cr.define('options.autofillOptions', function() {
 
   /**
    * Creates a new value list item.
-   * @param {AutofillValuesList} list The parent list of this item.
+   * @param {options.autofillOptions.AutofillValuesList} list The parent list of
+   *     this item.
    * @param {string} entry A string value.
    * @constructor
    * @extends {options.InlineEditableItem}
@@ -135,7 +140,7 @@ cr.define('options.autofillOptions', function() {
       this.isPlaceholder = !this.value;
 
       // The stored value.
-      var cell = this.createEditableTextCell(this.value);
+      var cell = this.createEditableTextCell(String(this.value));
       this.contentElement.appendChild(cell);
       this.input = cell.querySelector('input');
 
@@ -148,7 +153,7 @@ cr.define('options.autofillOptions', function() {
     },
 
     /**
-     * @return {string} This item's value.
+     * @return {Array} This item's value.
      * @protected
      */
     value_: function() {
@@ -156,7 +161,7 @@ cr.define('options.autofillOptions', function() {
     },
 
     /**
-     * @param {Object} value The value to test.
+     * @param {*} value The value to test.
      * @return {boolean} True if the given value is non-empty.
      * @protected
      */
@@ -219,10 +224,11 @@ cr.define('options.autofillOptions', function() {
 
   /**
    * Creates a new name value list item.
-   * @param {AutofillNameValuesList} list The parent list of this item.
-   * @param {array} entry An array of [first, middle, last] names.
+   * @param {options.autofillOptions.AutofillNameValuesList} list The parent
+   *     list of this item.
+   * @param {Array.<string>} entry An array of [first, middle, last] names.
    * @constructor
-   * @extends {options.ValuesListItem}
+   * @extends {options.autofillOptions.ValuesListItem}
    */
   function NameListItem(list, entry) {
     var el = cr.doc.createElement('div');
@@ -334,7 +340,7 @@ cr.define('options.autofillOptions', function() {
   /**
    * Create a new address list.
    * @constructor
-   * @extends {options.AutofillProfileList}
+   * @extends {options.autofillOptions.AutofillProfileList}
    */
   var AutofillAddressList = cr.ui.define('list');
 
@@ -350,7 +356,10 @@ cr.define('options.autofillOptions', function() {
       AutofillOptions.loadAddressEditor(this.dataModel.item(index)[0]);
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {Array} entry
+     */
     createItem: function(entry) {
       return new AddressListItem(entry);
     },
@@ -380,7 +389,10 @@ cr.define('options.autofillOptions', function() {
       AutofillOptions.loadCreditCardEditor(this.dataModel.item(index)[0]);
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {Array} entry
+     */
     createItem: function(entry) {
       return new CreditCardListItem(entry);
     },
@@ -401,7 +413,10 @@ cr.define('options.autofillOptions', function() {
   AutofillValuesList.prototype = {
     __proto__: InlineEditableItemList.prototype,
 
-    /** @override */
+    /**
+     * @override
+     * @param {string} entry
+     */
     createItem: function(entry) {
       return new ValuesListItem(this, entry);
     },
@@ -459,14 +474,17 @@ cr.define('options.autofillOptions', function() {
   /**
    * Create a new value list for phone number validation.
    * @constructor
-   * @extends {options.AutofillValuesList}
+   * @extends {options.autofillOptions.AutofillValuesList}
    */
   var AutofillNameValuesList = cr.ui.define('list');
 
   AutofillNameValuesList.prototype = {
     __proto__: AutofillValuesList.prototype,
 
-    /** @override */
+    /**
+     * @override
+     * @param {Array.<string>} entry
+     */
     createItem: function(entry) {
       return new NameListItem(this, entry);
     },
@@ -475,7 +493,7 @@ cr.define('options.autofillOptions', function() {
   /**
    * Create a new value list for phone number validation.
    * @constructor
-   * @extends {options.AutofillValuesList}
+   * @extends {options.autofillOptions.AutofillValuesList}
    */
   var AutofillPhoneValuesList = cr.ui.define('list');
 
@@ -538,6 +556,7 @@ cr.define('options.autofillOptions', function() {
   };
 
   return {
+    AutofillProfileList: AutofillProfileList,
     AddressListItem: AddressListItem,
     CreditCardListItem: CreditCardListItem,
     ValuesListItem: ValuesListItem,

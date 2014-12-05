@@ -32,7 +32,12 @@ class AuraWindowRegistry : public aura::WindowObserver {
     }
 
     // If the windows doesn't have an Id yet assign it.
-    int id = next_id_++;
+    int id;
+    do {
+      id = next_id_;
+      next_id_ = (next_id_ == INT_MAX) ? 1 : (next_id_ + 1);
+    } while (id_to_window_map_.find(id) != id_to_window_map_.end());
+
     window_to_id_map_[window] = id;
     id_to_window_map_[id] = window;
     window->AddObserver(this);
@@ -48,12 +53,12 @@ class AuraWindowRegistry : public aura::WindowObserver {
   friend struct DefaultSingletonTraits<AuraWindowRegistry>;
 
   AuraWindowRegistry()
-      : next_id_(0) {
+      : next_id_(1) {
   }
-  virtual ~AuraWindowRegistry() {}
+  ~AuraWindowRegistry() override {}
 
   // WindowObserver overrides.
-  virtual void OnWindowDestroying(aura::Window* window) OVERRIDE {
+  void OnWindowDestroying(aura::Window* window) override {
     std::map<aura::Window*, int>::iterator it = window_to_id_map_.find(window);
     DCHECK(it != window_to_id_map_.end());
     id_to_window_map_.erase(it->second);

@@ -28,26 +28,26 @@
 
 #include "core/editing/CompositeEditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
-class RemoveNodePreservingChildrenCommand FINAL : public CompositeEditCommand {
+class RemoveNodePreservingChildrenCommand final : public CompositeEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<RemoveNodePreservingChildrenCommand> create(PassRefPtrWillBeRawPtr<Node> node, ShouldAssumeContentIsAlwaysEditable shouldAssumeContentIsAlwaysEditable)
     {
         return adoptRefWillBeNoop(new RemoveNodePreservingChildrenCommand(node, shouldAssumeContentIsAlwaysEditable));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RemoveNodePreservingChildrenCommand(PassRefPtrWillBeRawPtr<Node>, ShouldAssumeContentIsAlwaysEditable);
 
-    virtual void doApply() OVERRIDE;
+    virtual void doApply() override;
 
     RefPtrWillBeMember<Node> m_node;
     ShouldAssumeContentIsAlwaysEditable m_shouldAssumeContentIsAlwaysEditable;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RemoveNodePreservingChildrenCommand_h

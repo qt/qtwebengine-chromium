@@ -12,7 +12,6 @@
 #include "ui/aura/client/focus_client.h"
 #include "ui/aura/layout_manager.h"
 #include "ui/aura/test/aura_test_helper.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
@@ -27,10 +26,10 @@
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/test/context_factories_for_test.h"
 #include "ui/compositor/test/layer_animator_test_controller.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/keyboard/keyboard_controller_observer.h"
 #include "ui/keyboard/keyboard_controller_proxy.h"
-#include "ui/keyboard/keyboard_switches.h"
 #include "ui/keyboard/keyboard_util.h"
 #include "ui/wm/core/default_activation_client.h"
 
@@ -63,13 +62,11 @@ class TestFocusController : public ui::EventHandler {
     root_->AddPreTargetHandler(this);
   }
 
-  virtual ~TestFocusController() {
-    root_->RemovePreTargetHandler(this);
-  }
+  ~TestFocusController() override { root_->RemovePreTargetHandler(this); }
 
  private:
   // Overridden from ui::EventHandler:
-  virtual void OnEvent(ui::Event* event) OVERRIDE {
+  void OnEvent(ui::Event* event) override {
     aura::Window* target = static_cast<aura::Window*>(event->target());
     if (event->type() == ui::ET_MOUSE_PRESSED ||
         event->type() == ui::ET_TOUCH_PRESSED) {
@@ -87,14 +84,14 @@ class TestKeyboardControllerProxy : public KeyboardControllerProxy {
       : input_method_(
             ui::CreateInputMethod(NULL, gfx::kNullAcceleratedWidget)) {}
 
-  virtual ~TestKeyboardControllerProxy() {
+  ~TestKeyboardControllerProxy() override {
     // Destroy the window before the delegate.
     window_.reset();
   }
 
   // Overridden from KeyboardControllerProxy:
-  virtual bool HasKeyboardWindow() const OVERRIDE { return window_; }
-  virtual aura::Window* GetKeyboardWindow() OVERRIDE {
+  bool HasKeyboardWindow() const override { return window_; }
+  aura::Window* GetKeyboardWindow() override {
     if (!window_) {
       window_.reset(new aura::Window(&delegate_));
       window_->Init(aura::WINDOW_LAYER_NOT_DRAWN);
@@ -102,15 +99,16 @@ class TestKeyboardControllerProxy : public KeyboardControllerProxy {
     }
     return window_.get();
   }
-  virtual content::BrowserContext* GetBrowserContext() OVERRIDE { return NULL; }
-  virtual ui::InputMethod* GetInputMethod() OVERRIDE {
-    return input_method_.get();
-  }
-  virtual void RequestAudioInput(content::WebContents* web_contents,
+  content::BrowserContext* GetBrowserContext() override { return NULL; }
+  ui::InputMethod* GetInputMethod() override { return input_method_.get(); }
+  void RequestAudioInput(
+      content::WebContents* web_contents,
       const content::MediaStreamRequest& request,
-      const content::MediaResponseCallback& callback) OVERRIDE { return; }
-  virtual void LoadSystemKeyboard() OVERRIDE {};
-  virtual void ReloadKeyboardIfNeeded() OVERRIDE {};
+      const content::MediaResponseCallback& callback) override {
+    return;
+  }
+  void LoadSystemKeyboard() override{};
+  void ReloadKeyboardIfNeeded() override{};
 
  private:
   scoped_ptr<aura::Window> window_;
@@ -124,7 +122,7 @@ class TestKeyboardControllerProxy : public KeyboardControllerProxy {
 class EventObserver : public ui::EventHandler {
  public:
   EventObserver() {}
-  virtual ~EventObserver() {}
+  ~EventObserver() override {}
 
   int GetEventCount(ui::EventType type) {
     return event_counts_[type];
@@ -132,7 +130,7 @@ class EventObserver : public ui::EventHandler {
 
  private:
   // Overridden from ui::EventHandler:
-  virtual void OnEvent(ui::Event* event) OVERRIDE {
+  void OnEvent(ui::Event* event) override {
     ui::EventHandler::OnEvent(event);
     event_counts_[event->type()]++;
   }
@@ -146,13 +144,10 @@ class KeyboardContainerObserver : public aura::WindowObserver {
   explicit KeyboardContainerObserver(aura::Window* window) : window_(window) {
     window_->AddObserver(this);
   }
-  virtual ~KeyboardContainerObserver() {
-    window_->RemoveObserver(this);
-  }
+  ~KeyboardContainerObserver() override { window_->RemoveObserver(this); }
 
  private:
-  virtual void OnWindowVisibilityChanged(aura::Window* window,
-                                         bool visible) OVERRIDE {
+  void OnWindowVisibilityChanged(aura::Window* window, bool visible) override {
     if (!visible)
       base::MessageLoop::current()->Quit();
   }
@@ -167,9 +162,9 @@ class KeyboardContainerObserver : public aura::WindowObserver {
 class KeyboardControllerTest : public testing::Test {
  public:
   KeyboardControllerTest() {}
-  virtual ~KeyboardControllerTest() {}
+  ~KeyboardControllerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // The ContextFactory must exist before any Compositors are created.
     bool enable_pixel_output = false;
     ui::ContextFactory* context_factory =
@@ -186,7 +181,7 @@ class KeyboardControllerTest : public testing::Test {
     controller_.reset(new KeyboardController(proxy_));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     controller_.reset();
     focus_controller_.reset();
     if (::switches::IsTextInputFocusManagerEnabled())
@@ -227,6 +222,10 @@ class KeyboardControllerTest : public testing::Test {
 
   bool WillHideKeyboard() {
     return controller_->WillHideKeyboard();
+  }
+
+  bool ShouldEnableInsets(aura::Window* window) {
+    return controller_->ShouldEnableInsets(window);
   }
 
   base::MessageLoopForUI message_loop_;
@@ -294,7 +293,7 @@ TEST_F(KeyboardControllerTest, ClickDoesNotFocusKeyboard) {
   EventObserver observer;
   keyboard_container->AddPreTargetHandler(&observer);
 
-  aura::test::EventGenerator generator(root_window());
+  ui::test::EventGenerator generator(root_window());
   generator.MoveMouseTo(proxy()->GetKeyboardWindow()->bounds().CenterPoint());
   generator.ClickLeftButton();
   EXPECT_TRUE(window->HasFocus());
@@ -422,6 +421,33 @@ TEST_F(KeyboardControllerTest, VisibilityChangeWithTextInputTypeChange) {
   EXPECT_TRUE(keyboard_container->IsVisible());
 }
 
+// Test to prevent spurious overscroll boxes when changing tabs during keyboard
+// hide. Refer to crbug.com/401670 for more context.
+TEST_F(KeyboardControllerTest, CheckOverscrollInsetDuringVisibilityChange) {
+  const gfx::Rect& root_bounds = root_window()->bounds();
+
+  ui::DummyTextInputClient input_client(ui::TEXT_INPUT_TYPE_TEXT);
+  ui::DummyTextInputClient no_input_client(ui::TEXT_INPUT_TYPE_NONE);
+
+  aura::Window* keyboard_container(controller()->GetContainerWindow());
+  keyboard_container->SetBounds(root_bounds);
+  root_window()->AddChild(keyboard_container);
+
+  // Enable touch keyboard / overscroll mode to test insets.
+  keyboard::SetTouchKeyboardEnabled(true);
+  EXPECT_TRUE(keyboard::IsKeyboardOverscrollEnabled());
+
+  SetFocus(&input_client);
+  SetFocus(&no_input_client);
+  // Insets should not be enabled for new windows while keyboard is in the
+  // process of hiding when overscroll is enabled.
+  EXPECT_FALSE(ShouldEnableInsets(proxy()->GetKeyboardWindow()));
+  // Cancel keyboard hide.
+  SetFocus(&input_client);
+  // Insets should be enabled for new windows as hide was cancelled.
+  EXPECT_TRUE(ShouldEnableInsets(proxy()->GetKeyboardWindow()));
+}
+
 TEST_F(KeyboardControllerTest, AlwaysVisibleWhenLocked) {
   const gfx::Rect& root_bounds = root_window()->bounds();
 
@@ -467,12 +493,12 @@ class KeyboardControllerAnimationTest : public KeyboardControllerTest,
                                         public KeyboardControllerObserver {
  public:
   KeyboardControllerAnimationTest() {}
-  virtual ~KeyboardControllerAnimationTest() {}
+  ~KeyboardControllerAnimationTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // We cannot short-circuit animations for this test.
-    ui::ScopedAnimationDurationScaleMode normal_duration_mode(
-        ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
+    ui::ScopedAnimationDurationScaleMode test_duration_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
 
     KeyboardControllerTest::SetUp();
 
@@ -482,14 +508,14 @@ class KeyboardControllerAnimationTest : public KeyboardControllerTest,
     controller()->AddObserver(this);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     controller()->RemoveObserver(this);
     KeyboardControllerTest::TearDown();
   }
 
  protected:
   // KeyboardControllerObserver overrides
-  virtual void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) OVERRIDE {
+  void OnKeyboardBoundsChanging(const gfx::Rect& new_bounds) override {
     notified_bounds_ = new_bounds;
   }
 
@@ -520,7 +546,7 @@ TEST_F(KeyboardControllerAnimationTest, ContainerAnimation) {
   EXPECT_TRUE(keyboard_window()->IsVisible());
   float show_start_opacity = layer->opacity();
   gfx::Transform transform;
-  transform.Translate(0, keyboard_window()->bounds().height());
+  transform.Translate(0, kAnimationDistance);
   EXPECT_EQ(transform, layer->transform());
   EXPECT_EQ(gfx::Rect(), notified_bounds());
 
@@ -570,40 +596,6 @@ TEST_F(KeyboardControllerAnimationTest, ContainerShowWhileHide) {
   EXPECT_TRUE(keyboard_window()->IsVisible());
   EXPECT_EQ(1.0, layer->opacity());
   EXPECT_EQ(gfx::Transform(), layer->transform());
-}
-
-class KeyboardControllerUsabilityTest : public KeyboardControllerTest {
- public:
-  KeyboardControllerUsabilityTest() {}
-  virtual ~KeyboardControllerUsabilityTest() {}
-
-  virtual void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kKeyboardUsabilityExperiment);
-    KeyboardControllerTest::SetUp();
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(KeyboardControllerUsabilityTest);
-};
-
-TEST_F(KeyboardControllerUsabilityTest, KeyboardAlwaysVisibleInUsabilityTest) {
-  const gfx::Rect& root_bounds = root_window()->bounds();
-
-  ui::DummyTextInputClient input_client(ui::TEXT_INPUT_TYPE_TEXT);
-  ui::DummyTextInputClient no_input_client(ui::TEXT_INPUT_TYPE_NONE);
-
-  aura::Window* keyboard_container(controller()->GetContainerWindow());
-  keyboard_container->SetBounds(root_bounds);
-  root_window()->AddChild(keyboard_container);
-
-  SetFocus(&input_client);
-  EXPECT_TRUE(keyboard_container->IsVisible());
-
-  SetFocus(&no_input_client);
-  // Keyboard should not hide itself after lost focus.
-  EXPECT_TRUE(keyboard_container->IsVisible());
-  EXPECT_FALSE(WillHideKeyboard());
 }
 
 }  // namespace keyboard

@@ -28,11 +28,10 @@
 
 #include "platform/graphics/DecodingImageGenerator.h"
 #include "platform/graphics/ImageDecodingStore.h"
-#include "platform/graphics/LazyDecodingPixelRef.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -79,8 +78,6 @@ bool DeferredImageDecoder::isLazyDecoded(const SkBitmap& bitmap)
 void DeferredImageDecoder::setEnabled(bool enabled)
 {
     s_enabled = enabled;
-    if (enabled)
-        ImageDecodingStore::setImageCachingEnabled(false);
 }
 
 bool DeferredImageDecoder::enabled()
@@ -126,8 +123,8 @@ void DeferredImageDecoder::setData(SharedBuffer& data, bool allDataReceived)
 
 bool DeferredImageDecoder::isSizeAvailable()
 {
-    // m_actualDecoder is 0 only if image decoding is deferred and that
-    // means image header decoded successfully and size is available.
+    // m_actualDecoder is 0 only if image decoding is deferred and that means
+    // the image header decoded successfully and the size is available.
     return m_actualDecoder ? m_actualDecoder->isSizeAvailable() : true;
 }
 
@@ -269,15 +266,12 @@ SkBitmap DeferredImageDecoder::createBitmap(size_t index)
     ASSERT(decodedSize.width() > 0);
     ASSERT(decodedSize.height() > 0);
 
-    SkImageInfo info;
-    info.fWidth = decodedSize.width();
-    info.fHeight = decodedSize.height();
 #if SK_B32_SHIFT // Little-endian RGBA pixels. (Android)
-    info.fColorType = kRGBA_8888_SkColorType;
+    const SkColorType colorType = kRGBA_8888_SkColorType;
 #else
-    info.fColorType = kBGRA_8888_SkColorType;
+    const SkColorType colorType = kBGRA_8888_SkColorType;
 #endif
-    info.fAlphaType = kPremul_SkAlphaType;
+    const SkImageInfo info = SkImageInfo::Make(decodedSize.width(), decodedSize.height(), colorType, kPremul_SkAlphaType);
 
     SkBitmap bitmap;
     DecodingImageGenerator* generator = new DecodingImageGenerator(m_frameGenerator, info, index);
@@ -294,4 +288,4 @@ bool DeferredImageDecoder::hotSpot(IntPoint& hotSpot) const
     return m_actualDecoder ? m_actualDecoder->hotSpot(hotSpot) : false;
 }
 
-} // namespace WebCore
+} // namespace blink

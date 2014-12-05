@@ -13,10 +13,13 @@ cr.define('cloudprint', function() {
    * @param {!print_preview.NativeLayer} nativeLayer Native layer used to get
    *     Auth2 tokens.
    * @param {!print_preview.UserInfo} userInfo User information repository.
+   * @param {boolean} isInAppKioskMode Whether the print preview is in App
+   *     Kiosk mode.
    * @constructor
    * @extends {cr.EventTarget}
    */
-  function CloudPrintInterface(baseUrl, nativeLayer, userInfo) {
+  function CloudPrintInterface(
+      baseUrl, nativeLayer, userInfo, isInAppKioskMode) {
     /**
      * The base URL of the Google Cloud Print API.
      * @type {string}
@@ -37,6 +40,14 @@ cr.define('cloudprint', function() {
      * @private
      */
     this.userInfo_ = userInfo;
+
+    /**
+     * Whether Print Preview is in App Kiosk mode, basically, use only printers
+     * available for the device.
+     * @type {boolean}
+     * @private
+     */
+    this.isInAppKioskMode_ = isInAppKioskMode;
 
     /**
      * Currently logged in users (identified by email) mapped to the Google
@@ -83,8 +94,13 @@ cr.define('cloudprint', function() {
    * @enum {string}
    */
   CloudPrintInterface.EventType = {
+    INVITES_DONE: 'cloudprint.CloudPrintInterface.INVITES_DONE',
+    INVITES_FAILED: 'cloudprint.CloudPrintInterface.INVITES_FAILED',
     PRINTER_DONE: 'cloudprint.CloudPrintInterface.PRINTER_DONE',
     PRINTER_FAILED: 'cloudprint.CloudPrintInterface.PRINTER_FAILED',
+    PROCESS_INVITE_DONE: 'cloudprint.CloudPrintInterface.PROCESS_INVITE_DONE',
+    PROCESS_INVITE_FAILED:
+        'cloudprint.CloudPrintInterface.PROCESS_INVITE_FAILED',
     SEARCH_DONE: 'cloudprint.CloudPrintInterface.SEARCH_DONE',
     SEARCH_FAILED: 'cloudprint.CloudPrintInterface.SEARCH_FAILED',
     SUBMIT_DONE: 'cloudprint.CloudPrintInterface.SUBMIT_DONE',
@@ -179,6 +195,11 @@ cr.define('cloudprint', function() {
       var account = opt_account || '';
       var origins =
           opt_origin && [opt_origin] || CloudPrintInterface.CLOUD_ORIGINS_;
+      if (this.isInAppKioskMode_) {
+        origins = origins.filter(function(origin) {
+          return origin != print_preview.Destination.Origin.COOKIES;
+        });
+      }
       this.abortSearchRequests_(origins);
       this.search_(true, account, origins);
       this.search_(false, account, origins);
@@ -215,6 +236,44 @@ cr.define('cloudprint', function() {
         this.outstandingCloudSearchRequests_.push(cpRequest);
         this.sendOrQueueRequest_(cpRequest);
       }, this);
+    },
+
+    /**
+     * Sends Google Cloud Print printer sharing invitations API requests.
+     * @param {string} account Account the request is sent for.
+     */
+    invites: function(account) {
+      var params = [
+        new HttpParam('client', 'chrome'),
+      ];
+      this.sendOrQueueRequest_(this.buildRequest_(
+          'GET',
+          'invites',
+          params,
+          print_preview.Destination.Origin.COOKIES,
+          account,
+          this.onInvitesDone_.bind(this)));
+    },
+
+    /**
+     * Accepts or rejects printer sharing invitation.
+     * @param {!print_preview.Invitation} invitation Invitation to process.
+     * @param {boolean} accept Whether to accept this invitation.
+     */
+    processInvite: function(invitation, accept) {
+      var params = [
+        new HttpParam('printerid', invitation.destination.id),
+        new HttpParam('email', invitation.scopeId),
+        new HttpParam('accept', accept),
+        new HttpParam('use_cdd', true),
+      ];
+      this.sendOrQueueRequest_(this.buildRequest_(
+          'POST',
+          'processinvite',
+          params,
+          invitation.destination.origin,
+          invitation.destination.account,
+          this.onProcessInviteDone_.bind(this, invitation, accept)));
     },
 
     /**
@@ -460,7 +519,7 @@ cr.define('cloudprint', function() {
 
     /**
      * Called when a native layer receives access token.
-     * @param {Event} evt Contains the authentication type and access token.
+     * @param {Event} event Contains the authentication type and access token.
      * @private
      */
     onAccessTokenReady_: function(event) {
@@ -559,6 +618,73 @@ cr.define('cloudprint', function() {
     },
 
     /**
+     * Called when invitations search request completes.
+     * @param {!CloudPrintRequest} request Request that has been completed.
+     * @private
+     */
+    onInvitesDone_: function(request) {
+      var event = null;
+      var activeUser =
+          (request.result &&
+           request.result['request'] &&
+           request.result['request']['user']) || '';
+      if (request.xhr.status == 200 && request.result['success']) {
+        // Extract invitations.
+        var invitationListJson = request.result['invites'] || [];
+        var invitationList = [];
+        invitationListJson.forEach(function(invitationJson) {
+          try {
+            invitationList.push(cloudprint.InvitationParser.parse(
+                invitationJson, activeUser));
+          } catch (e) {
+            console.error('Unable to parse invitation: ' + e);
+          }
+        });
+        // Dispatch INVITES_DONE event.
+        event = new Event(CloudPrintInterface.EventType.INVITES_DONE);
+        event.invitations = invitationList;
+      } else {
+        event = this.createErrorEvent_(
+            CloudPrintInterface.EventType.INVITES_FAILED, request);
+      }
+      event.user = activeUser;
+      this.dispatchEvent(event);
+    },
+
+    /**
+     * Called when invitation processing request completes.
+     * @param {!print_preview.Invitation} invitation Processed invitation.
+     * @param {boolean} accept Whether this invitation was accepted or rejected.
+     * @param {!CloudPrintRequest} request Request that has been completed.
+     * @private
+     */
+    onProcessInviteDone_: function(invitation, accept, request) {
+      var event = null;
+      var activeUser =
+          (request.result &&
+           request.result['request'] &&
+           request.result['request']['user']) || '';
+      if (request.xhr.status == 200 && request.result['success']) {
+        event = new Event(CloudPrintInterface.EventType.PROCESS_INVITE_DONE);
+        if (accept) {
+          try {
+            event.printer = cloudprint.CloudDestinationParser.parse(
+                request.result['printer'], request.origin, activeUser);
+          } catch (e) {
+            console.error('Failed to parse cloud print destination: ' + e);
+          }
+        }
+      } else {
+        event = this.createErrorEvent_(
+            CloudPrintInterface.EventType.PROCESS_INVITE_FAILED, request);
+      }
+      event.invitation = invitation;
+      event.accept = accept;
+      event.user = activeUser;
+      this.dispatchEvent(event);
+    },
+
+    /**
      * Called when the submit request completes.
      * @param {!CloudPrintRequest} request Request that has been completed.
      * @private
@@ -630,7 +756,7 @@ cr.define('cloudprint', function() {
             CloudPrintInterface.EventType.PRINTER_FAILED, request);
         errorEvent.destinationId = destinationId;
         errorEvent.destinationOrigin = request.origin;
-        this.dispatchEvent(errorEvent, request.origin);
+        this.dispatchEvent(errorEvent);
       }
     },
 

@@ -32,12 +32,14 @@
  * @constructor
  * @implements {WebInspector.Searchable}
  * @extends {WebInspector.Panel}
+ * @param {!WebInspector.ExtensionServer} server
  * @param {string} id
  * @param {string} pageURL
  */
-WebInspector.ExtensionPanel = function(id, pageURL)
+WebInspector.ExtensionPanel = function(server, id, pageURL)
 {
     WebInspector.Panel.call(this, id);
+    this._server = server;
     this.setHideOnDetach();
     this.element.classList.add("extension-panel");
     this._panelStatusBarElement = this.element.createChild("div", "panel-status-bar hidden");
@@ -45,7 +47,7 @@ WebInspector.ExtensionPanel = function(id, pageURL)
     this._searchableView = new WebInspector.SearchableView(this);
     this._searchableView.show(this.element);
 
-    var extensionView = new WebInspector.ExtensionView(id, pageURL, "extension panel");
+    var extensionView = new WebInspector.ExtensionView(server, id, pageURL, "extension");
     extensionView.show(this._searchableView.element);
     this.setDefaultFocusedElement(extensionView.defaultFocusedElement());
 }
@@ -70,7 +72,7 @@ WebInspector.ExtensionPanel.prototype = {
 
     searchCanceled: function()
     {
-        WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.CancelSearch);
+        this._server.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.CancelSearch);
         this._searchableView.updateSearchMatchesCount(0);
     },
 
@@ -83,23 +85,40 @@ WebInspector.ExtensionPanel.prototype = {
     },
 
     /**
-     * @param {string} query
+     * @param {!WebInspector.SearchableView.SearchConfig} searchConfig
      * @param {boolean} shouldJump
      * @param {boolean=} jumpBackwards
      */
-    performSearch: function(query, shouldJump, jumpBackwards)
+    performSearch: function(searchConfig, shouldJump, jumpBackwards)
     {
-        WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.PerformSearch, query);
+        var query = searchConfig.query;
+        this._server.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.PerformSearch, query);
     },
 
     jumpToNextSearchResult: function()
     {
-        WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.NextSearchResult);
+        this._server.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.NextSearchResult);
     },
 
     jumpToPreviousSearchResult: function()
     {
-        WebInspector.extensionServer.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.PreviousSearchResult);
+        this._server.notifySearchAction(this.name, WebInspector.extensionAPI.panels.SearchAction.PreviousSearchResult);
+    },
+
+    /**
+     * @return {boolean}
+     */
+    supportsCaseSensitiveSearch: function()
+    {
+        return false;
+    },
+
+    /**
+     * @return {boolean}
+     */
+    supportsRegexSearch: function()
+    {
+        return false;
     },
 
     __proto__: WebInspector.Panel.prototype
@@ -107,17 +126,18 @@ WebInspector.ExtensionPanel.prototype = {
 
 /**
  * @constructor
+ * @param {!WebInspector.ExtensionServer} server
  * @param {string} id
  * @param {string} iconURL
  * @param {string=} tooltip
  * @param {boolean=} disabled
  */
-WebInspector.ExtensionButton = function(id, iconURL, tooltip, disabled)
+WebInspector.ExtensionButton = function(server, id, iconURL, tooltip, disabled)
 {
     this._id = id;
-    this.element = document.createElement("button");
+    this.element = createElement("button");
     this.element.className = "status-bar-item extension";
-    this.element.addEventListener("click", this._onClicked.bind(this), false);
+    this.element.addEventListener("click", server.notifyButtonClicked.bind(server, this._id), false);
     this.update(iconURL, tooltip, disabled);
 }
 
@@ -135,28 +155,43 @@ WebInspector.ExtensionButton.prototype = {
             this.element.title = tooltip;
         if (typeof disabled === "boolean")
             this.element.disabled = disabled;
-    },
-
-    _onClicked: function()
-    {
-        WebInspector.extensionServer.notifyButtonClicked(this._id);
     }
 }
 
 /**
  * @constructor
  * @extends {WebInspector.SidebarPane}
+ * @param {!WebInspector.ExtensionServer} server
+ * @param {string} panelName
  * @param {string} title
  * @param {string} id
  */
-WebInspector.ExtensionSidebarPane = function(title, id)
+WebInspector.ExtensionSidebarPane = function(server, panelName, title, id)
 {
     WebInspector.SidebarPane.call(this, title);
     this.setHideOnDetach();
+    this._panelName = panelName;
+    this._server = server;
     this._id = id;
 }
 
 WebInspector.ExtensionSidebarPane.prototype = {
+    /**
+     * @return {string}
+     */
+    id: function()
+    {
+        return this._id;
+    },
+
+    /**
+     * @return {string}
+     */
+    panelName: function()
+    {
+        return this._panelName;
+    },
+
     /**
      * @param {!Object} object
      * @param {string} title
@@ -178,7 +213,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
     setExpression: function(expression, title, evaluateOptions, securityOrigin, callback)
     {
         this._createObjectPropertiesView();
-        WebInspector.extensionServer.evaluate(expression, true, false, evaluateOptions, securityOrigin, this._onEvaluate.bind(this, title, callback));
+        this._server.evaluate(expression, true, false, evaluateOptions, securityOrigin, this._onEvaluate.bind(this, title, callback));
     },
 
     /**
@@ -193,7 +228,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
         if (this._extensionView)
             this._extensionView.detach(true);
 
-        this._extensionView = new WebInspector.ExtensionView(this._id, url, "extension fill");
+        this._extensionView = new WebInspector.ExtensionView(this._server, this._id, url, "extension fill");
         this._extensionView.show(this.bodyElement);
 
         if (!this.bodyElement.style.height)
@@ -231,7 +266,7 @@ WebInspector.ExtensionSidebarPane.prototype = {
             this._extensionView.detach(true);
             delete this._extensionView;
         }
-        this._objectPropertiesView = new WebInspector.ExtensionNotifierView(this._id);
+        this._objectPropertiesView = new WebInspector.ExtensionNotifierView(this._server, this._id);
         this._objectPropertiesView.show(this.bodyElement);
     },
 

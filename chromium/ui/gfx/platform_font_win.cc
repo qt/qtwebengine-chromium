@@ -11,14 +11,19 @@
 #include <string>
 
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/win/scoped_comptr.h"
+#include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/scoped_select_object.h"
 #include "base/win/win_util.h"
+#include "third_party/skia/include/core/SkTypeface.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/win/scoped_set_map_mode.h"
 
 namespace {
@@ -60,6 +65,11 @@ void SetLogFontStyle(int font_style, LOGFONT* font_info) {
   font_info->lfWeight = (font_style & gfx::Font::BOLD) ? FW_BOLD : FW_NORMAL;
 }
 
+void GetTextMetricsForFont(HDC hdc, HFONT font, TEXTMETRIC* text_metrics) {
+  base::win::ScopedSelectObject scoped_font(hdc, font);
+  GetTextMetrics(hdc, text_metrics);
+}
+
 }  // namespace
 
 namespace gfx {
@@ -72,6 +82,8 @@ PlatformFontWin::AdjustFontCallback
     PlatformFontWin::adjust_font_callback = NULL;
 PlatformFontWin::GetMinimumFontSizeCallback
     PlatformFontWin::get_minimum_font_size_callback = NULL;
+
+bool PlatformFontWin::use_skia_for_font_metrics_ = false;
 
 ////////////////////////////////////////////////////////////////////////////////
 // PlatformFontWin, public
@@ -116,7 +128,7 @@ Font PlatformFontWin::DeriveFontWithHeight(int height, int style) {
   SetLogFontStyle(style, &font_info);
 
   HFONT hfont = CreateFontIndirect(&font_info);
-  return Font(new PlatformFontWin(CreateHFontRef(hfont)));
+  return DeriveWithCorrectedSize(hfont);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -172,9 +184,9 @@ std::string PlatformFontWin::GetLocalizedFontName() const {
 
   // When a font has a localized name for a language matching the system
   // locale, GetTextFace() returns the localized name.
-  base::win::ScopedSelectObject font(memory_dc, font_ref_->hfont());
+  base::win::ScopedSelectObject font(memory_dc.Get(), font_ref_->hfont());
   wchar_t localized_font_name[LF_FACESIZE];
-  int length = GetTextFace(memory_dc, arraysize(localized_font_name),
+  int length = GetTextFace(memory_dc.Get(), arraysize(localized_font_name),
                            &localized_font_name[0]);
   if (length <= 0)
     return GetFontName();
@@ -183,6 +195,12 @@ std::string PlatformFontWin::GetLocalizedFontName() const {
 
 int PlatformFontWin::GetFontSize() const {
   return font_ref_->font_size();
+}
+
+const FontRenderParams& PlatformFontWin::GetFontRenderParams() const {
+  CR_DEFINE_STATIC_LOCAL(const gfx::FontRenderParams, params,
+      (gfx::GetFontRenderParams(gfx::FontRenderParamsQuery(false), NULL)));
+  return params;
 }
 
 NativeFont PlatformFontWin::GetNativeFont() const {
@@ -201,7 +219,12 @@ void PlatformFontWin::InitWithCopyOfHFONT(HFONT hfont) {
 
 void PlatformFontWin::InitWithFontNameAndSize(const std::string& font_name,
                                               int font_size) {
-  HFONT hf = ::CreateFont(-font_size, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+  HFONT hf = ::CreateFont(-font_size, 0, 0, 0, FW_DONTCARE, FALSE, FALSE, FALSE,
+                          DEFAULT_CHARSET,
+                          OUT_DEFAULT_PRECIS,
+                          CLIP_DEFAULT_PRECIS,
+                          DEFAULT_QUALITY,
+                          DEFAULT_PITCH | FF_DONTCARE,
                           base::UTF8ToUTF16(font_name).c_str());
   font_ref_ = CreateHFontRef(hf);
 }
@@ -209,7 +232,7 @@ void PlatformFontWin::InitWithFontNameAndSize(const std::string& font_name,
 // static
 PlatformFontWin::HFontRef* PlatformFontWin::GetBaseFontRef() {
   if (base_font_ref_ == NULL) {
-    NONCLIENTMETRICS metrics;
+    NONCLIENTMETRICS_XP metrics;
     base::win::GetNonClientMetrics(&metrics);
 
     if (adjust_font_callback)
@@ -228,13 +251,21 @@ PlatformFontWin::HFontRef* PlatformFontWin::GetBaseFontRef() {
 PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRef(HFONT font) {
   TEXTMETRIC font_metrics;
 
+  if (use_skia_for_font_metrics_)
+    return CreateHFontRefFromSkia(font);
+
   {
     base::win::ScopedGetDC screen_dc(NULL);
-    base::win::ScopedSelectObject scoped_font(screen_dc, font);
     gfx::ScopedSetMapMode mode(screen_dc, MM_TEXT);
-    GetTextMetrics(screen_dc, &font_metrics);
+    GetTextMetricsForFont(screen_dc, font, &font_metrics);
   }
 
+  return CreateHFontRef(font, font_metrics);
+}
+
+PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRef(
+    HFONT font,
+    const TEXTMETRIC& font_metrics) {
   const int height = std::max<int>(1, font_metrics.tmHeight);
   const int baseline = std::max<int>(1, font_metrics.tmAscent);
   const int cap_height =
@@ -251,6 +282,86 @@ PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRef(HFONT font) {
     style |= Font::BOLD;
 
   return new HFontRef(font, font_size, height, baseline, cap_height,
+                      ave_char_width, style);
+}
+
+Font PlatformFontWin::DeriveWithCorrectedSize(HFONT base_font) {
+  base::win::ScopedGetDC screen_dc(NULL);
+  gfx::ScopedSetMapMode mode(screen_dc, MM_TEXT);
+
+  base::win::ScopedGDIObject<HFONT> best_font(base_font);
+  TEXTMETRIC best_font_metrics;
+  GetTextMetricsForFont(screen_dc, best_font, &best_font_metrics);
+
+  LOGFONT font_info;
+  GetObject(base_font, sizeof(LOGFONT), &font_info);
+
+  // Set |lfHeight| to negative value to indicate it's the size, not the height.
+  font_info.lfHeight =
+      -(best_font_metrics.tmHeight - best_font_metrics.tmInternalLeading);
+
+  do {
+    // Increment font size. Prefer font with greater size if its height isn't
+    // greater than height of base font.
+    font_info.lfHeight = AdjustFontSize(font_info.lfHeight, 1);
+    base::win::ScopedGDIObject<HFONT> font(CreateFontIndirect(&font_info));
+    TEXTMETRIC font_metrics;
+    GetTextMetricsForFont(screen_dc, font, &font_metrics);
+    if (font_metrics.tmHeight > best_font_metrics.tmHeight)
+      break;
+    best_font.Set(font.release());
+    best_font_metrics = font_metrics;
+  } while (true);
+
+  return Font(new PlatformFontWin(CreateHFontRef(best_font.release())));
+}
+
+// static
+PlatformFontWin::HFontRef* PlatformFontWin::CreateHFontRefFromSkia(
+    HFONT gdi_font) {
+  LOGFONT font_info = {0};
+  GetObject(gdi_font, sizeof(LOGFONT), &font_info);
+
+  int skia_style = SkTypeface::kNormal;
+  if (font_info.lfWeight >= FW_SEMIBOLD &&
+      font_info.lfWeight <= FW_ULTRABOLD) {
+    skia_style |= SkTypeface::kBold;
+  }
+  if (font_info.lfItalic)
+    skia_style |= SkTypeface::kItalic;
+
+  skia::RefPtr<SkTypeface> skia_face = skia::AdoptRef(
+      SkTypeface::CreateFromName(
+          base::SysWideToUTF8(font_info.lfFaceName).c_str(),
+                              static_cast<SkTypeface::Style>(skia_style)));
+  BOOL antialiasing = TRUE;
+  SystemParametersInfo(SPI_GETFONTSMOOTHING, 0, &antialiasing, 0);
+
+  SkPaint paint;
+  paint.setAntiAlias(!!antialiasing);
+  paint.setTypeface(skia_face.get());
+  SkPaint::FontMetrics skia_metrics;
+  paint.getFontMetrics(&skia_metrics);
+
+  // The calculations below are similar to those in the CreateHFontRef
+  // function.
+  const int height =
+      std::max<int>(1, std::ceil(fabs(skia_metrics.fAscent)) +
+                    std::ceil(skia_metrics.fDescent));
+  const int baseline = std::max<int>(1, std::ceil(fabs(skia_metrics.fAscent)));
+  const int cap_height = std::max<int>(1,
+      std::ceil(fabs(skia_metrics.fAscent)) - skia_metrics.fLeading);
+  const int ave_char_width = std::max<int>(1, skia_metrics.fAvgCharWidth);
+  const int font_size = std::max<int>(1, height - skia_metrics.fLeading);
+
+  int style = 0;
+  if (skia_style & SkTypeface::kItalic)
+    style |= Font::ITALIC;
+  if (font_info.lfUnderline)
+    style |= Font::UNDERLINE;
+  if (font_info.lfWeight >= kTextMetricWeightBold)
+    style |= Font::BOLD;
+  return new HFontRef(gdi_font, font_size, height, baseline, cap_height,
                       ave_char_width, style);
 }
 

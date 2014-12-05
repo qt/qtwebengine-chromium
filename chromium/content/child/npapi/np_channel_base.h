@@ -21,35 +21,6 @@ namespace base {
 class MessageLoopProxy;
 }
 
-#if defined(COMPILER_GCC)
-namespace BASE_HASH_NAMESPACE {
-
-template<>
-struct hash<NPObject*> {
-  std::size_t operator()(NPObject* const& ptr) const {
-    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
-  }
-};
-
-template<>
-struct hash<struct _NPP*> {
-  std::size_t operator()(struct _NPP* const& ptr) const {
-    return hash<size_t>()(reinterpret_cast<size_t>(ptr));
-  }
-};
-
-}  // namespace __gnu_cxx
-#elif defined(COMPILER_MSVC)
-namespace stdext {
-
-template<>
-inline size_t hash_value(NPObject* const& ptr) {
-  return hash_value(reinterpret_cast<size_t>(ptr));
-}
-
-}  // namespace stdext
-#endif // COMPILER
-
 namespace content {
 
 // Encapsulates an IPC channel between a renderer and another process. Used to
@@ -84,7 +55,7 @@ class NPChannelBase : public IPC::Listener,
   int GetExistingRouteForNPObjectOwner(struct _NPP* owner);
 
   // IPC::Sender implementation:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
   base::ProcessId peer_pid() { return channel_->GetPeerPID(); }
   IPC::ChannelHandle channel_handle() const { return channel_handle_; }
@@ -121,7 +92,7 @@ class NPChannelBase : public IPC::Listener,
 
   friend class base::RefCountedThreadSafe<NPChannelBase>;
 
-  virtual ~NPChannelBase();
+  ~NPChannelBase() override;
 
   // Returns a NPChannelBase derived object for the given channel name.
   // If an existing channel exists returns that object, otherwise creates a
@@ -145,9 +116,9 @@ class NPChannelBase : public IPC::Listener,
   virtual bool OnControlMessageReceived(const IPC::Message& msg);
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelError() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelError() override;
 
   void set_send_unblocking_only_during_unblock_dispatch() {
     send_unblocking_only_during_unblock_dispatch_ = true;

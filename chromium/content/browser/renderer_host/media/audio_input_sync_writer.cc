@@ -60,18 +60,20 @@ void AudioInputSyncWriter::Write(const media::AudioBus* data,
   if (last_write_time_.is_null()) {
     // This is the first time Write is called.
     base::TimeDelta interval = base::Time::Now() - creation_time_;
-    oss << "Audio input data received for the first time: delay = "
-        << interval.InMilliseconds() << "ms.";
+    oss << "AISW::Write: audio input data received for the first time: delay "
+           "= " << interval.InMilliseconds() << "ms";
 
   } else {
     base::TimeDelta interval = base::Time::Now() - last_write_time_;
     if (interval > kLogDelayThreadhold) {
-      oss << "Audio input data delay unexpectedly long: delay = "
-          << interval.InMilliseconds() << "ms.";
+      oss << "AISW::Write: audio input data delay unexpectedly long: delay = "
+          << interval.InMilliseconds() << "ms";
     }
   }
-  if (!oss.str().empty())
+  if (!oss.str().empty()) {
     MediaStreamManager::SendMessageToNativeLog(oss.str());
+    DVLOG(1) << oss.str();
+  }
 
   last_write_time_ = base::Time::Now();
 #endif
@@ -105,27 +107,11 @@ bool AudioInputSyncWriter::Init() {
                                                 foreign_socket_.get());
 }
 
-#if defined(OS_WIN)
-
-bool AudioInputSyncWriter::PrepareForeignSocketHandle(
+bool AudioInputSyncWriter::PrepareForeignSocket(
     base::ProcessHandle process_handle,
-    base::SyncSocket::Handle* foreign_handle) {
-  ::DuplicateHandle(GetCurrentProcess(), foreign_socket_->handle(),
-                    process_handle, foreign_handle,
-                    0, FALSE, DUPLICATE_SAME_ACCESS);
-  return (*foreign_handle != 0);
+    base::SyncSocket::TransitDescriptor* descriptor) {
+  return foreign_socket_->PrepareTransitDescriptor(process_handle, descriptor);
 }
 
-#else
-
-bool AudioInputSyncWriter::PrepareForeignSocketHandle(
-    base::ProcessHandle process_handle,
-    base::FileDescriptor* foreign_handle) {
-  foreign_handle->fd = foreign_socket_->handle();
-  foreign_handle->auto_close = false;
-  return (foreign_handle->fd != -1);
-}
-
-#endif
 
 }  // namespace content

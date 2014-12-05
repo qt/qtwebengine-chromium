@@ -8,11 +8,13 @@
 #include "cc/layers/delegated_frame_provider.h"
 #include "cc/layers/delegated_frame_resource_collection.h"
 #include "cc/output/copy_output_result.h"
+#include "cc/surfaces/surface_factory_client.h"
 #include "content/browser/compositor/image_transport_factory.h"
 #include "content/browser/compositor/owned_mailbox.h"
 #include "content/browser/renderer_host/delegated_frame_evictor.h"
 #include "content/browser/renderer_host/dip_util.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
+#include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/public/browser/render_process_host.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
@@ -20,6 +22,10 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_owner_delegate.h"
 #include "ui/gfx/rect_conversions.h"
+
+namespace cc {
+class SurfaceFactory;
+}
 
 namespace media {
 class VideoFrame;
@@ -41,7 +47,6 @@ class CONTENT_EXPORT DelegatedFrameHostClient {
   virtual ui::Compositor* GetCompositor() const = 0;
   virtual ui::Layer* GetLayer() = 0;
   virtual RenderWidgetHostImpl* GetHost() = 0;
-  virtual void SchedulePaintInRect(const gfx::Rect& damage_rect_in_dip) = 0;
   virtual bool IsVisible() = 0;
   virtual scoped_ptr<ResizeLock> CreateResizeLock(
       bool defer_compositor_lock) = 0;
@@ -72,10 +77,11 @@ class CONTENT_EXPORT DelegatedFrameHost
       public ImageTransportFactoryObserver,
       public DelegatedFrameEvictorClient,
       public cc::DelegatedFrameResourceCollectionClient,
+      public cc::SurfaceFactoryClient,
       public base::SupportsWeakPtr<DelegatedFrameHost> {
  public:
   DelegatedFrameHost(DelegatedFrameHostClient* client);
-  virtual ~DelegatedFrameHost();
+  ~DelegatedFrameHost() override;
 
   bool CanCopyToBitmap() const;
 
@@ -86,16 +92,16 @@ class CONTENT_EXPORT DelegatedFrameHost
       float frame_device_scale_factor,
       const std::vector<ui::LatencyInfo>& latency_info);
   void WasHidden();
-  void WasShown();
+  void WasShown(const ui::LatencyInfo& latency_info);
   void WasResized();
+  bool HasSavedFrame();
   gfx::Size GetRequestedRendererSize() const;
   void AddedToWindow();
   void RemovingFromWindow();
-  void CopyFromCompositingSurface(
-      const gfx::Rect& src_subrect,
-      const gfx::Size& dst_size,
-      const base::Callback<void(bool, const SkBitmap&)>& callback,
-      const SkBitmap::Config config);
+  void CopyFromCompositingSurface(const gfx::Rect& src_subrect,
+                                  const gfx::Size& output_size,
+                                  CopyFromCompositingSurfaceCallback& callback,
+                                  const SkColorType color_type);
   void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
@@ -105,15 +111,20 @@ class CONTENT_EXPORT DelegatedFrameHost
   void BeginFrameSubscription(
       scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber);
   void EndFrameSubscription();
+  bool HasFrameSubscriber() const { return frame_subscriber_; }
 
   // Exposed for tests.
   cc::DelegatedFrameProvider* FrameProviderForTesting() const {
     return frame_provider_.get();
   }
+  cc::SurfaceId SurfaceIdForTesting() const { return surface_id_; }
   void OnCompositingDidCommitForTesting(ui::Compositor* compositor) {
     OnCompositingDidCommit(compositor);
   }
   bool ShouldCreateResizeLockForTesting() { return ShouldCreateResizeLock(); }
+  bool ReleasedFrontLockActiveForTesting() const {
+    return !!released_front_lock_.get();
+  }
 
  private:
   friend class DelegatedFrameHostClient;
@@ -134,24 +145,22 @@ class CONTENT_EXPORT DelegatedFrameHost
   void UnlockResources();
 
   // Overridden from ui::CompositorObserver:
-  virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingStarted(ui::Compositor* compositor,
-                                    base::TimeTicks start_time) OVERRIDE;
-  virtual void OnCompositingEnded(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingAborted(ui::Compositor* compositor) OVERRIDE;
-  virtual void OnCompositingLockStateChanged(
-      ui::Compositor* compositor) OVERRIDE;
+  void OnCompositingDidCommit(ui::Compositor* compositor) override;
+  void OnCompositingStarted(ui::Compositor* compositor,
+                            base::TimeTicks start_time) override;
+  void OnCompositingEnded(ui::Compositor* compositor) override;
+  void OnCompositingAborted(ui::Compositor* compositor) override;
+  void OnCompositingLockStateChanged(ui::Compositor* compositor) override;
 
   // Overridden from ui::CompositorVSyncManager::Observer:
-  virtual void OnUpdateVSyncParameters(base::TimeTicks timebase,
-                                       base::TimeDelta interval) OVERRIDE;
+  void OnUpdateVSyncParameters(base::TimeTicks timebase,
+                               base::TimeDelta interval) override;
 
   // Overridden from ui::LayerOwnerObserver:
-  virtual void OnLayerRecreated(ui::Layer* old_layer,
-                                ui::Layer* new_layer) OVERRIDE;
+  void OnLayerRecreated(ui::Layer* old_layer, ui::Layer* new_layer) override;
 
   // Overridden from ImageTransportFactoryObserver:
-  virtual void OnLostResources() OVERRIDE;
+  void OnLostResources() override;
 
   bool ShouldSkipFrame(gfx::Size size_in_dip) const;
 
@@ -172,17 +181,17 @@ class CONTENT_EXPORT DelegatedFrameHost
   // of the copy.
   static void CopyFromCompositingSurfaceHasResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareTextureCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void PrepareBitmapCopyOutputResult(
       const gfx::Size& dst_size_in_pixel,
-      const SkBitmap::Config config,
+      const SkColorType color_type,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
       scoped_ptr<cc::CopyOutputResult> result);
   static void CopyFromCompositingSurfaceHasResultForVideo(
@@ -206,19 +215,31 @@ class CONTENT_EXPORT DelegatedFrameHost
   void SendReturnedDelegatedResources(uint32 output_surface_id);
 
   // DelegatedFrameEvictorClient implementation.
-  virtual void EvictDelegatedFrame() OVERRIDE;
+  void EvictDelegatedFrame() override;
 
   // cc::DelegatedFrameProviderClient implementation.
-  virtual void UnusedResourcesAreAvailable() OVERRIDE;
+  void UnusedResourcesAreAvailable() override;
 
-  void DidReceiveFrameFromRenderer();
+  // cc::SurfaceFactoryClient implementation.
+  void ReturnResources(const cc::ReturnedResourceArray& resources) override;
+
+  void DidReceiveFrameFromRenderer(const gfx::Rect& damage_rect);
 
   DelegatedFrameHostClient* client_;
+
+  // True if this renders into a Surface, false if it renders into a delegated
+  // layer.
+  bool use_surfaces_;
 
   std::vector<base::Closure> on_compositing_did_commit_callbacks_;
 
   // The vsync manager we are observing for changes, if any.
   scoped_refptr<ui::CompositorVSyncManager> vsync_manager_;
+
+  // The current VSync timebase and interval. These are zero until the first
+  // call to OnUpdateVSyncParameters().
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   // With delegated renderer, this is the last output surface, used to
   // disambiguate resources with the same id coming from different output
@@ -241,6 +262,13 @@ class CONTENT_EXPORT DelegatedFrameHost
 
   // Provides delegated frame updates to the cc::DelegatedRendererLayer.
   scoped_refptr<cc::DelegatedFrameProvider> frame_provider_;
+
+  // State for rendering into a Surface.
+  scoped_ptr<cc::SurfaceIdAllocator> id_allocator_;
+  scoped_ptr<cc::SurfaceFactory> surface_factory_;
+  cc::SurfaceId surface_id_;
+  gfx::Size current_surface_size_;
+  cc::ReturnedResourceArray surface_returned_resources_;
 
   // This lock is the one waiting for a frame of the right size to come back
   // from the renderer/GPU process. It is set from the moment the aura window

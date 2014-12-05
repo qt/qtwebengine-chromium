@@ -28,7 +28,7 @@
 
 #include "core/accessibility/AXObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXMockObject : public AXObject {
 
@@ -37,26 +37,18 @@ protected:
 public:
     virtual ~AXMockObject();
 
-    virtual void setParent(AXObject* parent) { m_parent = parent; }
-
     // AXObject overrides.
-    virtual AXObject* parentObject() const OVERRIDE { return m_parent; }
-    virtual bool isEnabled() const OVERRIDE { return true; }
-
-protected:
-    AXObject* m_parent;
-
-    // Must be called when the parent object clears its children.
-    virtual void detachFromParent() OVERRIDE { m_parent = 0; }
+    virtual AXObject* computeParent() const override { return m_parent; }
+    virtual bool isEnabled() const override { return true; }
 
 private:
-    virtual bool isMockObject() const OVERRIDE FINAL { return true; }
+    virtual bool isMockObject() const override final { return true; }
 
-    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
+    virtual bool computeAccessibilityIsIgnored() const override;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXMockObject, isMockObject());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXMockObject_h

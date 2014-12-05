@@ -23,7 +23,7 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLInputElement;
 
@@ -31,35 +31,38 @@ class HTMLInputElement;
 // sufficient space to draw a file icon and filename. The RenderButton has a shadow node
 // associated with it to receive click/hover events.
 
-class RenderFileUploadControl FINAL : public RenderBlockFlow {
+class RenderFileUploadControl final : public RenderBlockFlow {
 public:
     RenderFileUploadControl(HTMLInputElement*);
     virtual ~RenderFileUploadControl();
 
-    virtual bool isFileUploadControl() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectFileUploadControl || RenderBlockFlow::isOfType(type); }
 
     String buttonValue();
     String fileTextValue() const;
 
-private:
-    virtual const char* renderName() const OVERRIDE { return "RenderFileUploadControl"; }
+    HTMLInputElement* uploadButton() const;
+    int uploadButtonWidth();
 
-    virtual void updateFromElement() OVERRIDE;
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
-    virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    static const int afterButtonSpacing = 4;
+
+private:
+    virtual const char* renderName() const override { return "RenderFileUploadControl"; }
+
+    virtual void updateFromElement() override;
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
+    virtual void computePreferredLogicalWidths() override;
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) override;
 
     int maxFilenameWidth() const;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE;
-
-    HTMLInputElement* uploadButton() const;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
 
     bool m_canReceiveDroppedFiles;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFileUploadControl, isFileUploadControl());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFileUploadControl_h

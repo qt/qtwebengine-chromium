@@ -37,14 +37,14 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioFIFO;
 class AudioPullFIFO;
 
 // An AudioDestination using Chromium's audio system
 
-class PLATFORM_EXPORT AudioDestination : public blink::WebAudioDevice::RenderCallback, public AudioSourceProvider {
+class PLATFORM_EXPORT AudioDestination : public WebAudioDevice::RenderCallback, public AudioSourceProvider {
     WTF_MAKE_NONCOPYABLE(AudioDestination);
 public:
     AudioDestination(AudioIOCallback&, const String& inputDeviceId, unsigned numberOfInputChannels, unsigned numberOfOutputChannels, float sampleRate);
@@ -60,11 +60,11 @@ public:
 
     float sampleRate() const { return m_sampleRate; }
 
-    // blink::WebAudioDevice::RenderCallback
-    virtual void render(const blink::WebVector<float*>& sourceData, const blink::WebVector<float*>& audioData, size_t numberOfFrames) OVERRIDE;
+    // WebAudioDevice::RenderCallback
+    virtual void render(const WebVector<float*>& sourceData, const WebVector<float*>& audioData, size_t numberOfFrames) override;
 
-    // WebCore::AudioSourceProvider
-    virtual void provideInput(AudioBus*, size_t framesToProcess) OVERRIDE;
+    // AudioSourceProvider
+    virtual void provideInput(AudioBus*, size_t framesToProcess) override;
 
     static float hardwareSampleRate();
 
@@ -83,13 +83,13 @@ private:
     RefPtr<AudioBus> m_renderBus;
     float m_sampleRate;
     bool m_isPlaying;
-    OwnPtr<blink::WebAudioDevice> m_audioDevice;
+    OwnPtr<WebAudioDevice> m_audioDevice;
     size_t m_callbackBufferSize;
 
     OwnPtr<AudioFIFO> m_inputFifo;
     OwnPtr<AudioPullFIFO> m_fifo;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioDestination_h

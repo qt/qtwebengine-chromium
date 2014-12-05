@@ -64,14 +64,6 @@ ProxyServer::Scheme GetSchemeFromURIInternal(std::string::const_iterator begin,
   return ProxyServer::SCHEME_INVALID;
 }
 
-std::string HostNoBrackets(const std::string& host) {
-  // Remove brackets from an RFC 2732-style IPv6 literal address.
-  const std::string::size_type len = host.size();
-  if (len >= 2 && host[0] == '[' && host[len - 1] == ']')
-    return host.substr(1, len - 2);
-  return host;
-}
-
 }  // namespace
 
 ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
@@ -88,7 +80,8 @@ ProxyServer::ProxyServer(Scheme scheme, const HostPortPair& host_port_pair)
 const HostPortPair& ProxyServer::host_port_pair() const {
   // Doesn't make sense to call this if the URI scheme doesn't
   // have concept of a host.
-  DCHECK(is_valid() && !is_direct());
+  DCHECK(is_valid());
+  DCHECK(!is_direct());
   return host_port_pair_;
 }
 
@@ -219,27 +212,6 @@ ProxyServer::Scheme ProxyServer::GetSchemeFromURI(const std::string& scheme) {
   return GetSchemeFromURIInternal(scheme.begin(), scheme.end());
 }
 
-// TODO(bengr): Use |scheme_| to indicate that this is the data reduction proxy.
-#if defined(SPDY_PROXY_AUTH_ORIGIN)
-bool ProxyServer::isDataReductionProxy() const {
-    bool dev_host = false;
-#if defined (DATA_REDUCTION_DEV_HOST)
-    dev_host = host_port_pair_.Equals(
-        HostPortPair::FromURL(GURL(DATA_REDUCTION_DEV_HOST)));
-#endif
-  return dev_host || host_port_pair_.Equals(
-      HostPortPair::FromURL(GURL(SPDY_PROXY_AUTH_ORIGIN)));
-}
-
-bool ProxyServer::isDataReductionProxyFallback() const {
-#if defined(DATA_REDUCTION_FALLBACK_HOST)
-  return host_port_pair_.Equals(
-      HostPortPair::FromURL(GURL(DATA_REDUCTION_FALLBACK_HOST)));
-#endif  // defined(DATA_REDUCTION_FALLBACK_HOST)
-  return false;
-}
-#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
-
 // static
 ProxyServer ProxyServer::FromSchemeHostAndPort(
     Scheme scheme,
@@ -266,7 +238,7 @@ ProxyServer ProxyServer::FromSchemeHostAndPort(
     if (port == -1)
       port = GetDefaultPortForScheme(scheme);
 
-    host_port_pair = HostPortPair(HostNoBrackets(host), port);
+    host_port_pair = HostPortPair(host, port);
   }
 
   return ProxyServer(scheme, host_port_pair);

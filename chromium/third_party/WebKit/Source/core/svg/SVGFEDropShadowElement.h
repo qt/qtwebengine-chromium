@@ -25,9 +25,10 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEDropShadowElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEDropShadowElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEDropShadowElement);
 
@@ -43,9 +44,9 @@ private:
     explicit SVGFEDropShadowElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     static const AtomicString& stdDeviationXIdentifier();
     static const AtomicString& stdDeviationYIdentifier();
@@ -56,6 +57,6 @@ private:
     RefPtr<SVGAnimatedString> m_in1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEDropShadowElement_h

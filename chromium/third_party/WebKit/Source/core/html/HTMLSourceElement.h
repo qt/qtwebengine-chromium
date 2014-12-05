@@ -26,16 +26,20 @@
 #ifndef HTMLSourceElement_h
 #define HTMLSourceElement_h
 
+#include "core/css/MediaQueryListListener.h"
 #include "core/html/HTMLElement.h"
 #include "platform/Timer.h"
 
-namespace WebCore {
+namespace blink {
 
 template<typename T> class EventSender;
 typedef EventSender<HTMLSourceElement> SourceEventSender;
 
-class HTMLSourceElement FINAL : public HTMLElement {
+class HTMLSourceElement final : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
+    class Listener;
+
     DECLARE_NODE_FACTORY(HTMLSourceElement);
     virtual ~HTMLSourceElement();
 
@@ -48,15 +52,24 @@ public:
 
     void dispatchPendingEvent(SourceEventSender*);
 
+    bool mediaQueryMatches() const;
+
+    virtual void trace(Visitor*) override;
+
 private:
     explicit HTMLSourceElement(Document&);
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
-    virtual bool isURLAttribute(const Attribute&) const OVERRIDE;
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
+    virtual bool isURLAttribute(const Attribute&) const override;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+
+    void notifyMediaQueryChanged();
+
+    RefPtrWillBeMember<MediaQueryList> m_mediaQueryList;
+    RefPtrWillBeMember<Listener> m_listener;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // HTMLSourceElement_h

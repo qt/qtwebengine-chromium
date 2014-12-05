@@ -14,7 +14,7 @@ namespace cc {
 
 class CC_EXPORT DebugBorderDrawQuad : public DrawQuad {
  public:
-  static scoped_ptr<DebugBorderDrawQuad> Create();
+  DebugBorderDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -33,14 +33,12 @@ class CC_EXPORT DebugBorderDrawQuad : public DrawQuad {
   SkColor color;
   int width;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const DebugBorderDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  DebugBorderDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

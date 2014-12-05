@@ -32,40 +32,37 @@
 #include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
-class FrameView;
-}
-
 namespace blink {
 
+class FrameView;
 class WebViewImpl;
 
-class ValidationMessageClientImpl FINAL : public NoBaseWillBeGarbageCollectedFinalized<ValidationMessageClientImpl>, public WebCore::ValidationMessageClient {
+class ValidationMessageClientImpl final : public NoBaseWillBeGarbageCollectedFinalized<ValidationMessageClientImpl>, public ValidationMessageClient {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ValidationMessageClientImpl);
 public:
     static PassOwnPtrWillBeRawPtr<ValidationMessageClientImpl> create(WebViewImpl&);
     virtual ~ValidationMessageClientImpl();
 
-    virtual void trace(WebCore::Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     ValidationMessageClientImpl(WebViewImpl&);
-    void checkAnchorStatus(WebCore::Timer<ValidationMessageClientImpl>*);
-    WebCore::FrameView* currentView();
+    void checkAnchorStatus(Timer<ValidationMessageClientImpl>*);
+    FrameView* currentView();
 
-    virtual void showValidationMessage(const WebCore::Element& anchor, const String& message) OVERRIDE;
-    virtual void hideValidationMessage(const WebCore::Element& anchor) OVERRIDE;
-    virtual bool isValidationMessageVisible(const WebCore::Element& anchor) OVERRIDE;
-    virtual void documentDetached(const WebCore::Document&) OVERRIDE;
-    virtual void willBeDestroyed() OVERRIDE;
+    virtual void showValidationMessage(const Element& anchor, const String& message, TextDirection messageDir, const String& subMessage, TextDirection subMessageDir) override;
+    virtual void hideValidationMessage(const Element& anchor) override;
+    virtual bool isValidationMessageVisible(const Element& anchor) override;
+    virtual void documentDetached(const Document&) override;
+    virtual void willBeDestroyed() override;
 
     WebViewImpl& m_webView;
-    RawPtrWillBeMember<const WebCore::Element> m_currentAnchor;
+    RawPtrWillBeMember<const Element> m_currentAnchor;
     String m_message;
-    WebCore::IntRect m_lastAnchorRectInScreen;
+    IntRect m_lastAnchorRectInScreen;
     float m_lastPageScaleFactor;
     double m_finishTime;
-    WebCore::Timer<ValidationMessageClientImpl> m_timer;
+    Timer<ValidationMessageClientImpl> m_timer;
 };
 
 }

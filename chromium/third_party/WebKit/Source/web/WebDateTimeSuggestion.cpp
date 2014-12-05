@@ -26,18 +26,18 @@
 #include "config.h"
 #include "public/web/WebDateTimeSuggestion.h"
 
-#include "platform/DateTimeChooser.h"
+#include "core/html/forms/DateTimeChooser.h"
 
 namespace blink {
 
-WebDateTimeSuggestion::WebDateTimeSuggestion(const WebCore::DateTimeSuggestion& suggestion)
+WebDateTimeSuggestion::WebDateTimeSuggestion(const DateTimeSuggestion& suggestion)
     : value(suggestion.value)
     , localizedValue(suggestion.localizedValue)
     , label(suggestion.label)
 {
 }
 
-WebDateTimeSuggestion& WebDateTimeSuggestion::operator=(const WebCore::DateTimeSuggestion& suggestion)
+WebDateTimeSuggestion& WebDateTimeSuggestion::operator=(const DateTimeSuggestion& suggestion)
 {
     value = suggestion.value;
     localizedValue = suggestion.localizedValue;

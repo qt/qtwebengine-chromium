@@ -20,6 +20,8 @@
 
 #define BUILD_PRECOMPILE_H_
 
+#define _USE_MATH_DEFINES
+
 // The Windows header needs to come before almost all the other
 // Windows-specific headers.
 #include <Windows.h>
@@ -106,5 +108,3 @@
 #include <string>
 #include <utility>
 #include <vector>
-
-#include "intsafe_workaround.h"

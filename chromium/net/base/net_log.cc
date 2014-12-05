@@ -101,10 +101,10 @@ NetLog::ParametersCallback NetLog::Source::ToEventParametersCallback() const {
 // static
 bool NetLog::Source::FromEventParameters(base::Value* event_params,
                                          Source* source) {
-  base::DictionaryValue* dict;
-  base::DictionaryValue* source_dict;
-  int source_id;
-  int source_type;
+  base::DictionaryValue* dict = NULL;
+  base::DictionaryValue* source_dict = NULL;
+  int source_id = -1;
+  int source_type = NetLog::SOURCE_COUNT;
   if (!event_params ||
       !event_params->GetAsDictionary(&dict) ||
       !dict->GetDictionary("source_dependency", &source_dict) ||
@@ -114,7 +114,7 @@ bool NetLog::Source::FromEventParameters(base::Value* event_params,
     return false;
   }
 
-  DCHECK_LE(0, source_id);
+  DCHECK_GE(source_id, 0);
   DCHECK_LT(source_type, NetLog::SOURCE_COUNT);
   *source = Source(static_cast<SourceType>(source_type), source_id);
   return true;
@@ -198,10 +198,7 @@ void NetLog::ThreadSafeObserver::OnAddEntryData(const EntryData& entry_data) {
   OnAddEntry(Entry(&entry_data, log_level()));
 }
 
-NetLog::NetLog()
-    : last_id_(0),
-      base_log_level_(LOG_NONE),
-      effective_log_level_(LOG_NONE) {
+NetLog::NetLog() : last_id_(0), effective_log_level_(LOG_NONE) {
 }
 
 NetLog::~NetLog() {
@@ -225,13 +222,6 @@ void NetLog::AddGlobalEntry(
 
 uint32 NetLog::NextID() {
   return base::subtle::NoBarrier_AtomicIncrement(&last_id_, 1);
-}
-
-void NetLog::SetBaseLogLevel(LogLevel log_level) {
-  base::AutoLock lock(lock_);
-  base_log_level_ = log_level;
-
-  UpdateLogLevel();
 }
 
 NetLog::LogLevel NetLog::GetLogLevel() const {
@@ -285,7 +275,7 @@ void NetLog::UpdateLogLevel() {
 
   // Look through all the observers and find the finest granularity
   // log level (higher values of the enum imply *lower* log levels).
-  LogLevel new_effective_log_level = base_log_level_;
+  LogLevel new_effective_log_level = LOG_NONE;
   ObserverListBase<ThreadSafeObserver>::Iterator it(observers_);
   ThreadSafeObserver* observer;
   while ((observer = it.GetNext()) != NULL) {

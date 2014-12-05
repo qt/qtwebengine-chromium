@@ -2,112 +2,264 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/gfx/font_render_params_linux.h"
-
-#include "base/command_line.h"
-#include "base/logging.h"
-#include "ui/gfx/display.h"
-#include "ui/gfx/switches.h"
+#include "ui/gfx/font_render_params.h"
 
 #include <fontconfig/fontconfig.h>
 
-#if defined(OS_LINUX) && defined(USE_AURA) && !defined(OS_CHROMEOS)
+#include "base/command_line.h"
+#include "base/containers/mru_cache.h"
+#include "base/hash.h"
+#include "base/lazy_instance.h"
+#include "base/logging.h"
+#include "base/macros.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/synchronization/lock.h"
+#include "ui/gfx/font.h"
 #include "ui/gfx/linux_font_delegate.h"
-#endif
+#include "ui/gfx/switches.h"
 
 namespace gfx {
 
 namespace {
 
-bool SubpixelPositioningRequested(bool renderer) {
-  const CommandLine* cl = CommandLine::ForCurrentProcess();
-  if (renderer) {
-    // Text rendered by Blink in high-DPI mode is poorly-hinted unless subpixel
-    // positioning is used (as opposed to each glyph being individually snapped
-    // to the pixel grid).
-    return cl->HasSwitch(switches::kEnableWebkitTextSubpixelPositioning) ||
-           (Display::HasForceDeviceScaleFactor() &&
-            Display::GetForcedDeviceScaleFactor() != 1.0);
-  }
-  return cl->HasSwitch(switches::kEnableBrowserTextSubpixelPositioning);
-}
-
-// Initializes |params| with the system's default settings. |renderer| is true
-// when setting WebKit renderer defaults.
-void LoadDefaults(FontRenderParams* params, bool renderer) {
-  // For non-GTK builds (read: Aura), just use reasonable hardcoded values.
-  params->antialiasing = true;
-  params->autohinter = true;
-  params->use_bitmaps = true;
-  params->hinting = FontRenderParams::HINTING_SLIGHT;
-
-  // Fetch default subpixel rendering settings from FontConfig.
-  FcPattern* pattern = FcPatternCreate();
-  FcConfigSubstitute(NULL, pattern, FcMatchPattern);
-  FcDefaultSubstitute(pattern);
-  FcResult result;
-  FcPattern* match = FcFontMatch(0, pattern, &result);
-  DCHECK(match);
-  int fc_rgba = FC_RGBA_RGB;
-  FcPatternGetInteger(match, FC_RGBA, 0, &fc_rgba);
-  FcPatternDestroy(pattern);
-  FcPatternDestroy(match);
-
-  switch (fc_rgba) {
-    case FC_RGBA_RGB:
-      params->subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_RGB;
-      break;
-    case FC_RGBA_BGR:
-      params->subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_BGR;
-      break;
-    case FC_RGBA_VRGB:
-      params->subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_VRGB;
-      break;
-    case FC_RGBA_VBGR:
-      params->subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_VBGR;
-      break;
-    default:
-      params->subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_NONE;
-  }
-
-#if defined(OS_LINUX) && defined(USE_AURA) && !defined(OS_CHROMEOS)
-  const LinuxFontDelegate* delegate = LinuxFontDelegate::instance();
-  if (delegate) {
-    params->antialiasing = delegate->UseAntialiasing();
-    params->hinting = delegate->GetHintingStyle();
-    params->subpixel_rendering = delegate->GetSubpixelRenderingStyle();
-  }
+#if defined(OS_CHROMEOS)
+// A device scale factor for an internal display (if any)
+// that is used to determine if subpixel positioning should be used.
+float device_scale_factor_for_internal_display = 1.0f;
 #endif
 
-  params->subpixel_positioning = SubpixelPositioningRequested(renderer);
+// Number of recent GetFontRenderParams() results to cache.
+const size_t kCacheSize = 20;
 
-  // To enable subpixel positioning, we need to disable hinting.
-  if (params->subpixel_positioning)
-    params->hinting = FontRenderParams::HINTING_NONE;
+// Cached result from a call to GetFontRenderParams().
+struct QueryResult {
+  QueryResult(const FontRenderParams& params, const std::string& family)
+      : params(params),
+        family(family) {
+  }
+  ~QueryResult() {}
+
+  FontRenderParams params;
+  std::string family;
+};
+
+// Keyed by hashes of FontRenderParamQuery structs from
+// HashFontRenderParamsQuery().
+typedef base::MRUCache<uint32, QueryResult> Cache;
+
+// A cache and the lock that must be held while accessing it.
+// GetFontRenderParams() is called by both the UI thread and the sandbox IPC
+// thread.
+struct SynchronizedCache {
+  SynchronizedCache() : cache(kCacheSize) {}
+
+  base::Lock lock;
+  Cache cache;
+};
+
+base::LazyInstance<SynchronizedCache>::Leaky g_synchronized_cache =
+    LAZY_INSTANCE_INITIALIZER;
+
+bool IsBrowserTextSubpixelPositioningEnabled() {
+#if defined(OS_CHROMEOS)
+  return device_scale_factor_for_internal_display > 1.0f;
+#else
+  return false;
+#endif
+}
+
+// Converts Fontconfig FC_HINT_STYLE to FontRenderParams::Hinting.
+FontRenderParams::Hinting ConvertFontconfigHintStyle(int hint_style) {
+  switch (hint_style) {
+    case FC_HINT_SLIGHT: return FontRenderParams::HINTING_SLIGHT;
+    case FC_HINT_MEDIUM: return FontRenderParams::HINTING_MEDIUM;
+    case FC_HINT_FULL:   return FontRenderParams::HINTING_FULL;
+    default:             return FontRenderParams::HINTING_NONE;
+  }
+}
+
+// Converts Fontconfig FC_RGBA to FontRenderParams::SubpixelRendering.
+FontRenderParams::SubpixelRendering ConvertFontconfigRgba(int rgba) {
+  switch (rgba) {
+    case FC_RGBA_RGB:  return FontRenderParams::SUBPIXEL_RENDERING_RGB;
+    case FC_RGBA_BGR:  return FontRenderParams::SUBPIXEL_RENDERING_BGR;
+    case FC_RGBA_VRGB: return FontRenderParams::SUBPIXEL_RENDERING_VRGB;
+    case FC_RGBA_VBGR: return FontRenderParams::SUBPIXEL_RENDERING_VBGR;
+    default:           return FontRenderParams::SUBPIXEL_RENDERING_NONE;
+  }
+}
+
+// Queries Fontconfig for rendering settings and updates |params_out| and
+// |family_out| (if non-NULL). Returns false on failure.
+bool QueryFontconfig(const FontRenderParamsQuery& query,
+                     FontRenderParams* params_out,
+                     std::string* family_out) {
+  FcPattern* query_pattern = FcPatternCreate();
+  CHECK(query_pattern);
+
+  FcPatternAddBool(query_pattern, FC_SCALABLE, FcTrue);
+
+  for (std::vector<std::string>::const_iterator it = query.families.begin();
+       it != query.families.end(); ++it) {
+    FcPatternAddString(query_pattern,
+        FC_FAMILY, reinterpret_cast<const FcChar8*>(it->c_str()));
+  }
+  if (query.pixel_size > 0)
+    FcPatternAddDouble(query_pattern, FC_PIXEL_SIZE, query.pixel_size);
+  if (query.point_size > 0)
+    FcPatternAddInteger(query_pattern, FC_SIZE, query.point_size);
+  if (query.style >= 0) {
+    FcPatternAddInteger(query_pattern, FC_SLANT,
+        (query.style & Font::ITALIC) ? FC_SLANT_ITALIC : FC_SLANT_ROMAN);
+    FcPatternAddInteger(query_pattern, FC_WEIGHT,
+        (query.style & Font::BOLD) ? FC_WEIGHT_BOLD : FC_WEIGHT_NORMAL);
+  }
+
+  FcConfigSubstitute(NULL, query_pattern, FcMatchPattern);
+  FcDefaultSubstitute(query_pattern);
+
+  // If the query was non-empty, match a specific font and destroy the query
+  // pattern. Otherwise, just use the query pattern.
+  FcPattern* result_pattern = query_pattern;
+  if (!query.is_empty()) {
+    FcResult result;
+    result_pattern = FcFontMatch(NULL, query_pattern, &result);
+    FcPatternDestroy(query_pattern);
+    query_pattern = NULL;
+    if (!result_pattern)
+      return false;
+  }
+
+  if (family_out) {
+    FcChar8* family = NULL;
+    FcPatternGetString(result_pattern, FC_FAMILY, 0, &family);
+    if (family)
+      family_out->assign(reinterpret_cast<const char*>(family));
+  }
+
+  if (params_out) {
+    FcBool fc_antialias = 0;
+    if (FcPatternGetBool(result_pattern, FC_ANTIALIAS, 0, &fc_antialias) ==
+        FcResultMatch) {
+      params_out->antialiasing = fc_antialias;
+    }
+
+    FcBool fc_autohint = 0;
+    if (FcPatternGetBool(result_pattern, FC_AUTOHINT, 0, &fc_autohint) ==
+        FcResultMatch) {
+      params_out->autohinter = fc_autohint;
+    }
+
+    FcBool fc_bitmap = 0;
+    if (FcPatternGetBool(result_pattern, FC_EMBEDDED_BITMAP, 0, &fc_bitmap) ==
+        FcResultMatch) {
+      params_out->use_bitmaps = fc_bitmap;
+    }
+
+    FcBool fc_hinting = 0;
+    if (FcPatternGetBool(result_pattern, FC_HINTING, 0, &fc_hinting) ==
+        FcResultMatch) {
+      int fc_hint_style = FC_HINT_NONE;
+      if (fc_hinting)
+        FcPatternGetInteger(result_pattern, FC_HINT_STYLE, 0, &fc_hint_style);
+      params_out->hinting = ConvertFontconfigHintStyle(fc_hint_style);
+    }
+
+    int fc_rgba = FC_RGBA_NONE;
+    if (FcPatternGetInteger(result_pattern, FC_RGBA, 0, &fc_rgba) ==
+        FcResultMatch)
+      params_out->subpixel_rendering = ConvertFontconfigRgba(fc_rgba);
+  }
+
+  FcPatternDestroy(result_pattern);
+  return true;
+}
+
+// Serialize |query| into a string and hash it to a value suitable for use as a
+// cache key.
+uint32 HashFontRenderParamsQuery(const FontRenderParamsQuery& query) {
+  return base::Hash(base::StringPrintf("%d|%d|%d|%d|%s",
+      query.for_web_contents, query.pixel_size, query.point_size, query.style,
+      JoinString(query.families, ',').c_str()));
 }
 
 }  // namespace
 
-const FontRenderParams& GetDefaultFontRenderParams() {
-  static bool loaded_defaults = false;
-  static FontRenderParams default_params;
-  if (!loaded_defaults)
-    LoadDefaults(&default_params, /* renderer */ false);
-  loaded_defaults = true;
-  return default_params;
+FontRenderParams GetFontRenderParams(const FontRenderParamsQuery& query,
+                                     std::string* family_out) {
+  const uint32 hash = HashFontRenderParamsQuery(query);
+  SynchronizedCache* synchronized_cache = g_synchronized_cache.Pointer();
+
+  {
+    // Try to find a cached result so Fontconfig doesn't need to be queried.
+    base::AutoLock lock(synchronized_cache->lock);
+    Cache::const_iterator it = synchronized_cache->cache.Get(hash);
+    if (it != synchronized_cache->cache.end()) {
+      DVLOG(1) << "Returning cached params for " << hash;
+      const QueryResult& result = it->second;
+      if (family_out)
+        *family_out = result.family;
+      return result.params;
+    }
+  }
+
+  DVLOG(1) << "Computing params for " << hash;
+  if (family_out)
+    family_out->clear();
+
+  // Start with the delegate's settings, but let Fontconfig have the final say.
+  FontRenderParams params;
+  const LinuxFontDelegate* delegate = LinuxFontDelegate::instance();
+  if (delegate)
+    params = delegate->GetDefaultFontRenderParams();
+  QueryFontconfig(query, &params, family_out);
+  if (!params.antialiasing) {
+    // Cairo forces full hinting when antialiasing is disabled, since anything
+    // less than that looks awful; do the same here. Requesting subpixel
+    // rendering or positioning doesn't make sense either.
+    params.hinting = FontRenderParams::HINTING_FULL;
+    params.subpixel_rendering = FontRenderParams::SUBPIXEL_RENDERING_NONE;
+    params.subpixel_positioning = false;
+  } else {
+    // Fontconfig doesn't support configuring subpixel positioning; check a
+    // flag.
+    params.subpixel_positioning =
+        query.for_web_contents ?
+        CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableWebkitTextSubpixelPositioning) :
+        IsBrowserTextSubpixelPositioningEnabled();
+
+    // To enable subpixel positioning, we need to disable hinting.
+    if (params.subpixel_positioning)
+      params.hinting = FontRenderParams::HINTING_NONE;
+  }
+
+  // Use the first family from the list if Fontconfig didn't suggest a family.
+  if (family_out && family_out->empty() && !query.families.empty())
+    *family_out = query.families[0];
+
+  {
+    // Store the result. It's fine if this overwrites a result that was cached
+    // by a different thread in the meantime; the values should be identical.
+    base::AutoLock lock(synchronized_cache->lock);
+    synchronized_cache->cache.Put(hash,
+        QueryResult(params, family_out ? *family_out : std::string()));
+  }
+
+  return params;
 }
 
-const FontRenderParams& GetDefaultWebKitFontRenderParams() {
-  static bool loaded_defaults = false;
-  static FontRenderParams default_params;
-  if (!loaded_defaults)
-    LoadDefaults(&default_params, /* renderer */ true);
-  loaded_defaults = true;
-  return default_params;
+void ClearFontRenderParamsCacheForTest() {
+  SynchronizedCache* synchronized_cache = g_synchronized_cache.Pointer();
+  base::AutoLock lock(synchronized_cache->lock);
+  synchronized_cache->cache.Clear();
 }
 
-bool GetDefaultWebkitSubpixelPositioning() {
-  return SubpixelPositioningRequested(true);
+#if defined(OS_CHROMEOS)
+void SetFontRenderParamsDeviceScaleFactor(float device_scale_factor) {
+  device_scale_factor_for_internal_display = device_scale_factor;
 }
+#endif
 
 }  // namespace gfx

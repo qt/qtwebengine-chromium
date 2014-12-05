@@ -29,20 +29,20 @@
     NoInterfaceObject, // Always used on target of 'implements'
 ] interface URLUtils {
     // FIXME: should be stringifier: http://crbug.com/306606
-    // stringifier attribute DOMString href;
-    [PerWorldBindings, LogActivity=SetterOnly, LogPreviousValue] attribute DOMString href;
-    [NotEnumerable, ImplementedAs=href] DOMString toString();
-    readonly attribute DOMString origin;
+    // stringifier attribute USVString href;
+    attribute USVString href;
+    [NotEnumerable, ImplementedAs=href] USVString toString();
+    readonly attribute USVString origin;
 
-    attribute DOMString protocol;
-    attribute DOMString username;
-    attribute DOMString password;
-    attribute DOMString host;
-    attribute DOMString hostname;
-    attribute DOMString port;
-    attribute DOMString pathname;
-    attribute DOMString search;
+    attribute USVString protocol;
+    attribute USVString username;
+    attribute USVString password;
+    attribute USVString host;
+    attribute USVString hostname;
+    attribute USVString port;
+    attribute USVString pathname;
+    attribute USVString search;
     // Not yet implemented.
     // attribute URLSearchParams searchParams;
-    attribute DOMString hash;
+    attribute USVString hash;
 };

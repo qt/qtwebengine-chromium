@@ -17,6 +17,11 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
+
+#if !defined(OS_NACL) && !defined(OS_WIN)
+#include <net/if.h>
+#include <netinet/in.h>
+#endif  // !OS_NACL && !OS_WIN
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
@@ -24,9 +29,16 @@
 #include <iphlpapi.h>
 #include <objbase.h>
 #include "base/win/windows_version.h"
-#elif !defined(OS_ANDROID)
-#include <net/if.h>
+#include "net/base/net_util_win.h"
 #endif  // OS_WIN
+
+#if !defined(OS_MACOSX) && !defined(OS_NACL) && !defined(OS_WIN)
+#include "net/base/address_tracker_linux.h"
+#endif  // !OS_MACOSX && !OS_NACL && !OS_WIN
+
+#if !defined(OS_WIN)
+#include "net/base/net_util_posix.h"
+#endif  // !OS_WIN
 
 using base::ASCIIToUTF16;
 using base::WideToUTF16;
@@ -38,12 +50,6 @@ namespace {
 struct HeaderCase {
   const char* header_name;
   const char* expected;
-};
-
-struct CompliantHostCase {
-  const char* host;
-  const char* desired_tld;
-  bool expected_output;
 };
 
 // Fills in sockaddr for the given 32-bit address (IPv4.)
@@ -123,7 +129,7 @@ TEST(NetUtilTest, GetIdentityFromURL) {
       "p&ssword",
     },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i,
                                     tests[i].input_url));
     GURL url(tests[i].input_url);
@@ -185,50 +191,53 @@ TEST(NetUtilTest, GetSpecificHeader) {
   };
 
   // Test first with google_headers.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string result =
         GetSpecificHeader(google_headers, tests[i].header_name);
     EXPECT_EQ(result, tests[i].expected);
   }
 
   // Test again with empty headers.
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string result = GetSpecificHeader(std::string(), tests[i].header_name);
     EXPECT_EQ(result, std::string());
   }
 }
 
 TEST(NetUtilTest, CompliantHost) {
-  const CompliantHostCase compliant_host_cases[] = {
-    {"", "", false},
-    {"a", "", true},
-    {"-", "", false},
-    {".", "", false},
-    {"9", "", true},
-    {"9a", "", true},
-    {"a.", "", true},
-    {"a.a", "", true},
-    {"9.a", "", true},
-    {"a.9", "", true},
-    {"_9a", "", false},
-    {"-9a", "", false},
-    {"-9a", "a", true},
-    {"a.a9", "", true},
-    {"a.-a9", "", false},
-    {"a+9a", "", false},
-    {"-a.a9", "", true},
-    {"1-.a-b", "", true},
-    {"1_.a-b", "", false},
-    {"1-2.a_b", "", true},
-    {"a.b.c.d.e", "", true},
-    {"1.2.3.4.5", "", true},
-    {"1.2.3.4.5.", "", true},
+  struct CompliantHostCase {
+    const char* host;
+    bool expected_output;
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(compliant_host_cases); ++i) {
+  const CompliantHostCase compliant_host_cases[] = {
+    {"", false},
+    {"a", true},
+    {"-", false},
+    {".", false},
+    {"9", true},
+    {"9a", true},
+    {"a.", true},
+    {"a.a", true},
+    {"9.a", true},
+    {"a.9", true},
+    {"_9a", false},
+    {"-9a", false},
+    {"a.a9", true},
+    {"a.-a9", false},
+    {"a+9a", false},
+    {"-a.a9", true},
+    {"1-.a-b", true},
+    {"1_.a-b", false},
+    {"1-2.a_b", true},
+    {"a.b.c.d.e", true},
+    {"1.2.3.4.5", true},
+    {"1.2.3.4.5.", true},
+  };
+
+  for (size_t i = 0; i < arraysize(compliant_host_cases); ++i) {
     EXPECT_EQ(compliant_host_cases[i].expected_output,
-        IsCanonicalizedHostCompliant(compliant_host_cases[i].host,
-                                     compliant_host_cases[i].desired_tld));
+              IsCanonicalizedHostCompliant(compliant_host_cases[i].host));
   }
 }
 
@@ -245,9 +254,20 @@ TEST(NetUtilTest, ParseHostAndPort) {
     {
       "[1080:0:0:0:8:800:200C:4171]:11",
       true,
-      "[1080:0:0:0:8:800:200C:4171]",
-      11,
+      "1080:0:0:0:8:800:200C:4171",
+      11
     },
+    {
+      "[1080:0:0:0:8:800:200C:4171]",
+      true,
+      "1080:0:0:0:8:800:200C:4171",
+      -1
+    },
+
+    // Because no validation is done on the host, the following are accepted,
+    // even though they are invalid names.
+    {"]", true, "]", -1},
+    {"::1", true, ":", 1},
     // Invalid inputs:
     {"foo:bar", false, "", -1},
     {"foo:", false, "", -1},
@@ -261,9 +281,11 @@ TEST(NetUtilTest, ParseHostAndPort) {
     {":password@host:80", false, "", -1},
     {":password@host", false, "", -1},
     {"@host", false, "", -1},
+    {"[", false, "", -1},
+    {"[]", false, "", -1},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string host;
     int port;
     bool ok = ParseHostAndPort(tests[i].input, &host, &port);
@@ -289,7 +311,7 @@ TEST(NetUtilTest, GetHostAndPort) {
     { GURL("http://[1::2]/x"), "[1::2]:80"},
     { GURL("http://[::a]:33/x"), "[::a]:33"},
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string host_and_port = GetHostAndPort(tests[i].url);
     EXPECT_EQ(std::string(tests[i].expected_host_and_port), host_and_port);
   }
@@ -307,7 +329,7 @@ TEST(NetUtilTest, GetHostAndOptionalPort) {
     { GURL("http://[1::2]/x"), "[1::2]"},
     { GURL("http://[::a]:33/x"), "[::a]:33"},
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     std::string host_and_port = GetHostAndOptionalPort(tests[i].url);
     EXPECT_EQ(std::string(tests[i].expected_host_and_port), host_and_port);
   }
@@ -347,7 +369,7 @@ TEST(NetUtilTest, NetAddressToString_IPv4) {
     {{192, 168, 0, 1}, "192.168.0.1"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     SockaddrStorage storage;
     MakeIPv4Address(tests[i].addr, 80, &storage);
     std::string result = NetAddressToString(storage.addr, storage.addr_len);
@@ -365,7 +387,7 @@ TEST(NetUtilTest, NetAddressToString_IPv6) {
      "fedc:ba98:7654:3210:fedc:ba98:7654:3210"},
   };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     SockaddrStorage storage;
     MakeIPv6Address(tests[i].addr, 80, &storage);
     EXPECT_EQ(std::string(tests[i].result),
@@ -441,7 +463,7 @@ TEST(NetUtilTest, SimplifyUrlForRequest) {
       "foobar://user:pass@google.com:80/sup?yo",
     },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s", i,
                                     tests[i].input_url));
     GURL input_url(GURL(tests[i].input_url));
@@ -454,12 +476,12 @@ TEST(NetUtilTest, SetExplicitlyAllowedPortsTest) {
   std::string invalid[] = { "1,2,a", "'1','2'", "1, 2, 3", "1 0,11,12" };
   std::string valid[] = { "", "1", "1,2", "1,2,3", "10,11,12,13" };
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(invalid); ++i) {
+  for (size_t i = 0; i < arraysize(invalid); ++i) {
     SetExplicitlyAllowedPorts(invalid[i]);
     EXPECT_EQ(0, static_cast<int>(GetCountOfExplicitlyAllowedPorts()));
   }
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(valid); ++i) {
+  for (size_t i = 0; i < arraysize(valid); ++i) {
     SetExplicitlyAllowedPorts(valid[i]);
     EXPECT_EQ(i, GetCountOfExplicitlyAllowedPorts());
   }
@@ -522,6 +544,31 @@ TEST(NetUtilTest, ConvertIPv4NumberToIPv6Number) {
   EXPECT_EQ("0,0,0,0,0,0,0,0,0,0,255,255,192,168,0,1",
             DumpIPNumber(ipv6_number));
   EXPECT_EQ("::ffff:c0a8:1", IPAddressToString(ipv6_number));
+}
+
+TEST(NetUtilTest, ParseURLHostnameToNumber_FailParse) {
+  IPAddressNumber number;
+
+  EXPECT_FALSE(ParseURLHostnameToNumber("bad value", &number));
+  EXPECT_FALSE(ParseURLHostnameToNumber("bad:value", &number));
+  EXPECT_FALSE(ParseURLHostnameToNumber(std::string(), &number));
+  EXPECT_FALSE(ParseURLHostnameToNumber("192.168.0.1:30", &number));
+  EXPECT_FALSE(ParseURLHostnameToNumber("  192.168.0.1  ", &number));
+  EXPECT_FALSE(ParseURLHostnameToNumber("::1", &number));
+}
+
+TEST(NetUtilTest, ParseURLHostnameToNumber_IPv4) {
+  IPAddressNumber number;
+  EXPECT_TRUE(ParseURLHostnameToNumber("192.168.0.1", &number));
+  EXPECT_EQ("192,168,0,1", DumpIPNumber(number));
+  EXPECT_EQ("192.168.0.1", IPAddressToString(number));
+}
+
+TEST(NetUtilTest, ParseURLHostnameToNumber_IPv6) {
+  IPAddressNumber number;
+  EXPECT_TRUE(ParseURLHostnameToNumber("[1:abcd::3:4:ff]", &number));
+  EXPECT_EQ("0,1,171,205,0,0,0,0,0,0,0,3,0,4,0,255", DumpIPNumber(number));
+  EXPECT_EQ("1:abcd::3:4:ff", IPAddressToString(number));
 }
 
 TEST(NetUtilTest, IsIPv4Mapped) {
@@ -647,7 +694,7 @@ TEST(NetUtilTest, IPNumberMatchesPrefix) {
       false
     },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
+  for (size_t i = 0; i < arraysize(tests); ++i) {
     SCOPED_TRACE(base::StringPrintf("Test[%" PRIuS "]: %s, %s", i,
                                     tests[i].cidr_literal,
                                     tests[i].ip_literal));
@@ -763,6 +810,261 @@ TEST(NetUtilTest, GetNetworkList) {
     EXPECT_STREQ(it->name.c_str(), name);
 #endif
   }
+}
+
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_NACL)
+
+char* CopyInterfaceName(const char* ifname, int ifname_size, char* output) {
+  EXPECT_LT(ifname_size, IF_NAMESIZE);
+  memcpy(output, ifname, ifname_size);
+  return output;
+}
+
+static const char ifname_em1[] = "em1";
+char* GetInterfaceName(unsigned int interface_index, char* ifname) {
+  return CopyInterfaceName(ifname_em1, arraysize(ifname_em1), ifname);
+}
+
+static const char ifname_vm[] = "vmnet";
+char* GetInterfaceNameVM(unsigned int interface_index, char* ifname) {
+  return CopyInterfaceName(ifname_vm, arraysize(ifname_vm), ifname);
+}
+
+TEST(NetUtilTest, GetNetworkListTrimming) {
+  NetworkInterfaceList results;
+  ::base::hash_set<int> online_links;
+  net::internal::AddressTrackerLinux::AddressMap address_map;
+
+  const unsigned char kIPv6LocalAddr[] = {
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+  const unsigned char kIPv6Addr[] =
+    {0x24, 0x01, 0xfa, 0x00, 0x00, 0x04, 0x10, 0x00, 0xbe, 0x30, 0x5b, 0xff,
+     0xfe, 0xe5, 0x00, 0xc3};
+
+  IPAddressNumber ipv6_local_address(
+      kIPv6LocalAddr, kIPv6LocalAddr + arraysize(kIPv6LocalAddr));
+  IPAddressNumber ipv6_address(kIPv6Addr, kIPv6Addr + arraysize(kIPv6Addr));
+
+  // Interface 1 is offline.
+  struct ifaddrmsg msg = {
+      AF_INET6,
+      1,               /* prefix length */
+      IFA_F_TEMPORARY, /* address flags */
+      0,               /* link scope */
+      1                /* link index */
+  };
+
+  // Address of offline links should be ignored.
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceName));
+  EXPECT_EQ(results.size(), 0ul);
+
+  // Mark interface 1 online.
+  online_links.insert(1);
+
+  // Local address should be trimmed out.
+  address_map.clear();
+  ASSERT_TRUE(
+      address_map.insert(std::make_pair(ipv6_local_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceName));
+  EXPECT_EQ(results.size(), 0ul);
+
+  // vmware address should return by default.
+  address_map.clear();
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceNameVM));
+  EXPECT_EQ(results.size(), 1ul);
+  EXPECT_EQ(results[0].name, ifname_vm);
+  EXPECT_EQ(results[0].network_prefix, 1ul);
+  EXPECT_EQ(results[0].address, ipv6_address);
+  results.clear();
+
+  // vmware address should be trimmed out if policy specified so.
+  address_map.clear();
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        EXCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceNameVM));
+  EXPECT_EQ(results.size(), 0ul);
+  results.clear();
+
+  // Addresses with banned attributes should be ignored.
+  address_map.clear();
+  msg.ifa_flags = IFA_F_TENTATIVE;
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceName));
+  EXPECT_EQ(results.size(), 0ul);
+  results.clear();
+
+  // Addresses with allowed attribute IFA_F_TEMPORARY should be returned and
+  // attributes should be translated correctly.
+  address_map.clear();
+  msg.ifa_flags = IFA_F_TEMPORARY;
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceName));
+  EXPECT_EQ(results.size(), 1ul);
+  EXPECT_EQ(results[0].name, ifname_em1);
+  EXPECT_EQ(results[0].network_prefix, 1ul);
+  EXPECT_EQ(results[0].address, ipv6_address);
+  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_TEMPORARY);
+  results.clear();
+
+  // Addresses with allowed attribute IFA_F_DEPRECATED should be returned and
+  // attributes should be translated correctly.
+  address_map.clear();
+  msg.ifa_flags = IFA_F_DEPRECATED;
+  ASSERT_TRUE(address_map.insert(std::make_pair(ipv6_address, msg)).second);
+  EXPECT_TRUE(
+      net::internal::GetNetworkListImpl(&results,
+                                        INCLUDE_HOST_SCOPE_VIRTUAL_INTERFACES,
+                                        online_links,
+                                        address_map,
+                                        GetInterfaceName));
+  EXPECT_EQ(results.size(), 1ul);
+  EXPECT_EQ(results[0].name, ifname_em1);
+  EXPECT_EQ(results[0].network_prefix, 1ul);
+  EXPECT_EQ(results[0].address, ipv6_address);
+  EXPECT_EQ(results[0].ip_address_attributes, IP_ADDRESS_ATTRIBUTE_DEPRECATED);
+  results.clear();
+}
+
+#endif
+
+namespace {
+
+#if defined(OS_WIN)
+bool read_int_or_bool(DWORD data_size,
+                      PVOID data) {
+  switch (data_size) {
+    case 1:
+      return !!*reinterpret_cast<uint8*>(data);
+    case 4:
+      return !!*reinterpret_cast<uint32*>(data);
+    default:
+      LOG(FATAL) << "That is not a type I know!";
+      return false;
+  }
+}
+
+int GetWifiOptions() {
+  const internal::WlanApi& wlanapi = internal::WlanApi::GetInstance();
+  if (!wlanapi.initialized)
+    return -1;
+
+  internal::WlanHandle client;
+  DWORD cur_version = 0;
+  const DWORD kMaxClientVersion = 2;
+  DWORD result = wlanapi.OpenHandle(
+      kMaxClientVersion, &cur_version, &client);
+  if (result != ERROR_SUCCESS)
+    return -1;
+
+  WLAN_INTERFACE_INFO_LIST* interface_list_ptr = NULL;
+  result = wlanapi.enum_interfaces_func(client.Get(), NULL,
+                                        &interface_list_ptr);
+  if (result != ERROR_SUCCESS)
+    return -1;
+  scoped_ptr<WLAN_INTERFACE_INFO_LIST, internal::WlanApiDeleter> interface_list(
+      interface_list_ptr);
+
+  for (unsigned i = 0; i < interface_list->dwNumberOfItems; ++i) {
+    WLAN_INTERFACE_INFO* info = &interface_list->InterfaceInfo[i];
+    DWORD data_size;
+    PVOID data;
+    int options = 0;
+    result = wlanapi.query_interface_func(
+        client.Get(),
+        &info->InterfaceGuid,
+        wlan_intf_opcode_background_scan_enabled,
+        NULL,
+        &data_size,
+        &data,
+        NULL);
+    if (result != ERROR_SUCCESS)
+      continue;
+    if (!read_int_or_bool(data_size, data)) {
+      options |= WIFI_OPTIONS_DISABLE_SCAN;
+    }
+    internal::WlanApi::GetInstance().free_memory_func(data);
+
+    result = wlanapi.query_interface_func(
+        client.Get(),
+        &info->InterfaceGuid,
+        wlan_intf_opcode_media_streaming_mode,
+        NULL,
+        &data_size,
+        &data,
+        NULL);
+    if (result != ERROR_SUCCESS)
+      continue;
+    if (read_int_or_bool(data_size, data)) {
+      options |= WIFI_OPTIONS_MEDIA_STREAMING_MODE;
+    }
+    internal::WlanApi::GetInstance().free_memory_func(data);
+
+    // Just the the options from the first succesful
+    // interface.
+    return options;
+  }
+
+  // No wifi interface found.
+  return -1;
+}
+
+#else  // OS_WIN
+
+int GetWifiOptions() {
+  // Not supported.
+  return -1;
+}
+
+#endif  // OS_WIN
+
+void TryChangeWifiOptions(int options) {
+  int previous_options = GetWifiOptions();
+  scoped_ptr<ScopedWifiOptions> scoped_options = SetWifiOptions(options);
+  EXPECT_EQ(previous_options | options, GetWifiOptions());
+  scoped_options.reset();
+  EXPECT_EQ(previous_options, GetWifiOptions());
+}
+
+};  // namespace
+
+// Test SetWifiOptions().
+TEST(NetUtilTest, SetWifiOptionsTest) {
+  TryChangeWifiOptions(0);
+  TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN);
+  TryChangeWifiOptions(WIFI_OPTIONS_MEDIA_STREAMING_MODE);
+  TryChangeWifiOptions(WIFI_OPTIONS_DISABLE_SCAN |
+                       WIFI_OPTIONS_MEDIA_STREAMING_MODE);
 }
 
 struct NonUniqueNameTestData {

@@ -26,20 +26,21 @@ class CompositorResizeLock : public ResizeLock {
                        const gfx::Size new_size,
                        bool defer_compositor_lock,
                        const base::TimeDelta& timeout);
-  virtual ~CompositorResizeLock();
+  ~CompositorResizeLock() override;
 
-  virtual bool GrabDeferredLock() OVERRIDE;
-  virtual void UnlockCompositor() OVERRIDE;
+  bool GrabDeferredLock() override;
+  void UnlockCompositor() override;
 
  protected:
-  virtual void LockCompositor() OVERRIDE;
+  void LockCompositor() override;
   void CancelLock();
 
  private:
   aura::WindowTreeHost* host_;
   scoped_refptr<ui::CompositorLock> compositor_lock_;
-  base::WeakPtrFactory<CompositorResizeLock> weak_ptr_factory_;
   bool cancelled_;
+
+  base::WeakPtrFactory<CompositorResizeLock> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(CompositorResizeLock);
 };

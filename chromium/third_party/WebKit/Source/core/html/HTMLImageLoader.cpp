@@ -29,8 +29,9 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLObjectElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
+#include "platform/Logging.h"
 
-namespace WebCore {
+namespace blink {
 
 HTMLImageLoader::HTMLImageLoader(Element* node)
     : ImageLoader(node)
@@ -43,6 +44,8 @@ HTMLImageLoader::~HTMLImageLoader()
 
 void HTMLImageLoader::dispatchLoadEvent()
 {
+    WTF_LOG(Timers, "HTMLImageLoader::dispatchLoadEvent %p", this);
+
     // HTMLVideoElement uses this class to load the poster image, but it should not fire events for loading or failure.
     if (isHTMLVideoElement(*element()))
         return;

@@ -23,8 +23,8 @@
 #include "media/base/android/media_decoder_job.h"
 #include "media/base/android/media_drm_bridge.h"
 #include "media/base/android/media_player_android.h"
-#include "media/base/clock.h"
 #include "media/base/media_export.h"
+#include "media/base/time_delta_interpolator.h"
 
 namespace media {
 
@@ -41,36 +41,34 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   MediaSourcePlayer(int player_id,
                     MediaPlayerManager* manager,
                     const RequestMediaResourcesCB& request_media_resources_cb,
-                    const ReleaseMediaResourcesCB& release_media_resources_cb,
                     scoped_ptr<DemuxerAndroid> demuxer,
                     const GURL& frame_url);
   virtual ~MediaSourcePlayer();
 
   // MediaPlayerAndroid implementation.
-  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) OVERRIDE;
-  virtual void Start() OVERRIDE;
-  virtual void Pause(bool is_media_related_action ALLOW_UNUSED) OVERRIDE;
-  virtual void SeekTo(base::TimeDelta timestamp) OVERRIDE;
-  virtual void Release() OVERRIDE;
-  virtual void SetVolume(double volume) OVERRIDE;
-  virtual int GetVideoWidth() OVERRIDE;
-  virtual int GetVideoHeight() OVERRIDE;
-  virtual base::TimeDelta GetCurrentTime() OVERRIDE;
-  virtual base::TimeDelta GetDuration() OVERRIDE;
-  virtual bool IsPlaying() OVERRIDE;
-  virtual bool CanPause() OVERRIDE;
-  virtual bool CanSeekForward() OVERRIDE;
-  virtual bool CanSeekBackward() OVERRIDE;
-  virtual bool IsPlayerReady() OVERRIDE;
-  virtual void SetCdm(BrowserCdm* cdm) OVERRIDE;
-  virtual bool IsSurfaceInUse() const OVERRIDE;
+  virtual void SetVideoSurface(gfx::ScopedJavaSurface surface) override;
+  virtual void Start() override;
+  virtual void Pause(bool is_media_related_action) override;
+  virtual void SeekTo(base::TimeDelta timestamp) override;
+  virtual void Release() override;
+  virtual void SetVolume(double volume) override;
+  virtual int GetVideoWidth() override;
+  virtual int GetVideoHeight() override;
+  virtual base::TimeDelta GetCurrentTime() override;
+  virtual base::TimeDelta GetDuration() override;
+  virtual bool IsPlaying() override;
+  virtual bool CanPause() override;
+  virtual bool CanSeekForward() override;
+  virtual bool CanSeekBackward() override;
+  virtual bool IsPlayerReady() override;
+  virtual void SetCdm(BrowserCdm* cdm) override;
 
   // DemuxerAndroidClient implementation.
-  virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) OVERRIDE;
-  virtual void OnDemuxerDataAvailable(const DemuxerData& params) OVERRIDE;
+  virtual void OnDemuxerConfigsAvailable(const DemuxerConfigs& params) override;
+  virtual void OnDemuxerDataAvailable(const DemuxerData& params) override;
   virtual void OnDemuxerSeekDone(
-      base::TimeDelta actual_browser_seek_time) OVERRIDE;
-  virtual void OnDemuxerDurationChanged(base::TimeDelta duration) OVERRIDE;
+      base::TimeDelta actual_browser_seek_time) override;
+  virtual void OnDemuxerDurationChanged(base::TimeDelta duration) override;
 
  private:
   friend class MediaSourcePlayerTest;
@@ -91,6 +89,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
         base::TimeDelta current_presentation_timestamp,
         base::TimeDelta max_presentation_timestamp);
 
+  bool IsPrerollFinished(bool is_audio) const;
+
   // Gets MediaCrypto object from |drm_bridge_|.
   base::android::ScopedJavaLocalRef<jobject> GetMediaCrypto();
 
@@ -108,8 +108,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   void DecodeMoreVideo();
 
   // Functions check whether audio/video is present.
-  bool HasVideo();
-  bool HasAudio();
+  bool HasVideo() const;
+  bool HasAudio() const;
 
   // Functions that check whether audio/video stream has reached end of output
   // or are not present in player configuration.
@@ -162,6 +162,10 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Called when new decryption key becomes available.
   void OnKeyAdded();
 
+  // Called to resume playback after NO_KEY is received, but a new key is
+  // available.
+  void ResumePlaybackAfterKeyAdded();
+
   // Called when the CDM is detached.
   void OnCdmUnset();
 
@@ -200,11 +204,12 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   base::TimeDelta duration_;
   bool playing_;
 
-  // base::TickClock used by |clock_|.
+  // base::TickClock used by |interpolator_|.
   base::DefaultTickClock default_tick_clock_;
 
-  // Reference clock. Keeps track of current playback time.
-  Clock clock_;
+  // Tracks the most recent media time update and provides interpolated values
+  // as playback progresses.
+  TimeDeltaInterpolator interpolator_;
 
   // Timestamps for providing simple A/V sync. When start decoding an audio
   // chunk, we record its presentation timestamp and the current system time.
@@ -249,6 +254,12 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // try to start playback again.
   bool is_waiting_for_key_;
 
+  // Indicates the situation where new key is added during pending decode
+  // (this variable can only be set when *_decoder_job_->is_decoding()). If this
+  // variable is true and MEDIA_CODEC_NO_KEY is returned then we need to try
+  // decoding again in case the newly added key is the correct decryption key.
+  bool key_added_while_decode_pending_;
+
   // Indicates whether the player is waiting for audio or video decoder to be
   // created. This could happen if video surface is not available or key is
   // not added.
@@ -258,8 +269,8 @@ class MEDIA_EXPORT MediaSourcePlayer : public MediaPlayerAndroid,
   // Test-only callback for hooking the completion of the next decode cycle.
   base::Closure decode_callback_for_testing_;
 
-  // Whether |surface_| is currently used by the player.
-  bool is_surface_in_use_;
+  // Whether audio or video decoder is in the process of prerolling.
+  bool prerolling_;
 
   // Weak pointer passed to media decoder jobs for callbacks.
   // NOTE: Weak pointers must be invalidated before all other member variables.

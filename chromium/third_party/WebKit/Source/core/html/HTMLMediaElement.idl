@@ -30,12 +30,12 @@
 ] interface HTMLMediaElement : HTMLElement {
 
     // error state
-    [TypeChecking=Interface|Nullable] readonly attribute MediaError? error;
+    readonly attribute MediaError? error;
 
     // network state
-    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString src;
-    [URL, LogActivity=SetterOnly] readonly attribute DOMString currentSrc;
-    [Reflect, ReflectOnly="anonymous"|"use-credentials", ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString crossOrigin;
+    [Reflect, URL] attribute DOMString src;
+    [URL] readonly attribute DOMString currentSrc;
+    [Reflect, ReflectOnly=("anonymous","use-credentials"), ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString? crossOrigin;
 
     const unsigned short NETWORK_EMPTY = 0;
     const unsigned short NETWORK_IDLE = 1;
@@ -46,7 +46,7 @@
 
     readonly attribute TimeRanges buffered;
     void load();
-    DOMString canPlayType(DOMString type, [Default=Undefined, TreatNullAs=NullString, TreatUndefinedAs=NullString] optional DOMString keySystem);
+    DOMString canPlayType(DOMString type, [Default=Undefined, TreatUndefinedAs=NullString] optional DOMString? keySystem);
 
     // ready state
     const unsigned short HAVE_NOTHING = 0;
@@ -73,10 +73,10 @@
 
     // media controller
     [RuntimeEnabled=MediaController, Reflect] attribute DOMString mediaGroup;
-    [RuntimeEnabled=MediaController, TypeChecking=Interface|Nullable] attribute MediaController? controller;
+    [RuntimeEnabled=MediaController, TypeChecking=Interface] attribute MediaController? controller;
 
     // controls
-    attribute boolean controls;
+    [Reflect] attribute boolean controls;
     [RaisesException=Setter] attribute double volume;
     attribute boolean muted;
     [Reflect=muted] attribute boolean defaultMuted;

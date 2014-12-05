@@ -110,34 +110,57 @@ static std::string NALUTypeToString(int type) {
   return "UnsupportedType";
 }
 
+static void WriteStartCodeAndNALUType(std::vector<uint8>* buffer,
+                                      const std::string& nal_unit_type) {
+  buffer->push_back(0x00);
+  buffer->push_back(0x00);
+  buffer->push_back(0x00);
+  buffer->push_back(0x01);
+  buffer->push_back(StringToNALUType(nal_unit_type));
+}
+
+// Input string should be one or more NALU types separated with spaces or
+// commas. NALU grouped together and separated by commas are placed into the
+// same subsample, NALU groups separated by spaces are placed into separate
+// subsamples.
+// For example: input string "SPS PPS I" produces Annex B buffer containing
+// SPS, PPS and I NALUs, each in a separate subsample. While input string
+// "SPS,PPS I" produces Annex B buffer where the first subsample contains SPS
+// and PPS NALUs and the second subsample contains the I-slice NALU.
+// The output buffer will contain a valid-looking Annex B (it's valid-looking in
+// the sense that it has start codes and correct NALU types, but the actual NALU
+// payload is junk).
 void StringToAnnexB(const std::string& str, std::vector<uint8>* buffer,
                     std::vector<SubsampleEntry>* subsamples) {
   DCHECK(!str.empty());
 
-  std::vector<std::string> tokens;
-  EXPECT_GT(Tokenize(str, " ", &tokens), 0u);
+  std::vector<std::string> subsample_specs;
+  EXPECT_GT(Tokenize(str, " ", &subsample_specs), 0u);
 
   buffer->clear();
-  for (size_t i = 0; i < tokens.size(); ++i) {
+  for (size_t i = 0; i < subsample_specs.size(); ++i) {
     SubsampleEntry entry;
     size_t start = buffer->size();
 
-    // Write the start code.
-    buffer->push_back(0x00);
-    buffer->push_back(0x00);
-    buffer->push_back(0x00);
-    buffer->push_back(0x01);
+    std::vector<std::string> subsample_nalus;
+    EXPECT_GT(Tokenize(subsample_specs[i], ",", &subsample_nalus), 0u);
+    for (size_t j = 0; j < subsample_nalus.size(); ++j) {
+      WriteStartCodeAndNALUType(buffer, subsample_nalus[j]);
 
-    // Write NALU type.
-    buffer->push_back(StringToNALUType(tokens[i]));
+      // Write junk for the payload since the current code doesn't
+      // actually look at it.
+      buffer->push_back(0x32);
+      buffer->push_back(0x12);
+      buffer->push_back(0x67);
+    }
 
     entry.clear_bytes = buffer->size() - start;
 
-    // Write junk for the payload since the current code doesn't
-    // actually look at it.
-    buffer->push_back(0x32);
-    buffer->push_back(0x12);
-    buffer->push_back(0x67);
+    if (subsamples) {
+      // Simulate the encrypted bits containing something that looks
+      // like a SPS NALU.
+      WriteStartCodeAndNALUType(buffer, "SPS");
+    }
 
     entry.cypher_bytes = buffer->size() - start - entry.clear_bytes;
 
@@ -147,21 +170,28 @@ void StringToAnnexB(const std::string& str, std::vector<uint8>* buffer,
   }
 }
 
-std::string AnnexBToString(const std::vector<uint8>& buffer) {
+std::string AnnexBToString(const std::vector<uint8>& buffer,
+                           const std::vector<SubsampleEntry>& subsamples) {
   std::stringstream ss;
 
   H264Parser parser;
-  parser.SetStream(&buffer[0], buffer.size());
+  parser.SetEncryptedStream(&buffer[0], buffer.size(), subsamples);
 
   H264NALU nalu;
   bool first = true;
+  size_t current_subsample_index = 0;
   while (parser.AdvanceToNextNALU(&nalu) == H264Parser::kOk) {
-    if (!first)
-      ss << " ";
-    else
+    size_t subsample_index = AVC::FindSubsampleIndex(buffer, &subsamples,
+                                                     nalu.data);
+    if (!first) {
+      ss << (subsample_index == current_subsample_index ? "," : " ");
+    } else {
+      DCHECK_EQ(subsample_index, current_subsample_index);
       first = false;
+    }
 
     ss << NALUTypeToString(nalu.nal_unit_type);
+    current_subsample_index = subsample_index;
   }
   return ss.str();
 }
@@ -191,12 +221,13 @@ class AVCConversionTest : public testing::TestWithParam<int> {
 
 TEST_P(AVCConversionTest, ParseCorrectly) {
   std::vector<uint8> buf;
+  std::vector<SubsampleEntry> subsamples;
   MakeInputForLength(GetParam(), &buf);
   EXPECT_TRUE(AVC::ConvertFrameToAnnexB(GetParam(), &buf));
-  EXPECT_TRUE(AVC::IsValidAnnexB(buf));
+  EXPECT_TRUE(AVC::IsValidAnnexB(buf, subsamples));
   EXPECT_EQ(buf.size(), sizeof(kExpected));
   EXPECT_EQ(0, memcmp(kExpected, &buf[0], sizeof(kExpected)));
-  EXPECT_EQ("P SDC", AnnexBToString(buf));
+  EXPECT_EQ("P,SDC", AnnexBToString(buf, subsamples));
 }
 
 // Intentionally write NALU sizes that are larger than the buffer.
@@ -260,10 +291,10 @@ TEST_F(AVCConversionTest, ConvertConfigToAnnexB) {
 
   std::vector<uint8> buf;
   std::vector<SubsampleEntry> subsamples;
-  EXPECT_TRUE(AVC::ConvertConfigToAnnexB(avc_config, &buf, &subsamples));
+  EXPECT_TRUE(AVC::ConvertConfigToAnnexB(avc_config, &buf));
   EXPECT_EQ(0, memcmp(kExpectedParamSets, &buf[0],
                       sizeof(kExpectedParamSets)));
-  EXPECT_EQ("SPS SPS PPS", AnnexBToString(buf));
+  EXPECT_EQ("SPS,SPS,PPS", AnnexBToString(buf, subsamples));
 }
 
 // Verify that we can round trip string -> Annex B -> string.
@@ -271,11 +302,11 @@ TEST_F(AVCConversionTest, StringConversionFunctions) {
   std::string str =
       "AUD SPS SPSExt SPS PPS SEI SEI R14 I P FILL EOSeq EOStr";
   std::vector<uint8> buf;
-  StringToAnnexB(str, &buf, NULL);
+  std::vector<SubsampleEntry> subsamples;
+  StringToAnnexB(str, &buf, &subsamples);
+  EXPECT_TRUE(AVC::IsValidAnnexB(buf, subsamples));
 
-  EXPECT_TRUE(AVC::IsValidAnnexB(buf));
-
-  EXPECT_EQ(str, AnnexBToString(buf));
+  EXPECT_EQ(str, AnnexBToString(buf, subsamples));
 }
 
 TEST_F(AVCConversionTest, ValidAnnexBConstructs) {
@@ -294,18 +325,24 @@ TEST_F(AVCConversionTest, ValidAnnexBConstructs) {
     "SEI SEI R14 I",
     "SPS SPSExt SPS PPS I P",
     "R14 SEI I",
+    "AUD,I",
+    "AUD,SEI I",
+    "AUD,SEI,SPS,PPS,I"
   };
 
   for (size_t i = 0; i < arraysize(test_cases); ++i) {
     std::vector<uint8> buf;
+    std::vector<SubsampleEntry> subsamples;
     StringToAnnexB(test_cases[i], &buf, NULL);
-    EXPECT_TRUE(AVC::IsValidAnnexB(buf)) << "'" << test_cases[i] << "' failed";
+    EXPECT_TRUE(AVC::IsValidAnnexB(buf, subsamples)) << "'" << test_cases[i]
+                                                     << "' failed";
   }
 }
 
 TEST_F(AVCConversionTest, InvalidAnnexBConstructs) {
   static const char* test_cases[] = {
     "AUD",  // No VCL present.
+    "AUD,SEI", // No VCL present.
     "SPS PPS",  // No VCL present.
     "SPS PPS AUD I",  // Parameter sets must come after AUD.
     "SPSExt SPS P",  // SPS must come before SPSExt.
@@ -320,8 +357,10 @@ TEST_F(AVCConversionTest, InvalidAnnexBConstructs) {
 
   for (size_t i = 0; i < arraysize(test_cases); ++i) {
     std::vector<uint8> buf;
+    std::vector<SubsampleEntry> subsamples;
     StringToAnnexB(test_cases[i], &buf, NULL);
-    EXPECT_FALSE(AVC::IsValidAnnexB(buf)) << "'" << test_cases[i] << "' failed";
+    EXPECT_FALSE(AVC::IsValidAnnexB(buf, subsamples)) << "'" << test_cases[i]
+                                                      << "' failed";
   }
 }
 
@@ -332,14 +371,18 @@ typedef struct {
 
 TEST_F(AVCConversionTest, InsertParamSetsAnnexB) {
   static const InsertTestCases test_cases[] = {
-    { "I", "SPS SPS PPS I" },
-    { "AUD I", "AUD SPS SPS PPS I" },
+    { "I", "SPS,SPS,PPS,I" },
+    { "AUD I", "AUD SPS,SPS,PPS,I" },
 
     // Cases where param sets in |avc_config| are placed before
     // the existing ones.
-    { "SPS PPS I", "SPS SPS PPS SPS PPS I" },
-    { "AUD SPS PPS I", "AUD SPS SPS PPS SPS PPS I" },  // Note: params placed
+    { "SPS,PPS,I", "SPS,SPS,PPS,SPS,PPS,I" },
+    { "AUD,SPS,PPS,I", "AUD,SPS,SPS,PPS,SPS,PPS,I" },  // Note: params placed
                                                        // after AUD.
+
+    // One or more NALUs might follow AUD in the first subsample, we need to
+    // handle this correctly. Params should be inserted right after AUD.
+    { "AUD,SEI I", "AUD,SPS,SPS,PPS,SEI I" },
   };
 
   AVCDecoderConfigurationRecord avc_config;
@@ -361,9 +404,9 @@ TEST_F(AVCConversionTest, InsertParamSetsAnnexB) {
 
     EXPECT_TRUE(AVC::InsertParamSetsAnnexB(avc_config, &buf, &subsamples))
         << "'" << test_cases[i].input << "' insert failed.";
-    EXPECT_TRUE(AVC::IsValidAnnexB(buf))
+    EXPECT_TRUE(AVC::IsValidAnnexB(buf, subsamples))
         << "'" << test_cases[i].input << "' created invalid AnnexB.";
-    EXPECT_EQ(test_cases[i].expected, AnnexBToString(buf))
+    EXPECT_EQ(test_cases[i].expected, AnnexBToString(buf, subsamples))
         << "'" << test_cases[i].input << "' generated unexpected output.";
   }
 }

@@ -5,8 +5,14 @@
 import("//build/config/crypto.gni")
 import("//build/config/features.gni")
 import("//build/config/ui.gni")
-import("//tools/grit/grit_rule.gni")
 import("//url/config.gni")
+
+# TODO(cjhopman): //build/config/android/rules.gni also imports grit_rule.gni.
+# Currently, that file can't be imported multiple times.  Make this always
+# imported when http://crbug.com/393704 is fixed.
+if (!is_android) {
+  import("//tools/grit/grit_rule.gni")
+}
 
 if (is_android) {
   import("//build/config/android/config.gni")
@@ -78,25 +84,24 @@ component("net") {
     "NET_IMPLEMENTATION"
   ]
   configs += [ ":net_win_size_truncation" ]
-  direct_dependent_configs = [ ":net_config" ]
+  public_configs = [ ":net_config" ]
   include_dirs = []
 
+  public_deps = [
+    "//crypto",
+    "//crypto:platform"
+  ]
   deps = [
    ":net_resources",
     "//base",
     "//base:i18n",
+    "//base:prefs",
     "//base/third_party/dynamic_annotations",
-    "//crypto",
-    "//crypto:platform",
     "//net/base/registry_controlled_domains",
     "//sdch",
     "//third_party/icu",
     "//third_party/zlib",
     "//url",
-  ]
-  forward_dependent_configs_from = [
-    "//crypto",
-    "//crypto:platform"
   ]
 
   if (use_kerberos) {
@@ -192,8 +197,11 @@ component("net") {
       "cert/ct_objects_extractor_nss.cc",
       "cert/jwk_serializer_nss.cc",
       "cert/scoped_nss_types.h",
+      "cert/test_root_certs_nss.cc",
       "cert/x509_util_nss.cc",
       "cert/x509_util_nss.h",
+      "ocsp/nss_ocsp.cc",
+      "ocsp/nss_ocsp.h",
       "quic/crypto/aead_base_decrypter_nss.cc",
       "quic/crypto/aead_base_encrypter_nss.cc",
       "quic/crypto/aes_128_gcm_12_decrypter_nss.cc",
@@ -239,15 +247,16 @@ component("net") {
       sources -= [
         "cert/cert_verify_proc_nss.cc",
         "cert/cert_verify_proc_nss.h",
-        "cert/test_root_certs_nss.cc",
-        "ocsp/nss_ocsp.cc",
-        "ocsp/nss_ocsp.h",
+      ]
+    }
+    if (is_win) {
+      sources -= [
+        "cert/cert/sha256_legacy_support_nss_win.cc",
       ]
     }
   } else {
     sources -= [
       "base/crypto_module_openssl.cc",
-      "base/keygen_handler_openssl.cc",
       "cert/ct_log_verifier_openssl.cc",
       "cert/ct_objects_extractor_openssl.cc",
       "cert/jwk_serializer_openssl.cc",
@@ -263,19 +272,32 @@ component("net") {
       "quic/crypto/p256_key_exchange_openssl.cc",
       "quic/crypto/scoped_evp_aead_ctx.cc",
       "quic/crypto/scoped_evp_aead_ctx.h",
-      "socket/openssl_ssl_util.cc",
-      "socket/openssl_ssl_util.h",
       "socket/ssl_client_socket_openssl.cc",
       "socket/ssl_client_socket_openssl.h",
       "socket/ssl_server_socket_openssl.cc",
       "socket/ssl_server_socket_openssl.h",
       "socket/ssl_session_cache_openssl.cc",
       "socket/ssl_session_cache_openssl.h",
+      "ssl/openssl_platform_key.h",
+      "ssl/openssl_ssl_util.cc",
+      "ssl/openssl_ssl_util.h",
     ]
+    if (is_mac) {
+      sources -= [
+        "ssl/openssl_platform_key_mac.cc",
+      ]
+    }
+    if (is_win) {
+      sources -= [
+        "cert/sha256_legacy_support_openssl_win.cc",
+        "ssl/openssl_platform_key_win.cc",
+      ]
+    }
   }
 
   if (!use_openssl_certs) {
     sources -= [
+      "base/keygen_handler_openssl.cc",
       "base/openssl_private_key_store.h",
       "base/openssl_private_key_store_memory.cc",
       "cert/cert_database_openssl.cc",
@@ -301,7 +323,7 @@ component("net") {
     ]
   }
 
-  if (use_glib) {
+  if (use_glib && !is_chromeos) {
     configs += [ "//build/config/linux:gconf" ]
     deps += [ "//build/config/linux:gio" ]
   }
@@ -324,7 +346,7 @@ component("net") {
       "third_party/mozilla_security_manager/nsPKCS12Blob.h",
     ]
 
-    if (!is_ios) {
+    if (!is_ios && !use_openssl) {
       # These files are part of the partial implementation of NSS on iOS so
       # keep them in that case.
       sources -= [
@@ -435,14 +457,12 @@ component("net") {
   if (is_win) {
     sources -= [
       "http/http_auth_handler_ntlm_portable.cc",
+      "socket/socket_libevent.cc",
+      "socket/socket_libevent.h",
       "socket/tcp_socket_libevent.cc",
       "socket/tcp_socket_libevent.h",
       "udp/udp_socket_libevent.cc",
       "udp/udp_socket_libevent.h",
-    ]
-    deps += [
-      "//third_party/nss:nspr",
-      "//third_party/nss",
     ]
   } else {  # !is_win
     sources -= [
@@ -456,10 +476,6 @@ component("net") {
   }
 
   if (is_mac) {
-    deps += [
-      "//third_party/nss:nspr",
-      "//third_party/nss",
-    ]
     libs = [
       "Foundation.framework",
       "Security.framework",
@@ -489,9 +505,6 @@ component("net") {
     set_sources_assignment_filter(sources_assignment_filter)
 
     sources -= [ "disk_cache/blockfile/file_posix.cc" ]
-    deps += [
-      "//third_party/nss",
-    ]
     libs = [
       "CFNetwork.framework",
       "MobileCoreServices.framework",
@@ -514,13 +527,9 @@ component("net") {
 
     if (!is_android_webview_build) {
       deps += [ ":net_jni_headers" ]
-
-      # The net/android/keystore_openssl.cc source file needs to access an
-      # OpenSSL-internal header.
-      include_dirs = [ "//third_party/openssl" ]
     }
   }
-  
+
   if (use_icu_alternatives_on_android) {
     deps -= [
       "//base:i18n",
@@ -540,6 +549,21 @@ component("net") {
 
 grit("net_resources") {
   source = "base/net_resources.grd"
+  use_qualified_include = true
+  outputs = [
+    "grit/net_resources.h",
+    "net_resources.pak",
+    "net_resources.rc",
+  ]
+}
+
+static_library("extras") {
+  sources = gypi_values.net_extras_sources
+  configs += [ "//build/config/compiler:wexit_time_destructors" ]
+  deps = [
+    ":net",
+    "//sql:sql",
+  ]
 }
 
 static_library("http_server") {
@@ -563,6 +587,7 @@ static_library("http_server") {
 }
 
 executable("dump_cache") {
+  testonly = true
   sources = [
     "tools/dump_cache/cache_dumper.cc",
     "tools/dump_cache/cache_dumper.h",
@@ -571,8 +596,6 @@ executable("dump_cache") {
     "tools/dump_cache/dump_files.h",
     "tools/dump_cache/simple_cache_dumper.cc",
     "tools/dump_cache/simple_cache_dumper.h",
-    "tools/dump_cache/upgrade_win.cc",
-    "tools/dump_cache/upgrade_win.h",
     "tools/dump_cache/url_to_filename_encoder.cc",
     "tools/dump_cache/url_to_filename_encoder.h",
     "tools/dump_cache/url_utilities.h",
@@ -589,6 +612,7 @@ executable("dump_cache") {
 }
 
 source_set("test_support") {
+  testonly = true
   sources = [
     "base/capturing_net_log.cc",
     "base/capturing_net_log.h",
@@ -630,6 +654,7 @@ source_set("test_support") {
     "socket/socket_test_util.h",
     "test/cert_test_util.cc",
     "test/cert_test_util.h",
+    "test/cert_test_util_nss.cc",
     "test/ct_test_util.cc",
     "test/ct_test_util.h",
     "test/embedded_test_server/embedded_test_server.cc",
@@ -657,16 +682,18 @@ source_set("test_support") {
     "test/spawned_test_server/spawner_communicator.h",
     "url_request/test_url_fetcher_factory.cc",
     "url_request/test_url_fetcher_factory.h",
+    "url_request/test_url_request_interceptor.cc",
+    "url_request/test_url_request_interceptor.h",
     "url_request/url_request_test_util.cc",
     "url_request/url_request_test_util.h",
   ]
 
   configs += [ ":net_win_size_truncation" ]
 
-  deps = [
+  public_deps = [
     "//base",
     "//base/test:test_support",
-    "//crypto:platform",
+    "//crypto",
     "//net",
     "//net/tools/tld_cleanup",
     "//testing/gmock",
@@ -674,8 +701,8 @@ source_set("test_support") {
     "//url",
   ]
 
-  if (is_ios) {
-    deps += [ "//third_party/nss" ]
+  if (!use_openssl && (use_nss_certs || is_ios)) {
+    public_deps += ["//crypto:platform" ]
   }
 
   if (!is_android) {
@@ -688,7 +715,7 @@ source_set("test_support") {
   }
 
   if (use_v8_in_net) {
-    deps += [ ":net_with_v8" ]
+    public_deps += [ ":net_with_v8" ]
   }
 
   if (!enable_mdns) {
@@ -698,7 +725,39 @@ source_set("test_support") {
     ]
   }
 
-  forward_dependent_configs_from = deps
+  if (!use_nss_certs) {
+    sources -= [
+      "test/cert_test_util_nss.cc",
+    ]
+  }
+}
+
+source_set("balsa") {
+  sources = [
+    "tools/balsa/balsa_enums.h",
+    "tools/balsa/balsa_frame.cc",
+    "tools/balsa/balsa_frame.h",
+    "tools/balsa/balsa_headers.cc",
+    "tools/balsa/balsa_headers.h",
+    "tools/balsa/balsa_headers_token_utils.cc",
+    "tools/balsa/balsa_headers_token_utils.h",
+    "tools/balsa/balsa_visitor_interface.h",
+    "tools/balsa/http_message_constants.cc",
+    "tools/balsa/http_message_constants.h",
+    "tools/balsa/noop_balsa_visitor.h",
+    "tools/balsa/simple_buffer.cc",
+    "tools/balsa/simple_buffer.h",
+    "tools/balsa/split.cc",
+    "tools/balsa/split.h",
+    "tools/balsa/string_piece_utils.h",
+    "tools/quic/spdy_utils.cc",
+    "tools/quic/spdy_utils.h",
+  ]
+  deps = [
+    ":net",
+    "//base",
+    "//url",
+  ]
 }
 
 if (use_v8_in_net) {
@@ -718,8 +777,10 @@ if (use_v8_in_net) {
       "//build/config/compiler:wexit_time_destructors",
     ]
 
-    deps = [
+    public_deps = [
       ":net",
+    ]
+    deps = [
       "//base",
       "//gin",
       "//url",
@@ -730,6 +791,7 @@ if (use_v8_in_net) {
 
 if (!is_ios && !is_android) {
   executable("crash_cache") {
+    testonly = true
     sources = [ "tools/crash_cache/crash_cache.cc" ]
     configs += [ ":net_win_size_truncation" ]
     deps = [
@@ -740,6 +802,7 @@ if (!is_ios && !is_android) {
   }
 
   executable("crl_set_dump") {
+    testonly = true
     sources = [ "tools/crl_set_dump/crl_set_dump.cc" ]
     configs += [ ":net_win_size_truncation" ]
     deps = [
@@ -749,6 +812,7 @@ if (!is_ios && !is_android) {
   }
 
   executable("dns_fuzz_stub") {
+    testonly = true
     sources = [ "tools/dns_fuzz_stub/dns_fuzz_stub.cc" ]
     configs += [ ":net_win_size_truncation" ]
     deps = [
@@ -758,6 +822,7 @@ if (!is_ios && !is_android) {
   }
 
   executable("gdig") {
+    testonly = true
     sources = [
       "tools/gdig/file_net_log.cc",
       "tools/gdig/gdig.cc",
@@ -769,6 +834,7 @@ if (!is_ios && !is_android) {
   }
 
   executable("get_server_time") {
+    testonly = true
     sources = [ "tools/get_server_time/get_server_time.cc" ]
     configs += [ ":net_win_size_truncation" ]
     deps = [
@@ -781,6 +847,7 @@ if (!is_ios && !is_android) {
 
   if (use_v8_in_net) {
     executable("net_watcher") {
+      testonly = true
       sources = [ "tools/net_watcher/net_watcher.cc" ]
       deps = [
         ":net",
@@ -788,14 +855,18 @@ if (!is_ios && !is_android) {
         "//base",
       ]
 
-      if (is_linux) {
-        configs += [ "//build/config/linux:gconf" ]
+      if (is_desktop_linux) {
+        configs += [
+          "//build/config/linux:gconf",
+          "//build/config/linux:glib",
+        ]
         deps += [ "//build/config/linux:gio" ]
       }
     }
   }
 
   executable("run_testserver") {
+    testonly = true
     sources = [ "tools/testserver/run_testserver.cc" ]
     deps = [
       ":net",  # TODO(brettw) bug 363749: this shouldn't be necessary. It's not
@@ -808,6 +879,7 @@ if (!is_ios && !is_android) {
   }
 
   executable("stress_cache") {
+    testonly = true
     sources = [ "disk_cache/blockfile/stress_cache.cc" ]
     configs += [ ":net_win_size_truncation" ]
     deps = [
@@ -829,31 +901,6 @@ if (!is_ios && !is_android) {
 }
 
 if (is_linux) {
-  source_set("balsa") {
-    sources = [
-      "tools/balsa/balsa_enums.h",
-      "tools/balsa/balsa_frame.cc",
-      "tools/balsa/balsa_frame.h",
-      "tools/balsa/balsa_headers.cc",
-      "tools/balsa/balsa_headers.h",
-      "tools/balsa/balsa_headers_token_utils.cc",
-      "tools/balsa/balsa_headers_token_utils.h",
-      "tools/balsa/balsa_visitor_interface.h",
-      "tools/balsa/http_message_constants.cc",
-      "tools/balsa/http_message_constants.h",
-      "tools/balsa/noop_balsa_visitor.h",
-      "tools/balsa/simple_buffer.cc",
-      "tools/balsa/simple_buffer.h",
-      "tools/balsa/split.cc",
-      "tools/balsa/split.h",
-      "tools/balsa/string_piece_utils.h",
-    ]
-    deps = [
-      ":net",
-      "//base",
-    ]
-  }
-
   static_library("epoll_server") {
     sources = [
       "tools/epoll_server/epoll_server.cc",
@@ -866,6 +913,7 @@ if (is_linux) {
   }
 
   static_library("flip_in_mem_edsm_server_base") {
+    testonly = true
     sources = [
       "tools/dump_cache/url_to_filename_encoder.cc",
       "tools/dump_cache/url_to_filename_encoder.h",
@@ -904,11 +952,12 @@ if (is_linux) {
       ":epoll_server",
       ":net",
       "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
   executable("flip_in_mem_edsm_server_unittests") {
+    testonly = true
     sources = [
       "tools/flip_server/flip_test_utils.cc",
       "tools/flip_server/flip_test_utils.h",
@@ -923,11 +972,12 @@ if (is_linux) {
       ":test_support",
       "//testing/gtest",
       "//testing/gmock",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 
   executable("flip_in_mem_edsm_server") {
+    testonly = true
     sources = [ "tools/flip_server/flip_in_mem_edsm_server.cc" ]
     deps = [
       ":flip_in_mem_edsm_server_base",
@@ -954,6 +1004,8 @@ if (is_linux) {
       "tools/quic/quic_in_memory_cache.h",
       "tools/quic/quic_packet_writer_wrapper.cc",
       "tools/quic/quic_packet_writer_wrapper.h",
+      "tools/quic/quic_per_connection_packet_writer.cc",
+      "tools/quic/quic_per_connection_packet_writer.h",
       "tools/quic/quic_server.cc",
       "tools/quic/quic_server.h",
       "tools/quic/quic_server_session.cc",
@@ -966,8 +1018,6 @@ if (is_linux) {
       "tools/quic/quic_spdy_server_stream.h",
       "tools/quic/quic_time_wait_list_manager.h",
       "tools/quic/quic_time_wait_list_manager.cc",
-      "tools/quic/spdy_utils.cc",
-      "tools/quic/spdy_utils.h",
     ]
     deps = [
       ":balsa",
@@ -976,7 +1026,7 @@ if (is_linux) {
       "//base",
       "//base/third_party/dynamic_annotations",
       "//crypto",
-      "//third_party/openssl",
+      "//third_party/boringssl",
       "//url",
     ]
   }
@@ -987,17 +1037,7 @@ if (is_linux) {
       ":quic_base",
       ":net",
       "//base",
-      "//third_party/openssl",
-    ]
-  }
-
-  executable("quic_server") {
-    sources = [ "tools/quic/quic_server_bin.cc" ]
-    deps = [
-      ":quic_base",
-      ":net",
-      "//base",
-      "//third_party/openssl",
+      "//third_party/boringssl",
     ]
   }
 }
@@ -1016,10 +1056,17 @@ if (is_android) {
     ]
     jni_package = "net"
   }
+  generate_jni("net_test_jni_headers") {
+    sources = [
+      "android/javatests/src/org/chromium/net/AndroidKeyStoreTestUtil.java",
+    ]
+    jni_package = "net"
+  }
 }
 
 if (is_android || is_linux) {
   executable("disk_cache_memory_test") {
+    testonly = true
     sources = [ "tools/disk_cache_memory_test/disk_cache_memory_test.cc" ]
     deps = [
       ":net",
@@ -1029,7 +1076,35 @@ if (is_android || is_linux) {
 }
 
 # TODO(GYP) make this compile on Android, we need some native test deps done.
-if (!is_android) {
+# TODO(GYP) Also doesn't work on Windows; dependency on boringssl is wrong.
+if (!is_android && !is_win) {
+
+source_set("quic_tools") {
+  sources = [
+    "quic/quic_dispatcher.cc",
+    "quic/quic_dispatcher.h",
+    "quic/quic_in_memory_cache.cc",
+    "quic/quic_in_memory_cache.h",
+    "quic/quic_per_connection_packet_writer.cc",
+    "quic/quic_per_connection_packet_writer.h",
+    "quic/quic_server.cc",
+    "quic/quic_server.h",
+    "quic/quic_server_packet_writer.cc",
+    "quic/quic_server_packet_writer.h",
+    "quic/quic_server_session.cc",
+    "quic/quic_server_session.h",
+    "quic/quic_spdy_server_stream.cc",
+    "quic/quic_spdy_server_stream.h",
+    "quic/quic_time_wait_list_manager.cc",
+    "quic/quic_time_wait_list_manager.h",
+  ]
+  deps = [
+    ":net",
+    "//base",
+    "//base/third_party/dynamic_annotations",
+    "//url",
+  ]
+}
 
 test("net_unittests") {
   sources = gypi_values.net_test_sources
@@ -1038,15 +1113,19 @@ test("net_unittests") {
   defines = []
 
   deps = [
+    ":extras",
     ":http_server",
     ":net",
+    ":quic_tools",
     ":test_support",
     "//base",
     "//base:i18n",
+    "//base:prefs_test_support",
     "//base/allocator",
     "//base/third_party/dynamic_annotations",
     "//crypto",
     "//crypto:platform",
+    "//crypto:test_support",
     "//net/base/registry_controlled_domains",
     "//testing/gmock",
     "//testing/gtest",
@@ -1066,7 +1145,6 @@ test("net_unittests") {
 
   if (is_chromeos) {
     sources -= [
-      "base/network_change_notifier_linux_unittest.cc",
       "proxy/proxy_config_service_linux_unittest.cc",
     ]
   }
@@ -1102,14 +1180,17 @@ test("net_unittests") {
     # TODO(bulach): Add equivalent tests when the underlying
     #               functionality is ported to OpenSSL.
     sources -= [
-      "cert/ct_objects_extractor_unittest.cc",
-      "cert/multi_log_ct_verifier_unittest.cc",
       "cert/nss_cert_database_unittest.cc",
-      "cert/nss_cert_database_chromeos_unittest.cc",
-      "cert/nss_profile_filter_chromeos_unittest.cc",
       "cert/x509_util_nss_unittest.cc",
       "quic/test_tools/crypto_test_utils_nss.cc",
     ]
+    if (is_chromeos) {
+      # These were already removed in the non-ChromeOS case.
+      sources -= [
+        "cert/nss_cert_database_chromeos_unittest.cc",
+        "cert/nss_profile_filter_chromeos_unittest.cc",
+      ]
+    }
   } else {
     sources -= [
       "cert/x509_util_openssl_unittest.cc",
@@ -1260,7 +1341,9 @@ test("net_unittests") {
       # The following tests are disabled because they don't apply to
       # iOS.
       # OS is not "linux" or "freebsd" or "openbsd".
-      "socket/unix_domain_socket_posix_unittest.cc",
+      "socket/unix_domain_client_socket_posix_unittest.cc",
+      "socket/unix_domain_listen_socket_posix_unittest.cc",
+      "socket/unix_domain_server_socket_posix_unittest.cc",
 
       # See bug http://crbug.com/344533.
       "disk_cache/blockfile/index_table_v3_unittest.cc",
@@ -1290,6 +1373,16 @@ test("net_unittests") {
     ]
     deps -= [ "//base:i18n" ]
   }
+}
+
+executable("quic_server") {
+  sources = [ "quic/quic_server_bin.cc" ]
+  deps = [
+    ":quic_tools",
+    ":net",
+    "//base",
+    "//third_party/boringssl",
+  ]
 }
 
 }  # !is_android

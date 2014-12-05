@@ -30,11 +30,11 @@
 #include "wtf/Forward.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class NotificationClient;
 
-class NotificationController FINAL : public NoBaseWillBeGarbageCollectedFinalized<NotificationController>, public WillBeHeapSupplement<LocalFrame> {
+class NotificationController final : public NoBaseWillBeGarbageCollectedFinalized<NotificationController>, public WillBeHeapSupplement<LocalFrame> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NotificationController);
     WTF_MAKE_NONCOPYABLE(NotificationController);
 public:
@@ -42,10 +42,10 @@ public:
 
     static PassOwnPtrWillBeRawPtr<NotificationController> create(PassOwnPtr<NotificationClient>);
     static const char* supplementName();
-    static NotificationController* from(LocalFrame* frame) { return static_cast<NotificationController*>(WillBeHeapSupplement<LocalFrame>::from(frame, supplementName())); }
-    static NotificationClient& clientFrom(LocalFrame*);
+    static NotificationController* from(ExecutionContext*);
+    static NotificationClient& clientFrom(ExecutionContext*);
 
-    virtual void trace(Visitor* visitor) OVERRIDE { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { WillBeHeapSupplement<LocalFrame>::trace(visitor); }
 
 private:
     explicit NotificationController(PassOwnPtr<NotificationClient>);
@@ -57,6 +57,6 @@ private:
 
 void provideNotification(LocalFrame&, PassOwnPtr<NotificationClient>);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NotificationController_h

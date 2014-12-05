@@ -28,34 +28,30 @@ class DoNothingRequestDelegate : public HttpStreamRequest::Delegate {
  public:
   DoNothingRequestDelegate() {}
 
-  virtual ~DoNothingRequestDelegate() {}
+  ~DoNothingRequestDelegate() override {}
 
   // HttpStreamRequest::Delegate
-  virtual void OnStreamReady(
+  void OnStreamReady(const SSLConfig& used_ssl_config,
+                     const ProxyInfo& used_proxy_info,
+                     HttpStream* stream) override {}
+  void OnWebSocketHandshakeStreamReady(
       const SSLConfig& used_ssl_config,
       const ProxyInfo& used_proxy_info,
-      HttpStreamBase* stream) OVERRIDE {}
-  virtual void OnWebSocketHandshakeStreamReady(
-      const SSLConfig& used_ssl_config,
-      const ProxyInfo& used_proxy_info,
-      WebSocketHandshakeStreamBase* stream) OVERRIDE {}
-  virtual void OnStreamFailed(
-      int status,
-      const SSLConfig& used_ssl_config) OVERRIDE {}
-  virtual void OnCertificateError(
-      int status,
-      const SSLConfig& used_ssl_config,
-      const SSLInfo& ssl_info) OVERRIDE {}
-  virtual void OnNeedsProxyAuth(const HttpResponseInfo& proxy_response,
-                                const SSLConfig& used_ssl_config,
-                                const ProxyInfo& used_proxy_info,
-                                HttpAuthController* auth_controller) OVERRIDE {}
-  virtual void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
-                                 SSLCertRequestInfo* cert_info) OVERRIDE {}
-  virtual void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
-                                          const SSLConfig& used_ssl_config,
-                                          const ProxyInfo& used_proxy_info,
-                                          HttpStreamBase* stream) OVERRIDE {}
+      WebSocketHandshakeStreamBase* stream) override {}
+  void OnStreamFailed(int status, const SSLConfig& used_ssl_config) override {}
+  void OnCertificateError(int status,
+                          const SSLConfig& used_ssl_config,
+                          const SSLInfo& ssl_info) override {}
+  void OnNeedsProxyAuth(const HttpResponseInfo& proxy_response,
+                        const SSLConfig& used_ssl_config,
+                        const ProxyInfo& used_proxy_info,
+                        HttpAuthController* auth_controller) override {}
+  void OnNeedsClientAuth(const SSLConfig& used_ssl_config,
+                         SSLCertRequestInfo* cert_info) override {}
+  void OnHttpsProxyTunnelResponse(const HttpResponseInfo& response_info,
+                                  const SSLConfig& used_ssl_config,
+                                  const ProxyInfo& used_proxy_info,
+                                  HttpStream* stream) override {}
 };
 
 }  // namespace
@@ -76,7 +72,7 @@ TEST_P(HttpStreamFactoryImplRequestTest, SetPriority) {
 
   HttpStreamFactoryImpl::Job* job =
       new HttpStreamFactoryImpl::Job(factory,
-                                     session,
+                                     session.get(),
                                      HttpRequestInfo(),
                                      DEFAULT_PRIORITY,
                                      SSLConfig(),

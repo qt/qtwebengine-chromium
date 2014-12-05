@@ -230,7 +230,7 @@ TreeOutline.prototype.removeChildren = function()
 TreeOutline.prototype._rememberTreeElement = function(element)
 {
     if (!this._treeElementsMap.get(element.representedObject))
-        this._treeElementsMap.put(element.representedObject, []);
+        this._treeElementsMap.set(element.representedObject, []);
 
     // check if the element is already known
     var elements = this._treeElementsMap.get(element.representedObject);
@@ -323,7 +323,7 @@ TreeOutline.prototype.findTreeElement = function(representedObject, getParent)
  */
 TreeOutline.prototype.treeElementFromPoint = function(x, y)
 {
-    var node = this._childrenListNode.ownerDocument.elementFromPoint(x, y);
+    var node = this._childrenListNode.ownerDocument.deepElementFromPoint(x, y);
     if (!node)
         return null;
 
@@ -331,6 +331,15 @@ TreeOutline.prototype.treeElementFromPoint = function(x, y)
     if (listNode)
         return listNode.parentTreeElement || listNode.treeElement;
     return null;
+}
+
+/**
+ * @param {?Event} event
+ * @return {?TreeElement}
+ */
+TreeOutline.prototype.treeElementFromEvent = function(event)
+{
+    return event ? this.treeElementFromPoint(event.pageX, event.pageY) : null;
 }
 
 TreeOutline.prototype._treeKeyDown = function(event)
@@ -509,6 +518,16 @@ TreeElement.prototype = {
         return this._hasChildren;
     },
 
+    /**
+     * Used inside subclasses.
+     *
+     * @param {boolean} hasChildren
+     */
+    setHasChildren: function(hasChildren)
+    {
+        this.hasChildren = hasChildren;
+    },
+
     set hasChildren(x) {
         if (this._hasChildren === x)
             return;
@@ -602,6 +621,7 @@ TreeElement.prototype._attach = function()
             this._listItemNode.classList.add("selected");
 
         this._listItemNode.addEventListener("mousedown", TreeElement.treeElementMouseDown, false);
+        this._listItemNode.addEventListener("selectstart", TreeElement.treeElementSelectStart, false);
         this._listItemNode.addEventListener("click", TreeElement.treeElementToggled, false);
         this._listItemNode.addEventListener("dblclick", TreeElement.treeElementDoubleClicked, false);
 
@@ -631,7 +651,11 @@ TreeElement.prototype._detach = function()
 TreeElement.treeElementMouseDown = function(event)
 {
     var element = event.currentTarget;
-    if (!element || !element.treeElement || !element.treeElement.selectable)
+    if (!element)
+        return;
+    delete element._selectionStarted;
+
+    if (!element.treeElement || !element.treeElement.selectable)
         return;
 
     if (element.treeElement.isEventWithinDisclosureTriangle(event))
@@ -640,15 +664,35 @@ TreeElement.treeElementMouseDown = function(event)
     element.treeElement.selectOnMouseDown(event);
 }
 
+TreeElement.treeElementSelectStart = function(event)
+{
+    var element = event.currentTarget;
+    if (!element)
+        return;
+    element._selectionStarted = true;
+}
+
 TreeElement.treeElementToggled = function(event)
 {
     var element = event.currentTarget;
-    if (!element || !element.treeElement)
+    if (!element)
+        return;
+    if (element._selectionStarted) {
+        delete element._selectionStarted
+        var selection = window.getSelection();
+        if (selection && !selection.isCollapsed && element.isSelfOrAncestor(selection.anchorNode) && element.isSelfOrAncestor(selection.focusNode))
+            return;
+    }
+
+    if (!element.treeElement)
         return;
 
     var toggleOnClick = element.treeElement.toggleOnClick && !element.treeElement.selectable;
     var isInTriangle = element.treeElement.isEventWithinDisclosureTriangle(event);
     if (!toggleOnClick && !isInTriangle)
+        return;
+
+    if (event.target && event.target.enclosingNodeOrSelfWithNodeName("a"))
         return;
 
     if (element.treeElement.expanded) {
@@ -688,7 +732,7 @@ TreeElement.prototype.collapse = function()
     this.expanded = false;
 
     if (this.treeOutline)
-        this.treeOutline._expandedStateMap.put(this.representedObject, false);
+        this.treeOutline._expandedStateMap.set(this.representedObject, false);
 
     this.oncollapse();
 }
@@ -714,7 +758,7 @@ TreeElement.prototype.expand = function()
 
     this.expanded = true;
     if (this.treeOutline)
-        this.treeOutline._expandedStateMap.put(this.representedObject, true);
+        this.treeOutline._expandedStateMap.set(this.representedObject, true);
 
     if (this.treeOutline && (!this._childrenListNode || this._shouldRefreshChildren)) {
         if (this._childrenListNode && this._childrenListNode.parentNode)
@@ -793,6 +837,8 @@ TreeElement.prototype.reveal = function()
             currentAncestor.expand();
         currentAncestor = currentAncestor.parent;
     }
+
+    this.listItemElement.scrollIntoViewIfNeeded();
 
     this.onreveal();
 }
@@ -983,8 +1029,9 @@ TreeElement.prototype.traversePreviousTreeElement = function(skipUnrevealed, don
 TreeElement.prototype.isEventWithinDisclosureTriangle = function(event)
 {
     // FIXME: We should not use getComputedStyle(). For that we need to get rid of using ::before for disclosure triangle. (http://webk.it/74446)
-    var paddingLeftValue = window.getComputedStyle(this._listItemNode).getPropertyCSSValue("padding-left");
-    var computedLeftPadding = paddingLeftValue ? paddingLeftValue.getFloatValue(CSSPrimitiveValue.CSS_PX) : 0;
+    var paddingLeftValue = window.getComputedStyle(this._listItemNode).paddingLeft;
+    console.assert(paddingLeftValue.endsWith("px"));
+    var computedLeftPadding = parseFloat(paddingLeftValue);
     var left = this._listItemNode.totalOffsetLeft() + computedLeftPadding;
     return event.pageX >= left && event.pageX <= left + this.arrowToggleWidth && this.hasChildren;
 }

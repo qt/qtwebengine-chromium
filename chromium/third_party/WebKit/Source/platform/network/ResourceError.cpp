@@ -32,13 +32,13 @@
 #include "public/platform/WebURL.h"
 #include "public/platform/WebURLError.h"
 
-namespace WebCore {
+namespace blink {
 
 const char errorDomainBlinkInternal[] = "BlinkInternal";
 
 ResourceError ResourceError::cancelledError(const String& failingURL)
 {
-    return blink::Platform::current()->cancelledError(KURL(ParsedURLString, failingURL));
+    return Platform::current()->cancelledError(KURL(ParsedURLString, failingURL));
 }
 
 ResourceError ResourceError::copy() const
@@ -87,4 +87,4 @@ bool ResourceError::compare(const ResourceError& a, const ResourceError& b)
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

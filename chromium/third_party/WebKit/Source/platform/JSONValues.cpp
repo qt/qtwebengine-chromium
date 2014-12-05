@@ -35,7 +35,7 @@
 #include "wtf/MathExtras.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
@@ -46,13 +46,13 @@ const char* const falseString = "false";
 inline bool escapeChar(UChar c, StringBuilder* dst)
 {
     switch (c) {
-    case '\b': dst->append("\\b", 2); break;
-    case '\f': dst->append("\\f", 2); break;
-    case '\n': dst->append("\\n", 2); break;
-    case '\r': dst->append("\\r", 2); break;
-    case '\t': dst->append("\\t", 2); break;
-    case '\\': dst->append("\\\\", 2); break;
-    case '"': dst->append("\\\"", 2); break;
+    case '\b': dst->appendLiteral("\\b"); break;
+    case '\f': dst->appendLiteral("\\f"); break;
+    case '\n': dst->appendLiteral("\\n"); break;
+    case '\r': dst->appendLiteral("\\r"); break;
+    case '\t': dst->appendLiteral("\\t"); break;
+    case '\\': dst->appendLiteral("\\\\"); break;
+    case '"': dst->appendLiteral("\\\""); break;
     default:
         return false;
     }
@@ -78,6 +78,12 @@ inline void doubleQuoteString(const String& str, StringBuilder* dst)
         }
     }
     dst->append('"');
+}
+
+void writeIndent(int depth, StringBuilder* output)
+{
+    for (int i = 0; i < depth; ++i)
+        output->appendLiteral("  ");
 }
 
 } // anonymous namespace
@@ -151,10 +157,29 @@ String JSONValue::toJSONString() const
     return result.toString();
 }
 
+String JSONValue::toPrettyJSONString() const
+{
+    StringBuilder result;
+    result.reserveCapacity(512);
+    prettyWriteJSON(&result);
+    return result.toString();
+}
+
 void JSONValue::writeJSON(StringBuilder* output) const
 {
     ASSERT(m_type == TypeNull);
     output->append(nullString, 4);
+}
+
+void JSONValue::prettyWriteJSON(StringBuilder* output) const
+{
+    prettyWriteJSONInternal(output, 0);
+    output->append('\n');
+}
+
+void JSONValue::prettyWriteJSONInternal(StringBuilder* output, int depth) const
+{
+    writeJSON(output);
 }
 
 bool JSONBasicValue::asBoolean(bool* output) const
@@ -368,6 +393,24 @@ void JSONObjectBase::writeJSON(StringBuilder* output) const
     output->append('}');
 }
 
+void JSONObjectBase::prettyWriteJSONInternal(StringBuilder* output, int depth) const
+{
+    output->appendLiteral("{\n");
+    for (size_t i = 0; i < m_order.size(); ++i) {
+        Dictionary::const_iterator it = m_data.find(m_order[i]);
+        ASSERT_WITH_SECURITY_IMPLICATION(it != m_data.end());
+        if (i)
+            output->appendLiteral(",\n");
+        writeIndent(depth + 1, output);
+        doubleQuoteString(it->key, output);
+        output->appendLiteral(": ");
+        it->value->prettyWriteJSONInternal(output, depth + 1);
+    }
+    output->append('\n');
+    writeIndent(depth, output);
+    output->append('}');
+}
+
 JSONObjectBase::JSONObjectBase()
     : JSONValue(TypeObject)
     , m_data()
@@ -399,6 +442,36 @@ void JSONArrayBase::writeJSON(StringBuilder* output) const
         if (it != m_data.begin())
             output->append(',');
         (*it)->writeJSON(output);
+    }
+    output->append(']');
+}
+
+void JSONArrayBase::prettyWriteJSONInternal(StringBuilder* output, int depth) const
+{
+    output->append('[');
+    bool lastIsArrayOrObject = false;
+    for (Vector<RefPtr<JSONValue> >::const_iterator it = m_data.begin(); it != m_data.end(); ++it) {
+        bool isArrayOrObject = (*it)->type() == JSONValue::TypeObject || (*it)->type() == JSONValue::TypeArray;
+        if (it == m_data.begin()) {
+            if (isArrayOrObject) {
+                output->append('\n');
+                writeIndent(depth + 1, output);
+            }
+        } else {
+            output->append(',');
+            if (lastIsArrayOrObject) {
+                output->append('\n');
+                writeIndent(depth + 1, output);
+            } else {
+                output->append(' ');
+            }
+        }
+        (*it)->prettyWriteJSONInternal(output, depth + 1);
+        lastIsArrayOrObject = isArrayOrObject;
+    }
+    if (lastIsArrayOrObject) {
+        output->append('\n');
+        writeIndent(depth, output);
     }
     output->append(']');
 }
@@ -453,4 +526,4 @@ PassRefPtr<JSONValue> JSONArrayBase::get(size_t index)
     return m_data[index];
 }
 
-} // namespace WebCore
+} // namespace blink

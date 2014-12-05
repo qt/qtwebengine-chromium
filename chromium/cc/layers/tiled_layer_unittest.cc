@@ -18,14 +18,13 @@
 #include "cc/test/fake_output_surface.h"
 #include "cc/test/fake_output_surface_client.h"
 #include "cc/test/fake_proxy.h"
-#include "cc/test/fake_rendering_stats_instrumentation.h"
 #include "cc/test/geometry_test_utils.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/test/tiled_layer_test_common.h"
 #include "cc/trees/occlusion_tracker.h"
 #include "cc/trees/single_thread_proxy.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
 namespace cc {
@@ -41,7 +40,7 @@ class TestOcclusionTracker : public OcclusionTracker<Layer> {
     stack_.back().target = render_target;
   }
 
-  void SetOcclusion(const Region& occlusion) {
+  void SetOcclusion(const SimpleEnclosedRegion& occlusion) {
     stack_.back().occlusion_from_inside_target = occlusion;
   }
 };
@@ -57,7 +56,7 @@ class SynchronousOutputSurfaceLayerTreeHost : public LayerTreeHost {
         client, manager, settings, impl_task_runner));
   }
 
-  virtual ~SynchronousOutputSurfaceLayerTreeHost() {}
+  ~SynchronousOutputSurfaceLayerTreeHost() override {}
 
   bool EnsureOutputSurfaceCreated() {
     base::MessageLoop::current()->PostDelayedTask(
@@ -68,8 +67,7 @@ class SynchronousOutputSurfaceLayerTreeHost : public LayerTreeHost {
     return output_surface_created_;
   }
 
-  virtual void OnCreateAndInitializeOutputSurfaceAttempted(
-      bool success) OVERRIDE {
+  void OnCreateAndInitializeOutputSurfaceAttempted(bool success) override {
     LayerTreeHost::OnCreateAndInitializeOutputSurfaceAttempted(success);
     output_surface_created_ = success;
     run_loop_.Quit();
@@ -81,9 +79,10 @@ class SynchronousOutputSurfaceLayerTreeHost : public LayerTreeHost {
       SharedBitmapManager* manager,
       const LayerTreeSettings& settings,
       scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
-      : LayerTreeHost(client, manager, settings),
+      : LayerTreeHost(client, manager, NULL, settings),
         output_surface_created_(false) {
-    LayerTreeHost::InitializeThreaded(impl_task_runner);
+    LayerTreeHost::InitializeThreaded(base::MessageLoopProxy::current(),
+                                      impl_task_runner);
   }
 
   bool output_surface_created_;
@@ -93,12 +92,12 @@ class SynchronousOutputSurfaceLayerTreeHost : public LayerTreeHost {
 class TiledLayerTest : public testing::Test {
  public:
   TiledLayerTest()
-      : proxy_(NULL),
+      : proxy_(nullptr),
         output_surface_(FakeOutputSurface::Create3d()),
         queue_(make_scoped_ptr(new ResourceUpdateQueue)),
         impl_thread_("ImplThread"),
         fake_layer_tree_host_client_(FakeLayerTreeHostClient::DIRECT_3D),
-        occlusion_(NULL) {
+        occlusion_(nullptr) {
     settings_.max_partial_texture_updates = std::numeric_limits<size_t>::max();
     settings_.layer_transforms_should_scale_layer_contents = true;
   }
@@ -111,6 +110,7 @@ class TiledLayerTest : public testing::Test {
         shared_bitmap_manager_.get(),
         settings_,
         impl_thread_.message_loop_proxy());
+    fake_layer_tree_host_client_.SetLayerTreeHost(layer_tree_host_.get());
     proxy_ = layer_tree_host_->proxy();
     resource_manager_ = PrioritizedResourceManager::Create(proxy_);
     layer_tree_host_->SetLayerTreeHostClientReady();
@@ -121,9 +121,13 @@ class TiledLayerTest : public testing::Test {
 
     DebugScopedSetImplThreadAndMainThreadBlocked
         impl_thread_and_main_thread_blocked(proxy_);
-    resource_provider_ = ResourceProvider::Create(
-        output_surface_.get(), shared_bitmap_manager_.get(), 0, false, 1,
-        false);
+    resource_provider_ = ResourceProvider::Create(output_surface_.get(),
+                                                  shared_bitmap_manager_.get(),
+                                                  nullptr,
+                                                  nullptr,
+                                                  0,
+                                                  false,
+                                                  1);
     host_impl_ = make_scoped_ptr(
         new FakeLayerTreeHostImpl(proxy_, shared_bitmap_manager_.get()));
   }
@@ -134,8 +138,8 @@ class TiledLayerTest : public testing::Test {
 
     DebugScopedSetImplThreadAndMainThreadBlocked
     impl_thread_and_main_thread_blocked(proxy_);
-    resource_provider_.reset();
-    host_impl_.reset();
+    resource_provider_ = nullptr;
+    host_impl_ = nullptr;
   }
 
   void ResourceManagerClearAllMemory(
@@ -155,7 +159,7 @@ class TiledLayerTest : public testing::Test {
     impl_thread_and_main_thread_blocked(proxy_);
     DCHECK(queue_);
     scoped_ptr<ResourceUpdateController> update_controller =
-        ResourceUpdateController::Create(NULL,
+        ResourceUpdateController::Create(nullptr,
                                          proxy_->ImplThreadTaskRunner(),
                                          queue_.Pass(),
                                          resource_provider_.get());
@@ -284,6 +288,27 @@ TEST_F(TiledLayerTest, PushDirtyTiles) {
   EXPECT_FALSE(layer_impl->HasResourceIdForTileAt(0, 1));
 }
 
+TEST_F(TiledLayerTest, Scale) {
+  layer_tree_host_->SetDeviceScaleFactor(1.5);
+
+  scoped_refptr<FakeTiledLayer> layer =
+      make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
+  scoped_ptr<FakeTiledLayerImpl> layer_impl =
+      make_scoped_ptr(new FakeTiledLayerImpl(host_impl_->active_tree(), 1));
+  RenderSurfaceLayerList render_surface_layer_list;
+
+  layer_tree_host_->root_layer()->AddChild(layer);
+
+  layer->SetBounds(gfx::Size(100, 200));
+  CalcDrawProps(&render_surface_layer_list);
+
+  // Change the width so that it doesn't divide cleanly by the scale.
+  layer->SetBounds(gfx::Size(101, 200));
+  UpdateAndPush(layer, layer_impl);
+
+  EXPECT_EQ(1.5, layer->fake_layer_updater()->last_contents_width_scale());
+}
+
 TEST_F(TiledLayerTest, PushOccludedDirtyTiles) {
   scoped_refptr<FakeTiledLayer> layer =
       make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
@@ -314,7 +339,7 @@ TEST_F(TiledLayerTest, PushOccludedDirtyTiles) {
     // Invalidates part of the top tile...
     layer->InvalidateContentRect(gfx::Rect(0, 0, 50, 50));
     // ....but the area is occluded.
-    occluded.SetOcclusion(gfx::Rect(0, 0, 50, 50));
+    occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(0, 0, 50, 50)));
     CalcDrawProps(&render_surface_layer_list);
     UpdateAndPush(layer, layer_impl);
 
@@ -557,7 +582,7 @@ TEST_F(TiledLayerTest, PushIdlePaintedOccludedTiles) {
 
   // The tile size is 100x100, so this invalidates one occluded tile, culls it
   // during paint, but prepaints it.
-  occluded.SetOcclusion(gfx::Rect(0, 0, 100, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(0, 0, 100, 100)));
 
   layer->SetBounds(gfx::Size(100, 100));
   CalcDrawProps(&render_surface_layer_list);
@@ -695,7 +720,7 @@ TEST_F(TiledLayerTest, PaintSmallAnimatedLayersImmediately) {
     layer->SetTexturePriorities(priority_calculator_);
     resource_manager_->PrioritizeTextures();
     layer->SavePaintProperties();
-    layer->Update(queue_.get(), NULL);
+    layer->Update(queue_.get(), nullptr);
     UpdateTextures();
     LayerPushPropertiesTo(layer.get(), layer_impl.get());
 
@@ -867,11 +892,13 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer_tree_host_->root_layer()->AddChild(layer);
 
   gfx::Rect layer_bounds(0, 0, 300, 200);
-  gfx::Rect content_bounds(0, 0, 200, 250);
+  gfx::Rect content_bounds(0, 0, 150, 250);
 
   layer->SetBounds(layer_bounds.size());
   layer->SetContentBounds(content_bounds.size());
   layer->draw_properties().visible_content_rect = content_bounds;
+  layer->draw_properties().contents_scale_x = .5f;
+  layer->draw_properties().contents_scale_y = 1.25f;
 
   // On first update, the update_rect includes all tiles, even beyond the
   // boundaries of the layer.
@@ -881,8 +908,10 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
-  EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 300, 300 * 0.8), layer->update_rect());
+  layer->Update(queue_.get(), nullptr);
+
+  // Update rect is 200x300 (tile size of 100x100). Scaled this gives 400x240.
+  EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 400, 240), layer->update_rect());
   UpdateTextures();
 
   // After the tiles are updated once, another invalidate only needs to update
@@ -891,7 +920,7 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   resource_manager_->PrioritizeTextures();
   layer->InvalidateContentRect(content_bounds);
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(layer_bounds), layer->update_rect());
   UpdateTextures();
 
@@ -902,8 +931,8 @@ TEST_F(TiledLayerTest, VerifyUpdateRectWhenContentBoundsAreScaled) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
-  EXPECT_FLOAT_RECT_EQ(gfx::RectF(45, 80, 15, 8), layer->update_rect());
+  layer->Update(queue_.get(), nullptr);
+  EXPECT_FLOAT_RECT_EQ(gfx::RectF(60, 80, 20, 8), layer->update_rect());
 }
 
 TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
@@ -919,7 +948,7 @@ TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
   layer->SetBounds(gfx::Size(100, 100));
   CalcDrawProps(&render_surface_layer_list);
   layer->draw_properties().visible_content_rect = gfx::Rect(0, 0, 100, 100);
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   UpdateTextures();
   EXPECT_FLOAT_RECT_EQ(gfx::RectF(0, 0, 100, 100),
                        layer->last_needs_display_rect());
@@ -928,7 +957,7 @@ TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   UpdateTextures();
   LayerPushPropertiesTo(layer.get(), layer_impl.get());
   EXPECT_TRUE(layer_impl->HasResourceIdForTileAt(0, 0));
@@ -947,7 +976,7 @@ TEST_F(TiledLayerTest, VerifyInvalidationWhenContentsScaleChanges) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   UpdateTextures();
   LayerPushPropertiesTo(layer.get(), layer_impl.get());
   EXPECT_TRUE(layer_impl->HasResourceIdForTileAt(0, 0));
@@ -1017,7 +1046,7 @@ TEST_F(TiledLayerTest, SkipsDrawGetsReset) {
 
   ResourceManagerClearAllMemory(layer_tree_host_->contents_texture_manager(),
                                 resource_provider_.get());
-  layer_tree_host_->SetRootLayer(NULL);
+  layer_tree_host_->SetRootLayer(nullptr);
 }
 
 TEST_F(TiledLayerTest, ResizeToSmaller) {
@@ -1033,7 +1062,7 @@ TEST_F(TiledLayerTest, ResizeToSmaller) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
 
   layer->SetBounds(gfx::Size(200, 200));
   layer->InvalidateContentRect(gfx::Rect(0, 0, 200, 200));
@@ -1054,7 +1083,7 @@ TEST_F(TiledLayerTest, HugeLayerUpdateCrash) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
 }
 
 class TiledLayerPartialUpdateTest : public TiledLayerTest {
@@ -1167,7 +1196,7 @@ TEST_F(TiledLayerPartialUpdateTest, PartialUpdates) {
 
   ResourceManagerClearAllMemory(layer_tree_host_->contents_texture_manager(),
                                 resource_provider_.get());
-  layer_tree_host_->SetRootLayer(NULL);
+  layer_tree_host_->SetRootLayer(nullptr);
 }
 
 TEST_F(TiledLayerTest, TilesPaintedWithoutOcclusion) {
@@ -1184,7 +1213,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithoutOcclusion) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
   layer->SavePaintProperties();
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   EXPECT_EQ(2, layer->fake_layer_updater()->update_count());
 }
 
@@ -1203,7 +1232,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(&render_surface_layer_list);
 
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 100)));
   layer->draw_properties().drawable_content_rect =
       gfx::Rect(layer->content_bounds());
   layer->draw_properties().visible_content_rect =
@@ -1220,7 +1249,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
 
-  occluded.SetOcclusion(gfx::Rect(250, 200, 300, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(250, 200, 300, 100)));
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded);
@@ -1230,7 +1259,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusion) {
   layer->SetTexturePriorities(priority_calculator_);
   resource_manager_->PrioritizeTextures();
 
-  occluded.SetOcclusion(gfx::Rect(250, 250, 300, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(250, 250, 300, 100)));
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
   layer->SavePaintProperties();
   layer->Update(queue_.get(), &occluded);
@@ -1254,7 +1283,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
 
   // The partially occluded tiles (by the 150 occlusion height) are visible
   // beyond the occlusion, so not culled.
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 150));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 150)));
   layer->draw_properties().drawable_content_rect = gfx::Rect(0, 0, 600, 360);
   layer->draw_properties().visible_content_rect = gfx::Rect(0, 0, 600, 360);
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
@@ -1269,7 +1298,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
 
   // Now the visible region stops at the edge of the occlusion so the partly
   // visible tiles become fully occluded.
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 150));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 150)));
   layer->draw_properties().drawable_content_rect = gfx::Rect(0, 0, 600, 350);
   layer->draw_properties().visible_content_rect = gfx::Rect(0, 0, 600, 350);
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
@@ -1283,7 +1312,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndVisiblityConstraints) {
 
   // Now the visible region is even smaller than the occlusion, it should have
   // the same result.
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 150));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 150)));
   layer->draw_properties().drawable_content_rect = gfx::Rect(0, 0, 600, 340);
   layer->draw_properties().visible_content_rect = gfx::Rect(0, 0, 600, 340);
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
@@ -1309,7 +1338,7 @@ TEST_F(TiledLayerTest, TilesNotPaintedWithoutInvalidation) {
   layer->SetBounds(gfx::Size(600, 600));
   CalcDrawProps(&render_surface_layer_list);
 
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 100)));
   layer->draw_properties().drawable_content_rect = gfx::Rect(0, 0, 600, 600);
   layer->draw_properties().visible_content_rect = gfx::Rect(0, 0, 600, 600);
   layer->InvalidateContentRect(gfx::Rect(0, 0, 600, 600));
@@ -1352,7 +1381,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndTransforms) {
   layer->draw_properties().screen_space_transform = screen_transform;
   layer->draw_properties().target_space_transform = screen_transform;
 
-  occluded.SetOcclusion(gfx::Rect(100, 100, 150, 50));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(100, 100, 150, 50)));
   layer->draw_properties().drawable_content_rect =
       gfx::Rect(layer->content_bounds());
   layer->draw_properties().visible_content_rect =
@@ -1394,7 +1423,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
             layer->content_bounds().ToString());
 
   // No tiles are covered by the 300x50 occlusion.
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 50));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 50)));
   layer->draw_properties().drawable_content_rect =
       gfx::Rect(layer->bounds());
   layer->draw_properties().visible_content_rect =
@@ -1410,7 +1439,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->fake_layer_updater()->ClearUpdateCount();
 
   // The occlusion of 300x100 will be cover 3 tiles as tiles are 100x100 still.
-  occluded.SetOcclusion(gfx::Rect(200, 200, 300, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(200, 200, 300, 100)));
   layer->draw_properties().drawable_content_rect =
       gfx::Rect(layer->bounds());
   layer->draw_properties().visible_content_rect =
@@ -1434,7 +1463,7 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->draw_properties().target_space_transform = screen_transform;
 
   // An occlusion of 150x100 will cover 3*2 = 6 tiles.
-  occluded.SetOcclusion(gfx::Rect(100, 100, 150, 100));
+  occluded.SetOcclusion(SimpleEnclosedRegion(gfx::Rect(100, 100, 150, 100)));
 
   gfx::Rect layer_bounds_rect(layer->bounds());
   layer->draw_properties().drawable_content_rect =
@@ -1448,94 +1477,6 @@ TEST_F(TiledLayerTest, TilesPaintedWithOcclusionAndScaling) {
   layer->Update(queue_.get(), &occluded);
   int visible_tiles3 = 6 * 6 - 6;
   EXPECT_EQ(visible_tiles3, layer->fake_layer_updater()->update_count());
-}
-
-TEST_F(TiledLayerTest, VisibleContentOpaqueRegion) {
-  scoped_refptr<FakeTiledLayer> layer =
-      make_scoped_refptr(new FakeTiledLayer(resource_manager_.get()));
-  RenderSurfaceLayerList render_surface_layer_list;
-  TestOcclusionTracker occluded;
-  occlusion_ = &occluded;
-  layer_tree_host_->SetViewportSize(gfx::Size(1000, 1000));
-
-  layer_tree_host_->root_layer()->AddChild(layer);
-
-  // The tile size is 100x100, so this invalidates and then paints two tiles in
-  // various ways.
-
-  gfx::Rect opaque_paint_rect;
-  Region opaque_contents;
-
-  gfx::Rect content_bounds = gfx::Rect(0, 0, 100, 200);
-  gfx::Rect visible_bounds = gfx::Rect(0, 0, 100, 150);
-
-  layer->SetBounds(content_bounds.size());
-  CalcDrawProps(&render_surface_layer_list);
-  layer->draw_properties().drawable_content_rect = visible_bounds;
-  layer->draw_properties().visible_content_rect = visible_bounds;
-
-  // If the layer doesn't paint opaque content, then the
-  // VisibleContentOpaqueRegion should be empty.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(content_bounds);
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_TRUE(opaque_contents.IsEmpty());
-
-  // VisibleContentOpaqueRegion should match the visible part of what is painted
-  // opaque.
-  opaque_paint_rect = gfx::Rect(10, 10, 90, 190);
-  layer->fake_layer_updater()->SetOpaquePaintRect(opaque_paint_rect);
-  layer->InvalidateContentRect(content_bounds);
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we paint again without invalidating, the same stuff should be opaque.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we repaint a non-opaque part of the tile, then it shouldn't lose its
-  // opaque-ness. And other tiles should not be affected.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(gfx::Rect(0, 0, 1, 1));
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(opaque_paint_rect, visible_bounds).ToString(),
-            opaque_contents.ToString());
-
-  // If we repaint an opaque part of the tile, then it should lose its
-  // opaque-ness. But other tiles should still not be affected.
-  layer->fake_layer_updater()->SetOpaquePaintRect(gfx::Rect());
-  layer->InvalidateContentRect(gfx::Rect(10, 10, 1, 1));
-  layer->SetTexturePriorities(priority_calculator_);
-  resource_manager_->PrioritizeTextures();
-  layer->SavePaintProperties();
-  layer->Update(queue_.get(), &occluded);
-  UpdateTextures();
-  opaque_contents = layer->VisibleContentOpaqueRegion();
-  EXPECT_EQ(gfx::IntersectRects(gfx::Rect(10, 100, 90, 100),
-                                visible_bounds).ToString(),
-            opaque_contents.ToString());
 }
 
 TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
@@ -1696,7 +1637,7 @@ TEST_F(TiledLayerTest, DontAllocateContentsWhenTargetSurfaceCantBeAllocated) {
 
   ResourceManagerClearAllMemory(layer_tree_host_->contents_texture_manager(),
                                 resource_provider_.get());
-  layer_tree_host_->SetRootLayer(NULL);
+  layer_tree_host_->SetRootLayer(nullptr);
 }
 
 class TrackingLayerPainter : public LayerPainter {
@@ -1705,9 +1646,7 @@ class TrackingLayerPainter : public LayerPainter {
     return make_scoped_ptr(new TrackingLayerPainter());
   }
 
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE {
+  void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) override {
     painted_rect_ = content_rect;
   }
 
@@ -1724,10 +1663,8 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
       : FakeTiledLayer(manager) {
     scoped_ptr<TrackingLayerPainter> painter(TrackingLayerPainter::Create());
     tracking_layer_painter_ = painter.get();
-    layer_updater_ =
-        BitmapContentLayerUpdater::Create(painter.PassAs<LayerPainter>(),
-                                          &stats_instrumentation_,
-                                          0);
+    layer_updater_ = BitmapContentLayerUpdater::Create(
+        painter.Pass(), &stats_instrumentation_, 0);
   }
 
   TrackingLayerPainter* tracking_layer_painter() const {
@@ -1735,10 +1672,8 @@ class UpdateTrackingTiledLayer : public FakeTiledLayer {
   }
 
  private:
-  virtual LayerUpdater* Updater() const OVERRIDE {
-    return layer_updater_.get();
-  }
-  virtual ~UpdateTrackingTiledLayer() {}
+  LayerUpdater* Updater() const override { return layer_updater_.get(); }
+  ~UpdateTrackingTiledLayer() override {}
 
   TrackingLayerPainter* tracking_layer_painter_;
   scoped_refptr<BitmapContentLayerUpdater> layer_updater_;
@@ -1766,7 +1701,7 @@ TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {
   layer->SavePaintProperties();
 
   // Update the whole tile.
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   layer->tracking_layer_painter()->ResetPaintedRect();
 
   EXPECT_RECT_EQ(gfx::Rect(), layer->tracking_layer_painter()->PaintedRect());
@@ -1775,9 +1710,13 @@ TEST_F(TiledLayerTest, NonIntegerContentsScaleIsNotDistortedDuringPaint) {
   // Invalidate the entire layer in content space. When painting, the rect given
   // to webkit should match the layer's bounds.
   layer->InvalidateContentRect(content_rect);
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
 
-  EXPECT_RECT_EQ(layer_rect, layer->tracking_layer_painter()->PaintedRect());
+  // Rounding leads to an extra pixel.
+  gfx::Rect expanded_layer_rect(layer_rect);
+  expanded_layer_rect.set_height(32);
+  EXPECT_RECT_EQ(expanded_layer_rect,
+                 layer->tracking_layer_painter()->PaintedRect());
 }
 
 TEST_F(TiledLayerTest,
@@ -1801,7 +1740,7 @@ TEST_F(TiledLayerTest,
   layer->SavePaintProperties();
 
   // Update the whole tile.
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
   layer->tracking_layer_painter()->ResetPaintedRect();
 
   EXPECT_RECT_EQ(gfx::Rect(), layer->tracking_layer_painter()->PaintedRect());
@@ -1810,9 +1749,13 @@ TEST_F(TiledLayerTest,
   // Invalidate the entire layer in layer space. When painting, the rect given
   // to webkit should match the layer's bounds.
   layer->SetNeedsDisplayRect(layer_rect);
-  layer->Update(queue_.get(), NULL);
+  layer->Update(queue_.get(), nullptr);
 
-  EXPECT_RECT_EQ(layer_rect, layer->tracking_layer_painter()->PaintedRect());
+  // Rounding leads to an extra pixel.
+  gfx::Rect expanded_layer_rect(layer_rect);
+  expanded_layer_rect.set_height(32);
+  EXPECT_RECT_EQ(expanded_layer_rect,
+                 layer->tracking_layer_painter()->PaintedRect());
 }
 
 }  // namespace

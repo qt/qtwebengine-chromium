@@ -12,9 +12,9 @@
 #include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_time.h"
 #include "ppapi/host/ppapi_host.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 namespace content {
 
@@ -28,29 +28,28 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
       int render_process_id,
       base::WeakPtr<PepperFileSystemBrowserHost> fs_host,
       const std::string& path);
-  virtual ~PepperInternalFileRefBackend();
+  ~PepperInternalFileRefBackend() override;
 
   // PepperFileRefBackend overrides.
-  virtual int32_t MakeDirectory(ppapi::host::ReplyMessageContext context,
-                                int32_t make_directory_flags) OVERRIDE;
-  virtual int32_t Touch(ppapi::host::ReplyMessageContext context,
-                        PP_Time last_accessed_time,
-                        PP_Time last_modified_time) OVERRIDE;
-  virtual int32_t Delete(ppapi::host::ReplyMessageContext context) OVERRIDE;
-  virtual int32_t Rename(ppapi::host::ReplyMessageContext context,
-                         PepperFileRefHost* new_file_ref) OVERRIDE;
-  virtual int32_t Query(ppapi::host::ReplyMessageContext context) OVERRIDE;
-  virtual int32_t ReadDirectoryEntries(ppapi::host::ReplyMessageContext context)
-      OVERRIDE;
-  virtual int32_t GetAbsolutePath(ppapi::host::ReplyMessageContext context)
-      OVERRIDE;
-  virtual fileapi::FileSystemURL GetFileSystemURL() const OVERRIDE;
-  virtual base::FilePath GetExternalFilePath() const OVERRIDE;
+  int32_t MakeDirectory(ppapi::host::ReplyMessageContext context,
+                        int32_t make_directory_flags) override;
+  int32_t Touch(ppapi::host::ReplyMessageContext context,
+                PP_Time last_accessed_time,
+                PP_Time last_modified_time) override;
+  int32_t Delete(ppapi::host::ReplyMessageContext context) override;
+  int32_t Rename(ppapi::host::ReplyMessageContext context,
+                 PepperFileRefHost* new_file_ref) override;
+  int32_t Query(ppapi::host::ReplyMessageContext context) override;
+  int32_t ReadDirectoryEntries(
+      ppapi::host::ReplyMessageContext context) override;
+  int32_t GetAbsolutePath(ppapi::host::ReplyMessageContext context) override;
+  storage::FileSystemURL GetFileSystemURL() const override;
+  base::FilePath GetExternalFilePath() const override;
 
-  virtual int32_t CanRead() const OVERRIDE;
-  virtual int32_t CanWrite() const OVERRIDE;
-  virtual int32_t CanCreate() const OVERRIDE;
-  virtual int32_t CanReadWrite() const OVERRIDE;
+  int32_t CanRead() const override;
+  int32_t CanWrite() const override;
+  int32_t CanCreate() const override;
+  int32_t CanReadWrite() const override;
 
  private:
   // Generic reply callback.
@@ -64,12 +63,12 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
                            const base::File::Info& file_info);
   void ReadDirectoryComplete(
       ppapi::host::ReplyMessageContext context,
-      fileapi::FileSystemOperation::FileEntryList* accumulated_file_list,
+      storage::FileSystemOperation::FileEntryList* accumulated_file_list,
       base::File::Error error,
-      const fileapi::FileSystemOperation::FileEntryList& file_list,
+      const storage::FileSystemOperation::FileEntryList& file_list,
       bool has_more);
 
-  scoped_refptr<fileapi::FileSystemContext> GetFileSystemContext() const;
+  scoped_refptr<storage::FileSystemContext> GetFileSystemContext() const;
 
   ppapi::host::PpapiHost* host_;
   int render_process_id_;
@@ -77,7 +76,7 @@ class PepperInternalFileRefBackend : public PepperFileRefBackend {
   PP_FileSystemType fs_type_;
   std::string path_;
 
-  mutable fileapi::FileSystemURL fs_url_;
+  mutable storage::FileSystemURL fs_url_;
 
   base::WeakPtrFactory<PepperInternalFileRefBackend> weak_factory_;
 

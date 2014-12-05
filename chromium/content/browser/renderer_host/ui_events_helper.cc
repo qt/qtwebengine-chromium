@@ -4,6 +4,7 @@
 
 #include "content/browser/renderer_host/ui_events_helper.h"
 
+#include "content/browser/renderer_host/input/web_input_event_util.h"
 #include "content/common/input/web_touch_event_traits.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/events/event.h"
@@ -20,6 +21,8 @@ int WebModifiersToUIFlags(int modifiers) {
     flags |= ui::EF_CONTROL_DOWN;
   if (modifiers & blink::WebInputEvent::AltKey)
     flags |= ui::EF_ALT_DOWN;
+  if (modifiers & blink::WebInputEvent::MetaKey)
+    flags |= ui::EF_COMMAND_DOWN;
 
   if (modifiers & blink::WebInputEvent::LeftButtonDown)
     flags |= ui::EF_LEFT_MOUSE_BUTTON;
@@ -240,27 +243,6 @@ blink::WebGestureEvent MakeWebGestureEventFromUIEvent(
   return gesture_event;
 }
 
-int EventFlagsToWebEventModifiers(int flags) {
-  int modifiers = 0;
-
-  if (flags & ui::EF_SHIFT_DOWN)
-    modifiers |= blink::WebInputEvent::ShiftKey;
-  if (flags & ui::EF_CONTROL_DOWN)
-    modifiers |= blink::WebInputEvent::ControlKey;
-  if (flags & ui::EF_ALT_DOWN)
-    modifiers |= blink::WebInputEvent::AltKey;
-  // TODO(beng): MetaKey/META_MASK
-  if (flags & ui::EF_LEFT_MOUSE_BUTTON)
-    modifiers |= blink::WebInputEvent::LeftButtonDown;
-  if (flags & ui::EF_MIDDLE_MOUSE_BUTTON)
-    modifiers |= blink::WebInputEvent::MiddleButtonDown;
-  if (flags & ui::EF_RIGHT_MOUSE_BUTTON)
-    modifiers |= blink::WebInputEvent::RightButtonDown;
-  if (flags & ui::EF_CAPS_LOCK_DOWN)
-    modifiers |= blink::WebInputEvent::CapsLockOn;
-  return modifiers;
-}
-
 blink::WebTouchPoint* UpdateWebTouchEventFromUIEvent(
     const ui::TouchEvent& event,
     blink::WebTouchEvent* web_event) {
@@ -304,13 +286,6 @@ blink::WebTouchPoint* UpdateWebTouchEventFromUIEvent(
 
   // Update the location and state of the point.
   point->state = TouchPointStateFromEvent(event);
-  if (point->state == blink::WebTouchPoint::StateMoved) {
-    // It is possible for badly written touch drivers to emit Move events even
-    // when the touch location hasn't changed. In such cases, consume the event
-    // and pretend nothing happened.
-    if (point->position.x == event.x() && point->position.y == event.y())
-      return NULL;
-  }
   point->position.x = event.x();
   point->position.y = event.y();
 

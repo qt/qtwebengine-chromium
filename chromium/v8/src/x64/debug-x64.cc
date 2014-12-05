@@ -23,7 +23,7 @@ bool BreakLocationIterator::IsDebugBreakAtReturn()  {
 // CodeGenerator::VisitReturnStatement and VirtualFrame::Exit in codegen-x64.cc
 // for the precise return instructions sequence.
 void BreakLocationIterator::SetDebugBreakAtReturn()  {
-  ASSERT(Assembler::kJSReturnSequenceLength >= Assembler::kCallSequenceLength);
+  DCHECK(Assembler::kJSReturnSequenceLength >= Assembler::kCallSequenceLength);
   rinfo()->PatchCodeWithCall(
       debug_info_->GetIsolate()->builtins()->Return_DebugBreak()->entry(),
       Assembler::kJSReturnSequenceLength - Assembler::kCallSequenceLength);
@@ -40,20 +40,20 @@ void BreakLocationIterator::ClearDebugBreakAtReturn() {
 // A debug break in the frame exit code is identified by the JS frame exit code
 // having been patched with a call instruction.
 bool Debug::IsDebugBreakAtReturn(v8::internal::RelocInfo* rinfo) {
-  ASSERT(RelocInfo::IsJSReturn(rinfo->rmode()));
+  DCHECK(RelocInfo::IsJSReturn(rinfo->rmode()));
   return rinfo->IsPatchedReturnSequence();
 }
 
 
 bool BreakLocationIterator::IsDebugBreakAtSlot() {
-  ASSERT(IsDebugBreakSlot());
+  DCHECK(IsDebugBreakSlot());
   // Check whether the debug break slot instructions have been patched.
   return rinfo()->IsPatchedDebugBreakSlotSequence();
 }
 
 
 void BreakLocationIterator::SetDebugBreakAtSlot() {
-  ASSERT(IsDebugBreakSlot());
+  DCHECK(IsDebugBreakSlot());
   rinfo()->PatchCodeWithCall(
       debug_info_->GetIsolate()->builtins()->Slot_DebugBreak()->entry(),
       Assembler::kDebugBreakSlotLength - Assembler::kCallSequenceLength);
@@ -61,7 +61,7 @@ void BreakLocationIterator::SetDebugBreakAtSlot() {
 
 
 void BreakLocationIterator::ClearDebugBreakAtSlot() {
-  ASSERT(IsDebugBreakSlot());
+  DCHECK(IsDebugBreakSlot());
   rinfo()->PatchCode(original_rinfo()->pc(), Assembler::kDebugBreakSlotLength);
 }
 
@@ -86,13 +86,13 @@ static void Generate_DebugBreakCallHelper(MacroAssembler* masm,
     // Store the registers containing live values on the expression stack to
     // make sure that these are correctly updated during GC. Non object values
     // are stored as as two smis causing it to be untouched by GC.
-    ASSERT((object_regs & ~kJSCallerSaved) == 0);
-    ASSERT((non_object_regs & ~kJSCallerSaved) == 0);
-    ASSERT((object_regs & non_object_regs) == 0);
+    DCHECK((object_regs & ~kJSCallerSaved) == 0);
+    DCHECK((non_object_regs & ~kJSCallerSaved) == 0);
+    DCHECK((object_regs & non_object_regs) == 0);
     for (int i = 0; i < kNumJSCallerSaved; i++) {
       int r = JSCallerSavedCode(i);
       Register reg = { r };
-      ASSERT(!reg.is(kScratchRegister));
+      DCHECK(!reg.is(kScratchRegister));
       if ((object_regs & (1 << r)) != 0) {
         __ Push(reg);
       }
@@ -162,45 +162,39 @@ void DebugCodegen::GenerateCallICStubDebugBreak(MacroAssembler* masm) {
 
 void DebugCodegen::GenerateLoadICDebugBreak(MacroAssembler* masm) {
   // Register state for IC load call (from ic-x64.cc).
-  // ----------- S t a t e -------------
-  //  -- rax    : receiver
-  //  -- rcx    : name
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, rax.bit() | rcx.bit(), 0, false);
+  Register receiver = LoadDescriptor::ReceiverRegister();
+  Register name = LoadDescriptor::NameRegister();
+  RegList regs = receiver.bit() | name.bit();
+  if (FLAG_vector_ics) {
+    regs |= VectorLoadICTrampolineDescriptor::SlotRegister().bit();
+  }
+  Generate_DebugBreakCallHelper(masm, regs, 0, false);
 }
 
 
 void DebugCodegen::GenerateStoreICDebugBreak(MacroAssembler* masm) {
   // Register state for IC store call (from ic-x64.cc).
-  // ----------- S t a t e -------------
-  //  -- rax    : value
-  //  -- rcx    : name
-  //  -- rdx    : receiver
-  // -----------------------------------
+  Register receiver = StoreDescriptor::ReceiverRegister();
+  Register name = StoreDescriptor::NameRegister();
+  Register value = StoreDescriptor::ValueRegister();
   Generate_DebugBreakCallHelper(
-      masm, rax.bit() | rcx.bit() | rdx.bit(), 0, false);
+      masm, receiver.bit() | name.bit() | value.bit(), 0, false);
 }
 
 
 void DebugCodegen::GenerateKeyedLoadICDebugBreak(MacroAssembler* masm) {
   // Register state for keyed IC load call (from ic-x64.cc).
-  // ----------- S t a t e -------------
-  //  -- rax     : key
-  //  -- rdx     : receiver
-  // -----------------------------------
-  Generate_DebugBreakCallHelper(masm, rax.bit() | rdx.bit(), 0, false);
+  GenerateLoadICDebugBreak(masm);
 }
 
 
 void DebugCodegen::GenerateKeyedStoreICDebugBreak(MacroAssembler* masm) {
-  // Register state for keyed IC load call (from ic-x64.cc).
-  // ----------- S t a t e -------------
-  //  -- rax    : value
-  //  -- rcx    : key
-  //  -- rdx    : receiver
-  // -----------------------------------
+  // Register state for keyed IC store call (from ic-x64.cc).
+  Register receiver = StoreDescriptor::ReceiverRegister();
+  Register name = StoreDescriptor::NameRegister();
+  Register value = StoreDescriptor::ValueRegister();
   Generate_DebugBreakCallHelper(
-      masm, rax.bit() | rcx.bit() | rdx.bit(), 0, false);
+      masm, receiver.bit() | name.bit() | value.bit(), 0, false);
 }
 
 
@@ -265,7 +259,7 @@ void DebugCodegen::GenerateSlot(MacroAssembler* masm) {
   __ bind(&check_codesize);
   __ RecordDebugBreakSlot();
   __ Nop(Assembler::kDebugBreakSlotLength);
-  ASSERT_EQ(Assembler::kDebugBreakSlotLength,
+  DCHECK_EQ(Assembler::kDebugBreakSlotLength,
             masm->SizeOfCodeGeneratedSince(&check_codesize));
 }
 

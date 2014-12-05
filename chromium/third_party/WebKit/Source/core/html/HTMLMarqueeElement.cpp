@@ -23,188 +23,50 @@
 #include "config.h"
 #include "core/html/HTMLMarqueeElement.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "core/CSSPropertyNames.h"
-#include "core/CSSValueKeywords.h"
+#include "bindings/core/v8/PrivateScriptRunner.h"
+#include "bindings/core/v8/V8HTMLMarqueeElement.h"
 #include "core/HTMLNames.h"
-#include "core/dom/ExceptionCode.h"
-#include "core/rendering/RenderMarquee.h"
+#include "core/dom/Document.h"
+#include "core/frame/UseCounter.h"
 
-namespace WebCore {
-
-using namespace HTMLNames;
+namespace blink {
 
 inline HTMLMarqueeElement::HTMLMarqueeElement(Document& document)
-    : HTMLElement(marqueeTag, document)
-    , ActiveDOMObject(&document)
+    : HTMLElement(HTMLNames::marqueeTag, document)
 {
-    ScriptWrappable::init(this);
+    v8::Handle<v8::Value> classObject = PrivateScriptRunner::installClassIfNeeded(&document, "HTMLMarqueeElement");
+    RELEASE_ASSERT(!classObject.IsEmpty());
+    UseCounter::count(document, UseCounter::HTMLMarqueeElement);
 }
 
 PassRefPtrWillBeRawPtr<HTMLMarqueeElement> HTMLMarqueeElement::create(Document& document)
 {
     RefPtrWillBeRawPtr<HTMLMarqueeElement> marqueeElement(adoptRefWillBeNoop(new HTMLMarqueeElement(document)));
-    marqueeElement->suspendIfNeeded();
+    V8HTMLMarqueeElement::PrivateScript::createdCallbackMethod(document.frame(), marqueeElement.get());
     return marqueeElement.release();
 }
 
-int HTMLMarqueeElement::minimumDelay() const
+void HTMLMarqueeElement::attributeWillChange(const QualifiedName& name, const AtomicString& oldValue, const AtomicString& newValue)
 {
-    if (fastGetAttribute(truespeedAttr).isEmpty()) {
-        // WinIE uses 60ms as the minimum delay by default.
-        return 60;
+    HTMLElement::attributeWillChange(name, oldValue, newValue);
+    V8HTMLMarqueeElement::PrivateScript::attributeChangedCallbackMethod(document().frame(), this, name.toString(), oldValue, newValue);
+}
+
+Node::InsertionNotificationRequest HTMLMarqueeElement::insertedInto(ContainerNode* insertionPoint)
+{
+    HTMLElement::insertedInto(insertionPoint);
+    if (inDocument()) {
+        V8HTMLMarqueeElement::PrivateScript::attachedCallbackMethod(document().frame(), this);
     }
-    return 0;
+    return InsertionDone;
 }
 
-void HTMLMarqueeElement::didMoveToNewDocument(Document& oldDocument)
+void HTMLMarqueeElement::removedFrom(ContainerNode* insertionPoint)
 {
-    ActiveDOMObject::didMoveToNewExecutionContext(&document());
-    HTMLElement::didMoveToNewDocument(oldDocument);
+    HTMLElement::removedFrom(insertionPoint);
+    if (insertionPoint->inDocument()) {
+        V8HTMLMarqueeElement::PrivateScript::detachedCallbackMethod(insertionPoint->document().frame(), this);
+    }
 }
 
-bool HTMLMarqueeElement::isPresentationAttribute(const QualifiedName& name) const
-{
-    if (name == widthAttr || name == heightAttr || name == bgcolorAttr || name == vspaceAttr || name == hspaceAttr || name == scrollamountAttr || name == scrolldelayAttr || name == loopAttr || name == behaviorAttr || name == directionAttr)
-        return true;
-    return HTMLElement::isPresentationAttribute(name);
-}
-
-void HTMLMarqueeElement::collectStyleForPresentationAttribute(const QualifiedName& name, const AtomicString& value, MutableStylePropertySet* style)
-{
-    if (name == widthAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyWidth, value);
-    } else if (name == heightAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyHeight, value);
-    } else if (name == bgcolorAttr) {
-        if (!value.isEmpty())
-            addHTMLColorToStyle(style, CSSPropertyBackgroundColor, value);
-    } else if (name == vspaceAttr) {
-        if (!value.isEmpty()) {
-            addHTMLLengthToStyle(style, CSSPropertyMarginTop, value);
-            addHTMLLengthToStyle(style, CSSPropertyMarginBottom, value);
-        }
-    } else if (name == hspaceAttr) {
-        if (!value.isEmpty()) {
-            addHTMLLengthToStyle(style, CSSPropertyMarginLeft, value);
-            addHTMLLengthToStyle(style, CSSPropertyMarginRight, value);
-        }
-    } else if (name == scrollamountAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeIncrement, value);
-    } else if (name == scrolldelayAttr) {
-        if (!value.isEmpty())
-            addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeSpeed, value);
-    } else if (name == loopAttr) {
-        if (!value.isEmpty()) {
-            if (value == "-1" || equalIgnoringCase(value, "infinite"))
-                addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeRepetition, CSSValueInfinite);
-            else
-                addHTMLLengthToStyle(style, CSSPropertyInternalMarqueeRepetition, value);
-        }
-    } else if (name == behaviorAttr) {
-        if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeStyle, value);
-    } else if (name == directionAttr) {
-        if (!value.isEmpty())
-            addPropertyToPresentationAttributeStyle(style, CSSPropertyInternalMarqueeDirection, value);
-    } else
-        HTMLElement::collectStyleForPresentationAttribute(name, value, style);
-}
-
-void HTMLMarqueeElement::start()
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->start();
-}
-
-void HTMLMarqueeElement::stop()
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->stop();
-}
-
-int HTMLMarqueeElement::scrollAmount() const
-{
-    bool ok;
-    int scrollAmount = fastGetAttribute(scrollamountAttr).toInt(&ok);
-    return ok && scrollAmount >= 0 ? scrollAmount : RenderStyle::initialMarqueeIncrement().intValue();
-}
-
-void HTMLMarqueeElement::setScrollAmount(int scrollAmount, ExceptionState& exceptionState)
-{
-    if (scrollAmount < 0)
-        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(scrollAmount) + ") is negative.");
-    else
-        setIntegralAttribute(scrollamountAttr, scrollAmount);
-}
-
-int HTMLMarqueeElement::scrollDelay() const
-{
-    bool ok;
-    int scrollDelay = fastGetAttribute(scrolldelayAttr).toInt(&ok);
-    return ok && scrollDelay >= 0 ? scrollDelay : RenderStyle::initialMarqueeSpeed();
-}
-
-void HTMLMarqueeElement::setScrollDelay(int scrollDelay, ExceptionState& exceptionState)
-{
-    if (scrollDelay < 0)
-        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(scrollDelay) + ") is negative.");
-    else
-        setIntegralAttribute(scrolldelayAttr, scrollDelay);
-}
-
-int HTMLMarqueeElement::loop() const
-{
-    bool ok;
-    int loopValue = fastGetAttribute(loopAttr).toInt(&ok);
-    return ok && loopValue > 0 ? loopValue : -1;
-}
-
-void HTMLMarqueeElement::setLoop(int loop, ExceptionState& exceptionState)
-{
-    if (loop <= 0 && loop != -1)
-        exceptionState.throwDOMException(IndexSizeError, "The provided value (" + String::number(loop) + ") is neither positive nor -1.");
-    else
-        setIntegralAttribute(loopAttr, loop);
-}
-
-void HTMLMarqueeElement::suspend()
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->suspend();
-}
-
-void HTMLMarqueeElement::resume()
-{
-    if (RenderMarquee* marqueeRenderer = renderMarquee())
-        marqueeRenderer->updateMarqueePosition();
-}
-
-RenderMarquee* HTMLMarqueeElement::renderMarquee() const
-{
-    if (renderer() && renderer()->isMarquee())
-        return toRenderMarquee(renderer());
-    return 0;
-}
-
-RenderObject* HTMLMarqueeElement::createRenderer(RenderStyle*)
-{
-    return new RenderMarquee(this);
-}
-
-void HTMLMarqueeElement::timerFired(Timer<HTMLMarqueeElement>*)
-{
-    if (!renderer())
-        return;
-
-    document().updateLayout();
-
-    // The updateLayout() could have destroyed renderer(), so this re-check is very important.
-    if (renderer())
-        toRenderMarquee(renderer())->timerFired();
-}
-
-} // namespace WebCore
+} // namespace blink

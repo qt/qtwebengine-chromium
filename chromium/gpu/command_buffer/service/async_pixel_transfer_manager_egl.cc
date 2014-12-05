@@ -93,11 +93,9 @@ class TransferThread : public base::Thread {
     SetPriority(base::kThreadPriority_Background);
 #endif
   }
-  virtual ~TransferThread() {
-    Stop();
-  }
+  ~TransferThread() override { Stop(); }
 
-  virtual void Init() OVERRIDE {
+  void Init() override {
     gfx::GLShareGroup* share_group = NULL;
     surface_ = new gfx::PbufferGLSurfaceEGL(gfx::Size(1, 1));
     surface_->Initialize();
@@ -107,7 +105,7 @@ class TransferThread : public base::Thread {
     DCHECK(is_current);
   }
 
-  virtual void CleanUp() OVERRIDE {
+  void CleanUp() override {
     surface_ = NULL;
     context_->ReleaseCurrent(surface_.get());
     context_ = NULL;
@@ -401,20 +399,18 @@ class AsyncPixelTransferDelegateEGL
       AsyncPixelTransferManagerEGL::SharedState* shared_state,
       GLuint texture_id,
       const AsyncTexImage2DParams& define_params);
-  virtual ~AsyncPixelTransferDelegateEGL();
+  ~AsyncPixelTransferDelegateEGL() override;
 
   void BindTransfer() { state_->BindTransfer(); }
 
   // Implement AsyncPixelTransferDelegate:
-  virtual void AsyncTexImage2D(
-      const AsyncTexImage2DParams& tex_params,
-      const AsyncMemoryParams& mem_params,
-      const base::Closure& bind_callback) OVERRIDE;
-  virtual void AsyncTexSubImage2D(
-      const AsyncTexSubImage2DParams& tex_params,
-      const AsyncMemoryParams& mem_params) OVERRIDE;
-  virtual bool TransferIsInProgress() OVERRIDE;
-  virtual void WaitForTransferCompletion() OVERRIDE;
+  void AsyncTexImage2D(const AsyncTexImage2DParams& tex_params,
+                       const AsyncMemoryParams& mem_params,
+                       const base::Closure& bind_callback) override;
+  void AsyncTexSubImage2D(const AsyncTexSubImage2DParams& tex_params,
+                          const AsyncMemoryParams& mem_params) override;
+  bool TransferIsInProgress() override;
+  void WaitForTransferCompletion() override;
 
  private:
   // Returns true if a work-around was used.
@@ -664,10 +660,12 @@ bool AsyncPixelTransferDelegateEGL::WorkAroundAsyncTexSubImage2D(
 AsyncPixelTransferManagerEGL::SharedState::SharedState()
     // TODO(reveman): Skip this if --enable-gpu-benchmarking is not present.
     : texture_upload_stats(new AsyncPixelTransferUploadStats) {
-  std::string vendor;
-  vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
-  is_imagination = vendor.find("Imagination") != std::string::npos;
-  is_qualcomm = vendor.find("Qualcomm") != std::string::npos;
+  const char* vendor = reinterpret_cast<const char*>(glGetString(GL_VENDOR));
+  if (vendor) {
+    is_imagination =
+        std::string(vendor).find("Imagination") != std::string::npos;
+    is_qualcomm = std::string(vendor).find("Qualcomm") != std::string::npos;
+  }
 }
 
 AsyncPixelTransferManagerEGL::SharedState::~SharedState() {}

@@ -12,6 +12,7 @@
 #ifndef VP9_ENCODER_VP9_RATECTRL_H_
 #define VP9_ENCODER_VP9_RATECTRL_H_
 
+#include "vpx/vpx_codec.h"
 #include "vpx/vpx_integer.h"
 
 #include "vp9/common/vp9_blockd.h"
@@ -23,6 +24,15 @@ extern "C" {
 // Bits Per MB at different Q (Multiplied by 512)
 #define BPER_MB_NORMBITS    9
 
+typedef enum {
+  INTER_NORMAL = 0,
+  INTER_HIGH = 1,
+  GF_ARF_LOW = 2,
+  GF_ARF_STD = 3,
+  KF_STD = 4,
+  RATE_FACTOR_LEVELS = 5
+} RATE_FACTOR_LEVEL;
+
 typedef struct {
   // Rate targetting variables
   int base_frame_target;           // A baseline frame target before adjustment
@@ -30,16 +40,15 @@ typedef struct {
   int this_frame_target;           // Actual frame target after rc adjustment.
   int projected_frame_size;
   int sb64_target_rate;
-  int last_q[3];                   // Separate values for Intra/Inter/ARF-GF
+  int last_q[FRAME_TYPES];         // Separate values for Intra/Inter
   int last_boosted_qindex;         // Last boosted GF/KF/ARF q
+  int last_kf_qindex;              // Q index of the last key frame coded.
 
   int gfu_boost;
   int last_boost;
   int kf_boost;
 
-  double rate_correction_factor;
-  double key_frame_rate_correction_factor;
-  double gf_rate_correction_factor;
+  double rate_correction_factors[RATE_FACTOR_LEVELS];
 
   int frames_since_golden;
   int frames_till_gf_update_due;
@@ -61,7 +70,7 @@ typedef struct {
   int ni_av_qi;
   int ni_tot_qi;
   int ni_frames;
-  int avg_frame_qindex[3];        // 0 - KEY, 1 - INTER, 2 - ARF/GF
+  int avg_frame_qindex[FRAME_TYPES];
   double tot_q;
   double avg_q;
 
@@ -78,12 +87,18 @@ typedef struct {
   int long_rolling_target_bits;
   int long_rolling_actual_bits;
 
+  int rate_error_estimate;
+
   int64_t total_actual_bits;
   int64_t total_target_bits;
   int64_t total_target_vs_actual;
 
   int worst_quality;
   int best_quality;
+
+  int64_t starting_buffer_level;
+  int64_t optimal_buffer_level;
+  int64_t maximum_buffer_size;
   // int active_best_quality;
 } RATE_CONTROL;
 
@@ -93,7 +108,7 @@ struct VP9EncoderConfig;
 void vp9_rc_init(const struct VP9EncoderConfig *oxcf, int pass,
                  RATE_CONTROL *rc);
 
-double vp9_convert_qindex_to_q(int qindex);
+double vp9_convert_qindex_to_q(int qindex, vpx_bit_depth_t bit_depth);
 
 void vp9_rc_init_minq_luts();
 
@@ -156,7 +171,7 @@ int vp9_rc_regulate_q(const struct VP9_COMP *cpi, int target_bits_per_frame,
 
 // Estimates bits per mb for a given qindex and correction factor.
 int vp9_rc_bits_per_mb(FRAME_TYPE frame_type, int qindex,
-                       double correction_factor);
+                       double correction_factor, vpx_bit_depth_t bit_depth);
 
 // Clamping utilities for bitrate targets for iframes and pframes.
 int vp9_rc_clamp_iframe_target_size(const struct VP9_COMP *const cpi,
@@ -169,14 +184,19 @@ void vp9_rc_set_frame_target(struct VP9_COMP *cpi, int target);
 
 // Computes a q delta (in "q index" terms) to get from a starting q value
 // to a target q value
-int vp9_compute_qdelta(const RATE_CONTROL *rc, double qstart, double qtarget);
+int vp9_compute_qdelta(const RATE_CONTROL *rc, double qstart, double qtarget,
+                       vpx_bit_depth_t bit_depth);
 
 // Computes a q delta (in "q index" terms) to get from a starting q value
 // to a value that should equate to the given rate ratio.
 int vp9_compute_qdelta_by_rate(const RATE_CONTROL *rc, FRAME_TYPE frame_type,
-                               int qindex, double rate_target_ratio);
+                               int qindex, double rate_target_ratio,
+                               vpx_bit_depth_t bit_depth);
 
 void vp9_rc_update_framerate(struct VP9_COMP *cpi);
+
+void vp9_rc_set_gf_max_interval(const struct VP9_COMP *const cpi,
+                                RATE_CONTROL *const rc);
 
 #ifdef __cplusplus
 }  // extern "C"

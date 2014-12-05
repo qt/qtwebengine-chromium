@@ -31,27 +31,24 @@
 #include "config.h"
 #include "public/web/WebCryptoNormalize.h"
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
 #include "modules/crypto/CryptoResultImpl.h"
 #include "modules/crypto/NormalizeAlgorithm.h"
 #include "platform/CryptoResult.h"
 #include "public/platform/WebString.h"
 #include <v8.h>
 
-using namespace WebCore;
-
 namespace blink {
-
 
 WebCryptoAlgorithm normalizeCryptoAlgorithm(v8::Handle<v8::Object> algorithmObject, WebCryptoOperation operation, int* exceptionCode, WebString* errorDetails, v8::Isolate* isolate)
 {
-    WebCore::Dictionary algorithmDictionary(algorithmObject, isolate);
+    Dictionary algorithmDictionary(algorithmObject, isolate);
     if (!algorithmDictionary.isUndefinedOrNull() && !algorithmDictionary.isObject())
         return WebCryptoAlgorithm();
     WebCryptoAlgorithm algorithm;
-    WebCore::AlgorithmError error;
+    AlgorithmError error;
     if (!normalizeAlgorithm(algorithmDictionary, operation, algorithm, &error)) {
-        *exceptionCode = WebCore::webCryptoErrorToExceptionCode(error.errorType);
+        *exceptionCode = webCryptoErrorToExceptionCode(error.errorType);
         *errorDetails = error.errorDetails;
         return WebCryptoAlgorithm();
     }

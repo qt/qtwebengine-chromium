@@ -8,6 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/message_loop/message_loop.h"
 #include "base/power_monitor/power_monitor.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "net/base/auth.h"
@@ -33,7 +34,6 @@ URLRequestJob::URLRequestJob(URLRequest* request,
       filtered_read_buffer_len_(0),
       has_handled_response_(false),
       expected_content_size_(-1),
-      deferred_redirect_status_code_(-1),
       network_delegate_(network_delegate),
       weak_factory_(this) {
   base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
@@ -203,22 +203,18 @@ void URLRequestJob::ContinueDespiteLastError() {
 }
 
 void URLRequestJob::FollowDeferredRedirect() {
-  DCHECK(deferred_redirect_status_code_ != -1);
+  DCHECK_NE(-1, deferred_redirect_info_.status_code);
 
-  // NOTE: deferred_redirect_url_ may be invalid, and attempting to redirect to
-  // such an URL will fail inside FollowRedirect.  The DCHECK above asserts
-  // that we called OnReceivedRedirect.
+  // NOTE: deferred_redirect_info_ may be invalid, and attempting to follow it
+  // will fail inside FollowRedirect.  The DCHECK above asserts that we called
+  // OnReceivedRedirect.
 
   // It is also possible that FollowRedirect will drop the last reference to
   // this job, so we need to reset our members before calling it.
 
-  GURL redirect_url = deferred_redirect_url_;
-  int redirect_status_code = deferred_redirect_status_code_;
-
-  deferred_redirect_url_ = GURL();
-  deferred_redirect_status_code_ = -1;
-
-  FollowRedirect(redirect_url, redirect_status_code);
+  RedirectInfo redirect_info = deferred_redirect_info_;
+  deferred_redirect_info_ = RedirectInfo();
+  FollowRedirect(redirect_info);
 }
 
 void URLRequestJob::ResumeNetworkStart() {
@@ -304,6 +300,11 @@ void URLRequestJob::NotifyBeforeNetworkStart(bool* defer) {
 }
 
 void URLRequestJob::NotifyHeadersComplete() {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLRequestJob::NotifyHeadersComplete"));
+
   if (!request_ || !request_->has_delegate())
     return;  // The request was destroyed, so there is no more work to do.
 
@@ -325,51 +326,81 @@ void URLRequestJob::NotifyHeadersComplete() {
   // survival until we can get out of this method.
   scoped_refptr<URLRequestJob> self_preservation(this);
 
-  if (request_)
+  if (request_) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile1(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 1"));
+
     request_->OnHeadersComplete();
+  }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile2(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLRequestJob::NotifyHeadersComplete 2"));
 
   GURL new_location;
   int http_status_code;
   if (IsRedirectResponse(&new_location, &http_status_code)) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile3(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 3"));
+
     // Redirect response bodies are not read. Notify the transaction
     // so it does not treat being stopped as an error.
     DoneReadingRedirectResponse();
 
-    const GURL& url = request_->url();
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile4(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 4"));
 
-    // Move the reference fragment of the old location to the new one if the
-    // new one has none. This duplicates mozilla's behavior.
-    if (url.is_valid() && url.has_ref() && !new_location.has_ref() &&
-        CopyFragmentOnRedirect(new_location)) {
-      GURL::Replacements replacements;
-      // Reference the |ref| directly out of the original URL to avoid a
-      // malloc.
-      replacements.SetRef(url.spec().data(),
-                          url.parsed_for_possibly_invalid_spec().ref);
-      new_location = new_location.ReplaceComponents(replacements);
-    }
+    RedirectInfo redirect_info =
+        ComputeRedirectInfo(new_location, http_status_code);
+
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile5(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 5"));
 
     bool defer_redirect = false;
-    request_->NotifyReceivedRedirect(new_location, &defer_redirect);
+    request_->NotifyReceivedRedirect(redirect_info, &defer_redirect);
 
     // Ensure that the request wasn't detached or destroyed in
     // NotifyReceivedRedirect
     if (!request_ || !request_->has_delegate())
       return;
 
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile6(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 6"));
+
     // If we were not cancelled, then maybe follow the redirect.
     if (request_->status().is_success()) {
       if (defer_redirect) {
-        deferred_redirect_url_ = new_location;
-        deferred_redirect_status_code_ = http_status_code;
+        deferred_redirect_info_ = redirect_info;
       } else {
-        FollowRedirect(new_location, http_status_code);
+        FollowRedirect(redirect_info);
       }
       return;
     }
   } else if (NeedsAuth()) {
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile7(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 7"));
+
     scoped_refptr<AuthChallengeInfo> auth_info;
     GetAuthChallengeInfo(&auth_info);
+
+    // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+    tracked_objects::ScopedTracker tracking_profile8(
+        FROM_HERE_WITH_EXPLICIT_FUNCTION(
+            "423948 URLRequestJob::NotifyHeadersComplete 8"));
+
     // Need to check for a NULL auth_info because the server may have failed
     // to send a challenge with the 401 response.
     if (auth_info.get()) {
@@ -378,6 +409,11 @@ void URLRequestJob::NotifyHeadersComplete() {
       return;
     }
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile9(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLRequestJob::NotifyHeadersComplete 9"));
 
   has_handled_response_ = true;
   if (request_->status().is_success())
@@ -389,6 +425,11 @@ void URLRequestJob::NotifyHeadersComplete() {
     if (!content_length.empty())
       base::StringToInt64(content_length, &expected_content_size_);
   }
+
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/423948 is fixed.
+  tracked_objects::ScopedTracker tracking_profile10(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "423948 URLRequestJob::NotifyHeadersComplete 10"));
 
   request_->NotifyResponseStarted();
 }
@@ -548,10 +589,10 @@ void URLRequestJob::FilteredDataRead(int bytes_read) {
 
 bool URLRequestJob::ReadFilteredData(int* bytes_read) {
   DCHECK(filter_);
-  DCHECK(filtered_read_buffer_);
+  DCHECK(filtered_read_buffer_.get());
   DCHECK_GT(filtered_read_buffer_len_, 0);
   DCHECK_LT(filtered_read_buffer_len_, 1000000);  // Sanity check.
-  DCHECK(!raw_read_buffer_);
+  DCHECK(!raw_read_buffer_.get());
 
   *bytes_read = 0;
   bool rv = false;
@@ -726,8 +767,8 @@ bool URLRequestJob::ReadRawDataHelper(IOBuffer* buf, int buf_size,
   return rv;
 }
 
-void URLRequestJob::FollowRedirect(const GURL& location, int http_status_code) {
-  int rv = request_->Redirect(location, http_status_code);
+void URLRequestJob::FollowRedirect(const RedirectInfo& redirect_info) {
+  int rv = request_->Redirect(redirect_info);
   if (rv != OK)
     NotifyDone(URLRequestStatus(URLRequestStatus::FAILED, rv));
 }
@@ -768,6 +809,54 @@ bool URLRequestJob::FilterHasData() {
 }
 
 void URLRequestJob::UpdatePacketReadTimes() {
+}
+
+RedirectInfo URLRequestJob::ComputeRedirectInfo(const GURL& location,
+                                                int http_status_code) {
+  const GURL& url = request_->url();
+
+  RedirectInfo redirect_info;
+
+  redirect_info.status_code = http_status_code;
+
+  // The request method may change, depending on the status code.
+  redirect_info.new_method = URLRequest::ComputeMethodForRedirect(
+      request_->method(), http_status_code);
+
+  // Move the reference fragment of the old location to the new one if the
+  // new one has none. This duplicates mozilla's behavior.
+  if (url.is_valid() && url.has_ref() && !location.has_ref() &&
+      CopyFragmentOnRedirect(location)) {
+    GURL::Replacements replacements;
+    // Reference the |ref| directly out of the original URL to avoid a
+    // malloc.
+    replacements.SetRef(url.spec().data(),
+                        url.parsed_for_possibly_invalid_spec().ref);
+    redirect_info.new_url = location.ReplaceComponents(replacements);
+  } else {
+    redirect_info.new_url = location;
+  }
+
+  // Update the first-party URL if appropriate.
+  if (request_->first_party_url_policy() ==
+          URLRequest::UPDATE_FIRST_PARTY_URL_ON_REDIRECT) {
+    redirect_info.new_first_party_for_cookies = redirect_info.new_url;
+  } else {
+    redirect_info.new_first_party_for_cookies =
+        request_->first_party_for_cookies();
+  }
+
+  // Suppress the referrer if we're redirecting out of https.
+  if (request_->referrer_policy() ==
+          URLRequest::CLEAR_REFERRER_ON_TRANSITION_FROM_SECURE_TO_INSECURE &&
+      GURL(request_->referrer()).SchemeIsSecure() &&
+      !redirect_info.new_url.SchemeIsSecure()) {
+    redirect_info.new_referrer.clear();
+  } else {
+    redirect_info.new_referrer = request_->referrer();
+  }
+
+  return redirect_info;
 }
 
 }  // namespace net

@@ -31,36 +31,36 @@
 #ifndef Entry_h
 #define Entry_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/filesystem/DOMFileSystem.h"
 #include "modules/filesystem/EntryBase.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DirectoryEntry;
 class EntryCallback;
-class EntrySync;
 class ErrorCallback;
 class MetadataCallback;
 class VoidCallback;
 
 class Entry : public EntryBase, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DOMFileSystem* filesystem() const { return static_cast<DOMFileSystem*>(m_fileSystem.get()); }
 
-    void getMetadata(PassOwnPtr<MetadataCallback> successCallback = nullptr, PassOwnPtr<ErrorCallback> = nullptr);
-    void moveTo(DirectoryEntry* parent, const String& name = String(), PassOwnPtr<EntryCallback> successCallback = nullptr, PassOwnPtr<ErrorCallback> = nullptr) const;
-    void copyTo(DirectoryEntry* parent, const String& name = String(), PassOwnPtr<EntryCallback> successCallback = nullptr, PassOwnPtr<ErrorCallback> = nullptr) const;
-    void remove(PassOwnPtr<VoidCallback> successCallback = nullptr, PassOwnPtr<ErrorCallback> = nullptr) const;
-    void getParent(PassOwnPtr<EntryCallback> successCallback = nullptr, PassOwnPtr<ErrorCallback> = nullptr) const;
+    void getMetadata(MetadataCallback* successCallback = nullptr, ErrorCallback* = nullptr);
+    void moveTo(DirectoryEntry* parent, const String& name = String(), EntryCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
+    void copyTo(DirectoryEntry* parent, const String& name = String(), EntryCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
+    void remove(VoidCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
+    void getParent(EntryCallback* successCallback = nullptr, ErrorCallback* = nullptr) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
     Entry(DOMFileSystemBase*, const String& fullPath);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Entry_h

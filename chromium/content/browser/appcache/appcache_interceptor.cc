@@ -4,41 +4,63 @@
 
 #include "content/browser/appcache/appcache_interceptor.h"
 
-#include "webkit/browser/appcache/appcache_backend_impl.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/appcache/appcache_request_handler.h"
-#include "webkit/browser/appcache/appcache_service_impl.h"
-#include "webkit/browser/appcache/appcache_url_request_job.h"
-#include "webkit/common/appcache/appcache_interfaces.h"
-
-using appcache::AppCacheBackendImpl;
-using appcache::AppCacheHost;
-using appcache::AppCacheRequestHandler;
-using appcache::AppCacheServiceImpl;
-using appcache::kAppCacheNoCacheId;
-using appcache::kAppCacheNoHostId;
+#include "content/browser/appcache/appcache_backend_impl.h"
+#include "content/browser/appcache/appcache_host.h"
+#include "content/browser/appcache/appcache_request_handler.h"
+#include "content/browser/appcache/appcache_service_impl.h"
+#include "content/browser/appcache/appcache_url_request_job.h"
+#include "content/common/appcache_interfaces.h"
 
 namespace content {
+
+class AppCacheInterceptor::StartInterceptor
+    : public net::URLRequestInterceptor {
+ public:
+  StartInterceptor() {}
+  ~StartInterceptor() override {}
+  net::URLRequestJob* MaybeInterceptRequest(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override {
+    AppCacheRequestHandler* handler = GetHandler(request);
+    if (!handler)
+      return NULL;
+    return handler->MaybeLoadResource(request, network_delegate);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(StartInterceptor);
+};
+
 
 // static
 AppCacheInterceptor* AppCacheInterceptor::GetInstance() {
   return Singleton<AppCacheInterceptor>::get();
 }
 
-void AppCacheInterceptor::SetHandler(
-    net::URLRequest* request, AppCacheRequestHandler* handler) {
+// static
+scoped_ptr<net::URLRequestInterceptor>
+AppCacheInterceptor::CreateStartInterceptor() {
+  return scoped_ptr<net::URLRequestInterceptor>(
+      new StartInterceptor);
+}
+
+void AppCacheInterceptor::SetHandler(net::URLRequest* request,
+                                     AppCacheRequestHandler* handler) {
   request->SetUserData(GetInstance(), handler);  // request takes ownership
 }
 
 AppCacheRequestHandler* AppCacheInterceptor::GetHandler(
     net::URLRequest* request) {
-  return reinterpret_cast<AppCacheRequestHandler*>(
+  return static_cast<AppCacheRequestHandler*>(
       request->GetUserData(GetInstance()));
 }
 
 void AppCacheInterceptor::SetExtraRequestInfo(
-    net::URLRequest* request, AppCacheServiceImpl* service, int process_id,
-    int host_id, ResourceType::Type resource_type) {
+    net::URLRequest* request,
+    AppCacheServiceImpl* service,
+    int process_id,
+    int host_id,
+    ResourceType resource_type) {
   if (!service || (host_id == kAppCacheNoHostId))
     return;
 
@@ -100,10 +122,8 @@ AppCacheInterceptor::~AppCacheInterceptor() {
 
 net::URLRequestJob* AppCacheInterceptor::MaybeIntercept(
     net::URLRequest* request, net::NetworkDelegate* network_delegate) {
-  AppCacheRequestHandler* handler = GetHandler(request);
-  if (!handler)
-    return NULL;
-  return handler->MaybeLoadResource(request, network_delegate);
+  // Intentionally empty, handled by class StartInterceptor.
+  return NULL;
 }
 
 net::URLRequestJob* AppCacheInterceptor::MaybeInterceptRedirect(

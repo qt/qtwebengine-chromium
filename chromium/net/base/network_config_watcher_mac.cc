@@ -31,12 +31,12 @@ void DynamicStoreCallback(SCDynamicStoreRef /* store */,
 class NetworkConfigWatcherMacThread : public base::Thread {
  public:
   NetworkConfigWatcherMacThread(NetworkConfigWatcherMac::Delegate* delegate);
-  virtual ~NetworkConfigWatcherMacThread();
+  ~NetworkConfigWatcherMacThread() override;
 
  protected:
   // base::Thread
-  virtual void Init() OVERRIDE;
-  virtual void CleanUp() OVERRIDE;
+  void Init() override;
+  void CleanUp() override;
 
  private:
   // The SystemConfiguration calls in this function can lead to contention early

@@ -40,7 +40,7 @@
 #include "platform/network/ResourceLoadTiming.h"
 #include "platform/network/ResourceResponse.h"
 
-namespace WebCore {
+namespace blink {
 
 static unsigned long long toIntegerMilliseconds(double seconds)
 {
@@ -51,7 +51,6 @@ static unsigned long long toIntegerMilliseconds(double seconds)
 PerformanceTiming::PerformanceTiming(LocalFrame* frame)
     : DOMWindowProperty(frame)
 {
-    ScriptWrappable::init(this);
 }
 
 unsigned long long PerformanceTiming::navigationStart() const
@@ -310,7 +309,7 @@ unsigned long long PerformanceTiming::loadEventEnd() const
 DocumentLoader* PerformanceTiming::documentLoader() const
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
 
     return m_frame->loader().documentLoader();
 }
@@ -318,11 +317,11 @@ DocumentLoader* PerformanceTiming::documentLoader() const
 const DocumentTiming* PerformanceTiming::documentTiming() const
 {
     if (!m_frame)
-        return 0;
+        return nullptr;
 
     Document* document = m_frame->document();
     if (!document)
-        return 0;
+        return nullptr;
 
     return &document->timing();
 }
@@ -331,7 +330,7 @@ DocumentLoadTiming* PerformanceTiming::documentLoadTiming() const
 {
     DocumentLoader* loader = documentLoader();
     if (!loader)
-        return 0;
+        return nullptr;
 
     return loader->timing();
 }
@@ -340,7 +339,7 @@ ResourceLoadTiming* PerformanceTiming::resourceLoadTiming() const
 {
     DocumentLoader* loader = documentLoader();
     if (!loader)
-        return 0;
+        return nullptr;
 
     return loader->response().resourceLoadTiming();
 }
@@ -355,4 +354,9 @@ unsigned long long PerformanceTiming::monotonicTimeToIntegerMilliseconds(double 
     return toIntegerMilliseconds(timing->monotonicTimeToPseudoWallTime(monotonicSeconds));
 }
 
-} // namespace WebCore
+void PerformanceTiming::trace(Visitor* visitor)
+{
+    DOMWindowProperty::trace(visitor);
+}
+
+} // namespace blink

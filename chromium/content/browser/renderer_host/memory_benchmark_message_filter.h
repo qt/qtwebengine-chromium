@@ -15,9 +15,10 @@ class MemoryBenchmarkMessageFilter : public BrowserMessageFilter {
  public:
   MemoryBenchmarkMessageFilter();
 
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+
  private:
-  virtual ~MemoryBenchmarkMessageFilter();
+  ~MemoryBenchmarkMessageFilter() override;
 
   void OnHeapProfilerDump(const std::string& reason);
 

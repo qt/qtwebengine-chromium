@@ -31,7 +31,7 @@
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/style/StyleImage.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsStyleRareInheritedData : public RefCounted<SameSizeAsStyleRareInheritedData> {
     void* styleImage;
@@ -73,7 +73,6 @@ StyleRareInheritedData::StyleRareInheritedData()
     , wordBreak(RenderStyle::initialWordBreak())
     , overflowWrap(RenderStyle::initialOverflowWrap())
     , lineBreak(LineBreakAuto)
-    , resize(RenderStyle::initialResize())
     , userSelect(RenderStyle::initialUserSelect())
     , speak(SpeakNormal)
     , hyphens(HyphensManual)
@@ -129,7 +128,6 @@ StyleRareInheritedData::StyleRareInheritedData(const StyleRareInheritedData& o)
     , wordBreak(o.wordBreak)
     , overflowWrap(o.overflowWrap)
     , lineBreak(o.lineBreak)
-    , resize(o.resize)
     , userSelect(o.userSelect)
     , speak(o.speak)
     , hyphens(o.hyphens)
@@ -193,7 +191,6 @@ bool StyleRareInheritedData::operator==(const StyleRareInheritedData& o) const
         && wordBreak == o.wordBreak
         && overflowWrap == o.overflowWrap
         && lineBreak == o.lineBreak
-        && resize == o.resize
         && userSelect == o.userSelect
         && speak == o.speak
         && hyphens == o.hyphens
@@ -233,4 +230,4 @@ bool StyleRareInheritedData::quotesDataEquivalent(const StyleRareInheritedData& 
     return dataEquivalent(quotes, o.quotes);
 }
 
-} // namespace WebCore
+} // namespace blink

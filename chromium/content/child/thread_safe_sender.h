@@ -26,7 +26,7 @@ class CONTENT_EXPORT ThreadSafeSender
     : public IPC::Sender,
       public base::RefCountedThreadSafe<ThreadSafeSender> {
  public:
-  virtual bool Send(IPC::Message* msg) OVERRIDE;
+  bool Send(IPC::Message* msg) override;
 
  private:
   friend class ChildThread;  // for construction
@@ -34,9 +34,9 @@ class CONTENT_EXPORT ThreadSafeSender
   friend class WebIDBCursorImplTest;
   friend class base::RefCountedThreadSafe<ThreadSafeSender>;
 
-  ThreadSafeSender(base::MessageLoopProxy* main_loop,
-                   IPC::SyncMessageFilter* sync_filter);
-  virtual ~ThreadSafeSender();
+  ThreadSafeSender(const scoped_refptr<base::MessageLoopProxy>& main_loop,
+                   const scoped_refptr<IPC::SyncMessageFilter>& sync_filter);
+  ~ThreadSafeSender() override;
 
   scoped_refptr<base::MessageLoopProxy> main_loop_;
   scoped_refptr<IPC::SyncMessageFilter> sync_filter_;

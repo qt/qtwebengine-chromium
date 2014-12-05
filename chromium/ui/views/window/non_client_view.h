@@ -6,6 +6,7 @@
 #define UI_VIEWS_WINDOW_NON_CLIENT_VIEW_H_
 
 #include "ui/views/view.h"
+#include "ui/views/view_targeter_delegate.h"
 
 namespace gfx {
 class Path;
@@ -22,7 +23,8 @@ class ClientView;
 //  responds to events within the frame portions of the non-client area of a
 //  window. This view does _not_ contain the ClientView, but rather is a sibling
 //  of it.
-class VIEWS_EXPORT NonClientFrameView : public View {
+class VIEWS_EXPORT NonClientFrameView : public View,
+                                        public ViewTargeterDelegate {
  public:
   // Internal class name.
   static const char kViewClassName[];
@@ -37,7 +39,7 @@ class VIEWS_EXPORT NonClientFrameView : public View {
     kClientEdgeThickness = 1,
   };
 
-  virtual ~NonClientFrameView();
+  ~NonClientFrameView() override;
 
   // Sets whether the window should be rendered as active regardless of the
   // actual active state. Used when bubbles become active to make their parent
@@ -77,16 +79,21 @@ class VIEWS_EXPORT NonClientFrameView : public View {
   virtual void ResetWindowControls() = 0;
   virtual void UpdateWindowIcon() = 0;
   virtual void UpdateWindowTitle() = 0;
+  virtual void SizeConstraintsChanged() = 0;
 
-  // Overridden from View:
-  virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
+  // View:
+  void GetAccessibleState(ui::AXViewState* state) override;
+  const char* GetClassName() const override;
 
  protected:
-  virtual void OnBoundsChanged(const gfx::Rect& previous_bounds) OVERRIDE;
-
   NonClientFrameView();
+
+  // ViewTargeterDelegate:
+  bool DoesIntersectRect(const View* target,
+                         const gfx::Rect& rect) const override;
+
+  // View:
+  void OnBoundsChanged(const gfx::Rect& previous_bounds) override;
 
  private:
   // Prevents the non-client frame view from being rendered as inactive when
@@ -130,13 +137,13 @@ class VIEWS_EXPORT NonClientFrameView : public View {
 // implementations (e.g. during the switch from DWM/Aero-Glass to Vista Basic/
 // Classic rendering).
 //
-class VIEWS_EXPORT NonClientView : public View {
+class VIEWS_EXPORT NonClientView : public View, public ViewTargeterDelegate {
  public:
   // Internal class name.
   static const char kViewClassName[];
 
   NonClientView();
-  virtual ~NonClientView();
+  ~NonClientView() override;
 
   // Returns the current NonClientFrameView instance, or NULL if
   // it does not exist.
@@ -190,6 +197,9 @@ class VIEWS_EXPORT NonClientView : public View {
   // title.
   void UpdateWindowTitle();
 
+  // Called when the size constraints of the window change.
+  void SizeConstraintsChanged();
+
   // Get/Set client_view property.
   ClientView* client_view() const { return client_view_; }
   void set_client_view(ClientView* client_view) {
@@ -205,23 +215,24 @@ class VIEWS_EXPORT NonClientView : public View {
   void SetAccessibleName(const base::string16& name);
 
   // NonClientView, View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  gfx::Size GetMinimumSize() const override;
+  gfx::Size GetMaximumSize() const override;
+  void Layout() override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  const char* GetClassName() const override;
 
-  virtual views::View* GetEventHandlerForRect(const gfx::Rect& rect) OVERRIDE;
-  virtual views::View* GetTooltipHandlerForPoint(
-      const gfx::Point& point) OVERRIDE;
+  views::View* GetTooltipHandlerForPoint(const gfx::Point& point) override;
 
  protected:
   // NonClientView, View overrides:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
 
  private:
+  // ViewTargeterDelegate:
+  View* TargetForRect(View* root, const gfx::Rect& rect) override;
+
   // A ClientView object or subclass, responsible for sizing the contents view
   // of the window, hit testing and perhaps other tasks depending on the
   // implementation.

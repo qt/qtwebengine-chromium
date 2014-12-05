@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "gtest/gtest.h"
+#include "testing/gtest/include/gtest/gtest.h"
 #include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
 #include "webrtc/modules/remote_bitrate_estimator/test/bwe_test.h"
 #include "webrtc/test/testsupport/fileutils.h"
@@ -96,6 +96,47 @@ TEST_P(BweSimulation, Choke1000kbps500kbps1000kbps) {
   RunFor(60 * 1000);
 }
 
+TEST_P(BweSimulation, PacerChoke1000kbps500kbps1000kbps) {
+  VerboseLogging(true);
+  PeriodicKeyFrameSender source(0, NULL, 30, 300, 0, 0, 1000);
+  PacedVideoSender sender(this, 300, &source);
+  ChokeFilter filter(this);
+  RateCounterFilter counter(this, "receiver_input");
+  filter.SetCapacity(1000);
+  filter.SetMaxDelay(500);
+  RunFor(60 * 1000);
+  filter.SetCapacity(500);
+  RunFor(60 * 1000);
+  filter.SetCapacity(1000);
+  RunFor(60 * 1000);
+}
+
+TEST_P(BweSimulation, PacerChoke10000kbps) {
+  VerboseLogging(true);
+  PeriodicKeyFrameSender source(0, NULL, 30, 300, 0, 0, 0);
+  PacedVideoSender sender(this, 300, &source);
+  ChokeFilter filter(this);
+  RateCounterFilter counter(this, "receiver_input");
+  filter.SetCapacity(10000);
+  filter.SetMaxDelay(500);
+  RunFor(60 * 1000);
+}
+
+TEST_P(BweSimulation, PacerChoke200kbps30kbps200kbps) {
+  VerboseLogging(true);
+  PeriodicKeyFrameSender source(0, NULL, 30, 300, 0, 0, 1000);
+  PacedVideoSender sender(this, 300, &source);
+  ChokeFilter filter(this);
+  RateCounterFilter counter(this, "receiver_input");
+  filter.SetCapacity(200);
+  filter.SetMaxDelay(500);
+  RunFor(60 * 1000);
+  filter.SetCapacity(30);
+  RunFor(60 * 1000);
+  filter.SetCapacity(200);
+  RunFor(60 * 1000);
+}
+
 TEST_P(BweSimulation, Choke200kbps30kbps200kbps) {
   VerboseLogging(true);
   AdaptiveVideoSender sender(0, this, 30, 300, 0, 0);
@@ -113,6 +154,18 @@ TEST_P(BweSimulation, Choke200kbps30kbps200kbps) {
 TEST_P(BweSimulation, GoogleWifiTrace3Mbps) {
   VerboseLogging(true);
   AdaptiveVideoSender sender(0, this, 30, 300, 0, 0);
+  RateCounterFilter counter1(this, "sender_output");
+  TraceBasedDeliveryFilter filter(this, "link_capacity");
+  filter.SetMaxDelay(500);
+  RateCounterFilter counter2(this, "receiver_input");
+  ASSERT_TRUE(filter.Init(test::ResourcePath("google-wifi-3mbps", "rx")));
+  RunFor(300 * 1000);
+}
+
+TEST_P(BweSimulation, PacerGoogleWifiTrace3Mbps) {
+  VerboseLogging(true);
+  PeriodicKeyFrameSender source(0, NULL, 30, 300, 0, 0, 1000);
+  PacedVideoSender sender(this, 300, &source);
   RateCounterFilter counter1(this, "sender_output");
   TraceBasedDeliveryFilter filter(this, "link_capacity");
   filter.SetMaxDelay(500);

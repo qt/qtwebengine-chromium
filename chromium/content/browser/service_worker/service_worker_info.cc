@@ -10,8 +10,7 @@
 namespace content {
 
 ServiceWorkerVersionInfo::ServiceWorkerVersionInfo()
-    : is_null(true),
-      running_status(ServiceWorkerVersion::STOPPED),
+    : running_status(ServiceWorkerVersion::STOPPED),
       status(ServiceWorkerVersion::NEW),
       version_id(kInvalidServiceWorkerVersionId),
       process_id(-1),
@@ -22,13 +21,14 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo()
 ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
     ServiceWorkerVersion::RunningStatus running_status,
     ServiceWorkerVersion::Status status,
+    const GURL& script_url,
     int64 version_id,
     int process_id,
     int thread_id,
     int devtools_agent_route_id)
-    : is_null(false),
-      running_status(running_status),
+    : running_status(running_status),
       status(status),
+      script_url(script_url),
       version_id(version_id),
       process_id(process_id),
       thread_id(thread_id),
@@ -37,19 +37,24 @@ ServiceWorkerVersionInfo::ServiceWorkerVersionInfo(
 
 ServiceWorkerVersionInfo::~ServiceWorkerVersionInfo() {}
 
-ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo() {}
+ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo()
+    : registration_id(kInvalidServiceWorkerRegistrationId),
+      stored_version_size_bytes(0) {
+}
 
 ServiceWorkerRegistrationInfo::ServiceWorkerRegistrationInfo(
-    const GURL& script_url,
     const GURL& pattern,
     int64 registration_id,
     const ServiceWorkerVersionInfo& active_version,
-    const ServiceWorkerVersionInfo& waiting_version)
-    : script_url(script_url),
-      pattern(pattern),
+    const ServiceWorkerVersionInfo& waiting_version,
+    const ServiceWorkerVersionInfo& installing_version,
+    int64_t stored_version_size_bytes)
+    : pattern(pattern),
       registration_id(registration_id),
       active_version(active_version),
-      waiting_version(waiting_version) {
+      waiting_version(waiting_version),
+      installing_version(installing_version),
+      stored_version_size_bytes(stored_version_size_bytes) {
 }
 
 ServiceWorkerRegistrationInfo::~ServiceWorkerRegistrationInfo() {}

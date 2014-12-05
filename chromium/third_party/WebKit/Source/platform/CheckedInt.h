@@ -10,7 +10,7 @@
 // 1) Comment out #define MOZ_CHECKEDINT_ENABLE_MOZ_ASSERTS
 // 2) Comment out #include "mozilla/StandardInteger.h"
 // 3) Define MOZ_DELETE
-// 4) Change namespace mozilla to namespace WebCore
+// 4) Change namespace mozilla to namespace blink
 
 #ifndef mozilla_CheckedInt_h_
 #define mozilla_CheckedInt_h_
@@ -46,9 +46,8 @@
 #endif
 
 #include <climits>
-#include <cstddef>
 
-namespace WebCore {
+namespace blink {
 
 namespace detail {
 
@@ -814,6 +813,6 @@ typedef CheckedInt<uint32_t> CheckedUint32;
 typedef CheckedInt<int64_t>  CheckedInt64;
 typedef CheckedInt<uint64_t> CheckedUint64;
 
-} // namespace WebCore
+} // namespace blink
 
 #endif /* mozilla_CheckedInt_h_ */

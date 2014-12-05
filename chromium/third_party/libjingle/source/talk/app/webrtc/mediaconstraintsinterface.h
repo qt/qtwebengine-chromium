@@ -85,9 +85,6 @@ class MediaConstraintsInterface {
 
   // Google-specific constraint keys for a local video source
   static const char kNoiseReduction[];  // googNoiseReduction
-  static const char kLeakyBucket[];  // googLeakyBucket
-  static const char kTemporalLayeredScreencast[];
-      // googTemporalLayeredScreencast
 
   // Constraint keys for CreateOffer / CreateAnswer
   // Specified by the W3C PeerConnection spec
@@ -115,10 +112,11 @@ class MediaConstraintsInterface {
   // Temporary constraint to enable suspend below min bitrate feature.
   static const char kEnableVideoSuspendBelowMinBitrate[];
       // googSuspendBelowMinBitrate
-  static const char kImprovedWifiBwe[];  // googImprovedWifiBwe
+  static const char kNumUnsignalledRecvStreams[];
+      // googNumUnsignalledRecvStreams
+  // Constraint to enable combined audio+video bandwidth estimation.
+  static const char kCombinedAudioVideoBwe[];  // googCombinedAudioVideoBwe
   static const char kScreencastMinBitrate[];  // googScreencastMinBitrate
-  static const char kSkipEncodingUnusedStreams[];
-      // googSkipEncodingUnusedStreams
   static const char kCpuOveruseDetection[];  // googCpuOveruseDetection
   static const char kCpuUnderuseThreshold[];  // googCpuUnderuseThreshold
   static const char kCpuOveruseThreshold[];  // googCpuOveruseThreshold
@@ -133,11 +131,6 @@ class MediaConstraintsInterface {
   static const char kHighBitrate[];  // googHighBitrate
   static const char kVeryHighBitrate[];  // googVeryHighBitrate
   static const char kPayloadPadding[];  // googPayloadPadding
-
-  // PeerConnection codec constraint keys. This should be combined with the
-  // values above.
-  // kOpusFec controls whether we ask the other side to turn on FEC for Opus.
-  static const char kOpusFec[];  // googOpusFec
 
   // The prefix of internal-only constraints whose JS set values should be
   // stripped by Chrome before passed down to Libjingle.

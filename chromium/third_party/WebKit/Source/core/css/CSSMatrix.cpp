@@ -26,29 +26,27 @@
 #include "config.h"
 #include "core/css/CSSMatrix.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/CSSPropertyNames.h"
 #include "core/CSSValueKeywords.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSToLengthConversionData.h"
 #include "core/css/StylePropertySet.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/css/resolver/TransformBuilder.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/StyleInheritedData.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSMatrix::CSSMatrix(const TransformationMatrix& m)
     : m_matrix(m)
 {
-    ScriptWrappable::init(this);
 }
 
 CSSMatrix::CSSMatrix(const String& s, ExceptionState& exceptionState)
 {
-    ScriptWrappable::init(this);
     setMatrixValue(s, exceptionState);
 }
 
@@ -57,17 +55,13 @@ void CSSMatrix::setMatrixValue(const String& string, ExceptionState& exceptionSt
     if (string.isEmpty())
         return;
 
-    // FIXME: crbug.com/154722 - should this continue to use legacy style parsing?
-    RefPtrWillBeRawPtr<MutableStylePropertySet> styleDeclaration = MutableStylePropertySet::create();
-    if (BisonCSSParser::parseValue(styleDeclaration.get(), CSSPropertyWebkitTransform, string, true, HTMLStandardMode, 0)) {
-        // Convert to TransformOperations. This can fail if a property
-        // requires style (i.e., param uses 'ems' or 'exs')
-        RefPtrWillBeRawPtr<CSSValue> value = styleDeclaration->getPropertyCSSValue(CSSPropertyWebkitTransform);
-
-        // Check for a "none" or empty transform. In these cases we can use the default identity matrix.
-        if (!value || (value->isPrimitiveValue() && (toCSSPrimitiveValue(value.get()))->getValueID() == CSSValueNone))
+    // FIXME: crbug.com/154772 - should this continue to use legacy style parsing?
+    if (RefPtrWillBeRawPtr<CSSValue> value = CSSParser::parseSingleValue(CSSPropertyWebkitTransform, string)) {
+        // Check for a "none" transform. In these cases we can use the default identity matrix.
+        if (value->isPrimitiveValue() && (toCSSPrimitiveValue(value.get()))->getValueID() == CSSValueNone)
             return;
 
+        // FIXME: This has a null pointer crash if we use ex units (crbug.com/414145)
         DEFINE_STATIC_REF(RenderStyle, defaultStyle, RenderStyle::createDefaultStyle());
         TransformOperations operations;
         if (!TransformBuilder::createTransformOperations(value.get(), CSSToLengthConversionData(defaultStyle, defaultStyle, 0, 0, 1.0f), operations)) {
@@ -189,4 +183,4 @@ String CSSMatrix::toString() const
     m_matrix.m41(), m_matrix.m42(), m_matrix.m43(), m_matrix.m44());
 }
 
-} // namespace WebCore
+} // namespace blink

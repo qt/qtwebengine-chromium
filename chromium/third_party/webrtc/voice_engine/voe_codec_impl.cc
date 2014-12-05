@@ -418,6 +418,24 @@ int VoECodecImpl::GetVADStatus(int channel, bool& enabled, VadModes& mode,
     return 0;
 }
 
+int VoECodecImpl::SetOpusMaxPlaybackRate(int channel, int frequency_hz) {
+  WEBRTC_TRACE(kTraceApiCall, kTraceVoice, VoEId(_shared->instance_id(), -1),
+               "SetOpusMaxPlaybackRate(channel=%d, frequency_hz=%d)", channel,
+               frequency_hz);
+  if (!_shared->statistics().Initialized()) {
+    _shared->SetLastError(VE_NOT_INITED, kTraceError);
+    return -1;
+  }
+  voe::ChannelOwner ch = _shared->channel_manager().GetChannel(channel);
+  voe::Channel* channelPtr = ch.channel();
+  if (channelPtr == NULL) {
+    _shared->SetLastError(VE_CHANNEL_NOT_VALID, kTraceError,
+                          "SetOpusMaxPlaybackRate failed to locate channel");
+    return -1;
+  }
+  return channelPtr->SetOpusMaxPlaybackRate(frequency_hz);
+}
+
 void VoECodecImpl::ACMToExternalCodecRepresentation(CodecInst& toInst,
                                                     const CodecInst& fromInst)
 {

@@ -33,7 +33,7 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/style/StyleInheritedData.h"
 
-namespace WebCore {
+namespace blink {
 
 struct LayerFragment;
 typedef Vector<LayerFragment, 1> LayerFragments;
@@ -43,14 +43,11 @@ class RenderRegion : public RenderBlockFlow {
 public:
     explicit RenderRegion(Element*, RenderFlowThread*);
 
-    virtual bool isRenderRegion() const OVERRIDE FINAL { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderRegion || RenderBlockFlow::isOfType(type); }
 
     void setFlowThreadPortionRect(const LayoutRect& rect) { m_flowThreadPortionRect = rect; }
     LayoutRect flowThreadPortionRect() const { return m_flowThreadPortionRect; }
     LayoutRect flowThreadPortionOverflowRect() const;
-
-    void attachRegion();
-    void detachRegion();
 
     RenderFlowThread* flowThread() const { return m_flowThread; }
 
@@ -67,42 +64,20 @@ public:
     virtual LayoutUnit pageLogicalWidth() const;
     virtual LayoutUnit pageLogicalHeight() const;
 
-    LayoutUnit logicalTopOfFlowThreadContentRect(const LayoutRect&) const;
-    LayoutUnit logicalBottomOfFlowThreadContentRect(const LayoutRect&) const;
-    LayoutUnit logicalTopForFlowThreadContent() const { return logicalTopOfFlowThreadContentRect(flowThreadPortionRect()); };
-    LayoutUnit logicalBottomForFlowThreadContent() const { return logicalBottomOfFlowThreadContentRect(flowThreadPortionRect()); };
+    virtual bool canHaveChildren() const override final { return false; }
+    virtual bool canHaveGeneratedChildren() const override final { return true; }
 
-    // This method represents the logical height of the entire flow thread portion used by the region or set.
-    // For RenderRegions it matches logicalPaginationHeight(), but for sets it is the height of all the pages
-    // or columns added together.
-    virtual LayoutUnit logicalHeightOfAllFlowThreadContent() const;
-
-    // The top of the nearest page inside the region. For RenderRegions, this is just the logical top of the
-    // flow thread portion we contain. For sets, we have to figure out the top of the nearest column or
-    // page.
-    virtual LayoutUnit pageLogicalTopForOffset(LayoutUnit offset) const;
-
-    virtual void repaintFlowThreadContent(const LayoutRect& repaintRect) const;
-
-    virtual void collectLayerFragments(LayerFragments&, const LayoutRect&, const LayoutRect&) { }
-
-    virtual bool canHaveChildren() const OVERRIDE FINAL { return false; }
-    virtual bool canHaveGeneratedChildren() const OVERRIDE FINAL { return true; }
-
-    virtual const char* renderName() const OVERRIDE { return "RenderRegion"; }
+    virtual const char* renderName() const override { return "RenderRegion"; }
 
 protected:
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE FINAL;
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override final;
 
     LayoutRect overflowRectForFlowThreadPortion(const LayoutRect& flowThreadPortionRect, bool isFirstPortion, bool isLastPortion) const;
-    void repaintFlowThreadContentRectangle(const LayoutRect& repaintRect, const LayoutRect& flowThreadPortionRect,
+    void paintInvalidationOfFlowThreadContentRectangle(const LayoutRect& paintInvalidationRect, const LayoutRect& flowThreadPortionRect,
         const LayoutRect& flowThreadPortionOverflowRect, const LayoutPoint& regionLocation) const;
 
 private:
-    virtual void insertedIntoTree() OVERRIDE FINAL;
-    virtual void willBeRemovedFromTree() OVERRIDE FINAL;
-
-    virtual void layoutBlock(bool relayoutChildren) OVERRIDE FINAL;
+    virtual void layoutBlock(bool relayoutChildren) override final;
 
 protected:
     RenderFlowThread* m_flowThread;
@@ -114,6 +89,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderRegion, isRenderRegion());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderRegion_h

@@ -30,11 +30,12 @@
  */
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     ActiveDOMObject,
     Constructor,
     ConstructorCallWith=ExecutionContext,
-    Exposed=Window&Worker
+    Exposed=(Window,Worker),
+    TypeChecking=Interface
 ] interface FileReader : EventTarget {
     // ready states
     const unsigned short EMPTY = 0;

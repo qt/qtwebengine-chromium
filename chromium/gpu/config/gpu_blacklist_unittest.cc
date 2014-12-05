@@ -17,7 +17,7 @@ class GpuBlacklistTest : public testing::Test {
  public:
   GpuBlacklistTest() { }
 
-  virtual ~GpuBlacklistTest() { }
+  ~GpuBlacklistTest() override {}
 
   const GPUInfo& gpu_info() const {
     return gpu_info_;
@@ -55,7 +55,7 @@ class GpuBlacklistTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     gpu_info_.gpu.vendor_id = 0x10de;
     gpu_info_.gpu.device_id = 0x0640;
     gpu_info_.driver_vendor = "NVIDIA";
@@ -70,8 +70,7 @@ class GpuBlacklistTest : public testing::Test {
     gpu_info_.performance_stats.overall = 5.0;
   }
 
-  virtual void TearDown() {
-  }
+  void TearDown() override {}
 
  private:
   GPUInfo gpu_info_;
@@ -127,9 +126,5 @@ GPU_BLACKLIST_FEATURE_TEST(PanelFitting,
 GPU_BLACKLIST_FEATURE_TEST(GpuRasterization,
                            "gpu_rasterization",
                            GPU_FEATURE_TYPE_GPU_RASTERIZATION)
-
-GPU_BLACKLIST_FEATURE_TEST(GpuRasterizationFieldTrial,
-                           "gpu_rasterization_field_trial",
-                           GPU_FEATURE_TYPE_GPU_RASTERIZATION_FIELD_TRIAL)
 
 }  // namespace gpu

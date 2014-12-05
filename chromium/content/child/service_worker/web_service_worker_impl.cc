@@ -43,9 +43,8 @@ WebServiceWorkerImpl::~WebServiceWorkerImpl() {
 
 void WebServiceWorkerImpl::OnStateChanged(
     blink::WebServiceWorkerState new_state) {
-  DCHECK(proxy_);
-  if (proxy_->isReady())
-    ChangeState(new_state);
+  if (proxy_ && proxy_->isReady())
+    CommitState(new_state);
   else
     queued_states_.push_back(new_state);
 }
@@ -65,7 +64,7 @@ void WebServiceWorkerImpl::proxyReadyChanged() {
            queued_states_.begin();
        it != queued_states_.end();
        ++it) {
-    ChangeState(*it);
+    CommitState(*it);
   }
   queued_states_.clear();
 }
@@ -90,7 +89,7 @@ void WebServiceWorkerImpl::postMessage(const WebString& message,
       WebMessagePortChannelImpl::ExtractMessagePortIDs(channels)));
 }
 
-void WebServiceWorkerImpl::ChangeState(blink::WebServiceWorkerState new_state) {
+void WebServiceWorkerImpl::CommitState(blink::WebServiceWorkerState new_state) {
   DCHECK(proxy_);
   DCHECK(proxy_->isReady());
   state_ = new_state;

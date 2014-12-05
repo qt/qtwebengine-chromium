@@ -8,8 +8,8 @@
 #import <UIKit/UIKit.h>
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_nsobject.h"
@@ -44,9 +44,6 @@ base::FilePath GetResourcesPakFilePath(NSString* name, NSString* mac_locale) {
 }  // namespace
 
 void ResourceBundle::LoadCommonResources() {
-  AddDataPackFromPath(GetResourcesPakFilePath(@"chrome", nil),
-                      ui::SCALE_FACTOR_NONE);
-
   if (IsScaleFactorSupported(SCALE_FACTOR_100P)) {
     AddDataPackFromPath(GetResourcesPakFilePath(@"chrome_100_percent", nil),
                         SCALE_FACTOR_100P);
@@ -55,6 +52,11 @@ void ResourceBundle::LoadCommonResources() {
   if (IsScaleFactorSupported(SCALE_FACTOR_200P)) {
     AddDataPackFromPath(GetResourcesPakFilePath(@"chrome_200_percent", nil),
                         SCALE_FACTOR_200P);
+  }
+
+  if (IsScaleFactorSupported(SCALE_FACTOR_300P)) {
+    AddDataPackFromPath(GetResourcesPakFilePath(@"chrome_300_percent", nil),
+                        SCALE_FACTOR_300P);
   }
 }
 

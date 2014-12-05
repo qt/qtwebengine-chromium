@@ -52,24 +52,16 @@
               'sources',
             ],
           },
+          'variables': {
+            'clang_warning_flags': [
+              '-Wno-enum-conversion',
+              '-Wno-switch',
+              '-Wno-format',
+              # libexif uses fabs(int) to cast to float.
+              '-Wno-absolute-value',
+            ],
+          },
           'conditions': [
-            ['clang==1', {
-              'cflags': [
-                '-Wno-enum-conversion', 
-                '-Wno-switch',
-                # libexif uses fabs(int) to cast to float.
-                '-Wno-absolute-value',
-              ],
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  '-Wno-enum-conversion', 
-                  '-Wno-switch',
-                  '-Wno-format',
-                  # libexif uses fabs(int) to cast to float.
-                  '-Wno-absolute-value',
-                ],
-              },
-            }],
             ['os_posix==1 and OS!="mac"', {
               'cflags!': ['-fvisibility=hidden'],
             }],
@@ -99,6 +91,16 @@
                 4018, # size/unsigned mismatch
                 4267, # size_t -> ExifLong truncation on amd64
               ],
+              # As of VS 2013 Update 3, building this project with /analyze hits
+              # an internal compiler error on exif-entry.c. This halts the build
+              # and prevents subsequent analysis. Therefore, /analyze is
+              # disabled for this project. See this bug for details:
+              # https://connect.microsoft.com/VisualStudio/feedback/details/1014689/internal-compiler-error
+              'msvs_settings': {
+                'VCCLCompilerTool': {
+                  'AdditionalOptions!': [ '/analyze' ]
+                },
+              },
             }],
           ],
         },

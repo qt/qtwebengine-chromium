@@ -29,10 +29,7 @@
 #include "platform/PlatformEvent.h"
 #include "platform/geometry/IntPoint.h"
 
-namespace WebCore {
-
-class FloatPoint;
-class FloatSize;
+namespace blink {
 
 // Wheel events come in two flavors:
 // The ScrollByPixelWheelEvent is a fine-grained event that specifies the precise number of pixels to scroll. It is sent directly by MacBook touchpads on OS X,
@@ -65,14 +62,10 @@ public:
         , m_wheelTicksX(0)
         , m_wheelTicksY(0)
         , m_granularity(ScrollByPixelWheelEvent)
-        , m_directionInvertedFromDevice(false)
         , m_hasPreciseScrollingDeltas(false)
 #if OS(MACOSX)
         , m_phase(PlatformWheelEventPhaseNone)
         , m_momentumPhase(PlatformWheelEventPhaseNone)
-        , m_scrollCount(0)
-        , m_unacceleratedScrollingDeltaX(0)
-        , m_unacceleratedScrollingDeltaY(0)
         , m_canRubberbandLeft(true)
         , m_canRubberbandRight(true)
 #endif
@@ -88,14 +81,10 @@ public:
         , m_wheelTicksX(wheelTicksX)
         , m_wheelTicksY(wheelTicksY)
         , m_granularity(granularity)
-        , m_directionInvertedFromDevice(false)
         , m_hasPreciseScrollingDeltas(false)
 #if OS(MACOSX)
         , m_phase(PlatformWheelEventPhaseNone)
         , m_momentumPhase(PlatformWheelEventPhaseNone)
-        , m_scrollCount(0)
-        , m_unacceleratedScrollingDeltaX(0)
-        , m_unacceleratedScrollingDeltaY(0)
         , m_canRubberbandLeft(true)
         , m_canRubberbandRight(true)
 #endif
@@ -113,16 +102,11 @@ public:
 
     PlatformWheelEventGranularity granularity() const { return m_granularity; }
 
-    bool directionInvertedFromDevice() const { return m_directionInvertedFromDevice; }
-
     bool hasPreciseScrollingDeltas() const { return m_hasPreciseScrollingDeltas; }
     void setHasPreciseScrollingDeltas(bool b) { m_hasPreciseScrollingDeltas = b; }
 #if OS(MACOSX)
     PlatformWheelEventPhase phase() const { return m_phase; }
     PlatformWheelEventPhase momentumPhase() const { return m_momentumPhase; }
-    unsigned scrollCount() const { return m_scrollCount; }
-    float unacceleratedScrollingDeltaX() const { return m_unacceleratedScrollingDeltaX; }
-    float unacceleratedScrollingDeltaY() const { return m_unacceleratedScrollingDeltaY; }
     bool useLatchedEventNode() const { return m_momentumPhase == PlatformWheelEventPhaseBegan || m_momentumPhase == PlatformWheelEventPhaseChanged; }
     bool canRubberbandLeft() const { return m_canRubberbandLeft; }
     bool canRubberbandRight() const { return m_canRubberbandRight; }
@@ -138,19 +122,15 @@ protected:
     float m_wheelTicksX;
     float m_wheelTicksY;
     PlatformWheelEventGranularity m_granularity;
-    bool m_directionInvertedFromDevice;
     bool m_hasPreciseScrollingDeltas;
 #if OS(MACOSX)
     PlatformWheelEventPhase m_phase;
     PlatformWheelEventPhase m_momentumPhase;
-    unsigned m_scrollCount;
-    float m_unacceleratedScrollingDeltaX;
-    float m_unacceleratedScrollingDeltaY;
     bool m_canRubberbandLeft;
     bool m_canRubberbandRight;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformWheelEvent_h

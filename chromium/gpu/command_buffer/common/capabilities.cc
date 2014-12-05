@@ -8,16 +8,20 @@ namespace gpu {
 
 Capabilities::Capabilities()
     : post_sub_buffer(false),
-      fast_npot_mo8_textures(false),
       egl_image_external(false),
       texture_format_bgra8888(false),
       texture_format_etc1(false),
+      texture_format_etc1_npot(false),
       texture_rectangle(false),
       iosurface(false),
       texture_usage(false),
       texture_storage(false),
       discard_framebuffer(false),
       sync_query(false),
-      map_image(false) {}
+      image(false),
+      future_sync_points(false),
+      blend_equation_advanced(false),
+      blend_equation_advanced_coherent(false) {
+}
 
 }  // namespace gpu

@@ -28,11 +28,14 @@
 
 /**
  * @constructor
+ * @implements {WebInspector.TargetManager.Observer}
  */
 WebInspector.InspectElementModeController = function()
 {
     this._toggleSearchButton = new WebInspector.StatusBarButton(WebInspector.UIString("Select an element in the page to inspect it."), "node-search-status-bar-item");
     this._shortcut = WebInspector.InspectElementModeController.createShortcut();
+    InspectorFrontendHost.events.addEventListener(InspectorFrontendHostAPI.Events.EnterInspectElementMode, this._toggleSearch, this);
+    WebInspector.targetManager.observeTargets(this);
 }
 
 /**
@@ -45,6 +48,24 @@ WebInspector.InspectElementModeController.createShortcut = function()
 
 WebInspector.InspectElementModeController.prototype = {
     /**
+     * @param {!WebInspector.Target} target
+     */
+    targetAdded: function(target)
+    {
+        // When DevTools are opening in the inspect element mode, the first target comes in
+        // much later than the InspectorFrontendAPI.enterInspectElementMode event.
+        if (this.enabled())
+            target.domModel.setInspectModeEnabled(true, WebInspector.settings.showUAShadowDOM.get());
+    },
+
+    /**
+     * @param {!WebInspector.Target} target
+     */
+    targetRemoved: function(target)
+    {
+    },
+
+    /**
      * @return {boolean}
      */
     enabled: function()
@@ -55,10 +76,10 @@ WebInspector.InspectElementModeController.prototype = {
     disable: function()
     {
         if (this.enabled())
-            this.toggleSearch();
+            this._toggleSearch();
     },
 
-    toggleSearch: function()
+    _toggleSearch: function()
     {
         var enabled = !this.enabled();
         this._toggleSearchButton.toggled = enabled;
@@ -85,14 +106,14 @@ WebInspector.InspectElementModeController.ToggleSearchActionDelegate.prototype =
     {
         if (!WebInspector.inspectElementModeController)
             return false;
-        WebInspector.inspectElementModeController.toggleSearch();
+        WebInspector.inspectElementModeController._toggleSearch();
         return true;
     }
 }
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarButton.Provider}
+ * @implements {WebInspector.StatusBarItem.Provider}
  */
 WebInspector.InspectElementModeController.ToggleButtonProvider = function()
 {
@@ -100,9 +121,9 @@ WebInspector.InspectElementModeController.ToggleButtonProvider = function()
 
 WebInspector.InspectElementModeController.ToggleButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarButton}
+     * @return {?WebInspector.StatusBarItem}
      */
-    button: function()
+    item: function()
     {
         if (!WebInspector.inspectElementModeController)
             return null;

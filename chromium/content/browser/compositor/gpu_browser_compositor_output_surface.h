@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_GPU_BROWSER_COMPOSITOR_OUTPUT_SURFACE_H_
 #define CONTENT_BROWSER_COMPOSITOR_GPU_BROWSER_COMPOSITOR_OUTPUT_SURFACE_H_
 
+#include "base/cancelable_callback.h"
 #include "content/browser/compositor/browser_compositor_output_surface.h"
 
 namespace ui {
@@ -16,6 +17,7 @@ class OverlayCandidateValidator;
 }
 
 namespace content {
+class CommandBufferProxyImpl;
 
 // Adapts a WebGraphicsContext3DCommandBufferImpl into a
 // cc::OutputSurface that also handles vsync parameter updates
@@ -30,11 +32,22 @@ class GpuBrowserCompositorOutputSurface
       const scoped_refptr<ui::CompositorVSyncManager>& vsync_manager,
       scoped_ptr<cc::OverlayCandidateValidator> overlay_candidate_validator);
 
-  virtual ~GpuBrowserCompositorOutputSurface();
+  ~GpuBrowserCompositorOutputSurface() override;
 
- private:
+ protected:
   // cc::OutputSurface implementation.
-  virtual void SwapBuffers(cc::CompositorFrame* frame) OVERRIDE;
+  void SwapBuffers(cc::CompositorFrame* frame) override;
+  bool BindToClient(cc::OutputSurfaceClient* client) override;
+
+#if defined(OS_MACOSX)
+  void OnSurfaceDisplayed() override;
+#endif
+
+  CommandBufferProxyImpl* GetCommandBufferProxy();
+  void OnSwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info);
+
+  base::CancelableCallback<void(const std::vector<ui::LatencyInfo>&)>
+      swap_buffers_completion_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuBrowserCompositorOutputSurface);
 };

@@ -29,13 +29,14 @@
 #include "modules/EventModules.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class DeviceAcceleration;
 class DeviceMotionData;
 class DeviceRotationRate;
 
-class DeviceMotionEvent FINAL : public Event {
+class DeviceMotionEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~DeviceMotionEvent();
     static PassRefPtrWillBeRawPtr<DeviceMotionEvent> create()
@@ -56,22 +57,22 @@ public:
     DeviceRotationRate* rotationRate();
     double interval(bool& isNull) const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     DeviceMotionEvent();
     DeviceMotionEvent(const AtomicString& eventType, DeviceMotionData*);
 
-    RefPtrWillBeMember<DeviceMotionData> m_deviceMotionData;
-    RefPtrWillBeMember<DeviceAcceleration> m_acceleration;
-    RefPtrWillBeMember<DeviceAcceleration> m_accelerationIncludingGravity;
-    RefPtrWillBeMember<DeviceRotationRate> m_rotationRate;
+    PersistentWillBeMember<DeviceMotionData> m_deviceMotionData;
+    PersistentWillBeMember<DeviceAcceleration> m_acceleration;
+    PersistentWillBeMember<DeviceAcceleration> m_accelerationIncludingGravity;
+    PersistentWillBeMember<DeviceRotationRate> m_rotationRate;
 };
 
 DEFINE_TYPE_CASTS(DeviceMotionEvent, Event, event, event->interfaceName() == EventNames::DeviceMotionEvent, event.interfaceName() == EventNames::DeviceMotionEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceMotionEvent_h

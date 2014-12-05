@@ -35,13 +35,13 @@
 #include "WebString.h"
 #include <url/third_party/mozilla/url_parse.h>
 
-#if INSIDE_BLINK
-namespace WebCore { class KURL; }
-#else
+#if !INSIDE_BLINK
 #include <url/gurl.h>
 #endif
 
 namespace blink {
+
+class KURL;
 
 class WebURL {
 public:
@@ -102,9 +102,9 @@ public:
     }
 
 #if INSIDE_BLINK
-    BLINK_PLATFORM_EXPORT WebURL(const WebCore::KURL&);
-    BLINK_PLATFORM_EXPORT WebURL& operator=(const WebCore::KURL&);
-    BLINK_PLATFORM_EXPORT operator WebCore::KURL() const;
+    BLINK_PLATFORM_EXPORT WebURL(const KURL&);
+    BLINK_PLATFORM_EXPORT WebURL& operator=(const KURL&);
+    BLINK_PLATFORM_EXPORT operator KURL() const;
 #else
     WebURL(const GURL& url)
         : m_string(WebString::fromUTF8(url.possibly_invalid_spec()))

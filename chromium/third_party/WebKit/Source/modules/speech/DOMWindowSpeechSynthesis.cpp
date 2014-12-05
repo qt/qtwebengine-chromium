@@ -35,16 +35,14 @@
 #include "core/frame/LocalFrame.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowSpeechSynthesis::DOMWindowSpeechSynthesis(LocalDOMWindow& window)
     : DOMWindowProperty(window.frame())
 {
 }
 
-DOMWindowSpeechSynthesis::~DOMWindowSpeechSynthesis()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowSpeechSynthesis);
 
 const char* DOMWindowSpeechSynthesis::supplementName()
 {
@@ -79,6 +77,7 @@ void DOMWindowSpeechSynthesis::trace(Visitor* visitor)
 {
     visitor->trace(m_speechSynthesis);
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

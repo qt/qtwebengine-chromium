@@ -33,11 +33,9 @@
 #include "wtf/dtoa.h"
 #include "wtf/text/StringBuilder.h"
 
-using namespace std;
+namespace blink {
 
-namespace WebCore {
-
-#if !COMPILER(MSVC) || COMPILER(CLANG)
+#if !COMPILER(MSVC)
 // FIXME: Use C++11 strong enums to avoid static data member with initializer definition problems.
 const RGBA32 Color::black;
 const RGBA32 Color::white;
@@ -52,18 +50,18 @@ static const RGBA32 darkenedWhite = 0xFFABABAB;
 
 RGBA32 makeRGB(int r, int g, int b)
 {
-    return 0xFF000000 | max(0, min(r, 255)) << 16 | max(0, min(g, 255)) << 8 | max(0, min(b, 255));
+    return 0xFF000000 | std::max(0, std::min(r, 255)) << 16 | std::max(0, std::min(g, 255)) << 8 | std::max(0, std::min(b, 255));
 }
 
 RGBA32 makeRGBA(int r, int g, int b, int a)
 {
-    return max(0, min(a, 255)) << 24 | max(0, min(r, 255)) << 16 | max(0, min(g, 255)) << 8 | max(0, min(b, 255));
+    return std::max(0, std::min(a, 255)) << 24 | std::max(0, std::min(r, 255)) << 16 | std::max(0, std::min(g, 255)) << 8 | std::max(0, std::min(b, 255));
 }
 
 static int colorFloatToRGBAByte(float f)
 {
     // We use lroundf and 255 instead of nextafterf(256, 0) to match CG's rounding
-    return max(0, min(static_cast<int>(lroundf(255.0f * f)), 255));
+    return std::max(0, std::min(static_cast<int>(lroundf(255.0f * f)), 255));
 }
 
 RGBA32 makeRGBA32FromFloats(float r, float g, float b, float a)
@@ -194,19 +192,19 @@ String Color::serializedAsCSSComponentValue() const
     result.reserveCapacity(32);
     bool colorHasAlpha = hasAlpha();
     if (colorHasAlpha)
-        result.append("rgba(", 5);
+        result.appendLiteral("rgba(");
     else
-        result.append("rgb(", 4);
+        result.appendLiteral("rgb(");
 
     result.appendNumber(static_cast<unsigned char>(red()));
-    result.append(", ", 2);
+    result.appendLiteral(", ");
 
     result.appendNumber(static_cast<unsigned char>(green()));
-    result.append(", ", 2);
+    result.appendLiteral(", ");
 
     result.appendNumber(static_cast<unsigned char>(blue()));
     if (colorHasAlpha) {
-        result.append(", ", 2);
+        result.appendLiteral(", ");
 
         NumberToStringBuffer buffer;
         const char* alphaString = numberToFixedPrecisionString(alpha() / 255.0f, 6, buffer, true);
@@ -231,16 +229,14 @@ String Color::serialized() const
 
     StringBuilder result;
     result.reserveCapacity(28);
-    const char commaSpace[] = ", ";
-    const char rgbaParen[] = "rgba(";
 
-    result.append(rgbaParen, 5);
+    result.appendLiteral("rgba(");
     result.appendNumber(red());
-    result.append(commaSpace, 2);
+    result.appendLiteral(", ");
     result.appendNumber(green());
-    result.append(commaSpace, 2);
+    result.appendLiteral(", ");
     result.appendNumber(blue());
-    result.append(commaSpace, 2);
+    result.appendLiteral(", ");
 
     if (!alpha())
         result.append('0');
@@ -293,13 +289,13 @@ Color Color::light() const
     float r, g, b, a;
     getRGBA(r, g, b, a);
 
-    float v = max(r, max(g, b));
+    float v = std::max(r, std::max(g, b));
 
     if (v == 0.0f)
         // Lightened black with alpha.
         return Color(0x54, 0x54, 0x54, alpha());
 
-    float multiplier = min(1.0f, v + 0.33f) / v;
+    float multiplier = std::min(1.0f, v + 0.33f) / v;
 
     return Color(static_cast<int>(multiplier * r * scaleFactor),
                  static_cast<int>(multiplier * g * scaleFactor),
@@ -318,8 +314,8 @@ Color Color::dark() const
     float r, g, b, a;
     getRGBA(r, g, b, a);
 
-    float v = max(r, max(g, b));
-    float multiplier = max(0.0f, (v - 0.33f) / v);
+    float v = std::max(r, std::max(g, b));
+    float multiplier = std::max(0.0f, (v - 0.33f) / v);
 
     return Color(static_cast<int>(multiplier * r * scaleFactor),
                  static_cast<int>(multiplier * g * scaleFactor),
@@ -464,4 +460,4 @@ RGBA32 premultipliedARGBFromColor(const Color& color)
     return pixelColor;
 }
 
-} // namespace WebCore
+} // namespace blink

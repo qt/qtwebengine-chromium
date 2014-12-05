@@ -32,14 +32,14 @@
 #include "core/events/EventPath.h"
 #include "core/events/TouchEventContext.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<StaticNodeList> TreeScopeEventContext::ensureEventPath(EventPath& path)
 {
     if (m_eventPath)
         return m_eventPath;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > nodes;
+    WillBeHeapVector<RefPtrWillBeMember<Node>> nodes;
     nodes.reserveInitialCapacity(path.size());
     for (size_t i = 0; i < path.size(); ++i) {
         TreeScope& treeScope = path[i].treeScopeEventContext().treeScope();

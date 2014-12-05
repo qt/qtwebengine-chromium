@@ -4,6 +4,10 @@
 
 #include "net/quic/congestion_control/rtt_stats.h"
 
+#include <complex>  // std::abs
+
+using std::max;
+
 namespace net {
 
 namespace {
@@ -28,45 +32,49 @@ RttStats::RttStats()
       num_min_rtt_samples_remaining_(0),
       recent_min_rtt_window_(QuicTime::Delta::Infinite()) {}
 
-bool RttStats::HasUpdates() const {
-  return !smoothed_rtt_.IsZero();
-}
-
 void RttStats::SampleNewRecentMinRtt(uint32 num_samples) {
   num_min_rtt_samples_remaining_ = num_samples;
   new_min_rtt_ = RttSample();
+}
+
+void RttStats::ExpireSmoothedMetrics() {
+  mean_deviation_ =
+      max(mean_deviation_,
+          QuicTime::Delta::FromMicroseconds(
+              std::abs(smoothed_rtt_.Subtract(latest_rtt_).ToMicroseconds())));
+  smoothed_rtt_ = max(smoothed_rtt_, latest_rtt_);
 }
 
 // Updates the RTT based on a new sample.
 void RttStats::UpdateRtt(QuicTime::Delta send_delta,
                          QuicTime::Delta ack_delay,
                          QuicTime now) {
-  QuicTime::Delta rtt_sample(QuicTime::Delta::Zero());
-  if (send_delta > ack_delay) {
-    rtt_sample = send_delta.Subtract(ack_delay);
-  } else if (!HasUpdates()) {
-    // Even though we received information from the peer suggesting
-    // an invalid (negative) RTT, we can use the send delta as an
-    // approximation until we get a better estimate.
-    rtt_sample = send_delta;
-  }
-
-  if (rtt_sample.IsInfinite() || rtt_sample.IsZero()) {
-    DVLOG(1) << "Ignoring rtt, because it's "
-             << (rtt_sample.IsZero() ? "Zero" : "Infinite");
+  if (send_delta.IsInfinite() || send_delta <= QuicTime::Delta::Zero()) {
+    LOG(WARNING) << "Ignoring measured send_delta, because it's is "
+                 << "either infinite, zero, or negative.  send_delta = "
+                 << send_delta.ToMicroseconds();
     return;
   }
-  // RTT can't be negative.
-  DCHECK_LT(0, rtt_sample.ToMicroseconds());
 
-  latest_rtt_ = rtt_sample;
-  // First time call or link delay decreases.
-  if (min_rtt_.IsZero() || min_rtt_ > rtt_sample) {
-    min_rtt_ = rtt_sample;
+  // Update min_rtt_ first. min_rtt_ does not use an rtt_sample corrected for
+  // ack_delay but the raw observed send_delta, since poor clock granularity at
+  // the client may cause a high ack_delay to result in underestimation of the
+  // min_rtt_.
+  if (min_rtt_.IsZero() || min_rtt_ > send_delta) {
+    min_rtt_ = send_delta;
   }
-  UpdateRecentMinRtt(rtt_sample, now);
+  UpdateRecentMinRtt(send_delta, now);
+
+  // Correct for ack_delay if information received from the peer results in a
+  // positive RTT sample. Otherwise, we use the send_delta as a reasonable
+  // measure for smoothed_rtt.
+  QuicTime::Delta rtt_sample(send_delta);
+  if (rtt_sample > ack_delay) {
+    rtt_sample = rtt_sample.Subtract(ack_delay);
+  }
+  latest_rtt_ = rtt_sample;
   // First time call.
-  if (!HasUpdates()) {
+  if (smoothed_rtt_.IsZero()) {
     smoothed_rtt_ = rtt_sample;
     mean_deviation_ = QuicTime::Delta::FromMicroseconds(
         rtt_sample.ToMicroseconds() / 2);
@@ -76,7 +84,7 @@ void RttStats::UpdateRtt(QuicTime::Delta send_delta,
         kBeta * std::abs(smoothed_rtt_.Subtract(rtt_sample).ToMicroseconds()));
     smoothed_rtt_ = smoothed_rtt_.Multiply(kOneMinusAlpha).Add(
         rtt_sample.Multiply(kAlpha));
-    DVLOG(1) << "Cubic; smoothed_rtt(us):" << smoothed_rtt_.ToMicroseconds()
+    DVLOG(1) << " smoothed_rtt(us):" << smoothed_rtt_.ToMicroseconds()
              << " mean_deviation(us):" << mean_deviation_.ToMicroseconds();
   }
 }
@@ -117,13 +125,6 @@ void RttStats::UpdateRecentMinRtt(QuicTime::Delta rtt_sample, QuicTime now) {
       now.Subtract(recent_min_rtt_window_.Multiply(kQuarterWindow))) {
     quarter_window_rtt_ = RttSample(rtt_sample, now);
   }
-}
-
-QuicTime::Delta RttStats::SmoothedRtt() const {
-  if (!HasUpdates()) {
-    return QuicTime::Delta::FromMicroseconds(initial_rtt_us_);
-  }
-  return smoothed_rtt_;
 }
 
 }  // namespace net

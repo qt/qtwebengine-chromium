@@ -56,14 +56,11 @@ namespace chromeos {
 scoped_refptr<BluetoothSocketChromeOS>
 BluetoothSocketChromeOS::CreateBluetoothSocket(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-    scoped_refptr<BluetoothSocketThread> socket_thread,
-    net::NetLog* net_log,
-    const net::NetLog::Source& source) {
+    scoped_refptr<BluetoothSocketThread> socket_thread) {
   DCHECK(ui_task_runner->RunsTasksOnCurrentThread());
 
   return make_scoped_refptr(
-      new BluetoothSocketChromeOS(
-          ui_task_runner, socket_thread, net_log, source));
+      new BluetoothSocketChromeOS(ui_task_runner, socket_thread));
 }
 
 BluetoothSocketChromeOS::AcceptRequest::AcceptRequest() {}
@@ -78,10 +75,8 @@ BluetoothSocketChromeOS::ConnectionRequest::~ConnectionRequest() {}
 
 BluetoothSocketChromeOS::BluetoothSocketChromeOS(
     scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-    scoped_refptr<BluetoothSocketThread> socket_thread,
-    net::NetLog* net_log,
-    const net::NetLog::Source& source)
-    : BluetoothSocketNet(ui_task_runner, socket_thread, net_log, source) {
+    scoped_refptr<BluetoothSocketThread> socket_thread)
+    : BluetoothSocketNet(ui_task_runner, socket_thread) {
 }
 
 BluetoothSocketChromeOS::~BluetoothSocketChromeOS() {
@@ -97,6 +92,7 @@ BluetoothSocketChromeOS::~BluetoothSocketChromeOS() {
 void BluetoothSocketChromeOS::Connect(
     const BluetoothDeviceChromeOS* device,
     const BluetoothUUID& uuid,
+    SecurityLevel security_level,
     const base::Closure& success_callback,
     const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
@@ -112,6 +108,8 @@ void BluetoothSocketChromeOS::Connect(
   device_path_ = device->object_path();
   uuid_ = uuid;
   options_.reset(new BluetoothProfileManagerClient::Options());
+  if (security_level == SECURITY_LEVEL_LOW)
+    options_->require_authentication.reset(new bool(false));
 
   RegisterProfile(success_callback, error_callback);
 }
@@ -120,7 +118,7 @@ void BluetoothSocketChromeOS::Listen(
     scoped_refptr<BluetoothAdapter> adapter,
     SocketType socket_type,
     const BluetoothUUID& uuid,
-    int psm_or_channel,
+    const BluetoothAdapter::ServiceOptions& service_options,
     const base::Closure& success_callback,
     const ErrorCompletionCallback& error_callback) {
   DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
@@ -137,17 +135,17 @@ void BluetoothSocketChromeOS::Listen(
 
   uuid_ = uuid;
   options_.reset(new BluetoothProfileManagerClient::Options());
+  if (service_options.name)
+    options_->name.reset(new std::string(*service_options.name));
 
   switch (socket_type) {
     case kRfcomm:
-      options_->channel.reset(new uint16(
-          psm_or_channel == BluetoothAdapter::kChannelAuto
-              ? 0 : psm_or_channel));
+      options_->channel.reset(
+          new uint16(service_options.channel ? *service_options.channel : 0));
       break;
     case kL2cap:
-      options_->psm.reset(new uint16(
-          psm_or_channel == BluetoothAdapter::kPsmAuto
-              ? 0 : psm_or_channel));
+      options_->psm.reset(
+          new uint16(service_options.psm ? *service_options.psm : 0));
       break;
     default:
       NOTREACHED();
@@ -161,6 +159,15 @@ void BluetoothSocketChromeOS::Close() {
 
   if (profile_)
     UnregisterProfile();
+
+  // In the case below, where an asynchronous task gets posted on the socket
+  // thread in BluetoothSocketNet::Close, a reference will be held to this
+  // socket by the callback. This may cause the BluetoothAdapter to outlive
+  // DBusThreadManager during shutdown if that callback executes too late.
+  if (adapter_.get()) {
+    adapter_->RemoveObserver(this);
+    adapter_ = NULL;
+  }
 
   if (!device_path_.value().empty()) {
     BluetoothSocketNet::Close();
@@ -238,7 +245,7 @@ void BluetoothSocketChromeOS::RegisterProfile(
   // Before reaching out to the Bluetooth Daemon to register a listening socket,
   // make sure it's actually running. If not, report success and carry on;
   // the profile will be registered when the daemon becomes available.
-  if (adapter_ && !adapter_->IsPresent()) {
+  if (adapter_.get() && !adapter_->IsPresent()) {
     VLOG(1) << object_path_.value() << ": Delaying profile registration.";
     success_callback.Run();
     return;
@@ -438,10 +445,7 @@ void BluetoothSocketChromeOS::AcceptConnectionRequest() {
 
   scoped_refptr<BluetoothSocketChromeOS> client_socket =
       BluetoothSocketChromeOS::CreateBluetoothSocket(
-          ui_task_runner(),
-          socket_thread(),
-          net_log(),
-          source());
+          ui_task_runner(), socket_thread());
 
   client_socket->device_address_ = device->GetAddress();
   client_socket->device_path_ = request->device_path;

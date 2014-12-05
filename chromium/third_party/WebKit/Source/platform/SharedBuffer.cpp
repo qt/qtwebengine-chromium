@@ -37,9 +37,7 @@
 #include "wtf/MainThread.h"
 #endif
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 static const unsigned segmentSize = 0x1000;
 static const unsigned segmentPositionMask = 0x0FFF;
@@ -174,14 +172,10 @@ SharedBuffer::SharedBuffer(const char* data, int size)
 #endif
 }
 
-SharedBuffer::SharedBuffer(const char* data, int size, PurgeableVector::PurgeableOption purgeable)
+SharedBuffer::SharedBuffer(const char* data, unsigned size, PurgeableVector::PurgeableOption purgeable)
     : m_size(0)
     , m_buffer(purgeable)
 {
-    // FIXME: Use unsigned consistently, and check for invalid casts when calling into SharedBuffer from other code.
-    if (size < 0)
-        CRASH();
-
     append(data, size);
 
 #ifdef SHARED_BUFFER_STATS
@@ -232,7 +226,7 @@ const char* SharedBuffer::data() const
     return m_buffer.data();
 }
 
-void SharedBuffer::append(SharedBuffer* data)
+void SharedBuffer::append(PassRefPtr<SharedBuffer> data)
 {
     const char* segment;
     size_t position = 0;
@@ -266,7 +260,7 @@ void SharedBuffer::append(const char* data, unsigned length)
         segment = m_segments.last() + positionInSegment;
 
     unsigned segmentFreeSpace = segmentSize - positionInSegment;
-    unsigned bytesToCopy = min(length, segmentFreeSpace);
+    unsigned bytesToCopy = std::min(length, segmentFreeSpace);
 
     for (;;) {
         memcpy(segment, data, bytesToCopy);
@@ -277,7 +271,7 @@ void SharedBuffer::append(const char* data, unsigned length)
         data += bytesToCopy;
         segment = allocateSegment();
         m_segments.append(segment);
-        bytesToCopy = min(length, segmentSize);
+        bytesToCopy = std::min(length, segmentSize);
     }
 }
 
@@ -321,7 +315,7 @@ void SharedBuffer::mergeSegmentsIntoBuffer() const
         m_buffer.reserveCapacity(m_size);
         unsigned bytesLeft = m_size - bufferSize;
         for (unsigned i = 0; i < m_segments.size(); ++i) {
-            unsigned bytesToCopy = min(bytesLeft, segmentSize);
+            unsigned bytesToCopy = std::min(bytesLeft, segmentSize);
             m_buffer.append(m_segments[i], bytesToCopy);
             bytesLeft -= bytesToCopy;
             freeSegment(m_segments[i]);
@@ -352,7 +346,7 @@ unsigned SharedBuffer::getSomeData(const char*& someData, unsigned position) con
     unsigned segment = segmentIndex(position);
     if (segment < segments) {
         unsigned bytesLeft = totalSize - consecutiveSize;
-        unsigned segmentedSize = min(maxSegmentedSize, bytesLeft);
+        unsigned segmentedSize = std::min(maxSegmentedSize, bytesLeft);
 
         unsigned positionInSegment = offsetInSegment(position);
         someData = m_segments[segment] + positionInSegment;
@@ -388,7 +382,8 @@ PassRefPtr<ArrayBuffer> SharedBuffer::getAsArrayBuffer() const
 PassRefPtr<SkData> SharedBuffer::getAsSkData() const
 {
     unsigned bufferLength = size();
-    char* buffer = static_cast<char*>(sk_malloc_throw(bufferLength));
+    SkData* data = SkData::NewUninitialized(bufferLength);
+    char* buffer = static_cast<char*>(data->writable_data());
     const char* segment = 0;
     unsigned position = 0;
     while (unsigned segmentSize = getSomeData(segment, position)) {
@@ -401,7 +396,7 @@ PassRefPtr<SkData> SharedBuffer::getAsSkData() const
         // Don't return the incomplete SkData.
         return nullptr;
     }
-    return adoptRef(SkData::NewFromMalloc(buffer, bufferLength));
+    return adoptRef(data);
 }
 
 bool SharedBuffer::lock()
@@ -420,4 +415,4 @@ bool SharedBuffer::isLocked() const
     return m_buffer.isLocked();
 }
 
-} // namespace WebCore
+} // namespace blink

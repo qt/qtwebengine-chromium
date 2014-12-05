@@ -1,6 +1,6 @@
 /*
  * Copyright (C) 2000 Peter Kelly (pmk@post.com)
- * Copyright (C) 2005, 2006, 2008 Apple Inc. All rights reserved.
+ * Copyright (C) 2005, 2006, 2008, 2014 Apple Inc. All rights reserved.
  * Copyright (C) 2006 Alexey Proskuryakov (ap@webkit.org)
  * Copyright (C) 2007 Samuel Weinig (sam@webkit.org)
  * Copyright (C) 2008 Nokia Corporation and/or its subsidiary(-ies)
@@ -26,10 +26,11 @@
 #include "config.h"
 #include "core/xml/parser/XMLDocumentParser.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/V8Document.h"
 #include "core/FetchInitiatorTypeNames.h"
 #include "core/HTMLNames.h"
 #include "core/XMLNSNames.h"
@@ -52,12 +53,12 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/ImageLoader.h"
 #include "core/svg/graphics/SVGImage.h"
-#include "core/xml/XMLTreeViewer.h"
 #include "core/xml/parser/SharedBufferReader.h"
 #include "core/xml/parser/XMLDocumentParserScope.h"
 #include "core/xml/parser/XMLParserInput.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
+#include "platform/TraceEvent.h"
 #include "platform/network/ResourceError.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/network/ResourceResponse.h"
@@ -72,7 +73,7 @@
 #include <libxml/parserInternals.h>
 #include <libxslt/xslt.h>
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -116,7 +117,7 @@ static inline bool hasNoStyleInformation(Document* document)
     return true;
 }
 
-class PendingStartElementNSCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingStartElementNSCallback final : public XMLDocumentParser::PendingCallback {
 public:
     PendingStartElementNSCallback(const AtomicString& localName, const AtomicString& prefix, const AtomicString& uri,
         int namespaceCount, const xmlChar** namespaces, int attributeCount, int defaultedCount, const xmlChar** attributes)
@@ -153,7 +154,7 @@ public:
         xmlFree(m_attributes);
     }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->startElementNs(m_localName, m_prefix, m_uri,
             m_namespaceCount, const_cast<const xmlChar**>(m_namespaces),
@@ -171,15 +172,15 @@ private:
     xmlChar** m_attributes;
 };
 
-class PendingEndElementNSCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingEndElementNSCallback final : public XMLDocumentParser::PendingCallback {
 public:
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->endElementNs();
     }
 };
 
-class PendingCharactersCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingCharactersCallback final : public XMLDocumentParser::PendingCallback {
 public:
     PendingCharactersCallback(const xmlChar* chars, int length)
         : m_chars(xmlStrndup(chars, length))
@@ -192,7 +193,7 @@ public:
         xmlFree(m_chars);
     }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->characters(m_chars, m_length);
     }
@@ -202,7 +203,7 @@ private:
     int m_length;
 };
 
-class PendingProcessingInstructionCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingProcessingInstructionCallback final : public XMLDocumentParser::PendingCallback {
 public:
     PendingProcessingInstructionCallback(const String& target, const String& data)
         : m_target(target)
@@ -210,7 +211,7 @@ public:
     {
     }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->processingInstruction(m_target, m_data);
     }
@@ -220,11 +221,11 @@ private:
     String m_data;
 };
 
-class PendingCDATABlockCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingCDATABlockCallback final : public XMLDocumentParser::PendingCallback {
 public:
     explicit PendingCDATABlockCallback(const String& text) : m_text(text) { }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->cdataBlock(m_text);
     }
@@ -233,11 +234,11 @@ private:
     String m_text;
 };
 
-class PendingCommentCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingCommentCallback final : public XMLDocumentParser::PendingCallback {
 public:
     explicit PendingCommentCallback(const String& text) : m_text(text) { }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->comment(m_text);
     }
@@ -246,7 +247,7 @@ private:
     String m_text;
 };
 
-class PendingInternalSubsetCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingInternalSubsetCallback final : public XMLDocumentParser::PendingCallback {
 public:
     PendingInternalSubsetCallback(const String& name, const String& externalID, const String& systemID)
         : m_name(name)
@@ -255,7 +256,7 @@ public:
     {
     }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->internalSubset(m_name, m_externalID, m_systemID);
     }
@@ -266,7 +267,7 @@ private:
     String m_systemID;
 };
 
-class PendingErrorCallback FINAL : public XMLDocumentParser::PendingCallback {
+class PendingErrorCallback final : public XMLDocumentParser::PendingCallback {
 public:
     PendingErrorCallback(XMLErrors::ErrorType type, const xmlChar* message, OrdinalNumber lineNumber, OrdinalNumber columnNumber)
         : m_type(type)
@@ -281,7 +282,7 @@ public:
         xmlFree(m_message);
     }
 
-    virtual void call(XMLDocumentParser* parser) OVERRIDE
+    virtual void call(XMLDocumentParser* parser) override
     {
         parser->handleError(m_type, reinterpret_cast<char*>(m_message), TextPosition(m_lineNumber, m_columnNumber));
     }
@@ -404,6 +405,7 @@ void XMLDocumentParser::detach()
 
 void XMLDocumentParser::end()
 {
+    TRACE_EVENT0("blink", "XMLDocumentParser::end");
     // XMLDocumentParserLibxml2 will do bad things to the document if doEnd() is called.
     // I don't believe XMLDocumentParserQt needs doEnd called in the fragment case.
     ASSERT(!m_parsingFragment);
@@ -438,6 +440,12 @@ void XMLDocumentParser::finish()
     // FIXME: We should ASSERT(!m_parserStopped) here, since it does not
     // makes sense to call any methods on DocumentParser once it's been stopped.
     // However, FrameLoader::stop calls DocumentParser::finish unconditionally.
+
+    // flush may ending up executing arbitrary script, and possibly detach the parser.
+    RefPtrWillBeRawPtr<XMLDocumentParser> protect(this);
+    flush();
+    if (isDetached())
+        return;
 
     if (m_parserPaused)
         m_finishCalled = true;
@@ -503,7 +511,7 @@ bool XMLDocumentParser::parseDocumentFragment(const String& chunk, DocumentFragm
     // FIXME: We need to implement the HTML5 XML Fragment parsing algorithm:
     // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-xhtml-syntax.html#xml-fragment-parsing-algorithm
     // For now we have a hack for script/style innerHTML support:
-    if (contextElement && (contextElement->hasLocalName(HTMLNames::scriptTag) || contextElement->hasLocalName(HTMLNames::styleTag))) {
+    if (contextElement && (contextElement->hasLocalName(scriptTag.localName()) || contextElement->hasLocalName(styleTag.localName()))) {
         fragment->parserAppendChild(fragment->document().createTextNode(chunk));
         return true;
     }
@@ -648,6 +656,8 @@ static void* openFunc(const char* uri)
     // See <https://bugs.webkit.org/show_bug.cgi?id=21963>.
     if (!shouldAllowExternalLoad(finalURL))
         return &globalDescriptor;
+
+    UseCounter::count(XMLDocumentParserScope::currentFetcher->document(), UseCounter::XMLExternalResourceLoad);
 
     return new SharedBufferReader(data);
 }
@@ -799,10 +809,10 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
     while (parentElement) {
         elemStack.append(parentElement);
 
-        ContainerNode* n = parentElement->parentNode();
-        if (!n || !n->isElementNode())
+        Element* grandParentElement = parentElement->parentElement();
+        if (!grandParentElement)
             break;
-        parentElement = toElement(n);
+        parentElement = grandParentElement;
     }
 
     if (elemStack.isEmpty())
@@ -810,15 +820,13 @@ XMLDocumentParser::XMLDocumentParser(DocumentFragment* fragment, Element* parent
 
     for (; !elemStack.isEmpty(); elemStack.removeLast()) {
         Element* element = elemStack.last();
-        if (element->hasAttributes()) {
-            AttributeCollection attributes = element->attributes();
-            AttributeCollection::const_iterator end = attributes.end();
-            for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-                if (it->localName() == xmlnsAtom)
-                    m_defaultNamespaceURI = it->value();
-                else if (it->prefix() == xmlnsAtom)
-                    m_prefixToNamespaceMap.set(it->localName(), it->value());
-            }
+        AttributeCollection attributes = element->attributes();
+        AttributeCollection::iterator end = attributes.end();
+        for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
+            if (it->localName() == xmlnsAtom)
+                m_defaultNamespaceURI = it->value();
+            else if (it->prefix() == xmlnsAtom)
+                m_prefixToNamespaceMap.set(it->localName(), it->value());
         }
     }
 
@@ -861,6 +869,7 @@ void XMLDocumentParser::trace(Visitor* visitor)
 
 void XMLDocumentParser::doWrite(const String& parseString)
 {
+    TRACE_EVENT0("blink", "XMLDocumentParser::doWrite");
     ASSERT(!isDetached());
     if (!m_context)
         initializeParserContext();
@@ -906,7 +915,7 @@ static inline void handleNamespaceAttributes(Vector<Attribute>& prefixedAttribut
         AtomicString namespaceQName = xmlnsAtom;
         AtomicString namespaceURI = toAtomicString(namespaces[i].uri);
         if (namespaces[i].prefix)
-            namespaceQName = "xmlns:" + toString(namespaces[i].prefix);
+            namespaceQName = WTF::xmlnsWithColon + namespaces[i].prefix;
 
         QualifiedName parsedName = anyName;
         if (!Element::parseAttributeName(parsedName, XMLNSNames::xmlnsNamespaceURI, namespaceQName, exceptionState))
@@ -997,6 +1006,13 @@ void XMLDocumentParser::startElementNs(const AtomicString& localName, const Atom
         m_scriptStartPosition = textPosition();
 
     m_currentNode->parserAppendChild(newElement.get());
+
+    // Event handlers may synchronously trigger removal of the
+    // document and cancellation of this parser.
+    if (isStopped()) {
+        stopParsing();
+        return;
+    }
 
     if (isHTMLTemplateElement(*newElement))
         pushCurrentNode(toHTMLTemplateElement(*newElement).content());
@@ -1433,7 +1449,6 @@ void XMLDocumentParser::initializeParserContext(const CString& chunk)
     sax.ignorableWhitespace = ignorableWhitespaceHandler;
     sax.entityDecl = xmlSAX2EntityDecl;
     sax.initialized = XML_SAX2_MAGIC;
-    DocumentParser::startParsing();
     m_sawError = false;
     m_sawCSS = false;
     m_sawXSLTransform = false;
@@ -1464,8 +1479,9 @@ void XMLDocumentParser::doEnd()
 
     bool xmlViewerMode = !m_sawError && !m_sawCSS && !m_sawXSLTransform && hasNoStyleInformation(document());
     if (xmlViewerMode) {
-        XMLTreeViewer xmlTreeViewer(document());
-        xmlTreeViewer.transformDocumentToTreeView();
+        const char noStyleMessage[] = "This XML file does not appear to have any style information associated with it. The document tree is shown below.";
+        document()->setIsViewSource(true);
+        V8Document::PrivateScript::transformDocumentToTreeViewMethod(document()->frame(), document(), noStyleMessage);
     } else if (m_sawXSLTransform) {
         xmlDocPtr doc = xmlDocPtrForString(document()->fetcher(), m_originalSourceForTransform.toString(), document()->url().string());
         document()->setTransformSource(adoptPtr(new TransformSource(doc)));
@@ -1563,6 +1579,7 @@ bool XMLDocumentParser::appendFragmentSource(const String& chunk)
     if (chunkAsUtf8.length() > INT_MAX)
         return false;
 
+    TRACE_EVENT0("blink", "XMLDocumentParser::appendFragmentSource");
     initializeParserContext(chunkAsUtf8);
     xmlParseContent(context());
     endDocument(); // Close any open text nodes.
@@ -1633,4 +1650,4 @@ HashMap<String, String> parseAttributes(const String& string, bool& attrsOK)
     return state.attributes;
 }
 
-} // namespace WebCore
+} // namespace blink

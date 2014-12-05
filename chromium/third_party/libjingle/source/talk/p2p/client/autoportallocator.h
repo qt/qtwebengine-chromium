@@ -25,22 +25,22 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_EXAMPLES_LOGIN_AUTOPORTALLOCATOR_H_
-#define TALK_EXAMPLES_LOGIN_AUTOPORTALLOCATOR_H_
+#ifndef WEBRTC_P2P_CLIENT_AUTOPORTALLOCATOR_H_
+#define WEBRTC_P2P_CLIENT_AUTOPORTALLOCATOR_H_
 
 #include <string>
 #include <vector>
 
-#include "talk/base/sigslot.h"
-#include "talk/p2p/client/httpportallocator.h"
-#include "talk/xmpp/jingleinfotask.h"
-#include "talk/xmpp/xmppclient.h"
+#include "webrtc/p2p/client/httpportallocator.h"
+#include "webrtc/libjingle/xmpp/jingleinfotask.h"
+#include "webrtc/libjingle/xmpp/xmppclient.h"
+#include "webrtc/base/sigslot.h"
 
 // This class sets the relay and stun servers using XmppClient.
 // It enables the client to traverse Proxy and NAT.
 class AutoPortAllocator : public cricket::HttpPortAllocator {
  public:
-  AutoPortAllocator(talk_base::NetworkManager* network_manager,
+  AutoPortAllocator(rtc::NetworkManager* network_manager,
                     const std::string& user_agent)
       : cricket::HttpPortAllocator(network_manager, user_agent) {
   }
@@ -59,11 +59,11 @@ class AutoPortAllocator : public cricket::HttpPortAllocator {
   void OnJingleInfo(
       const std::string& token,
       const std::vector<std::string>& relay_hosts,
-      const std::vector<talk_base::SocketAddress>& stun_hosts) {
+      const std::vector<rtc::SocketAddress>& stun_hosts) {
     SetRelayToken(token);
     SetStunHosts(stun_hosts);
     SetRelayHosts(relay_hosts);
   }
 };
 
-#endif  // TALK_EXAMPLES_LOGIN_AUTOPORTALLOCATOR_H_
+#endif  // WEBRTC_P2P_CLIENT_AUTOPORTALLOCATOR_H_

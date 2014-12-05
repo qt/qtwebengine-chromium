@@ -25,16 +25,16 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_RELAYPORT_H_
-#define TALK_P2P_BASE_RELAYPORT_H_
+#ifndef WEBRTC_P2P_BASE_RELAYPORT_H_
+#define WEBRTC_P2P_BASE_RELAYPORT_H_
 
 #include <deque>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "talk/p2p/base/port.h"
-#include "talk/p2p/base/stunrequest.h"
+#include "webrtc/p2p/base/port.h"
+#include "webrtc/p2p/base/stunrequest.h"
 
 namespace cricket {
 
@@ -49,12 +49,12 @@ class RelayConnection;
 // successful all other connection attemts are aborted.
 class RelayPort : public Port {
  public:
-  typedef std::pair<talk_base::Socket::Option, int> OptionValue;
+  typedef std::pair<rtc::Socket::Option, int> OptionValue;
 
   // RelayPort doesn't yet do anything fancy in the ctor.
   static RelayPort* Create(
-      talk_base::Thread* thread, talk_base::PacketSocketFactory* factory,
-      talk_base::Network* network, const talk_base::IPAddress& ip,
+      rtc::Thread* thread, rtc::PacketSocketFactory* factory,
+      rtc::Network* network, const rtc::IPAddress& ip,
       int min_port, int max_port, const std::string& username,
       const std::string& password) {
     return new RelayPort(thread, factory, network, ip, min_port, max_port,
@@ -71,8 +71,8 @@ class RelayPort : public Port {
   virtual void PrepareAddress();
   virtual Connection* CreateConnection(const Candidate& address,
                                        CandidateOrigin origin);
-  virtual int SetOption(talk_base::Socket::Option opt, int value);
-  virtual int GetOption(talk_base::Socket::Option opt, int* value);
+  virtual int SetOption(rtc::Socket::Option opt, int value);
+  virtual int GetOption(rtc::Socket::Option opt, int* value);
   virtual int GetError();
 
   const ProtocolAddress * ServerAddress(size_t index) const;
@@ -83,8 +83,8 @@ class RelayPort : public Port {
   sigslot::signal1<const ProtocolAddress*> SignalSoftTimeout;
 
  protected:
-  RelayPort(talk_base::Thread* thread, talk_base::PacketSocketFactory* factory,
-            talk_base::Network*, const talk_base::IPAddress& ip,
+  RelayPort(rtc::Thread* thread, rtc::PacketSocketFactory* factory,
+            rtc::Network*, const rtc::IPAddress& ip,
             int min_port, int max_port, const std::string& username,
             const std::string& password);
   bool Init();
@@ -92,15 +92,15 @@ class RelayPort : public Port {
   void SetReady();
 
   virtual int SendTo(const void* data, size_t size,
-                     const talk_base::SocketAddress& addr,
-                     const talk_base::PacketOptions& options,
+                     const rtc::SocketAddress& addr,
+                     const rtc::PacketOptions& options,
                      bool payload);
 
   // Dispatches the given packet to the port or connection as appropriate.
   void OnReadPacket(const char* data, size_t size,
-                    const talk_base::SocketAddress& remote_addr,
+                    const rtc::SocketAddress& remote_addr,
                     ProtocolType proto,
-                    const talk_base::PacketTime& packet_time);
+                    const rtc::PacketTime& packet_time);
 
  private:
   friend class RelayEntry;
@@ -115,4 +115,4 @@ class RelayPort : public Port {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_RELAYPORT_H_
+#endif  // WEBRTC_P2P_BASE_RELAYPORT_H_

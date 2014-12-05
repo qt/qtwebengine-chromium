@@ -37,9 +37,7 @@
 #include "core/rendering/RenderFlowThread.h"
 #include "core/rendering/RenderView.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 RenderRegion::RenderRegion(Element* element, RenderFlowThread* flowThread)
     : RenderBlockFlow(element)
@@ -55,12 +53,6 @@ LayoutUnit RenderRegion::pageLogicalWidth() const
 }
 
 LayoutUnit RenderRegion::pageLogicalHeight() const
-{
-    ASSERT(m_flowThread);
-    return m_flowThread->isHorizontalWritingMode() ? contentHeight() : contentWidth();
-}
-
-LayoutUnit RenderRegion::logicalHeightOfAllFlowThreadContent() const
 {
     ASSERT(m_flowThread);
     return m_flowThread->isHorizontalWritingMode() ? contentHeight() : contentWidth();
@@ -84,24 +76,19 @@ LayoutRect RenderRegion::overflowRectForFlowThreadPortion(const LayoutRect& flow
     LayoutRect clipRect;
     if (m_flowThread->isHorizontalWritingMode()) {
         LayoutUnit minY = isFirstPortion ? flowThreadOverflow.y() : flowThreadPortionRect.y();
-        LayoutUnit maxY = isLastPortion ? max(flowThreadPortionRect.maxY(), flowThreadOverflow.maxY()) : flowThreadPortionRect.maxY();
-        LayoutUnit minX = min(flowThreadPortionRect.x(), flowThreadOverflow.x());
-        LayoutUnit maxX = max(flowThreadPortionRect.maxX(), flowThreadOverflow.maxX());
+        LayoutUnit maxY = isLastPortion ? std::max(flowThreadPortionRect.maxY(), flowThreadOverflow.maxY()) : flowThreadPortionRect.maxY();
+        LayoutUnit minX = std::min(flowThreadPortionRect.x(), flowThreadOverflow.x());
+        LayoutUnit maxX = std::max(flowThreadPortionRect.maxX(), flowThreadOverflow.maxX());
         clipRect = LayoutRect(minX, minY, maxX - minX, maxY - minY);
     } else {
         LayoutUnit minX = isFirstPortion ? flowThreadOverflow.x() : flowThreadPortionRect.x();
-        LayoutUnit maxX = isLastPortion ? max(flowThreadPortionRect.maxX(), flowThreadOverflow.maxX()) : flowThreadPortionRect.maxX();
-        LayoutUnit minY = min(flowThreadPortionRect.y(), (flowThreadOverflow.y()));
-        LayoutUnit maxY = max(flowThreadPortionRect.y(), (flowThreadOverflow.maxY()));
+        LayoutUnit maxX = isLastPortion ? std::max(flowThreadPortionRect.maxX(), flowThreadOverflow.maxX()) : flowThreadPortionRect.maxX();
+        LayoutUnit minY = std::min(flowThreadPortionRect.y(), (flowThreadOverflow.y()));
+        LayoutUnit maxY = std::max(flowThreadPortionRect.y(), (flowThreadOverflow.maxY()));
         clipRect = LayoutRect(minX, minY, maxX - minX, maxY - minY);
     }
 
     return clipRect;
-}
-
-LayoutUnit RenderRegion::pageLogicalTopForOffset(LayoutUnit /* offset */) const
-{
-    return flowThread()->isHorizontalWritingMode() ? flowThreadPortionRect().y() : flowThreadPortionRect().x();
 }
 
 bool RenderRegion::isFirstRegion() const
@@ -132,22 +119,17 @@ void RenderRegion::layoutBlock(bool relayoutChildren)
     // RenderFlowThread itself).
 }
 
-void RenderRegion::repaintFlowThreadContent(const LayoutRect& repaintRect) const
-{
-    repaintFlowThreadContentRectangle(repaintRect, flowThreadPortionRect(), flowThreadPortionOverflowRect(), contentBoxRect().location());
-}
-
-void RenderRegion::repaintFlowThreadContentRectangle(const LayoutRect& repaintRect, const LayoutRect& flowThreadPortionRect, const LayoutRect& flowThreadPortionOverflowRect, const LayoutPoint& regionLocation) const
+void RenderRegion::paintInvalidationOfFlowThreadContentRectangle(const LayoutRect& paintInvalidationRect, const LayoutRect& flowThreadPortionRect, const LayoutRect& flowThreadPortionOverflowRect, const LayoutPoint& regionLocation) const
 {
     ASSERT(isValid());
 
-    // We only have to issue a repaint in this region if the region rect intersects the repaint rect.
+    // We only have to issue a paint invalidation in this region if the region rect intersects the paint invalidation rect.
     LayoutRect flippedFlowThreadPortionRect(flowThreadPortionRect);
     LayoutRect flippedFlowThreadPortionOverflowRect(flowThreadPortionOverflowRect);
     flowThread()->flipForWritingMode(flippedFlowThreadPortionRect); // Put the region rects into physical coordinates.
     flowThread()->flipForWritingMode(flippedFlowThreadPortionOverflowRect);
 
-    LayoutRect clippedRect(repaintRect);
+    LayoutRect clippedRect(paintInvalidationRect);
     clippedRect.intersect(flippedFlowThreadPortionOverflowRect);
     if (clippedRect.isEmpty())
         return;
@@ -155,60 +137,10 @@ void RenderRegion::repaintFlowThreadContentRectangle(const LayoutRect& repaintRe
     // Put the region rect into the region's physical coordinate space.
     clippedRect.setLocation(regionLocation + (clippedRect.location() - flippedFlowThreadPortionRect.location()));
 
-    // Now switch to the region's writing mode coordinate space and let it repaint itself.
+    // Now switch to the region's writing mode coordinate space and let it issue paint invalidations itself.
     flipForWritingMode(clippedRect);
 
-    // Issue the repaint.
     invalidatePaintRectangle(clippedRect);
-}
-
-void RenderRegion::attachRegion()
-{
-    if (documentBeingDestroyed())
-        return;
-
-    // A region starts off invalid.
-    setIsValid(false);
-
-    if (!m_flowThread)
-        return;
-
-    // Only after adding the region to the thread, the region is marked to be valid.
-    m_flowThread->addRegionToThread(this);
-}
-
-void RenderRegion::detachRegion()
-{
-    if (m_flowThread) {
-        m_flowThread->removeRegionFromThread(this);
-        m_flowThread = 0;
-    }
-}
-
-LayoutUnit RenderRegion::logicalTopOfFlowThreadContentRect(const LayoutRect& rect) const
-{
-    ASSERT(isValid());
-    return flowThread()->isHorizontalWritingMode() ? rect.y() : rect.x();
-}
-
-LayoutUnit RenderRegion::logicalBottomOfFlowThreadContentRect(const LayoutRect& rect) const
-{
-    ASSERT(isValid());
-    return flowThread()->isHorizontalWritingMode() ? rect.maxY() : rect.maxX();
-}
-
-void RenderRegion::insertedIntoTree()
-{
-    RenderBlockFlow::insertedIntoTree();
-
-    attachRegion();
-}
-
-void RenderRegion::willBeRemovedFromTree()
-{
-    RenderBlockFlow::willBeRemovedFromTree();
-
-    detachRegion();
 }
 
 void RenderRegion::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const
@@ -222,4 +154,4 @@ void RenderRegion::computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, La
     maxLogicalWidth = m_flowThread->maxPreferredLogicalWidth();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -44,7 +44,7 @@
 
 // This file provides a utility function to support rendering certain elements above plugins.
 
-namespace WebCore {
+namespace blink {
 
 static void getObjectStack(const RenderObject* ro, Vector<const RenderObject*>* roStack)
 {
@@ -164,13 +164,13 @@ void getPluginOcclusions(Element* element, Widget* parentWidget, const IntRect& 
     FrameView* parentFrameView = toFrameView(parentWidget);
 
     // Occlusions by iframes.
-    const HashSet<RefPtr<Widget> >* children = parentFrameView->children();
-    for (HashSet<RefPtr<Widget> >::const_iterator it = children->begin(); it != children->end(); ++it) {
+    const FrameView::ChildrenWidgetSet* children = parentFrameView->children();
+    for (FrameView::ChildrenWidgetSet::const_iterator it = children->begin(); it != children->end(); ++it) {
         // We only care about FrameView's because iframes show up as FrameViews.
         if (!(*it)->isFrameView())
             continue;
 
-        const FrameView* frameView = toFrameView((*it).get());
+        const FrameView* frameView = toFrameView(it->get());
         // Check to make sure we can get both the element and the RenderObject
         // for this FrameView, if we can't just move on to the next object.
         // FIXME: Plugin occlusion by remote frames is probably broken.
@@ -200,4 +200,4 @@ void getPluginOcclusions(Element* element, Widget* parentWidget, const IntRect& 
         addTreeToOcclusions(elements[i]->renderer(), frameRect, occlusions);
 }
 
-} // namespace WebCore
+} // namespace blink

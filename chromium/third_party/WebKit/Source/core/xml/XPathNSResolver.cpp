@@ -27,10 +27,8 @@
 #include "config.h"
 #include "core/xml/XPathNSResolver.h"
 
-namespace WebCore {
+namespace blink {
 
-XPathNSResolver::~XPathNSResolver()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(XPathNSResolver);
 
 }

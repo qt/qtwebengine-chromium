@@ -31,14 +31,13 @@
 #include "config.h"
 #include "web/UserMediaClientImpl.h"
 
+#include "public/platform/WebMediaStreamTrackSourcesRequest.h"
 #include "public/web/WebFrameClient.h"
 #include "public/web/WebMediaDevicesRequest.h"
 #include "public/web/WebUserMediaClient.h"
 #include "public/web/WebUserMediaRequest.h"
 #include "web/WebLocalFrameImpl.h"
 #include "wtf/RefPtr.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -47,7 +46,7 @@ UserMediaClientImpl::UserMediaClientImpl(WebLocalFrameImpl* webFrame)
 {
 }
 
-void UserMediaClientImpl::requestUserMedia(PassRefPtrWillBeRawPtr<UserMediaRequest> request)
+void UserMediaClientImpl::requestUserMedia(UserMediaRequest* request)
 {
     if (m_client)
         m_client->requestUserMedia(request);
@@ -59,16 +58,22 @@ void UserMediaClientImpl::cancelUserMediaRequest(UserMediaRequest* request)
         m_client->cancelUserMediaRequest(WebUserMediaRequest(request));
 }
 
-void UserMediaClientImpl::requestMediaDevices(PassRefPtrWillBeRawPtr<WebCore::MediaDevicesRequest> request)
+void UserMediaClientImpl::requestMediaDevices(MediaDevicesRequest* request)
 {
     if (m_client)
         m_client->requestMediaDevices(request);
 }
 
-void UserMediaClientImpl::cancelMediaDevicesRequest(WebCore::MediaDevicesRequest* request)
+void UserMediaClientImpl::cancelMediaDevicesRequest(MediaDevicesRequest* request)
 {
     if (m_client)
         m_client->cancelMediaDevicesRequest(WebMediaDevicesRequest(request));
+}
+
+void UserMediaClientImpl::requestSources(MediaStreamTrackSourcesRequest* request)
+{
+    if (m_client)
+        m_client->requestSources(request);
 }
 
 } // namespace blink

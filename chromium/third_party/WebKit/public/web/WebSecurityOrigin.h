@@ -34,12 +34,12 @@
 #include "../platform/WebCommon.h"
 
 #if BLINK_IMPLEMENTATION
-namespace WebCore { class SecurityOrigin; }
 namespace WTF { template <typename T> class PassRefPtr; }
 #endif
 
 namespace blink {
 
+class SecurityOrigin;
 class WebSecurityOriginPrivate;
 class WebString;
 class WebURL;
@@ -83,6 +83,13 @@ public:
     // from a given security origin to receive contents from a given URL.
     BLINK_EXPORT bool canRequest(const WebURL&) const;
 
+    // A "secure origin" as defined by [1] are those that load resources either
+    // from the local machine (necessarily trusted) or over the network from a
+    // cryptographically-authenticated server.
+    //
+    // [1] http://www.chromium.org/Home/chromium-security/security-faq#TOC-Which-origins-are-secure-
+    BLINK_EXPORT bool canAccessFeatureRequiringSecureOrigin(WebString& errorMessage) const;
+
     // Returns a string representation of the WebSecurityOrigin.  The empty
     // WebSecurityOrigin is represented by "null".  The representation of a
     // non-empty WebSecurityOrigin resembles a standard URL.
@@ -100,10 +107,10 @@ public:
     BLINK_EXPORT void grantLoadLocalResources() const;
 
 #if BLINK_IMPLEMENTATION
-    WebSecurityOrigin(const WTF::PassRefPtr<WebCore::SecurityOrigin>&);
-    WebSecurityOrigin& operator=(const WTF::PassRefPtr<WebCore::SecurityOrigin>&);
-    operator WTF::PassRefPtr<WebCore::SecurityOrigin>() const;
-    WebCore::SecurityOrigin* get() const;
+    WebSecurityOrigin(const WTF::PassRefPtr<SecurityOrigin>&);
+    WebSecurityOrigin& operator=(const WTF::PassRefPtr<SecurityOrigin>&);
+    operator WTF::PassRefPtr<SecurityOrigin>() const;
+    SecurityOrigin* get() const;
 #endif
 
 private:

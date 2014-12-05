@@ -35,10 +35,12 @@
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
 #include "core/frame/LocalFrame.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 #include "core/rendering/RenderObject.h"
+#include "core/rendering/RenderText.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 

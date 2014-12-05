@@ -29,46 +29,35 @@
 #ifndef AXListBoxOption_h
 #define AXListBoxOption_h
 
-#include "core/accessibility/AXObject.h"
+#include "core/accessibility/AXRenderObject.h"
 #include "core/html/HTMLElement.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXListBox;
-class Element;
-class HTMLElement;
 class HTMLSelectElement;
 
-class AXListBoxOption FINAL : public AXObject {
+class AXListBoxOption final : public AXRenderObject {
 
 private:
-    AXListBoxOption();
+    AXListBoxOption(RenderObject*);
 public:
-    static PassRefPtr<AXListBoxOption> create();
+    static PassRefPtr<AXListBoxOption> create(RenderObject*);
     virtual ~AXListBoxOption();
 
-    void setHTMLElement(HTMLElement* element) { m_optionElement = element; }
-
-    virtual AccessibilityRole roleValue() const OVERRIDE { return ListBoxOptionRole; }
-    virtual bool isSelected() const OVERRIDE;
-    virtual bool isEnabled() const OVERRIDE;
-    virtual bool isSelectedOptionActive() const OVERRIDE;
-    virtual String stringValue() const OVERRIDE;
-    virtual Element* actionElement() const OVERRIDE;
-    virtual Node* node() const OVERRIDE { return m_optionElement; }
-    virtual void setSelected(bool) OVERRIDE;
-    virtual bool canSetSelectedAttribute() const OVERRIDE;
-
-    virtual LayoutRect elementRect() const OVERRIDE;
-    virtual AXObject* parentObject() const OVERRIDE;
+    virtual AccessibilityRole roleValue() const override { return ListBoxOptionRole; }
+    virtual bool isSelected() const override;
+    virtual bool isEnabled() const override;
+    virtual bool isSelectedOptionActive() const override;
+    virtual void setSelected(bool) override;
+    virtual bool canSetSelectedAttribute() const override;
+    virtual String stringValue() const override;
+    virtual String title() const override { return String(); }
 
 private:
-    HTMLElement* m_optionElement;
-
-    virtual bool isListBoxOption() const OVERRIDE { return true; }
-    virtual bool canHaveChildren() const OVERRIDE { return false; }
-    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
+    virtual bool isListBoxOption() const override { return true; }
+    virtual bool canHaveChildren() const override { return false; }
+    virtual bool computeAccessibilityIsIgnored() const override;
 
     HTMLSelectElement* listBoxOptionParentNode() const;
     int listBoxOptionIndex() const;
@@ -77,6 +66,6 @@ private:
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXListBoxOption, isListBoxOption());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXListBoxOption_h

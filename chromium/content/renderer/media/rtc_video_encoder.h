@@ -35,33 +35,35 @@ namespace content {
 // webrtc::VideoEncoder class for WebRTC.  Internally, VEA methods are
 // trampolined to a private RTCVideoEncoder::Impl instance.  The Impl class runs
 // on the worker thread queried from the |gpu_factories_|, which is presently
-// the media thread.  RTCVideoEncoder itself is run and destroyed on the thread
-// it is constructed on, which is presently the libjingle worker thread.
-// Callbacks from the Impl due to its VEA::Client notifications are also posted
-// back to RTCVideoEncoder on this thread.
+// the media thread.  RTCVideoEncoder is sychronized by webrtc::VideoSender.
+// webrtc::VideoEncoder methods do not run concurrently. RTCVideoEncoder is run
+// and destroyed on the thread it is constructed on, which is presently the
+// libjingle worker thread. Encode is run on ViECaptureThread. SetRates and
+// SetChannelParameters are run on ProcessThread or the libjingle worker thread.
+// Callbacks from the Impl due to its VEA::Client notifications are posted back
+// to RTCVideoEncoder on the libjingle worker thread.
 class CONTENT_EXPORT RTCVideoEncoder
     : NON_EXPORTED_BASE(public webrtc::VideoEncoder) {
  public:
   RTCVideoEncoder(
       webrtc::VideoCodecType type,
-      media::VideoCodecProfile profile,
       const scoped_refptr<media::GpuVideoAcceleratorFactories>& gpu_factories);
-  virtual ~RTCVideoEncoder();
+  ~RTCVideoEncoder() override;
 
   // webrtc::VideoEncoder implementation.  Tasks are posted to |impl_| using the
   // appropriate VEA methods.
-  virtual int32_t InitEncode(const webrtc::VideoCodec* codec_settings,
-                             int32_t number_of_cores,
-                             uint32_t max_payload_size) OVERRIDE;
-  virtual int32_t Encode(
+  int32_t InitEncode(const webrtc::VideoCodec* codec_settings,
+                     int32_t number_of_cores,
+                     uint32_t max_payload_size) override;
+  int32_t Encode(
       const webrtc::I420VideoFrame& input_image,
       const webrtc::CodecSpecificInfo* codec_specific_info,
-      const std::vector<webrtc::VideoFrameType>* frame_types) OVERRIDE;
-  virtual int32_t RegisterEncodeCompleteCallback(
-      webrtc::EncodedImageCallback* callback) OVERRIDE;
-  virtual int32_t Release() OVERRIDE;
-  virtual int32_t SetChannelParameters(uint32_t packet_loss, int rtt) OVERRIDE;
-  virtual int32_t SetRates(uint32_t new_bit_rate, uint32_t frame_rate) OVERRIDE;
+      const std::vector<webrtc::VideoFrameType>* frame_types) override;
+  int32_t RegisterEncodeCompleteCallback(
+      webrtc::EncodedImageCallback* callback) override;
+  int32_t Release() override;
+  int32_t SetChannelParameters(uint32_t packet_loss, int rtt) override;
+  int32_t SetRates(uint32_t new_bit_rate, uint32_t frame_rate) override;
 
  private:
   class Impl;
@@ -74,15 +76,13 @@ class CONTENT_EXPORT RTCVideoEncoder
 
   void NotifyError(int32_t error);
 
-  void RecordInitEncodeUMA(int32_t init_retval);
+  void RecordInitEncodeUMA(int32_t init_retval,
+                           media::VideoCodecProfile profile);
 
   base::ThreadChecker thread_checker_;
 
   // The video codec type, as reported to WebRTC.
   const webrtc::VideoCodecType video_codec_type_;
-
-  // The video codec profile, to configure the encoder to encode to.
-  const media::VideoCodecProfile video_codec_profile_;
 
   // Factory for creating VEAs, shared memory buffers, etc.
   scoped_refptr<media::GpuVideoAcceleratorFactories> gpu_factories_;

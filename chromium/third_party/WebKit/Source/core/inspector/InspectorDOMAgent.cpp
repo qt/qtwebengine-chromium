@@ -31,8 +31,9 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMAgent.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptEventListener.h"
+#include "core/InputTypeNames.h"
 #include "core/dom/Attr.h"
 #include "core/dom/CharacterData.h"
 #include "core/dom/ContainerNode.h"
@@ -42,7 +43,6 @@
 #include "core/dom/DocumentType.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
-#include "core/dom/NodeTraversal.h"
 #include "core/dom/PseudoElement.h"
 #include "core/dom/StaticNodeList.h"
 #include "core/dom/Text.h"
@@ -83,7 +83,7 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -180,18 +180,19 @@ static Node* hoveredNodeForEvent(LocalFrame* frame, const PlatformTouchEvent& ev
     return hoveredNodeForPoint(frame, roundedIntPoint(points[0].pos()), ignorePointerEventsNone);
 }
 
-class RevalidateStyleAttributeTask {
-    WTF_MAKE_FAST_ALLOCATED;
+class RevalidateStyleAttributeTask final : public NoBaseWillBeGarbageCollectedFinalized<RevalidateStyleAttributeTask> {
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    RevalidateStyleAttributeTask(InspectorDOMAgent*);
+    explicit RevalidateStyleAttributeTask(InspectorDOMAgent*);
     void scheduleFor(Element*);
     void reset() { m_timer.stop(); }
     void onTimer(Timer<RevalidateStyleAttributeTask>*);
+    void trace(Visitor*);
 
 private:
-    InspectorDOMAgent* m_domAgent;
+    RawPtrWillBeMember<InspectorDOMAgent> m_domAgent;
     Timer<RevalidateStyleAttributeTask> m_timer;
-    WillBePersistentHeapHashSet<RefPtrWillBeMember<Element> > m_elements;
+    WillBeHeapHashSet<RefPtrWillBeMember<Element> > m_elements;
 };
 
 RevalidateStyleAttributeTask::RevalidateStyleAttributeTask(InspectorDOMAgent* domAgent)
@@ -218,6 +219,14 @@ void RevalidateStyleAttributeTask::onTimer(Timer<RevalidateStyleAttributeTask>*)
     m_elements.clear();
 }
 
+void RevalidateStyleAttributeTask::trace(Visitor* visitor)
+{
+    visitor->trace(m_domAgent);
+#if ENABLE(OILPAN)
+    visitor->trace(m_elements);
+#endif
+}
+
 String InspectorDOMAgent::toErrorString(ExceptionState& exceptionState)
 {
     if (exceptionState.hadException())
@@ -231,19 +240,21 @@ InspectorDOMAgent::InspectorDOMAgent(InspectorPageAgent* pageAgent, InjectedScri
     , m_injectedScriptManager(injectedScriptManager)
     , m_overlay(overlay)
     , m_frontend(0)
-    , m_domListener(0)
+    , m_domListener(nullptr)
     , m_documentNodeToIdMap(adoptPtrWillBeNoop(new NodeToIdMap()))
     , m_lastNodeId(1)
     , m_searchingForNode(NotSearching)
     , m_suppressAttributeModifiedEvent(false)
-    , m_listener(0)
+    , m_listener(nullptr)
 {
 }
 
 InspectorDOMAgent::~InspectorDOMAgent()
 {
+#if !ENABLE(OILPAN)
     reset();
     ASSERT(m_searchingForNode == NotSearching);
+#endif
 }
 
 void InspectorDOMAgent::setFrontend(InspectorFrontend* frontend)
@@ -276,14 +287,14 @@ void InspectorDOMAgent::clearFrontend()
 
 void InspectorDOMAgent::restore()
 {
-    // Reset document to avoid early return from setDocument.
-    m_document = nullptr;
-    setDocument(m_pageAgent->mainFrame()->document());
+    if (!enabled())
+        return;
+    innerEnable();
 }
 
-Vector<Document*> InspectorDOMAgent::documents()
+WillBeHeapVector<RawPtrWillBeMember<Document> > InspectorDOMAgent::documents()
 {
-    Vector<Document*> result;
+    WillBeHeapVector<RawPtrWillBeMember<Document> > result;
     for (Frame* frame = m_document->frame(); frame; frame = frame->tree().traverseNext()) {
         if (!frame->isLocalFrame())
             continue;
@@ -467,6 +478,18 @@ Node* InspectorDOMAgent::assertEditableNode(ErrorString* errorString, int nodeId
     return node;
 }
 
+Node* InspectorDOMAgent::assertEditableChildNode(ErrorString* errorString, Element* parentElement, int nodeId)
+{
+    Node* node = assertEditableNode(errorString, nodeId);
+    if (!node)
+        return 0;
+    if (node->parentNode() != parentElement) {
+        *errorString = "Anchor node must be child of the target element";
+        return 0;
+    }
+    return node;
+}
+
 Element* InspectorDOMAgent::assertEditableElement(ErrorString* errorString, int nodeId)
 {
     Element* element = assertElement(errorString, nodeId);
@@ -486,13 +509,20 @@ Element* InspectorDOMAgent::assertEditableElement(ErrorString* errorString, int 
     return element;
 }
 
+void InspectorDOMAgent::innerEnable()
+{
+    m_state->setBoolean(DOMAgentState::domAgentEnabled, true);
+    m_document = nullptr;
+    setDocument(m_pageAgent->mainFrame()->document());
+    if (m_listener)
+        m_listener->domAgentWasEnabled();
+}
+
 void InspectorDOMAgent::enable(ErrorString*)
 {
     if (enabled())
         return;
-    m_state->setBoolean(DOMAgentState::domAgentEnabled, true);
-    if (m_listener)
-        m_listener->domAgentWasEnabled();
+    innerEnable();
 }
 
 bool InspectorDOMAgent::enabled() const
@@ -500,10 +530,13 @@ bool InspectorDOMAgent::enabled() const
     return m_state->getBoolean(DOMAgentState::domAgentEnabled);
 }
 
-void InspectorDOMAgent::disable(ErrorString*)
+void InspectorDOMAgent::disable(ErrorString* errorString)
 {
-    if (!enabled())
+    if (!enabled()) {
+        if (errorString)
+            *errorString = "DOM agent hasn't been enabled";
         return;
+    }
     m_state->setBoolean(DOMAgentState::domAgentEnabled, false);
     reset();
     if (m_listener)
@@ -513,7 +546,8 @@ void InspectorDOMAgent::disable(ErrorString*)
 void InspectorDOMAgent::getDocument(ErrorString* errorString, RefPtr<TypeBuilder::DOM::Node>& root)
 {
     // Backward compatibility. Mark agent as enabled when it requests document.
-    enable(errorString);
+    if (!enabled())
+        innerEnable();
 
     if (!m_document) {
         *errorString = "Document is not available";
@@ -621,7 +655,7 @@ void InspectorDOMAgent::querySelectorAll(ErrorString* errorString, int nodeId, c
         return;
 
     TrackExceptionState exceptionState;
-    RefPtrWillBeRawPtr<StaticNodeList> nodes = toContainerNode(node)->querySelectorAll(AtomicString(selectors), exceptionState);
+    RefPtrWillBeRawPtr<StaticElementList> elements = toContainerNode(node)->querySelectorAll(AtomicString(selectors), exceptionState);
     if (exceptionState.hadException()) {
         *errorString = "DOM Error while querying";
         return;
@@ -629,8 +663,8 @@ void InspectorDOMAgent::querySelectorAll(ErrorString* errorString, int nodeId, c
 
     result = TypeBuilder::Array<int>::create();
 
-    for (unsigned i = 0; i < nodes->length(); ++i)
-        result->addItem(pushNodePathToFrontend(nodes->item(i)));
+    for (unsigned i = 0; i < elements->length(); ++i)
+        result->addItem(pushNodePathToFrontend(elements->item(i)));
 }
 
 int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
@@ -639,8 +673,7 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
 
     if (!m_document)
         return 0;
-    // FIXME: Oilpan: .get will be unnecessary if m_document is a Member<>.
-    if (!m_documentNodeToIdMap->contains(m_document.get()))
+    if (!m_documentNodeToIdMap->contains(m_document))
         return 0;
 
     // Return id in case the node is known.
@@ -649,7 +682,7 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
         return result;
 
     Node* node = nodeToPush;
-    Vector<Node*> path;
+    WillBeHeapVector<RawPtrWillBeMember<Node> > path;
     NodeToIdMap* danglingMap = 0;
 
     while (true) {
@@ -673,7 +706,7 @@ int InspectorDOMAgent::pushNodePathToFrontend(Node* nodeToPush)
 
     NodeToIdMap* map = danglingMap ? danglingMap : m_documentNodeToIdMap.get();
     for (int i = path.size() - 1; i >= 0; --i) {
-        int nodeId = map->get(path.at(i));
+        int nodeId = map->get(path.at(i).get());
         ASSERT(nodeId);
         pushChildNodesToFrontend(nodeId);
     }
@@ -718,15 +751,15 @@ void InspectorDOMAgent::setAttributesAsText(ErrorString* errorString, int elemen
 
     String caseAdjustedName = name ? (shouldIgnoreCase ? name->lower() : *name) : String();
 
-    if (!parsedElement->hasAttributes() && name) {
+    AttributeCollection attributes = parsedElement->attributes();
+    if (attributes.isEmpty() && name) {
         m_domEditor->removeAttribute(element, caseAdjustedName, errorString);
         return;
     }
 
     bool foundOriginalAttribute = false;
-    AttributeCollection attributes = parsedElement->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         // Add attribute pair
         String attributeName = it->name().toString();
         if (shouldIgnoreCase)
@@ -781,8 +814,7 @@ void InspectorDOMAgent::setNodeName(ErrorString* errorString, int nodeId, const 
     newElem->cloneAttributesFromElement(*toElement(oldNode));
 
     // Copy over the original node's children.
-    Node* child;
-    while ((child = oldNode->firstChild())) {
+    for (Node* child = oldNode->firstChild(); child; child = oldNode->firstChild()) {
         if (!m_domEditor->insertBefore(newElem.get(), child, 0, errorString))
             return;
     }
@@ -926,12 +958,52 @@ void InspectorDOMAgent::getEventListeners(EventTarget* target, Vector<EventListe
     }
 }
 
-void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrimmedQuery, String* searchId, int* resultCount)
+static Node* nextNodeWithShadowDOMInMind(const Node& current, const Node* stayWithin, bool includeUserAgentShadowDOM)
+{
+    // At first traverse the subtree.
+    if (current.isElementNode()) {
+        const Element& element = toElement(current);
+        ElementShadow* elementShadow = element.shadow();
+        if (elementShadow) {
+            ShadowRoot* shadowRoot = elementShadow->youngestShadowRoot();
+            if (shadowRoot) {
+                if (shadowRoot->type() == ShadowRoot::AuthorShadowRoot || includeUserAgentShadowDOM)
+                    return shadowRoot;
+            }
+        }
+    }
+    if (current.hasChildren())
+        return current.firstChild();
+
+    // Then traverse siblings of the node itself and its ancestors.
+    const Node* node = &current;
+    do {
+        if (node == stayWithin)
+            return 0;
+        if (node->isShadowRoot()) {
+            const ShadowRoot* shadowRoot = toShadowRoot(node);
+            if (shadowRoot->olderShadowRoot())
+                return shadowRoot->olderShadowRoot();
+            Node* host = shadowRoot->host();
+            if (host && host->hasChildren())
+                return host->firstChild();
+        }
+        if (node->nextSibling())
+            return node->nextSibling();
+        node = node->isShadowRoot() ? toShadowRoot(node)->host() : node->parentNode();
+    } while (node);
+
+    return 0;
+}
+
+void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrimmedQuery, const bool* optionalIncludeUserAgentShadowDOM, String* searchId, int* resultCount)
 {
     // FIXME: Few things are missing here:
     // 1) Search works with node granularity - number of matches within node is not calculated.
     // 2) There is no need to push all search results to the front-end at a time, pushing next / previous result
     //    is sufficient.
+
+    bool includeUserAgentShadowDOM = optionalIncludeUserAgentShadowDOM ? *optionalIncludeUserAgentShadowDOM : false;
 
     unsigned queryLength = whitespaceTrimmedQuery.length();
     bool startTagFound = !whitespaceTrimmedQuery.find('<');
@@ -951,17 +1023,18 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
     if (endQuoteFound)
         attributeQuery = attributeQuery.left(attributeQuery.length() - 1);
 
-    Vector<Document*> docs = documents();
-    ListHashSet<Node*> resultCollector;
+    WillBeHeapVector<RawPtrWillBeMember<Document> > docs = documents();
+    WillBeHeapListHashSet<RawPtrWillBeMember<Node> > resultCollector;
 
-    for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
+    for (WillBeHeapVector<RawPtrWillBeMember<Document> >::iterator it = docs.begin(); it != docs.end(); ++it) {
         Document* document = *it;
-        Node* node = document->documentElement();
+        Node* documentElement = document->documentElement();
+        Node* node = documentElement;
         if (!node)
             continue;
 
         // Manual plain text search.
-        while ((node = NodeTraversal::next(*node, document->documentElement()))) {
+        for (node = nextNodeWithShadowDOMInMind(*node, documentElement, includeUserAgentShadowDOM); node; node = nextNodeWithShadowDOMInMind(*node, documentElement, includeUserAgentShadowDOM)) {
             switch (node->nodeType()) {
             case Node::TEXT_NODE:
             case Node::COMMENT_NODE:
@@ -981,12 +1054,9 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
                 }
                 // Go through all attributes and serialize them.
                 const Element* element = toElement(node);
-                if (!element->hasAttributes())
-                    break;
-
                 AttributeCollection attributes = element->attributes();
-                AttributeCollection::const_iterator end = attributes.end();
-                for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+                AttributeCollection::iterator end = attributes.end();
+                for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
                     // Add attribute pair
                     if (it->localName().find(whitespaceTrimmedQuery, 0, false) != kNotFound) {
                         resultCollector.add(node);
@@ -1008,7 +1078,7 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
         }
 
         // XPath evaluation
-        for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
+        for (WillBeHeapVector<RawPtrWillBeMember<Document> >::iterator it = docs.begin(); it != docs.end(); ++it) {
             Document* document = *it;
             ASSERT(document);
             TrackExceptionState exceptionState;
@@ -1029,23 +1099,23 @@ void InspectorDOMAgent::performSearch(ErrorString*, const String& whitespaceTrim
         }
 
         // Selector evaluation
-        for (Vector<Document*>::iterator it = docs.begin(); it != docs.end(); ++it) {
+        for (WillBeHeapVector<RawPtrWillBeMember<Document> >::iterator it = docs.begin(); it != docs.end(); ++it) {
             Document* document = *it;
             TrackExceptionState exceptionState;
-            RefPtrWillBeRawPtr<StaticNodeList> nodeList = document->querySelectorAll(AtomicString(whitespaceTrimmedQuery), exceptionState);
-            if (exceptionState.hadException() || !nodeList)
+            RefPtrWillBeRawPtr<StaticElementList> elementList = document->querySelectorAll(AtomicString(whitespaceTrimmedQuery), exceptionState);
+            if (exceptionState.hadException() || !elementList)
                 continue;
 
-            unsigned size = nodeList->length();
+            unsigned size = elementList->length();
             for (unsigned i = 0; i < size; ++i)
-                resultCollector.add(nodeList->item(i));
+                resultCollector.add(elementList->item(i));
         }
     }
 
     *searchId = IdentifiersFactory::createIdentifier();
     WillBeHeapVector<RefPtrWillBeMember<Node> >* resultsIt = &m_searchResults.add(*searchId, WillBeHeapVector<RefPtrWillBeMember<Node> >()).storedValue->value;
 
-    for (ListHashSet<Node*>::iterator it = resultCollector.begin(); it != resultCollector.end(); ++it)
+    for (WillBeHeapListHashSet<RawPtrWillBeMember<Node> >::iterator it = resultCollector.begin(); it != resultCollector.end(); ++it)
         resultsIt->append(*it);
 
     *resultCount = resultsIt->size();
@@ -1130,13 +1200,13 @@ void InspectorDOMAgent::inspect(Node* inspectedNode)
         m_frontend->inspectNodeRequested(nodeId);
 }
 
-void InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEvent& event)
+bool InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEvent& event)
 {
     if (m_searchingForNode == NotSearching)
-        return;
+        return false;
 
     if (!frame->view() || !frame->contentRenderer())
-        return;
+        return true;
     Node* node = hoveredNodeForEvent(frame, event, event.shiftKey());
 
     // Do not highlight within UA shadow root unless requested.
@@ -1151,7 +1221,7 @@ void InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEv
         node = node->parentOrShadowHostNode();
 
     if (!node)
-        return;
+        return true;
 
     Node* eventTarget = event.shiftKey() ? hoveredNodeForEvent(frame, event, false) : 0;
     if (eventTarget == node)
@@ -1159,6 +1229,7 @@ void InspectorDOMAgent::handleMouseMove(LocalFrame* frame, const PlatformMouseEv
 
     if (node && m_inspectModeHighlightConfig)
         m_overlay->highlightNode(node, eventTarget, *m_inspectModeHighlightConfig, event.ctrlKey() || event.metaKey());
+    return true;
 }
 
 void InspectorDOMAgent::setSearchingForNode(ErrorString* errorString, SearchMode searchMode, JSONObject* highlightInspectorObject)
@@ -1190,12 +1261,18 @@ PassOwnPtr<HighlightConfig> InspectorDOMAgent::highlightConfigFromInspectorObjec
     bool showRulers = false; // Default: false (do not show rulers).
     highlightInspectorObject->getBoolean("showRulers", &showRulers);
     highlightConfig->showRulers = showRulers;
+    bool showExtensionLines = false; // Default: false (do not show extension lines).
+    highlightInspectorObject->getBoolean("showExtensionLines", &showExtensionLines);
+    highlightConfig->showExtensionLines = showExtensionLines;
     highlightConfig->content = parseConfigColor("contentColor", highlightInspectorObject);
     highlightConfig->contentOutline = parseConfigColor("contentOutlineColor", highlightInspectorObject);
     highlightConfig->padding = parseConfigColor("paddingColor", highlightInspectorObject);
     highlightConfig->border = parseConfigColor("borderColor", highlightInspectorObject);
     highlightConfig->margin = parseConfigColor("marginColor", highlightInspectorObject);
     highlightConfig->eventTarget = parseConfigColor("eventTargetColor", highlightInspectorObject);
+    highlightConfig->shape = parseConfigColor("shapeColor", highlightInspectorObject);
+    highlightConfig->shapeMargin = parseConfigColor("shapeMarginColor", highlightInspectorObject);
+
     return highlightConfig.release();
 }
 
@@ -1203,7 +1280,7 @@ void InspectorDOMAgent::setInspectModeEnabled(ErrorString* errorString, bool ena
 {
     if (enabled && !pushDocumentUponHandlelessOperation(errorString))
         return;
-    SearchMode searchMode = enabled ? (inspectUAShadowDOM && *inspectUAShadowDOM ? SearchingForUAShadow : SearchingForNormal) : NotSearching;
+    SearchMode searchMode = enabled ? (asBool(inspectUAShadowDOM) ? SearchingForUAShadow : SearchingForNormal) : NotSearching;
     setSearchingForNode(errorString, searchMode, highlightConfig ? highlightConfig->get() : 0);
 }
 
@@ -1276,7 +1353,7 @@ void InspectorDOMAgent::hideHighlight(ErrorString*)
     m_overlay->hideHighlight();
 }
 
-void InspectorDOMAgent::moveTo(ErrorString* errorString, int nodeId, int targetElementId, const int* const anchorNodeId, int* newNodeId)
+void InspectorDOMAgent::copyTo(ErrorString* errorString, int nodeId, int targetElementId, const int* const anchorNodeId, int* newNodeId)
 {
     Node* node = assertEditableNode(errorString, nodeId);
     if (!node)
@@ -1288,13 +1365,47 @@ void InspectorDOMAgent::moveTo(ErrorString* errorString, int nodeId, int targetE
 
     Node* anchorNode = 0;
     if (anchorNodeId && *anchorNodeId) {
-        anchorNode = assertEditableNode(errorString, *anchorNodeId);
+        anchorNode = assertEditableChildNode(errorString, targetElement, *anchorNodeId);
         if (!anchorNode)
             return;
-        if (anchorNode->parentNode() != targetElement) {
-            *errorString = "Anchor node must be child of the target element";
+    }
+
+    // The clone is deep by default.
+    RefPtrWillBeRawPtr<Node> clonedNode = node->cloneNode(true);
+    if (!clonedNode) {
+        *errorString = "Failed to clone node";
+        return;
+    }
+    if (!m_domEditor->insertBefore(targetElement, clonedNode, anchorNode, errorString))
+        return;
+
+    *newNodeId = pushNodePathToFrontend(clonedNode.get());
+}
+
+void InspectorDOMAgent::moveTo(ErrorString* errorString, int nodeId, int targetElementId, const int* const anchorNodeId, int* newNodeId)
+{
+    Node* node = assertEditableNode(errorString, nodeId);
+    if (!node)
+        return;
+
+    Element* targetElement = assertEditableElement(errorString, targetElementId);
+    if (!targetElement)
+        return;
+
+    Node* current = targetElement;
+    while (current) {
+        if (current == node) {
+            *errorString = "Unable to move node into self or descendant";
             return;
         }
+        current = current->parentNode();
+    }
+
+    Node* anchorNode = 0;
+    if (anchorNodeId && *anchorNodeId) {
+        anchorNode = assertEditableChildNode(errorString, targetElement, *anchorNodeId);
+        if (!anchorNode)
+            return;
     }
 
     if (!m_domEditor->insertBefore(targetElement, node, anchorNode, errorString))
@@ -1341,12 +1452,12 @@ void InspectorDOMAgent::setFileInputFiles(ErrorString* errorString, int nodeId, 
     Node* node = assertNode(errorString, nodeId);
     if (!node)
         return;
-    if (!isHTMLInputElement(*node) || !toHTMLInputElement(*node).isFileUpload()) {
+    if (!isHTMLInputElement(*node) || toHTMLInputElement(*node).type() != InputTypeNames::file) {
         *errorString = "Node is not a file input element";
         return;
     }
 
-    RefPtrWillBeRawPtr<FileList> fileList = FileList::create();
+    FileList* fileList = FileList::create();
     for (JSONArray::const_iterator iter = files->begin(); iter != files->end(); ++iter) {
         String path;
         if (!(*iter)->asString(&path)) {
@@ -1358,58 +1469,28 @@ void InspectorDOMAgent::setFileInputFiles(ErrorString* errorString, int nodeId, 
     toHTMLInputElement(node)->setFiles(fileList);
 }
 
-static RefPtr<TypeBuilder::Array<double> > buildArrayForQuad(const FloatQuad& quad)
-{
-    RefPtr<TypeBuilder::Array<double> > array = TypeBuilder::Array<double>::create();
-    array->addItem(quad.p1().x());
-    array->addItem(quad.p1().y());
-    array->addItem(quad.p2().x());
-    array->addItem(quad.p2().y());
-    array->addItem(quad.p3().x());
-    array->addItem(quad.p3().y());
-    array->addItem(quad.p4().x());
-    array->addItem(quad.p4().y());
-    return array.release();
-}
-
 void InspectorDOMAgent::getBoxModel(ErrorString* errorString, int nodeId, RefPtr<TypeBuilder::DOM::BoxModel>& model)
 {
     Node* node = assertNode(errorString, nodeId);
     if (!node)
         return;
 
-    Vector<FloatQuad> quads;
-    bool isInlineOrBox = m_overlay->getBoxModel(node, &quads);
-    if (!isInlineOrBox) {
+    bool result = m_overlay->getBoxModel(node, model);
+    if (!result)
         *errorString = "Could not compute box model.";
-        return;
-    }
 
-    RenderObject* renderer = node->renderer();
-    LocalFrame* frame = node->document().frame();
-    FrameView* view = frame->view();
-
-    IntRect boundingBox = pixelSnappedIntRect(view->contentsToRootView(renderer->absoluteBoundingBoxRect()));
-    RenderBoxModelObject* modelObject = renderer->isBoxModelObject() ? toRenderBoxModelObject(renderer) : 0;
-    RefPtr<TypeBuilder::DOM::ShapeOutsideInfo> shapeOutsideInfo = m_overlay->buildObjectForShapeOutside(node);
-
-    model = TypeBuilder::DOM::BoxModel::create()
-        .setContent(buildArrayForQuad(quads.at(3)))
-        .setPadding(buildArrayForQuad(quads.at(2)))
-        .setBorder(buildArrayForQuad(quads.at(1)))
-        .setMargin(buildArrayForQuad(quads.at(0)))
-        .setWidth(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetWidth(), modelObject) : boundingBox.width())
-        .setHeight(modelObject ? adjustForAbsoluteZoom(modelObject->pixelSnappedOffsetHeight(), modelObject) : boundingBox.height());
-    if (shapeOutsideInfo)
-        model->setShapeOutside(shapeOutsideInfo);
 }
 
 void InspectorDOMAgent::getNodeForLocation(ErrorString* errorString, int x, int y, int* nodeId)
 {
     if (!pushDocumentUponHandlelessOperation(errorString))
         return;
-
-    Node* node = hoveredNodeForPoint(m_document->frame(), IntPoint(x, y), false);
+    HitTestRequest request(HitTestRequest::Move | HitTestRequest::ReadOnly | HitTestRequest::AllowChildFrameContent);
+    HitTestResult result(IntPoint(x, y));
+    m_document->frame()->contentRenderer()->hitTest(request, result);
+    Node* node = result.innerPossiblyPseudoNode();
+    while (node && node->nodeType() == Node::TEXT_NODE)
+        node = node->parentNode();
     if (!node) {
         *errorString = "No node found at given location";
         return;
@@ -1480,7 +1561,6 @@ static TypeBuilder::DOM::ShadowRootType::Enum shadowRootType(ShadowRoot* shadowR
 PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* node, int depth, NodeToIdMap* nodesMap)
 {
     int id = bind(node, nodesMap);
-    String nodeName;
     String localName;
     String nodeValue;
 
@@ -1493,13 +1573,10 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
             nodeValue = nodeValue.left(maxTextSize) + ellipsisUChar;
         break;
     case Node::ATTRIBUTE_NODE:
-        localName = node->localName();
-        break;
     case Node::DOCUMENT_FRAGMENT_NODE:
     case Node::DOCUMENT_NODE:
     case Node::ELEMENT_NODE:
     default:
-        nodeName = node->nodeName();
         localName = node->localName();
         break;
     }
@@ -1507,7 +1584,7 @@ PassRefPtr<TypeBuilder::DOM::Node> InspectorDOMAgent::buildObjectForNode(Node* n
     RefPtr<TypeBuilder::DOM::Node> value = TypeBuilder::DOM::Node::create()
         .setNodeId(id)
         .setNodeType(static_cast<int>(node->nodeType()))
-        .setNodeName(nodeName)
+        .setNodeName(node->nodeName())
         .setLocalName(localName)
         .setNodeValue(nodeValue);
 
@@ -1598,11 +1675,9 @@ PassRefPtr<TypeBuilder::Array<String> > InspectorDOMAgent::buildArrayForElementA
 {
     RefPtr<TypeBuilder::Array<String> > attributesValue = TypeBuilder::Array<String>::create();
     // Go through all attributes and serialize them.
-    if (!element->hasAttributes())
-        return attributesValue.release();
     AttributeCollection attributes = element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
+    AttributeCollection::iterator end = attributes.end();
+    for (AttributeCollection::iterator it = attributes.begin(); it != end; ++it) {
         // Add attribute pair
         attributesValue->addItem(it->name().toString());
         attributesValue->addItem(it->value());
@@ -1640,13 +1715,15 @@ PassRefPtr<TypeBuilder::DOM::EventListener> InspectorDOMAgent::buildObjectForEve
     String sourceName;
     String scriptId;
     int lineNumber;
-    if (!eventListenerHandlerLocation(&node->document(), eventListener.get(), sourceName, scriptId, lineNumber))
+    int columnNumber;
+    if (!eventListenerHandlerLocation(&node->document(), eventListener.get(), sourceName, scriptId, lineNumber, columnNumber))
         return nullptr;
 
     Document& document = node->document();
     RefPtr<TypeBuilder::Debugger::Location> location = TypeBuilder::Debugger::Location::create()
         .setScriptId(scriptId)
         .setLineNumber(lineNumber);
+    location->setColumnNumber(columnNumber);
     RefPtr<TypeBuilder::DOM::EventListener> value = TypeBuilder::DOM::EventListener::create()
         .setType(eventType)
         .setUseCapture(registeredEventListener.useCapture)
@@ -1753,7 +1830,7 @@ void InspectorDOMAgent::domContentLoadedEventFired(LocalFrame* frame)
 
 void InspectorDOMAgent::invalidateFrameOwnerElement(LocalFrame* frame)
 {
-    Element* frameOwner = frame->document()->ownerElement();
+    HTMLFrameOwnerElement* frameOwner = frame->document()->ownerElement();
     if (!frameOwner)
         return;
 
@@ -1847,7 +1924,7 @@ void InspectorDOMAgent::willModifyDOMAttr(Element*, const AtomicString& oldValue
     m_suppressAttributeModifiedEvent = (oldValue == newValue);
 }
 
-void InspectorDOMAgent::didModifyDOMAttr(Element* element, const AtomicString& name, const AtomicString& value)
+void InspectorDOMAgent::didModifyDOMAttr(Element* element, const String& name, const AtomicString& value)
 {
     bool shouldSuppressEvent = m_suppressAttributeModifiedEvent;
     m_suppressAttributeModifiedEvent = false;
@@ -1865,7 +1942,7 @@ void InspectorDOMAgent::didModifyDOMAttr(Element* element, const AtomicString& n
     m_frontend->attributeModified(id, name, value);
 }
 
-void InspectorDOMAgent::didRemoveDOMAttr(Element* element, const AtomicString& name)
+void InspectorDOMAgent::didRemoveDOMAttr(Element* element, const String& name)
 {
     int id = boundNodeId(element);
     // If node is not mapped yet -> ignore the event.
@@ -1914,7 +1991,7 @@ void InspectorDOMAgent::didInvalidateStyleAttr(Node* node)
         return;
 
     if (!m_revalidateStyleAttrTask)
-        m_revalidateStyleAttrTask = adoptPtr(new RevalidateStyleAttributeTask(this));
+        m_revalidateStyleAttrTask = adoptPtrWillBeNoop(new RevalidateStyleAttributeTask(this));
     m_revalidateStyleAttrTask->scheduleFor(toElement(node));
 }
 
@@ -2008,7 +2085,7 @@ Node* InspectorDOMAgent::nodeForPath(const String& path)
 
     Node* node = m_document.get();
     Vector<String> pathTokens;
-    path.split(",", false, pathTokens);
+    path.split(',', pathTokens);
     if (!pathTokens.size())
         return 0;
     for (size_t i = 0; i < pathTokens.size() - 1; i += 2) {
@@ -2094,8 +2171,7 @@ PassRefPtr<TypeBuilder::Runtime::RemoteObject> InspectorDOMAgent::resolveNode(No
 
 bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorString)
 {
-    // FIXME: Oilpan: .get will be unnecessary if m_document is a Member<>.
-    if (!m_documentNodeToIdMap->contains(m_document.get())) {
+    if (!m_documentNodeToIdMap->contains(m_document)) {
         RefPtr<TypeBuilder::DOM::Node> root;
         getDocument(errorString, root);
         return errorString->isEmpty();
@@ -2103,5 +2179,25 @@ bool InspectorDOMAgent::pushDocumentUponHandlelessOperation(ErrorString* errorSt
     return true;
 }
 
-} // namespace WebCore
+void InspectorDOMAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_domListener);
+    visitor->trace(m_pageAgent);
+    visitor->trace(m_injectedScriptManager);
+#if ENABLE(OILPAN)
+    visitor->trace(m_documentNodeToIdMap);
+    visitor->trace(m_danglingNodeToIdMaps);
+    visitor->trace(m_idToNode);
+    visitor->trace(m_idToNodesMap);
+    visitor->trace(m_document);
+    visitor->trace(m_revalidateStyleAttrTask);
+    visitor->trace(m_searchResults);
+#endif
+    visitor->trace(m_history);
+    visitor->trace(m_domEditor);
+    visitor->trace(m_listener);
+    InspectorBaseAgent::trace(visitor);
+}
+
+} // namespace blink
 

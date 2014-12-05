@@ -10,18 +10,18 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 
-class EventModulesFactory FINAL : public EventFactoryBase {
+class EventModulesFactory final : public EventFactoryBase {
 public:
     static PassOwnPtr<EventModulesFactory> create()
     {
         return adoptPtr(new EventModulesFactory());
     }
 
-    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) override;
 };
 
 }

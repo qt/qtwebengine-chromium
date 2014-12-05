@@ -27,7 +27,7 @@ class SpdyFrameDataFrame : public DataFrame {
     size = spdy_frame->size();
   }
 
-  virtual ~SpdyFrameDataFrame() { delete frame; }
+  ~SpdyFrameDataFrame() override { delete frame; }
 
   const SpdyFrame* frame;
 };
@@ -285,6 +285,8 @@ void SpdySM::OnSynReply(SpdyStreamId stream_id,
 }
 
 void SpdySM::OnHeaders(SpdyStreamId stream_id,
+                       bool has_priority,
+                       SpdyPriority priority,
                        bool fin,
                        const SpdyHeaderBlock& headers) {
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: OnHeaders(" << stream_id << ")";
@@ -294,6 +296,10 @@ void SpdySM::OnRstStream(SpdyStreamId stream_id, SpdyRstStreamStatus status) {
   VLOG(2) << ACCEPTOR_CLIENT_IDENT << "SpdySM: OnRstStream(" << stream_id
           << ")";
   client_output_ordering_.RemoveStreamId(stream_id);
+}
+
+bool SpdySM::OnUnknownFrame(SpdyStreamId stream_id, int frame_type) {
+  return false;
 }
 
 size_t SpdySM::ProcessReadInput(const char* data, size_t len) {

@@ -36,7 +36,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<InputType> URLInputType::create(HTMLInputElement& element)
 {
@@ -68,9 +68,4 @@ String URLInputType::typeMismatchText() const
     return locale().queryString(blink::WebLocalizedString::ValidationTypeMismatchForURL);
 }
 
-bool URLInputType::isURLField() const
-{
-    return true;
-}
-
-} // namespace WebCore
+} // namespace blink

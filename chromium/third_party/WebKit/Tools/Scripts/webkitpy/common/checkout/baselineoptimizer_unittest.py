@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.checkout.baselineoptimizer import BaselineOptimizer
 from webkitpy.common.checkout.scm.scm_mock import MockSCM
@@ -62,10 +62,11 @@ class ExcludingMockSCM(MockSCM):
 class BaselineOptimizerTest(unittest.TestCase):
     def test_move_baselines(self):
         host = MockHost(scm=ExcludingMockSCM(['/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt']))
+        host.filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/VirtualTestSuites', '[]')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/win/another/test-expected.txt', 'result A')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt', 'result A')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/another/test-expected.txt', 'result B')
-        baseline_optimizer = BaselineOptimizer(host, host.port_factory.all_port_names(), skip_scm_commands=False)
+        baseline_optimizer = BaselineOptimizer(host, host.port_factory.get(), host.port_factory.all_port_names(), skip_scm_commands=False)
         baseline_optimizer._move_baselines('another/test-expected.txt', {
             '/mock-checkout/third_party/WebKit/LayoutTests/platform/win': 'aaa',
             '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac': 'aaa',
@@ -77,10 +78,11 @@ class BaselineOptimizerTest(unittest.TestCase):
 
     def test_move_baselines_skip_scm_commands(self):
         host = MockHost(scm=ExcludingMockSCM(['/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt']))
+        host.filesystem.write_text_file('/mock-checkout/third_party/WebKit/LayoutTests/VirtualTestSuites', '[]')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/win/another/test-expected.txt', 'result A')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt', 'result A')
         host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/another/test-expected.txt', 'result B')
-        baseline_optimizer = BaselineOptimizer(host, host.port_factory.all_port_names(), skip_scm_commands=True)
+        baseline_optimizer = BaselineOptimizer(host, host.port_factory.get(), host.port_factory.all_port_names(), skip_scm_commands=True)
         baseline_optimizer._move_baselines('another/test-expected.txt', {
             '/mock-checkout/third_party/WebKit/LayoutTests/platform/win': 'aaa',
             '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac': 'aaa',
@@ -100,17 +102,20 @@ class BaselineOptimizerTest(unittest.TestCase):
             '/mock-checkout/third_party/WebKit/LayoutTests/platform/linux/another/test-expected.txt',
         ])
 
-    def _assertOptimization(self, results_by_directory, expected_new_results_by_directory, baseline_dirname='', expected_files_to_delete=None):
-        host = MockHost()
+    def _assertOptimization(self, results_by_directory, expected_new_results_by_directory, baseline_dirname='', expected_files_to_delete=None, host=None):
+        if not host:
+            host = MockHost()
         fs = host.filesystem
         webkit_base = WebKitFinder(fs).webkit_base()
         baseline_name = 'mock-baseline-expected.txt'
+        fs.write_text_file(fs.join(webkit_base, 'LayoutTests', 'VirtualTestSuites'),
+                           '[{"prefix": "gpu", "base": "fast/canvas", "args": ["--foo"]}]')
 
         for dirname, contents in results_by_directory.items():
             path = fs.join(webkit_base, 'LayoutTests', dirname, baseline_name)
             fs.write_binary_file(path, contents)
 
-        baseline_optimizer = BaselineOptimizer(host, host.port_factory.all_port_names(), skip_scm_commands=expected_files_to_delete is not None)
+        baseline_optimizer = BaselineOptimizer(host, host.port_factory.get(), host.port_factory.all_port_names(), skip_scm_commands=expected_files_to_delete is not None)
         self.assertTrue(baseline_optimizer.optimize(fs.join(baseline_dirname, baseline_name)))
 
         for dirname, contents in expected_new_results_by_directory.items():
@@ -127,7 +132,7 @@ class BaselineOptimizerTest(unittest.TestCase):
                 self.assertTrue(not fs.exists(path) or path in baseline_optimizer._files_to_delete)
 
         if expected_files_to_delete:
-            self.assertEqual(baseline_optimizer._files_to_delete, expected_files_to_delete)
+            self.assertEqual(sorted(baseline_optimizer._files_to_delete), sorted(expected_files_to_delete))
 
     def test_linux_redundant_with_win(self):
         self._assertOptimization({
@@ -220,44 +225,60 @@ class BaselineOptimizerTest(unittest.TestCase):
 
     def test_virtual_root_redundant_with_actual_root(self):
         self._assertOptimization({
-            'virtual/softwarecompositing': '2',
-            'compositing': '2',
+            'virtual/gpu/fast/canvas': '2',
+            'fast/canvas': '2',
         }, {
-            'virtual/softwarecompositing': None,
-            'compositing': '2',
-        }, baseline_dirname='virtual/softwarecompositing')
+            'virtual/gpu/fast/canvas': None,
+            'fast/canvas': '2',
+        }, baseline_dirname='virtual/gpu/fast/canvas')
 
     def test_virtual_root_redundant_with_ancestors(self):
         self._assertOptimization({
-            'virtual/softwarecompositing': '2',
-            'platform/mac/compositing': '2',
-            'platform/win/compositing': '2',
+            'virtual/gpu/fast/canvas': '2',
+            'platform/mac/fast/canvas': '2',
+            'platform/win/fast/canvas': '2',
         }, {
-            'virtual/softwarecompositing': None,
-            'compositing': '2',
-        }, baseline_dirname='virtual/softwarecompositing')
+            'virtual/gpu/fast/canvas': None,
+            'fast/canvas': '2',
+        }, baseline_dirname='virtual/gpu/fast/canvas')
 
     def test_virtual_root_redundant_with_ancestors_skip_scm_commands(self):
         self._assertOptimization({
-            'virtual/softwarecompositing': '2',
-            'platform/mac/compositing': '2',
-            'platform/win/compositing': '2',
+            'virtual/gpu/fast/canvas': '2',
+            'platform/mac/fast/canvas': '2',
+            'platform/win/fast/canvas': '2',
         }, {
-            'virtual/softwarecompositing': None,
-            'compositing': '2',
+            'virtual/gpu/fast/canvas': None,
+            'fast/canvas': '2',
         },
-        baseline_dirname='virtual/softwarecompositing',
+        baseline_dirname='virtual/gpu/fast/canvas',
         expected_files_to_delete=[
-            '/mock-checkout/third_party/WebKit/LayoutTests/virtual/softwarecompositing/mock-baseline-expected.txt',
-            '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/compositing/mock-baseline-expected.txt',
-            '/mock-checkout/third_party/WebKit/LayoutTests/platform/win/compositing/mock-baseline-expected.txt',
+            '/mock-checkout/third_party/WebKit/LayoutTests/virtual/gpu/fast/canvas/mock-baseline-expected.txt',
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/fast/canvas/mock-baseline-expected.txt',
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/win/fast/canvas/mock-baseline-expected.txt',
         ])
+
+    def test_virtual_root_redundant_with_ancestors_skip_scm_commands_with_file_not_in_scm(self):
+        self._assertOptimization({
+            'virtual/gpu/fast/canvas': '2',
+            'platform/mac/fast/canvas': '2',
+            'platform/win/fast/canvas': '2',
+        }, {
+            'virtual/gpu/fast/canvas': None,
+            'fast/canvas': '2',
+        },
+        baseline_dirname='virtual/gpu/fast/canvas',
+        expected_files_to_delete=[
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/fast/canvas/mock-baseline-expected.txt',
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/win/fast/canvas/mock-baseline-expected.txt',
+        ],
+        host=MockHost(scm=ExcludingMockSCM(['/mock-checkout/third_party/WebKit/LayoutTests/virtual/gpu/fast/canvas/mock-baseline-expected.txt'])))
 
     def test_virtual_root_not_redundant_with_ancestors(self):
         self._assertOptimization({
-            'virtual/softwarecompositing': '2',
-            'platform/mac/compositing': '1',
+            'virtual/gpu/fast/canvas': '2',
+            'platform/mac/fast/canvas': '1',
         }, {
-            'virtual/softwarecompositing': '2',
-            'platform/mac/compositing': '1',
-        }, baseline_dirname='virtual/softwarecompositing')
+            'virtual/gpu/fast/canvas': '2',
+            'platform/mac/fast/canvas': '1',
+        }, baseline_dirname='virtual/gpu/fast/canvas')

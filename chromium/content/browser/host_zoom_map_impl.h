@@ -28,36 +28,32 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
                                        public base::SupportsUserData::Data {
  public:
   HostZoomMapImpl();
-  virtual ~HostZoomMapImpl();
+  ~HostZoomMapImpl() override;
 
   // HostZoomMap implementation:
-  virtual void CopyFrom(HostZoomMap* copy) OVERRIDE;
-  virtual double GetZoomLevelForHostAndScheme(
-      const std::string& scheme,
-      const std::string& host) const OVERRIDE;
+  void CopyFrom(HostZoomMap* copy) override;
+  double GetZoomLevelForHostAndScheme(const std::string& scheme,
+                                      const std::string& host) const override;
   // TODO(wjmaclean) Should we use a GURL here? crbug.com/384486
-  virtual bool HasZoomLevel(const std::string& scheme,
-                            const std::string& host) const OVERRIDE;
-  virtual ZoomLevelVector GetAllZoomLevels() const OVERRIDE;
-  virtual void SetZoomLevelForHost(
-      const std::string& host,
-      double level) OVERRIDE;
-  virtual void SetZoomLevelForHostAndScheme(
-      const std::string& scheme,
-      const std::string& host,
-      double level) OVERRIDE;
-  virtual bool UsesTemporaryZoomLevel(int render_process_id,
-                                      int render_view_id) const OVERRIDE;
-  virtual void SetTemporaryZoomLevel(int render_process_id,
-                                     int render_view_id,
-                                     double level) OVERRIDE;
+  bool HasZoomLevel(const std::string& scheme,
+                    const std::string& host) const override;
+  ZoomLevelVector GetAllZoomLevels() const override;
+  void SetZoomLevelForHost(const std::string& host, double level) override;
+  void SetZoomLevelForHostAndScheme(const std::string& scheme,
+                                    const std::string& host,
+                                    double level) override;
+  bool UsesTemporaryZoomLevel(int render_process_id,
+                              int render_view_id) const override;
+  void SetTemporaryZoomLevel(int render_process_id,
+                             int render_view_id,
+                             double level) override;
 
-  virtual void ClearTemporaryZoomLevel(int render_process_id,
-                                       int render_view_id) OVERRIDE;
-  virtual double GetDefaultZoomLevel() const OVERRIDE;
-  virtual void SetDefaultZoomLevel(double level) OVERRIDE;
-  virtual scoped_ptr<Subscription> AddZoomLevelChangedCallback(
-      const ZoomLevelChangedCallback& callback) OVERRIDE;
+  void ClearTemporaryZoomLevel(int render_process_id,
+                               int render_view_id) override;
+  double GetDefaultZoomLevel() const override;
+  void SetDefaultZoomLevel(double level) override;
+  scoped_ptr<Subscription> AddZoomLevelChangedCallback(
+      const ZoomLevelChangedCallback& callback) override;
 
   // Returns the current zoom level for the specified WebContents. This may
   // be a temporary zoom level, depending on UsesTemporaryZoomLevel().
@@ -86,9 +82,11 @@ class CONTENT_EXPORT HostZoomMapImpl : public NON_EXPORTED_BASE(HostZoomMap),
                                int render_view_id) const;
 
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
+
+  void SendErrorPageZoomLevelRefresh();
 
  private:
   typedef std::map<std::string, double> HostZoomLevels;

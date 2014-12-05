@@ -33,7 +33,7 @@
 
 #include "platform/Length.h"
 
-namespace WebCore {
+namespace blink {
 
 // Represents an individual computed border image width or outset.
 //
@@ -42,8 +42,7 @@ namespace WebCore {
 class BorderImageLength {
 public:
     BorderImageLength(double number)
-        : m_length(Undefined)
-        , m_number(number)
+        : m_number(number)
         , m_type(NumberType)
     {
     }
@@ -84,6 +83,6 @@ private:
     } m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BorderImageLength_h

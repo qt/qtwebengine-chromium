@@ -28,7 +28,10 @@
 #include "core/rendering/RenderTable.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
+
+// This variable is used to balance the memory consumption vs the paint invalidation time on big tables.
+const float gMaxAllowedOverflowingCellRatioForFastPaintPath = 0.1f;
 
 enum CollapsedBorderSide {
     CBSBefore,
@@ -49,8 +52,8 @@ public:
     unsigned start() const { return m_start; }
     unsigned end() const { return m_end; }
 
-    unsigned& start() { return m_start; }
-    unsigned& end() { return m_end; }
+    void decreaseStart() { --m_start; }
+    void increaseEnd() { ++m_end; }
 
 private:
     unsigned m_start;
@@ -60,10 +63,11 @@ private:
 class RenderTableCell;
 class RenderTableRow;
 
-class RenderTableSection FINAL : public RenderBox {
+class RenderTableSection final : public RenderBox {
 public:
     RenderTableSection(Element*);
     virtual ~RenderTableSection();
+    virtual void trace(Visitor*) override;
 
     RenderTableRow* firstRow() const;
     RenderTableRow* lastRow() const;
@@ -71,9 +75,9 @@ public:
     const RenderObjectChildList* children() const { return &m_children; }
     RenderObjectChildList* children() { return &m_children; }
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override;
 
-    virtual int firstLineBoxBaseline() const OVERRIDE;
+    virtual int firstLineBoxBaseline() const override;
 
     void addCell(RenderTableCell*, RenderTableRow* row);
 
@@ -83,41 +87,47 @@ public:
 
     RenderTable* table() const { return toRenderTable(parent()); }
 
-    typedef Vector<RenderTableCell*, 2> SpanningRenderTableCells;
+    typedef WillBeHeapVector<RawPtrWillBeMember<RenderTableCell>, 2> SpanningRenderTableCells;
 
     struct CellStruct {
-        Vector<RenderTableCell*, 1> cells;
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
+        WillBeHeapVector<RawPtrWillBeMember<RenderTableCell>, 1> cells;
         bool inColSpan; // true for columns after the first in a colspan
 
         CellStruct()
             : inColSpan(false)
         {
         }
+        void trace(Visitor*);
 
         RenderTableCell* primaryCell()
         {
-            return hasCells() ? cells[cells.size() - 1] : 0;
+            return hasCells() ? cells[cells.size() - 1].get() : 0;
         }
 
         const RenderTableCell* primaryCell() const
         {
-            return hasCells() ? cells[cells.size() - 1] : 0;
+            return hasCells() ? cells[cells.size() - 1].get() : 0;
         }
 
         bool hasCells() const { return cells.size() > 0; }
     };
 
-    typedef Vector<CellStruct> Row;
+    typedef WillBeHeapVector<CellStruct> Row;
 
     struct RowStruct {
+        ALLOW_ONLY_INLINE_ALLOCATION();
+    public:
         RowStruct()
-            : rowRenderer(0)
+            : rowRenderer(nullptr)
             , baseline()
         {
         }
+        void trace(Visitor*);
 
         Row row;
-        RenderTableRow* rowRenderer;
+        RawPtrWillBeMember<RenderTableRow> rowRenderer;
         LayoutUnit baseline;
         Length logicalHeight;
     };
@@ -199,7 +209,7 @@ public:
 
     LayoutUnit rowBaseline(unsigned row) { return m_grid[row].baseline; }
 
-    void rowLogicalHeightChanged(unsigned rowIndex);
+    void rowLogicalHeightChanged(RenderTableRow*);
 
     void removeCachedCollapsedBorders(const RenderTableCell*);
     void setCachedCollapsedBorder(const RenderTableCell*, CollapsedBorderSide, CollapsedBorderValue);
@@ -210,33 +220,40 @@ public:
     int distributeExtraLogicalHeightToRows(int extraLogicalHeight);
 
     static RenderTableSection* createAnonymousWithParentRenderer(const RenderObject*);
-    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const RenderObject* parent) const OVERRIDE
+    virtual RenderBox* createAnonymousBoxWithSameTypeAs(const RenderObject* parent) const override
     {
         return createAnonymousWithParentRenderer(parent);
     }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
+
+    // Flip the rect so it aligns with the coordinates used by the rowPos and columnPos vectors.
+    LayoutRect logicalRectForWritingModeAndDirection(const LayoutRect&) const;
+
+    CellSpan dirtiedRows(const LayoutRect& paintInvalidationRect) const;
+    CellSpan dirtiedColumns(const LayoutRect& paintInvalidationRect) const;
+    WillBeHeapHashSet<RawPtrWillBeMember<RenderTableCell> >& overflowingCells() { return m_overflowingCells; }
+    bool hasMultipleCellLevels() { return m_hasMultipleCellLevels; }
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
 private:
-    virtual RenderObjectChildList* virtualChildren() OVERRIDE { return children(); }
-    virtual const RenderObjectChildList* virtualChildren() const OVERRIDE { return children(); }
+    virtual RenderObjectChildList* virtualChildren() override { return children(); }
+    virtual const RenderObjectChildList* virtualChildren() const override { return children(); }
 
-    virtual const char* renderName() const OVERRIDE { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
+    virtual const char* renderName() const override { return (isAnonymous() || isPseudoElement()) ? "RenderTableSection (anonymous)" : "RenderTableSection"; }
 
-    virtual bool isTableSection() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectTableSection || RenderBox::isOfType(type); }
 
-    virtual void willBeRemovedFromTree() OVERRIDE;
+    virtual void willBeRemovedFromTree() override;
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    void paintCell(RenderTableCell*, PaintInfo&, const LayoutPoint&);
-    virtual void paintObject(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintObject(PaintInfo&, const LayoutPoint&) override;
 
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
     int borderSpacingForRow(unsigned row) const { return m_grid[row].rowRenderer ? table()->vBorderSpacing() : 0; }
 
@@ -249,6 +266,7 @@ private:
 
     void populateSpanningRowsHeightFromCell(RenderTableCell*, struct SpanningRowsHeight&);
     void distributeExtraRowSpanHeightToPercentRows(RenderTableCell*, int, int&, Vector<int>&);
+    void distributeWholeExtraRowSpanHeightToPercentRows(RenderTableCell*, int, int&, Vector<int>&);
     void distributeExtraRowSpanHeightToAutoRows(RenderTableCell*, int, int&, Vector<int>&);
     void distributeExtraRowSpanHeightToRemainingRows(RenderTableCell*, int, int&, Vector<int>&);
     void distributeRowSpanHeightToRows(SpanningRenderTableCells& rowSpanCells);
@@ -260,16 +278,11 @@ private:
     void updateBaselineForCell(RenderTableCell*, unsigned row, LayoutUnit& baselineDescent);
 
     bool hasOverflowingCell() const { return m_overflowingCells.size() || m_forceSlowPaintPathWithOverflowingCell; }
+
     void computeOverflowFromCells(unsigned totalRows, unsigned nEffCols);
 
     CellSpan fullTableRowSpan() const { return CellSpan(0, m_grid.size()); }
     CellSpan fullTableColumnSpan() const { return CellSpan(0, table()->columns().size()); }
-
-    // Flip the rect so it aligns with the coordinates used by the rowPos and columnPos vectors.
-    LayoutRect logicalRectForWritingModeAndDirection(const LayoutRect&) const;
-
-    CellSpan dirtiedRows(const LayoutRect& repaintRect) const;
-    CellSpan dirtiedColumns(const LayoutRect& repaintRect) const;
 
     // These two functions take a rectangle as input that has been flipped by logicalRectForWritingModeAndDirection.
     // The returned span of rows or columns is end-exclusive, and empty if start==end.
@@ -280,7 +293,7 @@ private:
 
     RenderObjectChildList m_children;
 
-    Vector<RowStruct> m_grid;
+    WillBeHeapVector<RowStruct> m_grid;
     Vector<int> m_rowPos;
 
     // the current insertion position
@@ -297,18 +310,28 @@ private:
     // This HashSet holds the overflowing cells for faster painting.
     // If we have more than gMaxAllowedOverflowingCellRatio * total cells, it will be empty
     // and m_forceSlowPaintPathWithOverflowingCell will be set to save memory.
-    HashSet<RenderTableCell*> m_overflowingCells;
+    WillBeHeapHashSet<RawPtrWillBeMember<RenderTableCell> > m_overflowingCells;
     bool m_forceSlowPaintPathWithOverflowingCell;
 
     bool m_hasMultipleCellLevels;
 
     // This map holds the collapsed border values for cells with collapsed borders.
     // It is held at RenderTableSection level to spare memory consumption by table cells.
-    HashMap<pair<const RenderTableCell*, int>, CollapsedBorderValue > m_cellsCollapsedBorders;
+    WillBeHeapHashMap<pair<RawPtrWillBeMember<const RenderTableCell>, int>, CollapsedBorderValue > m_cellsCollapsedBorders;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTableSection, isTableSection());
 
-} // namespace WebCore
+} // namespace blink
+
+#if ENABLE(OILPAN)
+namespace WTF {
+
+template<> struct VectorTraits<blink::RenderTableSection::RowStruct> : VectorTraitsBase<blink::RenderTableSection::RowStruct> {
+    static const bool needsDestruction = false;
+};
+
+} // namespace WTF
+#endif
 
 #endif // RenderTableSection_h

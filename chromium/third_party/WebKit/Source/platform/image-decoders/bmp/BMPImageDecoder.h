@@ -34,7 +34,7 @@
 #include "platform/image-decoders/bmp/BMPImageReader.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 // This class decodes the BMP image format.
 class PLATFORM_EXPORT BMPImageDecoder : public ImageDecoder {
@@ -42,14 +42,14 @@ public:
     BMPImageDecoder(ImageSource::AlphaOption, ImageSource::GammaAndColorProfileOption, size_t maxDecodedBytes);
 
     // ImageDecoder
-    virtual String filenameExtension() const OVERRIDE { return "bmp"; }
-    virtual void setData(SharedBuffer*, bool allDataReceived) OVERRIDE;
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
+    virtual String filenameExtension() const override { return "bmp"; }
+    virtual void setData(SharedBuffer*, bool allDataReceived) override;
+    virtual bool isSizeAvailable() override;
+    virtual ImageFrame* frameBufferAtIndex(size_t) override;
     // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
     // accessing deleted memory, especially when calling this from inside
     // BMPImageReader!
-    virtual bool setFailed() OVERRIDE;
+    virtual bool setFailed() override;
 
 private:
     inline uint32_t readUint32(int offset) const
@@ -58,18 +58,18 @@ private:
     }
 
     // Decodes the image.  If |onlySize| is true, stops decoding after
-    // calculating the image size.  If decoding fails but there is no more
+    // calculating the image size. If decoding fails but there is no more
     // data coming, sets the "decode failure" flag.
     void decode(bool onlySize);
 
     // Decodes the image.  If |onlySize| is true, stops decoding after
-    // calculating the image size.  Returns whether decoding succeeded.
+    // calculating the image size. Returns whether decoding succeeded.
     bool decodeHelper(bool onlySize);
 
     // Processes the file header at the beginning of the data.  Sets
-    // |*imgDataOffset| based on the header contents.  Returns true if the
+    // |imgDataOffset| based on the header contents. Returns true if the
     // file header could be decoded.
-    bool processFileHeader(size_t* imgDataOffset);
+    bool processFileHeader(size_t& imgDataOffset);
 
     // An index into |m_data| representing how much we've already decoded.
     // Note that this only tracks data _this_ class decodes; once the
@@ -80,6 +80,6 @@ private:
     OwnPtr<BMPImageReader> m_reader;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

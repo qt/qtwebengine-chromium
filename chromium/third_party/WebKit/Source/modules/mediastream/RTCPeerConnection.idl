@@ -29,14 +29,14 @@
  */
 
 [
-    WillBeGarbageCollected,
+    GarbageCollected,
     ActiveDOMObject,
-    Constructor(Dictionary rtcIceServers, optional Dictionary mediaConstraints),
+    Constructor(Dictionary rtcConfiguration, optional Dictionary mediaConstraints),
     ConstructorCallWith=ExecutionContext,
     NoInterfaceObject,
     RaisesException=Constructor,
 ] interface RTCPeerConnection : EventTarget {
-    [RaisesException] void createOffer(RTCSessionDescriptionCallback successCallback, [Default=Undefined] optional RTCErrorCallback failureCallback, optional Dictionary mediaConstraints);
+    [RaisesException] void createOffer(RTCSessionDescriptionCallback successCallback, [Default=Undefined] optional RTCErrorCallback failureCallback, optional Dictionary rtcOfferOptions);
 
     [RaisesException] void createAnswer(RTCSessionDescriptionCallback successCallback, [Default=Undefined] optional RTCErrorCallback failureCallback, optional Dictionary mediaConstraints);
 
@@ -62,12 +62,12 @@
     sequence<MediaStream> getRemoteStreams();
     MediaStream getStreamById(DOMString streamId);
 
-    [TypeChecking=Interface|Nullable, RaisesException] void addStream(MediaStream? stream, optional Dictionary mediaConstraints);
-    [TypeChecking=Interface|Nullable, RaisesException] void removeStream(MediaStream? stream);
+    [TypeChecking=Interface, RaisesException] void addStream(MediaStream? stream, optional Dictionary mediaConstraints);
+    [TypeChecking=Interface, RaisesException] void removeStream(MediaStream? stream);
 
     void getStats(RTCStatsCallback successCallback, [Default=Undefined] optional MediaStreamTrack selector);
 
-    [RaisesException] RTCDataChannel createDataChannel([TreatNullAs=NullString, TreatUndefinedAs=NullString] DOMString label, optional Dictionary options);
+    [RaisesException] RTCDataChannel createDataChannel([TreatUndefinedAs=NullString] DOMString? label, optional Dictionary options);
 
     [RaisesException] RTCDTMFSender createDTMFSender(MediaStreamTrack track);
 

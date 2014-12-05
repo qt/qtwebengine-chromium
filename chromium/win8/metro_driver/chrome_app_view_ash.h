@@ -13,6 +13,8 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "base/strings/string16.h"
+#include "base/threading/thread.h"
+#include "ipc/ipc_listener.h"
 #include "ui/events/event_constants.h"
 #include "win8/metro_driver/direct3d_helper.h"
 #include "win8/metro_driver/ime/ime_popup_observer.h"
@@ -118,18 +120,18 @@ class ChromeAppViewAsh
   class PointerInfoHandler;
 
   // ImePopupObserver overrides.
-  virtual void OnImePopupChanged(ImePopupObserver::EventType event) OVERRIDE;
+  virtual void OnImePopupChanged(ImePopupObserver::EventType event) override;
 
   // InputSourceObserver overrides.
-  virtual void OnInputSourceChanged() OVERRIDE;
+  virtual void OnInputSourceChanged() override;
 
   // TextServiceDelegate overrides.
   virtual void OnCompositionChanged(
       const base::string16& text,
       int32 selection_start,
       int32 selection_end,
-      const std::vector<metro_viewer::UnderlineInfo>& underlines) OVERRIDE;
-  virtual void OnTextCommitted(const base::string16& text) OVERRIDE;
+      const std::vector<metro_viewer::UnderlineInfo>& underlines) override;
+  virtual void OnTextCommitted(const base::string16& text) override;
 
   // Convenience for sending a MetroViewerHostMsg_MouseButton with the specified
   // parameters.
@@ -196,6 +198,12 @@ class ChromeAppViewAsh
   HRESULT OnSizeChanged(winui::Core::ICoreWindow* sender,
                         winui::Core::IWindowSizeChangedEventArgs* args);
 
+  // This function checks if the Chrome browser channel is initialized. If yes
+  // then it goes ahead and starts up the viewer in Chrome OS mode. If not it
+  // posts a delayed task and checks again. It does this for a duration of 10
+  // seconds and then bails.
+  void StartChromeOSMode();
+
   mswr::ComPtr<winui::Core::ICoreWindow> window_;
   mswr::ComPtr<winapp::Core::ICoreApplicationView> view_;
   EventRegistrationToken activated_token_;
@@ -220,8 +228,11 @@ class ChromeAppViewAsh
   // Set the D3D swap chain and nothing else.
   metro_driver::Direct3DHelper direct3d_helper_;
 
+  // The IPC channel IO thread.
+  scoped_ptr<base::Thread> io_thread_;
+
   // The channel to Chrome, in particular to the MetroViewerProcessHost.
-  IPC::ChannelProxy* ui_channel_;
+  scoped_ptr<IPC::ChannelProxy> ui_channel_;
 
   // The actual window behind the view surface.
   HWND core_window_hwnd_;
@@ -238,6 +249,13 @@ class ChromeAppViewAsh
   // The win32 dpi scale which is queried via GetDeviceCaps. Please refer to
   // ui/gfx/win/dpi.cc for more information.
   float win32_dpi_scale_;
+
+  // The cursor set by the chroem browser process.
+  HCURSOR last_cursor_;
+
+  // Pointer to the channel listener for the channel between the viewer and
+  // the browser.
+  IPC::Listener* channel_listener_;
 };
 
 #endif  // WIN8_METRO_DRIVER_CHROME_APP_VIEW_ASH_H_

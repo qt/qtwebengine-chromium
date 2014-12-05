@@ -6,9 +6,9 @@
 
 #include "base/basictypes.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -21,7 +21,7 @@ namespace base {
 
 namespace {
 
-const char* kLinuxStandardBaseVersionKeys[] = {
+const char* const kLinuxStandardBaseVersionKeys[] = {
   "CHROMEOS_RELEASE_VERSION",
   "GOOGLE_RELEASE",
   "DISTRIB_RELEASE",

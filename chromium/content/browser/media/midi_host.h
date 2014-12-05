@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
+#include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
@@ -31,32 +32,35 @@ class CONTENT_EXPORT MidiHost
   MidiHost(int renderer_process_id, media::MidiManager* midi_manager);
 
   // BrowserMessageFilter implementation.
-  virtual void OnDestruct() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnDestruct() const override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // MidiManagerClient implementation.
-  virtual void CompleteStartSession(int client_id,
-                                    media::MidiResult result) OVERRIDE;
-  virtual void ReceiveMidiData(uint32 port,
-                               const uint8* data,
-                               size_t length,
-                               double timestamp) OVERRIDE;
-  virtual void AccumulateMidiBytesSent(size_t n) OVERRIDE;
+  void CompleteStartSession(media::MidiResult result) override;
+  void AddInputPort(const media::MidiPortInfo& info) override;
+  void AddOutputPort(const media::MidiPortInfo& info) override;
+  void ReceiveMidiData(uint32 port,
+                       const uint8* data,
+                       size_t length,
+                       double timestamp) override;
+  void AccumulateMidiBytesSent(size_t n) override;
 
   // Start session to access MIDI hardware.
-  void OnStartSession(int client_id);
+  void OnStartSession();
 
   // Data to be sent to a MIDI output port.
   void OnSendData(uint32 port,
                   const std::vector<uint8>& data,
                   double timestamp);
 
+  void OnEndSession();
+
  private:
   FRIEND_TEST_ALL_PREFIXES(MidiHostTest, IsValidWebMIDIData);
   friend class base::DeleteHelper<MidiHost>;
   friend class BrowserThread;
 
-  virtual ~MidiHost();
+  ~MidiHost() override;
 
   // Returns true if |data| fulfills the requirements of MidiOutput.send API
   // defined in the WebMIDI spec.
@@ -71,6 +75,9 @@ class CONTENT_EXPORT MidiHost
   // messages.
   bool has_sys_ex_permission_;
 
+  // Represents if a session is requested to start.
+  bool is_session_requested_;
+
   // |midi_manager_| talks to the platform-specific MIDI APIs.
   // It can be NULL if the platform (or our current implementation)
   // does not support MIDI.  If not supported then a call to
@@ -80,6 +87,9 @@ class CONTENT_EXPORT MidiHost
 
   // Buffers where data sent from each MIDI input port is stored.
   ScopedVector<media::MidiMessageQueue> received_messages_queues_;
+
+  // Protects access to |received_messages_queues_|;
+  base::Lock messages_queues_lock_;
 
   // The number of bytes sent to the platform-specific MIDI sending
   // system, but not yet completed.

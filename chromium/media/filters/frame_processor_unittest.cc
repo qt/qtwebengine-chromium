@@ -124,7 +124,6 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
       base::TimeDelta timestamp = base::TimeDelta::FromSecondsD(
           time_in_ms / base::Time::kMillisecondsPerSecond);
       buffer->set_timestamp(timestamp);
-      buffer->SetDecodeTimestamp(timestamp);
       buffer->set_duration(frame_duration_);
       buffers.push_back(buffer);
     }
@@ -250,7 +249,7 @@ class FrameProcessorTest : public testing::TestWithParam<bool> {
  private:
   void StoreStatusAndBuffer(DemuxerStream::Status status,
                             const scoped_refptr<DecoderBuffer>& buffer) {
-    if (status == DemuxerStream::kOk && buffer) {
+    if (status == DemuxerStream::kOk && buffer.get()) {
       DVLOG(3) << __FUNCTION__ << "status: " << status << " ts: "
                << buffer->timestamp().InSecondsF();
     } else {
@@ -607,6 +606,19 @@ TEST_P(FrameProcessorTest, AppendWindowFilterWithInexactPreroll) {
   CheckReadsThenReadStalls(audio_.get(), "0P 0:9.75 10:20");
 }
 
+TEST_P(FrameProcessorTest, AppendWindowFilterWithInexactPreroll_2) {
+  InSequence s;
+  AddTestTracks(HAS_AUDIO);
+  new_media_segment_ = true;
+  if (GetParam())
+    frame_processor_->SetSequenceMode(true);
+  SetTimestampOffset(-frame_duration_);
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_ * 2));
+  ProcessFrames("0K 10.25K 20K", "");
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,20) }");
+  CheckReadsThenReadStalls(audio_.get(), "0P 0:10.25 10:20");
+}
+
 TEST_P(FrameProcessorTest, AllowNegativeFramePTSAndDTSBeforeOffsetAdjustment) {
   InSequence s;
   AddTestTracks(HAS_AUDIO);
@@ -650,6 +662,30 @@ TEST_P(FrameProcessorTest, PartialAppendWindowFilterNoDiscontinuity) {
   EXPECT_EQ(base::TimeDelta(), timestamp_offset_);
   CheckExpectedRangesByTimestamp(audio_.get(), "{ [7,29) }");
   CheckReadsThenReadStalls(audio_.get(), "7:0 19");
+}
+
+TEST_P(FrameProcessorTest, PartialAppendWindowFilterNoNewMediaSegment) {
+  // Tests that a new media segment is not forcibly signalled for audio frame
+  // partial front trim, to prevent incorrect introduction of a discontinuity
+  // and potentially a non-keyframe video frame to be processed next after the
+  // discontinuity.
+  InSequence s;
+  AddTestTracks(HAS_AUDIO | HAS_VIDEO);
+  new_media_segment_ = true;
+  frame_processor_->SetSequenceMode(GetParam());
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_));
+  ProcessFrames("", "0K");
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_));
+  ProcessFrames("-5K", "");
+  EXPECT_CALL(callbacks_, PossibleDurationIncrease(frame_duration_* 2));
+  ProcessFrames("", "10");
+
+  EXPECT_EQ(base::TimeDelta(), timestamp_offset_);
+  EXPECT_FALSE(new_media_segment_);
+  CheckExpectedRangesByTimestamp(audio_.get(), "{ [0,5) }");
+  CheckExpectedRangesByTimestamp(video_.get(), "{ [0,20) }");
+  CheckReadsThenReadStalls(audio_.get(), "0:-5");
+  CheckReadsThenReadStalls(video_.get(), "0 10");
 }
 
 INSTANTIATE_TEST_CASE_P(SequenceMode, FrameProcessorTest, Values(true));

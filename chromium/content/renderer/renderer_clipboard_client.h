@@ -14,29 +14,28 @@ namespace content {
 class RendererClipboardClient : public ClipboardClient {
  public:
   RendererClipboardClient();
-  virtual ~RendererClipboardClient();
+  ~RendererClipboardClient() override;
 
-  virtual ui::Clipboard* GetClipboard() OVERRIDE;
-  virtual uint64 GetSequenceNumber(ui::ClipboardType type) OVERRIDE;
-  virtual bool IsFormatAvailable(ClipboardFormat format,
-                                 ui::ClipboardType type) OVERRIDE;
-  virtual void Clear(ui::ClipboardType type) OVERRIDE;
-  virtual void ReadAvailableTypes(ui::ClipboardType type,
-                                  std::vector<base::string16>* types,
-                                  bool* contains_filenames) OVERRIDE;
-  virtual void ReadText(ui::ClipboardType type,
-                        base::string16* result) OVERRIDE;
-  virtual void ReadHTML(ui::ClipboardType type,
-                        base::string16* markup,
-                        GURL* url,
-                        uint32* fragment_start,
-                        uint32* fragment_end) OVERRIDE;
-  virtual void ReadRTF(ui::ClipboardType type, std::string* result) OVERRIDE;
-  virtual void ReadImage(ui::ClipboardType type, std::string* data) OVERRIDE;
-  virtual void ReadCustomData(ui::ClipboardType clipboard_type,
-                              const base::string16& type,
-                              base::string16* data) OVERRIDE;
-  virtual WriteContext* CreateWriteContext() OVERRIDE;
+  ui::Clipboard* GetClipboard() override;
+  uint64 GetSequenceNumber(ui::ClipboardType type) override;
+  bool IsFormatAvailable(ClipboardFormat format,
+                         ui::ClipboardType type) override;
+  void Clear(ui::ClipboardType type) override;
+  void ReadAvailableTypes(ui::ClipboardType type,
+                          std::vector<base::string16>* types,
+                          bool* contains_filenames) override;
+  void ReadText(ui::ClipboardType type, base::string16* result) override;
+  void ReadHTML(ui::ClipboardType type,
+                base::string16* markup,
+                GURL* url,
+                uint32* fragment_start,
+                uint32* fragment_end) override;
+  void ReadRTF(ui::ClipboardType type, std::string* result) override;
+  void ReadImage(ui::ClipboardType type, std::string* data) override;
+  void ReadCustomData(ui::ClipboardType clipboard_type,
+                      const base::string16& type,
+                      base::string16* data) override;
+  WriteContext* CreateWriteContext() override;
 };
 
 }  // namespace content

@@ -83,9 +83,9 @@ void WriteContinuation() {
 class TestBackoffEntry : public net::BackoffEntry {
  public:
   explicit TestBackoffEntry(base::SimpleTestTickClock* tick_clock);
-  virtual ~TestBackoffEntry();
+  ~TestBackoffEntry() override;
 
-  virtual base::TimeTicks ImplGetTimeNow() const OVERRIDE;
+  base::TimeTicks ImplGetTimeNow() const override;
 
  private:
   base::SimpleTestTickClock* tick_clock_;
@@ -107,22 +107,22 @@ base::TimeTicks TestBackoffEntry::ImplGetTimeNow() const {
 class TestConnectionFactoryImpl : public ConnectionFactoryImpl {
  public:
   TestConnectionFactoryImpl(const base::Closure& finished_callback);
-  virtual ~TestConnectionFactoryImpl();
+  ~TestConnectionFactoryImpl() override;
 
   void InitializeFactory();
 
   // Overridden stubs.
-  virtual void ConnectImpl() OVERRIDE;
-  virtual void InitHandler() OVERRIDE;
-  virtual scoped_ptr<net::BackoffEntry> CreateBackoffEntry(
-      const net::BackoffEntry::Policy* const policy) OVERRIDE;
-  virtual scoped_ptr<ConnectionHandler> CreateConnectionHandler(
+  void ConnectImpl() override;
+  void InitHandler() override;
+  scoped_ptr<net::BackoffEntry> CreateBackoffEntry(
+      const net::BackoffEntry::Policy* const policy) override;
+  scoped_ptr<ConnectionHandler> CreateConnectionHandler(
       base::TimeDelta read_timeout,
       const ConnectionHandler::ProtoReceivedCallback& read_callback,
       const ConnectionHandler::ProtoSentCallback& write_callback,
       const ConnectionHandler::ConnectionChangedCallback& connection_callback)
-          OVERRIDE;
-  virtual base::TimeTicks NowTicks() OVERRIDE;
+      override;
+  base::TimeTicks NowTicks() override;
 
   // Helpers for verifying connection attempts are made. Connection results
   // must be consumed.
@@ -157,6 +157,7 @@ TestConnectionFactoryImpl::TestConnectionFactoryImpl(
     const base::Closure& finished_callback)
     : ConnectionFactoryImpl(BuildEndpoints(),
                             net::BackoffEntry::Policy(),
+                            NULL,
                             NULL,
                             NULL,
                             &dummy_recorder_),
@@ -227,9 +228,7 @@ void TestConnectionFactoryImpl::SetConnectResult(int connect_result) {
   connect_result_ = connect_result;
   num_expected_attempts_ = 1;
   fake_handler_->ExpectOutgoingMessage(
-      MCSMessage(kLoginRequestTag,
-                 BuildLoginRequest(0, 0, "").PassAs<
-                     const google::protobuf::MessageLite>()));
+      MCSMessage(kLoginRequestTag, BuildLoginRequest(0, 0, "")));
 }
 
 void TestConnectionFactoryImpl::SetMultipleConnectResults(
@@ -243,9 +242,7 @@ void TestConnectionFactoryImpl::SetMultipleConnectResults(
   num_expected_attempts_ = num_expected_attempts;
   for (int i = 0 ; i < num_expected_attempts; ++i) {
     fake_handler_->ExpectOutgoingMessage(
-        MCSMessage(kLoginRequestTag,
-                   BuildLoginRequest(0, 0, "").PassAs<
-                       const google::protobuf::MessageLite>()));
+        MCSMessage(kLoginRequestTag, BuildLoginRequest(0, 0, "")));
   }
 }
 
@@ -269,9 +266,9 @@ class ConnectionFactoryImplTest
   void WaitForConnections();
 
   // ConnectionFactory::ConnectionListener
-  virtual void OnConnected(const GURL& current_server,
-                           const net::IPEndPoint& ip_endpoint) OVERRIDE;
-  virtual void OnDisconnected() OVERRIDE;
+  void OnConnected(const GURL& current_server,
+                   const net::IPEndPoint& ip_endpoint) override;
+  void OnDisconnected() override;
 
  private:
   void ConnectionsComplete();

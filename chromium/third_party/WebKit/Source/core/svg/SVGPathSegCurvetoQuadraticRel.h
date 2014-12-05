@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegCurvetoQuadratic.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegCurvetoQuadraticRel FINAL : public SVGPathSegCurvetoQuadratic {
+class SVGPathSegCurvetoQuadraticRel final : public SVGPathSegCurvetoQuadratic {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegCurvetoQuadraticRel> create(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1)
+    static PassRefPtr<SVGPathSegCurvetoQuadraticRel> create(SVGPathElement* element, float x, float y, float x1, float y1)
     {
-        return adoptRef(new SVGPathSegCurvetoQuadraticRel(element, role, x, y, x1, y1));
+        return adoptRef(new SVGPathSegCurvetoQuadraticRel(element, x, y, x1, y1));
     }
 
 private:
-    SVGPathSegCurvetoQuadraticRel(SVGPathElement* element, SVGPathSegRole role, float x, float y, float x1, float y1)
-        : SVGPathSegCurvetoQuadratic(element, role, x, y, x1, y1)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegCurvetoQuadraticRel(SVGPathElement* element, float x, float y, float x1, float y1)
+        : SVGPathSegCurvetoQuadratic(element, x, y, x1, y1) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_CURVETO_QUADRATIC_REL; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "q"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_CURVETO_QUADRATIC_REL; }
+    virtual String pathSegTypeAsLetter() const override { return "q"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegCurvetoQuadraticRel_h

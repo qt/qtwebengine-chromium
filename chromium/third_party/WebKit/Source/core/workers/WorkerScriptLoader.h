@@ -32,74 +32,75 @@
 #include "core/loader/ThreadableLoaderClient.h"
 #include "platform/network/ResourceRequest.h"
 #include "platform/weborigin/KURL.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/FastAllocBase.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
-    class ResourceRequest;
-    class ResourceResponse;
-    class ExecutionContext;
-    class TextResourceDecoder;
-    class WorkerScriptLoaderClient;
+class ResourceRequest;
+class ResourceResponse;
+class ExecutionContext;
+class TextResourceDecoder;
+class WorkerScriptLoaderClient;
 
-    class WorkerScriptLoader FINAL : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
-        WTF_MAKE_FAST_ALLOCATED;
-    public:
-        static PassRefPtr<WorkerScriptLoader> create()
-        {
-            return adoptRef(new WorkerScriptLoader());
-        }
+class WorkerScriptLoader final : public RefCounted<WorkerScriptLoader>, public ThreadableLoaderClient {
+    WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassRefPtr<WorkerScriptLoader> create()
+    {
+        return adoptRef(new WorkerScriptLoader());
+    }
 
-        void loadSynchronously(ExecutionContext&, const KURL&, CrossOriginRequestPolicy);
-        void loadAsynchronously(ExecutionContext&, const KURL&, CrossOriginRequestPolicy, WorkerScriptLoaderClient*);
+    void loadSynchronously(ExecutionContext&, const KURL&, CrossOriginRequestPolicy);
+    void loadAsynchronously(ExecutionContext&, const KURL&, CrossOriginRequestPolicy, WorkerScriptLoaderClient*);
 
-        void notifyError();
+    void notifyError();
 
-        // This will immediately lead to notifyFinished() if loadAsynchronously
-        // is in progress.
-        void cancel();
+    // This will immediately lead to notifyFinished() if loadAsynchronously
+    // is in progress.
+    void cancel();
 
-        void setClient(WorkerScriptLoaderClient* client) { m_client = client; }
+    void setClient(WorkerScriptLoaderClient* client) { m_client = client; }
 
-        String script();
-        const KURL& url() const { return m_url; }
-        const KURL& responseURL() const;
-        bool failed() const { return m_failed; }
-        unsigned long identifier() const { return m_identifier; }
+    String script();
+    const KURL& url() const { return m_url; }
+    const KURL& responseURL() const;
+    bool failed() const { return m_failed; }
+    unsigned long identifier() const { return m_identifier; }
 
-        virtual void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&) OVERRIDE;
-        virtual void didReceiveData(const char* data, int dataLength) OVERRIDE;
-        virtual void didFinishLoading(unsigned long identifier, double) OVERRIDE;
-        virtual void didFail(const ResourceError&) OVERRIDE;
-        virtual void didFailRedirectCheck() OVERRIDE;
+    virtual void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    virtual void didReceiveData(const char* data, unsigned dataLength) override;
+    virtual void didFinishLoading(unsigned long identifier, double) override;
+    virtual void didFail(const ResourceError&) override;
+    virtual void didFailRedirectCheck() override;
 
-        void setTargetType(ResourceRequest::TargetType targetType) { m_targetType = targetType; }
+    void setRequestContext(WebURLRequest::RequestContext requestContext) { m_requestContext = requestContext; }
 
-    private:
-        friend class WTF::RefCounted<WorkerScriptLoader>;
+private:
+    friend class WTF::RefCounted<WorkerScriptLoader>;
 
-        WorkerScriptLoader();
-        virtual ~WorkerScriptLoader();
+    WorkerScriptLoader();
+    virtual ~WorkerScriptLoader();
 
-        PassOwnPtr<ResourceRequest> createResourceRequest();
-        void notifyFinished();
+    PassOwnPtr<ResourceRequest> createResourceRequest();
+    void notifyFinished();
 
-        WorkerScriptLoaderClient* m_client;
-        RefPtr<ThreadableLoader> m_threadableLoader;
-        String m_responseEncoding;
-        OwnPtr<TextResourceDecoder> m_decoder;
-        StringBuilder m_script;
-        KURL m_url;
-        KURL m_responseURL;
-        bool m_failed;
-        unsigned long m_identifier;
-        bool m_finishing;
-        ResourceRequest::TargetType m_targetType;
-    };
+    WorkerScriptLoaderClient* m_client;
+    RefPtr<ThreadableLoader> m_threadableLoader;
+    String m_responseEncoding;
+    OwnPtr<TextResourceDecoder> m_decoder;
+    StringBuilder m_script;
+    KURL m_url;
+    KURL m_responseURL;
+    bool m_failed;
+    unsigned long m_identifier;
+    bool m_finishing;
+    WebURLRequest::RequestContext m_requestContext;
+};
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerScriptLoader_h

@@ -17,6 +17,7 @@
 class SkBitmap;
 class SkClipStack;
 class SkBaseDevice;
+class SkBlitter;
 class SkMatrix;
 class SkPath;
 class SkRegion;
@@ -49,8 +50,9 @@ public:
         this->drawPath(path, paint, prePathMatrix, pathIsMutable, false);
     }
 
-    void drawPath(const SkPath& path, const SkPaint& paint) const {
-        this->drawPath(path, paint, NULL, false, false);
+    void drawPath(const SkPath& path, const SkPaint& paint,
+                  SkBlitter* customBlitter = NULL) const {
+        this->drawPath(path, paint, NULL, false, false, customBlitter);
     }
 
     void    drawBitmap(const SkBitmap&, const SkMatrix&, const SkPaint&) const;
@@ -58,8 +60,8 @@ public:
     void    drawText(const char text[], size_t byteLength, SkScalar x,
                      SkScalar y, const SkPaint& paint) const;
     void    drawPosText(const char text[], size_t byteLength,
-                        const SkScalar pos[], SkScalar constY,
-                        int scalarsPerPosition, const SkPaint& paint) const;
+                        const SkScalar pos[], int scalarsPerPosition,
+                        const SkPoint& offset, const SkPaint& paint) const;
     void    drawTextOnPath(const char text[], size_t byteLength,
                         const SkPath&, const SkMatrix*, const SkPaint&) const;
     void    drawVertices(SkCanvas::VertexMode mode, int count,
@@ -74,8 +76,9 @@ public:
      *
      *  Only device A8 is supported right now.
      */
-    void drawPathCoverage(const SkPath& src, const SkPaint& paint) const {
-        this->drawPath(src, paint, NULL, false, true);
+    void drawPathCoverage(const SkPath& src, const SkPaint& paint,
+                          SkBlitter* customBlitter = NULL) const {
+        this->drawPath(src, paint, NULL, false, true, customBlitter);
     }
 
     /** Helper function that creates a mask from a path and an optional maskfilter.
@@ -110,15 +113,16 @@ public:
     void        drawText_asPaths(const char text[], size_t byteLength,
                                  SkScalar x, SkScalar y, const SkPaint&) const;
     void        drawPosText_asPaths(const char text[], size_t byteLength,
-                                    const SkScalar pos[], SkScalar constY,
-                                    int scalarsPerPosition, const SkPaint&) const;
+                                    const SkScalar pos[], int scalarsPerPosition,
+                                    const SkPoint& offset, const SkPaint&) const;
 
 private:
     void    drawDevMask(const SkMask& mask, const SkPaint&) const;
     void    drawBitmapAsMask(const SkBitmap&, const SkPaint&) const;
 
     void    drawPath(const SkPath&, const SkPaint&, const SkMatrix* preMatrix,
-                     bool pathIsMutable, bool drawCoverage) const;
+                     bool pathIsMutable, bool drawCoverage,
+                     SkBlitter* customBlitter = NULL) const;
 
     /**
      *  Return the current clip bounds, in local coordinates, with slop to account

@@ -35,8 +35,6 @@
 #include "platform/mediastream/RTCVoidRequest.h"
 #include "wtf/PassOwnPtr.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 namespace {
@@ -53,7 +51,7 @@ private:
 
 } // namespace
 
-WebRTCVoidRequest::WebRTCVoidRequest(const PassRefPtr<RTCVoidRequest>& constraints)
+WebRTCVoidRequest::WebRTCVoidRequest(RTCVoidRequest* constraints)
     : m_private(constraints)
 {
 }

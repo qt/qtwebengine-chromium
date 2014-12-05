@@ -1,5 +1,5 @@
 ## Makefile.in for ICU data
-## Copyright (c) 1999-2010, International Business Machines Corporation and
+## Copyright (c) 1999-2013, International Business Machines Corporation and
 ## others. All Rights Reserved.
 
 ## Source directory information
@@ -45,6 +45,7 @@ ifeq ($(CURDIR),)
 CURDIR=.
 endif
 PKGDATA = $(TOOLBINDIR)/pkgdata $(PKGDATA_OPTS) -q -c -s $(CURDIR)/out/build/$(ICUDATA_PLATFORM_NAME) -d $(ICUPKGDATA_OUTDIR)
+OS390_PDS_NAME = -z -L $(BATCH_STUB_TARGET)
 
 ifeq ($(OS390_STUBDATA),1)
 OS390PKG=package390
@@ -53,6 +54,10 @@ OS390INSTALL=install390
 # Additional data for 390
 OS390LIST=$(OUTTMPDIR)/icudata390.lst
 OUTTMPDIR_390STUB=$(top_builddir)/data/out/tmp_390stub
+endif
+
+ifeq ($(OS390BATCH),1)
+CPPFLAGS += -Wc,'ros,roc'
 endif
 
 # OBJDATADIR must be a short path (with ..'s) to the data.
@@ -104,7 +109,8 @@ TOOLDIR=$(top_builddir)/tools
 .PHONY : all all-local all-recursive install install-local install-files	\
 install-recursive clean clean-local clean-recursive distclean		\
 distclean-local distclean-recursive dist dist-local dist-recursive	\
-check check-local check-recursive build-local clean-resindex build-dir icudata.jar
+check check-local check-recursive build-local clean-resindex build-dir icudata.jar	\
+check-exhaustive
 
 ## Clear suffix list
 .SUFFIXES :
@@ -116,6 +122,8 @@ clean: clean-local
 distclean : distclean-local
 dist: 
 check: all
+
+check-exhaustive: check
 
 -include Makefile.local
 
@@ -172,6 +180,9 @@ endif
 endif
 ifneq ($(ICUDATA_SOURCE_IS_NATIVE_TARGET),YES)
 	$(PKGDATA_INVOKE) $(PKGDATA) -e $(ICUDATA_ENTRY_POINT) -T $(OUTTMPDIR) -p $(ICUDATA_NAME) -m $(PKGDATA_MODE) $(PKGDATA_VERSIONING) $(PKGDATA_LIBNAME) $(PKGDATA_LIST)
+ifeq ($(OS390BATCH),1)
+	$(PKGDATA_INVOKE) $(PKGDATA) -e $(ICUDATA_ENTRY_POINT) -T $(OUTTMPDIR) -p $(ICUDATA_NAME) -m $(PKGDATA_MODE) $(PKGDATA_VERSIONING) $(OS390_PDS_NAME) $(PKGDATA_LIST)
+endif
 else
 	$(INSTALL_DATA) $(ICUDATA_SOURCE_ARCHIVE) $(OUTDIR)
 endif
@@ -226,6 +237,8 @@ package390: $(OUTTMPDIR)/icudata390.lst $(PKGDATA_LIST) ./icupkg.inc packagedata
 ## DAT files - Misc. data files.
 #  2005-may-05 Removed Unicode properties files (unorm.icu, uprops.icu, ucase.icu, ubidi.icu)
 #  from data build. See Jitterbug 4497. (makedata.mak revision 1.117)
+#  2010-dec Removed pnames.icu.
+# These are now hardcoded in ICU4C and only loaded in ICU4J.
 #
 # CHROME: unames.icu is excluded from the data file.
 # coll/invuca.icu is also excluded. When building a ICU data file to check in,
@@ -234,7 +247,7 @@ package390: $(OUTTMPDIR)/icudata390.lst $(PKGDATA_LIST) ./icupkg.inc packagedata
 # presence when compiling coll/root.txt. We have to put it back if Webkit
 # begins to use it.
 # See https://bugs.webkit.org/show_bug.cgi?id=30437#c32 about invuca.icu.
-DAT_FILES_SHORT=pnames.icu cnvalias.icu coll/ucadata.icu nfc.nrm nfkc.nrm nfkc_cf.nrm uts46.nrm
+DAT_FILES_SHORT=cnvalias.icu coll/ucadata.icu nfc.nrm nfkc.nrm nfkc_cf.nrm uts46.nrm
 DAT_FILES=$(DAT_FILES_SHORT:%=$(BUILDDIR)/%)
 
 ## BRK files
@@ -244,10 +257,10 @@ BREAK_TREE=brkitr
 ALL_BRK_SOURCE= $(BRK_SOURCE) $(BRK_SOURCE_LOCAL)
 BRK_FILES_SHORT=$(ALL_BRK_SOURCE:%.txt=$(BREAK_TREE)/%.brk)
 BRK_FILES=$(ALL_BRK_SOURCE:%.txt=$(BRKBLDDIR)/%.brk)
-ifdef BRK_CTD_SOURCE
-ALL_CTD_SOURCE=$(BRK_CTD_SOURCE) $(BRK_CTD_SOURCE_LOCAL)
-CTD_FILES_SHORT=$(ALL_CTD_SOURCE:%.txt=$(BREAK_TREE)/%.ctd)
-CTD_FILES=$(ALL_CTD_SOURCE:%.txt=$(BRKBLDDIR)/%.ctd)
+ifdef BRK_DICT_SOURCE
+ALL_DICT_SOURCE=$(BRK_DICT_SOURCE) $(BRK_DICT_SOURCE_LOCAL)
+DICT_FILES_SHORT=$(ALL_DICT_SOURCE:%.txt=$(BREAK_TREE)/%.dict)
+DICT_FILES=$(ALL_DICT_SOURCE:%.txt=$(BRKBLDDIR)/%.dict)
 endif
 ifdef BRK_RES_SOURCE
 BRS_SRC= root.txt $(BRK_RES_SOURCE) $(BRK_RES_SOURCE_LOCAL)
@@ -346,7 +359,7 @@ ifeq ($(ENABLE_SO_VERSION_DATA),1)
 ifeq ($(PKGDATA_MODE),dll)
 SO_VERSION_DATA = $(OUTTMPDIR)/icudata.res
 $(SO_VERSION_DATA) : $(MISCSRCDIR)/icudata.rc
-	rc.exe /i$(srcdir)/../common /fo$@ $(CPPFLAGS) $(SOURCE_FILE)
+	rc.exe /i$(srcdir)/../common /i$(top_builddir)/common /fo$@ $(CPPFLAGS) $(SOURCE_FILE)
 endif
 endif
 
@@ -413,14 +426,14 @@ SPREP_FILES = $(ALL_SPREP_SOURCE:%.txt=$(BUILDDIR)/%.spp)
 SPREP_FILES_SHORT = $(ALL_SPREP_SOURCE:%.txt=%.spp)
 
 ## All generated files
-ALL_FILES = $(DAT_FILES) $(CNV_FILES) $(CNV_FILES_SPECIAL) $(BRK_FILES) $(CTD_FILES) $(RES_FILES) $(INDEX_RES_FILE) $(CURR_FILES) $(LANG_FILES) $(REGION_FILES) $(ZONE_FILES) $(COLLATION_FILES) $(BRK_RES_FILES) $(RBNF_FILES) $(TRANSLIT_FILES) $(SPREP_FILES) $(CFU_FILES)
+ALL_FILES = $(DAT_FILES) $(CNV_FILES) $(CNV_FILES_SPECIAL) $(BRK_FILES) $(DICT_FILES) $(RES_FILES) $(INDEX_RES_FILE) $(CURR_FILES) $(LANG_FILES) $(REGION_FILES) $(ZONE_FILES) $(COLLATION_FILES) $(BRK_RES_FILES) $(RBNF_FILES) $(TRANSLIT_FILES) $(SPREP_FILES) $(CFU_FILES)
 ALL_INDEX_SRC_FILES = $(PKGDATA_LIST) $(INDEX_FILE) $(CURR_INDEX_FILE) $(LANG_INDEX_FILE) $(REGION_INDEX_FILE) $(ZONE_INDEX_FILE) $(COLLATION_INDEX_FILE) $(BRK_RES_INDEX_FILE) $(RBNF_INDEX_FILE)
 # a list to use in the .lst files (package-relative)
 COLL_FILES_LIST=$(COLLATION_FILES_SHORT) $(COLLATION_INDEX_RES_SHORT)
-BRK_FILES_LIST=$(BRK_FILES_SHORT) $(CTD_FILES_SHORT) $(BRK_RES_FILES_SHORT) $(BRK_RES_INDEX_RES_SHORT) 
+BRK_FILES_LIST=$(BRK_FILES_SHORT) $(BRK_RES_FILES_SHORT) $(BRK_RES_INDEX_RES_SHORT) $(DICT_FILES_SHORT)
 LOCALE_FILES_LIST= $(RES_FILES_SHORT) $(LANG_FILES_SHORT) $(REGION_FILES_SHORT) $(ZONE_FILES_SHORT)
 MISC_FILES_LIST=$(DAT_FILES_SHORT) $(CNV_FILES_SHORT) $(CNV_FILES_SHORT_SPECIAL) $(CURR_FILES_SHORT) $(RBNF_FILES_SHORT) $(RBNF_INDEX_RES_SHORT) $(TRANSLIT_FILES_SHORT) $(SPREP_FILES_SHORT) $(CFU_FILES_SHORT)
-UNI_CORE_DATA=uprops.icu ucase.icu ubidi.icu
+UNI_CORE_DATA=pnames.icu uprops.icu ucase.icu ubidi.icu
 UNI_CORE_TARGET_DATA=$(UNI_CORE_DATA:%=$(BUILDDIR)/%)
 
 ifneq ($(INCLUDE_UNI_CORE_DATA),)
@@ -503,25 +516,32 @@ $(BUILDDIR)/coll/%.icu: $(SRCDATADIR)/in/coll/%.icu
 ####################################################    SPP
 # SPP FILES
 
-# CHROME: We don't build unames.icu.
-$(BUILDDIR)/%.spp: $(SPREPSRCDIR)/%.txt $(TOOLBINDIR)/gensprep$(TOOLEXEEXT) $(BUILDDIR)/pnames.icu
+$(BUILDDIR)/%.spp: $(SPREPSRCDIR)/%.txt $(TOOLBINDIR)/gensprep$(TOOLEXEEXT) $(BUILDDIR)/unames.icu
 	$(INVOKE) $(TOOLBINDIR)/gensprep -d $(BUILDDIR) -i $(BUILDDIR) -s $(SPREPSRCDIR) -b $(@F:%.spp=%) -m $(UNICODEDATADIR) -u 3.2.0 $(<F)
 
 ####################################################    BRK
 # BRK FILES
 
-#thaidict.brk: $(SRCDATADIR)/thaidict.brk
-#	$(RMV) $@ && ln -s $(BUILDDIR) $@
-
 $(BRKBLDDIR)/%.brk: $(BRKSRCDIR)/%.txt $(TOOLBINDIR)/genbrk$(TOOLEXEEXT) $(DAT_FILES)
 	$(INVOKE) $(TOOLBINDIR)/genbrk -c -i $(BUILDDIR) -r $< -o $@
 
-####################################################    CTD
-# CTD FILES
+####################################################    DICT
+# DICT FILES
 
-# .ctd file now generated regardless of whether dictionary file exists
-$(BRKBLDDIR)/%.ctd: $(TOOLBINDIR)/genctd$(TOOLEXEEXT) $(DAT_FILES)
-	$(INVOKE) $(TOOLBINDIR)/genctd -c -i $(BUILDDIR) -o $@ $(BRKSRCDIR)/$(*F).txt
+# .dict file generated regardless of whether dictionary file exists
+
+$(BRKBLDDIR)/%.dict: $(TOOLBINDIR)/gendict$(TOOLEXEEXT) $(DAT_FILES)
+	$(INVOKE) $(TOOLBINDIR)/gendict --uchars -c -i $(BUILDDIR) $(BRKSRCDIR)/$(*F).txt $@
+
+$(BRKBLDDIR)/thaidict.dict: $(TOOLBINDIR)/gendict$(TOOLEXEEXT) $(DAT_FILES)
+	$(INVOKE) $(TOOLBINDIR)/gendict --bytes --transform offset-0x0e00 -c -i $(BUILDDIR) $(BRKSRCDIR)/thaidict.txt $(BRKBLDDIR)/thaidict.dict
+
+$(BRKBLDDIR)/laodict.dict: $(TOOLBINDIR)/gendict$(TOOLEXEEXT) $(DAT_FILES)
+	$(INVOKE) $(TOOLBINDIR)/gendict --bytes --transform offset-0x0e80 -c -i $(BUILDDIR) $(BRKSRCDIR)/laodict.txt $(BRKBLDDIR)/laodict.dict
+
+# TODO: figure out why combining characters are here?
+$(BRKBLDDIR)/khmerdict.dict: $(TOOLBINDIR)/gendict$(TOOLEXEEXT) $(DAT_FILES)
+	$(INVOKE) $(TOOLBINDIR)/gendict --bytes --transform offset-0x1780 -c -i $(BUILDDIR) $(BRKSRCDIR)/khmerdict.txt $(BRKBLDDIR)/khmerdict.dict
 
 ####################################################    CFU
 # CFU FILES
@@ -663,7 +683,7 @@ $(COLLATION_INDEX_FILE): $(SRCLISTDEPS)
 	echo "}" >> $@;
 
 ### brk res
-$(BRKBLDDIR)/%.res: $(BRKSRCDIR)/%.txt $(TOOLBINDIR)/genrb$(TOOLEXEEXT) $(BRK_FILES) $(DAT_FILES)
+$(BRKBLDDIR)/%.res: $(BRKSRCDIR)/%.txt $(TOOLBINDIR)/genrb$(TOOLEXEEXT) $(BRK_FILES) $(DICT_FILES) $(DAT_FILES)
 	$(INVOKE) $(TOOLBINDIR)/genrb $(GENRBOPTS) -i $(BUILDDIR) -s $(BRKSRCDIR) -d $(BRKBLDDIR) $(<F)
 
 $(BRKBLDDIR)/$(INDEX_NAME).res: $(OUTTMPDIR)/$(BREAK_TREE)/$(INDEX_NAME).txt $(TOOLBINDIR)/genrb$(TOOLEXEEXT)
@@ -764,11 +784,10 @@ clean-resindex:
 $(BUILDDIR)/$(INDEX_NAME).res: $(INDEX_FILE) $(TOOLBINDIR)/genrb$(TOOLEXEEXT)
 	$(INVOKE) $(TOOLBINDIR)/genrb $(GENRBOPTS) -i $(BUILDDIR) -d $(BUILDDIR) $(INDEX_FILE)
 
-# The core Unicode properties files (uprops.icu, ucase.icu, ubidi.icu)
+# The core Unicode properties files (pnames.icu, uprops.icu, ucase.icu, ubidi.icu)
 # are hardcoded in the common DLL and therefore not included in the data package any more.
 # They are not built by default but need to be built for ICU4J data and for getting the .c source files
 # when updating the Unicode data.
-# Changed in Makefile.in revision 1.147. See Jitterbug 4497.
 uni-core-data: build-dir $(UNI_CORE_TARGET_DATA)
 	@echo Unicode .icu files built to $(BUILDDIR)
 
@@ -782,26 +801,43 @@ JAR=jar
 
 # For building the testdata.jar see ../test/testdata/Makefile.
 
+ICU4J_TZDATA=$(OUTDIR)/icu4j/icutzdata.jar
+ICU4J_TZDATA_FILES=zoneinfo64 metaZones timezoneTypes windowsZones
+ICU4J_DATA_DIRNAME=com/ibm/icu/impl/data/$(ICUDATA_BASENAME_VERSION)b
+ICU4J_TZDATA_PATHS=$(ICU4J_TZDATA_FILES:%="$(ICU4J_DATA_DIRNAME)/%.res")
+
+# generate icu4j-related data to $(OUTDIR)/icu4j/com/ibm/icu/impl/data/...
+generate-data: build-dir packagedata $(OUTTMPDIR)/$(ICUDATA_PLATFORM_NAME).dat uni-core-data
+	mkdir -p $(OUTDIR)/icu4j/$(ICU4J_DATA_DIRNAME)
+	mkdir -p $(OUTDIR)/icu4j/tzdata/$(ICU4J_DATA_DIRNAME)
+	echo pnames.icu ubidi.icu ucase.icu uprops.icu > $(OUTDIR)/icu4j/add.txt
+	$(INVOKE) $(TOOLBINDIR)/icupkg $(OUTTMPDIR)/$(ICUDATA_PLATFORM_NAME).dat $(OUTDIR)/icu4j/$(ICUDATA_BASENAME_VERSION)b.dat -a $(OUTDIR)/icu4j/add.txt -s $(BUILDDIR) -x '*' -tb -d $(OUTDIR)/icu4j/$(ICU4J_DATA_DIRNAME)
+	mv $(ICU4J_TZDATA_PATHS:%=$(OUTDIR)/icu4j/%) "$(OUTDIR)/icu4j/tzdata/$(ICU4J_DATA_DIRNAME)"
+
+$(OUTDIR)/icu4j/icutzdata.jar: generate-data
+	$(JAR) cf $(OUTDIR)/icu4j/icutzdata.jar -C $(OUTDIR)/icu4j/tzdata $(ICU4J_DATA_DIRNAME)/
+
 # Build icudata.jar:
 # - add the uni-core-data to the ICU package
 # - swap the ICU data
 # - extract all data items
 # - package them into the .jar file
-$(OUTDIR)/icu4j/icudata.jar: build-dir packagedata $(OUTTMPDIR)/$(ICUDATA_PLATFORM_NAME).dat uni-core-data
-	mkdir -p $(OUTDIR)/icu4j/com/ibm/icu/impl/data/$(ICUDATA_BASENAME_VERSION)b
-	echo ubidi.icu ucase.icu uprops.icu > $(OUTDIR)/icu4j/add.txt
-	$(INVOKE) $(TOOLBINDIR)/icupkg $(OUTTMPDIR)/$(ICUDATA_PLATFORM_NAME).dat $(OUTDIR)/icu4j/$(ICUDATA_BASENAME_VERSION)b.dat -a $(OUTDIR)/icu4j/add.txt -s $(BUILDDIR) -x '*' -tb -d $(OUTDIR)/icu4j/com/ibm/icu/impl/data/$(ICUDATA_BASENAME_VERSION)b
-	$(JAR) cf $(OUTDIR)/icu4j/icudata.jar -C $(OUTDIR)/icu4j com/ibm/icu/impl/data/$(ICUDATA_BASENAME_VERSION)b
+$(OUTDIR)/icu4j/icudata.jar: generate-data
+	$(JAR) cf $(OUTDIR)/icu4j/icudata.jar -C $(OUTDIR)/icu4j $(ICU4J_DATA_DIRNAME)/
 
 ICU4J_DATA=$(OUTDIR)/icu4j/icudata.jar
 
 ifdef ICU4J_ROOT
 
-ICU4J_DATA_INSTALLED=$(ICU4J_ROOT)/main/shared/data/icudata.jar
+ICU4J_DATA_INSTALLED=$(ICU4J_ROOT)/main/shared/data/icudata.jar $(ICU4J_ROOT)/main/shared/data/icutzdata.jar
 
 $(ICU4J_ROOT)/main/shared/data/icudata.jar: $(OUTDIR)/icu4j/icudata.jar
 	mkdir -p $(ICU4J_ROOT)/main/shared/data
 	cp $(OUTDIR)/icu4j/icudata.jar $(ICU4J_ROOT)/main/shared/data
+
+$(ICU4J_ROOT)/main/shared/data/icutzdata.jar: $(OUTDIR)/icu4j/icutzdata.jar
+	mkdir -p $(ICU4J_ROOT)/main/shared/data
+	cp $(OUTDIR)/icu4j/icutzdata.jar $(ICU4J_ROOT)/main/shared/data
 
 icu4j-data-install: $(ICU4J_DATA_INSTALLED)
 
@@ -814,7 +850,7 @@ icu4j-data-install: icu4j-data
 
 endif
 
-icu4j-data: $(ICU4J_DATA)
+icu4j-data: $(ICU4J_DATA) $(ICU4J_TZDATA)
 
 
 ###################################################################
@@ -832,9 +868,9 @@ pkgdataMakefile:
 ###########
 ########### 390 (z/OS) support
 UCMFILES390=ebcdic-xml-us.ucm ibm-37_P100-1995.ucm ibm-1047_P100-1995.ucm ibm-4909_P100-1999.ucm
-# used to depend on uprops.icu ucase.icu ubidi.icu
-# see Jitterbug 4497
-ALLFILES390=pnames.icu cnvalias.icu $(UCMFILES390:.ucm=.cnv)
+# used to depend on pnames.icu uprops.icu ucase.icu ubidi.icu
+# These are now hardcoded in ICU4C and only loaded in ICU4J.
+ALLFILES390=cnvalias.icu $(UCMFILES390:.ucm=.cnv)
 
 $(OUTTMPDIR)/icudata390.lst: $(SRCLISTDEPS)
 	@echo "generating $@ (list of 390 data files)"
@@ -850,3 +886,4 @@ $(LIBICUUC): $(LIBICUDT)
 	$(RMV) $(LIBICUUC)
 	(cd ../common && $(MAKE) RECURSIVE=YES) || exit;
 endif
+

@@ -16,6 +16,7 @@
 namespace content {
 
 class EmbeddedWorkerRegistry;
+class ServiceWorkerProviderHost;
 class ServiceWorkerRegistration;
 class ServiceWorkerStorage;
 
@@ -28,12 +29,14 @@ class CONTENT_EXPORT ServiceWorkerJobCoordinator {
 
   void Register(const GURL& pattern,
                 const GURL& script_url,
-                int source_process_id,
+                ServiceWorkerProviderHost* provider_host,
                 const ServiceWorkerRegisterJob::RegistrationCallback& callback);
 
   void Unregister(
       const GURL& pattern,
       const ServiceWorkerUnregisterJob::UnregistrationCallback& callback);
+
+  void Update(ServiceWorkerRegistration* registration);
 
   // Calls ServiceWorkerRegisterJobBase::Abort() on all jobs and removes them.
   void AbortAll();

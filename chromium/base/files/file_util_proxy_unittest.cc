@@ -5,7 +5,7 @@
 #include "base/files/file_util_proxy.h"
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop.h"
@@ -23,7 +23,7 @@ class FileUtilProxyTest : public testing::Test {
         bytes_written_(-1),
         weak_factory_(this) {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
     ASSERT_TRUE(file_thread_.Start());
   }

@@ -16,13 +16,18 @@
 #include "content/browser/shared_worker/shared_worker_host.h"
 #include "content/browser/shared_worker/shared_worker_instance.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
-#include "content/browser/worker_host/worker_document_set.h"
+#include "content/browser/shared_worker/worker_document_set.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/worker_service_observer.h"
 
 namespace content {
+
+WorkerService* WorkerService::GetInstance() {
+  return SharedWorkerServiceImpl::GetInstance();
+}
+
 namespace {
 
 class ScopedWorkerDependencyChecker {
@@ -352,6 +357,13 @@ void SharedWorkerServiceImpl::WorkerContextDestroyed(
   host->WorkerContextDestroyed();
 }
 
+void SharedWorkerServiceImpl::WorkerReadyForInspection(
+    int worker_route_id,
+    SharedWorkerMessageFilter* filter) {
+  if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id))
+    host->WorkerReadyForInspection();
+}
+
 void SharedWorkerServiceImpl::WorkerScriptLoaded(
     int worker_route_id,
     SharedWorkerMessageFilter* filter) {
@@ -394,10 +406,14 @@ void SharedWorkerServiceImpl::AllowDatabase(
 void SharedWorkerServiceImpl::AllowFileSystem(
     int worker_route_id,
     const GURL& url,
-    bool* result,
+    IPC::Message* reply_msg,
     SharedWorkerMessageFilter* filter) {
-  if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id))
-    host->AllowFileSystem(url, result);
+  if (SharedWorkerHost* host = FindSharedWorkerHost(filter, worker_route_id)) {
+    host->AllowFileSystem(url, make_scoped_ptr(reply_msg));
+  } else {
+    filter->Send(reply_msg);
+    return;
+  }
 }
 
 void SharedWorkerServiceImpl::AllowIndexedDB(
@@ -626,18 +642,10 @@ SharedWorkerServiceImpl::GetRenderersWithWorkerDependency() {
 void SharedWorkerServiceImpl::CheckWorkerDependency() {
   const std::set<int> current_worker_depended_renderers =
       GetRenderersWithWorkerDependency();
-  std::vector<int> added_items;
-  std::vector<int> removed_items;
-  std::set_difference(current_worker_depended_renderers.begin(),
-                      current_worker_depended_renderers.end(),
-                      last_worker_depended_renderers_.begin(),
-                      last_worker_depended_renderers_.end(),
-                      std::back_inserter(added_items));
-  std::set_difference(last_worker_depended_renderers_.begin(),
-                      last_worker_depended_renderers_.end(),
-                      current_worker_depended_renderers.begin(),
-                      current_worker_depended_renderers.end(),
-                      std::back_inserter(removed_items));
+  std::vector<int> added_items = base::STLSetDifference<std::vector<int> >(
+      current_worker_depended_renderers, last_worker_depended_renderers_);
+  std::vector<int> removed_items = base::STLSetDifference<std::vector<int> >(
+      last_worker_depended_renderers_, current_worker_depended_renderers);
   if (!added_items.empty() || !removed_items.empty()) {
     last_worker_depended_renderers_ = current_worker_depended_renderers;
     update_worker_dependency_(added_items, removed_items);

@@ -1,5 +1,7 @@
-<div id="page-settings" class="two-column visible page-settings" hidden>
-  <h1 i18n-content="pagesLabel"></h1>
+<div id="page-settings" class="two-column page-settings" hidden>
+  <div class="left-column">
+    <h1 i18n-content="pagesLabel"></h1>
+  </div>
   <div class="right-column">
     <div class="radio"><label>
       <input class="page-settings-all-radio" name="pages" checked type="radio">
@@ -13,7 +15,8 @@
         <div class="page-settings-custom-input-wrapper">
           <input class="page-settings-custom-input" type="text"
                  id="page-settings-custom-input"
-                 i18n-values="placeholder:examplePageRangeText">
+                 i18n-values="placeholder:examplePageRangeText;
+                              aria-label:examplePageRangeText">
         </div>
       </label>
       <span class="page-settings-custom-hint hint suggestion" aria-hidden="true"

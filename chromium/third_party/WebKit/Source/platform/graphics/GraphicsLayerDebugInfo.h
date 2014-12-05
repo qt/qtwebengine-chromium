@@ -32,20 +32,22 @@
 #define GraphicsLayerDebugInfo_h
 
 #include "platform/JSONValues.h"
+#include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/CompositingReasons.h"
+#include "platform/graphics/PaintInvalidationReason.h"
 #include "public/platform/WebGraphicsLayerDebugInfo.h"
 
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class GraphicsLayerDebugInfo FINAL : public blink::WebGraphicsLayerDebugInfo {
+class GraphicsLayerDebugInfo final : public WebGraphicsLayerDebugInfo {
 public:
     GraphicsLayerDebugInfo();
     virtual ~GraphicsLayerDebugInfo();
 
-    virtual void appendAsTraceFormat(blink::WebString* out) const OVERRIDE;
+    virtual void appendAsTraceFormat(WebString* out) const override;
 
     GraphicsLayerDebugInfo* clone() const;
 
@@ -55,18 +57,29 @@ public:
     void setOwnerNodeId(int id) { m_ownerNodeId = id; }
     Vector<LayoutRect>& currentLayoutRects() { return m_currentLayoutRects; }
 
+    void appendAnnotatedInvalidateRect(const FloatRect&, PaintInvalidationReason);
+    void clearAnnotatedInvalidateRects();
+
 private:
     void appendLayoutRects(JSONObject*) const;
+    void appendAnnotatedInvalidateRects(JSONObject*) const;
     void appendCompositingReasons(JSONObject*) const;
     void appendDebugName(JSONObject*) const;
     void appendOwnerNodeId(JSONObject*) const;
+
+    struct AnnotatedInvalidationRect {
+        FloatRect rect;
+        PaintInvalidationReason reason;
+    };
 
     String m_debugName;
     CompositingReasons m_compositingReasons;
     int m_ownerNodeId;
     Vector<LayoutRect> m_currentLayoutRects;
+    Vector<AnnotatedInvalidationRect> m_invalidations;
+    Vector<AnnotatedInvalidationRect> m_previousInvalidations;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

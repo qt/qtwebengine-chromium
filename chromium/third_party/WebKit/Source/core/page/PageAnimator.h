@@ -5,23 +5,28 @@
 #ifndef PageAnimator_h
 #define PageAnimator_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
 
+namespace blink {
+
+class LocalFrame;
 class Page;
 
-class PageAnimator {
+class PageAnimator final : public RefCountedWillBeGarbageCollected<PageAnimator> {
 public:
-    explicit PageAnimator(Page*);
-
+    static PassRefPtrWillBeRawPtr<PageAnimator> create(Page&);
+    void trace(Visitor*);
     void scheduleVisualUpdate();
     void serviceScriptedAnimations(double monotonicAnimationStartTime);
 
     void setAnimationFramePending() { m_animationFramePending = true; }
     bool isServicingAnimations() const { return m_servicingAnimations; }
-    void updateLayoutAndStyleForPainting();
+    void updateLayoutAndStyleForPainting(LocalFrame* rootFrame);
 
 private:
-    Page* m_page;
+    explicit PageAnimator(Page&);
+
+    RawPtrWillBeMember<Page> m_page;
     bool m_animationFramePending;
     bool m_servicingAnimations;
     bool m_updatingLayoutAndStyleForPainting;

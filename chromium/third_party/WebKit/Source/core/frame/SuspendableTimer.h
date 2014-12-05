@@ -30,7 +30,7 @@
 #include "core/dom/ActiveDOMObject.h"
 #include "platform/Timer.h"
 
-namespace WebCore {
+namespace blink {
 
 class SuspendableTimer : public TimerBase, public ActiveDOMObject {
 public:
@@ -38,22 +38,21 @@ public:
     virtual ~SuspendableTimer();
 
     // ActiveDOMObject
-    virtual bool hasPendingActivity() const OVERRIDE FINAL;
-    virtual void stop() OVERRIDE;
-    virtual void suspend() OVERRIDE FINAL;
-    virtual void resume() OVERRIDE FINAL;
+    virtual bool hasPendingActivity() const override final;
+    virtual void stop() override;
+    virtual void suspend() override final;
+    virtual void resume() override final;
 
 private:
-    virtual void fired() = 0;
+    virtual void fired() override = 0;
 
     double m_nextFireInterval;
     double m_repeatInterval;
-    bool m_active;
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
     bool m_suspended;
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SuspendableTimer_h

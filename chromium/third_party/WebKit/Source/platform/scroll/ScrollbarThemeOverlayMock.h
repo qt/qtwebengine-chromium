@@ -33,15 +33,15 @@
 
 #include "platform/scroll/ScrollbarThemeOverlay.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT ScrollbarThemeOverlayMock : public ScrollbarThemeOverlay {
 public:
     ScrollbarThemeOverlayMock() : ScrollbarThemeOverlay(3, 4, DisallowHitTest, Color(128, 128, 128)) { }
 
 private:
-    virtual bool isMockTheme() const OVERRIDE FINAL { return true; }
+    virtual bool isMockTheme() const override final { return true; }
 };
 
-} // namespace WebCore
+} // namespace blink
 #endif // ScrollbarThemeOverlayMock_h

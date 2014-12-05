@@ -30,7 +30,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Event;
 
@@ -43,14 +43,14 @@ protected:
     EventFactoryBase() { }
 };
 
-class EventFactory FINAL : public EventFactoryBase {
+class EventFactory final : public EventFactoryBase {
 public:
     static PassOwnPtr<EventFactory> create()
     {
         return adoptPtr(new EventFactory());
     }
 
-    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) OVERRIDE;
+    virtual PassRefPtrWillBeRawPtr<Event> create(const String& eventType) override;
 };
 
 }

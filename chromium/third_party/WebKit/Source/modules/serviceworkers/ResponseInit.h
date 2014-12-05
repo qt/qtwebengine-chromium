@@ -5,26 +5,43 @@
 #ifndef ResponseInit_h
 #define ResponseInit_h
 
-#include "bindings/v8/Dictionary.h"
-#include "modules/serviceworkers/HeaderMap.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "modules/serviceworkers/Headers.h"
+#include "platform/heap/Handle.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
-struct ResponseInit {
-    explicit ResponseInit(const Dictionary& options)
+// FIXME: Use IDL dictionary instead of this class.
+class ResponseInit {
+    STACK_ALLOCATED();
+public:
+    ResponseInit()
         : status(200)
         , statusText("OK")
     {
-        options.get("status", status);
+    }
+    explicit ResponseInit(const Dictionary& options, ExceptionState& exceptionState)
+        : status(200)
+        , statusText("OK")
+    {
+        DictionaryHelper::get(options, "status", status);
         // FIXME: Spec uses ByteString for statusText. http://crbug.com/347426
-        options.get("statusText", statusText);
-        options.get("headers", headers);
+        DictionaryHelper::get(options, "statusText", statusText);
+        DictionaryHelper::get(options, "headers", headers);
+        if (!headers) {
+            Vector<Vector<String> > headersVector;
+            if (DictionaryHelper::get(options, "headers", headersVector, exceptionState))
+                headers = Headers::create(headersVector, exceptionState);
+            else
+                DictionaryHelper::get(options, "headers", headersDictionary);
+        }
     }
 
     unsigned short status;
     String statusText;
-    RefPtr<HeaderMap> headers;
+    Member<Headers> headers;
+    Dictionary headersDictionary;
 };
 
 }

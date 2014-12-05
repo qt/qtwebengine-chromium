@@ -38,7 +38,7 @@ scoped_ptr<net::test_server::HttpResponse> HandleEchoTitleRequest(
       base::StringPrintf(
           "<html><head><title>%s</title></head></html>",
           request.content.c_str()));
-  return http_response.PassAs<net::test_server::HttpResponse>();
+  return http_response.Pass();
 }
 
 }  // namespace
@@ -47,7 +47,7 @@ class SessionHistoryTest : public ContentBrowserTest {
  protected:
   SessionHistoryTest() {}
 
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
     embedded_test_server()->RegisterRequestHandler(
         base::Bind(&HandleEchoTitleRequest, "/echotitle"));

@@ -44,6 +44,7 @@ struct BuildInfoSingletonTraits {
 
 BuildInfo::BuildInfo(JNIEnv* env)
     : device_(StrDupJString(Java_BuildInfo_getDevice(env))),
+      manufacturer_(StrDupJString(Java_BuildInfo_getDeviceManufacturer(env))),
       model_(StrDupJString(Java_BuildInfo_getDeviceModel(env))),
       brand_(StrDupJString(Java_BuildInfo_getBrand(env))),
       android_build_id_(StrDupJString(Java_BuildInfo_getAndroidBuildId(env))),
@@ -69,7 +70,7 @@ BuildInfo* BuildInfo::GetInstance() {
 
 void BuildInfo::set_java_exception_info(const std::string& info) {
   DCHECK(!java_exception_info_) << "info should be set only once.";
-  java_exception_info_ = strndup(info.c_str(), 1024);
+  java_exception_info_ = strndup(info.c_str(), 4096);
 }
 
 // static

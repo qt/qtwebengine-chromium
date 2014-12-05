@@ -26,20 +26,15 @@
 #include "config.h"
 #include "modules/gamepad/GamepadList.h"
 
-namespace WebCore {
+namespace blink {
 
 GamepadList::GamepadList()
-{
-    ScriptWrappable::init(this);
-}
-
-GamepadList::~GamepadList()
 {
 }
 
 void GamepadList::set(unsigned index, Gamepad* gamepad)
 {
-    if (index >= blink::WebGamepads::itemsLengthCap)
+    if (index >= WebGamepads::itemsLengthCap)
         return;
     m_items[index] = gamepad;
 }
@@ -51,9 +46,9 @@ Gamepad* GamepadList::item(unsigned index)
 
 void GamepadList::trace(Visitor* visitor)
 {
-    for (unsigned index = 0; index < blink::WebGamepads::itemsLengthCap; index++) {
+    for (unsigned index = 0; index < WebGamepads::itemsLengthCap; index++) {
         visitor->trace(m_items[index]);
     }
 }
 
-} // namespace WebCore
+} // namespace blink

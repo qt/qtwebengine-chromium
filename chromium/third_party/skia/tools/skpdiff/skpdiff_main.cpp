@@ -5,11 +5,16 @@
  * found in the LICENSE file.
  */
 
+// TODO(djsollen): Rename this whole package (perhaps to "SkMultiDiffer").
+// It's not just for "pdiff" (perceptual diffs)--it's a harness that allows
+// the execution of an arbitrary set of difference algorithms.
+// See http://skbug.com/2711 ('rename skpdiff')
+
 #if SK_SUPPORT_OPENCL
 
 #define __NO_STD_VECTOR // Uses cl::vectpr instead of std::vectpr
 #define __NO_STD_STRING // Uses cl::STRING_CLASS instead of std::string
-#if SK_BUILD_FOR_MAC
+#if defined(SK_BUILD_FOR_MAC)
 // Note that some macs don't have this header and it can be downloaded from the Khronos registry
 #   include <OpenCL/cl.hpp>
 #else
@@ -22,6 +27,7 @@
 #include "SkGraphics.h"
 #include "SkStream.h"
 #include "SkTDArray.h"
+#include "SkTaskGroup.h"
 
 #include "SkDifferentPixelsMetric.h"
 #include "SkDiffContext.h"
@@ -37,11 +43,14 @@ DEFINE_bool2(list, l, false, "List out available differs");
 DEFINE_string2(differs, d, "", "The names of the differs to use or all of them by default");
 DEFINE_string2(folders, f, "", "Compare two folders with identical subfile names: <baseline folder> <test folder>");
 DEFINE_string2(patterns, p, "", "Use two patterns to compare images: <baseline> <test>");
-DEFINE_string2(output, o, "", "Writes the output of these diffs to output: <output>");
-DEFINE_string(alphaDir, "", "Writes the alpha mask of these diffs to output: <output>");
+DEFINE_string2(output, o, "", "Writes a JSON summary of these diffs to file: <filepath>");
+DEFINE_string(alphaDir, "", "If the differ can generate an alpha mask, write it into directory: <dirpath>");
+DEFINE_string(rgbDiffDir, "", "If the differ can generate an image showing the RGB diff at each pixel, write it into directory: <dirpath>");
+DEFINE_string(whiteDiffDir, "", "If the differ can generate an image showing every changed pixel in white, write it into directory: <dirpath>");
 DEFINE_bool(jsonp, true, "Output JSON with padding");
-DEFINE_string(csv, "", "Writes the output of these diffs to a csv file");
+DEFINE_string(csv, "", "Writes the output of these diffs to a csv file: <filepath>");
 DEFINE_int32(threads, -1, "run N threads in parallel [default is derived from CPUs available]");
+DEFINE_bool(longnames, false, "Output image names are a combination of baseline and test names");
 
 #if SK_SUPPORT_OPENCL
 /// A callback for any OpenCL errors
@@ -117,6 +126,7 @@ int tool_main(int argc, char * argv[]) {
 
     // Needed by various Skia components
     SkAutoGraphics ag;
+    SkTaskGroup::Enabler enabled;
 
     if (FLAGS_list) {
         SkDebugf("Available Metrics:\n");
@@ -124,7 +134,7 @@ int tool_main(int argc, char * argv[]) {
 
     // Figure which differs the user chose, and optionally print them if the user requests it
     SkTDArray<SkImageDiffer*> chosenDiffers;
-    for (int differIndex = 0; NULL != gDiffers[differIndex]; differIndex++) {
+    for (int differIndex = 0; gDiffers[differIndex]; differIndex++) {
         SkImageDiffer* differ = gDiffers[differIndex];
         if (FLAGS_list) {
             SkDebugf("    %s", differ->getName());
@@ -193,12 +203,32 @@ int tool_main(int argc, char * argv[]) {
             return 1;
         }
     }
+    if (!FLAGS_rgbDiffDir.isEmpty()) {
+        if (1 != FLAGS_rgbDiffDir.count()) {
+            SkDebugf("rgbDiffDir flag expects one argument: <directory>\n");
+            return 1;
+        }
+    }
+
+    if (!FLAGS_whiteDiffDir.isEmpty()) {
+        if (1 != FLAGS_whiteDiffDir.count()) {
+            SkDebugf("whiteDiffDir flag expects one argument: <directory>\n");
+            return 1;
+        }
+    }
 
     SkDiffContext ctx;
     ctx.setDiffers(chosenDiffers);
+    ctx.setLongNames(FLAGS_longnames);
 
     if (!FLAGS_alphaDir.isEmpty()) {
-        ctx.setDifferenceDir(SkString(FLAGS_alphaDir[0]));
+        ctx.setAlphaMaskDir(SkString(FLAGS_alphaDir[0]));
+    }
+    if (!FLAGS_rgbDiffDir.isEmpty()) {
+        ctx.setRgbDiffDir(SkString(FLAGS_rgbDiffDir[0]));
+    }
+    if (!FLAGS_whiteDiffDir.isEmpty()) {
+        ctx.setWhiteDiffDir(SkString(FLAGS_whiteDiffDir[0]));
     }
 
     if (FLAGS_threads >= 0) {

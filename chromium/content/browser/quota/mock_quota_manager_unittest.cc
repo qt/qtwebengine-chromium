@@ -5,7 +5,7 @@
 #include <set>
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
@@ -15,9 +15,9 @@
 #include "content/public/test/mock_storage_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using quota::kQuotaStatusOk;
-using quota::kStorageTypePersistent;
-using quota::kStorageTypeTemporary;
+using storage::kQuotaStatusOk;
+using storage::kStorageTypePersistent;
+using storage::kStorageTypeTemporary;
 
 namespace content {
 
@@ -42,7 +42,7 @@ class MockQuotaManagerTest : public testing::Test {
       weak_factory_(this) {
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     policy_ = new MockSpecialStoragePolicy;
     manager_ = new MockQuotaManager(false /* is_incognito */,
@@ -52,7 +52,7 @@ class MockQuotaManagerTest : public testing::Test {
                                     policy_.get());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     // Make sure the quota manager cleans up correctly.
     manager_ = NULL;
     base::RunLoop().RunUntilIdle();
@@ -223,4 +223,4 @@ TEST_F(MockQuotaManagerTest, ModifiedOrigins) {
   EXPECT_EQ(0UL, origins().count(kOrigin1));
   EXPECT_EQ(1UL, origins().count(kOrigin2));
 }
-}  // Namespace content
+}  // namespace content

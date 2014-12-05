@@ -23,9 +23,8 @@
 
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-    class DOMWrapperWorld;
     class Event;
     class ExecutionContext;
 

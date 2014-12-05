@@ -34,9 +34,9 @@
 #include "core/dom/SpaceSplitString.h"
 #include "core/html/HTMLCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class ClassCollection FINAL : public HTMLCollection {
+class ClassCollection final : public HTMLCollection {
 public:
     // classNames argument is an AtomicString because it is common for Elements to share the same class names.
     // It is also used to construct a SpaceSplitString (m_classNames) and its constructor requires an AtomicString.
@@ -65,13 +65,9 @@ inline bool ClassCollection::elementMatches(const Element& testElement) const
         return false;
     if (!m_classNames.size())
         return false;
-    // FIXME: DOM4 allows getElementsByClassName to return non StyledElement.
-    // https://bugs.webkit.org/show_bug.cgi?id=94718
-    if (!testElement.isStyledElement())
-        return false;
     return testElement.classNames().containsAll(m_classNames);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ClassCollection_h

@@ -29,17 +29,17 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
   DecryptingVideoDecoder(
       const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
       const SetDecryptorReadyCB& set_decryptor_ready_cb);
-  virtual ~DecryptingVideoDecoder();
+  ~DecryptingVideoDecoder() override;
 
   // VideoDecoder implementation.
-  virtual void Initialize(const VideoDecoderConfig& config,
-                          bool low_delay,
-                          const PipelineStatusCB& status_cb,
-                          const OutputCB& output_cb) OVERRIDE;
-  virtual void Decode(const scoped_refptr<DecoderBuffer>& buffer,
-                      const DecodeCB& decode_cb) OVERRIDE;
-  virtual void Reset(const base::Closure& closure) OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  std::string GetDisplayName() const override;
+  void Initialize(const VideoDecoderConfig& config,
+                  bool low_delay,
+                  const PipelineStatusCB& status_cb,
+                  const OutputCB& output_cb) override;
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              const DecodeCB& decode_cb) override;
+  void Reset(const base::Closure& closure) override;
 
  private:
   // For a detailed state diagram please see this link: http://goo.gl/8jAok
@@ -53,12 +53,13 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
     kPendingDecode,
     kWaitingForKey,
     kDecodeFinished,
-    kStopped,
     kError
   };
 
-  // Callback for DecryptorHost::RequestDecryptor().
-  void SetDecryptor(Decryptor* decryptor);
+  // Callback for DecryptorHost::RequestDecryptor(). |decryptor_attached_cb| is
+  // called when the decryptor has been completely attached to the pipeline.
+  void SetDecryptor(Decryptor* decryptor,
+                    const DecryptorAttachedCB& decryptor_attached_cb);
 
   // Callback for Decryptor::InitializeVideoDecoder() during initialization.
   void FinishInitialization(bool success);
@@ -76,9 +77,6 @@ class MEDIA_EXPORT DecryptingVideoDecoder : public VideoDecoder {
 
   // Reset decoder and call |reset_cb_|.
   void DoReset();
-
-  // Free decoder resources and call |stop_cb_|.
-  void DoStop();
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 

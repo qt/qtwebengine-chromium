@@ -26,11 +26,11 @@
 #include "config.h"
 #include "core/editing/WrapContentsInDummySpanCommand.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/editing/ApplyStyleCommand.h"
-#include "core/html/HTMLElement.h"
+#include "core/html/HTMLSpanElement.h"
 
-namespace WebCore {
+namespace blink {
 
 WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtrWillBeRawPtr<Element> element)
     : SimpleEditCommand(element->document())
@@ -41,13 +41,11 @@ WrapContentsInDummySpanCommand::WrapContentsInDummySpanCommand(PassRefPtrWillBeR
 
 void WrapContentsInDummySpanCommand::executeApply()
 {
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
-    for (Node* child = m_element->firstChild(); child; child = child->nextSibling())
-        children.append(child);
+    NodeVector children;
+    getChildNodes(*m_element, children);
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_dummySpan->appendChild(children[i].release(), IGNORE_EXCEPTION);
+    for (auto& child : children)
+        m_dummySpan->appendChild(child.release(), IGNORE_EXCEPTION);
 
     m_element->appendChild(m_dummySpan.get(), IGNORE_EXCEPTION);
 }
@@ -63,16 +61,14 @@ void WrapContentsInDummySpanCommand::doUnapply()
 {
     ASSERT(m_element);
 
-    if (!m_dummySpan || !m_element->rendererIsEditable())
+    if (!m_dummySpan || !m_element->hasEditableStyle())
         return;
 
-    WillBeHeapVector<RefPtrWillBeMember<Node> > children;
-    for (Node* child = m_dummySpan->firstChild(); child; child = child->nextSibling())
-        children.append(child);
+    NodeVector children;
+    getChildNodes(*m_dummySpan, children);
 
-    size_t size = children.size();
-    for (size_t i = 0; i < size; ++i)
-        m_element->appendChild(children[i].release(), IGNORE_EXCEPTION);
+    for (auto& child : children)
+        m_element->appendChild(child.release(), IGNORE_EXCEPTION);
 
     m_dummySpan->remove(IGNORE_EXCEPTION);
 }
@@ -81,7 +77,7 @@ void WrapContentsInDummySpanCommand::doReapply()
 {
     ASSERT(m_element);
 
-    if (!m_dummySpan || !m_element->rendererIsEditable())
+    if (!m_dummySpan || !m_element->hasEditableStyle())
         return;
 
     executeApply();
@@ -94,4 +90,4 @@ void WrapContentsInDummySpanCommand::trace(Visitor* visitor)
     SimpleEditCommand::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

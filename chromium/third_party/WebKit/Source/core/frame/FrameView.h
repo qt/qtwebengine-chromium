@@ -25,16 +25,23 @@
 #ifndef FrameView_h
 #define FrameView_h
 
+#include "core/frame/FrameViewAutoSizeInfo.h"
 #include "core/rendering/PaintPhase.h"
 #include "platform/RuntimeEnabledFeatures.h"
+#include "platform/Widget.h"
+#include "platform/geometry/IntRect.h"
 #include "platform/geometry/LayoutRect.h"
 #include "platform/graphics/Color.h"
-#include "platform/scroll/ScrollView.h"
+#include "platform/scroll/ScrollTypes.h"
+#include "platform/scroll/ScrollableArea.h"
+#include "platform/scroll/Scrollbar.h"
 #include "wtf/Forward.h"
+#include "wtf/HashSet.h"
 #include "wtf/OwnPtr.h"
+#include "wtf/TemporaryChange.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXObjectCache;
 class DocumentLifecycle;
@@ -49,40 +56,41 @@ class Page;
 class RenderBox;
 class RenderEmbeddedObject;
 class RenderObject;
+class RenderPart;
 class RenderScrollbarPart;
-class RenderStyle;
 class RenderView;
-class RenderWidget;
+struct CompositedSelectionBound;
 
 typedef unsigned long long DOMTimeStamp;
 
-class FrameView FINAL : public ScrollView {
+class FrameView final : public Widget, public ScrollableArea {
 public:
     friend class RenderView;
     friend class Internals;
 
-    static PassRefPtr<FrameView> create(LocalFrame*);
-    static PassRefPtr<FrameView> create(LocalFrame*, const IntSize& initialSize);
+    static PassRefPtrWillBeRawPtr<FrameView> create(LocalFrame*);
+    static PassRefPtrWillBeRawPtr<FrameView> create(LocalFrame*, const IntSize& initialSize);
 
     virtual ~FrameView();
 
-    virtual HostWindow* hostWindow() const OVERRIDE;
+    virtual void invalidateRect(const IntRect&) override;
+    virtual void setFrameRect(const IntRect&) override;
 
-    virtual void invalidateRect(const IntRect&) OVERRIDE;
-    virtual void setFrameRect(const IntRect&) OVERRIDE;
+    LocalFrame& frame() const
+    {
+        ASSERT(m_frame);
+        return *m_frame;
+    }
 
-    virtual bool scheduleAnimation() OVERRIDE;
-
-    LocalFrame& frame() const { return *m_frame; }
     Page* page() const;
 
     RenderView* renderView() const;
 
-    virtual void setCanHaveScrollbars(bool) OVERRIDE;
+    void setCanHaveScrollbars(bool);
 
-    virtual PassRefPtr<Scrollbar> createScrollbar(ScrollbarOrientation) OVERRIDE;
+    PassRefPtrWillBeRawPtr<Scrollbar> createScrollbar(ScrollbarOrientation);
 
-    virtual void setContentsSize(const IntSize&) OVERRIDE;
+    void setContentsSize(const IntSize&);
     IntPoint clampOffsetAtScale(const IntPoint& offset, float scale) const;
 
     void layout(bool allowSubtree = true);
@@ -102,6 +110,8 @@ public:
     bool needsLayout() const;
     void setNeedsLayout();
 
+    void setNeedsUpdateWidgetPositions() { m_needsUpdateWidgetPositions = true; }
+
     // Methods for getting/setting the size Blink should use to layout the contents.
     IntSize layoutSize(IncludeScrollbarsInRect = ExcludeScrollbars) const;
     void setLayoutSize(const IntSize&);
@@ -112,17 +122,18 @@ public:
     bool layoutSizeFixedToFrameSize() { return m_layoutSizeFixedToFrameSize; }
 
     bool needsFullPaintInvalidation() const { return m_doFullPaintInvalidation; }
+    void setNeedsFullPaintInvalidation() { m_doFullPaintInvalidation = true; }
 
     void updateAcceleratedCompositingSettings();
 
     void recalcOverflowAfterStyleChange();
 
-    bool hasCompositedContent() const;
     bool isEnclosedInCompositingLayer() const;
 
     void resetScrollbars();
     void prepareForDetach();
     void detachCustomScrollbars();
+    void recalculateCustomScrollbarStyle();
     virtual void recalculateScrollbarOverlayStyle();
 
     void clear();
@@ -139,20 +150,19 @@ public:
 
     void adjustViewSize();
 
-    virtual IntRect windowClipRect(IncludeScrollbarsInRect = ExcludeScrollbars) const OVERRIDE;
     IntRect windowClipRectForFrameOwner(const HTMLFrameOwnerElement*) const;
 
-    virtual IntRect windowResizerRect() const OVERRIDE;
-
-    virtual float visibleContentScaleFactor() const OVERRIDE { return m_visibleContentScaleFactor; }
+    float visibleContentScaleFactor() const { return m_visibleContentScaleFactor; }
     void setVisibleContentScaleFactor(float);
 
-    virtual float inputEventsScaleFactor() const OVERRIDE;
-    virtual IntSize inputEventsOffsetForEmulation() const OVERRIDE;
+    // Scale used to convert incoming input events. Usually the same as visibleContentScaleFactor(), unless specifically changed.
+    float inputEventsScaleFactor() const;
+    // Offset used to convert incoming input events while emulating device metics.
+    IntSize inputEventsOffsetForEmulation() const;
     void setInputEventsTransformForEmulation(const IntSize&, float);
 
-    virtual void setScrollPosition(const IntPoint&) OVERRIDE;
-    virtual bool isRubberBandInProgress() const OVERRIDE;
+    void setScrollPosition(const DoublePoint&, ScrollBehavior = ScrollBehaviorInstant);
+    virtual bool isRubberBandInProgress() const override;
     void setScrollPositionNonProgrammatically(const IntPoint&);
 
     // This is different than visibleContentRect() in that it ignores negative (or overly positive)
@@ -164,16 +174,11 @@ public:
     void setMediaType(const AtomicString&);
     void adjustMediaTypeForPrinting(bool printing);
 
-    void setCannotBlitToWindow();
-    void setIsOverlapped(bool);
-    bool isOverlapped() const { return m_isOverlapped; }
-    void setContentIsOpaque(bool);
-
     void addSlowRepaintObject();
     void removeSlowRepaintObject();
     bool hasSlowRepaintObjects() const { return m_slowRepaintObjectCount; }
 
-    // Includes fixed- and sticky-position objects.
+    // Fixed-position objects.
     typedef HashSet<RenderObject*> ViewportConstrainedObjectSet;
     void addViewportConstrainedObject(RenderObject*);
     void removeViewportConstrainedObject(RenderObject*);
@@ -183,7 +188,6 @@ public:
     void handleLoadCompleted();
 
     void updateAnnotatedRegions();
-    void updateControlTints();
 
     void restoreScrollbar();
 
@@ -195,34 +199,37 @@ public:
     bool safeToPropagateScrollToParent() const { return m_safeToPropagateScrollToParent; }
     void setSafeToPropagateScrollToParent(bool isSafe) { m_safeToPropagateScrollToParent = isSafe; }
 
-    void addWidget(RenderWidget*);
-    void removeWidget(RenderWidget*);
+    void addPart(RenderPart*);
+    void removePart(RenderPart*);
+
     void updateWidgetPositions();
 
-    void addWidgetToUpdate(RenderEmbeddedObject&);
+    void addPartToUpdate(RenderEmbeddedObject&);
 
-    virtual void paintContents(GraphicsContext*, const IntRect& damageRect) OVERRIDE;
     void setPaintBehavior(PaintBehavior);
     PaintBehavior paintBehavior() const;
+    void setIsPainting(bool val) { m_isPainting = val; }
     bool isPainting() const;
+    void setLastPaintTime(double val) { m_lastPaintTime = val; }
     bool hasEverPainted() const { return m_lastPaintTime; }
     void setNodeToDraw(Node*);
-
-    virtual void paintOverhangAreas(GraphicsContext*, const IntRect& horizontalOverhangArea, const IntRect& verticalOverhangArea, const IntRect& dirtyRect) OVERRIDE;
-    virtual void paintScrollCorner(GraphicsContext*, const IntRect& cornerRect) OVERRIDE;
-    virtual void paintScrollbar(GraphicsContext*, Scrollbar*, const IntRect&) OVERRIDE;
+    Node* nodeToDraw() { return m_nodeToDraw.get(); }
 
     Color documentBackgroundColor() const;
 
     static double currentFrameTimeStamp() { return s_currentFrameTimeStamp; }
+    void setCurrentFrameTimeStamp(double val) { s_currentFrameTimeStamp = val; }
 
     void updateLayoutAndStyleForPainting();
     void updateLayoutAndStyleIfNeededRecursive();
 
+    void invalidateTreeIfNeededRecursive();
+
     void incrementVisuallyNonEmptyCharacterCount(unsigned);
     void incrementVisuallyNonEmptyPixelCount(const IntSize&);
     void setIsVisuallyNonEmpty() { m_isVisuallyNonEmpty = true; }
-    void enableAutoSizeMode(bool enable, const IntSize& minSize, const IntSize& maxSize);
+    void enableAutoSizeMode(const IntSize& minSize, const IntSize& maxSize);
+    void disableAutoSizeMode() { disposeAutoSizeInfo(); }
 
     void forceLayout(bool allowSubtree = false);
     void forceLayoutForPagination(const FloatSize& pageSize, const FloatSize& originalPageSize, float maximumShrinkFactor);
@@ -241,29 +248,38 @@ public:
 
     bool isFrameViewScrollCorner(RenderScrollbarPart* scrollCorner) const { return m_scrollCorner == scrollCorner; }
 
+    enum ScrollingReasons {
+        Scrollable,
+        NotScrollableNoOverflow,
+        NotScrollableNotVisible,
+        NotScrollableExplicitlyDisabled
+    };
+
+    ScrollingReasons scrollingReasons();
     bool isScrollable();
 
     enum ScrollbarModesCalculationStrategy { RulesFromWebContentOnly, AnyRule };
     void calculateScrollbarModesForLayoutAndSetViewportRenderer(ScrollbarMode& hMode, ScrollbarMode& vMode, ScrollbarModesCalculationStrategy = AnyRule);
 
-    virtual IntPoint lastKnownMousePosition() const OVERRIDE;
+    virtual IntPoint lastKnownMousePosition() const override;
     bool shouldSetCursor() const;
 
     void setCursor(const Cursor&);
 
-    virtual bool scrollbarsCanBeActive() const OVERRIDE;
+    virtual bool scrollbarsCanBeActive() const override;
 
     // FIXME: Remove this method once plugin loading is decoupled from layout.
     void flushAnyPendingPostLayoutTasks();
 
-    virtual bool shouldSuspendScrollAnimations() const OVERRIDE;
-    virtual void scrollbarStyleChanged() OVERRIDE;
+    virtual bool shouldSuspendScrollAnimations() const override;
+    virtual void scrollbarStyleChanged() override;
 
     RenderBox* embeddedContentBox() const;
 
     void setTracksPaintInvalidations(bool);
     bool isTrackingPaintInvalidations() const { return m_isTrackingPaintInvalidations; }
     void resetTrackedPaintInvalidations();
+
     String trackedPaintInvalidationRectsAsText() const;
 
     typedef HashSet<ScrollableArea*> ScrollableAreaSet;
@@ -279,8 +295,6 @@ public:
     void removeResizerArea(RenderBox&);
     const ResizerAreaSet* resizerAreas() const { return m_resizerAreas.get(); }
 
-    virtual void removeChild(Widget*) OVERRIDE;
-
     // This function exists for ports that need to handle wheel events manually.
     // On Mac WebKit1 the underlying NSScrollView just does the scrolling, but on most other platforms
     // we need this function in order to do the scroll ourselves.
@@ -289,19 +303,15 @@ public:
     bool inProgrammaticScroll() const { return m_inProgrammaticScroll; }
     void setInProgrammaticScroll(bool programmaticScroll) { m_inProgrammaticScroll = programmaticScroll; }
 
-    void setHasSoftwareFilters(bool hasSoftwareFilters) { m_hasSoftwareFilters = hasSoftwareFilters; }
-    bool hasSoftwareFilters() const { return m_hasSoftwareFilters; }
-
-    virtual bool isActive() const OVERRIDE;
+    virtual bool isActive() const override;
 
     // DEPRECATED: Use viewportConstrainedVisibleContentRect() instead.
     IntSize scrollOffsetForFixedPosition() const;
 
     // Override scrollbar notifications to update the AXObject cache.
-    virtual void didAddScrollbar(Scrollbar*, ScrollbarOrientation) OVERRIDE;
-    virtual void willRemoveScrollbar(Scrollbar*, ScrollbarOrientation) OVERRIDE;
+    virtual void didAddScrollbar(Scrollbar*, ScrollbarOrientation) override;
+    virtual void willRemoveScrollbar(Scrollbar*, ScrollbarOrientation) override;
 
-    virtual bool shouldAttemptToScrollUsingFastPath() const OVERRIDE;
     // FIXME: This should probably be renamed as the 'inSubtreeLayout' parameter
     // passed around the FrameView layout methods can be true while this returns
     // false.
@@ -312,38 +322,268 @@ public:
     // If |m_tickmarks| is empty, the default behavior is restored.
     void setTickmarks(const Vector<IntRect>& tickmarks) { m_tickmarks = tickmarks; }
 
+    // Since the compositor can resize the viewport due to top controls and
+    // commit scroll offsets before a WebView::resize occurs, we need to adjust
+    // our scroll extents to prevent clamping the scroll offsets.
+    void setTopControlsViewportAdjustment(float);
+
+    virtual IntPoint maximumScrollPosition() const override;
+
     // ScrollableArea interface
-    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) OVERRIDE;
-    virtual void getTickmarks(Vector<IntRect>&) const OVERRIDE;
-    virtual void scrollTo(const IntSize&) OVERRIDE;
-    virtual IntRect scrollableAreaBoundingBox() const OVERRIDE;
-    virtual bool scrollAnimatorEnabled() const OVERRIDE;
-    virtual bool usesCompositedScrolling() const OVERRIDE;
-    virtual GraphicsLayer* layerForScrolling() const OVERRIDE;
-    virtual GraphicsLayer* layerForHorizontalScrollbar() const OVERRIDE;
-    virtual GraphicsLayer* layerForVerticalScrollbar() const OVERRIDE;
-    virtual GraphicsLayer* layerForScrollCorner() const OVERRIDE;
+    virtual void invalidateScrollbarRect(Scrollbar*, const IntRect&) override;
+    virtual void getTickmarks(Vector<IntRect>&) const override;
+    void scrollTo(const DoublePoint&);
+    virtual IntRect scrollableAreaBoundingBox() const override;
+    virtual bool scrollAnimatorEnabled() const override;
+    virtual bool usesCompositedScrolling() const override;
+    virtual GraphicsLayer* layerForScrolling() const override;
+    virtual GraphicsLayer* layerForHorizontalScrollbar() const override;
+    virtual GraphicsLayer* layerForVerticalScrollbar() const override;
+    virtual GraphicsLayer* layerForScrollCorner() const override;
+    virtual int scrollSize(ScrollbarOrientation) const override;
+    virtual void setScrollOffset(const IntPoint&) override;
+    virtual void setScrollOffset(const DoublePoint&) override;
+    virtual bool isScrollCornerVisible() const override;
+    virtual bool userInputScrollable(ScrollbarOrientation) const override;
+    virtual bool shouldPlaceVerticalScrollbarOnLeft() const override;
+
+    // The window that hosts the FrameView. The FrameView will communicate scrolls and repaints to the
+    // host window in the window's coordinate space.
+    HostWindow* hostWindow() const override;
+
+    // Returns a clip rect in host window coordinates. Used to clip the blit on a scroll.
+    IntRect windowClipRect(IncludeScrollbarsInRect = ExcludeScrollbars) const;
+
+    typedef WillBeHeapHashSet<RefPtrWillBeMember<Widget> > ChildrenWidgetSet;
+
+    // Functions for child manipulation and inspection.
+    virtual void setParent(Widget*) override;
+    void removeChild(Widget*);
+    void addChild(PassRefPtrWillBeRawPtr<Widget>);
+    const ChildrenWidgetSet* children() const { return &m_children; }
+
+    // If the scroll view does not use a native widget, then it will have cross-platform Scrollbars. These functions
+    // can be used to obtain those scrollbars.
+    virtual Scrollbar* horizontalScrollbar() const override { return m_horizontalScrollbar.get(); }
+    virtual Scrollbar* verticalScrollbar() const override { return m_verticalScrollbar.get(); }
+    RenderScrollbarPart* scrollCorner() { return m_scrollCorner; }
+
+    void positionScrollbarLayers();
+
+    // Functions for setting and retrieving the scrolling mode in each axis (horizontal/vertical). The mode has values of
+    // AlwaysOff, AlwaysOn, and Auto. AlwaysOff means never show a scrollbar, AlwaysOn means always show a scrollbar.
+    // Auto means show a scrollbar only when one is needed.
+    // Note that for platforms with native widgets, these modes are considered advisory. In other words the underlying native
+    // widget may choose not to honor the requested modes.
+    void setScrollbarModes(ScrollbarMode horizontalMode, ScrollbarMode verticalMode, bool horizontalLock = false, bool verticalLock = false);
+    void setHorizontalScrollbarMode(ScrollbarMode mode, bool lock = false) { setScrollbarModes(mode, verticalScrollbarMode(), lock, verticalScrollbarLock()); }
+    void setVerticalScrollbarMode(ScrollbarMode mode, bool lock = false) { setScrollbarModes(horizontalScrollbarMode(), mode, horizontalScrollbarLock(), lock); };
+    void scrollbarModes(ScrollbarMode& horizontalMode, ScrollbarMode& verticalMode) const;
+    ScrollbarMode horizontalScrollbarMode() const { ScrollbarMode horizontal, vertical; scrollbarModes(horizontal, vertical); return horizontal; }
+    ScrollbarMode verticalScrollbarMode() const { ScrollbarMode horizontal, vertical; scrollbarModes(horizontal, vertical); return vertical; }
+
+    void setHorizontalScrollbarLock(bool lock = true) { m_horizontalScrollbarLock = lock; }
+    bool horizontalScrollbarLock() const { return m_horizontalScrollbarLock; }
+    void setVerticalScrollbarLock(bool lock = true) { m_verticalScrollbarLock = lock; }
+    bool verticalScrollbarLock() const { return m_verticalScrollbarLock; }
+
+    void setScrollingModesLock(bool lock = true) { m_horizontalScrollbarLock = m_verticalScrollbarLock = lock; }
+
+    bool canHaveScrollbars() const { return horizontalScrollbarMode() != ScrollbarAlwaysOff || verticalScrollbarMode() != ScrollbarAlwaysOff; }
+
+    // By default, paint events are clipped to the visible area.  If set to
+    // false, paint events are no longer clipped.
+    bool clipsPaintInvalidations() const { return m_clipsRepaints; }
+    void setClipsRepaints(bool);
+
+    // The visible content rect has a location that is the scrolled offset of the document. The width and height are the viewport width
+    // and height. By default the scrollbars themselves are excluded from this rectangle, but an optional boolean argument allows them to be
+    // included.
+    virtual IntRect visibleContentRect(IncludeScrollbarsInRect = ExcludeScrollbars) const override;
+    IntSize visibleSize() const { return visibleContentRect().size(); }
+
+    // visibleContentRect().size() is computed from unscaledVisibleContentSize() divided by the value of visibleContentScaleFactor.
+    // For the main frame, visibleContentScaleFactor is equal to the page's pageScaleFactor; it's 1 otherwise.
+    IntSize unscaledVisibleContentSize(IncludeScrollbarsInRect = ExcludeScrollbars) const;
+
+    // Functions for getting/setting the size of the document contained inside the FrameView (as an IntSize or as individual width and height
+    // values).
+    virtual IntSize contentsSize() const override; // Always at least as big as the visibleWidth()/visibleHeight().
+    int contentsWidth() const { return contentsSize().width(); }
+    int contentsHeight() const { return contentsSize().height(); }
+
+    // Functions for querying the current scrolled position (both as a point, a size, or as individual X and Y values).
+    // FIXME: Remove the IntPoint version. crbug.com/414283.
+    virtual IntPoint scrollPosition() const override { return visibleContentRect().location(); }
+    virtual DoublePoint scrollPositionDouble() const override { return m_scrollPosition; }
+    // FIXME: Remove scrollOffset(). crbug.com/414283.
+    IntSize scrollOffset() const { return toIntSize(visibleContentRect().location()); } // Gets the scrolled position as an IntSize. Convenient for adding to other sizes.
+    DoubleSize scrollOffsetDouble() const { return DoubleSize(m_scrollPosition.x(), m_scrollPosition.y()); }
+    DoubleSize pendingScrollDelta() const { return m_pendingScrollDelta; }
+    virtual IntPoint minimumScrollPosition() const override; // The minimum position we can be scrolled to.
+    // Adjust the passed in scroll position to keep it between the minimum and maximum positions.
+    IntPoint adjustScrollPositionWithinRange(const IntPoint&) const;
+    DoublePoint adjustScrollPositionWithinRange(const DoublePoint&) const;
+    double scrollX() const { return scrollPositionDouble().x(); }
+    double scrollY() const { return scrollPositionDouble().y(); }
+
+    virtual IntSize overhangAmount() const override;
+
+    void cacheCurrentScrollPosition() { m_cachedScrollPosition = scrollPositionDouble(); }
+    DoublePoint cachedScrollPosition() const { return m_cachedScrollPosition; }
+
+    // Functions for scrolling the view.
+    void scrollBy(const DoubleSize& s, ScrollBehavior behavior = ScrollBehaviorInstant)
+    {
+        return setScrollPosition(scrollPositionDouble() + s, behavior);
+    }
+
+    bool scroll(ScrollDirection, ScrollGranularity);
+
+    // Scroll the actual contents of the view (either blitting or invalidating as needed).
+    void scrollContents(const IntSize& scrollDelta);
+
+    // This gives us a means of blocking painting on our scrollbars until the first layout has occurred.
+    void setScrollbarsSuppressed(bool suppressed, bool repaintOnUnsuppress = false);
+    bool scrollbarsSuppressed() const { return m_scrollbarsSuppressed; }
+
+    bool drawPanScrollIcon() { return m_shouldDrawPanScrollIcon; }
+
+    IntPoint rootViewToContents(const IntPoint&) const;
+    IntPoint contentsToRootView(const IntPoint&) const;
+    IntRect rootViewToContents(const IntRect&) const;
+    IntRect contentsToRootView(const IntRect&) const;
+
+    // Event coordinates are assumed to be in the coordinate space of a window that contains
+    // the entire widget hierarchy. It is up to the platform to decide what the precise definition
+    // of containing window is. (For example on Mac it is the containing NSWindow.)
+    IntPoint windowToContents(const IntPoint&) const;
+    FloatPoint windowToContents(const FloatPoint&) const;
+    IntPoint contentsToWindow(const IntPoint&) const;
+    IntRect windowToContents(const IntRect&) const;
+    IntRect contentsToWindow(const IntRect&) const;
+
+    // Functions for converting to screen coordinates.
+    IntRect contentsToScreen(const IntRect&) const;
+
+    // These functions are used to enable scrollbars to avoid window resizer controls that overlap the scroll view.
+    // This happens only on Mac OS X 10.6.
+    IntRect windowResizerRect() const;
+    bool containsScrollbarsAvoidingResizer() const;
+    void adjustScrollbarsAvoidingResizerCount(int overlapDelta);
+    void windowResizerRectChanged();
+
+    // For platforms that need to hit test scrollbars from within the engine's event handlers (like Win32).
+    Scrollbar* scrollbarAtWindowPoint(const IntPoint& windowPoint);
+    Scrollbar* scrollbarAtViewPoint(const IntPoint& viewPoint);
+
+    virtual IntPoint convertChildToSelf(const Widget* child, const IntPoint& point) const override
+    {
+        IntPoint newPoint = point;
+        if (!isFrameViewScrollbar(child))
+            newPoint = point - scrollOffset();
+        newPoint.moveBy(child->location());
+        return newPoint;
+    }
+
+    virtual IntPoint convertSelfToChild(const Widget* child, const IntPoint& point) const override
+    {
+        IntPoint newPoint = point;
+        if (!isFrameViewScrollbar(child))
+            newPoint = point + scrollOffset();
+        newPoint.moveBy(-child->location());
+        return newPoint;
+    }
+
+    // Widget override. Handles painting of the contents of the view as well as the scrollbars.
+    virtual void paint(GraphicsContext*, const IntRect&) override;
+    void paintContents(GraphicsContext*, const IntRect& damageRect);
+
+    // Widget overrides to ensure that our children's visibility status is kept up to date when we get shown and hidden.
+    virtual void show() override;
+    virtual void hide() override;
+    virtual void setParentVisible(bool) override;
+
+    // Pan scrolling.
+    static const int noPanScrollRadius = 15;
+    void addPanScrollIcon(const IntPoint&);
+    void removePanScrollIcon();
+    void paintPanScrollIcon(GraphicsContext*);
+
+    bool isPointInScrollbarCorner(const IntPoint&);
+    bool scrollbarCornerPresent() const;
+    virtual IntRect scrollCornerRect() const override;
+
+    virtual IntRect convertFromScrollbarToContainingView(const Scrollbar*, const IntRect&) const override;
+    virtual IntRect convertFromContainingViewToScrollbar(const Scrollbar*, const IntRect&) const override;
+    virtual IntPoint convertFromScrollbarToContainingView(const Scrollbar*, const IntPoint&) const override;
+    virtual IntPoint convertFromContainingViewToScrollbar(const Scrollbar*, const IntPoint&) const override;
+
+    virtual bool isFrameView() const override { return true; }
+
+    virtual void trace(Visitor*) override;
+    void notifyPageThatContentAreaWillPaint() const;
+    FrameView* parentFrameView() const;
+
+    void calculateOverhangAreasForPainting(IntRect& horizontalOverhangRect, IntRect& verticalOverhangRect);
 
 protected:
-    virtual void scrollContentsIfNeeded();
-    virtual bool scrollContentsFastPath(const IntSize& scrollDelta, const IntRect& rectToScroll, const IntRect& clipRect) OVERRIDE;
-    virtual void scrollContentsSlowPath(const IntRect& updateRect) OVERRIDE;
+    // Scroll the content via the compositor.
+    bool scrollContentsFastPath(const IntSize& scrollDelta);
 
-    virtual bool isVerticalDocument() const OVERRIDE;
-    virtual bool isFlippedDocument() const OVERRIDE;
+    // Scroll the content by invalidating everything.
+    void scrollContentsSlowPath(const IntRect& updateRect);
+
+    bool isVerticalDocument() const;
+    bool isFlippedDocument() const;
+
+    // Prevents creation of scrollbars. Used to prevent drawing two sets of
+    // overlay scrollbars in the case of the pinch viewport.
+    bool scrollbarsDisabled() const;
+
+    // These functions are used to create/destroy scrollbars.
+    void setHasHorizontalScrollbar(bool);
+    void setHasVerticalScrollbar(bool);
+
+    virtual void invalidateScrollCornerRect(const IntRect&) override;
+
+    void scrollContentsIfNeeded();
+
+    void setScrollOrigin(const IntPoint&, bool updatePositionAtAll, bool updatePositionSynchronously);
+
+    enum ComputeScrollbarExistenceOption {
+        FirstPass,
+        Incremental
+    };
+    void computeScrollbarExistence(bool& newHasHorizontalScrollbar, bool& newHasVerticalScrollbar, const IntSize& docSize, ComputeScrollbarExistenceOption = FirstPass) const;
+    void updateScrollbarGeometry();
+    IntRect adjustScrollbarRectForResizer(const IntRect&, Scrollbar*);
+
+    // Called to update the scrollbars to accurately reflect the state of the view.
+    void updateScrollbars(const DoubleSize& desiredOffset);
+
+    IntSize excludeScrollbars(const IntSize&) const;
+
+    class InUpdateScrollbarsScope {
+    public:
+        explicit InUpdateScrollbarsScope(FrameView* view)
+            : m_scope(view->m_inUpdateScrollbars, true)
+        { }
+    private:
+        TemporaryChange<bool> m_scope;
+    };
 
 private:
     explicit FrameView(LocalFrame*);
 
+    void dispose() override;
     void reset();
     void init();
 
-    virtual void frameRectsChanged() OVERRIDE;
-    virtual bool isFrameView() const OVERRIDE { return true; }
+    // Called when our frame rect changes (or the rect/scroll position of an ancestor changes).
+    virtual void frameRectsChanged() override;
 
-    friend class RenderWidget;
-    bool useSlowRepaints(bool considerOverlap = true) const;
-    bool useSlowRepaintsIfNotOverlapped() const;
+    friend class RenderPart;
 
     bool contentsInCompositedLayer() const;
 
@@ -351,35 +591,35 @@ private:
     void updateOverflowStatus(bool horizontalOverflow, bool verticalOverflow);
 
     void updateCounters();
-    void autoSizeIfEnabled();
     void forceLayoutParentViewIfNeeded();
     void performPreLayoutTasks();
     void performLayout(RenderObject* rootForThisLayout, bool inSubtreeLayout);
     void scheduleOrPerformPostLayoutTasks();
     void performPostLayoutTasks();
 
-    void invalidateTree(RenderObject* root);
+    void invalidateTreeIfNeeded();
 
     void gatherDebugLayoutRects(RenderObject* layoutRoot);
 
     DocumentLifecycle& lifecycle() const;
 
-    virtual void contentRectangleForPaintInvalidation(const IntRect&) OVERRIDE;
-    virtual void contentsResized() OVERRIDE;
-    virtual void scrollbarExistenceDidChange() OVERRIDE;
+    void contentRectangleForPaintInvalidation(const IntRect&);
+    virtual void contentsResized() override;
+    void scrollbarExistenceDidChange();
 
-    // Override ScrollView methods to do point conversion via renderers, in order to
+    // Override Widget methods to do point conversion via renderers, in order to
     // take transforms into account.
-    virtual IntRect convertToContainingView(const IntRect&) const OVERRIDE;
-    virtual IntRect convertFromContainingView(const IntRect&) const OVERRIDE;
-    virtual IntPoint convertToContainingView(const IntPoint&) const OVERRIDE;
-    virtual IntPoint convertFromContainingView(const IntPoint&) const OVERRIDE;
+    virtual IntRect convertToContainingView(const IntRect&) const override;
+    virtual IntRect convertFromContainingView(const IntRect&) const override;
+    virtual IntPoint convertToContainingView(const IntPoint&) const override;
+    virtual IntPoint convertFromContainingView(const IntPoint&) const override;
 
+    void updateWidgetPositionsIfNeeded();
+
+    bool wasViewportResized();
     void sendResizeEventIfNeeded();
 
     void updateScrollableAreaSet();
-
-    virtual void notifyPageThatContentAreaWillPaint() const OVERRIDE;
 
     void scheduleUpdateWidgetsIfNecessary();
     void updateWidgetsTimerFired(Timer<FrameView>*);
@@ -390,47 +630,63 @@ private:
     void didScrollTimerFired(Timer<FrameView>*);
 
     void updateLayersAndCompositingAfterScrollIfNeeded();
-    void updateFixedElementPaintInvalidationRectsAfterScroll();
+
+    static bool computeCompositedSelectionBounds(LocalFrame&, CompositedSelectionBound& start, CompositedSelectionBound& end);
+    void updateCompositedSelectionBoundsIfNeeded();
 
     bool hasCustomScrollbars() const;
     bool shouldUseCustomScrollbars(Element*& customScrollbarElement, LocalFrame*& customScrollbarFrame);
 
-    virtual void updateScrollCorner() OVERRIDE;
-
-    FrameView* parentFrameView() const;
+    void updateScrollCorner();
 
     AXObjectCache* axObjectCache() const;
     void removeFromAXObjectCache();
 
     void setLayoutSizeInternal(const IntSize&);
 
+    void disposeAutoSizeInfo();
+
     bool paintInvalidationIsAllowed() const
     {
-        if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled())
-            return true;
-
         return !isInPerformLayout() || canInvalidatePaintDuringPerformLayout();
     }
 
+    bool adjustScrollbarExistence(ComputeScrollbarExistenceOption = FirstPass);
+    void adjustScrollbarOpacity();
+    // FIXME(bokan): setScrollOffset, setScrollPosition, scrollTo, scrollToOffsetWithoutAnimation,
+    // notifyScrollPositionChanged...there's too many ways to scroll this class. This needs
+    // some cleanup.
+    void setScrollOffsetFromUpdateScrollbars(const DoubleSize&);
+
+    IntRect rectToCopyOnScroll() const;
+
+    void updateOverhangAreas();
+
+    bool isFrameViewScrollbar(const Widget* child) const { return horizontalScrollbar() == child || verticalScrollbar() == child; }
+
     static double s_currentFrameTimeStamp; // used for detecting decoded resource thrash in the cache
-    static bool s_inPaintContents;
 
     LayoutSize m_size;
 
-    typedef HashSet<RefPtr<RenderEmbeddedObject> > EmbeddedObjectSet;
-    EmbeddedObjectSet m_widgetUpdateSet;
+    typedef WillBeHeapHashSet<RefPtrWillBeMember<RenderEmbeddedObject> > EmbeddedObjectSet;
+    WillBeHeapHashSet<RefPtrWillBeMember<RenderEmbeddedObject> > m_partUpdateSet;
 
-    // FIXME: These are just "children" of the FrameView and should be RefPtr<Widget> instead.
-    HashSet<RefPtr<RenderWidget> > m_widgets;
+    // FIXME: These are just "children" of the FrameView and should be RefPtrWillBeMember<Widget> instead.
+    WillBeHeapHashSet<RefPtrWillBeMember<RenderPart> > m_parts;
 
-    RefPtr<LocalFrame> m_frame;
+    // The RefPtr cycle between LocalFrame and FrameView is broken
+    // when a LocalFrame is detached by FrameLoader::detachFromParent().
+    // It clears the LocalFrame's m_view reference via setView(nullptr).
+    //
+    // For Oilpan, Member reference cycles pose no problem, but
+    // LocalFrame's FrameView is also cleared by setView(). This additionally
+    // triggers FrameView::dispose(), which performs the operations
+    // that cannot be delayed until finalization time.
+    RefPtrWillBeMember<LocalFrame> m_frame;
 
     bool m_doFullPaintInvalidation;
 
     bool m_canHaveScrollbars;
-    bool m_cannotBlitToWindow;
-    bool m_isOverlapped;
-    bool m_contentIsOpaque;
     unsigned m_slowRepaintObjectCount;
 
     bool m_hasPendingLayout;
@@ -469,7 +725,7 @@ private:
     bool m_isTrackingPaintInvalidations; // Used for testing.
     Vector<IntRect> m_trackedPaintInvalidationRects;
 
-    RefPtrWillBePersistent<Node> m_nodeToDraw;
+    RefPtrWillBeMember<Node> m_nodeToDraw;
     PaintBehavior m_paintBehavior;
     bool m_isPainting;
 
@@ -478,26 +734,15 @@ private:
     bool m_isVisuallyNonEmpty;
     bool m_firstVisuallyNonEmptyLayoutCallbackPending;
 
-    RefPtrWillBePersistent<Node> m_maintainScrollPositionAnchor;
+    RefPtrWillBeMember<Node> m_maintainScrollPositionAnchor;
 
     // Renderer to hold our custom scroll corner.
-    RenderScrollbarPart* m_scrollCorner;
-
-    // If true, automatically resize the frame view around its content.
-    bool m_shouldAutoSize;
-    bool m_inAutoSize;
-    // True if autosize has been run since m_shouldAutoSize was set.
-    bool m_didRunAutosize;
-    // The lower bound on the size when autosizing.
-    IntSize m_minAutoSize;
-    // The upper bound on the size when autosizing.
-    IntSize m_maxAutoSize;
+    RawPtrWillBeMember<RenderScrollbarPart> m_scrollCorner;
 
     OwnPtr<ScrollableAreaSet> m_scrollableAreas;
     OwnPtr<ResizerAreaSet> m_resizerAreas;
     OwnPtr<ViewportConstrainedObjectSet> m_viewportConstrainedObjects;
-
-    bool m_hasSoftwareFilters;
+    OwnPtrWillBeMember<FrameViewAutoSizeInfo> m_autoSizeInfo;
 
     float m_visibleContentScaleFactor;
     IntSize m_inputEventsOffsetForEmulation;
@@ -509,6 +754,40 @@ private:
     Timer<FrameView> m_didScrollTimer;
 
     Vector<IntRect> m_tickmarks;
+
+    float m_topControlsViewportAdjustment;
+
+    bool m_needsUpdateWidgetPositions;
+
+#if ENABLE(OILPAN) && ENABLE(ASSERT)
+    // Verified when finalizing.
+    bool m_hasBeenDisposed;
+#endif
+
+    RefPtrWillBeMember<Scrollbar> m_horizontalScrollbar;
+    RefPtrWillBeMember<Scrollbar> m_verticalScrollbar;
+    ScrollbarMode m_horizontalScrollbarMode;
+    ScrollbarMode m_verticalScrollbarMode;
+
+    bool m_horizontalScrollbarLock;
+    bool m_verticalScrollbarLock;
+
+    ChildrenWidgetSet m_children;
+
+    DoubleSize m_pendingScrollDelta;
+    DoublePoint m_scrollPosition;
+    DoublePoint m_cachedScrollPosition;
+    IntSize m_contentsSize;
+
+    int m_scrollbarsAvoidingResizer;
+    bool m_scrollbarsSuppressed;
+
+    bool m_inUpdateScrollbars;
+
+    IntPoint m_panScrollIconPoint;
+    bool m_shouldDrawPanScrollIcon;
+
+    bool m_clipsRepaints;
 };
 
 inline void FrameView::incrementVisuallyNonEmptyCharacterCount(unsigned count)
@@ -537,6 +816,7 @@ inline void FrameView::incrementVisuallyNonEmptyPixelCount(const IntSize& size)
 DEFINE_TYPE_CASTS(FrameView, Widget, widget, widget->isFrameView(), widget.isFrameView());
 
 class AllowPaintInvalidationScope {
+    STACK_ALLOCATED();
 public:
     explicit AllowPaintInvalidationScope(FrameView* view)
         : m_view(view)
@@ -555,11 +835,12 @@ public:
 
         m_view->setCanInvalidatePaintDuringPerformLayout(m_originalValue);
     }
+
 private:
-    FrameView* m_view;
+    RawPtrWillBeMember<FrameView> m_view;
     bool m_originalValue;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FrameView_h

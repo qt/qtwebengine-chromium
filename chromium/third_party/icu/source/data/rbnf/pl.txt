@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/rbnf/pl.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/rbnf/pl.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/rbnf/pl.xml
+ * ICU <specials> source: <path>/xml/rbnf/pl.xml
  */
 pl{
     RBNFRules{
@@ -48,9 +48,9 @@ pl{
             "200: <%spellout-cardinal-feminine<\u015Bcie[ >>];",
             "300: <%spellout-cardinal-feminine<sta[ >>];",
             "500: <%spellout-cardinal-feminine<set[ >>];",
-            "1000: <%spellout-cardinal-feminine< tysi\u0105c[ >>];",
-            "2000: <%spellout-cardinal-feminine< tysi\u0105ce[ >>];",
-            "5000: <%spellout-cardinal-feminine< tysi\u0119cy[ >>];",
+            "1000: <%spellout-cardinal-masculine< tysi\u0105c[ >>];",
+            "2000: <%spellout-cardinal-masculine< tysi\u0105ce[ >>];",
+            "5000: <%spellout-cardinal-masculine< tysi\u0119cy[ >>];",
             "1000000: <%spellout-cardinal-masculine< milion[ >>];",
             "2000000: <%spellout-cardinal-masculine< miliony[ >>];",
             "5000000: <%spellout-cardinal-masculine< milion\u00F3w[ >>];",
@@ -64,11 +64,14 @@ pl{
             "2000000000000000: <%spellout-cardinal-masculine< biliardy[ >>];",
             "5000000000000000: <%spellout-cardinal-masculine< biliard\u00F3w[ >>];",
             "1000000000000000000: =#,##0=;",
-            "%spellout-cardinal-neutre:",
+            "%spellout-cardinal-neuter:",
             "-x: minus >>;",
-            "x.x: << przecinek >>;",
+            "x.x: << przecinek >%%spellout-fraction>;",
             "0: zero;",
             "1: jedno;",
+            "2: =%%spellout-cardinal-neuter-priv=;",
+            "%%spellout-cardinal-neuter-priv:",
+            "1: jeden;",
             "2: =%spellout-cardinal-masculine=;",
             "20: dwadzie\u015Bcia[ >>];",
             "30: trzydzie\u015Bci[ >>];",
@@ -78,9 +81,9 @@ pl{
             "200: <%spellout-cardinal-feminine<\u015Bcie[ >>];",
             "300: <%spellout-cardinal-feminine<sta[ >>];",
             "500: <%spellout-cardinal-feminine<set[ >>];",
-            "1000: <%spellout-cardinal-feminine< tysi\u0105c[ >>];",
-            "2000: <%spellout-cardinal-feminine< tysi\u0105ce[ >>];",
-            "5000: <%spellout-cardinal-feminine< tysi\u0119cy[ >>];",
+            "1000: <%spellout-cardinal-masculine< tysi\u0105c[ >>];",
+            "2000: <%spellout-cardinal-masculine< tysi\u0105ce[ >>];",
+            "5000: <%spellout-cardinal-masculine< tysi\u0119cy[ >>];",
             "1000000: <%spellout-cardinal-masculine< milion[ >>];",
             "2000000: <%spellout-cardinal-masculine< miliony[ >>];",
             "5000000: <%spellout-cardinal-masculine< milion\u00F3w[ >>];",
@@ -96,9 +99,12 @@ pl{
             "1000000000000000000: =#,##0=;",
             "%spellout-cardinal-feminine:",
             "-x: minus >>;",
-            "x.x: << przecinek >>;",
+            "x.x: << przecinek >%%spellout-fraction>;",
             "0: zero;",
             "1: jedna;",
+            "2: =%%spellout-cardinal-feminine-priv=;",
+            "%%spellout-cardinal-feminine-priv:",
+            "1: jeden;",
             "2: dwie;",
             "3: =%spellout-cardinal-masculine=;",
             "20: dwadzie\u015Bcia[ >>];",
@@ -109,9 +115,9 @@ pl{
             "200: <%spellout-cardinal-feminine<\u015Bcie[ >>];",
             "300: <%spellout-cardinal-feminine<sta[ >>];",
             "500: <%spellout-cardinal-feminine<set[ >>];",
-            "1000: <%spellout-cardinal-feminine< tysi\u0105c[ >>];",
-            "2000: <%spellout-cardinal-feminine< tysi\u0105ce[ >>];",
-            "5000: <%spellout-cardinal-feminine< tysi\u0119cy[ >>];",
+            "1000: <%spellout-cardinal-masculine< tysi\u0105c[ >>];",
+            "2000: <%spellout-cardinal-masculine< tysi\u0105ce[ >>];",
+            "5000: <%spellout-cardinal-masculine< tysi\u0119cy[ >>];",
             "1000000: <%spellout-cardinal-masculine< milion[ >>];",
             "2000000: <%spellout-cardinal-masculine< miliony[ >>];",
             "5000000: <%spellout-cardinal-masculine< milion\u00F3w[ >>];",
@@ -125,7 +131,21 @@ pl{
             "2000000000000000: <%spellout-cardinal-masculine< biliardy[ >>];",
             "5000000000000000: <%spellout-cardinal-masculine< biliard\u00F3w[ >>];",
             "1000000000000000000: =#,##0=;",
+            "%%spellout-fraction:",
+            "10: <%%spellout-fraction-digits<<;",
+            "100: <%%spellout-fraction-digits<<;",
+            "1000: <%%spellout-fraction-digits<<;",
+            "10000: <%%spellout-fraction-digits<<;",
+            "100000: <%%spellout-fraction-digits<<;",
+            "1000000: <%%spellout-fraction-digits<<;",
+            "10000000: <%%spellout-fraction-digits<<;",
+            "100000000: <%%spellout-fraction-digits<<;",
+            "1000000000: <%%spellout-fraction-digits<<;",
+            "10000000000: <0<;",
+            "%%spellout-fraction-digits:",
+            "0: =%spellout-cardinal-masculine=;",
+            "10: << >>;",
         }
     }
-    Version{"2.0.41.26"}
+    Version{"2.0.82.42"}
 }

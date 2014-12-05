@@ -28,16 +28,22 @@
 
 #include "core/workers/WorkerThread.h"
 
-#include "bindings/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/ScriptSourceCode.h"
+#include "bindings/core/v8/V8Initializer.h"
+#include "core/dom/Microtask.h"
 #include "core/inspector/InspectorInstrumentation.h"
+#include "core/inspector/WorkerInspectorController.h"
 #include "core/workers/DedicatedWorkerGlobalScope.h"
 #include "core/workers/WorkerClients.h"
 #include "core/workers/WorkerReportingProxy.h"
 #include "core/workers/WorkerThreadStartupData.h"
 #include "platform/PlatformThreadData.h"
+#include "platform/Task.h"
+#include "platform/ThreadTimers.h"
 #include "platform/heap/ThreadState.h"
 #include "platform/weborigin/KURL.h"
 #include "public/platform/Platform.h"
+#include "public/platform/WebThread.h"
 #include "public/platform/WebWaitableEvent.h"
 #include "public/platform/WebWorkerRunLoop.h"
 #include "wtf/Noncopyable.h"
@@ -45,7 +51,23 @@
 
 #include <utility>
 
-namespace WebCore {
+namespace blink {
+
+namespace {
+const int64_t kShortIdleHandlerDelayMs = 1000;
+const int64_t kLongIdleHandlerDelayMs = 10*1000;
+
+class MicrotaskRunner : public WebThread::TaskObserver {
+public:
+    virtual void willProcessTask() override { }
+    virtual void didProcessTask() override
+    {
+        Microtask::performCheckpoint();
+        V8Initializer::reportRejectedPromises();
+    }
+};
+
+} // namespace
 
 static Mutex& threadSetMutex()
 {
@@ -65,13 +87,167 @@ unsigned WorkerThread::workerThreadCount()
     return workerThreads().size();
 }
 
+class WorkerThreadCancelableTask final : public ExecutionContextTask {
+    WTF_MAKE_NONCOPYABLE(WorkerThreadCancelableTask); WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassOwnPtr<WorkerThreadCancelableTask> create(const Closure& closure)
+    {
+        return adoptPtr(new WorkerThreadCancelableTask(closure));
+    }
+
+    virtual void performTask(ExecutionContext*) override
+    {
+        if (!m_taskCanceled)
+            m_closure();
+    }
+
+    void cancelTask() { m_taskCanceled = true; }
+
+private:
+    explicit WorkerThreadCancelableTask(const Closure& closure)
+    : m_closure(closure)
+    , m_taskCanceled(false)
+    { }
+
+    Closure m_closure;
+    bool m_taskCanceled;
+};
+
+class WorkerSharedTimer : public SharedTimer {
+public:
+    explicit WorkerSharedTimer(WorkerThread* workerThread)
+        : m_workerThread(workerThread)
+        , m_nextFireTime(0.0)
+        , m_running(false)
+        , m_lastQueuedTask(nullptr)
+    { }
+
+    typedef void (*SharedTimerFunction)();
+    virtual void setFiredFunction(SharedTimerFunction func)
+    {
+        m_sharedTimerFunction = func;
+        if (!m_sharedTimerFunction)
+            m_nextFireTime = 0.0;
+    }
+
+    virtual void setFireInterval(double interval)
+    {
+        ASSERT(m_sharedTimerFunction);
+
+        // See BlinkPlatformImpl::setSharedTimerFireInterval for explanation of
+        // why ceil is used in the interval calculation.
+        int64_t delay = static_cast<int64_t>(ceil(interval * 1000));
+
+        if (delay < 0) {
+            delay = 0;
+            m_nextFireTime = 0.0;
+        }
+
+        m_running = true;
+        m_nextFireTime = currentTime() + interval;
+
+        if (m_lastQueuedTask)
+            m_lastQueuedTask->cancelTask();
+
+        // Now queue the task as a cancellable one.
+        m_lastQueuedTask = WorkerThreadCancelableTask::create(bind(&WorkerSharedTimer::OnTimeout, this)).leakPtr();
+        m_workerThread->postDelayedTask(adoptPtr(m_lastQueuedTask), delay);
+    }
+
+    virtual void stop()
+    {
+        m_running = false;
+        m_lastQueuedTask = 0;
+    }
+
+    double nextFireTime() { return m_nextFireTime; }
+
+private:
+    void OnTimeout()
+    {
+        ASSERT(m_workerThread->workerGlobalScope());
+
+        m_lastQueuedTask = 0;
+
+        if (m_sharedTimerFunction && m_running && !m_workerThread->workerGlobalScope()->isClosing())
+            m_sharedTimerFunction();
+    }
+
+    WorkerThread* m_workerThread;
+    SharedTimerFunction m_sharedTimerFunction;
+    double m_nextFireTime;
+    bool m_running;
+    WorkerThreadCancelableTask* m_lastQueuedTask;
+};
+
+class WorkerThreadTask : public blink::WebThread::Task {
+    WTF_MAKE_NONCOPYABLE(WorkerThreadTask); WTF_MAKE_FAST_ALLOCATED;
+public:
+    static PassOwnPtr<WorkerThreadTask> create(WorkerThread& workerThread, PassOwnPtr<ExecutionContextTask> task, bool isInstrumented)
+    {
+        return adoptPtr(new WorkerThreadTask(workerThread, task, isInstrumented));
+    }
+
+    virtual ~WorkerThreadTask() { }
+
+    virtual void run() override
+    {
+        WorkerGlobalScope* workerGlobalScope = m_workerThread.workerGlobalScope();
+        // Tasks could be put on the message loop after the cleanup task,
+        // ensure none of those are ran.
+        if (!workerGlobalScope)
+            return;
+
+        if (m_isInstrumented)
+            InspectorInstrumentation::willPerformExecutionContextTask(workerGlobalScope, m_task.get());
+        if ((!workerGlobalScope->isClosing() && !m_workerThread.terminated()) || m_task->isCleanupTask())
+            m_task->performTask(workerGlobalScope);
+        if (m_isInstrumented)
+            InspectorInstrumentation::didPerformExecutionContextTask(workerGlobalScope);
+    }
+
+private:
+    WorkerThreadTask(WorkerThread& workerThread, PassOwnPtr<ExecutionContextTask> task, bool isInstrumented)
+        : m_workerThread(workerThread)
+        , m_task(task)
+        , m_isInstrumented(isInstrumented)
+    {
+        if (m_isInstrumented)
+            m_isInstrumented = !m_task->taskNameForInstrumentation().isEmpty();
+        if (m_isInstrumented)
+            InspectorInstrumentation::didPostExecutionContextTask(m_workerThread.workerGlobalScope(), m_task.get());
+    }
+
+    WorkerThread& m_workerThread;
+    OwnPtr<ExecutionContextTask> m_task;
+    bool m_isInstrumented;
+};
+
+class RunDebuggerQueueTask final : public ExecutionContextTask {
+public:
+    static PassOwnPtr<RunDebuggerQueueTask> create(WorkerThread* thread)
+    {
+        return adoptPtr(new RunDebuggerQueueTask(thread));
+    }
+    virtual void performTask(ExecutionContext* context) override
+    {
+        ASSERT(context->isWorkerGlobalScope());
+        m_thread->runDebuggerTask(WorkerThread::DontWaitForMessage);
+    }
+
+private:
+    explicit RunDebuggerQueueTask(WorkerThread* thread) : m_thread(thread) { }
+
+    WorkerThread* m_thread;
+};
+
 WorkerThread::WorkerThread(WorkerLoaderProxy& workerLoaderProxy, WorkerReportingProxy& workerReportingProxy, PassOwnPtrWillBeRawPtr<WorkerThreadStartupData> startupData)
-    : m_threadID(0)
+    : m_terminated(false)
     , m_workerLoaderProxy(workerLoaderProxy)
     , m_workerReportingProxy(workerReportingProxy)
     , m_startupData(startupData)
-    , m_notificationClient(0)
     , m_shutdownEvent(adoptPtr(blink::Platform::current()->createWaitableEvent()))
+    , m_terminationEvent(adoptPtr(blink::Platform::current()->createWaitableEvent()))
 {
     MutexLocker lock(threadSetMutex());
     workerThreads().add(this);
@@ -84,25 +260,30 @@ WorkerThread::~WorkerThread()
     workerThreads().remove(this);
 }
 
-bool WorkerThread::start()
+void WorkerThread::start()
 {
-    // Mutex protection is necessary to ensure that m_threadID is initialized when the thread starts.
-    MutexLocker lock(m_threadCreationMutex);
+    if (m_thread)
+        return;
 
-    if (m_threadID)
-        return true;
-
-    m_threadID = createThread(WorkerThread::workerThreadStart, this, "WebCore: Worker");
-
-    return m_threadID;
+    m_thread = WebThreadSupportingGC::create("WebCore: Worker");
+    m_thread->postTask(new Task(WTF::bind(&WorkerThread::initialize, this)));
 }
 
-void WorkerThread::workerThreadStart(void* thread)
+void WorkerThread::interruptAndDispatchInspectorCommands()
 {
-    static_cast<WorkerThread*>(thread)->workerThread();
+    MutexLocker locker(m_workerInspectorControllerMutex);
+    if (m_workerInspectorController)
+        m_workerInspectorController->interruptAndDispatchInspectorCommands();
 }
 
-void WorkerThread::workerThread()
+PlatformThreadId WorkerThread::platformThreadId() const
+{
+    if (!m_thread)
+        return 0;
+    return m_thread->platformThread().threadId();
+}
+
+void WorkerThread::initialize()
 {
     KURL scriptURL = m_startupData->m_scriptURL;
     String sourceCode = m_startupData->m_sourceCode;
@@ -110,19 +291,27 @@ void WorkerThread::workerThread()
 
     {
         MutexLocker lock(m_threadCreationMutex);
-        ThreadState::attach();
-        m_workerGlobalScope = createWorkerGlobalScope(m_startupData.release());
-        m_runLoop.setWorkerGlobalScope(workerGlobalScope());
 
-        if (m_runLoop.terminated()) {
-            // The worker was terminated before the thread had a chance to run. Since the context didn't exist yet,
-            // forbidExecution() couldn't be called from stop().
-            m_workerGlobalScope->script()->forbidExecution();
+        // The worker was terminated before the thread had a chance to run.
+        if (m_terminated) {
+            // Notify the proxy that the WorkerGlobalScope has been disposed of.
+            // This can free this thread object, hence it must not be touched afterwards.
+            m_workerReportingProxy.workerThreadTerminated();
+            return;
         }
+
+        m_microtaskRunner = adoptPtr(new MicrotaskRunner);
+        m_thread->addTaskObserver(m_microtaskRunner.get());
+        m_thread->attachGC();
+        m_workerGlobalScope = createWorkerGlobalScope(m_startupData.release());
+
+        m_sharedTimer = adoptPtr(new WorkerSharedTimer(this));
+        PlatformThreadData::current().threadTimers().setSharedTimer(m_sharedTimer.get());
     }
+
     // The corresponding call to didStopWorkerRunLoop is in
     // ~WorkerScriptController.
-    blink::Platform::current()->didStartWorkerRunLoop(blink::WebWorkerRunLoop(&m_runLoop));
+    blink::Platform::current()->didStartWorkerRunLoop(blink::WebWorkerRunLoop(this));
 
     // Notify proxy that a new WorkerGlobalScope has been created and started.
     m_workerReportingProxy.workerGlobalScopeStarted(m_workerGlobalScope.get());
@@ -131,14 +320,20 @@ void WorkerThread::workerThread()
     if (!script->isExecutionForbidden())
         script->initializeContextIfNeeded();
     InspectorInstrumentation::willEvaluateWorkerScript(workerGlobalScope(), startMode);
-    script->evaluate(ScriptSourceCode(sourceCode, scriptURL));
+    bool success = script->evaluate(ScriptSourceCode(sourceCode, scriptURL));
+    m_workerGlobalScope->didEvaluateWorkerScript();
+    m_workerReportingProxy.didEvaluateWorkerScript(success);
 
-    runEventLoop();
+    postInitialize();
+
+    postDelayedTask(createSameThreadTask(&WorkerThread::idleHandler, this), kShortIdleHandlerDelayMs);
+}
+
+void WorkerThread::cleanup()
+{
 
     // This should be called before we start the shutdown procedure.
     workerReportingProxy().willDestroyWorkerGlobalScope();
-
-    ThreadIdentifier threadID = m_threadID;
 
     // The below assignment will destroy the context, which will in turn notify messaging proxy.
     // We cannot let any objects survive past thread exit, because no other thread will run GC or otherwise destroy them.
@@ -149,31 +344,19 @@ void WorkerThread::workerThread()
     m_workerGlobalScope->dispose();
     m_workerGlobalScope = nullptr;
 
-    // Detach the ThreadState, cleaning out the thread's heap by
-    // performing a final GC. The cleanup operation will at the end
-    // assert that the heap is empty. If the heap does not become
-    // empty, there are still pointers into the heap and those
-    // pointers will be dangling after thread termination because we
-    // are destroying the heap. It is important to detach while the
-    // thread is still valid. In particular, finalizers for objects in
-    // the heap for this thread will need to access thread local data.
-    ThreadState::detach();
+    m_thread->detachGC();
+
+    m_thread->removeTaskObserver(m_microtaskRunner.get());
+    m_microtaskRunner = nullptr;
 
     // Notify the proxy that the WorkerGlobalScope has been disposed of.
     // This can free this thread object, hence it must not be touched afterwards.
-    workerReportingProxy().workerGlobalScopeDestroyed();
+    workerReportingProxy().workerThreadTerminated();
+
+    m_terminationEvent->signal();
 
     // Clean up PlatformThreadData before WTF::WTFThreadData goes away!
     PlatformThreadData::current().destroy();
-
-    // The thread object may be already destroyed from notification now, don't try to access "this".
-    detachThread(threadID);
-}
-
-void WorkerThread::runEventLoop()
-{
-    // Does not return until terminated.
-    m_runLoop.run();
 }
 
 class WorkerThreadShutdownFinishTask : public ExecutionContextTask {
@@ -189,6 +372,7 @@ public:
         workerGlobalScope->clearInspector();
         // It's not safe to call clearScript until all the cleanup tasks posted by functions initiated by WorkerThreadShutdownStartTask have completed.
         workerGlobalScope->clearScript();
+        workerGlobalScope->thread()->m_thread->postTask(new Task(WTF::bind(&WorkerThread::cleanup, workerGlobalScope->thread())));
     }
 
     virtual bool isCleanupTask() const { return true; }
@@ -206,6 +390,7 @@ public:
         WorkerGlobalScope* workerGlobalScope = toWorkerGlobalScope(context);
         workerGlobalScope->stopFetch();
         workerGlobalScope->stopActiveDOMObjects();
+        PlatformThreadData::current().threadTimers().setSharedTimer(nullptr);
 
         // Event listeners would keep DOMWrapperWorld objects alive for too long. Also, they have references to JS objects,
         // which become dangling once Heap is destroyed.
@@ -223,27 +408,135 @@ void WorkerThread::stop()
 {
     // Prevent the deadlock between GC and an attempt to stop a thread.
     ThreadState::SafePointScope safePointScope(ThreadState::HeapPointersOnStack);
+    stopInternal();
+}
 
-    // Mutex protection is necessary because stop() can be called before the context is fully created.
+void WorkerThread::stopInShutdownSequence()
+{
+    stopInternal();
+}
+
+void WorkerThread::terminateAndWait()
+{
+    stop();
+    m_terminationEvent->wait();
+}
+
+bool WorkerThread::terminated()
+{
     MutexLocker lock(m_threadCreationMutex);
+    return m_terminated;
+}
+
+void WorkerThread::stopInternal()
+{
+    // Protect against this method and initialize() racing each other.
+    MutexLocker lock(m_threadCreationMutex);
+
+    // If stop has already been called, just return.
+    if (m_terminated)
+        return;
+    m_terminated = true;
 
     // Signal the thread to notify that the thread's stopping.
     if (m_shutdownEvent)
         m_shutdownEvent->signal();
 
-    // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
-    if (m_workerGlobalScope) {
-        m_workerGlobalScope->script()->scheduleExecutionTermination();
-        m_workerGlobalScope->wasRequestedToTerminate();
-        m_runLoop.postTaskAndTerminate(WorkerThreadShutdownStartTask::create());
+    if (!m_workerGlobalScope)
         return;
-    }
-    m_runLoop.terminate();
+
+    // Ensure that tasks are being handled by thread event loop. If script execution weren't forbidden, a while(1) loop in JS could keep the thread alive forever.
+    m_workerGlobalScope->script()->scheduleExecutionTermination();
+    InspectorInstrumentation::didKillAllExecutionContextTasks(m_workerGlobalScope.get());
+    m_debuggerMessageQueue.kill();
+    postTask(WorkerThreadShutdownStartTask::create());
+}
+
+void WorkerThread::terminateAndWaitForAllWorkers()
+{
+    // Keep this lock to prevent WorkerThread instances from being destroyed.
+    MutexLocker lock(threadSetMutex());
+    HashSet<WorkerThread*> threads = workerThreads();
+    for (WorkerThread* thread : threads)
+        thread->stopInShutdownSequence();
+
+    for (WorkerThread* thread : threads)
+        thread->terminationEvent()->wait();
 }
 
 bool WorkerThread::isCurrentThread() const
 {
-    return m_threadID == currentThread();
+    return m_thread && m_thread->isCurrentThread();
 }
 
-} // namespace WebCore
+void WorkerThread::idleHandler()
+{
+    ASSERT(m_workerGlobalScope.get());
+    int64_t delay = kLongIdleHandlerDelayMs;
+
+    // Do a script engine idle notification if the next event is distant enough.
+    const double kMinIdleTimespan = 0.3;
+    if (m_sharedTimer->nextFireTime() == 0.0 || m_sharedTimer->nextFireTime() > currentTime() + kMinIdleTimespan) {
+        bool hasMoreWork = !m_workerGlobalScope->idleNotification();
+        if (hasMoreWork)
+            delay = kShortIdleHandlerDelayMs;
+    }
+
+    postDelayedTask(createSameThreadTask(&WorkerThread::idleHandler, this), delay);
+}
+
+void WorkerThread::postTask(PassOwnPtr<ExecutionContextTask> task)
+{
+    m_thread->postTask(WorkerThreadTask::create(*this, task, true).leakPtr());
+}
+
+void WorkerThread::postDelayedTask(PassOwnPtr<ExecutionContextTask> task, long long delayMs)
+{
+    m_thread->postDelayedTask(WorkerThreadTask::create(*this, task, true).leakPtr(), delayMs);
+}
+
+void WorkerThread::postDebuggerTask(PassOwnPtr<ExecutionContextTask> task)
+{
+    m_debuggerMessageQueue.append(WorkerThreadTask::create(*this, task, false));
+    postTask(RunDebuggerQueueTask::create(this));
+}
+
+MessageQueueWaitResult WorkerThread::runDebuggerTask(WaitMode waitMode)
+{
+    ASSERT(isCurrentThread());
+    MessageQueueWaitResult result;
+    double absoluteTime = MessageQueue<blink::WebThread::Task>::infiniteTime();
+    OwnPtr<blink::WebThread::Task> task;
+    {
+        if (waitMode == DontWaitForMessage)
+            absoluteTime = 0.0;
+        ThreadState::SafePointScope safePointScope(ThreadState::NoHeapPointersOnStack);
+        task = m_debuggerMessageQueue.waitForMessageWithTimeout(result, absoluteTime);
+    }
+
+    if (result == MessageQueueMessageReceived) {
+        InspectorInstrumentation::willProcessTask(workerGlobalScope());
+        task->run();
+        InspectorInstrumentation::didProcessTask(workerGlobalScope());
+    }
+
+    return result;
+}
+
+void WorkerThread::willEnterNestedLoop()
+{
+    InspectorInstrumentation::willEnterNestedRunLoop(m_workerGlobalScope.get());
+}
+
+void WorkerThread::didLeaveNestedLoop()
+{
+    InspectorInstrumentation::didLeaveNestedRunLoop(m_workerGlobalScope.get());
+}
+
+void WorkerThread::setWorkerInspectorController(WorkerInspectorController* workerInspectorController)
+{
+    MutexLocker locker(m_workerInspectorControllerMutex);
+    m_workerInspectorController = workerInspectorController;
+}
+
+} // namespace blink

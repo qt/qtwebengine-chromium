@@ -22,8 +22,8 @@
 #include "config.h"
 #include "core/dom/Text.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/SVGNames.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/ExceptionCode.h"
@@ -40,7 +40,7 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<Text> Text::create(Document& document, const String& data)
 {
@@ -124,7 +124,7 @@ PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& ex
         return nullptr;
 
     if (renderer())
-        toRenderText(renderer())->setTextWithOffset(dataImpl(), 0, oldStr.length());
+        renderer()->setTextWithOffset(dataImpl(), 0, oldStr.length());
 
     if (parentNode())
         document().didSplitTextNode(*this);
@@ -134,8 +134,7 @@ PassRefPtrWillBeRawPtr<Text> Text::splitText(unsigned offset, ExceptionState& ex
 
 static const Text* earliestLogicallyAdjacentTextNode(const Text* t)
 {
-    const Node* n = t;
-    while ((n = n->previousSibling())) {
+    for (const Node* n = t->previousSibling(); n; n = n->previousSibling()) {
         Node::NodeType type = n->nodeType();
         if (type == Node::TEXT_NODE || type == Node::CDATA_SECTION_NODE) {
             t = toText(n);
@@ -149,8 +148,7 @@ static const Text* earliestLogicallyAdjacentTextNode(const Text* t)
 
 static const Text* latestLogicallyAdjacentTextNode(const Text* t)
 {
-    const Node* n = t;
-    while ((n = n->nextSibling())) {
+    for (const Node* n = t->nextSibling(); n; n = n->nextSibling()) {
         Node::NodeType type = n->nodeType();
         if (type == Node::TEXT_NODE || type == Node::CDATA_SECTION_NODE) {
             t = toText(n);
@@ -312,7 +310,7 @@ void Text::attach(const AttachContext& context)
 
 void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
 {
-    if (RenderText* renderer = toRenderText(this->renderer())) {
+    if (RenderText* renderer = this->renderer()) {
         if (change != NoChange || needsStyleRecalc())
             renderer->setStyle(document().ensureStyleResolver().styleForText(this));
         if (needsStyleRecalc())
@@ -320,7 +318,8 @@ void Text::recalcTextStyle(StyleRecalcChange change, Text* nextTextSibling)
         clearNeedsStyleRecalc();
     } else if (needsStyleRecalc() || needsWhitespaceRenderer()) {
         reattach();
-        reattachWhitespaceSiblings(nextTextSibling);
+        if (this->renderer())
+            reattachWhitespaceSiblings(nextTextSibling);
     }
 }
 
@@ -338,7 +337,7 @@ void Text::updateTextRenderer(unsigned offsetOfReplacedData, unsigned lengthOfRe
 {
     if (!inActiveDocument())
         return;
-    RenderText* textRenderer = toRenderText(renderer());
+    RenderText* textRenderer = renderer();
     if (!textRenderer || !textRendererIsNeeded(*textRenderer->style(), *textRenderer->parent())) {
         lazyReattachIfAttached();
         // FIXME: Editing should be updated so this is not neccesary.
@@ -374,4 +373,4 @@ void Text::formatForDebugger(char *buffer, unsigned length) const
 }
 #endif
 
-} // namespace WebCore
+} // namespace blink

@@ -7,11 +7,13 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "dbus/message.h"
 #include "dbus/mock_bus.h"
 #include "dbus/mock_exported_object.h"
 #include "dbus/mock_object_proxy.h"
 #include "dbus/object_path.h"
+#include "dbus/scoped_dbus_error.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -43,6 +45,10 @@ class MockTest : public testing::Test {
     // CreateMockProxyResponse() to return responses.
     EXPECT_CALL(*mock_proxy_.get(), MockCallMethodAndBlock(_, _))
         .WillRepeatedly(Invoke(this, &MockTest::CreateMockProxyResponse));
+    EXPECT_CALL(*mock_proxy_.get(),
+                MockCallMethodAndBlockWithErrorDetails(_, _, _))
+        .WillRepeatedly(
+            Invoke(this, &MockTest::CreateMockProxyResponseWithErrorDetails));
 
     // Set an expectation so mock_proxy's CallMethod() will use
     // HandleMockProxyResponseWithMessageLoop() to return responses.
@@ -72,12 +78,13 @@ class MockTest : public testing::Test {
       MessageReader reader(response);
       ASSERT_TRUE(reader.PopString(&response_string_));
     }
-    message_loop_.Quit();
+    run_loop_->Quit();
   };
 
  protected:
   std::string response_string_;
   base::MessageLoop message_loop_;
+  scoped_ptr<base::RunLoop> run_loop_;
   scoped_refptr<MockBus> mock_bus_;
   scoped_refptr<MockObjectProxy> mock_proxy_;
 
@@ -99,6 +106,12 @@ class MockTest : public testing::Test {
     }
 
     LOG(ERROR) << "Unexpected method call: " << method_call->ToString();
+    return NULL;
+  }
+
+  Response* CreateMockProxyResponseWithErrorDetails(
+      MethodCall* method_call, int timeout_ms, ScopedDBusError* error) {
+    dbus_set_error(error->get(), DBUS_ERROR_NOT_SUPPORTED, "Not implemented");
     return NULL;
   }
 
@@ -125,7 +138,7 @@ class MockTest : public testing::Test {
   }
 };
 
-// This test demonstrates how to mock a synchronos method call using the
+// This test demonstrates how to mock a synchronous method call using the
 // mock classes.
 TEST_F(MockTest, CallMethodAndBlock) {
   const char kHello[] = "Hello";
@@ -153,7 +166,29 @@ TEST_F(MockTest, CallMethodAndBlock) {
   EXPECT_EQ(kHello, text_message);
 }
 
-// This test demonstrates how to mock an asynchronos method call using the
+TEST_F(MockTest, CallMethodAndBlockWithErrorDetails) {
+  // Get an object proxy from the mock bus.
+  ObjectProxy* proxy = mock_bus_->GetObjectProxy(
+      "org.chromium.TestService",
+      ObjectPath("/org/chromium/TestObject"));
+
+  // Create a method call.
+  MethodCall method_call("org.chromium.TestInterface", "Echo");
+
+  ScopedDBusError error;
+  // Call the method.
+  scoped_ptr<Response> response(
+      proxy->CallMethodAndBlockWithErrorDetails(
+          &method_call, ObjectProxy::TIMEOUT_USE_DEFAULT, &error));
+
+  // Check the response.
+  ASSERT_FALSE(response.get());
+  ASSERT_TRUE(error.is_set());
+  EXPECT_STREQ(DBUS_ERROR_NOT_SUPPORTED, error.name());
+  EXPECT_STREQ("Not implemented", error.message());
+}
+
+// This test demonstrates how to mock an asynchronous method call using the
 // mock classes.
 TEST_F(MockTest, CallMethod) {
   const char kHello[] = "hello";
@@ -169,12 +204,13 @@ TEST_F(MockTest, CallMethod) {
   writer.AppendString(kHello);
 
   // Call the method.
+  run_loop_.reset(new base::RunLoop);
   proxy->CallMethod(&method_call,
                     ObjectProxy::TIMEOUT_USE_DEFAULT,
                     base::Bind(&MockTest::OnResponse,
                                base::Unretained(this)));
   // Run the message loop to let OnResponse be called.
-  message_loop_.Run();
+  run_loop_->Run();
 
   EXPECT_EQ(kHello, response_string_);
 }

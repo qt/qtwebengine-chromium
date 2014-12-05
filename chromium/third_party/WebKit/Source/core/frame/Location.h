@@ -29,21 +29,23 @@
 #ifndef Location_h
 #define Location_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/DOMStringList.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class ExceptionState;
 class LocalFrame;
 class KURL;
 
-class Location FINAL : public RefCountedWillBeGarbageCollectedFinalized<Location>, public ScriptWrappable, public DOMWindowProperty {
+class Location final : public RefCountedWillBeGarbageCollected<Location>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Location);
 public:
     static PassRefPtrWillBeRawPtr<Location> create(LocalFrame* frame)
     {
@@ -75,7 +77,7 @@ public:
 
     PassRefPtrWillBeRawPtr<DOMStringList> ancestorOrigins() const;
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit Location(LocalFrame*);
@@ -85,6 +87,6 @@ private:
     const KURL& url() const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Location_h

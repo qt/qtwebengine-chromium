@@ -18,6 +18,7 @@
 #include "base/debug/stack_trace.h"
 #include "base/files/scoped_file.h"
 #include "base/logging.h"
+#include "base/macros.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
 #include "base/posix/eintr_wrapper.h"
@@ -34,8 +35,7 @@
 #include "sandbox/linux/services/yama.h"
 #include "sandbox/linux/suid/client/setuid_sandbox_client.h"
 
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-     defined(LEAK_SANITIZER)
+#if defined(ANY_OF_AMTLU_SANITIZER)
 #include <sanitizer/common_interface_defs.h>
 #endif
 
@@ -52,20 +52,16 @@ struct FDCloser {
 };
 
 void LogSandboxStarted(const std::string& sandbox_name) {
-  const CommandLine& command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& command_line =
+      *base::CommandLine::ForCurrentProcess();
   const std::string process_type =
       command_line.GetSwitchValueASCII(switches::kProcessType);
   const std::string activated_sandbox =
       "Activated " + sandbox_name + " sandbox for process type: " +
       process_type + ".";
-#if defined(OS_CHROMEOS)
-  LOG(WARNING) << activated_sandbox;
-#else
   VLOG(1) << activated_sandbox;
-#endif
 }
 
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
 bool AddResourceLimit(int resource, rlim_t limit) {
   struct rlimit old_rlimit;
   if (getrlimit(resource, &old_rlimit))
@@ -78,7 +74,6 @@ bool AddResourceLimit(int resource, rlim_t limit) {
   int rc = setrlimit(resource, &new_rlimit);
   return rc == 0;
 }
-#endif
 
 bool IsRunningTSAN() {
 #if defined(THREAD_SANITIZER)
@@ -119,8 +114,7 @@ LinuxSandbox::LinuxSandbox()
   if (setuid_sandbox_client_ == NULL) {
     LOG(FATAL) << "Failed to instantiate the setuid sandbox client.";
   }
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-    defined(LEAK_SANITIZER)
+#if defined(ANY_OF_AMTLU_SANITIZER)
   sanitizer_args_ = make_scoped_ptr(new __sanitizer_sandbox_arguments);
   *sanitizer_args_ = {0};
 #endif
@@ -138,8 +132,7 @@ LinuxSandbox* LinuxSandbox::GetInstance() {
 void LinuxSandbox::PreinitializeSandbox() {
   CHECK(!pre_initialized_);
   seccomp_bpf_supported_ = false;
-#if defined(ADDRESS_SANITIZER) || defined(MEMORY_SANITIZER) || \
-     defined(LEAK_SANITIZER)
+#if defined(ANY_OF_AMTLU_SANITIZER)
   // Sanitizers need to open some resources before the sandbox is enabled.
   // This should not fork, not launch threads, not open a directory.
   __sanitizer_sandbox_on_notify(sanitizer_args());
@@ -264,7 +257,7 @@ bool LinuxSandbox::StartSeccompBPF(const std::string& process_type) {
 }
 
 bool LinuxSandbox::InitializeSandboxImpl() {
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   const std::string process_type =
       command_line->GetSwitchValueASCII(switches::kProcessType);
 
@@ -338,8 +331,9 @@ bool LinuxSandbox::seccomp_bpf_supported() const {
 
 bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   (void) process_type;
-#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
+#if !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) && \
+    !defined(THREAD_SANITIZER)
+  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kNoSandbox)) {
     return false;
   }
@@ -358,7 +352,6 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
   // For now, increase limit to 16GB for renderer and worker and gpu processes
   // to accomodate.
   if (process_type == switches::kRendererProcess ||
-      process_type == switches::kWorkerProcess ||
       process_type == switches::kGpuProcess) {
     address_space_limit = 1L << 34;
   }
@@ -376,9 +369,13 @@ bool LinuxSandbox::LimitAddressSpace(const std::string& process_type) {
 
   return limited_as && limited_data;
 #else
+  // Silence the compiler warning about unused function. This doesn't actually
+  // call AddResourceLimit().
+  ignore_result(AddResourceLimit);
   base::SysInfo::AmountOfVirtualMemory();
   return false;
-#endif  // !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER)
+#endif  // !defined(ADDRESS_SANITIZER) && !defined(MEMORY_SANITIZER) &&
+        // !defined(THREAD_SANITIZER)
 }
 
 bool LinuxSandbox::HasOpenDirectories() const {
@@ -397,7 +394,6 @@ void LinuxSandbox::CheckForBrokenPromises(const std::string& process_type) {
   // Make sure that any promise made with GetStatus() wasn't broken.
   bool promised_seccomp_bpf_would_start = false;
   if (process_type == switches::kRendererProcess ||
-      process_type == switches::kWorkerProcess ||
       process_type == switches::kPpapiPluginProcess) {
     promised_seccomp_bpf_would_start =
         (sandbox_status_flags_ != kSandboxLinuxInvalid) &&

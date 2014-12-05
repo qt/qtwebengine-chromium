@@ -10,6 +10,7 @@
 #include "cc/base/math_util.h"
 #include "cc/resources/picture.h"
 #include "content/public/renderer/v8_value_converter.h"
+#include "content/renderer/chrome_object_extensions_utils.h"
 #include "content/renderer/render_thread_impl.h"
 #include "gin/arguments.h"
 #include "gin/handle.h"
@@ -77,13 +78,8 @@ void SkiaBenchmarking::Install(blink::WebFrame* frame) {
   if (controller.IsEmpty())
     return;
 
-  v8::Handle<v8::Object> global = context->Global();
-  v8::Handle<v8::Object> chrome =
-      global->Get(gin::StringToV8(isolate, "chrome"))->ToObject();
-  if (chrome.IsEmpty()) {
-    chrome = v8::Object::New(isolate);
-    global->Set(gin::StringToV8(isolate, "chrome"), chrome);
-  }
+  v8::Handle<v8::Object> chrome = GetOrCreateChromeObject(isolate,
+                                                          context->Global());
   chrome->Set(gin::StringToV8(isolate, "skiaBenchmarking"), controller.ToV8());
 }
 
@@ -158,10 +154,7 @@ void SkiaBenchmarking::Rasterize(gin::Arguments* args) {
   gfx::Rect snapped_clip = gfx::ToEnclosingRect(clip);
 
   SkBitmap bitmap;
-  if (!bitmap.setConfig(SkBitmap::kARGB_8888_Config, snapped_clip.width(),
-                        snapped_clip.height()))
-    return;
-  if (!bitmap.allocPixels())
+  if (!bitmap.tryAllocN32Pixels(snapped_clip.width(), snapped_clip.height()))
     return;
   bitmap.eraseARGB(0, 0, 0, 0);
 
@@ -235,7 +228,7 @@ void SkiaBenchmarking::GetOps(gin::Arguments* args) {
              v8::String::NewFromUtf8(
                  isolate, SkDrawCommand::GetCommandString(cmd_type)));
 
-    SkTDArray<SkString*>* info = canvas.getCommandInfo(i);
+    const SkTDArray<SkString*>* info = canvas.getCommandInfo(i);
     DCHECK(info);
 
     v8::Local<v8::Array> v8_info = v8::Array::New(isolate, info->count());

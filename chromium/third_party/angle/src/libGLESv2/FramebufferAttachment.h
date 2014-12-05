@@ -10,11 +10,11 @@
 #ifndef LIBGLESV2_FRAMEBUFFERATTACHMENT_H_
 #define LIBGLESV2_FRAMEBUFFERATTACHMENT_H_
 
-#include <GLES3/gl3.h>
-#include <GLES2/gl2.h>
-
 #include "common/angleutils.h"
 #include "common/RefCountObject.h"
+#include "Texture.h"
+
+#include "angle_gl.h"
 
 namespace rx
 {
@@ -25,39 +25,21 @@ class TextureStorage;
 
 namespace gl
 {
-class Texture2D;
-class TextureCubeMap;
-class Texture3D;
-class Texture2DArray;
-class FramebufferAttachment;
-class FramebufferAttachmentInterface;
-class RenderbufferStorage;
+class Renderbuffer;
 
-// FramebufferAttachment implements the GL renderbuffer object.
-// It's only a proxy for a FramebufferAttachmentInterface instance; the internal object
-// can change whenever glRenderbufferStorage is called.
-class FramebufferAttachment : public RefCountObject
+// FramebufferAttachment implements a GL framebuffer attachment.
+// Attachments are "light" containers, which store pointers to ref-counted GL objects.
+// We support GL texture (2D/3D/Cube/2D array) and renderbuffer object attachments.
+// Note: Our old naming scheme used the term "Renderbuffer" for both GL renderbuffers and for
+// framebuffer attachments, which confused their usage.
+
+class FramebufferAttachment
 {
   public:
-    FramebufferAttachment(rx::Renderer *renderer, GLuint id, FramebufferAttachmentInterface *storage);
-
+    explicit FramebufferAttachment(GLenum binding);
     virtual ~FramebufferAttachment();
 
-    // These functions from RefCountObject are overloaded here because
-    // Textures need to maintain their own count of references to them via
-    // Renderbuffers/RenderbufferTextures. These functions invoke those
-    // reference counting functions on the FramebufferAttachmentInterface.
-    void addRef() const;
-    void release() const;
-
-    rx::RenderTarget *getRenderTarget();
-    rx::RenderTarget *getDepthStencil();
-    rx::TextureStorage *getTextureStorage();
-
-    GLsizei getWidth() const;
-    GLsizei getHeight() const;
-    GLenum getInternalFormat() const;
-    GLenum getActualFormat() const;
+    // Helper methods
     GLuint getRedSize() const;
     GLuint getGreenSize() const;
     GLuint getBlueSize() const;
@@ -66,64 +48,70 @@ class FramebufferAttachment : public RefCountObject
     GLuint getStencilSize() const;
     GLenum getComponentType() const;
     GLenum getColorEncoding() const;
-    GLsizei getSamples() const;
-
-    unsigned int getSerial() const;
-
     bool isTexture() const;
-    unsigned int getTextureSerial() const;
 
-    void setStorage(RenderbufferStorage *newStorage);
+    bool isTextureWithId(GLuint textureId) const { return isTexture() && id() == textureId; }
+    bool isRenderbufferWithId(GLuint renderbufferId) const { return !isTexture() && id() == renderbufferId; }
 
-  private:
-    DISALLOW_COPY_AND_ASSIGN(FramebufferAttachment);
+    GLenum getBinding() const { return mBinding; }
 
-    rx::Renderer const *mRenderer;
-    FramebufferAttachmentInterface *mInstance;
-};
-
-class FramebufferAttachmentInterface
-{
-  public:
-    FramebufferAttachmentInterface();
-
-    virtual ~FramebufferAttachmentInterface() {};
-
-    virtual void addProxyRef(const FramebufferAttachment *proxy);
-    virtual void releaseProxy(const FramebufferAttachment *proxy);
-
-    virtual rx::RenderTarget *getRenderTarget() = 0;
-    virtual rx::RenderTarget *getDepthStencil() = 0;
-    virtual rx::TextureStorage *getTextureStorage() = 0;
-
+    // Child class interface
     virtual GLsizei getWidth() const = 0;
     virtual GLsizei getHeight() const = 0;
     virtual GLenum getInternalFormat() const = 0;
     virtual GLenum getActualFormat() const = 0;
     virtual GLsizei getSamples() const = 0;
 
-    virtual unsigned int getSerial() const = 0;
+    virtual GLuint id() const = 0;
+    virtual GLenum type() const = 0;
+    virtual GLint mipLevel() const = 0;
+    virtual GLint layer() const = 0;
 
-    virtual bool isTexture() const = 0;
-    virtual unsigned int getTextureSerial() const = 0;
+    virtual Texture *getTexture() = 0;
+    virtual const ImageIndex *getTextureImageIndex() const = 0;
+    virtual Renderbuffer *getRenderbuffer() = 0;
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(FramebufferAttachmentInterface);
+    DISALLOW_COPY_AND_ASSIGN(FramebufferAttachment);
+
+    GLenum mBinding;
 };
 
-class Texture2DAttachment : public FramebufferAttachmentInterface
+class TextureAttachment : public FramebufferAttachment
 {
   public:
-    Texture2DAttachment(Texture2D *texture, GLint level);
+    TextureAttachment(GLenum binding, Texture *texture, const ImageIndex &index);
+    virtual ~TextureAttachment();
 
-    virtual ~Texture2DAttachment();
+    virtual GLsizei getSamples() const;
+    virtual GLuint id() const;
 
-    void addProxyRef(const FramebufferAttachment *proxy);
-    void releaseProxy(const FramebufferAttachment *proxy);
+    virtual GLsizei getWidth() const;
+    virtual GLsizei getHeight() const;
+    virtual GLenum getInternalFormat() const;
+    virtual GLenum getActualFormat() const;
 
-    rx::RenderTarget *getRenderTarget();
-    rx::RenderTarget *getDepthStencil();
-    rx::TextureStorage *getTextureStorage();
+    virtual GLenum type() const;
+    virtual GLint mipLevel() const;
+    virtual GLint layer() const;
+
+    virtual Texture *getTexture();
+    virtual const ImageIndex *getTextureImageIndex() const;
+    virtual Renderbuffer *getRenderbuffer();
+
+  private:
+    DISALLOW_COPY_AND_ASSIGN(TextureAttachment);
+
+    BindingPointer<Texture> mTexture;
+    ImageIndex mIndex;
+};
+
+class RenderbufferAttachment : public FramebufferAttachment
+{
+  public:
+    RenderbufferAttachment(GLenum binding, Renderbuffer *renderbuffer);
+
+    virtual ~RenderbufferAttachment();
 
     virtual GLsizei getWidth() const;
     virtual GLsizei getHeight() const;
@@ -131,115 +119,19 @@ class Texture2DAttachment : public FramebufferAttachmentInterface
     virtual GLenum getActualFormat() const;
     virtual GLsizei getSamples() const;
 
-    virtual unsigned int getSerial() const;
+    virtual GLuint id() const;
+    virtual GLenum type() const;
+    virtual GLint mipLevel() const;
+    virtual GLint layer() const;
 
-    virtual bool isTexture() const;
-    virtual unsigned int getTextureSerial() const;
-
-  private:
-    DISALLOW_COPY_AND_ASSIGN(Texture2DAttachment);
-
-    BindingPointer <Texture2D> mTexture2D;
-    const GLint mLevel;
-};
-
-class TextureCubeMapAttachment : public FramebufferAttachmentInterface
-{
-  public:
-    TextureCubeMapAttachment(TextureCubeMap *texture, GLenum faceTarget, GLint level);
-
-    virtual ~TextureCubeMapAttachment();
-
-    void addProxyRef(const FramebufferAttachment *proxy);
-    void releaseProxy(const FramebufferAttachment *proxy);
-
-    rx::RenderTarget *getRenderTarget();
-    rx::RenderTarget *getDepthStencil();
-    rx::TextureStorage *getTextureStorage();
-
-    virtual GLsizei getWidth() const;
-    virtual GLsizei getHeight() const;
-    virtual GLenum getInternalFormat() const;
-    virtual GLenum getActualFormat() const;
-    virtual GLsizei getSamples() const;
-
-    virtual unsigned int getSerial() const;
-
-    virtual bool isTexture() const;
-    virtual unsigned int getTextureSerial() const;
+    virtual Texture *getTexture();
+    virtual const ImageIndex *getTextureImageIndex() const;
+    virtual Renderbuffer *getRenderbuffer();
 
   private:
-    DISALLOW_COPY_AND_ASSIGN(TextureCubeMapAttachment);
+    DISALLOW_COPY_AND_ASSIGN(RenderbufferAttachment);
 
-    BindingPointer <TextureCubeMap> mTextureCubeMap;
-    const GLint mLevel;
-    const GLenum mFaceTarget;
-};
-
-class Texture3DAttachment : public FramebufferAttachmentInterface
-{
-  public:
-    Texture3DAttachment(Texture3D *texture, GLint level, GLint layer);
-
-    virtual ~Texture3DAttachment();
-
-    void addProxyRef(const FramebufferAttachment *proxy);
-    void releaseProxy(const FramebufferAttachment *proxy);
-
-    rx::RenderTarget *getRenderTarget();
-    rx::RenderTarget *getDepthStencil();
-    rx::TextureStorage *getTextureStorage();
-
-    virtual GLsizei getWidth() const;
-    virtual GLsizei getHeight() const;
-    virtual GLenum getInternalFormat() const;
-    virtual GLenum getActualFormat() const;
-    virtual GLsizei getSamples() const;
-
-    virtual unsigned int getSerial() const;
-
-    virtual bool isTexture() const;
-    virtual unsigned int getTextureSerial() const;
-
-  private:
-    DISALLOW_COPY_AND_ASSIGN(Texture3DAttachment);
-
-    BindingPointer<Texture3D> mTexture3D;
-    const GLint mLevel;
-    const GLint mLayer;
-};
-
-class Texture2DArrayAttachment : public FramebufferAttachmentInterface
-{
-  public:
-    Texture2DArrayAttachment(Texture2DArray *texture, GLint level, GLint layer);
-
-    virtual ~Texture2DArrayAttachment();
-
-    void addProxyRef(const FramebufferAttachment *proxy);
-    void releaseProxy(const FramebufferAttachment *proxy);
-
-    rx::RenderTarget *getRenderTarget();
-    rx::RenderTarget *getDepthStencil();
-    rx::TextureStorage *getTextureStorage();
-
-    virtual GLsizei getWidth() const;
-    virtual GLsizei getHeight() const;
-    virtual GLenum getInternalFormat() const;
-    virtual GLenum getActualFormat() const;
-    virtual GLsizei getSamples() const;
-
-    virtual unsigned int getSerial() const;
-
-    virtual bool isTexture() const;
-    virtual unsigned int getTextureSerial() const;
-
-  private:
-    DISALLOW_COPY_AND_ASSIGN(Texture2DArrayAttachment);
-
-    BindingPointer<Texture2DArray> mTexture2DArray;
-    const GLint mLevel;
-    const GLint mLayer;
+    BindingPointer<Renderbuffer> mRenderbuffer;
 };
 
 }

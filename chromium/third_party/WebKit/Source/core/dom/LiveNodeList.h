@@ -26,12 +26,12 @@
 
 #include "core/dom/LiveNodeListBase.h"
 #include "core/dom/NodeList.h"
-#include "core/html/CollectionIndexCache.h"
+#include "core/html/CollectionItemsCache.h"
 #include "core/html/CollectionType.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
@@ -41,28 +41,26 @@ public:
     LiveNodeList(ContainerNode& ownerNode, CollectionType collectionType, NodeListInvalidationType invalidationType, NodeListRootType rootType = NodeListIsRootedAtNode)
         : LiveNodeListBase(ownerNode, rootType, invalidationType, collectionType) { }
 
-    virtual unsigned length() const OVERRIDE FINAL { return m_collectionIndexCache.nodeCount(*this); }
-    virtual Element* item(unsigned offset) const OVERRIDE FINAL { return m_collectionIndexCache.nodeAt(*this, offset); }
+    virtual unsigned length() const override final;
+    virtual Element* item(unsigned offset) const override final;
     virtual bool elementMatches(const Element&) const = 0;
 
-    virtual void invalidateCache(Document* oldDocument = 0) const OVERRIDE FINAL;
+    virtual void invalidateCache(Document* oldDocument = 0) const override final;
     void invalidateCacheForAttribute(const QualifiedName*) const;
-
-    bool shouldOnlyIncludeDirectChildren() const { return false; }
 
     // Collection IndexCache API.
     bool canTraverseBackward() const { return true; }
-    Element* traverseToFirstElement() const;
-    Element* traverseToLastElement() const;
+    Element* traverseToFirst() const;
+    Element* traverseToLast() const;
     Element* traverseForwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
     Element* traverseBackwardToOffset(unsigned offset, Element& currentNode, unsigned& currentOffset) const;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
-    virtual Node* virtualOwnerNode() const OVERRIDE FINAL;
+    virtual Node* virtualOwnerNode() const override final;
 
-    mutable CollectionIndexCache<LiveNodeList, Element> m_collectionIndexCache;
+    mutable CollectionItemsCache<LiveNodeList, Element> m_collectionItemsCache;
 };
 
 DEFINE_TYPE_CASTS(LiveNodeList, LiveNodeListBase, list, isLiveNodeListType(list->type()), isLiveNodeListType(list.type()));
@@ -73,6 +71,6 @@ inline void LiveNodeList::invalidateCacheForAttribute(const QualifiedName* attrN
         invalidateCache();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // LiveNodeList_h

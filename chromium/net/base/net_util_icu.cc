@@ -491,9 +491,9 @@ class HostComponentTransform : public AppendComponentTransform {
   }
 
  private:
-  virtual base::string16 Execute(
+  base::string16 Execute(
       const std::string& component_text,
-      base::OffsetAdjuster::Adjustments* adjustments) const OVERRIDE {
+      base::OffsetAdjuster::Adjustments* adjustments) const override {
     return IDNToUnicodeWithAdjustments(component_text, languages_,
                                        adjustments);
   }
@@ -508,9 +508,9 @@ class NonHostComponentTransform : public AppendComponentTransform {
   }
 
  private:
-  virtual base::string16 Execute(
+  base::string16 Execute(
       const std::string& component_text,
-      base::OffsetAdjuster::Adjustments* adjustments) const OVERRIDE {
+      base::OffsetAdjuster::Adjustments* adjustments) const override {
     return (unescape_rules_ == UnescapeRule::NONE) ?
         base::UTF8ToUTF16WithAdjustments(component_text, adjustments) :
         UnescapeAndDecodeUTF8URLComponentWithAdjustments(component_text,

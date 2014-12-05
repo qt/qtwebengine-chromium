@@ -19,14 +19,17 @@ namespace views {
 class VIEWS_EXPORT LabelButtonBorder : public Border {
  public:
   explicit LabelButtonBorder(Button::ButtonStyle style);
-  virtual ~LabelButtonBorder();
+  ~LabelButtonBorder() override;
+
+  // Returns the default insets for a given |style|.
+  static gfx::Insets GetDefaultInsetsForStyle(Button::ButtonStyle style);
 
   Button::ButtonStyle style() const { return style_; }
 
   // Overridden from Border:
-  virtual void Paint(const View& view, gfx::Canvas* canvas) OVERRIDE;
-  virtual gfx::Insets GetInsets() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
+  void Paint(const View& view, gfx::Canvas* canvas) override;
+  gfx::Insets GetInsets() const override;
+  gfx::Size GetMinimumSize() const override;
 
   void set_insets(const gfx::Insets& insets) { insets_ = insets; }
 

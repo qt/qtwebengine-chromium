@@ -36,9 +36,7 @@
 // Use a 50ms smoothing / de-zippering time-constant.
 const float SmoothingTimeConstant = 0.050f;
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 EqualPowerPanner::EqualPowerPanner(float sampleRate)
     : Panner(PanningModelEqualPower)
@@ -72,8 +70,8 @@ void EqualPowerPanner::pan(double azimuth, double /*elevation*/, const AudioBus*
         return;
 
     // Clamp azimuth to allowed range of -180 -> +180.
-    azimuth = max(-180.0, azimuth);
-    azimuth = min(180.0, azimuth);
+    azimuth = std::max(-180.0, azimuth);
+    azimuth = std::min(180.0, azimuth);
 
     // Alias the azimuth ranges behind us to in front of us:
     // -90 -> -180 to -90 -> 0 and 90 -> 180 to 90 -> 0
@@ -101,8 +99,8 @@ void EqualPowerPanner::pan(double azimuth, double /*elevation*/, const AudioBus*
         }
     }
 
-    desiredGainL = cos(piOverTwoDouble * desiredPanPosition);
-    desiredGainR = sin(piOverTwoDouble * desiredPanPosition);
+    desiredGainL = std::cos(piOverTwoDouble * desiredPanPosition);
+    desiredGainR = std::sin(piOverTwoDouble * desiredPanPosition);
 
     // Don't de-zipper on first render call.
     if (m_isFirstRender) {
@@ -154,6 +152,6 @@ void EqualPowerPanner::pan(double azimuth, double /*elevation*/, const AudioBus*
     m_gainR = gainR;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

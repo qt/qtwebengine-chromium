@@ -5,18 +5,19 @@
 #include "config.h"
 #include "core/css/parser/SizesCalcParser.h"
 
+#include "core/MediaTypeNames.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/MediaValuesCached.h"
-#include "core/css/StylePropertySet.h"
-#include "core/css/parser/MediaQueryTokenizer.h"
+#include "core/css/parser/CSSParser.h"
+#include "core/css/parser/CSSTokenizer.h"
 
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 struct TestCase {
     const char* input;
-    const unsigned output;
+    const float output;
     const bool valid;
     const bool dontRunInCSSCalc;
 };
@@ -32,15 +33,13 @@ static void verifyCSSCalc(String text, double value, bool valid, unsigned fontSi
 {
     CSSLengthArray lengthArray;
     initLengthArray(lengthArray);
-    RefPtr<MutableStylePropertySet> propertySet = MutableStylePropertySet::create();
-    propertySet->setProperty(CSSPropertyLeft, text);
-    RefPtrWillBeRawPtr<CSSValue> cssValue = propertySet->getPropertyCSSValue(CSSPropertyLeft);
+    RefPtrWillBeRawPtr<CSSValue> cssValue = CSSParser::parseSingleValue(CSSPropertyLeft, text);
     CSSPrimitiveValue* primitiveValue = toCSSPrimitiveValue(cssValue.get());
     if (primitiveValue)
         primitiveValue->accumulateLengthArray(lengthArray);
     else
         ASSERT_EQ(valid, false);
-    int length = lengthArray.at(CSSPrimitiveValue::UnitTypePixels);
+    float length = lengthArray.at(CSSPrimitiveValue::UnitTypePixels);
     length += lengthArray.at(CSSPrimitiveValue::UnitTypeFontSize) * fontSize;
     length += lengthArray.at(CSSPrimitiveValue::UnitTypeViewportWidth) * viewportWidth / 100.0;
     length += lengthArray.at(CSSPrimitiveValue::UnitTypeViewportHeight) * viewportHeight / 100.0;
@@ -52,6 +51,7 @@ TEST(SizesCalcParserTest, Basic)
 {
     TestCase testCases[] = {
         {"calc(500px + 10em)", 660, true, false},
+        {"calc(500px / 8)", 62.5, true, false},
         {"calc(500px + 2 * 10em)", 820, true, false},
         {"calc(500px + 2*10em)", 820, true, false},
         {"calc(500px + 0.5*10em)", 580, true, false},
@@ -65,9 +65,10 @@ TEST(SizesCalcParserTest, Basic)
         {"calc(500px + 10)", 0, false, false},
         {"calc(500 + 10)", 0, false, false},
         {"calc(500px + 10s)", 0, false, true}, // This test ASSERTs in CSSCalculationValue.
-        {"calc(500px + 1cm)", 537, true, false},
+        {"calc(500px + 1cm)", 537.795276, true, false},
         {"calc(500px - 10s)", 0, false, true}, // This test ASSERTs in CSSCalculationValue.
-        {"calc(500px - 1cm)", 462, true, false},
+        {"calc(500px - 1cm)", 462.204724, true, false},
+        {"calc(500px - 1vw)", 495, true, false},
         {"calc(50px*10)", 500, true, false},
         {"calc(50px*10px)", 0, false, false},
         {"calc(50px/10px)", 0, false, false},
@@ -80,9 +81,9 @@ TEST(SizesCalcParserTest, Basic)
         {"calc(-500px/10)", 0, true, true}, // CSSCalculationValue does not clamp negative values to 0.
         {"calc(((4) * ((10px))))", 40, true, false},
         {"calc(50px / 0)", 0, false, false},
-        {"calc(50px / (10 + 10))", 2, true, false},
+        {"calc(50px / (10 + 10))", 2.5, true, false},
         {"calc(50px / (10 - 10))", 0, false, false},
-        {"calc(50px / (10 * 10))", 0, true, false},
+        {"calc(50px / (10 * 10))", 0.5, true, false},
         {"calc(50px / (10 / 10))", 50, true, false},
         {"calc(200px*)", 0, false, false},
         {"calc(+ +200px)", 0, false, false},
@@ -107,23 +108,20 @@ TEST(SizesCalcParserTest, Basic)
     data.devicePixelRatio = 2.0;
     data.colorBitsPerComponent = 24;
     data.monochromeBitsPerComponent = 0;
-    data.pointer = MediaValues::MousePointer;
+    data.primaryPointerType = PointerTypeFine;
     data.defaultFontSize = 16;
     data.threeDEnabled = true;
-    data.scanMediaType = false;
-    data.screenMediaType = true;
-    data.printMediaType = false;
+    data.mediaType = MediaTypeNames::screen;
     data.strictMode = true;
     RefPtr<MediaValues> mediaValues = MediaValuesCached::create(data);
 
     for (unsigned i = 0; testCases[i].input; ++i) {
-        Vector<MediaQueryToken> tokens;
-        MediaQueryTokenizer::tokenize(testCases[i].input, tokens);
-        unsigned output;
-        bool valid = SizesCalcParser::parse(tokens.begin(), tokens.end(), mediaValues, output);
-        ASSERT_EQ(testCases[i].valid, valid);
-        if (valid)
-            ASSERT_EQ(testCases[i].output, output);
+        Vector<CSSParserToken> tokens;
+        CSSTokenizer::tokenize(testCases[i].input, tokens);
+        SizesCalcParser calcParser(tokens.begin(), tokens.end(), mediaValues);
+        ASSERT_EQ(testCases[i].valid, calcParser.isValid());
+        if (calcParser.isValid())
+            ASSERT_EQ(testCases[i].output, calcParser.result());
     }
 
     for (unsigned i = 0; testCases[i].input; ++i) {

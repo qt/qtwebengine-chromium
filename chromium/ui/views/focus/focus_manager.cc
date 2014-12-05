@@ -66,6 +66,10 @@ bool FocusManager::OnKeyEvent(const ui::KeyEvent& event) {
     modifiers |= ui::EF_CONTROL_DOWN;
   if (event.IsAltDown())
     modifiers |= ui::EF_ALT_DOWN;
+#if defined(OS_MACOSX) || defined(OS_CHROMEOS)
+  if (event.IsCommandDown())
+    modifiers |= ui::EF_COMMAND_DOWN;
+#endif
   ui::Accelerator accelerator(event.key_code(), modifiers);
   accelerator.set_type(event.type());
   accelerator.set_is_repeat(event.IsRepeat());
@@ -355,6 +359,21 @@ void FocusManager::ClearFocus() {
   SetFocusedView(NULL);
   ClearNativeFocus();
   SetStoredFocusView(focused_view);
+}
+
+void FocusManager::AdvanceFocusIfNecessary() {
+  // If widget is inactive, there is no focused view to check. The stored view
+  // will also be checked for focusability when it is being restored.
+  if (!widget_->IsActive())
+    return;
+
+  // If widget is active and focused view is not focusable, advance focus or,
+  // if not possible, clear focus.
+  if (focused_view_ && !focused_view_->IsAccessibilityFocusable()) {
+    AdvanceFocus(false);
+    if (focused_view_ && !focused_view_->IsAccessibilityFocusable())
+      ClearFocus();
+  }
 }
 
 void FocusManager::StoreFocusedView(bool clear_native_focus) {

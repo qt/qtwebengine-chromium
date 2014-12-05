@@ -27,18 +27,18 @@
 #ifndef DOMTimer_h
 #define DOMTimer_h
 
-#include "bindings/v8/ScheduledAction.h"
+#include "bindings/core/v8/ScheduledAction.h"
 #include "core/frame/SuspendableTimer.h"
 #include "platform/UserGestureIndicator.h"
 #include "wtf/Compiler.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
-class DOMTimer FINAL : public SuspendableTimer {
+class DOMTimer final : public SuspendableTimer {
 public:
     // Creates a new timer owned by the ExecutionContext, starts it and returns its ID.
     static int install(ExecutionContext*, PassOwnPtr<ScheduledAction>, int timeout, bool singleShot);
@@ -49,8 +49,8 @@ public:
     int timeoutID() const;
 
     // ActiveDOMObject
-    virtual void contextDestroyed() OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual void contextDestroyed() override;
+    virtual void stop() override;
 
     // The following are essentially constants. All intervals are in seconds.
     static double hiddenPageAlignmentInterval();
@@ -66,10 +66,10 @@ private:
     }
 
     DOMTimer(ExecutionContext*, PassOwnPtr<ScheduledAction>, int interval, bool singleShot, int timeoutID);
-    virtual void fired() OVERRIDE;
+    virtual void fired() override;
 
     // Retuns timer fire time rounded to the next multiple of timer alignment interval.
-    virtual double alignedFireTime(double) const OVERRIDE;
+    virtual double alignedFireTime(double) const override;
 
     int m_timeoutID;
     int m_nestingLevel;
@@ -77,6 +77,6 @@ private:
     RefPtr<UserGestureToken> m_userGestureToken;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMTimer_h

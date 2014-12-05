@@ -463,6 +463,11 @@ class CHROME_DBUS_EXPORT MessageReader {
   // end of the message.
   Message::DataType GetDataType();
 
+  // Get the DBus signature of the value at the current iterator position.
+  // An empty string will be returned if the iterator points to the end of
+  // the message.
+  std::string GetDataSignature();
+
  private:
   // Returns true if the data type at the current iterator position
   // matches the given D-Bus type, such as DBUS_TYPE_BYTE.

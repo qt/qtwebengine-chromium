@@ -47,7 +47,7 @@ namespace {
 class MultipleThreadMain : public PlatformThread::Delegate {
  public:
   explicit MultipleThreadMain(int16 id) : id_(id) {}
-  virtual ~MultipleThreadMain() {}
+  ~MultipleThreadMain() override {}
 
   static void CleanUp() {
     SharedMemory memory;
@@ -55,7 +55,7 @@ class MultipleThreadMain : public PlatformThread::Delegate {
   }
 
   // PlatformThread::Delegate interface.
-  virtual void ThreadMain() OVERRIDE {
+  void ThreadMain() override {
 #if defined(OS_MACOSX)
     mac::ScopedNSAutoreleasePool pool;
 #endif
@@ -104,7 +104,7 @@ class MultipleLockThread : public PlatformThread::Delegate {
   virtual ~MultipleLockThread() {}
 
   // PlatformThread::Delegate interface.
-  virtual void ThreadMain() OVERRIDE {
+  virtual void ThreadMain() override {
     const uint32 kDataSize = sizeof(int);
     SharedMemoryHandle handle = NULL;
     {
@@ -434,13 +434,24 @@ TEST(SharedMemoryTest, ShareReadOnly) {
   HANDLE temp_handle;
   BOOL rv = ::DuplicateHandle(GetCurrentProcess(),
                               handle,
-                              GetCurrentProcess,
+                              GetCurrentProcess(),
                               &temp_handle,
                               FILE_MAP_ALL_ACCESS,
                               false,
                               0);
   EXPECT_EQ(FALSE, rv)
       << "Shouldn't be able to duplicate the handle into a writable one.";
+  if (rv)
+    base::win::ScopedHandle writable_handle(temp_handle);
+  rv = ::DuplicateHandle(GetCurrentProcess(),
+                         handle,
+                         GetCurrentProcess(),
+                         &temp_handle,
+                         FILE_MAP_READ,
+                         false,
+                         0);
+  EXPECT_EQ(TRUE, rv)
+      << "Should be able to duplicate the handle into a readable one.";
   if (rv)
     base::win::ScopedHandle writable_handle(temp_handle);
 #else
@@ -514,6 +525,8 @@ TEST(SharedMemoryTest, MapTwice) {
 }
 
 #if defined(OS_POSIX)
+// This test is not applicable for iOS (crbug.com/399384).
+#if !defined(OS_IOS)
 // Create a shared memory object, mmap it, and mprotect it to PROT_EXEC.
 TEST(SharedMemoryTest, AnonymousExecutable) {
   const uint32 kTestSize = 1 << 16;
@@ -529,6 +542,7 @@ TEST(SharedMemoryTest, AnonymousExecutable) {
   EXPECT_EQ(0, mprotect(shared_memory.memory(), shared_memory.requested_size(),
                         PROT_READ | PROT_EXEC));
 }
+#endif  // !defined(OS_IOS)
 
 // Android supports a different permission model than POSIX for its "ashmem"
 // shared memory implementation. So the tests about file permissions are not

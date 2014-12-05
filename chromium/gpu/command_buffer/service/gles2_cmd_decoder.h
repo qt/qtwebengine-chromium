@@ -35,6 +35,7 @@ namespace gles2 {
 class ContextGroup;
 class ErrorState;
 class GLES2Util;
+class ImageManager;
 class Logger;
 class QueryManager;
 class VertexArrayManager;
@@ -59,10 +60,15 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   typedef error::Error Error;
   typedef base::Callback<bool(uint32 id)> WaitSyncPointCallback;
 
+  // The default stencil mask, which has all bits set.  This really should be a
+  // GLuint, but we can't #include gl_bindings.h in this file without causing
+  // macro redefinitions.
+  static const unsigned int kDefaultStencilMask;
+
   // Creates a decoder.
   static GLES2Decoder* Create(ContextGroup* group);
 
-  virtual ~GLES2Decoder();
+  ~GLES2Decoder() override;
 
   bool initialized() const {
     return initialized_;
@@ -135,7 +141,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual Capabilities GetCapabilities() = 0;
 
   // Restores all of the decoder GL state.
-  virtual void RestoreState(const ContextState* prev_state) const = 0;
+  virtual void RestoreState(const ContextState* prev_state) = 0;
 
   // Restore States.
   virtual void RestoreActiveTexture() const = 0;
@@ -144,6 +150,7 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   virtual void RestoreActiveTextureUnitBinding(unsigned int target) const = 0;
   virtual void RestoreBufferBindings() const = 0;
   virtual void RestoreFramebufferBindings() const = 0;
+  virtual void RestoreRenderbufferBindings() = 0;
   virtual void RestoreGlobalState() const = 0;
   virtual void RestoreProgramBindings() const = 0;
   virtual void RestoreTextureState(unsigned service_id) const = 0;
@@ -160,8 +167,11 @@ class GPU_EXPORT GLES2Decoder : public base::SupportsWeakPtr<GLES2Decoder>,
   // Gets the VertexArrayManager for this context.
   virtual VertexArrayManager* GetVertexArrayManager() = 0;
 
+  // Gets the ImageManager for this context.
+  virtual ImageManager* GetImageManager() = 0;
+
   // Process any pending queries. Returns false if there are no pending queries.
-  virtual bool ProcessPendingQueries() = 0;
+  virtual bool ProcessPendingQueries(bool did_finish) = 0;
 
   // Returns false if there are no idle work to be made.
   virtual bool HasMoreIdleWork() = 0;

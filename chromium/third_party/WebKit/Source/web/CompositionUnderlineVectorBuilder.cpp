@@ -33,8 +33,6 @@
 
 #include "web/CompositionUnderlineBuilder.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 CompositionUnderlineVectorBuilder::CompositionUnderlineVectorBuilder(

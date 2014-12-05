@@ -37,10 +37,9 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class AutoscrollController;
-class BackForwardClient;
 class Chrome;
 class ChromeClient;
 class ClientRectList;
@@ -54,20 +53,12 @@ class EditorClient;
 class FocusController;
 class Frame;
 class FrameHost;
-class HistoryItem;
 class InspectorClient;
 class InspectorController;
 class PageLifecycleNotifier;
-class PlatformMouseEvent;
 class PluginData;
 class PointerLockController;
-class Range;
-class RenderBox;
-class RenderObject;
-class RenderTheme;
 class StorageClient;
-class VisibleSelection;
-class ScrollableArea;
 class ScrollingCoordinator;
 class Settings;
 class SpellCheckerClient;
@@ -79,7 +70,7 @@ typedef uint64_t LinkHash;
 
 float deviceScaleFactor(LocalFrame*);
 
-class Page FINAL : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
+class Page final : public NoBaseWillBeGarbageCollectedFinalized<Page>, public WillBeHeapSupplementable<Page>, public LifecycleContext<Page>, public SettingsDelegate {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Page);
     WTF_MAKE_NONCOPYABLE(Page);
     friend class Settings;
@@ -98,7 +89,6 @@ public:
         EditorClient* editorClient;
         DragClient* dragClient;
         InspectorClient* inspectorClient;
-        BackForwardClient* backForwardClient;
         SpellCheckerClient* spellCheckerClient;
         StorageClient* storageClient;
     };
@@ -142,11 +132,7 @@ public:
     bool openedByDOM() const;
     void setOpenedByDOM();
 
-    void incrementSubframeCount() { ++m_subframeCount; }
-    void decrementSubframeCount() { ASSERT(m_subframeCount); --m_subframeCount; }
-    int subframeCount() const { checkSubframeCountConsistency(); return m_subframeCount; }
-
-    PageAnimator& animator() { return m_animator; }
+    PageAnimator& animator() { return *m_animator; }
     Chrome& chrome() const { return *m_chrome; }
     AutoscrollController& autoscrollController() const { return *m_autoscrollController; }
     DragCaretController& dragCaretController() const { return *m_dragCaretController; }
@@ -164,7 +150,6 @@ public:
     PassRefPtrWillBeRawPtr<ClientRectList> nonFastScrollableRects(const LocalFrame*);
 
     Settings& settings() const { return *m_settings; }
-    BackForwardClient& backForward() const { return *m_backForwardClient; }
 
     UseCounter& useCounter() { return m_useCounter; }
 
@@ -184,6 +169,8 @@ public:
 
     float deviceScaleFactor() const { return m_deviceScaleFactor; }
     void setDeviceScaleFactor(float);
+    void setDeviceColorProfile(const Vector<char>&);
+    void resetDeviceColorProfile();
 
     static void allVisitedStateChanged();
     static void visitedStateChanged(LinkHash visitedHash);
@@ -191,19 +178,13 @@ public:
     StorageNamespace* sessionStorage(bool optionalCreate = true);
     StorageClient& storageClient() const { return *m_storageClient; }
 
-    // Don't allow more than a certain number of frames in a page.
-    // This seems like a reasonable upper bound, and otherwise mutually
-    // recursive frameset pages can quickly bring the program to its knees
-    // with exponential growth in the number of frames.
-    static const int maxNumberOfFrames = 1000;
-
     PageVisibilityState visibilityState() const;
     void setVisibilityState(PageVisibilityState, bool);
 
     bool isCursorVisible() const;
     void setIsCursorVisible(bool isVisible) { m_isCursorVisible = isVisible; }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void setIsPainting(bool painting) { m_isPainting = painting; }
     bool isPainting() const { return m_isPainting; }
 #endif
@@ -223,7 +204,7 @@ public:
     void acceptLanguagesChanged();
 
     static void networkStateChanged(bool online);
-    PassOwnPtr<LifecycleNotifier<Page> > createLifecycleNotifier();
+    PassOwnPtr<LifecycleNotifier<Page>> createLifecycleNotifier();
 
     void trace(Visitor*);
     void willBeDestroyed();
@@ -234,27 +215,21 @@ protected:
 private:
     void initGroup();
 
-#if ASSERT_ENABLED
-    void checkSubframeCountConsistency() const;
-#else
-    void checkSubframeCountConsistency() const { }
-#endif
-
     void setTimerAlignmentInterval(double);
 
     void setNeedsLayoutInAllFrames();
 
     // SettingsDelegate overrides.
-    virtual void settingsChanged(SettingsDelegate::ChangeType) OVERRIDE;
+    virtual void settingsChanged(SettingsDelegate::ChangeType) override;
 
-    PageAnimator m_animator;
+    RefPtrWillBeMember<PageAnimator> m_animator;
     const OwnPtr<AutoscrollController> m_autoscrollController;
     const OwnPtr<Chrome> m_chrome;
     const OwnPtrWillBeMember<DragCaretController> m_dragCaretController;
     const OwnPtrWillBeMember<DragController> m_dragController;
-    const OwnPtr<FocusController> m_focusController;
-    const OwnPtr<ContextMenuController> m_contextMenuController;
-    const OwnPtr<InspectorController> m_inspectorController;
+    const OwnPtrWillBeMember<FocusController> m_focusController;
+    const OwnPtrWillBeMember<ContextMenuController> m_contextMenuController;
+    const OwnPtrWillBeMember<InspectorController> m_inspectorController;
     const OwnPtrWillBeMember<PointerLockController> m_pointerLockController;
     OwnPtr<ScrollingCoordinator> m_scrollingCoordinator;
     const OwnPtrWillBeMember<UndoStack> m_undoStack;
@@ -271,11 +246,10 @@ private:
     // other, thus keeping each other alive. The call to willBeDestroyed()
     // breaks this cycle, so the frame is still properly destroyed once no
     // longer needed.
-    Frame* m_mainFrame;
+    RawPtrWillBeMember<Frame> m_mainFrame;
 
     mutable RefPtr<PluginData> m_pluginData;
 
-    BackForwardClient* m_backForwardClient;
     EditorClient* const m_editorClient;
     SpellCheckerClient* const m_spellCheckerClient;
     StorageClient* m_storageClient;
@@ -283,7 +257,6 @@ private:
 
     UseCounter m_useCounter;
 
-    int m_subframeCount;
     bool m_openedByDOM;
 
     bool m_tabKeyCyclesThroughElements;
@@ -299,17 +272,17 @@ private:
 
     bool m_isCursorVisible;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     bool m_isPainting;
 #endif
 
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> > m_multisamplingChangedObservers;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver>> m_multisamplingChangedObservers;
 
     // A pointer to all the interfaces provided to in-process Frames for this Page.
     // FIXME: Most of the members of Page should move onto FrameHost.
     OwnPtrWillBeMember<FrameHost> m_frameHost;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Page_h

@@ -4,9 +4,9 @@
 
 #include <string>
 
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
@@ -14,28 +14,28 @@
 #include "base/strings/utf_string_conversions.h"
 #include "content/public/test/async_file_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
+#include "storage/browser/fileapi/async_file_util_adapter.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/local_file_util.h"
+#include "storage/browser/fileapi/native_file_util.h"
+#include "storage/common/fileapi/file_system_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/async_file_util_adapter.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/local_file_util.h"
-#include "webkit/browser/fileapi/native_file_util.h"
-#include "webkit/common/fileapi/file_system_types.h"
 
 using content::AsyncFileTestHelper;
-using fileapi::AsyncFileUtilAdapter;
-using fileapi::FileSystemContext;
-using fileapi::FileSystemOperationContext;
-using fileapi::FileSystemURL;
-using fileapi::LocalFileUtil;
+using storage::AsyncFileUtilAdapter;
+using storage::FileSystemContext;
+using storage::FileSystemOperationContext;
+using storage::FileSystemURL;
+using storage::LocalFileUtil;
 
 namespace content {
 
 namespace {
 
 const GURL kOrigin("http://foo/");
-const fileapi::FileSystemType kFileSystemType = fileapi::kFileSystemTypeTest;
+const storage::FileSystemType kFileSystemType = storage::kFileSystemTypeTest;
 
 }  // namespace
 
@@ -43,13 +43,13 @@ class LocalFileUtilTest : public testing::Test {
  public:
   LocalFileUtilTest() {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     file_system_context_ = CreateFileSystemContextForTesting(
         NULL, data_dir_.path());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     file_system_context_ = NULL;
     base::RunLoop().RunUntilIdle();
   }

@@ -48,7 +48,7 @@
         '<@(unpack_lib_search_path_list)',
         '<@(ar_cmd)',
       ],
-      'process_output_as_sources': 1,
+      'process_outputs_as_sources': 1,
     },
   ],
 }

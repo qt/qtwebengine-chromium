@@ -12,18 +12,18 @@ namespace gpu {
 class AsyncPixelTransferManagerSync : public AsyncPixelTransferManager {
  public:
   AsyncPixelTransferManagerSync();
-  virtual ~AsyncPixelTransferManagerSync();
+  ~AsyncPixelTransferManagerSync() override;
 
   // AsyncPixelTransferManager implementation:
-  virtual void BindCompletedAsyncTransfers() OVERRIDE;
-  virtual void AsyncNotifyCompletion(
+  void BindCompletedAsyncTransfers() override;
+  void AsyncNotifyCompletion(
       const AsyncMemoryParams& mem_params,
-      AsyncPixelTransferCompletionObserver* observer) OVERRIDE;
-  virtual uint32 GetTextureUploadCount() OVERRIDE;
-  virtual base::TimeDelta GetTotalTextureUploadTime() OVERRIDE;
-  virtual void ProcessMorePendingTransfers() OVERRIDE;
-  virtual bool NeedsProcessMorePendingTransfers() OVERRIDE;
-  virtual void WaitAllAsyncTexImage2D() OVERRIDE;
+      AsyncPixelTransferCompletionObserver* observer) override;
+  uint32 GetTextureUploadCount() override;
+  base::TimeDelta GetTotalTextureUploadTime() override;
+  void ProcessMorePendingTransfers() override;
+  bool NeedsProcessMorePendingTransfers() override;
+  void WaitAllAsyncTexImage2D() override;
 
   // State shared between Managers and Delegates.
   struct SharedState {
@@ -36,9 +36,9 @@ class AsyncPixelTransferManagerSync : public AsyncPixelTransferManager {
 
  private:
   // AsyncPixelTransferManager implementation:
-  virtual AsyncPixelTransferDelegate* CreatePixelTransferDelegateImpl(
+  AsyncPixelTransferDelegate* CreatePixelTransferDelegateImpl(
       gles2::TextureRef* ref,
-      const AsyncTexImage2DParams& define_params) OVERRIDE;
+      const AsyncTexImage2DParams& define_params) override;
 
   SharedState shared_state_;
 

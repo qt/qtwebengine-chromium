@@ -6,7 +6,6 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_vector.h"
-#include "media/base/clock.h"
 #include "media/base/media_log.h"
 #include "media/filters/audio_renderer_impl.h"
 #include "media/filters/chunk_demuxer.h"
@@ -15,11 +14,13 @@
 #include "media/filters/ffmpeg_video_decoder.h"
 #include "media/filters/file_data_source.h"
 #include "media/filters/opus_audio_decoder.h"
+#include "media/filters/renderer_impl.h"
 #include "media/filters/vpx_video_decoder.h"
 
 using ::testing::_;
 using ::testing::AnyNumber;
 using ::testing::AtMost;
+using ::testing::InvokeWithoutArgs;
 using ::testing::SaveArg;
 
 namespace media {
@@ -44,6 +45,10 @@ PipelineIntegrationTestBase::~PipelineIntegrationTestBase() {
     return;
 
   Stop();
+}
+
+void PipelineIntegrationTestBase::SaveStatus(PipelineStatus status) {
+  pipeline_status_ = status;
 }
 
 void PipelineIntegrationTestBase::OnStatusCallback(
@@ -104,19 +109,25 @@ void PipelineIntegrationTestBase::OnError(PipelineStatus status) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         PipelineStatus expected_status) {
-  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+  EXPECT_CALL(*this, OnMetadata(_))
+      .Times(AtMost(1))
       .WillRepeatedly(SaveArg<0>(&metadata_));
-  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
+      .Times(AtMost(1));
+  CreateDemuxer(file_path);
   pipeline_->Start(
-      CreateFilterCollection(file_path, NULL),
+      demuxer_.get(),
+      CreateRenderer(NULL),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnError, base::Unretained(this)),
       QuitOnStatusCB(expected_status),
       base::Bind(&PipelineIntegrationTestBase::OnMetadata,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
+      base::Bind(&PipelineIntegrationTestBase::OnBufferingStateChanged,
                  base::Unretained(this)),
-      base::Closure());
+      base::Closure(),
+      base::Bind(&PipelineIntegrationTestBase::OnAddTextTrack,
+                 base::Unretained(this)));
   message_loop_.Run();
   return (pipeline_status_ == PIPELINE_OK);
 }
@@ -126,9 +137,6 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         kTestType test_type) {
   hashing_enabled_ = test_type == kHashed;
   clockless_playback_ = test_type == kClockless;
-  if (clockless_playback_) {
-    pipeline_->SetClockForTesting(new Clock(&dummy_clock_));
-  }
   return Start(file_path, expected_status);
 }
 
@@ -138,20 +146,27 @@ bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path) {
 
 bool PipelineIntegrationTestBase::Start(const base::FilePath& file_path,
                                         Decryptor* decryptor) {
-  EXPECT_CALL(*this, OnMetadata(_)).Times(AtMost(1))
+  EXPECT_CALL(*this, OnMetadata(_))
+      .Times(AtMost(1))
       .WillRepeatedly(SaveArg<0>(&metadata_));
-  EXPECT_CALL(*this, OnPrerollCompleted()).Times(AtMost(1));
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
+      .Times(AtMost(1));
+
+  CreateDemuxer(file_path);
   pipeline_->Start(
-      CreateFilterCollection(file_path, decryptor),
+      demuxer_.get(),
+      CreateRenderer(decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnEnded, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnError, base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnStatusCallback,
                  base::Unretained(this)),
       base::Bind(&PipelineIntegrationTestBase::OnMetadata,
                  base::Unretained(this)),
-      base::Bind(&PipelineIntegrationTestBase::OnPrerollCompleted,
+      base::Bind(&PipelineIntegrationTestBase::OnBufferingStateChanged,
                  base::Unretained(this)),
-      base::Closure());
+      base::Closure(),
+      base::Bind(&PipelineIntegrationTestBase::OnAddTextTrack,
+                 base::Unretained(this)));
   message_loop_.Run();
   return (pipeline_status_ == PIPELINE_OK);
 }
@@ -167,8 +182,11 @@ void PipelineIntegrationTestBase::Pause() {
 bool PipelineIntegrationTestBase::Seek(base::TimeDelta seek_time) {
   ended_ = false;
 
-  EXPECT_CALL(*this, OnPrerollCompleted());
-  pipeline_->Seek(seek_time, QuitOnStatusCB(PIPELINE_OK));
+  EXPECT_CALL(*this, OnBufferingStateChanged(BUFFERING_HAVE_ENOUGH))
+      .WillOnce(InvokeWithoutArgs(&message_loop_, &base::MessageLoop::QuitNow));
+  pipeline_->Seek(seek_time,
+                  base::Bind(&PipelineIntegrationTestBase::SaveStatus,
+                             base::Unretained(this)));
   message_loop_.Run();
   return (pipeline_status_ == PIPELINE_OK);
 }
@@ -210,10 +228,8 @@ bool PipelineIntegrationTestBase::WaitUntilCurrentTimeIsAfter(
   return (pipeline_status_ == PIPELINE_OK);
 }
 
-scoped_ptr<FilterCollection>
-PipelineIntegrationTestBase::CreateFilterCollection(
-    const base::FilePath& file_path,
-    Decryptor* decryptor) {
+void PipelineIntegrationTestBase::CreateDemuxer(
+    const base::FilePath& file_path) {
   FileDataSource* file_data_source = new FileDataSource();
   CHECK(file_data_source->Initialize(file_path)) << "Is " << file_path.value()
                                                  << " missing?";
@@ -221,31 +237,25 @@ PipelineIntegrationTestBase::CreateFilterCollection(
 
   Demuxer::NeedKeyCB need_key_cb = base::Bind(
       &PipelineIntegrationTestBase::DemuxerNeedKeyCB, base::Unretained(this));
-  scoped_ptr<Demuxer> demuxer(
-      new FFmpegDemuxer(message_loop_.message_loop_proxy(),
-                        data_source_.get(),
-                        need_key_cb,
-                        new MediaLog()));
-  return CreateFilterCollection(demuxer.Pass(), decryptor);
+  demuxer_ =
+      scoped_ptr<Demuxer>(new FFmpegDemuxer(message_loop_.message_loop_proxy(),
+                                            data_source_.get(),
+                                            need_key_cb,
+                                            new MediaLog()));
 }
 
-scoped_ptr<FilterCollection>
-PipelineIntegrationTestBase::CreateFilterCollection(
-    scoped_ptr<Demuxer> demuxer,
+scoped_ptr<Renderer> PipelineIntegrationTestBase::CreateRenderer(
     Decryptor* decryptor) {
-  demuxer_ = demuxer.Pass();
-
-  scoped_ptr<FilterCollection> collection(new FilterCollection());
-  collection->SetDemuxer(demuxer_.get());
-
   ScopedVector<VideoDecoder> video_decoders;
+#if !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(
       new VpxVideoDecoder(message_loop_.message_loop_proxy()));
+#endif  // !defined(MEDIA_DISABLE_LIBVPX)
   video_decoders.push_back(
       new FFmpegVideoDecoder(message_loop_.message_loop_proxy()));
 
   // Disable frame dropping if hashing is enabled.
-  scoped_ptr<VideoRenderer> renderer(new VideoRendererImpl(
+  scoped_ptr<VideoRenderer> video_renderer(new VideoRendererImpl(
       message_loop_.message_loop_proxy(),
       video_decoders.Pass(),
       base::Bind(&PipelineIntegrationTestBase::SetDecryptor,
@@ -253,8 +263,8 @@ PipelineIntegrationTestBase::CreateFilterCollection(
                  decryptor),
       base::Bind(&PipelineIntegrationTestBase::OnVideoRendererPaint,
                  base::Unretained(this)),
-      false));
-  collection->SetVideoRenderer(renderer.Pass());
+      false,
+      new MediaLog()));
 
   if (!clockless_playback_) {
     audio_sink_ = new NullAudioSink(message_loop_.message_loop_proxy());
@@ -275,7 +285,7 @@ PipelineIntegrationTestBase::CreateFilterCollection(
                              512);
   hardware_config_.UpdateOutputConfig(out_params);
 
-  AudioRendererImpl* audio_renderer_impl = new AudioRendererImpl(
+  scoped_ptr<AudioRenderer> audio_renderer(new AudioRendererImpl(
       message_loop_.message_loop_proxy(),
       (clockless_playback_)
           ? static_cast<AudioRendererSink*>(clockless_audio_sink_.get())
@@ -284,19 +294,34 @@ PipelineIntegrationTestBase::CreateFilterCollection(
       base::Bind(&PipelineIntegrationTestBase::SetDecryptor,
                  base::Unretained(this),
                  decryptor),
-      &hardware_config_);
+      hardware_config_,
+      new MediaLog()));
   if (hashing_enabled_)
     audio_sink_->StartAudioHashForTesting();
-  scoped_ptr<AudioRenderer> audio_renderer(audio_renderer_impl);
-  collection->SetAudioRenderer(audio_renderer.Pass());
 
-  return collection.Pass();
+  scoped_ptr<RendererImpl> renderer_impl(
+      new RendererImpl(message_loop_.message_loop_proxy(),
+                       audio_renderer.Pass(),
+                       video_renderer.Pass()));
+
+  // Prevent non-deterministic buffering state callbacks from firing (e.g., slow
+  // machine, valgrind).
+  renderer_impl->DisableUnderflowForTesting();
+
+  if (clockless_playback_)
+    renderer_impl->EnableClocklessVideoPlaybackForTesting();
+
+  return renderer_impl.Pass();
 }
 
 void PipelineIntegrationTestBase::SetDecryptor(
     Decryptor* decryptor,
     const DecryptorReadyCB& decryptor_ready_cb) {
-  decryptor_ready_cb.Run(decryptor);
+  decryptor_ready_cb.Run(
+      decryptor,
+      base::Bind(&PipelineIntegrationTestBase::DecryptorAttached,
+                 base::Unretained(this)));
+  EXPECT_CALL(*this, DecryptorAttached(true));
 }
 
 void PipelineIntegrationTestBase::OnVideoRendererPaint(

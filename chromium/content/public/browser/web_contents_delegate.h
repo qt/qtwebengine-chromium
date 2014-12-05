@@ -12,9 +12,9 @@
 #include "base/callback.h"
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_type.h"
 #include "content/public/common/media_stream_request.h"
-#include "content/public/common/page_transition_types.h"
 #include "content/public/common/window_container_type.h"
 #include "third_party/WebKit/public/web/WebDragOperation.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -84,10 +84,9 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Called to inform the delegate that the WebContents's navigation state
   // changed. The |changed_flags| indicates the parts of the navigation state
-  // that have been updated, and is any combination of the
-  // |WebContents::InvalidateTypes| bits.
+  // that have been updated.
   virtual void NavigationStateChanged(const WebContents* source,
-                                      unsigned changed_flags) {}
+                                      InvalidateTypes changed_flags) {}
 
   // Called to inform the delegate that the WebContent's visible SSL state (as
   // defined by SSLStatus) changed.
@@ -145,7 +144,6 @@ class CONTENT_EXPORT WebContentsDelegate {
 
   // Notification that the target URL has changed.
   virtual void UpdateTargetURL(WebContents* source,
-                               int32 page_id,
                                const GURL& url) {}
 
   // Notification that there was a mouse event, along with the absolute
@@ -163,8 +161,11 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual bool CanOverscrollContent() const;
 
   // Callback that allows vertical overscroll activies to be communicated to the
-  // delegate.
-  virtual void OverscrollUpdate(int delta_y) {}
+  // delegate. |delta_y| is the total amount of overscroll.
+  virtual void OverscrollUpdate(float delta_y) {}
+
+  // Invoked when a vertical overscroll completes.
+  virtual void OverscrollComplete() {}
 
   // Return the rect where to display the resize corner, if any, otherwise
   // an empty rect.
@@ -383,6 +384,14 @@ class CONTENT_EXPORT WebContentsDelegate {
                                        const GURL& url,
                                        bool user_gesture) {}
 
+  // Unregister the registered handler for URL requests with the given scheme.
+  // |user_gesture| is true if the registration is made in the context of a user
+  // gesture.
+  virtual void UnregisterProtocolHandler(WebContents* web_contents,
+                                         const std::string& protocol,
+                                         const GURL& url,
+                                         bool user_gesture) {}
+
   // Result of string search in the page. This includes the number of matches
   // found and the selection rect (in screen coordinates) for the string found.
   // If |final_update| is false, it indicates that more results follow.
@@ -435,6 +444,13 @@ class CONTENT_EXPORT WebContentsDelegate {
       WebContents* web_contents,
       const MediaStreamRequest& request,
       const MediaResponseCallback& callback);
+
+  // Checks if we have permission to access the microphone or camera. Note that
+  // this does not query the user. |type| must be MEDIA_DEVICE_AUDIO_CAPTURE
+  // or MEDIA_DEVICE_VIDEO_CAPTURE.
+  virtual bool CheckMediaAccessPermission(WebContents* web_contents,
+                                          const GURL& security_origin,
+                                          MediaStreamType type);
 
   // Requests permission to access the PPAPI broker. The delegate should return
   // true and call the passed in |callback| with the result, or return false

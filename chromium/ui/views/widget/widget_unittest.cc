@@ -12,13 +12,13 @@
 #include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/aura/test/event_generator.h"
-#include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
+#include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/events/event_processor.h"
 #include "ui/events/event_utils.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 #include "ui/views/bubble/bubble_delegate.h"
@@ -39,11 +39,35 @@
 namespace views {
 namespace test {
 
-// A view that keeps track of the events it receives, but consumes no events.
+namespace {
+
+// TODO(tdanderson): This utility function is used in different unittest
+//                   files. Move to a common location to avoid
+//                   repeated code.
+gfx::Point ConvertPointFromWidgetToView(View* view, const gfx::Point& p) {
+  gfx::Point tmp(p);
+  View::ConvertPointToTarget(view->GetWidget()->GetRootView(), view, &tmp);
+  return tmp;
+}
+
+}  // namespace
+
+// A view that keeps track of the events it receives, optionally consuming them.
 class EventCountView : public View {
  public:
-  EventCountView() {}
-  virtual ~EventCountView() {}
+  // Whether to call SetHandled() on events as they are received. For some event
+  // types, this will allow EventCountView to receives future events in the
+  // event sequence, such as a drag.
+  enum HandleMode {
+    PROPAGATE_EVENTS,
+    CONSUME_EVENTS
+  };
+
+  EventCountView()
+      : last_flags_(0),
+        handle_mode_(PROPAGATE_EVENTS) {}
+
+  ~EventCountView() override {}
 
   int GetEventCount(ui::EventType type) {
     return event_count_[type];
@@ -53,27 +77,39 @@ class EventCountView : public View {
     event_count_.clear();
   }
 
- protected:
-  // Overridden from ui::EventHandler:
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE {
-    RecordEvent(*event);
-  }
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE {
-    RecordEvent(*event);
-  }
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE {
-    RecordEvent(*event);
-  }
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    RecordEvent(*event);
+  int last_flags() const {
+    return last_flags_;
   }
 
+  void set_handle_mode(HandleMode handle_mode) {
+    handle_mode_ = handle_mode;
+  }
+
+ protected:
+  // Overridden from View:
+  void OnMouseMoved(const ui::MouseEvent& event) override {
+    // MouseMove events are not re-dispatched from the RootView.
+    ++event_count_[ui::ET_MOUSE_MOVED];
+    last_flags_ = 0;
+  }
+
+  // Overridden from ui::EventHandler:
+  void OnKeyEvent(ui::KeyEvent* event) override { RecordEvent(event); }
+  void OnMouseEvent(ui::MouseEvent* event) override { RecordEvent(event); }
+  void OnScrollEvent(ui::ScrollEvent* event) override { RecordEvent(event); }
+  void OnGestureEvent(ui::GestureEvent* event) override { RecordEvent(event); }
+
  private:
-  void RecordEvent(const ui::Event& event) {
-    ++event_count_[event.type()];
+  void RecordEvent(ui::Event* event) {
+    ++event_count_[event->type()];
+    last_flags_ = event->flags();
+    if (handle_mode_ == CONSUME_EVENTS)
+      event->SetHandled();
   }
 
   std::map<ui::EventType, int> event_count_;
+  int last_flags_;
+  HandleMode handle_mode_;
 
   DISALLOW_COPY_AND_ASSIGN(EventCountView);
 };
@@ -83,11 +119,11 @@ class EventCountView : public View {
 class ScrollableEventCountView : public EventCountView {
  public:
   ScrollableEventCountView() {}
-  virtual ~ScrollableEventCountView() {}
+  ~ScrollableEventCountView() override {}
 
  private:
   // Overridden from ui::EventHandler:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     EventCountView::OnGestureEvent(event);
     switch (event->type()) {
       case ui::ET_GESTURE_SCROLL_BEGIN:
@@ -101,7 +137,7 @@ class ScrollableEventCountView : public EventCountView {
     }
   }
 
-  virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE {
+  void OnScrollEvent(ui::ScrollEvent* event) override {
     EventCountView::OnScrollEvent(event);
     if (event->type() == ui::ET_SCROLL)
       event->SetHandled();
@@ -114,13 +150,11 @@ class ScrollableEventCountView : public EventCountView {
 class MinimumSizeFrameView : public NativeFrameView {
  public:
   explicit MinimumSizeFrameView(Widget* frame): NativeFrameView(frame) {}
-  virtual ~MinimumSizeFrameView() {}
+  ~MinimumSizeFrameView() override {}
 
  private:
   // Overridden from View:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE {
-    return gfx::Size(300, 400);
-  }
+  gfx::Size GetMinimumSize() const override { return gfx::Size(300, 400); }
 
   DISALLOW_COPY_AND_ASSIGN(MinimumSizeFrameView);
 };
@@ -130,7 +164,7 @@ class MinimumSizeFrameView : public NativeFrameView {
 class EventCountHandler : public ui::EventHandler {
  public:
   EventCountHandler() {}
-  virtual ~EventCountHandler() {}
+  ~EventCountHandler() override {}
 
   int GetEventCount(ui::EventType type) {
     return event_count_[type];
@@ -142,7 +176,7 @@ class EventCountHandler : public ui::EventHandler {
 
  protected:
   // Overridden from ui::EventHandler:
-  virtual void OnEvent(ui::Event* event) OVERRIDE {
+  void OnEvent(ui::Event* event) override {
     RecordEvent(*event);
     ui::EventHandler::OnEvent(event);
   }
@@ -166,7 +200,7 @@ class CloseWidgetView : public View {
   }
 
   // ui::EventHandler override:
-  virtual void OnEvent(ui::Event* event) OVERRIDE {
+  void OnEvent(ui::Event* event) override {
     if (event->type() == event_type_) {
       // Go through NativeWidgetPrivate to simulate what happens if the OS
       // deletes the NativeWindow out from under us.
@@ -277,14 +311,14 @@ TEST_F(WidgetTest, Visibility) {
 class WidgetOwnershipTest : public WidgetTest {
  public:
   WidgetOwnershipTest() {}
-  virtual ~WidgetOwnershipTest() {}
+  ~WidgetOwnershipTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     WidgetTest::SetUp();
     desktop_widget_ = CreateTopLevelPlatformWidget();
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     desktop_widget_->CloseNow();
     WidgetTest::TearDown();
   }
@@ -312,7 +346,7 @@ class OwnershipTestNativeWidget : public PlatformNativeWidget {
       : PlatformNativeWidget(delegate),
         state_(state) {
   }
-  virtual ~OwnershipTestNativeWidget() {
+  ~OwnershipTestNativeWidget() override {
     state_->native_widget_deleted = true;
   }
 
@@ -331,7 +365,7 @@ class OwnershipTestNativeWidgetAura : public NativeWidgetCapture {
       : NativeWidgetCapture(delegate),
         state_(state) {
   }
-  virtual ~OwnershipTestNativeWidgetAura() {
+  ~OwnershipTestNativeWidgetAura() override {
     state_->native_widget_deleted = true;
   }
 
@@ -345,9 +379,7 @@ class OwnershipTestNativeWidgetAura : public NativeWidgetCapture {
 class OwnershipTestWidget : public Widget {
  public:
   explicit OwnershipTestWidget(OwnershipTestState* state) : state_(state) {}
-  virtual ~OwnershipTestWidget() {
-    state_->widget_deleted = true;
-  }
+  ~OwnershipTestWidget() override { state_->widget_deleted = true; }
 
  private:
   OwnershipTestState* state_;
@@ -575,7 +607,7 @@ TEST_F(WidgetOwnershipTest,
 class WidgetWithDestroyedNativeViewTest : public ViewsTestBase {
  public:
   WidgetWithDestroyedNativeViewTest() {}
-  virtual ~WidgetWithDestroyedNativeViewTest() {}
+  ~WidgetWithDestroyedNativeViewTest() override {}
 
   void InvokeWidgetMethods(Widget* widget) {
     widget->GetNativeView();
@@ -671,17 +703,16 @@ class WidgetObserverTest : public WidgetTest, public WidgetObserver {
         widget_bounds_changed_(NULL) {
   }
 
-  virtual ~WidgetObserverTest() {}
+  ~WidgetObserverTest() override {}
 
   // Overridden from WidgetObserver:
-  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE {
+  void OnWidgetDestroying(Widget* widget) override {
     if (active_ == widget)
       active_ = NULL;
     widget_closed_ = widget;
   }
 
-  virtual void OnWidgetActivationChanged(Widget* widget,
-                                         bool active) OVERRIDE {
+  void OnWidgetActivationChanged(Widget* widget, bool active) override {
     if (active) {
       if (widget_activated_)
         widget_activated_->Deactivate();
@@ -694,16 +725,15 @@ class WidgetObserverTest : public WidgetTest, public WidgetObserver {
     }
   }
 
-  virtual void OnWidgetVisibilityChanged(Widget* widget,
-                                         bool visible) OVERRIDE {
+  void OnWidgetVisibilityChanged(Widget* widget, bool visible) override {
     if (visible)
       widget_shown_ = widget;
     else
       widget_hidden_ = widget;
   }
 
-  virtual void OnWidgetBoundsChanged(Widget* widget,
-                                     const gfx::Rect& new_bounds) OVERRIDE {
+  void OnWidgetBoundsChanged(Widget* widget,
+                             const gfx::Rect& new_bounds) override {
     widget_bounds_changed_ = widget;
   }
 
@@ -825,7 +855,68 @@ TEST_F(WidgetObserverTest, WidgetBoundsChanged) {
   EXPECT_EQ(child2, widget_bounds_changed());
 }
 
-#if defined(false)
+// Tests that SetBounds() and GetWindowBoundsInScreen() is symmetric when the
+// widget is visible and not maximized or fullscreen.
+TEST_F(WidgetTest, GetWindowBoundsInScreen) {
+  // Choose test coordinates away from edges and dimensions that are "small"
+  // (but not too small) to ensure the OS doesn't try to adjust them.
+  const gfx::Rect kTestBounds(150, 150, 400, 300);
+  const gfx::Size kTestSize(200, 180);
+
+  // First test a toplevel widget.
+  Widget* widget = CreateTopLevelPlatformWidget();
+  widget->Show();
+
+  EXPECT_NE(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+
+  EXPECT_NE(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+  widget->SetBounds(kTestBounds);
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+
+  // Changing just the size should not change the origin.
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestBounds.origin().ToString(),
+            widget->GetWindowBoundsInScreen().origin().ToString());
+
+  widget->CloseNow();
+
+  // Same tests with a frameless window.
+  widget = CreateTopLevelFramelessPlatformWidget();
+  widget->Show();
+
+  EXPECT_NE(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestSize.ToString(),
+            widget->GetWindowBoundsInScreen().size().ToString());
+
+  EXPECT_NE(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+  widget->SetBounds(kTestBounds);
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetWindowBoundsInScreen().ToString());
+
+  // For a frameless widget, the client bounds should also match.
+  EXPECT_EQ(kTestBounds.ToString(),
+            widget->GetClientAreaBoundsInScreen().ToString());
+
+  // Verify origin is stable for a frameless window as well.
+  widget->SetSize(kTestSize);
+  EXPECT_EQ(kTestBounds.origin().ToString(),
+            widget->GetWindowBoundsInScreen().origin().ToString());
+
+  widget->CloseNow();
+}
+
+// Before being enabled on Mac, this was #ifdef(false).
+// TODO(tapted): Fix this for DesktopNativeWidgets on other platforms.
+#if defined(OS_MACOSX)
 // Aura needs shell to maximize/fullscreen window.
 // NativeWidgetGtk doesn't implement GetRestoredBounds.
 TEST_F(WidgetTest, GetRestoredBounds) {
@@ -835,8 +926,14 @@ TEST_F(WidgetTest, GetRestoredBounds) {
   toplevel->Show();
   toplevel->Maximize();
   RunPendingMessages();
+#if defined(OS_MACOSX)
+  // Current expectation on Mac is to do nothing on Maximize.
+  EXPECT_EQ(toplevel->GetWindowBoundsInScreen().ToString(),
+            toplevel->GetRestoredBounds().ToString());
+#else
   EXPECT_NE(toplevel->GetWindowBoundsInScreen().ToString(),
             toplevel->GetRestoredBounds().ToString());
+#endif
   EXPECT_GT(toplevel->GetRestoredBounds().width(), 0);
   EXPECT_GT(toplevel->GetRestoredBounds().height(), 0);
 
@@ -872,6 +969,9 @@ TEST_F(WidgetTest, ExitFullscreenRestoreState) {
   // And it should still be in normal state after getting out of full screen.
   EXPECT_EQ(ui::SHOW_STATE_NORMAL, GetWidgetShowState(toplevel));
 
+// On Mac, a "maximized" state is indistinguishable from a window that just
+// fills the screen, so nothing to check there.
+#if !defined(OS_MACOSX)
   // Now, make it maximized.
   toplevel->Maximize();
   EXPECT_EQ(ui::SHOW_STATE_MAXIMIZED, GetWidgetShowState(toplevel));
@@ -883,6 +983,7 @@ TEST_F(WidgetTest, ExitFullscreenRestoreState) {
 
   // And it stays maximized after getting out of full screen.
   EXPECT_EQ(ui::SHOW_STATE_MAXIMIZED, GetWidgetShowState(toplevel));
+#endif
 
   // Clean up.
   toplevel->Close();
@@ -903,10 +1004,10 @@ TEST_F(WidgetTest, KeyboardInputEvent) {
   textfield->RequestFocus();
 
   // The press gets handled. The release doesn't have an effect.
-  ui::KeyEvent backspace_p(ui::ET_KEY_PRESSED, ui::VKEY_DELETE, 0, false);
+  ui::KeyEvent backspace_p(ui::ET_KEY_PRESSED, ui::VKEY_DELETE, ui::EF_NONE);
   toplevel->OnKeyEvent(&backspace_p);
   EXPECT_TRUE(backspace_p.stopped_propagation());
-  ui::KeyEvent backspace_r(ui::ET_KEY_RELEASED, ui::VKEY_DELETE, 0, false);
+  ui::KeyEvent backspace_r(ui::ET_KEY_RELEASED, ui::VKEY_DELETE, ui::EF_NONE);
   toplevel->OnKeyEvent(&backspace_r);
   EXPECT_FALSE(backspace_r.handled());
 
@@ -957,9 +1058,9 @@ class TestBubbleDelegateView : public BubbleDelegateView {
   TestBubbleDelegateView(View* anchor)
       : BubbleDelegateView(anchor, BubbleBorder::NONE),
         reset_controls_called_(false) {}
-  virtual ~TestBubbleDelegateView() {}
+  ~TestBubbleDelegateView() override {}
 
-  virtual bool ShouldShowCloseButton() const OVERRIDE {
+  bool ShouldShowCloseButton() const override {
     reset_controls_called_ = true;
     return true;
   }
@@ -1010,19 +1111,20 @@ TEST_F(WidgetTest, TestViewWidthAfterMinimizingWidget) {
 class DesktopAuraTestValidPaintWidget : public views::Widget {
  public:
   DesktopAuraTestValidPaintWidget()
-    : expect_paint_(true),
-      received_paint_while_hidden_(false) {
-  }
+    : received_paint_(false),
+      expect_paint_(true),
+      received_paint_while_hidden_(false) {}
 
-  virtual ~DesktopAuraTestValidPaintWidget() {
-  }
+  ~DesktopAuraTestValidPaintWidget() override {}
 
-  virtual void Show() OVERRIDE {
+  void InitForTest(Widget::InitParams create_params);
+
+  void Show() override {
     expect_paint_ = true;
     views::Widget::Show();
   }
 
-  virtual void Close() OVERRIDE {
+  void Close() override {
     expect_paint_ = false;
     views::Widget::Close();
   }
@@ -1032,11 +1134,18 @@ class DesktopAuraTestValidPaintWidget : public views::Widget {
     views::Widget::Hide();
   }
 
-  virtual void OnNativeWidgetPaint(gfx::Canvas* canvas) OVERRIDE {
+  void OnNativeWidgetPaint(gfx::Canvas* canvas) override {
+    received_paint_ = true;
     EXPECT_TRUE(expect_paint_);
     if (!expect_paint_)
       received_paint_while_hidden_ = true;
     views::Widget::OnNativeWidgetPaint(canvas);
+  }
+
+  bool ReadReceivedPaintAndReset() {
+    bool result = received_paint_;
+    received_paint_ = false;
+    return result;
   }
 
   bool received_paint_while_hidden() const {
@@ -1044,47 +1153,48 @@ class DesktopAuraTestValidPaintWidget : public views::Widget {
   }
 
  private:
+  bool received_paint_;
   bool expect_paint_;
   bool received_paint_while_hidden_;
+
+  DISALLOW_COPY_AND_ASSIGN(DesktopAuraTestValidPaintWidget);
 };
 
-TEST_F(WidgetTest, DesktopNativeWidgetNoPaintAfterCloseTest) {
+void DesktopAuraTestValidPaintWidget::InitForTest(InitParams init_params) {
+  init_params.bounds = gfx::Rect(0, 0, 200, 200);
+  init_params.ownership = InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  init_params.native_widget = new PlatformDesktopNativeWidget(this);
+  Init(init_params);
+
   View* contents_view = new View;
   contents_view->SetFocusable(true);
+  SetContentsView(contents_view);
+
+  Show();
+  Activate();
+}
+
+TEST_F(WidgetTest, DesktopNativeWidgetNoPaintAfterCloseTest) {
   DesktopAuraTestValidPaintWidget widget;
-  Widget::InitParams init_params =
-      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-  init_params.bounds = gfx::Rect(0, 0, 200, 200);
-  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  init_params.native_widget = new PlatformDesktopNativeWidget(&widget);
-  widget.Init(init_params);
-  widget.SetContentsView(contents_view);
-  widget.Show();
-  widget.Activate();
+  widget.InitForTest(CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS));
   RunPendingMessages();
-  widget.SchedulePaintInRect(init_params.bounds);
+  EXPECT_TRUE(widget.ReadReceivedPaintAndReset());
+  widget.SchedulePaintInRect(widget.GetRestoredBounds());
   widget.Close();
   RunPendingMessages();
+  EXPECT_FALSE(widget.ReadReceivedPaintAndReset());
   EXPECT_FALSE(widget.received_paint_while_hidden());
 }
 
 TEST_F(WidgetTest, DesktopNativeWidgetNoPaintAfterHideTest) {
-  View* contents_view = new View;
-  contents_view->SetFocusable(true);
   DesktopAuraTestValidPaintWidget widget;
-  Widget::InitParams init_params =
-      CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS);
-  init_params.bounds = gfx::Rect(0, 0, 200, 200);
-  init_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  init_params.native_widget = new PlatformDesktopNativeWidget(&widget);
-  widget.Init(init_params);
-  widget.SetContentsView(contents_view);
-  widget.Show();
-  widget.Activate();
+  widget.InitForTest(CreateParams(Widget::InitParams::TYPE_WINDOW_FRAMELESS));
   RunPendingMessages();
-  widget.SchedulePaintInRect(init_params.bounds);
+  EXPECT_TRUE(widget.ReadReceivedPaintAndReset());
+  widget.SchedulePaintInRect(widget.GetRestoredBounds());
   widget.Hide();
   RunPendingMessages();
+  EXPECT_FALSE(widget.ReadReceivedPaintAndReset());
   EXPECT_FALSE(widget.received_paint_while_hidden());
   widget.Close();
 }
@@ -1106,6 +1216,8 @@ TEST_F(WidgetTest, TestWindowVisibilityAfterHide) {
   NonClientFrameView* frame_view = new MinimumSizeFrameView(&widget);
   non_client_view->SetFrameView(frame_view);
 
+  widget.Show();
+  EXPECT_TRUE(IsNativeWindowVisible(widget.GetNativeWindow()));
   widget.Hide();
   EXPECT_FALSE(IsNativeWindowVisible(widget.GetNativeWindow()));
   widget.Show();
@@ -1231,20 +1343,25 @@ TEST_F(WidgetTest, GestureScrollEventDispatching) {
   widget->GetRootView()->AddChildView(scroll_view);
 
   {
-    ui::GestureEvent begin(ui::ET_GESTURE_SCROLL_BEGIN,
-        5, 5, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0),
-        1);
+    ui::GestureEvent begin(
+        5,
+        5,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN));
     widget->OnGestureEvent(&begin);
-    ui::GestureEvent update(ui::ET_GESTURE_SCROLL_UPDATE,
-        25, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10),
-        1);
+    ui::GestureEvent update(
+        25,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10));
     widget->OnGestureEvent(&update);
-    ui::GestureEvent end(ui::ET_GESTURE_SCROLL_END,
-        25, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0),
-        1);
+    ui::GestureEvent end(25,
+                         15,
+                         0,
+                         base::TimeDelta(),
+                         ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END));
     widget->OnGestureEvent(&end);
 
     EXPECT_EQ(1, noscroll_view->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
@@ -1253,20 +1370,25 @@ TEST_F(WidgetTest, GestureScrollEventDispatching) {
   }
 
   {
-    ui::GestureEvent begin(ui::ET_GESTURE_SCROLL_BEGIN,
-        65, 5, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN, 0, 0),
-        1);
+    ui::GestureEvent begin(
+        65,
+        5,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_BEGIN));
     widget->OnGestureEvent(&begin);
-    ui::GestureEvent update(ui::ET_GESTURE_SCROLL_UPDATE,
-        85, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10),
-        1);
+    ui::GestureEvent update(
+        85,
+        15,
+        0,
+        base::TimeDelta(),
+        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_UPDATE, 20, 10));
     widget->OnGestureEvent(&update);
-    ui::GestureEvent end(ui::ET_GESTURE_SCROLL_END,
-        85, 15, 0, base::TimeDelta(),
-        ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END, 0, 0),
-        1);
+    ui::GestureEvent end(85,
+                         15,
+                         0,
+                         base::TimeDelta(),
+                         ui::GestureEventDetails(ui::ET_GESTURE_SCROLL_END));
     widget->OnGestureEvent(&end);
 
     EXPECT_EQ(1, scroll_view->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
@@ -1297,22 +1419,8 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
   widget->SetBounds(gfx::Rect(0, 0, 100, 100));
   widget->Show();
 
-  ui::GestureEvent begin(ui::ET_GESTURE_BEGIN,
-      5, 5, 0, ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_BEGIN, 0, 0), 1);
-  ui::GestureEvent end(ui::ET_GESTURE_END,
-      5, 5, 0, ui::EventTimeForNow(),
-      ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0), 1);
-  widget->OnGestureEvent(&begin);
-  EXPECT_EQ(1, h1.GetEventCount(ui::ET_GESTURE_BEGIN));
-  EXPECT_EQ(1, view->GetEventCount(ui::ET_GESTURE_BEGIN));
-  EXPECT_EQ(1, h2.GetEventCount(ui::ET_GESTURE_BEGIN));
-
-  widget->OnGestureEvent(&end);
-  EXPECT_EQ(1, h1.GetEventCount(ui::ET_GESTURE_END));
-  EXPECT_EQ(1, view->GetEventCount(ui::ET_GESTURE_END));
-  EXPECT_EQ(1, h2.GetEventCount(ui::ET_GESTURE_END));
-
+  // Dispatch a ui::ET_SCROLL event. The event remains unhandled and should
+  // bubble up the views hierarchy to be re-dispatched on the root view.
   ui::ScrollEvent scroll(ui::ET_SCROLL,
                          gfx::Point(5, 5),
                          ui::EventTimeForNow(),
@@ -1334,6 +1442,8 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
   view->ResetCounts();
   h2.ResetCounts();
 
+  // Dispatch a ui::ET_SCROLL_FLING_START event. The event remains unhandled and
+  // should bubble up the views hierarchy to be re-dispatched on the root view.
   ui::ScrollEvent fling(ui::ET_SCROLL_FLING_START,
                         gfx::Point(5, 5),
                         ui::EventTimeForNow(),
@@ -1356,13 +1466,40 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
   view->ResetCounts();
   h2.ResetCounts();
 
-  // Replace the child of |root_view| with a ScrollableEventCountView so that
-  // ui::ET_SCROLL events are marked as handled at the target phase.
-  root_view->RemoveChildView(view.get());
-  ScrollableEventCountView* scroll_view = new ScrollableEventCountView;
-  scroll_view->SetBounds(0, 0, 20, 20);
-  root_view->AddChildView(scroll_view);
+  // Change the handle mode of |view| so that events are marked as handled at
+  // the target phase.
+  view->set_handle_mode(EventCountView::CONSUME_EVENTS);
 
+  // Dispatch a ui::ET_GESTURE_TAP_DOWN and a ui::ET_GESTURE_TAP_CANCEL event.
+  // The events are handled at the target phase and should not reach the
+  // post-target handler.
+  ui::GestureEvent tap_down(5,
+                            5,
+                            0,
+                            ui::EventTimeForNow(),
+                            ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN));
+  widget->OnGestureEvent(&tap_down);
+  EXPECT_EQ(1, h1.GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(0, h2.GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+
+  ui::GestureEvent tap_cancel(
+      5,
+      5,
+      0,
+      ui::EventTimeForNow(),
+      ui::GestureEventDetails(ui::ET_GESTURE_TAP_CANCEL));
+  widget->OnGestureEvent(&tap_cancel);
+  EXPECT_EQ(1, h1.GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(0, h2.GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+
+  h1.ResetCounts();
+  view->ResetCounts();
+  h2.ResetCounts();
+
+  // Dispatch a ui::ET_SCROLL event. The event is handled at the target phase
+  // and should not reach the post-target handler.
   ui::ScrollEvent consumed_scroll(ui::ET_SCROLL,
                                   gfx::Point(5, 5),
                                   ui::EventTimeForNow(),
@@ -1371,16 +1508,13 @@ TEST_F(WidgetTest, EventHandlersOnRootView) {
                                   0, 20,
                                   2);
   widget->OnScrollEvent(&consumed_scroll);
-
-  // The event is handled at the target phase and should not reach the
-  // post-target handler.
   EXPECT_EQ(1, h1.GetEventCount(ui::ET_SCROLL));
-  EXPECT_EQ(1, scroll_view->GetEventCount(ui::ET_SCROLL));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_SCROLL));
   EXPECT_EQ(0, h2.GetEventCount(ui::ET_SCROLL));
 
   // Handled scroll events are not turned into wheel events and re-dispatched.
   EXPECT_EQ(0, h1.GetEventCount(ui::ET_MOUSEWHEEL));
-  EXPECT_EQ(0, scroll_view->GetEventCount(ui::ET_MOUSEWHEEL));
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSEWHEEL));
   EXPECT_EQ(0, h2.GetEventCount(ui::ET_MOUSEWHEEL));
 
   widget->CloseNow();
@@ -1413,6 +1547,52 @@ TEST_F(WidgetTest, SynthesizeMouseMoveEvent) {
   EXPECT_EQ(1, v2->GetEventCount(ui::ET_MOUSE_ENTERED));
 }
 
+namespace {
+
+// ui::EventHandler which handles all mouse press events.
+class MousePressEventConsumer : public ui::EventHandler {
+ public:
+  explicit MousePressEventConsumer() {
+  }
+
+  ~MousePressEventConsumer() override {}
+
+ private:
+  // ui::EventHandler:
+  void OnMouseEvent(ui::MouseEvent* event) override {
+    if (event->type() == ui::ET_MOUSE_PRESSED)
+      event->SetHandled();
+  }
+
+  DISALLOW_COPY_AND_ASSIGN(MousePressEventConsumer);
+};
+
+}  // namespace
+
+// Test that mouse presses and mouse releases are dispatched normally when a
+// touch is down.
+TEST_F(WidgetTest, MouseEventDispatchWhileTouchIsDown) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->Show();
+  widget->SetSize(gfx::Size(300, 300));
+
+  EventCountView* event_count_view = new EventCountView();
+  event_count_view->SetBounds(0, 0, 300, 300);
+  widget->GetRootView()->AddChildView(event_count_view);
+
+  MousePressEventConsumer consumer;
+  event_count_view->AddPostTargetHandler(&consumer);
+
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  generator.PressTouch();
+  generator.ClickLeftButton();
+
+  EXPECT_EQ(1, event_count_view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, event_count_view->GetEventCount(ui::ET_MOUSE_RELEASED));
+
+  widget->CloseNow();
+}
+
 // Used by SingleWindowClosing to count number of times WindowClosing() has
 // been invoked.
 class ClosingDelegate : public WidgetDelegate {
@@ -1424,11 +1604,9 @@ class ClosingDelegate : public WidgetDelegate {
   void set_widget(views::Widget* widget) { widget_ = widget; }
 
   // WidgetDelegate overrides:
-  virtual Widget* GetWidget() OVERRIDE { return widget_; }
-  virtual const Widget* GetWidget() const OVERRIDE { return widget_; }
-  virtual void WindowClosing() OVERRIDE {
-    count_++;
-  }
+  Widget* GetWidget() override { return widget_; }
+  const Widget* GetWidget() const override { return widget_; }
+  void WindowClosing() override { count_++; }
 
  private:
   int count_;
@@ -1523,7 +1701,7 @@ TEST_F(WidgetTest, WidgetDeleted_InOnMousePressed) {
   widget->SetSize(gfx::Size(100, 100));
   widget->Show();
 
-  aura::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
 
   WidgetDeletionObserver deletion_observer(widget);
   generator.ClickLeftButton();
@@ -1543,7 +1721,7 @@ TEST_F(WidgetTest, WidgetDeleted_InDispatchGestureEvent) {
   widget->SetSize(gfx::Size(100, 100));
   widget->Show();
 
-  aura::test::EventGenerator generator(GetContext());
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
 
   WidgetDeletionObserver deletion_observer(widget);
   generator.GestureTapAt(widget->GetWindowBoundsInScreen().CenterPoint());
@@ -1556,13 +1734,9 @@ TEST_F(WidgetTest, WidgetDeleted_InDispatchGestureEvent) {
 class GetNativeThemeFromDestructorView : public WidgetDelegateView {
  public:
   GetNativeThemeFromDestructorView() {}
-  virtual ~GetNativeThemeFromDestructorView() {
-    VerifyNativeTheme();
-  }
+  ~GetNativeThemeFromDestructorView() override { VerifyNativeTheme(); }
 
-  virtual View* GetContentsView() OVERRIDE {
-    return this;
-  }
+  View* GetContentsView() override { return this; }
 
  private:
   void VerifyNativeTheme() {
@@ -1610,7 +1784,7 @@ class CloseDestroysWidget : public Widget {
       : destroyed_(destroyed) {
   }
 
-  virtual ~CloseDestroysWidget() {
+  ~CloseDestroysWidget() override {
     if (destroyed_) {
       *destroyed_ = true;
       base::MessageLoop::current()->QuitNow();
@@ -1624,6 +1798,42 @@ class CloseDestroysWidget : public Widget {
   bool* destroyed_;
 
   DISALLOW_COPY_AND_ASSIGN(CloseDestroysWidget);
+};
+
+// An observer that registers that an animation has ended.
+class AnimationEndObserver : public ui::ImplicitAnimationObserver {
+ public:
+  AnimationEndObserver() : animation_completed_(false) {}
+  ~AnimationEndObserver() override {}
+
+  bool animation_completed() const { return animation_completed_; }
+
+  // ui::ImplicitAnimationObserver:
+  void OnImplicitAnimationsCompleted() override { animation_completed_ = true; }
+
+ private:
+  bool animation_completed_;
+
+  DISALLOW_COPY_AND_ASSIGN(AnimationEndObserver);
+};
+
+// An observer that registers the bounds of a widget on destruction.
+class WidgetBoundsObserver : public WidgetObserver {
+ public:
+  WidgetBoundsObserver() {}
+  ~WidgetBoundsObserver() override {}
+
+  gfx::Rect bounds() { return bounds_; }
+
+  // WidgetObserver:
+  void OnWidgetDestroying(Widget* widget) override {
+    bounds_ = widget->GetWindowBoundsInScreen();
+  }
+
+ private:
+  gfx::Rect bounds_;
+
+  DISALLOW_COPY_AND_ASSIGN(WidgetBoundsObserver);
 };
 
 // Verifies Close() results in destroying.
@@ -1640,8 +1850,9 @@ TEST_F(WidgetTest, CloseDestroys) {
   widget->Show();
   widget->Hide();
   widget->Close();
+  EXPECT_FALSE(destroyed);
   // Run the message loop as Close() asynchronously deletes.
-  RunPendingMessages();
+  base::RunLoop().Run();
   EXPECT_TRUE(destroyed);
   // Close() should destroy the widget. If not we'll cleanup to avoid leaks.
   if (!destroyed) {
@@ -1655,17 +1866,29 @@ TEST_F(WidgetTest, CloseWidgetWhileAnimating) {
   scoped_ptr<Widget> widget(new Widget);
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
   params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.bounds = gfx::Rect(50, 50, 250, 250);
   widget->Init(params);
+  AnimationEndObserver animation_observer;
+  WidgetBoundsObserver widget_observer;
+  gfx::Rect bounds(0, 0, 50, 50);
+  {
+    // Normal animations for tests have ZERO_DURATION, make sure we are actually
+    // animating the movement.
+    ui::ScopedAnimationDurationScaleMode animation_scale_mode(
+        ui::ScopedAnimationDurationScaleMode::NON_ZERO_DURATION);
+    ui::ScopedLayerAnimationSettings animation_settings(
+        widget->GetLayer()->GetAnimator());
+    animation_settings.AddObserver(&animation_observer);
+    widget->AddObserver(&widget_observer);
+    widget->Show();
 
-  // Normal animations for tests have ZERO_DURATION, make sure we are actually
-  // animating the movement.
-  ui::ScopedAnimationDurationScaleMode animation_scale_mode(
-      ui::ScopedAnimationDurationScaleMode::NORMAL_DURATION);
-  ui::ScopedLayerAnimationSettings animation_settings(
-      widget->GetLayer()->GetAnimator());
-  widget->Show();
-  // Animate the bounds change.
-  widget->SetBounds(gfx::Rect(0, 0, 200, 200));
+    // Animate the bounds change.
+    widget->SetBounds(bounds);
+    widget.reset();
+    EXPECT_FALSE(animation_observer.animation_completed());
+  }
+  EXPECT_TRUE(animation_observer.animation_completed());
+  EXPECT_EQ(widget_observer.bounds(), bounds);
 }
 
 // A view that consumes mouse-pressed event and gesture-tap-down events.
@@ -1674,11 +1897,9 @@ class RootViewTestView : public View {
   RootViewTestView(): View() {}
 
  private:
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE {
-    return true;
-  }
+  bool OnMousePressed(const ui::MouseEvent& event) override { return true; }
 
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
+  void OnGestureEvent(ui::GestureEvent* event) override {
     if (event->type() == ui::ET_GESTURE_TAP_DOWN)
       event->SetHandled();
   }
@@ -1726,14 +1947,11 @@ TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   // Check RootView::gesture_handler_.
   widget->Show();
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
-  ui::GestureEvent tap_down(
-      ui::ET_GESTURE_TAP_DOWN,
-      15,
-      15,
-      0,
-      base::TimeDelta(),
-      ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN, 0, 0),
-      1);
+  ui::GestureEvent tap_down(15,
+                            15,
+                            0,
+                            base::TimeDelta(),
+                            ui::GestureEventDetails(ui::ET_GESTURE_TAP_DOWN));
   widget->OnGestureEvent(&tap_down);
   EXPECT_EQ(view, GetGestureHandler(root_view));
   widget->Hide();
@@ -1742,29 +1960,683 @@ TEST_F(WidgetTest, MAYBE_DisableTestRootViewHandlersWhenHidden) {
   widget->Close();
 }
 
-class GestureEndConsumerView : public View {
- private:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE {
-    if (event->type() == ui::ET_GESTURE_END)
-      event->SetHandled();
-  }
+// Convenience to make constructing a GestureEvent simpler.
+class GestureEventForTest : public ui::GestureEvent {
+ public:
+  GestureEventForTest(ui::EventType type, int x, int y)
+      : GestureEvent(x,
+                     y,
+                     0,
+                     base::TimeDelta(),
+                     ui::GestureEventDetails(type)) {}
+
+  GestureEventForTest(ui::GestureEventDetails details, int x, int y)
+      : GestureEvent(x, y, 0, base::TimeDelta(), details) {}
 };
 
-TEST_F(WidgetTest, GestureHandlerNotSetOnGestureEnd) {
+// Tests that the |gesture_handler_| member in RootView is always NULL
+// after the dispatch of a ui::ET_GESTURE_END event corresponding to
+// the release of the final touch point on the screen, but that
+// ui::ET_GESTURE_END events corresponding to the removal of any other touch
+// point do not modify |gesture_handler_|.
+TEST_F(WidgetTest, GestureEndEvents) {
   Widget* widget = CreateTopLevelNativeWidget();
   widget->SetBounds(gfx::Rect(0, 0, 300, 300));
-  View* view = new GestureEndConsumerView();
+  EventCountView* view = new EventCountView();
   view->SetBounds(0, 0, 300, 300);
   internal::RootView* root_view =
       static_cast<internal::RootView*>(widget->GetRootView());
   root_view->AddChildView(view);
-
   widget->Show();
+
+  // If no gesture handler is set, a ui::ET_GESTURE_END event should not set
+  // the gesture handler.
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
-  ui::GestureEvent end(ui::ET_GESTURE_END, 15, 15, 0, base::TimeDelta(),
-                       ui::GestureEventDetails(ui::ET_GESTURE_END, 0, 0), 1);
+  GestureEventForTest end(ui::ET_GESTURE_END, 15, 15);
   widget->OnGestureEvent(&end);
   EXPECT_EQ(NULL, GetGestureHandler(root_view));
+
+  // Change the handle mode of |view| to indicate that it would like
+  // to handle all events, then send a GESTURE_TAP to set the gesture handler.
+  view->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  GestureEventForTest tap(ui::ET_GESTURE_TAP, 15, 15);
+  widget->OnGestureEvent(&tap);
+  EXPECT_TRUE(tap.handled());
+  EXPECT_EQ(view, GetGestureHandler(root_view));
+
+  // The gesture handler should remain unchanged on a ui::ET_GESTURE_END
+  // corresponding to a second touch point, but should be reset to NULL by a
+  // ui::ET_GESTURE_END corresponding to the final touch point.
+  ui::GestureEventDetails details(ui::ET_GESTURE_END);
+  details.set_touch_points(2);
+  GestureEventForTest end_second_touch_point(details, 15, 15);
+  widget->OnGestureEvent(&end_second_touch_point);
+  EXPECT_EQ(view, GetGestureHandler(root_view));
+
+  end = GestureEventForTest(ui::ET_GESTURE_END, 15, 15);
+  widget->OnGestureEvent(&end);
+  EXPECT_TRUE(end.handled());
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+
+  // Send a GESTURE_TAP to set the gesture handler, then change the handle
+  // mode of |view| to indicate that it does not want to handle any
+  // further events.
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 15, 15);
+  widget->OnGestureEvent(&tap);
+  EXPECT_TRUE(tap.handled());
+  EXPECT_EQ(view, GetGestureHandler(root_view));
+  view->set_handle_mode(EventCountView::PROPAGATE_EVENTS);
+
+  // The gesture handler should remain unchanged on a ui::ET_GESTURE_END
+  // corresponding to a second touch point, but should be reset to NULL by a
+  // ui::ET_GESTURE_END corresponding to the final touch point.
+  end_second_touch_point = GestureEventForTest(details, 15, 15);
+  widget->OnGestureEvent(&end_second_touch_point);
+  EXPECT_EQ(view, GetGestureHandler(root_view));
+
+  end = GestureEventForTest(ui::ET_GESTURE_END, 15, 15);
+  widget->OnGestureEvent(&end);
+  EXPECT_FALSE(end.handled());
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+
+  widget->Close();
+}
+
+// Tests that gesture events which should not be processed (because
+// RootView::OnEventProcessingStarted() has marked them as handled) are not
+// dispatched to any views.
+TEST_F(WidgetTest, GestureEventsNotProcessed) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+
+  // Define a hierarchy of four views (coordinates are in
+  // their parent coordinate space).
+  // v1 (0, 0, 300, 300)
+  //   v2 (0, 0, 100, 100)
+  //     v3 (0, 0, 50, 50)
+  //       v4(0, 0, 10, 10)
+  EventCountView* v1 = new EventCountView();
+  v1->SetBounds(0, 0, 300, 300);
+  EventCountView* v2 = new EventCountView();
+  v2->SetBounds(0, 0, 100, 100);
+  EventCountView* v3 = new EventCountView();
+  v3->SetBounds(0, 0, 50, 50);
+  EventCountView* v4 = new EventCountView();
+  v4->SetBounds(0, 0, 10, 10);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(v1);
+  v1->AddChildView(v2);
+  v2->AddChildView(v3);
+  v3->AddChildView(v4);
+
+  widget->Show();
+
+  // ui::ET_GESTURE_BEGIN events should never be seen by any view, but
+  // they should be marked as handled by OnEventProcessingStarted().
+  GestureEventForTest begin(ui::ET_GESTURE_BEGIN, 5, 5);
+  widget->OnGestureEvent(&begin);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_BEGIN));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_BEGIN));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_BEGIN));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_BEGIN));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(begin.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // ui::ET_GESTURE_END events should not be seen by any view when there is
+  // no default gesture handler set, but they should be marked as handled by
+  // OnEventProcessingStarted().
+  GestureEventForTest end(ui::ET_GESTURE_END, 5, 5);
+  widget->OnGestureEvent(&end);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(end.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // ui::ET_GESTURE_END events not corresponding to the release of the
+  // final touch point should never be seen by any view, but they should
+  // be marked as handled by OnEventProcessingStarted().
+  ui::GestureEventDetails details(ui::ET_GESTURE_END);
+  details.set_touch_points(2);
+  GestureEventForTest end_second_touch_point(details, 5, 5);
+  widget->OnGestureEvent(&end_second_touch_point);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(end_second_touch_point.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // ui::ET_GESTURE_SCROLL_UPDATE events should never be seen by any view when
+  // there is no default gesture handler set, but they should be marked as
+  // handled by OnEventProcessingStarted().
+  GestureEventForTest scroll_update(ui::ET_GESTURE_SCROLL_UPDATE, 5, 5);
+  widget->OnGestureEvent(&scroll_update);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_update.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // ui::ET_GESTURE_SCROLL_END events should never be seen by any view when
+  // there is no default gesture handler set, but they should be marked as
+  // handled by OnEventProcessingStarted().
+  GestureEventForTest scroll_end(ui::ET_GESTURE_SCROLL_END, 5, 5);
+  widget->OnGestureEvent(&scroll_end);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_end.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // ui::ET_SCROLL_FLING_START events should never be seen by any view when
+  // there is no default gesture handler set, but they should be marked as
+  // handled by OnEventProcessingStarted().
+  GestureEventForTest scroll_fling_start(ui::ET_SCROLL_FLING_START, 5, 5);
+  widget->OnGestureEvent(&scroll_fling_start);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_SCROLL_FLING_START));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_SCROLL_FLING_START));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_SCROLL_FLING_START));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_SCROLL_FLING_START));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_fling_start.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  widget->Close();
+}
+
+// Tests that a (non-scroll) gesture event is dispatched to the correct views
+// in a view hierarchy and that the default gesture handler in RootView is set
+// correctly.
+TEST_F(WidgetTest, GestureEventDispatch) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+
+  // Define a hierarchy of four views (coordinates are in
+  // their parent coordinate space).
+  // v1 (0, 0, 300, 300)
+  //   v2 (0, 0, 100, 100)
+  //     v3 (0, 0, 50, 50)
+  //       v4(0, 0, 10, 10)
+  EventCountView* v1 = new EventCountView();
+  v1->SetBounds(0, 0, 300, 300);
+  EventCountView* v2 = new EventCountView();
+  v2->SetBounds(0, 0, 100, 100);
+  EventCountView* v3 = new EventCountView();
+  v3->SetBounds(0, 0, 50, 50);
+  EventCountView* v4 = new EventCountView();
+  v4->SetBounds(0, 0, 10, 10);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(v1);
+  v1->AddChildView(v2);
+  v2->AddChildView(v3);
+  v3->AddChildView(v4);
+
+  widget->Show();
+
+  // No gesture handler is set in the root view and none of the views in the
+  // view hierarchy handle a ui::ET_GESTURE_TAP event. In this case the tap
+  // event should be dispatched to all views in the hierarchy, the gesture
+  // handler should remain unset, and the event should remain unhandled.
+  GestureEventForTest tap(ui::ET_GESTURE_TAP, 5, 5);
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_FALSE(tap.handled());
+
+  // No gesture handler is set in the root view and |v1|, |v2|, and |v3| all
+  // handle a ui::ET_GESTURE_TAP event. In this case the tap event should be
+  // dispatched to |v4| and |v3|, the gesture handler should be set to |v3|,
+  // and the event should be marked as handled.
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+  v1->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  v2->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  v3->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap.handled());
+
+  // The gesture handler is set to |v3| and all views handle all gesture event
+  // types. In this case subsequent gesture events should only be dispatched to
+  // |v3| and marked as handled. The gesture handler should remain as |v3|.
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+  v4->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_TRUE(tap.handled());
+  GestureEventForTest show_press(ui::ET_GESTURE_SHOW_PRESS, 5, 5);
+  widget->OnGestureEvent(&show_press);
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(2, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_SHOW_PRESS));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_SHOW_PRESS));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_SHOW_PRESS));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SHOW_PRESS));
+  EXPECT_TRUE(tap.handled());
+  EXPECT_TRUE(show_press.handled());
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+
+  // The gesture handler is set to |v3|, but |v3| does not handle
+  // ui::ET_GESTURE_TAP events. In this case a tap gesture should be dispatched
+  // only to |v3|, but the event should remain unhandled. The gesture handler
+  // should remain as |v3|.
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+  v3->set_handle_mode(EventCountView::PROPAGATE_EVENTS);
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_FALSE(tap.handled());
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+
+  widget->Close();
+}
+
+// Tests that gesture scroll events will change the default gesture handler in
+// RootView if the current handler to which they are dispatched does not handle
+// gesture scroll events.
+TEST_F(WidgetTest, ScrollGestureEventDispatch) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+
+  // Define a hierarchy of four views (coordinates are in
+  // their parent coordinate space).
+  // v1 (0, 0, 300, 300)
+  //   v2 (0, 0, 100, 100)
+  //     v3 (0, 0, 50, 50)
+  //       v4(0, 0, 10, 10)
+  EventCountView* v1 = new EventCountView();
+  v1->SetBounds(0, 0, 300, 300);
+  EventCountView* v2 = new EventCountView();
+  v2->SetBounds(0, 0, 100, 100);
+  EventCountView* v3 = new EventCountView();
+  v3->SetBounds(0, 0, 50, 50);
+  EventCountView* v4 = new EventCountView();
+  v4->SetBounds(0, 0, 10, 10);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(v1);
+  v1->AddChildView(v2);
+  v2->AddChildView(v3);
+  v3->AddChildView(v4);
+
+  widget->Show();
+
+  // Change the handle mode of |v3| to indicate that it would like to handle
+  // gesture events.
+  v3->set_handle_mode(EventCountView::CONSUME_EVENTS);
+
+  // When no gesture handler is set, dispatching a ui::ET_GESTURE_TAP_DOWN
+  // should bubble up the views hierarchy until it reaches the first view
+  // that will handle it (|v3|) and then sets the handler to |v3|.
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  GestureEventForTest tap_down(ui::ET_GESTURE_TAP_DOWN, 5, 5);
+  widget->OnGestureEvent(&tap_down);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(1, v4->GetEventCount(ui::ET_GESTURE_TAP_DOWN));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap_down.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A ui::ET_GESTURE_TAP_CANCEL event should be dispatched to |v3| directly.
+  GestureEventForTest tap_cancel(ui::ET_GESTURE_TAP_CANCEL, 5, 5);
+  widget->OnGestureEvent(&tap_cancel);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_TAP_CANCEL));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap_cancel.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // Change the handle mode of |v3| to indicate that it would no longer like
+  // to handle events, and change the mode of |v1| to indicate that it would
+  // like to handle events.
+  v3->set_handle_mode(EventCountView::PROPAGATE_EVENTS);
+  v1->set_handle_mode(EventCountView::CONSUME_EVENTS);
+
+  // Dispatch a ui::ET_GESTURE_SCROLL_BEGIN event. Because the current gesture
+  // handler (|v3|) does not handle scroll events, the event should bubble up
+  // the views hierarchy until it reaches the first view that will handle
+  // it (|v1|) and then sets the handler to |v1|.
+  GestureEventForTest scroll_begin(ui::ET_GESTURE_SCROLL_BEGIN, 5, 5);
+  widget->OnGestureEvent(&scroll_begin);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
+  EXPECT_EQ(1, v2->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
+  EXPECT_EQ(1, v3->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SCROLL_BEGIN));
+  EXPECT_EQ(v1, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_begin.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A ui::ET_GESTURE_SCROLL_UPDATE event should be dispatched to |v1|
+  // directly.
+  GestureEventForTest scroll_update(ui::ET_GESTURE_SCROLL_UPDATE, 5, 5);
+  widget->OnGestureEvent(&scroll_update);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SCROLL_UPDATE));
+  EXPECT_EQ(v1, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_update.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A ui::ET_GESTURE_SCROLL_END event should be dispatched to |v1|
+  // directly and should not reset the gesture handler.
+  GestureEventForTest scroll_end(ui::ET_GESTURE_SCROLL_END, 5, 5);
+  widget->OnGestureEvent(&scroll_end);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_SCROLL_END));
+  EXPECT_EQ(v1, GetGestureHandler(root_view));
+  EXPECT_TRUE(scroll_end.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A ui::ET_GESTURE_PINCH_BEGIN event (which is a non-scroll event) should
+  // still be dispatched to |v1| directly.
+  GestureEventForTest pinch_begin(ui::ET_GESTURE_PINCH_BEGIN, 5, 5);
+  widget->OnGestureEvent(&pinch_begin);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_PINCH_BEGIN));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_PINCH_BEGIN));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_PINCH_BEGIN));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_PINCH_BEGIN));
+  EXPECT_EQ(v1, GetGestureHandler(root_view));
+  EXPECT_TRUE(pinch_begin.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A ui::ET_GESTURE_END event should be dispatched to |v1| and should
+  // set the gesture handler to NULL.
+  GestureEventForTest end(ui::ET_GESTURE_END, 5, 5);
+  widget->OnGestureEvent(&end);
+  EXPECT_EQ(1, v1->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(end.handled());
+
+  widget->Close();
+}
+
+// A class used in WidgetTest.GestureEventLocationWhileBubbling to verify
+// that when a gesture event bubbles up a View hierarchy, the location
+// of a gesture event seen by each View is in the local coordinate space
+// of that View.
+class GestureLocationView : public EventCountView {
+ public:
+  GestureLocationView() {}
+  ~GestureLocationView() override {}
+
+  void set_expected_location(gfx::Point expected_location) {
+    expected_location_ = expected_location;
+  }
+
+  // EventCountView:
+  void OnGestureEvent(ui::GestureEvent* event) override {
+    EventCountView::OnGestureEvent(event);
+
+    // Verify that the location of |event| is in the local coordinate
+    // space of |this|.
+    EXPECT_EQ(expected_location_, event->location());
+  }
+
+ private:
+  // The expected location of a gesture event dispatched to |this|.
+  gfx::Point expected_location_;
+
+  DISALLOW_COPY_AND_ASSIGN(GestureLocationView);
+};
+
+// Verifies that the location of a gesture event is always in the local
+// coordinate space of the View receiving the event while bubbling.
+TEST_F(WidgetTest, GestureEventLocationWhileBubbling) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+
+  // Define a hierarchy of three views (coordinates shown below are in the
+  // coordinate space of the root view, but the coordinates used for
+  // SetBounds() are in their parent coordinate space).
+  // v1 (50, 50, 150, 150)
+  //   v2 (100, 70, 50, 80)
+  //     v3 (120, 100, 10, 10)
+  GestureLocationView* v1 = new GestureLocationView();
+  v1->SetBounds(50, 50, 150, 150);
+  GestureLocationView* v2 = new GestureLocationView();
+  v2->SetBounds(50, 20, 50, 80);
+  GestureLocationView* v3 = new GestureLocationView();
+  v3->SetBounds(20, 30, 10, 10);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(v1);
+  v1->AddChildView(v2);
+  v2->AddChildView(v3);
+
+  widget->Show();
+
+  // Define a GESTURE_TAP event located at (125, 105) in root view coordinates.
+  // This event is contained within all of |v1|, |v2|, and |v3|.
+  gfx::Point location_in_root(125, 105);
+  GestureEventForTest tap(
+      ui::ET_GESTURE_TAP, location_in_root.x(), location_in_root.y());
+
+  // Calculate the location of the event in the local coordinate spaces
+  // of each of the views.
+  gfx::Point location_in_v1(ConvertPointFromWidgetToView(v1, location_in_root));
+  EXPECT_EQ(gfx::Point(75, 55), location_in_v1);
+  gfx::Point location_in_v2(ConvertPointFromWidgetToView(v2, location_in_root));
+  EXPECT_EQ(gfx::Point(25, 35), location_in_v2);
+  gfx::Point location_in_v3(ConvertPointFromWidgetToView(v3, location_in_root));
+  EXPECT_EQ(gfx::Point(5, 5), location_in_v3);
+
+  // Dispatch the event. When each view receives the event, its location should
+  // be in the local coordinate space of that view (see the check made by
+  // GestureLocationView). After dispatch is complete the event's location
+  // should be in the root coordinate space.
+  v1->set_expected_location(location_in_v1);
+  v2->set_expected_location(location_in_v2);
+  v3->set_expected_location(location_in_v3);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(location_in_root, tap.location());
+
+  // Verify that each view did in fact see the event.
+  EventCountView* view1 = v1;
+  EventCountView* view2 = v2;
+  EventCountView* view3 = v3;
+  EXPECT_EQ(1, view1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, view2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, view3->GetEventCount(ui::ET_GESTURE_TAP));
+
+  widget->Close();
+}
+
+// Verifies that disabled views are permitted to be set as the default gesture
+// handler in RootView. Also verifies that gesture events targeted to a disabled
+// view are not actually dispatched to the view, but are still marked as
+// handled.
+TEST_F(WidgetTest, DisabledGestureEventTarget) {
+  Widget* widget = CreateTopLevelNativeWidget();
+  widget->SetBounds(gfx::Rect(0, 0, 300, 300));
+
+  // Define a hierarchy of four views (coordinates are in
+  // their parent coordinate space).
+  // v1 (0, 0, 300, 300)
+  //   v2 (0, 0, 100, 100)
+  //     v3 (0, 0, 50, 50)
+  //       v4(0, 0, 10, 10)
+  EventCountView* v1 = new EventCountView();
+  v1->SetBounds(0, 0, 300, 300);
+  EventCountView* v2 = new EventCountView();
+  v2->SetBounds(0, 0, 100, 100);
+  EventCountView* v3 = new EventCountView();
+  v3->SetBounds(0, 0, 50, 50);
+  EventCountView* v4 = new EventCountView();
+  v4->SetBounds(0, 0, 10, 10);
+  internal::RootView* root_view =
+      static_cast<internal::RootView*>(widget->GetRootView());
+  root_view->AddChildView(v1);
+  v1->AddChildView(v2);
+  v2->AddChildView(v3);
+  v3->AddChildView(v4);
+
+  widget->Show();
+
+  // |v1|, |v2|, and |v3| all handle gesture events but |v3| is marked as
+  // disabled.
+  v1->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  v2->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  v3->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  v3->SetEnabled(false);
+
+  // No gesture handler is set in the root view. In this case the tap event
+  // should be dispatched only to |v4|, the gesture handler should be set to
+  // |v3|, and the event should be marked as handled.
+  GestureEventForTest tap(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A subsequent gesture event should be marked as handled but not dispatched.
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A GESTURE_END should reset the default gesture handler to NULL. It should
+  // also not be dispatched to |v3| but still marked as handled.
+  GestureEventForTest end(ui::ET_GESTURE_END, 5, 5);
+  widget->OnGestureEvent(&end);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(end.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // Change the handle mode of |v3| to indicate that it would no longer like
+  // to handle events which are dispatched to it.
+  v3->set_handle_mode(EventCountView::PROPAGATE_EVENTS);
+
+  // No gesture handler is set in the root view. In this case the tap event
+  // should be dispatched only to |v4| and the event should be marked as
+  // handled. Furthermore, the gesture handler should be set to
+  // |v3|; even though |v3| does not explicitly handle events, it is a
+  // valid target for the tap event because it is disabled.
+  tap = GestureEventForTest(ui::ET_GESTURE_TAP, 5, 5);
+  widget->OnGestureEvent(&tap);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(1, v4->GetEventCount(ui::ET_GESTURE_TAP));
+  EXPECT_EQ(v3, GetGestureHandler(root_view));
+  EXPECT_TRUE(tap.handled());
+  v1->ResetCounts();
+  v2->ResetCounts();
+  v3->ResetCounts();
+  v4->ResetCounts();
+
+  // A GESTURE_END should reset the default gesture handler to NULL. It should
+  // also not be dispatched to |v3| but still marked as handled.
+  end = GestureEventForTest(ui::ET_GESTURE_END, 5, 5);
+  widget->OnGestureEvent(&end);
+  EXPECT_EQ(0, v1->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v2->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v3->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(0, v4->GetEventCount(ui::ET_GESTURE_END));
+  EXPECT_EQ(NULL, GetGestureHandler(root_view));
+  EXPECT_TRUE(end.handled());
 
   widget->Close();
 }
@@ -1811,9 +2683,7 @@ class DestroyedTrackingView : public View {
         add_to_(add_to) {
   }
 
-  virtual ~DestroyedTrackingView() {
-    add_to_->push_back(name_);
-  }
+  ~DestroyedTrackingView() override { add_to_->push_back(name_); }
 
  private:
   const std::string name_;
@@ -1897,12 +2767,10 @@ TEST_F(WidgetChildDestructionTest, DestroyChildWidgetsInOrder) {
 class ModalDialogDelegate : public DialogDelegateView {
  public:
   ModalDialogDelegate() {}
-  virtual ~ModalDialogDelegate() {}
+  ~ModalDialogDelegate() override {}
 
   // WidgetDelegate overrides.
-  virtual ui::ModalType GetModalType() const OVERRIDE {
-    return ui::MODAL_TYPE_WINDOW;
-  }
+  ui::ModalType GetModalType() const override { return ui::MODAL_TYPE_WINDOW; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ModalDialogDelegate);
@@ -2003,7 +2871,6 @@ TEST_F(WidgetTest, FullscreenStatePropagated) {
               IsNativeWindowVisible(top_level_widget.GetNativeWindow()));
     top_level_widget.CloseNow();
   }
-
 #if !defined(OS_CHROMEOS)
   {
     Widget top_level_widget;
@@ -2017,7 +2884,6 @@ TEST_F(WidgetTest, FullscreenStatePropagated) {
   }
 #endif
 }
-
 #if defined(OS_WIN)
 
 // Provides functionality to test widget activation via an activation flag
@@ -2031,19 +2897,19 @@ class ModalWindowTestWidgetDelegate : public WidgetDelegate {
   virtual ~ModalWindowTestWidgetDelegate() {}
 
   // Overridden from WidgetDelegate:
-  virtual void DeleteDelegate() OVERRIDE {
+  virtual void DeleteDelegate() override {
     delete this;
   }
-  virtual Widget* GetWidget() OVERRIDE {
+  virtual Widget* GetWidget() override {
     return widget_;
   }
-  virtual const Widget* GetWidget() const OVERRIDE {
+  virtual const Widget* GetWidget() const override {
     return widget_;
   }
-  virtual bool CanActivate() const OVERRIDE {
+  virtual bool CanActivate() const override {
     return can_activate_;
   }
-  virtual bool ShouldAdvanceFocusToTopLevelWidget() const OVERRIDE {
+  virtual bool ShouldAdvanceFocusToTopLevelWidget() const override {
     return true;
   }
 
@@ -2121,7 +2987,15 @@ TEST_F(WidgetTest, ShowCreatesActiveWindow) {
   widget->CloseNow();
 }
 
-TEST_F(WidgetTest, ShowInactive) {
+// OSX does not have a per-application "active" window such as provided by
+// ::GetActiveWindow() on Windows. There is only a system-wide "keyWindow" which
+// is updated asynchronously.
+#if defined(OS_MACOSX)
+#define MAYBE_ShowInactive DISABLED_ShowInactive
+#else
+#define MAYBE_ShowInactive ShowInactive
+#endif
+TEST_F(WidgetTest, MAYBE_ShowInactive) {
   Widget* widget = CreateTopLevelPlatformWidget();
 
   widget->ShowInactive();
@@ -2130,13 +3004,39 @@ TEST_F(WidgetTest, ShowInactive) {
   widget->CloseNow();
 }
 
-TEST_F(WidgetTest, ShowInactiveAfterShow) {
+TEST_F(WidgetTest, InactiveBeforeShow) {
   Widget* widget = CreateTopLevelPlatformWidget();
 
+  EXPECT_FALSE(widget->IsActive());
+  EXPECT_FALSE(widget->IsVisible());
+
   widget->Show();
+
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_TRUE(widget->IsVisible());
+
+  widget->CloseNow();
+}
+
+TEST_F(WidgetTest, ShowInactiveAfterShow) {
+  // Create 2 widgets to ensure window layering does not change.
+  Widget* widget = CreateTopLevelPlatformWidget();
+  Widget* widget2 = CreateTopLevelPlatformWidget();
+
+  widget2->Show();
+  EXPECT_FALSE(widget->IsActive());
+  EXPECT_TRUE(widget2->IsVisible());
+  EXPECT_TRUE(widget2->IsActive());
+
+  widget->Show();
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_FALSE(widget2->IsActive());
   widget->ShowInactive();
+  EXPECT_TRUE(widget->IsActive());
+  EXPECT_FALSE(widget2->IsActive());
   EXPECT_EQ(GetWidgetShowState(widget), ui::SHOW_STATE_NORMAL);
 
+  widget2->CloseNow();
   widget->CloseNow();
 }
 
@@ -2177,27 +3077,23 @@ class FullscreenAwareFrame : public views::NonClientFrameView {
  public:
   explicit FullscreenAwareFrame(views::Widget* widget)
       : widget_(widget), fullscreen_layout_called_(false) {}
-  virtual ~FullscreenAwareFrame() {}
+  ~FullscreenAwareFrame() override {}
 
   // views::NonClientFrameView overrides:
-  virtual gfx::Rect GetBoundsForClientView() const OVERRIDE {
+  gfx::Rect GetBoundsForClientView() const override { return gfx::Rect(); }
+  gfx::Rect GetWindowBoundsForClientBounds(
+      const gfx::Rect& client_bounds) const override {
     return gfx::Rect();
   }
-  virtual gfx::Rect GetWindowBoundsForClientBounds(
-      const gfx::Rect& client_bounds) const OVERRIDE {
-    return gfx::Rect();
-  }
-  virtual int NonClientHitTest(const gfx::Point& point) OVERRIDE {
-    return HTNOWHERE;
-  }
-  virtual void GetWindowMask(const gfx::Size& size,
-                             gfx::Path* window_mask) OVERRIDE {}
-  virtual void ResetWindowControls() OVERRIDE {}
-  virtual void UpdateWindowIcon() OVERRIDE {}
-  virtual void UpdateWindowTitle() OVERRIDE {}
+  int NonClientHitTest(const gfx::Point& point) override { return HTNOWHERE; }
+  void GetWindowMask(const gfx::Size& size, gfx::Path* window_mask) override {}
+  void ResetWindowControls() override {}
+  void UpdateWindowIcon() override {}
+  void UpdateWindowTitle() override {}
+  void SizeConstraintsChanged() override {}
 
   // views::View overrides:
-  virtual void Layout() OVERRIDE {
+  void Layout() override {
     if (widget_->IsFullscreen())
       fullscreen_layout_called_ = true;
   }
@@ -2240,10 +3136,8 @@ namespace {
 class IsActiveFromDestroyObserver : public WidgetObserver {
  public:
   IsActiveFromDestroyObserver() {}
-  virtual ~IsActiveFromDestroyObserver() {}
-  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE {
-    widget->IsActive();
-  }
+  ~IsActiveFromDestroyObserver() override {}
+  void OnWidgetDestroying(Widget* widget) override { widget->IsActive(); }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(IsActiveFromDestroyObserver);
@@ -2268,7 +3162,7 @@ TEST_F(WidgetTest, IsActiveFromDestroy) {
   Widget::InitParams child_params =
       CreateParams(Widget::InitParams::TYPE_POPUP);
   child_params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
-  child_params.context = parent_widget.GetNativeView();
+  child_params.context = parent_widget.GetNativeWindow();
   child_widget.Init(child_params);
   child_widget.AddObserver(&observer);
   child_widget.Show();
@@ -2276,6 +3170,96 @@ TEST_F(WidgetTest, IsActiveFromDestroy) {
   parent_widget.CloseNow();
 }
 #endif  // !defined(OS_CHROMEOS)
+
+// Tests that events propagate through from the dispatcher with the correct
+// event type, and that the different platforms behave the same.
+TEST_F(WidgetTest, MouseEventTypesViaGenerator) {
+  EventCountView* view = new EventCountView;
+  view->set_handle_mode(EventCountView::CONSUME_EVENTS);
+  view->SetBounds(10, 10, 50, 40);
+
+  Widget* widget = CreateTopLevelFramelessPlatformWidget();
+  widget->GetRootView()->AddChildView(view);
+
+  widget->SetBounds(gfx::Rect(0, 0, 100, 80));
+  widget->Show();
+
+  ui::test::EventGenerator generator(GetContext(), widget->GetNativeWindow());
+  generator.set_current_location(gfx::Point(20, 20));
+
+  generator.ClickLeftButton();
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, view->last_flags());
+
+  generator.PressRightButton();
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, view->last_flags());
+
+  generator.ReleaseRightButton();
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(ui::EF_RIGHT_MOUSE_BUTTON, view->last_flags());
+
+  // Test mouse move events.
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+
+  // Move the mouse within the view (20, 20) -> (30, 30).
+  generator.MoveMouseTo(gfx::Point(30, 30));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(ui::EF_NONE, view->last_flags());
+
+  // Move it again - entered count shouldn't change.
+  generator.MoveMouseTo(gfx::Point(31, 31));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(0, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Move it off the view.
+  generator.MoveMouseTo(gfx::Point(5, 5));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Move it back on.
+  generator.MoveMouseTo(gfx::Point(20, 20));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_MOVED));
+  EXPECT_EQ(2, view->GetEventCount(ui::ET_MOUSE_ENTERED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_EXITED));
+
+  // Drargging. Cover HasCapture() and NativeWidgetPrivate::IsMouseButtonDown().
+  generator.DragMouseTo(gfx::Point(40, 40));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_PRESSED));
+  EXPECT_EQ(3, view->GetEventCount(ui::ET_MOUSE_RELEASED));
+  EXPECT_EQ(1, view->GetEventCount(ui::ET_MOUSE_DRAGGED));
+  EXPECT_EQ(ui::EF_LEFT_MOUSE_BUTTON, view->last_flags());
+
+  widget->CloseNow();
+}
+
+// Tests that the root view is correctly set up for Widget types that do not
+// require a non-client view, before any other views are added to the widget.
+// That is, before Widget::ReorderNativeViews() is called which, if called with
+// a root view not set, could cause the root view to get resized to the widget.
+TEST_F(WidgetTest, NonClientWindowValidAfterInit) {
+  Widget* widget = CreateTopLevelFramelessPlatformWidget();
+  View* root_view = widget->GetRootView();
+
+  // Size the root view to exceed the widget bounds.
+  const gfx::Rect test_rect(0, 0, 500, 500);
+  root_view->SetBoundsRect(test_rect);
+
+  EXPECT_NE(test_rect.size(), widget->GetWindowBoundsInScreen().size());
+
+  EXPECT_EQ(test_rect, root_view->bounds());
+  widget->ReorderNativeViews();
+  EXPECT_EQ(test_rect, root_view->bounds());
+
+  widget->CloseNow();
+}
 
 }  // namespace test
 }  // namespace views

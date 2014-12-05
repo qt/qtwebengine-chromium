@@ -30,9 +30,11 @@
 #include "core/xml/XPathNodeSet.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace XPath {
+
+struct EvaluationContext;
 
 class ValueData : public RefCountedWillBeGarbageCollectedFinalized<ValueData> {
 public:
@@ -84,8 +86,10 @@ public:
     bool isNumber() const { return m_type == NumberValue; }
     bool isString() const { return m_type == StringValue; }
 
-    const NodeSet& toNodeSet() const;
-    NodeSet& modifiableNodeSet();
+    // If this is called during XPathExpression::evaluate(), EvaluationContext
+    // should be passed.
+    const NodeSet& toNodeSet(EvaluationContext*) const;
+    NodeSet& modifiableNodeSet(EvaluationContext&);
     bool toBoolean() const;
     double toNumber() const;
     String toString() const;

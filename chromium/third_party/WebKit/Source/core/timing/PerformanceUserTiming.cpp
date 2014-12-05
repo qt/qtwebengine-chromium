@@ -26,18 +26,18 @@
 #include "config.h"
 #include "core/timing/PerformanceUserTiming.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/timing/Performance.h"
 #include "core/timing/PerformanceMark.h"
 #include "core/timing/PerformanceMeasure.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-typedef HashMap<String, NavigationTimingFunction> RestrictedKeyMap;
+using RestrictedKeyMap = HashMap<String, NavigationTimingFunction>;
 static RestrictedKeyMap restrictedKeyMap()
 {
     DEFINE_STATIC_LOCAL(RestrictedKeyMap, map, ());
@@ -168,8 +168,8 @@ static PerformanceEntryVector convertToEntrySequence(const PerformanceEntryMap& 
 {
     PerformanceEntryVector entries;
 
-    for (PerformanceEntryMap::const_iterator it = performanceEntryMap.begin(); it != performanceEntryMap.end(); ++it)
-        entries.appendVector(it->value);
+    for (const auto& entry : performanceEntryMap)
+        entries.appendVector(entry.value);
 
     return entries;
 }
@@ -207,9 +207,11 @@ PerformanceEntryVector UserTiming::getMeasures(const String& name) const
 
 void UserTiming::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_performance);
     visitor->trace(m_marksMap);
     visitor->trace(m_measuresMap);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

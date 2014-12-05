@@ -5,6 +5,7 @@
 #include "net/url_request/url_request_ftp_job.h"
 
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/run_loop.h"
 #include "net/base/host_port_pair.h"
@@ -66,18 +67,15 @@ class SimpleProxyConfigService : public ProxyConfigService {
     config_.proxy_rules().ParseFromString("ftp=localhost");
   }
 
-  virtual void AddObserver(Observer* observer) OVERRIDE {
-    observer_ = observer;
-  }
+  void AddObserver(Observer* observer) override { observer_ = observer; }
 
-  virtual void RemoveObserver(Observer* observer) OVERRIDE {
+  void RemoveObserver(Observer* observer) override {
     if (observer_ == observer) {
       observer_ = NULL;
     }
   }
 
-  virtual ConfigAvailability GetLatestProxyConfig(
-      ProxyConfig* config) OVERRIDE {
+  ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) override {
     *config = config_;
     return CONFIG_VALID;
   }
@@ -107,16 +105,14 @@ class TestURLRequestFtpJob : public URLRequestFtpJob {
   using URLRequestFtpJob::priority;
 
  protected:
-  virtual ~TestURLRequestFtpJob() {}
+  ~TestURLRequestFtpJob() override {}
 };
 
 class MockFtpTransactionFactory : public FtpTransactionFactory {
  public:
-  virtual FtpTransaction* CreateTransaction() OVERRIDE {
-    return NULL;
-  }
+  FtpTransaction* CreateTransaction() override { return NULL; }
 
-  virtual void Suspend(bool suspend) OVERRIDE {}
+  void Suspend(bool suspend) override {}
 };
 
 // Fixture for priority-related tests. Priority matters when there is
@@ -125,10 +121,10 @@ class URLRequestFtpJobPriorityTest : public testing::Test {
  protected:
   URLRequestFtpJobPriorityTest()
       : proxy_service_(new SimpleProxyConfigService, NULL, NULL),
-        req_(GURL("ftp://ftp.example.com"),
-             DEFAULT_PRIORITY,
-             &delegate_,
-             &context_) {
+        req_(context_.CreateRequest(GURL("ftp://ftp.example.com"),
+                                    DEFAULT_PRIORITY,
+                                    &delegate_,
+                                    NULL)) {
     context_.set_proxy_service(&proxy_service_);
     context_.set_http_transaction_factory(&network_layer_);
   }
@@ -139,14 +135,14 @@ class URLRequestFtpJobPriorityTest : public testing::Test {
   FtpAuthCache ftp_auth_cache_;
   TestURLRequestContext context_;
   TestDelegate delegate_;
-  TestURLRequest req_;
+  scoped_ptr<URLRequest> req_;
 };
 
 // Make sure that SetPriority actually sets the URLRequestFtpJob's
 // priority, both before and after start.
 TEST_F(URLRequestFtpJobPriorityTest, SetPriorityBasic) {
   scoped_refptr<TestURLRequestFtpJob> job(new TestURLRequestFtpJob(
-      &req_, &ftp_factory_, &ftp_auth_cache_));
+      req_.get(), &ftp_factory_, &ftp_auth_cache_));
   EXPECT_EQ(DEFAULT_PRIORITY, job->priority());
 
   job->SetPriority(LOWEST);
@@ -166,7 +162,7 @@ TEST_F(URLRequestFtpJobPriorityTest, SetPriorityBasic) {
 // transaction on start.
 TEST_F(URLRequestFtpJobPriorityTest, SetTransactionPriorityOnStart) {
   scoped_refptr<TestURLRequestFtpJob> job(new TestURLRequestFtpJob(
-      &req_, &ftp_factory_, &ftp_auth_cache_));
+      req_.get(), &ftp_factory_, &ftp_auth_cache_));
   job->SetPriority(LOW);
 
   EXPECT_FALSE(network_layer_.last_transaction());
@@ -181,7 +177,7 @@ TEST_F(URLRequestFtpJobPriorityTest, SetTransactionPriorityOnStart) {
 // its transaction.
 TEST_F(URLRequestFtpJobPriorityTest, SetTransactionPriority) {
   scoped_refptr<TestURLRequestFtpJob> job(new TestURLRequestFtpJob(
-      &req_, &ftp_factory_, &ftp_auth_cache_));
+      req_.get(), &ftp_factory_, &ftp_auth_cache_));
   job->SetPriority(LOW);
   job->Start();
   ASSERT_TRUE(network_layer_.last_transaction());
@@ -195,7 +191,7 @@ TEST_F(URLRequestFtpJobPriorityTest, SetTransactionPriority) {
 // newly-created transactions after the first one.
 TEST_F(URLRequestFtpJobPriorityTest, SetSubsequentTransactionPriority) {
   scoped_refptr<TestURLRequestFtpJob> job(new TestURLRequestFtpJob(
-      &req_, &ftp_factory_, &ftp_auth_cache_));
+      req_.get(), &ftp_factory_, &ftp_auth_cache_));
   job->Start();
 
   job->SetPriority(LOW);
@@ -221,7 +217,7 @@ class URLRequestFtpJobTest : public testing::Test {
                          &ftp_transaction_factory_) {
   }
 
-  virtual ~URLRequestFtpJobTest() {
+  ~URLRequestFtpJobTest() override {
     // Clean up any remaining tasks that mess up unrelated tests.
     base::RunLoop run_loop;
     run_loop.RunUntilIdle();
@@ -268,16 +264,15 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequest) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY,
+      &request_delegate, NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(4);
 
-  EXPECT_TRUE(url_request.status().is_success());
-  EXPECT_TRUE(url_request.proxy_server().Equals(
+  EXPECT_TRUE(url_request->status().is_success());
+  EXPECT_TRUE(url_request->proxy_server().Equals(
       net::HostPortPair::FromString("localhost:80")));
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
@@ -295,11 +290,10 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestOrphanJob) {
           new MockAsyncProxyResolver, NULL));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
 
   // Now |url_request| will be deleted before its completion,
   // resulting in it being orphaned. It should not crash.
@@ -323,16 +317,15 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestNeedProxyAuthNoCredentials) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(5);
 
-  EXPECT_TRUE(url_request.status().is_success());
-  EXPECT_TRUE(url_request.proxy_server().Equals(
+  EXPECT_TRUE(url_request->status().is_success());
+  EXPECT_TRUE(url_request->proxy_server().Equals(
       net::HostPortPair::FromString("localhost:80")));
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
@@ -369,15 +362,14 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestNeedProxyAuthWithCredentials) {
   TestDelegate request_delegate;
   request_delegate.set_credentials(
       AuthCredentials(ASCIIToUTF16("myuser"), ASCIIToUTF16("mypass")));
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(9);
 
-  EXPECT_TRUE(url_request.status().is_success());
+  EXPECT_TRUE(url_request->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_TRUE(request_delegate.auth_required_called());
@@ -402,15 +394,14 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestNeedServerAuthNoCredentials) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(5);
 
-  EXPECT_TRUE(url_request.status().is_success());
+  EXPECT_TRUE(url_request->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_TRUE(request_delegate.auth_required_called());
@@ -446,15 +437,14 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestNeedServerAuthWithCredentials) {
   TestDelegate request_delegate;
   request_delegate.set_credentials(
       AuthCredentials(ASCIIToUTF16("myuser"), ASCIIToUTF16("mypass")));
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(9);
 
-  EXPECT_TRUE(url_request.status().is_success());
+  EXPECT_TRUE(url_request->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_TRUE(request_delegate.auth_required_called());
@@ -512,17 +502,17 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestNeedProxyAndServerAuth) {
   TestDelegate request_delegate;
   request_delegate.set_credentials(
       AuthCredentials(ASCIIToUTF16("proxyuser"), ASCIIToUTF16("proxypass")));
-  URLRequest url_request(
-      url, DEFAULT_PRIORITY, &request_delegate, request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      url, DEFAULT_PRIORITY, &request_delegate, NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
   socket_data(0)->RunFor(5);
 
   request_delegate.set_credentials(
       AuthCredentials(ASCIIToUTF16("myuser"), ASCIIToUTF16("mypass")));
   socket_data(0)->RunFor(9);
 
-  EXPECT_TRUE(url_request.status().is_success());
+  EXPECT_TRUE(url_request->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_TRUE(request_delegate.auth_required_called());
@@ -545,16 +535,15 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestDoNotSaveCookies) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  ASSERT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  ASSERT_TRUE(url_request->is_pending());
 
   socket_data(0)->RunFor(5);
 
-  EXPECT_TRUE(url_request.status().is_success());
+  EXPECT_TRUE(url_request->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
 
@@ -579,26 +568,25 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestDoNotFollowRedirects) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate;
-  URLRequest url_request(GURL("ftp://ftp.example.com/"),
-                         DEFAULT_PRIORITY,
-                         &request_delegate,
-                         request_context());
-  url_request.Start();
-  EXPECT_TRUE(url_request.is_pending());
+  scoped_ptr<URLRequest> url_request(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/"), DEFAULT_PRIORITY, &request_delegate,
+      NULL));
+  url_request->Start();
+  EXPECT_TRUE(url_request->is_pending());
 
   base::MessageLoop::current()->RunUntilIdle();
 
-  EXPECT_TRUE(url_request.is_pending());
+  EXPECT_TRUE(url_request->is_pending());
   EXPECT_EQ(0, request_delegate.response_started_count());
   EXPECT_EQ(0, network_delegate()->error_count());
-  ASSERT_TRUE(url_request.status().is_success());
+  ASSERT_TRUE(url_request->status().is_success());
 
   socket_data(0)->RunFor(1);
 
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(1, network_delegate()->error_count());
-  EXPECT_FALSE(url_request.status().is_success());
-  EXPECT_EQ(ERR_UNSAFE_REDIRECT, url_request.status().error());
+  EXPECT_FALSE(url_request->status().is_success());
+  EXPECT_EQ(ERR_UNSAFE_REDIRECT, url_request->status().error());
 }
 
 // We should re-use socket for requests using the same scheme, host, and port.
@@ -623,16 +611,16 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestReuseSocket) {
   AddSocket(reads, arraysize(reads), writes, arraysize(writes));
 
   TestDelegate request_delegate1;
-  URLRequest url_request1(GURL("ftp://ftp.example.com/first"),
-                          DEFAULT_PRIORITY,
-                          &request_delegate1,
-                          request_context());
-  url_request1.Start();
-  ASSERT_TRUE(url_request1.is_pending());
+
+  scoped_ptr<URLRequest> url_request1(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/first"), DEFAULT_PRIORITY, &request_delegate1,
+      NULL));
+  url_request1->Start();
+  ASSERT_TRUE(url_request1->is_pending());
   socket_data(0)->RunFor(4);
 
-  EXPECT_TRUE(url_request1.status().is_success());
-  EXPECT_TRUE(url_request1.proxy_server().Equals(
+  EXPECT_TRUE(url_request1->status().is_success());
+  EXPECT_TRUE(url_request1->proxy_server().Equals(
       net::HostPortPair::FromString("localhost:80")));
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
@@ -640,15 +628,14 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestReuseSocket) {
   EXPECT_EQ("test1.html", request_delegate1.data_received());
 
   TestDelegate request_delegate2;
-  URLRequest url_request2(GURL("ftp://ftp.example.com/second"),
-                          DEFAULT_PRIORITY,
-                          &request_delegate2,
-                          request_context());
-  url_request2.Start();
-  ASSERT_TRUE(url_request2.is_pending());
+  scoped_ptr<URLRequest> url_request2(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/second"), DEFAULT_PRIORITY,
+      &request_delegate2, NULL));
+  url_request2->Start();
+  ASSERT_TRUE(url_request2->is_pending());
   socket_data(0)->RunFor(4);
 
-  EXPECT_TRUE(url_request2.status().is_success());
+  EXPECT_TRUE(url_request2->status().is_success());
   EXPECT_EQ(2, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_FALSE(request_delegate2.auth_required_called());
@@ -668,7 +655,7 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestDoNotReuseSocket) {
               "Host: ftp.example.com\r\n"
               "Connection: keep-alive\r\n"
               "User-Agent:\r\n"
-              "Accept-Encoding: gzip,deflate\r\n"
+              "Accept-Encoding: gzip, deflate\r\n"
               "Accept-Language: en-us,fr\r\n\r\n"),
   };
   MockRead reads1[] = {
@@ -686,30 +673,28 @@ TEST_F(URLRequestFtpJobTest, FtpProxyRequestDoNotReuseSocket) {
   AddSocket(reads2, arraysize(reads2), writes2, arraysize(writes2));
 
   TestDelegate request_delegate1;
-  URLRequest url_request1(GURL("ftp://ftp.example.com/first"),
-                          DEFAULT_PRIORITY,
-                          &request_delegate1,
-                          request_context());
-  url_request1.Start();
-  ASSERT_TRUE(url_request1.is_pending());
+  scoped_ptr<URLRequest> url_request1(request_context()->CreateRequest(
+      GURL("ftp://ftp.example.com/first"), DEFAULT_PRIORITY,
+      &request_delegate1, NULL));
+  url_request1->Start();
+  ASSERT_TRUE(url_request1->is_pending());
   socket_data(0)->RunFor(4);
 
-  EXPECT_TRUE(url_request1.status().is_success());
+  EXPECT_TRUE(url_request1->status().is_success());
   EXPECT_EQ(1, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_FALSE(request_delegate1.auth_required_called());
   EXPECT_EQ("test1.html", request_delegate1.data_received());
 
   TestDelegate request_delegate2;
-  URLRequest url_request2(GURL("http://ftp.example.com/second"),
-                          DEFAULT_PRIORITY,
-                          &request_delegate2,
-                          request_context());
-  url_request2.Start();
-  ASSERT_TRUE(url_request2.is_pending());
+  scoped_ptr<URLRequest> url_request2(request_context()->CreateRequest(
+      GURL("http://ftp.example.com/second"), DEFAULT_PRIORITY,
+      &request_delegate2, NULL));
+  url_request2->Start();
+  ASSERT_TRUE(url_request2->is_pending());
   socket_data(1)->RunFor(4);
 
-  EXPECT_TRUE(url_request2.status().is_success());
+  EXPECT_TRUE(url_request2->status().is_success());
   EXPECT_EQ(2, network_delegate()->completed_requests());
   EXPECT_EQ(0, network_delegate()->error_count());
   EXPECT_FALSE(request_delegate2.auth_required_called());

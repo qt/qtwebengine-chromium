@@ -32,7 +32,7 @@
 #include "core/events/Event.h"
 #include "core/inspector/InspectorInstrumentation.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtrWillBeRawPtr<WorkerEventQueue> WorkerEventQueue::create(ExecutionContext* context)
 {
@@ -52,8 +52,10 @@ WorkerEventQueue::~WorkerEventQueue()
 
 void WorkerEventQueue::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_executionContext);
     visitor->trace(m_eventTaskMap);
+#endif
     EventQueue::trace(visitor);
 }
 
@@ -134,9 +136,9 @@ bool WorkerEventQueue::cancelEvent(Event* event)
 void WorkerEventQueue::close()
 {
     m_isClosed = true;
-    for (EventTaskMap::iterator it = m_eventTaskMap.begin(); it != m_eventTaskMap.end(); ++it) {
-        Event* event = it->key.get();
-        EventDispatcherTask* task = it->value;
+    for (const auto& entry : m_eventTaskMap) {
+        Event* event = entry.key.get();
+        EventDispatcherTask* task = entry.value;
         InspectorInstrumentation::didRemoveEvent(event->target(), event);
         task->cancel();
     }

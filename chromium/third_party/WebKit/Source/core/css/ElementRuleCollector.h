@@ -30,13 +30,12 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class CSSRuleList;
 class RuleData;
 class RuleSet;
-class ScopedStyleResolver;
 class SelectorFilter;
 class StaticCSSRuleList;
 
@@ -83,14 +82,14 @@ private:
     RawPtrWillBeMember<const CSSStyleSheet> m_parentStyleSheet;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(WebCore::MatchedRule);
+WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(blink::MatchedRule);
 
-namespace WebCore {
+namespace blink {
 
 // FIXME: oilpan: when transition types are gone this class can be replaced with HeapVector.
-class StyleRuleList FINAL : public RefCountedWillBeGarbageCollected<StyleRuleList> {
+class StyleRuleList final : public RefCountedWillBeGarbageCollected<StyleRuleList> {
 public:
     static PassRefPtrWillBeRawPtr<StyleRuleList> create() { return adoptRefWillBeNoop(new StyleRuleList()); }
 
@@ -120,35 +119,33 @@ public:
     void setSameOriginOnly(bool f) { m_sameOriginOnly = f; }
 
     void setMatchingUARules(bool matchingUARules) { m_matchingUARules = matchingUARules; }
+    void setScopeContainsLastMatchedElement(bool scopeContainsLastMatchedElement) { m_scopeContainsLastMatchedElement = scopeContainsLastMatchedElement; }
+    bool scopeContainsLastMatchedElement() const { return m_scopeContainsLastMatchedElement; }
     bool hasAnyMatchingRules(RuleSet*);
 
     MatchResult& matchedResult();
     PassRefPtrWillBeRawPtr<StyleRuleList> matchedStyleRuleList();
     PassRefPtrWillBeRawPtr<CSSRuleList> matchedCSSRuleList();
 
-    void collectMatchingRules(const MatchRequest&, RuleRange&, SelectorChecker::BehaviorAtBoundary = SelectorChecker::DoesNotCrossBoundary, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder);
+    void collectMatchingRules(const MatchRequest&, RuleRange&, CascadeScope = ignoreCascadeScope, CascadeOrder = ignoreCascadeOrder, bool matchingTreeBoundaryRules = false);
     void sortAndTransferMatchedRules();
     void clearMatchedRules();
     void addElementStyleProperties(const StylePropertySet*, bool isCacheable = true);
 
-    unsigned lastMatchedRulesPosition() const { return m_matchedRules ? m_matchedRules->size() : 0; }
-    void sortMatchedRulesFrom(unsigned position);
-    void sortAndTransferMatchedRulesWithOnlySortBySpecificity();
-
 private:
-    void collectRuleIfMatches(const RuleData&, SelectorChecker::BehaviorAtBoundary, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
+    void collectRuleIfMatches(const RuleData&, CascadeScope, CascadeOrder, const MatchRequest&, RuleRange&);
 
     template<typename RuleDataListType>
-    void collectMatchingRulesForList(const RuleDataListType* rules, SelectorChecker::BehaviorAtBoundary behaviorAtBoundary, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
+    void collectMatchingRulesForList(const RuleDataListType* rules, CascadeScope cascadeScope, CascadeOrder cascadeOrder, const MatchRequest& matchRequest, RuleRange& ruleRange)
     {
         if (!rules)
             return;
 
-        for (typename RuleDataListType::const_iterator it = rules->begin(), end = rules->end(); it != end; ++it)
-            collectRuleIfMatches(*it, behaviorAtBoundary, cascadeScope, cascadeOrder, matchRequest, ruleRange);
+        for (const auto& rule : *rules)
+            collectRuleIfMatches(rule, cascadeScope, cascadeOrder, matchRequest, ruleRange);
     }
 
-    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::BehaviorAtBoundary, SelectorChecker::MatchResult*);
+    bool ruleMatches(const RuleData&, const ContainerNode* scope, SelectorChecker::MatchResult*);
 
     CSSRuleList* nestedRuleList(CSSRule*);
     template<class CSSRuleCollection>
@@ -171,6 +168,7 @@ private:
     bool m_canUseFastReject;
     bool m_sameOriginOnly;
     bool m_matchingUARules;
+    bool m_scopeContainsLastMatchedElement;
 
     OwnPtrWillBeMember<WillBeHeapVector<MatchedRule, 32> > m_matchedRules;
 
@@ -180,6 +178,6 @@ private:
     MatchResult m_result;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ElementRuleCollector_h

@@ -8,14 +8,14 @@
 #include <functional>
 #include <vector>
 
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/stl_util.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
-using fileapi::FilePathToString;
+using storage::FilePathToString;
 
 namespace content {
 

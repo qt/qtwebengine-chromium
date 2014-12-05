@@ -24,19 +24,20 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEFlood.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEFloodElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEFloodElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEFloodElement);
 
 private:
     explicit SVGFEFloodElement(Document&);
 
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName& attrName) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEFloodElement_h

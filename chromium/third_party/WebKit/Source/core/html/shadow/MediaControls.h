@@ -30,12 +30,11 @@
 #include "core/html/HTMLDivElement.h"
 #include "core/html/shadow/MediaControlElements.h"
 
-namespace WebCore {
+namespace blink {
 
-class Document;
 class Event;
 
-class MediaControls FINAL : public HTMLDivElement {
+class MediaControls final : public HTMLDivElement {
 public:
     static PassRefPtrWillBeRawPtr<MediaControls> create(HTMLMediaElement&);
 
@@ -59,16 +58,21 @@ public:
 
     void changedClosedCaptionsVisibility();
     void refreshClosedCaptionsButtonVisibility();
-    void closedCaptionTracksChanged();
+    void textTracksChanged();
 
     void enteredFullscreen();
     void exitedFullscreen();
+
+    void startedCasting();
+    void stoppedCasting();
+    void refreshCastButtonVisibility();
+    void showOverlayCastButton();
 
     void updateTextTrackDisplay();
 
     void mediaElementFocused();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit MediaControls(HTMLMediaElement&);
@@ -82,26 +86,28 @@ private:
 
     enum HideBehaviorFlags {
         IgnoreVideoHover = 1 << 0,
-        IgnoreFocus = 1 << 1
+        IgnoreFocus = 1 << 1,
+        IgnoreControlsHover = 1 << 2
     };
 
     bool shouldHideMediaControls(unsigned behaviorFlags = 0) const;
     void hideMediaControlsTimerFired(Timer<MediaControls>*);
     void startHideMediaControlsTimer();
     void stopHideMediaControlsTimer();
+    void resetHideMediaControlsTimer();
 
     void createTextTrackDisplay();
     void showTextTrackDisplay();
     void hideTextTrackDisplay();
 
     // Node
-    virtual bool isMediaControls() const OVERRIDE { return true; }
-    virtual bool willRespondToMouseMoveEvents() OVERRIDE { return true; }
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual bool isMediaControls() const override { return true; }
+    virtual bool willRespondToMouseMoveEvents() override { return true; }
+    virtual void defaultEventHandler(Event*) override;
     bool containsRelatedTarget(Event*);
 
     // Element
-    virtual const AtomicString& shadowPseudoId() const OVERRIDE;
+    virtual const AtomicString& shadowPseudoId() const override;
 
     RawPtrWillBeMember<HTMLMediaElement> m_mediaElement;
 
@@ -121,12 +127,15 @@ private:
     RawPtrWillBeMember<MediaControlVolumeSliderElement> m_volumeSlider;
     RawPtrWillBeMember<MediaControlToggleClosedCaptionsButtonElement> m_toggleClosedCaptionsButton;
     RawPtrWillBeMember<MediaControlFullscreenButtonElement> m_fullScreenButton;
+    RawPtrWillBeMember<MediaControlCastButtonElement> m_castButton;
+    RawPtrWillBeMember<MediaControlCastButtonElement> m_overlayCastButton;
     RawPtrWillBeMember<MediaControlTimeRemainingDisplayElement> m_durationDisplay;
     RawPtrWillBeMember<MediaControlPanelEnclosureElement> m_enclosure;
 
     Timer<MediaControls> m_hideMediaControlsTimer;
     bool m_isMouseOverControls : 1;
     bool m_isPausedForScrubbing : 1;
+    bool m_wasLastEventTouch : 1;
 };
 
 DEFINE_ELEMENT_TYPE_CASTS(MediaControls, isMediaControls());

@@ -71,14 +71,14 @@ ServiceWorkerJobCoordinator::~ServiceWorkerJobCoordinator() {
 void ServiceWorkerJobCoordinator::Register(
     const GURL& pattern,
     const GURL& script_url,
-    int source_process_id,
+    ServiceWorkerProviderHost* provider_host,
     const ServiceWorkerRegisterJob::RegistrationCallback& callback) {
   scoped_ptr<ServiceWorkerRegisterJobBase> job(
       new ServiceWorkerRegisterJob(context_, pattern, script_url));
   ServiceWorkerRegisterJob* queued_job =
       static_cast<ServiceWorkerRegisterJob*>(
           job_queues_[pattern].Push(job.Pass()));
-  queued_job->AddCallback(callback, source_process_id);
+  queued_job->AddCallback(callback, provider_host);
 }
 
 void ServiceWorkerJobCoordinator::Unregister(
@@ -90,6 +90,15 @@ void ServiceWorkerJobCoordinator::Unregister(
       static_cast<ServiceWorkerUnregisterJob*>(
           job_queues_[pattern].Push(job.Pass()));
   queued_job->AddCallback(callback);
+}
+
+void ServiceWorkerJobCoordinator::Update(
+    ServiceWorkerRegistration* registration) {
+  DCHECK(registration);
+  DCHECK(registration->GetNewestVersion());
+  job_queues_[registration->pattern()].Push(
+      make_scoped_ptr<ServiceWorkerRegisterJobBase>(
+          new ServiceWorkerRegisterJob(context_, registration)));
 }
 
 void ServiceWorkerJobCoordinator::AbortAll() {

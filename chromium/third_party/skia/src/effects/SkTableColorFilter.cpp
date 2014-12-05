@@ -43,7 +43,7 @@ public:
     virtual bool asComponentTable(SkBitmap* table) const SK_OVERRIDE;
 
 #if SK_SUPPORT_GPU
-    virtual GrEffectRef* asNewEffect(GrContext* context) const SK_OVERRIDE;
+    virtual GrFragmentProcessor* asFragmentProcessor(GrContext* context) const SK_OVERRIDE;
 #endif
 
     virtual void filterSpan(const SkPMColor src[], int count,
@@ -61,7 +61,9 @@ public:
     };
 
 protected:
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
     SkTable_ColorFilter(SkReadBuffer& buffer);
+#endif
     virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
 private:
@@ -69,6 +71,8 @@ private:
 
     uint8_t fStorage[256 * 4];
     unsigned fFlags;
+
+    friend class SkTableColorFilter;
 
     typedef SkColorFilter INHERITED;
 };
@@ -168,19 +172,62 @@ static const uint8_t gCountNibBits[] = {
 #include "SkPackBits.h"
 
 void SkTable_ColorFilter::flatten(SkWriteBuffer& buffer) const {
-    this->INHERITED::flatten(buffer);
-
     uint8_t storage[5*256];
     int count = gCountNibBits[fFlags & 0xF];
     size_t size = SkPackBits::Pack8(fStorage, count * 256, storage);
     SkASSERT(size <= sizeof(storage));
 
-//    SkDebugf("raw %d packed %d\n", count * 256, size);
-
-    buffer.writeInt(fFlags);
+    buffer.write32(fFlags);
     buffer.writeByteArray(storage, size);
 }
 
+SkFlattenable* SkTable_ColorFilter::CreateProc(SkReadBuffer& buffer) {
+    const int flags = buffer.read32();
+    const size_t count = gCountNibBits[flags & 0xF];
+    SkASSERT(count <= 4);
+
+    uint8_t packedStorage[5*256];
+    size_t packedSize = buffer.getArrayCount();
+    if (!buffer.validate(packedSize <= sizeof(packedStorage))) {
+        return NULL;
+    }
+    if (!buffer.readByteArray(packedStorage, packedSize)) {
+        return NULL;
+    }
+
+    uint8_t unpackedStorage[4*256];
+    size_t unpackedSize = SkPackBits::Unpack8(packedStorage, packedSize, unpackedStorage);
+    // now check that we got the size we expected
+    if (!buffer.validate(unpackedSize == count*256)) {
+        return NULL;
+    }
+
+    const uint8_t* a = NULL;
+    const uint8_t* r = NULL;
+    const uint8_t* g = NULL;
+    const uint8_t* b = NULL;
+    const uint8_t* ptr = unpackedStorage;
+
+    if (flags & kA_Flag) {
+        a = ptr;
+        ptr += 256;
+    }
+    if (flags & kR_Flag) {
+        r = ptr;
+        ptr += 256;
+    }
+    if (flags & kG_Flag) {
+        g = ptr;
+        ptr += 256;
+    }
+    if (flags & kB_Flag) {
+        b = ptr;
+        ptr += 256;
+    }
+    return SkTableColorFilter::CreateARGB(a, r, g, b);
+}
+
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkTable_ColorFilter::SkTable_ColorFilter(SkReadBuffer& buffer) : INHERITED(buffer) {
     fBitmap = NULL;
 
@@ -199,6 +246,7 @@ SkTable_ColorFilter::SkTable_ColorFilter(SkReadBuffer& buffer) : INHERITED(buffe
     SkDEBUGCODE(size_t count = gCountNibBits[fFlags & 0xF]);
     SkASSERT(raw == count * 256);
 }
+#endif
 
 bool SkTable_ColorFilter::asComponentTable(SkBitmap* table) const {
     if (table) {
@@ -227,181 +275,255 @@ bool SkTable_ColorFilter::asComponentTable(SkBitmap* table) const {
 
 #if SK_SUPPORT_GPU
 
-#include "GrEffect.h"
-#include "GrTBackendEffectFactory.h"
-#include "gl/GrGLEffect.h"
+#include "GrFragmentProcessor.h"
+#include "GrTBackendProcessorFactory.h"
 #include "SkGr.h"
+#include "effects/GrTextureStripAtlas.h"
+#include "gl/GrGLProcessor.h"
+#include "gl/builders/GrGLProgramBuilder.h"
+
 
 class GLColorTableEffect;
 
-class ColorTableEffect : public GrEffect {
+class ColorTableEffect : public GrFragmentProcessor {
 public:
-    static GrEffectRef* Create(GrTexture* texture, unsigned flags) {
-        AutoEffectUnref effect(SkNEW_ARGS(ColorTableEffect, (texture, flags)));
-        return CreateEffectRef(effect);
-    }
+    static GrFragmentProcessor* Create(GrContext* context, SkBitmap bitmap, unsigned flags);
 
     virtual ~ColorTableEffect();
 
     static const char* Name() { return "ColorTable"; }
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
+    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
 
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
+    typedef GLColorTableEffect GLProcessor;
 
-    typedef GLColorTableEffect GLEffect;
+    const GrTextureStripAtlas* atlas() const { return fAtlas; }
+    int atlasRow() const { return fRow; }
 
 private:
-    virtual bool onIsEqual(const GrEffect&) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrFragmentProcessor&) const SK_OVERRIDE;
 
-    explicit ColorTableEffect(GrTexture* texture, unsigned flags);
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
 
-    GR_DECLARE_EFFECT_TEST;
+    ColorTableEffect(GrTexture* texture, GrTextureStripAtlas* atlas, int row, unsigned flags);
 
-    GrTextureAccess fTextureAccess;
-    unsigned        fFlags; // currently not used in shader code, just to assist
-                            // getConstantColorComponents().
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 
-    typedef GrEffect INHERITED;
+    GrTextureAccess         fTextureAccess;
+
+    // currently not used in shader code, just to assist onComputeInvariantOutput().
+    unsigned                fFlags; 
+
+    GrTextureStripAtlas*    fAtlas;
+    int                     fRow;
+
+    typedef GrFragmentProcessor INHERITED;
 };
 
-class GLColorTableEffect : public GrGLEffect {
+class GLColorTableEffect : public GrGLFragmentProcessor {
 public:
-    GLColorTableEffect(const GrBackendEffectFactory&, const GrDrawEffect&);
+    GLColorTableEffect(const GrBackendProcessorFactory&, const GrProcessor&);
 
-    virtual void emitCode(GrGLShaderBuilder*,
-                          const GrDrawEffect&,
-                          EffectKey,
+    virtual void emitCode(GrGLFPBuilder*,
+                          const GrFragmentProcessor&,
+                          const GrProcessorKey&,
                           const char* outputColor,
                           const char* inputColor,
                           const TransformedCoordsArray&,
                           const TextureSamplerArray&) SK_OVERRIDE;
 
-    virtual void setData(const GrGLUniformManager&, const GrDrawEffect&) SK_OVERRIDE {}
+    virtual void setData(const GrGLProgramDataManager&, const GrProcessor&) SK_OVERRIDE;
 
-    static EffectKey GenKey(const GrDrawEffect&, const GrGLCaps&);
+    static void GenKey(const GrProcessor&, const GrGLCaps&, GrProcessorKeyBuilder* b) {}
 
 private:
-
-    typedef GrGLEffect INHERITED;
+    UniformHandle fRGBAYValuesUni;
+    typedef GrGLFragmentProcessor INHERITED;
 };
 
-GLColorTableEffect::GLColorTableEffect(const GrBackendEffectFactory& factory, const GrDrawEffect&)
+GLColorTableEffect::GLColorTableEffect(const GrBackendProcessorFactory& factory, const GrProcessor&)
     : INHERITED(factory) {
  }
 
-void GLColorTableEffect::emitCode(GrGLShaderBuilder* builder,
-                                  const GrDrawEffect&,
-                                  EffectKey,
+void GLColorTableEffect::setData(const GrGLProgramDataManager& pdm, const GrProcessor& proc) {
+    // The textures are organized in a strip where the rows are ordered a, r, g, b.
+    float rgbaYValues[4];
+    const ColorTableEffect& cte = proc.cast<ColorTableEffect>();
+    if (cte.atlas()) {
+        SkScalar yDelta = cte.atlas()->getNormalizedTexelHeight();
+        rgbaYValues[3] = cte.atlas()->getYOffset(cte.atlasRow()) + SK_ScalarHalf * yDelta;
+        rgbaYValues[0] = rgbaYValues[3] + yDelta;
+        rgbaYValues[1] = rgbaYValues[0] + yDelta;
+        rgbaYValues[2] = rgbaYValues[1] + yDelta;
+    } else {
+        rgbaYValues[3] = 0.125;
+        rgbaYValues[0] = 0.375;
+        rgbaYValues[1] = 0.625;
+        rgbaYValues[2] = 0.875;        
+    }
+    pdm.set4fv(fRGBAYValuesUni, 1, rgbaYValues);
+}
+
+void GLColorTableEffect::emitCode(GrGLFPBuilder* builder,
+                                  const GrFragmentProcessor&,
+                                  const GrProcessorKey&,
                                   const char* outputColor,
                                   const char* inputColor,
                                   const TransformedCoordsArray&,
                                   const TextureSamplerArray& samplers) {
-
+    const char* yoffsets;
+    fRGBAYValuesUni = builder->addUniform(GrGLFPBuilder::kFragment_Visibility,
+                                          kVec4f_GrSLType, "yoffsets", &yoffsets);
     static const float kColorScaleFactor = 255.0f / 256.0f;
     static const float kColorOffsetFactor = 1.0f / 512.0f;
+    GrGLFPFragmentBuilder* fsBuilder = builder->getFragmentShaderBuilder();
     if (NULL == inputColor) {
         // the input color is solid white (all ones).
         static const float kMaxValue = kColorScaleFactor + kColorOffsetFactor;
-        builder->fsCodeAppendf("\t\tvec4 coord = vec4(%f, %f, %f, %f);\n",
+        fsBuilder->codeAppendf("\t\tvec4 coord = vec4(%f, %f, %f, %f);\n",
                                kMaxValue, kMaxValue, kMaxValue, kMaxValue);
 
     } else {
-        builder->fsCodeAppendf("\t\tfloat nonZeroAlpha = max(%s.a, .0001);\n", inputColor);
-        builder->fsCodeAppendf("\t\tvec4 coord = vec4(%s.rgb / nonZeroAlpha, nonZeroAlpha);\n", inputColor);
-        builder->fsCodeAppendf("\t\tcoord = coord * %f + vec4(%f, %f, %f, %f);\n",
+        fsBuilder->codeAppendf("\t\tfloat nonZeroAlpha = max(%s.a, .0001);\n", inputColor);
+        fsBuilder->codeAppendf("\t\tvec4 coord = vec4(%s.rgb / nonZeroAlpha, nonZeroAlpha);\n", inputColor);
+        fsBuilder->codeAppendf("\t\tcoord = coord * %f + vec4(%f, %f, %f, %f);\n",
                               kColorScaleFactor,
                               kColorOffsetFactor, kColorOffsetFactor,
                               kColorOffsetFactor, kColorOffsetFactor);
     }
 
-    builder->fsCodeAppendf("\t\t%s.a = ", outputColor);
-    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.a, 0.125)");
-    builder->fsCodeAppend(";\n");
+    SkString coord;
 
-    builder->fsCodeAppendf("\t\t%s.r = ", outputColor);
-    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.r, 0.375)");
-    builder->fsCodeAppend(";\n");
+    fsBuilder->codeAppendf("\t\t%s.a = ", outputColor);
+    coord.printf("vec2(coord.a, %s.a)", yoffsets);
+    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->codeAppend(";\n");
 
-    builder->fsCodeAppendf("\t\t%s.g = ", outputColor);
-    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.g, 0.625)");
-    builder->fsCodeAppend(";\n");
+    fsBuilder->codeAppendf("\t\t%s.r = ", outputColor);
+    coord.printf("vec2(coord.r, %s.r)", yoffsets);
+    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->codeAppend(";\n");
 
-    builder->fsCodeAppendf("\t\t%s.b = ", outputColor);
-    builder->fsAppendTextureLookup(samplers[0], "vec2(coord.b, 0.875)");
-    builder->fsCodeAppend(";\n");
+    fsBuilder->codeAppendf("\t\t%s.g = ", outputColor);
+    coord.printf("vec2(coord.g, %s.g)", yoffsets);
+    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->codeAppend(";\n");
 
-    builder->fsCodeAppendf("\t\t%s.rgb *= %s.a;\n", outputColor, outputColor);
-}
+    fsBuilder->codeAppendf("\t\t%s.b = ", outputColor);
+    coord.printf("vec2(coord.b, %s.b)", yoffsets);
+    fsBuilder->appendTextureLookup(samplers[0], coord.c_str());
+    fsBuilder->codeAppend(";\n");
 
-GrGLEffect::EffectKey GLColorTableEffect::GenKey(const GrDrawEffect&, const GrGLCaps&) {
-    return 0;
+    fsBuilder->codeAppendf("\t\t%s.rgb *= %s.a;\n", outputColor, outputColor);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+GrFragmentProcessor* ColorTableEffect::Create(GrContext* context, SkBitmap bitmap, unsigned flags) {
 
-ColorTableEffect::ColorTableEffect(GrTexture* texture, unsigned flags)
+    GrTextureStripAtlas::Desc desc;
+    desc.fWidth  = bitmap.width();
+    desc.fHeight = 128;
+    desc.fRowHeight = bitmap.height();
+    desc.fContext = context;
+    desc.fConfig = SkImageInfo2GrPixelConfig(bitmap.info());
+    GrTextureStripAtlas* atlas = GrTextureStripAtlas::GetAtlas(desc);
+    int row = atlas->lockRow(bitmap);
+    SkAutoTUnref<GrTexture> texture;
+    if (-1 == row) {
+        atlas = NULL;
+        // Passing params=NULL because this effect does no tiling or filtering.
+        texture.reset(GrRefCachedBitmapTexture(context, bitmap, NULL));
+    } else {
+        texture.reset(SkRef(atlas->getTexture()));
+    }
+
+    return SkNEW_ARGS(ColorTableEffect, (texture, atlas, row, flags));
+}
+
+ColorTableEffect::ColorTableEffect(GrTexture* texture, GrTextureStripAtlas* atlas, int row,
+                                   unsigned flags)
     : fTextureAccess(texture, "a")
-    , fFlags(flags) {
+    , fFlags(flags)
+    , fAtlas(atlas)
+    , fRow(row) {
+
     this->addTextureAccess(&fTextureAccess);
 }
 
 ColorTableEffect::~ColorTableEffect() {
+    if (fAtlas) {
+        fAtlas->unlockRow(fRow);
+    }
 }
 
-const GrBackendEffectFactory&  ColorTableEffect::getFactory() const {
-    return GrTBackendEffectFactory<ColorTableEffect>::getInstance();
+const GrBackendFragmentProcessorFactory&  ColorTableEffect::getFactory() const {
+    return GrTBackendFragmentProcessorFactory<ColorTableEffect>::getInstance();
 }
 
-bool ColorTableEffect::onIsEqual(const GrEffect& sBase) const {
-    return this->texture(0) == sBase.texture(0);
+bool ColorTableEffect::onIsEqual(const GrFragmentProcessor& other) const {
+    // For non-atlased instances, the texture (compared by base class) is sufficient to
+    // differentiate different tables. For atlased instances we ensure they are using the
+    // same row.
+    const ColorTableEffect& that = other.cast<ColorTableEffect>();
+    SkASSERT(SkToBool(fAtlas) == SkToBool(that.fAtlas));
+    // Ok to always do this comparison since both would be -1 if non-atlased.
+    return fRow == that.fRow;
 }
 
-void ColorTableEffect::getConstantColorComponents(GrColor* color, uint32_t* validFlags) const {
+void ColorTableEffect::onComputeInvariantOutput(InvariantOutput* inout) const {
     // If we kept the table in the effect then we could actually run known inputs through the
     // table.
+    uint8_t invalidateFlags = 0;
     if (fFlags & SkTable_ColorFilter::kR_Flag) {
-        *validFlags &= ~kR_GrColorComponentFlag;
+        invalidateFlags |= kR_GrColorComponentFlag;
     }
     if (fFlags & SkTable_ColorFilter::kG_Flag) {
-        *validFlags &= ~kG_GrColorComponentFlag;
+        invalidateFlags |= kG_GrColorComponentFlag;
     }
     if (fFlags & SkTable_ColorFilter::kB_Flag) {
-        *validFlags &= ~kB_GrColorComponentFlag;
+        invalidateFlags |= kB_GrColorComponentFlag;
     }
     if (fFlags & SkTable_ColorFilter::kA_Flag) {
-        *validFlags &= ~kA_GrColorComponentFlag;
+        invalidateFlags |= kA_GrColorComponentFlag;
     }
+    inout->invalidateComponents(invalidateFlags, InvariantOutput::kWill_ReadInput);
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GR_DEFINE_EFFECT_TEST(ColorTableEffect);
+GR_DEFINE_FRAGMENT_PROCESSOR_TEST(ColorTableEffect);
 
-GrEffectRef* ColorTableEffect::TestCreate(SkRandom* random,
-                                          GrContext* context,
-                                          const GrDrawTargetCaps&,
-                                          GrTexture* textures[]) {
-    static unsigned kAllFlags = SkTable_ColorFilter::kR_Flag | SkTable_ColorFilter::kG_Flag |
-                                SkTable_ColorFilter::kB_Flag | SkTable_ColorFilter::kA_Flag;
-    return ColorTableEffect::Create(textures[GrEffectUnitTest::kAlphaTextureIdx], kAllFlags);
+GrFragmentProcessor* ColorTableEffect::TestCreate(SkRandom* random,
+                                                  GrContext* context,
+                                                  const GrDrawTargetCaps&,
+                                                  GrTexture* textures[]) {
+    int flags = 0;
+    uint8_t luts[256][4];
+    do {
+        for (int i = 0; i < 4; ++i) {
+            flags |= random->nextBool() ? (1  << i): 0;
+        }
+    } while (!flags);
+    for (int i = 0; i < 4; ++i) {
+        if (flags & (1 << i)) {
+            for (int j = 0; j < 256; ++j) {
+                luts[j][i] = SkToU8(random->nextBits(8));
+            }
+        }
+    }
+    SkAutoTUnref<SkColorFilter> filter(SkTableColorFilter::CreateARGB(
+        (flags & (1 << 0)) ? luts[0] : NULL,
+        (flags & (1 << 1)) ? luts[1] : NULL,
+        (flags & (1 << 2)) ? luts[2] : NULL,
+        (flags & (1 << 3)) ? luts[3] : NULL
+    ));
+    return filter->asFragmentProcessor(context);
 }
 
-GrEffectRef* SkTable_ColorFilter::asNewEffect(GrContext* context) const {
+GrFragmentProcessor* SkTable_ColorFilter::asFragmentProcessor(GrContext* context) const {
     SkBitmap bitmap;
-    GrEffectRef* effect = NULL;
     this->asComponentTable(&bitmap);
-    // passing NULL because this effect does no tiling or filtering.
-    GrTexture* texture = GrLockAndRefCachedBitmapTexture(context, bitmap, NULL);
-    if (NULL != texture) {
-        effect = ColorTableEffect::Create(texture, fFlags);
 
-        // Unlock immediately, this is not great, but we don't have a way of
-        // knowing when else to unlock it currently. TODO: Remove this when
-        // unref becomes the unlock replacement for all types of textures.
-        GrUnlockAndUnrefCachedBitmapTexture(texture);
-    }
-    return effect;
+    return ColorTableEffect::Create(context, bitmap, fFlags);
 }
 
 #endif // SK_SUPPORT_GPU

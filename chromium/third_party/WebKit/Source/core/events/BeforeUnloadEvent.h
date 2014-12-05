@@ -27,9 +27,10 @@
 
 #include "core/events/Event.h"
 
-namespace WebCore {
+namespace blink {
 
-class BeforeUnloadEvent FINAL : public Event {
+class BeforeUnloadEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~BeforeUnloadEvent();
 
@@ -38,14 +39,14 @@ public:
         return adoptRefWillBeNoop(new BeforeUnloadEvent);
     }
 
-    virtual bool isBeforeUnloadEvent() const OVERRIDE;
+    virtual bool isBeforeUnloadEvent() const override;
 
     void setReturnValue(const String& returnValue) { m_returnValue = returnValue; }
     String returnValue() const { return m_returnValue; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::BeforeUnloadEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::BeforeUnloadEvent; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     BeforeUnloadEvent();
@@ -55,6 +56,6 @@ private:
 
 DEFINE_EVENT_TYPE_CASTS(BeforeUnloadEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BeforeUnloadEvent_h

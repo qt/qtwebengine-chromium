@@ -30,11 +30,12 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEConvolveMatrix.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<EdgeModeType>();
 
-class SVGFEConvolveMatrixElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEConvolveMatrixElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEConvolveMatrixElement);
 
@@ -55,10 +56,10 @@ private:
     explicit SVGFEConvolveMatrixElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual bool setFilterEffectAttribute(FilterEffect*, const QualifiedName&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtr<SVGAnimatedNumber> m_bias;
     RefPtr<SVGAnimatedNumber> m_divisor;
@@ -72,6 +73,6 @@ private:
     RefPtr<SVGAnimatedInteger> m_targetY;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEConvolveMatrixElement_h

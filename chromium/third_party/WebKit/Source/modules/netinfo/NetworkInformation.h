@@ -5,43 +5,41 @@
 #ifndef NetworkInformation_h
 #define NetworkInformation_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/page/NetworkStateNotifier.h"
 #include "public/platform/WebConnectionType.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 
-class NetworkInformation FINAL
-    : public RefCountedWillBeRefCountedGarbageCollected<NetworkInformation>
-    , public ScriptWrappable
+class NetworkInformation final
+    : public RefCountedGarbageCollectedWillBeGarbageCollectedFinalized<NetworkInformation>
     , public ActiveDOMObject
     , public EventTargetWithInlineData
     , public NetworkStateNotifier::NetworkStateObserver {
-    REFCOUNTED_EVENT_TARGET(NetworkInformation);
+    DEFINE_EVENT_TARGET_REFCOUNTING_WILL_BE_REMOVED(RefCountedGarbageCollected<NetworkInformation>);
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NetworkInformation);
-
 public:
-    static PassRefPtrWillBeRawPtr<NetworkInformation> create(ExecutionContext*);
+    static NetworkInformation* create(ExecutionContext*);
     virtual ~NetworkInformation();
 
     String type() const;
 
-    virtual void connectionTypeChange(blink::WebConnectionType) OVERRIDE;
+    virtual void connectionTypeChange(WebConnectionType) override;
 
     // EventTarget overrides.
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
-    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) OVERRIDE;
-    virtual bool removeEventListener(const AtomicString& eventType, EventListener*, bool useCapture = false) OVERRIDE;
-    virtual void removeAllEventListeners() OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
+    virtual bool addEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    virtual bool removeEventListener(const AtomicString& eventType, PassRefPtr<EventListener>, bool useCapture = false) override;
+    virtual void removeAllEventListeners() override;
 
     // ActiveDOMObject overrides.
-    virtual bool hasPendingActivity() const OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual bool hasPendingActivity() const override;
+    virtual void stop() override;
 
     DEFINE_ATTRIBUTE_EVENT_LISTENER(typechange);
 
@@ -51,7 +49,7 @@ private:
     void stopObserving();
 
     // Touched only on context thread.
-    blink::WebConnectionType m_type;
+    WebConnectionType m_type;
 
     // Whether this object is listening for events from NetworkStateNotifier.
     bool m_observing;
@@ -60,6 +58,6 @@ private:
     bool m_contextStopped;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NetworkInformation_h

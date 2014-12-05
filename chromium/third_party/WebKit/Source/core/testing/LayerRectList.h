@@ -31,25 +31,25 @@
 #ifndef LayerRectList_h
 #define LayerRectList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClientRect;
 class ClientRectList;
 class LayerRect;
 class Node;
 
-class LayerRectList FINAL : public RefCountedWillBeGarbageCollected<LayerRectList> {
-    DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(LayerRectList);
+class LayerRectList final : public GarbageCollected<LayerRectList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<LayerRectList> create()
+    static LayerRectList* create()
     {
-        return adoptRefWillBeNoop(new LayerRectList);
+        return new LayerRectList;
     }
 
     unsigned length() const;
@@ -61,9 +61,9 @@ public:
 private:
     LayerRectList();
 
-    WillBeHeapVector<RefPtrWillBeMember<LayerRect> > m_list;
+    HeapVector<Member<LayerRect> > m_list;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ClientRectList_h

@@ -46,6 +46,7 @@ protected:
 
         SkPaint labelP;
         labelP.setAntiAlias(true);
+        sk_tool_utils::set_portable_typeface(&labelP);
 
         static const SkColor kSolidColors[] = {
             SK_ColorTRANSPARENT,
@@ -123,17 +124,17 @@ private:
     SkCanvas* possiblyCreateTempCanvas(SkCanvas* baseCanvas, int w, int h) {
         SkCanvas* tempCanvas = NULL;
 #if SK_SUPPORT_GPU
-        GrRenderTarget* rt = baseCanvas->getDevice()->accessRenderTarget();
-        if (NULL != rt) {
-            GrContext* context = rt->getContext();
-            GrTextureDesc desc;
+        GrContext* context = baseCanvas->getGrContext();
+        if (context) {
+            GrSurfaceDesc desc;
             desc.fWidth = w;
             desc.fHeight = h;
-            desc.fConfig = rt->config();
-            desc.fFlags = kRenderTarget_GrTextureFlagBit;
+            desc.fConfig = SkImageInfo2GrPixelConfig(baseCanvas->imageInfo());
+            desc.fFlags = kRenderTarget_GrSurfaceFlag;
             SkAutoTUnref<GrSurface> surface(context->createUncachedTexture(desc, NULL, 0));
-            SkAutoTUnref<SkBaseDevice> device(SkGpuDevice::Create(surface.get()));
-            if (NULL != device.get()) {
+            SkAutoTUnref<SkBaseDevice> device(SkGpuDevice::Create(surface.get(),
+                                          SkSurfaceProps(SkSurfaceProps::kLegacyFontHost_InitType)));
+            if (device.get()) {
                 tempCanvas = SkNEW_ARGS(SkCanvas, (device.get()));
             }
         }

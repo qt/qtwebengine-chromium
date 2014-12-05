@@ -16,15 +16,37 @@
 #include "base/mac/scoped_ioplugininterface.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
-#import "media/video/capture/mac/avfoundation_glue.h"
+#import "media/base/mac/avfoundation_glue.h"
 #import "media/video/capture/mac/platform_video_capturing_mac.h"
 #import "media/video/capture/mac/video_capture_device_avfoundation_mac.h"
 #import "media/video/capture/mac/video_capture_device_qtkit_mac.h"
+#include "ui/gfx/size.h"
+
+@implementation DeviceNameAndTransportType
+
+- (id)initWithName:(NSString*)deviceName transportType:(int32_t)transportType {
+  if (self = [super init]) {
+    deviceName_.reset([deviceName copy]);
+    transportType_ = transportType;
+  }
+  return self;
+}
+
+- (NSString*)deviceName {
+  return deviceName_;
+}
+
+- (int32_t)transportType {
+  return transportType_;
+}
+
+@end  // @implementation DeviceNameAndTransportType
 
 namespace media {
 
-const int kMinFrameRate = 1;
-const int kMaxFrameRate = 30;
+// Mac specific limits for minimum and maximum frame rate.
+const float kMinFrameRate = 1.0f;
+const float kMaxFrameRate = 30.0f;
 
 // In device identifiers, the USB VID and PID are stored in 4 bytes each.
 const size_t kVidPidSize = 4;
@@ -73,24 +95,19 @@ typedef struct IOUSBInterfaceDescriptor {
   UInt8 bUnitID;
 } IOUSBInterfaceDescriptor;
 
-// TODO(ronghuawu): Replace this with CapabilityList::GetBestMatchedCapability.
-void GetBestMatchSupportedResolution(int* width, int* height) {
+static void GetBestMatchSupportedResolution(gfx::Size* resolution) {
   int min_diff = kint32max;
-  int matched_width = *width;
-  int matched_height = *height;
-  int desired_res_area = *width * *height;
+  const int desired_area = resolution->GetArea();
   for (size_t i = 0; i < arraysize(kWellSupportedResolutions); ++i) {
-    int area = kWellSupportedResolutions[i]->width *
-               kWellSupportedResolutions[i]->height;
-    int diff = std::abs(desired_res_area - area);
+    const int area = kWellSupportedResolutions[i]->width *
+                     kWellSupportedResolutions[i]->height;
+    const int diff = std::abs(desired_area - area);
     if (diff < min_diff) {
       min_diff = diff;
-      matched_width = kWellSupportedResolutions[i]->width;
-      matched_height = kWellSupportedResolutions[i]->height;
+      resolution->SetSize(kWellSupportedResolutions[i]->width,
+                          kWellSupportedResolutions[i]->height);
     }
   }
-  *width = matched_width;
-  *height = matched_height;
 }
 
 // Tries to create a user-side device interface for a given USB device. Returns
@@ -307,10 +324,14 @@ static void SetAntiFlickerInUsbDevice(const int vendor_id,
 }
 
 const std::string VideoCaptureDevice::Name::GetModel() const {
-  // Both PID and VID are 4 characters.
-  if (unique_id_.size() < 2 * kVidPidSize) {
+  // Skip the AVFoundation's not USB nor built-in devices.
+  if (capture_api_type() == AVFOUNDATION && transport_type() != USB_OR_BUILT_IN)
     return "";
-  }
+  if (capture_api_type() == DECKLINK)
+    return "";
+  // Both PID and VID are 4 characters.
+  if (unique_id_.size() < 2 * kVidPidSize)
+    return "";
 
   // The last characters of device id is a concatenation of VID and then PID.
   const size_t vid_location = unique_id_.size() - 2 * kVidPidSize;
@@ -328,7 +349,9 @@ VideoCaptureDeviceMac::VideoCaptureDeviceMac(const Name& device_name)
       state_(kNotInitialized),
       capture_device_(nil),
       weak_factory_(this) {
-  final_resolution_selected_ = AVFoundationGlue::IsAVFoundationSupported();
+  // Avoid reconfiguring AVFoundation or blacklisted devices.
+  final_resolution_selected_ = AVFoundationGlue::IsAVFoundationSupported() ||
+      device_name.is_blacklisted();
 }
 
 VideoCaptureDeviceMac::~VideoCaptureDeviceMac() {
@@ -343,15 +366,13 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   if (state_ != kIdle) {
     return;
   }
-  int width = params.requested_format.frame_size.width();
-  int height = params.requested_format.frame_size.height();
-  int frame_rate = params.requested_format.frame_rate;
 
   // QTKit API can scale captured frame to any size requested, which would lead
   // to undesired aspect ratio changes. Try to open the camera with a known
   // supported format and let the client crop/pad the captured frames.
+  gfx::Size resolution = params.requested_format.frame_size;
   if (!AVFoundationGlue::IsAVFoundationSupported())
-    GetBestMatchSupportedResolution(&width, &height);
+    GetBestMatchSupportedResolution(&resolution);
 
   client_ = client.Pass();
   if (device_name_.capture_api_type() == Name::AVFOUNDATION)
@@ -367,13 +388,11 @@ void VideoCaptureDeviceMac::AllocateAndStart(
     SetErrorState("Could not open capture device.");
     return;
   }
-  if (frame_rate < kMinFrameRate)
-    frame_rate = kMinFrameRate;
-  else if (frame_rate > kMaxFrameRate)
-    frame_rate = kMaxFrameRate;
 
-  capture_format_.frame_size.SetSize(width, height);
-  capture_format_.frame_rate = frame_rate;
+  capture_format_.frame_size = resolution;
+  capture_format_.frame_rate =
+      std::max(kMinFrameRate,
+               std::min(params.requested_format.frame_rate, kMaxFrameRate));
   capture_format_.pixel_format = PIXEL_FORMAT_UYVY;
 
   // QTKit: Set the capture resolution only if this is VGA or smaller, otherwise
@@ -383,8 +402,8 @@ void VideoCaptureDeviceMac::AllocateAndStart(
   // latency, because the webcam will need to be reopened if its default
   // resolution is not HD or VGA.
   // AVfoundation is configured for all resolutions.
-  if (AVFoundationGlue::IsAVFoundationSupported() || width <= kVGA.width ||
-      height <= kVGA.height) {
+  if (AVFoundationGlue::IsAVFoundationSupported() ||
+      resolution.width() <= kVGA.width || resolution.height() <= kVGA.height) {
     if (!UpdateCaptureResolution())
       return;
   }
@@ -415,7 +434,6 @@ void VideoCaptureDeviceMac::AllocateAndStart(
 void VideoCaptureDeviceMac::StopAndDeAllocate() {
   DCHECK(task_runner_->BelongsToCurrentThread());
   DCHECK(state_ == kCapturing || state_ == kError) << state_;
-  [capture_device_ stopCapture];
 
   [capture_device_ setCaptureDevice:nil];
   [capture_device_ setFrameReceiver:nil];
@@ -535,7 +553,6 @@ void VideoCaptureDeviceMac::ReceiveError(const std::string& reason) {
 
 void VideoCaptureDeviceMac::SetErrorState(const std::string& reason) {
   DCHECK(task_runner_->BelongsToCurrentThread());
-  DLOG(ERROR) << reason;
   state_ = kError;
   client_->OnError(reason);
 }
@@ -547,13 +564,13 @@ void VideoCaptureDeviceMac::LogMessage(const std::string& message) {
 }
 
 bool VideoCaptureDeviceMac::UpdateCaptureResolution() {
- if (![capture_device_ setCaptureHeight:capture_format_.frame_size.height()
-                                  width:capture_format_.frame_size.width()
-                              frameRate:capture_format_.frame_rate]) {
-   ReceiveError("Could not configure capture device.");
-   return false;
- }
- return true;
+  if (![capture_device_ setCaptureHeight:capture_format_.frame_size.height()
+                                   width:capture_format_.frame_size.width()
+                               frameRate:capture_format_.frame_rate]) {
+    ReceiveError("Could not configure capture device.");
+    return false;
+  }
+  return true;
 }
 
 } // namespace media

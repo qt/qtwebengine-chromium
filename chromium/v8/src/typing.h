@@ -10,11 +10,11 @@
 #include "src/allocation.h"
 #include "src/ast.h"
 #include "src/compiler.h"
+#include "src/effects.h"
+#include "src/scopes.h"
 #include "src/type-info.h"
 #include "src/types.h"
-#include "src/effects.h"
 #include "src/zone.h"
-#include "src/scopes.h"
 
 namespace v8 {
 namespace internal {
@@ -72,10 +72,10 @@ class AstTyper: public AstVisitor {
            var->IsParameter() ? parameter_index(var->index()) : kNoVar;
   }
 
-  void VisitDeclarations(ZoneList<Declaration*>* declarations);
-  void VisitStatements(ZoneList<Statement*>* statements);
+  void VisitDeclarations(ZoneList<Declaration*>* declarations) OVERRIDE;
+  void VisitStatements(ZoneList<Statement*>* statements) OVERRIDE;
 
-#define DECLARE_VISIT(type) virtual void Visit##type(type* node);
+#define DECLARE_VISIT(type) virtual void Visit##type(type* node) OVERRIDE;
   AST_NODE_LIST(DECLARE_VISIT)
 #undef DECLARE_VISIT
 

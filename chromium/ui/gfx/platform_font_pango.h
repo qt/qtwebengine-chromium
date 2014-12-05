@@ -11,6 +11,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
+#include "ui/gfx/font_render_params.h"
 #include "ui/gfx/platform_font.h"
 
 class SkTypeface;
@@ -22,7 +23,7 @@ class GFX_EXPORT PlatformFontPango : public PlatformFont {
  public:
   PlatformFontPango();
   explicit PlatformFontPango(NativeFont native_font);
-  PlatformFontPango(const std::string& font_name, int font_size);
+  PlatformFontPango(const std::string& font_name, int font_size_pixels);
 
   // Converts |gfx_font| to a new pango font. Free the returned font with
   // pango_font_description_free().
@@ -34,52 +35,47 @@ class GFX_EXPORT PlatformFontPango : public PlatformFont {
   static void ReloadDefaultFont();
 
 #if defined(OS_CHROMEOS)
-  // Sets the default font.
+  // Sets the default font. |font_description| is a Pango font description that
+  // will be passed to pango_font_description_from_string().
   static void SetDefaultFontDescription(const std::string& font_description);
 #endif
 
-  // Position as an offset from the height of the drawn text, used to draw
-  // an underline. This is a negative number, so the underline would be
-  // drawn at y + height + underline_position.
-  double underline_position() const;
-  // The thickness to draw the underline.
-  double underline_thickness() const;
-
   // Overridden from PlatformFont:
-  virtual Font DeriveFont(int size_delta, int style) const OVERRIDE;
-  virtual int GetHeight() const OVERRIDE;
-  virtual int GetBaseline() const OVERRIDE;
-  virtual int GetCapHeight() const OVERRIDE;
-  virtual int GetExpectedTextWidth(int length) const OVERRIDE;
-  virtual int GetStyle() const OVERRIDE;
-  virtual std::string GetFontName() const OVERRIDE;
-  virtual std::string GetActualFontNameForTesting() const OVERRIDE;
-  virtual int GetFontSize() const OVERRIDE;
-  virtual NativeFont GetNativeFont() const OVERRIDE;
+  Font DeriveFont(int size_delta, int style) const override;
+  int GetHeight() const override;
+  int GetBaseline() const override;
+  int GetCapHeight() const override;
+  int GetExpectedTextWidth(int length) const override;
+  int GetStyle() const override;
+  std::string GetFontName() const override;
+  std::string GetActualFontNameForTesting() const override;
+  int GetFontSize() const override;
+  const FontRenderParams& GetFontRenderParams() const override;
+  NativeFont GetNativeFont() const override;
 
  private:
   // Create a new instance of this object with the specified properties. Called
   // from DeriveFont.
   PlatformFontPango(const skia::RefPtr<SkTypeface>& typeface,
                     const std::string& name,
-                    int size,
-                    int style);
-  virtual ~PlatformFontPango();
+                    int size_pixels,
+                    int style,
+                    const FontRenderParams& params);
+  ~PlatformFontPango() override;
 
-  // Returns a Pango font description (suitable for parsing by
-  // pango_font_description_from_string()) for the default UI font.
-  static std::string GetDefaultFont();
-
-  // Initialize this object.
-  void InitWithNameAndSize(const std::string& font_name, int font_size);
-  void InitWithTypefaceNameSizeAndStyle(
+  // Initializes this object based on the passed-in details. If |typeface| is
+  // empty, a new typeface will be loaded.
+  void InitFromDetails(
       const skia::RefPtr<SkTypeface>& typeface,
       const std::string& font_family,
-      int font_size,
-      int style);
+      int font_size_pixels,
+      int style,
+      const FontRenderParams& params);
+
+  // Initializes this object as a copy of another PlatformFontPango.
   void InitFromPlatformFont(const PlatformFontPango* other);
 
-  // Potentially slow call to get pango metrics (average width, underline info).
+  // Potentially slow call to get pango metrics (average width).
   void InitPangoMetrics();
 
   // Setup a Skia context to use the current typeface.
@@ -93,28 +89,30 @@ class GFX_EXPORT PlatformFontPango : public PlatformFont {
 
   skia::RefPtr<SkTypeface> typeface_;
 
-  // Additional information about the face
+  // Additional information about the face.
   // Skia actually expects a family name and not a font name.
   std::string font_family_;
   int font_size_pixels_;
   int style_;
 
+  // Information describing how the font should be rendered.
+  FontRenderParams font_render_params_;
+
   // Cached metrics, generated at construction.
-  int height_pixels_;
   int ascent_pixels_;
+  int height_pixels_;
   int cap_height_pixels_;
 
   // The pango metrics are much more expensive so we wait until we need them
   // to compute them.
   bool pango_metrics_inited_;
   double average_width_pixels_;
-  double underline_position_pixels_;
-  double underline_thickness_pixels_;
 
   // The default font, used for the default constructor.
   static Font* default_font_;
 
 #if defined(OS_CHROMEOS)
+  // A Pango font description.
   static std::string* default_font_description_;
 #endif
 

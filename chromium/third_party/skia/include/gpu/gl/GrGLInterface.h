@@ -170,6 +170,7 @@ public:
         GLPtr<GrGLCompressedTexImage2DProc> fCompressedTexImage2D;
         GLPtr<GrGLCompressedTexSubImage2DProc> fCompressedTexSubImage2D;
         GLPtr<GrGLCopyTexSubImage2DProc> fCopyTexSubImage2D;
+        GLPtr<GrGLCopyTextureCHROMIUMProc> fCopyTextureCHROMIUM;
         GLPtr<GrGLCreateProgramProc> fCreateProgram;
         GLPtr<GrGLCreateShaderProc> fCreateShader;
         GLPtr<GrGLCullFaceProc> fCullFace;
@@ -310,6 +311,9 @@ public:
         GLPtr<GrGLUnmapBufferSubDataProc> fUnmapBufferSubData;
         GLPtr<GrGLUnmapTexSubImage2DProc> fUnmapTexSubImage2D;
         GLPtr<GrGLUseProgramProc> fUseProgram;
+        GLPtr<GrGLVertexAttrib1fProc> fVertexAttrib1f;
+        GLPtr<GrGLVertexAttrib2fvProc> fVertexAttrib2fv;
+        GLPtr<GrGLVertexAttrib3fvProc> fVertexAttrib3fv;
         GLPtr<GrGLVertexAttrib4fvProc> fVertexAttrib4fv;
         GLPtr<GrGLVertexAttribPointerProc> fVertexAttribPointer;
         GLPtr<GrGLViewportProc> fViewport;
@@ -317,55 +321,32 @@ public:
         // Experimental: Functions for GL_NV_path_rendering. These will be
         // alphabetized with the above functions once this is fully supported
         // (and functions we are unlikely to use will possibly be omitted).
+        GLPtr<GrGLGetProgramResourceLocationProc> fGetProgramResourceLocation;
         GLPtr<GrGLPathCommandsProc> fPathCommands;
         GLPtr<GrGLPathCoordsProc> fPathCoords;
-        GLPtr<GrGLPathSubCommandsProc> fPathSubCommands;
-        GLPtr<GrGLPathSubCoordsProc> fPathSubCoords;
-        GLPtr<GrGLPathStringProc> fPathString;
-        GLPtr<GrGLPathGlyphsProc> fPathGlyphs;
-        GLPtr<GrGLPathGlyphRangeProc> fPathGlyphRange;
-        GLPtr<GrGLWeightPathsProc> fWeightPaths;
-        GLPtr<GrGLCopyPathProc> fCopyPath;
-        GLPtr<GrGLInterpolatePathsProc> fInterpolatePaths;
-        GLPtr<GrGLTransformPathProc> fTransformPath;
-        GLPtr<GrGLPathParameterivProc> fPathParameteriv;
         GLPtr<GrGLPathParameteriProc> fPathParameteri;
-        GLPtr<GrGLPathParameterfvProc> fPathParameterfv;
         GLPtr<GrGLPathParameterfProc> fPathParameterf;
-        GLPtr<GrGLPathDashArrayProc> fPathDashArray;
         GLPtr<GrGLGenPathsProc> fGenPaths;
         GLPtr<GrGLDeletePathsProc> fDeletePaths;
         GLPtr<GrGLIsPathProc> fIsPath;
         GLPtr<GrGLPathStencilFuncProc> fPathStencilFunc;
-        GLPtr<GrGLPathStencilDepthOffsetProc> fPathStencilDepthOffset;
         GLPtr<GrGLStencilFillPathProc> fStencilFillPath;
         GLPtr<GrGLStencilStrokePathProc> fStencilStrokePath;
         GLPtr<GrGLStencilFillPathInstancedProc> fStencilFillPathInstanced;
         GLPtr<GrGLStencilStrokePathInstancedProc> fStencilStrokePathInstanced;
-        GLPtr<GrGLPathCoverDepthFuncProc> fPathCoverDepthFunc;
-        GLPtr<GrGLPathColorGenProc> fPathColorGen;
         GLPtr<GrGLPathTexGenProc> fPathTexGen;
-        GLPtr<GrGLPathFogGenProc> fPathFogGen;
         GLPtr<GrGLCoverFillPathProc> fCoverFillPath;
         GLPtr<GrGLCoverStrokePathProc> fCoverStrokePath;
         GLPtr<GrGLCoverFillPathInstancedProc> fCoverFillPathInstanced;
         GLPtr<GrGLCoverStrokePathInstancedProc> fCoverStrokePathInstanced;
-        GLPtr<GrGLGetPathParameterivProc> fGetPathParameteriv;
-        GLPtr<GrGLGetPathParameterfvProc> fGetPathParameterfv;
-        GLPtr<GrGLGetPathCommandsProc> fGetPathCommands;
-        GLPtr<GrGLGetPathCoordsProc> fGetPathCoords;
-        GLPtr<GrGLGetPathDashArrayProc> fGetPathDashArray;
-        GLPtr<GrGLGetPathMetricsProc> fGetPathMetrics;
-        GLPtr<GrGLGetPathMetricRangeProc> fGetPathMetricRange;
-        GLPtr<GrGLGetPathSpacingProc> fGetPathSpacing;
-        GLPtr<GrGLGetPathColorGenivProc> fGetPathColorGeniv;
-        GLPtr<GrGLGetPathColorGenfvProc> fGetPathColorGenfv;
-        GLPtr<GrGLGetPathTexGenivProc> fGetPathTexGeniv;
-        GLPtr<GrGLGetPathTexGenfvProc> fGetPathTexGenfv;
-        GLPtr<GrGLIsPointInFillPathProc> fIsPointInFillPath;
-        GLPtr<GrGLIsPointInStrokePathProc> fIsPointInStrokePath;
-        GLPtr<GrGLGetPathLengthProc> fGetPathLength;
-        GLPtr<GrGLPointAlongPathProc> fPointAlongPath;
+        // NV_path_rendering v1.2
+        GLPtr<GrGLStencilThenCoverFillPathProc> fStencilThenCoverFillPath;
+        GLPtr<GrGLStencilThenCoverStrokePathProc> fStencilThenCoverStrokePath;
+        GLPtr<GrGLStencilThenCoverFillPathInstancedProc> fStencilThenCoverFillPathInstanced;
+        GLPtr<GrGLStencilThenCoverStrokePathInstancedProc> fStencilThenCoverStrokePathInstanced;
+        // NV_path_rendering v1.3
+        GLPtr<GrGLProgramPathFragmentInputGenProc> fProgramPathFragmentInputGen;
+        GLPtr<GrGLPathMemoryGlyphIndexArrayProc> fPathMemoryGlyphIndexArray;
     } fFunctions;
 
     // Per-GL func callback
@@ -373,6 +354,9 @@ public:
     GrGLInterfaceCallbackProc fCallback;
     GrGLInterfaceCallbackData fCallbackData;
 #endif
+
+    // This exists for internal testing.
+    virtual void abandon() const {}
 };
 
 #endif

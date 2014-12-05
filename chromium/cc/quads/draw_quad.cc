@@ -4,6 +4,7 @@
 
 #include "cc/quads/draw_quad.h"
 
+#include "base/debug/trace_event_argument.h"
 #include "base/logging.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
@@ -19,13 +20,7 @@
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/quads/tile_draw_quad.h"
 #include "cc/quads/yuv_video_draw_quad.h"
-#include "ui/gfx/quad_f.h"
-
-namespace {
-template<typename T> T* TypedCopy(const cc::DrawQuad* other) {
-  return new T(*T::MaterialCast(other));
-}
-}  // namespace
+#include "ui/gfx/geometry/quad_f.h"
 
 namespace cc {
 
@@ -62,91 +57,59 @@ void DrawQuad::SetAll(const SharedQuadState* shared_quad_state,
 DrawQuad::~DrawQuad() {
 }
 
-scoped_ptr<DrawQuad> DrawQuad::Copy(
-    const SharedQuadState* copied_shared_quad_state) const {
-  scoped_ptr<DrawQuad> copy_quad;
-  switch (material) {
-    case CHECKERBOARD:
-      copy_quad.reset(TypedCopy<CheckerboardDrawQuad>(this));
-      break;
-    case DEBUG_BORDER:
-      copy_quad.reset(TypedCopy<DebugBorderDrawQuad>(this));
-      break;
-    case IO_SURFACE_CONTENT:
-      copy_quad.reset(TypedCopy<IOSurfaceDrawQuad>(this));
-      break;
-    case PICTURE_CONTENT:
-      copy_quad.reset(TypedCopy<PictureDrawQuad>(this));
-      break;
-    case TEXTURE_CONTENT:
-      copy_quad.reset(TypedCopy<TextureDrawQuad>(this));
-      break;
-    case SOLID_COLOR:
-      copy_quad.reset(TypedCopy<SolidColorDrawQuad>(this));
-      break;
-    case TILED_CONTENT:
-      copy_quad.reset(TypedCopy<TileDrawQuad>(this));
-      break;
-    case STREAM_VIDEO_CONTENT:
-      copy_quad.reset(TypedCopy<StreamVideoDrawQuad>(this));
-      break;
-    case SURFACE_CONTENT:
-      copy_quad.reset(TypedCopy<SurfaceDrawQuad>(this));
-      break;
-    case YUV_VIDEO_CONTENT:
-      copy_quad.reset(TypedCopy<YUVVideoDrawQuad>(this));
-      break;
-    case RENDER_PASS:  // RenderPass quads have their own copy() method.
-    case INVALID:
-      LOG(FATAL) << "Invalid DrawQuad material " << material;
-      break;
-  }
-  copy_quad->shared_quad_state = copied_shared_quad_state;
-  return copy_quad.Pass();
-}
-
-scoped_ptr<base::Value> DrawQuad::AsValue() const {
-  scoped_ptr<base::DictionaryValue> value(new base::DictionaryValue());
+void DrawQuad::AsValueInto(base::debug::TracedValue* value) const {
   value->SetInteger("material", material);
-  value->Set("shared_state",
-             TracedValue::CreateIDRef(shared_quad_state).release());
+  TracedValue::SetIDRef(shared_quad_state, value, "shared_state");
 
-  value->Set("content_space_rect", MathUtil::AsValue(rect).release());
+  value->BeginArray("content_space_rect");
+  MathUtil::AddToTracedValue(rect, value);
+  value->EndArray();
+
   bool rect_is_clipped;
   gfx::QuadF rect_as_target_space_quad = MathUtil::MapQuad(
       shared_quad_state->content_to_target_transform,
       gfx::QuadF(rect),
       &rect_is_clipped);
-  value->Set("rect_as_target_space_quad",
-             MathUtil::AsValue(rect_as_target_space_quad).release());
+  value->BeginArray("rect_as_target_space_quad");
+  MathUtil::AddToTracedValue(rect_as_target_space_quad, value);
+  value->EndArray();
+
   value->SetBoolean("rect_is_clipped", rect_is_clipped);
 
-  value->Set("content_space_opaque_rect",
-             MathUtil::AsValue(opaque_rect).release());
+  value->BeginArray("content_space_opaque_rect");
+  MathUtil::AddToTracedValue(opaque_rect, value);
+  value->EndArray();
+
   bool opaque_rect_is_clipped;
   gfx::QuadF opaque_rect_as_target_space_quad = MathUtil::MapQuad(
       shared_quad_state->content_to_target_transform,
       gfx::QuadF(opaque_rect),
       &opaque_rect_is_clipped);
-  value->Set("opaque_rect_as_target_space_quad",
-             MathUtil::AsValue(opaque_rect_as_target_space_quad).release());
+  value->BeginArray("opaque_rect_as_target_space_quad");
+  MathUtil::AddToTracedValue(opaque_rect_as_target_space_quad, value);
+  value->EndArray();
+
   value->SetBoolean("opaque_rect_is_clipped", opaque_rect_is_clipped);
 
-  value->Set("content_space_visible_rect",
-             MathUtil::AsValue(visible_rect).release());
+  value->BeginArray("content_space_visible_rect");
+  MathUtil::AddToTracedValue(visible_rect, value);
+  value->EndArray();
+
   bool visible_rect_is_clipped;
   gfx::QuadF visible_rect_as_target_space_quad = MathUtil::MapQuad(
       shared_quad_state->content_to_target_transform,
       gfx::QuadF(visible_rect),
       &visible_rect_is_clipped);
-  value->Set("visible_rect_as_target_space_quad",
-             MathUtil::AsValue(visible_rect_as_target_space_quad).release());
+
+  value->BeginArray("visible_rect_as_target_space_quad");
+  MathUtil::AddToTracedValue(visible_rect_as_target_space_quad, value);
+  value->EndArray();
+
   value->SetBoolean("visible_rect_is_clipped", visible_rect_is_clipped);
 
   value->SetBoolean("needs_blending", needs_blending);
   value->SetBoolean("should_draw_with_blending", ShouldDrawWithBlending());
-  ExtendValue(value.get());
-  return value.PassAs<base::Value>();
+  ExtendValue(value);
 }
 
 }  // namespace cc

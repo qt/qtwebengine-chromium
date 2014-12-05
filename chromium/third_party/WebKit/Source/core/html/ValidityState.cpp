@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/ValidityState.h"
 
-namespace WebCore {
+namespace blink {
 
 String ValidityState::validationMessage() const
 {
@@ -49,6 +49,11 @@ bool ValidityState::patternMismatch() const
 bool ValidityState::tooLong() const
 {
     return m_control->tooLong();
+}
+
+bool ValidityState::tooShort() const
+{
+    return m_control->tooShort();
 }
 
 bool ValidityState::rangeUnderflow() const

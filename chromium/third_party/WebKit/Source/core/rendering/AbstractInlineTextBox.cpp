@@ -34,7 +34,7 @@
 #include "core/editing/TextIterator.h"
 #include "platform/text/TextBreakIterator.h"
 
-namespace WebCore {
+namespace blink {
 
 AbstractInlineTextBox::InlineToAbstractInlineTextBoxHashMap* AbstractInlineTextBox::gAbstractInlineTextBoxMap = 0;
 
@@ -90,14 +90,6 @@ LayoutRect AbstractInlineTextBox::bounds() const
     return m_renderText->localToAbsoluteQuad(boundaries).enclosingBoundingBox();
 }
 
-unsigned AbstractInlineTextBox::start() const
-{
-    if (!m_inlineTextBox)
-        return 0;
-
-    return m_inlineTextBox->start();
-}
-
 unsigned AbstractInlineTextBox::len() const
 {
     if (!m_inlineTextBox)
@@ -132,6 +124,11 @@ void AbstractInlineTextBox::wordBoundaries(Vector<WordBoundaries>& words) const
     String text = this->text();
     int len = text.length();
     TextBreakIterator* iterator = wordBreakIterator(text, 0, len);
+
+    // FIXME: When http://crbug.com/411764 is fixed, replace this with an ASSERT.
+    if (!iterator)
+        return;
+
     int pos = iterator->first();
     while (pos >= 0 && pos < len) {
         int next = iterator->next();
@@ -161,4 +158,4 @@ String AbstractInlineTextBox::text() const
     return result;
 }
 
-} // namespace WebCore
+} // namespace blink

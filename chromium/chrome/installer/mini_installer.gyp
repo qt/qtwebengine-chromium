@@ -39,10 +39,12 @@
             'mini_installer/configuration.h',
             'mini_installer/decompress.cc',
             'mini_installer/decompress.h',
+            'mini_installer/exit_code.h',
             'mini_installer/mini_installer.cc',
-            'mini_installer/mini_installer.h',
             'mini_installer/mini_installer.ico',
             'mini_installer/mini_installer.rc',
+            'mini_installer/mini_installer_constants.cc',
+            'mini_installer/mini_installer_constants.h',
             'mini_installer/mini_installer_exe_version.rc.version',
             'mini_installer/mini_installer_resource.h',
             'mini_installer/mini_string.cc',
@@ -196,7 +198,6 @@
                 ['disable_nacl==1', {
                   'inputs!': [
                     '<(PRODUCT_DIR)/nacl64.exe',
-                    '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
                     '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                     '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
                   ],
@@ -223,13 +224,18 @@
                     '<(PRODUCT_DIR)/icudtl.dat',
                   ],
                 }],
+                ['v8_use_external_startup_data == 1', {
+                  'inputs': [
+                    '<(PRODUCT_DIR)/natives_blob.bin',
+                    '<(PRODUCT_DIR)/snapshot_blob.bin',
+                  ],
+                }],
               ],
               'inputs': [
                 '<(create_installer_archive_py_path)',
                 '<(PRODUCT_DIR)/chrome.exe',
                 '<(PRODUCT_DIR)/chrome.dll',
                 '<(PRODUCT_DIR)/nacl64.exe',
-                '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.dll',
                 '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
                 '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
                 '<(PRODUCT_DIR)/locales/en-US.pak',
@@ -294,7 +300,6 @@
               ],
               'includes': [
                 '../../build/isolate.gypi',
-                'mini_installer_tests.isolate',
               ],
               'sources': [
                 'mini_installer_tests.isolate',

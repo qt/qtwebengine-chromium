@@ -39,15 +39,15 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementDescriptor;
 class CustomElementMicrotaskImportStep;
+class CustomElementMicrotaskStep;
 class CustomElementRegistrationContext;
-class Element;
 class HTMLImportChild;
 
-class CustomElementScheduler FINAL : public NoBaseWillBeGarbageCollected<CustomElementScheduler> {
+class CustomElementScheduler final : public NoBaseWillBeGarbageCollected<CustomElementScheduler> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(CustomElementScheduler);
 public:
 
@@ -60,27 +60,12 @@ public:
     static void microtaskDispatcherDidFinish();
     static void callbackDispatcherDidFinish();
 
-    void trace(Visitor*);
-
 private:
     CustomElementScheduler() { }
 
-    static CustomElementScheduler& instance();
-
-    CustomElementCallbackQueue& ensureCallbackQueue(PassRefPtrWillBeRawPtr<Element>);
-    CustomElementCallbackQueue& schedule(PassRefPtrWillBeRawPtr<Element>);
-
-    // FIXME: Consider moving the element's callback queue to
-    // ElementRareData. Then the scheduler can become completely
-    // static.
-    void clearElementCallbackQueueMap();
-
-    // The element -> callback queue map is populated by the scheduler
-    // and owns the lifetimes of the CustomElementCallbackQueues.
-    typedef WillBeHeapHashMap<RawPtrWillBeMember<Element>, OwnPtrWillBeMember<CustomElementCallbackQueue> > ElementCallbackQueueMap;
-    ElementCallbackQueueMap m_elementCallbackQueueMap;
+    static void enqueueMicrotaskStep(Document&, PassOwnPtrWillBeRawPtr<CustomElementMicrotaskStep>, bool importIsSync = true);
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementScheduler_h

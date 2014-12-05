@@ -31,12 +31,12 @@
 #ifndef ErrorEvent_h
 #define ErrorEvent_h
 
-#include "bindings/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
 #include "core/events/Event.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct ErrorEventInit : public EventInit {
     ErrorEventInit();
@@ -47,7 +47,8 @@ struct ErrorEventInit : public EventInit {
     unsigned colno;
 };
 
-class ErrorEvent FINAL : public Event {
+class ErrorEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<ErrorEvent> create()
     {
@@ -76,13 +77,13 @@ public:
     // 'messageForConsole' is not exposed to JavaScript, and prefers 'm_unsanitizedMessage'.
     const String& messageForConsole() const { return !m_unsanitizedMessage.isEmpty() ? m_unsanitizedMessage : m_sanitizedMessage; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     DOMWrapperWorld* world() const { return m_world.get(); }
 
     void setUnsanitizedMessage(const String&);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     ErrorEvent();
@@ -98,6 +99,6 @@ private:
     RefPtr<DOMWrapperWorld> m_world;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ErrorEvent_h

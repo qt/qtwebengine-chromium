@@ -29,34 +29,36 @@
 #ifndef BarProp_h
 #define BarProp_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-    class LocalFrame;
+class LocalFrame;
 
-    class BarProp FINAL : public RefCountedWillBeGarbageCollectedFinalized<BarProp>, public ScriptWrappable, public DOMWindowProperty {
-    public:
-        enum Type { Locationbar, Menubar, Personalbar, Scrollbars, Statusbar, Toolbar };
+class BarProp final : public RefCountedWillBeGarbageCollected<BarProp>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(BarProp);
+public:
+    enum Type { Locationbar, Menubar, Personalbar, Scrollbars, Statusbar, Toolbar };
 
-        static PassRefPtrWillBeRawPtr<BarProp> create(LocalFrame* frame, Type type)
-        {
-            return adoptRefWillBeNoop(new BarProp(frame, type));
-        }
+    static PassRefPtrWillBeRawPtr<BarProp> create(LocalFrame* frame, Type type)
+    {
+        return adoptRefWillBeNoop(new BarProp(frame, type));
+    }
 
-        bool visible() const;
+    bool visible() const;
 
-        void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
-    private:
-        BarProp(LocalFrame*, Type);
-        Type m_type;
-    };
+private:
+    BarProp(LocalFrame*, Type);
+    Type m_type;
+};
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BarProp_h

@@ -36,12 +36,11 @@
 #include "../platform/WebString.h"
 #include "WebExceptionCode.h"
 
-namespace WebCore { class Node; }
-
 namespace blink {
+
+class Node;
+class WebAXObject;
 class WebDOMEvent;
-class WebDOMEventListener;
-class WebDOMEventListenerPrivate;
 class WebDocument;
 class WebElement;
 class WebElementCollection;
@@ -51,7 +50,7 @@ class WebPluginContainer;
 // Provides access to some properties of a DOM node.
 // Note that the class design requires that neither this class nor any of its subclasses have any virtual
 // methods (other than the destructor), so that it is possible to safely static_cast an instance of one
-// class to the appropriate subclass based on the actual type of the wrapped WebCore::Node. For the same
+// class to the appropriate subclass based on the actual type of the wrapped blink::Node. For the same
 // reason, subclasses must not add any additional data members.
 class WebNode {
 public:
@@ -109,11 +108,10 @@ public:
     BLINK_EXPORT bool isFocusable() const;
     BLINK_EXPORT bool isContentEditable() const;
     BLINK_EXPORT bool isElementNode() const;
-    // addEventListener only works with a small set of eventTypes.
-    BLINK_EXPORT void addEventListener(const WebString& eventType, WebDOMEventListener* listener, bool useCapture);
     BLINK_EXPORT bool dispatchEvent(const WebDOMEvent&);
     BLINK_EXPORT void simulateClick();
-    BLINK_EXPORT WebElementCollection getElementsByTagName(const WebString&) const;
+    // The argument should be lower-cased.
+    BLINK_EXPORT WebElementCollection getElementsByHTMLTagName(const WebString&) const;
     BLINK_EXPORT WebElement querySelector(const WebString&, WebExceptionCode&) const;
     BLINK_EXPORT WebElement rootEditableElement() const;
     BLINK_EXPORT bool focused() const;
@@ -123,8 +121,12 @@ public:
     // This does not 100% guarantee the user can see it, but is pretty close.
     // Note: This method only works properly after layout has occurred.
     BLINK_EXPORT bool hasNonEmptyBoundingBox() const;
+
+    BLINK_EXPORT bool containsIncludingShadowDOM(const WebNode&) const;
     BLINK_EXPORT WebPluginContainer* pluginContainer() const;
     BLINK_EXPORT WebElement shadowHost() const;
+
+    BLINK_EXPORT WebAXObject accessibilityObject();
 
     template<typename T> T to()
     {
@@ -141,21 +143,9 @@ public:
     }
 
 #if BLINK_IMPLEMENTATION
-    WebNode(const PassRefPtrWillBeRawPtr<WebCore::Node>&);
-    WebNode& operator=(const PassRefPtrWillBeRawPtr<WebCore::Node>&);
-    operator PassRefPtrWillBeRawPtr<WebCore::Node>() const;
-#if ENABLE(OILPAN)
-    // This constructor enables creation of WebNodes from Members
-    // holding WebCore::Node-derived objects (this shows up in WebVector
-    // assignments, for instance.) It is needed because a RawPtr<T> constructor
-    // from a Member<U> isn't provided, hence the above constructor
-    // won't be usable.
-    template<typename U>
-    WebNode(const WebCore::Member<U>& other, EnsurePtrConvertibleArgDecl(U, WebCore::Node))
-        : m_private(other.get())
-    {
-    }
-#endif
+    WebNode(const PassRefPtrWillBeRawPtr<Node>&);
+    WebNode& operator=(const PassRefPtrWillBeRawPtr<Node>&);
+    operator PassRefPtrWillBeRawPtr<Node>() const;
 #endif
 
 #if BLINK_IMPLEMENTATION
@@ -171,7 +161,7 @@ public:
 #endif
 
 protected:
-    WebPrivatePtr<WebCore::Node> m_private;
+    WebPrivatePtr<Node> m_private;
 };
 
 inline bool operator==(const WebNode& a, const WebNode& b)

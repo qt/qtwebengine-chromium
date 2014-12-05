@@ -14,7 +14,7 @@
 #include "SkTypeface.h"
 
 static void setTypeface(SkPaint* paint, const char name[], SkTypeface::Style style) {
-    SkSafeUnref(paint->setTypeface(SkTypeface::CreateFromName(name, style)));
+    sk_tool_utils::set_portable_typeface(paint, name, style);
 }
 
 static SkSize computeSize(const SkBitmap& bm, const SkMatrix& mat) {
@@ -194,11 +194,8 @@ class FilterBitmapImageGM: public FilterBitmapGM {
       }
 
       void makeBitmap() SK_OVERRIDE {
-          SkString resourcePath = GetResourcePath();
-          resourcePath.append("/");
-          resourcePath.append(fFilename);
-
           SkImageDecoder* codec = NULL;
+          SkString resourcePath = GetResourcePath(fFilename.c_str());
           SkFILEStream stream(resourcePath.c_str());
           if (stream.isValid()) {
               codec = SkImageDecoder::Factory(&stream);
@@ -233,3 +230,4 @@ DEF_GM( return new FilterBitmapImageGM("mandrill_64.png"); )
 DEF_GM( return new FilterBitmapImageGM("mandrill_128.png"); )
 DEF_GM( return new FilterBitmapImageGM("mandrill_256.png"); )
 DEF_GM( return new FilterBitmapImageGM("mandrill_512.png"); )
+DEF_GM( return new FilterBitmapImageGM("color_wheel.png"); )

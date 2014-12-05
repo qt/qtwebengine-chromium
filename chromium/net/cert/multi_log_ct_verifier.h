@@ -10,6 +10,7 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "net/base/net_export.h"
 #include "net/cert/ct_verifier.h"
 #include "net/cert/signed_certificate_timestamp.h"
@@ -30,16 +31,17 @@ class CTLogVerifier;
 class NET_EXPORT MultiLogCTVerifier : public CTVerifier {
  public:
   MultiLogCTVerifier();
-  virtual ~MultiLogCTVerifier();
+  ~MultiLogCTVerifier() override;
 
   void AddLog(scoped_ptr<CTLogVerifier> log_verifier);
+  void AddLogs(ScopedVector<CTLogVerifier> log_verifiers);
 
   // CTVerifier implementation:
-  virtual int Verify(X509Certificate* cert,
-                     const std::string& stapled_ocsp_response,
-                     const std::string& sct_list_from_tls_extension,
-                     ct::CTVerifyResult* result,
-                     const BoundNetLog& net_log) OVERRIDE;
+  int Verify(X509Certificate* cert,
+             const std::string& stapled_ocsp_response,
+             const std::string& sct_list_from_tls_extension,
+             ct::CTVerifyResult* result,
+             const BoundNetLog& net_log) override;
 
  private:
   // Mapping from a log's ID to the verifier for this log.

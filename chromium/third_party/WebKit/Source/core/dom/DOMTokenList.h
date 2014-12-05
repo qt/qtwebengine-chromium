@@ -25,24 +25,22 @@
 #ifndef DOMTokenList_h
 #define DOMTokenList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Vector.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class ExceptionState;
 
 class DOMTokenList : public NoBaseWillBeGarbageCollectedFinalized<DOMTokenList>, public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(DOMTokenList);
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(DOMTokenList);
 public:
-    DOMTokenList()
-    {
-        ScriptWrappable::init(this);
-    }
+    DOMTokenList() { }
     virtual ~DOMTokenList() { }
 
 #if !ENABLE(OILPAN)
@@ -83,6 +81,6 @@ protected:
     static AtomicString removeTokens(const AtomicString&, const Vector<String>&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMTokenList_h

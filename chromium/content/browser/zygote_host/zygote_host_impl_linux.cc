@@ -13,8 +13,8 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_util.h"
 #include "base/files/file_enumerator.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/linux_util.h"
 #include "base/logging.h"
@@ -100,7 +100,7 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
 
   base::FilePath chrome_path;
   CHECK(PathService::Get(base::FILE_EXE, &chrome_path));
-  CommandLine cmd_line(chrome_path);
+  base::CommandLine cmd_line(chrome_path);
 
   cmd_line.AppendSwitchASCII(switches::kProcessType, switches::kZygoteProcess);
 
@@ -111,7 +111,8 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   fds_to_map.push_back(std::make_pair(fds[1], kZygoteSocketPairFd));
 
   base::LaunchOptions options;
-  const CommandLine& browser_command_line = *CommandLine::ForCurrentProcess();
+  const base::CommandLine& browser_command_line =
+      *base::CommandLine::ForCurrentProcess();
   if (browser_command_line.HasSwitch(switches::kZygoteCmdPrefix)) {
     cmd_line.PrependWrapper(
         browser_command_line.GetSwitchValueNative(switches::kZygoteCmdPrefix));
@@ -121,18 +122,17 @@ void ZygoteHostImpl::Init(const std::string& sandbox_cmd) {
   // Should this list be obtained from browser_render_process_host.cc?
   static const char* kForwardSwitches[] = {
     switches::kAllowSandboxDebugging,
-    switches::kLoggingLevel,
-    switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
-    switches::kV,
-    switches::kVModule,
-    switches::kRegisterPepperPlugins,
     switches::kDisableSeccompFilterSandbox,
-
+    switches::kEnableLogging,  // Support, e.g., --enable-logging=stderr.
     // Zygote process needs to know what resources to have loaded when it
     // becomes a renderer process.
     switches::kForceDeviceScaleFactor,
-
+    switches::kLoggingLevel,
     switches::kNoSandbox,
+    switches::kPpapiInProcess,
+    switches::kRegisterPepperPlugins,
+    switches::kV,
+    switches::kVModule,
   };
   cmd_line.CopySwitchesFrom(browser_command_line, kForwardSwitches,
                             arraysize(kForwardSwitches));
@@ -287,10 +287,9 @@ ssize_t ZygoteHostImpl::ReadReply(void* buf, size_t buf_len) {
   return HANDLE_EINTR(read(control_fd_, buf, buf_len));
 }
 
-pid_t ZygoteHostImpl::ForkRequest(
-    const std::vector<std::string>& argv,
-    const std::vector<FileDescriptorInfo>& mapping,
-    const std::string& process_type) {
+pid_t ZygoteHostImpl::ForkRequest(const std::vector<std::string>& argv,
+                                  scoped_ptr<FileDescriptorInfo> mapping,
+                                  const std::string& process_type) {
   DCHECK(init_);
   Pickle pickle;
 
@@ -309,26 +308,20 @@ pid_t ZygoteHostImpl::ForkRequest(
 
   // Fork requests contain one file descriptor for the PID oracle, and one
   // more for each file descriptor mapping for the child process.
-  const size_t num_fds_to_send = 1 + mapping.size();
+  const size_t num_fds_to_send = 1 + mapping->GetMappingSize();
   pickle.WriteInt(num_fds_to_send);
 
   std::vector<int> fds;
-  ScopedVector<base::ScopedFD> autoclose_fds;
 
   // First FD to send is peer_sock.
+  // TODO(morrita): Ideally, this should be part of the mapping so that
+  // FileDescriptorInfo can manages its lifetime.
   fds.push_back(peer_sock.get());
-  autoclose_fds.push_back(new base::ScopedFD(peer_sock.Pass()));
 
   // The rest come from mapping.
-  for (std::vector<FileDescriptorInfo>::const_iterator
-       i = mapping.begin(); i != mapping.end(); ++i) {
-    pickle.WriteUInt32(i->id);
-    fds.push_back(i->fd.fd);
-    if (i->fd.auto_close) {
-      // Auto-close means we need to close the FDs after they have been passed
-      // to the other process.
-      autoclose_fds.push_back(new base::ScopedFD(i->fd.fd));
-    }
+  for (size_t i = 0; i < mapping->GetMappingSize(); ++i) {
+    pickle.WriteUInt32(mapping->GetIDAt(i));
+    fds.push_back(mapping->GetFDAt(i));
   }
 
   // Sanity check that we've populated |fds| correctly.
@@ -339,7 +332,8 @@ pid_t ZygoteHostImpl::ForkRequest(
     base::AutoLock lock(control_lock_);
     if (!SendMessage(pickle, &fds))
       return base::kNullProcessHandle;
-    autoclose_fds.clear();
+    mapping.reset();
+    peer_sock.reset();
 
     {
       char buf[sizeof(kZygoteChildPingMessage) + 1];

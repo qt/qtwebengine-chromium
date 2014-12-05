@@ -30,7 +30,7 @@
 #include "wtf/FastAllocBase.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 // Each thread has its own single instance of shared timer, which implements this interface.
 // This instance is shared by all timers in the thread.
@@ -54,22 +54,22 @@ PLATFORM_EXPORT void stopSharedTimer();
 
 class PLATFORM_EXPORT MainThreadSharedTimer : public SharedTimer {
 public:
-    virtual void setFiredFunction(void (*function)()) OVERRIDE
+    virtual void setFiredFunction(void (*function)()) override
     {
         setSharedTimerFiredFunction(function);
     }
 
-    virtual void setFireInterval(double interval) OVERRIDE
+    virtual void setFireInterval(double interval) override
     {
         setSharedTimerFireInterval(interval);
     }
 
-    virtual void stop() OVERRIDE
+    virtual void stop() override
     {
         stopSharedTimer();
     }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SharedTimer_h

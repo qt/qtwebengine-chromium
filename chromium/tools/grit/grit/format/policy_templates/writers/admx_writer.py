@@ -32,6 +32,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     Args:
       name: Name of the referenced ADML string.
     '''
+    name = name.replace('.', '_')
     return '$(string.' + name + ')'
 
   def _AdmlStringExplain(self, name):
@@ -39,6 +40,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     Args:
       name: Name of the referenced ADML explanation.
     '''
+    name = name.replace('.', '_')
     return '$(string.' + name + '_Explain)'
 
   def _AdmlPresentation(self, name):
@@ -166,6 +168,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     attributes = {
       'id': name,
       'valueName': name,
+      'maxLength': '1000000',
     }
     self.AddElement(parent, 'text', attributes)
 
@@ -286,7 +289,7 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     elif policy_type in ('int-enum', 'string-enum'):
       parent = self._GetElements(policy_elem)
       self._AddEnumPolicy(parent, policy)
-    elif policy_type == 'list':
+    elif policy_type in ('list', 'string-enum-list'):
       parent = self._GetElements(policy_elem)
       self._AddListPolicy(parent, key, policy_name)
     elif policy_type == 'group':
@@ -295,10 +298,11 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
       raise Exception('Unknown policy type %s.' % policy_type)
 
   def WritePolicy(self, policy):
-    self._WritePolicy(policy,
-                      policy['name'],
-                      self.config['win_reg_mandatory_key_name'],
-                      self._active_mandatory_policy_group_name)
+    if self.CanBeMandatory(policy):
+      self._WritePolicy(policy,
+                        policy['name'],
+                        self.config['win_reg_mandatory_key_name'],
+                        self._active_mandatory_policy_group_name)
 
   def WriteRecommendedPolicy(self, policy):
     self._WritePolicy(policy,
@@ -348,6 +352,9 @@ class ADMXWriter(xml_formatted_writer.XMLFormattedWriter):
     '''
     dom_impl = minidom.getDOMImplementation('')
     self._doc = dom_impl.createDocument(None, 'policyDefinitions', None)
+    if self._GetChromiumVersionString() is not None:
+      self.AddComment(self._doc.documentElement, self.config['build'] + \
+          ' version: ' + self._GetChromiumVersionString())
     policy_definitions_elem = self._doc.documentElement
 
     policy_definitions_elem.attributes['revision'] = '1.0'

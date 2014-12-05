@@ -142,6 +142,7 @@
     ['build_ffmpegsumo != 0', {
       'includes': [
         'ffmpeg_generated.gypi',
+        '../../build/util/version.gypi',
       ],
       'variables': {
         # Path to platform configuration files.
@@ -149,16 +150,45 @@
       },
       'targets': [
         {
+          'target_name': 'ffmpegsumo_resources',
+          'type': 'none',
+          'conditions': [
+            ['branding == "Chrome"', {
+              'variables': {
+                 'branding_path': '../../chrome/app/theme/google_chrome/BRANDING',
+              },
+            }, { # else branding!="Chrome"
+              'variables': {
+                 'branding_path': '../../chrome/app/theme/chromium/BRANDING',
+              },
+            }],
+          ],
+          'variables': {
+            'output_dir': 'ffmpegsumo',
+            'template_input_path': '../../chrome/app/chrome_version.rc.version',
+          },
+          'sources': [
+            'ffmpegsumo.ver',
+          ],
+          'includes': [
+            '../../chrome/version_resource_rules.gypi',
+          ],
+        },
+        {
           'target_name': 'ffmpegsumo',
           'type': 'loadable_module',
           'sources': [
             '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
+            '<(SHARED_INTERMEDIATE_DIR)/ffmpegsumo/ffmpegsumo_version.rc',
           ],
           'include_dirs': [
             '<(platform_config_root)',
             '.',
+          ],
+          'dependencies': [
+            'ffmpegsumo_resources',
           ],
           'defines': [
             'HAVE_AV_CONFIG_H',
@@ -171,6 +201,24 @@
             'FF_API_DESTRUCT_PACKET=0',
             'FF_API_GET_BUFFER=0',
           ],
+          'variables': {
+            'clang_warning_flags': [
+              '-Wno-absolute-value',
+              # ffmpeg uses its own deprecated functions.
+              '-Wno-deprecated-declarations',
+              # ffmpeg doesn't care about pointer constness.
+              '-Wno-incompatible-pointer-types',
+              # ffmpeg doesn't follow usual parentheses conventions.
+              '-Wno-parentheses',
+              # ffmpeg doesn't care about pointer signedness.
+              '-Wno-pointer-sign',
+              # ffmpeg doesn't believe in exhaustive switch statements.
+              '-Wno-switch',
+              # matroskadec.c has a "failed:" label that's only used if some
+              # CONFIG_ flags we don't set are set.
+              '-Wno-unused-label',
+            ],
+          },
           'cflags': [
             '-fPIC',
             '-fomit-frame-pointer',
@@ -183,48 +231,7 @@
                 'ffmpeg_yasm',
               ],
             }],
-            ['clang == 1', {
-              'xcode_settings': {
-                'WARNING_CFLAGS': [
-                  '-Wno-absolute-value',
-                  # ffmpeg uses its own deprecated functions.
-                  '-Wno-deprecated-declarations',
-                  # ffmpeg doesn't care about pointer constness.
-                  '-Wno-incompatible-pointer-types',
-                  # ffmpeg doesn't follow usual parentheses conventions.
-                  '-Wno-parentheses',
-                  # ffmpeg doesn't care about pointer signedness.
-                  '-Wno-pointer-sign',
-                  # ffmpeg doesn't believe in exhaustive switch statements.
-                  '-Wno-switch',
-                ],
-              },
-              'cflags': [
-                '-Wno-absolute-value',
-                '-Wno-incompatible-pointer-types',
-                '-Wno-logical-op-parentheses',
-                '-Wno-parentheses',
-                '-Wno-pointer-sign',
-                '-Wno-switch',
-                # Don't emit warnings for gcc -f flags clang doesn't implement.
-                '-Qunused-arguments',
-              ],
-              'conditions': [
-                ['ffmpeg_branding == "Chrome" or ffmpeg_branding == "ChromeOS"', {
-                  'xcode_settings': {
-                    'WARNING_CFLAGS': [
-                      # Clang doesn't support __attribute__((flatten)),
-                      # http://llvm.org/PR7559
-                      # This is used in the h264 decoder.
-                      '-Wno-attributes',
-                    ],
-                  },
-                  'cflags': [
-                    '-Wno-attributes',
-                  ],
-                }],
-              ],
-            }, {
+            ['clang != 1', {
               'cflags': [
                 # gcc doesn't have flags for specific warnings, so disable them
                 # all.
@@ -387,7 +394,15 @@
                 4116, 4307, 4273, 4005, 4056, 4756,
               ],
               'conditions': [
-                ['clang == 1 or (OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"))', {
+                ['clang == 1', {
+                  'msvs_settings': {
+                    'VCCLCompilerTool': {
+                      # This corresponds to msvs_disabled_warnings 4273 above.
+                      'AdditionalOptions': [ '-Wno-inconsistent-dllimport' ],
+                    },
+                  },
+                }],
+                ['clang == 1 or (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e")', {
                   'defines': [
                     'inline=__inline',
                     'strtoll=_strtoi64',

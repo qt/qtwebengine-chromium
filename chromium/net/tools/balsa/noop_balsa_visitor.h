@@ -17,39 +17,38 @@ namespace net {
 class NoOpBalsaVisitor : public BalsaVisitorInterface {
  public:
   NoOpBalsaVisitor() { }
-  virtual ~NoOpBalsaVisitor() { }
+  ~NoOpBalsaVisitor() override {}
 
-  virtual void ProcessBodyInput(const char* input, size_t size) OVERRIDE { }
-  virtual void ProcessBodyData(const char* input, size_t size) OVERRIDE { }
-  virtual void ProcessHeaderInput(const char* input, size_t size) OVERRIDE { }
-  virtual void ProcessTrailerInput(const char* input, size_t size) OVERRIDE { }
-  virtual void ProcessHeaders(const BalsaHeaders& headers) OVERRIDE { }
+  void ProcessBodyInput(const char* input, size_t size) override {}
+  void ProcessBodyData(const char* input, size_t size) override {}
+  void ProcessHeaderInput(const char* input, size_t size) override {}
+  void ProcessTrailerInput(const char* input, size_t size) override {}
+  void ProcessHeaders(const BalsaHeaders& headers) override {}
 
-  virtual void ProcessRequestFirstLine(const char* line_input,
-                                       size_t line_length,
-                                       const char* method_input,
-                                       size_t method_length,
-                                       const char* request_uri_input,
-                                       size_t request_uri_length,
-                                       const char* version_input,
-                                       size_t version_length) OVERRIDE { }
-  virtual void ProcessResponseFirstLine(const char* line_input,
-                                        size_t line_length,
-                                        const char* version_input,
-                                        size_t version_length,
-                                        const char* status_input,
-                                        size_t status_length,
-                                        const char* reason_input,
-                                        size_t reason_length) OVERRIDE { }
-  virtual void ProcessChunkLength(size_t chunk_length) OVERRIDE { }
-  virtual void ProcessChunkExtensions(const char* input, size_t size) OVERRIDE {
-  }
-  virtual void HeaderDone() OVERRIDE { }
-  virtual void MessageDone() OVERRIDE { }
-  virtual void HandleHeaderError(BalsaFrame* framer) OVERRIDE { }
-  virtual void HandleHeaderWarning(BalsaFrame* framer) OVERRIDE { }
-  virtual void HandleChunkingError(BalsaFrame* framer) OVERRIDE { }
-  virtual void HandleBodyError(BalsaFrame* framer) OVERRIDE { }
+  void ProcessRequestFirstLine(const char* line_input,
+                               size_t line_length,
+                               const char* method_input,
+                               size_t method_length,
+                               const char* request_uri_input,
+                               size_t request_uri_length,
+                               const char* version_input,
+                               size_t version_length) override {}
+  void ProcessResponseFirstLine(const char* line_input,
+                                size_t line_length,
+                                const char* version_input,
+                                size_t version_length,
+                                const char* status_input,
+                                size_t status_length,
+                                const char* reason_input,
+                                size_t reason_length) override {}
+  void ProcessChunkLength(size_t chunk_length) override {}
+  void ProcessChunkExtensions(const char* input, size_t size) override {}
+  void HeaderDone() override {}
+  void MessageDone() override {}
+  void HandleHeaderError(BalsaFrame* framer) override {}
+  void HandleHeaderWarning(BalsaFrame* framer) override {}
+  void HandleChunkingError(BalsaFrame* framer) override {}
+  void HandleBodyError(BalsaFrame* framer) override {}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(NoOpBalsaVisitor);

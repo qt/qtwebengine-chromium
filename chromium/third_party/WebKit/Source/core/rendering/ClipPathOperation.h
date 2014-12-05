@@ -37,7 +37,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ClipPathOperation : public RefCounted<ClipPathOperation> {
 public:
@@ -63,7 +63,7 @@ protected:
     OperationType m_type;
 };
 
-class ReferenceClipPathOperation FINAL : public ClipPathOperation {
+class ReferenceClipPathOperation final : public ClipPathOperation {
 public:
     static PassRefPtr<ReferenceClipPathOperation> create(const String& url, const AtomicString& fragment)
     {
@@ -74,7 +74,7 @@ public:
     const AtomicString& fragment() const { return m_fragment; }
 
 private:
-    virtual bool operator==(const ClipPathOperation& o) const OVERRIDE
+    virtual bool operator==(const ClipPathOperation& o) const override
     {
         return isSameType(o) && m_url == static_cast<const ReferenceClipPathOperation&>(o).m_url;
     }
@@ -92,7 +92,7 @@ private:
 
 DEFINE_TYPE_CASTS(ReferenceClipPathOperation, ClipPathOperation, op, op->type() == ClipPathOperation::REFERENCE, op.type() == ClipPathOperation::REFERENCE);
 
-class ShapeClipPathOperation FINAL : public ClipPathOperation {
+class ShapeClipPathOperation final : public ClipPathOperation {
 public:
     static PassRefPtr<ShapeClipPathOperation> create(PassRefPtr<BasicShape> shape)
     {
@@ -100,6 +100,7 @@ public:
     }
 
     const BasicShape* basicShape() const { return m_shape.get(); }
+    bool isValid() const { return m_shape.get(); }
     WindRule windRule() const { return m_shape->windRule(); }
     const Path& path(const FloatRect& boundingRect)
     {
@@ -111,7 +112,7 @@ public:
     }
 
 private:
-    virtual bool operator==(const ClipPathOperation&) const OVERRIDE;
+    virtual bool operator==(const ClipPathOperation&) const override;
 
     ShapeClipPathOperation(PassRefPtr<BasicShape> shape)
         : ClipPathOperation(SHAPE)
@@ -127,7 +128,12 @@ DEFINE_TYPE_CASTS(ShapeClipPathOperation, ClipPathOperation, op, op->type() == C
 
 inline bool ShapeClipPathOperation::operator==(const ClipPathOperation& o) const
 {
-    return isSameType(o) && *m_shape == *toShapeClipPathOperation(o).m_shape;
+    if (!isSameType(o))
+        return false;
+    BasicShape* otherShape = toShapeClipPathOperation(o).m_shape.get();
+    if (!m_shape.get() || !otherShape)
+        return static_cast<bool>(m_shape.get()) == static_cast<bool>(otherShape);
+    return *m_shape == *otherShape;
 }
 
 }

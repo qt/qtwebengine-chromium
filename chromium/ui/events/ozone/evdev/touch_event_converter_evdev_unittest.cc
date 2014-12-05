@@ -9,6 +9,7 @@
 
 #include <vector>
 
+#include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/scoped_vector.h"
 #include "base/posix/eintr_wrapper.h"
@@ -38,14 +39,19 @@ namespace ui {
 class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
  public:
   MockTouchEventConverterEvdev(int fd, base::FilePath path);
-  virtual ~MockTouchEventConverterEvdev() {};
+  ~MockTouchEventConverterEvdev() override {}
 
   void ConfigureReadMock(struct input_event* queue,
                          long read_this_many,
                          long queue_index);
 
   unsigned size() { return dispatched_events_.size(); }
-  TouchEvent* event(unsigned index) { return dispatched_events_[index]; }
+  TouchEvent* event(unsigned index) {
+    DCHECK_GT(dispatched_events_.size(), index);
+    Event* ev = dispatched_events_[index];
+    DCHECK(ev->IsTouchEvent());
+    return static_cast<TouchEvent*>(ev);
+  }
 
   // Actually dispatch the event reader code.
   void ReadNow() {
@@ -53,18 +59,17 @@ class MockTouchEventConverterEvdev : public TouchEventConverterEvdev {
     base::RunLoop().RunUntilIdle();
   }
 
-  void DispatchCallback(Event* event) {
-    dispatched_events_.push_back(
-        new TouchEvent(*static_cast<TouchEvent*>(event)));
+  void DispatchCallback(scoped_ptr<Event> event) {
+    dispatched_events_.push_back(event.release());
   }
 
-  virtual bool Reinitialize() OVERRIDE { return true; }
+  bool Reinitialize() override { return true; }
 
  private:
   int read_pipe_;
   int write_pipe_;
 
-  ScopedVector<TouchEvent> dispatched_events_;
+  ScopedVector<Event> dispatched_events_;
 
   DISALLOW_COPY_AND_ASSIGN(MockTouchEventConverterEvdev);
 };
@@ -74,6 +79,7 @@ MockTouchEventConverterEvdev::MockTouchEventConverterEvdev(int fd,
     : TouchEventConverterEvdev(
           fd,
           path,
+          1,
           EventDeviceInfo(),
           base::Bind(&MockTouchEventConverterEvdev::DispatchCallback,
                      base::Unretained(this))) {
@@ -118,7 +124,7 @@ class TouchEventConverterEvdevTest : public testing::Test {
   TouchEventConverterEvdevTest() {}
 
   // Overridden from testing::Test:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Set up pipe to satisfy message pump (unused).
     int evdev_io[2];
     if (pipe(evdev_io))
@@ -131,7 +137,7 @@ class TouchEventConverterEvdevTest : public testing::Test {
         events_in_, base::FilePath(kTestDevicePath));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     delete device_;
     delete loop_;
   }
@@ -180,6 +186,7 @@ TEST_F(TouchEventConverterEvdevTest, TouchDown) {
   EXPECT_EQ(42, event->x());
   EXPECT_EQ(51, event->y());
   EXPECT_EQ(0, event->touch_id());
+  EXPECT_FLOAT_EQ(1.5f, event->radius_x());
   EXPECT_FLOAT_EQ(.5f, event->force());
   EXPECT_FLOAT_EQ(0.f, event->rotation_angle());
 }
@@ -478,4 +485,49 @@ TEST_F(TouchEventConverterEvdevTest, Unsync) {
   dev->ConfigureReadMock(mock_kernel_queue_move1, 2, 0);
   dev->ReadNow();
   EXPECT_EQ(2u, dev->size());
+}
+
+// crbug.com/407386
+TEST_F(TouchEventConverterEvdevTest,
+       DontChangeMultitouchPositionFromLegacyAxes) {
+  ui::MockTouchEventConverterEvdev* dev = device();
+
+  struct input_event mock_kernel_queue[] = {
+      {{0, 0}, EV_ABS, ABS_MT_SLOT, 0},
+      {{0, 0}, EV_ABS, ABS_MT_TRACKING_ID, 100},
+      {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 999},
+      {{0, 0}, EV_ABS, ABS_MT_POSITION_Y, 888},
+      {{0, 0}, EV_ABS, ABS_MT_PRESSURE, 55},
+      {{0, 0}, EV_ABS, ABS_MT_SLOT, 1},
+      {{0, 0}, EV_ABS, ABS_MT_TRACKING_ID, 200},
+      {{0, 0}, EV_ABS, ABS_MT_PRESSURE, 44},
+      {{0, 0}, EV_ABS, ABS_MT_POSITION_X, 777},
+      {{0, 0}, EV_ABS, ABS_MT_POSITION_Y, 666},
+      {{0, 0}, EV_ABS, ABS_X, 999},
+      {{0, 0}, EV_ABS, ABS_Y, 888},
+      {{0, 0}, EV_ABS, ABS_PRESSURE, 55},
+      {{0, 0}, EV_SYN, SYN_REPORT, 0},
+  };
+
+  // Check that two events are generated.
+  dev->ConfigureReadMock(mock_kernel_queue, arraysize(mock_kernel_queue), 0);
+  dev->ReadNow();
+
+  const unsigned int kExpectedEventCount = 2;
+  EXPECT_EQ(kExpectedEventCount, dev->size());
+  if (kExpectedEventCount != dev->size())
+    return;
+
+  ui::TouchEvent* ev0 = dev->event(0);
+  ui::TouchEvent* ev1 = dev->event(1);
+
+  EXPECT_EQ(0, ev0->touch_id());
+  EXPECT_EQ(999, ev0->x());
+  EXPECT_EQ(888, ev0->y());
+  EXPECT_FLOAT_EQ(0.8333333f, ev0->force());
+
+  EXPECT_EQ(1, ev1->touch_id());
+  EXPECT_EQ(777, ev1->x());
+  EXPECT_EQ(666, ev1->y());
+  EXPECT_FLOAT_EQ(0.4666666f, ev1->force());
 }

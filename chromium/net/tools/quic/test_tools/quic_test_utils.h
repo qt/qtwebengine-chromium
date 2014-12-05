@@ -14,6 +14,8 @@
 #include "net/quic/quic_packet_writer.h"
 #include "net/quic/quic_session.h"
 #include "net/spdy/spdy_framer.h"
+#include "net/tools/quic/quic_dispatcher.h"
+#include "net/tools/quic/quic_per_connection_packet_writer.h"
 #include "net/tools/quic/quic_server_session.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -87,7 +89,6 @@ class MockConnection : public QuicConnection {
   virtual bool OnProtocolVersionMismatch(QuicVersion version) { return false; }
 
  private:
-  scoped_ptr<QuicPacketWriter> writer_;
   scoped_ptr<QuicConnectionHelperInterface> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(MockConnection);
@@ -103,7 +104,7 @@ class TestSession : public QuicSession {
 
   void SetCryptoStream(QuicCryptoStream* stream);
 
-  virtual QuicCryptoStream* GetCryptoStream() OVERRIDE;
+  virtual QuicCryptoStream* GetCryptoStream() override;
 
  private:
   QuicCryptoStream* crypto_stream_;
@@ -135,7 +136,8 @@ class MockQuicServerSessionVisitor : public QuicServerSessionVisitor {
   virtual ~MockQuicServerSessionVisitor();
   MOCK_METHOD2(OnConnectionClosed, void(QuicConnectionId connection_id,
                                         QuicErrorCode error));
-  MOCK_METHOD1(OnWriteBlocked, void(QuicBlockedWriterInterface* writer));
+  MOCK_METHOD1(OnWriteBlocked,
+               void(QuicBlockedWriterInterface* blocked_writer));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockQuicServerSessionVisitor);
@@ -156,6 +158,45 @@ class MockAckNotifierDelegate : public QuicAckNotifier::DelegateInterface {
   virtual ~MockAckNotifierDelegate();
 
   DISALLOW_COPY_AND_ASSIGN(MockAckNotifierDelegate);
+};
+
+// Creates per-connection packet writers that register themselves with the
+// TestWriterFactory on each write so that TestWriterFactory::OnPacketSent can
+// be routed to the appropriate QuicConnection.
+class TestWriterFactory : public QuicDispatcher::PacketWriterFactory {
+ public:
+  TestWriterFactory();
+  ~TestWriterFactory() override;
+
+  QuicPacketWriter* Create(QuicPacketWriter* writer,
+                           QuicConnection* connection) override;
+
+  // Calls OnPacketSent on the last QuicConnection to write through one of the
+  // packet writers created by this factory.
+  void OnPacketSent(WriteResult result);
+
+ private:
+  class PerConnectionPacketWriter : public QuicPerConnectionPacketWriter {
+   public:
+    PerConnectionPacketWriter(TestWriterFactory* factory,
+                              QuicPacketWriter* writer,
+                              QuicConnection* connection);
+    ~PerConnectionPacketWriter() override;
+
+    WriteResult WritePacket(const char* buffer,
+                            size_t buf_len,
+                            const IPAddressNumber& self_address,
+                            const IPEndPoint& peer_address) override;
+
+   private:
+    TestWriterFactory* factory_;
+  };
+
+  // If an asynchronous write is happening and |writer| gets deleted, this
+  // clears the pointer to it to prevent use-after-free.
+  void Unregister(PerConnectionPacketWriter* writer);
+
+  PerConnectionPacketWriter* current_writer_;
 };
 
 }  // namespace test

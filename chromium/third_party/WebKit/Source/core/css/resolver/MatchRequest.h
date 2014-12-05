@@ -26,19 +26,18 @@
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/RuleSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContainerNode;
 
 class MatchRequest {
     STACK_ALLOCATED();
 public:
-    MatchRequest(RuleSet* ruleSet, bool includeEmptyRules = false, const ContainerNode* scope = 0, const CSSStyleSheet* cssSheet = 0, bool elementApplyAuthorStyles = true, unsigned styleSheetIndex = 0)
+    MatchRequest(RuleSet* ruleSet, bool includeEmptyRules = false, const ContainerNode* scope = 0, const CSSStyleSheet* cssSheet = 0, unsigned styleSheetIndex = 0)
         : ruleSet(ruleSet)
         , includeEmptyRules(includeEmptyRules)
         , scope(scope)
         , styleSheet(cssSheet)
-        , elementApplyAuthorStyles(elementApplyAuthorStyles)
         , styleSheetIndex(styleSheetIndex)
     {
         // Now that we're about to read from the RuleSet, we're done adding more
@@ -50,10 +49,9 @@ public:
     const bool includeEmptyRules;
     RawPtrWillBeMember<const ContainerNode> scope;
     RawPtrWillBeMember<const CSSStyleSheet> styleSheet;
-    const bool elementApplyAuthorStyles;
     const unsigned styleSheetIndex;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MatchRequest_h

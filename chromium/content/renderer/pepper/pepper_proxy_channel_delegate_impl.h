@@ -13,15 +13,15 @@ namespace content {
 class PepperProxyChannelDelegateImpl
     : public ppapi::proxy::ProxyChannel::Delegate {
  public:
-  virtual ~PepperProxyChannelDelegateImpl();
+  ~PepperProxyChannelDelegateImpl() override;
 
   // ProxyChannel::Delegate implementation.
-  virtual base::MessageLoopProxy* GetIPCMessageLoop() OVERRIDE;
-  virtual base::WaitableEvent* GetShutdownEvent() OVERRIDE;
-  virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
+  base::MessageLoopProxy* GetIPCMessageLoop() override;
+  base::WaitableEvent* GetShutdownEvent() override;
+  IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
       base::ProcessId remote_pid,
-      bool should_close_source) OVERRIDE;
+      bool should_close_source) override;
 };
 
 }  // namespace content

@@ -34,16 +34,14 @@
 #include "core/frame/LocalDOMWindow.h"
 #include "modules/crypto/Crypto.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMWindowCrypto::DOMWindowCrypto(LocalDOMWindow& window)
     : DOMWindowProperty(window.frame())
 {
 }
 
-DOMWindowCrypto::~DOMWindowCrypto()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMWindowCrypto);
 
 const char* DOMWindowCrypto::supplementName()
 {
@@ -76,6 +74,7 @@ void DOMWindowCrypto::trace(Visitor* visitor)
 {
     visitor->trace(m_crypto);
     WillBeHeapSupplement<LocalDOMWindow>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

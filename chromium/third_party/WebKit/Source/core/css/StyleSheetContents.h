@@ -21,7 +21,6 @@
 #ifndef StyleSheetContents_h
 #define StyleSheetContents_h
 
-#include "core/css/CSSParserMode.h"
 #include "core/css/RuleSet.h"
 #include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
@@ -34,7 +33,7 @@
 #include "wtf/text/TextPosition.h"
 
 
-namespace WebCore {
+namespace blink {
 
 class CSSStyleSheet;
 class CSSStyleSheetResource;
@@ -195,7 +194,6 @@ private:
 
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> > m_loadingClients;
     WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> > m_completedClients;
-    typedef WillBeHeapHashSet<RawPtrWillBeWeakMember<CSSStyleSheet> >::iterator ClientsIterator;
 
     OwnPtrWillBeMember<RuleSet> m_ruleSet;
 };

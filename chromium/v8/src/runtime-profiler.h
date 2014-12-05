@@ -8,12 +8,16 @@
 #include "src/allocation.h"
 
 namespace v8 {
+
+namespace base {
+class Semaphore;
+}
+
 namespace internal {
 
 class Isolate;
 class JSFunction;
 class Object;
-class Semaphore;
 
 class RuntimeProfiler {
  public:
@@ -23,7 +27,7 @@ class RuntimeProfiler {
 
   void NotifyICChanged() { any_ic_changed_ = true; }
 
-  void AttemptOnStackReplacement(JSFunction* function);
+  void AttemptOnStackReplacement(JSFunction* function, int nesting_levels = 1);
 
  private:
   void Optimize(JSFunction* function, const char* reason);

@@ -28,14 +28,14 @@
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAnimatedPropertyBase;
 class SVGPropertyBase;
 class SVGElement;
 class SVGAnimationElement;
 
-class SVGAnimatedTypeAnimator FINAL : public NoBaseWillBeGarbageCollectedFinalized<SVGAnimatedTypeAnimator> {
+class SVGAnimatedTypeAnimator final : public NoBaseWillBeGarbageCollectedFinalized<SVGAnimatedTypeAnimator> {
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<SVGAnimatedTypeAnimator> create(SVGAnimationElement* animationElement, SVGElement* targetElement)
@@ -77,6 +77,6 @@ private:
     RefPtr<SVGAnimatedPropertyBase> m_animatedProperty;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedTypeAnimator_h

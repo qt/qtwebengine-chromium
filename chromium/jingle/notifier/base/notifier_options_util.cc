@@ -7,8 +7,8 @@
 #include "base/logging.h"
 #include "jingle/notifier/base/const_communicator.h"
 #include "jingle/notifier/base/notifier_options.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/jid.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/jid.h"
 
 namespace notifier {
 
@@ -23,7 +23,7 @@ buzz::XmppClientSettings MakeXmppClientSettings(
   xmpp_client_settings.set_user(jid.node());
   xmpp_client_settings.set_resource("chrome-sync");
   xmpp_client_settings.set_host(jid.domain());
-  xmpp_client_settings.set_use_tls(buzz::TLS_ENABLED);
+  xmpp_client_settings.set_use_tls(buzz::TLS_REQUIRED);
   xmpp_client_settings.set_auth_token(notifier_options.auth_mechanism,
       notifier_options.invalidate_xmpp_login ?
       token + "bogus" : token);

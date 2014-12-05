@@ -25,7 +25,7 @@
 #include "config.h"
 #include "core/html/ImageDocument.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/RawDataDocumentParser.h"
 #include "core/events/EventListener.h"
@@ -43,10 +43,11 @@
 #include "core/loader/FrameLoader.h"
 #include "core/loader/FrameLoaderClient.h"
 #include "wtf/text/StringBuilder.h"
+#include <limits>
 
 using std::min;
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -92,7 +93,7 @@ private:
     {
     }
 
-    virtual void appendBytes(const char*, size_t) OVERRIDE;
+    virtual void appendBytes(const char*, size_t) override;
     virtual void finish();
 };
 
@@ -108,12 +109,12 @@ static String imageTitle(const String& filename, const IntSize& size)
 {
     StringBuilder result;
     result.append(filename);
-    result.append(" (");
+    result.appendLiteral(" (");
     // FIXME: Localize numbers. Safari/OSX shows localized numbers with group
     // separaters. For example, "1,920x1,080".
-    result.append(String::number(size.width()));
+    result.appendNumber(size.width());
     result.append(static_cast<UChar>(0xD7)); // U+00D7 (multiplication sign)
-    result.append(String::number(size.height()));
+    result.appendNumber(size.height());
     result.append(')');
     return result.toString();
 }
@@ -128,8 +129,10 @@ void ImageDocumentParser::appendBytes(const char* data, size_t length)
     if (!frame->loader().client()->allowImage(!settings || settings->imagesEnabled(), document()->url()))
         return;
 
-    if (document()->cachedImage())
+    if (document()->cachedImage()) {
+        RELEASE_ASSERT(length <= std::numeric_limits<unsigned>::max());
         document()->cachedImage()->appendData(data, length);
+    }
     // Make sure the image renderer gets created because we need the renderer
     // to read the aspect ratio. See crbug.com/320244
     document()->updateRenderTreeIfNeeded();
@@ -199,7 +202,7 @@ void ImageDocument::createDocumentStructure()
 
     m_imageElement = HTMLImageElement::create(*this);
     m_imageElement->setAttribute(styleAttr, "-webkit-user-select: none");
-    m_imageElement->setLoadManually(true);
+    m_imageElement->setLoadingImageDocument();
     m_imageElement->setSrc(url().string());
     body->appendChild(m_imageElement.get());
 
@@ -261,12 +264,12 @@ void ImageDocument::imageClicked(int x, int y)
 
         updateLayout();
 
-        float scale = this->scale();
+        double scale = this->scale();
 
-        int scrollX = static_cast<int>(x / scale - (float)frame()->view()->width() / 2);
-        int scrollY = static_cast<int>(y / scale - (float)frame()->view()->height() / 2);
+        double scrollX = x / scale - static_cast<double>(frame()->view()->width()) / 2;
+        double scrollY = y / scale - static_cast<double>(frame()->view()->height()) / 2;
 
-        frame()->view()->setScrollPosition(IntPoint(scrollX, scrollY));
+        frame()->view()->setScrollPosition(DoublePoint(scrollX, scrollY));
     }
 }
 

@@ -24,11 +24,11 @@
 #include "core/css/StylePropertySet.h"
 
 #include "core/StylePropertyShorthand.h"
-#include "core/css/parser/BisonCSSParser.h"
+#include "core/css/CSSPropertyMetadata.h"
 #include "core/css/CSSValuePool.h"
-#include "core/css/RuntimeCSSEnabled.h"
 #include "core/css/StylePropertySerializer.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/frame/UseCounter.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/text/StringBuilder.h"
@@ -38,14 +38,14 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 static size_t sizeForImmutableStylePropertySetWithPropertyCount(unsigned count)
 {
     return sizeof(ImmutableStylePropertySet) - sizeof(void*) + sizeof(CSSValue*) * count + sizeof(StylePropertyMetadata) * count;
 }
 
-PassRefPtr<ImmutableStylePropertySet> ImmutableStylePropertySet::create(const CSSProperty* properties, unsigned count, CSSParserMode cssParserMode)
+PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> ImmutableStylePropertySet::create(const CSSProperty* properties, unsigned count, CSSParserMode cssParserMode)
 {
     ASSERT(count <= MaxArraySize);
 #if ENABLE(OILPAN)
@@ -53,10 +53,10 @@ PassRefPtr<ImmutableStylePropertySet> ImmutableStylePropertySet::create(const CS
 #else
     void* slot = WTF::fastMalloc(sizeForImmutableStylePropertySetWithPropertyCount(count));
 #endif // ENABLE(OILPAN)
-    return adoptRefWillBeRefCountedGarbageCollected(new (slot) ImmutableStylePropertySet(properties, count, cssParserMode));
+    return adoptRefWillBeNoop(new (slot) ImmutableStylePropertySet(properties, count, cssParserMode));
 }
 
-PassRefPtr<ImmutableStylePropertySet> StylePropertySet::immutableCopyIfNeeded() const
+PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> StylePropertySet::immutableCopyIfNeeded() const
 {
     if (!isMutable())
         return toImmutableStylePropertySet(const_cast<StylePropertySet*>(this));
@@ -108,7 +108,7 @@ int ImmutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     for (int n = m_arraySize - 1 ; n >= 0; --n) {
         if (metadataArray()[n].m_propertyID == id) {
             // Only enabled or internal properties should be part of the style.
-            ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID) || isInternalProperty(propertyID));
+            ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID) || isInternalProperty(propertyID));
             return n;
         }
     }
@@ -265,7 +265,7 @@ bool MutableStylePropertySet::setProperty(CSSPropertyID propertyID, const String
 
     // When replacing an existing property value, this moves the property to the end of the list.
     // Firefox preserves the position, and MSIE moves the property to the beginning.
-    return BisonCSSParser::parseValue(this, propertyID, value, important, cssParserMode(), contextStyleSheet);
+    return CSSParser::parseValue(this, propertyID, value, important, cssParserMode(), contextStyleSheet);
 }
 
 void MutableStylePropertySet::setProperty(CSSPropertyID propertyID, PassRefPtrWillBeRawPtr<CSSValue> prpValue, bool important)
@@ -331,12 +331,6 @@ bool MutableStylePropertySet::setProperty(CSSPropertyID propertyID, CSSValueID i
     return true;
 }
 
-bool MutableStylePropertySet::setProperty(CSSPropertyID propertyID, CSSPropertyID identifier, bool important)
-{
-    setProperty(CSSProperty(propertyID, cssValuePool().createIdentifierValue(identifier), important));
-    return true;
-}
-
 void MutableStylePropertySet::parseDeclaration(const String& styleDeclaration, StyleSheetContents* contextStyleSheet)
 {
     m_propertyVector.clear();
@@ -347,7 +341,7 @@ void MutableStylePropertySet::parseDeclaration(const String& styleDeclaration, S
         context.setMode(cssParserMode());
     }
 
-    BisonCSSParser parser(context);
+    CSSParser parser(context);
     parser.parseDeclaration(this, styleDeclaration, 0, contextStyleSheet);
 }
 
@@ -398,7 +392,6 @@ bool StylePropertySet::hasFailedOrCanceledSubresources() const
 static const CSSPropertyID staticBlockProperties[] = {
     CSSPropertyOrphans,
     CSSPropertyOverflow, // This can be also be applied to replaced elements
-    CSSPropertyWebkitAspectRatio,
     CSSPropertyWebkitColumnCount,
     CSSPropertyWebkitColumnGap,
     CSSPropertyWebkitColumnRuleColor,
@@ -422,7 +415,7 @@ static const Vector<CSSPropertyID>& blockProperties()
 {
     DEFINE_STATIC_LOCAL(Vector<CSSPropertyID>, properties, ());
     if (properties.isEmpty())
-        RuntimeCSSEnabled::filterEnabledCSSPropertiesIntoVector(staticBlockProperties, WTF_ARRAY_LENGTH(staticBlockProperties), properties);
+        CSSPropertyMetadata::filterEnabledCSSPropertiesIntoVector(staticBlockProperties, WTF_ARRAY_LENGTH(staticBlockProperties), properties);
     return properties;
 }
 
@@ -518,7 +511,7 @@ void MutableStylePropertySet::removeEquivalentProperties(const CSSStyleDeclarati
 
 PassRefPtrWillBeRawPtr<MutableStylePropertySet> StylePropertySet::mutableCopy() const
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new MutableStylePropertySet(*this));
+    return adoptRefWillBeNoop(new MutableStylePropertySet(*this));
 }
 
 PassRefPtrWillBeRawPtr<MutableStylePropertySet> StylePropertySet::copyPropertiesInSet(const Vector<CSSPropertyID>& properties) const
@@ -555,7 +548,7 @@ int MutableStylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     for (int n = m_propertyVector.size() - 1 ; n >= 0; --n) {
         if (properties[n].metadata().m_propertyID == id) {
             // Only enabled or internal properties should be part of the style.
-            ASSERT(RuntimeCSSEnabled::isCSSPropertyEnabled(propertyID) || isInternalProperty(propertyID));
+            ASSERT(CSSPropertyMetadata::isEnabledProperty(propertyID) || isInternalProperty(propertyID));
             return n;
         }
     }
@@ -577,7 +570,7 @@ unsigned StylePropertySet::averageSizeInBytes()
 }
 
 // See the function above if you need to update this.
-struct SameSizeAsStylePropertySet : public RefCountedWillBeRefCountedGarbageCollected<SameSizeAsStylePropertySet> {
+struct SameSizeAsStylePropertySet : public RefCountedWillBeGarbageCollectedFinalized<SameSizeAsStylePropertySet> {
     unsigned bitfield;
 };
 COMPILE_ASSERT(sizeof(StylePropertySet) == sizeof(SameSizeAsStylePropertySet), style_property_set_should_stay_small);
@@ -591,12 +584,12 @@ void StylePropertySet::showStyle()
 
 PassRefPtrWillBeRawPtr<MutableStylePropertySet> MutableStylePropertySet::create(CSSParserMode cssParserMode)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new MutableStylePropertySet(cssParserMode));
+    return adoptRefWillBeNoop(new MutableStylePropertySet(cssParserMode));
 }
 
 PassRefPtrWillBeRawPtr<MutableStylePropertySet> MutableStylePropertySet::create(const CSSProperty* properties, unsigned count)
 {
-    return adoptRefWillBeRefCountedGarbageCollected(new MutableStylePropertySet(properties, count));
+    return adoptRefWillBeNoop(new MutableStylePropertySet(properties, count));
 }
 
 String StylePropertySet::PropertyReference::cssName() const
@@ -617,4 +610,4 @@ String StylePropertySet::PropertyReference::cssText() const
 }
 
 
-} // namespace WebCore
+} // namespace blink

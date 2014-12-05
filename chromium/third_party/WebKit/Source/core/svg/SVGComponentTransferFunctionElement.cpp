@@ -27,7 +27,7 @@
 #include "core/svg/SVGFEComponentTransferElement.h"
 #include "core/svg/SVGNumberList.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<ComponentTransferType>()
 {
@@ -52,8 +52,6 @@ SVGComponentTransferFunctionElement::SVGComponentTransferFunctionElement(const Q
     , m_offset(SVGAnimatedNumber::create(this, SVGNames::offsetAttr, SVGNumber::create()))
     , m_type(SVGAnimatedEnumeration<ComponentTransferType>::create(this, SVGNames::typeAttr, FECOMPONENTTRANSFER_TYPE_IDENTITY))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_tableValues);
     addToPropertyMap(m_slope);
     addToPropertyMap(m_intercept);
@@ -80,29 +78,7 @@ bool SVGComponentTransferFunctionElement::isSupportedAttribute(const QualifiedNa
 
 void SVGComponentTransferFunctionElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::tableValuesAttr)
-        m_tableValues->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::typeAttr)
-        m_type->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::slopeAttr)
-        m_slope->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::interceptAttr)
-        m_intercept->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::amplitudeAttr)
-        m_amplitude->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::exponentAttr)
-        m_exponent->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::offsetAttr)
-        m_offset->setBaseValueAsString(value, parseError);
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGComponentTransferFunctionElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -130,4 +106,4 @@ ComponentTransferFunction SVGComponentTransferFunctionElement::transferFunction(
     return func;
 }
 
-}
+} // namespace blink

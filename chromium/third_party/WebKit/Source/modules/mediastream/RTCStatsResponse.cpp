@@ -23,36 +23,34 @@
  */
 
 #include "config.h"
-
 #include "modules/mediastream/RTCStatsResponse.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<RTCStatsResponse> RTCStatsResponse::create()
+RTCStatsResponse* RTCStatsResponse::create()
 {
-    return adoptRefWillBeNoop(new RTCStatsResponse());
+    return new RTCStatsResponse();
 }
 
 RTCStatsResponse::RTCStatsResponse()
 {
-    ScriptWrappable::init(this);
 }
 
-PassRefPtrWillBeRawPtr<RTCStatsReport> RTCStatsResponse::namedItem(const AtomicString& name)
+RTCStatsReport* RTCStatsResponse::namedItem(const AtomicString& name)
 {
     if (m_idmap.find(name) != m_idmap.end())
         return m_result[m_idmap.get(name)];
     return nullptr;
 }
 
-size_t RTCStatsResponse::addReport(String id, String type, double timestamp)
+size_t RTCStatsResponse::addReport(const String& id, const String& type, double timestamp)
 {
     m_result.append(RTCStatsReport::create(id, type, timestamp));
     m_idmap.add(id, m_result.size() - 1);
     return m_result.size() - 1;
 }
 
-void RTCStatsResponse::addStatistic(size_t report, String name, String value)
+void RTCStatsResponse::addStatistic(size_t report, const String& name, const String& value)
 {
     ASSERT_WITH_SECURITY_IMPLICATION(report >= 0 && report < m_result.size());
     m_result[report]->addStatistic(name, value);
@@ -64,4 +62,4 @@ void RTCStatsResponse::trace(Visitor* visitor)
     RTCStatsResponseBase::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

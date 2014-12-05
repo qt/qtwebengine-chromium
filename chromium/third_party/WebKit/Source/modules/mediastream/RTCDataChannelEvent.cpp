@@ -25,14 +25,14 @@
 #include "config.h"
 #include "modules/mediastream/RTCDataChannelEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create()
 {
     return adoptRefWillBeNoop(new RTCDataChannelEvent);
 }
 
-PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel> channel)
+PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create(const AtomicString& type, bool canBubble, bool cancelable, RTCDataChannel* channel)
 {
     return adoptRefWillBeNoop(new RTCDataChannelEvent(type, canBubble, cancelable, channel));
 }
@@ -40,14 +40,12 @@ PassRefPtrWillBeRawPtr<RTCDataChannelEvent> RTCDataChannelEvent::create(const At
 
 RTCDataChannelEvent::RTCDataChannelEvent()
 {
-    ScriptWrappable::init(this);
 }
 
-RTCDataChannelEvent::RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel> channel)
+RTCDataChannelEvent::RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, RTCDataChannel* channel)
     : Event(type, canBubble, cancelable)
     , m_channel(channel)
 {
-    ScriptWrappable::init(this);
 }
 
 RTCDataChannelEvent::~RTCDataChannelEvent()
@@ -70,4 +68,4 @@ void RTCDataChannelEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

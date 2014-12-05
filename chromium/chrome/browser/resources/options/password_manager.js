@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
 
   /////////////////////////////////////////////////////////////////////////////
@@ -12,30 +13,30 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of password and exceptions page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function PasswordManager() {
     this.activeNavTab = null;
-    OptionsPage.call(this,
-                     'passwords',
-                     loadTimeData.getString('passwordsPageTabTitle'),
-                     'password-manager');
+    Page.call(this, 'passwords',
+              loadTimeData.getString('passwordsPageTabTitle'),
+              'password-manager');
   }
 
   cr.addSingletonGetter(PasswordManager);
 
   PasswordManager.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The saved passwords list.
-     * @type {DeletableItemList}
+     * @type {options.DeletableItemList}
      * @private
      */
     savedPasswordsList_: null,
 
     /**
      * The password exceptions list.
-     * @type {DeletableItemList}
+     * @type {options.DeletableItemList}
      * @private
      */
     passwordExceptionsList_: null,
@@ -56,10 +57,10 @@ cr.define('options', function() {
 
     /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       $('password-manager-confirm').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
 
       $('password-search-box').addEventListener('search',
@@ -87,8 +88,10 @@ cr.define('options', function() {
      * @private
      */
     createSavedPasswordsList_: function() {
-      this.savedPasswordsList_ = $('saved-passwords-list');
-      options.passwordManager.PasswordsList.decorate(this.savedPasswordsList_);
+      var savedPasswordsList = $('saved-passwords-list');
+      options.passwordManager.PasswordsList.decorate(savedPasswordsList);
+      this.savedPasswordsList_ = assertInstanceof(savedPasswordsList,
+          options.DeletableItemList);
       this.savedPasswordsList_.autoExpands = true;
     },
 
@@ -97,9 +100,11 @@ cr.define('options', function() {
      * @private
      */
     createPasswordExceptionsList_: function() {
-      this.passwordExceptionsList_ = $('password-exceptions-list');
+      var passwordExceptionsList = $('password-exceptions-list');
       options.passwordManager.PasswordExceptionsList.decorate(
-          this.passwordExceptionsList_);
+          passwordExceptionsList);
+      this.passwordExceptionsList_ = assertInstanceof(passwordExceptionsList,
+          options.DeletableItemList);
       this.passwordExceptionsList_.autoExpands = true;
     },
 
@@ -138,7 +143,7 @@ cr.define('options', function() {
 
     /**
      * Updates the visibility of the list and empty list placeholder.
-     * @param {!List} list The list to toggle visilibility for.
+     * @param {!cr.ui.List} list The list to toggle visilibility for.
      */
     updateListVisibility_: function(list) {
       var empty = list.dataModel.length == 0;
@@ -150,7 +155,7 @@ cr.define('options', function() {
     /**
      * Updates the data model for the saved passwords list with the values from
      * |entries|.
-     * @param {Array} entries The list of saved password data.
+     * @param {!Array} entries The list of saved password data.
      */
     setSavedPasswordsList_: function(entries) {
       if (this.lastQuery_) {
@@ -177,7 +182,7 @@ cr.define('options', function() {
     /**
      * Updates the data model for the password exceptions list with the values
      * from |entries|.
-     * @param {Array} entries The list of password exception data.
+     * @param {!Array} entries The list of password exception data.
      */
     setPasswordExceptionsList_: function(entries) {
       this.passwordExceptionsList_.dataModel = new ArrayDataModel(entries);
@@ -208,6 +213,14 @@ cr.define('options', function() {
       var item = this.savedPasswordsList_.getListItemByIndex(index);
       item.showPassword(password);
     },
+
+    /**
+     * @param {boolean} visible Whether the link should be visible.
+     * @private
+     */
+    setManageAccountLinkVisibility_: function(visible) {
+      $('manage-passwords-span').hidden = !visible;
+    },
   };
 
   /**
@@ -231,16 +244,12 @@ cr.define('options', function() {
   };
 
   // Forward public APIs to private implementations on the singleton instance.
-  [
+  cr.makePublic(PasswordManager, [
+    'setManageAccountLinkVisibility',
     'setSavedPasswordsList',
     'setPasswordExceptionsList',
     'showPassword'
-   ].forEach(function(name) {
-     PasswordManager[name] = function() {
-      var instance = PasswordManager.getInstance();
-      return instance[name + '_'].apply(instance, arguments);
-    };
-  });
+  ]);
 
   // Export
   return {

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <gtest/gtest.h>
-
+#include <assert.h>
+#include <stdio.h>
 #ifdef _WIN32
 #include <io.h>
 #include <windows.h>
@@ -76,6 +76,54 @@ TEST_F(DiskInterfaceTest, StatExistingFile) {
   EXPECT_GT(disk_.Stat("file"), 1);
 }
 
+TEST_F(DiskInterfaceTest, StatExistingDir) {
+  ASSERT_TRUE(disk_.MakeDir("subdir"));
+  ASSERT_TRUE(disk_.MakeDir("subdir/subsubdir"));
+  EXPECT_GT(disk_.Stat("."), 1);
+  EXPECT_GT(disk_.Stat("subdir"), 1);
+  EXPECT_GT(disk_.Stat("subdir/subsubdir"), 1);
+
+  EXPECT_EQ(disk_.Stat("subdir"), disk_.Stat("subdir/."));
+  EXPECT_EQ(disk_.Stat("subdir"), disk_.Stat("subdir/subsubdir/.."));
+  EXPECT_EQ(disk_.Stat("subdir/subsubdir"), disk_.Stat("subdir/subsubdir/."));
+}
+
+#ifdef _WIN32
+TEST_F(DiskInterfaceTest, StatCache) {
+  disk_.AllowStatCache(true);
+
+  ASSERT_TRUE(Touch("file1"));
+  ASSERT_TRUE(Touch("fiLE2"));
+  ASSERT_TRUE(disk_.MakeDir("subdir"));
+  ASSERT_TRUE(disk_.MakeDir("subdir/subsubdir"));
+  ASSERT_TRUE(Touch("subdir\\subfile1"));
+  ASSERT_TRUE(Touch("subdir\\SUBFILE2"));
+  ASSERT_TRUE(Touch("subdir\\SUBFILE3"));
+
+  EXPECT_GT(disk_.Stat("FIle1"), 1);
+  EXPECT_GT(disk_.Stat("file1"), 1);
+
+  EXPECT_GT(disk_.Stat("subdir/subfile2"), 1);
+  EXPECT_GT(disk_.Stat("sUbdir\\suBFile1"), 1);
+
+  EXPECT_GT(disk_.Stat("."), 1);
+  EXPECT_GT(disk_.Stat("subdir"), 1);
+  EXPECT_GT(disk_.Stat("subdir/subsubdir"), 1);
+
+  EXPECT_EQ(disk_.Stat("subdir"), disk_.Stat("subdir/."));
+  EXPECT_EQ(disk_.Stat("subdir"), disk_.Stat("subdir/subsubdir/.."));
+  EXPECT_EQ(disk_.Stat("subdir/subsubdir"), disk_.Stat("subdir/subsubdir/."));
+
+  // Test error cases.
+  disk_.quiet_ = true;
+  string bad_path("cc:\\foo");
+  EXPECT_EQ(-1, disk_.Stat(bad_path));
+  EXPECT_EQ(-1, disk_.Stat(bad_path));
+  EXPECT_EQ(0, disk_.Stat("nosuchfile"));
+  EXPECT_EQ(0, disk_.Stat("nosuchdir/nosuchfile"));
+}
+#endif
+
 TEST_F(DiskInterfaceTest, ReadFile) {
   string err;
   EXPECT_EQ("", disk_.ReadFile("foobar", &err));
@@ -120,7 +168,7 @@ struct StatTest : public StateTestWithBuiltinRules,
   StatTest() : scan_(&state_, NULL, NULL, this) {}
 
   // DiskInterface implementation.
-  virtual TimeStamp Stat(const string& path);
+  virtual TimeStamp Stat(const string& path) const;
   virtual bool WriteFile(const string& path, const string& contents) {
     assert(false);
     return true;
@@ -140,12 +188,12 @@ struct StatTest : public StateTestWithBuiltinRules,
 
   DependencyScan scan_;
   map<string, TimeStamp> mtimes_;
-  vector<string> stats_;
+  mutable vector<string> stats_;
 };
 
-TimeStamp StatTest::Stat(const string& path) {
+TimeStamp StatTest::Stat(const string& path) const {
   stats_.push_back(path);
-  map<string, TimeStamp>::iterator i = mtimes_.find(path);
+  map<string, TimeStamp>::const_iterator i = mtimes_.find(path);
   if (i == mtimes_.end())
     return 0;  // File not found.
   return i->second;

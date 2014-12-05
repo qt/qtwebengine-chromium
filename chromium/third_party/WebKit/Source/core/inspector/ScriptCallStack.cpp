@@ -31,8 +31,9 @@
 #include "config.h"
 #include "core/inspector/ScriptCallStack.h"
 
+#include "core/inspector/ScriptAsyncCallStack.h"
 
-namespace WebCore {
+namespace blink {
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptCallStack);
 
@@ -57,6 +58,16 @@ size_t ScriptCallStack::size() const
     return m_frames.size();
 }
 
+PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> ScriptCallStack::asyncCallStack() const
+{
+    return m_asyncCallStack;
+}
+
+void ScriptCallStack::setAsyncCallStack(PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack)
+{
+    m_asyncCallStack = asyncCallStack;
+}
+
 PassRefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > ScriptCallStack::buildInspectorArray() const
 {
     RefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > frames = TypeBuilder::Array<TypeBuilder::Console::CallFrame>::create();
@@ -65,4 +76,9 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > ScriptCallStack
     return frames;
 }
 
-} // namespace WebCore
+void ScriptCallStack::trace(Visitor* visitor)
+{
+    visitor->trace(m_asyncCallStack);
+}
+
+} // namespace blink

@@ -53,7 +53,7 @@ WebInspector.AuditRules.getDomainToResourcesMap = function(requests, types, need
     var domainToResourcesMap = {};
     for (var i = 0, size = requests.length; i < size; ++i) {
         var request = requests[i];
-        if (types && types.indexOf(request.type) === -1)
+        if (types && types.indexOf(request.resourceType()) === -1)
             continue;
         var parsedURL = request.url.asParsedURL();
         if (!parsedURL)
@@ -94,7 +94,7 @@ WebInspector.AuditRules.GzipRule.prototype = {
         var summary = result.addChild("", true);
         for (var i = 0, length = requests.length; i < length; ++i) {
             var request = requests[i];
-            if (request.cached || request.statusCode === 304)
+            if (request.cached() || request.statusCode === 304)
                 continue; // Do not test cached resources.
             if (this._shouldCompress(request)) {
                 var size = request.resourceSize;
@@ -134,7 +134,7 @@ WebInspector.AuditRules.GzipRule.prototype = {
      */
     _shouldCompress: function(request)
     {
-        return request.type.isTextType() && request.parsedURL.host && request.resourceSize !== undefined && request.resourceSize > 150;
+        return request.resourceType().isTextType() && request.parsedURL.host && request.resourceSize !== undefined && request.resourceSize > 150;
     },
 
     __proto__: WebInspector.AuditRule.prototype
@@ -143,6 +143,11 @@ WebInspector.AuditRules.GzipRule.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.AuditRule}
+ * @param {string} id
+ * @param {string} name
+ * @param {!WebInspector.ResourceType} type
+ * @param {string} resourceTypeName
+ * @param {boolean} allowedPerDomain
  */
 WebInspector.AuditRules.CombineExternalResourcesRule = function(id, name, type, resourceTypeName, allowedPerDomain)
 {
@@ -414,7 +419,7 @@ WebInspector.AuditRules.UnusedCssRule.prototype = {
                         continue;
 
                     var resource = WebInspector.resourceForURL(styleSheet.sourceURL);
-                    var isInlineBlock = resource && resource.request && resource.request.type === WebInspector.resourceTypes.Document;
+                    var isInlineBlock = resource && resource.request && resource.request.resourceType() === WebInspector.resourceTypes.Document;
                     var url = !isInlineBlock ? WebInspector.AuditRuleResult.linkifyDisplayName(styleSheet.sourceURL) : WebInspector.UIString("Inline block #%d", ++inlineBlockOrdinal);
                     var pctUnused = Math.round(100 * unusedRules.length / styleSheet.rules.length);
                     if (!summary)
@@ -677,7 +682,7 @@ WebInspector.AuditRules.CacheControlRule.prototype = {
      */
     isCompressible: function(request)
     {
-        return request.type.isTextType();
+        return request.resourceType().isTextType();
     },
 
     /**

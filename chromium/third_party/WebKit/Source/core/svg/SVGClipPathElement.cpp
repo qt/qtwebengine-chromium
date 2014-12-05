@@ -25,47 +25,25 @@
 
 #include "core/rendering/svg/RenderSVGResourceClipper.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGClipPathElement::SVGClipPathElement(Document& document)
     : SVGGraphicsElement(SVGNames::clipPathTag, document)
     , m_clipPathUnits(SVGAnimatedEnumeration<SVGUnitTypes::SVGUnitType>::create(this, SVGNames::clipPathUnitsAttr, SVGUnitTypes::SVG_UNIT_TYPE_USERSPACEONUSE))
 {
-    ScriptWrappable::init(this);
     addToPropertyMap(m_clipPathUnits);
 }
 
 DEFINE_NODE_FACTORY(SVGClipPathElement)
 
-bool SVGClipPathElement::isSupportedAttribute(const QualifiedName& attrName)
-{
-    DEFINE_STATIC_LOCAL(HashSet<QualifiedName>, supportedAttributes, ());
-    if (supportedAttributes.isEmpty())
-        supportedAttributes.add(SVGNames::clipPathUnitsAttr);
-
-    return supportedAttributes.contains<SVGAttributeHashTranslator>(attrName);
-}
-
 void SVGClipPathElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
-        return;
-    }
-
-    SVGParsingError parseError = NoError;
-
-    if (name == SVGNames::clipPathUnitsAttr)
-        m_clipPathUnits->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
 {
-    if (!isSupportedAttribute(attrName)) {
+    if (attrName != SVGNames::clipPathUnitsAttr) {
         SVGGraphicsElement::svgAttributeChanged(attrName);
         return;
     }
@@ -77,11 +55,11 @@ void SVGClipPathElement::svgAttributeChanged(const QualifiedName& attrName)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-void SVGClipPathElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGClipPathElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGGraphicsElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGGraphicsElement::childrenChanged(change);
 
-    if (changedByParser)
+    if (change.byParser)
         return;
 
     if (RenderObject* object = renderer())

@@ -25,18 +25,19 @@
 #ifndef TreeWalker_h
 #define TreeWalker_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/NodeFilter.h"
 #include "core/dom/NodeIteratorBase.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 
-class TreeWalker FINAL : public RefCountedWillBeGarbageCollectedFinalized<TreeWalker>, public ScriptWrappable, public NodeIteratorBase {
+class TreeWalker final : public RefCountedWillBeGarbageCollected<TreeWalker>, public ScriptWrappable, public NodeIteratorBase {
+    DEFINE_WRAPPERTYPEINFO();
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(TreeWalker);
 public:
     static PassRefPtrWillBeRawPtr<TreeWalker> create(PassRefPtrWillBeRawPtr<Node> rootNode, unsigned whatToShow, PassRefPtrWillBeRawPtr<NodeFilter> filter)
@@ -65,6 +66,6 @@ private:
     RefPtrWillBeMember<Node> m_current;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // TreeWalker_h

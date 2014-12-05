@@ -14,8 +14,16 @@
 #include "content/common/indexed_db/indexed_db_param_traits.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
-#include "third_party/WebKit/public/platform/WebIDBCursor.h"
-#include "third_party/WebKit/public/platform/WebIDBDatabase.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
+
+// Singly-included section for typedefs in multiply-included file.
+#ifndef CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
+#define CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
+
+// An index id, and corresponding set of keys to insert.
+typedef std::pair<int64, std::vector<content::IndexedDBKey> > IndexKeys;
+
+#endif  // CONTENT_COMMON_INDEXED_DB_INDEXED_DB_MESSAGES_H_
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -23,18 +31,14 @@
 
 // Argument structures used in messages
 
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBCursor::Direction,
-                          blink::WebIDBCursor::DirectionLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::PutMode,
-                          blink::WebIDBDatabase::PutModeLast)
-IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDatabase::TaskType,
-                          blink::WebIDBDatabase::TaskTypeLast)
-IPC_ENUM_TRAITS(blink::WebIDBDatabase::TransactionMode)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBCursorDirection,
+                          blink::WebIDBCursorDirectionLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBPutMode, blink::WebIDBPutModeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBTaskType, blink::WebIDBTaskTypeLast)
+IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBTransactionMode,
+                          blink::WebIDBTransactionModeLast)
 
 IPC_ENUM_TRAITS_MAX_VALUE(blink::WebIDBDataLoss, blink::WebIDBDataLossTotal)
-
-// An index id, and corresponding set of keys to insert.
-typedef std::pair<int64, std::vector<content::IndexedDBKey> > IndexKeys;
 
 // Used to enumerate indexed databases.
 IPC_STRUCT_BEGIN(IndexedDBHostMsg_FactoryGetDatabaseNames_Params)
@@ -85,7 +89,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseCreateTransaction_Params)
   // The scope of the transaction.
   IPC_STRUCT_MEMBER(std::vector<int64>, object_store_ids)
   // The transaction mode.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TransactionMode, mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBTransactionMode, mode)
 IPC_STRUCT_END()
 
 // Used to create an object store.
@@ -150,7 +154,7 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabasePut_Params)
   // The key to set it on (may not be "valid"/set in some cases).
   IPC_STRUCT_MEMBER(content::IndexedDBKey, key)
   // Whether this is an add or a put.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::PutMode, put_mode)
+  IPC_STRUCT_MEMBER(blink::WebIDBPutMode, put_mode)
   // The index ids and the list of keys for each index.
   IPC_STRUCT_MEMBER(std::vector<IndexKeys>, index_keys)
   // Sideband data for any blob or file encoded in value.
@@ -173,11 +177,11 @@ IPC_STRUCT_BEGIN(IndexedDBHostMsg_DatabaseOpenCursor_Params)
   // The serialized key range.
   IPC_STRUCT_MEMBER(content::IndexedDBKeyRange, key_range)
   // The direction of this cursor.
-  IPC_STRUCT_MEMBER(blink::WebIDBCursor::Direction, direction)
+  IPC_STRUCT_MEMBER(blink::WebIDBCursorDirection, direction)
   // If this is just retrieving the key
   IPC_STRUCT_MEMBER(bool, key_only)
   // The priority of this cursor.
-  IPC_STRUCT_MEMBER(blink::WebIDBDatabase::TaskType, task_type)
+  IPC_STRUCT_MEMBER(blink::WebIDBTaskType, task_type)
 IPC_STRUCT_END()
 
 // Used to open both cursors and object cursors in IndexedDB.
@@ -476,7 +480,11 @@ IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_DatabaseCreateTransaction,
 
 // WebIDBDatabase::close() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_DatabaseClose,
-                     int32 /* ipc_database_callbacks_id */)
+                     int32 /* ipc_database_id */)
+
+// WebIDBDatabase::versionChangeIgnored() message.
+IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_DatabaseVersionChangeIgnored,
+                     int32 /* ipc_database_id */)
 
 // WebIDBDatabase::~WebIDBDatabase() message.
 IPC_MESSAGE_CONTROL1(IndexedDBHostMsg_DatabaseDestroyed,

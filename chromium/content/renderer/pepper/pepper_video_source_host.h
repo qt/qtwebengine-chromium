@@ -9,9 +9,11 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/renderer/media/video_source_handler.h"
 #include "ppapi/c/pp_time.h"
+#include "ppapi/c/ppb_image_data.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
 
@@ -19,6 +21,7 @@ struct PP_ImageDataDesc;
 
 namespace content {
 
+class PPB_ImageData_Impl;
 class RendererPpapiHost;
 
 class CONTENT_EXPORT PepperVideoSourceHost : public ppapi::host::ResourceHost {
@@ -27,11 +30,11 @@ class CONTENT_EXPORT PepperVideoSourceHost : public ppapi::host::ResourceHost {
                         PP_Instance instance,
                         PP_Resource resource);
 
-  virtual ~PepperVideoSourceHost();
+  ~PepperVideoSourceHost() override;
 
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
  private:
   // This helper object receives frames on a video worker thread and passes
@@ -42,17 +45,15 @@ class CONTENT_EXPORT PepperVideoSourceHost : public ppapi::host::ResourceHost {
     explicit FrameReceiver(const base::WeakPtr<PepperVideoSourceHost>& host);
 
     // FrameReaderInterface implementation.
-    virtual bool GotFrame(const scoped_refptr<media::VideoFrame>& frame)
-        OVERRIDE;
-
-    void OnGotFrame(const scoped_refptr<media::VideoFrame>& frame);
+    void GotFrame(const scoped_refptr<media::VideoFrame>& frame) override;
 
    private:
     friend class base::RefCountedThreadSafe<FrameReceiver>;
-    virtual ~FrameReceiver();
+    ~FrameReceiver() override;
 
     base::WeakPtr<PepperVideoSourceHost> host_;
-    scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
+    // |thread_checker_| is bound to the main render thread.
+    base::ThreadChecker thread_checker_;
   };
 
   friend class FrameReceiver;
@@ -79,6 +80,13 @@ class CONTENT_EXPORT PepperVideoSourceHost : public ppapi::host::ResourceHost {
   std::string stream_url_;
   scoped_refptr<media::VideoFrame> last_frame_;
   bool get_frame_pending_;
+  // We use only one ImageData resource in order to avoid allocating
+  // shared memory repeatedly. We send the same one each time the plugin
+  // requests a frame. For this to work, the plugin must finish using
+  // the ImageData it receives prior to calling GetFrame, and not access
+  // the ImageData until it gets its next callback to GetFrame.
+  scoped_refptr<PPB_ImageData_Impl> shared_image_;
+  PP_ImageDataDesc shared_image_desc_;
 
   base::WeakPtrFactory<PepperVideoSourceHost> weak_factory_;
 

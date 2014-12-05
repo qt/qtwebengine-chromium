@@ -29,12 +29,11 @@ class QuicSpdyClientStreamTest : public TestWithParam<QuicVersion> {
   QuicSpdyClientStreamTest()
       : connection_(new StrictMock<MockConnection>(
             false, SupportedVersions(GetParam()))),
-        session_(QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
-                 DefaultQuicConfig(),
-                 connection_,
-                 &crypto_config_),
+        session_(DefaultQuicConfig(), connection_, /*is_secure=*/false),
         body_("hello world") {
-    crypto_config_.SetDefaults();
+    session_.InitializeSession(
+        QuicServerId("example.com", 80, false, PRIVACY_MODE_DISABLED),
+        &crypto_config_);
 
     headers_.SetResponseFirstlineFromStringPieces("HTTP/1.1", "200", "Ok");
     headers_.ReplaceOrAppendHeader("content-length", "11");
@@ -102,7 +101,7 @@ TEST_P(QuicSpdyClientStreamTest, TestNoBidirectionalStreaming) {
   QuicStreamFrame frame(3, false, 3, MakeIOVector("asd"));
 
   EXPECT_FALSE(stream_->write_side_closed());
-  EXPECT_TRUE(stream_->OnStreamFrame(frame));
+  stream_->OnStreamFrame(frame);
   EXPECT_TRUE(stream_->write_side_closed());
 }
 

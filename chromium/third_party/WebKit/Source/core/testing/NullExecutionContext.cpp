@@ -3,20 +3,23 @@
 // found in the LICENSE file.
 
 #include "config.h"
-
 #include "core/testing/NullExecutionContext.h"
 
-namespace WebCore {
+#include "core/dom/ExecutionContextTask.h"
+#include "core/events/Event.h"
+#include "core/frame/DOMTimer.h"
+
+namespace blink {
 
 namespace {
 
-class NullEventQueue FINAL : public EventQueue {
+class NullEventQueue final : public EventQueue {
 public:
     NullEventQueue() { }
     virtual ~NullEventQueue() { }
-    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) OVERRIDE { return true; }
-    virtual bool cancelEvent(Event*) OVERRIDE { return true; }
-    virtual void close() OVERRIDE { }
+    virtual bool enqueueEvent(PassRefPtrWillBeRawPtr<Event>) override { return true; }
+    virtual bool cancelEvent(Event*) override { return true; }
+    virtual void close() override { }
 };
 
 } // namespace
@@ -27,4 +30,13 @@ NullExecutionContext::NullExecutionContext()
 {
 }
 
-} // namespace WebCore
+void NullExecutionContext::postTask(PassOwnPtr<ExecutionContextTask>)
+{
+}
+
+double NullExecutionContext::timerAlignmentInterval() const
+{
+    return DOMTimer::visiblePageAlignmentInterval();
+}
+
+} // namespace blink

@@ -30,12 +30,11 @@
 
 /**
  * @constructor
- * @extends {WebInspector.TargetAwareObject}
- * @param {!WebInspector.Target} target
+ * @extends {WebInspector.Object}
  */
-WebInspector.TimelineModel = function(target)
+WebInspector.TimelineModel = function()
 {
-    WebInspector.TargetAwareObject.call(this, target);
+    WebInspector.Object.call(this);
     this._filters = [];
 }
 
@@ -87,7 +86,6 @@ WebInspector.TimelineModel.RecordType = {
 
     FunctionCall: "FunctionCall",
     GCEvent: "GCEvent",
-    JSFrame: "JSFrame",
 
     UpdateCounters: "UpdateCounters",
 
@@ -111,6 +109,8 @@ WebInspector.TimelineModel.Events = {
     RecordingProgress: "RecordingProgress",
     RecordFilterChanged: "RecordFilterChanged"
 }
+
+WebInspector.TimelineModel.MainThreadName = "main";
 
 /**
  * @param {!Array.<!WebInspector.TimelineModel.Record>} recordsArray
@@ -141,26 +141,20 @@ WebInspector.TimelineModel.forAllRecords = function(recordsArray, preOrderCallba
     return processRecords(recordsArray, 0);
 }
 
+WebInspector.TimelineModel.TransferChunkLengthBytes = 5000000;
+
 WebInspector.TimelineModel.prototype = {
     /**
-     * @param {boolean} captureStacks
+     * @param {boolean} captureCauses
      * @param {boolean} captureMemory
      * @param {boolean} capturePictures
      */
-    startRecording: function(captureStacks, captureMemory, capturePictures)
+    startRecording: function(captureCauses, captureMemory, capturePictures)
     {
     },
 
     stopRecording: function()
     {
-    },
-
-    /**
-     * @return {boolean}
-     */
-    loadedFromFile: function()
-    {
-        return false;
     },
 
     /**
@@ -243,26 +237,61 @@ WebInspector.TimelineModel.prototype = {
      */
     loadFromFile: function(file, progress)
     {
-        throw new Error("Not implemented");
+        var delegate = new WebInspector.TimelineModelLoadFromFileDelegate(this, progress);
+        var fileReader = this._createFileReader(file, delegate);
+        var loader = this.createLoader(fileReader, progress);
+        fileReader.start(loader);
     },
 
     /**
-     * @param {string} url
+     * @param {!WebInspector.ChunkedFileReader} fileReader
      * @param {!WebInspector.Progress} progress
+     * @return {!WebInspector.OutputStream}
      */
-    loadFromURL: function(url, progress)
+    createLoader: function(fileReader, progress)
     {
-        throw new Error("Not implemented");
+        throw new Error("Not implemented.");
+    },
+
+    _createFileReader: function(file, delegate)
+    {
+        return new WebInspector.ChunkedFileReader(file, WebInspector.TimelineModel.TransferChunkLengthBytes, delegate);
+    },
+
+    _createFileWriter: function()
+    {
+        return new WebInspector.FileOutputStream();
     },
 
     saveToFile: function()
     {
-        throw new Error("Not implemented");
+        var now = new Date();
+        var fileName = "TimelineRawData-" + now.toISO8601Compact() + ".json";
+        var stream = this._createFileWriter();
+
+        /**
+         * @param {boolean} accepted
+         * @this {WebInspector.TimelineModel}
+         */
+        function callback(accepted)
+        {
+            if (!accepted)
+                return;
+            this.writeToStream(stream);
+        }
+        stream.open(fileName, callback.bind(this));
+    },
+
+    /**
+     * @param {!WebInspector.OutputStream} stream
+     */
+    writeToStream: function(stream)
+    {
+        throw new Error("Not implemented.");
     },
 
     reset: function()
     {
-        this._loadedFromFile = false;
         this._records = [];
         this._minimumRecordTime = 0;
         this._maximumRecordTime = 0;
@@ -280,7 +309,7 @@ WebInspector.TimelineModel.prototype = {
      */
     minimumRecordTime: function()
     {
-        return this._minimumRecordTime;
+        throw new Error("Not implemented.");
     },
 
     /**
@@ -288,21 +317,15 @@ WebInspector.TimelineModel.prototype = {
      */
     maximumRecordTime: function()
     {
-        return this._maximumRecordTime;
+        throw new Error("Not implemented.");
     },
 
     /**
-     * @param {!WebInspector.TimelineModel.Record} record
+     * @return {boolean}
      */
-    _updateBoundaries: function(record)
+    isEmpty: function()
     {
-        var startTime = record.startTime();
-        var endTime = record.endTime();
-
-        if (!this._minimumRecordTime || startTime < this._minimumRecordTime)
-            this._minimumRecordTime = startTime;
-        if (endTime > this._maximumRecordTime)
-            this._maximumRecordTime = endTime;
+        return this.minimumRecordTime() === 0 && this.maximumRecordTime() === 0;
     },
 
     /**
@@ -329,7 +352,7 @@ WebInspector.TimelineModel.prototype = {
         return this._eventDividerRecords;
     },
 
-    __proto__: WebInspector.TargetAwareObject.prototype
+    __proto__: WebInspector.Object.prototype
 }
 
 /**
@@ -351,7 +374,7 @@ WebInspector.TimelineModel.Record.prototype = {
     initiator: function() { },
 
     /**
-     * @return {!WebInspector.Target}
+     * @return {?WebInspector.Target}
      */
     target: function() { },
 
@@ -366,17 +389,12 @@ WebInspector.TimelineModel.Record.prototype = {
     children: function() { },
 
     /**
-     * @return {!WebInspector.TimelineCategory}
-     */
-    category: function() { },
-
-    /**
      * @return {number}
      */
     startTime: function() { },
 
     /**
-     * @return {string|undefined}
+     * @return {string}
      */
     thread: function() { },
 
@@ -423,11 +441,6 @@ WebInspector.TimelineModel.Record.prototype = {
     setUserObject: function(key, value) { },
 
     /**
-     * @return {!Object.<string, number>}
-     */
-    aggregatedStats: function() { },
-
-    /**
      * @return {?Array.<string>}
      */
     warnings: function() { }
@@ -460,6 +473,90 @@ WebInspector.TimelineModel.Filter.prototype = {
 
 /**
  * @constructor
+ * @extends {WebInspector.TimelineModel.Filter}
+ * @param {!Array.<string>} recordTypes
+ */
+WebInspector.TimelineRecordTypeFilter = function(recordTypes)
+{
+    WebInspector.TimelineModel.Filter.call(this);
+    this._recordTypes = recordTypes.keySet();
+}
+
+WebInspector.TimelineRecordTypeFilter.prototype = {
+    __proto__: WebInspector.TimelineModel.Filter.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TimelineRecordTypeFilter}
+ * @param {!Array.<string>} recordTypes
+ */
+WebInspector.TimelineRecordHiddenEmptyTypeFilter = function(recordTypes)
+{
+    WebInspector.TimelineRecordTypeFilter.call(this, recordTypes);
+}
+
+WebInspector.TimelineRecordHiddenEmptyTypeFilter.prototype = {
+    /**
+     * @param {!WebInspector.TimelineModel.Record} record
+     * @return {boolean}
+     */
+    accept: function(record)
+    {
+        return record.children().length !== 0 || !this._recordTypes[record.type()];
+    },
+
+    __proto__: WebInspector.TimelineRecordTypeFilter.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TimelineRecordTypeFilter}
+ * @param {!Array.<string>} recordTypes
+ */
+WebInspector.TimelineRecordHiddenTypeFilter = function(recordTypes)
+{
+    WebInspector.TimelineRecordTypeFilter.call(this, recordTypes);
+}
+
+WebInspector.TimelineRecordHiddenTypeFilter.prototype = {
+    /**
+     * @param {!WebInspector.TimelineModel.Record} record
+     * @return {boolean}
+     */
+    accept: function(record)
+    {
+        return !this._recordTypes[record.type()];
+    },
+
+    __proto__: WebInspector.TimelineRecordTypeFilter.prototype
+}
+
+/**
+ * @constructor
+ * @extends {WebInspector.TimelineRecordTypeFilter}
+ * @param {!Array.<string>} recordTypes
+ */
+WebInspector.TimelineRecordVisibleTypeFilter = function(recordTypes)
+{
+    WebInspector.TimelineRecordTypeFilter.call(this, recordTypes);
+}
+
+WebInspector.TimelineRecordVisibleTypeFilter.prototype = {
+    /**
+     * @param {!WebInspector.TimelineModel.Record} record
+     * @return {boolean}
+     */
+    accept: function(record)
+    {
+        return !!this._recordTypes[record.type()];
+    },
+
+    __proto__: WebInspector.TimelineRecordTypeFilter.prototype
+}
+
+/**
+ * @constructor
  */
 WebInspector.TimelineMergingRecordBuffer = function()
 {
@@ -477,7 +574,7 @@ WebInspector.TimelineMergingRecordBuffer.prototype = {
      */
     process: function(thread, records)
     {
-        if (thread) {
+        if (thread !== WebInspector.TimelineModel.MainThreadName) {
             this._backgroundRecordsBuffer = this._backgroundRecordsBuffer.concat(records);
             return [];
         }
@@ -493,5 +590,70 @@ WebInspector.TimelineMergingRecordBuffer.prototype = {
         var result = this._backgroundRecordsBuffer.mergeOrdered(records, recordTimestampComparator);
         this._backgroundRecordsBuffer = [];
         return result;
+    }
+}
+
+/**
+ * @constructor
+ * @implements {WebInspector.OutputStreamDelegate}
+ * @param {!WebInspector.TimelineModel} model
+ * @param {!WebInspector.Progress} progress
+ */
+WebInspector.TimelineModelLoadFromFileDelegate = function(model, progress)
+{
+    this._model = model;
+    this._progress = progress;
+}
+
+WebInspector.TimelineModelLoadFromFileDelegate.prototype = {
+    onTransferStarted: function()
+    {
+        this._progress.setTitle(WebInspector.UIString("Loading\u2026"));
+    },
+
+    /**
+     * @param {!WebInspector.ChunkedReader} reader
+     */
+    onChunkTransferred: function(reader)
+    {
+        if (this._progress.isCanceled()) {
+            reader.cancel();
+            this._progress.done();
+            this._model.reset();
+            return;
+        }
+
+        var totalSize = reader.fileSize();
+        if (totalSize) {
+            this._progress.setTotalWork(totalSize);
+            this._progress.setWorked(reader.loadedSize());
+        }
+    },
+
+    onTransferFinished: function()
+    {
+        this._progress.done();
+    },
+
+    /**
+     * @param {!WebInspector.ChunkedReader} reader
+     * @param {!Event} event
+     */
+    onError: function(reader, event)
+    {
+        this._progress.done();
+        this._model.reset();
+        switch (event.target.error.code) {
+        case FileError.NOT_FOUND_ERR:
+            WebInspector.console.error(WebInspector.UIString("File \"%s\" not found.", reader.fileName()));
+            break;
+        case FileError.NOT_READABLE_ERR:
+            WebInspector.console.error(WebInspector.UIString("File \"%s\" is not readable", reader.fileName()));
+            break;
+        case FileError.ABORT_ERR:
+            break;
+        default:
+            WebInspector.console.error(WebInspector.UIString("An error occurred while reading the file \"%s\"", reader.fileName()));
+        }
     }
 }

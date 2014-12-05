@@ -6,15 +6,16 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/hash.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/stats_counters.h"
 #include "base/rand_util.h"
+#include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
@@ -109,9 +110,10 @@ void FinalCleanupCallback(disk_cache::BackendImpl* backend) {
 
 namespace disk_cache {
 
-BackendImpl::BackendImpl(const base::FilePath& path,
-                         base::MessageLoopProxy* cache_thread,
-                         net::NetLog* net_log)
+BackendImpl::BackendImpl(
+    const base::FilePath& path,
+    const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+    net::NetLog* net_log)
     : background_queue_(this, cache_thread),
       path_(path),
       block_files_(path),
@@ -134,10 +136,11 @@ BackendImpl::BackendImpl(const base::FilePath& path,
       ptr_factory_(this) {
 }
 
-BackendImpl::BackendImpl(const base::FilePath& path,
-                         uint32 mask,
-                         base::MessageLoopProxy* cache_thread,
-                         net::NetLog* net_log)
+BackendImpl::BackendImpl(
+    const base::FilePath& path,
+    uint32 mask,
+    const scoped_refptr<base::SingleThreadTaskRunner>& cache_thread,
+    net::NetLog* net_log)
     : background_queue_(this, cache_thread),
       path_(path),
       block_files_(path),
@@ -325,13 +328,6 @@ void BackendImpl::CleanupCache() {
 
 // ------------------------------------------------------------------------
 
-int BackendImpl::OpenPrevEntry(void** iter, Entry** prev_entry,
-                               const CompletionCallback& callback) {
-  DCHECK(!callback.is_null());
-  background_queue_.OpenPrevEntry(iter, prev_entry, callback);
-  return net::ERR_IO_PENDING;
-}
-
 int BackendImpl::SyncOpenEntry(const std::string& key, Entry** entry) {
   DCHECK(entry);
   *entry = OpenEntryImpl(key);
@@ -385,14 +381,14 @@ int BackendImpl::SyncDoomEntriesBetween(const base::Time initial_time,
     return net::ERR_FAILED;
 
   EntryImpl* node;
-  void* iter = NULL;
-  EntryImpl* next = OpenNextEntryImpl(&iter);
+  scoped_ptr<Rankings::Iterator> iterator(new Rankings::Iterator());
+  EntryImpl* next = OpenNextEntryImpl(iterator.get());
   if (!next)
     return net::OK;
 
   while (next) {
     node = next;
-    next = OpenNextEntryImpl(&iter);
+    next = OpenNextEntryImpl(iterator.get());
 
     if (node->GetLastUsed() >= initial_time &&
         node->GetLastUsed() < end_time) {
@@ -401,7 +397,7 @@ int BackendImpl::SyncDoomEntriesBetween(const base::Time initial_time,
       if (next)
         next->Release();
       next = NULL;
-      SyncEndEnumeration(iter);
+      SyncEndEnumeration(iterator.Pass());
     }
 
     node->Release();
@@ -419,36 +415,31 @@ int BackendImpl::SyncDoomEntriesSince(const base::Time initial_time) {
 
   stats_.OnEvent(Stats::DOOM_RECENT);
   for (;;) {
-    void* iter = NULL;
-    EntryImpl* entry = OpenNextEntryImpl(&iter);
+    scoped_ptr<Rankings::Iterator> iterator(new Rankings::Iterator());
+    EntryImpl* entry = OpenNextEntryImpl(iterator.get());
     if (!entry)
       return net::OK;
 
     if (initial_time > entry->GetLastUsed()) {
       entry->Release();
-      SyncEndEnumeration(iter);
+      SyncEndEnumeration(iterator.Pass());
       return net::OK;
     }
 
     entry->DoomImpl();
     entry->Release();
-    SyncEndEnumeration(iter);  // Dooming the entry invalidates the iterator.
+    SyncEndEnumeration(iterator.Pass());  // The doom invalidated the iterator.
   }
 }
 
-int BackendImpl::SyncOpenNextEntry(void** iter, Entry** next_entry) {
-  *next_entry = OpenNextEntryImpl(iter);
+int BackendImpl::SyncOpenNextEntry(Rankings::Iterator* iterator,
+                                   Entry** next_entry) {
+  *next_entry = OpenNextEntryImpl(iterator);
   return (*next_entry) ? net::OK : net::ERR_FAILED;
 }
 
-int BackendImpl::SyncOpenPrevEntry(void** iter, Entry** prev_entry) {
-  *prev_entry = OpenPrevEntryImpl(iter);
-  return (*prev_entry) ? net::OK : net::ERR_FAILED;
-}
-
-void BackendImpl::SyncEndEnumeration(void* iter) {
-  scoped_ptr<Rankings::Iterator> iterator(
-      reinterpret_cast<Rankings::Iterator*>(iter));
+void BackendImpl::SyncEndEnumeration(scoped_ptr<Rankings::Iterator> iterator) {
+  iterator->Reset();
 }
 
 void BackendImpl::SyncOnExternalCacheHit(const std::string& key) {
@@ -613,12 +604,72 @@ EntryImpl* BackendImpl::CreateEntryImpl(const std::string& key) {
   return cache_entry.get();
 }
 
-EntryImpl* BackendImpl::OpenNextEntryImpl(void** iter) {
-  return OpenFollowingEntry(true, iter);
-}
+EntryImpl* BackendImpl::OpenNextEntryImpl(Rankings::Iterator* iterator) {
+  if (disabled_)
+    return NULL;
 
-EntryImpl* BackendImpl::OpenPrevEntryImpl(void** iter) {
-  return OpenFollowingEntry(false, iter);
+  const int kListsToSearch = 3;
+  scoped_refptr<EntryImpl> entries[kListsToSearch];
+  if (!iterator->my_rankings) {
+    iterator->my_rankings = &rankings_;
+    bool ret = false;
+
+    // Get an entry from each list.
+    for (int i = 0; i < kListsToSearch; i++) {
+      EntryImpl* temp = NULL;
+      ret |= OpenFollowingEntryFromList(static_cast<Rankings::List>(i),
+                                        &iterator->nodes[i], &temp);
+      entries[i].swap(&temp);  // The entry was already addref'd.
+    }
+    if (!ret) {
+      iterator->Reset();
+      return NULL;
+    }
+  } else {
+    // Get the next entry from the last list, and the actual entries for the
+    // elements on the other lists.
+    for (int i = 0; i < kListsToSearch; i++) {
+      EntryImpl* temp = NULL;
+      if (iterator->list == i) {
+          OpenFollowingEntryFromList(
+              iterator->list, &iterator->nodes[i], &temp);
+      } else {
+        temp = GetEnumeratedEntry(iterator->nodes[i],
+                                  static_cast<Rankings::List>(i));
+      }
+
+      entries[i].swap(&temp);  // The entry was already addref'd.
+    }
+  }
+
+  int newest = -1;
+  int oldest = -1;
+  Time access_times[kListsToSearch];
+  for (int i = 0; i < kListsToSearch; i++) {
+    if (entries[i].get()) {
+      access_times[i] = entries[i]->GetLastUsed();
+      if (newest < 0) {
+        DCHECK_LT(oldest, 0);
+        newest = oldest = i;
+        continue;
+      }
+      if (access_times[i] > access_times[newest])
+        newest = i;
+      if (access_times[i] < access_times[oldest])
+        oldest = i;
+    }
+  }
+
+  if (newest < 0 || oldest < 0) {
+    iterator->Reset();
+    return NULL;
+  }
+
+  EntryImpl* next_entry;
+  next_entry = entries[newest].get();
+  iterator->list = static_cast<Rankings::List>(newest);
+  next_entry->AddRef();
+  return next_entry;
 }
 
 bool BackendImpl::SetMaxSize(int max_bytes) {
@@ -1196,16 +1247,33 @@ int BackendImpl::DoomEntriesSince(const base::Time initial_time,
   return net::ERR_IO_PENDING;
 }
 
-int BackendImpl::OpenNextEntry(void** iter, Entry** next_entry,
-                               const CompletionCallback& callback) {
-  DCHECK(!callback.is_null());
-  background_queue_.OpenNextEntry(iter, next_entry, callback);
-  return net::ERR_IO_PENDING;
-}
+class BackendImpl::IteratorImpl : public Backend::Iterator {
+ public:
+  explicit IteratorImpl(base::WeakPtr<InFlightBackendIO> background_queue)
+      : background_queue_(background_queue),
+        iterator_(new Rankings::Iterator()) {
+  }
 
-void BackendImpl::EndEnumeration(void** iter) {
-  background_queue_.EndEnumeration(*iter);
-  *iter = NULL;
+  ~IteratorImpl() override {
+    if (background_queue_)
+      background_queue_->EndEnumeration(iterator_.Pass());
+  }
+
+  int OpenNextEntry(Entry** next_entry,
+                    const net::CompletionCallback& callback) override {
+    if (!background_queue_)
+      return net::ERR_FAILED;
+    background_queue_->OpenNextEntry(iterator_.get(), next_entry, callback);
+    return net::ERR_IO_PENDING;
+  }
+
+ private:
+  const base::WeakPtr<InFlightBackendIO> background_queue_;
+  scoped_ptr<Rankings::Iterator> iterator_;
+};
+
+scoped_ptr<Backend::Iterator> BackendImpl::CreateIterator() {
+  return scoped_ptr<Backend::Iterator>(new IteratorImpl(GetBackgroundQueue()));
 }
 
 void BackendImpl::GetStats(StatsItems* stats) {
@@ -1616,85 +1684,7 @@ EntryImpl* BackendImpl::MatchEntry(const std::string& key, uint32 hash,
   return tmp;
 }
 
-// This is the actual implementation for OpenNextEntry and OpenPrevEntry.
-EntryImpl* BackendImpl::OpenFollowingEntry(bool forward, void** iter) {
-  if (disabled_)
-    return NULL;
-
-  DCHECK(iter);
-
-  const int kListsToSearch = 3;
-  scoped_refptr<EntryImpl> entries[kListsToSearch];
-  scoped_ptr<Rankings::Iterator> iterator(
-      reinterpret_cast<Rankings::Iterator*>(*iter));
-  *iter = NULL;
-
-  if (!iterator.get()) {
-    iterator.reset(new Rankings::Iterator(&rankings_));
-    bool ret = false;
-
-    // Get an entry from each list.
-    for (int i = 0; i < kListsToSearch; i++) {
-      EntryImpl* temp = NULL;
-      ret |= OpenFollowingEntryFromList(forward, static_cast<Rankings::List>(i),
-                                        &iterator->nodes[i], &temp);
-      entries[i].swap(&temp);  // The entry was already addref'd.
-    }
-    if (!ret)
-      return NULL;
-  } else {
-    // Get the next entry from the last list, and the actual entries for the
-    // elements on the other lists.
-    for (int i = 0; i < kListsToSearch; i++) {
-      EntryImpl* temp = NULL;
-      if (iterator->list == i) {
-          OpenFollowingEntryFromList(forward, iterator->list,
-                                     &iterator->nodes[i], &temp);
-      } else {
-        temp = GetEnumeratedEntry(iterator->nodes[i],
-                                  static_cast<Rankings::List>(i));
-      }
-
-      entries[i].swap(&temp);  // The entry was already addref'd.
-    }
-  }
-
-  int newest = -1;
-  int oldest = -1;
-  Time access_times[kListsToSearch];
-  for (int i = 0; i < kListsToSearch; i++) {
-    if (entries[i].get()) {
-      access_times[i] = entries[i]->GetLastUsed();
-      if (newest < 0) {
-        DCHECK_LT(oldest, 0);
-        newest = oldest = i;
-        continue;
-      }
-      if (access_times[i] > access_times[newest])
-        newest = i;
-      if (access_times[i] < access_times[oldest])
-        oldest = i;
-    }
-  }
-
-  if (newest < 0 || oldest < 0)
-    return NULL;
-
-  EntryImpl* next_entry;
-  if (forward) {
-    next_entry = entries[newest].get();
-    iterator->list = static_cast<Rankings::List>(newest);
-  } else {
-    next_entry = entries[oldest].get();
-    iterator->list = static_cast<Rankings::List>(oldest);
-  }
-
-  *iter = iterator.release();
-  next_entry->AddRef();
-  return next_entry;
-}
-
-bool BackendImpl::OpenFollowingEntryFromList(bool forward, Rankings::List list,
+bool BackendImpl::OpenFollowingEntryFromList(Rankings::List list,
                                              CacheRankingsBlock** from_entry,
                                              EntryImpl** next_entry) {
   if (disabled_)
@@ -1704,9 +1694,7 @@ bool BackendImpl::OpenFollowingEntryFromList(bool forward, Rankings::List list,
     return false;
 
   Rankings::ScopedRankingsBlock rankings(&rankings_, *from_entry);
-  CacheRankingsBlock* next_block = forward ?
-      rankings_.GetNext(rankings.get(), list) :
-      rankings_.GetPrev(rankings.get(), list);
+  CacheRankingsBlock* next_block = rankings_.GetNext(rankings.get(), list);
   Rankings::ScopedRankingsBlock next(&rankings_, next_block);
   *from_entry = NULL;
 

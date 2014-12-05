@@ -38,15 +38,15 @@ enum BinaryType { "blob", "arraybuffer" };
 [
     ActiveDOMObject,
     // FIXME: should be optional union type http://crbug.com/240176
-    Constructor(DOMString url),
-    Constructor(DOMString url, DOMString protocol),
+    Constructor(DOMString url, optional DOMString protocol),
     Constructor(DOMString url, sequence<DOMString> protocols),
     ConstructorCallWith=ExecutionContext,
-    Exposed=Window&Worker,
+    Exposed=(Window,Worker),
     RaisesException=Constructor,
-    WillBeGarbageCollected,
+    GarbageCollected,
+    ImplementedAs=DOMWebSocket,
 ] interface WebSocket : EventTarget {
-    [MeasureAs=WebSocketURL] readonly attribute DOMString URL; // Lowercased .url is the one in the spec, but leaving .URL for compatibility reasons.
+    [DeprecateAs=WebSocketURL] readonly attribute DOMString URL; // Lowercased .url is the one in the spec, but leaving .URL for compatibility reasons.
     readonly attribute DOMString url;
 
     // ready state

@@ -34,9 +34,7 @@
 
 const unsigned RenderingQuantum = 128;
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 WaveShaperDSPKernel::WaveShaperDSPKernel(WaveShaperProcessor* processor)
     : AudioDSPKernel(processor)
@@ -79,7 +77,7 @@ void WaveShaperDSPKernel::processCurve(const float* source, float* destination, 
 {
     ASSERT(source && destination && waveShaperProcessor());
 
-    Float32Array* curve = waveShaperProcessor()->curve();
+    DOMFloat32Array* curve = waveShaperProcessor()->curve();
     if (!curve) {
         // Act as "straight wire" pass-through if no curve is set.
         memcpy(destination, source, sizeof(float) * framesToProcess);
@@ -206,6 +204,6 @@ double WaveShaperDSPKernel::latencyTime() const
     return static_cast<double>(latencyFrames) / sampleRate();
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

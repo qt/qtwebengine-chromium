@@ -22,17 +22,18 @@
 
 #include "core/html/HTMLProgressElement.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/frame/UseCounter.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/html/shadow/ProgressShadowElement.h"
 #include "core/rendering/RenderProgress.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -43,7 +44,7 @@ HTMLProgressElement::HTMLProgressElement(Document& document)
     : LabelableElement(progressTag, document)
     , m_value(nullptr)
 {
-    ScriptWrappable::init(this);
+    UseCounter::count(document, UseCounter::ProgressElement);
 }
 
 HTMLProgressElement::~HTMLProgressElement()
@@ -142,7 +143,7 @@ void HTMLProgressElement::didElementStateChange()
         bool wasDeterminate = render->isDeterminate();
         render->updateFromElement();
         if (wasDeterminate != isDeterminate())
-            didAffectSelector(AffectedSelectorIndeterminate);
+            pseudoStateChanged(CSSSelector::PseudoIndeterminate);
     }
 }
 

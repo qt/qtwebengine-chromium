@@ -34,36 +34,28 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class DocumentParser;
-class LocalFrame;
-class KURL;
-class SecurityOrigin;
-class TextResourceDecoder;
 
 class DocumentWriter : public RefCountedWillBeGarbageCollectedFinalized<DocumentWriter> {
     WTF_MAKE_NONCOPYABLE(DocumentWriter);
 public:
-    static PassRefPtrWillBeRawPtr<DocumentWriter> create(Document*, const AtomicString& mimeType = emptyAtom, const AtomicString& encoding = emptyAtom, bool encodingUserChoosen = false);
+    static PassRefPtrWillBeRawPtr<DocumentWriter> create(Document*, const AtomicString& mimeType = emptyAtom, const AtomicString& encoding = emptyAtom);
 
     ~DocumentWriter();
     void trace(Visitor*);
 
     void end();
 
-    // This is only called by ScriptController::executeScriptIfJavaScriptURL
-    // and always contains the result of evaluating a javascript: url.
-    void replaceDocument(const String&, Document* ownerDocument);
-
+    void forceSynchronousParse();
     void addData(const char* bytes, size_t length);
 
     const AtomicString& mimeType() const { return m_decoderBuilder.mimeType(); }
     const AtomicString& encoding() const { return m_decoderBuilder.encoding(); }
-    bool encodingWasChosenByUser() const { return m_decoderBuilder.encodingWasChosenByUser(); }
 
-    // Exposed for DocumentLoader::replaceDocument.
+    // Exposed for DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL.
     void appendReplacingData(const String&);
 
     void setUserChosenEncoding(const String& charset);
@@ -71,14 +63,15 @@ public:
     void setDocumentWasLoadedAsPartOfNavigation();
 
 private:
-    DocumentWriter(Document*, const AtomicString& mimeType, const AtomicString& encoding, bool encodingUserChoosen);
+    DocumentWriter(Document*, const AtomicString& mimeType, const AtomicString& encoding);
 
     RawPtrWillBeMember<Document> m_document;
     TextResourceDecoderBuilder m_decoderBuilder;
 
     RefPtrWillBeMember<DocumentParser> m_parser;
+    bool m_forcedSynchronousParse;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentWriter_h

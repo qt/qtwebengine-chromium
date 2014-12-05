@@ -12,8 +12,6 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/sparse_histogram.h"
-// TODO(rvargas): remove this (needed for kInvalidPlatformFileValue).
-#include "base/platform_file.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_restrictions.h"
@@ -280,11 +278,16 @@ void File::Close() {
 int64 File::Seek(Whence whence, int64 offset) {
   base::ThreadRestrictions::AssertIOAllowed();
   DCHECK(IsValid());
-  if (offset < 0)
-    return -1;
 
+#if defined(OS_ANDROID)
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off64_t), off64_t_64_bit);
+  return lseek64(file_.get(), static_cast<off64_t>(offset),
+                 static_cast<int>(whence));
+#else
+  COMPILE_ASSERT(sizeof(int64) == sizeof(off_t), off_t_64_bit);
   return lseek(file_.get(), static_cast<off_t>(offset),
                static_cast<int>(whence));
+#endif
 }
 
 int File::Read(int64 offset, char* data, int size) {
@@ -478,6 +481,49 @@ File::Error File::OSErrorToFileError(int saved_errno) {
 #endif
       return FILE_ERROR_FAILED;
   }
+}
+
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD() {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::MemoryCheckingScopedFD(int fd) : file_(fd) {
+  UpdateChecksum();
+}
+
+File::MemoryCheckingScopedFD::~MemoryCheckingScopedFD() {}
+
+// static
+void File::MemoryCheckingScopedFD::ComputeMemoryChecksum(
+    unsigned int* out_checksum) const {
+  // Use a single iteration of a linear congruentional generator (lcg) to
+  // provide a cheap checksum unlikely to be accidentally matched by a random
+  // memory corruption.
+
+  // By choosing constants that satisfy the Hull-Duebell Theorem on lcg cycle
+  // length, we insure that each distinct fd value maps to a distinct checksum,
+  // which maximises the utility of our checksum.
+
+  // This code uses "unsigned int" throughout for its defined modular semantics,
+  // which implicitly gives us a divisor that is a power of two.
+
+  const unsigned int kMultiplier = 13035 * 4 + 1;
+  COMPILE_ASSERT(((kMultiplier - 1) & 3) == 0, pred_must_be_multiple_of_four);
+  const unsigned int kIncrement = 1595649551;
+  COMPILE_ASSERT(kIncrement & 1, must_be_coprime_to_powers_of_two);
+
+  *out_checksum =
+      static_cast<unsigned int>(file_.get()) * kMultiplier + kIncrement;
+}
+
+void File::MemoryCheckingScopedFD::Check() const {
+  unsigned int computed_checksum;
+  ComputeMemoryChecksum(&computed_checksum);
+  CHECK_EQ(file_memory_checksum_, computed_checksum) << "corrupted fd memory";
+}
+
+void File::MemoryCheckingScopedFD::UpdateChecksum() {
+  ComputeMemoryChecksum(&file_memory_checksum_);
 }
 
 void File::SetPlatformFile(PlatformFile file) {

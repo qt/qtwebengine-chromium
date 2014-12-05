@@ -41,7 +41,7 @@
 #include "src/builtins.h"
 #include "src/gdb-jit.h"
 #include "src/isolate.h"
-#include "src/runtime.h"
+#include "src/runtime/runtime.h"
 #include "src/token.h"
 
 namespace v8 {
@@ -66,6 +66,7 @@ class AssemblerBase: public Malloced {
   void set_emit_debug_code(bool value) { emit_debug_code_ = value; }
 
   bool serializer_enabled() const { return serializer_enabled_; }
+  void enable_serializer() { serializer_enabled_ = true; }
 
   bool predictable_code_size() const { return predictable_code_size_; }
   void set_predictable_code_size(bool value) { predictable_code_size_ = value; }
@@ -76,6 +77,16 @@ class AssemblerBase: public Malloced {
   }
   bool IsEnabled(CpuFeature f) {
     return (enabled_cpu_features_ & (static_cast<uint64_t>(1) << f)) != 0;
+  }
+
+  bool is_ool_constant_pool_available() const {
+    if (FLAG_enable_ool_constant_pool) {
+      return ool_constant_pool_available_;
+    } else {
+      // Out-of-line constant pool not supported on this architecture.
+      UNREACHABLE();
+      return false;
+    }
   }
 
   // Overwrite a host NaN with a quiet target NaN.  Used by mksnapshot for
@@ -97,6 +108,15 @@ class AssemblerBase: public Malloced {
   int buffer_size_;
   bool own_buffer_;
 
+  void set_ool_constant_pool_available(bool available) {
+    if (FLAG_enable_ool_constant_pool) {
+      ool_constant_pool_available_ = available;
+    } else {
+      // Out-of-line constant pool not supported on this architecture.
+      UNREACHABLE();
+    }
+  }
+
   // The program counter, which points into the buffer above and moves forward.
   byte* pc_;
 
@@ -107,6 +127,14 @@ class AssemblerBase: public Malloced {
   bool emit_debug_code_;
   bool predictable_code_size_;
   bool serializer_enabled_;
+
+  // Indicates whether the constant pool can be accessed, which is only possible
+  // if the pp register points to the current code object's constant pool.
+  bool ool_constant_pool_available_;
+
+  // Constant pool.
+  friend class FrameAndConstantPoolScope;
+  friend class ConstantPoolUnavailableScope;
 };
 
 
@@ -175,6 +203,11 @@ class CpuFeatures : public AllStatic {
     ProbeImpl(cross_compile);
   }
 
+  static unsigned SupportedFeatures() {
+    Probe(false);
+    return supported_;
+  }
+
   static bool IsSupported(CpuFeature f) {
     return (supported_ & (1u << f)) != 0;
   }
@@ -182,12 +215,15 @@ class CpuFeatures : public AllStatic {
   static inline bool SupportsCrankshaft();
 
   static inline unsigned cache_line_size() {
-    ASSERT(cache_line_size_ != 0);
+    DCHECK(cache_line_size_ != 0);
     return cache_line_size_;
   }
 
   static void PrintTarget();
   static void PrintFeatures();
+
+  // Flush instruction cache.
+  static void FlushICache(void* start, size_t size);
 
  private:
   // Platform-dependent implementation.
@@ -219,8 +255,8 @@ class Label BASE_EMBEDDED {
   }
 
   INLINE(~Label()) {
-    ASSERT(!is_linked());
-    ASSERT(!is_near_linked());
+    DCHECK(!is_linked());
+    DCHECK(!is_near_linked());
   }
 
   INLINE(void Unuse()) { pos_ = 0; }
@@ -250,15 +286,15 @@ class Label BASE_EMBEDDED {
 
   void bind_to(int pos)  {
     pos_ = -pos - 1;
-    ASSERT(is_bound());
+    DCHECK(is_bound());
   }
   void link_to(int pos, Distance distance = kFar) {
     if (distance == kNear) {
       near_link_pos_ = pos + 1;
-      ASSERT(is_near_linked());
+      DCHECK(is_near_linked());
     } else {
       pos_ = pos + 1;
-      ASSERT(is_linked());
+      DCHECK(is_linked());
     }
   }
 
@@ -380,7 +416,7 @@ class RelocInfo {
         mode <= LAST_REAL_RELOC_MODE;
   }
   static inline bool IsPseudoRelocMode(Mode mode) {
-    ASSERT(!IsRealRelocMode(mode));
+    DCHECK(!IsRealRelocMode(mode));
     return mode >= FIRST_PSEUDO_RELOC_MODE &&
         mode <= LAST_PSEUDO_RELOC_MODE;
   }
@@ -450,9 +486,7 @@ class RelocInfo {
   Mode rmode() const {  return rmode_; }
   intptr_t data() const { return data_; }
   double data64() const { return data64_; }
-  uint64_t raw_data64() {
-    return BitCast<uint64_t>(data64_);
-  }
+  uint64_t raw_data64() { return bit_cast<uint64_t>(data64_); }
   Code* host() const { return host_; }
   void set_host(Code* host) { host_ = host; }
 
@@ -571,7 +605,7 @@ class RelocInfo {
 #ifdef ENABLE_DISASSEMBLER
   // Printing
   static const char* RelocModeName(Mode rmode);
-  void Print(Isolate* isolate, FILE* out);
+  void Print(Isolate* isolate, std::ostream& os);  // NOLINT
 #endif  // ENABLE_DISASSEMBLER
 #ifdef VERIFY_HEAP
   void Verify(Isolate* isolate);
@@ -677,7 +711,7 @@ class RelocIterator: public Malloced {
 
   // Return pointer valid until next next().
   RelocInfo* rinfo() {
-    ASSERT(!done());
+    DCHECK(!done());
     return &rinfo_;
   }
 
@@ -765,12 +799,12 @@ class ExternalReference BASE_EMBEDDED {
     PROFILING_API_CALL,
 
     // Direct call to accessor getter callback.
-    // void f(Local<String> property, PropertyCallbackInfo& info)
+    // void f(Local<Name> property, PropertyCallbackInfo& info)
     DIRECT_GETTER_CALL,
 
     // Call to accessor getter callback via InvokeAccessorGetterCallback.
-    // void f(Local<String> property, PropertyCallbackInfo& info,
-    //     AccessorGetterCallback callback)
+    // void f(Local<Name> property, PropertyCallbackInfo& info,
+    //     AccessorNameGetterCallback callback)
     PROFILING_GETTER_CALL
   };
 
@@ -857,8 +891,6 @@ class ExternalReference BASE_EMBEDDED {
   // Static variable Heap::NewSpaceStart()
   static ExternalReference new_space_start(Isolate* isolate);
   static ExternalReference new_space_mask(Isolate* isolate);
-  static ExternalReference heap_always_allocate_scope_depth(Isolate* isolate);
-  static ExternalReference new_space_mark_bits(Isolate* isolate);
 
   // Write barrier.
   static ExternalReference store_buffer_top(Isolate* isolate);
@@ -892,9 +924,6 @@ class ExternalReference BASE_EMBEDDED {
   static ExternalReference address_of_min_int();
   static ExternalReference address_of_one_half();
   static ExternalReference address_of_minus_one_half();
-  static ExternalReference address_of_minus_zero();
-  static ExternalReference address_of_zero();
-  static ExternalReference address_of_uint8_max_value();
   static ExternalReference address_of_negative_infinity();
   static ExternalReference address_of_canonical_non_hole_nan();
   static ExternalReference address_of_the_hole_nan();
@@ -911,6 +940,7 @@ class ExternalReference BASE_EMBEDDED {
 
   static ExternalReference cpu_features();
 
+  static ExternalReference debug_is_active_address(Isolate* isolate);
   static ExternalReference debug_after_break_target_address(Isolate* isolate);
   static ExternalReference debug_restarter_frame_function_pointer_address(
       Isolate* isolate);
@@ -949,35 +979,16 @@ class ExternalReference BASE_EMBEDDED {
   static void set_redirector(Isolate* isolate,
                              ExternalReferenceRedirector* redirector) {
     // We can't stack them.
-    ASSERT(isolate->external_reference_redirector() == NULL);
+    DCHECK(isolate->external_reference_redirector() == NULL);
     isolate->set_external_reference_redirector(
         reinterpret_cast<ExternalReferenceRedirectorPointer*>(redirector));
   }
 
   static ExternalReference stress_deopt_count(Isolate* isolate);
 
-  bool operator==(const ExternalReference& other) const {
-    return address_ == other.address_;
-  }
-
-  bool operator!=(const ExternalReference& other) const {
-    return !(*this == other);
-  }
-
  private:
   explicit ExternalReference(void* address)
       : address_(address) {}
-
-  static void* Redirect(Isolate* isolate,
-                        void* address,
-                        Type type = ExternalReference::BUILTIN_CALL) {
-    ExternalReferenceRedirector* redirector =
-        reinterpret_cast<ExternalReferenceRedirector*>(
-            isolate->external_reference_redirector());
-    if (redirector == NULL) return address;
-    void* answer = (*redirector)(address, type);
-    return answer;
-  }
 
   static void* Redirect(Isolate* isolate,
                         Address address_arg,
@@ -994,6 +1005,13 @@ class ExternalReference BASE_EMBEDDED {
 
   void* address_;
 };
+
+bool operator==(ExternalReference, ExternalReference);
+bool operator!=(ExternalReference, ExternalReference);
+
+size_t hash_value(ExternalReference);
+
+std::ostream& operator<<(std::ostream&, ExternalReference);
 
 
 // -----------------------------------------------------------------------------
@@ -1017,29 +1035,9 @@ class PositionsRecorder BASE_EMBEDDED {
  public:
   explicit PositionsRecorder(Assembler* assembler)
       : assembler_(assembler) {
-#ifdef ENABLE_GDB_JIT_INTERFACE
-    gdbjit_lineinfo_ = NULL;
-#endif
     jit_handler_data_ = NULL;
   }
 
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  ~PositionsRecorder() {
-    delete gdbjit_lineinfo_;
-  }
-
-  void StartGDBJITLineInfoRecording() {
-    if (FLAG_gdbjit) {
-      gdbjit_lineinfo_ = new GDBJITLineInfo();
-    }
-  }
-
-  GDBJITLineInfo* DetachGDBJITLineInfo() {
-    GDBJITLineInfo* lineinfo = gdbjit_lineinfo_;
-    gdbjit_lineinfo_ = NULL;  // To prevent deallocation in destructor.
-    return lineinfo;
-  }
-#endif
   void AttachJITHandlerData(void* user_data) {
     jit_handler_data_ = user_data;
   }
@@ -1067,9 +1065,6 @@ class PositionsRecorder BASE_EMBEDDED {
  private:
   Assembler* assembler_;
   PositionState state_;
-#ifdef ENABLE_GDB_JIT_INTERFACE
-  GDBJITLineInfo* gdbjit_lineinfo_;
-#endif
 
   // Currently jit_handler_data_ is used to store JITHandler-specific data
   // over the lifetime of a PositionsRecorder
@@ -1136,20 +1131,6 @@ class NullCallWrapper : public CallWrapper {
   virtual ~NullCallWrapper() { }
   virtual void BeforeCall(int call_size) const { }
   virtual void AfterCall() const { }
-};
-
-
-// The multiplier and shift for signed division via multiplication, see Warren's
-// "Hacker's Delight", chapter 10.
-class MultiplierAndShift {
- public:
-  explicit MultiplierAndShift(int32_t d);
-  int32_t multiplier() const { return multiplier_; }
-  int32_t shift() const { return shift_; }
-
- private:
-  int32_t multiplier_;
-  int32_t shift_;
 };
 
 

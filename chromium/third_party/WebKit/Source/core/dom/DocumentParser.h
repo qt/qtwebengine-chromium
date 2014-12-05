@@ -28,10 +28,10 @@
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
-class DocumentWriter;
+class DocumentParserClient;
 class SegmentedString;
 class ScriptableDocumentParser;
 class TextResourceDecoder;
@@ -51,7 +51,6 @@ public:
 
     // The below functions are used by DocumentWriter (the loader).
     virtual void appendBytes(const char* bytes, size_t length) = 0;
-    virtual void flush() = 0;
     virtual bool needsDecoder() const { return false; }
     virtual void setDecoder(PassOwnPtr<TextResourceDecoder>);
     virtual TextResourceDecoder* decoder();
@@ -60,7 +59,7 @@ public:
     // pinToMainThread also makes append() not yield before completion of that chunk.
     virtual void pinToMainThread() { }
 
-    // FIXME: append() should be private, but DocumentWriter::replaceDocument uses it for now.
+    // FIXME: append() should be private, but DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL uses it for now.
     // FIXME: This really should take a PassOwnPtr to signify that it expects to take
     // ownership of the buffer. The parser expects the PassRefPtr to hold the only ref of the StringImpl.
     virtual void append(PassRefPtr<StringImpl>) = 0;
@@ -79,9 +78,6 @@ public:
     bool isStopping() const { return m_state == StoppingState; }
     bool isStopped() const { return m_state >= StoppedState; }
     bool isDetached() const { return m_state == DetachedState; }
-
-    // FIXME: Is this necessary? Does XMLDocumentParserLibxml2 really need to set this?
-    virtual void startParsing();
 
     // prepareToStop() is used when the EOF token is encountered and parsing is to be
     // stopped normally.
@@ -108,8 +104,13 @@ public:
     virtual void suspendScheduledTasks();
     virtual void resumeScheduledTasks();
 
+    void addClient(DocumentParserClient*);
+    void removeClient(DocumentParserClient*);
+
 protected:
     explicit DocumentParser(Document*);
+
+    virtual void flush() = 0;
 
 private:
     enum ParserState {
@@ -124,8 +125,10 @@ private:
     // Every DocumentParser needs a pointer back to the document.
     // m_document will be 0 after the parser is stopped.
     RawPtrWillBeMember<Document> m_document;
+
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<DocumentParserClient> > m_clients;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentParser_h

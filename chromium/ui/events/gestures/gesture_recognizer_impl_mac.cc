@@ -14,41 +14,47 @@ namespace {
 class GestureRecognizerImplMac : public GestureRecognizer {
  public:
   GestureRecognizerImplMac() {}
-  virtual ~GestureRecognizerImplMac() {}
+  ~GestureRecognizerImplMac() override {}
 
  private:
-  virtual Gestures* ProcessTouchEventForGesture(
-      const TouchEvent& event,
-      ui::EventResult result,
-      GestureConsumer* consumer) OVERRIDE {
-    return NULL;
-  }
-  virtual bool CleanupStateForConsumer(GestureConsumer* consumer) OVERRIDE {
+  bool ProcessTouchEventPreDispatch(const TouchEvent& event,
+                                    GestureConsumer* consumer) override {
     return false;
   }
-  virtual GestureConsumer* GetTouchLockedTarget(
-      const TouchEvent& event) OVERRIDE {
+
+  Gestures* ProcessTouchEventPostDispatch(const TouchEvent& event,
+                                          ui::EventResult result,
+                                          GestureConsumer* consumer) override {
     return NULL;
   }
-  virtual GestureConsumer* GetTargetForGestureEvent(
-      const GestureEvent& event) OVERRIDE {
+  Gestures* ProcessTouchEventOnAsyncAck(const TouchEvent& event,
+                                        ui::EventResult result,
+                                        GestureConsumer* consumer) override {
     return NULL;
-  }
-  virtual GestureConsumer* GetTargetForLocation(const gfx::PointF& location,
-                                                int source_device_id) OVERRIDE {
-    return NULL;
-  }
-  virtual void TransferEventsTo(GestureConsumer* current_consumer,
-                                GestureConsumer* new_consumer) OVERRIDE {}
-  virtual bool GetLastTouchPointForTarget(GestureConsumer* consumer,
-                                          gfx::PointF* point) OVERRIDE {
+  };
+  bool CleanupStateForConsumer(GestureConsumer* consumer) override {
     return false;
   }
-  virtual bool CancelActiveTouches(GestureConsumer* consumer) OVERRIDE {
+  GestureConsumer* GetTouchLockedTarget(const TouchEvent& event) override {
+    return NULL;
+  }
+  GestureConsumer* GetTargetForGestureEvent(
+      const GestureEvent& event) override {
+    return NULL;
+  }
+  GestureConsumer* GetTargetForLocation(const gfx::PointF& location,
+                                        int source_device_id) override {
+    return NULL;
+  }
+  void TransferEventsTo(GestureConsumer* current_consumer,
+                        GestureConsumer* new_consumer) override {}
+  bool GetLastTouchPointForTarget(GestureConsumer* consumer,
+                                  gfx::PointF* point) override {
     return false;
   }
-  virtual void AddGestureEventHelper(GestureEventHelper* helper) OVERRIDE {}
-  virtual void RemoveGestureEventHelper(GestureEventHelper* helper) OVERRIDE {}
+  bool CancelActiveTouches(GestureConsumer* consumer) override { return false; }
+  void AddGestureEventHelper(GestureEventHelper* helper) override {}
+  void RemoveGestureEventHelper(GestureEventHelper* helper) override {}
 
   DISALLOW_COPY_AND_ASSIGN(GestureRecognizerImplMac);
 };

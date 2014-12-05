@@ -28,14 +28,12 @@
 #include "web/ExternalDateTimeChooser.h"
 
 #include "core/InputTypeNames.h"
-#include "platform/DateTimeChooserClient.h"
+#include "core/html/forms/DateTimeChooserClient.h"
 #include "public/web/WebDateTimeChooserCompletion.h"
 #include "public/web/WebDateTimeChooserParams.h"
 #include "public/web/WebViewClient.h"
 #include "web/ChromeClientImpl.h"
 #include "wtf/text/AtomicString.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -47,19 +45,19 @@ public:
     }
 
 private:
-    virtual void didChooseValue(const WebString& value) OVERRIDE
+    virtual void didChooseValue(const WebString& value) override
     {
         m_chooser->didChooseValue(value);
         delete this;
     }
 
-    virtual void didChooseValue(double value) OVERRIDE
+    virtual void didChooseValue(double value) override
     {
         m_chooser->didChooseValue(value);
         delete this;
     }
 
-    virtual void didCancelChooser() OVERRIDE
+    virtual void didCancelChooser() override
     {
         m_chooser->didCancelChooser();
         delete this;
@@ -72,13 +70,13 @@ ExternalDateTimeChooser::~ExternalDateTimeChooser()
 {
 }
 
-ExternalDateTimeChooser::ExternalDateTimeChooser(WebCore::DateTimeChooserClient* client)
+ExternalDateTimeChooser::ExternalDateTimeChooser(DateTimeChooserClient* client)
     : m_client(client)
 {
     ASSERT(client);
 }
 
-PassRefPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, WebCore::DateTimeChooserClient* client, const WebCore::DateTimeChooserParameters& parameters)
+PassRefPtr<ExternalDateTimeChooser> ExternalDateTimeChooser::create(ChromeClientImpl* chromeClient, WebViewClient* webViewClient, DateTimeChooserClient* client, const DateTimeChooserParameters& parameters)
 {
     ASSERT(chromeClient);
     RefPtr<ExternalDateTimeChooser> chooser = adoptRef(new ExternalDateTimeChooser(client));
@@ -168,6 +166,11 @@ void ExternalDateTimeChooser::endChooser()
     client->didEndChooser();
 }
 
+AXObject* ExternalDateTimeChooser::rootAXObject()
+{
+    return 0;
 }
+
+} // namespace blink
 
 #endif

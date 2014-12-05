@@ -7,6 +7,12 @@
 
 #import <Cocoa/Cocoa.h>
 
+#import "ui/base/cocoa/tracking_area.h"
+
+namespace ui {
+class TextInputClient;
+}
+
 namespace views {
 class View;
 }
@@ -14,13 +20,27 @@ class View;
 // The NSView that sits as the root contentView of the NSWindow, whilst it has
 // a views::RootView present. Bridges requests from Cocoa to the hosted
 // views::View.
-@interface BridgedContentView : NSView {
+@interface BridgedContentView : NSView<NSTextInputClient> {
  @private
   // Weak. The hosted RootView, owned by hostedView_->GetWidget().
   views::View* hostedView_;
+
+  // Weak. If non-null the TextInputClient of the currently focused View in the
+  // hierarchy rooted at |hostedView_|. Owned by the focused View.
+  ui::TextInputClient* textInputClient_;
+
+  // A tracking area installed to enable mouseMoved events.
+  ui::ScopedCrTrackingArea trackingArea_;
+
+  // Set to ignore window visibility in a subsequent call to drawRect:. Views
+  // does not expect hidden windows to paint. However, when showing a window,
+  // Cocoa first paints before updating visibility.
+  BOOL willShow_;
 }
 
 @property(readonly, nonatomic) views::View* hostedView;
+@property(assign, nonatomic) ui::TextInputClient* textInputClient;
+@property(assign, nonatomic) BOOL willShow;
 
 // Initialize the NSView -> views::View bridge. |viewToHost| must be non-NULL.
 - (id)initWithView:(views::View*)viewToHost;

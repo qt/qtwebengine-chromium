@@ -28,13 +28,13 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/faketaskrunner.h"
-#include "talk/base/gunit.h"
-#include "talk/base/sigslot.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/fakexmppclient.h"
-#include "talk/xmpp/mucroomlookuptask.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/fakexmppclient.h"
+#include "webrtc/libjingle/xmpp/mucroomlookuptask.h"
+#include "webrtc/base/faketaskrunner.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/sigslot.h"
 
 class MucRoomLookupListener : public sigslot::has_slots<> {
  public:
@@ -66,7 +66,7 @@ class MucRoomLookupTaskTest : public testing::Test {
   }
 
   virtual void SetUp() {
-    runner = new talk_base::FakeTaskRunner();
+    runner = new rtc::FakeTaskRunner();
     xmpp_client = new buzz::FakeXmppClient(runner);
     listener = new MucRoomLookupListener();
   }
@@ -77,7 +77,7 @@ class MucRoomLookupTaskTest : public testing::Test {
     delete runner;
   }
 
-  talk_base::FakeTaskRunner* runner;
+  rtc::FakeTaskRunner* runner;
   buzz::FakeXmppClient* xmpp_client;
   MucRoomLookupListener* listener;
   buzz::Jid lookup_server_jid;

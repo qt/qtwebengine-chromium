@@ -6,7 +6,7 @@
  * @fileoverview Login UI based on a stripped down OOBE controller.
  */
 
-<include src="login_common.js"></include>
+<include src="login_common.js">
 
 cr.define('cr.ui.Oobe', function() {
   return {
@@ -26,11 +26,12 @@ cr.define('cr.ui.Oobe', function() {
       login.ErrorMessageScreen.register();
       login.TPMErrorMessageScreen.register();
       login.PasswordChangedScreen.register();
-      login.LocallyManagedUserCreationScreen.register();
+      login.SupervisedUserCreationScreen.register();
       login.TermsOfServiceScreen.register();
       login.AppLaunchSplashScreen.register();
       login.ConfirmPasswordScreen.register();
       login.FatalErrorScreen.register();
+      login.DeviceDisabledScreen.register();
 
       cr.ui.Bubble.decorate($('bubble'));
       login.HeaderBar.decorate($('login-header-bar'));
@@ -48,6 +49,15 @@ cr.define('cr.ui.Oobe', function() {
     setOemEulaUrl: function(oemEulaUrl) {},
     setTpmPassword: function(password) {},
     refreshA11yInfo: function(data) {},
-    reloadContent: function(data) {},
+
+    /**
+     * Reloads content of the page.
+     * @param {!Object} data New dictionary with i18n values.
+     */
+    reloadContent: function(data) {
+      loadTimeData.overrideValues(data);
+      i18nTemplate.process(document, loadTimeData);
+      Oobe.getInstance().updateLocalizedContent_();
+    },
   };
 });

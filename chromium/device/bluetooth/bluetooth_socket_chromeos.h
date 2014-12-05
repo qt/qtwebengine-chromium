@@ -34,11 +34,14 @@ class CHROMEOS_EXPORT BluetoothSocketChromeOS
       public device::BluetoothAdapter::Observer,
       public BluetoothProfileServiceProvider::Delegate {
  public:
+  enum SecurityLevel {
+    SECURITY_LEVEL_LOW,
+    SECURITY_LEVEL_MEDIUM
+  };
+
   static scoped_refptr<BluetoothSocketChromeOS> CreateBluetoothSocket(
       scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-      scoped_refptr<device::BluetoothSocketThread> socket_thread,
-      net::NetLog* net_log,
-      const net::NetLog::Source& source);
+      scoped_refptr<device::BluetoothSocketThread> socket_thread);
 
   // Connects this socket to the service on |device| published as UUID |uuid|,
   // the underlying protocol and PSM or Channel is obtained through service
@@ -47,28 +50,30 @@ class CHROMEOS_EXPORT BluetoothSocketChromeOS
   // with a message explaining the cause of the failure.
   virtual void Connect(const BluetoothDeviceChromeOS* device,
                        const device::BluetoothUUID& uuid,
+                       SecurityLevel security_level,
                        const base::Closure& success_callback,
                        const ErrorCompletionCallback& error_callback);
 
   // Listens using this socket using a service published on |adapter|. The
   // service is either RFCOMM or L2CAP depending on |socket_type| and published
-  // as UUID |uuid|. The |psm_or_channel| argument is interpreted according to
+  // as UUID |uuid|. The |service_options| argument is interpreted according to
   // |socket_type|. |success_callback| will be called if the service is
   // successfully registered, |error_callback| on failure with a message
   // explaining the cause.
   enum SocketType { kRfcomm, kL2cap };
-  virtual void Listen(scoped_refptr<device::BluetoothAdapter> adapter,
-                      SocketType socket_type,
-                      const device::BluetoothUUID& uuid,
-                      int psm_or_channel,
-                      const base::Closure& success_callback,
-                      const ErrorCompletionCallback& error_callback);
+  virtual void Listen(
+      scoped_refptr<device::BluetoothAdapter> adapter,
+      SocketType socket_type,
+      const device::BluetoothUUID& uuid,
+      const device::BluetoothAdapter::ServiceOptions& service_options,
+      const base::Closure& success_callback,
+      const ErrorCompletionCallback& error_callback);
 
   // BluetoothSocket:
-  virtual void Close() OVERRIDE;
-  virtual void Disconnect(const base::Closure& callback) OVERRIDE;
+  virtual void Close() override;
+  virtual void Disconnect(const base::Closure& callback) override;
   virtual void Accept(const AcceptCompletionCallback& success_callback,
-                      const ErrorCompletionCallback& error_callback) OVERRIDE;
+                      const ErrorCompletionCallback& error_callback) override;
 
   // Returns the object path of the socket.
   const dbus::ObjectPath& object_path() const { return object_path_; }
@@ -79,9 +84,7 @@ class CHROMEOS_EXPORT BluetoothSocketChromeOS
  private:
   BluetoothSocketChromeOS(
       scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
-      scoped_refptr<device::BluetoothSocketThread> socket_thread,
-      net::NetLog* net_log,
-      const net::NetLog::Source& source);
+      scoped_refptr<device::BluetoothSocketThread> socket_thread);
 
   // Register the underlying profile client object with the Bluetooth Daemon.
   void RegisterProfile(const base::Closure& success_callback,
@@ -100,7 +103,7 @@ class CHROMEOS_EXPORT BluetoothSocketChromeOS
 
   // BluetoothAdapter::Observer:
   virtual void AdapterPresentChanged(device::BluetoothAdapter* adapter,
-                                     bool present) OVERRIDE;
+                                     bool present) override;
 
   // Called by dbus:: on completion of the RegisterProfile() method call
   // triggered as a result of the adapter becoming present again.
@@ -109,16 +112,16 @@ class CHROMEOS_EXPORT BluetoothSocketChromeOS
                                       const std::string& error_message);
 
   // BluetoothProfileServiceProvider::Delegate:
-  virtual void Released() OVERRIDE;
+  virtual void Released() override;
   virtual void NewConnection(
       const dbus::ObjectPath& device_path,
       scoped_ptr<dbus::FileDescriptor> fd,
       const BluetoothProfileServiceProvider::Delegate::Options& options,
-      const ConfirmationCallback& callback) OVERRIDE;
+      const ConfirmationCallback& callback) override;
   virtual void RequestDisconnection(
       const dbus::ObjectPath& device_path,
-      const ConfirmationCallback& callback) OVERRIDE;
-  virtual void Cancel() OVERRIDE;
+      const ConfirmationCallback& callback) override;
+  virtual void Cancel() override;
 
   // Method run to accept a single incoming connection.
   void AcceptConnectionRequest();

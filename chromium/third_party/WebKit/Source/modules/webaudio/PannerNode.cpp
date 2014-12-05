@@ -28,6 +28,8 @@
 
 #include "modules/webaudio/PannerNode.h"
 
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExecutionContext.h"
 #include "platform/audio/HRTFPanner.h"
 #include "modules/webaudio/AudioBufferSourceNode.h"
@@ -36,9 +38,7 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "wtf/MathExtras.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 static void fixNANs(double &x)
 {
@@ -48,7 +48,7 @@ static void fixNANs(double &x)
 
 PannerNode::PannerNode(AudioContext* context, float sampleRate)
     : AudioNode(context, sampleRate)
-    , m_panningModel(Panner::PanningModelHRTF)
+    , m_panningModel(Panner::PanningModelEqualPower)
     , m_distanceModel(DistanceEffect::ModelInverse)
     , m_position(0, 0, 0)
     , m_orientation(1, 0, 0)
@@ -65,11 +65,10 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
 {
     // Load the HRTF database asynchronously so we don't block the Javascript thread while creating the HRTF database.
     // The HRTF panner will return zeroes until the database is loaded.
-    m_hrtfDatabaseLoader = HRTFDatabaseLoader::createAndLoadAsynchronouslyIfNecessary(context->sampleRate());
+    listener()->createAndLoadHRTFDatabaseLoader(context->sampleRate());
 
-    ScriptWrappable::init(this);
-    addInput(adoptPtr(new AudioNodeInput(this)));
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    addInput();
+    addOutput(AudioNodeOutput::create(this, 2));
 
     // Node-specific default mixing rules.
     m_channelCount = 2;
@@ -83,7 +82,13 @@ PannerNode::PannerNode(AudioContext* context, float sampleRate)
 
 PannerNode::~PannerNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void PannerNode::dispose()
+{
     uninitialize();
+    AudioNode::dispose();
 }
 
 void PannerNode::pullInputs(size_t framesToProcess)
@@ -125,9 +130,9 @@ void PannerNode::process(size_t framesToProcess)
 
     if (tryLocker.locked() && tryListenerLocker.locked()) {
         // HRTFDatabase should be loaded before proceeding for offline audio context when the panning model is HRTF.
-        if (m_panningModel == Panner::PanningModelHRTF && !m_hrtfDatabaseLoader->isLoaded()) {
+        if (m_panningModel == Panner::PanningModelHRTF && !listener()->isHRTFDatabaseLoaded()) {
             if (context()->isOfflineContext()) {
-                m_hrtfDatabaseLoader->waitForLoaderThreadCompletion();
+                listener()->waitForHRTFDatabaseLoaderThreadCompletion();
             } else {
                 destination->zero();
                 return;
@@ -162,7 +167,7 @@ void PannerNode::initialize()
     if (isInitialized())
         return;
 
-    m_panner = Panner::create(m_panningModel, sampleRate(), m_hrtfDatabaseLoader.get());
+    m_panner = Panner::create(m_panningModel, sampleRate(), listener()->hrtfDatabaseLoader());
     listener()->addPanner(this);
 
     AudioNode::initialize();
@@ -193,7 +198,7 @@ String PannerNode::panningModel() const
         return "HRTF";
     default:
         ASSERT_NOT_REACHED();
-        return "HRTF";
+        return "equalpower";
     }
 }
 
@@ -213,8 +218,7 @@ bool PannerNode::setPanningModel(unsigned model)
         if (!m_panner.get() || model != m_panningModel) {
             // This synchronizes with process().
             MutexLocker processLocker(m_processLock);
-            OwnPtr<Panner> newPanner = Panner::create(model, sampleRate(), m_hrtfDatabaseLoader.get());
-            m_panner = newPanner.release();
+            m_panner = Panner::create(model, sampleRate(), listener()->hrtfDatabaseLoader());
             m_panningModel = model;
         }
         break;
@@ -467,8 +471,8 @@ double PannerNode::calculateDopplerRate()
                 sourceProjection = -sourceProjection;
 
                 double scaledSpeedOfSound = speedOfSound / dopplerFactor;
-                listenerProjection = min(listenerProjection, scaledSpeedOfSound);
-                sourceProjection = min(sourceProjection, scaledSpeedOfSound);
+                listenerProjection = std::min(listenerProjection, scaledSpeedOfSound);
+                sourceProjection = std::min(sourceProjection, scaledSpeedOfSound);
 
                 dopplerShift = ((speedOfSound - dopplerFactor * listenerProjection) / (speedOfSound - dopplerFactor * sourceProjection));
                 fixNANs(dopplerShift); // avoid illegal values
@@ -577,6 +581,66 @@ void PannerNode::notifyAudioSourcesConnectedToNode(AudioNode* node, HashMap<Audi
     }
 }
 
-} // namespace WebCore
+void PannerNode::setChannelCount(unsigned long channelCount, ExceptionState& exceptionState)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(context());
+
+    // A PannerNode only supports 1 or 2 channels
+    if (channelCount > 0 && channelCount <= 2) {
+        if (m_channelCount != channelCount) {
+            m_channelCount = channelCount;
+            if (m_channelCountMode != Max)
+                updateChannelsForInputs();
+        }
+    } else {
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::indexOutsideRange<unsigned long>(
+                "channelCount",
+                channelCount,
+                1,
+                ExceptionMessages::InclusiveBound,
+                2,
+                ExceptionMessages::InclusiveBound));
+    }
+}
+
+void PannerNode::setChannelCountMode(const String& mode, ExceptionState& exceptionState)
+{
+    ASSERT(isMainThread());
+    AudioContext::AutoLocker locker(context());
+
+    ChannelCountMode oldMode = m_channelCountMode;
+
+    if (mode == "clamped-max") {
+        m_newChannelCountMode = ClampedMax;
+    } else if (mode == "explicit") {
+        m_newChannelCountMode = Explicit;
+    } else if (mode == "max") {
+        // This is not supported for a PannerNode, which can only handle 1 or 2 channels.
+        exceptionState.throwDOMException(
+            NotSupportedError,
+            ExceptionMessages::failedToSet(
+                "channelCountMode",
+                "PannerNode",
+                "'max' is not allowed"));
+        m_newChannelCountMode = oldMode;
+    } else {
+        // Do nothing for other invalid values.
+        m_newChannelCountMode = oldMode;
+    }
+
+    if (m_newChannelCountMode != oldMode)
+        context()->addChangedChannelCountMode(this);
+}
+
+void PannerNode::trace(Visitor* visitor)
+{
+    visitor->trace(m_panner);
+    AudioNode::trace(visitor);
+}
+
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

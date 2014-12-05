@@ -38,7 +38,7 @@
 #include "core/rendering/style/StylePendingImage.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 StyleResourceLoader::StyleResourceLoader(ResourceFetcher* fetcher)
     : m_fetcher(fetcher)
@@ -125,7 +125,7 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleReso
 
         switch (currentProperty) {
         case CSSPropertyBackgroundImage: {
-            for (FillLayer* backgroundLayer = style->accessBackgroundLayers(); backgroundLayer; backgroundLayer = backgroundLayer->next()) {
+            for (FillLayer* backgroundLayer = &style->accessBackgroundLayers(); backgroundLayer; backgroundLayer = backgroundLayer->next()) {
                 if (backgroundLayer->image() && backgroundLayer->image()->isPendingImage())
                     backgroundLayer->setImage(loadPendingImage(toStylePendingImage(backgroundLayer->image()), elementStyleResources.deviceScaleFactor()));
             }
@@ -134,11 +134,11 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleReso
         case CSSPropertyContent: {
             for (ContentData* contentData = const_cast<ContentData*>(style->contentData()); contentData; contentData = contentData->next()) {
                 if (contentData->isImage()) {
-                    StyleImage* image = static_cast<ImageContentData*>(contentData)->image();
+                    StyleImage* image = toImageContentData(contentData)->image();
                     if (image->isPendingImage()) {
                         RefPtr<StyleImage> loadedImage = loadPendingImage(toStylePendingImage(image), elementStyleResources.deviceScaleFactor());
                         if (loadedImage)
-                            static_cast<ImageContentData*>(contentData)->setImage(loadedImage.release());
+                            toImageContentData(contentData)->setImage(loadedImage.release());
                     }
                 }
             }
@@ -182,7 +182,7 @@ void StyleResourceLoader::loadPendingImages(RenderStyle* style, ElementStyleReso
             break;
         }
         case CSSPropertyWebkitMaskImage: {
-            for (FillLayer* maskLayer = style->accessMaskLayers(); maskLayer; maskLayer = maskLayer->next()) {
+            for (FillLayer* maskLayer = &style->accessMaskLayers(); maskLayer; maskLayer = maskLayer->next()) {
                 if (maskLayer->image() && maskLayer->image()->isPendingImage())
                     maskLayer->setImage(loadPendingImage(toStylePendingImage(maskLayer->image()), elementStyleResources.deviceScaleFactor()));
             }

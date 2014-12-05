@@ -4,12 +4,12 @@
 
 #include "base/strings/string_piece.h"
 #include "base/strings/utf_string_conversions.h"
+#include "storage/browser/database/database_util.h"
+#include "storage/common/database/database_identifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/database/database_util.h"
-#include "webkit/common/database/database_identifier.h"
 
 using base::ASCIIToUTF16;
-using webkit_database::DatabaseUtil;
+using storage::DatabaseUtil;
 
 static void TestVfsFilePath(bool expected_result,
                             const char* vfs_file_name,
@@ -30,8 +30,8 @@ static void TestVfsFilePath(bool expected_result,
 }
 
 static GURL ToAndFromOriginIdentifier(const GURL origin_url) {
-  std::string id = webkit_database::GetIdentifierFromOrigin(origin_url);
-  return webkit_database::GetOriginFromIdentifier(id);
+  std::string id = storage::GetIdentifierFromOrigin(origin_url);
+  return storage::GetOriginFromIdentifier(id);
 }
 
 static void TestValidOriginIdentifier(bool expected_result,

@@ -27,9 +27,7 @@
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 static const double angleEpsilon = 1e-4;
 
@@ -100,14 +98,14 @@ PassRefPtr<TransformOperation> RotateTransformOperation::blend(const TransformOp
         return RotateTransformOperation::create(fromOp ? fromOp->m_x : m_x,
                                                 fromOp ? fromOp->m_y : m_y,
                                                 fromOp ? fromOp->m_z : m_z,
-                                                WebCore::blend(fromAngle, m_angle, progress), m_type);
+                                                blink::blend(fromAngle, m_angle, progress), m_type);
     }
     double fromAngle;
     double toAngle;
     FloatPoint3D axis;
 
     if (shareSameAxis(fromOp, this, &axis, &fromAngle, &toAngle))
-        return RotateTransformOperation::create(axis.x(), axis.y(), axis.z(), WebCore::blend(fromAngle, toAngle, progress), m_type);
+        return RotateTransformOperation::create(axis.x(), axis.y(), axis.z(), blink::blend(fromAngle, toAngle, progress), m_type);
 
     const RotateTransformOperation* toOp = this;
 
@@ -135,14 +133,14 @@ PassRefPtr<TransformOperation> RotateTransformOperation::blend(const TransformOp
     double x = -decomp.quaternionX;
     double y = -decomp.quaternionY;
     double z = -decomp.quaternionZ;
-    double length = sqrt(x * x + y * y + z * z);
+    double length = std::sqrt(x * x + y * y + z * z);
     double angle = 0;
 
     if (length > 0.00001) {
         x /= length;
         y /= length;
         z /= length;
-        angle = rad2deg(acos(decomp.quaternionW) * 2);
+        angle = rad2deg(std::acos(decomp.quaternionW) * 2);
     } else {
         x = 0;
         y = 0;
@@ -156,4 +154,4 @@ bool RotateTransformOperation::canBlendWith(const TransformOperation& other) con
     return other.isSameType(*this);
 }
 
-} // namespace WebCore
+} // namespace blink

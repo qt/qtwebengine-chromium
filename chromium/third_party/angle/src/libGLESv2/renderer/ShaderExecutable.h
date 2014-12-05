@@ -13,38 +13,48 @@
 #include "common/angleutils.h"
 #include "common/debug.h"
 
+#include <vector>
+#include <cstdint>
+
 namespace rx
 {
 
 class ShaderExecutable
 {
   public:
-    ShaderExecutable(const void *function, size_t length) : mLength(length)
+    ShaderExecutable(const void *function, size_t length)
+        : mFunctionBuffer(length)
     {
-        mFunction = new char[length];
-        memcpy(mFunction, function, length);
-    }
-    
-    virtual ~ShaderExecutable()
-    {
-        delete[] mFunction;
+        memcpy(mFunctionBuffer.data(), function, length);
     }
 
-    void *getFunction() const
+    virtual ~ShaderExecutable() {}
+
+    const uint8_t *getFunction() const
     {
-        return mFunction;
+        return mFunctionBuffer.data();
     }
 
     size_t getLength() const
     {
-        return mLength;
+        return mFunctionBuffer.size();
+    }
+
+    const std::string &getDebugInfo() const
+    {
+        return mDebugInfo;
+    }
+
+    void appendDebugInfo(const std::string &info)
+    {
+        mDebugInfo += info;
     }
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ShaderExecutable);
 
-    void *mFunction;
-    const size_t mLength;
+    std::vector<uint8_t> mFunctionBuffer;
+    std::string mDebugInfo;
 };
 
 class UniformStorage
@@ -65,4 +75,4 @@ class UniformStorage
 
 }
 
-#endif // LIBGLESV2_RENDERER_SHADEREXECUTABLE9_H_
+#endif // LIBGLESV2_RENDERER_SHADEREXECUTABLE_H_

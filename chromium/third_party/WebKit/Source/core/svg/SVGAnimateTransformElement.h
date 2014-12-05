@@ -26,9 +26,10 @@
 #include "core/svg/SVGAnimateElement.h"
 #include "core/svg/SVGTransform.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGAnimateTransformElement FINAL : public SVGAnimateElement {
+class SVGAnimateTransformElement final : public SVGAnimateElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGAnimateTransformElement);
 
@@ -37,14 +38,13 @@ public:
 private:
     explicit SVGAnimateTransformElement(Document&);
 
-    virtual bool hasValidAttributeType() OVERRIDE;
+    virtual bool hasValidAttributeType() override;
 
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     SVGTransformType m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimateTransformElement_h

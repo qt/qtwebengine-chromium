@@ -28,6 +28,8 @@
          disable_depth_texture)                              \
   GPU_OP(DISABLE_EGL_KHR_FENCE_SYNC,                         \
          disable_egl_khr_fence_sync)                         \
+  GPU_OP(DISABLE_EGL_KHR_WAIT_SYNC,                          \
+         disable_egl_khr_wait_sync)                          \
   GPU_OP(DISABLE_EXT_DISCARD_FRAMEBUFFER,                    \
          disable_ext_discard_framebuffer)                    \
   GPU_OP(DISABLE_EXT_DRAW_BUFFERS,                           \
@@ -42,8 +44,8 @@
          disable_oes_standard_derivatives)                   \
   GPU_OP(DISABLE_POST_SUB_BUFFERS_FOR_ONSCREEN_SURFACES,     \
          disable_post_sub_buffers_for_onscreen_surfaces)     \
-  GPU_OP(ENABLE_CHROMIUM_FAST_NPOT_MO8_TEXTURES,             \
-         enable_chromium_fast_npot_mo8_textures)             \
+  GPU_OP(ETC1_POWER_OF_TWO_ONLY,                             \
+         etc1_power_of_two_only)                             \
   GPU_OP(EXIT_ON_CONTEXT_LOST,                               \
          exit_on_context_lost)                               \
   GPU_OP(FORCE_DISCRETE_GPU,                                 \
@@ -78,12 +80,14 @@
          needs_glsl_built_in_function_emulation)             \
   GPU_OP(NEEDS_OFFSCREEN_BUFFER_WORKAROUND,                  \
          needs_offscreen_buffer_workaround)                  \
-  GPU_OP(RELEASE_IMAGE_AFTER_USE,                            \
-         release_image_after_use)                            \
+  GPU_OP(REGENERATE_STRUCT_NAMES,                            \
+         regenerate_struct_names)                            \
   GPU_OP(RESTORE_SCISSOR_ON_FBO_CHANGE,                      \
          restore_scissor_on_fbo_change)                      \
   GPU_OP(REVERSE_POINT_SPRITE_COORD_ORIGIN,                  \
          reverse_point_sprite_coord_origin)                  \
+  GPU_OP(SCALARIZE_VEC_AND_MAT_CONSTRUCTOR_ARGS,             \
+         scalarize_vec_and_mat_constructor_args)             \
   GPU_OP(SET_TEXTURE_FILTER_BEFORE_GENERATING_MIPMAP,        \
          set_texture_filter_before_generating_mipmap)        \
   GPU_OP(SWIZZLE_RGBA_FOR_ASYNC_READPIXELS,                  \

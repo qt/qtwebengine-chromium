@@ -32,11 +32,11 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/StringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class IdTargetObserver;
 
-class IdTargetObserverRegistry FINAL : public NoBaseWillBeGarbageCollectedFinalized<IdTargetObserverRegistry> {
+class IdTargetObserverRegistry final : public NoBaseWillBeGarbageCollectedFinalized<IdTargetObserverRegistry> {
     WTF_MAKE_NONCOPYABLE(IdTargetObserverRegistry);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
     friend class IdTargetObserver;
@@ -66,6 +66,6 @@ inline void IdTargetObserverRegistry::notifyObservers(const AtomicString& id)
     IdTargetObserverRegistry::notifyObserversInternal(id);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // IdTargetObserverRegistry_h

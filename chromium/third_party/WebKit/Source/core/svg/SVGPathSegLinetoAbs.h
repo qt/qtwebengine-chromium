@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegWithContext.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegLinetoAbs FINAL : public SVGPathSegSingleCoordinate {
+class SVGPathSegLinetoAbs final : public SVGPathSegSingleCoordinate {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegLinetoAbs> create(SVGPathElement* element, SVGPathSegRole role, float x, float y)
+    static PassRefPtr<SVGPathSegLinetoAbs> create(SVGPathElement* element, float x, float y)
     {
-        return adoptRef(new SVGPathSegLinetoAbs(element, role, x, y));
+        return adoptRef(new SVGPathSegLinetoAbs(element, x, y));
     }
 
 private:
-    SVGPathSegLinetoAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y)
-        : SVGPathSegSingleCoordinate(element, role, x, y)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegLinetoAbs(SVGPathElement* element, float x, float y)
+        : SVGPathSegSingleCoordinate(element, x, y) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_LINETO_ABS; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "L"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_LINETO_ABS; }
+    virtual String pathSegTypeAsLetter() const override { return "L"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegLinetoAbs_h

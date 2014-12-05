@@ -72,7 +72,7 @@ void P2PSocketClientImpl::DoInit(P2PSocketType type,
 void P2PSocketClientImpl::SendWithDscp(
     const net::IPEndPoint& address,
     const std::vector<char>& data,
-    const talk_base::PacketOptions& options) {
+    const rtc::PacketOptions& options) {
   if (!ipc_message_loop_->BelongsToCurrentThread()) {
     ipc_message_loop_->PostTask(
         FROM_HERE, base::Bind(
@@ -92,7 +92,7 @@ void P2PSocketClientImpl::SendWithDscp(
 
 void P2PSocketClientImpl::Send(const net::IPEndPoint& address,
                                const std::vector<char>& data) {
-  talk_base::PacketOptions options(talk_base::DSCP_DEFAULT);
+  rtc::PacketOptions options(rtc::DSCP_DEFAULT);
   SendWithDscp(address, data, options);
 }
 
@@ -143,21 +143,25 @@ void P2PSocketClientImpl::SetDelegate(P2PSocketClientDelegate* delegate) {
   delegate_ = delegate;
 }
 
-void P2PSocketClientImpl::OnSocketCreated(const net::IPEndPoint& address) {
+void P2PSocketClientImpl::OnSocketCreated(
+    const net::IPEndPoint& local_address,
+    const net::IPEndPoint& remote_address) {
   DCHECK(ipc_message_loop_->BelongsToCurrentThread());
   DCHECK_EQ(state_, STATE_OPENING);
   state_ = STATE_OPEN;
 
   delegate_message_loop_->PostTask(
       FROM_HERE,
-      base::Bind(&P2PSocketClientImpl::DeliverOnSocketCreated, this, address));
+      base::Bind(&P2PSocketClientImpl::DeliverOnSocketCreated, this,
+                 local_address, remote_address));
 }
 
 void P2PSocketClientImpl::DeliverOnSocketCreated(
-    const net::IPEndPoint& address) {
+    const net::IPEndPoint& local_address,
+    const net::IPEndPoint& remote_address) {
   DCHECK(delegate_message_loop_->BelongsToCurrentThread());
   if (delegate_)
-    delegate_->OnOpen(address);
+    delegate_->OnOpen(local_address, remote_address);
 }
 
 void P2PSocketClientImpl::OnIncomingTcpConnection(

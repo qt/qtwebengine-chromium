@@ -9,6 +9,7 @@
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/scoped_variant.h"
+#include "content/browser/accessibility/accessibility_mode_helper.h"
 #include "content/browser/accessibility/accessibility_tree_formatter_utils_win.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
 #include "content/public/browser/notification_service.h"
@@ -399,6 +400,9 @@ base::string16 AccessibleChecker::RoleVariantToString(
 
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
                        TestBusyAccessibilityTree) {
+ if (GetBaseAccessibilityMode() != AccessibilityModeOff)
+    return;
+
   NavigateToURL(shell(), GURL(url::kAboutBlankURL));
 
   // The initial accessible returned should have state STATE_SYSTEM_BUSY while
@@ -640,8 +644,9 @@ IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
 // If you made a change and this test now fails, check that the NativeViewHost
 // that wraps the tab contents returns the IAccessible implementation
 // provided by RenderWidgetHostViewWin in GetNativeViewAccessible().
+// flaky: http://crbug.com/402190
 IN_PROC_BROWSER_TEST_F(AccessibilityWinBrowserTest,
-                       ContainsRendererAccessibilityTree) {
+                       DISABLED_ContainsRendererAccessibilityTree) {
   LoadInitialAccessibilityTreeFromHtml(
       "<html><head><title>MyDocument</title></head>"
       "<body>Content</body></html>");

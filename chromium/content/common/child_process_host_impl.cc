@@ -11,13 +11,14 @@
 #include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/numerics/safe_math.h"
 #include "base/path_service.h"
 #include "base/process/process_metrics.h"
 #include "base/rand_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "content/common/child_process_messages.h"
-#include "content/common/gpu/client/gpu_memory_buffer_impl.h"
+#include "content/common/gpu/client/gpu_memory_buffer_impl_shared_memory.h"
 #include "content/public/common/child_process_host_delegate.h"
 #include "content/public/common/content_paths.h"
 #include "content/public/common/content_switches.h"
@@ -78,6 +79,9 @@ base::FilePath TransformPathForFeature(const base::FilePath& path,
 // Global atomic to generate child process unique IDs.
 base::StaticAtomicSequenceNumber g_unique_id;
 
+// Global atomic to generate gpu memory buffer unique IDs.
+base::StaticAtomicSequenceNumber g_next_gpu_memory_buffer_id;
+
 }  // namespace
 
 namespace content {
@@ -93,7 +97,7 @@ ChildProcessHost* ChildProcessHost::Create(ChildProcessHostDelegate* delegate) {
 base::FilePath ChildProcessHost::GetChildPath(int flags) {
   base::FilePath child_path;
 
-  child_path = CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+  child_path = base::CommandLine::ForCurrentProcess()->GetSwitchValuePath(
       switches::kBrowserSubprocessPath);
 
 #if defined(OS_LINUX)
@@ -187,7 +191,7 @@ bool ChildProcessHostImpl::IsChannelOpening() {
 }
 
 #if defined(OS_POSIX)
-int ChildProcessHostImpl::TakeClientFileDescriptor() {
+base::ScopedFD ChildProcessHostImpl::TakeClientFileDescriptor() {
   return channel_->TakeClientFileDescriptor();
 }
 #endif
@@ -253,8 +257,11 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
                           OnShutdownRequest)
       IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateSharedMemory,
                           OnAllocateSharedMemory)
-      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
-                          OnAllocateGpuMemoryBuffer)
+      IPC_MESSAGE_HANDLER_DELAY_REPLY(
+          ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer,
+          OnAllocateGpuMemoryBuffer)
+      IPC_MESSAGE_HANDLER(ChildProcessHostMsg_DeletedGpuMemoryBuffer,
+                          OnDeletedGpuMemoryBuffer)
       IPC_MESSAGE_UNHANDLED(handled = false)
     IPC_END_MESSAGE_MAP()
 
@@ -271,9 +278,9 @@ bool ChildProcessHostImpl::OnMessageReceived(const IPC::Message& msg) {
 
 void ChildProcessHostImpl::OnChannelConnected(int32 peer_pid) {
   if (!peer_handle_ &&
-      !base::OpenPrivilegedProcessHandle(peer_pid, &peer_handle_) &&
-      !(peer_handle_ = delegate_->GetHandle())) {
-    NOTREACHED();
+      !base::OpenPrivilegedProcessHandle(peer_pid, &peer_handle_)) {
+    peer_handle_ = delegate_->GetHandle();
+    DCHECK(peer_handle_);
   }
   opening_channel_ = false;
   delegate_->OnChannelConnected(peer_pid);
@@ -310,14 +317,48 @@ void ChildProcessHostImpl::OnShutdownRequest() {
 void ChildProcessHostImpl::OnAllocateGpuMemoryBuffer(
     uint32 width,
     uint32 height,
-    uint32 internalformat,
-    uint32 usage,
-    gfx::GpuMemoryBufferHandle* handle) {
-  handle->type = gfx::SHARED_MEMORY_BUFFER;
-  AllocateSharedMemory(
-      width * height * GpuMemoryBufferImpl::BytesPerPixel(internalformat),
+    gfx::GpuMemoryBuffer::Format format,
+    gfx::GpuMemoryBuffer::Usage usage,
+    IPC::Message* reply) {
+  base::CheckedNumeric<int> size = width;
+  size *= height;
+  if (!size.IsValid()) {
+    GpuMemoryBufferAllocated(reply, gfx::GpuMemoryBufferHandle());
+    return;
+  }
+
+  // TODO(reveman): Add support for other types of GpuMemoryBuffers.
+  if (!GpuMemoryBufferImplSharedMemory::IsConfigurationSupported(
+          gfx::Size(width, height), format, usage)) {
+    GpuMemoryBufferAllocated(reply, gfx::GpuMemoryBufferHandle());
+    return;
+  }
+
+  // Note: It is safe to use base::Unretained here as the shared memory
+  // implementation of AllocateForChildProcess() calls this synchronously.
+  GpuMemoryBufferImplSharedMemory::AllocateForChildProcess(
+      g_next_gpu_memory_buffer_id.GetNext(),
+      gfx::Size(width, height),
+      format,
       peer_handle_,
-      &handle->handle);
+      base::Bind(&ChildProcessHostImpl::GpuMemoryBufferAllocated,
+                 base::Unretained(this),
+                 reply));
+}
+
+void ChildProcessHostImpl::OnDeletedGpuMemoryBuffer(
+    gfx::GpuMemoryBufferId id,
+    uint32 sync_point) {
+  // Note: Nothing to do here as ownership of shared memory backed
+  // GpuMemoryBuffers is passed with IPC.
+}
+
+void ChildProcessHostImpl::GpuMemoryBufferAllocated(
+    IPC::Message* reply,
+    const gfx::GpuMemoryBufferHandle& handle) {
+  ChildProcessHostMsg_SyncAllocateGpuMemoryBuffer::WriteReplyParams(reply,
+                                                                    handle);
+  Send(reply);
 }
 
 }  // namespace content

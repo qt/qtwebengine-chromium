@@ -44,9 +44,9 @@ class SyncCallback: public disk_cache::FileIOCallback {
     entry->AddRef();
     entry->IncrementIoCount();
   }
-  virtual ~SyncCallback() {}
+  ~SyncCallback() override {}
 
-  virtual void OnFileIOComplete(int bytes_copied) OVERRIDE;
+  void OnFileIOComplete(int bytes_copied) override;
   void Discard();
 
  private:
@@ -942,7 +942,8 @@ EntryImpl::~EntryImpl() {
     bool ret = true;
     for (int index = 0; index < kNumStreams; index++) {
       if (user_buffers_[index].get()) {
-        if (!(ret = Flush(index, 0)))
+        ret = Flush(index, 0);
+        if (!ret)
           LOG(ERROR) << "Failed to save user data";
       }
       if (unreported_size_[index]) {

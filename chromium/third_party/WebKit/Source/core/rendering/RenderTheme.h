@@ -35,7 +35,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class FileList;
@@ -90,18 +90,12 @@ public:
     // the baseline position API above).
     bool isControlContainer(ControlPart) const;
 
-    // A method asking if the control changes its tint when the window has focus or not.
-    virtual bool controlSupportsTints(const RenderObject*) const { return false; }
-
     // Whether or not the control has been styled enough by the author to disable the native appearance.
     virtual bool isControlStyled(const RenderStyle*, const CachedUAStyle*) const;
 
-    // A general method asking if any control tinting is supported at all.
-    virtual bool supportsControlTints() const { return false; }
-
-    // Some controls may spill out of their containers (e.g., the check on an OS X checkbox).  When these controls repaint,
+    // Some controls may spill out of their containers (e.g., the check on an OS X checkbox). When these controls issues paint invalidations,
     // the theme needs to communicate this inflated rect to the engine so that it can invalidate the whole control.
-    virtual void adjustRepaintRect(const RenderObject*, IntRect&);
+    virtual void adjustPaintInvalidationRect(const RenderObject*, IntRect&);
 
     // This method is called whenever a relevant state changes on a particular themed object, e.g., the mouse becomes pressed
     // or a control becomes disabled.
@@ -144,7 +138,8 @@ public:
     virtual double caretBlinkInterval() const { return 0.5; }
 
     // System fonts and colors for CSS.
-    virtual void systemFont(CSSValueID, FontDescription&) const = 0;
+    virtual void systemFont(CSSValueID systemFontID, FontStyle&, FontWeight&, float& fontSize, AtomicString& fontFamily) const = 0;
+    void systemFont(CSSValueID systemFontID, FontDescription&);
     virtual Color systemColor(CSSValueID) const;
 
     virtual int minimumMenuListSize(RenderStyle*) const { return 0; }
@@ -187,13 +182,17 @@ public:
     // Functions for <select> elements.
     virtual bool delegatesMenuListRendering() const { return false; }
     virtual bool popsMenuByArrowKeys() const { return false; }
-    virtual bool popsMenuBySpaceOrReturn() const { return false; }
+    virtual bool popsMenuBySpaceKey() const { return false; }
+    virtual bool popsMenuByReturnKey() const { return false; }
+    virtual bool popsMenuByAltDownUpOrF4Key() const { return false; }
 
     virtual String fileListNameForWidth(Locale&, const FileList*, const Font&, int width) const;
 
     virtual bool shouldOpenPickerWithF4Key() const;
 
     virtual bool supportsSelectionForegroundColors() const { return true; }
+
+    virtual bool isModalColorChooser() const { return true; }
 
 protected:
     // The platform selection color.
@@ -268,6 +267,7 @@ protected:
     virtual bool paintMediaVolumeSliderTrack(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaVolumeSliderThumb(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaToggleClosedCaptionsButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
+    virtual bool paintMediaCastButton(RenderObject*, const PaintInfo&, const IntRect&) { return true; };
     virtual bool paintMediaControlsBackground(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaCurrentTime(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
     virtual bool paintMediaTimeRemaining(RenderObject*, const PaintInfo&, const IntRect&) { return true; }
@@ -311,6 +311,6 @@ private:
 #endif
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTheme_h

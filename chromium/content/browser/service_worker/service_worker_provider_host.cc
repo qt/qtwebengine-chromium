@@ -11,9 +11,12 @@
 #include "content/browser/service_worker/service_worker_controllee_request_handler.h"
 #include "content/browser/service_worker/service_worker_dispatcher_host.h"
 #include "content/browser/service_worker/service_worker_handle.h"
+#include "content/browser/service_worker/service_worker_registration_handle.h"
 #include "content/browser/service_worker/service_worker_utils.h"
 #include "content/browser/service_worker/service_worker_version.h"
+#include "content/common/resource_request_body.h"
 #include "content/common/service_worker/service_worker_messages.h"
+#include "content/common/service_worker/service_worker_types.h"
 
 namespace content {
 
@@ -26,14 +29,30 @@ ServiceWorkerProviderHost::ServiceWorkerProviderHost(
     : process_id_(process_id),
       provider_id_(provider_id),
       context_(context),
-      dispatcher_host_(dispatcher_host) {
+      dispatcher_host_(dispatcher_host),
+      allow_association_(true) {
 }
 
 ServiceWorkerProviderHost::~ServiceWorkerProviderHost() {
-  if (active_version_)
-    active_version_->RemoveControllee(this);
-  if (waiting_version_)
-    waiting_version_->RemoveWaitingControllee(this);
+  // Clear docurl so the deferred activation of a waiting worker
+  // won't associate the new version with a provider being destroyed.
+  document_url_ = GURL();
+  if (controlling_version_.get())
+    controlling_version_->RemoveControllee(this);
+  if (associated_registration_.get()) {
+    DecreaseProcessReference(associated_registration_->pattern());
+    associated_registration_->RemoveListener(this);
+  }
+  for (std::vector<GURL>::iterator it = associated_patterns_.begin();
+       it != associated_patterns_.end(); ++it) {
+    DecreaseProcessReference(*it);
+  }
+}
+
+void ServiceWorkerProviderHost::OnRegistrationFailed(
+    ServiceWorkerRegistration* registration) {
+  DCHECK_EQ(associated_registration_.get(), registration);
+  DisassociateRegistration();
 }
 
 void ServiceWorkerProviderHost::SetDocumentUrl(const GURL& url) {
@@ -41,47 +60,33 @@ void ServiceWorkerProviderHost::SetDocumentUrl(const GURL& url) {
   document_url_ = url;
 }
 
-void ServiceWorkerProviderHost::SetActiveVersion(
+void ServiceWorkerProviderHost::SetTopmostFrameUrl(const GURL& url) {
+  topmost_frame_url_ = url;
+}
+
+void ServiceWorkerProviderHost::SetControllerVersionAttribute(
     ServiceWorkerVersion* version) {
-  if (version == active_version_)
+  if (version == controlling_version_.get())
     return;
-  scoped_refptr<ServiceWorkerVersion> previous_version = active_version_;
-  active_version_ = version;
+
+  scoped_refptr<ServiceWorkerVersion> previous_version = controlling_version_;
+  controlling_version_ = version;
   if (version)
     version->AddControllee(this);
-  if (previous_version)
+  if (previous_version.get())
     previous_version->RemoveControllee(this);
 
   if (!dispatcher_host_)
     return;  // Could be NULL in some tests.
 
-  dispatcher_host_->Send(new ServiceWorkerMsg_SetCurrentServiceWorker(
-      kDocumentMainThreadId, provider_id(), CreateHandleAndPass(version)));
-}
-
-void ServiceWorkerProviderHost::SetWaitingVersion(
-    ServiceWorkerVersion* version) {
-  DCHECK(ValidateVersionForAssociation(version));
-  if (version == waiting_version_)
-    return;
-  scoped_refptr<ServiceWorkerVersion> previous_version = waiting_version_;
-  waiting_version_ = version;
-  if (version)
-    version->AddWaitingControllee(this);
-  if (previous_version)
-    previous_version->RemoveWaitingControllee(this);
-
-  if (!dispatcher_host_)
-    return;  // Could be NULL in some tests.
-
-  dispatcher_host_->Send(new ServiceWorkerMsg_SetWaitingServiceWorker(
+  dispatcher_host_->Send(new ServiceWorkerMsg_SetControllerServiceWorker(
       kDocumentMainThreadId, provider_id(), CreateHandleAndPass(version)));
 }
 
 bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
   if (!context_)
     return true;  // System is shutting down.
-  if (active_version_)
+  if (active_version())
     return false;  // Unexpected bad message.
 
   ServiceWorkerVersion* live_version = context_->GetLiveVersion(version_id);
@@ -100,43 +105,87 @@ bool ServiceWorkerProviderHost::SetHostedVersionId(int64 version_id) {
   return true;
 }
 
+void ServiceWorkerProviderHost::AssociateRegistration(
+    ServiceWorkerRegistration* registration) {
+  DCHECK(CanAssociateRegistration(registration));
+  if (associated_registration_.get())
+    DecreaseProcessReference(associated_registration_->pattern());
+  IncreaseProcessReference(registration->pattern());
+
+  if (dispatcher_host_) {
+    ServiceWorkerRegistrationHandle* handle =
+        dispatcher_host_->GetOrCreateRegistrationHandle(
+            provider_id(), registration);
+
+    ServiceWorkerVersionAttributes attrs;
+    attrs.installing = handle->CreateServiceWorkerHandleAndPass(
+        registration->installing_version());
+    attrs.waiting = handle->CreateServiceWorkerHandleAndPass(
+        registration->waiting_version());
+    attrs.active = handle->CreateServiceWorkerHandleAndPass(
+        registration->active_version());
+
+    dispatcher_host_->Send(new ServiceWorkerMsg_AssociateRegistration(
+        kDocumentMainThreadId, provider_id(), handle->GetObjectInfo(), attrs));
+  }
+
+  associated_registration_ = registration;
+  associated_registration_->AddListener(this);
+  SetControllerVersionAttribute(registration->active_version());
+}
+
+void ServiceWorkerProviderHost::DisassociateRegistration() {
+  if (!associated_registration_.get())
+    return;
+  DecreaseProcessReference(associated_registration_->pattern());
+  associated_registration_->RemoveListener(this);
+  associated_registration_ = NULL;
+  SetControllerVersionAttribute(NULL);
+
+  if (dispatcher_host_) {
+    dispatcher_host_->Send(new ServiceWorkerMsg_DisassociateRegistration(
+        kDocumentMainThreadId, provider_id()));
+  }
+}
+
 scoped_ptr<ServiceWorkerRequestHandler>
 ServiceWorkerProviderHost::CreateRequestHandler(
-    ResourceType::Type resource_type,
-    base::WeakPtr<webkit_blob::BlobStorageContext> blob_storage_context) {
+    FetchRequestMode request_mode,
+    FetchCredentialsMode credentials_mode,
+    ResourceType resource_type,
+    RequestContextType request_context_type,
+    RequestContextFrameType frame_type,
+    base::WeakPtr<storage::BlobStorageContext> blob_storage_context,
+    scoped_refptr<ResourceRequestBody> body) {
   if (IsHostToRunningServiceWorker()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
         new ServiceWorkerContextRequestHandler(
             context_, AsWeakPtr(), blob_storage_context, resource_type));
   }
   if (ServiceWorkerUtils::IsMainResourceType(resource_type) ||
-      active_version()) {
+      controlling_version()) {
     return scoped_ptr<ServiceWorkerRequestHandler>(
-        new ServiceWorkerControlleeRequestHandler(
-            context_, AsWeakPtr(), blob_storage_context, resource_type));
+        new ServiceWorkerControlleeRequestHandler(context_,
+                                                  AsWeakPtr(),
+                                                  blob_storage_context,
+                                                  request_mode,
+                                                  credentials_mode,
+                                                  resource_type,
+                                                  request_context_type,
+                                                  frame_type,
+                                                  body));
   }
   return scoped_ptr<ServiceWorkerRequestHandler>();
 }
 
-bool ServiceWorkerProviderHost::ValidateVersionForAssociation(
-    ServiceWorkerVersion* version) {
-  if (running_hosted_version_)
+bool ServiceWorkerProviderHost::CanAssociateRegistration(
+    ServiceWorkerRegistration* registration) {
+  if (!context_)
     return false;
-  if (!version)
-    return true;
-
-  // A version to be associated with this provider should have the same
-  // registration (scope) as current active/waiting versions.
-  if (active_version_) {
-    if (active_version_->registration_id() != version->registration_id())
-      return false;
-    DCHECK_EQ(active_version_->scope(), version->scope());
-  }
-  if (waiting_version_) {
-    if (waiting_version_->registration_id() != version->registration_id())
-      return false;
-    DCHECK_EQ(waiting_version_->scope(), version->scope());
-  }
+  if (running_hosted_version_.get())
+    return false;
+  if (!registration || associated_registration_.get() || !allow_association_)
+    return false;
   return true;
 }
 
@@ -159,18 +208,42 @@ void ServiceWorkerProviderHost::PostMessage(
           new_routing_ids));
 }
 
+void ServiceWorkerProviderHost::AddScopedProcessReferenceToPattern(
+    const GURL& pattern) {
+  associated_patterns_.push_back(pattern);
+  IncreaseProcessReference(pattern);
+}
+
 ServiceWorkerObjectInfo ServiceWorkerProviderHost::CreateHandleAndPass(
     ServiceWorkerVersion* version) {
-  DCHECK(ValidateVersionForAssociation(version));
   ServiceWorkerObjectInfo info;
   if (context_ && version) {
     scoped_ptr<ServiceWorkerHandle> handle =
-        ServiceWorkerHandle::Create(context_, dispatcher_host_,
-                                    kDocumentMainThreadId, version);
+        ServiceWorkerHandle::Create(context_,
+                                    dispatcher_host_,
+                                    kDocumentMainThreadId,
+                                    provider_id_,
+                                    version);
     info = handle->GetObjectInfo();
     dispatcher_host_->RegisterServiceWorkerHandle(handle.Pass());
   }
   return info;
+}
+
+void ServiceWorkerProviderHost::IncreaseProcessReference(
+    const GURL& pattern) {
+  if (context_ && context_->process_manager()) {
+    context_->process_manager()->AddProcessReferenceToPattern(
+        pattern, process_id_);
+  }
+}
+
+void ServiceWorkerProviderHost::DecreaseProcessReference(
+    const GURL& pattern) {
+  if (context_ && context_->process_manager()) {
+    context_->process_manager()->RemoveProcessReferenceFromPattern(
+        pattern, process_id_);
+  }
 }
 
 bool ServiceWorkerProviderHost::IsContextAlive() {

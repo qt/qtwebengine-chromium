@@ -30,7 +30,6 @@
  */
 
 #include "config.h"
-
 #include "platform/mediastream/MediaStreamComponent.h"
 
 #include "platform/UUID.h"
@@ -38,7 +37,7 @@
 #include "platform/mediastream/MediaStreamSource.h"
 #include "public/platform/WebAudioSourceProvider.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<MediaStreamComponent> MediaStreamComponent::create(PassRefPtr<MediaStreamSource> source)
 {
@@ -54,12 +53,13 @@ MediaStreamComponent::MediaStreamComponent(const String& id, PassRefPtr<MediaStr
     : m_source(source)
     , m_id(id)
     , m_enabled(true)
+    , m_muted(false)
 {
     ASSERT(m_id.length());
 }
 
 #if ENABLE(WEB_AUDIO)
-void MediaStreamComponent::AudioSourceProviderImpl::wrap(blink::WebAudioSourceProvider* provider)
+void MediaStreamComponent::AudioSourceProviderImpl::wrap(WebAudioSourceProvider* provider)
 {
     MutexLocker locker(m_provideInputLock);
     m_webAudioSourceProvider = provider;
@@ -79,7 +79,7 @@ void MediaStreamComponent::AudioSourceProviderImpl::provideInput(AudioBus* bus, 
 
     // Wrap the AudioBus channel data using WebVector.
     size_t n = bus->numberOfChannels();
-    blink::WebVector<float*> webAudioData(n);
+    WebVector<float*> webAudioData(n);
     for (size_t i = 0; i < n; ++i)
         webAudioData[i] = bus->channel(i)->mutableData();
 
@@ -87,5 +87,5 @@ void MediaStreamComponent::AudioSourceProviderImpl::provideInput(AudioBus* bus, 
 }
 #endif // #if ENABLE(WEB_AUDIO)
 
-} // namespace WebCore
+} // namespace blink
 

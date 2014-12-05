@@ -29,16 +29,17 @@
 #include "modules/webaudio/DelayProcessor.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioParam;
 class ExceptionState;
 
-class DelayNode FINAL : public AudioBasicProcessorNode {
+class DelayNode final : public AudioBasicProcessorNode {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<DelayNode> create(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
+    static DelayNode* create(AudioContext* context, float sampleRate, double maxDelayTime, ExceptionState& exceptionState)
     {
-        return adoptRefWillBeNoop(new DelayNode(context, sampleRate, maxDelayTime, exceptionState));
+        return new DelayNode(context, sampleRate, maxDelayTime, exceptionState);
     }
 
     AudioParam* delayTime();
@@ -49,6 +50,6 @@ private:
     DelayProcessor* delayProcessor() { return static_cast<DelayProcessor*>(processor()); }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DelayNode_h

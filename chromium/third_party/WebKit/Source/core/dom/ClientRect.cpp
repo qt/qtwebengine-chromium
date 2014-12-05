@@ -27,23 +27,20 @@
 #include "config.h"
 #include "core/dom/ClientRect.h"
 
-namespace WebCore {
+namespace blink {
 
 ClientRect::ClientRect()
 {
-    ScriptWrappable::init(this);
 }
 
 ClientRect::ClientRect(const IntRect& rect)
     : m_rect(rect)
 {
-    ScriptWrappable::init(this);
 }
 
 ClientRect::ClientRect(const FloatRect& rect)
     : m_rect(rect)
 {
-    ScriptWrappable::init(this);
 }
 
-} // namespace WebCore
+} // namespace blink

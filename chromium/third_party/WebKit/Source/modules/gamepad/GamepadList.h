@@ -26,34 +26,32 @@
 #ifndef GamepadList_h
 #define GamepadList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/gamepad/Gamepad.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebGamepads.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class GamepadList FINAL : public GarbageCollectedFinalized<GamepadList>, public ScriptWrappable {
+class GamepadList final : public GarbageCollected<GamepadList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static GamepadList* create()
     {
         return new GamepadList();
     }
-    ~GamepadList();
 
     void set(unsigned index, Gamepad*);
     Gamepad* item(unsigned index);
-    unsigned length() const { return blink::WebGamepads::itemsLengthCap; }
+    unsigned length() const { return WebGamepads::itemsLengthCap; }
 
     void trace(Visitor*);
 
 private:
     GamepadList();
-    Member<Gamepad> m_items[blink::WebGamepads::itemsLengthCap];
+    Member<Gamepad> m_items[WebGamepads::itemsLengthCap];
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GamepadList_h

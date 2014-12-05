@@ -40,6 +40,7 @@
 namespace blink {
 
 class WebDataSource;
+class WebServiceWorkerCacheStorage;
 class WebServiceWorkerContextProxy;
 class WebServiceWorkerNetworkProvider;
 class WebServiceWorkerResponse;
@@ -57,6 +58,9 @@ class WebServiceWorkerContextClient {
 public:
     virtual ~WebServiceWorkerContextClient() { }
 
+    // ServiceWorker specific method.
+    virtual WebServiceWorkerCacheStorage* cacheStorage() { return 0; }
+
     // ServiceWorker specific method. Called when script accesses the
     // the |scope| attribute of the ServiceWorkerGlobalScope. Immutable per spec.
     virtual WebURL scope() const { return WebURL(); }
@@ -66,6 +70,9 @@ public:
     // downloaded. The scope will not be created and the script will not be loaded until
     // WebEmbeddedWorker.resumeAfterDownload() is invoked.
     virtual void didPauseAfterDownload() { }
+
+    // ServiceWorker has prepared everything for script loading and is now ready for inspection.
+    virtual void workerReadyForInspection() { }
 
     // A new WorkerGlobalScope is created and started to run on the
     // worker thread.
@@ -87,6 +94,10 @@ public:
     // This is called on the main thread.
     virtual void workerContextFailedToStart() { }
 
+    // Called when the worker script is evaluated. |success| is true if the
+    // evaluation completed with no uncaught exception.
+    virtual void didEvaluateWorkerScript(bool success) { }
+
     // Called when the WorkerGlobalScope had an error or an exception.
     virtual void reportException(const WebString& errorMessage, int lineNumber, int columnNumber, const WebString& sourceURL) { }
 
@@ -98,12 +109,12 @@ public:
     virtual void saveDevToolsAgentState(const WebString&) { }
 
     // ServiceWorker specific method.
-    virtual void didHandleActivateEvent(int eventID, blink::WebServiceWorkerEventResult result) { }
+    virtual void didHandleActivateEvent(int eventID, WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific method. Called after InstallEvent (dispatched
     // via WebServiceWorkerContextProxy) is handled by the ServiceWorker's
     // script context.
-    virtual void didHandleInstallEvent(int installEventID, blink::WebServiceWorkerEventResult result) { }
+    virtual void didHandleInstallEvent(int installEventID, WebServiceWorkerEventResult result) { }
 
     // ServiceWorker specific methods. Called after FetchEvent is handled by the
     // ServiceWorker's script context. When no response is provided, the browser
@@ -117,7 +128,7 @@ public:
     virtual void didHandleSyncEvent(int syncEventID) { }
 
     // Ownership of the returned object is transferred to the caller.
-    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(blink::WebDataSource*) { return 0; }
+    virtual WebServiceWorkerNetworkProvider* createServiceWorkerNetworkProvider(WebDataSource*) { return 0; }
 
     // Ownership of the passed callbacks is transferred to the callee, callee
     // should delete the callbacks after calling either onSuccess or onError.
@@ -132,4 +143,4 @@ public:
 
 } // namespace blink
 
-#endif // WebWorkerContextClient_h
+#endif // WebServiceWorkerContextClient_h

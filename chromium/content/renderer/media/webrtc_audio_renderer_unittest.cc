@@ -24,6 +24,9 @@ namespace content {
 
 namespace {
 
+const int kHardwareSampleRate = 44100;
+const int kHardwareBufferSize = 512;
+
 class MockAudioOutputIPC : public media::AudioOutputIPC {
  public:
   MockAudioOutputIPC() {}
@@ -87,11 +90,13 @@ class WebRtcAudioRendererTest : public testing::Test {
             message_loop_->message_loop_proxy())),
         factory_(new MockAudioDeviceFactory()),
         source_(new MockAudioRendererSource()),
-        stream_(new talk_base::RefCountedObject<MockMediaStream>("label")),
-        renderer_(new WebRtcAudioRenderer(stream_, 1, 1, 1, 44100, 441)) {
+        stream_(new rtc::RefCountedObject<MockMediaStream>("label")),
+        renderer_(new WebRtcAudioRenderer(message_loop_->message_loop_proxy(),
+                                          stream_, 1, 1, 1, 44100,
+                                          kHardwareBufferSize)) {
     EXPECT_CALL(*factory_.get(), CreateOutputDevice(1))
-        .WillOnce(Return(mock_output_device_));
-    EXPECT_CALL(*mock_output_device_, Start());
+        .WillOnce(Return(mock_output_device_.get()));
+    EXPECT_CALL(*mock_output_device_.get(), Start());
     EXPECT_TRUE(renderer_->Initialize(source_.get()));
     renderer_proxy_ = renderer_->CreateSharedAudioRendererProxy(stream_);
   }
@@ -114,7 +119,7 @@ TEST_F(WebRtcAudioRendererTest, StopRenderer) {
 
   // |renderer_| has only one proxy, stopping the proxy should stop the sink of
   // |renderer_|.
-  EXPECT_CALL(*mock_output_device_, Stop());
+  EXPECT_CALL(*mock_output_device_.get(), Stop());
   EXPECT_CALL(*source_.get(), RemoveAudioRenderer(renderer_.get()));
   renderer_proxy_->Stop();
 }
@@ -136,19 +141,40 @@ TEST_F(WebRtcAudioRendererTest, MultipleRenderers) {
 
   // Stop the |renderer_proxy_| should not stop the sink since it is used by
   // other proxies.
-  EXPECT_CALL(*mock_output_device_, Stop()).Times(0);
+  EXPECT_CALL(*mock_output_device_.get(), Stop()).Times(0);
   renderer_proxy_->Stop();
 
   for (int i = 0; i < kNumberOfRendererProxy; ++i) {
     if (i != kNumberOfRendererProxy -1) {
-      EXPECT_CALL(*mock_output_device_, Stop()).Times(0);
+      EXPECT_CALL(*mock_output_device_.get(), Stop()).Times(0);
     } else {
       // When the last proxy is stopped, the sink will stop.
       EXPECT_CALL(*source_.get(), RemoveAudioRenderer(renderer_.get()));
-      EXPECT_CALL(*mock_output_device_, Stop());
+      EXPECT_CALL(*mock_output_device_.get(), Stop());
     }
     renderer_proxies_[i]->Stop();
   }
+}
+
+// Verify that the sink of the renderer is using the expected sample rate and
+// buffer size.
+TEST_F(WebRtcAudioRendererTest, VerifySinkParameters) {
+  renderer_proxy_->Start();
+#if defined(OS_LINUX) || defined(OS_MACOSX)
+  static const int kExpectedBufferSize = kHardwareSampleRate / 100;
+#elif defined(OS_ANDROID)
+  static const int kExpectedBufferSize = 2 * kHardwareSampleRate / 100;
+#else
+  // Windows.
+  static const int kExpectedBufferSize = kHardwareBufferSize;
+#endif
+  EXPECT_EQ(kExpectedBufferSize, renderer_->frames_per_buffer());
+  EXPECT_EQ(kHardwareSampleRate, renderer_->sample_rate());
+  EXPECT_EQ(2, renderer_->channels());
+
+  EXPECT_CALL(*mock_output_device_.get(), Stop());
+  EXPECT_CALL(*source_.get(), RemoveAudioRenderer(renderer_.get()));
+  renderer_proxy_->Stop();
 }
 
 }  // namespace content

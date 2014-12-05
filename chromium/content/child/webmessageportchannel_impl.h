@@ -28,14 +28,17 @@ class WebMessagePortChannelImpl
       public IPC::Listener,
       public base::RefCountedThreadSafe<WebMessagePortChannelImpl> {
  public:
-  explicit WebMessagePortChannelImpl(base::MessageLoopProxy* child_thread_loop);
-  WebMessagePortChannelImpl(int route_id,
-                            int message_port_id,
-                            base::MessageLoopProxy* child_thread_loop);
+  explicit WebMessagePortChannelImpl(
+      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop);
+  WebMessagePortChannelImpl(
+      int route_id,
+      int message_port_id,
+      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop);
 
-  static void CreatePair(base::MessageLoopProxy* child_thread_loop,
-                         blink::WebMessagePortChannel** channel1,
-                         blink::WebMessagePortChannel** channel2);
+  static void CreatePair(
+      const scoped_refptr<base::MessageLoopProxy>& child_thread_loop,
+      blink::WebMessagePortChannel** channel1,
+      blink::WebMessagePortChannel** channel2);
 
   // Extracts port IDs for passing on to the browser process, and queues any
   // received messages. Takes ownership of the passed array (and deletes it).
@@ -49,7 +52,7 @@ class WebMessagePortChannelImpl
 
  private:
   friend class base::RefCountedThreadSafe<WebMessagePortChannelImpl>;
-  virtual ~WebMessagePortChannelImpl();
+  ~WebMessagePortChannelImpl() override;
 
   // WebMessagePortChannel implementation.
   virtual void setClient(blink::WebMessagePortChannelClient* client);
@@ -66,7 +69,7 @@ class WebMessagePortChannelImpl
                    blink::WebMessagePortChannelArray* channels);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void OnMessage(const base::string16& message,
                  const std::vector<int>& sent_message_port_ids,

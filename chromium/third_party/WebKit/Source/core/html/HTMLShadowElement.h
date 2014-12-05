@@ -34,9 +34,10 @@
 #include "core/dom/shadow/InsertionPoint.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLShadowElement FINAL : public InsertionPoint {
+class HTMLShadowElement final : public InsertionPoint {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLShadowElement);
     virtual ~HTMLShadowElement();
@@ -45,9 +46,9 @@ public:
 
 private:
     explicit HTMLShadowElement(Document&);
-    virtual InsertionNotificationRequest insertedInto(ContainerNode* insertionPoint) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode* insertionPoint) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLShadowElement_h

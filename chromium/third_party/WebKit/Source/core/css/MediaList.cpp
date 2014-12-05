@@ -20,18 +20,18 @@
 #include "config.h"
 #include "core/css/MediaList.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/MediaFeatureNames.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSStyleSheet.h"
 #include "core/css/MediaQuery.h"
 #include "core/css/MediaQueryExp.h"
 #include "core/css/parser/MediaQueryParser.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 /* MediaList is used to store 3 types of media related entities which mean the same:
  *
@@ -71,11 +71,7 @@ PassRefPtrWillBeRawPtr<MediaQuerySet> MediaQuerySet::create(const String& mediaS
     if (mediaString.isEmpty())
         return MediaQuerySet::create();
 
-    if (RuntimeEnabledFeatures::mediaQueryParserEnabled())
-        return MediaQueryParser::parseMediaQuerySet(mediaString);
-
-    BisonCSSParser parser(strictCSSParserContext());
-    return parser.parseMediaQueryList(mediaString);
+    return MediaQueryParser::parseMediaQuerySet(mediaString);
 }
 
 PassRefPtrWillBeRawPtr<MediaQuerySet> MediaQuerySet::createOffMainThread(const String& mediaString)
@@ -273,7 +269,7 @@ static void addResolutionWarningMessageToConsole(Document* document, const Strin
 
     message.append(serializedExpression);
 
-    document->addConsoleMessage(CSSMessageSource, DebugMessageLevel, message.toString());
+    document->addConsoleMessage(ConsoleMessage::create(CSSMessageSource, DebugMessageLevel, message.toString()));
 }
 
 static inline bool isResolutionMediaFeature(const String& mediaFeature)

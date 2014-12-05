@@ -117,7 +117,7 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
                                 Delegate* delegate,
                                 InitParams* init_params);
 
-  virtual ~TrayBubbleView();
+  ~TrayBubbleView() override;
 
   // Sets up animations, and show the bubble. Must occur after CreateBubble()
   // is called.
@@ -147,25 +147,25 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
   bool is_gesture_dragging() const { return is_gesture_dragging_; }
 
   // Overridden from views::WidgetDelegate.
-  virtual bool CanActivate() const OVERRIDE;
-  virtual views::NonClientFrameView* CreateNonClientFrameView(
-      views::Widget* widget) OVERRIDE;
-  virtual bool WidgetHasHitTestMask() const OVERRIDE;
-  virtual void GetWidgetHitTestMask(gfx::Path* mask) const OVERRIDE;
+  bool CanActivate() const override;
+  views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) override;
+  bool WidgetHasHitTestMask() const override;
+  void GetWidgetHitTestMask(gfx::Path* mask) const override;
 
   // Overridden from views::BubbleDelegateView.
-  virtual gfx::Rect GetAnchorRect() const OVERRIDE;
+  gfx::Rect GetAnchorRect() const override;
 
   // Overridden from views::View.
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual gfx::Size GetMaximumSize() const OVERRIDE;
-  virtual int GetHeightForWidth(int width) const OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  gfx::Size GetMaximumSize() const override;
+  int GetHeightForWidth(int width) const override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // Overridden from MouseWatcherListener
-  virtual void MouseMovedOutOfHost() OVERRIDE;
+  void MouseMovedOutOfHost() override;
 
  protected:
   TrayBubbleView(gfx::NativeView parent_window,
@@ -174,12 +174,12 @@ class VIEWS_EXPORT TrayBubbleView : public views::BubbleDelegateView,
                  const InitParams& init_params);
 
   // Overridden from views::BubbleDelegateView.
-  virtual void Init() OVERRIDE;
+  void Init() override;
 
   // Overridden from views::View.
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  void ChildPreferredSizeChanged(View* child) override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
 
  private:
   InitParams params_;

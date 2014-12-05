@@ -30,8 +30,8 @@
 
 #include <list>
 
-#include "talk/base/common.h"
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "webrtc/base/common.h"
 
 namespace webrtc {
 

@@ -26,16 +26,15 @@
 #include "config.h"
 #include "core/html/canvas/WebGLDebugShaders.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 #include "core/html/canvas/WebGLShader.h"
 
-namespace WebCore {
+namespace blink {
 
 WebGLDebugShaders::WebGLDebugShaders(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
 }
 
 WebGLDebugShaders::~WebGLDebugShaders()
@@ -47,9 +46,9 @@ WebGLExtensionName WebGLDebugShaders::name() const
     return WebGLDebugShadersName;
 }
 
-PassRefPtr<WebGLDebugShaders> WebGLDebugShaders::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<WebGLDebugShaders> WebGLDebugShaders::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new WebGLDebugShaders(context));
+    return adoptRefWillBeNoop(new WebGLDebugShaders(context));
 }
 
 String WebGLDebugShaders::getTranslatedShaderSource(WebGLShader* shader)
@@ -71,4 +70,4 @@ const char* WebGLDebugShaders::extensionName()
     return "WEBGL_debug_shaders";
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -26,8 +26,13 @@ namespace gpu {
 // Mocks an AsyncAPIInterface, using GMock.
 class AsyncAPIMock : public AsyncAPIInterface {
  public:
-  AsyncAPIMock();
+  explicit AsyncAPIMock(bool default_do_commands);
   virtual ~AsyncAPIMock();
+
+  error::Error FakeDoCommands(unsigned int num_commands,
+                              const void* buffer,
+                              int num_entries,
+                              int* entries_processed);
 
   // Predicate that matches args passed to DoCommand, by looking at the values.
   class IsArgs {
@@ -56,6 +61,12 @@ class AsyncAPIMock : public AsyncAPIInterface {
       unsigned int arg_count,
       const void* cmd_data));
 
+  MOCK_METHOD4(DoCommands,
+               error::Error(unsigned int num_commands,
+                            const void* buffer,
+                            int num_entries,
+                            int* entries_processed));
+
   const char* GetCommandName(unsigned int command_id) const {
     return "";
   };
@@ -80,18 +91,19 @@ class MockShaderTranslator : public ShaderTranslatorInterface {
   virtual ~MockShaderTranslator();
 
   MOCK_METHOD5(Init, bool(
-      ShShaderType shader_type,
+      sh::GLenum shader_type,
       ShShaderSpec shader_spec,
       const ShBuiltInResources* resources,
       GlslImplementationType glsl_implementation_type,
       ShCompileOptions driver_bug_workarounds));
-  MOCK_METHOD1(Translate, bool(const char* shader));
-  MOCK_CONST_METHOD0(translated_shader, const char*());
-  MOCK_CONST_METHOD0(info_log, const char*());
-  MOCK_CONST_METHOD0(attrib_map, const VariableMap&());
-  MOCK_CONST_METHOD0(uniform_map, const VariableMap&());
-  MOCK_CONST_METHOD0(varying_map, const VariableMap&());
-  MOCK_CONST_METHOD0(name_map, const NameMap&());
+  MOCK_CONST_METHOD7(Translate, bool(
+      const std::string& shader_source,
+      std::string* info_log,
+      std::string* translated_source,
+      AttributeMap* attrib_map,
+      UniformMap* uniform_map,
+      VaryingMap* varying_map,
+      NameMap* name_map));
   MOCK_CONST_METHOD0(
       GetStringForOptionsThatWouldAffectCompilation, std::string());
 };

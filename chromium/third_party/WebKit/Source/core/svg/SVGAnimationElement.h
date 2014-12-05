@@ -26,12 +26,11 @@
 #define SVGAnimationElement_h
 
 #include "core/svg/SVGAnimatedBoolean.h"
-#include "core/svg/SVGTests.h"
 #include "core/svg/animation/SVGSMILElement.h"
 #include "platform/animation/UnitBezier.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 enum AnimationMode {
     NoAnimation,
@@ -57,8 +56,8 @@ enum CalcMode {
     CalcModeSpline
 };
 
-class SVGAnimationElement : public SVGSMILElement,
-                            public SVGTests {
+class SVGAnimationElement : public SVGSMILElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     // SVGAnimationElement
     float getStartTime() const;
@@ -137,8 +136,8 @@ protected:
     void determinePropertyValueTypes(const String& from, const String& to);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
     enum AttributeType {
         AttributeTypeCSS,
@@ -152,14 +151,14 @@ protected:
     String fromValue() const;
 
     // from SVGSMILElement
-    virtual void startedActiveInterval() OVERRIDE;
-    virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) OVERRIDE;
+    virtual void startedActiveInterval() override;
+    virtual void updateAnimation(float percent, unsigned repeat, SVGSMILElement* resultElement) override;
 
     AnimatedPropertyValueType m_fromPropertyValueType;
     AnimatedPropertyValueType m_toPropertyValueType;
 
-    virtual void setTargetElement(SVGElement*) OVERRIDE;
-    virtual void setAttributeName(const QualifiedName&) OVERRIDE;
+    virtual void setTargetElement(SVGElement*) override;
+    virtual void setAttributeName(const QualifiedName&) override;
 
     bool hasInvalidCSSAttributeType() const { return m_hasInvalidCSSAttributeType; }
 
@@ -168,7 +167,9 @@ protected:
     void setCalcMode(CalcMode calcMode) { m_calcMode = calcMode; }
 
 private:
-    virtual void animationAttributeChanged() OVERRIDE;
+    virtual bool isValid() const override final { return SVGTests::isValid(); }
+
+    virtual void animationAttributeChanged() override;
     void setAttributeType(const AtomicString&);
 
     void checkInvalidCSSAttributeType(SVGElement*);
@@ -208,6 +209,6 @@ private:
     AnimationMode m_animationMode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimationElement_h

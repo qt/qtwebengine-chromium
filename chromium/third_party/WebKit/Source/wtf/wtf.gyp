@@ -59,9 +59,6 @@
               '_SCL_SECURE_NO_DEPRECATE',
               'CRASH=__debugbreak',
             ],
-            'include_dirs': [
-              'os-win32',
-            ],
           }],
         ],
       },
@@ -118,7 +115,6 @@
         }],
         ['OS=="win"', {
           'sources/': [
-            ['exclude', 'ThreadIdentifierDataPthreads\\.(h|cpp)$'],
             ['exclude', 'ThreadingPthreads\\.cpp$'],
           ],
           'include_dirs!': [

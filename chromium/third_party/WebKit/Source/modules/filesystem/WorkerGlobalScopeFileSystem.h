@@ -30,7 +30,7 @@
 #include "modules/filesystem/DOMFileSystemSync.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class EntryCallback;
 class EntrySync;
@@ -46,9 +46,9 @@ public:
         PERSISTENT,
     };
 
-    static void webkitRequestFileSystem(WorkerGlobalScope&, int type, long long size, PassOwnPtr<FileSystemCallback> successCallback, PassOwnPtr<ErrorCallback>);
+    static void webkitRequestFileSystem(WorkerGlobalScope&, int type, long long size, FileSystemCallback* successCallback, ErrorCallback*);
     static DOMFileSystemSync* webkitRequestFileSystemSync(WorkerGlobalScope&, int type, long long size, ExceptionState&);
-    static void webkitResolveLocalFileSystemURL(WorkerGlobalScope&, const String& url, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback>);
+    static void webkitResolveLocalFileSystemURL(WorkerGlobalScope&, const String& url, EntryCallback* successCallback, ErrorCallback*);
     static EntrySync* webkitResolveLocalFileSystemSyncURL(WorkerGlobalScope&, const String& url, ExceptionState&);
 
 private:
@@ -56,6 +56,6 @@ private:
     ~WorkerGlobalScopeFileSystem();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerGlobalScopeFileSystem_h

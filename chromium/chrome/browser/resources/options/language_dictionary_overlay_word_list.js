@@ -12,7 +12,7 @@ cr.define('options.dictionary_words', function() {
    * @param {function(string)} addDictionaryWordCallback Callback for
    * adding a dictionary word.
    * @constructor
-   * @extends {cr.ui.InlineEditableItem}
+   * @extends {options.InlineEditableItem}
    */
   function DictionaryWordsListItem(dictionaryWord, addDictionaryWordCallback) {
     var el = cr.doc.createElement('div');
@@ -76,7 +76,8 @@ cr.define('options.dictionary_words', function() {
 
   /**
    * A list of words in the dictionary.
-   * @extends {cr.ui.InlineEditableItemList}
+   * @constructor
+   * @extends {options.InlineEditableItemList}
    */
   var DictionaryWordsList = cr.ui.define('list');
 
@@ -85,7 +86,7 @@ cr.define('options.dictionary_words', function() {
 
     /**
      * The function to notify that the word list has changed.
-     * @type {function()}
+     * @type {?Function}
      */
     onWordListChanged: null,
 
@@ -203,7 +204,10 @@ cr.define('options.dictionary_words', function() {
       return this.dataModel.length < 2;
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {string} dictionaryWord
+     */
     createItem: function(dictionaryWord) {
       return new DictionaryWordsListItem(
           dictionaryWord,

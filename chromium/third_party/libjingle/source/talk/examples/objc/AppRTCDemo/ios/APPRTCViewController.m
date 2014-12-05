@@ -34,6 +34,7 @@
 #import <AVFoundation/AVFoundation.h>
 #import "APPRTCConnectionManager.h"
 #import "RTCEAGLVideoView.h"
+#import "RTCVideoTrack.h"
 
 // Padding space for local video view with its parent.
 static CGFloat const kLocalViewPadding = 20;
@@ -47,6 +48,8 @@ static CGFloat const kLocalViewPadding = 20;
 
 @implementation APPRTCViewController {
   APPRTCConnectionManager* _connectionManager;
+  RTCVideoTrack* _localVideoTrack;
+  RTCVideoTrack* _remoteVideoTrack;
   CGSize _localVideoSize;
   CGSize _remoteVideoSize;
 }
@@ -63,6 +66,18 @@ static CGFloat const kLocalViewPadding = 20;
 
 - (void)viewDidLoad {
   [super viewDidLoad];
+
+  self.remoteVideoView =
+      [[RTCEAGLVideoView alloc] initWithFrame:self.blackView.bounds];
+  self.remoteVideoView.delegate = self;
+  self.remoteVideoView.transform = CGAffineTransformMakeScale(-1, 1);
+  [self.blackView addSubview:self.remoteVideoView];
+
+  self.localVideoView =
+      [[RTCEAGLVideoView alloc] initWithFrame:self.blackView.bounds];
+  self.localVideoView.delegate = self;
+  [self.blackView addSubview:self.localVideoView];
+
   self.statusBarOrientation =
       [UIApplication sharedApplication].statusBarOrientation;
   self.roomInput.delegate = self;
@@ -89,13 +104,15 @@ static CGFloat const kLocalViewPadding = 20;
 
 - (void)connectionManager:(APPRTCConnectionManager*)manager
     didReceiveLocalVideoTrack:(RTCVideoTrack*)localVideoTrack {
+  _localVideoTrack = localVideoTrack;
+  [_localVideoTrack addRenderer:self.localVideoView];
   self.localVideoView.hidden = NO;
-  self.localVideoView.videoTrack = localVideoTrack;
 }
 
 - (void)connectionManager:(APPRTCConnectionManager*)manager
     didReceiveRemoteVideoTrack:(RTCVideoTrack*)remoteVideoTrack {
-  self.remoteVideoView.videoTrack = remoteVideoTrack;
+  _remoteVideoTrack = remoteVideoTrack;
+  [_remoteVideoTrack addRenderer:self.remoteVideoView];
 }
 
 - (void)connectionManagerDidReceiveHangup:(APPRTCConnectionManager*)manager {
@@ -181,25 +198,21 @@ static CGFloat const kLocalViewPadding = 20;
   self.instructionsView.hidden = NO;
   self.logView.hidden = YES;
   self.logView.text = nil;
+  if (_localVideoTrack) {
+    [_localVideoTrack removeRenderer:self.localVideoView];
+    _localVideoTrack = nil;
+    [self.localVideoView renderFrame:nil];
+  }
+  if (_remoteVideoTrack) {
+    [_remoteVideoTrack removeRenderer:self.remoteVideoView];
+    _remoteVideoTrack = nil;
+    [self.remoteVideoView renderFrame:nil];
+  }
   self.blackView.hidden = YES;
-  [self.remoteVideoView removeFromSuperview];
-  self.remoteVideoView = nil;
-  [self.localVideoView removeFromSuperview];
-  self.localVideoView = nil;
 }
 
 - (void)setupCaptureSession {
   self.blackView.hidden = NO;
-  self.remoteVideoView =
-      [[RTCEAGLVideoView alloc] initWithFrame:self.blackView.bounds];
-  self.remoteVideoView.delegate = self;
-  self.remoteVideoView.transform = CGAffineTransformMakeScale(-1, 1);
-  [self.blackView addSubview:self.remoteVideoView];
-
-  self.localVideoView =
-      [[RTCEAGLVideoView alloc] initWithFrame:self.blackView.bounds];
-  self.localVideoView.delegate = self;
-  [self.blackView addSubview:self.localVideoView];
   [self updateVideoViewLayout];
 }
 

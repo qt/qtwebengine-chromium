@@ -7,8 +7,8 @@
 #include <dlfcn.h>
 #include <mach-o/getsect.h>
 
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/strings/string_util.h"
@@ -46,14 +46,15 @@ std::string NativeLibraryLoadError::ToString() const {
 }
 
 // static
-// TODO(xhwang): Fill |error|. See http://crbug.com/353771
 NativeLibrary LoadNativeLibrary(const base::FilePath& library_path,
-                                NativeLibraryLoadError* /* error */) {
+                                NativeLibraryLoadError* error) {
   // dlopen() etc. open the file off disk.
   if (library_path.Extension() == "dylib" || !DirectoryExists(library_path)) {
     void* dylib = dlopen(library_path.value().c_str(), RTLD_LAZY);
-    if (!dylib)
+    if (!dylib) {
+      error->message = dlerror();
       return NULL;
+    }
     NativeLibrary native_lib = new NativeLibraryStruct();
     native_lib->type = DYNAMIC_LIB;
     native_lib->dylib = dylib;

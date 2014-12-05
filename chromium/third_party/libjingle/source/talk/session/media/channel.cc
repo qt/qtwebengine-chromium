@@ -27,23 +27,22 @@
 
 #include "talk/session/media/channel.h"
 
-#include "talk/base/bind.h"
-#include "talk/base/buffer.h"
-#include "talk/base/byteorder.h"
-#include "talk/base/common.h"
-#include "talk/base/dscp.h"
-#include "talk/base/logging.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/rtputils.h"
-#include "talk/p2p/base/transportchannel.h"
+#include "webrtc/p2p/base/transportchannel.h"
 #include "talk/session/media/channelmanager.h"
 #include "talk/session/media/mediamessages.h"
 #include "talk/session/media/typingmonitor.h"
-
+#include "webrtc/base/bind.h"
+#include "webrtc/base/buffer.h"
+#include "webrtc/base/byteorder.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/dscp.h"
+#include "webrtc/base/logging.h"
 
 namespace cricket {
 
-using talk_base::Bind;
+using rtc::Bind;
 
 enum {
   MSG_EARLYMEDIATIMEOUT = 1,
@@ -73,35 +72,21 @@ static void SafeSetError(const std::string& message, std::string* error_desc) {
   }
 }
 
-// TODO(hellner): use the device manager for creation of screen capturers when
-// the cl enabling it has landed.
-class NullScreenCapturerFactory : public VideoChannel::ScreenCapturerFactory {
- public:
-  VideoCapturer* CreateScreenCapturer(const ScreencastId& window) {
-    return NULL;
-  }
+struct PacketMessageData : public rtc::MessageData {
+  rtc::Buffer packet;
+  rtc::DiffServCodePoint dscp;
 };
 
-
-VideoChannel::ScreenCapturerFactory* CreateScreenCapturerFactory() {
-  return new NullScreenCapturerFactory();
-}
-
-struct PacketMessageData : public talk_base::MessageData {
-  talk_base::Buffer packet;
-  talk_base::DiffServCodePoint dscp;
-};
-
-struct ScreencastEventMessageData : public talk_base::MessageData {
-  ScreencastEventMessageData(uint32 s, talk_base::WindowEvent we)
+struct ScreencastEventMessageData : public rtc::MessageData {
+  ScreencastEventMessageData(uint32 s, rtc::WindowEvent we)
       : ssrc(s),
         event(we) {
   }
   uint32 ssrc;
-  talk_base::WindowEvent event;
+  rtc::WindowEvent event;
 };
 
-struct VoiceChannelErrorMessageData : public talk_base::MessageData {
+struct VoiceChannelErrorMessageData : public rtc::MessageData {
   VoiceChannelErrorMessageData(uint32 in_ssrc,
                                VoiceMediaChannel::Error in_error)
       : ssrc(in_ssrc),
@@ -111,7 +96,7 @@ struct VoiceChannelErrorMessageData : public talk_base::MessageData {
   VoiceMediaChannel::Error error;
 };
 
-struct VideoChannelErrorMessageData : public talk_base::MessageData {
+struct VideoChannelErrorMessageData : public rtc::MessageData {
   VideoChannelErrorMessageData(uint32 in_ssrc,
                                VideoMediaChannel::Error in_error)
       : ssrc(in_ssrc),
@@ -121,7 +106,7 @@ struct VideoChannelErrorMessageData : public talk_base::MessageData {
   VideoMediaChannel::Error error;
 };
 
-struct DataChannelErrorMessageData : public talk_base::MessageData {
+struct DataChannelErrorMessageData : public rtc::MessageData {
   DataChannelErrorMessageData(uint32 in_ssrc,
                               DataMediaChannel::Error in_error)
       : ssrc(in_ssrc),
@@ -144,7 +129,7 @@ static const char* PacketType(bool rtcp) {
   return (!rtcp) ? "RTP" : "RTCP";
 }
 
-static bool ValidPacket(bool rtcp, const talk_base::Buffer* packet) {
+static bool ValidPacket(bool rtcp, const rtc::Buffer* packet) {
   // Check the packet size. We could check the header too if needed.
   return (packet &&
       packet->length() >= (!rtcp ? kMinRtpPacketLen : kMinRtcpPacketLen) &&
@@ -166,7 +151,7 @@ static const MediaContentDescription* GetContentDescription(
   return static_cast<const MediaContentDescription*>(cinfo->description);
 }
 
-BaseChannel::BaseChannel(talk_base::Thread* thread,
+BaseChannel::BaseChannel(rtc::Thread* thread,
                          MediaEngineInterface* media_engine,
                          MediaChannel* media_channel, BaseSession* session,
                          const std::string& content_name, bool rtcp)
@@ -189,12 +174,12 @@ BaseChannel::BaseChannel(talk_base::Thread* thread,
       dtls_keyed_(false),
       secure_required_(false),
       rtp_abs_sendtime_extn_id_(-1) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   LOG(LS_INFO) << "Created channel for " << content_name;
 }
 
 BaseChannel::~BaseChannel() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   Deinit();
   StopConnectionMonitor();
   FlushRtcpMessages();  // Send any outstanding RTCP packets.
@@ -296,7 +281,7 @@ bool BaseChannel::SetRemoteContent(const MediaContentDescription* content,
 void BaseChannel::StartConnectionMonitor(int cms) {
   socket_monitor_.reset(new SocketMonitor(transport_channel_,
                                           worker_thread(),
-                                          talk_base::Thread::Current()));
+                                          rtc::Thread::Current()));
   socket_monitor_->SignalUpdate.connect(
       this, &BaseChannel::OnConnectionMonitorUpdate);
   socket_monitor_->Start(cms);
@@ -343,17 +328,17 @@ bool BaseChannel::IsReadyToSend() const {
          was_ever_writable();
 }
 
-bool BaseChannel::SendPacket(talk_base::Buffer* packet,
-                             talk_base::DiffServCodePoint dscp) {
+bool BaseChannel::SendPacket(rtc::Buffer* packet,
+                             rtc::DiffServCodePoint dscp) {
   return SendPacket(false, packet, dscp);
 }
 
-bool BaseChannel::SendRtcp(talk_base::Buffer* packet,
-                           talk_base::DiffServCodePoint dscp) {
+bool BaseChannel::SendRtcp(rtc::Buffer* packet,
+                           rtc::DiffServCodePoint dscp) {
   return SendPacket(true, packet, dscp);
 }
 
-int BaseChannel::SetOption(SocketType type, talk_base::Socket::Option opt,
+int BaseChannel::SetOption(SocketType type, rtc::Socket::Option opt,
                            int value) {
   TransportChannel* channel = NULL;
   switch (type) {
@@ -379,15 +364,15 @@ void BaseChannel::OnWritableState(TransportChannel* channel) {
 
 void BaseChannel::OnChannelRead(TransportChannel* channel,
                                 const char* data, size_t len,
-                                const talk_base::PacketTime& packet_time,
+                                const rtc::PacketTime& packet_time,
                                 int flags) {
   // OnChannelRead gets called from P2PSocket; now pass data to MediaEngine
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
 
   // When using RTCP multiplexing we might get RTCP packets on the RTP
   // transport. We feed RTP traffic into the demuxer to determine if it is RTCP.
   bool rtcp = PacketIsRtcp(channel, data, len);
-  talk_base::Buffer packet(data, len);
+  rtc::Buffer packet(data, len);
   HandlePacket(rtcp, &packet, packet_time);
 }
 
@@ -421,8 +406,8 @@ bool BaseChannel::PacketIsRtcp(const TransportChannel* channel,
           rtcp_mux_filter_.DemuxRtcp(data, static_cast<int>(len)));
 }
 
-bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
-                             talk_base::DiffServCodePoint dscp) {
+bool BaseChannel::SendPacket(bool rtcp, rtc::Buffer* packet,
+                             rtc::DiffServCodePoint dscp) {
   // SendPacket gets called from MediaEngine, typically on an encoder thread.
   // If the thread is not our worker thread, we will post to our worker
   // so that the real work happens on our worker. This avoids us having to
@@ -430,7 +415,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
   // SRTP and the inner workings of the transport channels.
   // The only downside is that we can't return a proper failure code if
   // needed. Since UDP is unreliable anyway, this should be a non-issue.
-  if (talk_base::Thread::Current() != worker_thread_) {
+  if (rtc::Thread::Current() != worker_thread_) {
     // Avoid a copy by transferring the ownership of the packet data.
     int message_id = (!rtcp) ? MSG_RTPPACKET : MSG_RTCPPACKET;
     PacketMessageData* data = new PacketMessageData;
@@ -460,11 +445,11 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
 
   // Signal to the media sink before protecting the packet.
   {
-    talk_base::CritScope cs(&signal_send_packet_cs_);
+    rtc::CritScope cs(&signal_send_packet_cs_);
     SignalSendPacketPreCrypto(packet->data(), packet->length(), rtcp);
   }
 
-  talk_base::PacketOptions options(dscp);
+  rtc::PacketOptions options(dscp);
   // Protect if needed.
   if (srtp_filter_.IsActive()) {
     bool res;
@@ -534,7 +519,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
 
   // Signal to the media sink after protecting the packet.
   {
-    talk_base::CritScope cs(&signal_send_packet_cs_);
+    rtc::CritScope cs(&signal_send_packet_cs_);
     SignalSendPacketPostCrypto(packet->data(), packet->length(), rtcp);
   }
 
@@ -551,7 +536,7 @@ bool BaseChannel::SendPacket(bool rtcp, talk_base::Buffer* packet,
   return true;
 }
 
-bool BaseChannel::WantsPacket(bool rtcp, talk_base::Buffer* packet) {
+bool BaseChannel::WantsPacket(bool rtcp, rtc::Buffer* packet) {
   // Protect ourselves against crazy data.
   if (!ValidPacket(rtcp, packet)) {
     LOG(LS_ERROR) << "Dropping incoming " << content_name_ << " "
@@ -564,8 +549,8 @@ bool BaseChannel::WantsPacket(bool rtcp, talk_base::Buffer* packet) {
   return bundle_filter_.DemuxPacket(packet->data(), packet->length(), rtcp);
 }
 
-void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet,
-                               const talk_base::PacketTime& packet_time) {
+void BaseChannel::HandlePacket(bool rtcp, rtc::Buffer* packet,
+                               const rtc::PacketTime& packet_time) {
   if (!WantsPacket(rtcp, packet)) {
     return;
   }
@@ -577,7 +562,7 @@ void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet,
 
   // Signal to the media sink before unprotecting the packet.
   {
-    talk_base::CritScope cs(&signal_recv_packet_cs_);
+    rtc::CritScope cs(&signal_recv_packet_cs_);
     SignalRecvPacketPostCrypto(packet->data(), packet->length(), rtcp);
   }
 
@@ -628,7 +613,7 @@ void BaseChannel::HandlePacket(bool rtcp, talk_base::Buffer* packet,
 
   // Signal to the media sink after unprotecting the packet.
   {
-    talk_base::CritScope cs(&signal_recv_packet_cs_);
+    rtc::CritScope cs(&signal_recv_packet_cs_);
     SignalRecvPacketPreCrypto(packet->data(), packet->length(), rtcp);
   }
 
@@ -669,7 +654,7 @@ void BaseChannel::OnNewRemoteDescription(
 }
 
 void BaseChannel::EnableMedia_w() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   if (enabled_)
     return;
 
@@ -679,7 +664,7 @@ void BaseChannel::EnableMedia_w() {
 }
 
 void BaseChannel::DisableMedia_w() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   if (!enabled_)
     return;
 
@@ -689,7 +674,7 @@ void BaseChannel::DisableMedia_w() {
 }
 
 bool BaseChannel::MuteStream_w(uint32 ssrc, bool mute) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   bool ret = media_channel()->MuteStream(ssrc, mute);
   if (ret) {
     if (mute)
@@ -701,12 +686,12 @@ bool BaseChannel::MuteStream_w(uint32 ssrc, bool mute) {
 }
 
 bool BaseChannel::IsStreamMuted_w(uint32 ssrc) {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   return muted_streams_.find(ssrc) != muted_streams_.end();
 }
 
 void BaseChannel::ChannelWritable_w() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   if (writable_)
     return;
 
@@ -832,13 +817,13 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
     &dtls_buffer[offset], SRTP_MASTER_KEY_SALT_LEN);
 
   std::vector<unsigned char> *send_key, *recv_key;
-  talk_base::SSLRole role;
+  rtc::SSLRole role;
   if (!channel->GetSslRole(&role)) {
     LOG(LS_WARNING) << "GetSslRole failed";
     return false;
   }
 
-  if (role == talk_base::SSL_SERVER) {
+  if (role == rtc::SSL_SERVER) {
     send_key = &server_write_key;
     recv_key = &client_write_key;
   } else {
@@ -873,7 +858,7 @@ bool BaseChannel::SetupDtlsSrtp(bool rtcp_channel) {
 }
 
 void BaseChannel::ChannelNotWritable_w() {
-  ASSERT(worker_thread_ == talk_base::Thread::Current());
+  ASSERT(worker_thread_ == rtc::Thread::Current());
   if (!writable_)
     return;
 
@@ -894,6 +879,42 @@ bool BaseChannel::CheckSrtpConfig(const std::vector<CryptoParams>& cryptos,
     SafeSetError("Cryptos must be empty when DTLS is active.",
                  error_desc);
     return false;
+  }
+  return true;
+}
+
+bool BaseChannel::SetRecvRtpHeaderExtensions_w(
+    const MediaContentDescription* content,
+    MediaChannel* media_channel,
+    std::string* error_desc) {
+  if (content->rtp_header_extensions_set()) {
+    if (!media_channel->SetRecvRtpHeaderExtensions(
+            content->rtp_header_extensions())) {
+      std::ostringstream desc;
+      desc << "Failed to set receive rtp header extensions for "
+           << MediaTypeToString(content->type()) << " content.";
+      SafeSetError(desc.str(), error_desc);
+      return false;
+    }
+  }
+  return true;
+}
+
+bool BaseChannel::SetSendRtpHeaderExtensions_w(
+    const MediaContentDescription* content,
+    MediaChannel* media_channel,
+    std::string* error_desc) {
+  if (content->rtp_header_extensions_set()) {
+    if (!media_channel->SetSendRtpHeaderExtensions(
+            content->rtp_header_extensions())) {
+      std::ostringstream desc;
+      desc << "Failed to set send rtp header extensions for "
+           << MediaTypeToString(content->type()) << " content.";
+      SafeSetError(desc.str(), error_desc);
+      return false;
+    } else {
+      MaybeCacheRtpAbsSendTimeHeaderExtension(content->rtp_header_extensions());
+    }
   }
   return true;
 }
@@ -986,7 +1007,7 @@ bool BaseChannel::SetRtcpMux_w(bool enable, ContentAction action,
 }
 
 bool BaseChannel::AddRecvStream_w(const StreamParams& sp) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   if (!media_channel()->AddRecvStream(sp))
     return false;
 
@@ -994,7 +1015,7 @@ bool BaseChannel::AddRecvStream_w(const StreamParams& sp) {
 }
 
 bool BaseChannel::RemoveRecvStream_w(uint32 ssrc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   bundle_filter_.RemoveStream(ssrc);
   return media_channel()->RemoveRecvStream(ssrc);
 }
@@ -1154,22 +1175,16 @@ bool BaseChannel::SetBaseLocalContent_w(const MediaContentDescription* content,
                                         std::string* error_desc) {
   // Cache secure_required_ for belt and suspenders check on SendPacket
   secure_required_ = content->crypto_required() != CT_NONE;
-  bool ret = UpdateLocalStreams_w(content->streams(), action, error_desc);
+  // Set local RTP header extensions.
+  bool ret = SetRecvRtpHeaderExtensions_w(content, media_channel(), error_desc);
   // Set local SRTP parameters (what we will encrypt with).
   ret &= SetSrtp_w(content->cryptos(), action, CS_LOCAL, error_desc);
   // Set local RTCP mux parameters.
   ret &= SetRtcpMux_w(content->rtcp_mux(), action, CS_LOCAL, error_desc);
-  // Set local RTP header extensions.
-  if (content->rtp_header_extensions_set()) {
-    if (!media_channel()->SetRecvRtpHeaderExtensions(
-            content->rtp_header_extensions())) {
-      std::ostringstream desc;
-      desc << "Failed to set receive rtp header extensions for "
-           << MediaTypeToString(content->type()) << " content.";
-      SafeSetError(desc.str(), error_desc);
-      ret = false;
-    }
-  }
+
+  // Call UpdateLocalStreams_w last to make sure as many settings as possible
+  // are already set when creating streams.
+  ret &= UpdateLocalStreams_w(content->streams(), action, error_desc);
   set_local_content_direction(content->direction());
   return ret;
 }
@@ -1177,25 +1192,12 @@ bool BaseChannel::SetBaseLocalContent_w(const MediaContentDescription* content,
 bool BaseChannel::SetBaseRemoteContent_w(const MediaContentDescription* content,
                                          ContentAction action,
                                          std::string* error_desc) {
-  bool ret = UpdateRemoteStreams_w(content->streams(), action, error_desc);
+  // Set remote RTP header extensions.
+  bool ret = SetSendRtpHeaderExtensions_w(content, media_channel(), error_desc);
   // Set remote SRTP parameters (what the other side will encrypt with).
   ret &= SetSrtp_w(content->cryptos(), action, CS_REMOTE, error_desc);
   // Set remote RTCP mux parameters.
   ret &= SetRtcpMux_w(content->rtcp_mux(), action, CS_REMOTE, error_desc);
-  // Set remote RTP header extensions.
-  if (content->rtp_header_extensions_set()) {
-    if (!media_channel()->SetSendRtpHeaderExtensions(
-            content->rtp_header_extensions())) {
-      std::ostringstream desc;
-      desc << "Failed to set send rtp header extensions for "
-           << MediaTypeToString(content->type()) << " content.";
-      SafeSetError(desc.str(), error_desc);
-      ret = false;
-    } else {
-      MaybeCacheRtpAbsSendTimeHeaderExtension(content->rtp_header_extensions());
-    }
-  }
-
   if (!media_channel()->SetMaxSendBandwidth(content->bandwidth())) {
     std::ostringstream desc;
     desc << "Failed to set max send bandwidth for "
@@ -1203,6 +1205,10 @@ bool BaseChannel::SetBaseRemoteContent_w(const MediaContentDescription* content,
     SafeSetError(desc.str(), error_desc);
     ret = false;
   }
+
+  // Call UpdateRemoteStreams_w last to make sure as many settings as possible
+  // are already set when creating streams.
+  ret &= UpdateRemoteStreams_w(content->streams(), action, error_desc);
   set_remote_content_direction(content->direction());
   return ret;
 }
@@ -1215,7 +1221,7 @@ void BaseChannel::MaybeCacheRtpAbsSendTimeHeaderExtension(
       send_time_extension ? send_time_extension->id : -1;
 }
 
-void BaseChannel::OnMessage(talk_base::Message *pmsg) {
+void BaseChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_RTPPACKET:
     case MSG_RTCPPACKET: {
@@ -1234,16 +1240,16 @@ void BaseChannel::OnMessage(talk_base::Message *pmsg) {
 void BaseChannel::FlushRtcpMessages() {
   // Flush all remaining RTCP messages. This should only be called in
   // destructor.
-  ASSERT(talk_base::Thread::Current() == worker_thread_);
-  talk_base::MessageList rtcp_messages;
+  ASSERT(rtc::Thread::Current() == worker_thread_);
+  rtc::MessageList rtcp_messages;
   worker_thread_->Clear(this, MSG_RTCPPACKET, &rtcp_messages);
-  for (talk_base::MessageList::iterator it = rtcp_messages.begin();
+  for (rtc::MessageList::iterator it = rtcp_messages.begin();
        it != rtcp_messages.end(); ++it) {
     worker_thread_->Send(this, MSG_RTCPPACKET, it->pdata);
   }
 }
 
-VoiceChannel::VoiceChannel(talk_base::Thread* thread,
+VoiceChannel::VoiceChannel(rtc::Thread* thread,
                            MediaEngineInterface* media_engine,
                            VoiceMediaChannel* media_channel,
                            BaseSession* session,
@@ -1344,7 +1350,7 @@ bool VoiceChannel::GetStats(VoiceMediaInfo* stats) {
 
 void VoiceChannel::StartMediaMonitor(int cms) {
   media_monitor_.reset(new VoiceMediaMonitor(media_channel(), worker_thread(),
-      talk_base::Thread::Current()));
+      rtc::Thread::Current()));
   media_monitor_->SignalUpdate.connect(
       this, &VoiceChannel::OnMediaMonitorUpdate);
   media_monitor_->Start(cms);
@@ -1359,7 +1365,7 @@ void VoiceChannel::StopMediaMonitor() {
 }
 
 void VoiceChannel::StartAudioMonitor(int cms) {
-  audio_monitor_.reset(new AudioMonitor(this, talk_base::Thread::Current()));
+  audio_monitor_.reset(new AudioMonitor(this, rtc::Thread::Current()));
   audio_monitor_
     ->SignalUpdate.connect(this, &VoiceChannel::OnAudioMonitorUpdate);
   audio_monitor_->Start(cms);
@@ -1410,7 +1416,7 @@ void VoiceChannel::GetActiveStreams_w(AudioInfo::StreamList* actives) {
 
 void VoiceChannel::OnChannelRead(TransportChannel* channel,
                                  const char* data, size_t len,
-                                 const talk_base::PacketTime& packet_time,
+                                 const rtc::PacketTime& packet_time,
                                 int flags) {
   BaseChannel::OnChannelRead(channel, data, len, packet_time, flags);
 
@@ -1449,7 +1455,7 @@ const ContentInfo* VoiceChannel::GetFirstContent(
 bool VoiceChannel::SetLocalContent_w(const MediaContentDescription* content,
                                      ContentAction action,
                                      std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   LOG(LS_INFO) << "Setting local voice description";
 
   const AudioContentDescription* audio =
@@ -1487,7 +1493,7 @@ bool VoiceChannel::SetLocalContent_w(const MediaContentDescription* content,
 bool VoiceChannel::SetRemoteContent_w(const MediaContentDescription* content,
                                       ContentAction action,
                                       std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   LOG(LS_INFO) << "Setting remote voice description";
 
   const AudioContentDescription* audio =
@@ -1538,12 +1544,12 @@ bool VoiceChannel::SetRemoteContent_w(const MediaContentDescription* content,
 }
 
 bool VoiceChannel::SetRingbackTone_w(const void* buf, int len) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   return media_channel()->SetRingbackTone(static_cast<const char*>(buf), len);
 }
 
 bool VoiceChannel::PlayRingbackTone_w(uint32 ssrc, bool play, bool loop) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   if (play) {
     LOG(LS_INFO) << "Playing ringback tone, loop=" << loop;
   } else {
@@ -1574,7 +1580,7 @@ bool VoiceChannel::SetChannelOptions(const AudioOptions& options) {
                              media_channel(), options));
 }
 
-void VoiceChannel::OnMessage(talk_base::Message *pmsg) {
+void VoiceChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_EARLYMEDIATIMEOUT:
       HandleEarlyMediaTimeout();
@@ -1642,7 +1648,7 @@ void VoiceChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
   GetSupportedAudioCryptoSuites(ciphers);
 }
 
-VideoChannel::VideoChannel(talk_base::Thread* thread,
+VideoChannel::VideoChannel(rtc::Thread* thread,
                            MediaEngineInterface* media_engine,
                            VideoMediaChannel* media_channel,
                            BaseSession* session,
@@ -1653,8 +1659,7 @@ VideoChannel::VideoChannel(talk_base::Thread* thread,
                   rtcp),
       voice_channel_(voice_channel),
       renderer_(NULL),
-      screencapture_factory_(CreateScreenCapturerFactory()),
-      previous_we_(talk_base::WE_CLOSE) {
+      previous_we_(rtc::WE_CLOSE) {
 }
 
 bool VideoChannel::Init() {
@@ -1708,10 +1713,9 @@ bool VideoChannel::ApplyViewRequest(const ViewRequest& request) {
   return InvokeOnWorker(Bind(&VideoChannel::ApplyViewRequest_w, this, request));
 }
 
-VideoCapturer* VideoChannel::AddScreencast(
-    uint32 ssrc, const ScreencastId& id) {
-  return worker_thread()->Invoke<VideoCapturer*>(Bind(
-      &VideoChannel::AddScreencast_w, this, ssrc, id));
+bool VideoChannel::AddScreencast(uint32 ssrc, VideoCapturer* capturer) {
+  return worker_thread()->Invoke<bool>(Bind(
+      &VideoChannel::AddScreencast_w, this, ssrc, capturer));
 }
 
 bool VideoChannel::SetCapturer(uint32 ssrc, VideoCapturer* capturer) {
@@ -1753,13 +1757,6 @@ bool VideoChannel::RequestIntraFrame() {
   return true;
 }
 
-void VideoChannel::SetScreenCaptureFactory(
-    ScreenCapturerFactory* screencapture_factory) {
-  worker_thread()->Invoke<void>(Bind(
-      &VideoChannel::SetScreenCaptureFactory_w,
-      this, screencapture_factory));
-}
-
 void VideoChannel::ChangeState() {
   // Render incoming data if we're the active call, and we have the local
   // content. We receive data on the default channel and multiplexed streams.
@@ -1788,7 +1785,7 @@ bool VideoChannel::GetStats(
 
 void VideoChannel::StartMediaMonitor(int cms) {
   media_monitor_.reset(new VideoMediaMonitor(media_channel(), worker_thread(),
-      talk_base::Thread::Current()));
+      rtc::Thread::Current()));
   media_monitor_->SignalUpdate.connect(
       this, &VideoChannel::OnMediaMonitorUpdate);
   media_monitor_->Start(cms);
@@ -1809,7 +1806,7 @@ const ContentInfo* VideoChannel::GetFirstContent(
 bool VideoChannel::SetLocalContent_w(const MediaContentDescription* content,
                                      ContentAction action,
                                      std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   LOG(LS_INFO) << "Setting local video description";
 
   const VideoContentDescription* video =
@@ -1856,7 +1853,7 @@ bool VideoChannel::SetLocalContent_w(const MediaContentDescription* content,
 bool VideoChannel::SetRemoteContent_w(const MediaContentDescription* content,
                                       ContentAction action,
                                       std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   LOG(LS_INFO) << "Setting remote video description";
 
   const VideoContentDescription* video =
@@ -1939,20 +1936,13 @@ bool VideoChannel::ApplyViewRequest_w(const ViewRequest& request) {
   return ret;
 }
 
-VideoCapturer* VideoChannel::AddScreencast_w(
-    uint32 ssrc, const ScreencastId& id) {
+bool VideoChannel::AddScreencast_w(uint32 ssrc, VideoCapturer* capturer) {
   if (screencast_capturers_.find(ssrc) != screencast_capturers_.end()) {
-    return NULL;
+    return false;
   }
-  VideoCapturer* screen_capturer =
-      screencapture_factory_->CreateScreenCapturer(id);
-  if (!screen_capturer) {
-    return NULL;
-  }
-  screen_capturer->SignalStateChange.connect(this,
-                                             &VideoChannel::OnStateChange);
-  screencast_capturers_[ssrc] = screen_capturer;
-  return screen_capturer;
+  capturer->SignalStateChange.connect(this, &VideoChannel::OnStateChange);
+  screencast_capturers_[ssrc] = capturer;
+  return true;
 }
 
 bool VideoChannel::RemoveScreencast_w(uint32 ssrc) {
@@ -1982,18 +1972,9 @@ void VideoChannel::GetScreencastDetails_w(
   data->screencast_max_pixels = capturer->screencast_max_pixels();
 }
 
-void VideoChannel::SetScreenCaptureFactory_w(
-    ScreenCapturerFactory* screencapture_factory) {
-  if (screencapture_factory == NULL) {
-    screencapture_factory_.reset(CreateScreenCapturerFactory());
-  } else {
-    screencapture_factory_.reset(screencapture_factory);
-  }
-}
-
 void VideoChannel::OnScreencastWindowEvent_s(uint32 ssrc,
-                                             talk_base::WindowEvent we) {
-  ASSERT(signaling_thread() == talk_base::Thread::Current());
+                                             rtc::WindowEvent we) {
+  ASSERT(signaling_thread() == rtc::Thread::Current());
   SignalScreencastWindowEvent(ssrc, we);
 }
 
@@ -2002,7 +1983,7 @@ bool VideoChannel::SetChannelOptions(const VideoOptions &options) {
                              media_channel(), options));
 }
 
-void VideoChannel::OnMessage(talk_base::Message *pmsg) {
+void VideoChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_SCREENCASTWINDOWEVENT: {
       const ScreencastEventMessageData* data =
@@ -2038,7 +2019,7 @@ void VideoChannel::OnMediaMonitorUpdate(
 }
 
 void VideoChannel::OnScreencastWindowEvent(uint32 ssrc,
-                                           talk_base::WindowEvent event) {
+                                           rtc::WindowEvent event) {
   ScreencastEventMessageData* pdata =
       new ScreencastEventMessageData(ssrc, event);
   signaling_thread()->Post(this, MSG_SCREENCASTWINDOWEVENT, pdata);
@@ -2047,13 +2028,13 @@ void VideoChannel::OnScreencastWindowEvent(uint32 ssrc,
 void VideoChannel::OnStateChange(VideoCapturer* capturer, CaptureState ev) {
   // Map capturer events to window events. In the future we may want to simply
   // pass these events up directly.
-  talk_base::WindowEvent we;
+  rtc::WindowEvent we;
   if (ev == CS_STOPPED) {
-    we = talk_base::WE_CLOSE;
+    we = rtc::WE_CLOSE;
   } else if (ev == CS_PAUSED) {
-    we = talk_base::WE_MINIMIZE;
-  } else if (ev == CS_RUNNING && previous_we_ == talk_base::WE_MINIMIZE) {
-    we = talk_base::WE_RESTORE;
+    we = rtc::WE_MINIMIZE;
+  } else if (ev == CS_RUNNING && previous_we_ == rtc::WE_MINIMIZE) {
+    we = rtc::WE_RESTORE;
   } else {
     return;
   }
@@ -2116,7 +2097,7 @@ void VideoChannel::GetSrtpCiphers(std::vector<std::string>* ciphers) const {
   GetSupportedVideoCryptoSuites(ciphers);
 }
 
-DataChannel::DataChannel(talk_base::Thread* thread,
+DataChannel::DataChannel(rtc::Thread* thread,
                          DataMediaChannel* media_channel,
                          BaseSession* session,
                          const std::string& content_name,
@@ -2157,7 +2138,7 @@ bool DataChannel::Init() {
 }
 
 bool DataChannel::SendData(const SendDataParams& params,
-                           const talk_base::Buffer& payload,
+                           const rtc::Buffer& payload,
                            SendDataResult* result) {
   return InvokeOnWorker(Bind(&DataMediaChannel::SendData,
                              media_channel(), params, payload, result));
@@ -2168,21 +2149,11 @@ const ContentInfo* DataChannel::GetFirstContent(
   return GetFirstDataContent(sdesc);
 }
 
-
-static bool IsRtpPacket(const talk_base::Buffer* packet) {
-  int version;
-  if (!GetRtpVersion(packet->data(), packet->length(), &version)) {
-    return false;
-  }
-
-  return version == 2;
-}
-
-bool DataChannel::WantsPacket(bool rtcp, talk_base::Buffer* packet) {
+bool DataChannel::WantsPacket(bool rtcp, rtc::Buffer* packet) {
   if (data_channel_type_ == DCT_SCTP) {
     // TODO(pthatcher): Do this in a more robust way by checking for
     // SCTP or DTLS.
-    return !IsRtpPacket(packet);
+    return !IsRtpPacket(packet->data(), packet->length());
   } else if (data_channel_type_ == DCT_RTP) {
     return BaseChannel::WantsPacket(rtcp, packet);
   }
@@ -2223,7 +2194,7 @@ bool DataChannel::SetDataChannelTypeFromContent(
 bool DataChannel::SetLocalContent_w(const MediaContentDescription* content,
                                     ContentAction action,
                                     std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
   LOG(LS_INFO) << "Setting local data description";
 
   const DataContentDescription* data =
@@ -2277,7 +2248,7 @@ bool DataChannel::SetLocalContent_w(const MediaContentDescription* content,
 bool DataChannel::SetRemoteContent_w(const MediaContentDescription* content,
                                      ContentAction action,
                                      std::string* error_desc) {
-  ASSERT(worker_thread() == talk_base::Thread::Current());
+  ASSERT(worker_thread() == rtc::Thread::Current());
 
   const DataContentDescription* data =
       static_cast<const DataContentDescription*>(content);
@@ -2366,7 +2337,7 @@ void DataChannel::ChangeState() {
   LOG(LS_INFO) << "Changing data state, recv=" << recv << " send=" << send;
 }
 
-void DataChannel::OnMessage(talk_base::Message *pmsg) {
+void DataChannel::OnMessage(rtc::Message *pmsg) {
   switch (pmsg->message_id) {
     case MSG_READYTOSENDDATA: {
       DataChannelReadyToSendMessageData* data =
@@ -2391,8 +2362,8 @@ void DataChannel::OnMessage(talk_base::Message *pmsg) {
       break;
     }
     case MSG_STREAMCLOSEDREMOTELY: {
-      talk_base::TypedMessageData<uint32>* data =
-          static_cast<talk_base::TypedMessageData<uint32>*>(pmsg->pdata);
+      rtc::TypedMessageData<uint32>* data =
+          static_cast<rtc::TypedMessageData<uint32>*>(pmsg->pdata);
       SignalStreamClosedRemotely(data->data());
       delete data;
       break;
@@ -2410,7 +2381,7 @@ void DataChannel::OnConnectionMonitorUpdate(
 
 void DataChannel::StartMediaMonitor(int cms) {
   media_monitor_.reset(new DataMediaMonitor(media_channel(), worker_thread(),
-      talk_base::Thread::Current()));
+      rtc::Thread::Current()));
   media_monitor_->SignalUpdate.connect(
       this, &DataChannel::OnMediaMonitorUpdate);
   media_monitor_->Start(cms);
@@ -2484,8 +2455,8 @@ bool DataChannel::ShouldSetupDtlsSrtp() const {
 }
 
 void DataChannel::OnStreamClosedRemotely(uint32 sid) {
-  talk_base::TypedMessageData<uint32>* message =
-      new talk_base::TypedMessageData<uint32>(sid);
+  rtc::TypedMessageData<uint32>* message =
+      new rtc::TypedMessageData<uint32>(sid);
   signaling_thread()->Post(this, MSG_STREAMCLOSEDREMOTELY, message);
 }
 

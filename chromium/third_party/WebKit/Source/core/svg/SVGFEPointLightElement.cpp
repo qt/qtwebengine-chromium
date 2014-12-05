@@ -24,20 +24,18 @@
 #include "platform/graphics/filters/Filter.h"
 #include "platform/graphics/filters/PointLightSource.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGFEPointLightElement::SVGFEPointLightElement(Document& document)
     : SVGFELightElement(SVGNames::fePointLightTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(SVGFEPointLightElement)
 
 PassRefPtr<LightSource> SVGFEPointLightElement::lightSource(Filter* filter) const
 {
-    FloatPoint3D location(x()->currentValue()->value(), y()->currentValue()->value(), z()->currentValue()->value());
-    return PointLightSource::create(filter->resolve3dPoint(location));
+    return PointLightSource::create(filter->resolve3dPoint(position()));
 }
 
 }

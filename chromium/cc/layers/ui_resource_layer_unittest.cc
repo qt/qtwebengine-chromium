@@ -34,16 +34,17 @@ class UIResourceLayerTest : public testing::Test {
 
  protected:
   virtual void SetUp() {
-    layer_tree_host_ = FakeLayerTreeHost::Create();
-    layer_tree_host_->InitializeSingleThreaded(&fake_client_);
+    layer_tree_host_ = FakeLayerTreeHost::Create(&fake_client_);
+    layer_tree_host_->InitializeSingleThreaded(
+        &fake_client_, base::MessageLoopProxy::current());
   }
 
   virtual void TearDown() {
     Mock::VerifyAndClearExpectations(layer_tree_host_.get());
   }
 
-  scoped_ptr<FakeLayerTreeHost> layer_tree_host_;
   FakeLayerTreeHostClient fake_client_;
+  scoped_ptr<FakeLayerTreeHost> layer_tree_host_;
 };
 
 TEST_F(UIResourceLayerTest, SetBitmap) {

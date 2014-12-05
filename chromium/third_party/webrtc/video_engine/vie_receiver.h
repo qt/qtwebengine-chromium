@@ -72,14 +72,14 @@ class ViEReceiver : public RtpData {
   int ReceivedRTPPacket(const void* rtp_packet, int rtp_packet_length,
                         const PacketTime& packet_time);
   int ReceivedRTCPPacket(const void* rtcp_packet, int rtcp_packet_length);
-  virtual bool OnRecoveredPacket(const uint8_t* packet,
-                                 int packet_length) OVERRIDE;
 
   // Implements RtpData.
   virtual int32_t OnReceivedPayloadData(
       const uint8_t* payload_data,
       const uint16_t payload_size,
-      const WebRtcRTPHeader* rtp_header);
+      const WebRtcRTPHeader* rtp_header) OVERRIDE;
+  virtual bool OnRecoveredPacket(const uint8_t* packet,
+                                 int packet_length) OVERRIDE;
 
   void GetReceiveBandwidthEstimatorStats(
       ReceiveBandwidthEstimatorStats* output) const;
@@ -105,6 +105,7 @@ class ViEReceiver : public RtpData {
   bool IsPacketRetransmitted(const RTPHeader& header, bool in_order) const;
 
   scoped_ptr<CriticalSectionWrapper> receive_cs_;
+  Clock* clock_;
   scoped_ptr<RtpHeaderParser> rtp_header_parser_;
   scoped_ptr<RTPPayloadRegistry> rtp_payload_registry_;
   scoped_ptr<RtpReceiver> rtp_receiver_;
@@ -122,6 +123,7 @@ class ViEReceiver : public RtpData {
   uint8_t restored_packet_[kViEMaxMtu];
   bool restored_packet_in_use_;
   bool receiving_ast_enabled_;
+  int64_t last_packet_log_ms_;
 };
 
 }  // namespace webrt

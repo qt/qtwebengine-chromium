@@ -42,15 +42,15 @@ class CONTENT_EXPORT DragDownloadFile : public ui::DownloadFileProvider {
                    WebContents* web_contents);
 
   // DownloadFileProvider methods.
-  virtual void Start(ui::DownloadFileObserver* observer) OVERRIDE;
-  virtual bool Wait() OVERRIDE;
-  virtual void Stop() OVERRIDE;
+  void Start(ui::DownloadFileObserver* observer) override;
+  bool Wait() override;
+  void Stop() override;
 
  private:
   class DragDownloadFileUI;
   enum State {INITIALIZED, STARTED, SUCCESS, FAILURE};
 
-  virtual ~DragDownloadFile();
+  ~DragDownloadFile() override;
 
   void DownloadCompleted(bool is_successful);
   void CheckThread();

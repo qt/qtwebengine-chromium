@@ -24,21 +24,21 @@
 #include "config.h"
 #include "core/html/HTMLFrameElementBase.h"
 
-#include "bindings/v8/ScriptController.h"
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptController.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/RemoteFrame.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/loader/FrameLoader.h"
-#include "core/page/ChromeClient.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/rendering/RenderPart.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -207,31 +207,15 @@ bool HTMLFrameElementBase::isHTMLContentAttribute(const Attribute& attribute) co
     return attribute.name() == srcdocAttr || HTMLFrameOwnerElement::isHTMLContentAttribute(attribute);
 }
 
-int HTMLFrameElementBase::width()
-{
-    document().updateLayoutIgnorePendingStylesheets();
-    if (!renderBox())
-        return 0;
-    return renderBox()->width();
-}
-
-int HTMLFrameElementBase::height()
-{
-    document().updateLayoutIgnorePendingStylesheets();
-    if (!renderBox())
-        return 0;
-    return renderBox()->height();
-}
-
 // FIXME: Remove this code once we have input routing in the browser
 // process. See http://crbug.com/339659.
 void HTMLFrameElementBase::defaultEventHandler(Event* event)
 {
-    if (contentFrame() && contentFrame()->isRemoteFrameTemporary()) {
-        contentFrame()->chromeClient().forwardInputEvent(contentFrame(), event);
+    if (contentFrame() && contentFrame()->isRemoteFrame()) {
+        toRemoteFrame(contentFrame())->forwardInputEvent(event);
         return;
     }
     HTMLFrameOwnerElement::defaultEventHandler(event);
 }
 
-} // namespace WebCore
+} // namespace blink

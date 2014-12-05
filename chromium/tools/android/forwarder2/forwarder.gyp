@@ -3,8 +3,12 @@
 # found in the LICENSE file.
 
 {
+  'variables': {
+    'chromium_code': 1,
+  },
   'targets': [
     {
+      # GN version: //tools/android/forwarder2
       'target_name': 'forwarder2',
       'type': 'none',
       'dependencies': [
@@ -20,11 +24,13 @@
       'includes': ['../../../build/android/native_app_dependencies.gypi'],
     },
     {
+      # GN version: //tools/android/forwarder2:device_forwarder
       'target_name': 'device_forwarder',
       'type': 'executable',
       'toolsets': ['target'],
       'dependencies': [
         '../../../base/base.gyp:base',
+        '../../../build/android/pylib/device/commands/commands.gyp:chromium_commands',
         '../common/common.gyp:android_tools_common',
       ],
       'include_dirs': [
@@ -44,6 +50,7 @@
       ],
     },
     {
+      # GN version: //tools/android/forwarder2:host_forwarder
       'target_name': 'host_forwarder',
       'type': 'executable',
       'toolsets': ['host'],

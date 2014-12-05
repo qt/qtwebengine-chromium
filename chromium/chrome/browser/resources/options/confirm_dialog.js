@@ -11,25 +11,33 @@ cr.define('options', function() {
    * the new value is committed to Chrome. If the user clicks Cancel or leaves
    * the settings page, the new value is discarded.
    * @constructor
-   * @param {string} name See OptionsPage constructor.
-   * @param {string} title See OptionsPage constructor.
-   * @param {string} pageDivName See OptionsPage constructor.
-   * @param {HTMLInputElement} okButton The confirmation button element.
-   * @param {HTMLInputElement} cancelButton The cancellation button element.
+   * @param {string} name See Page constructor.
+   * @param {string} title See Page constructor.
+   * @param {string} pageDivName See Page constructor.
+   * @param {HTMLButtonElement} okButton The confirmation button element.
+   * @param {HTMLButtonElement} cancelButton The cancellation button element.
    * @param {string} pref The pref that requires confirmation.
    * @param {string} metric User metrics identifier.
-   * @param {string} confirmed_pref A pref used to remember whether the user has
-   *     confirmed the dialog before. This ensures that the user is presented
-   *     with the dialog only once. If left |undefined| or |null|, the dialog
+   * @param {string=} opt_confirmedPref A pref used to remember whether the
+   *     user has confirmed the dialog before. This ensures that the user is
+   *     presented with the dialog only once. If left |undefined|, the dialog
    *     will pop up every time the user attempts to set |pref| to |true|.
-   * @extends {SettingsDialog}
+   * @extends {options.SettingsDialog}
    */
   function ConfirmDialog(name, title, pageDivName, okButton, cancelButton, pref,
-                         metric, confirmed_pref) {
+                         metric, opt_confirmedPref) {
     SettingsDialog.call(this, name, title, pageDivName, okButton, cancelButton);
+
+    /** @protected */
     this.pref = pref;
+
+    /** @protected */
     this.metric = metric;
-    this.confirmed_pref = confirmed_pref;
+
+    /** @private */
+    this.confirmedPref_ = opt_confirmedPref;
+
+    /** @private */
     this.confirmed_ = false;
   }
 
@@ -50,13 +58,13 @@ cr.define('options', function() {
         return;
 
       if (event.value.value && !this.confirmed_)
-        OptionsPage.showPageByName(this.name, false);
+        PageManager.showPageByName(this.name, false);
       else
         Preferences.getInstance().commitPref(this.pref, this.metric);
     },
 
     /**
-     * Handle changes to |confirmed_pref| by caching them.
+     * Handle changes to |confirmedPref_| by caching them.
      * @param {Event} event Change event.
      * @private
      */
@@ -72,15 +80,15 @@ cr.define('options', function() {
       this.cancelButton.onclick = this.handleCancel.bind(this);
       Preferences.getInstance().addEventListener(
           this.pref, this.onPrefChanged_.bind(this));
-      if (this.confirmed_pref) {
+      if (this.confirmedPref_) {
         Preferences.getInstance().addEventListener(
-            this.confirmed_pref, this.onConfirmedChanged_.bind(this));
+            this.confirmedPref_, this.onConfirmedChanged_.bind(this));
       }
     },
 
     /**
      * Handle the confirm button by committing the |pref| change. If
-     * |confirmed_pref| has been specified, also remember that the dialog has
+     * |confirmedPref_| has been specified, also remember that the dialog has
      * been confirmed to avoid bringing it up in the future.
      * @override
      */
@@ -88,8 +96,8 @@ cr.define('options', function() {
       SettingsDialog.prototype.handleConfirm.call(this);
 
       Preferences.getInstance().commitPref(this.pref, this.metric);
-      if (this.confirmed_pref)
-        Preferences.setBooleanPref(this.confirmed_pref, true, true);
+      if (this.confirmedPref_)
+        Preferences.setBooleanPref(this.confirmedPref_, true, true);
     },
 
     /**

@@ -27,9 +27,9 @@
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGTextLayoutEngine.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGRootInlineBox FINAL : public RootInlineBox {
+class SVGRootInlineBox final : public RootInlineBox {
 public:
     SVGRootInlineBox(RenderBlockFlow& block)
         : RootInlineBox(block)
@@ -37,14 +37,14 @@ public:
     {
     }
 
-    virtual bool isSVGRootInlineBox() const OVERRIDE { return true; }
+    virtual bool isSVGRootInlineBox() const override { return true; }
 
-    virtual float virtualLogicalHeight() const OVERRIDE { return m_logicalHeight; }
+    virtual float virtualLogicalHeight() const override { return m_logicalHeight; }
     void setLogicalHeight(float height) { m_logicalHeight = height; }
 
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
-    virtual void markDirty() OVERRIDE;
+    virtual void markDirty() override;
 
     void computePerCharacterLayoutInformation();
 
@@ -62,6 +62,6 @@ private:
 
 DEFINE_INLINE_BOX_TYPE_CASTS(SVGRootInlineBox);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGRootInlineBox_h

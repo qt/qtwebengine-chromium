@@ -36,13 +36,13 @@
 #include "modules/filesystem/DirectoryReader.h"
 #include "modules/filesystem/EntryCallback.h"
 #include "modules/filesystem/ErrorCallback.h"
+#include "modules/filesystem/FileSystemFlags.h"
 
-namespace WebCore {
+namespace blink {
 
 DirectoryEntry::DirectoryEntry(DOMFileSystemBase* fileSystem, const String& fullPath)
     : Entry(fileSystem, fullPath)
 {
-    ScriptWrappable::init(this);
 }
 
 DirectoryReader* DirectoryEntry::createReader()
@@ -50,19 +50,17 @@ DirectoryReader* DirectoryEntry::createReader()
     return DirectoryReader::create(m_fileSystem, m_fullPath);
 }
 
-void DirectoryEntry::getFile(const String& path, const Dictionary& options, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DirectoryEntry::getFile(const String& path, const FileSystemFlags& options, EntryCallback* successCallback, ErrorCallback* errorCallback)
 {
-    FileSystemFlags flags(options);
-    m_fileSystem->getFile(this, path, flags, successCallback, errorCallback);
+    m_fileSystem->getFile(this, path, options, successCallback, errorCallback);
 }
 
-void DirectoryEntry::getDirectory(const String& path, const Dictionary& options, PassOwnPtr<EntryCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DirectoryEntry::getDirectory(const String& path, const FileSystemFlags& options, EntryCallback* successCallback, ErrorCallback* errorCallback)
 {
-    FileSystemFlags flags(options);
-    m_fileSystem->getDirectory(this, path, flags, successCallback, errorCallback);
+    m_fileSystem->getDirectory(this, path, options, successCallback, errorCallback);
 }
 
-void DirectoryEntry::removeRecursively(PassOwnPtr<VoidCallback> successCallback, PassOwnPtr<ErrorCallback> errorCallback) const
+void DirectoryEntry::removeRecursively(VoidCallback* successCallback, ErrorCallback* errorCallback) const
 {
     m_fileSystem->removeRecursively(this, successCallback, errorCallback);
 }

@@ -10,13 +10,14 @@ cr.define('options.passwordManager', function() {
 
   /**
    * Creates a new passwords list item.
-   * @param {ArrayDataModel} dataModel The data model that contains this item.
+   * @param {cr.ui.ArrayDataModel} dataModel The data model that contains this
+   *     item.
    * @param {Array} entry An array of the form [url, username, password]. When
    *     the list has been filtered, a fourth element [index] may be present.
    * @param {boolean} showPasswords If true, add a button to the element to
    *     allow the user to reveal the saved password.
    * @constructor
-   * @extends {cr.ui.ListItem}
+   * @extends {options.DeletableItem}
    */
   function PasswordListItem(dataModel, entry, showPasswords) {
     var el = cr.doc.createElement('div');
@@ -194,7 +195,7 @@ cr.define('options.passwordManager', function() {
    * Creates a new PasswordExceptions list item.
    * @param {Array} entry A pair of the form [url, username].
    * @constructor
-   * @extends {Deletable.ListItem}
+   * @extends {options.DeletableItem}
    */
   function PasswordExceptionsListItem(entry) {
     var el = cr.doc.createElement('div');
@@ -246,7 +247,7 @@ cr.define('options.passwordManager', function() {
   /**
    * Create a new passwords list.
    * @constructor
-   * @extends {cr.ui.List}
+   * @extends {options.DeletableItemList}
    */
   var PasswordsList = cr.ui.define('list');
 
@@ -278,7 +279,10 @@ cr.define('options.passwordManager', function() {
       this.redraw();
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {Array} entry
+     */
     createItem: function(entry) {
       var showPasswords = this.showPasswords_;
 
@@ -316,7 +320,10 @@ cr.define('options.passwordManager', function() {
   PasswordExceptionsList.prototype = {
     __proto__: DeletableItemList.prototype,
 
-    /** @override */
+    /**
+     * @override
+     * @param {Array} entry
+     */
     createItem: function(entry) {
       return new PasswordExceptionsListItem(entry);
     },

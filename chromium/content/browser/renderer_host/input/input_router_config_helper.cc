@@ -9,8 +9,7 @@
 #include "ui/events/gesture_detection/gesture_detector.h"
 
 #if defined(USE_AURA)
-#include "ui/events/gestures/gesture_configuration.h"
-#include "ui/events/gestures/unified_gesture_detector_enabled.h"
+#include "ui/events/gesture_detection/gesture_configuration.h"
 #elif defined(OS_ANDROID)
 #include "ui/gfx/android/view_configuration.h"
 #include "ui/gfx/screen.h"
@@ -20,30 +19,32 @@ namespace content {
 namespace {
 
 #if defined(USE_AURA)
-
+// TODO(jdduke): Consolidate router configuration paths using
+// ui::GestureConfiguration.
 GestureEventQueue::Config GetGestureEventQueueConfig() {
   GestureEventQueue::Config config;
-
+  ui::GestureConfiguration* gesture_config =
+      ui::GestureConfiguration::GetInstance();
   config.debounce_interval = base::TimeDelta::FromMilliseconds(
-      ui::GestureConfiguration::scroll_debounce_interval_in_ms());
+      gesture_config->scroll_debounce_interval_in_ms());
 
   config.touchscreen_tap_suppression_config.enabled = true;
   config.touchscreen_tap_suppression_config.max_cancel_to_down_time =
       base::TimeDelta::FromMilliseconds(
-          ui::GestureConfiguration::fling_max_cancel_to_down_time_in_ms());
+          gesture_config->fling_max_cancel_to_down_time_in_ms());
 
   config.touchscreen_tap_suppression_config.max_tap_gap_time =
-      base::TimeDelta::FromMilliseconds(static_cast<int>(
-          ui::GestureConfiguration::semi_long_press_time_in_seconds() * 1000));
+      base::TimeDelta::FromMilliseconds(
+          gesture_config->semi_long_press_time_in_ms());
 
   config.touchpad_tap_suppression_config.enabled = true;
   config.touchpad_tap_suppression_config.max_cancel_to_down_time =
       base::TimeDelta::FromMilliseconds(
-          ui::GestureConfiguration::fling_max_cancel_to_down_time_in_ms());
+          gesture_config->fling_max_cancel_to_down_time_in_ms());
 
   config.touchpad_tap_suppression_config.max_tap_gap_time =
-      base::TimeDelta::FromMilliseconds(static_cast<int>(
-          ui::GestureConfiguration::fling_max_tap_gap_time_in_ms() * 1000));
+      base::TimeDelta::FromMilliseconds(
+          gesture_config->fling_max_tap_gap_time_in_ms());
 
   return config;
 }
@@ -52,10 +53,8 @@ TouchEventQueue::Config GetTouchEventQueueConfig() {
   TouchEventQueue::Config config;
 
   config.touchmove_slop_suppression_length_dips =
-      ui::GestureConfiguration::max_touch_move_in_pixels_for_click();
-
-  config.touchmove_slop_suppression_region_includes_boundary =
-      ui::IsUnifiedGestureDetectorEnabled();
+      ui::GestureConfiguration::GetInstance()
+          ->max_touch_move_in_pixels_for_click();
 
   return config;
 }
@@ -114,7 +113,7 @@ TouchEventQueue::Config GetTouchEventQueueConfig() {
 
 TouchEventQueue::TouchScrollingMode GetTouchScrollingMode() {
   std::string modeString =
-      CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+      base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kTouchScrollingMode);
   if (modeString == switches::kTouchScrollingModeAsyncTouchmove)
     return TouchEventQueue::TOUCH_SCROLLING_MODE_ASYNC_TOUCHMOVE;

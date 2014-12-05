@@ -590,6 +590,21 @@ class Node(object):
     '''Whether we need to expand variables on a given node.'''
     return False
 
+  def IsResourceMapSource(self):
+    '''Whether this node is a resource map source.'''
+    return False
+
+  def GeneratesResourceMapEntry(self, output_all_resource_defines,
+                                is_active_descendant):
+    '''Whether this node should output a resource map entry.
+
+    Args:
+      output_all_resource_defines: The value of output_all_resource_defines for
+                                   the root node.
+      is_active_descendant: Whether the current node is an active descendant
+                            from the root node.'''
+    return False
+
 
 class ContentNode(Node):
   '''Convenience baseclass for nodes that can have content.'''

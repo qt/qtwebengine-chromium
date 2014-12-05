@@ -31,29 +31,28 @@
 #ifndef FileReaderSync_h
 #define FileReaderSync_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
-#include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
+class DOMArrayBuffer;
 class ExceptionState;
-class FileReaderLoader;
 class ExecutionContext;
+class FileReaderLoader;
 
-class FileReaderSync FINAL : public RefCountedWillBeGarbageCollectedFinalized<FileReaderSync>, public ScriptWrappable {
+class FileReaderSync final : public GarbageCollected<FileReaderSync>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<FileReaderSync> create()
+    static FileReaderSync* create()
     {
-        return adoptRefWillBeNoop(new FileReaderSync());
+        return new FileReaderSync();
     }
 
-    ~FileReaderSync() { }
-
-    PassRefPtr<ArrayBuffer> readAsArrayBuffer(ExecutionContext*, Blob*, ExceptionState&);
+    PassRefPtr<DOMArrayBuffer> readAsArrayBuffer(ExecutionContext*, Blob*, ExceptionState&);
     String readAsBinaryString(ExecutionContext*, Blob*, ExceptionState&);
     String readAsText(ExecutionContext* executionContext, Blob* blob, ExceptionState& ec)
     {
@@ -70,6 +69,6 @@ private:
     void startLoading(ExecutionContext*, FileReaderLoader&, const Blob&, ExceptionState&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FileReaderSync_h

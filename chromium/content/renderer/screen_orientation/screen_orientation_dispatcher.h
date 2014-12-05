@@ -33,19 +33,17 @@ class CONTENT_EXPORT ScreenOrientationDispatcher :
   friend class ScreenOrientationDispatcherTest;
 
   // RenderFrameObserver implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // blink::WebScreenOrientationClient implementation.
   virtual void lockOrientation(
       blink::WebScreenOrientationLockType orientation,
-      blink::WebLockOrientationCallback* callback) OVERRIDE;
-  virtual void unlockOrientation() OVERRIDE;
+      blink::WebLockOrientationCallback* callback) override;
+  virtual void unlockOrientation() override;
 
-  void OnLockSuccess(int request_id,
-                     unsigned angle,
-                     blink::WebScreenOrientationType orientation);
+  void OnLockSuccess(int request_id);
   void OnLockError(int request_id,
-                   blink::WebLockOrientationCallback::ErrorType error);
+                   blink::WebLockOrientationError error);
 
   void CancelPendingLocks();
 

@@ -30,7 +30,7 @@
 #include "core/fetch/ResourcePtr.h"
 #include "core/rendering/style/StyleImage.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderObject;
 
@@ -60,7 +60,6 @@ public:
     virtual bool errorOccurred() const { return m_cachedImage && m_cachedImage->errorOccurred(); }
 
     virtual void setContainerSizeForRenderer(const IntSize&);
-    virtual bool usesImageContainerSize() const { return m_cachedImage ? m_cachedImage->usesImageContainerSize() : false; }
     virtual bool imageHasRelativeWidth() const { return m_cachedImage ? m_cachedImage->imageHasRelativeWidth() : false; }
     virtual bool imageHasRelativeHeight() const { return m_cachedImage ? m_cachedImage->imageHasRelativeHeight() : false; }
 
@@ -78,6 +77,6 @@ private:
     LayoutSize getImageSize(float multiplier, ImageResource::SizeType) const;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderImage_h

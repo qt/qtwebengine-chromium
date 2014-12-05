@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -16,6 +16,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "content/browser/service_worker/service_worker_database.pb.h"
+#include "content/browser/service_worker/service_worker_metrics.h"
 #include "content/common/service_worker/service_worker_types.h"
 #include "third_party/leveldatabase/src/helpers/memenv/memenv.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
@@ -78,14 +79,6 @@ const char kPurgeableResIdKeyPrefix[] = "PRES:";
 
 const int64 kCurrentSchemaVersion = 1;
 
-// For histogram.
-const char kOpenResultHistogramLabel[] =
-    "ServiceWorker.Database.OpenResult";
-const char kReadResultHistogramLabel[] =
-    "ServiceWorker.Database.ReadResult";
-const char kWriteResultHistogramLabel[] =
-    "ServiceWorker.Database.WriteResult";
-
 bool RemovePrefix(const std::string& str,
                   const std::string& prefix,
                   std::string* out) {
@@ -141,6 +134,7 @@ void PutRegistrationDataToBatch(
   data.set_is_active(input.is_active);
   data.set_has_fetch_handler(input.has_fetch_handler);
   data.set_last_update_check_time(input.last_update_check.ToInternalValue());
+  data.set_resources_total_size_bytes(input.resources_total_size_bytes);
 
   std::string value;
   bool success = data.SerializeToString(&value);
@@ -154,11 +148,13 @@ void PutResourceRecordToBatch(
     int64 version_id,
     leveldb::WriteBatch* batch) {
   DCHECK(batch);
+  DCHECK_GE(input.size_bytes, 0);
 
   // Convert ResourceRecord to ServiceWorkerResourceRecord.
   ServiceWorkerResourceRecord record;
   record.set_resource_id(input.resource_id);
   record.set_url(input.url.spec());
+  record.set_size_bytes(input.size_bytes);
 
   std::string value;
   bool success = record.SerializeToString(&value);
@@ -222,6 +218,9 @@ ServiceWorkerDatabase::Status ParseRegistrationData(
   if (!scope_url.is_valid() ||
       !script_url.is_valid() ||
       scope_url.GetOrigin() != script_url.GetOrigin()) {
+    DLOG(ERROR) << "Scope URL '" << data.scope_url() << "' and/or script url '"
+                << data.script_url()
+                << "' are invalid or have mismatching origins.";
     return ServiceWorkerDatabase::STATUS_ERROR_CORRUPTED;
   }
 
@@ -234,6 +233,8 @@ ServiceWorkerDatabase::Status ParseRegistrationData(
   out->has_fetch_handler = data.has_fetch_handler();
   out->last_update_check =
       base::Time::FromInternalValue(data.last_update_check_time());
+  out->resources_total_size_bytes = data.resources_total_size_bytes();
+
   return ServiceWorkerDatabase::STATUS_OK;
 }
 
@@ -252,6 +253,7 @@ ServiceWorkerDatabase::Status ParseResourceRecord(
   // Convert ServiceWorkerResourceRecord to ResourceRecord.
   out->resource_id = record.resource_id();
   out->url = url;
+  out->size_bytes = record.size_bytes();
   return ServiceWorkerDatabase::STATUS_OK;
 }
 
@@ -269,7 +271,10 @@ ServiceWorkerDatabase::Status LevelDBStatusToStatus(
     return ServiceWorkerDatabase::STATUS_ERROR_FAILED;
 }
 
-const char* StatusToString(ServiceWorkerDatabase::Status status) {
+}  // namespace
+
+const char* ServiceWorkerDatabase::StatusToString(
+  ServiceWorkerDatabase::Status status) {
   switch (status) {
     case ServiceWorkerDatabase::STATUS_OK:
       return "Database OK";
@@ -289,13 +294,12 @@ const char* StatusToString(ServiceWorkerDatabase::Status status) {
   return "Database unknown error";
 }
 
-}  // namespace
-
 ServiceWorkerDatabase::RegistrationData::RegistrationData()
     : registration_id(kInvalidServiceWorkerRegistrationId),
       version_id(kInvalidServiceWorkerVersionId),
       is_active(false),
-      has_fetch_handler(false) {
+      has_fetch_handler(false),
+      resources_total_size_bytes(0) {
 }
 
 ServiceWorkerDatabase::RegistrationData::~RegistrationData() {
@@ -488,9 +492,12 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::ReadRegistration(
 ServiceWorkerDatabase::Status ServiceWorkerDatabase::WriteRegistration(
     const RegistrationData& registration,
     const std::vector<ResourceRecord>& resources,
+    RegistrationData* old_registration,
     std::vector<int64>* newly_purgeable_resources) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  DCHECK(old_registration);
   Status status = LazyOpen(true);
+  old_registration->version_id = kInvalidServiceWorkerVersionId;
   if (status != STATUS_OK)
     return status;
 
@@ -499,6 +506,15 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::WriteRegistration(
   BumpNextVersionIdIfNeeded(registration.version_id, &batch);
 
   PutUniqueOriginToBatch(registration.scope.GetOrigin(), &batch);
+#if DCHECK_IS_ON
+  int64_t total_size_bytes = 0;
+  for (const auto& resource : resources) {
+    total_size_bytes += resource.size_bytes;
+  }
+  DCHECK_EQ(total_size_bytes, registration.resources_total_size_bytes)
+      << "The total size in the registration must match the cumulative "
+      << "sizes of the resources.";
+#endif
   PutRegistrationDataToBatch(registration, &batch);
 
   // Used for avoiding multiple writes for the same resource id or url.
@@ -518,19 +534,21 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::WriteRegistration(
     // Delete a resource from the uncommitted list.
     batch.Delete(CreateResourceIdKey(
         kUncommittedResIdKeyPrefix, itr->resource_id));
+    // Delete from the purgeable list in case this version was once deleted.
+    batch.Delete(
+        CreateResourceIdKey(kPurgeableResIdKeyPrefix, itr->resource_id));
   }
 
   // Retrieve a previous version to sweep purgeable resources.
-  RegistrationData old_registration;
   status = ReadRegistrationData(registration.registration_id,
                                 registration.scope.GetOrigin(),
-                                &old_registration);
+                                old_registration);
   if (status != STATUS_OK && status != STATUS_ERROR_NOT_FOUND)
     return status;
   if (status == STATUS_OK) {
-    DCHECK_LT(old_registration.version_id, registration.version_id);
+    DCHECK_LT(old_registration->version_id, registration.version_id);
     status = DeleteResourceRecords(
-        old_registration.version_id, newly_purgeable_resources, &batch);
+        old_registration->version_id, newly_purgeable_resources, &batch);
     if (status != STATUS_OK)
       return status;
 
@@ -550,7 +568,7 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::UpdateVersionToActive(
     int64 registration_id,
     const GURL& origin) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
-  ServiceWorkerDatabase::Status status = LazyOpen(false);
+  Status status = LazyOpen(false);
   if (IsNewOrNonexistentDatabase(status))
     return STATUS_ERROR_NOT_FOUND;
   if (status != STATUS_OK)
@@ -575,7 +593,7 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::UpdateLastCheckTime(
     const GURL& origin,
     const base::Time& time) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
-  ServiceWorkerDatabase::Status status = LazyOpen(false);
+  Status status = LazyOpen(false);
   if (IsNewOrNonexistentDatabase(status))
     return STATUS_ERROR_NOT_FOUND;
   if (status != STATUS_OK)
@@ -598,8 +616,11 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::UpdateLastCheckTime(
 ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteRegistration(
     int64 registration_id,
     const GURL& origin,
+    RegistrationData* deleted_version,
     std::vector<int64>* newly_purgeable_resources) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
+  DCHECK(deleted_version);
+  deleted_version->version_id = kInvalidServiceWorkerVersionId;
   Status status = LazyOpen(false);
   if (IsNewOrNonexistentDatabase(status))
     return STATUS_OK;
@@ -627,11 +648,11 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteRegistration(
   batch.Delete(CreateRegistrationKey(registration_id, origin));
 
   // Delete resource records associated with the registration.
-  for (std::vector<RegistrationData>::const_iterator itr =
-           registrations.begin(); itr != registrations.end(); ++itr) {
-    if (itr->registration_id == registration_id) {
+  for (const auto& registration : registrations) {
+    if (registration.registration_id == registration_id) {
+      *deleted_version = registration;
       status = DeleteResourceRecords(
-          itr->version_id, newly_purgeable_resources, &batch);
+          registration.version_id, newly_purgeable_resources, &batch);
       if (status != STATUS_OK)
         return status;
       break;
@@ -685,8 +706,8 @@ ServiceWorkerDatabase::PurgeUncommittedResourceIds(
   return WriteBatch(&batch);
 }
 
-ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteAllDataForOrigin(
-    const GURL& origin,
+ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteAllDataForOrigins(
+    const std::set<GURL>& origins,
     std::vector<int64>* newly_purgeable_resources) {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   Status status = LazyOpen(false);
@@ -694,27 +715,28 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteAllDataForOrigin(
     return STATUS_OK;
   if (status != STATUS_OK)
     return status;
-  if (!origin.is_valid())
-    return STATUS_ERROR_FAILED;
-
   leveldb::WriteBatch batch;
 
-  // Delete from the unique origin list.
-  batch.Delete(CreateUniqueOriginKey(origin));
+  for (const GURL& origin : origins) {
+    if (!origin.is_valid())
+      return STATUS_ERROR_FAILED;
 
-  std::vector<RegistrationData> registrations;
-  status = GetRegistrationsForOrigin(origin, &registrations);
-  if (status != STATUS_OK)
-    return status;
+    // Delete from the unique origin list.
+    batch.Delete(CreateUniqueOriginKey(origin));
 
-  // Delete registrations and resource records.
-  for (std::vector<RegistrationData>::const_iterator itr =
-           registrations.begin(); itr != registrations.end(); ++itr) {
-    batch.Delete(CreateRegistrationKey(itr->registration_id, origin));
-    status = DeleteResourceRecords(
-        itr->version_id, newly_purgeable_resources, &batch);
+    std::vector<RegistrationData> registrations;
+    status = GetRegistrationsForOrigin(origin, &registrations);
     if (status != STATUS_OK)
       return status;
+
+    // Delete registrations and resource records.
+    for (const RegistrationData& data : registrations) {
+      batch.Delete(CreateRegistrationKey(data.registration_id, origin));
+      status = DeleteResourceRecords(
+          data.version_id, newly_purgeable_resources, &batch);
+      if (status != STATUS_OK)
+        return status;
+    }
   }
 
   return WriteBatch(&batch);
@@ -723,8 +745,19 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::DeleteAllDataForOrigin(
 ServiceWorkerDatabase::Status ServiceWorkerDatabase::DestroyDatabase() {
   DCHECK(sequence_checker_.CalledOnValidSequencedThread());
   Disable(FROM_HERE, STATUS_OK);
+
+  leveldb::Options options;
+  if (path_.empty()) {
+    if (env_) {
+      options.env = env_.get();
+    } else {
+      // In-memory database not initialized.
+      return STATUS_OK;
+    }
+  }
+
   return LevelDBStatusToStatus(
-      leveldb::DestroyDB(path_.AsUTF8Unsafe(), leveldb::Options()));
+      leveldb::DestroyDB(path_.AsUTF8Unsafe(), options));
 }
 
 ServiceWorkerDatabase::Status ServiceWorkerDatabase::LazyOpen(
@@ -969,11 +1002,15 @@ ServiceWorkerDatabase::Status ServiceWorkerDatabase::WriteResourceIdsInBatch(
   if (status != STATUS_OK)
     return status;
 
+  if (ids.empty())
+    return STATUS_OK;
   for (std::set<int64>::const_iterator itr = ids.begin();
        itr != ids.end(); ++itr) {
     // Value should be empty.
     batch->Put(CreateResourceIdKey(id_key_prefix, *itr), "");
   }
+  // std::set is sorted, so the last element is the largest.
+  BumpNextResourceIdIfNeeded(*ids.rbegin(), batch);
   return STATUS_OK;
 }
 
@@ -1055,6 +1092,15 @@ void ServiceWorkerDatabase::BumpNextRegistrationIdIfNeeded(
   }
 }
 
+void ServiceWorkerDatabase::BumpNextResourceIdIfNeeded(
+    int64 used_id, leveldb::WriteBatch* batch) {
+  DCHECK(batch);
+  if (next_avail_resource_id_ <= used_id) {
+    next_avail_resource_id_ = used_id + 1;
+    batch->Put(kNextResIdKey, base::Int64ToString(next_avail_resource_id_));
+  }
+}
+
 void ServiceWorkerDatabase::BumpNextVersionIdIfNeeded(
     int64 used_id, leveldb::WriteBatch* batch) {
   DCHECK(batch);
@@ -1083,31 +1129,25 @@ void ServiceWorkerDatabase::Disable(
 void ServiceWorkerDatabase::HandleOpenResult(
     const tracked_objects::Location& from_here,
     Status status) {
-  if (status != ServiceWorkerDatabase::STATUS_OK)
+  if (status != STATUS_OK)
     Disable(from_here, status);
-  UMA_HISTOGRAM_ENUMERATION(kOpenResultHistogramLabel,
-                            status,
-                            ServiceWorkerDatabase::STATUS_ERROR_MAX);
+  ServiceWorkerMetrics::CountOpenDatabaseResult(status);
 }
 
 void ServiceWorkerDatabase::HandleReadResult(
     const tracked_objects::Location& from_here,
     Status status) {
-  if (status != ServiceWorkerDatabase::STATUS_OK)
+  if (status != STATUS_OK)
     Disable(from_here, status);
-  UMA_HISTOGRAM_ENUMERATION(kReadResultHistogramLabel,
-                            status,
-                            ServiceWorkerDatabase::STATUS_ERROR_MAX);
+  ServiceWorkerMetrics::CountReadDatabaseResult(status);
 }
 
 void ServiceWorkerDatabase::HandleWriteResult(
     const tracked_objects::Location& from_here,
     Status status) {
-  if (status != ServiceWorkerDatabase::STATUS_OK)
+  if (status != STATUS_OK)
     Disable(from_here, status);
-  UMA_HISTOGRAM_ENUMERATION(kWriteResultHistogramLabel,
-                            status,
-                            ServiceWorkerDatabase::STATUS_ERROR_MAX);
+  ServiceWorkerMetrics::CountWriteDatabaseResult(status);
 }
 
 }  // namespace content

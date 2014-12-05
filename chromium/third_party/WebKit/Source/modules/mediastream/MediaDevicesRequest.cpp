@@ -27,20 +27,20 @@
 
 #include "modules/mediastream/MediaDevicesRequest.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "modules/mediastream/UserMediaController.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MediaDevicesRequest> MediaDevicesRequest::create(ExecutionContext* context, UserMediaController* controller, PassOwnPtr<MediaDeviceInfoCallback> callback, ExceptionState& exceptionState)
+MediaDevicesRequest* MediaDevicesRequest::create(ExecutionContext* context, UserMediaController* controller, MediaDeviceInfoCallback* callback, ExceptionState& exceptionState)
 {
-    RefPtrWillBeRawPtr<MediaDevicesRequest> request = adoptRefWillBeRefCountedGarbageCollected(new MediaDevicesRequest(context, controller, callback));
+    MediaDevicesRequest* request = new MediaDevicesRequest(context, controller, callback);
     request->suspendIfNeeded();
-    return request.release();
+    return request;
 }
 
-MediaDevicesRequest::MediaDevicesRequest(ExecutionContext* context, UserMediaController* controller, PassOwnPtr<MediaDeviceInfoCallback> callback)
+MediaDevicesRequest::MediaDevicesRequest(ExecutionContext* context, UserMediaController* controller, MediaDeviceInfoCallback* callback)
     : ActiveDOMObject(context)
     , m_controller(controller)
     , m_callback(callback)
@@ -80,4 +80,9 @@ void MediaDevicesRequest::stop()
     m_controller = 0;
 }
 
-} // namespace WebCore
+void MediaDevicesRequest::trace(Visitor* visitor)
+{
+    visitor->trace(m_callback);
+}
+
+} // namespace blink

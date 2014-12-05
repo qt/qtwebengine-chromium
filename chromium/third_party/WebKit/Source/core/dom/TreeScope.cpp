@@ -28,6 +28,7 @@
 #include "core/dom/TreeScope.h"
 
 #include "core/HTMLNames.h"
+#include "core/css/resolver/ScopedStyleResolver.h"
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
@@ -37,6 +38,7 @@
 #include "core/dom/TreeScopeAdopter.h"
 #include "core/dom/shadow/ElementShadow.h"
 #include "core/dom/shadow/ShadowRoot.h"
+#include "core/editing/DOMSelection.h"
 #include "core/events/EventPath.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
@@ -44,14 +46,13 @@
 #include "core/html/HTMLFrameOwnerElement.h"
 #include "core/html/HTMLLabelElement.h"
 #include "core/html/HTMLMapElement.h"
-#include "core/page/DOMSelection.h"
 #include "core/page/FocusController.h"
 #include "core/page/Page.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/RenderView.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -145,30 +146,43 @@ void TreeScope::setParentTreeScope(TreeScope& newParentScope)
     setDocument(newParentScope.document());
 }
 
+ScopedStyleResolver& TreeScope::ensureScopedStyleResolver()
+{
+    RELEASE_ASSERT(this);
+    if (!m_scopedStyleResolver)
+        m_scopedStyleResolver = ScopedStyleResolver::create(*this);
+    return *m_scopedStyleResolver;
+}
+
+void TreeScope::clearScopedStyleResolver()
+{
+    m_scopedStyleResolver.clear();
+}
+
 Element* TreeScope::getElementById(const AtomicString& elementId) const
 {
     if (elementId.isEmpty())
         return 0;
     if (!m_elementsById)
         return 0;
-    return m_elementsById->getElementById(elementId.impl(), this);
+    return m_elementsById->getElementById(elementId, this);
 }
 
-const Vector<Element*>& TreeScope::getAllElementsById(const AtomicString& elementId) const
+const WillBeHeapVector<RawPtrWillBeMember<Element> >& TreeScope::getAllElementsById(const AtomicString& elementId) const
 {
-    DEFINE_STATIC_LOCAL(Vector<Element*>, emptyVector, ());
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<WillBeHeapVector<RawPtrWillBeMember<Element> > >, emptyVector, (adoptPtrWillBeNoop(new WillBeHeapVector<RawPtrWillBeMember<Element> >())));
     if (elementId.isEmpty())
-        return emptyVector;
+        return *emptyVector;
     if (!m_elementsById)
-        return emptyVector;
-    return m_elementsById->getAllElementsById(elementId.impl(), this);
+        return *emptyVector;
+    return m_elementsById->getAllElementsById(elementId, this);
 }
 
 void TreeScope::addElementById(const AtomicString& elementId, Element* element)
 {
     if (!m_elementsById)
-        m_elementsById = adoptPtr(new DocumentOrderedMap);
-    m_elementsById->add(elementId.impl(), element);
+        m_elementsById = DocumentOrderedMap::create();
+    m_elementsById->add(elementId, element);
     m_idTargetObserverRegistry->notifyObservers(elementId);
 }
 
@@ -176,7 +190,7 @@ void TreeScope::removeElementById(const AtomicString& elementId, Element* elemen
 {
     if (!m_elementsById)
         return;
-    m_elementsById->remove(elementId.impl(), element);
+    m_elementsById->remove(elementId, element);
     m_idTargetObserverRegistry->notifyObservers(elementId);
 }
 
@@ -196,11 +210,11 @@ Node* TreeScope::ancestorInThisScope(Node* node) const
 
 void TreeScope::addImageMap(HTMLMapElement* imageMap)
 {
-    StringImpl* name = imageMap->getName().impl();
+    const AtomicString& name = imageMap->getName();
     if (!name)
         return;
     if (!m_imageMapsByName)
-        m_imageMapsByName = adoptPtr(new DocumentOrderedMap);
+        m_imageMapsByName = DocumentOrderedMap::create();
     m_imageMapsByName->add(name, imageMap);
 }
 
@@ -208,7 +222,7 @@ void TreeScope::removeImageMap(HTMLMapElement* imageMap)
 {
     if (!m_imageMapsByName)
         return;
-    StringImpl* name = imageMap->getName().impl();
+    const AtomicString& name = imageMap->getName();
     if (!name)
         return;
     m_imageMapsByName->remove(name, imageMap);
@@ -221,10 +235,10 @@ HTMLMapElement* TreeScope::getImageMap(const String& url) const
     if (!m_imageMapsByName)
         return 0;
     size_t hashPos = url.find('#');
-    String name = (hashPos == kNotFound ? url : url.substring(hashPos + 1)).impl();
+    String name = hashPos == kNotFound ? url : url.substring(hashPos + 1);
     if (rootNode().document().isHTMLDocument())
-        return toHTMLMapElement(m_imageMapsByName->getElementByLowercasedMapName(AtomicString(name.lower()).impl(), this));
-    return toHTMLMapElement(m_imageMapsByName->getElementByMapName(AtomicString(name).impl(), this));
+        return toHTMLMapElement(m_imageMapsByName->getElementByLowercasedMapName(AtomicString(name.lower()), this));
+    return toHTMLMapElement(m_imageMapsByName->getElementByMapName(AtomicString(name), this));
 }
 
 HitTestResult hitTestInDocument(const Document* document, int x, int y)
@@ -243,7 +257,7 @@ HitTestResult hitTestInDocument(const Document* document, int x, int y)
     if (!frameView->visibleContentRect().contains(point))
         return HitTestResult();
 
-    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active | HitTestRequest::ConfusingAndOftenMisusedDisallowShadowContent);
+    HitTestRequest request(HitTestRequest::ReadOnly | HitTestRequest::Active);
     HitTestResult result(point);
     document->renderView()->hitTest(request, result);
     return result;
@@ -267,13 +281,13 @@ Element* TreeScope::elementFromPoint(int x, int y) const
 void TreeScope::addLabel(const AtomicString& forAttributeValue, HTMLLabelElement* element)
 {
     ASSERT(m_labelsByForAttribute);
-    m_labelsByForAttribute->add(forAttributeValue.impl(), element);
+    m_labelsByForAttribute->add(forAttributeValue, element);
 }
 
 void TreeScope::removeLabel(const AtomicString& forAttributeValue, HTMLLabelElement* element)
 {
     ASSERT(m_labelsByForAttribute);
-    m_labelsByForAttribute->remove(forAttributeValue.impl(), element);
+    m_labelsByForAttribute->remove(forAttributeValue, element);
 }
 
 HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeValue)
@@ -283,15 +297,15 @@ HTMLLabelElement* TreeScope::labelElementForId(const AtomicString& forAttributeV
 
     if (!m_labelsByForAttribute) {
         // Populate the map on first access.
-        m_labelsByForAttribute = adoptPtr(new DocumentOrderedMap);
-        for (HTMLLabelElement* label = Traversal<HTMLLabelElement>::firstWithin(rootNode()); label; label = Traversal<HTMLLabelElement>::next(*label)) {
-            const AtomicString& forValue = label->fastGetAttribute(forAttr);
+        m_labelsByForAttribute = DocumentOrderedMap::create();
+        for (HTMLLabelElement& label : Traversal<HTMLLabelElement>::startsAfter(rootNode())) {
+            const AtomicString& forValue = label.fastGetAttribute(forAttr);
             if (!forValue.isEmpty())
-                addLabel(forValue, label);
+                addLabel(forValue, &label);
         }
     }
 
-    return toHTMLLabelElement(m_labelsByForAttribute->getElementByLabelForAttribute(forAttributeValue.impl(), this));
+    return toHTMLLabelElement(m_labelsByForAttribute->getElementByLabelForAttribute(forAttributeValue, this));
 }
 
 DOMSelection* TreeScope::getSelection() const
@@ -315,23 +329,18 @@ Element* TreeScope::findAnchor(const String& name)
         return 0;
     if (Element* element = getElementById(AtomicString(name)))
         return element;
-    for (HTMLAnchorElement* anchor = Traversal<HTMLAnchorElement>::firstWithin(rootNode()); anchor; anchor = Traversal<HTMLAnchorElement>::next(*anchor)) {
+    for (HTMLAnchorElement& anchor : Traversal<HTMLAnchorElement>::startsAfter(rootNode())) {
         if (rootNode().document().inQuirksMode()) {
             // Quirks mode, case insensitive comparison of names.
-            if (equalIgnoringCase(anchor->name(), name))
-                return anchor;
+            if (equalIgnoringCase(anchor.name(), name))
+                return &anchor;
         } else {
             // Strict mode, names need to match exactly.
-            if (anchor->name() == name)
-                return anchor;
+            if (anchor.name() == name)
+                return &anchor;
         }
     }
     return 0;
-}
-
-bool TreeScope::applyAuthorStyles() const
-{
-    return rootNode().isDocumentNode();
 }
 
 void TreeScope::adoptIfNeeded(Node& node)
@@ -405,7 +414,7 @@ unsigned short TreeScope::comparePosition(const TreeScope& otherScope) const
             Node* shadowHost1 = child1->rootNode().parentOrShadowHostNode();
             Node* shadowHost2 = child2->rootNode().parentOrShadowHostNode();
             if (shadowHost1 != shadowHost2)
-                return shadowHost1->compareDocumentPositionInternal(shadowHost2, Node::TreatShadowTreesAsDisconnected);
+                return shadowHost1->compareDocumentPosition(shadowHost2, Node::TreatShadowTreesAsDisconnected);
 
             for (const ShadowRoot* child = toShadowRoot(child2->rootNode()).olderShadowRoot(); child; child = child->olderShadowRoot())
                 if (child == child1)
@@ -481,7 +490,7 @@ TreeScope* commonTreeScope(Node* nodeA, Node* nodeB)
     return treeScopesA[indexA] == treeScopesB[indexB] ? treeScopesA[indexA] : 0;
 }
 
-#if SECURITY_ASSERT_ENABLED && !ENABLE(OILPAN)
+#if ENABLE(SECURITY_ASSERT) && !ENABLE(OILPAN)
 bool TreeScope::deletionHasBegun()
 {
     return rootNode().m_deletionHasBegun;
@@ -515,10 +524,10 @@ Element* TreeScope::getElementByAccessKey(const String& key) const
         return 0;
     Element* result = 0;
     Node& root = rootNode();
-    for (Element* element = ElementTraversal::firstWithin(root); element; element = ElementTraversal::next(*element, &root)) {
-        if (equalIgnoringCase(element->fastGetAttribute(accesskeyAttr), key))
-            result = element;
-        for (ShadowRoot* shadowRoot = element->youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
+    for (Element& element : ElementTraversal::descendantsOf(root)) {
+        if (equalIgnoringCase(element.fastGetAttribute(accesskeyAttr), key))
+            result = &element;
+        for (ShadowRoot* shadowRoot = element.youngestShadowRoot(); shadowRoot; shadowRoot = shadowRoot->olderShadowRoot()) {
             if (Element* shadowResult = shadowRoot->getElementByAccessKey(key))
                 result = shadowResult;
         }
@@ -533,7 +542,7 @@ void TreeScope::setNeedsStyleRecalcForViewportUnits()
             root->setNeedsStyleRecalcForViewportUnits();
         RenderStyle* style = element->renderStyle();
         if (style && style->hasViewportUnits())
-            element->setNeedsStyleRecalc(LocalStyleChange);
+            element->setNeedsStyleRecalc(LocalStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::ViewportUnits));
     }
 }
 
@@ -544,6 +553,10 @@ void TreeScope::trace(Visitor* visitor)
     visitor->trace(m_parentTreeScope);
     visitor->trace(m_idTargetObserverRegistry);
     visitor->trace(m_selection);
+    visitor->trace(m_elementsById);
+    visitor->trace(m_imageMapsByName);
+    visitor->trace(m_labelsByForAttribute);
+    visitor->trace(m_scopedStyleResolver);
 }
 
-} // namespace WebCore
+} // namespace blink

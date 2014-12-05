@@ -35,22 +35,21 @@ class VIEWS_EXPORT TooltipController : public aura::client::TooltipClient,
                                        public aura::WindowObserver {
  public:
   explicit TooltipController(scoped_ptr<Tooltip> tooltip);
-  virtual ~TooltipController();
+  ~TooltipController() override;
 
   // Overridden from aura::client::TooltipClient.
-  virtual void UpdateTooltip(aura::Window* target) OVERRIDE;
-  virtual void SetTooltipShownTimeout(aura::Window* target,
-                                      int timeout_in_ms) OVERRIDE;
-  virtual void SetTooltipsEnabled(bool enable) OVERRIDE;
+  void UpdateTooltip(aura::Window* target) override;
+  void SetTooltipShownTimeout(aura::Window* target, int timeout_in_ms) override;
+  void SetTooltipsEnabled(bool enable) override;
 
   // Overridden from ui::EventHandler.
-  virtual void OnKeyEvent(ui::KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
-  virtual void OnCancelMode(ui::CancelModeEvent* event) OVERRIDE;
+  void OnKeyEvent(ui::KeyEvent* event) override;
+  void OnMouseEvent(ui::MouseEvent* event) override;
+  void OnTouchEvent(ui::TouchEvent* event) override;
+  void OnCancelMode(ui::CancelModeEvent* event) override;
 
   // Overridden from aura::WindowObserver.
-  virtual void OnWindowDestroyed(aura::Window* window) OVERRIDE;
+  void OnWindowDestroyed(aura::Window* window) override;
 
   const gfx::Point& mouse_location() const { return curr_mouse_loc_; }
 

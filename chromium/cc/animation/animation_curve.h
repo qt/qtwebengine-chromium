@@ -45,27 +45,27 @@ class CC_EXPORT AnimationCurve {
 
 class CC_EXPORT ColorAnimationCurve : public AnimationCurve {
  public:
-  virtual ~ColorAnimationCurve() {}
+  ~ColorAnimationCurve() override {}
 
   virtual SkColor GetValue(double t) const = 0;
 
   // Partial Animation implementation.
-  virtual CurveType Type() const OVERRIDE;
+  CurveType Type() const override;
 };
 
 class CC_EXPORT FloatAnimationCurve : public AnimationCurve {
  public:
-  virtual ~FloatAnimationCurve() {}
+  ~FloatAnimationCurve() override {}
 
   virtual float GetValue(double t) const = 0;
 
   // Partial Animation implementation.
-  virtual CurveType Type() const OVERRIDE;
+  CurveType Type() const override;
 };
 
 class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
  public:
-  virtual ~TransformAnimationCurve() {}
+  ~TransformAnimationCurve() override {}
 
   virtual gfx::Transform GetValue(double t) const = 0;
 
@@ -81,23 +81,27 @@ class CC_EXPORT TransformAnimationCurve : public AnimationCurve {
   // Returns true if this animation is a translation.
   virtual bool IsTranslation() const = 0;
 
-  // Set |max_scale| to the maximum scale along any dimension during this
-  // animation. Returns false if the maximum scale cannot be computed.
-  virtual bool MaximumScale(float* max_scale) const = 0;
+  // Set |max_scale| to the maximum scale along any dimension at the end of
+  // intermediate animation target points (eg keyframe end points). When
+  // |forward_direction| is true, the animation curve assumes it plays from
+  // the first keyframe to the last, otherwise it assumes the opposite. Returns
+  // false if the maximum scale cannot be computed.
+  virtual bool MaximumTargetScale(bool forward_direction,
+                                  float* max_scale) const = 0;
 
   // Partial Animation implementation.
-  virtual CurveType Type() const OVERRIDE;
+  CurveType Type() const override;
 };
 
 class CC_EXPORT FilterAnimationCurve : public AnimationCurve {
  public:
-  virtual ~FilterAnimationCurve() {}
+  ~FilterAnimationCurve() override {}
 
   virtual FilterOperations GetValue(double t) const = 0;
   virtual bool HasFilterThatMovesPixels() const = 0;
 
   // Partial Animation implementation.
-  virtual CurveType Type() const OVERRIDE;
+  CurveType Type() const override;
 };
 
 }  // namespace cc

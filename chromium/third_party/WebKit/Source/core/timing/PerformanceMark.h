@@ -31,31 +31,30 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class PerformanceMark FINAL : public PerformanceEntry {
+class PerformanceMark final : public PerformanceEntry {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<PerformanceMark> create(const String& name, double startTime)
     {
         return adoptRefWillBeNoop(new PerformanceMark(name, startTime));
     }
 
-    virtual bool isMark() OVERRIDE { return true; }
+    virtual bool isMark() override { return true; }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         PerformanceEntry::trace(visitor);
     }
 
 private:
-    PerformanceMark(const String& name, double startTime) : PerformanceEntry(name, "mark", startTime, startTime)
-    {
-        ScriptWrappable::init(this);
-    }
+    PerformanceMark(const String& name, double startTime)
+        : PerformanceEntry(name, "mark", startTime, startTime) { }
 
     virtual ~PerformanceMark() { }
 };
 
-}
+} // namespace blink
 
-#endif // !defined(PerformanceMark_h)
+#endif // PerformanceMark_h

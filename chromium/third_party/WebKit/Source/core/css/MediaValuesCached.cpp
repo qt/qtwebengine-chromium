@@ -8,10 +8,9 @@
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalFrame.h"
-#include "core/html/imports/HTMLImportsController.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<MediaValues> MediaValuesCached::create()
 {
@@ -25,9 +24,7 @@ PassRefPtr<MediaValues> MediaValuesCached::create(MediaValuesCachedData& data)
 
 PassRefPtr<MediaValues> MediaValuesCached::create(Document& document)
 {
-    Document* executingDocument = document.importsController() ? document.importsController()->master() : &document;
-    ASSERT(executingDocument);
-    return MediaValuesCached::create(executingDocument->frame());
+    return MediaValuesCached::create(frameFrom(document));
 }
 
 PassRefPtr<MediaValues> MediaValuesCached::create(LocalFrame* frame)
@@ -57,13 +54,16 @@ MediaValuesCached::MediaValuesCached(LocalFrame* frame)
     m_data.devicePixelRatio = calculateDevicePixelRatio(frame);
     m_data.colorBitsPerComponent = calculateColorBitsPerComponent(frame);
     m_data.monochromeBitsPerComponent = calculateMonochromeBitsPerComponent(frame);
-    m_data.pointer = calculateLeastCapablePrimaryPointerDeviceType(frame);
+    m_data.primaryPointerType = calculatePrimaryPointerType(frame);
+    m_data.availablePointerTypes = calculateAvailablePointerTypes(frame);
+    m_data.primaryHoverType = calculatePrimaryHoverType(frame);
+    m_data.availableHoverTypes = calculateAvailableHoverTypes(frame);
     m_data.defaultFontSize = calculateDefaultFontSize(frame);
     m_data.threeDEnabled = calculateThreeDEnabled(frame);
-    m_data.scanMediaType = calculateScanMediaType(frame);
-    m_data.screenMediaType = calculateScreenMediaType(frame);
-    m_data.printMediaType = calculatePrintMediaType(frame);
     m_data.strictMode = calculateStrictMode(frame);
+    const String mediaType = calculateMediaType(frame);
+    if (!mediaType.isEmpty())
+        m_data.mediaType = mediaType.isolatedCopy();
 }
 
 MediaValuesCached::MediaValuesCached(const MediaValuesCachedData& data)
@@ -126,9 +126,24 @@ int MediaValuesCached::monochromeBitsPerComponent() const
     return m_data.monochromeBitsPerComponent;
 }
 
-MediaValues::PointerDeviceType MediaValuesCached::pointer() const
+PointerType MediaValuesCached::primaryPointerType() const
 {
-    return m_data.pointer;
+    return m_data.primaryPointerType;
+}
+
+int MediaValuesCached::availablePointerTypes() const
+{
+    return m_data.availablePointerTypes;
+}
+
+HoverType MediaValuesCached::primaryHoverType() const
+{
+    return m_data.primaryHoverType;
+}
+
+int MediaValuesCached::availableHoverTypes() const
+{
+    return m_data.availableHoverTypes;
 }
 
 bool MediaValuesCached::threeDEnabled() const
@@ -136,24 +151,13 @@ bool MediaValuesCached::threeDEnabled() const
     return m_data.threeDEnabled;
 }
 
-bool MediaValuesCached::scanMediaType() const
-{
-    return m_data.scanMediaType;
-}
-
-bool MediaValuesCached::screenMediaType() const
-{
-    return m_data.screenMediaType;
-}
-
-bool MediaValuesCached::printMediaType() const
-{
-    return m_data.printMediaType;
-}
-
 bool MediaValuesCached::strictMode() const
 {
     return m_data.strictMode;
+}
+const String MediaValuesCached::mediaType() const
+{
+    return m_data.mediaType;
 }
 
 Document* MediaValuesCached::document() const

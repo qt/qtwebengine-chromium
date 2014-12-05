@@ -2,9 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('options');
+
+/**
+ * @typedef {{Name: string, Type: string, servicePath: string}}
+ */
+options.PreferredNetwork;
+
 cr.define('options', function() {
 
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   var ArrayDataModel = cr.ui.ArrayDataModel;
   var DeletableItem = options.DeletableItem;
   var DeletableItemList = options.DeletableItemList;
@@ -15,27 +23,23 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of ChromeOS network preferences page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function PreferredNetworks(model) {
-    OptionsPage.call(this,
-                     'preferredNetworksPage',
-                     null,
-                     'preferredNetworksPage');
+    Page.call(this, 'preferredNetworksPage', '', 'preferredNetworksPage');
   }
 
   cr.addSingletonGetter(PreferredNetworks);
 
   PreferredNetworks.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
-   /**
-     * Initializes the preferred networks page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       PreferredNetworkList.decorate($('remembered-network-list'));
       $('preferred-networks-confirm').onclick =
-          OptionsPage.closeOverlay.bind(OptionsPage);
+          PageManager.closeOverlay.bind(PageManager);
     },
 
     update: function(rememberedNetworks) {
@@ -51,11 +55,9 @@ cr.define('options', function() {
 
   /**
    * Creates a list entry for a remembered network.
-   * @param{{networkName: string,
-             networkType: string,
-             servicePath: string}} data
-   *    Description of the network.
+   * @param {options.PreferredNetwork} data Description of the network.
    * @constructor
+   * @extends {options.DeletableItem}
    */
   function PreferredNetworkListItem(data) {
     var el = cr.doc.createElement('div');
@@ -72,9 +74,7 @@ cr.define('options', function() {
 
     /**
      * Description of the network.
-     * @type {{networkName: string,
-     *         networkType: string,
-     *         servicePath: string}}
+     * @type {?options.PreferredNetwork}
      */
     data: null,
 
@@ -82,7 +82,7 @@ cr.define('options', function() {
     decorate: function() {
       DeletableItem.prototype.decorate.call(this);
       var label = this.ownerDocument.createElement('div');
-      label.textContent = this.data.networkName;
+      label.textContent = this.data.Name;
       if (this.data.policyManaged)
         this.deletable = false;
       this.contentElement.appendChild(label);
@@ -114,7 +114,10 @@ cr.define('options', function() {
       this.selectionModel.unselectAll();
     },
 
-    /** @override */
+    /**
+     * @override
+     * @param {options.PreferredNetwork} entry
+     */
     createItem: function(entry) {
       return new PreferredNetworkListItem(entry);
     },
@@ -123,11 +126,9 @@ cr.define('options', function() {
     deleteItemAtIndex: function(index) {
       var item = this.dataModel.item(index);
       if (item) {
-        // Inform the network library that we are forgetting this network.
-        chrome.send('networkCommand',
-                    [item.networkType,
-                    item.servicePath,
-                    'forget']);
+        // TODO(stevenjb): Add removeNetwork to chrome.networkingPrivate and
+        // use that here.
+        chrome.send('removeNetwork', [item.servicePath]);
       }
       this.dataModel.splice(index, 1);
       // Invalidate the list since it has a stale cache after a splice
@@ -146,10 +147,7 @@ cr.define('options', function() {
 
     /**
      * Adds a remembered network to the list.
-     * @param {{networkName: string,
-                networkType: string,
-                servicePath: string} data
-     *     Description of the network.
+     * @param {options.PreferredNetwork} data Description of the network.
      */
     append: function(data) {
       this.dataModel.push(data);

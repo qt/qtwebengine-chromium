@@ -186,13 +186,6 @@ static const struct {
    true,
    L"\x05E9\x05C1\x05B8\x05DC\x05D5\x05B9\x05DD",
    NULL},
-  // Hindi Devanagari (ISCII)
-  {"iscii-dev",
-   "\xEF\x42" "\xC6\xCC\xD7\xE8\xB3\xDA\xCF",
-   OnStringConversionError::FAIL,
-   true,
-   L"\x0928\x092E\x0938\x094D\x0915\x093E\x0930",
-   NULL},
   // Korean (EUC)
   {"euc-kr",
    "\xBE\xC8\xB3\xE7\xC7\xCF\xBC\xBC\xBF\xE4",
@@ -202,10 +195,10 @@ static const struct {
    NULL},
   // Japanese (EUC)
   {"euc-jp",
-   "\xA4\xB3\xA4\xF3\xA4\xCB\xA4\xC1\xA4\xCF\xB0\xEC\x8F\xB0\xA1\x8E\xA6",
+   "\xA4\xB3\xA4\xF3\xA4\xCB\xA4\xC1\xA4\xCF\xB0\xEC\x8E\xA6",
    OnStringConversionError::FAIL,
    true,
-   L"\x3053\x3093\x306B\x3061\x306F\x4E00\x4E02\xFF66",
+   L"\x3053\x3093\x306B\x3061\x306F\x4E00\xFF66",
    NULL},
   // Japanese (ISO-2022)
   {"iso-2022-jp",
@@ -238,17 +231,10 @@ static const struct {
    L"\x0E2A\x0E27\x0E31\x0E2A\x0E14\x0E35"
    L"\x0E04\x0E23\x0e31\x0E1A",
    NULL},
-  // Empty text
-  {"iscii-dev",
-   "",
-   OnStringConversionError::FAIL,
-   true,
-   L"",
-   NULL},
 };
 
 TEST(ICUStringConversionsTest, ConvertBetweenCodepageAndWide) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kConvertCodepageCases); ++i) {
+  for (size_t i = 0; i < arraysize(kConvertCodepageCases); ++i) {
     SCOPED_TRACE(base::StringPrintf(
                      "Test[%" PRIuS "]: <encoded: %s> <codepage: %s>", i,
                      kConvertCodepageCases[i].encoded,
@@ -315,7 +301,7 @@ TEST(ICUStringConversionsTest, ConvertBetweenCodepageAndWide) {
 }
 
 TEST(ICUStringConversionsTest, ConvertBetweenCodepageAndUTF16) {
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kConvertCodepageCases); ++i) {
+  for (size_t i = 0; i < arraysize(kConvertCodepageCases); ++i) {
     SCOPED_TRACE(base::StringPrintf(
                      "Test[%" PRIuS "]: <encoded: %s> <codepage: %s>", i,
                      kConvertCodepageCases[i].encoded,
@@ -357,7 +343,8 @@ static const struct {
   {"foo-\xe4.html", "iso-8859-1", true, "foo-\xc3\xa4.html"},
   {"foo-\xe4.html", "iso-8859-7", true, "foo-\xce\xb4.html"},
   {"foo-\xe4.html", "foo-bar", false, ""},
-  {"foo-\xff.html", "ascii", false, ""},
+  // HTML Encoding spec treats US-ASCII as synonymous with windows-1252
+  {"foo-\xff.html", "ascii", true, "foo-\xc3\xbf.html"},
   {"foo.html", "ascii", true, "foo.html"},
   {"foo-a\xcc\x88.html", "utf-8", true, "foo-\xc3\xa4.html"},
   {"\x95\x32\x82\x36\xD2\xBB", "gb18030", true, "\xF0\xA0\x80\x80\xE4\xB8\x80"},
@@ -369,7 +356,7 @@ static const struct {
 };
 TEST(ICUStringConversionsTest, ConvertToUtf8AndNormalize) {
   std::string result;
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kConvertAndNormalizeCases); ++i) {
+  for (size_t i = 0; i < arraysize(kConvertAndNormalizeCases); ++i) {
     SCOPED_TRACE(base::StringPrintf(
                      "Test[%" PRIuS "]: <encoded: %s> <codepage: %s>", i,
                      kConvertAndNormalizeCases[i].encoded,

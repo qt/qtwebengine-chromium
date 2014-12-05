@@ -33,13 +33,29 @@
 
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Element.h"
+#include "core/inspector/InspectorTraceEvents.h"
+#include "platform/TracedValue.h"
+#include "wtf/Compiler.h"
+#include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
+
+static const unsigned char* s_tracingEnabled = nullptr;
+
+#define TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(element, reason, singleSelectorPart) \
+    if (UNLIKELY(*s_tracingEnabled)) \
+        TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART(element, reason, singleSelectorPart);
+
+void DescendantInvalidationSet::cacheTracingFlag()
+{
+    s_tracingEnabled = TRACE_EVENT_API_GET_CATEGORY_ENABLED(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking"));
+}
 
 DescendantInvalidationSet::DescendantInvalidationSet()
     : m_allDescendantsMightBeInvalid(false)
     , m_customPseudoInvalid(false)
     , m_treeBoundaryCrossing(false)
+    , m_insertionPointCrossing(false)
 {
 }
 
@@ -48,24 +64,32 @@ bool DescendantInvalidationSet::invalidatesElement(Element& element) const
     if (m_allDescendantsMightBeInvalid)
         return true;
 
-    if (m_tagNames && m_tagNames->contains(element.tagQName().localName()))
+    if (m_tagNames && m_tagNames->contains(element.tagQName().localName())) {
+        TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(element, InvalidationSetMatchedTagName, element.tagQName().localName());
         return true;
+    }
 
-    if (element.hasID() && m_ids && m_ids->contains(element.idForStyleResolution()))
+    if (element.hasID() && m_ids && m_ids->contains(element.idForStyleResolution())) {
+        TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(element, InvalidationSetMatchedId, element.idForStyleResolution());
         return true;
+    }
 
     if (element.hasClass() && m_classes) {
         const SpaceSplitString& classNames = element.classNames();
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = m_classes->begin(); it != m_classes->end(); ++it) {
-            if (classNames.contains(*it))
+        for (const auto& className : *m_classes) {
+            if (classNames.contains(className)) {
+                TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(element, InvalidationSetMatchedClass, className);
                 return true;
+            }
         }
     }
 
     if (element.hasAttributes() && m_attributes) {
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = m_attributes->begin(); it != m_attributes->end(); ++it) {
-            if (element.hasAttribute(*it))
+        for (const auto& attribute : *m_attributes) {
+            if (element.hasAttribute(attribute)) {
+                TRACE_STYLE_INVALIDATOR_INVALIDATION_SELECTORPART_IF_ENABLED(element, InvalidationSetMatchedAttribute, attribute);
                 return true;
+            }
         }
     }
 
@@ -89,28 +113,27 @@ void DescendantInvalidationSet::combine(const DescendantInvalidationSet& other)
     if (other.treeBoundaryCrossing())
         setTreeBoundaryCrossing();
 
+    if (other.insertionPointCrossing())
+        setInsertionPointCrossing();
+
     if (other.m_classes) {
-        WillBeHeapHashSet<AtomicString>::const_iterator end = other.m_classes->end();
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = other.m_classes->begin(); it != end; ++it)
-            addClass(*it);
+        for (const auto& className : *other.m_classes)
+            addClass(className);
     }
 
     if (other.m_ids) {
-        WillBeHeapHashSet<AtomicString>::const_iterator end = other.m_ids->end();
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = other.m_ids->begin(); it != end; ++it)
-            addId(*it);
+        for (const auto& id : *other.m_ids)
+            addId(id);
     }
 
     if (other.m_tagNames) {
-        WillBeHeapHashSet<AtomicString>::const_iterator end = other.m_tagNames->end();
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = other.m_tagNames->begin(); it != end; ++it)
-            addTagName(*it);
+        for (const auto& tagName : *other.m_tagNames)
+            addTagName(tagName);
     }
 
     if (other.m_attributes) {
-        WillBeHeapHashSet<AtomicString>::const_iterator end = other.m_attributes->end();
-        for (WillBeHeapHashSet<AtomicString>::const_iterator it = other.m_attributes->begin(); it != end; ++it)
-            addAttribute(*it);
+        for (const auto& attribute : *other.m_attributes)
+            addAttribute(attribute);
     }
 }
 
@@ -177,6 +200,7 @@ void DescendantInvalidationSet::setWholeSubtreeInvalid()
 
     m_allDescendantsMightBeInvalid = true;
     m_treeBoundaryCrossing = false;
+    m_insertionPointCrossing = false;
     m_classes = nullptr;
     m_ids = nullptr;
     m_tagNames = nullptr;
@@ -193,4 +217,61 @@ void DescendantInvalidationSet::trace(Visitor* visitor)
 #endif
 }
 
-} // namespace WebCore
+void DescendantInvalidationSet::toTracedValue(TracedValue* value) const
+{
+    value->beginDictionary();
+
+    value->setString("id", descendantInvalidationSetToIdString(*this));
+
+    if (m_allDescendantsMightBeInvalid)
+        value->setBoolean("allDescendantsMightBeInvalid", true);
+    if (m_customPseudoInvalid)
+        value->setBoolean("customPseudoInvalid", true);
+    if (m_treeBoundaryCrossing)
+        value->setBoolean("treeBoundaryCrossing", true);
+    if (m_insertionPointCrossing)
+        value->setBoolean("insertionPointCrossing", true);
+
+    if (m_ids) {
+        value->beginArray("ids");
+        for (const auto& id : *m_ids)
+            value->pushString(id);
+        value->endArray();
+    }
+
+    if (m_classes) {
+        value->beginArray("classes");
+        for (const auto& className : *m_classes)
+            value->pushString(className);
+        value->endArray();
+    }
+
+    if (m_tagNames) {
+        value->beginArray("tagNames");
+        for (const auto& tagName : *m_tagNames)
+            value->pushString(tagName);
+        value->endArray();
+    }
+
+    if (m_attributes) {
+        value->beginArray("attributes");
+        for (const auto& attribute : *m_attributes)
+            value->pushString(attribute);
+        value->endArray();
+    }
+
+    value->endDictionary();
+}
+
+#ifndef NDEBUG
+void DescendantInvalidationSet::show() const
+{
+    RefPtr<TracedValue> value = TracedValue::create();
+    value->beginArray("DescendantInvalidationSet");
+    toTracedValue(value.get());
+    value->endArray();
+    fprintf(stderr, "%s\n", value->asTraceFormat().ascii().data());
+}
+#endif // NDEBUG
+
+} // namespace blink

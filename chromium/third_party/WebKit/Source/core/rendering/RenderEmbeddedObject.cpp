@@ -42,7 +42,7 @@
 #include "platform/text/PlatformLocale.h"
 #include "platform/text/TextRun.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -80,9 +80,9 @@ static String unavailablePluginReplacementText(Node* node, RenderEmbeddedObject:
     Locale& locale = node ? toElement(node)->locale() : Locale::defaultLocale();
     switch (pluginUnavailabilityReason) {
     case RenderEmbeddedObject::PluginMissing:
-        return locale.queryString(blink::WebLocalizedString::MissingPluginText);
+        return locale.queryString(WebLocalizedString::MissingPluginText);
     case RenderEmbeddedObject::PluginBlockedByContentSecurityPolicy:
-        return locale.queryString(blink::WebLocalizedString::BlockedPluginText);
+        return locale.queryString(WebLocalizedString::BlockedPluginText);
     }
 
     ASSERT_NOT_REACHED();
@@ -130,10 +130,6 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     if (paintInfo.phase == PaintPhaseSelection)
         return;
 
-    GraphicsContext* context = paintInfo.context;
-    if (context->paintingDisabled())
-        return;
-
     FloatRect contentRect;
     Path path;
     FloatRect replacementTextRect;
@@ -143,6 +139,7 @@ void RenderEmbeddedObject::paintReplaced(PaintInfo& paintInfo, const LayoutPoint
     if (!getReplacementTextGeometry(paintOffset, contentRect, path, replacementTextRect, font, run, textWidth))
         return;
 
+    GraphicsContext* context = paintInfo.context;
     GraphicsContextStateSaver stateSaver(*context);
     context->clip(contentRect);
     context->setAlphaAsFloat(replacementTextRoundedRectOpacity);
@@ -201,7 +198,7 @@ void RenderEmbeddedObject::layout()
     updateLayerTransformAfterLayout();
 
     if (!widget() && frameView())
-        frameView()->addWidgetToUpdate(*this);
+        frameView()->addPartToUpdate(*this);
 
     clearNeedsLayout();
 }
@@ -211,7 +208,7 @@ bool RenderEmbeddedObject::scroll(ScrollDirection direction, ScrollGranularity g
     return false;
 }
 
-CompositingReasons RenderEmbeddedObject::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+CompositingReasons RenderEmbeddedObject::additionalCompositingReasons() const
 {
     if (requiresAcceleratedCompositing())
         return CompositingReasonPlugin;
@@ -225,4 +222,4 @@ RenderBox* RenderEmbeddedObject::embeddedContentBox() const
     return toFrameView(widget())->embeddedContentBox();
 }
 
-}
+} // namespace blink

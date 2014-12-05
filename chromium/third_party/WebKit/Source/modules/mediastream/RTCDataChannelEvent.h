@@ -29,28 +29,29 @@
 #include "modules/mediastream/RTCDataChannel.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
-class RTCDataChannelEvent FINAL : public Event {
+class RTCDataChannelEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~RTCDataChannelEvent();
 
     static PassRefPtrWillBeRawPtr<RTCDataChannelEvent> create();
-    static PassRefPtrWillBeRawPtr<RTCDataChannelEvent> create(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel>);
+    static PassRefPtrWillBeRawPtr<RTCDataChannelEvent> create(const AtomicString& type, bool canBubble, bool cancelable, RTCDataChannel*);
 
     RTCDataChannel* channel() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RTCDataChannelEvent();
-    RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCDataChannel>);
+    RTCDataChannelEvent(const AtomicString& type, bool canBubble, bool cancelable, RTCDataChannel*);
 
-    RefPtrWillBeMember<RTCDataChannel> m_channel;
+    PersistentWillBeMember<RTCDataChannel> m_channel;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCDataChannelEvent_h

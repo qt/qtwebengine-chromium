@@ -45,6 +45,9 @@ cr.define('login', function() {
           this.handleSignoutClick_);
       $('cancel-multiple-sign-in-button').addEventListener('click',
           this.handleCancelMultipleSignInClick_);
+      $('cancel-consumer-management-enrollment-button').addEventListener(
+          'click',
+          this.handleCancelConsumerManagementEnrollmentClick_);
       if (Oobe.getInstance().displayType == DISPLAY_TYPE.LOGIN ||
           Oobe.getInstance().displayType == DISPLAY_TYPE.OOBE) {
         if (Oobe.getInstance().newKioskUI)
@@ -154,6 +157,16 @@ cr.define('login', function() {
     },
 
     /**
+     * Cancel consumer management enrollment button handler.
+     *
+     * @private
+     */
+    handleCancelConsumerManagementEnrollmentClick_: function(e) {
+      chrome.send('cancelConsumerManagementEnrollment');
+      e.stopPropagation();
+    },
+
+    /**
      * If true then "Browse as Guest" button is shown.
      *
      * @type {boolean}
@@ -206,12 +219,15 @@ cr.define('login', function() {
       var gaiaIsActive = (this.signinUIState_ == SIGNIN_UI_STATE.GAIA_SIGNIN);
       var accountPickerIsActive =
           (this.signinUIState_ == SIGNIN_UI_STATE.ACCOUNT_PICKER);
-      var managedUserCreationDialogIsActive =
-          (this.signinUIState_ == SIGNIN_UI_STATE.MANAGED_USER_CREATION_FLOW);
+      var supervisedUserCreationDialogIsActive =
+          (this.signinUIState_ ==
+               SIGNIN_UI_STATE.SUPERVISED_USER_CREATION_FLOW);
       var wrongHWIDWarningIsActive =
           (this.signinUIState_ == SIGNIN_UI_STATE.WRONG_HWID_WARNING);
       var isSamlPasswordConfirm =
           (this.signinUIState_ == SIGNIN_UI_STATE.SAML_PASSWORD_CONFIRM);
+      var isEnrollingConsumerManagement = (this.signinUIState_ ==
+          SIGNIN_UI_STATE.CONSUMER_MANAGEMENT_ENROLLMENT);
       var isMultiProfilesUI =
           (Oobe.getInstance().displayType == DISPLAY_TYPE.USER_ADDING);
       var isLockScreen =
@@ -224,7 +240,7 @@ cr.define('login', function() {
           wrongHWIDWarningIsActive ||
           isMultiProfilesUI;
       $('guest-user-header-bar-item').hidden = gaiaIsActive ||
-          managedUserCreationDialogIsActive ||
+          supervisedUserCreationDialogIsActive ||
           !this.showGuest_ ||
           wrongHWIDWarningIsActive ||
           isSamlPasswordConfirm ||
@@ -236,6 +252,8 @@ cr.define('login', function() {
       $('apps-header-bar-item').hidden = !this.hasApps_ ||
           (!gaiaIsActive && !accountPickerIsActive);
       $('cancel-multiple-sign-in-item').hidden = !isMultiProfilesUI;
+      $('cancel-consumer-management-enrollment').hidden =
+          !isEnrollingConsumerManagement;
 
       if (!Oobe.getInstance().newKioskUI) {
         if (!$('apps-header-bar-item').hidden)
@@ -304,7 +322,7 @@ cr.define('login', function() {
    */
   HeaderBar.animateIn = function(callback) {
     $('login-header-bar').animateIn(callback);
-  }
+  };
 
   return {
     HeaderBar: HeaderBar

@@ -52,14 +52,13 @@
 
 // FIXME: There are repainting problems due to Aqua scroll bar buttons' visual overflow.
 
-using namespace std;
-using namespace WebCore;
+using namespace blink;
 
 @interface NSColor (WebNSColorDetails)
 + (NSImage *)_linenPatternImage;
 @end
 
-namespace WebCore {
+namespace blink {
 
 typedef HashSet<ScrollbarThemeClient*> ScrollbarSet;
 
@@ -140,7 +139,7 @@ void ScrollbarThemeMacCommon::paintOverhangBackground(GraphicsContext* context, 
     if (!m_overhangPattern) {
         // Lazily load the linen pattern image used for overhang drawing.
         RefPtr<Image> patternImage = Image::loadPlatformResource("overhangPattern");
-        m_overhangPattern = Pattern::create(patternImage, true, true);
+        m_overhangPattern = Pattern::createBitmapPattern(patternImage);
     }
     context->setFillPattern(m_overhangPattern);
     if (hasHorizontalOverhang)
@@ -361,4 +360,4 @@ bool ScrollbarThemeMacCommon::isOverlayAPIAvailable()
     return apiAvailable;
 }
 
-} // namespace WebCore
+} // namespace blink

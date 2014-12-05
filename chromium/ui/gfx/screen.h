@@ -50,9 +50,6 @@ class GFX_EXPORT Screen {
   Screen();
   virtual ~Screen();
 
-  // Returns true if DIP is enabled.
-  virtual bool IsDIPEnabled() = 0;
-
   // Returns the current absolute position of the mouse pointer.
   virtual gfx::Point GetCursorScreenPoint() = 0;
 
@@ -71,6 +68,8 @@ class GFX_EXPORT Screen {
   virtual std::vector<gfx::Display> GetAllDisplays() const = 0;
 
   // Returns the display nearest the specified window.
+  // If the window is NULL or the window is not rooted to a display this will
+  // return the primary display.
   virtual gfx::Display GetDisplayNearestWindow(NativeView view) const = 0;
 
   // Returns the display nearest the specified point.

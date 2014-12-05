@@ -1,3 +1,4 @@
+# Do NOT add net/ or ui/base without a great reason, they're huge!
 include_rules = [
   "+gpu",
   "+jni",
@@ -6,9 +7,9 @@ include_rules = [
   "+third_party/libyuv",
   "+third_party/opus",
   "+third_party/skia",
-  "+ui/base",
   "+ui/events",
   "+ui/gfx",
   "+ui/gl",
   "+ui/ozone",
+  "-media/blink",
 ]

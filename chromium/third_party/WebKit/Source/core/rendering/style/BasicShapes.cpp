@@ -36,21 +36,7 @@
 #include "platform/geometry/FloatRect.h"
 #include "platform/graphics/Path.h"
 
-namespace WebCore {
-
-void BasicShapeCenterCoordinate::updateComputedLength()
-{
-    if (m_direction == TopLeft) {
-        m_computedLength = m_length.isUndefined() ? Length(0, Fixed) : m_length;
-        return;
-    }
-    if (m_length.isUndefined()) {
-        m_computedLength = Length(100, Percent);
-        return;
-    }
-
-    m_computedLength = m_length.subtractFromOneHundredPercent();
-}
+namespace blink {
 
 bool BasicShape::canBlend(const BasicShape* other) const
 {
@@ -60,15 +46,13 @@ bool BasicShape::canBlend(const BasicShape* other) const
 
     // Just polygons with same number of vertices can be animated.
     if (type() == BasicShape::BasicShapePolygonType
-        && (static_cast<const BasicShapePolygon*>(this)->values().size() != static_cast<const BasicShapePolygon*>(other)->values().size()
-        || static_cast<const BasicShapePolygon*>(this)->windRule() != static_cast<const BasicShapePolygon*>(other)->windRule()))
+        && (toBasicShapePolygon(this)->values().size() != toBasicShapePolygon(other)->values().size()
+        || toBasicShapePolygon(this)->windRule() != toBasicShapePolygon(other)->windRule()))
         return false;
 
     // Circles with keywords for radii or center coordinates cannot be animated.
     if (type() == BasicShape::BasicShapeCircleType) {
-        const BasicShapeCircle* thisCircle = static_cast<const BasicShapeCircle*>(this);
-        const BasicShapeCircle* otherCircle = static_cast<const BasicShapeCircle*>(other);
-        if (!thisCircle->radius().canBlend(otherCircle->radius()))
+        if (!toBasicShapeCircle(this)->radius().canBlend(toBasicShapeCircle(other)->radius()))
             return false;
     }
 
@@ -76,10 +60,8 @@ bool BasicShape::canBlend(const BasicShape* other) const
     if (type() != BasicShape::BasicShapeEllipseType)
         return true;
 
-    const BasicShapeEllipse* thisEllipse = static_cast<const BasicShapeEllipse*>(this);
-    const BasicShapeEllipse* otherEllipse = static_cast<const BasicShapeEllipse*>(other);
-    return (thisEllipse->radiusX().canBlend(otherEllipse->radiusX())
-        && thisEllipse->radiusY().canBlend(otherEllipse->radiusY()));
+    return (toBasicShapeEllipse(this)->radiusX().canBlend(toBasicShapeEllipse(other)->radiusX())
+        && toBasicShapeEllipse(this)->radiusY().canBlend(toBasicShapeEllipse(other)->radiusY()));
 }
 
 bool BasicShapeCircle::operator==(const BasicShape& o) const
@@ -120,7 +102,7 @@ void BasicShapeCircle::path(Path& path, const FloatRect& boundingBox)
 PassRefPtr<BasicShape> BasicShapeCircle::blend(const BasicShape* other, double progress) const
 {
     ASSERT(type() == other->type());
-    const BasicShapeCircle* o = static_cast<const BasicShapeCircle*>(other);
+    const BasicShapeCircle* o = toBasicShapeCircle(other);
     RefPtr<BasicShapeCircle> result =  BasicShapeCircle::create();
 
     result->setCenterX(m_centerX.blend(o->centerX(), progress));
@@ -166,7 +148,7 @@ void BasicShapeEllipse::path(Path& path, const FloatRect& boundingBox)
 PassRefPtr<BasicShape> BasicShapeEllipse::blend(const BasicShape* other, double progress) const
 {
     ASSERT(type() == other->type());
-    const BasicShapeEllipse* o = static_cast<const BasicShapeEllipse*>(other);
+    const BasicShapeEllipse* o = toBasicShapeEllipse(other);
     RefPtr<BasicShapeEllipse> result =  BasicShapeEllipse::create();
 
     if (m_radiusX.type() != BasicShapeRadius::Value || o->radiusX().type() != BasicShapeRadius::Value
@@ -207,7 +189,7 @@ PassRefPtr<BasicShape> BasicShapePolygon::blend(const BasicShape* other, double 
 {
     ASSERT(other && isSameType(*other));
 
-    const BasicShapePolygon* o = static_cast<const BasicShapePolygon*>(other);
+    const BasicShapePolygon* o = toBasicShapePolygon(other);
     ASSERT(m_values.size() == o->values().size());
     ASSERT(!(m_values.size() % 2));
 

@@ -4,6 +4,8 @@
 
 #include "net/url_request/url_fetcher_core.h"
 
+#include <stdint.h>
+
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
@@ -12,6 +14,7 @@
 #include "base/stl_util.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/tracked_objects.h"
+#include "net/base/elements_upload_data_stream.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
@@ -20,6 +23,7 @@
 #include "net/base/upload_data_stream.h"
 #include "net/base/upload_file_element_reader.h"
 #include "net/http/http_response_headers.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_response_writer.h"
 #include "net/url_request/url_request_context.h"
@@ -371,13 +375,13 @@ bool URLFetcherCore::GetResponseAsFilePath(bool take_ownership,
 }
 
 void URLFetcherCore::OnReceivedRedirect(URLRequest* request,
-                                        const GURL& new_url,
+                                        const RedirectInfo& redirect_info,
                                         bool* defer_redirect) {
   DCHECK_EQ(request, request_.get());
   DCHECK(network_task_runner_->BelongsToCurrentThread());
   if (stop_on_redirect_) {
     stopped_on_redirect_ = true;
-    url_ = new_url;
+    url_ = redirect_info.new_url;
     response_code_ = request_->GetResponseCode();
     was_fetched_via_proxy_ = request_->was_fetched_via_proxy();
     request->Cancel();
@@ -475,7 +479,7 @@ void URLFetcherCore::SetIgnoreCertificateRequests(bool ignored) {
 }
 
 URLFetcherCore::~URLFetcherCore() {
-  // |request_| should be NULL.  If not, it's unsafe to delete it here since we
+  // |request_| should be NULL. If not, it's unsafe to delete it here since we
   // may not be on the IO thread.
   DCHECK(!request_.get());
 }
@@ -545,8 +549,8 @@ void URLFetcherCore::StartURLRequest() {
       if (!upload_content_.empty()) {
         scoped_ptr<UploadElementReader> reader(new UploadBytesElementReader(
             upload_content_.data(), upload_content_.size()));
-        request_->set_upload(make_scoped_ptr(
-            UploadDataStream::CreateWithReader(reader.Pass(), 0)));
+        request_->set_upload(
+            ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0));
       } else if (!upload_file_path_.empty()) {
         scoped_ptr<UploadElementReader> reader(
             new UploadFileElementReader(upload_file_task_runner_.get(),
@@ -554,8 +558,8 @@ void URLFetcherCore::StartURLRequest() {
                                         upload_range_offset_,
                                         upload_range_length_,
                                         base::Time()));
-        request_->set_upload(make_scoped_ptr(
-            UploadDataStream::CreateWithReader(reader.Pass(), 0)));
+        request_->set_upload(
+            ElementsUploadDataStream::CreateWithReader(reader.Pass(), 0));
       }
 
       current_upload_bytes_ = -1;
@@ -607,8 +611,8 @@ void URLFetcherCore::StartURLRequestWhenAppropriate() {
 
   DCHECK(request_context_getter_.get());
 
-  int64 delay = 0LL;
-  if (original_url_throttler_entry_.get() == NULL) {
+  int64 delay = INT64_C(0);
+  if (!original_url_throttler_entry_.get()) {
     URLRequestThrottlerManager* manager =
         request_context_getter_->GetURLRequestContext()->throttler_manager();
     if (manager) {
@@ -616,12 +620,12 @@ void URLFetcherCore::StartURLRequestWhenAppropriate() {
           manager->RegisterRequestUrl(original_url_);
     }
   }
-  if (original_url_throttler_entry_.get() != NULL) {
+  if (original_url_throttler_entry_.get()) {
     delay = original_url_throttler_entry_->ReserveSendingTimeForNextRequest(
         GetBackoffReleaseTime());
   }
 
-  if (delay == 0) {
+  if (delay == INT64_C(0)) {
     StartURLRequest();
   } else {
     base::ThreadTaskRunnerHandle::Get()->PostDelayedTask(
@@ -677,7 +681,7 @@ void URLFetcherCore::InformDelegateFetchIsComplete() {
 
 void URLFetcherCore::NotifyMalformedContent() {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
-  if (url_throttler_entry_.get() != NULL) {
+  if (url_throttler_entry_.get()) {
     int status_code = response_code_;
     if (status_code == URLFetcher::RESPONSE_CODE_INVALID) {
       // The status code will generally be known by the time clients
@@ -767,21 +771,20 @@ void URLFetcherCore::ReleaseRequest() {
 base::TimeTicks URLFetcherCore::GetBackoffReleaseTime() {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
 
-  if (original_url_throttler_entry_.get()) {
-    base::TimeTicks original_url_backoff =
-        original_url_throttler_entry_->GetExponentialBackoffReleaseTime();
-    base::TimeTicks destination_url_backoff;
-    if (url_throttler_entry_.get() != NULL &&
-        original_url_throttler_entry_.get() != url_throttler_entry_.get()) {
-      destination_url_backoff =
-          url_throttler_entry_->GetExponentialBackoffReleaseTime();
-    }
-
-    return original_url_backoff > destination_url_backoff ?
-        original_url_backoff : destination_url_backoff;
-  } else {
+  if (!original_url_throttler_entry_.get())
     return base::TimeTicks();
+
+  base::TimeTicks original_url_backoff =
+      original_url_throttler_entry_->GetExponentialBackoffReleaseTime();
+  base::TimeTicks destination_url_backoff;
+  if (url_throttler_entry_.get() &&
+      original_url_throttler_entry_.get() != url_throttler_entry_.get()) {
+    destination_url_backoff =
+        url_throttler_entry_->GetExponentialBackoffReleaseTime();
   }
+
+  return original_url_backoff > destination_url_backoff ?
+      original_url_backoff : destination_url_backoff;
 }
 
 void URLFetcherCore::CompleteAddingUploadDataChunk(
@@ -839,14 +842,16 @@ void URLFetcherCore::DidWriteBuffer(scoped_refptr<DrainableIOBuffer> data,
 }
 
 void URLFetcherCore::ReadResponse() {
-  // Some servers may treat HEAD requests as GET requests.  To free up the
+  // Some servers may treat HEAD requests as GET requests. To free up the
   // network connection as soon as possible, signal that the request has
   // completed immediately, without trying to read any data back (all we care
   // about is the response code and headers, which we already have).
   int bytes_read = 0;
   if (request_->status().is_success() &&
-      (request_type_ != URLFetcher::HEAD))
-    request_->Read(buffer_.get(), kBufferSize, &bytes_read);
+      (request_type_ != URLFetcher::HEAD)) {
+    if (!request_->Read(buffer_.get(), kBufferSize, &bytes_read))
+      bytes_read = -1;  // Match OnReadCompleted() interface contract.
+  }
   OnReadCompleted(request_.get(), bytes_read);
 }
 
@@ -860,7 +865,7 @@ void URLFetcherCore::InformDelegateUploadProgress() {
       if (!is_chunked_upload_) {
         total = static_cast<int64>(request_->GetUploadProgress().size());
         // Total may be zero if the UploadDataStream::Init has not been called
-        // yet.  Don't send the upload progress until the size is initialized.
+        // yet. Don't send the upload progress until the size is initialized.
         if (!total)
           return;
       }

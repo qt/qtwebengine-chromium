@@ -9,11 +9,16 @@
 #include "content/child/child_shared_bitmap_manager.h"
 #include "content/renderer/render_process.h"
 #include "content/renderer/render_thread_impl.h"
-#include "third_party/skia/include/core/SkBitmapDevice.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPixelRef.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "ui/gfx/skia_util.h"
+
+namespace {
+
+const size_t kInvalidIndex = static_cast<size_t>(-1);
+
+}  // namespace
 
 namespace content {
 
@@ -56,7 +61,7 @@ bool CompositorSoftwareOutputDevice::Buffer::FindDamageDifferenceFrom(
 }
 
 CompositorSoftwareOutputDevice::CompositorSoftwareOutputDevice()
-    : current_index_(-1),
+    : current_index_(kInvalidIndex),
       next_buffer_id_(1),
       shared_bitmap_manager_(
           RenderThreadImpl::current()->shared_bitmap_manager()) {
@@ -113,7 +118,7 @@ void CompositorSoftwareOutputDevice::Resize(
   }
 
   buffers_.clear();
-  current_index_ = -1;
+  current_index_ = kInvalidIndex;
   viewport_pixel_size_ = viewport_pixel_size;
 }
 
@@ -126,7 +131,7 @@ void CompositorSoftwareOutputDevice::DiscardBackbuffer() {
     }
   }
   buffers_.clear();
-  current_index_ = -1;
+  current_index_ = kInvalidIndex;
 }
 
 void CompositorSoftwareOutputDevice::EnsureBackbuffer() {
@@ -137,7 +142,7 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(
   DCHECK(CalledOnValidThread());
 
   Buffer* previous = NULL;
-  if (current_index_ != size_t(-1))
+  if (current_index_ != kInvalidIndex)
     previous = buffers_[current_index_];
   current_index_ = FindFreeBuffer(current_index_ + 1);
   Buffer* current = buffers_[current_index_];
@@ -166,11 +171,10 @@ SkCanvas* CompositorSoftwareOutputDevice::BeginPaint(
 
     // Copy over the damage region.
     if (!region.isEmpty()) {
+      SkImageInfo info = SkImageInfo::MakeN32Premul(
+          viewport_pixel_size_.width(), viewport_pixel_size_.height());
       SkBitmap back_bitmap;
-      back_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                            viewport_pixel_size_.width(),
-                            viewport_pixel_size_.height());
-      back_bitmap.setPixels(previous->memory());
+      back_bitmap.installPixels(info, previous->memory(), info.minRowBytes());
 
       for (SkRegion::Iterator it(region); !it.done(); it.next()) {
         const SkIRect& src_rect = it.rect();

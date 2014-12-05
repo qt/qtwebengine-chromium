@@ -27,9 +27,8 @@
 #include "core/XLinkNames.h"
 #include "core/rendering/RenderImageResource.h"
 #include "core/rendering/svg/RenderSVGImage.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGImageElement::SVGImageElement(Document& document)
     : SVGGraphicsElement(SVGNames::imageTag, document)
@@ -42,8 +41,6 @@ inline SVGImageElement::SVGImageElement(Document& document)
     , m_imageLoader(SVGImageLoader::create(this))
     , m_needsLoaderURIUpdate(true)
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_x);
     addToPropertyMap(m_y);
     addToPropertyMap(m_width);
@@ -104,26 +101,7 @@ void SVGImageElement::collectStyleForPresentationAttribute(const QualifiedName& 
 
 void SVGImageElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name)) {
-        SVGGraphicsElement::parseAttribute(name, value);
-    } else if (name == SVGNames::xAttr) {
-        m_x->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::yAttr) {
-        m_y->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::widthAttr) {
-        m_width->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::heightAttr) {
-        m_height->setBaseValueAsString(value, parseError);
-    } else if (name == SVGNames::preserveAspectRatioAttr) {
-        m_preserveAspectRatio->setBaseValueAsString(value, parseError);
-    } else if (SVGURIReference::parseAttribute(name, value, parseError)) {
-    } else {
-        ASSERT_NOT_REACHED();
-    }
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -145,7 +123,7 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (SVGURIReference::isKnownAttribute(attrName)) {
         if (inDocument())
-            imageLoader().updateFromElementIgnoringPreviousError();
+            imageLoader().updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         else
             m_needsLoaderURIUpdate = true;
         return;
@@ -157,12 +135,12 @@ void SVGImageElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (isLengthAttribute) {
         if (toRenderSVGImage(renderer)->updateImageViewport())
-            RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+            markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
     if (attrName == SVGNames::preserveAspectRatioAttr) {
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
@@ -208,7 +186,7 @@ Node::InsertionNotificationRequest SVGImageElement::insertedInto(ContainerNode* 
     // We can only resolve base URIs properly after tree insertion - hence, URI mutations while
     // detached are deferred until this point.
     if (m_needsLoaderURIUpdate) {
-        imageLoader().updateFromElementIgnoringPreviousError();
+        imageLoader().updateFromElement(ImageLoader::UpdateIgnorePreviousError);
         m_needsLoaderURIUpdate = false;
     } else {
         // A previous loader update may have failed to actually fetch the image if the document
@@ -231,4 +209,4 @@ void SVGImageElement::didMoveToNewDocument(Document& oldDocument)
     SVGGraphicsElement::didMoveToNewDocument(oldDocument);
 }
 
-}
+} // namespace blink

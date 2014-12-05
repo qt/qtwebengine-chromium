@@ -34,24 +34,16 @@
 
 #include "core/svg/SVGAnimationElement.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGInteger::SVGInteger(int value)
-    : SVGPropertyBase(classType())
-    , m_value(value)
+    : m_value(value)
 {
 }
 
 PassRefPtr<SVGInteger> SVGInteger::clone() const
 {
     return create(m_value);
-}
-
-PassRefPtr<SVGPropertyBase> SVGInteger::cloneForAnimation(const String& value) const
-{
-    RefPtr<SVGInteger> svgInteger = create();
-    svgInteger->setValueAsString(value, IGNORE_EXCEPTION);
-    return svgInteger.release();
 }
 
 String SVGInteger::valueAsString() const

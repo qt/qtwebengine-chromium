@@ -20,7 +20,7 @@ scoped_ptr<CastReceiver> CastReceiver::Create(
     scoped_refptr<CastEnvironment> cast_environment,
     const FrameReceiverConfig& audio_config,
     const FrameReceiverConfig& video_config,
-    transport::PacketSender* const packet_sender) {
+    PacketSender* const packet_sender) {
   return scoped_ptr<CastReceiver>(new CastReceiverImpl(
       cast_environment, audio_config, video_config, packet_sender));
 }
@@ -29,9 +29,11 @@ CastReceiverImpl::CastReceiverImpl(
     scoped_refptr<CastEnvironment> cast_environment,
     const FrameReceiverConfig& audio_config,
     const FrameReceiverConfig& video_config,
-    transport::PacketSender* const packet_sender)
+    PacketSender* const packet_sender)
     : cast_environment_(cast_environment),
-      pacer_(cast_environment->Clock(),
+      pacer_(kTargetBurstSize,
+             kMaxBurstSize,
+             cast_environment->Clock(),
              cast_environment->Logging(),
              packet_sender,
              cast_environment->GetTaskRunner(CastEnvironment::MAIN)),
@@ -41,8 +43,8 @@ CastReceiverImpl::CastReceiverImpl(
       ssrc_of_video_sender_(video_config.incoming_ssrc),
       num_audio_channels_(audio_config.channels),
       audio_sampling_rate_(audio_config.frequency),
-      audio_codec_(audio_config.codec.audio),
-      video_codec_(video_config.codec.video) {}
+      audio_codec_(audio_config.codec),
+      video_codec_(video_config.codec) {}
 
 CastReceiverImpl::~CastReceiverImpl() {}
 
@@ -76,7 +78,7 @@ void CastReceiverImpl::DispatchReceivedPacket(scoped_ptr<Packet> packet) {
                  base::Passed(&packet)));
 }
 
-transport::PacketReceiverCallback CastReceiverImpl::packet_receiver() {
+PacketReceiverCallback CastReceiverImpl::packet_receiver() {
   return base::Bind(&CastReceiverImpl::DispatchReceivedPacket,
                     // TODO(miu): This code structure is dangerous, since the
                     // callback could be stored and then invoked after
@@ -122,7 +124,7 @@ void CastReceiverImpl::RequestEncodedVideoFrame(
 
 void CastReceiverImpl::DecodeEncodedAudioFrame(
     const AudioFrameDecodedCallback& callback,
-    scoped_ptr<transport::EncodedFrame> encoded_frame) {
+    scoped_ptr<EncodedFrame> encoded_frame) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   if (!encoded_frame) {
     callback.Run(make_scoped_ptr<AudioBus>(NULL), base::TimeTicks(), false);
@@ -150,7 +152,7 @@ void CastReceiverImpl::DecodeEncodedAudioFrame(
 
 void CastReceiverImpl::DecodeEncodedVideoFrame(
     const VideoFrameDecodedCallback& callback,
-    scoped_ptr<transport::EncodedFrame> encoded_frame) {
+    scoped_ptr<EncodedFrame> encoded_frame) {
   DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
   if (!encoded_frame) {
     callback.Run(
@@ -211,7 +213,7 @@ void CastReceiverImpl::EmitDecodedVideoFrame(
     const scoped_refptr<VideoFrame>& video_frame,
     bool is_continuous) {
   DCHECK(cast_environment->CurrentlyOn(CastEnvironment::MAIN));
-  if (video_frame) {
+  if (video_frame.get()) {
     const base::TimeTicks now = cast_environment->Clock()->NowTicks();
     cast_environment->Logging()->InsertFrameEvent(
         now, FRAME_DECODED, VIDEO_EVENT, rtp_timestamp, frame_id);

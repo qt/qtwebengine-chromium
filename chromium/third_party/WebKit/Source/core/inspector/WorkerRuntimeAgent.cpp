@@ -32,15 +32,14 @@
 
 #include "core/inspector/WorkerRuntimeAgent.h"
 
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/inspector/WorkerDebuggerAgent.h"
 #include "core/workers/WorkerGlobalScope.h"
-#include "core/workers/WorkerRunLoop.h"
 #include "core/workers/WorkerThread.h"
 
-namespace WebCore {
+namespace blink {
 
 WorkerRuntimeAgent::WorkerRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* workerGlobalScope)
     : InspectorRuntimeAgent(injectedScriptManager, scriptDebugServer)
@@ -51,7 +50,15 @@ WorkerRuntimeAgent::WorkerRuntimeAgent(InjectedScriptManager* injectedScriptMana
 
 WorkerRuntimeAgent::~WorkerRuntimeAgent()
 {
+#if !ENABLE(OILPAN)
     m_instrumentingAgents->setWorkerRuntimeAgent(0);
+#endif
+}
+
+void WorkerRuntimeAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_workerGlobalScope);
+    InspectorRuntimeAgent::trace(visitor);
 }
 
 void WorkerRuntimeAgent::init()
@@ -106,10 +113,12 @@ void WorkerRuntimeAgent::willEvaluateWorkerScript(WorkerGlobalScope* context, in
 
     m_paused = true;
     MessageQueueWaitResult result;
+    context->thread()->willEnterNestedLoop();
     do {
-        result = context->thread()->runLoop().runDebuggerTask();
+        result = context->thread()->runDebuggerTask();
     // Keep waiting until execution is resumed.
     } while (result == MessageQueueMessageReceived && m_paused);
+    context->thread()->didLeaveNestedLoop();
 }
 
-} // namespace WebCore
+} // namespace blink

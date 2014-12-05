@@ -24,26 +24,24 @@
 
 #include "core/svg/SVGPathSegArc.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPathSegArcAbs FINAL : public SVGPathSegArc {
+class SVGPathSegArcAbs final : public SVGPathSegArc {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<SVGPathSegArcAbs> create(SVGPathElement* element, SVGPathSegRole role, float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
+    static PassRefPtr<SVGPathSegArcAbs> create(SVGPathElement* element, float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
     {
-        return adoptRef(new SVGPathSegArcAbs(element, role, x, y, r1, r2, angle, largeArcFlag, sweepFlag));
+        return adoptRef(new SVGPathSegArcAbs(element, x, y, r1, r2, angle, largeArcFlag, sweepFlag));
     }
 
 private:
-    SVGPathSegArcAbs(SVGPathElement* element, SVGPathSegRole role, float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
-        : SVGPathSegArc(element, role, x, y, r1, r2, angle, largeArcFlag, sweepFlag)
-    {
-        ScriptWrappable::init(this);
-    }
+    SVGPathSegArcAbs(SVGPathElement* element, float x, float y, float r1, float r2, float angle, bool largeArcFlag, bool sweepFlag)
+        : SVGPathSegArc(element, x, y, r1, r2, angle, largeArcFlag, sweepFlag) { }
 
-    virtual unsigned short pathSegType() const OVERRIDE { return PATHSEG_ARC_ABS; }
-    virtual String pathSegTypeAsLetter() const OVERRIDE { return "A"; }
+    virtual unsigned short pathSegType() const override { return PATHSEG_ARC_ABS; }
+    virtual String pathSegTypeAsLetter() const override { return "A"; }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathSegArcAbs_h

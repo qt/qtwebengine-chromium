@@ -23,27 +23,27 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLProgressElement;
 
-class RenderProgress FINAL : public RenderBlockFlow {
+class RenderProgress final : public RenderBlockFlow {
 public:
     explicit RenderProgress(HTMLElement*);
     virtual ~RenderProgress();
+    virtual void destroy() override;
 
     double position() const { return m_position; }
     double animationProgress() const;
-    double animationStartTime() const { return m_animationStartTime; }
 
     bool isDeterminate() const;
-    virtual void updateFromElement() OVERRIDE;
+    virtual void updateFromElement() override;
 
     HTMLProgressElement* progressElement() const;
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderProgress"; }
-    virtual bool isProgress() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderProgress"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectProgress || RenderBlockFlow::isOfType(type); }
 
     void animationTimerFired(Timer<RenderProgress>*);
     void updateAnimationState();
@@ -58,6 +58,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderProgress, isProgress());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderProgress_h

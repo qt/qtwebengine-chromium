@@ -36,7 +36,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
 class AnimationClock {
     WTF_MAKE_NONCOPYABLE(AnimationClock);
@@ -50,7 +50,7 @@ public:
 
     void updateTime(double time);
     double currentTime();
-    void resetTimeForTesting();
+    void resetTimeForTesting(double time = 0);
 
     static void notifyTaskStart() { ++s_currentTask; }
 
@@ -61,6 +61,6 @@ private:
     static unsigned s_currentTask;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AnimationClock_h

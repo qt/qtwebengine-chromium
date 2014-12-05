@@ -58,6 +58,9 @@ class MEDIA_EXPORT MediaCodecBridge {
   // Returns true if MediaCodec.setParameters() is available on the device.
   static bool SupportsSetParameters();
 
+  // Returns true if MediaCodec.getName() is available on the device.
+  static bool SupportsGetName();
+
   // Returns whether MediaCodecBridge has a decoder that |is_secure| and can
   // decode |codec| type.
   static bool CanDecode(const std::string& codec, bool is_secure);
@@ -73,6 +76,15 @@ class MEDIA_EXPORT MediaCodecBridge {
 
   // Get a list of supported codecs.
   static std::vector<CodecsInfo> GetCodecsInfo();
+
+  // Get default codec name for |mime_type|.
+  static std::string GetDefaultCodecName(const std::string& mime_type,
+                                         MediaCodecDirection direction);
+
+  // Get a list of encoder supported color formats for |mime_type|.
+  // The mapping of color format name and its value refers to
+  // MediaCodecInfo.CodecCapabilities.
+  static std::set<int> GetEncoderColorFormats(const std::string& mime_type);
 
   virtual ~MediaCodecBridge();
 

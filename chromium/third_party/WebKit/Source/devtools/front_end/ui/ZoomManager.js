@@ -5,10 +5,13 @@
 /**
  * @constructor
  * @extends {WebInspector.Object}
+ * @param {!Window} window
+ * @param {!InspectorFrontendHostAPI} frontendHost
  */
-WebInspector.ZoomManager = function()
+WebInspector.ZoomManager = function(window, frontendHost)
 {
-    this._zoomFactor = InspectorFrontendHost.zoomFactor();
+    this._frontendHost = frontendHost;
+    this._zoomFactor = this._frontendHost.zoomFactor();
     window.addEventListener("resize", this._onWindowResize.bind(this), true);
 };
 
@@ -28,7 +31,7 @@ WebInspector.ZoomManager.prototype = {
     _onWindowResize: function()
     {
         var oldZoomFactor = this._zoomFactor;
-        this._zoomFactor = InspectorFrontendHost.zoomFactor();
+        this._zoomFactor = this._frontendHost.zoomFactor();
         if (oldZoomFactor !== this._zoomFactor)
             this.dispatchEventToListeners(WebInspector.ZoomManager.Events.ZoomChanged, {from: oldZoomFactor, to: this._zoomFactor});
     },

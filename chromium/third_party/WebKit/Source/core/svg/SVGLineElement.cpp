@@ -19,13 +19,12 @@
  */
 
 #include "config.h"
-
 #include "core/svg/SVGLineElement.h"
 
-#include "core/rendering/svg/RenderSVGResource.h"
+#include "core/rendering/svg/RenderSVGShape.h"
 #include "core/svg/SVGLength.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGLineElement::SVGLineElement(Document& document)
     : SVGGeometryElement(SVGNames::lineTag, document)
@@ -34,8 +33,6 @@ inline SVGLineElement::SVGLineElement(Document& document)
     , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
 {
-    ScriptWrappable::init(this);
-
     addToPropertyMap(m_x1);
     addToPropertyMap(m_y1);
     addToPropertyMap(m_x2);
@@ -58,22 +55,7 @@ bool SVGLineElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGLineElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGGeometryElement::parseAttribute(name, value);
-    else if (name == SVGNames::x1Attr)
-        m_x1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::y1Attr)
-        m_y1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::x2Attr)
-        m_x2->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::y2Attr)
-        m_y2->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -99,7 +81,7 @@ void SVGLineElement::svgAttributeChanged(const QualifiedName& attrName)
 
     if (isLengthAttribute) {
         renderer->setNeedsShapeUpdate();
-        RenderSVGResource::markForLayoutAndParentResourceInvalidation(renderer);
+        markForLayoutAndParentResourceInvalidation(renderer);
         return;
     }
 
@@ -114,4 +96,4 @@ bool SVGLineElement::selfHasRelativeLengths() const
         || m_y2->currentValue()->isRelative();
 }
 
-}
+} // namespace blink

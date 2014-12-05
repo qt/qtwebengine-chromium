@@ -12,12 +12,18 @@ gypi_values = exec_script(
 #if (chrome_multiple_dll) {
 #  blink_target = "//third_party/WebKit/public:blink_minimal"
 #} else {
-#  blink_target = "//third_party/WebKit/public:blink"
+  blink_target = "//third_party/WebKit/public:blink"
 #}
 
 # These are just headers.
 source_set("ppapi_c") {
   sources = gypi_values.c_source_files
+}
+
+# Some targets need to depend on the PPAPI version only. This target exists so
+# they can include this header without header check warnings.
+source_set("ppapi_macros") {
+  sources = [ "c/pp_macros.h" ]
 }
 
 source_set("ppapi_cpp_objects") {
@@ -51,6 +57,13 @@ source_set("ppapi_cpp") {
   deps = [
     ":ppapi_c",
     ":ppapi_cpp_objects",
+  ]
+}
+
+source_set("ppapi_internal_module") {
+  sources = [
+    "cpp/private/internal_module.cc",
+    "cpp/private/internal_module.h",
   ]
 }
 
@@ -90,6 +103,8 @@ component("ppapi_shared") {
     "shared_impl/array_writer.h",
     "shared_impl/callback_tracker.cc",
     "shared_impl/callback_tracker.h",
+    "shared_impl/compositor_layer_data.cc",
+    "shared_impl/compositor_layer_data.h",
     "shared_impl/dictionary_var.cc",
     "shared_impl/dictionary_var.h",
     "shared_impl/file_io_state_manager.cc",
@@ -113,6 +128,8 @@ component("ppapi_shared") {
     "shared_impl/media_stream_buffer.h",
     "shared_impl/media_stream_buffer_manager.cc",
     "shared_impl/media_stream_buffer_manager.h",
+    "shared_impl/media_stream_audio_track_shared.cc",
+    "shared_impl/media_stream_audio_track_shared.h",
     "shared_impl/media_stream_video_track_shared.h",
     "shared_impl/media_stream_video_track_shared.cc",
     "shared_impl/platform_file.cc",
@@ -209,6 +226,10 @@ component("ppapi_shared") {
     "thunk/ppb_broker_api.h",
     "thunk/ppb_browser_font_trusted_api.h",
     "thunk/ppb_buffer_api.h",
+    "thunk/ppb_compositor_api.h",
+    "thunk/ppb_compositor_layer_api.h",
+    "thunk/ppb_compositor_layer_thunk.cc",
+    "thunk/ppb_compositor_thunk.cc",
     "thunk/ppb_console_thunk.cc",
     "thunk/ppb_cursor_control_thunk.cc",
     "thunk/ppb_device_ref_api.h",
@@ -249,6 +270,7 @@ component("ppapi_shared") {
     "thunk/ppb_image_data_thunk.cc",
     "thunk/ppb_input_event_api.h",
     "thunk/ppb_input_event_thunk.cc",
+    "thunk/ppb_input_event_private_thunk.cc",
     "thunk/ppb_instance_api.h",
     "thunk/ppb_instance_private_thunk.cc",
     "thunk/ppb_instance_thunk.cc",
@@ -304,8 +326,10 @@ component("ppapi_shared") {
     "thunk/ppb_var_array_thunk.cc",
     "thunk/ppb_var_dictionary_thunk.cc",
     "thunk/ppb_video_capture_api.h",
+    "thunk/ppb_video_capture_thunk.cc",
     "thunk/ppb_video_decoder_api.h",
     "thunk/ppb_video_decoder_dev_api.h",
+    "thunk/ppb_video_decoder_thunk.cc",
     "thunk/ppb_video_destination_private_api.h",
     "thunk/ppb_video_destination_private_thunk.cc",
     "thunk/ppb_video_frame_api.h",
@@ -357,7 +381,6 @@ component("ppapi_shared") {
       "thunk/ppb_scrollbar_thunk.cc",
       "thunk/ppb_talk_private_thunk.cc",
       "thunk/ppb_url_util_thunk.cc",
-      "thunk/ppb_video_capture_thunk.cc",
       "thunk/ppb_video_decoder_dev_thunk.cc",
     ]
   }
@@ -385,18 +408,23 @@ component("ppapi_shared") {
     "PPAPI_THUNK_IMPLEMENTATION",
   ]
 
+  public_deps = [
+    blink_target,
+  ]
   deps = [
     ":ppapi_c",
     "//base",
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//gpu/command_buffer/client",
+    "//gpu/command_buffer/client:gles2_cmd_helper",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/command_buffer/common",
     "//ipc",
-    #"//media:shared_memory_support",  TODO(GYP)
+    "//media:shared_memory_support",
     "//skia",
     "//third_party/icu:icuuc",
+    "//ui/events:events_base",
     "//ui/surface",
     "//url",
   ]
@@ -406,10 +434,6 @@ component("ppapi_shared") {
   } else if (is_win) {
     cflags = [ "/wd4267" ]  # size_t to int truncation.
   }
-
-  # TODO(GYP)
-  #deps += [ blink_target ]
-  #forward_dependent_configs_from = [ blink_target ]
 }
 
 source_set("ppapi_ipc") {
@@ -435,6 +459,8 @@ source_set("ppapi_ipc") {
     "proxy/var_serialization_rules.h",
   ]
 
+  defines = [ "PPAPI_PROXY_IMPLEMENTATION" ]
+
   deps = [
     ":ppapi_c",
     ":ppapi_shared",
@@ -442,6 +468,7 @@ source_set("ppapi_ipc") {
     "//gpu/ipc",
     "//ipc",
     "//skia",
+    "//ui/events/ipc",
   ]
 
   if (is_nacl) {
@@ -463,6 +490,10 @@ component("ppapi_proxy") {
     "proxy/audio_buffer_resource.h",
     "proxy/broker_resource.cc",
     "proxy/broker_resource.h",
+    "proxy/compositor_layer_resource.cc",
+    "proxy/compositor_layer_resource.h",
+    "proxy/compositor_resource.cc",
+    "proxy/compositor_resource.h",
     "proxy/connection.h",
     "proxy/dispatcher.cc",
     "proxy/dispatcher.h",
@@ -504,6 +535,8 @@ component("ppapi_proxy") {
     "proxy/media_stream_track_resource_base.h",
     "proxy/media_stream_video_track_resource.cc",
     "proxy/media_stream_video_track_resource.h",
+    "proxy/message_handler.cc",
+    "proxy/message_handler.h",
     "proxy/net_address_resource.cc",
     "proxy/net_address_resource.h",
     "proxy/network_list_resource.cc",
@@ -686,6 +719,8 @@ component("ppapi_proxy") {
       "proxy/ppp_instance_private_proxy.h",
       "proxy/ppp_video_decoder_proxy.cc",
       "proxy/ppp_video_decoder_proxy.h",
+      "proxy/video_decoder_resource.cc",
+      "proxy/video_decoder_resource.h",
       "proxy/talk_resource.cc",
       "proxy/talk_resource.h",
       "proxy/video_capture_resource.cc",
@@ -703,17 +738,81 @@ component("ppapi_proxy") {
     "//base/third_party/dynamic_annotations",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/ipc",
-    #"//media:shared_memory_support",  # TODO(GYP)
+    "//media:shared_memory_support",
     "//ipc",
     "//skia",
     "//third_party/icu",
+    "//ui/events:events_base",
     "//ui/surface",
-    #blink_target,  TODO(GYP)
+    blink_target,
   ]
 
   if (is_win) {
     cflags = [ "/wd4267" ]  # size_t to int truncation.
   }
+}
+
+component("ppapi_host") {
+  sources = [
+    "host/dispatch_host_message.h",
+    "host/error_conversion.cc",
+    "host/error_conversion.h",
+    "host/host_factory.h",
+    "host/host_message_context.cc",
+    "host/host_message_context.h",
+    "host/instance_message_filter.cc",
+    "host/instance_message_filter.h",
+    "host/message_filter_host.cc",
+    "host/message_filter_host.h",
+    "host/ppapi_host.cc",
+    "host/ppapi_host.h",
+    "host/ppapi_host_export.h",
+    "host/resource_host.cc",
+    "host/resource_host.h",
+    "host/resource_message_filter.cc",
+    "host/resource_message_filter.h",
+    "host/resource_message_handler.cc",
+    "host/resource_message_handler.h",
+  ]
+
+  defines = [ "PPAPI_HOST_IMPLEMENTATION" ]
+
+  deps = [
+    ":ppapi_c",
+    ":ppapi_ipc",
+    ":ppapi_proxy",
+    ":ppapi_shared",
+    "//base",
+    "//ipc",
+    "//media:shared_memory_support",
+    "//ui/events:events_base",
+    "//ui/surface",
+    "//url",
+  ]
+}
+
+static_library("ppapi_unittest_shared") {
+  testonly = true
+  sources = [
+    "proxy/ppapi_proxy_test.cc",
+    "proxy/ppapi_proxy_test.h",
+    "proxy/resource_message_test_sink.cc",
+    "proxy/resource_message_test_sink.h",
+    "shared_impl/test_globals.cc",
+    "shared_impl/test_globals.h",
+    "shared_impl/unittest_utils.cc",
+    "shared_impl/unittest_utils.h",
+  ]
+
+  deps = [
+    ":ppapi_proxy",
+    ":ppapi_shared",
+    "//base/test:test_support",
+    "//ipc",
+    "//ipc:test_support",
+    "//testing/gmock",
+    "//testing/gtest",
+  ]
 }
 
 # TODO(GYP) other targets from ppapi_tests.gyp

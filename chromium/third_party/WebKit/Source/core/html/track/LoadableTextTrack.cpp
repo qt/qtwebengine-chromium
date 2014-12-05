@@ -32,12 +32,12 @@
 #include "core/html/track/TextTrackCueList.h"
 #include "core/html/track/vtt/VTTRegionList.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 LoadableTextTrack::LoadableTextTrack(HTMLTrackElement* track)
-    : TextTrack(track->document(), emptyAtom, emptyAtom, emptyAtom, emptyAtom, TrackElement)
+    : TextTrack(emptyAtom, emptyAtom, emptyAtom, emptyAtom, TrackElement)
     , m_trackElement(track)
     , m_loadTimer(this, &LoadableTextTrack::loadTimerFired)
     , m_isDefault(false)
@@ -61,8 +61,10 @@ void LoadableTextTrack::clearTrackElement()
 void LoadableTextTrack::setMode(const AtomicString& mode)
 {
     TextTrack::setMode(mode);
+#if !ENABLE(OILPAN)
     if (!m_trackElement)
         return;
+#endif
 
     if (m_trackElement->readyState() == HTMLTrackElement::NONE)
         m_trackElement->scheduleLoad();
@@ -98,8 +100,10 @@ void LoadableTextTrack::loadTimerFired(Timer<LoadableTextTrack>*)
     if (m_loader)
         m_loader->cancelLoad();
 
+#if !ENABLE(OILPAN)
     if (!m_trackElement)
         return;
+#endif
 
     // 4.8.10.12.3 Sourcing out-of-band text tracks (continued)
 
@@ -115,7 +119,7 @@ void LoadableTextTrack::newCuesAvailable(TextTrackLoader* loader)
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
-    WillBeHeapVector<RefPtrWillBeMember<VTTCue> > newCues;
+    WillBeHeapVector<RefPtrWillBeMember<VTTCue>> newCues;
     m_loader->getNewCues(newCues);
 
     if (!m_cues)
@@ -134,8 +138,10 @@ void LoadableTextTrack::cueLoadingCompleted(TextTrackLoader* loader, bool loadin
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
+#if !ENABLE(OILPAN)
     if (!m_trackElement)
         return;
+#endif
 
     m_trackElement->didCompleteLoad(loadingFailed ? HTMLTrackElement::Failure : HTMLTrackElement::Success);
 }
@@ -144,7 +150,7 @@ void LoadableTextTrack::newRegionsAvailable(TextTrackLoader* loader)
 {
     ASSERT_UNUSED(loader, m_loader == loader);
 
-    WillBeHeapVector<RefPtrWillBeMember<VTTRegion> > newRegions;
+    WillBeHeapVector<RefPtrWillBeMember<VTTRegion>> newRegions;
     m_loader->getNewRegions(newRegions);
 
     for (size_t i = 0; i < newRegions.size(); ++i) {
@@ -178,4 +184,4 @@ void LoadableTextTrack::trace(Visitor* visitor)
     TextTrack::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

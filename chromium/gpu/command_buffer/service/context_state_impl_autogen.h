@@ -68,6 +68,38 @@ void ContextState::Initialize() {
   hint_generate_mipmap = GL_DONT_CARE;
   hint_fragment_shader_derivative = GL_DONT_CARE;
   line_width = 1.0f;
+  modelview_matrix[0] = 1.0f;
+  modelview_matrix[1] = 0.0f;
+  modelview_matrix[2] = 0.0f;
+  modelview_matrix[3] = 0.0f;
+  modelview_matrix[4] = 0.0f;
+  modelview_matrix[5] = 1.0f;
+  modelview_matrix[6] = 0.0f;
+  modelview_matrix[7] = 0.0f;
+  modelview_matrix[8] = 0.0f;
+  modelview_matrix[9] = 0.0f;
+  modelview_matrix[10] = 1.0f;
+  modelview_matrix[11] = 0.0f;
+  modelview_matrix[12] = 0.0f;
+  modelview_matrix[13] = 0.0f;
+  modelview_matrix[14] = 0.0f;
+  modelview_matrix[15] = 1.0f;
+  projection_matrix[0] = 1.0f;
+  projection_matrix[1] = 0.0f;
+  projection_matrix[2] = 0.0f;
+  projection_matrix[3] = 0.0f;
+  projection_matrix[4] = 0.0f;
+  projection_matrix[5] = 1.0f;
+  projection_matrix[6] = 0.0f;
+  projection_matrix[7] = 0.0f;
+  projection_matrix[8] = 0.0f;
+  projection_matrix[9] = 0.0f;
+  projection_matrix[10] = 1.0f;
+  projection_matrix[11] = 0.0f;
+  projection_matrix[12] = 0.0f;
+  projection_matrix[13] = 0.0f;
+  projection_matrix[14] = 0.0f;
+  projection_matrix[15] = 1.0f;
   pack_alignment = 4;
   unpack_alignment = 4;
   polygon_offset_factor = 0.0f;
@@ -150,9 +182,7 @@ void ContextState::InitState(const ContextState* prev_state) const {
         (blend_color_green != prev_state->blend_color_green) ||
         (blend_color_blue != prev_state->blend_color_blue) ||
         (blend_color_alpha != prev_state->blend_color_alpha))
-      glBlendColor(blend_color_red,
-                   blend_color_green,
-                   blend_color_blue,
+      glBlendColor(blend_color_red, blend_color_green, blend_color_blue,
                    blend_color_alpha);
     if ((blend_equation_rgb != prev_state->blend_equation_rgb) ||
         (blend_equation_alpha != prev_state->blend_equation_alpha))
@@ -161,17 +191,13 @@ void ContextState::InitState(const ContextState* prev_state) const {
         (blend_dest_rgb != prev_state->blend_dest_rgb) ||
         (blend_source_alpha != prev_state->blend_source_alpha) ||
         (blend_dest_alpha != prev_state->blend_dest_alpha))
-      glBlendFuncSeparate(blend_source_rgb,
-                          blend_dest_rgb,
-                          blend_source_alpha,
+      glBlendFuncSeparate(blend_source_rgb, blend_dest_rgb, blend_source_alpha,
                           blend_dest_alpha);
     if ((color_clear_red != prev_state->color_clear_red) ||
         (color_clear_green != prev_state->color_clear_green) ||
         (color_clear_blue != prev_state->color_clear_blue) ||
         (color_clear_alpha != prev_state->color_clear_alpha))
-      glClearColor(color_clear_red,
-                   color_clear_green,
-                   color_clear_blue,
+      glClearColor(color_clear_red, color_clear_green, color_clear_blue,
                    color_clear_alpha);
     if ((depth_clear != prev_state->depth_clear))
       glClearDepth(depth_clear);
@@ -181,10 +207,8 @@ void ContextState::InitState(const ContextState* prev_state) const {
         (cached_color_mask_green != prev_state->cached_color_mask_green) ||
         (cached_color_mask_blue != prev_state->cached_color_mask_blue) ||
         (cached_color_mask_alpha != prev_state->cached_color_mask_alpha))
-      glColorMask(cached_color_mask_red,
-                  cached_color_mask_green,
-                  cached_color_mask_blue,
-                  cached_color_mask_alpha);
+      glColorMask(cached_color_mask_red, cached_color_mask_green,
+                  cached_color_mask_blue, cached_color_mask_alpha);
     if ((cull_mode != prev_state->cull_mode))
       glCullFace(cull_mode);
     if ((depth_func != prev_state->depth_func))
@@ -195,19 +219,36 @@ void ContextState::InitState(const ContextState* prev_state) const {
       glDepthRange(z_near, z_far);
     if ((front_face != prev_state->front_face))
       glFrontFace(front_face);
-    if (prev_state->hint_generate_mipmap != hint_generate_mipmap)
+    if (prev_state->hint_generate_mipmap != hint_generate_mipmap) {
       glHint(GL_GENERATE_MIPMAP_HINT, hint_generate_mipmap);
-    if (feature_info_->feature_flags().oes_standard_derivatives)
+    }
+    if (feature_info_->feature_flags().oes_standard_derivatives) {
       if (prev_state->hint_fragment_shader_derivative !=
-          hint_fragment_shader_derivative)
+          hint_fragment_shader_derivative) {
         glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES,
                hint_fragment_shader_derivative);
+      }
+    }
     if ((line_width != prev_state->line_width))
       glLineWidth(line_width);
-    if (prev_state->pack_alignment != pack_alignment)
+    if (feature_info_->feature_flags().chromium_path_rendering) {
+      if (memcmp(prev_state->modelview_matrix, modelview_matrix,
+                 sizeof(GLfloat) * 16)) {
+        glMatrixLoadfEXT(GL_PATH_MODELVIEW_CHROMIUM, modelview_matrix);
+      }
+    }
+    if (feature_info_->feature_flags().chromium_path_rendering) {
+      if (memcmp(prev_state->projection_matrix, projection_matrix,
+                 sizeof(GLfloat) * 16)) {
+        glMatrixLoadfEXT(GL_PATH_PROJECTION_CHROMIUM, projection_matrix);
+      }
+    }
+    if (prev_state->pack_alignment != pack_alignment) {
       glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
-    if (prev_state->unpack_alignment != unpack_alignment)
+    }
+    if (prev_state->unpack_alignment != unpack_alignment) {
       glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment);
+    }
     if ((polygon_offset_factor != prev_state->polygon_offset_factor) ||
         (polygon_offset_units != prev_state->polygon_offset_units))
       glPolygonOffset(polygon_offset_factor, polygon_offset_units);
@@ -222,13 +263,13 @@ void ContextState::InitState(const ContextState* prev_state) const {
     if ((stencil_front_func != prev_state->stencil_front_func) ||
         (stencil_front_ref != prev_state->stencil_front_ref) ||
         (stencil_front_mask != prev_state->stencil_front_mask))
-      glStencilFuncSeparate(
-          GL_FRONT, stencil_front_func, stencil_front_ref, stencil_front_mask);
+      glStencilFuncSeparate(GL_FRONT, stencil_front_func, stencil_front_ref,
+                            stencil_front_mask);
     if ((stencil_back_func != prev_state->stencil_back_func) ||
         (stencil_back_ref != prev_state->stencil_back_ref) ||
         (stencil_back_mask != prev_state->stencil_back_mask))
-      glStencilFuncSeparate(
-          GL_BACK, stencil_back_func, stencil_back_ref, stencil_back_mask);
+      glStencilFuncSeparate(GL_BACK, stencil_back_func, stencil_back_ref,
+                            stencil_back_mask);
     if ((cached_stencil_front_writemask !=
          prev_state->cached_stencil_front_writemask))
       glStencilMaskSeparate(GL_FRONT, cached_stencil_front_writemask);
@@ -238,16 +279,12 @@ void ContextState::InitState(const ContextState* prev_state) const {
     if ((stencil_front_fail_op != prev_state->stencil_front_fail_op) ||
         (stencil_front_z_fail_op != prev_state->stencil_front_z_fail_op) ||
         (stencil_front_z_pass_op != prev_state->stencil_front_z_pass_op))
-      glStencilOpSeparate(GL_FRONT,
-                          stencil_front_fail_op,
-                          stencil_front_z_fail_op,
-                          stencil_front_z_pass_op);
+      glStencilOpSeparate(GL_FRONT, stencil_front_fail_op,
+                          stencil_front_z_fail_op, stencil_front_z_pass_op);
     if ((stencil_back_fail_op != prev_state->stencil_back_fail_op) ||
         (stencil_back_z_fail_op != prev_state->stencil_back_z_fail_op) ||
         (stencil_back_z_pass_op != prev_state->stencil_back_z_pass_op))
-      glStencilOpSeparate(GL_BACK,
-                          stencil_back_fail_op,
-                          stencil_back_z_fail_op,
+      glStencilOpSeparate(GL_BACK, stencil_back_fail_op, stencil_back_z_fail_op,
                           stencil_back_z_pass_op);
     if ((viewport_x != prev_state->viewport_x) ||
         (viewport_y != prev_state->viewport_y) ||
@@ -255,51 +292,48 @@ void ContextState::InitState(const ContextState* prev_state) const {
         (viewport_height != prev_state->viewport_height))
       glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
   } else {
-    glBlendColor(blend_color_red,
-                 blend_color_green,
-                 blend_color_blue,
+    glBlendColor(blend_color_red, blend_color_green, blend_color_blue,
                  blend_color_alpha);
     glBlendEquationSeparate(blend_equation_rgb, blend_equation_alpha);
-    glBlendFuncSeparate(
-        blend_source_rgb, blend_dest_rgb, blend_source_alpha, blend_dest_alpha);
-    glClearColor(color_clear_red,
-                 color_clear_green,
-                 color_clear_blue,
+    glBlendFuncSeparate(blend_source_rgb, blend_dest_rgb, blend_source_alpha,
+                        blend_dest_alpha);
+    glClearColor(color_clear_red, color_clear_green, color_clear_blue,
                  color_clear_alpha);
     glClearDepth(depth_clear);
     glClearStencil(stencil_clear);
-    glColorMask(cached_color_mask_red,
-                cached_color_mask_green,
-                cached_color_mask_blue,
-                cached_color_mask_alpha);
+    glColorMask(cached_color_mask_red, cached_color_mask_green,
+                cached_color_mask_blue, cached_color_mask_alpha);
     glCullFace(cull_mode);
     glDepthFunc(depth_func);
     glDepthMask(cached_depth_mask);
     glDepthRange(z_near, z_far);
     glFrontFace(front_face);
     glHint(GL_GENERATE_MIPMAP_HINT, hint_generate_mipmap);
-    if (feature_info_->feature_flags().oes_standard_derivatives)
+    if (feature_info_->feature_flags().oes_standard_derivatives) {
       glHint(GL_FRAGMENT_SHADER_DERIVATIVE_HINT_OES,
              hint_fragment_shader_derivative);
+    }
     glLineWidth(line_width);
+    if (feature_info_->feature_flags().chromium_path_rendering) {
+      glMatrixLoadfEXT(GL_PATH_MODELVIEW_CHROMIUM, modelview_matrix);
+    }
+    if (feature_info_->feature_flags().chromium_path_rendering) {
+      glMatrixLoadfEXT(GL_PATH_PROJECTION_CHROMIUM, projection_matrix);
+    }
     glPixelStorei(GL_PACK_ALIGNMENT, pack_alignment);
     glPixelStorei(GL_UNPACK_ALIGNMENT, unpack_alignment);
     glPolygonOffset(polygon_offset_factor, polygon_offset_units);
     glSampleCoverage(sample_coverage_value, sample_coverage_invert);
     glScissor(scissor_x, scissor_y, scissor_width, scissor_height);
-    glStencilFuncSeparate(
-        GL_FRONT, stencil_front_func, stencil_front_ref, stencil_front_mask);
-    glStencilFuncSeparate(
-        GL_BACK, stencil_back_func, stencil_back_ref, stencil_back_mask);
+    glStencilFuncSeparate(GL_FRONT, stencil_front_func, stencil_front_ref,
+                          stencil_front_mask);
+    glStencilFuncSeparate(GL_BACK, stencil_back_func, stencil_back_ref,
+                          stencil_back_mask);
     glStencilMaskSeparate(GL_FRONT, cached_stencil_front_writemask);
     glStencilMaskSeparate(GL_BACK, cached_stencil_back_writemask);
-    glStencilOpSeparate(GL_FRONT,
-                        stencil_front_fail_op,
-                        stencil_front_z_fail_op,
-                        stencil_front_z_pass_op);
-    glStencilOpSeparate(GL_BACK,
-                        stencil_back_fail_op,
-                        stencil_back_z_fail_op,
+    glStencilOpSeparate(GL_FRONT, stencil_front_fail_op,
+                        stencil_front_z_fail_op, stencil_front_z_pass_op);
+    glStencilOpSeparate(GL_BACK, stencil_back_fail_op, stencil_back_z_fail_op,
                         stencil_back_z_pass_op);
     glViewport(viewport_x, viewport_y, viewport_width, viewport_height);
   }
@@ -458,6 +492,22 @@ bool ContextState::GetStateAsGLint(GLenum pname,
         params[0] = static_cast<GLint>(line_width);
       }
       return true;
+    case GL_PATH_MODELVIEW_MATRIX_CHROMIUM:
+      *num_written = 16;
+      if (params) {
+        for (size_t i = 0; i < 16; ++i) {
+          params[i] = static_cast<GLint>(round(modelview_matrix[i]));
+        }
+      }
+      return true;
+    case GL_PATH_PROJECTION_MATRIX_CHROMIUM:
+      *num_written = 16;
+      if (params) {
+        for (size_t i = 0; i < 16; ++i) {
+          params[i] = static_cast<GLint>(round(projection_matrix[i]));
+        }
+      }
+      return true;
     case GL_PACK_ALIGNMENT:
       *num_written = 1;
       if (params) {
@@ -473,13 +523,13 @@ bool ContextState::GetStateAsGLint(GLenum pname,
     case GL_POLYGON_OFFSET_FACTOR:
       *num_written = 1;
       if (params) {
-        params[0] = static_cast<GLint>(polygon_offset_factor);
+        params[0] = static_cast<GLint>(round(polygon_offset_factor));
       }
       return true;
     case GL_POLYGON_OFFSET_UNITS:
       *num_written = 1;
       if (params) {
-        params[0] = static_cast<GLint>(polygon_offset_units);
+        params[0] = static_cast<GLint>(round(polygon_offset_units));
       }
       return true;
     case GL_SAMPLE_COVERAGE_VALUE:
@@ -781,6 +831,18 @@ bool ContextState::GetStateAsGLfloat(GLenum pname,
       *num_written = 1;
       if (params) {
         params[0] = static_cast<GLfloat>(line_width);
+      }
+      return true;
+    case GL_PATH_MODELVIEW_MATRIX_CHROMIUM:
+      *num_written = 16;
+      if (params) {
+        memcpy(params, modelview_matrix, sizeof(GLfloat) * 16);
+      }
+      return true;
+    case GL_PATH_PROJECTION_MATRIX_CHROMIUM:
+      *num_written = 16;
+      if (params) {
+        memcpy(params, projection_matrix, sizeof(GLfloat) * 16);
       }
       return true;
     case GL_PACK_ALIGNMENT:

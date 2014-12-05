@@ -121,6 +121,7 @@
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_resources',
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
             '<(DEPTH)/chrome/common_constants.gyp:common_constants',
+            '<(DEPTH)/components/components.gyp:metrics',
             '<(DEPTH)/courgette/courgette.gyp:courgette_lib',
             '<(DEPTH)/crypto/crypto.gyp:crypto',
             '<(DEPTH)/third_party/bspatch/bspatch.gyp:bspatch',
@@ -189,6 +190,10 @@
             '<(SHARED_INTERMEDIATE_DIR)',
           ],
           'sources': [
+            # Include |client_info.cc| directly here to avoid having to create a
+            # metrics_win64 target solely for this purpose.
+            '../components/metrics/client_info.cc',
+            '../components/metrics/client_info.h',
             'installer/util/google_chrome_distribution_dummy.cc',
             'installer/util/master_preferences.h',
             'installer/util/master_preferences_dummy.cc',
@@ -204,6 +209,7 @@
     ['OS!="win"', {
       'targets': [
         {
+          # GN version: //chrome/installer/util
           'target_name': 'installer_util',
           'type': 'static_library',
           'dependencies': [
@@ -212,6 +218,7 @@
             '<(DEPTH)/chrome/chrome_resources.gyp:chrome_strings',
           ],
           'sources': [
+            # Note: sources list duplicated in GN build.
             'installer/util/google_update_experiment_util.cc',
             'installer/util/google_update_experiment_util.h',
             'installer/util/master_preferences.cc',

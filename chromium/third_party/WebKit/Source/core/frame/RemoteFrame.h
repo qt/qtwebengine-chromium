@@ -7,26 +7,41 @@
 
 #include "core/frame/Frame.h"
 
-namespace WebCore {
+namespace blink {
 
+class Event;
+class RemoteFrameClient;
 class RemoteFrameView;
 
 class RemoteFrame: public Frame {
 public:
-    static PassRefPtr<RemoteFrame> create(FrameClient*, FrameHost*, FrameOwner*);
-    virtual bool isRemoteFrame() const OVERRIDE { return true; }
+    static PassRefPtrWillBeRawPtr<RemoteFrame> create(RemoteFrameClient*, FrameHost*, FrameOwner*);
 
     virtual ~RemoteFrame();
 
-    void setView(PassRefPtr<RemoteFrameView>);
+    // Frame overrides:
+    void trace(Visitor*) override;
+    virtual bool isRemoteFrame() const override { return true; }
+    virtual LocalDOMWindow* domWindow() const override { return 0; }
+    virtual void navigate(Document& originDocument, const KURL&, bool lockBackForwardList) override;
+    virtual void detach() override;
+
+    // FIXME: Remove this method once we have input routing in the browser
+    // process. See http://crbug.com/339659.
+    void forwardInputEvent(Event*);
+
+    void setView(PassRefPtrWillBeRawPtr<RemoteFrameView>);
     void createView();
 
     RemoteFrameView* view() const;
 
-private:
-    RemoteFrame(FrameClient*, FrameHost*, FrameOwner*);
 
-    RefPtr<RemoteFrameView> m_view;
+private:
+    RemoteFrame(RemoteFrameClient*, FrameHost*, FrameOwner*);
+
+    RemoteFrameClient* remoteFrameClient() const;
+
+    RefPtrWillBeMember<RemoteFrameView> m_view;
 };
 
 inline RemoteFrameView* RemoteFrame::view() const
@@ -36,6 +51,6 @@ inline RemoteFrameView* RemoteFrame::view() const
 
 DEFINE_TYPE_CASTS(RemoteFrame, Frame, remoteFrame, remoteFrame->isRemoteFrame(), remoteFrame.isRemoteFrame());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RemoteFrame_h

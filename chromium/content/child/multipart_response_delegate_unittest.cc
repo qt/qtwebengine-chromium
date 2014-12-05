@@ -2,17 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "content/child/multipart_response_delegate.h"
+
 #include <vector>
 
-#include "base/basictypes.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/platform/WebURL.h"
 #include "third_party/WebKit/public/platform/WebURLLoaderClient.h"
 #include "third_party/WebKit/public/platform/WebURLResponse.h"
-#include "webkit/child/multipart_response_delegate.h"
 
-using std::string;
 using blink::WebString;
 using blink::WebURL;
 using blink::WebURLError;
@@ -20,8 +19,7 @@ using blink::WebURLLoader;
 using blink::WebURLLoaderClient;
 using blink::WebURLRequest;
 using blink::WebURLResponse;
-using content::MultipartResponseDelegateTester;
-using webkit_glue::MultipartResponseDelegate;
+using std::string;
 
 namespace content {
 
@@ -124,7 +122,7 @@ TEST(MultipartResponseTest, Functions) {
     { "Line\rLine", 4, 1 },
     { "Line\r\rLine", 4, 1 },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(line_tests); ++i) {
+  for (size_t i = 0; i < arraysize(line_tests); ++i) {
     EXPECT_EQ(line_tests[i].expected,
               delegate_tester.PushOverLine(line_tests[i].input,
                                            line_tests[i].position));
@@ -146,7 +144,7 @@ TEST(MultipartResponseTest, Functions) {
     { "Foo: bar\r\nBaz:\n", false, 0, "Foo: bar\r\nBaz:\n" },
     { "\r\n", true, 1, "" },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(header_tests); ++i) {
+  for (size_t i = 0; i < arraysize(header_tests); ++i) {
     client.Reset();
     delegate_tester.data().assign(header_tests[i].data);
     EXPECT_EQ(header_tests[i].rv,
@@ -192,7 +190,7 @@ TEST(MultipartResponseTest, Functions) {
     { "foo", "bound", string::npos },
     { "bound", "--boundbound", 0 },
   };
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(boundary_tests); ++i) {
+  for (size_t i = 0; i < arraysize(boundary_tests); ++i) {
     delegate_tester.boundary().assign(boundary_tests[i].boundary);
     delegate_tester.data().assign(boundary_tests[i].data);
     EXPECT_EQ(boundary_tests[i].position,

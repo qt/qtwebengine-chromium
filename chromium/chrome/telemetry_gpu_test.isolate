@@ -11,7 +11,7 @@
       # conformance tests, to be run. However, extra command line arguments
       # must be supplied in order to run any one of them.
       'variables': {
-        'isolate_dependency_untracked': [
+        'files': [
           '../content/test/gpu/',
           '../content/test/data/gpu/',
           # For GpuProcess.video
@@ -21,6 +21,25 @@
         ],
         'command': [
           '../content/test/gpu/run_gpu_test.py',
+        ],
+      },
+    }],
+    # These PDBs are needed in order to get reasonable stack traces if
+    # an assertion fires or a crash occurs. Add more as necessary.
+    ['OS=="win" and (fastbuild==0 or fastbuild==1)', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/chrome.exe.pdb',
+        ],
+      },
+    }],
+    ['OS=="win" and component=="shared_library" and (fastbuild==0 or fastbuild==1)', {
+      'variables': {
+        'files': [
+          '<(PRODUCT_DIR)/base.dll.pdb',
+          '<(PRODUCT_DIR)/blink_platform.dll.pdb',
+          '<(PRODUCT_DIR)/blink_web.dll.pdb',
+          '<(PRODUCT_DIR)/content.dll.pdb',
         ],
       },
     }],

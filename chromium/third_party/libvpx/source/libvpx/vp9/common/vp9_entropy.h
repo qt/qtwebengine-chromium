@@ -13,8 +13,8 @@
 
 #include "vpx/vpx_integer.h"
 
-#include "vp9/common/vp9_blockd.h"
 #include "vp9/common/vp9_common.h"
+#include "vp9/common/vp9_prob.h"
 #include "vp9/common/vp9_scan.h"
 
 #ifdef __cplusplus
@@ -43,6 +43,36 @@ extern "C" {
 
 DECLARE_ALIGNED(16, extern const uint8_t, vp9_pt_energy_class[ENTROPY_TOKENS]);
 
+#define CAT1_MIN_VAL    5
+#define CAT2_MIN_VAL    7
+#define CAT3_MIN_VAL   11
+#define CAT4_MIN_VAL   19
+#define CAT5_MIN_VAL   35
+#define CAT6_MIN_VAL   67
+
+// Extra bit probabilities.
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat1_prob[1]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat2_prob[2]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat3_prob[3]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat4_prob[4]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat5_prob[5]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat6_prob[14]);
+
+#if CONFIG_VP9_HIGHBITDEPTH
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat1_prob_high10[1]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat2_prob_high10[2]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat3_prob_high10[3]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat4_prob_high10[4]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat5_prob_high10[5]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat6_prob_high10[16]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat1_prob_high12[1]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat2_prob_high12[2]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat3_prob_high12[3]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat4_prob_high12[4]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat5_prob_high12[5]);
+DECLARE_ALIGNED(16, extern const uint8_t, vp9_cat6_prob_high12[18]);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
+
 #define EOB_MODEL_TOKEN 3
 extern const vp9_tree_index vp9_coefmodel_tree[];
 
@@ -55,8 +85,16 @@ typedef struct {
 
 // indexed by token value
 extern const vp9_extra_bit vp9_extra_bits[ENTROPY_TOKENS];
+#if CONFIG_VP9_HIGHBITDEPTH
+extern const vp9_extra_bit vp9_extra_bits_high10[ENTROPY_TOKENS];
+extern const vp9_extra_bit vp9_extra_bits_high12[ENTROPY_TOKENS];
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
 #define DCT_MAX_VALUE           16384
+#if CONFIG_VP9_HIGHBITDEPTH
+#define DCT_MAX_VALUE_HIGH10    65536
+#define DCT_MAX_VALUE_HIGH12   262144
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
 /* Coefficients are predicted via a 3-dimensional probability table. */
 
@@ -168,14 +206,15 @@ static INLINE int get_entropy_context(TX_SIZE tx_size, const ENTROPY_CONTEXT *a,
       break;
     default:
       assert(0 && "Invalid transform size.");
+      break;
   }
 
   return combine_entropy_contexts(above_ec, left_ec);
 }
 
-static const INLINE scan_order *get_scan(const MACROBLOCKD *xd, TX_SIZE tx_size,
+static INLINE const scan_order *get_scan(const MACROBLOCKD *xd, TX_SIZE tx_size,
                                          PLANE_TYPE type, int block_idx) {
-  const MODE_INFO *const mi = xd->mi[0];
+  const MODE_INFO *const mi = xd->mi[0].src_mi;
 
   if (is_inter_block(&mi->mbmi) || type != PLANE_TYPE_Y || xd->lossless) {
     return &vp9_default_scan_orders[tx_size];

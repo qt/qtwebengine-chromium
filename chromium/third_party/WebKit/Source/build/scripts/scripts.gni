@@ -17,10 +17,13 @@ scripts_for_in_files = [
   "$_scripts_dir/in_file.py",
   "$_scripts_dir/in_generator.py",
   "$_scripts_dir/license.py",
-  "$_scripts_dir/name_macros.py",
   "$_scripts_dir/name_utilities.py",
   "$_scripts_dir/template_expander.py",
   "$_scripts_dir/templates/macros.tmpl",
+]
+
+css_properties_files = scripts_for_in_files + [
+  "$_scripts_dir/css_properties.py",
 ]
 
 make_event_factory_files = scripts_for_in_files + [
@@ -44,8 +47,6 @@ make_element_factory_files = make_qualified_names_files + [
   "$_scripts_dir/make_element_factory.py",
   "$_scripts_dir/templates/ElementFactory.cpp.tmpl",
   "$_scripts_dir/templates/ElementFactory.h.tmpl",
-  "$_scripts_dir/templates/ElementWrapperFactory.cpp.tmpl",
-  "$_scripts_dir/templates/ElementWrapperFactory.h.tmpl",
 ]
 
 make_element_type_helpers_files = make_qualified_names_files + [
@@ -56,21 +57,11 @@ make_element_type_helpers_files = make_qualified_names_files + [
 # The executables are relative to the build directory. Don't rebase it because
 # on Posix we want to run the system one on the path.
 if (is_win) {
-  perl_exe = rebase_path("//third_party/perl/perl/bin/perl.exe", root_build_dir)
   gperf_exe = rebase_path("//third_party/gperf/bin/gperf.exe", root_build_dir)
   bison_exe = rebase_path("//third_party/bison/bin/bison.exe", root_build_dir)
-  # Using cl instead of cygwin gcc cuts the processing time from
-  # 1m58s to 0m52s.
-  preprocessor = "--preprocessor \"cl.exe -nologo -EP -TP\""
 } else {
-  perl_exe = "perl"
   gperf_exe = "gperf"
   bison_exe = "bison"
-  # We specify a preprocess so it happens locally and won't get
-  # distributed to goma.
-  # FIXME: /usr/bin/gcc won't exist on OSX forever. We want to
-  # use /usr/bin/clang once we require Xcode 4.x.
-  preprocessor = "--preprocessor \"/usr/bin/gcc -E -P -x c++\""
 }
 
 # Templates --------------------------------------------------------------------
@@ -97,16 +88,16 @@ make_core_generated_deps = [
 #                 from the GYP build.
 #   outputs: expected results. Note that the directory of the 0th item in this
 #            list will be taken to be the output path.
-#   other_args: (optional) other arguements to pass to the script.
+#   other_args: (optional) other arguments to pass to the script.
 template("process_in_files") {
   action(target_name) {
     script = invoker.script
 
-    source_prereqs = invoker.in_files
+    inputs = invoker.in_files
     if (defined(invoker.other_inputs)) {
-      source_prereqs += invoker.other_inputs
+      inputs += invoker.other_inputs
     } else {
-      source_prereqs += scripts_for_in_files
+      inputs += scripts_for_in_files
     }
     outputs = invoker.outputs
 
@@ -124,6 +115,24 @@ template("process_in_files") {
   }
 }
 
+# Template for scripts using css_properties.py. This is a special case of
+# process_in_files.
+#   outputs: expected results
+template("css_properties") {
+  process_in_files(target_name) {
+    script = invoker.script
+    in_files = ["css/CSSProperties.in"]
+    other_inputs = css_properties_files
+    if (defined(invoker.other_inputs)) {
+      other_inputs += invoker.other_inputs
+    }
+    other_args = [
+      "--gperf", gperf_exe,
+    ]
+    outputs = invoker.outputs
+  }
+}
+
 # Template to run the make_names script. This is a special case of
 # process_in_files.
 #   in_files: files to pass to the script
@@ -134,7 +143,6 @@ template("make_names") {
     in_files = invoker.in_files
     other_inputs = make_names_files
     outputs = invoker.outputs
-    other_args = [ "--defines", feature_defines_string ]
   }
 }
 
@@ -148,7 +156,6 @@ template("make_qualified_names") {
     in_files = invoker.in_files
     other_inputs = make_qualified_names_files
     outputs = invoker.outputs
-    other_args = [ "--defines", feature_defines_string ]
   }
 }
 
@@ -172,7 +179,7 @@ template("make_token_matcher") {
   action(target_name) {
     script = "//third_party/WebKit/Source/build/scripts/make_token_matcher.py"
 
-    source_prereqs = scripts_for_in_files + [ invoker.input_file ]
+    inputs = scripts_for_in_files + [ invoker.input_file ]
     outputs = [ invoker.output_file ]
 
     args = [
@@ -183,4 +190,3 @@ template("make_token_matcher") {
     deps = make_core_generated_deps
   }
 }
-

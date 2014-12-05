@@ -31,10 +31,11 @@
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
 #include "core/page/Page.h"
+#include "core/paint/HTMLCanvasPainter.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/RenderView.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -51,30 +52,7 @@ LayerType RenderHTMLCanvas::layerTypeRequired() const
 
 void RenderHTMLCanvas::paintReplaced(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    GraphicsContext* context = paintInfo.context;
-
-    LayoutRect contentRect = contentBoxRect();
-    contentRect.moveBy(paintOffset);
-    LayoutRect paintRect = replacedContentRect();
-    paintRect.moveBy(paintOffset);
-
-    bool clip = !contentRect.contains(paintRect);
-    if (clip) {
-        // Not allowed to overflow the content box.
-        paintInfo.context->save();
-        paintInfo.context->clip(pixelSnappedIntRect(contentRect));
-    }
-
-    // FIXME: InterpolationNone should be used if ImageRenderingOptimizeContrast is set.
-    // See bug for more details: crbug.com/353716.
-    InterpolationQuality interpolationQuality = style()->imageRendering() == ImageRenderingOptimizeContrast ? InterpolationLow : CanvasDefaultInterpolationQuality;
-    InterpolationQuality previousInterpolationQuality = context->imageInterpolationQuality();
-    context->setImageInterpolationQuality(interpolationQuality);
-    toHTMLCanvasElement(node())->paint(context, paintRect);
-    context->setImageInterpolationQuality(previousInterpolationQuality);
-
-    if (clip)
-        context->restore();
+    HTMLCanvasPainter(*this).paintReplaced(paintInfo, paintOffset);
 }
 
 void RenderHTMLCanvas::canvasSizeChanged()
@@ -100,14 +78,11 @@ void RenderHTMLCanvas::canvasSizeChanged()
         return;
 
     if (!selfNeedsLayout())
-        setNeedsLayoutAndFullPaintInvalidation();
+        setNeedsLayout();
 }
 
-CompositingReasons RenderHTMLCanvas::additionalCompositingReasons(CompositingTriggerFlags triggers) const
+CompositingReasons RenderHTMLCanvas::additionalCompositingReasons() const
 {
-    if (!(triggers & CanvasTrigger))
-        return CompositingReasonNone;
-
     HTMLCanvasElement* canvas = toHTMLCanvasElement(node());
     if (canvas->renderingContext() && canvas->renderingContext()->isAccelerated())
         return CompositingReasonCanvas;
@@ -115,4 +90,4 @@ CompositingReasons RenderHTMLCanvas::additionalCompositingReasons(CompositingTri
     return CompositingReasonNone;
 }
 
-} // namespace WebCore
+} // namespace blink

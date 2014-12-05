@@ -23,21 +23,21 @@
 
 #include "core/rendering/svg/RenderSVGInline.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderSVGTextPath FINAL : public RenderSVGInline {
+class RenderSVGTextPath final : public RenderSVGInline {
 public:
     explicit RenderSVGTextPath(Element*);
 
     Path layoutPath() const;
     float startOffset() const;
 
-    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const OVERRIDE;
+    virtual bool isChildAllowed(RenderObject*, RenderStyle*) const override;
 
-    virtual bool isSVGTextPath() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVGTextPath || RenderSVGInline::isOfType(type); }
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGTextPath"; }
+    virtual const char* renderName() const override { return "RenderSVGTextPath"; }
 
     Path m_layoutPath;
 };

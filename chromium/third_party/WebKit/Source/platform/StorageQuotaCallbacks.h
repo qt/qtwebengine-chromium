@@ -32,23 +32,25 @@
 #define StorageQuotaCallbacks_h
 
 #include "platform/PlatformExport.h"
+#include "platform/heap/Handle.h"
 #include "public/platform/WebStorageQuotaError.h"
 #include "wtf/Assertions.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
-class PLATFORM_EXPORT StorageQuotaCallbacks {
+class PLATFORM_EXPORT StorageQuotaCallbacks : public GarbageCollectedFinalized<StorageQuotaCallbacks> {
     WTF_MAKE_NONCOPYABLE(StorageQuotaCallbacks);
 public:
     StorageQuotaCallbacks() { }
     virtual ~StorageQuotaCallbacks() { }
+    virtual void trace(Visitor*) { }
 
     virtual void didQueryStorageUsageAndQuota(unsigned long long usageInBytes, unsigned long long quotaInBytes) { ASSERT_NOT_REACHED(); };
     virtual void didGrantStorageQuota(unsigned long long usageInBytes, unsigned long long grantedQuotaInBytes) { ASSERT_NOT_REACHED(); };
-    virtual void didFail(blink::WebStorageQuotaError) { ASSERT_NOT_REACHED(); };
+    virtual void didFail(WebStorageQuotaError) { ASSERT_NOT_REACHED(); };
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageQuotaCallbacks_h

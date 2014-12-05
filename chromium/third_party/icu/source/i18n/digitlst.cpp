@@ -1,6 +1,6 @@
 /*
 **********************************************************************
-*   Copyright (C) 1997-2010, International Business Machines
+*   Copyright (C) 1997-2012, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 **********************************************************************
 *
@@ -31,6 +31,7 @@
 #include "charstr.h"
 #include "cmemory.h"
 #include "cstring.h"
+#include "mutex.h"
 #include "putilimp.h"
 #include "uassert.h"
 #include <stdlib.h>
@@ -51,26 +52,17 @@
  */
 #define kZero '0'
 
-static char gDecimal = 0;
 
 /* Only for 32 bit numbers. Ignore the negative sign. */
-static const char LONG_MIN_REP[] = "2147483648";
-static const char I64_MIN_REP[] = "9223372036854775808";
+//static const char LONG_MIN_REP[] = "2147483648";
+//static const char I64_MIN_REP[] = "9223372036854775808";
 
+
+static const uint8_t DIGIT_HAVE_NONE=0;
+static const uint8_t DIGIT_HAVE_DOUBLE=1;
+static const uint8_t DIGIT_HAVE_INT64=2;
 
 U_NAMESPACE_BEGIN
-
-static void
-loadDecimalChar() {
-    if (gDecimal == 0) {
-        char rep[MAX_DIGITS];
-        // For machines that decide to change the decimal on you,
-        // and try to be too smart with localization.
-        // This normally should be just a '.'.
-        sprintf(rep, "%+1.1f", 1.0);
-        gDecimal = rep[2];
-    }
-}
 
 // -------------------------------------
 // default constructor
@@ -85,8 +77,7 @@ DigitList::DigitList()
     fDecNumber = fStorage.getAlias();
     uprv_decNumberZero(fDecNumber);
 
-    fDouble = 0.0;
-    fHaveDouble = TRUE;
+    internalSetDouble(0.0);
 }
 
 // -------------------------------------
@@ -123,8 +114,19 @@ DigitList::operator=(const DigitList& other)
         fContext.digits = fStorage.getCapacity();
         uprv_decNumberCopy(fDecNumber, other.fDecNumber);
 
-        fDouble = other.fDouble;
-        fHaveDouble = other.fHaveDouble;
+        {
+            // fDouble is lazily created and cached.
+            // Avoid potential races with that happening with other.fDouble
+            // while we are doing the assignment.
+            Mutex mutex;
+
+            if(other.fHave==kDouble) {
+              fUnion.fDouble = other.fUnion.fDouble;
+            } else if(other.fHave==kInt64) {
+              fUnion.fInt64 = other.fUnion.fInt64;
+            }
+            fHave = other.fHave;
+        }
     }
     return *this;
 }
@@ -196,8 +198,7 @@ DigitList::clear()
 {
     uprv_decNumberZero(fDecNumber);
     uprv_decContextSetRounding(&fContext, DEC_ROUND_HALF_EVEN);
-    fDouble = 0.0;
-    fHaveDouble = TRUE;
+    internalSetDouble(0.0);
 }
 
 
@@ -242,6 +243,15 @@ formatBase10(int64_t number, char *outputStr) {
 
 
 // -------------------------------------
+//
+//  setRoundingMode()
+//    For most modes, the meaning and names are the same between the decNumber library
+//      (which DigitList follows) and the ICU Formatting Rounding Mode values.
+//      The flag constants are different, however.
+//
+//     Note that ICU's kRoundingUnnecessary is not implemented directly by DigitList.
+//     This mode, inherited from Java, means that numbers that would not format exactly
+//     will return an error when formatting is attempted.
 
 void 
 DigitList::setRoundingMode(DecimalFormat::ERoundingMode m) {
@@ -255,6 +265,7 @@ DigitList::setRoundingMode(DecimalFormat::ERoundingMode m) {
       case  DecimalFormat::kRoundHalfEven: r = DEC_ROUND_HALF_EVEN; break;
       case  DecimalFormat::kRoundHalfDown: r = DEC_ROUND_HALF_DOWN; break;
       case  DecimalFormat::kRoundHalfUp:   r = DEC_ROUND_HALF_UP;   break;
+      case  DecimalFormat::kRoundUnnecessary: r = DEC_ROUND_HALF_EVEN; break;
       default:
          // TODO: how to report the problem?
          // Leave existing mode unchanged.
@@ -274,7 +285,7 @@ DigitList::setPositive(UBool s) {
     } else {
         fDecNumber->bits |= DECNEG;
     }
-    fHaveDouble = FALSE;
+    internalClear();
 }
 // -------------------------------------
 
@@ -289,7 +300,7 @@ DigitList::setDecimalAt(int32_t d) {
         adjustedDigits = 0;
     }
     fDecNumber->exponent = d - adjustedDigits;
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 int32_t  
@@ -311,7 +322,7 @@ DigitList::setCount(int32_t c)  {
         fDecNumber->lsu[0] = 0;
     }
     fDecNumber->digits = c;
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 int32_t  
@@ -332,7 +343,7 @@ DigitList::setDigit(int32_t i, char v) {
     U_ASSERT(v>='0' && v<='9');
     v &= 0x0f;
     fDecNumber->lsu[count-i-1] = v;
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 char     
@@ -386,13 +397,13 @@ DigitList::append(char digit)
             fDecNumber->exponent--;
         }
     }
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 // -------------------------------------
 
 /**
- * Currently, getDouble() depends on atof() to do its conversion.
+ * Currently, getDouble() depends on strtod() to do its conversion.
  *
  * WARNING!!
  * This is an extremely costly function. ~1/2 of the conversion time
@@ -401,28 +412,42 @@ DigitList::append(char digit)
 double
 DigitList::getDouble() const
 {
-    // TODO:  fix thread safety.  Can probably be finessed some by analyzing
-    //        what public const functions can see which DigitLists.
-    //        Like precompute fDouble for DigitLists coming in from a parse
-    //        or from a Formattable::set(), but not for any others.
-    if (fHaveDouble) {
-        return fDouble;
+    static char gDecimal = 0;
+    char decimalSeparator;
+    {
+        Mutex mutex;
+        if (fHave == kDouble) {
+            return fUnion.fDouble;
+        } else if(fHave == kInt64) {
+            return (double)fUnion.fInt64;
+        }
+        decimalSeparator = gDecimal;
     }
-    DigitList *nonConstThis = const_cast<DigitList *>(this);
 
+    if (decimalSeparator == 0) {
+        // We need to know the decimal separator character that will be used with strtod().
+        // Depends on the C runtime global locale.
+        // Most commonly is '.'
+        // TODO: caching could fail if the global locale is changed on the fly.
+        char rep[MAX_DIGITS];
+        sprintf(rep, "%+1.1f", 1.0);
+        decimalSeparator = rep[2];
+    }
+
+    double tDouble = 0.0;
     if (isZero()) {
-        nonConstThis->fDouble = 0.0;
+        tDouble = 0.0;
         if (decNumberIsNegative(fDecNumber)) {
-            nonConstThis->fDouble /= -1;
+            tDouble /= -1;
         }
     } else if (isInfinite()) {
         if (std::numeric_limits<double>::has_infinity) {
-            nonConstThis->fDouble = std::numeric_limits<double>::infinity();
+            tDouble = std::numeric_limits<double>::infinity();
         } else {
-            nonConstThis->fDouble = std::numeric_limits<double>::max();
+            tDouble = std::numeric_limits<double>::max();
         }
         if (!isPositive()) {
-            nonConstThis->fDouble = -fDouble;
+            tDouble = -tDouble; //this was incorrectly "-fDouble" originally.
         } 
     } else {
         MaybeStackArray<char, MAX_DBL_DIGITS+18> s;
@@ -437,25 +462,29 @@ DigitList::getDouble() const
             DigitList numToConvert(*this);
             numToConvert.reduce();    // Removes any trailing zeros, so that digit count is good.
             numToConvert.round(MAX_DBL_DIGITS+3);
-            uprv_decNumberToString(numToConvert.fDecNumber, s);
+            uprv_decNumberToString(numToConvert.fDecNumber, s.getAlias());
             // TODO:  how many extra digits should be included for an accurate conversion?
         } else {
-            uprv_decNumberToString(this->fDecNumber, s);
+            uprv_decNumberToString(this->fDecNumber, s.getAlias());
         }
         U_ASSERT(uprv_strlen(&s[0]) < MAX_DBL_DIGITS+18);
         
-        loadDecimalChar();
-        if (gDecimal != '.') {
-            char *decimalPt = strchr(s, '.');
+        if (decimalSeparator != '.') {
+            char *decimalPt = strchr(s.getAlias(), '.');
             if (decimalPt != NULL) {
-                *decimalPt = gDecimal;
+                *decimalPt = decimalSeparator;
             }
         }
         char *end = NULL;
-        nonConstThis->fDouble = uprv_strtod(s, &end);
+        tDouble = uprv_strtod(s.getAlias(), &end);
     }
-    nonConstThis->fHaveDouble = TRUE;
-    return fDouble;
+    {
+        Mutex mutex;
+        DigitList *nonConstThis = const_cast<DigitList *>(this);
+        nonConstThis->internalSetDouble(tDouble);
+        gDecimal = decimalSeparator;
+    }
+    return tDouble;
 }
 
 // -------------------------------------
@@ -486,11 +515,14 @@ int32_t DigitList::getLong() /*const*/
 
 
 /**
- *  convert this number to an int64_t.   Round if there is a fractional part.
+ *  convert this number to an int64_t.   Truncate if there is a fractional part.
  *  Return zero if the number cannot be represented.
  */
 int64_t DigitList::getInt64() /*const*/ {
-    // Round if non-integer.   (Truncate or round?)
+    if(fHave==kInt64) {
+      return fUnion.fInt64;
+    } 
+    // Truncate if non-integer.
     // Return 0 if out of range.
     // Range of in64_t is -9223372036854775808 to 9223372036854775807  (19 digits)
     //
@@ -498,23 +530,27 @@ int64_t DigitList::getInt64() /*const*/ {
         // Overflow, absolute value too big.
         return 0;
     }
-    decNumber *workingNum = fDecNumber;
 
-    if (fDecNumber->exponent != 0) {
-        // Force to an integer, with zero exponent, rounding if necessary.
-        DigitList copy(*this);
-        DigitList zero;
-        uprv_decNumberQuantize(copy.fDecNumber, copy.fDecNumber, zero.fDecNumber, &fContext);
-        workingNum = copy.fDecNumber;
-    }
+    // The number of integer digits may differ from the number of digits stored
+    //   in the decimal number.
+    //     for 12.345  numIntDigits = 2, number->digits = 5
+    //     for 12E4    numIntDigits = 6, number->digits = 2
+    // The conversion ignores the fraction digits in the first case,
+    // and fakes up extra zero digits in the second.
+    // TODO:  It would be faster to store a table of powers of ten to multiply by
+    //        instead of looping over zero digits, multiplying each time.
 
+    int32_t numIntDigits = fDecNumber->digits + fDecNumber->exponent;
     uint64_t value = 0;
-    int32_t numDigits = workingNum->digits;
-    for (int i = numDigits-1; i>=0 ; --i) {
-        int v = workingNum->lsu[i];
+    for (int32_t i = 0; i < numIntDigits; i++) {
+        // Loop is iterating over digits starting with the most significant.
+        // Numbers are stored with the least significant digit at index zero.
+        int32_t digitIndex = fDecNumber->digits - i - 1;
+        int32_t v = (digitIndex >= 0) ? fDecNumber->lsu[digitIndex] : 0;
         value = value * (uint64_t)10 + (uint64_t)v;
     }
-    if (decNumberIsNegative(workingNum)) {
+
+    if (decNumberIsNegative(fDecNumber)) {
         value = ~value;
         value += 1;
     }
@@ -523,7 +559,7 @@ int64_t DigitList::getInt64() /*const*/ {
     // Check overflow.  It's convenient that the MSD is 9 only on overflow, the amount of
     //                  overflow can't wrap too far.  The test will also fail -0, but
     //                  that does no harm; the right answer is 0.
-    if (numDigits == 19) {
+    if (numIntDigits == 19) {
         if (( decNumberIsNegative(fDecNumber) && svalue>0) ||
             (!decNumberIsNegative(fDecNumber) && svalue<0)) {
             svalue = 0;
@@ -657,14 +693,12 @@ void
 DigitList::set(int32_t source)
 {
     set((int64_t)source);
-    fDouble = source;
-    fHaveDouble = TRUE;
+    internalSetDouble(source);
 }
 
 // -------------------------------------
 /**
- * @param maximumDigits The maximum digits to be generated.  If zero,
- * there is no maximum -- generate all digits.
+ * Set an int64, via decnumber
  */
 void
 DigitList::set(int64_t source)
@@ -674,8 +708,17 @@ DigitList::set(int64_t source)
     U_ASSERT(uprv_strlen(str) < sizeof(str));
 
     uprv_decNumberFromString(fDecNumber, str, &fContext);
-    fDouble = (double)source;
-    fHaveDouble = TRUE;
+    internalSetDouble(source);
+}
+
+/**
+ * Set an int64, with no decnumber
+ */
+void
+DigitList::setInteger(int64_t source)
+{
+  fDecNumber=NULL;
+  internalSetInt64(source);
 }
 
 
@@ -689,31 +732,58 @@ DigitList::set(int64_t source)
  * be acceptable for a public API.
  */
 void
-DigitList::set(const StringPiece &source, UErrorCode &status) {
+DigitList::set(const StringPiece &source, UErrorCode &status, uint32_t /*fastpathBits*/) {
     if (U_FAILURE(status)) {
         return;
     }
 
-    // Figure out a max number of digits to use during the conversion, and
-    // resize the number up if necessary.
-    int32_t numDigits = source.length();
-    if (numDigits > fContext.digits) {
+#if 0    
+    if(fastpathBits==(kFastpathOk|kNoDecimal)) {
+      int32_t size = source.size();
+      const char *data = source.data();
+      int64_t r = 0;
+      int64_t m = 1;
+      // fast parse
+      while(size>0) {
+        char ch = data[--size];
+        if(ch=='+') {
+          break;
+        } else if(ch=='-') {
+          r = -r;
+          break;
+        } else {
+          int64_t d = ch-'0';
+          //printf("CH[%d]=%c, %d, *=%d\n", size,ch, (int)d, (int)m);
+          r+=(d)*m;
+          m *= 10;
+        }
+      }
+      //printf("R=%d\n", r);
+      set(r);
+    } else
+#endif
+        {
+      // Figure out a max number of digits to use during the conversion, and
+      // resize the number up if necessary.
+      int32_t numDigits = source.length();
+      if (numDigits > fContext.digits) {
         // fContext.digits == fStorage.getCapacity()
         decNumber *t = fStorage.resize(numDigits, fStorage.getCapacity());
         if (t == NULL) {
-            status = U_MEMORY_ALLOCATION_ERROR;
-            return;
+          status = U_MEMORY_ALLOCATION_ERROR;
+          return;
         }
         fDecNumber = t;
         fContext.digits = numDigits;
-    }
+      }
 
-    fContext.status = 0;
-    uprv_decNumberFromString(fDecNumber, source.data(), &fContext);
-    if ((fContext.status & DEC_Conversion_syntax) != 0) {
+      fContext.status = 0;
+      uprv_decNumberFromString(fDecNumber, source.data(), &fContext);
+      if ((fContext.status & DEC_Conversion_syntax) != 0) {
         status = U_DECIMAL_NUMBER_SYNTAX_ERROR;
+      }
     }
-    fHaveDouble = FALSE;
+    internalClear();
 }   
 
 /**
@@ -727,26 +797,33 @@ DigitList::set(double source)
     // for now, simple implementation; later, do proper IEEE stuff
     char rep[MAX_DIGITS + 8]; // Extra space for '+', '.', e+NNN, and '\0' (actually +8 is enough)
 
-    // Generate a representation of the form /[+-][0-9]+e[+-][0-9]+/
-    sprintf(rep, "%+1.*e", MAX_DBL_DIGITS - 1, source);
+    // Generate a representation of the form /[+-][0-9].[0-9]+e[+-][0-9]+/
+    // Can also generate /[+-]nan/ or /[+-]inf/
+    // TODO: Use something other than sprintf() here, since it's behavior is somewhat platform specific.
+    //       That is why infinity is special cased here.
+    if (uprv_isInfinite(source)) {
+        if (uprv_isNegativeInfinity(source)) {
+            uprv_strcpy(rep,"-inf"); // Handle negative infinity
+        } else {
+            uprv_strcpy(rep,"inf");
+        }
+    } else {
+        sprintf(rep, "%+1.*e", MAX_DBL_DIGITS - 1, source);
+    }
     U_ASSERT(uprv_strlen(rep) < sizeof(rep));
 
     // uprv_decNumberFromString() will parse the string expecting '.' as a
     // decimal separator, however sprintf() can use ',' in certain locales.
-    // Overwrite a different decimal separator with '.' here before proceeding.
-    loadDecimalChar();
-    if (gDecimal != '.') {
-        char *decimalPt = strchr(rep, gDecimal);
-        if (decimalPt != NULL) {
-            *decimalPt = '.';
-        }
+    // Overwrite a ',' with '.' here before proceeding.
+    char *decimalSeparator = strchr(rep, ',');
+    if (decimalSeparator != NULL) {
+        *decimalSeparator = '.';
     }
 
     // Create a decNumber from the string.
     uprv_decNumberFromString(fDecNumber, rep, &fContext);
     uprv_decNumberTrim(fDecNumber);
-    fDouble = source;
-    fHaveDouble = TRUE;
+    internalSetDouble(source);
 }
 
 // -------------------------------------
@@ -767,7 +844,7 @@ DigitList::mult(const DigitList &other, UErrorCode &status) {
         ensureCapacity(requiredDigits, status);
     }
     uprv_decNumberMultiply(fDecNumber, fDecNumber, other.fDecNumber, &fContext);
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 // -------------------------------------
@@ -784,7 +861,7 @@ DigitList::div(const DigitList &other, UErrorCode &status) {
         return;
     }
     uprv_decNumberDivide(fDecNumber, fDecNumber, other.fDecNumber, &fContext);
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 // -------------------------------------
@@ -834,7 +911,7 @@ DigitList::round(int32_t maximumDigits)
     uprv_decNumberPlus(fDecNumber, fDecNumber, &fContext);
     fContext.digits = savedDigits;
     uprv_decNumberTrim(fDecNumber);
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 
@@ -851,7 +928,7 @@ DigitList::roundFixedPoint(int32_t maximumFractionDigits) {
     
     uprv_decNumberQuantize(fDecNumber, fDecNumber, &scale, &fContext);
     trim();
-    fHaveDouble = FALSE;
+    internalClear();
 }
 
 // -------------------------------------
@@ -868,7 +945,6 @@ DigitList::isZero() const
 {
     return decNumberIsZero(fDecNumber);
 }
-
 
 U_NAMESPACE_END
 #endif // #if !UCONFIG_NO_FORMATTING

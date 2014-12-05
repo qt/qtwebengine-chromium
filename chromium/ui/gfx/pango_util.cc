@@ -5,22 +5,20 @@
 #include "ui/gfx/pango_util.h"
 
 #include <cairo/cairo.h>
-#include <fontconfig/fontconfig.h>
 #include <pango/pango.h>
 #include <pango/pangocairo.h>
 #include <string>
 
 #include <algorithm>
 #include <map>
-#include <vector>
 
 #include "base/logging.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
-#include "ui/gfx/font_render_params_linux.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/font_render_params.h"
+#include "ui/gfx/linux_font_delegate.h"
 #include "ui/gfx/platform_font_pango.h"
-#include "ui/gfx/rect.h"
 #include "ui/gfx/text_utils.h"
 
 namespace gfx {
@@ -30,17 +28,16 @@ namespace {
 // Marker for accelerators in the text.
 const gunichar kAcceleratorChar = '&';
 
-// Return |cairo_font_options|. If needed, allocate and update it.
-// TODO(derat): Return font-specific options: http://crbug.com/125235
-cairo_font_options_t* GetCairoFontOptions() {
-  // Font settings that we initialize once and then use when drawing text.
-  static cairo_font_options_t* cairo_font_options = NULL;
-  if (cairo_font_options)
-    return cairo_font_options;
+// Creates and returns a PangoContext. The caller owns the context.
+PangoContext* GetPangoContext() {
+  PangoFontMap* font_map = pango_cairo_font_map_get_default();
+  return pango_font_map_create_context(font_map);
+}
 
-  cairo_font_options = cairo_font_options_create();
+// Creates a new cairo_font_options_t based on |params|.
+cairo_font_options_t* CreateCairoFontOptions(const FontRenderParams& params) {
+  cairo_font_options_t* cairo_font_options = cairo_font_options_create();
 
-  const FontRenderParams& params = GetDefaultFontRenderParams();
   FontRenderParams::SubpixelRendering subpixel = params.subpixel_rendering;
   if (!params.antialiasing) {
     cairo_font_options_set_antialias(cairo_font_options, CAIRO_ANTIALIAS_NONE);
@@ -88,84 +85,56 @@ cairo_font_options_t* GetCairoFontOptions() {
   return cairo_font_options;
 }
 
+// Returns the DPI that should be used by Pango.
+double GetPangoDPI() {
+  static double dpi = -1.0;
+  if (dpi < 0.0) {
+    const gfx::LinuxFontDelegate* delegate = gfx::LinuxFontDelegate::instance();
+    if (delegate)
+      dpi = delegate->GetFontDPI();
+    if (dpi <= 0.0)
+      dpi = 96.0;
+  }
+  return dpi;
+}
+
 // Returns the number of pixels in a point.
 // - multiply a point size by this to get pixels ("device units")
 // - divide a pixel size by this to get points
-float GetPixelsInPoint() {
-  static float pixels_in_point = 1.0;
-  static bool determined_value = false;
-
-  if (!determined_value) {
-    // http://goo.gl/UIh5m: "This is a scale factor between points specified in
-    // a PangoFontDescription and Cairo units.  The default value is 96, meaning
-    // that a 10 point font will be 13 units high. (10 * 96. / 72. = 13.3)."
-    double pango_dpi = GetPangoResolution();
-    if (pango_dpi <= 0)
-      pango_dpi = 96.0;
-    pixels_in_point = pango_dpi / 72.0;  // 72 points in an inch
-    determined_value = true;
-  }
-
+double GetPixelsInPoint() {
+  static double pixels_in_point = GetPangoDPI() / 72.0;  // 72 points in an inch
   return pixels_in_point;
 }
 
 }  // namespace
 
-PangoContext* GetPangoContext() {
-  PangoFontMap* font_map = pango_cairo_font_map_get_default();
-  return pango_font_map_create_context(font_map);
-}
-
-double GetPangoResolution() {
-  static double resolution;
-  static bool determined_resolution = false;
-  if (!determined_resolution) {
-    determined_resolution = true;
-    PangoContext* default_context = GetPangoContext();
-    resolution = pango_cairo_context_get_resolution(default_context);
-    g_object_unref(default_context);
-  }
-  return resolution;
-}
-
-// Pass a width greater than 0 to force wrapping and eliding.
-static void SetupPangoLayoutWithoutFont(
+void SetUpPangoLayout(
     PangoLayout* layout,
     const base::string16& text,
-    int width,
+    const FontList& font_list,
     base::i18n::TextDirection text_direction,
     int flags) {
-  cairo_font_options_t* cairo_font_options = GetCairoFontOptions();
+  cairo_font_options_t* cairo_font_options = CreateCairoFontOptions(
+      font_list.GetPrimaryFont().GetFontRenderParams());
 
-  // If we got an explicit request to turn off subpixel rendering, disable it on
-  // a copy of the static font options object.
-  bool copied_cairo_font_options = false;
+  // If we got an explicit request to turn off subpixel rendering, disable it.
   if ((flags & Canvas::NO_SUBPIXEL_RENDERING) &&
       (cairo_font_options_get_antialias(cairo_font_options) ==
-       CAIRO_ANTIALIAS_SUBPIXEL)) {
-    cairo_font_options = cairo_font_options_copy(cairo_font_options);
-    copied_cairo_font_options = true;
+       CAIRO_ANTIALIAS_SUBPIXEL))
     cairo_font_options_set_antialias(cairo_font_options, CAIRO_ANTIALIAS_GRAY);
-  }
 
   // This needs to be done early on; it has no effect when called just before
   // pango_cairo_show_layout().
   pango_cairo_context_set_font_options(
       pango_layout_get_context(layout), cairo_font_options);
-
-  if (copied_cairo_font_options) {
-    cairo_font_options_destroy(cairo_font_options);
-    cairo_font_options = NULL;
-  }
+  cairo_font_options_destroy(cairo_font_options);
+  cairo_font_options = NULL;
 
   // Set Pango's base text direction explicitly from |text_direction|.
   pango_layout_set_auto_dir(layout, FALSE);
   pango_context_set_base_dir(pango_layout_get_context(layout),
       (text_direction == base::i18n::RIGHT_TO_LEFT ?
        PANGO_DIRECTION_RTL : PANGO_DIRECTION_LTR));
-
-  if (width > 0)
-    pango_layout_set_width(layout, width * PANGO_SCALE);
 
   if (flags & Canvas::TEXT_ALIGN_CENTER) {
     // We don't support center aligned w/ eliding.
@@ -191,14 +160,10 @@ static void SetupPangoLayoutWithoutFont(
     pango_layout_set_width(layout, -1);
   }
 
-  // Set the resolution to match that used by Gtk. If we don't set the
-  // resolution and the resolution differs from the default, Gtk and Chrome end
-  // up drawing at different sizes.
-  double resolution = GetPangoResolution();
-  if (resolution > 0) {
-    pango_cairo_context_set_resolution(pango_layout_get_context(layout),
-                                       resolution);
-  }
+  // Set the layout's resolution to match the resolution used to convert from
+  // points to pixels.
+  pango_cairo_context_set_resolution(pango_layout_get_context(layout),
+                                     GetPangoDPI());
 
   // Set text and accelerator character if needed.
   if (flags & Canvas::SHOW_PREFIX) {
@@ -228,45 +193,21 @@ static void SetupPangoLayoutWithoutFont(
 
     pango_layout_set_text(layout, utf8.data(), utf8.size());
   }
-}
 
-void SetupPangoLayout(PangoLayout* layout,
-                      const base::string16& text,
-                      const Font& font,
-                      int width,
-                      base::i18n::TextDirection text_direction,
-                      int flags) {
-  SetupPangoLayoutWithoutFont(layout, text, width, text_direction, flags);
-
-  ScopedPangoFontDescription desc(font.GetNativeFont());
+  ScopedPangoFontDescription desc(pango_font_description_from_string(
+      font_list.GetFontDescriptionString().c_str()));
   pango_layout_set_font_description(layout, desc.get());
 }
 
-void SetupPangoLayoutWithFontDescription(
-    PangoLayout* layout,
-    const base::string16& text,
-    const std::string& font_description,
-    int width,
-    base::i18n::TextDirection text_direction,
-    int flags) {
-  SetupPangoLayoutWithoutFont(layout, text, width, text_direction, flags);
+int GetPangoFontSizeInPixels(PangoFontDescription* pango_font) {
+  // If the size is absolute, then it's in Pango units rather than points. There
+  // are PANGO_SCALE Pango units in a device unit (pixel).
+  if (pango_font_description_get_size_is_absolute(pango_font))
+    return pango_font_description_get_size(pango_font) / PANGO_SCALE;
 
-  ScopedPangoFontDescription desc(
-      pango_font_description_from_string(font_description.c_str()));
-  pango_layout_set_font_description(layout, desc.get());
-}
-
-size_t GetPangoFontSizeInPixels(PangoFontDescription* pango_font) {
-  size_t size_in_pixels = pango_font_description_get_size(pango_font);
-  if (pango_font_description_get_size_is_absolute(pango_font)) {
-    // If the size is absolute, then it's in Pango units rather than points.
-    // There are PANGO_SCALE Pango units in a device unit (pixel).
-    size_in_pixels /= PANGO_SCALE;
-  } else {
-    // Otherwise, we need to convert from points.
-    size_in_pixels = size_in_pixels * GetPixelsInPoint() / PANGO_SCALE;
-  }
-  return size_in_pixels;
+  // Otherwise, we need to convert from points.
+  return static_cast<int>(GetPixelsInPoint() *
+      pango_font_description_get_size(pango_font) / PANGO_SCALE + 0.5);
 }
 
 PangoFontMetrics* GetPangoFontMetrics(PangoFontDescription* desc) {

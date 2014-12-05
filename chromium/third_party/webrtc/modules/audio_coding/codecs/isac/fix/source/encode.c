@@ -194,7 +194,8 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
     }
     return status;
   }
-  AvgPitchGain_Q12 = WEBRTC_SPL_RSHIFT_W32(PitchGains_Q12[0] + PitchGains_Q12[1] + PitchGains_Q12[2] + PitchGains_Q12[3], 2);
+  AvgPitchGain_Q12 = (PitchGains_Q12[0] + PitchGains_Q12[1] +
+      PitchGains_Q12[2] + PitchGains_Q12[3]) >> 2;
 
   /* find coefficients for perceptual pre-filters */
   WebRtcIsacfix_GetLpcCoef(LPandHP, HP16a+QLOOKAHEAD, &ISACenc_obj->maskfiltstr_obj,
@@ -456,7 +457,8 @@ int WebRtcIsacfix_EncodeImpl(int16_t      *in,
       assert(stream_length >= 0);
       if (stream_length & 0x0001){
         ISACenc_obj->bitstr_seed = WEBRTC_SPL_RAND( ISACenc_obj->bitstr_seed );
-        ISACenc_obj->bitstr_obj.stream[ WEBRTC_SPL_RSHIFT_W16(stream_length, 1) ] |= (uint16_t)(ISACenc_obj->bitstr_seed & 0xFF);
+        ISACenc_obj->bitstr_obj.stream[stream_length / 2] |=
+            (uint16_t)(ISACenc_obj->bitstr_seed & 0xFF);
       } else {
         ISACenc_obj->bitstr_seed = WEBRTC_SPL_RAND( ISACenc_obj->bitstr_seed );
         ISACenc_obj->bitstr_obj.stream[stream_length / 2] =

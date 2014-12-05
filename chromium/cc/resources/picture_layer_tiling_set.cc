@@ -19,12 +19,8 @@ class LargestToSmallestScaleFunctor {
 
 }  // namespace
 
-
-PictureLayerTilingSet::PictureLayerTilingSet(
-    PictureLayerTilingClient* client,
-    const gfx::Size& layer_bounds)
-    : client_(client),
-      layer_bounds_(layer_bounds) {
+PictureLayerTilingSet::PictureLayerTilingSet(PictureLayerTilingClient* client)
+    : client_(client) {
 }
 
 PictureLayerTilingSet::~PictureLayerTilingSet() {
@@ -36,13 +32,17 @@ void PictureLayerTilingSet::SetClient(PictureLayerTilingClient* client) {
     tilings_[i]->SetClient(client_);
 }
 
+void PictureLayerTilingSet::RemoveTilesInRegion(const Region& region) {
+  for (size_t i = 0; i < tilings_.size(); ++i)
+    tilings_[i]->RemoveTilesInRegion(region);
+}
+
 bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
                                         const gfx::Size& new_layer_bounds,
                                         const Region& layer_invalidation,
                                         float minimum_contents_scale) {
   if (new_layer_bounds.IsEmpty()) {
     RemoveAllTilings();
-    layer_bounds_ = new_layer_bounds;
     return false;
   }
 
@@ -69,18 +69,18 @@ bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
     if (PictureLayerTiling* this_tiling = TilingAtScale(contents_scale)) {
       this_tiling->set_resolution(other.tilings_[i]->resolution());
 
-      // These two calls must come before updating the pile, because they may
-      // destroy tiles that the new pile cannot raster.
-      this_tiling->SetLayerBounds(new_layer_bounds);
-      this_tiling->Invalidate(layer_invalidation);
-
-      this_tiling->UpdateTilesToCurrentPile();
+      this_tiling->UpdateTilesToCurrentPile(layer_invalidation,
+                                            new_layer_bounds);
       this_tiling->CreateMissingTilesInLiveTilesRect();
       if (this_tiling->resolution() == HIGH_RESOLUTION)
         have_high_res_tiling = true;
 
       DCHECK(this_tiling->tile_size() ==
-             client_->CalculateTileSize(this_tiling->TilingRect().size()));
+             client_->CalculateTileSize(this_tiling->tiling_size()))
+          << "tile_size: " << this_tiling->tile_size().ToString()
+          << " tiling_size: " << this_tiling->tiling_size().ToString()
+          << " CalculateTileSize: "
+          << client_->CalculateTileSize(this_tiling->tiling_size()).ToString();
       continue;
     }
     scoped_ptr<PictureLayerTiling> new_tiling = PictureLayerTiling::Create(
@@ -94,22 +94,17 @@ bool PictureLayerTilingSet::SyncTilings(const PictureLayerTilingSet& other,
   }
   tilings_.sort(LargestToSmallestScaleFunctor());
 
-  layer_bounds_ = new_layer_bounds;
   return have_high_res_tiling;
 }
 
-void PictureLayerTilingSet::RemoveTilesInRegion(const Region& region) {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->RemoveTilesInRegion(region);
-}
-
-PictureLayerTiling* PictureLayerTilingSet::AddTiling(float contents_scale) {
+PictureLayerTiling* PictureLayerTilingSet::AddTiling(
+    float contents_scale,
+    const gfx::Size& layer_bounds) {
   for (size_t i = 0; i < tilings_.size(); ++i)
     DCHECK_NE(tilings_[i]->contents_scale(), contents_scale);
 
-  tilings_.push_back(PictureLayerTiling::Create(contents_scale,
-                                                layer_bounds_,
-                                                client_));
+  tilings_.push_back(
+      PictureLayerTiling::Create(contents_scale, layer_bounds, client_));
   PictureLayerTiling* appended = tilings_.back();
 
   tilings_.sort(LargestToSmallestScaleFunctor());
@@ -218,7 +213,14 @@ Tile* PictureLayerTilingSet::CoverageIterator::operator*() const {
   return *tiling_iter_;
 }
 
-PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling() {
+TileResolution PictureLayerTilingSet::CoverageIterator::resolution() const {
+  const PictureLayerTiling* tiling = CurrentTiling();
+  DCHECK(tiling);
+  return tiling->resolution();
+}
+
+PictureLayerTiling* PictureLayerTilingSet::CoverageIterator::CurrentTiling()
+    const {
   if (current_tiling_ < 0)
     return NULL;
   if (static_cast<size_t>(current_tiling_) >= set_->tilings_.size())
@@ -307,21 +309,12 @@ PictureLayerTilingSet::CoverageIterator::operator bool() const {
       region_iter_.has_rect();
 }
 
-void PictureLayerTilingSet::DidBecomeActive() {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->DidBecomeActive();
-}
-
-void PictureLayerTilingSet::DidBecomeRecycled() {
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    tilings_[i]->DidBecomeRecycled();
-}
-
-scoped_ptr<base::Value> PictureLayerTilingSet::AsValue() const {
-  scoped_ptr<base::ListValue> state(new base::ListValue());
-  for (size_t i = 0; i < tilings_.size(); ++i)
-    state->Append(tilings_[i]->AsValue().release());
-  return state.PassAs<base::Value>();
+void PictureLayerTilingSet::AsValueInto(base::debug::TracedValue* state) const {
+  for (size_t i = 0; i < tilings_.size(); ++i) {
+    state->BeginDictionary();
+    tilings_[i]->AsValueInto(state);
+    state->EndDictionary();
+  }
 }
 
 size_t PictureLayerTilingSet::GPUMemoryUsageInBytes() const {
@@ -329,6 +322,53 @@ size_t PictureLayerTilingSet::GPUMemoryUsageInBytes() const {
   for (size_t i = 0; i < tilings_.size(); ++i)
     amount += tilings_[i]->GPUMemoryUsageInBytes();
   return amount;
+}
+
+PictureLayerTilingSet::TilingRange PictureLayerTilingSet::GetTilingRange(
+    TilingRangeType type) const {
+  // Doesn't seem to be the case right now but if it ever becomes a performance
+  // problem to compute these ranges each time this function is called, we can
+  // compute them only when the tiling set has changed instead.
+  TilingRange high_res_range(0, 0);
+  TilingRange low_res_range(tilings_.size(), tilings_.size());
+  for (size_t i = 0; i < tilings_.size(); ++i) {
+    const PictureLayerTiling* tiling = tilings_[i];
+    if (tiling->resolution() == HIGH_RESOLUTION)
+      high_res_range = TilingRange(i, i + 1);
+    if (tiling->resolution() == LOW_RESOLUTION)
+      low_res_range = TilingRange(i, i + 1);
+  }
+
+  TilingRange range(0, 0);
+  switch (type) {
+    case HIGHER_THAN_HIGH_RES:
+      range = TilingRange(0, high_res_range.start);
+      break;
+    case HIGH_RES:
+      range = high_res_range;
+      break;
+    case BETWEEN_HIGH_AND_LOW_RES:
+      // TODO(vmpstr): This code assumes that high res tiling will come before
+      // low res tiling, however there are cases where this assumption is
+      // violated. As a result, it's better to be safe in these situations,
+      // since otherwise we can end up accessing a tiling that doesn't exist.
+      // See crbug.com/429397 for high res tiling appearing after low res
+      // tiling discussion/fixes.
+      if (high_res_range.start <= low_res_range.start)
+        range = TilingRange(high_res_range.end, low_res_range.start);
+      else
+        range = TilingRange(low_res_range.end, high_res_range.start);
+      break;
+    case LOW_RES:
+      range = low_res_range;
+      break;
+    case LOWER_THAN_LOW_RES:
+      range = TilingRange(low_res_range.end, tilings_.size());
+      break;
+  }
+
+  DCHECK_LE(range.start, range.end);
+  return range;
 }
 
 }  // namespace cc

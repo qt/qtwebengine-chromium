@@ -31,8 +31,8 @@
 #include "config.h"
 #include "web/SharedWorkerRepositoryClientImpl.h"
 
-#include "bindings/v8/ExceptionMessages.h"
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionMessages.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/Event.h"
@@ -52,8 +52,6 @@
 #include "public/web/WebSharedWorkerRepositoryClient.h"
 #include "web/WebLocalFrameImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 // Callback class that keeps the SharedWorker and WebSharedWorker objects alive while connecting.
@@ -71,8 +69,8 @@ public:
 
 private:
     // WebSharedWorkerConnector::ConnectListener overrides.
-    virtual void connected() OVERRIDE;
-    virtual void scriptLoadFailed() OVERRIDE;
+    virtual void connected() override;
+    virtual void scriptLoadFailed() override;
 
     RefPtrWillBePersistent<SharedWorker> m_worker;
     KURL m_url;
@@ -83,11 +81,12 @@ private:
 
 SharedWorkerConnector::~SharedWorkerConnector()
 {
-    m_worker->unsetPreventGC();
+    m_worker->setIsBeingConnected(false);
 }
+
 void SharedWorkerConnector::connect()
 {
-    m_worker->setPreventGC();
+    m_worker->setIsBeingConnected(true);
     m_webWorkerConnector->connect(m_channel.leakPtr(), this);
 }
 
@@ -117,7 +116,7 @@ void SharedWorkerRepositoryClientImpl::connect(PassRefPtrWillBeRawPtr<SharedWork
     // No nested workers (for now) - connect() should only be called from document context.
     ASSERT(worker->executionContext()->isDocument());
     Document* document = toDocument(worker->executionContext());
-    OwnPtr<WebSharedWorkerConnector> webWorkerConnector = adoptPtr(m_client->createSharedWorkerConnector(url, name, getId(document), worker->executionContext()->contentSecurityPolicy()->deprecatedHeader(), static_cast<blink::WebContentSecurityPolicyType>(worker->executionContext()->contentSecurityPolicy()->deprecatedHeaderType())));
+    OwnPtr<WebSharedWorkerConnector> webWorkerConnector = adoptPtr(m_client->createSharedWorkerConnector(url, name, getId(document), worker->executionContext()->contentSecurityPolicy()->deprecatedHeader(), static_cast<WebContentSecurityPolicyType>(worker->executionContext()->contentSecurityPolicy()->deprecatedHeaderType())));
     if (!webWorkerConnector) {
         // Existing worker does not match this url, so return an error back to the caller.
         exceptionState.throwDOMException(URLMismatchError, "The location of the SharedWorker named '" + name + "' does not exactly match the provided URL ('" + url.elidedString() + "').");

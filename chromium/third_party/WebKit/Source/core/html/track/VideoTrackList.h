@@ -5,13 +5,13 @@
 #ifndef VideoTrackList_h
 #define VideoTrackList_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/html/track/TrackListBase.h"
 #include "core/html/track/VideoTrack.h"
 
-namespace WebCore {
+namespace blink {
 
-class VideoTrackList FINAL : public TrackListBase<VideoTrack>, public ScriptWrappable {
+class VideoTrackList final : public TrackListBase<VideoTrack> {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<VideoTrackList> create(HTMLMediaElement&);
 
@@ -20,7 +20,7 @@ public:
     int selectedIndex() const;
 
     // EventTarget
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
     void trackSelected(blink::WebMediaPlayer::TrackId selectedTrackId);
 
@@ -28,6 +28,6 @@ private:
     explicit VideoTrackList(HTMLMediaElement&);
 };
 
-}
+} // namespace blink
 
-#endif
+#endif // VideoTrackList_h

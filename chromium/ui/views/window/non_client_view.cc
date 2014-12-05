@@ -8,6 +8,7 @@
 #include "ui/base/hit_test.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/views/rect_based_targeting_utils.h"
+#include "ui/views/view_targeter.h"
 #include "ui/views/widget/root_view.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/client_view.h"
@@ -35,6 +36,8 @@ static const int kClientViewIndex = 1;
 NonClientView::NonClientView()
     : client_view_(NULL),
       overlay_view_(NULL) {
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
 }
 
 NonClientView::~NonClientView() {
@@ -112,6 +115,10 @@ void NonClientView::UpdateWindowTitle() {
   frame_view_->UpdateWindowTitle();
 }
 
+void NonClientView::SizeConstraintsChanged() {
+  frame_view_->SizeConstraintsChanged();
+}
+
 void NonClientView::LayoutFrameView() {
   // First layout the NonClientFrameView, which determines the size of the
   // ClientView...
@@ -186,9 +193,28 @@ const char* NonClientView::GetClassName() const {
   return kViewClassName;
 }
 
-View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
+View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
+  // The same logic as for |TargetForRect()| applies here.
+  if (frame_view_->parent() == this) {
+    // During the reset of the frame_view_ it's possible to be in this code
+    // after it's been removed from the view hierarchy but before it's been
+    // removed from the NonClientView.
+    gfx::Point point_in_child_coords(point);
+    View::ConvertPointToTarget(this, frame_view_.get(), &point_in_child_coords);
+    View* handler =
+        frame_view_->GetTooltipHandlerForPoint(point_in_child_coords);
+    if (handler)
+      return handler;
+  }
+
+  return View::GetTooltipHandlerForPoint(point);
+}
+
+View* NonClientView::TargetForRect(View* root, const gfx::Rect& rect) {
+  CHECK_EQ(root, this);
+
   if (!UsePointBasedTargeting(rect))
-    return View::GetEventHandlerForRect(rect);
+    return ViewTargeterDelegate::TargetForRect(root, rect);
 
   // Because of the z-ordering of our child views (the client view is positioned
   // over the non-client frame view, if the client view ever overlaps the frame
@@ -209,24 +235,7 @@ View* NonClientView::GetEventHandlerForRect(const gfx::Rect& rect) {
       return frame_view_->GetEventHandlerForRect(rect_in_child_coords);
   }
 
-  return View::GetEventHandlerForRect(rect);
-}
-
-View* NonClientView::GetTooltipHandlerForPoint(const gfx::Point& point) {
-  // The same logic as for |GetEventHandlerForRect()| applies here.
-  if (frame_view_->parent() == this) {
-    // During the reset of the frame_view_ it's possible to be in this code
-    // after it's been removed from the view hierarchy but before it's been
-    // removed from the NonClientView.
-    gfx::Point point_in_child_coords(point);
-    View::ConvertPointToTarget(this, frame_view_.get(), &point_in_child_coords);
-    View* handler =
-        frame_view_->GetTooltipHandlerForPoint(point_in_child_coords);
-    if (handler)
-      return handler;
-  }
-
-  return View::GetTooltipHandlerForPoint(point);
+  return ViewTargeterDelegate::TargetForRect(root, rect);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -300,18 +309,6 @@ int NonClientFrameView::GetHTComponentForFrame(const gfx::Point& point,
   return can_resize ? component : HTBORDER;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-// NonClientFrameView, View overrides:
-
-bool NonClientFrameView::HitTestRect(const gfx::Rect& rect) const {
-  // For the default case, we assume the non-client frame view never overlaps
-  // the client view.
-  return !GetWidget()->client_view()->bounds().Intersects(rect);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// NonClientFrameView, protected:
-
 void NonClientFrameView::GetAccessibleState(ui::AXViewState* state) {
   state->role = ui::AX_ROLE_CLIENT;
 }
@@ -320,12 +317,27 @@ const char* NonClientFrameView::GetClassName() const {
   return kViewClassName;
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// NonClientFrameView, protected:
+
+NonClientFrameView::NonClientFrameView() : inactive_rendering_disabled_(false) {
+  SetEventTargeter(
+      scoped_ptr<views::ViewTargeter>(new views::ViewTargeter(this)));
+}
+
+// ViewTargeterDelegate:
+bool NonClientFrameView::DoesIntersectRect(const View* target,
+                                           const gfx::Rect& rect) const {
+  CHECK_EQ(target, this);
+
+  // For the default case, we assume the non-client frame view never overlaps
+  // the client view.
+  return !GetWidget()->client_view()->bounds().Intersects(rect);
+}
+
 void NonClientFrameView::OnBoundsChanged(const gfx::Rect& previous_bounds) {
   // Overridden to do nothing. The NonClientView manually calls Layout on the
   // FrameView when it is itself laid out, see comment in NonClientView::Layout.
-}
-
-NonClientFrameView::NonClientFrameView() : inactive_rendering_disabled_(false) {
 }
 
 }  // namespace views

@@ -21,39 +21,36 @@ class CC_EXPORT PictureLayer : public Layer {
  public:
   static scoped_refptr<PictureLayer> Create(ContentLayerClient* client);
 
-  void ClearClient() { client_ = NULL; }
+  void ClearClient();
 
   // Layer interface.
-  virtual bool DrawsContent() const OVERRIDE;
-  virtual scoped_ptr<LayerImpl> CreateLayerImpl(
-      LayerTreeImpl* tree_impl) OVERRIDE;
-  virtual void SetLayerTreeHost(LayerTreeHost* host) OVERRIDE;
-  virtual void PushPropertiesTo(LayerImpl* layer) OVERRIDE;
-  virtual void SetNeedsDisplayRect(const gfx::RectF& layer_rect) OVERRIDE;
-  virtual bool Update(ResourceUpdateQueue* queue,
-                      const OcclusionTracker<Layer>* occlusion) OVERRIDE;
-  virtual void SetIsMask(bool is_mask) OVERRIDE;
-  virtual bool SupportsLCDText() const OVERRIDE;
-  virtual skia::RefPtr<SkPicture> GetPicture() const OVERRIDE;
-  virtual bool IsSuitableForGpuRasterization() const OVERRIDE;
+  scoped_ptr<LayerImpl> CreateLayerImpl(LayerTreeImpl* tree_impl) override;
+  void SetLayerTreeHost(LayerTreeHost* host) override;
+  void PushPropertiesTo(LayerImpl* layer) override;
+  void SetNeedsDisplayRect(const gfx::Rect& layer_rect) override;
+  bool Update(ResourceUpdateQueue* queue,
+              const OcclusionTracker<Layer>* occlusion) override;
+  void SetIsMask(bool is_mask) override;
+  bool SupportsLCDText() const override;
+  skia::RefPtr<SkPicture> GetPicture() const override;
+  bool IsSuitableForGpuRasterization() const override;
 
-  virtual void RunMicroBenchmark(MicroBenchmark* benchmark) OVERRIDE;
+  void RunMicroBenchmark(MicroBenchmark* benchmark) override;
 
   ContentLayerClient* client() { return client_; }
 
-  Picture::RecordingMode RecordingMode() const;
-
-  PicturePile* GetPicturePileForTesting() const { return pile_.get(); }
+  PicturePile* GetPicturePileForTesting() { return &pile_; }
 
  protected:
   explicit PictureLayer(ContentLayerClient* client);
-  virtual ~PictureLayer();
+  ~PictureLayer() override;
 
+  bool HasDrawableContent() const override;
   void UpdateCanUseLCDText();
 
  private:
   ContentLayerClient* client_;
-  scoped_refptr<PicturePile> pile_;
+  PicturePile pile_;
   devtools_instrumentation::
       ScopedLayerObjectTracker instrumentation_object_tracker_;
   // Invalidation to use the next time update is called.
@@ -61,7 +58,6 @@ class CC_EXPORT PictureLayer : public Layer {
   // Invalidation from the last time update was called.
   Region pile_invalidation_;
   gfx::Rect last_updated_visible_content_rect_;
-  bool is_mask_;
 
   int update_source_frame_number_;
   bool can_use_lcd_text_last_frame_;

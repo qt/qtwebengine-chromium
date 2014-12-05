@@ -31,44 +31,41 @@
 #include "public/platform/WebScrollbarThemeGeometry.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
-class ScrollbarTheme;
-}
-
 namespace blink {
 
+class ScrollbarTheme;
 class WebScrollbar;
 
 class PLATFORM_EXPORT WebScrollbarThemeGeometryNative : public WebScrollbarThemeGeometry {
 public:
-    static PassOwnPtr<WebScrollbarThemeGeometryNative> create(WebCore::ScrollbarTheme*);
+    static PassOwnPtr<WebScrollbarThemeGeometryNative> create(ScrollbarTheme*);
 
     // WebScrollbarThemeGeometry overrides
-    virtual WebScrollbarThemeGeometryNative* clone() const OVERRIDE;
-    virtual int thumbPosition(WebScrollbar*) OVERRIDE;
-    virtual int thumbLength(WebScrollbar*) OVERRIDE;
-    virtual int trackPosition(WebScrollbar*) OVERRIDE;
-    virtual int trackLength(WebScrollbar*) OVERRIDE;
-    virtual bool hasButtons(WebScrollbar*) OVERRIDE;
-    virtual bool hasThumb(WebScrollbar*) OVERRIDE;
-    virtual WebRect trackRect(WebScrollbar*) OVERRIDE;
-    virtual WebRect thumbRect(WebScrollbar*) OVERRIDE;
-    virtual int minimumThumbLength(WebScrollbar*) OVERRIDE;
-    virtual int scrollbarThickness(WebScrollbar*) OVERRIDE;
-    virtual WebRect backButtonStartRect(WebScrollbar*) OVERRIDE;
-    virtual WebRect backButtonEndRect(WebScrollbar*) OVERRIDE;
-    virtual WebRect forwardButtonStartRect(WebScrollbar*) OVERRIDE;
-    virtual WebRect forwardButtonEndRect(WebScrollbar*) OVERRIDE;
-    virtual WebRect constrainTrackRectToTrackPieces(WebScrollbar*, const WebRect&) OVERRIDE;
-    virtual void splitTrack(WebScrollbar*, const WebRect& track, WebRect& startTrack, WebRect& thumb, WebRect& endTrack) OVERRIDE;
+    virtual WebScrollbarThemeGeometryNative* clone() const override;
+    virtual int thumbPosition(WebScrollbar*) override;
+    virtual int thumbLength(WebScrollbar*) override;
+    virtual int trackPosition(WebScrollbar*) override;
+    virtual int trackLength(WebScrollbar*) override;
+    virtual bool hasButtons(WebScrollbar*) override;
+    virtual bool hasThumb(WebScrollbar*) override;
+    virtual WebRect trackRect(WebScrollbar*) override;
+    virtual WebRect thumbRect(WebScrollbar*) override;
+    virtual int minimumThumbLength(WebScrollbar*) override;
+    virtual int scrollbarThickness(WebScrollbar*) override;
+    virtual WebRect backButtonStartRect(WebScrollbar*) override;
+    virtual WebRect backButtonEndRect(WebScrollbar*) override;
+    virtual WebRect forwardButtonStartRect(WebScrollbar*) override;
+    virtual WebRect forwardButtonEndRect(WebScrollbar*) override;
+    virtual WebRect constrainTrackRectToTrackPieces(WebScrollbar*, const WebRect&) override;
+    virtual void splitTrack(WebScrollbar*, const WebRect& track, WebRect& startTrack, WebRect& thumb, WebRect& endTrack) override;
 
 private:
-    explicit WebScrollbarThemeGeometryNative(WebCore::ScrollbarTheme*);
+    explicit WebScrollbarThemeGeometryNative(ScrollbarTheme*);
 
     // The theme is not owned by this class. It is assumed that the theme is a
     // static pointer and its lifetime is essentially infinite. Only thread-safe
     // functions on the theme can be called by this theme.
-    WebCore::ScrollbarTheme* m_theme;
+    ScrollbarTheme* m_theme;
 };
 
 } // namespace blink

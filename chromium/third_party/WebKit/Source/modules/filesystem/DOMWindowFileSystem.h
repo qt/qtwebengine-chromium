@@ -26,9 +26,10 @@
 #ifndef DOMWindowFileSystem_h
 #define DOMWindowFileSystem_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class EntryCallback;
@@ -37,8 +38,8 @@ class FileSystemCallback;
 
 class DOMWindowFileSystem {
 public:
-    static void webkitRequestFileSystem(LocalDOMWindow&, int type, long long size, PassOwnPtr<FileSystemCallback>, PassOwnPtr<ErrorCallback>);
-    static void webkitResolveLocalFileSystemURL(LocalDOMWindow&, const String&, PassOwnPtr<EntryCallback>, PassOwnPtr<ErrorCallback>);
+    static void webkitRequestFileSystem(LocalDOMWindow&, int type, long long size, FileSystemCallback*, ErrorCallback*);
+    static void webkitResolveLocalFileSystemURL(LocalDOMWindow&, const String&, EntryCallback*, ErrorCallback*);
 
     // They are placed here and in all capital letters so they can be checked against the constants in the
     // IDL at compile time.
@@ -52,6 +53,6 @@ private:
     ~DOMWindowFileSystem();
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowFileSystem_h

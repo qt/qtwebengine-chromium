@@ -26,37 +26,44 @@
 #ifndef CanvasPattern_h
 #define CanvasPattern_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "core/svg/SVGMatrixTearOff.h"
 #include "platform/graphics/Pattern.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Image;
 
-class CanvasPattern : public RefCounted<CanvasPattern>, public ScriptWrappable {
+class CanvasPattern final : public RefCountedWillBeGarbageCollectedFinalized<CanvasPattern>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static void parseRepetitionType(const String&, bool& repeatX, bool& repeatY, ExceptionState&);
+    static Pattern::RepeatMode parseRepetitionType(const String&, ExceptionState&);
 
-    static PassRefPtr<CanvasPattern> create(PassRefPtr<Image> image, bool repeatX, bool repeatY, bool originClean)
+    static PassRefPtrWillBeRawPtr<CanvasPattern> create(PassRefPtr<Image> image,
+        Pattern::RepeatMode repeat, bool originClean)
     {
-        return adoptRef(new CanvasPattern(image, repeatX, repeatY, originClean));
+        return adoptRefWillBeNoop(new CanvasPattern(image, repeat, originClean));
     }
 
     Pattern* pattern() const { return m_pattern.get(); }
 
     bool originClean() const { return m_originClean; }
 
+    void trace(Visitor*) { }
+
+    void setTransform(SVGMatrixTearOff*);
+
 private:
-    CanvasPattern(PassRefPtr<Image>, bool repeatX, bool repeatY, bool originClean);
+    CanvasPattern(PassRefPtr<Image>, Pattern::RepeatMode, bool originClean);
 
     RefPtr<Pattern> m_pattern;
     bool m_originClean;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // CanvasPattern_h

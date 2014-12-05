@@ -142,6 +142,8 @@ int WebMStreamParser::ParseInfoAndTracks(const uint8* data, int size) {
     case kWebMIdCRC32:
     case kWebMIdCues:
     case kWebMIdChapters:
+    case kWebMIdTags:
+    case kWebMIdAttachments:
       // TODO(matthewjheaney): Implement support for chapters.
       if (cur_size < (result + element_size)) {
         // We don't have the whole element yet. Signal we need more data.
@@ -275,7 +277,7 @@ int WebMStreamParser::ParseCluster(const uint8* data, int size) {
 
 void WebMStreamParser::FireNeedKey(const std::string& key_id) {
   std::vector<uint8> key_id_vector(key_id.begin(), key_id.end());
-  need_key_cb_.Run(kWebMEncryptInitDataType, key_id_vector);
+  need_key_cb_.Run(kWebMInitDataType, key_id_vector);
 }
 
 }  // namespace media

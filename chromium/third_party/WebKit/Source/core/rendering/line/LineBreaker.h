@@ -27,7 +27,7 @@
 #include "core/rendering/line/LineInfo.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 enum WhitespacePosition { LeadingWhitespace, TrailingWhitespace };
 
@@ -42,7 +42,8 @@ public:
         reset();
     }
 
-    InlineIterator nextLineBreak(InlineBidiResolver&, LineInfo&, RenderTextInfo&, FloatingObject* lastFloatFromPreviousLine, unsigned consecutiveHyphenatedLines, WordMeasurements&);
+    InlineIterator nextLineBreak(InlineBidiResolver&, LineInfo&, RenderTextInfo&,
+        FloatingObject* lastFloatFromPreviousLine, WordMeasurements&);
 
     bool lineWasHyphenated() { return m_hyphenated; }
     const Vector<RenderBox*>& positionedObjects() { return m_positionedObjects; }

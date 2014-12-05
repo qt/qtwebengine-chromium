@@ -19,7 +19,8 @@
 //
 // We use a macro to ensure that no static initialisers are created. Use the
 // MakeQuicTag function in normal code.
-#define TAG(a, b, c, d) ((d << 24) + (c << 16) + (b << 8) + a)
+#define TAG(a, b, c, d) \
+    static_cast<QuicTag>((d << 24) + (c << 16) + (b << 8) + a)
 
 namespace net {
 
@@ -32,6 +33,7 @@ const QuicTag kREJ  = TAG('R', 'E', 'J', '\0');  // Reject
 const QuicTag kCETV = TAG('C', 'E', 'T', 'V');   // Client encrypted tag-value
                                                  // pairs
 const QuicTag kPRST = TAG('P', 'R', 'S', 'T');   // Public reset
+const QuicTag kSCUP = TAG('S', 'C', 'U', 'P');   // Server config update.
 
 // Key exchange methods
 const QuicTag kP256 = TAG('P', '2', '5', '6');   // ECDH, Curve P-256
@@ -42,17 +44,32 @@ const QuicTag kNULL = TAG('N', 'U', 'L', 'N');   // null algorithm
 const QuicTag kAESG = TAG('A', 'E', 'S', 'G');   // AES128 + GCM-12
 const QuicTag kCC12 = TAG('C', 'C', '1', '2');   // ChaCha20 + Poly1305
 
+// Socket receive buffer
+const QuicTag kSRBF = TAG('S', 'R', 'B', 'F');   // Socket receive buffer
+
 // Congestion control feedback types
 const QuicTag kQBIC = TAG('Q', 'B', 'I', 'C');   // TCP cubic
-const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
-const QuicTag kINAR = TAG('I', 'N', 'A', 'R');   // Inter arrival
 
-// Congestion control options
+// Connection options (COPT) values
 const QuicTag kTBBR = TAG('T', 'B', 'B', 'R');   // Reduced Buffer Bloat TCP
+const QuicTag kRENO = TAG('R', 'E', 'N', 'O');   // Reno Congestion Control
+const QuicTag kIW10 = TAG('I', 'W', '1', '0');   // Force ICWND to 10
+const QuicTag kPACE = TAG('P', 'A', 'C', 'E');   // Paced TCP cubic
+const QuicTag k1CON = TAG('1', 'C', 'O', 'N');   // Emulate a single connection
+const QuicTag kNTLP = TAG('N', 'T', 'L', 'P');   // No tail loss probe
+const QuicTag kNCON = TAG('N', 'C', 'O', 'N');   // N Connection Congestion Ctrl
 
 // Loss detection algorithm types
 const QuicTag kNACK = TAG('N', 'A', 'C', 'K');   // TCP style nack counting
 const QuicTag kTIME = TAG('T', 'I', 'M', 'E');   // Time based
+
+// Optional support of truncated Connection IDs.  If sent by a peer, the value
+// is the minimum number of bytes allowed for the connection ID sent to the
+// peer.
+const QuicTag kTCID = TAG('T', 'C', 'I', 'D');   // Connection ID truncation.
+
+// FEC options
+const QuicTag kFHDR = TAG('F', 'H', 'D', 'R');   // FEC protect headers
 
 // Proof types (i.e. certificate types)
 // NOTE: although it would be silly to do so, specifying both kX509 and kX59R
@@ -71,9 +88,7 @@ const QuicTag kAEAD = TAG('A', 'E', 'A', 'D');   // Authenticated
                                                  // encryption algorithms
 const QuicTag kCGST = TAG('C', 'G', 'S', 'T');   // Congestion control
                                                  // feedback types
-const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Congestion control options
-// kLOSS was 'L', 'O', 'S', 'S', but was changed from a tag vector to a tag.
-const QuicTag kLOSS = TAG('L', 'O', 'S', 'A');   // Loss detection algorithms
+const QuicTag kCOPT = TAG('C', 'O', 'P', 'T');   // Connection options
 const QuicTag kICSL = TAG('I', 'C', 'S', 'L');   // Idle connection state
                                                  // lifetime
 const QuicTag kKATO = TAG('K', 'A', 'T', 'O');   // Keepalive timeout
@@ -100,6 +115,10 @@ const QuicTag kCFCW = TAG('C', 'F', 'C', 'W');   // Initial session/connection
                                                  // flow control receive window.
 const QuicTag kUAID = TAG('U', 'A', 'I', 'D');   // Client's User Agent ID.
 
+// Rejection tags
+const QuicTag kRREJ = TAG('R', 'R', 'E', 'J');   // Reasons for server sending
+                                                 // rejection message tag.
+
 // Server hello tags
 const QuicTag kCADR = TAG('C', 'A', 'D', 'R');   // Client IP address and port
 
@@ -113,9 +132,6 @@ const QuicTag kRSEQ = TAG('R', 'S', 'E', 'Q');   // Rejected sequence number
 
 // Universal tags
 const QuicTag kPAD  = TAG('P', 'A', 'D', '\0');  // Padding
-
-// Reasons for server sending rejection message tag.
-const QuicTag kRREJ = TAG('R', 'R', 'E', 'J');
 
 // These tags have a special form so that they appear either at the beginning
 // or the end of a handshake message. Since handshake messages are sorted by

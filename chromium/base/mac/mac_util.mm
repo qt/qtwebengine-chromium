@@ -225,19 +225,6 @@ void SetCursorVisibility(bool visible) {
     [NSCursor hide];
 }
 
-bool ShouldWindowsMiniaturizeOnDoubleClick() {
-  // We use an undocumented method in Cocoa; if it doesn't exist, default to
-  // |true|. If it ever goes away, we can do (using an undocumented pref key):
-  //   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
-  //   return ![defaults objectForKey:@"AppleMiniaturizeOnDoubleClick"] ||
-  //          [defaults boolForKey:@"AppleMiniaturizeOnDoubleClick"];
-  BOOL methodImplemented =
-      [NSWindow respondsToSelector:@selector(_shouldMiniaturizeOnDoubleClick)];
-  DCHECK(methodImplemented);
-  return !methodImplemented ||
-      [NSWindow performSelector:@selector(_shouldMiniaturizeOnDoubleClick)];
-}
-
 void ActivateProcess(pid_t pid) {
   ProcessSerialNumber process;
   OSStatus status = GetProcessForPID(pid, &process);
@@ -356,24 +343,16 @@ void RemoveFromLoginItems() {
 
 bool WasLaunchedAsLoginOrResumeItem() {
   ProcessSerialNumber psn = { 0, kCurrentProcess };
+  ProcessInfoRec info = {};
+  info.processInfoLength = sizeof(info);
 
-  base::scoped_nsobject<NSDictionary> process_info(
-      CFToNSCast(ProcessInformationCopyDictionary(
-          &psn, kProcessDictionaryIncludeAllInformationMask)));
-
-  long long temp = [[process_info objectForKey:@"ParentPSN"] longLongValue];
-  ProcessSerialNumber parent_psn =
-      { (temp >> 32) & 0x00000000FFFFFFFFLL, temp & 0x00000000FFFFFFFFLL };
-
-  base::scoped_nsobject<NSDictionary> parent_info(
-      CFToNSCast(ProcessInformationCopyDictionary(
-          &parent_psn, kProcessDictionaryIncludeAllInformationMask)));
-
-  // Check that creator process code is that of loginwindow.
-  BOOL result =
-      [[parent_info objectForKey:@"FileCreator"] isEqualToString:@"lgnw"];
-
-  return result == YES;
+  if (GetProcessInformation(&psn, &info) == noErr) {
+    ProcessInfoRec parent_info = {};
+    parent_info.processInfoLength = sizeof(parent_info);
+    if (GetProcessInformation(&info.processLauncher, &parent_info) == noErr)
+      return parent_info.processSignature == 'lgnw';
+  }
+  return false;
 }
 
 bool WasLaunchedAsLoginItemRestoreState() {

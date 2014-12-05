@@ -4,20 +4,46 @@
 
 #include "ui/events/ozone/evdev/event_converter_evdev.h"
 
-#include "ui/events/event.h"
-#include "ui/ozone/public/event_factory_ozone.h"
+#include "base/files/file_path.h"
+#include "base/logging.h"
+#include "base/message_loop/message_loop.h"
 
 namespace ui {
 
-EventConverterEvdev::EventConverterEvdev() {}
+EventConverterEvdev::EventConverterEvdev(int fd,
+                                         const base::FilePath& path,
+                                         int id)
+    : fd_(fd), path_(path), id_(id) {
+}
 
-EventConverterEvdev::EventConverterEvdev(const EventDispatchCallback& callback)
-    : dispatch_callback_(callback) {}
+EventConverterEvdev::~EventConverterEvdev() {
+  Stop();
+}
 
-EventConverterEvdev::~EventConverterEvdev() {}
+void EventConverterEvdev::Start() {
+  base::MessageLoopForUI::current()->WatchFileDescriptor(
+      fd_, true, base::MessagePumpLibevent::WATCH_READ, &controller_, this);
+}
 
-void EventConverterEvdev::DispatchEventToCallback(ui::Event* event) {
-  dispatch_callback_.Run(event);
+void EventConverterEvdev::Stop() {
+  controller_.StopWatchingFileDescriptor();
+}
+
+void EventConverterEvdev::OnFileCanWriteWithoutBlocking(int fd) {
+  NOTREACHED();
+}
+
+bool EventConverterEvdev::HasTouchscreen() const {
+  return false;
+}
+
+gfx::Size EventConverterEvdev::GetTouchscreenSize() const {
+  NOTREACHED();
+  return gfx::Size();
+}
+
+bool EventConverterEvdev::IsInternal() const {
+  return false;
 }
 
 }  // namespace ui

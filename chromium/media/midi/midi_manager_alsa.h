@@ -20,14 +20,14 @@ namespace media {
 class MidiManagerAlsa : public MidiManager {
  public:
   MidiManagerAlsa();
-  virtual ~MidiManagerAlsa();
+  ~MidiManagerAlsa() override;
 
   // MidiManager implementation.
-  virtual void StartInitialization() OVERRIDE;
-  virtual void DispatchSendMidiData(MidiManagerClient* client,
-                                    uint32 port_index,
-                                    const std::vector<uint8>& data,
-                                    double timestamp) OVERRIDE;
+  void StartInitialization() override;
+  void DispatchSendMidiData(MidiManagerClient* client,
+                            uint32 port_index,
+                            const std::vector<uint8>& data,
+                            double timestamp) override;
 
  private:
   // An internal callback that runs on MidiSendThread.

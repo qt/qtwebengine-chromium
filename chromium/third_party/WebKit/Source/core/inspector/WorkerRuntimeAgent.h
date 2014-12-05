@@ -34,36 +34,37 @@
 #include "core/inspector/InspectorRuntimeAgent.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class WorkerGlobalScope;
 
-class WorkerRuntimeAgent FINAL : public InspectorRuntimeAgent {
+class WorkerRuntimeAgent final : public InspectorRuntimeAgent {
 public:
-    static PassOwnPtr<WorkerRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
+    static PassOwnPtrWillBeRawPtr<WorkerRuntimeAgent> create(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer, WorkerGlobalScope* context)
     {
-        return adoptPtr(new WorkerRuntimeAgent(injectedScriptManager, scriptDebugServer, context));
+        return adoptPtrWillBeNoop(new WorkerRuntimeAgent(injectedScriptManager, scriptDebugServer, context));
     }
     virtual ~WorkerRuntimeAgent();
+    virtual void trace(Visitor*) override;
 
-    virtual void init() OVERRIDE;
-    virtual void enable(ErrorString*) OVERRIDE;
+    virtual void init() override;
+    virtual void enable(ErrorString*) override;
 
     // Protocol commands.
-    virtual void run(ErrorString*) OVERRIDE;
-    virtual void isRunRequired(ErrorString*, bool* out_result) OVERRIDE;
+    virtual void run(ErrorString*) override;
+    virtual void isRunRequired(ErrorString*, bool* out_result) override;
 
     void willEvaluateWorkerScript(WorkerGlobalScope*, int workerThreadStartMode);
 
 private:
     WorkerRuntimeAgent(InjectedScriptManager*, ScriptDebugServer*, WorkerGlobalScope*);
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
-    virtual void muteConsole() OVERRIDE;
-    virtual void unmuteConsole() OVERRIDE;
-    WorkerGlobalScope* m_workerGlobalScope;
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    virtual void muteConsole() override;
+    virtual void unmuteConsole() override;
+    RawPtrWillBeMember<WorkerGlobalScope> m_workerGlobalScope;
     bool m_paused;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorPagerAgent_h)

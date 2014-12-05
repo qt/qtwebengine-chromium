@@ -14,7 +14,7 @@ cr.define('options', function() {
    * Creates a new Language list item.
    * @param {Object} languageInfo The information of the language.
    * @constructor
-   * @extends {DeletableItem.ListItem}
+   * @extends {options.DeletableItem}
    */
   function LanguageListItem(languageInfo) {
     var el = cr.doc.createElement('li');
@@ -29,7 +29,7 @@ cr.define('options', function() {
 
     /**
      * The language code of this language.
-     * @type {string}
+     * @type {?string}
      * @private
      */
     languageCode_: null,
@@ -56,7 +56,7 @@ cr.define('options', function() {
    * Creates a new language list.
    * @param {Object=} opt_propertyBag Optional properties.
    * @constructor
-   * @extends {cr.ui.List}
+   * @extends {options.DeletableItemList}
    */
   var LanguageList = cr.ui.define('list');
 
@@ -76,7 +76,7 @@ cr.define('options', function() {
     }
 
     return this.languageCodeToLanguageInfo_[languageCode];
-  }
+  };
 
   /**
    * Returns true if the given language code is valid.
@@ -89,7 +89,7 @@ cr.define('options', function() {
       return true;
     }
     return false;
-  }
+  };
 
   LanguageList.prototype = {
     __proto__: DeletableItemList.prototype,
@@ -132,8 +132,13 @@ cr.define('options', function() {
       this.addEventListener('dragleave', this.handleDragLeave_.bind(this));
     },
 
+    /**
+     * @override
+     * @param {string} languageCode
+     */
     createItem: function(languageCode) {
-      languageInfo = LanguageList.getLanguageInfoFromLanguageCode(languageCode);
+      var languageInfo =
+          LanguageList.getLanguageInfoFromLanguageCode(languageCode);
       return new LanguageListItem(languageInfo);
     },
 
@@ -150,7 +155,7 @@ cr.define('options', function() {
       }
     },
 
-    /*
+    /**
      * Adds a language to the language list.
      * @param {string} languageCode language code (ex. "fr").
      */
@@ -167,30 +172,30 @@ cr.define('options', function() {
       this.savePreference_();
     },
 
-    /*
+    /**
      * Gets the language codes of the currently listed languages.
      */
     getLanguageCodes: function() {
       return this.dataModel.slice();
     },
 
-    /*
+    /**
      * Clears the selection
      */
     clearSelection: function() {
       this.selectionModel.unselectAll();
     },
 
-    /*
+    /**
      * Gets the language code of the selected language.
      */
     getSelectedLanguageCode: function() {
       return this.selectedItem;
     },
 
-    /*
+    /**
      * Selects the language by the given language code.
-     * @returns {boolean} True if the operation is successful.
+     * @return {boolean} True if the operation is successful.
      */
     selectLanguageByCode: function(languageCode) {
       var index = this.dataModel.indexOf(languageCode);
@@ -213,7 +218,7 @@ cr.define('options', function() {
       return index;
     },
 
-    /*
+    /**
      * Computes the target item of drop event.
      * @param {Event} e The drop or dragover event.
      * @private
@@ -227,7 +232,7 @@ cr.define('options', function() {
       return target;
     },
 
-    /*
+    /**
      * Handles the dragstart event.
      * @param {Event} e The dragstart event.
      * @private
@@ -246,7 +251,7 @@ cr.define('options', function() {
       }
     },
 
-    /*
+    /**
      * Handles the dragenter event.
      * @param {Event} e The dragenter event.
      * @private
@@ -255,7 +260,7 @@ cr.define('options', function() {
       e.preventDefault();
     },
 
-    /*
+    /**
      * Handles the dragover event.
      * @param {Event} e The dragover event.
      * @private
@@ -280,7 +285,7 @@ cr.define('options', function() {
       e.preventDefault();
     },
 
-    /*
+    /**
      * Handles the drop event.
      * @param {Event} e The drop event.
      * @private
@@ -304,7 +309,7 @@ cr.define('options', function() {
       this.savePreference_();
     },
 
-    /*
+    /**
      * Handles the dragleave event.
      * @param {Event} e The dragleave event
      * @private
@@ -313,7 +318,7 @@ cr.define('options', function() {
       this.hideDropMarker_();
     },
 
-    /*
+    /**
      * Shows and positions the marker to indicate the drop target.
      * @param {HTMLElement} target The current target list item of drop
      * @param {string} pos 'below' or 'above'
@@ -334,7 +339,7 @@ cr.define('options', function() {
       marker.style.display = 'block';
     },
 
-    /*
+    /**
      * Hides the drop marker.
      * @private
      */
@@ -379,7 +384,7 @@ cr.define('options', function() {
 
     /**
      * Loads given language list.
-     * @param {Array} languageCodes List of language codes.
+     * @param {!Array} languageCodes List of language codes.
      * @private
      */
     load_: function(languageCodes) {

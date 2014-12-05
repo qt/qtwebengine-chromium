@@ -4,21 +4,6 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'conditions': [
-      ['os_posix==1', {
-        'syscall_handler': [
-          'posix/nacl_syscall_impl.c'
-        ],
-      }],
-      ['OS=="win"', {
-        'syscall_handler': [
-          'win/nacl_syscall_impl.c'
-        ],
-        'msvs_cygwin_shell': 0,
-      }],
-    ],
-  },
   'includes': [
     '../../../build/common.gypi',
   ],
@@ -51,9 +36,9 @@
           'nacl_stack_safety.c',
           'nacl_syscall_common.c',
           'nacl_syscall_hook.c',
+          'nacl_syscall_list.c',
           'nacl_text.c',
           'nacl_valgrind_hooks.c',
-          'name_service/default_name_service.c',
           'name_service/name_service.c',
           'sel_addrspace.c',
           'sel_ldr.c',
@@ -63,6 +48,7 @@
           # "sel_main_chrome" library once Chromium is changed to
           # depend on that rather than on "sel".
           'sel_main_chrome.c',
+          'sel_main_common.c',
           'sel_mem.c',
           'sel_qualify.c',
           'sel_validate_image.c',
@@ -74,6 +60,7 @@
           'sys_list_mappings.c',
           'sys_memory.c',
           'sys_parallel_io.c',
+          'sys_random.c',
           'thread_suspension_common.c',
           'thread_suspension_unwind.c',
         ],
@@ -81,33 +68,6 @@
           # For generated header files from the x86-64 validator,
           # e.g. nacl_disallows.h.
           '<(SHARED_INTERMEDIATE_DIR)',
-        ],
-        'sources!': [
-           '<(syscall_handler)',
-        ],
-        'actions': [
-          {
-            'action_name': 'nacl_syscall_handler',
-            'inputs': [
-              'nacl_syscall_handlers_gen.py',
-              '<(syscall_handler)',
-            ],
-            'action':
-              # TODO(gregoryd): find out how to generate a file
-              # in such a location that can be found in both
-              # NaCl and Chrome builds.
-              ['python', 'nacl_syscall_handlers_gen.py',
-               '-i', '<@(syscall_handler)',
-               '-o', '<@(_outputs)'],
-
-            'msvs_cygwin_shell': 0,
-            'msvs_quote_cmd': 0,
-            'outputs': [
-              '<(INTERMEDIATE_DIR)/nacl_syscall_handlers.c',
-            ],
-            'process_outputs_as_sources': 1,
-            'message': 'Creating nacl_syscall_handlers.c',
-          },
         ],
         'conditions': [
             ['OS=="mac"', {
@@ -221,12 +181,14 @@
             ['<(os_posix)==1', {
               'sources': [
                 'posix/nacl_signal_stack.c',
+                'posix/nacl_syscall_impl.c',
                 'posix/sel_addrspace_posix.c',
                ],
             }],
             ['OS=="win"', {
               'sources': [
                 'win/nacl_signal_stack.c',
+                'win/nacl_syscall_impl.c',
                 'win/sel_addrspace_win.c',
                 'win/thread_suspension.c',
                 'win/vm_hole.c',
@@ -258,7 +220,6 @@
         '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer',
         '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability',
         '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject',
-        '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc',
         '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval',
         '<(DEPTH)/native_client/src/trusted/perf_counter/perf_counter.gyp:nacl_perf_counter',
         '<(DEPTH)/native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib',
@@ -335,7 +296,6 @@
       'dependencies': [
         'sel_main',
         '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform',
-        '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc',
       ],
       'sources': [
         'nacl_test_injection_main.c',
@@ -372,7 +332,6 @@
             '<(DEPTH)/native_client/src/trusted/desc/desc.gyp:nrd_xfer64',
             '<(DEPTH)/native_client/src/trusted/desc_cacheability/desc_cacheability.gyp:desc_cacheability64',
             '<(DEPTH)/native_client/src/trusted/fault_injection/fault_injection.gyp:nacl_fault_inject64',
-            '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc64',
             '<(DEPTH)/native_client/src/trusted/interval_multiset/interval_multiset.gyp:nacl_interval64',
             '<(DEPTH)/native_client/src/trusted/perf_counter/perf_counter.gyp:nacl_perf_counter64',
             '<(DEPTH)/native_client/src/trusted/platform_qualify/platform_qualify.gyp:platform_qual_lib64',
@@ -437,7 +396,6 @@
           'dependencies': [
             'sel_main64',
             '<(DEPTH)/native_client/src/shared/platform/platform.gyp:platform64',
-            '<(DEPTH)/native_client/src/trusted/gio/gio_wrapped_desc.gyp:gio_wrapped_desc64',
           ],
           'sources': [
             'nacl_test_injection_main.c',

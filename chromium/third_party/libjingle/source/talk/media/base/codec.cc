@@ -30,14 +30,15 @@
 #include <algorithm>
 #include <sstream>
 
-#include "talk/base/common.h"
-#include "talk/base/logging.h"
-#include "talk/base/stringencode.h"
-#include "talk/base/stringutils.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/stringencode.h"
+#include "webrtc/base/stringutils.h"
 
 namespace cricket {
 
 static const int kMaxStaticPayloadId = 95;
+const int kMaxPayloadId = 127;
 
 bool FeedbackParam::operator==(const FeedbackParam& other) const {
   return _stricmp(other.id().c_str(), id().c_str()) == 0 &&
@@ -107,7 +108,7 @@ bool Codec::GetParam(const std::string& name, int* out) const {
   CodecParameterMap::const_iterator iter = params.find(name);
   if (iter == params.end())
     return false;
-  return talk_base::FromString(iter->second, out);
+  return rtc::FromString(iter->second, out);
 }
 
 void Codec::SetParam(const std::string& name, const std::string& value) {
@@ -115,7 +116,11 @@ void Codec::SetParam(const std::string& name, const std::string& value) {
 }
 
 void Codec::SetParam(const std::string& name, int value)  {
-  params[name] = talk_base::ToString(value);
+  params[name] = rtc::ToString(value);
+}
+
+bool Codec::RemoveParam(const std::string& name) {
+  return params.erase(name) == 1;
 }
 
 void Codec::AddFeedbackParam(const FeedbackParam& param) {

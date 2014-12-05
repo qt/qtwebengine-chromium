@@ -5,49 +5,48 @@
 #ifndef GamepadDispatcher_h
 #define GamepadDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebGamepad.h"
 #include "public/platform/WebGamepadListener.h"
 
 namespace blink {
+
 class WebGamepads;
-}
 
-namespace WebCore {
-
-class NavigatorGamepad;
-
-class GamepadDispatcher : public DeviceEventDispatcherBase, public blink::WebGamepadListener {
+class GamepadDispatcher final : public GarbageCollectedFinalized<GamepadDispatcher>, public PlatformEventDispatcher, public WebGamepadListener {
+    USING_GARBAGE_COLLECTED_MIXIN(GamepadDispatcher);
 public:
     static GamepadDispatcher& instance();
+    virtual ~GamepadDispatcher();
 
-    void sampleGamepads(blink::WebGamepads&);
+    void sampleGamepads(WebGamepads&);
 
     struct ConnectionChange {
-        blink::WebGamepad pad;
+        WebGamepad pad;
         unsigned index;
     };
 
     const ConnectionChange& latestConnectionChange() const { return m_latestChange; }
 
+    virtual void trace(Visitor*) override;
+
 private:
     GamepadDispatcher();
-    virtual ~GamepadDispatcher();
 
     // WebGamepadListener
-    virtual void didConnectGamepad(unsigned index, const blink::WebGamepad&) OVERRIDE;
-    virtual void didDisconnectGamepad(unsigned index, const blink::WebGamepad&) OVERRIDE;
+    virtual void didConnectGamepad(unsigned index, const WebGamepad&) override;
+    virtual void didDisconnectGamepad(unsigned index, const WebGamepad&) override;
 
-    // DeviceEventDispatcherBase
-    virtual void startListening() OVERRIDE;
-    virtual void stopListening() OVERRIDE;
+    // PlatformEventDispatcher
+    virtual void startListening() override;
+    virtual void stopListening() override;
 
-    void dispatchDidConnectOrDisconnectGamepad(unsigned index, const blink::WebGamepad&, bool connected);
+    void dispatchDidConnectOrDisconnectGamepad(unsigned index, const WebGamepad&, bool connected);
 
     ConnectionChange m_latestChange;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

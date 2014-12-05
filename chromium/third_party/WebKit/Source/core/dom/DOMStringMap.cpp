@@ -26,15 +26,13 @@
 #include "config.h"
 #include "core/dom/DOMStringMap.h"
 
-namespace WebCore {
+namespace blink {
 
-DOMStringMap::~DOMStringMap()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(DOMStringMap);
 
 bool DOMStringMap::namedPropertyQuery(const AtomicString& name, ExceptionState&)
 {
     return contains(name);
 }
 
-} // namespace WebCore
+} // namespace blink

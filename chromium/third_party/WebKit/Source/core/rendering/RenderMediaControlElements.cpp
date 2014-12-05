@@ -32,7 +32,7 @@
 #include "core/frame/DeprecatedScheduleStyleRecalcDuringLayout.h"
 #include "core/rendering/RenderView.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderTextTrackContainerElement::RenderTextTrackContainerElement(Element* element)
     : RenderBlockFlow(element)
@@ -49,8 +49,7 @@ void RenderTextTrackContainerElement::layout()
 
     DeprecatedScheduleStyleRecalcDuringLayout marker(node()->document().lifecycle());
 
-    ForceHorriblySlowRectMapping slowRectMapping(*this);
     static_cast<MediaControlTextTrackContainerElement*>(node())->updateSizes();
 }
 
-} // namespace WebCore
+} // namespace blink

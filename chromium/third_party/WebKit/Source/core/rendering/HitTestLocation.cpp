@@ -22,7 +22,7 @@
 #include "config.h"
 #include "core/rendering/HitTestLocation.h"
 
-namespace WebCore {
+namespace blink {
 
 HitTestLocation::HitTestLocation()
     : m_isRectBased(false)
@@ -152,6 +152,11 @@ bool HitTestLocation::intersects(const RoundedRect& rect) const
     return rect.intersectsQuad(m_transformedRect);
 }
 
+bool HitTestLocation::containsPoint(const FloatPoint& point) const
+{
+    return m_transformedRect.containsPoint(point);
+}
+
 IntRect HitTestLocation::rectForPoint(const LayoutPoint& point, unsigned topPadding, unsigned rightPadding, unsigned bottomPadding, unsigned leftPadding)
 {
     IntPoint actualPoint(flooredIntPoint(point));
@@ -165,4 +170,4 @@ IntRect HitTestLocation::rectForPoint(const LayoutPoint& point, unsigned topPadd
     return IntRect(actualPoint, actualPadding);
 }
 
-} // namespace WebCore
+} // namespace blink

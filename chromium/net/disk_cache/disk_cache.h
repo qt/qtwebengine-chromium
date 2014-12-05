@@ -12,6 +12,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
@@ -19,7 +21,7 @@
 
 namespace base {
 class FilePath;
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace net {
@@ -47,20 +49,41 @@ class Backend;
 // be invoked when a backend is available or a fatal error condition is reached.
 // The pointer to receive the |backend| must remain valid until the operation
 // completes (the callback is notified).
-NET_EXPORT int CreateCacheBackend(net::CacheType type,
-                                  net::BackendType backend_type,
-                                  const base::FilePath& path,
-                                  int max_bytes,
-                                  bool force,
-                                  base::MessageLoopProxy* thread,
-                                  net::NetLog* net_log,
-                                  scoped_ptr<Backend>* backend,
-                                  const net::CompletionCallback& callback);
+NET_EXPORT int CreateCacheBackend(
+    net::CacheType type,
+    net::BackendType backend_type,
+    const base::FilePath& path,
+    int max_bytes,
+    bool force,
+    const scoped_refptr<base::SingleThreadTaskRunner>& thread,
+    net::NetLog* net_log,
+    scoped_ptr<Backend>* backend,
+    const net::CompletionCallback& callback);
 
 // The root interface for a disk cache instance.
 class NET_EXPORT Backend {
  public:
   typedef net::CompletionCallback CompletionCallback;
+
+  class Iterator {
+   public:
+    virtual ~Iterator() {}
+
+    // OpenNextEntry returns |net::OK| and provides |next_entry| if there is an
+    // entry to enumerate. It returns |net::ERR_FAILED| at the end of
+    // enumeration. If the function returns |net::ERR_IO_PENDING|, then the
+    // final result will be passed to the provided |callback|, otherwise
+    // |callback| will not be called. If any entry in the cache is modified
+    // during iteration, the result of this function is thereafter undefined.
+    //
+    // Calling OpenNextEntry after the backend which created it is destroyed
+    // may fail with |net::ERR_FAILED|; however it should not crash.
+    //
+    // Some cache backends make stronger guarantees about mutation during
+    // iteration, see top comment in simple_backend_impl.h for details.
+    virtual int OpenNextEntry(Entry** next_entry,
+                              const CompletionCallback& callback) = 0;
+  };
 
   // If the backend is destroyed when there are operations in progress (any
   // callback that has not been invoked yet), this method cancels said
@@ -121,31 +144,9 @@ class NET_EXPORT Backend {
   virtual int DoomEntriesSince(base::Time initial_time,
                                const CompletionCallback& callback) = 0;
 
-  // Enumerates the cache. Initialize |iter| to NULL before calling this method
-  // the first time. That will cause the enumeration to start at the head of
-  // the cache. For subsequent calls, pass the same |iter| pointer again without
-  // changing its value. This method returns ERR_FAILED when there are no more
-  // entries to enumerate. When the entry pointer is no longer needed, its
-  // Close method should be called. The return value is a net error code. If
-  // this method returns ERR_IO_PENDING, the |callback| will be invoked when the
-  // |next_entry| is available. The pointer to receive the |next_entry| must
-  // remain valid until the operation completes.
-  //
-  // NOTE: This method does not modify the last_used field of the entry, and
-  // therefore it does not impact the eviction ranking of the entry. However,
-  // an enumeration will go through all entries on the cache only if the cache
-  // is not modified while the enumeration is taking place. Significantly
-  // altering the entry pointed by |iter| (for example, deleting the entry) will
-  // invalidate |iter|. Performing operations on an entry that modify the entry
-  // may result in loops in the iteration, skipped entries or similar.
-  virtual int OpenNextEntry(void** iter, Entry** next_entry,
-                            const CompletionCallback& callback) = 0;
-
-  // Releases iter without returning the next entry. Whenever OpenNextEntry()
-  // returns true, but the caller is not interested in continuing the
-  // enumeration by calling OpenNextEntry() again, the enumeration must be
-  // ended by calling this method with iter returned by OpenNextEntry().
-  virtual void EndEnumeration(void** iter) = 0;
+  // Returns an iterator which will enumerate all entries of the cache in an
+  // undefined order.
+  virtual scoped_ptr<Iterator> CreateIterator() = 0;
 
   // Return a list of cache statistics.
   virtual void GetStats(

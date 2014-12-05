@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
   var UserImagesGrid = options.UserImagesGrid;
   var ButtonImages = UserImagesGrid.ButtonImages;
 
@@ -24,27 +24,23 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of ChromeOS change picture options page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function ChangePictureOptions() {
-    OptionsPage.call(
-        this,
-        'changePicture',
-        loadTimeData.getString('changePicturePage'),
-        'change-picture-page');
+    Page.call(this, 'changePicture',
+              loadTimeData.getString('changePicturePage'),
+              'change-picture-page');
   }
 
   cr.addSingletonGetter(ChangePictureOptions);
 
   ChangePictureOptions.prototype = {
-    // Inherit ChangePictureOptions from OptionsPage.
-    __proto__: options.OptionsPage.prototype,
+    // Inherit ChangePictureOptions from Page.
+    __proto__: Page.prototype,
 
-    /**
-     * Initializes ChangePictureOptions page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to start preferences initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var imageGrid = $('user-image-grid');
       UserImagesGrid.decorate(imageGrid);
@@ -108,9 +104,7 @@ cr.define('options', function() {
       chrome.send('onChangePicturePageInitialized');
     },
 
-    /**
-     * Called right after the page has been shown to user.
-     */
+    /** @override */
     didShowPage: function() {
       var imageGrid = $('user-image-grid');
       // Reset camera element.
@@ -119,9 +113,7 @@ cr.define('options', function() {
       chrome.send('onChangePicturePageShown');
     },
 
-    /**
-     * Called right before the page is hidden.
-     */
+    /** @override */
     willHidePage: function() {
       var imageGrid = $('user-image-grid');
       imageGrid.blur();  // Make sure the image grid is not active.
@@ -134,10 +126,10 @@ cr.define('options', function() {
     },
 
     /**
-     * Called right after the page has been hidden.
+     * Either willHidePage or didClosePage may be called depending on the way
+     * the page was closed.
+     * @override
      */
-    // TODO(ivankr): both callbacks are required as only one of them is called
-    // depending on the way the page was closed, see http://crbug.com/118923.
     didClosePage: function() {
       this.willHidePage();
     },
@@ -148,7 +140,7 @@ cr.define('options', function() {
      */
     closeOverlay_: function() {
       if (!$('change-picture-page').hidden)
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
     },
 
     /**
@@ -328,19 +320,14 @@ cr.define('options', function() {
   };
 
   // Forward public APIs to private implementations.
-  [
+  cr.makePublic(ChangePictureOptions, [
     'closeOverlay',
     'setCameraPresent',
     'setDefaultImages',
     'setOldImage',
     'setProfileImage',
     'setSelectedImage',
-  ].forEach(function(name) {
-    ChangePictureOptions[name] = function() {
-      var instance = ChangePictureOptions.getInstance();
-      return instance[name + '_'].apply(instance, arguments);
-    };
-  });
+  ]);
 
   // Export
   return {

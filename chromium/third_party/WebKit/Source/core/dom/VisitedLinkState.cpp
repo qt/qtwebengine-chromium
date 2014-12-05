@@ -35,7 +35,7 @@
 #include "core/html/HTMLAnchorElement.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 static inline const AtomicString& linkAttribute(const Element& element)
 {
@@ -63,9 +63,9 @@ void VisitedLinkState::invalidateStyleForAllLinks()
 {
     if (m_linksCheckedForVisitedState.isEmpty())
         return;
-    for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
-        if (element->isLink())
-            element->setNeedsStyleRecalc(SubtreeStyleChange);
+    for (Node& node : NodeTraversal::startsAt(document().firstChild())) {
+        if (node.isLink())
+            node.setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::VisitedLink));
     }
 }
 
@@ -73,17 +73,17 @@ void VisitedLinkState::invalidateStyleForLink(LinkHash linkHash)
 {
     if (!m_linksCheckedForVisitedState.contains(linkHash))
         return;
-    for (Element* element = ElementTraversal::firstWithin(m_document); element; element = ElementTraversal::next(*element)) {
-        if (element->isLink() && linkHashForElement(*element) == linkHash)
-            element->setNeedsStyleRecalc(SubtreeStyleChange);
+    for (Node& node : NodeTraversal::startsAt(document().firstChild())) {
+        if (node.isLink() && linkHashForElement(toElement(node)) == linkHash)
+            node.setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::VisitedLink));
     }
 }
 
 EInsideLink VisitedLinkState::determineLinkStateSlowCase(const Element& element)
 {
     ASSERT(element.isLink());
-    ASSERT(m_document.isActive());
-    ASSERT(m_document == element.document());
+    ASSERT(document().isActive());
+    ASSERT(document() == element.document());
 
     const AtomicString& attribute = linkAttribute(element);
 
@@ -99,11 +99,16 @@ EInsideLink VisitedLinkState::determineLinkStateSlowCase(const Element& element)
 
     if (LinkHash hash = linkHashForElement(element, attribute)) {
         m_linksCheckedForVisitedState.add(hash);
-        if (blink::Platform::current()->isLinkVisited(hash))
+        if (Platform::current()->isLinkVisited(hash))
             return InsideVisitedLink;
     }
 
     return InsideUnvisitedLink;
 }
 
+void VisitedLinkState::trace(Visitor* visitor)
+{
+    visitor->trace(m_document);
 }
+
+} // namespace blink

@@ -22,26 +22,22 @@
 #define StylePropertySet_h
 
 #include "core/CSSPropertyNames.h"
-#include "core/css/CSSParserMode.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSProperty.h"
 #include "core/css/PropertySetCSSStyleDeclaration.h"
+#include "core/css/parser/CSSParserMode.h"
 #include "wtf/ListHashSet.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class CSSRule;
 class CSSStyleDeclaration;
-class Element;
 class ImmutableStylePropertySet;
-class KURL;
 class MutableStylePropertySet;
-class StylePropertyShorthand;
 class StyleSheetContents;
 
-class StylePropertySet : public RefCountedWillBeRefCountedGarbageCollected<StylePropertySet> {
+class StylePropertySet : public RefCountedWillBeGarbageCollectedFinalized<StylePropertySet> {
     friend class PropertyReference;
 public:
 
@@ -94,6 +90,7 @@ public:
     bool isEmpty() const;
     PropertyReference propertyAt(unsigned index) const { return PropertyReference(*this, index); }
     int findPropertyIndex(CSSPropertyID) const;
+    bool hasProperty(CSSPropertyID property) const { return findPropertyIndex(property) != -1; }
 
     PassRefPtrWillBeRawPtr<CSSValue> getPropertyCSSValue(CSSPropertyID) const;
     String getPropertyValue(CSSPropertyID) const;
@@ -107,7 +104,7 @@ public:
     CSSParserMode cssParserMode() const { return static_cast<CSSParserMode>(m_cssParserMode); }
 
     PassRefPtrWillBeRawPtr<MutableStylePropertySet> mutableCopy() const;
-    PassRefPtr<ImmutableStylePropertySet> immutableCopyIfNeeded() const;
+    PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> immutableCopyIfNeeded() const;
 
     PassRefPtrWillBeRawPtr<MutableStylePropertySet> copyPropertiesInSet(const Vector<CSSPropertyID>&) const;
 
@@ -154,7 +151,7 @@ protected:
 class ImmutableStylePropertySet : public StylePropertySet {
 public:
     ~ImmutableStylePropertySet();
-    static PassRefPtr<ImmutableStylePropertySet> create(const CSSProperty* properties, unsigned count, CSSParserMode);
+    static PassRefPtrWillBeRawPtr<ImmutableStylePropertySet> create(const CSSProperty* properties, unsigned count, CSSParserMode);
 
     unsigned propertyCount() const { return m_arraySize; }
 
@@ -187,11 +184,6 @@ inline const StylePropertyMetadata* ImmutableStylePropertySet::metadataArray() c
 
 DEFINE_TYPE_CASTS(ImmutableStylePropertySet, StylePropertySet, set, !set->isMutable(), !set.isMutable());
 
-inline ImmutableStylePropertySet* toImmutableStylePropertySet(const RefPtr<StylePropertySet>& set)
-{
-    return toImmutableStylePropertySet(set.get());
-}
-
 class MutableStylePropertySet : public StylePropertySet {
 public:
     ~MutableStylePropertySet() { }
@@ -209,7 +201,6 @@ public:
 
     // These do not. FIXME: This is too messy, we can do better.
     bool setProperty(CSSPropertyID, CSSValueID identifier, bool important = false);
-    bool setProperty(CSSPropertyID, CSSPropertyID identifier, bool important = false);
     void appendPrefixingVariantProperty(const CSSProperty&);
     void setPrefixingVariantProperty(const CSSProperty&);
     void setProperty(const CSSProperty&, CSSProperty* slot = 0);
@@ -247,7 +238,17 @@ private:
 
 DEFINE_TYPE_CASTS(MutableStylePropertySet, StylePropertySet, set, set->isMutable(), set.isMutable());
 
-inline MutableStylePropertySet* toMutableStylePropertySet(const RefPtr<StylePropertySet>& set)
+inline MutableStylePropertySet* toMutableStylePropertySet(const RefPtrWillBeRawPtr<StylePropertySet>& set)
+{
+    return toMutableStylePropertySet(set.get());
+}
+
+inline MutableStylePropertySet* toMutableStylePropertySet(const Persistent<StylePropertySet>& set)
+{
+    return toMutableStylePropertySet(set.get());
+}
+
+inline MutableStylePropertySet* toMutableStylePropertySet(const Member<StylePropertySet>& set)
 {
     return toMutableStylePropertySet(set.get());
 }
@@ -298,6 +299,6 @@ inline int StylePropertySet::findPropertyIndex(CSSPropertyID propertyID) const
     return toImmutableStylePropertySet(this)->findPropertyIndex(propertyID);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StylePropertySet_h

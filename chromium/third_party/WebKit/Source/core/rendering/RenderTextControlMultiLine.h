@@ -24,29 +24,29 @@
 
 #include "core/rendering/RenderTextControl.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTextAreaElement;
 
-class RenderTextControlMultiLine FINAL : public RenderTextControl {
+class RenderTextControlMultiLine final : public RenderTextControl {
 public:
     RenderTextControlMultiLine(HTMLTextAreaElement*);
     virtual ~RenderTextControlMultiLine();
 
 private:
-    virtual bool isTextArea() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectTextArea || RenderTextControl::isOfType(type); }
 
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) OVERRIDE;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, HitTestAction) override;
 
-    virtual float getAvgCharWidth(AtomicString family) OVERRIDE;
-    virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const OVERRIDE;
-    virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const OVERRIDE;
+    virtual float getAvgCharWidth(AtomicString family) override;
+    virtual LayoutUnit preferredContentLogicalWidth(float charWidth) const override;
+    virtual LayoutUnit computeControlLogicalHeight(LayoutUnit lineHeight, LayoutUnit nonContentHeight) const override;
     // We override the two baseline functions because we want our baseline to be the bottom of our margin box.
-    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const OVERRIDE;
-    virtual int inlineBlockBaseline(LineDirectionMode) const OVERRIDE { return -1; }
+    virtual int baselinePosition(FontBaseline, bool firstLine, LineDirectionMode, LinePositionMode = PositionOnContainingLine) const override;
+    virtual int inlineBlockBaseline(LineDirectionMode) const override { return -1; }
 
-    virtual PassRefPtr<RenderStyle> createInnerEditorStyle(const RenderStyle* startStyle) const OVERRIDE;
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) OVERRIDE;
+    virtual PassRefPtr<RenderStyle> createInnerEditorStyle(const RenderStyle* startStyle) const override;
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) override;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderTextControlMultiLine, isTextArea());

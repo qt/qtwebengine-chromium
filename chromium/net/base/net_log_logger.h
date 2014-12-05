@@ -8,9 +8,11 @@
 #include <stdio.h>
 
 #include "base/files/scoped_file.h"
+#include "base/macros.h"
 #include "net/base/net_log.h"
 
 namespace base {
+class DictionaryValue;
 class FilePath;
 class Value;
 }
@@ -27,7 +29,7 @@ class NET_EXPORT NetLogLogger : public NetLog::ThreadSafeObserver {
   // starts.  |file| must be non-NULL handle and be open for writing.
   // |constants| is a legend for decoding constant values used in the log.
   NetLogLogger(FILE* file, const base::Value& constants);
-  virtual ~NetLogLogger();
+  ~NetLogLogger() override;
 
   // Sets the log level to log at. Must be called before StartObserving.
   void set_log_level(NetLog::LogLevel log_level);
@@ -40,10 +42,13 @@ class NET_EXPORT NetLogLogger : public NetLog::ThreadSafeObserver {
   void StopObserving();
 
   // net::NetLog::ThreadSafeObserver implementation:
-  virtual void OnAddEntry(const NetLog::Entry& entry) OVERRIDE;
+  void OnAddEntry(const NetLog::Entry& entry) override;
 
   // Create a dictionary containing legend for net/ constants.  Caller takes
   // ownership of returned value.
+  // TODO(mmenke):  Get rid of this, and have embedders use GetNetConstants
+  // directly.  Also maybe call that function by default, so only embedders
+  // that need more constants need to worry about it.
   static base::DictionaryValue* GetConstants();
 
  private:

@@ -33,11 +33,11 @@
  */
 WebInspector.TimelineGrid = function()
 {
-    this.element = document.createElement("div");
+    this.element = createElement("div");
 
     this._dividersElement = this.element.createChild("div", "resources-dividers");
 
-    this._gridHeaderElement = document.createElement("div");
+    this._gridHeaderElement = createElement("div");
     this._gridHeaderElement.id = "timeline-grid-header";
     this._eventDividersElement = this._gridHeaderElement.createChild("div", "resources-event-dividers");
     this._dividersLabelBarElement = this._gridHeaderElement.createChild("div", "resources-dividers-label-bar");
@@ -49,14 +49,14 @@ WebInspector.TimelineGrid = function()
 
 /**
  * @param {!WebInspector.TimelineGrid.Calculator} calculator
- * @param {number} clientWidth
  * @return {!{offsets: !Array.<number>, precision: number}}
  */
-WebInspector.TimelineGrid.calculateDividerOffsets = function(calculator, clientWidth)
+WebInspector.TimelineGrid.calculateDividerOffsets = function(calculator)
 {
     const minGridSlicePx = 64; // minimal distance between grid lines.
     const gridFreeZoneAtLeftPx = 50;
 
+    var clientWidth = calculator.computePosition(calculator.maximumBoundary());
     var dividersCount = clientWidth / minGridSlicePx;
     var gridSliceTime = calculator.boundarySpan() / dividersCount;
     var pixelsPerTime = clientWidth / calculator.boundarySpan();
@@ -113,7 +113,7 @@ WebInspector.TimelineGrid.drawCanvasGrid = function(canvas, calculator, dividerO
     var height = canvas.height / window.devicePixelRatio;
     var precision = 0;
     if (!dividerOffsets) {
-        var dividersData = WebInspector.TimelineGrid.calculateDividerOffsets(calculator, width);
+        var dividersData = WebInspector.TimelineGrid.calculateDividerOffsets(calculator);
         dividerOffsets = dividersData.offsets;
         precision = dividersData.precision;
     }
@@ -182,7 +182,7 @@ WebInspector.TimelineGrid.prototype = {
     {
         var precision = 0;
         if (!dividerOffsets) {
-            var dividersData = WebInspector.TimelineGrid.calculateDividerOffsets(calculator, this._dividersElement.clientWidth);
+            var dividersData = WebInspector.TimelineGrid.calculateDividerOffsets(calculator);
             dividerOffsets = dividersData.offsets;
             precision = dividersData.precision;
             printDeltas = false;
@@ -199,13 +199,13 @@ WebInspector.TimelineGrid.prototype = {
         var lastTime = 0;
         for (var i = 0; i < dividerOffsets.length; ++i) {
             if (!divider) {
-                divider = document.createElement("div");
+                divider = createElement("div");
                 divider.className = "resources-divider";
                 this._dividersElement.appendChild(divider);
 
-                dividerLabelBar = document.createElement("div");
+                dividerLabelBar = createElement("div");
                 dividerLabelBar.className = "resources-divider";
-                var label = document.createElement("div");
+                var label = createElement("div");
                 label.className = "resources-divider-label";
                 dividerLabelBar._labelElement = label;
                 dividerLabelBar.appendChild(label);
@@ -230,8 +230,8 @@ WebInspector.TimelineGrid.prototype = {
             divider.style.left = percentLeft + "%";
             dividerLabelBar.style.left = percentLeft + "%";
 
-            divider = divider.nextSibling;
-            dividerLabelBar = dividerLabelBar.nextSibling;
+            divider = /** @type {?Element} */ (divider.nextSibling);
+            dividerLabelBar = /** @type {?Element} */ (dividerLabelBar.nextSibling);
         }
 
         // Remove extras.

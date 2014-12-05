@@ -23,9 +23,9 @@
 
 #include "core/rendering/InlineFlowBox.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGInlineFlowBox FINAL : public InlineFlowBox {
+class SVGInlineFlowBox final : public InlineFlowBox {
 public:
     SVGInlineFlowBox(RenderObject& obj)
         : InlineFlowBox(obj)
@@ -33,14 +33,14 @@ public:
     {
     }
 
-    virtual bool isSVGInlineFlowBox() const OVERRIDE { return true; }
-    virtual float virtualLogicalHeight() const OVERRIDE { return m_logicalHeight; }
+    virtual bool isSVGInlineFlowBox() const override { return true; }
+    virtual float virtualLogicalHeight() const override { return m_logicalHeight; }
     void setLogicalHeight(float h) { m_logicalHeight = h; }
 
     void paintSelectionBackground(PaintInfo&);
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
 
-    virtual FloatRect calculateBoundaries() const OVERRIDE;
+    virtual FloatRect calculateBoundaries() const override;
 
 private:
     float m_logicalHeight;
@@ -48,6 +48,6 @@ private:
 
 DEFINE_INLINE_BOX_TYPE_CASTS(SVGInlineFlowBox);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGInlineFlowBox_h

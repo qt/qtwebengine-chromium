@@ -15,7 +15,7 @@
 #include "vp9/common/vp9_seg_common.h"
 
 #include "vp9/encoder/vp9_ratectrl.h"
-#include "vp9/encoder/vp9_rdopt.h"
+#include "vp9/encoder/vp9_rd.h"
 #include "vp9/encoder/vp9_segmentation.h"
 #include "vp9/common/vp9_systemdependent.h"
 
@@ -34,6 +34,9 @@ static int segment_id[MAX_SEGMENTS] = { 5, 3, 1, 0, 2, 4, 6, 7 };
 #define SEGMENT_ID(i) segment_id[(i) - ENERGY_MIN]
 
 DECLARE_ALIGNED(16, static const uint8_t, vp9_64_zeros[64]) = {0};
+#if CONFIG_VP9_HIGHBITDEPTH
+DECLARE_ALIGNED(16, static const uint16_t, vp9_highbd_64_zeros[64]) = {0};
+#endif
 
 unsigned int vp9_vaq_segment_id(int energy) {
   ENERGY_IN_BOUNDS(energy);
@@ -75,7 +78,7 @@ void vp9_vaq_init() {
 void vp9_vaq_frame_setup(VP9_COMP *cpi) {
   VP9_COMMON *cm = &cpi->common;
   struct segmentation *seg = &cm->seg;
-  const double base_q = vp9_convert_qindex_to_q(cm->base_qindex);
+  const double base_q = vp9_convert_qindex_to_q(cm->base_qindex, cm->bit_depth);
   const int base_rdmult = vp9_compute_rd_mult(cpi, cm->base_qindex +
                                               cm->y_dc_delta_q);
   int i;
@@ -99,7 +102,8 @@ void vp9_vaq_frame_setup(VP9_COMP *cpi) {
         continue;
       }
 
-      qindex_delta = vp9_compute_qdelta(&cpi->rc, base_q, base_q * Q_RATIO(i));
+      qindex_delta = vp9_compute_qdelta(&cpi->rc, base_q, base_q * Q_RATIO(i),
+                                        cm->bit_depth);
       vp9_set_segdata(seg, SEGMENT_ID(i), SEG_LVL_ALT_Q, qindex_delta);
       vp9_enable_segfeature(seg, SEGMENT_ID(i), SEG_LVL_ALT_Q);
 
@@ -125,14 +129,40 @@ static unsigned int block_variance(VP9_COMP *cpi, MACROBLOCK *x,
     const int bw = 8 * num_8x8_blocks_wide_lookup[bs] - right_overflow;
     const int bh = 8 * num_8x8_blocks_high_lookup[bs] - bottom_overflow;
     int avg;
+#if CONFIG_VP9_HIGHBITDEPTH
+    if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+      highbd_variance(x->plane[0].src.buf, x->plane[0].src.stride,
+                      CONVERT_TO_BYTEPTR(vp9_highbd_64_zeros), 0, bw, bh,
+                      &sse, &avg);
+      sse >>= 2 * (xd->bd - 8);
+      avg >>= (xd->bd - 8);
+    } else {
+      variance(x->plane[0].src.buf, x->plane[0].src.stride,
+               vp9_64_zeros, 0, bw, bh, &sse, &avg);
+    }
+#else
     variance(x->plane[0].src.buf, x->plane[0].src.stride,
              vp9_64_zeros, 0, bw, bh, &sse, &avg);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
     var = sse - (((int64_t)avg * avg) / (bw * bh));
     return (256 * var) / (bw * bh);
   } else {
+#if CONFIG_VP9_HIGHBITDEPTH
+    if (xd->cur_buf->flags & YV12_FLAG_HIGHBITDEPTH) {
+      var = cpi->fn_ptr[bs].vf(x->plane[0].src.buf,
+                               x->plane[0].src.stride,
+                               CONVERT_TO_BYTEPTR(vp9_highbd_64_zeros),
+                               0, &sse);
+    } else {
+      var = cpi->fn_ptr[bs].vf(x->plane[0].src.buf,
+                               x->plane[0].src.stride,
+                               vp9_64_zeros, 0, &sse);
+    }
+#else
     var = cpi->fn_ptr[bs].vf(x->plane[0].src.buf,
                              x->plane[0].src.stride,
                              vp9_64_zeros, 0, &sse);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
     return (256 * var) >> num_pels_log2_lookup[bs];
   }
 }

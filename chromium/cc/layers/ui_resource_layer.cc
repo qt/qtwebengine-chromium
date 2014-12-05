@@ -23,7 +23,7 @@ class ScopedUIResourceHolder : public UIResourceLayer::UIResourceHolder {
                                             const SkBitmap& skbitmap) {
     return make_scoped_ptr(new ScopedUIResourceHolder(host, skbitmap));
   }
-  virtual UIResourceId id() OVERRIDE { return resource_->id(); }
+  UIResourceId id() override { return resource_->id(); }
 
  private:
   ScopedUIResourceHolder(LayerTreeHost* host, const SkBitmap& skbitmap) {
@@ -39,7 +39,7 @@ class SharedUIResourceHolder : public UIResourceLayer::UIResourceHolder {
     return make_scoped_ptr(new SharedUIResourceHolder(id));
   }
 
-  virtual UIResourceId id() OVERRIDE { return id_; }
+  UIResourceId id() override { return id_; }
 
  private:
   explicit SharedUIResourceHolder(UIResourceId id) : id_(id) {}
@@ -69,7 +69,7 @@ UIResourceLayer::~UIResourceLayer() {}
 
 scoped_ptr<LayerImpl> UIResourceLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return UIResourceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return UIResourceLayerImpl::Create(tree_impl, id());
 }
 
 void UIResourceLayer::SetUV(const gfx::PointF& top_left,
@@ -112,12 +112,12 @@ void UIResourceLayer::SetLayerTreeHost(LayerTreeHost* host) {
 }
 
 void UIResourceLayer::RecreateUIResourceHolder() {
-  ui_resource_holder_.reset();
-  if (!layer_tree_host() || bitmap_.empty())
-    return;
-
-  ui_resource_holder_ =
-    ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_);
+  ui_resource_holder_ = nullptr;
+  if (layer_tree_host() && !bitmap_.empty()) {
+    ui_resource_holder_ =
+        ScopedUIResourceHolder::Create(layer_tree_host(), bitmap_);
+  }
+  UpdateDrawsContent(HasDrawableContent());
 }
 
 void UIResourceLayer::SetBitmap(const SkBitmap& skbitmap) {
@@ -131,18 +131,18 @@ void UIResourceLayer::SetUIResourceId(UIResourceId resource_id) {
   if (ui_resource_holder_ && ui_resource_holder_->id() == resource_id)
     return;
 
-  if (resource_id) {
+  if (resource_id)
     ui_resource_holder_ = SharedUIResourceHolder::Create(resource_id);
-  } else {
-    ui_resource_holder_.reset();
-  }
+  else
+    ui_resource_holder_ = nullptr;
 
+  UpdateDrawsContent(HasDrawableContent());
   SetNeedsCommit();
 }
 
-bool UIResourceLayer::DrawsContent() const {
+bool UIResourceLayer::HasDrawableContent() const {
   return ui_resource_holder_ && ui_resource_holder_->id() &&
-         Layer::DrawsContent();
+         Layer::HasDrawableContent();
 }
 
 void UIResourceLayer::PushPropertiesTo(LayerImpl* layer) {

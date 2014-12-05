@@ -26,7 +26,7 @@ MidiManager* MidiManager::Create() {
 }
 #endif
 
-void MidiManager::StartSession(MidiManagerClient* client, int client_id) {
+void MidiManager::StartSession(MidiManagerClient* client) {
   bool session_is_ready;
   bool session_needs_initialization = false;
   bool too_many_pending_clients_exist = false;
@@ -34,6 +34,12 @@ void MidiManager::StartSession(MidiManagerClient* client, int client_id) {
   {
     base::AutoLock auto_lock(lock_);
     session_is_ready = initialized_;
+    if (clients_.find(client) != clients_.end() ||
+        pending_clients_.find(client) != pending_clients_.end()) {
+      // Should not happen. But just in case the renderer is compromised.
+      NOTREACHED();
+      return;
+    }
     if (!session_is_ready) {
       // Do not accept a new request if the pending client list contains too
       // many clients.
@@ -43,7 +49,7 @@ void MidiManager::StartSession(MidiManagerClient* client, int client_id) {
       if (!too_many_pending_clients_exist) {
         // Call StartInitialization() only for the first request.
         session_needs_initialization = pending_clients_.empty();
-        pending_clients_.insert(std::make_pair(client, client_id));
+        pending_clients_.insert(client);
       }
     }
   }
@@ -58,7 +64,7 @@ void MidiManager::StartSession(MidiManagerClient* client, int client_id) {
     }
     if (too_many_pending_clients_exist) {
       // Return an error immediately if there are too many requests.
-      client->CompleteStartSession(client_id, MIDI_INITIALIZATION_ERROR);
+      client->CompleteStartSession(MIDI_INITIALIZATION_ERROR);
       return;
     }
     // CompleteInitialization() will be called asynchronously when platform
@@ -71,14 +77,18 @@ void MidiManager::StartSession(MidiManagerClient* client, int client_id) {
   MidiResult result;
   {
     base::AutoLock auto_lock(lock_);
-    if (result_ == MIDI_OK)
+    if (result_ == MIDI_OK) {
+      AddInitialPorts(client);
       clients_.insert(client);
+    }
     result = result_;
   }
-  client->CompleteStartSession(client_id, result);
+  client->CompleteStartSession(result);
 }
 
 void MidiManager::EndSession(MidiManagerClient* client) {
+  // At this point, |client| can be in the destruction process, and calling
+  // any method of |client| is dangerous.
   base::AutoLock auto_lock(lock_);
   clients_.erase(client);
   pending_clients_.erase(client);
@@ -107,11 +117,17 @@ void MidiManager::CompleteInitialization(MidiResult result) {
 }
 
 void MidiManager::AddInputPort(const MidiPortInfo& info) {
+  base::AutoLock auto_lock(lock_);
   input_ports_.push_back(info);
+  for (auto client : clients_)
+    client->AddInputPort(info);
 }
 
 void MidiManager::AddOutputPort(const MidiPortInfo& info) {
+  base::AutoLock auto_lock(lock_);
   output_ports_.push_back(info);
+  for (auto client : clients_)
+    client->AddOutputPort(info);
 }
 
 void MidiManager::ReceiveMidiData(
@@ -121,8 +137,8 @@ void MidiManager::ReceiveMidiData(
     double timestamp) {
   base::AutoLock auto_lock(lock_);
 
-  for (ClientList::iterator i = clients_.begin(); i != clients_.end(); ++i)
-    (*i)->ReceiveMidiData(port_index, data, length, timestamp);
+  for (auto client : clients_)
+    client->ReceiveMidiData(port_index, data, length, timestamp);
 }
 
 void MidiManager::CompleteInitializationInternal(MidiResult result) {
@@ -134,14 +150,23 @@ void MidiManager::CompleteInitializationInternal(MidiResult result) {
   initialized_ = true;
   result_ = result;
 
-  for (PendingClientMap::iterator it = pending_clients_.begin();
-       it != pending_clients_.end();
-       ++it) {
-    if (result_ == MIDI_OK)
-      clients_.insert(it->first);
-    it->first->CompleteStartSession(it->second, result_);
+  for (auto client : pending_clients_) {
+    if (result_ == MIDI_OK) {
+      AddInitialPorts(client);
+      clients_.insert(client);
+    }
+    client->CompleteStartSession(result_);
   }
   pending_clients_.clear();
+}
+
+void MidiManager::AddInitialPorts(MidiManagerClient* client) {
+  lock_.AssertAcquired();
+
+  for (const auto& info : input_ports_)
+    client->AddInputPort(info);
+  for (const auto& info : output_ports_)
+    client->AddOutputPort(info);
 }
 
 }  // namespace media

@@ -14,8 +14,8 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "talk/base/sigslot.h"
-#include "talk/xmpp/xmppengine.h"
+#include "webrtc/base/sigslot.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
 
 namespace buzz {
 class PreXmppAuth;
@@ -77,7 +77,7 @@ class XmppConnection
   // Invalidates any weak pointers passed to the delegate by
   // OnConnect(), but does not trigger a call to the delegate's
   // OnError() function.
-  virtual ~XmppConnection();
+  ~XmppConnection() override;
 
  private:
   void OnStateChange(buzz::XmppEngine::State state);

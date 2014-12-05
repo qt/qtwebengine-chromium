@@ -30,16 +30,16 @@
 #define Panner_h
 
 #include "platform/PlatformExport.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class HRTFDatabaseLoader;
 
 // Abstract base class for panning a mono or stereo source.
 
-class PLATFORM_EXPORT Panner {
+class PLATFORM_EXPORT Panner : public GarbageCollectedFinalized<Panner> {
 public:
     enum {
         PanningModelEqualPower = 0,
@@ -48,7 +48,7 @@ public:
 
     typedef unsigned PanningModel;
 
-    static PassOwnPtr<Panner> create(PanningModel, float sampleRate, HRTFDatabaseLoader*);
+    static Panner* create(PanningModel, float sampleRate, HRTFDatabaseLoader*);
 
     virtual ~Panner() { };
 
@@ -61,12 +61,14 @@ public:
     virtual double tailTime() const = 0;
     virtual double latencyTime() const = 0;
 
+    virtual void trace(Visitor*) { }
+
 protected:
     Panner(PanningModel model) : m_panningModel(model) { }
 
     PanningModel m_panningModel;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Panner_h

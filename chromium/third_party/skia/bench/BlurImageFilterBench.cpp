@@ -6,7 +6,6 @@
  */
 
 #include "Benchmark.h"
-#include "SkBitmapDevice.h"
 #include "SkBlurImageFilter.h"
 #include "SkCanvas.h"
 #include "SkPaint.h"
@@ -18,6 +17,7 @@
 #define FILTER_HEIGHT_SMALL 32
 #define FILTER_WIDTH_LARGE  256
 #define FILTER_HEIGHT_LARGE 256
+#define BLUR_SIGMA_MINI     0.5f
 #define BLUR_SIGMA_SMALL    1.0f
 #define BLUR_SIGMA_LARGE    10.0f
 #define BLUR_SIGMA_HUGE     80.0f
@@ -87,6 +87,8 @@ DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_LARGE, 0, false);)
 DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_SMALL, 0, false);)
 DEF_BENCH(return new BlurImageFilterBench(0, BLUR_SIGMA_LARGE, false);)
 DEF_BENCH(return new BlurImageFilterBench(0, BLUR_SIGMA_SMALL, false);)
+DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_MINI, BLUR_SIGMA_MINI, true);)
+DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_MINI, BLUR_SIGMA_MINI, false);)
 DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_SMALL, BLUR_SIGMA_SMALL, true);)
 DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_SMALL, BLUR_SIGMA_SMALL, false);)
 DEF_BENCH(return new BlurImageFilterBench(BLUR_SIGMA_LARGE, BLUR_SIGMA_LARGE, true);)

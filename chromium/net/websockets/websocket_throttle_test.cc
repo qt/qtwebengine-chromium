@@ -23,14 +23,14 @@ namespace {
 class DummySocketStreamDelegate : public SocketStream::Delegate {
  public:
   DummySocketStreamDelegate() {}
-  virtual ~DummySocketStreamDelegate() {}
-  virtual void OnConnected(
-      SocketStream* socket, int max_pending_send_allowed) OVERRIDE {}
-  virtual void OnSentData(SocketStream* socket,
-                          int amount_sent) OVERRIDE {}
-  virtual void OnReceivedData(SocketStream* socket,
-                              const char* data, int len) OVERRIDE {}
-  virtual void OnClose(SocketStream* socket) OVERRIDE {}
+  ~DummySocketStreamDelegate() override {}
+  void OnConnected(SocketStream* socket,
+                   int max_pending_send_allowed) override {}
+  void OnSentData(SocketStream* socket, int amount_sent) override {}
+  void OnReceivedData(SocketStream* socket,
+                      const char* data,
+                      int len) override {}
+  void OnClose(SocketStream* socket) override {}
 };
 
 class WebSocketThrottleTestContext : public TestURLRequestContext {

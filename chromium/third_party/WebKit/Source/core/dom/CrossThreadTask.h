@@ -38,7 +38,7 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/TypeTraits.h"
 
-namespace WebCore {
+namespace blink {
 
 // Traits for the CrossThreadTask.
 template<typename T> struct CrossThreadTaskTraits {
@@ -57,8 +57,21 @@ template<typename T> struct CrossThreadTaskTraits<PassOwnPtr<T> > {
     typedef PassOwnPtr<T> ParamType;
 };
 
-// FIXME: Oilpan: Using a RawPtr is not safe.
-// We need to move ExecutionContextTask to the heap and make this a Member.
+// FIXME: Oilpan: Using a RawPtr is not safe, because the RawPtr does not keep
+// the pointee alive while the ExecutionContextTask holds the RawPtr.
+//
+// - Ideally, we want to move the ExecutionContextTask to Oilpan's heap and use a Member.
+// However we cannot do that easily because the ExecutionContextTask outlives the thread
+// that created the ExecutionContextTask. Oilpan does not support objects that
+// outlives the thread that created the objects.
+//
+// - It's not either easy to keep the ExecutionContextTask off-heap
+// and use a Persistent handle. This is because the Persistent handle can cause a cycle.
+// It's possible that the ExecutionContextTask holds a Persistent handle to the object
+// that owns the ExecutionContextTask.
+//
+// Given the above, we cannot avoid using a RawPtr at the moment.
+// It's a responsibility of the caller sites to manage the lifetime of the pointee.
 template<typename T> struct CrossThreadTaskTraits<RawPtr<T> > {
     typedef RawPtr<T> ParamType;
 };
@@ -380,7 +393,7 @@ private:
 };
 
 template<typename P1, typename MP1>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1),
     const P1& parameter1)
 {
@@ -390,7 +403,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2),
     const P1& parameter1, const P2& parameter2)
 {
@@ -400,7 +413,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3),
     const P1& parameter1, const P2& parameter2, const P3& parameter3)
 {
@@ -411,7 +424,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4),
     const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
 {
@@ -423,7 +436,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5),
     const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
 {
@@ -436,7 +449,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6),
     const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6)
 {
@@ -449,7 +462,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7),
     const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6, const P7& parameter7)
 {
@@ -464,7 +477,7 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
 }
 
 template<typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5, typename P6, typename MP6, typename P7, typename MP7, typename P8, typename MP8>
-PassOwnPtr<ExecutionContextTask> createCallbackTask(
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
     void (*method)(ExecutionContext*, MP1, MP2, MP3, MP4, MP5, MP6, MP7, MP8),
     const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6, const P7& parameter7, const P8& parameter8)
 {
@@ -478,6 +491,245 @@ PassOwnPtr<ExecutionContextTask> createCallbackTask(
                                                        CrossThreadCopier<P7>::copy(parameter7), CrossThreadCopier<P8>::copy(parameter8));
 }
 
-} // namespace WebCore
+// createCrossThreadTask(...) is similar to but safer than
+// CallClosureTask::create(bind(...)) for cross-thread task posting.
+// postTask(CallClosureTask::create(bind(...))) is not thread-safe
+// due to temporary objects, see http://crbug.com/390851 for details.
+//
+// createCrossThreadTask copies its arguments into Closure
+// by CrossThreadCopier, rather than copy constructors.
+// This means it creates deep copy of each argument if necessary.
+//
+// To pass things that cannot be copied by CrossThreadCopier
+// (e.g. pointers), use AllowCrossThreadAccess() explicitly.
+//
+// If the first argument of createCrossThreadTask
+// is a pointer to a member function in class C,
+// then the second argument of createCrossThreadTask
+// is a raw pointer (C*) or a weak pointer (const WeakPtr<C>&) to C.
+// createCrossThreadTask does not use CrossThreadCopier for the pointer,
+// assuming the user of createCrossThreadTask knows that the pointer
+// can be accessed from the target thread.
+
+// Templates for member function of class C + raw pointer (C*)
+// which do not use CrossThreadCopier for the raw pointer (a1)
+template<typename C>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(),
+    C* p)
+{
+    return CallClosureTask::create(bind(function,
+        p));
+}
+
+template<typename C, typename P1, typename MP1>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1),
+    C* p, const P1& parameter1)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2),
+    C* p, const P1& parameter1, const P2& parameter2)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3),
+    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3, MP4),
+    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3, MP4, MP5),
+    C* p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4),
+        CrossThreadCopier<P5>::copy(parameter5)));
+}
+
+// Templates for member function of class C + weak pointer (const WeakPtr<C>&)
+// which do not use CrossThreadCopier for the weak pointer (a1)
+template<typename C>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(),
+    const WeakPtr<C>& p)
+{
+    return CallClosureTask::create(bind(function,
+        p));
+}
+
+template<typename C, typename P1, typename MP1>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1),
+    const WeakPtr<C>& p, const P1& parameter1)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2),
+    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3),
+    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3, MP4),
+    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4)));
+}
+
+template<typename C, typename P1, typename MP1, typename P2, typename MP2, typename P3, typename MP3, typename P4, typename MP4, typename P5, typename MP5>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    void (C::*function)(MP1, MP2, MP3, MP4, MP5),
+    const WeakPtr<C>& p, const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
+{
+    return CallClosureTask::create(bind(function,
+        p,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4),
+        CrossThreadCopier<P5>::copy(parameter5)));
+}
+
+// Other cases; use CrossThreadCopier for all arguments
+template<typename FunctionType>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function)
+{
+    return CallClosureTask::create(bind(function));
+}
+
+template<typename FunctionType, typename P1>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1)));
+}
+
+template<typename FunctionType, typename P1, typename P2>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1, const P2& parameter2)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2)));
+}
+
+template<typename FunctionType, typename P1, typename P2, typename P3>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1, const P2& parameter2, const P3& parameter3)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3)));
+}
+
+template<typename FunctionType, typename P1, typename P2, typename P3, typename P4>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4)));
+}
+
+template<typename FunctionType, typename P1, typename P2, typename P3, typename P4, typename P5>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4),
+        CrossThreadCopier<P5>::copy(parameter5)));
+}
+
+template<typename FunctionType, typename P1, typename P2, typename P3, typename P4, typename P5, typename P6>
+PassOwnPtr<ExecutionContextTask> createCrossThreadTask(
+    FunctionType function,
+    const P1& parameter1, const P2& parameter2, const P3& parameter3, const P4& parameter4, const P5& parameter5, const P6& parameter6)
+{
+    return CallClosureTask::create(bind(function,
+        CrossThreadCopier<P1>::copy(parameter1),
+        CrossThreadCopier<P2>::copy(parameter2),
+        CrossThreadCopier<P3>::copy(parameter3),
+        CrossThreadCopier<P4>::copy(parameter4),
+        CrossThreadCopier<P5>::copy(parameter5),
+        CrossThreadCopier<P6>::copy(parameter6)));
+}
+
+} // namespace blink
 
 #endif // CrossThreadTask_h

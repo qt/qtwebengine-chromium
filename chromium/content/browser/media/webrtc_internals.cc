@@ -4,13 +4,14 @@
 
 #include "content/browser/media/webrtc_internals.h"
 
-#include "base/path_service.h"
+#include "base/strings/string_number_conversions.h"
 #include "content/browser/media/webrtc_internals_ui_observer.h"
 #include "content/browser/web_contents/web_contents_view.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/power_save_blocker.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 
@@ -20,6 +21,10 @@ using std::string;
 namespace content {
 
 namespace {
+
+static base::LazyInstance<WebRTCInternals>::Leaky g_webrtc_internals =
+    LAZY_INSTANCE_INITIALIZER;
+
 // Makes sure that |dict| has a ListValue under path "log".
 static base::ListValue* EnsureLogList(base::DictionaryValue* dict) {
   base::ListValue* log = NULL;
@@ -59,14 +64,14 @@ WebRTCInternals::~WebRTCInternals() {
 }
 
 WebRTCInternals* WebRTCInternals::GetInstance() {
-  return Singleton<WebRTCInternals>::get();
+  return g_webrtc_internals.Pointer();
 }
 
 void WebRTCInternals::OnAddPeerConnection(int render_process_id,
                                           ProcessId pid,
                                           int lid,
                                           const string& url,
-                                          const string& servers,
+                                          const string& rtc_configuration,
                                           const string& constraints) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
@@ -77,10 +82,11 @@ void WebRTCInternals::OnAddPeerConnection(int render_process_id,
   dict->SetInteger("rid", render_process_id);
   dict->SetInteger("pid", static_cast<int>(pid));
   dict->SetInteger("lid", lid);
-  dict->SetString("servers", servers);
+  dict->SetString("rtcConfiguration", rtc_configuration);
   dict->SetString("constraints", constraints);
   dict->SetString("url", url);
   peer_connection_data_.Append(dict);
+  CreateOrReleasePowerSaveBlocker();
 
   if (observers_.might_have_observers())
     SendUpdate("addPeerConnection", dict);
@@ -101,6 +107,7 @@ void WebRTCInternals::OnRemovePeerConnection(ProcessId pid, int lid) {
       continue;
 
     peer_connection_data_.Remove(i, NULL);
+    CreateOrReleasePowerSaveBlocker();
 
     if (observers_.might_have_observers()) {
       base::DictionaryValue id;
@@ -136,6 +143,9 @@ void WebRTCInternals::OnUpdatePeerConnection(
     if (!log_entry)
       return;
 
+    double epoch_time = base::Time::Now().ToJsTime();
+    string time = base::DoubleToString(epoch_time);
+    log_entry->SetString("time", time);
     log_entry->SetString("type", type);
     log_entry->SetString("value", value);
     log->Append(log_entry);
@@ -144,8 +154,7 @@ void WebRTCInternals::OnUpdatePeerConnection(
       base::DictionaryValue update;
       update.SetInteger("pid", static_cast<int>(pid));
       update.SetInteger("lid", lid);
-      update.SetString("type", type);
-      update.SetString("value", value);
+      update.MergeDictionary(log_entry);
 
       SendUpdate("updatePeerConnection", &update);
     }
@@ -260,6 +269,7 @@ void WebRTCInternals::ResetForTesting() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   observers_.Clear();
   peer_connection_data_.Clear();
+  CreateOrReleasePowerSaveBlocker();
   get_user_media_requests_.Clear();
   aec_dump_enabled_ = false;
 }
@@ -296,6 +306,8 @@ void WebRTCInternals::FileSelectionCanceled(void* params) {
 }
 
 void WebRTCInternals::OnRendererExit(int render_process_id) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
   // Iterates from the end of the list to remove the PeerConnections created
   // by the exitting renderer.
   for (int i = peer_connection_data_.GetSize() - 1; i >= 0; --i) {
@@ -319,6 +331,7 @@ void WebRTCInternals::OnRendererExit(int render_process_id) {
       peer_connection_data_.Remove(i, NULL);
     }
   }
+  CreateOrReleasePowerSaveBlocker();
 
   bool found_any = false;
   // Iterates from the end of the list to remove the getUserMedia requests
@@ -353,5 +366,21 @@ void WebRTCInternals::EnableAecDumpOnAllRenderProcessHosts() {
   }
 }
 #endif
+
+void WebRTCInternals::CreateOrReleasePowerSaveBlocker() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (peer_connection_data_.empty() && power_save_blocker_) {
+    DVLOG(1) << ("Releasing the block on application suspension since no "
+                 "PeerConnections are active anymore.");
+    power_save_blocker_.reset();
+  } else if (!peer_connection_data_.empty() && !power_save_blocker_) {
+    DVLOG(1) << ("Preventing the application from being suspended while one or "
+                 "more PeerConnections are active.");
+    power_save_blocker_ = content::PowerSaveBlocker::Create(
+        content::PowerSaveBlocker::kPowerSaveBlockPreventAppSuspension,
+        "WebRTC has active PeerConnections.").Pass();
+  }
+}
 
 }  // namespace content

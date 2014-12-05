@@ -12,7 +12,6 @@
 #include <vector>
 
 #include "base/strings/string16.h"
-#include "base/strings/string_util.h"
 #include "ui/base/ui_base_export.h"
 
 #if defined(OS_MACOSX)
@@ -24,6 +23,9 @@ namespace l10n_util {
 // The same as base::i18n::GetCanonicalLocale(const char*), but takes
 // std::string as an argument.
 UI_BASE_EXPORT std::string GetCanonicalLocale(const std::string& locale);
+
+// Takes normalized locale as |locale|. Returns language part (before '-').
+UI_BASE_EXPORT std::string GetLanguage(const std::string& locale);
 
 // This method translates a generic locale name to one of the locally defined
 // ones. This method returns true if it succeeds.
@@ -38,7 +40,13 @@ UI_BASE_EXPORT bool CheckAndResolveLocale(const std::string& locale,
 // command line (--lang), second we try the value in the prefs file (passed in
 // as |pref_locale|), finally, we fall back on the system locale. We only return
 // a value if there's a corresponding resource DLL for the locale.  Otherwise,
-// we fall back to en-us.
+// we fall back to en-us. |set_icu_locale| determines whether the resulting
+// locale is set as the default ICU locale before returning it.
+UI_BASE_EXPORT std::string GetApplicationLocale(const std::string& pref_locale,
+                                                bool set_icu_locale);
+
+// Convenience version of GetApplicationLocale() that sets the resulting locale
+// as the default ICU locale before returning it.
 UI_BASE_EXPORT std::string GetApplicationLocale(const std::string& pref_locale);
 
 // Returns true if a display name for |locale| is available in the locale
@@ -185,6 +193,10 @@ UI_BASE_EXPORT void GetAcceptLanguagesForLocale(
 // Returns the preferred size of the contents view of a window based on
 // designer given constraints which might dependent on the language used.
 UI_BASE_EXPORT int GetLocalizedContentsWidthInPixels(int pixel_resource_id);
+
+UI_BASE_EXPORT const char* const* GetAcceptLanguageListForTesting();
+
+UI_BASE_EXPORT size_t GetAcceptLanguageListSizeForTesting();
 
 }  // namespace l10n_util
 

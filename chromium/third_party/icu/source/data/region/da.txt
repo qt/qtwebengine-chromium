@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/da.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/da.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/da.xml
+ * ICU <specials> source: <path>/common/main/da.xml
  */
 da{
     Countries{
@@ -28,7 +28,7 @@ da{
         AT{"Østrig"}
         AU{"Australien"}
         AW{"Aruba"}
-        AX{"Åland"}
+        AX{"Ålandsøerne"}
         AZ{"Aserbajdsjan"}
         BA{"Bosnien-Hercegovina"}
         BB{"Barbados"}
@@ -41,12 +41,13 @@ da{
         BJ{"Benin"}
         BL{"Saint Barthélemy"}
         BM{"Bermuda"}
-        BN{"Brunei Darussalam"}
+        BN{"Brunei"}
         BO{"Bolivia"}
+        BQ{"Nederlandske antiller"}
         BR{"Brasilien"}
         BS{"Bahamas"}
         BT{"Bhutan"}
-        BV{"Bouvetø"}
+        BV{"Bouvetøen"}
         BW{"Botswana"}
         BY{"Hviderusland"}
         BZ{"Belize"}
@@ -54,19 +55,19 @@ da{
         CC{"Cocosøerne"}
         CD{"Congo-Kinshasa"}
         CF{"Centralafrikanske Republik"}
-        CG{"Congo"}
+        CG{"Congo-Brazzaville"}
         CH{"Schweiz"}
-        CI{"Elfenbenskysten"}
-        CK{"Cook-øerne"}
+        CI{"Côte d’Ivoire"}
+        CK{"Cookøerne"}
         CL{"Chile"}
         CM{"Cameroun"}
         CN{"Kina"}
         CO{"Colombia"}
         CP{"Clippertonøen"}
         CR{"Costa Rica"}
-        CS{"Serbien og Montenegro"}
         CU{"Cuba"}
         CV{"Kap Verde"}
+        CW{"Curaçao"}
         CX{"Juleøen"}
         CY{"Cypern"}
         CZ{"Tjekkiet"}
@@ -85,9 +86,9 @@ da{
         ER{"Eritrea"}
         ES{"Spanien"}
         ET{"Etiopien"}
-        EU{"EU"}
+        EU{"Den Europæiske Union"}
         FI{"Finland"}
-        FJ{"Fiji-øerne"}
+        FJ{"Fiji"}
         FK{"Falklandsøerne"}
         FM{"Mikronesiens Forenede Stater"}
         FO{"Færøerne"}
@@ -111,7 +112,7 @@ da{
         GU{"Guam"}
         GW{"Guinea-Bissau"}
         GY{"Guyana"}
-        HK{"SAR Hongkong"}
+        HK{"Hongkong SAR"}
         HM{"Heard- og McDonald-øerne"}
         HN{"Honduras"}
         HR{"Kroatien"}
@@ -123,7 +124,7 @@ da{
         IL{"Israel"}
         IM{"Isle of Man"}
         IN{"Indien"}
-        IO{"Det Britiske Territorium i Det Indiske Ocean"}
+        IO{"Det britiske territorium i Det Indiske Ocean"}
         IQ{"Irak"}
         IR{"Iran"}
         IS{"Island"}
@@ -156,16 +157,16 @@ da{
         LY{"Libyen"}
         MA{"Marokko"}
         MC{"Monaco"}
-        MD{"Republikken Moldova"}
+        MD{"Moldova"}
         ME{"Montenegro"}
         MF{"Saint Martin"}
         MG{"Madagaskar"}
         MH{"Marshalløerne"}
         MK{"Makedonien"}
         ML{"Mali"}
-        MM{"Myanmar"}
+        MM{"Myanmar (Burma)"}
         MN{"Mongoliet"}
-        MO{"SAR Macao"}
+        MO{"Macao SAR"}
         MP{"Nordmarianerne"}
         MQ{"Martinique"}
         MR{"Mauretanien"}
@@ -180,7 +181,7 @@ da{
         NA{"Namibia"}
         NC{"Ny Caledonien"}
         NE{"Niger"}
-        NF{"Norfolk Island"}
+        NF{"Norfolkøen"}
         NG{"Nigeria"}
         NI{"Nicaragua"}
         NL{"Holland"}
@@ -206,7 +207,7 @@ da{
         PY{"Paraguay"}
         QA{"Qatar"}
         QO{"Ydre Oceanien"}
-        RE{"Reunion"}
+        RE{"Réunion"}
         RO{"Rumænien"}
         RS{"Serbien"}
         RU{"Rusland"}
@@ -226,14 +227,16 @@ da{
         SN{"Senegal"}
         SO{"Somalia"}
         SR{"Surinam"}
+        SS{"Sydsudan"}
         ST{"Sao Tome og Principe"}
         SV{"El Salvador"}
+        SX{"Sint Maarten"}
         SY{"Syrien"}
         SZ{"Swaziland"}
         TA{"Tristan da Cunha"}
         TC{"Turks- og Caicosøerne"}
         TD{"Tchad"}
-        TF{"Franske Besiddelser i Det Sydlige Indiske Ocean"}
+        TF{"De franske besiddelser i Det Sydlige Indiske Ocean"}
         TG{"Togo"}
         TH{"Thailand"}
         TJ{"Tadsjikistan"}
@@ -249,25 +252,33 @@ da{
         TZ{"Tanzania"}
         UA{"Ukraine"}
         UG{"Uganda"}
-        UM{"De Mindre Amerikanske Oversøiske Øer"}
+        UM{"Amerikanske oversøiske øer"}
         US{"USA"}
         UY{"Uruguay"}
         UZ{"Usbekistan"}
         VA{"Vatikanstaten"}
-        VC{"St. Vincent og Grenadinerne"}
+        VC{"Saint Vincent og Grenadinerne"}
         VE{"Venezuela"}
-        VG{"De britiske jomfruøer"}
-        VI{"De amerikanske jomfruøer"}
+        VG{"De Britiske Jomfruøer"}
+        VI{"De Amerikanske Jomfruøer"}
         VN{"Vietnam"}
         VU{"Vanuatu"}
-        WF{"Wallis og Futunaøerne"}
+        WF{"Wallis og Futuna"}
         WS{"Samoa"}
+        XK{"Kosovo"}
         YE{"Yemen"}
         YT{"Mayotte"}
         ZA{"Sydafrika"}
         ZM{"Zambia"}
         ZW{"Zimbabwe"}
-        ZZ{"Ukendt eller ugyldigt område"}
+        ZZ{"Ukendt område"}
     }
-    Version{"2.0.50.96"}
+    CountriesShort{
+        GB{"UK"}
+        HK{"Hongkong"}
+        MO{"Macao"}
+        PS{"Palæstina"}
+        US{"USA"}
+    }
+    Version{"2.0.92.87"}
 }

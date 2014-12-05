@@ -34,56 +34,74 @@ class ImageTransportSurfaceFBO
     // Allocate the storage for the color buffer. The specified context is
     // current, and there is a texture bound to GL_TEXTURE_RECTANGLE_ARB.
     virtual bool AllocateColorBufferStorage(
-        CGLContextObj context, gfx::Size size) = 0;
+        CGLContextObj context, GLuint texture,
+        gfx::Size size, float scale_factor) = 0;
 
     // Free the storage allocated in the AllocateColorBufferStorage call. The
     // GL texture that was bound has already been deleted by the caller.
     virtual void FreeColorBufferStorage() = 0;
 
-    // Retrieve the handle for the surface to send to the browser process to
-    // display.
-    virtual uint64 GetSurfaceHandle() const = 0;
+    // Swap buffers and return the handle for the surface to send to the browser
+    // process to display.
+    virtual void SwapBuffers(const gfx::Size& size, float scale_factor) = 0;
+
+    // Indicate that the backbuffer will be written to.
+    virtual void WillWriteToBackbuffer() = 0;
+
+    // Indicate that the backbuffer has been discarded and should not be seen
+    // again.
+    virtual void DiscardBackbuffer() = 0;
+
+    // Called once for every SwapBuffers call when the IPC for the present has
+    // been processed by the browser. |disable_throttling| is set if the
+    // browser suspects that GPU back-pressure should be disabled.
+    virtual void SwapBuffersAckedByBrowser(bool disable_throttling) = 0;
   };
 
-  ImageTransportSurfaceFBO(StorageProvider* storage_provider,
-                           GpuChannelManager* manager,
+  ImageTransportSurfaceFBO(GpuChannelManager* manager,
                            GpuCommandBufferStub* stub,
                            gfx::PluginWindowHandle handle);
 
   // GLSurface implementation
-  virtual bool Initialize() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool DeferDraws() OVERRIDE;
-  virtual bool IsOffscreen() OVERRIDE;
-  virtual bool SwapBuffers() OVERRIDE;
-  virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual bool SupportsPostSubBuffer() OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual void* GetHandle() OVERRIDE;
-  virtual void* GetDisplay() OVERRIDE;
-  virtual bool OnMakeCurrent(gfx::GLContext* context) OVERRIDE;
-  virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
-  virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
-  virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
+  bool Initialize() override;
+  void Destroy() override;
+  bool DeferDraws() override;
+  bool IsOffscreen() override;
+  bool SwapBuffers() override;
+  bool PostSubBuffer(int x, int y, int width, int height) override;
+  bool SupportsPostSubBuffer() override;
+  gfx::Size GetSize() override;
+  void* GetHandle() override;
+  void* GetDisplay() override;
+  bool OnMakeCurrent(gfx::GLContext* context) override;
+  unsigned int GetBackingFrameBufferObject() override;
+  bool SetBackbufferAllocation(bool allocated) override;
+  void SetFrontbufferAllocation(bool allocated) override;
+
+  // Called when the context may continue to make forward progress after a swap.
+  void SendSwapBuffers(uint64 surface_handle,
+                       const gfx::Size pixel_size,
+                       float scale_factor);
+  void SetRendererID(int renderer_id);
 
  protected:
   // ImageTransportSurface implementation
-  virtual void OnBufferPresented(
-      const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
-  virtual void SetLatencyInfo(
-      const std::vector<ui::LatencyInfo>&) OVERRIDE;
-  virtual void WakeUpGpu() OVERRIDE;
+  void OnBufferPresented(
+      const AcceleratedSurfaceMsg_BufferPresented_Params& params) override;
+  void OnResize(gfx::Size pixel_size, float scale_factor) override;
+  void SetLatencyInfo(const std::vector<ui::LatencyInfo>&) override;
+  void WakeUpGpu() override;
 
   // GpuCommandBufferStub::DestructionObserver implementation.
-  virtual void OnWillDestroyStub() OVERRIDE;
+  void OnWillDestroyStub() override;
 
  private:
-  virtual ~ImageTransportSurfaceFBO() OVERRIDE;
+  ~ImageTransportSurfaceFBO() override;
 
   void AdjustBufferAllocation();
   void DestroyFramebuffer();
-  void CreateFramebuffer();
+  void AllocateOrResizeFramebuffer(
+      const gfx::Size& pixel_size, float scale_factor);
 
   scoped_ptr<StorageProvider> storage_provider_;
 
@@ -99,19 +117,15 @@ class ImageTransportSurfaceFBO
   // Weak pointer to the context that this was last made current to.
   gfx::GLContext* context_;
 
-  gfx::Size size_;
-  gfx::Size rounded_size_;
+  gfx::Size pixel_size_;
+  gfx::Size rounded_pixel_size_;
   float scale_factor_;
 
   // Whether or not we've successfully made the surface current once.
   bool made_current_;
 
-  // Whether a SwapBuffers is pending.
-  bool is_swap_buffers_pending_;
-
-  // Whether we unscheduled command buffer because of pending SwapBuffers.
-  bool did_unschedule_;
-
+  // Whether a SwapBuffers IPC needs to be sent to the browser.
+  bool is_swap_buffers_send_pending_;
   std::vector<ui::LatencyInfo> latency_info_;
 
   scoped_ptr<ImageTransportHelper> helper_;

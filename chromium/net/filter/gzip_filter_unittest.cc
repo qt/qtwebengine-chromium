@@ -5,7 +5,7 @@
 #include <fstream>
 #include <ostream>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
 #include "net/base/io_buffer.h"
@@ -49,7 +49,7 @@ namespace net {
 // Mac, so this needs to be a PlatformTest.
 class GZipUnitTest : public PlatformTest {
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     PlatformTest::SetUp();
 
     deflate_encode_buffer_ = NULL;
@@ -89,7 +89,7 @@ class GZipUnitTest : public PlatformTest {
     ASSERT_TRUE(gzip_encode_len_ <= kDefaultBufferSize);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     delete[] deflate_encode_buffer_;
     deflate_encode_buffer_ = NULL;
 

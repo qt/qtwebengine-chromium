@@ -8,6 +8,14 @@ config("ssl_config") {
   if (is_mac || is_win) {
     defines = [ "NSS_PLATFORM_CLIENT_AUTH" ]
   }
+
+  if (is_clang) {
+    cflags = [
+      # There is a broken header guard in /usr/include/nss/secmod.h:
+      # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
+      "-Wno-header-guard",
+    ]
+  }
 }
 
 component("libssl") {
@@ -57,7 +65,7 @@ component("libssl") {
     "bodge/secitem_array.c",
   ]
 
-  direct_dependent_configs = [ ":ssl_config" ]
+  public_configs = [ ":ssl_config" ]
 
   cflags = []
   defines = [
@@ -76,7 +84,9 @@ component("libssl") {
       "unix_err.c",
       "unix_err.h",
     ]
-    sources += [ "exports_win.def" ]
+    if (component_mode == "shared_library") {
+      ldflags = [ "/DEF:" + rebase_path("exports_win.def", root_build_dir) ]
+    }
   } else if (is_linux) {
     if (component_mode == "shared_library") {
       configs -= [ "//build/config/gcc:symbol_visibility_hidden" ]
@@ -88,7 +98,7 @@ component("libssl") {
 
     # Must be after ssl_config since we want our SSL headers to take
     # precedence.
-    direct_dependent_configs += [
+    public_configs += [
       "//third_party/nss:system_nss_no_ssl_config"
     ]
   } else if (is_mac) {
@@ -114,22 +124,9 @@ component("libssl") {
     sources -= [
       "bodge/secitem_array.c",
     ]
-    deps = [
+    public_deps = [
       "//third_party/nss:nspr",
       "//third_party/nss:nss",
-    ]
-    forward_dependent_configs_from = deps
-  }
-
-  if (is_clang) {
-    cflags += [
-      # See http://crbug.com/138571#c8. In short, sslsecur.c picks up the
-      # system's cert.h because cert.h isn't in chromium's repo.
-      "-Wno-incompatible-pointer-types",
-
-      # There is a broken header guard in /usr/include/nss/secmod.h:
-      # https://bugzilla.mozilla.org/show_bug.cgi?id=884072
-      "-Wno-header-guard",
     ]
   }
 

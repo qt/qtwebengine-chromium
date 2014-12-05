@@ -30,7 +30,9 @@
 #include "core/rendering/RenderInline.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderListMarker.h"
+#include "core/rendering/RenderObjectInlines.h"
 #include "core/rendering/RenderRubyRun.h"
+#include "core/rendering/TextRunConstructor.h"
 #include "core/rendering/break_lines.h"
 #include "core/rendering/line/LineBreaker.h"
 #include "core/rendering/line/LineInfo.h"
@@ -40,7 +42,7 @@
 #include "core/rendering/line/WordMeasurement.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
 
-namespace WebCore {
+namespace blink {
 
 // We don't let our line box tree for a single line get any deeper than this.
 const unsigned cMaxLineDepth = 200;
@@ -198,6 +200,7 @@ inline bool requiresLineBox(const InlineIterator& it, const LineInfo& lineInfo =
 
 inline void setStaticPositions(RenderBlockFlow* block, RenderBox* child)
 {
+    ASSERT(child->isOutOfFlowPositioned());
     // FIXME: The math here is actually not really right. It's a best-guess approximation that
     // will work for the common cases
     RenderObject* containerBlock = child->container();
@@ -208,6 +211,10 @@ inline void setStaticPositions(RenderBlockFlow* block, RenderBox* child)
         // inline so that we can obtain the value later.
         toRenderInline(containerBlock)->layer()->setStaticInlinePosition(block->startAlignedOffsetForLine(blockHeight, false));
         toRenderInline(containerBlock)->layer()->setStaticBlockPosition(blockHeight);
+
+        // If |child| is a leading or trailing positioned object this is its only opportunity to ensure it moves with an inline
+        // container changing width.
+        child->moveWithEdgeOfInlineContainerIfNecessary(child->isHorizontalWritingMode());
     }
     block->updateStaticInlinePositionForChild(child, blockHeight);
     child->layer()->setStaticBlockPosition(blockHeight);
@@ -335,7 +342,7 @@ inline void BreakingContext::handleOutOfFlowPositioned(Vector<RenderBox*>& posit
     RenderBox* box = toRenderBox(m_current.object());
     bool isInlineType = box->style()->isOriginalDisplayInlineType();
     if (!isInlineType) {
-        m_block->setStaticInlinePositionForChild(box, m_block->logicalHeight(), m_block->startOffsetForContent());
+        m_block->setStaticInlinePositionForChild(box, m_block->startOffsetForContent());
     } else {
         // If our original display was an INLINE type, then we can go ahead
         // and determine our static y position now.
@@ -496,7 +503,7 @@ inline float firstPositiveWidth(const WordMeasurements& wordMeasurements)
 inline float measureHyphenWidth(RenderText* renderer, const Font& font, TextDirection textDirection)
 {
     RenderStyle* style = renderer->style();
-    return font.width(RenderBlockFlow::constructTextRun(renderer, font,
+    return font.width(constructTextRun(renderer, font,
         style->hyphenString().string(), style, style->direction()));
 }
 
@@ -512,8 +519,9 @@ ALWAYS_INLINE float textWidth(RenderText* text, unsigned from, unsigned len, con
     if (isFixedPitch || (!from && len == text->textLength()) || text->style()->hasTextCombine())
         return text->width(from, len, font, xPos, text->style()->direction(), fallbackFonts, &glyphOverflow);
 
-    TextRun run = RenderBlockFlow::constructTextRun(text, font, text, from, len, text->style());
+    TextRun run = constructTextRun(text, font, text, from, len, text->style());
     run.setCharacterScanForCodePath(!text->canUseSimpleFontCodePath());
+    run.setUseComplexCodePath(!text->canUseSimpleFontCodePath());
     run.setTabSize(!collapseWhiteSpace, text->style()->tabSize());
     run.setXPos(xPos);
     return font.width(run, fallbackFonts, &glyphOverflow);
@@ -586,9 +594,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
     // Non-zero only when kerning is enabled, in which case we measure
     // words with their trailing space, then subtract its width.
     float wordTrailingSpaceWidth = (font.fontDescription().typesettingFeatures() & Kerning) ?
-        font.width(RenderBlockFlow::constructTextRun(
-            renderText, font, &space, 1, style,
-            style->direction())) + wordSpacing
+        font.width(constructTextRun(renderText, font, &space, 1, style, style->direction())) + wordSpacing
         : 0;
 
     UChar lastCharacter = m_renderTextInfo.m_lineBreakIterator.lastCharacter();
@@ -612,7 +618,7 @@ inline bool BreakingContext::handleText(WordMeasurements& wordMeasurements, bool
         if ((breakAll || breakWords) && !midWordBreak) {
             wrapW += charWidth;
             bool midWordBreakIsBeforeSurrogatePair = U16_IS_LEAD(c) && m_current.offset() + 1 < renderText->textLength() && U16_IS_TRAIL((*renderText)[m_current.offset() + 1]);
-            charWidth = textWidth(renderText, m_current.offset(), midWordBreakIsBeforeSurrogatePair ? 2 : 1, font, m_width.committedWidth() + wrapW, isFixedPitch, m_collapseWhiteSpace, 0);
+            charWidth = textWidth(renderText, m_current.offset(), midWordBreakIsBeforeSurrogatePair ? 2 : 1, font, m_width.committedWidth() + wrapW, isFixedPitch, m_collapseWhiteSpace);
             midWordBreak = m_width.committedWidth() + wrapW + charWidth > m_width.availableWidth();
         }
 

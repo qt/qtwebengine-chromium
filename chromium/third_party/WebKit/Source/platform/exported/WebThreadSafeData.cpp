@@ -33,8 +33,6 @@
 
 #include "platform/blob/BlobData.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebThreadSafeData::reset()

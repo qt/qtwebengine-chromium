@@ -24,26 +24,24 @@
 #include "config.h"
 #include "core/rendering/RenderReplaced.h"
 
+#include "core/editing/PositionWithAffinity.h"
+#include "core/paint/ReplacedPainter.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
-#include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/RenderBlock.h"
 #include "core/rendering/RenderImage.h"
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderView.h"
 #include "platform/LengthFunctions.h"
-#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/graphics/GraphicsContext.h"
 
-using namespace std;
+namespace blink {
 
-namespace WebCore {
-
-const int cDefaultWidth = 300;
-const int cDefaultHeight = 150;
+const int RenderReplaced::defaultWidth = 300;
+const int RenderReplaced::defaultHeight = 150;
 
 RenderReplaced::RenderReplaced(Element* element)
     : RenderBox(element)
-    , m_intrinsicSize(cDefaultWidth, cDefaultHeight)
+    , m_intrinsicSize(defaultWidth, defaultHeight)
 {
     setReplaced(true);
 }
@@ -81,7 +79,7 @@ void RenderReplaced::layout()
 {
     ASSERT(needsLayout());
 
-    LayoutRepainter repainter(*this, checkForPaintInvalidationDuringLayout());
+    LayoutRect oldContentRect = replacedContentRect();
 
     setHeight(minimumReplacedHeight());
 
@@ -93,88 +91,23 @@ void RenderReplaced::layout()
     updateLayerTransformAfterLayout();
     invalidateBackgroundObscurationStatus();
 
-    repainter.repaintAfterLayout();
     clearNeedsLayout();
+
+    if (replacedContentRect() != oldContentRect)
+        setShouldDoFullPaintInvalidation();
 }
 
 void RenderReplaced::intrinsicSizeChanged()
 {
-    int scaledWidth = static_cast<int>(cDefaultWidth * style()->effectiveZoom());
-    int scaledHeight = static_cast<int>(cDefaultHeight * style()->effectiveZoom());
+    int scaledWidth = static_cast<int>(defaultWidth * style()->effectiveZoom());
+    int scaledHeight = static_cast<int>(defaultHeight * style()->effectiveZoom());
     m_intrinsicSize = IntSize(scaledWidth, scaledHeight);
     setNeedsLayoutAndPrefWidthsRecalcAndFullPaintInvalidation();
 }
 
 void RenderReplaced::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
-
-    if (!shouldPaint(paintInfo, paintOffset))
-        return;
-
-    LayoutPoint adjustedPaintOffset = paintOffset + location();
-
-    if (hasBoxDecorations() && (paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection))
-        paintBoxDecorations(paintInfo, adjustedPaintOffset);
-
-    if (paintInfo.phase == PaintPhaseMask) {
-        paintMask(paintInfo, adjustedPaintOffset);
-        return;
-    }
-
-    if (paintInfo.phase == PaintPhaseClippingMask && (!hasLayer() || !layer()->hasCompositedClippingMask()))
-        return;
-
-    LayoutRect paintRect = LayoutRect(adjustedPaintOffset, size());
-    if ((paintInfo.phase == PaintPhaseOutline || paintInfo.phase == PaintPhaseSelfOutline) && style()->outlineWidth())
-        paintOutline(paintInfo, paintRect);
-
-    if (paintInfo.phase != PaintPhaseForeground && paintInfo.phase != PaintPhaseSelection && !canHaveChildren() && paintInfo.phase != PaintPhaseClippingMask)
-        return;
-
-    if (!paintInfo.shouldPaintWithinRoot(this))
-        return;
-
-    bool drawSelectionTint = selectionState() != SelectionNone && !document().printing();
-    if (paintInfo.phase == PaintPhaseSelection) {
-        if (selectionState() == SelectionNone)
-            return;
-        drawSelectionTint = false;
-    }
-
-    bool completelyClippedOut = false;
-    if (style()->hasBorderRadius()) {
-        LayoutRect borderRect = LayoutRect(adjustedPaintOffset, size());
-
-        if (borderRect.isEmpty())
-            completelyClippedOut = true;
-        else {
-            // Push a clip if we have a border radius, since we want to round the foreground content that gets painted.
-            paintInfo.context->save();
-            RoundedRect roundedInnerRect = style()->getRoundedInnerBorderFor(paintRect,
-                paddingTop() + borderTop(), paddingBottom() + borderBottom(), paddingLeft() + borderLeft(), paddingRight() + borderRight(), true, true);
-            clipRoundedInnerRect(paintInfo.context, paintRect, roundedInnerRect);
-        }
-    }
-
-    if (!completelyClippedOut) {
-        if (paintInfo.phase == PaintPhaseClippingMask) {
-            paintClippingMask(paintInfo, adjustedPaintOffset);
-        } else {
-            paintReplaced(paintInfo, adjustedPaintOffset);
-        }
-
-        if (style()->hasBorderRadius())
-            paintInfo.context->restore();
-    }
-
-    // The selection tint never gets clipped by border-radius rounding, since we want it to run right up to the edges of
-    // surrounding content.
-    if (drawSelectionTint) {
-        LayoutRect selectionPaintingRect = localSelectionRect();
-        selectionPaintingRect.moveBy(adjustedPaintOffset);
-        paintInfo.context->fillRect(pixelSnappedIntRect(selectionPaintingRect), selectionBackgroundColor());
-    }
+    ReplacedPainter(*this).paint(paintInfo, paintOffset);
 }
 
 bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
@@ -198,8 +131,8 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, const LayoutPoint& paintO
     if (isSelected() && inlineBoxWrapper()) {
         LayoutUnit selTop = paintOffset.y() + inlineBoxWrapper()->root().selectionTop();
         LayoutUnit selBottom = paintOffset.y() + selTop + inlineBoxWrapper()->root().selectionHeight();
-        top = min(selTop, top);
-        bottom = max(selBottom, bottom);
+        top = std::min(selTop, top);
+        bottom = std::max(selBottom, bottom);
     }
 
     if (adjustedPaintOffset.x() + visualOverflowRect().x() >= paintInfo.rect.maxX() || adjustedPaintOffset.x() + visualOverflowRect().maxX() <= paintInfo.rect.x())
@@ -209,25 +142,6 @@ bool RenderReplaced::shouldPaint(PaintInfo& paintInfo, const LayoutPoint& paintO
         return false;
 
     return true;
-}
-
-static inline RenderBlock* firstContainingBlockWithLogicalWidth(const RenderReplaced* replaced)
-{
-    // We have to lookup the containing block, which has an explicit width, which must not be equal to our direct containing block.
-    // If the embedded document appears _after_ we performed the initial layout, our intrinsic size is 300x150. If our containing
-    // block doesn't provide an explicit width, it's set to the 300 default, coming from the initial layout run.
-    RenderBlock* containingBlock = replaced->containingBlock();
-    if (!containingBlock)
-        return 0;
-
-    for (; !containingBlock->isRenderView() && !containingBlock->isBody(); containingBlock = containingBlock->containingBlock()) {
-        if (containingBlock->style()->logicalWidth().isSpecified()
-            && containingBlock->style()->logicalMinWidth().isSpecified()
-            && (containingBlock->style()->logicalMaxWidth().isSpecified() || containingBlock->style()->logicalMaxWidth().isUndefined()))
-            return containingBlock;
-    }
-
-    return 0;
 }
 
 bool RenderReplaced::hasReplacedLogicalHeight() const
@@ -309,9 +223,7 @@ LayoutRect RenderReplaced::replacedContentRect(const LayoutSize* overriddenIntri
     ObjectFit objectFit = style()->objectFit();
 
     if (objectFit == ObjectFitFill && style()->objectPosition() == RenderStyle::initialObjectPosition()) {
-        if (!isVideo() || RuntimeEnabledFeatures::objectFitPositionEnabled())
-            return contentRect;
-        objectFit = ObjectFitContain;
+        return contentRect;
     }
 
     LayoutSize intrinsicSize = overriddenIntrinsicSize ? *overriddenIntrinsicSize : this->intrinsicSize();
@@ -394,25 +306,12 @@ LayoutUnit RenderReplaced::computeReplacedLogicalWidth(ShouldComputePreferred sh
                     return 0;
                 // The aforementioned 'constraint equation' used for block-level, non-replaced elements in normal flow:
                 // 'margin-left' + 'border-left-width' + 'padding-left' + 'width' + 'padding-right' + 'border-right-width' + 'margin-right' = width of containing block
-                LayoutUnit logicalWidth;
-                // FIXME: This walking up the containgBlock chain to find the first one with a specified width is bonkers.
-                // If nothing else, it requires making sure that computeReplacedLogicalWidthRespectingMinMaxWidth cannot
-                // depend on the width of the replaced element or we infinite loop. Right now we do that in
-                // firstContainingBlockWithLogicalWidth by checking that width/min-width/max-width are all specified.
-                //
-                // Firefox 27 seems to only do this if the <svg> has a viewbox.
-                if (RenderBlock* blockWithWidth = firstContainingBlockWithLogicalWidth(this)) {
-                    logicalWidth = blockWithWidth->computeReplacedLogicalWidthRespectingMinMaxWidth(blockWithWidth->computeReplacedLogicalWidthUsing(blockWithWidth->style()->logicalWidth()), shouldComputePreferred);
-                } else {
-                    // FIXME: If shouldComputePreferred == ComputePreferred, then we're reading this during preferred width
-                    // computation, at which point this is reading stale data from a previous layout.
-                    logicalWidth = containingBlock()->availableLogicalWidth();
-                }
+                LayoutUnit logicalWidth = containingBlock()->availableLogicalWidth();
 
                 // This solves above equation for 'width' (== logicalWidth).
                 LayoutUnit marginStart = minimumValueForLength(style()->marginStart(), logicalWidth);
                 LayoutUnit marginEnd = minimumValueForLength(style()->marginEnd(), logicalWidth);
-                logicalWidth = max<LayoutUnit>(0, logicalWidth - (marginStart + marginEnd + (width() - clientWidth())));
+                logicalWidth = std::max<LayoutUnit>(0, logicalWidth - (marginStart + marginEnd + (width() - clientWidth())));
                 return computeReplacedLogicalWidthRespectingMinMaxWidth(logicalWidth, shouldComputePreferred);
             }
         }
@@ -486,13 +385,13 @@ void RenderReplaced::computePreferredLogicalWidths()
         m_minPreferredLogicalWidth = 0;
 
     if (styleToUse->logicalMinWidth().isFixed() && styleToUse->logicalMinWidth().value() > 0) {
-        m_maxPreferredLogicalWidth = max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
-        m_minPreferredLogicalWidth = max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
+        m_maxPreferredLogicalWidth = std::max(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
+        m_minPreferredLogicalWidth = std::max(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMinWidth().value()));
     }
 
     if (styleToUse->logicalMaxWidth().isFixed()) {
-        m_maxPreferredLogicalWidth = min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
-        m_minPreferredLogicalWidth = min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
+        m_maxPreferredLogicalWidth = std::min(m_maxPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
+        m_minPreferredLogicalWidth = std::min(m_minPreferredLogicalWidth, adjustContentBoxLogicalWidthForBoxSizing(styleToUse->logicalMaxWidth().value()));
     }
 
     LayoutUnit borderAndPadding = borderAndPaddingLogicalWidth();
@@ -529,7 +428,7 @@ PositionWithAffinity RenderReplaced::positionForPoint(const LayoutPoint& point)
     return RenderBox::positionForPoint(point);
 }
 
-LayoutRect RenderReplaced::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent)
+LayoutRect RenderReplaced::selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
 {
     ASSERT(!needsLayout());
 
@@ -537,11 +436,7 @@ LayoutRect RenderReplaced::selectionRectForPaintInvalidation(const RenderLayerMo
         return LayoutRect();
 
     LayoutRect rect = localSelectionRect();
-    if (clipToVisibleContent)
-        mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect);
-    else
-        rect = localToContainerQuad(FloatRect(rect), paintInvalidationContainer).enclosingBoundingBox();
-
+    mapRectToPaintInvalidationBacking(paintInvalidationContainer, rect, 0);
     return rect;
 }
 
@@ -555,7 +450,7 @@ LayoutRect RenderReplaced::localSelectionRect(bool checkWhetherSelected) const
         return LayoutRect(LayoutPoint(), size());
 
     RootInlineBox& root = inlineBoxWrapper()->root();
-    LayoutUnit newLogicalTop = root.block().style()->isFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
+    LayoutUnit newLogicalTop = root.block().style()->slowIsFlippedBlocksWritingMode() ? inlineBoxWrapper()->logicalBottom() - root.selectionBottom() : root.selectionTop() - inlineBoxWrapper()->logicalTop();
     if (root.block().style()->isHorizontalWritingMode())
         return LayoutRect(0, newLogicalTop, width(), root.selectionHeight());
     return LayoutRect(newLogicalTop, 0, root.selectionHeight(), height());
@@ -569,10 +464,10 @@ void RenderReplaced::setSelectionState(SelectionState state)
     if (!inlineBoxWrapper())
         return;
 
-    // We only include the space below the baseline in our layer's cached repaint rect if the
+    // We only include the space below the baseline in our layer's cached paint invalidation rect if the
     // image is selected. Since the selection state has changed update the rect.
     if (hasLayer())
-        layer()->repainter().computeRepaintRects();
+        setPreviousPaintInvalidationRect(boundsRectForPaintInvalidation(containerForPaintInvalidation()));
 
     if (canUpdateSelectionOnRootLineBoxes())
         inlineBoxWrapper()->root().setHasSelectedChildren(isSelected());
@@ -600,23 +495,15 @@ bool RenderReplaced::isSelected() const
     ASSERT(0);
     return false;
 }
-LayoutRect RenderReplaced::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const
+LayoutRect RenderReplaced::clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* paintInvalidationState) const
 {
     if (style()->visibility() != VISIBLE && !enclosingLayer()->hasVisibleContent())
         return LayoutRect();
 
     // The selectionRect can project outside of the overflowRect, so take their union
-    // for repainting to avoid selection painting glitches.
+    // for paint invalidation to avoid selection painting glitches.
     LayoutRect r = isSelected() ? localSelectionRect() : visualOverflowRect();
-
-    RenderView* v = view();
-    if (!RuntimeEnabledFeatures::repaintAfterLayoutEnabled() && v) {
-        // FIXME: layoutDelta needs to be applied in parts before/after transforms and
-        // repaint containers. https://bugs.webkit.org/show_bug.cgi?id=23308
-        r.move(v->layoutDelta());
-    }
-
-    mapRectToPaintInvalidationBacking(paintInvalidationContainer, r);
+    mapRectToPaintInvalidationBacking(paintInvalidationContainer, r, paintInvalidationState);
     return r;
 }
 

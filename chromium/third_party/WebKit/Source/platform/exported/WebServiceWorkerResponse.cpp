@@ -6,15 +6,25 @@
 #include "public/platform/WebServiceWorkerResponse.h"
 
 #include "platform/blob/BlobData.h"
+#include "platform/network/HTTPHeaderMap.h"
+#include "public/platform/WebHTTPHeaderVisitor.h"
+#include "wtf/HashMap.h"
 
 namespace blink {
 
 class WebServiceWorkerResponsePrivate : public RefCounted<WebServiceWorkerResponsePrivate> {
 public:
+    WebServiceWorkerResponsePrivate()
+        : status(0)
+        , responseType(WebServiceWorkerResponseTypeOpaque)
+    {
+    }
+    WebURL url;
     unsigned short status;
     WebString statusText;
-    HashMap<String, String> headers;
-    RefPtr<WebCore::BlobDataHandle> blobDataHandle;
+    WebServiceWorkerResponseType responseType;
+    HTTPHeaderMap headers;
+    RefPtr<BlobDataHandle> blobDataHandle;
 };
 
 WebServiceWorkerResponse::WebServiceWorkerResponse()
@@ -30,6 +40,16 @@ void WebServiceWorkerResponse::reset()
 void WebServiceWorkerResponse::assign(const WebServiceWorkerResponse& other)
 {
     m_private = other.m_private;
+}
+
+void WebServiceWorkerResponse::setURL(const WebURL& url)
+{
+    m_private->url = url;
+}
+
+WebURL WebServiceWorkerResponse::url() const
+{
+    return m_private->url;
 }
 
 void WebServiceWorkerResponse::setStatus(unsigned short status)
@@ -52,21 +72,51 @@ WebString WebServiceWorkerResponse::statusText() const
     return m_private->statusText;
 }
 
+void WebServiceWorkerResponse::setResponseType(WebServiceWorkerResponseType responseType)
+{
+    m_private->responseType = responseType;
+}
+
+WebServiceWorkerResponseType WebServiceWorkerResponse::responseType() const
+{
+    return m_private->responseType;
+}
+
 void WebServiceWorkerResponse::setHeader(const WebString& key, const WebString& value)
 {
     m_private->headers.set(key, value);
 }
 
+void WebServiceWorkerResponse::appendHeader(const WebString& key, const WebString& value)
+{
+    HTTPHeaderMap::AddResult addResult = m_private->headers.add(key, value);
+    if (!addResult.isNewEntry)
+        addResult.storedValue->value = addResult.storedValue->value + ", " + String(value);
+}
+
 WebVector<WebString> WebServiceWorkerResponse::getHeaderKeys() const
 {
     Vector<String> keys;
-    copyKeysToVector(m_private->headers, keys);
+    for (HTTPHeaderMap::const_iterator it = m_private->headers.begin(), end = m_private->headers.end(); it != end; ++it)
+        keys.append(it->key);
+
     return keys;
 }
 
 WebString WebServiceWorkerResponse::getHeader(const WebString& key) const
 {
     return m_private->headers.get(key);
+}
+
+void WebServiceWorkerResponse::visitHTTPHeaderFields(WebHTTPHeaderVisitor* headerVisitor) const
+{
+    for (HTTPHeaderMap::const_iterator i = m_private->headers.begin(), end = m_private->headers.end(); i != end; ++i)
+        headerVisitor->visitHeader(i->key, i->value);
+}
+
+void WebServiceWorkerResponse::setBlob(const WebString& uuid, uint64_t size)
+{
+    m_private->blobDataHandle = BlobDataHandle::create(uuid, String(), size);
 }
 
 WebString WebServiceWorkerResponse::blobUUID() const
@@ -76,22 +126,24 @@ WebString WebServiceWorkerResponse::blobUUID() const
     return m_private->blobDataHandle->uuid();
 }
 
-void WebServiceWorkerResponse::setHeaders(const HashMap<String, String>& headers)
+uint64_t WebServiceWorkerResponse::blobSize() const
 {
-    m_private->headers = headers;
+    if (!m_private->blobDataHandle)
+        return 0;
+    return m_private->blobDataHandle->size();
 }
 
-const HashMap<String, String>& WebServiceWorkerResponse::headers() const
+const HTTPHeaderMap& WebServiceWorkerResponse::headers() const
 {
     return m_private->headers;
 }
 
-void WebServiceWorkerResponse::setBlobDataHandle(PassRefPtr<WebCore::BlobDataHandle> blobDataHandle)
+void WebServiceWorkerResponse::setBlobDataHandle(PassRefPtr<BlobDataHandle> blobDataHandle)
 {
     m_private->blobDataHandle = blobDataHandle;
 }
 
-PassRefPtr<WebCore::BlobDataHandle> WebServiceWorkerResponse::blobDataHandle() const
+PassRefPtr<BlobDataHandle> WebServiceWorkerResponse::blobDataHandle() const
 {
     return m_private->blobDataHandle;
 }

@@ -15,6 +15,7 @@
 #include "content/public/renderer/media_stream_audio_sink.h"
 #include "content/renderer/pepper/pepper_media_stream_track_host_base.h"
 #include "media/audio/audio_parameters.h"
+#include "ppapi/host/host_message_context.h"
 #include "ppapi/shared_impl/media_stream_audio_track_shared.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
 
@@ -37,7 +38,7 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
   class AudioSink : public MediaStreamAudioSink {
    public:
     explicit AudioSink(PepperMediaStreamAudioTrackHost* host);
-    virtual ~AudioSink();
+    ~AudioSink() override;
 
     // Enqueues a free buffer index into |buffers_| which will be used for
     // sending audio samples to plugin.
@@ -45,24 +46,29 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
     void EnqueueBuffer(int32_t index);
 
     // This function is called on the main thread.
-    void Configure(int32_t number_of_buffers);
+    int32_t Configure(int32_t number_of_buffers, int32_t duration,
+                      const ppapi::host::ReplyMessageContext& context);
+
+    // Send a reply to the currently pending |Configure()| request.
+    void SendConfigureReply(int32_t result);
 
    private:
     // Initializes buffers on the main thread.
-    void SetFormatOnMainThread(int bytes_per_second);
+    void SetFormatOnMainThread(int bytes_per_second, int bytes_per_frame);
 
     void InitBuffers();
 
     // Send enqueue buffer message on the main thread.
-    void SendEnqueueBufferMessageOnMainThread(int32_t index);
+    void SendEnqueueBufferMessageOnMainThread(int32_t index,
+                                              int32_t buffers_generation);
 
     // MediaStreamAudioSink overrides:
     // These two functions should be called on the audio thread.
-    virtual void OnData(const int16* audio_data,
-                        int sample_rate,
-                        int number_of_channels,
-                        int number_of_frames) OVERRIDE;
-    virtual void OnSetFormat(const media::AudioParameters& params) OVERRIDE;
+    void OnData(const int16* audio_data,
+                int sample_rate,
+                int number_of_channels,
+                int number_of_frames) override;
+    void OnSetFormat(const media::AudioParameters& params) override;
 
     // Unowned host which is available during the AudioSink's lifespan.
     // It is mainly used in the main thread. But the audio thread will use
@@ -92,17 +98,35 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
     // Access only on the audio thread.
     uint32_t buffer_data_size_;
 
-    // A lock to protect the index queue |buffers_|.
+    // Index of the currently active buffer.
+    // Access only on the audio thread.
+    int active_buffer_index_;
+
+    // Generation of buffers corresponding to the currently active
+    // buffer. Used to make sure the active buffer is still valid.
+    // Access only on the audio thread.
+    int32_t active_buffers_generation_;
+
+    // Current offset, in bytes, within the currently active buffer.
+    // Access only on the audio thread.
+    uint32_t active_buffer_offset_;
+
+    // A lock to protect the index queue |buffers_|, |buffers_generation_|,
+    // buffers in |host_->buffer_manager()|, and |output_buffer_size_|.
     base::Lock lock_;
 
     // A queue for free buffer indices.
     std::deque<int32_t> buffers_;
 
+    // Generation of buffers. It is increased by every |InitBuffers()| call.
+    int32_t buffers_generation_;
+
+    // Intended size of each output buffer.
+    int32_t output_buffer_size_;
+
     scoped_refptr<base::MessageLoopProxy> main_message_loop_proxy_;
 
     base::ThreadChecker audio_thread_checker_;
-
-    base::WeakPtrFactory<AudioSink> weak_factory_;
 
     // Number of buffers.
     int32_t number_of_buffers_;
@@ -110,15 +134,26 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
     // Number of bytes per second.
     int bytes_per_second_;
 
+    // Number of bytes per frame = channels * bytes per sample.
+    int bytes_per_frame_;
+
+    // User-configured buffer duration, in milliseconds.
+    int32_t user_buffer_duration_;
+
+    // Pending |Configure()| reply context.
+    ppapi::host::ReplyMessageContext pending_configure_reply_;
+
+    base::WeakPtrFactory<AudioSink> weak_factory_;
+
     DISALLOW_COPY_AND_ASSIGN(AudioSink);
   };
 
-  virtual ~PepperMediaStreamAudioTrackHost();
+  ~PepperMediaStreamAudioTrackHost() override;
 
   // ResourceMessageHandler overrides:
-  virtual int32_t OnResourceMessageReceived(
+  int32_t OnResourceMessageReceived(
       const IPC::Message& msg,
-      ppapi::host::HostMessageContext* context) OVERRIDE;
+      ppapi::host::HostMessageContext* context) override;
 
   // Message handlers:
   int32_t OnHostMsgConfigure(
@@ -126,13 +161,13 @@ class PepperMediaStreamAudioTrackHost : public PepperMediaStreamTrackHostBase {
       const ppapi::MediaStreamAudioTrackShared::Attributes& attributes);
 
   // PepperMediaStreamTrackHostBase overrides:
-  virtual void OnClose() OVERRIDE;
+  void OnClose() override;
 
   // MediaStreamBufferManager::Delegate overrides:
-  virtual void OnNewBufferEnqueued() OVERRIDE;
+  void OnNewBufferEnqueued() override;
 
   // ResourceHost overrides:
-  virtual void DidConnectPendingHostToResource() OVERRIDE;
+  void DidConnectPendingHostToResource() override;
 
   blink::WebMediaStreamTrack track_;
 

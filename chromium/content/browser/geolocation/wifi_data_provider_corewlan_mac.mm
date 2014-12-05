@@ -55,7 +55,7 @@ class CoreWlanApi : public WifiDataProviderCommon::WlanApiInterface {
   bool Init();
 
   // WlanApiInterface
-  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data) OVERRIDE;
+  bool GetAccessPointData(WifiData::AccessPointDataSet* data) override;
 
  private:
   base::scoped_nsobject<NSBundle> bundle_;
@@ -168,7 +168,7 @@ bool CoreWlanApi::GetAccessPointData(WifiData::AccessPointDataSet* data) {
       [supported_interfaces count] - interface_error_count,
       1,
       5,
-      5);
+      6);
 
   // Return true even if some interfaces failed to scan, so long as at least
   // one interface did not fail.

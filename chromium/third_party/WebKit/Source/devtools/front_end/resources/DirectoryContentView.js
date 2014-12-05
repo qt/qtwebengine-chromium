@@ -30,7 +30,7 @@
 
 /**
  * @constructor
- * @extends {WebInspector.DataGrid}
+ * @extends {WebInspector.SortableDataGrid}
  */
 WebInspector.DirectoryContentView = function()
 {
@@ -43,7 +43,7 @@ WebInspector.DirectoryContentView = function()
         {id: indexes.ModificationTime, title: WebInspector.UIString("Modification Time"), sortable: true, width: "25%"}
     ];
 
-    WebInspector.DataGrid.call(this, columns);
+    WebInspector.SortableDataGrid.call(this, columns);
     this.addEventListener(WebInspector.DataGrid.Events.SortingChanged, this._sort, this);
 }
 
@@ -69,16 +69,18 @@ WebInspector.DirectoryContentView.prototype = {
 
     _sort: function()
     {
-        var column = /** @type {string} */ (this.sortColumnIdentifier());
-        this.sortNodes(WebInspector.DirectoryContentView.Node.comparator(column, !this.isSortOrderAscending()), false);
+        var column = this.sortColumnIdentifier();
+        if (!column)
+            return;
+        this.sortNodes(WebInspector.DirectoryContentView.Node.comparator(column), !this.isSortOrderAscending());
     },
 
-    __proto__: WebInspector.DataGrid.prototype
+    __proto__: WebInspector.SortableDataGrid.prototype
 }
 
 /**
  * @constructor
- * @extends {WebInspector.DataGridNode}
+ * @extends {WebInspector.SortableDataGridNode}
  * @param {!WebInspector.FileSystemModel.Entry} entry
  */
 WebInspector.DirectoryContentView.Node = function(entry)
@@ -91,7 +93,7 @@ WebInspector.DirectoryContentView.Node = function(entry)
     data[indexes.Size] = "";
     data[indexes.ModificationTime] = "";
 
-    WebInspector.DataGridNode.call(this, data);
+    WebInspector.SortableDataGridNode.call(this, data);
     this._entry = entry;
     this._metadata = null;
 
@@ -100,12 +102,10 @@ WebInspector.DirectoryContentView.Node = function(entry)
 
 /**
  * @param {string} column
- * @param {boolean} reverse
- * @return {function(!WebInspector.DirectoryContentView.Node, !WebInspector.DirectoryContentView.Node):number|undefined}
+ * @return {function(!WebInspector.DataGridNode, !WebInspector.DataGridNode):number}
  */
-WebInspector.DirectoryContentView.Node.comparator = function(column, reverse)
+WebInspector.DirectoryContentView.Node.comparator = function(column)
 {
-    var reverseFactor = reverse ? -1 : 1;
     const indexes = WebInspector.DirectoryContentView.columnIndexes;
 
     switch (column) {
@@ -130,6 +130,8 @@ WebInspector.DirectoryContentView.Node.comparator = function(column, reverse)
         {
             return isDirectoryCompare(x, y) || modificationTimeCompare(x, y) || nameCompare(x, y);
         };
+    default:
+        return WebInspector.SortableDataGrid.TrivialComparator;
     }
 
     function isDirectoryCompare(x, y)
@@ -141,22 +143,22 @@ WebInspector.DirectoryContentView.Node.comparator = function(column, reverse)
 
     function nameCompare(x, y)
     {
-        return reverseFactor * x._entry.name.compareTo(y._entry.name);
+        return x._entry.name.compareTo(y._entry.name);
     }
 
     function typeCompare(x, y)
     {
-        return reverseFactor * (x._entry.mimeType || "").compareTo(y._entry.mimeType || "");
+        return (x._entry.mimeType || "").compareTo(y._entry.mimeType || "");
     }
 
     function sizeCompare(x, y)
     {
-        return reverseFactor * ((x._metadata ? x._metadata.size : 0) - (y._metadata ? y._metadata.size : 0));
+        return ((x._metadata ? x._metadata.size : 0) - (y._metadata ? y._metadata.size : 0));
     }
 
     function modificationTimeCompare(x, y)
     {
-        return reverseFactor * ((x._metadata ? x._metadata.modificationTime : 0) - (y._metadata ? y._metadata.modificationTime : 0));
+        return ((x._metadata ? x._metadata.modificationTime : 0) - (y._metadata ? y._metadata.modificationTime : 0));
     }
 }
 
@@ -181,5 +183,5 @@ WebInspector.DirectoryContentView.Node.prototype = {
         this.data = data;
     },
 
-    __proto__: WebInspector.DataGridNode.prototype
+    __proto__: WebInspector.SortableDataGridNode.prototype
 }

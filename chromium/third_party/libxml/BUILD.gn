@@ -142,11 +142,11 @@ static_library("libxml") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
 
-  direct_dependent_configs = [ ":libxml_config" ]
-  forward_dependent_configs_from = [ "//third_party/icu:icuuc" ]
-
-  deps = [
+  public_configs = [ ":libxml_config" ]
+  public_deps = [
     "//third_party/icu:icuuc",
+  ]
+  deps = [
     "//third_party/zlib",
   ]
 
@@ -172,16 +172,13 @@ static_library("libxml") {
       # line, but until that's landed suppress the warning:
       "-Wno-empty-body",
 
-      # See http://crbug.com/138571#c8
+      # debugXML.c compares array 'arg' to NULL.
+      "-Wno-tautological-pointer-compare",
+
+      # threads.c attempts to forward declare a pthread_equal which doesn't
+      # match the prototype in pthreads.h
       "-Wno-ignored-attributes",
     ]
-    if (is_mac) {
-      # Mac Clang warnings.
-      cflags += [
-        # debugXML.c compares array 'arg' to NULL.
-        "-Wno-tautological-pointer-compare",
-      ]
-    }
   }
 
   include_dirs = [

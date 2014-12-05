@@ -6,29 +6,15 @@
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_backend_impl.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_host.h"
 #include "content/browser/appcache/mock_appcache_policy.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "net/url_request/url_request.h"
+#include "storage/browser/quota/quota_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_backend_impl.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_host.h"
-#include "webkit/browser/quota/quota_manager.h"
-
-using appcache::AppCache;
-using appcache::AppCacheBackendImpl;
-using appcache::AppCacheEntry;
-using appcache::AppCacheFrontend;
-using appcache::AppCacheGroup;
-using appcache::AppCacheHost;
-using appcache::kAppCacheNoCacheId;
-using appcache::APPCACHE_ERROR_EVENT;
-using appcache::APPCACHE_STATUS_OBSOLETE;
-using appcache::APPCACHE_OBSOLETE_EVENT;
-using appcache::APPCACHE_PROGRESS_EVENT;
-using appcache::AppCacheStatus;
-using appcache::APPCACHE_STATUS_UNCACHED;
 
 namespace content {
 
@@ -50,88 +36,81 @@ class AppCacheHostTest : public testing::Test {
    public:
     MockFrontend()
         : last_host_id_(-222), last_cache_id_(-222),
-          last_status_(appcache::APPCACHE_STATUS_OBSOLETE),
-          last_status_changed_(appcache::APPCACHE_STATUS_OBSOLETE),
-          last_event_id_(appcache::APPCACHE_OBSOLETE_EVENT),
+          last_status_(APPCACHE_STATUS_OBSOLETE),
+          last_status_changed_(APPCACHE_STATUS_OBSOLETE),
+          last_event_id_(APPCACHE_OBSOLETE_EVENT),
           content_blocked_(false) {
     }
 
-    virtual void OnCacheSelected(
-        int host_id, const appcache::AppCacheInfo& info) OVERRIDE {
+    void OnCacheSelected(int host_id, const AppCacheInfo& info) override {
       last_host_id_ = host_id;
       last_cache_id_ = info.cache_id;
       last_status_ = info.status;
     }
 
-    virtual void OnStatusChanged(const std::vector<int>& host_ids,
-                                 appcache::AppCacheStatus status) OVERRIDE {
+    void OnStatusChanged(const std::vector<int>& host_ids,
+                         AppCacheStatus status) override {
       last_status_changed_ = status;
     }
 
-    virtual void OnEventRaised(const std::vector<int>& host_ids,
-                               appcache::AppCacheEventID event_id) OVERRIDE {
+    void OnEventRaised(const std::vector<int>& host_ids,
+                       AppCacheEventID event_id) override {
       last_event_id_ = event_id;
     }
 
-    virtual void OnErrorEventRaised(
-        const std::vector<int>& host_ids,
-        const appcache::AppCacheErrorDetails& details) OVERRIDE {
+    void OnErrorEventRaised(const std::vector<int>& host_ids,
+                            const AppCacheErrorDetails& details) override {
       last_event_id_ = APPCACHE_ERROR_EVENT;
     }
 
-    virtual void OnProgressEventRaised(const std::vector<int>& host_ids,
-                                       const GURL& url,
-                                       int num_total,
-                                       int num_complete) OVERRIDE {
+    void OnProgressEventRaised(const std::vector<int>& host_ids,
+                               const GURL& url,
+                               int num_total,
+                               int num_complete) override {
       last_event_id_ = APPCACHE_PROGRESS_EVENT;
     }
 
-    virtual void OnLogMessage(int host_id,
-                              appcache::AppCacheLogLevel log_level,
-                              const std::string& message) OVERRIDE {
-    }
+    void OnLogMessage(int host_id,
+                      AppCacheLogLevel log_level,
+                      const std::string& message) override {}
 
-    virtual void OnContentBlocked(int host_id,
-                                  const GURL& manifest_url) OVERRIDE {
+    void OnContentBlocked(int host_id, const GURL& manifest_url) override {
       content_blocked_ = true;
     }
 
     int last_host_id_;
     int64 last_cache_id_;
-    appcache::AppCacheStatus last_status_;
-    appcache::AppCacheStatus last_status_changed_;
-    appcache::AppCacheEventID last_event_id_;
+    AppCacheStatus last_status_;
+    AppCacheStatus last_status_changed_;
+    AppCacheEventID last_event_id_;
     bool content_blocked_;
   };
 
-  class MockQuotaManagerProxy : public quota::QuotaManagerProxy {
+  class MockQuotaManagerProxy : public storage::QuotaManagerProxy {
    public:
     MockQuotaManagerProxy() : QuotaManagerProxy(NULL, NULL) {}
 
     // Not needed for our tests.
-    virtual void RegisterClient(quota::QuotaClient* client) OVERRIDE {}
-    virtual void NotifyStorageAccessed(quota::QuotaClient::ID client_id,
-                                       const GURL& origin,
-                                       quota::StorageType type) OVERRIDE {}
-    virtual void NotifyStorageModified(quota::QuotaClient::ID client_id,
-                                       const GURL& origin,
-                                       quota::StorageType type,
-                                       int64 delta) OVERRIDE {}
-    virtual void SetUsageCacheEnabled(quota::QuotaClient::ID client_id,
-                                      const GURL& origin,
-                                      quota::StorageType type,
-                                      bool enabled) OVERRIDE {}
-    virtual void GetUsageAndQuota(
-        base::SequencedTaskRunner* original_task_runner,
-        const GURL& origin,
-        quota::StorageType type,
-        const GetUsageAndQuotaCallback& callback) OVERRIDE {}
+    void RegisterClient(storage::QuotaClient* client) override {}
+    void NotifyStorageAccessed(storage::QuotaClient::ID client_id,
+                               const GURL& origin,
+                               storage::StorageType type) override {}
+    void NotifyStorageModified(storage::QuotaClient::ID client_id,
+                               const GURL& origin,
+                               storage::StorageType type,
+                               int64 delta) override {}
+    void SetUsageCacheEnabled(storage::QuotaClient::ID client_id,
+                              const GURL& origin,
+                              storage::StorageType type,
+                              bool enabled) override {}
+    void GetUsageAndQuota(base::SequencedTaskRunner* original_task_runner,
+                          const GURL& origin,
+                          storage::StorageType type,
+                          const GetUsageAndQuotaCallback& callback) override {}
 
-    virtual void NotifyOriginInUse(const GURL& origin) OVERRIDE {
-      inuse_[origin] += 1;
-    }
+    void NotifyOriginInUse(const GURL& origin) override { inuse_[origin] += 1; }
 
-    virtual void NotifyOriginNoLongerInUse(const GURL& origin) OVERRIDE {
+    void NotifyOriginNoLongerInUse(const GURL& origin) override {
       inuse_[origin] -= 1;
     }
 
@@ -147,7 +126,7 @@ class AppCacheHostTest : public testing::Test {
     std::map<GURL, int> inuse_;
 
    protected:
-    virtual ~MockQuotaManagerProxy() {}
+    ~MockQuotaManagerProxy() override {}
   };
 
   void GetStatusCallback(AppCacheStatus status, void* param) {
@@ -172,9 +151,9 @@ class AppCacheHostTest : public testing::Test {
   MockFrontend mock_frontend_;
 
   // Mock callbacks we expect to receive from the 'host'
-  appcache::GetStatusCallback get_status_callback_;
-  appcache::StartUpdateCallback start_update_callback_;
-  appcache::SwapCacheCallback swap_cache_callback_;
+  content::GetStatusCallback get_status_callback_;
+  content::StartUpdateCallback start_update_callback_;
+  content::SwapCacheCallback swap_cache_callback_;
 
   AppCacheStatus last_status_result_;
   bool last_swap_result_;
@@ -387,11 +366,11 @@ TEST_F(AppCacheHostTest, SetSwappableCache) {
 
   host.AssociateCompleteCache(cache1);
   EXPECT_FALSE(host.swappable_cache_.get());  // was same as associated cache
-  EXPECT_EQ(appcache::APPCACHE_STATUS_IDLE, host.GetStatus());
+  EXPECT_EQ(APPCACHE_STATUS_IDLE, host.GetStatus());
   // verify OnCacheSelected was called
   EXPECT_EQ(host.host_id(), mock_frontend_.last_host_id_);
   EXPECT_EQ(cache1->cache_id(), mock_frontend_.last_cache_id_);
-  EXPECT_EQ(appcache::APPCACHE_STATUS_IDLE, mock_frontend_.last_status_);
+  EXPECT_EQ(APPCACHE_STATUS_IDLE, mock_frontend_.last_status_);
 
   AppCache* cache2 = new AppCache(service_.storage(), 222);
   cache2->set_complete(true);

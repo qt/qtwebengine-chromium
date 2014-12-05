@@ -53,12 +53,13 @@ class VideoCaptureDeviceWin
     AM_MEDIA_TYPE* media_type_;
   };
 
-  static HRESULT GetDeviceFilter(const Name& device_name,
+  static HRESULT GetDeviceFilter(const std::string& device_id,
+                                 const CLSID device_class_id,
                                  IBaseFilter** filter);
-  static bool PinMatchesCategory(IPin* pin, REFGUID category);
   static base::win::ScopedComPtr<IPin> GetPin(IBaseFilter* filter,
                                               PIN_DIRECTION pin_dir,
-                                              REFGUID category);
+                                              REFGUID category,
+                                              REFGUID major_type);
   static VideoPixelFormat TranslateMediaSubtypeToPixelFormat(
       const GUID& sub_type);
 
@@ -70,8 +71,8 @@ class VideoCaptureDeviceWin
   // VideoCaptureDevice implementation.
   virtual void AllocateAndStart(
       const VideoCaptureParams& params,
-      scoped_ptr<VideoCaptureDevice::Client> client) OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+      scoped_ptr<VideoCaptureDevice::Client> client) override;
+  virtual void StopAndDeAllocate() override;
 
  private:
   enum InternalState {
@@ -86,6 +87,8 @@ class VideoCaptureDeviceWin
 
   bool CreateCapabilityMap();
   void SetAntiFlickerInCaptureFilter();
+  HRESULT InstantiateWDMFiltersAndPins();
+  HRESULT AddWDMCrossbarFilterToGraphAndConnect();
   void SetErrorState(const std::string& reason);
 
   Name device_name_;
@@ -101,6 +104,11 @@ class VideoCaptureDeviceWin
   base::win::ScopedComPtr<IBaseFilter> mjpg_filter_;
   base::win::ScopedComPtr<IPin> input_mjpg_pin_;
   base::win::ScopedComPtr<IPin> output_mjpg_pin_;
+  // Used for WDM devices as specified by |device_name_|. These devices need a
+  // WDM Crossbar Filter upstream from the Capture filter.
+  base::win::ScopedComPtr<IBaseFilter> crossbar_filter_;
+  base::win::ScopedComPtr<IPin> crossbar_video_output_pin_;
+  base::win::ScopedComPtr<IPin> analog_video_input_pin_;
 
   scoped_refptr<SinkFilter> sink_filter_;
 

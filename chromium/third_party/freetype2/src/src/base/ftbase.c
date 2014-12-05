@@ -33,6 +33,7 @@
 #include "ftstream.c"
 #include "fttrigon.c"
 #include "ftutil.c"
+#include "ftapi.c"
 
 #if defined( FT_MACINTOSH ) && !defined ( DARWIN_NO_CARBON )
 #include "ftmac.c"

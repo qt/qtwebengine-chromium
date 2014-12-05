@@ -35,7 +35,7 @@
 #include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class ThreadableLoaderClientWrapper;
 class WorkerLoaderProxy;
@@ -48,15 +48,15 @@ public:
     static PassOwnPtr<ThreadableLoaderClient> create(PassRefPtr<ThreadableLoaderClientWrapper>, WorkerLoaderProxy&);
     virtual ~WorkerLoaderClientBridge();
 
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&) OVERRIDE;
-    virtual void didReceiveData(const char*, int dataLength) OVERRIDE;
-    virtual void didDownloadData(int dataLength) OVERRIDE;
-    virtual void didReceiveCachedMetadata(const char*, int dataLength) OVERRIDE;
-    virtual void didFinishLoading(unsigned long identifier, double finishTime) OVERRIDE;
-    virtual void didFail(const ResourceError&) OVERRIDE;
-    virtual void didFailAccessControlCheck(const ResourceError&) OVERRIDE;
-    virtual void didFailRedirectCheck() OVERRIDE;
+    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+    virtual void didReceiveResponse(unsigned long identifier, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    virtual void didReceiveData(const char*, unsigned dataLength) override;
+    virtual void didDownloadData(int dataLength) override;
+    virtual void didReceiveCachedMetadata(const char*, int dataLength) override;
+    virtual void didFinishLoading(unsigned long identifier, double finishTime) override;
+    virtual void didFail(const ResourceError&) override;
+    virtual void didFailAccessControlCheck(const ResourceError&) override;
+    virtual void didFailRedirectCheck() override;
 
 private:
     WorkerLoaderClientBridge(PassRefPtr<ThreadableLoaderClientWrapper>, WorkerLoaderProxy&);
@@ -68,6 +68,6 @@ private:
     WorkerLoaderProxy& m_loaderProxy;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerLoaderClientBridge_h

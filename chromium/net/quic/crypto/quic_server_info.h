@@ -45,6 +45,10 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
   // but, obviously, a callback will never be made.
   virtual int WaitForDataReady(const CompletionCallback& callback) = 0;
 
+  // Cancel's WaitForDataReady callback. |callback| passed in WaitForDataReady
+  // will not be called.
+  virtual void CancelWaitForDataReadyCallback() = 0;
+
   // Returns true if data is loaded from disk cache and ready (WaitForDataReady
   // doesn't have a pending callback).
   virtual bool IsDataReady() = 0;
@@ -59,6 +63,9 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
   // only be called once WaitForDataReady has returned OK or called its
   // callback.
   virtual void Persist() = 0;
+
+  // Called whenever an external cache reuses quic server config.
+  virtual void OnExternalCacheHit() = 0;
 
   struct State {
     State();
@@ -104,13 +111,16 @@ class NET_EXPORT_PRIVATE QuicServerInfo {
   DISALLOW_COPY_AND_ASSIGN(QuicServerInfo);
 };
 
-class QuicServerInfoFactory {
+class NET_EXPORT_PRIVATE QuicServerInfoFactory {
  public:
+  QuicServerInfoFactory() {}
   virtual ~QuicServerInfoFactory();
 
   // GetForServer returns a fresh, allocated QuicServerInfo for the given
   // |server_id| or NULL on failure.
   virtual QuicServerInfo* GetForServer(const QuicServerId& server_id) = 0;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicServerInfoFactory);
 };
 
 }  // namespace net

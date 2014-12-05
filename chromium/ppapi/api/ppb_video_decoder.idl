@@ -10,7 +10,10 @@
 [generate_thunk]
 
 label Chrome {
-  [channel=dev] M36 = 0.1
+  /** Though not labeled 'channel=dev', 0.1 is a still a 'Dev' only API. */
+  M36 = 0.1,
+  M39 = 0.2,
+  M40 = 1.0
 };
 
 /**
@@ -90,6 +93,34 @@ interface PPB_VideoDecoder {
       [in] PP_CompletionCallback callback);
 
   /**
+   * Initializes a video decoder resource. This should be called after Create()
+   * and before any other functions.
+   *
+   * @param[in] video_decoder A <code>PP_Resource</code> identifying the video
+   * decoder.
+   * @param[in] graphics3d_context A <code>PPB_Graphics3D</code> resource to use
+   * during decoding.
+   * @param[in] profile A <code>PP_VideoProfile</code> specifying the video
+   * codec profile.
+   * @param[in] acceleration A <code>PP_HardwareAcceleration</code> specifying
+   * whether to use a hardware accelerated or a software implementation.
+   * @param[in] callback A <code>PP_CompletionCallback</code> to be called upon
+   * completion.
+   *
+   * @return An int32_t containing an error code from <code>pp_errors.h</code>.
+   * Returns PP_ERROR_NOTSUPPORTED if video decoding is not available, or the
+   * requested profile is not supported. In this case, the client may call
+   * Initialize() again with different parameters to find a good configuration.
+   */
+  [version = 0.2]
+  int32_t Initialize(
+      [in] PP_Resource video_decoder,
+      [in] PP_Resource graphics3d_context,
+      [in] PP_VideoProfile profile,
+      [in] PP_HardwareAcceleration acceleration,
+      [in] PP_CompletionCallback callback);
+
+  /**
    * Decodes a bitstream buffer. Copies |size| bytes of data from the plugin's
    * |buffer|. The plugin should wait until the decoder signals completion by
    * returning PP_OK or by running |callback| before calling Decode() again.
@@ -150,6 +181,33 @@ interface PPB_VideoDecoder {
    * Returns PP_ERROR_ABORTED when Reset() is called, or if a call to Flush()
    * completes while GetPicture() is pending.
    */
+  int32_t GetPicture(
+      [in] PP_Resource video_decoder,
+      [out] PP_VideoPicture_0_1 picture,
+      [in] PP_CompletionCallback callback);
+
+  /**
+   * Gets the next picture from the decoder. The picture is valid after the
+   * decoder signals completion by returning PP_OK or running |callback|. The
+   * plugin can call GetPicture() again after the decoder signals completion.
+   * When the plugin is finished using the picture, it should return it to the
+   * system by calling RecyclePicture().
+   *
+   * @param[in] video_decoder A <code>PP_Resource</code> identifying the video
+   * decoder.
+   * @param[out] picture A <code>PP_VideoPicture</code> to hold the decoded
+   * picture.
+   * @param[in] callback A <code>PP_CompletionCallback</code> to be called on
+   * completion.
+   *
+   * @return An int32_t containing an error code from <code>pp_errors.h</code>.
+   * Returns PP_ERROR_FAILED if the decoder isn't initialized or if a Reset()
+   * call is pending.
+   * Returns PP_ERROR_INPROGRESS if there is another GetPicture() call pending.
+   * Returns PP_ERROR_ABORTED when Reset() is called, or if a call to Flush()
+   * completes while GetPicture() is pending.
+   */
+  [version = 1.0]
   int32_t GetPicture(
       [in] PP_Resource video_decoder,
       [out] PP_VideoPicture picture,

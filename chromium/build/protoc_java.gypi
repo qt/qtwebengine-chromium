@@ -38,7 +38,7 @@
 
 {
   'variables': {
-    'protoc': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)protoc<(EXECUTABLE_SUFFIX)',
+    'protoc': '<(PRODUCT_DIR)/<(EXECUTABLE_PREFIX)android_protoc<(EXECUTABLE_SUFFIX)',
     'java_out_dir': '<(PRODUCT_DIR)/java_proto/<(_target_name)/src',
     'proto_in_dir%': '.',
     'stamp_file': '<(java_out_dir).stamp',
@@ -65,18 +65,18 @@
       ],
       'action': [
         '<(script)',
-        '<(protoc)',
-        '<(proto_in_dir)',
-        '<(java_out_dir)',
-        '<(stamp_file)',
+        '--protoc=<(protoc)',
+        '--proto-path=<(proto_in_dir)',
+        '--java-out-dir=<(java_out_dir)',
+        '--stamp=<(stamp_file)',
         '<@(_sources)',
       ],
-      'message': 'Generating Java code from <(proto_in_dir)',
+      'message': 'Generating Java code from protobuf files in <(proto_in_dir)',
     },
   ],
   'dependencies': [
-    '<(DEPTH)/third_party/protobuf/protobuf.gyp:protoc#host',
-    '<(DEPTH)/third_party/protobuf/protobuf.gyp:protobuf_lite_javalib',
+    '<(DEPTH)/third_party/android_protobuf/android_protobuf.gyp:android_protoc#host',
+    '<(DEPTH)/third_party/android_protobuf/android_protobuf.gyp:protobuf_nano_javalib',
   ],
   'includes': [ 'java.gypi' ],
 }

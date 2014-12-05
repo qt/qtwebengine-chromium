@@ -36,34 +36,35 @@
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 class InspectorClient;
 class Page;
 
 typedef String ErrorString;
 
-class InspectorInputAgent FINAL : public InspectorBaseAgent<InspectorInputAgent>, public InspectorBackendDispatcher::InputCommandHandler {
+class InspectorInputAgent final : public InspectorBaseAgent<InspectorInputAgent>, public InspectorBackendDispatcher::InputCommandHandler {
     WTF_MAKE_NONCOPYABLE(InspectorInputAgent);
 public:
-    static PassOwnPtr<InspectorInputAgent> create(Page* page, InspectorClient* client)
+    static PassOwnPtrWillBeRawPtr<InspectorInputAgent> create(Page* page, InspectorClient* client)
     {
-        return adoptPtr(new InspectorInputAgent(page, client));
+        return adoptPtrWillBeNoop(new InspectorInputAgent(page, client));
     }
 
     virtual ~InspectorInputAgent();
+    virtual void trace(Visitor*) override;
 
     // Methods called from the frontend for simulating input.
-    virtual void dispatchKeyEvent(ErrorString*, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey) OVERRIDE;
-    virtual void dispatchMouseEvent(ErrorString*, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount, const bool* deviceSpace) OVERRIDE;
-    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp) OVERRIDE;
+    virtual void dispatchKeyEvent(ErrorString*, const String& type, const int* modifiers, const double* timestamp, const String* text, const String* unmodifiedText, const String* keyIdentifier, const int* windowsVirtualKeyCode, const int* nativeVirtualKeyCode, const bool* autoRepeat, const bool* isKeypad, const bool* isSystemKey) override;
+    virtual void dispatchMouseEvent(ErrorString*, const String& type, int x, int y, const int* modifiers, const double* timestamp, const String* button, const int* clickCount) override;
+    virtual void dispatchTouchEvent(ErrorString*, const String& type, const RefPtr<JSONArray>& touchPoints, const int* modifiers, const double* timestamp) override;
 private:
     InspectorInputAgent(Page*, InspectorClient*);
 
-    Page* m_page;
+    RawPtrWillBeMember<Page> m_page;
     InspectorClient* m_client;
 };
 
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorInputAgent_h)

@@ -1,6 +1,6 @@
 /*
  *******************************************************************************
- * Copyright (C) 1997-2010, International Business Machines Corporation and    *
+ * Copyright (C) 1997-2013, International Business Machines Corporation and    *
  * others. All Rights Reserved.                                                *
  *******************************************************************************
  *
@@ -74,6 +74,7 @@ DateFormat& DateFormat::operator=(const DateFormat& other)
         } else {
           fNumberFormat = NULL;
         }
+        fBoolFlags = other.fBoolFlags;
     }
     return *this;
 }
@@ -193,11 +194,15 @@ DateFormat::format(Calendar& /* unused cal */,
 UnicodeString&
 DateFormat::format(UDate date, UnicodeString& appendTo, FieldPosition& fieldPosition) const {
     if (fCalendar != NULL) {
-        // Use our calendar instance
-        UErrorCode ec = U_ZERO_ERROR;
-        fCalendar->setTime(date, ec);
-        if (U_SUCCESS(ec)) {
-            return format(*fCalendar, appendTo, fieldPosition);
+        // Use a clone of our calendar instance
+        Calendar* calClone = fCalendar->clone();
+        if (calClone != NULL) {
+            UErrorCode ec = U_ZERO_ERROR;
+            calClone->setTime(date, ec);
+            if (U_SUCCESS(ec)) {
+                format(*calClone, appendTo, fieldPosition);
+            }
+            delete calClone;
         }
     }
     return appendTo;
@@ -209,9 +214,13 @@ UnicodeString&
 DateFormat::format(UDate date, UnicodeString& appendTo, FieldPositionIterator* posIter,
                    UErrorCode& status) const {
     if (fCalendar != NULL) {
-        fCalendar->setTime(date, status);
-        if (U_SUCCESS(status)) {
-            return format(*fCalendar, appendTo, posIter, status);
+        Calendar* calClone = fCalendar->clone();
+        if (calClone != NULL) {
+            calClone->setTime(date, status);
+            if (U_SUCCESS(status)) {
+               format(*calClone, appendTo, posIter, status);
+            }
+            delete calClone;
         }
     }
     return appendTo;
@@ -236,28 +245,25 @@ DateFormat::parse(const UnicodeString& text,
 {
     UDate d = 0; // Error return UDate is 0 (the epoch)
     if (fCalendar != NULL) {
-        int32_t start = pos.getIndex();
-
-        // Parse may update TimeZone used by the calendar.
-        TimeZone *tzsav = (TimeZone*)fCalendar->getTimeZone().clone();
-
-        fCalendar->clear();
-        parse(text, *fCalendar, pos);
-        if (pos.getIndex() != start) {
-            UErrorCode ec = U_ZERO_ERROR;
-            d = fCalendar->getTime(ec);
-            if (U_FAILURE(ec)) {
-                // We arrive here if fCalendar is non-lenient and there
-                // is an out-of-range field.  We don't know which field
-                // was illegal so we set the error index to the start.
-                pos.setIndex(start);
-                pos.setErrorIndex(start);
-                d = 0;
+        Calendar* calClone = fCalendar->clone();
+        if (calClone != NULL) {
+            int32_t start = pos.getIndex();
+            calClone->clear();
+            parse(text, *calClone, pos);
+            if (pos.getIndex() != start) {
+                UErrorCode ec = U_ZERO_ERROR;
+                d = calClone->getTime(ec);
+                if (U_FAILURE(ec)) {
+                    // We arrive here if fCalendar => calClone is non-lenient and
+                    // there is an out-of-range field.  We don't know which field
+                    // was illegal so we set the error index to the start.
+                    pos.setIndex(start);
+                    pos.setErrorIndex(start);
+                    d = 0;
+                }
             }
+            delete calClone;
         }
-
-        // Restore TimeZone
-        fCalendar->adoptTimeZone(tzsav);
     }
     return d;
 }
@@ -344,7 +350,7 @@ DateFormat* U_EXPORT2
 DateFormat::create(EStyle timeStyle, EStyle dateStyle, const Locale& locale)
 {
     UErrorCode status = U_ZERO_ERROR;
-#ifdef U_WINDOWS
+#if U_PLATFORM_HAS_WIN32_API
     char buffer[8];
     int32_t count = locale.getKeywordValue("compat", buffer, sizeof(buffer), status);
 
@@ -504,6 +510,29 @@ DateFormat::isLenient() const
     }
     // fCalendar is rarely null
     return FALSE;
+}
+
+//----------------------------------------------------------------------
+
+DateFormat& 
+DateFormat::setBooleanAttribute(UDateFormatBooleanAttribute attr,
+    									UBool newValue,
+    									UErrorCode &status) {
+    if(!fBoolFlags.isValidValue(newValue)) {
+        status = U_ILLEGAL_ARGUMENT_ERROR;
+    } else {
+        fBoolFlags.set(attr, newValue);
+    }
+
+    return *this;
+}
+
+//----------------------------------------------------------------------
+
+UBool 
+DateFormat::getBooleanAttribute(UDateFormatBooleanAttribute attr, UErrorCode &/*status*/) const {
+
+    return fBoolFlags.get(attr);
 }
 
 U_NAMESPACE_END

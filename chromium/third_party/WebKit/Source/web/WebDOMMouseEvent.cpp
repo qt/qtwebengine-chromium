@@ -33,8 +33,6 @@
 
 #include "core/events/MouseEvent.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 int WebDOMMouseEvent::screenX() const

@@ -9,10 +9,11 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string16.h"
 #include "base/time/time.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
-#include "content/browser/worker_host/worker_document_set.h"
+#include "content/browser/shared_worker/worker_document_set.h"
 
 class GURL;
 
@@ -55,6 +56,7 @@ class SharedWorkerHost {
                         unsigned long long document_id);
 
   void WorkerContextClosed();
+  void WorkerReadyForInspection();
   void WorkerScriptLoaded();
   void WorkerScriptLoadFailed();
   void WorkerConnected(int message_port_id);
@@ -64,7 +66,7 @@ class SharedWorkerHost {
                      const base::string16& display_name,
                      unsigned long estimated_size,
                      bool* result);
-  void AllowFileSystem(const GURL& url, bool* result);
+  void AllowFileSystem(const GURL& url, scoped_ptr<IPC::Message> reply_msg);
   void AllowIndexedDB(const GURL& url,
                       const base::string16& name,
                       bool* result);
@@ -118,7 +120,8 @@ class SharedWorkerHost {
   void SetMessagePortID(SharedWorkerMessageFilter* filter,
                         int route_id,
                         int message_port_id);
-
+  void AllowFileSystemResponse(scoped_ptr<IPC::Message> reply_msg,
+                               bool allowed);
   scoped_ptr<SharedWorkerInstance> instance_;
   scoped_refptr<WorkerDocumentSet> worker_document_set_;
   FilterList filters_;
@@ -128,6 +131,9 @@ class SharedWorkerHost {
   bool load_failed_;
   bool closed_;
   const base::TimeTicks creation_time_;
+
+  base::WeakPtrFactory<SharedWorkerHost> weak_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(SharedWorkerHost);
 };
 }  // namespace content

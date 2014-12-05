@@ -99,16 +99,18 @@ class DisplayWGL {
       return false;
     }
 
-    window_handle_ = CreateWindow(
-        reinterpret_cast<wchar_t*>(window_class_),
-        L"",
-        WS_OVERLAPPEDWINDOW,
-        0, 0,
-        100, 100,
-        NULL,
-        NULL,
-        NULL,
-        NULL);
+    window_handle_ = CreateWindowEx(WS_EX_NOPARENTNOTIFY,
+                                    reinterpret_cast<wchar_t*>(window_class_),
+                                    L"",
+                                    WS_OVERLAPPEDWINDOW,
+                                    0,
+                                    0,
+                                    100,
+                                    100,
+                                    NULL,
+                                    NULL,
+                                    NULL,
+                                    NULL);
     if (!window_handle_) {
       LOG(ERROR) << "CreateWindow failed.";
       return false;
@@ -175,9 +177,7 @@ HDC GLSurfaceWGL::GetDisplayDC() {
 }
 
 NativeViewGLSurfaceWGL::NativeViewGLSurfaceWGL(gfx::AcceleratedWidget window)
-    : window_(window),
-      child_window_(NULL),
-      device_context_(NULL) {
+    : window_(window), child_window_(NULL), device_context_(NULL) {
   DCHECK(window);
 }
 
@@ -197,17 +197,19 @@ bool NativeViewGLSurfaceWGL::Initialize() {
 
   // Create a child window. WGL has problems using a window handle owned by
   // another process.
-  child_window_ = CreateWindow(
-      reinterpret_cast<wchar_t*>(g_display->window_class()),
-      L"",
-      WS_CHILDWINDOW | WS_DISABLED | WS_VISIBLE,
-      0, 0,
-      rect.right - rect.left,
-      rect.bottom - rect.top,
-      window_,
-      NULL,
-      NULL,
-      NULL);
+  child_window_ =
+      CreateWindowEx(WS_EX_NOPARENTNOTIFY,
+                     reinterpret_cast<wchar_t*>(g_display->window_class()),
+                     L"",
+                     WS_CHILDWINDOW | WS_DISABLED | WS_VISIBLE,
+                     0,
+                     0,
+                     rect.right - rect.left,
+                     rect.bottom - rect.top,
+                     window_,
+                     NULL,
+                     NULL,
+                     NULL);
   if (!child_window_) {
     LOG(ERROR) << "CreateWindow failed.\n";
     Destroy();
@@ -259,7 +261,8 @@ bool NativeViewGLSurfaceWGL::SwapBuffers() {
   if (!GetClientRect(window_, &rect))
     return false;
   if (!MoveWindow(child_window_,
-                  0, 0,
+                  0,
+                  0,
                   rect.right - rect.left,
                   rect.bottom - rect.top,
                   FALSE)) {

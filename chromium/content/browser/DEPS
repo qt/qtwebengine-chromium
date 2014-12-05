@@ -1,9 +1,12 @@
 include_rules = [
+  "+content/app/strings/grit",  # For generated headers
   "+content/public/browser",
+  "+device/battery",  # For battery status service.
   "+media/audio",  # For audio input for speech input feature.
   "+media/base",  # For Android JNI registration.
   "+media/midi",  # For Web MIDI API
   "+media/video",  # For Video Device monitoring in Mac.
+  "+mojo",
   "+sql",
   "+ui/webui",
   "+win8/util",
@@ -12,6 +15,10 @@ include_rules = [
   # since //content shouldn't depend on //components, which is a layer
   # above.
   "+components/tracing",
+
+  # In general, //content shouldn't depend on //device.
+  # This is the an exception.
+  "+device/udev_linux",  # For udev utility and wrapper library.
 
   # Other libraries.
   "+third_party/iaccessible2",
@@ -25,25 +32,30 @@ include_rules = [
   "+chromeos",
   "+third_party/cros_system_api",
 
-  "-webkit/child",
   "-webkit/renderer",
 
   # No inclusion of WebKit from the browser, other than strictly enum/POD,
   # header-only types, and some selected common code.
   "-third_party/WebKit",
-  "+third_party/WebKit/public/platform/WebBatteryStatus.h",
+  "+third_party/WebKit/public/platform/WebCircularGeofencingRegion.h",
   "+third_party/WebKit/public/platform/WebCursorInfo.h",
   "+third_party/WebKit/public/platform/WebGamepad.h",
   "+third_party/WebKit/public/platform/WebGamepads.h",
+  "+third_party/WebKit/public/platform/WebGeofencingEventType.h",
   "+third_party/WebKit/public/platform/WebGraphicsContext3D.h",
   "+third_party/WebKit/public/platform/WebIDBDatabaseException.h",
   "+third_party/WebKit/public/platform/WebIDBTypes.h",
   "+third_party/WebKit/public/platform/WebReferrerPolicy.h",
+  "+third_party/WebKit/public/platform/WebLockOrientationError.h",
+  "+third_party/WebKit/public/platform/WebNotificationPermission.h",
+  "+third_party/WebKit/public/platform/WebPushPermissionStatus.h",
   "+third_party/WebKit/public/platform/WebScreenOrientationLockType.h",
   "+third_party/WebKit/public/platform/WebScreenOrientationType.h",
   "+third_party/WebKit/public/platform/WebScreenInfo.h",
+  "+third_party/WebKit/public/platform/WebServiceWorkerCacheError.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerError.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerEventResult.h",
+  "+third_party/WebKit/public/platform/WebServiceWorkerResponseType.h",
   "+third_party/WebKit/public/platform/WebServiceWorkerState.h",
   "+third_party/WebKit/public/platform/WebString.h",
   "+third_party/WebKit/public/platform/WebVibration.h",
@@ -63,12 +75,10 @@ include_rules = [
   "+third_party/WebKit/public/web/WebPopupType.h",
   "+third_party/WebKit/public/web/WebSerializedScriptValueVersion.h",
   "+third_party/WebKit/public/web/WebTextDirection.h",
+  "+third_party/WebKit/public/web/WebTextInputType.h",
 
   # These should be burned down. http://crbug.com/237267
   "!third_party/WebKit/public/web/mac/WebInputEventFactory.h",
-
-  "+ui/ozone/ozone_platform.h",
-  "+ui/ozone/ozone_switches.h",
 
   # DO NOT ADD ANY CHROME OR COMPONENTS INCLUDES HERE!!!
   # See https://sites.google.com/a/chromium.org/dev/developers/content-module

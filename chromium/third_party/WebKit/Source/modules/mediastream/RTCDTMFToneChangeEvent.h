@@ -29,13 +29,14 @@
 #include "modules/EventModules.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct RTCDTMFToneChangeEventInit : public EventInit {
     String tone;
 };
 
-class RTCDTMFToneChangeEvent FINAL : public Event {
+class RTCDTMFToneChangeEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~RTCDTMFToneChangeEvent();
 
@@ -45,9 +46,9 @@ public:
 
     const String& tone() const;
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RTCDTMFToneChangeEvent();
@@ -57,6 +58,6 @@ private:
     String m_tone;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCDTMFToneChangeEvent_h

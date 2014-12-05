@@ -18,6 +18,14 @@ namespace gles2 {
 static const unsigned int kProcessInterval = 16;
 static TraceOutputter* g_outputter_thread = NULL;
 
+TraceMarker::TraceMarker(const std::string& name)
+    : name_(name),
+      trace_(NULL) {
+}
+
+TraceMarker::~TraceMarker() {
+}
+
 scoped_refptr<TraceOutputter> TraceOutputter::Create(const std::string& name) {
   if (!g_outputter_thread) {
     g_outputter_thread = new TraceOutputter(name);
@@ -51,326 +59,287 @@ void TraceOutputter::Trace(const std::string& name,
   ++local_trace_id_;
 }
 
-class NoopTrace : public Trace {
- public:
-  explicit NoopTrace(const std::string& name) : Trace(name) {}
-
-  // Implementation of Tracer
-  virtual void Start() OVERRIDE {
-    TRACE_EVENT_COPY_ASYNC_BEGIN0(
-        TRACE_DISABLED_BY_DEFAULT("gpu.service"), name().c_str(), this);
-  }
-  virtual void End() OVERRIDE {
-    TRACE_EVENT_COPY_ASYNC_END0(
-        TRACE_DISABLED_BY_DEFAULT("gpu.service"), name().c_str(), this);
-  }
-  virtual bool IsAvailable() OVERRIDE { return true; }
-  virtual bool IsProcessable() OVERRIDE { return false; }
-  virtual void Process() OVERRIDE {}
-
- private:
-  virtual ~NoopTrace() {}
-
-  DISALLOW_COPY_AND_ASSIGN(NoopTrace);
-};
-
-struct TraceMarker {
-  TraceMarker(const std::string& name, GpuTracerSource source)
-      : name_(name), source_(source) {}
-
-  std::string name_;
-  GpuTracerSource source_;
-  scoped_refptr<Trace> trace_;
-};
-
-class GPUTracerImpl
-    : public GPUTracer,
-      public base::SupportsWeakPtr<GPUTracerImpl> {
- public:
-  GPUTracerImpl()
-      : gpu_trace_srv_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
-            TRACE_DISABLED_BY_DEFAULT("gpu.service"))),
-        gpu_trace_dev_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
-            TRACE_DISABLED_BY_DEFAULT("gpu.device"))),
-        gpu_executing_(false),
-        process_posted_(false) {}
-  virtual ~GPUTracerImpl() {}
-
-  // Implementation of gpu::gles2::GPUTracer
-  virtual bool BeginDecoding() OVERRIDE;
-  virtual bool EndDecoding() OVERRIDE;
-  virtual bool Begin(const std::string& name, GpuTracerSource source) OVERRIDE;
-  virtual bool End(GpuTracerSource source) OVERRIDE;
-  virtual const std::string& CurrentName() const OVERRIDE;
-  virtual bool IsTracing() OVERRIDE {
-    return (*gpu_trace_srv_category != 0) || (*gpu_trace_dev_category != 0);
-  }
-  virtual void CalculateTimerOffset() {}
-
-  // Process any completed traces.
-  virtual void Process();
-  virtual void ProcessTraces();
-
- protected:
-  // Create a new trace.
-  virtual scoped_refptr<Trace> CreateTrace(const std::string& name);
-
-  const unsigned char* gpu_trace_srv_category;
-  const unsigned char* gpu_trace_dev_category;
-
- protected:
-  void IssueProcessTask();
-
-  std::vector<TraceMarker> markers_;
-  std::deque<scoped_refptr<Trace> > traces_;
-
-  bool gpu_executing_;
-  bool process_posted_;
-
-  DISALLOW_COPY_AND_ASSIGN(GPUTracerImpl);
-};
-
-class GPUTracerARBTimerQuery : public GPUTracerImpl {
- public:
-  explicit GPUTracerARBTimerQuery(gles2::GLES2Decoder* decoder);
-  virtual ~GPUTracerARBTimerQuery();
-
-  // Implementation of GPUTracerImpl
-  virtual void ProcessTraces() OVERRIDE;
-
- protected:
-  // Implementation of GPUTracerImpl.
-  virtual bool BeginDecoding() OVERRIDE;
-  virtual bool EndDecoding() OVERRIDE;
-  virtual scoped_refptr<Trace> CreateTrace(const std::string& name) OVERRIDE;
-  virtual void CalculateTimerOffset() OVERRIDE;
-
-  scoped_refptr<Outputter> outputter_;
-
-  bool gpu_timing_synced_;
-  int64 timer_offset_;
-
-  gles2::GLES2Decoder* decoder_;
-
-  DISALLOW_COPY_AND_ASSIGN(GPUTracerARBTimerQuery);
-};
-
-bool Trace::IsProcessable() { return true; }
-
-const std::string& Trace::name() { return name_; }
-
-GLARBTimerTrace::GLARBTimerTrace(scoped_refptr<Outputter> outputter,
-                                 const std::string& name,
-                                 int64 offset)
-    : Trace(name),
+GPUTrace::GPUTrace(scoped_refptr<Outputter> outputter,
+                   const std::string& name,
+                   int64 offset,
+                   GpuTracerType tracer_type)
+    : name_(name),
       outputter_(outputter),
       offset_(offset),
       start_time_(0),
       end_time_(0),
+      tracer_type_(tracer_type),
       end_requested_(false) {
-  glGenQueries(2, queries_);
+  memset(queries_, 0, sizeof(queries_));
+  switch (tracer_type_) {
+    case kTracerTypeARBTimer:
+    case kTracerTypeDisjointTimer:
+      glGenQueriesARB(2, queries_);
+      break;
+
+    default:
+      tracer_type_ = kTracerTypeInvalid;
+  }
 }
 
-GLARBTimerTrace::~GLARBTimerTrace() { glDeleteQueries(2, queries_); }
+GPUTrace::~GPUTrace() {
+  switch (tracer_type_) {
+    case kTracerTypeInvalid:
+      break;
 
-void GLARBTimerTrace::Start() {
+    case kTracerTypeARBTimer:
+    case kTracerTypeDisjointTimer:
+      glDeleteQueriesARB(2, queries_);
+      break;
+  }
+}
+
+void GPUTrace::Start() {
   TRACE_EVENT_COPY_ASYNC_BEGIN0(
       TRACE_DISABLED_BY_DEFAULT("gpu.service"), name().c_str(), this);
-  glQueryCounter(queries_[0], GL_TIMESTAMP);
+
+  switch (tracer_type_) {
+    case kTracerTypeInvalid:
+      break;
+
+    case kTracerTypeDisjointTimer:
+      // For the disjoint timer, GPU idle time does not seem to increment the
+      // internal counter. We must calculate the offset before any query. The
+      // good news is any device that supports disjoint timer will also support
+      // glGetInteger64v, so we can query it directly unlike the ARBTimer case.
+      // The "offset_" variable will always be 0 during normal use cases, only
+      // under the unit tests will it be set to specific test values.
+      if (offset_ == 0) {
+        GLint64 gl_now = 0;
+        glGetInteger64v(GL_TIMESTAMP, &gl_now);
+        offset_ = base::TimeTicks::NowFromSystemTraceTime().ToInternalValue() -
+                  gl_now / base::Time::kNanosecondsPerMicrosecond;
+      }
+      // Intentionally fall through to kTracerTypeARBTimer case.xs
+    case kTracerTypeARBTimer:
+      // GL_TIMESTAMP and GL_TIMESTAMP_EXT both have the same value.
+      glQueryCounter(queries_[0], GL_TIMESTAMP);
+      break;
+  }
 }
 
-void GLARBTimerTrace::End() {
-  glQueryCounter(queries_[1], GL_TIMESTAMP);
+void GPUTrace::End() {
   end_requested_ = true;
+  switch (tracer_type_) {
+    case kTracerTypeInvalid:
+      break;
+
+    case kTracerTypeARBTimer:
+    case kTracerTypeDisjointTimer:
+      // GL_TIMESTAMP and GL_TIMESTAMP_EXT both have the same value.
+      glQueryCounter(queries_[1], GL_TIMESTAMP);
+      break;
+  }
+
   TRACE_EVENT_COPY_ASYNC_END0(
       TRACE_DISABLED_BY_DEFAULT("gpu.service"), name().c_str(), this);
 }
 
-bool GLARBTimerTrace::IsAvailable() {
-  if (!end_requested_)
-    return false;
+bool GPUTrace::IsAvailable() {
+  if (tracer_type_ != kTracerTypeInvalid) {
+    if (!end_requested_)
+      return false;
 
-  GLint done = 0;
-  glGetQueryObjectiv(queries_[1], GL_QUERY_RESULT_AVAILABLE, &done);
-  return !!done;
+    GLint done = 0;
+    glGetQueryObjectiv(queries_[1], GL_QUERY_RESULT_AVAILABLE, &done);
+    return !!done;
+  }
+
+  return true;
 }
 
-void GLARBTimerTrace::Process() {
+void GPUTrace::Process() {
+  if (tracer_type_ == kTracerTypeInvalid)
+    return;
+
   DCHECK(IsAvailable());
 
-  GLuint64 timestamp;
+  GLuint64 begin_stamp = 0;
+  GLuint64 end_stamp = 0;
 
   // TODO(dsinclair): It's possible for the timer to wrap during the start/end.
   // We need to detect if the end is less then the start and correct for the
   // wrapping.
-  glGetQueryObjectui64v(queries_[0], GL_QUERY_RESULT, &timestamp);
-  start_time_ = (timestamp / base::Time::kNanosecondsPerMicrosecond) + offset_;
+  glGetQueryObjectui64v(queries_[0], GL_QUERY_RESULT, &begin_stamp);
+  glGetQueryObjectui64v(queries_[1], GL_QUERY_RESULT, &end_stamp);
 
-  glGetQueryObjectui64v(queries_[1], GL_QUERY_RESULT, &timestamp);
-  end_time_ = (timestamp / base::Time::kNanosecondsPerMicrosecond) + offset_;
-
-  glDeleteQueries(2, queries_);
+  start_time_ = (begin_stamp / base::Time::kNanosecondsPerMicrosecond) +
+                offset_;
+  end_time_ = (end_stamp / base::Time::kNanosecondsPerMicrosecond) + offset_;
   outputter_->Trace(name(), start_time_, end_time_);
 }
 
-bool GPUTracerImpl::BeginDecoding() {
+GPUTracer::GPUTracer(gles2::GLES2Decoder* decoder)
+    : gpu_trace_srv_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu.service"))),
+      gpu_trace_dev_category(TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
+          TRACE_DISABLED_BY_DEFAULT("gpu.device"))),
+      decoder_(decoder),
+      timer_offset_(0),
+      last_tracer_source_(kTraceGroupInvalid),
+      tracer_type_(kTracerTypeInvalid),
+      gpu_timing_synced_(false),
+      gpu_executing_(false),
+      process_posted_(false) {
+  if (gfx::g_driver_gl.ext.b_GL_EXT_disjoint_timer_query) {
+    tracer_type_ = kTracerTypeDisjointTimer;
+    outputter_ = TraceOutputter::Create("GL_EXT_disjoint_timer_query");
+  } else if (gfx::g_driver_gl.ext.b_GL_ARB_timer_query) {
+    tracer_type_ = kTracerTypeARBTimer;
+    outputter_ = TraceOutputter::Create("GL_ARB_timer_query");
+  }
+}
+
+GPUTracer::~GPUTracer() {
+}
+
+bool GPUTracer::BeginDecoding() {
   if (gpu_executing_)
     return false;
 
+  CalculateTimerOffset();
   gpu_executing_ = true;
 
   if (IsTracing()) {
+    // Reset disjoint bit for the disjoint timer.
+    if (tracer_type_ == kTracerTypeDisjointTimer) {
+      GLint disjoint_value = 0;
+      glGetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint_value);
+    }
+
     // Begin a Trace for all active markers
-    for (size_t i = 0; i < markers_.size(); i++) {
-      markers_[i].trace_ = CreateTrace(markers_[i].name_);
-      markers_[i].trace_->Start();
+    for (int n = 0; n < NUM_TRACER_SOURCES; n++) {
+      for (size_t i = 0; i < markers_[n].size(); i++) {
+        markers_[n][i].trace_ = CreateTrace(markers_[n][i].name_);
+        markers_[n][i].trace_->Start();
+      }
     }
   }
   return true;
 }
 
-bool GPUTracerImpl::EndDecoding() {
+bool GPUTracer::EndDecoding() {
   if (!gpu_executing_)
     return false;
 
   // End Trace for all active markers
   if (IsTracing()) {
-    for (size_t i = 0; i < markers_.size(); i++) {
-      if (markers_[i].trace_) {
-        markers_[i].trace_->End();
-        if (markers_[i].trace_->IsProcessable())
-          traces_.push_back(markers_[i].trace_);
-        markers_[i].trace_ = 0;
+    for (int n = 0; n < NUM_TRACER_SOURCES; n++) {
+      for (size_t i = 0; i < markers_[n].size(); i++) {
+        if (markers_[n][i].trace_.get()) {
+          markers_[n][i].trace_->End();
+          if (markers_[n][i].trace_->IsEnabled())
+            traces_.push_back(markers_[n][i].trace_);
+          markers_[n][i].trace_ = 0;
+        }
       }
     }
     IssueProcessTask();
   }
 
   gpu_executing_ = false;
+
+  // NOTE(vmiura): glFlush() here can help give better trace results,
+  // but it distorts the normal device behavior.
   return true;
 }
 
-bool GPUTracerImpl::Begin(const std::string& name, GpuTracerSource source) {
+bool GPUTracer::Begin(const std::string& name, GpuTracerSource source) {
   if (!gpu_executing_)
     return false;
 
+  DCHECK(source >= 0 && source < NUM_TRACER_SOURCES);
+
   // Push new marker from given 'source'
-  markers_.push_back(TraceMarker(name, source));
+  last_tracer_source_ = source;
+  markers_[source].push_back(TraceMarker(name));
 
   // Create trace
   if (IsTracing()) {
-    scoped_refptr<Trace> trace = CreateTrace(name);
+    scoped_refptr<GPUTrace> trace = CreateTrace(name);
     trace->Start();
-    markers_.back().trace_ = trace;
+    markers_[source].back().trace_ = trace;
   }
+
   return true;
 }
 
-bool GPUTracerImpl::End(GpuTracerSource source) {
+bool GPUTracer::End(GpuTracerSource source) {
   if (!gpu_executing_)
     return false;
 
-  // Pop last marker with matching 'source'
-  for (int i = markers_.size() - 1; i >= 0; i--) {
-    if (markers_[i].source_ == source) {
-      // End trace
-      if (IsTracing()) {
-        scoped_refptr<Trace> trace = markers_[i].trace_;
-        if (trace) {
-          trace->End();
-          if (trace->IsProcessable())
-            traces_.push_back(trace);
-          IssueProcessTask();
-        }
-      }
+  DCHECK(source >= 0 && source < NUM_TRACER_SOURCES);
 
-      markers_.erase(markers_.begin() + i);
-      return true;
+  // Pop last marker with matching 'source'
+  if (!markers_[source].empty()) {
+    if (IsTracing()) {
+      scoped_refptr<GPUTrace> trace = markers_[source].back().trace_;
+      if (trace.get()) {
+        trace->End();
+        if (trace->IsEnabled())
+          traces_.push_back(trace);
+        IssueProcessTask();
+      }
     }
+
+    markers_[source].pop_back();
+    return true;
   }
   return false;
 }
 
-void GPUTracerImpl::Process() {
+bool GPUTracer::IsTracing() {
+  return (*gpu_trace_srv_category != 0) || (*gpu_trace_dev_category != 0);
+}
+
+const std::string& GPUTracer::CurrentName() const {
+  if (last_tracer_source_ >= 0 &&
+      last_tracer_source_ < NUM_TRACER_SOURCES &&
+      !markers_[last_tracer_source_].empty()) {
+    return markers_[last_tracer_source_].back().name_;
+  }
+  return base::EmptyString();
+}
+
+scoped_refptr<GPUTrace> GPUTracer::CreateTrace(const std::string& name) {
+  GpuTracerType tracer_type = *gpu_trace_dev_category ? tracer_type_ :
+                                                        kTracerTypeInvalid;
+
+  return new GPUTrace(outputter_, name, timer_offset_, tracer_type);
+}
+
+void GPUTracer::Process() {
   process_posted_ = false;
   ProcessTraces();
   IssueProcessTask();
 }
 
-void GPUTracerImpl::ProcessTraces() {
-  while (!traces_.empty() && traces_.front()->IsAvailable()) {
-    traces_.front()->Process();
-    traces_.pop_front();
-  }
-}
-
-const std::string& GPUTracerImpl::CurrentName() const {
-  if (markers_.empty())
-    return base::EmptyString();
-  return markers_.back().name_;
-}
-
-scoped_refptr<Trace> GPUTracerImpl::CreateTrace(const std::string& name) {
-  return new NoopTrace(name);
-}
-
-void GPUTracerImpl::IssueProcessTask() {
-  if (traces_.empty() || process_posted_)
+void GPUTracer::ProcessTraces() {
+  if (tracer_type_ == kTracerTypeInvalid) {
+    traces_.clear();
     return;
-
-  process_posted_ = true;
-  base::MessageLoop::current()->PostDelayedTask(
-      FROM_HERE,
-      base::Bind(&GPUTracerImpl::Process, base::AsWeakPtr(this)),
-      base::TimeDelta::FromMilliseconds(kProcessInterval));
-}
-
-GPUTracerARBTimerQuery::GPUTracerARBTimerQuery(gles2::GLES2Decoder* decoder)
-    : timer_offset_(0), decoder_(decoder) {
-  outputter_ = TraceOutputter::Create("GL_ARB_timer_query");
-}
-
-GPUTracerARBTimerQuery::~GPUTracerARBTimerQuery() {
-}
-
-scoped_refptr<Trace> GPUTracerARBTimerQuery::CreateTrace(
-    const std::string& name) {
-  if (*gpu_trace_dev_category)
-    return new GLARBTimerTrace(outputter_, name, timer_offset_);
-  return GPUTracerImpl::CreateTrace(name);
-}
-
-bool GPUTracerARBTimerQuery::BeginDecoding() {
-  if (*gpu_trace_dev_category) {
-    // Make sure timing is synced before tracing
-    if (!gpu_timing_synced_) {
-      CalculateTimerOffset();
-      gpu_timing_synced_ = true;
-    }
-  } else {
-    // If GPU device category is off, invalidate timing sync
-    gpu_timing_synced_ = false;
   }
 
-  return GPUTracerImpl::BeginDecoding();
-}
-
-bool GPUTracerARBTimerQuery::EndDecoding() {
-  bool ret = GPUTracerImpl::EndDecoding();
-
-  // NOTE(vmiura_: glFlush() here can help give better trace results,
-  // but it distorts the normal device behavior.
-  return ret;
-}
-
-void GPUTracerARBTimerQuery::ProcessTraces() {
-  TRACE_EVENT0("gpu", "GPUTracerARBTimerQuery::ProcessTraces");
+  TRACE_EVENT0("gpu", "GPUTracer::ProcessTraces");
 
   // Make owning decoder's GL context current
   if (!decoder_->MakeCurrent()) {
     // Skip subsequent GL calls if MakeCurrent fails
     traces_.clear();
     return;
+  }
+
+  // Check if disjoint operation has occurred, discard ongoing traces if so.
+  if (tracer_type_ == kTracerTypeDisjointTimer) {
+    GLint disjoint_value = 0;
+    glGetIntegerv(GL_GPU_DISJOINT_EXT, &disjoint_value);
+    if (disjoint_value)
+      traces_.clear();
   }
 
   while (!traces_.empty() && traces_.front()->IsAvailable()) {
@@ -384,34 +353,54 @@ void GPUTracerARBTimerQuery::ProcessTraces() {
     traces_.clear();
 }
 
-void GPUTracerARBTimerQuery::CalculateTimerOffset() {
-  TRACE_EVENT0("gpu", "GPUTracerARBTimerQuery::CalculateTimerOffset");
+void GPUTracer::CalculateTimerOffset() {
+  if (tracer_type_ != kTracerTypeInvalid) {
+    if (*gpu_trace_dev_category == '\0') {
+      // If GPU device category is off, invalidate timing sync.
+      gpu_timing_synced_ = false;
+      return;
+    } else if (tracer_type_ == kTracerTypeDisjointTimer) {
+      // Disjoint timers offsets should be calculated before every query.
+      gpu_timing_synced_ = true;
+      timer_offset_ = 0;
+    }
 
-  // NOTE(vmiura): It would be better to use glGetInteger64v, however
-  // it's not available everywhere.
-  GLuint64 gl_now = 0;
-  GLuint query;
-  glFinish();
-  glGenQueries(1, &query);
-  glQueryCounter(query, GL_TIMESTAMP);
-  glFinish();
-  glGetQueryObjectui64v(query, GL_QUERY_RESULT, &gl_now);
-  base::TimeTicks system_now = base::TimeTicks::NowFromSystemTraceTime();
+    if (gpu_timing_synced_)
+      return;
 
-  gl_now /= base::Time::kNanosecondsPerMicrosecond;
-  timer_offset_ = system_now.ToInternalValue() - gl_now;
-  glDeleteQueries(1, &query);
+    TRACE_EVENT0("gpu", "GPUTracer::CalculateTimerOffset");
+
+    // NOTE(vmiura): It would be better to use glGetInteger64v, however
+    // it's not available everywhere.
+    GLuint64 gl_now = 0;
+    GLuint query;
+
+    glGenQueriesARB(1, &query);
+
+    glFinish();
+    glQueryCounter(query, GL_TIMESTAMP);
+    glFinish();
+
+    glGetQueryObjectui64v(query, GL_QUERY_RESULT, &gl_now);
+    glDeleteQueriesARB(1, &query);
+
+    base::TimeTicks system_now = base::TimeTicks::NowFromSystemTraceTime();
+
+    gl_now /= base::Time::kNanosecondsPerMicrosecond;
+    timer_offset_ = system_now.ToInternalValue() - gl_now;
+    gpu_timing_synced_ = true;
+  }
 }
 
-GPUTracer::GPUTracer() {}
+void GPUTracer::IssueProcessTask() {
+  if (traces_.empty() || process_posted_)
+    return;
 
-GPUTracer::~GPUTracer() {}
-
-scoped_ptr<GPUTracer> GPUTracer::Create(gles2::GLES2Decoder* decoder) {
-  if (gfx::g_driver_gl.ext.b_GL_ARB_timer_query) {
-    return scoped_ptr<GPUTracer>(new GPUTracerARBTimerQuery(decoder));
-  }
-  return scoped_ptr<GPUTracer>(new GPUTracerImpl());
+  process_posted_ = true;
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&GPUTracer::Process, base::AsWeakPtr(this)),
+      base::TimeDelta::FromMilliseconds(kProcessInterval));
 }
 
 }  // namespace gles2

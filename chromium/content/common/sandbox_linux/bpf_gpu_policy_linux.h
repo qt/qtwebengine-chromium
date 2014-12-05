@@ -20,12 +20,13 @@ namespace content {
 class GpuProcessPolicy : public SandboxBPFBasePolicy {
  public:
   GpuProcessPolicy();
-  virtual ~GpuProcessPolicy();
+  explicit GpuProcessPolicy(bool allow_mincore);
+  ~GpuProcessPolicy() override;
 
-  virtual ErrorCode EvaluateSyscall(SandboxBPF* sandbox_compiler,
-                                    int system_call_number) const OVERRIDE;
+  sandbox::bpf_dsl::ResultExpr EvaluateSyscall(
+      int system_call_number) const override;
 
-  virtual bool PreSandboxHook() OVERRIDE;
+  bool PreSandboxHook() override;
 
  protected:
   // Start a broker process to handle open() inside the sandbox.
@@ -35,7 +36,7 @@ class GpuProcessPolicy : public SandboxBPFBasePolicy {
   // names that should be whitelisted by the broker process, in addition to
   // the basic ones.
   void InitGpuBrokerProcess(
-      sandbox::SandboxBPFPolicy* (*broker_sandboxer_allocator)(void),
+      sandbox::bpf_dsl::Policy* (*broker_sandboxer_allocator)(void),
       const std::vector<std::string>& read_whitelist_extra,
       const std::vector<std::string>& write_whitelist_extra);
 
@@ -50,6 +51,10 @@ class GpuProcessPolicy : public SandboxBPFBasePolicy {
   // This is allocated by InitGpuBrokerProcess, called from PreSandboxHook(),
   // which executes iff the sandbox is going to be enabled afterwards.
   sandbox::BrokerProcess* broker_process_;
+
+  // eglCreateWindowSurface() needs mincore().
+  bool allow_mincore_;
+
   DISALLOW_COPY_AND_ASSIGN(GpuProcessPolicy);
 };
 

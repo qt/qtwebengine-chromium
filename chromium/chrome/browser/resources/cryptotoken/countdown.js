@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 /**
- * @fileoverview Provides a countdown-based timer.
+ * @fileoverview Provides a countdown-based timer interface.
  */
 'use strict';
 
@@ -21,7 +21,7 @@ function Countdown() {}
  */
 Countdown.prototype.setTimeout = function(timeoutMillis, cb) {};
 
-/** Clears this timer's timeout. */
+/** Clears this timer's timeout. Timers that are cleared become expired. */
 Countdown.prototype.clearTimeout = function() {};
 
 /**
@@ -40,86 +40,15 @@ Countdown.prototype.expired = function() {};
 Countdown.prototype.clone = function(cb) {};
 
 /**
- * Constructs a new timer.  The timer has a very limited resolution, and does
- * not attempt to be millisecond accurate. Its intended use is as a
- * low-precision timer that pauses while debugging.
- * @param {number=} timeoutMillis how long, in milliseconds, the countdown
- *     lasts.
- * @param {Function=} cb called back when the countdown expires.
- * @constructor
- * @implements {Countdown}
+ * A factory to create countdown timers.
+ * @interface
  */
-function CountdownTimer(timeoutMillis, cb) {
-  this.remainingMillis = 0;
-  this.setTimeout(timeoutMillis || 0, cb);
-}
-
-/** Timer interval */
-CountdownTimer.TIMER_INTERVAL_MILLIS = 200;
+function CountdownFactory() {}
 
 /**
- * Sets a new timeout for this timer. Only possible if the timer is not
- * currently active.
- * @param {number} timeoutMillis how long, in milliseconds, the countdown lasts.
- * @param {Function=} cb called back when the countdown expires.
- * @return {boolean} whether the timeout could be set.
+ * Creates a new timer.
+ * @param {number} timeoutMillis How long, in milliseconds, the countdown lasts.
+ * @param {function()=} opt_cb Called back when the countdown expires.
+ * @return {!Countdown} The timer.
  */
-CountdownTimer.prototype.setTimeout = function(timeoutMillis, cb) {
-  if (this.timeoutId)
-    return false;
-  if (!timeoutMillis || timeoutMillis < 0)
-    return false;
-  this.remainingMillis = timeoutMillis;
-  this.cb = cb;
-  if (this.remainingMillis > CountdownTimer.TIMER_INTERVAL_MILLIS) {
-    this.timeoutId =
-        window.setInterval(this.timerTick.bind(this),
-            CountdownTimer.TIMER_INTERVAL_MILLIS);
-  } else {
-    // Set a one-shot timer for the last interval.
-    this.timeoutId =
-        window.setTimeout(this.timerTick.bind(this), this.remainingMillis);
-  }
-  return true;
-};
-
-/** Clears this timer's timeout. */
-CountdownTimer.prototype.clearTimeout = function() {
-  if (this.timeoutId) {
-    window.clearTimeout(this.timeoutId);
-    this.timeoutId = undefined;
-  }
-};
-
-/**
- * @return {number} how many milliseconds are remaining until the timer expires.
- */
-CountdownTimer.prototype.millisecondsUntilExpired = function() {
-  return this.remainingMillis > 0 ? this.remainingMillis : 0;
-};
-
-/** @return {boolean} whether the timer has expired. */
-CountdownTimer.prototype.expired = function() {
-  return this.remainingMillis <= 0;
-};
-
-/**
- * Constructs a new clone of this timer, while overriding its callback.
- * @param {Function=} cb callback for new timer.
- * @return {!Countdown} new clone.
- */
-CountdownTimer.prototype.clone = function(cb) {
-  return new CountdownTimer(this.remainingMillis, cb);
-};
-
-/** Timer callback. */
-CountdownTimer.prototype.timerTick = function() {
-  this.remainingMillis -= CountdownTimer.TIMER_INTERVAL_MILLIS;
-  if (this.expired()) {
-    window.clearTimeout(this.timeoutId);
-    this.timeoutId = undefined;
-    if (this.cb) {
-      this.cb();
-    }
-  }
-};
+CountdownFactory.prototype.createTimer = function(timeoutMillis, opt_cb) {};

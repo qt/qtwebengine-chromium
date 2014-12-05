@@ -16,16 +16,16 @@ class BASE_EXPORT MockTimer : public Timer {
             TimeDelta delay,
             const base::Closure& user_task,
             bool is_repeating);
-  virtual ~MockTimer();
+  ~MockTimer() override;
 
   // base::Timer implementation.
-  virtual bool IsRunning() const OVERRIDE;
-  virtual base::TimeDelta GetCurrentDelay() const OVERRIDE;
-  virtual void Start(const tracked_objects::Location& posted_from,
-                     base::TimeDelta delay,
-                     const base::Closure& user_task) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual void Reset() OVERRIDE;
+  bool IsRunning() const override;
+  base::TimeDelta GetCurrentDelay() const override;
+  void Start(const tracked_objects::Location& posted_from,
+             base::TimeDelta delay,
+             const base::Closure& user_task) override;
+  void Stop() override;
+  void Reset() override;
 
   // Testing methods.
   void Fire();

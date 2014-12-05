@@ -30,7 +30,6 @@
       'include_dirs': [
         '<(DEPTH)/third_party/swiftshader/include',
         '<(DEPTH)/third_party/khronos',
-        '<(DEPTH)/third_party/mesa/src/include',
         '<(gl_binding_output_dir)',
       ],
       'direct_dependent_settings': {
@@ -50,8 +49,6 @@
         'android/surface_texture.h',
         'android/surface_texture_listener.cc',
         'android/surface_texture_listener.h',
-        'android/surface_texture_tracker.cc',
-        'android/surface_texture_tracker.h',
         'gl_bindings.h',
         'gl_bindings_skia_in_process.cc',
         'gl_bindings_skia_in_process.h',
@@ -71,19 +68,21 @@
         'gl_export.h',
         'gl_fence.cc',
         'gl_fence.h',
+        'gl_fence_arb.cc',
+        'gl_fence_arb.h',
+        'gl_fence_nv.cc',
+        'gl_fence_nv.h',
         'gl_gl_api_implementation.cc',
         'gl_gl_api_implementation.h',
-        'gl_image.cc',
         'gl_image.h',
-        'gl_image_android.cc',
-        'gl_image_mac.cc',
-        'gl_image_ozone.cc',
-        'gl_image_shm.cc',
-        'gl_image_shm.h',
+        'gl_image_memory.cc',
+        'gl_image_memory.h',
+        'gl_image_ref_counted_memory.cc',
+        'gl_image_ref_counted_memory.h',
+        'gl_image_shared_memory.cc',
+        'gl_image_shared_memory.h',
         'gl_image_stub.cc',
         'gl_image_stub.h',
-        'gl_image_win.cc',
-        'gl_image_x11.cc',
         'gl_implementation.cc',
         'gl_implementation.h',
         'gl_implementation_android.cc',
@@ -114,6 +113,7 @@
         'gl_version_info.h',
         'gpu_switching_manager.cc',
         'gpu_switching_manager.h',
+        'gpu_switching_observer.h',
         'scoped_binders.cc',
         'scoped_binders.h',
         'scoped_make_current.cc',
@@ -177,6 +177,8 @@
             'egl_util.h',
             'gl_context_egl.cc',
             'gl_context_egl.h',
+            'gl_fence_egl.cc',
+            'gl_fence_egl.h',
             'gl_image_egl.cc',
             'gl_image_egl.h',
             'gl_surface_egl.cc',
@@ -196,14 +198,18 @@
             'gl_implementation_osmesa.h',
           ],
         }],
+        ['OS=="linux"', {
+          'sources': [
+            'gl_image_linux_dma_buffer.cc',
+            'gl_image_linux_dma_buffer.h',
+          ],
+        }],
         ['use_x11 == 1', {
           'sources': [
             'gl_context_glx.cc',
             'gl_context_glx.h',
             'gl_glx_api_implementation.cc',
             'gl_glx_api_implementation.h',
-            'gl_image_glx.cc',
-            'gl_image_glx.h',
             'gl_surface_glx.cc',
             'gl_surface_glx.h',
             'gl_egl_api_implementation.cc',
@@ -274,8 +280,6 @@
             'gl_jni_headers',
           ],
           'sources': [
-            'gl_image_android_native_buffer.cc',
-            'gl_image_android_native_buffer.h',
             'gl_image_surface_texture.cc',
             'gl_image_surface_texture.h',
           ],
@@ -298,11 +302,20 @@
         ['use_ozone==1', {
           'dependencies': [
             '../ozone/ozone.gyp:ozone',
+            '../ozone/ozone.gyp:ozone_base',
           ],
         }],
         ['OS=="android" and android_webview_build==0', {
           'dependencies': [
             '../android/ui_android.gyp:ui_java',
+          ],
+        }],
+        ['ubsan==1', {
+          # Due to a bug in LLVM (http://llvm.org/bugs/show_bug.cgi?id=21349),
+          # compilation hangs for some GL source files. Disable -O2 temporarily
+          # until http://crbug.com/426271 is fixed.
+          'cflags!': [
+            '-O2',
           ],
         }],
       ],

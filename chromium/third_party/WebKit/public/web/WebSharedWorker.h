@@ -34,10 +34,6 @@
 #include "../platform/WebCommon.h"
 #include "WebContentSecurityPolicy.h"
 
-namespace WebCore {
-class ScriptExecutionContext;
-}
-
 namespace blink {
 
 class WebString;
@@ -67,9 +63,8 @@ public:
     virtual void clientDestroyed() = 0;
 
     virtual void pauseWorkerContextOnStart() = 0;
-    virtual void resumeWorkerContext() = 0;
-    virtual void attachDevTools() = 0;
-    virtual void reattachDevTools(const WebString& savedState) = 0;
+    virtual void attachDevTools(const WebString& hostId) = 0;
+    virtual void reattachDevTools(const WebString& hostId, const WebString& savedState) = 0;
     virtual void detachDevTools() = 0;
     virtual void dispatchDevToolsMessage(const WebString&) = 0;
 };

@@ -30,7 +30,7 @@
 #include "core/svg/SVGLength.h"
 #include "core/svg/SVGTransformList.h"
 
-namespace WebCore {
+namespace blink {
 
 inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     : SVGGradientElement(SVGNames::linearGradientTag, document)
@@ -39,8 +39,6 @@ inline SVGLinearGradientElement::SVGLinearGradientElement(Document& document)
     , m_x2(SVGAnimatedLength::create(this, SVGNames::x2Attr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
     , m_y2(SVGAnimatedLength::create(this, SVGNames::y2Attr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
 {
-    ScriptWrappable::init(this);
-
     // Spec: If the x2 attribute is not specified, the effect is as if a value of "100%" were specified.
     m_x2->setDefaultValueAsString("100%");
 
@@ -66,22 +64,7 @@ bool SVGLinearGradientElement::isSupportedAttribute(const QualifiedName& attrNam
 
 void SVGLinearGradientElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGGradientElement::parseAttribute(name, value);
-    else if (name == SVGNames::x1Attr)
-        m_x1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::y1Attr)
-        m_y1->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::x2Attr)
-        m_x2->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::y2Attr)
-        m_y2->setBaseValueAsString(value, parseError);
-    else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGLinearGradientElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -147,7 +130,7 @@ bool SVGLinearGradientElement::collectGradientAttributes(LinearGradientAttribute
     if (!renderer())
         return false;
 
-    HashSet<SVGGradientElement*> processedGradients;
+    WillBeHeapHashSet<RawPtrWillBeMember<SVGGradientElement> > processedGradients;
     SVGGradientElement* current = this;
 
     setGradientAttributes(current, attributes);
@@ -185,4 +168,4 @@ bool SVGLinearGradientElement::selfHasRelativeLengths() const
         || m_y2->currentValue()->isRelative();
 }
 
-}
+} // namespace blink

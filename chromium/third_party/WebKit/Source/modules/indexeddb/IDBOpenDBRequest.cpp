@@ -26,22 +26,21 @@
 #include "config.h"
 #include "modules/indexeddb/IDBOpenDBRequest.h"
 
-#include "bindings/v8/Nullable.h"
+#include "bindings/core/v8/Nullable.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "modules/indexeddb/IDBDatabase.h"
 #include "modules/indexeddb/IDBDatabaseCallbacks.h"
-#include "modules/indexeddb/IDBPendingTransactionMonitor.h"
 #include "modules/indexeddb/IDBTracing.h"
 #include "modules/indexeddb/IDBVersionChangeEvent.h"
 
 using blink::WebIDBDatabase;
 
-namespace WebCore {
+namespace blink {
 
 IDBOpenDBRequest* IDBOpenDBRequest::create(ScriptState* scriptState, IDBDatabaseCallbacks* callbacks, int64_t transactionId, int64_t version)
 {
-    IDBOpenDBRequest* request = adoptRefCountedGarbageCollectedWillBeNoop(new IDBOpenDBRequest(scriptState, callbacks, transactionId, version));
+    IDBOpenDBRequest* request = new IDBOpenDBRequest(scriptState, callbacks, transactionId, version);
     request->suspendIfNeeded();
     return request;
 }
@@ -53,7 +52,6 @@ IDBOpenDBRequest::IDBOpenDBRequest(ScriptState* scriptState, IDBDatabaseCallback
     , m_version(version)
 {
     ASSERT(!resultAsAny());
-    ScriptWrappable::init(this);
 }
 
 IDBOpenDBRequest::~IDBOpenDBRequest()
@@ -80,7 +78,7 @@ void IDBOpenDBRequest::onBlocked(int64_t oldVersion)
     enqueueEvent(IDBVersionChangeEvent::create(EventTypeNames::blocked, oldVersion, newVersionNullable));
 }
 
-void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata, blink::WebIDBDataLoss dataLoss, String dataLossMessage)
+void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBDatabase> backend, const IDBDatabaseMetadata& metadata, WebIDBDataLoss dataLoss, String dataLossMessage)
 {
     IDB_TRACE("IDBOpenDBRequest::onUpgradeNeeded()");
     if (m_contextStopped || !executionContext()) {
@@ -104,7 +102,7 @@ void IDBOpenDBRequest::onUpgradeNeeded(int64_t oldVersion, PassOwnPtr<WebIDBData
     IDBDatabaseMetadata oldMetadata(metadata);
     oldMetadata.intVersion = oldVersion;
 
-    m_transaction = IDBTransaction::create(executionContext(), m_transactionId, idbDatabase, this, oldMetadata);
+    m_transaction = IDBTransaction::create(scriptState(), m_transactionId, idbDatabase, this, oldMetadata);
     setResult(IDBAny::create(idbDatabase));
 
     if (m_version == IDBDatabaseMetadata::NoIntVersion)
@@ -178,4 +176,4 @@ bool IDBOpenDBRequest::dispatchEvent(PassRefPtrWillBeRawPtr<Event> event)
     return IDBRequest::dispatchEvent(event);
 }
 
-} // namespace WebCore
+} // namespace blink

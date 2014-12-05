@@ -24,7 +24,7 @@
 #include "config.h"
 #include "core/html/HTMLFrameSetElement.h"
 
-#include "bindings/v8/ScriptEventListener.h"
+#include "bindings/core/v8/ScriptEventListener.h"
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 #include "core/dom/Document.h"
@@ -36,7 +36,7 @@
 #include "core/loader/FrameLoaderClient.h"
 #include "core/rendering/RenderFrameSet.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -49,7 +49,6 @@ inline HTMLFrameSetElement::HTMLFrameSetElement(Document& document)
     , m_frameborderSet(false)
     , m_noresize(false)
 {
-    ScriptWrappable::init(this);
     setHasCustomStyleCallbacks();
 }
 
@@ -75,12 +74,12 @@ void HTMLFrameSetElement::parseAttribute(const QualifiedName& name, const Atomic
     if (name == rowsAttr) {
         if (!value.isNull()) {
             m_rowLengths = parseListOfDimensions(value.string());
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(name));
         }
     } else if (name == colsAttr) {
         if (!value.isNull()) {
             m_colLengths = parseListOfDimensions(value.string());
-            setNeedsStyleRecalc(SubtreeStyleChange);
+            setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::fromAttribute(name));
         }
     } else if (name == frameborderAttr) {
         if (!value.isNull()) {
@@ -215,11 +214,11 @@ LocalDOMWindow* HTMLFrameSetElement::anonymousNamedGetter(const AtomicString& na
 {
     Element* frameElement = children()->namedItem(name);
     if (!isHTMLFrameElement(frameElement))
-        return 0;
+        return nullptr;
     Document* document = toHTMLFrameElement(frameElement)->contentDocument();
     if (!document || !document->frame())
-        return 0;
+        return nullptr;
     return document->domWindow();
 }
 
-} // namespace WebCore
+} // namespace blink

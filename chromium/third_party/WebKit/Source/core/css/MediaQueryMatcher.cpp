@@ -23,70 +23,58 @@
 #include "core/css/MediaList.h"
 #include "core/css/MediaQueryEvaluator.h"
 #include "core/css/MediaQueryList.h"
+#include "core/css/MediaQueryListEvent.h"
 #include "core/css/MediaQueryListListener.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/dom/Document.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-MediaQueryMatcher::Listener::Listener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener, PassRefPtrWillBeRawPtr<MediaQueryList> query)
-    : m_listener(listener)
-    , m_query(query)
+PassRefPtrWillBeRawPtr<MediaQueryMatcher> MediaQueryMatcher::create(Document& document)
 {
+    return adoptRefWillBeNoop(new MediaQueryMatcher(document));
 }
 
-void MediaQueryMatcher::Listener::evaluate(MediaQueryEvaluator* evaluator)
-{
-    if (m_query->evaluate(evaluator))
-        m_listener->queryChanged(m_query.get());
-}
-
-void MediaQueryMatcher::Listener::trace(Visitor* visitor)
-{
-    visitor->trace(m_listener);
-    visitor->trace(m_query);
-}
-
-MediaQueryMatcher::MediaQueryMatcher(Document* document)
-    : m_document(document)
-    , m_evaluationRound(1)
+MediaQueryMatcher::MediaQueryMatcher(Document& document)
+    : m_document(&document)
 {
     ASSERT(m_document);
 }
 
 DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(MediaQueryMatcher)
 
-void MediaQueryMatcher::documentDestroyed()
+void MediaQueryMatcher::documentDetached()
 {
-    m_listeners.clear();
     m_document = nullptr;
+    m_evaluator = nullptr;
 }
 
-AtomicString MediaQueryMatcher::mediaType() const
-{
-    if (!m_document || !m_document->frame() || !m_document->frame()->view())
-        return nullAtom;
-
-    return m_document->frame()->view()->mediaType();
-}
-
-PassOwnPtr<MediaQueryEvaluator> MediaQueryMatcher::prepareEvaluator() const
+PassOwnPtr<MediaQueryEvaluator> MediaQueryMatcher::createEvaluator() const
 {
     if (!m_document || !m_document->frame())
         return nullptr;
 
-    return adoptPtr(new MediaQueryEvaluator(mediaType(), m_document->frame()));
+    return adoptPtr(new MediaQueryEvaluator(m_document->frame()));
 }
 
 bool MediaQueryMatcher::evaluate(const MediaQuerySet* media)
 {
+    ASSERT(!m_document || m_document->frame() || !m_evaluator);
+
     if (!media)
         return false;
 
-    OwnPtr<MediaQueryEvaluator> evaluator(prepareEvaluator());
-    return evaluator && evaluator->eval(media);
+    // Cache the evaluator to avoid allocating one per evaluation.
+    if (!m_evaluator)
+        m_evaluator = createEvaluator();
+
+    if (m_evaluator)
+        return m_evaluator->eval(media);
+
+    return false;
 }
 
 PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryMatcher::matchMedia(const String& query)
@@ -97,56 +85,71 @@ PassRefPtrWillBeRawPtr<MediaQueryList> MediaQueryMatcher::matchMedia(const Strin
     RefPtrWillBeRawPtr<MediaQuerySet> media = MediaQuerySet::create(query);
     // Add warning message to inspector whenever dpi/dpcm values are used for "screen" media.
     reportMediaQueryWarningIfNeeded(m_document, media.get());
-    return MediaQueryList::create(this, media, evaluate(media.get()));
+    return MediaQueryList::create(m_document, this, media);
 }
 
-void MediaQueryMatcher::addListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener, PassRefPtrWillBeRawPtr<MediaQueryList> query)
+void MediaQueryMatcher::addMediaQueryList(MediaQueryList* query)
+{
+    if (!m_document)
+        return;
+    m_mediaLists.add(query);
+}
+
+void MediaQueryMatcher::removeMediaQueryList(MediaQueryList* query)
+{
+    if (!m_document)
+        return;
+    m_mediaLists.remove(query);
+}
+
+void MediaQueryMatcher::addViewportListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener)
+{
+    if (!m_document)
+        return;
+    m_viewportListeners.add(listener);
+}
+
+void MediaQueryMatcher::removeViewportListener(PassRefPtrWillBeRawPtr<MediaQueryListListener> listener)
+{
+    if (!m_document)
+        return;
+    m_viewportListeners.remove(listener);
+}
+
+void MediaQueryMatcher::mediaFeaturesChanged()
 {
     if (!m_document)
         return;
 
-    for (size_t i = 0; i < m_listeners.size(); ++i) {
-        if (*m_listeners[i]->listener() == *listener && m_listeners[i]->query() == query)
-            return;
-    }
-
-    m_listeners.append(adoptPtrWillBeNoop(new Listener(listener, query)));
-}
-
-void MediaQueryMatcher::removeListener(MediaQueryListListener* listener, MediaQueryList* query)
-{
-    if (!m_document)
-        return;
-
-    for (size_t i = 0; i < m_listeners.size(); ++i) {
-        if (*m_listeners[i]->listener() == *listener && m_listeners[i]->query() == query) {
-            m_listeners.remove(i);
-            return;
+    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> > listenersToNotify;
+    for (const auto& list : m_mediaLists) {
+        if (list->mediaFeaturesChanged(&listenersToNotify)) {
+            RefPtrWillBeRawPtr<Event> event(MediaQueryListEvent::create(list));
+            event->setTarget(list);
+            m_document->enqueueUniqueAnimationFrameEvent(event);
         }
     }
+    m_document->enqueueMediaQueryChangeListeners(listenersToNotify);
 }
 
-void MediaQueryMatcher::styleResolverChanged()
+void MediaQueryMatcher::viewportChanged()
 {
     if (!m_document)
         return;
 
-    ++m_evaluationRound;
-    OwnPtr<MediaQueryEvaluator> evaluator = prepareEvaluator();
-    if (!evaluator)
-        return;
+    WillBeHeapVector<RefPtrWillBeMember<MediaQueryListListener> > listenersToNotify;
+    for (const auto& listener : m_viewportListeners)
+        listenersToNotify.append(listener);
 
-    for (size_t i = 0; i < m_listeners.size(); ++i)
-        m_listeners[i]->evaluate(evaluator.get());
+    m_document->enqueueMediaQueryChangeListeners(listenersToNotify);
 }
 
 void MediaQueryMatcher::trace(Visitor* visitor)
 {
-    visitor->trace(m_document);
-    // We don't support tracing of vectors of OwnPtrs (ie. Vector<OwnPtr<Listener> >).
-    // Since this is a transitional object we are just ifdef'ing it out when oilpan is not enabled.
 #if ENABLE(OILPAN)
-    visitor->trace(m_listeners);
+    visitor->trace(m_document);
+    visitor->trace(m_mediaLists);
+    visitor->trace(m_viewportListeners);
 #endif
 }
 

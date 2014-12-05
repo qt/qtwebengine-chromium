@@ -2,9 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_util.h"
 #include "base/files/file.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/time/time.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -425,6 +426,23 @@ TEST(FileTest, WriteAtCurrentPosition) {
   EXPECT_EQ(std::string(buffer, buffer + kDataSize), std::string(kData));
 }
 
+TEST(FileTest, Seek) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  FilePath file_path = temp_dir.path().AppendASCII("seek_file");
+  File file(file_path,
+            base::File::FLAG_CREATE | base::File::FLAG_READ |
+                base::File::FLAG_WRITE);
+  ASSERT_TRUE(file.IsValid());
+
+  const int64 kOffset = 10;
+  EXPECT_EQ(kOffset, file.Seek(base::File::FROM_BEGIN, kOffset));
+  EXPECT_EQ(2 * kOffset, file.Seek(base::File::FROM_CURRENT, kOffset));
+  EXPECT_EQ(kOffset, file.Seek(base::File::FROM_CURRENT, -kOffset));
+  EXPECT_TRUE(file.SetLength(kOffset * 2));
+  EXPECT_EQ(kOffset, file.Seek(base::File::FROM_END, -kOffset));
+}
+
 #if defined(OS_WIN)
 TEST(FileTest, GetInfoForDirectory) {
   base::ScopedTempDir temp_dir;
@@ -449,3 +467,71 @@ TEST(FileTest, GetInfoForDirectory) {
   EXPECT_EQ(0, info.size);
 }
 #endif  // defined(OS_WIN)
+
+#if defined(OS_POSIX) && defined(GTEST_HAS_DEATH_TEST)
+TEST(FileTest, MemoryCorruption) {
+  {
+    // Test that changing the checksum value is detected.
+    base::File file;
+    EXPECT_NE(file.file_.file_memory_checksum_,
+              implicit_cast<unsigned int>(file.GetPlatformFile()));
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(file.IsValid(), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that changing the file descriptor value is detected.
+    base::File file;
+    file.file_.file_.reset(17);
+    EXPECT_DEATH(file.IsValid(), "");
+
+    // Do not crash on File::~File().
+    ignore_result(file.file_.file_.release());
+    file.file_.UpdateChecksum();
+  }
+
+  {
+    // Test that GetPlatformFile() checks for corruption.
+    base::File file;
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(file.GetPlatformFile(), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that the base::File destructor checks for corruption.
+    scoped_ptr<base::File> file(new File());
+    file->file_.file_memory_checksum_ = file->GetPlatformFile();
+    EXPECT_DEATH(file.reset(), "");
+
+    // Do not crash on this thread's destructor call.
+    file->file_.UpdateChecksum();
+  }
+
+  {
+    // Test that the base::File constructor checks for corruption.
+    base::File file;
+    file.file_.file_memory_checksum_ = file.GetPlatformFile();
+    EXPECT_DEATH(File f(file.Pass()), "");
+
+    file.file_.UpdateChecksum();  // Do not crash on File::~File().
+  }
+
+  {
+    // Test that doing IO checks for corruption.
+    base::File file;
+    file.file_.file_.reset(17);  // A fake open FD value.
+
+    EXPECT_DEATH(file.Seek(File::FROM_BEGIN, 0), "");
+    EXPECT_DEATH(file.Read(0, NULL, 0), "");
+    EXPECT_DEATH(file.ReadAtCurrentPos(NULL, 0), "");
+    EXPECT_DEATH(file.Write(0, NULL, 0), "");
+
+    ignore_result(file.file_.file_.release());
+    file.file_.UpdateChecksum();
+  }
+}
+#endif  // defined(OS_POSIX)

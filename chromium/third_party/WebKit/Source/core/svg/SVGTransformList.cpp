@@ -33,7 +33,7 @@
 #include "wtf/text/StringBuilder.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 inline PassRefPtr<SVGTransformList> toSVGTransformList(PassRefPtr<SVGPropertyBase> passBase)
 {
@@ -72,13 +72,6 @@ bool SVGTransformList::concatenate(AffineTransform& result) const
         result *= it->matrix();
 
     return true;
-}
-
-PassRefPtr<SVGTransformList> SVGTransformList::clone()
-{
-    RefPtr<SVGTransformList> svgTransformList = SVGTransformList::create();
-    svgTransformList->deepCopy(this);
-    return svgTransformList.release();
 }
 
 namespace {

@@ -25,35 +25,31 @@
 
 #include "core/rendering/RenderBlock.h"
 
-namespace WebCore {
+namespace blink {
 
 class FlexBoxIterator;
 
-class RenderDeprecatedFlexibleBox FINAL : public RenderBlock {
+class RenderDeprecatedFlexibleBox final : public RenderBlock {
 public:
-    RenderDeprecatedFlexibleBox(Element*);
+    RenderDeprecatedFlexibleBox(Element&);
     virtual ~RenderDeprecatedFlexibleBox();
 
-    static RenderDeprecatedFlexibleBox* createAnonymous(Document*);
+    virtual const char* renderName() const override;
 
-    virtual const char* renderName() const OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
 
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
-
-    virtual void layoutBlock(bool relayoutChildren) OVERRIDE;
+    virtual void layoutBlock(bool relayoutChildren) override;
     void layoutHorizontalBox(bool relayoutChildren);
     void layoutVerticalBox(bool relayoutChildren);
 
-    virtual bool avoidsFloats() const OVERRIDE { return true; }
-    virtual bool isDeprecatedFlexibleBox() const OVERRIDE { return true; }
+    virtual bool isDeprecatedFlexibleBox() const override { return true; }
     bool isStretchingChildren() const { return m_stretchingChildren; }
-    virtual bool canCollapseAnonymousBlockChild() const OVERRIDE { return false; }
+    virtual bool canCollapseAnonymousBlockChild() const override { return false; }
 
     void placeChild(RenderBox* child, const LayoutPoint& location);
 
-protected:
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE;
-    virtual void computePreferredLogicalWidths() OVERRIDE;
+private:
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override;
 
     LayoutUnit allowedChildFlex(RenderBox* child, bool expanding, unsigned group);
 
@@ -61,15 +57,14 @@ protected:
     bool isVertical() const { return style()->boxOrient() == VERTICAL; }
     bool isHorizontal() const { return style()->boxOrient() == HORIZONTAL; }
 
-    bool m_stretchingChildren;
-
-private:
     void applyLineClamp(FlexBoxIterator&, bool relayoutChildren);
     void clearLineClamp();
+
+    bool m_stretchingChildren;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderDeprecatedFlexibleBox, isDeprecatedFlexibleBox());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderDeprecatedFlexibleBox_h

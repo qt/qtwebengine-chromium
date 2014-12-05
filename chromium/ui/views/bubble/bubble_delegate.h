@@ -27,28 +27,25 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
  public:
   BubbleDelegateView();
   BubbleDelegateView(View* anchor_view, BubbleBorder::Arrow arrow);
-  virtual ~BubbleDelegateView();
+  ~BubbleDelegateView() override;
 
   // Create and initialize the bubble Widget(s) with proper bounds.
   static Widget* CreateBubble(BubbleDelegateView* bubble_delegate);
 
   // WidgetDelegateView overrides:
-  virtual BubbleDelegateView* AsBubbleDelegate() OVERRIDE;
-  virtual bool CanActivate() const OVERRIDE;
-  virtual bool ShouldShowCloseButton() const OVERRIDE;
-  virtual View* GetContentsView() OVERRIDE;
-  virtual NonClientFrameView* CreateNonClientFrameView(Widget* widget) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  BubbleDelegateView* AsBubbleDelegate() override;
+  bool ShouldShowCloseButton() const override;
+  View* GetContentsView() override;
+  NonClientFrameView* CreateNonClientFrameView(Widget* widget) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
 
   // WidgetObserver overrides:
-  virtual void OnWidgetDestroying(Widget* widget) OVERRIDE;
-  virtual void OnWidgetVisibilityChanging(Widget* widget, bool visible)
-      OVERRIDE;
-  virtual void OnWidgetVisibilityChanged(Widget* widget, bool visible)
-      OVERRIDE;
-  virtual void OnWidgetActivationChanged(Widget* widget, bool active) OVERRIDE;
-  virtual void OnWidgetBoundsChanged(Widget* widget,
-                                     const gfx::Rect& new_bounds) OVERRIDE;
+  void OnWidgetDestroying(Widget* widget) override;
+  void OnWidgetVisibilityChanging(Widget* widget, bool visible) override;
+  void OnWidgetVisibilityChanged(Widget* widget, bool visible) override;
+  void OnWidgetActivationChanged(Widget* widget, bool active) override;
+  void OnWidgetBoundsChanged(Widget* widget,
+                             const gfx::Rect& new_bounds) override;
 
   bool close_on_esc() const { return close_on_esc_; }
   void set_close_on_esc(bool close_on_esc) { close_on_esc_ = close_on_esc; }
@@ -82,9 +79,6 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
 
   gfx::NativeView parent_window() const { return parent_window_; }
   void set_parent_window(gfx::NativeView window) { parent_window_ = window; }
-
-  bool use_focusless() const { return use_focusless_; }
-  void set_use_focusless(bool focusless) { use_focusless_ = focusless; }
 
   bool accept_events() const { return accept_events_; }
   void set_accept_events(bool accept_events) { accept_events_ = accept_events; }
@@ -123,8 +117,8 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
   virtual const gfx::FontList& GetTitleFontList() const;
 
   // View overrides:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual void OnNativeThemeChanged(const ui::NativeTheme* theme) OVERRIDE;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void OnNativeThemeChanged(const ui::NativeTheme* theme) override;
 
   // Perform view initialization on the contents for bubble sizing.
   virtual void Init();
@@ -182,9 +176,6 @@ class VIEWS_EXPORT BubbleDelegateView : public WidgetDelegateView,
 
   // Insets applied to the |anchor_view_| bounds.
   gfx::Insets anchor_view_insets_;
-
-  // If true, the bubble does not take focus on display; default is false.
-  bool use_focusless_;
 
   // Specifies whether the bubble (or its border) handles mouse events, etc.
   bool accept_events_;

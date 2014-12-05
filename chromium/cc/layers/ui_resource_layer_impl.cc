@@ -7,10 +7,10 @@
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "cc/base/math_util.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/quads/texture_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
-#include "ui/gfx/rect_f.h"
+#include "cc/trees/occlusion.h"
+#include "ui/gfx/geometry/rect_f.h"
 
 namespace cc {
 
@@ -29,7 +29,7 @@ UIResourceLayerImpl::~UIResourceLayerImpl() {}
 
 scoped_ptr<LayerImpl> UIResourceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return UIResourceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return UIResourceLayerImpl::Create(tree_impl, id());
 }
 
 void UIResourceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -91,13 +91,16 @@ bool UIResourceLayerImpl::WillDraw(DrawMode draw_mode,
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                     AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+void UIResourceLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const Occlusion& occlusion_in_content_space,
+    AppendQuadsData* append_quads_data) {
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
   AppendDebugBorderQuad(
-      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   if (!ui_resource_id_)
     return;
@@ -118,12 +121,13 @@ void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
 
   gfx::Rect quad_rect(bounds());
   gfx::Rect opaque_rect(opaque ? quad_rect : gfx::Rect());
-  gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_in_content_space.GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
-  scoped_ptr<TextureDrawQuad> quad = TextureDrawQuad::Create();
+  TextureDrawQuad* quad =
+      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
@@ -135,7 +139,6 @@ void UIResourceLayerImpl::AppendQuads(QuadSink* quad_sink,
                SK_ColorTRANSPARENT,
                vertex_opacity_,
                flipped);
-  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 const char* UIResourceLayerImpl::LayerTypeAsString() const {

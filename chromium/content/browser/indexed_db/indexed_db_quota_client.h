@@ -12,9 +12,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/message_loop/message_loop_proxy.h"
 #include "content/common/content_export.h"
-#include "webkit/browser/quota/quota_client.h"
-#include "webkit/browser/quota/quota_task.h"
-#include "webkit/common/quota/quota_types.h"
+#include "storage/browser/quota/quota_client.h"
+#include "storage/browser/quota/quota_task.h"
+#include "storage/common/quota/quota_types.h"
 
 namespace content {
 class IndexedDBContextImpl;
@@ -22,32 +22,31 @@ class IndexedDBContextImpl;
 // A QuotaClient implementation to integrate IndexedDB
 // with the quota  management system. This interface is used
 // on the IO thread by the quota manager.
-class IndexedDBQuotaClient : public quota::QuotaClient,
-                             public quota::QuotaTaskObserver {
+class IndexedDBQuotaClient : public storage::QuotaClient,
+                             public storage::QuotaTaskObserver {
  public:
   CONTENT_EXPORT explicit IndexedDBQuotaClient(
       IndexedDBContextImpl* indexed_db_context);
-  CONTENT_EXPORT virtual ~IndexedDBQuotaClient();
+  CONTENT_EXPORT ~IndexedDBQuotaClient() override;
 
   // QuotaClient method overrides
-  virtual ID id() const OVERRIDE;
-  virtual void OnQuotaManagerDestroyed() OVERRIDE;
-  CONTENT_EXPORT virtual void GetOriginUsage(const GURL& origin_url,
-                                             quota::StorageType type,
-                                             const GetUsageCallback& callback)
-      OVERRIDE;
-  CONTENT_EXPORT virtual void GetOriginsForType(
-      quota::StorageType type,
-      const GetOriginsCallback& callback) OVERRIDE;
-  CONTENT_EXPORT virtual void GetOriginsForHost(
-      quota::StorageType type,
+  ID id() const override;
+  void OnQuotaManagerDestroyed() override;
+  CONTENT_EXPORT void GetOriginUsage(const GURL& origin_url,
+                                     storage::StorageType type,
+                                     const GetUsageCallback& callback) override;
+  CONTENT_EXPORT void GetOriginsForType(
+      storage::StorageType type,
+      const GetOriginsCallback& callback) override;
+  CONTENT_EXPORT void GetOriginsForHost(
+      storage::StorageType type,
       const std::string& host,
-      const GetOriginsCallback& callback) OVERRIDE;
-  CONTENT_EXPORT virtual void DeleteOriginData(const GURL& origin,
-                                               quota::StorageType type,
-                                               const DeletionCallback& callback)
-      OVERRIDE;
-  virtual bool DoesSupport(quota::StorageType type) const OVERRIDE;
+      const GetOriginsCallback& callback) override;
+  CONTENT_EXPORT void DeleteOriginData(
+      const GURL& origin,
+      storage::StorageType type,
+      const DeletionCallback& callback) override;
+  bool DoesSupport(storage::StorageType type) const override;
 
  private:
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;

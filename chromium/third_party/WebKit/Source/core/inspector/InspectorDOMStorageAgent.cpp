@@ -30,7 +30,7 @@
 #include "config.h"
 #include "core/inspector/InspectorDOMStorageAgent.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/InspectorFrontend.h"
 #include "core/dom/DOMException.h"
 #include "core/dom/Document.h"
@@ -46,7 +46,7 @@
 #include "platform/JSONValues.h"
 #include "platform/weborigin/SecurityOrigin.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace DOMStorageAgentState {
 static const char domStorageAgentEnabled[] = "domStorageAgentEnabled";
@@ -78,9 +78,15 @@ InspectorDOMStorageAgent::~InspectorDOMStorageAgent()
 {
 }
 
+void InspectorDOMStorageAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_pageAgent);
+    InspectorBaseAgent::trace(visitor);
+}
+
 void InspectorDOMStorageAgent::setFrontend(InspectorFrontend* frontend)
 {
-    m_frontend = frontend;
+    m_frontend = frontend->domstorage();
 }
 
 void InspectorDOMStorageAgent::clearFrontend()
@@ -187,13 +193,13 @@ void InspectorDOMStorageAgent::didDispatchDOMStorageEvent(const String& key, con
     RefPtr<TypeBuilder::DOMStorage::StorageId> id = storageId(securityOrigin, storageType == LocalStorage);
 
     if (key.isNull())
-        m_frontend->domstorage()->domStorageItemsCleared(id);
+        m_frontend->domStorageItemsCleared(id);
     else if (newValue.isNull())
-        m_frontend->domstorage()->domStorageItemRemoved(id, key);
+        m_frontend->domStorageItemRemoved(id, key);
     else if (oldValue.isNull())
-        m_frontend->domstorage()->domStorageItemAdded(id, key, newValue);
+        m_frontend->domStorageItemAdded(id, key, newValue);
     else
-        m_frontend->domstorage()->domStorageItemUpdated(id, key, oldValue, newValue);
+        m_frontend->domStorageItemUpdated(id, key, oldValue, newValue);
 }
 
 PassOwnPtrWillBeRawPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(ErrorString* errorString, const RefPtr<JSONObject>& storageId, LocalFrame*& targetFrame)
@@ -222,5 +228,5 @@ PassOwnPtrWillBeRawPtr<StorageArea> InspectorDOMStorageAgent::findStorageArea(Er
     return m_pageAgent->page()->sessionStorage()->storageArea(frame->document()->securityOrigin());
 }
 
-} // namespace WebCore
+} // namespace blink
 

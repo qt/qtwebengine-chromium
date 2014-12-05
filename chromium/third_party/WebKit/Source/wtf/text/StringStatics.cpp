@@ -26,11 +26,6 @@
 #include "config.h"
 #include "StringStatics.h"
 
-#ifdef SKIP_STATIC_CONSTRUCTORS_ON_GCC
-#define ATOMICSTRING_HIDE_GLOBALS 1
-#define STRING_HIDE_GLOBALS 1
-#endif
-
 #include "AtomicString.h"
 #include "StringImpl.h"
 #include "wtf/DynamicAnnotations.h"
@@ -42,7 +37,16 @@ namespace WTF {
 StringImpl* StringImpl::empty()
 {
     DEFINE_STATIC_LOCAL(StringImpl, emptyString, (ConstructEmptyString));
-    WTF_ANNOTATE_BENIGN_RACE(&emptyString, "Benign race on StringImpl::emptyString reference counter");
+    WTF_ANNOTATE_BENIGN_RACE(&emptyString,
+        "Benign race on the reference counter of a static string created by StringImpl::empty");
+    return &emptyString;
+}
+
+StringImpl* StringImpl::empty16Bit()
+{
+    DEFINE_STATIC_LOCAL(StringImpl, emptyString, (ConstructEmptyString16Bit));
+    WTF_ANNOTATE_BENIGN_RACE(&emptyString,
+        "Benign race on the reference counter of a static string created by StringImpl::empty16Bit");
     return &emptyString;
 }
 

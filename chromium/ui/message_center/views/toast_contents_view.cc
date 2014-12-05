@@ -9,7 +9,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
-#include "base/timer/timer.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/animation/slide_animation.h"
@@ -246,9 +245,7 @@ void ToastContentsView::OnDisplayChanged() {
     return;
 
   collection_->OnDisplayMetricsChanged(
-      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view),
-      gfx::DisplayObserver::DISPLAY_METRIC_BOUNDS |
-          gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
+      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view));
 }
 
 void ToastContentsView::OnWorkAreaChanged() {
@@ -261,8 +258,7 @@ void ToastContentsView::OnWorkAreaChanged() {
     return;
 
   collection_->OnDisplayMetricsChanged(
-      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view),
-      gfx::DisplayObserver::DISPLAY_METRIC_WORK_AREA);
+      Screen::GetScreenFor(native_view)->GetDisplayNearestWindow(native_view));
 }
 
 // views::View

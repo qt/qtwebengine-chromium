@@ -284,15 +284,14 @@ WebInspector.TabbedEditorContainer.prototype = {
 
         var tabId = this._tabIds.get(uiSourceCode) || this._appendFileTab(uiSourceCode, false);
 
-        if (!this._currentFile)
-            return;
-
         // Select tab if this file was the last to be shown.
         if (!index) {
             this._innerShowFile(uiSourceCode, false);
             return;
         }
 
+        if (!this._currentFile)
+            return;
         var currentProjectType = this._currentFile.project().type();
         var addedProjectType = uiSourceCode.project().type();
         var snippetsProjectType = WebInspector.projectTypes.Snippets;
@@ -377,7 +376,7 @@ WebInspector.TabbedEditorContainer.prototype = {
         var tooltip = this._tooltipForFile(uiSourceCode);
 
         var tabId = this._generateTabId();
-        this._tabIds.put(uiSourceCode, tabId);
+        this._tabIds.set(uiSourceCode, tabId);
         this._files[tabId] = uiSourceCode;
 
         var savedSelectionRange = this._history.selectionRange(uiSourceCode.uri());

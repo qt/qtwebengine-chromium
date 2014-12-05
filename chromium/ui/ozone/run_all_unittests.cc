@@ -15,8 +15,8 @@ class OzoneTestSuite : public base::TestSuite {
 
  protected:
   // base::TestSuite:
-  virtual void Initialize() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  void Initialize() override;
+  void Shutdown() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(OzoneTestSuite);

@@ -1,17 +1,17 @@
 // Copyright 2004 Google Inc. All Rights Reserved
 // Author: David Bau
 
-#include <string>
-#include <sstream>
 #include <iostream>
-#include "talk/base/common.h"
-#include "talk/base/gunit.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/constants.h"
-#include "talk/xmpp/util_unittest.h"
-#include "talk/xmpp/saslplainmechanism.h"
-#include "talk/xmpp/plainsaslhandler.h"
-#include "talk/xmpp/xmppengine.h"
+#include <sstream>
+#include <string>
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/libjingle/xmpp/plainsaslhandler.h"
+#include "webrtc/libjingle/xmpp/saslplainmechanism.h"
+#include "webrtc/libjingle/xmpp/util_unittest.h"
+#include "webrtc/libjingle/xmpp/xmppengine.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/gunit.h"
 
 using buzz::Jid;
 using buzz::QName;
@@ -54,14 +54,14 @@ class XmppEngineTest : public testing::Test {
     handler_.reset(new XmppTestHandler(engine_.get()));
 
     Jid jid("david@my-server");
-    talk_base::InsecureCryptStringImpl pass;
+    rtc::InsecureCryptStringImpl pass;
     pass.password() = "david";
     engine_->SetSessionHandler(handler_.get());
     engine_->SetOutputHandler(handler_.get());
     engine_->AddStanzaHandler(handler_.get());
     engine_->SetUser(jid);
     engine_->SetSaslHandler(
-        new buzz::PlainSaslHandler(jid, talk_base::CryptString(pass), true));
+        new buzz::PlainSaslHandler(jid, rtc::CryptString(pass), true));
   }
   virtual void TearDown() {
     handler_.reset();
@@ -70,8 +70,8 @@ class XmppEngineTest : public testing::Test {
   void RunLogin();
 
  private:
-  talk_base::scoped_ptr<XmppEngine> engine_;
-  talk_base::scoped_ptr<XmppTestHandler> handler_;
+  rtc::scoped_ptr<XmppEngine> engine_;
+  rtc::scoped_ptr<XmppTestHandler> handler_;
 };
 
 void XmppEngineTest::RunLogin() {

@@ -32,7 +32,7 @@
 #include "platform/graphics/GraphicsTypes.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 struct FillSize {
     FillSize()
@@ -76,7 +76,7 @@ public:
     EFillRepeat repeatX() const { return static_cast<EFillRepeat>(m_repeatX); }
     EFillRepeat repeatY() const { return static_cast<EFillRepeat>(m_repeatY); }
     CompositeOperator composite() const { return static_cast<CompositeOperator>(m_composite); }
-    blink::WebBlendMode blendMode() const { return static_cast<blink::WebBlendMode>(m_blendMode); }
+    WebBlendMode blendMode() const { return static_cast<WebBlendMode>(m_blendMode); }
     const LengthSize& sizeLength() const { return m_sizeLength; }
     EFillSizeType sizeType() const { return static_cast<EFillSizeType>(m_sizeType); }
     FillSize size() const { return FillSize(static_cast<EFillSizeType>(m_sizeType), m_sizeLength); }
@@ -84,6 +84,12 @@ public:
 
     const FillLayer* next() const { return m_next; }
     FillLayer* next() { return m_next; }
+    FillLayer* ensureNext()
+    {
+        if (!m_next)
+            m_next = new FillLayer(type());
+        return m_next;
+    }
 
     bool isImageSet() const { return m_imageSet; }
     bool isXPositionSet() const { return m_xPosSet; }
@@ -111,7 +117,7 @@ public:
     void setRepeatX(EFillRepeat r) { m_repeatX = r; m_repeatXSet = true; }
     void setRepeatY(EFillRepeat r) { m_repeatY = r; m_repeatYSet = true; }
     void setComposite(CompositeOperator c) { m_composite = c; m_compositeSet = true; }
-    void setBlendMode(blink::WebBlendMode b) { m_blendMode = b; m_blendModeSet = true; }
+    void setBlendMode(WebBlendMode b) { m_blendMode = b; m_blendModeSet = true; }
     void setSizeType(EFillSizeType b) { m_sizeType = b; }
     void setSizeLength(const LengthSize& l) { m_sizeLength = l; }
     void setSize(FillSize f) { m_sizeType = f.type; m_sizeLength = f.size; }
@@ -138,8 +144,6 @@ public:
     void clearBlendMode() { m_blendModeSet = false; }
     void clearSize() { m_sizeType = SizeNone; }
     void clearMaskSourceType() { m_maskSourceTypeSet = false; }
-
-    void setNext(FillLayer* n) { if (m_next != n) { delete m_next; m_next = n; } }
 
     FillLayer& operator=(const FillLayer& o);
     FillLayer(const FillLayer& o);
@@ -182,7 +186,7 @@ public:
     static EFillRepeat initialFillRepeatX(EFillLayerType) { return RepeatFill; }
     static EFillRepeat initialFillRepeatY(EFillLayerType) { return RepeatFill; }
     static CompositeOperator initialFillComposite(EFillLayerType) { return CompositeSourceOver; }
-    static blink::WebBlendMode initialFillBlendMode(EFillLayerType) { return blink::WebBlendModeNormal; }
+    static WebBlendMode initialFillBlendMode(EFillLayerType) { return WebBlendModeNormal; }
     static EFillSizeType initialFillSizeType(EFillLayerType) { return SizeLength; }
     static LengthSize initialFillSizeLength(EFillLayerType) { return LengthSize(); }
     static FillSize initialFillSize(EFillLayerType type) { return FillSize(initialFillSizeType(type), initialFillSizeLength(type)); }
@@ -214,7 +218,7 @@ private:
     unsigned m_repeatY : 3; // EFillRepeat
     unsigned m_composite : 4; // CompositeOperator
     unsigned m_sizeType : 2; // EFillSizeType
-    unsigned m_blendMode : 5; // blink::WebBlendMode
+    unsigned m_blendMode : 5; // WebBlendMode
     unsigned m_maskSourceType : 1; // EMaskSourceType
     unsigned m_backgroundXOrigin : 2; // BackgroundEdgeOrigin
     unsigned m_backgroundYOrigin : 2; // BackgroundEdgeOrigin
@@ -238,6 +242,6 @@ private:
     mutable unsigned m_clipMax : 2; // EFillBox, maximum m_clip value from this to bottom layer
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FillLayer_h

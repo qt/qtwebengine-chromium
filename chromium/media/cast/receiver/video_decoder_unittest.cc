@@ -11,9 +11,10 @@
 #include "base/time/time.h"
 #include "media/cast/cast_config.h"
 #include "media/cast/receiver/video_decoder.h"
+#include "media/cast/sender/vp8_encoder.h"
+#include "media/cast/test/utility/default_config.h"
 #include "media/cast/test/utility/standalone_cast_environment.h"
 #include "media/cast/test/utility/video_utility.h"
-#include "media/cast/video_sender/codecs/vp8/vp8_encoder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -26,7 +27,7 @@ const int kHeight = 240;
 const int kFrameRate = 10;
 
 VideoSenderConfig GetVideoSenderConfigForTest() {
-  VideoSenderConfig config;
+  VideoSenderConfig config = GetDefaultVideoSenderConfig();
   config.width = kWidth;
   config.height = kHeight;
   config.max_frame_rate = kFrameRate;
@@ -35,18 +36,22 @@ VideoSenderConfig GetVideoSenderConfigForTest() {
 
 }  // namespace
 
-class VideoDecoderTest
-    : public ::testing::TestWithParam<transport::VideoCodec> {
+class VideoDecoderTest : public ::testing::TestWithParam<Codec> {
  public:
   VideoDecoderTest()
       : cast_environment_(new StandaloneCastEnvironment()),
-        vp8_encoder_(GetVideoSenderConfigForTest(), 0),
+        vp8_encoder_(GetVideoSenderConfigForTest()),
         cond_(&lock_) {
     vp8_encoder_.Initialize();
   }
 
+  virtual ~VideoDecoderTest() {
+    // Make sure all threads have stopped before the environment goes away.
+    cast_environment_->Shutdown();
+  }
+
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     video_decoder_.reset(new VideoDecoder(cast_environment_, GetParam()));
     CHECK_EQ(STATUS_VIDEO_INITIALIZED, video_decoder_->InitializationResult());
 
@@ -71,14 +76,20 @@ class VideoDecoderTest
                                 frame_size,
                                 next_frame_timestamp_);
     next_frame_timestamp_ += base::TimeDelta::FromSeconds(1) / kFrameRate;
-    PopulateVideoFrame(video_frame, 0);
+    PopulateVideoFrame(video_frame.get(), 0);
 
     // Encode |frame| into |encoded_frame->data|.
-    scoped_ptr<transport::EncodedFrame> encoded_frame(
-        new transport::EncodedFrame());
-    CHECK_EQ(transport::kVp8, GetParam());  // Only support VP8 test currently.
-    vp8_encoder_.Encode(video_frame, encoded_frame.get());
+    scoped_ptr<EncodedFrame> encoded_frame(
+        new EncodedFrame());
+    // Test only supports VP8, currently.
+    CHECK_EQ(CODEC_VIDEO_VP8, GetParam());
+    vp8_encoder_.Encode(video_frame, base::TimeTicks(), encoded_frame.get());
+    // Rewrite frame IDs for testing purposes.
     encoded_frame->frame_id = last_frame_id_ + 1 + num_dropped_frames;
+    if (last_frame_id_ == 0)
+      encoded_frame->referenced_frame_id = encoded_frame->frame_id;
+    else
+      encoded_frame->referenced_frame_id = encoded_frame->frame_id - 1;
     last_frame_id_ = encoded_frame->frame_id;
 
     {
@@ -116,7 +127,7 @@ class VideoDecoderTest
     DCHECK(cast_environment_->CurrentlyOn(CastEnvironment::MAIN));
 
     // A NULL |video_frame| indicates a decode error, which we don't expect.
-    ASSERT_FALSE(!video_frame);
+    ASSERT_FALSE(!video_frame.get());
 
     // Did the decoder detect whether frames were dropped?
     EXPECT_EQ(should_be_continuous, is_continuous);
@@ -177,7 +188,7 @@ TEST_P(VideoDecoderTest, RecoversFromDroppedFrames) {
 
 INSTANTIATE_TEST_CASE_P(VideoDecoderTestScenarios,
                         VideoDecoderTest,
-                        ::testing::Values(transport::kVp8));
+                        ::testing::Values(CODEC_VIDEO_VP8));
 
 }  // namespace cast
 }  // namespace media

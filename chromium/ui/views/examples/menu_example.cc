@@ -28,12 +28,11 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
   ExampleMenuModel();
 
   // ui::SimpleMenuModel::Delegate:
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  bool IsCommandIdChecked(int command_id) const override;
+  bool IsCommandIdEnabled(int command_id) const override;
+  bool GetAcceleratorForCommandId(int command_id,
+                                  ui::Accelerator* accelerator) override;
+  void ExecuteCommand(int command_id, int event_flags) override;
 
  private:
   enum GroupID {
@@ -61,12 +60,11 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
 class ExampleMenuButton : public MenuButton, public MenuButtonListener {
  public:
   explicit ExampleMenuButton(const base::string16& test);
-  virtual ~ExampleMenuButton();
+  ~ExampleMenuButton() override;
 
  private:
   // MenuButtonListener:
-  virtual void OnMenuButtonClicked(View* source,
-                                   const gfx::Point& point) OVERRIDE;
+  void OnMenuButtonClicked(View* source, const gfx::Point& point) override;
 
   ui::SimpleMenuModel* GetMenuModel();
 
@@ -187,14 +185,13 @@ ExampleMenuButton::~ExampleMenuButton() {
 
 void ExampleMenuButton::OnMenuButtonClicked(View* source,
                                             const gfx::Point& point) {
-  menu_runner_.reset(new MenuRunner(GetMenuModel()));
+  menu_runner_.reset(new MenuRunner(GetMenuModel(), MenuRunner::HAS_MNEMONICS));
 
   if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
                               this,
                               gfx::Rect(point, gfx::Size()),
                               MENU_ANCHOR_TOPRIGHT,
-                              ui::MENU_SOURCE_NONE,
-                              MenuRunner::HAS_MNEMONICS) ==
+                              ui::MENU_SOURCE_NONE) ==
       MenuRunner::MENU_DELETED) {
     return;
   }

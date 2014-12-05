@@ -36,22 +36,13 @@ import urllib
 from common_includes import *
 import push_to_trunk
 
-SETTINGS_LOCATION = "SETTINGS_LOCATION"
-
-CONFIG = {
-  PERSISTFILE_BASENAME: "/tmp/v8-auto-push-tempfile",
-  DOT_GIT_LOCATION: ".git",
-  SETTINGS_LOCATION: "~/.auto-roll",
-}
-
-PUSH_MESSAGE_RE = re.compile(r".* \(based on bleeding_edge revision r(\d+)\)$")
-
+PUSH_MESSAGE_RE = re.compile(r".* \(based on ([a-fA-F0-9]+)\)$")
 
 class Preparation(Step):
   MESSAGE = "Preparation."
 
   def RunStep(self):
-    self.InitialEnvironmentChecks()
+    self.InitialEnvironmentChecks(self.default_cwd)
     self.CommonPrepare()
 
 
@@ -59,7 +50,7 @@ class CheckAutoPushSettings(Step):
   MESSAGE = "Checking settings file."
 
   def RunStep(self):
-    settings_file = os.path.realpath(self.Config(SETTINGS_LOCATION))
+    settings_file = os.path.realpath(self.Config("SETTINGS_LOCATION"))
     if os.path.exists(settings_file):
       settings_dict = json.loads(FileToText(settings_file))
       if settings_dict.get("enable_auto_roll") is False:
@@ -103,29 +94,36 @@ class CheckLastPush(Step):
       self.Die("Could not retrieve bleeding edge revision for trunk push %s"
                % last_push)
 
-    # TODO(machenbach): This metric counts all revisions. It could be
-    # improved by counting only the revisions on bleeding_edge.
-    if int(self["lkgr"]) - int(last_push_be) < 10:  # pragma: no cover
-      # This makes sure the script doesn't push twice in a row when the cron
-      # job retries several times.
-      self.Die("Last push too recently: %s" % last_push_be)
+    if self["lkgr"] == last_push_be:
+      print "Already pushed current lkgr %s" % last_push_be
+      return True
 
 
-class PushToTrunk(Step):
-  MESSAGE = "Pushing to trunk if specified."
+class PushToCandidates(Step):
+  MESSAGE = "Pushing to candidates if specified."
 
   def RunStep(self):
-    print "Pushing lkgr %s to trunk." % self["lkgr"]
+    print "Pushing lkgr %s to candidates." % self["lkgr"]
+
+    args = [
+      "--author", self._options.author,
+      "--reviewer", self._options.reviewer,
+      "--revision", self["lkgr"],
+      "--force",
+    ]
+
+    if self._options.svn:
+      args.extend(["--svn", self._options.svn])
+    if self._options.svn_config:
+      args.extend(["--svn-config", self._options.svn_config])
+    if self._options.vc_interface:
+      args.extend(["--vc-interface", self._options.vc_interface])
+    if self._options.work_dir:
+      args.extend(["--work-dir", self._options.work_dir])
 
     # TODO(machenbach): Update the script before calling it.
     if self._options.push:
-      P = push_to_trunk.PushToTrunk
-      self._side_effect_handler.Call(
-          P(push_to_trunk.CONFIG, self._side_effect_handler).Run,
-          ["--author", self._options.author,
-           "--reviewer", self._options.reviewer,
-           "--revision", self["lkgr"],
-           "--force"])
+      self._side_effect_handler.Call(push_to_trunk.PushToTrunk().Run, args)
 
 
 class AutoPush(ScriptsBase):
@@ -141,6 +139,12 @@ class AutoPush(ScriptsBase):
     options.requires_editor = False
     return True
 
+  def _Config(self):
+    return {
+      "PERSISTFILE_BASENAME": "/tmp/v8-auto-push-tempfile",
+      "SETTINGS_LOCATION": "~/.auto-roll",
+    }
+
   def _Steps(self):
     return [
       Preparation,
@@ -148,9 +152,9 @@ class AutoPush(ScriptsBase):
       CheckTreeStatus,
       FetchLKGR,
       CheckLastPush,
-      PushToTrunk,
+      PushToCandidates,
     ]
 
 
 if __name__ == "__main__":  # pragma: no cover
-  sys.exit(AutoPush(CONFIG).Run())
+  sys.exit(AutoPush().Run())

@@ -73,10 +73,18 @@ echo "Current HEAD: $hash"
 # Output log for upstream from current hash.
 if [ -n "$prev_hash" ]; then
   echo "git log from upstream:"
-  pretty_git_log="$(git log --no-merges --pretty="%h %s" $prev_hash..$hash)"
+  pretty_git_log="$(git log \
+                    --no-merges \
+                    --topo-order \
+                    --pretty="%h %s" \
+                    $prev_hash..$hash)"
   if [ -z "$pretty_git_log" ]; then
     echo "No log found. Checking for reverts."
-    pretty_git_log="$(git log --no-merges --pretty="%h %s" $hash..$prev_hash)"
+    pretty_git_log="$(git log \
+                      --no-merges \
+                      --topo-order \
+                      --pretty="%h %s" \
+                      $hash..$prev_hash)"
   fi
   echo "$pretty_git_log"
 fi

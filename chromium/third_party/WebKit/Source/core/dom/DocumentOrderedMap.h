@@ -31,59 +31,70 @@
 #ifndef DocumentOrderedMap_h
 #define DocumentOrderedMap_h
 
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/HashMap.h"
+#include "wtf/text/AtomicString.h"
+#include "wtf/text/AtomicStringHash.h"
 #include "wtf/text/StringImpl.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class TreeScope;
 
-class DocumentOrderedMap {
+class DocumentOrderedMap : public NoBaseWillBeGarbageCollected<DocumentOrderedMap> {
 public:
-    void add(StringImpl*, Element*);
-    void remove(StringImpl*, Element*);
+    static PassOwnPtrWillBeRawPtr<DocumentOrderedMap> create();
+    void add(const AtomicString&, Element*);
+    void remove(const AtomicString&, Element*);
 
-    bool contains(StringImpl*) const;
-    bool containsMultiple(StringImpl*) const;
+    bool contains(const AtomicString&) const;
+    bool containsMultiple(const AtomicString&) const;
     // concrete instantiations of the get<>() method template
-    Element* getElementById(StringImpl*, const TreeScope*) const;
-    const Vector<Element*>& getAllElementsById(StringImpl*, const TreeScope*) const;
-    Element* getElementByMapName(StringImpl*, const TreeScope*) const;
-    Element* getElementByLowercasedMapName(StringImpl*, const TreeScope*) const;
-    Element* getElementByLabelForAttribute(StringImpl*, const TreeScope*) const;
+    Element* getElementById(const AtomicString&, const TreeScope*) const;
+    const WillBeHeapVector<RawPtrWillBeMember<Element> >& getAllElementsById(const AtomicString&, const TreeScope*) const;
+    Element* getElementByMapName(const AtomicString&, const TreeScope*) const;
+    Element* getElementByLowercasedMapName(const AtomicString&, const TreeScope*) const;
+    Element* getElementByLabelForAttribute(const AtomicString&, const TreeScope*) const;
+
+    void trace(Visitor*);
 
 private:
-    template<bool keyMatches(StringImpl*, Element&)> Element* get(StringImpl*, const TreeScope*) const;
+    template<bool keyMatches(const AtomicString&, const Element&)>
+    Element* get(const AtomicString&, const TreeScope*) const;
 
-    struct MapEntry {
+    class MapEntry : public NoBaseWillBeGarbageCollected<MapEntry> {
+    public:
         explicit MapEntry(Element* firstElement)
             : element(firstElement)
             , count(1)
-        { }
+        {
+        }
 
-        Element* element;
+        void trace(Visitor*);
+
+        RawPtrWillBeMember<Element> element;
         unsigned count;
-        Vector<Element*> orderedList;
+        WillBeHeapVector<RawPtrWillBeMember<Element> > orderedList;
     };
 
-    typedef HashMap<StringImpl*, OwnPtr<MapEntry> > Map;
+    using Map = WillBeHeapHashMap<AtomicString, OwnPtrWillBeMember<MapEntry>>;
 
     mutable Map m_map;
 };
 
-inline bool DocumentOrderedMap::contains(StringImpl* id) const
+inline bool DocumentOrderedMap::contains(const AtomicString& id) const
 {
     return m_map.contains(id);
 }
 
-inline bool DocumentOrderedMap::containsMultiple(StringImpl* id) const
+inline bool DocumentOrderedMap::containsMultiple(const AtomicString& id) const
 {
     Map::const_iterator it = m_map.find(id);
     return it != m_map.end() && it->value->count > 1;
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentOrderedMap_h

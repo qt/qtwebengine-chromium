@@ -27,7 +27,7 @@
 #include "core/dom/NodeRareData.h"
 #include "wtf/Assertions.h"
 
-namespace WebCore {
+namespace blink {
 
 TagCollection::TagCollection(ContainerNode& rootNode, CollectionType type, const AtomicString& namespaceURI, const AtomicString& localName)
     : HTMLCollection(rootNode, type, DoesNotOverrideItemAfter)
@@ -56,10 +56,4 @@ bool TagCollection::elementMatches(const Element& testNode) const
     return m_namespaceURI == starAtom || m_namespaceURI == testNode.namespaceURI();
 }
 
-HTMLTagCollection::HTMLTagCollection(ContainerNode& rootNode, const AtomicString& localName)
-    : TagCollection(rootNode, HTMLTagCollectionType, starAtom, localName)
-    , m_loweredLocalName(localName.lower())
-{
-}
-
-} // namespace WebCore
+} // namespace blink

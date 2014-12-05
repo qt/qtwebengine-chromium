@@ -27,24 +27,25 @@
 #include "core/rendering/style/RenderStyle.h"
 #include "core/rendering/style/RenderStyleConstants.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
-class RenderQuote FINAL : public RenderInline {
+class RenderQuote final : public RenderInline {
 public:
     RenderQuote(Document*, const QuoteType);
     virtual ~RenderQuote();
+    virtual void trace(Visitor*) override;
     void attachQuote();
 
 private:
     void detachQuote();
 
-    virtual void willBeDestroyed() OVERRIDE;
-    virtual const char* renderName() const OVERRIDE { return "RenderQuote"; };
-    virtual bool isQuote() const OVERRIDE { return true; };
-    virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
-    virtual void willBeRemovedFromTree() OVERRIDE;
+    virtual void willBeDestroyed() override;
+    virtual const char* renderName() const override { return "RenderQuote"; };
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectQuote || RenderInline::isOfType(type); }
+    virtual void styleDidChange(StyleDifference, const RenderStyle*) override;
+    virtual void willBeRemovedFromTree() override;
 
     String computeText() const;
     void updateText();
@@ -52,16 +53,18 @@ private:
     void updateDepth();
     bool isAttached() { return m_attached; }
 
+    RenderTextFragment* findFragmentChild() const;
+
     QuoteType m_type;
     int m_depth;
-    RenderQuote* m_next;
-    RenderQuote* m_previous;
+    RawPtrWillBeMember<RenderQuote> m_next;
+    RawPtrWillBeMember<RenderQuote> m_previous;
     bool m_attached;
     String m_text;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderQuote, isQuote());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderQuote_h

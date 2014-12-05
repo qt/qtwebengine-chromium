@@ -34,17 +34,24 @@
 #include "platform/graphics/ImageObserver.h"
 #include "platform/graphics/skia/NativeImageSkia.h"
 #include "platform/graphics/skia/SkiaUtils.h"
-#include "wtf/CurrentTime.h"
 #include "wtf/PassRefPtr.h"
-#include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
+
+PassRefPtr<BitmapImage> BitmapImage::create(PassRefPtr<NativeImageSkia> nativeImage, ImageObserver* observer)
+{
+    if (!nativeImage) {
+        return BitmapImage::create(observer);
+    }
+
+    return adoptRef(new BitmapImage(nativeImage, observer));
+}
 
 BitmapImage::BitmapImage(ImageObserver* observer)
     : Image(observer)
     , m_currentFrame(0)
-    , m_frames(0)
+    , m_frames()
     , m_frameTimer(0)
     , m_repetitionCount(cAnimationNone)
     , m_repetitionCountStatus(Unknown)
@@ -98,6 +105,11 @@ BitmapImage::~BitmapImage()
 }
 
 bool BitmapImage::isBitmapImage() const
+{
+    return true;
+}
+
+bool BitmapImage::currentFrameHasSingleSecurityOrigin() const
 {
     return true;
 }
@@ -157,6 +169,7 @@ void BitmapImage::cacheFrame(size_t index)
     const IntSize frameSize(index ? m_source.frameSizeAtIndex(index) : m_size);
     if (frameSize != m_size)
         m_hasUniformFrameSize = false;
+
     if (m_frames[index].m_frame) {
         int deltaBytes = safeCast<int>(m_frames[index].m_frameBytes);
         // The fully-decoded frame will subsume the partially decoded data used
@@ -188,23 +201,14 @@ IntSize BitmapImage::sizeRespectingOrientation() const
     return m_sizeRespectingOrientation;
 }
 
-IntSize BitmapImage::currentFrameSize() const
-{
-    if (!m_currentFrame || m_hasUniformFrameSize)
-        return size();
-    IntSize frameSize = m_source.frameSizeAtIndex(m_currentFrame);
-    return frameSize;
-}
-
 bool BitmapImage::getHotSpot(IntPoint& hotSpot) const
 {
-    bool result = m_source.getHotSpot(hotSpot);
-    return result;
+    return m_source.getHotSpot(hotSpot);
 }
 
 bool BitmapImage::dataChanged(bool allDataReceived)
 {
-    TRACE_EVENT0("webkit", "BitmapImage::dataChanged");
+    TRACE_EVENT0("blink", "BitmapImage::dataChanged");
 
     // Clear all partially-decoded frames. For most image formats, there is only
     // one frame, but at least GIF and ICO can have more. With GIFs, the frames
@@ -244,11 +248,6 @@ bool BitmapImage::dataChanged(bool allDataReceived)
     return isSizeAvailable();
 }
 
-bool BitmapImage::isAllDataReceived() const
-{
-    return m_allDataReceived;
-}
-
 bool BitmapImage::hasColorProfile() const
 {
     return m_source.hasColorProfile();
@@ -259,25 +258,25 @@ String BitmapImage::filenameExtension() const
     return m_source.filenameExtension();
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode)
 {
     draw(ctxt, dstRect, srcRect, compositeOp, blendMode, DoNotRespectImageOrientation);
 }
 
-void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, blink::WebBlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
+void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator compositeOp, WebBlendMode blendMode, RespectImageOrientationEnum shouldRespectImageOrientation)
 {
     // Spin the animation to the correct frame before we try to draw it, so we
     // don't draw an old frame and then immediately need to draw a newer one,
     // causing flicker and wasting CPU.
     startAnimation();
 
-    RefPtr<NativeImageSkia> bm = nativeImageForCurrentFrame();
-    if (!bm)
+    RefPtr<NativeImageSkia> image = nativeImageForCurrentFrame();
+    if (!image)
         return; // It's too early and we don't have an image yet.
 
     FloatRect normDstRect = adjustForNegativeSize(dstRect);
     FloatRect normSrcRect = adjustForNegativeSize(srcRect);
-    normSrcRect.intersect(FloatRect(0, 0, bm->bitmap().width(), bm->bitmap().height()));
+    normSrcRect.intersect(FloatRect(0, 0, image->bitmap().width(), image->bitmap().height()));
 
     if (normSrcRect.isEmpty() || normDstRect.isEmpty())
         return; // Nothing to draw.
@@ -303,10 +302,17 @@ void BitmapImage::draw(GraphicsContext* ctxt, const FloatRect& dstRect, const Fl
         }
     }
 
-    bm->draw(ctxt, normSrcRect, normDstRect, WebCoreCompositeToSkiaComposite(compositeOp, blendMode));
+    image->draw(ctxt, normSrcRect, normDstRect, compositeOp, blendMode);
 
     if (ImageObserver* observer = imageObserver())
         observer->didDraw(this);
+}
+
+void BitmapImage::resetDecoder()
+{
+    ASSERT(isMainThread());
+
+    m_source.resetDecoder();
 }
 
 size_t BitmapImage::frameCount()
@@ -314,10 +320,10 @@ size_t BitmapImage::frameCount()
     if (!m_haveFrameCount) {
         m_frameCount = m_source.frameCount();
         // If decoder is not initialized yet, m_source.frameCount() returns 0.
-        if (m_frameCount) {
+        if (m_frameCount)
             m_haveFrameCount = true;
-        }
     }
+
     return m_frameCount;
 }
 
@@ -338,6 +344,7 @@ bool BitmapImage::ensureFrameIsCached(size_t index)
 
     if (index >= m_frames.size() || !m_frames[index].m_frame)
         cacheFrame(index);
+
     return true;
 }
 
@@ -345,6 +352,7 @@ PassRefPtr<NativeImageSkia> BitmapImage::frameAtIndex(size_t index)
 {
     if (!ensureFrameIsCached(index))
         return nullptr;
+
     return m_frames[index].m_frame;
 }
 
@@ -352,6 +360,7 @@ bool BitmapImage::frameIsCompleteAtIndex(size_t index)
 {
     if (index < m_frames.size() && m_frames[index].m_haveMetadata && m_frames[index].m_isComplete)
         return true;
+
     return m_source.frameIsCompleteAtIndex(index);
 }
 
@@ -359,12 +368,21 @@ float BitmapImage::frameDurationAtIndex(size_t index)
 {
     if (index < m_frames.size() && m_frames[index].m_haveMetadata)
         return m_frames[index].m_duration;
+
     return m_source.frameDurationAtIndex(index);
 }
 
 PassRefPtr<NativeImageSkia> BitmapImage::nativeImageForCurrentFrame()
 {
     return frameAtIndex(currentFrame());
+}
+
+PassRefPtr<Image> BitmapImage::imageForDefaultFrame()
+{
+    if (frameCount() > 1 && frameAtIndex(0))
+        return BitmapImage::create(frameAtIndex(0));
+
+    return Image::imageForDefaultFrame();
 }
 
 bool BitmapImage::frameHasAlphaAtIndex(size_t index)
@@ -399,14 +417,12 @@ ImageOrientation BitmapImage::frameOrientationAtIndex(size_t index)
     return m_source.orientationAtIndex(index);
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 bool BitmapImage::notSolidColor()
 {
     return size().width() != 1 || size().height() != 1 || frameCount() > 1;
 }
 #endif
-
-
 
 int BitmapImage::repetitionCount(bool imageKnownToBeComplete)
 {
@@ -548,6 +564,7 @@ bool BitmapImage::maybeAnimated()
         return false;
     if (frameCount() > 1)
         return true;
+
     return m_source.repetitionCount() != cAnimationNone;
 }
 
@@ -622,6 +639,7 @@ bool BitmapImage::mayFillWithSolidColor()
         checkForSolidColor();
         ASSERT(m_checkedForSolidColor);
     }
+
     return m_isSolidColor && !m_currentFrame;
 }
 
@@ -630,4 +648,4 @@ Color BitmapImage::solidColor() const
     return m_solidColor;
 }
 
-}
+} // namespace blink

@@ -7,7 +7,7 @@
 
 #include "cc/base/cc_export.h"
 #include "cc/resources/layer_updater.h"
-#include "ui/gfx/rect.h"
+#include "ui/gfx/geometry/rect.h"
 
 class SkCanvas;
 
@@ -22,26 +22,32 @@ class RenderingStatsInstrumentation;
 class CC_EXPORT ContentLayerUpdater : public LayerUpdater {
  public:
   void set_rendering_stats_instrumentation(RenderingStatsInstrumentation* rsi);
-  virtual void SetOpaque(bool opaque) OVERRIDE;
-  virtual void SetFillsBoundsCompletely(bool fills_bounds) OVERRIDE;
+  void SetOpaque(bool opaque) override;
+  void SetFillsBoundsCompletely(bool fills_bounds) override;
+  void SetBackgroundColor(SkColor background_color) override;
 
  protected:
   ContentLayerUpdater(scoped_ptr<LayerPainter> painter,
                       RenderingStatsInstrumentation* stats_instrumentation,
                       int layer_id);
-  virtual ~ContentLayerUpdater();
+  ~ContentLayerUpdater() override;
 
+  // Paints the contents. |content_size| size of the underlying layer in
+  // layer's content space. |paint_rect| bounds to paint in content space of the
+  // layer. Both |content_size| and |paint_rect| are in pixels.
   void PaintContents(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
+                     const gfx::Size& layer_content_size,
+                     const gfx::Rect& paint_rect,
                      float contents_width_scale,
-                     float contents_height_scale,
-                     gfx::Rect* resulting_opaque_rect);
-  gfx::Rect content_rect() const { return content_rect_; }
+                     float contents_height_scale);
+  gfx::Rect paint_rect() const { return paint_rect_; }
 
   bool layer_is_opaque() const { return layer_is_opaque_; }
   bool layer_fills_bounds_completely() const {
     return layer_fills_bounds_completely_;
   }
+
+  SkColor background_color() const { return background_color_; }
 
   RenderingStatsInstrumentation* rendering_stats_instrumentation_;
   int layer_id_;
@@ -52,8 +58,9 @@ class CC_EXPORT ContentLayerUpdater : public LayerUpdater {
   bool layer_fills_bounds_completely_;
 
  private:
-  gfx::Rect content_rect_;
+  gfx::Rect paint_rect_;
   scoped_ptr<LayerPainter> painter_;
+  SkColor background_color_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentLayerUpdater);
 };

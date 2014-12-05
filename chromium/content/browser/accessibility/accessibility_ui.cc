@@ -15,7 +15,9 @@
 #include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
+#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/common/view_message_enums.h"
+#include "content/grit/content_resources.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/render_process_host.h"
@@ -25,7 +27,6 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/common/url_constants.h"
-#include "grit/content_resources.h"
 #include "net/base/escape.h"
 
 static const char kDataFile[] = "targets-data.json";
@@ -63,11 +64,11 @@ base::DictionaryValue* BuildTargetDescriptor(
 }
 
 base::DictionaryValue* BuildTargetDescriptor(RenderViewHost* rvh) {
-  WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
-  std::string title;
-  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rvh);
-  AccessibilityMode accessibility_mode = rwhi->accessibility_mode();
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      WebContents::FromRenderViewHost(rvh));
+  AccessibilityMode accessibility_mode = web_contents->GetAccessibilityMode();
 
+  std::string title;
   GURL url;
   GURL favicon_url;
   if (web_contents) {
@@ -116,9 +117,9 @@ bool HandleRequestCallback(BrowserContext* current_context,
 
   scoped_ptr<base::DictionaryValue> data(new base::DictionaryValue());
   data->Set("list", rvh_list.release());
-  scoped_ptr<base::FundamentalValue> a11y_mode(base::Value::CreateIntegerValue(
-      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode()));
-  data->Set("global_a11y_mode", a11y_mode.release());
+  data->SetInteger(
+      "global_a11y_mode",
+      BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode());
 
   std::string json_string;
   base::JSONWriter::Write(data.get(), &json_string);
@@ -133,7 +134,6 @@ AccessibilityUI::AccessibilityUI(WebUI* web_ui) : WebUIController(web_ui) {
   // Set up the chrome://accessibility source.
   WebUIDataSource* html_source =
       WebUIDataSource::Create(kChromeUIAccessibilityHost);
-  html_source->SetUseJsonJSFormatV2();
 
   web_ui->RegisterMessageCallback(
       "toggleAccessibility",
@@ -178,14 +178,15 @@ void AccessibilityUI::ToggleAccessibility(const base::ListValue* args) {
   RenderViewHost* rvh = RenderViewHost::FromID(process_id, route_id);
   if (!rvh)
     return;
-  RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(rvh);
-  if (!rwhi)
-    return;
-  AccessibilityMode mode = rwhi->accessibility_mode();
-  if ((mode & AccessibilityModeComplete) != AccessibilityModeComplete)
-    rwhi->AddAccessibilityMode(AccessibilityModeComplete);
-  else
-    rwhi->ResetAccessibilityMode();
+  WebContentsImpl* web_contents = static_cast<WebContentsImpl*>(
+      WebContents::FromRenderViewHost(rvh));
+  AccessibilityMode mode = web_contents->GetAccessibilityMode();
+  if ((mode & AccessibilityModeComplete) != AccessibilityModeComplete) {
+    web_contents->AddAccessibilityMode(AccessibilityModeComplete);
+  } else {
+    web_contents->SetAccessibilityMode(
+        BrowserAccessibilityStateImpl::GetInstance()->accessibility_mode());
+  }
 }
 
 void AccessibilityUI::ToggleGlobalAccessibility(const base::ListValue* args) {
@@ -220,25 +221,10 @@ void AccessibilityUI::RequestAccessibilityTree(const base::ListValue* args) {
   }
 
   scoped_ptr<base::DictionaryValue> result(BuildTargetDescriptor(rvh));
-  RenderWidgetHostViewBase* host_view = static_cast<RenderWidgetHostViewBase*>(
-      WebContents::FromRenderViewHost(rvh)->GetRenderWidgetHostView());
-  if (!host_view) {
-    result->Set("error",
-                new base::StringValue("Could not get accessibility tree."));
-    web_ui()->CallJavascriptFunction("accessibility.showTree", *(result.get()));
-    return;
-  }
+  WebContents* web_contents = WebContents::FromRenderViewHost(rvh);
   scoped_ptr<AccessibilityTreeFormatter> formatter(
-      AccessibilityTreeFormatter::Create(rvh));
+      AccessibilityTreeFormatter::Create(web_contents));
   base::string16 accessibility_contents_utf16;
-  BrowserAccessibilityManager* manager =
-      host_view->GetBrowserAccessibilityManager();
-  if (!manager) {
-    result->Set("error",
-                new base::StringValue("Could not get accessibility tree."));
-    web_ui()->CallJavascriptFunction("accessibility.showTree", *(result.get()));
-    return;
-  }
   std::vector<AccessibilityTreeFormatter::Filter> filters;
   filters.push_back(AccessibilityTreeFormatter::Filter(
       base::ASCIIToUTF16("*"),

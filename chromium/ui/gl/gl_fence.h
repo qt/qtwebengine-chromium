@@ -15,6 +15,7 @@ class GL_EXPORT GLFence {
   GLFence();
   virtual ~GLFence();
 
+  static bool IsSupported();
   static GLFence* Create();
 
   // Creates a fence that is not guaranteed to signal until the current context
@@ -29,9 +30,6 @@ class GL_EXPORT GLFence {
   // Will block the server if supported, but might fall back to blocking the
   // client.
   virtual void ServerWait() = 0;
-
- protected:
-  static bool IsContextLost();
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GLFence);

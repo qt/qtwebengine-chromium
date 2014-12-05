@@ -26,40 +26,40 @@
 #ifndef MediaKeys_h
 #define MediaKeys_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/dom/ContextLifecycleObserver.h"
-#include "core/dom/ExecutionContext.h"
-#include "modules/EventTargetModules.h"
-#include "modules/encryptedmedia/MediaKeySession.h"
 #include "platform/Timer.h"
-#include "platform/heap/Handle.h"
-#include "wtf/Deque.h"
-#include "wtf/OwnPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/Uint8Array.h"
-#include "wtf/Vector.h"
+#include "wtf/Forward.h"
 #include "wtf/text/WTFString.h"
 
 namespace blink {
+
+class DOMArrayBuffer;
+class DOMArrayBufferView;
+class ExecutionContext;
+class MediaKeySession;
+class ScriptState;
 class WebContentDecryptionModule;
-}
-
-namespace WebCore {
-
-class HTMLMediaElement;
-class ExceptionState;
 
 // References are held by JS and HTMLMediaElement.
 // The WebContentDecryptionModule has the same lifetime as this object.
 class MediaKeys : public GarbageCollectedFinalized<MediaKeys>, public ContextLifecycleObserver, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static MediaKeys* create(ExecutionContext*, const String& keySystem, ExceptionState&);
-    ~MediaKeys();
+    MediaKeys(ExecutionContext*, const String& keySystem, PassOwnPtr<blink::WebContentDecryptionModule>);
+    virtual ~MediaKeys();
 
+    // FIXME: This should be removed after crbug.com/425186 is fully
+    // implemented.
     const String& keySystem() const { return m_keySystem; }
 
-    MediaKeySession* createSession(ExecutionContext*, const String& contentType, Uint8Array* initData, ExceptionState&);
+    MediaKeySession* createSession(ScriptState*, const String& sessionType);
 
+    ScriptPromise setServerCertificate(ScriptState*, DOMArrayBuffer* serverCertificate);
+    ScriptPromise setServerCertificate(ScriptState*, DOMArrayBufferView* serverCertificate);
+
+    // FIXME: Remove this method since it's not in the spec anymore.
     static bool isTypeSupported(const String& keySystem, const String& contentType);
 
     blink::WebContentDecryptionModule* contentDecryptionModule();
@@ -67,34 +67,22 @@ public:
     void trace(Visitor*);
 
     // ContextLifecycleObserver
-    virtual void contextDestroyed() OVERRIDE;
+    virtual void contextDestroyed() override;
 
-protected:
-    MediaKeys(ExecutionContext*, const String& keySystem, PassOwnPtr<blink::WebContentDecryptionModule>);
-    void initializeNewSessionTimerFired(Timer<MediaKeys>*);
+private:
+    class PendingAction;
+
+    ScriptPromise setServerCertificateInternal(ScriptState*, PassRefPtr<DOMArrayBuffer> initData);
+
+    void timerFired(Timer<MediaKeys>*);
 
     const String m_keySystem;
     OwnPtr<blink::WebContentDecryptionModule> m_cdm;
 
-    // FIXME: Check whether |initData| can be changed by JS. Maybe we should not pass it as a pointer.
-    class InitializeNewSessionData {
-        ALLOW_ONLY_INLINE_ALLOCATION();
-    public:
-        InitializeNewSessionData(MediaKeySession* session, const String& contentType, PassRefPtr<Uint8Array> initData)
-            : session(session)
-            , contentType(contentType)
-            , initData(initData) { }
-
-        void trace(Visitor*);
-
-        Member<MediaKeySession> session;
-        String contentType;
-        RefPtr<Uint8Array> initData;
-    };
-    HeapDeque<InitializeNewSessionData> m_pendingInitializeNewSessionData;
-    Timer<MediaKeys> m_initializeNewSessionTimer;
+    HeapDeque<Member<PendingAction> > m_pendingActions;
+    Timer<MediaKeys> m_timer;
 };
 
-}
+} // namespace blink
 
 #endif // MediaKeys_h

@@ -56,7 +56,7 @@ WebInspector.CPUProfileView = function(profileHeader)
     var option = options[optionName] || options[WebInspector.CPUProfileView._TypeFlame];
     this.viewSelectComboBox.select(option);
 
-    this._statusBarButtonsElement = document.createElement("span");
+    this._statusBarButtonsElement = createElement("span");
 
     this.focusButton = new WebInspector.StatusBarButton(WebInspector.UIString("Focus selected function."), "focus-profile-node-status-bar-item");
     this.focusButton.setEnabled(false);
@@ -88,6 +88,22 @@ WebInspector.CPUProfileView._TypeTree = "Tree";
 WebInspector.CPUProfileView._TypeHeavy = "Heavy";
 
 WebInspector.CPUProfileView.prototype = {
+    focus: function()
+    {
+        if (this._flameChart)
+            this._flameChart.focus();
+        else
+            WebInspector.View.prototype.focus.call(this);
+    },
+
+    /**
+     * @return {?WebInspector.Target}
+     */
+    target: function()
+    {
+        return this._profileHeader.target();
+    },
+
     /**
      * @param {!number} timeLeft
      * @param {!number} timeRight
@@ -316,22 +332,6 @@ WebInspector.CPUProfileView.prototype = {
     },
 
     /**
-     * @return {boolean}
-     */
-    showingFirstSearchResult: function()
-    {
-        return (this._currentSearchResultIndex === 0);
-    },
-
-    /**
-     * @return {boolean}
-     */
-    showingLastSearchResult: function()
-    {
-        return (this._searchResults && this._currentSearchResultIndex === (this._searchResults.length - 1));
-    },
-
-    /**
      * @return {number}
      */
     currentSearchResultIndex: function() {
@@ -364,12 +364,14 @@ WebInspector.CPUProfileView.prototype = {
     {
         var entryIndex = event.data;
         var node = this._dataProvider._entryNodes[entryIndex];
-        if (!node || !node.scriptId)
+        var target = this._profileHeader.target();
+        if (!node || !node.scriptId || !target)
             return;
-        var script = WebInspector.debuggerModel.scriptForId(node.scriptId)
+        var script = target.debuggerModel.scriptForId(node.scriptId)
         if (!script)
             return;
-        WebInspector.Revealer.reveal(script.rawLocationToUILocation(node.lineNumber));
+        var location = /** @type {!WebInspector.DebuggerModel.Location} */ (script.target().debuggerModel.createRawLocation(script, node.lineNumber, 0));
+        WebInspector.Revealer.reveal(WebInspector.debuggerWorkspaceBinding.rawLocationToUILocation(location));
     },
 
     _changeView: function()
@@ -481,7 +483,6 @@ WebInspector.CPUProfileView.prototype = {
 /**
  * @constructor
  * @extends {WebInspector.ProfileType}
- * @implements {WebInspector.CPUProfilerModel.Delegate}
  */
 WebInspector.CPUProfileType = function()
 {
@@ -492,7 +493,8 @@ WebInspector.CPUProfileType = function()
     this._anonymousConsoleProfileIdToTitle = {};
 
     WebInspector.CPUProfileType.instance = this;
-    WebInspector.cpuProfilerModel.setDelegate(this);
+    WebInspector.targetManager.addModelListener(WebInspector.CPUProfilerModel, WebInspector.CPUProfilerModel.EventTypes.ConsoleProfileStarted, this._consoleProfileStarted, this);
+    WebInspector.targetManager.addModelListener(WebInspector.CPUProfilerModel, WebInspector.CPUProfilerModel.EventTypes.ConsoleProfileFinished, this._consoleProfileFinished, this);
 }
 
 WebInspector.CPUProfileType.TypeId = "CPU";
@@ -538,36 +540,35 @@ WebInspector.CPUProfileType.prototype = {
     },
 
     /**
-     * @param {string} id
-     * @param {!WebInspector.DebuggerModel.Location} scriptLocation
-     * @param {string=} title
+     * @param {!WebInspector.Event} event
      */
-    consoleProfileStarted: function(id, scriptLocation, title)
+    _consoleProfileStarted: function(event)
     {
-        var resolvedTitle = title;
+        var protocolId = /** @type {string} */ (event.data.protocolId);
+        var scriptLocation = /** @type {!WebInspector.DebuggerModel.Location} */ (event.data.scriptLocation);
+        var resolvedTitle = /** @type {string|undefined} */ (event.data.title);
         if (!resolvedTitle) {
             resolvedTitle = WebInspector.UIString("Profile %s", this._nextAnonymousConsoleProfileNumber++);
-            this._anonymousConsoleProfileIdToTitle[id] = resolvedTitle;
+            this._anonymousConsoleProfileIdToTitle[protocolId] = resolvedTitle;
         }
         this._addMessageToConsole(WebInspector.ConsoleMessage.MessageType.Profile, scriptLocation, WebInspector.UIString("Profile '%s' started.", resolvedTitle));
     },
 
     /**
-     * @param {string} protocolId
-     * @param {!WebInspector.DebuggerModel.Location} scriptLocation
-     * @param {!ProfilerAgent.CPUProfile} cpuProfile
-     * @param {string=} title
+     * @param {!WebInspector.Event} event
      */
-    consoleProfileFinished: function(protocolId, scriptLocation, cpuProfile, title)
+    _consoleProfileFinished: function(event)
     {
-        var resolvedTitle = title;
-        if (typeof title === "undefined") {
+        var protocolId = /** @type {string} */ (event.data.protocolId);
+        var scriptLocation = /** @type {!WebInspector.DebuggerModel.Location} */ (event.data.scriptLocation);
+        var cpuProfile = /** @type {!ProfilerAgent.CPUProfile} */ (event.data.cpuProfile);
+        var resolvedTitle = /** @type {string|undefined} */ (event.data.title);
+        if (typeof resolvedTitle === "undefined") {
             resolvedTitle = this._anonymousConsoleProfileIdToTitle[protocolId];
             delete this._anonymousConsoleProfileIdToTitle[protocolId];
         }
 
-        var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-        var profile = new WebInspector.CPUProfileHeader(target, this, resolvedTitle);
+        var profile = new WebInspector.CPUProfileHeader(scriptLocation.target(), this, resolvedTitle);
         profile.setProtocolProfile(cpuProfile);
         this.addProfile(profile);
         this._addMessageToConsole(WebInspector.ConsoleMessage.MessageType.ProfileEnd, scriptLocation, WebInspector.UIString("Profile '%s' finished.", resolvedTitle));
@@ -581,8 +582,9 @@ WebInspector.CPUProfileType.prototype = {
     _addMessageToConsole: function(type, scriptLocation, messageText)
     {
         var script = scriptLocation.script();
+        var target = scriptLocation.target();
         var message = new WebInspector.ConsoleMessage(
-            WebInspector.console.target(),
+            target,
             WebInspector.ConsoleMessage.MessageSource.ConsoleAPI,
             WebInspector.ConsoleMessage.MessageLevel.Debug,
             messageText,
@@ -600,36 +602,27 @@ WebInspector.CPUProfileType.prototype = {
                 columnNumber: scriptLocation.columnNumber || 0
             }]);
 
-        WebInspector.console.addMessage(message);
-    },
-
-    /**
-     * @return {boolean}
-     */
-    isRecordingProfile: function()
-    {
-        return this._recording;
+        target.consoleModel.addMessage(message);
     },
 
     startRecordingProfile: function()
     {
-        if (this._profileBeingRecorded)
+        var target = WebInspector.context.flavor(WebInspector.Target);
+        if (this._profileBeingRecorded || !target)
             return;
-        var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
         var profile = new WebInspector.CPUProfileHeader(target, this);
         this.setProfileBeingRecorded(profile);
         this.addProfile(profile);
         profile.updateStatus(WebInspector.UIString("Recording\u2026"));
         this._recording = true;
-        WebInspector.cpuProfilerModel.setRecording(true);
-        WebInspector.userMetrics.ProfilesCPUProfileTaken.record();
-        ProfilerAgent.start();
+        target.cpuProfilerModel.startRecording();
     },
 
     stopRecordingProfile: function()
     {
         this._recording = false;
-        WebInspector.cpuProfilerModel.setRecording(false);
+        if (!this._profileBeingRecorded || !this._profileBeingRecorded.target())
+            return;
 
         /**
          * @param {?string} error
@@ -646,7 +639,7 @@ WebInspector.CPUProfileType.prototype = {
             this.setProfileBeingRecorded(null);
             this.dispatchEventToListeners(WebInspector.ProfileType.Events.ProfileComplete, recordedProfile);
         }
-        ProfilerAgent.stop(didStopProfiling.bind(this));
+        this._profileBeingRecorded.target().cpuProfilerModel.stopRecording(didStopProfiling.bind(this));
     },
 
     /**
@@ -656,8 +649,7 @@ WebInspector.CPUProfileType.prototype = {
      */
     createProfileLoadedFromFile: function(title)
     {
-        var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-        return new WebInspector.CPUProfileHeader(target, this, title);
+        return new WebInspector.CPUProfileHeader(null, this, title);
     },
 
     /**
@@ -676,13 +668,13 @@ WebInspector.CPUProfileType.prototype = {
  * @extends {WebInspector.ProfileHeader}
  * @implements {WebInspector.OutputStream}
  * @implements {WebInspector.OutputStreamDelegate}
- * @param {!WebInspector.Target} target
+ * @param {?WebInspector.Target} target
  * @param {!WebInspector.CPUProfileType} type
  * @param {string=} title
  */
 WebInspector.CPUProfileHeader = function(target, type, title)
 {
-    WebInspector.ProfileHeader.call(this, target, type, title || WebInspector.UIString("Profile %d", type._nextProfileUid));
+    WebInspector.ProfileHeader.call(this, target, type, title || WebInspector.UIString("Profile %d", type.nextProfileUid()));
     this._tempFile = null;
 }
 
@@ -714,7 +706,7 @@ WebInspector.CPUProfileHeader.prototype = {
 
     /**
      * @param {!WebInspector.ChunkedReader} reader
-     * @param {?Event} e
+     * @param {!Event} e
      */
     onError: function(reader, e)
     {
@@ -800,7 +792,7 @@ WebInspector.CPUProfileHeader.prototype = {
                     fileOutputStream.close();
             }
             if (this._failedToCreateTempFile) {
-                WebInspector.messageSink.addErrorMessage("Failed to open temp file with heap snapshot");
+                WebInspector.console.error("Failed to open temp file with heap snapshot");
                 fileOutputStream.close();
             } else if (this._tempFile) {
                 this._tempFile.read(didRead);
@@ -856,7 +848,7 @@ WebInspector.CPUProfileHeader.prototype = {
         {
             this._writeToTempFile(tempFile, serializedData);
         }
-        new WebInspector.TempFile("cpu-profiler", this.uid,  didCreateTempFile.bind(this));
+        new WebInspector.TempFile("cpu-profiler", String(this.uid), didCreateTempFile.bind(this));
     },
 
     /**
@@ -882,7 +874,7 @@ WebInspector.CPUProfileHeader.prototype = {
             tempFile.finishWriting();
             this._notifyTempFileReady();
         }
-        tempFile.write(serializedData, didWriteToTempFile.bind(this));
+        tempFile.write([serializedData], didWriteToTempFile.bind(this));
     },
 
     _notifyTempFileReady: function()

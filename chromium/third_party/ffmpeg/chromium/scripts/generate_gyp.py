@@ -131,7 +131,7 @@ GN_SOURCE_END = """]
 """
 
 # Controls GYP conditional stanza generation.
-SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon']
+SUPPORTED_ARCHITECTURES = ['ia32', 'arm', 'arm-neon', 'x64']
 SUPPORTED_TARGETS = ['Chromium', 'Chrome', 'ChromiumOS', 'ChromeOS']
 # Mac doesn't have any platform specific files, so just use linux and win.
 SUPPORTED_PLATFORMS = ['linux', 'win']
@@ -364,7 +364,7 @@ class SourceSet(object):
     # Only build a non-trivial conditional if it's a subset of all supported
     # architectures.
     arch_conditions = []
-    if self.architectures == set(SUPPORTED_ARCHITECTURES + ['x64']):
+    if self.architectures == set(SUPPORTED_ARCHITECTURES):
       arch_conditions.append('1')
     else:
       for arch in self.architectures:
@@ -418,25 +418,24 @@ class SourceSet(object):
     stanza += GYP_CONDITIONAL_STANZA_END % (conditions)
     return ''.join(stanza)
 
-  def WriteGnStanza(self, fd):
+  def GenerateGnStanza(self):
     """Generates a gyp conditional stanza representing this source set.
 
     TODO(scherkus): Having all this special case condition optimizing logic in
     here feels a bit dirty, but hey it works. Perhaps refactor if it starts
     getting out of hand.
-
-    Args:
-      fd: File object to write the stanza into.
     """
 
     # Only build a non-trivial conditional if it's a subset of all supported
     # architectures. targets. Arch conditions look like:
     #   (cpu_arch == "arm" || (cpu_arch == "arm" && arm_use_neon))
     arch_conditions = []
-    if self.architectures != set(SUPPORTED_ARCHITECTURES + ['x64']):
+    if self.architectures != set(SUPPORTED_ARCHITECTURES):
       for arch in self.architectures:
         if arch == 'arm-neon':
           arch_conditions.append('(cpu_arch == "arm" && arm_use_neon)')
+        elif arch == 'ia32':
+          arch_conditions.append('cpu_arch == "x86"')
         else:
           arch_conditions.append('cpu_arch == "%s"' % arch)
 
@@ -449,12 +448,12 @@ class SourceSet(object):
         branding_conditions.append('ffmpeg_branding == "%s"' % branding)
 
     # Platform conditions look like:
-    #   (os == "mac" || os == "linux")
+    #   (is_mac || is_linux)
     platform_conditions = []
     if (self.platforms != set(SUPPORTED_PLATFORMS) and
         self.platforms != set(['linux'])):
       for platform in self.platforms:
-        platform_conditions.append('os == "%s"' % platform)
+        platform_conditions.append('is_%s' % platform)
 
     # Remove 0-lengthed lists.
     conditions = filter(None, [' || '.join(arch_conditions),
@@ -466,46 +465,48 @@ class SourceSet(object):
     if len(conditions) > 1:
        conditions = [ '(%s)' % x for x in conditions ]
 
+    stanza = ''
     # Output a conditional wrapper around stanzas if necessary.
     if conditions:
-      fd.write(GN_CONDITION_BEGIN % ' && '.join(conditions))
-      def indent_write(s):
-        fd.write('  %s' % s)
+      stanza += GN_CONDITION_BEGIN % ' && '.join(conditions)
+      def indent(s):
+        return '  %s' % s
     else:
-      def indent_write(s):
-        fd.write(s)
+      def indent(s):
+        return s
 
     sources = sorted(n.replace('\\', '/') for n in self.sources)
 
     # Write out all C sources.
     c_sources = filter(IsCFile, sources)
     if c_sources:
-      indent_write(GN_C_SOURCES_BEGIN)
+      stanza += indent(GN_C_SOURCES_BEGIN)
       for name in c_sources:
-        indent_write(GN_SOURCE_ITEM % (name))
-      indent_write(GN_SOURCE_END)
+        stanza += indent(GN_SOURCE_ITEM % (name))
+      stanza += indent(GN_SOURCE_END)
 
     # Write out all assembly sources.
     gas_sources = filter(IsGasFile, sources)
     if gas_sources:
-      indent_write(GN_GAS_SOURCES_BEGIN)
+      stanza += indent(GN_GAS_SOURCES_BEGIN)
       for name in gas_sources:
-        indent_write(GN_SOURCE_ITEM % (name))
-      indent_write(GN_SOURCE_END)
+        stanza += indent(GN_SOURCE_ITEM % (name))
+      stanza += indent(GN_SOURCE_END)
 
     # Write out all assembly sources.
     yasm_sources = filter(IsYasmFile, sources)
     if yasm_sources:
-      indent_write(GN_YASM_SOURCES_BEGIN)
+      stanza += indent(GN_YASM_SOURCES_BEGIN)
       for name in yasm_sources:
-        indent_write(GN_SOURCE_ITEM % (name))
-      indent_write(GN_SOURCE_END)
+        stanza += indent(GN_SOURCE_ITEM % (name))
+      stanza += indent(GN_SOURCE_END)
 
     # Close the conditional if necessary.
     if conditions:
-      fd.write(GN_CONDITION_END)
+      stanza += GN_CONDITION_END
     else:
-      fd.write('\n')  # Makeup the spacing for the remove conditional.
+      stanza += '\n'  # Makeup the spacing for the remove conditional.
+    return stanza
 
 
 def CreatePairwiseDisjointSets(sets):
@@ -613,7 +614,7 @@ def WriteGn(fd, build_dir, disjoint_sets):
 
   # Generate conditional stanza for each disjoint source set.
   for s in reversed(disjoint_sets):
-    s.WriteGnStanza(fd)
+    fd.write(s.GenerateGnStanza())
 
 
 def main():
@@ -641,11 +642,6 @@ def main():
         # Generate the set of source files to build said target.
         s = GetSourceFileSet(object_to_sources, object_files)
         sets.append(SourceSet(s, set([arch]), set([target]), set([platform])))
-
-        # x64 and ia32 are the same file set.
-        if arch == 'ia32':
-          sets.append(SourceSet(s, set(['x64']), set([target]),
-                      set([platform])))
 
   sets = CreatePairwiseDisjointSets(sets)
   # Open for writing.

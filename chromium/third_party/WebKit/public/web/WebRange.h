@@ -36,11 +36,9 @@
 #include "public/platform/WebPrivatePtr.h"
 #include "public/platform/WebVector.h"
 
-namespace WebCore { class Range; }
-
 namespace blink {
 
-struct WebFloatQuad;
+class Range;
 class WebNode;
 class WebString;
 
@@ -74,15 +72,13 @@ public:
 
     BLINK_EXPORT static WebRange fromDocumentRange(WebLocalFrame*, int start, int length);
 
-    BLINK_EXPORT WebVector<WebFloatQuad> textQuads() const;
-
 #if BLINK_IMPLEMENTATION
-    WebRange(const PassRefPtrWillBeRawPtr<WebCore::Range>&);
-    operator PassRefPtrWillBeRawPtr<WebCore::Range>() const;
+    WebRange(const PassRefPtrWillBeRawPtr<Range>&);
+    operator PassRefPtrWillBeRawPtr<Range>() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::Range> m_private;
+    WebPrivatePtr<Range> m_private;
 };
 
 } // namespace blink

@@ -35,13 +35,13 @@ namespace views {
 class VIEWS_EXPORT DesktopCaptureClient : public aura::client::CaptureClient {
  public:
   explicit DesktopCaptureClient(aura::Window* root);
-  virtual ~DesktopCaptureClient();
+  ~DesktopCaptureClient() override;
 
   // Overridden from aura::client::CaptureClient:
-  virtual void SetCapture(aura::Window* window) OVERRIDE;
-  virtual void ReleaseCapture(aura::Window* window) OVERRIDE;
-  virtual aura::Window* GetCaptureWindow() OVERRIDE;
-  virtual aura::Window* GetGlobalCaptureWindow() OVERRIDE;
+  void SetCapture(aura::Window* window) override;
+  void ReleaseCapture(aura::Window* window) override;
+  aura::Window* GetCaptureWindow() override;
+  aura::Window* GetGlobalCaptureWindow() override;
 
  private:
   typedef std::set<DesktopCaptureClient*> CaptureClients;

@@ -46,9 +46,9 @@ SkOSWindow::~SkOSWindow() {
 }
 
 void SkOSWindow::closeWindow() {
-    if (NULL != fUnixWindow.fDisplay) {
+    if (fUnixWindow.fDisplay) {
         this->detach();
-        SkASSERT(NULL != fUnixWindow.fGc);
+        SkASSERT(fUnixWindow.fGc);
         XFreeGC(fUnixWindow.fDisplay, fUnixWindow.fGc);
         fUnixWindow.fGc = NULL;
         XDestroyWindow(fUnixWindow.fDisplay, fUnixWindow.fWin);
@@ -64,9 +64,9 @@ void SkOSWindow::initWindow(int requestedMSAASampleCount, AttachmentInfo* info) 
         this->closeWindow();
     }
     // presence of fDisplay means we already have a window
-    if (NULL != fUnixWindow.fDisplay) {
-        if (NULL != info) {
-            if (NULL != fVi) {
+    if (fUnixWindow.fDisplay) {
+        if (info) {
+            if (fVi) {
                 glXGetConfig(fUnixWindow.fDisplay, fVi, GLX_SAMPLES_ARB, &info->fSampleCount);
                 glXGetConfig(fUnixWindow.fDisplay, fVi, GLX_STENCIL_SIZE, &info->fStencilBits);
             } else {
@@ -110,7 +110,7 @@ void SkOSWindow::initWindow(int requestedMSAASampleCount, AttachmentInfo* info) 
     }
 
     if (fVi) {
-        if (NULL != info) {
+        if (info) {
             glXGetConfig(dsp, fVi, GLX_SAMPLES_ARB, &info->fSampleCount);
             glXGetConfig(dsp, fVi, GLX_STENCIL_SIZE, &info->fStencilBits);
         }
@@ -132,7 +132,7 @@ void SkOSWindow::initWindow(int requestedMSAASampleCount, AttachmentInfo* info) 
                                          CWEventMask | CWColormap,
                                          &swa);
     } else {
-        if (NULL != info) {
+        if (info) {
             info->fSampleCount = 0;
             info->fStencilBits = 0;
         }
@@ -200,11 +200,13 @@ static bool MyXNextEventWithDelay(Display* dsp, XEvent* evt) {
     return true;
 }
 
+static Atom wm_delete_window_message;
+
 SkOSWindow::NextXEventResult SkOSWindow::nextXEvent() {
     XEvent evt;
     Display* dsp = fUnixWindow.fDisplay;
 
-    if (!MyXNextEventWithDelay(fUnixWindow.fDisplay, &evt)) {
+    if (!MyXNextEventWithDelay(dsp, &evt)) {
         return kContinue_NextXEventResult;
     }
 
@@ -248,6 +250,11 @@ SkOSWindow::NextXEventResult SkOSWindow::nextXEvent() {
         case KeyRelease:
             this->handleKeyUp(XKeyToSkKey(XkbKeycodeToKeysym(dsp, evt.xkey.keycode, 0, 0)));
             break;
+        case ClientMessage:
+            if ((Atom)evt.xclient.data.l[0] == wm_delete_window_message) {
+                return kQuitRequest_NextXEventResult;
+            }
+            // fallthrough
         default:
             // Do nothing for other events
             break;
@@ -261,6 +268,9 @@ void SkOSWindow::loop() {
         return;
     }
     Window win = fUnixWindow.fWin;
+
+    wm_delete_window_message = XInternAtom(dsp, "WM_DELETE_WINDOW", False);
+    XSetWMProtocols(dsp, win, &wm_delete_window_message, 1);
 
     XSelectInput(dsp, win, EVENT_MASK);
 
@@ -300,7 +310,7 @@ void SkOSWindow::loop() {
 }
 
 void SkOSWindow::mapWindowAndWait() {
-    SkASSERT(NULL != fUnixWindow.fDisplay);
+    SkASSERT(fUnixWindow.fDisplay);
     Display* dsp = fUnixWindow.fDisplay;
     Window win = fUnixWindow.fWin;
     XMapWindow(dsp, win);
@@ -323,7 +333,7 @@ bool SkOSWindow::attach(SkBackEndTypes, int msaaSampleCount, AttachmentInfo* inf
         return false;
     }
     if (NULL == fUnixWindow.fGLContext) {
-        SkASSERT(NULL != fVi);
+        SkASSERT(fVi);
 
         fUnixWindow.fGLContext = glXCreateContext(fUnixWindow.fDisplay,
                                                   fVi,
@@ -355,7 +365,7 @@ void SkOSWindow::detach() {
 }
 
 void SkOSWindow::present() {
-    if (NULL != fUnixWindow.fDisplay && NULL != fUnixWindow.fGLContext) {
+    if (fUnixWindow.fDisplay && fUnixWindow.fGLContext) {
         glXSwapBuffers(fUnixWindow.fDisplay, fUnixWindow.fWin);
     }
 }
@@ -395,7 +405,7 @@ void SkOSWindow::doPaint() {
         return;
     }
     // If we are drawing with GL, we don't need XPutImage.
-    if (NULL != fUnixWindow.fGLContext) {
+    if (fUnixWindow.fGLContext) {
         return;
     }
     // Draw the bitmap to the screen.

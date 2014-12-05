@@ -32,19 +32,20 @@
 
 #include "public/web/WebLeakDetector.h"
 
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8GCController.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8GCController.h"
 #include "core/dom/Document.h"
 #include "core/fetch/MemoryCache.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/inspector/InspectorCounters.h"
+#include "core/rendering/RenderObject.h"
+#include "modules/webaudio/AudioNode.h"
 #include "platform/Timer.h"
 #include "public/web/WebDocument.h"
 #include "public/web/WebLocalFrame.h"
+#include "web/WebEmbeddedWorkerImpl.h"
 
 #include <v8.h>
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -54,20 +55,21 @@ namespace {
 // Please see comment in Heap::collectAllGarbage()
 static const int kNumberOfGCsToClaimChains = 5;
 
-class WebLeakDetectorImpl FINAL : public WebLeakDetector {
+class WebLeakDetectorImpl final : public WebLeakDetector {
 WTF_MAKE_NONCOPYABLE(WebLeakDetectorImpl);
 public:
     explicit WebLeakDetectorImpl(WebLeakDetectorClient* client)
         : m_client(client)
         , m_delayedGCAndReportTimer(this, &WebLeakDetectorImpl::delayedGCAndReport)
         , m_delayedReportTimer(this, &WebLeakDetectorImpl::delayedReport)
+        , m_numberOfGCNeeded(0)
     {
         ASSERT(m_client);
     }
 
     virtual ~WebLeakDetectorImpl() { }
 
-    virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) OVERRIDE;
+    virtual void collectGarbageAndGetDOMCounts(WebLocalFrame*) override;
 
 private:
     void delayedGCAndReport(Timer<WebLeakDetectorImpl>*);
@@ -76,10 +78,12 @@ private:
     WebLeakDetectorClient* m_client;
     Timer<WebLeakDetectorImpl> m_delayedGCAndReportTimer;
     Timer<WebLeakDetectorImpl> m_delayedReportTimer;
+    int m_numberOfGCNeeded;
 };
 
 void WebLeakDetectorImpl::collectGarbageAndGetDOMCounts(WebLocalFrame* frame)
 {
+    WebEmbeddedWorkerImpl::terminateAll();
     memoryCache()->evictResources();
 
     {
@@ -98,19 +102,25 @@ void WebLeakDetectorImpl::collectGarbageAndGetDOMCounts(WebLocalFrame* frame)
     // This method is called from navigation hook inside FrameLoader,
     // so previous document is still held by the loader until the next event loop.
     // Complete all pending tasks before proceeding to gc.
+    m_numberOfGCNeeded = 2;
     m_delayedGCAndReportTimer.startOneShot(0, FROM_HERE);
 }
 
 void WebLeakDetectorImpl::delayedGCAndReport(Timer<WebLeakDetectorImpl>*)
 {
-    // We do a second GC here to address flakiness: Resource GC may have postponed clean-up tasks to next event loop.
+    // We do a second and third GC here to address flakiness
+    // The second GC is necessary as Resource GC may have postponed clean-up tasks to next event loop.
+    // The third GC is necessary for cleaning up Document after worker object died.
 
     for (int i = 0; i < kNumberOfGCsToClaimChains; ++i)
         V8GCController::collectGarbage(V8PerIsolateData::mainThreadIsolate());
     // Note: Oilpan precise GC is scheduled at the end of the event loop.
 
     // Inspect counters on the next event loop.
-    m_delayedReportTimer.startOneShot(0, FROM_HERE);
+    if (--m_numberOfGCNeeded)
+        m_delayedGCAndReportTimer.startOneShot(0, FROM_HERE);
+    else
+        m_delayedReportTimer.startOneShot(0, FROM_HERE);
 }
 
 void WebLeakDetectorImpl::delayedReport(Timer<WebLeakDetectorImpl>*)
@@ -118,10 +128,17 @@ void WebLeakDetectorImpl::delayedReport(Timer<WebLeakDetectorImpl>*)
     ASSERT(m_client);
 
     WebLeakDetectorClient::Result result;
+    result.numberOfLiveAudioNodes = AudioNode::instanceCount();
     result.numberOfLiveDocuments = InspectorCounters::counterValue(InspectorCounters::DocumentCounter);
     result.numberOfLiveNodes = InspectorCounters::counterValue(InspectorCounters::NodeCounter);
+    result.numberOfLiveRenderObjects = RenderObject::instanceCount();
+    result.numberOfLiveResources = Resource::instanceCount();
 
     m_client->onLeakDetectionComplete(result);
+
+#ifndef NDEBUG
+    showLiveDocumentInstances();
+#endif
 }
 
 } // namespace

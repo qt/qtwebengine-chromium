@@ -9,7 +9,6 @@
 #include "cc/base/cc_export.h"
 #include "cc/resources/ui_resource_bitmap.h"
 #include "cc/resources/ui_resource_client.h"
-#include "ui/gfx/size.h"
 
 namespace cc {
 
@@ -25,11 +24,10 @@ class CC_EXPORT ScopedUIResource : public UIResourceClient {
  public:
   static scoped_ptr<ScopedUIResource> Create(LayerTreeHost* host,
                                              const UIResourceBitmap& bitmap);
-  virtual ~ScopedUIResource();
+  ~ScopedUIResource() override;
 
   // UIResourceClient implementation.
-  virtual UIResourceBitmap GetBitmap(UIResourceId uid,
-                                     bool resource_lost) OVERRIDE;
+  UIResourceBitmap GetBitmap(UIResourceId uid, bool resource_lost) override;
   UIResourceId id() { return id_; }
 
  protected:

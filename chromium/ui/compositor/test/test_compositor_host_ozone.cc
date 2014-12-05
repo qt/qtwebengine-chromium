@@ -10,7 +10,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop/message_loop.h"
+#include "base/thread_task_runner_handle.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/rect.h"
 
@@ -24,8 +24,8 @@ class TestCompositorHostOzone : public TestCompositorHost {
 
  private:
   // Overridden from TestCompositorHost:
-  virtual void Show() OVERRIDE;
-  virtual ui::Compositor* GetCompositor() OVERRIDE;
+  virtual void Show() override;
+  virtual ui::Compositor* GetCompositor() override;
 
   void Draw();
 
@@ -54,7 +54,9 @@ void TestCompositorHostOzone::Show() {
   // with a non-0 widget.
   // TODO(rjkroege): Use a "real" ozone widget when it is
   // available: http://crbug.com/255128
-  compositor_.reset(new ui::Compositor(1, context_factory_));
+  compositor_.reset(new ui::Compositor(1,
+                                       context_factory_,
+                                       base::ThreadTaskRunnerHandle::Get()));
   compositor_->SetScaleAndSize(1.0f, bounds_.size());
 }
 

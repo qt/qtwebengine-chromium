@@ -31,25 +31,25 @@
 #include "config.h"
 #include "core/inspector/InspectorHistory.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Node.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-class UndoableStateMark FINAL : public InspectorHistory::Action {
+class UndoableStateMark final : public InspectorHistory::Action {
 public:
     UndoableStateMark() : InspectorHistory::Action("[UndoableState]") { }
 
-    virtual bool perform(ExceptionState&) OVERRIDE { return true; }
+    virtual bool perform(ExceptionState&) override { return true; }
 
-    virtual bool undo(ExceptionState&) OVERRIDE { return true; }
+    virtual bool undo(ExceptionState&) override { return true; }
 
-    virtual bool redo(ExceptionState&) OVERRIDE { return true; }
+    virtual bool redo(ExceptionState&) override { return true; }
 
-    virtual bool isUndoableStateMark() OVERRIDE { return true; }
+    virtual bool isUndoableStateMark() override { return true; }
 };
 
 }
@@ -155,5 +155,5 @@ void InspectorHistory::trace(Visitor* visitor)
     visitor->trace(m_history);
 }
 
-} // namespace WebCore
+} // namespace blink
 

@@ -12,6 +12,7 @@
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/scoped_vector.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
@@ -1391,7 +1392,7 @@ TEST_F(CookieMonsterTest, DeleteCookieByName) {
   }
 }
 
-TEST_F(CookieMonsterTest, InitializeFromCookieMonster) {
+TEST_F(CookieMonsterTest, ImportCookiesFromCookieMonster) {
   scoped_refptr<CookieMonster> cm_1(new CookieMonster(NULL, NULL));
   CookieOptions options;
 
@@ -1407,7 +1408,7 @@ TEST_F(CookieMonsterTest, InitializeFromCookieMonster) {
 
   CookieList cookies_1 = GetAllCookies(cm_1.get());
   scoped_refptr<CookieMonster> cm_2(new CookieMonster(NULL, NULL));
-  ASSERT_TRUE(cm_2->InitializeFrom(cookies_1));
+  ASSERT_TRUE(cm_2->ImportCookies(cookies_1));
   CookieList cookies_2 = GetAllCookies(cm_2.get());
 
   size_t expected_size = 3;
@@ -1958,7 +1959,7 @@ TEST_F(CookieMonsterTest, BackingStoreCommunication) {
   {
     scoped_refptr<CookieMonster> cmout(new CookieMonster(store.get(), NULL));
     for (const CookiesInputInfo* p = input_info;
-         p < &input_info[ARRAYSIZE_UNSAFE(input_info)];
+         p < &input_info[arraysize(input_info)];
          p++) {
       EXPECT_TRUE(SetCookieWithDetails(cmout.get(),
                                        p->url,
@@ -2112,7 +2113,7 @@ TEST_F(CookieMonsterTest, MAYBE_GarbageCollectionTriggers) {
     }
   };
 
-  for (int ci = 0; ci < static_cast<int>(ARRAYSIZE_UNSAFE(test_cases)); ++ci) {
+  for (int ci = 0; ci < static_cast<int>(arraysize(test_cases)); ++ci) {
     const TestCase *test_case = &test_cases[ci];
     scoped_refptr<CookieMonster> cm(
         CreateMonsterFromStoreForGC(
@@ -2165,7 +2166,7 @@ class FlushablePersistentStore : public CookieMonster::PersistentCookieStore {
  public:
   FlushablePersistentStore() : flush_count_(0) {}
 
-  virtual void Load(const LoadedCallback& loaded_callback) OVERRIDE {
+  void Load(const LoadedCallback& loaded_callback) override {
     std::vector<CanonicalCookie*> out_cookies;
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
@@ -2173,18 +2174,17 @@ class FlushablePersistentStore : public CookieMonster::PersistentCookieStore {
                    new net::LoadedCallbackTask(loaded_callback, out_cookies)));
   }
 
-  virtual void LoadCookiesForKey(
-      const std::string& key,
-      const LoadedCallback& loaded_callback) OVERRIDE {
+  void LoadCookiesForKey(const std::string& key,
+                         const LoadedCallback& loaded_callback) override {
     Load(loaded_callback);
   }
 
-  virtual void AddCookie(const CanonicalCookie&) OVERRIDE {}
-  virtual void UpdateCookieAccessTime(const CanonicalCookie&) OVERRIDE {}
-  virtual void DeleteCookie(const CanonicalCookie&) OVERRIDE {}
-  virtual void SetForceKeepSessionState() OVERRIDE {}
+  void AddCookie(const CanonicalCookie&) override {}
+  void UpdateCookieAccessTime(const CanonicalCookie&) override {}
+  void DeleteCookie(const CanonicalCookie&) override {}
+  void SetForceKeepSessionState() override {}
 
-  virtual void Flush(const base::Closure& callback) OVERRIDE {
+  void Flush(const base::Closure& callback) override {
     ++flush_count_;
     if (!callback.is_null())
       callback.Run();
@@ -2195,7 +2195,7 @@ class FlushablePersistentStore : public CookieMonster::PersistentCookieStore {
   }
 
  private:
-  virtual ~FlushablePersistentStore() {}
+  ~FlushablePersistentStore() override {}
 
   volatile int flush_count_;
 };
@@ -2736,6 +2736,153 @@ TEST_F(CookieMonsterTest, ControlCharacterPurge) {
   scoped_refptr<CookieMonster> cm(new CookieMonster(store.get(), NULL));
 
   EXPECT_EQ("foo=bar; hello=world", GetCookies(cm.get(), url));
+}
+
+class CookieMonsterNotificationTest : public CookieMonsterTest {
+ public:
+  CookieMonsterNotificationTest()
+      : test_url_("http://www.google.com/foo"),
+        store_(new MockPersistentCookieStore),
+        monster_(new CookieMonster(store_.get(), NULL)) {}
+
+  ~CookieMonsterNotificationTest() override {}
+
+  CookieMonster* monster() { return monster_.get(); }
+
+ protected:
+  const GURL test_url_;
+
+ private:
+  scoped_refptr<MockPersistentCookieStore> store_;
+  scoped_refptr<CookieMonster> monster_;
+};
+
+void RecordCookieChanges(std::vector<net::CanonicalCookie>* out_cookies,
+                         std::vector<bool>* out_removes,
+                         const net::CanonicalCookie& cookie,
+                         bool removed) {
+  DCHECK(out_cookies);
+  out_cookies->push_back(cookie);
+  if (out_removes)
+    out_removes->push_back(removed);
+}
+
+TEST_F(CookieMonsterNotificationTest, NoNotifyWithNoCookie) {
+  std::vector<net::CanonicalCookie> cookies;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies, nullptr)));
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0U, cookies.size());
+}
+
+TEST_F(CookieMonsterNotificationTest, NoNotifyWithInitialCookie) {
+  std::vector<net::CanonicalCookie> cookies;
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies, nullptr)));
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(0U, cookies.size());
+}
+
+TEST_F(CookieMonsterNotificationTest, NotifyOnSet) {
+  std::vector<net::CanonicalCookie> cookies;
+  std::vector<bool> removes;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies.size());
+  EXPECT_EQ(1U, removes.size());
+
+  EXPECT_EQ("abc", cookies[0].Name());
+  EXPECT_EQ("def", cookies[0].Value());
+  EXPECT_FALSE(removes[0]);
+}
+
+TEST_F(CookieMonsterNotificationTest, NotifyOnDelete) {
+  std::vector<net::CanonicalCookie> cookies;
+  std::vector<bool> removes;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies.size());
+  EXPECT_EQ(1U, removes.size());
+
+  DeleteCookie(monster(), test_url_, "abc");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(2U, cookies.size());
+  EXPECT_EQ(2U, removes.size());
+
+  EXPECT_EQ("abc", cookies[1].Name());
+  EXPECT_EQ("def", cookies[1].Value());
+  EXPECT_TRUE(removes[1]);
+}
+
+TEST_F(CookieMonsterNotificationTest, NotifyOnUpdate) {
+  std::vector<net::CanonicalCookie> cookies;
+  std::vector<bool> removes;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies, &removes)));
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies.size());
+
+  // Replacing an existing cookie is actually a two-phase delete + set
+  // operation, so we get an extra notification.
+  SetCookie(monster(), test_url_, "abc=ghi");
+  base::MessageLoop::current()->RunUntilIdle();
+
+  EXPECT_EQ(3U, cookies.size());
+  EXPECT_EQ(3U, removes.size());
+
+  EXPECT_EQ("abc", cookies[1].Name());
+  EXPECT_EQ("def", cookies[1].Value());
+  EXPECT_TRUE(removes[1]);
+
+  EXPECT_EQ("abc", cookies[2].Name());
+  EXPECT_EQ("ghi", cookies[2].Value());
+  EXPECT_FALSE(removes[2]);
+}
+
+TEST_F(CookieMonsterNotificationTest, MultipleNotifies) {
+  std::vector<net::CanonicalCookie> cookies0;
+  std::vector<net::CanonicalCookie> cookies1;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub0(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies0, nullptr)));
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub1(
+      monster()->AddCallbackForCookie(test_url_, "def",
+          base::Bind(&RecordCookieChanges, &cookies1, nullptr)));
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies0.size());
+  EXPECT_EQ(0U, cookies1.size());
+  SetCookie(monster(), test_url_, "def=abc");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies0.size());
+  EXPECT_EQ(1U, cookies1.size());
+}
+
+TEST_F(CookieMonsterNotificationTest, MultipleSameNotifies) {
+  std::vector<net::CanonicalCookie> cookies0;
+  std::vector<net::CanonicalCookie> cookies1;
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub0(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies0, nullptr)));
+  scoped_ptr<CookieStore::CookieChangedSubscription> sub1(
+      monster()->AddCallbackForCookie(test_url_, "abc",
+          base::Bind(&RecordCookieChanges, &cookies1, nullptr)));
+  SetCookie(monster(), test_url_, "abc=def");
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(1U, cookies0.size());
+  EXPECT_EQ(1U, cookies0.size());
 }
 
 }  // namespace net

@@ -26,15 +26,15 @@
 #ifndef SpeechRecognitionResult_h
 #define SpeechRecognitionResult_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "modules/speech/SpeechRecognitionAlternative.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-class SpeechRecognitionResult FINAL : public GarbageCollectedFinalized<SpeechRecognitionResult>, public ScriptWrappable {
+class SpeechRecognitionResult final : public GarbageCollected<SpeechRecognitionResult>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    ~SpeechRecognitionResult();
     static SpeechRecognitionResult* create(const HeapVector<Member<SpeechRecognitionAlternative> >&, bool final);
 
     unsigned long length() { return m_alternatives.size(); }
@@ -50,6 +50,6 @@ private:
     HeapVector<Member<SpeechRecognitionAlternative> > m_alternatives;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SpeechRecognitionResult_h

@@ -4,7 +4,7 @@
 /*                                                                         */
 /*    Anti-aliasing renderer interface (body).                             */
 /*                                                                         */
-/*  Copyright 2000-2001, 2002, 2003, 2004, 2005, 2006, 2009 by             */
+/*  Copyright 2000-2006, 2009-2012 by                                      */
 /*  David Turner, Robert Wilhelm, and Werner Lemberg.                      */
 /*                                                                         */
 /*  This file is part of the FreeType project, and may only be used,       */
@@ -105,7 +105,10 @@
     FT_Error     error;
     FT_Outline*  outline = NULL;
     FT_BBox      cbox;
-    FT_UInt      width, height, height_org, width_org, pitch;
+    FT_Pos       width, height, pitch;
+#ifndef FT_CONFIG_OPTION_SUBPIXEL_RENDERING
+    FT_Pos       height_org, width_org;
+#endif
     FT_Bitmap*   bitmap;
     FT_Memory    memory;
     FT_Int       hmul = mode == FT_RENDER_MODE_LCD;
@@ -140,13 +143,33 @@
     cbox.xMax = FT_PIX_CEIL( cbox.xMax );
     cbox.yMax = FT_PIX_CEIL( cbox.yMax );
 
-    width  = (FT_UInt)( ( cbox.xMax - cbox.xMin ) >> 6 );
-    height = (FT_UInt)( ( cbox.yMax - cbox.yMin ) >> 6 );
+    if ( cbox.xMin < 0 && cbox.xMax > FT_INT_MAX + cbox.xMin )
+    {
+      FT_ERROR(( "ft_smooth_render_generic: glyph too large:"
+                 " xMin = %d, xMax = %d\n",
+                 cbox.xMin >> 6, cbox.xMax >> 6 ));
+      return Smooth_Err_Raster_Overflow;
+    }
+    else
+      width  = ( cbox.xMax - cbox.xMin ) >> 6;
+
+    if ( cbox.yMin < 0 && cbox.yMax > FT_INT_MAX + cbox.yMin )
+    {
+      FT_ERROR(( "ft_smooth_render_generic: glyph too large:"
+                 " yMin = %d, yMax = %d\n",
+                 cbox.yMin >> 6, cbox.yMax >> 6 ));
+      return Smooth_Err_Raster_Overflow;
+    }
+    else
+      height = ( cbox.yMax - cbox.yMin ) >> 6;
+
     bitmap = &slot->bitmap;
     memory = render->root.memory;
 
+#ifndef FT_CONFIG_OPTION_SUBPIXEL_RENDERING
     width_org  = width;
     height_org = height;
+#endif
 
     /* release old bitmap buffer */
     if ( slot->internal->flags & FT_GLYPH_OWN_BITMAP )
@@ -200,9 +223,9 @@
 
     /* Required check is ( pitch * height < FT_ULONG_MAX ),     */
     /* but we care realistic cases only. Always pitch <= width. */
-    if ( width > 0xFFFFU || height > 0xFFFFU )
+    if ( width > 0x7FFF || height > 0x7FFF )
     {
-      FT_ERROR(( "ft_smooth_render_generic: glyph too large: %d x %d\n",
+      FT_ERROR(( "ft_smooth_render_generic: glyph too large: %u x %u\n",
                  width, height ));
       return Smooth_Err_Raster_Overflow;
     }

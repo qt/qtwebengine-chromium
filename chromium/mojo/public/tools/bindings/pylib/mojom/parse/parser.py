@@ -8,9 +8,6 @@ import imp
 import os.path
 import sys
 
-# Disable lint check for finding modules:
-# pylint: disable=F0401
-
 def _GetDirAbove(dirname):
   """Returns the directory "above" this file containing |dirname| (which must
   also be "above" this file)."""
@@ -29,29 +26,14 @@ from ply import lex
 from ply import yacc
 
 from ..error import Error
-import ast
-from lexer import Lexer
+from . import ast
+from .lexer import Lexer
 
 
 _MAX_ORDINAL_VALUE = 0xffffffff
+_MAX_ARRAY_SIZE = 0xffffffff
 
 
-def _ListFromConcat(*items):
-  """Generate list by concatenating inputs (note: only concatenates lists, not
-  tuples or other iterables)."""
-  itemsout = []
-  for item in items:
-    if item is None:
-      continue
-    if type(item) is not type([]):
-      itemsout.append(item)
-    else:
-      itemsout.extend(item)
-  return itemsout
-
-
-# Disable lint check for exceptions deriving from Exception:
-# pylint: disable=W0710
 class ParseError(Error):
   """Class for errors from the parser."""
 
@@ -69,34 +51,66 @@ class Parser(object):
     self.source = source
     self.filename = filename
 
-  def p_root(self, p):
-    """root : import root
-            | module
-            | definitions"""
-    if len(p) > 2:
-      p[0] = _ListFromConcat(p[1], p[2])
-    else:
-      # Generator expects a module. If one wasn't specified insert one with an
-      # empty name.
-      if p[1][0] != 'MODULE':
-        p[0] = [('MODULE', '', None, p[1])]
-      else:
-        p[0] = [p[1]]
+  # Names of functions
+  #
+  # In general, we name functions after the left-hand-side of the rule(s) that
+  # they handle. E.g., |p_foo_bar| for a rule |foo_bar : ...|.
+  #
+  # There may be multiple functions handling rules for the same left-hand-side;
+  # then we name the functions |p_foo_bar_N| (for left-hand-side |foo_bar|),
+  # where N is a number (numbered starting from 1). Note that using multiple
+  # functions is actually more efficient than having single functions handle
+  # multiple rules (and, e.g., distinguishing them by examining |len(p)|).
+  #
+  # It's also possible to have a function handling multiple rules with different
+  # left-hand-sides. We do not do this.
+  #
+  # See http://www.dabeaz.com/ply/ply.html#ply_nn25 for more details.
+
+  # TODO(vtl): Get rid of the braces in the module "statement". (Consider
+  # renaming "module" -> "package".) Then we'll be able to have a single rule
+  # for root (by making module "optional").
+  def p_root_1(self, p):
+    """root : """
+    p[0] = ast.Mojom(None, ast.ImportList(), [])
+
+  def p_root_2(self, p):
+    """root : root module"""
+    if p[1].module is not None:
+      raise ParseError(self.filename,
+                       "Multiple \"module\" statements not allowed:",
+                       p[2].lineno, snippet=self._GetSnippet(p[2].lineno))
+    if p[1].import_list.items or p[1].definition_list:
+      raise ParseError(
+          self.filename,
+          "\"module\" statements must precede imports and definitions:",
+          p[2].lineno, snippet=self._GetSnippet(p[2].lineno))
+    p[0] = p[1]
+    p[0].module = p[2]
+
+  def p_root_3(self, p):
+    """root : root import"""
+    if p[1].definition_list:
+      raise ParseError(self.filename,
+                       "\"import\" statements must precede definitions:",
+                       p[2].lineno, snippet=self._GetSnippet(p[2].lineno))
+    p[0] = p[1]
+    p[0].import_list.Append(p[2])
+
+  def p_root_4(self, p):
+    """root : root definition"""
+    p[0] = p[1]
+    p[0].definition_list.append(p[2])
 
   def p_import(self, p):
-    """import : IMPORT STRING_LITERAL"""
+    """import : IMPORT STRING_LITERAL SEMI"""
     # 'eval' the literal to strip the quotes.
-    p[0] = ('IMPORT', eval(p[2]))
+    # TODO(vtl): This eval is dubious. We should unquote/unescape ourselves.
+    p[0] = ast.Import(eval(p[2]), filename=self.filename, lineno=p.lineno(2))
 
   def p_module(self, p):
-    """module : attribute_section MODULE identifier LBRACE definitions RBRACE"""
-    p[0] = ('MODULE', p[3], p[1], p[5])
-
-  def p_definitions(self, p):
-    """definitions : definition definitions
-                   | """
-    if len(p) > 1:
-      p[0] = _ListFromConcat(p[1], p[2])
+    """module : attribute_section MODULE identifier_wrapped SEMI"""
+    p[0] = ast.Module(p[3], p[1], filename=self.filename, lineno=p.lineno(2))
 
   def p_definition(self, p):
     """definition : struct
@@ -105,25 +119,35 @@ class Parser(object):
                   | const"""
     p[0] = p[1]
 
-  def p_attribute_section(self, p):
-    """attribute_section : LBRACKET attributes RBRACKET
-                         | """
-    if len(p) > 3:
-      p[0] = p[2]
+  def p_attribute_section_1(self, p):
+    """attribute_section : """
+    p[0] = None
 
-  def p_attributes(self, p):
-    """attributes : attribute
-                  | attribute COMMA attributes
-                  | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
+  def p_attribute_section_2(self, p):
+    """attribute_section : LBRACKET attribute_list RBRACKET"""
+    p[0] = p[2]
+
+  def p_attribute_list_1(self, p):
+    """attribute_list : """
+    p[0] = ast.AttributeList()
+
+  def p_attribute_list_2(self, p):
+    """attribute_list : nonempty_attribute_list"""
+    p[0] = p[1]
+
+  def p_nonempty_attribute_list_1(self, p):
+    """nonempty_attribute_list : attribute"""
+    p[0] = ast.AttributeList(p[1])
+
+  def p_nonempty_attribute_list_2(self, p):
+    """nonempty_attribute_list : nonempty_attribute_list COMMA attribute"""
+    p[0] = p[1]
+    p[0].Append(p[3])
 
   def p_attribute(self, p):
     """attribute : NAME EQUALS evaled_literal
                  | NAME EQUALS NAME"""
-    p[0] = ('ATTRIBUTE', p[1], p[3])
+    p[0] = ast.Attribute(p[1], p[3], filename=self.filename, lineno=p.lineno(1))
 
   def p_evaled_literal(self, p):
     """evaled_literal : literal"""
@@ -132,68 +156,95 @@ class Parser(object):
 
   def p_struct(self, p):
     """struct : attribute_section STRUCT NAME LBRACE struct_body RBRACE SEMI"""
-    p[0] = ('STRUCT', p[3], p[1], p[5])
+    p[0] = ast.Struct(p[3], p[1], p[5])
 
-  def p_struct_body(self, p):
-    """struct_body : field struct_body
-                   | enum struct_body
-                   | const struct_body
-                   | """
-    if len(p) > 1:
-      p[0] = _ListFromConcat(p[1], p[2])
+  def p_struct_body_1(self, p):
+    """struct_body : """
+    p[0] = ast.StructBody()
 
-  def p_field(self, p):
-    """field : typename NAME ordinal default SEMI"""
-    p[0] = ('FIELD', p[1], p[2], p[3], p[4])
+  def p_struct_body_2(self, p):
+    """struct_body : struct_body const
+                   | struct_body enum
+                   | struct_body struct_field"""
+    p[0] = p[1]
+    p[0].Append(p[2])
 
-  def p_default(self, p):
-    """default : EQUALS constant
-               | """
-    if len(p) > 2:
-      p[0] = p[2]
+  def p_struct_field(self, p):
+    """struct_field : typename NAME ordinal default SEMI"""
+    p[0] = ast.StructField(p[2], p[3], p[1], p[4])
+
+  def p_default_1(self, p):
+    """default : """
+    p[0] = None
+
+  def p_default_2(self, p):
+    """default : EQUALS constant"""
+    p[0] = p[2]
 
   def p_interface(self, p):
     """interface : attribute_section INTERFACE NAME LBRACE interface_body \
                        RBRACE SEMI"""
-    p[0] = ('INTERFACE', p[3], p[1], p[5])
+    p[0] = ast.Interface(p[3], p[1], p[5])
 
-  def p_interface_body(self, p):
-    """interface_body : method interface_body
-                      | enum interface_body
-                      | const interface_body
-                      | """
-    if len(p) > 1:
-      p[0] = _ListFromConcat(p[1], p[2])
+  def p_interface_body_1(self, p):
+    """interface_body : """
+    p[0] = ast.InterfaceBody()
 
-  def p_response(self, p):
-    """response : RESPONSE LPAREN parameters RPAREN
-                | """
-    if len(p) > 3:
-      p[0] = p[3]
+  def p_interface_body_2(self, p):
+    """interface_body : interface_body const
+                      | interface_body enum
+                      | interface_body method"""
+    p[0] = p[1]
+    p[0].Append(p[2])
+
+  def p_response_1(self, p):
+    """response : """
+    p[0] = None
+
+  def p_response_2(self, p):
+    """response : RESPONSE LPAREN parameter_list RPAREN"""
+    p[0] = p[3]
 
   def p_method(self, p):
-    """method : NAME ordinal LPAREN parameters RPAREN response SEMI"""
-    p[0] = ('METHOD', p[1], p[4], p[2], p[6])
+    """method : NAME ordinal LPAREN parameter_list RPAREN response SEMI"""
+    p[0] = ast.Method(p[1], p[2], p[4], p[6])
 
-  def p_parameters(self, p):
-    """parameters : parameter
-                  | parameter COMMA parameters
-                  | """
-    if len(p) == 1:
-      p[0] = []
-    elif len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
+  def p_parameter_list_1(self, p):
+    """parameter_list : """
+    p[0] = ast.ParameterList()
+
+  def p_parameter_list_2(self, p):
+    """parameter_list : nonempty_parameter_list"""
+    p[0] = p[1]
+
+  def p_nonempty_parameter_list_1(self, p):
+    """nonempty_parameter_list : parameter"""
+    p[0] = ast.ParameterList(p[1])
+
+  def p_nonempty_parameter_list_2(self, p):
+    """nonempty_parameter_list : nonempty_parameter_list COMMA parameter"""
+    p[0] = p[1]
+    p[0].Append(p[3])
 
   def p_parameter(self, p):
     """parameter : typename NAME ordinal"""
-    p[0] = ('PARAM', p[1], p[2], p[3])
+    p[0] = ast.Parameter(p[2], p[3], p[1],
+                         filename=self.filename, lineno=p.lineno(2))
 
   def p_typename(self, p):
-    """typename : basictypename
-                | array
-                | interfacerequest"""
+    """typename : nonnullable_typename QSTN
+                | nonnullable_typename"""
+    if len(p) == 2:
+      p[0] = p[1]
+    else:
+      p[0] = p[1] + "?"
+
+  def p_nonnullable_typename(self, p):
+    """nonnullable_typename : basictypename
+                            | array
+                            | fixed_array
+                            | associative_array
+                            | interfacerequest"""
     p[0] = p[1]
 
   def p_basictypename(self, p):
@@ -219,50 +270,63 @@ class Parser(object):
       p[0] = "handle<" + p[3] + ">"
 
   def p_array(self, p):
-    """array : typename LBRACKET RBRACKET"""
-    p[0] = p[1] + "[]"
+    """array : ARRAY LANGLE typename RANGLE"""
+    p[0] = p[3] + "[]"
+
+  def p_fixed_array(self, p):
+    """fixed_array : ARRAY LANGLE typename COMMA INT_CONST_DEC RANGLE"""
+    value = int(p[5])
+    if value == 0 or value > _MAX_ARRAY_SIZE:
+      raise ParseError(self.filename, "Fixed array size %d invalid:" % value,
+                       lineno=p.lineno(5),
+                       snippet=self._GetSnippet(p.lineno(5)))
+    p[0] = p[3] + "[" + p[5] + "]"
+
+  def p_associative_array(self, p):
+    """associative_array : MAP LANGLE identifier COMMA typename RANGLE"""
+    p[0] = p[5] + "{" + p[3] + "}"
 
   def p_interfacerequest(self, p):
     """interfacerequest : identifier AMP"""
     p[0] = p[1] + "&"
 
-  def p_ordinal(self, p):
-    """ordinal : ORDINAL
-               | """
-    if len(p) > 1:
-      value = int(p[1][1:])
-      if value > _MAX_ORDINAL_VALUE:
-        raise ParseError(self.filename, "Ordinal value %d too large:" % value,
-                         lineno=p.lineno(1),
-                         snippet=self._GetSnippet(p.lineno(1)))
-      p[0] = ast.Ordinal(value, filename=self.filename, lineno=p.lineno(1))
-    else:
-      p[0] = ast.Ordinal(None)
+  def p_ordinal_1(self, p):
+    """ordinal : """
+    p[0] = None
+
+  def p_ordinal_2(self, p):
+    """ordinal : ORDINAL"""
+    value = int(p[1][1:])
+    if value > _MAX_ORDINAL_VALUE:
+      raise ParseError(self.filename, "Ordinal value %d too large:" % value,
+                       lineno=p.lineno(1),
+                       snippet=self._GetSnippet(p.lineno(1)))
+    p[0] = ast.Ordinal(value, filename=self.filename, lineno=p.lineno(1))
 
   def p_enum(self, p):
-    """enum : ENUM NAME LBRACE enum_fields RBRACE SEMI"""
-    p[0] = ('ENUM', p[2], p[4])
+    """enum : ENUM NAME LBRACE nonempty_enum_value_list RBRACE SEMI
+            | ENUM NAME LBRACE nonempty_enum_value_list COMMA RBRACE SEMI"""
+    p[0] = ast.Enum(p[2], p[4], filename=self.filename, lineno=p.lineno(1))
 
-  def p_enum_fields(self, p):
-    """enum_fields : enum_field
-                   | enum_field COMMA enum_fields
-                   | """
-    if len(p) == 2:
-      p[0] = _ListFromConcat(p[1])
-    elif len(p) > 3:
-      p[0] = _ListFromConcat(p[1], p[3])
+  def p_nonempty_enum_value_list_1(self, p):
+    """nonempty_enum_value_list : enum_value"""
+    p[0] = ast.EnumValueList(p[1])
 
-  def p_enum_field(self, p):
-    """enum_field : NAME
-                  | NAME EQUALS constant"""
-    if len(p) == 2:
-      p[0] = ('ENUM_FIELD', p[1], None)
-    else:
-      p[0] = ('ENUM_FIELD', p[1], p[3])
+  def p_nonempty_enum_value_list_2(self, p):
+    """nonempty_enum_value_list : nonempty_enum_value_list COMMA enum_value"""
+    p[0] = p[1]
+    p[0].Append(p[3])
+
+  def p_enum_value(self, p):
+    """enum_value : NAME
+                  | NAME EQUALS int
+                  | NAME EQUALS identifier_wrapped"""
+    p[0] = ast.EnumValue(p[1], p[3] if len(p) == 4 else None,
+                         filename=self.filename, lineno=p.lineno(1))
 
   def p_const(self, p):
     """const : CONST typename NAME EQUALS constant SEMI"""
-    p[0] = ('CONST', p[2], p[3], p[5])
+    p[0] = ast.Const(p[3], p[2], p[5])
 
   def p_constant(self, p):
     """constant : literal
@@ -273,31 +337,38 @@ class Parser(object):
     """identifier_wrapped : identifier"""
     p[0] = ('IDENTIFIER', p[1])
 
+  # TODO(vtl): Make this produce a "wrapped" identifier (probably as an
+  # |ast.Identifier|, to be added) and get rid of identifier_wrapped.
   def p_identifier(self, p):
     """identifier : NAME
                   | NAME DOT identifier"""
     p[0] = ''.join(p[1:])
 
   def p_literal(self, p):
-    """literal : number
-               | CHAR_CONST
+    """literal : int
+               | float
                | TRUE
                | FALSE
                | DEFAULT
                | STRING_LITERAL"""
     p[0] = p[1]
 
-  def p_number(self, p):
-    """number : digits
-              | PLUS digits
-              | MINUS digits"""
+  def p_int(self, p):
+    """int : int_const
+           | PLUS int_const
+           | MINUS int_const"""
     p[0] = ''.join(p[1:])
 
-  def p_digits(self, p):
-    """digits : INT_CONST_DEC
-              | INT_CONST_HEX
-              | FLOAT_CONST"""
+  def p_int_const(self, p):
+    """int_const : INT_CONST_DEC
+                 | INT_CONST_HEX"""
     p[0] = p[1]
+
+  def p_float(self, p):
+    """float : FLOAT_CONST
+             | PLUS FLOAT_CONST
+             | MINUS FLOAT_CONST"""
+    p[0] = ''.join(p[1:])
 
   def p_error(self, e):
     if e is None:

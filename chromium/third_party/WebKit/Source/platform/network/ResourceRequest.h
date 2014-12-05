@@ -34,9 +34,10 @@
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/KURL.h"
 #include "platform/weborigin/Referrer.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 enum ResourceRequestCachePolicy {
     UseProtocolCachePolicy, // normal load
@@ -51,28 +52,6 @@ struct CrossThreadResourceRequestData;
 class PLATFORM_EXPORT ResourceRequest {
     WTF_MAKE_FAST_ALLOCATED;
 public:
-    // The type of this ResourceRequest, based on how the resource will be used.
-    enum TargetType {
-        TargetIsMainFrame,
-        TargetIsSubframe,
-        TargetIsSubresource, // Resource is a generic subresource. (Generally a specific type should be specified)
-        TargetIsStyleSheet,
-        TargetIsScript,
-        TargetIsFont,
-        TargetIsImage,
-        TargetIsObject,
-        TargetIsMedia,
-        TargetIsWorker,
-        TargetIsSharedWorker,
-        TargetIsPrefetch,
-        TargetIsFavicon,
-        TargetIsXHR,
-        TargetIsTextTrack,
-        TargetIsPing,
-        TargetIsServiceWorker,
-        TargetIsUnspecified,
-    };
-
     class ExtraData : public RefCounted<ExtraData> {
     public:
         virtual ~ExtraData() { }
@@ -80,23 +59,17 @@ public:
 
     ResourceRequest()
     {
-        initialize(KURL(), UseProtocolCachePolicy);
+        initialize(KURL());
     }
 
     ResourceRequest(const String& urlString)
     {
-        initialize(KURL(ParsedURLString, urlString), UseProtocolCachePolicy);
+        initialize(KURL(ParsedURLString, urlString));
     }
 
     ResourceRequest(const KURL& url)
     {
-        initialize(url, UseProtocolCachePolicy);
-    }
-
-    ResourceRequest(const KURL& url, const Referrer& referrer, ResourceRequestCachePolicy cachePolicy = UseProtocolCachePolicy)
-    {
-        initialize(url, cachePolicy);
-        setHTTPReferrer(referrer);
+        initialize(url);
     }
 
     static PassOwnPtr<ResourceRequest> adopt(PassOwnPtr<CrossThreadResourceRequestData>);
@@ -140,12 +113,13 @@ public:
 
     const AtomicString& httpReferrer() const { return httpHeaderField("Referer"); }
     ReferrerPolicy referrerPolicy() const { return m_referrerPolicy; }
-    void setHTTPReferrer(const Referrer& httpReferrer) { setHTTPHeaderField("Referer", httpReferrer.referrer); m_referrerPolicy = httpReferrer.referrerPolicy; }
+    void setHTTPReferrer(const Referrer&);
     void clearHTTPReferrer();
 
     const AtomicString& httpOrigin() const { return httpHeaderField("Origin"); }
     void setHTTPOrigin(const AtomicString& httpOrigin) { setHTTPHeaderField("Origin", httpOrigin); }
     void clearHTTPOrigin();
+    void addHTTPOriginIfNeeded(const AtomicString& origin);
 
     const AtomicString& httpUserAgent() const { return httpHeaderField("User-Agent"); }
     void setHTTPUserAgent(const AtomicString& httpUserAgent) { setHTTPHeaderField("User-Agent", httpUserAgent); }
@@ -197,17 +171,29 @@ public:
     bool downloadToFile() const { return m_downloadToFile; }
     void setDownloadToFile(bool downloadToFile) { m_downloadToFile = downloadToFile; }
 
+    // True if the request should not be handled by the ServiceWorker.
+    bool skipServiceWorker() const { return m_skipServiceWorker; }
+    void setSkipServiceWorker(bool skipServiceWorker) { m_skipServiceWorker = skipServiceWorker; }
+
     // Extra data associated with this request.
     ExtraData* extraData() const { return m_extraData.get(); }
     void setExtraData(PassRefPtr<ExtraData> extraData) { m_extraData = extraData; }
 
-    // What this request is for.
-    TargetType targetType() const { return m_targetType; }
-    void setTargetType(TargetType type) { m_targetType = type; }
+    WebURLRequest::RequestContext requestContext() const { return m_requestContext; }
+    void setRequestContext(WebURLRequest::RequestContext context) { m_requestContext = context; }
 
-    bool cacheControlContainsNoCache();
-    bool cacheControlContainsNoStore();
-    bool hasCacheValidatorFields();
+    WebURLRequest::FrameType frameType() const { return m_frameType; }
+    void setFrameType(WebURLRequest::FrameType frameType) { m_frameType = frameType; }
+
+    WebURLRequest::FetchRequestMode fetchRequestMode() const { return m_fetchRequestMode; }
+    void setFetchRequestMode(WebURLRequest::FetchRequestMode mode) { m_fetchRequestMode = mode; }
+
+    WebURLRequest::FetchCredentialsMode fetchCredentialsMode() const { return m_fetchCredentialsMode; }
+    void setFetchCredentialsMode(WebURLRequest::FetchCredentialsMode mode) { m_fetchCredentialsMode = mode; }
+
+    bool cacheControlContainsNoCache() const;
+    bool cacheControlContainsNoStore() const;
+    bool hasCacheValidatorFields() const;
 
     static double defaultTimeoutInterval(); // May return 0 when using platform default.
     static void setDefaultTimeoutInterval(double);
@@ -215,7 +201,9 @@ public:
     static bool compare(const ResourceRequest&, const ResourceRequest&);
 
 private:
-    void initialize(const KURL& url, ResourceRequestCachePolicy cachePolicy);
+    void initialize(const KURL&);
+
+    const CacheControlHeader& cacheControlHeader() const;
 
     KURL m_url;
     ResourceRequestCachePolicy m_cachePolicy;
@@ -229,15 +217,20 @@ private:
     bool m_reportRawHeaders : 1;
     bool m_hasUserGesture : 1;
     bool m_downloadToFile : 1;
+    bool m_skipServiceWorker : 1;
     ResourceLoadPriority m_priority;
     int m_intraPriorityValue;
     int m_requestorID;
     int m_requestorProcessID;
     int m_appCacheHostID;
     RefPtr<ExtraData> m_extraData;
-    TargetType m_targetType;
+    WebURLRequest::RequestContext m_requestContext;
+    WebURLRequest::FrameType m_frameType;
+    WebURLRequest::FetchRequestMode m_fetchRequestMode;
+    WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
-    CacheControlHeader m_cacheControlHeader;
+
+    mutable CacheControlHeader m_cacheControlHeaderCache;
 
     static double s_defaultTimeoutInterval;
 };
@@ -264,17 +257,21 @@ public:
     bool m_reportUploadProgress;
     bool m_hasUserGesture;
     bool m_downloadToFile;
+    bool m_skipServiceWorker;
     ResourceLoadPriority m_priority;
     int m_intraPriorityValue;
     int m_requestorID;
     int m_requestorProcessID;
     int m_appCacheHostID;
-    ResourceRequest::TargetType m_targetType;
+    WebURLRequest::RequestContext m_requestContext;
+    WebURLRequest::FrameType m_frameType;
+    WebURLRequest::FetchRequestMode m_fetchRequestMode;
+    WebURLRequest::FetchCredentialsMode m_fetchCredentialsMode;
     ReferrerPolicy m_referrerPolicy;
 };
 
 unsigned initializeMaximumHTTPConnectionCountPerHost();
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ResourceRequest_h

@@ -84,6 +84,22 @@ namespace WTF {
         const T& last() const { ASSERT(m_start != m_end); return *(--end()); }
         PassType takeLast();
 
+        T& at(size_t i)
+        {
+            RELEASE_ASSERT(i < size());
+            size_t right = m_buffer.capacity() - m_start;
+            return i < right ? m_buffer.buffer()[m_start + i] : m_buffer.buffer()[i - right];
+        }
+        const T& at(size_t i) const
+        {
+            RELEASE_ASSERT(i < size());
+            size_t right = m_buffer.capacity() - m_start;
+            return i < right ? m_buffer.buffer()[m_start + i] : m_buffer.buffer()[i - right];
+        }
+
+        T& operator[](size_t i) { return at(i); }
+        const T& operator[](size_t i) const { return at(i); }
+
         template<typename U> void append(const U&);
         template<typename U> void prepend(const U&);
         void removeFirst();
@@ -224,15 +240,6 @@ namespace WTF {
             TypeOperations::uninitializedCopy(otherBuffer, otherBuffer + m_end, m_buffer.buffer());
             TypeOperations::uninitializedCopy(otherBuffer + m_start, otherBuffer + m_buffer.capacity(), m_buffer.buffer() + m_start);
         }
-    }
-
-    template<typename T, size_t inlineCapacity, typename Allocator>
-    void deleteAllValues(const Deque<T, inlineCapacity, Allocator>& collection)
-    {
-        typedef typename Deque<T, inlineCapacity, Allocator>::const_iterator iterator;
-        iterator end = collection.end();
-        for (iterator it = collection.begin(); it != end; ++it)
-            delete *it;
     }
 
     template<typename T, size_t inlineCapacity, typename Allocator>
@@ -512,7 +519,7 @@ namespace WTF {
     template<typename T, size_t inlineCapacity, typename Allocator>
     void Deque<T, inlineCapacity, Allocator>::trace(typename Allocator::Visitor* visitor)
     {
-        COMPILE_ASSERT(Allocator::isGarbageCollected, Garbage_collector_must_be_enabled);
+        ASSERT(Allocator::isGarbageCollected); // Garbage collector must be enabled.
         const T* bufferBegin = m_buffer.buffer();
         const T* end = bufferBegin + m_end;
         if (ShouldBeTraced<VectorTraits<T> >::value) {
@@ -530,6 +537,19 @@ namespace WTF {
         if (m_buffer.hasOutOfLineBuffer())
             Allocator::markNoTracing(visitor, m_buffer.buffer());
     }
+
+    template<typename T, size_t inlineCapacity, typename Allocator>
+    inline void swap(Deque<T, inlineCapacity, Allocator>& a, Deque<T, inlineCapacity, Allocator>& b)
+    {
+        a.swap(b);
+    }
+
+#if !ENABLE(OILPAN)
+    template<typename T, size_t N>
+    struct NeedsTracing<Deque<T, N> > {
+        static const bool value = false;
+    };
+#endif
 
 } // namespace WTF
 

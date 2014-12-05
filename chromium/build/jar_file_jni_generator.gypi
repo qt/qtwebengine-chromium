@@ -26,6 +26,7 @@
     'jni_generator_includes%': (
         'base/android/jni_generator/jni_generator_helper.h'
     ),
+    'native_exports%': '',
   },
   'actions': [
     {
@@ -54,6 +55,7 @@
         '<(jni_generator_includes)',
         '--optimize_generation',
         '<(optimize_jni_generation)',
+        '<(native_exports)',
       ],
       'message': 'Generating JNI bindings from  <(input_jar_file)/<(input_java_class)',
       'process_outputs_as_sources': 1,
@@ -62,4 +64,14 @@
   # This target exports a hard dependency because it generates header
   # files.
   'hard_dependency': 1,
+  'conditions': [
+    ['android_webview_build==1', {
+      'variables': {
+        'native_exports%': '--native_exports',
+      },
+      'dependencies': [
+        '<(DEPTH)/build/android/android_exports.gyp:android_exports',
+      ],
+    }],
+  ],
 }

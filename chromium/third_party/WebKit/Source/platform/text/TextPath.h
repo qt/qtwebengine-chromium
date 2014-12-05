@@ -31,9 +31,9 @@
 #ifndef TextPath_h
 #define TextPath_h
 
-namespace WebCore {
+namespace blink {
 
-enum CodePath { AutoPath, SimplePath, ComplexPath, SimpleWithGlyphOverflowPath };
+enum CodePath { SimplePath, ComplexPath, SimpleWithGlyphOverflowPath };
 
 }
 

@@ -5,13 +5,12 @@
 #include "{{namespace}}ElementFactory.h"
 
 #include "{{namespace}}Names.h"
-{% for tag in tags|sort %}
-#include "core/{{namespace|lower}}/{{tag.interface}}.h"
+{% for tag in tags|groupby('interface') %}
+#include "core/{{namespace|lower}}/{{tag[0]}}.h"
 {% endfor %}
 {% if fallback_interface %}
 #include "core/{{namespace|lower}}/{{fallback_interface}}.h"
 {% endif %}
-#include "core/dom/ContextFeatures.h"
 #include "core/dom/custom/CustomElement.h"
 #include "core/dom/custom/CustomElementRegistrationContext.h"
 #include "core/dom/Document.h"
@@ -19,7 +18,7 @@
 #include "platform/RuntimeEnabledFeatures.h"
 #include "wtf/HashMap.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace {{namespace}}Names;
 
@@ -43,10 +42,6 @@ static PassRefPtrWillBeRawPtr<{{namespace}}Element> {{tag|symbol}}Constructor(
     {% endif %}
     bool createdByParser)
 {
-    {% if tag.contextConditional %}
-    if (!ContextFeatures::{{tag.contextConditional}}Enabled(&document))
-        return {{fallback_interface}}::create({{tag|symbol}}Tag, document);
-    {% endif %}
     {% if tag.runtimeEnabled %}
     if (!RuntimeEnabledFeatures::{{tag.runtimeEnabled}}Enabled())
         return {{fallback_interface}}::create({{tag|symbol}}Tag, document);
@@ -105,4 +100,4 @@ PassRefPtrWillBeRawPtr<{{namespace}}Element> {{namespace}}ElementFactory::create
     return {{fallback_interface}}::create(QualifiedName(nullAtom, localName, {{namespace_prefix}}NamespaceURI), document);
 }
 
-} // namespace WebCore
+} // namespace blink

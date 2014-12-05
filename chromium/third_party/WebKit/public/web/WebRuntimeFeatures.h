@@ -46,7 +46,13 @@ public:
 
     BLINK_EXPORT static void enableDatabase(bool);
 
-    BLINK_EXPORT static void enableDialogElement(bool);
+    BLINK_EXPORT static void enableCompositedSelectionUpdate(bool);
+    BLINK_EXPORT static bool isCompositedSelectionUpdateEnabled();
+
+    BLINK_EXPORT static void enableDecodeToYUV(bool);
+
+    BLINK_EXPORT static void enableDisplayList2dCanvas(bool);
+    BLINK_EXPORT static void forceDisplayList2dCanvas(bool);
 
     BLINK_EXPORT static void enableEncryptedMedia(bool);
     BLINK_EXPORT static bool isEncryptedMediaEnabled();
@@ -56,15 +62,15 @@ public:
 
     BLINK_EXPORT static void enableBleedingEdgeFastPaths(bool);
 
+    BLINK_EXPORT static void enableBlinkScheduler(bool);
+
     BLINK_EXPORT static void enableExperimentalCanvasFeatures(bool);
 
     BLINK_EXPORT static void enableFastMobileScrolling(bool);
 
-    BLINK_EXPORT static void enableFastTextAutosizing(bool);
-
     BLINK_EXPORT static void enableFileSystem(bool);
 
-    BLINK_EXPORT static void enableGamepad(bool);
+    BLINK_EXPORT static void enableImageColorProfiles(bool);
 
     BLINK_EXPORT static void enableLocalStorage(bool);
 
@@ -72,13 +78,17 @@ public:
 
     BLINK_EXPORT static void enableSubpixelFontScaling(bool);
 
-    BLINK_EXPORT static void enableMediaSource(bool);
+    BLINK_EXPORT static void enableMediaCapture(bool);
 
-    BLINK_EXPORT static void enableMediaStream(bool);
+    BLINK_EXPORT static void enableMediaSource(bool);
 
     BLINK_EXPORT static void enableNotifications(bool);
 
     BLINK_EXPORT static void enableNavigatorContentUtils(bool);
+
+    BLINK_EXPORT static void enableNavigationTransitions(bool);
+
+    BLINK_EXPORT static void enableNetworkInformation(bool);
 
     BLINK_EXPORT static void enableOrientationEvent(bool);
 
@@ -88,19 +98,19 @@ public:
 
     BLINK_EXPORT static void enableRequestAutocomplete(bool);
 
+    BLINK_EXPORT static void enableScreenOrientation(bool);
+
     BLINK_EXPORT static void enableScriptedSpeech(bool);
 
     BLINK_EXPORT static void enableServiceWorker(bool);
 
     BLINK_EXPORT static void enableSessionStorage(bool);
 
-    BLINK_EXPORT static void enableSpeechSynthesis(bool);
+    BLINK_EXPORT static void enableSlimmingPaint(bool);
 
     BLINK_EXPORT static void enableTouch(bool);
 
     BLINK_EXPORT static void enableTouchIconLoading(bool);
-
-    BLINK_EXPORT static void enableWebAnimationsSVG(bool);
 
     BLINK_EXPORT static void enableWebAudio(bool);
 
@@ -110,8 +120,6 @@ public:
 
     BLINK_EXPORT static void enableWebMIDI(bool);
 
-    BLINK_EXPORT static void enableHTMLImports(bool);
-
     BLINK_EXPORT static void enableXSLT(bool);
 
     BLINK_EXPORT static void enableOverlayScrollbars(bool);
@@ -120,17 +128,23 @@ public:
 
     BLINK_EXPORT static void enableSharedWorker(bool);
 
-    BLINK_EXPORT static void enableRepaintAfterLayout(bool);
-
-    BLINK_EXPORT static void enableExperimentalWebSocket(bool);
-
-    BLINK_EXPORT static void enableTargetedStyleRecalc(bool);
-
     BLINK_EXPORT static void enablePreciseMemoryInfo(bool);
 
     BLINK_EXPORT static void enableLayerSquashing(bool);
 
     BLINK_EXPORT static void enableShowModalDialog(bool);
+
+    BLINK_EXPORT static void enableLaxMixedContentChecking(bool);
+
+    BLINK_EXPORT static void enableCredentialManagerAPI(bool);
+
+    BLINK_EXPORT static void enableTextBlobs(bool);
+
+    BLINK_EXPORT static void enableCSSViewport(bool);
+
+    BLINK_EXPORT static void enableV8IdleTasks(bool);
+
+    BLINK_EXPORT static void enableSVG1DOM(bool);
 
 private:
     WebRuntimeFeatures();

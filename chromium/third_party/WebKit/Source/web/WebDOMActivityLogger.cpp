@@ -31,14 +31,12 @@
 #include "config.h"
 #include "public/web/WebDOMActivityLogger.h"
 
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8DOMActivityLogger.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8DOMActivityLogger.h"
 #include "core/dom/Document.h"
 #include "core/frame/LocalDOMWindow.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/text/WTFString.h"
-
-using namespace WebCore;
 
 namespace blink {
 
@@ -49,24 +47,27 @@ public:
     {
     }
 
-    virtual void logGetter(const String& apiName) OVERRIDE
+    virtual void logGetter(const String& apiName) override
     {
         m_domActivityLogger->logGetter(WebString(apiName), getURL(), getTitle());
     }
 
-    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue) OVERRIDE
+    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue) override
     {
         m_domActivityLogger->logSetter(WebString(apiName), newValue, getURL(), getTitle());
     }
 
-    virtual void logSetter(const String& apiName, const v8::Handle<v8::Value>& newValue, const v8::Handle<v8::Value>& oldValue) OVERRIDE
-    {
-        m_domActivityLogger->logSetter(WebString(apiName), newValue, oldValue, getURL(), getTitle());
-    }
-
-    virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) OVERRIDE
+    virtual void logMethod(const String& apiName, int argc, const v8::Handle<v8::Value>* argv) override
     {
         m_domActivityLogger->logMethod(WebString(apiName), argc, argv, getURL(), getTitle());
+    }
+
+    virtual void logEvent(const String& eventName, int argc, const String* argv) override
+    {
+        Vector<WebString> webStringArgv;
+        for (int i = 0; i < argc; i++)
+            webStringArgv.append(argv[i]);
+        m_domActivityLogger->logEvent(WebString(eventName), argc, webStringArgv.data(), getURL(), getTitle());
     }
 
 private:

@@ -22,7 +22,7 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
     : json_file_path_(json_file_path),
       allow_trailing_comma_(false) {}
 
-  virtual ~JSONFileValueSerializer() {}
+  ~JSONFileValueSerializer() override {}
 
   // DO NOT USE except in unit tests to verify the file was written properly.
   // We should never serialize directly to a file since this will block the
@@ -32,7 +32,7 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   // Attempt to serialize the data structure represented by Value into
   // JSON.  If the return value is true, the result will have been written
   // into the file whose name was passed into the constructor.
-  virtual bool Serialize(const base::Value& root) OVERRIDE;
+  bool Serialize(const base::Value& root) override;
 
   // Equivalent to Serialize(root) except binary values are omitted from the
   // output.
@@ -45,8 +45,8 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   // If |error_message| is non-null, it will be filled in with a formatted
   // error message including the location of the error if appropriate.
   // The caller takes ownership of the returned value.
-  virtual base::Value* Deserialize(int* error_code,
-                                   std::string* error_message) OVERRIDE;
+  base::Value* Deserialize(int* error_code,
+                           std::string* error_message) override;
 
   // This enum is designed to safely overlap with JSONReader::JsonParseError.
   enum JsonFileError {
@@ -58,10 +58,10 @@ class BASE_EXPORT JSONFileValueSerializer : public base::ValueSerializer {
   };
 
   // File-specific error messages that can be returned.
-  static const char* kAccessDenied;
-  static const char* kCannotReadFile;
-  static const char* kFileLocked;
-  static const char* kNoSuchFile;
+  static const char kAccessDenied[];
+  static const char kCannotReadFile[];
+  static const char kFileLocked[];
+  static const char kNoSuchFile[];
 
   // Convert an error code into an error message.  |error_code| is assumed to
   // be a JsonFileError.

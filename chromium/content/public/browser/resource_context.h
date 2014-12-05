@@ -16,10 +16,6 @@
 
 class GURL;
 
-namespace appcache {
-class AppCacheService;
-}
-
 namespace net {
 class ClientCertStore;
 class HostResolver;
@@ -28,6 +24,8 @@ class URLRequestContext;
 }
 
 namespace content {
+
+class AppCacheService;
 
 // ResourceContext contains the relevant context information required for
 // resource loading. It lives on the IO thread, although it is constructed on
@@ -38,7 +36,7 @@ class CONTENT_EXPORT ResourceContext : public base::SupportsUserData {
   virtual ~ResourceContext() {}
 #else
   ResourceContext();
-  virtual ~ResourceContext();
+  ~ResourceContext() override;
 #endif
   virtual net::HostResolver* GetHostResolver() = 0;
 
@@ -57,16 +55,6 @@ class CONTENT_EXPORT ResourceContext : public base::SupportsUserData {
       const std::string& challenge_string,
       const GURL& url,
       const base::Callback<void(scoped_ptr<net::KeygenHandler>)>& callback);
-
-  // Returns true if microphone access is allowed for |origin|. Used to
-  // determine what level of authorization is given to |origin| to access
-  // resource metadata.
-  virtual bool AllowMicAccess(const GURL& origin) = 0;
-
-  // Returns true if web camera access is allowed for |origin|. Used to
-  // determine what level of authorization is given to |origin| to access
-  // resource metadata.
-  virtual bool AllowCameraAccess(const GURL& origin) = 0;
 
   // Returns a callback that can be invoked to get a random salt
   // string that is used for creating media device IDs.  The salt

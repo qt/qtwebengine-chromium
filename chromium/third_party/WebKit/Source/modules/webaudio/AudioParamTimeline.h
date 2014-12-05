@@ -31,12 +31,11 @@
 
 #include "modules/webaudio/AudioContext.h"
 #include "wtf/Float32Array.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
+#include "wtf/Forward.h"
 #include "wtf/Threading.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioParamTimeline {
 public:
@@ -44,12 +43,12 @@ public:
     {
     }
 
-    void setValueAtTime(float value, double time);
-    void linearRampToValueAtTime(float value, double time);
+    void setValueAtTime(float value, double time, ExceptionState&);
+    void linearRampToValueAtTime(float value, double time, ExceptionState&);
     void exponentialRampToValueAtTime(float value, double time, ExceptionState&);
-    void setTargetAtTime(float target, double time, double timeConstant);
-    void setValueCurveAtTime(Float32Array* curve, double time, double duration);
-    void cancelScheduledValues(double startTime);
+    void setTargetAtTime(float target, double time, double timeConstant, ExceptionState&);
+    void setValueCurveAtTime(Float32Array* curve, double time, double duration, ExceptionState&);
+    void cancelScheduledValues(double startTime, ExceptionState&);
 
     // hasValue is set to true if a valid timeline value is returned.
     // otherwise defaultValue is returned.
@@ -110,6 +109,6 @@ private:
     Mutex m_eventsLock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioParamTimeline_h

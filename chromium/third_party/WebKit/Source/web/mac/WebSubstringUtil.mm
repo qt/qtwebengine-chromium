@@ -34,7 +34,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -55,8 +55,9 @@
 #include "public/web/WebRange.h"
 #include "public/web/WebView.h"
 #include "web/WebLocalFrameImpl.h"
+#include "web/WebViewImpl.h"
 
-using namespace WebCore;
+using namespace blink;
 
 static NSAttributedString* attributedSubstringFromRange(const Range* range)
 {
@@ -70,7 +71,7 @@ static NSAttributedString* attributedSubstringFromRange(const Range* range)
         if (!numCharacters)
             continue;
 
-        Node* container = it.range()->startContainer();
+        Node* container = it.startContainer();
         RenderObject* renderer = container->renderer();
         ASSERT(renderer);
         if (!renderer)
@@ -112,10 +113,10 @@ namespace blink {
 
 NSAttributedString* WebSubstringUtil::attributedWordAtPoint(WebView* view, WebPoint point, WebPoint& baselinePoint)
 {
-    HitTestResult result = view->hitTestResultAt(point);
-    if (!result.targetNode())
+    HitTestResult result = static_cast<WebViewImpl*>(view)->coreHitTestResultAt(point);
+    if (!result.innerNode())
       return nil;
-    LocalFrame* frame = result.targetNode()->document().frame();
+    LocalFrame* frame = result.innerNode()->document().frame();
     FrameView* frameView = frame->view();
 
     RefPtrWillBeRawPtr<Range> range = frame->rangeForPoint(result.roundedPointInInnerNodeFrame());
@@ -154,7 +155,8 @@ NSAttributedString* WebSubstringUtil::attributedSubstringInRange(WebLocalFrame* 
         frame->view()->layout();
 
     Element* editable = frame->selection().rootEditableElementOrDocumentElement();
-    ASSERT(editable);
+    if (!editable)
+        return nil;
     RefPtrWillBeRawPtr<Range> range(PlainTextRange(location, location + length).createRange(*editable));
     if (!range)
         return nil;

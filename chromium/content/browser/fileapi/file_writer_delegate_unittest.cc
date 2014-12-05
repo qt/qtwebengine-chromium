@@ -20,26 +20,26 @@
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory.h"
 #include "net/url_request/url_request_status.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_quota_util.h"
+#include "storage/browser/fileapi/file_writer_delegate.h"
+#include "storage/browser/fileapi/sandbox_file_stream_writer.h"
 #include "testing/platform_test.h"
 #include "url/gurl.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_quota_util.h"
-#include "webkit/browser/fileapi/file_writer_delegate.h"
-#include "webkit/browser/fileapi/sandbox_file_stream_writer.h"
 
 using content::AsyncFileTestHelper;
-using fileapi::FileSystemURL;
-using fileapi::FileWriterDelegate;
+using storage::FileSystemURL;
+using storage::FileWriterDelegate;
 
 namespace content {
 
 namespace {
 
 const GURL kOrigin("http://example.com");
-const fileapi::FileSystemType kFileSystemType = fileapi::kFileSystemTypeTest;
+const storage::FileSystemType kFileSystemType = storage::kFileSystemTypeTest;
 
 const char kData[] = "The quick brown fox jumps over the lazy dog.\n";
-const int kDataSize = ARRAYSIZE_UNSAFE(kData) - 1;
+const int kDataSize = arraysize(kData) - 1;
 
 class Result {
  public:
@@ -84,8 +84,8 @@ class FileWriterDelegateTest : public PlatformTest {
   FileWriterDelegateTest() {}
 
  protected:
-  virtual void SetUp() OVERRIDE;
-  virtual void TearDown() OVERRIDE;
+  void SetUp() override;
+  void TearDown() override;
 
   int64 usage() {
     return file_system_context_->GetQuotaUtil(kFileSystemType)
@@ -103,7 +103,7 @@ class FileWriterDelegateTest : public PlatformTest {
     base::File::Info file_info;
     EXPECT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::GetMetadata(
-                  file_system_context_, url, &file_info));
+                  file_system_context_.get(), url, &file_info));
     return file_info.size;
   }
 
@@ -116,16 +116,15 @@ class FileWriterDelegateTest : public PlatformTest {
       const char* test_file_path,
       int64 offset,
       int64 allowed_growth) {
-    fileapi::SandboxFileStreamWriter* writer =
-        new fileapi::SandboxFileStreamWriter(
+    storage::SandboxFileStreamWriter* writer =
+        new storage::SandboxFileStreamWriter(
             file_system_context_.get(),
             GetFileSystemURL(test_file_path),
             offset,
             *file_system_context_->GetUpdateObservers(kFileSystemType));
     writer->set_default_quota(allowed_growth);
-    return new FileWriterDelegate(
-        scoped_ptr<fileapi::FileStreamWriter>(writer),
-        FileWriterDelegate::FLUSH_ON_COMPLETION);
+    return new FileWriterDelegate(scoped_ptr<storage::FileStreamWriter>(writer),
+                                  FileWriterDelegate::FLUSH_ON_COMPLETION);
   }
 
   FileWriterDelegate::DelegateWriteCallback GetWriteCallback(Result* result) {
@@ -147,7 +146,7 @@ class FileWriterDelegateTest : public PlatformTest {
   // This should be alive until the very end of this instance.
   base::MessageLoopForIO loop_;
 
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
 
   net::URLRequestContext empty_context_;
   scoped_ptr<FileWriterDelegate> file_writer_delegate_;
@@ -176,15 +175,13 @@ class FileWriterDelegateTestJob : public net::URLRequestJob {
         cursor_(0) {
   }
 
-  virtual void Start() OVERRIDE {
+  void Start() override {
     base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&FileWriterDelegateTestJob::NotifyHeadersComplete, this));
   }
 
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int *bytes_read) OVERRIDE {
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override {
     if (remaining_bytes_ < buf_size)
       buf_size = static_cast<int>(remaining_bytes_);
 
@@ -197,12 +194,10 @@ class FileWriterDelegateTestJob : public net::URLRequestJob {
     return true;
   }
 
-  virtual int GetResponseCode() const OVERRIDE {
-    return 200;
-  }
+  int GetResponseCode() const override { return 200; }
 
  protected:
-  virtual ~FileWriterDelegateTestJob() {}
+  ~FileWriterDelegateTestJob() override {}
 
  private:
   std::string content_;
@@ -216,23 +211,36 @@ class BlobURLRequestJobFactory : public net::URLRequestJobFactory {
       : content_data_(content_data) {
   }
 
-  virtual net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
+  net::URLRequestJob* MaybeCreateJobWithProtocolHandler(
       const std::string& scheme,
       net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
+      net::NetworkDelegate* network_delegate) const override {
     return new FileWriterDelegateTestJob(
         request, network_delegate, *content_data_);
   }
 
-  virtual bool IsHandledProtocol(const std::string& scheme) const OVERRIDE {
+  net::URLRequestJob* MaybeInterceptRedirect(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate,
+      const GURL& location) const override {
+    return nullptr;
+  }
+
+  net::URLRequestJob* MaybeInterceptResponse(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const override {
+    return nullptr;
+  }
+
+  bool IsHandledProtocol(const std::string& scheme) const override {
     return scheme == "blob";
   }
 
-  virtual bool IsHandledURL(const GURL& url) const OVERRIDE {
+  bool IsHandledURL(const GURL& url) const override {
     return url.SchemeIs("blob");
   }
 
-  virtual bool IsSafeRedirectTarget(const GURL& location) const OVERRIDE {
+  bool IsSafeRedirectTarget(const GURL& location) const override {
     return true;
   }
 
@@ -250,8 +258,8 @@ void FileWriterDelegateTest::SetUp() {
   file_system_context_ = CreateFileSystemContextForTesting(
       NULL, dir_.path());
   ASSERT_EQ(base::File::FILE_OK,
-            AsyncFileTestHelper::CreateFile(
-                file_system_context_, GetFileSystemURL("test")));
+            AsyncFileTestHelper::CreateFile(file_system_context_.get(),
+                                            GetFileSystemURL("test")));
   job_factory_.reset(new BlobURLRequestJobFactory(&content_));
   empty_context_.set_job_factory(job_factory_.get());
 }
@@ -348,8 +356,8 @@ TEST_F(FileWriterDelegateTest, WriteSuccessWithoutQuotaLimitConcurrent) {
   scoped_ptr<net::URLRequest> request2;
 
   ASSERT_EQ(base::File::FILE_OK,
-            AsyncFileTestHelper::CreateFile(
-                file_system_context_, GetFileSystemURL("test2")));
+            AsyncFileTestHelper::CreateFile(file_system_context_.get(),
+                                            GetFileSystemURL("test2")));
 
   const GURL kBlobURL("blob:nolimitconcurrent");
   const GURL kBlobURL2("blob:nolimitconcurrent2");

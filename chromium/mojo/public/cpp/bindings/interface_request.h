@@ -16,9 +16,7 @@ class InterfaceRequest {
  public:
   InterfaceRequest() {}
 
-  InterfaceRequest(RValue other) {
-    handle_ = other.object->handle_.Pass();
-  }
+  InterfaceRequest(RValue other) { handle_ = other.object->handle_.Pass(); }
   InterfaceRequest& operator=(RValue other) {
     handle_ = other.object->handle_.Pass();
     return *this;
@@ -27,13 +25,9 @@ class InterfaceRequest {
   // Returns true if the request has yet to be completed.
   bool is_pending() const { return handle_.is_valid(); }
 
-  void Bind(ScopedMessagePipeHandle handle) {
-    handle_ = handle.Pass();
-  }
+  void Bind(ScopedMessagePipeHandle handle) { handle_ = handle.Pass(); }
 
-  ScopedMessagePipeHandle PassMessagePipe() {
-    return handle_.Pass();
-  }
+  ScopedMessagePipeHandle PassMessagePipe() { return handle_.Pass(); }
 
  private:
   ScopedMessagePipeHandle handle_;
@@ -60,12 +54,12 @@ InterfaceRequest<Interface> MakeRequest(ScopedMessagePipeHandle handle) {
 //
 //   InterfacePtr<Foo> foo = ...;
 //   InterfacePtr<Bar> bar;
-//   foo->CreateBar(Get(&bar));
+//   foo->CreateBar(GetProxy(&bar));
 //
 // Upon return from CreateBar, |bar| is ready to have methods called on it.
 //
 template <typename Interface>
-InterfaceRequest<Interface> Get(InterfacePtr<Interface>* ptr) {
+InterfaceRequest<Interface> GetProxy(InterfacePtr<Interface>* ptr) {
   MessagePipe pipe;
   ptr->Bind(pipe.handle0.Pass());
   return MakeRequest<Interface>(pipe.handle1.Pass());

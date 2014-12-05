@@ -46,9 +46,9 @@ class CommandBufferServiceLocked : public CommandBufferService {
         flush_locked_(false),
         last_flush_(-1),
         flush_count_(0) {}
-  virtual ~CommandBufferServiceLocked() {}
+  ~CommandBufferServiceLocked() override {}
 
-  virtual void Flush(int32 put_offset) OVERRIDE {
+  void Flush(int32 put_offset) override {
     flush_count_++;
     if (!flush_locked_) {
       last_flush_ = -1;
@@ -64,7 +64,7 @@ class CommandBufferServiceLocked : public CommandBufferService {
 
   int FlushCount() { return flush_count_; }
 
-  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE {
+  void WaitForGetOffsetInRange(int32 start, int32 end) override {
     if (last_flush_ != -1) {
       CommandBufferService::Flush(last_flush_);
       last_flush_ = -1;
@@ -85,7 +85,8 @@ class CommandBufferServiceLocked : public CommandBufferService {
 class CommandBufferHelperTest : public testing::Test {
  protected:
   virtual void SetUp() {
-    api_mock_.reset(new AsyncAPIMock);
+    api_mock_.reset(new AsyncAPIMock(true));
+
     // ignore noops in the mock - we don't want to inspect the internals of the
     // helper.
     EXPECT_CALL(*api_mock_, DoCommand(cmd::kNoop, _, _))
@@ -240,7 +241,7 @@ class CommandBufferHelperTest : public testing::Test {
   }
 
   int32 GetPutOffset() {
-    return command_buffer_->GetLastState().put_offset;
+    return command_buffer_->GetPutOffset();
   }
 
   int32 GetHelperGetOffset() { return helper_->get_offset(); }

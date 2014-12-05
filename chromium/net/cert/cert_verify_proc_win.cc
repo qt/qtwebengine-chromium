@@ -191,7 +191,7 @@ bool CertSubjectCommonNameHasNull(PCCERT_CONTEXT cert) {
   DWORD name_info_size = 0;
   BOOL rv;
   rv = CryptDecodeObjectEx(X509_ASN_ENCODING | PKCS_7_ASN_ENCODING,
-                           X509_NAME,
+                           WINCRYPT_X509_NAME,
                            cert->pCertInfo->Subject.pbData,
                            cert->pCertInfo->Subject.cbData,
                            CRYPT_DECODE_ALLOC_FLAG | CRYPT_DECODE_NOCOPY_FLAG,
@@ -334,6 +334,13 @@ void GetCertChainInfo(PCCERT_CHAIN_CONTEXT chain_context,
     } else if (strcmp(algorithm, szOID_RSA_MD4RSA) == 0) {
       // md4WithRSAEncryption: 1.2.840.113549.1.1.3
       verify_result->has_md4 = true;
+    } else if (strcmp(algorithm, szOID_RSA_SHA1RSA) == 0 ||
+               strcmp(algorithm, szOID_X957_SHA1DSA) == 0 ||
+               strcmp(algorithm, szOID_ECDSA_SHA1) == 0) {
+      // sha1WithRSAEncryption: 1.2.840.113549.1.1.5
+      // id-dsa-with-sha1: 1.2.840.10040.4.3
+      // ecdsa-with-SHA1: 1.2.840.10045.4.1
+      verify_result->has_sha1 = true;
     }
   }
 
@@ -385,10 +392,15 @@ enum CRLSetResult {
 // CheckRevocationWithCRLSet attempts to check each element of |chain|
 // against |crl_set|. It returns:
 //   kCRLSetRevoked: if any element of the chain is known to have been revoked.
-//   kCRLSetUnknown: if there is no fresh information about some element in
-//       the chain.
-//   kCRLSetOk: if every element in the chain is covered by a fresh CRLSet and
-//       is unrevoked.
+//   kCRLSetUnknown: if there is no fresh information about the leaf
+//       certificate in the chain or if the CRLSet has expired.
+//
+//       Only the leaf certificate is considered for coverage because some
+//       intermediates have CRLs with no revocations (after filtering) and
+//       those CRLs are pruned from the CRLSet at generation time. This means
+//       that some EV sites would otherwise take the hit of an OCSP lookup for
+//       no reason.
+//   kCRLSetOk: otherwise.
 CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
                                        CRLSet* crl_set) {
   if (chain->cChain == 0)
@@ -401,7 +413,13 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
   if (num_elements == 0)
     return kCRLSetOk;
 
-  bool covered = true;
+  // error is set to true if any errors are found. It causes such chains to be
+  // considered as not covered.
+  bool error = false;
+  // last_covered is set to the coverage state of the previous certificate. The
+  // certificates are iterated over backwards thus, after the iteration,
+  // |last_covered| contains the coverage state of the leaf certificate.
+  bool last_covered = false;
 
   // We iterate from the root certificate down to the leaf, keeping track of
   // the issuer's SPKI at each step.
@@ -416,7 +434,7 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
     base::StringPiece spki;
     if (!asn1::ExtractSPKIFromDERCert(der_bytes, &spki)) {
       NOTREACHED();
-      covered = false;
+      error = true;
       continue;
     }
 
@@ -441,18 +459,19 @@ CRLSetResult CheckRevocationWithCRLSet(PCCERT_CHAIN_CONTEXT chain,
       case CRLSet::REVOKED:
         return kCRLSetRevoked;
       case CRLSet::UNKNOWN:
-        covered = false;
+        last_covered = false;
         continue;
       case CRLSet::GOOD:
+        last_covered = true;
         continue;
       default:
         NOTREACHED();
-        covered = false;
+        error = true;
         continue;
     }
   }
 
-  if (!covered || crl_set->IsExpired())
+  if (error || !last_covered || crl_set->IsExpired())
     return kCRLSetUnknown;
   return kCRLSetOk;
 }
@@ -559,7 +578,7 @@ int CertVerifyProcWin::VerifyInternal(
   // We still need to request szOID_SERVER_GATED_CRYPTO and szOID_SGC_NETSCAPE
   // today because some certificate chains need them.  IE also requests these
   // two usages.
-  static const LPSTR usage[] = {
+  static const LPCSTR usage[] = {
     szOID_PKIX_KP_SERVER_AUTH,
     szOID_SERVER_GATED_CRYPTO,
     szOID_SGC_NETSCAPE
@@ -722,7 +741,7 @@ int CertVerifyProcWin::VerifyInternal(
   if (CertSubjectCommonNameHasNull(cert_handle))
     verify_result->cert_status |= CERT_STATUS_INVALID;
 
-  std::wstring wstr_hostname = base::ASCIIToWide(hostname);
+  base::string16 hostname16 = base::ASCIIToUTF16(hostname);
 
   SSL_EXTRA_CERT_CHAIN_POLICY_PARA extra_policy_para;
   memset(&extra_policy_para, 0, sizeof(extra_policy_para));
@@ -733,7 +752,7 @@ int CertVerifyProcWin::VerifyInternal(
   extra_policy_para.fdwChecks =
       0x00001000;  // SECURITY_FLAG_IGNORE_CERT_CN_INVALID
   extra_policy_para.pwszServerName =
-      const_cast<wchar_t*>(wstr_hostname.c_str());
+      const_cast<base::char16*>(hostname16.c_str());
 
   CERT_CHAIN_POLICY_PARA policy_para;
   memset(&policy_para, 0, sizeof(policy_para));

@@ -141,6 +141,19 @@ private:
         hash();
     }
 
+    enum ConstructEmptyString16BitTag { ConstructEmptyString16Bit };
+    explicit StringImpl(ConstructEmptyString16BitTag)
+        : m_refCount(1)
+        , m_length(0)
+        , m_hash(0)
+        , m_isAtomic(false)
+        , m_is8Bit(false)
+        , m_isStatic(true)
+    {
+        STRING_STATS_ADD_16BIT_STRING(m_length);
+        hash();
+    }
+
     // FIXME: there has to be a less hacky way to do this.
     enum Force8Bit { Force8BitConstructor };
     StringImpl(unsigned length, Force8Bit)
@@ -291,6 +304,7 @@ public:
     }
 
     static StringImpl* empty();
+    static StringImpl* empty16Bit();
 
     // FIXME: Does this really belong in StringImpl?
     template <typename T> static void copyChars(T* destination, const T* source, unsigned numCharacters)
@@ -326,13 +340,11 @@ public:
     unsigned toUIntStrict(bool* ok = 0, int base = 10);
     int64_t toInt64Strict(bool* ok = 0, int base = 10);
     uint64_t toUInt64Strict(bool* ok = 0, int base = 10);
-    intptr_t toIntPtrStrict(bool* ok = 0, int base = 10);
 
     int toInt(bool* ok = 0); // ignores trailing garbage
     unsigned toUInt(bool* ok = 0); // ignores trailing garbage
     int64_t toInt64(bool* ok = 0); // ignores trailing garbage
     uint64_t toUInt64(bool* ok = 0); // ignores trailing garbage
-    intptr_t toIntPtr(bool* ok = 0); // ignores trailing garbage
 
     // FIXME: Like the strict functions above, these give false for "ok" when there is trailing garbage.
     // Like the non-strict functions above, these return the value when there is trailing garbage.
@@ -427,7 +439,7 @@ private:
 
     static unsigned m_highestStaticStringLength;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     void assertHashIsCorrect()
     {
         ASSERT(hasHash());

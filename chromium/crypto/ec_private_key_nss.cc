@@ -159,6 +159,13 @@ bool ECPrivateKey::ImportFromEncryptedPrivateKeyInfo(
     return false;
   }
 
+  if (SECKEY_GetPublicKeyType(*public_key) != ecKey) {
+    DLOG(ERROR) << "The public key is not an EC key";
+    SECKEY_DestroyPublicKey(*public_key);
+    *public_key = NULL;
+    return false;
+  }
+
   SECItem encoded_epki = {
     siBuffer,
     const_cast<unsigned char*>(encrypted_private_key_info),
@@ -208,6 +215,21 @@ bool ECPrivateKey::ImportFromEncryptedPrivateKeyInfo(
   return true;
 }
 
+ECPrivateKey* ECPrivateKey::Copy() const {
+  scoped_ptr<ECPrivateKey> copy(new ECPrivateKey);
+  if (key_) {
+    copy->key_ = SECKEY_CopyPrivateKey(key_);
+    if (!copy->key_)
+      return NULL;
+  }
+  if (public_key_) {
+    copy->public_key_ = SECKEY_CopyPublicKey(public_key_);
+    if (!copy->public_key_)
+      return NULL;
+  }
+  return copy.release();
+}
+
 bool ECPrivateKey::ExportEncryptedPrivateKey(
     const std::string& password,
     int iterations,
@@ -223,12 +245,12 @@ bool ECPrivateKey::ExportEncryptedPrivateKey(
   };
 
   SECKEYEncryptedPrivateKeyInfo* encrypted = PK11_ExportEncryptedPrivKeyInfo(
-      NULL, // Slot, optional.
+      NULL,  // Slot, optional.
       SEC_OID_PKCS12_V2_PBE_WITH_SHA1_AND_3KEY_TRIPLE_DES_CBC,
       &password_item,
       key_,
       iterations,
-      NULL); // wincx.
+      NULL);  // wincx.
 
   if (!encrypted) {
     DLOG(ERROR) << "PK11_ExportEncryptedPrivKeyInfo: " << PORT_GetError();
@@ -261,6 +283,23 @@ bool ECPrivateKey::ExportPublicKey(std::vector<uint8>* output) {
   }
 
   output->assign(der_pubkey->data, der_pubkey->data + der_pubkey->len);
+  return true;
+}
+
+bool ECPrivateKey::ExportRawPublicKey(std::string* output) {
+  // public_key_->u.ec.publicValue is an ANSI X9.62 public key which, for
+  // a P-256 key, is 0x04 (meaning uncompressed) followed by the x and y field
+  // elements as 32-byte, big-endian numbers.
+  static const unsigned int kExpectedKeyLength = 65;
+
+  CHECK_EQ(ecKey, SECKEY_GetPublicKeyType(public_key_));
+  const unsigned char* const data = public_key_->u.ec.publicValue.data;
+  const unsigned int len = public_key_->u.ec.publicValue.len;
+  if (len != kExpectedKeyLength || data[0] != 0x04)
+    return false;
+
+  output->assign(reinterpret_cast<const char*>(data + 1),
+                 kExpectedKeyLength - 1);
   return true;
 }
 
@@ -301,7 +340,7 @@ ECPrivateKey* ECPrivateKey::CreateWithParams(PK11SlotInfo* slot,
   };
 
   ec_parameters.data[0] = SEC_ASN1_OBJECT_ID;
-  ec_parameters.data[1] = oid_data->oid.len;
+  ec_parameters.data[1] = static_cast<unsigned char>(oid_data->oid.len);
   memcpy(ec_parameters.data + 2, oid_data->oid.data, oid_data->oid.len);
 
   result->key_ = PK11_GenerateKeyPair(slot,
@@ -315,6 +354,7 @@ ECPrivateKey* ECPrivateKey::CreateWithParams(PK11SlotInfo* slot,
     DLOG(ERROR) << "PK11_GenerateKeyPair: " << PORT_GetError();
     return NULL;
   }
+  CHECK_EQ(ecKey, SECKEY_GetPublicKeyType(result->public_key_));
 
   return result.release();
 }
@@ -354,8 +394,10 @@ ECPrivateKey* ECPrivateKey::CreateFromEncryptedPrivateKeyInfoWithParams(
 
   SECKEY_DestroySubjectPublicKeyInfo(decoded_spki);
 
-  if (success)
+  if (success) {
+    CHECK_EQ(ecKey, SECKEY_GetPublicKeyType(result->public_key_));
     return result.release();
+  }
 
   return NULL;
 }

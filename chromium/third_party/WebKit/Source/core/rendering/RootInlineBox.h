@@ -24,7 +24,7 @@
 #include "core/rendering/InlineFlowBox.h"
 #include "platform/text/BidiContext.h"
 
-namespace WebCore {
+namespace blink {
 
 class EllipsisBox;
 class HitTestResult;
@@ -37,16 +37,16 @@ class RootInlineBox : public InlineFlowBox {
 public:
     explicit RootInlineBox(RenderBlockFlow&);
 
-    virtual void destroy() OVERRIDE FINAL;
+    virtual void destroy() override final;
 
-    virtual bool isRootInlineBox() const OVERRIDE FINAL { return true; }
+    virtual bool isRootInlineBox() const override final { return true; }
 
     void detachEllipsisBox();
 
     RootInlineBox* nextRootBox() const { return static_cast<RootInlineBox*>(m_nextLineBox); }
     RootInlineBox* prevRootBox() const { return static_cast<RootInlineBox*>(m_prevLineBox); }
 
-    virtual void adjustPosition(float dx, float dy) OVERRIDE FINAL;
+    virtual void adjustPosition(float dx, float dy) override final;
 
     LayoutUnit lineTop() const { return m_lineTop; }
     LayoutUnit lineBottom() const { return m_lineBottom; }
@@ -60,7 +60,6 @@ public:
     bool isFirstAfterPageBreak() const { return m_fragmentationData ? m_fragmentationData->m_isFirstAfterPageBreak : false; }
     void setIsFirstAfterPageBreak(bool isFirstAfterPageBreak) { ensureLineFragmentationData()->m_isFirstAfterPageBreak = isFirstAfterPageBreak; }
 
-    LayoutUnit paginatedLineWidth() const { return m_fragmentationData ? m_fragmentationData->m_paginatedLineWidth : LayoutUnit(0); }
     void setPaginatedLineWidth(LayoutUnit width) { ensureLineFragmentationData()->m_paginatedLineWidth = width; }
 
     LayoutUnit selectionTop() const;
@@ -73,15 +72,16 @@ public:
     int blockDirectionPointInLine() const;
 
     LayoutUnit alignBoxesInBlockDirection(LayoutUnit heightOfBlock, GlyphOverflowAndFallbackFontsMap&, VerticalPositionCache&);
-    void setLineTopBottomPositions(LayoutUnit top, LayoutUnit bottom, LayoutUnit topWithLeading, LayoutUnit bottomWithLeading)
+    void setLineTopBottomPositions(LayoutUnit top, LayoutUnit bottom, LayoutUnit topWithLeading, LayoutUnit bottomWithLeading, LayoutUnit selectionBottom = LayoutUnit::min())
     {
         m_lineTop = top;
         m_lineBottom = bottom;
         m_lineTopWithLeading = topWithLeading;
         m_lineBottomWithLeading = bottomWithLeading;
+        m_selectionBottom = selectionBottom == LayoutUnit::min() ? bottom : selectionBottom;
     }
 
-    virtual RenderLineBoxList* rendererLineBoxes() const OVERRIDE FINAL;
+    virtual RenderLineBoxList* rendererLineBoxes() const override final;
 
     RenderObject* lineBreakObj() const { return m_lineBreakObj; }
     BidiStatus lineBreakBidiStatus() const;
@@ -99,31 +99,27 @@ public:
     // Return the truncatedWidth, the width of the truncated text + ellipsis.
     float placeEllipsis(const AtomicString& ellipsisStr, bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, InlineBox* markupBox = 0);
     // Return the position of the EllipsisBox or -1.
-    virtual float placeEllipsisBox(bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, float &truncatedWidth, bool& foundBox) OVERRIDE FINAL;
+    virtual float placeEllipsisBox(bool ltr, float blockLeftEdge, float blockRightEdge, float ellipsisWidth, float &truncatedWidth, bool& foundBox) override final;
 
     using InlineBox::hasEllipsisBox;
     EllipsisBox* ellipsisBox() const;
 
-    void paintEllipsisBox(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) const;
+    virtual void clearTruncation() override final;
 
-    virtual void clearTruncation() OVERRIDE FINAL;
+    virtual int baselinePosition(FontBaseline baselineType) const override final;
+    virtual LayoutUnit lineHeight() const override final;
 
-    bool isHyphenated() const;
-
-    virtual int baselinePosition(FontBaseline baselineType) const OVERRIDE FINAL;
-    virtual LayoutUnit lineHeight() const OVERRIDE FINAL;
-
-    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE;
-    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) OVERRIDE FINAL;
+    virtual void paint(PaintInfo&, const LayoutPoint&, LayoutUnit lineTop, LayoutUnit lineBottom) override;
+    virtual bool nodeAtPoint(const HitTestRequest&, HitTestResult&, const HitTestLocation& locationInContainer, const LayoutPoint& accumulatedOffset, LayoutUnit lineTop, LayoutUnit lineBottom) override final;
 
     using InlineBox::hasSelectedChildren;
     using InlineBox::setHasSelectedChildren;
 
-    virtual RenderObject::SelectionState selectionState() OVERRIDE FINAL;
-    InlineBox* firstSelectedBox();
-    InlineBox* lastSelectedBox();
+    virtual RenderObject::SelectionState selectionState() const override final;
+    InlineBox* firstSelectedBox() const;
+    InlineBox* lastSelectedBox() const;
 
-    GapRects lineSelectionGap(RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*);
+    GapRects lineSelectionGap(const RenderBlock* rootBlock, const LayoutPoint& rootBlockPhysicalPosition, const LayoutSize& offsetFromRootBlock, LayoutUnit selTop, LayoutUnit selHeight, const PaintInfo*) const;
 
     RenderBlockFlow& block() const;
 
@@ -141,9 +137,9 @@ public:
 
     Vector<RenderBox*>* floatsPtr() { ASSERT(!isDirty()); return m_floats.get(); }
 
-    virtual void extractLineBoxFromRenderObject() OVERRIDE FINAL;
-    virtual void attachLineBoxToRenderObject() OVERRIDE FINAL;
-    virtual void removeLineBoxFromRenderObject() OVERRIDE FINAL;
+    virtual void extractLineBoxFromRenderObject() override final;
+    virtual void attachLineBoxToRenderObject() override final;
+    virtual void removeLineBoxFromRenderObject() override final;
 
     FontBaseline baselineType() const { return static_cast<FontBaseline>(m_baselineType); }
 
@@ -185,7 +181,7 @@ public:
     Node* getLogicalEndBoxWithNode(InlineBox*&) const;
 
 #ifndef NDEBUG
-    virtual const char* boxName() const OVERRIDE;
+    virtual const char* boxName() const override;
 #endif
 private:
     LayoutUnit beforeAnnotationsAdjustment() const;
@@ -206,12 +202,6 @@ private:
     // we can create an InlineIterator beginning just after the end of this line.
     RenderObject* m_lineBreakObj;
     RefPtr<BidiContext> m_lineBreakContext;
-
-    LayoutUnit m_lineTop;
-    LayoutUnit m_lineBottom;
-
-    LayoutUnit m_lineTopWithLeading;
-    LayoutUnit m_lineBottomWithLeading;
 
     struct LineFragmentationData {
         WTF_MAKE_NONCOPYABLE(LineFragmentationData); WTF_MAKE_FAST_ALLOCATED;
@@ -234,8 +224,14 @@ private:
     // Floats hanging off the line are pushed into this vector during layout. It is only
     // good for as long as the line has not been marked dirty.
     OwnPtr<Vector<RenderBox*> > m_floats;
+
+    LayoutUnit m_lineTop;
+    LayoutUnit m_lineBottom;
+    LayoutUnit m_lineTopWithLeading;
+    LayoutUnit m_lineBottomWithLeading;
+    LayoutUnit m_selectionBottom;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RootInlineBox_h

@@ -32,9 +32,11 @@
 #define WebMediaPlayer_h
 
 #include "WebCanvas.h"
+#include "WebContentDecryptionModule.h"
 #include "WebMediaSource.h"
 #include "WebString.h"
 #include "WebTimeRange.h"
+#include "third_party/skia/include/core/SkXfermode.h"
 
 namespace blink {
 
@@ -108,15 +110,18 @@ public:
     virtual void seek(double seconds) = 0;
     virtual void setRate(double) = 0;
     virtual void setVolume(double) = 0;
+    virtual void requestRemotePlayback() { };
+    virtual void requestRemotePlaybackControl() { };
     virtual void setPreload(Preload) { };
     virtual WebTimeRanges buffered() const = 0;
-    virtual double maxTimeSeekable() const = 0;
-
-    virtual void paint(WebCanvas*, const WebRect&, unsigned char alpha) = 0;
+    virtual WebTimeRanges seekable() const = 0;
 
     // True if the loaded media has a playable video/audio track.
     virtual bool hasVideo() const = 0;
     virtual bool hasAudio() const = 0;
+
+    // True if the media is being played on a remote device.
+    virtual bool isRemote() const { return false; }
 
     // Dimension of the video.
     virtual WebSize naturalSize() const = 0;
@@ -144,6 +149,7 @@ public:
     virtual unsigned audioDecodedByteCount() const = 0;
     virtual unsigned videoDecodedByteCount() const = 0;
 
+    virtual void paint(WebCanvas*, const WebRect&, unsigned char alpha, SkXfermode::Mode) = 0;
     // Do a GPU-GPU textures copy if possible.
     virtual bool copyVideoTextureToPlatformTexture(WebGraphicsContext3D*, unsigned texture, unsigned level, unsigned internalFormat, unsigned type, bool premultiplyAlpha, bool flipY) { return false; }
 
@@ -154,14 +160,13 @@ public:
     virtual MediaKeyException generateKeyRequest(const WebString& keySystem, const unsigned char* initData, unsigned initDataLength) { return MediaKeyExceptionKeySystemNotSupported; }
     virtual MediaKeyException addKey(const WebString& keySystem, const unsigned char* key, unsigned keyLength, const unsigned char* initData, unsigned initDataLength, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
     virtual MediaKeyException cancelKeyRequest(const WebString& keySystem, const WebString& sessionId) { return MediaKeyExceptionKeySystemNotSupported; }
-    virtual void setContentDecryptionModule(WebContentDecryptionModule* cdm) { }
+    virtual void setContentDecryptionModule(WebContentDecryptionModule* cdm, WebContentDecryptionModuleResult result) { result.completeWithError(WebContentDecryptionModuleExceptionNotSupportedError, 0, "ERROR"); }
 
     // Sets the poster image URL.
     virtual void setPoster(const WebURL& poster) { }
 
     // Instruct WebMediaPlayer to enter/exit fullscreen.
     virtual void enterFullscreen() { }
-    virtual void exitFullscreen() { }
     // Returns true if the player can enter fullscreen.
     virtual bool canEnterFullscreen() const { return false; }
 

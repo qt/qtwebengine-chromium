@@ -38,9 +38,11 @@
 #include "wtf/RefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class ScriptCallStack : public RefCountedWillBeGarbageCollectedFinalized<ScriptCallStack> {
+class ScriptAsyncCallStack;
+
+class ScriptCallStack final : public RefCountedWillBeGarbageCollectedFinalized<ScriptCallStack> {
     DECLARE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(ScriptCallStack);
 public:
     static const size_t maxCallStackSizeToCapture = 200;
@@ -50,16 +52,20 @@ public:
     const ScriptCallFrame &at(size_t) const;
     size_t size() const;
 
+    PassRefPtrWillBeRawPtr<ScriptAsyncCallStack> asyncCallStack() const;
+    void setAsyncCallStack(PassRefPtrWillBeRawPtr<ScriptAsyncCallStack>);
+
     PassRefPtr<TypeBuilder::Array<TypeBuilder::Console::CallFrame> > buildInspectorArray() const;
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
 private:
     explicit ScriptCallStack(Vector<ScriptCallFrame>&);
 
     Vector<ScriptCallFrame> m_frames;
+    RefPtrWillBeMember<ScriptAsyncCallStack> m_asyncCallStack;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ScriptCallStack_h

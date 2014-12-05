@@ -27,11 +27,11 @@
 #ifndef Canvas2DContextAttributes_h
 #define Canvas2DContextAttributes_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/CanvasContextAttributes.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 enum Canvas2DContextStorage {
     PersistentStorage,
@@ -39,11 +39,11 @@ enum Canvas2DContextStorage {
 };
 
 class Canvas2DContextAttributes : public CanvasContextAttributes, public ScriptWrappable {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(Canvas2DContextAttributes);
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    virtual ~Canvas2DContextAttributes();
-
     // Create a new attributes object
-    static PassRefPtr<Canvas2DContextAttributes> create();
+    static PassRefPtrWillBeRawPtr<Canvas2DContextAttributes> create();
 
     // Whether or not the drawing buffer has an alpha channel; default=true
     bool alpha() const;
@@ -60,6 +60,6 @@ protected:
     Canvas2DContextStorage m_storage;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Canvas2DContextAttributes_h

@@ -29,15 +29,14 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 class Document;
 class Page;
 class PlatformMouseEvent;
-class VoidCallback;
 
-class PointerLockController FINAL : public NoBaseWillBeGarbageCollected<PointerLockController> {
+class PointerLockController final : public NoBaseWillBeGarbageCollected<PointerLockController> {
     WTF_MAKE_NONCOPYABLE(PointerLockController);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -69,6 +68,6 @@ private:
     RefPtrWillBeMember<Document> m_documentOfRemovedElementWhileWaitingForUnlock;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PointerLockController_h

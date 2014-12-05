@@ -38,46 +38,7 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
-
-bool isOnAccessControlSimpleRequestMethodWhitelist(const String& method)
-{
-    return method == "GET" || method == "HEAD" || method == "POST";
-}
-
-bool isOnAccessControlSimpleRequestHeaderWhitelist(const AtomicString& name, const AtomicString& value)
-{
-    if (equalIgnoringCase(name, "accept")
-        || equalIgnoringCase(name, "accept-language")
-        || equalIgnoringCase(name, "content-language")
-        || equalIgnoringCase(name, "origin")
-        || equalIgnoringCase(name, "referer"))
-        return true;
-
-    // Preflight is required for MIME types that can not be sent via form submission.
-    if (equalIgnoringCase(name, "content-type")) {
-        AtomicString mimeType = extractMIMETypeFromMediaType(value);
-        return equalIgnoringCase(mimeType, "application/x-www-form-urlencoded")
-            || equalIgnoringCase(mimeType, "multipart/form-data")
-            || equalIgnoringCase(mimeType, "text/plain");
-    }
-
-    return false;
-}
-
-bool isSimpleCrossOriginAccessRequest(const String& method, const HTTPHeaderMap& headerMap)
-{
-    if (!isOnAccessControlSimpleRequestMethodWhitelist(method))
-        return false;
-
-    HTTPHeaderMap::const_iterator end = headerMap.end();
-    for (HTTPHeaderMap::const_iterator it = headerMap.begin(); it != end; ++it) {
-        if (!isOnAccessControlSimpleRequestHeaderWhitelist(it->key, it->value))
-            return false;
-    }
-
-    return true;
-}
+namespace blink {
 
 static PassOwnPtr<HTTPHeaderSet> createAllowedCrossOriginResponseHeadersSet()
 {
@@ -104,6 +65,7 @@ void updateRequestForAccessControl(ResourceRequest& request, SecurityOrigin* sec
 {
     request.removeCredentials();
     request.setAllowStoredCredentials(allowCredentials == AllowStoredCredentials);
+    request.setFetchCredentialsMode(allowCredentials == AllowStoredCredentials ? WebURLRequest::FetchCredentialsModeInclude : WebURLRequest::FetchCredentialsModeOmit);
 
     if (securityOrigin)
         request.setHTTPOrigin(securityOrigin->toAtomicString());
@@ -116,6 +78,7 @@ ResourceRequest createAccessControlPreflightRequest(const ResourceRequest& reque
     preflightRequest.setHTTPMethod("OPTIONS");
     preflightRequest.setHTTPHeaderField("Access-Control-Request-Method", request.httpMethod());
     preflightRequest.setPriority(request.priority());
+    preflightRequest.setRequestContext(request.requestContext());
 
     const HTTPHeaderMap& requestHeaderFields = request.httpHeaderFields();
 
@@ -142,6 +105,14 @@ static bool isOriginSeparator(UChar ch)
     return isASCIISpace(ch) || ch == ',';
 }
 
+static bool isInterestingStatusCode(int statusCode)
+{
+    // Predicate that gates what status codes should be included in
+    // console error messages for responses containing no access
+    // control headers.
+    return statusCode >= 400;
+}
+
 bool passesAccessControlCheck(const ResourceResponse& response, StoredCredentials includeCredentials, SecurityOrigin* securityOrigin, String& errorDescription)
 {
     AtomicallyInitializedStatic(AtomicString&, accessControlAllowOrigin = *new AtomicString("access-control-allow-origin", AtomicString::ConstructFromLiteral));
@@ -163,8 +134,11 @@ bool passesAccessControlCheck(const ResourceResponse& response, StoredCredential
             return false;
         }
     } else if (accessControlOriginString != securityOrigin->toAtomicString()) {
-        if (accessControlOriginString.isEmpty()) {
+        if (accessControlOriginString.isNull()) {
             errorDescription = "No 'Access-Control-Allow-Origin' header is present on the requested resource. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
+
+            if (isInterestingStatusCode(response.httpStatusCode()))
+                errorDescription.append(" The response had HTTP status code " + String::number(response.httpStatusCode()) + ".");
         } else if (accessControlOriginString.string().find(isOriginSeparator, 0) != kNotFound) {
             errorDescription = "The 'Access-Control-Allow-Origin' header contains multiple values '" + accessControlOriginString + "', but only one is allowed. Origin '" + securityOrigin->toString() + "' is therefore not allowed access.";
         } else {
@@ -272,4 +246,4 @@ bool CrossOriginAccessControl::handleRedirect(Resource* resource, SecurityOrigin
     return true;
 }
 
-} // namespace WebCore
+} // namespace blink

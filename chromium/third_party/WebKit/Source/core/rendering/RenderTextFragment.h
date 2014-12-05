@@ -25,55 +25,58 @@
 
 #include "core/rendering/RenderText.h"
 
-namespace WebCore {
+namespace blink {
 
 // Used to represent a text substring of an element, e.g., for text runs that are split because of
 // first letter and that must therefore have different styles (and positions in the render tree).
 // We cache offsets so that text transformations can be applied in such a way that we can recover
 // the original unaltered string from our corresponding DOM node.
-class RenderTextFragment FINAL : public RenderText {
+class RenderTextFragment final : public RenderText {
 public:
     RenderTextFragment(Node*, StringImpl*, int startOffset, int length);
     RenderTextFragment(Node*, StringImpl*);
     virtual ~RenderTextFragment();
+    virtual void trace(Visitor*) override;
 
-    virtual bool isTextFragment() const OVERRIDE { return true; }
+    virtual bool isTextFragment() const override { return true; }
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return node() && node()->rendererIsEditable(); }
+    virtual bool canBeSelectionLeaf() const override { return node() && node()->hasEditableStyle(); }
 
     unsigned start() const { return m_start; }
     unsigned end() const { return m_end; }
-    virtual unsigned textStartOffset() const OVERRIDE { return start(); }
+    virtual unsigned textStartOffset() const override { return start(); }
 
     RenderBoxModelObject* firstLetter() const { return m_firstLetter; }
     void setFirstLetter(RenderBoxModelObject* firstLetter) { m_firstLetter = firstLetter; }
     RenderText* firstRenderTextInFirstLetter() const;
 
-    StringImpl* contentString() const { return m_contentString.get(); }
-    virtual PassRefPtr<StringImpl> originalText() const OVERRIDE;
+    void setContentString(StringImpl*);
+    virtual PassRefPtr<StringImpl> originalText() const override;
 
-    virtual void setText(PassRefPtr<StringImpl>, bool force = false) OVERRIDE;
+    virtual void setText(PassRefPtr<StringImpl>, bool force = false) override;
 
-    virtual void transformText() OVERRIDE;
+    virtual void transformText() override;
+
+    virtual const char* renderName() const override final { return "RenderTextFragment"; }
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
 private:
-    virtual void willBeDestroyed() OVERRIDE;
+    virtual void willBeDestroyed() override;
 
-    virtual UChar previousCharacter() const OVERRIDE;
+    virtual UChar previousCharacter() const override;
     RenderBlock* blockForAccompanyingFirstLetter() const;
-    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) OVERRIDE;
+    virtual void updateHitTestResult(HitTestResult&, const LayoutPoint&) override;
 
     unsigned m_start;
     unsigned m_end;
     RefPtr<StringImpl> m_contentString;
-    RenderBoxModelObject* m_firstLetter;
+    RawPtrWillBeMember<RenderBoxModelObject> m_firstLetter;
 };
 
 DEFINE_TYPE_CASTS(RenderTextFragment, RenderObject, object, toRenderText(object)->isTextFragment(), toRenderText(object).isTextFragment());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderTextFragment_h

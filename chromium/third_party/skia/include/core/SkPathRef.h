@@ -9,6 +9,7 @@
 #ifndef SkPathRef_DEFINED
 #define SkPathRef_DEFINED
 
+#include "SkDynamicAnnotations.h"
 #include "SkMatrix.h"
 #include "SkPoint.h"
 #include "SkRect.h"
@@ -143,7 +144,7 @@ public:
      *              fact ovals can report false.
      */
     bool isOval(SkRect* rect) const {
-        if (fIsOval && NULL != rect) {
+        if (fIsOval && rect) {
             *rect = getBounds();
         }
 
@@ -290,9 +291,11 @@ private:
     // called, if dirty, by getBounds()
     void computeBounds() const {
         SkDEBUGCODE(this->validate();)
-        SkASSERT(fBoundsIsDirty);
+        // TODO(mtklein): remove fBoundsIsDirty and fIsFinite,
+        // using an inverted rect instead of fBoundsIsDirty and always recalculating fIsFinite.
+        //SkASSERT(fBoundsIsDirty);
 
-        fIsFinite = ComputePtBounds(&fBounds, *this);
+        fIsFinite = ComputePtBounds(fBounds.get(), *this);
         fBoundsIsDirty = false;
     }
 
@@ -300,7 +303,7 @@ private:
         SkASSERT(rect.fLeft <= rect.fRight && rect.fTop <= rect.fBottom);
         fBounds = rect;
         fBoundsIsDirty = false;
-        fIsFinite = fBounds.isFinite();
+        fIsFinite = fBounds->isFinite();
     }
 
     /** Makes additional room but does not change the counts or change the genID */
@@ -418,7 +421,7 @@ private:
     /**
      * Called the first time someone calls CreateEmpty to actually create the singleton.
      */
-    static SkPathRef* CreateEmptyImpl();
+    friend SkPathRef* sk_create_empty_pathref();
 
     void setIsOval(bool isOval) { fIsOval = isOval; }
 
@@ -432,11 +435,12 @@ private:
         kMinSize = 256,
     };
 
-    mutable SkRect      fBounds;
-    uint8_t             fSegmentMask;
-    mutable uint8_t     fBoundsIsDirty;
-    mutable SkBool8     fIsFinite;    // only meaningful if bounds are valid
-    mutable SkBool8     fIsOval;
+    mutable SkTRacyReffable<SkRect> fBounds;
+    mutable SkTRacy<uint8_t>        fBoundsIsDirty;
+    mutable SkTRacy<SkBool8>        fIsFinite;    // only meaningful if bounds are valid
+
+    SkBool8  fIsOval;
+    uint8_t  fSegmentMask;
 
     SkPoint*            fPoints; // points to begining of the allocation
     uint8_t*            fVerbs; // points just past the end of the allocation (verbs grow backwards)

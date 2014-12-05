@@ -22,26 +22,16 @@ class MockDelegate : public MessageCenterTrayDelegate {
       : show_popups_success_(true),
         show_message_center_success_(true),
         enable_context_menu_(true) {}
-  virtual ~MockDelegate() {}
-  virtual void OnMessageCenterTrayChanged() OVERRIDE {}
-  virtual bool ShowPopups() OVERRIDE {
-    return show_message_center_success_;
-  }
-  virtual void HidePopups() OVERRIDE {}
-  virtual bool ShowMessageCenter() OVERRIDE {
-    return show_popups_success_;
-  }
-  virtual void HideMessageCenter() OVERRIDE {}
-  virtual bool ShowNotifierSettings() OVERRIDE {
-    return true;
-  }
-  virtual bool IsContextMenuEnabled() const OVERRIDE {
-    return enable_context_menu_;
-  }
+  ~MockDelegate() override {}
+  void OnMessageCenterTrayChanged() override {}
+  bool ShowPopups() override { return show_message_center_success_; }
+  void HidePopups() override {}
+  bool ShowMessageCenter() override { return show_popups_success_; }
+  void HideMessageCenter() override {}
+  bool ShowNotifierSettings() override { return true; }
+  bool IsContextMenuEnabled() const override { return enable_context_menu_; }
 
-  virtual MessageCenterTray* GetMessageCenterTray() OVERRIDE {
-    return NULL;
-  }
+  MessageCenterTray* GetMessageCenterTray() override { return NULL; }
 
   bool show_popups_success_;
   bool show_message_center_success_;
@@ -56,9 +46,9 @@ class MockDelegate : public MessageCenterTrayDelegate {
 class MessageCenterTrayTest : public testing::Test {
  public:
   MessageCenterTrayTest() {}
-  virtual ~MessageCenterTrayTest() {}
+  ~MessageCenterTrayTest() override {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     MessageCenter::Initialize();
     delegate_.reset(new MockDelegate);
     message_center_ = MessageCenter::Get();
@@ -66,7 +56,7 @@ class MessageCenterTrayTest : public testing::Test {
         new MessageCenterTray(delegate_.get(), message_center_));
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     message_center_tray_.reset();
     delegate_.reset();
     message_center_ = NULL;

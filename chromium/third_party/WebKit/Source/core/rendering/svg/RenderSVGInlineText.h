@@ -25,14 +25,15 @@
 #include "core/rendering/RenderText.h"
 #include "core/rendering/svg/SVGTextLayoutAttributes.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderSVGInlineText FINAL : public RenderText {
+class RenderSVGInlineText final : public RenderText {
 public:
     RenderSVGInlineText(Node*, PassRefPtr<StringImpl>);
 
     bool characterStartsNewTextChunk(int position) const;
     SVGTextLayoutAttributes* layoutAttributes() { return &m_layoutAttributes; }
+    const SVGTextLayoutAttributes* layoutAttributes() const { return &m_layoutAttributes; }
 
     float scalingFactor() const { return m_scalingFactor; }
     const Font& scaledFont() const { return m_scaledFont; }
@@ -42,21 +43,24 @@ public:
     // Preserves floating point precision for the use in DRT. It knows how to round and does a better job than enclosingIntRect.
     FloatRect floatLinesBoundingBox() const;
 
+    virtual PassRefPtr<StringImpl> originalText() const override;
+
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderSVGInlineText"; }
+    virtual const char* renderName() const override { return "RenderSVGInlineText"; }
 
-    virtual void setTextInternal(PassRefPtr<StringImpl>) OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle*) OVERRIDE;
+    virtual void setTextInternal(PassRefPtr<StringImpl>) override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle*) override;
 
-    virtual FloatRect objectBoundingBox() const OVERRIDE { return floatLinesBoundingBox(); }
+    virtual FloatRect objectBoundingBox() const override { return floatLinesBoundingBox(); }
 
-    virtual bool isSVGInlineText() const OVERRIDE { return true; }
-    virtual bool isSVG() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectSVG || type == RenderObjectSVGInlineText || RenderText::isOfType(type); }
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE;
-    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) OVERRIDE;
-    virtual IntRect linesBoundingBox() const OVERRIDE;
-    virtual InlineTextBox* createTextBox() OVERRIDE;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override;
+    virtual LayoutRect localCaretRect(InlineBox*, int caretOffset, LayoutUnit* extraWidthToEndOfLine = 0) override;
+    virtual IntRect linesBoundingBox() const override;
+    virtual InlineTextBox* createTextBox(int start, unsigned short length) override;
+
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState*) const override final;
 
     float m_scalingFactor;
     Font m_scaledFont;

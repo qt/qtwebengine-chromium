@@ -28,24 +28,24 @@
 
 """Generate template values for a callback interface.
 
-Extends IdlType with property |callback_cpp_type|.
+Extends IdlTypeBase with property |callback_cpp_type|.
 
 Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
-from idl_types import IdlType
+from idl_types import IdlTypeBase
 from v8_globals import includes
 import v8_types
 import v8_utilities
 
 CALLBACK_INTERFACE_H_INCLUDES = frozenset([
-    'bindings/v8/ActiveDOMCallback.h',
-    'bindings/v8/DOMWrapperWorld.h',
-    'bindings/v8/ScopedPersistent.h',
+    'bindings/core/v8/ActiveDOMCallback.h',
+    'bindings/core/v8/DOMWrapperWorld.h',
+    'bindings/core/v8/ScopedPersistent.h',
 ])
 CALLBACK_INTERFACE_CPP_INCLUDES = frozenset([
-    'bindings/v8/V8Binding.h',
-    'bindings/v8/V8Callback.h',
+    'bindings/core/v8/ScriptController.h',
+    'bindings/core/v8/V8Binding.h',
     'core/dom/ExecutionContext.h',
     'wtf/Assertions.h',
     'wtf/GetPtr.h',
@@ -61,16 +61,16 @@ def cpp_type(idl_type):
         return 'const String&'
     if idl_type_name == 'void':
         return 'void'
-    # Callbacks use raw pointers, so used_as_argument=True
-    usual_cpp_type = idl_type.cpp_type_args(used_as_argument=True)
-    if usual_cpp_type.startswith(('Vector', 'HeapVector', 'WillBeHeapVector')):
-        return 'const %s&' % usual_cpp_type
-    return usual_cpp_type
+    # Callbacks use raw pointers, so raw_type=True
+    raw_cpp_type = idl_type.cpp_type_args(raw_type=True)
+    if raw_cpp_type.startswith(('Vector', 'HeapVector', 'WillBeHeapVector')):
+        return 'const %s&' % raw_cpp_type
+    return raw_cpp_type
 
-IdlType.callback_cpp_type = property(cpp_type)
+IdlTypeBase.callback_cpp_type = property(cpp_type)
 
 
-def generate_callback_interface(callback_interface):
+def callback_interface_context(callback_interface):
     includes.clear()
     includes.update(CALLBACK_INTERFACE_CPP_INCLUDES)
     return {
@@ -78,7 +78,7 @@ def generate_callback_interface(callback_interface):
         'cpp_class': callback_interface.name,
         'v8_class': v8_utilities.v8_class_name(callback_interface),
         'header_includes': set(CALLBACK_INTERFACE_H_INCLUDES),
-        'methods': [generate_method(operation)
+        'methods': [method_context(operation)
                     for operation in callback_interface.operations],
     }
 
@@ -89,7 +89,7 @@ def add_includes_for_operation(operation):
         argument.idl_type.add_includes_for_type()
 
 
-def generate_method(operation):
+def method_context(operation):
     extended_attributes = operation.extended_attributes
     idl_type = operation.idl_type
     idl_type_str = str(idl_type)
@@ -100,27 +100,24 @@ def generate_method(operation):
         add_includes_for_operation(operation)
     call_with = extended_attributes.get('CallWith')
     call_with_this_handle = v8_utilities.extended_attribute_value_contains(call_with, 'ThisValue')
-    contents = {
+    context = {
         'call_with_this_handle': call_with_this_handle,
         'cpp_type': idl_type.callback_cpp_type,
-        'custom': is_custom,
         'idl_type': idl_type_str,
+        'is_custom': is_custom,
         'name': operation.name,
     }
-    contents.update(generate_arguments_contents(operation.arguments, call_with_this_handle))
-    return contents
+    context.update(arguments_context(operation.arguments,
+                                     call_with_this_handle))
+    return context
 
 
-def generate_arguments_contents(arguments, call_with_this_handle):
-    def generate_argument(argument):
+def arguments_context(arguments, call_with_this_handle):
+    def argument_context(argument):
         return {
             'handle': '%sHandle' % argument.name,
-            # FIXME: setting creation_context=v8::Handle<v8::Object>() is
-            # wrong, as toV8 then implicitly uses the current context, which
-            # causes leaks between isolated worlds if a different context is
-            # used.
             'cpp_value_to_v8_value': argument.idl_type.cpp_value_to_v8_value(
-                argument.name, isolate='isolate',
+                argument.name, isolate='m_scriptState->isolate()',
                 creation_context='m_scriptState->context()->Global()'),
         }
 
@@ -130,5 +127,5 @@ def generate_arguments_contents(arguments, call_with_this_handle):
         for argument in arguments)
     return  {
         'argument_declarations': argument_declarations,
-        'arguments': [generate_argument(argument) for argument in arguments],
+        'arguments': [argument_context(argument) for argument in arguments],
     }

@@ -24,13 +24,14 @@
  */
 
 #include "config.h"
-
 #include "platform/graphics/GraphicsLayer.h"
 
 #include "SkImageFilter.h"
 #include "SkMatrix44.h"
+#include "platform/TraceEvent.h"
 #include "platform/geometry/FloatRect.h"
 #include "platform/geometry/LayoutRect.h"
+#include "platform/graphics/FirstPaintInvalidationTracking.h"
 #include "platform/graphics/GraphicsLayerFactory.h"
 #include "platform/graphics/Image.h"
 #include "platform/graphics/filters/SkiaImageFilterBuilder.h"
@@ -38,7 +39,7 @@
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/text/TextStream.h"
 #include "public/platform/Platform.h"
-#include "public/platform/WebAnimation.h"
+#include "public/platform/WebCompositorAnimation.h"
 #include "public/platform/WebCompositorSupport.h"
 #include "public/platform/WebFilterOperations.h"
 #include "public/platform/WebFloatPoint.h"
@@ -51,20 +52,13 @@
 #include "wtf/HashMap.h"
 #include "wtf/HashSet.h"
 #include "wtf/text/WTFString.h"
-
 #include <algorithm>
 
 #ifndef NDEBUG
 #include <stdio.h>
 #endif
 
-using blink::Platform;
-using blink::WebAnimation;
-using blink::WebFilterOperations;
-using blink::WebLayer;
-using blink::WebPoint;
-
-namespace WebCore {
+namespace blink {
 
 typedef HashMap<const GraphicsLayer*, Vector<FloatRect> > RepaintMap;
 static RepaintMap& repaintRectMap()
@@ -82,7 +76,7 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     : m_client(client)
     , m_backgroundColor(Color::transparent)
     , m_opacity(1)
-    , m_blendMode(blink::WebBlendModeNormal)
+    , m_blendMode(WebBlendModeNormal)
     , m_hasTransformOrigin(false)
     , m_contentsOpaque(false)
     , m_shouldFlattenTransform(true)
@@ -105,13 +99,13 @@ GraphicsLayer::GraphicsLayer(GraphicsLayerClient* client)
     , m_scrollableArea(0)
     , m_3dRenderingContext(0)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (m_client)
         m_client->verifyNotPainting();
 #endif
 
-    m_opaqueRectTrackingContentLayerDelegate = adoptPtr(new OpaqueRectTrackingContentLayerDelegate(this));
-    m_layer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(m_opaqueRectTrackingContentLayerDelegate.get()));
+    m_contentLayerDelegate = adoptPtr(new ContentLayerDelegate(this));
+    m_layer = adoptPtr(Platform::current()->compositorSupport()->createContentLayer(m_contentLayerDelegate.get()));
     m_layer->layer()->setDrawsContent(m_drawsContent && m_contentsVisible);
     m_layer->layer()->setWebLayerClient(this);
     m_layer->setAutomaticallyComputeRasterScale(true);
@@ -123,7 +117,7 @@ GraphicsLayer::~GraphicsLayer()
         m_linkHighlights[i]->clearCurrentGraphicsLayer();
     m_linkHighlights.clear();
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     if (m_client)
         m_client->verifyNotPainting();
 #endif
@@ -137,7 +131,7 @@ GraphicsLayer::~GraphicsLayer()
     removeAllChildren();
     removeFromParent();
 
-    resetTrackedRepaints();
+    resetTrackedPaintInvalidations();
     ASSERT(!m_parent);
 }
 
@@ -147,7 +141,7 @@ void GraphicsLayer::setParent(GraphicsLayer* layer)
     m_parent = layer;
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 
 bool GraphicsLayer::hasAncestor(GraphicsLayer* ancestor) const
 {
@@ -198,19 +192,6 @@ void GraphicsLayer::addChild(GraphicsLayer* childLayer)
     updateChildList();
 }
 
-void GraphicsLayer::addChildAtIndex(GraphicsLayer* childLayer, int index)
-{
-    ASSERT(childLayer != this);
-
-    if (childLayer->parent())
-        childLayer->removeFromParent();
-
-    childLayer->setParent(this);
-    m_children.insert(index, childLayer);
-
-    updateChildList();
-}
-
 void GraphicsLayer::addChildBelow(GraphicsLayer* childLayer, GraphicsLayer* sibling)
 {
     ASSERT(childLayer != this);
@@ -231,53 +212,6 @@ void GraphicsLayer::addChildBelow(GraphicsLayer* childLayer, GraphicsLayer* sibl
         m_children.append(childLayer);
 
     updateChildList();
-}
-
-void GraphicsLayer::addChildAbove(GraphicsLayer* childLayer, GraphicsLayer* sibling)
-{
-    childLayer->removeFromParent();
-    ASSERT(childLayer != this);
-
-    bool found = false;
-    for (unsigned i = 0; i < m_children.size(); i++) {
-        if (sibling == m_children[i]) {
-            m_children.insert(i+1, childLayer);
-            found = true;
-            break;
-        }
-    }
-
-    childLayer->setParent(this);
-
-    if (!found)
-        m_children.append(childLayer);
-
-    updateChildList();
-}
-
-bool GraphicsLayer::replaceChild(GraphicsLayer* oldChild, GraphicsLayer* newChild)
-{
-    ASSERT(!newChild->parent());
-    bool found = false;
-    for (unsigned i = 0; i < m_children.size(); i++) {
-        if (oldChild == m_children[i]) {
-            m_children[i] = newChild;
-            found = true;
-            break;
-        }
-    }
-
-    if (found) {
-        oldChild->setParent(0);
-
-        newChild->removeFromParent();
-        newChild->setParent(this);
-
-        updateChildList();
-        return true;
-    }
-
-    return false;
 }
 
 void GraphicsLayer::removeAllChildren()
@@ -333,6 +267,8 @@ void GraphicsLayer::paintGraphicsLayerContents(GraphicsContext& context, const I
 {
     if (!m_client)
         return;
+    if (firstPaintInvalidationTrackingEnabled())
+        m_debugInfo.clearAnnotatedInvalidateRects();
     incrementPaintCount();
     m_client->paintContents(this, context, m_paintingPhase, clip);
 }
@@ -477,7 +413,7 @@ GraphicsLayerDebugInfo& GraphicsLayer::debugInfo()
     return m_debugInfo;
 }
 
-blink::WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfoFor(WebLayer* layer)
+WebGraphicsLayerDebugInfo* GraphicsLayer::takeDebugInfoFor(WebLayer* layer)
 {
     GraphicsLayerDebugInfo* clone = m_debugInfo.clone();
     clone->setDebugName(debugName(layer));
@@ -490,52 +426,24 @@ WebLayer* GraphicsLayer::contentsLayerIfRegistered()
     return m_contentsLayer;
 }
 
-void GraphicsLayer::resetTrackedRepaints()
+void GraphicsLayer::resetTrackedPaintInvalidations()
 {
     repaintRectMap().remove(this);
 }
 
 void GraphicsLayer::addRepaintRect(const FloatRect& repaintRect)
 {
-    if (m_client->isTrackingRepaints()) {
-        FloatRect largestRepaintRect(FloatPoint(), m_size);
-        largestRepaintRect.intersect(repaintRect);
+    if (m_client->isTrackingPaintInvalidations()) {
         RepaintMap::iterator repaintIt = repaintRectMap().find(this);
         if (repaintIt == repaintRectMap().end()) {
             Vector<FloatRect> repaintRects;
-            repaintRects.append(largestRepaintRect);
+            repaintRects.append(repaintRect);
             repaintRectMap().set(this, repaintRects);
         } else {
             Vector<FloatRect>& repaintRects = repaintIt->value;
-            repaintRects.append(largestRepaintRect);
+            repaintRects.append(repaintRect);
         }
     }
-}
-
-void GraphicsLayer::collectTrackedRepaintRects(Vector<FloatRect>& rects) const
-{
-    if (!m_client->isTrackingRepaints())
-        return;
-
-    RepaintMap::iterator repaintIt = repaintRectMap().find(this);
-    if (repaintIt != repaintRectMap().end())
-        rects.appendVector(repaintIt->value);
-}
-
-void GraphicsLayer::dumpLayer(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
-{
-    writeIndent(ts, indent);
-    ts << "(" << "GraphicsLayer";
-
-    if (flags & LayerTreeIncludesDebugInfo) {
-        ts << " " << static_cast<void*>(const_cast<GraphicsLayer*>(this));
-        ts << " \"" << m_client->debugName(this) << "\"";
-    }
-
-    ts << "\n";
-    dumpProperties(ts, indent, flags, renderingContextMap);
-    writeIndent(ts, indent);
-    ts << ")\n";
 }
 
 static bool compareFloatRects(const FloatRect& a, const FloatRect& b)
@@ -549,52 +457,117 @@ static bool compareFloatRects(const FloatRect& a, const FloatRect& b)
     return a.height() > b.height();
 }
 
-void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
+template <typename T>
+static PassRefPtr<JSONArray> pointAsJSONArray(const T& point)
 {
-    if (m_position != FloatPoint()) {
-        writeIndent(ts, indent + 1);
-        ts << "(position " << m_position.x() << " " << m_position.y() << ")\n";
+    RefPtr<JSONArray> array = adoptRef(new JSONArray);
+    array->pushNumber(point.x());
+    array->pushNumber(point.y());
+    return array;
+}
+
+template <typename T>
+static PassRefPtr<JSONArray> sizeAsJSONArray(const T& size)
+{
+    RefPtr<JSONArray> array = adoptRef(new JSONArray);
+    array->pushNumber(size.width());
+    array->pushNumber(size.height());
+    return array;
+}
+
+template <typename T>
+static PassRefPtr<JSONArray> rectAsJSONArray(const T& rect)
+{
+    RefPtr<JSONArray> array = adoptRef(new JSONArray);
+    array->pushNumber(rect.x());
+    array->pushNumber(rect.y());
+    array->pushNumber(rect.width());
+    array->pushNumber(rect.height());
+    return array;
+}
+
+static double roundCloseToZero(double number)
+{
+    return std::abs(number) < 1e-7 ? 0 : number;
+}
+
+static PassRefPtr<JSONArray> transformAsJSONArray(const TransformationMatrix& t)
+{
+    RefPtr<JSONArray> array = adoptRef(new JSONArray);
+    {
+        RefPtr<JSONArray> row = adoptRef(new JSONArray);
+        row->pushNumber(roundCloseToZero(t.m11()));
+        row->pushNumber(roundCloseToZero(t.m12()));
+        row->pushNumber(roundCloseToZero(t.m13()));
+        row->pushNumber(roundCloseToZero(t.m14()));
+        array->pushArray(row);
+    }
+    {
+        RefPtr<JSONArray> row = adoptRef(new JSONArray);
+        row->pushNumber(roundCloseToZero(t.m21()));
+        row->pushNumber(roundCloseToZero(t.m22()));
+        row->pushNumber(roundCloseToZero(t.m23()));
+        row->pushNumber(roundCloseToZero(t.m24()));
+        array->pushArray(row);
+    }
+    {
+        RefPtr<JSONArray> row = adoptRef(new JSONArray);
+        row->pushNumber(roundCloseToZero(t.m31()));
+        row->pushNumber(roundCloseToZero(t.m32()));
+        row->pushNumber(roundCloseToZero(t.m33()));
+        row->pushNumber(roundCloseToZero(t.m34()));
+        array->pushArray(row);
+    }
+    {
+        RefPtr<JSONArray> row = adoptRef(new JSONArray);
+        row->pushNumber(roundCloseToZero(t.m41()));
+        row->pushNumber(roundCloseToZero(t.m42()));
+        row->pushNumber(roundCloseToZero(t.m43()));
+        row->pushNumber(roundCloseToZero(t.m44()));
+        array->pushArray(row);
+    }
+    return array;
+}
+
+static String pointerAsString(const void* ptr)
+{
+    TextStream ts;
+    ts << ptr;
+    return ts.release();
+}
+
+PassRefPtr<JSONObject> GraphicsLayer::layerTreeAsJSON(LayerTreeFlags flags, RenderingContextMap& renderingContextMap) const
+{
+    RefPtr<JSONObject> json = adoptRef(new JSONObject);
+
+    if (flags & LayerTreeIncludesDebugInfo) {
+        json->setString("this", pointerAsString(this));
+        json->setString("debugName", m_client->debugName(this));
     }
 
-    if (m_boundsOrigin != FloatPoint()) {
-        writeIndent(ts, indent + 1);
-        ts << "(bounds origin " << m_boundsOrigin.x() << " " << m_boundsOrigin.y() << ")\n";
-    }
+    if (m_position != FloatPoint())
+        json->setArray("position", pointAsJSONArray(m_position));
 
-    if (m_hasTransformOrigin && m_transformOrigin != FloatPoint3D(m_size.width() * 0.5f, m_size.height() * 0.5f, 0)) {
-        writeIndent(ts, indent + 1);
-        ts << "(transformOrigin " << m_transformOrigin.x() << " " << m_transformOrigin.y() << ")\n";
-    }
+    if (m_hasTransformOrigin && m_transformOrigin != FloatPoint3D(m_size.width() * 0.5f, m_size.height() * 0.5f, 0))
+        json->setArray("transformOrigin", pointAsJSONArray(m_transformOrigin));
 
-    if (m_size != IntSize()) {
-        writeIndent(ts, indent + 1);
-        ts << "(bounds " << m_size.width() << " " << m_size.height() << ")\n";
-    }
+    if (m_size != IntSize())
+        json->setArray("bounds", sizeAsJSONArray(m_size));
 
-    if (m_opacity != 1) {
-        writeIndent(ts, indent + 1);
-        ts << "(opacity " << m_opacity << ")\n";
-    }
+    if (m_opacity != 1)
+        json->setNumber("opacity", m_opacity);
 
-    if (m_blendMode != blink::WebBlendModeNormal) {
-        writeIndent(ts, indent + 1);
-        ts << "(blendMode " << compositeOperatorName(CompositeSourceOver, m_blendMode) << ")\n";
-    }
+    if (m_blendMode != WebBlendModeNormal)
+        json->setString("blendMode", compositeOperatorName(CompositeSourceOver, m_blendMode));
 
-    if (m_isRootForIsolatedGroup) {
-        writeIndent(ts, indent + 1);
-        ts << "(isolate " << m_isRootForIsolatedGroup << ")\n";
-    }
+    if (m_isRootForIsolatedGroup)
+        json->setBoolean("isolate", m_isRootForIsolatedGroup);
 
-    if (m_contentsOpaque) {
-        writeIndent(ts, indent + 1);
-        ts << "(contentsOpaque " << m_contentsOpaque << ")\n";
-    }
+    if (m_contentsOpaque)
+        json->setBoolean("contentsOpaque", m_contentsOpaque);
 
-    if (!m_shouldFlattenTransform) {
-        writeIndent(ts, indent + 1);
-        ts << "(shouldFlattenTransform " << m_shouldFlattenTransform << ")\n";
-    }
+    if (!m_shouldFlattenTransform)
+        json->setBoolean("shouldFlattenTransform", m_shouldFlattenTransform);
 
     if (m_3dRenderingContext) {
         RenderingContextMap::const_iterator it = renderingContextMap.find(m_3dRenderingContext);
@@ -604,163 +577,96 @@ void GraphicsLayer::dumpProperties(TextStream& ts, int indent, LayerTreeFlags fl
         else
             contextId = it->value;
 
-        writeIndent(ts, indent + 1);
-        ts << "(3dRenderingContext " << contextId << ")\n";
+        json->setNumber("3dRenderingContext", contextId);
     }
 
-    if (m_drawsContent) {
-        writeIndent(ts, indent + 1);
-        ts << "(drawsContent " << m_drawsContent << ")\n";
-    }
+    if (m_drawsContent)
+        json->setBoolean("drawsContent", m_drawsContent);
 
-    if (!m_contentsVisible) {
-        writeIndent(ts, indent + 1);
-        ts << "(contentsVisible " << m_contentsVisible << ")\n";
-    }
+    if (!m_contentsVisible)
+        json->setBoolean("contentsVisible", m_contentsVisible);
 
-    if (!m_backfaceVisibility) {
-        writeIndent(ts, indent + 1);
-        ts << "(backfaceVisibility " << (m_backfaceVisibility ? "visible" : "hidden") << ")\n";
-    }
+    if (!m_backfaceVisibility)
+        json->setString("backfaceVisibility", m_backfaceVisibility ? "visible" : "hidden");
 
-    if (flags & LayerTreeIncludesDebugInfo) {
-        writeIndent(ts, indent + 1);
-        ts << "(";
-        if (m_client)
-            ts << "client " << static_cast<void*>(m_client);
-        else
-            ts << "no client";
-        ts << ")\n";
-    }
+    if (flags & LayerTreeIncludesDebugInfo)
+        json->setString("client", pointerAsString(m_client));
 
-    if (m_backgroundColor.alpha()) {
-        writeIndent(ts, indent + 1);
-        ts << "(backgroundColor " << m_backgroundColor.nameForRenderTreeAsText() << ")\n";
-    }
+    if (m_backgroundColor.alpha())
+        json->setString("backgroundColor", m_backgroundColor.nameForRenderTreeAsText());
 
-    if (!m_transform.isIdentity()) {
-        writeIndent(ts, indent + 1);
-        ts << "(transform ";
-        ts << "[" << m_transform.m11() << " " << m_transform.m12() << " " << m_transform.m13() << " " << m_transform.m14() << "] ";
-        ts << "[" << m_transform.m21() << " " << m_transform.m22() << " " << m_transform.m23() << " " << m_transform.m24() << "] ";
-        ts << "[" << m_transform.m31() << " " << m_transform.m32() << " " << m_transform.m33() << " " << m_transform.m34() << "] ";
-        ts << "[" << m_transform.m41() << " " << m_transform.m42() << " " << m_transform.m43() << " " << m_transform.m44() << "])\n";
-    }
+    if (!m_transform.isIdentity())
+        json->setArray("transform", transformAsJSONArray(m_transform));
 
-    if (m_replicaLayer) {
-        writeIndent(ts, indent + 1);
-        ts << "(replica layer";
-        if (flags & LayerTreeIncludesDebugInfo)
-            ts << " " << m_replicaLayer;
-        ts << ")\n";
-        m_replicaLayer->dumpLayer(ts, indent + 2, flags, renderingContextMap);
-    }
+    if (m_replicaLayer)
+        json->setObject("replicaLayer", m_replicaLayer->layerTreeAsJSON(flags, renderingContextMap));
 
-    if (m_replicatedLayer) {
-        writeIndent(ts, indent + 1);
-        ts << "(replicated layer";
-        if (flags & LayerTreeIncludesDebugInfo)
-            ts << " " << m_replicatedLayer;
-        ts << ")\n";
-    }
+    if (m_replicatedLayer)
+        json->setString("replicatedLayer", flags & LayerTreeIncludesDebugInfo ? pointerAsString(m_replicatedLayer) : "");
 
-    if ((flags & LayerTreeIncludesRepaintRects) && repaintRectMap().contains(this) && !repaintRectMap().get(this).isEmpty()) {
+    if ((flags & LayerTreeIncludesPaintInvalidationRects) && repaintRectMap().contains(this) && !repaintRectMap().get(this).isEmpty()) {
         Vector<FloatRect> repaintRectsCopy = repaintRectMap().get(this);
         std::sort(repaintRectsCopy.begin(), repaintRectsCopy.end(), &compareFloatRects);
-        writeIndent(ts, indent + 1);
-        ts << "(repaint rects\n";
+        RefPtr<JSONArray> repaintRectsJSON = adoptRef(new JSONArray);
         for (size_t i = 0; i < repaintRectsCopy.size(); ++i) {
             if (repaintRectsCopy[i].isEmpty())
                 continue;
-            writeIndent(ts, indent + 2);
-            ts << "(rect ";
-            ts << repaintRectsCopy[i].x() << " ";
-            ts << repaintRectsCopy[i].y() << " ";
-            ts << repaintRectsCopy[i].width() << " ";
-            ts << repaintRectsCopy[i].height();
-            ts << ")\n";
+            repaintRectsJSON->pushArray(rectAsJSONArray(repaintRectsCopy[i]));
         }
-        writeIndent(ts, indent + 1);
-        ts << ")\n";
+        json->setArray("repaintRects", repaintRectsJSON);
     }
 
     if ((flags & LayerTreeIncludesPaintingPhases) && m_paintingPhase) {
-        writeIndent(ts, indent + 1);
-        ts << "(paintingPhases\n";
-        if (m_paintingPhase & GraphicsLayerPaintBackground) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintBackground\n";
-        }
-        if (m_paintingPhase & GraphicsLayerPaintForeground) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintForeground\n";
-        }
-        if (m_paintingPhase & GraphicsLayerPaintMask) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintMask\n";
-        }
-        if (m_paintingPhase & GraphicsLayerPaintChildClippingMask) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintChildClippingMask\n";
-        }
-        if (m_paintingPhase & GraphicsLayerPaintOverflowContents) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintOverflowContents\n";
-        }
-        if (m_paintingPhase & GraphicsLayerPaintCompositedScroll) {
-            writeIndent(ts, indent + 2);
-            ts << "GraphicsLayerPaintCompositedScroll\n";
-        }
-        writeIndent(ts, indent + 1);
-        ts << ")\n";
+        RefPtr<JSONArray> paintingPhasesJSON = adoptRef(new JSONArray);
+        if (m_paintingPhase & GraphicsLayerPaintBackground)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintBackground");
+        if (m_paintingPhase & GraphicsLayerPaintForeground)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintForeground");
+        if (m_paintingPhase & GraphicsLayerPaintMask)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintMask");
+        if (m_paintingPhase & GraphicsLayerPaintChildClippingMask)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintChildClippingMask");
+        if (m_paintingPhase & GraphicsLayerPaintOverflowContents)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintOverflowContents");
+        if (m_paintingPhase & GraphicsLayerPaintCompositedScroll)
+            paintingPhasesJSON->pushString("GraphicsLayerPaintCompositedScroll");
+        json->setArray("paintingPhases", paintingPhasesJSON);
     }
 
     if (flags & LayerTreeIncludesClipAndScrollParents) {
-        if (m_hasScrollParent) {
-            writeIndent(ts, indent + 1);
-            ts << "(hasScrollParent 1)\n";
-        }
-        if (m_hasClipParent) {
-            writeIndent(ts, indent + 1);
-            ts << "(hasClipParent 1)\n";
-        }
+        if (m_hasScrollParent)
+            json->setBoolean("hasScrollParent", true);
+        if (m_hasClipParent)
+            json->setBoolean("hasClipParent", true);
     }
 
     if (flags & LayerTreeIncludesDebugInfo) {
-        writeIndent(ts, indent + 1);
-        ts << "(compositingReasons\n";
-        for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonStringMap); ++i) {
-            if (m_debugInfo.compositingReasons() & compositingReasonStringMap[i].reason) {
-                writeIndent(ts, indent + 2);
-                ts << compositingReasonStringMap[i].description << "\n";
-            }
+        RefPtr<JSONArray> compositingReasonsJSON = adoptRef(new JSONArray);
+        for (size_t i = 0; i < kNumberOfCompositingReasons; ++i) {
+            if (m_debugInfo.compositingReasons() & kCompositingReasonStringMap[i].reason)
+                compositingReasonsJSON->pushString(kCompositingReasonStringMap[i].description);
         }
-        writeIndent(ts, indent + 1);
-        ts << ")\n";
+        json->setArray("compositingReasons", compositingReasonsJSON);
     }
 
     if (m_children.size()) {
-        writeIndent(ts, indent + 1);
-        ts << "(children " << m_children.size() << "\n";
-
-        unsigned i;
-        for (i = 0; i < m_children.size(); i++)
-            m_children[i]->dumpLayer(ts, indent + 2, flags, renderingContextMap);
-        writeIndent(ts, indent + 1);
-        ts << ")\n";
+        RefPtr<JSONArray> childrenJSON = adoptRef(new JSONArray);
+        for (size_t i = 0; i < m_children.size(); i++)
+            childrenJSON->pushObject(m_children[i]->layerTreeAsJSON(flags, renderingContextMap));
+        json->setArray("children", childrenJSON);
     }
+
+    return json;
 }
 
 String GraphicsLayer::layerTreeAsText(LayerTreeFlags flags) const
 {
-    TextStream ts;
-
     RenderingContextMap renderingContextMap;
-    dumpLayer(ts, 0, flags, renderingContextMap);
-    return ts.release();
+    RefPtr<JSONObject> json = layerTreeAsJSON(flags, renderingContextMap);
+    return json->toPrettyJSONString();
 }
 
-String GraphicsLayer::debugName(blink::WebLayer* webLayer) const
+String GraphicsLayer::debugName(WebLayer* webLayer) const
 {
     String name;
     if (!m_client)
@@ -883,13 +789,13 @@ void GraphicsLayer::setContentsVisible(bool contentsVisible)
     updateLayerIsDrawable();
 }
 
-void GraphicsLayer::setClipParent(blink::WebLayer* parent)
+void GraphicsLayer::setClipParent(WebLayer* parent)
 {
     m_hasClipParent = !!parent;
     m_layer->layer()->setClipParent(parent);
 }
 
-void GraphicsLayer::setScrollParent(blink::WebLayer* parent)
+void GraphicsLayer::setScrollParent(WebLayer* parent)
 {
     m_hasScrollParent = !!parent;
     m_layer->layer()->setScrollParent(parent);
@@ -908,7 +814,10 @@ void GraphicsLayer::setContentsOpaque(bool opaque)
 {
     m_contentsOpaque = opaque;
     m_layer->layer()->setOpaque(m_contentsOpaque);
-    m_opaqueRectTrackingContentLayerDelegate->setOpaque(m_contentsOpaque);
+    m_contentLayerDelegate->setOpaque(m_contentsOpaque);
+    clearContentsLayerIfUnregistered();
+    if (m_contentsLayer)
+        m_contentsLayer->setOpaque(opaque);
 }
 
 void GraphicsLayer::setMaskLayer(GraphicsLayer* maskLayer)
@@ -948,12 +857,12 @@ void GraphicsLayer::setOpacity(float opacity)
     platformLayer()->setOpacity(opacity);
 }
 
-void GraphicsLayer::setBlendMode(blink::WebBlendMode blendMode)
+void GraphicsLayer::setBlendMode(WebBlendMode blendMode)
 {
     if (m_blendMode == blendMode)
         return;
     m_blendMode = blendMode;
-    platformLayer()->setBlendMode(blink::WebBlendMode(blendMode));
+    platformLayer()->setBlendMode(WebBlendMode(blendMode));
 }
 
 void GraphicsLayer::setIsRootForIsolatedGroup(bool isolated)
@@ -982,10 +891,12 @@ void GraphicsLayer::setNeedsDisplay()
     }
 }
 
-void GraphicsLayer::setNeedsDisplayInRect(const FloatRect& rect)
+void GraphicsLayer::setNeedsDisplayInRect(const IntRect& rect, PaintInvalidationReason invalidationReason)
 {
     if (drawsContent()) {
         m_layer->layer()->invalidateRect(rect);
+        if (firstPaintInvalidationTrackingEnabled())
+            m_debugInfo.appendAnnotatedInvalidateRect(rect, invalidationReason);
         addRepaintRect(rect);
         for (size_t i = 0; i < m_linkHighlights.size(); ++i)
             m_linkHighlights[i]->invalidate();
@@ -1009,7 +920,7 @@ void GraphicsLayer::setContentsToImage(Image* image)
             m_imageLayer = adoptPtr(Platform::current()->compositorSupport()->createImageLayer());
             registerContentsLayer(m_imageLayer->layer());
         }
-        m_imageLayer->setBitmap(nativeImage->bitmap());
+        m_imageLayer->setImageBitmap(nativeImage->bitmap());
         m_imageLayer->layer()->setOpaque(image->currentFrameKnownToBeOpaque());
         updateContentsRect();
     } else {
@@ -1031,16 +942,24 @@ void GraphicsLayer::setContentsToNinePatch(Image* image, const IntRect& aperture
     RefPtr<NativeImageSkia> nativeImage = image ? image->nativeImageForCurrentFrame() : nullptr;
     if (nativeImage) {
         m_ninePatchLayer = adoptPtr(Platform::current()->compositorSupport()->createNinePatchLayer());
-        m_ninePatchLayer->setBitmap(nativeImage->bitmap(), aperture);
+        const SkBitmap& bitmap = nativeImage->bitmap();
+        int borderWidth = bitmap.width() - aperture.width();
+        int borderHeight = bitmap.height() - aperture.height();
+        WebRect border(aperture.x(), aperture.y(), borderWidth, borderHeight);
+
+        m_ninePatchLayer->setBitmap(bitmap);
+        m_ninePatchLayer->setAperture(aperture);
+        m_ninePatchLayer->setBorder(border);
+
         m_ninePatchLayer->layer()->setOpaque(image->currentFrameKnownToBeOpaque());
         registerContentsLayer(m_ninePatchLayer->layer());
     }
     setContentsTo(m_ninePatchLayer ? m_ninePatchLayer->layer() : 0);
 }
 
-bool GraphicsLayer::addAnimation(PassOwnPtr<WebAnimation> popAnimation)
+bool GraphicsLayer::addAnimation(PassOwnPtr<WebCompositorAnimation> popAnimation)
 {
-    OwnPtr<WebAnimation> animation(popAnimation);
+    OwnPtr<WebCompositorAnimation> animation(popAnimation);
     ASSERT(animation);
     platformLayer()->setAnimationDelegate(this);
 
@@ -1064,102 +983,14 @@ WebLayer* GraphicsLayer::platformLayer() const
     return m_layer->layer();
 }
 
-static bool copyWebCoreFilterOperationsToWebFilterOperations(const FilterOperations& filters, WebFilterOperations& webFilters)
-{
-    for (size_t i = 0; i < filters.size(); ++i) {
-        const FilterOperation& op = *filters.at(i);
-        switch (op.type()) {
-        case FilterOperation::REFERENCE:
-            return false; // Not supported.
-        case FilterOperation::GRAYSCALE:
-        case FilterOperation::SEPIA:
-        case FilterOperation::SATURATE:
-        case FilterOperation::HUE_ROTATE: {
-            float amount = toBasicColorMatrixFilterOperation(op).amount();
-            switch (op.type()) {
-            case FilterOperation::GRAYSCALE:
-                webFilters.appendGrayscaleFilter(amount);
-                break;
-            case FilterOperation::SEPIA:
-                webFilters.appendSepiaFilter(amount);
-                break;
-            case FilterOperation::SATURATE:
-                webFilters.appendSaturateFilter(amount);
-                break;
-            case FilterOperation::HUE_ROTATE:
-                webFilters.appendHueRotateFilter(amount);
-                break;
-            default:
-                ASSERT_NOT_REACHED();
-            }
-            break;
-        }
-        case FilterOperation::INVERT:
-        case FilterOperation::OPACITY:
-        case FilterOperation::BRIGHTNESS:
-        case FilterOperation::CONTRAST: {
-            float amount = toBasicComponentTransferFilterOperation(op).amount();
-            switch (op.type()) {
-            case FilterOperation::INVERT:
-                webFilters.appendInvertFilter(amount);
-                break;
-            case FilterOperation::OPACITY:
-                webFilters.appendOpacityFilter(amount);
-                break;
-            case FilterOperation::BRIGHTNESS:
-                webFilters.appendBrightnessFilter(amount);
-                break;
-            case FilterOperation::CONTRAST:
-                webFilters.appendContrastFilter(amount);
-                break;
-            default:
-                ASSERT_NOT_REACHED();
-            }
-            break;
-        }
-        case FilterOperation::BLUR: {
-            float pixelRadius = toBlurFilterOperation(op).stdDeviation().getFloatValue();
-            webFilters.appendBlurFilter(pixelRadius);
-            break;
-        }
-        case FilterOperation::DROP_SHADOW: {
-            const DropShadowFilterOperation& dropShadowOp = toDropShadowFilterOperation(op);
-            webFilters.appendDropShadowFilter(WebPoint(dropShadowOp.x(), dropShadowOp.y()), dropShadowOp.stdDeviation(), dropShadowOp.color().rgb());
-            break;
-        }
-        case FilterOperation::NONE:
-            break;
-        }
-    }
-    return true;
-}
-
-bool GraphicsLayer::setFilters(const FilterOperations& filters)
+void GraphicsLayer::setFilters(const FilterOperations& filters)
 {
     SkiaImageFilterBuilder builder;
     OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
     FilterOutsets outsets = filters.outsets();
     builder.setCropOffset(FloatSize(outsets.left(), outsets.top()));
-    if (!builder.buildFilterOperations(filters, webFilters.get())) {
-        // Make sure the filters are removed from the platform layer, as they are
-        // going to fallback to software mode.
-        webFilters->clear();
-        m_layer->layer()->setFilters(*webFilters);
-        m_filters = FilterOperations();
-        return false;
-    }
-
+    builder.buildFilterOperations(filters, webFilters.get());
     m_layer->layer()->setFilters(*webFilters);
-    m_filters = filters;
-    return true;
-}
-
-void GraphicsLayer::setBackgroundFilters(const FilterOperations& filters)
-{
-    OwnPtr<WebFilterOperations> webFilters = adoptPtr(Platform::current()->compositorSupport()->createFilterOperations());
-    if (!copyWebCoreFilterOperationsToWebFilterOperations(filters, *webFilters))
-        return;
-    m_layer->layer()->setBackgroundFilters(*webFilters);
 }
 
 void GraphicsLayer::setPaintingPhase(GraphicsLayerPaintingPhase phase)
@@ -1184,18 +1015,16 @@ void GraphicsLayer::removeLinkHighlight(LinkHighlightClient* linkHighlight)
     updateChildList();
 }
 
-void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isMainFrame)
+void GraphicsLayer::setScrollableArea(ScrollableArea* scrollableArea, bool isViewport)
 {
     if (m_scrollableArea == scrollableArea)
         return;
 
     m_scrollableArea = scrollableArea;
 
-    // Main frame scrolling may involve pinch zoom and gets routed through
+    // Viewport scrolling may involve pinch zoom and gets routed through
     // WebViewImpl explicitly rather than via GraphicsLayer::didScroll.
-    // TODO(bokan): With pinch virtual viewport the special case will no
-    // longer be needed, remove once old-style pinch is gone.
-    if (isMainFrame)
+    if (isViewport)
         m_layer->layer()->setScrollClient(0);
     else
         m_layer->layer()->setScrollClient(this);
@@ -1207,32 +1036,34 @@ void GraphicsLayer::paint(GraphicsContext& context, const IntRect& clip)
 }
 
 
-void GraphicsLayer::notifyAnimationStarted(double monotonicTime, WebAnimation::TargetProperty)
+void GraphicsLayer::notifyAnimationStarted(double monotonicTime, int group)
 {
     if (m_client)
-        m_client->notifyAnimationStarted(this, monotonicTime);
+        m_client->notifyAnimationStarted(this, monotonicTime, group);
 }
 
-void GraphicsLayer::notifyAnimationFinished(double, WebAnimation::TargetProperty)
+void GraphicsLayer::notifyAnimationFinished(double, int)
 {
-    // Do nothing.
 }
 
 void GraphicsLayer::didScroll()
 {
-    if (m_scrollableArea)
-        m_scrollableArea->scrollToOffsetWithoutAnimation(m_scrollableArea->minimumScrollPosition() + toIntSize(m_layer->layer()->scrollPosition()));
+    if (m_scrollableArea) {
+        DoublePoint newPosition = m_scrollableArea->minimumScrollPosition() + toDoubleSize(m_layer->layer()->scrollPositionDouble());
+        // FIXME: Remove the toFloatPoint(). crbug.com/414283.
+        m_scrollableArea->scrollToOffsetWithoutAnimation(toFloatPoint(newPosition));
+    }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #ifndef NDEBUG
-void showGraphicsLayerTree(const WebCore::GraphicsLayer* layer)
+void showGraphicsLayerTree(const blink::GraphicsLayer* layer)
 {
     if (!layer)
         return;
 
-    String output = layer->layerTreeAsText(WebCore::LayerTreeIncludesDebugInfo);
+    String output = layer->layerTreeAsText(blink::LayerTreeIncludesDebugInfo);
     fprintf(stderr, "%s\n", output.utf8().data());
 }
 #endif

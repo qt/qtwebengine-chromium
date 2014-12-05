@@ -28,11 +28,10 @@
 
 #include "core/html/parser/NestingLevelIncrementer.h"
 #include "platform/Timer.h"
-#include "wtf/CurrentTime.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class HTMLDocumentParser;
@@ -52,11 +51,17 @@ class PumpSession : public NestingLevelIncrementer, public ActiveParserSession {
 public:
     PumpSession(unsigned& nestingLevel, Document*);
     ~PumpSession();
+};
 
-    int processedTokens;
-    double startTime;
-    bool needsYield;
-    bool didSeeScript;
+class SpeculationsPumpSession : public ActiveParserSession {
+public:
+    explicit SpeculationsPumpSession(Document*);
+    ~SpeculationsPumpSession();
+
+    double elapsedTime() const;
+
+private:
+    double m_startTime;
 };
 
 class HTMLParserScheduler {
@@ -68,37 +73,18 @@ public:
     }
     ~HTMLParserScheduler();
 
-    // Inline as this is called after every token in the parser.
-    void checkForYieldBeforeToken(PumpSession& session)
-    {
-        if (session.processedTokens > parserChunkSize || session.didSeeScript) {
-            // currentTime() can be expensive.  By delaying, we avoided calling
-            // currentTime() when constructing non-yielding PumpSessions.
-            if (!session.startTime)
-                session.startTime = currentTime();
-
-            session.processedTokens = 0;
-            session.didSeeScript = false;
-
-            double elapsedTime = currentTime() - session.startTime;
-            if (elapsedTime > parserTimeLimit)
-                session.needsYield = true;
-        }
-        ++session.processedTokens;
-    }
-
-    void scheduleForResume();
     bool isScheduledForResume() const { return m_isSuspendedWithActiveTimer || m_continueNextChunkTimer.isActive(); }
+
+    bool yieldIfNeeded(const SpeculationsPumpSession&);
 
     void suspend();
     void resume();
 
 private:
-    static const double parserTimeLimit;
-    static const int parserChunkSize;
+    explicit HTMLParserScheduler(HTMLDocumentParser*);
 
-    HTMLParserScheduler(HTMLDocumentParser*);
-
+    bool shouldYield(const SpeculationsPumpSession&) const;
+    void scheduleForResume();
     void continueNextChunkTimerFired(Timer<HTMLParserScheduler>*);
 
     HTMLDocumentParser* m_parser;

@@ -36,15 +36,15 @@
 #include "talk/app/webrtc/test/fakeconstraints.h"
 #include "talk/app/webrtc/test/fakedatachannelprovider.h"
 #include "talk/app/webrtc/videotrack.h"
-#include "talk/base/gunit.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/stringutils.h"
-#include "talk/base/thread.h"
 #include "talk/media/base/fakemediaengine.h"
 #include "talk/media/devices/fakedevicemanager.h"
-#include "talk/p2p/base/constants.h"
-#include "talk/p2p/base/sessiondescription.h"
+#include "webrtc/p2p/base/constants.h"
+#include "webrtc/p2p/base/sessiondescription.h"
 #include "talk/session/media/channelmanager.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/stringutils.h"
+#include "webrtc/base/thread.h"
 
 static const char kStreams[][8] = {"stream1", "stream2"};
 static const char kAudioTracks[][32] = {"audiotrack0", "audiotrack1"};
@@ -62,10 +62,13 @@ using webrtc::IceCandidateInterface;
 using webrtc::MediaConstraintsInterface;
 using webrtc::MediaStreamInterface;
 using webrtc::MediaStreamTrackInterface;
+using webrtc::PeerConnectionInterface;
 using webrtc::SdpParseError;
 using webrtc::SessionDescriptionInterface;
 using webrtc::StreamCollection;
 using webrtc::StreamCollectionInterface;
+
+typedef PeerConnectionInterface::RTCOfferAnswerOptions RTCOfferAnswerOptions;
 
 // Reference SDP with a MediaStream with label "stream1" and audio track with
 // id "audio_1" and a video track with id "video_1;
@@ -148,6 +151,21 @@ static const char kSdpStringWithoutStreamsAudioOnly[] =
     "a=mid:audio\r\n"
     "a=rtpmap:103 ISAC/16000\r\n";
 
+// Reference SENDONLY SDP without MediaStreams. Msid is not supported.
+static const char kSdpStringSendOnlyWithWithoutStreams[] =
+    "v=0\r\n"
+    "o=- 0 0 IN IP4 127.0.0.1\r\n"
+    "s=-\r\n"
+    "t=0 0\r\n"
+    "m=audio 1 RTP/AVPF 103\r\n"
+    "a=mid:audio\r\n"
+    "a=sendonly"
+    "a=rtpmap:103 ISAC/16000\r\n"
+    "m=video 1 RTP/AVPF 120\r\n"
+    "a=mid:video\r\n"
+    "a=sendonly"
+    "a=rtpmap:120 VP8/90000\r\n";
+
 static const char kSdpStringInit[] =
     "v=0\r\n"
     "o=- 0 0 IN IP4 127.0.0.1\r\n"
@@ -198,7 +216,7 @@ static void VerifyMediaOptions(StreamCollectionInterface* collection,
       webrtc::AudioTrackInterface* audio = audio_tracks[j];
       EXPECT_EQ(options.streams[stream_index].sync_label, stream->label());
       EXPECT_EQ(options.streams[stream_index++].id, audio->id());
-      EXPECT_TRUE(options.has_audio);
+      EXPECT_TRUE(options.has_audio());
     }
     VideoTrackVector video_tracks = stream->GetVideoTracks();
     ASSERT_GE(options.streams.size(), stream_index + video_tracks.size());
@@ -206,7 +224,7 @@ static void VerifyMediaOptions(StreamCollectionInterface* collection,
       webrtc::VideoTrackInterface* video = video_tracks[j];
       EXPECT_EQ(options.streams[stream_index].sync_label, stream->label());
       EXPECT_EQ(options.streams[stream_index++].id, video->id());
-      EXPECT_TRUE(options.has_video);
+      EXPECT_TRUE(options.has_video());
     }
   }
 }
@@ -243,14 +261,20 @@ static bool CompareStreamCollections(StreamCollectionInterface* s1,
 class FakeDataChannelFactory : public webrtc::DataChannelFactory {
  public:
   FakeDataChannelFactory(FakeDataChannelProvider* provider,
-                         cricket::DataChannelType dct)
-      : provider_(provider), type_(dct) {}
+                         cricket::DataChannelType dct,
+                         webrtc::MediaStreamSignaling* media_stream_signaling)
+      : provider_(provider),
+        type_(dct),
+        media_stream_signaling_(media_stream_signaling) {}
 
-  virtual talk_base::scoped_refptr<webrtc::DataChannel> CreateDataChannel(
+  virtual rtc::scoped_refptr<webrtc::DataChannel> CreateDataChannel(
       const std::string& label,
       const webrtc::InternalDataChannelInit* config) {
     last_init_ = *config;
-    return webrtc::DataChannel::Create(provider_, type_, label, *config);
+    rtc::scoped_refptr<webrtc::DataChannel> data_channel =
+        webrtc::DataChannel::Create(provider_, type_, label, *config);
+    media_stream_signaling_->AddDataChannel(data_channel);
+    return data_channel;
   }
 
   const webrtc::InternalDataChannelInit& last_init() const {
@@ -260,6 +284,7 @@ class FakeDataChannelFactory : public webrtc::DataChannelFactory {
  private:
   FakeDataChannelProvider* provider_;
   cricket::DataChannelType type_;
+  webrtc::MediaStreamSignaling* media_stream_signaling_;
   webrtc::InternalDataChannelInit last_init_;
 };
 
@@ -434,14 +459,14 @@ class MockSignalingObserver : public webrtc::MediaStreamSignalingObserver {
   TrackInfos local_audio_tracks_;
   TrackInfos local_video_tracks_;
 
-  talk_base::scoped_refptr<StreamCollection> remote_media_streams_;
+  rtc::scoped_refptr<StreamCollection> remote_media_streams_;
 };
 
 class MediaStreamSignalingForTest : public webrtc::MediaStreamSignaling {
  public:
   MediaStreamSignalingForTest(MockSignalingObserver* observer,
                               cricket::ChannelManager* channel_manager)
-      : webrtc::MediaStreamSignaling(talk_base::Thread::Current(), observer,
+      : webrtc::MediaStreamSignaling(rtc::Thread::Current(), observer,
                                      channel_manager) {
   };
 
@@ -458,7 +483,7 @@ class MediaStreamSignalingTest: public testing::Test {
     channel_manager_.reset(
         new cricket::ChannelManager(new cricket::FakeMediaEngine(),
                                     new cricket::FakeDeviceManager(),
-                                    talk_base::Thread::Current()));
+                                    rtc::Thread::Current()));
     signaling_.reset(new MediaStreamSignalingForTest(observer_.get(),
                                                      channel_manager_.get()));
     data_channel_provider_.reset(new FakeDataChannelProvider());
@@ -468,22 +493,22 @@ class MediaStreamSignalingTest: public testing::Test {
   // CreateStreamCollection(1) creates a collection that
   // correspond to kSdpString1.
   // CreateStreamCollection(2) correspond to kSdpString2.
-  talk_base::scoped_refptr<StreamCollection>
+  rtc::scoped_refptr<StreamCollection>
   CreateStreamCollection(int number_of_streams) {
-    talk_base::scoped_refptr<StreamCollection> local_collection(
+    rtc::scoped_refptr<StreamCollection> local_collection(
         StreamCollection::Create());
 
     for (int i = 0; i < number_of_streams; ++i) {
-      talk_base::scoped_refptr<webrtc::MediaStreamInterface> stream(
+      rtc::scoped_refptr<webrtc::MediaStreamInterface> stream(
           webrtc::MediaStream::Create(kStreams[i]));
 
       // Add a local audio track.
-      talk_base::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
+      rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
           webrtc::AudioTrack::Create(kAudioTracks[i], NULL));
       stream->AddTrack(audio_track);
 
       // Add a local video track.
-      talk_base::scoped_refptr<webrtc::VideoTrackInterface> video_track(
+      rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track(
           webrtc::VideoTrack::Create(kVideoTracks[i], NULL));
       stream->AddTrack(video_track);
 
@@ -510,7 +535,7 @@ class MediaStreamSignalingTest: public testing::Test {
 
     std::string mediastream_label = kStreams[0];
 
-    talk_base::scoped_refptr<webrtc::MediaStreamInterface> stream(
+    rtc::scoped_refptr<webrtc::MediaStreamInterface> stream(
             webrtc::MediaStream::Create(mediastream_label));
     reference_collection_->AddStream(stream);
 
@@ -540,23 +565,23 @@ class MediaStreamSignalingTest: public testing::Test {
 
   void AddAudioTrack(const std::string& track_id,
                      MediaStreamInterface* stream) {
-    talk_base::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
+    rtc::scoped_refptr<webrtc::AudioTrackInterface> audio_track(
         webrtc::AudioTrack::Create(track_id, NULL));
     ASSERT_TRUE(stream->AddTrack(audio_track));
   }
 
   void AddVideoTrack(const std::string& track_id,
                      MediaStreamInterface* stream) {
-    talk_base::scoped_refptr<webrtc::VideoTrackInterface> video_track(
+    rtc::scoped_refptr<webrtc::VideoTrackInterface> video_track(
         webrtc::VideoTrack::Create(track_id, NULL));
     ASSERT_TRUE(stream->AddTrack(video_track));
   }
 
-  talk_base::scoped_refptr<webrtc::DataChannel> AddDataChannel(
+  rtc::scoped_refptr<webrtc::DataChannel> AddDataChannel(
       cricket::DataChannelType type, const std::string& label, int id) {
     webrtc::InternalDataChannelInit config;
     config.id = id;
-    talk_base::scoped_refptr<webrtc::DataChannel> data_channel(
+    rtc::scoped_refptr<webrtc::DataChannel> data_channel(
         webrtc::DataChannel::Create(
             data_channel_provider_.get(), type, label, config));
     EXPECT_TRUE(data_channel.get() != NULL);
@@ -566,122 +591,144 @@ class MediaStreamSignalingTest: public testing::Test {
 
   // ChannelManager is used by VideoSource, so it should be released after all
   // the video tracks. Put it as the first private variable should ensure that.
-  talk_base::scoped_ptr<cricket::ChannelManager> channel_manager_;
-  talk_base::scoped_refptr<StreamCollection> reference_collection_;
-  talk_base::scoped_ptr<MockSignalingObserver> observer_;
-  talk_base::scoped_ptr<MediaStreamSignalingForTest> signaling_;
-  talk_base::scoped_ptr<FakeDataChannelProvider> data_channel_provider_;
+  rtc::scoped_ptr<cricket::ChannelManager> channel_manager_;
+  rtc::scoped_refptr<StreamCollection> reference_collection_;
+  rtc::scoped_ptr<MockSignalingObserver> observer_;
+  rtc::scoped_ptr<MediaStreamSignalingForTest> signaling_;
+  rtc::scoped_ptr<FakeDataChannelProvider> data_channel_provider_;
 };
 
+TEST_F(MediaStreamSignalingTest, GetOptionsForOfferWithInvalidAudioOption) {
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_audio = RTCOfferAnswerOptions::kUndefined - 1;
+
+  cricket::MediaSessionOptions options;
+  EXPECT_FALSE(signaling_->GetOptionsForOffer(rtc_options, &options));
+
+  rtc_options.offer_to_receive_audio =
+      RTCOfferAnswerOptions::kMaxOfferToReceiveMedia + 1;
+  EXPECT_FALSE(signaling_->GetOptionsForOffer(rtc_options, &options));
+}
+
+
+TEST_F(MediaStreamSignalingTest, GetOptionsForOfferWithInvalidVideoOption) {
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_video =
+      RTCOfferAnswerOptions::kUndefined - 1;
+
+  cricket::MediaSessionOptions options;
+  EXPECT_FALSE(signaling_->GetOptionsForOffer(rtc_options, &options));
+
+  rtc_options.offer_to_receive_video =
+      RTCOfferAnswerOptions::kMaxOfferToReceiveMedia + 1;
+  EXPECT_FALSE(signaling_->GetOptionsForOffer(rtc_options, &options));
+}
+
 // Test that a MediaSessionOptions is created for an offer if
-// kOfferToReceiveAudio and kOfferToReceiveVideo constraints are set but no
+// OfferToReceiveAudio and OfferToReceiveVideo options are set but no
 // MediaStreams are sent.
 TEST_F(MediaStreamSignalingTest, GetMediaSessionOptionsForOfferWithAudioVideo) {
-  FakeConstraints constraints;
-  constraints.SetMandatoryReceiveAudio(true);
-  constraints.SetMandatoryReceiveVideo(true);
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_audio = 1;
+  rtc_options.offer_to_receive_video = 1;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&constraints, &options));
-  EXPECT_TRUE(options.has_audio);
-  EXPECT_TRUE(options.has_video);
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
+  EXPECT_TRUE(options.has_audio());
+  EXPECT_TRUE(options.has_video());
   EXPECT_TRUE(options.bundle_enabled);
 }
 
 // Test that a correct MediaSessionOptions is created for an offer if
-// kOfferToReceiveAudio constraints is set but no MediaStreams are sent.
+// OfferToReceiveAudio is set but no MediaStreams are sent.
 TEST_F(MediaStreamSignalingTest, GetMediaSessionOptionsForOfferWithAudio) {
-  FakeConstraints constraints;
-  constraints.SetMandatoryReceiveAudio(true);
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_audio = 1;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&constraints, &options));
-  EXPECT_TRUE(options.has_audio);
-  EXPECT_FALSE(options.has_video);
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
+  EXPECT_TRUE(options.has_audio());
+  EXPECT_FALSE(options.has_video());
   EXPECT_TRUE(options.bundle_enabled);
 }
 
 // Test that a correct MediaSessionOptions is created for an offer if
-// no constraints or MediaStreams are sent.
+// the default OfferOptons is used or MediaStreams are sent.
 TEST_F(MediaStreamSignalingTest, GetDefaultMediaSessionOptionsForOffer) {
+  RTCOfferAnswerOptions rtc_options;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(NULL, &options));
-  EXPECT_TRUE(options.has_audio);
-  EXPECT_FALSE(options.has_video);
-  EXPECT_TRUE(options.bundle_enabled);
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
+  EXPECT_FALSE(options.has_audio());
+  EXPECT_FALSE(options.has_video());
+  EXPECT_FALSE(options.bundle_enabled);
+  EXPECT_TRUE(options.vad_enabled);
+  EXPECT_FALSE(options.transport_options.ice_restart);
 }
 
 // Test that a correct MediaSessionOptions is created for an offer if
-// kOfferToReceiveVideo constraints is set but no MediaStreams are sent.
+// OfferToReceiveVideo is set but no MediaStreams are sent.
 TEST_F(MediaStreamSignalingTest, GetMediaSessionOptionsForOfferWithVideo) {
-  FakeConstraints constraints;
-  constraints.SetMandatoryReceiveAudio(false);
-  constraints.SetMandatoryReceiveVideo(true);
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_audio = 0;
+  rtc_options.offer_to_receive_video = 1;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&constraints, &options));
-  EXPECT_FALSE(options.has_audio);
-  EXPECT_TRUE(options.has_video);
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
+  EXPECT_FALSE(options.has_audio());
+  EXPECT_TRUE(options.has_video());
   EXPECT_TRUE(options.bundle_enabled);
 }
 
 // Test that a correct MediaSessionOptions is created for an offer if
-// kUseRtpMux constraints is set to false.
+// UseRtpMux is set to false.
 TEST_F(MediaStreamSignalingTest,
        GetMediaSessionOptionsForOfferWithBundleDisabled) {
-  FakeConstraints constraints;
-  constraints.SetMandatoryReceiveAudio(true);
-  constraints.SetMandatoryReceiveVideo(true);
-  constraints.SetMandatoryUseRtpMux(false);
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.offer_to_receive_audio = 1;
+  rtc_options.offer_to_receive_video = 1;
+  rtc_options.use_rtp_mux = false;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&constraints, &options));
-  EXPECT_TRUE(options.has_audio);
-  EXPECT_TRUE(options.has_video);
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
+  EXPECT_TRUE(options.has_audio());
+  EXPECT_TRUE(options.has_video());
   EXPECT_FALSE(options.bundle_enabled);
 }
 
 // Test that a correct MediaSessionOptions is created to restart ice if
-// kIceRestart constraints is set. It also tests that subsequent
-// MediaSessionOptions don't have |transport_options.ice_restart| set.
+// IceRestart is set. It also tests that subsequent MediaSessionOptions don't
+// have |transport_options.ice_restart| set.
 TEST_F(MediaStreamSignalingTest,
        GetMediaSessionOptionsForOfferWithIceRestart) {
-  FakeConstraints constraints;
-  constraints.SetMandatoryIceRestart(true);
+  RTCOfferAnswerOptions rtc_options;
+  rtc_options.ice_restart = true;
+
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&constraints, &options));
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
   EXPECT_TRUE(options.transport_options.ice_restart);
 
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(NULL, &options));
+  rtc_options = RTCOfferAnswerOptions();
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
   EXPECT_FALSE(options.transport_options.ice_restart);
-}
-
-// Test that GetMediaSessionOptionsForOffer and GetOptionsForAnswer work as
-// expected if unknown constraints are used.
-TEST_F(MediaStreamSignalingTest, GetMediaSessionOptionsWithBadConstraints) {
-  FakeConstraints mandatory;
-  mandatory.AddMandatory("bad_key", "bad_value");
-  cricket::MediaSessionOptions options;
-  EXPECT_FALSE(signaling_->GetOptionsForOffer(&mandatory, &options));
-  EXPECT_FALSE(signaling_->GetOptionsForAnswer(&mandatory, &options));
-
-  FakeConstraints optional;
-  optional.AddOptional("bad_key", "bad_value");
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&optional, &options));
-  EXPECT_TRUE(signaling_->GetOptionsForAnswer(&optional, &options));
 }
 
 // Test that a correct MediaSessionOptions are created for an offer if
 // a MediaStream is sent and later updated with a new track.
 // MediaConstraints are not used.
 TEST_F(MediaStreamSignalingTest, AddTrackToLocalMediaStream) {
-  talk_base::scoped_refptr<StreamCollection> local_streams(
+  RTCOfferAnswerOptions rtc_options;
+  rtc::scoped_refptr<StreamCollection> local_streams(
       CreateStreamCollection(1));
   MediaStreamInterface* local_stream = local_streams->at(0);
   EXPECT_TRUE(signaling_->AddLocalStream(local_stream));
   cricket::MediaSessionOptions options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(NULL, &options));
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
   VerifyMediaOptions(local_streams, options);
 
   cricket::MediaSessionOptions updated_options;
   local_stream->AddTrack(AudioTrack::Create(kAudioTracks[1], NULL));
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(NULL, &options));
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(rtc_options, &options));
   VerifyMediaOptions(local_streams, options);
 }
 
@@ -696,27 +743,26 @@ TEST_F(MediaStreamSignalingTest, MediaConstraintsInAnswer) {
 
   cricket::MediaSessionOptions answer_options;
   EXPECT_TRUE(signaling_->GetOptionsForAnswer(&answer_c, &answer_options));
-  EXPECT_TRUE(answer_options.has_audio);
-  EXPECT_TRUE(answer_options.has_video);
+  EXPECT_TRUE(answer_options.has_audio());
+  EXPECT_TRUE(answer_options.has_video());
 
-  FakeConstraints offer_c;
-  offer_c.SetMandatoryReceiveAudio(false);
-  offer_c.SetMandatoryReceiveVideo(false);
+  RTCOfferAnswerOptions rtc_offer_optoins;
 
   cricket::MediaSessionOptions offer_options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&offer_c, &offer_options));
-  EXPECT_FALSE(offer_options.has_audio);
-  EXPECT_FALSE(offer_options.has_video);
+  EXPECT_TRUE(
+      signaling_->GetOptionsForOffer(rtc_offer_optoins, &offer_options));
+  EXPECT_FALSE(offer_options.has_audio());
+  EXPECT_FALSE(offer_options.has_video());
 
-  FakeConstraints updated_offer_c;
-  updated_offer_c.SetMandatoryReceiveAudio(true);
-  updated_offer_c.SetMandatoryReceiveVideo(true);
+  RTCOfferAnswerOptions updated_rtc_offer_optoins;
+  updated_rtc_offer_optoins.offer_to_receive_audio = 1;
+  updated_rtc_offer_optoins.offer_to_receive_video = 1;
 
   cricket::MediaSessionOptions updated_offer_options;
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(&updated_offer_c,
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(updated_rtc_offer_optoins,
                                              &updated_offer_options));
-  EXPECT_TRUE(updated_offer_options.has_audio);
-  EXPECT_TRUE(updated_offer_options.has_video);
+  EXPECT_TRUE(updated_offer_options.has_audio());
+  EXPECT_TRUE(updated_offer_options.has_video());
 
   // Since an offer has been created with both audio and video, subsequent
   // offers and answers should contain both audio and video.
@@ -730,26 +776,29 @@ TEST_F(MediaStreamSignalingTest, MediaConstraintsInAnswer) {
   cricket::MediaSessionOptions updated_answer_options;
   EXPECT_TRUE(signaling_->GetOptionsForAnswer(&updated_answer_c,
                                               &updated_answer_options));
-  EXPECT_TRUE(updated_answer_options.has_audio);
-  EXPECT_TRUE(updated_answer_options.has_video);
+  EXPECT_TRUE(updated_answer_options.has_audio());
+  EXPECT_TRUE(updated_answer_options.has_video());
 
-  EXPECT_TRUE(signaling_->GetOptionsForOffer(NULL,
+  RTCOfferAnswerOptions default_rtc_options;
+  EXPECT_TRUE(signaling_->GetOptionsForOffer(default_rtc_options,
                                              &updated_offer_options));
-  EXPECT_TRUE(updated_offer_options.has_audio);
-  EXPECT_TRUE(updated_offer_options.has_video);
+  // By default, |has_audio| or |has_video| are false if there is no media
+  // track.
+  EXPECT_FALSE(updated_offer_options.has_audio());
+  EXPECT_FALSE(updated_offer_options.has_video());
 }
 
 // This test verifies that the remote MediaStreams corresponding to a received
 // SDP string is created. In this test the two separate MediaStreams are
 // signaled.
 TEST_F(MediaStreamSignalingTest, UpdateRemoteStreams) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithStream1, NULL));
   EXPECT_TRUE(desc != NULL);
   signaling_->OnRemoteDescriptionChanged(desc.get());
 
-  talk_base::scoped_refptr<StreamCollection> reference(
+  rtc::scoped_refptr<StreamCollection> reference(
       CreateStreamCollection(1));
   EXPECT_TRUE(CompareStreamCollections(signaling_->remote_streams(),
                                        reference.get()));
@@ -765,13 +814,13 @@ TEST_F(MediaStreamSignalingTest, UpdateRemoteStreams) {
 
   // Create a session description based on another SDP with another
   // MediaStream.
-  talk_base::scoped_ptr<SessionDescriptionInterface> update_desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> update_desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWith2Stream, NULL));
   EXPECT_TRUE(update_desc != NULL);
   signaling_->OnRemoteDescriptionChanged(update_desc.get());
 
-  talk_base::scoped_refptr<StreamCollection> reference2(
+  rtc::scoped_refptr<StreamCollection> reference2(
       CreateStreamCollection(2));
   EXPECT_TRUE(CompareStreamCollections(signaling_->remote_streams(),
                                        reference2.get()));
@@ -790,14 +839,14 @@ TEST_F(MediaStreamSignalingTest, UpdateRemoteStreams) {
 // SDP string is created. In this test the same remote MediaStream is signaled
 // but MediaStream tracks are added and removed.
 TEST_F(MediaStreamSignalingTest, AddRemoveTrackFromExistingRemoteMediaStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_ms1;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_ms1;
   CreateSessionDescriptionAndReference(1, 1, desc_ms1.use());
   signaling_->OnRemoteDescriptionChanged(desc_ms1.get());
   EXPECT_TRUE(CompareStreamCollections(signaling_->remote_streams(),
                                        reference_collection_));
 
   // Add extra audio and video tracks to the same MediaStream.
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_ms1_two_tracks;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_ms1_two_tracks;
   CreateSessionDescriptionAndReference(2, 2, desc_ms1_two_tracks.use());
   signaling_->OnRemoteDescriptionChanged(desc_ms1_two_tracks.get());
   EXPECT_TRUE(CompareStreamCollections(signaling_->remote_streams(),
@@ -806,7 +855,7 @@ TEST_F(MediaStreamSignalingTest, AddRemoveTrackFromExistingRemoteMediaStream) {
                                        reference_collection_));
 
   // Remove the extra audio and video tracks again.
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_ms2;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_ms2;
   CreateSessionDescriptionAndReference(1, 1, desc_ms2.use());
   signaling_->OnRemoteDescriptionChanged(desc_ms2.get());
   EXPECT_TRUE(CompareStreamCollections(signaling_->remote_streams(),
@@ -818,7 +867,7 @@ TEST_F(MediaStreamSignalingTest, AddRemoveTrackFromExistingRemoteMediaStream) {
 // This test that remote tracks are ended if a
 // local session description is set that rejects the media content type.
 TEST_F(MediaStreamSignalingTest, RejectMediaContent) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithStream1, NULL));
   EXPECT_TRUE(desc != NULL);
@@ -829,10 +878,10 @@ TEST_F(MediaStreamSignalingTest, RejectMediaContent) {
   ASSERT_EQ(1u, remote_stream->GetVideoTracks().size());
   ASSERT_EQ(1u, remote_stream->GetAudioTracks().size());
 
-  talk_base::scoped_refptr<webrtc::VideoTrackInterface> remote_video =
+  rtc::scoped_refptr<webrtc::VideoTrackInterface> remote_video =
       remote_stream->GetVideoTracks()[0];
   EXPECT_EQ(webrtc::MediaStreamTrackInterface::kLive, remote_video->state());
-  talk_base::scoped_refptr<webrtc::AudioTrackInterface> remote_audio =
+  rtc::scoped_refptr<webrtc::AudioTrackInterface> remote_audio =
       remote_stream->GetAudioTracks()[0];
   EXPECT_EQ(webrtc::MediaStreamTrackInterface::kLive, remote_audio->state());
 
@@ -856,7 +905,7 @@ TEST_F(MediaStreamSignalingTest, RejectMediaContent) {
 // of MediaStreamSignaling and then MediaStreamSignaling tries to reject
 // this track.
 TEST_F(MediaStreamSignalingTest, RemoveTrackThenRejectMediaContent) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithStream1, NULL));
   EXPECT_TRUE(desc != NULL);
@@ -884,7 +933,7 @@ TEST_F(MediaStreamSignalingTest, RemoveTrackThenRejectMediaContent) {
 // It also tests that the default stream is updated if a video m-line is added
 // in a subsequent session description.
 TEST_F(MediaStreamSignalingTest, SdpWithoutMsidCreatesDefaultStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_audio_only(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_audio_only(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreamsAudioOnly,
                                        NULL));
@@ -899,7 +948,7 @@ TEST_F(MediaStreamSignalingTest, SdpWithoutMsidCreatesDefaultStream) {
   EXPECT_EQ(0u, remote_stream->GetVideoTracks().size());
   EXPECT_EQ("default", remote_stream->label());
 
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreams, NULL));
   ASSERT_TRUE(desc != NULL);
@@ -913,10 +962,29 @@ TEST_F(MediaStreamSignalingTest, SdpWithoutMsidCreatesDefaultStream) {
   observer_->VerifyRemoteVideoTrack("default", "defaultv0", 0);
 }
 
+// This tests that a default MediaStream is created if a remote session
+// description doesn't contain any streams and media direction is send only.
+TEST_F(MediaStreamSignalingTest, RecvOnlySdpWithoutMsidCreatesDefaultStream) {
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
+      webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
+                                       kSdpStringSendOnlyWithWithoutStreams,
+                                       NULL));
+  ASSERT_TRUE(desc != NULL);
+  signaling_->OnRemoteDescriptionChanged(desc.get());
+
+  EXPECT_EQ(1u, signaling_->remote_streams()->count());
+  ASSERT_EQ(1u, observer_->remote_streams()->count());
+  MediaStreamInterface* remote_stream = observer_->remote_streams()->at(0);
+
+  EXPECT_EQ(1u, remote_stream->GetAudioTracks().size());
+  EXPECT_EQ(1u, remote_stream->GetVideoTracks().size());
+  EXPECT_EQ("default", remote_stream->label());
+}
+
 // This tests that it won't crash when MediaStreamSignaling tries to remove
 //  a remote track that as already been removed from the mediastream.
 TEST_F(MediaStreamSignalingTest, RemoveAlreadyGoneRemoteStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_audio_only(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_audio_only(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreams,
                                        NULL));
@@ -926,7 +994,7 @@ TEST_F(MediaStreamSignalingTest, RemoveAlreadyGoneRemoteStream) {
   remote_stream->RemoveTrack(remote_stream->GetAudioTracks()[0]);
   remote_stream->RemoveTrack(remote_stream->GetVideoTracks()[0]);
 
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreams, NULL));
   ASSERT_TRUE(desc != NULL);
@@ -940,7 +1008,7 @@ TEST_F(MediaStreamSignalingTest, RemoveAlreadyGoneRemoteStream) {
 // MSID is supported.
 TEST_F(MediaStreamSignalingTest,
        SdpWithoutMsidAndStreamsCreatesDefaultStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreams,
                                        NULL));
@@ -956,7 +1024,7 @@ TEST_F(MediaStreamSignalingTest,
 // This tests that a default MediaStream is not created if the remote session
 // description doesn't contain any streams but does support MSID.
 TEST_F(MediaStreamSignalingTest, SdpWitMsidDontCreatesDefaultStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_msid_without_streams(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_msid_without_streams(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithMsidWithoutStreams,
                                        NULL));
@@ -967,18 +1035,18 @@ TEST_F(MediaStreamSignalingTest, SdpWitMsidDontCreatesDefaultStream) {
 // This test that a default MediaStream is not created if a remote session
 // description is updated to not have any MediaStreams.
 TEST_F(MediaStreamSignalingTest, VerifyDefaultStreamIsNotCreated) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithStream1,
                                        NULL));
   ASSERT_TRUE(desc != NULL);
   signaling_->OnRemoteDescriptionChanged(desc.get());
-  talk_base::scoped_refptr<StreamCollection> reference(
+  rtc::scoped_refptr<StreamCollection> reference(
       CreateStreamCollection(1));
   EXPECT_TRUE(CompareStreamCollections(observer_->remote_streams(),
                                        reference.get()));
 
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_without_streams(
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_without_streams(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        kSdpStringWithoutStreams,
                                        NULL));
@@ -990,7 +1058,7 @@ TEST_F(MediaStreamSignalingTest, VerifyDefaultStreamIsNotCreated) {
 // when MediaStreamSignaling::OnLocalDescriptionChanged is called with an
 // updated local session description.
 TEST_F(MediaStreamSignalingTest, LocalDescriptionChanged) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_1;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_1;
   CreateSessionDescriptionAndReference(2, 2, desc_1.use());
 
   signaling_->AddLocalStream(reference_collection_->at(0));
@@ -1003,7 +1071,7 @@ TEST_F(MediaStreamSignalingTest, LocalDescriptionChanged) {
   observer_->VerifyLocalVideoTrack(kStreams[0], kVideoTracks[1], 4);
 
   // Remove an audio and video track.
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_2;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_2;
   CreateSessionDescriptionAndReference(1, 1, desc_2.use());
   signaling_->OnLocalDescriptionChanged(desc_2.get());
   EXPECT_EQ(1u, observer_->NumberOfLocalAudioTracks());
@@ -1016,7 +1084,7 @@ TEST_F(MediaStreamSignalingTest, LocalDescriptionChanged) {
 // when MediaStreamSignaling::AddLocalStream is called after
 // MediaStreamSignaling::OnLocalDescriptionChanged is called.
 TEST_F(MediaStreamSignalingTest, AddLocalStreamAfterLocalDescriptionChanged) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc_1;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc_1;
   CreateSessionDescriptionAndReference(2, 2, desc_1.use());
 
   signaling_->OnLocalDescriptionChanged(desc_1.get());
@@ -1036,7 +1104,7 @@ TEST_F(MediaStreamSignalingTest, AddLocalStreamAfterLocalDescriptionChanged) {
 // if the ssrc on a local track is changed when
 // MediaStreamSignaling::OnLocalDescriptionChanged is called.
 TEST_F(MediaStreamSignalingTest, ChangeSsrcOnTrackInLocalSessionDescription) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc;
   CreateSessionDescriptionAndReference(1, 1, desc.use());
 
   signaling_->AddLocalStream(reference_collection_->at(0));
@@ -1051,15 +1119,15 @@ TEST_F(MediaStreamSignalingTest, ChangeSsrcOnTrackInLocalSessionDescription) {
   desc->ToString(&sdp);
   std::string ssrc_org = "a=ssrc:1";
   std::string ssrc_to = "a=ssrc:97";
-  talk_base::replace_substrs(ssrc_org.c_str(), ssrc_org.length(),
+  rtc::replace_substrs(ssrc_org.c_str(), ssrc_org.length(),
                              ssrc_to.c_str(), ssrc_to.length(),
                              &sdp);
   ssrc_org = "a=ssrc:2";
   ssrc_to = "a=ssrc:98";
-  talk_base::replace_substrs(ssrc_org.c_str(), ssrc_org.length(),
+  rtc::replace_substrs(ssrc_org.c_str(), ssrc_org.length(),
                              ssrc_to.c_str(), ssrc_to.length(),
                              &sdp);
-  talk_base::scoped_ptr<SessionDescriptionInterface> updated_desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> updated_desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        sdp, NULL));
 
@@ -1074,7 +1142,7 @@ TEST_F(MediaStreamSignalingTest, ChangeSsrcOnTrackInLocalSessionDescription) {
 // if a new session description is set with the same tracks but they are now
 // sent on a another MediaStream.
 TEST_F(MediaStreamSignalingTest, SignalSameTracksInSeparateMediaStream) {
-  talk_base::scoped_ptr<SessionDescriptionInterface> desc;
+  rtc::scoped_ptr<SessionDescriptionInterface> desc;
   CreateSessionDescriptionAndReference(1, 1, desc.use());
 
   signaling_->AddLocalStream(reference_collection_->at(0));
@@ -1088,7 +1156,7 @@ TEST_F(MediaStreamSignalingTest, SignalSameTracksInSeparateMediaStream) {
 
   // Add a new MediaStream but with the same tracks as in the first stream.
   std::string stream_label_1 = kStreams[1];
-  talk_base::scoped_refptr<webrtc::MediaStreamInterface> stream_1(
+  rtc::scoped_refptr<webrtc::MediaStreamInterface> stream_1(
       webrtc::MediaStream::Create(kStreams[1]));
   stream_1->AddTrack(reference_collection_->at(0)->GetVideoTracks()[0]);
   stream_1->AddTrack(reference_collection_->at(0)->GetAudioTracks()[0]);
@@ -1097,10 +1165,10 @@ TEST_F(MediaStreamSignalingTest, SignalSameTracksInSeparateMediaStream) {
   // Replace msid in the original SDP.
   std::string sdp;
   desc->ToString(&sdp);
-  talk_base::replace_substrs(
+  rtc::replace_substrs(
       kStreams[0], strlen(kStreams[0]), kStreams[1], strlen(kStreams[1]), &sdp);
 
-  talk_base::scoped_ptr<SessionDescriptionInterface> updated_desc(
+  rtc::scoped_ptr<SessionDescriptionInterface> updated_desc(
       webrtc::CreateSessionDescription(SessionDescriptionInterface::kOffer,
                                        sdp, NULL));
 
@@ -1115,13 +1183,13 @@ TEST_F(MediaStreamSignalingTest, SignalSameTracksInSeparateMediaStream) {
 // SSL_SERVER.
 TEST_F(MediaStreamSignalingTest, SctpIdAllocationBasedOnRole) {
   int id;
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER, &id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER, &id));
   EXPECT_EQ(1, id);
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT, &id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT, &id));
   EXPECT_EQ(0, id);
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER, &id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER, &id));
   EXPECT_EQ(3, id);
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT, &id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT, &id));
   EXPECT_EQ(2, id);
 }
 
@@ -1131,13 +1199,13 @@ TEST_F(MediaStreamSignalingTest, SctpIdAllocationNoReuse) {
   AddDataChannel(cricket::DCT_SCTP, "a", old_id);
 
   int new_id;
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER, &new_id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER, &new_id));
   EXPECT_NE(old_id, new_id);
 
   // Creates a DataChannel with id 0.
   old_id = 0;
   AddDataChannel(cricket::DCT_SCTP, "a", old_id);
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT, &new_id));
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT, &new_id));
   EXPECT_NE(old_id, new_id);
 }
 
@@ -1149,12 +1217,12 @@ TEST_F(MediaStreamSignalingTest, SctpIdReusedForRemovedDataChannel) {
   AddDataChannel(cricket::DCT_SCTP, "a", even_id);
 
   int allocated_id = -1;
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER,
                                           &allocated_id));
   EXPECT_EQ(odd_id + 2, allocated_id);
   AddDataChannel(cricket::DCT_SCTP, "a", allocated_id);
 
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT,
                                           &allocated_id));
   EXPECT_EQ(even_id + 2, allocated_id);
   AddDataChannel(cricket::DCT_SCTP, "a", allocated_id);
@@ -1163,20 +1231,20 @@ TEST_F(MediaStreamSignalingTest, SctpIdReusedForRemovedDataChannel) {
   signaling_->RemoveSctpDataChannel(even_id);
 
   // Verifies that removed DataChannel ids are reused.
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER,
                                           &allocated_id));
   EXPECT_EQ(odd_id, allocated_id);
 
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT,
                                           &allocated_id));
   EXPECT_EQ(even_id, allocated_id);
 
   // Verifies that used higher DataChannel ids are not reused.
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_SERVER,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_SERVER,
                                           &allocated_id));
   EXPECT_NE(odd_id + 2, allocated_id);
 
-  ASSERT_TRUE(signaling_->AllocateSctpSid(talk_base::SSL_CLIENT,
+  ASSERT_TRUE(signaling_->AllocateSctpSid(rtc::SSL_CLIENT,
                                           &allocated_id));
   EXPECT_NE(even_id + 2, allocated_id);
 
@@ -1187,7 +1255,7 @@ TEST_F(MediaStreamSignalingTest, RtpDuplicatedLabelNotAllowed) {
   AddDataChannel(cricket::DCT_RTP, "a", -1);
 
   webrtc::InternalDataChannelInit config;
-  talk_base::scoped_refptr<webrtc::DataChannel> data_channel =
+  rtc::scoped_refptr<webrtc::DataChannel> data_channel =
       webrtc::DataChannel::Create(
           data_channel_provider_.get(), cricket::DCT_RTP, "a", config);
   ASSERT_TRUE(data_channel.get() != NULL);
@@ -1204,11 +1272,12 @@ TEST_F(MediaStreamSignalingTest, SctpDuplicatedLabelAllowed) {
 // message.
 TEST_F(MediaStreamSignalingTest, CreateDataChannelFromOpenMessage) {
   FakeDataChannelFactory fake_factory(data_channel_provider_.get(),
-                                      cricket::DCT_SCTP);
+                                      cricket::DCT_SCTP,
+                                      signaling_.get());
   signaling_->SetDataChannelFactory(&fake_factory);
   webrtc::DataChannelInit config;
   config.id = 1;
-  talk_base::Buffer payload;
+  rtc::Buffer payload;
   webrtc::WriteDataChannelOpenMessage("a", config, &payload);
   cricket::ReceiveDataParams params;
   params.ssrc = config.id;
@@ -1224,11 +1293,12 @@ TEST_F(MediaStreamSignalingTest, DuplicatedLabelFromOpenMessageAllowed) {
   AddDataChannel(cricket::DCT_SCTP, "a", -1);
 
   FakeDataChannelFactory fake_factory(data_channel_provider_.get(),
-                                      cricket::DCT_SCTP);
+                                      cricket::DCT_SCTP,
+                                      signaling_.get());
   signaling_->SetDataChannelFactory(&fake_factory);
   webrtc::DataChannelInit config;
   config.id = 0;
-  talk_base::Buffer payload;
+  rtc::Buffer payload;
   webrtc::WriteDataChannelOpenMessage("a", config, &payload);
   cricket::ReceiveDataParams params;
   params.ssrc = config.id;
@@ -1241,7 +1311,7 @@ TEST_F(MediaStreamSignalingTest,
   webrtc::InternalDataChannelInit config;
   config.id = 0;
 
-  talk_base::scoped_refptr<webrtc::DataChannel> data_channel =
+  rtc::scoped_refptr<webrtc::DataChannel> data_channel =
       webrtc::DataChannel::Create(
           data_channel_provider_.get(), cricket::DCT_SCTP, "a", config);
   ASSERT_TRUE(data_channel.get() != NULL);
@@ -1252,4 +1322,25 @@ TEST_F(MediaStreamSignalingTest,
 
   signaling_->OnRemoteSctpDataChannelClosed(config.id);
   EXPECT_EQ(webrtc::DataChannelInterface::kClosed, data_channel->state());
+}
+
+// Verifies that DataChannel added from OPEN message is added to
+// MediaStreamSignaling only once (webrtc issue 3778).
+TEST_F(MediaStreamSignalingTest, DataChannelFromOpenMessageAddedOnce) {
+  FakeDataChannelFactory fake_factory(data_channel_provider_.get(),
+                                      cricket::DCT_SCTP,
+                                      signaling_.get());
+  signaling_->SetDataChannelFactory(&fake_factory);
+  webrtc::DataChannelInit config;
+  config.id = 1;
+  rtc::Buffer payload;
+  webrtc::WriteDataChannelOpenMessage("a", config, &payload);
+  cricket::ReceiveDataParams params;
+  params.ssrc = config.id;
+  EXPECT_TRUE(signaling_->AddDataChannelFromOpenMessage(params, payload));
+  EXPECT_TRUE(signaling_->HasDataChannels());
+
+  // Removes the DataChannel and verifies that no DataChannel is left.
+  signaling_->RemoveSctpDataChannel(config.id);
+  EXPECT_FALSE(signaling_->HasDataChannels());
 }

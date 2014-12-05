@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import logging
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.host_mock import MockHost
 from webkitpy.common.checkout.scm.scm_mock import MockSCM
@@ -46,6 +46,7 @@ class MockPort(base.Port):
         host.filesystem.maybe_make_directory(self._absolute_path('platform'))
         host.filesystem.maybe_make_directory(self._absolute_path('existing_directory'))
         host.filesystem.write_text_file(self._absolute_path('existing_file.txt'), '')
+        host.filesystem.write_text_file(self._absolute_path('VirtualTestSuites'), '[]')
         host.filesystem.write_text_file(self._absolute_path('TestExpectations'), """
 crbug.com/42 [ Debug ] origin/path/test.html [ Pass Timeout Failure ]
 crbug.com/42 [ Win ] origin/path [ Slow ]

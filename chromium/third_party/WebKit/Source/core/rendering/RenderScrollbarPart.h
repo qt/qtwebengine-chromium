@@ -29,55 +29,53 @@
 #include "core/rendering/RenderBlock.h"
 #include "platform/scroll/ScrollTypes.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderScrollbar;
 
-class RenderScrollbarPart FINAL : public RenderBlock {
+class RenderScrollbarPart final : public RenderBlock {
 public:
     static RenderScrollbarPart* createAnonymous(Document*, RenderScrollbar* = 0, ScrollbarPart = NoPart);
 
     virtual ~RenderScrollbarPart();
 
-    virtual const char* renderName() const OVERRIDE { return "RenderScrollbarPart"; }
+    virtual const char* renderName() const override { return "RenderScrollbarPart"; }
 
-    virtual LayerType layerTypeRequired() const OVERRIDE { return NoLayer; }
+    virtual LayerType layerTypeRequired() const override { return NoLayer; }
 
-    virtual void layout() OVERRIDE;
-
-    void paintIntoRect(GraphicsContext*, const LayoutPoint&, const LayoutRect&);
+    virtual void layout() override;
 
     // Scrollbar parts needs to be rendered at device pixel boundaries.
-    virtual LayoutUnit marginTop() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.top())); return m_marginBox.top(); }
-    virtual LayoutUnit marginBottom() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.bottom())); return m_marginBox.bottom(); }
-    virtual LayoutUnit marginLeft() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.left())); return m_marginBox.left(); }
-    virtual LayoutUnit marginRight() const OVERRIDE { ASSERT(isIntegerValue(m_marginBox.right())); return m_marginBox.right(); }
+    virtual LayoutUnit marginTop() const override { ASSERT(isIntegerValue(m_marginBox.top())); return m_marginBox.top(); }
+    virtual LayoutUnit marginBottom() const override { ASSERT(isIntegerValue(m_marginBox.bottom())); return m_marginBox.bottom(); }
+    virtual LayoutUnit marginLeft() const override { ASSERT(isIntegerValue(m_marginBox.left())); return m_marginBox.left(); }
+    virtual LayoutUnit marginRight() const override { ASSERT(isIntegerValue(m_marginBox.right())); return m_marginBox.right(); }
 
-    virtual bool isRenderScrollbarPart() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRenderScrollbarPart || RenderBlock::isOfType(type); }
     RenderObject* rendererOwningScrollbar() const;
 
 protected:
-    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) OVERRIDE;
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
-    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) OVERRIDE;
+    virtual void styleWillChange(StyleDifference, const RenderStyle& newStyle) override;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
+    virtual void imageChanged(WrappedImagePtr, const IntRect* = 0) override;
 
 private:
     RenderScrollbarPart(RenderScrollbar*, ScrollbarPart);
 
-    virtual void computePreferredLogicalWidths() OVERRIDE;
+    virtual void computePreferredLogicalWidths() override;
 
     // Have all padding getters return 0. The important point here is to avoid resolving percents
     // against the containing block, since scroll bar corners don't always have one (so it would
     // crash). Scroll bar corners are not actually laid out, and they don't have child content, so
     // what we return here doesn't really matter.
-    virtual LayoutUnit paddingTop() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingBottom() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingLeft() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingRight() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingBefore() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingAfter() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingStart() const OVERRIDE { return LayoutUnit(); }
-    virtual LayoutUnit paddingEnd() const OVERRIDE { return LayoutUnit(); }
+    virtual LayoutUnit paddingTop() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingBottom() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingLeft() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingRight() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingBefore() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingAfter() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingStart() const override { return LayoutUnit(); }
+    virtual LayoutUnit paddingEnd() const override { return LayoutUnit(); }
 
     void layoutHorizontalPart();
     void layoutVerticalPart();
@@ -91,6 +89,6 @@ private:
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderScrollbarPart, isRenderScrollbarPart());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderScrollbarPart_h

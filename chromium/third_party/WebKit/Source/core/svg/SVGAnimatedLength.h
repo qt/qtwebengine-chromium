@@ -34,7 +34,7 @@
 #include "core/svg/SVGLengthTearOff.h"
 #include "core/svg/properties/SVGAnimatedProperty.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGAnimatedLength : public SVGAnimatedProperty<SVGLength> {
 public:
@@ -44,7 +44,7 @@ public:
     }
 
     void setDefaultValueAsString(const String&);
-    void setBaseValueAsString(const String&, SVGParsingError&);
+    void setBaseValueAsString(const String&, SVGParsingError&) override;
 
 protected:
     SVGAnimatedLength(SVGElement* contextElement, const QualifiedName& attributeName, PassRefPtr<SVGLength> initialValue, SVGLengthNegativeValuesMode negativeValuesMode)
@@ -57,6 +57,6 @@ private:
     SVGLengthNegativeValuesMode m_negativeValuesMode;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGAnimatedLength_h

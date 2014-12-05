@@ -4,16 +4,16 @@
 
 #include "base/json/json_file_value_serializer.h"
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 
 using base::FilePath;
 
-const char* JSONFileValueSerializer::kAccessDenied = "Access denied.";
-const char* JSONFileValueSerializer::kCannotReadFile = "Can't read file.";
-const char* JSONFileValueSerializer::kFileLocked = "File locked.";
-const char* JSONFileValueSerializer::kNoSuchFile = "File doesn't exist.";
+const char JSONFileValueSerializer::kAccessDenied[] = "Access denied.";
+const char JSONFileValueSerializer::kCannotReadFile[] = "Can't read file.";
+const char JSONFileValueSerializer::kFileLocked[] = "File locked.";
+const char JSONFileValueSerializer::kNoSuchFile[] = "File doesn't exist.";
 
 bool JSONFileValueSerializer::Serialize(const base::Value& root) {
   return SerializeInternal(root, false);

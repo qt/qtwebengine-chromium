@@ -14,6 +14,40 @@ declare_args() {
   # Normally, Android builds are lightly optimized, even for debug builds, to
   # keep binary size down. Setting this flag to true disables such optimization
   android_full_debug = false
+
+  # Whether to use the binary binutils checked into third_party/binutils.
+  # These are not multi-arch so cannot be used except on x86 and x86-64 (the
+  # only two architectures that are currently checked in). Turn this off when
+  # you are using a custom toolchain and need to control -B in cflags.
+  linux_use_bundled_binutils = is_linux && cpu_arch == "x64"
+}
+
+use_gold = is_linux && cpu_arch == "x64"
+
+if (!is_win) {
+  # linux_use_debug_fission: whether to use split DWARF debug info
+  # files. This can reduce link time significantly, but is incompatible
+  # with some utilities such as icecc and ccache. Requires gold and
+  # gcc >= 4.8 or clang.
+  # http://gcc.gnu.org/wiki/DebugFission
+  use_debug_fission = use_gold && linux_use_bundled_binutils
+}
+
+# default_include_dirs ---------------------------------------------------------
+#
+# This is a separate config so that third_party code (which would not use the
+# source root and might have conflicting versions of some headers) can remove
+# this and specify their own include paths.
+config("default_include_dirs") {
+  include_dirs = [
+    "//",
+    root_gen_dir,
+  ]
+}
+
+# TODO(GYP): is_ubsan, is_ubsan_vptr
+if (!is_win) {
+  using_sanitizer = is_asan || is_lsan || is_tsan || is_msan
 }
 
 # compiler ---------------------------------------------------------------------
@@ -29,9 +63,6 @@ config("compiler") {
   cflags_cc = []
   ldflags = []
   defines = []
-  include_dirs = []
-
-  include_dirs += [ "//", root_gen_dir ]
 
   # In general, Windows is totally different, but all the other builds share
   # some common GCC configuration. This section sets up Windows and the common
@@ -77,6 +108,45 @@ config("compiler") {
       # TODO(jochen): Enable this on chromeos on arm. http://crbug.com/356580
       ldflags += [ "-Wl,--fatal-warnings" ]
     }
+
+    # Common options for AddressSanitizer, LeakSanitizer, ThreadSanitizer and
+    # MemorySanitizer
+    if (using_sanitizer) {
+      cflags += [
+        "-fno-omit-frame-pointer",
+        "-gline-tables-only",
+      ]
+    }
+    if (is_asan) {
+      cflags += [ "-fsanitize=address" ]
+      if (is_mac) {
+        cflags += [ "-mllvm -asan-globals=0" ]  # http://crbug.com/352073
+        # TODO(GYP): deal with mac_bundles.
+      }
+    }
+  }
+
+  if (is_clang && is_debug) {
+    # Allow comparing the address of references and 'this' against 0
+    # in debug builds. Technically, these can never be null in
+    # well-defined C/C++ and Clang can optimize such checks away in
+    # release builds, but they may be used in asserts in debug builds.
+    cflags_cc += [
+      "-Wno-undefined-bool-conversion",
+      "-Wno-tautological-undefined-compare",
+    ]
+  }
+
+  if (is_clang && !is_win) {
+    # This is here so that all files get recompiled after a clang roll and
+    # when turning clang on or off. (defines are passed via the command line,
+    # and build system rebuild things when their commandline changes). Nothing
+    # should ever read this define.
+    defines += [
+      "CR_CLANG_REVISION=" +
+          exec_script(
+              "//tools/clang/scripts/posix-print-revision.py", [], "value")
+    ]
   }
 
   # Mac-specific compiler flags setup.
@@ -105,22 +175,36 @@ config("compiler") {
   } else if (is_posix) {
     # Non-Mac Posix compiler flags setup.
     # -----------------------------------
+    if (gcc_version >= 48) {
+      cflags_cc += [
+        "-std=gnu++11",
+      ]
+    }
 
     # CPU architecture. We may or may not be doing a cross compile now, so for
     # simplicity we always explicitly set the architecture.
     if (cpu_arch == "x64") {
-      cflags += [ "-m64" ]
+      cflags += [ "-m64", "-march=x86-64", ]
       ldflags += [ "-m64" ]
     } else if (cpu_arch == "x86") {
       cflags += [ "-m32" ]
       ldflags += [ "-m32" ]
+      if (is_clang) {
+        cflags += [
+          # Else building libyuv gives clang's register allocator issues,
+          # see llvm.org/PR15798 / crbug.com/233709
+          "-momit-leaf-frame-pointer",
+          # Align the stack on 16-byte boundaries, http://crbug.com/418554.
+          "-mstack-alignment=16",
+          "-mstackrealign",
+        ]
+      }
     } else if (cpu_arch == "arm") {
       # Don't set the compiler flags for the WebView build. These will come
       # from the Android build system.
       if (!is_android_webview_build) {
         cflags += [
           "-march=$arm_arch",
-          "-mfpu=$arm_fpu",
           "-mfloat-abi=$arm_float_abi",
         ]
         if (arm_tune != "") {
@@ -131,6 +215,20 @@ config("compiler") {
           if (is_android && !is_clang) {  # Clang doesn't support this option.
             cflags += [ "-mthumb-interwork" ]
           }
+        }
+        if (!is_clang) {
+          # Clang doesn't support these flags.
+          cflags += [
+            # The tree-sra optimization (scalar replacement for
+            # aggregates enabling subsequent optimizations) leads to
+            # invalid code generation when using the Android NDK's
+            # compiler (r5-r7). This can be verified using
+            # webkit_unit_tests' WTF.Checked_int8_t test.
+            "-fno-tree-sra",
+            # The following option is disabled to improve binary
+            # size and performance in gcc 4.9.
+            "-fno-caller-saves",
+          ]
         }
       }
     }
@@ -169,37 +267,42 @@ config("compiler") {
   # ------------------------------------
   if (is_linux) {
     cflags += [ "-pthread" ]
-
-    if (cpu_arch == "x64") {
-      # Use gold for linking on 64-bit Linux only (on 32-bit it runs out of
-      # address space, and it doesn't support cross-compiling).
-      gold_path = rebase_path("//third_party/binutils/Linux_x64/Release/bin",
-                              root_build_dir)
-      ldflags += [
-        "-B$gold_path",
-
-        # There seems to be a conflict of --icf and -pie in gold which can
-        # generate crashy binaries. As a security measure, -pie takes
-        # precedence for now.
-        # TODO(brettw) common.gypi has this only for target toolset.
-        #"-Wl,--icf=safe",
-        "-Wl,--icf=none",
-
-        # Experimentation found that using four linking threads
-        # saved ~20% of link time.
-        # https://groups.google.com/a/chromium.org/group/chromium-dev/browse_thread/thread/281527606915bb36
-        # Only apply this to the target linker, since the host
-        # linker might not be gold, but isn't used much anyway.
-        # TODO(raymes): Disable threading because gold is frequently
-        # crashing on the bots: crbug.com/161942.
-        #"-Wl,--threads",
-        #"-Wl,--thread-count=4",
-      ]
-    }
-
     ldflags += [
       "-pthread",
     ]
+  }
+  if (use_gold) {
+    # Use gold for linking on 64-bit Linux only (on 32-bit it runs out of
+    # address space, and it doesn't support cross-compiling).
+    gold_path = rebase_path("//third_party/binutils/Linux_x64/Release/bin",
+                            root_build_dir)
+    ldflags += [
+      "-B$gold_path",
+
+      # Newer gccs and clangs support -fuse-ld, use the flag to force gold
+      # selection.
+      # gcc -- http://gcc.gnu.org/onlinedocs/gcc-4.8.0/gcc/Optimize-Options.html
+      "-fuse-ld=gold",
+
+      # TODO(brettw) common.gypi has this only for target toolset.
+      "-Wl,--icf=safe",
+
+      # Experimentation found that using four linking threads
+      # saved ~20% of link time.
+      # https://groups.google.com/a/chromium.org/group/chromium-dev/browse_thread/thread/281527606915bb36
+      # Only apply this to the target linker, since the host
+      # linker might not be gold, but isn't used much anyway.
+      # TODO(raymes): Disable threading because gold is frequently
+      # crashing on the bots: crbug.com/161942.
+      #"-Wl,--threads",
+      #"-Wl,--thread-count=4",
+    ]
+  }
+
+  if (linux_use_bundled_binutils) {
+    binutils_path = rebase_path("//third_party/binutils/Linux_x64/Release/bin",
+                                root_build_dir)
+    cflags += [ "-B$binutils_path" ]
   }
 
   # Clang-specific compiler flags setup.
@@ -225,15 +328,6 @@ config("compiler") {
       # Clang doesn't support these flags.
       cflags += [
         "-finline-limit=64",
-        # The following 6 options are disabled to save on
-        # binary size in gcc 4.8.
-        # TODO(fdegans) Reevaluate when we upgrade GCC.
-        "-fno-partial-inlining",
-        "-fno-early-inlining",
-        "-fno-tree-copy-prop",
-        "-fno-tree-loop-optimize",
-        "-fno-move-loop-invariants",
-        "-fno-caller-saves",
       ]
     }
     if (is_android_webview_build) {
@@ -262,15 +356,11 @@ config("compiler") {
 
     # Use gold for Android for most CPU architectures.
     if (cpu_arch == "x86" || cpu_arch == "x64" || cpu_arch == "arm") {
+      ldflags += [ "-fuse-ld=gold" ]
       if (is_clang) {
-        # Clang does not support -fuse-ld to invoke the built-in gold linker,
-        # so use the -B option which requires us to specify the path.
-        ldflags += [
-          "-B" + rebase_path("//build/android/arm-linux-androideabi-gold",
-                             root_build_dir)
-        ]
-      } else {
-        ldflags += [ "-fuse-ld=gold" ]
+        # Let clang find the ld.gold in the NDK.
+        ldflags += [ "--gcc-toolchain=" + rebase_path(android_toolchain_root,
+                                                      root_build_dir) ]
       }
     }
 
@@ -297,6 +387,14 @@ config("compiler") {
         ldflags += [ "-target x86-linux-androideabi" ]
       }
     }
+  }
+}
+
+config("compiler_arm_fpu") {
+  if (cpu_arch == "arm" && !is_android_webview_build) {
+    cflags = [
+      "-mfpu=$arm_fpu",
+    ]
   }
 }
 
@@ -381,35 +479,41 @@ config("runtime_library") {
     # arm-linux-androideabi-4.4.3 toolchain (circa Gingerbread) will exhibit
     # strange errors. The include ordering here is important; change with
     # caution.
-    if (use_system_stlport) {
-      cflags += [
-        # For libstdc++/include, which is used by stlport.
-        "-I" + rebase_path("$android_src/bionic", root_build_dir),
-        "-I" + rebase_path("$android_src/external/stlport/stlport",
-                           root_build_dir),
-      ]
+    android_stlport_root = "$android_ndk_root/sources/cxx-stl/stlport"
+
+    cflags += [
+      "-isystem" + rebase_path("$android_stlport_root/stlport",
+                               root_build_dir)
+    ]
+    if (arm_use_thumb) {
+      lib_dirs += [ "$android_stlport_root/libs/$android_app_abi/thumb" ]
+    } else {
+      lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
+    }
+
+    if (component_mode == "shared_library") {
+      libs += [ "stlport_shared" ]
+    } else {
+      libs += [ "stlport_static" ]
+    }
+
+    if (cpu_arch == "mipsel") {
       libs += [
-        "stlport",
+        # ld linker is used for mips Android, and ld does not accept library
+        # absolute path prefixed by "-l"; Since libgcc does not exist in mips
+        # sysroot the proper library will be linked.
+        # TODO(gordanac): Remove once gold linker is used for mips Android.
+        "gcc",
       ]
     } else {
-      android_stlport_root = "$android_ndk_root/sources/cxx-stl/stlport"
-
-      cflags += [
-        "-I" + rebase_path("$android_stlport_root/stlport", root_build_dir)
+      libs += [
+        # Manually link the libgcc.a that the cross compiler uses. This is
+        # absolute because the linker will look inside the sysroot if it's not.
+        rebase_path(android_libgcc_file),
       ]
-      lib_dirs += [ "$android_stlport_root/libs/$android_app_abi" ]
-
-      if (component_mode == "shared_library") {
-        libs += [ "stlport_shared" ]
-      } else {
-        libs += [ "stlport_static" ]
-      }
     }
 
     libs += [
-      # Manually link the libgcc.a that the cross compiler uses. This is
-      # absolute because the linker will look inside the sysroot if it's not.
-      rebase_path(android_libgcc_file),
       "c",
       "dl",
       "m",
@@ -427,12 +531,10 @@ config("chromium_code") {
   if (is_win) {
     cflags = [
       "/W4",  # Warning level 4.
-      "/WX",  # Treat warnings as errors.
     ]
   } else {
     cflags = [
       "-Wall",
-      "-Werror",
 
       # GCC turns on -Wsign-compare for C++ under -Wall, but clang doesn't,
       # so we specify it explicitly.
@@ -447,12 +549,6 @@ config("chromium_code") {
       "__STDC_CONSTANT_MACROS",
       "__STDC_FORMAT_MACROS",
     ]
-
-    # TODO(brettw) this should also be enabled on Linux but some files
-    # currently fail.
-    if (is_mac) {
-      cflags += [ "-Wextra" ]
-    }
   }
 }
 config("no_chromium_code") {
@@ -464,6 +560,7 @@ config("no_chromium_code") {
     cflags += [
       "/W3",  # Warning level 3.
       "/wd4800",  # Disable warning when forcing value to bool.
+      "/wd4267",  # TODO(jschuh): size_t to int.
     ]
     defines += [
       "_CRT_NONSTDC_NO_WARNINGS",
@@ -530,48 +627,88 @@ config("no_rtti") {
 
 config("default_warnings") {
   if (is_win) {
-    # Please keep ordered and add names if you add more.
     cflags = [
+      "/WX",      # Treat warnings as errors.
+
+      # Warnings permanently disabled:
+
+      # TODO(GYP) The GYP build doesn't have this globally enabled but disabled
+      # for a bunch of individual targets. Re-enable this globally when those
+      # targets are fixed.
       "/wd4018",  # Comparing signed and unsigned values.
+
+      # C4127: conditional expression is constant
+      # This warning can in theory catch dead code and other problems, but
+      # triggers in far too many desirable cases where the conditional
+      # expression is either set by macros or corresponds some legitimate
+      # compile-time constant expression (due to constant template args,
+      # conditionals comparing the sizes of different types, etc.).  Some of
+      # these can be worked around, but it's not worth it.
+      "/wd4127",
+
+      # C4251: 'identifier' : class 'type' needs to have dll-interface to be
+      #        used by clients of class 'type2'
+      # This is necessary for the shared library build.
+      "/wd4251",
+
+      # C4351: new behavior: elements of array 'array' will be default
+      #        initialized
+      # This is a silly "warning" that basically just alerts you that the
+      # compiler is going to actually follow the language spec like it's
+      # supposed to, instead of not following it like old buggy versions did.
+      # There's absolutely no reason to turn this on.
+      "/wd4351",
+
+      # C4355: 'this': used in base member initializer list
+      # It's commonly useful to pass |this| to objects in a class' initializer
+      # list.  While this warning can catch real bugs, most of the time the
+      # constructors in question don't attempt to call methods on the passed-in
+      # pointer (until later), and annotating every legit usage of this is
+      # simply more hassle than the warning is worth.
+      "/wd4355",
+
+      # C4503: 'identifier': decorated name length exceeded, name was
+      #        truncated
+      # This only means that some long error messages might have truncated
+      # identifiers in the presence of lots of templates.  It has no effect on
+      # program correctness and there's no real reason to waste time trying to
+      # prevent it.
+      "/wd4503",
+
+      # C4611: interaction between 'function' and C++ object destruction is
+      #        non-portable
+      # This warning is unavoidable when using e.g. setjmp/longjmp.  MSDN
+      # suggests using exceptions instead of setjmp/longjmp for C++, but
+      # Chromium code compiles without exception support.  We therefore have to
+      # use setjmp/longjmp for e.g. JPEG decode error handling, which means we
+      # have to turn off this warning (and be careful about how object
+      # destruction happens in such cases).
+      "/wd4611",
+
+
+      # Warnings to evaluate and possibly fix/reenable later:
+
       "/wd4100",  # Unreferenced formal function parameter.
-      "/wd4121",  # Alignment of a member was sensitive to packing.
-      "/wd4125",  # Decimal digit terminates octal escape sequence.
-      "/wd4127",  # Conditional expression is constant.
-      "/wd4130",  # Logical operation on address of string constant.
       "/wd4189",  # A variable was declared and initialized but never used.
-      "/wd4201",  # Nonstandard extension used: nameless struct/union.
-      "/wd4238",  # Nonstandard extension used: class rvalue used as lvalue.
       "/wd4244",  # Conversion: possible loss of data.
-      "/wd4245",  # Conversion: signed/unsigned mismatch,
-      "/wd4251",  # Class needs to have dll-interface.
-      "/wd4310",  # Cast truncates constant value.
-      "/wd4351",  # Elements of array will be default initialized.
-      "/wd4355",  # 'this' used in base member initializer list.
-      "/wd4396",  # Inline friend template thing.
-      "/wd4428",  # Universal character name encountered in source.
       "/wd4481",  # Nonstandard extension: override specifier.
-      "/wd4503",  # Decorated name length exceeded, name was truncated.
       "/wd4505",  # Unreferenced local function has been removed.
       "/wd4510",  # Default constructor could not be generated.
       "/wd4512",  # Assignment operator could not be generated.
-      "/wd4530",  # Exception handler used, but unwind semantics not enabled.
       "/wd4610",  # Class can never be instantiated, constructor required.
-      "/wd4611",  # C++ object destruction and 'catch'.
-      "/wd4701",  # Potentially uninitialized local variable name used.
-      "/wd4702",  # Unreachable code.
-      "/wd4706",  # Assignment within conditional expression.
-      "/wd4819",  # Character not in the current code page.
     ]
   } else {
     # Common GCC warning setup.
     cflags = [
       # Enables.
       "-Wendif-labels",  # Weird old-style text after an #endif.
+      "-Werror",  # Warnings as errors.
 
       # Disables.
       "-Wno-missing-field-initializers",  # "struct foo f = {0};"
       "-Wno-unused-parameter",  # Unused function parameters.
     ]
+    cflags_cc = []
 
     if (is_mac) {
       cflags += [
@@ -601,8 +738,24 @@ config("default_warnings") {
         # http://crbug.com/255186
         "-Wno-deprecated-register",
 
-        # Clang spots more unused functions.
-        "-Wno-unused-function",
+        # TODO(thakis): This used to be implied by -Wno-unused-function,
+        # which we no longer use. Check if it makes sense to remove
+        # this as well. http://crbug.com/316352
+        "-Wno-unneeded-internal-declaration",
+
+        # TODO(thakis): Remove, http://crbug.com/263960
+        "-Wno-reserved-user-defined-literal",
+
+        # TODO(hans): Clean this up. Or disable with finer granularity.
+        "-Wno-unused-local-typedef",
+      ]
+    }
+    if (gcc_version >= 48) {
+      cflags_cc += [
+        # See comment for -Wno-c++11-narrowing.
+        "-Wno-narrowing",
+        # TODO(thakis): Remove, http://crbug.com/263960
+        "-Wno-literal-suffix",
       ]
     }
 
@@ -621,7 +774,7 @@ config("default_warnings") {
         "-Wno-ignored-qualifiers",
         "-Wno-type-limits",
       ]
-      cflags_cc = [
+      cflags_cc += [
         # Disabling c++0x-compat should be handled in WebKit, but
         # this currently doesn't work because gcc_version is not set
         # correctly when building with the Android build system.
@@ -686,9 +839,9 @@ if (is_win) {
   common_optimize_on_ldflags = []
 
   if (is_android) {
-    common_optimize_on_cflags += [
-      "-fomit-frame-pointer",
-    ]
+    if (!using_sanitizer) {
+      common_optimize_on_cflags += [ "-fomit-frame-pointer" ]
+    }
     common_optimize_on_ldflags += [
       # Warn in case of text relocations.
       "-Wl,--warn-shared-textrel",
@@ -746,19 +899,21 @@ config("no_optimize") {
     # much even when optimization is disabled to get the binary size down.
     cflags = [
       "-Os",
-      "-fomit-frame-pointer",
       "-fdata-sections",
       "-ffunction-sections",
     ]
+    if (!using_sanitizer) {
+      cflags += [ "-fomit-frame-pointer" ]
+    }
     ldflags = common_optimize_on_ldflags
   } else {
     cflags = [ "-O0" ]
   }
 }
 
-# On Windows, turns up the optimization level. This implies whole program
+# Turns up the optimization level. On Windows, this implies whole program
 # optimization and link-time code generation which is very expensive and should
-# be used sparingly. For non-Windows, this is the same as "optimize".
+# be used sparingly.
 config("optimize_max") {
   cflags = common_optimize_on_cflags
   ldflags = common_optimize_on_ldflags
@@ -787,6 +942,9 @@ config("symbols") {
     ldflags = [ "/DEBUG" ]
   } else {
     cflags = [ "-g2" ]
+    if (use_debug_fission) {
+      cflags += [ "-gsplit-dwarf" ]
+    }
   }
 }
 
@@ -796,6 +954,9 @@ config("minimal_symbols") {
     ldflags = [ "/DEBUG" ]
   } else {
     cflags = [ "-g1" ]
+    if (use_debug_fission) {
+      cflags += [ "-gsplit-dwarf" ]
+    }
   }
 }
 

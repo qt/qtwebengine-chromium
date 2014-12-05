@@ -26,7 +26,7 @@
 #ifndef FontFaceSet_h
 #define FontFaceSet_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/css/FontFace.h"
 #include "core/css/FontFaceSetForEachCallback.h"
 #include "core/dom/ActiveDOMObject.h"
@@ -43,7 +43,7 @@
 #undef check
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class CSSFontFace;
 class CSSFontFaceSource;
@@ -58,14 +58,15 @@ class FontsReadyPromiseResolver;
 class ExecutionContext;
 
 #if ENABLE(OILPAN)
-class FontFaceSet FINAL : public GarbageCollectedFinalized<FontFaceSet>, public HeapSupplement<Document>, public ActiveDOMObject, public EventTargetWithInlineData {
+class FontFaceSet final : public GarbageCollectedFinalized<FontFaceSet>, public HeapSupplement<Document>, public ActiveDOMObject, public EventTargetWithInlineData {
     USING_GARBAGE_COLLECTED_MIXIN(FontFaceSet);
     typedef HeapSupplement<Document> SupplementType;
 #else
-class FontFaceSet FINAL : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
+class FontFaceSet final : public RefCountedSupplement<Document, FontFaceSet>, public ActiveDOMObject, public EventTargetWithInlineData {
     DEFINE_EVENT_TARGET_REFCOUNTING(RefCounted<FontFaceSet>);
     typedef RefCountedSupplement<Document, FontFaceSet> SupplementType;
 #endif
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~FontFaceSet();
 
@@ -80,15 +81,15 @@ public:
     void add(FontFace*, ExceptionState&);
     void clear();
     bool remove(FontFace*, ExceptionState&);
-    void forEach(PassOwnPtr<FontFaceSetForEachCallback>, ScriptValue& thisArg) const;
-    void forEach(PassOwnPtr<FontFaceSetForEachCallback>) const;
+    void forEach(FontFaceSetForEachCallback*, const ScriptValue& thisArg) const;
+    void forEach(FontFaceSetForEachCallback*) const;
     bool has(FontFace*, ExceptionState&) const;
 
     unsigned long size() const;
     AtomicString status() const;
 
-    virtual ExecutionContext* executionContext() const OVERRIDE;
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual ExecutionContext* executionContext() const override;
+    virtual const AtomicString& interfaceName() const override;
 
     Document* document() const;
 
@@ -98,9 +99,9 @@ public:
     void loadError(FontFace*);
 
     // ActiveDOMObject
-    virtual void suspend() OVERRIDE;
-    virtual void resume() OVERRIDE;
-    virtual void stop() OVERRIDE;
+    virtual void suspend() override;
+    virtual void resume() override;
+    virtual void stop() override;
 
     static PassRefPtrWillBeRawPtr<FontFaceSet> from(Document&);
     static void didLayout(Document&);
@@ -108,7 +109,7 @@ public:
     void addFontFacesToFontFaceCache(FontFaceCache*, CSSFontSelector*);
 
 #if ENABLE(OILPAN)
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 #endif
 
 private:
@@ -136,7 +137,7 @@ private:
     bool hasLoadedFonts() const { return !m_loadedFonts.isEmpty() || !m_failedFonts.isEmpty(); }
 
     bool inActiveDocumentContext() const;
-    void forEachInternal(PassOwnPtr<FontFaceSetForEachCallback>, ScriptValue* thisArg) const;
+    void forEachInternal(FontFaceSetForEachCallback*, const ScriptValue* thisArg) const;
     void addToLoadingFonts(PassRefPtrWillBeRawPtr<FontFace>);
     void removeFromLoadingFonts(PassRefPtrWillBeRawPtr<FontFace>);
     void fireLoadingEvent();
@@ -144,7 +145,7 @@ private:
     bool resolveFontStyle(const String&, Font&);
     void handlePendingEventsAndPromisesSoon();
     void handlePendingEventsAndPromises();
-    const ListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFontFaceList() const;
+    const WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> >& cssConnectedFontFaceList() const;
     bool isCSSConnectedFontFace(FontFace*) const;
 
     WillBeHeapHashSet<RefPtrWillBeMember<FontFace> > m_loadingFonts;
@@ -152,14 +153,13 @@ private:
     Vector<OwnPtr<FontsReadyPromiseResolver> > m_readyResolvers;
     FontFaceArray m_loadedFonts;
     FontFaceArray m_failedFonts;
-    // FIXME: Oilpan: replace with a HeapListHashSet or HeapLinkedHashSet.
-    ListHashSet<RefPtrWillBeMember<FontFace> > m_nonCSSConnectedFaces;
+    WillBeHeapListHashSet<RefPtrWillBeMember<FontFace> > m_nonCSSConnectedFaces;
 
     AsyncMethodRunner<FontFaceSet> m_asyncRunner;
 
     FontLoadHistogram m_histogram;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FontFaceSet_h

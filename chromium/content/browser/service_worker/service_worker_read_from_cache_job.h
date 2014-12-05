@@ -5,6 +5,8 @@
 #ifndef CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_READ_FROM_CACHE_JOB_H_
 #define CONTENT_BROWSER_SERVICE_WORKER_SERVICE_WORKER_READ_FROM_CACHE_JOB_H_
 
+#include <string>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "content/browser/service_worker/service_worker_disk_cache.h"
@@ -30,21 +32,18 @@ class CONTENT_EXPORT ServiceWorkerReadFromCacheJob
       int64 response_id);
 
  private:
-  virtual ~ServiceWorkerReadFromCacheJob();
+  ~ServiceWorkerReadFromCacheJob() override;
 
   // net::URLRequestJob overrides
-  virtual void Start() OVERRIDE;
-  virtual void Kill() OVERRIDE;
-  virtual net::LoadState GetLoadState() const OVERRIDE;
-  virtual bool GetCharset(std::string* charset) OVERRIDE;
-  virtual bool GetMimeType(std::string* mime_type) const OVERRIDE;
-  virtual void GetResponseInfo(net::HttpResponseInfo* info) OVERRIDE;
-  virtual int GetResponseCode() const OVERRIDE;
-  virtual void SetExtraRequestHeaders(
-      const net::HttpRequestHeaders& headers) OVERRIDE;
-  virtual bool ReadRawData(net::IOBuffer* buf,
-                           int buf_size,
-                           int *bytes_read) OVERRIDE;
+  void Start() override;
+  void Kill() override;
+  net::LoadState GetLoadState() const override;
+  bool GetCharset(std::string* charset) override;
+  bool GetMimeType(std::string* mime_type) const override;
+  void GetResponseInfo(net::HttpResponseInfo* info) override;
+  int GetResponseCode() const override;
+  void SetExtraRequestHeaders(const net::HttpRequestHeaders& headers) override;
+  bool ReadRawData(net::IOBuffer* buf, int buf_size, int* bytes_read) override;
 
   // Reader completion callbacks.
   void OnReadInfoComplete(int result);

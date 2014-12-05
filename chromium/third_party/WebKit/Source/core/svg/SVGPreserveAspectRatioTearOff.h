@@ -31,13 +31,14 @@
 #ifndef SVGPreserveAspectRatioTearOff_h
 #define SVGPreserveAspectRatioTearOff_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/svg/SVGPreserveAspectRatio.h"
 #include "core/svg/properties/SVGPropertyTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGPreserveAspectRatioTearOff FINAL : public SVGPropertyTearOff<SVGPreserveAspectRatio>, public ScriptWrappable {
+class SVGPreserveAspectRatioTearOff final : public SVGPropertyTearOff<SVGPreserveAspectRatio>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum {
         SVG_PRESERVEASPECTRATIO_UNKNOWN = SVGPreserveAspectRatio::SVG_PRESERVEASPECTRATIO_UNKNOWN,
@@ -73,6 +74,6 @@ private:
     SVGPreserveAspectRatioTearOff(PassRefPtr<SVGPreserveAspectRatio>, SVGElement* contextElement, PropertyIsAnimValType, const QualifiedName& attributeName = QualifiedName::null());
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif // SVGPreserveAspectRatioTearOff_h_
+#endif // SVGPreserveAspectRatioTearOff_h

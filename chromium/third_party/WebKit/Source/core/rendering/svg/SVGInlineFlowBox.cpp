@@ -23,38 +23,19 @@
 #include "config.h"
 #include "core/rendering/svg/SVGInlineFlowBox.h"
 
-#include "core/rendering/svg/RenderSVGInlineText.h"
+#include "core/paint/SVGInlineFlowBoxPainter.h"
 #include "core/rendering/svg/SVGInlineTextBox.h"
-#include "core/rendering/svg/SVGRenderingContext.h"
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 void SVGInlineFlowBox::paintSelectionBackground(PaintInfo& paintInfo)
 {
-    ASSERT(paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection);
-    ASSERT(!paintInfo.context->paintingDisabled());
-
-    PaintInfo childPaintInfo(paintInfo);
-    for (InlineBox* child = firstChild(); child; child = child->nextOnLine()) {
-        if (child->isSVGInlineTextBox())
-            toSVGInlineTextBox(child)->paintSelectionBackground(childPaintInfo);
-        else if (child->isSVGInlineFlowBox())
-            toSVGInlineFlowBox(child)->paintSelectionBackground(childPaintInfo);
-    }
+    SVGInlineFlowBoxPainter(*this).paintSelectionBackground(paintInfo);
 }
 
 void SVGInlineFlowBox::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset, LayoutUnit, LayoutUnit)
 {
-    ASSERT(paintInfo.phase == PaintPhaseForeground || paintInfo.phase == PaintPhaseSelection);
-    ASSERT(!paintInfo.context->paintingDisabled());
-
-    SVGRenderingContext renderingContext(&renderer(), paintInfo, SVGRenderingContext::SaveGraphicsContext);
-    if (renderingContext.isRenderingPrepared()) {
-        for (InlineBox* child = firstChild(); child; child = child->nextOnLine())
-            child->paint(paintInfo, paintOffset, 0, 0);
-    }
+    SVGInlineFlowBoxPainter(*this).paint(paintInfo, paintOffset);
 }
 
 FloatRect SVGInlineFlowBox::calculateBoundaries() const
@@ -68,4 +49,4 @@ FloatRect SVGInlineFlowBox::calculateBoundaries() const
     return childRect;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -19,18 +19,19 @@
 #ifndef DOMParser_h
 #define DOMParser_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExceptionState;
 
-class DOMParser : public RefCountedWillBeGarbageCollectedFinalized<DOMParser>, public ScriptWrappable {
+class DOMParser final : public RefCountedWillBeGarbageCollected<DOMParser>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DOMParser> create()
     {
@@ -42,12 +43,9 @@ public:
     void trace(Visitor*) { }
 
 private:
-    DOMParser()
-    {
-        ScriptWrappable::init(this);
-    }
+    DOMParser() { }
 };
 
-}
+} // namespace blink
 
-#endif // XMLSerializer.h
+#endif // DOMParser_h

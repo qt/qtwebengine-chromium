@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/run_loop.h"
@@ -19,31 +19,31 @@
 #include "content/public/test/sandbox_file_system_test_helper.h"
 #include "content/public/test/test_file_system_context.h"
 #include "content/test/fileapi_test_file_set.h"
+#include "storage/browser/fileapi/external_mount_points.h"
+#include "storage/browser/fileapi/file_system_backend.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/obfuscated_file_util.h"
+#include "storage/browser/fileapi/sandbox_directory_database.h"
+#include "storage/browser/fileapi/sandbox_file_system_backend_delegate.h"
+#include "storage/browser/fileapi/sandbox_isolated_origin_database.h"
+#include "storage/browser/fileapi/sandbox_origin_database.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/common/database/database_identifier.h"
+#include "storage/common/quota/quota_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/external_mount_points.h"
-#include "webkit/browser/fileapi/file_system_backend.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
-#include "webkit/browser/fileapi/obfuscated_file_util.h"
-#include "webkit/browser/fileapi/sandbox_directory_database.h"
-#include "webkit/browser/fileapi/sandbox_file_system_backend_delegate.h"
-#include "webkit/browser/fileapi/sandbox_isolated_origin_database.h"
-#include "webkit/browser/fileapi/sandbox_origin_database.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/common/database/database_identifier.h"
-#include "webkit/common/quota/quota_types.h"
 
 using content::AsyncFileTestHelper;
-using fileapi::FileSystemContext;
-using fileapi::FileSystemOperation;
-using fileapi::FileSystemOperationContext;
-using fileapi::FileSystemURL;
-using fileapi::ObfuscatedFileUtil;
-using fileapi::SandboxDirectoryDatabase;
-using fileapi::SandboxIsolatedOriginDatabase;
-using fileapi::kFileSystemTypeTemporary;
-using fileapi::kFileSystemTypePersistent;
+using storage::FileSystemContext;
+using storage::FileSystemOperation;
+using storage::FileSystemOperationContext;
+using storage::FileSystemURL;
+using storage::ObfuscatedFileUtil;
+using storage::SandboxDirectoryDatabase;
+using storage::SandboxIsolatedOriginDatabase;
+using storage::kFileSystemTypeTemporary;
+using storage::kFileSystemTypePersistent;
 
 namespace content {
 
@@ -121,16 +121,17 @@ FileSystemURL FileSystemURLAppendUTF8(
 
 FileSystemURL FileSystemURLDirName(const FileSystemURL& url) {
   return FileSystemURL::CreateForTest(
-      url.origin(), url.mount_type(),
-      fileapi::VirtualPath::DirName(url.virtual_path()));
+      url.origin(),
+      url.mount_type(),
+      storage::VirtualPath::DirName(url.virtual_path()));
 }
 
-std::string GetTypeString(fileapi::FileSystemType type) {
-  return fileapi::SandboxFileSystemBackendDelegate::GetTypeString(type);
+std::string GetTypeString(storage::FileSystemType type) {
+  return storage::SandboxFileSystemBackendDelegate::GetTypeString(type);
 }
 
 bool HasFileSystemType(ObfuscatedFileUtil::AbstractOriginEnumerator* enumerator,
-                       fileapi::FileSystemType type) {
+                       storage::FileSystemType type) {
   return enumerator->HasTypeDirectory(GetTypeString(type));
 }
 
@@ -144,24 +145,23 @@ class ObfuscatedFileUtilTest : public testing::Test {
  public:
   ObfuscatedFileUtilTest()
       : origin_(GURL("http://www.example.com")),
-        type_(fileapi::kFileSystemTypeTemporary),
+        type_(storage::kFileSystemTypeTemporary),
         weak_factory_(this),
         sandbox_file_system_(origin_, type_),
-        quota_status_(quota::kQuotaStatusUnknown),
-        usage_(-1) {
-  }
+        quota_status_(storage::kQuotaStatusUnknown),
+        usage_(-1) {}
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
 
     storage_policy_ = new MockSpecialStoragePolicy();
 
     quota_manager_ =
-        new quota::QuotaManager(false /* is_incognito */,
-                                data_dir_.path(),
-                                base::MessageLoopProxy::current().get(),
-                                base::MessageLoopProxy::current().get(),
-                                storage_policy_.get());
+        new storage::QuotaManager(false /* is_incognito */,
+                                  data_dir_.path(),
+                                  base::MessageLoopProxy::current().get(),
+                                  base::MessageLoopProxy::current().get(),
+                                  storage_policy_.get());
 
     // Every time we create a new sandbox_file_system helper,
     // it creates another context, which creates another path manager,
@@ -173,11 +173,11 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
     sandbox_file_system_.SetUp(file_system_context_.get());
 
-    change_observers_ = fileapi::MockFileChangeObserver::CreateList(
-        &change_observer_);
+    change_observers_ =
+        storage::MockFileChangeObserver::CreateList(&change_observer_);
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     quota_manager_ = NULL;
     sandbox_file_system_.TearDown();
   }
@@ -208,11 +208,11 @@ class ObfuscatedFileUtilTest : public testing::Test {
     return context;
   }
 
-  const fileapi::ChangeObserverList& change_observers() const {
+  const storage::ChangeObserverList& change_observers() const {
     return change_observers_;
   }
 
-  fileapi::MockFileChangeObserver* change_observer() {
+  storage::MockFileChangeObserver* change_observer() {
     return &change_observer_;
   }
 
@@ -220,8 +220,8 @@ class ObfuscatedFileUtilTest : public testing::Test {
   // and obfuscated_file_util_.
   // Use this for tests which need to run in multiple origins; we need a test
   // helper per origin.
-  SandboxFileSystemTestHelper* NewFileSystem(
-      const GURL& origin, fileapi::FileSystemType type) {
+  SandboxFileSystemTestHelper* NewFileSystem(const GURL& origin,
+                                             storage::FileSystemType type) {
     SandboxFileSystemTestHelper* file_system =
         new SandboxFileSystemTestHelper(origin, type);
 
@@ -230,7 +230,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
   }
 
   scoped_ptr<ObfuscatedFileUtil> CreateObfuscatedFileUtil(
-      quota::SpecialStoragePolicy* storage_policy) {
+      storage::SpecialStoragePolicy* storage_policy) {
     return scoped_ptr<ObfuscatedFileUtil>(
       ObfuscatedFileUtil::CreateForTesting(
           storage_policy, data_dir_path(), NULL,
@@ -249,9 +249,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
     return origin_;
   }
 
-  fileapi::FileSystemType type() const {
-    return type_;
-  }
+  storage::FileSystemType type() const { return type_; }
 
   std::string type_string() const {
     return GetTypeString(type_);
@@ -270,7 +268,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
                                               sandbox_file_system_.type(),
                                               &usage_,
                                               &quota);
-    EXPECT_EQ(quota::kQuotaStatusOk, quota_status_);
+    EXPECT_EQ(storage::kQuotaStatusOk, quota_status_);
   }
 
   void RevokeUsageCache() {
@@ -303,7 +301,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
   }
 
   int64 usage() const { return usage_; }
-  fileapi::FileSystemUsageCache* usage_cache() {
+  storage::FileSystemUsageCache* usage_cache() {
     return sandbox_file_system_.usage_cache();
   }
 
@@ -440,7 +438,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
       std::set<base::FilePath::StringType>* files,
       std::set<base::FilePath::StringType>* directories) {
     scoped_ptr<FileSystemOperationContext> context;
-    std::vector<fileapi::DirectoryEntry> entries;
+    std::vector<storage::DirectoryEntry> entries;
     EXPECT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::ReadDirectory(file_system_context(),
                                                  root_url, &entries));
@@ -482,17 +480,17 @@ class ObfuscatedFileUtilTest : public testing::Test {
     FillTestDirectory(root_url, &files, &directories);
 
     scoped_ptr<FileSystemOperationContext> context;
-    std::vector<fileapi::DirectoryEntry> entries;
+    std::vector<storage::DirectoryEntry> entries;
     context.reset(NewContext(NULL));
     EXPECT_EQ(base::File::FILE_OK,
               AsyncFileTestHelper::ReadDirectory(
                   file_system_context(), root_url, &entries));
-    std::vector<fileapi::DirectoryEntry>::iterator entry_iter;
+    std::vector<storage::DirectoryEntry>::iterator entry_iter;
     EXPECT_EQ(files.size() + directories.size(), entries.size());
     EXPECT_TRUE(change_observer()->HasNoChange());
     for (entry_iter = entries.begin(); entry_iter != entries.end();
         ++entry_iter) {
-      const fileapi::DirectoryEntry& entry = *entry_iter;
+      const storage::DirectoryEntry& entry = *entry_iter;
       std::set<base::FilePath::StringType>::iterator iter =
           files.find(entry.name);
       if (iter != files.end()) {
@@ -711,8 +709,8 @@ class ObfuscatedFileUtilTest : public testing::Test {
     ASSERT_TRUE(db != NULL);
 
     // Destory it.
-    ASSERT_TRUE(file_util->DestroyDirectoryDatabase(
-        url.origin(), GetTypeString(url.type())));
+    file_util->DestroyDirectoryDatabase(
+        url.origin(), GetTypeString(url.type()));
     ASSERT_TRUE(file_util->directories_.empty());
   }
 
@@ -745,8 +743,7 @@ class ObfuscatedFileUtilTest : public testing::Test {
     // Initialize the directory with one origin using
     // SandboxIsolatedOriginDatabase.
     {
-      std::string origin_string =
-          webkit_database::GetIdentifierFromOrigin(origin_);
+      std::string origin_string = storage::GetIdentifierFromOrigin(origin_);
       SandboxIsolatedOriginDatabase database_old(
           origin_string, data_dir_path(),
           base::FilePath(
@@ -799,18 +796,18 @@ class ObfuscatedFileUtilTest : public testing::Test {
 
  protected:
   base::ScopedTempDir data_dir_;
-  base::MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   scoped_refptr<MockSpecialStoragePolicy> storage_policy_;
-  scoped_refptr<quota::QuotaManager> quota_manager_;
+  scoped_refptr<storage::QuotaManager> quota_manager_;
   scoped_refptr<FileSystemContext> file_system_context_;
   GURL origin_;
-  fileapi::FileSystemType type_;
+  storage::FileSystemType type_;
   base::WeakPtrFactory<ObfuscatedFileUtilTest> weak_factory_;
   SandboxFileSystemTestHelper sandbox_file_system_;
-  quota::QuotaStatusCode quota_status_;
+  storage::QuotaStatusCode quota_status_;
   int64 usage_;
-  fileapi::MockFileChangeObserver change_observer_;
-  fileapi::ChangeObserverList change_observers_;
+  storage::MockFileChangeObserver change_observer_;
+  storage::ChangeObserverList change_observers_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ObfuscatedFileUtilTest);
@@ -1217,7 +1214,7 @@ TEST_F(ObfuscatedFileUtilTest, TestReadDirectoryOnFile) {
             ofu()->EnsureFileExists(context.get(), url, &created));
   ASSERT_TRUE(created);
 
-  std::vector<fileapi::DirectoryEntry> entries;
+  std::vector<storage::DirectoryEntry> entries;
   EXPECT_EQ(base::File::FILE_ERROR_NOT_A_DIRECTORY,
             AsyncFileTestHelper::ReadDirectory(file_system_context(), url,
                                                &entries));
@@ -1787,7 +1784,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
   const FileSystemURL empty_path = CreateURL(base::FilePath());
   scoped_ptr<FileSystemOperationContext> context;
 
-  for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kPath); ++i) {
+  for (size_t i = 0; i < arraysize(kPath); ++i) {
     bool created = false;
     context.reset(NewContext(NULL));
     EXPECT_EQ(base::File::FILE_OK,
@@ -1795,7 +1792,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
     EXPECT_TRUE(created);
   }
 
-  std::vector<fileapi::DirectoryEntry> entries;
+  std::vector<storage::DirectoryEntry> entries;
   EXPECT_EQ(base::File::FILE_OK,
             AsyncFileTestHelper::ReadDirectory(
                 file_system_context(), empty_path, &entries));
@@ -1810,7 +1807,7 @@ TEST_F(ObfuscatedFileUtilTest, TestIncompleteDirectoryReading) {
   EXPECT_EQ(base::File::FILE_OK,
             AsyncFileTestHelper::ReadDirectory(
                 file_system_context(), empty_path, &entries));
-  EXPECT_EQ(ARRAYSIZE_UNSAFE(kPath) - 1, entries.size());
+  EXPECT_EQ(arraysize(kPath) - 1, entries.size());
 }
 
 TEST_F(ObfuscatedFileUtilTest, TestDirectoryTimestampForCreation) {
@@ -2040,7 +2037,7 @@ TEST_F(ObfuscatedFileUtilTest, TestFileEnumeratorTimestamp) {
                          base::Time()));
 
   context.reset(NewContext(NULL));
-  scoped_ptr<fileapi::FileSystemFileUtil::AbstractFileEnumerator> file_enum(
+  scoped_ptr<storage::FileSystemFileUtil::AbstractFileEnumerator> file_enum(
       ofu()->CreateFileEnumerator(context.get(), dir, false));
 
   int count = 0;
@@ -2190,7 +2187,6 @@ TEST_F(ObfuscatedFileUtilTest, TestQuotaOnMoveFile) {
                 from_file, from_file_size));
   ASSERT_EQ(expected_total_file_size, ComputeTotalFileSize());
 
-  int64 to_file_size ALLOW_UNUSED = from_file_size;
   from_file_size = 0;
   ASSERT_EQ(base::File::FILE_OK,
             ofu()->CopyOrMoveFile(
@@ -2451,6 +2447,125 @@ TEST_F(ObfuscatedFileUtilTest, CreateDirectory_NotADirectoryInRecursive) {
                                    path_in_file_in_file,
                                    false /* exclusive */,
                                    true /* recursive */));
+}
+
+TEST_F(ObfuscatedFileUtilTest, DeleteDirectoryForOriginAndType) {
+  const GURL origin1("http://www.example.com:12");
+  const GURL origin2("http://www.example.com:1234");
+
+  // Create origin directories.
+  scoped_ptr<SandboxFileSystemTestHelper> fs1(
+      NewFileSystem(origin1, kFileSystemTypeTemporary));
+  scoped_ptr<SandboxFileSystemTestHelper> fs2(
+      NewFileSystem(origin1, kFileSystemTypePersistent));
+  scoped_ptr<SandboxFileSystemTestHelper> fs3(
+      NewFileSystem(origin2, kFileSystemTypeTemporary));
+  scoped_ptr<SandboxFileSystemTestHelper> fs4(
+      NewFileSystem(origin2, kFileSystemTypePersistent));
+
+  // Make sure directories for origin1 exist.
+  base::File::Error error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+
+  // Make sure directories for origin2 exist.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+
+  // Delete a directory for origin1's persistent filesystem.
+  ofu()->DeleteDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypePersistent));
+
+  // The directory for origin1's temporary filesystem should not be removed.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+
+  // The directory for origin1's persistent filesystem should be removed.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_ERROR_NOT_FOUND, error);
+
+  // The directories for origin2 should not be removed.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+}
+
+TEST_F(ObfuscatedFileUtilTest, DeleteDirectoryForOriginAndType_DeleteAll) {
+  const GURL origin1("http://www.example.com:12");
+  const GURL origin2("http://www.example.com:1234");
+
+  // Create origin directories.
+  scoped_ptr<SandboxFileSystemTestHelper> fs1(
+      NewFileSystem(origin1, kFileSystemTypeTemporary));
+  scoped_ptr<SandboxFileSystemTestHelper> fs2(
+      NewFileSystem(origin1, kFileSystemTypePersistent));
+  scoped_ptr<SandboxFileSystemTestHelper> fs3(
+      NewFileSystem(origin2, kFileSystemTypeTemporary));
+  scoped_ptr<SandboxFileSystemTestHelper> fs4(
+      NewFileSystem(origin2, kFileSystemTypePersistent));
+
+  // Make sure directories for origin1 exist.
+  base::File::Error error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+
+  // Make sure directories for origin2 exist.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+
+  // Delete all directories for origin1.
+  ofu()->DeleteDirectoryForOriginAndType(origin1, std::string());
+
+  // The directories for origin1 should be removed.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_ERROR_NOT_FOUND, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin1, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_ERROR_NOT_FOUND, error);
+
+  // The directories for origin2 should not be removed.
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypeTemporary), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
+  error = base::File::FILE_ERROR_FAILED;
+  ofu()->GetDirectoryForOriginAndType(
+      origin2, GetTypeString(kFileSystemTypePersistent), false, &error);
+  ASSERT_EQ(base::File::FILE_OK, error);
 }
 
 }  // namespace content

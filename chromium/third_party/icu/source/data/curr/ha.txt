@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/ha.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/ha.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/ha.xml
+ * ICU <specials> source: <path>/common/main/ha.xml
  */
 ha{
     Currencies{
@@ -16,19 +16,19 @@ ha{
             "Kuɗin Haɗaɗɗiyar Daular Larabawa",
         }
         AOA{
-            "Kz",
+            "AOA",
             "Kuɗin Angola",
         }
         AUD{
-            "AU$",
+            "A$",
             "Dalar Ostareliya",
         }
         BHD{
-            "BD",
+            "BHD",
             "Kuɗin Baharan",
         }
         BIF{
-            "FBu",
+            "BIF",
             "Kuɗin Burundi",
         }
         BWP{
@@ -52,15 +52,15 @@ ha{
             "Kuɗin Caina/Sin",
         }
         CVE{
-            "CV$",
-            "Kuɗin  Tsibiran Kap Barde",
+            "CVE",
+            "Kuɗin Tsibiran Kap Barde",
         }
         DJF{
-            "Fdj",
+            "DJF",
             "Kuɗin Jibuti",
         }
         DZD{
-            "DA",
+            "DZD",
             "Kuɗin Aljeriya",
         }
         EGP{
@@ -68,11 +68,11 @@ ha{
             "Fam kin Masar",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "Kuɗin Eritireya",
         }
         ETB{
-            "Br",
+            "ETB",
             "Kuɗin Habasha",
         }
         EUR{
@@ -83,20 +83,16 @@ ha{
             "£",
             "Fam kin Ingila",
         }
-        GHC{
-            "₵",
-            "Cedi",
-        }
         GMD{
             "GMD",
             "Kuɗin Gambiya",
         }
         GNS{
-            "GNS" /** ===  */,
+            "GNS",
             "Kuɗin Gini",
         }
         INR{
-            "Rs",
+            "₹",
             "Kuɗin Indiya",
         }
         JPY{
@@ -104,15 +100,15 @@ ha{
             "Kuɗin Japan",
         }
         KES{
-            "Ksh",
+            "KES",
             "Sulen Kenya",
         }
         KMF{
-            "CF",
+            "KMF",
             "Kuɗin Kwamoras",
         }
         LRD{
-            "L$",
+            "LRD",
             "Dalar Laberiya",
         }
         LSL{
@@ -120,7 +116,7 @@ ha{
             "Kuɗin Lesoto",
         }
         LYD{
-            "LD",
+            "LYD",
             "Kuɗin Libiya",
         }
         MAD{
@@ -132,23 +128,19 @@ ha{
             "Kuɗin Madagaskar",
         }
         MRO{
-            "UM",
+            "MRO",
             "Kuɗin Moritaniya",
         }
         MUR{
-            "MURs",
+            "MUR",
             "Kuɗin Moritus",
         }
         MWK{
             "MWK",
             "Kuɗin Malawi",
         }
-        MZM{
-            "Mt",
-            "Kuɗin Mozambik",
-        }
         NAD{
-            "N$",
+            "NAD",
             "Dalar Namibiya",
         }
         NGN{
@@ -160,11 +152,11 @@ ha{
             "Kuɗin Ruwanda",
         }
         SAR{
-            "SR",
+            "SAR",
             "Riyal",
         }
         SCR{
-            "SRe",
+            "SCR",
             "Kuɗin Saishal",
         }
         SDG{
@@ -172,19 +164,19 @@ ha{
             "Fam kin Sudan",
         }
         SHP{
-            "SH£",
+            "SHP",
             "Fam kin San Helena",
         }
         SLL{
-            "Le",
+            "SLL",
             "Kuɗin Salewo",
         }
         SOS{
-            "Ssh",
+            "SOS",
             "Sulen Somaliya",
         }
         STD{
-            "Db",
+            "STD",
             "Kuɗin Sawo Tome da Paransip",
         }
         SZL{
@@ -192,15 +184,15 @@ ha{
             "Kuɗin Lilangeni",
         }
         TND{
-            "DT",
+            "TND",
             "Kuɗin Tunisiya",
         }
         TZS{
-            "TSh",
+            "TZS",
             "Sulen Tanzaniya",
         }
         UGX{
-            "USh",
+            "UGX",
             "Sule Yuganda",
         }
         USD{
@@ -216,17 +208,13 @@ ha{
             "Kuɗin Sefa na Afirka Ta Yamma",
         }
         ZAR{
-            "R",
+            "ZAR",
             "Kuɗin Afirka Ta Kudu",
         }
-        ZMK{
-            "ZK",
+        ZMW{
+            "ZMW",
             "Kuɗin Zambiya",
         }
-        ZWD{
-            "Z$",
-            "Dalar zimbabuwe",
-        }
     }
-    Version{"2.0.47.68"}
+    Version{"2.0.92.87"}
 }

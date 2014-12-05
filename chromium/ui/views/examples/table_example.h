@@ -33,28 +33,28 @@ class VIEWS_EXAMPLES_EXPORT TableExample : public ExampleBase,
                                            public ButtonListener {
  public:
   TableExample();
-  virtual ~TableExample();
+  ~TableExample() override;
 
   // ExampleBase:
-  virtual void CreateExampleView(View* container) OVERRIDE;
+  void CreateExampleView(View* container) override;
 
   // ui::TableModel:
-  virtual int RowCount() OVERRIDE;
-  virtual base::string16 GetText(int row, int column_id) OVERRIDE;
-  virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
-  virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
+  int RowCount() override;
+  base::string16 GetText(int row, int column_id) override;
+  gfx::ImageSkia GetIcon(int row) override;
+  void SetObserver(ui::TableModelObserver* observer) override;
 
   // TableGrouper:
-  virtual void GetGroupRange(int model_index, GroupRange* range) OVERRIDE;
+  void GetGroupRange(int model_index, GroupRange* range) override;
 
   // TableViewObserver:
-  virtual void OnSelectionChanged() OVERRIDE;
-  virtual void OnDoubleClick() OVERRIDE;
-  virtual void OnMiddleClick() OVERRIDE;
-  virtual void OnKeyDown(ui::KeyboardCode virtual_keycode) OVERRIDE;
+  void OnSelectionChanged() override;
+  void OnDoubleClick() override;
+  void OnMiddleClick() override;
+  void OnKeyDown(ui::KeyboardCode virtual_keycode) override;
 
   // ButtonListener:
-  virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
+  void ButtonPressed(Button* sender, const ui::Event& event) override;
 
  private:
   // The table to be tested.

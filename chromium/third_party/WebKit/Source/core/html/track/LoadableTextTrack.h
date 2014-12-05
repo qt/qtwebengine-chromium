@@ -31,23 +31,23 @@
 #include "platform/heap/Handle.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLTrackElement;
 class LoadableTextTrack;
 
-class LoadableTextTrack FINAL : public TextTrack, private TextTrackLoaderClient {
+class LoadableTextTrack final : public TextTrack, private TextTrackLoaderClient {
 public:
     static PassRefPtrWillBeRawPtr<LoadableTextTrack> create(HTMLTrackElement* track)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new LoadableTextTrack(track));
+        return adoptRefWillBeNoop(new LoadableTextTrack(track));
     }
     virtual ~LoadableTextTrack();
 
     void scheduleLoad(const KURL&);
 
     // TextTrack method.
-    virtual void setMode(const AtomicString&) OVERRIDE;
+    virtual void setMode(const AtomicString&) override;
 
     size_t trackElementIndex();
     HTMLTrackElement* trackElement() { return m_trackElement; }
@@ -55,29 +55,27 @@ public:
     void clearTrackElement();
 #endif
 
-    virtual bool isDefault() const OVERRIDE { return m_isDefault; }
-    virtual void setIsDefault(bool isDefault) OVERRIDE  { m_isDefault = isDefault; }
+    virtual bool isDefault() const override { return m_isDefault; }
+    virtual void setIsDefault(bool isDefault) override  { m_isDefault = isDefault; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     // TextTrackLoaderClient
-    virtual void newCuesAvailable(TextTrackLoader*) OVERRIDE;
-    virtual void cueLoadingCompleted(TextTrackLoader*, bool loadingFailed) OVERRIDE;
-    virtual void newRegionsAvailable(TextTrackLoader*) OVERRIDE;
+    virtual void newCuesAvailable(TextTrackLoader*) override;
+    virtual void cueLoadingCompleted(TextTrackLoader*, bool loadingFailed) override;
+    virtual void newRegionsAvailable(TextTrackLoader*) override;
 
-    LoadableTextTrack(HTMLTrackElement*);
+    explicit LoadableTextTrack(HTMLTrackElement*);
 
     void loadTimerFired(Timer<LoadableTextTrack>*);
 
-    // FIXME: Oilpan: This should be a strong pointer once Member pointers
-    // into the Node hierarchy can be used.
-    RawPtrWillBeWeakMember<HTMLTrackElement> m_trackElement;
+    RawPtrWillBeMember<HTMLTrackElement> m_trackElement;
     Timer<LoadableTextTrack> m_loadTimer;
     OwnPtrWillBeMember<TextTrackLoader> m_loader;
     KURL m_url;
     bool m_isDefault;
 };
-} // namespace WebCore
+} // namespace blink
 
 #endif

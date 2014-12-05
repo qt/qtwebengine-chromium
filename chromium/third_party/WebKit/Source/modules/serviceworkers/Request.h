@@ -5,46 +5,68 @@
 #ifndef Request_h
 #define Request_h
 
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ScriptWrappable.h"
-#include "modules/serviceworkers/HeaderMap.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "modules/serviceworkers/Body.h"
+#include "modules/serviceworkers/FetchRequestData.h"
+#include "modules/serviceworkers/Headers.h"
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
-#include "wtf/RefCounted.h"
+#include "public/platform/WebURLRequest.h"
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace blink { class WebServiceWorkerRequest; }
+namespace blink {
 
-namespace WebCore {
+class RequestInit;
+class WebServiceWorkerRequest;
 
-struct RequestInit;
-class ResourceRequest;
-
-class Request FINAL : public ScriptWrappable, public RefCounted<Request> {
+class Request final : public Body {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtr<Request> create();
-    static PassRefPtr<Request> create(const Dictionary&);
-    static PassRefPtr<Request> create(const blink::WebServiceWorkerRequest&);
-    ~Request() { };
+    virtual ~Request() { }
+    static Request* create(ExecutionContext*, const String&, ExceptionState&);
+    static Request* create(ExecutionContext*, const String&, const Dictionary&, ExceptionState&);
+    static Request* create(ExecutionContext*, Request*, ExceptionState&);
+    static Request* create(ExecutionContext*, Request*, const Dictionary&, ExceptionState&);
+    static Request* create(ExecutionContext*, FetchRequestData*);
+    static Request* create(ExecutionContext*, const WebServiceWorkerRequest&);
+    // The 'FetchRequestData' object is shared between requests, as it is
+    // immutable to the user after Request creation. Headers are copied.
+    static Request* create(const Request&);
 
-    void setURL(const String& value);
-    void setMethod(const String& value);
+    const FetchRequestData* request() { return m_request; }
 
-    String url() const { return m_url.string(); }
-    String method() const { return m_method; }
-    String origin() const;
-    PassRefPtr<HeaderMap> headers() const { return m_headers; }
+    String method() const;
+    String url() const;
+    Headers* headers() const { return m_headers; }
+    String referrer() const;
+    String mode() const;
+    String credentials() const;
 
-    PassOwnPtr<ResourceRequest> createResourceRequest() const;
+    Request* clone() const;
+
+    void populateWebServiceWorkerRequest(WebServiceWorkerRequest&) const;
+
+    void setBodyBlobHandle(PassRefPtr<BlobDataHandle>);
+    bool hasBody() const { return m_request->blobDataHandle(); }
+
+    virtual void trace(Visitor*)  override;
 
 private:
-    explicit Request(const RequestInit&);
-    explicit Request(const blink::WebServiceWorkerRequest&);
-    KURL m_url;
-    String m_method;
-    RefPtr<HeaderMap> m_headers;
+    explicit Request(const Request&);
+    Request(ExecutionContext*, FetchRequestData*);
+    Request(ExecutionContext*, const WebServiceWorkerRequest&);
+
+    static Request* createRequestWithRequestData(ExecutionContext*, FetchRequestData*, const RequestInit&, WebURLRequest::FetchRequestMode, WebURLRequest::FetchCredentialsMode, ExceptionState&);
+    void clearHeaderList();
+
+    virtual PassRefPtr<BlobDataHandle> blobDataHandle() override;
+
+    const Member<FetchRequestData> m_request;
+    const Member<Headers> m_headers;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Request_h

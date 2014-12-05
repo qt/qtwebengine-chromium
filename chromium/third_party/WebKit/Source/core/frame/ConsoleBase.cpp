@@ -29,15 +29,15 @@
 #include "config.h"
 #include "core/frame/Console.h"
 
-#include "bindings/v8/ScriptCallStackFactory.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/ScriptCallStackFactory.h"
 #include "core/inspector/InspectorConsoleInstrumentation.h"
+#include "core/inspector/InspectorTraceEvents.h"
 #include "core/inspector/ScriptArguments.h"
 #include "platform/TraceEvent.h"
 #include "wtf/text/CString.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 ConsoleBase::~ConsoleBase()
 {
@@ -85,7 +85,7 @@ void ConsoleBase::table(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptA
 
 void ConsoleBase::clear(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
 {
-    InspectorInstrumentation::addMessageToConsole(context(), ConsoleAPIMessageSource, ClearMessageType, LogMessageLevel, String(), scriptState, arguments);
+    internalAddMessage(ClearMessageType, LogMessageLevel, scriptState, arguments, true);
 }
 
 void ConsoleBase::trace(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
@@ -103,83 +103,138 @@ void ConsoleBase::assertCondition(ScriptState* scriptState, PassRefPtrWillBeRawP
 
 void ConsoleBase::count(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
 {
-    InspectorInstrumentation::consoleCount(context(), scriptState, arguments);
+    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(1));
+    const ScriptCallFrame& lastCaller = callStack->at(0);
+    // Follow Firebug's behavior of counting with null and undefined title in
+    // the same bucket as no argument
+    String title;
+    arguments->getFirstArgumentAsString(title);
+    String identifier = title.isEmpty() ? String(lastCaller.sourceURL() + ':' + String::number(lastCaller.lineNumber()))
+        : String(title + '@');
+
+    HashCountedSet<String>::AddResult result = m_counts.add(identifier);
+    String message = title + ": " + String::number(result.storedValue->value);
+
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(ConsoleAPIMessageSource, DebugMessageLevel, message);
+    consoleMessage->setType(CountMessageType);
+    consoleMessage->setScriptState(scriptState);
+    consoleMessage->setCallStack(callStack.release());
+    reportMessageToConsole(consoleMessage.release());
 }
 
 void ConsoleBase::markTimeline(const String& title)
 {
-    InspectorInstrumentation::consoleTimeStamp(context(), title);
+    timeStamp(title);
 }
 
-void ConsoleBase::profile(ScriptState* scriptState, const String& title)
+void ConsoleBase::profile(const String& title)
 {
-    InspectorInstrumentation::consoleProfile(context(), title, scriptState);
+    InspectorInstrumentation::consoleProfile(context(), title);
 }
 
-void ConsoleBase::profileEnd(ScriptState* scriptState, const String& title)
+void ConsoleBase::profileEnd(const String& title)
 {
-    InspectorInstrumentation::consoleProfileEnd(context(), title, scriptState);
+    InspectorInstrumentation::consoleProfileEnd(context(), title);
 }
 
 void ConsoleBase::time(const String& title)
 {
     InspectorInstrumentation::consoleTime(context(), title);
-    TRACE_EVENT_COPY_ASYNC_BEGIN0("webkit.console", title.utf8().data(), this);
+    TRACE_EVENT_COPY_ASYNC_BEGIN0("blink.console", title.utf8().data(), this);
+
+    if (title.isNull())
+        return;
+
+    m_times.add(title, monotonicallyIncreasingTime());
 }
 
 void ConsoleBase::timeEnd(ScriptState* scriptState, const String& title)
 {
-    TRACE_EVENT_COPY_ASYNC_END0("webkit.console", title.utf8().data(), this);
+    TRACE_EVENT_COPY_ASYNC_END0("blink.console", title.utf8().data(), this);
     InspectorInstrumentation::consoleTimeEnd(context(), title, scriptState);
+
+    // Follow Firebug's behavior of requiring a title that is not null or
+    // undefined for timing functions
+    if (title.isNull())
+        return;
+
+    HashMap<String, double>::iterator it = m_times.find(title);
+    if (it == m_times.end())
+        return;
+
+    double startTime = it->value;
+    m_times.remove(it);
+
+    double elapsed = monotonicallyIncreasingTime() - startTime;
+    String message = title + String::format(": %.3fms", elapsed * 1000);
+
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(ConsoleAPIMessageSource, DebugMessageLevel, message);
+    consoleMessage->setType(TimeEndMessageType);
+    consoleMessage->setScriptState(scriptState);
+    consoleMessage->setCallStack(createScriptCallStackForConsole(1));
+    reportMessageToConsole(consoleMessage.release());
 }
 
 void ConsoleBase::timeStamp(const String& title)
 {
+    TRACE_EVENT_INSTANT1(TRACE_DISABLED_BY_DEFAULT("devtools.timeline"), "TimeStamp", "data", InspectorTimeStampEvent::data(context(), title));
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::consoleTimeStamp(context(), title);
+}
+
+static String formatTimelineTitle(const String& title)
+{
+    return String::format("Timeline '%s'", title.utf8().data());
 }
 
 void ConsoleBase::timeline(ScriptState* scriptState, const String& title)
 {
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::consoleTimeline(context(), title, scriptState);
+
+    TRACE_EVENT_COPY_ASYNC_BEGIN0("blink.console", formatTimelineTitle(title).utf8().data(), this);
 }
 
 void ConsoleBase::timelineEnd(ScriptState* scriptState, const String& title)
 {
+    // FIXME(361045): remove InspectorInstrumentation calls once DevTools Timeline migrates to tracing.
     InspectorInstrumentation::consoleTimelineEnd(context(), title, scriptState);
+
+    TRACE_EVENT_COPY_ASYNC_END0("blink.console", formatTimelineTitle(title).utf8().data(), this);
 }
 
 void ConsoleBase::group(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
 {
-    InspectorInstrumentation::addMessageToConsole(context(), ConsoleAPIMessageSource, StartGroupMessageType, LogMessageLevel, String(), scriptState, arguments);
+    internalAddMessage(StartGroupMessageType, LogMessageLevel, scriptState, arguments, true);
 }
 
 void ConsoleBase::groupCollapsed(ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> arguments)
 {
-    InspectorInstrumentation::addMessageToConsole(context(), ConsoleAPIMessageSource, StartGroupCollapsedMessageType, LogMessageLevel, String(), scriptState, arguments);
+    internalAddMessage(StartGroupCollapsedMessageType, LogMessageLevel, scriptState, arguments, true);
 }
 
 void ConsoleBase::groupEnd()
 {
-    InspectorInstrumentation::addMessageToConsole(context(), ConsoleAPIMessageSource, EndGroupMessageType, LogMessageLevel, String(), nullptr);
+    internalAddMessage(EndGroupMessageType, LogMessageLevel, nullptr, nullptr, true);
 }
 
 void ConsoleBase::internalAddMessage(MessageType type, MessageLevel level, ScriptState* scriptState, PassRefPtrWillBeRawPtr<ScriptArguments> scriptArguments, bool acceptNoArguments, bool printTrace)
 {
-    if (!context())
-        return;
-
     RefPtrWillBeRawPtr<ScriptArguments> arguments = scriptArguments;
-    if (!acceptNoArguments && !arguments->argumentCount())
+    if (!acceptNoArguments && (!arguments || !arguments->argumentCount()))
         return;
-
-    size_t stackSize = printTrace ? ScriptCallStack::maxCallStackSizeToCapture : 1;
-    RefPtrWillBeRawPtr<ScriptCallStack> callStack(createScriptCallStackForConsole(scriptState, stackSize));
 
     String message;
-    bool gotStringMessage = arguments->getFirstArgumentAsString(message);
-    InspectorInstrumentation::addMessageToConsole(context(), ConsoleAPIMessageSource, type, level, message, scriptState, arguments);
-    if (gotStringMessage)
-        reportMessageToClient(level, message, callStack);
+    bool gotStringMessage = arguments ? arguments->getFirstArgumentAsString(message) : false;
+
+    RefPtrWillBeRawPtr<ConsoleMessage> consoleMessage = ConsoleMessage::create(ConsoleAPIMessageSource, level, gotStringMessage? message : String());
+    consoleMessage->setType(type);
+    consoleMessage->setScriptState(scriptState);
+    consoleMessage->setScriptArguments(arguments);
+
+    size_t stackSize = printTrace ? ScriptCallStack::maxCallStackSizeToCapture : 1;
+    consoleMessage->setCallStack(createScriptCallStackForConsole(stackSize));
+    reportMessageToConsole(consoleMessage.release());
 }
 
-} // namespace WebCore
+} // namespace blink

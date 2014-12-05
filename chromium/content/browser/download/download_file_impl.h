@@ -44,31 +44,58 @@ class CONTENT_EXPORT DownloadFileImpl : virtual public DownloadFile {
     const net::BoundNetLog& bound_net_log,
     base::WeakPtr<DownloadDestinationObserver> observer);
 
-  virtual ~DownloadFileImpl();
+  ~DownloadFileImpl() override;
 
   // DownloadFile functions.
-  virtual void Initialize(const InitializeCallback& callback) OVERRIDE;
-  virtual void RenameAndUniquify(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
-  virtual void RenameAndAnnotate(
-      const base::FilePath& full_path,
-      const RenameCompletionCallback& callback) OVERRIDE;
-  virtual void Detach() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual base::FilePath FullPath() const OVERRIDE;
-  virtual bool InProgress() const OVERRIDE;
-  virtual int64 CurrentSpeed() const OVERRIDE;
-  virtual bool GetHash(std::string* hash) OVERRIDE;
-  virtual std::string GetHashState() OVERRIDE;
-  virtual void SetClientGuid(const std::string& guid) OVERRIDE;
+  void Initialize(const InitializeCallback& callback) override;
+  void RenameAndUniquify(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
+  void RenameAndAnnotate(const base::FilePath& full_path,
+                         const RenameCompletionCallback& callback) override;
+  void Detach() override;
+  void Cancel() override;
+  base::FilePath FullPath() const override;
+  bool InProgress() const override;
+  int64 CurrentSpeed() const override;
+  bool GetHash(std::string* hash) override;
+  std::string GetHashState() override;
+  void SetClientGuid(const std::string& guid) override;
 
  protected:
   // For test class overrides.
   virtual DownloadInterruptReason AppendDataToFile(
       const char* data, size_t data_len);
 
+  virtual base::TimeDelta GetRetryDelayForFailedRename(int attempt_number);
+
+  virtual bool ShouldRetryFailedRename(DownloadInterruptReason reason);
+
  private:
+  friend class DownloadFileTest;
+
+  // Options for RenameWithRetryInternal.
+  enum RenameOption {
+    UNIQUIFY = 1 << 0,  // If there's already a file on disk that conflicts with
+                        // |new_path|, try to create a unique file by appending
+                        // a uniquifier.
+    ANNOTATE_WITH_SOURCE_INFORMATION = 1 << 1
+  };
+
+  // Rename file_ to |new_path|.
+  // |option| specifies additional operations to be performed during the rename.
+  //     See RenameOption above.
+  // |retries_left| indicates how many times to retry the operation if the
+  //     rename fails with a transient error.
+  // |time_of_first_failure| Set to an empty base::TimeTicks during the first
+  //     call. Once the first failure is seen, subsequent calls of
+  //     RenameWithRetryInternal will have a non-empty value keeping track of
+  //     the time of first observed failure.  Used for UMA.
+  void RenameWithRetryInternal(const base::FilePath& new_path,
+                               RenameOption option,
+                               int retries_left,
+                               base::TimeTicks time_of_first_failure,
+                               const RenameCompletionCallback& callback);
+
   // Send an update on our progress.
   void SendUpdate();
 

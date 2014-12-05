@@ -31,13 +31,16 @@
 #include "config.h"
 #include "core/workers/WorkerObjectProxy.h"
 
-#include "bindings/v8/SerializedScriptValue.h"
+#include "bindings/core/v8/SerializedScriptValue.h"
+#include "core/dom/CrossThreadTask.h"
+#include "core/dom/Document.h"
 #include "core/dom/ExecutionContext.h"
+#include "core/inspector/ConsoleMessage.h"
 #include "core/workers/WorkerMessagingProxy.h"
 #include "platform/NotImplemented.h"
 #include "wtf/Functional.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<WorkerObjectProxy> WorkerObjectProxy::create(ExecutionContext* executionContext, WorkerMessagingProxy* messagingProxy)
 {
@@ -46,7 +49,7 @@ PassOwnPtr<WorkerObjectProxy> WorkerObjectProxy::create(ExecutionContext* execut
 
 void WorkerObjectProxy::postMessageToWorkerObject(PassRefPtr<SerializedScriptValue> message, PassOwnPtr<MessagePortChannelArray> channels)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::postMessageToWorkerObject, m_messagingProxy, message, channels));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::postMessageToWorkerObject, m_messagingProxy, message, channels));
 }
 
 void WorkerObjectProxy::postTaskToMainExecutionContext(PassOwnPtr<ExecutionContextTask> task)
@@ -56,43 +59,39 @@ void WorkerObjectProxy::postTaskToMainExecutionContext(PassOwnPtr<ExecutionConte
 
 void WorkerObjectProxy::confirmMessageFromWorkerObject(bool hasPendingActivity)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::confirmMessageFromWorkerObject, m_messagingProxy, hasPendingActivity));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::confirmMessageFromWorkerObject, m_messagingProxy, hasPendingActivity));
 }
 
 void WorkerObjectProxy::reportPendingActivity(bool hasPendingActivity)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::reportPendingActivity, m_messagingProxy, hasPendingActivity));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::reportPendingActivity, m_messagingProxy, hasPendingActivity));
 }
 
 void WorkerObjectProxy::reportException(const String& errorMessage, int lineNumber, int columnNumber, const String& sourceURL)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::reportException, m_messagingProxy, errorMessage.isolatedCopy(), lineNumber, columnNumber, sourceURL.isolatedCopy()));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::reportException, m_messagingProxy, errorMessage, lineNumber, columnNumber, sourceURL));
 }
 
-void WorkerObjectProxy::reportConsoleMessage(MessageSource source, MessageLevel level, const String& message, int lineNumber, const String& sourceURL)
+void WorkerObjectProxy::reportConsoleMessage(PassRefPtrWillBeRawPtr<ConsoleMessage> consoleMessage)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::reportConsoleMessage, m_messagingProxy, source, level, message.isolatedCopy(), lineNumber, sourceURL.isolatedCopy()));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::reportConsoleMessage, m_messagingProxy, consoleMessage->source(), consoleMessage->level(), consoleMessage->message(), consoleMessage->lineNumber(), consoleMessage->url()));
 }
 
 void WorkerObjectProxy::postMessageToPageInspector(const String& message)
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::postMessageToPageInspector, m_messagingProxy, message.isolatedCopy()));
-}
-
-void WorkerObjectProxy::updateInspectorStateCookie(const String&)
-{
-    notImplemented();
+    if (m_executionContext->isDocument())
+        toDocument(m_executionContext)->postInspectorTask(createCrossThreadTask(&WorkerMessagingProxy::postMessageToPageInspector, m_messagingProxy, message));
 }
 
 void WorkerObjectProxy::workerGlobalScopeClosed()
 {
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::terminateWorkerGlobalScope, m_messagingProxy));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::terminateWorkerGlobalScope, m_messagingProxy));
 }
 
-void WorkerObjectProxy::workerGlobalScopeDestroyed()
+void WorkerObjectProxy::workerThreadTerminated()
 {
     // This will terminate the MessagingProxy.
-    m_executionContext->postTask(bind(&WorkerMessagingProxy::workerGlobalScopeDestroyed, m_messagingProxy));
+    m_executionContext->postTask(createCrossThreadTask(&WorkerMessagingProxy::workerThreadTerminated, m_messagingProxy));
 }
 
 WorkerObjectProxy::WorkerObjectProxy(ExecutionContext* executionContext, WorkerMessagingProxy* messagingProxy)
@@ -101,4 +100,4 @@ WorkerObjectProxy::WorkerObjectProxy(ExecutionContext* executionContext, WorkerM
 {
 }
 
-} // namespace WebCore
+} // namespace blink

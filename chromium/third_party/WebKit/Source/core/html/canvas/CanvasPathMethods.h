@@ -31,10 +31,9 @@
 
 #include "platform/graphics/Path.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
-class FloatRect;
 
 class CanvasPathMethods {
 public:
@@ -53,8 +52,11 @@ public:
     virtual bool isTransformInvertible() const { return true; }
 
 protected:
-    CanvasPathMethods() { }
-    CanvasPathMethods(const Path& path) : m_path(path) { }
+    CanvasPathMethods() { m_path.setIsVolatile(true); }
+    CanvasPathMethods(const Path& path) : m_path(path)
+    {
+        m_path.setIsVolatile(true);
+    }
     Path m_path;
 };
 }

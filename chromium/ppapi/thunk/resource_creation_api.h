@@ -5,6 +5,7 @@
 #ifndef PPAPI_THUNK_RESOURCE_CREATION_API_H_
 #define PPAPI_THUNK_RESOURCE_CREATION_API_H_
 
+#include "base/memory/shared_memory.h"
 #include "ppapi/c/dev/pp_video_dev.h"
 #include "ppapi/c/dev/ppb_file_chooser_dev.h"
 #include "ppapi/c/dev/ppb_truetype_font_dev.h"
@@ -30,6 +31,10 @@ struct PP_NetAddress_IPv4;
 struct PP_NetAddress_IPv6;
 struct PP_NetAddress_Private;
 struct PP_Size;
+
+namespace gpu {
+struct Capabilities;
+}
 
 namespace ppapi {
 
@@ -129,9 +134,12 @@ class ResourceCreationAPI {
   virtual PP_Resource CreateGraphics3D(PP_Instance instance,
                                        PP_Resource share_context,
                                        const int32_t* attrib_list) = 0;
-  virtual PP_Resource CreateGraphics3DRaw(PP_Instance instance,
-                                          PP_Resource share_context,
-                                          const int32_t* attrib_list) = 0;
+  virtual PP_Resource CreateGraphics3DRaw(
+      PP_Instance instance,
+      PP_Resource share_context,
+      const int32_t* attrib_list,
+      gpu::Capabilities* capabilities,
+      base::SharedMemoryHandle* shared_state) = 0;
   virtual PP_Resource CreateHostResolver(PP_Instance instance) = 0;
   virtual PP_Resource CreateHostResolverPrivate(PP_Instance instance) = 0;
   virtual PP_Resource CreateImageData(PP_Instance instance,

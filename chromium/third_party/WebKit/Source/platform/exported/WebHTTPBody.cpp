@@ -34,8 +34,6 @@
 #include "platform/FileMetadata.h"
 #include "platform/network/FormData.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 class WebHTTPBodyPrivate : public FormData {

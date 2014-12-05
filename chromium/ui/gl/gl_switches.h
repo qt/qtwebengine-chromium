@@ -26,7 +26,6 @@ namespace switches {
 GL_EXPORT extern const char kDisableD3D11[];
 GL_EXPORT extern const char kDisableGpuVsync[];
 GL_EXPORT extern const char kEnableGPUServiceLogging[];
-GL_EXPORT extern const char kEnableGPUClientLogging[];
 GL_EXPORT extern const char kEnableGPUServiceTracing[];
 GL_EXPORT extern const char kGpuNoContextLost[];
 
@@ -36,6 +35,7 @@ GL_EXPORT extern const char kUseGL[];
 GL_EXPORT extern const char kSwiftShaderPath[];
 GL_EXPORT extern const char kTestGLLib[];
 GL_EXPORT extern const char kUseGpuInTests[];
+GL_EXPORT extern const char kUseWarp[];
 
 // These flags are used by the test harness code, not passed in by users.
 GL_EXPORT extern const char kDisableGLDrawingForTests[];

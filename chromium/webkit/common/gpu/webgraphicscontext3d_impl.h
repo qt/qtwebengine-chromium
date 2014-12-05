@@ -19,6 +19,7 @@ namespace gpu {
 namespace gles2 {
 class GLES2Interface;
 class GLES2ImplementationErrorMessageCallback;
+struct ContextCreationAttribHelper;
 }
 }
 
@@ -45,6 +46,8 @@ class WebGraphicsContext3DErrorMessageCallback;
 class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
     : public NON_EXPORTED_BASE(blink::WebGraphicsContext3D) {
  public:
+  virtual ~WebGraphicsContext3DImpl();
+
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
 
@@ -480,6 +483,18 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
   virtual WebGLId createAndConsumeTextureCHROMIUM(WGC3Denum target,
                                       const WGC3Dbyte* mailbox);
 
+  virtual void genValuebuffersCHROMIUM(WGC3Dsizei count, WebGLId* ids);
+  virtual WebGLId createValuebufferCHROMIUM();
+  virtual void deleteValuebuffersCHROMIUM(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteValuebufferCHROMIUM(WebGLId);
+  virtual void bindValuebufferCHROMIUM(WGC3Denum target, WebGLId valuebuffer);
+  virtual WGC3Dboolean isValuebufferCHROMIUM(WebGLId renderbuffer);
+  virtual void subscribeValueCHROMIUM(WGC3Denum target, WGC3Denum subscription);
+  virtual void populateSubscribedValuesCHROMIUM(WGC3Denum target);
+  virtual void uniformValuebufferCHROMIUM(WGC3Dint location,
+                                          WGC3Denum target,
+                                          WGC3Denum subscription);
+
   virtual void insertEventMarkerEXT(const WGC3Dchar* marker);
   virtual void pushGroupMarkerEXT(const WGC3Dchar* marker);
   virtual void popGroupMarkerEXT();
@@ -531,16 +546,12 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
       WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount);
   virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor);
 
-  // GL_CHROMIUM_map_image
-  virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width,
-                                        WGC3Dsizei height,
-                                        WGC3Denum internalformat,
-                                        WGC3Denum usage);
+  // GL_CHROMIUM_gpu_memory_buffer_image
+  virtual WGC3Duint createGpuMemoryBufferImageCHROMIUM(WGC3Dsizei width,
+                                                       WGC3Dsizei height,
+                                                       WGC3Denum internalformat,
+                                                       WGC3Denum usage);
   virtual void destroyImageCHROMIUM(WGC3Duint image_id);
-  virtual void getImageParameterivCHROMIUM(
-      WGC3Duint image_id, WGC3Denum pname, WGC3Dint* params);
-  virtual void* mapImageCHROMIUM(WGC3Duint image_id);
-  virtual void unmapImageCHROMIUM(WGC3Duint image_id);
 
   // GL_EXT_multisampled_render_to_texture
   virtual void framebufferTexture2DMultisampleEXT(WGC3Denum target,
@@ -559,11 +570,16 @@ class WEBKIT_GPU_EXPORT WebGraphicsContext3DImpl
     return gl_;
   }
 
+  // Convert WebGL context creation attributes into command buffer / EGL size
+  // requests.
+  static void ConvertAttributes(
+      const blink::WebGraphicsContext3D::Attributes& attributes,
+      ::gpu::gles2::ContextCreationAttribHelper* output_attribs);
+
  protected:
   friend class WebGraphicsContext3DErrorMessageCallback;
 
   WebGraphicsContext3DImpl();
-  virtual ~WebGraphicsContext3DImpl();
 
   ::gpu::gles2::GLES2ImplementationErrorMessageCallback*
       getErrorMessageCallback();

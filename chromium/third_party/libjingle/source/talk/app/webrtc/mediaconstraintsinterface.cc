@@ -27,7 +27,7 @@
 
 #include "talk/app/webrtc/mediaconstraintsinterface.h"
 
-#include "talk/base/stringencode.h"
+#include "webrtc/base/stringencode.h"
 
 namespace webrtc {
 
@@ -66,9 +66,6 @@ const char MediaConstraintsInterface::kAudioMirroring[] = "googAudioMirroring";
 
 // Google-specific constraint keys for a local video source (getUserMedia).
 const char MediaConstraintsInterface::kNoiseReduction[] = "googNoiseReduction";
-const char MediaConstraintsInterface::kLeakyBucket[] = "googLeakyBucket";
-const char MediaConstraintsInterface::kTemporalLayeredScreencast[] =
-    "googTemporalLayeredScreencast";
 
 // Constraint keys for CreateOffer / CreateAnswer defined in W3C specification.
 const char MediaConstraintsInterface::kOfferToReceiveAudio[] =
@@ -93,12 +90,12 @@ const char MediaConstraintsInterface::kEnableDscp[] = "googDscp";
 const char MediaConstraintsInterface::kEnableIPv6[] = "googIPv6";
 const char MediaConstraintsInterface::kEnableVideoSuspendBelowMinBitrate[] =
     "googSuspendBelowMinBitrate";
-const char MediaConstraintsInterface::kImprovedWifiBwe[] =
-    "googImprovedWifiBwe";
+const char MediaConstraintsInterface::kNumUnsignalledRecvStreams[] =
+    "googNumUnsignalledRecvStreams";
+const char MediaConstraintsInterface::kCombinedAudioVideoBwe[] =
+    "googCombinedAudioVideoBwe";
 const char MediaConstraintsInterface::kScreencastMinBitrate[] =
     "googScreencastMinBitrate";
-const char MediaConstraintsInterface::kSkipEncodingUnusedStreams[] =
-    "googSkipEncodingUnusedStreams";
 // TODO(ronghuawu): Remove once cpu overuse detection is stable.
 const char MediaConstraintsInterface::kCpuOveruseDetection[] =
     "googCpuOveruseDetection";
@@ -119,7 +116,6 @@ const char MediaConstraintsInterface::kHighBitrate[] =
 const char MediaConstraintsInterface::kVeryHighBitrate[] =
     "googVeryHighBitrate";
 const char MediaConstraintsInterface::kPayloadPadding[] = "googPayloadPadding";
-const char MediaConstraintsInterface::kOpusFec[] = "googOpusFec";
 
 
 // Set |value| to the value associated with the first appearance of |key|, or
@@ -155,10 +151,10 @@ bool FindConstraint(const MediaConstraintsInterface* constraints,
   if (constraints->GetMandatory().FindFirst(key, &string_value)) {
     if (mandatory_constraints)
       ++*mandatory_constraints;
-    return talk_base::FromString(string_value, value);
+    return rtc::FromString(string_value, value);
   }
   if (constraints->GetOptional().FindFirst(key, &string_value)) {
-    return talk_base::FromString(string_value, value);
+    return rtc::FromString(string_value, value);
   }
   return false;
 }

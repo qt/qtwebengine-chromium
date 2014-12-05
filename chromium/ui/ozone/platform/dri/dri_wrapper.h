@@ -7,33 +7,36 @@
 
 #include <stdint.h>
 
+#include <vector>
+
 #include "base/macros.h"
-#include "ui/ozone/ozone_export.h"
+#include "ui/gfx/overlay_transform.h"
+#include "ui/gfx/rect.h"
+#include "ui/gfx/rect_f.h"
+#include "ui/ozone/platform/dri/scoped_drm_types.h"
 
 typedef struct _drmEventContext drmEventContext;
-typedef struct _drmModeConnector drmModeConnector;
-typedef struct _drmModeCrtc drmModeCrtc;
 typedef struct _drmModeModeInfo drmModeModeInfo;
-typedef struct _drmModeProperty drmModePropertyRes;
-typedef struct _drmModePropertyBlob drmModePropertyBlobRes;
+
+struct SkImageInfo;
 
 namespace ui {
 
 // Wraps DRM calls into a nice interface. Used to provide different
 // implementations of the DRM calls. For the actual implementation the DRM API
 // would be called. In unit tests this interface would be stubbed.
-class OZONE_EXPORT DriWrapper {
+class DriWrapper {
  public:
   DriWrapper(const char* device_path);
   virtual ~DriWrapper();
 
+  // Open device.
+  virtual void Initialize();
+
   // Get the CRTC state. This is generally used to save state before using the
   // CRTC. When the user finishes using the CRTC, the user should restore the
   // CRTC to it's initial state. Use |SetCrtc| to restore the state.
-  virtual drmModeCrtc* GetCrtc(uint32_t crtc_id);
-
-  // Frees the CRTC mode object.
-  virtual void FreeCrtc(drmModeCrtc* crtc);
+  virtual ScopedDrmCrtcPtr GetCrtc(uint32_t crtc_id);
 
   // Used to configure CRTC with ID |crtc_id| to use the connector in
   // |connectors|. The CRTC will be configured with mode |mode| and will display
@@ -41,15 +44,18 @@ class OZONE_EXPORT DriWrapper {
   // framebuffer, it should be registered with the CRTC using |AddFramebuffer|.
   virtual bool SetCrtc(uint32_t crtc_id,
                        uint32_t framebuffer,
-                       uint32_t* connectors,
+                       std::vector<uint32_t> connectors,
                        drmModeModeInfo* mode);
 
   // Used to set a specific configuration to the CRTC. Normally this function
   // would be called with a CRTC saved state (from |GetCrtc|) to restore it to
   // its original configuration.
-  virtual bool SetCrtc(drmModeCrtc* crtc, uint32_t* connectors);
+  virtual bool SetCrtc(drmModeCrtc* crtc, std::vector<uint32_t> connectors);
 
   virtual bool DisableCrtc(uint32_t crtc_id);
+
+  // Returns the connector properties for |connector_id|.
+  virtual ScopedDrmConnectorPtr GetConnector(uint32_t connector_id);
 
   // Register a buffer with the CRTC. On successful registration, the CRTC will
   // assign a framebuffer ID to |framebuffer|.
@@ -64,6 +70,9 @@ class OZONE_EXPORT DriWrapper {
   // Deregister the given |framebuffer|.
   virtual bool RemoveFramebuffer(uint32_t framebuffer);
 
+  // Get the DRM details associated with |framebuffer|.
+  virtual ScopedDrmFramebufferPtr GetFramebuffer(uint32_t framebuffer);
+
   // Schedules a pageflip for CRTC |crtc_id|. This function will return
   // immediately. Upon completion of the pageflip event, the CRTC will be
   // displaying the buffer with ID |framebuffer| and will have a DRM event
@@ -71,11 +80,20 @@ class OZONE_EXPORT DriWrapper {
   // will receive when processing the pageflip event.
   virtual bool PageFlip(uint32_t crtc_id, uint32_t framebuffer, void* data);
 
+  // Schedule an overlay to be show during the page flip for CRTC |crtc_id|.
+  // |source| location from |framebuffer| will be shown on overlay
+  // |overlay_plane|, in the bounds specified by |location| on the screen.
+  virtual bool PageFlipOverlay(uint32_t crtc_id,
+                               uint32_t framebuffer,
+                               const gfx::Rect& location,
+                               const gfx::RectF& source,
+                               int overlay_plane);
+
   // Returns the property with name |name| associated with |connector|. Returns
   // NULL if property not found. If the returned value is valid, it must be
   // released using FreeProperty().
-  virtual drmModePropertyRes* GetProperty(drmModeConnector* connector,
-                                          const char* name);
+  virtual ScopedDrmPropertyPtr GetProperty(drmModeConnector* connector,
+                                           const char* name);
 
   // Sets the value of property with ID |property_id| to |value|. The property
   // is applied to the connector with ID |connector_id|.
@@ -83,33 +101,42 @@ class OZONE_EXPORT DriWrapper {
                            uint32_t property_id,
                            uint64_t value);
 
-  // Frees |prop| and any resources it allocated when it was created. |prop|
-  // must be a valid object.
-  virtual void FreeProperty(drmModePropertyRes* prop);
+  // Can be used to query device/driver |capability|. Sets the value of
+  // |capability to |value|. Returns true in case of a succesful query.
+  virtual bool GetCapability(uint64_t capability, uint64_t* value);
 
   // Return a binary blob associated with |connector|. The binary blob is
   // associated with the property with name |name|. Return NULL if the property
   // could not be found or if the property does not have a binary blob. If valid
   // the returned object must be freed using FreePropertyBlob().
-  virtual drmModePropertyBlobRes* GetPropertyBlob(drmModeConnector* connector,
-                                                  const char* name);
-
-  // Frees |blob| and any resources allocated when it was created. |blob| must
-  // be a valid object.
-  virtual void FreePropertyBlob(drmModePropertyBlobRes* blob);
+  virtual ScopedDrmPropertyBlobPtr GetPropertyBlob(drmModeConnector* connector,
+                                                   const char* name);
 
   // Set the cursor to be displayed in CRTC |crtc_id|. (width, height) is the
   // cursor size pointed by |handle|.
   virtual bool SetCursor(uint32_t crtc_id,
                          uint32_t handle,
-                         uint32_t width,
-                         uint32_t height);
+                         const gfx::Size& size);
 
 
   // Move the cursor on CRTC |crtc_id| to (x, y);
-  virtual bool MoveCursor(uint32_t crtc_id, int x, int y);
+  virtual bool MoveCursor(uint32_t crtc_id, const gfx::Point& point);
 
   virtual void HandleEvent(drmEventContext& event);
+
+  virtual bool CreateDumbBuffer(const SkImageInfo& info,
+                                uint32_t* handle,
+                                uint32_t* stride,
+                                void** pixels);
+
+  virtual void DestroyDumbBuffer(const SkImageInfo& info,
+                                 uint32_t handle,
+                                 uint32_t stride,
+                                 void* pixels);
+
+  // Drm master related
+  virtual bool SetMaster();
+  virtual bool DropMaster();
 
   int get_fd() const { return fd_; }
 
@@ -119,6 +146,9 @@ class OZONE_EXPORT DriWrapper {
   int fd_;
 
  private:
+  // Path to DRM device.
+  const char* device_path_;
+
   DISALLOW_COPY_AND_ASSIGN(DriWrapper);
 };
 

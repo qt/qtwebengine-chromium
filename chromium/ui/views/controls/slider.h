@@ -53,7 +53,7 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   };
 
   Slider(SliderListener* listener, Orientation orientation);
-  virtual ~Slider();
+  ~Slider() override;
 
   float value() const { return value_; }
   void SetValue(float value);
@@ -94,21 +94,21 @@ class VIEWS_EXPORT Slider : public View, public gfx::AnimationDelegate {
   void OnSliderDragEnded();
 
   // views::View overrides:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  void OnPaint(gfx::Canvas* canvas) override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void OnFocus() override;
+  void OnBlur() override;
 
   // ui::EventHandler overrides:
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
+  void OnGestureEvent(ui::GestureEvent* event) override;
 
   // gfx::AnimationDelegate overrides:
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  void AnimationProgressed(const gfx::Animation* animation) override;
 
   void set_listener(SliderListener* listener) {
     listener_ = listener;

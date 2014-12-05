@@ -21,29 +21,24 @@
 #ifndef SVGGElement_h
 #define SVGGElement_h
 
-#include "core/svg/SVGAnimatedBoolean.h"
 #include "core/svg/SVGGraphicsElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGGElement FINAL : public SVGGraphicsElement {
+class SVGGElement final : public SVGGraphicsElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGGElement);
 
 protected:
     explicit SVGGElement(Document&, ConstructionType = CreateSVGElement);
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE;
+    virtual RenderObject* createRenderer(RenderStyle*) override;
 
 private:
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
-
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE;
-
+    virtual bool rendererIsNeeded(const RenderStyle&) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGGElement_h

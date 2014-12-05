@@ -53,13 +53,12 @@ struct IssueAdviceInfoEntry {
 
 typedef std::vector<IssueAdviceInfoEntry> IssueAdviceInfo;
 
-// This class implements the OAuth2 flow to Google to mint an OAuth2
-// token for the given client and the given set of scopes from the
-// OAuthLogin scoped "master" OAuth2 token for the user logged in to
-// Chrome.
+// This class implements the OAuth2 flow to Google to mint an OAuth2 access
+// token for the given client and the given set of scopes from the OAuthLogin
+// scoped "master" OAuth2 token for the user logged in to Chrome.
 class OAuth2MintTokenFlow : public OAuth2ApiCallFlow {
  public:
-  // There are four differnt modes when minting a token to grant
+  // There are four different modes when minting a token to grant
   // access to third-party app for a user.
   enum Mode {
     // Get the messages to display to the user without minting a token.
@@ -76,17 +75,17 @@ class OAuth2MintTokenFlow : public OAuth2ApiCallFlow {
   struct Parameters {
    public:
     Parameters();
-    Parameters(const std::string& at,
-               const std::string& eid,
+    Parameters(const std::string& eid,
                const std::string& cid,
                const std::vector<std::string>& scopes_arg,
+               const std::string& device_id,
                Mode mode_arg);
     ~Parameters();
 
-    std::string access_token;
     std::string extension_id;
     std::string client_id;
     std::vector<std::string> scopes;
+    std::string device_id;
     Mode mode;
   };
 
@@ -101,23 +100,16 @@ class OAuth2MintTokenFlow : public OAuth2ApiCallFlow {
     virtual ~Delegate() {}
   };
 
-  OAuth2MintTokenFlow(net::URLRequestContextGetter* context,
-                      Delegate* delegate,
-                      const Parameters& parameters);
-  virtual ~OAuth2MintTokenFlow();
+  OAuth2MintTokenFlow(Delegate* delegate, const Parameters& parameters);
+  ~OAuth2MintTokenFlow() override;
 
  protected:
   // Implementation of template methods in OAuth2ApiCallFlow.
-  virtual GURL CreateApiCallUrl() OVERRIDE;
-  virtual std::string CreateApiCallBody() OVERRIDE;
+  GURL CreateApiCallUrl() override;
+  std::string CreateApiCallBody() override;
 
-  virtual void ProcessApiCallSuccess(
-      const net::URLFetcher* source) OVERRIDE;
-  virtual void ProcessApiCallFailure(
-      const net::URLFetcher* source) OVERRIDE;
-  virtual void ProcessNewAccessToken(const std::string& access_token) OVERRIDE;
-  virtual void ProcessMintAccessTokenFailure(
-      const GoogleServiceAuthError& error) OVERRIDE;
+  void ProcessApiCallSuccess(const net::URLFetcher* source) override;
+  void ProcessApiCallFailure(const net::URLFetcher* source) override;
 
  private:
   friend class OAuth2MintTokenFlowTest;
@@ -126,8 +118,6 @@ class OAuth2MintTokenFlow : public OAuth2ApiCallFlow {
   FRIEND_TEST_ALL_PREFIXES(OAuth2MintTokenFlowTest, ParseMintTokenResponse);
   FRIEND_TEST_ALL_PREFIXES(OAuth2MintTokenFlowTest, ProcessApiCallSuccess);
   FRIEND_TEST_ALL_PREFIXES(OAuth2MintTokenFlowTest, ProcessApiCallFailure);
-  FRIEND_TEST_ALL_PREFIXES(OAuth2MintTokenFlowTest,
-      ProcessMintAccessTokenFailure);
 
   void ReportSuccess(const std::string& access_token, int time_to_live);
   void ReportIssueAdviceSuccess(const IssueAdviceInfo& issue_advice);

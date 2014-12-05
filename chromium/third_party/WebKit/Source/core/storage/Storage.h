@@ -26,8 +26,8 @@
 #ifndef Storage_h
 #define Storage_h
 
-#include "bindings/v8/ScriptWrappable.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/storage/StorageArea.h"
 #include "platform/heap/Handle.h"
@@ -35,15 +35,17 @@
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class LocalFrame;
 
-class Storage FINAL : public RefCountedWillBeGarbageCollectedFinalized<Storage>, public ScriptWrappable, public DOMWindowProperty {
+class Storage final : public RefCountedWillBeGarbageCollected<Storage>, public ScriptWrappable, public DOMWindowProperty {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Storage);
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(Storage);
 public:
     static PassRefPtrWillBeRawPtr<Storage> create(LocalFrame*, PassOwnPtrWillBeRawPtr<StorageArea>);
-    virtual ~Storage();
 
     unsigned length(ExceptionState& ec) const { return m_storageArea->length(ec, m_frame); }
     String key(unsigned index, ExceptionState& ec) const { return m_storageArea->key(index, ec, m_frame); }
@@ -64,7 +66,7 @@ public:
     void namedPropertyEnumerator(Vector<String>&, ExceptionState&);
     bool namedPropertyQuery(const AtomicString&, ExceptionState&);
 
-    void trace(Visitor*);
+    virtual void trace(Visitor*) override;
 
 private:
     Storage(LocalFrame*, PassOwnPtrWillBeRawPtr<StorageArea>);
@@ -72,6 +74,6 @@ private:
     OwnPtrWillBeMember<StorageArea> m_storageArea;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // Storage_h

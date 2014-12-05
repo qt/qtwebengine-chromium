@@ -38,9 +38,10 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Chrome;
+class ConsoleMessageStorage;
 class EventHandlerRegistry;
 class Page;
 class PinchViewport;
@@ -57,7 +58,7 @@ class Visitor;
 // browser-level concept and Blink core/ only knows about its LocalFrame (and FrameHost).
 // Separating Page from the rest of core/ through this indirection
 // allows us to slowly refactor Page without breaking the rest of core.
-class FrameHost FINAL : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
+class FrameHost final : public NoBaseWillBeGarbageCollectedFinalized<FrameHost> {
     WTF_MAKE_NONCOPYABLE(FrameHost); WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
     static PassOwnPtrWillBeRawPtr<FrameHost> create(Page&);
@@ -77,14 +78,32 @@ public:
     PinchViewport& pinchViewport() const;
     EventHandlerRegistry& eventHandlerRegistry() const;
 
+    const AtomicString& overrideEncoding() const { return m_overrideEncoding; }
+    void setOverrideEncoding(const AtomicString& encoding) { m_overrideEncoding = encoding; }
+
+    ConsoleMessageStorage& consoleMessageStorage() const;
+
     void trace(Visitor*);
+
+    // Don't allow more than a certain number of frames in a page.
+    // This seems like a reasonable upper bound, and otherwise mutually
+    // recursive frameset pages can quickly bring the program to its knees
+    // with exponential growth in the number of frames.
+    static const int maxNumberOfFrames = 1000;
+    void incrementSubframeCount() { ++m_subframeCount; }
+    void decrementSubframeCount() { ASSERT(m_subframeCount); --m_subframeCount; }
+    int subframeCount() const;
 
 private:
     explicit FrameHost(Page&);
 
     RawPtrWillBeMember<Page> m_page;
-    const OwnPtr<PinchViewport> m_pinchViewport;
+    const OwnPtrWillBeMember<PinchViewport> m_pinchViewport;
     const OwnPtrWillBeMember<EventHandlerRegistry> m_eventHandlerRegistry;
+    const OwnPtrWillBeMember<ConsoleMessageStorage> m_consoleMessageStorage;
+
+    AtomicString m_overrideEncoding;
+    int m_subframeCount;
 };
 
 }

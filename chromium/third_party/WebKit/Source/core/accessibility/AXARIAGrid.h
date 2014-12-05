@@ -32,32 +32,28 @@
 #include "core/accessibility/AXTable.h"
 #include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXTableCell;
-class AXTableHeaderContainer;
-
-class AXARIAGrid FINAL : public AXTable {
-
+class AXARIAGrid final : public AXTable {
 private:
     explicit AXARIAGrid(RenderObject*);
 public:
     static PassRefPtr<AXARIAGrid> create(RenderObject*);
     virtual ~AXARIAGrid();
 
-    virtual bool isAriaTable() const OVERRIDE { return true; }
+    virtual bool isAriaTable() const override { return true; }
 
-    virtual void addChildren() OVERRIDE;
+    virtual void addChildren() override;
 
 private:
     // ARIA treegrids and grids support selected rows.
-    virtual bool supportsSelectedRows() OVERRIDE { return true; }
-    virtual bool isMultiSelectable() const OVERRIDE { return true; }
-    virtual bool isTableExposableThroughAccessibility() const OVERRIDE { return true; }
+    virtual bool supportsSelectedRows() override { return true; }
+    virtual bool isMultiSelectable() const override { return true; }
+    virtual bool isTableExposableThroughAccessibility() const override { return true; }
 
     bool addTableCellChild(AXObject*, HashSet<AXObject*>& appendedRows, unsigned& columnCount);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXARIAGrid_h

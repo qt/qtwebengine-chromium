@@ -41,12 +41,13 @@ namespace WTF{
 class TextEncoding;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Blob;
 class HTMLFormElement;
 
-class DOMFormData : public RefCountedWillBeGarbageCollectedFinalized<DOMFormData>, public FormDataList, public ScriptWrappable {
+class DOMFormData final : public FormDataList, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<DOMFormData> create(HTMLFormElement* form = 0)
     {
@@ -66,6 +67,6 @@ private:
     explicit DOMFormData(HTMLFormElement*);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMFormData_h

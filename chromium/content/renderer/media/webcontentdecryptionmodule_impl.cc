@@ -4,9 +4,6 @@
 
 #include "content/renderer/media/webcontentdecryptionmodule_impl.h"
 
-#include <map>
-#include <vector>
-
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -15,30 +12,19 @@
 #include "content/renderer/media/cdm_session_adapter.h"
 #include "content/renderer/media/crypto/key_systems.h"
 #include "content/renderer/media/webcontentdecryptionmodulesession_impl.h"
+#include "media/base/cdm_promise.h"
 #include "media/base/media_keys.h"
+#include "media/blink/cdm_result_promise.h"
 #include "third_party/WebKit/public/platform/WebString.h"
 #include "third_party/WebKit/public/web/WebSecurityOrigin.h"
 #include "url/gurl.h"
 
-#if defined(ENABLE_PEPPER_CDMS)
-#include "content/renderer/media/crypto/pepper_cdm_wrapper_impl.h"
-#endif
-
 namespace content {
 
 WebContentDecryptionModuleImpl* WebContentDecryptionModuleImpl::Create(
-#if defined(ENABLE_PEPPER_CDMS)
-    blink::WebLocalFrame* frame,
-#elif defined(ENABLE_BROWSER_CDMS)
-    RendererCdmManager* manager,
-#endif
+    media::CdmFactory* cdm_factory,
     const blink::WebSecurityOrigin& security_origin,
     const base::string16& key_system) {
-#if defined(ENABLE_PEPPER_CDMS)
-  DCHECK(frame);
-#elif defined(ENABLE_BROWSER_CDMS)
-  DCHECK(manager);
-#endif
   DCHECK(!security_origin.isNull());
   DCHECK(!key_system.empty());
 
@@ -63,13 +49,7 @@ WebContentDecryptionModuleImpl* WebContentDecryptionModuleImpl::Create(
   GURL security_origin_as_gurl(security_origin.toString());
 
   if (!adapter->Initialize(
-#if defined(ENABLE_PEPPER_CDMS)
-          base::Bind(&PepperCdmWrapperImpl::Create, frame),
-#elif defined(ENABLE_BROWSER_CDMS)
-          manager,
-#endif
-          key_system_ascii,
-          security_origin_as_gurl)) {
+          cdm_factory, key_system_ascii, security_origin_as_gurl)) {
     return NULL;
   }
 
@@ -78,16 +58,36 @@ WebContentDecryptionModuleImpl* WebContentDecryptionModuleImpl::Create(
 
 WebContentDecryptionModuleImpl::WebContentDecryptionModuleImpl(
     scoped_refptr<CdmSessionAdapter> adapter)
-    : adapter_(adapter) {}
+    : adapter_(adapter) {
+}
 
 WebContentDecryptionModuleImpl::~WebContentDecryptionModuleImpl() {
 }
 
 // The caller owns the created session.
 blink::WebContentDecryptionModuleSession*
+WebContentDecryptionModuleImpl::createSession() {
+  return adapter_->CreateSession();
+}
+
+blink::WebContentDecryptionModuleSession*
 WebContentDecryptionModuleImpl::createSession(
     blink::WebContentDecryptionModuleSession::Client* client) {
-  return adapter_->CreateSession(client);
+  WebContentDecryptionModuleSessionImpl* session = adapter_->CreateSession();
+  session->setClientInterface(client);
+  return session;
+}
+
+void WebContentDecryptionModuleImpl::setServerCertificate(
+    const uint8* server_certificate,
+    size_t server_certificate_length,
+    blink::WebContentDecryptionModuleResult result) {
+  DCHECK(server_certificate);
+  adapter_->SetServerCertificate(
+      server_certificate,
+      server_certificate_length,
+      scoped_ptr<media::SimpleCdmPromise>(
+          new media::CdmResultPromise<>(result, std::string())));
 }
 
 media::Decryptor* WebContentDecryptionModuleImpl::GetDecryptor() {

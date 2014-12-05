@@ -28,9 +28,9 @@
 #include "config.h"
 
 #include "core/rendering/svg/RenderSVGRect.h"
-#include "platform/graphics/GraphicsContext.h"
+#include "core/svg/SVGRectElement.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGRect::RenderSVGRect(SVGRectElement* node)
     : RenderSVGShape(node)
@@ -49,6 +49,7 @@ void RenderSVGRect::updateShapeFromElement()
     m_fillBoundingBox = FloatRect();
     m_innerStrokeRect = FloatRect();
     m_outerStrokeRect = FloatRect();
+    m_usePathFallback = false;
     SVGRectElement* rect = toSVGRectElement(element());
     ASSERT(rect);
 
@@ -67,7 +68,6 @@ void RenderSVGRect::updateShapeFromElement()
             m_usePathFallback = true;
             return;
         }
-        m_usePathFallback = false;
     }
 
     m_fillBoundingBox = FloatRect(FloatPoint(rect->x()->currentValue()->value(lengthContext), rect->y()->currentValue()->value(lengthContext)), boundingBoxSize);
@@ -77,36 +77,13 @@ void RenderSVGRect::updateShapeFromElement()
     m_innerStrokeRect = m_fillBoundingBox;
     m_outerStrokeRect = m_fillBoundingBox;
 
-    if (style()->svgStyle()->hasStroke()) {
+    if (style()->svgStyle().hasStroke()) {
         float strokeWidth = this->strokeWidth();
         m_innerStrokeRect.inflate(-strokeWidth / 2);
         m_outerStrokeRect.inflate(strokeWidth / 2);
     }
 
     m_strokeBoundingBox = m_outerStrokeRect;
-}
-
-void RenderSVGRect::fillShape(GraphicsContext* context) const
-{
-    if (m_usePathFallback) {
-        RenderSVGShape::fillShape(context);
-        return;
-    }
-
-    context->fillRect(m_fillBoundingBox);
-}
-
-void RenderSVGRect::strokeShape(GraphicsContext* context) const
-{
-    if (!style()->svgStyle()->hasVisibleStroke())
-        return;
-
-    if (m_usePathFallback) {
-        RenderSVGShape::strokeShape(context);
-        return;
-    }
-
-    context->strokeRect(m_fillBoundingBox, strokeWidth());
 }
 
 bool RenderSVGRect::shapeDependentStrokeContains(const FloatPoint& point)

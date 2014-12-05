@@ -3,47 +3,48 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * Encapsulated handling of the Bluetooth options page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function BluetoothOptions() {
-    OptionsPage.call(this,
-                     'bluetooth',
-                     loadTimeData.getString('bluetoothOptionsPageTabTitle'),
-                     'bluetooth-options');
+    Page.call(this, 'bluetooth',
+              loadTimeData.getString('bluetoothOptionsPageTabTitle'),
+              'bluetooth-options');
   }
 
   cr.addSingletonGetter(BluetoothOptions);
 
   BluetoothOptions.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * The list of available (unpaired) bluetooth devices.
-     * @type {DeletableItemList}
+     * @type {options.DeletableItemList}
      * @private
      */
     deviceList_: null,
 
     /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       this.createDeviceList_();
 
       BluetoothOptions.updateDiscoveryState(true);
 
       $('bluetooth-add-device-cancel-button').onclick = function(event) {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
 
       var self = this;
       $('bluetooth-add-device-apply-button').onclick = function(event) {
         var device = self.deviceList_.selectedItem;
         var address = device.address;
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
         device.pairing = 'bluetoothStartConnecting';
         options.BluetoothPairing.showDialog(device);
         chrome.send('updateBluetoothDevice', [address, 'connect']);
@@ -78,8 +79,10 @@ cr.define('options', function() {
      * @private
      */
     createDeviceList_: function() {
-      this.deviceList_ = $('bluetooth-unpaired-devices-list');
-      options.system.bluetooth.BluetoothDeviceList.decorate(this.deviceList_);
+      var deviceList = $('bluetooth-unpaired-devices-list');
+      options.system.bluetooth.BluetoothDeviceList.decorate(deviceList);
+      this.deviceList_ = assertInstanceof(deviceList,
+                                          options.DeletableItemList);
     }
   };
 
@@ -109,7 +112,7 @@ cr.define('options', function() {
   BluetoothOptions.dismissOverlay = function() {
     var page = BluetoothOptions.getInstance();
     if (page && page.visible)
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
   };
 
   // Export

@@ -30,6 +30,7 @@
 #include "base/synchronization/lock.h"
 #include "content/common/content_export.h"
 #include "content/common/p2p_socket_type.h"
+#include "content/renderer/p2p/network_list_manager.h"
 #include "ipc/message_filter.h"
 #include "net/base/net_util.h"
 
@@ -48,22 +49,19 @@ class P2PAsyncAddressResolver;
 class P2PSocketClientImpl;
 class RenderViewImpl;
 
-class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter {
+class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter,
+                                           public NetworkListManager {
  public:
   explicit P2PSocketDispatcher(base::MessageLoopProxy* ipc_message_loop);
 
-  // Add a new network list observer. Each observer is called
-  // immidiately after it is registered and then later whenever
-  // network configuration changes. Can be called on any thread. The
-  // observer is always called on the thread it was added.
-  void AddNetworkListObserver(NetworkListObserver* network_list_observer);
-
-  // Removes network list observer. Must be called on the thread on
-  // which the observer was added.
-  void RemoveNetworkListObserver(NetworkListObserver* network_list_observer);
+  // NetworkListManager interface:
+  void AddNetworkListObserver(
+      NetworkListObserver* network_list_observer) override;
+  void RemoveNetworkListObserver(
+      NetworkListObserver* network_list_observer) override;
 
  protected:
-  virtual ~P2PSocketDispatcher();
+  ~P2PSocketDispatcher() override;
 
  private:
   friend class P2PAsyncAddressResolver;
@@ -73,10 +71,10 @@ class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter {
   virtual void Send(IPC::Message* message);
 
   // IPC::MessageFilter override. Called on IO thread.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-  virtual void OnFilterAdded(IPC::Sender* sender) OVERRIDE;
-  virtual void OnFilterRemoved() OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
+  void OnFilterAdded(IPC::Sender* sender) override;
+  void OnFilterRemoved() override;
+  void OnChannelClosing() override;
 
   // Returns the IO message loop.
   base::MessageLoopProxy* message_loop();
@@ -94,7 +92,9 @@ class CONTENT_EXPORT P2PSocketDispatcher : public IPC::MessageFilter {
   void OnNetworkListChanged(const net::NetworkInterfaceList& networks);
   void OnGetHostAddressResult(int32 request_id,
                               const net::IPAddressList& addresses);
-  void OnSocketCreated(int socket_id, const net::IPEndPoint& address);
+  void OnSocketCreated(int socket_id,
+                       const net::IPEndPoint& local_address,
+                       const net::IPEndPoint& remote_address);
   void OnIncomingTcpConnection(int socket_id, const net::IPEndPoint& address);
   void OnSendComplete(int socket_id);
   void OnError(int socket_id);

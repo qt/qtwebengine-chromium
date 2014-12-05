@@ -31,16 +31,19 @@
 #ifndef RTCSessionDescriptionCallback_h
 #define RTCSessionDescriptionCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class RTCSessionDescription;
 
-class RTCSessionDescriptionCallback {
+class RTCSessionDescriptionCallback : public GarbageCollectedFinalized<RTCSessionDescriptionCallback> {
 public:
     virtual ~RTCSessionDescriptionCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(RTCSessionDescription*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RTCSessionDescriptionCallback_h

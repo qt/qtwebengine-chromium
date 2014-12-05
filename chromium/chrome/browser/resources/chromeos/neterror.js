@@ -5,7 +5,7 @@
 function toggleHelpBox() {
   var helpBoxOuter = $('help-box-outer');
   helpBoxOuter.classList.toggle('hidden');
-  var moreLessButton = $('more-less-button');
+  var moreLessButton = $('details-button');
   if (helpBoxOuter.classList.contains('hidden')) {
     moreLessButton.innerText = moreLessButton.moreText;
   } else {
@@ -27,7 +27,6 @@ if (window.top.location != window.location)
 // Re-renders the error page using |strings| as the dictionary of values.
 // Used by NetErrorTabHelper to update DNS error pages with probe results.
 function updateForDnsProbe(strings) {
-  i18nTemplate.process(document, strings);
   var context = new JsEvalContext(strings);
   jstProcess(context, $('t'));
 }
@@ -48,4 +47,9 @@ function updateIconClass(classList, newClass) {
     classList.remove(oldClass);
 
   classList['last_icon_class'] = newClass;
+
+  if (newClass == 'icon-offline') {
+    document.body.classList.add('offline');
+    new Runner('.interstitial-wrapper');
+  }
 }

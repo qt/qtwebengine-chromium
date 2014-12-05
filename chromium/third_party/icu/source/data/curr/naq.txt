@@ -1,13 +1,13 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/naq.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/naq.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/naq.xml
+ * ICU <specials> source: <path>/common/main/naq.xml
  */
 naq{
     Currencies{
@@ -16,19 +16,19 @@ naq{
             "United Arab Emirates Dirham",
         }
         AOA{
-            "Kz",
+            "AOA",
             "Angolan Kwanzab",
         }
         AUD{
-            "AU$",
+            "A$",
             "Australian Dollari",
         }
         BHD{
-            "BD",
+            "BHD",
             "Bahrain Dinar",
         }
         BIF{
-            "FBu",
+            "BIF",
             "Burundi Franc",
         }
         BWP{
@@ -52,15 +52,15 @@ naq{
             "Chinese Yuan Renminbi",
         }
         CVE{
-            "CV$",
+            "CVE",
             "Escudo Caboverdiano",
         }
         DJF{
-            "Fdj",
+            "DJF",
             "Djibouti Franc",
         }
         DZD{
-            "DA",
+            "DZD",
             "Algerian Dinar",
         }
         EGP{
@@ -68,11 +68,11 @@ naq{
             "Egytian Ponds",
         }
         ERN{
-            "Nfk",
+            "ERN",
             "Eritreian Nakfa",
         }
         ETB{
-            "Br",
+            "ETB",
             "Ethiopian Birr",
         }
         EUR{
@@ -83,20 +83,16 @@ naq{
             "£",
             "British Ponds",
         }
-        GHC{
-            "₵",
-            "Ghana Cedi",
-        }
         GMD{
             "GMD",
             "Gambia Dalasi",
         }
         GNS{
-            "GNS" /** ===  */,
+            "GNS",
             "Guinea Franc",
         }
         INR{
-            "Rs",
+            "₹",
             "Indian Rupee",
         }
         JPY{
@@ -104,15 +100,15 @@ naq{
             "Japanese Yenni",
         }
         KES{
-            "Ksh",
+            "KES",
             "Kenyan Shilling",
         }
         KMF{
-            "CF",
+            "KMF",
             "Comorian Franc",
         }
         LRD{
-            "L$",
+            "LRD",
             "Liberian Dollar",
         }
         LSL{
@@ -120,7 +116,7 @@ naq{
             "Lesotho Loti",
         }
         LYD{
-            "LD",
+            "LYD",
             "Libyan Dinar",
         }
         MAD{
@@ -132,27 +128,23 @@ naq{
             "Malagasy Franc",
         }
         MRO{
-            "UM",
+            "MRO",
             "Mauritania Ouguiya",
         }
         MUR{
-            "MURs",
+            "MUR",
             "Mauritius Rupeeb",
         }
         MWK{
             "MWK",
             "Malawian Kwachab",
         }
-        MZM{
-            "Mt",
-            "Mozambique Metical",
-        }
         NAD{
-            "N$",
+            "$",
             "Namibia Dollari",
         }
         NGN{
-            "₦",
+            "NGN",
             "Nigerian Naira",
         }
         RWF{
@@ -160,35 +152,31 @@ naq{
             "Rwanda Franci",
         }
         SAR{
-            "SR",
+            "SAR",
             "Saudi Riyal",
         }
         SCR{
-            "SRe",
+            "SCR",
             "Seychelles Rupee",
         }
         SDG{
             "SDG",
             "Sudanese Dinar",
         }
-        SDP{
-            "SDP" /** ===  */,
-            "Sudanese Ponds",
-        }
         SHP{
-            "SH£",
+            "SHP",
             "St Helena Ponds",
         }
         SLL{
-            "Le",
+            "SLL",
             "Leone",
         }
         SOS{
-            "Ssh",
+            "SOS",
             "Somali Shillings",
         }
         STD{
-            "Db",
+            "STD",
             "Sao Tome and Principe Dobra",
         }
         SZL{
@@ -196,15 +184,15 @@ naq{
             "Lilangeni",
         }
         TND{
-            "DT",
+            "TND",
             "Tunisian Dinar",
         }
         TZS{
-            "TSh",
+            "TZS",
             "Tanzanian Shillings",
         }
         UGX{
-            "USh",
+            "UGX",
             "Ugandan Shillings",
         }
         USD{
@@ -220,17 +208,13 @@ naq{
             "CFA Franc BCEAO",
         }
         ZAR{
-            "R",
+            "ZAR",
             "South African Randi",
         }
-        ZMK{
-            "ZK",
+        ZMW{
+            "ZMW",
             "Zambian Kwachab",
         }
-        ZWD{
-            "Z$",
-            "Zimbabwe Dollari",
-        }
     }
-    Version{"2.0.46.85"}
+    Version{"2.0.92.87"}
 }

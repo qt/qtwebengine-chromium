@@ -58,7 +58,6 @@
 
 namespace base {
 
-class MessagePumpInstrumentation;
 class RunLoop;
 class TimeTicks;
 
@@ -83,18 +82,18 @@ class MessagePumpCFRunLoopBase : public MessagePump {
   friend class MessagePumpScopedAutoreleasePool;
  public:
   MessagePumpCFRunLoopBase();
-  virtual ~MessagePumpCFRunLoopBase();
+  ~MessagePumpCFRunLoopBase() override;
 
   // Subclasses should implement the work they need to do in MessagePump::Run
   // in the DoRun method.  MessagePumpCFRunLoopBase::Run calls DoRun directly.
   // This arrangement is used because MessagePumpCFRunLoopBase needs to set
   // up and tear down things before and after the "meat" of DoRun.
-  virtual void Run(Delegate* delegate) OVERRIDE;
+  void Run(Delegate* delegate) override;
   virtual void DoRun(Delegate* delegate) = 0;
 
-  virtual void ScheduleWork() OVERRIDE;
-  virtual void ScheduleDelayedWork(const TimeTicks& delayed_work_time) OVERRIDE;
-  virtual void SetTimerSlack(TimerSlack timer_slack) OVERRIDE;
+  void ScheduleWork() override;
+  void ScheduleDelayedWork(const TimeTicks& delayed_work_time) override;
+  void SetTimerSlack(TimerSlack timer_slack) override;
 
  protected:
   // Accessors for private data members to be used by subclasses.
@@ -112,11 +111,6 @@ class MessagePumpCFRunLoopBase : public MessagePump {
   // objects autoreleased by work to fall into the current autorelease pool.
   virtual AutoreleasePoolType* CreateAutoreleasePool();
 
-  // Enables instrumentation of the MessagePump. See MessagePumpInstrumentation
-  // in the implementation for details.
-  void EnableInstrumentation();
-  WeakPtr<MessagePumpInstrumentation> instrumentation_;
-
  private:
   // Timer callback scheduled by ScheduleDelayedWork.  This does not do any
   // work, but it signals work_source_ so that delayed work can be performed
@@ -130,11 +124,11 @@ class MessagePumpCFRunLoopBase : public MessagePump {
   static void RunWorkSource(void* info);
   bool RunWork();
 
-  // Perform idle-priority work.  This is normally called by
-  // StartOrEndWaitObserver, but is also associated with idle_work_source_. When
-  // this function actually does perform idle work, it will resignal that
-  // source.  The static method calls the instance method; the instance method
-  // returns true if idle work was done.
+  // Perform idle-priority work.  This is normally called by PreWaitObserver,
+  // but is also associated with idle_work_source_.  When this function
+  // actually does perform idle work, it will resignal that source.  The
+  // static method calls the instance method; the instance method returns
+  // true if idle work was done.
   static void RunIdleWorkSource(void* info);
   bool RunIdleWork();
 
@@ -156,8 +150,8 @@ class MessagePumpCFRunLoopBase : public MessagePump {
 
   // Observer callback responsible for performing idle-priority work, before
   // the run loop goes to sleep.  Associated with idle_work_observer_.
-  static void StartOrEndWaitObserver(CFRunLoopObserverRef observer,
-                                     CFRunLoopActivity activity, void* info);
+  static void PreWaitObserver(CFRunLoopObserverRef observer,
+                              CFRunLoopActivity activity, void* info);
 
   // Observer callback called before the run loop processes any sources.
   // Associated with pre_source_observer_.
@@ -226,13 +220,13 @@ class MessagePumpCFRunLoopBase : public MessagePump {
 class BASE_EXPORT MessagePumpCFRunLoop : public MessagePumpCFRunLoopBase {
  public:
   MessagePumpCFRunLoop();
-  virtual ~MessagePumpCFRunLoop();
+  ~MessagePumpCFRunLoop() override;
 
-  virtual void DoRun(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
+  void DoRun(Delegate* delegate) override;
+  void Quit() override;
 
  private:
-  virtual void EnterExitRunLoop(CFRunLoopActivity activity) OVERRIDE;
+  void EnterExitRunLoop(CFRunLoopActivity activity) override;
 
   // True if Quit is called to stop the innermost MessagePump
   // (innermost_quittable_) but some other CFRunLoopRun loop (nesting_level_)
@@ -245,10 +239,10 @@ class BASE_EXPORT MessagePumpCFRunLoop : public MessagePumpCFRunLoopBase {
 class BASE_EXPORT MessagePumpNSRunLoop : public MessagePumpCFRunLoopBase {
  public:
   MessagePumpNSRunLoop();
-  virtual ~MessagePumpNSRunLoop();
+  ~MessagePumpNSRunLoop() override;
 
-  virtual void DoRun(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
+  void DoRun(Delegate* delegate) override;
+  void Quit() override;
 
  private:
   // A source that doesn't do anything but provide something signalable
@@ -270,8 +264,8 @@ class MessagePumpUIApplication : public MessagePumpCFRunLoopBase {
  public:
   MessagePumpUIApplication();
   virtual ~MessagePumpUIApplication();
-  virtual void DoRun(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
+  virtual void DoRun(Delegate* delegate) override;
+  virtual void Quit() override;
 
   // This message pump can not spin the main message loop directly.  Instead,
   // call |Attach()| to set up a delegate.  It is an error to call |Run()|.
@@ -288,10 +282,10 @@ class MessagePumpUIApplication : public MessagePumpCFRunLoopBase {
 class MessagePumpNSApplication : public MessagePumpCFRunLoopBase {
  public:
   MessagePumpNSApplication();
-  virtual ~MessagePumpNSApplication();
+  ~MessagePumpNSApplication() override;
 
-  virtual void DoRun(Delegate* delegate) OVERRIDE;
-  virtual void Quit() OVERRIDE;
+  void DoRun(Delegate* delegate) override;
+  void Quit() override;
 
  private:
   // False after Quit is called.
@@ -309,12 +303,12 @@ class MessagePumpNSApplication : public MessagePumpCFRunLoopBase {
 class MessagePumpCrApplication : public MessagePumpNSApplication {
  public:
   MessagePumpCrApplication();
-  virtual ~MessagePumpCrApplication();
+  ~MessagePumpCrApplication() override;
 
  protected:
   // Returns nil if NSApp is currently in the middle of calling
   // -sendEvent.  Requires NSApp implementing CrAppProtocol.
-  virtual AutoreleasePoolType* CreateAutoreleasePool() OVERRIDE;
+  AutoreleasePoolType* CreateAutoreleasePool() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MessagePumpCrApplication);

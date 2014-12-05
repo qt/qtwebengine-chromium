@@ -16,15 +16,15 @@ namespace {
 class SplittedView : public View {
  public:
   SplittedView();
-  virtual ~SplittedView();
+  ~SplittedView() override;
 
   void SetColor(SkColor from, SkColor to);
 
  private:
   // View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual void Layout() OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  gfx::Size GetMinimumSize() const override;
+  void Layout() override;
 
   DISALLOW_COPY_AND_ASSIGN(SplittedView);
 };

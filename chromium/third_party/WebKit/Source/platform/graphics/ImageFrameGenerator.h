@@ -39,10 +39,9 @@
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class ImageDecoder;
-class ScaledImageFragment;
 class SharedBuffer;
 
 class PLATFORM_EXPORT ImageDecoderFactory {
@@ -64,14 +63,15 @@ public:
     ImageFrameGenerator(const SkISize& fullSize, PassRefPtr<SharedBuffer>, bool allDataReceived, bool isMultiFrame);
     ~ImageFrameGenerator();
 
-    const ScaledImageFragment* decodeAndScale(const SkISize& scaledSize, size_t index = 0);
-
     // Decodes and scales the specified frame indicated by |index|. Dimensions
     // and output format are specified in |info|. Decoded pixels are written
     // into |pixels| with a stride of |rowBytes|.
     //
     // Returns true if decoding was successful.
     bool decodeAndScale(const SkImageInfo&, size_t index, void* pixels, size_t rowBytes);
+
+    // Decodes YUV components directly into the provided memory planes.
+    bool decodeToYUV(SkISize componentSizes[3], void* planes[3], size_t rowBytes[3]);
 
     void setData(PassRefPtr<SharedBuffer>, bool allDataReceived);
 
@@ -85,35 +85,30 @@ public:
     // FIXME: Return alpha state for each frame.
     bool hasAlpha(size_t);
 
+    bool getYUVComponentSizes(SkISize componentSizes[3]);
+
 private:
     class ExternalMemoryAllocator;
     friend class ImageFrameGeneratorTest;
     friend class DeferredImageDecoderTest;
     // For testing. |factory| will overwrite the default ImageDecoder creation logic if |factory->create()| returns non-zero.
     void setImageDecoderFactory(PassOwnPtr<ImageDecoderFactory> factory) { m_imageDecoderFactory = factory; }
-    // For testing.
-    SkBitmap::Allocator* allocator() const { return m_discardableAllocator.get(); }
-    void setAllocator(PassOwnPtr<SkBitmap::Allocator> allocator) { m_discardableAllocator = allocator; }
+
+    void setHasAlpha(size_t index, bool hasAlpha);
 
     // These methods are called while m_decodeMutex is locked.
-    const ScaledImageFragment* tryToLockCompleteCache(const SkISize& scaledSize, size_t index);
-    const ScaledImageFragment* tryToResumeDecode(const SkISize& scaledSize, size_t index);
+    SkBitmap tryToResumeDecode(const SkISize& scaledSize, size_t index);
 
     // Use the given decoder to decode. If a decoder is not given then try to create one.
-    PassOwnPtr<ScaledImageFragment> decode(size_t index, ImageDecoder**);
-
-    // Return the next generation ID of a new image object. This is used
-    // to identify images of the same frame from different stages of
-    // progressive decode.
-    size_t nextGenerationId() { return m_decodeCount++; }
+    // Returns true if decoding was complete.
+    bool decode(size_t index, ImageDecoder**, SkBitmap*);
 
     SkISize m_fullSize;
     ThreadSafeDataTransport m_data;
     bool m_isMultiFrame;
     bool m_decodeFailedAndEmpty;
     Vector<bool> m_hasAlpha;
-    size_t m_decodeCount;
-    OwnPtr<SkBitmap::Allocator> m_discardableAllocator;
+    int m_decodeCount;
     OwnPtr<ExternalMemoryAllocator> m_externalAllocator;
 
     OwnPtr<ImageDecoderFactory> m_imageDecoderFactory;
@@ -125,6 +120,6 @@ private:
     Mutex m_alphaMutex;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

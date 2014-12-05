@@ -28,16 +28,16 @@ const MojoCreateMessagePipeOptionsFlags
     MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_NONE = 0;
 #else
 #define MOJO_CREATE_MESSAGE_PIPE_OPTIONS_FLAG_NONE \
-    ((MojoCreateMessagePipeOptionsFlags) 0)
+  ((MojoCreateMessagePipeOptionsFlags)0)
 #endif
 
-MOJO_COMPILE_ASSERT(MOJO_ALIGNOF(int64_t) == 8, int64_t_has_weird_alignment);
+MOJO_STATIC_ASSERT(MOJO_ALIGNOF(int64_t) == 8, "int64_t has weird alignment");
 struct MOJO_ALIGNAS(8) MojoCreateMessagePipeOptions {
   uint32_t struct_size;
   MojoCreateMessagePipeOptionsFlags flags;
 };
-MOJO_COMPILE_ASSERT(sizeof(MojoCreateMessagePipeOptions) == 8,
-                    MojoCreateMessagePipeOptions_has_wrong_size);
+MOJO_STATIC_ASSERT(sizeof(MojoCreateMessagePipeOptions) == 8,
+                   "MojoCreateMessagePipeOptions has wrong size");
 
 // |MojoWriteMessageFlags|: Used to specify different modes to
 // |MojoWriteMessage()|.
@@ -48,7 +48,7 @@ typedef uint32_t MojoWriteMessageFlags;
 #ifdef __cplusplus
 const MojoWriteMessageFlags MOJO_WRITE_MESSAGE_FLAG_NONE = 0;
 #else
-#define MOJO_WRITE_MESSAGE_FLAG_NONE ((MojoWriteMessageFlags) 0)
+#define MOJO_WRITE_MESSAGE_FLAG_NONE ((MojoWriteMessageFlags)0)
 #endif
 
 // |MojoReadMessageFlags|: Used to specify different modes to
@@ -64,8 +64,8 @@ typedef uint32_t MojoReadMessageFlags;
 const MojoReadMessageFlags MOJO_READ_MESSAGE_FLAG_NONE = 0;
 const MojoReadMessageFlags MOJO_READ_MESSAGE_FLAG_MAY_DISCARD = 1 << 0;
 #else
-#define MOJO_READ_MESSAGE_FLAG_NONE ((MojoReadMessageFlags) 0)
-#define MOJO_READ_MESSAGE_FLAG_MAY_DISCARD ((MojoReadMessageFlags) 1 << 0)
+#define MOJO_READ_MESSAGE_FLAG_NONE ((MojoReadMessageFlags)0)
+#define MOJO_READ_MESSAGE_FLAG_MAY_DISCARD ((MojoReadMessageFlags)1 << 0)
 #endif
 
 #ifdef __cplusplus
@@ -86,16 +86,16 @@ extern "C" {
 //
 // Returns:
 //   |MOJO_RESULT_OK| on success.
-//   |MOJO_RESULT_INVALID_ARGUMENT| if |message_pipe_handle0| and/or
-//       |message_pipe_handle1| do not appear to be valid pointers.
+//   |MOJO_RESULT_INVALID_ARGUMENT| if some argument was invalid (e.g.,
+//       |*options| is invalid).
 //   |MOJO_RESULT_RESOURCE_EXHAUSTED| if a process/system/quota/etc. limit has
 //       been reached.
 //
 // TODO(vtl): Add an options struct pointer argument.
 MOJO_SYSTEM_EXPORT MojoResult MojoCreateMessagePipe(
     const struct MojoCreateMessagePipeOptions* options,  // Optional.
-    MojoHandle* message_pipe_handle0,  // Out.
-    MojoHandle* message_pipe_handle1);  // Out.
+    MojoHandle* message_pipe_handle0,                    // Out.
+    MojoHandle* message_pipe_handle1);                   // Out.
 
 // Writes a message to the message pipe endpoint given by |message_pipe_handle|,
 // with message data specified by |bytes| of size |num_bytes| and attached
@@ -120,17 +120,18 @@ MOJO_SYSTEM_EXPORT MojoResult MojoCreateMessagePipe(
 //       Note that closing an endpoint is not necessarily synchronous (e.g.,
 //       across processes), so this function may be succeed even if the other
 //       endpoint has been closed (in which case the message would be dropped).
+//   |MOJO_RESULT_UNIMPLEMENTED| if an unsupported flag was set in |*options|.
 //   |MOJO_RESULT_BUSY| if some handle to be sent is currently in use.
 //
 // TODO(vtl): Add a notion of capacity for message pipes, and return
 // |MOJO_RESULT_SHOULD_WAIT| if the message pipe is full.
-MOJO_SYSTEM_EXPORT MojoResult MojoWriteMessage(
-    MojoHandle message_pipe_handle,
-    const void* bytes,  // Optional.
-    uint32_t num_bytes,
-    const MojoHandle* handles,  // Optional.
-    uint32_t num_handles,
-    MojoWriteMessageFlags flags);
+MOJO_SYSTEM_EXPORT MojoResult
+    MojoWriteMessage(MojoHandle message_pipe_handle,
+                     const void* bytes,  // Optional.
+                     uint32_t num_bytes,
+                     const MojoHandle* handles,  // Optional.
+                     uint32_t num_handles,
+                     MojoWriteMessageFlags flags);
 
 // Reads a message from the message pipe endpoint given by
 // |message_pipe_handle|; also usable to query the size of the next message or
@@ -163,13 +164,13 @@ MOJO_SYSTEM_EXPORT MojoResult MojoWriteMessage(
 //       error code; should distinguish this from the hitting-system-limits
 //       case.)
 //   |MOJO_RESULT_SHOULD_WAIT| if no message was available to be read.
-MOJO_SYSTEM_EXPORT MojoResult MojoReadMessage(
-    MojoHandle message_pipe_handle,
-    void* bytes,  // Optional out.
-    uint32_t* num_bytes,  // Optional in/out.
-    MojoHandle* handles,  // Optional out.
-    uint32_t* num_handles,  // Optional in/out.
-    MojoReadMessageFlags flags);
+MOJO_SYSTEM_EXPORT MojoResult
+    MojoReadMessage(MojoHandle message_pipe_handle,
+                    void* bytes,            // Optional out.
+                    uint32_t* num_bytes,    // Optional in/out.
+                    MojoHandle* handles,    // Optional out.
+                    uint32_t* num_handles,  // Optional in/out.
+                    MojoReadMessageFlags flags);
 
 #ifdef __cplusplus
 }  // extern "C"

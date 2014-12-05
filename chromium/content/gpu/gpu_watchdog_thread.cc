@@ -12,7 +12,7 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/power_monitor/power_monitor.h"
 #include "base/process/process.h"
 #include "build/build_config.h"
@@ -38,8 +38,8 @@ GpuWatchdogThread::GpuWatchdogThread(int timeout)
       arm_cpu_time_(),
 #endif
       task_observer_(this),
-      weak_factory_(this),
-      suspended_(false) {
+      suspended_(false),
+      weak_factory_(this) {
   DCHECK(timeout >= 0);
 
 #if defined(OS_WIN)

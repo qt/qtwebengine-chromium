@@ -15,6 +15,10 @@
 #include "content/public/common/signed_certificate_timestamp_id_and_status.h"
 #include "net/url_request/url_request.h"
 
+namespace net {
+class X509Certificate;
+}
+
 namespace content {
 class ResourceDispatcherHostLoginDelegate;
 class ResourceLoaderDelegate;
@@ -31,7 +35,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   ResourceLoader(scoped_ptr<net::URLRequest> request,
                  scoped_ptr<ResourceHandler> handler,
                  ResourceLoaderDelegate* delegate);
-  virtual ~ResourceLoader();
+  ~ResourceLoader() override;
 
   void StartRequest();
   void CancelRequest(bool from_renderer);
@@ -46,7 +50,6 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   ResourceRequestInfoImpl* GetRequestInfo();
 
   void ClearLoginDelegate();
-  void ClearSSLClientAuthHandler();
 
   // IPC message handlers:
   void OnUploadProgressACK();
@@ -56,33 +59,29 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   FRIEND_TEST_ALL_PREFIXES(ResourceLoaderTest, ClientCertStoreNull);
 
   // net::URLRequest::Delegate implementation:
-  virtual void OnReceivedRedirect(net::URLRequest* request,
-                                  const GURL& new_url,
-                                  bool* defer) OVERRIDE;
-  virtual void OnAuthRequired(net::URLRequest* request,
-                              net::AuthChallengeInfo* info) OVERRIDE;
-  virtual void OnCertificateRequested(net::URLRequest* request,
-                                      net::SSLCertRequestInfo* info) OVERRIDE;
-  virtual void OnSSLCertificateError(net::URLRequest* request,
-                                     const net::SSLInfo& info,
-                                     bool fatal) OVERRIDE;
-  virtual void OnBeforeNetworkStart(net::URLRequest* request,
-                                    bool* defer) OVERRIDE;
-  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
-  virtual void OnReadCompleted(net::URLRequest* request,
-                               int bytes_read) OVERRIDE;
+  void OnReceivedRedirect(net::URLRequest* request,
+                          const net::RedirectInfo& redirect_info,
+                          bool* defer) override;
+  void OnAuthRequired(net::URLRequest* request,
+                      net::AuthChallengeInfo* info) override;
+  void OnCertificateRequested(net::URLRequest* request,
+                              net::SSLCertRequestInfo* info) override;
+  void OnSSLCertificateError(net::URLRequest* request,
+                             const net::SSLInfo& info,
+                             bool fatal) override;
+  void OnBeforeNetworkStart(net::URLRequest* request, bool* defer) override;
+  void OnResponseStarted(net::URLRequest* request) override;
+  void OnReadCompleted(net::URLRequest* request, int bytes_read) override;
 
   // SSLErrorHandler::Delegate implementation:
-  virtual void CancelSSLRequest(const GlobalRequestID& id,
-                                int error,
-                                const net::SSLInfo* ssl_info) OVERRIDE;
-  virtual void ContinueSSLRequest(const GlobalRequestID& id) OVERRIDE;
+  void CancelSSLRequest(int error, const net::SSLInfo* ssl_info) override;
+  void ContinueSSLRequest() override;
 
   // ResourceController implementation:
-  virtual void Resume() OVERRIDE;
-  virtual void Cancel() OVERRIDE;
-  virtual void CancelAndIgnore() OVERRIDE;
-  virtual void CancelWithError(int error_code) OVERRIDE;
+  void Resume() override;
+  void Cancel() override;
+  void CancelAndIgnore() override;
+  void CancelWithError(int error_code) override;
 
   void StartRequestInternal();
   void CancelRequestInternal(int error, bool from_renderer);
@@ -103,6 +102,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   void ResponseCompleted();
   void CallDidFinishLoading();
   void RecordHistograms();
+  void ContinueWithCertificate(net::X509Certificate* cert);
 
   bool is_deferred() const { return deferred_stage_ != DEFERRED_NONE; }
 
@@ -133,7 +133,7 @@ class CONTENT_EXPORT ResourceLoader : public net::URLRequest::Delegate,
   ResourceLoaderDelegate* delegate_;
 
   scoped_refptr<ResourceDispatcherHostLoginDelegate> login_delegate_;
-  scoped_refptr<SSLClientAuthHandler> ssl_client_auth_handler_;
+  scoped_ptr<SSLClientAuthHandler> ssl_client_auth_handler_;
 
   uint64 last_upload_position_;
   bool waiting_for_upload_progress_ack_;

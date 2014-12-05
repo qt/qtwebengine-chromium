@@ -60,7 +60,7 @@ gfx::NativeWindow WebContentsViewGuest::GetTopLevelNativeWindow() const {
   return guest_->embedder_web_contents()->GetTopLevelNativeWindow();
 }
 
-void WebContentsViewGuest::OnGuestInitialized(WebContentsView* parent_view) {
+void WebContentsViewGuest::OnGuestAttached(WebContentsView* parent_view) {
 #if defined(USE_AURA)
   // In aura, ScreenPositionClient doesn't work properly if we do
   // not have the native view associated with this WebContentsViewGuest in the
@@ -71,14 +71,17 @@ void WebContentsViewGuest::OnGuestInitialized(WebContentsView* parent_view) {
 #endif  // defined(USE_AURA)
 }
 
+void WebContentsViewGuest::OnGuestDetached(WebContentsView* old_parent_view) {
+#if defined(USE_AURA)
+  old_parent_view->GetNativeView()->RemoveChild(
+      platform_view_->GetNativeView());
+#endif  // defined(USE_AURA)
+}
+
 ContextMenuParams WebContentsViewGuest::ConvertContextMenuParams(
     const ContextMenuParams& params) const {
-#if defined(USE_AURA)
-  // Context menu uses ScreenPositionClient::ConvertPointToScreen() in aura
-  // to calculate popup position. Guest's native view
-  // (platform_view_->GetNativeView()) is part of the embedder's view hierarchy,
-  // but is placed at (0, 0) w.r.t. the embedder's position. Therefore, |offset|
-  // is added to |params|.
+  // We need to add |offset| of the guest from the embedder to position the
+  // menu properly.
   gfx::Rect embedder_bounds;
   guest_->embedder_web_contents()->GetView()->GetContainerBounds(
       &embedder_bounds);
@@ -90,16 +93,18 @@ ContextMenuParams WebContentsViewGuest::ConvertContextMenuParams(
   params_in_embedder.x += offset.x();
   params_in_embedder.y += offset.y();
   return params_in_embedder;
-#else
-  return params;
-#endif
 }
 
 void WebContentsViewGuest::GetContainerBounds(gfx::Rect* out) const {
-  // We need embedder container's bounds to calculate our bounds.
-  guest_->embedder_web_contents()->GetView()->GetContainerBounds(out);
-  gfx::Point guest_coordinates = guest_->GetScreenCoordinates(gfx::Point());
-  out->Offset(guest_coordinates.x(), guest_coordinates.y());
+  if (guest_->embedder_web_contents()) {
+    // We need embedder container's bounds to calculate our bounds.
+    guest_->embedder_web_contents()->GetView()->GetContainerBounds(out);
+    gfx::Point guest_coordinates = guest_->GetScreenCoordinates(gfx::Point());
+    out->Offset(guest_coordinates.x(), guest_coordinates.y());
+  } else {
+    out->set_origin(gfx::Point());
+  }
+
   out->set_size(size_);
 }
 
@@ -119,21 +124,12 @@ gfx::Rect WebContentsViewGuest::GetViewBounds() const {
 }
 
 #if defined(OS_MACOSX)
-void WebContentsViewGuest::SetAllowOverlappingViews(bool overlapping) {
-  platform_view_->SetAllowOverlappingViews(overlapping);
+void WebContentsViewGuest::SetAllowOtherViews(bool allow) {
+  platform_view_->SetAllowOtherViews(allow);
 }
 
-bool WebContentsViewGuest::GetAllowOverlappingViews() const {
-  return platform_view_->GetAllowOverlappingViews();
-}
-
-void WebContentsViewGuest::SetOverlayView(
-    WebContentsView* overlay, const gfx::Point& offset) {
-  platform_view_->SetOverlayView(overlay, offset);
-}
-
-void WebContentsViewGuest::RemoveOverlayView() {
-  platform_view_->RemoveOverlayView();
+bool WebContentsViewGuest::GetAllowOtherViews() const {
+  return platform_view_->GetAllowOtherViews();
 }
 #endif
 
@@ -144,7 +140,7 @@ void WebContentsViewGuest::CreateView(const gfx::Size& initial_size,
 }
 
 RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForWidget(
-    RenderWidgetHost* render_widget_host) {
+    RenderWidgetHost* render_widget_host, bool is_guest_view_hack) {
   if (render_widget_host->GetView()) {
     // During testing, the view will already be set up in most cases to the
     // test view, so we don't want to clobber it with a real one. To verify that
@@ -157,14 +153,11 @@ RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForWidget(
   }
 
   RenderWidgetHostViewBase* platform_widget =
-      platform_view_->CreateViewForWidget(render_widget_host);
+      platform_view_->CreateViewForWidget(render_widget_host, true);
 
-  RenderWidgetHostViewBase* view = new RenderWidgetHostViewGuest(
-      render_widget_host,
-      guest_,
-      platform_widget);
-
-  return view;
+  return new RenderWidgetHostViewGuest(render_widget_host,
+                                       guest_,
+                                       platform_widget->GetWeakPtr());
 }
 
 RenderWidgetHostViewBase* WebContentsViewGuest::CreateViewForPopupWidget(

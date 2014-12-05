@@ -32,6 +32,7 @@
 #include "core/page/PageSerializer.h"
 
 #include "core/HTMLNames.h"
+#include "core/InputTypeNames.h"
 #include "core/css/CSSFontFaceRule.h"
 #include "core/css/CSSFontFaceSrcValue.h"
 #include "core/css/CSSImageValue.h"
@@ -67,7 +68,7 @@
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isCharsetSpecifyingNode(const Node& node)
 {
@@ -76,13 +77,10 @@ static bool isCharsetSpecifyingNode(const Node& node)
 
     const HTMLMetaElement& element = toHTMLMetaElement(node);
     HTMLAttributeList attributeList;
-    if (element.hasAttributes()) {
-        AttributeCollection attributes = element.attributes();
-        AttributeCollection::const_iterator end = attributes.end();
-        for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-            // FIXME: We should deal appropriately with the attribute if they have a namespace.
-            attributeList.append(std::make_pair(it->name().localName(), it->value().string()));
-        }
+    AttributeCollection attributes = element.attributes();
+    for (const Attribute& attr : attributes) {
+        // FIXME: We should deal appropriately with the attribute if they have a namespace.
+        attributeList.append(std::make_pair(attr.name().localName(), attr.value().string()));
     }
     WTF::TextEncoding textEncoding = encodingFromMetaAttributes(attributeList);
     return textEncoding.isValid();
@@ -99,23 +97,23 @@ static const QualifiedName& frameOwnerURLAttributeName(const HTMLFrameOwnerEleme
     return isHTMLObjectElement(frameOwner) ? HTMLNames::dataAttr : HTMLNames::srcAttr;
 }
 
-class SerializerMarkupAccumulator FINAL : public MarkupAccumulator {
+class SerializerMarkupAccumulator final : public MarkupAccumulator {
 public:
-    SerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node> >*);
+    SerializerMarkupAccumulator(PageSerializer*, const Document&, WillBeHeapVector<RawPtrWillBeMember<Node>>*);
     virtual ~SerializerMarkupAccumulator();
 
 protected:
-    virtual void appendText(StringBuilder& out, Text&) OVERRIDE;
-    virtual void appendElement(StringBuilder& out, Element&, Namespaces*) OVERRIDE;
-    virtual void appendCustomAttributes(StringBuilder& out, const Element&, Namespaces*) OVERRIDE;
-    virtual void appendEndTag(const Node&) OVERRIDE;
+    virtual void appendText(StringBuilder& out, Text&) override;
+    virtual void appendElement(StringBuilder& out, Element&, Namespaces*) override;
+    virtual void appendCustomAttributes(StringBuilder& out, const Element&, Namespaces*) override;
+    virtual void appendEndTag(const Element&) override;
 
 private:
     PageSerializer* m_serializer;
     const Document& m_document;
 };
 
-SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node> >* nodes)
+SerializerMarkupAccumulator::SerializerMarkupAccumulator(PageSerializer* serializer, const Document& document, WillBeHeapVector<RawPtrWillBeMember<Node>>* nodes)
     : MarkupAccumulator(nodes, ResolveAllURLs, nullptr)
     , m_serializer(serializer)
     , m_document(document)
@@ -139,9 +137,9 @@ void SerializerMarkupAccumulator::appendElement(StringBuilder& out, Element& ele
         MarkupAccumulator::appendElement(out, element, namespaces);
 
     if (isHTMLHeadElement(element)) {
-        out.append("<meta charset=\"");
+        out.appendLiteral("<meta charset=\"");
         out.append(m_document.charset());
-        out.append("\">");
+        out.appendLiteral("\">");
     }
 
     // FIXME: For object (plugins) tags and video tag we could replace them by an image of their current contents.
@@ -167,10 +165,10 @@ void SerializerMarkupAccumulator::appendCustomAttributes(StringBuilder& out, con
     appendAttribute(out, element, Attribute(frameOwnerURLAttributeName(frameOwner), AtomicString(url.string())), namespaces);
 }
 
-void SerializerMarkupAccumulator::appendEndTag(const Node& node)
+void SerializerMarkupAccumulator::appendEndTag(const Element& element)
 {
-    if (node.isElementNode() && !shouldIgnoreElement(toElement(node)))
-        MarkupAccumulator::appendEndTag(node);
+    if (!shouldIgnoreElement(element))
+        MarkupAccumulator::appendEndTag(element);
 }
 
 PageSerializer::PageSerializer(Vector<SerializedResource>* resources)
@@ -208,20 +206,19 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
         return;
     }
 
-    WillBeHeapVector<RawPtrWillBeMember<Node> > serializedNodes;
+    WillBeHeapVector<RawPtrWillBeMember<Node>> serializedNodes;
     SerializerMarkupAccumulator accumulator(this, document, &serializedNodes);
     String text = accumulator.serializeNodes(document, IncludeNode);
     CString frameHTML = textEncoding.normalizeAndEncode(text, WTF::EntitiesForUnencodables);
     m_resources->append(SerializedResource(url, document.suggestedMIMEType(), SharedBuffer::create(frameHTML.data(), frameHTML.length())));
     m_resourceURLs.add(url);
 
-    for (WillBeHeapVector<RawPtrWillBeMember<Node> >::iterator iter = serializedNodes.begin(); iter != serializedNodes.end(); ++iter) {
-        ASSERT(*iter);
-        Node& node = **iter;
-        if (!node.isElementNode())
+    for (Node* node : serializedNodes) {
+        ASSERT(node);
+        if (!node->isElementNode())
             continue;
 
-        Element& element = toElement(node);
+        Element& element = toElement(*node);
         // We have to process in-line style as it might contain some resources (typically background images).
         if (element.isStyledElement())
             retrieveResourcesForProperties(element.inlineStyle(), document);
@@ -233,7 +230,7 @@ void PageSerializer::serializeFrame(LocalFrame* frame)
             addImageToResources(cachedImage, imageElement.renderer(), url);
         } else if (isHTMLInputElement(element)) {
             HTMLInputElement& inputElement = toHTMLInputElement(element);
-            if (inputElement.isImageButton() && inputElement.hasImageLoader()) {
+            if (inputElement.type() == InputTypeNames::image && inputElement.hasImageLoader()) {
                 KURL url = inputElement.src();
                 ImageResource* cachedImage = inputElement.imageLoader()->image();
                 addImageToResources(cachedImage, inputElement.renderer(), url);
@@ -267,7 +264,7 @@ void PageSerializer::serializeCSSStyleSheet(CSSStyleSheet& styleSheet, const KUR
         if (!itemText.isEmpty()) {
             cssText.append(itemText);
             if (i < styleSheet.length() - 1)
-                cssText.append("\n\n");
+                cssText.appendLiteral("\n\n");
         }
         ASSERT(styleSheet.ownerDocument());
         Document& document = *styleSheet.ownerDocument();
@@ -322,7 +319,7 @@ void PageSerializer::addImageToResources(ImageResource* image, RenderObject* ima
     if (!image || image->image() == Image::nullImage() || image->errorOccurred())
         return;
 
-    RefPtr<SharedBuffer> data = imageRenderer ? image->imageForRenderer(imageRenderer)->data() : 0;
+    RefPtr<SharedBuffer> data = imageRenderer ? image->imageForRenderer(imageRenderer)->data() : nullptr;
     if (!data)
         data = image->image()->data();
 
@@ -363,7 +360,7 @@ void PageSerializer::retrieveResourcesForCSSValue(CSSValue* cssValue, Document& 
         if (!styleImage || !styleImage->isImageResource())
             return;
 
-        addImageToResources(styleImage->cachedImage(), 0, styleImage->cachedImage()->url());
+        addImageToResources(styleImage->cachedImage(), nullptr, styleImage->cachedImage()->url());
     } else if (cssValue->isFontFaceSrcValue()) {
         CSSFontFaceSrcValue* fontFaceSrcValue = toCSSFontFaceSrcValue(cssValue);
         if (fontFaceSrcValue->isLocal()) {

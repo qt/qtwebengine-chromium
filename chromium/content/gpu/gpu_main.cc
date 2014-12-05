@@ -10,6 +10,7 @@
 #endif
 
 #include "base/debug/trace_event.h"
+#include "base/environment.h"
 #include "base/lazy_instance.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
@@ -22,6 +23,7 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/gpu/gpu_config.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/gpu/media/gpu_video_encode_accelerator.h"
 #include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/gpu/gpu_child_thread.h"
 #include "content/gpu/gpu_process.h"
@@ -54,6 +56,7 @@
 
 #if defined(OS_MACOSX)
 #include "base/message_loop/message_pump_mac.h"
+#include "content/common/sandbox_mac.h"
 #endif
 
 #if defined(ADDRESS_SANITIZER)
@@ -205,8 +208,20 @@ int GpuMain(const MainFunctionParams& parameters) {
   // consuming has completed, otherwise the process is liable to be aborted.
   if (enable_watchdog && !delayed_watchdog_enable) {
     watchdog_thread = new GpuWatchdogThread(kGpuTimeout);
-    watchdog_thread->Start();
+    base::Thread::Options options;
+    options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+    watchdog_thread->StartWithOptions(options);
   }
+
+  // Temporarily disable DRI3 on desktop Linux.
+  // The GPU process is crashing on DRI3-enabled desktop Linux systems.
+  // TODO(jorgelo): remove this when crbug.com/415681 is fixed.
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  {
+    scoped_ptr<base::Environment> env(base::Environment::Create());
+    env->SetVar("LIBGL_DRI3_DISABLE", "1");
+  }
+#endif
 
   gpu::GPUInfo gpu_info;
   // Get vendor_id, device_id, driver_version from browser process through
@@ -222,16 +237,13 @@ int GpuMain(const MainFunctionParams& parameters) {
     bool initialized_sandbox = false;
     bool initialized_gl_context = false;
     bool should_initialize_gl_context = false;
-#if defined(OS_CHROMEOS) && defined(ARCH_CPU_ARMEL)
     // On Chrome OS ARM Mali, GPU driver userspace creates threads when
     // initializing a GL context, so start the sandbox early.
-    if (!command_line.HasSwitch(
-             switches::kGpuSandboxStartAfterInitialization)) {
-      gpu_info.sandboxed = StartSandboxLinux(gpu_info, watchdog_thread.get(),
-                                             should_initialize_gl_context);
+    if (command_line.HasSwitch(switches::kGpuSandboxStartEarly)) {
+      gpu_info.sandboxed = StartSandboxLinux(
+          gpu_info, watchdog_thread.get(), should_initialize_gl_context);
       initialized_sandbox = true;
     }
-#endif
 #endif  // defined(OS_LINUX)
 
     base::TimeTicks before_initialize_one_off = base::TimeTicks::Now();
@@ -302,7 +314,9 @@ int GpuMain(const MainFunctionParams& parameters) {
 
     if (enable_watchdog && delayed_watchdog_enable) {
       watchdog_thread = new GpuWatchdogThread(kGpuTimeout);
-      watchdog_thread->Start();
+      base::Thread::Options options;
+      options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+      watchdog_thread->StartWithOptions(options);
     }
 
     // OSMesa is expected to run very slowly, so disable the watchdog in that
@@ -323,7 +337,12 @@ int GpuMain(const MainFunctionParams& parameters) {
     }
 #elif defined(OS_WIN)
     gpu_info.sandboxed = StartSandboxWindows(parameters.sandbox_info);
+#elif defined(OS_MACOSX)
+    gpu_info.sandboxed = Sandbox::SandboxIsCurrentlyActive();
 #endif
+
+    gpu_info.video_encode_accelerator_supported_profiles =
+        content::GpuVideoEncodeAccelerator::GetSupportedProfiles();
   } else {
     dead_on_arrival = true;
   }
@@ -348,7 +367,7 @@ int GpuMain(const MainFunctionParams& parameters) {
 
   gpu_process.set_main_thread(child_thread);
 
-  if (watchdog_thread)
+  if (watchdog_thread.get())
     watchdog_thread->AddPowerObserver();
 
   {
@@ -404,6 +423,9 @@ bool CollectGraphicsInfo(gpu::GPUInfo& gpu_info) {
       break;
     case gpu::kCollectInfoNonFatalFailure:
       VLOG(1) << "gpu::CollectGraphicsInfo failed (non-fatal).";
+      break;
+    case gpu::kCollectInfoNone:
+      NOTREACHED();
       break;
     case gpu::kCollectInfoSuccess:
       break;
@@ -492,7 +514,9 @@ bool StartSandboxLinux(const gpu::GPUInfo& gpu_info,
   // with only one thread.
   res = LinuxSandbox::InitializeSandbox();
   if (watchdog_thread) {
-    watchdog_thread->Start();
+    base::Thread::Options options;
+    options.timer_slack = base::TIMER_SLACK_MAXIMUM;
+    watchdog_thread->StartWithOptions(options);
   }
 
   return res;

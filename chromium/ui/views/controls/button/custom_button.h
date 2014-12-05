@@ -18,8 +18,7 @@ namespace views {
 
 class CustomButtonStateChangedDelegate;
 
-// A button with custom rendering. The common base class of ImageButton,
-// LabelButton and TextButton.
+// A button with custom rendering. The base of ImageButton and LabelButton.
 // Note that this type of button is not focusable by default and will not be
 // part of the focus chain.  Call SetFocusable(true) to make it part of the
 // focus chain.
@@ -32,7 +31,7 @@ class VIEWS_EXPORT CustomButton : public Button,
   static const CustomButton* AsCustomButton(const views::View* view);
   static CustomButton* AsCustomButton(views::View* view);
 
-  virtual ~CustomButton();
+  ~CustomButton() override;
 
   // Get/sets the current display state of the button.
   ButtonState state() const { return state_; }
@@ -68,27 +67,27 @@ class VIEWS_EXPORT CustomButton : public Button,
   bool IsHotTracked() const;
 
   // Overridden from View:
-  virtual void OnEnabledChanged() OVERRIDE;
-  virtual const char* GetClassName() const OVERRIDE;
-  virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnMouseDragged(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseCaptureLost() OVERRIDE;
-  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
-  virtual void OnMouseMoved(const ui::MouseEvent& event) OVERRIDE;
-  virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
-  virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
-  virtual void ShowContextMenu(const gfx::Point& p,
-                               ui::MenuSourceType source_type) OVERRIDE;
-  virtual void OnDragDone() OVERRIDE;
-  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
-  virtual void VisibilityChanged(View* starting_from, bool is_visible) OVERRIDE;
+  void OnEnabledChanged() override;
+  const char* GetClassName() const override;
+  bool OnMousePressed(const ui::MouseEvent& event) override;
+  bool OnMouseDragged(const ui::MouseEvent& event) override;
+  void OnMouseReleased(const ui::MouseEvent& event) override;
+  void OnMouseCaptureLost() override;
+  void OnMouseEntered(const ui::MouseEvent& event) override;
+  void OnMouseExited(const ui::MouseEvent& event) override;
+  void OnMouseMoved(const ui::MouseEvent& event) override;
+  bool OnKeyPressed(const ui::KeyEvent& event) override;
+  bool OnKeyReleased(const ui::KeyEvent& event) override;
+  void OnGestureEvent(ui::GestureEvent* event) override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void ShowContextMenu(const gfx::Point& p,
+                       ui::MenuSourceType source_type) override;
+  void OnDragDone() override;
+  void GetAccessibleState(ui::AXViewState* state) override;
+  void VisibilityChanged(View* starting_from, bool is_visible) override;
 
   // Overridden from gfx::AnimationDelegate:
-  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  void AnimationProgressed(const gfx::Animation* animation) override;
 
   // Takes ownership of the delegate.
   void set_state_changed_delegate(CustomButtonStateChangedDelegate* delegate) {
@@ -115,9 +114,9 @@ class VIEWS_EXPORT CustomButton : public Button,
   virtual bool ShouldEnterPushedState(const ui::Event& event);
 
   // Overridden from View:
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
+  void OnBlur() override;
 
   // The button state (defined in implementation)
   ButtonState state_;

@@ -21,6 +21,27 @@
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_utils.h"
 
+namespace {
+
+enum DebugFlags {
+  INIT_DONE = 1 << 0,
+  CALLED_CONNECT = 1 << 1,
+  PENDING_CONNECT = 1 << 2,
+  CONNECT_COMPLETED = 1 << 3,
+  PIPE_CONNECTED = 1 << 4,
+  WRITE_MSG = 1 << 5,
+  READ_MSG = 1 << 6,
+  WRITE_COMPLETED = 1 << 7,
+  READ_COMPLETED = 1 << 8,
+  CLOSED = 1 << 9,
+  WAIT_FOR_READ = 1 << 10,
+  WAIT_FOR_WRITE = 1 << 11,
+  WAIT_FOR_READ_COMPLETE = 1 << 12,
+  WAIT_FOR_WRITE_COMPLETE = 1 << 13
+};
+
+}  // namespace
+
 namespace IPC {
 
 ChannelWin::State::State(ChannelWin* channel) : is_pending(false) {
@@ -34,17 +55,21 @@ ChannelWin::State::~State() {
 }
 
 ChannelWin::ChannelWin(const IPC::ChannelHandle &channel_handle,
-                                  Mode mode, Listener* listener)
+                       Mode mode, Listener* listener)
     : ChannelReader(listener),
       input_state_(this),
       output_state_(this),
-      pipe_(INVALID_HANDLE_VALUE),
       peer_pid_(base::kNullProcessId),
       waiting_connect_(mode & MODE_SERVER_FLAG),
       processing_incoming_(false),
-      weak_factory_(this),
+      validate_client_(false),
+      writing_(false),
+      debug_flags_(0),
+      write_error_(0),
+      last_write_error_(0),
+      write_size_(0),
       client_secret_(0),
-      validate_client_(false) {
+      weak_factory_(this) {
   CreatePipe(channel_handle, mode);
 }
 
@@ -56,16 +81,21 @@ void ChannelWin::Close() {
   if (thread_check_.get()) {
     DCHECK(thread_check_->CalledOnValidThread());
   }
+  debug_flags_ |= CLOSED;
 
   if (input_state_.is_pending || output_state_.is_pending)
-    CancelIo(pipe_);
+    CancelIo(pipe_.Get());
 
   // Closing the handle at this point prevents us from issuing more requests
   // form OnIOCompleted().
-  if (pipe_ != INVALID_HANDLE_VALUE) {
-    CloseHandle(pipe_);
-    pipe_ = INVALID_HANDLE_VALUE;
-  }
+  if (pipe_.IsValid())
+    pipe_.Close();
+
+  if (input_state_.is_pending)
+    debug_flags_ |= WAIT_FOR_READ;
+
+  if (output_state_.is_pending)
+    debug_flags_ |= WAIT_FOR_WRITE;
 
   // Make sure all IO has completed.
   base::Time start = base::Time::Now();
@@ -107,6 +137,10 @@ base::ProcessId ChannelWin::GetPeerPID() const {
   return peer_pid_;
 }
 
+base::ProcessId ChannelWin::GetSelfPID() const {
+  return GetCurrentProcessId();
+}
+
 // static
 bool ChannelWin::IsNamedServerInitialized(
     const std::string& channel_id) {
@@ -121,11 +155,12 @@ ChannelWin::ReadState ChannelWin::ReadData(
     char* buffer,
     int buffer_len,
     int* /* bytes_read */) {
-  if (INVALID_HANDLE_VALUE == pipe_)
+  if (!pipe_.IsValid())
     return READ_FAILED;
 
+  debug_flags_ |= READ_MSG;
   DWORD bytes_read = 0;
-  BOOL ok = ReadFile(pipe_, buffer, buffer_len,
+  BOOL ok = ReadFile(pipe_.Get(), buffer, buffer_len,
                      &bytes_read, &input_state_.context.overlapped);
   if (!ok) {
     DWORD err = GetLastError();
@@ -196,21 +231,25 @@ const base::string16 ChannelWin::PipeName(
   if (index != std::string::npos) {
     if (secret)  // Retrieve the secret if asked for.
       base::StringToInt(channel_id.substr(index + 1), secret);
-    return base::ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
+    return base::ASCIIToUTF16(name.append(channel_id.substr(0, index - 1)));
   }
 
   // This case is here to support predictable named pipes in tests.
   if (secret)
     *secret = 0;
-  return base::ASCIIToWide(name.append(channel_id));
+  return base::ASCIIToUTF16(name.append(channel_id));
 }
 
 bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
-                                      Mode mode) {
-  DCHECK_EQ(INVALID_HANDLE_VALUE, pipe_);
+                            Mode mode) {
+  DCHECK(!pipe_.IsValid());
   base::string16 pipe_name;
   // If we already have a valid pipe for channel just copy it.
   if (channel_handle.pipe.handle) {
+    // TODO(rvargas) crbug.com/415294: ChannelHandle should either go away in
+    // favor of two independent entities (name/file), or it should be a move-
+    // only type with a base::File member. In any case, this code should not
+    // call DuplicateHandle.
     DCHECK(channel_handle.name.empty());
     pipe_name = L"Not Available";  // Just used for LOG
     // Check that the given pipe confirms to the specified mode.  We can
@@ -224,50 +263,51 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
       LOG(WARNING) << "Inconsistent open mode. Mode :" << mode;
       return false;
     }
+    HANDLE local_handle;
     if (!DuplicateHandle(GetCurrentProcess(),
                          channel_handle.pipe.handle,
                          GetCurrentProcess(),
-                         &pipe_,
+                         &local_handle,
                          0,
                          FALSE,
                          DUPLICATE_SAME_ACCESS)) {
       LOG(WARNING) << "DuplicateHandle failed. Error :" << GetLastError();
       return false;
     }
+    pipe_.Set(local_handle);
   } else if (mode & MODE_SERVER_FLAG) {
     DCHECK(!channel_handle.pipe.handle);
     const DWORD open_mode = PIPE_ACCESS_DUPLEX | FILE_FLAG_OVERLAPPED |
                             FILE_FLAG_FIRST_PIPE_INSTANCE;
     pipe_name = PipeName(channel_handle.name, &client_secret_);
     validate_client_ = !!client_secret_;
-    pipe_ = CreateNamedPipeW(pipe_name.c_str(),
-                             open_mode,
-                             PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
-                             1,
-                             Channel::kReadBufferSize,
-                             Channel::kReadBufferSize,
-                             5000,
-                             NULL);
+    pipe_.Set(CreateNamedPipeW(pipe_name.c_str(),
+                               open_mode,
+                               PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
+                               1,
+                               Channel::kReadBufferSize,
+                               Channel::kReadBufferSize,
+                               5000,
+                               NULL));
   } else if (mode & MODE_CLIENT_FLAG) {
     DCHECK(!channel_handle.pipe.handle);
     pipe_name = PipeName(channel_handle.name, &client_secret_);
-    pipe_ = CreateFileW(pipe_name.c_str(),
-                        GENERIC_READ | GENERIC_WRITE,
-                        0,
-                        NULL,
-                        OPEN_EXISTING,
-                        SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION |
-                            FILE_FLAG_OVERLAPPED,
-                        NULL);
+    pipe_.Set(CreateFileW(pipe_name.c_str(),
+                          GENERIC_READ | GENERIC_WRITE,
+                          0,
+                          NULL,
+                          OPEN_EXISTING,
+                          SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION |
+                              FILE_FLAG_OVERLAPPED,
+                          NULL));
   } else {
     NOTREACHED();
   }
 
-  if (pipe_ == INVALID_HANDLE_VALUE) {
+  if (!pipe_.IsValid()) {
     // If this process is being closed, the pipe may be gone already.
-    LOG(WARNING) << "Unable to create pipe \"" << pipe_name <<
-                    "\" in " << (mode & MODE_SERVER_FLAG ? "server" : "client")
-                    << " mode. Error :" << GetLastError();
+    PLOG(WARNING) << "Unable to create pipe \"" << pipe_name << "\" in "
+                  << (mode & MODE_SERVER_FLAG ? "server" : "client") << " mode";
     return false;
   }
 
@@ -281,10 +321,11 @@ bool ChannelWin::CreatePipe(const IPC::ChannelHandle &channel_handle,
   int32 secret = validate_client_ ? 0 : client_secret_;
   if (!m->WriteInt(GetCurrentProcessId()) ||
       (secret && !m->WriteUInt32(secret))) {
-    CloseHandle(pipe_);
-    pipe_ = INVALID_HANDLE_VALUE;
+    pipe_.Close();
     return false;
   }
+
+  debug_flags_ |= INIT_DONE;
 
   output_queue_.push(m.release());
   return true;
@@ -296,10 +337,10 @@ bool ChannelWin::Connect() {
   if (!thread_check_.get())
     thread_check_.reset(new base::ThreadChecker());
 
-  if (pipe_ == INVALID_HANDLE_VALUE)
+  if (!pipe_.IsValid())
     return false;
 
-  base::MessageLoopForIO::current()->RegisterIOHandler(pipe_, this);
+  base::MessageLoopForIO::current()->RegisterIOHandler(pipe_.Get(), this);
 
   // Check to see if there is a client connected to our pipe...
   if (waiting_connect_)
@@ -329,10 +370,11 @@ bool ChannelWin::ProcessConnection() {
     input_state_.is_pending = false;
 
   // Do we have a client connected to our pipe?
-  if (INVALID_HANDLE_VALUE == pipe_)
+  if (!pipe_.IsValid())
     return false;
 
-  BOOL ok = ConnectNamedPipe(pipe_, &input_state_.context.overlapped);
+  BOOL ok = ConnectNamedPipe(pipe_.Get(), &input_state_.context.overlapped);
+  debug_flags_ |= CALLED_CONNECT;
 
   DWORD err = GetLastError();
   if (ok) {
@@ -345,8 +387,10 @@ bool ChannelWin::ProcessConnection() {
   switch (err) {
   case ERROR_IO_PENDING:
     input_state_.is_pending = true;
+    debug_flags_ |= PENDING_CONNECT;
     break;
   case ERROR_PIPE_CONNECTED:
+    debug_flags_ |= PIPE_CONNECTED;
     waiting_connect_ = false;
     break;
   case ERROR_NO_DATA:
@@ -385,20 +429,25 @@ bool ChannelWin::ProcessOutgoingMessages(
   if (output_queue_.empty())
     return true;
 
-  if (INVALID_HANDLE_VALUE == pipe_)
+  if (!pipe_.IsValid())
     return false;
 
   // Write to pipe...
   Message* m = output_queue_.front();
   DCHECK(m->size() <= INT_MAX);
-  BOOL ok = WriteFile(pipe_,
+  debug_flags_ |= WRITE_MSG;
+  CHECK(!writing_);
+  writing_ = true;
+  write_size_ = static_cast<uint32>(m->size());
+  write_error_ = 0;
+  BOOL ok = WriteFile(pipe_.Get(),
                       m->data(),
-                      static_cast<int>(m->size()),
-                      &bytes_written,
+                      write_size_,
+                      NULL,
                       &output_state_.context.overlapped);
   if (!ok) {
-    DWORD err = GetLastError();
-    if (err == ERROR_IO_PENDING) {
+    write_error_ = GetLastError();
+    if (write_error_ == ERROR_IO_PENDING) {
       output_state_.is_pending = true;
 
       DVLOG(2) << "sent pending message @" << m << " on channel @" << this
@@ -406,7 +455,9 @@ bool ChannelWin::ProcessOutgoingMessages(
 
       return true;
     }
-    LOG(ERROR) << "pipe error: " << err;
+    writing_ = false;
+    last_write_error_ = write_error_;
+    LOG(ERROR) << "pipe error: " << write_error_;
     return false;
   }
 
@@ -425,6 +476,7 @@ void ChannelWin::OnIOCompleted(
   DCHECK(thread_check_->CalledOnValidThread());
   if (context == &input_state_.context) {
     if (waiting_connect_) {
+      debug_flags_ |= CONNECT_COMPLETED;
       if (!ProcessConnection())
         return;
       // We may have some messages queued up to send...
@@ -443,10 +495,15 @@ void ChannelWin::OnIOCompleted(
     // Process the new data.
     if (input_state_.is_pending) {
       // This is the normal case for everything except the initialization step.
+      debug_flags_ |= READ_COMPLETED;
+      if (debug_flags_ & WAIT_FOR_READ) {
+        CHECK(!(debug_flags_ & WAIT_FOR_READ_COMPLETE));
+        debug_flags_ |= WAIT_FOR_READ_COMPLETE;
+      }
       input_state_.is_pending = false;
       if (!bytes_transfered)
         ok = false;
-      else if (pipe_ != INVALID_HANDLE_VALUE)
+      else if (pipe_.IsValid())
         ok = AsyncReadComplete(bytes_transfered);
     } else {
       DCHECK(!bytes_transfered);
@@ -457,9 +514,17 @@ void ChannelWin::OnIOCompleted(
       ok = ProcessIncomingMessages();
   } else {
     DCHECK(context == &output_state_.context);
+    CHECK(writing_);
+    CHECK(output_state_.is_pending);
+    writing_ = false;
+    debug_flags_ |= WRITE_COMPLETED;
+    if (debug_flags_ & WAIT_FOR_WRITE) {
+      CHECK(!(debug_flags_ & WAIT_FOR_WRITE_COMPLETE));
+      debug_flags_ |= WAIT_FOR_WRITE_COMPLETE;
+    }
     ok = ProcessOutgoingMessages(context, bytes_transfered);
   }
-  if (!ok && INVALID_HANDLE_VALUE != pipe_) {
+  if (!ok && pipe_.IsValid()) {
     // We don't want to re-enter Close().
     Close();
     listener()->OnChannelError();

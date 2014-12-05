@@ -41,7 +41,7 @@
 #include "core/rendering/RenderObject.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static IntRect applyScaleWithoutCollapsingToZero(const IntRect& rect, float scale)
 {
@@ -61,36 +61,17 @@ static Node* nodeInsideFrame(Node* node)
     return 0;
 }
 
-// FIXME: SmartClipData is eventually returned via
-// SLookSmartClip.DataExtractionListener:
-// http://img-developer.samsung.com/onlinedocs/sms/com/samsung/android/sdk/look/...
-// however the original author of this change chose to use a string-serialization
-// format (presumably to make IPC easy?).
-// If we're going to use this as a Pickle format, we should at least have the
-// read/write code in one place!
-String SmartClipData::toString()
+IntRect SmartClipData::rect() const
 {
-    if (m_isEmpty)
-        return emptyString();
-
-    const UChar fieldSeparator = 0xFFFE;
-    const UChar rowSeparator = 0xFFFF;
-
-    StringBuilder result;
-    result.append(String::number(m_rect.x()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.y()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.width()));
-    result.append(fieldSeparator);
-    result.append(String::number(m_rect.height()));
-    result.append(fieldSeparator);
-    result.append(m_string);
-    result.append(rowSeparator);
-    return result.toString();
+    return m_rect;
 }
 
-SmartClip::SmartClip(PassRefPtr<LocalFrame> frame)
+const String& SmartClipData::clipData() const
+{
+    return m_string;
+}
+
+SmartClip::SmartClip(PassRefPtrWillBeRawPtr<LocalFrame> frame)
     : m_frame(frame)
 {
 }
@@ -262,18 +243,18 @@ String SmartClip::extractTextFromNode(Node* node)
     int prevYPos = -99999;
 
     StringBuilder result;
-    for (Node* currentNode = node; currentNode; currentNode = NodeTraversal::next(*currentNode, node)) {
-        RenderStyle* style = currentNode->computedStyle();
+    for (Node& currentNode : NodeTraversal::inclusiveDescendantsOf(*node)) {
+        RenderStyle* style = currentNode.computedStyle();
         if (style && style->userSelect() == SELECT_NONE)
             continue;
 
-        if (Node* nodeFromFrame = nodeInsideFrame(currentNode))
+        if (Node* nodeFromFrame = nodeInsideFrame(&currentNode))
             result.append(extractTextFromNode(nodeFromFrame));
 
-        IntRect nodeRect = currentNode->pixelSnappedBoundingBox();
-        if (currentNode->renderer() && !nodeRect.isEmpty()) {
-            if (currentNode->isTextNode()) {
-                String nodeValue = currentNode->nodeValue();
+        IntRect nodeRect = currentNode.pixelSnappedBoundingBox();
+        if (currentNode.renderer() && !nodeRect.isEmpty()) {
+            if (currentNode.isTextNode()) {
+                String nodeValue = currentNode.nodeValue();
 
                 // It's unclear why we blacklist solitary "\n" node values.
                 // Maybe we're trying to ignore <br> tags somehow?
@@ -293,4 +274,4 @@ String SmartClip::extractTextFromNode(Node* node)
     return result.toString();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -42,6 +42,7 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
 
   virtual bool CanResize() const = 0;
   virtual bool CanMaximize() const = 0;
+  virtual bool CanMinimize() const = 0;
   virtual bool CanActivate() const = 0;
 
   virtual bool WidgetSizeIsClientSize() const = 0;
@@ -203,11 +204,6 @@ class VIEWS_EXPORT HWNDMessageHandlerDelegate {
   virtual bool HandleTooltipNotify(int w_param,
                                    NMHDR* l_param,
                                    LRESULT* l_result) = 0;
-
-  // Called to forward mouse events to the tooltip manager.
-  virtual void HandleTooltipMouseMove(UINT message,
-                                      WPARAM w_param,
-                                      LPARAM l_param) = 0;
 
   // Invoked on entering/exiting a menu loop.
   virtual void HandleMenuLoop(bool in_menu_loop) = 0;

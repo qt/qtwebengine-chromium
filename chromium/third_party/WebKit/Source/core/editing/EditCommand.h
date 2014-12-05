@@ -30,15 +30,10 @@
 #include "core/editing/VisibleSelection.h"
 #include "platform/heap/Handle.h"
 
-#ifndef NDEBUG
-#include "wtf/HashSet.h"
-#endif
-
-namespace WebCore {
+namespace blink {
 
 class CompositeEditCommand;
 class Document;
-class Element;
 
 class EditCommand : public RefCountedWillBeGarbageCollectedFinalized<EditCommand> {
 public:
@@ -91,11 +86,11 @@ protected:
     explicit SimpleEditCommand(Document& document) : EditCommand(document) { }
 
 private:
-    virtual bool isSimpleEditCommand() const OVERRIDE FINAL { return true; }
+    virtual bool isSimpleEditCommand() const override final { return true; }
 };
 
 DEFINE_TYPE_CASTS(SimpleEditCommand, EditCommand, command, command->isSimpleEditCommand(), command.isSimpleEditCommand());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EditCommand_h

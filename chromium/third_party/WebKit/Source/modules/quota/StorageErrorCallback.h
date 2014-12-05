@@ -33,36 +33,38 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "wtf/PassOwnPtr.h"
+#include "platform/heap/Handle.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class DOMError;
 
 typedef int ExceptionCode;
 
-class StorageErrorCallback {
+class StorageErrorCallback : public GarbageCollectedFinalized<StorageErrorCallback> {
 public:
     virtual ~StorageErrorCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(DOMError*) = 0;
 
-    class CallbackTask FINAL : public ExecutionContextTask {
+    class CallbackTask final : public ExecutionContextTask {
     public:
-        static PassOwnPtr<CallbackTask> create(PassOwnPtr<StorageErrorCallback> callback, ExceptionCode ec)
+        static PassOwnPtr<CallbackTask> create(StorageErrorCallback* callback, ExceptionCode ec)
         {
             return adoptPtr(new CallbackTask(callback, ec));
         }
 
-        virtual void performTask(ExecutionContext*) OVERRIDE;
+        virtual void performTask(ExecutionContext*) override;
 
     private:
-        CallbackTask(PassOwnPtr<StorageErrorCallback>, ExceptionCode);
+        CallbackTask(StorageErrorCallback*, ExceptionCode);
 
-        OwnPtr<StorageErrorCallback> m_callback;
+        Persistent<StorageErrorCallback> m_callback;
         ExceptionCode m_ec;
     };
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StorageErrorCallback_h

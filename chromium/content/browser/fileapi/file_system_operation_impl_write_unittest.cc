@@ -18,21 +18,21 @@
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_job_factory_impl.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/blob/blob_url_request_job.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
+#include "storage/browser/fileapi/file_system_operation_context.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
+#include "storage/browser/fileapi/local_file_util.h"
+#include "storage/common/blob/blob_data.h"
+#include "storage/common/fileapi/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/blob/blob_url_request_job.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation_context.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
-#include "webkit/browser/fileapi/local_file_util.h"
-#include "webkit/common/blob/blob_data.h"
-#include "webkit/common/fileapi/file_system_util.h"
 
-using fileapi::FileSystemOperation;
-using fileapi::FileSystemOperationRunner;
-using fileapi::FileSystemURL;
+using storage::FileSystemOperation;
+using storage::FileSystemOperationRunner;
+using storage::FileSystemURL;
 using content::MockBlobURLRequestContext;
 using content::ScopedTextBlob;
 
@@ -41,7 +41,7 @@ namespace content {
 namespace {
 
 const GURL kOrigin("http://example.com");
-const fileapi::FileSystemType kFileSystemType = fileapi::kFileSystemTypeTest;
+const storage::FileSystemType kFileSystemType = storage::kFileSystemTypeTest;
 
 void AssertStatusEq(base::File::Error expected,
                     base::File::Error actual) {
@@ -59,11 +59,11 @@ class FileSystemOperationImplWriteTest
         bytes_written_(0),
         complete_(false),
         weak_factory_(this) {
-    change_observers_ = fileapi::MockFileChangeObserver::CreateList(
-        &change_observer_);
+    change_observers_ =
+        storage::MockFileChangeObserver::CreateList(&change_observer_);
   }
 
-  virtual void SetUp() {
+  void SetUp() override {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
 
     quota_manager_ =
@@ -88,7 +88,7 @@ class FileSystemOperationImplWriteTest
         ->AddFileChangeObserver(change_observer());
   }
 
-  virtual void TearDown() {
+  void TearDown() override {
     quota_manager_ = NULL;
     file_system_context_ = NULL;
     base::RunLoop().RunUntilIdle();
@@ -105,11 +105,11 @@ class FileSystemOperationImplWriteTest
   bool complete() const { return complete_; }
 
  protected:
-  const fileapi::ChangeObserverList& change_observers() const {
+  const storage::ChangeObserverList& change_observers() const {
     return change_observers_;
   }
 
-  fileapi::MockFileChangeObserver* change_observer() {
+  storage::MockFileChangeObserver* change_observer() {
     return &change_observer_;
   }
 
@@ -152,7 +152,7 @@ class FileSystemOperationImplWriteTest
     return *url_request_context_;
   }
 
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
   scoped_refptr<MockQuotaManager> quota_manager_;
 
   base::MessageLoopForIO loop_;
@@ -168,8 +168,8 @@ class FileSystemOperationImplWriteTest
 
   scoped_ptr<MockBlobURLRequestContext> url_request_context_;
 
-  fileapi::MockFileChangeObserver change_observer_;
-  fileapi::ChangeObserverList change_observers_;
+  storage::MockFileChangeObserver change_observer_;
+  storage::ChangeObserverList change_observers_;
 
   base::WeakPtrFactory<FileSystemOperationImplWriteTest> weak_factory_;
 
@@ -209,7 +209,7 @@ TEST_F(FileSystemOperationImplWriteTest, TestWriteZero) {
 
 
 TEST_F(FileSystemOperationImplWriteTest, TestWriteInvalidBlobUrl) {
-  scoped_ptr<webkit_blob::BlobDataHandle> null_handle;
+  scoped_ptr<storage::BlobDataHandle> null_handle;
   file_system_context_->operation_runner()->Write(
       &url_request_context(), URLForPath(virtual_path_),
       null_handle.Pass(), 0, RecordWriteCallback());

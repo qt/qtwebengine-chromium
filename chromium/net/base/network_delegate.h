@@ -35,6 +35,9 @@ namespace net {
 class CookieOptions;
 class HttpRequestHeaders;
 class HttpResponseHeaders;
+class ProxyInfo;
+class ProxyServer;
+class ProxyService;
 class SocketStream;
 class URLRequest;
 
@@ -60,9 +63,18 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   int NotifyBeforeURLRequest(URLRequest* request,
                              const CompletionCallback& callback,
                              GURL* new_url);
+  void NotifyResolveProxy(const GURL& url,
+                          int load_flags,
+                          const ProxyService& proxy_service,
+                          ProxyInfo* result);
+  void NotifyProxyFallback(const ProxyServer& bad_proxy,
+                           int net_error);
   int NotifyBeforeSendHeaders(URLRequest* request,
                               const CompletionCallback& callback,
                               HttpRequestHeaders* headers);
+  void NotifyBeforeSendProxyHeaders(URLRequest* request,
+                                    const ProxyInfo& proxy_info,
+                                    HttpRequestHeaders* headers);
   void NotifySendHeaders(URLRequest* request,
                          const HttpRequestHeaders& headers);
   int NotifyHeadersReceived(
@@ -96,6 +108,11 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   int NotifyBeforeSocketStreamConnect(SocketStream* socket,
                                       const CompletionCallback& callback);
 
+  bool CancelURLRequestWithPolicyViolatingReferrerHeader(
+      const URLRequest& request,
+      const GURL& target_url,
+      const GURL& referrer_url) const;
+
  private:
   // This is the interface for subclasses of NetworkDelegate to implement. These
   // member functions will be called by the respective public notification
@@ -117,6 +134,21 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
                                  const CompletionCallback& callback,
                                  GURL* new_url);
 
+  // Called as the proxy is being resolved for |url|. Allows the delegate to
+  // override the proxy resolution decision made by ProxyService. The delegate
+  // may override the decision by modifying the ProxyInfo |result|.
+  virtual void OnResolveProxy(const GURL& url,
+                              int load_flags,
+                              const ProxyService& proxy_service,
+                              ProxyInfo* result);
+
+  // Called when use of |bad_proxy| fails due to |net_error|. |net_error| is
+  // the network error encountered, if any, and OK if the fallback was
+  // for a reason other than a network error (e.g. the proxy service was
+  // explicitly directed to skip a proxy).
+  virtual void OnProxyFallback(const ProxyServer& bad_proxy,
+                               int net_error);
+
   // Called right before the HTTP headers are sent. Allows the delegate to
   // read/write |headers| before they get sent out. |callback| and |headers| are
   // valid only until OnCompleted or OnURLRequestDestroyed is called for this
@@ -125,6 +157,13 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   virtual int OnBeforeSendHeaders(URLRequest* request,
                                   const CompletionCallback& callback,
                                   HttpRequestHeaders* headers);
+
+  // Called after a proxy connection. Allows the delegate to read/write
+  // |headers| before they get sent out. |headers| is valid only until
+  // OnCompleted or OnURLRequestDestroyed is called for this request.
+  virtual void OnBeforeSendProxyHeaders(URLRequest* request,
+                                        const ProxyInfo& proxy_info,
+                                        HttpRequestHeaders* headers);
 
   // Called right before the HTTP request(s) are being sent to the network.
   // |headers| is only valid until OnCompleted or OnURLRequestDestroyed is
@@ -236,6 +275,16 @@ class NET_EXPORT NetworkDelegate : public base::NonThreadSafe {
   // See OnBeforeURLRequest for return value description. Returns OK by default.
   virtual int OnBeforeSocketStreamConnect(
       SocketStream* socket, const CompletionCallback& callback);
+
+  // Called when the |referrer_url| for requesting |target_url| during handling
+  // of the |request| is does not comply with the referrer policy (e.g. a
+  // secure referrer for an insecure initial target).
+  // Returns true if the request should be cancelled. Otherwise, the referrer
+  // header is stripped from the request.
+  virtual bool OnCancelURLRequestWithPolicyViolatingReferrerHeader(
+      const URLRequest& request,
+      const GURL& target_url,
+      const GURL& referrer_url) const;
 };
 
 }  // namespace net

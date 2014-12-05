@@ -32,22 +32,24 @@ static bool IsMSESupported() {
 
 class MediaSourceTest : public content::MediaBrowserTest {
  public:
-  void TestSimplePlayback(const char* media_file, const char* media_type,
-                          const char* expectation) {
+  void TestSimplePlayback(const std::string& media_file,
+                          const std::string& media_type,
+                          const std::string& expectation) {
     if (!IsMSESupported()) {
       VLOG(0) << "Skipping test - MSE not supported.";
       return;
     }
 
-    std::vector<StringPair> query_params;
-    query_params.push_back(std::make_pair("mediafile", media_file));
-    query_params.push_back(std::make_pair("mediatype", media_type));
-    RunMediaTestPage("media_source_player.html", &query_params, expectation,
+    base::StringPairs query_params;
+    query_params.push_back(std::make_pair("mediaFile", media_file));
+    query_params.push_back(std::make_pair("mediaType", media_type));
+    query_params.push_back(std::make_pair("usePrefixedEME", "1"));
+    RunMediaTestPage("media_source_player.html", query_params, expectation,
                      true);
   }
 
 #if defined(OS_ANDROID)
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
+  virtual void SetUpCommandLine(CommandLine* command_line) override {
     command_line->AppendSwitch(
         switches::kDisableGestureRequirementForMediaPlayback);
   }
@@ -84,7 +86,9 @@ IN_PROC_BROWSER_TEST_F(MediaSourceTest, ConfigChangeVideo) {
     VLOG(0) << "Skipping test - MSE not supported.";
     return;
   }
-  RunMediaTestPage("mse_config_change.html", NULL, kEnded, true);
+  base::StringPairs query_params;
+  query_params.push_back(std::make_pair("usePrefixedEME", "1"));
+  RunMediaTestPage("mse_config_change.html", query_params, kEnded, true);
 }
 
 }  // namespace content

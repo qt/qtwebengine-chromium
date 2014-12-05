@@ -137,7 +137,8 @@ void MediaInternalsProxy::StopObservingMediaInternalsOnIOThread() {
 
 void MediaInternalsProxy::GetEverythingOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  MediaInternals::GetInstance()->SendEverything();
+  MediaInternals::GetInstance()->SendAudioStreamData();
+  MediaInternals::GetInstance()->SendVideoCaptureDeviceCapabilities();
 }
 
 void MediaInternalsProxy::UpdateUIOnUIThread(const base::string16& update) {

@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/process/process_handle.h"
 #include "net/test/spawned_test_server/base_test_server.h"
@@ -38,7 +38,7 @@ class LocalTestServer : public BaseTestServer {
                   const SSLOptions& ssl_options,
                   const base::FilePath& document_root);
 
-  virtual ~LocalTestServer();
+  ~LocalTestServer() override;
 
   // Start the test server and block until it's ready. Returns true on success.
   bool Start() WARN_UNUSED_RESULT;
@@ -96,9 +96,6 @@ class LocalTestServer : public BaseTestServer {
   base::ProcessHandle process_handle_;
 
 #if defined(OS_WIN)
-  // JobObject used to clean up orphaned child processes.
-  base::win::ScopedHandle job_handle_;
-
   // The pipe file handle we read from.
   base::win::ScopedHandle child_read_fd_;
 

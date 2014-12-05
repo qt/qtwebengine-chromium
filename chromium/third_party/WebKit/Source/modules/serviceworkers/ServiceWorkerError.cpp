@@ -34,10 +34,11 @@
 #include "core/dom/ExceptionCode.h"
 
 using blink::WebServiceWorkerError;
-namespace WebCore {
+
+namespace blink {
 
 // static
-PassRefPtrWillBeRawPtr<DOMException> ServiceWorkerError::from(ScriptPromiseResolverWithContext*, WebType* webErrorRaw)
+PassRefPtrWillBeRawPtr<DOMException> ServiceWorkerError::take(ScriptPromiseResolver*, WebType* webErrorRaw)
 {
     OwnPtr<WebType> webError = adoptPtr(webErrorRaw);
     switch (webError->errorType) {
@@ -54,6 +55,8 @@ PassRefPtrWillBeRawPtr<DOMException> ServiceWorkerError::from(ScriptPromiseResol
         // Not currently returned as a promise rejection.
         // FIXME: Introduce new ActivateError type to ExceptionCodes?
         return DOMException::create(AbortError, "The Service Worker activation failed.");
+    case WebServiceWorkerError::ErrorTypeNetwork:
+        return DOMException::create(NetworkError, "The Service Worker failed by network.");
     case WebServiceWorkerError::ErrorTypeNotFound:
         return DOMException::create(NotFoundError, "The specified Service Worker resource was not found.");
     case WebServiceWorkerError::ErrorTypeUnknown:
@@ -63,4 +66,10 @@ PassRefPtrWillBeRawPtr<DOMException> ServiceWorkerError::from(ScriptPromiseResol
     return DOMException::create(UnknownError);
 }
 
-} // namespace WebCore
+// static
+void ServiceWorkerError::dispose(WebType* webErrorRaw)
+{
+    delete webErrorRaw;
+}
+
+} // namespace blink

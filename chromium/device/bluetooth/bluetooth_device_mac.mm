@@ -29,6 +29,8 @@
 namespace device {
 namespace {
 
+const char kApiUnavailable[] = "This API is not implemented on this platform.";
+
 // Returns the first (should be, only) UUID contained within the
 // |service_class_data|. Returns an invalid (empty) UUID if none is found.
 BluetoothUUID ExtractUuid(IOBluetoothSDPDataElement* service_class_data) {
@@ -61,18 +63,6 @@ BluetoothDeviceMac::BluetoothDeviceMac(IOBluetoothDevice* device)
 }
 
 BluetoothDeviceMac::~BluetoothDeviceMac() {
-}
-
-void BluetoothDeviceMac::AddObserver(
-    device::BluetoothDevice::Observer* observer) {
-  DCHECK(observer);
-  observers_.AddObserver(observer);
-}
-
-void BluetoothDeviceMac::RemoveObserver(
-    device::BluetoothDevice::Observer* observer) {
-  DCHECK(observer);
-  observers_.RemoveObserver(observer);
 }
 
 uint32 BluetoothDeviceMac::GetBluetoothClass() const {
@@ -219,6 +209,13 @@ void BluetoothDeviceMac::ConnectToService(
       device_.get(), uuid, base::Bind(callback, socket), error_callback);
 }
 
+void BluetoothDeviceMac::ConnectToServiceInsecurely(
+      const BluetoothUUID& uuid,
+      const ConnectToServiceCallback& callback,
+      const ConnectToServiceErrorCallback& error_callback) {
+  error_callback.Run(kApiUnavailable);
+}
+
 void BluetoothDeviceMac::CreateGattConnection(
       const GattConnectionCallback& callback,
       const ConnectErrorCallback& error_callback) {
@@ -230,6 +227,10 @@ void BluetoothDeviceMac::StartConnectionMonitor(
     const base::Closure& callback,
     const ErrorCallback& error_callback) {
   NOTIMPLEMENTED();
+}
+
+NSDate* BluetoothDeviceMac::GetLastInquiryUpdate() {
+  return [device_ getLastInquiryUpdate];
 }
 
 int BluetoothDeviceMac::GetHostTransmitPower(

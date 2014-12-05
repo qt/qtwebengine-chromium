@@ -2,21 +2,26 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 {
+  'includes': ['src/cpp/libaddressinput.gypi'],
   'variables': {
-    # TODO(rouslan): Use the src/ directory. http://crbug.com/327046
-    'libaddressinput_dir': 'chromium',
-  },
-  'target_defaults': {
-    'conditions': [
-      ['OS=="mac" or OS=="ios"', {
-        'xcode_settings': {
-          'GCC_WARN_ABOUT_MISSING_NEWLINE': 'NO',
-        },
-      }],
-    ],
-    'defines': [
-      'CUSTOM_BASICTYPES="base/basictypes.h"',
-      'CUSTOM_SCOPED_PTR="base/memory/scoped_ptr.h"',
+    'libaddressinput_test_data_dir%': 'src/third_party/libaddressinput/src/testdata',
+    'libaddressinput_util_files': [
+      'src/cpp/src/address_data.cc',
+      'src/cpp/src/address_field.cc',
+      'src/cpp/src/address_field_util.cc',
+      'src/cpp/src/address_formatter.cc',
+      'src/cpp/src/address_metadata.cc',
+      'src/cpp/src/address_ui.cc',
+      'src/cpp/src/format_element.cc',
+      'src/cpp/src/language.cc',
+      'src/cpp/src/localization.cc',
+      'src/cpp/src/lookup_key.cc',
+      'src/cpp/src/region_data_constants.cc',
+      'src/cpp/src/rule.cc',
+      'src/cpp/src/util/cctype_tolower_equal.cc',
+      'src/cpp/src/util/json.cc',
+      'src/cpp/src/util/string_split.cc',
+      'src/cpp/src/util/string_util.cc',
     ],
   },
   'targets': [
@@ -25,197 +30,172 @@
       'type': 'none',
       'variables': {
         'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/third_party/libaddressinput/',
+        'grit_grd_file': '../../chrome/app/address_input_strings.grd',
       },
       'actions': [
         {
           'action_name': 'libaddressinput_strings',
           'variables': {
-            'grit_grd_file': '<(libaddressinput_dir)/cpp/res/libaddressinput_strings.grd',
           },
           'includes': [
             '../../build/grit_action.gypi',
           ],
         },
-      ],
-      'includes': [
-        '../../build/grit_target.gypi',
-      ],
-    },
-    {
-      'target_name': 'libaddressinput_updated_strings',
-      'type': 'none',
-      'variables': {
-        'grit_out_dir': '<(SHARED_INTERMEDIATE_DIR)/grit/libaddressinput/',
-      },
-      'actions': [
-        {
-          'action_name': 'libaddressinput_updated_strings',
-          'variables': {
-            'grit_grd_file': '../../chrome/app/address_input_strings.grd',
-          },
-          'includes': [
-            '../../build/grit_action.gypi',
-          ],
-        },
-      ],
-      'includes': [
-        '../../build/grit_target.gypi',
-      ],
-    },
-    # This target provides basic functionality which is cooked into the build.
-    { 'target_name': 'libaddressinput_util',
-      'type': 'static_library',
-      'include_dirs': [
-        '<(libaddressinput_dir)/cpp/include/',
-        '<(SHARED_INTERMEDIATE_DIR)/libaddressinput/',
-      ],
-      'sources': [
-        'chromium/canonicalize_string.cc',
-        'chromium/json.cc',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_data.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_field.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/basictypes.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/internal/basictypes.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/internal/move.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/internal/scoped_ptr.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/internal/template_util.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/util/scoped_ptr.h',
-        '<(libaddressinput_dir)/cpp/src/address_data.cc',
-        '<(libaddressinput_dir)/cpp/src/address_field.cc',
-        '<(libaddressinput_dir)/cpp/src/region_data_constants.cc',
-        '<(libaddressinput_dir)/cpp/src/region_data_constants.h',
-        '<(libaddressinput_dir)/cpp/src/rule.cc',
-        '<(libaddressinput_dir)/cpp/src/rule.h',
-        '<(libaddressinput_dir)/cpp/src/util/canonicalize_string.h',
-        '<(libaddressinput_dir)/cpp/src/util/json.h',
-        '<(libaddressinput_dir)/cpp/src/util/stl_util.h',
-        '<(libaddressinput_dir)/cpp/src/util/string_util.cc',
-        '<(libaddressinput_dir)/cpp/src/util/string_util.h',
-      ],
-      'dependencies': [
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
-        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
-        '<(DEPTH)/third_party/re2/re2.gyp:re2',
       ],
       'direct_dependent_settings': {
-        'defines': [
-          'CUSTOM_BASICTYPES="base/basictypes.h"',
-          'CUSTOM_SCOPED_PTR="base/memory/scoped_ptr.h"',
-        ],
+        # Files in libaddressinput include the grit-generated en_messages.cc
+        # without knowing its path.
         'include_dirs': [
-          '<(libaddressinput_dir)/cpp/include/',
+          '<(grit_out_dir)',
         ],
       },
     },
-    # This target provides more complicated functionality like pinging servers
-    # for validation rules.
+    {
+      'target_name': 'libaddressinput_util',
+      'type': 'static_library',
+      'sources': [
+        '<@(libaddressinput_util_files)',
+        'chromium/addressinput_util.cc',
+        'chromium/json.cc',
+      ],
+      'sources!': [
+        'src/cpp/src/util/json.cc',
+      ],
+      'conditions': [
+        ['OS=="mac" or OS=="ios"', {
+          # localization.cc in libaddressinput_util_files includes
+          # grit-generated en_messages.cc, which does not have a newline.
+          'xcode_settings': {
+            'GCC_WARN_ABOUT_MISSING_NEWLINE': 'NO',
+          },
+        }],
+      ],
+      'include_dirs': [
+        'chromium/override/',
+        'src/cpp/include/',
+      ],
+      'defines': [
+        'I18N_ADDRESSINPUT_USE_BASICTYPES_OVERRIDE=1',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          'chromium/override/',
+          'src/cpp/include/',
+        ],
+        'defines': [
+          'I18N_ADDRESSINPUT_USE_BASICTYPES_OVERRIDE=1',
+        ],
+      },
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../re2/re2.gyp:re2',
+        'libaddressinput_strings',
+      ],
+      'export_dependent_settings': [
+        'libaddressinput_strings',
+      ],
+    },
     {
       'target_name': 'libaddressinput',
       'type': 'static_library',
-      'include_dirs': [
-        '<(libaddressinput_dir)/cpp/include/',
-        '<(SHARED_INTERMEDIATE_DIR)/libaddressinput/',
-      ],
       'sources': [
-        'chromium/chrome_downloader_impl.cc',
-        'chromium/chrome_downloader_impl.h',
+        '<@(libaddressinput_files)',
+        'chromium/chrome_address_validator.cc',
+        'chromium/chrome_metadata_source.cc',
         'chromium/chrome_storage_impl.cc',
-        'chromium/chrome_storage_impl.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_problem.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_ui_component.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_ui.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/address_validator.h',
-        '<(libaddressinput_dir)/cpp/include/libaddressinput/load_rules_delegate.h',
-        '<(libaddressinput_dir)/cpp/src/address_problem.cc',
-        '<(libaddressinput_dir)/cpp/src/address_ui.cc',
-        '<(libaddressinput_dir)/cpp/src/address_validator.cc',
-        '<(libaddressinput_dir)/cpp/src/country_rules_aggregator.cc',
-        '<(libaddressinput_dir)/cpp/src/country_rules_aggregator.h',
-        '<(libaddressinput_dir)/cpp/src/fallback_data_store.cc',
-        '<(libaddressinput_dir)/cpp/src/fallback_data_store.h',
-        '<(libaddressinput_dir)/cpp/src/grit.h',
-        '<(libaddressinput_dir)/cpp/src/retriever.cc',
-        '<(libaddressinput_dir)/cpp/src/retriever.h',
-        '<(libaddressinput_dir)/cpp/src/ruleset.cc',
-        '<(libaddressinput_dir)/cpp/src/ruleset.h',
-        '<(libaddressinput_dir)/cpp/src/util/md5.cc',
-        '<(libaddressinput_dir)/cpp/src/util/md5.h',
-        '<(libaddressinput_dir)/cpp/src/util/trie.cc',
-        '<(libaddressinput_dir)/cpp/src/util/trie.h',
+        'chromium/fallback_data_store.cc',
+        'chromium/input_suggester.cc',
+        'chromium/string_compare.cc',
+        'chromium/trie.cc',
       ],
-      'defines': [
-        'VALIDATION_DATA_URL="https://i18napis.appspot.com/ssl-aggregate-address/"',
-      ],
-      'dependencies': [
-        'libaddressinput_strings',
-        'libaddressinput_updated_strings',
-        'libaddressinput_util',
-        '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/base/base.gyp:base_i18n',
-        '<(DEPTH)/third_party/icu/icu.gyp:icui18n',
-        '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
-        '<(DEPTH)/third_party/re2/re2.gyp:re2',
+      'sources!': [
+        '<@(libaddressinput_util_files)',
+        'src/cpp/src/util/string_compare.cc',
       ],
       'direct_dependent_settings': {
         'defines': [
-          'CUSTOM_BASICTYPES="base/basictypes.h"',
-          'CUSTOM_SCOPED_PTR="base/memory/scoped_ptr.h"',
-        ],
-        'include_dirs': [
-          '<(libaddressinput_dir)/cpp/include/',
+          'I18N_ADDRESS_VALIDATION_DATA_URL="https://i18napis.appspot.com/ssl-aggregate-address/"',
         ],
       },
+      'dependencies': [
+        '../../base/base.gyp:base',
+        '../../base/base.gyp:base_prefs',
+        '../../net/net.gyp:net',
+        '../icu/icu.gyp:icui18n',
+        '../icu/icu.gyp:icuuc',
+        '../re2/re2.gyp:re2',
+        'libaddressinput_util',
+      ],
+      'export_dependent_settings': [
+        'libaddressinput_util',
+      ],
     },
     {
       'target_name': 'libaddressinput_unittests',
       'type': '<(gtest_target_type)',
-      'include_dirs': [
-        '<(DEPTH)',
-        '<(libaddressinput_dir)/cpp/src/',
-        '<(DEPTH)/testing/gtest/include/',
-        '<(SHARED_INTERMEDIATE_DIR)/libaddressinput/',
-      ],
       'sources': [
-        'chromium/chrome_downloader_impl_unittest.cc',
-        'chromium/chrome_rule_test.cc',
+        '<@(libaddressinput_test_files)',
+        'chromium/addressinput_util_unittest.cc',
+        'chromium/chrome_address_validator_unittest.cc',
+        'chromium/chrome_metadata_source_unittest.cc',
         'chromium/chrome_storage_impl_unittest.cc',
-        '<(libaddressinput_dir)/cpp/test/address_data_test.cc',
-        '<(libaddressinput_dir)/cpp/test/address_ui_test.cc',
-        '<(libaddressinput_dir)/cpp/test/address_validator_test.cc',
-        '<(libaddressinput_dir)/cpp/test/country_rules_aggregator_test.cc',
-        '<(libaddressinput_dir)/cpp/test/countryinfo_example_addresses_test.cc',
-        '<(libaddressinput_dir)/cpp/test/fake_downloader.cc',
-        '<(libaddressinput_dir)/cpp/test/fake_downloader.h',
-        '<(libaddressinput_dir)/cpp/test/fake_downloader_test.cc',
-        '<(libaddressinput_dir)/cpp/test/fake_storage.cc',
-        '<(libaddressinput_dir)/cpp/test/fake_storage.h',
-        '<(libaddressinput_dir)/cpp/test/fake_storage_test.cc',
-        '<(libaddressinput_dir)/cpp/test/fallback_data_store_test.cc',
-        '<(libaddressinput_dir)/cpp/test/region_data_constants_test.cc',
-        '<(libaddressinput_dir)/cpp/test/retriever_test.cc',
-        '<(libaddressinput_dir)/cpp/test/rule_test.cc',
-        '<(libaddressinput_dir)/cpp/test/storage_test_runner.cc',
-        '<(libaddressinput_dir)/cpp/test/storage_test_runner.h',
-        '<(libaddressinput_dir)/cpp/test/util/json_test.cc',
-        '<(libaddressinput_dir)/cpp/test/util/md5_unittest.cc',
-        '<(libaddressinput_dir)/cpp/test/util/scoped_ptr_unittest.cc',
-        '<(libaddressinput_dir)/cpp/test/util/stl_util_unittest.cc',
-        '<(libaddressinput_dir)/cpp/test/util/string_util_test.cc',
-        '<(libaddressinput_dir)/cpp/test/util/trie_test.cc',
+        'chromium/fallback_data_store_unittest.cc',
+        'chromium/storage_test_runner.cc',
+        'chromium/string_compare_unittest.cc',
+        'chromium/trie_unittest.cc',
       ],
       'defines': [
-        'TEST_DATA_DIR="third_party/libaddressinput/src/testdata"',
+        'TEST_DATA_DIR="<(libaddressinput_test_data_dir)"',
+      ],
+      'include_dirs': [
+        '../../',
+        'src/cpp/src/',
       ],
       'dependencies': [
+        '../../base/base.gyp:base_prefs',
+        '../../base/base.gyp:run_all_unittests',
+        '../../net/net.gyp:net_test_support',
+        '../../testing/gtest.gyp:gtest',
         'libaddressinput',
-        'libaddressinput_strings',
-        '<(DEPTH)/base/base.gyp:base_prefs',
-        '<(DEPTH)/base/base.gyp:run_all_unittests',
-        '<(DEPTH)/net/net.gyp:net_test_support',
-        '<(DEPTH)/testing/gtest.gyp:gtest',
+        'libaddressinput_util',
       ],
     },
+  ],
+  'conditions': [
+    ['OS=="android"', {
+      'targets': [
+        {
+          # GN: //third_party/libaddressinput:libaddressinput_android_strings_grd
+          'target_name': 'libaddressinput_android_strings_grd',
+          'type': 'none',
+          'android_unmangled_name': 1,
+          'variables': {
+            'grd_file': '../../chrome/app/address_input_strings_android.grd',
+          },
+          'includes': [
+            '../../build/java_strings_grd.gypi',
+          ],
+        },
+        {
+          # GN: //third_party/libaddressinput:android_addressinput_widget_java
+          'target_name': 'android_addressinput_widget',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': 'src/java',
+            'never_lint': 1,
+            'res_v14_verify_only': 1,
+            'has_java_resources': 1,
+            'R_package': 'com.android.i18n.addressinput',
+            'R_package_relpath': 'com/android/i18n/addressinput',
+          },
+          'includes': [
+            '../../build/java.gypi',
+          ],
+          'dependencies': [
+            'libaddressinput_android_strings_grd',
+          ],
+        },
+      ],
+    },],
   ],
 }

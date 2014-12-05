@@ -37,9 +37,7 @@ WebInspector.GoToLineDialog = function(sourceFrame)
 {
     WebInspector.DialogDelegate.call(this);
 
-    this.element = document.createElement("div");
-    this.element.className = "go-to-line-dialog";
-
+    this.element = createElementWithClass("div", "go-to-line-dialog");
     this.element.createChild("label").textContent = WebInspector.UIString("Go to line: ");
 
     this._input = this.element.createChild("input");
@@ -65,7 +63,7 @@ WebInspector.GoToLineDialog.install = function(panel, sourceFrameGetter)
 
 /**
  * @param {function():?WebInspector.SourceFrame} sourceFrameGetter
- * @param {?Event=} event
+ * @param {!Event=} event
  * @return {boolean}
  */
 WebInspector.GoToLineDialog._show = function(sourceFrameGetter, event)

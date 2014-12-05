@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/fileapi/Blob.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/DOMURL.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
@@ -39,14 +39,14 @@
 #include "platform/blob/BlobRegistry.h"
 #include "platform/blob/BlobURL.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
-class BlobURLRegistry FINAL : public URLRegistry {
+class BlobURLRegistry final : public URLRegistry {
 public:
-    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) OVERRIDE;
-    virtual void unregisterURL(const KURL&) OVERRIDE;
+    virtual void registerURL(SecurityOrigin*, const KURL&, URLRegistrable*) override;
+    virtual void unregisterURL(const KURL&) override;
 
     static URLRegistry& registry();
 };
@@ -75,7 +75,6 @@ Blob::Blob(PassRefPtr<BlobDataHandle> dataHandle)
     : m_blobDataHandle(dataHandle)
     , m_hasBeenClosed(false)
 {
-    ScriptWrappable::init(this);
 }
 
 Blob::~Blob()
@@ -106,7 +105,7 @@ void Blob::clampSliceOffsets(long long size, long long& start, long long& end)
         end = size;
 }
 
-PassRefPtrWillBeRawPtr<Blob> Blob::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
+Blob* Blob::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
 {
     if (hasBeenClosed()) {
         exceptionState.throwDOMException(InvalidStateError, "Blob has been closed.");
@@ -155,4 +154,4 @@ URLRegistry& Blob::registry() const
     return BlobURLRegistry::registry();
 }
 
-} // namespace WebCore
+} // namespace blink

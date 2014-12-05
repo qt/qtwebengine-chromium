@@ -1,7 +1,7 @@
 /*
 *******************************************************************************
 *
-*   Copyright (C) 2002-2009, International Business Machines
+*   Copyright (C) 2002-2012, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 *
 *******************************************************************************
@@ -33,6 +33,8 @@
 #include "ustr.h"
 #include "prscmnts.h"
 #include "unicode/unistr.h"
+#include "unicode/utf8.h"
+#include "unicode/utf16.h"
 #include <time.h>
 
 U_NAMESPACE_USE
@@ -251,7 +253,7 @@ static char* convertAndEscape(char** pDest, int32_t destCap, int32_t* destLength
             return NULL;
         }
 
-        if((destLen+UTF8_CHAR_LENGTH(c)) < destCap){
+        if((destLen+U8_LENGTH(c)) < destCap){
 
             /* ASCII Range */
             if(c <=0x007F){
@@ -674,12 +676,10 @@ array_write_xml(struct SResource *res, const char* id, const char* language, UEr
     int index = 0;
 
     struct SResource *current = NULL;
-    struct SResource *first =NULL;
 
     sid = printContainer(res, group, array_restype, NULL, id, status);
 
     current = res->u.fArray.fFirst;
-    first=current;
 
     while (current != NULL) {
         char c[256] = {0};
@@ -910,7 +910,6 @@ table_write_xml(struct SResource *res, const char* id, const char* language, UBo
     uint32_t  i         = 0;
 
     struct SResource *current = NULL;
-    struct SResource *save = NULL;
     char* sid = NULL;
 
     if (U_FAILURE(*status)) {
@@ -923,7 +922,7 @@ table_write_xml(struct SResource *res, const char* id, const char* language, UBo
         sid[0] = '\0';
     }
 
-    save = current = res->u.fTable.fFirst;
+    current = res->u.fTable.fFirst;
     i = 0;
 
     while (current != NULL) {

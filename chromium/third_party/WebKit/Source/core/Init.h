@@ -31,24 +31,26 @@
 #ifndef Init_h
 #define Init_h
 
-namespace WebCore {
+namespace blink {
 
 class CoreInitializer {
 public:
     CoreInitializer() : m_isInited(false) { }
     // Should be called by clients before trying to create Frames.
-    void init();
+    virtual void init();
 
-    virtual void registerEventFactory();
-    virtual void initEventNames();
-    virtual void initEventTargetNames();
+    // FIXME: Why is this function static?
+    static void shutdown();
+
+protected:
+    bool isInitialized() const { return m_isInited; }
 
 private:
+    void registerEventFactory();
+
     bool m_isInited;
 };
 
-void shutdown();
-
-} // namespace WebCore
+} // namespace blink
 
 #endif // Init_h

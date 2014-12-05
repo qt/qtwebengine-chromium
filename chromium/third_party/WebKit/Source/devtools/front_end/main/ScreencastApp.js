@@ -5,6 +5,7 @@
 /**
  * @constructor
  * @extends {WebInspector.App}
+ * @implements {WebInspector.TargetManager.Observer}
  */
 WebInspector.ScreencastApp = function()
 {
@@ -20,29 +21,60 @@ WebInspector.ScreencastApp = function()
         this._currentScreencastState,
         lastScreencastState,
         this._onStatusBarButtonStateChanged.bind(this));
+    WebInspector.targetManager.observeTargets(this);
 };
 
 WebInspector.ScreencastApp.prototype = {
-    createRootView: function()
+    /**
+     * @param {!Document} document
+     * @override
+     */
+    presentUI: function(document)
     {
         var rootView = new WebInspector.RootView();
 
         this._rootSplitView = new WebInspector.SplitView(false, true, "InspectorView.screencastSplitViewState", 300, 300);
         this._rootSplitView.show(rootView.element);
+        this._rootSplitView.hideMain();
 
         WebInspector.inspectorView.show(this._rootSplitView.sidebarElement());
-        var target = /** @type {!WebInspector.Target} */ (WebInspector.targetManager.activeTarget());
-        this._screencastView = new WebInspector.ScreencastView(target);
-        this._screencastView.show(this._rootSplitView.mainElement());
-
-        this._onStatusBarButtonStateChanged(this._currentScreencastState.get());
-        rootView.attachToBody();
+        WebInspector.inspectorView.showInitialPanel();
+        rootView.attachToDocument(document);
     },
 
-    presentUI: function()
+    /**
+     * @param {!WebInspector.Target} target
+     */
+    targetAdded: function(target)
     {
-        WebInspector.App.prototype.presentUI.call(this);
-        this._screencastView.initialize();
+        if (this._target)
+            return;
+        this._target = target;
+        if (target.hasCapability(WebInspector.Target.Capabilities.CanScreencast)) {
+            this._screencastView = new WebInspector.ScreencastView(target);
+            this._screencastView.show(this._rootSplitView.mainElement());
+            this._screencastView.initialize();
+            this._onStatusBarButtonStateChanged(this._currentScreencastState.get());
+        } else {
+            this._onStatusBarButtonStateChanged("disabled");
+            this._toggleScreencastButton.setEnabled(false);
+        }
+    },
+
+    /**
+     * @param {!WebInspector.Target} target
+     */
+    targetRemoved: function(target)
+    {
+        if (this._target === target) {
+            delete this._target;
+            if (!this._screencastView)
+                return;
+            this._onStatusBarButtonStateChanged("disabled");
+            this._toggleScreencastButton.setEnabled(false);
+            this._screencastView.detach();
+            delete this._screencastView;
+        }
     },
 
     /**
@@ -71,7 +103,7 @@ WebInspector.ScreencastApp.prototype = {
 
 /**
  * @constructor
- * @implements {WebInspector.StatusBarButton.Provider}
+ * @implements {WebInspector.StatusBarItem.Provider}
  */
 WebInspector.ScreencastApp.StatusBarButtonProvider = function()
 {
@@ -79,9 +111,9 @@ WebInspector.ScreencastApp.StatusBarButtonProvider = function()
 
 WebInspector.ScreencastApp.StatusBarButtonProvider.prototype = {
     /**
-     * @return {?WebInspector.StatusBarButton}
+     * @return {?WebInspector.StatusBarItem}
      */
-    button: function()
+    item: function()
     {
         if (!(WebInspector.app instanceof WebInspector.ScreencastApp))
             return null;

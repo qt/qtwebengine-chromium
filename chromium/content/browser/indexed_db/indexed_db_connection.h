@@ -24,8 +24,10 @@ class CONTENT_EXPORT IndexedDBConnection {
   virtual void Close();
   virtual bool IsConnected();
 
-  IndexedDBDatabase* database() { return database_; }
-  IndexedDBDatabaseCallbacks* callbacks() { return callbacks_; }
+  void VersionChangeIgnored();
+
+  IndexedDBDatabase* database() const { return database_.get(); }
+  IndexedDBDatabaseCallbacks* callbacks() const { return callbacks_.get(); }
 
  private:
   // NULL in some unit tests, and after the connection is closed.

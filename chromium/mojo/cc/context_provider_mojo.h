@@ -5,6 +5,7 @@
 #ifndef MOJO_CC_CONTEXT_PROVIDER_MOJO_H_
 #define MOJO_CC_CONTEXT_PROVIDER_MOJO_H_
 
+#include "base/macros.h"
 #include "cc/output/context_provider.h"
 #include "mojo/public/c/gles2/gles2.h"
 #include "mojo/public/cpp/system/core.h"
@@ -16,24 +17,24 @@ class ContextProviderMojo : public cc::ContextProvider {
   explicit ContextProviderMojo(ScopedMessagePipeHandle command_buffer_handle);
 
   // cc::ContextProvider implementation.
-  virtual bool BindToCurrentThread() OVERRIDE;
-  virtual gpu::gles2::GLES2Interface* ContextGL() OVERRIDE;
-  virtual gpu::ContextSupport* ContextSupport() OVERRIDE;
-  virtual class GrContext* GrContext() OVERRIDE;
-  virtual Capabilities ContextCapabilities() OVERRIDE;
-  virtual bool IsContextLost() OVERRIDE;
-  virtual void VerifyContexts() OVERRIDE {}
-  virtual void DeleteCachedResources() OVERRIDE {}
-  virtual bool DestroyedOnMainThread() OVERRIDE;
-  virtual void SetLostContextCallback(
-      const LostContextCallback& lost_context_callback) OVERRIDE {}
-  virtual void SetMemoryPolicyChangedCallback(
+  bool BindToCurrentThread() override;
+  gpu::gles2::GLES2Interface* ContextGL() override;
+  gpu::ContextSupport* ContextSupport() override;
+  class GrContext* GrContext() override;
+  Capabilities ContextCapabilities() override;
+  bool IsContextLost() override;
+  void VerifyContexts() override {}
+  void DeleteCachedResources() override {}
+  bool DestroyedOnMainThread() override;
+  void SetLostContextCallback(
+      const LostContextCallback& lost_context_callback) override {}
+  void SetMemoryPolicyChangedCallback(
       const MemoryPolicyChangedCallback& memory_policy_changed_callback)
-      OVERRIDE {}
+      override {}
 
  protected:
   friend class base::RefCountedThreadSafe<ContextProviderMojo>;
-  virtual ~ContextProviderMojo();
+  ~ContextProviderMojo() override;
 
  private:
   static void ContextLostThunk(void* closure) {
@@ -44,6 +45,9 @@ class ContextProviderMojo : public cc::ContextProvider {
   cc::ContextProvider::Capabilities capabilities_;
   ScopedMessagePipeHandle command_buffer_handle_;
   MojoGLES2Context context_;
+  bool context_lost_;
+
+  DISALLOW_COPY_AND_ASSIGN(ContextProviderMojo);
 };
 
 }  // namespace mojo

@@ -25,12 +25,12 @@
 #include "config.h"
 #include "core/dom/NodeIterator.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/NodeTraversal.h"
 
-namespace WebCore {
+namespace blink {
 
 NodeIterator::NodePointer::NodePointer()
 {
@@ -75,16 +75,15 @@ NodeIterator::NodeIterator(PassRefPtrWillBeRawPtr<Node> rootNode, unsigned whatT
     : NodeIteratorBase(rootNode, whatToShow, filter)
     , m_referenceNode(root(), true)
 {
-    ScriptWrappable::init(this);
     root()->document().attachNodeIterator(this);
 }
 
+#if !ENABLE(OILPAN)
 NodeIterator::~NodeIterator()
 {
-#if !ENABLE(OILPAN)
     root()->document().detachNodeIterator(this);
-#endif
 }
+#endif
 
 PassRefPtrWillBeRawPtr<Node> NodeIterator::nextNode(ExceptionState& exceptionState)
 {
@@ -218,4 +217,4 @@ void NodeIterator::trace(Visitor* visitor)
     NodeIteratorBase::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

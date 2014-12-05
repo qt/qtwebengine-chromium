@@ -4,9 +4,7 @@
 
 #include "content/browser/browser_url_handler_impl.h"
 
-#include "base/command_line.h"
 #include "base/strings/string_util.h"
-#include "cc/base/switches.h"
 #include "content/browser/frame_host/debug_urls.h"
 #include "content/browser/webui/web_ui_impl.h"
 #include "content/public/browser/content_browser_client.h"
@@ -64,27 +62,12 @@ static bool ReverseViewSource(GURL* url, BrowserContext* browser_context) {
   // No action necessary if the URL is already view-source:
   if (url->SchemeIs(kViewSourceScheme))
     return false;
-
-  url::Replacements<char> repl;
-  repl.SetScheme(kViewSourceScheme,
-                 url::Component(0, strlen(kViewSourceScheme)));
-  repl.SetPath(url->spec().c_str(), url::Component(0, url->spec().size()));
-  *url = url->ReplaceComponents(repl);
+  // Recreate the url with the view-source scheme.
+  *url = GURL(kViewSourceScheme + std::string(":") + url->spec());
   return true;
 }
 
 static bool DebugURLHandler(GURL* url, BrowserContext* browser_context) {
-  // If running inside the Telemetry test harness, allow automated
-  // navigations to access browser-side debug URLs. They must use the
-  // chrome:// scheme, since the about: scheme won't be rewritten in
-  // this code path.
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          cc::switches::kEnableGpuBenchmarking)) {
-    if (HandleDebugURL(*url, PAGE_TRANSITION_FROM_ADDRESS_BAR)) {
-      return true;
-    }
-  }
-
   // Circumvent processing URLs that the renderer process will handle.
   return IsRendererDebugURL(*url);
 }

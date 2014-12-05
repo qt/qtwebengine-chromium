@@ -25,22 +25,23 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "talk/p2p/base/transport.h"
+#include "webrtc/p2p/base/transport.h"
 
-#include "talk/base/bind.h"
-#include "talk/base/common.h"
-#include "talk/base/logging.h"
-#include "talk/p2p/base/candidate.h"
-#include "talk/p2p/base/constants.h"
-#include "talk/p2p/base/sessionmanager.h"
-#include "talk/p2p/base/parsing.h"
-#include "talk/p2p/base/transportchannelimpl.h"
-#include "talk/xmllite/xmlelement.h"
-#include "talk/xmpp/constants.h"
+#include "webrtc/p2p/base/candidate.h"
+#include "webrtc/p2p/base/constants.h"
+#include "webrtc/p2p/base/parsing.h"
+#include "webrtc/p2p/base/port.h"
+#include "webrtc/p2p/base/sessionmanager.h"
+#include "webrtc/p2p/base/transportchannelimpl.h"
+#include "webrtc/libjingle/xmllite/xmlelement.h"
+#include "webrtc/libjingle/xmpp/constants.h"
+#include "webrtc/base/bind.h"
+#include "webrtc/base/common.h"
+#include "webrtc/base/logging.h"
 
 namespace cricket {
 
-using talk_base::Bind;
+using rtc::Bind;
 
 enum {
   MSG_ONSIGNALINGREADY = 1,
@@ -57,7 +58,7 @@ enum {
   MSG_FAILED,
 };
 
-struct ChannelParams : public talk_base::MessageData {
+struct ChannelParams : public rtc::MessageData {
   ChannelParams() : channel(NULL), candidate(NULL) {}
   explicit ChannelParams(int component)
       : component(component), channel(NULL), candidate(NULL) {}
@@ -118,8 +119,25 @@ bool BadTransportDescription(const std::string& desc, std::string* err_desc) {
   return false;
 }
 
-Transport::Transport(talk_base::Thread* signaling_thread,
-                     talk_base::Thread* worker_thread,
+bool IceCredentialsChanged(const std::string& old_ufrag,
+                           const std::string& old_pwd,
+                           const std::string& new_ufrag,
+                           const std::string& new_pwd) {
+  // TODO(jiayl): The standard (RFC 5245 Section 9.1.1.1) says that ICE should
+  // restart when both the ufrag and password are changed, but we do restart
+  // when either ufrag or passwrod is changed to keep compatible with GICE. We
+  // should clean this up when GICE is no longer used.
+  return (old_ufrag != new_ufrag) || (old_pwd != new_pwd);
+}
+
+static bool IceCredentialsChanged(const TransportDescription& old_desc,
+                                  const TransportDescription& new_desc) {
+  return IceCredentialsChanged(old_desc.ice_ufrag, old_desc.ice_pwd,
+                               new_desc.ice_ufrag, new_desc.ice_pwd);
+}
+
+Transport::Transport(rtc::Thread* signaling_thread,
+                     rtc::Thread* worker_thread,
                      const std::string& content_name,
                      const std::string& type,
                      PortAllocator* allocator)
@@ -148,25 +166,25 @@ void Transport::SetIceRole(IceRole role) {
   worker_thread_->Invoke<void>(Bind(&Transport::SetIceRole_w, this, role));
 }
 
-void Transport::SetIdentity(talk_base::SSLIdentity* identity) {
+void Transport::SetIdentity(rtc::SSLIdentity* identity) {
   worker_thread_->Invoke<void>(Bind(&Transport::SetIdentity_w, this, identity));
 }
 
-bool Transport::GetIdentity(talk_base::SSLIdentity** identity) {
+bool Transport::GetIdentity(rtc::SSLIdentity** identity) {
   // The identity is set on the worker thread, so for safety it must also be
   // acquired on the worker thread.
   return worker_thread_->Invoke<bool>(
       Bind(&Transport::GetIdentity_w, this, identity));
 }
 
-bool Transport::GetRemoteCertificate(talk_base::SSLCertificate** cert) {
+bool Transport::GetRemoteCertificate(rtc::SSLCertificate** cert) {
   // Channels can be deleted on the worker thread, so for safety the remote
   // certificate is acquired on the worker thread.
   return worker_thread_->Invoke<bool>(
       Bind(&Transport::GetRemoteCertificate_w, this, cert));
 }
 
-bool Transport::GetRemoteCertificate_w(talk_base::SSLCertificate** cert) {
+bool Transport::GetRemoteCertificate_w(rtc::SSLCertificate** cert) {
   ASSERT(worker_thread()->IsCurrent());
   if (channels_.empty())
     return false;
@@ -201,7 +219,7 @@ TransportChannelImpl* Transport::CreateChannel(int component) {
 TransportChannelImpl* Transport::CreateChannel_w(int component) {
   ASSERT(worker_thread()->IsCurrent());
   TransportChannelImpl *impl;
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
 
   // Create the entry if it does not exist.
   bool impl_exists = false;
@@ -259,13 +277,13 @@ TransportChannelImpl* Transport::CreateChannel_w(int component) {
 }
 
 TransportChannelImpl* Transport::GetChannel(int component) {
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(component);
   return (iter != channels_.end()) ? iter->second.get() : NULL;
 }
 
 bool Transport::HasChannels() {
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   return !channels_.empty();
 }
 
@@ -279,7 +297,7 @@ void Transport::DestroyChannel_w(int component) {
 
   TransportChannelImpl* impl = NULL;
   {
-    talk_base::CritScope cs(&crit_);
+    rtc::CritScope cs(&crit_);
     ChannelMap::iterator iter = channels_.find(component);
     if (iter == channels_.end())
       return;
@@ -326,8 +344,8 @@ void Transport::ConnectChannels_w() {
     LOG(LS_INFO) << "Transport::ConnectChannels_w: No local description has "
                  << "been set. Will generate one.";
     TransportDescription desc(NS_GINGLE_P2P, std::vector<std::string>(),
-                              talk_base::CreateRandomString(ICE_UFRAG_LENGTH),
-                              talk_base::CreateRandomString(ICE_PWD_LENGTH),
+                              rtc::CreateRandomString(ICE_UFRAG_LENGTH),
+                              rtc::CreateRandomString(ICE_PWD_LENGTH),
                               ICEMODE_FULL, CONNECTIONROLE_NONE, NULL,
                               Candidates());
     SetLocalTransportDescription_w(desc, CA_OFFER, NULL);
@@ -357,7 +375,7 @@ void Transport::DestroyAllChannels_w() {
   ASSERT(worker_thread()->IsCurrent());
   std::vector<TransportChannelImpl*> impls;
   {
-    talk_base::CritScope cs(&crit_);
+    rtc::CritScope cs(&crit_);
     for (ChannelMap::iterator iter = channels_.begin();
          iter != channels_.end();
          ++iter) {
@@ -385,7 +403,7 @@ void Transport::ResetChannels_w() {
   connect_requested_ = false;
 
   // Clear out the old messages, they aren't relevant
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   ready_candidates_.clear();
 
   // Reset all of the channels
@@ -404,7 +422,7 @@ void Transport::OnSignalingReady() {
 
 void Transport::CallChannels_w(TransportChannelFunc func) {
   ASSERT(worker_thread()->IsCurrent());
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end();
        ++iter) {
@@ -421,11 +439,12 @@ bool Transport::VerifyCandidate(const Candidate& cand, std::string* error) {
 
   // Disallow all ports below 1024, except for 80 and 443 on public addresses.
   int port = cand.address().port();
-  if (port == 0) {
+  if (cand.protocol() == TCP_PROTOCOL_NAME &&
+      (cand.tcptype() == TCPTYPE_ACTIVE_STR || port == 0)) {
     // Expected for active-only candidates per
     // http://tools.ietf.org/html/rfc6544#section-4.5 so no error.
-    *error = "";
-    return false;
+    // Libjingle clients emit port 0, in "active" mode.
+    return true;
   }
   if (port < 1024) {
     if ((port != 80) && (port != 443)) {
@@ -466,7 +485,7 @@ bool Transport::GetStats_w(TransportStats* stats) {
   return true;
 }
 
-bool Transport::GetSslRole(talk_base::SSLRole* ssl_role) const {
+bool Transport::GetSslRole(rtc::SSLRole* ssl_role) const {
   return worker_thread_->Invoke<bool>(Bind(
       &Transport::GetSslRole_w, this, ssl_role));
 }
@@ -535,7 +554,7 @@ void Transport::OnChannelWritableState_s() {
 
 TransportState Transport::GetTransportState_s(bool read) {
   ASSERT(signaling_thread()->IsCurrent());
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   bool any = false;
   bool all = !channels_.empty();
   for (ChannelMap::iterator iter = channels_.begin();
@@ -566,7 +585,7 @@ void Transport::OnChannelRequestSignaling_s(int component) {
   LOG(LS_INFO) << "Transport: " << content_name_ << ", allocating candidates";
   // Resetting ICE state for the channel.
   {
-    talk_base::CritScope cs(&crit_);
+    rtc::CritScope cs(&crit_);
     ChannelMap::iterator iter = channels_.find(component);
     if (iter != channels_.end())
       iter->second.set_candidates_allocated(false);
@@ -577,7 +596,7 @@ void Transport::OnChannelRequestSignaling_s(int component) {
 void Transport::OnChannelCandidateReady(TransportChannelImpl* channel,
                                         const Candidate& candidate) {
   ASSERT(worker_thread()->IsCurrent());
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   ready_candidates_.push_back(candidate);
 
   // We hold any messages until the client lets us connect.
@@ -593,7 +612,7 @@ void Transport::OnChannelCandidateReady_s() {
 
   std::vector<Candidate> candidates;
   {
-    talk_base::CritScope cs(&crit_);
+    rtc::CritScope cs(&crit_);
     candidates.swap(ready_candidates_);
   }
 
@@ -621,7 +640,7 @@ void Transport::OnChannelRouteChange_s(const TransportChannel* channel,
 void Transport::OnChannelCandidatesAllocationDone(
     TransportChannelImpl* channel) {
   ASSERT(worker_thread()->IsCurrent());
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   ChannelMap::iterator iter = channels_.find(channel->component());
   ASSERT(iter != channels_.end());
   LOG(LS_INFO) << "Transport: " << content_name_ << ", component "
@@ -696,7 +715,7 @@ void Transport::MaybeCompleted_w() {
 }
 
 void Transport::SetIceRole_w(IceRole role) {
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   ice_role_ = role;
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end(); ++iter) {
@@ -705,7 +724,7 @@ void Transport::SetIceRole_w(IceRole role) {
 }
 
 void Transport::SetRemoteIceMode_w(IceMode mode) {
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
   remote_ice_mode_ = mode;
   // Shouldn't channels be created after this method executed?
   for (ChannelMap::iterator iter = channels_.begin();
@@ -719,14 +738,24 @@ bool Transport::SetLocalTransportDescription_w(
     ContentAction action,
     std::string* error_desc) {
   bool ret = true;
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
 
   if (!VerifyIceParams(desc)) {
     return BadTransportDescription("Invalid ice-ufrag or ice-pwd length",
                                    error_desc);
   }
 
+  if (local_description_ && IceCredentialsChanged(*local_description_, desc)) {
+    IceRole new_ice_role = (action == CA_OFFER) ? ICEROLE_CONTROLLING
+                                                : ICEROLE_CONTROLLED;
+
+    // It must be called before ApplyLocalTransportDescription_w, which may
+    // trigger an ICE restart and depends on the new ICE role.
+    SetIceRole_w(new_ice_role);
+  }
+
   local_description_.reset(new TransportDescription(desc));
+
   for (ChannelMap::iterator iter = channels_.begin();
        iter != channels_.end(); ++iter) {
     ret &= ApplyLocalTransportDescription_w(iter->second.get(), error_desc);
@@ -746,7 +775,7 @@ bool Transport::SetRemoteTransportDescription_w(
     ContentAction action,
     std::string* error_desc) {
   bool ret = true;
-  talk_base::CritScope cs(&crit_);
+  rtc::CritScope cs(&crit_);
 
   if (!VerifyIceParams(desc)) {
     return BadTransportDescription("Invalid ice-ufrag or ice-pwd length",
@@ -864,7 +893,7 @@ bool Transport::NegotiateTransportDescription_w(ContentAction local_role,
   return true;
 }
 
-void Transport::OnMessage(talk_base::Message* msg) {
+void Transport::OnMessage(rtc::Message* msg) {
   switch (msg->message_id) {
     case MSG_ONSIGNALINGREADY:
       CallChannels_w(&TransportChannelImpl::OnSignalingReady);
@@ -917,7 +946,7 @@ void Transport::OnMessage(talk_base::Message* msg) {
 bool TransportParser::ParseAddress(const buzz::XmlElement* elem,
                                    const buzz::QName& address_name,
                                    const buzz::QName& port_name,
-                                   talk_base::SocketAddress* address,
+                                   rtc::SocketAddress* address,
                                    ParseError* error) {
   if (!elem->HasAttr(address_name))
     return BadParse("address does not have " + address_name.LocalPart(), error);

@@ -20,36 +20,22 @@
 #ifndef MediaQueryListListener_h
 #define MediaQueryListListener_h
 
-#include "bindings/v8/ScriptState.h"
-#include "bindings/v8/ScriptValue.h"
+#include "core/css/MediaQueryList.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
-
-class MediaQueryList;
+namespace blink {
 
 // See http://dev.w3.org/csswg/cssom-view/#the-mediaquerylist-interface
-
 class MediaQueryListListener : public RefCountedWillBeGarbageCollectedFinalized<MediaQueryListListener> {
 public:
-    static PassRefPtrWillBeRawPtr<MediaQueryListListener> create(ScriptState* scriptState, const ScriptValue& value)
-    {
-        if (!value.isFunction())
-            return nullptr;
-        return adoptRefWillBeNoop(new MediaQueryListListener(scriptState, value));
-    }
-    void queryChanged(MediaQueryList*);
+    virtual ~MediaQueryListListener();
 
-    bool operator==(const MediaQueryListListener& other) const { return m_function == other.m_function; }
+    virtual void notifyMediaQueryChanged() = 0;
 
-    void trace(Visitor*) { }
-
-private:
-    MediaQueryListListener(ScriptState*, const ScriptValue&);
-
-    RefPtr<ScriptState> m_scriptState;
-    ScriptValue m_function;
+    virtual void trace(Visitor* visitor) { }
+protected:
+    MediaQueryListListener();
 };
 
 }

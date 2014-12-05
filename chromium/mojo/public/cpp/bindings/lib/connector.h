@@ -29,7 +29,7 @@ class Connector : public MessageReceiver {
   explicit Connector(
       ScopedMessagePipeHandle message_pipe,
       const MojoAsyncWaiter* waiter = Environment::GetDefaultAsyncWaiter());
-  virtual ~Connector();
+  ~Connector() override;
 
   // Sets the receiver to handle messages read from the message pipe.  The
   // Connector will read messages from the pipe regardless of whether or not an
@@ -63,8 +63,13 @@ class Connector : public MessageReceiver {
   // a quiescent state.
   ScopedMessagePipeHandle PassMessagePipe();
 
+  // Waits for the next message on the pipe, blocking until one arrives or an
+  // error happens. Returns |true| if a message has been delivered, |false|
+  // otherwise.
+  bool WaitForIncomingMessage();
+
   // MessageReceiver implementation:
-  virtual bool Accept(Message* message) MOJO_OVERRIDE;
+  bool Accept(Message* message) override;
 
  private:
   static void CallOnHandleReady(void* closure, MojoResult result);
@@ -73,7 +78,15 @@ class Connector : public MessageReceiver {
   void WaitToReadMore();
 
   // Returns false if |this| was destroyed during message dispatch.
-  MOJO_WARN_UNUSED_RESULT bool ReadMore();
+  MOJO_WARN_UNUSED_RESULT bool ReadSingleMessage(MojoResult* read_result);
+
+  // |this| can be destroyed during message dispatch.
+  void ReadAllAvailableMessages();
+
+  void NotifyError();
+
+  // Cancels any calls made to |waiter_|.
+  void CancelWait();
 
   ErrorHandler* error_handler_;
   const MojoAsyncWaiter* waiter_;

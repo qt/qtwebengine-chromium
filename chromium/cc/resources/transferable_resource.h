@@ -11,7 +11,7 @@
 #include "cc/base/cc_export.h"
 #include "cc/resources/resource_format.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
@@ -35,6 +35,7 @@ struct CC_EXPORT TransferableResource {
   gpu::MailboxHolder mailbox_holder;
   bool is_repeated;
   bool is_software;
+  bool allow_overlay;
 };
 
 }  // namespace cc

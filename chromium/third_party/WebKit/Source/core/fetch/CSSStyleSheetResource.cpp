@@ -33,9 +33,8 @@
 #include "platform/SharedBuffer.h"
 #include "platform/network/HTTPParsers.h"
 #include "wtf/CurrentTime.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 CSSStyleSheetResource::CSSStyleSheetResource(const ResourceRequest& resourceRequest, const String& charset)
     : StyleSheetResource(resourceRequest, CSSStyleSheet, "text/css", charset)
@@ -49,8 +48,21 @@ CSSStyleSheetResource::CSSStyleSheetResource(const ResourceRequest& resourceRequ
 
 CSSStyleSheetResource::~CSSStyleSheetResource()
 {
+    // Make sure dispose() was cllaed before destruction.
+    ASSERT(!m_parsedStyleSheetCache);
+}
+
+void CSSStyleSheetResource::dispose()
+{
     if (m_parsedStyleSheetCache)
         m_parsedStyleSheetCache->removedFromMemoryCache();
+    m_parsedStyleSheetCache.clear();
+}
+
+void CSSStyleSheetResource::trace(Visitor* visitor)
+{
+    visitor->trace(m_parsedStyleSheetCache);
+    StyleSheetResource::trace(visitor);
 }
 
 void CSSStyleSheetResource::didAddClient(ResourceClient* c)

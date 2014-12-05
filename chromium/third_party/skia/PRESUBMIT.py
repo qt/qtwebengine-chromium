@@ -20,11 +20,14 @@ REVERT_CL_SUBJECT_PREFIX = 'Revert '
 
 SKIA_TREE_STATUS_URL = 'http://skia-tree-status.appspot.com'
 
+# Please add the complete email address here (and not just 'xyz@' or 'xyz').
 PUBLIC_API_OWNERS = (
     'reed@chromium.org',
     'reed@google.com',
     'bsalomon@chromium.org',
     'bsalomon@google.com',
+    'djsollen@chromium.org',
+    'djsollen@google.com',
 )
 
 AUTHORS_FILE_NAME = 'AUTHORS'
@@ -46,6 +49,31 @@ def _CheckChangeHasEol(input_api, output_api, source_file_filter=None):
   return []
 
 
+def _PythonChecks(input_api, output_api):
+  """Run checks on any modified Python files."""
+  pylint_disabled_warnings = (
+      'F0401',  # Unable to import.
+      'E0611',  # No name in module.
+      'W0232',  # Class has no __init__ method.
+      'E1002',  # Use of super on an old style class.
+      'W0403',  # Relative import used.
+      'R0201',  # Method could be a function.
+      'E1003',  # Using class name in super.
+      'W0613',  # Unused argument.
+  )
+  # Run Pylint on only the modified python files. Unfortunately it still runs
+  # Pylint on the whole file instead of just the modified lines.
+  affected_python_files = []
+  for affected_file in input_api.AffectedSourceFiles(None):
+    affected_file_path = affected_file.LocalPath()
+    if affected_file_path.endswith('.py'):
+      affected_python_files.append(affected_file_path)
+  return input_api.canned_checks.RunPylint(
+      input_api, output_api,
+      disabled_warnings=pylint_disabled_warnings,
+      white_list=affected_python_files)
+
+
 def _CommonChecks(input_api, output_api):
   """Presubmit checks common to upload and commit."""
   results = []
@@ -58,6 +86,7 @@ def _CommonChecks(input_api, output_api):
   results.extend(
       _CheckChangeHasEol(
           input_api, output_api, source_file_filter=sources))
+  results.extend(_PythonChecks(input_api, output_api))
   return results
 
 
@@ -114,7 +143,7 @@ def _CheckOwnerIsInAuthorsFile(input_api, output_api):
   results = []
   issue = input_api.change.issue
   if issue and input_api.rietveld:
-    issue_properties = input_api.rietveld.get_issue_properties( 
+    issue_properties = input_api.rietveld.get_issue_properties(
         issue=int(issue), messages=False)
     owner_email = issue_properties['owner_email']
 
@@ -143,7 +172,7 @@ def _CheckOwnerIsInAuthorsFile(input_api, output_api):
             '(individual) or '
             'https://developers.google.com/open-source/cla/corporate '
             '(corporate).'
-            % owner_email)) 
+            % owner_email))
     except IOError:
       # Do not fail if authors file cannot be found.
       traceback.print_exc()
@@ -160,11 +189,12 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
   """
   results = []
   requires_owner_check = False
-  for affected_svn_file in input_api.AffectedFiles():
-    affected_file_path = affected_svn_file.AbsoluteLocalPath()
+  for affected_file in input_api.AffectedFiles():
+    affected_file_path = affected_file.LocalPath()
     file_path, file_ext = os.path.splitext(affected_file_path)
-    # We only care about files that end in .h and are under the include dir.
-    if file_ext == '.h' and 'include' in file_path.split(os.path.sep):
+    # We only care about files that end in .h and are under the top-level
+    # include dir.
+    if file_ext == '.h' and 'include' == file_path.split(os.path.sep)[0]:
       requires_owner_check = True
 
   if not requires_owner_check:
@@ -178,6 +208,16 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
     if re.match(REVERT_CL_SUBJECT_PREFIX, issue_properties['subject'], re.I):
       # It is a revert CL, ignore the public api owners check.
       return results
+
+    match = re.search(r'^TBR=(.*)$', issue_properties['description'], re.M)
+    if match:
+      tbr_entries = match.group(1).strip().split(',')
+      for owner in PUBLIC_API_OWNERS:
+        if owner in tbr_entries or owner.split('@')[0] in tbr_entries:
+          # If an owner is specified in the TBR= line then ignore the public
+          # api owners check.
+          return results
+
     if issue_properties['owner_email'] in PUBLIC_API_OWNERS:
       # An owner created the CL that is an automatic LGTM.
       lgtm_from_owner = True
@@ -189,7 +229,7 @@ def _CheckLGTMsForPublicAPI(input_api, output_api):
             'lgtm' in message['text'].lower()):
           # Found an lgtm in a message from an owner.
           lgtm_from_owner = True
-          break;
+          break
 
   if not lgtm_from_owner:
     results.append(

@@ -32,7 +32,7 @@
 #include "core/css/StylePropertySet.h"
 #include "core/css/StyleRule.h"
 
-namespace WebCore {
+namespace blink {
 
 MatchedProperties::MatchedProperties()
     : possiblyPaddedMember(0)
@@ -43,14 +43,18 @@ MatchedProperties::~MatchedProperties()
 {
 }
 
-void MatchResult::addMatchedProperties(const StylePropertySet* properties, StyleRule* rule, unsigned linkMatchType, PropertyWhitelistType propertyWhitelistType)
+void MatchedProperties::trace(Visitor* visitor)
+{
+    visitor->trace(properties);
+}
+
+void MatchResult::addMatchedProperties(const StylePropertySet* properties, unsigned linkMatchType, PropertyWhitelistType propertyWhitelistType)
 {
     matchedProperties.grow(matchedProperties.size() + 1);
     MatchedProperties& newProperties = matchedProperties.last();
     newProperties.properties = const_cast<StylePropertySet*>(properties);
-    newProperties.linkMatchType = linkMatchType;
-    newProperties.whitelistType = propertyWhitelistType;
-    matchedRules.append(rule);
+    newProperties.m_types.linkMatchType = linkMatchType;
+    newProperties.m_types.whitelistType = propertyWhitelistType;
 }
 
-} // namespace WebCore
+} // namespace blink

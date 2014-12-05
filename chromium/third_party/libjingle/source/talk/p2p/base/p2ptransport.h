@@ -25,19 +25,19 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_P2PTRANSPORT_H_
-#define TALK_P2P_BASE_P2PTRANSPORT_H_
+#ifndef WEBRTC_P2P_BASE_P2PTRANSPORT_H_
+#define WEBRTC_P2P_BASE_P2PTRANSPORT_H_
 
 #include <string>
 #include <vector>
-#include "talk/p2p/base/transport.h"
+#include "webrtc/p2p/base/transport.h"
 
 namespace cricket {
 
 class P2PTransport : public Transport {
  public:
-  P2PTransport(talk_base::Thread* signaling_thread,
-               talk_base::Thread* worker_thread,
+  P2PTransport(rtc::Thread* signaling_thread,
+               rtc::Thread* worker_thread,
                const std::string& content_name,
                PortAllocator* allocator);
   virtual ~P2PTransport();
@@ -100,4 +100,4 @@ class P2PTransportParser : public TransportParser {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_P2PTRANSPORT_H_
+#endif  // WEBRTC_P2P_BASE_P2PTRANSPORT_H_

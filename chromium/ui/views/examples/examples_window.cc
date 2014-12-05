@@ -98,15 +98,15 @@ ScopedExamples GetExamplesToShow(ScopedExamples extra) {
 class ComboboxModelExampleList : public ui::ComboboxModel {
  public:
   ComboboxModelExampleList() {}
-  virtual ~ComboboxModelExampleList() {}
+  ~ComboboxModelExampleList() override {}
 
   void SetExamples(ScopedExamples examples) {
     example_list_.swap(*examples);
   }
 
   // ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE { return example_list_.size(); }
-  virtual base::string16 GetItemAt(int index) OVERRIDE {
+  int GetItemCount() const override { return example_list_.size(); }
+  base::string16 GetItemAt(int index) override {
     return base::UTF8ToUTF16(example_list_[index]->example_title());
   }
 
@@ -157,7 +157,7 @@ class ExamplesWindowContents : public WidgetDelegateView,
     layout->AddPaddingRow(0, 5);
   }
 
-  virtual ~ExamplesWindowContents() {
+  ~ExamplesWindowContents() override {
     // Delete |combobox_| first as it references |combobox_model_|.
     delete combobox_;
     combobox_ = NULL;
@@ -172,20 +172,21 @@ class ExamplesWindowContents : public WidgetDelegateView,
 
  private:
   // WidgetDelegateView:
-  virtual bool CanResize() const OVERRIDE { return true; }
-  virtual bool CanMaximize() const OVERRIDE { return true; }
-  virtual base::string16 GetWindowTitle() const OVERRIDE {
+  bool CanResize() const override { return true; }
+  bool CanMaximize() const override { return true; }
+  bool CanMinimize() const override { return true; }
+  base::string16 GetWindowTitle() const override {
     return base::ASCIIToUTF16("Views Examples");
   }
-  virtual View* GetContentsView() OVERRIDE { return this; }
-  virtual void WindowClosing() OVERRIDE {
+  View* GetContentsView() override { return this; }
+  void WindowClosing() override {
     instance_ = NULL;
     if (operation_ == QUIT_ON_CLOSE)
       base::MessageLoopForUI::current()->Quit();
   }
 
   // ComboboxListener:
-  virtual void OnPerformAction(Combobox* combobox) OVERRIDE {
+  void OnPerformAction(Combobox* combobox) override {
     DCHECK_EQ(combobox, combobox_);
     DCHECK(combobox->selected_index() < combobox_model_.GetItemCount());
     example_shown_->RemoveAllChildViews(false);
@@ -210,7 +211,7 @@ class ExamplesWindowContents : public WidgetDelegateView,
 ExamplesWindowContents* ExamplesWindowContents::instance_ = NULL;
 
 void ShowExamplesWindow(Operation operation,
-                        gfx::NativeView window_context,
+                        gfx::NativeWindow window_context,
                         ScopedExamples extra_examples) {
   if (ExamplesWindowContents::instance()) {
     ExamplesWindowContents::instance()->GetWidget()->Activate();
@@ -221,7 +222,6 @@ void ShowExamplesWindow(Operation operation,
     params.delegate = new ExamplesWindowContents(operation, examples.Pass());
     params.context = window_context;
     params.bounds = gfx::Rect(0, 0, 850, 300);
-    params.remove_standard_frame = true;
     widget->Init(params);
     widget->Show();
   }

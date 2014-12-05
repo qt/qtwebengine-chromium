@@ -29,7 +29,7 @@
 #include "core/svg/SVGPathByteStream.h"
 #include "wtf/WeakPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPathSegArcAbs;
 class SVGPathSegArcRel;
@@ -51,7 +51,8 @@ class SVGPathSegCurvetoCubicSmoothRel;
 class SVGPathSegCurvetoQuadraticSmoothAbs;
 class SVGPathSegCurvetoQuadraticSmoothRel;
 
-class SVGPathElement FINAL : public SVGGeometryElement {
+class SVGPathElement final : public SVGGeometryElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGPathElement);
 
@@ -93,17 +94,17 @@ public:
 
     void pathSegListChanged(ListModification = ListModificationUnknown);
 
-    virtual FloatRect getBBox() OVERRIDE;
+    virtual FloatRect getBBox() override;
 
 private:
     explicit SVGPathElement(Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual void svgAttributeChanged(const QualifiedName&) override;
 
-    virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
-    virtual void removedFrom(ContainerNode*) OVERRIDE;
+    virtual Node::InsertionNotificationRequest insertedInto(ContainerNode*) override;
+    virtual void removedFrom(ContainerNode*) override;
 
     void invalidateMPathDependencies();
 
@@ -111,6 +112,6 @@ private:
     RefPtr<SVGAnimatedPath> m_pathSegList;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGPathElement_h

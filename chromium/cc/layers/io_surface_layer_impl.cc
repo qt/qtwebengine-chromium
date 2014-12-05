@@ -5,11 +5,11 @@
 #include "cc/layers/io_surface_layer_impl.h"
 
 #include "base/strings/stringprintf.h"
-#include "cc/layers/quad_sink.h"
 #include "cc/output/gl_renderer.h"  // For the GLC() macro.
 #include "cc/output/output_surface.h"
 #include "cc/quads/io_surface_draw_quad.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/occlusion.h"
 #include "gpu/GLES2/gl2extchromium.h"
 #include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
@@ -38,7 +38,7 @@ void IOSurfaceLayerImpl::DestroyResource() {
 
 scoped_ptr<LayerImpl> IOSurfaceLayerImpl::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return IOSurfaceLayerImpl::Create(tree_impl, id()).PassAs<LayerImpl>();
+  return IOSurfaceLayerImpl::Create(tree_impl, id());
 }
 
 void IOSurfaceLayerImpl::PushPropertiesTo(LayerImpl* layer) {
@@ -64,22 +64,26 @@ bool IOSurfaceLayerImpl::WillDraw(DrawMode draw_mode,
   return LayerImpl::WillDraw(draw_mode, resource_provider);
 }
 
-void IOSurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
-                                     AppendQuadsData* append_quads_data) {
-  SharedQuadState* shared_quad_state = quad_sink->CreateSharedQuadState();
+void IOSurfaceLayerImpl::AppendQuads(
+    RenderPass* render_pass,
+    const Occlusion& occlusion_in_content_space,
+    AppendQuadsData* append_quads_data) {
+  SharedQuadState* shared_quad_state =
+      render_pass->CreateAndAppendSharedQuadState();
   PopulateSharedQuadState(shared_quad_state);
 
   AppendDebugBorderQuad(
-      quad_sink, content_bounds(), shared_quad_state, append_quads_data);
+      render_pass, content_bounds(), shared_quad_state, append_quads_data);
 
   gfx::Rect quad_rect(content_bounds());
   gfx::Rect opaque_rect(contents_opaque() ? quad_rect : gfx::Rect());
-  gfx::Rect visible_quad_rect = quad_sink->UnoccludedContentRect(
-      quad_rect, draw_properties().target_space_transform);
+  gfx::Rect visible_quad_rect =
+      occlusion_in_content_space.GetUnoccludedContentRect(quad_rect);
   if (visible_quad_rect.IsEmpty())
     return;
 
-  scoped_ptr<IOSurfaceDrawQuad> quad = IOSurfaceDrawQuad::Create();
+  IOSurfaceDrawQuad* quad =
+      render_pass->CreateAndAppendDrawQuad<IOSurfaceDrawQuad>();
   quad->SetNew(shared_quad_state,
                quad_rect,
                opaque_rect,
@@ -87,7 +91,6 @@ void IOSurfaceLayerImpl::AppendQuads(QuadSink* quad_sink,
                io_surface_size_,
                io_surface_resource_id_,
                IOSurfaceDrawQuad::FLIPPED);
-  quad_sink->Append(quad.PassAs<DrawQuad>());
 }
 
 void IOSurfaceLayerImpl::ReleaseResources() {

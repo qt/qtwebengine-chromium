@@ -14,16 +14,21 @@ using std::string;
 namespace net {
 namespace tools {
 
-QuicClientSession::QuicClientSession(
-    const QuicServerId& server_id,
-    const QuicConfig& config,
-    QuicConnection* connection,
-    QuicCryptoClientConfig* crypto_config)
-    : QuicClientSessionBase(connection, config),
-      crypto_stream_(server_id, this, NULL, crypto_config) {
+QuicClientSession::QuicClientSession(const QuicConfig& config,
+                                     QuicConnection* connection,
+                                     bool is_secure)
+    : QuicClientSessionBase(connection, config, is_secure) {
 }
 
 QuicClientSession::~QuicClientSession() {
+}
+
+void QuicClientSession::InitializeSession(
+    const QuicServerId& server_id,
+    QuicCryptoClientConfig* crypto_config) {
+  QuicClientSessionBase::InitializeSession();
+  crypto_stream_.reset(
+      new QuicCryptoClientStream(server_id, this, nullptr, crypto_config));
 }
 
 void QuicClientSession::OnProofValid(
@@ -35,19 +40,19 @@ void QuicClientSession::OnProofVerifyDetailsAvailable(
 }
 
 QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
-  if (!crypto_stream_.encryption_established()) {
+  if (!crypto_stream_->encryption_established()) {
     DVLOG(1) << "Encryption not active so no outgoing stream created.";
-    return NULL;
+    return nullptr;
   }
   if (GetNumOpenStreams() >= get_max_open_streams()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
              << "Already " << GetNumOpenStreams() << " open.";
-    return NULL;
+    return nullptr;
   }
   if (goaway_received()) {
     DVLOG(1) << "Failed to create a new outgoing stream. "
              << "Already received goaway.";
-    return NULL;
+    return nullptr;
   }
   QuicSpdyClientStream* stream
       = new QuicSpdyClientStream(GetNextStreamId(), this);
@@ -56,21 +61,22 @@ QuicSpdyClientStream* QuicClientSession::CreateOutgoingDataStream() {
 }
 
 QuicCryptoClientStream* QuicClientSession::GetCryptoStream() {
-  return &crypto_stream_;
+  return crypto_stream_.get();
 }
 
 bool QuicClientSession::CryptoConnect() {
-  return crypto_stream_.CryptoConnect();
+  DCHECK(flow_controller());
+  return crypto_stream_->CryptoConnect();
 }
 
 int QuicClientSession::GetNumSentClientHellos() const {
-  return crypto_stream_.num_sent_client_hellos();
+  return crypto_stream_->num_sent_client_hellos();
 }
 
 QuicDataStream* QuicClientSession::CreateIncomingDataStream(
     QuicStreamId id) {
   DLOG(ERROR) << "Server push not supported";
-  return NULL;
+  return nullptr;
 }
 
 }  // namespace tools

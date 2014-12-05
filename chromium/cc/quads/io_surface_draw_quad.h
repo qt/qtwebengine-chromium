@@ -8,7 +8,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "cc/base/cc_export.h"
 #include "cc/quads/draw_quad.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace cc {
 
@@ -20,7 +20,7 @@ class CC_EXPORT IOSurfaceDrawQuad : public DrawQuad {
     ORIENTATION_LAST = UNFLIPPED
   };
 
-  static scoped_ptr<IOSurfaceDrawQuad> Create();
+  IOSurfaceDrawQuad();
 
   void SetNew(const SharedQuadState* shared_quad_state,
               const gfx::Rect& rect,
@@ -43,14 +43,12 @@ class CC_EXPORT IOSurfaceDrawQuad : public DrawQuad {
   unsigned io_surface_resource_id;
   Orientation orientation;
 
-  virtual void IterateResources(const ResourceIteratorCallback& callback)
-      OVERRIDE;
+  void IterateResources(const ResourceIteratorCallback& callback) override;
 
   static const IOSurfaceDrawQuad* MaterialCast(const DrawQuad*);
 
  private:
-  IOSurfaceDrawQuad();
-  virtual void ExtendValue(base::DictionaryValue* value) const OVERRIDE;
+  void ExtendValue(base::debug::TracedValue* value) const override;
 };
 
 }  // namespace cc

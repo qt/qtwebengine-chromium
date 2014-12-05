@@ -26,24 +26,24 @@
 #ifndef DOMStringMap_h
 #define DOMStringMap_h
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/ScriptWrappable.h"
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/ScriptWrappable.h"
+#include "bindings/core/v8/V8Binding.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Noncopyable.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
-class DOMStringMap : public NoBaseWillBeGarbageCollectedFinalized<DOMStringMap>, public ScriptWrappable {
-    WTF_MAKE_NONCOPYABLE(DOMStringMap);
+class DOMStringMap : public NoBaseWillBeGarbageCollected<DOMStringMap>, public ScriptWrappable {
+    DECLARE_EMPTY_VIRTUAL_DESTRUCTOR_WILL_BE_REMOVED(DOMStringMap);
+    DEFINE_WRAPPERTYPEINFO();
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WTF_MAKE_NONCOPYABLE(DOMStringMap);
 public:
-    virtual ~DOMStringMap();
-
 #if !ENABLE(OILPAN)
     virtual void ref() = 0;
     virtual void deref() = 0;
@@ -88,12 +88,9 @@ public:
     virtual void trace(Visitor*) { }
 
 protected:
-    DOMStringMap()
-    {
-        ScriptWrappable::init(this);
-    }
+    DOMStringMap() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMStringMap_h

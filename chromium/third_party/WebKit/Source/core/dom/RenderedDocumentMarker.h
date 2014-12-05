@@ -28,15 +28,15 @@
 #define RenderedDocumentMarker_h
 
 #include "core/dom/DocumentMarker.h"
+#include "platform/geometry/LayoutRect.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderedDocumentMarker : public DocumentMarker {
+class RenderedDocumentMarker final : public DocumentMarker {
 public:
-
-    explicit RenderedDocumentMarker(const DocumentMarker& marker)
-        : DocumentMarker(marker), m_renderedRect(invalidMarkerRect())
+    static PassOwnPtrWillBeRawPtr<RenderedDocumentMarker> create(const DocumentMarker& marker)
     {
+        return adoptPtrWillBeNoop(new RenderedDocumentMarker(marker));
     }
 
     bool isRendered() const { return invalidMarkerRect() != m_renderedRect; }
@@ -47,6 +47,12 @@ public:
     void invalidate() { m_renderedRect = invalidMarkerRect(); }
 
 private:
+    explicit RenderedDocumentMarker(const DocumentMarker& marker)
+        : DocumentMarker(marker)
+        , m_renderedRect(invalidMarkerRect())
+    {
+    }
+
     static const LayoutRect& invalidMarkerRect()
     {
         static const LayoutRect rect = LayoutRect(-1, -1, -1, -1);
@@ -64,13 +70,8 @@ inline void RenderedDocumentMarker::invalidate(const LayoutRect& r)
 
 DEFINE_TYPE_CASTS(RenderedDocumentMarker, DocumentMarker, marker, true, true);
 
-} // namespace
+} // namespace blink
 
-namespace WTF {
-
-template<>
-struct VectorTraits<WebCore::RenderedDocumentMarker> : SimpleClassVectorTraits<WebCore::RenderedDocumentMarker> { };
-
-} // namespace WTF
+WTF_ALLOW_MOVE_INIT_AND_COMPARE_WITH_MEM_FUNCTIONS(blink::RenderedDocumentMarker);
 
 #endif

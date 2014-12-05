@@ -31,7 +31,7 @@
 
 #include "modules/webaudio/AudioSourceNode.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 
@@ -52,17 +52,6 @@ public:
         SCHEDULED_STATE = 1,
         PLAYING_STATE = 2,
         FINISHED_STATE = 3
-    };
-
-    // This helper class handles the lifetime of an AudioScheduledSourceNode with an onended event
-    // listener. This keeps the node alive until the event listener is processed.
-    class NotifyEndedTask {
-    public:
-        NotifyEndedTask(PassRefPtr<AudioScheduledSourceNode> scheduledNode);
-        void notifyEnded();
-
-    private:
-        RefPtr<AudioScheduledSourceNode> m_scheduledNode;
     };
 
     AudioScheduledSourceNode(AudioContext*, float sampleRate);
@@ -96,7 +85,7 @@ protected:
     // Called when we have no more sound to play or the noteOff() time has been reached.
     virtual void finish();
 
-    static void notifyEndedDispatch(void*);
+    void notifyEnded();
 
     PlaybackState m_playbackState;
 
@@ -113,6 +102,6 @@ protected:
     static const double UnknownTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioScheduledSourceNode_h

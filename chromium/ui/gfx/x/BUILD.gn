@@ -2,10 +2,12 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# GYP version: //ui/gfx/x/gfx_x11.gyp:gfx_x11
 component("x") {
   output_name = "gfx_x11"
 
   sources = [
+    "../gfx_export.h",
     "x11_atom_cache.cc",
     "x11_atom_cache.h",
     "x11_connection.cc",

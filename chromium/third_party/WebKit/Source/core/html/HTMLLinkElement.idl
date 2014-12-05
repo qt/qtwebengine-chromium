@@ -22,8 +22,8 @@
 interface HTMLLinkElement : HTMLElement {
     [Reflect] attribute boolean disabled;
     [Reflect] attribute DOMString charset;
-    [Reflect, URL, LogActivity=SetterOnly] attribute DOMString href;
-    [Reflect, ReflectOnly="anonymous"|"use-credentials", ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString crossOrigin;
+    [Reflect, URL] attribute DOMString href;
+    [Reflect, ReflectOnly=("anonymous","use-credentials"), ReflectEmpty="anonymous", ReflectInvalid="anonymous"] attribute DOMString? crossOrigin;
     [Reflect] attribute DOMString hreflang;
     [Reflect] attribute DOMString media;
     [Reflect] attribute DOMString rel;
@@ -35,7 +35,7 @@ interface HTMLLinkElement : HTMLElement {
     // DOM Level 2 Style
     readonly attribute StyleSheet sheet;
 
-    [RuntimeEnabled=HTMLImports] readonly attribute Document import;
+    readonly attribute Document import;
 
     [Reflect, RuntimeEnabled=SubresourceIntegrity] attribute DOMString integrity;
 };

@@ -11,8 +11,6 @@
 #include "content/common/content_export.h"
 #include "content/common/view_message_enums.h"
 
-struct WebPreferences;
-
 namespace blink {
 struct WebScreenInfo;
 }
@@ -20,6 +18,7 @@ struct WebScreenInfo;
 namespace content {
 
 struct RendererPreferences;
+struct WebPreferences;
 
 // Container for all parameters passed to RenderViewImpl's constructor.
 struct CONTENT_EXPORT RenderViewImplParams {
@@ -38,8 +37,7 @@ struct CONTENT_EXPORT RenderViewImplParams {
                        bool hidden,
                        bool never_visible,
                        int32 next_page_id,
-                       const blink::WebScreenInfo& screen_info,
-                       AccessibilityMode accessibility_mode);
+                       const blink::WebScreenInfo& screen_info);
   ~RenderViewImplParams();
 
   int32 opener_id;
@@ -58,7 +56,6 @@ struct CONTENT_EXPORT RenderViewImplParams {
   bool never_visible;
   int32 next_page_id;
   const blink::WebScreenInfo& screen_info;
-  AccessibilityMode accessibility_mode;
 };
 
 }  // namespace content

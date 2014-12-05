@@ -26,14 +26,15 @@
 #ifndef WebGLTexture_h
 #define WebGLTexture_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/html/canvas/WebGLSharedObject.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class WebGLTexture FINAL : public WebGLSharedObject, public ScriptWrappable {
+class WebGLTexture final : public WebGLSharedObject, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     enum TextureExtensionFlag {
         NoTextureExtensionEnabled = 0,
@@ -42,7 +43,7 @@ public:
     };
     virtual ~WebGLTexture();
 
-    static PassRefPtr<WebGLTexture> create(WebGLRenderingContextBase*);
+    static PassRefPtrWillBeRawPtr<WebGLTexture> create(WebGLRenderingContextBase*);
 
     void setTarget(GLenum target, GLint maxLevel);
     void setParameteri(GLenum pname, GLint param);
@@ -76,9 +77,9 @@ public:
     static GLint computeLevelCount(GLsizei width, GLsizei height);
 
 protected:
-    WebGLTexture(WebGLRenderingContextBase*);
+    explicit WebGLTexture(WebGLRenderingContextBase*);
 
-    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) OVERRIDE;
+    virtual void deleteObjectImpl(blink::WebGraphicsContext3D*, Platform3DObject) override;
 
 private:
     class LevelInfo {
@@ -108,7 +109,7 @@ private:
         GLenum type;
     };
 
-    virtual bool isTexture() const OVERRIDE { return true; }
+    virtual bool isTexture() const override { return true; }
 
     void update();
 
@@ -123,7 +124,7 @@ private:
     GLenum m_wrapS;
     GLenum m_wrapT;
 
-    Vector<Vector<LevelInfo> > m_info;
+    Vector<Vector<LevelInfo>> m_info;
 
     bool m_isNPOT;
     bool m_isCubeComplete;
@@ -133,6 +134,6 @@ private:
     bool m_isHalfFloatType;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WebGLTexture_h

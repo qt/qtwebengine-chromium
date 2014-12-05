@@ -29,56 +29,54 @@
 #define SQLStatementBackend_h
 
 #include "modules/webdatabase/sqlite/SQLValue.h"
-#include "modules/webdatabase/AbstractSQLStatementBackend.h"
+#include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
-#include "wtf/PassOwnPtr.h"
 #include "wtf/Vector.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
-class AbstractSQLStatement;
-class DatabaseBackend;
+class Database;
 class SQLErrorData;
-class SQLTransactionBackend;
+class SQLResultSet;
+class SQLStatement;
 
-class SQLStatementBackend FINAL : public AbstractSQLStatementBackend {
+class SQLStatementBackend final : public GarbageCollectedFinalized<SQLStatementBackend> {
 public:
-    static PassRefPtrWillBeRawPtr<SQLStatementBackend> create(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>,
+    static SQLStatementBackend* create(SQLStatement*,
         const String& sqlStatement, const Vector<SQLValue>& arguments, int permissions);
-    virtual void trace(Visitor*) OVERRIDE;
+    void trace(Visitor*);
 
-    bool execute(DatabaseBackend*);
+    bool execute(Database*);
     bool lastExecutionFailedDueToQuota() const;
 
     bool hasStatementCallback() const { return m_hasCallback; }
     bool hasStatementErrorCallback() const { return m_hasErrorCallback; }
 
-    void setVersionMismatchedError(DatabaseBackend*);
+    void setVersionMismatchedError(Database*);
 
-    AbstractSQLStatement* frontend();
-    virtual SQLErrorData* sqlError() const OVERRIDE;
-    virtual SQLResultSet* sqlResultSet() const OVERRIDE;
+    SQLStatement* frontend();
+    SQLErrorData* sqlError() const;
+    SQLResultSet* sqlResultSet() const;
 
 private:
-    SQLStatementBackend(PassOwnPtrWillBeRawPtr<AbstractSQLStatement>, const String& statement,
-        const Vector<SQLValue>& arguments, int permissions);
+    SQLStatementBackend(SQLStatement*, const String& statement, const Vector<SQLValue>& arguments, int permissions);
 
-    void setFailureDueToQuota(DatabaseBackend*);
+    void setFailureDueToQuota(Database*);
     void clearFailureDueToQuota();
 
-    OwnPtrWillBeMember<AbstractSQLStatement> m_frontend;
+    Member<SQLStatement> m_frontend;
     String m_statement;
     Vector<SQLValue> m_arguments;
     bool m_hasCallback;
     bool m_hasErrorCallback;
 
     OwnPtr<SQLErrorData> m_error;
-    RefPtrWillBeMember<SQLResultSet> m_resultSet;
+    Member<SQLResultSet> m_resultSet;
 
     int m_permissions;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SQLStatementBackend_h

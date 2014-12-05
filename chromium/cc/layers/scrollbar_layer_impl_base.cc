@@ -6,7 +6,7 @@
 
 #include <algorithm>
 #include "cc/trees/layer_tree_impl.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 
 namespace cc {
 
@@ -17,8 +17,8 @@ ScrollbarLayerImplBase::ScrollbarLayerImplBase(
     bool is_left_side_vertical_scrollbar,
     bool is_overlay)
     : LayerImpl(tree_impl, id),
-      scroll_layer_(NULL),
-      clip_layer_(NULL),
+      scroll_layer_(nullptr),
+      clip_layer_(nullptr),
       is_overlay_scrollbar_(is_overlay),
       thumb_thickness_scale_factor_(1.f),
       current_pos_(0.f),
@@ -26,7 +26,8 @@ ScrollbarLayerImplBase::ScrollbarLayerImplBase(
       orientation_(orientation),
       is_left_side_vertical_scrollbar_(is_left_side_vertical_scrollbar),
       vertical_adjust_(0.f),
-      visible_to_total_length_ratio_(1.f) {}
+      visible_to_total_length_ratio_(1.f) {
+}
 
 ScrollbarLayerImplBase::~ScrollbarLayerImplBase() {}
 
@@ -41,8 +42,8 @@ void ScrollbarLayerImplBase::PushPropertiesTo(LayerImpl* layer) {
 
 void ScrollbarLayerImplBase::PushScrollClipPropertiesTo(LayerImpl* layer) {
   DCHECK(layer->ToScrollbarLayer());
-  layer->ToScrollbarLayer()->SetScrollLayerById(ScrollLayerId());
-  layer->ToScrollbarLayer()->SetClipLayerById(ClipLayerId());
+  layer->ToScrollbarLayer()->SetScrollLayerAndClipLayerByIds(ScrollLayerId(),
+                                                             ClipLayerId());
 }
 
 ScrollbarLayerImplBase* ScrollbarLayerImplBase::ToScrollbarLayer() {
@@ -77,28 +78,22 @@ void RegisterScrollbarWithLayers(ScrollbarLayerImplBase* scrollbar,
 }
 }  // namespace
 
-void ScrollbarLayerImplBase::SetScrollLayerById(int id) {
-  LayerImpl* scroll_layer = layer_tree_impl()->LayerById(id);
-  if (scroll_layer_ == scroll_layer)
+void ScrollbarLayerImplBase::SetScrollLayerAndClipLayerByIds(
+    int scroll_layer_id,
+    int clip_layer_id) {
+  LayerImpl* scroll_layer = layer_tree_impl()->LayerById(scroll_layer_id);
+  LayerImpl* clip_layer = layer_tree_impl()->LayerById(clip_layer_id);
+  if (scroll_layer_ == scroll_layer && clip_layer_ == clip_layer)
     return;
 
   RegisterScrollbarWithLayers(
       this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
   scroll_layer_ = scroll_layer;
-  RegisterScrollbarWithLayers(
-      this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
-}
-
-void ScrollbarLayerImplBase::SetClipLayerById(int id) {
-  LayerImpl* clip_layer = layer_tree_impl()->LayerById(id);
-  if (clip_layer_ == clip_layer)
-    return;
-
-  RegisterScrollbarWithLayers(
-      this, clip_layer_, scroll_layer_, &LayerImpl::RemoveScrollbar);
   clip_layer_ = clip_layer;
   RegisterScrollbarWithLayers(
       this, clip_layer_, scroll_layer_, &LayerImpl::AddScrollbar);
+
+  ScrollbarParametersDidChange(false);
 }
 
 gfx::Rect ScrollbarLayerImplBase::ScrollbarLayerRectToContentRect(
@@ -111,42 +106,53 @@ gfx::Rect ScrollbarLayerImplBase::ScrollbarLayerRectToContentRect(
   return gfx::ToEnclosingRect(content_rect);
 }
 
-void ScrollbarLayerImplBase::SetCurrentPos(float current_pos) {
+bool ScrollbarLayerImplBase::SetCurrentPos(float current_pos) {
   if (current_pos_ == current_pos)
-    return;
+    return false;
   current_pos_ = current_pos;
   NoteLayerPropertyChanged();
+  return true;
 }
 
-void ScrollbarLayerImplBase::SetMaximum(int maximum) {
+bool ScrollbarLayerImplBase::SetMaximum(int maximum) {
   if (maximum_ == maximum)
-    return;
+    return false;
   maximum_ = maximum;
   NoteLayerPropertyChanged();
+  return true;
 }
 
-void ScrollbarLayerImplBase::SetVerticalAdjust(float vertical_adjust) {
+bool ScrollbarLayerImplBase::CanScrollOrientation() const {
+  if (!scroll_layer_)
+    return false;
+  return scroll_layer_->user_scrollable(orientation()) && (0 < maximum());
+}
+
+bool ScrollbarLayerImplBase::SetVerticalAdjust(float vertical_adjust) {
   if (vertical_adjust_ == vertical_adjust)
-    return;
+    return false;
   vertical_adjust_ = vertical_adjust;
   NoteLayerPropertyChanged();
+  return true;
 }
 
-void ScrollbarLayerImplBase::SetVisibleToTotalLengthRatio(float ratio) {
+bool ScrollbarLayerImplBase::SetVisibleToTotalLengthRatio(float ratio) {
   if (!IsThumbResizable())
-    return;
+    return false;
 
   if (visible_to_total_length_ratio_ == ratio)
-    return;
+    return false;
   visible_to_total_length_ratio_ = ratio;
   NoteLayerPropertyChanged();
+  return true;
 }
 
-void ScrollbarLayerImplBase::SetThumbThicknessScaleFactor(float factor) {
+bool ScrollbarLayerImplBase::SetThumbThicknessScaleFactor(float factor) {
   if (thumb_thickness_scale_factor_ == factor)
-    return;
+    return false;
   thumb_thickness_scale_factor_ = factor;
   NoteLayerPropertyChanged();
+  return true;
 }
 
 gfx::Rect ScrollbarLayerImplBase::ComputeThumbQuadRect() const {
@@ -218,9 +224,13 @@ gfx::Rect ScrollbarLayerImplBase::ComputeThumbQuadRect() const {
   // With the length known, we can compute the thumb's position.
   float clamped_current_pos =
       std::min(std::max(current_pos_, 0.f), static_cast<float>(maximum_));
-  float ratio = clamped_current_pos / maximum_;
-  float max_offset = track_length - thumb_length;
-  int thumb_offset = static_cast<int>(ratio * max_offset) + TrackStart();
+
+  int thumb_offset = TrackStart();
+  if (maximum_ > 0) {
+    float ratio = clamped_current_pos / maximum_;
+    float max_offset = track_length - thumb_length;
+    thumb_offset += static_cast<int>(ratio * max_offset);
+  }
 
   float thumb_thickness_adjustment =
       thumb_thickness * (1.f - thumb_thickness_scale_factor_);
@@ -244,11 +254,11 @@ gfx::Rect ScrollbarLayerImplBase::ComputeThumbQuadRect() const {
   return ScrollbarLayerRectToContentRect(thumb_rect);
 }
 
-void ScrollbarLayerImplBase::ScrollbarParametersDidChange() {
+void ScrollbarLayerImplBase::ScrollbarParametersDidChange(bool on_resize) {
   if (!clip_layer_ || !scroll_layer_)
     return;
 
-  scroll_layer_->SetScrollbarPosition(this, clip_layer_);
+  scroll_layer_->SetScrollbarPosition(this, clip_layer_, on_resize);
 }
 
 }  // namespace cc

@@ -22,7 +22,10 @@
 #ifndef FontSize_h
 #define FontSize_h
 
-namespace WebCore {
+#include "core/CSSValueKeywords.h"
+#include "platform/fonts/FixedPitchFontType.h"
+
+namespace blink {
 
 class Document;
 
@@ -37,14 +40,24 @@ private:
 public:
     static float getComputedSizeFromSpecifiedSize(const Document*, float zoomFactor, bool isAbsoluteSize, float specifiedSize, ESmartMinimumForFontSize = UseSmartMinimumForFontFize);
 
-    // Given a CSS keyword in the range (xx-small to -webkit-xxx-large), this function will return
-    // the correct font size scaled relative to the user's default (medium).
-    static float fontSizeForKeyword(const Document*, int keyword, bool shouldUseFixedDefaultSize);
+    // Given a CSS keyword in the range (xx-small to -webkit-xxx-large), this function returns
+    // values from '1' to '8'.
+    static unsigned keywordSize(CSSValueID valueID)
+    {
+        ASSERT(valueID >= CSSValueXxSmall && valueID <= CSSValueWebkitXxxLarge);
+        return valueID - CSSValueXxSmall + 1;
+    }
+
+    static unsigned initialKeywordSize() { return 4; } // CSSValueMedium
+
+    // Given a keyword size in the range (1 to 8), this function will return
+    // the correct font size scaled relative to the user's default (4).
+    static float fontSizeForKeyword(const Document*, unsigned keyword, FixedPitchFontType);
 
     // Given a font size in pixel, this function will return legacy font size between 1 and 7.
-    static int legacyFontSize(const Document*, int pixelFontSize, bool shouldUseFixedDefaultSize);
+    static int legacyFontSize(const Document*, int pixelFontSize, FixedPitchFontType);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FontSize_h

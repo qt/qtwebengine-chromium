@@ -28,22 +28,22 @@
 #ifndef WorkerScriptLoaderClient_h
 #define WorkerScriptLoaderClient_h
 
-namespace WebCore {
+namespace blink {
 
-    class ResourceResponse;
+class ResourceResponse;
 
-    class WorkerScriptLoaderClient {
-    public:
-        virtual void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&) { }
+class WorkerScriptLoaderClient {
+public:
+    virtual void didReceiveResponse(unsigned long /*identifier*/, const ResourceResponse&) { }
 
-        // FIXME: notifyFinished() is not currently guaranteed to be invoked if used from worker context and the worker shuts down in the middle of an operation.
-        // This will cause leaks when we support nested workers.
-        virtual void notifyFinished() { }
+    // FIXME: notifyFinished() is not currently guaranteed to be invoked if used from worker context and the worker shuts down in the middle of an operation.
+    // This will cause leaks when we support nested workers.
+    virtual void notifyFinished() { }
 
-    protected:
-        virtual ~WorkerScriptLoaderClient() { }
-    };
+protected:
+    virtual ~WorkerScriptLoaderClient() { }
+};
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerScriptLoaderClient_h

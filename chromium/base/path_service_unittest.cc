@@ -5,8 +5,8 @@
 #include "base/path_service.h"
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
@@ -15,10 +15,7 @@
 #include "testing/platform_test.h"
 
 #if defined(OS_WIN)
-#include <userenv.h>
 #include "base/win/windows_version.h"
-// userenv.dll is required for GetDefaultUserProfileDirectory().
-#pragma comment(lib, "userenv.lib")
 #endif
 
 namespace {
@@ -45,18 +42,7 @@ bool ReturnsValidPath(int dir_type) {
     check_path_exists = false;
 #endif
 #if defined(OS_WIN)
-  if (dir_type == base::DIR_DEFAULT_USER_QUICK_LAUNCH) {
-    // On Windows XP, the Quick Launch folder for the "Default User" doesn't
-    // exist by default. At least confirm that the path returned begins with the
-    // Default User's profile path.
-    if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-      wchar_t default_profile_path[MAX_PATH];
-      DWORD size = arraysize(default_profile_path);
-      return (result &&
-              ::GetDefaultUserProfileDirectory(default_profile_path, &size) &&
-              StartsWith(path.value(), default_profile_path, false));
-    }
-  } else if (dir_type == base::DIR_TASKBAR_PINS) {
+  if (dir_type == base::DIR_TASKBAR_PINS) {
     // There is no pinned-to-taskbar shortcuts prior to Win7.
     if (base::win::GetVersion() < base::win::VERSION_WIN7)
       check_path_exists = false;
@@ -112,18 +98,8 @@ TEST_F(PathServiceTest, Get) {
 #if defined(OS_WIN)
   for (int key = base::PATH_WIN_START + 1; key < base::PATH_WIN_END; ++key) {
     bool valid = true;
-    switch(key) {
-      case base::DIR_LOCAL_APP_DATA_LOW:
-        // DIR_LOCAL_APP_DATA_LOW is not supported prior Vista and is expected
-        // to fail.
-        valid = base::win::GetVersion() >= base::win::VERSION_VISTA;
-        break;
-      case base::DIR_APP_SHORTCUTS:
-        // DIR_APP_SHORTCUTS is not supported prior Windows 8 and is expected to
-        // fail.
-        valid = base::win::GetVersion() >= base::win::VERSION_WIN8;
-        break;
-    }
+    if (key == base::DIR_APP_SHORTCUTS)
+      valid = base::win::GetVersion() >= base::win::VERSION_WIN8;
 
     if (valid)
       EXPECT_TRUE(ReturnsValidPath(key)) << key;

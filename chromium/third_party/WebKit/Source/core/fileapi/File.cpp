@@ -26,7 +26,7 @@
 #include "config.h"
 #include "core/fileapi/File.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "platform/FileMetadata.h"
 #include "platform/MIMETypeRegistry.h"
@@ -35,7 +35,7 @@
 #include "wtf/CurrentTime.h"
 #include "wtf/DateMath.h"
 
-namespace WebCore {
+namespace blink {
 
 static String getContentTypeFromFileName(const String& name, File::ContentTypeLookupPolicy policy)
 {
@@ -86,80 +86,80 @@ static PassOwnPtr<BlobData> createBlobDataForFileSystemURL(const KURL& fileSyste
     return blobData.release();
 }
 
-PassRefPtrWillBeRawPtr<File> File::createWithRelativePath(const String& path, const String& relativePath)
+File* File::createWithRelativePath(const String& path, const String& relativePath)
 {
-    RefPtrWillBeRawPtr<File> file = adoptRefWillBeNoop(new File(path, AllContentTypes));
+    File* file = new File(path, File::AllContentTypes, File::IsUserVisible);
     file->m_relativePath = relativePath;
-    return file.release();
+    return file;
 }
 
-File::File(const String& path, ContentTypeLookupPolicy policy)
+File::File(const String& path, ContentTypeLookupPolicy policy, UserVisibility userVisibility)
     : Blob(BlobDataHandle::create(createBlobDataForFile(path, policy), -1))
     , m_hasBackingFile(true)
+    , m_userVisibility(userVisibility)
     , m_path(path)
-    , m_name(blink::Platform::current()->fileUtilities()->baseName(path))
+    , m_name(Platform::current()->fileUtilities()->baseName(path))
     , m_snapshotSize(-1)
     , m_snapshotModificationTime(invalidFileTime())
 {
-    ScriptWrappable::init(this);
 }
 
-File::File(const String& path, const String& name, ContentTypeLookupPolicy policy)
+File::File(const String& path, const String& name, ContentTypeLookupPolicy policy, UserVisibility userVisibility)
     : Blob(BlobDataHandle::create(createBlobDataForFileWithName(path, name, policy), -1))
     , m_hasBackingFile(true)
+    , m_userVisibility(userVisibility)
     , m_path(path)
     , m_name(name)
     , m_snapshotSize(-1)
     , m_snapshotModificationTime(invalidFileTime())
 {
-    ScriptWrappable::init(this);
 }
 
-File::File(const String& path, const String& name, const String& relativePath, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
+File::File(const String& path, const String& name, const String& relativePath, UserVisibility userVisibility, bool hasSnaphotData, uint64_t size, double lastModified, PassRefPtr<BlobDataHandle> blobDataHandle)
     : Blob(blobDataHandle)
     , m_hasBackingFile(!path.isEmpty() || !relativePath.isEmpty())
+    , m_userVisibility(userVisibility)
     , m_path(path)
     , m_name(name)
     , m_snapshotSize(hasSnaphotData ? static_cast<long long>(size) : -1)
     , m_snapshotModificationTime(hasSnaphotData ? lastModified : invalidFileTime())
     , m_relativePath(relativePath)
 {
-    ScriptWrappable::init(this);
 }
 
 File::File(const String& name, double modificationTime, PassRefPtr<BlobDataHandle> blobDataHandle)
     : Blob(blobDataHandle)
     , m_hasBackingFile(false)
+    , m_userVisibility(File::IsNotUserVisible)
     , m_name(name)
     , m_snapshotSize(Blob::size())
     , m_snapshotModificationTime(modificationTime)
 {
-    ScriptWrappable::init(this);
 }
 
-File::File(const String& name, const FileMetadata& metadata)
-    : Blob(BlobDataHandle::create(createBlobDataForFileWithMetadata(name, metadata),  metadata.length))
+File::File(const String& name, const FileMetadata& metadata, UserVisibility userVisibility)
+    : Blob(BlobDataHandle::create(createBlobDataForFileWithMetadata(name, metadata), metadata.length))
     , m_hasBackingFile(true)
+    , m_userVisibility(userVisibility)
     , m_path(metadata.platformPath)
     , m_name(name)
     , m_snapshotSize(metadata.length)
     , m_snapshotModificationTime(metadata.modificationTime)
 {
-    ScriptWrappable::init(this);
 }
 
-File::File(const KURL& fileSystemURL, const FileMetadata& metadata)
+File::File(const KURL& fileSystemURL, const FileMetadata& metadata, UserVisibility userVisibility)
     : Blob(BlobDataHandle::create(createBlobDataForFileSystemURL(fileSystemURL, metadata), metadata.length))
-    , m_hasBackingFile(true)
+    , m_hasBackingFile(false)
+    , m_userVisibility(userVisibility)
     , m_name(decodeURLEscapeSequences(fileSystemURL.lastPathComponent()))
     , m_fileSystemURL(fileSystemURL)
     , m_snapshotSize(metadata.length)
     , m_snapshotModificationTime(metadata.modificationTime)
 {
-    ScriptWrappable::init(this);
 }
 
-double File::lastModifiedDate() const
+double File::lastModifiedMS() const
 {
     if (hasValidSnapshotMetadata() && isValidFileTime(m_snapshotModificationTime))
         return m_snapshotModificationTime * msPerSecond;
@@ -169,6 +169,32 @@ double File::lastModifiedDate() const
         return modificationTime * msPerSecond;
 
     return currentTime() * msPerSecond;
+}
+
+long long File::lastModified() const
+{
+    double modifiedDate = lastModifiedMS();
+
+    // The getter should return the current time when the last modification time isn't known.
+    if (!isValidFileTime(modifiedDate))
+        modifiedDate = currentTimeMS();
+
+    // lastModified returns a number, not a Date instance,
+    // http://dev.w3.org/2006/webapi/FileAPI/#file-attrs
+    return floor(modifiedDate);
+}
+
+double File::lastModifiedDate() const
+{
+    double modifiedDate = lastModifiedMS();
+
+    // The getter should return the current time when the last modification time isn't known.
+    if (!isValidFileTime(modifiedDate))
+        modifiedDate = currentTimeMS();
+
+    // lastModifiedDate returns a Date instance,
+    // http://www.w3.org/TR/FileAPI/#dfn-lastModifiedDate
+    return modifiedDate;
 }
 
 unsigned long long File::size() const
@@ -184,7 +210,7 @@ unsigned long long File::size() const
     return static_cast<unsigned long long>(size);
 }
 
-PassRefPtrWillBeRawPtr<Blob> File::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
+Blob* File::slice(long long start, long long end, const String& contentType, ExceptionState& exceptionState) const
 {
     if (hasBeenClosed()) {
         exceptionState.throwDOMException(InvalidStateError, "File has been closed.");
@@ -270,4 +296,21 @@ void File::appendTo(BlobData& blobData) const
     blobData.appendFile(m_path, 0, size, modificationTime);
 }
 
-} // namespace WebCore
+bool File::hasSameSource(const File& other) const
+{
+    if (m_hasBackingFile != other.m_hasBackingFile)
+        return false;
+
+    if (m_hasBackingFile)
+        return m_path == other.m_path;
+
+    if (m_fileSystemURL.isEmpty() != other.m_fileSystemURL.isEmpty())
+        return false;
+
+    if (!m_fileSystemURL.isEmpty())
+        return m_fileSystemURL == other.m_fileSystemURL;
+
+    return uuid() == other.uuid();
+}
+
+} // namespace blink

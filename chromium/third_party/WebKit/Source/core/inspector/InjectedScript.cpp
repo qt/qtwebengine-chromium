@@ -33,19 +33,20 @@
 
 #include "core/inspector/InjectedScript.h"
 
-#include "bindings/v8/ScriptFunctionCall.h"
+#include "bindings/core/v8/ScriptFunctionCall.h"
 #include "core/inspector/InjectedScriptHost.h"
 #include "platform/JSONValues.h"
 #include "wtf/text/WTFString.h"
 
-using WebCore::TypeBuilder::Array;
-using WebCore::TypeBuilder::Debugger::CallFrame;
-using WebCore::TypeBuilder::Runtime::PropertyDescriptor;
-using WebCore::TypeBuilder::Runtime::InternalPropertyDescriptor;
-using WebCore::TypeBuilder::Debugger::FunctionDetails;
-using WebCore::TypeBuilder::Runtime::RemoteObject;
+using blink::TypeBuilder::Array;
+using blink::TypeBuilder::Debugger::CallFrame;
+using blink::TypeBuilder::Debugger::CollectionEntry;
+using blink::TypeBuilder::Debugger::FunctionDetails;
+using blink::TypeBuilder::Runtime::PropertyDescriptor;
+using blink::TypeBuilder::Runtime::InternalPropertyDescriptor;
+using blink::TypeBuilder::Runtime::RemoteObject;
 
-namespace WebCore {
+namespace blink {
 
 InjectedScript::InjectedScript()
     : InjectedScriptBase("InjectedScript")
@@ -57,7 +58,7 @@ InjectedScript::InjectedScript(ScriptValue injectedScriptObject, InspectedStateA
 {
 }
 
-void InjectedScript::evaluate(ErrorString* errorString, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InjectedScript::evaluate(ErrorString* errorString, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
 {
     ScriptFunctionCall function(injectedScriptObject(), "evaluate");
     function.appendArgument(expression);
@@ -65,7 +66,7 @@ void InjectedScript::evaluate(ErrorString* errorString, const String& expression
     function.appendArgument(includeCommandLineAPI);
     function.appendArgument(returnByValue);
     function.appendArgument(generatePreview);
-    makeEvalCall(errorString, function, result, wasThrown);
+    makeEvalCall(errorString, function, result, wasThrown, exceptionDetails);
 }
 
 void InjectedScript::callFunctionOn(ErrorString* errorString, const String& objectId, const String& expression, const String& arguments, bool returnByValue, bool generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown)
@@ -79,7 +80,7 @@ void InjectedScript::callFunctionOn(ErrorString* errorString, const String& obje
     makeEvalCall(errorString, function, result, wasThrown);
 }
 
-void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptValue& callFrames, const Vector<ScriptValue>& asyncCallStacks, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptValue& callFrames, const Vector<ScriptValue>& asyncCallStacks, const String& callFrameId, const String& expression, const String& objectGroup, bool includeCommandLineAPI, bool returnByValue, bool generatePreview, RefPtr<RemoteObject>* result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>* exceptionDetails)
 {
     ScriptFunctionCall function(injectedScriptObject(), "evaluateOnCallFrame");
     function.appendArgument(callFrames);
@@ -90,7 +91,7 @@ void InjectedScript::evaluateOnCallFrame(ErrorString* errorString, const ScriptV
     function.appendArgument(includeCommandLineAPI);
     function.appendArgument(returnByValue);
     function.appendArgument(generatePreview);
-    makeEvalCall(errorString, function, result, wasThrown);
+    makeEvalCall(errorString, function, result, wasThrown, exceptionDetails);
 }
 
 void InjectedScript::restartFrame(ErrorString* errorString, const ScriptValue& callFrames, const String& callFrameId, RefPtr<JSONObject>* result)
@@ -175,6 +176,20 @@ void InjectedScript::getFunctionDetails(ErrorString* errorString, const String& 
         return;
     }
     *result = FunctionDetails::runtimeCast(resultValue);
+}
+
+void InjectedScript::getCollectionEntries(ErrorString* errorString, const String& objectId, RefPtr<Array<CollectionEntry> >* result)
+{
+    ScriptFunctionCall function(injectedScriptObject(), "getCollectionEntries");
+    function.appendArgument(objectId);
+    RefPtr<JSONValue> resultValue;
+    makeCall(function, &resultValue);
+    if (!resultValue || resultValue->type() != JSONValue::TypeArray) {
+        if (!resultValue->asString(errorString))
+            *errorString = "Internal error";
+        return;
+    }
+    *result = Array<CollectionEntry>::runtimeCast(resultValue);
 }
 
 void InjectedScript::getProperties(ErrorString* errorString, const String& objectId, bool ownProperties, bool accessorPropertiesOnly, RefPtr<Array<PropertyDescriptor> >* properties)
@@ -322,5 +337,14 @@ ScriptValue InjectedScript::nodeAsScriptValue(Node* node)
     return InjectedScriptHost::nodeAsScriptValue(scriptState(), node);
 }
 
-} // namespace WebCore
+void InjectedScript::setLastEvaluationResult(const String& objectId)
+{
+    ASSERT(!isEmpty());
+    ScriptFunctionCall setLastResultFunction(injectedScriptObject(), "setLastEvaluationResult");
+    setLastResultFunction.appendArgument(objectId);
+    RefPtr<JSONValue> result;
+    makeCall(setLastResultFunction, &result);
+}
+
+} // namespace blink
 

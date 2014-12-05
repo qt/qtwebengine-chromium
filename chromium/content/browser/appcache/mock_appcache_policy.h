@@ -6,20 +6,20 @@
 #define CONTENT_BROWSER_APPCACHE_MOCK_APPCACHE_POLICY_H_
 
 #include "base/compiler_specific.h"
+#include "content/browser/appcache/appcache_policy.h"
 #include "url/gurl.h"
-#include "webkit/browser/appcache/appcache_policy.h"
 
 namespace content {
 
-class MockAppCachePolicy : public appcache::AppCachePolicy {
+class MockAppCachePolicy : public AppCachePolicy {
  public:
   MockAppCachePolicy();
   virtual ~MockAppCachePolicy();
 
-  virtual bool CanLoadAppCache(const GURL& manifest_url,
-                               const GURL& first_party) OVERRIDE;
-  virtual bool CanCreateAppCache(const GURL& manifest_url,
-                                 const GURL& first_party) OVERRIDE;
+  bool CanLoadAppCache(const GURL& manifest_url,
+                       const GURL& first_party) override;
+  bool CanCreateAppCache(const GURL& manifest_url,
+                         const GURL& first_party) override;
 
   bool can_load_return_value_;
   bool can_create_return_value_;

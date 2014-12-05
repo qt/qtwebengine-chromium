@@ -5,17 +5,17 @@
 #ifndef NavigatorBattery_h
 #define NavigatorBattery_h
 
-#include "bindings/v8/ScriptPromise.h"
+#include "bindings/core/v8/ScriptPromise.h"
 #include "core/frame/Navigator.h"
 #include "platform/Supplementable.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
 class BatteryManager;
 class Navigator;
 
-class NavigatorBattery FINAL : public NoBaseWillBeGarbageCollectedFinalized<NavigatorBattery>, public WillBeHeapSupplement<Navigator> {
+class NavigatorBattery final : public NoBaseWillBeGarbageCollectedFinalized<NavigatorBattery>, public WillBeHeapSupplement<Navigator> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(NavigatorBattery);
 public:
     virtual ~NavigatorBattery();
@@ -31,9 +31,9 @@ private:
     NavigatorBattery();
     static const char* supplementName();
 
-    RefPtrWillBeMember<BatteryManager> m_batteryManager;
+    PersistentWillBeMember<BatteryManager> m_batteryManager;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorBattery_h

@@ -23,7 +23,6 @@
 #include "core/rendering/HitTestResult.h"
 
 #include "core/HTMLNames.h"
-#include "core/XLinkNames.h"
 #include "core/dom/DocumentMarkerController.h"
 #include "core/dom/NodeRenderingTraversal.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -34,6 +33,7 @@
 #include "core/html/HTMLImageElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLMediaElement.h"
+#include "core/html/HTMLTextAreaElement.h"
 #include "core/html/parser/HTMLParserIdioms.h"
 #include "core/page/FrameTree.h"
 #include "core/rendering/RenderImage.h"
@@ -41,7 +41,7 @@
 #include "core/svg/SVGElement.h"
 #include "platform/scroll/Scrollbar.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -114,6 +114,30 @@ HitTestResult& HitTestResult::operator=(const HitTestResult& other)
     return *this;
 }
 
+void HitTestResult::trace(Visitor* visitor)
+{
+    visitor->trace(m_innerNode);
+    visitor->trace(m_innerPossiblyPseudoNode);
+    visitor->trace(m_innerNonSharedNode);
+    visitor->trace(m_innerURLElement);
+    visitor->trace(m_scrollbar);
+#if ENABLE(OILPAN)
+    visitor->trace(m_rectBasedTestResult);
+#endif
+}
+
+PositionWithAffinity HitTestResult::position() const
+{
+    if (!m_innerPossiblyPseudoNode)
+        return PositionWithAffinity();
+    RenderObject* renderer = this->renderer();
+    if (!renderer)
+        return PositionWithAffinity();
+    if (m_innerPossiblyPseudoNode->isPseudoElement() && m_innerPossiblyPseudoNode->pseudoId() == BEFORE)
+        return Position(m_innerNode, Position::PositionIsBeforeChildren).downstream();
+    return renderer->positionForPoint(localPoint());
+}
+
 RenderObject* HitTestResult::renderer() const
 {
     if (!m_innerNode)
@@ -122,19 +146,6 @@ RenderObject* HitTestResult::renderer() const
     if (!m_isFirstLetter || !renderer || !renderer->isText() || !toRenderText(renderer)->isTextFragment())
         return renderer;
     return toRenderTextFragment(renderer)->firstRenderTextInFirstLetter();
-}
-
-void HitTestResult::setToNodesInDocumentTreeScope()
-{
-    if (Node* node = innerNode()) {
-        node = node->document().ancestorInThisScope(node);
-        setInnerNode(node);
-    }
-
-    if (Node* node = innerNonSharedNode()) {
-        node = node->document().ancestorInThisScope(node);
-        setInnerNonSharedNode(node);
-    }
 }
 
 void HitTestResult::setToShadowHostIfInUserAgentShadowRoot()
@@ -223,7 +234,7 @@ String HitTestResult::title(TextDirection& dir) const
     for (Node* titleNode = m_innerNode.get(); titleNode; titleNode = titleNode->parentNode()) {
         if (titleNode->isElementNode()) {
             String title = toElement(titleNode)->title();
-            if (!title.isEmpty()) {
+            if (!title.isNull()) {
                 if (RenderObject* renderer = titleNode->renderer())
                     dir = renderer->style()->direction();
                 return title;
@@ -279,12 +290,11 @@ KURL HitTestResult::absoluteImageURL() const
         return KURL();
 
     RenderObject* renderer = m_innerNonSharedNode->renderer();
-    if (!(renderer && (renderer->isImage() || renderer->isCanvas())))
+    if (!(renderer && renderer->isImage()))
         return KURL();
 
     AtomicString urlString;
-    if (isHTMLCanvasElement(*m_innerNonSharedNode)
-        || isHTMLEmbedElement(*m_innerNonSharedNode)
+    if (isHTMLEmbedElement(*m_innerNonSharedNode)
         || isHTMLImageElement(*m_innerNonSharedNode)
         || isHTMLInputElement(*m_innerNonSharedNode)
         || isHTMLObjectElement(*m_innerNonSharedNode)
@@ -321,37 +331,19 @@ KURL HitTestResult::absoluteLinkURL() const
 {
     if (!m_innerURLElement)
         return KURL();
-
-    AtomicString urlString;
-    if (isHTMLAnchorElement(*m_innerURLElement) || isHTMLAreaElement(*m_innerURLElement) || isHTMLLinkElement(*m_innerURLElement))
-        urlString = m_innerURLElement->getAttribute(hrefAttr);
-    else if (isSVGAElement(*m_innerURLElement))
-        urlString = m_innerURLElement->getAttribute(XLinkNames::hrefAttr);
-    else
-        return KURL();
-
-    return m_innerURLElement->document().completeURL(stripLeadingAndTrailingHTMLSpaces(urlString));
+    return m_innerURLElement->hrefURL();
 }
 
 bool HitTestResult::isLiveLink() const
 {
-    if (!m_innerURLElement)
-        return false;
-
-    if (isHTMLAnchorElement(*m_innerURLElement))
-        return toHTMLAnchorElement(m_innerURLElement)->isLiveLink();
-
-    if (isSVGAElement(*m_innerURLElement))
-        return m_innerURLElement->isLink();
-
-    return false;
+    return m_innerURLElement && m_innerURLElement->isLiveLink();
 }
 
 bool HitTestResult::isMisspelled() const
 {
-    if (!targetNode() || !targetNode()->renderer())
+    if (!innerNode() || !innerNode()->renderer())
         return false;
-    VisiblePosition pos(targetNode()->renderer()->positionForPoint(localPoint()));
+    VisiblePosition pos(innerNode()->renderer()->positionForPoint(localPoint()));
     if (pos.isNull())
         return false;
     return m_innerNonSharedNode->document().markers().markersInRange(
@@ -380,12 +372,14 @@ bool HitTestResult::isContentEditable() const
         return false;
 
     if (isHTMLTextAreaElement(*m_innerNonSharedNode))
-        return true;
+        return !toHTMLTextAreaElement(*m_innerNonSharedNode).isDisabledOrReadOnly();
 
-    if (isHTMLInputElement(*m_innerNonSharedNode))
-        return toHTMLInputElement(*m_innerNonSharedNode).isTextField();
+    if (isHTMLInputElement(*m_innerNonSharedNode)) {
+        HTMLInputElement& inputElement = toHTMLInputElement(*m_innerNonSharedNode);
+        return !inputElement.isDisabledOrReadOnly() && inputElement.isTextField();
+    }
 
-    return m_innerNonSharedNode->rendererIsEditable();
+    return m_innerNonSharedNode->hasEditableStyle();
 }
 
 bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestRequest& request, const HitTestLocation& locationInContainer, const LayoutRect& rect)
@@ -398,9 +392,6 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestReques
     // If node is null, return true so the hit test can continue.
     if (!node)
         return true;
-
-    if (request.disallowsShadowContent())
-        node = node->document().ancestorInThisScope(node);
 
     mutableRectBasedTestResult().add(node);
 
@@ -418,9 +409,6 @@ bool HitTestResult::addNodeToRectBasedTestResult(Node* node, const HitTestReques
     // If node is null, return true so the hit test can continue.
     if (!node)
         return true;
-
-    if (request.disallowsShadowContent())
-        node = node->document().ancestorInThisScope(node);
 
     mutableRectBasedTestResult().add(node);
 
@@ -467,19 +455,22 @@ HitTestResult::NodeSet& HitTestResult::mutableRectBasedTestResult()
     return *m_rectBasedTestResult;
 }
 
-Node* HitTestResult::targetNode() const
+void HitTestResult::resolveRectBasedTest(Node* resolvedInnerNode, const LayoutPoint& resolvedPointInMainFrame)
 {
-    Node* node = innerNode();
-    if (!node)
-        return 0;
-    if (node->inDocument())
-        return node;
+    ASSERT(isRectBasedTest());
+    ASSERT(m_hitTestLocation.containsPoint(resolvedPointInMainFrame));
+    m_hitTestLocation = HitTestLocation(resolvedPointInMainFrame);
+    m_pointInInnerNodeFrame = resolvedPointInMainFrame;
+    m_innerNode = nullptr;
+    m_innerNonSharedNode = nullptr;
+    m_innerPossiblyPseudoNode = nullptr;
+    m_rectBasedTestResult = nullptr;
 
-    Element* element = node->parentElement();
-    if (element && element->inDocument())
-        return element;
-
-    return node;
+    // Update the HitTestResult as if the supplied node had been hit in normal point-based hit-test.
+    // Note that we don't know the local point after a rect-based hit-test, but we never use
+    // it so shouldn't bother with the cost of computing it.
+    resolvedInnerNode->renderer()->updateHitTestResult(*this, LayoutPoint());
+    ASSERT(!isRectBasedTest());
 }
 
 Element* HitTestResult::innerElement() const
@@ -492,4 +483,4 @@ Element* HitTestResult::innerElement() const
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

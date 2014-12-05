@@ -4,81 +4,48 @@
 
 #include "ui/shell_dialogs/select_file_dialog_win.h"
 
-#include <windows.h>
-#include <commdlg.h>
 #include <shlobj.h>
 
 #include <algorithm>
 #include <set>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/i18n/case_conversion.h"
 #include "base/message_loop/message_loop.h"
 #include "base/message_loop/message_loop_proxy.h"
-#include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/win/metro.h"
+#include "base/tuple.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
 #include "base/win/shortcut.h"
-#include "base/win/windows_version.h"
-#include "grit/ui_strings.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
 #include "ui/aura/window_tree_host.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/win/open_file_name_win.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/shell_dialogs/base_shell_dialog_win.h"
 #include "ui/shell_dialogs/shell_dialogs_delegate.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "win8/viewer/metro_viewer_process_host.h"
 
 namespace {
+
+bool CallBuiltinGetOpenFileName(OPENFILENAME* ofn) {
+  return ::GetOpenFileName(ofn) == TRUE;
+}
+
+bool CallBuiltinGetSaveFileName(OPENFILENAME* ofn) {
+  return ::GetSaveFileName(ofn) == TRUE;
+}
 
 // Given |extension|, if it's not empty, then remove the leading dot.
 std::wstring GetExtensionWithoutLeadingDot(const std::wstring& extension) {
   DCHECK(extension.empty() || extension[0] == L'.');
   return extension.empty() ? extension : extension.substr(1);
-}
-
-// Diverts to a metro-specific implementation as appropriate.
-bool CallGetOpenFileName(OPENFILENAME* ofn) {
-  HMODULE metro_module = base::win::GetMetroModule();
-  if (metro_module != NULL) {
-    typedef BOOL (*MetroGetOpenFileName)(OPENFILENAME*);
-    MetroGetOpenFileName metro_get_open_file_name =
-        reinterpret_cast<MetroGetOpenFileName>(
-            ::GetProcAddress(metro_module, "MetroGetOpenFileName"));
-    if (metro_get_open_file_name == NULL) {
-      NOTREACHED();
-      return false;
-    }
-
-    return metro_get_open_file_name(ofn) == TRUE;
-  } else {
-    return GetOpenFileName(ofn) == TRUE;
-  }
-}
-
-// Diverts to a metro-specific implementation as appropriate.
-bool CallGetSaveFileName(OPENFILENAME* ofn) {
-  HMODULE metro_module = base::win::GetMetroModule();
-  if (metro_module != NULL) {
-    typedef BOOL (*MetroGetSaveFileName)(OPENFILENAME*);
-    MetroGetSaveFileName metro_get_save_file_name =
-        reinterpret_cast<MetroGetSaveFileName>(
-            ::GetProcAddress(metro_module, "MetroGetSaveFileName"));
-    if (metro_get_save_file_name == NULL) {
-      NOTREACHED();
-      return false;
-    }
-
-    return metro_get_save_file_name(ofn) == TRUE;
-  } else {
-    return GetSaveFileName(ofn) == TRUE;
-  }
 }
 
 // Distinguish directories from regular files.
@@ -189,232 +156,20 @@ std::wstring FormatFilterForExtensions(
   return result;
 }
 
-// Enforce visible dialog box.
-UINT_PTR CALLBACK SaveAsDialogHook(HWND dialog, UINT message,
-                                   WPARAM wparam, LPARAM lparam) {
-  static const UINT kPrivateMessage = 0x2F3F;
-  switch (message) {
-    case WM_INITDIALOG: {
-      // Do nothing here. Just post a message to defer actual processing.
-      PostMessage(dialog, kPrivateMessage, 0, 0);
-      return TRUE;
-    }
-    case kPrivateMessage: {
-      // The dialog box is the parent of the current handle.
-      HWND real_dialog = GetParent(dialog);
-
-      // Retrieve the final size.
-      RECT dialog_rect;
-      GetWindowRect(real_dialog, &dialog_rect);
-
-      // Verify that the upper left corner is visible.
-      POINT point = { dialog_rect.left, dialog_rect.top };
-      HMONITOR monitor1 = MonitorFromPoint(point, MONITOR_DEFAULTTONULL);
-      point.x = dialog_rect.right;
-      point.y = dialog_rect.bottom;
-
-      // Verify that the lower right corner is visible.
-      HMONITOR monitor2 = MonitorFromPoint(point, MONITOR_DEFAULTTONULL);
-      if (monitor1 && monitor2)
-        return 0;
-
-      // Some part of the dialog box is not visible, fix it by moving is to the
-      // client rect position of the browser window.
-      HWND parent_window = GetParent(real_dialog);
-      if (!parent_window)
-        return 0;
-      WINDOWINFO parent_info;
-      parent_info.cbSize = sizeof(WINDOWINFO);
-      GetWindowInfo(parent_window, &parent_info);
-      SetWindowPos(real_dialog, NULL,
-                   parent_info.rcClient.left,
-                   parent_info.rcClient.top,
-                   0, 0,  // Size.
-                   SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_NOSIZE |
-                   SWP_NOZORDER);
-
-      return 0;
-    }
-  }
-  return 0;
-}
-
-// Prompt the user for location to save a file.
-// Callers should provide the filter string, and also a filter index.
-// The parameter |index| indicates the initial index of filter description
-// and filter pattern for the dialog box. If |index| is zero or greater than
-// the number of total filter types, the system uses the first filter in the
-// |filter| buffer. |index| is used to specify the initial selected extension,
-// and when done contains the extension the user chose. The parameter
-// |final_name| returns the file name which contains the drive designator,
-// path, file name, and extension of the user selected file name. |def_ext| is
-// the default extension to give to the file if the user did not enter an
-// extension. If |ignore_suggested_ext| is true, any file extension contained in
-// |suggested_name| will not be used to generate the file name. This is useful
-// in the case of saving web pages, where we know the extension type already and
-// where |suggested_name| may contain a '.' character as a valid part of the
-// name, thus confusing our extension detection code.
-bool SaveFileAsWithFilter(HWND owner,
-                          const std::wstring& suggested_name,
-                          const std::wstring& filter,
-                          const std::wstring& def_ext,
-                          bool ignore_suggested_ext,
-                          unsigned* index,
-                          std::wstring* final_name) {
-  DCHECK(final_name);
-  // Having an empty filter makes for a bad user experience. We should always
-  // specify a filter when saving.
-  DCHECK(!filter.empty());
-  const base::FilePath suggested_path(suggested_name);
-  std::wstring file_part = suggested_path.BaseName().value();
-  // If the suggested_name is a root directory, file_part will be '\', and the
-  // call to GetSaveFileName below will fail.
-  if (file_part.size() == 1 && file_part[0] == L'\\')
-    file_part.clear();
-
-  // The size of the in/out buffer in number of characters we pass to win32
-  // GetSaveFileName.  From MSDN "The buffer must be large enough to store the
-  // path and file name string or strings, including the terminating NULL
-  // character.  ... The buffer should be at least 256 characters long.".
-  // _IsValidPathComDlg does a copy expecting at most MAX_PATH, otherwise will
-  // result in an error of FNERR_INVALIDFILENAME.  So we should only pass the
-  // API a buffer of at most MAX_PATH.
-  wchar_t file_name[MAX_PATH];
-  base::wcslcpy(file_name, file_part.c_str(), arraysize(file_name));
-
-  OPENFILENAME save_as;
-  // We must do this otherwise the ofn's FlagsEx may be initialized to random
-  // junk in release builds which can cause the Places Bar not to show up!
-  ZeroMemory(&save_as, sizeof(save_as));
-  save_as.lStructSize = sizeof(OPENFILENAME);
-  save_as.hwndOwner = owner;
-  save_as.hInstance = NULL;
-
-  save_as.lpstrFilter = filter.empty() ? NULL : filter.c_str();
-
-  save_as.lpstrCustomFilter = NULL;
-  save_as.nMaxCustFilter = 0;
-  save_as.nFilterIndex = *index;
-  save_as.lpstrFile = file_name;
-  save_as.nMaxFile = arraysize(file_name);
-  save_as.lpstrFileTitle = NULL;
-  save_as.nMaxFileTitle = 0;
-
-  // Set up the initial directory for the dialog.
-  std::wstring directory;
-  if (!suggested_name.empty()) {
-    if (IsDirectory(suggested_path)) {
-      directory = suggested_path.value();
-      file_part.clear();
-    } else {
-      directory = suggested_path.DirName().value();
-    }
-  }
-
-  save_as.lpstrInitialDir = directory.c_str();
-  save_as.lpstrTitle = NULL;
-  save_as.Flags = OFN_OVERWRITEPROMPT | OFN_EXPLORER | OFN_ENABLESIZING |
-                  OFN_NOCHANGEDIR | OFN_PATHMUSTEXIST;
-  save_as.lpstrDefExt = &def_ext[0];
-  save_as.lCustData = NULL;
-
-  if (base::win::GetVersion() < base::win::VERSION_VISTA) {
-    // The save as on Windows XP remembers its last position,
-    // and if the screen resolution changed, it will be off screen.
-    save_as.Flags |= OFN_ENABLEHOOK;
-    save_as.lpfnHook = &SaveAsDialogHook;
-  }
-
-  // Must be NULL or 0.
-  save_as.pvReserved = NULL;
-  save_as.dwReserved = 0;
-
-  if (!CallGetSaveFileName(&save_as)) {
-    // Zero means the dialog was closed, otherwise we had an error.
-    DWORD error_code = CommDlgExtendedError();
-    if (error_code != 0) {
-      NOTREACHED() << "GetSaveFileName failed with code: " << error_code;
-    }
-    return false;
-  }
-
-  // Return the user's choice.
-  final_name->assign(save_as.lpstrFile);
-  *index = save_as.nFilterIndex;
-
-  // Figure out what filter got selected from the vector with embedded nulls.
-  // NOTE: The filter contains a string with embedded nulls, such as:
-  // JPG Image\0*.jpg\0All files\0*.*\0\0
-  // The filter index is 1-based index for which pair got selected. So, using
-  // the example above, if the first index was selected we need to skip 1
-  // instance of null to get to "*.jpg".
-  std::vector<std::wstring> filters;
-  if (!filter.empty() && save_as.nFilterIndex > 0)
-    base::SplitString(filter, '\0', &filters);
-  std::wstring filter_selected;
-  if (!filters.empty())
-    filter_selected = filters[(2 * (save_as.nFilterIndex - 1)) + 1];
-
-  // Get the extension that was suggested to the user (when the Save As dialog
-  // was opened). For saving web pages, we skip this step since there may be
-  // 'extension characters' in the title of the web page.
-  std::wstring suggested_ext;
-  if (!ignore_suggested_ext)
-    suggested_ext = GetExtensionWithoutLeadingDot(suggested_path.Extension());
-
-  // If we can't get the extension from the suggested_name, we use the default
-  // extension passed in. This is to cover cases like when saving a web page,
-  // where we get passed in a name without an extension and a default extension
-  // along with it.
-  if (suggested_ext.empty())
-    suggested_ext = def_ext;
-
-  *final_name =
-      ui::AppendExtensionIfNeeded(*final_name, filter_selected, suggested_ext);
-  return true;
-}
-
-// Prompt the user for location to save a file. 'suggested_name' is a full path
-// that gives the dialog box a hint as to how to initialize itself.
-// For example, a 'suggested_name' of:
-//   "C:\Documents and Settings\jojo\My Documents\picture.png"
-// will start the dialog in the "C:\Documents and Settings\jojo\My Documents\"
-// directory, and filter for .png file types.
-// 'owner' is the window to which the dialog box is modal, NULL for a modeless
-// dialog box.
-// On success,  returns true and 'final_name' contains the full path of the file
-// that the user chose. On error, returns false, and 'final_name' is not
-// modified.
-bool SaveFileAs(HWND owner,
-                const std::wstring& suggested_name,
-                std::wstring* final_name) {
-  std::wstring file_ext =
-      base::FilePath(suggested_name).Extension().insert(0, L"*");
-  std::wstring filter = FormatFilterForExtensions(
-      std::vector<std::wstring>(1, file_ext),
-      std::vector<std::wstring>(),
-      true);
-  unsigned index = 1;
-  return SaveFileAsWithFilter(owner,
-                              suggested_name,
-                              filter,
-                              L"",
-                              false,
-                              &index,
-                              final_name);
-}
-
 // Implementation of SelectFileDialog that shows a Windows common dialog for
 // choosing a file or folder.
 class SelectFileDialogImpl : public ui::SelectFileDialog,
                              public ui::BaseShellDialogImpl {
  public:
-  explicit SelectFileDialogImpl(Listener* listener,
-                                ui::SelectFilePolicy* policy);
+  SelectFileDialogImpl(
+      Listener* listener,
+      ui::SelectFilePolicy* policy,
+      const base::Callback<bool(OPENFILENAME*)>& get_open_file_name_impl,
+      const base::Callback<bool(OPENFILENAME*)>& get_save_file_name_impl);
 
   // BaseShellDialog implementation:
-  virtual bool IsRunning(gfx::NativeWindow owning_window) const OVERRIDE;
-  virtual void ListenerDestroyed() OVERRIDE;
+  virtual bool IsRunning(gfx::NativeWindow owning_window) const override;
+  virtual void ListenerDestroyed() override;
 
  protected:
   // SelectFileDialog implementation:
@@ -426,7 +181,7 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
       int file_type_index,
       const base::FilePath::StringType& default_extension,
       gfx::NativeWindow owning_window,
-      void* params) OVERRIDE;
+      void* params) override;
 
  private:
   virtual ~SelectFileDialogImpl();
@@ -470,6 +225,29 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
   // back on the ui thread. Run on the dialog thread.
   void ExecuteSelectFile(const ExecuteSelectParams& params);
 
+  // Prompt the user for location to save a file.
+  // Callers should provide the filter string, and also a filter index.
+  // The parameter |index| indicates the initial index of filter description
+  // and filter pattern for the dialog box. If |index| is zero or greater than
+  // the number of total filter types, the system uses the first filter in the
+  // |filter| buffer. |index| is used to specify the initial selected extension,
+  // and when done contains the extension the user chose. The parameter
+  // |final_name| returns the file name which contains the drive designator,
+  // path, file name, and extension of the user selected file name. |def_ext| is
+  // the default extension to give to the file if the user did not enter an
+  // extension. If |ignore_suggested_ext| is true, any file extension contained
+  // in |suggested_name| will not be used to generate the file name. This is
+  // useful in the case of saving web pages, where we know the extension type
+  // already and where |suggested_name| may contain a '.' character as a valid
+  // part of the name, thus confusing our extension detection code.
+  bool SaveFileAsWithFilter(HWND owner,
+                            const std::wstring& suggested_name,
+                            const std::wstring& filter,
+                            const std::wstring& def_ext,
+                            bool ignore_suggested_ext,
+                            unsigned* index,
+                            std::wstring* final_name);
+
   // Notifies the listener that a folder was chosen. Run on the ui thread.
   void FileSelected(const base::FilePath& path, int index,
                     void* params, RunState run_state);
@@ -511,7 +289,7 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
                                          LPARAM parameter,
                                          LPARAM data);
 
-  virtual bool HasMultipleFileTypeChoicesImpl() OVERRIDE;
+  virtual bool HasMultipleFileTypeChoicesImpl() override;
 
   // Returns the filter to be used while displaying the open/save file dialog.
   // This is computed from the extensions for the file types being opened.
@@ -519,15 +297,22 @@ class SelectFileDialogImpl : public ui::SelectFileDialog,
   base::string16 GetFilterForFileTypes(const FileTypeInfo* file_types);
 
   bool has_multiple_file_type_choices_;
+  base::Callback<bool(OPENFILENAME*)> get_open_file_name_impl_;
+  base::Callback<bool(OPENFILENAME*)> get_save_file_name_impl_;
 
   DISALLOW_COPY_AND_ASSIGN(SelectFileDialogImpl);
 };
 
-SelectFileDialogImpl::SelectFileDialogImpl(Listener* listener,
-                                           ui::SelectFilePolicy* policy)
+SelectFileDialogImpl::SelectFileDialogImpl(
+    Listener* listener,
+    ui::SelectFilePolicy* policy,
+    const base::Callback<bool(OPENFILENAME*)>& get_open_file_name_impl,
+    const base::Callback<bool(OPENFILENAME*)>& get_save_file_name_impl)
     : SelectFileDialog(listener, policy),
       BaseShellDialogImpl(),
-      has_multiple_file_type_choices_(false) {
+      has_multiple_file_type_choices_(false),
+      get_open_file_name_impl_(get_open_file_name_impl),
+      get_save_file_name_impl_(get_save_file_name_impl) {
 }
 
 SelectFileDialogImpl::~SelectFileDialogImpl() {
@@ -680,6 +465,84 @@ void SelectFileDialogImpl::ExecuteSelectFile(
   }
 }
 
+bool SelectFileDialogImpl::SaveFileAsWithFilter(
+    HWND owner,
+    const std::wstring& suggested_name,
+    const std::wstring& filter,
+    const std::wstring& def_ext,
+    bool ignore_suggested_ext,
+    unsigned* index,
+    std::wstring* final_name) {
+  DCHECK(final_name);
+  // Having an empty filter makes for a bad user experience. We should always
+  // specify a filter when saving.
+  DCHECK(!filter.empty());
+
+  ui::win::OpenFileName save_as(owner,
+                                OFN_OVERWRITEPROMPT | OFN_EXPLORER |
+                                    OFN_ENABLESIZING | OFN_NOCHANGEDIR |
+                                    OFN_PATHMUSTEXIST);
+
+  const base::FilePath suggested_path = base::FilePath(suggested_name);
+  if (!suggested_name.empty()) {
+    base::FilePath suggested_file_name;
+    base::FilePath suggested_directory;
+    if (IsDirectory(suggested_path)) {
+      suggested_directory = suggested_path;
+    } else {
+      suggested_directory = suggested_path.DirName();
+      suggested_file_name = suggested_path.BaseName();
+      // If the suggested_name is a root directory, file_part will be '\', and
+      // the call to GetSaveFileName below will fail.
+      if (suggested_file_name.value() == L"\\")
+        suggested_file_name.clear();
+    }
+    save_as.SetInitialSelection(suggested_directory, suggested_file_name);
+  }
+
+  save_as.GetOPENFILENAME()->lpstrFilter =
+      filter.empty() ? NULL : filter.c_str();
+  save_as.GetOPENFILENAME()->nFilterIndex = *index;
+  save_as.GetOPENFILENAME()->lpstrDefExt = &def_ext[0];
+  save_as.MaybeInstallWindowPositionHookForSaveAsOnXP();
+
+  if (!get_save_file_name_impl_.Run(save_as.GetOPENFILENAME()))
+    return false;
+
+  // Return the user's choice.
+  final_name->assign(save_as.GetOPENFILENAME()->lpstrFile);
+  *index = save_as.GetOPENFILENAME()->nFilterIndex;
+
+  // Figure out what filter got selected. The filter index is 1-based.
+  std::wstring filter_selected;
+  if (*index > 0) {
+    std::vector<Tuple2<base::string16, base::string16> > filters =
+        ui::win::OpenFileName::GetFilters(save_as.GetOPENFILENAME());
+    if (*index > filters.size())
+      NOTREACHED() << "Invalid filter index.";
+    else
+      filter_selected = filters[*index - 1].b;
+  }
+
+  // Get the extension that was suggested to the user (when the Save As dialog
+  // was opened). For saving web pages, we skip this step since there may be
+  // 'extension characters' in the title of the web page.
+  std::wstring suggested_ext;
+  if (!ignore_suggested_ext)
+    suggested_ext = GetExtensionWithoutLeadingDot(suggested_path.Extension());
+
+  // If we can't get the extension from the suggested_name, we use the default
+  // extension passed in. This is to cover cases like when saving a web page,
+  // where we get passed in a name without an extension and a default extension
+  // along with it.
+  if (suggested_ext.empty())
+    suggested_ext = def_ext;
+
+  *final_name =
+      ui::AppendExtensionIfNeeded(*final_name, filter_selected, suggested_ext);
+  return true;
+}
+
 void SelectFileDialogImpl::FileSelected(const base::FilePath& selected_folder,
                                         int index,
                                         void* params,
@@ -773,47 +636,23 @@ bool SelectFileDialogImpl::RunOpenFileDialog(
     const std::wstring& filter,
     HWND owner,
     base::FilePath* path) {
-  OPENFILENAME ofn;
-  // We must do this otherwise the ofn's FlagsEx may be initialized to random
-  // junk in release builds which can cause the Places Bar not to show up!
-  ZeroMemory(&ofn, sizeof(ofn));
-  ofn.lStructSize = sizeof(ofn);
-  ofn.hwndOwner = owner;
-
-  wchar_t filename[MAX_PATH];
-  // According to http://support.microsoft.com/?scid=kb;en-us;222003&x=8&y=12,
-  // The lpstrFile Buffer MUST be NULL Terminated.
-  filename[0] = 0;
-  // Define the dir in here to keep the string buffer pointer pointed to
-  // ofn.lpstrInitialDir available during the period of running the
-  // GetOpenFileName.
-  base::FilePath dir;
-  // Use lpstrInitialDir to specify the initial directory
-  if (!path->empty()) {
-    if (IsDirectory(*path)) {
-      ofn.lpstrInitialDir = path->value().c_str();
-    } else {
-      dir = path->DirName();
-      ofn.lpstrInitialDir = dir.value().c_str();
-      // Only pure filename can be put in lpstrFile field.
-      base::wcslcpy(filename, path->BaseName().value().c_str(),
-                    arraysize(filename));
-    }
-  }
-
-  ofn.lpstrFile = filename;
-  ofn.nMaxFile = MAX_PATH;
-
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
-  ofn.Flags = OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR;
+  ui::win::OpenFileName ofn(owner, OFN_FILEMUSTEXIST | OFN_NOCHANGEDIR);
+  if (!path->empty()) {
+    if (IsDirectory(*path))
+      ofn.SetInitialSelection(*path, base::FilePath());
+    else
+      ofn.SetInitialSelection(path->DirName(), path->BaseName());
+  }
 
   if (!filter.empty())
-    ofn.lpstrFilter = filter.c_str();
-  bool success = CallGetOpenFileName(&ofn);
+    ofn.GetOPENFILENAME()->lpstrFilter = filter.c_str();
+
+  bool success = get_open_file_name_impl_.Run(ofn.GetOPENFILENAME());
   DisableOwner(owner);
   if (success)
-    *path = base::FilePath(filename);
+    *path = ofn.GetSingleResult();
   return success;
 }
 
@@ -822,53 +661,31 @@ bool SelectFileDialogImpl::RunOpenMultiFileDialog(
     const std::wstring& filter,
     HWND owner,
     std::vector<base::FilePath>* paths) {
-  OPENFILENAME ofn;
-  // We must do this otherwise the ofn's FlagsEx may be initialized to random
-  // junk in release builds which can cause the Places Bar not to show up!
-  ZeroMemory(&ofn, sizeof(ofn));
-  ofn.lStructSize = sizeof(ofn);
-  ofn.hwndOwner = owner;
-
-  scoped_ptr<wchar_t[]> filename(new wchar_t[UNICODE_STRING_MAX_CHARS]);
-  filename[0] = 0;
-
-  ofn.lpstrFile = filename.get();
-  ofn.nMaxFile = UNICODE_STRING_MAX_CHARS;
   // We use OFN_NOCHANGEDIR so that the user can rename or delete the directory
   // without having to close Chrome first.
-  ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST | OFN_EXPLORER
-               | OFN_HIDEREADONLY | OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR;
+  ui::win::OpenFileName ofn(owner,
+                            OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST |
+                                OFN_EXPLORER | OFN_HIDEREADONLY |
+                                OFN_ALLOWMULTISELECT | OFN_NOCHANGEDIR);
 
-  if (!filter.empty()) {
-    ofn.lpstrFilter = filter.c_str();
-  }
+  if (!filter.empty())
+    ofn.GetOPENFILENAME()->lpstrFilter = filter.c_str();
 
-  bool success = CallGetOpenFileName(&ofn);
+  base::FilePath directory;
+  std::vector<base::FilePath> filenames;
+
+  if (get_open_file_name_impl_.Run(ofn.GetOPENFILENAME()))
+    ofn.GetResult(&directory, &filenames);
+
   DisableOwner(owner);
-  if (success) {
-    std::vector<base::FilePath> files;
-    const wchar_t* selection = ofn.lpstrFile;
-    while (*selection) {  // Empty string indicates end of list.
-      files.push_back(base::FilePath(selection));
-      // Skip over filename and null-terminator.
-      selection += files.back().value().length() + 1;
-    }
-    if (files.empty()) {
-      success = false;
-    } else if (files.size() == 1) {
-      // When there is one file, it contains the path and filename.
-      paths->swap(files);
-    } else {
-      // Otherwise, the first string is the path, and the remainder are
-      // filenames.
-      std::vector<base::FilePath>::iterator path = files.begin();
-      for (std::vector<base::FilePath>::iterator file = path + 1;
-           file != files.end(); ++file) {
-        paths->push_back(path->Append(*file));
-      }
-    }
+
+  for (std::vector<base::FilePath>::iterator it = filenames.begin();
+       it != filenames.end();
+       ++it) {
+    paths->push_back(directory.Append(*it));
   }
-  return success;
+
+  return !paths->empty();
 }
 
 base::string16 SelectFileDialogImpl::GetFilterForFileTypes(
@@ -941,8 +758,20 @@ std::wstring AppendExtensionIfNeeded(
 
 SelectFileDialog* CreateWinSelectFileDialog(
     SelectFileDialog::Listener* listener,
+    SelectFilePolicy* policy,
+    const base::Callback<bool(OPENFILENAME* ofn)>& get_open_file_name_impl,
+    const base::Callback<bool(OPENFILENAME* ofn)>& get_save_file_name_impl) {
+  return new SelectFileDialogImpl(
+      listener, policy, get_open_file_name_impl, get_save_file_name_impl);
+}
+
+SelectFileDialog* CreateDefaultWinSelectFileDialog(
+    SelectFileDialog::Listener* listener,
     SelectFilePolicy* policy) {
-  return new SelectFileDialogImpl(listener, policy);
+  return CreateWinSelectFileDialog(listener,
+                                   policy,
+                                   base::Bind(&CallBuiltinGetOpenFileName),
+                                   base::Bind(&CallBuiltinGetSaveFileName));
 }
 
 }  // namespace ui

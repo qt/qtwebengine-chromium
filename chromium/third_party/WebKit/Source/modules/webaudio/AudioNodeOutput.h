@@ -30,20 +30,21 @@
 #include "modules/webaudio/AudioParam.h"
 #include "wtf/HashSet.h"
 #include "wtf/RefPtr.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 class AudioNodeInput;
 
 // AudioNodeOutput represents a single output for an AudioNode.
 // It may be connected to one or more AudioNodeInputs.
-
-class AudioNodeOutput {
+class AudioNodeOutput : public GarbageCollectedFinalized<AudioNodeOutput> {
 public:
-    // It's OK to pass 0 for numberOfChannels in which case setNumberOfChannels() must be called later on.
-    AudioNodeOutput(AudioNode*, unsigned numberOfChannels);
+    // It's OK to pass 0 for numberOfChannels in which case
+    // setNumberOfChannels() must be called later on.
+    static AudioNodeOutput* create(AudioNode*, unsigned numberOfChannels);
+    void trace(Visitor*);
+    void dispose();
 
     // Can be called from any thread.
     AudioNode* node() const { return m_node; }
@@ -82,17 +83,19 @@ public:
     void updateRenderingState();
 
 private:
-    AudioNode* m_node;
+    AudioNodeOutput(AudioNode*, unsigned numberOfChannels);
+
+    Member<AudioNode> m_node;
 
     friend class AudioNodeInput;
     friend class AudioParam;
 
     // These are called from AudioNodeInput.
     // They must be called with the context's graph lock.
-    void addInput(AudioNodeInput*);
-    void removeInput(AudioNodeInput*);
-    void addParam(AudioParam*);
-    void removeParam(AudioParam*);
+    void addInput(AudioNodeInput&);
+    void removeInput(AudioNodeInput&);
+    void addParam(AudioParam&);
+    void removeParam(AudioParam&);
 
     // fanOutCount() is the number of AudioNodeInputs that we're connected to.
     // This method should not be called in audio thread rendering code, instead renderingFanOutCount() should be used.
@@ -131,18 +134,25 @@ private:
     // If m_isInPlace is true, use m_inPlaceBus as the valid AudioBus; If false, use the default m_internalBus.
     bool m_isInPlace;
 
-    HashSet<AudioNodeInput*> m_inputs;
-    typedef HashSet<AudioNodeInput*>::iterator InputsIterator;
+    // Oilpan: This HashMap holds connection references. We must call
+    // AudioNode::makeConnection when we add an AudioNode to this, and must call
+    // AudioNode::breakConnection() when we remove an AudioNode from this.
+    HeapHashMap<Member<AudioNodeInput>, Member<AudioNode> > m_inputs;
+    typedef HeapHashMap<Member<AudioNodeInput>, Member<AudioNode> >::iterator InputsIterator;
     bool m_isEnabled;
+
+#if ENABLE_ASSERT
+    bool m_didCallDispose;
+#endif
 
     // For the purposes of rendering, keeps track of the number of inputs and AudioParams we're connected to.
     // These value should only be changed at the very start or end of the rendering quantum.
     unsigned m_renderingFanOutCount;
     unsigned m_renderingParamFanOutCount;
 
-    WillBePersistentHeapHashSet<RefPtrWillBeMember<AudioParam> > m_params;
+    HeapHashSet<Member<AudioParam> > m_params;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioNodeOutput_h

@@ -21,11 +21,11 @@ class NetworkChangeNotifier;
 class NetTestSuite : public base::TestSuite {
  public:
   NetTestSuite(int argc, char** argv);
-  virtual ~NetTestSuite();
+  ~NetTestSuite() override;
 
-  virtual void Initialize() OVERRIDE;
+  void Initialize() override;
 
-  virtual void Shutdown() OVERRIDE;
+  void Shutdown() override;
 
  protected:
   // This constructor is only accessible to specialized net test

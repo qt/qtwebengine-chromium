@@ -7,7 +7,7 @@
 
 #include "base/files/file_path.h"
 #include "content/common/content_export.h"
-#include "webkit/browser/fileapi/file_system_url.h"
+#include "storage/browser/fileapi/file_system_url.h"
 
 namespace content {
 
@@ -22,7 +22,7 @@ CONTENT_EXPORT bool CanOpenWithPepperFlags(int pp_open_flags,
 CONTENT_EXPORT bool CanOpenFileSystemURLWithPepperFlags(
     int pp_open_flags,
     int child_id,
-    const fileapi::FileSystemURL& url);
+    const storage::FileSystemURL& url);
 
 }  // namespace content
 

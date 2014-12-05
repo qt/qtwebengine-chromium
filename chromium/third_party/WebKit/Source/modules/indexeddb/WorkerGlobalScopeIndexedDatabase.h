@@ -29,14 +29,12 @@
 
 #include "platform/Supplementable.h"
 
-namespace WebCore {
+namespace blink {
 
 class IDBFactory;
-class IndexedDBClient;
-class ExecutionContext;
 class WorkerGlobalScope;
 
-class WorkerGlobalScopeIndexedDatabase FINAL : public NoBaseWillBeGarbageCollectedFinalized<WorkerGlobalScopeIndexedDatabase>, public WillBeHeapSupplement<WorkerGlobalScope> {
+class WorkerGlobalScopeIndexedDatabase final : public NoBaseWillBeGarbageCollectedFinalized<WorkerGlobalScopeIndexedDatabase>, public WillBeHeapSupplement<WorkerGlobalScope> {
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(WorkerGlobalScopeIndexedDatabase);
 public:
     virtual ~WorkerGlobalScopeIndexedDatabase();
@@ -55,6 +53,6 @@ private:
     PersistentWillBeMember<IDBFactory> m_idbFactory;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // WorkerGlobalScopeIndexedDatabase_h

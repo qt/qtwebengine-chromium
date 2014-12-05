@@ -6,10 +6,10 @@
 #define SizesCalcParser_h
 
 #include "core/css/MediaValues.h"
-#include "core/css/parser/MediaQueryToken.h"
+#include "core/css/parser/CSSParserToken.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SizesCalcValue {
     double value;
@@ -34,26 +34,26 @@ struct SizesCalcValue {
 class SizesCalcParser {
 
 public:
-    static bool parse(MediaQueryTokenIterator start, MediaQueryTokenIterator end, PassRefPtr<MediaValues>, unsigned& result);
+    SizesCalcParser(CSSParserTokenIterator start, CSSParserTokenIterator end, PassRefPtr<MediaValues>);
+
+    float result() const;
+    bool isValid() const { return m_isValid; }
 
 private:
-    SizesCalcParser(PassRefPtr<MediaValues> mediaValues)
-        : m_mediaValues(mediaValues)
-    {
-    }
-
-    bool calcToReversePolishNotation(MediaQueryTokenIterator start, MediaQueryTokenIterator end);
-    bool calculate(unsigned& result);
-    void appendNumber(const MediaQueryToken&);
-    bool appendLength(const MediaQueryToken&);
-    bool handleOperator(Vector<MediaQueryToken>& stack, const MediaQueryToken&);
-    void appendOperator(const MediaQueryToken&);
+    bool calcToReversePolishNotation(CSSParserTokenIterator start, CSSParserTokenIterator end);
+    bool calculate();
+    void appendNumber(const CSSParserToken&);
+    bool appendLength(const CSSParserToken&);
+    bool handleOperator(Vector<CSSParserToken>& stack, const CSSParserToken&);
+    void appendOperator(const CSSParserToken&);
 
     Vector<SizesCalcValue> m_valueList;
     RefPtr<MediaValues> m_mediaValues;
+    bool m_isValid;
+    float m_result;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SizesCalcParser_h
 

@@ -25,18 +25,22 @@
 #include "core/plugins/DOMPlugin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMMimeType::DOMMimeType(PassRefPtr<PluginData> pluginData, LocalFrame* frame, unsigned index)
     : FrameDestructionObserver(frame)
     , m_pluginData(pluginData)
     , m_index(index)
 {
-    ScriptWrappable::init(this);
 }
 
 DOMMimeType::~DOMMimeType()
 {
+}
+
+void DOMMimeType::trace(Visitor* visitor)
+{
+    FrameDestructionObserver::trace(visitor);
 }
 
 const String &DOMMimeType::type() const
@@ -73,4 +77,4 @@ PassRefPtrWillBeRawPtr<DOMPlugin> DOMMimeType::enabledPlugin() const
     return DOMPlugin::create(m_pluginData.get(), m_frame, m_pluginData->mimePluginIndices()[m_index]);
 }
 
-} // namespace WebCore
+} // namespace blink

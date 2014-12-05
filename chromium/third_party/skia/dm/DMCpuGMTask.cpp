@@ -1,9 +1,6 @@
 #include "DMCpuGMTask.h"
-#include "DMExpectationsTask.h"
 #include "DMPipeTask.h"
 #include "DMQuiltTask.h"
-#include "DMRecordTask.h"
-#include "DMReplayTask.h"
 #include "DMSerializeTask.h"
 #include "DMUtil.h"
 #include "DMWriteTask.h"
@@ -14,39 +11,36 @@ CpuGMTask::CpuGMTask(const char* config,
                      Reporter* reporter,
                      TaskRunner* taskRunner,
                      skiagm::GMRegistry::Factory gmFactory,
-                     const Expectations& expectations,
                      SkColorType colorType)
     : CpuTask(reporter, taskRunner)
     , fGMFactory(gmFactory)
     , fGM(fGMFactory(NULL))
     , fName(UnderJoin(fGM->getName(), config))
-    , fExpectations(expectations)
     , fColorType(colorType)
     {}
 
 void CpuGMTask::draw() {
-    SkBitmap bitmap;
-    AllocatePixels(fColorType, fGM->getISize().width(), fGM->getISize().height(), &bitmap);
+    SkBitmap bm;
+    AllocatePixels(fColorType, fGM->getISize().width(), fGM->getISize().height(), &bm);
 
-    SkCanvas canvas(bitmap);
+    SkCanvas canvas(bm);
+    CanvasPreflight(&canvas);
     canvas.concat(fGM->getInitialTransform());
     fGM->draw(&canvas);
     canvas.flush();
 
 #define SPAWN(ChildTask, ...) this->spawnChild(SkNEW_ARGS(ChildTask, (*this, __VA_ARGS__)))
-    SPAWN(ExpectationsTask, fExpectations, bitmap);
+    SPAWN(PipeTask, fGMFactory(NULL), bm, PipeTask::kInProcess_Mode);
+    SPAWN(PipeTask, fGMFactory(NULL), bm, PipeTask::kCrossProcess_Mode);
+    SPAWN(PipeTask, fGMFactory(NULL), bm, PipeTask::kSharedAddress_Mode);
 
-    SPAWN(PipeTask, fGMFactory(NULL), bitmap, PipeTask::kInProcess_Mode);
-    SPAWN(PipeTask, fGMFactory(NULL), bitmap, PipeTask::kCrossProcess_Mode);
-    SPAWN(PipeTask, fGMFactory(NULL), bitmap, PipeTask::kSharedAddress_Mode);
-    SPAWN(QuiltTask, fGMFactory(NULL), bitmap);
-    SPAWN(RecordTask, fGMFactory(NULL), bitmap, RecordTask::kOptimize_Mode);
-    SPAWN(RecordTask, fGMFactory(NULL), bitmap, RecordTask::kNoOptimize_Mode);
-    SPAWN(ReplayTask, fGMFactory(NULL), bitmap, ReplayTask::kNormal_Mode);
-    SPAWN(ReplayTask, fGMFactory(NULL), bitmap, ReplayTask::kRTree_Mode);
-    SPAWN(SerializeTask, fGMFactory(NULL), bitmap);
+    SPAWN(QuiltTask, fGMFactory(NULL), bm, QuiltTask::kNone_BBH);
+    SPAWN(QuiltTask, fGMFactory(NULL), bm, QuiltTask::kRTree_BBH);
+    SPAWN(QuiltTask, fGMFactory(NULL), bm, QuiltTask::kTileGrid_BBH);
 
-    SPAWN(WriteTask, bitmap);
+    SPAWN(SerializeTask, fGMFactory(NULL), bm);
+
+    SPAWN(WriteTask, "GM", bm);
 #undef SPAWN
 }
 

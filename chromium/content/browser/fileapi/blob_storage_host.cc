@@ -6,12 +6,12 @@
 
 #include "base/sequenced_task_runner.h"
 #include "base/strings/string_util.h"
+#include "storage/browser/blob/blob_data_handle.h"
+#include "storage/browser/blob/blob_storage_context.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_data_handle.h"
-#include "webkit/browser/blob/blob_storage_context.h"
 
-using webkit_blob::BlobStorageContext;
-using webkit_blob::BlobData;
+using storage::BlobStorageContext;
+using storage::BlobData;
 
 namespace content {
 

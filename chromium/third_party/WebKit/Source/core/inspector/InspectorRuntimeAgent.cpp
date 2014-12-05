@@ -31,25 +31,21 @@
 #include "config.h"
 #include "core/inspector/InspectorRuntimeAgent.h"
 
-#include "bindings/v8/ScriptDebugServer.h"
-#include "bindings/v8/ScriptState.h"
+#include "bindings/core/v8/DOMWrapperWorld.h"
+#include "bindings/core/v8/ScriptDebugServer.h"
+#include "bindings/core/v8/ScriptState.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 #include "core/inspector/InspectorState.h"
 #include "platform/JSONValues.h"
 
-using WebCore::TypeBuilder::Runtime::ExecutionContextDescription;
+using blink::TypeBuilder::Runtime::ExecutionContextDescription;
 
-namespace WebCore {
+namespace blink {
 
 namespace InspectorRuntimeAgentState {
 static const char runtimeEnabled[] = "runtimeEnabled";
 };
-
-static bool asBool(const bool* const b)
-{
-    return b ? *b : false;
-}
 
 InspectorRuntimeAgent::InspectorRuntimeAgent(InjectedScriptManager* injectedScriptManager, ScriptDebugServer* scriptDebugServer)
     : InspectorBaseAgent<InspectorRuntimeAgent>("Runtime")
@@ -64,6 +60,12 @@ InspectorRuntimeAgent::~InspectorRuntimeAgent()
 {
 }
 
+void InspectorRuntimeAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_injectedScriptManager);
+    InspectorBaseAgent::trace(visitor);
+}
+
 static ScriptDebugServer::PauseOnExceptionsState setPauseOnExceptionsState(ScriptDebugServer* scriptDebugServer, ScriptDebugServer::PauseOnExceptionsState newState)
 {
     ASSERT(scriptDebugServer);
@@ -73,7 +75,7 @@ static ScriptDebugServer::PauseOnExceptionsState setPauseOnExceptionsState(Scrip
     return presentState;
 }
 
-void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown)
+void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& expression, const String* const objectGroup, const bool* const includeCommandLineAPI, const bool* const doNotPauseOnExceptionsAndMuteConsole, const int* executionContextId, const bool* const returnByValue, const bool* generatePreview, RefPtr<TypeBuilder::Runtime::RemoteObject>& result, TypeBuilder::OptOutput<bool>* wasThrown, RefPtr<TypeBuilder::Debugger::ExceptionDetails>& exceptionDetails)
 {
     InjectedScript injectedScript = injectedScriptForEval(errorString, executionContextId);
     if (injectedScript.isEmpty())
@@ -84,7 +86,7 @@ void InspectorRuntimeAgent::evaluate(ErrorString* errorString, const String& exp
     if (asBool(doNotPauseOnExceptionsAndMuteConsole))
         muteConsole();
 
-    injectedScript.evaluate(errorString, expression, objectGroup ? *objectGroup : "", asBool(includeCommandLineAPI), asBool(returnByValue), asBool(generatePreview), &result, wasThrown);
+    injectedScript.evaluate(errorString, expression, objectGroup ? *objectGroup : "", asBool(includeCommandLineAPI), asBool(returnByValue), asBool(generatePreview), &result, wasThrown, &exceptionDetails);
 
     if (asBool(doNotPauseOnExceptionsAndMuteConsole)) {
         unmuteConsole();
@@ -128,10 +130,9 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
     ScriptDebugServer::PauseOnExceptionsState previousPauseOnExceptionsState = setPauseOnExceptionsState(m_scriptDebugServer, ScriptDebugServer::DontPauseOnExceptions);
     muteConsole();
 
-    bool accessorPropertiesOnlyValue = accessorPropertiesOnly && *accessorPropertiesOnly;
-    injectedScript.getProperties(errorString, objectId, ownProperties && *ownProperties, accessorPropertiesOnlyValue, &result);
+    injectedScript.getProperties(errorString, objectId, asBool(ownProperties), asBool(accessorPropertiesOnly), &result);
 
-    if (!accessorPropertiesOnlyValue)
+    if (!asBool(accessorPropertiesOnly))
         injectedScript.getInternalProperties(errorString, objectId, &internalProperties);
 
     unmuteConsole();
@@ -141,13 +142,24 @@ void InspectorRuntimeAgent::getProperties(ErrorString* errorString, const String
 void InspectorRuntimeAgent::releaseObject(ErrorString*, const String& objectId)
 {
     InjectedScript injectedScript = m_injectedScriptManager->injectedScriptForObjectId(objectId);
-    if (!injectedScript.isEmpty())
-        injectedScript.releaseObject(objectId);
+    if (injectedScript.isEmpty())
+        return;
+    bool pausingOnNextStatement = m_scriptDebugServer->pausingOnNextStatement();
+    if (pausingOnNextStatement)
+        m_scriptDebugServer->setPauseOnNextStatement(false);
+    injectedScript.releaseObject(objectId);
+    if (pausingOnNextStatement)
+        m_scriptDebugServer->setPauseOnNextStatement(true);
 }
 
 void InspectorRuntimeAgent::releaseObjectGroup(ErrorString*, const String& objectGroup)
 {
+    bool pausingOnNextStatement = m_scriptDebugServer->pausingOnNextStatement();
+    if (pausingOnNextStatement)
+        m_scriptDebugServer->setPauseOnNextStatement(false);
     m_injectedScriptManager->releaseObjectGroup(objectGroup);
+    if (pausingOnNextStatement)
+        m_scriptDebugServer->setPauseOnNextStatement(true);
 }
 
 void InspectorRuntimeAgent::run(ErrorString*)
@@ -200,17 +212,20 @@ void InspectorRuntimeAgent::disable(ErrorString* errorString)
     m_state->setBoolean(InspectorRuntimeAgentState::runtimeEnabled, false);
 }
 
-void InspectorRuntimeAgent::addExecutionContextToFrontend(ScriptState* scriptState, bool isPageContext, const String& name, const String& frameId)
+void InspectorRuntimeAgent::addExecutionContextToFrontend(ScriptState* scriptState, bool isPageContext, const String& origin, const String& frameId)
 {
     int executionContextId = injectedScriptManager()->injectedScriptIdFor(scriptState);
     m_scriptStateToId.set(scriptState, executionContextId);
+    DOMWrapperWorld& world = scriptState->world();
+    String humanReadableName = world.isIsolatedWorld() ? world.isolatedWorldHumanReadableName() : "";
     m_frontend->executionContextCreated(ExecutionContextDescription::create()
         .setId(executionContextId)
         .setIsPageContext(isPageContext)
-        .setName(name)
+        .setName(humanReadableName)
+        .setOrigin(origin)
         .setFrameId(frameId)
         .release());
 }
 
-} // namespace WebCore
+} // namespace blink
 

@@ -25,7 +25,7 @@
 #include "core/svg/SVGElement.h"
 #include "platform/weborigin/KURL.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGURIReference::SVGURIReference(SVGElement* element)
     : m_href(SVGAnimatedString::create(element, XLinkNames::hrefAttr, SVGString::create()))
@@ -103,15 +103,6 @@ Element* SVGURIReference::targetElementFromIRIString(const String& iri, const Tr
 void SVGURIReference::addSupportedAttributes(HashSet<QualifiedName>& supportedAttributes)
 {
     supportedAttributes.add(XLinkNames::hrefAttr);
-}
-
-bool SVGURIReference::parseAttribute(const QualifiedName& name, const AtomicString& value, SVGParsingError& parseError)
-{
-    if (name.matches(XLinkNames::hrefAttr)) {
-        m_href->setBaseValueAsString(value, parseError);
-        return true;
-    }
-    return false;
 }
 
 }

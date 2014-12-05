@@ -31,19 +31,6 @@ namespace content {
 class SynchronousCompositorClient;
 class WebContents;
 
-struct CONTENT_EXPORT SynchronousCompositorMemoryPolicy {
-  // Memory limit for rendering and pre-rendering.
-  size_t bytes_limit;
-
-  // Limit of number of GL resources used for rendering and pre-rendering.
-  size_t num_resources_limit;
-
-  SynchronousCompositorMemoryPolicy();
-
-  bool operator==(const SynchronousCompositorMemoryPolicy& other) const;
-  bool operator!=(const SynchronousCompositorMemoryPolicy& other) const;
-};
-
 // Interface for embedders that wish to direct compositing operations
 // synchronously under their own control. Only meaningful when the
 // kEnableSyncrhonousRendererCompositor flag is specified.
@@ -80,18 +67,15 @@ class CONTENT_EXPORT SynchronousCompositor {
   // releases all hardware resources.
   virtual void ReleaseHwDraw() = 0;
 
-  // Get the share context of the compositor. The returned context is owned
-  // by the compositor and is only valid between InitializeHwDraw and
-  // ReleaseHwDraw.
-  virtual gpu::GLInProcessContext* GetShareContext() = 0;
-
   // "On demand" hardware draw. The content is first clipped to |damage_area|,
   // then transformed through |transform|, and finally clipped to |view_size|.
   virtual scoped_ptr<cc::CompositorFrame> DemandDrawHw(
       gfx::Size surface_size,
       const gfx::Transform& transform,
       gfx::Rect viewport,
-      gfx::Rect clip) = 0;
+      gfx::Rect clip,
+      gfx::Rect viewport_rect_for_tile_priority,
+      const gfx::Transform& transform_for_tile_priority) = 0;
 
   // For delegated rendering, return resources from parent compositor to this.
   // Note that all resources must be returned before ReleaseHwDraw.
@@ -102,8 +86,7 @@ class CONTENT_EXPORT SynchronousCompositor {
   virtual bool DemandDrawSw(SkCanvas* canvas) = 0;
 
   // Set the memory limit policy of this compositor.
-  virtual void SetMemoryPolicy(
-      const SynchronousCompositorMemoryPolicy& policy) = 0;
+  virtual void SetMemoryPolicy(size_t bytes_limit) = 0;
 
   // Should be called by the embedder after the embedder had modified the
   // scroll offset of the root layer (as returned by

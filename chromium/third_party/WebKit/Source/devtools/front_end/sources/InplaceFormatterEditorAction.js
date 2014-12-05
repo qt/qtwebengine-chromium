@@ -68,6 +68,8 @@ WebInspector.InplaceFormatterEditorAction.prototype = {
     {
         if (!uiSourceCode)
             return false;
+        if (uiSourceCode.project().type() === WebInspector.projectTypes.FileSystem)
+            return true;
         return uiSourceCode.contentType() === WebInspector.resourceTypes.Stylesheet
             || uiSourceCode.project().type() === WebInspector.projectTypes.Snippets;
     },
@@ -90,7 +92,8 @@ WebInspector.InplaceFormatterEditorAction.prototype = {
         function contentLoaded(content)
         {
             var formatter = WebInspector.Formatter.createFormatter(uiSourceCode.contentType());
-            formatter.formatContent(uiSourceCode.highlighterType(), content || "", innerCallback.bind(this));
+            var highlighterType = WebInspector.SourcesView.uiSourceCodeHighlighterType(uiSourceCode);
+            formatter.formatContent(highlighterType, content || "", innerCallback.bind(this));
         }
 
         /**

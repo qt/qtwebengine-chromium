@@ -10,6 +10,7 @@
 
 #include "webrtc/base/gunit.h"
 #include "webrtc/base/nullsocketserver.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace rtc {
 

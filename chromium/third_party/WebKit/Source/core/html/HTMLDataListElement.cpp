@@ -34,14 +34,15 @@
 
 #include "core/HTMLNames.h"
 #include "core/dom/IdTargetObserverRegistry.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/frame/UseCounter.h"
+#include "core/html/HTMLDataListOptionsCollection.h"
 
-namespace WebCore {
+namespace blink {
 
 inline HTMLDataListElement::HTMLDataListElement(Document& document)
     : HTMLElement(HTMLNames::datalistTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 PassRefPtrWillBeRawPtr<HTMLDataListElement> HTMLDataListElement::create(Document& document)
@@ -50,15 +51,15 @@ PassRefPtrWillBeRawPtr<HTMLDataListElement> HTMLDataListElement::create(Document
     return adoptRefWillBeNoop(new HTMLDataListElement(document));
 }
 
-PassRefPtrWillBeRawPtr<HTMLCollection> HTMLDataListElement::options()
+PassRefPtrWillBeRawPtr<HTMLDataListOptionsCollection> HTMLDataListElement::options()
 {
-    return ensureCachedHTMLCollection(DataListOptions);
+    return ensureCachedCollection<HTMLDataListOptionsCollection>(DataListOptions);
 }
 
-void HTMLDataListElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void HTMLDataListElement::childrenChanged(const ChildrenChange& change)
 {
-    HTMLElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
-    if (!changedByParser)
+    HTMLElement::childrenChanged(change);
+    if (!change.byParser)
         treeScope().idTargetObserverRegistry().notifyObservers(getIdAttribute());
 }
 
@@ -72,4 +73,4 @@ void HTMLDataListElement::optionElementChildrenChanged()
     treeScope().idTargetObserverRegistry().notifyObservers(getIdAttribute());
 }
 
-} // namespace WebCore
+} // namespace blink

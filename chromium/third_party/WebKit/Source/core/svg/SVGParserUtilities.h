@@ -30,7 +30,7 @@
 typedef pair<unsigned, unsigned> UnicodeRange;
 typedef Vector<UnicodeRange> UnicodeRanges;
 
-namespace WebCore {
+namespace blink {
 
 class FloatPoint;
 
@@ -41,8 +41,6 @@ enum WhitespaceMode {
     AllowLeadingAndTrailingWhitespace = AllowLeadingWhitespace | AllowTrailingWhitespace
 };
 
-template <typename CharType>
-bool parseSVGNumber(CharType* ptr, size_t length, double& number);
 bool parseNumber(const LChar*& ptr, const LChar* end, float& number, WhitespaceMode = AllowLeadingAndTrailingWhitespace);
 bool parseNumber(const UChar*& ptr, const UChar* end, float& number, WhitespaceMode = AllowLeadingAndTrailingWhitespace);
 bool parseNumberOptionalNumber(const String& s, float& h, float& v);
@@ -79,14 +77,10 @@ inline bool skipOptionalSVGSpacesOrDelimiter(const CharType*& ptr, const CharTyp
     return ptr < end;
 }
 
-Vector<String> parseDelimitedString(const String& input, const char seperator);
-bool parseKerningUnicodeString(const String& input, UnicodeRanges&, HashSet<String>& stringList);
-bool parseGlyphName(const String& input, HashSet<String>& values);
-
 template<typename CharType>
 bool parseAndSkipTransformType(const CharType*& ptr, const CharType* end, SVGTransformType&);
 SVGTransformType parseTransformType(const String&);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGParserUtilities_h

@@ -28,27 +28,28 @@
 #include "core/fetch/ResourcePtr.h"
 #include "core/html/parser/TextResourceDecoder.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 
-class DocumentResource FINAL : public Resource {
+class DocumentResource final : public Resource {
 public:
     typedef ResourceClient ClientType;
 
     DocumentResource(const ResourceRequest&, Type);
     virtual ~DocumentResource();
+    virtual void trace(Visitor*) override;
 
     Document* document() const { return m_document.get(); }
 
-    virtual void setEncoding(const String&) OVERRIDE;
-    virtual String encoding() const OVERRIDE;
-    virtual void checkNotify() OVERRIDE;
+    virtual void setEncoding(const String&) override;
+    virtual String encoding() const override;
+    virtual void checkNotify() override;
 
 private:
     PassRefPtrWillBeRawPtr<Document> createDocument(const KURL&);
 
-    RefPtrWillBePersistent<Document> m_document;
+    RefPtrWillBeMember<Document> m_document;
     OwnPtr<TextResourceDecoder> m_decoder;
 };
 
@@ -59,7 +60,7 @@ class DocumentResourceClient : public ResourceClient {
 public:
     virtual ~DocumentResourceClient() { }
     static ResourceClientType expectedType() { return DocumentType; }
-    virtual ResourceClientType resourceClientType() const OVERRIDE { return expectedType(); }
+    virtual ResourceClientType resourceClientType() const override { return expectedType(); }
 };
 
 }

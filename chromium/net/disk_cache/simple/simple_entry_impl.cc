@@ -13,9 +13,10 @@
 #include "base/callback.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "base/task_runner.h"
 #include "base/task_runner_util.h"
+#include "base/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -160,6 +161,8 @@ class SimpleEntryImpl::ScopedOperationRunner {
   SimpleEntryImpl* const entry_;
 };
 
+SimpleEntryImpl::ActiveEntryProxy::~ActiveEntryProxy() {}
+
 SimpleEntryImpl::SimpleEntryImpl(net::CacheType cache_type,
                                  const FilePath& path,
                                  const uint64 entry_hash,
@@ -193,6 +196,12 @@ SimpleEntryImpl::SimpleEntryImpl(net::CacheType cache_type,
   MakeUninitialized();
   net_log_.BeginEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY,
       CreateNetLogSimpleEntryConstructionCallback(this));
+}
+
+void SimpleEntryImpl::SetActiveEntryProxy(
+    scoped_ptr<ActiveEntryProxy> active_entry_proxy) {
+  DCHECK(!active_entry_proxy_);
+  active_entry_proxy_.reset(active_entry_proxy.release());
 }
 
 int SimpleEntryImpl::OpenEntry(Entry** out_entry,
@@ -525,7 +534,6 @@ SimpleEntryImpl::~SimpleEntryImpl() {
   DCHECK_EQ(0U, pending_operations_.size());
   DCHECK(state_ == STATE_UNINITIALIZED || state_ == STATE_FAILURE);
   DCHECK(!synchronous_entry_);
-  RemoveSelfFromBackend();
   net_log_.EndEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY);
 }
 
@@ -535,7 +543,7 @@ void SimpleEntryImpl::PostClientCallback(const CompletionCallback& callback,
     return;
   // Note that the callback is posted rather than directly invoked to avoid
   // reentrancy issues.
-  MessageLoopProxy::current()->PostTask(
+  base::ThreadTaskRunnerHandle::Get()->PostTask(
       FROM_HERE,
       base::Bind(&InvokeCallbackIfBackendIsAlive, backend_, callback, result));
 }
@@ -567,18 +575,12 @@ void SimpleEntryImpl::ReturnEntryToCaller(Entry** out_entry) {
   *out_entry = this;
 }
 
-void SimpleEntryImpl::RemoveSelfFromBackend() {
-  if (!backend_.get())
-    return;
-  backend_->OnDeactivated(this);
-}
-
 void SimpleEntryImpl::MarkAsDoomed() {
   doomed_ = true;
   if (!backend_.get())
     return;
   backend_->index()->Remove(entry_hash_);
-  RemoveSelfFromBackend();
+  active_entry_proxy_.reset();
 }
 
 void SimpleEntryImpl::RunNextOperationIfNeeded() {
@@ -820,7 +822,7 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
       // Note that the API states that client-provided callbacks for entry-level
       // (i.e. non-backend) operations (e.g. read, write) are invoked even if
       // the backend was already destroyed.
-      MessageLoopProxy::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(callback, net::ERR_FAILED));
     }
     if (net_log_.IsLogging()) {
@@ -836,7 +838,8 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
     // If there is nothing to read, we bail out before setting state_ to
     // STATE_IO_PENDING.
     if (!callback.is_null())
-      MessageLoopProxy::current()->PostTask(FROM_HERE, base::Bind(callback, 0));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                    base::Bind(callback, 0));
     return;
   }
 
@@ -846,8 +849,8 @@ void SimpleEntryImpl::ReadDataInternal(int stream_index,
   if (stream_index == 0) {
     int ret_value = ReadStream0Data(buf, offset, buf_len);
     if (!callback.is_null()) {
-      MessageLoopProxy::current()->PostTask(FROM_HERE,
-                                            base::Bind(callback, ret_value));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(callback, ret_value));
     }
     return;
   }
@@ -904,7 +907,7 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
           CreateNetLogReadWriteCompleteCallback(net::ERR_FAILED));
     }
     if (!callback.is_null()) {
-      MessageLoopProxy::current()->PostTask(
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
           FROM_HERE, base::Bind(callback, net::ERR_FAILED));
     }
     // |this| may be destroyed after return here.
@@ -917,8 +920,8 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
   if (stream_index == 0) {
     int ret_value = SetStream0Data(buf, offset, buf_len, truncate);
     if (!callback.is_null()) {
-      MessageLoopProxy::current()->PostTask(FROM_HERE,
-                                            base::Bind(callback, ret_value));
+      base::ThreadTaskRunnerHandle::Get()->PostTask(
+          FROM_HERE, base::Bind(callback, ret_value));
     }
     return;
   }
@@ -929,8 +932,8 @@ void SimpleEntryImpl::WriteDataInternal(int stream_index,
     if (truncate ? (offset == data_size) : (offset <= data_size)) {
       RecordWriteResult(cache_type_, WRITE_RESULT_FAST_EMPTY_RETURN);
       if (!callback.is_null()) {
-        MessageLoopProxy::current()->PostTask(FROM_HERE, base::Bind(
-            callback, 0));
+        base::ThreadTaskRunnerHandle::Get()->PostTask(FROM_HERE,
+                                                      base::Bind(callback, 0));
       }
       return;
     }
@@ -1076,10 +1079,11 @@ void SimpleEntryImpl::GetAvailableRangeInternal(
 
 void SimpleEntryImpl::DoomEntryInternal(const CompletionCallback& callback) {
   PostTaskAndReplyWithResult(
-      worker_pool_, FROM_HERE,
+      worker_pool_.get(),
+      FROM_HERE,
       base::Bind(&SimpleSynchronousEntry::DoomEntry, path_, entry_hash_),
-      base::Bind(&SimpleEntryImpl::DoomOperationComplete, this, callback,
-                 state_));
+      base::Bind(
+          &SimpleEntryImpl::DoomOperationComplete, this, callback, state_));
   state_ = STATE_IO_PENDING;
 }
 
@@ -1112,7 +1116,7 @@ void SimpleEntryImpl::CreationOperationComplete(
 
   state_ = STATE_READY;
   synchronous_entry_ = in_results->sync_entry;
-  if (in_results->stream_0_data) {
+  if (in_results->stream_0_data.get()) {
     stream_0_data_ = in_results->stream_0_data;
     // The crc was read in SimpleSynchronousEntry.
     crc_check_state_[0] = CRC_CHECK_DONE;
@@ -1153,8 +1157,8 @@ void SimpleEntryImpl::EntryOperationComplete(
   }
 
   if (!completion_callback.is_null()) {
-    MessageLoopProxy::current()->PostTask(FROM_HERE, base::Bind(
-        completion_callback, *result));
+    base::ThreadTaskRunnerHandle::Get()->PostTask(
+        FROM_HERE, base::Bind(completion_callback, *result));
   }
   RunNextOperationIfNeeded();
 }
@@ -1297,6 +1301,7 @@ void SimpleEntryImpl::DoomOperationComplete(
     State state_to_restore,
     int result) {
   state_ = state_to_restore;
+  net_log_.AddEvent(net::NetLog::TYPE_SIMPLE_CACHE_ENTRY_DOOM_END);
   if (!callback.is_null())
     callback.Run(result);
   RunNextOperationIfNeeded();

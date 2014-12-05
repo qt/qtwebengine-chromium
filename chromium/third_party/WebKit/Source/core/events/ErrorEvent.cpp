@@ -31,10 +31,10 @@
 #include "config.h"
 #include "core/events/ErrorEvent.h"
 
-#include "bindings/v8/V8Binding.h"
+#include "bindings/core/v8/V8Binding.h"
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 ErrorEventInit::ErrorEventInit()
     : message()
@@ -45,8 +45,12 @@ ErrorEventInit::ErrorEventInit()
 }
 
 ErrorEvent::ErrorEvent()
+    : m_sanitizedMessage()
+    , m_fileName()
+    , m_lineNumber(0)
+    , m_columnNumber(0)
+    , m_world(DOMWrapperWorld::current(v8::Isolate::GetCurrent()))
 {
-    ScriptWrappable::init(this);
 }
 
 ErrorEvent::ErrorEvent(const AtomicString& type, const ErrorEventInit& initializer)
@@ -57,7 +61,6 @@ ErrorEvent::ErrorEvent(const AtomicString& type, const ErrorEventInit& initializ
     , m_columnNumber(initializer.colno)
     , m_world(DOMWrapperWorld::current(v8::Isolate::GetCurrent()))
 {
-    ScriptWrappable::init(this);
 }
 
 ErrorEvent::ErrorEvent(const String& message, const String& fileName, unsigned lineNumber, unsigned columnNumber, DOMWrapperWorld* world)
@@ -68,7 +71,6 @@ ErrorEvent::ErrorEvent(const String& message, const String& fileName, unsigned l
     , m_columnNumber(columnNumber)
     , m_world(world)
 {
-    ScriptWrappable::init(this);
 }
 
 void ErrorEvent::setUnsanitizedMessage(const String& message)
@@ -91,4 +93,4 @@ void ErrorEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

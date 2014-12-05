@@ -27,11 +27,16 @@
 <link rel="stylesheet" href="other_devices.css">
 </if>
 
+<script src="chrome://resources/js/action_link.js"></script>
+<script src="chrome://resources/js/assert.js"></script>
 <script src="chrome://resources/js/event_tracker.js"></script>
+<script src="chrome://resources/js/util.js"></script>
 <script src="chrome://resources/js/cr.js"></script>
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/command.js"></script>
 <script src="chrome://resources/js/cr/ui/focus_manager.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_row.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_grid.js"></script>
 <script src="chrome://resources/js/cr/ui/menu_item.js"></script>
 <script src="chrome://resources/js/cr/ui/menu.js"></script>
 <if expr="not is_android and not is_ios">
@@ -73,39 +78,27 @@
     <header>
       <h1 i18n-content="history"></h1>
       <div id="search-form" class="search-field-container">
-        <input type="search" id="search-field" required>
-        <input type="submit" id="search-button" i18n-values="value:searchButton">
+        <input type="search" id="search-field"
+               i18n-values="aria-label:searchButton">
+        <input type="submit" id="search-button"
+               i18n-values="value:searchButton">
       </div>
       <div id="filter-controls" hidden>
-        <button id="range-today" i18n-content="rangeToday" disabled></button>
-        <button id="range-previous" i18n-values="alt:rangePrevious" disabled>
-        </button>
-        <button id="range-next" i18n-values="alt:rangeNext" disabled>
-        </button>
-        <div id="display-filter-controls">
-          <div class="display-filter-button">
-            <label for="timeframe-filter-all">
-              <input id="timeframe-filter-all" type="radio"
-                  name="timeframe-filter" value="0" checked>
-              <span i18n-content="rangeAllTime" class="first-button-component">
-              </span>
-            </label>
-          </div>
-          <div class="display-filter-button">
-            <label for="timeframe-filter-week">
-              <input id="timeframe-filter-week" type="radio"
-                  name="timeframe-filter" value="1">
-              <span i18n-content="rangeWeek"></span>
-            </label>
-          </div>
-          <div class="display-filter-button">
-            <label for="timeframe-filter-month">
-              <input id="timeframe-filter-month" type="radio"
-                  name="timeframe-filter" value="2">
-              <span i18n-content="rangeMonth" class="last-button-component">
-              </span>
-            </label>
-          </div>
+        <div id="range-controls">
+          <button id="range-today" i18n-content="rangeToday"
+                  i18n-values="aria-label:rangeToday" disabled></button>
+          <button id="range-previous" i18n-values="aria-label:rangePrevious"
+                  disabled></button>
+          <button id="range-next" i18n-values="aria-label:rangeNext" disabled>
+          </button>
+        </div>
+        <div id="timeframe-controls">
+          <input type="radio" name="timeframe-filter" value="0" checked
+              i18n-values="aria-label:rangeAllTime">
+          <input type="radio" name="timeframe-filter" value="1"
+              i18n-values="aria-label:rangeWeek">
+          <input type="radio" name="timeframe-filter" value="2"
+              i18n-values="aria-label:rangeMonth">
         </div>
       </div>
     </header>
@@ -114,7 +107,8 @@
 </if>
     <div id="top-container">
       <div id="editing-controls">
-        <button id="clear-browsing-data" i18n-content="clearAllHistory"></button>
+        <button id="clear-browsing-data" i18n-content="clearAllHistory">
+        </button>
         <button id="remove-selected" disabled="disabled"
             i18n-content="removeSelected"></button>
       </div>
@@ -129,13 +123,9 @@
       </span>
     </div>
     <div id="results-pagination">
-      <button id="newest-button" class="link-button" i18n-content="newest"
-          hidden>
-      </button>
-      <button id="newer-button" class="link-button" i18n-content="newer" hidden>
-      </button>
-      <button id="older-button" class="link-button" i18n-content="older" hidden>
-      </button>
+      <a is="action-link" id="newest-button" i18n-content="newest" hidden></a>
+      <a is="action-link" id="newer-button" i18n-content="newer" hidden></a>
+      <a is="action-link" id="older-button" i18n-content="older" hidden></a>
     </div>
   </div>
 </div>

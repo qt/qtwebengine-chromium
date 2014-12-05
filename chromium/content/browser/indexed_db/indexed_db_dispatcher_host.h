@@ -15,8 +15,8 @@
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "storage/browser/blob/blob_data_handle.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_data_handle.h"
 
 struct IndexedDBDatabaseMetadata;
 struct IndexedDBHostMsg_DatabaseCount_Params;
@@ -58,18 +58,18 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
       const content::IndexedDBDatabaseMetadata& metadata);
 
   // BrowserMessageFilter implementation.
-  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
-  virtual void OnChannelClosing() OVERRIDE;
-  virtual void OnDestruct() const OVERRIDE;
-  virtual base::TaskRunner* OverrideTaskRunnerForMessage(
-      const IPC::Message& message) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  void OnChannelConnected(int32 peer_pid) override;
+  void OnChannelClosing() override;
+  void OnDestruct() const override;
+  base::TaskRunner* OverrideTaskRunnerForMessage(
+      const IPC::Message& message) override;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   void FinishTransaction(int64 host_transaction_id, bool committed);
 
   // A shortcut for accessing our context.
-  IndexedDBContextImpl* Context() { return indexed_db_context_; }
-  webkit_blob::BlobStorageContext* blob_storage_context() const {
+  IndexedDBContextImpl* Context() { return indexed_db_context_.get(); }
+  storage::BlobStorageContext* blob_storage_context() const {
     return blob_storage_context_->context();
   }
 
@@ -94,9 +94,8 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   static uint32 TransactionIdToRendererTransactionId(int64 host_transaction_id);
   static uint32 TransactionIdToProcessId(int64 host_transaction_id);
 
-  void HoldBlobDataHandle(
-      const std::string& uuid,
-      scoped_ptr<webkit_blob::BlobDataHandle>& blob_data_handle);
+  void HoldBlobDataHandle(const std::string& uuid,
+                          scoped_ptr<storage::BlobDataHandle> blob_data_handle);
   void DropBlobDataHandle(const std::string& uuid);
 
  private:
@@ -104,30 +103,19 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   friend class BrowserThread;
   friend class base::DeleteHelper<IndexedDBDispatcherHost>;
 
-  virtual ~IndexedDBDispatcherHost();
-
-  // Message processing. Most of the work is delegated to the dispatcher hosts
-  // below.
-  void OnIDBFactoryGetDatabaseNames(
-      const IndexedDBHostMsg_FactoryGetDatabaseNames_Params& p);
-  void OnIDBFactoryOpen(const IndexedDBHostMsg_FactoryOpen_Params& p);
-
-  void OnIDBFactoryDeleteDatabase(
-      const IndexedDBHostMsg_FactoryDeleteDatabase_Params& p);
-
-  void OnAckReceivedBlobs(const std::vector<std::string>& uuids);
-  void OnPutHelper(const IndexedDBHostMsg_DatabasePut_Params& params,
-                   std::vector<webkit_blob::BlobDataHandle*> handles);
-
-  void ResetDispatcherHosts();
+  // Used in nested classes.
+  typedef std::map<std::string, storage::BlobDataHandle*> BlobDataHandleMap;
+  typedef std::map<int64, int64> TransactionIDToDatabaseIDMap;
+  typedef std::map<int64, uint64> TransactionIDToSizeMap;
+  typedef std::map<int64, GURL> TransactionIDToURLMap;
+  typedef std::map<int32, GURL> WebIDBObjectIDToURLMap;
 
   // IDMap for RefCounted types
   template <typename RefCountedType>
   class RefIDMap {
-   private:
+   public:
     typedef int32 KeyType;
 
-   public:
     RefIDMap() {}
     ~RefIDMap() {}
 
@@ -154,24 +142,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     DISALLOW_COPY_AND_ASSIGN(RefIDMap);
   };
 
-  // Helper templates.
-  template <class ReturnType>
-  ReturnType* GetOrTerminateProcess(IDMap<ReturnType, IDMapOwnPointer>* map,
-                                    int32 ipc_return_object_id);
-  template <class ReturnType>
-  ReturnType* GetOrTerminateProcess(RefIDMap<ReturnType>* map,
-                                    int32 ipc_return_object_id);
-
-  template <typename MapType>
-  void DestroyObject(MapType* map, int32 ipc_object_id);
-
-  // Used in nested classes.
-  typedef std::map<int32, GURL> WebIDBObjectIDToURLMap;
-
-  typedef std::map<int64, GURL> TransactionIDToURLMap;
-  typedef std::map<int64, uint64> TransactionIDToSizeMap;
-  typedef std::map<int64, int64> TransactionIDToDatabaseIDMap;
-
   class DatabaseDispatcherHost {
    public:
     explicit DatabaseDispatcherHost(IndexedDBDispatcherHost* parent);
@@ -188,6 +158,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     void OnCreateTransaction(
         const IndexedDBHostMsg_DatabaseCreateTransaction_Params&);
     void OnClose(int32 ipc_database_id);
+    void OnVersionChangeIgnored(int32 ipc_database_id);
     void OnDestroyed(int32 ipc_database_id);
 
     void OnGet(const IndexedDBHostMsg_DatabaseGet_Params& params);
@@ -195,7 +166,7 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     // before posting to the IDB TaskRunner for the rest of the job.
     void OnPutWrapper(const IndexedDBHostMsg_DatabasePut_Params& params);
     void OnPut(const IndexedDBHostMsg_DatabasePut_Params& params,
-               std::vector<webkit_blob::BlobDataHandle*> handles);
+               std::vector<storage::BlobDataHandle*> handles);
     void OnSetIndexKeys(
         const IndexedDBHostMsg_DatabaseSetIndexKeys_Params& params);
     void OnSetIndexesReady(int32 ipc_database_id,
@@ -263,6 +234,34 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
     DISALLOW_COPY_AND_ASSIGN(CursorDispatcherHost);
   };
 
+  ~IndexedDBDispatcherHost() override;
+
+  // Helper templates.
+  template <class ReturnType>
+  ReturnType* GetOrTerminateProcess(IDMap<ReturnType, IDMapOwnPointer>* map,
+                                    int32 ipc_return_object_id);
+  template <class ReturnType>
+  ReturnType* GetOrTerminateProcess(RefIDMap<ReturnType>* map,
+                                    int32 ipc_return_object_id);
+
+  template <typename MapType>
+  void DestroyObject(MapType* map, int32 ipc_object_id);
+
+  // Message processing. Most of the work is delegated to the dispatcher hosts
+  // below.
+  void OnIDBFactoryGetDatabaseNames(
+      const IndexedDBHostMsg_FactoryGetDatabaseNames_Params& p);
+  void OnIDBFactoryOpen(const IndexedDBHostMsg_FactoryOpen_Params& p);
+
+  void OnIDBFactoryDeleteDatabase(
+      const IndexedDBHostMsg_FactoryDeleteDatabase_Params& p);
+
+  void OnAckReceivedBlobs(const std::vector<std::string>& uuids);
+  void OnPutHelper(const IndexedDBHostMsg_DatabasePut_Params& params,
+                   std::vector<storage::BlobDataHandle*> handles);
+
+  void ResetDispatcherHosts();
+
   // The getter holds the context until OnChannelConnected() can be called from
   // the IO thread, which will extract the net::URLRequestContext from it.
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
@@ -270,7 +269,6 @@ class IndexedDBDispatcherHost : public BrowserMessageFilter {
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;
   scoped_refptr<ChromeBlobStorageContext> blob_storage_context_;
 
-  typedef std::map<std::string, webkit_blob::BlobDataHandle*> BlobDataHandleMap;
   BlobDataHandleMap blob_data_handle_map_;
 
   // Only access on IndexedDB thread.

@@ -27,7 +27,7 @@
 #include "config.h"
 #include "core/dom/shadow/ShadowRoot.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/css/StyleSheetList.h"
 #include "core/css/resolver/StyleResolver.h"
 #include "core/css/resolver/StyleResolverParentScope.h"
@@ -41,7 +41,7 @@
 #include "core/html/HTMLShadowElement.h"
 #include "public/platform/Platform.h"
 
-namespace WebCore {
+namespace blink {
 
 struct SameSizeAsShadowRoot : public DocumentFragment, public TreeScope, public DoublyLinkedListNode<ShadowRoot> {
     void* pointers[3];
@@ -60,7 +60,6 @@ ShadowRoot::ShadowRoot(Document& document, ShadowRootType type)
     , m_registeredWithParentShadowRoot(false)
     , m_descendantInsertionPointsIsValid(false)
 {
-    ScriptWrappable::init(this);
 }
 
 ShadowRoot::~ShadowRoot()
@@ -140,26 +139,10 @@ void ShadowRoot::recalcStyle(StyleRecalcChange change)
     if (styleChangeType() >= SubtreeStyleChange)
         change = Force;
 
-    if (change < Force && hasRareData() && childNeedsStyleRecalc())
-        checkForChildrenAdjacentRuleChanges();
-
     // There's no style to update so just calling recalcStyle means we're updated.
     clearNeedsStyleRecalc();
 
-    // FIXME: This doesn't handle :hover + div properly like Element::recalcStyle does.
-    Text* lastTextNode = 0;
-    for (Node* child = lastChild(); child; child = child->previousSibling()) {
-        if (child->isTextNode()) {
-            toText(child)->recalcTextStyle(change, lastTextNode);
-            lastTextNode = toText(child);
-        } else if (child->isElementNode()) {
-            if (child->shouldCallRecalcStyle(change))
-                toElement(child)->recalcStyle(change, lastTextNode);
-            if (child->renderer())
-                lastTextNode = 0;
-        }
-    }
-
+    recalcChildStyle(change);
     clearChildNeedsStyleRecalc();
 }
 
@@ -204,11 +187,12 @@ void ShadowRoot::removedFrom(ContainerNode* insertionPoint)
     DocumentFragment::removedFrom(insertionPoint);
 }
 
-void ShadowRoot::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void ShadowRoot::childrenChanged(const ChildrenChange& change)
 {
-    ContainerNode::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    ContainerNode::childrenChanged(change);
 
-    checkForSiblingStyleChanges(false, beforeChange, afterChange, childCountDelta);
+    if (change.isChildElementChange())
+        checkForSiblingStyleChanges(change.type == ElementRemoved ? SiblingElementRemoved : SiblingElementInserted, change.siblingBeforeChange, change.siblingAfterChange);
 
     if (InsertionPoint* point = shadowInsertionPointOfYoungerShadowRoot()) {
         if (ShadowRoot* root = point->containingShadowRoot())
@@ -316,10 +300,8 @@ const WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> >& ShadowRoot::descend
         return emptyList;
 
     WillBeHeapVector<RefPtrWillBeMember<InsertionPoint> > insertionPoints;
-    for (Element* element = ElementTraversal::firstWithin(*this); element; element = ElementTraversal::next(*element, this)) {
-        if (element->isInsertionPoint())
-            insertionPoints.append(toInsertionPoint(element));
-    }
+    for (InsertionPoint& insertionPoint : Traversal<InsertionPoint>::descendantsOf(*this))
+        insertionPoints.append(&insertionPoint);
 
     ensureShadowRootRareData()->setDescendantInsertionPoints(insertionPoints);
 

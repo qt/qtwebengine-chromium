@@ -18,24 +18,23 @@ namespace net {
 class NET_EXPORT ProxyResolverMac : public ProxyResolver {
  public:
   ProxyResolverMac();
-  virtual ~ProxyResolverMac();
+  ~ProxyResolverMac() override;
 
   // ProxyResolver methods:
-  virtual int GetProxyForURL(const GURL& url,
-                             ProxyInfo* results,
-                             const net::CompletionCallback& callback,
-                             RequestHandle* request,
-                             const BoundNetLog& net_log) OVERRIDE;
+  int GetProxyForURL(const GURL& url,
+                     ProxyInfo* results,
+                     const net::CompletionCallback& callback,
+                     RequestHandle* request,
+                     const BoundNetLog& net_log) override;
 
-  virtual void CancelRequest(RequestHandle request) OVERRIDE;
+  void CancelRequest(RequestHandle request) override;
 
-  virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE;
+  LoadState GetLoadState(RequestHandle request) const override;
 
-  virtual void CancelSetPacScript() OVERRIDE;
+  void CancelSetPacScript() override;
 
-  virtual int SetPacScript(
-      const scoped_refptr<ProxyResolverScriptData>& script_data,
-      const net::CompletionCallback& /*callback*/) OVERRIDE;
+  int SetPacScript(const scoped_refptr<ProxyResolverScriptData>& script_data,
+                   const net::CompletionCallback& /*callback*/) override;
 
  private:
   scoped_refptr<ProxyResolverScriptData> script_data_;

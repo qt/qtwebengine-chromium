@@ -9,6 +9,7 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "base/timer/timer.h"
+#include "build/build_config.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/audio_power_monitor.h"
@@ -51,11 +52,6 @@
 //
 
 namespace media {
-
-// Only do power monitoring for non-mobile platforms that need it for the UI.
-#if !defined(OS_ANDROID) && !defined(OS_IOS)
-#define AUDIO_POWER_MONITORING
-#endif
 
 class MEDIA_EXPORT AudioOutputController
     : public base::RefCountedThreadSafe<AudioOutputController>,
@@ -110,6 +106,16 @@ class MEDIA_EXPORT AudioOutputController
       const AudioParameters& params, const std::string& output_device_id,
       SyncReader* sync_reader);
 
+  // Indicates whether audio power level analysis will be performed.  If false,
+  // ReadCurrentPowerAndClip() can not be called.
+  static bool will_monitor_audio_levels() {
+#if defined(OS_ANDROID) || defined(OS_IOS)
+    return false;
+#else
+    return true;
+#endif
+  }
+
   // Methods to control playback of the stream.
 
   // Starts the playback of this audio output stream.
@@ -148,20 +154,19 @@ class MEDIA_EXPORT AudioOutputController
                           const base::Closure& callback);
 
   // AudioSourceCallback implementation.
-  virtual int OnMoreData(AudioBus* dest,
-                         AudioBuffersState buffers_state) OVERRIDE;
-  virtual void OnError(AudioOutputStream* stream) OVERRIDE;
+  int OnMoreData(AudioBus* dest, uint32 total_bytes_delay) override;
+  void OnError(AudioOutputStream* stream) override;
 
   // AudioDeviceListener implementation.  When called AudioOutputController will
   // shutdown the existing |stream_|, transition to the kRecreating state,
   // create a new stream, and then transition back to an equivalent state prior
   // to being called.
-  virtual void OnDeviceChange() OVERRIDE;
+  void OnDeviceChange() override;
 
   // AudioSourceDiverter implementation.
-  virtual const AudioParameters& GetAudioParameters() OVERRIDE;
-  virtual void StartDiverting(AudioOutputStream* to_stream) OVERRIDE;
-  virtual void StopDiverting() OVERRIDE;
+  const AudioParameters& GetAudioParameters() override;
+  void StartDiverting(AudioOutputStream* to_stream) override;
+  void StopDiverting() override;
 
   // Accessor for AudioPowerMonitor::ReadCurrentPowerAndClip().  See comments in
   // audio_power_monitor.h for usage.  This may be called on any thread.
@@ -178,8 +183,12 @@ class MEDIA_EXPORT AudioOutputController
     kError,
   };
 
+  // Time constant for AudioPowerMonitor.  See AudioPowerMonitor ctor comments
+  // for semantics.  This value was arbitrarily chosen, but seems to work well.
+  enum { kPowerMeasurementTimeConstantMillis = 10 };
+
   friend class base::RefCountedThreadSafe<AudioOutputController>;
-  virtual ~AudioOutputController();
+  ~AudioOutputController() override;
 
  private:
   AudioOutputController(AudioManager* audio_manager, EventHandler* handler,
@@ -235,10 +244,8 @@ class MEDIA_EXPORT AudioOutputController
   // The message loop of audio manager thread that this object runs on.
   const scoped_refptr<base::SingleThreadTaskRunner> message_loop_;
 
-#if defined(AUDIO_POWER_MONITORING)
   // Scans audio samples from OnMoreData() as input to compute power levels.
   AudioPowerMonitor power_monitor_;
-#endif
 
   // Flags when we've asked for a stream to start but it never did.
   base::AtomicRefCount on_more_io_data_called_;

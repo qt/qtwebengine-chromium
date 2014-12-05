@@ -2,31 +2,30 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <ocidl.h>
-#include <commdlg.h>
-
-#include <string>
+#include "printing/printing_context_win.h"
 
 #include "base/bind.h"
-#include "base/bind_helpers.h"
-#include "base/memory/scoped_ptr.h"
 #include "base/message_loop/message_loop.h"
 #include "printing/backend/printing_info_win.h"
 #include "printing/backend/win_helper.h"
-#include "printing/printing_test.h"
-#include "printing/printing_context.h"
-#include "printing/printing_context_win.h"
 #include "printing/print_settings.h"
+#include "printing/printing_context_system_dialog_win.h"
+#include "printing/printing_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace printing {
 
 // This test is automatically disabled if no printer is available.
-class PrintingContextTest : public PrintingTest<testing::Test> {
+class PrintingContextTest : public PrintingTest<testing::Test>,
+                            public PrintingContext::Delegate {
  public:
   void PrintSettingsCallback(PrintingContext::Result result) {
     result_ = result;
   }
+
+  // PrintingContext::Delegate methods.
+  virtual gfx::NativeView GetParentView() override { return NULL; }
+  virtual std::string GetAppLocale() override { return std::string(); }
 
  protected:
   PrintingContext::Result result() const { return result_; }
@@ -35,14 +34,15 @@ class PrintingContextTest : public PrintingTest<testing::Test> {
   PrintingContext::Result result_;
 };
 
-class MockPrintingContextWin : public PrintingContextWin {
+class MockPrintingContextWin : public PrintingContextSytemDialogWin {
  public:
-  MockPrintingContextWin() : PrintingContextWin("") {}
+  MockPrintingContextWin(Delegate* delegate)
+      : PrintingContextSytemDialogWin(delegate) {}
 
  protected:
   // This is a fake PrintDlgEx implementation that sets the right fields in
   // |lppd| to trigger a bug in older revisions of PrintingContext.
-  HRESULT ShowPrintDialog(PRINTDLGEX* lppd) OVERRIDE {
+  HRESULT ShowPrintDialog(PRINTDLGEX* lppd) override {
     // The interesting bits:
     // Pretend the user hit print
     lppd->dwResultAction = PD_RESULT_PRINT;
@@ -66,7 +66,7 @@ class MockPrintingContextWin : public PrintingContextWin {
     lppd->hDevNames = NULL;
 
     PrinterInfo2 info_2;
-    if (info_2.Init(printer)) {
+    if (info_2.Init(printer.Get())) {
       dev_mode = info_2.get()->pDevMode;
     }
     if (!dev_mode) {
@@ -74,8 +74,8 @@ class MockPrintingContextWin : public PrintingContextWin {
       goto Cleanup;
     }
 
-    if (!PrintingContextWin::AllocateContext(
-            printer_name, dev_mode, &lppd->hDC)) {
+    lppd->hDC = CreateDC(L"WINSPOOL", printer_name.c_str(), NULL, dev_mode);
+    if (!lppd->hDC) {
       result = E_FAIL;
       goto Cleanup;
     }
@@ -152,6 +152,22 @@ class MockPrintingContextWin : public PrintingContextWin {
   }
 };
 
+TEST_F(PrintingContextTest, PrintAll) {
+  base::MessageLoop message_loop;
+  if (IsTestCaseDisabled())
+    return;
+
+  MockPrintingContextWin context(this);
+  context.AskUserForSettings(
+      123,
+      false,
+      base::Bind(&PrintingContextTest::PrintSettingsCallback,
+                 base::Unretained(this)));
+  EXPECT_EQ(PrintingContext::OK, result());
+  PrintSettings settings = context.settings();
+  EXPECT_EQ(settings.ranges().size(), 0);
+}
+
 TEST_F(PrintingContextTest, Base) {
   if (IsTestCaseDisabled())
     return;
@@ -159,7 +175,7 @@ TEST_F(PrintingContextTest, Base) {
   PrintSettings settings;
   settings.set_device_name(GetDefaultPrinter());
   // Initialize it.
-  scoped_ptr<PrintingContext> context(PrintingContext::Create(std::string()));
+  scoped_ptr<PrintingContext> context(PrintingContext::Create(this));
   EXPECT_EQ(PrintingContext::OK, context->InitWithSettings(settings));
 
   // The print may lie to use and may not support world transformation.
@@ -167,20 +183,6 @@ TEST_F(PrintingContextTest, Base) {
   XFORM random_matrix = { 1, 0.1f, 0, 1.5f, 0, 1 };
   EXPECT_TRUE(SetWorldTransform(context->context(), &random_matrix));
   EXPECT_TRUE(ModifyWorldTransform(context->context(), NULL, MWT_IDENTITY));
-}
-
-TEST_F(PrintingContextTest, PrintAll) {
-  base::MessageLoop message_loop;
-  if (IsTestCaseDisabled())
-    return;
-
-  MockPrintingContextWin context;
-  context.AskUserForSettings(
-      NULL, 123, false, base::Bind(&PrintingContextTest::PrintSettingsCallback,
-                                   base::Unretained(this)));
-  EXPECT_EQ(PrintingContext::OK, result());
-  PrintSettings settings = context.settings();
-  EXPECT_EQ(settings.ranges().size(), 0);
 }
 
 }  // namespace printing

@@ -25,7 +25,7 @@
 
 #include "platform/graphics/filters/FELighting.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT FESpecularLighting : public FELighting {
 public:
@@ -54,12 +54,12 @@ public:
     const LightSource* lightSource() const;
     void setLightSource(PassRefPtr<LightSource>);
 
-    virtual TextStream& externalRepresentation(TextStream&, int indention) const OVERRIDE;
+    virtual TextStream& externalRepresentation(TextStream&, int indention) const override;
 
 private:
     FESpecularLighting(Filter*, const Color&, float, float, float, float, float, PassRefPtr<LightSource>);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FESpecularLighting_h

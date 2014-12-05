@@ -108,17 +108,41 @@ SK_API NSImage* SkBitmapToNSImage(const SkBitmap& icon);
 // Converts a SkCanvas temporarily to a CGContext
 class SK_API SkiaBitLocker {
  public:
+  // TODO(ccameron): delete this constructor
   explicit SkiaBitLocker(SkCanvas* canvas);
+  SkiaBitLocker(SkCanvas* canvas,
+                const SkIRect& userClipRect,
+                SkScalar bitmapScaleFactor = 1);
   ~SkiaBitLocker();
   CGContextRef cgContext();
+  bool hasEmptyClipRegion() const;
 
  private:
   void releaseIfNeeded();
+  SkIRect computeDirtyRect();
+
   SkCanvas* canvas_;
+
+  // If the user specified a clip rect it would draw into then the locker may
+  // skip the step of searching for a rect bounding the pixels that the user
+  // has drawn into.
+  bool userClipRectSpecified_;
+
   CGContextRef cgContext_;
   SkBitmap bitmap_;
   SkIPoint bitmapOffset_;
+  SkScalar bitmapScaleFactor_;
+
+  // True if we are drawing to |canvas_|'s SkBaseDevice's bits directly through
+  // |bitmap_|. Otherwise, the bits in |bitmap_| are our allocation and need to
+  // be copied over to |canvas_|.
   bool useDeviceBits_;
+
+  // True if |bitmap_| is a dummy 1x1 bitmap allocated for the sake of creating
+  // a non-NULL CGContext (it is invalid to use a NULL CGContext), and will not
+  // be copied to |canvas_|. This will happen if |canvas_|'s clip region is
+  // empty.
+  bool bitmapIsDummy_;
 };
 
 

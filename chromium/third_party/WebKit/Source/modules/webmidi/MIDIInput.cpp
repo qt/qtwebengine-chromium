@@ -35,19 +35,17 @@
 #include "modules/webmidi/MIDIMessageEvent.h"
 #include "platform/heap/Handle.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MIDIInput> MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
+MIDIInput* MIDIInput::create(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
 {
     ASSERT(access);
-    RefPtrWillBeRawPtr<MIDIInput> input = adoptRefWillBeRefCountedGarbageCollected(new MIDIInput(access, id, manufacturer, name, version));
-    return input.release();
+    return new MIDIInput(access, id, manufacturer, name, version, isActive);
 }
 
-MIDIInput::MIDIInput(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version)
-    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeInput, version)
+MIDIInput::MIDIInput(MIDIAccess* access, const String& id, const String& manufacturer, const String& name, const String& version, bool isActive)
+    : MIDIPort(access, id, manufacturer, name, MIDIPortTypeInput, version, isActive)
 {
-    ScriptWrappable::init(this);
 }
 
 void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data, size_t length, double timeStamp)
@@ -62,7 +60,7 @@ void MIDIInput::didReceiveMIDIData(unsigned portIndex, const unsigned char* data
     // unless the current process has an explicit permission to handle sysex message.
     if (data[0] == 0xf0 && !midiAccess()->sysexEnabled())
         return;
-    RefPtr<Uint8Array> array = Uint8Array::create(data, length);
+    RefPtr<DOMUint8Array> array = DOMUint8Array::create(data, length);
     dispatchEvent(MIDIMessageEvent::create(timeStamp, array));
 }
 
@@ -71,4 +69,4 @@ void MIDIInput::trace(Visitor* visitor)
     MIDIPort::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

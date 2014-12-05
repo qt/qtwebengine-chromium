@@ -34,6 +34,7 @@
 #include "core/frame/FrameClient.h"
 #include "core/loader/FrameLoaderTypes.h"
 #include "core/loader/NavigationPolicy.h"
+#include "platform/heap/Handle.h"
 #include "platform/network/ResourceLoadPriority.h"
 #include "platform/weborigin/Referrer.h"
 #include "wtf/Forward.h"
@@ -44,41 +45,29 @@ namespace blink {
 class WebCookieJar;
 class WebRTCPeerConnectionHandler;
 class WebServiceWorkerProvider;
-class WebServiceWorkerProviderClient;
 class WebSocketHandle;
 class WebApplicationCacheHost;
 class WebApplicationCacheHostClient;
 }
 
-namespace WebCore {
+namespace blink {
 
-    class Color;
-    class DOMWindowExtension;
-    class DOMWrapperWorld;
+    class Document;
     class DocumentLoader;
-    class Element;
     class FetchRequest;
-    class FrameLoader;
-    class FrameNetworkingContext;
     class HTMLAppletElement;
     class HTMLFormElement;
     class HTMLFrameOwnerElement;
     class HTMLPlugInElement;
     class HistoryItem;
-    class IntSize;
     class KURL;
     class LocalFrame;
-    class MessageEvent;
-    class Page;
-    class PluginView;
+    class PluginPlaceholder;
     class ResourceError;
-    class ResourceHandle;
     class ResourceRequest;
     class ResourceResponse;
     class SecurityOrigin;
-    class SharedBuffer;
     class SharedWorkerRepositoryClient;
-    class SocketStreamHandle;
     class SubstituteData;
     class Widget;
 
@@ -88,9 +77,6 @@ namespace WebCore {
 
         virtual bool hasWebView() const = 0; // mainly for assertions
 
-        virtual void detachedFromParent() = 0;
-
-        virtual void dispatchWillRequestAfterPreconnect(ResourceRequest&) { }
         virtual void dispatchWillSendRequest(DocumentLoader*, unsigned long identifier, ResourceRequest&, const ResourceResponse& redirectResponse) = 0;
         virtual void dispatchDidReceiveResponse(DocumentLoader*, unsigned long identifier, const ResourceResponse&) = 0;
         virtual void dispatchDidFinishLoading(DocumentLoader*, unsigned long identifier) = 0;
@@ -100,7 +86,7 @@ namespace WebCore {
         virtual void dispatchDidReceiveServerRedirectForProvisionalLoad() = 0;
         virtual void dispatchDidNavigateWithinPage(HistoryItem*, HistoryCommitType) { }
         virtual void dispatchWillClose() = 0;
-        virtual void dispatchDidStartProvisionalLoad() = 0;
+        virtual void dispatchDidStartProvisionalLoad(bool isTransitionNavigation) = 0;
         virtual void dispatchDidReceiveTitle(const String&) = 0;
         virtual void dispatchDidChangeIcons(IconType) = 0;
         virtual void dispatchDidCommitLoad(LocalFrame*, HistoryItem*, HistoryCommitType) = 0;
@@ -111,8 +97,9 @@ namespace WebCore {
         virtual void dispatchDidFirstVisuallyNonEmptyLayout() = 0;
         virtual void dispatchDidChangeThemeColor() = 0;
 
-        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy) = 0;
+        virtual NavigationPolicy decidePolicyForNavigation(const ResourceRequest&, DocumentLoader*, NavigationPolicy, bool isTransitionNavigation) = 0;
 
+        virtual void dispatchAddNavigationTransitionData(const String& origin, const String& selector, const String& markup) { }
         virtual void dispatchWillRequestResource(FetchRequest*) { }
 
         virtual void dispatchWillSendSubmitEvent(HTMLFormElement*) = 0;
@@ -154,16 +141,21 @@ namespace WebCore {
 
         virtual void transitionToCommittedForNewPage() = 0;
 
-        virtual PassRefPtr<LocalFrame> createFrame(const KURL&, const AtomicString& name, const Referrer&, HTMLFrameOwnerElement*) = 0;
+        virtual PassRefPtrWillBeRawPtr<LocalFrame> createFrame(const KURL&, const AtomicString& name, HTMLFrameOwnerElement*) = 0;
         // Whether or not plugin creation should fail if the HTMLPlugInElement isn't in the DOM after plugin initialization.
         enum DetachedPluginPolicy {
             FailOnDetachedPlugin,
             AllowDetachedPlugin,
         };
         virtual bool canCreatePluginWithoutRenderer(const String& mimeType) const = 0;
-        virtual PassRefPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
 
-        virtual PassRefPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
+        // Called before plugin creation in order to ask the embedder whether a
+        // placeholder should be substituted instead.
+        virtual PassOwnPtrWillBeRawPtr<PluginPlaceholder> createPluginPlaceholder(Document&, const KURL&, const Vector<String>& paramNames, const Vector<String>& paramValues, const String& mimeType, bool loadManually) = 0;
+
+        virtual PassRefPtrWillBeRawPtr<Widget> createPlugin(HTMLPlugInElement*, const KURL&, const Vector<String>&, const Vector<String>&, const String&, bool loadManually, DetachedPluginPolicy) = 0;
+
+        virtual PassRefPtrWillBeRawPtr<Widget> createJavaAppletWidget(HTMLAppletElement*, const KURL& baseURL, const Vector<String>& paramNames, const Vector<String>& paramValues) = 0;
 
         virtual ObjectContentType objectContentType(const KURL&, const String& mimeType, bool shouldPreferPlugInsForImages) = 0;
 
@@ -176,11 +168,13 @@ namespace WebCore {
 
         virtual void didChangeScrollOffset() { }
         virtual void didUpdateCurrentHistoryItem() { }
+        virtual void didRemoveAllPendingStylesheet() { }
 
         virtual bool allowScript(bool enabledPerSettings) { return enabledPerSettings; }
         virtual bool allowScriptFromSource(bool enabledPerSettings, const KURL&) { return enabledPerSettings; }
         virtual bool allowPlugins(bool enabledPerSettings) { return enabledPerSettings; }
         virtual bool allowImage(bool enabledPerSettings, const KURL&) { return enabledPerSettings; }
+        virtual bool allowMedia(const KURL&) { return true; }
         virtual bool allowDisplayingInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) { return enabledPerSettings; }
         virtual bool allowRunningInsecureContent(bool enabledPerSettings, SecurityOrigin*, const KURL&) { return enabledPerSettings; }
 
@@ -195,12 +189,8 @@ namespace WebCore {
 
         virtual blink::WebCookieJar* cookieJar() const = 0;
 
-        // Returns true if the embedder intercepted the postMessage call
-        virtual bool willCheckAndDispatchMessageEvent(SecurityOrigin* /*target*/, MessageEvent*) const { return false; }
-
         virtual void didChangeName(const String&) { }
 
-        virtual void dispatchWillOpenSocketStream(SocketStreamHandle*) { }
         virtual void dispatchWillOpenWebSocket(blink::WebSocketHandle*) { }
 
         virtual void dispatchWillStartUsingPeerConnectionHandler(blink::WebRTCPeerConnectionHandler*) { }
@@ -219,6 +209,10 @@ namespace WebCore {
 
         virtual PassOwnPtr<blink::WebServiceWorkerProvider> createServiceWorkerProvider() = 0;
 
+        virtual bool isControlledByServiceWorker(DocumentLoader&) = 0;
+
+        virtual int64_t serviceWorkerID(DocumentLoader&) = 0;
+
         virtual SharedWorkerRepositoryClient* sharedWorkerRepositoryClient() { return 0; }
 
         virtual PassOwnPtr<blink::WebApplicationCacheHost> createApplicationCacheHost(blink::WebApplicationCacheHostClient*) = 0;
@@ -227,9 +221,11 @@ namespace WebCore {
 
         virtual void dispatchDidChangeManifest() { }
 
+        virtual unsigned backForwardLength() { return 0; }
+
         virtual bool isFrameLoaderClientImpl() const { return false; }
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // FrameLoaderClient_h

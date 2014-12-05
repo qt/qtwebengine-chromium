@@ -48,8 +48,20 @@ void MockDemuxerStream::set_video_decoder_config(
   video_decoder_config_ = config;
 }
 
+VideoRotation MockDemuxerStream::video_rotation() {
+  return VIDEO_ROTATION_0;
+}
+
+std::string MockVideoDecoder::GetDisplayName() const {
+  return "MockVideoDecoder";
+}
+
 MockVideoDecoder::MockVideoDecoder() {
   EXPECT_CALL(*this, HasAlpha()).WillRepeatedly(Return(false));
+}
+
+std::string MockAudioDecoder::GetDisplayName() const {
+  return "MockAudioDecoder";
 }
 
 MockVideoDecoder::~MockVideoDecoder() {}
@@ -66,6 +78,14 @@ MockAudioRenderer::MockAudioRenderer() {}
 
 MockAudioRenderer::~MockAudioRenderer() {}
 
+MockRenderer::MockRenderer() {}
+
+MockRenderer::~MockRenderer() {}
+
+MockTimeSource::MockTimeSource() {}
+
+MockTimeSource::~MockTimeSource() {}
+
 MockTextTrack::MockTextTrack() {}
 
 MockTextTrack::~MockTextTrack() {}
@@ -73,9 +93,5 @@ MockTextTrack::~MockTextTrack() {}
 MockDecryptor::MockDecryptor() {}
 
 MockDecryptor::~MockDecryptor() {}
-
-MockStatisticsCB::MockStatisticsCB() {}
-
-MockStatisticsCB::~MockStatisticsCB() {}
 
 }  // namespace media

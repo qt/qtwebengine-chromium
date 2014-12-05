@@ -24,14 +24,14 @@ class AccessiblePaneViewFocusSearch : public FocusSearch {
         accessible_pane_view_(pane_view) {}
 
  protected:
-  virtual View* GetParent(View* v) OVERRIDE {
+  View* GetParent(View* v) override {
     return accessible_pane_view_->ContainsForFocusSearch(root(), v) ?
         accessible_pane_view_->GetParentForFocusSearch(v) : NULL;
   }
 
   // Returns true if |v| is contained within the hierarchy rooted at |root|.
   // Subclasses can override this if they need custom focus search behavior.
-  virtual bool Contains(View* root, const View* v) OVERRIDE {
+  bool Contains(View* root, const View* v) override {
     return accessible_pane_view_->ContainsForFocusSearch(root, v);
   }
 
@@ -43,13 +43,13 @@ class AccessiblePaneViewFocusSearch : public FocusSearch {
 AccessiblePaneView::AccessiblePaneView()
     : pane_has_focus_(false),
       allow_deactivate_on_esc_(false),
-      method_factory_(this),
       focus_manager_(NULL),
       home_key_(ui::VKEY_HOME, ui::EF_NONE),
       end_key_(ui::VKEY_END, ui::EF_NONE),
       escape_key_(ui::VKEY_ESCAPE, ui::EF_NONE),
       left_key_(ui::VKEY_LEFT, ui::EF_NONE),
-      right_key_(ui::VKEY_RIGHT, ui::EF_NONE) {
+      right_key_(ui::VKEY_RIGHT, ui::EF_NONE),
+      method_factory_(this) {
   focus_search_.reset(new AccessiblePaneViewFocusSearch(this));
   last_focused_view_storage_id_ = ViewStorage::GetInstance()->CreateStorageID();
 }

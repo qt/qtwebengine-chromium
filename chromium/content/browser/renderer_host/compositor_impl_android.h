@@ -8,17 +8,18 @@
 #include "base/basictypes.h"
 #include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
-#include "base/containers/scoped_ptr_hash_map.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "cc/resources/ui_resource_client.h"
 #include "cc/trees/layer_tree_host_client.h"
 #include "cc/trees/layer_tree_host_single_thread_client.h"
 #include "content/browser/android/ui_resource_provider_impl.h"
 #include "content/browser/renderer_host/image_transport_factory_android.h"
 #include "content/common/content_export.h"
+#include "content/common/gpu/client/context_provider_command_buffer.h"
 #include "content/public/browser/android/compositor.h"
+#include "gpu/command_buffer/common/capabilities.h"
 #include "third_party/khronos/GLES2/gl2.h"
+#include "ui/base/android/system_ui_resource_manager.h"
 #include "ui/base/android/window_android_compositor.h"
 
 class SkBitmap;
@@ -48,56 +49,59 @@ class CONTENT_EXPORT CompositorImpl
 
   static bool IsInitialized();
 
-  // Creates a surface texture and returns a surface texture id. Returns -1 on
-  // failure.
-  static int CreateSurfaceTexture(int child_process_id);
-
-  // Destroy all surface textures associated with |child_process_id|.
-  static void DestroyAllSurfaceTextures(int child_process_id);
+  void PopulateGpuCapabilities(gpu::Capabilities gpu_capabilities);
 
  private:
   // Compositor implementation.
-  virtual void SetRootLayer(scoped_refptr<cc::Layer> root) OVERRIDE;
-  virtual void SetWindowSurface(ANativeWindow* window) OVERRIDE;
-  virtual void SetSurface(jobject surface) OVERRIDE;
-  virtual void SetVisible(bool visible) OVERRIDE;
-  virtual void setDeviceScaleFactor(float factor) OVERRIDE;
-  virtual void SetWindowBounds(const gfx::Size& size) OVERRIDE;
-  virtual void SetHasTransparentBackground(bool flag) OVERRIDE;
-  virtual void SetNeedsComposite() OVERRIDE;
-  virtual UIResourceProvider& GetUIResourceProvider() OVERRIDE;
+  virtual void SetRootLayer(scoped_refptr<cc::Layer> root) override;
+  virtual void SetSurface(jobject surface) override;
+  virtual void SetVisible(bool visible) override;
+  virtual void setDeviceScaleFactor(float factor) override;
+  virtual void SetWindowBounds(const gfx::Size& size) override;
+  virtual void SetHasTransparentBackground(bool flag) override;
+  virtual void SetNeedsComposite() override;
+  virtual UIResourceProvider& GetUIResourceProvider() override;
 
   // LayerTreeHostClient implementation.
-  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
-  virtual void DidBeginMainFrame() OVERRIDE {}
-  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
-  virtual void Layout() OVERRIDE;
-  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
-                                   float page_scale) OVERRIDE {}
-  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
-      OVERRIDE;
-  virtual void DidInitializeOutputSurface() OVERRIDE {}
-  virtual void WillCommit() OVERRIDE {}
-  virtual void DidCommit() OVERRIDE;
-  virtual void DidCommitAndDrawFrame() OVERRIDE {}
-  virtual void DidCompleteSwapBuffers() OVERRIDE;
+  virtual void WillBeginMainFrame(int frame_id) override {}
+  virtual void DidBeginMainFrame() override {}
+  virtual void BeginMainFrame(const cc::BeginFrameArgs& args) override {}
+  virtual void Layout() override;
+  virtual void ApplyViewportDeltas(
+      const gfx::Vector2d& inner_delta,
+      const gfx::Vector2d& outer_delta,
+      float page_scale,
+      float top_controls_delta) override {}
+  virtual void ApplyViewportDeltas(
+      const gfx::Vector2d& scroll_delta,
+      float page_scale,
+      float top_controls_delta) override {}
+  virtual void RequestNewOutputSurface(bool fallback) override;
+  virtual void DidInitializeOutputSurface() override {}
+  virtual void WillCommit() override {}
+  virtual void DidCommit() override;
+  virtual void DidCommitAndDrawFrame() override {}
+  virtual void DidCompleteSwapBuffers() override;
 
   // LayerTreeHostSingleThreadClient implementation.
-  virtual void ScheduleComposite() OVERRIDE;
-  virtual void ScheduleAnimation() OVERRIDE;
-  virtual void DidPostSwapBuffers() OVERRIDE;
-  virtual void DidAbortSwapBuffers() OVERRIDE;
+  virtual void ScheduleComposite() override;
+  virtual void ScheduleAnimation() override;
+  virtual void DidPostSwapBuffers() override;
+  virtual void DidAbortSwapBuffers() override;
 
   // ImageTransportFactoryAndroidObserver implementation.
-  virtual void OnLostResources() OVERRIDE;
+  virtual void OnLostResources() override;
 
   // WindowAndroidCompositor implementation.
-  virtual void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) OVERRIDE;
+  virtual void AttachLayerForReadback(scoped_refptr<cc::Layer> layer) override;
   virtual void RequestCopyOfOutputOnRootLayer(
-      scoped_ptr<cc::CopyOutputRequest> request) OVERRIDE;
+      scoped_ptr<cc::CopyOutputRequest> request) override;
   virtual void OnVSync(base::TimeTicks frame_time,
-                       base::TimeDelta vsync_period) OVERRIDE;
-  virtual void SetNeedsAnimate() OVERRIDE;
+                       base::TimeDelta vsync_period) override;
+  virtual void SetNeedsAnimate() override;
+  virtual ui::SystemUIResourceManager& GetSystemUIResourceManager() override;
+
+  void SetWindowSurface(ANativeWindow* window);
 
   enum CompositingTrigger {
     DO_NOT_COMPOSITE,
@@ -106,6 +110,7 @@ class CONTENT_EXPORT CompositorImpl
   };
   void PostComposite(CompositingTrigger trigger);
   void Composite(CompositingTrigger trigger);
+  void CreateOutputSurface(bool fallback);
 
   bool WillCompositeThisFrame() const {
     return current_composite_task_ &&
@@ -127,9 +132,6 @@ class CONTENT_EXPORT CompositorImpl
     composite_on_vsync_trigger_ = DO_NOT_COMPOSITE;
     will_composite_immediately_ = false;
   }
-  cc::UIResourceId GenerateUIResourceFromUIResourceBitmap(
-      const cc::UIResourceBitmap& bitmap,
-      bool is_transient);
   void OnGpuChannelEstablished();
 
   // root_layer_ is the persistent internal root layer, while subroot_layer_

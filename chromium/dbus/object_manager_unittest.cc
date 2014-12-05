@@ -10,6 +10,7 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "dbus/bus.h"
@@ -27,7 +28,7 @@ class ObjectManagerTest
     : public testing::Test,
       public ObjectManager::Interface {
  public:
-  ObjectManagerTest() {
+  ObjectManagerTest() : timeout_expired_(false) {
   }
 
   struct Properties : public PropertySet {
@@ -50,7 +51,7 @@ class ObjectManagerTest
   virtual PropertySet* CreateProperties(
       ObjectProxy* object_proxy,
       const ObjectPath& object_path,
-      const std::string& interface_name) OVERRIDE {
+      const std::string& interface_name) override {
     Properties* properties = new Properties(
         object_proxy, interface_name,
         base::Bind(&ObjectManagerTest::OnPropertyChanged,
@@ -89,7 +90,6 @@ class ObjectManagerTest
         ObjectPath("/org/chromium/TestService"));
     object_manager_->RegisterInterface("org.chromium.TestInterface", this);
 
-    object_manager_->GetManagedObjects();
     WaitForObject();
   }
 
@@ -105,33 +105,55 @@ class ObjectManagerTest
     // Stopping a thread is considered an IO operation, so do this after
     // allowing IO.
     test_service_->Stop();
+
+    base::RunLoop().RunUntilIdle();
   }
 
   void MethodCallback(Response* response) {
     method_callback_called_ = true;
-    message_loop_.Quit();
+    run_loop_->Quit();
+  }
+
+  // Called from the PropertiesChangedAsObjectsReceived test case. The test will
+  // not run the message loop if it receives the expected PropertiesChanged
+  // signal before the timeout. This method immediately fails the test.
+  void PropertiesChangedTestTimeout() {
+    timeout_expired_ = true;
+    run_loop_->Quit();
+
+    FAIL() << "Never received PropertiesChanged";
   }
 
  protected:
   // Called when an object is added.
   virtual void ObjectAdded(const ObjectPath& object_path,
-                           const std::string& interface_name) OVERRIDE {
+                           const std::string& interface_name) override {
     added_objects_.push_back(std::make_pair(object_path, interface_name));
-    message_loop_.Quit();
+    run_loop_->Quit();
   }
 
   // Called when an object is removed.
   virtual void ObjectRemoved(const ObjectPath& object_path,
-                             const std::string& interface_name) OVERRIDE {
+                             const std::string& interface_name) override {
     removed_objects_.push_back(std::make_pair(object_path, interface_name));
-    message_loop_.Quit();
+    run_loop_->Quit();
   }
 
   // Called when a property value is updated.
   void OnPropertyChanged(const ObjectPath& object_path,
                          const std::string& name) {
+    // Store the value of the "Name" property if that's the one that
+    // changed.
+    Properties* properties = static_cast<Properties*>(
+        object_manager_->GetProperties(
+            object_path,
+            "org.chromium.TestInterface"));
+    if (name == properties->name.name())
+      last_name_value_ = properties->name.value();
+
+    // Store the updated property.
     updated_properties_.push_back(name);
-    message_loop_.Quit();
+    run_loop_->Quit();
   }
 
   static const size_t kExpectedObjects = 1;
@@ -139,8 +161,10 @@ class ObjectManagerTest
 
   void WaitForObject() {
     while (added_objects_.size() < kExpectedObjects ||
-           updated_properties_.size() < kExpectedProperties)
-      message_loop_.Run();
+           updated_properties_.size() < kExpectedProperties) {
+      run_loop_.reset(new base::RunLoop);
+      run_loop_->Run();
+    }
     for (size_t i = 0; i < kExpectedObjects; ++i)
       added_objects_.erase(added_objects_.begin());
     for (size_t i = 0; i < kExpectedProperties; ++i)
@@ -148,14 +172,17 @@ class ObjectManagerTest
   }
 
   void WaitForRemoveObject() {
-    while (removed_objects_.size() < kExpectedObjects)
-      message_loop_.Run();
+    while (removed_objects_.size() < kExpectedObjects) {
+      run_loop_.reset(new base::RunLoop);
+      run_loop_->Run();
+    }
     for (size_t i = 0; i < kExpectedObjects; ++i)
       removed_objects_.erase(removed_objects_.begin());
   }
 
   void WaitForMethodCallback() {
-    message_loop_.Run();
+    run_loop_.reset(new base::RunLoop);
+    run_loop_->Run();
     method_callback_called_ = false;
   }
 
@@ -177,10 +204,14 @@ class ObjectManagerTest
   }
 
   base::MessageLoop message_loop_;
+  scoped_ptr<base::RunLoop> run_loop_;
   scoped_ptr<base::Thread> dbus_thread_;
   scoped_refptr<Bus> bus_;
   ObjectManager* object_manager_;
   scoped_ptr<TestService> test_service_;
+
+  std::string last_name_value_;
+  bool timeout_expired_;
 
   std::vector<std::pair<ObjectPath, std::string> > added_objects_;
   std::vector<std::pair<ObjectPath, std::string> > removed_objects_;
@@ -348,6 +379,40 @@ TEST_F(ObjectManagerTest, OwnershipLostAndRegained) {
 
   std::vector<ObjectPath> object_paths = object_manager_->GetObjects();
   ASSERT_EQ(1U, object_paths.size());
+}
+
+TEST_F(ObjectManagerTest, PropertiesChangedAsObjectsReceived) {
+  // Remove the existing object manager.
+  object_manager_->UnregisterInterface("org.chromium.TestInterface");
+  run_loop_.reset(new base::RunLoop);
+  EXPECT_TRUE(bus_->RemoveObjectManager(
+      "org.chromium.TestService",
+      ObjectPath("/org/chromium/TestService"),
+      run_loop_->QuitClosure()));
+  run_loop_->Run();
+
+  PerformAction("SetSendImmediatePropertiesChanged",
+                ObjectPath("/org/chromium/TestService"));
+
+  object_manager_ = bus_->GetObjectManager(
+      "org.chromium.TestService",
+      ObjectPath("/org/chromium/TestService"));
+  object_manager_->RegisterInterface("org.chromium.TestInterface", this);
+
+  // The newly created object manager should call GetManagedObjects immediately
+  // after setting up the match rule for PropertiesChanged. We should process
+  // the PropertiesChanged event right after that. If we don't receive it within
+  // 2 seconds, then fail the test.
+  message_loop_.PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ObjectManagerTest::PropertiesChangedTestTimeout,
+                 base::Unretained(this)),
+      base::TimeDelta::FromSeconds(2));
+
+  while (last_name_value_ != "ChangedTestServiceName" && !timeout_expired_) {
+    run_loop_.reset(new base::RunLoop);
+    run_loop_->Run();
+  }
 }
 
 }  // namespace dbus

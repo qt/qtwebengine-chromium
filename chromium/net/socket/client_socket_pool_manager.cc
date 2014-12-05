@@ -84,7 +84,6 @@ int InitSocketPoolHelper(const GURL& request_url,
                          HttpNetworkSession::SocketPoolType socket_pool_type,
                          const OnHostResolutionCallback& resolution_callback,
                          const CompletionCallback& callback) {
-  scoped_refptr<TransportSocketParams> tcp_params;
   scoped_refptr<HttpProxySocketParams> http_proxy_params;
   scoped_refptr<SOCKSSocketParams> socks_params;
   scoped_ptr<HostPortPair> proxy_host_port;
@@ -132,7 +131,7 @@ int InitSocketPoolHelper(const GURL& request_url,
     // should be the same for all connections, whereas version_max may
     // change for version fallbacks.
     std::string prefix = "ssl/";
-    if (ssl_config_for_origin.version_max != net::kDefaultSSLVersionMax) {
+    if (ssl_config_for_origin.version_max != kDefaultSSLVersionMax) {
       switch (ssl_config_for_origin.version_max) {
         case SSL_PROTOCOL_VERSION_TLS1_2:
           prefix = "ssl(max:3.3)/";
@@ -155,19 +154,16 @@ int InitSocketPoolHelper(const GURL& request_url,
   }
 
   bool ignore_limits = (request_load_flags & LOAD_IGNORE_LIMITS) != 0;
-  if (proxy_info.is_direct()) {
-    tcp_params = new TransportSocketParams(origin_host_port,
-                                           disable_resolver_cache,
-                                           ignore_limits,
-                                           resolution_callback);
-  } else {
+  if (!proxy_info.is_direct()) {
     ProxyServer proxy_server = proxy_info.proxy_server();
     proxy_host_port.reset(new HostPortPair(proxy_server.host_port_pair()));
     scoped_refptr<TransportSocketParams> proxy_tcp_params(
-        new TransportSocketParams(*proxy_host_port,
-                                  disable_resolver_cache,
-                                  ignore_limits,
-                                  resolution_callback));
+        new TransportSocketParams(
+            *proxy_host_port,
+            disable_resolver_cache,
+            ignore_limits,
+            resolution_callback,
+            TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT));
 
     if (proxy_info.is_http() || proxy_info.is_https()) {
       std::string user_agent;
@@ -175,6 +171,18 @@ int InitSocketPoolHelper(const GURL& request_url,
                                       &user_agent);
       scoped_refptr<SSLSocketParams> ssl_params;
       if (proxy_info.is_https()) {
+        // Combine connect and write for SSL sockets in TCP FastOpen
+        // field trial.
+        TransportSocketParams::CombineConnectAndWritePolicy
+            combine_connect_and_write =
+                session->params().enable_tcp_fast_open_for_ssl ?
+                    TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DESIRED :
+                    TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT;
+        proxy_tcp_params = new TransportSocketParams(*proxy_host_port,
+                                                     disable_resolver_cache,
+                                                     ignore_limits,
+                                                     resolution_callback,
+                                                     combine_connect_and_write);
         // Set ssl_params, and unset proxy_tcp_params
         ssl_params = new SSLSocketParams(proxy_tcp_params,
                                          NULL,
@@ -197,7 +205,8 @@ int InitSocketPoolHelper(const GURL& request_url,
                                     session->http_auth_cache(),
                                     session->http_auth_handler_factory(),
                                     session->spdy_session_pool(),
-                                    force_tunnel || using_ssl);
+                                    force_tunnel || using_ssl,
+                                    session->params().proxy_delegate);
     } else {
       DCHECK(proxy_info.is_socks());
       char socks_version;
@@ -220,8 +229,23 @@ int InitSocketPoolHelper(const GURL& request_url,
 
   // Deal with SSL - which layers on top of any given proxy.
   if (using_ssl) {
+    scoped_refptr<TransportSocketParams> ssl_tcp_params;
+    if (proxy_info.is_direct()) {
+      // Setup TCP params if non-proxied SSL connection.
+      // Combine connect and write for SSL sockets in TCP FastOpen field trial.
+      TransportSocketParams::CombineConnectAndWritePolicy
+          combine_connect_and_write =
+              session->params().enable_tcp_fast_open_for_ssl ?
+                  TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DESIRED :
+                  TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT;
+      ssl_tcp_params = new TransportSocketParams(origin_host_port,
+                                                 disable_resolver_cache,
+                                                 ignore_limits,
+                                                 resolution_callback,
+                                                 combine_connect_and_write);
+    }
     scoped_refptr<SSLSocketParams> ssl_params =
-        new SSLSocketParams(tcp_params,
+        new SSLSocketParams(ssl_tcp_params,
                             socks_params,
                             http_proxy_params,
                             origin_host_port,
@@ -280,7 +304,13 @@ int InitSocketPoolHelper(const GURL& request_url,
   }
 
   DCHECK(proxy_info.is_direct());
-
+  scoped_refptr<TransportSocketParams> tcp_params =
+      new TransportSocketParams(
+          origin_host_port,
+          disable_resolver_cache,
+          ignore_limits,
+          resolution_callback,
+          TransportSocketParams::COMBINE_CONNECT_AND_WRITE_DEFAULT);
   TransportClientSocketPool* pool =
       session->GetTransportSocketPool(socket_pool_type);
   if (num_preconnect_streams) {

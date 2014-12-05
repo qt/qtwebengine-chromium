@@ -36,7 +36,6 @@
 #include "core/dom/ContainerNode.h"
 #include "core/dom/Document.h"
 #include "core/dom/ElementTraversal.h"
-#include "core/dom/FullscreenElementStack.h"
 #include "core/dom/Node.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/QualifiedName.h"
@@ -52,7 +51,7 @@
 #include "wtf/HashSet.h"
 #include "wtf/text/AtomicString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -85,7 +84,7 @@ bool SharedStyleFinder::canShareStyleWithControl(Element& candidate) const
         if (willValidate != element().willValidate())
             return false;
 
-        if (willValidate && (candidate.isValidFormControlElement() != element().isValidFormControlElement()))
+        if (willValidate && (candidate.isValidElement() != element().isValidElement()))
             return false;
 
         if (candidate.isInRange() != element().isInRange())
@@ -116,7 +115,7 @@ static inline const AtomicString& typeAttributeValue(const Element& element)
 
 bool SharedStyleFinder::sharingCandidateHasIdenticalStyleAffectingAttributes(Element& candidate) const
 {
-    if (element().elementData() == candidate.elementData())
+    if (element().sharesSameElementData(candidate))
         return true;
     if (element().fastGetAttribute(XMLNames::langAttr) != candidate.fastGetAttribute(XMLNames::langAttr))
         return false;
@@ -234,11 +233,13 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
         return false;
 
     bool isControl = candidate.isFormControlElement();
-
-    if (isControl != element().isFormControlElement())
+    ASSERT(isControl == element().isFormControlElement());
+    if (isControl && !canShareStyleWithControl(candidate))
         return false;
 
-    if (isControl && !canShareStyleWithControl(candidate))
+    if (isHTMLOptionElement(candidate) && isHTMLOptionElement(element())
+        && (toHTMLOptionElement(candidate).selected() != toHTMLOptionElement(element()).selected()
+        || toHTMLOptionElement(candidate).spatialNavigationFocused() != toHTMLOptionElement(element()).spatialNavigationFocused()))
         return false;
 
     // FIXME: This line is surprisingly hot, we may wish to inline hasDirectionAuto into StyleResolver.
@@ -264,13 +265,18 @@ bool SharedStyleFinder::canShareStyleWithElement(Element& candidate) const
             return false;
     }
 
+    if (document().containsValidityStyleRules()) {
+        if (candidate.isValidElement() != element().isValidElement())
+            return false;
+    }
+
     return true;
 }
 
 bool SharedStyleFinder::documentContainsValidCandidate() const
 {
-    for (Element* element = document().documentElement(); element; element = ElementTraversal::next(*element)) {
-        if (element->supportsStyleSharing() && canShareStyleWithElement(*element))
+    for (Element& element : ElementTraversal::startsAt(document().documentElement())) {
+        if (element.supportsStyleSharing() && canShareStyleWithElement(element))
             return true;
     }
     return false;

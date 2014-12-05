@@ -23,33 +23,30 @@
  */
 
 #include "config.h"
-
 #include "modules/mediastream/RTCIceCandidateEvent.h"
 
 #include "modules/mediastream/RTCIceCandidate.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create()
 {
     return adoptRefWillBeNoop(new RTCIceCandidateEvent);
 }
 
-PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate> candidate)
+PassRefPtrWillBeRawPtr<RTCIceCandidateEvent> RTCIceCandidateEvent::create(bool canBubble, bool cancelable, RTCIceCandidate* candidate)
 {
     return adoptRefWillBeNoop(new RTCIceCandidateEvent(canBubble, cancelable, candidate));
 }
 
 RTCIceCandidateEvent::RTCIceCandidateEvent()
 {
-    ScriptWrappable::init(this);
 }
 
-RTCIceCandidateEvent::RTCIceCandidateEvent(bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<RTCIceCandidate> candidate)
+RTCIceCandidateEvent::RTCIceCandidateEvent(bool canBubble, bool cancelable, RTCIceCandidate* candidate)
     : Event(EventTypeNames::icecandidate, canBubble, cancelable)
     , m_candidate(candidate)
 {
-    ScriptWrappable::init(this);
 }
 
 RTCIceCandidateEvent::~RTCIceCandidateEvent()
@@ -72,5 +69,5 @@ void RTCIceCandidateEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 

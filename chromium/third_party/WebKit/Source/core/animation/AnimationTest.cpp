@@ -5,31 +5,34 @@
 #include "config.h"
 #include "core/animation/Animation.h"
 
-#include "bindings/v8/Dictionary.h"
+#include "bindings/core/v8/Dictionary.h"
+#include "bindings/core/v8/UnionTypesCore.h"
 #include "core/animation/AnimationClock.h"
-#include "core/animation/AnimationHelpers.h"
 #include "core/animation/AnimationNodeTiming.h"
 #include "core/animation/AnimationTestHelper.h"
 #include "core/animation/AnimationTimeline.h"
 #include "core/animation/KeyframeEffectModel.h"
 #include "core/animation/Timing.h"
 #include "core/dom/Document.h"
+#include "core/testing/DummyPageHolder.h"
 #include <gtest/gtest.h>
 #include <v8.h>
 
-namespace WebCore {
+namespace blink {
 
 class AnimationAnimationTest : public ::testing::Test {
 protected:
     AnimationAnimationTest()
-        : document(Document::create())
-        , element(document->createElement("foo", ASSERT_NO_EXCEPTION))
+        : pageHolder(DummyPageHolder::create())
+        , document(pageHolder->document())
+        , element(document.createElement("foo", ASSERT_NO_EXCEPTION))
     {
-        document->animationClock().resetTimeForTesting();
-        EXPECT_EQ(0, document->timeline().currentTime());
+        document.animationClock().resetTimeForTesting(document.timeline().zeroTime());
+        EXPECT_EQ(0, document.timeline().currentTime());
     }
 
-    RefPtrWillBePersistent<Document> document;
+    OwnPtr<DummyPageHolder> pageHolder;
+    Document& document;
     RefPtrWillBePersistent<Element> element;
     TrackExceptionState exceptionState;
 };
@@ -75,11 +78,11 @@ TEST_F(AnimationAnimationV8Test, CanCreateAnAnimation)
     jsKeyframes.append(Dictionary(keyframe2, m_isolate));
 
     String value1;
-    ASSERT_TRUE(jsKeyframes[0].get("width", value1));
+    ASSERT_TRUE(DictionaryHelper::get(jsKeyframes[0], "width", value1));
     ASSERT_EQ("100px", value1);
 
     String value2;
-    ASSERT_TRUE(jsKeyframes[1].get("width", value2));
+    ASSERT_TRUE(DictionaryHelper::get(jsKeyframes[1], "width", value2));
     ASSERT_EQ("0px", value2);
 
     RefPtrWillBeRawPtr<Animation> animation = createAnimation(element.get(), jsKeyframes, 0, exceptionState);
@@ -100,8 +103,8 @@ TEST_F(AnimationAnimationV8Test, CanCreateAnAnimation)
     EXPECT_EQ("100px", keyframe1Width->cssText());
     EXPECT_EQ("0px", keyframe2Width->cssText());
 
-    EXPECT_EQ(*(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseInOut)), *keyframes[0]->easing());
-    EXPECT_EQ(*(CubicBezierTimingFunction::create(1, 1, 0.3, 0.3).get()), *keyframes[1]->easing());
+    EXPECT_EQ(*(CubicBezierTimingFunction::preset(CubicBezierTimingFunction::EaseInOut)), keyframes[0]->easing());
+    EXPECT_EQ(*(CubicBezierTimingFunction::create(1, 1, 0.3, 0.3).get()), keyframes[1]->easing());
 }
 
 TEST_F(AnimationAnimationV8Test, CanSetDuration)
@@ -250,15 +253,11 @@ TEST_F(AnimationAnimationV8Test, SpecifiedDurationGetter)
     RefPtrWillBeRawPtr<Animation> animationWithDuration = createAnimation(element.get(), jsKeyframes, timingInputDictionaryWithDuration, exceptionState);
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specifiedWithDuration = animationWithDuration->timing();
-    bool isNumber = false;
-    double numberDuration = std::numeric_limits<double>::quiet_NaN();
-    bool isString = false;
-    String stringDuration = "";
-    specifiedWithDuration->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_TRUE(isNumber);
-    EXPECT_EQ(2.5, numberDuration);
-    EXPECT_FALSE(isString);
-    EXPECT_EQ("", stringDuration);
+    DoubleOrString duration;
+    specifiedWithDuration->getDuration("duration", duration);
+    EXPECT_TRUE(duration.isDouble());
+    EXPECT_EQ(2.5, duration.getAsDouble());
+    EXPECT_FALSE(duration.isString());
 
 
     v8::Handle<v8::Object> timingInputNoDuration = v8::Object::New(m_isolate);
@@ -267,15 +266,11 @@ TEST_F(AnimationAnimationV8Test, SpecifiedDurationGetter)
     RefPtrWillBeRawPtr<Animation> animationNoDuration = createAnimation(element.get(), jsKeyframes, timingInputDictionaryNoDuration, exceptionState);
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specifiedNoDuration = animationNoDuration->timing();
-    isNumber = false;
-    numberDuration = std::numeric_limits<double>::quiet_NaN();
-    isString = false;
-    stringDuration = "";
-    specifiedNoDuration->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_FALSE(isNumber);
-    EXPECT_TRUE(std::isnan(numberDuration));
-    EXPECT_TRUE(isString);
-    EXPECT_EQ("auto", stringDuration);
+    DoubleOrString duration2;
+    specifiedNoDuration->getDuration("duration", duration2);
+    EXPECT_FALSE(duration2.isDouble());
+    EXPECT_TRUE(duration2.isString());
+    EXPECT_EQ("auto", duration2.getAsString());
 }
 
 TEST_F(AnimationAnimationV8Test, SpecifiedSetters)
@@ -329,26 +324,18 @@ TEST_F(AnimationAnimationV8Test, SetSpecifiedDuration)
 
     RefPtrWillBeRawPtr<AnimationNodeTiming> specified = animation->timing();
 
-    bool isNumber = false;
-    double numberDuration = std::numeric_limits<double>::quiet_NaN();
-    bool isString = false;
-    String stringDuration = "";
-    specified->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_FALSE(isNumber);
-    EXPECT_TRUE(std::isnan(numberDuration));
-    EXPECT_TRUE(isString);
-    EXPECT_EQ("auto", stringDuration);
+    DoubleOrString duration;
+    specified->getDuration("duration", duration);
+    EXPECT_FALSE(duration.isDouble());
+    EXPECT_TRUE(duration.isString());
+    EXPECT_EQ("auto", duration.getAsString());
 
     specified->setDuration("duration", 2.5);
-    isNumber = false;
-    numberDuration = std::numeric_limits<double>::quiet_NaN();
-    isString = false;
-    stringDuration = "";
-    specified->getDuration("duration", isNumber, numberDuration, isString, stringDuration);
-    EXPECT_TRUE(isNumber);
-    EXPECT_EQ(2.5, numberDuration);
-    EXPECT_FALSE(isString);
-    EXPECT_EQ("", stringDuration);
+    DoubleOrString duration2;
+    specified->getDuration("duration", duration2);
+    EXPECT_TRUE(duration2.isDouble());
+    EXPECT_EQ(2.5, duration2.getAsDouble());
+    EXPECT_FALSE(duration2.isString());
 }
 
 TEST_F(AnimationAnimationTest, TimeToEffectChange)
@@ -359,7 +346,7 @@ TEST_F(AnimationAnimationTest, TimeToEffectChange)
     timing.endDelay = 100;
     timing.fillMode = Timing::FillModeNone;
     RefPtrWillBeRawPtr<Animation> animation = Animation::create(0, nullptr, timing);
-    RefPtrWillBeRawPtr<AnimationPlayer> player = document->timeline().play(animation.get());
+    RefPtrWillBeRawPtr<AnimationPlayer> player = document.timeline().play(animation.get());
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -392,7 +379,7 @@ TEST_F(AnimationAnimationTest, TimeToEffectChangeWithPlaybackRate)
     timing.playbackRate = 2;
     timing.fillMode = Timing::FillModeNone;
     RefPtrWillBeRawPtr<Animation> animation = Animation::create(0, nullptr, timing);
-    RefPtrWillBeRawPtr<AnimationPlayer> player = document->timeline().play(animation.get());
+    RefPtrWillBeRawPtr<AnimationPlayer> player = document.timeline().play(animation.get());
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -425,7 +412,7 @@ TEST_F(AnimationAnimationTest, TimeToEffectChangeWithNegativePlaybackRate)
     timing.playbackRate = -2;
     timing.fillMode = Timing::FillModeNone;
     RefPtrWillBeRawPtr<Animation> animation = Animation::create(0, nullptr, timing);
-    RefPtrWillBeRawPtr<AnimationPlayer> player = document->timeline().play(animation.get());
+    RefPtrWillBeRawPtr<AnimationPlayer> player = document.timeline().play(animation.get());
     double inf = std::numeric_limits<double>::infinity();
 
     EXPECT_EQ(100, animation->timeToForwardsEffectChange());
@@ -456,12 +443,12 @@ TEST_F(AnimationAnimationTest, ElementDestructorClearsAnimationTarget)
     timing.iterationDuration = 5;
     RefPtrWillBeRawPtr<Animation> animation = Animation::create(element.get(), nullptr, timing);
     EXPECT_EQ(element.get(), animation->target());
-    document->timeline().play(animation.get());
-    document.clear();
+    document.timeline().play(animation.get());
+    pageHolder.clear();
     element.clear();
 #if !ENABLE(OILPAN)
     EXPECT_EQ(0, animation->target());
 #endif
 }
 
-} // namespace WebCore
+} // namespace blink

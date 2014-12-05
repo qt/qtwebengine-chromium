@@ -13,6 +13,7 @@
 #include "base/synchronization/waitable_event_watcher.h"
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/thread_local.h"
+#include "ipc/ipc_channel_factory.h"
 #include "ipc/ipc_logging.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_sync_message.h"
@@ -228,7 +229,7 @@ base::LazyInstance<base::ThreadLocalPointer<SyncChannel::ReceivedSyncMsgQueue> >
 
 SyncChannel::SyncContext::SyncContext(
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event)
     : ChannelProxy::Context(listener, ipc_task_runner),
       received_sync_msgs_(ReceivedSyncMsgQueue::AddContext()),
@@ -409,7 +410,7 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
     const IPC::ChannelHandle& channel_handle,
     Channel::Mode mode,
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     bool create_pipe_now,
     base::WaitableEvent* shutdown_event) {
   scoped_ptr<SyncChannel> channel =
@@ -420,8 +421,21 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
 
 // static
 scoped_ptr<SyncChannel> SyncChannel::Create(
+    scoped_ptr<ChannelFactory> factory,
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
+    bool create_pipe_now,
+    base::WaitableEvent* shutdown_event) {
+  scoped_ptr<SyncChannel> channel =
+      Create(listener, ipc_task_runner, shutdown_event);
+  channel->Init(factory.Pass(), create_pipe_now);
+  return channel.Pass();
+}
+
+// static
+scoped_ptr<SyncChannel> SyncChannel::Create(
+    Listener* listener,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event) {
   return make_scoped_ptr(
       new SyncChannel(listener, ipc_task_runner, shutdown_event));
@@ -429,12 +443,12 @@ scoped_ptr<SyncChannel> SyncChannel::Create(
 
 SyncChannel::SyncChannel(
     Listener* listener,
-    base::SingleThreadTaskRunner* ipc_task_runner,
+    const scoped_refptr<base::SingleThreadTaskRunner>& ipc_task_runner,
     WaitableEvent* shutdown_event)
     : ChannelProxy(new SyncContext(listener, ipc_task_runner, shutdown_event)) {
   // The current (listener) thread must be distinct from the IPC thread, or else
   // sending synchronous messages will deadlock.
-  DCHECK_NE(ipc_task_runner, base::ThreadTaskRunnerHandle::Get());
+  DCHECK_NE(ipc_task_runner.get(), base::ThreadTaskRunnerHandle::Get().get());
   StartWatching();
 }
 
@@ -447,9 +461,8 @@ void SyncChannel::SetRestrictDispatchChannelGroup(int group) {
 
 bool SyncChannel::Send(Message* message) {
 #ifdef IPC_MESSAGE_LOG_ENABLED
-  Logging* logger = Logging::GetInstance();
   std::string name;
-  logger->GetMessageText(message->type(), &name, message, NULL);
+  Logging::GetInstance()->GetMessageText(message->type(), &name, message, NULL);
   TRACE_EVENT1("ipc", "SyncChannel::Send", "name", name);
 #else
   TRACE_EVENT2("ipc", "SyncChannel::Send",

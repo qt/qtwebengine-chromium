@@ -30,14 +30,15 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBuffer;
 
-class AudioProcessingEvent FINAL : public Event {
+class AudioProcessingEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create();
-    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime);
+    static PassRefPtrWillBeRawPtr<AudioProcessingEvent> create(AudioBuffer* inputBuffer, AudioBuffer* outputBuffer, double playbackTime);
 
     virtual ~AudioProcessingEvent();
 
@@ -45,19 +46,19 @@ public:
     AudioBuffer* outputBuffer() { return m_outputBuffer.get(); }
     double playbackTime() const { return m_playbackTime; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     AudioProcessingEvent();
-    AudioProcessingEvent(PassRefPtrWillBeRawPtr<AudioBuffer> inputBuffer, PassRefPtrWillBeRawPtr<AudioBuffer> outputBuffer, double playbackTime);
+    AudioProcessingEvent(AudioBuffer* inputBuffer, AudioBuffer* outputBuffer, double playbackTime);
 
-    RefPtrWillBeMember<AudioBuffer> m_inputBuffer;
-    RefPtrWillBeMember<AudioBuffer> m_outputBuffer;
+    PersistentWillBeMember<AudioBuffer> m_inputBuffer;
+    PersistentWillBeMember<AudioBuffer> m_outputBuffer;
     double m_playbackTime;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AudioProcessingEvent_h

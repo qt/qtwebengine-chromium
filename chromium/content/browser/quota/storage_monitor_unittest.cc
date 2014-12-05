@@ -11,26 +11,26 @@
 #include "content/public/test/mock_special_storage_policy.h"
 #include "content/public/test/mock_storage_client.h"
 #include "net/base/net_util.h"
+#include "storage/browser/quota/quota_manager.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
+#include "storage/browser/quota/storage_monitor.h"
+#include "storage/browser/quota/storage_observer.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/quota/quota_manager.h"
-#include "webkit/browser/quota/quota_manager_proxy.h"
-#include "webkit/browser/quota/storage_monitor.h"
-#include "webkit/browser/quota/storage_observer.h"
 
-using quota::HostStorageObservers;
-using quota::kQuotaErrorNotSupported;
-using quota::kQuotaStatusOk;
-using quota::kStorageTypePersistent;
-using quota::kStorageTypeTemporary;
-using quota::QuotaClient;
-using quota::QuotaManager;
-using quota::QuotaStatusCode;
-using quota::SpecialStoragePolicy;
-using quota::StorageMonitor;
-using quota::StorageObserver;
-using quota::StorageObserverList;
-using quota::StorageType;
-using quota::StorageTypeObservers;
+using storage::HostStorageObservers;
+using storage::kQuotaErrorNotSupported;
+using storage::kQuotaStatusOk;
+using storage::kStorageTypePersistent;
+using storage::kStorageTypeTemporary;
+using storage::QuotaClient;
+using storage::QuotaManager;
+using storage::QuotaStatusCode;
+using storage::SpecialStoragePolicy;
+using storage::StorageMonitor;
+using storage::StorageObserver;
+using storage::StorageObserverList;
+using storage::StorageType;
+using storage::StorageTypeObservers;
 
 namespace content {
 
@@ -51,7 +51,7 @@ class MockObserver : public StorageObserver {
   }
 
   // StorageObserver implementation:
-  virtual void OnStorageEvent(const StorageObserver::Event& event) OVERRIDE {
+  void OnStorageEvent(const StorageObserver::Event& event) override {
     events_.push_back(event);
   }
 
@@ -86,10 +86,10 @@ class UsageMockQuotaManager : public QuotaManager {
     delayed_callback_.Run(callback_status_, callback_usage_, callback_quota_);
   }
 
-  virtual void GetUsageAndQuotaForWebApps(
+  void GetUsageAndQuotaForWebApps(
       const GURL& origin,
       StorageType type,
-      const GetUsageAndQuotaCallback& callback) OVERRIDE {
+      const GetUsageAndQuotaCallback& callback) override {
     if (initialized_)
       callback.Run(callback_status_, callback_usage_, callback_quota_);
     else
@@ -97,7 +97,7 @@ class UsageMockQuotaManager : public QuotaManager {
   }
 
  protected:
-  virtual ~UsageMockQuotaManager() {}
+  ~UsageMockQuotaManager() override {}
 
  private:
   int64 callback_usage_;
@@ -164,12 +164,12 @@ class StorageMonitorTestBase : public testing::Test {
 
 class StorageTestWithManagerBase : public StorageMonitorTestBase {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     storage_policy_ = new MockSpecialStoragePolicy();
     quota_manager_ = new UsageMockQuotaManager(storage_policy_.get());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // This ensures the quota manager is destroyed correctly.
     quota_manager_ = NULL;
     base::RunLoop().RunUntilIdle();
@@ -563,7 +563,7 @@ class StorageMonitorTest : public StorageTestWithManagerBase {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     StorageTestWithManagerBase::SetUp();
 
     storage_monitor_ = quota_manager_->storage_monitor_.get();
@@ -645,7 +645,7 @@ TEST_F(StorageMonitorTest, RemoveObserverForFilter) {
 
 class StorageMonitorIntegrationTest : public testing::Test {
  public:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     storage_policy_ = new MockSpecialStoragePolicy();
     quota_manager_ = new QuotaManager(
@@ -663,7 +663,7 @@ class StorageMonitorIntegrationTest : public testing::Test {
     quota_manager_->proxy()->RegisterClient(client_);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     // This ensures the quota manager is destroyed correctly.
     quota_manager_ = NULL;
     base::RunLoop().RunUntilIdle();

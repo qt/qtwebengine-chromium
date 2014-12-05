@@ -80,7 +80,7 @@ class ChannelNacl::ReaderThreadRunner
 
   // DelegateSimpleThread implementation. Reads data from the pipe in a loop
   // until either we are told to quit or a read fails.
-  virtual void Run() OVERRIDE;
+  virtual void Run() override;
 
  private:
   int pipe_;
@@ -142,6 +142,10 @@ ChannelNacl::~ChannelNacl() {
 base::ProcessId ChannelNacl::GetPeerPID() const {
   // This shouldn't actually get used in the untrusted side of the proxy, and we
   // don't have the real pid anyway.
+  return -1;
+}
+
+base::ProcessId ChannelNacl::GetSelfPID() const {
   return -1;
 }
 
@@ -274,7 +278,7 @@ bool ChannelNacl::ProcessOutgoingMessages() {
     int fds[FileDescriptorSet::kMaxDescriptorsPerMessage];
     const size_t num_fds = msg->file_descriptor_set()->size();
     DCHECK(num_fds <= FileDescriptorSet::kMaxDescriptorsPerMessage);
-    msg->file_descriptor_set()->GetDescriptors(fds);
+    msg->file_descriptor_set()->PeekDescriptors(fds);
 
     NaClAbiNaClImcMsgIoVec iov = {
       const_cast<void*>(msg->data()), msg->size()
@@ -348,8 +352,8 @@ bool ChannelNacl::WillDispatchInputMessage(Message* msg) {
   // The shenaniganery below with &foo.front() requires input_fds_ to have
   // contiguous underlying storage (such as a simple array or a std::vector).
   // This is why the header warns not to make input_fds_ a deque<>.
-  msg->file_descriptor_set()->SetDescriptors(&input_fds_.front(),
-                                             header_fds);
+  msg->file_descriptor_set()->AddDescriptorsToOwn(&input_fds_.front(),
+                                                  header_fds);
   input_fds_.clear();
   return true;
 }

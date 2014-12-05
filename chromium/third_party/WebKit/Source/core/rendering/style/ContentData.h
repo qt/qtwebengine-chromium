@@ -30,7 +30,7 @@
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class RenderObject;
@@ -66,17 +66,20 @@ private:
     OwnPtr<ContentData> m_next;
 };
 
-class ImageContentData FINAL : public ContentData {
+#define DEFINE_CONTENT_DATA_TYPE_CASTS(typeName) \
+    DEFINE_TYPE_CASTS(typeName##ContentData, ContentData, content, content->is##typeName(), content.is##typeName())
+
+class ImageContentData final : public ContentData {
     friend class ContentData;
 public:
     const StyleImage* image() const { return m_image.get(); }
     StyleImage* image() { return m_image.get(); }
     void setImage(PassRefPtr<StyleImage> image) { m_image = image; }
 
-    virtual bool isImage() const OVERRIDE { return true; }
-    virtual RenderObject* createRenderer(Document&, RenderStyle*) const OVERRIDE;
+    virtual bool isImage() const override { return true; }
+    virtual RenderObject* createRenderer(Document&, RenderStyle*) const override;
 
-    virtual bool equals(const ContentData& data) const OVERRIDE
+    virtual bool equals(const ContentData& data) const override
     {
         if (!data.isImage())
             return false;
@@ -89,7 +92,7 @@ private:
     {
     }
 
-    virtual PassOwnPtr<ContentData> cloneInternal() const OVERRIDE
+    virtual PassOwnPtr<ContentData> cloneInternal() const override
     {
         RefPtr<StyleImage> image = const_cast<StyleImage*>(this->image());
         return create(image.release());
@@ -98,16 +101,18 @@ private:
     RefPtr<StyleImage> m_image;
 };
 
-class TextContentData FINAL : public ContentData {
+DEFINE_CONTENT_DATA_TYPE_CASTS(Image);
+
+class TextContentData final : public ContentData {
     friend class ContentData;
 public:
     const String& text() const { return m_text; }
     void setText(const String& text) { m_text = text; }
 
-    virtual bool isText() const OVERRIDE { return true; }
-    virtual RenderObject* createRenderer(Document&, RenderStyle*) const OVERRIDE;
+    virtual bool isText() const override { return true; }
+    virtual RenderObject* createRenderer(Document&, RenderStyle*) const override;
 
-    virtual bool equals(const ContentData& data) const OVERRIDE
+    virtual bool equals(const ContentData& data) const override
     {
         if (!data.isText())
             return false;
@@ -120,19 +125,21 @@ private:
     {
     }
 
-    virtual PassOwnPtr<ContentData> cloneInternal() const OVERRIDE { return create(text()); }
+    virtual PassOwnPtr<ContentData> cloneInternal() const override { return create(text()); }
 
     String m_text;
 };
 
-class CounterContentData FINAL : public ContentData {
+DEFINE_CONTENT_DATA_TYPE_CASTS(Text);
+
+class CounterContentData final : public ContentData {
     friend class ContentData;
 public:
     const CounterContent* counter() const { return m_counter.get(); }
     void setCounter(PassOwnPtr<CounterContent> counter) { m_counter = counter; }
 
-    virtual bool isCounter() const OVERRIDE { return true; }
-    virtual RenderObject* createRenderer(Document&, RenderStyle*) const OVERRIDE;
+    virtual bool isCounter() const override { return true; }
+    virtual RenderObject* createRenderer(Document&, RenderStyle*) const override;
 
 private:
     CounterContentData(PassOwnPtr<CounterContent> counter)
@@ -140,13 +147,13 @@ private:
     {
     }
 
-    virtual PassOwnPtr<ContentData> cloneInternal() const OVERRIDE
+    virtual PassOwnPtr<ContentData> cloneInternal() const override
     {
         OwnPtr<CounterContent> counterData = adoptPtr(new CounterContent(*counter()));
         return create(counterData.release());
     }
 
-    virtual bool equals(const ContentData& data) const OVERRIDE
+    virtual bool equals(const ContentData& data) const override
     {
         if (!data.isCounter())
             return false;
@@ -156,16 +163,18 @@ private:
     OwnPtr<CounterContent> m_counter;
 };
 
-class QuoteContentData FINAL : public ContentData {
+DEFINE_CONTENT_DATA_TYPE_CASTS(Counter);
+
+class QuoteContentData final : public ContentData {
     friend class ContentData;
 public:
     QuoteType quote() const { return m_quote; }
     void setQuote(QuoteType quote) { m_quote = quote; }
 
-    virtual bool isQuote() const OVERRIDE { return true; }
-    virtual RenderObject* createRenderer(Document&, RenderStyle*) const OVERRIDE;
+    virtual bool isQuote() const override { return true; }
+    virtual RenderObject* createRenderer(Document&, RenderStyle*) const override;
 
-    virtual bool equals(const ContentData& data) const OVERRIDE
+    virtual bool equals(const ContentData& data) const override
     {
         if (!data.isQuote())
             return false;
@@ -178,10 +187,12 @@ private:
     {
     }
 
-    virtual PassOwnPtr<ContentData> cloneInternal() const OVERRIDE { return create(quote()); }
+    virtual PassOwnPtr<ContentData> cloneInternal() const override { return create(quote()); }
 
     QuoteType m_quote;
 };
+
+DEFINE_CONTENT_DATA_TYPE_CASTS(Quote);
 
 inline bool operator==(const ContentData& a, const ContentData& b)
 {
@@ -193,6 +204,6 @@ inline bool operator!=(const ContentData& a, const ContentData& b)
     return !(a == b);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ContentData_h

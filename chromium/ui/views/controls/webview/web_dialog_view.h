@@ -46,75 +46,71 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
   WebDialogView(content::BrowserContext* context,
                 ui::WebDialogDelegate* delegate,
                 WebContentsHandler* handler);
-  virtual ~WebDialogView();
+  ~WebDialogView() override;
 
   // For testing.
   content::WebContents* web_contents();
 
   // Overridden from views::ClientView:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator)
-      OVERRIDE;
-  virtual void ViewHierarchyChanged(
-      const ViewHierarchyChangedDetails& details) OVERRIDE;
-  virtual bool CanClose() OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  gfx::Size GetMinimumSize() const override;
+  bool AcceleratorPressed(const ui::Accelerator& accelerator) override;
+  void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) override;
+  bool CanClose() override;
 
   // Overridden from views::WidgetDelegate:
-  virtual bool CanResize() const OVERRIDE;
-  virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual base::string16 GetWindowTitle() const OVERRIDE;
-  virtual std::string GetWindowName() const OVERRIDE;
-  virtual void WindowClosing() OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
-  virtual ClientView* CreateClientView(views::Widget* widget) OVERRIDE;
-  virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual views::Widget* GetWidget() OVERRIDE;
-  virtual const views::Widget* GetWidget() const OVERRIDE;
+  bool CanResize() const override;
+  ui::ModalType GetModalType() const override;
+  base::string16 GetWindowTitle() const override;
+  std::string GetWindowName() const override;
+  void WindowClosing() override;
+  views::View* GetContentsView() override;
+  ClientView* CreateClientView(views::Widget* widget) override;
+  views::View* GetInitiallyFocusedView() override;
+  bool ShouldShowWindowTitle() const override;
+  views::Widget* GetWidget() override;
+  const views::Widget* GetWidget() const override;
 
   // Overridden from ui::WebDialogDelegate:
-  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual base::string16 GetDialogTitle() const OVERRIDE;
-  virtual GURL GetDialogContentURL() const OVERRIDE;
-  virtual void GetWebUIMessageHandlers(
-      std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
-  virtual void GetDialogSize(gfx::Size* size) const OVERRIDE;
-  virtual void GetMinimumDialogSize(gfx::Size* size) const OVERRIDE;
-  virtual std::string GetDialogArgs() const OVERRIDE;
-  virtual void OnDialogShown(
-      content::WebUI* webui,
-      content::RenderViewHost* render_view_host) OVERRIDE;
-  virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
-  virtual void OnDialogCloseFromWebUI(
-      const std::string& json_retval) OVERRIDE;
-  virtual void OnCloseContents(content::WebContents* source,
-                               bool* out_close_dialog) OVERRIDE;
-  virtual bool ShouldShowDialogTitle() const OVERRIDE;
-  virtual bool HandleContextMenu(
-      const content::ContextMenuParams& params) OVERRIDE;
+  ui::ModalType GetDialogModalType() const override;
+  base::string16 GetDialogTitle() const override;
+  GURL GetDialogContentURL() const override;
+  void GetWebUIMessageHandlers(
+      std::vector<content::WebUIMessageHandler*>* handlers) const override;
+  void GetDialogSize(gfx::Size* size) const override;
+  void GetMinimumDialogSize(gfx::Size* size) const override;
+  std::string GetDialogArgs() const override;
+  void OnDialogShown(content::WebUI* webui,
+                     content::RenderViewHost* render_view_host) override;
+  void OnDialogClosed(const std::string& json_retval) override;
+  void OnDialogCloseFromWebUI(const std::string& json_retval) override;
+  void OnCloseContents(content::WebContents* source,
+                       bool* out_close_dialog) override;
+  bool ShouldShowDialogTitle() const override;
+  bool HandleContextMenu(const content::ContextMenuParams& params) override;
 
   // Overridden from content::WebContentsDelegate:
-  virtual void MoveContents(content::WebContents* source,
-                            const gfx::Rect& pos) OVERRIDE;
-  virtual void HandleKeyboardEvent(
+  void MoveContents(content::WebContents* source,
+                    const gfx::Rect& pos) override;
+  void HandleKeyboardEvent(
       content::WebContents* source,
-      const content::NativeWebKeyboardEvent& event) OVERRIDE;
-  virtual void CloseContents(content::WebContents* source) OVERRIDE;
-  virtual content::WebContents* OpenURLFromTab(
+      const content::NativeWebKeyboardEvent& event) override;
+  void CloseContents(content::WebContents* source) override;
+  content::WebContents* OpenURLFromTab(
       content::WebContents* source,
-      const content::OpenURLParams& params) OVERRIDE;
-  virtual void AddNewContents(content::WebContents* source,
-                              content::WebContents* new_contents,
-                              WindowOpenDisposition disposition,
-                              const gfx::Rect& initial_pos,
-                              bool user_gesture,
-                              bool* was_blocked) OVERRIDE;
-  virtual void LoadingStateChanged(content::WebContents* source,
-                                   bool to_different_document) OVERRIDE;
-  virtual void BeforeUnloadFired(content::WebContents* tab,
-                                 bool proceed,
-                                 bool* proceed_to_fire_unload) OVERRIDE;
+      const content::OpenURLParams& params) override;
+  void AddNewContents(content::WebContents* source,
+                      content::WebContents* new_contents,
+                      WindowOpenDisposition disposition,
+                      const gfx::Rect& initial_pos,
+                      bool user_gesture,
+                      bool* was_blocked) override;
+  void LoadingStateChanged(content::WebContents* source,
+                           bool to_different_document) override;
+  void BeforeUnloadFired(content::WebContents* tab,
+                         bool proceed,
+                         bool* proceed_to_fire_unload) override;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WebDialogBrowserTest, WebContentRendered);

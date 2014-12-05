@@ -26,6 +26,9 @@ namespace media {
 
 class MFReaderCallback;
 
+const DWORD kFirstVideoStream =
+    static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM);
+
 class MEDIA_EXPORT VideoCaptureDeviceMFWin
     : public base::NonThreadSafe,
       public VideoCaptureDevice {
@@ -41,8 +44,8 @@ class MEDIA_EXPORT VideoCaptureDeviceMFWin
   // VideoCaptureDevice implementation.
   virtual void AllocateAndStart(const VideoCaptureParams& params,
                                 scoped_ptr<VideoCaptureDevice::Client> client)
-      OVERRIDE;
-  virtual void StopAndDeAllocate() OVERRIDE;
+      override;
+  virtual void StopAndDeAllocate() override;
 
   // Captured new video data.
   void OnIncomingCapturedData(const uint8* data,

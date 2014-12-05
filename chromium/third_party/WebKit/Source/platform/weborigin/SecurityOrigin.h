@@ -33,7 +33,7 @@
 #include "wtf/ThreadSafeRefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class KURL;
 class SecurityOriginCache;
@@ -118,7 +118,7 @@ public:
     // cryptographically-authenticated server.
     //
     // [1] http://www.chromium.org/Home/chromium-security/security-faq#TOC-Which-origins-are-secure-
-    bool canAccessFeatureRequiringSecureOrigin() const;
+    bool canAccessFeatureRequiringSecureOrigin(String& errorMessage) const;
 
     // Returns true if this SecurityOrigin can load local resources, such
     // as images, iframes, and style sheets, and can link to local URLs.
@@ -203,6 +203,17 @@ public:
 
     static const String& urlWithUniqueSecurityOrigin();
 
+    // Transfer origin privileges from another security origin.
+    // The following privileges are currently copied over:
+    //
+    //   - Grant universal access.
+    //   - Grant loading of local resources.
+    //   - Use path-based file:// origins.
+    //
+    // Note: It is dangerous to change the privileges of an origin
+    // at any other time than during initialization.
+    void transferPrivilegesFrom(const SecurityOrigin&);
+
 private:
     SecurityOrigin();
     explicit SecurityOrigin(const KURL&);
@@ -225,6 +236,6 @@ private:
     bool m_needsDatabaseIdentifierQuirkForFiles;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SecurityOrigin_h

@@ -28,7 +28,7 @@
 
 #include "platform/PlatformExport.h"
 
-namespace WebCore {
+namespace blink {
 
 class Image;
 class IntRect;
@@ -48,6 +48,6 @@ public:
     virtual void changedInRect(const Image*, const IntRect&) = 0;
 };
 
-}
+} // namespace blink
 
 #endif

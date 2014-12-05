@@ -26,14 +26,13 @@
 #include "core/CSSPropertyNames.h"
 #include "core/HTMLNames.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLUListElement::HTMLUListElement(Document& document)
     : HTMLElement(ulTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLUListElement)

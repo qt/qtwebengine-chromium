@@ -40,18 +40,16 @@ class NonBlockingPushClient::Core
   void SendNotification(const Notification& data);
   void SendPing();
 
-  virtual void OnNotificationsEnabled() OVERRIDE;
-  virtual void OnNotificationsDisabled(
-      NotificationsDisabledReason reason) OVERRIDE;
-  virtual void OnIncomingNotification(
-      const Notification& notification) OVERRIDE;
-  virtual void OnPingResponse() OVERRIDE;
+  void OnNotificationsEnabled() override;
+  void OnNotificationsDisabled(NotificationsDisabledReason reason) override;
+  void OnIncomingNotification(const Notification& notification) override;
+  void OnPingResponse() override;
 
  private:
   friend class base::RefCountedThreadSafe<NonBlockingPushClient::Core>;
 
   // Called on either the parent thread or the delegate thread.
-  virtual ~Core();
+  ~Core() override;
 
   const scoped_refptr<base::SingleThreadTaskRunner> parent_task_runner_;
   const scoped_refptr<base::SingleThreadTaskRunner> delegate_task_runner_;

@@ -28,15 +28,18 @@
 
 #include "core/html/HTMLCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class HTMLAllCollection FINAL : public HTMLCollection {
+class NodeListOrElement;
+
+class HTMLAllCollection final : public HTMLCollection {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<HTMLAllCollection> create(ContainerNode&, CollectionType);
     virtual ~HTMLAllCollection();
 
     Element* namedItemWithIndex(const AtomicString& name, unsigned index) const;
-    void namedGetter(const AtomicString& name, bool&, RefPtrWillBeRawPtr<NodeList>&, bool&, RefPtrWillBeRawPtr<Element>&);
+    void namedGetter(const AtomicString& name, NodeListOrElement&);
 
 private:
     explicit HTMLAllCollection(ContainerNode&);
@@ -44,6 +47,6 @@ private:
 
 DEFINE_TYPE_CASTS(HTMLAllCollection, LiveNodeListBase, collection, collection->type() == DocAll, collection.type() == DocAll);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLAllCollection_h

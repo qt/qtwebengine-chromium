@@ -26,12 +26,14 @@
 #ifndef DOMWindowProperty_h
 #define DOMWindowProperty_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class LocalDOMWindow;
 class LocalFrame;
 
-class DOMWindowProperty {
+class DOMWindowProperty : public WillBeGarbageCollectedMixin {
 public:
     explicit DOMWindowProperty(LocalFrame*);
 
@@ -40,13 +42,21 @@ public:
 
     LocalFrame* frame() const { return m_frame; }
 
-protected:
-    virtual ~DOMWindowProperty();
+    virtual void trace(Visitor*);
 
-    LocalFrame* m_frame;
+protected:
+#if !ENABLE(OILPAN)
+    virtual ~DOMWindowProperty();
+#endif
+
+    RawPtrWillBeWeakMember<LocalFrame> m_frame;
+
+#if !ENABLE(OILPAN)
+private:
     LocalDOMWindow* m_associatedDOMWindow;
+#endif
 };
 
-}
+} // namespace blink
 
 #endif

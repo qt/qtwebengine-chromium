@@ -16,13 +16,13 @@ namespace ui {
 class UI_BASE_EXPORT SimpleComboboxModel : public ComboboxModel {
  public:
   explicit SimpleComboboxModel(const std::vector<base::string16>& items);
-  virtual ~SimpleComboboxModel();
+  ~SimpleComboboxModel() override;
 
   // ui::ComboboxModel:
-  virtual int GetItemCount() const OVERRIDE;
-  virtual base::string16 GetItemAt(int index) OVERRIDE;
-  virtual bool IsItemSeparatorAt(int index) OVERRIDE;
-  virtual int GetDefaultIndex() const OVERRIDE;
+  int GetItemCount() const override;
+  base::string16 GetItemAt(int index) override;
+  bool IsItemSeparatorAt(int index) override;
+  int GetDefaultIndex() const override;
 
  private:
   const std::vector<base::string16> items_;

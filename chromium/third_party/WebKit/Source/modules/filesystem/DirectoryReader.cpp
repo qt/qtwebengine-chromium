@@ -36,61 +36,72 @@
 #include "modules/filesystem/Entry.h"
 #include "modules/filesystem/ErrorCallback.h"
 
-namespace WebCore {
+namespace blink {
 
-class DirectoryReader::EntriesCallbackHelper : public EntriesCallback {
+class DirectoryReader::EntriesCallbackHelper final : public EntriesCallback {
 public:
     explicit EntriesCallbackHelper(DirectoryReader* reader)
         : m_reader(reader)
     {
     }
 
-    virtual void handleEvent(const EntryHeapVector& entries) OVERRIDE
+    virtual void handleEvent(const EntryHeapVector& entries) override
     {
         m_reader->addEntries(entries);
     }
 
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_reader);
+        EntriesCallback::trace(visitor);
+    }
+
 private:
-    // FIXME: This Persistent keeps the reader alive until all of the readDirectory results are received. crbug.com/350285
-    Persistent<DirectoryReader> m_reader;
+    // FIXME: This Member keeps the reader alive until all of the readDirectory results are received. crbug.com/350285
+    Member<DirectoryReader> m_reader;
 };
 
-class DirectoryReader::ErrorCallbackHelper : public ErrorCallback {
+class DirectoryReader::ErrorCallbackHelper final : public ErrorCallback {
 public:
     explicit ErrorCallbackHelper(DirectoryReader* reader)
         : m_reader(reader)
     {
     }
 
-    virtual void handleEvent(FileError* error) OVERRIDE
+    virtual void handleEvent(FileError* error) override
     {
         m_reader->onError(error);
     }
 
+    virtual void trace(Visitor* visitor) override
+    {
+        visitor->trace(m_reader);
+        ErrorCallback::trace(visitor);
+    }
+
 private:
-    Persistent<DirectoryReader> m_reader;
+    Member<DirectoryReader> m_reader;
 };
 
 DirectoryReader::DirectoryReader(DOMFileSystemBase* fileSystem, const String& fullPath)
     : DirectoryReaderBase(fileSystem, fullPath)
     , m_isReading(false)
 {
-    ScriptWrappable::init(this);
 }
 
 DirectoryReader::~DirectoryReader()
 {
 }
 
-void DirectoryReader::readEntries(PassOwnPtr<EntriesCallback> entriesCallback, PassOwnPtr<ErrorCallback> errorCallback)
+void DirectoryReader::readEntries(EntriesCallback* entriesCallback, ErrorCallback* errorCallback)
 {
     if (!m_isReading) {
         m_isReading = true;
-        filesystem()->readDirectory(this, m_fullPath, adoptPtr(new EntriesCallbackHelper(this)), adoptPtr(new ErrorCallbackHelper(this)));
+        filesystem()->readDirectory(this, m_fullPath, new EntriesCallbackHelper(this), new ErrorCallbackHelper(this));
     }
 
     if (m_error) {
-        filesystem()->scheduleCallback(errorCallback, PassRefPtrWillBeRawPtr<FileError>(m_error.get()));
+        filesystem()->scheduleCallback(errorCallback, m_error);
         return;
     }
 
@@ -115,7 +126,7 @@ void DirectoryReader::addEntries(const EntryHeapVector& entries)
     m_entries.appendVector(entries);
     m_errorCallback = nullptr;
     if (m_entriesCallback) {
-        OwnPtr<EntriesCallback> entriesCallback = m_entriesCallback.release();
+        EntriesCallback* entriesCallback = m_entriesCallback.release();
         EntryHeapVector entries;
         entries.swap(m_entries);
         entriesCallback->handleEvent(entries);
@@ -127,7 +138,7 @@ void DirectoryReader::onError(FileError* error)
     m_error = error;
     m_entriesCallback = nullptr;
     if (m_errorCallback) {
-        OwnPtr<ErrorCallback> errorCallback = m_errorCallback.release();
+        ErrorCallback* errorCallback = m_errorCallback.release();
         errorCallback->handleEvent(error);
     }
 }
@@ -136,6 +147,8 @@ void DirectoryReader::trace(Visitor* visitor)
 {
     visitor->trace(m_entries);
     visitor->trace(m_error);
+    visitor->trace(m_entriesCallback);
+    visitor->trace(m_errorCallback);
     DirectoryReaderBase::trace(visitor);
 }
 

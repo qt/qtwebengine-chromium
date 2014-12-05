@@ -28,14 +28,14 @@
 
 """Functions shared by various parts of the code generator.
 
-Extends IdlType and IdlUnion type with |enum_validation_expression| property.
+Extends IdlTypeBase type with |enum_validation_expression| property.
 
 Design doc: http://www.chromium.org/developers/design-documents/idl-compiler
 """
 
 import re
 
-from idl_types import IdlType, IdlUnionType
+from idl_types import IdlTypeBase
 import idl_types
 from v8_globals import includes
 import v8_types
@@ -58,9 +58,10 @@ ACRONYMS = [
 # Extended attribute parsing
 ################################################################################
 
-def extended_attribute_value_contains(extended_attribute_value, value):
-    return (extended_attribute_value and
-            value in re.split('[|&]', extended_attribute_value))
+def extended_attribute_value_contains(extended_attribute_value, key):
+    return (extended_attribute_value == key or
+            (isinstance(extended_attribute_value, list) and
+             key in extended_attribute_value))
 
 
 def has_extended_attribute(definition_or_member, extended_attribute_list):
@@ -72,6 +73,16 @@ def has_extended_attribute_value(definition_or_member, name, value):
     extended_attributes = definition_or_member.extended_attributes
     return (name in extended_attributes and
             extended_attribute_value_contains(extended_attributes[name], value))
+
+
+def extended_attribute_value_as_list(definition_or_member, name):
+    extended_attributes = definition_or_member.extended_attributes
+    if name not in extended_attributes:
+        return None
+    value = extended_attributes[name]
+    if isinstance(value, list):
+        return value
+    return [value]
 
 
 ################################################################################
@@ -113,10 +124,12 @@ def enum_validation_expression(idl_type):
         return None
     return ' || '.join(['string == "%s"' % enum_value
                         for enum_value in idl_type.enum_values])
-IdlType.enum_validation_expression = property(enum_validation_expression)
+IdlTypeBase.enum_validation_expression = property(enum_validation_expression)
 
 
 def scoped_name(interface, definition, base_name):
+    if 'ImplementedInPrivateScript' in definition.extended_attributes:
+        return '%s::PrivateScript::%s' % (v8_class_name(interface), base_name)
     # partial interfaces are implemented as separate classes, with their members
     # implemented as static member functions
     partial_interface_implemented_as = definition.extended_attributes.get('PartialInterfaceImplementedAs')
@@ -130,6 +143,13 @@ def scoped_name(interface, definition, base_name):
 
 def v8_class_name(interface):
     return v8_types.v8_type(interface.name)
+
+
+def v8_class_name_or_partial(interface):
+    class_name = v8_class_name(interface)
+    if interface.is_partial:
+        return ''.join([class_name, 'Partial'])
+    return class_name
 
 
 ################################################################################
@@ -149,7 +169,7 @@ def activity_logging_world_list(member, access_type=''):
     if log_activity and not log_activity.startswith(access_type):
         return set()
 
-    includes.add('bindings/v8/V8DOMActivityLogger.h')
+    includes.add('bindings/core/v8/V8DOMActivityLogger.h')
     if 'LogAllWorlds' in extended_attributes:
         return set(['', 'ForMainWorld'])
     return set([''])  # At minimum, include isolated worlds.
@@ -201,17 +221,17 @@ def call_with_arguments(call_with_values):
 
 
 # [Conditional]
+DELIMITER_TO_OPERATOR = {
+    '|': '||',
+    ',': '&&',
+}
+
+
 def conditional_string(definition_or_member):
     extended_attributes = definition_or_member.extended_attributes
     if 'Conditional' not in extended_attributes:
         return None
-    conditional = extended_attributes['Conditional']
-    for operator in '&|':
-        if operator in conditional:
-            conditions = conditional.split(operator)
-            operator_separator = ' %s%s ' % (operator, operator)
-            return operator_separator.join('ENABLE(%s)' % expression for expression in sorted(conditions))
-    return 'ENABLE(%s)' % conditional
+    return 'ENABLE(%s)' % extended_attributes['Conditional']
 
 
 # [DeprecateAs]
@@ -221,6 +241,48 @@ def deprecate_as(member):
         return None
     includes.add('core/frame/UseCounter.h')
     return extended_attributes['DeprecateAs']
+
+
+# [Exposed]
+EXPOSED_EXECUTION_CONTEXT_METHOD = {
+    'DedicatedWorker': 'isDedicatedWorkerGlobalScope',
+    'ServiceWorker': 'isServiceWorkerGlobalScope',
+    'SharedWorker': 'isSharedWorkerGlobalScope',
+    'Window': 'isDocument',
+    'Worker': 'isWorkerGlobalScope',
+}
+
+
+def exposed(definition_or_member, interface):
+    exposure_set = extended_attribute_value_as_list(definition_or_member, 'Exposed')
+    if not exposure_set:
+        return None
+
+    interface_exposure_set = expanded_exposure_set_for_interface(interface)
+
+    # Methods must not be exposed to a broader scope than their interface.
+    if not set(exposure_set).issubset(interface_exposure_set):
+        raise ValueError('Interface members\' exposure sets must be a subset of the interface\'s.')
+
+    exposure_checks = []
+    for environment in exposure_set:
+        # Methods must be exposed on one of the scopes known to Blink.
+        if environment not in EXPOSED_EXECUTION_CONTEXT_METHOD:
+            raise ValueError('Values for the [Exposed] annotation must reflect to a valid exposure scope.')
+
+        exposure_checks.append('context->%s()' % EXPOSED_EXECUTION_CONTEXT_METHOD[environment])
+
+    return ' || '.join(exposure_checks)
+
+
+def expanded_exposure_set_for_interface(interface):
+    exposure_set = extended_attribute_value_as_list(interface, 'Exposed')
+
+    # "Worker" is an aggregation for the different kinds of workers.
+    if 'Worker' in exposure_set:
+        exposure_set.extend(('DedicatedWorker', 'SharedWorker', 'ServiceWorker'))
+
+    return sorted(set(exposure_set))
 
 
 # [GarbageCollected], [WillBeGarbageCollected]
@@ -239,6 +301,13 @@ def cpp_name(definition_or_member):
     if 'ImplementedAs' not in extended_attributes:
         return definition_or_member.name
     return extended_attributes['ImplementedAs']
+
+
+def cpp_name_or_partial(interface):
+    cpp_class_name = cpp_name(interface)
+    if interface.is_partial:
+        return ''.join([cpp_class_name, 'Partial'])
+    return cpp_class_name
 
 
 # [MeasureAs]

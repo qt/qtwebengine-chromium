@@ -22,8 +22,13 @@ scoped_ptr<ProxyMediaKeys> ProxyMediaKeys::Create(
     const media::SessionMessageCB& session_message_cb,
     const media::SessionReadyCB& session_ready_cb,
     const media::SessionClosedCB& session_closed_cb,
-    const media::SessionErrorCB& session_error_cb) {
+    const media::SessionErrorCB& session_error_cb,
+    const media::SessionKeysChangeCB& session_keys_change_cb,
+    const media::SessionExpirationUpdateCB& session_expiration_update_cb) {
   DCHECK(manager);
+
+  // TODO(jrummell): Add support for SessionKeysChangeCB and
+  // SessionExpirationUpdateCB.
   scoped_ptr<ProxyMediaKeys> proxy_media_keys(
       new ProxyMediaKeys(manager,
                          session_message_cb,
@@ -48,6 +53,13 @@ ProxyMediaKeys::~ProxyMediaKeys() {
   session_id_to_promise_map_.clear();
 }
 
+void ProxyMediaKeys::SetServerCertificate(
+    const uint8* certificate_data,
+    int certificate_data_length,
+    scoped_ptr<media::SimpleCdmPromise> promise) {
+  promise->reject(NOT_SUPPORTED_ERROR, 0, "Not yet implemented.");
+}
+
 void ProxyMediaKeys::CreateSession(
     const std::string& init_data_type,
     const uint8* init_data,
@@ -57,9 +69,9 @@ void ProxyMediaKeys::CreateSession(
   // TODO(xhwang): Move these checks up to blink and DCHECK here.
   // See http://crbug.com/342510
   CdmHostMsg_CreateSession_ContentType create_session_content_type;
-  if (init_data_type == "audio/mp4" || init_data_type == "video/mp4") {
+  if (init_data_type == "cenc") {
     create_session_content_type = CREATE_SESSION_TYPE_MP4;
-  } else if (init_data_type == "audio/webm" || init_data_type == "video/webm") {
+  } else if (init_data_type == "webm") {
     create_session_content_type = CREATE_SESSION_TYPE_WEBM;
   } else {
     DLOG(ERROR) << "Unsupported EME CreateSession content type of "
@@ -72,7 +84,7 @@ void ProxyMediaKeys::CreateSession(
   }
 
   uint32 session_id = CreateSessionId();
-  SavePromise(session_id, promise.PassAs<media::CdmPromise>());
+  SavePromise(session_id, promise.Pass());
   manager_->CreateSession(
       cdm_id_,
       session_id,
@@ -100,24 +112,38 @@ void ProxyMediaKeys::UpdateSession(
     return;
   }
 
-  SavePromise(session_id, promise.PassAs<media::CdmPromise>());
+  SavePromise(session_id, promise.Pass());
   manager_->UpdateSession(
       cdm_id_,
       session_id,
       std::vector<uint8>(response, response + response_length));
 }
 
-void ProxyMediaKeys::ReleaseSession(
-    const std::string& web_session_id,
-    scoped_ptr<media::SimpleCdmPromise> promise) {
+void ProxyMediaKeys::CloseSession(const std::string& web_session_id,
+                                  scoped_ptr<media::SimpleCdmPromise> promise) {
   uint32 session_id = LookupSessionId(web_session_id);
   if (!session_id) {
     promise->reject(INVALID_ACCESS_ERROR, 0, "Session does not exist.");
     return;
   }
 
-  SavePromise(session_id, promise.PassAs<media::CdmPromise>());
+  SavePromise(session_id, promise.Pass());
   manager_->ReleaseSession(cdm_id_, session_id);
+}
+
+void ProxyMediaKeys::RemoveSession(
+    const std::string& web_session_id,
+    scoped_ptr<media::SimpleCdmPromise> promise) {
+  promise->reject(NOT_SUPPORTED_ERROR, 0, "Not yet implemented.");
+}
+
+void ProxyMediaKeys::GetUsableKeyIds(const std::string& web_session_id,
+                                     scoped_ptr<media::KeyIdsPromise> promise) {
+  promise->reject(NOT_SUPPORTED_ERROR, 0, "Not yet implemented.");
+}
+
+int ProxyMediaKeys::GetCdmId() const {
+  return cdm_id_;
 }
 
 void ProxyMediaKeys::OnSessionCreated(uint32 session_id,
@@ -194,10 +220,6 @@ void ProxyMediaKeys::OnSessionError(uint32 session_id,
   // for something bad to happen in the CDM and it needs to tell the client.
   session_error_cb_.Run(
       web_session_id, exception_code, system_code, std::string());
-}
-
-int ProxyMediaKeys::GetCdmId() const {
-  return cdm_id_;
 }
 
 ProxyMediaKeys::ProxyMediaKeys(

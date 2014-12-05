@@ -29,7 +29,7 @@
 #include "config.h"
 #include "core/accessibility/AXTable.h"
 
-#include "core/accessibility/AXObjectCache.h"
+#include "core/accessibility/AXObjectCacheImpl.h"
 #include "core/accessibility/AXTableCell.h"
 #include "core/accessibility/AXTableColumn.h"
 #include "core/accessibility/AXTableRow.h"
@@ -44,7 +44,7 @@
 #include "core/html/HTMLTableSectionElement.h"
 #include "core/rendering/RenderTableCell.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -111,7 +111,7 @@ bool AXTable::isDataTable() const
     // When a section of the document is contentEditable, all tables should be
     // treated as data tables, otherwise users may not be able to work with rich
     // text editors that allow creating and editing tables.
-    if (node() && node()->rendererIsEditable())
+    if (node() && node()->hasEditableStyle())
         return true;
 
     // This employs a heuristic to determine if this table should appear.
@@ -141,16 +141,13 @@ bool AXTable::isDataTable() const
     RefPtrWillBeRawPtr<HTMLTableRowsCollection> rows = tableElement->rows();
     unsigned rowCount = rows->length();
     for (unsigned rowIndex = 0; rowIndex < rowCount; ++rowIndex) {
-        Element* rowElement = rows->item(rowIndex);
+        HTMLTableRowElement* rowElement = rows->item(rowIndex);
         if (elementHasAriaRole(rowElement))
             return false;
-        if (rowElement->hasTagName(trTag)) {
-            HTMLTableRowElement* row = static_cast<HTMLTableRowElement*>(rowElement);
-            RefPtrWillBeRawPtr<HTMLCollection> cells = row->cells();
-            for (unsigned cellIndex = 0; cellIndex < cells->length(); ++cellIndex) {
-                if (elementHasAriaRole(cells->item(cellIndex)))
-                    return false;
-            }
+        RefPtrWillBeRawPtr<HTMLCollection> cells = rowElement->cells();
+        for (unsigned cellIndex = 0; cellIndex < cells->length(); ++cellIndex) {
+            if (elementHasAriaRole(cells->item(cellIndex)))
+                return false;
         }
     }
 
@@ -374,7 +371,7 @@ void AXTable::addChildren()
         return;
 
     RenderTable* table = toRenderTable(m_renderer);
-    AXObjectCache* axCache = m_renderer->document().axObjectCache();
+    AXObjectCacheImpl* axCache = toAXObjectCacheImpl(m_renderer->document().axObjectCache());
 
     // Go through all the available sections to pull out the rows and add them as children.
     table->recalcSectionsIfNeeded();
@@ -514,7 +511,7 @@ AXTableCell* AXTable::cellForColumnAndRow(unsigned column, unsigned row)
         for (unsigned colIndexCounter = std::min(static_cast<unsigned>(children.size()), column + 1); colIndexCounter > 0; --colIndexCounter) {
             unsigned colIndex = colIndexCounter - 1;
             AXObject* child = children[colIndex].get();
-            ASSERT(child->isTableCell());
+
             if (!child->isTableCell())
                 continue;
 
@@ -579,4 +576,4 @@ String AXTable::title() const
     return title;
 }
 
-} // namespace WebCore
+} // namespace blink

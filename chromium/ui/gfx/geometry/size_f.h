@@ -5,20 +5,42 @@
 #ifndef UI_GFX_GEOMETRY_SIZE_F_H_
 #define UI_GFX_GEOMETRY_SIZE_F_H_
 
+#include <cmath>
+#include <iosfwd>
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "ui/gfx/geometry/size_base.h"
 #include "ui/gfx/gfx_export.h"
 
 namespace gfx {
 
 // A floating version of gfx::Size.
-class GFX_EXPORT SizeF : public SizeBase<SizeF, float> {
+class GFX_EXPORT SizeF {
  public:
-  SizeF() : SizeBase<SizeF, float>(0, 0) {}
-  SizeF(float width, float height) : SizeBase<SizeF, float>(width, height) {}
+  SizeF() : width_(0.f), height_(0.f) {}
+  SizeF(float width, float height)
+      : width_(fmaxf(0, width)), height_(fmaxf(0, height)) {}
   ~SizeF() {}
+
+  float width() const { return width_; }
+  float height() const { return height_; }
+
+  void set_width(float width) { width_ = fmaxf(0, width); }
+  void set_height(float height) { height_ = fmaxf(0, height); }
+
+  float GetArea() const;
+
+  void SetSize(float width, float height) {
+    set_width(width);
+    set_height(height);
+  }
+
+  void Enlarge(float grow_width, float grow_height);
+
+  void SetToMin(const SizeF& other);
+  void SetToMax(const SizeF& other);
+
+  bool IsEmpty() const { return !width() || !height(); }
 
   void Scale(float scale) {
     Scale(scale, scale);
@@ -29,6 +51,10 @@ class GFX_EXPORT SizeF : public SizeBase<SizeF, float> {
   }
 
   std::string ToString() const;
+
+ private:
+  float width_;
+  float height_;
 };
 
 inline bool operator==(const SizeF& lhs, const SizeF& rhs) {
@@ -45,9 +71,10 @@ inline SizeF ScaleSize(const SizeF& p, float scale) {
   return ScaleSize(p, scale, scale);
 }
 
-#if !defined(COMPILER_MSVC)
-extern template class SizeBase<SizeF, float>;
-#endif
+// This is declared here for use in gtest-based unit tests but is defined in
+// the gfx_test_support target. Depend on that to use this in your unit test.
+// This should not be used in production code - call ToString() instead.
+void PrintTo(const SizeF& size, ::std::ostream* os);
 
 }  // namespace gfx
 

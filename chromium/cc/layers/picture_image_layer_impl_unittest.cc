@@ -5,13 +5,13 @@
 #include "cc/layers/picture_image_layer_impl.h"
 
 #include "cc/layers/append_quads_data.h"
+#include "cc/quads/draw_quad.h"
 #include "cc/resources/tile_priority.h"
 #include "cc/test/fake_impl_proxy.h"
 #include "cc/test/fake_layer_tree_host_impl.h"
 #include "cc/test/fake_output_surface.h"
-#include "cc/test/fake_picture_layer_tiling_client.h"
+#include "cc/test/fake_picture_pile_impl.h"
 #include "cc/test/impl_side_painting_settings.h"
-#include "cc/test/mock_quad_culler.h"
 #include "cc/test/test_shared_bitmap_manager.h"
 #include "cc/trees/layer_tree_impl.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -40,15 +40,13 @@ class PictureImageLayerImplTest : public testing::Test {
         host_impl_(ImplSidePaintingSettings(),
                    &proxy_,
                    &shared_bitmap_manager_) {
-    tiling_client_.SetTileSize(ImplSidePaintingSettings().default_tile_size);
     host_impl_.CreatePendingTree();
-    host_impl_.InitializeRenderer(
-        FakeOutputSurface::Create3d().PassAs<OutputSurface>());
+    host_impl_.InitializeRenderer(FakeOutputSurface::Create3d());
   }
 
   scoped_ptr<TestablePictureImageLayerImpl> CreateLayer(int id,
                                                         WhichTree which_tree) {
-    LayerTreeImpl* tree = NULL;
+    LayerTreeImpl* tree = nullptr;
     switch (which_tree) {
       case ACTIVE_TREE:
         tree = host_impl_.active_tree();
@@ -62,11 +60,9 @@ class PictureImageLayerImplTest : public testing::Test {
     }
     TestablePictureImageLayerImpl* layer =
         new TestablePictureImageLayerImpl(tree, id);
-    layer->SetBounds(gfx::Size(100, 200));
-    layer->SetContentBounds(gfx::Size(100, 200));
-    layer->tilings_.reset(new PictureLayerTilingSet(&tiling_client_,
-                                                    layer->bounds()));
-    layer->pile_ = tiling_client_.pile();
+    layer->pile_ = FakePicturePileImpl::CreateInfiniteFilledPile();
+    layer->SetBounds(layer->pile_->tiling_size());
+    layer->SetContentBounds(layer->pile_->tiling_size());
     return make_scoped_ptr(layer);
   }
 
@@ -75,7 +71,8 @@ class PictureImageLayerImplTest : public testing::Test {
                                          float device_scale_factor,
                                          float page_scale_factor,
                                          float maximum_animation_contents_scale,
-                                         bool animating_transform_to_screen) {
+                                         bool animating_transform_to_screen,
+                                         gfx::Rect viewport_rect) {
     layer->draw_properties().ideal_contents_scale = ideal_contents_scale;
     layer->draw_properties().device_scale_factor = device_scale_factor;
     layer->draw_properties().page_scale_factor = page_scale_factor;
@@ -83,21 +80,25 @@ class PictureImageLayerImplTest : public testing::Test {
         maximum_animation_contents_scale;
     layer->draw_properties().screen_space_transform_is_animating =
         animating_transform_to_screen;
-    layer->UpdateTiles();
+    layer->draw_properties().visible_content_rect = viewport_rect;
+    bool resourceless_software_draw = false;
+    layer->UpdateTiles(Occlusion(), resourceless_software_draw);
   }
 
  protected:
   FakeImplProxy proxy_;
   FakeLayerTreeHostImpl host_impl_;
   TestSharedBitmapManager shared_bitmap_manager_;
-  FakePictureLayerTilingClient tiling_client_;
 };
 
 TEST_F(PictureImageLayerImplTest, CalculateContentsScale) {
   scoped_ptr<TestablePictureImageLayerImpl> layer(CreateLayer(1, PENDING_TREE));
   layer->SetDrawsContent(true);
+  layer->DoPostCommitInitializationIfNeeded();
 
-  SetupDrawPropertiesAndUpdateTiles(layer.get(), 2.f, 3.f, 4.f, 1.f, false);
+  gfx::Rect viewport(100, 200);
+  SetupDrawPropertiesAndUpdateTiles(
+      layer.get(), 2.f, 3.f, 4.f, 1.f, false, viewport);
 
   EXPECT_FLOAT_EQ(1.f, layer->contents_scale_x());
   EXPECT_FLOAT_EQ(1.f, layer->contents_scale_y());
@@ -108,6 +109,8 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
   scoped_ptr<TestablePictureImageLayerImpl> pending_layer(
       CreateLayer(1, PENDING_TREE));
   pending_layer->SetDrawsContent(true);
+
+  gfx::Rect viewport(100, 200);
 
   // Set PictureLayerImpl::ideal_contents_scale_ to 2.f which is not equal
   // to the content scale used by PictureImageLayerImpl.
@@ -121,12 +124,14 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
                                     device_scale_factor,
                                     page_scale_factor,
                                     maximum_animation_contents_scale,
-                                    animating_transform_to_screen);
+                                    animating_transform_to_screen,
+                                    viewport);
   EXPECT_EQ(1.f, pending_layer->tilings()->tiling_at(0)->contents_scale());
 
   // Push to active layer.
-  host_impl_.pending_tree()->SetRootLayer(pending_layer.PassAs<LayerImpl>());
-  host_impl_.ActivatePendingTree();
+  host_impl_.pending_tree()->SetRootLayer(pending_layer.Pass());
+  host_impl_.ActivateSyncTree();
+
   TestablePictureImageLayerImpl* active_layer =
       static_cast<TestablePictureImageLayerImpl*>(
           host_impl_.active_tree()->root_layer());
@@ -135,29 +140,25 @@ TEST_F(PictureImageLayerImplTest, IgnoreIdealContentScale) {
                                     device_scale_factor,
                                     page_scale_factor,
                                     maximum_animation_contents_scale,
-                                    animating_transform_to_screen);
+                                    animating_transform_to_screen,
+                                    viewport);
   EXPECT_EQ(1.f, active_layer->tilings()->tiling_at(0)->contents_scale());
 
-  // Create tile and resource.
-  active_layer->tilings()->tiling_at(0)->CreateAllTilesForTesting();
+  // Create resources for the tiles.
   host_impl_.tile_manager()->InitializeTilesWithResourcesForTesting(
       active_layer->tilings()->tiling_at(0)->AllTilesForTesting());
 
   // Draw.
-  active_layer->draw_properties().visible_content_rect =
-      gfx::Rect(active_layer->bounds());
-  MockOcclusionTracker<LayerImpl> occlusion_tracker;
   scoped_ptr<RenderPass> render_pass = RenderPass::Create();
-  MockQuadCuller quad_culler(render_pass.get(), &occlusion_tracker);
   AppendQuadsData data;
-  active_layer->WillDraw(DRAW_MODE_SOFTWARE, NULL);
-  active_layer->AppendQuads(&quad_culler, &data);
-  active_layer->DidDraw(NULL);
+  active_layer->WillDraw(DRAW_MODE_SOFTWARE, nullptr);
+  active_layer->AppendQuads(render_pass.get(), Occlusion(), &data);
+  active_layer->DidDraw(nullptr);
 
-  EXPECT_EQ(DrawQuad::TILED_CONTENT, quad_culler.quad_list()[0]->material);
+  EXPECT_EQ(DrawQuad::TILED_CONTENT, render_pass->quad_list.front()->material);
 
   // Tiles are ready at correct scale, so should not set had_incomplete_tile.
-  EXPECT_FALSE(data.had_incomplete_tile);
+  EXPECT_EQ(0, data.num_incomplete_tiles);
 }
 
 }  // namespace

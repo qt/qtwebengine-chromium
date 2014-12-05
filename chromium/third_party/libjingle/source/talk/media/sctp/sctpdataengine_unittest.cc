@@ -31,19 +31,24 @@
 #include <string>
 #include <vector>
 
-#include "talk/base/bind.h"
-#include "talk/base/buffer.h"
-#include "talk/base/criticalsection.h"
-#include "talk/base/gunit.h"
-#include "talk/base/helpers.h"
-#include "talk/base/messagehandler.h"
-#include "talk/base/messagequeue.h"
-#include "talk/base/scoped_ptr.h"
-#include "talk/base/ssladapter.h"
-#include "talk/base/thread.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/media/sctp/sctpdataengine.h"
+#include "webrtc/base/bind.h"
+#include "webrtc/base/buffer.h"
+#include "webrtc/base/criticalsection.h"
+#include "webrtc/base/gunit.h"
+#include "webrtc/base/helpers.h"
+#include "webrtc/base/messagehandler.h"
+#include "webrtc/base/messagequeue.h"
+#include "webrtc/base/scoped_ptr.h"
+#include "webrtc/base/ssladapter.h"
+#include "webrtc/base/thread.h"
+
+#ifdef HAVE_NSS_SSL_H
+// TODO(thorcarpenter): Remove after webrtc switches over to BoringSSL.
+#include "webrtc/base/nssstreamadapter.h"
+#endif  // HAVE_NSS_SSL_H
 
 enum {
   MSG_PACKET = 1,
@@ -52,9 +57,9 @@ enum {
 // Fake NetworkInterface that sends/receives sctp packets.  The one in
 // talk/media/base/fakenetworkinterface.h only works with rtp/rtcp.
 class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
-                                 public talk_base::MessageHandler {
+                                 public rtc::MessageHandler {
  public:
-  explicit SctpFakeNetworkInterface(talk_base::Thread* thread)
+  explicit SctpFakeNetworkInterface(rtc::Thread* thread)
     : thread_(thread),
       dest_(NULL) {
   }
@@ -63,15 +68,14 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
 
  protected:
   // Called to send raw packet down the wire (e.g. SCTP an packet).
-  virtual bool SendPacket(talk_base::Buffer* packet,
-                          talk_base::DiffServCodePoint dscp) {
+  virtual bool SendPacket(rtc::Buffer* packet,
+                          rtc::DiffServCodePoint dscp) {
     LOG(LS_VERBOSE) << "SctpFakeNetworkInterface::SendPacket";
 
     // TODO(ldixon): Can/should we use Buffer.TransferTo here?
     // Note: this assignment does a deep copy of data from packet.
-    talk_base::Buffer* buffer = new talk_base::Buffer(packet->data(),
-                                                      packet->length());
-    thread_->Post(this, MSG_PACKET, talk_base::WrapMessageData(buffer));
+    rtc::Buffer* buffer = new rtc::Buffer(packet->data(), packet->length());
+    thread_->Post(this, MSG_PACKET, rtc::WrapMessageData(buffer));
     LOG(LS_VERBOSE) << "SctpFakeNetworkInterface::SendPacket, Posted message.";
     return true;
   }
@@ -79,13 +83,13 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
   // Called when a raw packet has been recieved. This passes the data to the
   // code that will interpret the packet. e.g. to get the content payload from
   // an SCTP packet.
-  virtual void OnMessage(talk_base::Message* msg) {
+  virtual void OnMessage(rtc::Message* msg) {
     LOG(LS_VERBOSE) << "SctpFakeNetworkInterface::OnMessage";
-    talk_base::scoped_ptr<talk_base::Buffer> buffer(
-        static_cast<talk_base::TypedMessageData<talk_base::Buffer*>*>(
+    rtc::scoped_ptr<rtc::Buffer> buffer(
+        static_cast<rtc::TypedMessageData<rtc::Buffer*>*>(
             msg->pdata)->data());
     if (dest_) {
-      dest_->OnPacketReceived(buffer.get(), talk_base::PacketTime());
+      dest_->OnPacketReceived(buffer.get(), rtc::PacketTime());
     }
     delete msg->pdata;
   }
@@ -93,23 +97,23 @@ class SctpFakeNetworkInterface : public cricket::MediaChannel::NetworkInterface,
   // Unsupported functions required to exist by NetworkInterface.
   // TODO(ldixon): Refactor parent NetworkInterface class so these are not
   // required. They are RTC specific and should be in an appropriate subclass.
-  virtual bool SendRtcp(talk_base::Buffer* packet,
-                        talk_base::DiffServCodePoint dscp) {
+  virtual bool SendRtcp(rtc::Buffer* packet,
+                        rtc::DiffServCodePoint dscp) {
     LOG(LS_WARNING) << "Unsupported: SctpFakeNetworkInterface::SendRtcp.";
     return false;
   }
-  virtual int SetOption(SocketType type, talk_base::Socket::Option opt,
+  virtual int SetOption(SocketType type, rtc::Socket::Option opt,
                         int option) {
     LOG(LS_WARNING) << "Unsupported: SctpFakeNetworkInterface::SetOption.";
     return 0;
   }
-  virtual void SetDefaultDSCPCode(talk_base::DiffServCodePoint dscp) {
+  virtual void SetDefaultDSCPCode(rtc::DiffServCodePoint dscp) {
     LOG(LS_WARNING) << "Unsupported: SctpFakeNetworkInterface::SetOption.";
   }
 
  private:
   // Not owned by this class.
-  talk_base::Thread* thread_;
+  rtc::Thread* thread_;
   cricket::DataMediaChannel* dest_;
 };
 
@@ -219,11 +223,12 @@ class SctpDataMediaChannelTest : public testing::Test,
   // usrsctp uses the NSS random number generator on non-Android platforms,
   // so we need to initialize SSL.
   static void SetUpTestCase() {
-    talk_base::InitializeSSL();
+#ifdef HAVE_NSS_SSL_H
+  // TODO(thorcarpenter): Remove after webrtc switches over to BoringSSL.
+  if (!rtc::NSSContext::InitializeSSL(NULL)) {
+    LOG(LS_WARNING) << "Unabled to initialize NSS.";
   }
-
-  static void TearDownTestCase() {
-    talk_base::CleanupSSL();
+#endif  // HAVE_NSS_SSL_H
   }
 
   virtual void SetUp() {
@@ -231,8 +236,8 @@ class SctpDataMediaChannelTest : public testing::Test,
   }
 
   void SetupConnectedChannels() {
-    net1_.reset(new SctpFakeNetworkInterface(talk_base::Thread::Current()));
-    net2_.reset(new SctpFakeNetworkInterface(talk_base::Thread::Current()));
+    net1_.reset(new SctpFakeNetworkInterface(rtc::Thread::Current()));
+    net2_.reset(new SctpFakeNetworkInterface(rtc::Thread::Current()));
     recv1_.reset(new SctpFakeDataReceiver());
     recv2_.reset(new SctpFakeDataReceiver());
     chan1_.reset(CreateChannel(net1_.get(), recv1_.get()));
@@ -266,6 +271,10 @@ class SctpDataMediaChannelTest : public testing::Test,
   virtual void TearDown() {
     channel1()->SetSend(false);
     channel2()->SetSend(false);
+
+    // Process messages until idle to prevent a sent packet from being dropped
+    // and causing memory leaks (not being deleted by the receiver).
+    ProcessMessagesUntilIdle();
   }
 
   void AddStream(int ssrc) {
@@ -294,7 +303,7 @@ class SctpDataMediaChannelTest : public testing::Test,
     cricket::SendDataParams params;
     params.ssrc = ssrc;
 
-    return chan->SendData(params, talk_base::Buffer(
+    return chan->SendData(params, rtc::Buffer(
         &msg[0], msg.length()), result);
   }
 
@@ -306,10 +315,10 @@ class SctpDataMediaChannelTest : public testing::Test,
   }
 
   bool ProcessMessagesUntilIdle() {
-    talk_base::Thread* thread = talk_base::Thread::Current();
+    rtc::Thread* thread = rtc::Thread::Current();
     while (!thread->empty()) {
-      talk_base::Message msg;
-      if (thread->Get(&msg, talk_base::kForever)) {
+      rtc::Message msg;
+      if (thread->Get(&msg, rtc::kForever)) {
         thread->Dispatch(&msg);
       }
     }
@@ -322,13 +331,13 @@ class SctpDataMediaChannelTest : public testing::Test,
   SctpFakeDataReceiver* receiver2() { return recv2_.get(); }
 
  private:
-  talk_base::scoped_ptr<cricket::SctpDataEngine> engine_;
-  talk_base::scoped_ptr<SctpFakeNetworkInterface> net1_;
-  talk_base::scoped_ptr<SctpFakeNetworkInterface> net2_;
-  talk_base::scoped_ptr<SctpFakeDataReceiver> recv1_;
-  talk_base::scoped_ptr<SctpFakeDataReceiver> recv2_;
-  talk_base::scoped_ptr<cricket::SctpDataMediaChannel> chan1_;
-  talk_base::scoped_ptr<cricket::SctpDataMediaChannel> chan2_;
+  rtc::scoped_ptr<cricket::SctpDataEngine> engine_;
+  rtc::scoped_ptr<SctpFakeNetworkInterface> net1_;
+  rtc::scoped_ptr<SctpFakeNetworkInterface> net2_;
+  rtc::scoped_ptr<SctpFakeDataReceiver> recv1_;
+  rtc::scoped_ptr<SctpFakeDataReceiver> recv2_;
+  rtc::scoped_ptr<cricket::SctpDataMediaChannel> chan1_;
+  rtc::scoped_ptr<cricket::SctpDataMediaChannel> chan2_;
 };
 
 // Verifies that SignalReadyToSend is fired.
@@ -398,7 +407,7 @@ TEST_F(SctpDataMediaChannelTest, SendDataBlocked) {
 
   for (size_t i = 0; i < 100; ++i) {
     channel1()->SendData(
-        params, talk_base::Buffer(&buffer[0], buffer.size()), &result);
+        params, rtc::Buffer(&buffer[0], buffer.size()), &result);
     if (result == cricket::SDR_BLOCK)
       break;
   }

@@ -27,7 +27,7 @@
 #include "core/rendering/svg/RenderSVGResourceMarker.h"
 #include "core/svg/SVGAngleTearOff.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<SVGMarkerUnitsType>()
 {
@@ -44,14 +44,12 @@ inline SVGMarkerElement::SVGMarkerElement(Document& document)
     : SVGElement(SVGNames::markerTag, document)
     , SVGFitToViewBox(this)
     , m_refX(SVGAnimatedLength::create(this, SVGNames::refXAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
-    , m_refY(SVGAnimatedLength::create(this, SVGNames::refXAttr, SVGLength::create(LengthModeWidth), AllowNegativeLengths))
+    , m_refY(SVGAnimatedLength::create(this, SVGNames::refYAttr, SVGLength::create(LengthModeHeight), AllowNegativeLengths))
     , m_markerWidth(SVGAnimatedLength::create(this, SVGNames::markerWidthAttr, SVGLength::create(LengthModeWidth), ForbidNegativeLengths))
     , m_markerHeight(SVGAnimatedLength::create(this, SVGNames::markerHeightAttr, SVGLength::create(LengthModeHeight), ForbidNegativeLengths))
     , m_orientAngle(SVGAnimatedAngle::create(this))
     , m_markerUnits(SVGAnimatedEnumeration<SVGMarkerUnitsType>::create(this, SVGNames::markerUnitsAttr, SVGMarkerUnitsStrokeWidth))
 {
-    ScriptWrappable::init(this);
-
     // Spec: If the markerWidth/markerHeight attribute is not specified, the effect is as if a value of "3" were specified.
     m_markerWidth->setDefaultValueAsString("3");
     m_markerHeight->setDefaultValueAsString("3");
@@ -88,27 +86,7 @@ bool SVGMarkerElement::isSupportedAttribute(const QualifiedName& attrName)
 
 void SVGMarkerElement::parseAttribute(const QualifiedName& name, const AtomicString& value)
 {
-    SVGParsingError parseError = NoError;
-
-    if (!isSupportedAttribute(name))
-        SVGElement::parseAttribute(name, value);
-    else if (name == SVGNames::markerUnitsAttr)
-        m_markerUnits->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::refXAttr)
-        m_refX->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::refYAttr)
-        m_refY->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::markerWidthAttr)
-        m_markerWidth->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::markerHeightAttr)
-        m_markerHeight->setBaseValueAsString(value, parseError);
-    else if (name == SVGNames::orientAttr)
-        m_orientAngle->setBaseValueAsString(value, parseError);
-    else if (SVGFitToViewBox::parseAttribute(name, value, document(), parseError)) {
-    } else
-        ASSERT_NOT_REACHED();
-
-    reportAttributeParsingError(parseError, name, value);
+    parseAttributeNew(name, value);
 }
 
 void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
@@ -131,11 +109,11 @@ void SVGMarkerElement::svgAttributeChanged(const QualifiedName& attrName)
         renderer->invalidateCacheAndMarkForLayout();
 }
 
-void SVGMarkerElement::childrenChanged(bool changedByParser, Node* beforeChange, Node* afterChange, int childCountDelta)
+void SVGMarkerElement::childrenChanged(const ChildrenChange& change)
 {
-    SVGElement::childrenChanged(changedByParser, beforeChange, afterChange, childCountDelta);
+    SVGElement::childrenChanged(change);
 
-    if (changedByParser)
+    if (change.byParser)
         return;
 
     if (RenderObject* object = renderer())
@@ -171,4 +149,4 @@ bool SVGMarkerElement::selfHasRelativeLengths() const
         || m_markerHeight->currentValue()->isRelative();
 }
 
-}
+} // namespace blink

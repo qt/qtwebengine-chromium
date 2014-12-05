@@ -26,8 +26,10 @@
 
 #include "config.h"
 #include "platform/network/ResourceRequest.h"
+#include "platform/weborigin/SecurityOrigin.h"
+#include "public/platform/WebURLRequest.h"
 
-namespace WebCore {
+namespace blink {
 
 double ResourceRequest::s_defaultTimeoutInterval = INT_MAX;
 
@@ -48,10 +50,14 @@ PassOwnPtr<ResourceRequest> ResourceRequest::adopt(PassOwnPtr<CrossThreadResourc
     request->setReportUploadProgress(data->m_reportUploadProgress);
     request->setHasUserGesture(data->m_hasUserGesture);
     request->setDownloadToFile(data->m_downloadToFile);
+    request->setSkipServiceWorker(data->m_skipServiceWorker);
     request->setRequestorID(data->m_requestorID);
     request->setRequestorProcessID(data->m_requestorProcessID);
     request->setAppCacheHostID(data->m_appCacheHostID);
-    request->setTargetType(data->m_targetType);
+    request->setRequestContext(data->m_requestContext);
+    request->setFrameType(data->m_frameType);
+    request->setFetchRequestMode(data->m_fetchRequestMode);
+    request->setFetchCredentialsMode(data->m_fetchCredentialsMode);
     request->m_referrerPolicy = data->m_referrerPolicy;
     return request.release();
 }
@@ -74,10 +80,14 @@ PassOwnPtr<CrossThreadResourceRequestData> ResourceRequest::copyData() const
     data->m_reportUploadProgress = m_reportUploadProgress;
     data->m_hasUserGesture = m_hasUserGesture;
     data->m_downloadToFile = m_downloadToFile;
+    data->m_skipServiceWorker = m_skipServiceWorker;
     data->m_requestorID = m_requestorID;
     data->m_requestorProcessID = m_requestorProcessID;
     data->m_appCacheHostID = m_appCacheHostID;
-    data->m_targetType = m_targetType;
+    data->m_requestContext = m_requestContext;
+    data->m_frameType = m_frameType;
+    data->m_fetchRequestMode = m_fetchRequestMode;
+    data->m_fetchCredentialsMode = m_fetchCredentialsMode;
     data->m_referrerPolicy = m_referrerPolicy;
     return data.release();
 }
@@ -176,6 +186,15 @@ void ResourceRequest::setHTTPHeaderField(const char* name, const AtomicString& v
     setHTTPHeaderField(AtomicString(name), value);
 }
 
+void ResourceRequest::setHTTPReferrer(const Referrer& referrer)
+{
+    if (referrer.referrer.isEmpty())
+        m_httpHeaderFields.remove("Referer");
+    else
+        setHTTPHeaderField("Referer", referrer.referrer);
+    m_referrerPolicy = referrer.referrerPolicy;
+}
+
 void ResourceRequest::clearHTTPAuthorization()
 {
     m_httpHeaderFields.remove("Authorization");
@@ -190,6 +209,32 @@ void ResourceRequest::clearHTTPReferrer()
 void ResourceRequest::clearHTTPOrigin()
 {
     m_httpHeaderFields.remove("Origin");
+}
+
+void ResourceRequest::addHTTPOriginIfNeeded(const AtomicString& origin)
+{
+    if (!httpOrigin().isEmpty())
+        return; // Request already has an Origin header.
+
+    // Don't send an Origin header for GET or HEAD to avoid privacy issues.
+    // For example, if an intranet page has a hyperlink to an external web
+    // site, we don't want to include the Origin of the request because it
+    // will leak the internal host name. Similar privacy concerns have lead
+    // to the widespread suppression of the Referer header at the network
+    // layer.
+    if (httpMethod() == "GET" || httpMethod() == "HEAD")
+        return;
+
+    // For non-GET and non-HEAD methods, always send an Origin header so the
+    // server knows we support this feature.
+
+    if (origin.isEmpty()) {
+        // If we don't know what origin header to attach, we attach the value
+        // for an empty origin.
+        setHTTPOrigin(SecurityOrigin::createUnique()->toAtomicString());
+        return;
+    }
+    setHTTPOrigin(origin);
 }
 
 void ResourceRequest::clearHTTPUserAgent()
@@ -320,21 +365,24 @@ static const AtomicString& pragmaHeaderString()
     return pragmaHeader;
 }
 
-bool ResourceRequest::cacheControlContainsNoCache()
+const CacheControlHeader& ResourceRequest::cacheControlHeader() const
 {
-    if (!m_cacheControlHeader.parsed)
-        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
-    return m_cacheControlHeader.containsNoCache;
+    if (!m_cacheControlHeaderCache.parsed)
+        m_cacheControlHeaderCache = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
+    return m_cacheControlHeaderCache;
 }
 
-bool ResourceRequest::cacheControlContainsNoStore()
+bool ResourceRequest::cacheControlContainsNoCache() const
 {
-    if (!m_cacheControlHeader.parsed)
-        m_cacheControlHeader = parseCacheControlDirectives(m_httpHeaderFields.get(cacheControlHeaderString()), m_httpHeaderFields.get(pragmaHeaderString()));
-    return m_cacheControlHeader.containsNoStore;
+    return cacheControlHeader().containsNoCache;
 }
 
-bool ResourceRequest::hasCacheValidatorFields()
+bool ResourceRequest::cacheControlContainsNoStore() const
+{
+    return cacheControlHeader().containsNoStore;
+}
+
+bool ResourceRequest::hasCacheValidatorFields() const
 {
     DEFINE_STATIC_LOCAL(const AtomicString, lastModifiedHeader, ("last-modified", AtomicString::ConstructFromLiteral));
     DEFINE_STATIC_LOCAL(const AtomicString, eTagHeader, ("etag", AtomicString::ConstructFromLiteral));
@@ -351,10 +399,10 @@ void ResourceRequest::setDefaultTimeoutInterval(double timeoutInterval)
     s_defaultTimeoutInterval = timeoutInterval;
 }
 
-void ResourceRequest::initialize(const KURL& url, ResourceRequestCachePolicy cachePolicy)
+void ResourceRequest::initialize(const KURL& url)
 {
     m_url = url;
-    m_cachePolicy = cachePolicy;
+    m_cachePolicy = UseProtocolCachePolicy;
     m_timeoutInterval = s_defaultTimeoutInterval;
     m_httpMethod = "GET";
     m_allowStoredCredentials = true;
@@ -362,12 +410,19 @@ void ResourceRequest::initialize(const KURL& url, ResourceRequestCachePolicy cac
     m_reportRawHeaders = false;
     m_hasUserGesture = false;
     m_downloadToFile = false;
-    m_priority = ResourceLoadPriorityLow;
+    m_skipServiceWorker = false;
+    m_priority = ResourceLoadPriorityLowest;
     m_intraPriorityValue = 0;
     m_requestorID = 0;
     m_requestorProcessID = 0;
     m_appCacheHostID = 0;
-    m_targetType = TargetIsUnspecified;
+    m_requestContext = WebURLRequest::RequestContextUnspecified;
+    m_frameType = WebURLRequest::FrameTypeNone;
+    m_fetchRequestMode = WebURLRequest::FetchRequestModeNoCORS;
+    // Contrary to the Fetch spec, we default to same-origin mode here, and deal
+    // with CORS modes in updateRequestForAccessControl if we're called in a
+    // context which requires it.
+    m_fetchCredentialsMode = WebURLRequest::FetchCredentialsModeSameOrigin;
     m_referrerPolicy = ReferrerPolicyDefault;
 }
 
@@ -380,4 +435,4 @@ unsigned initializeMaximumHTTPConnectionCountPerHost()
     return 10000;
 }
 
-}
+} // namespace blink

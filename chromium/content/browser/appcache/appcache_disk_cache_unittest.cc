@@ -3,16 +3,15 @@
 // found in the LICENSE file.
 
 #include "base/bind.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
+#include "base/single_thread_task_runner.h"
+#include "base/thread_task_runner_handle.h"
+#include "content/browser/appcache/appcache_disk_cache.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache_disk_cache.h"
-
-using appcache::AppCacheDiskCache;
 
 namespace content {
 
@@ -20,17 +19,17 @@ class AppCacheDiskCacheTest : public testing::Test {
  public:
   AppCacheDiskCacheTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     // Use the current thread for the DiskCache's cache_thread.
     message_loop_.reset(new base::MessageLoopForIO());
-    cache_thread_ = base::MessageLoopProxy::current();
+    cache_thread_ = base::ThreadTaskRunnerHandle::Get();
     ASSERT_TRUE(directory_.CreateUniqueTempDir());
     completion_callback_ = base::Bind(
         &AppCacheDiskCacheTest::OnComplete,
         base::Unretained(this));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     base::RunLoop().RunUntilIdle();
     message_loop_.reset(NULL);
   }
@@ -45,7 +44,7 @@ class AppCacheDiskCacheTest : public testing::Test {
 
   base::ScopedTempDir directory_;
   scoped_ptr<base::MessageLoop> message_loop_;
-  scoped_refptr<base::MessageLoopProxy> cache_thread_;
+  scoped_refptr<base::SingleThreadTaskRunner> cache_thread_;
   net::CompletionCallback completion_callback_;
   std::vector<int> completion_results_;
 
@@ -60,8 +59,7 @@ TEST_F(AppCacheDiskCacheTest, DisablePriorToInitCompletion) {
   scoped_ptr<AppCacheDiskCache> disk_cache(new AppCacheDiskCache);
   EXPECT_FALSE(disk_cache->is_disabled());
   disk_cache->InitWithDiskBackend(
-      directory_.path(), k10MBytes, false, cache_thread_,
-      completion_callback_);
+      directory_.path(), k10MBytes, false, cache_thread_, completion_callback_);
   disk_cache->CreateEntry(1, &entry, completion_callback_);
   disk_cache->OpenEntry(2, &entry, completion_callback_);
   disk_cache->DoomEntry(3, completion_callback_);
@@ -92,8 +90,7 @@ TEST_F(AppCacheDiskCacheTest, DisableAfterInitted) {
   scoped_ptr<AppCacheDiskCache> disk_cache(new AppCacheDiskCache);
   EXPECT_FALSE(disk_cache->is_disabled());
   disk_cache->InitWithDiskBackend(
-      directory_.path(), k10MBytes, false, cache_thread_,
-      completion_callback_);
+      directory_.path(), k10MBytes, false, cache_thread_, completion_callback_);
   FlushCacheTasks();
   EXPECT_EQ(1u, completion_results_.size());
   EXPECT_EQ(net::OK, completion_results_[0]);
@@ -128,8 +125,7 @@ TEST_F(AppCacheDiskCacheTest, DISABLED_DisableWithEntriesOpen) {
   scoped_ptr<AppCacheDiskCache> disk_cache(new AppCacheDiskCache);
   EXPECT_FALSE(disk_cache->is_disabled());
   disk_cache->InitWithDiskBackend(
-      directory_.path(), k10MBytes, false, cache_thread_,
-      completion_callback_);
+      directory_.path(), k10MBytes, false, cache_thread_, completion_callback_);
   FlushCacheTasks();
   EXPECT_EQ(1u, completion_results_.size());
   EXPECT_EQ(net::OK, completion_results_[0]);
@@ -155,7 +151,7 @@ TEST_F(AppCacheDiskCacheTest, DISABLED_DisableWithEntriesOpen) {
   const char* kData = "Hello";
   const int kDataLen = strlen(kData) + 1;
   scoped_refptr<net::IOBuffer> write_buf(new net::WrappedIOBuffer(kData));
-  entry1->Write(0, 0, write_buf, kDataLen, completion_callback_);
+  entry1->Write(0, 0, write_buf.get(), kDataLen, completion_callback_);
   FlushCacheTasks();
 
   // Queue up a read and a write.

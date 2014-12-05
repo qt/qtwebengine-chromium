@@ -27,11 +27,12 @@
 #include "core/svg/SVGElement.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
 
-namespace WebCore {
+namespace blink {
 
 template<> const SVGEnumerationStringEntries& getStaticStringEntries<ComponentTransferType>();
 
 class SVGComponentTransferFunctionElement : public SVGElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     ComponentTransferFunction transferFunction() const;
 
@@ -47,10 +48,10 @@ protected:
     SVGComponentTransferFunctionElement(const QualifiedName&, Document&);
 
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE FINAL;
-    virtual void svgAttributeChanged(const QualifiedName&) OVERRIDE FINAL;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override final;
+    virtual void svgAttributeChanged(const QualifiedName&) override final;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE FINAL { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override final { return false; }
 
 private:
     RefPtr<SVGAnimatedNumberList> m_tableValues;
@@ -62,6 +63,6 @@ private:
     RefPtr<SVGAnimatedEnumeration<ComponentTransferType> > m_type;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGComponentTransferFunctionElement_h

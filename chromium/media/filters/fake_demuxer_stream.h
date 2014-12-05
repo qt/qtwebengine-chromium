@@ -25,15 +25,15 @@ class FakeDemuxerStream : public DemuxerStream {
   FakeDemuxerStream(int num_configs,
                     int num_buffers_in_one_config,
                     bool is_encrypted);
-  virtual ~FakeDemuxerStream();
+  ~FakeDemuxerStream() override;
 
   // DemuxerStream implementation.
-  virtual void Read(const ReadCB& read_cb) OVERRIDE;
-  virtual AudioDecoderConfig audio_decoder_config() OVERRIDE;
-  virtual VideoDecoderConfig video_decoder_config() OVERRIDE;
-  virtual Type type() OVERRIDE;
-  virtual void EnableBitstreamConverter() OVERRIDE;
-  virtual bool SupportsConfigChanges() OVERRIDE;
+  void Read(const ReadCB& read_cb) override;
+  AudioDecoderConfig audio_decoder_config() override;
+  VideoDecoderConfig video_decoder_config() override;
+  Type type() override;
+  bool SupportsConfigChanges() override;
+  VideoRotation video_rotation() override;
 
   void Initialize();
 

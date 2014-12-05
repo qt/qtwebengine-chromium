@@ -36,9 +36,7 @@
 
 struct sqlite3;
 
-namespace WebCore {
-
-class SQLiteDatabase;
+namespace blink {
 
 // A class that abstracts the file system related operations required
 // by the WebKit database code.
@@ -52,16 +50,13 @@ public:
     // filemame - The name of the database file.
     // database - The SQLite structure that represents the database stored
     //            in the given file.
-    // forWebSQLDatabase - True, if and only if we're opening a Web SQL Database file.
-    //                     Used by Chromium to determine if the DB file needs to be opened
-    //                     using a custom VFS.
-    static int openDatabase(const String& filename, sqlite3** database, bool forWebSQLDatabase);
+    static int openDatabase(const String& filename, sqlite3** database);
 
 private:
     // do not instantiate this class
     SQLiteFileSystem();
 }; // class SQLiteFileSystem
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

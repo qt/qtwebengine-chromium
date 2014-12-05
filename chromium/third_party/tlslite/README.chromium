@@ -35,3 +35,7 @@ Local Modifications:
   certificate_types field of CertificateRequest.
 - patches/ignore_write_failure.patch: Don't invalidate sessions on write
   failures.
+- patches/intolerance_options.patch: Add an option to further control
+  simulated TLS version intolerance.
+- patches/save_client_hello.patch: Save the parsed ClientHello on TLSConnection
+  so tests can query it.

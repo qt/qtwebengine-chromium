@@ -31,11 +31,8 @@
 #include "platform/PlatformGestureEvent.h"
 #include "platform/PlatformMouseEvent.h"
 #include "platform/scroll/ScrollAnimator.h"
-#include "platform/scroll/ScrollView.h"
 #include "platform/scroll/ScrollableArea.h"
 #include "platform/scroll/ScrollbarTheme.h"
-
-using namespace std;
 
 #if ((OS(POSIX) && !OS(MACOSX)) || OS(WIN))
 // The position of the scrollbar thumb affects the appearance of the steppers, so
@@ -43,11 +40,11 @@ using namespace std;
 #define THUMB_POSITION_AFFECTS_BUTTONS
 #endif
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtr<Scrollbar> Scrollbar::create(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, ScrollbarControlSize size)
+PassRefPtrWillBeRawPtr<Scrollbar> Scrollbar::create(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, ScrollbarControlSize size)
 {
-    return adoptRef(new Scrollbar(scrollableArea, orientation, size));
+    return adoptRefWillBeNoop(new Scrollbar(scrollableArea, orientation, size));
 }
 
 Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orientation, ScrollbarControlSize controlSize, ScrollbarTheme* theme)
@@ -83,6 +80,11 @@ Scrollbar::Scrollbar(ScrollableArea* scrollableArea, ScrollbarOrientation orient
     Widget::setFrameRect(IntRect(0, 0, thickness, thickness));
 
     m_currentPos = scrollableAreaCurrentPos();
+
+#if ENABLE(OILPAN)
+    if (m_scrollableArea)
+        m_animator = m_scrollableArea->scrollAnimator();
+#endif
 }
 
 Scrollbar::~Scrollbar()
@@ -90,22 +92,17 @@ Scrollbar::~Scrollbar()
     stopTimerIfNeeded();
 
     m_theme->unregisterScrollbar(this);
-}
 
-void Scrollbar::removeFromParent()
-{
-    if (parent())
-        toScrollView(parent())->removeChild(this);
-}
+#if ENABLE(OILPAN)
+    if (!m_animator)
+        return;
 
-ScrollView* Scrollbar::parentScrollView() const
-{
-    return toScrollView(parent());
-}
-
-ScrollView* Scrollbar::rootScrollView() const
-{
-    return toScrollView(root());
+    ASSERT(m_scrollableArea);
+    if (m_orientation == VerticalScrollbar)
+        m_animator->willRemoveVerticalScrollbar(this);
+    else
+        m_animator->willRemoveHorizontalScrollbar(this);
+#endif
 }
 
 ScrollbarOverlayStyle Scrollbar::scrollbarOverlayStyle() const
@@ -122,11 +119,6 @@ void Scrollbar::getTickmarks(Vector<IntRect>& tickmarks) const
 bool Scrollbar::isScrollableAreaActive() const
 {
     return m_scrollableArea && m_scrollableArea->isActive();
-}
-
-bool Scrollbar::isScrollViewScrollbar() const
-{
-    return parent() && parent()->isFrameView() && toScrollView(parent())->isScrollViewScrollbar(this);
 }
 
 bool Scrollbar::isLeftSideVerticalScrollbar() const
@@ -149,6 +141,14 @@ void Scrollbar::offsetDidChange()
     updateThumbPosition();
     if (m_pressedPart == ThumbPart)
         setPressedPos(m_pressedPos + theme()->thumbPosition(this) - oldThumbPosition);
+}
+
+void Scrollbar::disconnectFromScrollableArea()
+{
+    m_scrollableArea = nullptr;
+#if ENABLE(OILPAN)
+    m_animator = nullptr;
+#endif
 }
 
 void Scrollbar::setProportion(int visibleSize, int totalSize)
@@ -183,12 +183,7 @@ void Scrollbar::updateThumbProportion()
 
 void Scrollbar::paint(GraphicsContext* context, const IntRect& damageRect)
 {
-    if (context->updatingControlTints() && theme()->supportsControlTints()) {
-        invalidate();
-        return;
-    }
-
-    if (context->paintingDisabled() || !frameRect().intersects(damageRect))
+    if (!frameRect().intersects(damageRect))
         return;
 
     if (!theme()->paint(this, context, damageRect))
@@ -307,9 +302,9 @@ void Scrollbar::moveThumb(int pos, bool draggingDocument)
     int thumbLen = theme()->thumbLength(this);
     int trackLen = theme()->trackLength(this);
     if (delta > 0)
-        delta = min(trackLen - thumbLen - thumbPos, delta);
+        delta = std::min(trackLen - thumbLen - thumbPos, delta);
     else if (delta < 0)
-        delta = max(-thumbPos, delta);
+        delta = std::max(-thumbPos, delta);
 
     float minPos = m_scrollableArea->minimumScrollPosition(m_orientation);
     float maxPos = m_scrollableArea->maximumScrollPosition(m_orientation);
@@ -483,47 +478,6 @@ void Scrollbar::mouseDown(const PlatformMouseEvent& evt)
     autoscrollPressedPart(theme()->initialAutoscrollTimerDelay());
 }
 
-void Scrollbar::setFrameRect(const IntRect& rect)
-{
-    // Get our window resizer rect and see if we overlap. Adjust to avoid the overlap
-    // if necessary.
-    IntRect adjustedRect(rect);
-    bool overlapsResizer = false;
-    ScrollView* view = parentScrollView();
-    if (view && !rect.isEmpty() && !view->windowResizerRect().isEmpty()) {
-        IntRect resizerRect = view->convertFromContainingWindow(view->windowResizerRect());
-        if (rect.intersects(resizerRect)) {
-            if (orientation() == HorizontalScrollbar) {
-                int overlap = rect.maxX() - resizerRect.x();
-                if (overlap > 0 && resizerRect.maxX() >= rect.maxX()) {
-                    adjustedRect.setWidth(rect.width() - overlap);
-                    overlapsResizer = true;
-                }
-            } else {
-                int overlap = rect.maxY() - resizerRect.y();
-                if (overlap > 0 && resizerRect.maxY() >= rect.maxY()) {
-                    adjustedRect.setHeight(rect.height() - overlap);
-                    overlapsResizer = true;
-                }
-            }
-        }
-    }
-    if (overlapsResizer != m_overlapsResizer) {
-        m_overlapsResizer = overlapsResizer;
-        if (view)
-            view->adjustScrollbarsAvoidingResizerCount(m_overlapsResizer ? 1 : -1);
-    }
-
-    Widget::setFrameRect(adjustedRect);
-}
-
-void Scrollbar::setParent(Widget* parentView)
-{
-    if (!parentView && m_overlapsResizer && parentScrollView())
-        parentScrollView()->adjustScrollbarsAvoidingResizerCount(-1);
-    Widget::setParent(parentView);
-}
-
 void Scrollbar::setEnabled(bool e)
 {
     if (m_enabled == e)
@@ -603,4 +557,4 @@ float Scrollbar::scrollableAreaCurrentPos() const
     return m_scrollableArea->scrollPosition().y() - m_scrollableArea->minimumScrollPosition().y();
 }
 
-} // namespace WebCore
+} // namespace blink

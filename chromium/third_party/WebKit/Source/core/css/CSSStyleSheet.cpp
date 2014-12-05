@@ -21,18 +21,18 @@
 #include "config.h"
 #include "core/css/CSSStyleSheet.h"
 
-#include "bindings/v8/ExceptionState.h"
-#include "bindings/v8/V8Binding.h"
-#include "bindings/v8/V8PerIsolateData.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "bindings/core/v8/V8Binding.h"
+#include "bindings/core/v8/V8PerIsolateData.h"
 #include "core/HTMLNames.h"
 #include "core/SVGNames.h"
 #include "core/css/CSSCharsetRule.h"
 #include "core/css/CSSImportRule.h"
-#include "core/css/parser/BisonCSSParser.h"
 #include "core/css/CSSRuleList.h"
 #include "core/css/MediaList.h"
 #include "core/css/StyleRule.h"
 #include "core/css/StyleSheetContents.h"
+#include "core/css/parser/CSSParser.h"
 #include "core/dom/Document.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Node.h"
@@ -43,16 +43,16 @@
 #include "platform/weborigin/SecurityOrigin.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
-class StyleSheetCSSRuleList FINAL : public CSSRuleList {
+class StyleSheetCSSRuleList final : public CSSRuleList {
 public:
     static PassOwnPtrWillBeRawPtr<StyleSheetCSSRuleList> create(CSSStyleSheet* sheet)
     {
         return adoptPtrWillBeNoop(new StyleSheetCSSRuleList(sheet));
     }
 
-    virtual void trace(Visitor* visitor) OVERRIDE
+    virtual void trace(Visitor* visitor) override
     {
         visitor->trace(m_styleSheet);
         CSSRuleList::trace(visitor);
@@ -62,19 +62,19 @@ private:
     StyleSheetCSSRuleList(CSSStyleSheet* sheet) : m_styleSheet(sheet) { }
 
 #if !ENABLE(OILPAN)
-    virtual void ref() OVERRIDE { m_styleSheet->ref(); }
-    virtual void deref() OVERRIDE { m_styleSheet->deref(); }
+    virtual void ref() override { m_styleSheet->ref(); }
+    virtual void deref() override { m_styleSheet->deref(); }
 #endif
 
-    virtual unsigned length() const OVERRIDE { return m_styleSheet->length(); }
-    virtual CSSRule* item(unsigned index) const OVERRIDE { return m_styleSheet->item(index); }
+    virtual unsigned length() const override { return m_styleSheet->length(); }
+    virtual CSSRule* item(unsigned index) const override { return m_styleSheet->item(index); }
 
-    virtual CSSStyleSheet* styleSheet() const OVERRIDE { return m_styleSheet; }
+    virtual CSSStyleSheet* styleSheet() const override { return m_styleSheet; }
 
     RawPtrWillBeMember<CSSStyleSheet> m_styleSheet;
 };
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 static bool isAcceptableCSSStyleSheetParent(Node* parentNode)
 {
     // Only these nodes can be parents of StyleSheets, and they need to call
@@ -310,8 +310,7 @@ unsigned CSSStyleSheet::insertRule(const String& ruleString, unsigned index, Exc
         return 0;
     }
     CSSParserContext context(m_contents->parserContext(), UseCounter::getFrom(this));
-    BisonCSSParser p(context);
-    RefPtrWillBeRawPtr<StyleRuleBase> rule = p.parseRule(m_contents.get(), ruleString);
+    RefPtrWillBeRawPtr<StyleRuleBase> rule = CSSParser::parseRule(context, m_contents.get(), ruleString);
 
     if (!rule) {
         exceptionState.throwDOMException(SyntaxError, "Failed to parse the rule '" + ruleString + "'.");
@@ -466,4 +465,4 @@ void CSSStyleSheet::trace(Visitor* visitor)
     StyleSheet::trace(visitor);
 }
 
-}
+} // namespace blink

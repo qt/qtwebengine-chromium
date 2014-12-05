@@ -56,7 +56,7 @@ class GPU_EXPORT GpuScheduler
                AsyncAPIInterface* handler,
                gles2::GLES2Decoder* decoder);
 
-  virtual ~GpuScheduler();
+  ~GpuScheduler() override;
 
   void PutChanged();
 
@@ -83,11 +83,11 @@ class GPU_EXPORT GpuScheduler
   void SetSchedulingChangedCallback(const SchedulingChangedCallback& callback);
 
   // Implementation of CommandBufferEngine.
-  virtual scoped_refptr<Buffer> GetSharedMemoryBuffer(int32 shm_id) OVERRIDE;
-  virtual void set_token(int32 token) OVERRIDE;
-  virtual bool SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
-  virtual bool SetGetOffset(int32 offset) OVERRIDE;
-  virtual int32 GetGetOffset() OVERRIDE;
+  scoped_refptr<Buffer> GetSharedMemoryBuffer(int32 shm_id) override;
+  void set_token(int32 token) override;
+  bool SetGetBuffer(int32 transfer_buffer_id) override;
+  bool SetGetOffset(int32 offset) override;
+  int32 GetGetOffset() override;
 
   void SetCommandProcessedCallback(const base::Closure& callback);
 
@@ -136,10 +136,6 @@ class GPU_EXPORT GpuScheduler
   // account of a timeout.
   int rescheduled_count_;
 
-  // A factory for outstanding rescheduling tasks that is invalidated whenever
-  // the scheduler is rescheduled.
-  base::WeakPtrFactory<GpuScheduler> reschedule_task_factory_;
-
   // The GpuScheduler will unschedule itself in the event that further GL calls
   // are issued to it before all these fences have been crossed by the GPU.
   struct UnscheduleFence {
@@ -159,6 +155,10 @@ class GPU_EXPORT GpuScheduler
   // If non-NULL and |preemption_flag_->IsSet()|, exit PutChanged early.
   scoped_refptr<PreemptionFlag> preemption_flag_;
   bool was_preempted_;
+
+  // A factory for outstanding rescheduling tasks that is invalidated whenever
+  // the scheduler is rescheduled.
+  base::WeakPtrFactory<GpuScheduler> reschedule_task_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuScheduler);
 };

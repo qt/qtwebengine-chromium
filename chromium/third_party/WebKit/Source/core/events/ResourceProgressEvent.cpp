@@ -27,18 +27,16 @@
 #include "config.h"
 #include "core/events/ResourceProgressEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 ResourceProgressEvent::ResourceProgressEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 ResourceProgressEvent::ResourceProgressEvent(const AtomicString& type, bool lengthComputable, unsigned long long loaded, unsigned long long total, const String& url)
     : ProgressEvent(type, lengthComputable, loaded, total)
     , m_url(url)
 {
-    ScriptWrappable::init(this);
 }
 
 const String& ResourceProgressEvent::url() const

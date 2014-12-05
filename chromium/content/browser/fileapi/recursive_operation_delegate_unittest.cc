@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/recursive_operation_delegate.h"
+#include "storage/browser/fileapi/recursive_operation_delegate.h"
 
 #include <vector>
 
@@ -14,19 +14,19 @@
 #include "base/message_loop/message_loop_proxy.h"
 #include "base/run_loop.h"
 #include "content/public/test/sandbox_file_system_test_helper.h"
+#include "storage/browser/fileapi/file_system_file_util.h"
+#include "storage/browser/fileapi/file_system_operation.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/file_system_file_util.h"
-#include "webkit/browser/fileapi/file_system_operation.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
 
-using fileapi::FileSystemContext;
-using fileapi::FileSystemOperationContext;
-using fileapi::FileSystemURL;
+using storage::FileSystemContext;
+using storage::FileSystemOperationContext;
+using storage::FileSystemURL;
 
 namespace content {
 namespace {
 
-class LoggingRecursiveOperation : public fileapi::RecursiveOperationDelegate {
+class LoggingRecursiveOperation : public storage::RecursiveOperationDelegate {
  public:
   struct LogEntry {
     enum Type {
@@ -41,26 +41,21 @@ class LoggingRecursiveOperation : public fileapi::RecursiveOperationDelegate {
   LoggingRecursiveOperation(FileSystemContext* file_system_context,
                             const FileSystemURL& root,
                             const StatusCallback& callback)
-      : fileapi::RecursiveOperationDelegate(file_system_context),
+      : storage::RecursiveOperationDelegate(file_system_context),
         root_(root),
         callback_(callback),
-        weak_factory_(this) {
-  }
-  virtual ~LoggingRecursiveOperation() {}
+        weak_factory_(this) {}
+  ~LoggingRecursiveOperation() override {}
 
   const std::vector<LogEntry>& log_entries() const { return log_entries_; }
 
   // RecursiveOperationDelegate overrides.
-  virtual void Run() OVERRIDE {
-    NOTREACHED();
-  }
+  void Run() override { NOTREACHED(); }
 
-  virtual void RunRecursively() OVERRIDE {
-    StartRecursiveOperation(root_, callback_);
-  }
+  void RunRecursively() override { StartRecursiveOperation(root_, callback_); }
 
-  virtual void ProcessFile(const FileSystemURL& url,
-                           const StatusCallback& callback) OVERRIDE {
+  void ProcessFile(const FileSystemURL& url,
+                   const StatusCallback& callback) override {
     RecordLogEntry(LogEntry::PROCESS_FILE, url);
     operation_runner()->GetMetadata(
         url,
@@ -68,14 +63,14 @@ class LoggingRecursiveOperation : public fileapi::RecursiveOperationDelegate {
                    weak_factory_.GetWeakPtr(), callback));
   }
 
-  virtual void ProcessDirectory(const FileSystemURL& url,
-                                const StatusCallback& callback) OVERRIDE {
+  void ProcessDirectory(const FileSystemURL& url,
+                        const StatusCallback& callback) override {
     RecordLogEntry(LogEntry::PROCESS_DIRECTORY, url);
     callback.Run(base::File::FILE_OK);
   }
 
-  virtual void PostProcessDirectory(const FileSystemURL& url,
-                                    const StatusCallback& callback) OVERRIDE {
+  void PostProcessDirectory(const FileSystemURL& url,
+                            const StatusCallback& callback) override {
     RecordLogEntry(LogEntry::POST_PROCESS_DIRECTORY, url);
     callback.Run(base::File::FILE_OK);
   }
@@ -117,7 +112,7 @@ void ReportStatus(base::File::Error* out_error,
 
 // To test the Cancel() during operation, calls Cancel() of |operation|
 // after |counter| times message posting.
-void CallCancelLater(fileapi::RecursiveOperationDelegate* operation,
+void CallCancelLater(storage::RecursiveOperationDelegate* operation,
                      int counter) {
   if (counter > 0) {
     base::MessageLoopProxy::current()->PostTask(
@@ -133,14 +128,12 @@ void CallCancelLater(fileapi::RecursiveOperationDelegate* operation,
 
 class RecursiveOperationDelegateTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     EXPECT_TRUE(base_.CreateUniqueTempDir());
     sandbox_file_system_.SetUp(base_.path().AppendASCII("filesystem"));
   }
 
-  virtual void TearDown() OVERRIDE {
-    sandbox_file_system_.TearDown();
-  }
+  void TearDown() override { sandbox_file_system_.TearDown(); }
 
   scoped_ptr<FileSystemOperationContext> NewContext() {
     FileSystemOperationContext* context =
@@ -150,7 +143,7 @@ class RecursiveOperationDelegateTest : public testing::Test {
     return make_scoped_ptr(context);
   }
 
-  fileapi::FileSystemFileUtil* file_util() {
+  storage::FileSystemFileUtil* file_util() {
     return sandbox_file_system_.file_util();
   }
 

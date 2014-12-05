@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("//extensions/generated_extensions_api.gni")
+import("//build/json_schema_api.gni")
 
 component("accessibility") {
   sources = [
@@ -23,17 +23,33 @@ component("accessibility") {
     "ax_tree_update.h",
     "ax_view_state.cc",
     "ax_view_state.h",
+    "platform/ax_platform_node.cc",
+    "platform/ax_platform_node.h",
+    "platform/ax_platform_node_base.cc",
+    "platform/ax_platform_node_base.h",
+    "platform/ax_platform_node_delegate.h",
+    "platform/ax_platform_node_mac.h",
+    "platform/ax_platform_node_mac.mm",
   ]
 
   defines = [ "ACCESSIBILITY_IMPLEMENTATION" ]
 
-  forward_dependent_configs_from = [ ":ax_gen" ]
-
-  deps = [
+  public_deps = [
     ":ax_gen",
     "//base",
     "//ui/gfx",
     "//ui/gfx/geometry",
+  ]
+}
+
+source_set("test_support") {
+  sources = [
+    "tree_generator.cc",
+    "tree_generator.h"
+  ]
+
+  deps = [
+    ":accessibility"
   ]
 }
 
@@ -46,6 +62,7 @@ test("accessibility_unittests") {
 
   deps = [
     ":accessibility",
+    ":test_support",
     "//base",
     "//base/test:run_all_unittests",
     "//testing/gtest",
@@ -54,8 +71,9 @@ test("accessibility_unittests") {
   ]
 }
 
-generated_extensions_api("ax_gen") {
+json_schema_api("ax_gen") {
   sources = [ "ax_enums.idl" ]
-  root_namespace = ""
-  impl_dir = "."
+  deps = [ "//base/third_party/dynamic_annotations" ]
+  root_namespace = "ui"
+  schemas = true
 }

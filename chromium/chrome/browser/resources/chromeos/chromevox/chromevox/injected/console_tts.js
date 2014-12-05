@@ -30,10 +30,15 @@ goog.addSingletonGetter(cvox.ConsoleTts);
 cvox.ConsoleTts.prototype.speak = function(textString, queueMode, properties) {
   if (this.enabled_ && window['console']) {
     var logStr = 'Speak';
-    if (queueMode == cvox.AbstractTts.QUEUE_MODE_FLUSH) {
+    if (queueMode == cvox.QueueMode.FLUSH) {
       logStr += ' (I)';
+    } else if (queueMode == cvox.QueueMode.CATEGORY_FLUSH) {
+      logStr += ' (C)';
     } else {
       logStr += ' (Q)';
+    }
+    if (properties && properties.category) {
+      logStr += ' category=' + properties.category;
     }
     logStr += ' "' + textString + '"';
     window['console']['log'](logStr);

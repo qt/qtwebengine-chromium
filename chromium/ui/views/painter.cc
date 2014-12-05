@@ -27,11 +27,11 @@ namespace {
 class DashedFocusPainter : public Painter {
  public:
   explicit DashedFocusPainter(const gfx::Insets& insets);
-  virtual ~DashedFocusPainter();
+  ~DashedFocusPainter() override;
 
   // Painter:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE;
+  gfx::Size GetMinimumSize() const override;
+  void Paint(gfx::Canvas* canvas, const gfx::Size& size) override;
 
  private:
   const gfx::Insets insets_;
@@ -61,11 +61,11 @@ void DashedFocusPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
 class SolidFocusPainter : public Painter {
  public:
   SolidFocusPainter(SkColor color, const gfx::Insets& insets);
-  virtual ~SolidFocusPainter();
+  ~SolidFocusPainter() override;
 
   // Painter:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE;
+  gfx::Size GetMinimumSize() const override;
+  void Paint(gfx::Canvas* canvas, const gfx::Size& size) override;
 
  private:
   const SkColor color_;
@@ -101,11 +101,11 @@ class GradientPainter : public Painter {
                   SkColor* colors,
                   SkScalar* pos,
                   size_t count);
-  virtual ~GradientPainter();
+  ~GradientPainter() override;
 
   // Painter:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE;
+  gfx::Size GetMinimumSize() const override;
+  void Paint(gfx::Canvas* canvas, const gfx::Size& size) override;
 
  private:
   // If |horizontal_| is true then the gradient is painted horizontally.
@@ -163,7 +163,7 @@ void GradientPainter::Paint(gfx::Canvas* canvas, const gfx::Size& size) {
 // ImagePainter ---------------------------------------------------------------
 
 // ImagePainter stores and paints nine images as a scalable grid.
-class VIEWS_EXPORT ImagePainter : public Painter {
+class ImagePainter : public Painter {
  public:
   // Constructs an ImagePainter with the specified image resource ids.
   // See CreateImageGridPainter()'s comment regarding image ID count and order.
@@ -172,11 +172,11 @@ class VIEWS_EXPORT ImagePainter : public Painter {
   // Constructs an ImagePainter with the specified image and insets.
   ImagePainter(const gfx::ImageSkia& image, const gfx::Insets& insets);
 
-  virtual ~ImagePainter();
+  ~ImagePainter() override;
 
   // Painter:
-  virtual gfx::Size GetMinimumSize() const OVERRIDE;
-  virtual void Paint(gfx::Canvas* canvas, const gfx::Size& size) OVERRIDE;
+  gfx::Size GetMinimumSize() const override;
+  void Paint(gfx::Canvas* canvas, const gfx::Size& size) override;
 
  private:
   scoped_ptr<gfx::NineImagePainter> nine_painter_;

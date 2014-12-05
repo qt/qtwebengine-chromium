@@ -4,17 +4,18 @@
 
 #include "ui/message_center/views/message_view.h"
 
-#include "grit/ui_resources.h"
-#include "grit/ui_strings.h"
 #include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/models/simple_menu_model.h"
-#include "ui/base/resource/resource_bundle.h"
+#include "ui/base/ui_base_switches_util.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/image/image_skia_operations.h"
 #include "ui/message_center/message_center.h"
 #include "ui/message_center/message_center_style.h"
 #include "ui/message_center/views/padded_button.h"
+#include "ui/resources/grit/ui_resources.h"
+#include "ui/strings/grit/ui_strings.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
@@ -30,6 +31,31 @@ const int kCloseIconRightPadding = 5;
 
 const int kShadowOffset = 1;
 const int kShadowBlur = 4;
+
+const gfx::ImageSkia CreateImage(int width, int height, SkColor color) {
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(width, height);
+  bitmap.eraseColor(color);
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
+}
+
+// Take the alpha channel of small_image, mask it with the foreground,
+// then add the masked foreground on top of the background
+const gfx::ImageSkia GetMaskedSmallImage(const gfx::ImageSkia& small_image) {
+  int width = small_image.width();
+  int height = small_image.height();
+
+  // Background color grey
+  const gfx::ImageSkia background = CreateImage(
+      width, height, message_center::kSmallImageMaskBackgroundColor);
+  // Foreground color white
+  const gfx::ImageSkia foreground = CreateImage(
+      width, height, message_center::kSmallImageMaskForegroundColor);
+  const gfx::ImageSkia masked_small_image =
+      gfx::ImageSkiaOperations::CreateMaskedImage(foreground, small_image);
+  return gfx::ImageSkiaOperations::CreateSuperimposedImage(background,
+                                                           masked_small_image);
+}
 
 }  // namespace
 
@@ -54,8 +80,9 @@ MessageView::MessageView(MessageViewController* controller,
       views::Background::CreateSolidBackground(kNotificationBackgroundColor));
   AddChildView(background_view_);
 
+  const gfx::ImageSkia masked_small_image = GetMaskedSmallImage(small_image);
   views::ImageView* small_image_view = new views::ImageView();
-  small_image_view->SetImage(small_image);
+  small_image_view->SetImage(masked_small_image);
   small_image_view->SetImageSize(gfx::Size(kSmallImageSize, kSmallImageSize));
   // The small image view should be added to view hierarchy by the derived
   // class. This ensures that it is on top of other views.
@@ -84,7 +111,9 @@ MessageView::~MessageView() {
 }
 
 void MessageView::UpdateWithNotification(const Notification& notification) {
-  small_image_view_->SetImage(notification.small_image().AsImageSkia());
+  const gfx::ImageSkia masked_small_image =
+      GetMaskedSmallImage(notification.small_image().AsImageSkia());
+  small_image_view_->SetImage(masked_small_image);
   display_source_ = notification.display_source();
 }
 
@@ -195,10 +224,25 @@ void MessageView::Layout() {
 }
 
 void MessageView::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_TAP) {
-    controller_->ClickOnNotification(notification_id_);
-    event->SetHandled();
-    return;
+  switch (event->type()) {
+    case ui::ET_GESTURE_TAP_DOWN: {
+      SetDrawBackgroundAsActive(true);
+      break;
+    }
+    case ui::ET_GESTURE_TAP_CANCEL:
+    case ui::ET_GESTURE_END: {
+      SetDrawBackgroundAsActive(false);
+      break;
+    }
+    case ui::ET_GESTURE_TAP: {
+      SetDrawBackgroundAsActive(false);
+      controller_->ClickOnNotification(notification_id_);
+      event->SetHandled();
+      return;
+    }
+    default: {
+      // Do nothing
+    }
   }
 
   SlideOutView::OnGestureEvent(event);
@@ -223,6 +267,15 @@ void MessageView::ButtonPressed(views::Button* sender,
 
 void MessageView::OnSlideOut() {
   controller_->RemoveNotification(notification_id_, true);  // By user.
+}
+
+void MessageView::SetDrawBackgroundAsActive(bool active) {
+  if (!switches::IsTouchFeedbackEnabled())
+    return;
+  background_view_->background()->
+      SetNativeControlColor(active ? kHoveredButtonBackgroundColor :
+                                     kNotificationBackgroundColor);
+  SchedulePaint();
 }
 
 }  // namespace message_center

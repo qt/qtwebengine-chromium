@@ -16,7 +16,7 @@ class SimpleBuffer : public BufferInterface {
  public:
   SimpleBuffer();
   explicit SimpleBuffer(int size);
-  virtual ~SimpleBuffer();
+  ~SimpleBuffer() override;
 
   std::string str() const;
 
@@ -32,32 +32,32 @@ class SimpleBuffer : public BufferInterface {
   // The following functions all override pure virtual functions
   // in BufferInterface. See buffer_interface.h for a description
   // of what they do.
-  virtual int ReadableBytes() const OVERRIDE;
-  virtual int BufferSize() const OVERRIDE;
-  virtual int BytesFree() const OVERRIDE;
+  int ReadableBytes() const override;
+  int BufferSize() const override;
+  int BytesFree() const override;
 
-  virtual bool Empty() const OVERRIDE;
-  virtual bool Full() const OVERRIDE;
+  bool Empty() const override;
+  bool Full() const override;
 
-  virtual int Write(const char* bytes, int size) OVERRIDE;
+  int Write(const char* bytes, int size) override;
 
-  virtual void GetWritablePtr(char **ptr, int* size) const OVERRIDE;
+  void GetWritablePtr(char** ptr, int* size) const override;
 
-  virtual void GetReadablePtr(char **ptr, int* size) const OVERRIDE;
+  void GetReadablePtr(char** ptr, int* size) const override;
 
-  virtual int Read(char* bytes, int size) OVERRIDE;
+  int Read(char* bytes, int size) override;
 
-  virtual void Clear() OVERRIDE;
+  void Clear() override;
 
   // This can be an expensive operation: costing a new/delete, and copying of
   // all existing data. Even if the existing buffer does not need to be
   // resized, unread data may still need to be non-destructively copied to
   // consolidate fragmented free space.
-  virtual bool Reserve(int size) OVERRIDE;
+  bool Reserve(int size) override;
 
-  virtual void AdvanceReadablePtr(int amount_to_advance) OVERRIDE;
+  void AdvanceReadablePtr(int amount_to_advance) override;
 
-  virtual void AdvanceWritablePtr(int amount_to_advance) OVERRIDE;
+  void AdvanceWritablePtr(int amount_to_advance) override;
 
   void Swap(SimpleBuffer* other) {
     char* tmp = storage_;

@@ -155,7 +155,7 @@ private:
 
     bool createBlock(size_t requestSize);
     void destroyBlock();
-    void flushCpuData(GrGeometryBuffer* buffer, size_t flushSize);
+    void flushCpuData(const BufferBlock& block, size_t flushSize);
 #ifdef SK_DEBUG
     void validate(bool unusedBlockAllowed = false) const;
 #endif
@@ -231,15 +231,6 @@ public:
                     int* startVertex);
 
     /**
-     * Shortcut to make space and then write verts into the made space.
-     */
-    bool appendVertices(size_t vertexSize,
-                        int vertexCount,
-                        const void* vertices,
-                        const GrVertexBuffer** buffer,
-                        int* startVertex);
-
-    /**
      * Gets the number of vertices that can be added to the current VB without
      * spilling to another VB. If the pool has been reset, or the previous
      * makeSpace completely exhausted a VB then the returned number of vertices
@@ -313,14 +304,6 @@ public:
     void* makeSpace(int indexCount,
                     const GrIndexBuffer** buffer,
                     int* startIndex);
-
-    /**
-     * Shortcut to make space and then write indices into the made space.
-     */
-    bool appendIndices(int indexCount,
-                       const void* indices,
-                       const GrIndexBuffer** buffer,
-                       int* startIndex);
 
     /**
      * Gets the number of indices that can be added to the current IB without

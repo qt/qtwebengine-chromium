@@ -39,7 +39,7 @@
 #include "third_party/skia/include/pathops/SkPathOps.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 Path::Path()
     : m_path()
@@ -68,7 +68,7 @@ bool Path::operator==(const Path& other) const
 
 bool Path::contains(const FloatPoint& point, WindRule rule) const
 {
-    return SkPathContainsPoint(m_path, point, rule == RULE_NONZERO ? SkPath::kWinding_FillType : SkPath::kEvenOdd_FillType);
+    return SkPathContainsPoint(m_path, point, static_cast<SkPath::FillType>(rule));
 }
 
 bool Path::strokeContains(const FloatPoint& point, const StrokeData& strokeData) const
@@ -247,6 +247,11 @@ bool Path::isEmpty() const
     return m_path.isEmpty();
 }
 
+void Path::setIsVolatile(bool isVolatile)
+{
+    m_path.setIsVolatile(isVolatile);
+}
+
 bool Path::hasCurrentPoint() const
 {
     return m_path.getPoints(0, 0);
@@ -277,9 +282,7 @@ WindRule Path::windRule() const
 
 void Path::setWindRule(const WindRule rule)
 {
-    m_path.setFillType(rule == RULE_EVENODD
-        ? SkPath::kEvenOdd_FillType
-        : SkPath::kWinding_FillType);
+    m_path.setFillType(WebCoreWindRuleToSkFillType(rule));
 }
 
 void Path::moveTo(const FloatPoint& point)
@@ -482,12 +485,22 @@ void Path::translate(const FloatSize& size)
     m_path.offset(WebCoreFloatToSkScalar(size.width()), WebCoreFloatToSkScalar(size.height()));
 }
 
+bool Path::subtractPath(const Path& other)
+{
+    return Op(m_path, other.m_path, kDifference_PathOp, &m_path);
+}
+
+bool Path::intersectPath(const Path& other)
+{
+    return Op(m_path, other.m_path, kIntersect_PathOp, &m_path);
+}
+
 bool Path::unionPath(const Path& other)
 {
     return Op(m_path, other.m_path, kUnion_PathOp, &m_path);
 }
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 bool ellipseIsRenderable(float startAngle, float endAngle)
 {
     return (std::abs(endAngle - startAngle) < twoPiFloat)
@@ -495,4 +508,4 @@ bool ellipseIsRenderable(float startAngle, float endAngle)
 }
 #endif
 
-}
+} // namespace blink

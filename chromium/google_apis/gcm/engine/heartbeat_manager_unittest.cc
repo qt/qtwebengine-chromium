@@ -4,8 +4,11 @@
 
 #include "google_apis/gcm/engine/heartbeat_manager.h"
 
+#include "base/bind.h"
+#include "base/bind_helpers.h"
 #include "base/message_loop/message_loop.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "google_apis/gcm/protocol/mcs.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -21,15 +24,25 @@ mcs_proto::HeartbeatConfig BuildHeartbeatConfig(int interval_ms) {
 
 class TestHeartbeatManager : public HeartbeatManager {
  public:
-  TestHeartbeatManager() {}
+  TestHeartbeatManager()
+      : HeartbeatManager(make_scoped_ptr(
+            new base::Timer(true, /* retain user task */
+                            false /* non repeating */))) {}
   virtual ~TestHeartbeatManager() {}
 
   // Bypass the heartbeat timer, and send the heartbeat now.
   void TriggerHearbeat();
+
+  // Check for a missed heartbeat now.
+  void TriggerMissedHeartbeatCheck();
 };
 
 void TestHeartbeatManager::TriggerHearbeat() {
   OnHeartbeatTriggered();
+}
+
+void TestHeartbeatManager::TriggerMissedHeartbeatCheck() {
+  CheckForMissedHeartbeat();
 }
 
 class HeartbeatManagerTest : public testing::Test {
@@ -169,6 +182,20 @@ TEST_F(HeartbeatManagerTest, Stop) {
 
   manager()->Stop();
   EXPECT_TRUE(manager()->GetNextHeartbeatTime().is_null());
+}
+
+// Simulate missing a heartbeat by manually invoking the check method. The
+// heartbeat should only be triggered once, and only if the heartbeat timer
+// is running. Because the period is several minutes, none should fire.
+TEST_F(HeartbeatManagerTest, MissedHeartbeat) {
+  // Do nothing while stopped.
+  manager()->TriggerMissedHeartbeatCheck();
+  StartManager();
+  EXPECT_EQ(0, heartbeats_sent());
+
+  // Do nothing before the period is reached.
+  manager()->TriggerMissedHeartbeatCheck();
+  EXPECT_EQ(0, heartbeats_sent());
 }
 
 }  // namespace

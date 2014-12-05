@@ -24,20 +24,20 @@ class GL_EXPORT GLContextGLX : public GLContextReal {
   XDisplay* display();
 
   // Implement GLContext.
-  virtual bool Initialize(
-      GLSurface* compatible_surface, GpuPreference gpu_preference) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool MakeCurrent(GLSurface* surface) OVERRIDE;
-  virtual void ReleaseCurrent(GLSurface* surface) OVERRIDE;
-  virtual bool IsCurrent(GLSurface* surface) OVERRIDE;
-  virtual void* GetHandle() OVERRIDE;
-  virtual void SetSwapInterval(int interval) OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
-  virtual bool GetTotalGpuMemory(size_t* bytes) OVERRIDE;
-  virtual bool WasAllocatedUsingRobustnessExtension() OVERRIDE;
+  bool Initialize(GLSurface* compatible_surface,
+                  GpuPreference gpu_preference) override;
+  void Destroy() override;
+  bool MakeCurrent(GLSurface* surface) override;
+  void ReleaseCurrent(GLSurface* surface) override;
+  bool IsCurrent(GLSurface* surface) override;
+  void* GetHandle() override;
+  void SetSwapInterval(int interval) override;
+  std::string GetExtensions() override;
+  bool GetTotalGpuMemory(size_t* bytes) override;
+  bool WasAllocatedUsingRobustnessExtension() override;
 
  protected:
-  virtual ~GLContextGLX();
+  ~GLContextGLX() override;
 
  private:
   void* context_;

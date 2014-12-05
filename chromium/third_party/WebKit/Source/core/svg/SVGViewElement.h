@@ -28,11 +28,12 @@
 #include "core/svg/SVGStaticStringList.h"
 #include "core/svg/SVGZoomAndPan.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGViewElement FINAL : public SVGElement,
+class SVGViewElement final : public SVGElement,
                              public SVGFitToViewBox,
                              public SVGZoomAndPan {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGViewElement);
 
@@ -46,15 +47,13 @@ public:
 private:
     explicit SVGViewElement(Document&);
 
-    // FIXME: svgAttributeChanged missing.
-    bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
-    virtual bool rendererIsNeeded(const RenderStyle&) OVERRIDE { return false; }
+    virtual bool rendererIsNeeded(const RenderStyle&) override { return false; }
 
     RefPtr<SVGStaticStringList> m_viewTarget;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGViewElement_h

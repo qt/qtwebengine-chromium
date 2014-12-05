@@ -24,14 +24,15 @@
 #ifndef NodeList_h
 #define NodeList_h
 
-#include "bindings/v8/ScriptWrappable.h"
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
 class NodeList : public RefCountedWillBeGarbageCollectedFinalized<NodeList>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~NodeList() { }
 
@@ -48,12 +49,9 @@ public:
     virtual void trace(Visitor*) { }
 
 protected:
-    NodeList()
-    {
-        ScriptWrappable::init(this);
-    }
+    NodeList() { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NodeList_h

@@ -23,8 +23,12 @@
 #   args (required)
 #       [list of strings] Same meaning as action/action_foreach.
 #
+#   inputs (optional)
+#       Files the binary takes as input. The step will be re-run whenever any
+#       of these change. If inputs is empty, the step will run only when the
+#       binary itself changes.
+#
 #   visibility
-#   source_prereqs
 #   deps
 #   args   (all optional)
 #       Same meaning as action/action_foreach.
@@ -40,7 +44,7 @@
 #     ]
 #
 #     # The tool takes this input.
-#     source_prereqs = [ "my_input_file.idl" ]
+#     inputs = [ "my_input_file.idl" ]
 #
 #     # In this case, the tool takes as arguments the input file and the output
 #     # build dir (both relative to the "cd" that the script will be run in)
@@ -62,10 +66,19 @@
 # saves unnecessarily compiling your tool for the target platform. But if you
 # need a target build of your tool as well, just leave off the if statement.
 
+if (build_os == "win") {
+  _host_executable_suffix = ".exe"
+} else {
+  _host_executable_suffix = ""
+}
+
 template("compiled_action") {
   assert(defined(invoker.tool), "tool must be defined for $target_name")
   assert(defined(invoker.outputs), "outputs must be defined for $target_name")
   assert(defined(invoker.args), "args must be defined for $target_name")
+
+  assert(!defined(invoker.sources),
+         "compiled_action doesn't take a sources arg. Use inputs instead.")
 
   action(target_name) {
     if (defined(invoker.visibility)) {
@@ -74,8 +87,10 @@ template("compiled_action") {
 
     script = "//build/gn_run_binary.py"
 
-    if (defined(invoker.source_prereqs)) {
-      source_prereqs = invoker.source_prereqs
+    if (defined(invoker.inputs)) {
+      inputs = invoker.inputs
+    } else {
+      inputs = []
     }
     outputs = invoker.outputs
 
@@ -88,7 +103,10 @@ template("compiled_action") {
     # specify this, since we can't know what the output name is (it might be in
     # another file not processed yet).
     host_executable = get_label_info(host_tool, "root_out_dir") + "/" +
-      get_label_info(host_tool, "name")
+      get_label_info(host_tool, "name") + _host_executable_suffix
+
+    # Add the executable itself as an input.
+    inputs += [ host_executable ]
 
     deps = [ host_tool ]
     if (defined(invoker.deps)) {
@@ -118,8 +136,10 @@ template("compiled_action_foreach") {
     script = "//build/gn_run_binary.py"
     sources = invoker.sources
 
-    if (defined(invoker.source_prereqs)) {
-      source_prereqs = invoker.source_prereqs
+    if (defined(invoker.inputs)) {
+      inputs = invoker.inputs
+    } else {
+      inputs = []
     }
     outputs = invoker.outputs
 
@@ -132,7 +152,10 @@ template("compiled_action_foreach") {
     # specify this, since we can't know what the output name is (it might be in
     # another file not processed yet).
     host_executable = get_label_info(host_tool, "root_out_dir") + "/" +
-      get_label_info(host_tool, "name")
+      get_label_info(host_tool, "name") + _host_executable_suffix
+
+    # Add the executable itself as an input.
+    inputs += [ host_executable ]
 
     deps = [ host_tool ]
     if (defined(invoker.deps)) {

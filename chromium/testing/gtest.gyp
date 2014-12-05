@@ -3,46 +3,16 @@
 # found in the LICENSE file.
 
 {
+  'includes': [
+    'gtest.gypi',
+  ],
   'targets': [
     {
       'target_name': 'gtest',
       'toolsets': ['host', 'target'],
       'type': 'static_library',
       'sources': [
-        'gtest/include/gtest/gtest-death-test.h',
-        'gtest/include/gtest/gtest-message.h',
-        'gtest/include/gtest/gtest-param-test.h',
-        'gtest/include/gtest/gtest-printers.h',
-        'gtest/include/gtest/gtest-spi.h',
-        'gtest/include/gtest/gtest-test-part.h',
-        'gtest/include/gtest/gtest-typed-test.h',
-        'gtest/include/gtest/gtest.h',
-        'gtest/include/gtest/gtest_pred_impl.h',
-        'gtest/include/gtest/internal/gtest-death-test-internal.h',
-        'gtest/include/gtest/internal/gtest-filepath.h',
-        'gtest/include/gtest/internal/gtest-internal.h',
-        'gtest/include/gtest/internal/gtest-linked_ptr.h',
-        'gtest/include/gtest/internal/gtest-param-util-generated.h',
-        'gtest/include/gtest/internal/gtest-param-util.h',
-        'gtest/include/gtest/internal/gtest-port.h',
-        'gtest/include/gtest/internal/gtest-string.h',
-        'gtest/include/gtest/internal/gtest-tuple.h',
-        'gtest/include/gtest/internal/gtest-type-util.h',
-        'gtest/src/gtest-all.cc',
-        'gtest/src/gtest-death-test.cc',
-        'gtest/src/gtest-filepath.cc',
-        'gtest/src/gtest-internal-inl.h',
-        'gtest/src/gtest-port.cc',
-        'gtest/src/gtest-printers.cc',
-        'gtest/src/gtest-test-part.cc',
-        'gtest/src/gtest-typed-test.cc',
-        'gtest/src/gtest.cc',
-        'multiprocess_func_list.cc',
-        'multiprocess_func_list.h',
-        'platform_test.h',
-      ],
-      'sources!': [
-        'gtest/src/gtest-all.cc',  # Not needed by our build.
+        '<@(gtest_sources)',
       ],
       'include_dirs': [
         'gtest',
@@ -55,10 +25,13 @@
         # In order to allow regex matches in gtest to be shared between Windows
         # and other systems, we tell gtest to always use it's internal engine.
         'GTEST_HAS_POSIX_RE=0',
+        # Chrome doesn't support / require C++11, yet.
+        'GTEST_LANG_CXX11=0',
       ],
       'all_dependent_settings': {
         'defines': [
           'GTEST_HAS_POSIX_RE=0',
+          'GTEST_LANG_CXX11=0',
         ],
       },
       'conditions': [
@@ -66,13 +39,17 @@
           'sources': [
             'gtest_mac.h',
             'gtest_mac.mm',
-            'platform_test_mac.mm'
           ],
           'link_settings': {
             'libraries': [
               '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
             ],
           },
+        }],
+        ['OS == "mac"', {
+          'sources': [
+            'platform_test_mac.mm',
+          ],
         }],
         ['OS == "ios"', {
           'dependencies' : [
@@ -97,7 +74,7 @@
                 },
                 'mac_bundle_resources': [
                   '<(ios_unittest_info_plist_path)',
-                  '<(DEPTH)/testing/gtest_ios/Default-568h@2x.png',
+                  '<(DEPTH)/testing/gtest_ios/Default.png',
                 ],
                 'mac_bundle_resources!': [
                   '<(ios_unittest_info_plist_path)',
@@ -105,6 +82,11 @@
               }],
             ],
           },
+          'sources': [
+            'coverage_util_ios.cc',
+            'coverage_util_ios.h',
+            'platform_test_ios.mm',
+          ],
         }],
         ['OS=="ios" and asan==1', {
           'direct_dependent_settings': {

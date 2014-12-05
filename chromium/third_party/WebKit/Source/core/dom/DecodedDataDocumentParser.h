@@ -29,7 +29,7 @@
 #include "core/dom/DocumentParser.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 class TextResourceDecoder;
 
 class DecodedDataDocumentParser : public DocumentParser {
@@ -39,11 +39,11 @@ public:
     virtual bool wellFormed() const { return true; }
 
     // The below functions are used by DocumentWriter (the loader).
-    virtual void appendBytes(const char* bytes, size_t length) OVERRIDE;
-    virtual void flush() OVERRIDE;
-    virtual bool needsDecoder() const OVERRIDE FINAL { return m_needsDecoder; }
-    virtual void setDecoder(PassOwnPtr<TextResourceDecoder>) OVERRIDE;
-    virtual TextResourceDecoder* decoder() OVERRIDE FINAL;
+    virtual void appendBytes(const char* bytes, size_t length) override;
+    virtual void flush() override;
+    virtual bool needsDecoder() const override final { return m_needsDecoder; }
+    virtual void setDecoder(PassOwnPtr<TextResourceDecoder>) override;
+    virtual TextResourceDecoder* decoder() override final;
 
     PassOwnPtr<TextResourceDecoder> takeDecoder();
 
@@ -52,7 +52,7 @@ protected:
     virtual ~DecodedDataDocumentParser();
 
 private:
-    // append is used by DocumentWriter::replaceDocument.
+    // append is used by DocumentLoader::replaceDocumentWhileExecutingJavaScriptURL.
     virtual void append(PassRefPtr<StringImpl>) = 0;
 
     void updateDocument(String& decodedData);

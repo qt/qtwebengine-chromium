@@ -20,26 +20,15 @@
 #include "config.h"
 #include "core/css/MediaQueryListListener.h"
 
-#include "bindings/core/v8/V8MediaQueryList.h"
-#include "bindings/v8/V8Callback.h"
-#include <v8.h>
+namespace blink {
 
-namespace WebCore {
-
-MediaQueryListListener::MediaQueryListListener(ScriptState* scriptState, const ScriptValue& function)
-    : m_scriptState(scriptState)
-    , m_function(function)
+MediaQueryListListener::MediaQueryListListener()
 {
-    ASSERT(m_function.isFunction());
+    // only for use by subclasses
 }
 
-void MediaQueryListListener::queryChanged(MediaQueryList* query)
+MediaQueryListListener::~MediaQueryListListener()
 {
-    if (m_scriptState->contextIsEmpty())
-        return;
-    ScriptState::Scope scope(m_scriptState.get());
-    v8::Handle<v8::Value> args[] = { toV8(query, m_scriptState->context()->Global(), m_scriptState->isolate()) };
-    invokeCallback(m_scriptState.get(), v8::Handle<v8::Function>::Cast(m_function.v8Value()), WTF_ARRAY_LENGTH(args), args);
 }
 
 }

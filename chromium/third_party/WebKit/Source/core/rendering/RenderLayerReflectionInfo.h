@@ -49,16 +49,17 @@
 #include "core/rendering/RenderLayerModelObject.h"
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderLayer;
 class RenderReplica;
 
-class RenderLayerReflectionInfo {
+class RenderLayerReflectionInfo : public NoBaseWillBeGarbageCollected<RenderLayerReflectionInfo> {
     WTF_MAKE_NONCOPYABLE(RenderLayerReflectionInfo);
 public:
     explicit RenderLayerReflectionInfo(RenderBox&);
-    ~RenderLayerReflectionInfo();
+    void destroy();
+    void trace(Visitor*);
 
     RenderReplica* reflection() const { return m_reflection; }
     RenderLayer* reflectionLayer() const;
@@ -69,16 +70,17 @@ public:
 
     void paint(GraphicsContext*, const LayerPaintingInfo&, PaintLayerFlags);
 
-    String debugName() const;
-
 private:
-    RenderBox& m_box;
-    RenderReplica* m_reflection;
+    RenderBox& box() { return *m_box; }
+    const RenderBox& box() const { return *m_box; }
+
+    RawPtrWillBeMember<RenderBox> m_box;
+    RawPtrWillBeMember<RenderReplica> m_reflection;
 
     // A state bit tracking if we are painting inside a replica.
     unsigned m_isPaintingInsideReflection : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderLayerReflectinInfo_h

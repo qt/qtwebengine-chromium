@@ -31,7 +31,7 @@
 #include "config.h"
 #include "core/editing/TextIterator.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Node.h"
@@ -51,13 +51,13 @@
 #include "wtf/testing/WTFTestHelpers.h"
 #include <gtest/gtest.h>
 
-using namespace WebCore;
+using namespace blink;
 
 namespace {
 
 class TextIteratorTest : public ::testing::Test {
 protected:
-    virtual void SetUp() OVERRIDE;
+    virtual void SetUp() override;
 
     HTMLDocument& document() const;
 
@@ -84,7 +84,6 @@ void TextIteratorTest::SetUp()
 
 Vector<String> TextIteratorTest::iterate(TextIteratorBehavior iteratorBehavior)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive(); // Force renderers to be created; TextIterator needs them.
     RefPtrWillBeRawPtr<Range> range = getBodyRange();
     TextIterator iterator(range.get(), iteratorBehavior);
     return iterateWithIterator(iterator);
@@ -92,7 +91,6 @@ Vector<String> TextIteratorTest::iterate(TextIteratorBehavior iteratorBehavior)
 
 Vector<String> TextIteratorTest::iteratePartial(const Position& start, const Position& end, TextIteratorBehavior iteratorBehavior)
 {
-    document().view()->updateLayoutAndStyleIfNeededRecursive();
     TextIterator iterator(start, end, iteratorBehavior);
     return iterateWithIterator(iterator);
 }
@@ -550,6 +548,21 @@ TEST_F(TextIteratorTest, RangeLengthWithReplacedElements)
     RefPtrWillBeRawPtr<Range> range = Range::create(document(), divNode, 0, divNode, 3);
 
     EXPECT_EQ(3, TextIterator::rangeLength(range.get()));
+}
+
+TEST_F(TextIteratorTest, SubrangeWithReplacedElements)
+{
+    static const char* bodyContent =
+        "<div id=\"div\" contenteditable=\"true\">1<img src=\"foo.png\">345</div>";
+    setBodyInnerHTML(bodyContent);
+    document().view()->updateLayoutAndStyleIfNeededRecursive();
+
+    Node* divNode = document().getElementById("div");
+    RefPtrWillBeRawPtr<Range> entireRange = Range::create(document(), divNode, 0, divNode, 3);
+
+    RefPtrWillBeRawPtr<Range> subrange = TextIterator::subrange(entireRange.get(), 2, 3);
+    EXPECT_EQ(0, subrange->startOffset());
+    EXPECT_EQ(3, subrange->endOffset());
 }
 
 }

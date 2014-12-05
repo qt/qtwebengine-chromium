@@ -39,8 +39,8 @@
 #include "platform/geometry/FloatSize.h"
 #else
 #include <cmath>
-#include <ui/gfx/size_f.h>
-#include <ui/gfx/vector2d_f.h>
+#include <ui/gfx/geometry/size_f.h>
+#include <ui/gfx/geometry/vector2d_f.h>
 #endif
 
 namespace blink {
@@ -64,22 +64,22 @@ struct WebFloatSize {
     }
 
 #if INSIDE_BLINK
-    WebFloatSize(const WebCore::FloatSize& s)
+    WebFloatSize(const FloatSize& s)
         : width(s.width())
         , height(s.height())
     {
     }
 
-    WebFloatSize& operator=(const WebCore::FloatSize& s)
+    WebFloatSize& operator=(const FloatSize& s)
     {
         width = s.width();
         height = s.height();
         return *this;
     }
 
-    operator WebCore::FloatSize() const
+    operator FloatSize() const
     {
-        return WebCore::FloatSize(width, height);
+        return FloatSize(width, height);
     }
 #else
     WebFloatSize(const gfx::SizeF& s)

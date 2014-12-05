@@ -25,16 +25,19 @@
 #ifndef NavigatorUserMediaSuccessCallback_h
 #define NavigatorUserMediaSuccessCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
 class MediaStream;
 
-class NavigatorUserMediaSuccessCallback {
+class NavigatorUserMediaSuccessCallback : public GarbageCollectedFinalized<NavigatorUserMediaSuccessCallback> {
 public:
     virtual ~NavigatorUserMediaSuccessCallback() { }
+    virtual void trace(Visitor*) { }
     virtual void handleEvent(MediaStream*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NavigatorUserMediaSuccessCallback_h

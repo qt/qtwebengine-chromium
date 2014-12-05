@@ -34,12 +34,11 @@
 
 #include "core/html/canvas/WebGLRenderingContextBase.h"
 
-namespace WebCore {
+namespace blink {
 
 ANGLEInstancedArrays::ANGLEInstancedArrays(WebGLRenderingContextBase* context)
     : WebGLExtension(context)
 {
-    ScriptWrappable::init(this);
     context->extensionsUtil()->ensureExtensionEnabled("GL_ANGLE_instanced_arrays");
 }
 
@@ -52,9 +51,9 @@ WebGLExtensionName ANGLEInstancedArrays::name() const
     return ANGLEInstancedArraysName;
 }
 
-PassRefPtr<ANGLEInstancedArrays> ANGLEInstancedArrays::create(WebGLRenderingContextBase* context)
+PassRefPtrWillBeRawPtr<ANGLEInstancedArrays> ANGLEInstancedArrays::create(WebGLRenderingContextBase* context)
 {
-    return adoptRef(new ANGLEInstancedArrays(context));
+    return adoptRefWillBeNoop(new ANGLEInstancedArrays(context));
 }
 
 bool ANGLEInstancedArrays::supported(WebGLRenderingContextBase* context)
@@ -91,4 +90,4 @@ void ANGLEInstancedArrays::vertexAttribDivisorANGLE(GLuint index, GLuint divisor
     m_context->vertexAttribDivisorANGLE(index, divisor);
 }
 
-} // namespace WebCore
+} // namespace blink

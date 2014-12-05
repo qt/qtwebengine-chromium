@@ -115,23 +115,26 @@ void SynchronousCompositorImpl::ReleaseHwDraw() {
   g_factory.Get().CompositorReleasedHardwareDraw();
 }
 
-gpu::GLInProcessContext* SynchronousCompositorImpl::GetShareContext() {
-  DCHECK(CalledOnValidThread());
-  return g_factory.Get().GetShareContext();
-}
-
 scoped_ptr<cc::CompositorFrame> SynchronousCompositorImpl::DemandDrawHw(
     gfx::Size surface_size,
     const gfx::Transform& transform,
     gfx::Rect viewport,
-    gfx::Rect clip) {
+    gfx::Rect clip,
+    gfx::Rect viewport_rect_for_tile_priority,
+    const gfx::Transform& transform_for_tile_priority) {
   DCHECK(CalledOnValidThread());
   DCHECK(output_surface_);
 
   scoped_ptr<cc::CompositorFrame> frame =
-      output_surface_->DemandDrawHw(surface_size, transform, viewport, clip);
+      output_surface_->DemandDrawHw(surface_size,
+                                    transform,
+                                    viewport,
+                                    clip,
+                                    viewport_rect_for_tile_priority,
+                                    transform_for_tile_priority);
   if (frame.get())
     UpdateFrameMetaData(frame->metadata);
+
   return frame.Pass();
 }
 
@@ -157,14 +160,14 @@ void SynchronousCompositorImpl::UpdateFrameMetaData(
       contents_->GetRenderWidgetHostView());
   if (rwhv)
     rwhv->SynchronousFrameMetadata(frame_metadata);
+  DeliverMessages();
 }
 
-void SynchronousCompositorImpl::SetMemoryPolicy(
-    const SynchronousCompositorMemoryPolicy& policy) {
+void SynchronousCompositorImpl::SetMemoryPolicy(size_t bytes_limit) {
   DCHECK(CalledOnValidThread());
   DCHECK(output_surface_);
 
-  output_surface_->SetMemoryPolicy(policy);
+  output_surface_->SetMemoryPolicy(bytes_limit);
 }
 
 void SynchronousCompositorImpl::DidChangeRootLayerScrollOffset() {
@@ -236,16 +239,31 @@ InputEventAckState SynchronousCompositorImpl::HandleInputEvent(
       contents_->GetRoutingID(), input_event);
 }
 
+void SynchronousCompositorImpl::DeliverMessages() {
+  ScopedVector<IPC::Message> messages;
+  output_surface_->GetMessagesToDeliver(&messages);
+  RenderProcessHost* rph = contents_->GetRenderProcessHost();
+  for (ScopedVector<IPC::Message>::const_iterator i = messages.begin();
+       i != messages.end();
+       ++i) {
+    rph->OnMessageReceived(**i);
+  }
+}
+
 void SynchronousCompositorImpl::DidActivatePendingTree() {
   if (compositor_client_)
     compositor_client_->DidUpdateContent();
 }
 
-gfx::Vector2dF SynchronousCompositorImpl::GetTotalScrollOffset() {
+gfx::ScrollOffset SynchronousCompositorImpl::GetTotalScrollOffset() {
   DCHECK(CalledOnValidThread());
-  if (compositor_client_)
-    return compositor_client_->GetTotalRootLayerScrollOffset();
-  return gfx::Vector2dF();
+  if (compositor_client_) {
+    // TODO(miletus): Make GetTotalRootLayerScrollOffset return
+    // ScrollOffset. crbug.com/414283.
+    return gfx::ScrollOffset(
+        compositor_client_->GetTotalRootLayerScrollOffset());
+  }
+  return gfx::ScrollOffset();
 }
 
 bool SynchronousCompositorImpl::IsExternalFlingActive() const {
@@ -256,8 +274,8 @@ bool SynchronousCompositorImpl::IsExternalFlingActive() const {
 }
 
 void SynchronousCompositorImpl::UpdateRootLayerState(
-    const gfx::Vector2dF& total_scroll_offset,
-    const gfx::Vector2dF& max_scroll_offset,
+    const gfx::ScrollOffset& total_scroll_offset,
+    const gfx::ScrollOffset& max_scroll_offset,
     const gfx::SizeF& scrollable_size,
     float page_scale_factor,
     float min_page_scale_factor,
@@ -266,12 +284,14 @@ void SynchronousCompositorImpl::UpdateRootLayerState(
   if (!compositor_client_)
     return;
 
-  compositor_client_->UpdateRootLayerState(total_scroll_offset,
-                                           max_scroll_offset,
-                                           scrollable_size,
-                                           page_scale_factor,
-                                           min_page_scale_factor,
-                                           max_page_scale_factor);
+  // TODO(miletus): Pass in ScrollOffset. crbug.com/414283.
+  compositor_client_->UpdateRootLayerState(
+      gfx::ScrollOffsetToVector2dF(total_scroll_offset),
+      gfx::ScrollOffsetToVector2dF(max_scroll_offset),
+      scrollable_size,
+      page_scale_factor,
+      min_page_scale_factor,
+      max_page_scale_factor);
 }
 
 // Not using base::NonThreadSafe as we want to enforce a more exacting threading

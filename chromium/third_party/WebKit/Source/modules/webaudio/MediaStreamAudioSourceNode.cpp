@@ -33,11 +33,11 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include "wtf/Locker.h"
 
-namespace WebCore {
+namespace blink {
 
-PassRefPtrWillBeRawPtr<MediaStreamAudioSourceNode> MediaStreamAudioSourceNode::create(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
+MediaStreamAudioSourceNode* MediaStreamAudioSourceNode::create(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
 {
-    return adoptRefWillBeNoop(new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider));
+    return new MediaStreamAudioSourceNode(context, mediaStream, audioTrack, audioSourceProvider);
 }
 
 MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, MediaStream* mediaStream, MediaStreamTrack* audioTrack, PassOwnPtr<AudioSourceProvider> audioSourceProvider)
@@ -47,9 +47,9 @@ MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, Me
     , m_audioSourceProvider(audioSourceProvider)
     , m_sourceNumberOfChannels(0)
 {
-    ScriptWrappable::init(this);
-    // Default to stereo. This could change depending on the format of the MediaStream's audio track.
-    addOutput(adoptPtr(new AudioNodeOutput(this, 2)));
+    // Default to stereo. This could change depending on the format of the
+    // MediaStream's audio track.
+    addOutput(AudioNodeOutput::create(this, 2));
 
     setNodeType(NodeTypeMediaStreamAudioSource);
 
@@ -58,7 +58,13 @@ MediaStreamAudioSourceNode::MediaStreamAudioSourceNode(AudioContext* context, Me
 
 MediaStreamAudioSourceNode::~MediaStreamAudioSourceNode()
 {
+    ASSERT(!isInitialized());
+}
+
+void MediaStreamAudioSourceNode::dispose()
+{
     uninitialize();
+    AudioSourceNode::dispose();
 }
 
 void MediaStreamAudioSourceNode::setFormat(size_t numberOfChannels, float sourceSampleRate)
@@ -121,6 +127,6 @@ void MediaStreamAudioSourceNode::trace(Visitor* visitor)
     AudioSourceProviderClient::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

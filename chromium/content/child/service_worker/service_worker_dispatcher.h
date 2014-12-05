@@ -29,18 +29,30 @@ class Message;
 namespace content {
 
 class ServiceWorkerMessageFilter;
-struct ServiceWorkerObjectInfo;
 class ServiceWorkerProviderContext;
 class ThreadSafeSender;
 class WebServiceWorkerImpl;
+class WebServiceWorkerRegistrationImpl;
+struct ServiceWorkerObjectInfo;
+struct ServiceWorkerRegistrationObjectInfo;
+struct ServiceWorkerVersionAttributes;
 
 // This class manages communication with the browser process about
 // registration of the service worker, exposed to renderer and worker
 // scripts through methods like navigator.registerServiceWorker().
 class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
  public:
+  typedef blink::WebServiceWorkerProvider::WebServiceWorkerRegistrationCallbacks
+      WebServiceWorkerRegistrationCallbacks;
+  typedef
+      blink::WebServiceWorkerProvider::WebServiceWorkerUnregistrationCallbacks
+      WebServiceWorkerUnregistrationCallbacks;
+  typedef
+      blink::WebServiceWorkerProvider::WebServiceWorkerGetRegistrationCallbacks
+      WebServiceWorkerGetRegistrationCallbacks;
+
   explicit ServiceWorkerDispatcher(ThreadSafeSender* thread_safe_sender);
-  virtual ~ServiceWorkerDispatcher();
+  ~ServiceWorkerDispatcher() override;
 
   void OnMessageReceived(const IPC::Message& msg);
   bool Send(IPC::Message* msg);
@@ -50,12 +62,17 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
       int provider_id,
       const GURL& pattern,
       const GURL& script_url,
-      blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks);
+      WebServiceWorkerRegistrationCallbacks* callbacks);
   // Corresponds to navigator.serviceWorker.unregister()
   void UnregisterServiceWorker(
       int provider_id,
       const GURL& pattern,
-      blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks* callbacks);
+      WebServiceWorkerUnregistrationCallbacks* callbacks);
+  // Corresponds to navigator.serviceWorker.getRegistration()
+  void GetRegistration(
+      int provider_id,
+      const GURL& document_url,
+      WebServiceWorkerRegistrationCallbacks* callbacks);
 
   // Called when a new provider context for a document is created. Usually
   // this happens when a new document is being loaded, and is called much
@@ -83,8 +100,25 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   // WebServiceWorkerImpl, in which case ownership is transferred to
   // the caller who must bounce it to a method that will associate it
   // with a WebCore::ServiceWorker.
-  WebServiceWorkerImpl* GetServiceWorker(const ServiceWorkerObjectInfo&,
-                                         bool adopt_handle);
+  WebServiceWorkerImpl* GetServiceWorker(
+      const ServiceWorkerObjectInfo& info,
+      bool adopt_handle);
+
+  // Finds a WebServiceWorkerRegistrationImpl for the specified registration.
+  // If it's not found, returns NULL. If |adopt_handle| is true,
+  // a ServiceWorkerRegistrationHandleReference will be adopted for the
+  // registration.
+  WebServiceWorkerRegistrationImpl* FindServiceWorkerRegistration(
+      const ServiceWorkerRegistrationObjectInfo& info,
+      bool adopt_handle);
+
+  // Creates a WebServiceWorkerRegistrationImpl for the specified registration
+  // and transfers its ownership to the caller. If |adopt_handle| is true, a
+  // ServiceWorkerRegistrationHandleReference will be adopted for the
+  // registration.
+  WebServiceWorkerRegistrationImpl* CreateServiceWorkerRegistration(
+      const ServiceWorkerRegistrationObjectInfo& info,
+      bool adopt_handle);
 
   // |thread_safe_sender| needs to be passed in because if the call leads to
   // construction it will be needed.
@@ -96,50 +130,112 @@ class ServiceWorkerDispatcher : public WorkerTaskRunner::Observer {
   static ServiceWorkerDispatcher* GetThreadSpecificInstance();
 
  private:
-  typedef IDMap<blink::WebServiceWorkerProvider::WebServiceWorkerCallbacks,
-      IDMapOwnPointer> CallbackMap;
+  typedef IDMap<WebServiceWorkerRegistrationCallbacks,
+      IDMapOwnPointer> RegistrationCallbackMap;
+  typedef IDMap<WebServiceWorkerUnregistrationCallbacks,
+      IDMapOwnPointer> UnregistrationCallbackMap;
+  typedef IDMap<WebServiceWorkerGetRegistrationCallbacks,
+      IDMapOwnPointer> GetRegistrationCallbackMap;
   typedef std::map<int, blink::WebServiceWorkerProviderClient*> ScriptClientMap;
   typedef std::map<int, ServiceWorkerProviderContext*> ProviderContextMap;
   typedef std::map<int, WebServiceWorkerImpl*> WorkerObjectMap;
   typedef std::map<int, ServiceWorkerProviderContext*> WorkerToProviderMap;
+  typedef std::map<int, WebServiceWorkerRegistrationImpl*>
+      RegistrationObjectMap;
 
   friend class WebServiceWorkerImpl;
+  friend class WebServiceWorkerRegistrationImpl;
 
   // WorkerTaskRunner::Observer implementation.
-  virtual void OnWorkerRunLoopStopped() OVERRIDE;
+  void OnWorkerRunLoopStopped() override;
 
+  void OnAssociateRegistration(int thread_id,
+                               int provider_id,
+                               const ServiceWorkerRegistrationObjectInfo& info,
+                               const ServiceWorkerVersionAttributes& attrs);
+  void OnDisassociateRegistration(int thread_id,
+                                  int provider_id);
   void OnRegistered(int thread_id,
                     int request_id,
-                    const ServiceWorkerObjectInfo& info);
+                    const ServiceWorkerRegistrationObjectInfo& info,
+                    const ServiceWorkerVersionAttributes& attrs);
   void OnUnregistered(int thread_id,
-                      int request_id);
+                      int request_id,
+                      bool is_success);
+  void OnDidGetRegistration(int thread_id,
+                            int request_id,
+                            const ServiceWorkerRegistrationObjectInfo& info,
+                            const ServiceWorkerVersionAttributes& attrs);
   void OnRegistrationError(int thread_id,
                            int request_id,
                            blink::WebServiceWorkerError::ErrorType error_type,
                            const base::string16& message);
+  void OnUnregistrationError(int thread_id,
+                             int request_id,
+                             blink::WebServiceWorkerError::ErrorType error_type,
+                             const base::string16& message);
+  void OnGetRegistrationError(
+      int thread_id,
+      int request_id,
+      blink::WebServiceWorkerError::ErrorType error_type,
+      const base::string16& message);
   void OnServiceWorkerStateChanged(int thread_id,
                                    int handle_id,
                                    blink::WebServiceWorkerState state);
-  void OnSetWaitingServiceWorker(int thread_id,
-                                 int provider_id,
-                                 const ServiceWorkerObjectInfo& info);
-  void OnSetCurrentServiceWorker(int thread_id,
-                                 int provider_id,
-                                 const ServiceWorkerObjectInfo& info);
+  void OnSetVersionAttributes(int thread_id,
+                              int provider_id,
+                              int registration_handle_id,
+                              int changed_mask,
+                              const ServiceWorkerVersionAttributes& attributes);
+  void OnUpdateFound(int thread_id,
+                     const ServiceWorkerRegistrationObjectInfo& info);
+  void OnSetControllerServiceWorker(int thread_id,
+                                    int provider_id,
+                                    const ServiceWorkerObjectInfo& info);
   void OnPostMessage(int thread_id,
                      int provider_id,
                      const base::string16& message,
                      const std::vector<int>& sent_message_port_ids,
                      const std::vector<int>& new_routing_ids);
 
+  void SetInstallingServiceWorker(
+      int provider_id,
+      int registration_handle_id,
+      const ServiceWorkerObjectInfo& info);
+  void SetWaitingServiceWorker(
+      int provider_id,
+      int registration_handle_id,
+      const ServiceWorkerObjectInfo& info);
+  void SetActiveServiceWorker(
+      int provider_id,
+      int registration_handle_id,
+      const ServiceWorkerObjectInfo& info);
+  void SetReadyRegistration(
+      int provider_id,
+      int registration_handle_id);
+
   // Keeps map from handle_id to ServiceWorker object.
   void AddServiceWorker(int handle_id, WebServiceWorkerImpl* worker);
   void RemoveServiceWorker(int handle_id);
 
-  CallbackMap pending_callbacks_;
+  // Keeps map from registration_handle_id to ServiceWorkerRegistration object.
+  void AddServiceWorkerRegistration(
+      int registration_handle_id,
+      WebServiceWorkerRegistrationImpl* registration);
+  void RemoveServiceWorkerRegistration(
+      int registration_handle_id);
+
+  WebServiceWorkerRegistrationImpl* FindOrCreateRegistration(
+      const ServiceWorkerRegistrationObjectInfo& info,
+      const ServiceWorkerVersionAttributes& attrs);
+
+  RegistrationCallbackMap pending_registration_callbacks_;
+  UnregistrationCallbackMap pending_unregistration_callbacks_;
+  GetRegistrationCallbackMap pending_get_registration_callbacks_;
   ScriptClientMap script_clients_;
   ProviderContextMap provider_contexts_;
   WorkerObjectMap service_workers_;
+  RegistrationObjectMap registrations_;
 
   // A map for ServiceWorkers that are associated to a particular document
   // (e.g. as .current).

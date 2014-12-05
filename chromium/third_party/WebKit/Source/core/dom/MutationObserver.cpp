@@ -31,20 +31,19 @@
 #include "config.h"
 #include "core/dom/MutationObserver.h"
 
-#include <algorithm>
-#include "bindings/v8/Dictionary.h"
-#include "bindings/v8/ExceptionState.h"
-#include "core/dom/Document.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/Microtask.h"
 #include "core/dom/MutationCallback.h"
+#include "core/dom/MutationObserverInit.h"
 #include "core/dom/MutationObserverRegistration.h"
 #include "core/dom/MutationRecord.h"
 #include "core/dom/Node.h"
 #include "core/inspector/InspectorInstrumentation.h"
 #include "wtf/MainThread.h"
+#include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 static unsigned s_observerPriority = 0;
 
@@ -65,7 +64,6 @@ MutationObserver::MutationObserver(PassOwnPtr<MutationCallback> callback)
     : m_callback(callback)
     , m_priority(s_observerPriority++)
 {
-    ScriptWrappable::init(this);
 }
 
 MutationObserver::~MutationObserver()
@@ -77,7 +75,7 @@ MutationObserver::~MutationObserver()
         InspectorInstrumentation::didClearAllMutationRecords(m_callback->executionContext(), this);
 }
 
-void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, ExceptionState& exceptionState)
+void MutationObserver::observe(Node* node, const MutationObserverInit& observerInit, ExceptionState& exceptionState)
 {
     if (!node) {
         exceptionState.throwDOMException(NotFoundError, "The provided node was null.");
@@ -86,37 +84,32 @@ void MutationObserver::observe(Node* node, const Dictionary& optionsDictionary, 
 
     MutationObserverOptions options = 0;
 
-    bool attributeOldValue = false;
-    bool attributeOldValuePresent = optionsDictionary.get("attributeOldValue", attributeOldValue);
-    if (attributeOldValue)
+    if (observerInit.hasAttributeOldValue() && observerInit.attributeOldValue())
         options |= AttributeOldValue;
 
     HashSet<AtomicString> attributeFilter;
-    bool attributeFilterPresent = optionsDictionary.get("attributeFilter", attributeFilter);
-    if (attributeFilterPresent)
+    if (observerInit.hasAttributeFilter()) {
+        const Vector<String>& sequence = observerInit.attributeFilter();
+        for (unsigned i = 0; i < sequence.size(); ++i)
+            attributeFilter.add(AtomicString(sequence[i]));
         options |= AttributeFilter;
+    }
 
-    bool attributes = false;
-    bool attributesPresent = optionsDictionary.get("attributes", attributes);
-    if (attributes || (!attributesPresent && (attributeOldValuePresent || attributeFilterPresent)))
+    bool attributes = observerInit.hasAttributes() && observerInit.attributes();
+    if (attributes || (!observerInit.hasAttributes() && (observerInit.hasAttributeOldValue() || observerInit.hasAttributeFilter())))
         options |= Attributes;
 
-    bool characterDataOldValue = false;
-    bool characterDataOldValuePresent = optionsDictionary.get("characterDataOldValue", characterDataOldValue);
-    if (characterDataOldValue)
+    if (observerInit.hasCharacterDataOldValue() && observerInit.characterDataOldValue())
         options |= CharacterDataOldValue;
 
-    bool characterData = false;
-    bool characterDataPresent = optionsDictionary.get("characterData", characterData);
-    if (characterData || (!characterDataPresent && characterDataOldValuePresent))
+    bool characterData = observerInit.hasCharacterData() && observerInit.characterData();
+    if (characterData || (!observerInit.hasCharacterData() && observerInit.hasCharacterDataOldValue()))
         options |= CharacterData;
 
-    bool childListValue = false;
-    if (optionsDictionary.get("childList", childListValue) && childListValue)
+    if (observerInit.childList())
         options |= ChildList;
 
-    bool subtreeValue = false;
-    if (optionsDictionary.get("subtree", subtreeValue) && subtreeValue)
+    if (observerInit.subtree())
         options |= Subtree;
 
     if (!(options & Attributes)) {
@@ -174,24 +167,14 @@ void MutationObserver::observationEnded(MutationObserverRegistration* registrati
 
 static MutationObserverSet& activeMutationObservers()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, activeObservers, (new MutationObserverSet()));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<MutationObserverSet>, activeObservers, (adoptPtrWillBeNoop(new MutationObserverSet())));
     return *activeObservers;
-#else
-    DEFINE_STATIC_LOCAL(MutationObserverSet, activeObservers, ());
-    return activeObservers;
-#endif
 }
 
 static MutationObserverSet& suspendedMutationObservers()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<MutationObserverSet>, suspendedObservers, (new MutationObserverSet()));
+    DEFINE_STATIC_LOCAL(OwnPtrWillBePersistent<MutationObserverSet>, suspendedObservers, (adoptPtrWillBeNoop(new MutationObserverSet())));
     return *suspendedObservers;
-#else
-    DEFINE_STATIC_LOCAL(MutationObserverSet, suspendedObservers, ());
-    return suspendedObservers;
-#endif
 }
 
 static void activateObserver(PassRefPtrWillBeRawPtr<MutationObserver> observer)
@@ -216,22 +199,22 @@ void MutationObserver::setHasTransientRegistration()
     activateObserver(this);
 }
 
-HashSet<Node*> MutationObserver::getObservedNodes() const
+WillBeHeapHashSet<RawPtrWillBeMember<Node> > MutationObserver::getObservedNodes() const
 {
-    HashSet<Node*> observedNodes;
+    WillBeHeapHashSet<RawPtrWillBeMember<Node> > observedNodes;
     for (MutationObserverRegistrationSet::const_iterator iter = m_registrations.begin(); iter != m_registrations.end(); ++iter)
         (*iter)->addRegistrationNodesToSet(observedNodes);
     return observedNodes;
 }
 
-bool MutationObserver::canDeliver()
+bool MutationObserver::shouldBeSuspended() const
 {
-    return !m_callback->executionContext()->activeDOMObjectsAreSuspended();
+    return m_callback->executionContext() && m_callback->executionContext()->activeDOMObjectsAreSuspended();
 }
 
 void MutationObserver::deliver()
 {
-    ASSERT(canDeliver());
+    ASSERT(!shouldBeSuspended());
 
     // Calling clearTransientRegistrations() can modify m_registrations, so it's necessary
     // to make a copy of the transient registrations before operating on them.
@@ -263,7 +246,7 @@ void MutationObserver::resumeSuspendedObservers()
     MutationObserverVector suspended;
     copyToVector(suspendedMutationObservers(), suspended);
     for (size_t i = 0; i < suspended.size(); ++i) {
-        if (suspended[i]->canDeliver()) {
+        if (!suspended[i]->shouldBeSuspended()) {
             suspendedMutationObservers().remove(suspended[i]);
             activateObserver(suspended[i]);
         }
@@ -278,17 +261,19 @@ void MutationObserver::deliverMutations()
     activeMutationObservers().clear();
     std::sort(observers.begin(), observers.end(), ObserverLessThan());
     for (size_t i = 0; i < observers.size(); ++i) {
-        if (observers[i]->canDeliver())
-            observers[i]->deliver();
-        else
+        if (observers[i]->shouldBeSuspended())
             suspendedMutationObservers().add(observers[i]);
+        else
+            observers[i]->deliver();
     }
 }
 
 void MutationObserver::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
     visitor->trace(m_records);
     visitor->trace(m_registrations);
+#endif
 }
 
-} // namespace WebCore
+} // namespace blink

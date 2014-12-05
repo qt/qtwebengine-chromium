@@ -28,20 +28,19 @@
 
 #include "core/rendering/svg/RenderSVGText.h"
 
+#include "core/editing/PositionWithAffinity.h"
+#include "core/paint/SVGTextPainter.h"
 #include "core/rendering/HitTestRequest.h"
 #include "core/rendering/HitTestResult.h"
-#include "core/rendering/LayoutRepainter.h"
 #include "core/rendering/PaintInfo.h"
 #include "core/rendering/PointerEventsHitRules.h"
 #include "core/rendering/style/ShadowList.h"
 #include "core/rendering/svg/RenderSVGInline.h"
 #include "core/rendering/svg/RenderSVGInlineText.h"
-#include "core/rendering/svg/RenderSVGResource.h"
 #include "core/rendering/svg/RenderSVGRoot.h"
 #include "core/rendering/svg/SVGRenderSupport.h"
 #include "core/rendering/svg/SVGResourcesCache.h"
 #include "core/rendering/svg/SVGRootInlineBox.h"
-#include "core/rendering/svg/SVGTextRunRenderingContext.h"
 #include "core/svg/SVGLengthList.h"
 #include "core/svg/SVGTextElement.h"
 #include "core/svg/SVGTransformList.h"
@@ -51,9 +50,8 @@
 #include "platform/fonts/SimpleFontData.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/TransformState.h"
-#include "platform/graphics/GraphicsContextStateSaver.h"
 
-namespace WebCore {
+namespace blink {
 
 RenderSVGText::RenderSVGText(SVGTextElement* node)
     : RenderSVGBlock(node)
@@ -94,11 +92,12 @@ const RenderSVGText* RenderSVGText::locateRenderSVGTextAncestor(const RenderObje
     return toRenderSVGText(start);
 }
 
-void RenderSVGText::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, bool fixed) const
+void RenderSVGText::mapRectToPaintInvalidationBacking(const RenderLayerModelObject* paintInvalidationContainer, LayoutRect& rect, const PaintInvalidationState* paintInvalidationState) const
 {
-    FloatRect repaintRect = rect;
-    computeFloatRectForPaintInvalidation(paintInvalidationContainer, repaintRect, fixed);
-    rect = enclosingLayoutRect(repaintRect);
+    FloatRect paintInvalidationRect = rect;
+    paintInvalidationRect.inflate(style()->outlineWidth());
+    computeFloatRectForPaintInvalidation(paintInvalidationContainer, paintInvalidationRect, paintInvalidationState);
+    rect = enclosingLayoutRect(paintInvalidationRect);
 }
 
 static inline void collectLayoutAttributes(RenderObject* text, Vector<SVGTextLayoutAttributes*>& attributes)
@@ -196,7 +195,7 @@ void RenderSVGText::subtreeChildWasAdded(RenderObject* child)
         }
     }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     // Verify that m_layoutAttributes only differs by a maximum of one entry.
     for (size_t i = 0; i < size; ++i)
         ASSERT(m_layoutAttributes.find(newLayoutAttributes[i]) != kNotFound || newLayoutAttributes[i] == attributes);
@@ -207,7 +206,7 @@ void RenderSVGText::subtreeChildWasAdded(RenderObject* child)
 
 static inline void checkLayoutAttributesConsistency(RenderSVGText* text, Vector<SVGTextLayoutAttributes*>& expectedLayoutAttributes)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     Vector<SVGTextLayoutAttributes*> newLayoutAttributes;
     collectLayoutAttributes(text, newLayoutAttributes);
     ASSERT(newLayoutAttributes == expectedLayoutAttributes);
@@ -325,11 +324,9 @@ void RenderSVGText::layout()
 
     subtreeStyleDidChange();
 
-    LayoutRepainter repainter(*this, SVGRenderSupport::checkForSVGRepaintDuringLayout(this));
-
     bool updateCachedBoundariesInParents = false;
     if (m_needsTransformUpdate) {
-        m_localTransform = toSVGTextElement(node())->animatedLocalTransform();
+        m_localTransform = toSVGTextElement(node())->calculateAnimatedLocalTransform();
         m_needsTransformUpdate = false;
         updateCachedBoundariesInParents = true;
     }
@@ -395,9 +392,9 @@ void RenderSVGText::layout()
     LayoutUnit afterEdge = borderAfter() + paddingAfter() + scrollbarLogicalHeight();
     setLogicalHeight(beforeEdge);
 
-    LayoutUnit repaintLogicalTop = 0;
-    LayoutUnit repaintLogicalBottom = 0;
-    layoutInlineChildren(true, repaintLogicalTop, repaintLogicalBottom, afterEdge);
+    LayoutUnit paintInvalidationLogicalTop = 0;
+    LayoutUnit paintInvalidationLogicalBottom = 0;
+    layoutInlineChildren(true, paintInvalidationLogicalTop, paintInvalidationLogicalBottom, afterEdge);
 
     if (m_needsReordering)
         m_needsReordering = false;
@@ -413,7 +410,6 @@ void RenderSVGText::layout()
     if (updateCachedBoundariesInParents)
         RenderSVGBlock::setNeedsBoundariesUpdate();
 
-    repainter.repaintAfterLayout();
     clearNeedsLayout();
 }
 
@@ -430,12 +426,12 @@ bool RenderSVGText::nodeAtFloatPoint(const HitTestRequest& request, HitTestResul
     bool isVisible = (style()->visibility() == VISIBLE);
     if (isVisible || !hitRules.requireVisible) {
         if ((hitRules.canHitBoundingBox && !objectBoundingBox().isEmpty())
-            || (hitRules.canHitStroke && (style()->svgStyle()->hasStroke() || !hitRules.requireStroke))
-            || (hitRules.canHitFill && (style()->svgStyle()->hasFill() || !hitRules.requireFill))) {
-            FloatPoint localPoint = localToParentTransform().inverse().mapPoint(pointInParent);
-
-            if (!SVGRenderSupport::pointInClippingArea(this, localPoint))
+            || (hitRules.canHitStroke && (style()->svgStyle().hasStroke() || !hitRules.requireStroke))
+            || (hitRules.canHitFill && (style()->svgStyle().hasFill() || !hitRules.requireFill))) {
+            FloatPoint localPoint;
+            if (!SVGRenderSupport::transformToUserSpaceAndCheckClipping(this, localToParentTransform(), pointInParent, localPoint))
                 return false;
+
             if (hitRules.canHitBoundingBox && !objectBoundingBox().contains(localPoint))
                 return false;
 
@@ -470,52 +466,32 @@ void RenderSVGText::absoluteQuads(Vector<FloatQuad>& quads, bool* wasFixed) cons
 
 void RenderSVGText::paint(PaintInfo& paintInfo, const LayoutPoint&)
 {
-    if (paintInfo.context->paintingDisabled())
-        return;
-
-    if (paintInfo.phase != PaintPhaseForeground
-     && paintInfo.phase != PaintPhaseSelection)
-         return;
-
-    PaintInfo blockInfo(paintInfo);
-    GraphicsContextStateSaver stateSaver(*blockInfo.context, false);
-    const AffineTransform& localTransform = localToParentTransform();
-    if (!localTransform.isIdentity()) {
-        stateSaver.save();
-        blockInfo.applyTransform(localTransform, false);
-    }
-    RenderBlock::paint(blockInfo, LayoutPoint());
-
-    // Paint the outlines, if any
-    if (paintInfo.phase == PaintPhaseForeground) {
-        blockInfo.phase = PaintPhaseSelfOutline;
-        RenderBlock::paint(blockInfo, LayoutPoint());
-    }
+    SVGTextPainter(*this).paint(paintInfo);
 }
 
 FloatRect RenderSVGText::strokeBoundingBox() const
 {
     FloatRect strokeBoundaries = objectBoundingBox();
-    const SVGRenderStyle* svgStyle = style()->svgStyle();
-    if (!svgStyle->hasStroke())
+    const SVGRenderStyle& svgStyle = style()->svgStyle();
+    if (!svgStyle.hasStroke())
         return strokeBoundaries;
 
     ASSERT(node());
     ASSERT(node()->isSVGElement());
     SVGLengthContext lengthContext(toSVGElement(node()));
-    strokeBoundaries.inflate(svgStyle->strokeWidth()->value(lengthContext));
+    strokeBoundaries.inflate(svgStyle.strokeWidth()->value(lengthContext));
     return strokeBoundaries;
 }
 
 FloatRect RenderSVGText::paintInvalidationRectInLocalCoordinates() const
 {
-    FloatRect repaintRect = strokeBoundingBox();
-    SVGRenderSupport::intersectRepaintRectWithResources(this, repaintRect);
+    FloatRect paintInvalidationRect = strokeBoundingBox();
+    SVGRenderSupport::intersectPaintInvalidationRectWithResources(this, paintInvalidationRect);
 
     if (const ShadowList* textShadow = style()->textShadow())
-        textShadow->adjustRectForShadow(repaintRect);
+        textShadow->adjustRectForShadow(paintInvalidationRect);
 
-    return repaintRect;
+    return paintInvalidationRect;
 }
 
 void RenderSVGText::addChild(RenderObject* child, RenderObject* beforeChild)
@@ -535,19 +511,6 @@ void RenderSVGText::removeChild(RenderObject* child)
     subtreeChildWillBeRemoved(child, affectedAttributes);
     RenderSVGBlock::removeChild(child);
     subtreeChildWasRemoved(affectedAttributes);
-}
-
-// Fix for <rdar://problem/8048875>. We should not render :first-line CSS Style
-// in a SVG text element context.
-RenderBlock* RenderSVGText::firstLineBlock() const
-{
-    return 0;
-}
-
-// Fix for <rdar://problem/8048875>. We should not render :first-letter CSS Style
-// in a SVG text element context.
-void RenderSVGText::updateFirstLetter()
-{
 }
 
 }

@@ -36,6 +36,10 @@ cr.define('options.accounts', function() {
           });
     },
 
+    /**
+     * @override
+     * @param {Object} user
+     */
     createItem: function(user) {
       return new UserListItem(user);
     },
@@ -77,7 +81,7 @@ cr.define('options.accounts', function() {
 
     /**
      * Loads given user list.
-     * @param {Array.<Object>} users An array of user info objects.
+     * @param {!Array.<Object>} users An array of user info objects.
      * @private
      */
     load_: function(users) {
@@ -98,7 +102,6 @@ cr.define('options.accounts', function() {
 
   /**
    * Whether the user list is disabled. Only used for display purpose.
-   * @type {boolean}
    */
   cr.defineProperty(UserList, 'disabled', cr.PropertyKind.BOOL_ATTR);
 

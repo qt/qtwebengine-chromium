@@ -11,7 +11,7 @@ cr.define('options.browser_options', function() {
    * Creates a new profile list item.
    * @param {Object} profileInfo The profile this item represents.
    * @constructor
-   * @extends {cr.ui.DeletableItem}
+   * @extends {options.DeletableItem}
    */
   function ProfileListItem(profileInfo) {
     var el = cr.doc.createElement('div');
@@ -37,13 +37,6 @@ cr.define('options.browser_options', function() {
      */
     get profilePath() {
       return this.profileInfo_.filePath;
-    },
-
-    /**
-     * @type {boolean} whether this profile is managed.
-     */
-    get isManaged() {
-      return this.profileInfo_.isManaged;
     },
 
     /** @override */
@@ -73,11 +66,11 @@ cr.define('options.browser_options', function() {
       }
       nameEl.textContent = displayName;
 
-      if (profileInfo.isManaged) {
+      if (profileInfo.isSupervised) {
         var supervisedEl = this.ownerDocument.createElement('div');
         supervisedEl.className = 'profile-supervised';
         supervisedEl.textContent =
-          '(' + loadTimeData.getStringF('managedUserLabel') + ')';
+            loadTimeData.getString('supervisedUserLabel');
         containerEl.appendChild(supervisedEl);
       }
 
@@ -108,7 +101,7 @@ cr.define('options.browser_options', function() {
 
     /** @override */
     deleteItemAtIndex: function(index) {
-      if (loadTimeData.getBoolean('profileIsManaged'))
+      if (loadTimeData.getBoolean('profileIsSupervised'))
         return;
       ManageProfileOverlay.showDeleteDialog(this.dataModel.item(index));
     },

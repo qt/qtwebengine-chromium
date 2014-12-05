@@ -19,8 +19,17 @@
       'ext',
     ],
   },
-
+  'variables': {
+    # TODO(scottmg): http://crbug.com/177306
+    'clang_warning_flags_unset': [
+      # Don't warn about string->bool used in asserts.
+      '-Wstring-conversion',
+    ],
+  },
   'sources': [
+    'config/SkUserConfig.h',
+
+    # Note: file list duplicated in GN build.
     'ext/analysis_canvas.cc',
     'ext/analysis_canvas.h',
     'ext/benchmarking_canvas.cc',
@@ -47,8 +56,6 @@
     'ext/lazy_pixel_ref.h',
     'ext/opacity_draw_filter.cc',
     'ext/opacity_draw_filter.h',
-    'ext/paint_simplifier.cc',
-    'ext/paint_simplifier.h',
     'ext/pixel_ref_utils.cc',
     'ext/pixel_ref_utils.h',
     'ext/platform_canvas.cc',
@@ -80,12 +87,13 @@
     'ext/vector_platform_device_skia.h',
   ],
   'conditions': [
-    [ 'OS == "android" and enable_printing == 0', {
+    [ 'OS == "android" and '
+      'enable_basic_printing==0 and enable_print_preview==0', {
       'sources!': [
         'ext/skia_utils_base.cc',
       ],
     }],
-    [ 'enable_printing == 0', {
+    [ 'enable_basic_printing==0 and enable_print_preview==0', {
       'sources!': [
         'ext/vector_platform_device_skia.cc',
       ],
@@ -96,18 +104,6 @@
       ],
       'dependencies!': [
         'skia_chrome_opts',
-      ],
-    }],
-    # TODO(scottmg): http://crbug.com/177306
-    ['clang==1', {
-      'xcode_settings': {
-        'WARNING_CFLAGS!': [
-          # Don't warn about string->bool used in asserts.
-          '-Wstring-conversion',
-        ],
-      },
-      'cflags!': [
-        '-Wstring-conversion',
       ],
     }],
     [ 'OS != "android" and (OS != "linux" or use_cairo==1)', {

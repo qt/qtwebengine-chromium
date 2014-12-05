@@ -29,25 +29,25 @@
 #include "core/CSSPropertyNames.h"
 #include "core/editing/EditCommand.h"
 
-namespace WebCore {
+namespace blink {
 
 class Element;
 
-class RemoveCSSPropertyCommand FINAL : public SimpleEditCommand {
+class RemoveCSSPropertyCommand final : public SimpleEditCommand {
 public:
     static PassRefPtrWillBeRawPtr<RemoveCSSPropertyCommand> create(Document& document, PassRefPtrWillBeRawPtr<Element> element, CSSPropertyID property)
     {
         return adoptRefWillBeNoop(new RemoveCSSPropertyCommand(document, element, property));
     }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     RemoveCSSPropertyCommand(Document&, PassRefPtrWillBeRawPtr<Element>, CSSPropertyID);
     virtual ~RemoveCSSPropertyCommand();
 
-    virtual void doApply() OVERRIDE;
-    virtual void doUnapply() OVERRIDE;
+    virtual void doApply() override;
+    virtual void doUnapply() override;
 
     RefPtrWillBeMember<Element> m_element;
     CSSPropertyID m_property;
@@ -55,6 +55,6 @@ private:
     bool m_important;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RemoveCSSPropertyCommand_h

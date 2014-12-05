@@ -33,7 +33,7 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class LabelsNodeList;
 
@@ -45,19 +45,14 @@ public:
     PassRefPtrWillBeRawPtr<LabelsNodeList> labels();
     virtual bool supportLabels() const { return false; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 protected:
     LabelableElement(const QualifiedName& tagName, Document&);
 
 private:
-    virtual bool isLabelable() const OVERRIDE FINAL { return true; }
+    virtual bool isLabelable() const override final { return true; }
 };
-
-inline bool isLabelableElement(const Element& element)
-{
-    return element.isHTMLElement() && toHTMLElement(element).isLabelable();
-}
 
 inline bool isLabelableElement(const HTMLElement& element)
 {
@@ -66,6 +61,6 @@ inline bool isLabelableElement(const HTMLElement& element)
 
 DEFINE_HTMLELEMENT_TYPE_CASTS_WITH_FUNCTION(LabelableElement);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

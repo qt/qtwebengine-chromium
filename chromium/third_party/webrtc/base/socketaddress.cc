@@ -121,7 +121,7 @@ void SocketAddress::SetResolvedIP(const IPAddress& ip) {
 
 void SocketAddress::SetPort(int port) {
   ASSERT((0 <= port) && (port < 65536));
-  port_ = port;
+  port_ = static_cast<uint16>(port);
 }
 
 uint32 SocketAddress::ip() const {
@@ -227,25 +227,20 @@ bool SocketAddress::operator==(const SocketAddress& addr) const {
 }
 
 bool SocketAddress::operator<(const SocketAddress& addr) const {
-  if (ip_ < addr.ip_)
-    return true;
-  else if (addr.ip_ < ip_)
-    return false;
+  if (ip_ != addr.ip_)
+    return ip_ < addr.ip_;
 
-  // We only check hostnames if both IPs are zero.  This matches EqualIPs()
-  if (addr.IsAnyIP()) {
-    if (hostname_ < addr.hostname_)
-      return true;
-    else if (addr.hostname_ < hostname_)
-      return false;
-  }
+  // We only check hostnames if both IPs are ANY or unspecified.  This matches
+  // EqualIPs().
+  if ((IPIsAny(ip_) || IPIsUnspec(ip_)) && hostname_ != addr.hostname_)
+    return hostname_ < addr.hostname_;
 
   return port_ < addr.port_;
 }
 
 bool SocketAddress::EqualIPs(const SocketAddress& addr) const {
   return (ip_ == addr.ip_) &&
-      ((!IPIsAny(ip_)) || (hostname_ == addr.hostname_));
+      ((!IPIsAny(ip_) && !IPIsUnspec(ip_)) || (hostname_ == addr.hostname_));
 }
 
 bool SocketAddress::EqualPorts(const SocketAddress& addr) const {
@@ -284,9 +279,9 @@ bool SocketAddress::FromSockAddr(const sockaddr_in& saddr) {
 }
 
 static size_t ToSockAddrStorageHelper(sockaddr_storage* addr,
-                                      IPAddress ip, int port, int scope_id) {
+                                      IPAddress ip, uint16 port, int scope_id) {
   memset(addr, 0, sizeof(sockaddr_storage));
-  addr->ss_family = ip.family();
+  addr->ss_family = static_cast<unsigned short>(ip.family());
   if (addr->ss_family == AF_INET6) {
     sockaddr_in6* saddr = reinterpret_cast<sockaddr_in6*>(addr);
     saddr->sin6_addr = ip.ipv6_address();

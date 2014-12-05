@@ -10,6 +10,7 @@
 
 #include "gl/GrGLInterface.h"
 #include "GrGLDefines.h"
+#include "GrStencil.h"
 
 class SkMatrix;
 
@@ -34,6 +35,7 @@ enum GrGLVendor {
     kImagination_GrGLVendor,
     kIntel_GrGLVendor,
     kQualcomm_GrGLVendor,
+    kNVIDIA_GrGLVendor,
 
     kOther_GrGLVendor
 };
@@ -41,7 +43,8 @@ enum GrGLVendor {
 enum GrGLRenderer {
     kTegra2_GrGLRenderer,
     kTegra3_GrGLRenderer,
-
+    kPowerVR54x_GrGLRenderer,
+    kPowerVRRogue_GrGLRenderer,
     kOther_GrGLRenderer
 };
 
@@ -128,13 +131,13 @@ template<int MatrixSize> void GrGLGetMatrix(GrGLfloat* dest, const SkMatrix& src
     #define GR_GL_CHECK_ERROR_IMPL(IFACE, X)
 #endif
 
-// internal macro to conditionally log the gl call using GrPrintf based on
+// internal macro to conditionally log the gl call using SkDebugf based on
 // compile-time and run-time flags.
 #if GR_GL_LOG_CALLS
     extern bool gLogCallsGL;
     #define GR_GL_LOG_CALLS_IMPL(X)                             \
         if (gLogCallsGL)                                        \
-            GrPrintf(GR_FILE_AND_LINE_STR "GL: " #X "\n")
+            SkDebugf(GR_FILE_AND_LINE_STR "GL: " #X "\n")
 #else
     #define GR_GL_LOG_CALLS_IMPL(X)
 #endif
@@ -179,5 +182,8 @@ template<int MatrixSize> void GrGLGetMatrix(GrGLfloat* dest, const SkMatrix& src
 
 // call glGetError without doing a redundant error check or logging.
 #define GR_GL_GET_ERROR(IFACE) (IFACE)->fFunctions.fGetError()
+
+GrGLenum GrToGLStencilFunc(GrStencilFunc basicFunc);
+
 
 #endif

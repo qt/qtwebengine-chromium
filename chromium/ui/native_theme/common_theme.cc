@@ -5,7 +5,6 @@
 #include "ui/native_theme/common_theme.h"
 
 #include "base/logging.h"
-#include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
@@ -14,6 +13,7 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/sys_color_change_listener.h"
+#include "ui/resources/grit/ui_resources.h"
 
 namespace {
 
@@ -37,8 +37,9 @@ const SkColor kHoverMenuItemBackgroundColor =
 const SkColor kButtonHoverBackgroundColor = SkColorSetRGB(0xEA, 0xEA, 0xEA);
 const SkColor kBlueButtonEnabledColor = SK_ColorWHITE;
 const SkColor kBlueButtonDisabledColor = SK_ColorWHITE;
-const SkColor kBlueButtonHighlightColor = SK_ColorWHITE;
+const SkColor kBlueButtonPressedColor = SK_ColorWHITE;
 const SkColor kBlueButtonHoverColor = SK_ColorWHITE;
+const SkColor kBlueButtonShadowColor = SkColorSetRGB(0x53, 0x8C, 0xEA);
 
 }  // namespace
 
@@ -96,11 +97,14 @@ bool CommonThemeGetSystemColor(NativeTheme::ColorId color_id, SkColor* color) {
     case NativeTheme::kColorId_BlueButtonDisabledColor:
       *color = kBlueButtonDisabledColor;
       break;
-    case NativeTheme::kColorId_BlueButtonHighlightColor:
-      *color = kBlueButtonHighlightColor;
+    case NativeTheme::kColorId_BlueButtonPressedColor:
+      *color = kBlueButtonPressedColor;
       break;
     case NativeTheme::kColorId_BlueButtonHoverColor:
       *color = kBlueButtonHoverColor;
+      break;
+    case NativeTheme::kColorId_BlueButtonShadowColor:
+      *color = kBlueButtonShadowColor;
       break;
     default:
       return false;
@@ -147,10 +151,7 @@ void CommonThemePaintComboboxArrow(SkCanvas* canvas, const gfx::Rect& rect) {
   CommonThemeCreateCanvas(canvas)->DrawImageInt(*arrow, rect.x(), rect.y());
 }
 
-void CommonThemePaintMenuSeparator(
-    SkCanvas* canvas,
-    const gfx::Rect& rect,
-    const NativeTheme::MenuSeparatorExtraParams& extra) {
+void CommonThemePaintMenuSeparator(SkCanvas* canvas, const gfx::Rect& rect) {
   SkColor color;
   CommonThemeGetSystemColor(NativeTheme::kColorId_MenuSeparatorColor, &color);
   SkPaint paint;

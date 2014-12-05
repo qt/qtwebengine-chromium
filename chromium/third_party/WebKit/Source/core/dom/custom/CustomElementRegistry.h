@@ -41,13 +41,12 @@
 #include "wtf/text/AtomicString.h"
 #include "wtf/text/AtomicStringHash.h"
 
-namespace WebCore {
+namespace blink {
 
 class CustomElementConstructorBuilder;
-class Document;
 class ExceptionState;
 
-class CustomElementRegistry FINAL {
+class CustomElementRegistry final {
     WTF_MAKE_NONCOPYABLE(CustomElementRegistry);
 protected:
     friend class CustomElementRegistrationContext;
@@ -63,6 +62,6 @@ private:
     HashSet<AtomicString> m_registeredTypeNames;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // CustomElementRegistry_h

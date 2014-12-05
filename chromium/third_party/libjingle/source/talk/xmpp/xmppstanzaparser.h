@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef _xmppstanzaparser_h_
-#define _xmppstanzaparser_h_
+#ifndef TALK_XMPP_XMPPSTANZAPARSER_H_
+#define TALK_XMPP_XMPPSTANZAPARSER_H_
 
-#include "talk/xmllite/xmlparser.h"
-#include "talk/xmllite/xmlbuilder.h"
+#include "webrtc/libjingle/xmllite/xmlbuilder.h"
+#include "webrtc/libjingle/xmllite/xmlparser.h"
 
 
 namespace buzz {
@@ -94,4 +94,4 @@ private:
 
 }
 
-#endif
+#endif  // TALK_XMPP_XMPPSTANZAPARSER_H_

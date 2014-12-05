@@ -3,33 +3,22 @@
 # found in the LICENSE file.
 
 {
-  # Default value for all libraries.
-  'extra_configure_flags': '',
-  'extra_cflags': '',
-  'extra_cxxflags': '',
-  'extra_ldflags': '',
-  'run_before_build': '',
-  'build_method': 'destdir',
-
   'variables': {
     'verbose_libraries_build%': 0,
     'instrumented_libraries_jobs%': 1,
   },
 
-  'jobs': '<(instrumented_libraries_jobs)',
+  'ubuntu_release': '<!(lsb_release -cs)',
 
   'conditions': [
     ['asan==1', {
       'sanitizer_type': 'asan',
-      'sanitizer_blacklist': '',
     }],
     ['msan==1', {
       'sanitizer_type': 'msan',
-      'sanitizer_blacklist': '<(msan_blacklist)',
     }],
     ['tsan==1', {
       'sanitizer_type': 'tsan',
-      'sanitizer_blacklist': '<(tsan_blacklist)',
     }],
     ['use_goma==1', {
       'cc': '<(gomadir)/gomacc <!(cd <(DEPTH) && pwd -P)/<(make_clang_dir)/bin/clang',
@@ -39,6 +28,52 @@
       'cxx': '<!(cd <(DEPTH) && pwd -P)/<(make_clang_dir)/bin/clang++',
     }],
   ],
+
+  'target_defaults': {
+    'build_method': 'destdir',
+    'extra_configure_flags': [],
+    'jobs': '<(instrumented_libraries_jobs)',
+    'package_cflags': [
+      '-O2',
+      '-gline-tables-only',
+      '-fPIC',
+      '-w',
+      '-U_FORITFY_SOURCE',
+      '-fno-omit-frame-pointer'
+    ],
+    'package_ldflags': [
+      '-Wl,-z,origin',
+      # We set RPATH=XORIGIN when building the package and replace it with
+      # $ORIGIN later. The reason is that this flag goes through configure/make
+      # differently for different packages. Because of this, we can't escape the
+      # $ character in a way that would work for every package.
+      '-Wl,-R,XORIGIN/.'
+    ],
+    'patch': '',
+    'run_before_build': '',
+    'asan_blacklist': '',
+    'msan_blacklist': '',
+    'tsan_blacklist': '',
+
+    'conditions': [
+      ['asan==1', {
+        'package_cflags': ['-fsanitize=address'],
+        'package_ldflags': ['-fsanitize=address'],
+      }],
+      ['msan==1', {
+        'package_cflags': [
+          '-fsanitize=memory',
+          '-fsanitize-memory-track-origins=<(msan_track_origins)'
+        ],
+        'package_ldflags': ['-fsanitize=memory'],
+      }],
+      ['tsan==1', {
+        'package_cflags': ['-fsanitize=thread'],
+        'package_ldflags': ['-fsanitize=thread'],
+      }],
+    ],
+  },
+
   'targets': [
     {
       'target_name': 'instrumented_libraries',
@@ -49,6 +84,7 @@
         'link_dependency': 1,
       },
       'dependencies': [
+        '<(_sanitizer_type)-freetype',
         '<(_sanitizer_type)-libcairo2',
         '<(_sanitizer_type)-libexpat1',
         '<(_sanitizer_type)-libffi6',
@@ -83,25 +119,29 @@
         '<(_sanitizer_type)-libasound2',
         '<(_sanitizer_type)-pango1.0',
         '<(_sanitizer_type)-libcap2',
-        '<(_sanitizer_type)-libudev0',
-        '<(_sanitizer_type)-libtasn1-3',
+        '<(_sanitizer_type)-udev',
         '<(_sanitizer_type)-libgnome-keyring0',
         '<(_sanitizer_type)-libgtk2.0-0',
         '<(_sanitizer_type)-libgdk-pixbuf2.0-0',
         '<(_sanitizer_type)-libpci3',
         '<(_sanitizer_type)-libdbusmenu-glib4',
-        '<(_sanitizer_type)-liboverlay-scrollbar-0.2-0',
+        '<(_sanitizer_type)-overlay-scrollbar',
         '<(_sanitizer_type)-libgconf-2-4',
         '<(_sanitizer_type)-libappindicator1',
         '<(_sanitizer_type)-libdbusmenu',
         '<(_sanitizer_type)-atk1.0',
         '<(_sanitizer_type)-libunity9',
         '<(_sanitizer_type)-dee',
+        '<(_sanitizer_type)-libpixman-1-0',
       ],
       'conditions': [
-        ['asan==1', {
+        ['"<(_ubuntu_release)"=="precise"', {
           'dependencies': [
-            '<(_sanitizer_type)-libpixman-1-0',
+            '<(_sanitizer_type)-libtasn1-3',
+          ],
+        }, {
+          'dependencies': [
+            '<(_sanitizer_type)-libtasn1-6',
           ],
         }],
         ['msan==1', {
@@ -125,7 +165,7 @@
             '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)/rpaths.fixed.txt',
           ],
           'action': [
-            '<(DEPTH)/third_party/instrumented_libraries/fix_rpaths.sh',
+            './fix_rpaths.sh',
             '<(PRODUCT_DIR)/instrumented_libraries/<(_sanitizer_type)'
           ],
         },
@@ -143,234 +183,268 @@
       },
     },
     {
-      'library_name': 'freetype',
+      'package_name': 'freetype',
       'dependencies=': [],
-      'run_before_build': 'freetype.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/freetype.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libcairo2',
+      'package_name': 'libcairo2',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-gtk-doc',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-gtk-doc'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libdbus-1-3',
-      'dependencies=': [
-        '<(_sanitizer_type)-libglib2.0-0',
-      ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'package_name': 'libdbus-1-3',
+      'dependencies=': [],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libdbus-glib-1-2',
-      'dependencies=': [
-        '<(_sanitizer_type)-libglib2.0-0',
-      ],
+      'package_name': 'libdbus-glib-1-2',
+      'dependencies=': [],
       # Use system dbus-binding-tool. The just-built one is instrumented but
       # doesn't have the correct RPATH, and will crash.
-      'extra_configure_flags': '--with-dbus-binding-tool=dbus-binding-tool',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--with-dbus-binding-tool=dbus-binding-tool'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libexpat1',
+      'package_name': 'libexpat1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libffi6',
+      'package_name': 'libffi6',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libfontconfig1',
-      'dependencies=': [
-        '<(_sanitizer_type)-freetype',
-      ],
+      'package_name': 'libfontconfig1',
+      'dependencies=': [],
       'extra_configure_flags': [
         '--disable-docs',
         '--sysconfdir=/etc/',
         # From debian/rules.
         '--with-add-fonts=/usr/X11R6/lib/X11/fonts,/usr/local/share/fonts',
       ],
-      'run_before_build': 'libfontconfig.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/libfontconfig.precise.diff',
+        }, {
+          'patch': 'patches/libfontconfig.trusty.diff',
+        }],
+      ],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgcrypt11',
+      'package_name': 'libgcrypt11',
       'dependencies=': [],
-      'extra_ldflags': '-Wl,-z,muldefs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'package_ldflags': ['-Wl,-z,muldefs'],
+      'extra_configure_flags': [
+        # From debian/rules.
+        '--enable-noexecstack',
+        '--enable-ld-version-script',
+        '--enable-static',
+        # http://crbug.com/344505
+        '--disable-asm'
+      ],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libglib2.0-0',
+      'package_name': 'libglib2.0-0',
       'dependencies=': [],
       'extra_configure_flags': [
         '--disable-gtk-doc',
         '--disable-gtk-doc-html',
         '--disable-gtk-doc-pdf',
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'asan_blacklist': 'blacklists/asan/libglib2.0-0.txt',
+      'msan_blacklist': 'blacklists/msan/libglib2.0-0.txt',
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgpg-error0',
+      'package_name': 'libgpg-error0',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libnspr4',
+      'package_name': 'libnspr4',
       'dependencies=': [],
       'extra_configure_flags': [
         '--enable-64bit',
         # TSan reports data races on debug variables.
         '--disable-debug',
       ],
-      'run_before_build': 'libnspr4.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/libnspr4.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libp11-kit0',
+      'package_name': 'libp11-kit0',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      # Required on Trusty due to autoconf version mismatch.
+      'run_before_build': 'scripts/autoreconf.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libpcre3',
+      'package_name': 'libpcre3',
       'dependencies=': [],
       'extra_configure_flags': [
         '--enable-utf8',
         '--enable-unicode-properties',
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libpixman-1-0',
-      'dependencies=': [
-        '<(_sanitizer_type)-libglib2.0-0',
+      'package_name': 'libpixman-1-0',
+      'dependencies=': [],
+      'extra_configure_flags': [
+        # From debian/rules.
+        '--disable-gtk',
+        '--disable-silent-rules',
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'patch': 'patches/libpixman-1-0.diff',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libpng12-0',
+      'package_name': 'libpng12-0',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libx11-6',
+      'package_name': 'libx11-6',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-specs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-specs'],
+      'msan_blacklist': 'blacklists/msan/libx11-6.txt',
+      # Required on Trusty due to autoconf version mismatch.
+      'run_before_build': 'scripts/autoreconf.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxau6',
+      'package_name': 'libxau6',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxcb1',
+      'package_name': 'libxcb1',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-build-docs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-build-docs'],
+      # Required on Trusty due to autoconf version mismatch.
+      'run_before_build': 'scripts/autoreconf.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxcomposite1',
+      'package_name': 'libxcomposite1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxcursor1',
+      'package_name': 'libxcursor1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxdamage1',
+      'package_name': 'libxdamage1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxdmcp6',
+      'package_name': 'libxdmcp6',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-docs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-docs'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxext6',
+      'package_name': 'libxext6',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-specs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-specs'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxfixes3',
+      'package_name': 'libxfixes3',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxi6',
+      'package_name': 'libxi6',
       'dependencies=': [],
       'extra_configure_flags': [
         '--disable-specs',
         '--disable-docs',
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxinerama1',
+      'package_name': 'libxinerama1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxrandr2',
+      'package_name': 'libxrandr2',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxrender1',
+      'package_name': 'libxrender1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxss1',
+      'package_name': 'libxss1',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libxtst6',
+      'package_name': 'libxtst6',
       'dependencies=': [],
-      'extra_configure_flags': '--disable-specs',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': ['--disable-specs'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'zlib1g',
+      'package_name': 'zlib1g',
       'dependencies=': [],
-      'run_before_build': 'zlib1g.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'patch': 'patches/zlib1g.diff',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'nss',
+      'package_name': 'nss',
       'dependencies=': [
+        # TODO(earthdok): get rid of this dependency
         '<(_sanitizer_type)-libnspr4',
       ],
-      'run_before_build': 'nss.sh',
+      'patch': 'patches/nss.diff',
       'build_method': 'custom_nss',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'pulseaudio',
-      'dependencies=': [
-        '<(_sanitizer_type)-libdbus-1-3',
+      'package_name': 'pulseaudio',
+      'dependencies=': [],
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/pulseaudio.precise.diff',
+        }],
       ],
-      'run_before_build': 'pulseaudio.sh',
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-x11',
+          '--disable-hal-compat',
+          # Disable some ARM-related code that fails compilation. No idea why
+          # this even impacts x86-64 builds.
+          '--disable-neon-opt'
+      ],
+      'run_before_build': 'scripts/pulseaudio.sh',
       'jobs': 1,
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libasound2',
+      'package_name': 'libasound2',
       'dependencies=': [],
-      'run_before_build': 'libasound2.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/libasound2.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libcups2',
+      'package_name': 'libcups2',
       'dependencies=': [],
-      'run_before_build': 'libcups2.sh',
+      'patch': 'patches/libcups2.diff',
       'jobs': 1,
       'extra_configure_flags': [
         # All from debian/rules.
@@ -397,28 +471,30 @@
         '--with-remote_protocols="CUPS dnssd"',
         '--enable-libusb',
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'pango1.0',
-      'dependencies=': [
-        '<(_sanitizer_type)-libglib2.0-0',
-      ],
+      'package_name': 'pango1.0',
+      'dependencies=': [],
       'extra_configure_flags': [
         # Avoid https://bugs.gentoo.org/show_bug.cgi?id=425620
         '--enable-introspection=no',
+        # Pango is normally used with dynamically loaded modules. However,
+        # ensuring pango is able to find instrumented versions of those modules
+        # is a huge pain in the neck. Let's link them statically instead, and
+        # hope for the best.
+        '--with-included-modules=yes'
       ],
-      'build_method': 'custom_pango',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libcap2',
+      'package_name': 'libcap2',
       'dependencies=': [],
       'build_method': 'custom_libcap',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libudev0',
+      'package_name': 'udev',
       'dependencies=': [],
       'extra_configure_flags': [
           # Without this flag there's a linking step that doesn't honor LDFLAGS
@@ -426,27 +502,44 @@
           # TODO(earthdok): find a better fix.
           '--disable-gudev'
       ],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      # Required on Trusty due to autoconf version mismatch.
+      'run_before_build': 'scripts/autoreconf.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libtasn1-3',
+      'package_name': 'libtasn1-3',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-ld-version-script',
+      ],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgnome-keyring0',
+      'package_name': 'libtasn1-6',
+      'dependencies=': [],
+      'extra_configure_flags': [
+          # From debian/rules.
+          '--enable-ld-version-script',
+      ],
+      'includes': ['standard_instrumented_package_target.gypi'],
+    },
+    {
+      'package_name': 'libgnome-keyring0',
       'extra_configure_flags': [
           # Build static libs (from debian/rules).
           '--enable-static',
           '--enable-tests=no',
+          # Make the build less problematic.
+          '--disable-introspection',
       ],
-      'extra_ldflags': '-Wl,--as-needed',
+      'package_ldflags': ['-Wl,--as-needed'],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgtk2.0-0',
-      'extra_cflags': '-Wno-return-type',
+      'package_name': 'libgtk2.0-0',
+      'package_cflags': ['-Wno-return-type'],
       'extra_configure_flags': [
           # From debian/rules.
           '--prefix=/usr',
@@ -456,11 +549,18 @@
           '--with-xinput=yes',
       ],
       'dependencies=': [],
-      'run_before_build': 'libgtk2.0-0.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'conditions': [
+        ['"<(_ubuntu_release)"=="precise"', {
+          'patch': 'patches/libgtk2.0-0.precise.diff',
+        }, {
+          'patch': 'patches/libgtk2.0-0.trusty.diff',
+        }],
+      ],
+      'run_before_build': 'scripts/libgtk2.0-0.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgdk-pixbuf2.0-0',
+      'package_name': 'libgdk-pixbuf2.0-0',
       'extra_configure_flags': [
           # From debian/rules.
           '--with-libjasper',
@@ -469,18 +569,18 @@
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'run_before_build': 'libgdk-pixbuf2.0-0.sh',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/libgdk-pixbuf2.0-0.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libpci3',
+      'package_name': 'libpci3',
       'dependencies=': [],
       'build_method': 'custom_libpci3',
       'jobs': 1,
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libdbusmenu-glib4',
+      'package_name': 'libdbusmenu-glib4',
       'extra_configure_flags': [
           # From debian/rules.
           '--disable-scrollkeeper',
@@ -492,18 +592,20 @@
           '--disable-vala',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'liboverlay-scrollbar-0.2-0',
+      'package_name': 'overlay-scrollbar',
       'extra_configure_flags': [
           '--with-gtk=2',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libgconf-2-4',
+      'package_name': 'libgconf-2-4',
       'extra_configure_flags': [
           # From debian/rules. (Even though --with-gtk=3.0 doesn't make sense.)
           '--with-gtk=3.0',
@@ -512,20 +614,21 @@
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libappindicator1',
+      'package_name': 'libappindicator1',
       'extra_configure_flags': [
           # See above.
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'build_method': 'custom_libappindicator1',
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'jobs': 1,
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libdbusmenu',
+      'package_name': 'libdbusmenu',
       'extra_configure_flags': [
           # From debian/rules.
           '--disable-scrollkeeper',
@@ -535,30 +638,33 @@
           '--disable-vala',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'atk1.0',
+      'package_name': 'atk1.0',
       'extra_configure_flags': [
           # See above.
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'libunity9',
+      'package_name': 'libunity9',
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
     {
-      'library_name': 'dee',
+      'package_name': 'dee',
       'extra_configure_flags': [
           # See above.
           '--disable-introspection',
       ],
       'dependencies=': [],
-      'includes': ['standard_instrumented_library_target.gypi'],
+      'run_before_build': 'scripts/autogen.sh',
+      'includes': ['standard_instrumented_package_target.gypi'],
     },
   ],
 }

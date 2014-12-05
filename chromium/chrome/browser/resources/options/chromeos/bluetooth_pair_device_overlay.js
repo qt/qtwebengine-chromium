@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  /** @const */ var OptionsPage = options.OptionsPage;
+  /** @const */ var Page = cr.ui.pageManager.Page;
+  /** @const */ var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * Enumeration of possible states during pairing.  The value associated with
@@ -41,32 +42,23 @@ cr.define('options', function() {
   /**
    * Encapsulated handling of the Bluetooth device pairing page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function BluetoothPairing() {
-    OptionsPage.call(this,
-                     'bluetoothPairing',
-                     loadTimeData.getString('bluetoothOptionsPageTabTitle'),
-                     'bluetooth-pairing');
+    Page.call(this, 'bluetoothPairing',
+              loadTimeData.getString('bluetoothOptionsPageTabTitle'),
+              'bluetooth-pairing');
   }
 
   cr.addSingletonGetter(BluetoothPairing);
 
   BluetoothPairing.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * Description of the bluetooth device.
-     * @type {{name: string,
-     *         address: string,
-     *         paired: boolean,
-     *         connected: boolean,
-     *         connecting: boolean,
-     *         connectable: boolean,
-     *         pairing: string|undefined,
-     *         passkey: number|undefined,
-     *         pincode: string|undefined,
-     *         entered: number|undefined}}
-     * @private.
+     * @type {?BluetoothDevice}
+     * @private
      */
     device_: null,
 
@@ -78,16 +70,16 @@ cr.define('options', function() {
 
     /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
       var self = this;
       $('bluetooth-pair-device-cancel-button').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
       $('bluetooth-pair-device-reject-button').onclick = function() {
         chrome.send('updateBluetoothDevice',
                     [self.device_.address, 'reject']);
         self.device_.pairing = PAIRING.DISMISSED;
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
       $('bluetooth-pair-device-connect-button').onclick = function() {
         var args = [self.device_.address, 'connect'];
@@ -109,7 +101,7 @@ cr.define('options', function() {
         $('bluetooth-pair-device-accept-button').disabled = true;
       };
       $('bluetooth-pair-device-dismiss-button').onclick = function() {
-        OptionsPage.closeOverlay();
+        PageManager.closeOverlay();
       };
       $('bluetooth-passkey').oninput = function() {
         var inputField = $('bluetooth-passkey');
@@ -123,11 +115,11 @@ cr.define('options', function() {
           inputField.value = filtered;
         $('bluetooth-pair-device-connect-button').disabled =
             inputField.value.length == 0;
-      }
+      };
       $('bluetooth-pincode').oninput = function() {
         $('bluetooth-pair-device-connect-button').disabled =
             $('bluetooth-pincode').value.length == 0;
-      }
+      };
       $('bluetooth-passkey').addEventListener('keydown',
           this.keyDownEventHandler_.bind(this));
       $('bluetooth-pincode').addEventListener('keydown',
@@ -151,7 +143,7 @@ cr.define('options', function() {
      * @return {boolean} True if the overlay can be displayed.
      */
     canShowPage: function() {
-      return this.device_ && this.device_.address && this.device_.pairing;
+      return !!(this.device_ && this.device_.address && this.device_.pairing);
     },
 
     /**
@@ -169,11 +161,11 @@ cr.define('options', function() {
      * @param {Object} device Description of the bluetooth device.
      */
     update: function(device) {
-      this.device_ = {};
-      for (key in device)
+      this.device_ = /** @type {BluetoothDevice} */({});
+      for (var key in device)
         this.device_[key] = device[key];
       // Update the pairing instructions.
-      var instructionsEl = $('bluetooth-pairing-instructions');
+      var instructionsEl = assert($('bluetooth-pairing-instructions'));
       this.clearElement_(instructionsEl);
       this.dismissible_ = ('dismissible' in device) ?
         device.dismissible : true;
@@ -227,7 +219,7 @@ cr.define('options', function() {
 
     /**
      * Handles the ENTER key for the passkey or pincode entry field.
-     * @return {Event} a keydown event.
+     * @param {Event} event A keydown event.
      * @private
      */
     keyDownEventHandler_: function(event) {
@@ -274,7 +266,7 @@ cr.define('options', function() {
      * @param {string} key Passkey or PIN to display.
      */
     updatePasskey_: function(key) {
-      var passkeyEl = $('bluetooth-pairing-passkey-display');
+      var passkeyEl = assert($('bluetooth-pairing-passkey-display'));
       var keyClass = (this.device_.pairing == PAIRING.REMOTE_PASSKEY ||
                       this.device_.pairing == PAIRING.REMOTE_PIN_CODE) ?
           'bluetooth-keyboard-button' : 'bluetooth-passkey-char';
@@ -325,13 +317,14 @@ cr.define('options', function() {
    */
   BluetoothPairing.showDialog = function(device) {
     BluetoothPairing.getInstance().update(device);
-    OptionsPage.showPageByName('bluetoothPairing', false);
+    PageManager.showPageByName('bluetoothPairing', false);
   };
 
   /**
    * Displays a message from the Bluetooth adapter.
-   * @param {{string: label,
-   *          string: address} data  Data for constructing the message.
+   * @param {{message: string, address: string}} data Data for constructing the
+   *     message. |data.message| is the name of message to show. |data.address|
+   *     is the device address.
    */
   BluetoothPairing.showMessage = function(data) {
     var name = data.address;
@@ -359,7 +352,7 @@ cr.define('options', function() {
     }
     BluetoothPairing.showDialog({name: name,
                                  address: data.address,
-                                 pairing: data.label,
+                                 pairing: data.message,
                                  dismissible: false});
   };
 
@@ -367,11 +360,11 @@ cr.define('options', function() {
    * Closes the Bluetooth pairing dialog.
    */
   BluetoothPairing.dismissDialog = function() {
-    var overlay = OptionsPage.getTopmostVisiblePage();
+    var overlay = PageManager.getTopmostVisiblePage();
     var dialog = BluetoothPairing.getInstance();
     if (overlay == dialog && dialog.dismissible_) {
       dialog.device_.pairing = PAIRING.DISMISSED;
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
     }
   };
 

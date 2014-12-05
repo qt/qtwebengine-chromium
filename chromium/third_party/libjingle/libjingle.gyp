@@ -13,7 +13,12 @@
     'libjingle_source%': "source",
     'libpeer_target_type%': 'static_library',
     'libpeer_allocator_shim%': 0,
+    'webrtc_p2p': "../webrtc/p2p",
+    'webrtc_xmpp': "../webrtc/libjingle/xmpp",
   },
+  # Most of these settings have been split according to their scope into
+  # :jingle_unexported_configs, :jingle_direct_dependent_configs,
+  # :jingle_all_dependent_configs in the GN build.
   'target_defaults': {
     'defines': [
       'EXPAT_RELATIVE_PATH',
@@ -22,12 +27,13 @@
       'HAVE_SRTP',
       'HAVE_WEBRTC_VIDEO',
       'HAVE_WEBRTC_VOICE',
-      'LOGGING_INSIDE_LIBJINGLE',
+      'LOGGING_INSIDE_WEBRTC',
       'NO_MAIN_THREAD_WRAPPING',
       'NO_SOUND_SYSTEM',
       'SRTP_RELATIVE_PATH',
       'USE_WEBRTC_DEV_BRANCH',
       'ENABLE_EXTERNAL_AUTH',
+      'WEBRTC_CHROMIUM_BUILD',
     ],
     'configurations': {
       'Debug': {
@@ -40,15 +46,15 @@
     },
     'include_dirs': [
       './overrides',
-      './<(libjingle_source)',
       '../../third_party/webrtc/overrides',
+      './<(libjingle_source)',
       '../..',
       '../../testing/gtest/include',
       '../../third_party',
       '../../third_party/libyuv/include',
       '../../third_party/usrsctp',
-      '../../third_party/webrtc',
     ],
+    # These dependencies have been translated into :jingle_deps in the GN build.
     'dependencies': [
       '<(DEPTH)/base/base.gyp:base',
       '<(DEPTH)/net/net.gyp:net',
@@ -59,13 +65,12 @@
     ],
     'direct_dependent_settings': {
       'include_dirs': [
+        '../../third_party/webrtc/overrides',
         './overrides',
         './<(libjingle_source)',
-        '../../third_party/webrtc/overrides',
         '../..',
         '../../testing/gtest/include',
         '../../third_party',
-        '../../third_party/webrtc',
       ],
       'defines': [
         'FEATURE_ENABLE_SSL',
@@ -98,11 +103,25 @@
         ['OS=="linux"', {
           'defines': [
             'LINUX',
+            'WEBRTC_LINUX',
           ],
         }],
         ['OS=="mac"', {
           'defines': [
             'OSX',
+            'WEBRTC_MAC',
+          ],
+        }],
+        ['OS=="ios"', {
+          'defines': [
+            'IOS',
+            'WEBRTC_MAC',
+            'WEBRTC_IOS',
+          ],
+        }],
+        ['OS=="win"', {
+          'defines': [
+            'WEBRTC_WIN',
           ],
         }],
         ['OS=="android"', {
@@ -113,6 +132,7 @@
         ['os_posix==1', {
           'defines': [
             'POSIX',
+            'WEBRTC_POSIX',
           ],
         }],
         ['os_bsd==1', {
@@ -141,12 +161,18 @@
       'configurations': {
         'Debug': {
           'defines': [
-            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of
-            # _DEBUG and remove this define. See above as well.
+            # TODO(sergeyu): Fix libjingle to use NDEBUG instead of _DEBUG and
+            # remove this define. See above and GN file as well.
             '_DEBUG',
           ],
         }
       },
+    },
+    'variables': {
+      'clang_warning_flags_unset': [
+        # Don't warn about string->bool used in asserts.
+        '-Wstring-conversion',
+      ],
     },
     'conditions': [
       ['"<(libpeer_target_type)"=="static_library"', {
@@ -158,7 +184,7 @@
           'HAVE_OPENSSL_SSL_H',
         ],
         'dependencies': [
-          '../../third_party/openssl/openssl.gyp:openssl',
+          '../../third_party/boringssl/boringssl.gyp:boringssl',
         ],
       }, {
         'defines': [
@@ -193,35 +219,34 @@
           }],
         ],
       }],
-      ['clang == 1', {
-        'xcode_settings': {
-          'WARNING_CFLAGS!': [
-            # Don't warn about string->bool used in asserts.
-            '-Wstring-conversion',
-          ],
-        },
-        'cflags!': [
-          '-Wstring-conversion',
-        ],
-      }],
       ['OS=="linux"', {
         'defines': [
           'LINUX',
+          'WEBRTC_LINUX',
         ],
       }],
       ['OS=="mac"', {
         'defines': [
           'OSX',
+          'WEBRTC_MAC',
+        ],
+      }],
+      ['OS=="win"', {
+        'defines': [
+          'WEBRTC_WIN',
         ],
       }],
       ['OS=="ios"', {
         'defines': [
           'IOS',
+          'WEBRTC_MAC',
+          'WEBRTC_IOS',
         ],
       }],
       ['os_posix == 1', {
         'defines': [
           'POSIX',
+          'WEBRTC_POSIX',
         ],
       }],
       ['os_bsd==1', {
@@ -242,30 +267,19 @@
     ],
   },
   'targets': [
+    # GN version: //third_party/libjingle
     {
       'target_name': 'libjingle',
       'type': 'static_library',
       'includes': [ 'libjingle_common.gypi' ],
-      'sources': [
-        'overrides/talk/base/basictypes.h',
-        'overrides/talk/base/constructormagic.h',
-        'overrides/talk/base/win32socketinit.cc',
-
-        # Overrides logging.h/.cc because libjingle logging should be done to
-        # the same place as the chromium logging.
-        'overrides/talk/base/logging.cc',
-        'overrides/talk/base/logging.h',
-      ],
       'sources!' : [
         # Compiled as part of libjingle_p2p_constants.
-        '<(libjingle_source)/talk/p2p/base/constants.cc',
-        '<(libjingle_source)/talk/p2p/base/constants.h',
-
-        # Replaced with logging.cc in the overrides.
-        '<(libjingle_source)/talk/base/logging.h',
-        '<(libjingle_source)/talk/base/logging.cc',
+        '<(webrtc_p2p)/base/constants.cc',
+        '<(webrtc_p2p)/base/constants.h',
       ],
       'dependencies': [
+        '<(DEPTH)/third_party/webrtc/base/base.gyp:webrtc_base',
+        '<(DEPTH)/third_party/webrtc/libjingle/xmllite/xmllite.gyp:rtc_xmllite',
         'libjingle_p2p_constants',
         '<@(libjingle_additional_deps)',
       ],
@@ -277,14 +291,17 @@
     # run GYP and if GYP has removed the validation check, then we can assume
     # that the toolchains have been fixed (we currently use VS2010 and later,
     # so VS2008 isn't a concern anymore).
+    #
+    # GN version: //third_party/libjingle:libjingle_p2p_constants
     {
       'target_name': 'libjingle_p2p_constants',
       'type': 'static_library',
       'sources': [
-        '<(libjingle_source)/talk/p2p/base/constants.cc',
-        '<(libjingle_source)/talk/p2p/base/constants.h',
+        '<(webrtc_p2p)/base/constants.cc',
+        '<(webrtc_p2p)/base/constants.h',
       ],
     },  # target libjingle_p2p_constants
+    # GN version: //third_party/libjingle:peerconnection_server
     {
       'target_name': 'peerconnection_server',
       'type': 'executable',
@@ -311,6 +328,7 @@
     ['enable_webrtc==1', {
       'targets': [
         {
+          # GN version: //third_party/libjingle:libjingle_webrtc_common
           'target_name': 'libjingle_webrtc_common',
           'type': 'static_library',
           'all_dependent_settings': {
@@ -429,6 +447,8 @@
             '<(libjingle_source)/talk/media/webrtc/webrtcvideocapturer.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoframe.h',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.cc',
+            '<(libjingle_source)/talk/media/webrtc/webrtcvideoframefactory.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvie.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvoe.h',
             '<(libjingle_source)/talk/session/media/audiomonitor.cc',
@@ -497,26 +517,10 @@
               'sources': [
                 '<(libjingle_source)/talk/media/devices/devicemanager.cc',
                 '<(libjingle_source)/talk/media/devices/devicemanager.h',
-                '<(libjingle_source)/talk/sound/nullsoundsystem.cc',
-                '<(libjingle_source)/talk/sound/nullsoundsystem.h',
-                '<(libjingle_source)/talk/sound/nullsoundsystemfactory.cc',
-                '<(libjingle_source)/talk/sound/nullsoundsystemfactory.h',
-                '<(libjingle_source)/talk/sound/platformsoundsystem.cc',
-                '<(libjingle_source)/talk/sound/platformsoundsystem.h',
-                '<(libjingle_source)/talk/sound/platformsoundsystemfactory.cc',
-                '<(libjingle_source)/talk/sound/platformsoundsystemfactory.h',
-                '<(libjingle_source)/talk/sound/soundsysteminterface.cc',
-                '<(libjingle_source)/talk/sound/soundsysteminterface.h',
-                '<(libjingle_source)/talk/sound/soundsystemproxy.cc',
-                '<(libjingle_source)/talk/sound/soundsystemproxy.h',
               ],
               'conditions': [
                 ['OS=="win"', {
                   'sources': [
-                    '<(libjingle_source)/talk/base/win32window.cc',
-                    '<(libjingle_source)/talk/base/win32window.h',
-                    '<(libjingle_source)/talk/base/win32windowpicker.cc',
-                    '<(libjingle_source)/talk/base/win32windowpicker.h',
                     '<(libjingle_source)/talk/media/devices/win32deviceinfo.cc',
                     '<(libjingle_source)/talk/media/devices/win32devicemanager.cc',
                     '<(libjingle_source)/talk/media/devices/win32devicemanager.h',
@@ -524,8 +528,6 @@
                 }],
                 ['OS=="linux"', {
                   'sources': [
-                    '<(libjingle_source)/talk/base/linuxwindowpicker.cc',
-                    '<(libjingle_source)/talk/base/linuxwindowpicker.h',
                     '<(libjingle_source)/talk/media/devices/libudevsymboltable.cc',
                     '<(libjingle_source)/talk/media/devices/libudevsymboltable.h',
                     '<(libjingle_source)/talk/media/devices/linuxdeviceinfo.cc',
@@ -533,16 +535,6 @@
                     '<(libjingle_source)/talk/media/devices/linuxdevicemanager.h',
                     '<(libjingle_source)/talk/media/devices/v4llookup.cc',
                     '<(libjingle_source)/talk/media/devices/v4llookup.h',
-                    '<(libjingle_source)/talk/sound/alsasoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/alsasoundsystem.h',
-                    '<(libjingle_source)/talk/sound/alsasymboltable.cc',
-                    '<(libjingle_source)/talk/sound/alsasymboltable.h',
-                    '<(libjingle_source)/talk/sound/linuxsoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/linuxsoundsystem.h',
-                    '<(libjingle_source)/talk/sound/pulseaudiosoundsystem.cc',
-                    '<(libjingle_source)/talk/sound/pulseaudiosoundsystem.h',
-                    '<(libjingle_source)/talk/sound/pulseaudiosymboltable.cc',
-                    '<(libjingle_source)/talk/sound/pulseaudiosymboltable.h',
                   ],
                 }],
                 ['OS=="mac"', {
@@ -566,12 +558,13 @@
           'dependencies': [
             '<(DEPTH)/third_party/libsrtp/libsrtp.gyp:libsrtp',
             '<(DEPTH)/third_party/webrtc/modules/modules.gyp:media_file',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module',
-            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_capture_module_impl',
+            '<(DEPTH)/third_party/webrtc/modules/modules.gyp:video_render_module_impl',
             'libjingle',
           ],
         },  # target libjingle_webrtc_common
         {
+          # GN version: //third_party/libjingle:libjingle_webrtc
           'target_name': 'libjingle_webrtc',
           'type': 'static_library',
           'sources': [
@@ -581,11 +574,20 @@
           'dependencies': [
             'libjingle_webrtc_common',
           ],
+          'conditions': [
+            ['libpeer_target_type=="static_library"', {
+              'dependencies': [
+                '<(DEPTH)/third_party/webrtc/modules/modules.gyp:audio_processing',
+              ],
+            }],
+          ],
         },
         {
+          # GN version: //third_party/libjingle:libpeerconnection
           'target_name': 'libpeerconnection',
           'type': '<(libpeer_target_type)',
           'sources': [
+            # Note: sources list duplicated in GN build.
             '<(libjingle_source)/talk/media/webrtc/webrtcmediaengine.cc',
             '<(libjingle_source)/talk/media/webrtc/webrtcmediaengine.h',
             '<(libjingle_source)/talk/media/webrtc/webrtcvideoengine.cc',
@@ -651,6 +653,35 @@
             }],
           ],
         },  # target libpeerconnection
+      ],
+    }],
+    ['enable_webrtc==1 and OS=="android" and "<(libpeer_target_type)"=="static_library"', {
+      'targets': [
+        {
+          # GN version: //third_party/libjingle:libjingle_peerconnection_so
+          'target_name': 'libjingle_peerconnection_so',
+          'type': 'shared_library',
+          'dependencies': [
+            '<(DEPTH)/third_party/icu/icu.gyp:icuuc',
+            'libjingle_webrtc',
+            'libpeerconnection',
+          ],
+          'sources': [
+            '<(libjingle_source)/talk/app/webrtc/java/jni/peerconnection_jni.cc',
+          ],
+        },
+        {
+          # GN version: //third_party/libjingle:libjingle_peerconnection_java
+          'target_name': 'libjingle_peerconnection_javalib',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '<(libjingle_source)/talk/app/webrtc/java',
+          },
+          'dependencies': [
+            'libjingle_peerconnection_so',
+          ],
+          'includes': [ '../../build/java.gypi' ],
+        },
       ],
     }],
   ],

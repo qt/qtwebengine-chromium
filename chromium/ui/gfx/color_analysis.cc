@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColorPriv.h"
 #include "third_party/skia/include/core/SkUnPreMultiply.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/color_utils.h"
@@ -39,26 +40,26 @@ class KMeanCluster {
   }
 
   void Reset() {
-    centroid[0] = centroid[1] = centroid[2] = 0;
-    aggregate[0] = aggregate[1] = aggregate[2] = 0;
-    counter = 0;
-    weight = 0;
+    centroid_[0] = centroid_[1] = centroid_[2] = 0;
+    aggregate_[0] = aggregate_[1] = aggregate_[2] = 0;
+    counter_ = 0;
+    weight_ = 0;
   }
 
   inline void SetCentroid(uint8_t r, uint8_t g, uint8_t b) {
-    centroid[0] = r;
-    centroid[1] = g;
-    centroid[2] = b;
+    centroid_[0] = r;
+    centroid_[1] = g;
+    centroid_[2] = b;
   }
 
   inline void GetCentroid(uint8_t* r, uint8_t* g, uint8_t* b) {
-    *r = centroid[0];
-    *g = centroid[1];
-    *b = centroid[2];
+    *r = centroid_[0];
+    *g = centroid_[1];
+    *b = centroid_[2];
   }
 
   inline bool IsAtCentroid(uint8_t r, uint8_t g, uint8_t b) {
-    return r == centroid[0] && g == centroid[1] && b == centroid[2];
+    return r == centroid_[0] && g == centroid_[1] && b == centroid_[2];
   }
 
   // Recomputes the centroid of the cluster based on the aggregate data. The
@@ -66,30 +67,30 @@ class KMeanCluster {
   // purposes. The aggregate and counter are then cleared to be ready for the
   // next iteration.
   inline void RecomputeCentroid() {
-    if (counter > 0) {
-      centroid[0] = aggregate[0] / counter;
-      centroid[1] = aggregate[1] / counter;
-      centroid[2] = aggregate[2] / counter;
+    if (counter_ > 0) {
+      centroid_[0] = static_cast<uint8_t>(aggregate_[0] / counter_);
+      centroid_[1] = static_cast<uint8_t>(aggregate_[1] / counter_);
+      centroid_[2] = static_cast<uint8_t>(aggregate_[2] / counter_);
 
-      aggregate[0] = aggregate[1] = aggregate[2] = 0;
-      weight = counter;
-      counter = 0;
+      aggregate_[0] = aggregate_[1] = aggregate_[2] = 0;
+      weight_ = counter_;
+      counter_ = 0;
     }
   }
 
   inline void AddPoint(uint8_t r, uint8_t g, uint8_t b) {
-    aggregate[0] += r;
-    aggregate[1] += g;
-    aggregate[2] += b;
-    ++counter;
+    aggregate_[0] += r;
+    aggregate_[1] += g;
+    aggregate_[2] += b;
+    ++counter_;
   }
 
   // Just returns the distance^2. Since we are comparing relative distances
   // there is no need to perform the expensive sqrt() operation.
   inline uint32_t GetDistanceSqr(uint8_t r, uint8_t g, uint8_t b) {
-    return (r - centroid[0]) * (r - centroid[0]) +
-           (g - centroid[1]) * (g - centroid[1]) +
-           (b - centroid[2]) * (b - centroid[2]);
+    return (r - centroid_[0]) * (r - centroid_[0]) +
+           (g - centroid_[1]) * (g - centroid_[1]) +
+           (b - centroid_[2]) * (b - centroid_[2]);
   }
 
   // In order to determine if we have hit convergence or not we need to see
@@ -97,18 +98,18 @@ class KMeanCluster {
   // not the centroid is the same as the aggregate sum of points that will be
   // used to generate the next centroid.
   inline bool CompareCentroidWithAggregate() {
-    if (counter == 0)
+    if (counter_ == 0)
       return false;
 
-    return aggregate[0] / counter == centroid[0] &&
-           aggregate[1] / counter == centroid[1] &&
-           aggregate[2] / counter == centroid[2];
+    return aggregate_[0] / counter_ == centroid_[0] &&
+           aggregate_[1] / counter_ == centroid_[1] &&
+           aggregate_[2] / counter_ == centroid_[2];
   }
 
   // Returns the previous counter, which is used to determine the weight
   // of the cluster for sorting.
   inline uint32_t GetWeight() const {
-    return weight;
+    return weight_;
   }
 
   static bool SortKMeanClusterByWeight(const KMeanCluster& a,
@@ -117,27 +118,31 @@ class KMeanCluster {
   }
 
  private:
-  uint8_t centroid[3];
+  uint8_t centroid_[3];
 
   // Holds the sum of all the points that make up this cluster. Used to
   // generate the next centroid as well as to check for convergence.
-  uint32_t aggregate[3];
-  uint32_t counter;
+  uint32_t aggregate_[3];
+  uint32_t counter_;
 
   // The weight of the cluster, determined by how many points were used
   // to generate the previous centroid.
-  uint32_t weight;
+  uint32_t weight_;
 };
 
-// Un-premultiplies each pixel in |bitmap| into an output |buffer|. Requires
-// approximately 10 microseconds for a 16x16 icon on an Intel Core i5.
+// Un-premultiplies each pixel in |bitmap| into an output |buffer|.
 void UnPreMultiply(const SkBitmap& bitmap, uint32_t* buffer, int buffer_size) {
   SkAutoLockPixels auto_lock(bitmap);
   uint32_t* in = static_cast<uint32_t*>(bitmap.getPixels());
   uint32_t* out = buffer;
   int pixel_count = std::min(bitmap.width() * bitmap.height(), buffer_size);
-  for (int i = 0; i < pixel_count; ++i)
-    *out++ = SkUnPreMultiply::PMColorToColor(*in++);
+  for (int i = 0; i < pixel_count; ++i) {
+    int alpha = SkGetPackedA32(*in);
+    if (alpha != 0 && alpha != 255)
+      *out++ = SkUnPreMultiply::PMColorToColor(*in++);
+    else
+      *out++ = *in++;
+  }
 }
 
 } // namespace
@@ -419,7 +424,7 @@ gfx::Matrix3F ComputeColorCovariance(const SkBitmap& bitmap) {
     return covariance;
 
   // Assume ARGB_8888 format.
-  DCHECK(bitmap.colorType() == kPMColor_SkColorType);
+  DCHECK(bitmap.colorType() == kN32_SkColorType);
 
   int64_t r_sum = 0;
   int64_t g_sum = 0;
@@ -434,7 +439,13 @@ gfx::Matrix3F ComputeColorCovariance(const SkBitmap& bitmap) {
   for (int y = 0; y < bitmap.height(); ++y) {
     SkPMColor* current_color = static_cast<uint32_t*>(bitmap.getAddr32(0, y));
     for (int x = 0; x < bitmap.width(); ++x, ++current_color) {
-      SkColor c = SkUnPreMultiply::PMColorToColor(*current_color);
+      SkColor c;
+      int alpha = SkGetPackedA32(*current_color);
+      if (alpha != 0 && alpha != 255)
+        c = SkUnPreMultiply::PMColorToColor(*current_color);
+      else
+        c = *current_color;
+
       SkColor r = SkColorGetR(c);
       SkColor g = SkColorGetG(c);
       SkColor b = SkColorGetB(c);
@@ -457,24 +468,33 @@ gfx::Matrix3F ComputeColorCovariance(const SkBitmap& bitmap) {
   // of R, G and B channels with (R, G, B)
   int pixel_n = bitmap.width() * bitmap.height();
   covariance.set(
-      (static_cast<double>(rr_sum) / pixel_n -
-       static_cast<double>(r_sum * r_sum) / pixel_n / pixel_n),
-      (static_cast<double>(rg_sum) / pixel_n -
-       static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
-      (static_cast<double>(rb_sum) / pixel_n -
-       static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
-      (static_cast<double>(rg_sum) / pixel_n -
-       static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
-      (static_cast<double>(gg_sum) / pixel_n -
-       static_cast<double>(g_sum * g_sum) / pixel_n / pixel_n),
-      (static_cast<double>(gb_sum) / pixel_n -
-       static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
-      (static_cast<double>(rb_sum) / pixel_n -
-       static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
-      (static_cast<double>(gb_sum) / pixel_n -
-       static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
-      (static_cast<double>(bb_sum) / pixel_n -
-       static_cast<double>(b_sum * b_sum) / pixel_n / pixel_n));
+      static_cast<float>(
+          static_cast<double>(rr_sum) / pixel_n -
+              static_cast<double>(r_sum * r_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(rg_sum) / pixel_n -
+              static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(rb_sum) / pixel_n -
+              static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(rg_sum) / pixel_n -
+              static_cast<double>(r_sum * g_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(gg_sum) / pixel_n -
+              static_cast<double>(g_sum * g_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(gb_sum) / pixel_n -
+              static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(rb_sum) / pixel_n -
+              static_cast<double>(r_sum * b_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(gb_sum) / pixel_n -
+              static_cast<double>(g_sum * b_sum) / pixel_n / pixel_n),
+      static_cast<float>(
+          static_cast<double>(bb_sum) / pixel_n -
+              static_cast<double>(b_sum * b_sum) / pixel_n / pixel_n));
   return covariance;
 }
 
@@ -488,7 +508,7 @@ bool ApplyColorReduction(const SkBitmap& source_bitmap,
 
   DCHECK(source_bitmap.getPixels());
   DCHECK(target_bitmap->getPixels());
-  DCHECK_EQ(kPMColor_SkColorType, source_bitmap.colorType());
+  DCHECK_EQ(kN32_SkColorType, source_bitmap.colorType());
   DCHECK_EQ(kAlpha_8_SkColorType, target_bitmap->colorType());
   DCHECK_EQ(source_bitmap.height(), target_bitmap->height());
   DCHECK_EQ(source_bitmap.width(), target_bitmap->width());
@@ -511,10 +531,16 @@ bool ApplyColorReduction(const SkBitmap& source_bitmap,
       const SkPMColor* source_color_row = static_cast<SkPMColor*>(
           source_bitmap.getAddr32(0, y));
       for (int x = 0; x < source_bitmap.width(); ++x) {
-        SkColor c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
-        float r = SkColorGetR(c);
-        float g = SkColorGetG(c);
-        float b = SkColorGetB(c);
+        SkColor c;
+        int alpha = SkGetPackedA32(source_color_row[x]);
+        if (alpha != 0 && alpha != 255)
+          c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
+        else
+          c = source_color_row[x];
+
+        uint8_t r = SkColorGetR(c);
+        uint8_t g = SkColorGetG(c);
+        uint8_t b = SkColorGetB(c);
         float gray_level = tr * r + tg * g + tb * b;
         max_val = std::max(max_val, gray_level);
         min_val = std::min(min_val, gray_level);
@@ -525,7 +551,7 @@ bool ApplyColorReduction(const SkBitmap& source_bitmap,
     float scale = 0.0;
     t0 = -min_val;
     if (max_val > min_val)
-      scale = 255.0 / (max_val - min_val);
+      scale = 255.0f / (max_val - min_val);
     t0 *= scale;
     tr *= scale;
     tg *= scale;
@@ -537,10 +563,16 @@ bool ApplyColorReduction(const SkBitmap& source_bitmap,
         source_bitmap.getAddr32(0, y));
     uint8_t* target_color_row = target_bitmap->getAddr8(0, y);
     for (int x = 0; x < source_bitmap.width(); ++x) {
-      SkColor c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
-      float r = SkColorGetR(c);
-      float g = SkColorGetG(c);
-      float b = SkColorGetB(c);
+      SkColor c;
+      int alpha = SkGetPackedA32(source_color_row[x]);
+      if (alpha != 0 && alpha != 255)
+        c = SkUnPreMultiply::PMColorToColor(source_color_row[x]);
+      else
+        c = source_color_row[x];
+
+      uint8_t r = SkColorGetR(c);
+      uint8_t g = SkColorGetG(c);
+      uint8_t b = SkColorGetB(c);
 
       float gl = t0 + tr * r + tg * g + tb * b;
       if (gl < 0)

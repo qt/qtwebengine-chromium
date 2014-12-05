@@ -14,28 +14,51 @@
 
 namespace net {
 
+class CachedNetworkParameters;
 class CryptoHandshakeMessage;
 class QuicCryptoServerConfig;
+class QuicCryptoServerStream;
 class QuicSession;
 
 namespace test {
 class CryptoTestUtils;
 }  // namespace test
 
+// Receives a notification when the server hello (SHLO) has been ACKed by the
+// peer. At this point we disable HANDSHAKE_MODE in the sent packet manager.
+class NET_EXPORT_PRIVATE ServerHelloNotifier : public
+    QuicAckNotifier::DelegateInterface {
+ public:
+  explicit ServerHelloNotifier(QuicCryptoServerStream* stream)
+      : server_stream_(stream) {}
+
+  // QuicAckNotifier::DelegateInterface implementation
+  void OnAckNotification(int num_original_packets,
+                         int num_original_bytes,
+                         int num_retransmitted_packets,
+                         int num_retransmitted_bytes,
+                         QuicTime::Delta delta_largest_observed) override;
+
+ private:
+  ~ServerHelloNotifier() override {}
+
+  QuicCryptoServerStream* server_stream_;
+
+  DISALLOW_COPY_AND_ASSIGN(ServerHelloNotifier);
+};
+
 class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
  public:
   QuicCryptoServerStream(const QuicCryptoServerConfig& crypto_config,
                          QuicSession* session);
-  explicit QuicCryptoServerStream(QuicSession* session);
-  virtual ~QuicCryptoServerStream();
+  ~QuicCryptoServerStream() override;
 
   // Cancel any outstanding callbacks, such as asynchronous validation of client
   // hello.
   void CancelOutstandingCallbacks();
 
   // CryptoFramerVisitorInterface implementation
-  virtual void OnHandshakeMessage(
-      const CryptoHandshakeMessage& message) OVERRIDE;
+  void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;
 
   // GetBase64SHA256ClientChannelID sets |*output| to the base64 encoded,
   // SHA-256 hash of the client's ChannelID key and returns true, if the client
@@ -43,6 +66,21 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   bool GetBase64SHA256ClientChannelID(std::string* output) const;
 
   uint8 num_handshake_messages() const { return num_handshake_messages_; }
+
+  int num_server_config_update_messages_sent() const {
+    return num_server_config_update_messages_sent_;
+  }
+
+  // Sends the latest server config and source-address token to the client.
+  virtual void SendServerConfigUpdate(
+      const CachedNetworkParameters* cached_network_params);
+
+  // Called by the ServerHello AckNotifier once the SHLO has been ACKed by the
+  // client.
+  void OnServerHelloAcked();
+
+  void set_previous_cached_network_params(
+      CachedNetworkParameters cached_network_params);
 
  protected:
   virtual QuicErrorCode ProcessClientHello(
@@ -55,6 +93,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
   // before going through the parameter negotiation step.
   virtual void OverrideQuicConfigDefaults(QuicConfig* config);
 
+  CachedNetworkParameters* get_previous_cached_network_params();
+
  private:
   friend class test::CryptoTestUtils;
 
@@ -65,8 +105,8 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
     void Cancel();
 
     // From ValidateClientHelloResultCallback
-    virtual void RunImpl(const CryptoHandshakeMessage& client_hello,
-                         const Result& result) OVERRIDE;
+    void RunImpl(const CryptoHandshakeMessage& client_hello,
+                 const Result& result) override;
 
    private:
     QuicCryptoServerStream* parent_;
@@ -86,11 +126,20 @@ class NET_EXPORT_PRIVATE QuicCryptoServerStream : public QuicCryptoStream {
 
   // Pointer to the active callback that will receive the result of
   // the client hello validation request and forward it to
-  // FinishProcessingHandshakeMessage for processing.  NULL if no
+  // FinishProcessingHandshakeMessage for processing.  nullptr if no
   // handshake message is being validated.
   ValidateCallback* validate_client_hello_cb_;
 
+  // Number of handshake messages received by this stream.
   uint8 num_handshake_messages_;
+
+  // Number of server config update (SCUP) messages sent by this stream.
+  int num_server_config_update_messages_sent_;
+
+  // If the client provides CachedNetworkParameters in the STK in the CHLO, then
+  // store here, and send back in future STKs if we have no better bandwidth
+  // estimate to send.
+  scoped_ptr<CachedNetworkParameters> previous_cached_network_params_;
 
   DISALLOW_COPY_AND_ASSIGN(QuicCryptoServerStream);
 };

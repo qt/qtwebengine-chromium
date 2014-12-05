@@ -36,7 +36,7 @@
 #if INSIDE_BLINK
 #include "platform/geometry/IntPoint.h"
 #else
-#include <ui/gfx/point.h>
+#include <ui/gfx/geometry/point.h>
 #endif
 
 namespace blink {
@@ -58,22 +58,22 @@ struct WebPoint {
     }
 
 #if INSIDE_BLINK
-    WebPoint(const WebCore::IntPoint& p)
+    WebPoint(const IntPoint& p)
         : x(p.x())
         , y(p.y())
     {
     }
 
-    WebPoint& operator=(const WebCore::IntPoint& p)
+    WebPoint& operator=(const IntPoint& p)
     {
         x = p.x();
         y = p.y();
         return *this;
     }
 
-    operator WebCore::IntPoint() const
+    operator IntPoint() const
     {
-        return WebCore::IntPoint(x, y);
+        return IntPoint(x, y);
     }
 #else
     WebPoint(const gfx::Point& p)

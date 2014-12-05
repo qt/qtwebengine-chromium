@@ -31,12 +31,12 @@
 #include "config.h"
 #include "core/inspector/InjectedScriptModule.h"
 
-#include "bindings/v8/ScriptFunctionCall.h"
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptFunctionCall.h"
+#include "bindings/core/v8/ScriptValue.h"
 #include "core/inspector/InjectedScript.h"
 #include "core/inspector/InjectedScriptManager.h"
 
-namespace WebCore {
+namespace blink {
 
 InjectedScriptModule::InjectedScriptModule(const String& name)
     : InjectedScriptBase(name)
@@ -71,4 +71,4 @@ void InjectedScriptModule::ensureInjected(InjectedScriptManager* injectedScriptM
     initialize(resultValue, injectedScriptManager->inspectedStateAccessCheck());
 }
 
-} // namespace WebCore
+} // namespace blink

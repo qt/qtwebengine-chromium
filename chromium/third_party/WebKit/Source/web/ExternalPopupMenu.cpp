@@ -31,26 +31,28 @@
 #include "config.h"
 #include "web/ExternalPopupMenu.h"
 
+#include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/PinchViewport.h"
+#include "core/page/Page.h"
 #include "platform/PopupMenuClient.h"
 #include "platform/geometry/FloatQuad.h"
 #include "platform/geometry/IntPoint.h"
 #include "platform/text/TextDirection.h"
 #include "public/platform/WebVector.h"
 #include "public/web/WebExternalPopupMenu.h"
+#include "public/web/WebFrameClient.h"
 #include "public/web/WebMenuItemInfo.h"
 #include "public/web/WebPopupMenuInfo.h"
-#include "public/web/WebViewClient.h"
+#include "web/WebLocalFrameImpl.h"
 #include "web/WebViewImpl.h"
-
-using namespace WebCore;
 
 namespace blink {
 
 ExternalPopupMenu::ExternalPopupMenu(LocalFrame& frame, PopupMenuClient* popupMenuClient, WebViewImpl& webView)
     : m_popupMenuClient(popupMenuClient)
-    , m_frameView(frame.view())
+    , m_localFrame(frame)
     , m_webView(webView)
     , m_dispatchEventTimer(this, &ExternalPopupMenu::dispatchEvent)
     , m_webExternalPopupMenu(0)
@@ -59,6 +61,12 @@ ExternalPopupMenu::ExternalPopupMenu(LocalFrame& frame, PopupMenuClient* popupMe
 
 ExternalPopupMenu::~ExternalPopupMenu()
 {
+}
+
+void ExternalPopupMenu::trace(Visitor* visitor)
+{
+    visitor->trace(m_localFrame);
+    PopupMenu::trace(visitor);
 }
 
 void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, int index)
@@ -72,12 +80,17 @@ void ExternalPopupMenu::show(const FloatQuad& controlPosition, const IntSize&, i
     }
 
     WebPopupMenuInfo info;
-    getPopupMenuInfo(&info);
+    getPopupMenuInfo(info, *m_popupMenuClient);
     if (info.items.isEmpty())
         return;
-    m_webExternalPopupMenu = m_webView.client()->createExternalPopupMenu(info, this);
+    WebLocalFrameImpl* webframe = WebLocalFrameImpl::fromFrame(m_localFrame.get());
+    m_webExternalPopupMenu = webframe->client()->createExternalPopupMenu(info, this);
     if (m_webExternalPopupMenu) {
-        m_webExternalPopupMenu->show(m_frameView->contentsToWindow(rect));
+        // FIXME: Standardize viewport coordinate conversions. crbug.com/371902.
+        IntRect rectInViewport = m_localFrame->view()->contentsToWindow(rect);
+        if (m_webView.pinchVirtualViewportEnabled())
+            rectInViewport.moveBy(-flooredIntPoint(m_webView.page()->frameHost().pinchViewport().location()));
+        m_webExternalPopupMenu->show(rectInViewport);
 #if OS(MACOSX)
         const WebInputEvent* currentEvent = WebViewImpl::currentInputEvent();
         if (currentEvent && currentEvent->type == WebInputEvent::MouseDown) {
@@ -126,7 +139,7 @@ void ExternalPopupMenu::disconnectClient()
 void ExternalPopupMenu::didChangeSelection(int index)
 {
     if (m_popupMenuClient)
-        m_popupMenuClient->selectionChanged(index);
+        m_popupMenuClient->selectionChanged(toPopupMenuItemIndex(index, *m_popupMenuClient));
 }
 
 void ExternalPopupMenu::didAcceptIndex(int index)
@@ -134,11 +147,12 @@ void ExternalPopupMenu::didAcceptIndex(int index)
     // Calling methods on the PopupMenuClient might lead to this object being
     // derefed. This ensures it does not get deleted while we are running this
     // method.
-    RefPtr<ExternalPopupMenu> guard(this);
+    int popupMenuItemIndex = toPopupMenuItemIndex(index, *m_popupMenuClient);
+    RefPtrWillBeRawPtr<ExternalPopupMenu> guard(this);
 
     if (m_popupMenuClient) {
         m_popupMenuClient->popupDidHide();
-        m_popupMenuClient->valueChanged(index);
+        m_popupMenuClient->valueChanged(popupMenuItemIndex);
     }
     m_webExternalPopupMenu = 0;
 }
@@ -153,19 +167,16 @@ void ExternalPopupMenu::didAcceptIndices(const WebVector<int>& indices)
     // Calling methods on the PopupMenuClient might lead to this object being
     // derefed. This ensures it does not get deleted while we are running this
     // method.
-    RefPtr<ExternalPopupMenu> protect(this);
+    RefPtrWillBeRawPtr<ExternalPopupMenu> protect(this);
+
+    m_popupMenuClient->popupDidHide();
 
     if (!indices.size())
-        m_popupMenuClient->valueChanged(-1, true);
+        m_popupMenuClient->valueChanged(static_cast<unsigned>(-1), true);
     else {
         for (size_t i = 0; i < indices.size(); ++i)
-            m_popupMenuClient->listBoxSelectItem(indices[i], (i > 0), false, (i == indices.size() - 1));
+            m_popupMenuClient->listBoxSelectItem(toPopupMenuItemIndex(indices[i], *m_popupMenuClient), (i > 0), false, (i == indices.size() - 1));
     }
-
-    // The call to valueChanged above might have lead to a call to
-    // disconnectClient, so we might not have a PopupMenuClient anymore.
-    if (m_popupMenuClient)
-        m_popupMenuClient->popupDidHide();
 
     m_webExternalPopupMenu = 0;
 }
@@ -173,43 +184,80 @@ void ExternalPopupMenu::didAcceptIndices(const WebVector<int>& indices)
 void ExternalPopupMenu::didCancel()
 {
     // See comment in didAcceptIndex on why we need this.
-    RefPtr<ExternalPopupMenu> guard(this);
+    RefPtrWillBeRawPtr<ExternalPopupMenu> guard(this);
 
     if (m_popupMenuClient)
         m_popupMenuClient->popupDidHide();
     m_webExternalPopupMenu = 0;
 }
 
-void ExternalPopupMenu::getPopupMenuInfo(WebPopupMenuInfo* info)
+void ExternalPopupMenu::getPopupMenuInfo(WebPopupMenuInfo& info, PopupMenuClient& popupMenuClient)
 {
-    int itemCount = m_popupMenuClient->listSize();
-    WebVector<WebMenuItemInfo> items(static_cast<size_t>(itemCount));
+    int itemCount = popupMenuClient.listSize();
+    int count = 0;
+    Vector<WebMenuItemInfo> items(static_cast<size_t>(itemCount));
     for (int i = 0; i < itemCount; ++i) {
-        WebMenuItemInfo& popupItem = items[i];
-        popupItem.label = m_popupMenuClient->itemText(i);
-        popupItem.toolTip = m_popupMenuClient->itemToolTip(i);
-        if (m_popupMenuClient->itemIsSeparator(i))
+        PopupMenuStyle style = popupMenuClient.itemStyle(i);
+        if (style.isDisplayNone())
+            continue;
+
+        WebMenuItemInfo& popupItem = items[count++];
+        popupItem.label = popupMenuClient.itemText(i);
+        popupItem.toolTip = popupMenuClient.itemToolTip(i);
+        if (popupMenuClient.itemIsSeparator(i))
             popupItem.type = WebMenuItemInfo::Separator;
-        else if (m_popupMenuClient->itemIsLabel(i))
+        else if (popupMenuClient.itemIsLabel(i))
             popupItem.type = WebMenuItemInfo::Group;
         else
             popupItem.type = WebMenuItemInfo::Option;
-        popupItem.enabled = m_popupMenuClient->itemIsEnabled(i);
-        popupItem.checked = m_popupMenuClient->itemIsSelected(i);
-        PopupMenuStyle style = m_popupMenuClient->itemStyle(i);
-        if (style.textDirection() == WebCore::RTL)
-            popupItem.textDirection = WebTextDirectionRightToLeft;
-        else
-            popupItem.textDirection = WebTextDirectionLeftToRight;
+        popupItem.enabled = popupMenuClient.itemIsEnabled(i);
+        popupItem.checked = popupMenuClient.itemIsSelected(i);
+        popupItem.textDirection = toWebTextDirection(style.textDirection());
         popupItem.hasTextDirectionOverride = style.hasTextDirectionOverride();
     }
 
-    info->itemHeight = m_popupMenuClient->menuStyle().font().fontMetrics().height();
-    info->itemFontSize = static_cast<int>(m_popupMenuClient->menuStyle().font().fontDescription().computedSize());
-    info->selectedIndex = m_popupMenuClient->selectedIndex();
-    info->rightAligned = m_popupMenuClient->menuStyle().textDirection() == WebCore::RTL;
-    info->allowMultipleSelection = m_popupMenuClient->multiple();
-    info->items.swap(items);
-}
+    info.itemHeight = popupMenuClient.menuStyle().font().fontMetrics().height();
+    info.itemFontSize = static_cast<int>(popupMenuClient.menuStyle().font().fontDescription().computedSize());
+    info.selectedIndex = toExternalPopupMenuItemIndex(popupMenuClient.selectedIndex(), popupMenuClient);
+    info.rightAligned = popupMenuClient.menuStyle().textDirection() == RTL;
+    info.allowMultipleSelection = popupMenuClient.multiple();
+    if (count < itemCount)
+        items.shrink(count);
+    info.items = items;
 
 }
+
+int ExternalPopupMenu::toPopupMenuItemIndex(int externalPopupMenuItemIndex, PopupMenuClient& popupMenuClient)
+{
+    if (externalPopupMenuItemIndex < 0)
+        return externalPopupMenuItemIndex;
+
+    int itemCount = popupMenuClient.listSize();
+    int indexTracker = 0;
+    for (int i = 0; i < itemCount ; ++i) {
+        if (popupMenuClient.itemStyle(i).isDisplayNone())
+            continue;
+        if (indexTracker++ == externalPopupMenuItemIndex)
+            return i;
+    }
+    return -1;
+}
+
+int ExternalPopupMenu::toExternalPopupMenuItemIndex(int popupMenuItemIndex, PopupMenuClient& popupMenuClient)
+{
+    if (popupMenuItemIndex < 0)
+        return popupMenuItemIndex;
+
+    int itemCount = popupMenuClient.listSize();
+    int indexTracker = 0;
+    for (int i = 0; i < itemCount; ++i) {
+        if (popupMenuClient.itemStyle(i).isDisplayNone())
+            continue;
+        if (popupMenuItemIndex == i)
+            return indexTracker;
+        ++indexTracker;
+    }
+    return -1;
+}
+
+} // namespace blink

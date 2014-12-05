@@ -25,12 +25,13 @@
 
 #include "core/fetch/ResourceClient.h"
 #include "core/fetch/ResourcePtr.h"
+#include "public/platform/WebDataConsumerHandle.h"
+#include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
-class RawResourceCallback;
+namespace blink {
 class RawResourceClient;
 
-class RawResource FINAL : public Resource {
+class RawResource final : public Resource {
 public:
     typedef RawResourceClient ClientType;
 
@@ -41,22 +42,22 @@ public:
     // This can be fixed by splitting CORS preflighting out of DocumentThreacableLoader.
     void setDefersLoading(bool);
 
-    virtual bool canReuse(const ResourceRequest&) const OVERRIDE;
+    bool canReuse(const ResourceRequest&) const override;
 
 private:
-    virtual void didAddClient(ResourceClient*) OVERRIDE;
-    virtual void appendData(const char*, int) OVERRIDE;
+    void didAddClient(ResourceClient*) override;
+    void appendData(const char*, unsigned) override;
 
-    virtual bool shouldIgnoreHTTPStatusCodeErrors() const OVERRIDE { return true; }
+    bool shouldIgnoreHTTPStatusCodeErrors() const override { return true; }
 
-    virtual void willSendRequest(ResourceRequest&, const ResourceResponse&) OVERRIDE;
-    virtual void updateRequest(const ResourceRequest&) OVERRIDE;
-    virtual void responseReceived(const ResourceResponse&) OVERRIDE;
-    virtual void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-    virtual void didDownloadData(int) OVERRIDE;
+    void willFollowRedirect(ResourceRequest&, const ResourceResponse&) override;
+    void updateRequest(const ResourceRequest&) override;
+    void responseReceived(const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    void didSendData(unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+    void didDownloadData(int) override;
 };
 
-#ifdef SECURITY_ASSERT_ENABLED
+#if ENABLE(SECURITY_ASSERT)
 inline bool isRawResource(const Resource& resource)
 {
     Resource::Type type = resource.type();
@@ -73,11 +74,11 @@ class RawResourceClient : public ResourceClient {
 public:
     virtual ~RawResourceClient() { }
     static ResourceClientType expectedType() { return RawResourceType; }
-    virtual ResourceClientType resourceClientType() const OVERRIDE FINAL { return expectedType(); }
+    virtual ResourceClientType resourceClientType() const override final { return expectedType(); }
 
     virtual void dataSent(Resource*, unsigned long long /* bytesSent */, unsigned long long /* totalBytesToBeSent */) { }
-    virtual void responseReceived(Resource*, const ResourceResponse&) { }
-    virtual void dataReceived(Resource*, const char* /* data */, int /* length */) { }
+    virtual void responseReceived(Resource*, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) { }
+    virtual void dataReceived(Resource*, const char* /* data */, unsigned /* length */) { }
     virtual void redirectReceived(Resource*, ResourceRequest&, const ResourceResponse&) { }
     virtual void updateRequest(Resource*, const ResourceRequest&) { }
     virtual void dataDownloaded(Resource*, int) { }

@@ -39,12 +39,13 @@
 #include "platform/graphics/GraphicsContextStateSaver.h"
 #include "public/platform/Platform.h"
 #include "public/platform/WebData.h"
+#include "third_party/skia/include/core/SkImage.h"
 #include "wtf/MainThread.h"
 #include "wtf/StdLibExtras.h"
 
 #include <math.h>
 
-namespace WebCore {
+namespace blink {
 
 Image::Image(ImageObserver* observer)
     : m_imageObserver(observer)
@@ -64,7 +65,7 @@ Image* Image::nullImage()
 
 PassRefPtr<Image> Image::loadPlatformResource(const char *name)
 {
-    const blink::WebData& resource = blink::Platform::current()->loadResource(name);
+    const WebData& resource = Platform::current()->loadResource(name);
     if (resource.isEmpty())
         return Image::nullImage();
 
@@ -116,12 +117,12 @@ FloatRect Image::adjustForNegativeSize(const FloatRect& rect)
     return norm;
 }
 
-void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator op, blink::WebBlendMode blendMode, RespectImageOrientationEnum)
+void Image::draw(GraphicsContext* ctx, const FloatRect& dstRect, const FloatRect& srcRect, CompositeOperator op, WebBlendMode blendMode, RespectImageOrientationEnum)
 {
     draw(ctx, dstRect, srcRect, op, blendMode);
 }
 
-void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
+void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& destRect, const FloatPoint& srcPoint, const FloatSize& scaledTileSize, CompositeOperator op, WebBlendMode blendMode, const IntSize& repeatSpacing)
 {
     if (mayFillWithSolidColor()) {
         fillWithSolidColor(ctxt, destRect, solidColor(), op);
@@ -223,7 +224,7 @@ void Image::drawTiled(GraphicsContext* ctxt, const FloatRect& dstRect, const Flo
 }
 
 void Image::drawPattern(GraphicsContext* context, const FloatRect& floatSrcRect, const FloatSize& scale,
-    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, blink::WebBlendMode blendMode, const IntSize& repeatSpacing)
+    const FloatPoint& phase, CompositeOperator compositeOp, const FloatRect& destRect, WebBlendMode blendMode, const IntSize& repeatSpacing)
 {
     TRACE_EVENT0("skia", "Image::drawPattern");
     if (RefPtr<NativeImageSkia> bitmap = nativeImageForCurrentFrame())
@@ -237,4 +238,16 @@ void Image::computeIntrinsicDimensions(Length& intrinsicWidth, Length& intrinsic
     intrinsicHeight = Length(intrinsicRatio.height(), Fixed);
 }
 
+PassRefPtr<Image> Image::imageForDefaultFrame()
+{
+    RefPtr<Image> image(this);
+
+    return image.release();
 }
+
+PassRefPtr<SkImage> Image::skImage()
+{
+    return nullptr;
+}
+
+} // namespace blink

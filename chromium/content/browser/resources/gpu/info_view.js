@@ -94,15 +94,12 @@ cr.define('gpu', function() {
         'panel_fitting': 'Panel Fitting',
         'rasterization': 'Rasterization',
         'threaded_rasterization': 'Threaded Rasterization',
+        'multiple_raster_threads': 'Multiple Raster Threads',
       };
 
       var statusMap =  {
         'disabled_software': {
           'label': 'Software only. Hardware acceleration disabled',
-          'class': 'feature-yellow'
-        },
-        'disabled_software_threaded': {
-          'label': 'Software only, threaded. Hardware acceleration disabled',
           'class': 'feature-yellow'
         },
         'disabled_off': {
@@ -115,10 +112,6 @@ cr.define('gpu', function() {
         },
         'unavailable_software': {
           'label': 'Software only, hardware acceleration unavailable',
-          'class': 'feature-yellow'
-        },
-        'unavailable_software_threaded': {
-          'label': 'Software only, threaded. Hardware acceleration unavailable',
           'class': 'feature-yellow'
         },
         'unavailable_off': {
@@ -137,10 +130,6 @@ cr.define('gpu', function() {
           'label': 'Hardware accelerated on all pages',
           'class': 'feature-green'
         },
-        'enabled_threaded': {
-          'label': 'Hardware accelerated and threaded',
-          'class': 'feature-green'
-        },
         'enabled': {
           'label': 'Hardware accelerated',
           'class': 'feature-green'
@@ -148,7 +137,11 @@ cr.define('gpu', function() {
         'enabled_on': {
           'label': 'Enabled',
           'class': 'feature-green'
-        }
+        },
+        'enabled_force_on': {
+          'label': 'Force enabled',
+          'class': 'feature-green'
+        },
       };
 
       // GPU info, basic

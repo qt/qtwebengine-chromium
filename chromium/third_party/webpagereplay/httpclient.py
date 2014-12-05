@@ -16,16 +16,15 @@
 """Retrieve web resources over http."""
 
 import copy
-import httparchive
 import httplib
 import logging
-import os
-import platformsettings
 import random
-import re
-import script_injector
 import StringIO
-import util
+
+import httparchive
+import platformsettings
+import script_injector
+
 
 # PIL isn't always available, but we still want to be able to run without
 # the image scrambling functionality in this case.
@@ -65,6 +64,7 @@ def _InjectScripts(response, inject_script):
       response.set_data(text)
   return response
 
+
 def _ScrambleImages(response):
   """If the |response| is an image, attempt to scramble it.
 
@@ -98,10 +98,11 @@ def _ScrambleImages(response):
 
       response = copy.deepcopy(response)
       response.set_data(output_image_data)
-    except Exception, err:
+    except Exception:
       pass
 
   return response
+
 
 class DetailedHTTPResponse(httplib.HTTPResponse):
   """Preserve details relevant to replaying responses.
@@ -178,12 +179,14 @@ class DetailedHTTPSResponse(DetailedHTTPResponse):
   """Preserve details relevant to replaying SSL responses."""
   pass
 
+
 class DetailedHTTPSConnection(httplib.HTTPSConnection):
   """Preserve details relevant to replaying SSL connections."""
   response_class = DetailedHTTPSResponse
 
 
 class RealHttpFetch(object):
+
   def __init__(self, real_dns_lookup):
     """Initialize RealHttpFetch.
 
@@ -252,6 +255,49 @@ class RealHttpFetch(object):
       all_headers.append((name, value))
     return all_headers
 
+  @staticmethod
+  def _get_request_host_port(request):
+    host_parts = request.host.split(':')
+    host = host_parts[0]
+    port = int(host_parts[1]) if len(host_parts) == 2 else None
+    return host, port
+
+  def _get_system_proxy(self, is_ssl):
+    return platformsettings.get_system_proxy(is_ssl)
+
+  def _get_connection(self, request_host, request_port, is_ssl):
+    """Return a detailed connection object for host/port pair.
+
+    If a system proxy is defined (see platformsettings.py), it will be used.
+
+    Args:
+      request_host: a host string (e.g. "www.example.com").
+      request_port: a port integer (e.g. 8080) or None (for the default port).
+      is_ssl: True if HTTPS connection is needed.
+    Returns:
+      A DetailedHTTPSConnection or DetailedHTTPConnection instance.
+    """
+    connection_host = request_host
+    connection_port = request_port
+    system_proxy = self._get_system_proxy(is_ssl)
+    if system_proxy:
+      connection_host = system_proxy.host
+      connection_port = system_proxy.port
+
+    # Use an IP address because WPR may override DNS settings.
+    connection_ip = self._real_dns_lookup(connection_host)
+    if not connection_ip:
+      logging.critical('Unable to find host ip for name: %s', connection_host)
+      return None
+
+    if is_ssl:
+      connection = DetailedHTTPSConnection(connection_ip, connection_port)
+      if system_proxy:
+        connection.set_tunnel(self, request_host, request_port)
+    else:
+      connection = DetailedHTTPConnection(connection_ip, connection_port)
+    return connection
+
   def __call__(self, request):
     """Fetch an HTTP request.
 
@@ -261,31 +307,12 @@ class RealHttpFetch(object):
       an ArchivedHttpResponse
     """
     logging.debug('RealHttpFetch: %s %s', request.host, request.full_path)
-    if ':' in request.host:
-      parts = request.host.split(':')
-      truehost = parts[0]
-      trueport = int(parts[1])
-    else:
-      truehost = request.host
-      trueport = None
-
-    host_ip = self._real_dns_lookup(truehost)
-    if not host_ip:
-      logging.critical('Unable to find host ip for name: %s', truehost)
-      return None
+    request_host, request_port = self._get_request_host_port(request)
     retries = 3
     while True:
       try:
-        if request.is_ssl:
-          if trueport:
-            connection = DetailedHTTPSConnection(host_ip, trueport)
-          else:
-            connection = DetailedHTTPSConnection(host_ip)
-        else:
-          if trueport:
-            connection = DetailedHTTPConnection(host_ip, trueport)
-          else:
-            connection = DetailedHTTPConnection(host_ip)
+        connection = self._get_connection(
+            request_host, request_port, request.is_ssl)
         connect_start = TIMER()
         connection.connect()
         connect_delay = int((TIMER() - connect_start) * 1000)
@@ -456,6 +483,7 @@ class ControllableHttpArchiveFetch(object):
       use_closest_match: If True, on replay mode, serve the closest match
         in the archive instead of giving a 404.
     """
+    self.http_archive = http_archive
     self.record_fetch = RecordHttpArchiveFetch(
         http_archive, real_dns_lookup, inject_script,
         cache_misses)

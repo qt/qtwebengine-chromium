@@ -12,7 +12,10 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
 #include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/gfx/rect.h"
+#include "ui/gfx/scoped_canvas.h"
 #include "ui/gfx/size_conversions.h"
 #include "ui/gfx/skia_util.h"
 #include "ui/gfx/transform.h"
@@ -89,12 +92,12 @@ void Canvas::SizeStringInt(const base::string16& text,
                            int* height,
                            int line_height,
                            int flags) {
-  float fractional_width = *width;
-  float factional_height = *height;
+  float fractional_width = static_cast<float>(*width);
+  float factional_height = static_cast<float>(*height);
   SizeStringFloat(text, font_list, &fractional_width,
                   &factional_height, line_height, flags);
-  *width = std::ceil(fractional_width);
-  *height = std::ceil(factional_height);
+  *width = ToCeiledInt(fractional_width);
+  *height = ToCeiledInt(factional_height);
 }
 
 // static
@@ -131,6 +134,8 @@ ImageSkiaRep Canvas::ExtractImageRep() const {
 }
 
 void Canvas::DrawDashedRect(const Rect& rect, SkColor color) {
+  if (rect.IsEmpty())
+    return;
   // Create a 2D bitmap containing alternating on/off pixels - we do this
   // so that you never get two pixels of the same color around the edges
   // of the focus rect (this may mean that opposing edges of the rect may
@@ -207,9 +212,12 @@ bool Canvas::IsClipEmpty() const {
 
 bool Canvas::GetClipBounds(Rect* bounds) {
   SkRect out;
-  bool has_non_empty_clip = canvas_->getClipBounds(&out);
-  bounds->SetRect(out.left(), out.top(), out.width(), out.height());
-  return has_non_empty_clip;
+  if (canvas_->getClipBounds(&out)) {
+    *bounds = ToEnclosingRect(SkRectToRectF(out));
+    return true;
+  }
+  *bounds = gfx::Rect();
+  return false;
 }
 
 void Canvas::Translate(const Vector2d& offset) {
@@ -340,14 +348,13 @@ void Canvas::DrawImageInt(const ImageSkia& image,
   const SkBitmap& bitmap = image_rep.sk_bitmap();
   float bitmap_scale = image_rep.scale();
 
-  canvas_->save();
+  ScopedCanvas scoper(this);
   canvas_->scale(SkFloatToScalar(1.0f / bitmap_scale),
                  SkFloatToScalar(1.0f / bitmap_scale));
   canvas_->drawBitmap(bitmap,
                       SkFloatToScalar(x * bitmap_scale),
                       SkFloatToScalar(y * bitmap_scale),
                       &paint);
-  canvas_->restore();
 }
 
 void Canvas::DrawImageInt(const ImageSkia& image,
@@ -409,13 +416,14 @@ void Canvas::DrawImageIntInPixel(const ImageSkia& image,
 
   // Ensure that the direction of the x and y scales is preserved. This is
   // important for RTL layouts.
-  matrix.getScaleX() > 0 ? matrix.setScaleX(1.0f) : matrix.setScaleX(-1.0f);
-  matrix.getScaleY() > 0 ? matrix.setScaleY(1.0f) : matrix.setScaleY(-1.0f);
+  matrix.setScaleX(matrix.getScaleX() > 0 ? 1.0f : -1.0f);
+  matrix.setScaleY(matrix.getScaleY() > 0 ? 1.0f : -1.0f);
 
-  matrix.setTranslateX(SkScalarRoundToInt(matrix.getTranslateX()));
-  matrix.setTranslateY(SkScalarRoundToInt(matrix.getTranslateY()));
+  // Floor so that we get consistent rounding.
+  matrix.setTranslateX(SkScalarFloorToScalar(matrix.getTranslateX()));
+  matrix.setTranslateY(SkScalarFloorToScalar(matrix.getTranslateY()));
 
-  Save();
+  ScopedCanvas scoper(this);
 
   canvas_->setMatrix(matrix);
 
@@ -432,9 +440,6 @@ void Canvas::DrawImageIntInPixel(const ImageSkia& image,
                      paint,
                      image_scale_,
                      true);
-
-  // Restore the state of the canvas.
-  Restore();
 }
 
 void Canvas::DrawImageInPath(const ImageSkia& image,

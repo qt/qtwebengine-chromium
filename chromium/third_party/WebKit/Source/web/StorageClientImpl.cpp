@@ -40,15 +40,15 @@ StorageClientImpl::StorageClientImpl(WebViewImpl* webView)
 {
 }
 
-PassOwnPtr<WebCore::StorageNamespace> StorageClientImpl::createSessionStorageNamespace()
+PassOwnPtr<StorageNamespace> StorageClientImpl::createSessionStorageNamespace()
 {
-    return adoptPtr(new WebCore::StorageNamespace(adoptPtr(m_webView->client()->createSessionStorageNamespace())));
+    return adoptPtr(new StorageNamespace(adoptPtr(m_webView->client()->createSessionStorageNamespace())));
 }
 
-bool StorageClientImpl::canAccessStorage(WebCore::LocalFrame* frame, WebCore::StorageType type) const
+bool StorageClientImpl::canAccessStorage(LocalFrame* frame, StorageType type) const
 {
     WebLocalFrameImpl* webFrame = WebLocalFrameImpl::fromFrame(frame);
-    return !webFrame->permissionClient() || webFrame->permissionClient()->allowStorage(type == WebCore::LocalStorage);
+    return !webFrame->permissionClient() || webFrame->permissionClient()->allowStorage(type == LocalStorage);
 }
 
 } // namespace blink

@@ -27,11 +27,10 @@
 #include "wtf/text/CString.h"
 #include "wtf/text/TextEncoding.h"
 
-namespace WebCore {
+namespace blink {
 
 inline FormData::FormData()
     : m_identifier(0)
-    , m_alwaysStream(false)
     , m_containsPasswordData(false)
 {
 }
@@ -40,7 +39,6 @@ inline FormData::FormData(const FormData& data)
     : RefCounted<FormData>()
     , m_elements(data.m_elements)
     , m_identifier(data.m_identifier)
-    , m_alwaysStream(false)
     , m_containsPasswordData(data.m_containsPasswordData)
 {
 }
@@ -84,8 +82,6 @@ PassRefPtr<FormData> FormData::deepCopy() const
 {
     RefPtr<FormData> formData(create());
 
-    formData->m_alwaysStream = m_alwaysStream;
-
     size_t n = m_elements.size();
     formData->m_elements.reserveInitialCapacity(n);
     for (size_t i = 0; i < n; ++i) {
@@ -95,13 +91,13 @@ PassRefPtr<FormData> FormData::deepCopy() const
             formData->m_elements.uncheckedAppend(FormDataElement(e.m_data));
             break;
         case FormDataElement::encodedFile:
-            formData->m_elements.uncheckedAppend(FormDataElement(e.m_filename, e.m_fileStart, e.m_fileLength, e.m_expectedFileModificationTime));
+            formData->m_elements.uncheckedAppend(FormDataElement(e.m_filename.isolatedCopy(), e.m_fileStart, e.m_fileLength, e.m_expectedFileModificationTime));
             break;
         case FormDataElement::encodedBlob:
-            formData->m_elements.uncheckedAppend(FormDataElement(e.m_blobUUID, e.m_optionalBlobDataHandle));
+            formData->m_elements.uncheckedAppend(FormDataElement(e.m_blobUUID.isolatedCopy(), e.m_optionalBlobDataHandle));
             break;
         case FormDataElement::encodedFileSystemURL:
-            formData->m_elements.uncheckedAppend(FormDataElement(e.m_fileSystemURL, e.m_fileStart, e.m_fileLength, e.m_expectedFileModificationTime));
+            formData->m_elements.uncheckedAppend(FormDataElement(e.m_fileSystemURL.copy(), e.m_fileStart, e.m_fileLength, e.m_expectedFileModificationTime));
             break;
         }
     }
@@ -187,4 +183,4 @@ unsigned long long FormData::sizeInBytes() const
     return size;
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -51,13 +51,13 @@ class NET_EXPORT_PRIVATE QuicReliableClientStream : public QuicDataStream {
                            QuicSession* session,
                            const BoundNetLog& net_log);
 
-  virtual ~QuicReliableClientStream();
+  ~QuicReliableClientStream() override;
 
   // QuicDataStream
-  virtual uint32 ProcessData(const char* data, uint32 data_len) OVERRIDE;
-  virtual void OnFinRead() OVERRIDE;
-  virtual void OnCanWrite() OVERRIDE;
-  virtual QuicPriority EffectivePriority() const OVERRIDE;
+  uint32 ProcessData(const char* data, uint32 data_len) override;
+  void OnClose() override;
+  void OnCanWrite() override;
+  QuicPriority EffectivePriority() const override;
 
   // While the server's set_priority shouldn't be called externally, the creator
   // of client-side streams should be able to set the priority.

@@ -31,43 +31,42 @@
 #ifndef DeviceOrientationDispatcher_h
 #define DeviceOrientationDispatcher_h
 
-#include "core/frame/DeviceEventDispatcherBase.h"
+#include "core/frame/PlatformEventDispatcher.h"
 #include "platform/heap/Handle.h"
 #include "public/platform/WebDeviceOrientationListener.h"
 #include "wtf/RefPtr.h"
 
 namespace blink {
-class WebDeviceOrientationData;
-}
 
-namespace WebCore {
-
-class DeviceOrientationController;
 class DeviceOrientationData;
+class WebDeviceOrientationData;
 
 // This class listens to device orientation data and notifies all registered controllers.
-class DeviceOrientationDispatcher : public DeviceEventDispatcherBase, public blink::WebDeviceOrientationListener {
+class DeviceOrientationDispatcher final : public GarbageCollectedFinalized<DeviceOrientationDispatcher>, public PlatformEventDispatcher, public WebDeviceOrientationListener {
+    USING_GARBAGE_COLLECTED_MIXIN(DeviceOrientationDispatcher);
 public:
     static DeviceOrientationDispatcher& instance();
+    virtual ~DeviceOrientationDispatcher();
 
     // Note that the returned object is owned by this class.
     // FIXME: make the return value const, see crbug.com/233174.
     DeviceOrientationData* latestDeviceOrientationData();
 
     // Inherited from WebDeviceOrientationListener.
-    virtual void didChangeDeviceOrientation(const blink::WebDeviceOrientationData&) OVERRIDE;
+    virtual void didChangeDeviceOrientation(const WebDeviceOrientationData&) override;
+
+    virtual void trace(Visitor*) override;
 
 private:
     DeviceOrientationDispatcher();
-    ~DeviceOrientationDispatcher();
 
-    // Inherited from DeviceEventDispatcherBase.
-    virtual void startListening() OVERRIDE;
-    virtual void stopListening() OVERRIDE;
+    // Inherited from PlatformEventDispatcher.
+    virtual void startListening() override;
+    virtual void stopListening() override;
 
-    RefPtrWillBePersistent<DeviceOrientationData> m_lastDeviceOrientationData;
+    Member<DeviceOrientationData> m_lastDeviceOrientationData;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DeviceOrientationDispatcher_h

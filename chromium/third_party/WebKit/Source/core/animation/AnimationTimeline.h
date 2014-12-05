@@ -31,23 +31,24 @@
 #ifndef AnimationTimeline_h
 #define AnimationTimeline_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/dom/Element.h"
-#include "core/events/Event.h"
 #include "platform/Timer.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class AnimationNode;
 
 // AnimationTimeline is constructed and owned by Document, and tied to its lifecycle.
-class AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline> {
+class AnimationTimeline : public RefCountedWillBeGarbageCollectedFinalized<AnimationTimeline>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     class PlatformTiming : public NoBaseWillBeGarbageCollectedFinalized<PlatformTiming> {
 
@@ -68,6 +69,7 @@ public:
     // Creates a player attached to this timeline, but without a start time.
     AnimationPlayer* createAnimationPlayer(AnimationNode*);
     AnimationPlayer* play(AnimationNode*);
+    WillBeHeapVector<RefPtrWillBeMember<AnimationPlayer>> getAnimationPlayers();
 
 #if !ENABLE(OILPAN)
     void playerDestroyed(AnimationPlayer* player)
@@ -78,14 +80,13 @@ public:
 #endif
 
     bool hasPendingUpdates() const { return !m_playersNeedingUpdate.isEmpty(); }
-    double zeroTime() const { return 0; }
+    double zeroTime();
     double currentTime(bool& isNull);
     double currentTime();
     double currentTimeInternal(bool& isNull);
     double currentTimeInternal();
     double effectiveTime();
     void pauseAnimationsForTesting(double);
-    size_t numberOfActiveAnimationsForTesting() const;
 
     void setOutdatedAnimationPlayer(AnimationPlayer*);
     bool hasOutdatedAnimationPlayer() const;
@@ -103,17 +104,18 @@ protected:
 
 private:
     RawPtrWillBeMember<Document> m_document;
+    double m_zeroTime;
     // AnimationPlayers which will be updated on the next frame
     // i.e. current, in effect, or had timing changed
-    WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer> > m_playersNeedingUpdate;
-    WillBeHeapHashSet<RawPtrWillBeWeakMember<AnimationPlayer> > m_players;
+    WillBeHeapHashSet<RefPtrWillBeMember<AnimationPlayer>> m_playersNeedingUpdate;
+    WillBeHeapHashSet<RawPtrWillBeWeakMember<AnimationPlayer>> m_players;
 
     friend class SMILTimeContainer;
     static const double s_minimumDelay;
 
     OwnPtrWillBeMember<PlatformTiming> m_timing;
 
-    class AnimationTimelineTiming FINAL : public PlatformTiming {
+    class AnimationTimelineTiming final : public PlatformTiming {
     public:
         AnimationTimelineTiming(AnimationTimeline* timeline)
             : m_timeline(timeline)
@@ -122,13 +124,13 @@ private:
             ASSERT(m_timeline);
         }
 
-        virtual void wakeAfter(double duration) OVERRIDE;
-        virtual void cancelWake() OVERRIDE;
-        virtual void serviceOnNextFrame() OVERRIDE;
+        virtual void wakeAfter(double duration) override;
+        virtual void cancelWake() override;
+        virtual void serviceOnNextFrame() override;
 
         void timerFired(Timer<AnimationTimelineTiming>*) { m_timeline->wake(); }
 
-        virtual void trace(Visitor*) OVERRIDE;
+        virtual void trace(Visitor*) override;
 
     private:
         RawPtrWillBeMember<AnimationTimeline> m_timeline;
@@ -138,6 +140,6 @@ private:
     friend class AnimationAnimationTimelineTest;
 };
 
-} // namespace
+} // namespace blink
 
 #endif

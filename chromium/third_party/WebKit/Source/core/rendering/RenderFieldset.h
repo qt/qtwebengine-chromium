@@ -26,9 +26,9 @@
 
 #include "core/rendering/RenderBlockFlow.h"
 
-namespace WebCore {
+namespace blink {
 
-class RenderFieldset FINAL : public RenderBlockFlow {
+class RenderFieldset final : public RenderBlockFlow {
 public:
     explicit RenderFieldset(Element*);
 
@@ -36,20 +36,20 @@ public:
     RenderBox* findLegend(FindLegendOption = IgnoreFloatingOrOutOfFlow) const;
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderFieldSet"; }
-    virtual bool isFieldset() const OVERRIDE { return true; }
+    virtual const char* renderName() const override { return "RenderFieldSet"; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectFieldset || RenderBlockFlow::isOfType(type); }
 
-    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) OVERRIDE;
+    virtual RenderObject* layoutSpecialExcludedChild(bool relayoutChildren, SubtreeLayoutScope&) override;
 
-    virtual void computePreferredLogicalWidths() OVERRIDE;
-    virtual bool avoidsFloats() const OVERRIDE { return true; }
+    virtual void computePreferredLogicalWidths() override;
+    virtual bool avoidsFloats() const override { return true; }
 
-    virtual void paintBoxDecorations(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    virtual void paintMask(PaintInfo&, const LayoutPoint&) OVERRIDE;
+    virtual void paintBoxDecorationBackground(PaintInfo&, const LayoutPoint&) override;
+    virtual void paintMask(PaintInfo&, const LayoutPoint&) override;
 };
 
 DEFINE_RENDER_OBJECT_TYPE_CASTS(RenderFieldset, isFieldset());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderFieldset_h

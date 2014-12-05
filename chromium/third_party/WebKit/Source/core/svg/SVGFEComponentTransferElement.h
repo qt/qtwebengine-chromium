@@ -24,9 +24,10 @@
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
 
-namespace WebCore {
+namespace blink {
 
-class SVGFEComponentTransferElement FINAL : public SVGFilterPrimitiveStandardAttributes {
+class SVGFEComponentTransferElement final : public SVGFilterPrimitiveStandardAttributes {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(SVGFEComponentTransferElement);
     SVGAnimatedString* in1() { return m_in1.get(); }
@@ -36,12 +37,12 @@ private:
 
     // FIXME: svgAttributeChanged missing.
     bool isSupportedAttribute(const QualifiedName&);
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
-    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
+    virtual PassRefPtr<FilterEffect> build(SVGFilterBuilder*, Filter*) override;
 
     RefPtr<SVGAnimatedString> m_in1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // SVGFEComponentTransferElement_h

@@ -935,6 +935,16 @@ Message::DataType MessageReader::GetDataType() {
   return static_cast<Message::DataType>(dbus_type);
 }
 
+std::string MessageReader::GetDataSignature() {
+  std::string signature;
+  char* raw_signature = dbus_message_iter_get_signature(&raw_message_iter_);
+  if (raw_signature) {
+    signature = raw_signature;
+    dbus_free(raw_signature);
+  }
+  return signature;
+}
+
 bool MessageReader::CheckDataType(int dbus_type) {
   const int actual_type = dbus_message_iter_get_arg_type(&raw_message_iter_);
   if (actual_type != dbus_type) {

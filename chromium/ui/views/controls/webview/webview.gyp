@@ -8,6 +8,7 @@
   },
   'targets': [
     {
+      # GN version: //ui/views/controls/webview
       'target_name': 'webview',
       'type': '<(component)',
       'dependencies': [
@@ -28,9 +29,11 @@
         'WEBVIEW_IMPLEMENTATION',
       ],
       'sources': [
+        # Note: file list duplicated in GN build.
         'unhandled_keyboard_event_handler.cc',
         'unhandled_keyboard_event_handler.h',
         'unhandled_keyboard_event_handler_linux.cc',
+        'unhandled_keyboard_event_handler_mac.mm',
         'unhandled_keyboard_event_handler_win.cc',
         'web_dialog_view.cc',
         'web_dialog_view.h',

@@ -7,14 +7,14 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "content/public/test/test_file_system_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/browser/fileapi/file_system_operation_runner.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/browser/fileapi/file_system_operation_runner.h"
 
-using fileapi::FileSystemContext;
-using fileapi::FileSystemOperationRunner;
-using fileapi::FileSystemType;
-using fileapi::FileSystemURL;
+using storage::FileSystemContext;
+using storage::FileSystemOperationRunner;
+using storage::FileSystemType;
+using storage::FileSystemURL;
 
 namespace content {
 
@@ -40,23 +40,24 @@ void GetCancelStatus(bool* operation_done,
 class FileSystemOperationRunnerTest : public testing::Test {
  protected:
   FileSystemOperationRunnerTest() {}
-  virtual ~FileSystemOperationRunnerTest() {}
+  ~FileSystemOperationRunnerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     ASSERT_TRUE(base_.CreateUniqueTempDir());
     base::FilePath base_dir = base_.path();
     file_system_context_ =
         CreateFileSystemContextForTesting(NULL, base_dir);
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     file_system_context_ = NULL;
     base::RunLoop().RunUntilIdle();
   }
 
   FileSystemURL URL(const std::string& path) {
     return file_system_context_->CreateCrackedFileSystemURL(
-        GURL("http://example.com"), fileapi::kFileSystemTypeTemporary,
+        GURL("http://example.com"),
+        storage::kFileSystemTypeTemporary,
         base::FilePath::FromUTF8Unsafe(path));
   }
 

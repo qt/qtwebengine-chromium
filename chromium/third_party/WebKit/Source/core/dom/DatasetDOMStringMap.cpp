@@ -26,14 +26,14 @@
 #include "config.h"
 #include "core/dom/DatasetDOMStringMap.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/Attribute.h"
 #include "core/dom/Element.h"
 #include "core/dom/ExceptionCode.h"
 #include "wtf/ASCIICType.h"
 #include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 static bool isValidAttributeName(const String& name)
 {
@@ -125,7 +125,7 @@ static bool isValidPropertyName(const String& name)
 static AtomicString convertPropertyNameToAttributeName(const String& name)
 {
     StringBuilder builder;
-    builder.append("data-");
+    builder.appendLiteral("data-");
 
     unsigned length = name.length();
     for (unsigned i = 0; i < length; ++i) {
@@ -154,27 +154,19 @@ void DatasetDOMStringMap::deref()
 
 void DatasetDOMStringMap::getNames(Vector<String>& names)
 {
-    if (!m_element->hasAttributes())
-        return;
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        if (isValidAttributeName(it->localName()))
-            names.append(convertAttributeNameToPropertyName(it->localName()));
+    for (const Attribute& attr : attributes) {
+        if (isValidAttributeName(attr.localName()))
+            names.append(convertAttributeNameToPropertyName(attr.localName()));
     }
 }
 
 String DatasetDOMStringMap::item(const String& name)
 {
-    if (!m_element->hasAttributes())
-        return String();
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        if (propertyNameMatchesAttributeName(name, it->localName()))
-            return it->value();
+    for (const Attribute& attr : attributes) {
+        if (propertyNameMatchesAttributeName(name, attr.localName()))
+            return attr.value();
     }
 
     return String();
@@ -182,13 +174,9 @@ String DatasetDOMStringMap::item(const String& name)
 
 bool DatasetDOMStringMap::contains(const String& name)
 {
-    if (!m_element->hasAttributes())
-        return false;
-
     AttributeCollection attributes = m_element->attributes();
-    AttributeCollection::const_iterator end = attributes.end();
-    for (AttributeCollection::const_iterator it = attributes.begin(); it != end; ++it) {
-        if (propertyNameMatchesAttributeName(name, it->localName()))
+    for (const Attribute& attr : attributes) {
+        if (propertyNameMatchesAttributeName(name, attr.localName()))
             return true;
     }
     return false;
@@ -222,4 +210,4 @@ void DatasetDOMStringMap::trace(Visitor* visitor)
     DOMStringMap::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

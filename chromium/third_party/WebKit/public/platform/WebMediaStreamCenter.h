@@ -34,18 +34,16 @@
 #include "WebVector.h"
 
 namespace blink {
+
 class WebAudioSourceProvider;
 class WebMediaStream;
 class WebMediaStreamTrack;
-class WebMediaStreamTrackSourcesRequest;
 class WebSourceInfo;
 class WebString;
 
 class WebMediaStreamCenter {
 public:
     virtual ~WebMediaStreamCenter() { }
-
-    virtual bool getMediaStreamTrackSources(const WebMediaStreamTrackSourcesRequest&)= 0;
 
     // Stream functionality.
     virtual void didCreateMediaStream(WebMediaStream&) = 0;

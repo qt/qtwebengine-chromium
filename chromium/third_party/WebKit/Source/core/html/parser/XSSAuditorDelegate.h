@@ -26,6 +26,7 @@
 #ifndef XSSAuditorDelegate_h
 #define XSSAuditorDelegate_h
 
+#include "platform/heap/Handle.h"
 #include "platform/weborigin/KURL.h"
 #include "wtf/OwnPtr.h"
 #include "wtf/PassOwnPtr.h"
@@ -33,7 +34,7 @@
 #include "wtf/text/TextPosition.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class FormData;
@@ -63,10 +64,12 @@ private:
     { }
 };
 
-class XSSAuditorDelegate {
+class XSSAuditorDelegate final {
+    DISALLOW_ALLOCATION();
     WTF_MAKE_NONCOPYABLE(XSSAuditorDelegate);
 public:
     explicit XSSAuditorDelegate(Document*);
+    void trace(Visitor*);
 
     void didBlockScript(const XSSInfo&);
     void setReportURL(const KURL& url) { m_reportURL = url; }
@@ -74,12 +77,12 @@ public:
 private:
     PassRefPtr<FormData> generateViolationReport(const XSSInfo&);
 
-    Document* m_document;
+    RawPtrWillBeMember<Document> m_document;
     bool m_didSendNotifications;
     KURL m_reportURL;
 };
 
-typedef Vector<OwnPtr<XSSInfo> > XSSInfoStream;
+typedef Vector<OwnPtr<XSSInfo>> XSSInfoStream;
 
 }
 

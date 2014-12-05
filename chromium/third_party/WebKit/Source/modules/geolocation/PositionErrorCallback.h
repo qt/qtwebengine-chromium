@@ -26,16 +26,19 @@
 #ifndef PositionErrorCallback_h
 #define PositionErrorCallback_h
 
-namespace WebCore {
+#include "platform/heap/Handle.h"
+
+namespace blink {
 
     class PositionError;
 
-    class PositionErrorCallback {
+    class PositionErrorCallback : public GarbageCollectedFinalized<PositionErrorCallback> {
     public:
         virtual ~PositionErrorCallback() { }
+        virtual void trace(Visitor*) { }
         virtual void handleEvent(PositionError*) = 0;
     };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PositionErrorCallback_h

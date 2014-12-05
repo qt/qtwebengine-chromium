@@ -5,20 +5,32 @@
 {
   'variables': {
     'chromium_code': 1,
+    'message_lib_deps': [
+      '../../../base/base.gyp:base',
+      '../../../chrome/chrome.gyp:common',
+      '../../../components/components.gyp:pdf_common',
+      '../../../components/nacl.gyp:nacl_common',
+      '../../../content/content.gyp:content_child',
+      '../../../ipc/ipc.gyp:ipc',
+      '../../../media/cast/cast.gyp:cast_net',
+      '../../../ppapi/ppapi_internal.gyp:ppapi_ipc',
+      '../../../remoting/remoting.gyp:remoting_host',
+      '../../../skia/skia.gyp:skia',
+      '../../../third_party/libjingle/libjingle.gyp:libjingle',
+      '../../../third_party/mt19937ar/mt19937ar.gyp:mt19937ar',
+      '../../../third_party/WebKit/public/blink.gyp:blink',
+      '../../../ui/accessibility/accessibility.gyp:ax_gen',
+    ],
   },
   'targets': [
     {
       'target_name': 'ipc_message_lib',
       'type': 'static_library',
       'dependencies': [
-        '../../../base/base.gyp:base',
-        '../../../chrome/chrome.gyp:common',
-        '../../../ipc/ipc.gyp:ipc',
-        '../../../media/cast/cast.gyp:cast_transport',
-        '../../../skia/skia.gyp:skia',
-        '../../../third_party/libjingle/libjingle.gyp:libjingle',
-        '../../../third_party/WebKit/public/blink.gyp:blink',
-        '../../../ui/accessibility/accessibility.gyp:ax_gen',
+         '<@(message_lib_deps)',
+      ],
+      'export_dependent_settings': [
+         '<@(message_lib_deps)',
       ],
       'sources': [
         'all_messages.h',

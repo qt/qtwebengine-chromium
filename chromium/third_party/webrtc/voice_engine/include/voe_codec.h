@@ -126,6 +126,14 @@ public:
     virtual int GetVADStatus(int channel, bool& enabled, VadModes& mode,
                              bool& disabledDTX) = 0;
 
+    // If send codec is Opus on a specified |channel|, sets the maximum playback
+    // rate the receiver will render: |frequency_hz| (in Hz).
+    // TODO(minyue): Make SetOpusMaxPlaybackRate() pure virtual when
+    // fakewebrtcvoiceengine in talk is ready.
+    virtual int SetOpusMaxPlaybackRate(int channel, int frequency_hz) {
+      return -1;
+    }
+
     // Don't use. To be removed.
     virtual int SetAMREncFormat(int channel, AmrMode mode) { return -1; }
     virtual int SetAMRDecFormat(int channel, AmrMode mode) { return -1; }

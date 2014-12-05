@@ -83,15 +83,13 @@ class MESSAGE_CENTER_EXPORT PopupTimersController
       public MessageCenterObserver {
  public:
   explicit PopupTimersController(MessageCenter* message_center);
-  virtual ~PopupTimersController();
+  ~PopupTimersController() override;
 
   // MessageCenterObserver implementation.
-  virtual void OnNotificationDisplayed(
-      const std::string& id,
-      const DisplaySource source) OVERRIDE;
-  virtual void OnNotificationUpdated(const std::string& id) OVERRIDE;
-  virtual void OnNotificationRemoved(const std::string& id, bool by_user)
-      OVERRIDE;
+  void OnNotificationDisplayed(const std::string& id,
+                               const DisplaySource source) override;
+  void OnNotificationUpdated(const std::string& id) override;
+  void OnNotificationRemoved(const std::string& id, bool by_user) override;
 
   // Callback for each timer when its time is up.
   virtual void TimerFinished(const std::string& id);
@@ -142,70 +140,64 @@ class MessageCenterImpl : public MessageCenter,
                           public message_center::NotifierSettingsObserver {
  public:
   MessageCenterImpl();
-  virtual ~MessageCenterImpl();
+  ~MessageCenterImpl() override;
 
   // MessageCenter overrides:
-  virtual void AddObserver(MessageCenterObserver* observer) OVERRIDE;
-  virtual void RemoveObserver(MessageCenterObserver* observer) OVERRIDE;
-  virtual void AddNotificationBlocker(NotificationBlocker* blocker) OVERRIDE;
-  virtual void RemoveNotificationBlocker(NotificationBlocker* blocker) OVERRIDE;
-  virtual void SetVisibility(Visibility visible) OVERRIDE;
-  virtual bool IsMessageCenterVisible() const OVERRIDE;
-  virtual size_t NotificationCount() const OVERRIDE;
-  virtual size_t UnreadNotificationCount() const OVERRIDE;
-  virtual bool HasPopupNotifications() const OVERRIDE;
-  virtual bool IsQuietMode() const OVERRIDE;
-  virtual bool HasClickedListener(const std::string& id) OVERRIDE;
-  virtual message_center::Notification* FindVisibleNotificationById(
-      const std::string& id) OVERRIDE;
-  virtual const NotificationList::Notifications& GetVisibleNotifications()
-      OVERRIDE;
-  virtual NotificationList::PopupNotifications GetPopupNotifications() OVERRIDE;
-  virtual void AddNotification(scoped_ptr<Notification> notification) OVERRIDE;
-  virtual void UpdateNotification(const std::string& old_id,
-                                  scoped_ptr<Notification> new_notification)
-      OVERRIDE;
-  virtual void RemoveNotification(const std::string& id, bool by_user) OVERRIDE;
-  virtual void RemoveAllNotifications(bool by_user) OVERRIDE;
-  virtual void RemoveAllVisibleNotifications(bool by_user) OVERRIDE;
-  virtual void SetNotificationIcon(const std::string& notification_id,
-                                   const gfx::Image& image) OVERRIDE;
-  virtual void SetNotificationImage(const std::string& notification_id,
-                                    const gfx::Image& image) OVERRIDE;
-  virtual void SetNotificationButtonIcon(const std::string& notification_id,
-                                         int button_index,
-                                         const gfx::Image& image) OVERRIDE;
-  virtual void DisableNotificationsByNotifier(
-      const NotifierId& notifier_id) OVERRIDE;
-  virtual void ClickOnNotification(const std::string& id) OVERRIDE;
-  virtual void ClickOnNotificationButton(const std::string& id,
-                                         int button_index) OVERRIDE;
-  virtual void MarkSinglePopupAsShown(const std::string& id,
-                                      bool mark_notification_as_read) OVERRIDE;
-  virtual void DisplayedNotification(
-      const std::string& id,
-      const DisplaySource source) OVERRIDE;
-  virtual void SetNotifierSettingsProvider(
-      NotifierSettingsProvider* provider) OVERRIDE;
-  virtual NotifierSettingsProvider* GetNotifierSettingsProvider() OVERRIDE;
-  virtual void SetQuietMode(bool in_quiet_mode) OVERRIDE;
-  virtual void EnterQuietModeWithExpire(
-      const base::TimeDelta& expires_in) OVERRIDE;
-  virtual void RestartPopupTimers() OVERRIDE;
-  virtual void PausePopupTimers() OVERRIDE;
+  void AddObserver(MessageCenterObserver* observer) override;
+  void RemoveObserver(MessageCenterObserver* observer) override;
+  void AddNotificationBlocker(NotificationBlocker* blocker) override;
+  void RemoveNotificationBlocker(NotificationBlocker* blocker) override;
+  void SetVisibility(Visibility visible) override;
+  bool IsMessageCenterVisible() const override;
+  size_t NotificationCount() const override;
+  size_t UnreadNotificationCount() const override;
+  bool HasPopupNotifications() const override;
+  bool IsQuietMode() const override;
+  bool HasClickedListener(const std::string& id) override;
+  message_center::Notification* FindVisibleNotificationById(
+      const std::string& id) override;
+  const NotificationList::Notifications& GetVisibleNotifications() override;
+  NotificationList::PopupNotifications GetPopupNotifications() override;
+  void AddNotification(scoped_ptr<Notification> notification) override;
+  void UpdateNotification(const std::string& old_id,
+                          scoped_ptr<Notification> new_notification) override;
+  void RemoveNotification(const std::string& id, bool by_user) override;
+  void RemoveAllNotifications(bool by_user) override;
+  void RemoveAllVisibleNotifications(bool by_user) override;
+  void SetNotificationIcon(const std::string& notification_id,
+                           const gfx::Image& image) override;
+  void SetNotificationImage(const std::string& notification_id,
+                            const gfx::Image& image) override;
+  void SetNotificationButtonIcon(const std::string& notification_id,
+                                 int button_index,
+                                 const gfx::Image& image) override;
+  void DisableNotificationsByNotifier(const NotifierId& notifier_id) override;
+  void ClickOnNotification(const std::string& id) override;
+  void ClickOnNotificationButton(const std::string& id,
+                                 int button_index) override;
+  void MarkSinglePopupAsShown(const std::string& id,
+                              bool mark_notification_as_read) override;
+  void DisplayedNotification(const std::string& id,
+                             const DisplaySource source) override;
+  void SetNotifierSettingsProvider(NotifierSettingsProvider* provider) override;
+  NotifierSettingsProvider* GetNotifierSettingsProvider() override;
+  void SetQuietMode(bool in_quiet_mode) override;
+  void EnterQuietModeWithExpire(const base::TimeDelta& expires_in) override;
+  void RestartPopupTimers() override;
+  void PausePopupTimers() override;
 
   // NotificationBlocker::Observer overrides:
-  virtual void OnBlockingStateChanged(NotificationBlocker* blocker) OVERRIDE;
+  void OnBlockingStateChanged(NotificationBlocker* blocker) override;
 
   // message_center::NotifierSettingsObserver overrides:
-  virtual void UpdateIconImage(const NotifierId& notifier_id,
-                               const gfx::Image& icon) OVERRIDE;
-  virtual void NotifierGroupChanged() OVERRIDE;
-  virtual void NotifierEnabledChanged(const NotifierId& notifier_id,
-                                      bool enabled) OVERRIDE;
+  void UpdateIconImage(const NotifierId& notifier_id,
+                       const gfx::Image& icon) override;
+  void NotifierGroupChanged() override;
+  void NotifierEnabledChanged(const NotifierId& notifier_id,
+                              bool enabled) override;
 
  protected:
-  virtual void DisableTimersForTest() OVERRIDE;
+  void DisableTimersForTest() override;
 
  private:
   struct NotificationCache {

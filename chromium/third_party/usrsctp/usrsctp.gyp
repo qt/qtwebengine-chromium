@@ -28,7 +28,7 @@
           'SCTP_USE_OPENSSL_SHA1',
         ],
         'dependencies': [
-          '<(DEPTH)/third_party/openssl/openssl.gyp:openssl',
+          '<(DEPTH)/third_party/boringssl/boringssl.gyp:boringssl',
         ],
       },
       {  # else use_openssl==0, use NSS.
@@ -53,9 +53,11 @@
   },
   'targets': [
     {
+      # GN version: //third_party/usrsctp
       'target_name': 'usrsctplib',
       'type': 'static_library',
       'sources': [
+        # Note: sources list duplicated in GN build.
         'usrsctplib/netinet/sctp.h',
         'usrsctplib/netinet/sctp_asconf.c',
         'usrsctplib/netinet/sctp_asconf.h',
@@ -113,7 +115,6 @@
         'usrsctplib/user_recv_thread.c',
         'usrsctplib/user_recv_thread.h',
         'usrsctplib/user_route.h',
-        'usrsctplib/user_sctp_timer_iterate.c',
         'usrsctplib/user_socket.c',
         'usrsctplib/user_socketvar.h',
         'usrsctplib/user_uma.h',
@@ -127,7 +128,7 @@
           'cflags!': [ '-Werror', '-Wall' ],
           'cflags': [ '-w' ],
         }],
-        ['OS=="mac"', {
+        ['OS=="mac" or OS=="ios"', {
           'defines': [
             'HAVE_SA_LEN',
             'HAVE_SCONN_LEN',

@@ -5,20 +5,21 @@
 #include "config.h"
 #include "core/frame/RemoteFrame.h"
 
+#include "core/frame/RemoteFrameClient.h"
 #include "core/frame/RemoteFrameView.h"
 #include "core/html/HTMLFrameOwnerElement.h"
+#include "platform/weborigin/SecurityPolicy.h"
 
-namespace WebCore {
+namespace blink {
 
-inline RemoteFrame::RemoteFrame(FrameClient* client, FrameHost* host, FrameOwner* owner)
+inline RemoteFrame::RemoteFrame(RemoteFrameClient* client, FrameHost* host, FrameOwner* owner)
     : Frame(client, host, owner)
 {
 }
 
-PassRefPtr<RemoteFrame> RemoteFrame::create(FrameClient* client, FrameHost* host, FrameOwner* owner)
+PassRefPtrWillBeRawPtr<RemoteFrame> RemoteFrame::create(RemoteFrameClient* client, FrameHost* host, FrameOwner* owner)
 {
-    RefPtr<RemoteFrame> frame = adoptRef(new RemoteFrame(client, host, owner));
-    return frame.release();
+    return adoptRefWillBeNoop(new RemoteFrame(client, host, owner));
 }
 
 RemoteFrame::~RemoteFrame()
@@ -26,14 +27,44 @@ RemoteFrame::~RemoteFrame()
     setView(nullptr);
 }
 
-void RemoteFrame::setView(PassRefPtr<RemoteFrameView> view)
+void RemoteFrame::trace(Visitor* visitor)
 {
+    visitor->trace(m_view);
+    Frame::trace(visitor);
+}
+
+void RemoteFrame::navigate(Document& originDocument, const KURL& url, bool lockBackForwardList)
+{
+    // The process where this frame actually lives won't have sufficient information to determine
+    // correct referrer, since it won't have access to the originDocument. Set it now.
+    ResourceRequest request(url);
+    request.setHTTPReferrer(SecurityPolicy::generateReferrer(originDocument.referrerPolicy(), url, originDocument.outgoingReferrer()));
+    remoteFrameClient()->navigate(request, lockBackForwardList);
+}
+
+void RemoteFrame::detach()
+{
+    detachChildren();
+    if (!client())
+        return;
+    Frame::detach();
+}
+
+void RemoteFrame::forwardInputEvent(Event* event)
+{
+    remoteFrameClient()->forwardInputEvent(event);
+}
+
+void RemoteFrame::setView(PassRefPtrWillBeRawPtr<RemoteFrameView> view)
+{
+    // Oilpan: as RemoteFrameView performs no finalization actions,
+    // no explicit dispose() of it needed here. (cf. FrameView::dispose().)
     m_view = view;
 }
 
 void RemoteFrame::createView()
 {
-    RefPtr<RemoteFrameView> view = RemoteFrameView::create(this);
+    RefPtrWillBeRawPtr<RemoteFrameView> view = RemoteFrameView::create(this);
     setView(view);
 
     if (ownerRenderer()) {
@@ -43,4 +74,9 @@ void RemoteFrame::createView()
     }
 }
 
-} // namespace WebCore
+RemoteFrameClient* RemoteFrame::remoteFrameClient() const
+{
+    return static_cast<RemoteFrameClient*>(client());
+}
+
+} // namespace blink

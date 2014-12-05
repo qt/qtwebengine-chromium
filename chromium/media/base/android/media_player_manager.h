@@ -14,18 +14,24 @@ namespace media {
 
 class MediaPlayerAndroid;
 class MediaResourceGetter;
+class MediaUrlInterceptor;
 
 // This class is responsible for managing active MediaPlayerAndroid objects.
 class MEDIA_EXPORT MediaPlayerManager {
  public:
   virtual ~MediaPlayerManager() {}
 
-  // Return a pointer to the MediaResourceGetter object.
+  // Returns a pointer to the MediaResourceGetter object.
   virtual MediaResourceGetter* GetMediaResourceGetter() = 0;
 
+  // Returns a pointer to the MediaUrlInterceptor object or null.
+  virtual MediaUrlInterceptor* GetMediaUrlInterceptor() = 0;
+
   // Called when time update messages need to be sent. Args: player ID,
-  // current time.
-  virtual void OnTimeUpdate(int player_id, base::TimeDelta current_time) = 0;
+  // current timestamp, current time ticks.
+  virtual void OnTimeUpdate(int player_id,
+                            base::TimeDelta current_timestamp,
+                            base::TimeTicks current_time_ticks) = 0;
 
   // Called when media metadata changed. Args: player ID, duration of the
   // media, width, height, whether the metadata is successfully extracted.

@@ -30,9 +30,9 @@
 
 #include "core/html/shadow/SpinButtonElement.h"
 
-namespace WebCore {
+namespace blink {
 
-class AXSpinButton FINAL : public AXMockObject {
+class AXSpinButton final : public AXMockObject {
 public:
     static PassRefPtr<AXSpinButton> create();
     virtual ~AXSpinButton();
@@ -43,16 +43,16 @@ public:
 private:
     AXSpinButton();
 
-    virtual AccessibilityRole roleValue() const OVERRIDE { return SpinButtonRole; }
-    virtual bool isSpinButton() const OVERRIDE { return true; }
-    virtual bool isNativeSpinButton() const OVERRIDE { return true; }
-    virtual void addChildren() OVERRIDE;
-    virtual LayoutRect elementRect() const OVERRIDE;
+    virtual AccessibilityRole roleValue() const override { return SpinButtonRole; }
+    virtual bool isSpinButton() const override { return true; }
+    virtual bool isNativeSpinButton() const override { return true; }
+    virtual void addChildren() override;
+    virtual LayoutRect elementRect() const override;
 
     SpinButtonElement* m_spinButtonElement;
 };
 
-class AXSpinButtonPart FINAL : public AXMockObject {
+class AXSpinButtonPart final : public AXMockObject {
 public:
     static PassRefPtr<AXSpinButtonPart> create();
     virtual ~AXSpinButtonPart() { }
@@ -64,15 +64,15 @@ private:
     AXSpinButtonPart();
     bool m_isIncrementor : 1;
 
-    virtual bool press() const OVERRIDE;
-    virtual AccessibilityRole roleValue() const OVERRIDE { return ButtonRole; }
-    virtual bool isSpinButtonPart() const OVERRIDE { return true; }
-    virtual LayoutRect elementRect() const OVERRIDE;
+    virtual bool press() const override;
+    virtual AccessibilityRole roleValue() const override { return ButtonRole; }
+    virtual bool isSpinButtonPart() const override { return true; }
+    virtual LayoutRect elementRect() const override;
 };
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXSpinButton, isNativeSpinButton());
 DEFINE_AX_OBJECT_TYPE_CASTS(AXSpinButtonPart, isSpinButtonPart());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXSpinButton_h

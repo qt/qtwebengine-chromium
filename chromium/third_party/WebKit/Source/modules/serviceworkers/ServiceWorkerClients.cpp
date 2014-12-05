@@ -5,31 +5,34 @@
 #include "config.h"
 #include "modules/serviceworkers/ServiceWorkerClients.h"
 
-#include "bindings/v8/CallbackPromiseAdapter.h"
-#include "bindings/v8/ScriptPromiseResolver.h"
-#include "bindings/v8/ScriptPromiseResolverWithContext.h"
-#include "modules/serviceworkers/Client.h"
+#include "bindings/core/v8/CallbackPromiseAdapter.h"
+#include "bindings/core/v8/ScriptPromiseResolver.h"
+#include "modules/serviceworkers/ServiceWorkerClient.h"
 #include "modules/serviceworkers/ServiceWorkerError.h"
 #include "modules/serviceworkers/ServiceWorkerGlobalScopeClient.h"
 #include "public/platform/WebServiceWorkerClientsInfo.h"
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 namespace {
 
     class ClientArray {
     public:
         typedef blink::WebServiceWorkerClientsInfo WebType;
-        static Vector<RefPtr<Client> > from(ScriptPromiseResolverWithContext*, WebType* webClientsRaw)
+        static HeapVector<Member<ServiceWorkerClient> > take(ScriptPromiseResolver*, WebType* webClientsRaw)
         {
             OwnPtr<WebType> webClients = adoptPtr(webClientsRaw);
-            Vector<RefPtr<Client> > clients;
+            HeapVector<Member<ServiceWorkerClient> > clients;
             for (size_t i = 0; i < webClients->clientIDs.size(); ++i) {
-                clients.append(Client::create(webClients->clientIDs[i]));
+                clients.append(ServiceWorkerClient::create(webClients->clientIDs[i]));
             }
             return clients;
+        }
+        static void dispose(WebType* webClientsRaw)
+        {
+            delete webClientsRaw;
         }
 
     private:
@@ -39,25 +42,28 @@ namespace {
 
 } // namespace
 
-PassRefPtr<ServiceWorkerClients> ServiceWorkerClients::create()
+ServiceWorkerClients* ServiceWorkerClients::create()
 {
-    return adoptRef(new ServiceWorkerClients());
+    return new ServiceWorkerClients();
 }
 
 ServiceWorkerClients::ServiceWorkerClients()
 {
-    ScriptWrappable::init(this);
 }
 
-ServiceWorkerClients::~ServiceWorkerClients()
+ScriptPromise ServiceWorkerClients::getAll(ScriptState* scriptState, const ServiceWorkerClientQueryOptions& options)
 {
-}
+    RefPtr<ScriptPromiseResolver> resolver = ScriptPromiseResolver::create(scriptState);
+    ScriptPromise promise = resolver->promise();
 
-ScriptPromise ServiceWorkerClients::getServiced(ScriptState* scriptState)
-{
-    RefPtr<ScriptPromiseResolverWithContext> resolver = ScriptPromiseResolverWithContext::create(scriptState);
+    if (options.includeUncontrolled()) {
+        // FIXME: Currently we don't support includeUncontrolled=true.
+        resolver->reject(DOMException::create(NotSupportedError, "includeUncontrolled parameter of getAll is not supported."));
+        return promise;
+    }
+
     ServiceWorkerGlobalScopeClient::from(scriptState->executionContext())->getClients(new CallbackPromiseAdapter<ClientArray, ServiceWorkerError>(resolver));
-    return resolver->promise();
+    return promise;
 }
 
-} // namespace WebCore
+} // namespace blink

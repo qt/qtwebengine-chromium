@@ -28,28 +28,26 @@
 
 #include "modules/webaudio/OfflineAudioCompletionEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create()
 {
     return adoptRefWillBeNoop(new OfflineAudioCompletionEvent);
 }
 
-PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer)
+PassRefPtrWillBeRawPtr<OfflineAudioCompletionEvent> OfflineAudioCompletionEvent::create(AudioBuffer* renderedBuffer)
 {
     return adoptRefWillBeNoop(new OfflineAudioCompletionEvent(renderedBuffer));
 }
 
 OfflineAudioCompletionEvent::OfflineAudioCompletionEvent()
 {
-    ScriptWrappable::init(this);
 }
 
-OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(PassRefPtrWillBeRawPtr<AudioBuffer> renderedBuffer)
+OfflineAudioCompletionEvent::OfflineAudioCompletionEvent(AudioBuffer* renderedBuffer)
     : Event(EventTypeNames::complete, true, false)
     , m_renderedBuffer(renderedBuffer)
 {
-    ScriptWrappable::init(this);
 }
 
 OfflineAudioCompletionEvent::~OfflineAudioCompletionEvent()
@@ -67,6 +65,6 @@ void OfflineAudioCompletionEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

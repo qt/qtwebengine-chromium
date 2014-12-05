@@ -36,18 +36,16 @@
 #include "wtf/text/TextEncoding.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMFormData::DOMFormData(const WTF::TextEncoding& encoding)
     : FormDataList(encoding)
 {
-    ScriptWrappable::init(this);
 }
 
 DOMFormData::DOMFormData(HTMLFormElement* form)
     : FormDataList(UTF8Encoding())
 {
-    ScriptWrappable::init(this);
     if (!form)
         return;
 
@@ -60,14 +58,12 @@ DOMFormData::DOMFormData(HTMLFormElement* form)
 
 void DOMFormData::append(const String& name, const String& value)
 {
-    if (!name.isEmpty())
-        appendData(name, value);
+    appendData(name, value);
 }
 
 void DOMFormData::append(const String& name, Blob* blob, const String& filename)
 {
-    if (!name.isEmpty())
-        appendBlob(name, blob, filename);
+    appendBlob(name, blob, filename);
 }
 
-} // namespace WebCore
+} // namespace blink

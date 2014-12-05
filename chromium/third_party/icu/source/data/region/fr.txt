@@ -1,18 +1,18 @@
 ﻿// ***************************************************************************
 // *
-// * Copyright (C) 2010 International Business Machines
-// * Corporation and others.  All Rights Reserved.
-// * Tool: com.ibm.icu.dev.tool.cldr.LDML2ICUConverter.java
-// * Source File:<path>/common/main/fr.xml
+// * Copyright (C) 2013 International Business Machines
+// * Corporation and others. All Rights Reserved.
+// * Tool: org.unicode.cldr.icu.NewLdml2IcuConverter
+// * Source File: <path>/common/main/fr.xml
 // *
 // ***************************************************************************
 /**
- *  ICU <specials> source: <path>/xml/main/fr.xml
+ * ICU <specials> source: <path>/common/main/fr.xml
  */
 fr{
     Countries{
         419{"Amérique latine"}
-        AC{"Île de l'Ascension"}
+        AC{"Île de l’Ascension"}
         AD{"Andorre"}
         AE{"Émirats arabes unis"}
         AF{"Afghanistan"}
@@ -39,20 +39,21 @@ fr{
         BH{"Bahreïn"}
         BI{"Burundi"}
         BJ{"Bénin"}
-        BL{"Saint-Barthélémy"}
+        BL{"Saint-Barthélemy"}
         BM{"Bermudes"}
         BN{"Brunéi Darussalam"}
         BO{"Bolivie"}
+        BQ{"Pays-Bas caribéens"}
         BR{"Brésil"}
         BS{"Bahamas"}
         BT{"Bhoutan"}
         BV{"Île Bouvet"}
         BW{"Botswana"}
-        BY{"Bélarus"}
+        BY{"Biélorussie"}
         BZ{"Belize"}
         CA{"Canada"}
-        CC{"Îles Cocos - Keeling"}
-        CD{"République démocratique du Congo"}
+        CC{"Îles Cocos (Keeling)"}
+        CD{"Congo-Kinshasa"}
         CF{"République centrafricaine"}
         CG{"Congo-Brazzaville"}
         CH{"Suisse"}
@@ -64,9 +65,9 @@ fr{
         CO{"Colombie"}
         CP{"Île Clipperton"}
         CR{"Costa Rica"}
-        CS{"Serbie-et-Monténégro"}
         CU{"Cuba"}
         CV{"Cap-Vert"}
+        CW{"Curaçao"}
         CX{"Île Christmas"}
         CY{"Chypre"}
         CZ{"République tchèque"}
@@ -106,7 +107,7 @@ fr{
         GP{"Guadeloupe"}
         GQ{"Guinée équatoriale"}
         GR{"Grèce"}
-        GS{"Géorgie du Sud et les îles Sandwich du Sud"}
+        GS{"Géorgie du Sud et les Îles Sandwich du Sud"}
         GT{"Guatemala"}
         GU{"Guam"}
         GW{"Guinée-Bissau"}
@@ -123,7 +124,7 @@ fr{
         IL{"Israël"}
         IM{"Île de Man"}
         IN{"Inde"}
-        IO{"Territoire britannique de l'océan Indien"}
+        IO{"Territoire britannique de l’océan Indien"}
         IQ{"Irak"}
         IR{"Iran"}
         IS{"Islande"}
@@ -158,7 +159,7 @@ fr{
         MC{"Monaco"}
         MD{"Moldavie"}
         ME{"Monténégro"}
-        MF{"Saint-Martin"}
+        MF{"Saint-Martin (partie française)"}
         MG{"Madagascar"}
         MH{"Îles Marshall"}
         MK{"Macédoine"}
@@ -200,13 +201,13 @@ fr{
         PM{"Saint-Pierre-et-Miquelon"}
         PN{"Pitcairn"}
         PR{"Porto Rico"}
-        PS{"Territoire palestinien"}
+        PS{"Territoires palestiniens"}
         PT{"Portugal"}
         PW{"Palaos"}
         PY{"Paraguay"}
         QA{"Qatar"}
         QO{"régions éloignées de l’Océanie"}
-        RE{"Réunion"}
+        RE{"La Réunion"}
         RO{"Roumanie"}
         RS{"Serbie"}
         RU{"Russie"}
@@ -219,19 +220,21 @@ fr{
         SG{"Singapour"}
         SH{"Sainte-Hélène"}
         SI{"Slovénie"}
-        SJ{"Svalbard et Île Jan Mayen"}
+        SJ{"Svalbard et Jan Mayen"}
         SK{"Slovaquie"}
         SL{"Sierra Leone"}
         SM{"Saint-Marin"}
         SN{"Sénégal"}
         SO{"Somalie"}
         SR{"Suriname"}
+        SS{"Soudan du Sud"}
         ST{"Sao Tomé-et-Principe"}
         SV{"El Salvador"}
+        SX{"Saint-Martin (partie néerlandaise)"}
         SY{"Syrie"}
         SZ{"Swaziland"}
         TA{"Tristan da Cunha"}
-        TC{"Îles Turks et Caïques"}
+        TC{"Îles Turques-et-Caïques"}
         TD{"Tchad"}
         TF{"Terres australes françaises"}
         TG{"Togo"}
@@ -249,7 +252,7 @@ fr{
         TZ{"Tanzanie"}
         UA{"Ukraine"}
         UG{"Ouganda"}
-        UM{"Îles Mineures Éloignées des États-Unis"}
+        UM{"Îles mineures éloignées des États-Unis"}
         US{"États-Unis"}
         UY{"Uruguay"}
         UZ{"Ouzbékistan"}
@@ -258,10 +261,11 @@ fr{
         VE{"Venezuela"}
         VG{"Îles Vierges britanniques"}
         VI{"Îles Vierges des États-Unis"}
-        VN{"Viêt Nam"}
+        VN{"Vietnam"}
         VU{"Vanuatu"}
         WF{"Wallis-et-Futuna"}
         WS{"Samoa"}
+        XK{"Kosovo"}
         YE{"Yémen"}
         YT{"Mayotte"}
         ZA{"Afrique du Sud"}
@@ -269,5 +273,12 @@ fr{
         ZW{"Zimbabwe"}
         ZZ{"région indéterminée"}
     }
-    Version{"2.0.51.59"}
+    CountriesShort{
+        GB{"R.-U."}
+        HK{"Hong Kong"}
+        MO{"Macao"}
+        PS{"Palestine"}
+        US{"É.-U."}
+    }
+    Version{"2.0.93.10"}
 }

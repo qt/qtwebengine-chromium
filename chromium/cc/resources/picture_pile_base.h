@@ -10,27 +10,27 @@
 #include <utility>
 
 #include "base/containers/hash_tables.h"
-#include "base/memory/ref_counted.h"
 #include "cc/base/cc_export.h"
 #include "cc/base/region.h"
 #include "cc/base/tiling_data.h"
 #include "cc/resources/picture.h"
-#include "ui/gfx/size.h"
+#include "ui/gfx/geometry/size.h"
 
 namespace base {
+namespace debug {
+class TracedValue;
+}
 class Value;
 }
 
 namespace cc {
 
-class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
+class CC_EXPORT PicturePileBase {
  public:
   PicturePileBase();
   explicit PicturePileBase(const PicturePileBase* other);
-  PicturePileBase(const PicturePileBase* other, unsigned thread_index);
 
-  void SetTilingRect(const gfx::Rect& tiling_rect);
-  gfx::Rect tiling_rect() const { return tiling_.tiling_rect(); }
+  gfx::Size tiling_size() const { return tiling_.tiling_size(); }
   void SetMinContentsScale(float min_contents_scale);
 
   // If non-empty, all pictures tiles inside this rect are recorded. There may
@@ -42,10 +42,11 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   int num_tiles_y() const { return tiling_.num_tiles_y(); }
   gfx::Rect tile_bounds(int x, int y) const { return tiling_.TileBounds(x, y); }
   bool HasRecordingAt(int x, int y);
-  bool CanRaster(float contents_scale, const gfx::Rect& content_rect);
 
-  // If this pile contains any valid recordings. May have false positives.
-  bool HasRecordings() const { return has_any_recordings_; }
+  bool is_solid_color() const { return is_solid_color_; }
+  SkColor solid_color() const { return solid_color_; }
+
+  void set_is_mask(bool is_mask) { is_mask_ = is_mask; }
 
   static void ComputeTileGridInfo(const gfx::Size& tile_grid_size,
                                   SkTileGridFactory::TileGridInfo* info);
@@ -53,7 +54,16 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   void SetTileGridSize(const gfx::Size& tile_grid_size);
   TilingData& tiling() { return tiling_; }
 
-  scoped_ptr<base::Value> AsValue() const;
+  SkTileGridFactory::TileGridInfo GetTileGridInfoForTesting() const {
+    return tile_grid_info_;
+  }
+
+  void SetRecordedViewportForTesting(const gfx::Rect& viewport) {
+    recorded_viewport_ = viewport;
+  }
+  void SetHasAnyRecordingsForTesting(bool has_recordings) {
+    has_any_recordings_ = has_recordings;
+  }
 
  protected:
   class CC_EXPORT PictureInfo {
@@ -67,9 +77,8 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
 
     bool Invalidate(int frame_number);
     bool NeedsRecording(int frame_number, int distance_to_visible);
-    PictureInfo CloneForThread(int thread_index) const;
     void SetPicture(scoped_refptr<Picture> picture);
-    Picture* GetPicture() const;
+    const Picture* GetPicture() const;
 
     float GetInvalidationFrequencyForTesting() const {
       return GetInvalidationFrequency();
@@ -80,7 +89,7 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
     float GetInvalidationFrequency() const;
 
     int last_frame_number_;
-    scoped_refptr<Picture> picture_;
+    scoped_refptr<const Picture> picture_;
     std::bitset<INVALIDATION_FRAMES_TRACKED> invalidation_history_;
   };
 
@@ -92,12 +101,8 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   int buffer_pixels() const { return tiling_.border_texels(); }
   void Clear();
 
-  gfx::Rect PaddedRect(const PictureMapKey& key);
-  gfx::Rect PadRect(const gfx::Rect& rect);
-
-  // An internal CanRaster check that goes to the picture_map rather than
-  // using the recorded_viewport hint.
-  bool CanRasterSlowTileCheck(const gfx::Rect& layer_rect) const;
+  gfx::Rect PaddedRect(const PictureMapKey& key) const;
+  gfx::Rect PadRect(const gfx::Rect& rect) const;
 
   // A picture pile is a tiled set of pictures. The picture map is a map of tile
   // indices to picture infos.
@@ -115,11 +120,15 @@ class CC_EXPORT PicturePileBase : public base::RefCounted<PicturePileBase> {
   // A hint about whether there are any recordings. This may be a false
   // positive.
   bool has_any_recordings_;
+  bool is_mask_;
+  bool is_solid_color_;
+  SkColor solid_color_;
 
  private:
+  friend class PicturePileImpl;
+
   void SetBufferPixels(int buffer_pixels);
 
-  friend class base::RefCounted<PicturePileBase>;
   DISALLOW_COPY_AND_ASSIGN(PicturePileBase);
 };
 

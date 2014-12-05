@@ -2,26 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+cr.exportPath('options');
+
+/**
+ * @typedef {{
+ *   availableColorProfiles: Array.<{profileId: number, name: string}>,
+ *   colorProfile: number,
+ *   height: number,
+ *   id: string,
+ *   isInternal: boolean,
+ *   isPrimary: boolean,
+ *   resolutions: Array.<{width: number, height: number, originalWidth: number,
+ *       originalHeight: number, deviceScaleFactor: number, scale: number,
+ *       refreshRate: number, isBest: boolean, selected: boolean}>,
+ *   name: string,
+ *   orientation: number,
+ *   width: number,
+ *   x: number,
+ *   y: number
+ * }}
+ */
+options.DisplayInfo;
+
+/**
+ * Enumeration of secondary display layout.  The value has to be same as the
+ * values in ash/display/display_controller.cc.
+ * @enum {number}
+ */
+options.SecondaryDisplayLayout = {
+  TOP: 0,
+  RIGHT: 1,
+  BOTTOM: 2,
+  LEFT: 3
+};
+
 cr.define('options', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   // The scale ratio of the display rectangle to its original size.
   /** @const */ var VISUAL_SCALE = 1 / 10;
 
   // The number of pixels to share the edges between displays.
   /** @const */ var MIN_OFFSET_OVERLAP = 5;
-
-  /**
-   * Enumeration of secondary display layout.  The value has to be same as the
-   * values in ash/display/display_controller.cc.
-   * @enum {number}
-   */
-  var SecondaryDisplayLayout = {
-    TOP: 0,
-    RIGHT: 1,
-    BOTTOM: 2,
-    LEFT: 3
-  };
 
   /**
    * Calculates the bounds of |element| relative to the page.
@@ -48,7 +71,8 @@ cr.define('options', function() {
    * Gets the position of |point| to |rect|, left, right, top, or bottom.
    * @param {Object} rect The base rectangle with x, y, width, and height.
    * @param {Object} point The point to check the position.
-   * @return {SecondaryDisplayLayout} The position of the calculated point.
+   * @return {options.SecondaryDisplayLayout} The position of the calculated
+   *     point.
    */
   function getPositionToRectangle(rect, point) {
     // Separates the area into four (LEFT/RIGHT/TOP/BOTTOM) by the diagonals of
@@ -59,31 +83,32 @@ cr.define('options', function() {
 
     if (point.y > topDownIntercept + point.x * diagonalSlope) {
       if (point.y > bottomUpIntercept - point.x * diagonalSlope)
-        return SecondaryDisplayLayout.BOTTOM;
+        return options.SecondaryDisplayLayout.BOTTOM;
       else
-        return SecondaryDisplayLayout.LEFT;
+        return options.SecondaryDisplayLayout.LEFT;
     } else {
       if (point.y > bottomUpIntercept - point.x * diagonalSlope)
-        return SecondaryDisplayLayout.RIGHT;
+        return options.SecondaryDisplayLayout.RIGHT;
       else
-        return SecondaryDisplayLayout.TOP;
+        return options.SecondaryDisplayLayout.TOP;
     }
   }
 
   /**
    * Encapsulated handling of the 'Display' page.
    * @constructor
+   * @extends {cr.ui.pageManager.Page}
    */
   function DisplayOptions() {
-    OptionsPage.call(this, 'display',
-                     loadTimeData.getString('displayOptionsPageTabTitle'),
-                     'display-options-page');
+    Page.call(this, 'display',
+              loadTimeData.getString('displayOptionsPageTabTitle'),
+              'display-options-page');
   }
 
   cr.addSingletonGetter(DisplayOptions);
 
   DisplayOptions.prototype = {
-    __proto__: OptionsPage.prototype,
+    __proto__: Page.prototype,
 
     /**
      * Whether the current output status is mirroring displays or not.
@@ -95,11 +120,12 @@ cr.define('options', function() {
      * The current secondary display layout.
      * @private
      */
-    layout_: SecondaryDisplayLayout.RIGHT,
+    layout_: options.SecondaryDisplayLayout.RIGHT,
 
     /**
      * The array of current output displays.  It also contains the display
      * rectangles currently rendered on screen.
+     * @type {Array.<options.DisplayInfo>}
      * @private
      */
     displays_: [],
@@ -144,16 +170,14 @@ cr.define('options', function() {
      */
     lastTouchLocation_: null,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
-      $('display-options-toggle-mirroring').onclick = function() {
+      $('display-options-toggle-mirroring').onclick = (function() {
         this.mirroring_ = !this.mirroring_;
         chrome.send('setMirroring', [this.mirroring_]);
-      }.bind(this);
+      }).bind(this);
 
       var container = $('display-options-displays-view-host');
       container.onmousemove = this.onMouseMove_.bind(this);
@@ -161,38 +185,31 @@ cr.define('options', function() {
       container.ontouchmove = this.onTouchMove_.bind(this);
       container.ontouchend = this.endDragging_.bind(this);
 
-      $('display-options-set-primary').onclick = function() {
+      $('display-options-set-primary').onclick = (function() {
         chrome.send('setPrimary', [this.displays_[this.focusedIndex_].id]);
-      }.bind(this);
-      $('display-options-resolution-selection').onchange = function(ev) {
+      }).bind(this);
+      $('display-options-resolution-selection').onchange = (function(ev) {
         var display = this.displays_[this.focusedIndex_];
         var resolution = display.resolutions[ev.target.value];
-        if (resolution.scale) {
-          chrome.send('setUIScale', [display.id, resolution.scale]);
-        } else {
-          chrome.send('setResolution',
-                      [display.id, resolution.width, resolution.height]);
-        }
-      }.bind(this);
-      $('display-options-orientation-selection').onchange = function(ev) {
+        chrome.send('setDisplayMode', [display.id, resolution]);
+      }).bind(this);
+      $('display-options-orientation-selection').onchange = (function(ev) {
         chrome.send('setOrientation', [this.displays_[this.focusedIndex_].id,
                                        ev.target.value]);
-      }.bind(this);
-      $('display-options-color-profile-selection').onchange = function(ev) {
+      }).bind(this);
+      $('display-options-color-profile-selection').onchange = (function(ev) {
         chrome.send('setColorProfile', [this.displays_[this.focusedIndex_].id,
                                         ev.target.value]);
-      }.bind(this);
-      $('selected-display-start-calibrating-overscan').onclick = function() {
+      }).bind(this);
+      $('selected-display-start-calibrating-overscan').onclick = (function() {
         // Passes the target display ID. Do not specify it through URL hash,
         // we do not care back/forward.
         var displayOverscan = options.DisplayOverscan.getInstance();
         displayOverscan.setDisplayId(this.displays_[this.focusedIndex_].id);
-        OptionsPage.navigateToPage('displayOverscan');
+        PageManager.showPageByName('displayOverscan');
         chrome.send('coreOptionsUserMetricsAction',
                     ['Options_DisplaySetOverscan']);
-      }.bind(this);
-
-      chrome.send('getDisplayInfo');
+      }).bind(this);
     },
 
     /** @override */
@@ -204,13 +221,7 @@ cr.define('options', function() {
         maxSize = Math.max(maxSize, optionTitles[i].clientWidth);
       for (var i = 0; i < optionTitles.length; i++)
         optionTitles[i].style.width = maxSize + 'px';
-    },
-
-    /** @override */
-    onVisibilityChanged_: function() {
-      OptionsPage.prototype.onVisibilityChanged_(this);
-      if (this.visible)
-        chrome.send('getDisplayInfo');
+      chrome.send('getDisplayInfo');
     },
 
     /**
@@ -261,7 +272,8 @@ cr.define('options', function() {
         return true;
 
       e.preventDefault();
-      return this.startDragging_(e.target, {x: e.pageX, y: e.pageY});
+      var target = assertInstanceof(e.target, HTMLElement);
+      return this.startDragging_(target, {x: e.pageX, y: e.pageY});
     },
 
     /**
@@ -279,7 +291,8 @@ cr.define('options', function() {
       e.preventDefault();
       var touch = e.touches[0];
       this.lastTouchLocation_ = {x: touch.pageX, y: touch.pageY};
-      return this.startDragging_(e.target, this.lastTouchLocation_);
+      var target = assertInstanceof(e.target, HTMLElement);
+      return this.startDragging_(target, this.lastTouchLocation_);
     },
 
     /**
@@ -291,8 +304,8 @@ cr.define('options', function() {
       var primary = this.primaryDisplay_;
       var secondary = this.secondaryDisplay_;
       var offset;
-      if (this.layout_ == SecondaryDisplayLayout.LEFT ||
-          this.layout_ == SecondaryDisplayLayout.RIGHT) {
+      if (this.layout_ == options.SecondaryDisplayLayout.LEFT ||
+          this.layout_ == options.SecondaryDisplayLayout.RIGHT) {
         offset = secondary.div.offsetTop - primary.div.offsetTop;
       } else {
         offset = secondary.div.offsetLeft - primary.div.offsetLeft;
@@ -381,41 +394,49 @@ cr.define('options', function() {
         height: baseDiv.offsetHeight
       };
       switch (getPositionToRectangle(baseBounds, newCenter)) {
-        case SecondaryDisplayLayout.RIGHT:
+        case options.SecondaryDisplayLayout.RIGHT:
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.LEFT : SecondaryDisplayLayout.RIGHT;
+              options.SecondaryDisplayLayout.LEFT :
+              options.SecondaryDisplayLayout.RIGHT;
           break;
-        case SecondaryDisplayLayout.LEFT:
+        case options.SecondaryDisplayLayout.LEFT:
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.RIGHT : SecondaryDisplayLayout.LEFT;
+              options.SecondaryDisplayLayout.RIGHT :
+              options.SecondaryDisplayLayout.LEFT;
           break;
-        case SecondaryDisplayLayout.TOP:
+        case options.SecondaryDisplayLayout.TOP:
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.BOTTOM : SecondaryDisplayLayout.TOP;
+              options.SecondaryDisplayLayout.BOTTOM :
+              options.SecondaryDisplayLayout.TOP;
           break;
-        case SecondaryDisplayLayout.BOTTOM:
+        case options.SecondaryDisplayLayout.BOTTOM:
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.TOP : SecondaryDisplayLayout.BOTTOM;
+              options.SecondaryDisplayLayout.TOP :
+              options.SecondaryDisplayLayout.BOTTOM;
           break;
       }
 
-      if (this.layout_ == SecondaryDisplayLayout.LEFT ||
-          this.layout_ == SecondaryDisplayLayout.RIGHT) {
+      if (this.layout_ == options.SecondaryDisplayLayout.LEFT ||
+          this.layout_ == options.SecondaryDisplayLayout.RIGHT) {
         if (newPosition.y > baseDiv.offsetTop + baseDiv.offsetHeight)
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.TOP : SecondaryDisplayLayout.BOTTOM;
+              options.SecondaryDisplayLayout.TOP :
+              options.SecondaryDisplayLayout.BOTTOM;
         else if (newPosition.y + draggingDiv.offsetHeight <
                  baseDiv.offsetTop)
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.BOTTOM : SecondaryDisplayLayout.TOP;
+              options.SecondaryDisplayLayout.BOTTOM :
+              options.SecondaryDisplayLayout.TOP;
       } else {
         if (newPosition.x > baseDiv.offsetLeft + baseDiv.offsetWidth)
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.LEFT : SecondaryDisplayLayout.RIGHT;
+              options.SecondaryDisplayLayout.LEFT :
+              options.SecondaryDisplayLayout.RIGHT;
         else if (newPosition.x + draggingDiv.offsetWidth <
-                   baseDiv.offstLeft)
+                   baseDiv.offsetLeft)
           this.layout_ = this.dragging_.display.isPrimary ?
-              SecondaryDisplayLayout.RIGHT : SecondaryDisplayLayout.LEFT;
+              options.SecondaryDisplayLayout.RIGHT :
+              options.SecondaryDisplayLayout.LEFT;
       }
 
       var layoutToBase;
@@ -423,38 +444,38 @@ cr.define('options', function() {
         layoutToBase = this.layout_;
       } else {
         switch (this.layout_) {
-          case SecondaryDisplayLayout.RIGHT:
-            layoutToBase = SecondaryDisplayLayout.LEFT;
+          case options.SecondaryDisplayLayout.RIGHT:
+            layoutToBase = options.SecondaryDisplayLayout.LEFT;
             break;
-          case SecondaryDisplayLayout.LEFT:
-            layoutToBase = SecondaryDisplayLayout.RIGHT;
+          case options.SecondaryDisplayLayout.LEFT:
+            layoutToBase = options.SecondaryDisplayLayout.RIGHT;
             break;
-          case SecondaryDisplayLayout.TOP:
-            layoutToBase = SecondaryDisplayLayout.BOTTOM;
+          case options.SecondaryDisplayLayout.TOP:
+            layoutToBase = options.SecondaryDisplayLayout.BOTTOM;
             break;
-          case SecondaryDisplayLayout.BOTTOM:
-            layoutToBase = SecondaryDisplayLayout.TOP;
+          case options.SecondaryDisplayLayout.BOTTOM:
+            layoutToBase = options.SecondaryDisplayLayout.TOP;
             break;
         }
       }
 
       switch (layoutToBase) {
-        case SecondaryDisplayLayout.RIGHT:
+        case options.SecondaryDisplayLayout.RIGHT:
           draggingDiv.style.left =
               baseDiv.offsetLeft + baseDiv.offsetWidth + 'px';
           draggingDiv.style.top = newPosition.y + 'px';
           break;
-        case SecondaryDisplayLayout.LEFT:
+        case options.SecondaryDisplayLayout.LEFT:
           draggingDiv.style.left =
               baseDiv.offsetLeft - draggingDiv.offsetWidth + 'px';
           draggingDiv.style.top = newPosition.y + 'px';
           break;
-        case SecondaryDisplayLayout.TOP:
+        case options.SecondaryDisplayLayout.TOP:
           draggingDiv.style.top =
               baseDiv.offsetTop - draggingDiv.offsetHeight + 'px';
           draggingDiv.style.left = newPosition.x + 'px';
           break;
-        case SecondaryDisplayLayout.BOTTOM:
+        case options.SecondaryDisplayLayout.BOTTOM:
           draggingDiv.style.top =
               baseDiv.offsetTop + baseDiv.offsetHeight + 'px';
           draggingDiv.style.left = newPosition.x + 'px';
@@ -516,8 +537,8 @@ cr.define('options', function() {
         var baseDiv = this.dragging_.display.isPrimary ?
             this.secondaryDisplay_.div : this.primaryDisplay_.div;
         var draggingDiv = this.dragging_.display.div;
-        if (this.layout_ == SecondaryDisplayLayout.LEFT ||
-            this.layout_ == SecondaryDisplayLayout.RIGHT) {
+        if (this.layout_ == options.SecondaryDisplayLayout.LEFT ||
+            this.layout_ == options.SecondaryDisplayLayout.RIGHT) {
           var top = Math.max(draggingDiv.offsetTop,
                              baseDiv.offsetTop - draggingDiv.offsetHeight +
                              MIN_OFFSET_OVERLAP);
@@ -620,6 +641,7 @@ cr.define('options', function() {
         resolution.appendChild(option);
         resolution.disabled = true;
       } else {
+        var previousOption;
         for (var i = 0; i < display.resolutions.length; i++) {
           var option = document.createElement('option');
           option.value = i;
@@ -628,9 +650,18 @@ cr.define('options', function() {
           if (display.resolutions[i].isBest) {
             option.textContent += ' ' +
                 loadTimeData.getString('annotateBest');
+          } else if (display.resolutions[i].isNative) {
+            option.textContent += ' ' +
+                loadTimeData.getString('annotateNative');
+          }
+          if (display.resolutions[i].deviceScaleFactor && previousOption &&
+              previousOption.textContent == option.textContent) {
+            option.textContent +=
+                ' (' + display.resolutions[i].deviceScaleFactor + 'x)';
           }
           option.selected = display.resolutions[i].selected;
           resolution.appendChild(option);
+          previousOption = option;
         }
         resolution.disabled = (display.resolutions.length <= 1);
       }
@@ -828,8 +859,9 @@ cr.define('options', function() {
     /**
      * Called when the display arrangement has changed.
      * @param {boolean} mirroring Whether current mode is mirroring or not.
-     * @param {Array} displays The list of the display information.
-     * @param {SecondaryDisplayLayout} layout The layout strategy.
+     * @param {Array.<options.DisplayInfo>} displays The list of the display
+     *     information.
+     * @param {options.SecondaryDisplayLayout} layout The layout strategy.
      * @param {number} offset The offset of the secondary display.
      * @private
      */

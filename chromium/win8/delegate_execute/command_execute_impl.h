@@ -15,8 +15,6 @@
 #include "base/process/process_handle.h"
 #include "win8/delegate_execute/resource.h"       // main symbols
 
-using namespace ATL;
-
 EXTERN_C const GUID CLSID_CommandExecuteImpl;
 
 // CommandExecuteImpl
@@ -83,12 +81,11 @@ class ATL_NO_VTABLE DECLSPEC_UUID("071BB5F2-85A4-424F-BFE7-5F1609BE4C2C")
   // IForegroundTransfer
   STDMETHOD(AllowForegroundTransfer)(void* reserved);
 
- private:
   static bool FindChromeExe(base::FilePath* chrome_exe);
 
-  static bool path_provider_initialized_;
+ private:
 
-  void SetHighDPIRegistryKey(bool enable);
+  static bool path_provider_initialized_;
 
   bool GetLaunchScheme(base::string16* display_name, INTERNET_SCHEME* scheme);
   HRESULT LaunchDesktopChrome();

@@ -14,10 +14,10 @@
 #include "crypto/ec_signature_creator.h"
 #include "crypto/signature_creator.h"
 #include "net/base/capturing_net_log.h"
+#include "net/base/chunked_upload_data_stream.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
-#include "net/base/upload_data_stream.h"
-#include "net/base/upload_element_reader.h"
+#include "net/base/test_completion_callback.h"
 #include "net/cert/asn1_util.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
@@ -27,7 +27,7 @@
 #include "net/spdy/spdy_http_utils.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_test_util_common.h"
-#include "net/ssl/default_server_bound_cert_store.h"
+#include "net/ssl/default_channel_id_store.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -79,7 +79,7 @@ class SpdyHttpStreamTest : public testing::Test,
   OrderedSocketData* data() { return data_.get(); }
 
  protected:
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     crypto::ECSignatureCreator::SetFactoryForTesting(NULL);
     base::MessageLoop::current()->RunUntilIdle();
   }
@@ -111,7 +111,7 @@ class SpdyHttpStreamTest : public testing::Test,
   }
 
   void TestSendCredentials(
-    ServerBoundCertService* server_bound_cert_service,
+    ChannelIDService* channel_id_service,
     const std::string& cert,
     const std::string& proof);
 
@@ -338,10 +338,10 @@ TEST_P(SpdyHttpStreamTest, SendChunkedPost) {
               key);
   EXPECT_EQ(spdy_util_.spdy_version(), session_->GetProtocolVersion());
 
-  UploadDataStream upload_stream(UploadDataStream::CHUNKED, 0);
+  ChunkedUploadDataStream upload_stream(0);
   const int kFirstChunkSize = kUploadDataSize/2;
-  upload_stream.AppendChunk(kUploadData, kFirstChunkSize, false);
-  upload_stream.AppendChunk(kUploadData + kFirstChunkSize,
+  upload_stream.AppendData(kUploadData, kFirstChunkSize, false);
+  upload_stream.AppendData(kUploadData + kFirstChunkSize,
                             kUploadDataSize - kFirstChunkSize, true);
 
   HttpRequestInfo request;
@@ -349,7 +349,7 @@ TEST_P(SpdyHttpStreamTest, SendChunkedPost) {
   request.url = GURL("http://www.google.com/");
   request.upload_data_stream = &upload_stream;
 
-  ASSERT_EQ(OK, upload_stream.Init(CompletionCallback()));
+  ASSERT_EQ(OK, upload_stream.Init(TestCompletionCallback().callback()));
 
   TestCompletionCallback callback;
   HttpResponseInfo response;
@@ -413,15 +413,15 @@ TEST_P(SpdyHttpStreamTest, DelayedSendChunkedPost) {
                            writes, arraysize(writes),
                            key);
 
-  UploadDataStream upload_stream(UploadDataStream::CHUNKED, 0);
+  ChunkedUploadDataStream upload_stream(0);
 
   HttpRequestInfo request;
   request.method = "POST";
   request.url = GURL("http://www.google.com/");
   request.upload_data_stream = &upload_stream;
 
-  ASSERT_EQ(OK, upload_stream.Init(CompletionCallback()));
-  upload_stream.AppendChunk(kUploadData, kUploadDataSize, false);
+  ASSERT_EQ(OK, upload_stream.Init(TestCompletionCallback().callback()));
+  upload_stream.AppendData(kUploadData, kUploadDataSize, false);
 
   BoundNetLog net_log;
   scoped_ptr<SpdyHttpStream> http_stream(new SpdyHttpStream(session_, true));
@@ -443,8 +443,8 @@ TEST_P(SpdyHttpStreamTest, DelayedSendChunkedPost) {
   EXPECT_EQ(OK, callback.WaitForResult());
 
   // Now append the final two chunks which will enqueue two more writes.
-  upload_stream.AppendChunk(kUploadData1, kUploadData1Size, false);
-  upload_stream.AppendChunk(kUploadData, kUploadDataSize, true);
+  upload_stream.AppendData(kUploadData1, kUploadData1Size, false);
+  upload_stream.AppendData(kUploadData, kUploadDataSize, true);
 
   // Finish writing all the chunks.
   deterministic_data()->RunFor(2);
@@ -476,6 +476,166 @@ TEST_P(SpdyHttpStreamTest, DelayedSendChunkedPost) {
             http_stream->ReadResponseBody(
                 buf3.get(), kUploadDataSize, callback.callback()));
   EXPECT_EQ(kUploadData, std::string(buf3->data(), kUploadDataSize));
+
+  // Finish reading the |EOF|.
+  deterministic_data()->RunFor(1);
+  ASSERT_TRUE(response.headers.get());
+  ASSERT_EQ(200, response.headers->response_code());
+  EXPECT_TRUE(deterministic_data()->at_read_eof());
+  EXPECT_TRUE(deterministic_data()->at_write_eof());
+}
+
+// Test that the SpdyStream state machine can handle sending a final empty data
+// frame when uploading a chunked data stream.
+TEST_P(SpdyHttpStreamTest, DelayedSendChunkedPostWithEmptyFinalDataFrame) {
+  scoped_ptr<SpdyFrame> req(spdy_util_.ConstructChunkedSpdyPost(NULL, 0));
+  scoped_ptr<SpdyFrame> chunk1(spdy_util_.ConstructSpdyBodyFrame(1, false));
+  scoped_ptr<SpdyFrame> chunk2(
+      spdy_util_.ConstructSpdyBodyFrame(1, "", 0, true));
+  MockWrite writes[] = {
+    CreateMockWrite(*req.get(), 0),
+    CreateMockWrite(*chunk1, 1),  // POST upload frames
+    CreateMockWrite(*chunk2, 2),
+  };
+  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
+  MockRead reads[] = {
+    CreateMockRead(*resp, 3),
+    CreateMockRead(*chunk1, 4),
+    CreateMockRead(*chunk2, 5),
+    MockRead(ASYNC, 0, 6)  // EOF
+  };
+
+  HostPortPair host_port_pair("www.google.com", 80);
+  SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
+                     PRIVACY_MODE_DISABLED);
+  InitSessionDeterministic(reads, arraysize(reads),
+                           writes, arraysize(writes),
+                           key);
+
+  ChunkedUploadDataStream upload_stream(0);
+
+  HttpRequestInfo request;
+  request.method = "POST";
+  request.url = GURL("http://www.google.com/");
+  request.upload_data_stream = &upload_stream;
+
+  ASSERT_EQ(OK, upload_stream.Init(TestCompletionCallback().callback()));
+  upload_stream.AppendData(kUploadData, kUploadDataSize, false);
+
+  BoundNetLog net_log;
+  scoped_ptr<SpdyHttpStream> http_stream(new SpdyHttpStream(session_, true));
+  ASSERT_EQ(OK, http_stream->InitializeStream(&request, DEFAULT_PRIORITY,
+                                              net_log, CompletionCallback()));
+
+  TestCompletionCallback callback;
+  HttpRequestHeaders headers;
+  HttpResponseInfo response;
+  // This will attempt to Write() the initial request and headers, which will
+  // complete asynchronously.
+  EXPECT_EQ(ERR_IO_PENDING, http_stream->SendRequest(headers, &response,
+                                                     callback.callback()));
+  EXPECT_TRUE(HasSpdySession(http_session_->spdy_session_pool(), key));
+
+  // Complete the initial request write and the first chunk.
+  deterministic_data()->RunFor(2);
+  ASSERT_TRUE(callback.have_result());
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Now end the stream with an empty data frame and the FIN set.
+  upload_stream.AppendData(NULL, 0, true);
+
+  // Finish writing the final frame.
+  deterministic_data()->RunFor(1);
+
+  // Read response headers.
+  deterministic_data()->RunFor(1);
+  ASSERT_EQ(OK, http_stream->ReadResponseHeaders(callback.callback()));
+
+  // Read and check |chunk1| response.
+  deterministic_data()->RunFor(1);
+  scoped_refptr<IOBuffer> buf1(new IOBuffer(kUploadDataSize));
+  ASSERT_EQ(kUploadDataSize,
+            http_stream->ReadResponseBody(
+                buf1.get(), kUploadDataSize, callback.callback()));
+  EXPECT_EQ(kUploadData, std::string(buf1->data(), kUploadDataSize));
+
+  // Read and check |chunk2| response.
+  deterministic_data()->RunFor(1);
+  ASSERT_EQ(0,
+            http_stream->ReadResponseBody(
+                buf1.get(), kUploadDataSize, callback.callback()));
+
+  // Finish reading the |EOF|.
+  deterministic_data()->RunFor(1);
+  ASSERT_TRUE(response.headers.get());
+  ASSERT_EQ(200, response.headers->response_code());
+  EXPECT_TRUE(deterministic_data()->at_read_eof());
+  EXPECT_TRUE(deterministic_data()->at_write_eof());
+}
+
+// Test that the SpdyStream state machine handles a chunked upload with no
+// payload. Unclear if this is a case worth supporting.
+TEST_P(SpdyHttpStreamTest, ChunkedPostWithEmptyPayload) {
+  scoped_ptr<SpdyFrame> req(spdy_util_.ConstructChunkedSpdyPost(NULL, 0));
+  scoped_ptr<SpdyFrame> chunk(
+      spdy_util_.ConstructSpdyBodyFrame(1, "", 0, true));
+  MockWrite writes[] = {
+    CreateMockWrite(*req.get(), 0),
+    CreateMockWrite(*chunk, 1),
+  };
+  scoped_ptr<SpdyFrame> resp(spdy_util_.ConstructSpdyPostSynReply(NULL, 0));
+  MockRead reads[] = {
+    CreateMockRead(*resp, 2),
+    CreateMockRead(*chunk, 3),
+    MockRead(ASYNC, 0, 4)  // EOF
+  };
+
+  HostPortPair host_port_pair("www.google.com", 80);
+  SpdySessionKey key(host_port_pair, ProxyServer::Direct(),
+                     PRIVACY_MODE_DISABLED);
+  InitSessionDeterministic(reads, arraysize(reads),
+                           writes, arraysize(writes),
+                           key);
+
+  ChunkedUploadDataStream upload_stream(0);
+
+  HttpRequestInfo request;
+  request.method = "POST";
+  request.url = GURL("http://www.google.com/");
+  request.upload_data_stream = &upload_stream;
+
+  ASSERT_EQ(OK, upload_stream.Init(TestCompletionCallback().callback()));
+  upload_stream.AppendData("", 0, true);
+
+  BoundNetLog net_log;
+  scoped_ptr<SpdyHttpStream> http_stream(new SpdyHttpStream(session_, true));
+  ASSERT_EQ(OK, http_stream->InitializeStream(&request, DEFAULT_PRIORITY,
+                                              net_log, CompletionCallback()));
+
+  TestCompletionCallback callback;
+  HttpRequestHeaders headers;
+  HttpResponseInfo response;
+  // This will attempt to Write() the initial request and headers, which will
+  // complete asynchronously.
+  EXPECT_EQ(ERR_IO_PENDING, http_stream->SendRequest(headers, &response,
+                                                     callback.callback()));
+  EXPECT_TRUE(HasSpdySession(http_session_->spdy_session_pool(), key));
+
+  // Complete writing request, followed by a FIN.
+  deterministic_data()->RunFor(2);
+  ASSERT_TRUE(callback.have_result());
+  EXPECT_EQ(OK, callback.WaitForResult());
+
+  // Read response headers.
+  deterministic_data()->RunFor(1);
+  ASSERT_EQ(OK, http_stream->ReadResponseHeaders(callback.callback()));
+
+  // Read and check |chunk| response.
+  deterministic_data()->RunFor(1);
+  scoped_refptr<IOBuffer> buf(new IOBuffer(1));
+  ASSERT_EQ(0,
+            http_stream->ReadResponseBody(
+                buf.get(), 1, callback.callback()));
 
   // Finish reading the |EOF|.
   deterministic_data()->RunFor(1);
@@ -567,15 +727,15 @@ TEST_P(SpdyHttpStreamTest, DelayedSendChunkedPostWithWindowUpdate) {
                            writes, arraysize(writes),
                            key);
 
-  UploadDataStream upload_stream(UploadDataStream::CHUNKED, 0);
+  ChunkedUploadDataStream upload_stream(0);
 
   HttpRequestInfo request;
   request.method = "POST";
   request.url = GURL("http://www.google.com/");
   request.upload_data_stream = &upload_stream;
 
-  ASSERT_EQ(OK, upload_stream.Init(CompletionCallback()));
-  upload_stream.AppendChunk(kUploadData, kUploadDataSize, true);
+  ASSERT_EQ(OK, upload_stream.Init(TestCompletionCallback().callback()));
+  upload_stream.AppendData(kUploadData, kUploadDataSize, true);
 
   BoundNetLog net_log;
   scoped_ptr<SpdyHttpStream> http_stream(new SpdyHttpStream(session_, true));

@@ -30,7 +30,7 @@
 #include "wtf/Noncopyable.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class PNGImageReader;
 
@@ -42,14 +42,14 @@ public:
     virtual ~PNGImageDecoder();
 
     // ImageDecoder
-    virtual String filenameExtension() const OVERRIDE { return "png"; }
-    virtual bool isSizeAvailable() OVERRIDE;
-    virtual bool hasColorProfile() const OVERRIDE { return m_hasColorProfile; }
-    virtual ImageFrame* frameBufferAtIndex(size_t) OVERRIDE;
+    virtual String filenameExtension() const override { return "png"; }
+    virtual bool isSizeAvailable() override;
+    virtual bool hasColorProfile() const override { return m_hasColorProfile; }
+    virtual ImageFrame* frameBufferAtIndex(size_t) override;
     // CAUTION: setFailed() deletes |m_reader|.  Be careful to avoid
     // accessing deleted memory, especially when calling this from inside
     // PNGImageReader!
-    virtual bool setFailed() OVERRIDE;
+    virtual bool setFailed() override;
 
     // Callbacks from libpng
     void headerAvailable();
@@ -72,6 +72,6 @@ private:
     bool m_hasColorProfile;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

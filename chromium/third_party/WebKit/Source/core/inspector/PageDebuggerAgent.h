@@ -31,58 +31,57 @@
 #ifndef PageDebuggerAgent_h
 #define PageDebuggerAgent_h
 
-#include "bindings/v8/PageScriptDebugServer.h"
+#include "bindings/core/v8/PageScriptDebugServer.h"
 #include "core/inspector/InspectorDebuggerAgent.h"
 #include "core/inspector/InspectorOverlayHost.h"
 
-namespace WebCore {
+namespace blink {
 
 class DocumentLoader;
 class InspectorOverlay;
 class InspectorPageAgent;
-class Page;
 class PageScriptDebugServer;
-class ScriptSourceCode;
 
-class PageDebuggerAgent FINAL :
-    public InspectorDebuggerAgent,
-    public InspectorOverlayHost::Listener {
+class PageDebuggerAgent final
+    : public InspectorDebuggerAgent
+    , public InspectorOverlayHost::Listener {
     WTF_MAKE_NONCOPYABLE(PageDebuggerAgent);
-    WTF_MAKE_FAST_ALLOCATED;
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(PageDebuggerAgent);
 public:
-    static PassOwnPtr<PageDebuggerAgent> create(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    static PassOwnPtrWillBeRawPtr<PageDebuggerAgent> create(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
     virtual ~PageDebuggerAgent();
+    virtual void trace(Visitor*) override;
 
     void didClearDocumentOfWindowObject(LocalFrame*);
-    String preprocessEventListener(LocalFrame*, const String& source, const String& url, const String& functionName);
-    PassOwnPtr<ScriptSourceCode> preprocess(LocalFrame*, const ScriptSourceCode&);
     void didCommitLoad(LocalFrame*, DocumentLoader*);
 
 protected:
-    virtual void enable() OVERRIDE;
-    virtual void disable() OVERRIDE;
+    virtual void enable() override;
+    virtual void disable() override;
 
 private:
-    virtual void startListeningScriptDebugServer() OVERRIDE;
-    virtual void stopListeningScriptDebugServer() OVERRIDE;
-    virtual PageScriptDebugServer& scriptDebugServer() OVERRIDE;
-    virtual void muteConsole() OVERRIDE;
-    virtual void unmuteConsole() OVERRIDE;
+    virtual void startListeningScriptDebugServer() override;
+    virtual void stopListeningScriptDebugServer() override;
+    virtual PageScriptDebugServer& scriptDebugServer() override;
+    virtual void muteConsole() override;
+    virtual void unmuteConsole() override;
 
     // InspectorOverlayHost::Listener implementation.
-    virtual void overlayResumed() OVERRIDE;
-    virtual void overlaySteppedOver() OVERRIDE;
+    virtual void overlayResumed() override;
+    virtual void overlaySteppedOver() override;
 
-    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) OVERRIDE;
-    virtual void setOverlayMessage(ErrorString*, const String*) OVERRIDE;
+    virtual InjectedScript injectedScriptForEval(ErrorString*, const int* executionContextId) override;
+    virtual void setOverlayMessage(ErrorString*, const String*) override;
 
     PageDebuggerAgent(PageScriptDebugServer*, InspectorPageAgent*, InjectedScriptManager*, InspectorOverlay*);
+    // FIXME: Oilpan: Move PageScriptDebugServer to heap in follow-up CL.
     PageScriptDebugServer* m_pageScriptDebugServer;
-    InspectorPageAgent* m_pageAgent;
+    RawPtrWillBeMember<InspectorPageAgent> m_pageAgent;
     InspectorOverlay* m_overlay;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // !defined(PageDebuggerAgent_h)

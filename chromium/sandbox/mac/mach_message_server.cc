@@ -12,6 +12,7 @@
 #include "base/logging.h"
 #include "base/mac/mach_logging.h"
 #include "base/strings/stringprintf.h"
+#include "sandbox/mac/dispatch_source_mach.h"
 
 namespace sandbox {
 
@@ -21,8 +22,6 @@ MachMessageServer::MachMessageServer(
     mach_msg_size_t buffer_size)
     : demuxer_(demuxer),
       server_port_(server_receive_right),
-      server_queue_(NULL),
-      server_source_(NULL),
       buffer_size_(
           mach_vm_round_page(buffer_size + sizeof(mach_msg_audit_trailer_t))),
       did_forward_message_(false) {
@@ -30,10 +29,6 @@ MachMessageServer::MachMessageServer(
 }
 
 MachMessageServer::~MachMessageServer() {
-  if (server_source_)
-    dispatch_release(server_source_);
-  if (server_queue_)
-    dispatch_release(server_queue_);
 }
 
 bool MachMessageServer::Initialize() {
@@ -72,26 +67,22 @@ bool MachMessageServer::Initialize() {
   reply_buffer_.reset(buffer, buffer_size_);
 
   // Set up the dispatch queue to service the bootstrap port.
-  // TODO(rsesek): Specify DISPATCH_QUEUE_SERIAL, in the 10.7 SDK. NULL means
-  // the same thing but is not symbolically clear.
   std::string label = base::StringPrintf(
       "org.chromium.sandbox.MachMessageServer.%p", demuxer_);
-  server_queue_ = dispatch_queue_create(label.c_str(), NULL);
-  server_source_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_MACH_RECV,
-      server_port_.get(), 0, server_queue_);
-  dispatch_source_set_event_handler(server_source_, ^{ ReceiveMessage(); });
-  dispatch_resume(server_source_);
+  dispatch_source_.reset(new DispatchSourceMach(
+      label.c_str(), server_port_.get(), ^{ ReceiveMessage(); }));
+  dispatch_source_->Resume();
 
   return true;
 }
 
-pid_t MachMessageServer::GetMessageSenderPID(mach_msg_header_t* request) {
+pid_t MachMessageServer::GetMessageSenderPID(IPCMessage request) {
   // Get the PID of the task that sent this request. This requires getting at
   // the trailer of the message, from the header.
   mach_msg_audit_trailer_t* trailer =
       reinterpret_cast<mach_msg_audit_trailer_t*>(
-          reinterpret_cast<vm_address_t>(request) +
-              round_msg(request->msgh_size));
+          reinterpret_cast<vm_address_t>(request.mach) +
+              round_msg(request.mach->msgh_size));
   // TODO(rsesek): In the 10.7 SDK, there's audit_token_to_pid().
   pid_t sender_pid;
   audit_token_to_au32(trailer->msgh_audit,
@@ -99,16 +90,37 @@ pid_t MachMessageServer::GetMessageSenderPID(mach_msg_header_t* request) {
   return sender_pid;
 }
 
-bool MachMessageServer::SendReply(mach_msg_header_t* reply) {
-  kern_return_t kr = mach_msg(reply, MACH_SEND_MSG, reply->msgh_size, 0,
-      MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE, MACH_PORT_NULL);
+IPCMessage MachMessageServer::CreateReply(IPCMessage request_message) {
+  mach_msg_header_t* request = request_message.mach;
+
+  IPCMessage reply_message;
+  mach_msg_header_t* reply = reply_message.mach =
+      reinterpret_cast<mach_msg_header_t*>(reply_buffer_.address());
+  bzero(reply, buffer_size_);
+
+  reply->msgh_bits = MACH_MSGH_BITS_REMOTE(reply->msgh_bits);
+  // Since mach_msg will automatically swap the request and reply ports,
+  // undo that.
+  reply->msgh_remote_port = request->msgh_remote_port;
+  reply->msgh_local_port = MACH_PORT_NULL;
+  // MIG servers simply add 100 to the request ID to generate the reply ID.
+  reply->msgh_id = request->msgh_id + 100;
+
+  return reply_message;
+}
+
+bool MachMessageServer::SendReply(IPCMessage reply) {
+  kern_return_t kr = mach_msg(reply.mach, MACH_SEND_MSG,
+      reply.mach->msgh_size, 0, MACH_PORT_NULL, MACH_MSG_TIMEOUT_NONE,
+      MACH_PORT_NULL);
   MACH_LOG_IF(ERROR, kr != KERN_SUCCESS, kr)
       << "Unable to send intercepted reply message.";
   return kr == KERN_SUCCESS;
 }
 
-void MachMessageServer::ForwardMessage(mach_msg_header_t* request,
+void MachMessageServer::ForwardMessage(IPCMessage message,
                                        mach_port_t destination) {
+  mach_msg_header_t* request = message.mach;
   request->msgh_local_port = request->msgh_remote_port;
   request->msgh_remote_port = destination;
   // Preserve the msgh_bits that do not deal with the local and remote ports.
@@ -122,15 +134,20 @@ void MachMessageServer::ForwardMessage(mach_msg_header_t* request,
   }
 }
 
-void MachMessageServer::RejectMessage(mach_msg_header_t* reply,
-                                      int error_code) {
-  mig_reply_error_t* error_reply = reinterpret_cast<mig_reply_error_t*>(reply);
+void MachMessageServer::RejectMessage(IPCMessage request, int error_code) {
+  IPCMessage reply = CreateReply(request);
+  mig_reply_error_t* error_reply =
+      reinterpret_cast<mig_reply_error_t*>(reply.mach);
   error_reply->Head.msgh_size = sizeof(mig_reply_error_t);
   error_reply->Head.msgh_bits =
       MACH_MSGH_BITS_REMOTE(MACH_MSG_TYPE_MOVE_SEND_ONCE);
   error_reply->NDR = NDR_record;
   error_reply->RetCode = error_code;
-  SendReply(&error_reply->Head);
+  SendReply(reply);
+}
+
+mach_port_t MachMessageServer::GetServerPort() const {
+  return server_port_.get();
 }
 
 void MachMessageServer::ReceiveMessage() {
@@ -158,17 +175,9 @@ void MachMessageServer::ReceiveMessage() {
     return;
   }
 
-  // Set up a reply message in case it will be used.
-  reply->msgh_bits = MACH_MSGH_BITS_REMOTE(reply->msgh_bits);
-  // Since mach_msg will automatically swap the request and reply ports,
-  // undo that.
-  reply->msgh_remote_port = request->msgh_remote_port;
-  reply->msgh_local_port = MACH_PORT_NULL;
-  // MIG servers simply add 100 to the request ID to generate the reply ID.
-  reply->msgh_id = request->msgh_id + 100;
-
   // Process the message.
-  demuxer_->DemuxMessage(request, reply);
+  IPCMessage request_message = { request };
+  demuxer_->DemuxMessage(request_message);
 
   // Free any descriptors in the message body. If the message was forwarded,
   // any descriptors would have been moved out of the process on send. If the

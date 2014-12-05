@@ -34,7 +34,7 @@
 #include "platform/geometry/IntRect.h"
 #include "wtf/MathExtras.h"
 
-namespace WebCore {
+namespace blink {
 
 AffineTransform::AffineTransform()
 {
@@ -223,14 +223,6 @@ AffineTransform& AffineTransform::skewY(double angle)
     return shear(0, tan(deg2rad(angle)));
 }
 
-AffineTransform makeMapBetweenRects(const FloatRect& source, const FloatRect& dest)
-{
-    AffineTransform transform;
-    transform.translate(dest.x() - source.x(), dest.y() - source.y());
-    transform.scale(dest.width() / source.width(), dest.height() / source.height());
-    return transform;
-}
-
 void AffineTransform::map(double x, double y, double& x2, double& y2) const
 {
     x2 = (m_transform[0] * x + m_transform[2] * y + m_transform[4]);
@@ -308,44 +300,6 @@ FloatQuad AffineTransform::mapQuad(const FloatQuad& q) const
     result.setP3(mapPoint(q.p3()));
     result.setP4(mapPoint(q.p4()));
     return result;
-}
-
-void AffineTransform::blend(const AffineTransform& from, double progress)
-{
-    DecomposedType srA, srB;
-
-    from.decompose(srA);
-    this->decompose(srB);
-
-    // If x-axis of one is flipped, and y-axis of the other, convert to an unflipped rotation.
-    if ((srA.scaleX < 0 && srB.scaleY < 0) || (srA.scaleY < 0 &&  srB.scaleX < 0)) {
-        srA.scaleX = -srA.scaleX;
-        srA.scaleY = -srA.scaleY;
-        srA.angle += srA.angle < 0 ? piDouble : -piDouble;
-    }
-
-    // Don't rotate the long way around.
-    srA.angle = fmod(srA.angle, twoPiDouble);
-    srB.angle = fmod(srB.angle, twoPiDouble);
-
-    if (fabs(srA.angle - srB.angle) > piDouble) {
-        if (srA.angle > srB.angle)
-            srA.angle -= twoPiDouble;
-        else
-            srB.angle -= twoPiDouble;
-    }
-
-    srA.scaleX += progress * (srB.scaleX - srA.scaleX);
-    srA.scaleY += progress * (srB.scaleY - srA.scaleY);
-    srA.angle += progress * (srB.angle - srA.angle);
-    srA.remainderA += progress * (srB.remainderA - srA.remainderA);
-    srA.remainderB += progress * (srB.remainderB - srA.remainderB);
-    srA.remainderC += progress * (srB.remainderC - srA.remainderC);
-    srA.remainderD += progress * (srB.remainderD - srA.remainderD);
-    srA.translateX += progress * (srB.translateX - srA.translateX);
-    srA.translateY += progress * (srB.translateY - srA.translateY);
-
-    this->recompose(srA);
 }
 
 TransformationMatrix AffineTransform::toTransformationMatrix() const

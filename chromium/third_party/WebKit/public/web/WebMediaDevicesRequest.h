@@ -31,11 +31,9 @@
 #include "public/platform/WebPrivatePtr.h"
 #include "public/platform/WebString.h"
 
-namespace WebCore {
-class MediaDevicesRequest;
-}
-
 namespace blink {
+
+class MediaDevicesRequest;
 class WebDocument;
 class WebMediaDeviceInfo;
 template <typename T> class WebVector;
@@ -63,13 +61,12 @@ public:
     BLINK_EXPORT void requestSucceeded(WebVector<WebMediaDeviceInfo>);
 
 #if BLINK_IMPLEMENTATION
-    WebMediaDevicesRequest(const PassRefPtrWillBeRawPtr<WebCore::MediaDevicesRequest>&);
-    WebMediaDevicesRequest(WebCore::MediaDevicesRequest*);
-    operator WebCore::MediaDevicesRequest*() const;
+    WebMediaDevicesRequest(MediaDevicesRequest*);
+    operator MediaDevicesRequest*() const;
 #endif
 
 private:
-    WebPrivatePtr<WebCore::MediaDevicesRequest> m_private;
+    WebPrivatePtr<MediaDevicesRequest> m_private;
 };
 
 inline bool operator==(const WebMediaDevicesRequest& a, const WebMediaDevicesRequest& b)

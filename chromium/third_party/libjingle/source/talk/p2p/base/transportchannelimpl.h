@@ -25,12 +25,12 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_TRANSPORTCHANNELIMPL_H_
-#define TALK_P2P_BASE_TRANSPORTCHANNELIMPL_H_
+#ifndef WEBRTC_P2P_BASE_TRANSPORTCHANNELIMPL_H_
+#define WEBRTC_P2P_BASE_TRANSPORTCHANNELIMPL_H_
 
 #include <string>
-#include "talk/p2p/base/transport.h"
-#include "talk/p2p/base/transportchannel.h"
+#include "webrtc/p2p/base/transport.h"
+#include "webrtc/p2p/base/transportchannel.h"
 
 namespace buzz { class XmlElement; }
 
@@ -99,14 +99,14 @@ class TransportChannelImpl : public TransportChannel {
   // retains ownership and must delete it after this TransportChannelImpl is
   // destroyed.
   // TODO(bemasc): Fix the ownership semantics of this method.
-  virtual bool SetLocalIdentity(talk_base::SSLIdentity* identity) = 0;
+  virtual bool SetLocalIdentity(rtc::SSLIdentity* identity) = 0;
 
   // Set DTLS Remote fingerprint. Must be after local identity set.
   virtual bool SetRemoteFingerprint(const std::string& digest_alg,
     const uint8* digest,
     size_t digest_len) = 0;
 
-  virtual bool SetSslRole(talk_base::SSLRole role) = 0;
+  virtual bool SetSslRole(rtc::SSLRole role) = 0;
 
   // TransportChannel is forwarding this signal from PortAllocatorSession.
   sigslot::signal1<TransportChannelImpl*> SignalCandidatesAllocationDone;
@@ -125,4 +125,4 @@ class TransportChannelImpl : public TransportChannel {
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_TRANSPORTCHANNELIMPL_H_
+#endif  // WEBRTC_P2P_BASE_TRANSPORTCHANNELIMPL_H_

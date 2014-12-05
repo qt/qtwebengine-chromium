@@ -4,6 +4,8 @@
 
 #include "mojo/public/cpp/bindings/lib/router.h"
 
+#include "mojo/public/cpp/environment/logging.h"
+
 namespace mojo {
 namespace internal {
 
@@ -12,14 +14,12 @@ namespace internal {
 class ResponderThunk : public MessageReceiver {
  public:
   explicit ResponderThunk(const SharedData<Router*>& router)
-      : router_(router) {
-  }
-  virtual ~ResponderThunk() {
-  }
+      : router_(router) {}
+  ~ResponderThunk() override {}
 
   // MessageReceiver implementation:
-  virtual bool Accept(Message* message) MOJO_OVERRIDE {
-    assert(message->has_flag(kMessageIsResponse));
+  bool Accept(Message* message) override {
+    MOJO_DCHECK(message->has_flag(kMessageIsResponse));
 
     bool result = false;
 
@@ -56,7 +56,7 @@ Router::Router(ScopedMessagePipeHandle message_pipe,
       filters_(filters.Pass()),
       connector_(message_pipe.Pass(), waiter),
       weak_self_(this),
-      incoming_receiver_(NULL),
+      incoming_receiver_(nullptr),
       next_request_id_(0),
       testing_mode_(false) {
   filters_.SetSink(&thunk_);
@@ -64,22 +64,22 @@ Router::Router(ScopedMessagePipeHandle message_pipe,
 }
 
 Router::~Router() {
-  weak_self_.set_value(NULL);
+  weak_self_.set_value(nullptr);
 
   for (ResponderMap::const_iterator i = responders_.begin();
-       i != responders_.end(); ++i) {
+       i != responders_.end();
+       ++i) {
     delete i->second;
   }
 }
 
 bool Router::Accept(Message* message) {
-  assert(!message->has_flag(kMessageExpectsResponse));
+  MOJO_DCHECK(!message->has_flag(kMessageExpectsResponse));
   return connector_.Accept(message);
 }
 
-bool Router::AcceptWithResponder(Message* message,
-                                 MessageReceiver* responder) {
-  assert(message->has_flag(kMessageExpectsResponse));
+bool Router::AcceptWithResponder(Message* message, MessageReceiver* responder) {
+  MOJO_DCHECK(message->has_flag(kMessageExpectsResponse));
 
   // Reserve 0 in case we want it to convey special meaning in the future.
   uint64_t request_id = next_request_id_++;
@@ -117,7 +117,7 @@ bool Router::HandleIncomingMessage(Message* message) {
     uint64_t request_id = message->request_id();
     ResponderMap::iterator it = responders_.find(request_id);
     if (it == responders_.end()) {
-      assert(testing_mode_);
+      MOJO_DCHECK(testing_mode_);
       return false;
     }
     MessageReceiver* responder = it->second;

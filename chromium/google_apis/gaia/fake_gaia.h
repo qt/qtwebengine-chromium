@@ -79,8 +79,17 @@ class FakeGaia {
   FakeGaia();
   virtual ~FakeGaia();
 
+  void SetFakeMergeSessionParams(const std::string& email,
+                                 const std::string& auth_sid_cookie,
+                                 const std::string& auth_lsid_cookie);
+
   // Sets the initial value of tokens and cookies.
   void SetMergeSessionParams(const MergeSessionParams& params);
+
+  // Sets the specified |gaia_id| as corresponding to the given |email|
+  // address when setting GAIA response headers.  If no mapping is given for
+  // an email address, a default GAIA Id is used.
+  void MapEmailToGaiaId(const std::string& email, const std::string& gaia_id);
 
   // Initializes HTTP request handlers. Should be called after switches
   // for tweaking GaiaUrls are in place.
@@ -117,7 +126,14 @@ class FakeGaia {
 
  private:
   typedef std::multimap<std::string, AccessTokenInfo> AccessTokenInfoMap;
+  typedef std::map<std::string, std::string> EmailToGaiaIdMap;
   typedef std::map<std::string, GURL> SamlAccountIdpMap;
+
+  std::string GetGaiaIdOfEmail(const std::string& email) const;
+
+  void AddGoogleAccountsSigninHeader(
+      net::test_server::BasicHttpResponse* http_response,
+      const std::string& email) const;
 
   // Formats a JSON response with the data in |response_dict|.
   void FormatJSONResponse(const base::DictionaryValue& response_dict,
@@ -152,6 +168,8 @@ class FakeGaia {
                           net::test_server::BasicHttpResponse* http_response);
   void HandlePeopleGet(const net::test_server::HttpRequest& request,
                        net::test_server::BasicHttpResponse* http_response);
+  void HandleGetUserInfo(const net::test_server::HttpRequest& request,
+                         net::test_server::BasicHttpResponse* http_response);
 
   // Returns the access token associated with |auth_token| that matches the
   // given |client_id| and |scope_string|. If |scope_string| is empty, the first
@@ -163,6 +181,7 @@ class FakeGaia {
       const;
 
   MergeSessionParams merge_session_params_;
+  EmailToGaiaIdMap email_to_gaia_id_map_;
   AccessTokenInfoMap access_token_info_map_;
   RequestHandlerMap request_handlers_;
   std::string service_login_response_;

@@ -11,7 +11,7 @@ cr.define('options', function() {
    * of the hotword search setting, including a bubble to show setup errors
    * (such as failures to download extension resources).
    * @constructor
-   * @extends {HTMLSpanElement}
+   * @extends {options.ControlledSettingIndicator}
    */
   var HotwordSearchSettingIndicator = cr.ui.define('span');
 
@@ -27,55 +27,53 @@ cr.define('options', function() {
       this.hidden = true;
     },
 
-    /* Handle changes to the associated pref by hiding any currently visible
+    /**
+     * Handle changes to the associated pref by hiding any currently visible
      * bubble.
      * @param {Event} event Pref change event.
      * @override
      */
     handlePrefChange: function(event) {
-      OptionsPage.hideBubble();
+      PageManager.hideBubble();
     },
 
     /**
-     * Sets the variable tracking thesection which becomes disabled if an
-     * error exists.
-     * @param {HTMLElement} section The section to disable.
+     * Returns the current error.
+     * @return {string} The error message to be displayed. May be undefined if
+     *     there is no error.
      */
-    set disabledOnErrorSection(section) {
-      this.disabledOnErrorSection_ = section;
+    get errorText() {
+      return this.errorText_;
     },
 
     /**
-     * Assigns a value to the error message and updates the hidden state
-     * and whether the disabled section is disabled or not.
-     * @param {string} errorMsg The error message to be displayed. If none,
-     *                          there is no error.
+     * Checks for errors and records them.
+     * @param {string} errorMsg The error message to be displayed. May be
+     *     undefined if there is no error.
      */
-    set errorText(errorMsg) {
+    setError: function(errorMsg) {
       this.setAttribute('controlled-by', 'policy');
       this.errorText_ = errorMsg;
-      if (errorMsg)
-        this.hidden = false;
-      if (this.disabledOnErrorSection_)
-        this.disabledOnErrorSection_.disabled = (errorMsg ? true : false);
     },
 
     /**
-     * Assigns a value to the help link variable.
-     * @param {string} helpLink The text that links to a troubleshooting page.
+     * Changes the display to be visible if there are errors and disables
+     * the section.
      */
-    set helpLink(helpLinkText) {
-      this.helpLink_ = helpLinkText;
+    updateBasedOnError: function() {
+      if (this.errorText_)
+        this.hidden = false;
     },
 
     /**
      * Toggles showing and hiding the error message bubble. An empty
      * |errorText_| indicates that there is no error message. So the bubble
      * only be shown if |errorText_| has a value.
+     * @override
      */
-    toggleBubble_: function() {
+    toggleBubble: function() {
       if (this.showingBubble) {
-        OptionsPage.hideBubble();
+        PageManager.hideBubble();
         return;
       }
 
@@ -90,12 +88,8 @@ cr.define('options', function() {
       var text = document.createElement('p');
       text.innerHTML = this.errorText_;
 
-      var help = document.createElement('p');
-      help.innerHTML = this.helpLink_;
-
       var textDiv = document.createElement('div');
       textDiv.appendChild(text);
-      textDiv.appendChild(help);
 
       var container = document.createElement('div');
       container.appendChild(closeButton);
@@ -104,7 +98,7 @@ cr.define('options', function() {
       var content = document.createElement('div');
       content.appendChild(container);
 
-      OptionsPage.showBubble(content, this.image, this, this.location);
+      PageManager.showBubble(content, this.image, this, this.location);
     },
   };
 

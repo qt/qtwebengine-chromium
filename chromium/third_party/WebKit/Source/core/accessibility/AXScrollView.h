@@ -28,54 +28,64 @@
 
 #include "core/accessibility/AXObject.h"
 
-namespace WebCore {
+namespace blink {
 
 class AXScrollbar;
 class Scrollbar;
-class ScrollView;
+class FrameView;
 
-class AXScrollView FINAL : public AXObject {
+class AXScrollView final : public AXObject {
 public:
-    static PassRefPtr<AXScrollView> create(ScrollView*);
-    virtual AccessibilityRole roleValue() const OVERRIDE { return ScrollAreaRole; }
-    ScrollView* scrollView() const { return m_scrollView; }
+    static PassRefPtr<AXScrollView> create(FrameView*);
+    virtual AccessibilityRole roleValue() const override { return ScrollAreaRole; }
+    FrameView* scrollView() const { return m_scrollView; }
 
     virtual ~AXScrollView();
-    virtual void detach() OVERRIDE;
+    virtual void detach() override;
 
 protected:
-    virtual ScrollableArea* getScrollableAreaIfScrollable() const OVERRIDE;
-    virtual void scrollTo(const IntPoint&) const OVERRIDE;
+    virtual ScrollableArea* getScrollableAreaIfScrollable() const override;
+    virtual void scrollTo(const IntPoint&) const override;
 
 private:
-    explicit AXScrollView(ScrollView*);
+    explicit AXScrollView(FrameView*);
 
-    virtual bool computeAccessibilityIsIgnored() const OVERRIDE;
-    virtual bool isAXScrollView() const OVERRIDE { return true; }
-    virtual bool isEnabled() const OVERRIDE { return true; }
+    virtual bool computeAccessibilityIsIgnored() const override;
+    virtual bool isAXScrollView() const override { return true; }
+    virtual bool isEnabled() const override { return true; }
 
-    virtual bool isAttachment() const OVERRIDE;
-    virtual Widget* widgetForAttachmentView() const OVERRIDE;
+    virtual bool isAttachment() const override;
+    virtual Widget* widgetForAttachmentView() const override;
 
-    virtual AXObject* scrollBar(AccessibilityOrientation) OVERRIDE;
-    virtual void addChildren() OVERRIDE;
-    virtual void clearChildren() OVERRIDE;
-    virtual AXObject* accessibilityHitTest(const IntPoint&) const OVERRIDE;
-    virtual void updateChildrenIfNecessary() OVERRIDE;
-    virtual void setNeedsToUpdateChildren() OVERRIDE { m_childrenDirty = true; }
+    virtual AXObject* scrollBar(AccessibilityOrientation) override;
+    virtual void addChildren() override;
+    virtual void clearChildren() override;
+    virtual AXObject* accessibilityHitTest(const IntPoint&) const override;
+    virtual void updateChildrenIfNecessary() override;
+    virtual void setNeedsToUpdateChildren() override { m_childrenDirty = true; }
     void updateScrollbars();
 
-    virtual FrameView* documentFrameView() const OVERRIDE;
-    virtual LayoutRect elementRect() const OVERRIDE;
-    virtual AXObject* parentObject() const OVERRIDE;
-    virtual AXObject* parentObjectIfExists() const OVERRIDE;
+    virtual FrameView* documentFrameView() const override;
+    virtual LayoutRect elementRect() const override;
+    virtual AXObject* computeParent() const override;
+    virtual AXObject* computeParentIfExists() const override;
 
     AXObject* webAreaObject() const;
-    virtual AXObject* firstChild() const OVERRIDE { return webAreaObject(); }
+    virtual AXObject* firstChild() const override { return webAreaObject(); }
     AXScrollbar* addChildScrollbar(Scrollbar*);
     void removeChildScrollbar(AXObject*);
 
-    ScrollView* m_scrollView;
+    // FIXME: Oilpan: Frame/ScrollView is on the heap and its
+    // AXScrollView is detached&removed from the AX cache when the
+    // FrameView is disposed. Which clears m_scrollView, hence this
+    // bare pointer will not be stale, so the bare pointer use is safe
+    // & acceptable.
+    //
+    // However, it would be preferable to have it be normally traced
+    // as part of moving the AX objects to the heap. Temporarily using
+    // a Persistent risks creating a FrameView leak, and brings no
+    // real benefits overall.
+    FrameView* m_scrollView;
     RefPtr<AXObject> m_horizontalScrollbar;
     RefPtr<AXObject> m_verticalScrollbar;
     bool m_childrenDirty;
@@ -83,6 +93,6 @@ private:
 
 DEFINE_AX_OBJECT_TYPE_CASTS(AXScrollView, isAXScrollView());
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // AXScrollView_h

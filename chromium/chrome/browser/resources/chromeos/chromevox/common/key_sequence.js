@@ -247,6 +247,9 @@ cvox.KeySequence.prototype.rationalizeKeys_ = function() {
   if (modifierKeyCombo.indexOf(metaKeyName) != -1) {
     if (metaKeyName == 'Search') {
       this.keys.searchKeyHeld[index] = false;
+      // TODO(dmazzoni): http://crbug.com/404763 Get rid of the code that
+      // tracks the search key and just use meta everywhere.
+      this.keys.metaKey[index] = false;
     } else if (metaKeyName == 'Cmd' || metaKeyName == 'Win') {
       this.keys.metaKey[index] = false;
     }
@@ -384,8 +387,7 @@ cvox.KeySequence.prototype.isKeyModifierActive = function(keyEvent, modifier) {
       return (keyEvent.shiftKey || (keyEvent.keyCode == 16));
       break;
     case 'metaKey':
-      return (keyEvent.metaKey ||
-          (!cvox.ChromeVox.isChromeOS && keyEvent.keyCode == 91));
+      return (keyEvent.metaKey || (keyEvent.keyCode == 91));
       break;
     case 'searchKeyHeld':
       return ((cvox.ChromeVox.isChromeOS && keyEvent.keyCode == 91) ||

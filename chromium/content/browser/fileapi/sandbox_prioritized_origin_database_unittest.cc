@@ -3,15 +3,15 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
+#include "storage/browser/fileapi/sandbox_origin_database.h"
+#include "storage/browser/fileapi/sandbox_prioritized_origin_database.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/fileapi/sandbox_origin_database.h"
-#include "webkit/browser/fileapi/sandbox_prioritized_origin_database.h"
 
-using fileapi::SandboxOriginDatabase;
-using fileapi::SandboxOriginDatabaseInterface;
-using fileapi::SandboxPrioritizedOriginDatabase;
+using storage::SandboxOriginDatabase;
+using storage::SandboxOriginDatabaseInterface;
+using storage::SandboxPrioritizedOriginDatabase;
 
 namespace content {
 

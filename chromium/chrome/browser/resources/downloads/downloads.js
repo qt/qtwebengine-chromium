@@ -5,6 +5,33 @@
 // TODO(jhawkins): Use hidden instead of showInline* and display:none.
 
 /**
+ * The type of the download object. The definition is based on
+ * chrome/browser/ui/webui/downloads_dom_handler.cc:CreateDownloadItemValue()
+ * @typedef {{by_ext_id: (string|undefined),
+ *            by_ext_name: (string|undefined),
+ *            danger_type: (string|undefined),
+ *            date_string: string,
+ *            file_externally_removed: boolean,
+ *            file_name: string,
+ *            file_path: string,
+ *            file_url: string,
+ *            id: string,
+ *            last_reason_text: (string|undefined),
+ *            otr: boolean,
+ *            percent: (number|undefined),
+ *            progress_status_text: (string|undefined),
+ *            received: (number|undefined),
+ *            resume: boolean,
+ *            retry: boolean,
+ *            since_string: string,
+ *            started: number,
+ *            state: string,
+ *            total: number,
+ *            url: string}}
+ */
+var BackendDownloadObject;
+
+/**
  * Sets the display style of a node.
  * @param {!Element} node The target element to show or hide.
  * @param {boolean} isShow Should the target element be visible.
@@ -25,15 +52,13 @@ function showInlineBlock(node, isShow) {
 /**
  * Creates a link with a specified onclick handler and content.
  * @param {function()} onclick The onclick handler.
- * @param {string} value The link text.
- * @return {Element} The created link element.
+ * @param {string=} opt_text The link text.
+ * @return {!Element} The created link element.
  */
-function createLink(onclick, value) {
-  var link = document.createElement('a');
+function createActionLink(onclick, opt_text) {
+  var link = new ActionLink;
   link.onclick = onclick;
-  link.href = '#';
-  link.textContent = value;
-  link.oncontextmenu = function() { return false; };
+  if (opt_text) link.textContent = opt_text;
   return link;
 }
 
@@ -58,8 +83,13 @@ function createButton(onclick, value) {
  * @constructor
  */
 function Downloads() {
+  /**
+   * @type {!Object.<string, Download>}
+   * @private
+   */
   this.downloads_ = {};
   this.node_ = $('downloads-display');
+  this.noDownloadsOrResults_ = $('no-downloads-or-results');
   this.summary_ = $('downloads-summary-text');
   this.searchText_ = '';
 
@@ -70,11 +100,22 @@ function Downloads() {
   // Icon load request queue.
   this.iconLoadQueue_ = [];
   this.isIconLoading_ = false;
+
+  this.progressForeground1_ = new Image();
+  this.progressForeground1_.src =
+    'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@1x';
+  this.progressForeground2_ = new Image();
+  this.progressForeground2_.src =
+    'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@2x';
+
+  window.addEventListener('keydown', this.onKeyDown_.bind(this));
+
+  this.onDownloadListChanged_();
 }
 
 /**
  * Called when a download has been updated or added.
- * @param {Object} download A backend download object (see downloads_ui.cc)
+ * @param {BackendDownloadObject} download A backend download object
  */
 Downloads.prototype.updated = function(download) {
   var id = download.id;
@@ -98,7 +139,7 @@ Downloads.prototype.updated = function(download) {
   // TODO(benjhayden) Only do this if its nodeSince_ or nodeDate_ actually did
   // change since this may touch 150 elements and Downloads.prototype.updated
   // may be called 150 times.
-  this.updateDateDisplay_();
+  this.onDownloadListChanged_();
 };
 
 /**
@@ -117,30 +158,25 @@ Downloads.prototype.updateSummary = function() {
     this.summary_.textContent = loadTimeData.getStringF('searchresultsfor',
                                                         this.searchText_);
   } else {
-    this.summary_.textContent = loadTimeData.getString('downloads');
-  }
-
-  var hasDownloads = false;
-  for (var i in this.downloads_) {
-    hasDownloads = true;
-    break;
+    this.summary_.textContent = '';
   }
 };
 
 /**
  * Returns the number of downloads in the model. Used by tests.
- * @return {integer} Returns the number of downloads shown on the page.
+ * @return {number} Returns the number of downloads shown on the page.
  */
 Downloads.prototype.size = function() {
   return Object.keys(this.downloads_).length;
 };
 
 /**
- * Update the date visibility in our nodes so that no date is
- * repeated.
+ * Called whenever the downloads lists items have changed (either by being
+ * updated, added, or removed).
  * @private
  */
-Downloads.prototype.updateDateDisplay_ = function() {
+Downloads.prototype.onDownloadListChanged_ = function() {
+  // Update the date visibility in our nodes so that no date is repeated.
   var dateContainers = document.getElementsByClassName('date-container');
   var displayed = {};
   for (var i = 0, container; container = dateContainers[i]; i++) {
@@ -152,16 +188,23 @@ Downloads.prototype.updateDateDisplay_ = function() {
       container.style.display = 'block';
     }
   }
+
+  this.noDownloadsOrResults_.textContent = loadTimeData.getString(
+      this.searchText_ ? 'no_search_results' : 'no_downloads');
+
+  var hasDownloads = this.size() > 0;
+  this.node_.hidden = !hasDownloads;
+  this.noDownloadsOrResults_.hidden = hasDownloads;
 };
 
 /**
  * Remove a download.
- * @param {number} id The id of the download to remove.
+ * @param {string} id The id of the download to remove.
  */
 Downloads.prototype.remove = function(id) {
   this.node_.removeChild(this.downloads_[id].node);
   delete this.downloads_[id];
-  this.updateDateDisplay_();
+  this.onDownloadListChanged_();
 };
 
 /**
@@ -229,11 +272,24 @@ Downloads.prototype.isUpdateNeeded = function(downloads) {
   return false;
 };
 
+/**
+ * Handles shortcut keys.
+ * @param {Event} evt The keyboard event.
+ * @private
+ */
+Downloads.prototype.onKeyDown_ = function(evt) {
+  var keyEvt = /** @type {KeyboardEvent} */(evt);
+  if (keyEvt.keyCode == 67 && keyEvt.altKey) {  // alt + c.
+    clearAll();
+    keyEvt.preventDefault();
+  }
+};
+
 ///////////////////////////////////////////////////////////////////////////////
 // Download
 /**
  * A download and the DOM representation for that download.
- * @param {Object} download A backend download object (see downloads_ui.cc)
+ * @param {BackendDownloadObject} download A backend download object
  * @constructor
  */
 function Download(download) {
@@ -270,13 +326,14 @@ function Download(download) {
   }
 
   this.nodeImg_ = createElementWithClassName('img', 'icon');
+  this.nodeImg_.alt = '';
   this.safe_.appendChild(this.nodeImg_);
 
   // FileLink is used for completed downloads, otherwise we show FileName.
   this.nodeTitleArea_ = createElementWithClassName('div', 'title-area');
   this.safe_.appendChild(this.nodeTitleArea_);
 
-  this.nodeFileLink_ = createLink(this.openFile_.bind(this), '');
+  this.nodeFileLink_ = createActionLink(this.openFile_.bind(this));
   this.nodeFileLink_.className = 'name';
   this.nodeFileLink_.style.display = 'none';
   this.nodeTitleArea_.appendChild(this.nodeFileLink_);
@@ -302,7 +359,7 @@ function Download(download) {
   // We don't need 'show in folder' in chromium os. See download_ui.cc and
   // http://code.google.com/p/chromium-os/issues/detail?id=916.
   if (loadTimeData.valueExists('control_showinfolder')) {
-    this.controlShow_ = createLink(this.show_.bind(this),
+    this.controlShow_ = createActionLink(this.show_.bind(this),
         loadTimeData.getString('control_showinfolder'));
     this.nodeControls_.appendChild(this.controlShow_);
   } else {
@@ -315,17 +372,17 @@ function Download(download) {
   this.nodeControls_.appendChild(this.controlRetry_);
 
   // Pause/Resume are a toggle.
-  this.controlPause_ = createLink(this.pause_.bind(this),
+  this.controlPause_ = createActionLink(this.pause_.bind(this),
       loadTimeData.getString('control_pause'));
   this.nodeControls_.appendChild(this.controlPause_);
 
-  this.controlResume_ = createLink(this.resume_.bind(this),
+  this.controlResume_ = createActionLink(this.resume_.bind(this),
       loadTimeData.getString('control_resume'));
   this.nodeControls_.appendChild(this.controlResume_);
 
   // Anchors <a> don't support the "disabled" property.
   if (loadTimeData.getBoolean('allow_deleting_history')) {
-    this.controlRemove_ = createLink(this.remove_.bind(this),
+    this.controlRemove_ = createActionLink(this.remove_.bind(this),
         loadTimeData.getString('control_removefromlist'));
     this.controlRemove_.classList.add('control-remove-link');
   } else {
@@ -340,7 +397,7 @@ function Download(download) {
 
   this.nodeControls_.appendChild(this.controlRemove_);
 
-  this.controlCancel_ = createLink(this.cancel_.bind(this),
+  this.controlCancel_ = createActionLink(this.cancel_.bind(this),
       loadTimeData.getString('control_cancel'));
   this.nodeControls_.appendChild(this.controlCancel_);
 
@@ -352,6 +409,7 @@ function Download(download) {
   this.node.appendChild(this.danger_);
 
   this.dangerNodeImg_ = createElementWithClassName('img', 'icon');
+  this.dangerNodeImg_.alt = '';
   this.danger_.appendChild(this.dangerNodeImg_);
 
   this.dangerDesc_ = document.createElement('div');
@@ -359,11 +417,11 @@ function Download(download) {
 
   // Buttons for the malicious case.
   this.malwareNodeControls_ = createElementWithClassName('div', 'controls');
-  this.malwareSave_ = createLink(
+  this.malwareSave_ = createActionLink(
       this.saveDangerous_.bind(this),
       loadTimeData.getString('danger_restore'));
   this.malwareNodeControls_.appendChild(this.malwareSave_);
-  this.malwareDiscard_ = createLink(
+  this.malwareDiscard_ = createActionLink(
       this.discardDangerous_.bind(this),
       loadTimeData.getString('control_removefromlist'));
   this.malwareNodeControls_.appendChild(this.malwareDiscard_);
@@ -387,6 +445,7 @@ function Download(download) {
 /**
  * The states a download can be in. These correspond to states defined in
  * DownloadsDOMHandler::CreateDownloadItemValue
+ * @enum {string}
  */
 Download.States = {
   IN_PROGRESS: 'IN_PROGRESS',
@@ -399,6 +458,7 @@ Download.States = {
 
 /**
  * Explains why a download is in DANGEROUS state.
+ * @enum {string}
  */
 Download.DangerType = {
   NOT_DANGEROUS: 'NOT_DANGEROUS',
@@ -413,7 +473,7 @@ Download.DangerType = {
 /**
  * @param {number} a Some float.
  * @param {number} b Some float.
- * @param {number} opt_pct Percent of min(a,b).
+ * @param {number=} opt_pct Percent of min(a,b).
  * @return {boolean} true if a is within opt_pct percent of b.
  */
 function floatEq(a, b, opt_pct) {
@@ -449,24 +509,13 @@ computeDownloadProgress();
 // Listens for when device-pixel-ratio changes between any zoom level.
 [0.3, 0.4, 0.6, 0.7, 0.8, 0.95, 1.05, 1.2, 1.4, 1.6, 1.9, 2.2, 2.7, 3.5, 4.5
 ].forEach(function(scale) {
-  matchMedia('(-webkit-min-device-pixel-ratio:' + scale + ')').addListener(
-    function() {
-      computeDownloadProgress();
-  });
+  var media = '(-webkit-min-device-pixel-ratio:' + scale + ')';
+  window.matchMedia(media).addListener(computeDownloadProgress);
 });
-
-var ImageCache = {};
-function getCachedImage(src) {
-  if (!ImageCache[src]) {
-    ImageCache[src] = new Image();
-    ImageCache[src].src = src;
-  }
-  return ImageCache[src];
-}
 
 /**
  * Updates the download to reflect new data.
- * @param {Object} download A backend download object (see downloads_ui.cc)
+ * @param {BackendDownloadObject} download A backend download object
  */
 Download.prototype.update = function(download) {
   this.id_ = download.id;
@@ -528,9 +577,8 @@ Download.prototype.update = function(download) {
       this.nodeProgressForeground_.width = Download.Progress.width;
       this.nodeProgressForeground_.height = Download.Progress.height;
 
-      var foregroundImage = getCachedImage(
-          'chrome://theme/IDR_DOWNLOAD_PROGRESS_FOREGROUND_32@' +
-          window.devicePixelRatio + 'x');
+      var foregroundImage = (window.devicePixelRatio < 2) ?
+        downloads.progressForeground1_ : downloads.progressForeground2_;
 
       // Draw a pie-slice for the progress.
       this.canvasProgress_.globalCompositeOperation = 'copy';
@@ -715,6 +763,8 @@ Download.prototype.getStatusText_ = function() {
       return this.fileExternallyRemoved_ ?
           loadTimeData.getString('status_removed') : '';
   }
+  assertNotReached();
+  return '';
 };
 
 /**
@@ -837,7 +887,8 @@ function load() {
   var clearAllHolder = $('clear-all-holder');
   var clearAllElement;
   if (loadTimeData.getBoolean('allow_deleting_history')) {
-    clearAllElement = createLink(clearAll, loadTimeData.getString('clear_all'));
+    clearAllElement = createActionLink(
+        clearAll, loadTimeData.getString('clear_all'));
     clearAllElement.classList.add('clear-all-link');
     clearAllHolder.classList.remove('disabled-link');
   } else {
@@ -849,24 +900,13 @@ function load() {
     clearAllHolder.hidden = true;
 
   clearAllHolder.appendChild(clearAllElement);
-  clearAllElement.oncontextmenu = function() { return false; };
 
-  // TODO(jhawkins): Use a link-button here.
-  var openDownloadsFolderLink = $('open-downloads-folder');
-  openDownloadsFolderLink.onclick = function() {
+  $('open-downloads-folder').onclick = function() {
     chrome.send('openDownloadsFolder');
-  };
-  openDownloadsFolderLink.oncontextmenu = function() { return false; };
-
-  $('search-link').onclick = function(e) {
-    setSearch('');
-    e.preventDefault();
-    $('term').value = '';
-    return false;
   };
 
   $('term').onsearch = function(e) {
-    setSearch(this.value);
+    setSearch($('term').value);
   };
 }
 

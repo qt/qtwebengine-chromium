@@ -19,15 +19,10 @@
 
 #include "config.h"
 
-#ifdef SKIP_STATIC_CONSTRUCTORS_ON_GCC
-#define WEBCORE_QUALIFIEDNAME_HIDE_GLOBALS 1
-#else
-#define QNAME_DEFAULT_CONSTRUCTOR
-#endif
-
 #include "core/dom/QualifiedName.h"
 
 #include "core/HTMLNames.h"
+#include "core/MathMLNames.h"
 #include "core/SVGNames.h"
 #include "core/XLinkNames.h"
 #include "core/XMLNSNames.h"
@@ -37,9 +32,17 @@
 #include "wtf/MainThread.h"
 #include "wtf/StaticConstructors.h"
 
-namespace WebCore {
+namespace blink {
+
+struct SameSizeAsQualifiedNameImpl : public RefCounted<SameSizeAsQualifiedNameImpl> {
+    unsigned bitfield;
+    void* pointers[4];
+};
+
+COMPILE_ASSERT(sizeof(QualifiedName::QualifiedNameImpl) == sizeof(SameSizeAsQualifiedNameImpl), qualified_name_impl_should_stay_small);
 
 static const int staticQualifiedNamesCount = HTMLNames::HTMLTagsCount + HTMLNames::HTMLAttrsCount
+    + MathMLNames::MathMLTagsCount + MathMLNames::MathMLAttrsCount
     + SVGNames::SVGTagsCount + SVGNames::SVGAttrsCount
     + XLinkNames::XLinkAttrsCount
     + XMLNSNames::XMLNSAttrsCount

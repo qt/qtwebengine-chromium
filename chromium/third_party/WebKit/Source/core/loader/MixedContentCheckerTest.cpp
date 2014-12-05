@@ -12,7 +12,7 @@
 #include <base/macros.h>
 #include <gtest/gtest.h>
 
-namespace WebCore {
+namespace blink {
 
 TEST(MixedContentCheckerTest, IsMixedContent)
 {
@@ -31,7 +31,7 @@ TEST(MixedContentCheckerTest, IsMixedContent)
         {"https://example.com/foo", "ws://google.com/foo", true},
     };
 
-    for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
+    for (size_t i = 0; i < arraysize(cases); ++i) {
         const char* origin = cases[i].origin;
         const char* target = cases[i].target;
         bool expectation = cases[i].expectation;
@@ -43,4 +43,4 @@ TEST(MixedContentCheckerTest, IsMixedContent)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -50,8 +50,8 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
   // A type of each member is based on the html spec, but InputContext can be
   // used to specify about a non html text field like Omnibox.
   struct InputContext {
-    InputContext(ui::TextInputType type_, ui::TextInputMode mode_) :
-      type(type_), mode(mode_) {}
+    InputContext(ui::TextInputType type_, ui::TextInputMode mode_, int flags_) :
+      type(type_), mode(mode_), flags(flags_) {}
 
     // An attribute of the field defined at
     // http://www.w3.org/TR/html401/interact/forms.html#input-control-types.
@@ -61,6 +61,9 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
     //  association-of-controls-and-forms.html#input-modalities
     //  :-the-inputmode-attribute.
     ui::TextInputMode mode;
+    // An antribute to indicate the flags for web input fields. Please refer to
+    // WebTextInputType.
+    int flags;
   };
 
   virtual ~IMEEngineHandlerInterface() {}
@@ -72,7 +75,7 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
   virtual void FocusOut() = 0;
 
   // Called when the IME is enabled.
-  virtual void Enable() = 0;
+  virtual void Enable(const std::string& component_id) = 0;
 
   // Called when the IME is disabled.
   virtual void Disable() = 0;
@@ -98,6 +101,9 @@ class UI_BASE_EXPORT IMEEngineHandlerInterface {
   // Otherwise |anchor_pos| is equal to |cursor_pos|.
   virtual void SetSurroundingText(const std::string& text, uint32 cursor_pos,
                                   uint32 anchor_pos) = 0;
+
+  // Called when the composition bounds changed.
+  virtual void SetCompositionBounds(const gfx::Rect& bounds) = 0;
 
  protected:
   IMEEngineHandlerInterface() {}

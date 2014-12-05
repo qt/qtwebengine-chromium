@@ -29,14 +29,14 @@
 
 #include "platform/RefCountedSupplement.h"
 
-namespace WebCore {
+namespace blink {
 
 class ContextFeaturesClient;
 class Document;
 class Page;
 
 #if ENABLE(OILPAN)
-class ContextFeatures FINAL : public GarbageCollectedFinalized<ContextFeatures>, public HeapSupplement<Page> {
+class ContextFeatures final : public GarbageCollectedFinalized<ContextFeatures>, public HeapSupplement<Page> {
     USING_GARBAGE_COLLECTED_MIXIN(ContextFeatures);
 public:
     typedef HeapSupplement<Page> SupplementType;
@@ -46,8 +46,7 @@ public:
     typedef RefCountedSupplement<Page, ContextFeatures> SupplementType;
 #endif
     enum FeatureType {
-        DialogElement = 0,
-        PagePopup,
+        PagePopup = 0,
         MutationEvents,
         PushState,
         FeatureTypeSize // Should be the last entry.
@@ -57,7 +56,6 @@ public:
     static ContextFeatures* defaultSwitch();
     static PassRefPtrWillBeRawPtr<ContextFeatures> create(PassOwnPtr<ContextFeaturesClient>);
 
-    static bool dialogElementEnabled(Document*);
     static bool pagePopupEnabled(Document*);
     static bool mutationEventsEnabled(Document*);
     static bool pushStateEnabled(Document*);
@@ -66,7 +64,7 @@ public:
     void urlDidChange(Document*);
 
 #if ENABLE(OILPAN)
-    virtual void trace(Visitor* visitor) OVERRIDE { HeapSupplement<Page>::trace(visitor); }
+    virtual void trace(Visitor* visitor) override { HeapSupplement<Page>::trace(visitor); }
 #endif
 
 private:
@@ -114,6 +112,6 @@ inline void ContextFeatures::urlDidChange(Document* document)
     // m_client->urlDidChange(document);
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ContextFeatures_h

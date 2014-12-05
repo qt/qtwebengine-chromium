@@ -33,7 +33,7 @@
 
 #include "core/html/forms/TextFieldInputType.h"
 
-namespace WebCore {
+namespace blink {
 
 // Base of email, password, search, tel, text, and URL types.
 // They support maxlength, selection functions, and so on.
@@ -42,12 +42,15 @@ protected:
     BaseTextInputType(HTMLInputElement& element) : TextFieldInputType(element) { }
 
 private:
-    virtual bool isTextType() const OVERRIDE FINAL;
-    virtual bool patternMismatch(const String&) const OVERRIDE FINAL;
-    virtual bool supportsPlaceholder() const OVERRIDE FINAL;
-    virtual bool supportsSelectionAPI() const OVERRIDE;
+    virtual bool tooLong(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const override final;
+    virtual bool tooShort(const String&, HTMLTextFormControlElement::NeedsToCheckDirtyFlag) const override final;
+    virtual int maxLength() const override final;
+    virtual int minLength() const override final;
+    virtual bool patternMismatch(const String&) const override final;
+    virtual bool supportsPlaceholder() const override final;
+    virtual bool supportsSelectionAPI() const override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // BaseTextInputType_h

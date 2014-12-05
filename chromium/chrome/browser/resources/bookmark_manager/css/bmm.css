@@ -2,6 +2,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file. */
 
+<include src="../search_header.css">
+
 html,
 body {
   cursor: default;
@@ -12,8 +14,8 @@ body {
 }
 
 body {
-  -webkit-flex-direction: column;
-  display: -webkit-flex;
+  display: flex;
+  flex-direction: column;
 }
 
 list {
@@ -26,7 +28,7 @@ list > * {
   -webkit-padding-end: 20px;
   -webkit-padding-start: 3px;
   color: hsl(0, 0%, 70%);
-  display: -webkit-flex;
+  display: flex;
   line-height: 20px;
   margin: 0;
   overflow: visible;
@@ -52,9 +54,9 @@ list > * > .label {
 }
 
 list > * > .url {
-  -webkit-flex: 1;
   direction: ltr; /* URLs always read LTR */
   display: none;
+  flex: 1;
 }
 
 list > :hover > .url,
@@ -199,27 +201,73 @@ list > .folder > .label,
 </if>
 
 .main {
-  -webkit-flex: 1;
-  display: -webkit-flex;
+  border-top: 1px solid rgb(156, 194, 239);
+  display: flex;
+  flex: 1;
 }
 
-#tree-container {
-  -webkit-padding-end: 5px;
-  -webkit-padding-start: 10px;
-  box-sizing: border-box;
+.pane,
+.splitter {
+  display: flex;
+  flex-direction: column;
+}
+
+.pane > :first-child,
+.splitter > :first-child {
+  background-color: rgb(235, 239, 249);
+  flex: none;
+  padding: 5px 10px;
+  white-space: nowrap;
+}
+
+.splitter > :first-child {
+  overflow: hidden;
+  padding-left: 0;
+  padding-right: 0;
+  width: 15px;
+}
+
+.splitter button {
+  visibility: hidden;  /* This button is only used for height matching. */
+}
+
+#tree-pane {
   /* min-width and max-width are used by the split pane. */
   max-width: 50%;
-  min-width: 50px;
-  overflow: auto;
-  padding-bottom: 5px;
-  padding-top: 5px;
+  min-width: 150px;
   width: 200px;
 }
 
-#tree {
+#list-pane {
+  flex: 1;
+}
+
+#list-pane > :first-child {
+  -webkit-padding-start: 0;  /* Accounts for extra splitter resize width. */
+}
+
+#tree-container {
+  overflow: auto;
+}
+
+#list,
+#tree-container {
+  flex: 1;
+}
+
+#tree,
+#list {
+  -webkit-padding-end: 5px;
+  box-sizing: border-box;
   display: inline-block;
   min-width: 100%;
-  overflow: visible; /* let the container do the scrolling */
+  padding-bottom: 5px;
+  padding-top: 5px;
+}
+
+#tree {
+  /* Only pad the tree as the splitter adds a lot of whitespace for the list. */
+  -webkit-padding-start: 10px;
 }
 
 .tree-item > .tree-row {
@@ -230,54 +278,13 @@ list > .folder > .label,
   top: 2px;
 }
 
-#list {
-  -webkit-flex: 1;
-  -webkit-padding-end: 5px;
-  box-sizing: border-box;
-  padding-bottom: 5px;
-  padding-top: 5px;
-}
-
 .splitter {
-  -webkit-border-end: 15px solid white;
-  -webkit-border-start: 0;
-  background-color: rgb(235, 239, 249);
+  border-left: 5px solid rgb(235, 239, 249);
   cursor: e-resize;
-  width: 5px;
 <if expr="is_macosx">
   cursor: col-resize;
 </if>
-}
-
-.logo {
-  -webkit-appearance: none;
-  background: url('../images/bookmarks_section_32.png') no-repeat 50% 50%;
-  border: 0;
-  cursor: pointer;
-  float: left;
-  height: 32px;
-  margin: 10px;
-  width: 32px;
-}
-
-html:not(.focus-outline-visible) .logo:focus {
-  outline: none;
-}
-
-.header form {
-  float: left;
-  margin: 14px 2px 0 2px;
-  width: 171px;
-}
-
-.header {
-  min-width: 400px;
-}
-
-html[dir=rtl] .logo,
-html[dir=rtl] .header > div,
-html[dir=rtl] .header form {
-  float: right;
+  overflow-x: hidden;
 }
 
 .tree-row.drag-on,
@@ -320,37 +327,39 @@ list.drag-above::before {
 
 list > .drag-below,
 list > .drag-above {
-  overflow : visible;
-}
-
-.summary {
-  background-color: rgb(235, 239, 249);
-  border-top: 1px solid rgb(156, 194, 239);
-  clear: both;
-  padding: 5px 10px;
-  white-space: nowrap;
+  overflow: visible;
 }
 
 .summary > * {
-  display: inline-block;
   font-size: 100%;
   margin: 0;
 }
 
-.summary button {
+#folders-button,
+#organize-button,
+.splitter button {
   -webkit-appearance: none;
-  -webkit-margin-start: 10px;
   -webkit-padding-end: 11px;
   -webkit-padding-start: 0;
   background: transparent -webkit-canvas(drop-down-arrow)
               no-repeat right center;
   border: 0;
   font: inherit;
+  font-weight: bold;
   padding-bottom: 0;
   padding-top: 0;
 }
 
-html[dir=rtl] .summary button {
+#folders-button {
+  -webkit-margin-start: 16px;
+}
+
+#organize-button {
+  -webkit-margin-start: 4px;
+}
+
+html[dir=rtl] #folders-button,
+html[dir=rtl] #organize-button {
   background-position: left center;
 }
 

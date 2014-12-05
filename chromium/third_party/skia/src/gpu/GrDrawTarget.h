@@ -9,9 +9,11 @@
 #define GrDrawTarget_DEFINED
 
 #include "GrClipData.h"
+#include "GrClipMaskManager.h"
 #include "GrContext.h"
 #include "GrDrawState.h"
 #include "GrIndexBuffer.h"
+#include "GrPathRendering.h"
 #include "GrTraceMarker.h"
 
 #include "SkClipStack.h"
@@ -26,6 +28,7 @@
 class GrClipData;
 class GrDrawTargetCaps;
 class GrPath;
+class GrPathRange;
 class GrVertexBuffer;
 
 class GrDrawTarget : public SkRefCnt {
@@ -34,6 +37,8 @@ protected:
 
 public:
     SK_DECLARE_INST_COUNT(GrDrawTarget)
+
+    typedef GrPathRendering::PathTransformType PathTransformType ;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -83,39 +88,14 @@ public:
      */
     GrDrawState* drawState() { return fDrawState; }
 
-    /**
-     * Color alpha and coverage are two inputs to the drawing pipeline. For some
-     * blend modes it is safe to fold the coverage into constant or per-vertex
-     * color alpha value. For other blend modes they must be handled separately.
-     * Depending on features available in the underlying 3D API this may or may
-     * not be possible.
-     *
-     * This function considers the current draw state and the draw target's
-     * capabilities to determine whether coverage can be handled correctly. The
-     * following assumptions are made:
-     *    1. The caller intends to somehow specify coverage. This can be
-     *       specified either by enabling a coverage stage on the GrDrawState or
-     *       via the vertex layout.
-     *    2. Other than enabling coverage stages or enabling coverage in the
-     *       layout, the current configuration of the target's GrDrawState is as
-     *       it will be at draw time.
-     */
-    bool canApplyCoverage() const;
-
     /** When we're using coverage AA but the blend is incompatible (given gpu
      * limitations) we should disable AA. */
-    bool shouldDisableCoverageAAForBlend() {
+    bool shouldDisableCoverageAAForBlend() const {
         // Enable below if we should draw with AA even when it produces
         // incorrect blending.
         // return false;
-        return !this->canApplyCoverage();
+        return !this->getDrawState().couldApplyCoverage(*this->caps());
     }
-
-    /**
-     * Given the current draw state and hw support, will HW AA lines be used (if
-     * a line primitive type is drawn)?
-     */
-    bool willUseHWAALines() const;
 
     /**
      * There are three types of "sources" of geometry (vertices and indices) for
@@ -221,25 +201,6 @@ public:
                                int* indexCount) const;
 
     /**
-     * Sets source of vertex data for the next draw. Array must contain
-     * the vertex data when this is called.
-     *
-     * @param vertexArray   cpu array containing vertex data.
-     * @param vertexCount   the number of vertices in the array. Vertex size is
-     *                      queried from the current GrDrawState.
-     */
-    void setVertexSourceToArray(const void* vertexArray, int vertexCount);
-
-    /**
-     * Sets source of index data for the next indexed draw. Array must contain
-     * the indices when this is called.
-     *
-     * @param indexArray    cpu array containing index data.
-     * @param indexCount    the number of indices in the array.
-     */
-    void setIndexSourceToArray(const void* indexArray, int indexCount);
-
-    /**
      * Sets source of vertex data for the next draw. Data does not have to be
      * in the buffer until drawIndexed, drawNonIndexed, or drawIndexedInstances.
      *
@@ -335,35 +296,39 @@ public:
     /**
      * Draws path into the stencil buffer. The fill must be either even/odd or
      * winding (not inverse or hairline). It will respect the HW antialias flag
-     * on the draw state (if possible in the 3D API).
+     * on the draw state (if possible in the 3D API).  Note, we will never have an inverse fill
+     * with stencil path
      */
-    void stencilPath(const GrPath*, SkPath::FillType fill);
+    void stencilPath(const GrPath*, GrPathRendering::FillType fill);
 
     /**
      * Draws a path. Fill must not be a hairline. It will respect the HW
      * antialias flag on the draw state (if possible in the 3D API).
      */
-    void drawPath(const GrPath*, SkPath::FillType fill);
+    void drawPath(const GrPath*, GrPathRendering::FillType fill);
 
     /**
      * Draws many paths. It will respect the HW
      * antialias flag on the draw state (if possible in the 3D API).
      *
-     * @param transforms array of 2d affine transformations, one for each path.
-     * @param fill the fill type for drawing all the paths. Fill must not be a
-     *             hairline.
-     * @param stroke the stroke for drawing all the paths.
+     * @param pathRange       Source of paths to draw from
+     * @param indices         Array of indices into the the pathRange
+     * @param count           Number of paths to draw (length of indices array)
+     * @param transforms      Array of individual transforms, one for each path
+     * @param transformsType  Type of transformations in the array. Array contains
+                              PathTransformSize(transformsType) * count elements
+     * @param fill            Fill type for drawing all the paths
      */
-    void drawPaths(int pathCount, const GrPath** paths,
-                   const SkMatrix* transforms, SkPath::FillType fill,
-                   SkStrokeRec::Style stroke);
+    void drawPaths(const GrPathRange* pathRange,
+                   const uint32_t indices[], int count,
+                   const float transforms[], PathTransformType transformsType,
+                   GrPathRendering::FillType fill);
 
     /**
      * Helper function for drawing rects. It performs a geometry src push and pop
      * and thus will finalize any reserved geometry.
      *
      * @param rect        the rect to draw
-     * @param matrix      optional matrix applied to rect (before viewMatrix)
      * @param localRect   optional rect that specifies local coords to map onto
      *                    rect. If NULL then rect serves as the local coords.
      * @param localMatrix optional matrix applied to localRect. If
@@ -372,22 +337,21 @@ public:
      *                    srcMatrix can be NULL when no srcMatrix is desired.
      */
     void drawRect(const SkRect& rect,
-                  const SkMatrix* matrix,
                   const SkRect* localRect,
                   const SkMatrix* localMatrix) {
         AutoGeometryPush agp(this);
-        this->onDrawRect(rect, matrix, localRect, localMatrix);
+        this->onDrawRect(rect, localRect, localMatrix);
     }
 
     /**
      * Helper for drawRect when the caller doesn't need separate local rects or matrices.
      */
-    void drawSimpleRect(const SkRect& rect, const SkMatrix* matrix = NULL) {
-        this->drawRect(rect, matrix, NULL, NULL);
+    void drawSimpleRect(const SkRect& rect) {
+        this->drawRect(rect, NULL, NULL);
     }
-    void drawSimpleRect(const SkIRect& irect, const SkMatrix* matrix = NULL) {
+    void drawSimpleRect(const SkIRect& irect) {
         SkRect rect = SkRect::Make(irect);
-        this->drawRect(rect, matrix, NULL, NULL);
+        this->drawRect(rect, NULL, NULL);
     }
 
     /**
@@ -427,21 +391,17 @@ public:
                               const SkRect* devBounds = NULL);
 
     /**
-     * Clear the current render target if one isn't passed in. Ignores the
-     * clip and all other draw state (blend mode, stages, etc). Clears the
-     * whole thing if rect is NULL, otherwise just the rect. If canIgnoreRect
-     * is set then the entire render target can be optionally cleared.
+     * Clear the passed in render target. Ignores the draw state and clip. Clears the whole thing if
+     * rect is NULL, otherwise just the rect. If canIgnoreRect is set then the entire render target
+     * can be optionally cleared.
      */
-    virtual void clear(const SkIRect* rect,
-                       GrColor color,
-                       bool canIgnoreRect,
-                       GrRenderTarget* renderTarget = NULL) = 0;
+    void clear(const SkIRect* rect, GrColor color, bool canIgnoreRect,
+               GrRenderTarget* renderTarget);
 
     /**
-     * Discards the contents render target. NULL indicates that the current render target should
-     * be discarded.
+     * Discards the contents render target.
      **/
-    virtual void discard(GrRenderTarget* = NULL) = 0;
+    virtual void discard(GrRenderTarget*) = 0;
 
     /**
      * Called at start and end of gpu trace marking
@@ -473,25 +433,25 @@ public:
      * limitations. If rect is clipped out entirely by the src or dst bounds then
      * true is returned since there is no actual copy necessary to succeed.
      */
-    bool copySurface(GrSurface* dst,
-                     GrSurface* src,
-                     const SkIRect& srcRect,
-                     const SkIPoint& dstPoint);
+    virtual bool copySurface(GrSurface* dst,
+                             GrSurface* src,
+                             const SkIRect& srcRect,
+                             const SkIPoint& dstPoint);
     /**
      * Function that determines whether a copySurface call would succeed without
      * performing the copy.
      */
-    bool canCopySurface(GrSurface* dst,
-                        GrSurface* src,
-                        const SkIRect& srcRect,
-                        const SkIPoint& dstPoint);
+    virtual bool canCopySurface(GrSurface* dst,
+                                GrSurface* src,
+                                const SkIRect& srcRect,
+                                const SkIPoint& dstPoint);
 
     /**
      * This is can be called before allocating a texture to be a dst for copySurface. It will
      * populate the origin, config, and flags fields of the desc such that copySurface is more
      * likely to succeed and be efficient.
      */
-    virtual void initCopySurfaceDstDesc(const GrSurface* src, GrTextureDesc* desc);
+    virtual void initCopySurfaceDstDesc(const GrSurface* src, GrSurfaceDesc* desc);
 
 
     /**
@@ -508,7 +468,7 @@ public:
     /**
      * For subclass internal use to invoke a call to onDrawPath().
      */
-    void executeDrawPath(const GrPath* path, SkPath::FillType fill,
+    void executeDrawPath(const GrPath* path, GrPathRendering::FillType fill,
                          const GrDeviceCoordTexture* dstCopy) {
         this->onDrawPath(path, fill, dstCopy);
     }
@@ -516,15 +476,12 @@ public:
     /**
      * For subclass internal use to invoke a call to onDrawPaths().
      */
-    void executeDrawPaths(int pathCount, const GrPath** paths,
-                          const SkMatrix* transforms, SkPath::FillType fill,
-                          SkStrokeRec::Style stroke,
+    void executeDrawPaths(const GrPathRange* pathRange,
+                          const uint32_t indices[], int count,
+                          const float transforms[], PathTransformType transformsType,
+                          GrPathRendering::FillType fill,
                           const GrDeviceCoordTexture* dstCopy) {
-        this->onDrawPaths(pathCount, paths, transforms, fill, stroke, dstCopy);
-    }
-
-    inline bool isGpuTracingEnabled() const {
-        return this->getContext()->isGpuTracingEnabled();
+        this->onDrawPaths(pathRange, indices, count, transforms, transformsType, fill, dstCopy);
     }
 
     ////////////////////////////////////////////////////////////////////////////
@@ -615,7 +572,7 @@ public:
         bool set(GrDrawTarget*  target,
                  int            vertexCount,
                  int            indexCount);
-        bool succeeded() const { return NULL != fTarget; }
+        bool succeeded() const { return SkToBool(fTarget); }
         void* vertices() const { SkASSERT(this->succeeded()); return fVertices; }
         void* indices() const { SkASSERT(this->succeeded()); return fIndices; }
         SkPoint* positions() const {
@@ -661,7 +618,7 @@ public:
     public:
         AutoGeometryPush(GrDrawTarget* target)
             : fAttribRestore(target->drawState()) {
-            SkASSERT(NULL != target);
+            SkASSERT(target);
             fTarget = target;
             target->pushGeometrySource();
         }
@@ -683,7 +640,7 @@ public:
                                  ASRInit init,
                                  const SkMatrix* viewMatrix = NULL)
             : fState(target, init, viewMatrix) {
-            SkASSERT(NULL != target);
+            SkASSERT(target);
             fTarget = target;
             target->pushGeometrySource();
             if (kPreserve_ASRInit == init) {
@@ -705,7 +662,7 @@ public:
         DrawToken(GrDrawTarget* drawTarget, uint32_t drawID) :
                   fDrawTarget(drawTarget), fDrawID(drawID) {}
 
-        bool isIssued() { return NULL != fDrawTarget && fDrawTarget->isIssued(fDrawID); }
+        bool isIssued() { return fDrawTarget && fDrawTarget->isIssued(fDrawID); }
 
     private:
         GrDrawTarget*  fDrawTarget;
@@ -716,11 +673,14 @@ public:
     virtual DrawToken getCurrentDrawToken() { return DrawToken(this, 0); }
 
 protected:
+    // Extend access to GrDrawState::convertToPEndeingExec to subclasses.
+    void convertDrawStateToPendingExec(GrDrawState* ds) {
+        ds->convertToPendingExec();
+    }
 
     enum GeometrySrcType {
         kNone_GeometrySrcType,     //<! src has not been specified
         kReserved_GeometrySrcType, //<! src was set using reserve*Space
-        kArray_GeometrySrcType,    //<! src was set using set*SourceToArray
         kBuffer_GeometrySrcType    //<! src was set using set*SourceToBuffer
     };
 
@@ -750,7 +710,6 @@ protected:
             case kNone_GeometrySrcType:
                 return 0;
             case kReserved_GeometrySrcType:
-            case kArray_GeometrySrcType:
                 return src.fIndexCount;
             case kBuffer_GeometrySrcType:
                 return static_cast<int>(src.fIndexBuffer->gpuMemorySize() / sizeof(uint16_t));
@@ -759,25 +718,6 @@ protected:
                 return 0;
         }
     }
-
-    // This method is called by copySurface  The srcRect is guaranteed to be entirely within the
-    // src bounds. Likewise, the dst rect implied by dstPoint and srcRect's width and height falls
-    // entirely within the dst. The default implementation will draw a rect from the src to the
-    // dst if the src is a texture and the dst is a render target and fail otherwise.
-    virtual bool onCopySurface(GrSurface* dst,
-                               GrSurface* src,
-                               const SkIRect& srcRect,
-                               const SkIPoint& dstPoint);
-
-    // Called to determine whether an onCopySurface call would succeed or not. This is useful for
-    // proxy subclasses to test whether the copy would succeed without executing it yet. Derived
-    // classes must keep this consistent with their implementation of onCopySurface(). The inputs
-    // are the same as onCopySurface(), i.e. srcRect and dstPoint are clipped to be inside the src
-    // and dst bounds.
-    virtual bool onCanCopySurface(GrSurface* dst,
-                                  GrSurface* src,
-                                  const SkIRect& srcRect,
-                                  const SkIPoint& dstPoint);
 
     GrContext* getContext() { return fContext; }
     const GrContext* getContext() const { return fContext; }
@@ -844,7 +784,7 @@ protected:
 
         // NULL if no copy of the dst is needed for the draw.
         const GrDeviceCoordTexture* getDstCopy() const {
-            if (NULL != fDstCopy.texture()) {
+            if (fDstCopy.texture()) {
                 return &fDstCopy;
             } else {
                 return NULL;
@@ -873,6 +813,14 @@ protected:
         GrDeviceCoordTexture    fDstCopy;
     };
 
+    // Makes a copy of the dst if it is necessary for the draw. Returns false if a copy is required
+    // but couldn't be made. Otherwise, returns true.  This method needs to be protected because it
+    // needs to be accessed by GLPrograms to setup a correct drawstate
+    bool setupDstReadIfNecessary(DrawInfo* info) {
+        return this->setupDstReadIfNecessary(&info->fDstCopy, info->getDevBounds());
+    }
+    bool setupDstReadIfNecessary(GrDeviceCoordTexture* dstCopy, const SkRect* drawBounds);
+
 private:
     // A subclass can optionally overload this function to be notified before
     // vertex and index space is reserved.
@@ -884,12 +832,6 @@ private:
     // implemented by subclass to handle release of reserved geom space
     virtual void releaseReservedVertexSpace() = 0;
     virtual void releaseReservedIndexSpace() = 0;
-    // subclass must consume array contents when set
-    virtual void onSetVertexSourceToArray(const void* vertexArray, int vertexCount) = 0;
-    virtual void onSetIndexSourceToArray(const void* indexArray, int indexCount) = 0;
-    // subclass is notified that geom source will be set away from an array
-    virtual void releaseVertexArray() = 0;
-    virtual void releaseIndexArray() = 0;
     // subclass overrides to be notified just before geo src state is pushed/popped.
     virtual void geometrySourceWillPush() = 0;
     virtual void geometrySourceWillPop(const GeometrySrcState& restoredState) = 0;
@@ -902,16 +844,20 @@ private:
     // drawIndexedInstances, ...). The base class draws a two triangle fan using
     // drawNonIndexed from reserved vertex space.
     virtual void onDrawRect(const SkRect& rect,
-                            const SkMatrix* matrix,
                             const SkRect* localRect,
                             const SkMatrix* localMatrix);
 
-    virtual void onStencilPath(const GrPath*, SkPath::FillType) = 0;
-    virtual void onDrawPath(const GrPath*, SkPath::FillType,
+    virtual void onStencilPath(const GrPath*, GrPathRendering::FillType) = 0;
+    virtual void onDrawPath(const GrPath*, GrPathRendering::FillType,
                             const GrDeviceCoordTexture* dstCopy) = 0;
-    virtual void onDrawPaths(int, const GrPath**, const SkMatrix*,
-                             SkPath::FillType, SkStrokeRec::Style,
-                             const GrDeviceCoordTexture* dstCopy) = 0;
+    virtual void onDrawPaths(const GrPathRange*,
+                             const uint32_t indices[], int count,
+                             const float transforms[], PathTransformType,
+                             GrPathRendering::FillType, const GrDeviceCoordTexture*) = 0;
+
+    virtual void onClear(const SkIRect* rect, GrColor color, bool canIgnoreRect,
+                         GrRenderTarget* renderTarget) = 0;
+
 
     virtual void didAddGpuTraceMarker() = 0;
     virtual void didRemoveGpuTraceMarker() = 0;
@@ -931,15 +877,9 @@ private:
     void releasePreviousVertexSource();
     void releasePreviousIndexSource();
 
-    // Makes a copy of the dst if it is necessary for the draw. Returns false if a copy is required
-    // but couldn't be made. Otherwise, returns true.
-    bool setupDstReadIfNecessary(DrawInfo* info) {
-        return this->setupDstReadIfNecessary(&info->fDstCopy, info->getDevBounds());
-    }
-    bool setupDstReadIfNecessary(GrDeviceCoordTexture* dstCopy, const SkRect* drawBounds);
-
     // Check to see if this set of draw commands has been sent out
     virtual bool       isIssued(uint32_t drawID) { return true; }
+    virtual GrClipMaskManager* clipMaskManager() = 0;
 
     enum {
         kPreallocGeoSrcStateStackCnt = 4,
@@ -956,6 +896,48 @@ private:
     GrTraceMarkerSet                                                fStoredTraceMarkers;
 
     typedef SkRefCnt INHERITED;
+};
+
+/*
+ * This class is JUST for clip mask manager.  Everyone else should just use draw target above.
+ */
+class GrClipTarget : public GrDrawTarget {
+public:
+    GrClipTarget(GrContext* context) : INHERITED(context) {
+        fClipMaskManager.setClipTarget(this);
+    }
+
+    /* Clip mask manager needs access to the context.
+     * TODO we only need a very small subset of context in the CMM.
+     */
+    GrContext* getContext() { return INHERITED::getContext(); }
+    const GrContext* getContext() const { return INHERITED::getContext(); }
+
+    /**
+     * Clip Mask Manager(and no one else) needs to clear private stencil bits.
+     * ClipTarget subclass sets clip bit in the stencil buffer. The subclass
+     * is free to clear the remaining bits to zero if masked clears are more
+     * expensive than clearing all bits.
+     */
+    virtual void clearStencilClip(const SkIRect& rect, bool insideClip, GrRenderTarget* = NULL) = 0;
+
+    /**
+     * Release any resources that are cached but not currently in use. This
+     * is intended to give an application some recourse when resources are low.
+     */
+    virtual void purgeResources() SK_OVERRIDE {
+        // The clip mask manager can rebuild all its clip masks so just
+        // get rid of them all.
+        fClipMaskManager.purgeResources();
+    };
+
+protected:
+    GrClipMaskManager           fClipMaskManager;
+
+private:
+    GrClipMaskManager* clipMaskManager() { return &fClipMaskManager; }
+
+    typedef GrDrawTarget INHERITED;
 };
 
 #endif

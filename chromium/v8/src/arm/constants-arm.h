@@ -19,11 +19,11 @@ const int kConstantPoolMarkerMask = 0xfff000f0;
 const int kConstantPoolMarker = 0xe7f000f0;
 const int kConstantPoolLengthMaxMask = 0xffff;
 inline int EncodeConstantPoolLength(int length) {
-  ASSERT((length & kConstantPoolLengthMaxMask) == length);
+  DCHECK((length & kConstantPoolLengthMaxMask) == length);
   return ((length & 0xfff0) << 4) | (length & 0xf);
 }
 inline int DecodeConstantPoolLength(int instr) {
-  ASSERT((instr & kConstantPoolMarkerMask) == kConstantPoolMarker);
+  DCHECK((instr & kConstantPoolMarkerMask) == kConstantPoolMarker);
   return ((instr >> 4) & 0xfff0) | (instr & 0xf);
 }
 
@@ -84,7 +84,7 @@ enum Condition {
 
 
 inline Condition NegateCondition(Condition cond) {
-  ASSERT(cond != al);
+  DCHECK(cond != al);
   return static_cast<Condition>(cond ^ ne);
 }
 
@@ -161,26 +161,26 @@ enum MiscInstructionsBits74 {
 
 // Instruction encoding bits and masks.
 enum {
-  H   = 1 << 5,   // Halfword (or byte).
-  S6  = 1 << 6,   // Signed (or unsigned).
-  L   = 1 << 20,  // Load (or store).
-  S   = 1 << 20,  // Set condition code (or leave unchanged).
-  W   = 1 << 21,  // Writeback base register (or leave unchanged).
-  A   = 1 << 21,  // Accumulate in multiply instruction (or not).
-  B   = 1 << 22,  // Unsigned byte (or word).
-  N   = 1 << 22,  // Long (or short).
-  U   = 1 << 23,  // Positive (or negative) offset/index.
-  P   = 1 << 24,  // Offset/pre-indexed addressing (or post-indexed addressing).
-  I   = 1 << 25,  // Immediate shifter operand (or not).
-
-  B4  = 1 << 4,
-  B5  = 1 << 5,
-  B6  = 1 << 6,
-  B7  = 1 << 7,
-  B8  = 1 << 8,
-  B9  = 1 << 9,
+  H = 1 << 5,   // Halfword (or byte).
+  S6 = 1 << 6,  // Signed (or unsigned).
+  L = 1 << 20,  // Load (or store).
+  S = 1 << 20,  // Set condition code (or leave unchanged).
+  W = 1 << 21,  // Writeback base register (or leave unchanged).
+  A = 1 << 21,  // Accumulate in multiply instruction (or not).
+  B = 1 << 22,  // Unsigned byte (or word).
+  N = 1 << 22,  // Long (or short).
+  U = 1 << 23,  // Positive (or negative) offset/index.
+  P = 1 << 24,  // Offset/pre-indexed addressing (or post-indexed addressing).
+  I = 1 << 25,  // Immediate shifter operand (or not).
+  B4 = 1 << 4,
+  B5 = 1 << 5,
+  B6 = 1 << 6,
+  B7 = 1 << 7,
+  B8 = 1 << 8,
+  B9 = 1 << 9,
   B12 = 1 << 12,
   B16 = 1 << 16,
+  B17 = 1 << 17,
   B18 = 1 << 18,
   B19 = 1 << 19,
   B20 = 1 << 20,
@@ -194,16 +194,16 @@ enum {
   B28 = 1 << 28,
 
   // Instruction bit masks.
-  kCondMask   = 15 << 28,
-  kALUMask    = 0x6f << 21,
-  kRdMask     = 15 << 12,  // In str instruction.
+  kCondMask = 15 << 28,
+  kALUMask = 0x6f << 21,
+  kRdMask = 15 << 12,  // In str instruction.
   kCoprocessorMask = 15 << 8,
   kOpCodeMask = 15 << 21,  // In data-processing instructions.
-  kImm24Mask  = (1 << 24) - 1,
-  kImm16Mask  = (1 << 16) - 1,
-  kImm8Mask  = (1 << 8) - 1,
-  kOff12Mask  = (1 << 12) - 1,
-  kOff8Mask  = (1 << 8) - 1
+  kImm24Mask = (1 << 24) - 1,
+  kImm16Mask = (1 << 16) - 1,
+  kImm8Mask = (1 << 8) - 1,
+  kOff12Mask = (1 << 12) - 1,
+  kOff8Mask = (1 << 8) - 1
 };
 
 
@@ -406,64 +406,6 @@ inline Hint NegateHint(Hint ignored) { return no_hint; }
 
 
 // -----------------------------------------------------------------------------
-// Specific instructions, constants, and masks.
-// These constants are declared in assembler-arm.cc, as they use named registers
-// and other constants.
-
-
-// add(sp, sp, 4) instruction (aka Pop())
-extern const Instr kPopInstruction;
-
-// str(r, MemOperand(sp, 4, NegPreIndex), al) instruction (aka push(r))
-// register r is not encoded.
-extern const Instr kPushRegPattern;
-
-// ldr(r, MemOperand(sp, 4, PostIndex), al) instruction (aka pop(r))
-// register r is not encoded.
-extern const Instr kPopRegPattern;
-
-// mov lr, pc
-extern const Instr kMovLrPc;
-// ldr rd, [pc, #offset]
-extern const Instr kLdrPCMask;
-extern const Instr kLdrPCPattern;
-// vldr dd, [pc, #offset]
-extern const Instr kVldrDPCMask;
-extern const Instr kVldrDPCPattern;
-// blxcc rm
-extern const Instr kBlxRegMask;
-
-extern const Instr kBlxRegPattern;
-
-extern const Instr kMovMvnMask;
-extern const Instr kMovMvnPattern;
-extern const Instr kMovMvnFlip;
-extern const Instr kMovLeaveCCMask;
-extern const Instr kMovLeaveCCPattern;
-extern const Instr kMovwMask;
-extern const Instr kMovwPattern;
-extern const Instr kMovwLeaveCCFlip;
-extern const Instr kCmpCmnMask;
-extern const Instr kCmpCmnPattern;
-extern const Instr kCmpCmnFlip;
-extern const Instr kAddSubFlip;
-extern const Instr kAndBicFlip;
-
-// A mask for the Rd register for push, pop, ldr, str instructions.
-extern const Instr kLdrRegFpOffsetPattern;
-
-extern const Instr kStrRegFpOffsetPattern;
-
-extern const Instr kLdrRegFpNegOffsetPattern;
-
-extern const Instr kStrRegFpNegOffsetPattern;
-
-extern const Instr kLdrStrInstrTypeMask;
-extern const Instr kLdrStrInstrArgumentMask;
-extern const Instr kLdrStrOffsetMask;
-
-
-// -----------------------------------------------------------------------------
 // Instruction abstraction.
 
 // The class Instruction enables access to individual fields defined in the ARM
@@ -622,10 +564,13 @@ class Instruction {
   inline int ShiftAmountValue() const { return Bits(11, 7); }
     // with immediate
   inline int RotateValue() const { return Bits(11, 8); }
+  DECLARE_STATIC_ACCESSOR(RotateValue);
   inline int Immed8Value() const { return Bits(7, 0); }
+  DECLARE_STATIC_ACCESSOR(Immed8Value);
   inline int Immed4Value() const { return Bits(19, 16); }
   inline int ImmedMovwMovtValue() const {
       return Immed4Value() << 12 | Offset12Value(); }
+  DECLARE_STATIC_ACCESSOR(ImmedMovwMovtValue);
 
   // Fields used in Load/Store instructions
   inline int PUValue() const { return Bits(24, 23); }

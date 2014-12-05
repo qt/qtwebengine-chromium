@@ -23,9 +23,7 @@ static const int kTimeCheckInterval = 10;
 
 class MockLayerPainter : public LayerPainter {
  public:
-  virtual void Paint(SkCanvas* canvas,
-                     const gfx::Rect& content_rect,
-                     gfx::RectF* opaque) OVERRIDE {}
+  void Paint(SkCanvas* canvas, const gfx::Rect& content_rect) override {}
 };
 
 
@@ -39,14 +37,15 @@ class LayerPerfTest : public testing::Test {
                kTimeCheckInterval) {}
 
  protected:
-  virtual void SetUp() OVERRIDE {
-    layer_tree_host_ = FakeLayerTreeHost::Create();
-    layer_tree_host_->InitializeSingleThreaded(&fake_client_);
+  virtual void SetUp() override {
+    layer_tree_host_ = FakeLayerTreeHost::Create(&fake_client_);
+    layer_tree_host_->InitializeSingleThreaded(
+        &fake_client_, base::MessageLoopProxy::current());
   }
 
-  virtual void TearDown() OVERRIDE {
-    layer_tree_host_->SetRootLayer(NULL);
-    layer_tree_host_.reset();
+  virtual void TearDown() override {
+    layer_tree_host_->SetRootLayer(nullptr);
+    layer_tree_host_ = nullptr;
   }
 
   FakeImplProxy proxy_;
@@ -75,7 +74,7 @@ TEST_F(LayerPerfTest, PushPropertiesTo) {
   // Properties changed.
   timer_.Reset();
   do {
-    test_layer->SetNeedsDisplayRect(gfx::RectF(0.f, 0.f, 5.f, 5.f));
+    test_layer->SetNeedsDisplayRect(gfx::Rect(5, 5));
     test_layer->SetTransformOrigin(gfx::Point3F(0.f, 0.f, transform_origin_z));
     test_layer->SetContentsOpaque(contents_opaque);
     test_layer->SetDoubleSided(double_sided);

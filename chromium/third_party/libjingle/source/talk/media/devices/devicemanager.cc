@@ -27,34 +27,29 @@
 
 #include "talk/media/devices/devicemanager.h"
 
-#include "talk/base/fileutils.h"
-#include "talk/base/logging.h"
-#include "talk/base/pathutils.h"
-#include "talk/base/stringutils.h"
-#include "talk/base/thread.h"
-#include "talk/base/windowpicker.h"
-#include "talk/base/windowpickerfactory.h"
 #include "talk/media/base/mediacommon.h"
+#include "talk/media/base/videocapturerfactory.h"
 #include "talk/media/devices/deviceinfo.h"
 #include "talk/media/devices/filevideocapturer.h"
 #include "talk/media/devices/yuvframescapturer.h"
+#include "webrtc/base/fileutils.h"
+#include "webrtc/base/logging.h"
+#include "webrtc/base/pathutils.h"
+#include "webrtc/base/stringutils.h"
+#include "webrtc/base/thread.h"
+#include "webrtc/base/windowpicker.h"
+#include "webrtc/base/windowpickerfactory.h"
 
-#if defined(HAVE_WEBRTC_VIDEO)
-#include "talk/media/webrtc/webrtcvideocapturer.h"
-#endif
-
-
-#if defined(HAVE_WEBRTC_VIDEO)
-#define VIDEO_CAPTURER_NAME WebRtcVideoCapturer
-#endif
-
+#ifdef HAVE_WEBRTC_VIDEO
+#include "talk/media/webrtc/webrtcvideocapturerfactory.h"
+#endif  // HAVE_WEBRTC_VIDEO
 
 namespace {
 
 bool StringMatchWithWildcard(
     const std::pair<const std::basic_string<char>, cricket::VideoFormat> key,
     const std::string& val) {
-  return talk_base::string_match(val.c_str(), key.first.c_str());
+  return rtc::string_match(val.c_str(), key.first.c_str());
 }
 
 }  // namespace
@@ -64,29 +59,12 @@ namespace cricket {
 // Initialize to empty string.
 const char DeviceManagerInterface::kDefaultDeviceName[] = "";
 
-class DefaultVideoCapturerFactory : public VideoCapturerFactory {
- public:
-  DefaultVideoCapturerFactory() {}
-  virtual ~DefaultVideoCapturerFactory() {}
-
-  VideoCapturer* Create(const Device& device) {
-#if defined(VIDEO_CAPTURER_NAME)
-    VIDEO_CAPTURER_NAME* return_value = new VIDEO_CAPTURER_NAME;
-    if (!return_value->Init(device)) {
-      delete return_value;
-      return NULL;
-    }
-    return return_value;
-#else
-    return NULL;
-#endif
-  }
-};
-
 DeviceManager::DeviceManager()
     : initialized_(false),
-      device_video_capturer_factory_(new DefaultVideoCapturerFactory),
-      window_picker_(talk_base::WindowPickerFactory::CreateWindowPicker()) {
+      window_picker_(rtc::WindowPickerFactory::CreateWindowPicker()) {
+#ifdef HAVE_WEBRTC_VIDEO
+  SetVideoDeviceCapturerFactory(new WebRtcVideoDeviceCapturerFactory());
+#endif  // HAVE_WEBRTC_VIDEO
 }
 
 DeviceManager::~DeviceManager() {
@@ -187,7 +165,7 @@ bool DeviceManager::GetVideoCaptureDevice(const std::string& name,
 
 bool DeviceManager::GetFakeVideoCaptureDevice(const std::string& name,
                                               Device* out) const {
-  if (talk_base::Filesystem::IsFile(name)) {
+  if (rtc::Filesystem::IsFile(name)) {
     *out = FileVideoCapturer::CreateFileVideoCapturerDevice(name);
     return true;
   }
@@ -212,12 +190,16 @@ void DeviceManager::ClearVideoCaptureDeviceMaxFormat(
 }
 
 VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
-  VideoCapturer* capturer = ConstructFakeVideoCapturer(device);
+  VideoCapturer* capturer = MaybeConstructFakeVideoCapturer(device);
   if (capturer) {
     return capturer;
   }
 
-  capturer = device_video_capturer_factory_->Create(device);
+  if (!video_device_capturer_factory_) {
+    LOG(LS_ERROR) << "No video capturer factory for devices.";
+    return NULL;
+  }
+  capturer = video_device_capturer_factory_->Create(device);
   if (!capturer) {
     return NULL;
   }
@@ -231,7 +213,7 @@ VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
   return capturer;
 }
 
-VideoCapturer* DeviceManager::ConstructFakeVideoCapturer(
+VideoCapturer* DeviceManager::MaybeConstructFakeVideoCapturer(
     const Device& device) const {
   // TODO(hellner): Throw out the creation of a file video capturer once the
   // refactoring is completed.
@@ -242,7 +224,7 @@ VideoCapturer* DeviceManager::ConstructFakeVideoCapturer(
       return NULL;
     }
     LOG(LS_INFO) << "Created file video capturer " << device.name;
-    capturer->set_repeat(talk_base::kForever);
+    capturer->set_repeat(rtc::kForever);
     return capturer;
   }
 
@@ -255,46 +237,28 @@ VideoCapturer* DeviceManager::ConstructFakeVideoCapturer(
 }
 
 bool DeviceManager::GetWindows(
-    std::vector<talk_base::WindowDescription>* descriptions) {
+    std::vector<rtc::WindowDescription>* descriptions) {
   if (!window_picker_) {
     return false;
   }
   return window_picker_->GetWindowList(descriptions);
 }
 
-VideoCapturer* DeviceManager::CreateWindowCapturer(talk_base::WindowId window) {
-#if defined(WINDOW_CAPTURER_NAME)
-  WINDOW_CAPTURER_NAME* window_capturer = new WINDOW_CAPTURER_NAME();
-  if (!window_capturer->Init(window)) {
-    delete window_capturer;
-    return NULL;
-  }
-  return window_capturer;
-#else
-  return NULL;
-#endif
-}
-
 bool DeviceManager::GetDesktops(
-    std::vector<talk_base::DesktopDescription>* descriptions) {
+    std::vector<rtc::DesktopDescription>* descriptions) {
   if (!window_picker_) {
     return false;
   }
   return window_picker_->GetDesktopList(descriptions);
 }
 
-VideoCapturer* DeviceManager::CreateDesktopCapturer(
-    talk_base::DesktopId desktop) {
-#if defined(DESKTOP_CAPTURER_NAME)
-  DESKTOP_CAPTURER_NAME* desktop_capturer = new DESKTOP_CAPTURER_NAME();
-  if (!desktop_capturer->Init(desktop.index())) {
-    delete desktop_capturer;
+VideoCapturer* DeviceManager::CreateScreenCapturer(
+    const ScreencastId& screenid) const {
+  if (!screen_capturer_factory_) {
+    LOG(LS_ERROR) << "No video capturer factory for screens.";
     return NULL;
   }
-  return desktop_capturer;
-#else
-  return NULL;
-#endif
+  return screen_capturer_factory_->Create(screenid);
 }
 
 bool DeviceManager::GetAudioDevices(bool input,

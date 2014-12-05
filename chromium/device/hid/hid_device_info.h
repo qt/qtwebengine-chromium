@@ -9,11 +9,7 @@
 #include <vector>
 
 #include "build/build_config.h"
-#include "device/hid/hid_usage_and_page.h"
-
-#if defined(OS_MACOSX)
-#include <IOKit/hid/IOHIDDevice.h>
-#endif
+#include "device/hid/hid_collection_info.h"
 
 namespace device {
 
@@ -22,32 +18,27 @@ enum HidBusType {
   kHIDBusTypeBluetooth = 1,
 };
 
-#if defined(OS_MACOSX)
-typedef IOHIDDeviceRef HidDeviceId;
-const HidDeviceId kInvalidHidDeviceId = NULL;
-#else
 typedef std::string HidDeviceId;
 extern const char kInvalidHidDeviceId[];
-#endif
 
 struct HidDeviceInfo {
   HidDeviceInfo();
   ~HidDeviceInfo();
 
+  // Device identification.
   HidDeviceId device_id;
-
-  HidBusType bus_type;
   uint16_t vendor_id;
   uint16_t product_id;
-
-  int input_report_size;
-  int output_report_size;
-  int feature_report_size;
-  std::vector<HidUsageAndPage> usages;
-  bool has_report_id;
-
   std::string product_name;
   std::string serial_number;
+  HidBusType bus_type;
+
+  // Top-Level Collections information.
+  std::vector<HidCollectionInfo> collections;
+  bool has_report_id;
+  size_t max_input_report_size;
+  size_t max_output_report_size;
+  size_t max_feature_report_size;
 };
 
 }  // namespace device

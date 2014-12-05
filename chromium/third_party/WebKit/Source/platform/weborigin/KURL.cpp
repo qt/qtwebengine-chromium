@@ -40,14 +40,14 @@
 #include <stdio.h>
 #endif
 
-namespace WebCore {
+namespace blink {
 
 static const int maximumValidPortNumber = 0xFFFE;
 static const int invalidPortNumber = 0xFFFF;
 
 static void assertProtocolIsGood(const char* protocol)
 {
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     const char* p = protocol;
     while (*p) {
         ASSERT(*p > ' ' && *p < 0x7F && !(*p >= 'A' && *p <= 'Z'));
@@ -93,7 +93,7 @@ static bool isUnicodeEncoding(const WTF::TextEncoding* encoding)
 
 namespace {
 
-class KURLCharsetConverter FINAL : public url::CharsetConverter {
+class KURLCharsetConverter final : public url::CharsetConverter {
 public:
     // The encoding parameter may be 0, but in this case the object must not be called.
     explicit KURLCharsetConverter(const WTF::TextEncoding* encoding)
@@ -101,7 +101,7 @@ public:
     {
     }
 
-    virtual void ConvertFromUTF16(const url::UTF16Char* input, int inputLength, url::CanonOutput* output) OVERRIDE
+    virtual void ConvertFromUTF16(const url::UTF16Char* input, int inputLength, url::CanonOutput* output) override
     {
         CString encoded = m_encoding->normalizeAndEncode(String(input, inputLength), WTF::URLEncodedEntitiesForUnencodables);
         output->Append(encoded.data(), static_cast<int>(encoded.length()));
@@ -260,31 +260,6 @@ KURL& KURL::operator=(const KURL& other)
         m_innerURL.clear();
     return *this;
 }
-
-#if COMPILER_SUPPORTS(CXX_RVALUE_REFERENCES)
-KURL::KURL(KURL&& other)
-    : m_isValid(other.m_isValid)
-    , m_protocolIsInHTTPFamily(other.m_protocolIsInHTTPFamily)
-    , m_parsed(other.m_parsed)
-    // FIXME: Instead of explicitly casting to String&& here, we should use std::move, but that requires us to
-    // have a standard library that supports move semantics.
-    , m_string(static_cast<String&&>(other.m_string))
-    , m_innerURL(other.m_innerURL.release())
-{
-}
-
-KURL& KURL::operator=(KURL&& other)
-{
-    m_isValid = other.m_isValid;
-    m_protocolIsInHTTPFamily = other.m_protocolIsInHTTPFamily;
-    m_parsed = other.m_parsed;
-    // FIXME: Instead of explicitly casting to String&& here, we should use std::move, but that requires us to
-    // have a standard library that supports move semantics.
-    m_string = static_cast<String&&>(other.m_string);
-    m_innerURL = other.m_innerURL.release();
-    return *this;
-}
-#endif
 
 KURL KURL::copy() const
 {
@@ -919,4 +894,4 @@ bool KURL::isSafeToSendToAnotherThread() const
         && (!m_innerURL || m_innerURL->isSafeToSendToAnotherThread());
 }
 
-} // namespace WebCore
+} // namespace blink

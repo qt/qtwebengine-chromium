@@ -26,14 +26,12 @@ class ProxyMediaKeys;
 // Class for managing all the CDM objects in the same RenderFrame.
 class RendererCdmManager : public RenderFrameObserver {
  public:
-  static const int kInvalidCdmId = 0;
-
   // Constructs a RendererCdmManager object for the |render_frame|.
   explicit RendererCdmManager(RenderFrame* render_frame);
   virtual ~RendererCdmManager();
 
   // RenderFrameObserver overrides.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& msg) override;
 
   // Encrypted media related methods.
   void InitializeCdm(int cdm_id,

@@ -14,12 +14,12 @@ namespace message_center {
 class ProportionalImageView : public views::View {
  public:
   ProportionalImageView(const gfx::ImageSkia& image, const gfx::Size& max_size);
-  virtual ~ProportionalImageView();
+  ~ProportionalImageView() override;
 
   // Overridden from views::View:
-  virtual gfx::Size GetPreferredSize() const OVERRIDE;
-  virtual int GetHeightForWidth(int width) const OVERRIDE;
-  virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
+  gfx::Size GetPreferredSize() const override;
+  int GetHeightForWidth(int width) const override;
+  void OnPaint(gfx::Canvas* canvas) override;
 
  private:
   gfx::Size GetImageDrawingSize();

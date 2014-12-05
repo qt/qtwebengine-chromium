@@ -8,20 +8,22 @@
 #ifndef SkDebugGLContext_DEFINED
 #define SkDebugGLContext_DEFINED
 
-#include "SkGLContextHelper.h"
+#include "SkGLContext.h"
 
-class SkDebugGLContext : public SkGLContextHelper {
-
+class SkDebugGLContext : public SkGLContext {
 public:
-    SkDebugGLContext() {};
+    virtual ~SkDebugGLContext() SK_OVERRIDE;
+    virtual void makeCurrent() const SK_OVERRIDE {}
+    virtual void swapBuffers() const SK_OVERRIDE {}
 
-    virtual void makeCurrent() const SK_OVERRIDE {};
-    virtual void swapBuffers() const SK_OVERRIDE {};
-
-protected:
-    virtual const GrGLInterface* createGLContext() SK_OVERRIDE;
-
-    virtual void destroyGLContext() SK_OVERRIDE {};
+    static SkDebugGLContext* Create(GrGLStandard forcedGpuAPI) {
+        if (kGLES_GrGLStandard == forcedGpuAPI) {
+            return NULL;
+        }
+        return SkNEW(SkDebugGLContext);
+    }
+private:
+    SkDebugGLContext();
 };
 
 #endif

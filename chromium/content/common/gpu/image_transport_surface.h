@@ -23,7 +23,6 @@
 
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
-struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
 
 namespace gfx {
 class GLSurface;
@@ -58,8 +57,10 @@ class ImageTransportSurface {
  public:
   ImageTransportSurface();
 
+#if defined(OS_MACOSX)
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) = 0;
+#endif
   virtual void OnResize(gfx::Size size, float scale_factor) = 0;
   virtual void SetLatencyInfo(
       const std::vector<ui::LatencyInfo>& latency_info) = 0;
@@ -93,6 +94,13 @@ class ImageTransportSurface {
       GpuCommandBufferStub* stub,
       const gfx::GLSurfaceHandle& handle);
 
+#if defined(OS_ANDROID)
+  static scoped_refptr<gfx::GLSurface> CreateTransportSurface(
+      GpuChannelManager* manager,
+      GpuCommandBufferStub* stub,
+      const gfx::GLSurfaceHandle& handle);
+#endif
+
   DISALLOW_COPY_AND_ASSIGN(ImageTransportSurface);
 };
 
@@ -105,25 +113,21 @@ class ImageTransportHelper
                        GpuChannelManager* manager,
                        GpuCommandBufferStub* stub,
                        gfx::PluginWindowHandle handle);
-  virtual ~ImageTransportHelper();
+  ~ImageTransportHelper() override;
 
   bool Initialize();
-  void Destroy();
 
   // IPC::Listener implementation:
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // Helper send functions. Caller fills in the surface specific params
   // like size and surface id. The helper fills in the rest.
   void SendAcceleratedSurfaceBuffersSwapped(
       GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params);
-  void SendAcceleratedSurfacePostSubBuffer(
-      GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params);
-  void SendAcceleratedSurfaceRelease();
   void SendUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
 
-  void SendLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
+  void SwapBuffersCompleted(const std::vector<ui::LatencyInfo>& latency_info);
 
   // Whether or not we should execute more commands.
   void SetScheduled(bool is_scheduled);
@@ -139,8 +143,6 @@ class ImageTransportHelper
   // Set the default swap interval on the surface.
   static void SetSwapInterval(gfx::GLContext* context);
 
-  void Suspend();
-
   GpuChannelManager* manager() const { return manager_; }
   GpuCommandBufferStub* stub() const { return stub_.get(); }
 
@@ -149,8 +151,10 @@ class ImageTransportHelper
   gpu::gles2::GLES2Decoder* Decoder();
 
   // IPC::Message handlers.
+#if defined(OS_MACOSX)
   void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params);
+#endif
   void OnWakeUpGpu();
 
   // Backbuffer resize callback.
@@ -180,23 +184,25 @@ class PassThroughImageTransportSurface
                                    gfx::GLSurface* surface);
 
   // GLSurface implementation.
-  virtual bool Initialize() OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual bool SwapBuffers() OVERRIDE;
-  virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual bool OnMakeCurrent(gfx::GLContext* context) OVERRIDE;
+  bool Initialize() override;
+  void Destroy() override;
+  bool SwapBuffers() override;
+  bool PostSubBuffer(int x, int y, int width, int height) override;
+  bool OnMakeCurrent(gfx::GLContext* context) override;
 
   // ImageTransportSurface implementation.
-  virtual void OnBufferPresented(
-      const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
-  virtual gfx::Size GetSize() OVERRIDE;
-  virtual void SetLatencyInfo(
-      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
-  virtual void WakeUpGpu() OVERRIDE;
+#if defined(OS_MACOSX)
+  void OnBufferPresented(
+      const AcceleratedSurfaceMsg_BufferPresented_Params& params) override;
+#endif
+  void OnResize(gfx::Size size, float scale_factor) override;
+  gfx::Size GetSize() override;
+  void SetLatencyInfo(
+      const std::vector<ui::LatencyInfo>& latency_info) override;
+  void WakeUpGpu() override;
 
  protected:
-  virtual ~PassThroughImageTransportSurface();
+  ~PassThroughImageTransportSurface() override;
 
   // If updated vsync parameters can be determined, send this information to
   // the browser.

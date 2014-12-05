@@ -12,7 +12,7 @@
 
 # Older Debian based systems had both "admin" and "adm" groups, with "admin"
 # apparently being used in more places. Newer distributions have standardized
-# on just the "adm" group. Check /etc/group for the prefered name of the
+# on just the "adm" group. Check /etc/group for the preferred name of the
 # administrator group.
 admin=$(grep '^admin:' /etc/group >&/dev/null && echo admin || echo adm)
 
@@ -504,6 +504,10 @@ done
 session="$(schroot -c "${chroot}" -b)"
 export CHROOT_SESSION_ID="${session}"
 
+# Set GOMA_TMP_DIR for better handling of goma inside chroot.
+export GOMA_TMP_DIR="/tmp/goma_tmp_$CHROOT_SESSION_ID"
+mkdir -p "$GOMA_TMP_DIR"
+
 if [ $# -eq 0 ]; then
   # Run an interactive shell session
   schroot -c "${session}" -r -p
@@ -554,6 +558,8 @@ done
 # clean up the stale files by invoking us with "--clean" after having killed
 # all running processes.
 schroot -c "${session}" -e
+# Since no goma processes are running, we can remove goma directory.
+rm -rf "$GOMA_TMP_DIR"
 exit $rc
 EOF
 sudo chown root:root /usr/local/bin/"${target%bit}"
@@ -639,7 +645,7 @@ sudo "/usr/local/bin/${target%bit}" /bin/sh -c '
 # Install a few more commonly used packages
 sudo "/usr/local/bin/${target%bit}" apt-get -y install                         \
   autoconf automake1.9 dpkg-dev g++-multilib gcc-multilib gdb less libtool     \
-  strace
+  lsof strace
 
 # If running a 32bit environment on a 64bit machine, install a few binaries
 # as 64bit. This is only done automatically if the chroot distro is the same as
@@ -653,7 +659,7 @@ if [ "${copy_64}" = "y" -o \
   readlinepkg=$(sudo "/usr/local/bin/${target%bit}" sh -c \
     'apt-cache search "lib64readline.\$" | sort | tail -n 1 | cut -d " " -f 1')
   sudo "/usr/local/bin/${target%bit}" apt-get -y install                       \
-    lib64expat1 lib64ncurses5 ${readlinepkg} lib64z1
+    lib64expat1 lib64ncurses5 ${readlinepkg} lib64z1 lib64stdc++6
   dep=
   for i in binutils gdb; do
     [ -d /usr/share/doc/"$i" ] || dep="$dep $i"

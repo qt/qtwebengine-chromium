@@ -25,9 +25,10 @@
 
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class HTMLDivElement : public HTMLElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     DECLARE_NODE_FACTORY(HTMLDivElement);
 
@@ -35,9 +36,9 @@ protected:
     explicit HTMLDivElement(Document&);
 
 private:
-    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) OVERRIDE;
+    virtual void collectStyleForPresentationAttribute(const QualifiedName&, const AtomicString&, MutableStylePropertySet*) override;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLDivElement_h

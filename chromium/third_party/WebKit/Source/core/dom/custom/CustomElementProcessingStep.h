@@ -33,9 +33,7 @@
 
 #include "wtf/Noncopyable.h"
 
-namespace WebCore {
-
-class Element;
+namespace blink {
 
 class CustomElementProcessingStep {
     WTF_MAKE_NONCOPYABLE(CustomElementProcessingStep);
@@ -44,9 +42,9 @@ public:
 
     virtual ~CustomElementProcessingStep() { }
     virtual void dispatch(Element*) = 0;
-    virtual bool isCreated() const { return false; }
+    virtual bool isCreatedCallback() const { return false; }
 };
 
-}
+} // namespace blink
 
 #endif // CustomElementProcessingStep_h

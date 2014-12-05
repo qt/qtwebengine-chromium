@@ -5,6 +5,8 @@
 #include "content/browser/indexed_db/leveldb/leveldb_transaction.h"
 
 #include "base/logging.h"
+#include "base/metrics/histogram.h"
+#include "base/time/time.h"
 #include "content/browser/indexed_db/leveldb/leveldb_database.h"
 #include "content/browser/indexed_db/leveldb/leveldb_write_batch.h"
 #include "third_party/leveldatabase/src/include/leveldb/db.h"
@@ -25,9 +27,8 @@ LevelDBTransaction::Record::Record() : deleted(false) {}
 LevelDBTransaction::Record::~Record() {}
 
 void LevelDBTransaction::Clear() {
-  for (DataType::iterator it = data_.begin(); it != data_.end(); ++it) {
-    delete it->second;
-  }
+  for (const auto& it : data_)
+    delete it.second;
   data_.clear();
 }
 
@@ -93,20 +94,22 @@ leveldb::Status LevelDBTransaction::Commit() {
     return leveldb::Status::OK();
   }
 
+  base::TimeTicks begin_time = base::TimeTicks::Now();
   scoped_ptr<LevelDBWriteBatch> write_batch = LevelDBWriteBatch::Create();
 
-  for (DataType::iterator iterator = data_.begin(); iterator != data_.end();
-       ++iterator) {
-    if (!iterator->second->deleted)
-      write_batch->Put(iterator->first, iterator->second->value);
+  for (const auto& iterator : data_) {
+    if (!iterator.second->deleted)
+      write_batch->Put(iterator.first, iterator.second->value);
     else
-      write_batch->Remove(iterator->first);
+      write_batch->Remove(iterator.first);
   }
 
   leveldb::Status s = db_->Write(*write_batch);
   if (s.ok()) {
     Clear();
     finished_ = true;
+    UMA_HISTOGRAM_TIMES("WebCore.IndexedDB.LevelDB.Transaction.CommitTime",
+                         base::TimeTicks::Now() - begin_time);
   }
   return s;
 }
@@ -118,7 +121,7 @@ void LevelDBTransaction::Rollback() {
 }
 
 scoped_ptr<LevelDBIterator> LevelDBTransaction::CreateIterator() {
-  return TransactionIterator::Create(this).PassAs<LevelDBIterator>();
+  return TransactionIterator::Create(this);
 }
 
 scoped_ptr<LevelDBTransaction::DataIterator>
@@ -439,12 +442,8 @@ void LevelDBTransaction::UnregisterIterator(TransactionIterator* iterator) {
 }
 
 void LevelDBTransaction::NotifyIterators() {
-  for (std::set<TransactionIterator*>::iterator i = iterators_.begin();
-       i != iterators_.end();
-       ++i) {
-    TransactionIterator* transaction_iterator = *i;
+  for (auto* transaction_iterator : iterators_)
     transaction_iterator->DataChanged();
-  }
 }
 
 scoped_ptr<LevelDBDirectTransaction> LevelDBDirectTransaction::Create(

@@ -25,22 +25,22 @@
 #include "config.h"
 #include "core/html/HTMLTableSectionElement.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/dom/ElementTraversal.h"
 #include "core/dom/ExceptionCode.h"
+#include "core/dom/NodeListsNodeData.h"
 #include "core/html/HTMLCollection.h"
 #include "core/html/HTMLTableElement.h"
 #include "core/html/HTMLTableRowElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLTableSectionElement::HTMLTableSectionElement(const QualifiedName& tagName, Document& document)
     : HTMLTablePartElement(tagName, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_ELEMENT_FACTORY_WITH_TAGNAME(HTMLTableSectionElement)
@@ -49,13 +49,7 @@ const StylePropertySet* HTMLTableSectionElement::additionalPresentationAttribute
 {
     if (HTMLTableElement* table = findParentTable())
         return table->additionalGroupStyle(true);
-    return 0;
-}
-
-PassRefPtrWillBeRawPtr<HTMLElement> HTMLTableSectionElement::insertRow(ExceptionState& exceptionState)
-{
-    // The default 'index' argument value is -1.
-    return insertRow(-1, exceptionState);
+    return nullptr;
 }
 
 // these functions are rather slow, since we need to get the row at
@@ -101,7 +95,7 @@ int HTMLTableSectionElement::numRows() const
 
 PassRefPtrWillBeRawPtr<HTMLCollection> HTMLTableSectionElement::rows()
 {
-    return ensureCachedHTMLCollection(TSectionRows);
+    return ensureCachedCollection<HTMLCollection>(TSectionRows);
 }
 
 }

@@ -65,6 +65,10 @@ cr.define('print_preview', function() {
       this.isCancelButtonEnabled = isEnabled;
     },
 
+    get isPrintButtonEnabled() {
+      return !this.getChildElement('button.print').disabled;
+    },
+
     set isPrintButtonEnabled(isEnabled) {
       this.isPrintButtonEnabled_ = isEnabled;
       this.updatePrintButtonEnabledState_();
@@ -79,6 +83,11 @@ cr.define('print_preview', function() {
       var summaryEl = this.getChildElement('.summary');
       summaryEl.innerHTML = '';
       summaryEl.textContent = message;
+    },
+
+    /** @override */
+    decorateInternal: function() {
+      cr.ui.reverseButtonStrips(this.getElement());
     },
 
     /** @override */
@@ -149,14 +158,14 @@ cr.define('print_preview', function() {
       }
 
       var summaryLabel =
-          localStrings.getString('printPreviewSheetsLabelSingular');
-      var pagesLabel = localStrings.getString('printPreviewPageLabelPlural');
+          loadTimeData.getString('printPreviewSheetsLabelSingular');
+      var pagesLabel = loadTimeData.getString('printPreviewPageLabelPlural');
 
       var saveToPdf = this.destinationStore_.selectedDestination &&
           this.destinationStore_.selectedDestination.id ==
               print_preview.Destination.GooglePromotedId.SAVE_AS_PDF;
       if (saveToPdf) {
-        summaryLabel = localStrings.getString('printPreviewPageLabelSingular');
+        summaryLabel = loadTimeData.getString('printPreviewPageLabelSingular');
       }
 
       var numPages = this.printTicketStore_.pageRange.getPageNumberSet().size;
@@ -171,25 +180,34 @@ cr.define('print_preview', function() {
 
       if (numSheets > 1) {
         summaryLabel = saveToPdf ? pagesLabel :
-            localStrings.getString('printPreviewSheetsLabelPlural');
+            loadTimeData.getString('printPreviewSheetsLabelPlural');
       }
 
       var html;
+      var label;
       if (numPages != numSheets) {
-        html = localStrings.getStringF('printPreviewSummaryFormatLong',
+        html = loadTimeData.getStringF('printPreviewSummaryFormatLong',
                                        '<b>' + numSheets + '</b>',
                                        '<b>' + summaryLabel + '</b>',
                                        numPages,
                                        pagesLabel);
+        label = loadTimeData.getStringF('printPreviewSummaryFormatLong',
+                                        numSheets, summaryLabel,
+                                        numPages, pagesLabel);
       } else {
-        html = localStrings.getStringF('printPreviewSummaryFormatShort',
+        html = loadTimeData.getStringF('printPreviewSummaryFormatShort',
                                        '<b>' + numSheets + '</b>',
                                        '<b>' + summaryLabel + '</b>');
+        label = loadTimeData.getStringF('printPreviewSummaryFormatShort',
+                                        numSheets, summaryLabel);
       }
 
       // Removing extra spaces from within the string.
       html = html.replace(/\s{2,}/g, ' ');
-      this.getChildElement('.summary').innerHTML = html;
+
+      var summary = this.getChildElement('.summary');
+      summary.innerHTML = html;
+      summary.setAttribute('aria-label', label);
     },
 
     /**
@@ -203,7 +221,7 @@ cr.define('print_preview', function() {
         this.getChildElement('button.print').classList.add('loading');
         this.getChildElement('button.cancel').classList.add('loading');
         this.getChildElement('.summary').innerHTML =
-            localStrings.getString('printing');
+            loadTimeData.getString('printing');
       }
       cr.dispatchSimpleEvent(this, PrintHeader.EventType.PRINT_BUTTON_CLICK);
     },
@@ -229,7 +247,7 @@ cr.define('print_preview', function() {
            this.destinationStore_.selectedDestination.id ==
                print_preview.Destination.GooglePromotedId.DOCS);
       this.getChildElement('button.print').textContent =
-          localStrings.getString(isSaveLabel ? 'saveButton' : 'printButton');
+          loadTimeData.getString(isSaveLabel ? 'saveButton' : 'printButton');
       if (this.destinationStore_.selectedDestination) {
         this.getChildElement('button.print').focus();
       }

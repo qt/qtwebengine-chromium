@@ -37,15 +37,6 @@ namespace blink {
 
 class WebHeap {
 public:
-    // Attach thread to the garbage collector managed heap. Thread can
-    // allocate or use garbage collector managed objects only while it is
-    // attached.
-    BLINK_EXPORT static void attachThread();
-
-    // Detach thread from the garbage collector managed heap. Thread can
-    // no longer allocate or use garbage collector managed objects.
-    BLINK_EXPORT static void detachThread();
-
     // While this object is active on the stack current thread is marked as
     // being at safepoint. It can't manipulate garbage collector managed objects
     // until it leaves safepoint, but it can block indefinitely.
@@ -56,6 +47,11 @@ public:
         BLINK_EXPORT SafePointScope();
         BLINK_EXPORT ~SafePointScope();
     };
+
+    // These APIs are only for testing purposes and should not be used
+    // outside of tests.
+    BLINK_EXPORT static void collectGarbageForTesting();
+    BLINK_EXPORT static void collectAllGarbageForTesting();
 };
 
 } // namespace blink

@@ -244,6 +244,54 @@ SK_API void SkDebugf_FileLine(const char* file, int line, bool fatal,
 #  endif
 #endif
 
+// These flags are no longer defined in Skia, but we have them (temporarily)
+// until we update our call-sites (typically these are for API changes).
+//
+// Remove these as we update our sites.
+//
+#ifndef    SK_SUPPORT_LEGACY_GETTOPDEVICE
+#   define SK_SUPPORT_LEGACY_GETTOPDEVICE
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_GETDEVICE
+#   define SK_SUPPORT_LEGACY_GETDEVICE
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
+#   define SK_SUPPORT_LEGACY_PUBLIC_IMAGEINFO_FIELDS
+#endif
+
+#ifndef    SK_SUPPORT_LEGACY_PICTURE_CLONE
+#   define SK_SUPPORT_LEGACY_PICTURE_CLONE
+#endif
+
+#ifndef    SK_IGNORE_ETC1_SUPPORT
+#   define SK_IGNORE_ETC1_SUPPORT
+#endif
+
+#ifndef    SK_IGNORE_GPU_DITHER
+#   define SK_IGNORE_GPU_DITHER
+#endif
+
+#ifndef    SK_LEGACY_PICTURE_SIZE_API
+#   define SK_LEGACY_PICTURE_SIZE_API
+#endif
+
+#ifndef    SK_LEGACY_PICTURE_DRAW_API
+#   define SK_LEGACY_PICTURE_DRAW_API
+#endif
+
+
+// Turns SkPicture::clone() into a simple "return SkRef(this);" as a way to
+// test the threadsafety of SkPicture playback.
+#define SK_PICTURE_CLONE_NOOP 1
+
+// Turns on new (nicer, hopefully faster) SkPicture backend.
+#define SK_PICTURE_USE_SK_RECORD 1
+
+// Run a few optimization passes over the SkRecord after recording.
+#define SK_PICTURE_OPTIMIZE_SK_RECORD 1
+
 // ===== End Chrome-specific definitions =====
 
 #endif

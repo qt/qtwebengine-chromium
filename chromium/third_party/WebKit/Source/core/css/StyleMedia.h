@@ -27,28 +27,31 @@
 #ifndef StyleMedia_h
 #define StyleMedia_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalFrame;
 
-class StyleMedia : public RefCountedWillBeGarbageCollectedFinalized<StyleMedia>, public DOMWindowProperty {
+class StyleMedia : public RefCountedWillBeGarbageCollected<StyleMedia>, public DOMWindowProperty, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(StyleMedia);
 public:
     static PassRefPtrWillBeRawPtr<StyleMedia> create(LocalFrame* frame) { return adoptRefWillBeNoop(new StyleMedia(frame));}
 
     AtomicString type() const;
     bool matchMedium(const String&) const;
 
-    void trace(Visitor*) { }
+    virtual void trace(Visitor*) override;
 
 private:
     explicit StyleMedia(LocalFrame*);
 };
 
-} // namespace
+} // namespace blink
 
 #endif // StyleMedia_h

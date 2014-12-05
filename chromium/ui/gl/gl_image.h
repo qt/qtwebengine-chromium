@@ -6,23 +6,23 @@
 #define UI_GL_GL_IMAGE_H_
 
 #include "base/memory/ref_counted.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
+#include "ui/gfx/overlay_transform.h"
+#include "ui/gfx/rect.h"
+#include "ui/gfx/rect_f.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_export.h"
 
 namespace gfx {
 
-class GLSurface;
-
 // Encapsulates an image that can be bound to a texture, hiding platform
 // specific management.
 class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
  public:
-  GLImage();
+  GLImage() {}
 
   // Destroys the image.
-  virtual void Destroy() = 0;
+  virtual void Destroy(bool have_context) = 0;
 
   // Get the size of the image.
   virtual gfx::Size GetSize() = 0;
@@ -32,6 +32,9 @@ class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
 
   // Release image from texture currently bound to |target|.
   virtual void ReleaseTexImage(unsigned target) = 0;
+
+  // Copy image to texture currently bound to |target|.
+  virtual bool CopyTexImage(unsigned target) = 0;
 
   // Called before the texture is used for drawing.
   virtual void WillUseTexImage() = 0;
@@ -45,21 +48,15 @@ class GL_EXPORT GLImage : public base::RefCounted<GLImage> {
   // Called after the texture image data has been modified.
   virtual void DidModifyTexImage() = 0;
 
-  // Indicate that image should be released after use.
-  // (For an Android work-around only).
-  virtual void SetReleaseAfterUse();
-
-  // Create a GL image for a window.
-  static scoped_refptr<GLImage> CreateGLImage(gfx::PluginWindowHandle window);
-
-  // Create a GL image for a GPU Memory buffer.
-  static scoped_refptr<GLImage> CreateGLImageForGpuMemoryBuffer(
-      gfx::GpuMemoryBufferHandle buffer,
-      gfx::Size size,
-      unsigned internalformat);
+  // Schedule image as an overlay plane to be shown at swap time for |widget|.
+  virtual bool ScheduleOverlayPlane(gfx::AcceleratedWidget widget,
+                                    int z_order,
+                                    OverlayTransform transform,
+                                    const Rect& bounds_rect,
+                                    const RectF& crop_rect) = 0;
 
  protected:
-  virtual ~GLImage();
+  virtual ~GLImage() {}
 
  private:
   friend class base::RefCounted<GLImage>;

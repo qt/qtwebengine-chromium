@@ -60,7 +60,7 @@ SkOSWindow::SkOSWindow(void* hWnd) {
 
 SkOSWindow::~SkOSWindow() {
 #if SK_SUPPORT_GPU
-    if (NULL != fHGLRC) {
+    if (fHGLRC) {
         wglDeleteContext((HGLRC)fHGLRC);
     }
 #if SK_ANGLE
@@ -331,7 +331,8 @@ void SkEvent::SignalQueueTimer(SkMSec delay)
 bool SkOSWindow::attachGL(int msaaSampleCount, AttachmentInfo* info) {
     HDC dc = GetDC((HWND)fHWND);
     if (NULL == fHGLRC) {
-        fHGLRC = SkCreateWGLContext(dc, msaaSampleCount, false);
+        fHGLRC = SkCreateWGLContext(dc, msaaSampleCount,
+                kGLPreferCompatibilityProfile_SkWGLContextRequest);
         if (NULL == fHGLRC) {
             return false;
         }

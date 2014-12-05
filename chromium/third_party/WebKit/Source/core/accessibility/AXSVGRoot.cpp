@@ -30,11 +30,10 @@
 #include "core/accessibility/AXSVGRoot.h"
 
 
-namespace WebCore {
+namespace blink {
 
 AXSVGRoot::AXSVGRoot(RenderObject* renderer)
     : AXRenderObject(renderer)
-    , m_parent(0)
 {
 }
 
@@ -47,15 +46,25 @@ PassRefPtr<AXSVGRoot> AXSVGRoot::create(RenderObject* renderer)
     return adoptRef(new AXSVGRoot(renderer));
 }
 
-AXObject* AXSVGRoot::parentObject() const
+void AXSVGRoot::setParent(AXObject* parent)
+{
+    // Only update the parent to another objcet if it wasn't already set to
+    // something. Multiple elements in an HTML document can reference
+    // the same remote SVG document, and in that case the parent should just
+    // stay with the first one.
+    if (!m_parent || !parent)
+        m_parent = parent;
+}
+
+AXObject* AXSVGRoot::computeParent() const
 {
     // If a parent was set because this is a remote SVG resource, use that
     // but otherwise, we should rely on the standard render tree for the parent.
     if (m_parent)
         return m_parent;
 
-    return AXRenderObject::parentObject();
+    return AXRenderObject::computeParent();
 }
 
 
-} // namespace WebCore
+} // namespace blink

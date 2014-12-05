@@ -35,10 +35,11 @@
 #include "core/animation/AnimationEffect.h"
 #include "core/animation/AnimationPlayer.h"
 #include "core/animation/SampledEffect.h"
+#include "platform/geometry/FloatBox.h"
 #include "wtf/HashSet.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class InertAnimation;
 
@@ -54,6 +55,7 @@ public:
     bool hasActiveAnimationsOnCompositor(CSSPropertyID) const;
     static WillBeHeapHashMap<CSSPropertyID, RefPtrWillBeMember<Interpolation> > activeInterpolations(AnimationStack*, const WillBeHeapVector<RawPtrWillBeMember<InertAnimation> >* newAnimations, const WillBeHeapHashSet<RawPtrWillBeMember<const AnimationPlayer> >* cancelledAnimationPlayers, Animation::Priority, double timelineCurrentTime);
 
+    bool getAnimatedBoundingBox(FloatBox&, CSSPropertyID) const;
     void trace(Visitor*);
 
 private:
@@ -64,6 +66,6 @@ private:
     friend class AnimationAnimationStackTest;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif

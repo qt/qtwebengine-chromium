@@ -15,52 +15,79 @@ namespace content {
 // Provides common implementation of a GPU memory buffer.
 class GpuMemoryBufferImpl : public gfx::GpuMemoryBuffer {
  public:
+  typedef base::Callback<void(scoped_ptr<GpuMemoryBufferImpl> buffer)>
+      CreationCallback;
   typedef base::Callback<void(const gfx::GpuMemoryBufferHandle& handle)>
       AllocationCallback;
+  typedef base::Callback<void(uint32 sync_point)> DestructionCallback;
 
-  virtual ~GpuMemoryBufferImpl();
+  ~GpuMemoryBufferImpl() override;
 
-  // Creates a GPU memory buffer instance with |size| and |internalformat| for
-  // |usage|.
-  static scoped_ptr<GpuMemoryBufferImpl> Create(const gfx::Size& size,
-                                                unsigned internalformat,
-                                                unsigned usage);
+  // Creates a GPU memory buffer instance with |size| and |format| for |usage|
+  // by the current process and |client_id|.
+  static void Create(gfx::GpuMemoryBufferId id,
+                     const gfx::Size& size,
+                     Format format,
+                     Usage usage,
+                     int client_id,
+                     const CreationCallback& callback);
 
   // Allocates a GPU memory buffer with |size| and |internalformat| for |usage|
-  // by |child_process|. The |handle| returned can be used by the
-  // |child_process| to create an instance of this class.
-  static void AllocateForChildProcess(const gfx::Size& size,
-                                      unsigned internalformat,
-                                      unsigned usage,
+  // by |child_process| and |child_client_id|. The |handle| returned can be
+  // used by the |child_process| to create an instance of this class.
+  static void AllocateForChildProcess(gfx::GpuMemoryBufferId id,
+                                      const gfx::Size& size,
+                                      Format format,
+                                      Usage usage,
                                       base::ProcessHandle child_process,
+                                      int child_client_id,
                                       const AllocationCallback& callback);
 
+  // Notify that GPU memory buffer has been deleted by |child_process|.
+  static void DeletedByChildProcess(gfx::GpuMemoryBufferType type,
+                                    gfx::GpuMemoryBufferId id,
+                                    base::ProcessHandle child_process,
+                                    int child_client_id,
+                                    uint32 sync_point);
+
   // Creates an instance from the given |handle|. |size| and |internalformat|
-  // should match what was used to allocate the |handle|.
+  // should match what was used to allocate the |handle|. |callback| is
+  // called when instance is deleted, which is not necessarily on the same
+  // thread as this function was called on and instance was created on.
   static scoped_ptr<GpuMemoryBufferImpl> CreateFromHandle(
-      gfx::GpuMemoryBufferHandle handle,
+      const gfx::GpuMemoryBufferHandle& handle,
       const gfx::Size& size,
-      unsigned internalformat);
+      Format format,
+      const DestructionCallback& callback);
 
-  // Returns true if |internalformat| is a format recognized by this base class.
-  static bool IsFormatValid(unsigned internalformat);
-
-  // Returns true if |usage| is recognized by this base class.
-  static bool IsUsageValid(unsigned usage);
+  // Type-checking upcast routine. Returns an NULL on failure.
+  static GpuMemoryBufferImpl* FromClientBuffer(ClientBuffer buffer);
 
   // Returns the number of bytes per pixel that must be used by an
-  // implementation when using |internalformat|.
-  static size_t BytesPerPixel(unsigned internalformat);
+  // implementation when using |format|.
+  static size_t BytesPerPixel(Format format);
 
   // Overridden from gfx::GpuMemoryBuffer:
-  virtual bool IsMapped() const OVERRIDE;
+  bool IsMapped() const override;
+  Format GetFormat() const override;
+  ClientBuffer AsClientBuffer() override;
+
+  void set_destruction_sync_point(uint32 sync_point) {
+    destruction_sync_point_ = sync_point;
+  }
 
  protected:
-  GpuMemoryBufferImpl(const gfx::Size& size, unsigned internalformat);
+  GpuMemoryBufferImpl(gfx::GpuMemoryBufferId id,
+                      const gfx::Size& size,
+                      Format format,
+                      const DestructionCallback& callback);
 
+  const gfx::GpuMemoryBufferId id_;
   const gfx::Size size_;
-  const unsigned internalformat_;
+  const Format format_;
+  const DestructionCallback callback_;
   bool mapped_;
+  uint32 destruction_sync_point_;
 
   DISALLOW_COPY_AND_ASSIGN(GpuMemoryBufferImpl);
 };

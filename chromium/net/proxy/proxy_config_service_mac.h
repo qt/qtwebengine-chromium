@@ -20,23 +20,20 @@ class SingleThreadTaskRunner;
 
 namespace net {
 
-// TODO(sergeyu): This class needs to be exported because remoting code
-// creates it directly. Fix that and remove NET_EXPORT here.
-// crbug.com/125104
-class NET_EXPORT ProxyConfigServiceMac : public ProxyConfigService {
+class ProxyConfigServiceMac : public ProxyConfigService {
  public:
   // Constructs a ProxyConfigService that watches the Mac OS system settings.
   // This instance is expected to be operated and deleted on the same thread
   // (however it may be constructed from a different thread).
   explicit ProxyConfigServiceMac(
-      base::SingleThreadTaskRunner* io_thread_task_runner);
-  virtual ~ProxyConfigServiceMac();
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_thread_task_runner);
+  ~ProxyConfigServiceMac() override;
 
  public:
   // ProxyConfigService implementation:
-  virtual void AddObserver(Observer* observer) OVERRIDE;
-  virtual void RemoveObserver(Observer* observer) OVERRIDE;
-  virtual ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) OVERRIDE;
+  void AddObserver(Observer* observer) override;
+  void RemoveObserver(Observer* observer) override;
+  ConfigAvailability GetLatestProxyConfig(ProxyConfig* config) override;
 
  private:
   class Helper;
@@ -49,10 +46,9 @@ class NET_EXPORT ProxyConfigServiceMac : public ProxyConfigService {
         : proxy_config_service_(proxy_config_service) {}
 
     // NetworkConfigWatcherMac::Delegate implementation:
-    virtual void StartReachabilityNotifications() OVERRIDE {}
-    virtual void SetDynamicStoreNotificationKeys(
-        SCDynamicStoreRef store) OVERRIDE;
-    virtual void OnNetworkConfigChange(CFArrayRef changed_keys) OVERRIDE;
+    void StartReachabilityNotifications() override {}
+    void SetDynamicStoreNotificationKeys(SCDynamicStoreRef store) override;
+    void OnNetworkConfigChange(CFArrayRef changed_keys) override;
 
    private:
     ProxyConfigServiceMac* const proxy_config_service_;

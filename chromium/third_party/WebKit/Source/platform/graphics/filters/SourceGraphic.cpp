@@ -22,12 +22,11 @@
 
 #include "platform/graphics/filters/SourceGraphic.h"
 
-#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/filters/Filter.h"
 #include "platform/text/TextStream.h"
-#include "wtf/StdLibExtras.h"
-#include "wtf/text/WTFString.h"
+#include "third_party/skia/include/effects/SkPictureImageFilter.h"
 
-namespace WebCore {
+namespace blink {
 
 PassRefPtr<SourceGraphic> SourceGraphic::create(Filter* filter)
 {
@@ -48,18 +47,17 @@ FloatRect SourceGraphic::determineAbsolutePaintRect(const FloatRect& requestedRe
     return srcRect;
 }
 
-void SourceGraphic::applySoftware()
+void SourceGraphic::setDisplayList(PassRefPtr<DisplayList> displayList)
 {
-    ImageBuffer* resultImage = createImageBufferResult();
-    Filter* filter = this->filter();
-    if (!resultImage || !filter->sourceImage())
-        return;
+    m_displayList = displayList;
+}
 
-    IntRect srcRect = filter->sourceImageRect();
-    if (ImageBuffer* sourceImageBuffer = filter->sourceImage()) {
-        resultImage->context()->drawImageBuffer(sourceImageBuffer,
-            FloatRect(IntPoint(srcRect.location() - absolutePaintRect().location()), sourceImageBuffer->size()));
-    }
+PassRefPtr<SkImageFilter> SourceGraphic::createImageFilter(SkiaImageFilterBuilder*)
+{
+    if (!m_displayList)
+        return nullptr;
+
+    return adoptRef(SkPictureImageFilter::Create(m_displayList->picture().get(), m_displayList->bounds()));
 }
 
 TextStream& SourceGraphic::externalRepresentation(TextStream& ts, int indent) const
@@ -69,4 +67,4 @@ TextStream& SourceGraphic::externalRepresentation(TextStream& ts, int indent) co
     return ts;
 }
 
-} // namespace WebCore
+} // namespace blink

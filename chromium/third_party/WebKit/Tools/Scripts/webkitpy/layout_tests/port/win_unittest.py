@@ -27,7 +27,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import os
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system import outputcapture
 from webkitpy.common.system.executive_mock import MockExecutive
@@ -39,12 +39,10 @@ from webkitpy.tool.mocktool import MockOptions
 
 class WinPortTest(port_testcase.PortTestCase):
     port_name = 'win'
+    full_port_name = 'win-xp'
     port_maker = win.WinPort
     os_name = 'win'
     os_version = 'xp'
-
-    def test_uses_apache(self):
-        self.assertFalse(self.make_port().uses_apache())
 
     def test_setup_environ_for_server(self):
         port = self.make_port()

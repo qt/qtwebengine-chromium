@@ -71,6 +71,9 @@ interface InspectorInstrumentation {
     void didClearDocumentOfWindowObject([Keep] LocalFrame*);
 
     [DOMDebugger, Inline=FastReturn]
+    void willCloseWindow(ExecutionContext*);
+
+    [DOMDebugger, Inline=FastReturn]
     void willInsertDOMNode([Keep] Node* parent);
 
     [DOM, DOMDebugger, Inline=FastReturn]
@@ -83,10 +86,10 @@ interface InspectorInstrumentation {
     void willModifyDOMAttr([Keep] Element*, const AtomicString& oldValue, const AtomicString& newValue);
 
     [DOM, Inline=FastReturn]
-    void didModifyDOMAttr([Keep] Element*, const AtomicString& name, const AtomicString& value);
+    void didModifyDOMAttr([Keep] Element*, const String& name, const AtomicString& value);
 
     [DOM, Inline=FastReturn]
-    void didRemoveDOMAttr([Keep] Element*, const AtomicString& name);
+    void didRemoveDOMAttr([Keep] Element*, const String& name);
 
     [DOM, Inline=FastReturn]
     void characterDataModified([Keep] CharacterData*);
@@ -112,7 +115,7 @@ interface InspectorInstrumentation {
     [CSS, Inline=FastReturn]
     void activeStyleSheetsUpdated([Keep] Document*);
 
-    [Console, PageRuntime]
+    [PageRuntime]
     void frameWindowDiscarded(LocalFrame*, LocalDOMWindow* domWindow);
 
     [CSS, Inline=FastReturn]
@@ -190,6 +193,18 @@ interface InspectorInstrumentation {
     [Debugger, Inline=FastReturn]
     void didDeliverMutationRecords(ExecutionContext*);
 
+    [Debugger, Inline=FastReturn]
+    void didPostExecutionContextTask([Keep] ExecutionContext*, ExecutionContextTask*);
+
+    [Debugger, Inline=FastReturn]
+    void didKillAllExecutionContextTasks([Keep] ExecutionContext*);
+
+    [Debugger, Inline=FastReturn]
+    void willPerformExecutionContextTask([Keep] ExecutionContext*, ExecutionContextTask*);
+
+    [Debugger, Inline=FastReturn]
+    void didPerformExecutionContextTask(ExecutionContext*);
+
     [Timeline, Inline=FastReturn]
     InspectorInstrumentationCookie willEvaluateScript([Keep] LocalFrame*, const String& url, int lineNumber);
 
@@ -225,6 +240,9 @@ interface InspectorInstrumentation {
 
     [Timeline, Inline=FastReturn]
     void didDispatchXHRLoadEvent(const InspectorInstrumentationCookie&);
+
+    [Debugger, Inline=FastReturn]
+    void didDispatchXHRLoadendEvent(ExecutionContext*, XMLHttpRequest*);
 
     [Timeline, Inline=FastReturn]
     void willScrollLayer([Keep] RenderObject*);
@@ -268,14 +286,11 @@ interface InspectorInstrumentation {
     [Resource]
     void markResourceAsCached(Page*, unsigned long identifier);
 
-    [Timeline, Resource, Console] // Console should come AFTER Resource notification, front-end relies on this.
+    [Timeline, Resource]
     void didReceiveResourceResponse([Keep] LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
 
     [Inline=Forward]
     void continueAfterXFrameOptionsDenied(LocalFrame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r);
-
-    [Inline=Forward]
-    void continueWithPolicyDownload(LocalFrame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r);
 
     [Inline=Forward]
     void continueWithPolicyIgnore(LocalFrame* frame, DocumentLoader* loader, unsigned long identifier, const ResourceResponse& r);
@@ -289,7 +304,7 @@ interface InspectorInstrumentation {
     [Resource]
     void didReceiveCORSRedirectResponse([Keep] LocalFrame*, unsigned long identifier, DocumentLoader*, const ResourceResponse&, ResourceLoader*);
 
-    [Timeline, Resource, Console] // Console should come AFTER Resource notification, front-end relies on this.
+    [Timeline, Resource]
     void didFailLoading(LocalFrame* frame, unsigned long identifier, const ResourceError&);
 
     [Resource]
@@ -302,7 +317,7 @@ interface InspectorInstrumentation {
     void didFailXHRLoading(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client);
 
     [Console, Resource]
-    void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString& method, const String& url, const String& sendURL, unsigned sendLineNumber);
+    void didFinishXHRLoading(ExecutionContext*, XMLHttpRequest* xhr, ThreadableLoaderClient* client, unsigned long identifier, ScriptString sourceString, const AtomicString& method, const String& url);
 
     [Resource]
     void scriptImported(ExecutionContext*, unsigned long identifier, const String& sourceString);
@@ -325,7 +340,7 @@ interface InspectorInstrumentation {
     [Canvas, Page]
     void frameDetachedFromParent([Keep] LocalFrame*);
 
-    [Console, Resource, DOM, Canvas, Page, PageDebugger]
+    [Resource, DOM, Canvas, Page, PageDebugger]
     void didCommitLoad([Keep] LocalFrame*, DocumentLoader*);
 
     [DOM, Inline=FastReturn]
@@ -377,13 +392,13 @@ interface InspectorInstrumentation {
     void didDispatchDOMStorageEvent(Page* page, const String& key, const String& oldValue, const String& newValue, StorageType storageType, SecurityOrigin* securityOrigin);
 
     [Worker]
-    void didStartWorkerGlobalScope(ExecutionContext*, WorkerGlobalScopeProxy* proxy, const KURL& url);
+    void didStartWorker(ExecutionContext*, WorkerInspectorProxy* proxy, const KURL& url);
+
+    [Worker]
+    void workerTerminated(ExecutionContext*, WorkerInspectorProxy* proxy);
 
     [WorkerRuntime]
     void willEvaluateWorkerScript([Keep] WorkerGlobalScope* context, int workerThreadStartMode);
-
-    [Worker]
-    void workerGlobalScopeTerminated(ExecutionContext*, WorkerGlobalScopeProxy* proxy);
 
     [Profiler, Timeline]
     void willProcessTask(WorkerGlobalScope* context);
@@ -439,32 +454,42 @@ interface InspectorInstrumentation {
 
     [DOMDebugger, Inline=FastReturn]
     void willExecuteCustomElementCallback([Keep] Element*);
+
+    [Debugger, Inline=FastReturn]
+    int traceAsyncOperationStarting([Keep] ExecutionContext*, const String& operationName);
+
+    [Debugger, Inline=FastReturn]
+    int traceAsyncOperationStarting([Keep] ExecutionContext*, const String& operationName, int prevOperationId);
+
+    [Debugger, Inline=FastReturn]
+    void traceAsyncOperationCompleted([Keep] ExecutionContext*, int operationId);
+
+    [Debugger, Inline=FastReturn]
+    InspectorInstrumentationCookie traceAsyncOperationCompletedCallbackStarting([Keep] ExecutionContext*, int operationId);
+
+    [Debugger, Inline=FastReturn]
+    InspectorInstrumentationCookie traceAsyncCallbackStarting([Keep] ExecutionContext*, int operationId);
+
+    [Debugger, Inline=FastReturn]
+    void traceAsyncCallbackCompleted(const InspectorInstrumentationCookie&);
 }
 
 interface InspectorConsoleInstrumentation {
 
 #include "core/inspector/ScriptArguments.h"
-#include "core/inspector/ScriptCallStack.h"
 
-    // FIXME: Convert to ScriptArguments to match non-worker context.
-    // Use the same implementation as above as a similar method dispatched on Page.
-    [Console]
-    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, PassRefPtrWillBeRawPtr<ScriptCallStack> callStack, unsigned long requestIdentifier = 0);
-
-    // Use the same implementation as above as a similar method dispatched on Page.
-    [Console]
-    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, const String& scriptId, unsigned lineNumber, unsigned columnNumber, ScriptState* state, unsigned long requestIdentifier = 0);
+class ConsoleMessage;
 
     [Console, Debugger]
-    void addMessageToConsole(ExecutionContext* context, MessageSource source, MessageType type, MessageLevel level, const String& message, ScriptState* state, PassRefPtrWillBeRawPtr<ScriptArguments> arguments, unsigned long requestIdentifier = 0);
+    void addMessageToConsole(FrameHost* frameHost, ConsoleMessage* consoleMessage);
 
-    [Console]
-    void consoleCount(ExecutionContext* context, ScriptState* state, PassRefPtrWillBeRawPtr<ScriptArguments> arguments);
+    [Console, Debugger]
+    void addMessageToConsole(ExecutionContext* context, ConsoleMessage* consoleMessage);
 
-    [Timeline, Console]
+    [Timeline]
     void consoleTime([Keep] ExecutionContext* context, const String& title);
 
-    [Console, Timeline]
+    [Timeline]
     void consoleTimeEnd([Keep] ExecutionContext* context, const String& title, ScriptState* state);
 
     [Timeline, Inline=FastReturn]
@@ -477,10 +502,16 @@ interface InspectorConsoleInstrumentation {
     void consoleTimelineEnd([Keep] ExecutionContext* context, const String& title, ScriptState* state);
 
     [Profiler, Inline=FastReturn]
-    void consoleProfile(ExecutionContext* context, const String& title, ScriptState* state);
+    void consoleProfile([Keep] ExecutionContext* context, const String& title);
 
     [Profiler, Inline=FastReturn]
-    void consoleProfileEnd(ExecutionContext* context, const String& title, ScriptState* state);
+    void consoleProfileEnd(ExecutionContext* context, const String& title);
+
+    [Console]
+    void consoleMessagesCleared(FrameHost* frameHost);
+
+    [Console]
+    void consoleMessagesCleared(ExecutionContext* context);
 }
 
 interface InspectorOverrides {
@@ -489,12 +520,15 @@ interface InspectorOverrides {
 
     [Worker, Inline=FastReturn]
     bool shouldPauseDedicatedWorkerOnStart(ExecutionContext* context);
+
+    [Resource, Inline=FastReturn]
+    bool shouldForceCORSPreflight(Document*);
 }
 
 
 interface InspectorCanvasInstrumentation {
 
-#include "bindings/v8/ScriptValue.h"
+#include "bindings/core/v8/ScriptValue.h"
 
     [Canvas]
     ScriptValue wrapCanvas2DRenderingContextForInstrumentation(Document*, const ScriptValue&);

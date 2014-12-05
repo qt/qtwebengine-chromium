@@ -31,19 +31,16 @@
 #include "modules/mediastream/MediaDeviceInfoCallback.h"
 #include "platform/heap/Handle.h"
 #include "wtf/PassOwnPtr.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExceptionState;
-class MediaStreamDescriptor;
 class UserMediaController;
 
-class MediaDevicesRequest FINAL : public RefCountedWillBeRefCountedGarbageCollected<MediaDevicesRequest>, public ActiveDOMObject {
+class MediaDevicesRequest final : public GarbageCollectedFinalized<MediaDevicesRequest>, public ActiveDOMObject {
 public:
-    static PassRefPtrWillBeRawPtr<MediaDevicesRequest> create(ExecutionContext*, UserMediaController*, PassOwnPtr<MediaDeviceInfoCallback>, ExceptionState&);
+    static MediaDevicesRequest* create(ExecutionContext*, UserMediaController*, MediaDeviceInfoCallback*, ExceptionState&);
     virtual ~MediaDevicesRequest();
 
     MediaDeviceInfoCallback* callback() const { return m_callback.get(); }
@@ -54,18 +51,18 @@ public:
     void succeed(const MediaDeviceInfoVector&);
 
     // ActiveDOMObject
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
 
-    void trace(Visitor*) { }
+    void trace(Visitor*);
 
 private:
-    MediaDevicesRequest(ExecutionContext*, UserMediaController*, PassOwnPtr<MediaDeviceInfoCallback>);
+    MediaDevicesRequest(ExecutionContext*, UserMediaController*, MediaDeviceInfoCallback*);
 
     UserMediaController* m_controller;
 
-    OwnPtr<MediaDeviceInfoCallback> m_callback;
+    Member<MediaDeviceInfoCallback> m_callback;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MediaDevicesRequest_h

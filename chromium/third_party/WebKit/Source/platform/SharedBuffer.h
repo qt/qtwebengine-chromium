@@ -36,7 +36,7 @@
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class PLATFORM_EXPORT SharedBuffer : public RefCounted<SharedBuffer> {
 public:
@@ -45,7 +45,7 @@ public:
     static PassRefPtr<SharedBuffer> create(const char* c, int i) { return adoptRef(new SharedBuffer(c, i)); }
     static PassRefPtr<SharedBuffer> create(const unsigned char* c, int i) { return adoptRef(new SharedBuffer(c, i)); }
 
-    static PassRefPtr<SharedBuffer> createPurgeable(const char* c, int i) { return adoptRef(new SharedBuffer(c, i, PurgeableVector::Purgeable)); }
+    static PassRefPtr<SharedBuffer> createPurgeable(const char* c, unsigned size) { return adoptRef(new SharedBuffer(c, size, PurgeableVector::Purgeable)); }
 
     static PassRefPtr<SharedBuffer> adoptVector(Vector<char>&);
 
@@ -60,7 +60,7 @@ public:
 
     bool isEmpty() const { return !size(); }
 
-    void append(SharedBuffer*);
+    void append(PassRefPtr<SharedBuffer>);
     void append(const char*, unsigned);
     void append(const Vector<char>&);
 
@@ -105,8 +105,8 @@ private:
     SharedBuffer();
     explicit SharedBuffer(size_t);
     SharedBuffer(const char*, int);
-    SharedBuffer(const char*, int, PurgeableVector::PurgeableOption);
     SharedBuffer(const unsigned char*, int);
+    SharedBuffer(const char*, unsigned, PurgeableVector::PurgeableOption);
 
     // See SharedBuffer::data().
     void mergeSegmentsIntoBuffer() const;
@@ -116,6 +116,6 @@ private:
     mutable Vector<char*> m_segments;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SharedBuffer_h

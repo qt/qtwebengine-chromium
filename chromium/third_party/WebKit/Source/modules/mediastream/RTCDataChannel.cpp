@@ -25,16 +25,17 @@
 #include "config.h"
 #include "modules/mediastream/RTCDataChannel.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
+#include "core/dom/DOMArrayBuffer.h"
+#include "core/dom/DOMArrayBufferView.h"
 #include "core/dom/ExceptionCode.h"
 #include "core/dom/ExecutionContext.h"
 #include "core/events/MessageEvent.h"
 #include "core/fileapi/Blob.h"
+#include "modules/mediastream/RTCPeerConnection.h"
 #include "public/platform/WebRTCPeerConnectionHandler.h"
-#include "wtf/ArrayBuffer.h"
-#include "wtf/ArrayBufferView.h"
 
-namespace WebCore {
+namespace blink {
 
 static void throwNotOpenException(ExceptionState& exceptionState)
 {
@@ -51,48 +52,41 @@ static void throwNoBlobSupportException(ExceptionState& exceptionState)
     exceptionState.throwDOMException(NotSupportedError, "Blob support not implemented yet");
 }
 
-PassRefPtrWillBeRawPtr<RTCDataChannel> RTCDataChannel::create(ExecutionContext* context, RTCPeerConnection* connection, PassOwnPtr<blink::WebRTCDataChannelHandler> handler)
+RTCDataChannel* RTCDataChannel::create(ExecutionContext* context, RTCPeerConnection* connection, PassOwnPtr<WebRTCDataChannelHandler> handler)
 {
     ASSERT(handler);
-    return adoptRefWillBeRefCountedGarbageCollected(new RTCDataChannel(context, connection, handler));
+    return new RTCDataChannel(context, connection, handler);
 }
 
-PassRefPtrWillBeRawPtr<RTCDataChannel> RTCDataChannel::create(ExecutionContext* context, RTCPeerConnection* connection, blink::WebRTCPeerConnectionHandler* peerConnectionHandler, const String& label, const blink::WebRTCDataChannelInit& init, ExceptionState& exceptionState)
+RTCDataChannel* RTCDataChannel::create(ExecutionContext* context, RTCPeerConnection* connection, WebRTCPeerConnectionHandler* peerConnectionHandler, const String& label, const WebRTCDataChannelInit& init, ExceptionState& exceptionState)
 {
-    OwnPtr<blink::WebRTCDataChannelHandler> handler = adoptPtr(peerConnectionHandler->createDataChannel(label, init));
+    OwnPtr<WebRTCDataChannelHandler> handler = adoptPtr(peerConnectionHandler->createDataChannel(label, init));
     if (!handler) {
         exceptionState.throwDOMException(NotSupportedError, "RTCDataChannel is not supported");
         return nullptr;
     }
-    return adoptRefWillBeRefCountedGarbageCollected(new RTCDataChannel(context, connection, handler.release()));
+    return new RTCDataChannel(context, connection, handler.release());
 }
 
-RTCDataChannel::RTCDataChannel(ExecutionContext* context, RTCPeerConnection* connection, PassOwnPtr<blink::WebRTCDataChannelHandler> handler)
+RTCDataChannel::RTCDataChannel(ExecutionContext* context, RTCPeerConnection* connection, PassOwnPtr<WebRTCDataChannelHandler> handler)
     : m_executionContext(context)
     , m_handler(handler)
     , m_stopped(false)
     , m_readyState(ReadyStateConnecting)
     , m_binaryType(BinaryTypeArrayBuffer)
     , m_scheduledEventTimer(this, &RTCDataChannel::scheduledEventTimerFired)
-#if ENABLE(OILPAN)
     , m_connection(connection)
-#endif
 {
-    ScriptWrappable::init(this);
     m_handler->setClient(this);
 }
 
 RTCDataChannel::~RTCDataChannel()
 {
-#if ENABLE(OILPAN)
     // If the peer connection and the data channel die in the same
     // GC cycle stop has not been called and we need to notify the
     // client that the channel is gone.
     if (!m_stopped)
         m_handler->setClient(0);
-#else
-    ASSERT(m_stopped);
-#endif
 }
 
 String RTCDataChannel::label() const
@@ -191,14 +185,14 @@ void RTCDataChannel::send(const String& data, ExceptionState& exceptionState)
     }
 }
 
-void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& exceptionState)
+void RTCDataChannel::send(PassRefPtr<DOMArrayBuffer> prpData, ExceptionState& exceptionState)
 {
     if (m_readyState != ReadyStateOpen) {
         throwNotOpenException(exceptionState);
         return;
     }
 
-    RefPtr<ArrayBuffer> data = prpData;
+    RefPtr<DOMArrayBuffer> data = prpData;
 
     size_t dataLength = data->byteLength();
     if (!dataLength)
@@ -210,7 +204,7 @@ void RTCDataChannel::send(PassRefPtr<ArrayBuffer> prpData, ExceptionState& excep
     }
 }
 
-void RTCDataChannel::send(PassRefPtr<ArrayBufferView> data, ExceptionState& exceptionState)
+void RTCDataChannel::send(PassRefPtr<DOMArrayBufferView> data, ExceptionState& exceptionState)
 {
     if (!m_handler->sendRawData(static_cast<const char*>(data->baseAddress()), data->byteLength())) {
         // FIXME: This should not throw an exception but instead forcefully close the data channel.
@@ -218,7 +212,7 @@ void RTCDataChannel::send(PassRefPtr<ArrayBufferView> data, ExceptionState& exce
     }
 }
 
-void RTCDataChannel::send(PassRefPtrWillBeRawPtr<Blob> data, ExceptionState& exceptionState)
+void RTCDataChannel::send(Blob* data, ExceptionState& exceptionState)
 {
     // FIXME: implement
     throwNoBlobSupportException(exceptionState);
@@ -232,7 +226,7 @@ void RTCDataChannel::close()
     m_handler->close();
 }
 
-void RTCDataChannel::didChangeReadyState(blink::WebRTCDataChannelHandlerClient::ReadyState newState)
+void RTCDataChannel::didChangeReadyState(WebRTCDataChannelHandlerClient::ReadyState newState)
 {
     if (m_stopped || m_readyState == ReadyStateClosed)
         return;
@@ -251,7 +245,7 @@ void RTCDataChannel::didChangeReadyState(blink::WebRTCDataChannelHandlerClient::
     }
 }
 
-void RTCDataChannel::didReceiveStringData(const blink::WebString& text)
+void RTCDataChannel::didReceiveStringData(const WebString& text)
 {
     if (m_stopped)
         return;
@@ -269,7 +263,7 @@ void RTCDataChannel::didReceiveRawData(const char* data, size_t dataLength)
         return;
     }
     if (m_binaryType == BinaryTypeArrayBuffer) {
-        RefPtr<ArrayBuffer> buffer = ArrayBuffer::create(data, dataLength);
+        RefPtr<DOMArrayBuffer> buffer = DOMArrayBuffer::create(data, dataLength);
         scheduleDispatchEvent(MessageEvent::create(buffer.release()));
         return;
     }
@@ -325,7 +319,6 @@ void RTCDataChannel::scheduledEventTimerFired(Timer<RTCDataChannel>*)
     events.clear();
 }
 
-#if ENABLE(OILPAN)
 void RTCDataChannel::clearWeakMembers(Visitor* visitor)
 {
     if (visitor->isAlive(m_connection))
@@ -333,15 +326,12 @@ void RTCDataChannel::clearWeakMembers(Visitor* visitor)
     stop();
     m_connection = nullptr;
 }
-#endif
 
 void RTCDataChannel::trace(Visitor* visitor)
 {
-#if ENABLE(OILPAN)
     visitor->trace(m_scheduledEvents);
     visitor->registerWeakMembers<RTCDataChannel, &RTCDataChannel::clearWeakMembers>(this);
-#endif
     EventTargetWithInlineData::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

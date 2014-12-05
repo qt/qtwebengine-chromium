@@ -31,18 +31,22 @@
 #ifndef InternalProfilers_h
 #define InternalProfilers_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/Forward.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
-class InternalProfilers : public RefCountedWillBeGarbageCollected<InternalProfilers> {
+class InternalProfilers final : public GarbageCollected<InternalProfilers>, public ScriptWrappable {
+    DEFINE_WRAPPERTYPEINFO();
 public:
-    static PassRefPtrWillBeRawPtr<InternalProfilers> create()
+    InternalProfilers();
+
+    static InternalProfilers* create()
     {
-        return adoptRefWillBeNoop(new InternalProfilers());
+        return new InternalProfilers();
     }
 
     void startHeapProfiling(const String& prefix);
@@ -53,6 +57,6 @@ public:
     void trace(Visitor*) { }
 };
 
-} // namespace WebCore
+} // namespace blink
 
-#endif
+#endif // InternalProfilers_h

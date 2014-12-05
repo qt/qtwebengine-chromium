@@ -16,7 +16,7 @@
 #include "content/browser/message_port_message_filter.h"
 #include "content/browser/shared_worker/shared_worker_message_filter.h"
 #include "content/browser/shared_worker/shared_worker_service_impl.h"
-#include "content/browser/worker_host/worker_storage_partition.h"
+#include "content/browser/shared_worker/worker_storage_partition.h"
 #include "content/common/message_port_messages.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
@@ -60,8 +60,8 @@ class SharedWorkerServiceImplTest : public testing::Test {
             &SharedWorkerServiceImplTest::MockTryIncrementWorkerRefCount);
   }
 
-  virtual void SetUp() OVERRIDE {}
-  virtual void TearDown() OVERRIDE {
+  void SetUp() override {}
+  void TearDown() override {
     s_update_worker_dependency_call_count_ = 0;
     s_worker_dependency_added_ids_.clear();
     s_worker_dependency_removed_ids_.clear();
@@ -110,7 +110,7 @@ class MockMessagePortMessageFilter : public MessagePortMessageFilter {
                                ScopedVector<IPC::Message>* message_queue)
       : MessagePortMessageFilter(callback), message_queue_(message_queue) {}
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     if (!message_queue_) {
       delete message;
       return false;
@@ -125,7 +125,7 @@ class MockMessagePortMessageFilter : public MessagePortMessageFilter {
   }
 
  private:
-  virtual ~MockMessagePortMessageFilter() {}
+  ~MockMessagePortMessageFilter() override {}
   ScopedVector<IPC::Message>* message_queue_;
 };
 
@@ -142,7 +142,7 @@ class MockSharedWorkerMessageFilter : public SharedWorkerMessageFilter {
                                   message_port_filter),
         message_queue_(message_queue) {}
 
-  virtual bool Send(IPC::Message* message) OVERRIDE {
+  bool Send(IPC::Message* message) override {
     if (!message_queue_) {
       delete message;
       return false;
@@ -157,7 +157,7 @@ class MockSharedWorkerMessageFilter : public SharedWorkerMessageFilter {
   }
 
  private:
-  virtual ~MockSharedWorkerMessageFilter() {}
+  ~MockSharedWorkerMessageFilter() override {}
   ScopedVector<IPC::Message>* message_queue_;
 };
 
@@ -436,6 +436,12 @@ TEST_F(SharedWorkerServiceImplTest, BasicTest) {
   connector->SendSendQueuedMessages(empty_messages);
   EXPECT_EQ(0U, renderer_host->QueuedMessageCount());
 
+  // SharedWorker sends WorkerHostMsg_WorkerReadyForInspection in
+  // EmbeddedSharedWorkerStub::WorkerReadyForInspection().
+  EXPECT_TRUE(renderer_host->OnMessageReceived(
+      new WorkerHostMsg_WorkerReadyForInspection(worker_route_id)));
+  EXPECT_EQ(0U, renderer_host->QueuedMessageCount());
+
   // SharedWorker sends WorkerHostMsg_WorkerScriptLoaded in
   // EmbeddedSharedWorkerStub::workerScriptLoaded().
   EXPECT_TRUE(renderer_host->OnMessageReceived(
@@ -525,6 +531,12 @@ TEST_F(SharedWorkerServiceImplTest, TwoRendererTest) {
   // sends MessagePortHostMsg_SendQueuedMessages.
   std::vector<QueuedMessage> empty_messages;
   connector0->SendSendQueuedMessages(empty_messages);
+  EXPECT_EQ(0U, renderer_host0->QueuedMessageCount());
+
+  // SharedWorker sends WorkerHostMsg_WorkerReadyForInspection in
+  // EmbeddedSharedWorkerStub::WorkerReadyForInspection().
+  EXPECT_TRUE(renderer_host0->OnMessageReceived(
+      new WorkerHostMsg_WorkerReadyForInspection(worker_route_id)));
   EXPECT_EQ(0U, renderer_host0->QueuedMessageCount());
 
   // SharedWorker sends WorkerHostMsg_WorkerScriptLoaded in

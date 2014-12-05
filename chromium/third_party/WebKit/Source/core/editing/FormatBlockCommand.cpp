@@ -24,17 +24,18 @@
  */
 
 #include "config.h"
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "core/editing/FormatBlockCommand.h"
+
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
-#include "core/dom/Document.h"
 #include "core/dom/Element.h"
 #include "core/dom/Range.h"
-#include "core/editing/FormatBlockCommand.h"
 #include "core/editing/VisibleUnits.h"
 #include "core/editing/htmlediting.h"
+#include "core/html/HTMLBRElement.h"
 #include "core/html/HTMLElement.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -59,12 +60,12 @@ void FormatBlockCommand::formatSelection(const VisiblePosition& startOfSelection
     m_didApply = true;
 }
 
-void FormatBlockCommand::formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<Element>& blockNode)
+void FormatBlockCommand::formatRange(const Position& start, const Position& end, const Position& endOfSelection, RefPtrWillBeRawPtr<HTMLElement>& blockElement)
 {
-    Element* refNode = enclosingBlockFlowElement(VisiblePosition(end));
+    Element* refElement = enclosingBlockFlowElement(VisiblePosition(end));
     Element* root = editableRootForPosition(start);
     // Root is null for elements with contenteditable=false.
-    if (!root || !refNode)
+    if (!root || !refElement)
         return;
 
     Node* nodeToSplitTo = enclosingBlockToSplitTreeTo(start.deprecatedNode());
@@ -72,30 +73,30 @@ void FormatBlockCommand::formatRange(const Position& start, const Position& end,
     RefPtrWillBeRawPtr<Node> nodeAfterInsertionPosition = outerBlock;
     RefPtrWillBeRawPtr<Range> range = Range::create(document(), start, endOfSelection);
 
-    if (isElementForFormatBlock(refNode->tagQName()) && VisiblePosition(start) == startOfBlock(VisiblePosition(start))
-        && (VisiblePosition(end) == endOfBlock(VisiblePosition(end)) || isNodeVisiblyContainedWithin(*refNode, *range))
-        && refNode != root && !root->isDescendantOf(refNode)) {
+    if (isElementForFormatBlock(refElement->tagQName()) && VisiblePosition(start) == startOfBlock(VisiblePosition(start))
+        && (VisiblePosition(end) == endOfBlock(VisiblePosition(end)) || isNodeVisiblyContainedWithin(*refElement, *range))
+        && refElement != root && !root->isDescendantOf(refElement)) {
         // Already in a block element that only contains the current paragraph
-        if (refNode->hasTagName(tagName()))
+        if (refElement->hasTagName(tagName()))
             return;
-        nodeAfterInsertionPosition = refNode;
+        nodeAfterInsertionPosition = refElement;
     }
 
-    if (!blockNode) {
+    if (!blockElement) {
         // Create a new blockquote and insert it as a child of the root editable element. We accomplish
         // this by splitting all parents of the current paragraph up to that point.
-        blockNode = createBlockElement();
-        insertNodeBefore(blockNode, nodeAfterInsertionPosition);
+        blockElement = createBlockElement();
+        insertNodeBefore(blockElement, nodeAfterInsertionPosition);
     }
 
-    Position lastParagraphInBlockNode = blockNode->lastChild() ? positionAfterNode(blockNode->lastChild()) : Position();
+    Position lastParagraphInBlockNode = blockElement->lastChild() ? positionAfterNode(blockElement->lastChild()) : Position();
     bool wasEndOfParagraph = isEndOfParagraph(VisiblePosition(lastParagraphInBlockNode));
 
-    moveParagraphWithClones(VisiblePosition(start), VisiblePosition(end), blockNode.get(), outerBlock.get());
+    moveParagraphWithClones(VisiblePosition(start), VisiblePosition(end), blockElement.get(), outerBlock.get());
 
     // Copy the inline style of the original block element to the newly created block-style element.
     if (outerBlock.get() != nodeAfterInsertionPosition.get() && toHTMLElement(nodeAfterInsertionPosition.get())->hasAttribute(styleAttr))
-        blockNode->setAttribute(styleAttr, toHTMLElement(nodeAfterInsertionPosition.get())->getAttribute(styleAttr));
+        blockElement->setAttribute(styleAttr, toHTMLElement(nodeAfterInsertionPosition.get())->getAttribute(styleAttr));
 
     if (wasEndOfParagraph && !isEndOfParagraph(VisiblePosition(lastParagraphInBlockNode)) && !isStartOfParagraph(VisiblePosition(lastParagraphInBlockNode)))
         insertBlockPlaceholder(lastParagraphInBlockNode);
@@ -154,14 +155,14 @@ Node* enclosingBlockToSplitTreeTo(Node* startNode)
 {
     Node* lastBlock = startNode;
     for (Node* n = startNode; n; n = n->parentNode()) {
-        if (!n->rendererIsEditable())
+        if (!n->hasEditableStyle())
             return lastBlock;
-        if (isTableCell(n) || isHTMLBodyElement(*n) || !n->parentNode() || !n->parentNode()->rendererIsEditable() || isElementForFormatBlock(n))
+        if (isTableCell(n) || isHTMLBodyElement(*n) || !n->parentNode() || !n->parentNode()->hasEditableStyle() || isElementForFormatBlock(n))
             return n;
         if (isBlock(n))
             lastBlock = n;
-        if (isListElement(n))
-            return n->parentNode()->rendererIsEditable() ? n->parentNode() : n;
+        if (isHTMLListElement(n))
+            return n->parentNode()->hasEditableStyle() ? n->parentNode() : n;
     }
     return lastBlock;
 }

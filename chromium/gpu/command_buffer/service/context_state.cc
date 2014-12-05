@@ -4,6 +4,8 @@
 
 #include "gpu/command_buffer/service/context_state.h"
 
+#include <cmath>
+
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/buffer_manager.h"
 #include "gpu/command_buffer/service/error_state.h"
@@ -91,6 +93,7 @@ ContextState::ContextState(FeatureInfo* feature_info,
                            ErrorStateClient* error_state_client,
                            Logger* logger)
     : active_texture_unit(0),
+      bound_renderbuffer_valid(false),
       pack_reverse_row_order(false),
       ignore_cached_state(false),
       fbo_binding_for_scissor_workaround_dirty_(false),
@@ -158,11 +161,9 @@ void ContextState::RestoreBufferBindings() const {
                bound_array_buffer.get() ? bound_array_buffer->service_id() : 0);
 }
 
-void ContextState::RestoreRenderbufferBindings() const {
-  // Restore Bindings
-  glBindRenderbufferEXT(
-      GL_RENDERBUFFER,
-      bound_renderbuffer.get() ? bound_renderbuffer->service_id() : 0);
+void ContextState::RestoreRenderbufferBindings() {
+  // Require Renderbuffer rebind.
+  bound_renderbuffer_valid = false;
 }
 
 void ContextState::RestoreProgramBindings() const {
@@ -277,7 +278,7 @@ void ContextState::RestoreGlobalState(const ContextState* prev_state) const {
   InitState(prev_state);
 }
 
-void ContextState::RestoreState(const ContextState* prev_state) const {
+void ContextState::RestoreState(const ContextState* prev_state) {
   RestoreAllTextureUnitBindings(prev_state);
   RestoreVertexAttribs();
   RestoreBufferBindings();

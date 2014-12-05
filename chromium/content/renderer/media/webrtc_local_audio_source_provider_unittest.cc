@@ -13,17 +13,18 @@
 #include "media/base/audio_bus.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/web/WebHeap.h"
 
 namespace content {
 
 class WebRtcLocalAudioSourceProviderTest : public testing::Test {
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     source_params_.Reset(media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-                         media::CHANNEL_LAYOUT_MONO, 1, 0, 48000, 16, 480);
+                         media::CHANNEL_LAYOUT_MONO, 1, 48000, 16, 480);
     sink_params_.Reset(
         media::AudioParameters::AUDIO_PCM_LOW_LATENCY,
-        media::CHANNEL_LAYOUT_STEREO, 2, 0, 44100, 16,
+        media::CHANNEL_LAYOUT_STEREO, 2, 44100, 16,
         WebRtcLocalAudioSourceProvider::kWebAudioRenderBufferSize);
     const int length =
         source_params_.frames_per_buffer() * source_params_.channels();
@@ -37,7 +38,7 @@ class WebRtcLocalAudioSourceProviderTest : public testing::Test {
     scoped_refptr<WebRtcLocalAudioTrackAdapter> adapter(
         WebRtcLocalAudioTrackAdapter::Create(std::string(), NULL));
     scoped_ptr<WebRtcLocalAudioTrack> native_track(
-        new WebRtcLocalAudioTrack(adapter, capturer, NULL));
+        new WebRtcLocalAudioTrack(adapter.get(), capturer, NULL));
     blink::WebMediaStreamSource audio_source;
     audio_source.initialize(base::UTF8ToUTF16("dummy_source_id"),
                             blink::WebMediaStreamSource::TypeAudio,
@@ -48,6 +49,12 @@ class WebRtcLocalAudioSourceProviderTest : public testing::Test {
     source_provider_.reset(new WebRtcLocalAudioSourceProvider(blink_track_));
     source_provider_->SetSinkParamsForTesting(sink_params_);
     source_provider_->OnSetFormat(source_params_);
+  }
+
+  void TearDown() override {
+    source_provider_.reset();
+    blink_track_.reset();
+    blink::WebHeap::collectAllGarbageForTesting();
   }
 
   media::AudioParameters source_params_;

@@ -35,7 +35,7 @@ import os
 import stat
 import sys
 import tempfile
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system.filesystem import FileSystem
 
@@ -118,6 +118,22 @@ class GenericFileSystemTests(object):
         self.assertFalse(self.fs.exists('foodir'))
         self.assertFalse(self.fs.exists(self.fs.join('foodir', 'baz')))
 
+    def test_copytree(self):
+        self.fs.chdir(self.generic_test_dir)
+        self.fs.copytree('foodir/', 'bardir/')
+        self.assertTrue(self.fs.exists('bardir'))
+        self.assertTrue(self.fs.exists(self.fs.join('bardir', 'baz')))
+
+    def test_move(self):
+        self.fs.chdir(self.generic_test_dir)
+        self.fs.move('foo.txt', 'bar.txt')
+        self.assertFalse(self.fs.exists('foo.txt'))
+        self.assertTrue(self.fs.exists('bar.txt'))
+        self.fs.move('foodir', 'bardir')
+        self.assertFalse(self.fs.exists('foodir'))
+        self.assertFalse(self.fs.exists(self.fs.join('foodir', 'baz')))
+        self.assertTrue(self.fs.exists('bardir'))
+        self.assertTrue(self.fs.exists(self.fs.join('bardir', 'baz')))
 
 class RealFileSystemTest(unittest.TestCase, GenericFileSystemTests):
     def setUp(self):

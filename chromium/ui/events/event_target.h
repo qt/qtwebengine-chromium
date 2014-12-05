@@ -38,7 +38,7 @@ class EVENTS_EXPORT EventTarget : public EventHandler {
   };
 
   EventTarget();
-  virtual ~EventTarget();
+  ~EventTarget() override;
 
   virtual bool CanAcceptEvent(const Event& event) = 0;
 
@@ -85,12 +85,12 @@ class EVENTS_EXPORT EventTarget : public EventHandler {
   EventHandler* target_handler() { return target_handler_; }
 
   // Overridden from EventHandler:
-  virtual void OnEvent(Event* event) OVERRIDE;
-  virtual void OnKeyEvent(KeyEvent* event) OVERRIDE;
-  virtual void OnMouseEvent(MouseEvent* event) OVERRIDE;
-  virtual void OnScrollEvent(ScrollEvent* event) OVERRIDE;
-  virtual void OnTouchEvent(TouchEvent* event) OVERRIDE;
-  virtual void OnGestureEvent(GestureEvent* event) OVERRIDE;
+  void OnEvent(Event* event) override;
+  void OnKeyEvent(KeyEvent* event) override;
+  void OnMouseEvent(MouseEvent* event) override;
+  void OnScrollEvent(ScrollEvent* event) override;
+  void OnTouchEvent(TouchEvent* event) override;
+  void OnGestureEvent(GestureEvent* event) override;
 
  private:
   friend class EventDispatcher;

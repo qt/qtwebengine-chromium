@@ -40,24 +40,24 @@ class GpuVideoDecodeAccelerator
       const scoped_refptr<base::MessageLoopProxy>& io_message_loop);
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // media::VideoDecodeAccelerator::Client implementation.
-  virtual void ProvidePictureBuffers(uint32 requested_num_of_buffers,
-                                     const gfx::Size& dimensions,
-                                     uint32 texture_target) OVERRIDE;
-  virtual void DismissPictureBuffer(int32 picture_buffer_id) OVERRIDE;
-  virtual void PictureReady(const media::Picture& picture) OVERRIDE;
-  virtual void NotifyError(media::VideoDecodeAccelerator::Error error) OVERRIDE;
-  virtual void NotifyEndOfBitstreamBuffer(int32 bitstream_buffer_id) OVERRIDE;
-  virtual void NotifyFlushDone() OVERRIDE;
-  virtual void NotifyResetDone() OVERRIDE;
+  void ProvidePictureBuffers(uint32 requested_num_of_buffers,
+                             const gfx::Size& dimensions,
+                             uint32 texture_target) override;
+  void DismissPictureBuffer(int32 picture_buffer_id) override;
+  void PictureReady(const media::Picture& picture) override;
+  void NotifyError(media::VideoDecodeAccelerator::Error error) override;
+  void NotifyEndOfBitstreamBuffer(int32 bitstream_buffer_id) override;
+  void NotifyFlushDone() override;
+  void NotifyResetDone() override;
 
   // GpuCommandBufferStub::DestructionObserver implementation.
-  virtual void OnWillDestroyStub() OVERRIDE;
+  void OnWillDestroyStub() override;
 
   // Function to delegate sending to actual sender.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   // Initialize the accelerator with the given profile and send the
   // |init_done_msg| when done.
@@ -68,7 +68,7 @@ class GpuVideoDecodeAccelerator
   class MessageFilter;
 
   // We only allow self-delete, from OnWillDestroyStub(), after cleanup there.
-  virtual ~GpuVideoDecodeAccelerator();
+  ~GpuVideoDecodeAccelerator() override;
 
   // Handlers for IPC messages.
   void OnDecode(base::SharedMemoryHandle handle, int32 id, uint32 size);

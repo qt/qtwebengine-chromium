@@ -23,20 +23,19 @@ class DelayedCookieMonster : public CookieStore {
   // invoke the internal callback.
   // Post a delayed task to invoke the original callback with the results.
 
-  virtual void SetCookieWithOptionsAsync(
+  void SetCookieWithOptionsAsync(
       const GURL& url,
       const std::string& cookie_line,
       const CookieOptions& options,
-      const CookieMonster::SetCookiesCallback& callback) OVERRIDE;
+      const CookieMonster::SetCookiesCallback& callback) override;
 
-  virtual void GetCookiesWithOptionsAsync(
+  void GetCookiesWithOptionsAsync(
       const GURL& url,
       const CookieOptions& options,
-      const CookieMonster::GetCookiesCallback& callback) OVERRIDE;
+      const CookieMonster::GetCookiesCallback& callback) override;
 
-  virtual void GetAllCookiesForURLAsync(
-      const GURL& url,
-      const GetCookieListCallback& callback) OVERRIDE;
+  void GetAllCookiesForURLAsync(const GURL& url,
+                                const GetCookieListCallback& callback) override;
 
   virtual bool SetCookieWithOptions(const GURL& url,
                                     const std::string& cookie_line,
@@ -48,24 +47,27 @@ class DelayedCookieMonster : public CookieStore {
   virtual void DeleteCookie(const GURL& url,
                             const std::string& cookie_name);
 
-  virtual void DeleteCookieAsync(const GURL& url,
-                                 const std::string& cookie_name,
-                                 const base::Closure& callback) OVERRIDE;
+  void DeleteCookieAsync(const GURL& url,
+                         const std::string& cookie_name,
+                         const base::Closure& callback) override;
 
-  virtual void DeleteAllCreatedBetweenAsync(
-      const base::Time& delete_begin,
-      const base::Time& delete_end,
-      const DeleteCallback& callback) OVERRIDE;
+  void DeleteAllCreatedBetweenAsync(const base::Time& delete_begin,
+                                    const base::Time& delete_end,
+                                    const DeleteCallback& callback) override;
 
-  virtual void DeleteAllCreatedBetweenForHostAsync(
+  void DeleteAllCreatedBetweenForHostAsync(
       const base::Time delete_begin,
       const base::Time delete_end,
       const GURL& url,
-      const DeleteCallback& callback) OVERRIDE;
+      const DeleteCallback& callback) override;
 
-  virtual void DeleteSessionCookiesAsync(const DeleteCallback&) OVERRIDE;
+  void DeleteSessionCookiesAsync(const DeleteCallback&) override;
 
-  virtual CookieMonster* GetCookieMonster() OVERRIDE;
+  CookieMonster* GetCookieMonster() override;
+
+  scoped_ptr<CookieStore::CookieChangedSubscription>
+  AddCallbackForCookie(const GURL& url, const std::string& name,
+                       const CookieChangedCallback& callback) override;
 
  private:
 
@@ -84,7 +86,7 @@ class DelayedCookieMonster : public CookieStore {
       const CookieMonster::GetCookiesCallback& callback);
 
   friend class base::RefCountedThreadSafe<DelayedCookieMonster>;
-  virtual ~DelayedCookieMonster();
+  ~DelayedCookieMonster() override;
 
   scoped_refptr<CookieMonster> cookie_monster_;
 

@@ -84,6 +84,18 @@ lighter
 900
 
 //
+// font-stretch
+//
+ultra-condensed
+extra-condensed
+condensed
+semi-condensed
+semi-expanded
+expanded
+extra-expanded
+ultra-expanded
+
+//
 // font-size
 //
 xx-small
@@ -446,7 +458,6 @@ portrait
 pre
 pre-line
 pre-wrap
--internal-presence
 relative
 scroll
 separate
@@ -491,11 +502,14 @@ single
 multiple
 
 // align-content
+// start
+// end
 flex-start
 flex-end
 // center
 space-between
 space-around
+space-evenly
 // stretch
 
 // align-items / align-self
@@ -506,11 +520,16 @@ space-around
 // stretch
 
 // justify-content
+// start
+// end
 // flex-start
 // flex-end
 // center
 // space-between
 // space-around
+// space-evenly
+// stretch
+
 
 // flex-flow
 row
@@ -518,33 +537,12 @@ row-reverse
 column
 column-reverse
 // nowrap
-// wrap
+wrap
 wrap-reverse
 
-// -internal-marquee-direction
-forwards
-backwards
-ahead
-// reverse
-// left
-// right
-up
-down
-// auto
-
-// -internal-marquee-speed
-slow
-// normal
-fast
-
-// -internal-marquee-repetition
-infinite
-
-// -internal-marquee-style
-// none
-slide
-// scroll
-alternate
+// grid-auto-flow
+dense
+stack
 
 //
 // -webkit-user-modify
@@ -587,19 +585,6 @@ ellipsis
 // collapse
 // separate
 discard
-
-//
-// text-*-color
-//
-dot-dash
-dot-dot-dash
-wave
-
-//
-// text-*-mode
-//
-continuous
-skip-white-space
 
 //
 // word-break
@@ -654,6 +639,8 @@ media-controls-background
 media-controls-fullscreen-background
 media-current-time-display
 media-time-remaining-display
+-internal-media-cast-off-button
+-internal-media-overlay-cast-off-button
 menulist
 menulist-button
 menulist-text
@@ -715,28 +702,21 @@ logical
 visual
 
 //
-// -webkit-border-fit
-//
-lines
-
-//
 // animation-direction
 //
-// alternate
-
+alternate
 alternate-reverse
 
 //
 // animation-fill-mode
 //
-// forwards
-// backwards
+forwards
+backwards
 // both
 
 //
 // animation-iteration-count
-//
-// infinite
+infinite
 
 //
 // animation-play-state
@@ -762,6 +742,8 @@ ease-in-out
 step-start
 step-middle
 step-end
+steps
+cubic-bezier
 
 //
 // zoom
@@ -876,6 +858,7 @@ off
 //auto
 //optimizeSpeed
 optimizeQuality
+pixelated
 -webkit-optimize-contrast
 
 // shape-outside
@@ -885,27 +868,17 @@ at
 // closest-side
 // farthest-side
 
-// -webkit-wrap-flow
-// auto
-// both
-// left
-// right
-maximum
-// clear
-
-// -webkit-wrap-through
-wrap
-// none
-
 alphabetic
-
-// position
-sticky
 
 // (pointer:) media feature
 // none
 coarse
 fine
+
+// (hover:) media feature
+//  none
+on-demand
+hover
 
 // blend modes
 // normal
@@ -942,6 +915,9 @@ no-drag
 // grid-{column|row}-{start|end}
 span
 
+// grid-template-{columns|rows}
+minmax
+
 // text-indent
 each-line
 //hanging   // hanging exists in SVGCSSValueKeywords.in
@@ -976,10 +952,11 @@ pan-x
 pan-y
 manipulation
 
-// justify-self
+// justify-items / justify-self
 // auto
 // stretch
 // baseline
+last-baseline
 // center
 // start
 // end
@@ -991,6 +968,7 @@ self-end
 // right
 true
 safe
+legacy
 
 // scroll-behavior
 instant
@@ -1005,3 +983,80 @@ scroll-position
 // initial
 // inherit
 unset
+
+// background-image, etc.
+linear-gradient
+radial-gradient
+repeating-linear-gradient
+repeating-radial-gradient
+-webkit-canvas
+-webkit-cross-fade
+-webkit-gradient
+-webkit-linear-gradient
+-webkit-radial-gradient
+-webkit-repeating-linear-gradient
+-webkit-repeating-radial-gradient
+-webkit-image-set
+
+// deprecated gradients
+from
+to
+color-stop
+radial
+
+// content
+attr
+counter
+counters
+
+// clip
+rect
+
+// shapes
+polygon
+
+// @font-face src
+format
+
+// (-webkit-)filter
+grayscale
+sepia
+saturate
+hue-rotate
+opacity
+brightness
+contrast
+blur
+drop-shadow
+
+// colors
+rgb
+rgba
+hsl
+hsla
+
+// transform
+matrix
+matrix3d
+perspective
+rotate
+rotatex
+rotatey
+rotatez
+rotate3d
+scale
+scalex
+scaley
+scalez
+scale3d
+skew
+skewx
+skewy
+translate
+translatex
+translatey
+translatez
+translate3d
+
+calc
+-webkit-calc

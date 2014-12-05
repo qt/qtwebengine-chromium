@@ -34,36 +34,38 @@
 #include "wtf/PassRefPtr.h"
 #include "wtf/ThreadingPrimitives.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioContext;
 class HTMLMediaElement;
 
-class MediaElementAudioSourceNode FINAL : public AudioSourceNode, public AudioSourceProviderClient {
-    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(MediaElementAudioSourceNode);
+class MediaElementAudioSourceNode final : public AudioSourceNode, public AudioSourceProviderClient {
+    DEFINE_WRAPPERTYPEINFO();
+    USING_GARBAGE_COLLECTED_MIXIN(MediaElementAudioSourceNode);
 public:
-    static PassRefPtrWillBeRawPtr<MediaElementAudioSourceNode> create(AudioContext*, HTMLMediaElement*);
+    static MediaElementAudioSourceNode* create(AudioContext*, HTMLMediaElement*);
 
     virtual ~MediaElementAudioSourceNode();
 
     HTMLMediaElement* mediaElement() { return m_mediaElement.get(); }
 
     // AudioNode
-    virtual void process(size_t framesToProcess) OVERRIDE;
+    virtual void dispose() override;
+    virtual void process(size_t framesToProcess) override;
 
     // AudioSourceProviderClient
-    virtual void setFormat(size_t numberOfChannels, float sampleRate) OVERRIDE;
+    virtual void setFormat(size_t numberOfChannels, float sampleRate) override;
 
-    virtual void lock() OVERRIDE;
-    virtual void unlock() OVERRIDE;
+    virtual void lock() override;
+    virtual void unlock() override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     MediaElementAudioSourceNode(AudioContext*, HTMLMediaElement*);
 
     // As an audio source, we will never propagate silence.
-    virtual bool propagatesSilence() const OVERRIDE { return false; }
+    virtual bool propagatesSilence() const override { return false; }
 
     RefPtrWillBeMember<HTMLMediaElement> m_mediaElement;
     Mutex m_processLock;
@@ -74,7 +76,7 @@ private:
     OwnPtr<MultiChannelResampler> m_multiChannelResampler;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)
 

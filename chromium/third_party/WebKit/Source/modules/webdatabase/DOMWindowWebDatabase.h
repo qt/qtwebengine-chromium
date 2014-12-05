@@ -28,28 +28,24 @@
 #define DOMWindowWebDatabase_h
 
 #include "platform/heap/Handle.h"
-#include "wtf/PassRefPtr.h"
-#include "wtf/RefCounted.h"
-#include "wtf/RefPtr.h"
-#include "wtf/text/WTFString.h"
+#include "wtf/Forward.h"
 
-namespace WebCore {
+namespace blink {
 
 class LocalDOMWindow;
 class Database;
 class DatabaseCallback;
 class ExceptionState;
-class LocalFrame;
 
 class DOMWindowWebDatabase {
 public:
-    static PassRefPtrWillBeRawPtr<Database> openDatabase(LocalDOMWindow&, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, PassOwnPtr<DatabaseCallback> creationCallback, ExceptionState&);
+    static Database* openDatabase(LocalDOMWindow&, const String& name, const String& version, const String& displayName, unsigned long estimatedSize, DatabaseCallback* creationCallback, ExceptionState&);
 
 private:
     DOMWindowWebDatabase() { };
     ~DOMWindowWebDatabase() { };
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DOMWindowWebDatabase_h

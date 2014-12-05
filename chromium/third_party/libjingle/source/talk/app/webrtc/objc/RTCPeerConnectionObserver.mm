@@ -32,9 +32,9 @@
 #import "RTCPeerConnectionObserver.h"
 
 #import "RTCDataChannel+Internal.h"
+#import "RTCEnumConverter.h"
 #import "RTCICECandidate+Internal.h"
 #import "RTCMediaStream+Internal.h"
-#import "RTCEnumConverter.h"
 
 namespace webrtc {
 
@@ -44,10 +44,6 @@ RTCPeerConnectionObserver::RTCPeerConnectionObserver(
 }
 
 RTCPeerConnectionObserver::~RTCPeerConnectionObserver() {
-}
-
-void RTCPeerConnectionObserver::OnError() {
-  [_peerConnection.delegate peerConnectionOnError:_peerConnection];
 }
 
 void RTCPeerConnectionObserver::OnSignalingChange(

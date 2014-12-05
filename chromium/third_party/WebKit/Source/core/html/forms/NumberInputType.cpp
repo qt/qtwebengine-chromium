@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/NumberInputType.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/HTMLNames.h"
 #include "core/InputTypeNames.h"
 #include "core/dom/ExceptionCode.h"
@@ -45,7 +45,7 @@
 #include "wtf/PassOwnPtr.h"
 #include <limits>
 
-namespace WebCore {
+namespace blink {
 
 using blink::WebLocalizedString;
 using namespace HTMLNames;
@@ -266,11 +266,6 @@ bool NumberInputType::supportsPlaceholder() const
     return true;
 }
 
-bool NumberInputType::isNumberField() const
-{
-    return true;
-}
-
 void NumberInputType::minOrMaxAttributeChanged()
 {
     InputType::minOrMaxAttributeChanged();
@@ -292,4 +287,4 @@ bool NumberInputType::supportsSelectionAPI() const
     return false;
 }
 
-} // namespace WebCore
+} // namespace blink

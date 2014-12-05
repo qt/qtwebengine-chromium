@@ -5,10 +5,10 @@
 #ifndef V8_ARM64_INSTRUCTIONS_ARM64_H_
 #define V8_ARM64_INSTRUCTIONS_ARM64_H_
 
-#include "src/globals.h"
-#include "src/utils.h"
 #include "src/arm64/constants-arm64.h"
 #include "src/arm64/utils-arm64.h"
+#include "src/globals.h"
+#include "src/utils.h"
 
 namespace v8 {
 namespace internal {
@@ -137,7 +137,7 @@ class Instruction {
   // ImmPCRel is a compound field (not present in INSTRUCTION_FIELDS_LIST),
   // formed from ImmPCRelLo and ImmPCRelHi.
   int ImmPCRel() const {
-    ASSERT(IsPCRelAddressing());
+    DCHECK(IsPCRelAddressing());
     int const offset = ((ImmPCRelHi() << ImmPCRelLo_width) | ImmPCRelLo());
     int const width = ImmPCRelLo_width + ImmPCRelHi_width;
     return signed_bitextract_32(width - 1, 0, offset);
@@ -338,7 +338,7 @@ class Instruction {
   // Find the PC offset encoded in this instruction. 'this' may be a branch or
   // a PC-relative addressing instruction.
   // The offset returned is unscaled.
-  ptrdiff_t ImmPCOffset();
+  int64_t ImmPCOffset();
 
   // Find the target of this instruction. 'this' may be a branch or a
   // PC-relative addressing instruction.
@@ -352,9 +352,9 @@ class Instruction {
   // Patch a literal load instruction to load from 'source'.
   void SetImmLLiteral(Instruction* source);
 
-  uint8_t* LiteralAddress() {
+  uintptr_t LiteralAddress() {
     int offset = ImmLLiteral() << kLoadLiteralScaleLog2;
-    return reinterpret_cast<uint8_t*>(this) + offset;
+    return reinterpret_cast<uintptr_t>(this) + offset;
   }
 
   enum CheckAlignment { NO_CHECK, CHECK_ALIGNMENT };
@@ -364,7 +364,7 @@ class Instruction {
       CheckAlignment check = CHECK_ALIGNMENT) {
     Address addr = reinterpret_cast<Address>(this) + offset;
     // The FUZZ_disasm test relies on no check being done.
-    ASSERT(check == NO_CHECK || IsAddressAligned(addr, kInstructionSize));
+    DCHECK(check == NO_CHECK || IsAddressAligned(addr, kInstructionSize));
     return Cast(addr);
   }
 

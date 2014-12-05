@@ -90,7 +90,7 @@ class StrictStaticSocketDataProvider : public StaticSocketDataProvider {
       : StaticSocketDataProvider(reads, reads_count, writes, writes_count),
         strict_mode_(strict_mode) {}
 
-  virtual ~StrictStaticSocketDataProvider() {
+  ~StrictStaticSocketDataProvider() override {
     if (strict_mode_) {
       EXPECT_EQ(read_count(), read_index());
       EXPECT_EQ(write_count(), write_index());
@@ -110,7 +110,7 @@ class WebSocketBasicStreamSocketTest : public WebSocketBasicStreamTest {
         generator_(&GenerateNulMaskingKey),
         expect_all_io_to_complete_(true) {}
 
-  virtual ~WebSocketBasicStreamSocketTest() {
+  ~WebSocketBasicStreamSocketTest() override {
     // stream_ has a reference to socket_data_ (via MockTCPClientSocket) and so
     // should be destroyed first.
     stream_.reset();
@@ -237,7 +237,7 @@ class WebSocketBasicStreamSocketWriteTest
  protected:
   // All write tests use the same frame, so it is easiest to create it during
   // test creation.
-  virtual void SetUp() OVERRIDE { PrepareWriteFrame(); }
+  void SetUp() override { PrepareWriteFrame(); }
 
   // Creates a WebSocketFrame with a wire format matching kWriteFrame and adds
   // it to |frames_|.
@@ -639,7 +639,7 @@ TEST_F(WebSocketBasicStreamSocketTest, HttpReadBufferIsUsed) {
 
   EXPECT_EQ(OK, stream_->ReadFrames(&frames_, cb_.callback()));
   ASSERT_EQ(1U, frames_.size());
-  ASSERT_TRUE(frames_[0]->data);
+  ASSERT_TRUE(frames_[0]->data.get());
   EXPECT_EQ(GG_UINT64_C(6), frames_[0]->header.payload_length);
 }
 
@@ -653,7 +653,7 @@ TEST_F(WebSocketBasicStreamSocketSingleReadTest,
   ASSERT_EQ(ERR_IO_PENDING, stream_->ReadFrames(&frames_, cb_.callback()));
   EXPECT_EQ(OK, cb_.WaitForResult());
   ASSERT_EQ(1U, frames_.size());
-  ASSERT_TRUE(frames_[0]->data);
+  ASSERT_TRUE(frames_[0]->data.get());
   EXPECT_EQ(GG_UINT64_C(6), frames_[0]->header.payload_length);
   EXPECT_EQ(WebSocketFrameHeader::kOpCodeText, frames_[0]->header.opcode);
 }

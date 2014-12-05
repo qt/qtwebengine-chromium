@@ -10,16 +10,14 @@
 #include "core/frame/Navigator.h"
 #include "modules/netinfo/NetworkInformation.h"
 
-namespace WebCore {
+namespace blink {
 
 NavigatorNetworkInformation::NavigatorNetworkInformation(Navigator& navigator)
     : DOMWindowProperty(navigator.frame())
 {
 }
 
-NavigatorNetworkInformation::~NavigatorNetworkInformation()
-{
-}
+DEFINE_EMPTY_DESTRUCTOR_WILL_BE_REMOVED(NavigatorNetworkInformation);
 
 NavigatorNetworkInformation& NavigatorNetworkInformation::from(Navigator& navigator)
 {
@@ -59,6 +57,7 @@ void NavigatorNetworkInformation::trace(Visitor* visitor)
 {
     visitor->trace(m_connection);
     WillBeHeapSupplement<Navigator>::trace(visitor);
+    DOMWindowProperty::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

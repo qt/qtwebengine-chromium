@@ -34,16 +34,11 @@
 #include "core/html/imports/HTMLImportState.h"
 #include "platform/heap/Handle.h"
 #include "wtf/TreeNode.h"
-#include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
-class LocalFrame;
-class HTMLImportChild;
 class HTMLImportLoader;
-class HTMLImportsController;
-class KURL;
 
 //
 // # Basic Data Structure and Algorithms of HTML Imports implemenation.
@@ -116,7 +111,7 @@ public:
 
     virtual Document* document() const = 0;
     virtual bool isDone() const = 0; // FIXME: Should be renamed to haveFinishedLoading()
-    virtual HTMLImportLoader* loader() const { return 0; }
+    virtual HTMLImportLoader* loader() const { return nullptr; }
     virtual void stateWillChange() { }
     virtual void stateDidChange();
 
@@ -142,6 +137,6 @@ private:
     unsigned m_sync : 1;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // HTMLImport_h

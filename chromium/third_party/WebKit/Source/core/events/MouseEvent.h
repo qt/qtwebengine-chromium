@@ -26,12 +26,12 @@
 
 #include "core/events/EventDispatchMediator.h"
 #include "core/events/MouseRelatedEvent.h"
+#include "platform/PlatformMouseEvent.h"
 
-namespace WebCore {
+namespace blink {
 
-class Clipboard;
+class DataTransfer;
 class EventDispatcher;
-class PlatformMouseEvent;
 
 struct MouseEventInit : public UIEventInit {
     MouseEventInit();
@@ -49,6 +49,7 @@ struct MouseEventInit : public UIEventInit {
 };
 
 class MouseEvent : public MouseRelatedEvent {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<MouseEvent> create()
     {
@@ -59,7 +60,8 @@ public:
         int detail, int screenX, int screenY, int pageX, int pageY,
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<Clipboard>, bool isSimulated = false);
+        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<DataTransfer>,
+        bool isSimulated = false, PlatformMouseEvent::SyntheticEventType = PlatformMouseEvent::RealOrIndistinguishable);
 
     static PassRefPtrWillBeRawPtr<MouseEvent> create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView>, const PlatformMouseEvent&, int detail, PassRefPtrWillBeRawPtr<Node> relatedTarget);
 
@@ -77,28 +79,30 @@ public:
     unsigned short button() const { return m_button; }
     bool buttonDown() const { return m_buttonDown; }
     EventTarget* relatedTarget() const { return m_relatedTarget.get(); }
-    EventTarget* relatedTarget(bool& isNull) const { isNull = !m_relatedTarget; return m_relatedTarget.get(); }
     void setRelatedTarget(PassRefPtrWillBeRawPtr<EventTarget> relatedTarget) { m_relatedTarget = relatedTarget; }
 
     Node* toElement() const;
     Node* fromElement() const;
 
-    Clipboard* dataTransfer() const { return isDragEvent() ? m_clipboard.get() : 0; }
+    DataTransfer* dataTransfer() const { return isDragEvent() ? m_dataTransfer.get() : 0; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    bool fromTouch() const { return m_syntheticEventType == PlatformMouseEvent::FromTouch; }
 
-    virtual bool isMouseEvent() const OVERRIDE;
-    virtual bool isDragEvent() const OVERRIDE FINAL;
-    virtual int which() const OVERRIDE FINAL;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual bool isMouseEvent() const override;
+    virtual bool isDragEvent() const override final;
+    virtual int which() const override final;
+
+    virtual void trace(Visitor*) override;
 
 protected:
     MouseEvent(const AtomicString& type, bool canBubble, bool cancelable, PassRefPtrWillBeRawPtr<AbstractView>,
         int detail, int screenX, int screenY, int pageX, int pageY,
         int movementX, int movementY,
         bool ctrlKey, bool altKey, bool shiftKey, bool metaKey, unsigned short button,
-        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<Clipboard>, bool isSimulated);
+        PassRefPtrWillBeRawPtr<EventTarget> relatedTarget, PassRefPtrWillBeRawPtr<DataTransfer>,
+        bool isSimulated, PlatformMouseEvent::SyntheticEventType);
 
     MouseEvent(const AtomicString& type, const MouseEventInit&);
 
@@ -108,21 +112,22 @@ private:
     unsigned short m_button;
     bool m_buttonDown;
     RefPtrWillBeMember<EventTarget> m_relatedTarget;
-    RefPtrWillBeMember<Clipboard> m_clipboard;
+    RefPtrWillBeMember<DataTransfer> m_dataTransfer;
+    PlatformMouseEvent::SyntheticEventType m_syntheticEventType;
 };
 
-class SimulatedMouseEvent FINAL : public MouseEvent {
+class SimulatedMouseEvent final : public MouseEvent {
 public:
     static PassRefPtrWillBeRawPtr<SimulatedMouseEvent> create(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView>, PassRefPtrWillBeRawPtr<Event> underlyingEvent);
     virtual ~SimulatedMouseEvent();
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     SimulatedMouseEvent(const AtomicString& eventType, PassRefPtrWillBeRawPtr<AbstractView>, PassRefPtrWillBeRawPtr<Event> underlyingEvent);
 };
 
-class MouseEventDispatchMediator FINAL : public EventDispatchMediator {
+class MouseEventDispatchMediator final : public EventDispatchMediator {
 public:
     enum MouseEventType { SyntheticMouseEvent, NonSyntheticMouseEvent};
     static PassRefPtrWillBeRawPtr<MouseEventDispatchMediator> create(PassRefPtrWillBeRawPtr<MouseEvent>, MouseEventType = NonSyntheticMouseEvent);
@@ -131,13 +136,13 @@ private:
     explicit MouseEventDispatchMediator(PassRefPtrWillBeRawPtr<MouseEvent>, MouseEventType);
     MouseEvent* event() const;
 
-    virtual bool dispatchEvent(EventDispatcher*) const OVERRIDE;
+    virtual bool dispatchEvent(EventDispatcher*) const override;
     bool isSyntheticMouseEvent() const { return m_mouseEventType == SyntheticMouseEvent; }
     MouseEventType m_mouseEventType;
 };
 
 DEFINE_EVENT_TYPE_CASTS(MouseEvent);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // MouseEvent_h

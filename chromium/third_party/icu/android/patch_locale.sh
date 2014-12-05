@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-cd `dirname $0`/../source/data
+cd $(dirname $0)/../source/data
 
 # Excludes curr data which is not used on Android.
 echo Overwriting curr/reslocal.mk...
@@ -50,6 +50,65 @@ for i in lang/*.txt; do
        /^    calendar{$/,/^    }$/d
        /^    codePatterns{$/,/^    }$/d
        /^    localeDisplayPattern{$/,/^    }$/d' -i $i
+done
+
+# Remove exemplar cities in timezone data.
+# This is copied from scripts/trim_data.sh where it's disabled by default.
+for i in zone/*.txt
+do
+  [ $i != 'zone/root.txt' ] && \
+  sed -i '/^    zoneStrings/, /^        "meta:/ {
+            /^    zoneStrings/ p
+            /^        "meta:/ p
+            d
+          }' $i
+done
+
+# Keep only two common calendars. Add locale-specific calendars only to
+# locales that are likely to use them most.
+COMMON_CALENDARS="gregorian|generic"
+for i in locales/*.txt; do
+  CALENDARS="${COMMON_CALENDARS}"
+  case $(basename $i .txt | sed 's/_.*$//') in
+    th)
+      EXTRA_CAL='buddhist'
+      ;;
+    zh)
+      EXTRA_CAL='chinese'
+      ;;
+    ko)
+      EXTRA_CAL='dangi'
+      ;;
+    am)
+      EXTRA_CAL='ethiopic'
+      ;;
+    he)
+      EXTRA_CAL='hebrew'
+      ;;
+    ar)
+      EXTRA_CAL='arabic'
+      ;;
+    fa)
+      EXTRA_CAL='persian'
+      ;;
+    ja)
+      EXTRA_CAL='japanese'
+      ;;
+  esac
+
+  # Add 'roc' calendar to zh_Hant*.
+  [[ "$(basename $i .txt)" =~ 'zh_Hant' ]] && { EXTRA_CAL="$EXTRA_CAL|roc"; }
+
+  CAL_PATTERN="(${COMMON_CALENDARS}|${EXTRA_CAL})"
+  echo $CAL_PATTERN
+
+  echo Overwriting $i...
+  sed -r '/^    calendar\{$/,/^    \}$/ {
+            /^    calendar\{$/p
+            /^        '${CAL_PATTERN}'\{$/, /^        \}$/p
+            /^    \}$/p
+            d
+          }' -i $i
 done
 
 echo DONE.

@@ -10,6 +10,7 @@
 #include "gpu/command_buffer/service/gpu_service_test.h"
 #include "gpu/command_buffer/service/shader_manager.h"
 #include "gpu/command_buffer/service/shader_translator.h"
+#include "gpu/command_buffer/service/test_helper.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_mock.h"
@@ -19,10 +20,6 @@ using ::testing::ElementsAreArray;
 using ::testing::Invoke;
 using ::testing::SetArgPointee;
 using ::testing::SetArrayArgument;
-
-namespace {
-typedef gpu::gles2::ShaderTranslator::VariableMap VariableMap;
-}  // anonymous namespace
 
 namespace gpu {
 namespace gles2 {
@@ -79,9 +76,7 @@ class MemoryProgramCacheTest : public GpuServiceTest {
         vertex_shader_(NULL),
         fragment_shader_(NULL),
         shader_cache_count_(0) { }
-  virtual ~MemoryProgramCacheTest() {
-    shader_manager_.Destroy(false);
-  }
+  ~MemoryProgramCacheTest() override { shader_manager_.Destroy(false); }
 
   void ShaderCacheCb(const std::string& key, const std::string& shader) {
     shader_cache_count_++;
@@ -92,7 +87,7 @@ class MemoryProgramCacheTest : public GpuServiceTest {
   const std::string& shader_cache_shader() { return shader_cache_shader_; }
 
  protected:
-  virtual void SetUp() {
+  void SetUp() override {
     GpuServiceTest::SetUp();
 
     vertex_shader_ = shader_manager_.CreateShader(kVertexShaderClientId,
@@ -104,37 +99,39 @@ class MemoryProgramCacheTest : public GpuServiceTest {
         GL_FRAGMENT_SHADER);
     ASSERT_TRUE(vertex_shader_ != NULL);
     ASSERT_TRUE(fragment_shader_ != NULL);
-    typedef ShaderTranslatorInterface::VariableInfo VariableInfo;
-    typedef ShaderTranslator::VariableMap VariableMap;
-    VariableMap vertex_attrib_map;
-    VariableMap vertex_uniform_map;
-    VariableMap vertex_varying_map;
-    VariableMap fragment_attrib_map;
-    VariableMap fragment_uniform_map;
-    VariableMap fragment_varying_map;
+    AttributeMap vertex_attrib_map;
+    UniformMap vertex_uniform_map;
+    VaryingMap vertex_varying_map;
+    AttributeMap fragment_attrib_map;
+    UniformMap fragment_uniform_map;
+    VaryingMap fragment_varying_map;
 
-    vertex_attrib_map["a"] = VariableInfo(1, 34, SH_PRECISION_LOWP, 0, "a");
-    vertex_uniform_map["a"] = VariableInfo(0, 10, SH_PRECISION_MEDIUMP, 1, "a");
-    vertex_uniform_map["b"] = VariableInfo(2, 3114, SH_PRECISION_HIGHP, 1, "b");
-    vertex_varying_map["c"] = VariableInfo(3, 2, SH_PRECISION_HIGHP, 1, "c");
-    fragment_attrib_map["jjjbb"] =
-        VariableInfo(463, 1114, SH_PRECISION_MEDIUMP, 0, "jjjbb");
-    fragment_uniform_map["k"] =
-        VariableInfo(10, 34413, SH_PRECISION_MEDIUMP, 1, "k");
-    fragment_varying_map["c"] = VariableInfo(3, 2, SH_PRECISION_HIGHP, 1, "c");
+    vertex_attrib_map["a"] = TestHelper::ConstructAttribute(
+        GL_FLOAT_VEC2, 34, GL_LOW_FLOAT, false, "a");
+    vertex_uniform_map["a"] = TestHelper::ConstructUniform(
+        GL_FLOAT, 10, GL_MEDIUM_FLOAT, true, "a");
+    vertex_uniform_map["b"] = TestHelper::ConstructUniform(
+        GL_FLOAT_VEC3, 3114, GL_HIGH_FLOAT, true, "b");
+    vertex_varying_map["c"] = TestHelper::ConstructVarying(
+        GL_FLOAT_VEC4, 2, GL_HIGH_FLOAT, true, "c");
+    fragment_attrib_map["jjjbb"] = TestHelper::ConstructAttribute(
+        GL_FLOAT_MAT4, 1114, GL_MEDIUM_FLOAT, false, "jjjbb");
+    fragment_uniform_map["k"] = TestHelper::ConstructUniform(
+        GL_FLOAT_MAT2, 34413, GL_MEDIUM_FLOAT, true, "k");
+    fragment_varying_map["c"] = TestHelper::ConstructVarying(
+        GL_FLOAT_VEC4, 2, GL_HIGH_FLOAT, true, "c");
 
-    vertex_shader_->set_attrib_map(vertex_attrib_map);
-    vertex_shader_->set_uniform_map(vertex_uniform_map);
-    vertex_shader_->set_varying_map(vertex_varying_map);
-    fragment_shader_->set_attrib_map(vertex_attrib_map);
-    fragment_shader_->set_uniform_map(vertex_uniform_map);
-    fragment_shader_->set_varying_map(vertex_varying_map);
+    vertex_shader_->set_source("bbbalsldkdkdkd");
+    fragment_shader_->set_source("bbbal   sldkdkdkas 134 ad");
 
-    vertex_shader_->UpdateSource("bbbalsldkdkdkd");
-    fragment_shader_->UpdateSource("bbbal   sldkdkdkas 134 ad");
-
-    vertex_shader_->SetStatus(true, NULL, NULL);
-    fragment_shader_->SetStatus(true, NULL, NULL);
+    TestHelper::SetShaderStates(
+        gl_.get(), vertex_shader_, true, NULL, NULL,
+        &vertex_attrib_map, &vertex_uniform_map, &vertex_varying_map,
+        NULL);
+    TestHelper::SetShaderStates(
+        gl_.get(), fragment_shader_, true, NULL, NULL,
+        &fragment_attrib_map, &fragment_uniform_map, &fragment_varying_map,
+        NULL);
   }
 
   void SetExpectationsForSaveLinkedProgram(
@@ -201,9 +198,9 @@ TEST_F(MemoryProgramCacheTest, CacheSave) {
                                        base::Unretained(this)));
 
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
   EXPECT_EQ(1, shader_cache_count());
@@ -226,9 +223,9 @@ TEST_F(MemoryProgramCacheTest, LoadProgram) {
                                        base::Unretained(this)));
 
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
   EXPECT_EQ(1, shader_cache_count());
@@ -237,9 +234,9 @@ TEST_F(MemoryProgramCacheTest, LoadProgram) {
 
   cache_->LoadProgram(shader_cache_shader());
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
 }
@@ -261,19 +258,19 @@ TEST_F(MemoryProgramCacheTest, CacheLoadMatchesSave) {
                                        base::Unretained(this)));
   EXPECT_EQ(1, shader_cache_count());
 
-  VariableMap vertex_attrib_map = vertex_shader_->attrib_map();
-  VariableMap vertex_uniform_map = vertex_shader_->uniform_map();
-  VariableMap vertex_varying_map = vertex_shader_->varying_map();
-  VariableMap fragment_attrib_map = fragment_shader_->attrib_map();
-  VariableMap fragment_uniform_map = fragment_shader_->uniform_map();
-  VariableMap fragment_varying_map = fragment_shader_->varying_map();
+  AttributeMap vertex_attrib_map = vertex_shader_->attrib_map();
+  UniformMap vertex_uniform_map = vertex_shader_->uniform_map();
+  VaryingMap vertex_varying_map = vertex_shader_->varying_map();
+  AttributeMap fragment_attrib_map = fragment_shader_->attrib_map();
+  UniformMap fragment_uniform_map = fragment_shader_->uniform_map();
+  VaryingMap fragment_varying_map = fragment_shader_->varying_map();
 
-  vertex_shader_->set_attrib_map(VariableMap());
-  vertex_shader_->set_uniform_map(VariableMap());
-  vertex_shader_->set_varying_map(VariableMap());
-  fragment_shader_->set_attrib_map(VariableMap());
-  fragment_shader_->set_uniform_map(VariableMap());
-  fragment_shader_->set_varying_map(VariableMap());
+  vertex_shader_->set_attrib_map(AttributeMap());
+  vertex_shader_->set_uniform_map(UniformMap());
+  vertex_shader_->set_varying_map(VaryingMap());
+  fragment_shader_->set_attrib_map(AttributeMap());
+  fragment_shader_->set_uniform_map(UniformMap());
+  fragment_shader_->set_varying_map(VaryingMap());
 
   SetExpectationsForLoadLinkedProgram(kProgramId, &emulator);
 
@@ -316,19 +313,19 @@ TEST_F(MemoryProgramCacheTest, LoadProgramMatchesSave) {
                                        base::Unretained(this)));
   EXPECT_EQ(1, shader_cache_count());
 
-  VariableMap vertex_attrib_map = vertex_shader_->attrib_map();
-  VariableMap vertex_uniform_map = vertex_shader_->uniform_map();
-  VariableMap vertex_varying_map = vertex_shader_->varying_map();
-  VariableMap fragment_attrib_map = fragment_shader_->attrib_map();
-  VariableMap fragment_uniform_map = fragment_shader_->uniform_map();
-  VariableMap fragment_varying_map = fragment_shader_->varying_map();
+  AttributeMap vertex_attrib_map = vertex_shader_->attrib_map();
+  UniformMap vertex_uniform_map = vertex_shader_->uniform_map();
+  VaryingMap vertex_varying_map = vertex_shader_->varying_map();
+  AttributeMap fragment_attrib_map = fragment_shader_->attrib_map();
+  UniformMap fragment_uniform_map = fragment_shader_->uniform_map();
+  VaryingMap fragment_varying_map = fragment_shader_->varying_map();
 
-  vertex_shader_->set_attrib_map(VariableMap());
-  vertex_shader_->set_uniform_map(VariableMap());
-  vertex_shader_->set_varying_map(VariableMap());
-  fragment_shader_->set_attrib_map(VariableMap());
-  fragment_shader_->set_uniform_map(VariableMap());
-  fragment_shader_->set_varying_map(VariableMap());
+  vertex_shader_->set_attrib_map(AttributeMap());
+  vertex_shader_->set_uniform_map(UniformMap());
+  vertex_shader_->set_varying_map(VaryingMap());
+  fragment_shader_->set_attrib_map(AttributeMap());
+  fragment_shader_->set_uniform_map(UniformMap());
+  fragment_shader_->set_varying_map(VaryingMap());
 
   SetExpectationsForLoadLinkedProgram(kProgramId, &emulator);
 
@@ -401,10 +398,9 @@ TEST_F(MemoryProgramCacheTest, LoadFailOnDifferentSource) {
                             base::Bind(&MemoryProgramCacheTest::ShaderCacheCb,
                                        base::Unretained(this)));
 
-  const std::string vertex_orig_source =
-      *vertex_shader_->signature_source();
-  vertex_shader_->UpdateSource("different!");
-  vertex_shader_->SetStatus(true, NULL, NULL);
+  const std::string vertex_orig_source = vertex_shader_->signature_source();
+  vertex_shader_->set_source("different!");
+  TestHelper::SetShaderStates(gl_.get(), vertex_shader_, true);
   EXPECT_EQ(ProgramCache::PROGRAM_LOAD_FAILURE, cache_->LoadLinkedProgram(
       kProgramId,
       vertex_shader_,
@@ -415,10 +411,10 @@ TEST_F(MemoryProgramCacheTest, LoadFailOnDifferentSource) {
       base::Bind(&MemoryProgramCacheTest::ShaderCacheCb,
                  base::Unretained(this))));
 
-  vertex_shader_->UpdateSource(vertex_orig_source.c_str());
-  vertex_shader_->SetStatus(true, NULL, NULL);
-  fragment_shader_->UpdateSource("different!");
-  fragment_shader_->SetStatus(true, NULL, NULL);
+  vertex_shader_->set_source(vertex_orig_source);
+  TestHelper::SetShaderStates(gl_.get(), vertex_shader_, true);
+  fragment_shader_->set_source("different!");
+  TestHelper::SetShaderStates(gl_.get(), fragment_shader_, true);
   EXPECT_EQ(ProgramCache::PROGRAM_LOAD_FAILURE, cache_->LoadLinkedProgram(
       kProgramId,
       vertex_shader_,
@@ -494,10 +490,9 @@ TEST_F(MemoryProgramCacheTest, MemoryProgramCacheEviction) {
   const GLuint kEvictingBinaryLength = kCacheSizeBytes - kBinaryLength + 1;
 
   // save old source and modify for new program
-  const std::string old_source =
-      *fragment_shader_->signature_source();
-  fragment_shader_->UpdateSource("al sdfkjdk");
-  fragment_shader_->SetStatus(true, NULL, NULL);
+  const std::string& old_source = fragment_shader_->signature_source();
+  fragment_shader_->set_source("al sdfkjdk");
+  TestHelper::SetShaderStates(gl_.get(), fragment_shader_, true);
 
   scoped_ptr<char[]> bigTestBinary =
       scoped_ptr<char[]>(new char[kEvictingBinaryLength]);
@@ -519,15 +514,15 @@ TEST_F(MemoryProgramCacheTest, MemoryProgramCacheEviction) {
                                        base::Unretained(this)));
 
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
   EXPECT_EQ(ProgramCache::LINK_UNKNOWN, cache_->GetLinkedProgramStatus(
       old_source,
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
 }
@@ -542,7 +537,7 @@ TEST_F(MemoryProgramCacheTest, SaveCorrectProgram) {
   }
   ProgramBinaryEmulator emulator1(kBinaryLength, kFormat, test_binary);
 
-  vertex_shader_->UpdateSource("different!");
+  vertex_shader_->set_source("different!");
   SetExpectationsForSaveLinkedProgram(kProgramId, &emulator1);
   cache_->SaveLinkedProgram(kProgramId, vertex_shader_, NULL,
                             fragment_shader_, NULL, NULL,
@@ -550,9 +545,9 @@ TEST_F(MemoryProgramCacheTest, SaveCorrectProgram) {
                                        base::Unretained(this)));
 
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
 }
@@ -574,15 +569,15 @@ TEST_F(MemoryProgramCacheTest, LoadCorrectProgram) {
                                        base::Unretained(this)));
 
   EXPECT_EQ(ProgramCache::LINK_SUCCEEDED, cache_->GetLinkedProgramStatus(
-      *vertex_shader_->signature_source(),
+      vertex_shader_->signature_source(),
       NULL,
-      *fragment_shader_->signature_source(),
+      fragment_shader_->signature_source(),
       NULL,
       NULL));
 
   SetExpectationsForLoadLinkedProgram(kProgramId, &emulator);
 
-  fragment_shader_->UpdateSource("different!");
+  fragment_shader_->set_source("different!");
   EXPECT_EQ(ProgramCache::PROGRAM_LOAD_SUCCESS, cache_->LoadLinkedProgram(
       kProgramId,
       vertex_shader_,

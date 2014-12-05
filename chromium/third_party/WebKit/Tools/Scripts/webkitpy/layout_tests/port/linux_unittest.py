@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.common.system import executive_mock
 from webkitpy.common.system.systemhost_mock import MockSystemHost
@@ -38,6 +38,7 @@ from webkitpy.layout_tests.port import port_testcase
 
 class LinuxPortTest(port_testcase.PortTestCase):
     port_name = 'linux'
+    full_port_name = 'linux-x86'
     port_maker = linux.LinuxPort
 
     def assert_architecture(self, port_name=None, file_output=None, expected_architecture=None):

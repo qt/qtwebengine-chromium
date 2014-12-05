@@ -4,10 +4,7 @@
 
 #include "google_apis/drive/drive_api_parser.h"
 
-#include <algorithm>
-
 #include "base/basictypes.h"
-#include "base/files/file_path.h"
 #include "base/json/json_value_converter.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/strings/string_number_conversions.h"
@@ -16,13 +13,11 @@
 #include "base/values.h"
 #include "google_apis/drive/time_util.h"
 
-using base::Value;
-using base::DictionaryValue;
-using base::ListValue;
-
 namespace google_apis {
 
 namespace {
+
+const int64 kUnsetFileSize = -1;
 
 bool CreateFileResourceFromValue(const base::Value* value,
                                  scoped_ptr<FileResource>* file) {
@@ -73,7 +68,7 @@ bool GetOpenWithLinksFromDictionaryValue(
     return false;
 
   result->reserve(dictionary_value->size());
-  for (DictionaryValue::Iterator iter(*dictionary_value);
+  for (base::DictionaryValue::Iterator iter(*dictionary_value);
        !iter.IsAtEnd(); iter.Advance()) {
     std::string string_value;
     if (!iter.value().GetAsString(&string_value))
@@ -429,7 +424,7 @@ bool ParentReference::Parse(const base::Value& value) {
 ////////////////////////////////////////////////////////////////////////////////
 // FileResource implementation
 
-FileResource::FileResource() : shared_(false), file_size_(0) {}
+FileResource::FileResource() : shared_(false), file_size_(kUnsetFileSize) {}
 
 FileResource::~FileResource() {}
 
@@ -489,6 +484,12 @@ scoped_ptr<FileResource> FileResource::CreateFrom(const base::Value& value) {
 
 bool FileResource::IsDirectory() const {
   return mime_type_ == kDriveFolderMimeType;
+}
+
+bool FileResource::IsHostedDocument() const {
+  // Hosted documents don't have fileSize field set:
+  // https://developers.google.com/drive/v2/reference/files
+  return !IsDirectory() && file_size_ == kUnsetFileSize;
 }
 
 bool FileResource::Parse(const base::Value& value) {

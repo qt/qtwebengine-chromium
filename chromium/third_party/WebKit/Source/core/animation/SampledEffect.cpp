@@ -5,9 +5,9 @@
 #include "config.h"
 #include "core/animation/SampledEffect.h"
 
-#include "core/animation/interpolation/StyleInterpolation.h"
+#include "core/animation/StyleInterpolation.h"
 
-namespace WebCore {
+namespace blink {
 
 SampledEffect::SampledEffect(Animation* animation, PassOwnPtrWillBeRawPtr<WillBeHeapVector<RefPtrWillBeMember<Interpolation> > > interpolations)
     : m_animation(animation)
@@ -15,7 +15,7 @@ SampledEffect::SampledEffect(Animation* animation, PassOwnPtrWillBeRawPtr<WillBe
     , m_player(animation->player())
 #endif
     , m_interpolations(interpolations)
-    , m_playerSortInfo(animation->player()->sortInfo())
+    , m_sequenceNumber(animation->player()->sequenceNumber())
     , m_priority(animation->priority())
 {
     ASSERT(m_interpolations && !m_interpolations->isEmpty());
@@ -63,4 +63,4 @@ void SampledEffect::trace(Visitor* visitor)
 #endif
 }
 
-} // namespace WebCore
+} // namespace blink

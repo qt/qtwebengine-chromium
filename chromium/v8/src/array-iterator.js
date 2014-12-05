@@ -50,7 +50,7 @@ function ArrayIteratorIterator() {
 function ArrayIteratorNext() {
   var iterator = ToObject(this);
 
-  if (!HAS_PRIVATE(iterator, arrayIteratorObjectSymbol)) {
+  if (!HAS_DEFINED_PRIVATE(iterator, arrayIteratorNextIndexSymbol)) {
     throw MakeTypeError('incompatible_method_receiver',
                         ['Array Iterator.prototype.next']);
   }
@@ -110,8 +110,10 @@ function SetUpArrayIterator() {
     'next', ArrayIteratorNext
   ));
   %FunctionSetName(ArrayIteratorIterator, '[Symbol.iterator]');
-  %SetProperty(ArrayIterator.prototype, symbolIterator, ArrayIteratorIterator,
-      DONT_ENUM | DONT_DELETE | READ_ONLY);
+  %AddNamedProperty(ArrayIterator.prototype, symbolIterator,
+                    ArrayIteratorIterator, DONT_ENUM);
+  %AddNamedProperty(ArrayIterator.prototype, symbolToStringTag,
+                    "Array Iterator", READ_ONLY | DONT_ENUM);
 }
 SetUpArrayIterator();
 
@@ -120,9 +122,38 @@ function ExtendArrayPrototype() {
   %CheckIsBootstrapping();
 
   InstallFunctions($Array.prototype, DONT_ENUM, $Array(
+    // No 'values' since it breaks webcompat: http://crbug.com/409858
     'entries', ArrayEntries,
-    'values', ArrayValues,
     'keys', ArrayKeys
   ));
+
+  %AddNamedProperty($Array.prototype, symbolIterator, ArrayValues, DONT_ENUM);
 }
 ExtendArrayPrototype();
+
+
+function ExtendTypedArrayPrototypes() {
+  %CheckIsBootstrapping();
+
+macro TYPED_ARRAYS(FUNCTION)
+  FUNCTION(Uint8Array)
+  FUNCTION(Int8Array)
+  FUNCTION(Uint16Array)
+  FUNCTION(Int16Array)
+  FUNCTION(Uint32Array)
+  FUNCTION(Int32Array)
+  FUNCTION(Float32Array)
+  FUNCTION(Float64Array)
+  FUNCTION(Uint8ClampedArray)
+endmacro
+
+macro EXTEND_TYPED_ARRAY(NAME)
+  %AddNamedProperty($NAME.prototype, 'entries', ArrayEntries, DONT_ENUM);
+  %AddNamedProperty($NAME.prototype, 'values', ArrayValues, DONT_ENUM);
+  %AddNamedProperty($NAME.prototype, 'keys', ArrayKeys, DONT_ENUM);
+  %AddNamedProperty($NAME.prototype, symbolIterator, ArrayValues, DONT_ENUM);
+endmacro
+
+  TYPED_ARRAYS(EXTEND_TYPED_ARRAY)
+}
+ExtendTypedArrayPrototypes();

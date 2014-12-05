@@ -32,7 +32,6 @@
 #ifndef Performance_h
 #define Performance_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/events/EventTarget.h"
 #include "core/frame/DOMWindowProperty.h"
 #include "core/timing/MemoryInfo.h"
@@ -45,7 +44,7 @@
 #include "wtf/RefPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class ExceptionState;
@@ -54,20 +53,21 @@ class ResourceResponse;
 class ResourceTimingInfo;
 class UserTiming;
 
-typedef WillBeHeapVector<RefPtrWillBeMember<PerformanceEntry> > PerformanceEntryVector;
+using PerformanceEntryVector = WillBeHeapVector<RefPtrWillBeMember<PerformanceEntry>>;
 
-class Performance FINAL : public RefCountedWillBeRefCountedGarbageCollected<Performance>, public ScriptWrappable, public DOMWindowProperty, public EventTargetWithInlineData {
+class Performance final : public RefCountedWillBeGarbageCollectedFinalized<Performance>, public DOMWindowProperty, public EventTargetWithInlineData {
+    DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(Performance);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(Performance);
 public:
     static PassRefPtrWillBeRawPtr<Performance> create(LocalFrame* frame)
     {
-        return adoptRefWillBeRefCountedGarbageCollected(new Performance(frame));
+        return adoptRefWillBeNoop(new Performance(frame));
     }
     virtual ~Performance();
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     PassRefPtrWillBeRawPtr<MemoryInfo> memory() const;
     PerformanceNavigation* navigation() const;
@@ -91,7 +91,7 @@ public:
     void measure(const String& measureName, const String& startMark, const String& endMark, ExceptionState&);
     void clearMeasures(const String& measureName);
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     explicit Performance(LocalFrame*);
@@ -109,6 +109,6 @@ private:
     RefPtrWillBeMember<UserTiming> m_userTiming;
 };
 
-}
+} // namespace blink
 
 #endif // Performance_h

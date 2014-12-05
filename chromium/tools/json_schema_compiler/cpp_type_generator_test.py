@@ -3,6 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from cpp_namespace_environment import CppNamespaceEnvironment
 from cpp_type_generator import CppTypeGenerator
 from json_schema import CachedLoad
 import model
@@ -51,17 +52,42 @@ class CppTypeGeneratorTest(unittest.TestCase):
 
   def testGenerateIncludesAndForwardDeclarations(self):
     m = model.Model()
-    m.AddNamespace(self.windows_json[0], 'path/to/windows.json')
-    m.AddNamespace(self.tabs_json[0], 'path/to/tabs.json')
+    m.AddNamespace(self.windows_json[0],
+                   'path/to/windows.json',
+                   environment=CppNamespaceEnvironment('%(namespace)s'))
+    m.AddNamespace(self.tabs_json[0],
+                   'path/to/tabs.json',
+                   environment=CppNamespaceEnvironment('%(namespace)s'))
     manager = CppTypeGenerator(m, _FakeSchemaLoader(m))
 
     self.assertEquals('', manager.GenerateIncludes().Render())
     self.assertEquals('#include "path/to/tabs.h"',
                       manager.GenerateIncludes(include_soft=True).Render())
-    self.assertEquals('namespace tabs {\n'
-                      'struct Tab;\n'
-                      '}',
-                      manager.GenerateForwardDeclarations().Render())
+    self.assertEquals(
+        'namespace tabs {\n'
+        'struct Tab;\n'
+        '}  // namespace tabs',
+        manager.GenerateForwardDeclarations().Render())
+
+    m = model.Model()
+    m.AddNamespace(self.windows_json[0],
+                   'path/to/windows.json',
+                   environment=CppNamespaceEnvironment(
+                       'foo::bar::%(namespace)s'))
+    m.AddNamespace(self.tabs_json[0],
+                   'path/to/tabs.json',
+                   environment=CppNamespaceEnvironment(
+                       'foo::bar::%(namespace)s'))
+    manager = CppTypeGenerator(m, _FakeSchemaLoader(m))
+    self.assertEquals(
+        'namespace foo {\n'
+        'namespace bar {\n'
+        'namespace tabs {\n'
+        'struct Tab;\n'
+        '}  // namespace tabs\n'
+        '}  // namespace bar\n'
+        '}  // namespace foo',
+        manager.GenerateForwardDeclarations().Render())
     manager = CppTypeGenerator(self.models.get('permissions'),
                                _FakeSchemaLoader(m))
     self.assertEquals('', manager.GenerateIncludes().Render())
@@ -85,11 +111,7 @@ class CppTypeGeneratorTest(unittest.TestCase):
     self.assertEquals('#include "path/to/browser_action.h"\n'
                       '#include "path/to/font_settings.h"',
                       manager.GenerateIncludes().Render())
-    self.assertEquals('namespace browser_action {\n'
-                      '}\n'
-                      'namespace font_settings {\n'
-                      '}',
-                      manager.GenerateForwardDeclarations().Render())
+    self.assertEquals('', manager.GenerateForwardDeclarations().Render())
 
   def testGetCppTypeSimple(self):
     manager = CppTypeGenerator(self.models.get('tabs'), _FakeSchemaLoader(None))
@@ -139,8 +161,12 @@ class CppTypeGeneratorTest(unittest.TestCase):
 
   def testGetCppTypeIncludedRef(self):
     m = model.Model()
-    m.AddNamespace(self.windows_json[0], 'path/to/windows.json')
-    m.AddNamespace(self.tabs_json[0], 'path/to/tabs.json')
+    m.AddNamespace(self.windows_json[0],
+                   'path/to/windows.json',
+                   environment=CppNamespaceEnvironment('%(namespace)s'))
+    m.AddNamespace(self.tabs_json[0],
+                   'path/to/tabs.json',
+                   environment=CppNamespaceEnvironment('%(namespace)s'))
     manager = CppTypeGenerator(m, _FakeSchemaLoader(m))
     self.assertEquals(
         'std::vector<linked_ptr<tabs::Tab> >',

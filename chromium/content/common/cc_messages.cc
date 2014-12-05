@@ -6,8 +6,8 @@
 
 #include "cc/output/compositor_frame.h"
 #include "cc/output/filter_operations.h"
+#include "cc/quads/largest_draw_quad.h"
 #include "content/public/common/common_param_traits.h"
-#include "content/public/common/content_switches.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkFlattenableSerialization.h"
 #include "ui/gfx/transform.h"
@@ -294,13 +294,13 @@ void ParamTraits<cc::RenderPass>::Write(
   WriteParam(m, p.damage_rect);
   WriteParam(m, p.transform_to_root_target);
   WriteParam(m, p.has_transparent_background);
-  WriteParam(m, p.shared_quad_state_list.size());
   WriteParam(m, p.quad_list.size());
 
-  size_t shared_quad_state_index = 0;
-  size_t last_shared_quad_state_index = kuint32max;
-  for (size_t i = 0; i < p.quad_list.size(); ++i) {
-    const cc::DrawQuad* quad = p.quad_list[i];
+  cc::SharedQuadStateList::ConstIterator shared_quad_state_iter =
+      p.shared_quad_state_list.begin();
+  cc::SharedQuadStateList::ConstIterator last_shared_quad_state_iter =
+      p.shared_quad_state_list.end();
+  for (const auto& quad : p.quad_list) {
     DCHECK(quad->rect.Contains(quad->visible_rect))
         << quad->material << " rect: " << quad->rect.ToString()
         << " visible_rect: " << quad->visible_rect.ToString();
@@ -347,35 +347,23 @@ void ParamTraits<cc::RenderPass>::Write(
         break;
     }
 
-    const cc::ScopedPtrVector<cc::SharedQuadState>& sqs_list =
-        p.shared_quad_state_list;
-
-    // This is an invalid index.
-    size_t bad_index = sqs_list.size();
-
     // Null shared quad states should not occur.
     DCHECK(quad->shared_quad_state);
-    if (!quad->shared_quad_state) {
-      WriteParam(m, bad_index);
-      continue;
-    }
 
     // SharedQuadStates should appear in the order they are used by DrawQuads.
     // Find the SharedQuadState for this DrawQuad.
-    while (shared_quad_state_index < sqs_list.size() &&
-           quad->shared_quad_state != sqs_list[shared_quad_state_index])
-      ++shared_quad_state_index;
+    while (shared_quad_state_iter != p.shared_quad_state_list.end() &&
+           quad->shared_quad_state != *shared_quad_state_iter)
+      ++shared_quad_state_iter;
 
-    DCHECK_LT(shared_quad_state_index, sqs_list.size());
-    if (shared_quad_state_index >= sqs_list.size()) {
-      WriteParam(m, bad_index);
-      continue;
-    }
+    DCHECK(shared_quad_state_iter != p.shared_quad_state_list.end());
 
-    WriteParam(m, shared_quad_state_index);
-    if (shared_quad_state_index != last_shared_quad_state_index) {
-      WriteParam(m, *sqs_list[shared_quad_state_index]);
-      last_shared_quad_state_index = shared_quad_state_index;
+    if (shared_quad_state_iter != last_shared_quad_state_iter) {
+      WriteParam(m, true);
+      WriteParam(m, **shared_quad_state_iter);
+      last_shared_quad_state_iter = shared_quad_state_iter;
+    } else {
+      WriteParam(m, false);
     }
   }
 }
@@ -383,33 +371,35 @@ void ParamTraits<cc::RenderPass>::Write(
 static size_t ReserveSizeForRenderPassWrite(const cc::RenderPass& p) {
   size_t to_reserve = sizeof(cc::RenderPass);
 
+  // Whether the quad points to a new shared quad state for each quad.
+  to_reserve += p.quad_list.size() * sizeof(bool);
+
+  // Shared quad state is only written when a quad contains a shared quad state
+  // that has not been written.
   to_reserve += p.shared_quad_state_list.size() * sizeof(cc::SharedQuadState);
 
-  // The shared_quad_state_index for each quad.
-  to_reserve += p.quad_list.size() * sizeof(size_t);
-
   // The largest quad type, verified by a unit test.
-  to_reserve += p.quad_list.size() * sizeof(cc::RenderPassDrawQuad);
+  to_reserve += p.quad_list.size() * cc::LargestDrawQuadSize();
   return to_reserve;
 }
 
-template<typename QuadType>
-static scoped_ptr<cc::DrawQuad> ReadDrawQuad(const Message* m,
-                                             PickleIterator* iter) {
-  scoped_ptr<QuadType> quad = QuadType::Create();
-  if (!ReadParam(m, iter, quad.get()))
-    return scoped_ptr<QuadType>().template PassAs<cc::DrawQuad>();
-  return quad.template PassAs<cc::DrawQuad>();
+template <typename QuadType>
+static cc::DrawQuad* ReadDrawQuad(const Message* m,
+                                  PickleIterator* iter,
+                                  cc::RenderPass* render_pass) {
+  QuadType* quad = render_pass->CreateAndAppendDrawQuad<QuadType>();
+  if (!ReadParam(m, iter, quad))
+    return NULL;
+  return quad;
 }
 
 bool ParamTraits<cc::RenderPass>::Read(
     const Message* m, PickleIterator* iter, param_type* p) {
-  cc::RenderPass::Id id(-1, -1);
+  cc::RenderPassId id(-1, -1);
   gfx::Rect output_rect;
   gfx::Rect damage_rect;
   gfx::Transform transform_to_root_target;
   bool has_transparent_background;
-  size_t shared_quad_state_list_size;
   size_t quad_list_size;
 
   if (!ReadParam(m, iter, &id) ||
@@ -417,7 +407,6 @@ bool ParamTraits<cc::RenderPass>::Read(
       !ReadParam(m, iter, &damage_rect) ||
       !ReadParam(m, iter, &transform_to_root_target) ||
       !ReadParam(m, iter, &has_transparent_background) ||
-      !ReadParam(m, iter, &shared_quad_state_list_size) ||
       !ReadParam(m, iter, &quad_list_size))
     return false;
 
@@ -427,47 +416,46 @@ bool ParamTraits<cc::RenderPass>::Read(
             transform_to_root_target,
             has_transparent_background);
 
-  size_t last_shared_quad_state_index = kuint32max;
   for (size_t i = 0; i < quad_list_size; ++i) {
     cc::DrawQuad::Material material;
     PickleIterator temp_iter = *iter;
     if (!ReadParam(m, &temp_iter, &material))
       return false;
 
-    scoped_ptr<cc::DrawQuad> draw_quad;
+    cc::DrawQuad* draw_quad = NULL;
     switch (material) {
       case cc::DrawQuad::CHECKERBOARD:
-        draw_quad = ReadDrawQuad<cc::CheckerboardDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::CheckerboardDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::DEBUG_BORDER:
-        draw_quad = ReadDrawQuad<cc::DebugBorderDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::DebugBorderDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::IO_SURFACE_CONTENT:
-        draw_quad = ReadDrawQuad<cc::IOSurfaceDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::IOSurfaceDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::PICTURE_CONTENT:
         NOTREACHED();
         return false;
       case cc::DrawQuad::SURFACE_CONTENT:
-        draw_quad = ReadDrawQuad<cc::SurfaceDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::SurfaceDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::TEXTURE_CONTENT:
-        draw_quad = ReadDrawQuad<cc::TextureDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::TextureDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::RENDER_PASS:
-        draw_quad = ReadDrawQuad<cc::RenderPassDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::RenderPassDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::SOLID_COLOR:
-        draw_quad = ReadDrawQuad<cc::SolidColorDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::SolidColorDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::TILED_CONTENT:
-        draw_quad = ReadDrawQuad<cc::TileDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::TileDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::STREAM_VIDEO_CONTENT:
-        draw_quad = ReadDrawQuad<cc::StreamVideoDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::StreamVideoDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::YUV_VIDEO_CONTENT:
-        draw_quad = ReadDrawQuad<cc::YUVVideoDrawQuad>(m, iter);
+        draw_quad = ReadDrawQuad<cc::YUVVideoDrawQuad>(m, iter, p);
         break;
       case cc::DrawQuad::INVALID:
         break;
@@ -488,26 +476,18 @@ bool ParamTraits<cc::RenderPass>::Read(
       return false;
     }
 
-    size_t shared_quad_state_index;
-    if (!ReadParam(m, iter, &shared_quad_state_index))
-      return false;
-    if (shared_quad_state_index >= shared_quad_state_list_size)
-      return false;
-    // SharedQuadState indexes should be in ascending order.
-    if (last_shared_quad_state_index != kuint32max &&
-        shared_quad_state_index < last_shared_quad_state_index)
+    bool has_new_shared_quad_state;
+    if (!ReadParam(m, iter, &has_new_shared_quad_state))
       return false;
 
     // If the quad has a new shared quad state, read it in.
-    if (last_shared_quad_state_index != shared_quad_state_index) {
+    if (has_new_shared_quad_state) {
       cc::SharedQuadState* state = p->CreateAndAppendSharedQuadState();
       if (!ReadParam(m, iter, state))
         return false;
-      last_shared_quad_state_index = shared_quad_state_index;
     }
 
     draw_quad->shared_quad_state = p->shared_quad_state_list.back();
-    p->quad_list.push_back(draw_quad.Pass());
   }
 
   return true;
@@ -528,16 +508,15 @@ void ParamTraits<cc::RenderPass>::Log(
   l->append(", ");
 
   l->append("[");
-  for (size_t i = 0; i < p.shared_quad_state_list.size(); ++i) {
-    if (i)
+  for (const auto& shared_quad_state : p.shared_quad_state_list) {
+    if (shared_quad_state != p.shared_quad_state_list.front())
       l->append(", ");
-    LogParam(*p.shared_quad_state_list[i], l);
+    LogParam(*shared_quad_state, l);
   }
   l->append("], [");
-  for (size_t i = 0; i < p.quad_list.size(); ++i) {
-    if (i)
+  for (const auto& quad : p.quad_list) {
+    if (quad != p.quad_list.front())
       l->append(", ");
-    const cc::DrawQuad* quad = p.quad_list[i];
     switch (quad->material) {
       case cc::DrawQuad::CHECKERBOARD:
         LogParam(*cc::CheckerboardDrawQuad::MaterialCast(quad), l);
@@ -715,6 +694,7 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
   to_reserve += p.resource_list.size() * sizeof(cc::TransferableResource);
   for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
     const cc::RenderPass* pass = p.render_pass_list[i];
+    to_reserve += sizeof(size_t) * 2;
     to_reserve += ReserveSizeForRenderPassWrite(*pass);
   }
   m->Reserve(to_reserve);
@@ -722,8 +702,11 @@ void ParamTraits<cc::DelegatedFrameData>::Write(Message* m,
   WriteParam(m, p.device_scale_factor);
   WriteParam(m, p.resource_list);
   WriteParam(m, p.render_pass_list.size());
-  for (size_t i = 0; i < p.render_pass_list.size(); ++i)
+  for (size_t i = 0; i < p.render_pass_list.size(); ++i) {
+    WriteParam(m, p.render_pass_list[i]->quad_list.size());
+    WriteParam(m, p.render_pass_list[i]->shared_quad_state_list.size());
     WriteParam(m, *p.render_pass_list[i]);
+  }
 }
 
 bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
@@ -733,6 +716,8 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
     return false;
 
   const static size_t kMaxRenderPasses = 10000;
+  const static size_t kMaxSharedQuadStateListSize = 100000;
+  const static size_t kMaxQuadListSize = 1000000;
 
   size_t num_render_passes;
   if (!ReadParam(m, iter, &p->resource_list) ||
@@ -740,7 +725,15 @@ bool ParamTraits<cc::DelegatedFrameData>::Read(const Message* m,
       num_render_passes > kMaxRenderPasses || num_render_passes == 0)
     return false;
   for (size_t i = 0; i < num_render_passes; ++i) {
-    scoped_ptr<cc::RenderPass> render_pass = cc::RenderPass::Create();
+    size_t quad_list_size;
+    size_t shared_quad_state_list_size;
+    if (!ReadParam(m, iter, &quad_list_size) ||
+        !ReadParam(m, iter, &shared_quad_state_list_size) ||
+        quad_list_size > kMaxQuadListSize ||
+        shared_quad_state_list_size > kMaxSharedQuadStateListSize)
+      return false;
+    scoped_ptr<cc::RenderPass> render_pass =
+        cc::RenderPass::Create(shared_quad_state_list_size, quad_list_size);
     if (!ReadParam(m, iter, render_pass.get()))
       return false;
     p->render_pass_list.push_back(render_pass.Pass());

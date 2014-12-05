@@ -27,7 +27,7 @@ class TimeZoneMonitorLinuxImpl;
 class TimeZoneMonitorLinux : public TimeZoneMonitor {
  public:
   TimeZoneMonitorLinux();
-  virtual ~TimeZoneMonitorLinux();
+  ~TimeZoneMonitorLinux() override;
 
   void NotifyRenderersFromImpl() {
     NotifyRenderers();
@@ -151,7 +151,7 @@ TimeZoneMonitorLinux::TimeZoneMonitorLinux()
 }
 
 TimeZoneMonitorLinux::~TimeZoneMonitorLinux() {
-  if (impl_) {
+  if (impl_.get()) {
     impl_->StopWatching();
   }
 }

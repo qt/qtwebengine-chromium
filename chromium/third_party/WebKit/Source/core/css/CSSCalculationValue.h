@@ -31,21 +31,18 @@
 #ifndef CSSCalculationValue_h
 #define CSSCalculationValue_h
 
-#include "core/css/CSSParserValues.h"
 #include "core/css/CSSPrimitiveValue.h"
 #include "core/css/CSSValue.h"
+#include "core/css/parser/CSSParserValues.h"
 #include "platform/CalculationValue.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/RefCounted.h"
 #include "wtf/RefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSParserValueList;
-class CSSValueList;
 class CalculationValue;
-class CalcExpressionNode;
-class Length;
 
 enum CalcOperator {
     CalcAdd = '+',
@@ -54,12 +51,17 @@ enum CalcOperator {
     CalcDivide = '/'
 };
 
+// The order of this enum should not change since its elements are used as indices
+// in the addSubtractResult matrix.
 enum CalculationCategory {
     CalcNumber = 0,
     CalcLength,
     CalcPercent,
     CalcPercentNumber,
     CalcPercentLength,
+    CalcAngle,
+    CalcTime,
+    CalcFrequency,
     CalcOther
 };
 
@@ -100,7 +102,7 @@ protected:
 
 class CSSCalcValue : public CSSValue {
 public:
-    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(CSSParserString name, CSSParserValueList*, ValueRange);
+    static PassRefPtrWillBeRawPtr<CSSCalcValue> create(CSSParserValueList*, ValueRange);
     static PassRefPtrWillBeRawPtr<CSSCalcValue> create(PassRefPtrWillBeRawPtr<CSSCalcExpressionNode>, ValueRange = ValueRangeAll);
 
     static PassRefPtrWillBeRawPtr<CSSCalcExpressionNode> createExpressionNode(PassRefPtrWillBeRawPtr<CSSPrimitiveValue>, bool isInteger = false);
@@ -143,7 +145,7 @@ private:
 
 DEFINE_CSS_VALUE_TYPE_CASTS(CSSCalcValue, isCalcValue());
 
-} // namespace WebCore
+} // namespace blink
 
 
 #endif // CSSCalculationValue_h

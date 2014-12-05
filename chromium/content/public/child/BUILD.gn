@@ -4,7 +4,18 @@
 
 import("//content/child/child.gni")
 
-source_set("child") {
+# See //content/BUILD.gn for how this works.
+group("child") {
+  if (is_component_build) {
+    public_deps = [ "//content" ]
+  } else {
+    public_deps = [ ":child_sources" ]
+  }
+}
+
+source_set("child_sources") {
+  visibility = [ "//content/*" ]
+
   sources = rebase_path(content_child_gypi_values.public_child_sources,
                         ".", "//content")
 
@@ -14,5 +25,6 @@ source_set("child") {
 
   deps = [
     "//content/child",
+    "//content/public/common:common_sources",
   ]
 }

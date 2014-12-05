@@ -9,12 +9,11 @@
 #include "ui/aura/client/screen_position_client.h"
 #include "ui/aura/env.h"
 #include "ui/aura/test/aura_test_base.h"
-#include "ui/aura/test/event_generator.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/test/test_window_delegate.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_event_dispatcher.h"
-#include "ui/base/resource/resource_bundle.h"
+#include "ui/events/test/event_generator.h"
 #include "ui/gfx/font.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/screen.h"
@@ -28,6 +27,7 @@
 #include "ui/views/widget/tooltip_manager.h"
 #include "ui/views/widget/widget.h"
 #include "ui/wm/core/default_activation_client.h"
+#include "ui/wm/core/default_screen_position_client.h"
 #include "ui/wm/core/wm_state.h"
 #include "ui/wm/public/tooltip_client.h"
 #include "ui/wm/public/window_types.h"
@@ -76,9 +76,9 @@ TooltipController* GetController(Widget* widget) {
 class TooltipControllerTest : public aura::test::AuraTestBase {
  public:
   TooltipControllerTest() : view_(NULL) {}
-  virtual ~TooltipControllerTest() {}
+  ~TooltipControllerTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
 #if defined(OS_CHROMEOS)
     views_delegate_.reset(new TestViewsDelegate);
 #else
@@ -101,10 +101,10 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
     view_->SetBoundsRect(widget_->GetContentsView()->GetLocalBounds());
     helper_.reset(new TooltipControllerTestHelper(
                       GetController(widget_.get())));
-    generator_.reset(new aura::test::EventGenerator(GetRootWindow()));
+    generator_.reset(new ui::test::EventGenerator(GetRootWindow()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
 #if defined(OS_CHROMEOS)
     root_window()->RemovePreTargetHandler(controller_.get());
     aura::client::SetTooltipClient(root_window(), NULL);
@@ -137,7 +137,7 @@ class TooltipControllerTest : public aura::test::AuraTestBase {
   scoped_ptr<views::Widget> widget_;
   TooltipTestView* view_;
   scoped_ptr<TooltipControllerTestHelper> helper_;
-  scoped_ptr<aura::test::EventGenerator> generator_;
+  scoped_ptr<ui::test::EventGenerator> generator_;
 
  private:
   scoped_ptr<TooltipController> controller_;
@@ -412,40 +412,14 @@ int IndexInParent(const aura::Window* window) {
       static_cast<int>(i - window->parent()->children().begin());
 }
 
-class TestScreenPositionClient : public aura::client::ScreenPositionClient {
- public:
-  TestScreenPositionClient() {}
-  virtual ~TestScreenPositionClient() {}
-
-  // ScreenPositionClient overrides:
-  virtual void ConvertPointToScreen(const aura::Window* window,
-                                    gfx::Point* point) OVERRIDE {
-  }
-  virtual void ConvertPointFromScreen(const aura::Window* window,
-                                      gfx::Point* point) OVERRIDE {
-  }
-  virtual void ConvertHostPointToScreen(aura::Window* root_gwindow,
-                                        gfx::Point* point) OVERRIDE {
-    NOTREACHED();
-  }
-  virtual void SetBounds(aura::Window* window,
-                         const gfx::Rect& bounds,
-                         const gfx::Display& display) OVERRIDE {
-    window->SetBounds(bounds);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(TestScreenPositionClient);
-};
-
 }  // namespace
 
 class TooltipControllerCaptureTest : public TooltipControllerTest {
  public:
   TooltipControllerCaptureTest() {}
-  virtual ~TooltipControllerCaptureTest() {}
+  ~TooltipControllerCaptureTest() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     TooltipControllerTest::SetUp();
     aura::client::SetScreenPositionClient(GetRootWindow(),
                                           &screen_position_client_);
@@ -456,7 +430,7 @@ class TooltipControllerCaptureTest : public TooltipControllerTest {
 #endif
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
 #if !defined(OS_CHROMEOS)
     gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen());
     desktop_screen_.reset();
@@ -466,14 +440,15 @@ class TooltipControllerCaptureTest : public TooltipControllerTest {
   }
 
  private:
-  TestScreenPositionClient screen_position_client_;
+  wm::DefaultScreenPositionClient screen_position_client_;
   scoped_ptr<gfx::Screen> desktop_screen_;
 
   DISALLOW_COPY_AND_ASSIGN(TooltipControllerCaptureTest);
 };
 
 // Verifies when capture is released the TooltipController resets state.
-TEST_F(TooltipControllerCaptureTest, CloseOnCaptureLost) {
+// Flaky on all builders.  http://crbug.com/388268
+TEST_F(TooltipControllerCaptureTest, DISABLED_CloseOnCaptureLost) {
   view_->GetWidget()->SetCapture(view_);
   RunAllPendingInMessageLoop();
   view_->set_tooltip_text(ASCIIToUTF16("Tooltip Text"));
@@ -552,26 +527,20 @@ namespace {
 class TestTooltip : public Tooltip {
  public:
   TestTooltip() : is_visible_(false) {}
-  virtual ~TestTooltip() {}
+  ~TestTooltip() override {}
 
   const base::string16& tooltip_text() const { return tooltip_text_; }
 
   // Tooltip:
-  virtual void SetText(aura::Window* window,
-                       const base::string16& tooltip_text,
-                       const gfx::Point& location) OVERRIDE {
+  void SetText(aura::Window* window,
+               const base::string16& tooltip_text,
+               const gfx::Point& location) override {
     tooltip_text_ = tooltip_text;
     location_ = location;
   }
-  virtual void Show() OVERRIDE {
-    is_visible_ = true;
-  }
-  virtual void Hide() OVERRIDE {
-    is_visible_ = false;
-  }
-  virtual bool IsVisible() OVERRIDE {
-    return is_visible_;
-  }
+  void Show() override { is_visible_ = true; }
+  void Hide() override { is_visible_ = false; }
+  bool IsVisible() override { return is_visible_; }
   const gfx::Point& location() { return location_; }
 
  private:
@@ -588,9 +557,9 @@ class TestTooltip : public Tooltip {
 class TooltipControllerTest2 : public aura::test::AuraTestBase {
  public:
   TooltipControllerTest2() : test_tooltip_(new TestTooltip) {}
-  virtual ~TooltipControllerTest2() {}
+  ~TooltipControllerTest2() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     wm_state_.reset(new wm::WMState);
     aura::test::AuraTestBase::SetUp();
     new wm::DefaultActivationClient(root_window());
@@ -599,10 +568,10 @@ class TooltipControllerTest2 : public aura::test::AuraTestBase {
     root_window()->AddPreTargetHandler(controller_.get());
     SetTooltipClient(root_window(), controller_.get());
     helper_.reset(new TooltipControllerTestHelper(controller_.get()));
-    generator_.reset(new aura::test::EventGenerator(root_window()));
+    generator_.reset(new ui::test::EventGenerator(root_window()));
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     root_window()->RemovePreTargetHandler(controller_.get());
     aura::client::SetTooltipClient(root_window(), NULL);
     controller_.reset();
@@ -616,7 +585,7 @@ class TooltipControllerTest2 : public aura::test::AuraTestBase {
   // Owned by |controller_|.
   TestTooltip* test_tooltip_;
   scoped_ptr<TooltipControllerTestHelper> helper_;
-  scoped_ptr<aura::test::EventGenerator> generator_;
+  scoped_ptr<ui::test::EventGenerator> generator_;
 
  private:
   scoped_ptr<TooltipController> controller_;
@@ -663,9 +632,9 @@ TEST_F(TooltipControllerTest2, CloseOnCancelMode) {
 class TooltipControllerTest3 : public aura::test::AuraTestBase {
  public:
   TooltipControllerTest3() : test_tooltip_(new TestTooltip) {}
-  virtual ~TooltipControllerTest3() {}
+  ~TooltipControllerTest3() override {}
 
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     wm_state_.reset(new wm::WMState);
     aura::test::AuraTestBase::SetUp();
     new wm::DefaultActivationClient(root_window());
@@ -676,7 +645,7 @@ class TooltipControllerTest3 : public aura::test::AuraTestBase {
     widget_->GetContentsView()->AddChildView(view_);
     view_->SetBoundsRect(widget_->GetContentsView()->GetLocalBounds());
 
-    generator_.reset(new aura::test::EventGenerator(GetRootWindow()));
+    generator_.reset(new ui::test::EventGenerator(GetRootWindow()));
     controller_.reset(new TooltipController(
         scoped_ptr<views::corewm::Tooltip>(test_tooltip_)));
     GetRootWindow()->RemovePreTargetHandler(
@@ -687,7 +656,7 @@ class TooltipControllerTest3 : public aura::test::AuraTestBase {
     SetTooltipClient(GetRootWindow(), controller_.get());
   }
 
-  virtual void TearDown() OVERRIDE {
+  void TearDown() override {
     GetRootWindow()->RemovePreTargetHandler(controller_.get());
     aura::client::SetTooltipClient(GetRootWindow(), NULL);
 
@@ -705,7 +674,7 @@ class TooltipControllerTest3 : public aura::test::AuraTestBase {
   // Owned by |controller_|.
   TestTooltip* test_tooltip_;
   scoped_ptr<TooltipControllerTestHelper> helper_;
-  scoped_ptr<aura::test::EventGenerator> generator_;
+  scoped_ptr<ui::test::EventGenerator> generator_;
   scoped_ptr<views::Widget> widget_;
   TooltipTestView* view_;
 

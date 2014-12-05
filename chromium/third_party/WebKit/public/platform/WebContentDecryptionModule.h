@@ -31,6 +31,7 @@
 #ifndef WebContentDecryptionModule_h
 #define WebContentDecryptionModule_h
 
+#include "public/platform/WebContentDecryptionModuleResult.h"
 #include "public/platform/WebContentDecryptionModuleSession.h"
 
 namespace blink {
@@ -40,7 +41,9 @@ public:
     virtual ~WebContentDecryptionModule();
 
     // Must return non-null.
-    virtual WebContentDecryptionModuleSession* createSession(WebContentDecryptionModuleSession::Client*) = 0;
+    virtual WebContentDecryptionModuleSession* createSession() = 0;
+
+    virtual void setServerCertificate(const unsigned char* certificate, size_t certificateLength, WebContentDecryptionModuleResult) = 0;
 };
 
 } // namespace blink

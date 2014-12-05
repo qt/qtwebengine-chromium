@@ -32,14 +32,20 @@
 #include "wtf/Forward.h"
 #include "wtf/unicode/CharacterNames.h"
 
-namespace WebCore {
+namespace blink {
 
 class Document;
 class Element;
 class ExceptionState;
+class HTMLBRElement;
 class HTMLElement;
+class HTMLLIElement;
+class HTMLOListElement;
+class HTMLSpanElement;
+class HTMLUListElement;
 class Node;
 class Position;
+class PositionWithAffinity;
 class Range;
 class VisiblePosition;
 class VisibleSelection;
@@ -53,23 +59,25 @@ class VisibleSelection;
 
 // Functions returning Node
 
-Node* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
+ContainerNode* highestEditableRoot(const Position&, EditableType = ContentIsEditable);
 
 Node* highestEnclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*),
-    EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = 0);
-Node* highestNodeToRemoveInPruning(Node*, Node* excludeNode = 0);
-Node* lowestEditableAncestor(Node*);
+    EditingBoundaryCrossingRule = CannotCrossEditingBoundary, Node* stayWithin = nullptr);
+Node* highestNodeToRemoveInPruning(Node*, Node* excludeNode = nullptr);
+Element* lowestEditableAncestor(Node*);
 
 Element* enclosingBlock(Node*, EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
-Node* enclosingTableCell(const Position&);
+Element* enclosingBlockFlowElement(Node&); // Deprecated, use enclosingBlock instead.
+bool inSameContainingBlockFlowElement(Node*, Node*);
+Element* enclosingTableCell(const Position&);
 Node* enclosingEmptyListItem(const VisiblePosition&);
 Element* enclosingAnchorElement(const Position&);
-Node* enclosingNodeWithTag(const Position&, const QualifiedName&);
+Element* enclosingElementWithTag(const Position&, const QualifiedName&);
 Node* enclosingNodeOfType(const Position&, bool (*nodeIsOfType)(const Node*), EditingBoundaryCrossingRule = CannotCrossEditingBoundary);
 
-Node* tabSpanNode(const Node*);
-Node* isLastPositionBeforeTable(const VisiblePosition&);
-Node* isFirstPositionAfterTable(const VisiblePosition&);
+HTMLSpanElement* tabSpanElement(const Node*);
+Element* isLastPositionBeforeTable(const VisiblePosition&);
+Element* isFirstPositionAfterTable(const VisiblePosition&);
 
 // offset functions on Node
 
@@ -97,22 +105,22 @@ inline bool canHaveChildrenForEditing(const Node* node)
 bool isAtomicNode(const Node*);
 bool isBlock(const Node*);
 bool isInline(const Node*);
-bool isSpecialElement(const Node*);
-bool isTabSpanNode(const Node*);
-bool isTabSpanTextNode(const Node*);
-bool isMailBlockquote(const Node*);
-bool isRenderedTable(const Node*);
+bool isTabHTMLSpanElement(const Node*);
+bool isTabHTMLSpanElementTextNode(const Node*);
+bool isMailHTMLBlockquoteElement(const Node*);
 bool isRenderedTableElement(const Node*);
+bool isRenderedHTMLTableElement(const Node*);
 bool isTableCell(const Node*);
 bool isEmptyTableCell(const Node*);
 bool isTableStructureNode(const Node*);
-bool isListElement(Node*);
+bool isHTMLListElement(Node*);
 bool isListItem(const Node*);
 bool isNodeRendered(const Node*);
 bool isNodeVisiblyContainedWithin(Node&, const Range&);
 bool isRenderedAsNonInlineTableImageOrHR(const Node*);
 bool areIdenticalElements(const Node*, const Node*);
 bool isNonTableCellHTMLBlockElement(const Node*);
+bool isBlockFlowElement(const Node&);
 TextDirection directionOfEnclosingBlock(const Position&);
 
 // -------------------------------------------------------------------------
@@ -127,8 +135,8 @@ Position previousCandidate(const Position&);
 Position nextVisuallyDistinctCandidate(const Position&);
 Position previousVisuallyDistinctCandidate(const Position&);
 
-Position positionBeforeContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
-Position positionAfterContainingSpecialElement(const Position&, Node** containingSpecialElement = 0);
+Position positionBeforeContainingSpecialElement(const Position&, HTMLElement** containingSpecialElement = nullptr);
+Position positionAfterContainingSpecialElement(const Position&, HTMLElement** containingSpecialElement = nullptr);
 
 inline Position firstPositionInOrBeforeNode(Node* node)
 {
@@ -166,6 +174,9 @@ bool isAtUnsplittableElement(const Position&);
 
 // miscellaneous functions on Position
 
+enum WhitespacePositionOption { NotConsiderNonCollapsibleWhitespace, ConsiderNonCollapsibleWhitespace };
+Position leadingWhitespacePosition(const Position&, EAffinity, WhitespacePositionOption = NotConsiderNonCollapsibleWhitespace);
+Position trailingWhitespacePosition(const Position&, EAffinity, WhitespacePositionOption = NotConsiderNonCollapsibleWhitespace);
 unsigned numEnclosingMailBlockquotes(const Position&);
 void updatePositionForNodeRemoval(Position&, Node&);
 
@@ -175,8 +186,8 @@ void updatePositionForNodeRemoval(Position&, Node&);
 
 // Functions returning VisiblePosition
 
-VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position&, Node*);
-VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position&, Node*);
+VisiblePosition firstEditableVisiblePositionAfterPositionInRoot(const Position&, ContainerNode*);
+VisiblePosition lastEditableVisiblePositionBeforePositionInRoot(const Position&, ContainerNode*);
 VisiblePosition visiblePositionBeforeNode(Node&);
 VisiblePosition visiblePositionAfterNode(Node&);
 
@@ -202,15 +213,15 @@ PassRefPtrWillBeRawPtr<Range> createRange(Document&, const VisiblePosition& star
 // Functions returning HTMLElement
 
 PassRefPtrWillBeRawPtr<HTMLElement> createDefaultParagraphElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLElement> createBreakElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLElement> createOrderedListElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLElement> createUnorderedListElement(Document&);
-PassRefPtrWillBeRawPtr<HTMLElement> createListItemElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLBRElement> createBreakElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLOListElement> createOrderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLUListElement> createUnorderedListElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLLIElement> createListItemElement(Document&);
 PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const QualifiedName&);
 PassRefPtrWillBeRawPtr<HTMLElement> createHTMLElement(Document&, const AtomicString&);
 
 HTMLElement* enclosingList(Node*);
-HTMLElement* outermostEnclosingList(Node*, Node* rootList = 0);
+HTMLElement* outermostEnclosingList(Node*, HTMLElement* rootList = nullptr);
 Node* enclosingListChild(Node*);
 
 // -------------------------------------------------------------------------
@@ -219,10 +230,10 @@ Node* enclosingListChild(Node*);
 
 // Functions returning Element
 
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&);
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Node> tabTextNode);
-PassRefPtrWillBeRawPtr<Element> createTabSpanElement(Document&, const String& tabText);
-PassRefPtrWillBeRawPtr<Element> createBlockPlaceholderElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&);
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, PassRefPtrWillBeRawPtr<Text> tabTextNode);
+PassRefPtrWillBeRawPtr<HTMLSpanElement> createTabSpanElement(Document&, const String& tabText);
+PassRefPtrWillBeRawPtr<HTMLBRElement> createBlockPlaceholderElement(Document&);
 
 Element* editableRootForPosition(const Position&, EditableType = ContentIsEditable);
 Element* unsplittableElementForPosition(const Position&);

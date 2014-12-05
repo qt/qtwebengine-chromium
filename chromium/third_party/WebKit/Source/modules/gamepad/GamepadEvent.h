@@ -8,7 +8,7 @@
 #include "modules/EventModules.h"
 #include "modules/gamepad/Gamepad.h"
 
-namespace WebCore {
+namespace blink {
 
 struct GamepadEventInit : public EventInit {
     GamepadEventInit();
@@ -16,7 +16,8 @@ struct GamepadEventInit : public EventInit {
     Member<Gamepad> gamepad;
 };
 
-class GamepadEvent FINAL : public Event {
+class GamepadEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     static PassRefPtrWillBeRawPtr<GamepadEvent> create()
     {
@@ -34,9 +35,9 @@ public:
 
     Gamepad* gamepad() const { return m_gamepad.get(); }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     GamepadEvent();
@@ -46,6 +47,6 @@ private:
     PersistentWillBeMember<Gamepad> m_gamepad;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // GamepadEvent_h

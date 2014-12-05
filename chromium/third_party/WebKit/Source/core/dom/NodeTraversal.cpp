@@ -27,7 +27,7 @@
 
 #include "core/dom/ContainerNode.h"
 
-namespace WebCore {
+namespace blink {
 
 Node* NodeTraversal::previousIncludingPseudo(const Node& current, const Node* stayWithin)
 {
@@ -104,6 +104,12 @@ Node* NodeTraversal::lastWithin(const ContainerNode& current)
     return descendant;
 }
 
+Node& NodeTraversal::lastWithinOrSelf(Node& current)
+{
+    Node* lastDescendant = current.isContainerNode() ? NodeTraversal::lastWithin(toContainerNode(current)) : 0;
+    return lastDescendant ? *lastDescendant : current;
+}
+
 Node* NodeTraversal::previous(const Node& current, const Node* stayWithin)
 {
     if (current == stayWithin)
@@ -167,4 +173,4 @@ Node* NodeTraversal::previousPostOrder(const Node& current, const Node* stayWith
     return previousAncestorSiblingPostOrder(current, stayWithin);
 }
 
-} // namespace WebCore
+} // namespace blink

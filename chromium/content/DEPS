@@ -4,7 +4,9 @@ include_rules = [
   # The subdirectories in content/ will manually allow their own include
   # directories in content/ so we disallow all of them.
   "-content",
+  "+content/app/resources/grit/content_resources.h",
   "+content/common",
+  "+content/grit",
   "+content/public/common",
   "+content/public/test",
   "+content/shell",  # for content_browsertests
@@ -15,7 +17,10 @@ include_rules = [
   # being used as a parallel API to the Content API.
   "-base/prefs",
 
+  "+blink",
+
   "+cc",
+  "-cc/blink",
   # If you want to use any of these files, move them to src/base first.
   "-cc/base/scoped_ptr_algorithm.h",
   "-cc/base/scoped_ptr_deque.h",
@@ -23,21 +28,15 @@ include_rules = [
 
   "+crypto",
   "+grit/blink_resources.h",
-  "+grit/content_resources.h",
-  "+grit/ui_resources.h",
-  "+grit/ui_strings.h",
-  "+grit/webkit_resources.h",
-  "+grit/webkit_strings.h",
-  "+grit/webui_resources.h",
-  "+grit/webui_resources_map.h",
+  "+grit/content_strings.h",
 
   "+dbus",
   "+gpu",
-  "+mojo/public",
-  "+mojo/bindings/js",
   "+mojo/common",
-  "+mojo/embedder",
-  "+mojo/service_manager",
+  "+mojo/edk/embedder",
+  "+mojo/edk/js",
+  "+mojo/edk/test",
+  "+mojo/public",
   "+net",
   "+ppapi",
   "+printing",
@@ -86,9 +85,14 @@ include_rules = [
   "+ui/gfx",
   "+ui/gl",
   "+ui/native_theme",
-  "+ui/ozone",
+  "+ui/ozone/gpu",
+  "+ui/ozone/public",
+  "+ui/resources/grit/ui_resources.h",
+  "+ui/resources/grit/webui_resources.h",
+  "+ui/resources/grit/webui_resources_map.h",
   "+ui/shell_dialogs",
   "+ui/snapshot",
+  "+ui/strings/grit/ui_strings.h",
   "+ui/surface",
   "+ui/wm",
   # Content knows about grd files, but the specifics of how to get a resource
@@ -103,6 +107,8 @@ include_rules = [
   # explicit.
   "-ui/views",
 
+  "+storage/browser",
+  "+storage/common",
   "+webkit",
 
   # For generated JNI includes.

@@ -20,11 +20,12 @@ WebRtcLocalAudioTrack::WebRtcLocalAudioTrack(
     WebRtcLocalAudioTrackAdapter* adapter,
     const scoped_refptr<WebRtcAudioCapturer>& capturer,
     WebAudioCapturerSource* webaudio_source)
-    : MediaStreamTrack(adapter, true),
+    : MediaStreamTrack(true),
       adapter_(adapter),
       capturer_(capturer),
       webaudio_source_(webaudio_source) {
   DCHECK(capturer.get() || webaudio_source);
+  signal_thread_checker_.DetachFromThread();
 
   adapter_->Initialize(this);
 
@@ -42,13 +43,14 @@ void WebRtcLocalAudioTrack::Capture(const int16* audio_data,
                                     base::TimeDelta delay,
                                     int volume,
                                     bool key_pressed,
-                                    bool need_audio_processing) {
+                                    bool need_audio_processing,
+                                    bool force_report_nonzero_energy) {
   DCHECK(capture_thread_checker_.CalledOnValidThread());
 
   // Calculate the signal level regardless if the track is disabled or enabled.
   int signal_level = level_calculator_->Calculate(
       audio_data, audio_parameters_.channels(),
-      audio_parameters_.frames_per_buffer());
+      audio_parameters_.frames_per_buffer(), force_report_nonzero_energy);
   adapter_->SetSignalLevel(signal_level);
 
   scoped_refptr<WebRtcAudioCapturer> capturer;
@@ -86,7 +88,7 @@ void WebRtcLocalAudioTrack::Capture(const int16* audio_data,
                                    volume,
                                    need_audio_processing,
                                    key_pressed);
-    if (new_volume != 0 && capturer.get() && !webaudio_source_) {
+    if (new_volume != 0 && capturer.get() && !webaudio_source_.get()) {
       // Feed the new volume to WebRtc while changing the volume on the
       // browser.
       capturer->SetVolume(new_volume);
@@ -121,7 +123,11 @@ void WebRtcLocalAudioTrack::SetAudioProcessor(
 }
 
 void WebRtcLocalAudioTrack::AddSink(MediaStreamAudioSink* sink) {
-  DCHECK(main_render_thread_checker_.CalledOnValidThread());
+  // This method is called from webrtc, on the signaling thread, when the local
+  // description is set and from the main thread from WebMediaPlayerMS::load
+  // (via WebRtcLocalAudioRenderer::Start).
+  DCHECK(main_render_thread_checker_.CalledOnValidThread() ||
+         signal_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::AddSink()";
   base::AutoLock auto_lock(lock_);
 
@@ -135,17 +141,22 @@ void WebRtcLocalAudioTrack::AddSink(MediaStreamAudioSink* sink) {
   // we remember to call OnSetFormat() on the new sink.
   scoped_refptr<MediaStreamAudioTrackSink> sink_owner(
       new MediaStreamAudioSinkOwner(sink));
-  sinks_.AddAndTag(sink_owner);
+  sinks_.AddAndTag(sink_owner.get());
 }
 
 void WebRtcLocalAudioTrack::RemoveSink(MediaStreamAudioSink* sink) {
-  DCHECK(main_render_thread_checker_.CalledOnValidThread());
+  // See AddSink for additional context.  When local audio is stopped from
+  // webrtc, we'll be called here on the signaling thread.
+  DCHECK(main_render_thread_checker_.CalledOnValidThread() ||
+         signal_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::RemoveSink()";
 
-  base::AutoLock auto_lock(lock_);
-
-  scoped_refptr<MediaStreamAudioTrackSink> removed_item = sinks_.Remove(
-      MediaStreamAudioTrackSink::WrapsMediaStreamSink(sink));
+  scoped_refptr<MediaStreamAudioTrackSink> removed_item;
+  {
+    base::AutoLock auto_lock(lock_);
+    removed_item = sinks_.Remove(
+        MediaStreamAudioTrackSink::WrapsMediaStreamSink(sink));
+  }
 
   // Clear the delegate to ensure that no more capture callbacks will
   // be sent to this sink. Also avoids a possible crash which can happen
@@ -169,7 +180,7 @@ void WebRtcLocalAudioTrack::AddSink(PeerConnectionAudioSink* sink) {
   // we remember to call OnSetFormat() on the new sink.
   scoped_refptr<MediaStreamAudioTrackSink> sink_owner(
       new PeerConnectionAudioSinkOwner(sink));
-  sinks_.AddAndTag(sink_owner);
+  sinks_.AddAndTag(sink_owner.get());
 }
 
 void WebRtcLocalAudioTrack::RemoveSink(PeerConnectionAudioSink* sink) {
@@ -211,6 +222,12 @@ void WebRtcLocalAudioTrack::Start() {
   }
 }
 
+void WebRtcLocalAudioTrack::SetEnabled(bool enabled) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (adapter_.get())
+    adapter_->set_enabled(enabled);
+}
+
 void WebRtcLocalAudioTrack::Stop() {
   DCHECK(main_render_thread_checker_.CalledOnValidThread());
   DVLOG(1) << "WebRtcLocalAudioTrack::Stop()";
@@ -246,6 +263,11 @@ void WebRtcLocalAudioTrack::Stop() {
     (*it)->OnReadyStateChanged(blink::WebMediaStreamSource::ReadyStateEnded);
     (*it)->Reset();
   }
+}
+
+webrtc::AudioTrackInterface* WebRtcLocalAudioTrack::GetAudioAdapter() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  return adapter_.get();
 }
 
 }  // namespace content

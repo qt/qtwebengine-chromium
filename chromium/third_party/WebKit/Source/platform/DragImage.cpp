@@ -53,7 +53,7 @@
 
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 const float kDragLabelBorderX = 4;
 // Keep border_y in synch with DragController::LinkDragBorderInset.
@@ -89,7 +89,7 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
                 destRect = destRect.transposedRect();
 
             SkBitmap skBitmap;
-            if (!skBitmap.allocN32Pixels(sizeRespectingOrientation.width(), sizeRespectingOrientation.height()))
+            if (!skBitmap.tryAllocN32Pixels(sizeRespectingOrientation.width(), sizeRespectingOrientation.height()))
                 return nullptr;
 
             SkCanvas canvas(skBitmap);
@@ -101,7 +101,7 @@ PassOwnPtr<DragImage> DragImage::create(Image* image, RespectImageOrientationEnu
     }
 
     SkBitmap skBitmap;
-    if (!bitmap->bitmap().copyTo(&skBitmap, kPMColor_SkColorType))
+    if (!bitmap->bitmap().copyTo(&skBitmap, kN32_SkColorType))
         return nullptr;
     return adoptPtr(new DragImage(skBitmap, deviceScaleFactor));
 }
@@ -176,24 +176,24 @@ PassOwnPtr<DragImage> DragImage::create(const KURL& url, const String& inLabel, 
     // Draw the text
     if (drawURLString) {
         if (clipURLString)
-            urlString = StringTruncator::centerTruncate(urlString, imageSize.width() - (kDragLabelBorderX * 2.0f), urlFont, StringTruncator::EnableRoundingHacks);
+            urlString = StringTruncator::centerTruncate(urlString, imageSize.width() - (kDragLabelBorderX * 2.0f), urlFont);
         IntPoint textPos(kDragLabelBorderX, imageSize.height() - (kLabelBorderYOffset + urlFont.fontMetrics().descent()));
         TextRun textRun(urlString);
         buffer->context()->drawText(urlFont, TextRunPaintInfo(textRun), textPos);
     }
 
     if (clipLabelString)
-        label = StringTruncator::rightTruncate(label, imageSize.width() - (kDragLabelBorderX * 2.0f), labelFont, StringTruncator::EnableRoundingHacks);
+        label = StringTruncator::rightTruncate(label, imageSize.width() - (kDragLabelBorderX * 2.0f), labelFont);
 
     bool hasStrongDirectionality;
     TextRun textRun = textRunWithDirectionality(label, hasStrongDirectionality);
     IntPoint textPos(kDragLabelBorderX, kDragLabelBorderY + labelFont.fontDescription().computedPixelSize());
     if (hasStrongDirectionality && textRun.direction() == RTL) {
-        float textWidth = urlFont.width(textRun);
+        float textWidth = labelFont.width(textRun);
         int availableWidth = imageSize.width() - kDragLabelBorderX * 2;
         textPos.setX(availableWidth - ceilf(textWidth));
     }
-    buffer->context()->drawBidiText(urlFont, TextRunPaintInfo(textRun), textPos);
+    buffer->context()->drawBidiText(labelFont, TextRunPaintInfo(textRun), textPos);
 
     RefPtr<Image> image = buffer->copyImage();
     return DragImage::create(image.get(), DoNotRespectImageOrientation, deviceScaleFactor);
@@ -269,4 +269,4 @@ void DragImage::dissolveToFraction(float fraction)
     }
 }
 
-} // namespace WebCore
+} // namespace blink

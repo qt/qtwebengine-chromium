@@ -9,7 +9,7 @@
 #include "core/loader/appcache/ApplicationCacheHost.h"
 #include "public/platform/WebApplicationCacheHostClient.h"
 
-namespace WebCore {
+namespace blink {
 
 class ApplicationCacheErrorEvent;
 
@@ -22,7 +22,8 @@ struct ApplicationCacheErrorEventInit : public EventInit {
     String message;
 };
 
-class ApplicationCacheErrorEvent FINAL : public Event {
+class ApplicationCacheErrorEvent final : public Event {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     virtual ~ApplicationCacheErrorEvent();
 
@@ -46,9 +47,9 @@ public:
     int status() const { return m_status; }
     const String& message() const { return m_message; }
 
-    virtual const AtomicString& interfaceName() const OVERRIDE { return EventNames::ApplicationCacheErrorEvent; }
+    virtual const AtomicString& interfaceName() const override { return EventNames::ApplicationCacheErrorEvent; }
 
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
 private:
     ApplicationCacheErrorEvent();
@@ -61,6 +62,6 @@ private:
     String m_message;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ApplicationCacheErrorEvent_h

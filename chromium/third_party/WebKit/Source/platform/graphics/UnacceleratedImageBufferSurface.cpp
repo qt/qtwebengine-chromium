@@ -31,17 +31,37 @@
 #include "config.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 
-#include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkSurface.h"
 #include "wtf/PassRefPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 UnacceleratedImageBufferSurface::UnacceleratedImageBufferSurface(const IntSize& size, OpacityMode opacityMode)
     : ImageBufferSurface(size, opacityMode)
-    , m_canvas(adoptRef(SkCanvas::NewRasterN32(size.width(), size.height())))
 {
-    if (m_canvas)
+    SkAlphaType alphaType = (Opaque == opacityMode) ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
+    SkImageInfo info = SkImageInfo::MakeN32(size.width(), size.height(), alphaType);
+    m_surface = adoptRef(SkSurface::NewRaster(info));
+
+    if (m_surface)
         clear();
 }
 
-} // namespace WebCore
+UnacceleratedImageBufferSurface::~UnacceleratedImageBufferSurface() { }
+
+SkCanvas* UnacceleratedImageBufferSurface::canvas() const
+{
+    return m_surface->getCanvas();
+}
+
+bool UnacceleratedImageBufferSurface::isValid() const
+{
+    return m_surface;
+}
+
+PassRefPtr<SkImage> UnacceleratedImageBufferSurface::newImageSnapshot() const
+{
+    return adoptRef(m_surface->newImageSnapshot());
+}
+
+} // namespace blink

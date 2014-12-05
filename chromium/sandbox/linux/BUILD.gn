@@ -35,6 +35,7 @@ group("sandbox") {
 }
 
 source_set("sandbox_linux_test_utils") {
+  testonly = true
   sources = [
     "tests/sandbox_test_runner.cc",
     "tests/sandbox_test_runner.h",
@@ -66,12 +67,15 @@ source_set("sandbox_linux_test_utils") {
 # The main sandboxing test target.
 test("sandbox_linux_unittests") {
   sources = [
-    "tests/main.cc",
-    "tests/unit_tests_unittest.cc",
-    "services/broker_process_unittest.cc",
     "services/scoped_process_unittest.cc",
     "services/thread_helpers_unittests.cc",
     "services/yama_unittests.cc",
+    "syscall_broker/broker_process_unittest.cc",
+    "tests/main.cc",
+    "tests/scoped_temporary_file.cc",
+    "tests/scoped_temporary_file.h",
+    "tests/scoped_temporary_file_unittest.cc",
+    "tests/unit_tests_unittest.cc",
   ]
 
   deps = [
@@ -82,6 +86,11 @@ test("sandbox_linux_unittests") {
     "//testing/gtest",
   ]
 
+  if (is_linux) {
+    # Don't use this on Android.
+    libs = [ "rt" ]
+  }
+
   if (compile_suid_client) {
     sources += [
       "suid/client/setuid_sandbox_client_unittest.cc",
@@ -89,11 +98,14 @@ test("sandbox_linux_unittests") {
   }
   if (use_seccomp_bpf) {
     sources += [
+      "bpf_dsl/bpf_dsl_more_unittest.cc",
+      "bpf_dsl/bpf_dsl_unittest.cc",
+      "bpf_dsl/cons_unittest.cc",
       "seccomp-bpf-helpers/baseline_policy_unittest.cc",
+      "seccomp-bpf-helpers/syscall_parameters_restrictions_unittests.cc",
       "seccomp-bpf/bpf_tests_unittest.cc",
       "seccomp-bpf/codegen_unittest.cc",
       "seccomp-bpf/errorcode_unittest.cc",
-      "seccomp-bpf/sandbox_bpf_unittest.cc",
       "seccomp-bpf/syscall_iterator_unittest.cc",
       "seccomp-bpf/syscall_unittest.cc",
     ]
@@ -126,6 +138,18 @@ test("sandbox_linux_unittests") {
 
 component("seccomp_bpf") {
   sources = [
+    "bpf_dsl/bpf_dsl.cc",
+    "bpf_dsl/bpf_dsl.h",
+    "bpf_dsl/bpf_dsl_forward.h",
+    "bpf_dsl/bpf_dsl_impl.h",
+    "bpf_dsl/cons.h",
+    "bpf_dsl/dump_bpf.cc",
+    "bpf_dsl/dump_bpf.h",
+    "bpf_dsl/policy.cc",
+    "bpf_dsl/policy.h",
+    "bpf_dsl/policy_compiler.cc",
+    "bpf_dsl/policy_compiler.h",
+    "bpf_dsl/trap_registry.h",
     "seccomp-bpf/basicblock.cc",
     "seccomp-bpf/basicblock.h",
     "seccomp-bpf/codegen.cc",
@@ -138,9 +162,6 @@ component("seccomp_bpf") {
     "seccomp-bpf/linux_seccomp.h",
     "seccomp-bpf/sandbox_bpf.cc",
     "seccomp-bpf/sandbox_bpf.h",
-    "seccomp-bpf/sandbox_bpf_compatibility_policy.h",
-    "seccomp-bpf/sandbox_bpf_policy.cc",
-    "seccomp-bpf/sandbox_bpf_policy.h",
     "seccomp-bpf/syscall.cc",
     "seccomp-bpf/syscall.h",
     "seccomp-bpf/syscall_iterator.cc",
@@ -177,43 +198,29 @@ component("seccomp_bpf_helpers") {
   ]
 }
 
-if (compile_seccomp_bpf_demo) {
-  # A demonstration program for the seccomp-bpf sandbox.
-  executable("seccomp_bpf_demo") {
+if (is_linux) {
+# The setuid sandbox for Linux.
+  executable("chrome_sandbox") {
     sources = [
-      "seccomp-bpf/demo.cc",
+      "suid/common/sandbox.h",
+      "suid/common/suid_unsafe_environment_variables.h",
+      "suid/process_util.h",
+      "suid/process_util_linux.c",
+      "suid/sandbox.c",
     ]
-    deps = [
-      ":seccomp_bpf",
+
+    cflags = [
+      # For ULLONG_MAX
+      "-std=gnu99",
+      # These files have a suspicious comparison.
+      # TODO fix this and re-enable this warning.
+      "-Wno-sign-compare",
     ]
   }
 }
 
-# The setuid sandbox for Linux.
-executable("chrome_sandbox") {
-  sources = [
-    "suid/common/sandbox.h",
-    "suid/common/suid_unsafe_environment_variables.h",
-    "suid/linux_util.c",
-    "suid/linux_util.h",
-    "suid/process_util.h",
-    "suid/process_util_linux.c",
-    "suid/sandbox.c",
-  ]
-
-  cflags = [
-    # For ULLONG_MAX
-    "-std=gnu99",
-    # These files have a suspicious comparison.
-    # TODO fix this and re-enable this warning.
-    "-Wno-sign-compare",
-  ]
-}
-
 component("sandbox_services") {
   sources = [
-    "services/broker_process.cc",
-    "services/broker_process.h",
     "services/init_process_reaper.cc",
     "services/init_process_reaper.h",
     "services/scoped_process.cc",
@@ -222,6 +229,15 @@ component("sandbox_services") {
     "services/thread_helpers.h",
     "services/yama.h",
     "services/yama.cc",
+    "syscall_broker/broker_client.cc",
+    "syscall_broker/broker_client.h",
+    "syscall_broker/broker_common.h",
+    "syscall_broker/broker_host.cc",
+    "syscall_broker/broker_host.h",
+    "syscall_broker/broker_policy.cc",
+    "syscall_broker/broker_policy.h",
+    "syscall_broker/broker_process.cc",
+    "syscall_broker/broker_process.h",
   ]
 
   defines = [ "SANDBOX_IMPLEMENTATION" ]
@@ -243,10 +259,12 @@ component("sandbox_services") {
 source_set("sandbox_services_headers") {
   sources = [
     "services/android_arm_ucontext.h",
+    "services/android_arm64_ucontext.h",
     "services/android_futex.h",
     "services/android_ucontext.h",
     "services/android_i386_ucontext.h",
     "services/arm_linux_syscalls.h",
+    "services/arm64_linux_syscalls.h",
     "services/linux_syscalls.h",
     "services/x86_32_linux_syscalls.h",
     "services/x86_64_linux_syscalls.h",
@@ -264,19 +282,21 @@ source_set("libc_urandom_override") {
   ]
 }
 
-component("suid_sandbox_client") {
-  sources = [
-    "suid/common/sandbox.h",
-    "suid/common/suid_unsafe_environment_variables.h",
-    "suid/client/setuid_sandbox_client.cc",
-    "suid/client/setuid_sandbox_client.h",
-  ]
-  defines = [ "SANDBOX_IMPLEMENTATION" ]
+if (compile_suid_client) {
+  component("suid_sandbox_client") {
+    sources = [
+      "suid/common/sandbox.h",
+      "suid/common/suid_unsafe_environment_variables.h",
+      "suid/client/setuid_sandbox_client.cc",
+      "suid/client/setuid_sandbox_client.h",
+    ]
+    defines = [ "SANDBOX_IMPLEMENTATION" ]
 
-  deps = [
-    ":sandbox_services",
-    "//base",
-  ]
+    deps = [
+      ":sandbox_services",
+      "//base",
+    ]
+  }
 }
 
 if (is_android) {

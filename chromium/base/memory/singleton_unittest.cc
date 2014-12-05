@@ -4,7 +4,6 @@
 
 #include "base/at_exit.h"
 #include "base/memory/singleton.h"
-#include "base/path_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
@@ -154,7 +153,7 @@ class SingletonTest : public testing::Test {
  public:
   SingletonTest() {}
 
-  virtual void SetUp() OVERRIDE {
+  virtual void SetUp() override {
     non_leak_called_ = false;
     leaky_called_ = false;
     static_called_ = false;

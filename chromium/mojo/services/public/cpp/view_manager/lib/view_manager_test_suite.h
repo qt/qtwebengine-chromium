@@ -8,21 +8,19 @@
 #include "base/test/test_suite.h"
 
 namespace mojo {
-namespace view_manager {
 
 class ViewManagerTestSuite : public base::TestSuite {
  public:
   ViewManagerTestSuite(int argc, char** argv);
-  virtual ~ViewManagerTestSuite();
+  ~ViewManagerTestSuite() override;
 
  protected:
-  virtual void Initialize() OVERRIDE;
+  void Initialize() override;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ViewManagerTestSuite);
 };
 
-}  // namespace view_manager
 }  // namespace mojo
 
 #endif  // MOJO_SERVICES_PUBLIC_CPP_VIEW_MANAGER_LIB_VIEW_MANAGER_TEST_SUITE_H_

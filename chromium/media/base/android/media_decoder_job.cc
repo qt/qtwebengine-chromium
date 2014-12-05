@@ -24,7 +24,8 @@ MediaDecoderJob::MediaDecoderJob(
     const scoped_refptr<base::SingleThreadTaskRunner>& decoder_task_runner,
     const base::Closure& request_data_cb,
     const base::Closure& config_changed_cb)
-    : ui_task_runner_(base::MessageLoopProxy::current()),
+    : need_to_reconfig_decoder_job_(false),
+      ui_task_runner_(base::MessageLoopProxy::current()),
       decoder_task_runner_(decoder_task_runner),
       needs_flush_(false),
       input_eos_encountered_(false),
@@ -116,16 +117,10 @@ bool MediaDecoderJob::Decode(
   DCHECK(decode_cb_.is_null());
   DCHECK(data_received_cb_.is_null());
   DCHECK(ui_task_runner_->BelongsToCurrentThread());
-
   if (!media_codec_bridge_ || need_to_reconfig_decoder_job_) {
+    if (drain_decoder_)
+      OnDecoderDrained();
     need_to_reconfig_decoder_job_ = !CreateMediaCodecBridge();
-    if (drain_decoder_) {
-      // Decoder has been recreated, stop draining.
-      drain_decoder_ = false;
-      input_eos_encountered_ = false;
-      output_eos_encountered_ = false;
-      access_unit_index_[current_demuxer_data_index_]++;
-    }
     skip_eos_enqueue_ = true;
     if (need_to_reconfig_decoder_job_)
       return false;
@@ -201,13 +196,6 @@ void MediaDecoderJob::ReleaseDecoderResources() {
 
   // Release |media_codec_bridge_| once decoding is completed.
   release_resources_pending_ = true;
-}
-
-bool MediaDecoderJob::SetDemuxerConfigs(const DemuxerConfigs& configs) {
-  bool config_changed = AreDemuxerConfigsChanged(configs);
-  if (config_changed)
-    UpdateDemuxerConfigs(configs);
-  return config_changed;
 }
 
 base::android::ScopedJavaLocalRef<jobject> MediaDecoderJob::GetMediaCrypto() {
@@ -335,19 +323,18 @@ void MediaDecoderJob::DecodeCurrentAccessUnit(
     int index = CurrentReceivedDataChunkIndex();
     const DemuxerConfigs& configs = received_data_[index].demuxer_configs[0];
     bool reconfigure_needed = IsCodecReconfigureNeeded(configs);
-    // TODO(qinmin): |config_changed_cb_| should be run after draining finishes.
-    // http://crbug.com/381975.
-    if (SetDemuxerConfigs(configs))
-      config_changed_cb_.Run();
+    SetDemuxerConfigs(configs);
     if (!drain_decoder_) {
       // If we haven't decoded any data yet, just skip the current access unit
       // and request the MediaCodec to be recreated on next Decode().
       if (skip_eos_enqueue_ || !reconfigure_needed) {
         need_to_reconfig_decoder_job_ =
             need_to_reconfig_decoder_job_ || reconfigure_needed;
+        // Report MEDIA_CODEC_OK status so decoder will continue decoding and
+        // MEDIA_CODEC_OUTPUT_FORMAT_CHANGED status will come later.
         ui_task_runner_->PostTask(FROM_HERE, base::Bind(
             &MediaDecoderJob::OnDecodeCompleted, base::Unretained(this),
-            MEDIA_CODEC_OUTPUT_FORMAT_CHANGED, kNoTimestamp(), kNoTimestamp()));
+            MEDIA_CODEC_OK, kNoTimestamp(), kNoTimestamp()));
         return;
       }
       // Start draining the decoder so that all the remaining frames are
@@ -430,20 +417,31 @@ void MediaDecoderJob::DecodeInternal(
   base::TimeDelta timeout = base::TimeDelta::FromMilliseconds(
       kMediaCodecTimeoutInMilliseconds);
 
-  MediaCodecStatus status =
-      media_codec_bridge_->DequeueOutputBuffer(timeout,
-                                               &buffer_index,
-                                               &offset,
-                                               &size,
-                                               &presentation_timestamp,
-                                               &output_eos_encountered_,
-                                               NULL);
-
-  if (status != MEDIA_CODEC_OK) {
+  MediaCodecStatus status = MEDIA_CODEC_OK;
+  bool has_format_change = false;
+  // Dequeue the output buffer until a MEDIA_CODEC_OK, MEDIA_CODEC_ERROR or
+  // MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER is received.
+  do {
+    status = media_codec_bridge_->DequeueOutputBuffer(
+        timeout,
+        &buffer_index,
+        &offset,
+        &size,
+        &presentation_timestamp,
+        &output_eos_encountered_,
+        NULL);
     if (status == MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED &&
         !media_codec_bridge_->GetOutputBuffers()) {
       status = MEDIA_CODEC_ERROR;
+    } else if (status == MEDIA_CODEC_OUTPUT_FORMAT_CHANGED) {
+      // TODO(qinmin): instead of waiting for the next output buffer to be
+      // dequeued, post a task on the UI thread to signal the format change.
+      has_format_change = true;
     }
+  } while (status != MEDIA_CODEC_OK && status != MEDIA_CODEC_ERROR &&
+           status != MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER);
+
+  if (status != MEDIA_CODEC_OK) {
     callback.Run(status, kNoTimestamp(), kNoTimestamp());
     return;
   }
@@ -451,6 +449,8 @@ void MediaDecoderJob::DecodeInternal(
   // TODO(xhwang/qinmin): This logic is correct but strange. Clean it up.
   if (output_eos_encountered_)
     status = MEDIA_CODEC_OUTPUT_END_OF_STREAM;
+  else if (has_format_change)
+    status = MEDIA_CODEC_OUTPUT_FORMAT_CHANGED;
 
   bool render_output  = presentation_timestamp >= preroll_timestamp_ &&
       (status != MEDIA_CODEC_OUTPUT_END_OF_STREAM || size != 0u);
@@ -511,13 +511,14 @@ void MediaDecoderJob::OnDecodeCompleted(
   DCHECK(!decode_cb_.is_null());
 
   // If output was queued for rendering, then we have completed prerolling.
-  if (current_presentation_timestamp != kNoTimestamp())
+  if (current_presentation_timestamp != kNoTimestamp() ||
+      status == MEDIA_CODEC_OUTPUT_END_OF_STREAM) {
     prerolling_ = false;
+  }
 
   switch (status) {
     case MEDIA_CODEC_OK:
     case MEDIA_CODEC_DEQUEUE_OUTPUT_AGAIN_LATER:
-    case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
     case MEDIA_CODEC_OUTPUT_FORMAT_CHANGED:
     case MEDIA_CODEC_OUTPUT_END_OF_STREAM:
       if (!input_eos_encountered_) {
@@ -534,10 +535,20 @@ void MediaDecoderJob::OnDecodeCompleted(
     case MEDIA_CODEC_ERROR:
       // Do nothing.
       break;
+
+    case MEDIA_CODEC_OUTPUT_BUFFERS_CHANGED:
+      DCHECK(false) << "Invalid output status";
+      break;
   };
 
   if (status == MEDIA_CODEC_OUTPUT_END_OF_STREAM && drain_decoder_) {
     OnDecoderDrained();
+    status = MEDIA_CODEC_OK;
+  }
+
+  if (status == MEDIA_CODEC_OUTPUT_FORMAT_CHANGED) {
+    if (UpdateOutputFormat())
+      config_changed_cb_.Run();
     status = MEDIA_CODEC_OK;
   }
 
@@ -642,12 +653,16 @@ bool MediaDecoderJob::IsCodecReconfigureNeeded(
   return true;
 }
 
+bool MediaDecoderJob::UpdateOutputFormat() {
+  return false;
+}
+
 void MediaDecoderJob::ReleaseMediaCodecBridge() {
   if (!media_codec_bridge_)
     return;
 
   media_codec_bridge_.reset();
-  OnMediaCodecBridgeReleased();
+  input_buf_index_ = -1;
 }
 
 }  // namespace media

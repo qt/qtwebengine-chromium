@@ -33,25 +33,31 @@
 
 #include "core/inspector/InspectorLayerTreeAgent.h"
 
+#include "core/dom/Document.h"
+#include "core/frame/FrameHost.h"
 #include "core/frame/LocalFrame.h"
+#include "core/frame/Settings.h"
 #include "core/inspector/IdentifiersFactory.h"
 #include "core/inspector/InspectorNodeIds.h"
 #include "core/inspector/InspectorState.h"
 #include "core/inspector/InstrumentingAgents.h"
 #include "core/loader/DocumentLoader.h"
 #include "core/page/Page.h"
+#include "core/rendering/RenderPart.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/compositing/CompositedLayerMapping.h"
 #include "core/rendering/compositing/RenderLayerCompositor.h"
 #include "platform/geometry/IntRect.h"
 #include "platform/graphics/CompositingReasons.h"
 #include "platform/graphics/GraphicsContextRecorder.h"
+#include "platform/image-encoders/skia/PNGImageEncoder.h"
 #include "platform/transforms/TransformationMatrix.h"
 #include "public/platform/WebFloatPoint.h"
 #include "public/platform/WebLayer.h"
 #include "wtf/text/Base64.h"
+#include "wtf/text/StringBuilder.h"
 
-namespace WebCore {
+namespace blink {
 
 unsigned InspectorLayerTreeAgent::s_lastSnapshotId;
 
@@ -148,6 +154,12 @@ InspectorLayerTreeAgent::~InspectorLayerTreeAgent()
 {
 }
 
+void InspectorLayerTreeAgent::trace(Visitor* visitor)
+{
+    visitor->trace(m_page);
+    InspectorBaseAgent::trace(visitor);
+}
+
 void InspectorLayerTreeAgent::setFrontend(InspectorFrontend* frontend)
 {
     m_frontend = frontend->layertree();
@@ -211,7 +223,7 @@ PassRefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > InspectorLayerTre
     LayerIdToNodeIdMap layerIdToNodeIdMap;
     RefPtr<TypeBuilder::Array<TypeBuilder::LayerTree::Layer> > layers = TypeBuilder::Array<TypeBuilder::LayerTree::Layer>::create();
     buildLayerIdToNodeIdMap(compositor->rootRenderLayer(), layerIdToNodeIdMap);
-    gatherGraphicsLayers(compositor->rootGraphicsLayer(), layerIdToNodeIdMap, layers);
+    gatherGraphicsLayers(rootGraphicsLayer(), layerIdToNodeIdMap, layers);
     return layers.release();
 }
 
@@ -227,7 +239,7 @@ void InspectorLayerTreeAgent::buildLayerIdToNodeIdMap(RenderLayer* root, LayerId
         buildLayerIdToNodeIdMap(child, layerIdToNodeIdMap);
     if (!root->renderer()->isRenderIFrame())
         return;
-    FrameView* childFrameView = toFrameView(toRenderWidget(root->renderer())->widget());
+    FrameView* childFrameView = toFrameView(toRenderPart(root->renderer())->widget());
     if (RenderView* childRenderView = childFrameView->renderView()) {
         if (RenderLayerCompositor* childCompositor = childRenderView->compositor())
             buildLayerIdToNodeIdMap(childCompositor->rootRenderLayer(), layerIdToNodeIdMap);
@@ -256,6 +268,14 @@ RenderLayerCompositor* InspectorLayerTreeAgent::renderLayerCompositor()
     RenderView* renderView = m_page->deprecatedLocalMainFrame()->contentRenderer();
     RenderLayerCompositor* compositor = renderView ? renderView->compositor() : 0;
     return compositor;
+}
+
+GraphicsLayer* InspectorLayerTreeAgent::rootGraphicsLayer()
+{
+    if (m_page->settings().pinchVirtualViewportEnabled())
+        return m_page->frameHost().pinchViewport().rootGraphicsLayer();
+
+    return renderLayerCompositor()->rootGraphicsLayer();
 }
 
 static GraphicsLayer* findLayerById(GraphicsLayer* root, int layerId)
@@ -287,7 +307,7 @@ GraphicsLayer* InspectorLayerTreeAgent::layerById(ErrorString* errorString, cons
         return 0;
     }
 
-    GraphicsLayer* result = findLayerById(compositor->rootGraphicsLayer(), id);
+    GraphicsLayer* result = findLayerById(rootGraphicsLayer(), id);
     if (!result)
         *errorString = "No layer matching given id found";
     return result;
@@ -300,12 +320,12 @@ void InspectorLayerTreeAgent::compositingReasons(ErrorString* errorString, const
         return;
     CompositingReasons reasonsBitmask = graphicsLayer->compositingReasons();
     reasonStrings = TypeBuilder::Array<String>::create();
-    for (size_t i = 0; i < WTF_ARRAY_LENGTH(compositingReasonStringMap); ++i) {
-        if (!(reasonsBitmask & compositingReasonStringMap[i].reason))
+    for (size_t i = 0; i < kNumberOfCompositingReasons; ++i) {
+        if (!(reasonsBitmask & kCompositingReasonStringMap[i].reason))
             continue;
-        reasonStrings->addItem(compositingReasonStringMap[i].shortName);
+        reasonStrings->addItem(kCompositingReasonStringMap[i].shortName);
 #ifndef _NDEBUG
-        reasonsBitmask &= ~compositingReasonStringMap[i].reason;
+        reasonsBitmask &= ~kCompositingReasonStringMap[i].reason;
 #endif
     }
     ASSERT(!reasonsBitmask);
@@ -364,13 +384,21 @@ const GraphicsContextSnapshot* InspectorLayerTreeAgent::snapshotById(ErrorString
     return it->value.get();
 }
 
-void InspectorLayerTreeAgent::replaySnapshot(ErrorString* errorString, const String& snapshotId, const int* fromStep, const int* toStep, String* dataURL)
+void InspectorLayerTreeAgent::replaySnapshot(ErrorString* errorString, const String& snapshotId, const int* fromStep, const int* toStep, const double* scale, String* dataURL)
 {
     const GraphicsContextSnapshot* snapshot = snapshotById(errorString, snapshotId);
     if (!snapshot)
         return;
-    OwnPtr<ImageBuffer> imageBuffer = snapshot->replay(fromStep ? *fromStep : 0, toStep ? *toStep : 0);
-    *dataURL = imageBuffer->toDataURL("image/png");
+    OwnPtr<Vector<char> > base64Data = snapshot->replay(fromStep ? *fromStep : 0, toStep ? *toStep : 0, scale ? *scale : 1.0);
+    if (!base64Data) {
+        *errorString = "Image encoding failed";
+        return;
+    }
+    StringBuilder url;
+    url.appendLiteral("data:image/png;base64,");
+    url.reserveCapacity(url.length() + base64Data->size());
+    url.append(base64Data->begin(), base64Data->size());
+    *dataURL = url.toString();
 }
 
 void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const String& snapshotId, const int* minRepeatCount, const double* minDuration, RefPtr<TypeBuilder::Array<TypeBuilder::Array<double> > >& outTimings)
@@ -383,8 +411,8 @@ void InspectorLayerTreeAgent::profileSnapshot(ErrorString* errorString, const St
     for (size_t i = 0; i < timings->size(); ++i) {
         const Vector<double>& row = (*timings)[i];
         RefPtr<TypeBuilder::Array<double> > outRow = TypeBuilder::Array<double>::create();
-        for (size_t j = 1; j < row.size(); ++j)
-            outRow->addItem(row[j] - row[j - 1]);
+        for (size_t j = 0; j < row.size(); ++j)
+            outRow->addItem(row[j]);
         outTimings->addItem(outRow.release());
     }
 }
@@ -411,4 +439,4 @@ void InspectorLayerTreeAgent::didRemovePageOverlay(const GraphicsLayer* layer)
 }
 
 
-} // namespace WebCore
+} // namespace blink

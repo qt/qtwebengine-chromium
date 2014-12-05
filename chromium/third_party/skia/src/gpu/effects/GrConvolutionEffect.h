@@ -22,35 +22,33 @@ class GrConvolutionEffect : public Gr1DKernelEffect {
 public:
 
     /// Convolve with an arbitrary user-specified kernel
-    static GrEffectRef* Create(GrTexture* tex,
-                               Direction dir,
-                               int halfWidth,
-                               const float* kernel,
-                               bool useBounds,
-                               float bounds[2]) {
-        AutoEffectUnref effect(SkNEW_ARGS(GrConvolutionEffect, (tex,
-                                                                dir,
-                                                                halfWidth,
-                                                                kernel,
-                                                                useBounds,
-                                                                bounds)));
-        return CreateEffectRef(effect);
+    static GrFragmentProcessor* Create(GrTexture* tex,
+                                       Direction dir,
+                                       int halfWidth,
+                                       const float* kernel,
+                                       bool useBounds,
+                                       float bounds[2]) {
+        return SkNEW_ARGS(GrConvolutionEffect, (tex,
+                                                dir,
+                                                halfWidth,
+                                                kernel,
+                                                useBounds,
+                                                bounds));
     }
 
     /// Convolve with a Gaussian kernel
-    static GrEffectRef* CreateGaussian(GrTexture* tex,
-                                       Direction dir,
-                                       int halfWidth,
-                                       float gaussianSigma,
-                                       bool useBounds,
-                                       float bounds[2]) {
-        AutoEffectUnref effect(SkNEW_ARGS(GrConvolutionEffect, (tex,
-                                                                dir,
-                                                                halfWidth,
-                                                                gaussianSigma,
-                                                                useBounds,
-                                                                bounds)));
-        return CreateEffectRef(effect);
+    static GrFragmentProcessor* CreateGaussian(GrTexture* tex,
+                                               Direction dir,
+                                               int halfWidth,
+                                               float gaussianSigma,
+                                               bool useBounds,
+                                               float bounds[2]) {
+        return SkNEW_ARGS(GrConvolutionEffect, (tex,
+                                                dir,
+                                                halfWidth,
+                                                gaussianSigma,
+                                                useBounds,
+                                                bounds));
     }
 
     virtual ~GrConvolutionEffect();
@@ -62,15 +60,9 @@ public:
 
     static const char* Name() { return "Convolution"; }
 
-    typedef GrGLConvolutionEffect GLEffect;
+    typedef GrGLConvolutionEffect GLProcessor;
 
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
-
-    virtual void getConstantColorComponents(GrColor*, uint32_t* validFlags) const {
-        // If the texture was opaque we could know that the output color if we knew the sum of the
-        // kernel values.
-        *validFlags = 0;
-    }
+    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
 
     enum {
         // This was decided based on the min allowed value for the max texture
@@ -103,9 +95,15 @@ private:
                         bool useBounds,
                         float bounds[2]);
 
-    virtual bool onIsEqual(const GrEffect&) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrFragmentProcessor&) const SK_OVERRIDE;
 
-    GR_DECLARE_EFFECT_TEST;
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const {
+        // If the texture was opaque we could know that the output color if we knew the sum of the
+        // kernel values.
+        inout->mulByUnknownColor();
+    }
+
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 
     typedef Gr1DKernelEffect INHERITED;
 };

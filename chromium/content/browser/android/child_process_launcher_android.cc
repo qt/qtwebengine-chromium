@@ -18,7 +18,7 @@
 #include "content/public/common/content_switches.h"
 #include "jni/ChildProcessLauncher_jni.h"
 #include "media/base/android/media_player_android.h"
-#include "ui/gl/android/scoped_java_surface.h"
+#include "ui/gl/android/surface_texture.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ToJavaArrayOfStrings;
@@ -100,9 +100,9 @@ static void OnChildProcessStarted(JNIEnv*,
 }
 
 void StartChildProcess(
-    const CommandLine::StringVector& argv,
+    const base::CommandLine::StringVector& argv,
     int child_process_id,
-    const std::vector<content::FileDescriptorInfo>& files_to_register,
+    scoped_ptr<content::FileDescriptorInfo> files_to_register,
     const StartChildProcessCallback& callback) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
@@ -110,7 +110,7 @@ void StartChildProcess(
   // Create the Command line String[]
   ScopedJavaLocalRef<jobjectArray> j_argv = ToJavaArrayOfStrings(env, argv);
 
-  size_t file_count = files_to_register.size();
+  size_t file_count = files_to_register->GetMappingSize();
   DCHECK(file_count > 0);
 
   ScopedJavaLocalRef<jintArray> j_file_ids(env, env->NewIntArray(file_count));
@@ -128,10 +128,14 @@ void StartChildProcess(
       env->GetBooleanArrayElements(j_file_auto_close.obj(), NULL);
   base::android::CheckException(env);
   for (size_t i = 0; i < file_count; ++i) {
-    const content::FileDescriptorInfo& fd_info = files_to_register[i];
-    file_ids[i] = fd_info.id;
-    file_fds[i] = fd_info.fd.fd;
-    file_auto_close[i] = fd_info.fd.auto_close;
+    // Owners of passed descriptors can outlive this function and we don't know
+    // when it is safe to close() them. So we pass dup()-ed FD and
+    // let ChildProcessLauncher in java take care of their lifetimes.
+    // TODO(morrita): Drop FileDescriptorInfo.mAutoClose on Java side.
+    file_auto_close[i] = true;  // This indicates ownership transfer.
+    file_ids[i] = files_to_register->GetIDAt(i);
+    file_fds[i] = dup(files_to_register->GetFDAt(i));
+    PCHECK(0 <= file_fds[i]);
   }
   env->ReleaseIntArrayElements(j_file_ids.obj(), file_ids, 0);
   env->ReleaseIntArrayElements(j_file_fds.obj(), file_fds, 0);
@@ -193,25 +197,37 @@ void UnregisterViewSurface(int surface_id) {
   Java_ChildProcessLauncher_unregisterViewSurface(env, surface_id);
 }
 
-void RegisterChildProcessSurfaceTexture(int surface_texture_id,
-                                        int child_process_id,
-                                        jobject j_surface_texture) {
+void CreateSurfaceTextureSurface(int surface_texture_id,
+                                 int client_id,
+                                 gfx::SurfaceTexture* surface_texture) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
-  Java_ChildProcessLauncher_registerSurfaceTexture(
-      env, surface_texture_id, child_process_id, j_surface_texture);
+  Java_ChildProcessLauncher_createSurfaceTextureSurface(
+      env,
+      surface_texture_id,
+      client_id,
+      surface_texture->j_surface_texture().obj());
 }
 
-void UnregisterChildProcessSurfaceTexture(int surface_texture_id,
-                                          int child_process_id) {
+void DestroySurfaceTextureSurface(int surface_texture_id, int client_id) {
   JNIEnv* env = AttachCurrentThread();
   DCHECK(env);
-  Java_ChildProcessLauncher_unregisterSurfaceTexture(
-      env, surface_texture_id, child_process_id);
+  Java_ChildProcessLauncher_destroySurfaceTextureSurface(
+      env, surface_texture_id, client_id);
+}
+
+gfx::ScopedJavaSurface GetSurfaceTextureSurface(int surface_texture_id,
+                                                int client_id) {
+  JNIEnv* env = AttachCurrentThread();
+  DCHECK(env);
+  return gfx::ScopedJavaSurface::AcquireExternalSurface(
+      Java_ChildProcessLauncher_getSurfaceTextureSurface(
+          env, surface_texture_id, client_id).obj());
 }
 
 jboolean IsSingleProcess(JNIEnv* env, jclass clazz) {
-  return CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess);
+  return base::CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kSingleProcess);
 }
 
 bool RegisterChildProcessLauncher(JNIEnv* env) {

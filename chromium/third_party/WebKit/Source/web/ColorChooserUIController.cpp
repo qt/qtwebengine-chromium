@@ -26,7 +26,7 @@
 #include "config.h"
 #include "web/ColorChooserUIController.h"
 
-#include "platform/ColorChooserClient.h"
+#include "core/html/forms/ColorChooserClient.h"
 #include "platform/graphics/Color.h"
 #include "public/platform/WebColor.h"
 #include "public/web/WebColorChooser.h"
@@ -34,19 +34,27 @@
 #include "public/web/WebFrameClient.h"
 #include "web/WebLocalFrameImpl.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 
 ColorChooserUIController::ColorChooserUIController(LocalFrame* frame, ColorChooserClient* client)
-    : m_frame(frame)
-    , m_client(client)
+    : m_client(client)
+    , m_frame(frame)
 {
 }
 
 ColorChooserUIController::~ColorChooserUIController()
 {
+    // The client cannot be accessed when finalizing.
+    m_client = nullptr;
+    endChooser();
+}
+
+void ColorChooserUIController::trace(Visitor* visitor)
+{
+    visitor->trace(m_frame);
+    visitor->trace(m_client);
+    ColorChooser::trace(visitor);
 }
 
 void ColorChooserUIController::openUI()
@@ -66,6 +74,11 @@ void ColorChooserUIController::endChooser()
         m_chooser->endChooser();
 }
 
+AXObject* ColorChooserUIController::rootAXObject()
+{
+    return 0;
+}
+
 void ColorChooserUIController::didChooseColor(const WebColor& color)
 {
     ASSERT(m_client);
@@ -74,9 +87,9 @@ void ColorChooserUIController::didChooseColor(const WebColor& color)
 
 void ColorChooserUIController::didEndChooser()
 {
-    ASSERT(m_client);
     m_chooser = nullptr;
-    m_client->didEndChooser();
+    if (m_client)
+        m_client->didEndChooser();
 }
 
 void ColorChooserUIController::openColorChooser()

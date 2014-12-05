@@ -33,11 +33,12 @@
 
 #include "core/svg/SVGGraphicsElement.h"
 
-namespace WebCore {
+namespace blink {
 
 class SVGPointTearOff;
 
 class SVGGeometryElement : public SVGGraphicsElement {
+    DEFINE_WRAPPERTYPEINFO();
 public:
     bool isPointInFill(PassRefPtr<SVGPointTearOff>) const;
     bool isPointInStroke(PassRefPtr<SVGPointTearOff>) const;
@@ -46,6 +47,6 @@ protected:
     SVGGeometryElement(const QualifiedName&, Document&, ConstructionType = CreateSVGElement);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // SVGGraphicsElement_h

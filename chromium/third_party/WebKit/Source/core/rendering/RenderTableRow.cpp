@@ -26,8 +26,8 @@
 #include "core/rendering/RenderTableRow.h"
 
 #include "core/HTMLNames.h"
-#include "core/dom/Document.h"
 #include "core/fetch/ImageResource.h"
+#include "core/paint/TableRowPainter.h"
 #include "core/rendering/GraphicsContextAnnotator.h"
 #include "core/rendering/HitTestResult.h"
 #include "core/rendering/PaintInfo.h"
@@ -36,7 +36,7 @@
 #include "core/rendering/SubtreeLayoutScope.h"
 #include "core/rendering/style/StyleInheritedData.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -46,6 +46,12 @@ RenderTableRow::RenderTableRow(Element* element)
 {
     // init RenderObject attributes
     setInline(false);   // our object is not Inline
+}
+
+void RenderTableRow::trace(Visitor* visitor)
+{
+    visitor->trace(m_children);
+    RenderBox::trace(visitor);
 }
 
 void RenderTableRow::willBeRemovedFromTree()
@@ -71,7 +77,7 @@ void RenderTableRow::styleDidChange(StyleDifference diff, const RenderStyle* old
     propagateStyleToAnonymousChildren();
 
     if (section() && oldStyle && style()->logicalHeight() != oldStyle->logicalHeight())
-        section()->rowLogicalHeightChanged(rowIndex());
+        section()->rowLogicalHeightChanged(this);
 
     // If border was changed, notify table.
     if (parent()) {
@@ -175,20 +181,16 @@ void RenderTableRow::layout()
 
     m_overflow.clear();
     addVisualEffectOverflow();
+    // We do not call addOverflowFromCell here. The cell are laid out to be
+    // measured above and will be sized correctly in a follow-up phase.
 
     // We only ever need to issue paint invalidations if our cells didn't, which means that they didn't need
     // layout, so we know that our bounds didn't change. This code is just making up for
     // the fact that we did not invalidate paints in setStyle() because we had a layout hint.
-    // We cannot call repaint() because our clippedOverflowRectForPaintInvalidation() is taken from the
-    // parent table, and being mid-layout, that is invalid. Instead, we issue paint invalidations for our cells.
-    if (selfNeedsLayout() && checkForPaintInvalidation()) {
+    if (selfNeedsLayout()) {
         for (RenderTableCell* cell = firstCell(); cell; cell = cell->nextCell()) {
-            if (RuntimeEnabledFeatures::repaintAfterLayoutEnabled()) {
-                // FIXME: Is this needed with Repaint After Layout?
-                cell->setShouldDoFullPaintInvalidationAfterLayout(true);
-            } else {
-                cell->paintInvalidationForWholeRenderer();
-            }
+            // FIXME: Is this needed when issuing paint invalidations after layout?
+            cell->setShouldDoFullPaintInvalidation();
         }
     }
 
@@ -218,33 +220,15 @@ bool RenderTableRow::nodeAtPoint(const HitTestRequest& request, HitTestResult& r
     return false;
 }
 
-void RenderTableRow::paintOutlineForRowIfNeeded(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
-{
-    LayoutPoint adjustedPaintOffset = paintOffset + location();
-    PaintPhase paintPhase = paintInfo.phase;
-    if ((paintPhase == PaintPhaseOutline || paintPhase == PaintPhaseSelfOutline) && style()->visibility() == VISIBLE)
-        paintOutline(paintInfo, LayoutRect(adjustedPaintOffset, size()));
-}
-
 void RenderTableRow::paint(PaintInfo& paintInfo, const LayoutPoint& paintOffset)
 {
-    ASSERT(hasSelfPaintingLayer());
-    ANNOTATE_GRAPHICS_CONTEXT(paintInfo, this);
-
-    paintOutlineForRowIfNeeded(paintInfo, paintOffset);
-    for (RenderTableCell* cell = firstCell(); cell; cell = cell->nextCell()) {
-        // Paint the row background behind the cell.
-        if (paintInfo.phase == PaintPhaseBlockBackground || paintInfo.phase == PaintPhaseChildBlockBackground)
-            cell->paintBackgroundsBehindCell(paintInfo, paintOffset, this);
-        if (!cell->hasSelfPaintingLayer())
-            cell->paint(paintInfo, paintOffset);
-    }
+    TableRowPainter(*this).paint(paintInfo, paintOffset);
 }
 
 void RenderTableRow::imageChanged(WrappedImagePtr, const IntRect*)
 {
-    // FIXME: Examine cells and repaint only the rect the image paints in.
-    paintInvalidationForWholeRenderer();
+    // FIXME: Examine cells and issue paint invalidations of only the rect the image paints in.
+    setShouldDoFullPaintInvalidation();
 }
 
 RenderTableRow* RenderTableRow::createAnonymous(Document* document)
@@ -262,4 +246,22 @@ RenderTableRow* RenderTableRow::createAnonymousWithParentRenderer(const RenderOb
     return newRow;
 }
 
-} // namespace WebCore
+void RenderTableRow::addOverflowFromCell(const RenderTableCell* cell)
+{
+    // Non-row-spanning-cells don't create overflow (they are fully contained within this row).
+    if (cell->rowSpan() == 1)
+        return;
+
+    // Cells only generates visual overflow.
+    LayoutRect cellVisualOverflowRect = cell->visualOverflowRectForPropagation(style());
+
+    // The cell and the row share the section's coordinate system. However
+    // the visual overflow should be determined in the coordinate system of
+    // the row, that's why we shift it below.
+    LayoutUnit cellOffsetLogicalTopDifference = cell->location().y() - location().y();
+    cellVisualOverflowRect.move(0, cellOffsetLogicalTopDifference);
+
+    addVisualOverflow(cellVisualOverflowRect);
+}
+
+} // namespace blink

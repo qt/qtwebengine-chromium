@@ -40,18 +40,18 @@ namespace blink {
 class WebThreadedDataReceiver;
 }
 
-namespace WebCore {
+namespace blink {
 
 class Resource;
 class KURL;
 class ResourceError;
-class ResourceResponse;
 class ResourceLoaderHost;
 
-class ResourceLoader FINAL : public RefCounted<ResourceLoader>, protected blink::WebURLLoaderClient {
+class ResourceLoader final : public RefCountedWillBeGarbageCollectedFinalized<ResourceLoader>, protected WebURLLoaderClient {
 public:
-    static PassRefPtr<ResourceLoader> create(ResourceLoaderHost*, Resource*, const ResourceRequest&, const ResourceLoaderOptions&);
+    static PassRefPtrWillBeRawPtr<ResourceLoader> create(ResourceLoaderHost*, Resource*, const ResourceRequest&, const ResourceLoaderOptions&);
     virtual ~ResourceLoader();
+    void trace(Visitor*);
 
     void start();
     void changeToSynchronous();
@@ -73,17 +73,17 @@ public:
     void didChangePriority(ResourceLoadPriority, int intraPriorityValue);
 
     // WebURLLoaderClient
-    virtual void willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&, const blink::WebURLResponse& redirectResponse) OVERRIDE;
-    virtual void didSendData(blink::WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) OVERRIDE;
-    virtual void didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&) OVERRIDE;
-    virtual void didReceiveData(blink::WebURLLoader*, const char*, int, int encodedDataLength) OVERRIDE;
-    virtual void didReceiveCachedMetadata(blink::WebURLLoader*, const char* data, int length) OVERRIDE;
-    virtual void didFinishLoading(blink::WebURLLoader*, double finishTime, int64 encodedDataLength) OVERRIDE;
-    virtual void didFail(blink::WebURLLoader*, const blink::WebURLError&) OVERRIDE;
-    virtual void didDownloadData(blink::WebURLLoader*, int, int) OVERRIDE;
+    void willSendRequest(blink::WebURLLoader*, blink::WebURLRequest&, const blink::WebURLResponse& redirectResponse) override;
+    void didSendData(blink::WebURLLoader*, unsigned long long bytesSent, unsigned long long totalBytesToBeSent) override;
+    void didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&) override;
+    void didReceiveResponse(blink::WebURLLoader*, const blink::WebURLResponse&, WebDataConsumerHandle*) override;
+    void didReceiveData(blink::WebURLLoader*, const char*, int, int encodedDataLength) override;
+    void didReceiveCachedMetadata(blink::WebURLLoader*, const char* data, int length) override;
+    void didFinishLoading(blink::WebURLLoader*, double finishTime, int64_t encodedDataLength) override;
+    void didFail(blink::WebURLLoader*, const blink::WebURLError&) override;
+    void didDownloadData(blink::WebURLLoader*, int, int) override;
 
     const KURL& url() const { return m_request.url(); }
-    bool shouldSniffContent() const { return m_options.sniffContent == SniffContent; }
     bool isLoadedBy(ResourceLoaderHost*) const;
 
     bool reachedTerminalState() const { return m_state == Terminated; }
@@ -109,10 +109,12 @@ private:
 
     bool responseNeedsAccessControlCheck() const;
 
+    void didComplete();
+
     ResourceRequest& applyOptions(ResourceRequest&) const;
 
     OwnPtr<blink::WebURLLoader> m_loader;
-    RefPtrWillBePersistent<ResourceLoaderHost> m_host;
+    RefPtrWillBeMember<ResourceLoaderHost> m_host;
 
     ResourceRequest m_request;
     ResourceRequest m_originalRequest; // Before redirects.
@@ -120,6 +122,7 @@ private:
     bool m_notifiedLoadComplete;
 
     bool m_defersLoading;
+    OwnPtr<ResourceRequest> m_fallbackRequestForServiceWorker;
     ResourceRequest m_deferredRequest;
     ResourceLoaderOptions m_options;
 
@@ -139,7 +142,7 @@ private:
         ConnectionStateFailed,
     };
 
-    Resource* m_resource;
+    RawPtrWillBeMember<Resource> m_resource;
     ResourceLoaderState m_state;
 
     // Used for sanity checking to make sure we don't experience illegal state

@@ -3,7 +3,8 @@
 // found in the LICENSE file.
 
 cr.define('options', function() {
-  var OptionsPage = options.OptionsPage;
+  var Page = cr.ui.pageManager.Page;
+  var PageManager = cr.ui.pageManager.PageManager;
 
   /**
    * ClearBrowserDataOverlay class
@@ -11,7 +12,7 @@ cr.define('options', function() {
    * @class
    */
   function ClearBrowserDataOverlay() {
-    OptionsPage.call(this, 'clearBrowserData',
+    Page.call(this, 'clearBrowserData',
                      loadTimeData.getString('clearBrowserDataOverlayTabTitle'),
                      'clear-browser-data-overlay');
   }
@@ -19,8 +20,8 @@ cr.define('options', function() {
   cr.addSingletonGetter(ClearBrowserDataOverlay);
 
   ClearBrowserDataOverlay.prototype = {
-    // Inherit ClearBrowserDataOverlay from OptionsPage.
-    __proto__: OptionsPage.prototype,
+    // Inherit ClearBrowserDataOverlay from Page.
+    __proto__: Page.prototype,
 
     /**
      * Whether deleting history and downloads is allowed.
@@ -47,12 +48,9 @@ cr.define('options', function() {
      */
     isInitializationComplete_: false,
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
-      // Call base class implementation to starts preference initialization.
-      OptionsPage.prototype.initializePage.call(this);
+      Page.prototype.initializePage.call(this);
 
       var f = this.updateStateOfControls_.bind(this);
       var types = ['browser.clear_data.browsing_history',
@@ -110,22 +108,21 @@ cr.define('options', function() {
           loadTimeData.getString('contentSettingsAndSearchEnginesRemain')
                       .split(/([|#])/);
       for (var i = 0; i < footerFragments.length;) {
-        var buttonId = '';
+        var linkId = '';
         if (i + 2 < footerFragments.length) {
           if (footerFragments[i] == '|' && footerFragments[i + 2] == '|') {
-            buttonId = 'open-content-settings-from-clear-browsing-data';
+            linkId = 'open-content-settings-from-clear-browsing-data';
           } else if (footerFragments[i] == '#' &&
                      footerFragments[i + 2] == '#') {
-            buttonId = 'open-search-engines-from-clear-browsing-data';
+            linkId = 'open-search-engines-from-clear-browsing-data';
           }
         }
 
-        if (buttonId != '') {
-          var button = document.createElement('button');
-          button.setAttribute('id', buttonId);
-          button.setAttribute('class', 'link-button');
-          button.textContent = footerFragments[i + 1];
-          footer.appendChild(button);
+        if (linkId) {
+          var link = new ActionLink;
+          link.id = linkId;
+          link.textContent = footerFragments[i + 1];
+          footer.appendChild(link);
           i += 3;
         } else {
           var span = document.createElement('span');
@@ -136,12 +133,12 @@ cr.define('options', function() {
       }
       $('open-content-settings-from-clear-browsing-data').onclick =
           function(event) {
-        OptionsPage.navigateToPage('content');
-      }
+        PageManager.showPageByName('content');
+      };
       $('open-search-engines-from-clear-browsing-data').onclick =
           function(event) {
-        OptionsPage.navigateToPage('searchEngines');
-      }
+        PageManager.showPageByName('searchEngines');
+      };
     },
 
     /**
@@ -257,9 +254,9 @@ cr.define('options', function() {
   };
 
   ClearBrowserDataOverlay.dismiss = function() {
-    var topmostVisiblePage = OptionsPage.getTopmostVisiblePage();
+    var topmostVisiblePage = PageManager.getTopmostVisiblePage();
     if (topmostVisiblePage && topmostVisiblePage.name == 'clearBrowserData')
-      OptionsPage.closeOverlay();
+      PageManager.closeOverlay();
   };
 
   // Export

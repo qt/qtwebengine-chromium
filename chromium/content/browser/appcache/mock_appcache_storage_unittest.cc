@@ -3,24 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/run_loop.h"
+#include "content/browser/appcache/appcache.h"
+#include "content/browser/appcache/appcache_group.h"
+#include "content/browser/appcache/appcache_response.h"
+#include "content/browser/appcache/appcache_storage.h"
 #include "content/browser/appcache/mock_appcache_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/appcache/appcache.h"
-#include "webkit/browser/appcache/appcache_group.h"
-#include "webkit/browser/appcache/appcache_response.h"
-#include "webkit/browser/appcache/appcache_storage.h"
-
-using appcache::AppCache;
-using appcache::AppCacheEntry;
-using appcache::AppCacheGroup;
-using appcache::AppCacheStorage;
-using appcache::APPCACHE_FALLBACK_NAMESPACE;
-using appcache::APPCACHE_INTERCEPT_NAMESPACE;
-using appcache::kAppCacheNoCacheId;
-using appcache::kAppCacheNoResponseId;
-using appcache::Manifest;
-using appcache::Namespace;
-using appcache::APPCACHE_NETWORK_NAMESPACE;
 
 namespace content {
 
@@ -33,38 +21,39 @@ class MockAppCacheStorageTest : public testing::Test {
           obsoleted_success_(false), found_cache_id_(kAppCacheNoCacheId) {
     }
 
-    virtual void OnCacheLoaded(AppCache* cache, int64 cache_id) OVERRIDE {
+    void OnCacheLoaded(AppCache* cache, int64 cache_id) override {
       loaded_cache_ = cache;
       loaded_cache_id_ = cache_id;
     }
 
-    virtual void OnGroupLoaded(AppCacheGroup* group,
-                               const GURL& manifest_url) OVERRIDE {
+    void OnGroupLoaded(AppCacheGroup* group,
+                       const GURL& manifest_url) override {
       loaded_group_ = group;
       loaded_manifest_url_ = manifest_url;
     }
 
-    virtual void OnGroupAndNewestCacheStored(
-        AppCacheGroup* group, AppCache* newest_cache, bool success,
-        bool would_exceed_quota) OVERRIDE {
+    void OnGroupAndNewestCacheStored(AppCacheGroup* group,
+                                     AppCache* newest_cache,
+                                     bool success,
+                                     bool would_exceed_quota) override {
       stored_group_ = group;
       stored_group_success_ = success;
     }
 
-    virtual void OnGroupMadeObsolete(AppCacheGroup* group,
-                                     bool success,
-                                     int response_code) OVERRIDE {
+    void OnGroupMadeObsolete(AppCacheGroup* group,
+                             bool success,
+                             int response_code) override {
       obsoleted_group_ = group;
       obsoleted_success_ = success;
     }
 
-    virtual void OnMainResponseFound(const GURL& url,
-                                     const AppCacheEntry& entry,
-                                     const GURL& fallback_url,
-                                     const AppCacheEntry& fallback_entry,
-                                     int64 cache_id,
-                                     int64 group_id,
-                                     const GURL& manifest_url) OVERRIDE {
+    void OnMainResponseFound(const GURL& url,
+                             const AppCacheEntry& entry,
+                             const GURL& fallback_url,
+                             const AppCacheEntry& fallback_entry,
+                             int64 cache_id,
+                             int64 group_id,
+                             const GURL& manifest_url) override {
       found_url_ = url;
       found_entry_ = entry;
       found_fallback_url_ = fallback_url;
@@ -249,7 +238,7 @@ TEST_F(MockAppCacheStorageTest, StoreNewGroup) {
   EXPECT_TRUE(delegate.stored_group_success_);
   EXPECT_FALSE(storage->stored_caches_.empty());
   EXPECT_FALSE(storage->stored_groups_.empty());
-  EXPECT_EQ(cache, group->newest_complete_cache());
+  EXPECT_EQ(cache.get(), group->newest_complete_cache());
   EXPECT_TRUE(cache->is_complete());
 }
 
@@ -318,7 +307,7 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroupExistingCache) {
   // Hold our refs to simulate the UpdateJob holding these refs.
 
   // Change the group's newest cache.
-  EXPECT_EQ(cache, group->newest_complete_cache());
+  EXPECT_EQ(cache.get(), group->newest_complete_cache());
   GURL entry_url("http://blah/blah");
   cache->AddEntry(entry_url, AppCacheEntry(AppCacheEntry::MASTER));
 
@@ -336,7 +325,7 @@ TEST_F(MockAppCacheStorageTest, StoreExistingGroupExistingCache) {
   EXPECT_EQ(size_t(1), storage->stored_caches_.size());
   EXPECT_EQ(size_t(1), storage->stored_groups_.size());
   EXPECT_TRUE(storage->IsCacheStored(cache.get()));
-  EXPECT_EQ(cache, group->newest_complete_cache());
+  EXPECT_EQ(cache.get(), group->newest_complete_cache());
   EXPECT_TRUE(cache->GetEntry(entry_url));
 }
 
@@ -481,12 +470,12 @@ TEST_F(MockAppCacheStorageTest, BasicFindMainFallbackResponse) {
   const int64 kResponseId1 = 1;
   const int64 kResponseId2 = 2;
 
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl1,
                 kFallbackEntryUrl1, false));
   manifest.fallback_namespaces.push_back(
-      Namespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
+      AppCacheNamespace(APPCACHE_FALLBACK_NAMESPACE, kFallbackNamespaceUrl2,
                 kFallbackEntryUrl2, false));
 
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
@@ -593,9 +582,9 @@ TEST_F(MockAppCacheStorageTest, FindMainResponseExclusions) {
   const GURL kOnlineNamespaceUrl("http://blah/online_namespace");
   const int64 kResponseId = 1;
 
-  Manifest manifest;
+  AppCacheManifest manifest;
   manifest.online_whitelist_namespaces.push_back(
-      Namespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceUrl,
+      AppCacheNamespace(APPCACHE_NETWORK_NAMESPACE, kOnlineNamespaceUrl,
                 GURL(), false));
   scoped_refptr<AppCache> cache(new AppCache(service.storage(), kCacheId));
   cache->InitializeWithManifest(&manifest);

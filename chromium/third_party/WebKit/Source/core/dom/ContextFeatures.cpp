@@ -31,7 +31,7 @@
 #include "core/page/Page.h"
 #include "platform/RuntimeEnabledFeatures.h"
 
-namespace WebCore {
+namespace blink {
 
 PassOwnPtr<ContextFeaturesClient> ContextFeaturesClient::empty()
 {
@@ -45,19 +45,8 @@ const char* ContextFeatures::supplementName()
 
 ContextFeatures* ContextFeatures::defaultSwitch()
 {
-#if ENABLE(OILPAN)
-    DEFINE_STATIC_LOCAL(Persistent<ContextFeatures>, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
-#else
-    DEFINE_STATIC_REF(ContextFeatures, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
-#endif
+    DEFINE_STATIC_REF_WILL_BE_PERSISTENT(ContextFeatures, instance, (ContextFeatures::create(ContextFeaturesClient::empty())));
     return instance;
-}
-
-bool ContextFeatures::dialogElementEnabled(Document* document)
-{
-    if (!document)
-        return RuntimeEnabledFeatures::dialogElementEnabled();
-    return document->contextFeatures().isEnabled(document, DialogElement, RuntimeEnabledFeatures::dialogElementEnabled());
 }
 
 bool ContextFeatures::pagePopupEnabled(Document* document)

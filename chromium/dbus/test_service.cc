@@ -24,7 +24,7 @@ void EmptyCallback(bool /* success */) {
 namespace dbus {
 
 // Echo, SlowEcho, AsyncEcho, BrokenMethod, GetAll, Get, Set, PerformAction,
-// GetManagedObjects.
+// GetManagedObjects
 const int TestService::kNumMethodsToExport = 9;
 
 TestService::Options::Options()
@@ -39,7 +39,11 @@ TestService::TestService(const Options& options)
       request_ownership_options_(options.request_ownership_options),
       dbus_task_runner_(options.dbus_task_runner),
       on_name_obtained_(false, false),
-      num_exported_methods_(0) {
+      num_exported_methods_(0),
+      send_immediate_properties_changed_(false),
+      has_ownership_(false),
+      exported_object_(NULL),
+      exported_object_manager_(NULL) {
 }
 
 TestService::~TestService() {
@@ -158,6 +162,10 @@ void TestService::ReleaseOwnershipInternal(
   bus_->GetOriginTaskRunner()->PostTask(
       FROM_HERE,
       callback);
+}
+
+void TestService::SetSendImmediatePropertiesChanged() {
+  send_immediate_properties_changed_ = true;
 }
 
 void TestService::OnExported(const std::string& interface_name,
@@ -471,11 +479,13 @@ void TestService::PerformAction(
     return;
   }
 
-  if (action == "AddObject")
+  if (action == "AddObject") {
     AddObject(object_path);
-  else if (action == "RemoveObject")
+  } else if (action == "RemoveObject") {
     RemoveObject(object_path);
-  else if (action == "ReleaseOwnership") {
+  } else if (action == "SetSendImmediatePropertiesChanged") {
+    SetSendImmediatePropertiesChanged();
+  } if (action == "ReleaseOwnership") {
     ReleaseOwnership(base::Bind(&TestService::PerformActionResponse,
                                 base::Unretained(this),
                                 method_call, response_sender));
@@ -556,6 +566,9 @@ void TestService::GetManagedObjects(
   writer.CloseContainer(&array_writer);
 
   response_sender.Run(response.Pass());
+
+  if (send_immediate_properties_changed_)
+    SendPropertyChangedSignal("ChangedTestServiceName");
 }
 
 void TestService::AddPropertiesToWriter(MessageWriter* writer) {

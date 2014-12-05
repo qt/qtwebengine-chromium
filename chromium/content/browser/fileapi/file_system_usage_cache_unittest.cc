@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "webkit/browser/fileapi/file_system_usage_cache.h"
+#include "storage/browser/fileapi/file_system_usage_cache.h"
 
 #include "base/basictypes.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/message_loop/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using fileapi::FileSystemUsageCache;
+using storage::FileSystemUsageCache;
 
 namespace content {
 
@@ -19,9 +19,7 @@ class FileSystemUsageCacheTest : public testing::Test {
   FileSystemUsageCacheTest()
       : usage_cache_(base::MessageLoopProxy::current().get()) {}
 
-  virtual void SetUp() {
-    ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
-  }
+  void SetUp() override { ASSERT_TRUE(data_dir_.CreateUniqueTempDir()); }
 
  protected:
   base::FilePath GetUsageFilePath() {

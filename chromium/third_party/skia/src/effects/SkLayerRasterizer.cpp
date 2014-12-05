@@ -50,17 +50,6 @@ SkLayerRasterizer::~SkLayerRasterizer() {
     clean_up_layers(const_cast<SkDeque*>(fLayers));
 }
 
-#ifdef SK_SUPPORT_LEGACY_LAYERRASTERIZER_API
-void SkLayerRasterizer::addLayer(const SkPaint& paint, SkScalar dx,
-                                 SkScalar dy) {
-    SkASSERT(fLayers);
-    SkLayerRasterizer_Rec* rec = (SkLayerRasterizer_Rec*)fLayers->push_back();
-
-    SkNEW_PLACEMENT_ARGS(&rec->fPaint, SkPaint, (paint));
-    rec->fOffset.set(dx, dy);
-}
-#endif
-
 static bool compute_bounds(const SkDeque& layers, const SkPath& path,
                            const SkMatrix& matrix,
                            const SkIRect* clipBounds, SkIRect* bounds) {
@@ -159,12 +148,18 @@ bool SkLayerRasterizer::onRasterize(const SkPath& path, const SkMatrix& matrix,
     return true;
 }
 
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
 SkLayerRasterizer::SkLayerRasterizer(SkReadBuffer& buffer)
     : SkRasterizer(buffer), fLayers(ReadLayers(buffer)) {}
+#endif
+
+SkFlattenable* SkLayerRasterizer::CreateProc(SkReadBuffer& buffer) {
+    return SkNEW_ARGS(SkLayerRasterizer, (ReadLayers(buffer)));
+}
 
 SkDeque* SkLayerRasterizer::ReadLayers(SkReadBuffer& buffer) {
     int count = buffer.readInt();
-
+    
     SkDeque* layers = SkNEW_ARGS(SkDeque, (sizeof(SkLayerRasterizer_Rec)));
     for (int i = 0; i < count; i++) {
         SkLayerRasterizer_Rec* rec = (SkLayerRasterizer_Rec*)layers->push_back();

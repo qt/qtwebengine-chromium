@@ -9,8 +9,9 @@
 #define GrTextureDomainEffect_DEFINED
 
 #include "GrSingleTextureEffect.h"
-#include "gl/GrGLEffect.h"
+#include "gl/GrGLProcessor.h"
 
+class GrGLProgramBuilder;
 class GrGLShaderBuilder;
 struct SkRect;
 
@@ -23,11 +24,18 @@ struct SkRect;
 class GrTextureDomain {
 public:
     enum Mode {
-        kIgnore_Mode,  // Ignore the texture domain rectangle.
-        kClamp_Mode,   // Clamp texture coords to the domain rectangle.
-        kDecal_Mode,   // Treat the area outside the domain rectangle as fully transparent.
+        // Ignore the texture domain rectangle.
+        kIgnore_Mode,
+        // Clamp texture coords to the domain rectangle.
+        kClamp_Mode,
+        // Treat the area outside the domain rectangle as fully transparent.
+        kDecal_Mode,
+        // Wrap texture coordinates.  NOTE: filtering may not work as expected because Bilerp will
+        // read texels outside of the domain.  We could perform additional texture reads and filter
+        // in the shader, but are not currently doing this for performance reasons
+        kRepeat_Mode,
 
-        kLastMode = kDecal_Mode
+        kLastMode = kRepeat_Mode
     };
     static const int kModeCount = kLastMode + 1;
 
@@ -61,11 +69,11 @@ public:
     }
 
     bool operator== (const GrTextureDomain& that) const {
-        return fMode == that.fMode && fDomain == that.fDomain;
+        return fMode == that.fMode && (kIgnore_Mode == fMode || fDomain == that.fDomain);
     }
 
     /**
-     * A GrGLEffect subclass that corresponds to a GrEffect subclass that uses GrTextureDomain
+     * A GrGLProcessor subclass that corresponds to a GrProcessor subclass that uses GrTextureDomain
      * should include this helper. It generates the texture domain GLSL, produces the part of the
      * effect key that reflects the texture domain code, and performs the uniform uploads necessary
      * for texture domains.
@@ -78,7 +86,8 @@ public:
         }
 
         /**
-         * Call this from GrGLEffect::emitCode() to sample the texture W.R.T. the domain and mode.
+         * Call this from GrGLProcessor::emitCode() to sample the texture W.R.T. the domain and
+         * mode.
          *
          * @param outcolor  name of vec4 variable to hold the sampled color.
          * @param inCoords  name of vec2 variable containing the coords to be used with the domain.
@@ -90,14 +99,14 @@ public:
                            const GrTextureDomain& textureDomain,
                            const char* outColor,
                            const SkString& inCoords,
-                           const GrGLEffect::TextureSampler sampler,
+                           const GrGLProcessor::TextureSampler sampler,
                            const char* inModulateColor = NULL);
 
         /**
-         * Call this from GrGLEffect::setData() to upload uniforms necessary for the texture domain.
-         * The rectangle is automatically adjusted to account for the texture's origin.
+         * Call this from GrGLProcessor::setData() to upload uniforms necessary for the texture
+         * domain. The rectangle is automatically adjusted to account for the texture's origin.
          */
-        void setData(const GrGLUniformManager& uman, const GrTextureDomain& textureDomain,
+        void setData(const GrGLProgramDataManager& pdman, const GrTextureDomain& textureDomain,
                      GrSurfaceOrigin textureOrigin);
 
         enum {
@@ -105,19 +114,19 @@ public:
         };
 
         /**
-         * GrGLEffect::GenKey() must call this and include the returned value in it's computed key.
-         * The returned will be limited to the lower kDomainKeyBits bits.
+         * GrGLProcessor::GenKey() must call this and include the returned value in it's computed
+         * key. The returned will be limited to the lower kDomainKeyBits bits.
          */
-        static GrGLEffect::EffectKey DomainKey(const GrTextureDomain& domain) {
+        static uint32_t DomainKey(const GrTextureDomain& domain) {
             GR_STATIC_ASSERT(kModeCount <= 4);
             return domain.mode();
         }
 
     private:
-        SkDEBUGCODE(Mode                  fMode;)
-        GrGLUniformManager::UniformHandle fDomainUni;
-        SkString                          fDomainName;
-        GrGLfloat                         fPrevDomain[4];
+        SkDEBUGCODE(Mode                      fMode;)
+        GrGLProgramDataManager::UniformHandle fDomainUni;
+        SkString                              fDomainName;
+        GrGLfloat                             fPrevDomain[4];
     };
 
 protected:
@@ -136,21 +145,20 @@ class GrGLTextureDomainEffect;
 class GrTextureDomainEffect : public GrSingleTextureEffect {
 
 public:
-    static GrEffectRef* Create(GrTexture*,
-                               const SkMatrix&,
-                               const SkRect& domain,
-                               GrTextureDomain::Mode,
-                               GrTextureParams::FilterMode filterMode,
-                               GrCoordSet = kLocal_GrCoordSet);
+    static GrFragmentProcessor* Create(GrTexture*,
+                                       const SkMatrix&,
+                                       const SkRect& domain,
+                                       GrTextureDomain::Mode,
+                                       GrTextureParams::FilterMode filterMode,
+                                       GrCoordSet = kLocal_GrCoordSet);
 
     virtual ~GrTextureDomainEffect();
 
     static const char* Name() { return "TextureDomain"; }
 
-    typedef GrGLTextureDomainEffect GLEffect;
+    typedef GrGLTextureDomainEffect GLProcessor;
 
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
-    virtual void getConstantColorComponents(GrColor* color, uint32_t* validFlags) const SK_OVERRIDE;
+    virtual const GrBackendFragmentProcessorFactory& getFactory() const SK_OVERRIDE;
 
     const GrTextureDomain& textureDomain() const { return fTextureDomain; }
 
@@ -165,9 +173,11 @@ private:
                           GrTextureParams::FilterMode,
                           GrCoordSet);
 
-    virtual bool onIsEqual(const GrEffect&) const SK_OVERRIDE;
+    virtual bool onIsEqual(const GrFragmentProcessor&) const SK_OVERRIDE;
 
-    GR_DECLARE_EFFECT_TEST;
+    virtual void onComputeInvariantOutput(InvariantOutput* inout) const SK_OVERRIDE;
+
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
 
     typedef GrSingleTextureEffect INHERITED;
 };

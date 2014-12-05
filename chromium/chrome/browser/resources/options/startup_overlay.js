@@ -4,21 +4,20 @@
 
 cr.define('options', function() {
   /** @const */ var ArrayDataModel = cr.ui.ArrayDataModel;
-  /** @const */ var OptionsPage = options.OptionsPage;
   /** @const */ var SettingsDialog = options.SettingsDialog;
 
   /**
    * StartupOverlay class
    * Encapsulated handling of the 'Set Startup pages' overlay page.
    * @constructor
-   * @class
+   * @extends {options.SettingsDialog}
    */
   function StartupOverlay() {
     SettingsDialog.call(this, 'startup',
-                        loadTimeData.getString('startupPagesOverlayTabTitle'),
-                        'startup-overlay',
-                        $('startup-overlay-confirm'),
-                        $('startup-overlay-cancel'));
+        loadTimeData.getString('startupPagesOverlayTabTitle'),
+        'startup-overlay',
+        assertInstanceof($('startup-overlay-confirm'), HTMLButtonElement),
+        assertInstanceof($('startup-overlay-cancel'), HTMLButtonElement));
   };
 
   cr.addSingletonGetter(StartupOverlay);
@@ -38,9 +37,7 @@ cr.define('options', function() {
       'disabled': false
     },
 
-    /**
-     * Initialize the page.
-     */
+    /** @override */
     initializePage: function() {
       SettingsDialog.prototype.initializePage.call(this);
 
@@ -109,7 +106,7 @@ cr.define('options', function() {
     /**
      * Handles change events of the preference
      * 'session.startup_urls'.
-     * @param {event} preference changed event.
+     * @param {Event} event Preference changed event.
      * @private
      */
     handleStartupPageListChange_: function(event) {
@@ -119,7 +116,7 @@ cr.define('options', function() {
 
     /**
      * Updates the startup pages list with the given entries.
-     * @param {Array} pages List of startup pages.
+     * @param {!Array} pages List of startup pages.
      * @private
      */
     updateStartupPages_: function(pages) {
@@ -142,7 +139,7 @@ cr.define('options', function() {
 
     /**
      * Updates the autocomplete suggestion list with the given entries.
-     * @param {Array} pages List of autocomplete suggestions.
+     * @param {Array} suggestions List of autocomplete suggestions.
      * @private
      */
     updateAutocompleteSuggestions_: function(suggestions) {
@@ -158,15 +155,10 @@ cr.define('options', function() {
   };
 
   // Forward public APIs to private implementations.
-  [
+  cr.makePublic(StartupOverlay, [
     'updateStartupPages',
     'updateAutocompleteSuggestions',
-  ].forEach(function(name) {
-    StartupOverlay[name] = function() {
-      var instance = StartupOverlay.getInstance();
-      return instance[name + '_'].apply(instance, arguments);
-    };
-  });
+  ]);
 
   // Export
   return {

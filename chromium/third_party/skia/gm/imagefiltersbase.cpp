@@ -18,39 +18,69 @@
 
 class FailImageFilter : public SkImageFilter {
 public:
+    class Registrar {
+    public:
+        Registrar() {
+            SkFlattenable::Register("FailImageFilter",
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+                                    FailImageFilter::DeepCreateProc,
+#else
+                                    FailImageFilter::CreateProc,
+#endif
+                                    FailImageFilter::GetFlattenableType());
+        }
+    };
     static FailImageFilter* Create() {
         return SkNEW(FailImageFilter);
     }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(FailImageFilter)
+
 protected:
-    FailImageFilter() : INHERITED(0) {}
+    FailImageFilter() : INHERITED(0, NULL) {}
+
     virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
                                SkBitmap* result, SkIPoint* offset) const SK_OVERRIDE {
         return false;
     }
 
-    FailImageFilter(SkReadBuffer& buffer)
-      : INHERITED(1, buffer) {}
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+    FailImageFilter(SkReadBuffer& buffer) : INHERITED(0, buffer) {}
+#endif
 
 private:
     typedef SkImageFilter INHERITED;
 };
 
-// register the filter with the flattenable registry
-static SkFlattenable::Registrar gFailImageFilterReg("FailImageFilter",
-                                                    FailImageFilter::CreateProc,
-                                                    FailImageFilter::GetFlattenableType());
+static FailImageFilter::Registrar gReg0;
+
+SkFlattenable* FailImageFilter::CreateProc(SkReadBuffer& buffer) {
+    SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 0);
+    return FailImageFilter::Create();
+}
 
 class IdentityImageFilter : public SkImageFilter {
 public:
-    static IdentityImageFilter* Create() {
-        return SkNEW(IdentityImageFilter);
+    class Registrar {
+    public:
+        Registrar() {
+            SkFlattenable::Register("IdentityImageFilter",
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+                                    IdentityImageFilter::DeepCreateProc,
+#else
+                                    IdentityImageFilter::CreateProc,
+#endif
+                                    IdentityImageFilter::GetFlattenableType());
+        }
+    };
+    static IdentityImageFilter* Create(SkImageFilter* input = NULL) {
+        return SkNEW_ARGS(IdentityImageFilter, (input));
     }
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(IdentityImageFilter)
 protected:
-    IdentityImageFilter() : INHERITED(0) {}
+    IdentityImageFilter(SkImageFilter* input) : INHERITED(1, &input) {}
+
     virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
                                SkBitmap* result, SkIPoint* offset) const SK_OVERRIDE {
         *result = src;
@@ -58,18 +88,20 @@ protected:
         return true;
     }
 
-    IdentityImageFilter(SkReadBuffer& buffer)
-      : INHERITED(1, buffer) {}
+#ifdef SK_SUPPORT_LEGACY_DEEPFLATTENING
+    IdentityImageFilter(SkReadBuffer& buffer) : INHERITED(1, buffer) {}
+#endif
 
 private:
     typedef SkImageFilter INHERITED;
 };
 
-// register the filter with the flattenable registry
-static SkFlattenable::Registrar gIdentityImageFilterReg("IdentityImageFilter",
-                                                        IdentityImageFilter::CreateProc,
-                                                        IdentityImageFilter::GetFlattenableType());
+static IdentityImageFilter::Registrar gReg1;
 
+SkFlattenable* IdentityImageFilter::CreateProc(SkReadBuffer& buffer) {
+    SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 1);
+    return IdentityImageFilter::Create(common.getInput(0));
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -113,6 +145,7 @@ static void draw_text(SkCanvas* canvas, const SkRect& r, SkImageFilter* imf) {
     paint.setImageFilter(imf);
     paint.setColor(SK_ColorCYAN);
     paint.setAntiAlias(true);
+    sk_tool_utils::set_portable_typeface(&paint);
     paint.setTextSize(r.height()/2);
     paint.setTextAlign(SkPaint::kCenter_Align);
     canvas->drawText("Text", 4, r.centerX(), r.centerY(), paint);
@@ -198,7 +231,8 @@ protected:
             FailImageFilter::Create(),
             SkColorFilterImageFilter::Create(cf),
             SkBlurImageFilter::Create(12.0f, 0.0f),
-            SkDropShadowImageFilter::Create(10.0f, 5.0f, 3.0f, SK_ColorBLUE),
+            SkDropShadowImageFilter::Create(10.0f, 5.0f, 3.0f, 3.0f, SK_ColorBLUE,
+                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode),
         };
         cf->unref();
 

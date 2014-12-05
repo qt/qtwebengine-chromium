@@ -26,13 +26,13 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/database/database_util.h"
+#include "storage/common/database/database_identifier.h"
 #include "third_party/WebKit/public/platform/WebIDBDatabaseException.h"
 #include "url/gurl.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/database/database_util.h"
-#include "webkit/common/database/database_identifier.h"
 
-using webkit_database::DatabaseUtil;
+using storage::DatabaseUtil;
 using blink::WebIDBKey;
 
 namespace content {
@@ -50,7 +50,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
       cursor_dispatcher_host_(new CursorDispatcherHost(this)),
       ipc_process_id_(ipc_process_id) {
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 }
 
 IndexedDBDispatcherHost::IndexedDBDispatcherHost(
@@ -65,7 +65,7 @@ IndexedDBDispatcherHost::IndexedDBDispatcherHost(
       database_dispatcher_host_(new DatabaseDispatcherHost(this)),
       cursor_dispatcher_host_(new CursorDispatcherHost(this)),
       ipc_process_id_(ipc_process_id) {
-  DCHECK(indexed_db_context_);
+  DCHECK(indexed_db_context_.get());
 }
 
 IndexedDBDispatcherHost::~IndexedDBDispatcherHost() {
@@ -211,7 +211,7 @@ uint32 IndexedDBDispatcherHost::TransactionIdToProcessId(
 
 void IndexedDBDispatcherHost::HoldBlobDataHandle(
     const std::string& uuid,
-    scoped_ptr<webkit_blob::BlobDataHandle>& blob_data_handle) {
+    scoped_ptr<storage::BlobDataHandle> blob_data_handle) {
   DCHECK(!ContainsKey(blob_data_handle_map_, uuid));
   blob_data_handle_map_[uuid] = blob_data_handle.release();
 }
@@ -240,12 +240,9 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
   metadata.int_version = web_metadata.int_version;
   metadata.max_object_store_id = web_metadata.max_object_store_id;
 
-  for (content::IndexedDBDatabaseMetadata::ObjectStoreMap::const_iterator iter =
-           web_metadata.object_stores.begin();
-       iter != web_metadata.object_stores.end();
-       ++iter) {
+  for (const auto& iter : web_metadata.object_stores) {
     const content::IndexedDBObjectStoreMetadata& web_store_metadata =
-        iter->second;
+        iter.second;
     ::IndexedDBObjectStoreMetadata idb_store_metadata;
     idb_store_metadata.id = web_store_metadata.id;
     idb_store_metadata.name = web_store_metadata.name;
@@ -253,12 +250,9 @@ IndexedDBCursor* IndexedDBDispatcherHost::GetCursorFromId(int32 ipc_cursor_id) {
     idb_store_metadata.autoIncrement = web_store_metadata.auto_increment;
     idb_store_metadata.max_index_id = web_store_metadata.max_index_id;
 
-    for (content::IndexedDBObjectStoreMetadata::IndexMap::const_iterator
-             index_iter = web_store_metadata.indexes.begin();
-         index_iter != web_store_metadata.indexes.end();
-         ++index_iter) {
+    for (const auto& index_iter : web_store_metadata.indexes) {
       const content::IndexedDBIndexMetadata& web_index_metadata =
-          index_iter->second;
+          index_iter.second;
       ::IndexedDBIndexMetadata idb_index_metadata;
       idb_index_metadata.id = web_index_metadata.id;
       idb_index_metadata.name = web_index_metadata.name;
@@ -278,7 +272,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
 
   GURL origin_url =
-      webkit_database::GetOriginFromIdentifier(params.database_identifier);
+      storage::GetOriginFromIdentifier(params.database_identifier);
 
   Context()->GetIDBFactory()->GetDatabaseNames(
       new IndexedDBCallbacks(
@@ -291,10 +285,11 @@ void IndexedDBDispatcherHost::OnIDBFactoryGetDatabaseNames(
 void IndexedDBDispatcherHost::OnIDBFactoryOpen(
     const IndexedDBHostMsg_FactoryOpen_Params& params) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  base::TimeTicks begin_time = base::TimeTicks::Now();
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
 
   GURL origin_url =
-      webkit_database::GetOriginFromIdentifier(params.database_identifier);
+      storage::GetOriginFromIdentifier(params.database_identifier);
 
   int64 host_transaction_id = HostTransactionId(params.transaction_id);
 
@@ -307,6 +302,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryOpen(
                              params.ipc_database_callbacks_id,
                              host_transaction_id,
                              origin_url);
+  callbacks->SetConnectionOpenStartTime(begin_time);
   scoped_refptr<IndexedDBDatabaseCallbacks> database_callbacks =
       new IndexedDBDatabaseCallbacks(
           this, params.ipc_thread_id, params.ipc_database_callbacks_id);
@@ -324,7 +320,7 @@ void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
     const IndexedDBHostMsg_FactoryDeleteDatabase_Params& params) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
   GURL origin_url =
-      webkit_database::GetOriginFromIdentifier(params.database_identifier);
+      storage::GetOriginFromIdentifier(params.database_identifier);
   base::FilePath indexed_db_path = indexed_db_context_->data_path();
   DCHECK(request_context_);
   Context()->GetIDBFactory()->DeleteDatabase(
@@ -340,16 +336,15 @@ void IndexedDBDispatcherHost::OnIDBFactoryDeleteDatabase(
 // to the IndexedDBDispatcherHost.
 void IndexedDBDispatcherHost::OnPutHelper(
     const IndexedDBHostMsg_DatabasePut_Params& params,
-    std::vector<webkit_blob::BlobDataHandle*> handles) {
+    std::vector<storage::BlobDataHandle*> handles) {
   database_dispatcher_host_->OnPut(params, handles);
 }
 
 void IndexedDBDispatcherHost::OnAckReceivedBlobs(
     const std::vector<std::string>& uuids) {
   DCHECK(indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
-  std::vector<std::string>::const_iterator iter;
-  for (iter = uuids.begin(); iter != uuids.end(); ++iter)
-    DropBlobDataHandle(*iter);
+  for (const auto& uuid : uuids)
+    DropBlobDataHandle(uuid);
 }
 
 void IndexedDBDispatcherHost::FinishTransaction(int64 host_transaction_id,
@@ -447,13 +442,11 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::CloseAll() {
   }
   DCHECK(transaction_database_map_.empty());
 
-  for (WebIDBObjectIDToURLMap::iterator iter = database_url_map_.begin();
-       iter != database_url_map_.end();
-       iter++) {
-    IndexedDBConnection* connection = map_.Lookup(iter->first);
+  for (const auto& iter : database_url_map_) {
+    IndexedDBConnection* connection = map_.Lookup(iter.first);
     if (connection && connection->IsConnected()) {
       connection->Close();
-      parent_->Context()->ConnectionClosed(iter->second, connection);
+      parent_->Context()->ConnectionClosed(iter.second, connection);
     }
   }
 }
@@ -475,6 +468,8 @@ bool IndexedDBDispatcherHost::DatabaseDispatcherHost::OnMessageReceived(
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseCreateTransaction,
                         OnCreateTransaction)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseClose, OnClose)
+    IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseVersionChangeIgnored,
+                        OnVersionChangeIgnored)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseDestroyed, OnDestroyed)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabaseGet, OnGet)
     IPC_MESSAGE_HANDLER(IndexedDBHostMsg_DatabasePut, OnPutWrapper)
@@ -568,6 +563,17 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnClose(
   connection->Close();
 }
 
+void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnVersionChangeIgnored(
+    int32 ipc_database_id) {
+  DCHECK(
+      parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
+  IndexedDBConnection* connection =
+      parent_->GetOrTerminateProcess(&map_, ipc_database_id);
+  if (!connection || !connection->IsConnected())
+    return;
+  connection->VersionChangeIgnored();
+}
+
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnDestroyed(
     int32 ipc_object_id) {
   DCHECK(
@@ -603,7 +609,7 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnGet(
 
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPutWrapper(
     const IndexedDBHostMsg_DatabasePut_Params& params) {
-  std::vector<webkit_blob::BlobDataHandle*> handles;
+  std::vector<storage::BlobDataHandle*> handles;
   for (size_t i = 0; i < params.blob_or_file_info.size(); ++i) {
     const IndexedDBMsg_BlobOrFileInfo& info = params.blob_or_file_info[i];
     handles.push_back(parent_->blob_storage_context_->context()
@@ -618,12 +624,11 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPutWrapper(
 
 void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
     const IndexedDBHostMsg_DatabasePut_Params& params,
-    std::vector<webkit_blob::BlobDataHandle*> handles) {
-
+    std::vector<storage::BlobDataHandle*> handles) {
   DCHECK(
       parent_->indexed_db_context_->TaskRunner()->RunsTasksOnCurrentThread());
 
-  ScopedVector<webkit_blob::BlobDataHandle> scoped_handles;
+  ScopedVector<storage::BlobDataHandle> scoped_handles;
   scoped_handles.swap(handles);
 
   IndexedDBConnection* connection =
@@ -664,15 +669,14 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnPut(
   IndexedDBValue value;
   value.bits = params.value;
   value.blob_info.swap(blob_info);
-  connection->database()->Put(
-      host_transaction_id,
-      params.object_store_id,
-      &value,
-      &scoped_handles,
-      make_scoped_ptr(new IndexedDBKey(params.key)),
-      static_cast<IndexedDBDatabase::PutMode>(params.put_mode),
-      callbacks,
-      params.index_keys);
+  connection->database()->Put(host_transaction_id,
+                              params.object_store_id,
+                              &value,
+                              &scoped_handles,
+                              make_scoped_ptr(new IndexedDBKey(params.key)),
+                              params.put_mode,
+                              callbacks,
+                              params.index_keys);
   TransactionIDToSizeMap* map =
       &parent_->database_dispatcher_host_->transaction_size_map_;
   // Size can't be big enough to overflow because it represents the
@@ -729,9 +733,9 @@ void IndexedDBDispatcherHost::DatabaseDispatcherHost::OnOpenCursor(
       params.object_store_id,
       params.index_id,
       make_scoped_ptr(new IndexedDBKeyRange(params.key_range)),
-      static_cast<indexed_db::CursorDirection>(params.direction),
+      params.direction,
       params.key_only,
-      static_cast<IndexedDBDatabase::TaskType>(params.task_type),
+      params.task_type,
       callbacks);
 }
 

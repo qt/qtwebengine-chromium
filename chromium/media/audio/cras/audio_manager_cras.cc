@@ -53,7 +53,8 @@ bool AudioManagerCras::HasAudioInputDevices() {
 }
 
 AudioManagerCras::AudioManagerCras(AudioLogFactory* audio_log_factory)
-    : AudioManagerBase(audio_log_factory) {
+    : AudioManagerBase(audio_log_factory),
+      has_keyboard_mic_(false) {
   SetMaxOutputStreamsAllowed(kMaxOutputStreams);
 }
 
@@ -77,15 +78,25 @@ void AudioManagerCras::GetAudioOutputDeviceNames(
 
 AudioParameters AudioManagerCras::GetInputStreamParameters(
     const std::string& device_id) {
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
+
   int user_buffer_size = GetUserBufferSize();
   int buffer_size = user_buffer_size ?
       user_buffer_size : kDefaultInputBufferSize;
+  AudioParameters::PlatformEffectsMask effects =
+      has_keyboard_mic_ ? AudioParameters::KEYBOARD_MIC
+                        : AudioParameters::NO_EFFECTS;
 
   // TODO(hshi): Fine-tune audio parameters based on |device_id|. The optimal
   // parameters for the loopback stream may differ from the default.
   return AudioParameters(
       AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_STEREO,
-      kDefaultSampleRate, 16, buffer_size);
+      kDefaultSampleRate, 16, buffer_size, effects);
+}
+
+void AudioManagerCras::SetHasKeyboardMic() {
+  DCHECK(GetTaskRunner()->BelongsToCurrentThread());
+  has_keyboard_mic_ = true;
 }
 
 AudioOutputStream* AudioManagerCras::MakeLinearOutputStream(
@@ -124,12 +135,10 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
   int sample_rate = kDefaultSampleRate;
   int buffer_size = kMinimumOutputBufferSize;
   int bits_per_sample = 16;
-  int input_channels = 0;
   if (input_params.IsValid()) {
     sample_rate = input_params.sample_rate();
     bits_per_sample = input_params.bits_per_sample();
     channel_layout = input_params.channel_layout();
-    input_channels = input_params.input_channels();
     buffer_size =
         std::min(kMaximumOutputBufferSize,
                  std::max(buffer_size, input_params.frames_per_buffer()));
@@ -140,7 +149,7 @@ AudioParameters AudioManagerCras::GetPreferredOutputStreamParameters(
     buffer_size = user_buffer_size;
 
   return AudioParameters(
-      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout, input_channels,
+      AudioParameters::AUDIO_PCM_LOW_LATENCY, channel_layout,
       sample_rate, bits_per_sample, buffer_size, AudioParameters::NO_EFFECTS);
 }
 

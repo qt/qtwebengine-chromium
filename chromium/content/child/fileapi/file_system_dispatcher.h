@@ -14,14 +14,14 @@
 #include "base/process/process.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_platform_file.h"
-#include "webkit/common/fileapi/file_system_types.h"
-#include "webkit/common/quota/quota_types.h"
+#include "storage/common/fileapi/file_system_types.h"
+#include "storage/common/quota/quota_types.h"
 
 namespace base {
 class FilePath;
 }
 
-namespace fileapi {
+namespace storage {
 struct DirectoryEntry;
 struct FileSystemInfo;
 }
@@ -42,39 +42,38 @@ class FileSystemDispatcher : public IPC::Listener {
       const base::File::Info& file_info,
       const base::FilePath& platform_path,
       int request_id)> CreateSnapshotFileCallback;
-  typedef base::Callback<void(
-      const std::vector<fileapi::DirectoryEntry>& entries,
-      bool has_more)> ReadDirectoryCallback;
+  typedef base::Callback<
+      void(const std::vector<storage::DirectoryEntry>& entries, bool has_more)>
+      ReadDirectoryCallback;
   typedef base::Callback<void(
       const std::string& name,
       const GURL& root)> OpenFileSystemCallback;
-  typedef base::Callback<void(
-      const fileapi::FileSystemInfo& info,
-      const base::FilePath& file_path,
-      bool is_directory)> ResolveURLCallback;
+  typedef base::Callback<void(const storage::FileSystemInfo& info,
+                              const base::FilePath& file_path,
+                              bool is_directory)> ResolveURLCallback;
   typedef base::Callback<void(
       int64 bytes,
       bool complete)> WriteCallback;
-  typedef base::Callback<void(
-      base::PlatformFile file,
-      int file_open_id,
-      quota::QuotaLimitType quota_policy)> OpenFileCallback;
+  typedef base::Callback<void(base::PlatformFile file,
+                              int file_open_id,
+                              storage::QuotaLimitType quota_policy)>
+      OpenFileCallback;
 
   FileSystemDispatcher();
-  virtual ~FileSystemDispatcher();
+  ~FileSystemDispatcher() override;
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
 
   void OpenFileSystem(const GURL& origin_url,
-                      fileapi::FileSystemType type,
+                      storage::FileSystemType type,
                       const OpenFileSystemCallback& success_callback,
                       const StatusCallback& error_callback);
   void ResolveURL(const GURL& filesystem_url,
                   const ResolveURLCallback& success_callback,
                   const StatusCallback& error_callback);
   void DeleteFileSystem(const GURL& origin_url,
-                        fileapi::FileSystemType type,
+                        storage::FileSystemType type,
                         const StatusCallback& callback);
   void Move(const GURL& src_path,
             const GURL& dest_path,
@@ -133,7 +132,7 @@ class FileSystemDispatcher : public IPC::Listener {
                            const std::string& name,
                            const GURL& root);
   void OnDidResolveURL(int request_id,
-                       const fileapi::FileSystemInfo& info,
+                       const storage::FileSystemInfo& info,
                        const base::FilePath& file_path,
                        bool is_directory);
   void OnDidSucceed(int request_id);
@@ -143,15 +142,10 @@ class FileSystemDispatcher : public IPC::Listener {
                                const base::File::Info& file_info,
                                const base::FilePath& platform_path);
   void OnDidReadDirectory(int request_id,
-                          const std::vector<fileapi::DirectoryEntry>& entries,
+                          const std::vector<storage::DirectoryEntry>& entries,
                           bool has_more);
   void OnDidFail(int request_id, base::File::Error error_code);
   void OnDidWrite(int request_id, int64 bytes, bool complete);
-  void OnDidOpenFile(
-      int request_id,
-      IPC::PlatformFileForTransit file,
-      int file_open_id,
-      quota::QuotaLimitType quota_policy);
 
   IDMap<CallbackDispatcher, IDMapOwnPointer> dispatchers_;
 

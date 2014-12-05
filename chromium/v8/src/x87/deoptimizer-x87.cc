@@ -35,7 +35,7 @@ void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
   for (int i = 0; i < deopt_data->DeoptCount(); i++) {
     int pc_offset = deopt_data->Pc(i)->value();
     if (pc_offset == -1) continue;
-    ASSERT_GE(pc_offset, prev_pc_offset);
+    DCHECK_GE(pc_offset, prev_pc_offset);
     int pc_delta = pc_offset - prev_pc_offset;
     // We use RUNTIME_ENTRY reloc info which has a size of 2 bytes
     // if encodable with small pc delta encoding and up to 6 bytes
@@ -81,7 +81,7 @@ void Deoptimizer::EnsureRelocSpaceForLazyDeoptimization(Handle<Code> code) {
       byte* pos_before = reloc_info_writer.pos();
 #endif
       reloc_info_writer.Write(&rinfo);
-      ASSERT(RelocInfo::kMinRelocCommentSize ==
+      DCHECK(RelocInfo::kMinRelocCommentSize ==
              pos_before - reloc_info_writer.pos());
     }
     // Replace relocation information on the code object.
@@ -128,9 +128,6 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   // Emit call to lazy deoptimization at all lazy deopt points.
   DeoptimizationInputData* deopt_data =
       DeoptimizationInputData::cast(code->deoptimization_data());
-  SharedFunctionInfo* shared =
-      SharedFunctionInfo::cast(deopt_data->SharedFunctionInfo());
-  shared->EvictFromOptimizedCodeMap(code, "deoptimized code");
 #ifdef DEBUG
   Address prev_call_address = NULL;
 #endif
@@ -149,11 +146,11 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
                     reinterpret_cast<intptr_t>(deopt_entry),
                     NULL);
     reloc_info_writer.Write(&rinfo);
-    ASSERT_GE(reloc_info_writer.pos(),
+    DCHECK_GE(reloc_info_writer.pos(),
               reloc_info->address() + ByteArray::kHeaderSize);
-    ASSERT(prev_call_address == NULL ||
+    DCHECK(prev_call_address == NULL ||
            call_address >= prev_call_address + patch_size());
-    ASSERT(call_address + patch_size() <= code->instruction_end());
+    DCHECK(call_address + patch_size() <= code->instruction_end());
 #ifdef DEBUG
     prev_call_address = call_address;
 #endif
@@ -169,7 +166,7 @@ void Deoptimizer::PatchCodeForDeoptimization(Isolate* isolate, Code* code) {
   // Handle the junk part after the new relocation info. We will create
   // a non-live object in the extra space at the end of the former reloc info.
   Address junk_address = reloc_info->address() + reloc_info->Size();
-  ASSERT(junk_address <= reloc_end_address);
+  DCHECK(junk_address <= reloc_end_address);
   isolate->heap()->CreateFillerObjectAt(junk_address,
                                         reloc_end_address - junk_address);
 }
@@ -197,9 +194,9 @@ void Deoptimizer::FillInputFrame(Address tos, JavaScriptFrame* frame) {
 
 
 void Deoptimizer::SetPlatformCompiledStubRegisters(
-    FrameDescription* output_frame, CodeStubInterfaceDescriptor* descriptor) {
+    FrameDescription* output_frame, CodeStubDescriptor* descriptor) {
   intptr_t handler =
-      reinterpret_cast<intptr_t>(descriptor->deoptimization_handler_);
+      reinterpret_cast<intptr_t>(descriptor->deoptimization_handler());
   int params = descriptor->GetHandlerParameterCount();
   output_frame->SetRegister(eax.code(), params);
   output_frame->SetRegister(ebx.code(), handler);
@@ -207,8 +204,10 @@ void Deoptimizer::SetPlatformCompiledStubRegisters(
 
 
 void Deoptimizer::CopyDoubleRegisters(FrameDescription* output_frame) {
-  // Do nothing for X87.
-  return;
+  for (int i = 0; i < X87Register::kMaxNumAllocatableRegisters; ++i) {
+    double double_value = input_->GetDoubleRegister(i);
+    output_frame->SetDoubleRegister(i, double_value);
+  }
 }
 
 
@@ -219,7 +218,7 @@ bool Deoptimizer::HasAlignmentPadding(JSFunction* function) {
       input_frame_size - parameter_count * kPointerSize -
       StandardFrameConstants::kFixedFrameSize -
       kPointerSize;
-  ASSERT(JavaScriptFrameConstants::kDynamicAlignmentStateOffset ==
+  DCHECK(JavaScriptFrameConstants::kDynamicAlignmentStateOffset ==
       JavaScriptFrameConstants::kLocal0Offset);
   int32_t alignment_state = input_->GetFrameSlot(alignment_state_offset);
   return (alignment_state == kAlignmentPaddingPushed);
@@ -233,9 +232,42 @@ void Deoptimizer::EntryGenerator::Generate() {
 
   // Save all general purpose registers before messing with them.
   const int kNumberOfRegisters = Register::kNumRegisters;
+
+  const int kDoubleRegsSize =
+      kDoubleSize * X87Register::kMaxNumAllocatableRegisters;
+
+  // Reserve space for x87 fp registers.
+  __ sub(esp, Immediate(kDoubleRegsSize));
+
   __ pushad();
 
-  const int kSavedRegistersAreaSize = kNumberOfRegisters * kPointerSize;
+  // GP registers are safe to use now.
+  // Save used x87 fp registers in correct position of previous reserve space.
+  Label loop, done;
+  // Get the layout of x87 stack.
+  __ sub(esp, Immediate(kPointerSize));
+  __ fistp_s(MemOperand(esp, 0));
+  __ pop(eax);
+  // Preserve stack layout in edi
+  __ mov(edi, eax);
+  // Get the x87 stack depth, the first 3 bits.
+  __ mov(ecx, eax);
+  __ and_(ecx, 0x7);
+  __ j(zero, &done, Label::kNear);
+
+  __ bind(&loop);
+  __ shr(eax, 0x3);
+  __ mov(ebx, eax);
+  __ and_(ebx, 0x7);  // Extract the st_x index into ebx.
+  // Pop TOS to the correct position. The disp(0x20) is due to pushad.
+  // The st_i should be saved to (esp + ebx * kDoubleSize + 0x20).
+  __ fstp_d(Operand(esp, ebx, times_8, 0x20));
+  __ dec(ecx);  // Decrease stack depth.
+  __ j(not_zero, &loop, Label::kNear);
+  __ bind(&done);
+
+  const int kSavedRegistersAreaSize =
+      kNumberOfRegisters * kPointerSize + kDoubleRegsSize;
 
   // Get the bailout id from the stack.
   __ mov(ebx, Operand(esp, kSavedRegistersAreaSize));
@@ -248,6 +280,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ sub(edx, ebp);
   __ neg(edx);
 
+  __ push(edi);
   // Allocate a new deoptimizer object.
   __ PrepareCallCFunction(6, eax);
   __ mov(eax, Operand(ebp, JavaScriptFrameConstants::kFunctionOffset));
@@ -263,6 +296,8 @@ void Deoptimizer::EntryGenerator::Generate() {
     __ CallCFunction(ExternalReference::new_deoptimizer_function(isolate()), 6);
   }
 
+  __ pop(edi);
+
   // Preserve deoptimizer object in register eax and get the input
   // frame descriptor pointer.
   __ mov(ebx, Operand(eax, Deoptimizer::input_offset()));
@@ -273,13 +308,22 @@ void Deoptimizer::EntryGenerator::Generate() {
     __ pop(Operand(ebx, offset));
   }
 
+  int double_regs_offset = FrameDescription::double_registers_offset();
+  // Fill in the double input registers.
+  for (int i = 0; i < X87Register::kMaxNumAllocatableRegisters; ++i) {
+    int dst_offset = i * kDoubleSize + double_regs_offset;
+    int src_offset = i * kDoubleSize;
+    __ fld_d(Operand(esp, src_offset));
+    __ fstp_d(Operand(ebx, dst_offset));
+  }
+
   // Clear FPU all exceptions.
   // TODO(ulan): Find out why the TOP register is not zero here in some cases,
   // and check that the generated code never deoptimizes with unbalanced stack.
   __ fnclex();
 
   // Remove the bailout id, return address and the double registers.
-  __ add(esp, Immediate(2 * kPointerSize));
+  __ add(esp, Immediate(kDoubleRegsSize + 2 * kPointerSize));
 
   // Compute a pointer to the unwinding limit in register ecx; that is
   // the first stack slot not part of the input frame.
@@ -301,6 +345,7 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ j(not_equal, &pop_loop);
 
   // Compute the output frame in the deoptimizer.
+  __ push(edi);
   __ push(eax);
   __ PrepareCallCFunction(1, ebx);
   __ mov(Operand(esp, 0 * kPointerSize), eax);
@@ -310,6 +355,7 @@ void Deoptimizer::EntryGenerator::Generate() {
         ExternalReference::compute_output_frames_function(isolate()), 1);
   }
   __ pop(eax);
+  __ pop(edi);
 
   // If frame was dynamically aligned, pop padding.
   Label no_padding;
@@ -348,6 +394,25 @@ void Deoptimizer::EntryGenerator::Generate() {
   __ cmp(eax, edx);
   __ j(below, &outer_push_loop);
 
+
+  // In case of a failed STUB, we have to restore the x87 stack.
+  // x87 stack layout is in edi.
+  Label loop2, done2;
+  // Get the x87 stack depth, the first 3 bits.
+  __ mov(ecx, edi);
+  __ and_(ecx, 0x7);
+  __ j(zero, &done2, Label::kNear);
+
+  __ lea(ecx, Operand(ecx, ecx, times_2, 0));
+  __ bind(&loop2);
+  __ mov(eax, edi);
+  __ shr_cl(eax);
+  __ and_(eax, 0x7);
+  __ fld_d(Operand(ebx, eax, times_8, double_regs_offset));
+  __ sub(ecx, Immediate(0x3));
+  __ j(not_zero, &loop2, Label::kNear);
+  __ bind(&done2);
+
   // Push state, pc, and continuation from the last output frame.
   __ push(Operand(ebx, FrameDescription::state_offset()));
   __ push(Operand(ebx, FrameDescription::pc_offset()));
@@ -376,7 +441,7 @@ void Deoptimizer::TableEntryGenerator::GeneratePrologue() {
     USE(start);
     __ push_imm32(i);
     __ jmp(&done);
-    ASSERT(masm()->pc_offset() - start == table_entry_size_);
+    DCHECK(masm()->pc_offset() - start == table_entry_size_);
   }
   __ bind(&done);
 }

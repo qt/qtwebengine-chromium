@@ -33,11 +33,11 @@
 
 #include "wtf/FastAllocBase.h"
 
-#if ASSERT_ENABLED
+#if ENABLE(ASSERT)
 #include "wtf/MainThread.h"
 #endif
 
-namespace WebCore {
+namespace blink {
 
 class InspectorCounters {
 public:
@@ -68,6 +68,6 @@ private:
     static int s_counters[CounterTypeLength];
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // !defined(InspectorCounters_h)

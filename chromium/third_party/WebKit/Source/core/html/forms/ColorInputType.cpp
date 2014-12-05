@@ -31,26 +31,28 @@
 #include "config.h"
 #include "core/html/forms/ColorInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
-#include "bindings/v8/ScriptController.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ScriptController.h"
 #include "core/CSSPropertyNames.h"
 #include "core/InputTypeNames.h"
 #include "core/events/MouseEvent.h"
 #include "core/dom/shadow/ShadowRoot.h"
 #include "core/html/HTMLDataListElement.h"
+#include "core/html/HTMLDataListOptionsCollection.h"
 #include "core/html/HTMLDivElement.h"
 #include "core/html/HTMLInputElement.h"
 #include "core/html/HTMLOptionElement.h"
+#include "core/html/forms/ColorChooser.h"
 #include "core/page/Chrome.h"
+#include "core/rendering/RenderTheme.h"
 #include "core/rendering/RenderView.h"
-#include "platform/ColorChooser.h"
 #include "platform/RuntimeEnabledFeatures.h"
 #include "platform/UserGestureIndicator.h"
 #include "platform/graphics/Color.h"
 #include "wtf/PassOwnPtr.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -80,17 +82,18 @@ PassRefPtrWillBeRawPtr<InputType> ColorInputType::create(HTMLInputElement& eleme
 
 ColorInputType::~ColorInputType()
 {
-    endColorChooser();
+}
+
+void ColorInputType::trace(Visitor* visitor)
+{
+    visitor->trace(m_chooser);
+    BaseClickableWithKeyInputType::trace(visitor);
+    ColorChooserClient::trace(visitor);
 }
 
 void ColorInputType::countUsage()
 {
     countUsageIfVisible(UseCounter::InputTypeColor);
-}
-
-bool ColorInputType::isColorControl() const
-{
-    return true;
 }
 
 const AtomicString& ColorInputType::formControlType() const
@@ -187,11 +190,14 @@ void ColorInputType::didChooseColor(const Color& color)
         return;
     element().setValueFromRenderer(color.serialized());
     element().updateView();
-    element().dispatchFormControlChangeEvent();
+    if (!RenderTheme::theme().isModalColorChooser())
+        element().dispatchFormControlChangeEvent();
 }
 
 void ColorInputType::didEndChooser()
 {
+    if (RenderTheme::theme().isModalColorChooser())
+        element().dispatchFormControlChangeEvent();
     m_chooser.clear();
 }
 
@@ -216,6 +222,11 @@ HTMLElement* ColorInputType::shadowColorSwatch() const
     return shadow ? toHTMLElement(shadow->firstChild()->firstChild()) : 0;
 }
 
+Element& ColorInputType::ownerElement() const
+{
+    return element();
+}
+
 IntRect ColorInputType::elementRectRelativeToRootView() const
 {
     return element().document().view()->contentsToRootView(element().pixelSnappedBoundingBox());
@@ -236,8 +247,8 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
     Vector<ColorSuggestion> suggestions;
     HTMLDataListElement* dataList = element().dataList();
     if (dataList) {
-        RefPtrWillBeRawPtr<HTMLCollection> options = dataList->options();
-        for (unsigned i = 0; HTMLOptionElement* option = toHTMLOptionElement(options->item(i)); i++) {
+        RefPtrWillBeRawPtr<HTMLDataListOptionsCollection> options = dataList->options();
+        for (unsigned i = 0; HTMLOptionElement* option = options->item(i); i++) {
             if (!element().isValidValue(option->value()))
                 continue;
             Color color;
@@ -252,4 +263,14 @@ Vector<ColorSuggestion> ColorInputType::suggestions() const
     return suggestions;
 }
 
-} // namespace WebCore
+AXObject* ColorInputType::popupRootAXObject()
+{
+    return m_chooser ? m_chooser->rootAXObject() : 0;
+}
+
+ColorChooserClient* ColorInputType::colorChooserClient()
+{
+    return this;
+}
+
+} // namespace blink

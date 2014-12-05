@@ -34,7 +34,7 @@
 #include "core/rendering/RenderBlockFlow.h"
 #include "core/rendering/RenderInline.h"
 
-namespace WebCore {
+namespace blink {
 
 // Following the HTML 5 spec, the box object model for a <ruby> element allows several runs of ruby
 // bases with their respective ruby texts looks as follows:
@@ -51,42 +51,42 @@ namespace WebCore {
 // Generated :before/:after content is shunted into anonymous inline blocks
 
 // <ruby> when used as 'display:inline'
-class RenderRubyAsInline FINAL : public RenderInline {
+class RenderRubyAsInline final : public RenderInline {
 public:
     RenderRubyAsInline(Element*);
     virtual ~RenderRubyAsInline();
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
-    virtual void removeChild(RenderObject* child) OVERRIDE;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override;
+    virtual void removeChild(RenderObject* child) override;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
 private:
-    virtual bool isRuby() const OVERRIDE { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderRuby (inline)"; }
-    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRuby || RenderInline::isOfType(type); }
+    virtual const char* renderName() const override { return "RenderRuby (inline)"; }
+    virtual bool createsAnonymousWrapper() const override { return true; }
 };
 
 // <ruby> when used as 'display:block' or 'display:inline-block'
-class RenderRubyAsBlock FINAL : public RenderBlockFlow {
+class RenderRubyAsBlock final : public RenderBlockFlow {
 public:
     RenderRubyAsBlock(Element*);
     virtual ~RenderRubyAsBlock();
 
-    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) OVERRIDE;
-    virtual void removeChild(RenderObject* child) OVERRIDE;
+    virtual void addChild(RenderObject* child, RenderObject* beforeChild = 0) override;
+    virtual void removeChild(RenderObject* child) override;
 
 protected:
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
 private:
-    virtual bool isRuby() const OVERRIDE { return true; }
-    virtual const char* renderName() const OVERRIDE { return "RenderRuby (block)"; }
-    virtual bool createsAnonymousWrapper() const OVERRIDE { return true; }
-    virtual void removeLeftoverAnonymousBlock(RenderBlock*) OVERRIDE { ASSERT_NOT_REACHED(); }
+    virtual bool isOfType(RenderObjectType type) const override { return type == RenderObjectRuby || RenderBlockFlow::isOfType(type); }
+    virtual const char* renderName() const override { return "RenderRuby (block)"; }
+    virtual bool createsAnonymousWrapper() const override { return true; }
+    virtual void removeLeftoverAnonymousBlock(RenderBlock*) override { ASSERT_NOT_REACHED(); }
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // RenderRuby_h

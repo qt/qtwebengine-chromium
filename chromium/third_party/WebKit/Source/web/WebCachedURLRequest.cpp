@@ -35,8 +35,6 @@
 #include "platform/exported/WrappedResourceRequest.h"
 #include "public/platform/WebURLRequest.h"
 
-using namespace WebCore;
-
 namespace blink {
 
 void WebCachedURLRequest::reset()

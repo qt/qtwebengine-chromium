@@ -30,7 +30,7 @@
 #include "core/rendering/RenderLayer.h"
 #include "core/rendering/RenderObject.h"
 
-namespace WebCore {
+namespace blink {
 
 MouseRelatedEvent::MouseRelatedEvent()
     : m_isSimulated(false)
@@ -161,6 +161,7 @@ void MouseRelatedEvent::computeRelativePosition()
         n = n->parentNode();
 
     if (n) {
+        // FIXME: This logic is a wrong implementation of convertToLayerCoords.
         for (RenderLayer* layer = n->renderer()->enclosingLayer(); layer; layer = layer->parent())
             m_layerLocation -= toLayoutSize(layer->location());
     }
@@ -229,4 +230,4 @@ void MouseRelatedEvent::trace(Visitor* visitor)
     UIEventWithKeyState::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

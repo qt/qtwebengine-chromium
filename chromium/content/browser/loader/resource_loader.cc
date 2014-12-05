@@ -14,6 +14,7 @@
 #include "content/browser/loader/detachable_resource_handler.h"
 #include "content/browser/loader/resource_loader_delegate.h"
 #include "content/browser/loader/resource_request_info_impl.h"
+#include "content/browser/service_worker/service_worker_request_handler.h"
 #include "content/browser/ssl/ssl_client_auth_handler.h"
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/common/ssl_status_serialization.h"
@@ -29,6 +30,7 @@
 #include "net/base/load_flags.h"
 #include "net/http/http_response_headers.h"
 #include "net/ssl/client_cert_store.h"
+#include "net/url_request/redirect_info.h"
 #include "net/url_request/url_request_status.h"
 
 using base::TimeDelta;
@@ -37,9 +39,9 @@ using base::TimeTicks;
 namespace content {
 namespace {
 
-void PopulateResourceResponse(net::URLRequest* request,
+void PopulateResourceResponse(ResourceRequestInfoImpl* info,
+                              net::URLRequest* request,
                               ResourceResponse* response) {
-  response->head.error_code = request->status().error();
   response->head.request_time = request->request_time();
   response->head.response_time = request->response_time();
   response->head.headers = request->response_headers();
@@ -53,13 +55,24 @@ void PopulateResourceResponse(net::URLRequest* request,
       response_info.npn_negotiated_protocol;
   response->head.connection_info = response_info.connection_info;
   response->head.was_fetched_via_proxy = request->was_fetched_via_proxy();
+  response->head.proxy_server = response_info.proxy_server;
   response->head.socket_address = request->GetSocketAddress();
+  if (ServiceWorkerRequestHandler* handler =
+          ServiceWorkerRequestHandler::GetHandler(request)) {
+    handler->GetExtraResponseInfo(
+        &response->head.was_fetched_via_service_worker,
+        &response->head.was_fallback_required_by_service_worker,
+        &response->head.original_url_via_service_worker,
+        &response->head.response_type_via_service_worker,
+        &response->head.service_worker_fetch_start,
+        &response->head.service_worker_fetch_ready,
+        &response->head.service_worker_fetch_end);
+  }
   AppCacheInterceptor::GetExtraResponseInfo(
       request,
       &response->head.appcache_id,
       &response->head.appcache_manifest_url);
-  // TODO(mmenke):  Figure out if LOAD_ENABLE_LOAD_TIMING is safe to remove.
-  if (request->load_flags() & net::LOAD_ENABLE_LOAD_TIMING)
+  if (info->is_load_timing_enabled())
     request->GetLoadTimingInfo(&response->head.load_timing);
 }
 
@@ -83,8 +96,7 @@ ResourceLoader::ResourceLoader(scoped_ptr<net::URLRequest> request,
 ResourceLoader::~ResourceLoader() {
   if (login_delegate_.get())
     login_delegate_->OnRequestCancelled();
-  if (ssl_client_auth_handler_.get())
-    ssl_client_auth_handler_->OnRequestCancelled();
+  ssl_client_auth_handler_.reset();
 
   // Run ResourceHandler destructor before we tear-down the rest of our state
   // as the ResourceHandler may want to inspect the URLRequest and other state.
@@ -148,7 +160,8 @@ void ResourceLoader::ReportUploadProgress() {
   bool too_much_time_passed = time_since_last > kOneSecond;
 
   if (is_finished || enough_new_progress || too_much_time_passed) {
-    if (request_->load_flags() & net::LOAD_ENABLE_UPLOAD_PROGRESS) {
+    ResourceRequestInfoImpl* info = GetRequestInfo();
+    if (info->is_upload_progress_enabled()) {
       handler_->OnUploadProgress(progress.position(), progress.size());
       waiting_for_upload_progress_ack_ = true;
     }
@@ -158,7 +171,7 @@ void ResourceLoader::ReportUploadProgress() {
 }
 
 void ResourceLoader::MarkAsTransferring() {
-  CHECK(ResourceType::IsFrame(GetRequestInfo()->GetResourceType()))
+  CHECK(IsResourceTypeFrame(GetRequestInfo()->GetResourceType()))
       << "Can only transfer for navigations";
   is_transferring_ = true;
 }
@@ -183,16 +196,12 @@ void ResourceLoader::ClearLoginDelegate() {
   login_delegate_ = NULL;
 }
 
-void ResourceLoader::ClearSSLClientAuthHandler() {
-  ssl_client_auth_handler_ = NULL;
-}
-
 void ResourceLoader::OnUploadProgressACK() {
   waiting_for_upload_progress_ack_ = false;
 }
 
 void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
-                                        const GURL& new_url,
+                                        const net::RedirectInfo& redirect_info,
                                         bool* defer) {
   DCHECK_EQ(request_.get(), unused);
 
@@ -203,27 +212,27 @@ void ResourceLoader::OnReceivedRedirect(net::URLRequest* unused,
 
   if (info->GetProcessType() != PROCESS_TYPE_PLUGIN &&
       !ChildProcessSecurityPolicyImpl::GetInstance()->
-          CanRequestURL(info->GetChildID(), new_url)) {
+          CanRequestURL(info->GetChildID(), redirect_info.new_url)) {
     VLOG(1) << "Denied unauthorized request for "
-            << new_url.possibly_invalid_spec();
+            << redirect_info.new_url.possibly_invalid_spec();
 
     // Tell the renderer that this request was disallowed.
     Cancel();
     return;
   }
 
-  delegate_->DidReceiveRedirect(this, new_url);
+  delegate_->DidReceiveRedirect(this, redirect_info.new_url);
 
-  if (delegate_->HandleExternalProtocol(this, new_url)) {
+  if (delegate_->HandleExternalProtocol(this, redirect_info.new_url)) {
     // The request is complete so we can remove it.
     CancelAndIgnore();
     return;
   }
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
-  PopulateResourceResponse(request_.get(), response.get());
+  PopulateResourceResponse(info, request_.get(), response.get());
 
-  if (!handler_->OnRequestRedirected(new_url, response.get(), defer)) {
+  if (!handler_->OnRequestRedirected(redirect_info, response.get(), defer)) {
     Cancel();
   } else if (*defer) {
     deferred_stage_ = DEFERRED_REDIRECT;  // Follow redirect when resumed.
@@ -259,12 +268,14 @@ void ResourceLoader::OnCertificateRequested(
     return;
   }
 
-  DCHECK(!ssl_client_auth_handler_.get())
+  DCHECK(!ssl_client_auth_handler_)
       << "OnCertificateRequested called with ssl_client_auth_handler pending";
-  ssl_client_auth_handler_ = new SSLClientAuthHandler(
+  ssl_client_auth_handler_.reset(new SSLClientAuthHandler(
       GetRequestInfo()->GetContext()->CreateClientCertStore(),
       request_.get(),
-      cert_info);
+      cert_info,
+      base::Bind(&ResourceLoader::ContinueWithCertificate,
+                 weak_ptr_factory_.GetWeakPtr())));
   ssl_client_auth_handler_->SelectCertificate();
 }
 
@@ -280,7 +291,6 @@ void ResourceLoader::OnSSLCertificateError(net::URLRequest* request,
 
   SSLManager::OnSSLCertificateError(
       weak_ptr_factory_.GetWeakPtr(),
-      info->GetGlobalRequestID(),
       info->GetResourceType(),
       request_->url(),
       render_process_id,
@@ -375,8 +385,7 @@ void ResourceLoader::OnReadCompleted(net::URLRequest* unused, int bytes_read) {
   }
 }
 
-void ResourceLoader::CancelSSLRequest(const GlobalRequestID& id,
-                                      int error,
+void ResourceLoader::CancelSSLRequest(int error,
                                       const net::SSLInfo* ssl_info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
@@ -393,7 +402,7 @@ void ResourceLoader::CancelSSLRequest(const GlobalRequestID& id,
   }
 }
 
-void ResourceLoader::ContinueSSLRequest(const GlobalRequestID& id) {
+void ResourceLoader::ContinueSSLRequest() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   DVLOG(1) << "ContinueSSLRequest() url: " << request_->url().spec();
@@ -483,10 +492,7 @@ void ResourceLoader::CancelRequestInternal(int error, bool from_renderer) {
     login_delegate_->OnRequestCancelled();
     login_delegate_ = NULL;
   }
-  if (ssl_client_auth_handler_.get()) {
-    ssl_client_auth_handler_->OnRequestCancelled();
-    ssl_client_auth_handler_ = NULL;
-  }
+  ssl_client_auth_handler_.reset();
 
   request_->CancelWithError(error);
 
@@ -510,7 +516,7 @@ void ResourceLoader::StoreSignedCertificateTimestamps(
 
   for (net::SignedCertificateTimestampAndStatusList::const_iterator iter =
        sct_list.begin(); iter != sct_list.end(); ++iter) {
-    const int sct_id(sct_store->Store(iter->sct, process_id));
+    const int sct_id(sct_store->Store(iter->sct.get(), process_id));
     sct_ids->push_back(
         SignedCertificateTimestampIDAndStatus(sct_id, iter->status));
   }
@@ -520,7 +526,7 @@ void ResourceLoader::CompleteResponseStarted() {
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
   scoped_refptr<ResourceResponse> response(new ResourceResponse());
-  PopulateResourceResponse(request_.get(), response.get());
+  PopulateResourceResponse(info, request_.get(), response.get());
 
   if (request_->ssl_info().cert.get()) {
     int cert_id = CertStore::GetInstance()->StoreCert(
@@ -606,7 +612,7 @@ void ResourceLoader::ReadMore(int* bytes_read) {
     return;
   }
 
-  DCHECK(buf);
+  DCHECK(buf.get());
   DCHECK(buf_size > 0);
 
   request_->Read(buf.get(), buf_size, bytes_read);
@@ -672,7 +678,7 @@ void ResourceLoader::CallDidFinishLoading() {
 void ResourceLoader::RecordHistograms() {
   ResourceRequestInfoImpl* info = GetRequestInfo();
 
-  if (info->GetResourceType() == ResourceType::PREFETCH) {
+  if (info->GetResourceType() == RESOURCE_TYPE_PREFETCH) {
     PrefetchStatus status = STATUS_UNDEFINED;
     TimeDelta total_time = base::TimeTicks::Now() - request_->creation_time();
 
@@ -700,6 +706,11 @@ void ResourceLoader::RecordHistograms() {
 
     UMA_HISTOGRAM_ENUMERATION("Net.Prefetch.Pattern", status, STATUS_MAX);
   }
+}
+
+void ResourceLoader::ContinueWithCertificate(net::X509Certificate* cert) {
+  ssl_client_auth_handler_.reset();
+  request_->ContinueWithCertificate(cert);
 }
 
 }  // namespace content

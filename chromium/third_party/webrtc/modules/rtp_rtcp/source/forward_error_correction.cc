@@ -230,7 +230,7 @@ void ForwardErrorCorrection::GenerateFecBitStrings(
         Packet* media_packet = *media_list_it;
 
         // Assign network-ordered media payload length.
-        ModuleRTPUtility::AssignUWord16ToBuffer(
+        RtpUtility::AssignUWord16ToBuffer(
             media_payload_length, media_packet->length - kRtpHeaderSize);
 
         fec_packet_length = media_packet->length + fec_rtp_offset;
@@ -432,7 +432,7 @@ void ForwardErrorCorrection::GenerateFecUlpHeaders(
     // -- ULP header --
     // Copy the payload size to the protection length field.
     // (We protect the entire packet.)
-    ModuleRTPUtility::AssignUWord16ToBuffer(
+    RtpUtility::AssignUWord16ToBuffer(
         &generated_fec_packets_[i].data[10],
         generated_fec_packets_[i].length - kFecHeaderSize - ulp_header_size);
 
@@ -537,7 +537,7 @@ void ForwardErrorCorrection::InsertFECPacket(
   fec_packet->ssrc = rx_packet->ssrc;
 
   const uint16_t seq_num_base =
-      ModuleRTPUtility::BufferToUWord16(&fec_packet->pkt->data[2]);
+      RtpUtility::BufferToUWord16(&fec_packet->pkt->data[2]);
   const uint16_t maskSizeBytes =
       (fec_packet->pkt->data[0] & 0x40) ? kMaskSizeLBitSet
                                         : kMaskSizeLBitClear;  // L bit set?
@@ -603,6 +603,23 @@ void ForwardErrorCorrection::InsertPackets(
   while (!received_packet_list->empty()) {
     ReceivedPacket* rx_packet = received_packet_list->front();
 
+    // Check for discarding oldest FEC packet, to avoid wrong FEC decoding from
+    // sequence number wrap-around. Detection of old FEC packet is based on
+    // sequence number difference of received packet and oldest packet in FEC
+    // packet list.
+    // TODO(marpan/holmer): We should be able to improve detection/discarding of
+    // old FEC packets based on timestamp information or better sequence number
+    // thresholding (e.g., to distinguish between wrap-around and reordering).
+    if (!fec_packet_list_.empty()) {
+      uint16_t seq_num_diff = abs(
+          static_cast<int>(rx_packet->seq_num) -
+          static_cast<int>(fec_packet_list_.front()->seq_num));
+      if (seq_num_diff > 0x3fff) {
+        DiscardFECPacket(fec_packet_list_.front());
+        fec_packet_list_.pop_front();
+      }
+    }
+
     if (rx_packet->is_fec) {
       InsertFECPacket(rx_packet, recovered_packet_list);
     } else {
@@ -633,7 +650,7 @@ void ForwardErrorCorrection::InitRecovery(const FecPacket* fec_packet,
   // Copy FEC payload, skipping the ULP header.
   memcpy(&recovered->pkt->data[kRtpHeaderSize],
          &fec_packet->pkt->data[kFecHeaderSize + ulp_header_size],
-         ModuleRTPUtility::BufferToUWord16(protection_length));
+         RtpUtility::BufferToUWord16(protection_length));
   // Copy the length recovery field.
   memcpy(recovered->length_recovery, &fec_packet->pkt->data[8], 2);
   // Copy the first 2 bytes of the FEC header.
@@ -641,8 +658,7 @@ void ForwardErrorCorrection::InitRecovery(const FecPacket* fec_packet,
   // Copy the 5th to 8th bytes of the FEC header.
   memcpy(&recovered->pkt->data[4], &fec_packet->pkt->data[4], 4);
   // Set the SSRC field.
-  ModuleRTPUtility::AssignUWord32ToBuffer(&recovered->pkt->data[8],
-                                          fec_packet->ssrc);
+  RtpUtility::AssignUWord32ToBuffer(&recovered->pkt->data[8], fec_packet->ssrc);
 }
 
 void ForwardErrorCorrection::FinishRecovery(RecoveredPacket* recovered) {
@@ -651,12 +667,11 @@ void ForwardErrorCorrection::FinishRecovery(RecoveredPacket* recovered) {
   recovered->pkt->data[0] &= 0xbf;  // Clear the 2nd bit.
 
   // Set the SN field.
-  ModuleRTPUtility::AssignUWord16ToBuffer(&recovered->pkt->data[2],
-                                          recovered->seq_num);
+  RtpUtility::AssignUWord16ToBuffer(&recovered->pkt->data[2],
+                                    recovered->seq_num);
   // Recover the packet length.
   recovered->pkt->length =
-      ModuleRTPUtility::BufferToUWord16(recovered->length_recovery) +
-      kRtpHeaderSize;
+      RtpUtility::BufferToUWord16(recovered->length_recovery) + kRtpHeaderSize;
 }
 
 void ForwardErrorCorrection::XorPackets(const Packet* src_packet,
@@ -671,8 +686,8 @@ void ForwardErrorCorrection::XorPackets(const Packet* src_packet,
   }
   // XOR with the network-ordered payload size.
   uint8_t media_payload_length[2];
-  ModuleRTPUtility::AssignUWord16ToBuffer(media_payload_length,
-                                          src_packet->length - kRtpHeaderSize);
+  RtpUtility::AssignUWord16ToBuffer(media_payload_length,
+                                    src_packet->length - kRtpHeaderSize);
   dst_packet->length_recovery[0] ^= media_payload_length[0];
   dst_packet->length_recovery[1] ^= media_payload_length[1];
 

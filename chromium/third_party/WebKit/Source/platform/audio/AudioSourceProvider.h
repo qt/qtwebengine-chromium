@@ -31,7 +31,7 @@
 
 #include "platform/PlatformExport.h"
 
-namespace WebCore {
+namespace blink {
 
 class AudioBus;
 class AudioSourceProviderClient;
@@ -48,6 +48,6 @@ public:
     virtual ~AudioSourceProvider() { }
 };
 
-} // WebCore
+} // namespace blink
 
 #endif // AudioSourceProvider_h

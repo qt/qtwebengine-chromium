@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_P2P_BASE_CONSTANTS_H_
-#define TALK_P2P_BASE_CONSTANTS_H_
+#ifndef WEBRTC_P2P_BASE_CONSTANTS_H_
+#define WEBRTC_P2P_BASE_CONSTANTS_H_
 
 #include <string>
-#include "talk/xmllite/qname.h"
+#include "webrtc/libjingle/xmllite/qname.h"
 
 // This file contains constants related to signaling that are used in various
 // classes in this directory.
@@ -273,4 +273,4 @@ extern const char CONNECTIONROLE_HOLDCONN_STR[];
 
 }  // namespace cricket
 
-#endif  // TALK_P2P_BASE_CONSTANTS_H_
+#endif  // WEBRTC_P2P_BASE_CONSTANTS_H_

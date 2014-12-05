@@ -10,6 +10,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/strings/string_tokenizer.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_version.h"
@@ -66,6 +67,15 @@ class NET_EXPORT HttpUtil {
   static bool ParseRangeHeader(const std::string& range_specifier,
                                std::vector<HttpByteRange>* ranges);
 
+  // Parses a Retry-After header that is either an absolute date/time or a
+  // number of seconds in the future. Interprets absolute times as relative to
+  // |now|. If |retry_after_string| is successfully parsed and indicates a time
+  // that is not in the past, fills in |*retry_after| and returns true;
+  // otherwise, returns false.
+  static bool ParseRetryAfterHeader(const std::string& retry_after_string,
+                                    base::Time now,
+                                    base::TimeDelta* retry_after);
+
   // Scans the '\r\n'-delimited headers for the given header name.  Returns
   // true if a match is found.  Input is assumed to be well-formed.
   // TODO(darin): kill this
@@ -74,6 +84,13 @@ class NET_EXPORT HttpUtil {
   // Returns true if it is safe to allow users and scripts to specify the header
   // named |name|.
   static bool IsSafeHeader(const std::string& name);
+
+  // Returns true if |name| is a valid HTTP header name.
+  static bool IsValidHeaderName(const std::string& name);
+
+  // Returns false if |value| contains NUL or CRLF. This method does not perform
+  // a fully RFC-2616-compliant header value validation.
+  static bool IsValidHeaderValue(const std::string& value);
 
   // Strips all header lines from |headers| whose name matches
   // |headers_to_remove|. |headers_to_remove| is a list of null-terminated

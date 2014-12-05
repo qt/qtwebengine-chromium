@@ -1,6 +1,6 @@
 /*
 ********************************************************************************
-*   Copyright (C) 1997-2010, International Business Machines
+*   Copyright (C) 1997-2013, International Business Machines
 *   Corporation and others.  All Rights Reserved.
 ********************************************************************************
 *
@@ -32,6 +32,7 @@
 
 #include "unicode/uobject.h"
 #include "unicode/locid.h"
+#include "unicode/unum.h"
 
 /**
  * \file
@@ -127,55 +128,44 @@ public:
          */
         kMonetaryGroupingSeparatorSymbol,
         /** One
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kOneDigitSymbol,
         /** Two
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kTwoDigitSymbol,
         /** Three
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kThreeDigitSymbol,
         /** Four
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kFourDigitSymbol,
         /** Five
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kFiveDigitSymbol,
         /** Six
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kSixDigitSymbol,
         /** Seven
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kSevenDigitSymbol,
         /** Eight
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kEightDigitSymbol,
         /** Nine
-         * @draft ICU 4.6
+         * @stable ICU 4.6
          */
         kNineDigitSymbol,
         /** count symbol constants */
         kFormatSymbolCount
     };
-
-    /**
-      * Constants for specifying currency spacing
-      * @draft ICU 4.2
-      */
-     enum ECurrencySpacing {
-       kCurrencyMatch,
-       kSurroundingMatch,
-       kInsert,
-       kCurrencySpacingCount
-     };
 
     /**
      * Create a DecimalFormatSymbols object for the given locale.
@@ -197,7 +187,26 @@ public:
      *                  failure code upon return.
      * @stable ICU 2.0
      */
-    DecimalFormatSymbols( UErrorCode& status);
+    DecimalFormatSymbols(UErrorCode& status);
+
+#ifndef U_HIDE_DRAFT_API
+    /**
+     * Creates a DecimalFormatSymbols object with last-resort data.
+     * Intended for callers who cache the symbols data and
+     * set all symbols on the resulting object.
+     *
+     * The last-resort symbols are similar to those for the root data,
+     * except that the grouping separators are empty,
+     * the NaN symbol is U+FFFD rather than "NaN",
+     * and the CurrencySpacing patterns are empty.
+     *
+     * @param status    Input/output parameter, set to success or
+     *                  failure code upon return.
+     * @return last-resort symbols
+     * @draft ICU 52
+     */
+    static DecimalFormatSymbols* createWithLastResortData(UErrorCode& status);
+#endif  /* U_HIDE_DRAFT_API */
 
     /**
      * Copy constructor.
@@ -279,7 +288,7 @@ public:
       * This API gets the CurrencySpacing data from ResourceBundle. The pattern can
       * be empty if there is no data from current locale and its parent locales.
       *
-      * @param type :  kCurrencyMatch, kSurroundingMatch or kInsert.
+      * @param type :  UNUM_CURRENCY_MATCH, UNUM_CURRENCY_SURROUNDING_MATCH or UNUM_CURRENCY_INSERT.
       * @param beforeCurrency : true if the pattern is for before currency symbol.
       *                         false if the pattern is for after currency symbol.
       * @param status: Input/output parameter, set to success or
@@ -287,22 +296,22 @@ public:
       * @return pattern string for currencyMatch, surroundingMatch or spaceInsert.
       *     Return empty string if there is no data for this locale and its parent
       *     locales.
-      * @draft ICU 4.2
+      * @stable ICU 4.8
       */
-     const UnicodeString& getPatternForCurrencySpacing(ECurrencySpacing type,
+     const UnicodeString& getPatternForCurrencySpacing(UCurrencySpacing type,
                                                  UBool beforeCurrency,
                                                  UErrorCode& status) const;
      /**
        * Set pattern string for 'CurrencySpacing' that can be applied to
        * currency format.
        *
-       * @param type : kCurrencyMatch, kSurroundingMatch or kInsert.
+       * @param type : UNUM_CURRENCY_MATCH, UNUM_CURRENCY_SURROUNDING_MATCH or UNUM_CURRENCY_INSERT.
        * @param beforeCurrency : true if the pattern is for before currency symbol.
        *                         false if the pattern is for after currency symbol.
        * @param pattern : pattern string to override current setting.
-       * @draft ICU 4.2
+       * @stable ICU 4.8
        */
-     void setPatternForCurrencySpacing(ECurrencySpacing type,
+     void setPatternForCurrencySpacing(UCurrencySpacing type,
                                        UBool beforeCurrency,
                                        const UnicodeString& pattern);
 
@@ -321,7 +330,7 @@ public:
     static UClassID U_EXPORT2 getStaticClassID();
 
 private:
-    DecimalFormatSymbols(); // default constructor not implemented
+    DecimalFormatSymbols();
 
     /**
      * Initializes the symbols from the LocaleElements resource bundle.
@@ -343,6 +352,7 @@ private:
     void setCurrencyForSymbols();
 
 public:
+#ifndef U_HIDE_INTERNAL_API
     /**
      * _Internal_ function - more efficient version of getSymbol,
      * returning a const reference to one of the symbol strings.
@@ -361,6 +371,7 @@ public:
      * @internal
      */
     inline const UChar* getCurrencyPattern(void) const;
+#endif  /* U_HIDE_INTERNAL_API */
 
 private:
     /**
@@ -392,8 +403,8 @@ private:
     char validLocale[ULOC_FULLNAME_CAPACITY];
     const UChar* currPattern;
 
-    UnicodeString currencySpcBeforeSym[kCurrencySpacingCount];
-    UnicodeString currencySpcAfterSym[kCurrencySpacingCount];
+    UnicodeString currencySpcBeforeSym[UNUM_CURRENCY_SPACING_COUNT];
+    UnicodeString currencySpcAfterSym[UNUM_CURRENCY_SPACING_COUNT];
 };
 
 // -------------------------------------
@@ -409,6 +420,8 @@ DecimalFormatSymbols::getSymbol(ENumberFormatSymbol symbol) const {
     return *strPtr;
 }
 
+#ifndef U_HIDE_INTERNAL_API
+
 inline const UnicodeString &
 DecimalFormatSymbols::getConstSymbol(ENumberFormatSymbol symbol) const {
     const UnicodeString *strPtr;
@@ -419,6 +432,9 @@ DecimalFormatSymbols::getConstSymbol(ENumberFormatSymbol symbol) const {
     }
     return *strPtr;
 }
+
+#endif  /* U_HIDE_INTERNAL_API */
+
 
 // -------------------------------------
 
@@ -448,10 +464,13 @@ DecimalFormatSymbols::getLocale() const {
     return locale;
 }
 
+#ifndef U_HIDE_INTERNAL_API
 inline const UChar*
 DecimalFormatSymbols::getCurrencyPattern() const {
     return currPattern;
 }
+#endif /* U_HIDE_INTERNAL_API */
+
 U_NAMESPACE_END
 
 #endif /* #if !UCONFIG_NO_FORMATTING */

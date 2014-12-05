@@ -23,17 +23,18 @@
 #ifndef CSSRule_h
 #define CSSRule_h
 
+#include "bindings/core/v8/ScriptWrappable.h"
 #include "platform/heap/Handle.h"
 #include "wtf/RefCounted.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 class CSSParserContext;
 class CSSStyleSheet;
 class StyleRuleBase;
 
-class CSSRule : public RefCountedWillBeGarbageCollectedFinalized<CSSRule> {
+class CSSRule : public RefCountedWillBeGarbageCollectedFinalized<CSSRule>, public ScriptWrappableBase {
 public:
     virtual ~CSSRule() { }
 
@@ -114,6 +115,6 @@ private:
 #define DEFINE_CSS_RULE_TYPE_CASTS(ToType, TYPE_NAME) \
     DEFINE_TYPE_CASTS(ToType, CSSRule, rule, rule->type() == CSSRule::TYPE_NAME, rule.type() == CSSRule::TYPE_NAME)
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CSSRule_h

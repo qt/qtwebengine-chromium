@@ -9,7 +9,7 @@
 #include "core/rendering/compositing/CompositingTriggers.h"
 #include "platform/graphics/CompositingReasons.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderObject;
 class RenderView;
@@ -19,15 +19,13 @@ class CompositingReasonFinder {
 public:
     explicit CompositingReasonFinder(RenderView&);
 
-    CompositingReasons styleDeterminedReasons(RenderObject*) const;
+    CompositingReasons potentialCompositingReasonsFromStyle(RenderObject*) const;
     CompositingReasons directReasons(const RenderLayer*) const;
 
     void updateTriggers();
 
     bool hasOverflowScrollTrigger() const;
-
     bool requiresCompositingForScrollableFrame() const;
-    bool requiresCompositingForPositionFixed(RenderObject*, const RenderLayer*, RenderLayer::ViewportConstrainedNotCompositedReason*) const;
 
 private:
     bool isMainFrame() const;
@@ -35,13 +33,13 @@ private:
     CompositingReasons nonStyleDeterminedDirectReasons(const RenderLayer*) const;
 
     bool requiresCompositingForTransform(RenderObject*) const;
-    bool requiresCompositingForFilters(RenderObject*) const;
     bool requiresCompositingForAnimation(RenderStyle*) const;
+    bool requiresCompositingForPositionFixed(const RenderLayer*) const;
 
     RenderView& m_renderView;
     CompositingTriggerFlags m_compositingTriggers;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // CompositingReasonFinder_h

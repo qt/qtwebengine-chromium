@@ -79,7 +79,6 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
                                    blink::WebDataSource* ds) {}
   virtual void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) {}
   virtual void FocusedNodeChanged(const blink::WebNode& node) {}
-  virtual void ZoomLevelChanged() {};
   virtual void DidChangeScrollOffset(blink::WebLocalFrame* frame) {}
   virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
   virtual void DidCommitCompositorFrame() {}
@@ -88,26 +87,28 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match the RenderView methods.
   virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
   virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) {}
+  virtual void DidHandleGestureEvent(const blink::WebGestureEvent& event) {}
 
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
   virtual void OrientationChangeEvent() {}
+  virtual void Resized() {}
 
   virtual void OnStop() {}
 
   // IPC::Listener implementation.
-  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& message) override;
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
   RenderView* render_view() const;
   int routing_id() const { return routing_id_; }
 
  protected:
   explicit RenderViewObserver(RenderView* render_view);
-  virtual ~RenderViewObserver();
+  ~RenderViewObserver() override;
 
   // Sets |render_view_| to track.
   // Removes itself of previous (if any) |render_view_| observer list and adds

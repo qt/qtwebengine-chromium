@@ -36,7 +36,7 @@
 #include "modules/notifications/NotificationPermissionCallback.h"
 #include "wtf/PassOwnPtr.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExecutionContext;
 class Notification;
@@ -63,15 +63,10 @@ public:
     // the notification, but must not attempt to call the event handlers.
     virtual void notificationObjectDestroyed(Notification*) = 0;
 
-    // Requests user permission to show desktop notifications from a particular
-    // script context. The callback parameter should be run when the user has
-    // made a decision.
-    virtual void requestPermission(ExecutionContext*, PassOwnPtr<NotificationPermissionCallback>) = 0;
-
     // Checks the current level of permission.
     virtual Permission checkPermission(ExecutionContext*) = 0;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // NotificationClient_h

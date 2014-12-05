@@ -32,7 +32,6 @@
 #ifndef EventSource_h
 #define EventSource_h
 
-#include "bindings/v8/ScriptWrappable.h"
 #include "core/dom/ActiveDOMObject.h"
 #include "core/events/EventTarget.h"
 #include "core/loader/ThreadableLoaderClient.h"
@@ -42,21 +41,22 @@
 #include "wtf/RefPtr.h"
 #include "wtf/Vector.h"
 
-namespace WebCore {
+namespace blink {
 
-class Dictionary;
+class EventSourceInit;
 class ExceptionState;
 class MessageEvent;
 class ResourceResponse;
 class TextResourceDecoder;
 class ThreadableLoader;
 
-class EventSource FINAL : public RefCountedWillBeRefCountedGarbageCollected<EventSource>, public ScriptWrappable, public EventTargetWithInlineData, private ThreadableLoaderClient, public ActiveDOMObject {
-    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
+class EventSource final : public RefCountedWillBeGarbageCollectedFinalized<EventSource>, public EventTargetWithInlineData, private ThreadableLoaderClient, public ActiveDOMObject {
+    DEFINE_WRAPPERTYPEINFO();
     REFCOUNTED_EVENT_TARGET(EventSource);
     WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(EventSource);
+    WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
-    static PassRefPtrWillBeRawPtr<EventSource> create(ExecutionContext*, const String& url, const Dictionary&, ExceptionState&);
+    static PassRefPtrWillBeRawPtr<EventSource> create(ExecutionContext*, const String& url, const EventSourceInit&, ExceptionState&);
     virtual ~EventSource();
 
     static const unsigned long long defaultReconnectDelay;
@@ -77,8 +77,8 @@ public:
 
     void close();
 
-    virtual const AtomicString& interfaceName() const OVERRIDE;
-    virtual ExecutionContext* executionContext() const OVERRIDE;
+    virtual const AtomicString& interfaceName() const override;
+    virtual ExecutionContext* executionContext() const override;
 
     // ActiveDOMObject
     //
@@ -86,17 +86,19 @@ public:
     // Page::setDefersLoading() and it defers delivery of events from the
     // loader, and therefore the methods of this class for receiving
     // asynchronous events from the loader won't be invoked.
-    virtual void stop() OVERRIDE;
+    virtual void stop() override;
+
+    virtual bool hasPendingActivity() const override;
 
 private:
-    EventSource(ExecutionContext*, const KURL&, const Dictionary&);
+    EventSource(ExecutionContext*, const KURL&, const EventSourceInit&);
 
-    virtual void didReceiveResponse(unsigned long, const ResourceResponse&) OVERRIDE;
-    virtual void didReceiveData(const char*, int) OVERRIDE;
-    virtual void didFinishLoading(unsigned long, double) OVERRIDE;
-    virtual void didFail(const ResourceError&) OVERRIDE;
-    virtual void didFailAccessControlCheck(const ResourceError&) OVERRIDE;
-    virtual void didFailRedirectCheck() OVERRIDE;
+    virtual void didReceiveResponse(unsigned long, const ResourceResponse&, PassOwnPtr<WebDataConsumerHandle>) override;
+    virtual void didReceiveData(const char*, unsigned) override;
+    virtual void didFinishLoading(unsigned long, double) override;
+    virtual void didFail(const ResourceError&) override;
+    virtual void didFailAccessControlCheck(const ResourceError&) override;
+    virtual void didFailRedirectCheck() override;
 
     void scheduleInitialConnect();
     void connect();
@@ -127,6 +129,6 @@ private:
     String m_eventStreamOrigin;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // EventSource_h

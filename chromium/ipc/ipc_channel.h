@@ -12,6 +12,7 @@
 #endif
 
 #include "base/compiler_specific.h"
+#include "base/files/scoped_file.h"
 #include "base/process/process.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_message.h"
@@ -118,7 +119,7 @@ class IPC_EXPORT Channel : public Sender {
   // TODO(morrita): Replace CreateByModeForProxy() with one of above Create*().
   //
   static scoped_ptr<Channel> Create(
-      const IPC::ChannelHandle &channel_handle, Mode mode,Listener* listener);
+      const IPC::ChannelHandle &channel_handle, Mode mode, Listener* listener);
 
   static scoped_ptr<Channel> CreateClient(
       const IPC::ChannelHandle &channel_handle, Listener* listener);
@@ -142,8 +143,7 @@ class IPC_EXPORT Channel : public Sender {
   static scoped_ptr<Channel> CreateServer(
       const IPC::ChannelHandle &channel_handle, Listener* listener);
 
-
-  virtual ~Channel();
+  ~Channel() override;
 
   // Connect the pipe.  On the server side, this will initiate
   // waiting for connections.  On the client, it attempts to
@@ -170,13 +170,20 @@ class IPC_EXPORT Channel : public Sender {
   // listener.
   virtual base::ProcessId GetPeerPID() const = 0;
 
+  // Get its own process id. This value is told to the peer.
+  virtual base::ProcessId GetSelfPID() const = 0;
+
+  // Overridden from ipc::Sender.
   // Send a message over the Channel to the listener on the other end.
   //
   // |message| must be allocated using operator new.  This object will be
   // deleted once the contents of the Message have been sent.
-  virtual bool Send(Message* message) = 0;
+  virtual bool Send(Message* message) override = 0;
 
-#if defined(OS_POSIX) && !defined(OS_NACL)
+  // NaCl in Non-SFI mode runs on Linux directly, and the following functions
+  // compiled on Linux are also needed. Please see also comments in
+  // components/nacl_nonsfi.gyp for more details.
+#if defined(OS_POSIX) && !defined(OS_NACL_SFI)
   // On POSIX an IPC::Channel wraps a socketpair(), this method returns the
   // FD # for the client end of the socket.
   // This method may only be called on the server side of a channel.
@@ -186,14 +193,14 @@ class IPC_EXPORT Channel : public Sender {
   // Same as GetClientFileDescriptor, but transfers the ownership of the
   // file descriptor to the caller.
   // This method can be called on any thread.
-  virtual int TakeClientFileDescriptor() = 0;
-#endif  // defined(OS_POSIX) && !defined(OS_NACL)
+  virtual base::ScopedFD TakeClientFileDescriptor() = 0;
+#endif
 
   // Returns true if a named server channel is initialized on the given channel
   // ID. Even if true, the server may have already accepted a connection.
   static bool IsNamedServerInitialized(const std::string& channel_id);
 
-#if !defined(OS_NACL)
+#if !defined(OS_NACL_SFI)
   // Generates a channel ID that's non-predictable and unique.
   static std::string GenerateUniqueRandomChannelID();
 

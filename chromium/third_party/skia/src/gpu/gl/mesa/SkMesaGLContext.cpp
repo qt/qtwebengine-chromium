@@ -11,28 +11,57 @@
 #include "gl/SkMesaGLContext.h"
 #include "gl/GrGLDefines.h"
 
-SkMesaGLContext::AutoContextRestore::AutoContextRestore() {
-    fOldContext = (Context)OSMesaGetCurrentContext();
-    if (NULL != (OSMesaContext)fOldContext) {
-        OSMesaGetColorBuffer((OSMesaContext)fOldContext,
-                              &fOldWidth, &fOldHeight,
-                              &fOldFormat, &fOldImage);
-    }
-}
-
-SkMesaGLContext::AutoContextRestore::~AutoContextRestore() {
-    if (NULL != (OSMesaContext)fOldContext) {
-        OSMesaMakeCurrent((OSMesaContext)fOldContext, fOldImage,
-                          fOldFormat, fOldWidth, fOldHeight);
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
+static const GrGLint gBOGUS_SIZE = 16;
 
 SkMesaGLContext::SkMesaGLContext()
     : fContext(static_cast<Context>(NULL))
     , fImage(NULL) {
     GR_STATIC_ASSERT(sizeof(Context) == sizeof(OSMesaContext));
+
+    /* Create an RGBA-mode context */
+#if OSMESA_MAJOR_VERSION * 100 + OSMESA_MINOR_VERSION >= 305
+    /* specify Z, stencil, accum sizes */
+    fContext = (Context)OSMesaCreateContextExt(OSMESA_BGRA, 0, 0, 0, NULL);
+#else
+    fContext = (Context)OSMesaCreateContext(OSMESA_BGRA, NULL);
+#endif
+    if (!fContext) {
+        SkDebugf("OSMesaCreateContext failed!\n");
+        this->destroyGLContext();
+        return;
+    }
+    // Allocate the image buffer
+    fImage = (GrGLubyte *) sk_malloc_throw(gBOGUS_SIZE * gBOGUS_SIZE *
+                                           4 * sizeof(GrGLubyte));
+    if (!fImage) {
+        SkDebugf("Alloc image buffer failed!\n");
+        this->destroyGLContext();
+        return;
+    }
+
+    // Bind the buffer to the context and make it current
+    if (!OSMesaMakeCurrent((OSMesaContext)fContext,
+                           fImage,
+                           GR_GL_UNSIGNED_BYTE,
+                           gBOGUS_SIZE,
+                           gBOGUS_SIZE)) {
+        SkDebugf("OSMesaMakeCurrent failed!\n");
+        this->destroyGLContext();
+        return;
+    }
+
+    fGL.reset(GrGLCreateMesaInterface());
+    if (NULL == fGL.get()) {
+        SkDebugf("Could not create GL interface!\n");
+        this->destroyGLContext();
+        return;
+    }
+
+    if (!fGL->validate()) {
+        SkDebugf("Could not validate GL interface!\n");
+        this->destroyGLContext();
+        return;
+    }
 }
 
 SkMesaGLContext::~SkMesaGLContext() {
@@ -40,6 +69,7 @@ SkMesaGLContext::~SkMesaGLContext() {
 }
 
 void SkMesaGLContext::destroyGLContext() {
+    fGL.reset(NULL);
     if (fImage) {
         sk_free(fImage);
         fImage = NULL;
@@ -51,50 +81,7 @@ void SkMesaGLContext::destroyGLContext() {
     }
 }
 
-static const GrGLint gBOGUS_SIZE = 16;
 
-const GrGLInterface* SkMesaGLContext::createGLContext() {
-    /* Create an RGBA-mode context */
-#if OSMESA_MAJOR_VERSION * 100 + OSMESA_MINOR_VERSION >= 305
-    /* specify Z, stencil, accum sizes */
-    fContext = (Context)OSMesaCreateContextExt(OSMESA_BGRA, 0, 0, 0, NULL);
-#else
-    fContext = (Context)OSMesaCreateContext(OSMESA_BGRA, NULL);
-#endif
-    if (!fContext) {
-        SkDebugf("OSMesaCreateContext failed!\n");
-        this->destroyGLContext();
-        return NULL;
-    }
-    // Allocate the image buffer
-    fImage = (GrGLubyte *) sk_malloc_throw(gBOGUS_SIZE * gBOGUS_SIZE *
-                                           4 * sizeof(GrGLubyte));
-    if (!fImage) {
-        SkDebugf("Alloc image buffer failed!\n");
-        this->destroyGLContext();
-        return NULL;
-    }
-
-    // Bind the buffer to the context and make it current
-    if (!OSMesaMakeCurrent((OSMesaContext)fContext,
-                           fImage,
-                           GR_GL_UNSIGNED_BYTE,
-                           gBOGUS_SIZE,
-                           gBOGUS_SIZE)) {
-        SkDebugf("OSMesaMakeCurrent failed!\n");
-        this->destroyGLContext();
-        return NULL;
-    }
-
-    const GrGLInterface* interface = GrGLCreateMesaInterface();
-    if (!interface) {
-        SkDebugf("Could not create GL interface!\n");
-        this->destroyGLContext();
-        return NULL;
-    }
-    return interface;
-
-}
 
 void SkMesaGLContext::makeCurrent() const {
     if (fContext) {

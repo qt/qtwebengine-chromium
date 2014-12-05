@@ -21,19 +21,15 @@ namespace views {
 class InputMethodBridge::HostObserver : public ui::InputMethodObserver {
  public:
   explicit HostObserver(InputMethodBridge* bridge);
-  virtual ~HostObserver();
+  ~HostObserver() override;
 
-  virtual void OnTextInputTypeChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnFocus() OVERRIDE {}
-  virtual void OnBlur() OVERRIDE {}
-  virtual void OnCaretBoundsChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnTextInputStateChanged(
-      const ui::TextInputClient* client) OVERRIDE {}
-  virtual void OnInputMethodDestroyed(
-      const ui::InputMethod* input_method) OVERRIDE;
-  virtual void OnShowImeIfNeeded() OVERRIDE {}
+  void OnTextInputTypeChanged(const ui::TextInputClient* client) override {}
+  void OnFocus() override {}
+  void OnBlur() override {}
+  void OnCaretBoundsChanged(const ui::TextInputClient* client) override {}
+  void OnTextInputStateChanged(const ui::TextInputClient* client) override {}
+  void OnInputMethodDestroyed(const ui::InputMethod* input_method) override;
+  void OnShowImeIfNeeded() override {}
 
  private:
   InputMethodBridge* bridge_;
@@ -224,6 +220,11 @@ ui::TextInputType InputMethodBridge::GetTextInputType() const {
 ui::TextInputMode InputMethodBridge::GetTextInputMode() const {
   TextInputClient* client = GetTextInputClient();
   return client ? client->GetTextInputMode() : ui::TEXT_INPUT_MODE_DEFAULT;
+}
+
+int InputMethodBridge::GetTextInputFlags() const {
+  TextInputClient* client = GetTextInputClient();
+  return client ? client->GetTextInputFlags() : 0;
 }
 
 bool InputMethodBridge::CanComposeInline() const {

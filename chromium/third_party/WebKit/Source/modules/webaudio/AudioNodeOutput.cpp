@@ -32,20 +32,43 @@
 #include "modules/webaudio/AudioNodeInput.h"
 #include "wtf/Threading.h"
 
-namespace WebCore {
+namespace blink {
 
-AudioNodeOutput::AudioNodeOutput(AudioNode* node, unsigned numberOfChannels)
+inline AudioNodeOutput::AudioNodeOutput(AudioNode* node, unsigned numberOfChannels)
     : m_node(node)
     , m_numberOfChannels(numberOfChannels)
     , m_desiredNumberOfChannels(numberOfChannels)
     , m_isInPlace(false)
     , m_isEnabled(true)
+#if ENABLE_ASSERT
+    , m_didCallDispose(false)
+#endif
     , m_renderingFanOutCount(0)
     , m_renderingParamFanOutCount(0)
 {
     ASSERT(numberOfChannels <= AudioContext::maxNumberOfChannels());
 
     m_internalBus = AudioBus::create(numberOfChannels, AudioNode::ProcessingSizeInFrames);
+}
+
+AudioNodeOutput* AudioNodeOutput::create(AudioNode* node, unsigned numberOfChannels)
+{
+    return new AudioNodeOutput(node, numberOfChannels);
+}
+
+void AudioNodeOutput::trace(Visitor* visitor)
+{
+    visitor->trace(m_node);
+    visitor->trace(m_inputs);
+    visitor->trace(m_params);
+}
+
+void AudioNodeOutput::dispose()
+{
+#if ENABLE_ASSERT
+    m_didCallDispose = true;
+#endif
+    context()->removeMarkedAudioNodeOutput(this);
 }
 
 void AudioNodeOutput::setNumberOfChannels(unsigned numberOfChannels)
@@ -59,6 +82,7 @@ void AudioNodeOutput::setNumberOfChannels(unsigned numberOfChannels)
         // If we're in the audio thread then we can take care of it right away (we should be at the very start or end of a rendering quantum).
         updateNumberOfChannels();
     } else {
+        ASSERT(!m_didCallDispose);
         // Let the context take care of it in the audio thread in the pre and post render tasks.
         context()->markAudioNodeOutputDirty(this);
     }
@@ -96,11 +120,8 @@ void AudioNodeOutput::propagateChannelCount()
 
     if (isChannelCountKnown()) {
         // Announce to any nodes we're connected to that we changed our channel count for its input.
-        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i) {
-            AudioNodeInput* input = *i;
-            AudioNode* connectionNode = input->node();
-            connectionNode->checkNumberOfChannelsForInput(input);
-        }
+        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i)
+            i->value->checkNumberOfChannelsForInput(i->key);
     }
 }
 
@@ -146,26 +167,18 @@ unsigned AudioNodeOutput::renderingFanOutCount() const
     return m_renderingFanOutCount;
 }
 
-void AudioNodeOutput::addInput(AudioNodeInput* input)
+void AudioNodeOutput::addInput(AudioNodeInput& input)
 {
     ASSERT(context()->isGraphOwner());
-
-    ASSERT(input);
-    if (!input)
-        return;
-
-    m_inputs.add(input);
+    m_inputs.add(&input, &input.node());
+    input.node().makeConnection();
 }
 
-void AudioNodeOutput::removeInput(AudioNodeInput* input)
+void AudioNodeOutput::removeInput(AudioNodeInput& input)
 {
     ASSERT(context()->isGraphOwner());
-
-    ASSERT(input);
-    if (!input)
-        return;
-
-    m_inputs.remove(input);
+    input.node().breakConnection();
+    m_inputs.remove(&input);
 }
 
 void AudioNodeOutput::disconnectAllInputs()
@@ -173,32 +186,20 @@ void AudioNodeOutput::disconnectAllInputs()
     ASSERT(context()->isGraphOwner());
 
     // AudioNodeInput::disconnect() changes m_inputs by calling removeInput().
-    while (!m_inputs.isEmpty()) {
-        AudioNodeInput* input = *m_inputs.begin();
-        input->disconnect(this);
-    }
+    while (!m_inputs.isEmpty())
+        m_inputs.begin()->key->disconnect(*this);
 }
 
-void AudioNodeOutput::addParam(AudioParam* param)
+void AudioNodeOutput::addParam(AudioParam& param)
 {
     ASSERT(context()->isGraphOwner());
-
-    ASSERT(param);
-    if (!param)
-        return;
-
-    m_params.add(param);
+    m_params.add(&param);
 }
 
-void AudioNodeOutput::removeParam(AudioParam* param)
+void AudioNodeOutput::removeParam(AudioParam& param)
 {
     ASSERT(context()->isGraphOwner());
-
-    ASSERT(param);
-    if (!param)
-        return;
-
-    m_params.remove(param);
+    m_params.remove(&param);
 }
 
 void AudioNodeOutput::disconnectAllParams()
@@ -206,10 +207,8 @@ void AudioNodeOutput::disconnectAllParams()
     ASSERT(context()->isGraphOwner());
 
     // AudioParam::disconnect() changes m_params by calling removeParam().
-    while (!m_params.isEmpty()) {
-        AudioParam* param = m_params.begin()->get();
-        param->disconnect(this);
-    }
+    while (!m_params.isEmpty())
+        (*m_params.begin())->disconnect(*this);
 }
 
 void AudioNodeOutput::disconnectAll()
@@ -223,11 +222,9 @@ void AudioNodeOutput::disable()
     ASSERT(context()->isGraphOwner());
 
     if (m_isEnabled) {
-        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i) {
-            AudioNodeInput* input = *i;
-            input->disable(this);
-        }
         m_isEnabled = false;
+        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i)
+            i->key->disable(*this);
     }
 }
 
@@ -236,14 +233,12 @@ void AudioNodeOutput::enable()
     ASSERT(context()->isGraphOwner());
 
     if (!m_isEnabled) {
-        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i) {
-            AudioNodeInput* input = *i;
-            input->enable(this);
-        }
         m_isEnabled = true;
+        for (InputsIterator i = m_inputs.begin(); i != m_inputs.end(); ++i)
+            i->key->enable(*this);
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

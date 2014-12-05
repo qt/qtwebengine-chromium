@@ -1,4 +1,4 @@
-Copyright 20014 The Chromium Authors. All rights reserved.
+Copyright 2014 The Chromium Authors. All rights reserved.
 Use of this useless file is governed by a BSD-style license that can be
 found in the LICENSE file.
 
@@ -8,7 +8,7 @@ any modification below this line.
 
 =====================================================================
 
-Let's make a story. Add one sentence for every commit:
+Let's make a story. Add zero+ sentences for every commit:
 
 CHÄPTER 1:
 It was a dark and blinky night; the rain fell in torrents -- except at
@@ -87,6 +87,7 @@ I can feel the heat closing in, feel them out there making their moves...
 What could possibly go wrong? We've already ate our cake.
 
 Stand Still. Pause Clocks. We can make the World Stop.
+WUBWUBWUBWUBWUB
 
 I want a 1917 build and you will give me what I want.
 
@@ -94,6 +95,7 @@ This sentence is false.
 
 Beauty is in the eyes of a Beholder.
 
+I'm the best at space.
 
 The first time Yossarian saw the chaplain, he fell madly in love with him.
 *
@@ -112,7 +114,7 @@ still higher than other birds upon the plain, even though they soar.
 
 I'm here to commit lines and drop rhymes
 *
-This is a line to test and try uploading a cl. 
+This is a line to test and try uploading a cl.
 
 And lo, in the year 2014, there was verily an attempt to upgrade to GCC 4.8 on
 the Android bots, and it was good. Except on one bot, where it was bad. And
@@ -125,3 +127,21 @@ bot, and perhaps it will rebuild with GCC 4.6, which hath worked for many many
 seasons. And so they modified the whitespace file with these immortal lines,
 and visited it upon the bots, that great destruction might be wrought upon
 their outdated binaries. In clobberus, veritas.
+
+As the git approaches, light begins to shine through the SCM thrice again...
+However, the git, is, after all, quite stupid.
+
+Suddenly Domo-Kun found itself in a room filled with dazzling mirrors.
+
+A herd of wild gits appears!  Time for CQ :D
+And one more for sizes.py...
+
+Sigh.
+
+It was love at first sight.  The moment Yossarian first laid eyes on the chaplain, he fell madly in love with him.
+
+Cool whitespace change for git-cl land
+
+Oh god the bots are red! I'm blind! Mmmm, cronuts.
+
+If you stand on your head, you will get footprints in your hair.

@@ -5,7 +5,7 @@
 #include "config.h"
 #include "core/events/ApplicationCacheErrorEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 static const String& errorReasonToString(blink::WebApplicationCacheHost::ErrorReason reason)
 {
@@ -47,7 +47,6 @@ ApplicationCacheErrorEventInit::ApplicationCacheErrorEventInit()
 
 ApplicationCacheErrorEvent::ApplicationCacheErrorEvent()
 {
-    ScriptWrappable::init(this);
 }
 
 ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(blink::WebApplicationCacheHost::ErrorReason reason, const String& url, int status, const String& message)
@@ -57,7 +56,6 @@ ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(blink::WebApplicationCach
     , m_status(status)
     , m_message(message)
 {
-    ScriptWrappable::init(this);
 }
 
 ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(const AtomicString& eventType, const ApplicationCacheErrorEventInit& initializer)
@@ -67,7 +65,6 @@ ApplicationCacheErrorEvent::ApplicationCacheErrorEvent(const AtomicString& event
     , m_status(initializer.status)
     , m_message(initializer.message)
 {
-    ScriptWrappable::init(this);
 }
 
 ApplicationCacheErrorEvent::~ApplicationCacheErrorEvent()
@@ -79,4 +76,4 @@ void ApplicationCacheErrorEvent::trace(Visitor* visitor)
     Event::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

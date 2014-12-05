@@ -5,10 +5,12 @@
 #ifndef V8_ZONE_H_
 #define V8_ZONE_H_
 
+#include <limits>
+
 #include "src/allocation.h"
-#include "src/checks.h"
-#include "src/hashmap.h"
+#include "src/base/logging.h"
 #include "src/globals.h"
+#include "src/hashmap.h"
 #include "src/list.h"
 #include "src/splay-tree.h"
 
@@ -38,10 +40,14 @@ class Zone {
   ~Zone();
   // Allocate 'size' bytes of memory in the Zone; expands the Zone by
   // allocating new segments of memory on demand using malloc().
-  inline void* New(int size);
+  void* New(int size);
 
   template <typename T>
-  inline T* NewArray(int length);
+  T* NewArray(int length) {
+    CHECK(std::numeric_limits<int>::max() / static_cast<int>(sizeof(T)) >
+          length);
+    return static_cast<T*>(New(length * sizeof(T)));
+  }
 
   // Deletes all objects and free all memory allocated in the Zone. Keeps one
   // small (size <= kMaximumKeptSegmentSize) segment around if it finds one.
@@ -57,9 +63,9 @@ class Zone {
 
   inline void adjust_segment_bytes_allocated(int delta);
 
-  inline unsigned allocation_size() { return allocation_size_; }
+  inline unsigned allocation_size() const { return allocation_size_; }
 
-  inline Isolate* isolate() { return isolate_; }
+  inline Isolate* isolate() const { return isolate_; }
 
  private:
   friend class Isolate;

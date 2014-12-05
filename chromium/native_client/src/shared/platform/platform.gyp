@@ -1,6 +1,6 @@
 # -*- python -*-
 #
-# Copyright (c) 2012 The Native Client Authors.  All rights reserved.
+# Copyright (c) 2012 The Native Client Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -56,6 +56,7 @@
           'posix/aligned_malloc.c',
           'posix/condition_variable.c',
           'posix/lock.c',
+          'posix/nacl_error.c',
           'posix/nacl_exit.c',
           'posix/nacl_fast_mutex.c',
           'posix/nacl_file_lock.c',
@@ -74,6 +75,7 @@
           'win/condition_variable.cc',
           'win/lock.cc',
           'win/nacl_clock.c',
+          'win/nacl_error.c',
           'win/nacl_exit.c',
           'win/nacl_fast_mutex.c',
           'win/nacl_find_addrsp.c',
@@ -165,11 +167,13 @@
         'build_newlib': 1,
         'build_pnacl_newlib': 1,
         'build_irt': 1,
+        'build_nonsfi_helper': 1,
         'sources': [
           'nacl_check.c',
           'nacl_log.c',
           'posix/condition_variable.c',
           'posix/lock.c',
+          'posix/nacl_error.c',
           'posix/nacl_exit.c',
           'posix/nacl_thread_id.c',
           'posix/nacl_threads.c',

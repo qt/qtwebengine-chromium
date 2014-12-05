@@ -29,11 +29,12 @@
 #include "SkData.h"
 #include "SkImageInfo.h"
 #include "platform/PlatformInstrumentation.h"
+#include "platform/RuntimeEnabledFeatures.h"
 #include "platform/SharedBuffer.h"
 #include "platform/TraceEvent.h"
 #include "platform/graphics/ImageFrameGenerator.h"
 
-namespace WebCore {
+namespace blink {
 
 DecodingImageGenerator::DecodingImageGenerator(PassRefPtr<ImageFrameGenerator> frameGenerator, const SkImageInfo& info, size_t index)
     : m_frameGenerator(frameGenerator)
@@ -68,17 +69,35 @@ bool DecodingImageGenerator::onGetInfo(SkImageInfo* info)
 
 bool DecodingImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, SkPMColor ctable[], int* ctableCount)
 {
-    TRACE_EVENT1("webkit", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
+    TRACE_EVENT1("blink", "DecodingImageGenerator::getPixels", "index", static_cast<int>(m_frameIndex));
 
-    // Implementation doesn't support scaling yet so make sure we're not given
-    // a different size.
-    ASSERT(info.fWidth == m_imageInfo.fWidth);
-    ASSERT(info.fHeight == m_imageInfo.fHeight);
-    ASSERT(info.fColorType == m_imageInfo.fColorType);
-    ASSERT(info.fAlphaType == m_imageInfo.fAlphaType);
+    // Implementation doesn't support scaling yet so make sure we're not given a different size.
+    if (info.width() != m_imageInfo.width() || info.height() != m_imageInfo.height() || info.colorType() != m_imageInfo.colorType()) {
+        // ImageFrame may have changed the owning SkBitmap to kOpaque_SkAlphaType after sniffing the encoded data, so if we see a request
+        // for opaque, that is ok even if our initial alphatype was not opaque.
+        return false;
+    }
+
     PlatformInstrumentation::willDecodeLazyPixelRef(m_generationId);
     bool decoded = m_frameGenerator->decodeAndScale(m_imageInfo, m_frameIndex, pixels, rowBytes);
     PlatformInstrumentation::didDecodeLazyPixelRef();
+    return decoded;
+}
+
+bool DecodingImageGenerator::onGetYUV8Planes(SkISize sizes[3], void* planes[3], size_t rowBytes[3], SkYUVColorSpace* colorSpace)
+{
+    if (!RuntimeEnabledFeatures::decodeToYUVEnabled())
+        return false;
+
+    if (!planes || !planes[0])
+        return m_frameGenerator->getYUVComponentSizes(sizes);
+
+    TRACE_EVENT0("blink", "DecodingImageGenerator::onGetYUV8Planes");
+    PlatformInstrumentation::willDecodeLazyPixelRef(m_generationId);
+    bool decoded = m_frameGenerator->decodeToYUV(sizes, planes, rowBytes);
+    PlatformInstrumentation::didDecodeLazyPixelRef();
+    if (colorSpace)
+        *colorSpace = kJPEG_SkYUVColorSpace;
     return decoded;
 }
 

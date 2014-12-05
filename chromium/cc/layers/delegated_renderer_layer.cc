@@ -7,7 +7,6 @@
 #include "cc/layers/delegated_renderer_layer_impl.h"
 #include "cc/output/delegated_frame_data.h"
 #include "cc/quads/render_pass_draw_quad.h"
-#include "cc/trees/blocking_task_runner.h"
 #include "cc/trees/layer_tree_host.h"
 
 namespace cc {
@@ -23,8 +22,7 @@ DelegatedRendererLayer::DelegatedRendererLayer(
     : Layer(),
       frame_provider_(frame_provider),
       should_collect_new_frame_(true),
-      frame_data_(NULL),
-      main_thread_runner_(BlockingTaskRunner::current()),
+      frame_data_(nullptr),
       weak_ptrs_(this) {
   frame_provider_->AddObserver(this);
 }
@@ -35,8 +33,7 @@ DelegatedRendererLayer::~DelegatedRendererLayer() {
 
 scoped_ptr<LayerImpl> DelegatedRendererLayer::CreateLayerImpl(
     LayerTreeImpl* tree_impl) {
-  return DelegatedRendererLayerImpl::Create(
-      tree_impl, layer_id_).PassAs<LayerImpl>();
+  return DelegatedRendererLayerImpl::Create(tree_impl, layer_id_);
 }
 
 void DelegatedRendererLayer::SetLayerTreeHost(LayerTreeHost* host) {
@@ -72,7 +69,7 @@ void DelegatedRendererLayer::PushPropertiesTo(LayerImpl* impl) {
 
   if (frame_data_)
     delegated_impl->SetFrameData(frame_data_, frame_damage_);
-  frame_data_ = NULL;
+  frame_data_ = nullptr;
   frame_damage_ = gfx::RectF();
 }
 
@@ -95,6 +92,10 @@ bool DelegatedRendererLayer::Update(ResourceUpdateQueue* queue,
   should_collect_new_frame_ = false;
 
   SetNeedsPushProperties();
+  return true;
+}
+
+bool DelegatedRendererLayer::HasDelegatedContent() const {
   return true;
 }
 

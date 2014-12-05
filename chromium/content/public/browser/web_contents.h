@@ -14,6 +14,7 @@
 #include "base/strings/string16.h"
 #include "base/supports_user_data.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/save_page_type.h"
@@ -45,6 +46,7 @@ struct LoadStateWithParam;
 namespace content {
 
 class BrowserContext;
+class BrowserPluginGuestDelegate;
 class InterstitialPage;
 class PageState;
 class RenderFrameHost;
@@ -55,6 +57,7 @@ class SiteInstance;
 class WebContentsDelegate;
 struct CustomContextMenuContext;
 struct DropData;
+struct Manifest;
 struct RendererPreferences;
 
 // WebContents is the core class in content/. A WebContents renders web content
@@ -109,13 +112,8 @@ class WebContents : public PageNavigator,
     // True if the contents should be initially hidden.
     bool initially_hidden;
 
-    // If this instance ID is non-zero then it indicates that this WebContents
-    // should behave as a guest.
-    int guest_instance_id;
-
-    // TODO(fsamuel): This is temporary. Remove this once all guests are created
-    // from the content embedder.
-    scoped_ptr<base::DictionaryValue> guest_extra_params;
+    // If non-null then this WebContents will be hosted by a BrowserPlugin.
+    BrowserPluginGuestDelegate* guest_delegate;
 
     // Used to specify the location context which display the new view should
     // belong. This can be NULL if not needed.
@@ -146,7 +144,7 @@ class WebContents : public PageNavigator,
 
   CONTENT_EXPORT static WebContents* FromRenderFrameHost(RenderFrameHost* rfh);
 
-  virtual ~WebContents() {}
+  ~WebContents() override {}
 
   // Intrinsic tab state -------------------------------------------------------
 
@@ -226,6 +224,18 @@ class WebContents : public PageNavigator,
   virtual void SetUserAgentOverride(const std::string& override) = 0;
   virtual const std::string& GetUserAgentOverride() const = 0;
 
+  // Enable the accessibility tree for this WebContents in the renderer,
+  // but don't enable creating a native accessibility tree on the browser
+  // side.
+  virtual void EnableTreeOnlyAccessibilityMode() = 0;
+
+  // Returns true only if "tree only" accessibility mode is on.
+  virtual bool IsTreeOnlyAccessibilityModeForTesting() const = 0;
+
+  // Returns true only if complete accessibility mode is on, meaning there's
+  // both renderer accessibility, and a native browser accessibility tree.
+  virtual bool IsFullAccessibilityModeForTesting() const = 0;
+
 #if defined(OS_WIN)
   virtual void SetParentNativeViewAccessible(
       gfx::NativeViewAccessible accessible_parent) = 0;
@@ -296,6 +306,10 @@ class WebContents : public PageNavigator,
   virtual void DecrementCapturerCount() = 0;
   virtual int GetCapturerCount() const = 0;
 
+  // Indicates/Sets whether all audio output from this WebContents is muted.
+  virtual bool IsAudioMuted() const = 0;
+  virtual void SetAudioMuted(bool mute) = 0;
+
   // Indicates whether this tab should be considered crashed. The setter will
   // also notify the delegate when the flag is changed.
   virtual bool IsCrashed() const  = 0;
@@ -307,8 +321,8 @@ class WebContents : public PageNavigator,
   virtual bool IsBeingDestroyed() const = 0;
 
   // Convenience method for notifying the delegate of a navigation state
-  // change. See InvalidateType enum.
-  virtual void NotifyNavigationStateChanged(unsigned changed_flags) = 0;
+  // change.
+  virtual void NotifyNavigationStateChanged(InvalidateTypes changed_flags) = 0;
 
   // Get the last time that the WebContents was made active (either when it was
   // created or shown with WasShown()).
@@ -492,10 +506,6 @@ class WebContents : public PageNavigator,
   virtual void SetClosedByUserGesture(bool value) = 0;
   virtual bool GetClosedByUserGesture() const = 0;
 
-  // Gets the zoom percent for this tab.
-  virtual int GetZoomPercent(bool* enable_increment,
-                             bool* enable_decrement) const = 0;
-
   // Opens view-source tab for this contents.
   virtual void ViewSource() = 0;
 
@@ -571,28 +581,25 @@ class WebContents : public PageNavigator,
   // Requests the renderer to insert CSS into the main frame's document.
   virtual void InsertCSS(const std::string& css) = 0;
 
+  // Returns true if audio has recently been audible from the WebContents.
+  virtual bool WasRecentlyAudible() = 0;
+
+  typedef base::Callback<void(const Manifest&)> GetManifestCallback;
+
+  // Requests the Manifest of the main frame's document.
+  virtual void GetManifest(const GetManifestCallback&) = 0;
+
 #if defined(OS_ANDROID)
   CONTENT_EXPORT static WebContents* FromJavaWebContents(
       jobject jweb_contents_android);
   virtual base::android::ScopedJavaLocalRef<jobject> GetJavaWebContents() = 0;
 #elif defined(OS_MACOSX)
-  // The web contents view assumes that its view will never be overlapped by
-  // another view (either partially or fully). This allows it to perform
-  // optimizations. If the view is in a view hierarchy where it might be
-  // overlapped by another view, notify the view by calling this with |true|.
-  virtual void SetAllowOverlappingViews(bool overlapping) = 0;
+  // Allowing other views disables optimizations which assume that only a single
+  // WebContents is present.
+  virtual void SetAllowOtherViews(bool allow) = 0;
 
-  // Returns true if overlapping views are allowed, false otherwise.
-  virtual bool GetAllowOverlappingViews() = 0;
-
-  // To draw two overlapping web contents view, the underlaying one should
-  // know about the overlaying one. Caller must ensure that |overlay| exists
-  // until |RemoveOverlayView| is called.
-  virtual void SetOverlayView(WebContents* overlay,
-                              const gfx::Point& offset) = 0;
-
-  // Removes the previously set overlay view.
-  virtual void RemoveOverlayView() = 0;
+  // Returns true if other views are allowed, false otherwise.
+  virtual bool GetAllowOtherViews() = 0;
 #endif  // OS_ANDROID
 
  private:

@@ -26,45 +26,51 @@
 #ifndef ColorChooserUIController_h
 #define ColorChooserUIController_h
 
-#include "platform/ColorChooser.h"
+#include "core/html/forms/ColorChooser.h"
+#include "platform/heap/Handle.h"
 #include "platform/text/PlatformLocale.h"
 #include "public/web/WebColorChooserClient.h"
 #include "wtf/OwnPtr.h"
 
-namespace WebCore {
-class ColorChooserClient;
-class LocalFrame;
-}
-
 namespace blink {
 
+class ColorChooserClient;
+class LocalFrame;
 class WebColorChooser;
 
-class ColorChooserUIController : public WebColorChooserClient, public WebCore::ColorChooser {
+class ColorChooserUIController : public NoBaseWillBeGarbageCollectedFinalized<ColorChooserUIController>, public WebColorChooserClient, public ColorChooser {
+    WILL_BE_USING_GARBAGE_COLLECTED_MIXIN(ColorChooserUIController);
 public:
-    ColorChooserUIController(WebCore::LocalFrame*, WebCore::ColorChooserClient*);
+    static PassOwnPtrWillBeRawPtr<ColorChooserUIController> create(LocalFrame* frame, ColorChooserClient* client)
+    {
+        return adoptPtrWillBeNoop(new ColorChooserUIController(frame, client));
+    }
+
     virtual ~ColorChooserUIController();
+    virtual void trace(Visitor*) override;
 
     virtual void openUI();
 
     // ColorChooser functions:
-    virtual void setSelectedColor(const WebCore::Color&) OVERRIDE FINAL;
-    virtual void endChooser() OVERRIDE;
+    virtual void setSelectedColor(const Color&) override final;
+    virtual void endChooser() override;
+    virtual AXObject* rootAXObject() override;
 
     // WebColorChooserClient functions:
-    virtual void didChooseColor(const WebColor&) OVERRIDE FINAL;
-    virtual void didEndChooser() OVERRIDE FINAL;
+    virtual void didChooseColor(const WebColor&) override final;
+    virtual void didEndChooser() override final;
 
 protected:
+    ColorChooserUIController(LocalFrame*, ColorChooserClient*);
+
     void openColorChooser();
     OwnPtr<WebColorChooser> m_chooser;
+    RawPtrWillBeMember<ColorChooserClient> m_client;
 
 private:
-
-    WebCore::LocalFrame* m_frame;
-    WebCore::ColorChooserClient* m_client;
+    RawPtrWillBeMember<LocalFrame> m_frame;
 };
 
-}
+} // namespace blink
 
 #endif // ColorChooserUIController_h

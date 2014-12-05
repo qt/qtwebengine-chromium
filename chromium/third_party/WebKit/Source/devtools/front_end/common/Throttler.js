@@ -21,6 +21,12 @@ WebInspector.Throttler.prototype = {
         this._isRunningProcess = false;
         if (this._process)
             this._innerSchedule(false);
+        this._processCompletedForTests();
+    },
+
+    _processCompletedForTests: function()
+    {
+        // For sniffing in tests.
     },
 
     _onTimeout: function()
@@ -43,20 +49,25 @@ WebInspector.Throttler.prototype = {
     {
         // Deliberately skip previous process.
         this._process = process;
-        var force = !!asSoonAsPossible && !this._asSoonAsPossible;
-        this._asSoonAsPossible = this._asSoonAsPossible || !!asSoonAsPossible;
 
-        this._innerSchedule(force);
+        // Run the first scheduled task instantly.
+        var hasScheduledTasks = !!this._processTimeout || this._isRunningProcess;
+        asSoonAsPossible = !!asSoonAsPossible || !hasScheduledTasks;
+
+        var forceTimerUpdate = asSoonAsPossible && !this._asSoonAsPossible;
+        this._asSoonAsPossible = this._asSoonAsPossible || asSoonAsPossible;
+
+        this._innerSchedule(forceTimerUpdate);
     },
 
     /**
-     * @param {boolean} force
+     * @param {boolean} forceTimerUpdate
      */
-    _innerSchedule: function(force)
+    _innerSchedule: function(forceTimerUpdate)
     {
         if (this._isRunningProcess)
             return;
-        if (this._processTimeout && !force)
+        if (this._processTimeout && !forceTimerUpdate)
             return;
         if (this._processTimeout)
             this._clearTimeout(this._processTimeout);

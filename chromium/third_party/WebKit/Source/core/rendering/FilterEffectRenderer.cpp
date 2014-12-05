@@ -28,27 +28,30 @@
 
 #include "core/rendering/FilterEffectRenderer.h"
 
-#include "core/dom/Document.h"
 #include "core/fetch/DocumentResource.h"
 #include "core/fetch/DocumentResourceReference.h"
+#include "core/frame/Settings.h"
 #include "core/page/Page.h"
-#include "core/rendering/RenderLayer.h"
-#include "core/rendering/RenderView.h"
+#include "core/rendering/RenderObject.h"
 #include "core/rendering/svg/ReferenceFilterBuilder.h"
 #include "core/svg/SVGElement.h"
 #include "core/svg/SVGFilterPrimitiveStandardAttributes.h"
 #include "platform/FloatConversion.h"
 #include "platform/LengthFunctions.h"
 #include "platform/graphics/ColorSpace.h"
+#include "platform/graphics/GraphicsContext.h"
+#include "platform/graphics/ImageFilter.h"
 #include "platform/graphics/UnacceleratedImageBufferSurface.h"
 #include "platform/graphics/filters/FEColorMatrix.h"
 #include "platform/graphics/filters/FEComponentTransfer.h"
 #include "platform/graphics/filters/FEDropShadow.h"
 #include "platform/graphics/filters/FEGaussianBlur.h"
+#include "platform/graphics/filters/SkiaImageFilterBuilder.h"
+#include "platform/graphics/filters/SourceGraphic.h"
 #include "wtf/MathExtras.h"
 #include <algorithm>
 
-namespace WebCore {
+namespace blink {
 
 static inline void endMatrixRow(Vector<float>& parameters)
 {
@@ -66,41 +69,30 @@ static inline void lastMatrixRow(Vector<float>& parameters)
 }
 
 FilterEffectRenderer::FilterEffectRenderer()
-    : Filter(AffineTransform())
-    , m_graphicsBufferAttached(false)
-    , m_hasFilterThatMovesPixels(false)
 {
-    m_sourceGraphic = SourceGraphic::create(this);
 }
 
 FilterEffectRenderer::~FilterEffectRenderer()
 {
 }
 
-GraphicsContext* FilterEffectRenderer::inputContext()
-{
-    return sourceImage() ? sourceImage()->context() : 0;
-}
-
 bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations& operations)
 {
-    m_hasFilterThatMovesPixels = operations.hasFilterThatMovesPixels();
-
-    // Inverse zoom the pre-zoomed CSS shorthand filters, so that they are in the same zoom as the unzoomed reference filters.
     const RenderStyle* style = renderer->style();
-#ifdef BLINK_SCALE_FILTERS_AT_RECORD_TIME
-    float invZoom = 1.0f / ((style ? style->effectiveZoom() : 1.0f) * deviceScaleFactor(renderer->frame()));
-#else
-    float invZoom = style ? 1.0f / style->effectiveZoom() : 1.0f;
-#endif
+    float zoom = style ? style->effectiveZoom() : 1.0f;
 
-    RefPtr<FilterEffect> previousEffect = m_sourceGraphic;
+    // Create a parent filter for shorthand filters. These have already been scaled by the CSS code for page zoom, so scale is 1.0 here.
+    RefPtr<ReferenceFilter> parentFilter = ReferenceFilter::create(1.0f);
+    RefPtr<FilterEffect> previousEffect = SourceGraphic::create(parentFilter.get());
     for (size_t i = 0; i < operations.operations().size(); ++i) {
         RefPtr<FilterEffect> effect;
         FilterOperation* filterOperation = operations.operations().at(i).get();
         switch (filterOperation->type()) {
         case FilterOperation::REFERENCE: {
-            effect = ReferenceFilterBuilder::build(this, renderer, previousEffect.get(), toReferenceFilterOperation(filterOperation));
+            RefPtr<ReferenceFilter> referenceFilter = ReferenceFilter::create(zoom);
+            effect = ReferenceFilterBuilder::build(referenceFilter.get(), renderer, previousEffect.get(), toReferenceFilterOperation(filterOperation));
+            referenceFilter->setLastEffect(effect);
+            m_referenceFilters.append(referenceFilter);
             break;
         }
         case FilterOperation::GRAYSCALE: {
@@ -127,7 +119,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
 
             lastMatrixRow(inputParameters);
 
-            effect = FEColorMatrix::create(this, FECOLORMATRIX_TYPE_MATRIX, inputParameters);
+            effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_MATRIX, inputParameters);
             break;
         }
         case FilterOperation::SEPIA: {
@@ -154,19 +146,19 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
 
             lastMatrixRow(inputParameters);
 
-            effect = FEColorMatrix::create(this, FECOLORMATRIX_TYPE_MATRIX, inputParameters);
+            effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_MATRIX, inputParameters);
             break;
         }
         case FilterOperation::SATURATE: {
             Vector<float> inputParameters;
             inputParameters.append(narrowPrecisionToFloat(toBasicColorMatrixFilterOperation(filterOperation)->amount()));
-            effect = FEColorMatrix::create(this, FECOLORMATRIX_TYPE_SATURATE, inputParameters);
+            effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_SATURATE, inputParameters);
             break;
         }
         case FilterOperation::HUE_ROTATE: {
             Vector<float> inputParameters;
             inputParameters.append(narrowPrecisionToFloat(toBasicColorMatrixFilterOperation(filterOperation)->amount()));
-            effect = FEColorMatrix::create(this, FECOLORMATRIX_TYPE_HUEROTATE, inputParameters);
+            effect = FEColorMatrix::create(parentFilter.get(), FECOLORMATRIX_TYPE_HUEROTATE, inputParameters);
             break;
         }
         case FilterOperation::INVERT: {
@@ -179,7 +171,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             transferFunction.tableValues = transferParameters;
 
             ComponentTransferFunction nullFunction;
-            effect = FEComponentTransfer::create(this, transferFunction, transferFunction, transferFunction, nullFunction);
+            effect = FEComponentTransfer::create(parentFilter.get(), transferFunction, transferFunction, transferFunction, nullFunction);
             break;
         }
         case FilterOperation::OPACITY: {
@@ -191,7 +183,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             transferFunction.tableValues = transferParameters;
 
             ComponentTransferFunction nullFunction;
-            effect = FEComponentTransfer::create(this, nullFunction, nullFunction, nullFunction, transferFunction);
+            effect = FEComponentTransfer::create(parentFilter.get(), nullFunction, nullFunction, nullFunction, transferFunction);
             break;
         }
         case FilterOperation::BRIGHTNESS: {
@@ -201,7 +193,7 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             transferFunction.intercept = 0;
 
             ComponentTransferFunction nullFunction;
-            effect = FEComponentTransfer::create(this, transferFunction, transferFunction, transferFunction, nullFunction);
+            effect = FEComponentTransfer::create(parentFilter.get(), transferFunction, transferFunction, transferFunction, nullFunction);
             break;
         }
         case FilterOperation::CONTRAST: {
@@ -212,20 +204,20 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
             transferFunction.intercept = -0.5 * amount + 0.5;
 
             ComponentTransferFunction nullFunction;
-            effect = FEComponentTransfer::create(this, transferFunction, transferFunction, transferFunction, nullFunction);
+            effect = FEComponentTransfer::create(parentFilter.get(), transferFunction, transferFunction, transferFunction, nullFunction);
             break;
         }
         case FilterOperation::BLUR: {
-            float stdDeviation = floatValueForLength(toBlurFilterOperation(filterOperation)->stdDeviation(), 0) * invZoom;
-            effect = FEGaussianBlur::create(this, stdDeviation, stdDeviation);
+            float stdDeviation = floatValueForLength(toBlurFilterOperation(filterOperation)->stdDeviation(), 0);
+            effect = FEGaussianBlur::create(parentFilter.get(), stdDeviation, stdDeviation);
             break;
         }
         case FilterOperation::DROP_SHADOW: {
             DropShadowFilterOperation* dropShadowOperation = toDropShadowFilterOperation(filterOperation);
-            float stdDeviation = dropShadowOperation->stdDeviation() * invZoom;
-            float x = dropShadowOperation->x() * invZoom;
-            float y = dropShadowOperation->y() * invZoom;
-            effect = FEDropShadow::create(this, stdDeviation, stdDeviation, x, y, dropShadowOperation->color(), 1);
+            float stdDeviation = dropShadowOperation->stdDeviation();
+            float x = dropShadowOperation->x();
+            float y = dropShadowOperation->y();
+            effect = FEDropShadow::create(parentFilter.get(), stdDeviation, stdDeviation, x, y, dropShadowOperation->color(), 1);
             break;
         }
         default:
@@ -243,6 +235,8 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
         }
     }
 
+    m_referenceFilters.append(parentFilter);
+
     // We need to keep the old effects alive until this point, so that SVG reference filters
     // can share cached resources across frames.
     m_lastEffect = previousEffect;
@@ -254,145 +248,33 @@ bool FilterEffectRenderer::build(RenderObject* renderer, const FilterOperations&
     return true;
 }
 
-bool FilterEffectRenderer::updateBackingStoreRect(const FloatRect& floatFilterRect)
-{
-    IntRect filterRect = enclosingIntRect(floatFilterRect);
-    if (!filterRect.isEmpty() && FilterEffect::isFilterSizeValid(filterRect)) {
-        FloatRect currentSourceRect = sourceImageRect();
-        if (filterRect != currentSourceRect) {
-            setSourceImageRect(filterRect);
-            return true;
-        }
-    }
-    return false;
-}
-
-void FilterEffectRenderer::allocateBackingStoreIfNeeded()
-{
-    // At this point the effect chain has been built, and the
-    // source image sizes set. We just need to attach the graphic
-    // buffer if we have not yet done so.
-    if (!m_graphicsBufferAttached) {
-        IntSize logicalSize(m_sourceDrawingRegion.width(), m_sourceDrawingRegion.height());
-        if (!sourceImage() || sourceImage()->size() != logicalSize) {
-            OwnPtr<ImageBufferSurface> surface = adoptPtr(new UnacceleratedImageBufferSurface(logicalSize));
-            setSourceImage(ImageBuffer::create(surface.release()));
-        }
-        m_graphicsBufferAttached = true;
-    }
-}
-
 void FilterEffectRenderer::clearIntermediateResults()
 {
     if (m_lastEffect.get())
         m_lastEffect->clearResultsRecursive();
 }
 
-void FilterEffectRenderer::apply()
+bool FilterEffectRenderer::beginFilterEffect(GraphicsContext* context, const FloatRect& filterBoxRect)
 {
-    RefPtr<FilterEffect> effect = lastEffect();
-    effect->apply();
-    effect->transformResultColorSpace(ColorSpaceDeviceRGB);
-}
-
-LayoutRect FilterEffectRenderer::computeSourceImageRectForDirtyRect(const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect)
-{
-    // The result of this function is the area in the "filterBoxRect" that needs to be repainted, so that we fully cover the "dirtyRect".
-    FloatRect rectForRepaint = dirtyRect;
-    float inf = std::numeric_limits<float>::infinity();
-    FloatRect clipRect = FloatRect(FloatPoint(-inf, -inf), FloatSize(inf, inf));
-    rectForRepaint = lastEffect()->getSourceRect(rectForRepaint, clipRect);
-    rectForRepaint.intersect(filterBoxRect);
-    return LayoutRect(rectForRepaint);
-}
-
-bool FilterEffectRendererHelper::prepareFilterEffect(RenderLayer* renderLayer, const LayoutRect& filterBoxRect, const LayoutRect& dirtyRect, const LayoutRect& layerRepaintRect)
-{
-    ASSERT(m_haveFilterEffect && renderLayer->filterRenderer());
-    m_renderLayer = renderLayer;
-    m_repaintRect = dirtyRect;
-
-    // Get the zoom factor to scale the filterSourceRect input
-    const RenderLayerModelObject* renderer = renderLayer->renderer();
-    const RenderStyle* style = renderer ? renderer->style() : 0;
-    float zoom = style ? style->effectiveZoom() : 1.0f;
-
-    // Prepare a transformation that brings the coordinates into the space
-    // filter coordinates are defined in.
-    AffineTransform absoluteTransform;
-    // FIXME: Should these really be upconverted to doubles and not rounded? crbug.com/350474
-    absoluteTransform.translate(filterBoxRect.x().toDouble(), filterBoxRect.y().toDouble());
-    absoluteTransform.scale(zoom, zoom);
-
-    FilterEffectRenderer* filter = renderLayer->filterRenderer();
-    filter->setAbsoluteTransform(absoluteTransform);
-
-    IntRect filterSourceRect = pixelSnappedIntRect(filter->computeSourceImageRectForDirtyRect(filterBoxRect, dirtyRect));
-
-    if (filterSourceRect.isEmpty()) {
-        // The dirty rect is not in view, just bail out.
-        m_haveFilterEffect = false;
+    SkiaImageFilterBuilder builder(context);
+    m_lastEffect->determineFilterPrimitiveSubregion(MapRectForward);
+    RefPtr<ImageFilter> imageFilter = builder.build(m_lastEffect.get(), ColorSpaceDeviceRGB);
+    if (!imageFilter)
         return false;
-    }
-
-    filter->setFilterRegion(filter->mapAbsoluteRectToLocalRect(filterSourceRect));
-    filter->lastEffect()->determineFilterPrimitiveSubregion(MapRectForward);
-
-    bool hasUpdatedBackingStore = filter->updateBackingStoreRect(filterSourceRect);
-    if (filter->hasFilterThatMovesPixels()) {
-        if (hasUpdatedBackingStore)
-            m_repaintRect = filterSourceRect;
-        else {
-            m_repaintRect.unite(layerRepaintRect);
-            m_repaintRect.intersect(filterSourceRect);
-        }
-    }
+    context->save();
+    FloatRect boundaries = mapImageFilterRect(imageFilter.get(), filterBoxRect);
+    context->translate(filterBoxRect.x(), filterBoxRect.y());
+    boundaries.move(-filterBoxRect.x(), -filterBoxRect.y());
+    context->beginLayer(1, CompositeSourceOver, &boundaries, ColorFilterNone, imageFilter.get());
+    context->translate(-filterBoxRect.x(), -filterBoxRect.y());
     return true;
 }
 
-GraphicsContext* FilterEffectRendererHelper::beginFilterEffect(GraphicsContext* oldContext)
+void FilterEffectRenderer::endFilterEffect(GraphicsContext* context)
 {
-    ASSERT(m_renderLayer);
-
-    FilterEffectRenderer* filter = m_renderLayer->filterRenderer();
-    filter->allocateBackingStoreIfNeeded();
-    // Paint into the context that represents the SourceGraphic of the filter.
-    GraphicsContext* sourceGraphicsContext = filter->inputContext();
-    if (!sourceGraphicsContext || !FilterEffect::isFilterSizeValid(filter->absoluteFilterRegion())) {
-        // Disable the filters and continue.
-        m_haveFilterEffect = false;
-        return oldContext;
-    }
-
-    m_savedGraphicsContext = oldContext;
-
-    // Translate the context so that the contents of the layer is captuterd in the offscreen memory buffer.
-    sourceGraphicsContext->save();
-    // FIXME: can we just use sourceImageRect for everything, and get rid of
-    // m_repaintRect?
-    FloatPoint offset = filter->sourceImageRect().location();
-    sourceGraphicsContext->translate(-offset.x(), -offset.y());
-    sourceGraphicsContext->clearRect(m_repaintRect);
-    sourceGraphicsContext->clip(m_repaintRect);
-
-    return sourceGraphicsContext;
+    context->endLayer();
+    context->restore();
 }
 
-GraphicsContext* FilterEffectRendererHelper::applyFilterEffect()
-{
-    ASSERT(m_haveFilterEffect && m_renderLayer->filterRenderer());
-    FilterEffectRenderer* filter = m_renderLayer->filterRenderer();
-    filter->inputContext()->restore();
-
-    filter->apply();
-
-    // Get the filtered output and draw it in place.
-    m_savedGraphicsContext->drawImageBuffer(filter->output(), filter->outputRect());
-
-    filter->clearIntermediateResults();
-
-    return m_savedGraphicsContext;
-}
-
-} // namespace WebCore
+} // namespace blink
 

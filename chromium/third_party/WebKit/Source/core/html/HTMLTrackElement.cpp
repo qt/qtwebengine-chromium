@@ -26,14 +26,15 @@
 #include "config.h"
 #include "core/html/HTMLTrackElement.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
+#include "core/dom/Document.h"
 #include "core/events/Event.h"
 #include "core/frame/csp/ContentSecurityPolicy.h"
 #include "core/html/HTMLMediaElement.h"
 #include "platform/Logging.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
@@ -53,7 +54,6 @@ inline HTMLTrackElement::HTMLTrackElement(Document& document)
     , m_loadTimer(this, &HTMLTrackElement::loadTimerFired)
 {
     WTF_LOG(Media, "HTMLTrackElement::HTMLTrackElement - %p", this);
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLTrackElement)
@@ -266,7 +266,7 @@ HTMLMediaElement* HTMLTrackElement::mediaElement() const
     Element* parent = parentElement();
     if (isHTMLMediaElement(parent))
         return toHTMLMediaElement(parent);
-    return 0;
+    return nullptr;
 }
 
 void HTMLTrackElement::trace(Visitor* visitor)

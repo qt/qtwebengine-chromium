@@ -8,11 +8,11 @@
 #ifndef GrTextureStripAtlas_DEFINED
 #define GrTextureStripAtlas_DEFINED
 
-#include "GrBinHashKey.h"
-#include "GrTHashTable.h"
+#include "GrMurmur3HashKey.h"
 #include "SkBitmap.h"
 #include "SkGr.h"
 #include "SkTDArray.h"
+#include "SkTDynamicHash.h"
 #include "SkTypes.h"
 
 /**
@@ -61,11 +61,11 @@ public:
      *       texture2D(sampler, vec2(x, yOffset + y * scaleFactor))
      *
      * Where yOffset, returned by getYOffset(), is the offset to the start of the row within the
-     * atlas and scaleFactor, returned by getVerticalScaleFactor(), is the y-scale of the row,
-     * relative to the height of the overall atlas texture.
+     * atlas and scaleFactor, returned by getNormalizedTexelHeight, is the normalized height of
+     * one texel row.
      */
     SkScalar getYOffset(int row) const { return SkIntToScalar(row) / fNumRows; }
-    SkScalar getVerticalScaleFactor() const { return SkIntToScalar(fDesc.fRowHeight) / fDesc.fHeight; }
+    SkScalar getNormalizedTexelHeight() const { return fNormalizedYHeight; }
 
     GrContext* getContext() const { return fDesc.fContext; }
     GrTexture* getTexture() const { return fTexture; }
@@ -135,23 +135,24 @@ private:
     static void CleanUp(const GrContext* context, void* info);
 
     // Hash table entry for atlases
-    class AtlasEntry;
-    class AtlasHashKey : public GrBinHashKey<sizeof(GrTextureStripAtlas::Desc)> {
-    public:
-        static bool Equals(const AtlasEntry& entry, const AtlasHashKey& key);
-        static bool LessThan(const AtlasEntry& entry, const AtlasHashKey& key);
-    };
     class AtlasEntry : public ::SkNoncopyable {
     public:
+        // for SkTDynamicHash
+        class Key : public GrMurmur3HashKey<sizeof(GrTextureStripAtlas::Desc)> {};
+        static const Key& GetKey(const AtlasEntry& entry) { return entry.fKey; }
+        static uint32_t Hash(const Key& key) { return key.getHash(); }
+
+        // AtlasEntry proper
         AtlasEntry() : fAtlas(NULL) {}
         ~AtlasEntry() { SkDELETE(fAtlas); }
-        AtlasHashKey fKey;
+        Key fKey;
         GrTextureStripAtlas* fAtlas;
     };
 
-    static GrTHashTable<AtlasEntry, AtlasHashKey, 8>* gAtlasCache;
+    class Hash;
+    static Hash* gAtlasCache;
 
-    static GrTHashTable<AtlasEntry, AtlasHashKey, 8>* GetCache();
+    static Hash* GetCache();
 
     // We increment gCacheCount for each atlas
     static int32_t gCacheCount;
@@ -167,6 +168,8 @@ private:
     const uint16_t fNumRows;
     GrTexture* fTexture;
 
+    SkScalar fNormalizedYHeight;
+
     // Array of AtlasRows which store the state of all our rows. Stored in a contiguous array, in
     // order that they appear in our texture, this means we can subtract this pointer from a row
     // pointer to get its index in the texture, and can save storing a row number in AtlasRow.
@@ -180,15 +183,5 @@ private:
     // A list of pointers to AtlasRows that currently contain cached images, sorted by key
     SkTDArray<AtlasRow*> fKeyTable;
 };
-
-inline bool GrTextureStripAtlas::AtlasHashKey::Equals(const AtlasEntry& entry,
-                                                      const AtlasHashKey& key) {
-    return entry.fKey == key;
-}
-
-inline bool GrTextureStripAtlas::AtlasHashKey::LessThan(const AtlasEntry& entry,
-                                                        const AtlasHashKey& key) {
-    return entry.fKey < key;
-}
 
 #endif

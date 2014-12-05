@@ -36,8 +36,6 @@
 #include "platform/graphics/Color.h"
 #include "public/platform/WebColor.h"
 
-using namespace::WebCore;
-
 namespace blink {
 
 static int toCSSValueKeyword(WebColorName name)
@@ -125,4 +123,4 @@ void setNamedColors(const WebColorName* colorNames, const WebColor* colors, size
     // TODO(jeremy): Tell RenderTheme to update colors.
 }
 
-} // WebKit
+} // namespace blink

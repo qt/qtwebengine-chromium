@@ -59,7 +59,7 @@ TEST(ScopedPtrVectorTest, InsertAndTake) {
   ++it;
   EXPECT_EQ(6, (*it)->data());
 
-  v.insert_and_take(it, v2);
+  v.insert_and_take(it, &v2);
 
   EXPECT_EQ(6u, v.size());
   EXPECT_EQ(1, v[0]->data());
@@ -70,9 +70,9 @@ TEST(ScopedPtrVectorTest, InsertAndTake) {
   EXPECT_EQ(6, v[5]->data());
 
   EXPECT_EQ(3u, v2.size());
-  EXPECT_EQ(NULL, v2[0]);
-  EXPECT_EQ(NULL, v2[1]);
-  EXPECT_EQ(NULL, v2[2]);
+  EXPECT_EQ(nullptr, v2[0]);
+  EXPECT_EQ(nullptr, v2[1]);
+  EXPECT_EQ(nullptr, v2[2]);
 }
 
 TEST(ScopedPtrVectorTest, Partition) {

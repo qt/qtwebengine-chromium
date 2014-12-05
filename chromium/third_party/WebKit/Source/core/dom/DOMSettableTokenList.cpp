@@ -25,15 +25,14 @@
 #include "config.h"
 #include "core/dom/DOMSettableTokenList.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 
-namespace WebCore {
+namespace blink {
 
 DOMSettableTokenList::DOMSettableTokenList()
     : m_value()
     , m_tokens()
 {
-    ScriptWrappable::init(this);
 }
 
 DOMSettableTokenList::~DOMSettableTokenList()
@@ -92,4 +91,4 @@ void DOMSettableTokenList::setValue(const AtomicString& value)
     m_tokens.set(value, false);
 }
 
-} // namespace WebCore
+} // namespace blink

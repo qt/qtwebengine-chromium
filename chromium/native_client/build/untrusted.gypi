@@ -11,12 +11,28 @@
       # 1 to use goma.
       'use_goma%': 0,
     },
+    'common_args': [
+      'python',
+      '<(DEPTH)/native_client/build/build_nexe.py',
+      '--root', '<(DEPTH)',
+      # Horrible hack: postfix the product-dir with a fake child.
+      # Without this hack, MSVS will expand the PRODUCT_DIR variable to a path
+      # with a trailing backslash, and that backslash will escape the rightmost
+      # quote around the path causing serious problems parsing the resulting
+      # command line. The fake child prevents an accidental escape while also
+      # being robust against GYP's attempt to normalize the path.
+      # Technically this hack is only needed for Windows, but conditional logic
+      # would just make things uglier.
+      '--product-dir', '<(PRODUCT_DIR)/xyz',
+      '--config-name', '<(CONFIGURATION_NAME)',
+      '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+    ],
     # Default C compiler defines.
     'nacl_default_defines': [
-      '__linux__',
       '__STDC_LIMIT_MACROS=1',
       '__STDC_FORMAT_MACROS=1',
       '_GNU_SOURCE=1',
+      '_DEFAULT_SOURCE=1',
       '_BSD_SOURCE=1',
       '_POSIX_C_SOURCE=199506',
       '_XOPEN_SOURCE=600',
@@ -60,6 +76,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 0,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -76,6 +93,7 @@
           'tc_lib_dir_glibc64': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/lib64',
           'tc_lib_dir_irt32': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/lib32',
           'tc_lib_dir_irt64': '<(SHARED_INTERMEDIATE_DIR)/tc_irt/lib64',
+          'tc_lib_dir_nonsfi_helper32': '<(SHARED_INTERMEDIATE_DIR)/tc_nonsfi_helper/lib32',
           'tc_include_dir_newlib': '<(SHARED_INTERMEDIATE_DIR)/tc_newlib/include',
           'tc_include_dir_glibc': '<(SHARED_INTERMEDIATE_DIR)/tc_glibc/include',
           'extra_deps': [],
@@ -83,6 +101,7 @@
           'extra_deps_newlib32': [],
           'extra_deps_glibc64': [],
           'extra_deps_glibc32': [],
+          'extra_deps_newlib32_nonsfi': [],
           'include_dirs': ['<(DEPTH)'],
           'defines': [
             '<@(nacl_default_defines)',
@@ -90,15 +109,10 @@
           ],
           'sources': [],
           'link_flags': [],
-          'get_sources': [
-            'scan_sources',
-            # This is needed to open the .c filenames, which are given
-            # relative to the .gyp file.
-            '-I.',
-            # This is needed to open the .h filenames, which are given
-            # relative to the native_client directory's parent.
-            '-I<(DEPTH)',
-          ],
+          # X86-32 IRT needs to be callable with an under-aligned stack so we
+          # disable SSE instructions, which can fault on misaligned addresses:
+          # see https://code.google.com/p/nativeclient/issues/detail?id=3935
+          'irt_flags_x86_32': '-Wt,-mattr=-sse',
         },
       },
     }],
@@ -118,6 +132,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 1,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -144,15 +159,6 @@
            ],
            'sources': [],
            'link_flags': [],
-           'get_sources': [
-             'scan_sources',
-             # This is needed to open the .c filenames, which are given
-             # relative to the .gyp file.
-             '-I.',
-             # This is needed to open the .h filenames, which are given
-             # relative to the native_client directory's parent.
-             '-I<(DEPTH)',
-           ],
          },
        },
     }],
@@ -171,6 +177,7 @@
           'build_newlib': 0,
           'build_glibc': 0,
           'build_irt': 0,
+          'build_nonsfi_helper': 0,
           'disable_glibc%': 1,
           'disable_bionic%': 1,
           'extra_args': [],
@@ -194,15 +201,6 @@
            ],
            'sources': [],
            'link_flags': [],
-           'get_sources': [
-             'scan_sources',
-             # This is needed to open the .c filenames, which are given
-             # relative to the .gyp file.
-             '-I.',
-             # This is needed to open the .h filenames, which are given
-             # relative to the native_client directory's parent.
-             '-I<(DEPTH)',
-           ],
          },
        },
     }],
@@ -226,7 +224,7 @@
                  'description': 'building >(out_newlib64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
@@ -234,16 +232,12 @@
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'newlib_nexe',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -271,7 +265,7 @@
                  'description': 'building >(out_newlib64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
@@ -279,16 +273,12 @@
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'newlib_nlib',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -316,7 +306,7 @@
                  'description': 'building >(out_newlib64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
@@ -325,16 +315,12 @@
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'newlib_nexe_pnacl',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -364,7 +350,7 @@
                  'description': 'building >(out_newlib64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib64)',
                     '^(source_list_newlib64)',
@@ -372,16 +358,12 @@
                  ],
                  'outputs': ['>(out_newlib64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'newlib_nlib_pnacl',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib64)',
                    '--objdir', '>(objdir_newlib64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=--target=x86_64-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -409,7 +391,7 @@
                  'description': 'building >(out_newlib32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
@@ -417,16 +399,12 @@
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
                    '--build', 'newlib_nexe',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -454,7 +432,7 @@
                  'description': 'building >(out_newlib32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
@@ -462,16 +440,12 @@
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
                    '--build', 'newlib_nlib',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -499,7 +473,7 @@
                  'description': 'building >(out_newlib32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
@@ -508,21 +482,18 @@
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
-                   '--build', 'newlib_nexe',
-                   '--root', '<(DEPTH)',
+                   '--build', 'newlib_nexe_pnacl',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=-m32 ^(gcc_irt_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl -stdlib=libstdc++ ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=-m32 -B>(tc_lib_dir_irt32) ^(gcc_irt_link_flags) ^(link_flags) >(_link_flags)',
+
+                   '--link_flags=--target=i686-unknown-nacl -stdlib=libstdc++ -arch x86-32 --pnacl-allow-translate --pnacl-allow-native >(irt_flags_x86_32) -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib32)',
                    '--tls-edit=<(PRODUCT_DIR)/tls_edit<(EXECUTABLE_SUFFIX)',
                    '--irt-layout',
@@ -547,7 +518,7 @@
                  'description': 'building >(out_newlib32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_newlib32)',
                     '^(source_list_newlib32)',
@@ -555,21 +526,17 @@
                  ],
                  'outputs': ['>(out_newlib32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
-                   '--build', 'newlib_nlib',
-                   '--root', '<(DEPTH)',
+                   '--build', 'newlib_nlib_pnacl',
                    '--name', '>(out_newlib32)',
                    '--objdir', '>(objdir_newlib32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=-m32 ^(gcc_irt_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
+                   '--compile_flags=--target=i686-unknown-nacl -stdlib=libstdc++ >(irt_flags_x86_32) ^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
                    '--defines=^(defines) >(_defines)',
-                   '--link_flags=-m32 -B>(tc_lib_dir_irt32) ^(gcc_irt_link_flags) ^(link_flags) >(_link_flags)',
+                   '--link_flags=--target=i686-unknown-nacl -stdlib=libstdc++ -B>(tc_lib_dir_irt32) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
                    '--source-list=^(source_list_newlib32)',
                  ],
                },
@@ -578,6 +545,105 @@
         ],
       },
     }], # end x86 gcc nexe/nlib actions
+    ['(target_arch=="ia32" or target_arch=="x64") and OS=="linux"', {
+      'target_defaults': {
+        'target_conditions': [
+          # x86-32 non-SFI helper nexe build.
+          ['nexe_target!="" and build_nonsfi_helper!=0', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib32_nonsfi%': '<(PRODUCT_DIR)/>(nexe_target)_newlib_x32_nonsfi.nexe',
+              'objdir_newlib32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-x86-32/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build non-SFI helper x86-32 nexe',
+                'variables': {
+                  'source_list_newlib32_nonsfi%': '^|(<(tool_name)-x86-32-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                  'stdlibs': ['-lc++', '-lm', '-lnacl', '-lc', '-lpnaclmm'],
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib32_nonsfi)',
+                'inputs': [
+                  '<(DEPTH)/native_client/build/build_nexe.py',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib32_nonsfi)',
+                  '^(source_list_newlib32_nonsfi)',
+                  '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                ],
+                'outputs': ['>(out_newlib32_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'x86-32-nonsfi',
+                  '--build', 'newlib_nexe_pnacl',
+                  '--name', '>(out_newlib32_nonsfi)',
+                  '--objdir', '>(objdir_newlib32_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=i686-unknown-nacl --pnacl-bias=x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  # Both -Wl,--noirt and -Wt,--noirt are needed here. The
+                  # former is to prevent linking to irt. The latter controls
+                  # the entry point for Non-SFI NaCl in pnacl-translate.
+                  # "-nodefaultlibs -Wl,--starg-group, ... -Wl,--end-group"
+                  # is the flags to exclude -lpthread, otherwise it causes
+                  # library not found error. Note that pthread related code
+                  # is contained in libnacl_sys_private.a, which is
+                  # automatically linked.
+                  '--link_flags=--target=i686-unknown-nacl -arch x86-32-nonsfi --pnacl-allow-translate --pnacl-allow-native -Wl,--noirt -Wt,--noirt -Wt,--noirtshim -B>(tc_lib_dir_nonsfi_helper32) ^(link_flags) >(_link_flags) -nodefaultlibs -Wl,--start-group >@(stdlibs) -Wl,--end-group',
+                  '--source-list=^(source_list_newlib32_nonsfi)',
+                ],
+              },
+            ],
+          }],
+
+          # x86-32 non-SFI helper library build or PNaCl PPAPI shim for nonsfi
+          # build.
+          ['nlib_target!="" and (build_nonsfi_helper!=0 or (pnacl_native_biased!=0 and enable_x86_32_nonsfi==1))', {
+            'variables': {
+              'tool_name': 'nonsfi_helper',
+              'out_newlib32_nonsfi%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/lib32/>(nlib_target)',
+              'objdir_newlib32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-x86-32-nonsfi/>(_target_name)',
+            },
+            'actions': [
+              {
+                'action_name': 'build nonsfi_helper x86-32 nlib',
+                'variables': {
+                  'source_list_newlib32_nonsfi%': '^|(<(tool_name)-x86-32-nonsfi.>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
+                },
+                'msvs_cygwin_shell': 0,
+                'description': 'building >(out_newlib32_nonsfi)',
+                'inputs': [
+                  '<(DEPTH)/native_client/build/build_nexe.py',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
+                  '>@(extra_deps)',
+                  '>@(extra_deps_newlib32_nonsfi)',
+                  '^(source_list_newlib32_nonsfi)',
+                  '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/nacl_x86_newlib/stamp.prep',
+                ],
+                'outputs': ['>(out_newlib32_nonsfi)'],
+                'action': [
+                  '<@(common_args)',
+                  '>@(extra_args)',
+                  '--arch', 'x86-32-nonsfi',
+                  '--build', 'newlib_nlib_pnacl',
+                  '--name', '>(out_newlib32_nonsfi)',
+                  '--objdir', '>(objdir_newlib32_nonsfi)',
+                  '--include-dirs=>(tc_include_dir_newlib) <(DEPTH)/native_client/src/public/linux_syscalls ^(include_dirs) >(_include_dirs)',
+                  '--compile_flags=--target=i686-unknown-nacl --pnacl-bias=x86-32-nonsfi --pnacl-allow-translate --pnacl-allow-native -arch x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--gomadir', '<(gomadir)',
+                  '--defines=^(defines) >(_defines)',
+                  '--link_flags=-B>(tc_lib_dir_nonsfi_helper32) ^(link_flags) >(_link_flags)',
+                  '--source-list=^(source_list_newlib32_nonsfi)',
+                ],
+              },
+            ],
+          }],
+        ],
+      },
+    }],  # end x86-32 Non-SFI helper nexe / library actions.
     ['target_arch=="arm"', {
       'target_defaults': {
         'target_conditions': [
@@ -598,7 +664,7 @@
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
@@ -606,16 +672,12 @@
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'newlib_nexe',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -643,7 +705,7 @@
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
@@ -651,16 +713,12 @@
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'newlib_nlib',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -687,7 +745,7 @@
                 'description': 'building >(out_bionic_arm)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_bionic_arm)',
                    '^(source_list_bionic_arm)',
@@ -695,16 +753,12 @@
                 ],
                 'outputs': ['>(out_bionic_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'bionic_nlib',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_bionic_arm)',
                   '--objdir', '>(objdir_bionic_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_bionic) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -732,7 +786,7 @@
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
@@ -741,16 +795,12 @@
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'newlib_nexe',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_irt_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -780,7 +830,7 @@
                 'description': 'building >(out_newlib_arm)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_arm)',
                    '^(source_list_newlib_arm)',
@@ -788,16 +838,12 @@
                 ],
                 'outputs': ['>(out_newlib_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'newlib_nlib',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_arm)',
                   '--objdir', '>(objdir_newlib_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-Wno-unused-local-typedefs -Wno-psabi ^(gcc_irt_compile_flags) ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -831,7 +877,7 @@
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources) >(native_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources) >(native_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
@@ -839,16 +885,12 @@
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'mips',
                   '--build', 'newlib_nexe',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -876,7 +918,7 @@
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
@@ -884,16 +926,12 @@
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'mips',
                   '--build', 'newlib_nlib',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -921,7 +959,7 @@
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
@@ -930,16 +968,12 @@
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'mips',
                   '--build', 'newlib_nexe',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=-stdlib=libstdc++ ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -969,7 +1003,7 @@
                 'description': 'building >(out_newlib_mips)',
                 'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_newlib_mips)',
                    '^(source_list_newlib_mips)',
@@ -977,18 +1011,14 @@
                 ],
                 'outputs': ['>(out_newlib_mips)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'mips',
                   '--build', 'newlib_nlib',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_newlib_mips)',
                   '--objdir', '>(objdir_newlib_mips)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_newlib) ^(include_dirs) >(_include_dirs)',
-                  '--compile_flags=-stdlib=libstdc++ ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+                  '--compile_flags=-stdlib=libstdc++ -Wt,-mtls-use-call ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
                   '--defines=^(defines) >(_defines)',
                   '--link_flags=-stdlib=libstdc++ -B>(tc_lib_dir_irt_mips) ^(pnacl_irt_link_flags) ^(link_flags) >(_link_flags)',
@@ -1020,7 +1050,7 @@
                  'description': 'building >(out_glibc64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
@@ -1028,16 +1058,12 @@
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'glibc_nexe',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc64)',
                    '--objdir', '>(objdir_glibc64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1065,7 +1091,7 @@
                  'description': 'building >(out_glibc32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
@@ -1073,16 +1099,12 @@
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
                    '--build', 'glibc_nexe',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc32)',
                    '--objdir', '>(objdir_glibc32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1110,7 +1132,7 @@
                  'description': 'building >(out_glibc64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
@@ -1118,16 +1140,12 @@
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'glibc_nlib',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc64)',
                    '--objdir', '>(objdir_glibc64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1155,7 +1173,7 @@
                  'description': 'building >(out_glibc32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
@@ -1163,16 +1181,12 @@
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
                    '--build', 'glibc_nlib',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc32)',
                    '--objdir', '>(objdir_glibc32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1200,7 +1214,7 @@
                  'description': 'building >(out_glibc64)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc64)',
                     '^(source_list_glibc64)',
@@ -1208,16 +1222,12 @@
                  ],
                  'outputs': ['>(out_glibc64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_args)',
                    '>@(extra_args)',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
                    '--arch', 'x86-64',
                    '--build', 'glibc_nso',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc64)',
                    '--objdir', '>(objdir_glibc64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m64 -fPIC ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1245,7 +1255,7 @@
                  'description': 'building >(out_glibc32)',
                  'inputs': [
                     '<(DEPTH)/native_client/build/build_nexe.py',
-                    '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                    '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                     '>@(extra_deps)',
                     '>@(extra_deps_glibc32)',
                     '^(source_list_glibc32)',
@@ -1253,16 +1263,12 @@
                  ],
                  'outputs': ['>(out_glibc32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
+                   '<@(common_args)',
                    '>@(extra_args)',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
                    '--arch', 'x86-32',
                    '--build', 'glibc_nso',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_glibc32)',
                    '--objdir', '>(objdir_glibc32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_glibc) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=-m32 -fPIC ^(gcc_compile_flags) >(_gcc_compile_flags) ^(compile_flags) >(_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1283,6 +1289,10 @@
     'variables': {
       'disable_pnacl%': 0,
       'build_pnacl_newlib': 0,
+      # Flag to translate pexes into nexes at build time (vs in the browser).
+      'translate_pexe_with_build': 0,
+      # Flag to indicate that PNaCl should compile with the native ABI
+      # instead of the le32 ABI.
       'pnacl_native_biased': 0,
       'nexe_target': '',
       'nlib_target': '',
@@ -1354,7 +1364,7 @@
              'description': 'building >(out_pnacl_newlib)',
              'inputs': [
                '<(DEPTH)/native_client/build/build_nexe.py',
-               '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+               '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                '>@(extra_deps)',
                '>@(extra_deps_pnacl_newlib)',
                '^(source_list_pnacl_newlib)',
@@ -1362,18 +1372,16 @@
              ],
              'outputs': ['>(out_pnacl_newlib)'],
              'action': [
-               'python',
-               '<(DEPTH)/native_client/build/build_nexe.py',
-               '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+               '<@(common_args)',
                '>@(extra_args)',
                '--arch', 'pnacl',
                '--build', 'newlib_pexe',
-               '--root', '<(DEPTH)',
                '--name', '>(out_pnacl_newlib)',
                '--objdir', '>(objdir_pnacl_newlib)',
-               '--config-name', '<(CONFIGURATION_NAME)',
                '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-               '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+               # TODO(dschuff): try removing gline-tables-only after 3.5 merge
+               # when debug metadata is less memory-intensive
+               '--compile_flags=^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                '--gomadir', '<(gomadir)',
                '--defines=^(defines) >(_defines)',
                '--link_flags=-B<(SHARED_INTERMEDIATE_DIR)/tc_pnacl_newlib/lib ^(link_flags) >(_link_flags)',
@@ -1381,7 +1389,7 @@
              ],
            }],
          'target_conditions': [
-           [ 'enable_x86_32!=0', {
+           [ 'enable_x86_32!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to x86-32 nexe',
                'msvs_cygwin_shell': 0,
@@ -1394,20 +1402,16 @@
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_32_nexe)' ],
                'action' : [
-                 'python',
-                 '<(DEPTH)/native_client/build/build_nexe.py',
-                 '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                 '<@(common_args)',
                  '--arch', 'x86-32',
                  '--build', 'newlib_translate',
-                 '--root', '<(DEPTH)',
                  '--name', '>(out_pnacl_newlib_x86_32_nexe)',
-                 '--config-name', '<(CONFIGURATION_NAME)',
                  '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-x86-32',
                  '>(out_pnacl_newlib)',
                ],
              }],
            }],
-           [ 'enable_x86_32_nonsfi!=0', {
+           [ 'enable_x86_32_nonsfi!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to x86-32-nonsfi nexe',
                'msvs_cygwin_shell': 0,
@@ -1420,20 +1424,16 @@
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_32_nonsfi_nexe)' ],
                'action' : [
-                 'python',
-                 '<(DEPTH)/native_client/build/build_nexe.py',
-                 '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                 '<@(common_args)',
                  '--arch', 'x86-32-nonsfi',
                  '--build', 'newlib_translate',
-                 '--root', '<(DEPTH)',
                  '--name', '>(out_pnacl_newlib_x86_32_nonsfi_nexe)',
-                 '--config-name', '<(CONFIGURATION_NAME)',
                  '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-x86-32-nonsfi',
                  '>(out_pnacl_newlib)',
                ],
              }],
            }],
-           [ 'enable_x86_64!=0', {
+           [ 'enable_x86_64!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to x86-64 nexe',
                'msvs_cygwin_shell': 0,
@@ -1446,20 +1446,16 @@
                ],
                'outputs': [ '>(out_pnacl_newlib_x86_64_nexe)' ],
                'action' : [
-                 'python',
-                 '<(DEPTH)/native_client/build/build_nexe.py',
-                 '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                 '<@(common_args)',
                  '--arch', 'x86-64',
                  '--build', 'newlib_translate',
-                 '--root', '<(DEPTH)',
                  '--name', '>(out_pnacl_newlib_x86_64_nexe)',
-                 '--config-name', '<(CONFIGURATION_NAME)',
                  '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-x86-64',
                  '>(out_pnacl_newlib)',
                ],
              }],
            }],
-           [ 'enable_arm!=0', {
+           [ 'enable_arm!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to ARM nexe',
                'msvs_cygwin_shell': 0,
@@ -1472,20 +1468,16 @@
                ],
                'outputs': [ '>(out_pnacl_newlib_arm_nexe)' ],
                'action' : [
-                 'python',
-                 '<(DEPTH)/native_client/build/build_nexe.py',
-                 '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                 '<@(common_args)',
                  '--arch', 'arm',
                  '--build', 'newlib_translate',
-                 '--root', '<(DEPTH)',
                  '--name', '>(out_pnacl_newlib_arm_nexe)',
-                 '--config-name', '<(CONFIGURATION_NAME)',
                  '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-arm',
                  '>(out_pnacl_newlib)',
                ],
              }],
            }],
-           [ 'enable_mips!=0', {
+           [ 'enable_mips!=0 and translate_pexe_with_build!=0', {
              'actions': [{
                'action_name': 'translate newlib pexe to MIPS nexe',
                'msvs_cygwin_shell': 0,
@@ -1498,14 +1490,10 @@
                ],
                'outputs': [ '>(out_pnacl_newlib_mips_nexe)' ],
                'action' : [
-                 'python',
-                 '<(DEPTH)/native_client/build/build_nexe.py',
-                 '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                 '<@(common_args)',
                  '--arch', 'mips',
                  '--build', 'newlib_translate',
-                 '--root', '<(DEPTH)',
                  '--name', '>(out_pnacl_newlib_mips_nexe)',
-                 '--config-name', '<(CONFIGURATION_NAME)',
                  '--link_flags=^(translate_flags) >(translate_flags) -Wl,-L>(tc_lib_dir_pnacl_translate)/lib-mips32',
                  '>(out_pnacl_newlib)',
                ],
@@ -1531,7 +1519,7 @@
              'description': 'building >(out_pnacl_newlib)',
              'inputs': [
                '<(DEPTH)/native_client/build/build_nexe.py',
-               '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+               '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                '>@(extra_deps)',
                '>@(extra_deps_pnacl_newlib)',
                '^(source_list_pnacl_newlib)',
@@ -1539,18 +1527,16 @@
              ],
              'outputs': ['>(out_pnacl_newlib)'],
              'action': [
-               'python',
-               '<(DEPTH)/native_client/build/build_nexe.py',
-               '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+               '<@(common_args)',
                '>@(extra_args)',
                '--arch', 'pnacl',
                '--build', 'newlib_plib',
-               '--root', '<(DEPTH)',
                '--name', '>(out_pnacl_newlib)',
                '--objdir', '>(objdir_pnacl_newlib)',
-               '--config-name', '<(CONFIGURATION_NAME)',
                '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-               '--compile_flags=^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
+               # TODO(dschuff): try removing gline-tables-only after 3.5 merge
+               # when debug metadata is less memory-intensive
+               '--compile_flags=^(compile_flags) >(_compile_flags) -gline-tables-only ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                '--gomadir', '<(gomadir)',
                '--defines=^(defines) >(_defines)',
                '--link_flags=-B>(tc_lib_dir_pnacl_newlib) ^(link_flags) >(_link_flags)',
@@ -1581,7 +1567,7 @@
                 'description': 'building >(out_pnacl_newlib_arm)',
                 'inputs': [
                   '<(DEPTH)/native_client/build/build_nexe.py',
-                  '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                   '>@(extra_deps)',
                   '>@(extra_deps_pnacl_newlib)',
                   '^(source_list_pnacl_newlib_arm)',
@@ -1589,16 +1575,12 @@
                 ],
                 'outputs': ['>(out_pnacl_newlib_arm)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'arm',
                   '--build', 'newlib_nlib_pnacl',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_pnacl_newlib_arm)',
                   '--objdir', '>(objdir_pnacl_newlib_arm)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=--target=armv7-unknown-nacl-gnueabi -mfloat-abi=hard --pnacl-allow-translate -arch arm ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',
@@ -1632,7 +1614,7 @@
                  'description': 'building >(out_pnacl_newlib_x86_64)',
                  'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_pnacl_newlib)',
                    '^(source_list_pnacl_newlib_x86_64)',
@@ -1640,16 +1622,12 @@
                  ],
                  'outputs': ['>(out_pnacl_newlib_x86_64)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-64',
                    '--build', 'newlib_nlib_pnacl',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_pnacl_newlib_x86_64)',
                    '--objdir', '>(objdir_pnacl_newlib_x86_64)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=--target=x86_64-unknown-nacl --pnacl-allow-translate -arch x86-64 ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1678,7 +1656,7 @@
                  'description': 'building >(out_pnacl_newlib_x86_32)',
                  'inputs': [
                    '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                   '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                    '>@(extra_deps)',
                    '>@(extra_deps_pnacl_newlib)',
                    '^(source_list_pnacl_newlib_x86_32)',
@@ -1686,16 +1664,12 @@
                  ],
                  'outputs': ['>(out_pnacl_newlib_x86_32)'],
                  'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                   '<@(common_args)',
                    '>@(extra_args)',
                    '--arch', 'x86-32',
                    '--build', 'newlib_nlib_pnacl',
-                   '--root', '<(DEPTH)',
                    '--name', '>(out_pnacl_newlib_x86_32)',
                    '--objdir', '>(objdir_pnacl_newlib_x86_32)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
                    '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
                    '--compile_flags=--target=i686-unknown-nacl --pnacl-allow-translate -arch x86-32 ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                    '--gomadir', '<(gomadir)',
@@ -1706,56 +1680,6 @@
                },
              ],
            }], # end ia32
-          # Non-SFI mode for ia32.
-          ['enable_x86_32_nonsfi!=0 and disable_pnacl==0 and '
-           'pnacl_native_biased==1 and nlib_target!="" and '
-           'build_pnacl_newlib!=0', {
-             'variables': {
-               'tool_name': 'pnacl_newlib_x86_32',
-               # TODO(hidehiko): replace with (tc_lib_dir_pnacl_translate)/
-               # lib-x86-32-nonsfi/>(nlib_target) to be more consistent with
-               # similar configs.
-               'out_pnacl_newlib_x86_32_nonsfi%': '<(SHARED_INTERMEDIATE_DIR)/tc_<(tool_name)/lib-x86-32-nonsfi/>(nlib_target)',
-               'objdir_pnacl_newlib_x86_32_nonsfi%': '>(INTERMEDIATE_DIR)/<(tool_name)-nonsfi/>(_target_name)',
-             },
-             'actions': [
-               {
-                 'action_name': 'build newlib x86-32-nonsfi nlib (via pnacl)',
-                 'variables': {
-                   'source_list_pnacl_newlib_x86_32_nonsfi%': '^|(<(tool_name).>(_target_name).source_list.gypcmd ^(_sources) ^(sources))',
-                 },
-                 'msvs_cygwin_shell': 0,
-                 'description': 'building >(out_pnacl_newlib_x86_32_nonsfi)',
-                 'inputs': [
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
-                   '>@(extra_deps)',
-                   '>@(extra_deps_pnacl_newlib)',
-                   '^(source_list_pnacl_newlib_x86_32_nonsfi)',
-                   '<(SHARED_INTERMEDIATE_DIR)/sdk/<(TOOLCHAIN_OS)_x86/pnacl_newlib/stamp.prep'
-                 ],
-                 'outputs': ['>(out_pnacl_newlib_x86_32_nonsfi)'],
-                 'action': [
-                   'python',
-                   '<(DEPTH)/native_client/build/build_nexe.py',
-                   '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
-                   '>@(extra_args)',
-                   '--arch', 'x86-32-nonsfi',
-                   '--build', 'newlib_nlib_pnacl',
-                   '--root', '<(DEPTH)',
-                   '--name', '>(out_pnacl_newlib_x86_32_nonsfi)',
-                   '--objdir', '>(objdir_pnacl_newlib_x86_32_nonsfi)',
-                   '--config-name', '<(CONFIGURATION_NAME)',
-                   '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
-                   '--compile_flags=--target=i686-unknown-nacl --pnacl-allow-native --pnacl-allow-translate -arch x86-32-nonsfi ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
-                   '--gomadir', '<(gomadir)',
-                   '--defines=^(defines) >(_defines)',
-                   '--link_flags=-B>(tc_lib_dir_pnacl_newlib) ^(link_flags) >(_link_flags)',
-                   '--source-list=^(source_list_pnacl_newlib_x86_32_nonsfi)',
-                 ],
-               },
-             ],
-           }], # end ia32 Non-SFI mode.
         ], # end ia32 or x64
       }],
       # MIPS
@@ -1778,7 +1702,7 @@
                 'description': 'building >(out_pnacl_newlib_mips)',
                 'inputs': [
                   '<(DEPTH)/native_client/build/build_nexe.py',
-                  '>!@pymod_do_main(>(get_sources) >(sources) >(_sources))',
+                  '>!@pymod_do_main(scan_sources -I . >(include_dirs) >(_include_dirs) -S >(sources) >(_sources))',
                   '>@(extra_deps)',
                   '>@(extra_deps_pnacl_newlib)',
                   '^(source_list_pnacl_newlib_mips)',
@@ -1786,16 +1710,12 @@
                 ],
                 'outputs': ['>(out_pnacl_newlib_mips)'],
                 'action': [
-                  'python',
-                  '<(DEPTH)/native_client/build/build_nexe.py',
-                  '-t', '<(SHARED_INTERMEDIATE_DIR)/sdk/',
+                  '<@(common_args)',
                   '>@(extra_args)',
                   '--arch', 'mips',
                   '--build', 'newlib_nlib_pnacl',
-                  '--root', '<(DEPTH)',
                   '--name', '>(out_pnacl_newlib_mips)',
                   '--objdir', '>(objdir_pnacl_newlib_mips)',
-                  '--config-name', '<(CONFIGURATION_NAME)',
                   '--include-dirs=>(tc_include_dir_pnacl_newlib) ^(include_dirs) >(_include_dirs)',
                   '--compile_flags=--pnacl-allow-translate -arch mips ^(compile_flags) >(_compile_flags) ^(pnacl_compile_flags) >(_pnacl_compile_flags)',
                   '--gomadir', '<(gomadir)',

@@ -6,7 +6,8 @@
 #define CONTENT_BROWSER_MEDIA_WEBRTC_INTERNALS_H_
 
 #include "base/gtest_prod_util.h"
-#include "base/memory/singleton.h"
+#include "base/lazy_instance.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
 #include "base/process/process.h"
 #include "base/values.h"
@@ -16,6 +17,8 @@
 #include "ui/shell_dialogs/select_file_dialog.h"
 
 namespace content {
+
+class PowerSaveBlocker;
 class WebContents;
 class WebRTCInternalsUIObserver;
 
@@ -34,13 +37,14 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // render process terminates and we want to clean up.
   // |pid| is the renderer process id, |lid| is the renderer local id used to
   // identify a PeerConnection, |url| is the url of the tab owning the
-  // PeerConnection, |servers| is the servers configuration, |constraints| is
-  // the media constraints used to initialize the PeerConnection.
+  // PeerConnection, |rtc_configuration| is the serialized RTCConfiguration,
+  // |constraints| is the media constraints used to initialize the
+  // PeerConnection.
   void OnAddPeerConnection(int render_process_id,
                            base::ProcessId pid,
                            int lid,
                            const std::string& url,
-                           const std::string& servers,
+                           const std::string& rtc_configuration,
                            const std::string& constraints);
 
   // This method is called when PeerConnection is destroyed.
@@ -98,28 +102,29 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   void ResetForTesting();
 
  private:
-  friend struct DefaultSingletonTraits<WebRTCInternals>;
-  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest, CallWithAecDump);
-  FRIEND_TEST_ALL_PREFIXES(WebRtcBrowserTest,
+  friend struct base::DefaultLazyInstanceTraits<WebRTCInternals>;
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest, CallWithAecDump);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest,
                            CallWithAecDumpEnabledThenDisabled);
+  FRIEND_TEST_ALL_PREFIXES(WebRtcAecDumpBrowserTest, TwoCallsWithAecDump);
   FRIEND_TEST_ALL_PREFIXES(WebRTCInternalsTest,
                            AecRecordingFileSelectionCanceled);
 
   WebRTCInternals();
-  virtual ~WebRTCInternals();
+  ~WebRTCInternals() override;
 
   void SendUpdate(const std::string& command, base::Value* value);
 
   // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  void Observe(int type,
+               const NotificationSource& source,
+               const NotificationDetails& details) override;
 
   // ui::SelectFileDialog::Listener implementation.
-  virtual void FileSelected(const base::FilePath& path,
-                            int index,
-                            void* unused_params) OVERRIDE;
-  virtual void FileSelectionCanceled(void* params) OVERRIDE;
+  void FileSelected(const base::FilePath& path,
+                    int index,
+                    void* unused_params) override;
+  void FileSelectionCanceled(void* params) override;
 
   // Called when a renderer exits (including crashes).
   void OnRendererExit(int render_process_id);
@@ -128,6 +133,11 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // Enables AEC dump on all render process hosts using |aec_dump_file_path_|.
   void EnableAecDumpOnAllRenderProcessHosts();
 #endif
+
+  // Called whenever an element is added to or removed from
+  // |peer_connection_data_| to impose/release a block on suspending the current
+  // application for power-saving.
+  void CreateOrReleasePowerSaveBlocker();
 
   ObserverList<WebRTCInternalsUIObserver> observers_;
 
@@ -142,8 +152,9 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // "servers" and "constraints" -- server configuration and media constraints
   // used to initialize the PeerConnection respectively.
   // "log" -- a ListValue contains all the updates for the PeerConnection. Each
-  // list item is a DictionaryValue containing "type" and "value", both of which
-  // are strings.
+  // list item is a DictionaryValue containing "time", which is the number of
+  // milliseconds since epoch as a string, and "type" and "value", both of which
+  // are strings representing the event.
   base::ListValue peer_connection_data_;
 
   // A list of getUserMedia requests. Each item is a DictionaryValue that
@@ -163,6 +174,11 @@ class CONTENT_EXPORT WebRTCInternals : public NotificationObserver,
   // AEC dump (diagnostic echo canceller recording) state.
   bool aec_dump_enabled_;
   base::FilePath aec_dump_file_path_;
+
+  // While |peer_connection_data_| is non-empty, hold an instance of
+  // PowerSaveBlocker.  This prevents the application from being suspended while
+  // remoting.
+  scoped_ptr<PowerSaveBlocker> power_save_blocker_;
 };
 
 }  // namespace content

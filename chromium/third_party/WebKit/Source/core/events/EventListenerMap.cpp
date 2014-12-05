@@ -37,15 +37,15 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/Vector.h"
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 #include "wtf/ThreadingPrimitives.h"
 #endif
 
 using namespace WTF;
 
-namespace WebCore {
+namespace blink {
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 static Mutex& activeIteratorCountMutex()
 {
     DEFINE_STATIC_LOCAL(Mutex, mutex, ());
@@ -60,7 +60,7 @@ void EventListenerMap::assertNoActiveIterators()
 #endif
 
 EventListenerMap::EventListenerMap()
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     : m_activeIteratorCount(0)
 #endif
 {
@@ -200,11 +200,11 @@ void EventListenerMap::removeFirstEventListenerCreatedFromMarkup(const AtomicStr
 
 static void copyListenersNotCreatedFromMarkupToTarget(const AtomicString& eventType, EventListenerVector* listenerVector, EventTarget* target)
 {
-    for (size_t i = 0; i < listenerVector->size(); ++i) {
+    for (const auto& eventListener : *listenerVector) {
         // Event listeners created from markup have already been transfered to the shadow tree during cloning.
-        if ((*listenerVector)[i].listener->wasCreatedFromMarkup())
+        if (eventListener.listener->wasCreatedFromMarkup())
             continue;
-        target->addEventListener(eventType, (*listenerVector)[i].listener, (*listenerVector)[i].useCapture);
+        target->addEventListener(eventType, eventListener.listener, eventListener.useCapture);
     }
 }
 
@@ -212,19 +212,19 @@ void EventListenerMap::copyEventListenersNotCreatedFromMarkupToTarget(EventTarge
 {
     assertNoActiveIterators();
 
-    for (unsigned i = 0; i < m_entries.size(); ++i)
-        copyListenersNotCreatedFromMarkupToTarget(m_entries[i].first, m_entries[i].second.get(), target);
+    for (const auto& eventListener : m_entries)
+        copyListenersNotCreatedFromMarkupToTarget(eventListener.first, eventListener.second.get(), target);
 }
 
 EventListenerIterator::EventListenerIterator()
-    : m_map(0)
+    : m_map(nullptr)
     , m_entryIndex(0)
     , m_index(0)
 {
 }
 
 EventListenerIterator::EventListenerIterator(EventTarget* target)
-    : m_map(0)
+    : m_map(nullptr)
     , m_entryIndex(0)
     , m_index(0)
 {
@@ -236,7 +236,7 @@ EventListenerIterator::EventListenerIterator(EventTarget* target)
 
     m_map = &data->eventListenerMap;
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     {
         MutexLocker locker(activeIteratorCountMutex());
         m_map->m_activeIteratorCount++;
@@ -244,7 +244,7 @@ EventListenerIterator::EventListenerIterator(EventTarget* target)
 #endif
 }
 
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
 EventListenerIterator::~EventListenerIterator()
 {
     if (m_map) {
@@ -269,4 +269,4 @@ EventListener* EventListenerIterator::nextListener()
     return 0;
 }
 
-} // namespace WebCore
+} // namespace blink

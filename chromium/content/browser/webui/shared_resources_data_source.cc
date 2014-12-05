@@ -10,8 +10,8 @@
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
-#include "grit/webui_resources_map.h"
 #include "net/base/mime_util.h"
+#include "ui/resources/grit/webui_resources_map.h"
 
 namespace {
 
@@ -88,4 +88,18 @@ std::string SharedResourcesDataSource::GetMimeType(
   std::string mime_type;
   net::GetMimeTypeFromFile(base::FilePath().AppendASCII(path), &mime_type);
   return mime_type;
+}
+
+std::string
+SharedResourcesDataSource::GetAccessControlAllowOriginForOrigin(
+    const std::string& origin) const {
+  // For now we give access only for "chrome://*" origins.
+  // According to CORS spec, Access-Control-Allow-Origin header doesn't support
+  // wildcards, so we need to set its value explicitly by passing the |origin|
+  // back.
+  std::string allowed_origin_prefix = content::kChromeUIScheme;
+  allowed_origin_prefix += "://";
+  if (origin.find(allowed_origin_prefix) != 0)
+    return "none";
+  return origin;
 }

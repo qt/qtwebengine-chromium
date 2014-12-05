@@ -6,9 +6,14 @@
 
 #include <cstdlib>
 
+#include "base/bind.h"
 #include "base/files/file.h"
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
 #include "base/stl_util.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/thread_task_runner_handle.h"
+#include "base/threading/thread_restrictions.h"
 #include "device/hid/hid_connection_win.h"
 #include "device/hid/hid_device_info.h"
 #include "net/base/io_buffer.h"
@@ -16,16 +21,6 @@
 #if defined(OS_WIN)
 
 #define INITGUID
-
-#include <windows.h>
-#include <hidclass.h>
-
-extern "C" {
-
-#include <hidsdi.h>
-#include <hidpi.h>
-
-}
 
 #include <setupapi.h>
 #include <winioctl.h>
@@ -45,6 +40,9 @@ const char kHIDClass[] = "HIDClass";
 }  // namespace
 
 HidServiceWin::HidServiceWin() {
+  base::ThreadRestrictions::AssertIOAllowed();
+  task_runner_ = base::ThreadTaskRunnerHandle::Get();
+  DCHECK(task_runner_.get());
   Enumerate();
 }
 
@@ -66,78 +64,137 @@ void HidServiceWin::Enumerate() {
       NULL,
       DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
 
-  if (device_info_set == INVALID_HANDLE_VALUE)
-    return;
+  std::set<std::string> connected_devices;
 
-  for (int device_index = 0;
-       SetupDiEnumDeviceInterfaces(device_info_set,
-                                   NULL,
-                                   &GUID_DEVINTERFACE_HID,
-                                   device_index,
-                                   &device_interface_data);
-       ++device_index) {
-    DWORD required_size = 0;
-
-    // Determime the required size of detail struct.
-    SetupDiGetDeviceInterfaceDetailA(device_info_set,
-                                     &device_interface_data,
+  if (device_info_set != INVALID_HANDLE_VALUE) {
+    for (int device_index = 0;
+         SetupDiEnumDeviceInterfaces(device_info_set,
                                      NULL,
-                                     0,
-                                     &required_size,
-                                     NULL);
+                                     &GUID_DEVINTERFACE_HID,
+                                     device_index,
+                                     &device_interface_data);
+         ++device_index) {
+      DWORD required_size = 0;
 
-    scoped_ptr<SP_DEVICE_INTERFACE_DETAIL_DATA_A, base::FreeDeleter>
-        device_interface_detail_data(
-            static_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(
-                malloc(required_size)));
-    device_interface_detail_data->cbSize =
-        sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
+      // Determime the required size of detail struct.
+      SetupDiGetDeviceInterfaceDetailA(device_info_set,
+                                       &device_interface_data,
+                                       NULL,
+                                       0,
+                                       &required_size,
+                                       NULL);
 
-    // Get the detailed data for this device.
-    res = SetupDiGetDeviceInterfaceDetailA(device_info_set,
-                                           &device_interface_data,
-                                           device_interface_detail_data.get(),
-                                           required_size,
-                                           NULL,
-                                           NULL);
-    if (!res)
-      continue;
+      scoped_ptr<SP_DEVICE_INTERFACE_DETAIL_DATA_A, base::FreeDeleter>
+          device_interface_detail_data(
+              static_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_A*>(
+                  malloc(required_size)));
+      device_interface_detail_data->cbSize =
+          sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_A);
 
-    // Enumerate device info. Looking for Setup Class "HIDClass".
-    for (DWORD i = 0;
-        SetupDiEnumDeviceInfo(device_info_set, i, &devinfo_data);
-        i++) {
-      char class_name[256] = {0};
-      res = SetupDiGetDeviceRegistryPropertyA(device_info_set,
-                                              &devinfo_data,
-                                              SPDRP_CLASS,
-                                              NULL,
-                                              (PBYTE) class_name,
-                                              sizeof(class_name) - 1,
-                                              NULL);
+      // Get the detailed data for this device.
+      res = SetupDiGetDeviceInterfaceDetailA(device_info_set,
+                                             &device_interface_data,
+                                             device_interface_detail_data.get(),
+                                             required_size,
+                                             NULL,
+                                             NULL);
       if (!res)
-        break;
-      if (memcmp(class_name, kHIDClass, sizeof(kHIDClass)) == 0) {
-        char driver_name[256] = {0};
-        // Get bounded driver.
+        continue;
+
+      // Enumerate device info. Looking for Setup Class "HIDClass".
+      for (DWORD i = 0;
+          SetupDiEnumDeviceInfo(device_info_set, i, &devinfo_data);
+          i++) {
+        char class_name[256] = {0};
         res = SetupDiGetDeviceRegistryPropertyA(device_info_set,
                                                 &devinfo_data,
-                                                SPDRP_DRIVER,
+                                                SPDRP_CLASS,
                                                 NULL,
-                                                (PBYTE) driver_name,
-                                                sizeof(driver_name) - 1,
+                                                (PBYTE) class_name,
+                                                sizeof(class_name) - 1,
                                                 NULL);
-        if (res) {
-          // Found the driver.
+        if (!res)
           break;
+        if (memcmp(class_name, kHIDClass, sizeof(kHIDClass)) == 0) {
+          char driver_name[256] = {0};
+          // Get bounded driver.
+          res = SetupDiGetDeviceRegistryPropertyA(device_info_set,
+                                                  &devinfo_data,
+                                                  SPDRP_DRIVER,
+                                                  NULL,
+                                                  (PBYTE) driver_name,
+                                                  sizeof(driver_name) - 1,
+                                                  NULL);
+          if (res) {
+            // Found the driver.
+            break;
+          }
+        }
+      }
+
+      if (!res)
+        continue;
+
+      PlatformAddDevice(device_interface_detail_data->DevicePath);
+      connected_devices.insert(device_interface_detail_data->DevicePath);
+    }
+  }
+
+  // Find disconnected devices.
+  std::vector<std::string> disconnected_devices;
+  for (DeviceMap::const_iterator it = devices().begin(); it != devices().end();
+       ++it) {
+    if (!ContainsKey(connected_devices, it->first)) {
+      disconnected_devices.push_back(it->first);
+    }
+  }
+
+  // Remove disconnected devices.
+  for (size_t i = 0; i < disconnected_devices.size(); ++i) {
+    PlatformRemoveDevice(disconnected_devices[i]);
+  }
+}
+
+void HidServiceWin::CollectInfoFromButtonCaps(
+    PHIDP_PREPARSED_DATA preparsed_data,
+    HIDP_REPORT_TYPE report_type,
+    USHORT button_caps_length,
+    HidCollectionInfo* collection_info) {
+  if (button_caps_length > 0) {
+    scoped_ptr<HIDP_BUTTON_CAPS[]> button_caps(
+        new HIDP_BUTTON_CAPS[button_caps_length]);
+    if (HidP_GetButtonCaps(report_type,
+                           &button_caps[0],
+                           &button_caps_length,
+                           preparsed_data) == HIDP_STATUS_SUCCESS) {
+      for (size_t i = 0; i < button_caps_length; i++) {
+        int report_id = button_caps[i].ReportID;
+        if (report_id != 0) {
+          collection_info->report_ids.insert(report_id);
         }
       }
     }
+  }
+}
 
-    if (!res)
-      continue;
-
-    PlatformAddDevice(device_interface_detail_data->DevicePath);
+void HidServiceWin::CollectInfoFromValueCaps(
+    PHIDP_PREPARSED_DATA preparsed_data,
+    HIDP_REPORT_TYPE report_type,
+    USHORT value_caps_length,
+    HidCollectionInfo* collection_info) {
+  if (value_caps_length > 0) {
+    scoped_ptr<HIDP_VALUE_CAPS[]> value_caps(
+        new HIDP_VALUE_CAPS[value_caps_length]);
+    if (HidP_GetValueCaps(
+            report_type, &value_caps[0], &value_caps_length, preparsed_data) ==
+        HIDP_STATUS_SUCCESS) {
+      for (size_t i = 0; i < value_caps_length; i++) {
+        int report_id = value_caps[i].ReportID;
+        if (report_id != 0) {
+          collection_info->report_ids.insert(report_id);
+        }
+      }
+    }
   }
 }
 
@@ -187,38 +244,57 @@ void HidServiceWin::PlatformAddDevice(const std::string& device_path) {
   PHIDP_PREPARSED_DATA preparsed_data;
   if (HidD_GetPreparsedData(device_handle.Get(), &preparsed_data) &&
       preparsed_data) {
-    HIDP_CAPS capabilities;
+    HIDP_CAPS capabilities = {0};
     if (HidP_GetCaps(preparsed_data, &capabilities) == HIDP_STATUS_SUCCESS) {
-      device_info.input_report_size = capabilities.InputReportByteLength;
-      device_info.output_report_size = capabilities.OutputReportByteLength;
-      device_info.feature_report_size = capabilities.FeatureReportByteLength;
-      device_info.usages.push_back(HidUsageAndPage(
-        capabilities.Usage,
-        static_cast<HidUsageAndPage::Page>(capabilities.UsagePage)));
-    }
-    // Detect if the device supports report ids.
-    if (capabilities.NumberInputValueCaps > 0) {
-      scoped_ptr<HIDP_VALUE_CAPS[]> value_caps(
-          new HIDP_VALUE_CAPS[capabilities.NumberInputValueCaps]);
-      USHORT value_caps_length = capabilities.NumberInputValueCaps;
-      if (HidP_GetValueCaps(HidP_Input, &value_caps[0], &value_caps_length,
-                            preparsed_data) == HIDP_STATUS_SUCCESS) {
-        device_info.has_report_id = (value_caps[0].ReportID != 0);
+      device_info.max_input_report_size = capabilities.InputReportByteLength;
+      device_info.max_output_report_size = capabilities.OutputReportByteLength;
+      device_info.max_feature_report_size =
+          capabilities.FeatureReportByteLength;
+      HidCollectionInfo collection_info;
+      collection_info.usage = HidUsageAndPage(
+          capabilities.Usage,
+          static_cast<HidUsageAndPage::Page>(capabilities.UsagePage));
+      CollectInfoFromButtonCaps(preparsed_data,
+                                HidP_Input,
+                                capabilities.NumberInputButtonCaps,
+                                &collection_info);
+      CollectInfoFromButtonCaps(preparsed_data,
+                                HidP_Output,
+                                capabilities.NumberOutputButtonCaps,
+                                &collection_info);
+      CollectInfoFromButtonCaps(preparsed_data,
+                                HidP_Feature,
+                                capabilities.NumberFeatureButtonCaps,
+                                &collection_info);
+      CollectInfoFromValueCaps(preparsed_data,
+                               HidP_Input,
+                               capabilities.NumberInputValueCaps,
+                               &collection_info);
+      CollectInfoFromValueCaps(preparsed_data,
+                               HidP_Output,
+                               capabilities.NumberOutputValueCaps,
+                               &collection_info);
+      CollectInfoFromValueCaps(preparsed_data,
+                               HidP_Feature,
+                               capabilities.NumberFeatureValueCaps,
+                               &collection_info);
+      if (!collection_info.report_ids.empty()) {
+        device_info.has_report_id = true;
       }
+      device_info.collections.push_back(collection_info);
     }
-    if (!device_info.has_report_id && capabilities.NumberInputButtonCaps > 0)
-    {
-      scoped_ptr<HIDP_BUTTON_CAPS[]> button_caps(
-        new HIDP_BUTTON_CAPS[capabilities.NumberInputButtonCaps]);
-      USHORT button_caps_length = capabilities.NumberInputButtonCaps;
-      if (HidP_GetButtonCaps(HidP_Input,
-                             &button_caps[0],
-                             &button_caps_length,
-                             preparsed_data) == HIDP_STATUS_SUCCESS) {
-        device_info.has_report_id = (button_caps[0].ReportID != 0);
-      }
+    // Whether or not the device includes report IDs in its reports the size
+    // of the report ID is included in the value provided by Windows. This
+    // appears contrary to the MSDN documentation.
+    if (device_info.max_input_report_size > 0) {
+      device_info.max_input_report_size--;
     }
-
+    if (device_info.max_output_report_size > 0) {
+      device_info.max_output_report_size--;
+    }
+    if (device_info.max_feature_report_size > 0) {
+      device_info.max_feature_report_size--;
+    }
     HidD_FreePreparsedData(preparsed_data);
   }
 
@@ -234,17 +310,22 @@ void HidServiceWin::GetDevices(std::vector<HidDeviceInfo>* devices) {
   HidService::GetDevices(devices);
 }
 
-scoped_refptr<HidConnection> HidServiceWin::Connect(
-    const HidDeviceId& device_id) {
-  HidDeviceInfo device_info;
-  if (!GetDeviceInfo(device_id, &device_info))
-    return NULL;
+void HidServiceWin::Connect(const HidDeviceId& device_id,
+                            const ConnectCallback& callback) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  const auto& map_entry = devices().find(device_id);
+  if (map_entry == devices().end()) {
+    task_runner_->PostTask(FROM_HERE, base::Bind(callback, nullptr));
+    return;
+  }
+  const HidDeviceInfo& device_info = map_entry->second;
+
   scoped_refptr<HidConnectionWin> connection(new HidConnectionWin(device_info));
   if (!connection->available()) {
-    PLOG(ERROR) << "Failed to open device.";
-    return NULL;
+    PLOG(ERROR) << "Failed to open device";
+    connection = nullptr;
   }
-  return connection;
+  task_runner_->PostTask(FROM_HERE, base::Bind(callback, connection));
 }
 
 }  // namespace device

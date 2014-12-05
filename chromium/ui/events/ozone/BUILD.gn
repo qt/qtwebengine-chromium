@@ -16,8 +16,6 @@ component("events_ozone") {
     "device/device_manager_manual.h",
     "device/udev/device_manager_udev.cc",
     "device/udev/device_manager_udev.h",
-    "event_factory_ozone.cc",
-    "event_factory_ozone.h",
     "events_ozone_export.h",
   ]
 
@@ -47,6 +45,8 @@ component("events_ozone_evdev") {
   sources = [
     "evdev/event_converter_evdev.cc",
     "evdev/event_converter_evdev.h",
+    "evdev/event_converter_evdev_impl.cc",
+    "evdev/event_converter_evdev_impl.h",
     "evdev/event_device_info.cc",
     "evdev/event_device_info.h",
     "evdev/event_factory_evdev.cc",
@@ -54,8 +54,8 @@ component("events_ozone_evdev") {
     "evdev/event_modifiers_evdev.cc",
     "evdev/event_modifiers_evdev.h",
     "evdev/events_ozone_evdev_export.h",
-    "evdev/key_event_converter_evdev.cc",
-    "evdev/key_event_converter_evdev.h",
+    "evdev/keyboard_evdev.cc",
+    "evdev/keyboard_evdev.h",
     "evdev/touch_event_converter_evdev.cc",
     "evdev/touch_event_converter_evdev.h",
   ]
@@ -67,6 +67,7 @@ component("events_ozone_evdev") {
   deps = [
     ":events_ozone",
     "//base",
+    "//ui/events/devices",
     "//ui/events/platform",
     "//ui/gfx",
   ]
@@ -85,6 +86,8 @@ component("events_ozone_evdev") {
       "evdev/libgestures_glue/gesture_interpreter_libevdev_cros.h",
       "evdev/libgestures_glue/gesture_logging.cc",
       "evdev/libgestures_glue/gesture_logging.h",
+      "evdev/libgestures_glue/gesture_property_provider.cc",
+      "evdev/libgestures_glue/gesture_property_provider.h",
       "evdev/libgestures_glue/gesture_timer_provider.cc",
       "evdev/libgestures_glue/gesture_timer_provider.h",
     ]

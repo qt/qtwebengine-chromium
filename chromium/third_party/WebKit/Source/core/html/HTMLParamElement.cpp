@@ -27,14 +27,13 @@
 #include "core/dom/Attribute.h"
 #include "core/dom/Document.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
 inline HTMLParamElement::HTMLParamElement(Document& document)
     : HTMLElement(paramTag, document)
 {
-    ScriptWrappable::init(this);
 }
 
 DEFINE_NODE_FACTORY(HTMLParamElement)

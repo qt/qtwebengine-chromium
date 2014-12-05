@@ -32,11 +32,6 @@
 #include "wtf/Vector.h"
 
 namespace blink {
-class WebSpeechSynthesizer;
-class WebSpeechSynthesizerClient;
-}
-
-namespace WebCore {
 
 enum SpeechBoundary {
     SpeechWordBoundary,
@@ -44,6 +39,7 @@ enum SpeechBoundary {
 };
 
 class PlatformSpeechSynthesisUtterance;
+class WebSpeechSynthesizer;
 class WebSpeechSynthesizerClientImpl;
 
 class PlatformSpeechSynthesizerClient : public GarbageCollectedMixin {
@@ -56,7 +52,6 @@ public:
     virtual void boundaryEventOccurred(PlatformSpeechSynthesisUtterance*, SpeechBoundary, unsigned charIndex) = 0;
     virtual void voicesDidChange() = 0;
 
-    virtual void trace(Visitor*) { }
 protected:
     virtual ~PlatformSpeechSynthesizerClient() { }
 };
@@ -90,10 +85,10 @@ protected:
 private:
     Member<PlatformSpeechSynthesizerClient> m_speechSynthesizerClient;
 
-    OwnPtr<blink::WebSpeechSynthesizer> m_webSpeechSynthesizer;
-    Member<WebCore::WebSpeechSynthesizerClientImpl> m_webSpeechSynthesizerClient;
+    OwnPtr<WebSpeechSynthesizer> m_webSpeechSynthesizer;
+    Member<WebSpeechSynthesizerClientImpl> m_webSpeechSynthesizerClient;
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // PlatformSpeechSynthesizer_h

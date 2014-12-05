@@ -46,8 +46,8 @@ void WebStorageEventDispatcher::dispatchLocalStorageEvent(
         const WebURL& pageURL, WebStorageArea* sourceAreaInstance,
         bool originatedInProcess)
 {
-    RefPtr<WebCore::SecurityOrigin> securityOrigin = WebCore::SecurityOrigin::create(origin);
-    WebCore::StorageArea::dispatchLocalStorageEvent(
+    RefPtr<SecurityOrigin> securityOrigin = SecurityOrigin::create(origin);
+    StorageArea::dispatchLocalStorageEvent(
             key, oldValue, newValue, securityOrigin.get(), pageURL,
             sourceAreaInstance, originatedInProcess);
 }
@@ -58,8 +58,8 @@ void WebStorageEventDispatcher::dispatchSessionStorageEvent(
         const WebURL& pageURL, const WebStorageNamespace& sessionNamespace,
         WebStorageArea* sourceAreaInstance, bool originatedInProcess)
 {
-    RefPtr<WebCore::SecurityOrigin> securityOrigin = WebCore::SecurityOrigin::create(origin);
-    WebCore::StorageArea::dispatchSessionStorageEvent(
+    RefPtr<SecurityOrigin> securityOrigin = SecurityOrigin::create(origin);
+    StorageArea::dispatchSessionStorageEvent(
             key, oldValue, newValue, securityOrigin.get(), pageURL,
             sessionNamespace, sourceAreaInstance, originatedInProcess);
 }

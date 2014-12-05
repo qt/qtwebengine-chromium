@@ -35,11 +35,15 @@ from webkitpy.common.system import environment, executive, filesystem, platformi
 
 class SystemHost(object):
     def __init__(self):
+        self.executable = sys.executable
         self.executive = executive.Executive()
         self.filesystem = filesystem.FileSystem()
         self.user = user.User()
         self.platform = platforminfo.PlatformInfo(sys, platform, self.executive)
         self.workspace = workspace.Workspace(self.filesystem, self.executive)
+        self.stdin = sys.stdin
+        self.stdout = sys.stdout
+        self.stderr = sys.stderr
 
     def copy_current_environment(self):
         return environment.Environment(os.environ.copy())
@@ -47,8 +51,8 @@ class SystemHost(object):
     def print_(self, *args, **kwargs):
         sep = kwargs.get('sep', ' ')
         end = kwargs.get('end', '\n')
-        file = kwargs.get('file', None)
-        stderr = kwargs.get('stderr', False)
+        stream = kwargs.get('stream', self.stdout)
+        stream.write(sep.join([str(arg) for arg in args]) + end)
 
-        file = file or (sys.stderr if stderr else sys.stdout)
-        file.write(sep.join([str(arg) for arg in args]) + end)
+    def exit(self, returncode):
+        sys.exit(returncode)

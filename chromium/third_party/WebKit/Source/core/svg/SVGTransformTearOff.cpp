@@ -31,15 +31,14 @@
 #include "config.h"
 #include "core/svg/SVGTransformTearOff.h"
 
-#include "bindings/v8/ExceptionState.h"
+#include "bindings/core/v8/ExceptionState.h"
 #include "core/dom/ExceptionCode.h"
 
-namespace WebCore {
+namespace blink {
 
 SVGTransformTearOff::SVGTransformTearOff(PassRefPtr<SVGTransform> target, SVGElement* contextElement, PropertyIsAnimValType propertyIsAnimVal, const QualifiedName& attributeName)
     : SVGPropertyTearOff<SVGTransform>(target, contextElement, propertyIsAnimVal, attributeName)
 {
-    ScriptWrappable::init(this);
 }
 
 SVGTransformTearOff::~SVGTransformTearOff()

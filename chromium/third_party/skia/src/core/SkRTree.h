@@ -59,44 +59,17 @@ public:
             bool orderWhenBulkLoading = true);
     virtual ~SkRTree();
 
-    /**
-     * Insert a node, consisting of bounds and a data value into the tree, if we don't immediately
-     * need to use the tree; we may allow the insert to be deferred (this can allow us to bulk-load
-     * a large batch of nodes at once, which tends to be faster and produce a better tree).
-     *  @param data The data value
-     *  @param bounds The corresponding bounding box
-     *  @param defer Can this insert be deferred? (this may be ignored)
-     */
-    virtual void insert(void* data, const SkIRect& bounds, bool defer = false) SK_OVERRIDE;
+    virtual void insert(SkAutoTMalloc<SkRect>* boundsArray, int N) SK_OVERRIDE;
+    virtual void search(const SkRect& query, SkTDArray<unsigned>* results) const SK_OVERRIDE;
 
-    /**
-     * If any inserts have been deferred, this will add them into the tree
-     */
-    virtual void flushDeferredInserts() SK_OVERRIDE;
-
-    /**
-     * Given a query rectangle, populates the passed-in array with the elements it intersects
-     */
-    virtual void search(const SkIRect& query, SkTDArray<void*>* results) SK_OVERRIDE;
-
-    virtual void clear() SK_OVERRIDE;
-    bool isEmpty() const { return 0 == fCount; }
-
-    /**
-     * Gets the depth of the tree structure
-     */
-    virtual int getDepth() const SK_OVERRIDE {
-        return this->isEmpty() ? 0 : fRoot.fChild.subtree->fLevel + 1;
-    }
-
-    /**
-     * This gets the insertion count (rather than the node count)
-     */
-    virtual int getCount() const SK_OVERRIDE { return fCount; }
-
-    virtual void rewindInserts() SK_OVERRIDE;
+    void clear();
+    // Return the depth of the tree structure.
+    int getDepth() const { return this->isEmpty() ? 0 : fRoot.fChild.subtree->fLevel + 1; }
+    // Insertion count (not overall node count, which may be greater).
+    int getCount() const { return fCount; }
 
 private:
+    bool isEmpty() const { return 0 == this->getCount(); }
 
     struct Node;
 
@@ -106,7 +79,7 @@ private:
     struct Branch {
         union {
             Node* subtree;
-            void* data;
+            unsigned opIndex;
         } fChild;
         SkIRect fBounds;
     };
@@ -162,7 +135,7 @@ private:
     int chooseSubtree(Node* root, Branch* branch);
     SkIRect computeBounds(Node* n);
     int distributeChildren(Branch* children);
-    void search(Node* root, const SkIRect query, SkTDArray<void*>* results) const;
+    void search(Node* root, const SkIRect query, SkTDArray<unsigned>* results) const;
 
     /**
      * This performs a bottom-up bulk load using the STR (sort-tile-recursive) algorithm, this
@@ -177,8 +150,8 @@ private:
      */
     Branch bulkLoad(SkTDArray<Branch>* branches, int level = 0);
 
-    void validate();
-    int validateSubtree(Node* root, SkIRect bounds, bool isRoot = false);
+    void validate() const;
+    int validateSubtree(Node* root, SkIRect bounds, bool isRoot = false) const;
 
     const int fMinChildren;
     const int fMaxChildren;
@@ -189,7 +162,6 @@ private:
 
     Branch fRoot;
     SkChunkAlloc fNodes;
-    SkTDArray<Branch> fDeferredInserts;
     SkScalar fAspectRatio;
     bool fSortWhenBulkLoading;
 

@@ -33,19 +33,19 @@ class CONTENT_EXPORT GoogleOneShotRemoteEngine
   static int url_fetcher_id_for_tests;
 
   explicit GoogleOneShotRemoteEngine(net::URLRequestContextGetter* context);
-  virtual ~GoogleOneShotRemoteEngine();
+  ~GoogleOneShotRemoteEngine() override;
 
   // SpeechRecognitionEngine methods.
-  virtual void SetConfig(const SpeechRecognitionEngineConfig& config) OVERRIDE;
-  virtual void StartRecognition() OVERRIDE;
-  virtual void EndRecognition() OVERRIDE;
-  virtual void TakeAudioChunk(const AudioChunk& data) OVERRIDE;
-  virtual void AudioChunksEnded() OVERRIDE;
-  virtual bool IsRecognitionPending() const OVERRIDE;
-  virtual int GetDesiredAudioChunkDurationMs() const OVERRIDE;
+  void SetConfig(const SpeechRecognitionEngineConfig& config) override;
+  void StartRecognition() override;
+  void EndRecognition() override;
+  void TakeAudioChunk(const AudioChunk& data) override;
+  void AudioChunksEnded() override;
+  bool IsRecognitionPending() const override;
+  int GetDesiredAudioChunkDurationMs() const override;
 
   // net::URLFetcherDelegate methods.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
+  void OnURLFetchComplete(const net::URLFetcher* source) override;
 
  private:
   SpeechRecognitionEngineConfig config_;

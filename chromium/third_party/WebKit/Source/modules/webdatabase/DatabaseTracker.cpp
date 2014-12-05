@@ -33,7 +33,7 @@
 
 #include "core/dom/ExecutionContext.h"
 #include "core/dom/ExecutionContextTask.h"
-#include "modules/webdatabase/DatabaseBackendBase.h"
+#include "modules/webdatabase/Database.h"
 #include "modules/webdatabase/DatabaseClient.h"
 #include "modules/webdatabase/DatabaseContext.h"
 #include "modules/webdatabase/QuotaTracker.h"
@@ -46,12 +46,12 @@
 #include "wtf/Assertions.h"
 #include "wtf/StdLibExtras.h"
 
-namespace WebCore {
+namespace blink {
 
-static void databaseClosed(DatabaseBackendBase* database)
+static void databaseClosed(Database* database)
 {
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->databaseClosed(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->databaseClosed(
             createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin()),
             database->stringIdentifier());
     }
@@ -82,7 +82,7 @@ String DatabaseTracker::fullPathForDatabase(SecurityOrigin* origin, const String
     return createDatabaseIdentifierFromSecurityOrigin(origin) + "/" + name + "#";
 }
 
-void DatabaseTracker::addOpenDatabase(DatabaseBackendBase* database)
+void DatabaseTracker::addOpenDatabase(Database* database)
 {
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
     if (!m_openDatabaseMap)
@@ -105,33 +105,33 @@ void DatabaseTracker::addOpenDatabase(DatabaseBackendBase* database)
     databaseSet->add(database);
 }
 
-class NotifyDatabaseObserverOnCloseTask FINAL : public ExecutionContextTask {
+class NotifyDatabaseObserverOnCloseTask final : public ExecutionContextTask {
 public:
-    static PassOwnPtr<NotifyDatabaseObserverOnCloseTask> create(PassRefPtrWillBeRawPtr<DatabaseBackendBase> database)
+    static PassOwnPtr<NotifyDatabaseObserverOnCloseTask> create(Database* database)
     {
         return adoptPtr(new NotifyDatabaseObserverOnCloseTask(database));
     }
 
-    virtual void performTask(ExecutionContext*) OVERRIDE
+    virtual void performTask(ExecutionContext*) override
     {
         databaseClosed(m_database.get());
     }
 
-    virtual bool isCleanupTask() const OVERRIDE
+    virtual bool isCleanupTask() const override
     {
         return true;
     }
 
 private:
-    explicit NotifyDatabaseObserverOnCloseTask(PassRefPtrWillBeRawPtr<DatabaseBackendBase> database)
+    explicit NotifyDatabaseObserverOnCloseTask(Database* database)
         : m_database(database)
     {
     }
 
-    RefPtrWillBeCrossThreadPersistent<DatabaseBackendBase> m_database;
+    CrossThreadPersistent<Database> m_database;
 };
 
-void DatabaseTracker::removeOpenDatabase(DatabaseBackendBase* database)
+void DatabaseTracker::removeOpenDatabase(Database* database)
 {
     String originIdentifier = createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin());
     MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
@@ -166,11 +166,11 @@ void DatabaseTracker::removeOpenDatabase(DatabaseBackendBase* database)
         databaseClosed(database);
 }
 
-void DatabaseTracker::prepareToOpenDatabase(DatabaseBackendBase* database)
+void DatabaseTracker::prepareToOpenDatabase(Database* database)
 {
     ASSERT(database->databaseContext()->executionContext()->isContextThread());
-    if (blink::Platform::current()->databaseObserver()) {
-        blink::Platform::current()->databaseObserver()->databaseOpened(
+    if (Platform::current()->databaseObserver()) {
+        Platform::current()->databaseObserver()->databaseOpened(
             createDatabaseIdentifierFromSecurityOrigin(database->securityOrigin()),
             database->stringIdentifier(),
             database->displayName(),
@@ -178,7 +178,7 @@ void DatabaseTracker::prepareToOpenDatabase(DatabaseBackendBase* database)
     }
 }
 
-void DatabaseTracker::failedToOpenDatabase(DatabaseBackendBase* database)
+void DatabaseTracker::failedToOpenDatabase(Database* database)
 {
     ExecutionContext* executionContext = database->databaseContext()->executionContext();
     if (!executionContext->isContextThread())
@@ -187,7 +187,7 @@ void DatabaseTracker::failedToOpenDatabase(DatabaseBackendBase* database)
         databaseClosed(database);
 }
 
-unsigned long long DatabaseTracker::getMaxSizeForDatabase(const DatabaseBackendBase* database)
+unsigned long long DatabaseTracker::getMaxSizeForDatabase(const Database* database)
 {
     unsigned long long spaceAvailable = 0;
     unsigned long long databaseSize = 0;
@@ -197,42 +197,21 @@ unsigned long long DatabaseTracker::getMaxSizeForDatabase(const DatabaseBackendB
     return databaseSize + spaceAvailable;
 }
 
-void DatabaseTracker::interruptAllDatabasesForContext(const DatabaseContext* context)
-{
-    MutexLocker openDatabaseMapLock(m_openDatabaseMapGuard);
-
-    if (!m_openDatabaseMap)
-        return;
-
-    DatabaseNameMap* nameMap = m_openDatabaseMap->get(createDatabaseIdentifierFromSecurityOrigin(context->securityOrigin()));
-    if (!nameMap)
-        return;
-
-    DatabaseNameMap::const_iterator dbNameMapEndIt = nameMap->end();
-    for (DatabaseNameMap::const_iterator dbNameMapIt = nameMap->begin(); dbNameMapIt != dbNameMapEndIt; ++dbNameMapIt) {
-        DatabaseSet* databaseSet = dbNameMapIt->value;
-        DatabaseSet::const_iterator end = databaseSet->end();
-        for (DatabaseSet::const_iterator it = databaseSet->begin(); it != end; ++it) {
-            if ((*it)->databaseContext() == context)
-                (*it)->interrupt();
-        }
-    }
-}
-
-class DatabaseTracker::CloseOneDatabaseImmediatelyTask FINAL : public ExecutionContextTask {
+// FIXME: This can be removed by createCrossThreadTask().
+class DatabaseTracker::CloseOneDatabaseImmediatelyTask final : public ExecutionContextTask {
 public:
-    static PassOwnPtr<CloseOneDatabaseImmediatelyTask> create(const String& originIdentifier, const String& name, DatabaseBackendBase* database)
+    static PassOwnPtr<CloseOneDatabaseImmediatelyTask> create(const String& originIdentifier, const String& name, Database* database)
     {
         return adoptPtr(new CloseOneDatabaseImmediatelyTask(originIdentifier, name, database));
     }
 
-    virtual void performTask(ExecutionContext*) OVERRIDE
+    virtual void performTask(ExecutionContext*) override
     {
         DatabaseTracker::tracker().closeOneDatabaseImmediately(m_originIdentifier, m_name, m_database);
     }
 
 private:
-    CloseOneDatabaseImmediatelyTask(const String& originIdentifier, const String& name, DatabaseBackendBase* database)
+    CloseOneDatabaseImmediatelyTask(const String& originIdentifier, const String& name, Database* database)
         : m_originIdentifier(originIdentifier.isolatedCopy())
         , m_name(name.isolatedCopy())
         , m_database(database)
@@ -241,7 +220,7 @@ private:
 
     String m_originIdentifier;
     String m_name;
-    DatabaseBackendBase* m_database; // Intentionally a raw pointer.
+    CrossThreadPersistent<Database> m_database;
 };
 
 void DatabaseTracker::closeDatabasesImmediately(const String& originIdentifier, const String& name)
@@ -258,14 +237,12 @@ void DatabaseTracker::closeDatabasesImmediately(const String& originIdentifier, 
     if (!databaseSet)
         return;
 
-    // We have to call closeImmediately() on the context thread and we cannot safely add a reference to
-    // the database in our collection when not on the context thread (which is always the case given
-    // current usage).
+    // We have to call closeImmediately() on the context thread.
     for (DatabaseSet::iterator it = databaseSet->begin(); it != databaseSet->end(); ++it)
         (*it)->databaseContext()->executionContext()->postTask(CloseOneDatabaseImmediatelyTask::create(originIdentifier, name, *it));
 }
 
-void DatabaseTracker::closeOneDatabaseImmediately(const String& originIdentifier, const String& name, DatabaseBackendBase* database)
+void DatabaseTracker::closeOneDatabaseImmediately(const String& originIdentifier, const String& name, Database* database)
 {
     // First we have to confirm the 'database' is still in our collection.
     {
@@ -290,4 +267,4 @@ void DatabaseTracker::closeOneDatabaseImmediately(const String& originIdentifier
     database->closeImmediately();
 }
 
-}
+} // namespace blink

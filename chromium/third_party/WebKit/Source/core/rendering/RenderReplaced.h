@@ -24,7 +24,7 @@
 
 #include "core/rendering/RenderBox.h"
 
-namespace WebCore {
+namespace blink {
 
 class RenderReplaced : public RenderBox {
 public:
@@ -32,57 +32,62 @@ public:
     RenderReplaced(Element*, const LayoutSize& intrinsicSize);
     virtual ~RenderReplaced();
 
-    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const OVERRIDE;
-    virtual LayoutUnit computeReplacedLogicalHeight() const OVERRIDE;
+    virtual LayoutUnit computeReplacedLogicalWidth(ShouldComputePreferred  = ComputeActual) const override;
+    virtual LayoutUnit computeReplacedLogicalHeight() const override;
 
     bool hasReplacedLogicalHeight() const;
     LayoutRect replacedContentRect(const LayoutSize* overriddenIntrinsicSize = 0) const;
 
-    virtual bool needsPreferredWidthsRecalculation() const OVERRIDE;
+    virtual bool needsPreferredWidthsRecalculation() const override;
+
+    // These values are specified to be 300 and 150 pixels in the CSS 2.1 spec.
+    // http://www.w3.org/TR/CSS2/visudet.html#inline-replaced-width
+    static const int defaultWidth;
+    static const int defaultHeight;
+    virtual bool canHaveChildren() const override { return false; }
+    bool shouldPaint(PaintInfo&, const LayoutPoint&);
+    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) { }
+    LayoutRect localSelectionRect(bool checkWhetherSelected = true) const; // This is in local coordinates, but it's a physical rect (so the top left corner is physical top left).
+
+    virtual void paint(PaintInfo&, const LayoutPoint&) override;
 
 protected:
-    virtual void willBeDestroyed() OVERRIDE;
+    virtual void willBeDestroyed() override;
 
-    virtual void layout() OVERRIDE;
+    virtual void layout() override;
 
-    virtual LayoutSize intrinsicSize() const OVERRIDE FINAL { return m_intrinsicSize; }
-    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const OVERRIDE;
+    virtual LayoutSize intrinsicSize() const override final { return m_intrinsicSize; }
+    virtual void computeIntrinsicRatioInformation(FloatSize& intrinsicSize, double& intrinsicRatio) const override;
 
-    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const OVERRIDE FINAL;
+    virtual void computeIntrinsicLogicalWidths(LayoutUnit& minLogicalWidth, LayoutUnit& maxLogicalWidth) const override final;
 
     virtual LayoutUnit intrinsicContentLogicalHeight() const { return intrinsicLogicalHeight(); }
 
     virtual LayoutUnit minimumReplacedHeight() const { return LayoutUnit(); }
 
-    virtual void setSelectionState(SelectionState) OVERRIDE FINAL;
+    virtual void setSelectionState(SelectionState) override final;
 
     bool isSelected() const;
 
-    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) OVERRIDE;
+    virtual void styleDidChange(StyleDifference, const RenderStyle* oldStyle) override;
 
     void setIntrinsicSize(const LayoutSize& intrinsicSize) { m_intrinsicSize = intrinsicSize; }
     virtual void intrinsicSizeChanged();
 
-    virtual void paint(PaintInfo&, const LayoutPoint&) OVERRIDE;
-    bool shouldPaint(PaintInfo&, const LayoutPoint&);
-    LayoutRect localSelectionRect(bool checkWhetherSelected = true) const; // This is in local coordinates, but it's a physical rect (so the top left corner is physical top left).
     virtual RenderBox* embeddedContentBox() const { return 0; }
 
 private:
-    virtual const char* renderName() const OVERRIDE { return "RenderReplaced"; }
+    virtual const char* renderName() const override { return "RenderReplaced"; }
 
-    virtual bool canHaveChildren() const OVERRIDE { return false; }
+    virtual void computePreferredLogicalWidths() override final;
 
-    virtual void computePreferredLogicalWidths() OVERRIDE FINAL;
-    virtual void paintReplaced(PaintInfo&, const LayoutPoint&) { }
+    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, const PaintInvalidationState* = 0) const override;
 
-    virtual LayoutRect clippedOverflowRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const OVERRIDE;
+    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) override final;
 
-    virtual PositionWithAffinity positionForPoint(const LayoutPoint&) OVERRIDE FINAL;
+    virtual bool canBeSelectionLeaf() const override { return true; }
 
-    virtual bool canBeSelectionLeaf() const OVERRIDE { return true; }
-
-    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer, bool clipToVisibleContent = true) OVERRIDE FINAL;
+    virtual LayoutRect selectionRectForPaintInvalidation(const RenderLayerModelObject* paintInvalidationContainer) const override final;
     void computeAspectRatioInformationForRenderBox(RenderBox*, FloatSize& constrainedSize, double& intrinsicRatio) const;
 
     mutable LayoutSize m_intrinsicSize;

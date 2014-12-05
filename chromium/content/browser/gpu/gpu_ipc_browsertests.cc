@@ -25,7 +25,7 @@ const content::CauseForGpuLaunch kInitCause =
 
 class ContextTestBase : public content::ContentBrowserTest {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     if (!content::BrowserGpuChannelHostFactory::CanUseForTesting())
       return;
 
@@ -47,12 +47,12 @@ class ContextTestBase : public content::ContentBrowserTest {
             WebGraphicsContext3DCommandBufferImpl::SharedMemoryLimits(),
             NULL));
     CHECK(context_.get());
-    context_->makeContextCurrent();
+    context_->InitializeOnCurrentThread();
     context_support_ = context_->GetContextSupport();
     ContentBrowserTest::SetUpOnMainThread();
   }
 
-  virtual void TearDownOnMainThread() OVERRIDE {
+  void TearDownOnMainThread() override {
     // Must delete the context first.
     context_.reset(NULL);
     ContentBrowserTest::TearDownOnMainThread();
@@ -73,7 +73,7 @@ namespace content {
 
 class BrowserGpuChannelHostFactoryTest : public ContentBrowserTest {
  public:
-  virtual void SetUpOnMainThread() OVERRIDE {
+  void SetUpOnMainThread() override {
     if (!BrowserGpuChannelHostFactory::CanUseForTesting())
       return;
 
@@ -161,7 +161,7 @@ IN_PROC_BROWSER_TEST_F(BrowserGpuChannelHostFactoryTest,
       kInitCause,
       base::Bind(&BrowserGpuChannelHostFactoryTest::Signal, &event));
   EXPECT_TRUE(event);
-  EXPECT_EQ(gpu_channel, GetGpuChannel());
+  EXPECT_EQ(gpu_channel.get(), GetGpuChannel());
 }
 
 // Fails since UI Compositor establishes a GpuChannel.

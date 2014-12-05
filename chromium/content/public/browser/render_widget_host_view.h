@@ -10,6 +10,7 @@
 #include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkRegion.h"
 #include "third_party/WebKit/public/web/WebInputEvent.h"
 #include "ui/gfx/native_widget_types.h"
@@ -61,6 +62,9 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // screen space.
   virtual void SetBounds(const gfx::Rect& rect) = 0;
 
+  // Retrieves the last known scroll position.
+  virtual gfx::Vector2dF GetLastScrollOffset() const = 0;
+
   // Retrieves the native view used to contain plugins and identify the
   // renderer in IPC messages.
   virtual gfx::NativeView GetNativeView() const = 0;
@@ -101,9 +105,12 @@ class CONTENT_EXPORT RenderWidgetHostView {
   // Returns the currently selected text.
   virtual base::string16 GetSelectedText() const = 0;
 
-  // Subclasses should override this method to do what is appropriate to set
-  // the background to be transparent or opaque.
-  virtual void SetBackgroundOpaque(bool opaque) = 0;
+  // Subclasses should override this method to set the background color. |color|
+  // could be transparent or opaque.
+  virtual void SetBackgroundColor(SkColor color) = 0;
+  // Convenience method to fill the background layer with the default color by
+  // calling |SetBackgroundColor|.
+  virtual void SetBackgroundColorToDefault() = 0;
   virtual bool GetBackgroundOpaque() = 0;
 
   // Return value indicates whether the mouse is locked successfully or not.
@@ -134,12 +141,6 @@ class CONTENT_EXPORT RenderWidgetHostView {
 #if defined(OS_MACOSX)
   // Set the view's active state (i.e., tint state of controls).
   virtual void SetActive(bool active) = 0;
-
-  // Tells the view whether or not to accept first responder status.  If |flag|
-  // is true, the view does not accept first responder status and instead
-  // manually becomes first responder when it receives a mouse down event.  If
-  // |flag| is false, the view participates in the key-view chain as normal.
-  virtual void SetTakesFocusOnlyOnMouseDown(bool flag) = 0;
 
   // Notifies the view that its enclosing window has changed visibility
   // (minimized/unminimized, app hidden/unhidden, etc).

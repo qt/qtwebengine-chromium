@@ -30,7 +30,7 @@
 #include "core/xml/XPathExpressionNode.h"
 #include "core/xml/XPathNodeSet.h"
 
-namespace WebCore {
+namespace blink {
 
 class Node;
 
@@ -38,7 +38,7 @@ namespace XPath {
 
 class Predicate;
 
-class Step FINAL : public ParseNode {
+class Step final : public ParseNode {
     WTF_MAKE_NONCOPYABLE(Step);
     WTF_MAKE_FAST_ALLOCATED_WILL_BE_REMOVED;
 public:
@@ -96,11 +96,11 @@ public:
     Step(Axis, const NodeTest&);
     Step(Axis, const NodeTest&, WillBeHeapVector<OwnPtrWillBeMember<Predicate> >&);
     virtual ~Step();
-    virtual void trace(Visitor*) OVERRIDE;
+    virtual void trace(Visitor*) override;
 
     void optimize();
 
-    void evaluate(Node* context, NodeSet&) const;
+    void evaluate(EvaluationContext&, Node* context, NodeSet&) const;
 
     Axis axis() const { return m_axis; }
     const NodeTest& nodeTest() const { return *m_nodeTest; }
@@ -111,7 +111,7 @@ private:
     NodeTest& nodeTest() { return *m_nodeTest; }
 
     void parseNodeTest(const String&);
-    void nodesInAxis(Node* context, NodeSet&) const;
+    void nodesInAxis(EvaluationContext&, Node* context, NodeSet&) const;
     String namespaceFromNodetest(const String& nodeTest) const;
 
     Axis m_axis;
@@ -123,6 +123,6 @@ void optimizeStepPair(Step*, Step*, bool& dropSecondStep);
 
 } // namespace XPath
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // XPathStep_h

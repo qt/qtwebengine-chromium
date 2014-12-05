@@ -5,11 +5,12 @@
 #ifndef DocumentNameCollection_h
 #define DocumentNameCollection_h
 
+#include "core/html/HTMLElement.h"
 #include "core/html/HTMLNameCollection.h"
 
-namespace WebCore {
+namespace blink {
 
-class DocumentNameCollection FINAL : public HTMLNameCollection {
+class DocumentNameCollection final : public HTMLNameCollection {
 public:
     static PassRefPtrWillBeRawPtr<DocumentNameCollection> create(ContainerNode& document, CollectionType type, const AtomicString& name)
     {
@@ -17,7 +18,9 @@ public:
         return adoptRefWillBeNoop(new DocumentNameCollection(document, name));
     }
 
-    bool elementMatches(const Element&) const;
+    HTMLElement* item(unsigned offset) const { return toHTMLElement(HTMLNameCollection::item(offset)); }
+
+    bool elementMatches(const HTMLElement&) const;
 
 private:
     DocumentNameCollection(ContainerNode& document, const AtomicString& name);
@@ -25,6 +28,6 @@ private:
 
 DEFINE_TYPE_CASTS(DocumentNameCollection, LiveNodeListBase, collection, collection->type() == DocumentNamedItems, collection.type() == DocumentNamedItems);
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // DocumentNameCollection_h

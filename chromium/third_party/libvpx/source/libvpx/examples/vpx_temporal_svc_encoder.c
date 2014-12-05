@@ -12,12 +12,12 @@
 //  encoding scheme based on temporal scalability for video applications
 //  that benefit from a scalable bitstream.
 
+#include <assert.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define VPX_CODEC_DISABLE_COMPAT 1
 #include "./vpx_config.h"
 #include "vpx_ports/vpx_timer.h"
 #include "vpx/vp8cx.h"
@@ -31,6 +31,15 @@ static const char *exec_name;
 void usage_exit() {
   exit(EXIT_FAILURE);
 }
+
+// Denoiser states, for temporal denoising.
+enum denoiserState {
+  kDenoiserOff,
+  kDenoiserOnYOnly,
+  kDenoiserOnYUV,
+  kDenoiserOnYUVAggressive,
+  kDenoiserOnAdaptive
+};
 
 static int mode_to_num_layers[12] = {1, 2, 2, 3, 3, 3, 3, 5, 2, 3, 3, 3};
 
@@ -429,7 +438,7 @@ static void set_temporal_layer_pattern(int layering_mode,
 }
 
 int main(int argc, char **argv) {
-  VpxVideoWriter *outfile[VPX_TS_MAX_LAYERS];
+  VpxVideoWriter *outfile[VPX_TS_MAX_LAYERS] = {NULL};
   vpx_codec_ctx_t codec;
   vpx_codec_enc_cfg_t cfg;
   int frame_cnt = 0;
@@ -447,26 +456,39 @@ int main(int argc, char **argv) {
   int layering_mode = 0;
   int layer_flags[VPX_TS_MAX_PERIODICITY] = {0};
   int flag_periodicity = 1;
-  int max_intra_size_pct;
   vpx_svc_layer_id_t layer_id = {0, 0};
   const VpxInterface *encoder = NULL;
   FILE *infile = NULL;
   struct RateControlMetrics rc;
   int64_t cx_time = 0;
+  const int min_args_base = 11;
+#if CONFIG_VP9_HIGHBITDEPTH
+  vpx_bit_depth_t bit_depth = VPX_BITS_8;
+  int input_bit_depth = 8;
+  const int min_args = min_args_base + 1;
+#else
+  const int min_args = min_args_base;
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
   exec_name = argv[0];
   // Check usage and arguments.
-  if (argc < 11) {
+  if (argc < min_args) {
+#if CONFIG_VP9_HIGHBITDEPTH
+    die("Usage: %s <infile> <outfile> <codec_type(vp8/vp9)> <width> <height> "
+        "<rate_num> <rate_den> <speed> <frame_drop_threshold> <mode> "
+        "<Rate_0> ... <Rate_nlayers-1> <bit-depth> \n", argv[0]);
+#else
     die("Usage: %s <infile> <outfile> <codec_type(vp8/vp9)> <width> <height> "
         "<rate_num> <rate_den> <speed> <frame_drop_threshold> <mode> "
         "<Rate_0> ... <Rate_nlayers-1> \n", argv[0]);
+#endif  // CONFIG_VP9_HIGHBITDEPTH
   }
 
   encoder = get_vpx_encoder_by_name(argv[3]);
   if (!encoder)
     die("Unsupported codec.");
 
-  printf("Using %s\n", vpx_codec_iface_name(encoder->interface()));
+  printf("Using %s\n", vpx_codec_iface_name(encoder->codec_interface()));
 
   width = strtol(argv[4], NULL, 0);
   height = strtol(argv[5], NULL, 0);
@@ -479,16 +501,41 @@ int main(int argc, char **argv) {
     die("Invalid layering mode (0..12) %s", argv[10]);
   }
 
-  if (argc != 11 + mode_to_num_layers[layering_mode]) {
+  if (argc != min_args + mode_to_num_layers[layering_mode]) {
     die("Invalid number of arguments");
   }
 
+#if CONFIG_VP9_HIGHBITDEPTH
+  switch (strtol(argv[argc-1], NULL, 0)) {
+    case 8:
+      bit_depth = VPX_BITS_8;
+      input_bit_depth = 8;
+      break;
+    case 10:
+      bit_depth = VPX_BITS_10;
+      input_bit_depth = 10;
+      break;
+    case 12:
+      bit_depth = VPX_BITS_12;
+      input_bit_depth = 12;
+      break;
+    default:
+      die("Invalid bit depth (8, 10, 12) %s", argv[argc-1]);
+  }
+  if (!vpx_img_alloc(&raw,
+                     bit_depth == VPX_BITS_8 ? VPX_IMG_FMT_I420 :
+                                               VPX_IMG_FMT_I42016,
+                     width, height, 32)) {
+    die("Failed to allocate image", width, height);
+  }
+#else
   if (!vpx_img_alloc(&raw, VPX_IMG_FMT_I420, width, height, 32)) {
     die("Failed to allocate image", width, height);
   }
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
   // Populate encoder configuration.
-  res = vpx_codec_enc_config_default(encoder->interface(), &cfg, 0);
+  res = vpx_codec_enc_config_default(encoder->codec_interface(), &cfg, 0);
   if (res) {
     printf("Failed to get config: %s\n", vpx_codec_err_to_string(res));
     return EXIT_FAILURE;
@@ -497,6 +544,14 @@ int main(int argc, char **argv) {
   // Update the default configuration with our settings.
   cfg.g_w = width;
   cfg.g_h = height;
+
+#if CONFIG_VP9_HIGHBITDEPTH
+  if (bit_depth != VPX_BITS_8) {
+    cfg.g_bit_depth = bit_depth;
+    cfg.g_input_bit_depth = input_bit_depth;
+    cfg.g_profile = 2;
+  }
+#endif  // CONFIG_VP9_HIGHBITDEPTH
 
   // Timebase format e.g. 30fps: numerator=1, demoninator = 30.
   cfg.g_timebase.num = strtol(argv[6], NULL, 0);
@@ -507,7 +562,9 @@ int main(int argc, char **argv) {
     die("Invalid speed setting: must be positive");
   }
 
-  for (i = 11; (int)i < 11 + mode_to_num_layers[layering_mode]; ++i) {
+  for (i = min_args_base;
+       (int)i < min_args_base + mode_to_num_layers[layering_mode];
+       ++i) {
     cfg.ts_target_bitrate[i - 11] = strtol(argv[i], NULL, 0);
   }
 
@@ -561,22 +618,30 @@ int main(int argc, char **argv) {
     outfile[i] = vpx_video_writer_open(file_name, kContainerIVF, &info);
     if (!outfile[i])
       die("Failed to open %s for writing", file_name);
+
+    assert(outfile[i] != NULL);
   }
   // No spatial layers in this encoder.
   cfg.ss_number_layers = 1;
 
   // Initialize codec.
-  if (vpx_codec_enc_init(&codec, encoder->interface(), &cfg, 0))
+#if CONFIG_VP9_HIGHBITDEPTH
+  if (vpx_codec_enc_init(
+          &codec, encoder->codec_interface(), &cfg,
+          bit_depth == VPX_BITS_8 ? 0 : VPX_CODEC_USE_HIGHBITDEPTH))
+#else
+  if (vpx_codec_enc_init(&codec, encoder->codec_interface(), &cfg, 0))
+#endif  // CONFIG_VP9_HIGHBITDEPTH
     die_codec(&codec, "Failed to initialize encoder");
 
   if (strncmp(encoder->name, "vp8", 3) == 0) {
     vpx_codec_control(&codec, VP8E_SET_CPUUSED, -speed);
-    vpx_codec_control(&codec, VP8E_SET_NOISE_SENSITIVITY, 1);
+    vpx_codec_control(&codec, VP8E_SET_NOISE_SENSITIVITY, kDenoiserOnYOnly);
   } else if (strncmp(encoder->name, "vp9", 3) == 0) {
       vpx_codec_control(&codec, VP8E_SET_CPUUSED, speed);
       vpx_codec_control(&codec, VP9E_SET_AQ_MODE, 3);
       vpx_codec_control(&codec, VP9E_SET_FRAME_PERIODIC_BOOST, 0);
-      vpx_codec_control(&codec, VP8E_SET_NOISE_SENSITIVITY, 0);
+      vpx_codec_control(&codec, VP9E_SET_NOISE_SENSITIVITY, 0);
       if (vpx_codec_control(&codec, VP9E_SET_SVC, 1)) {
         die_codec(&codec, "Failed to set SVC");
     }
@@ -586,11 +651,11 @@ int main(int argc, char **argv) {
   // This controls the maximum target size of the key frame.
   // For generating smaller key frames, use a smaller max_intra_size_pct
   // value, like 100 or 200.
-  max_intra_size_pct = (int) (((double)cfg.rc_buf_optimal_sz * 0.5)
-      * ((double) cfg.g_timebase.den / cfg.g_timebase.num) / 10.0);
-  // For low-quality key frame.
-  max_intra_size_pct = 200;
-  vpx_codec_control(&codec, VP8E_SET_MAX_INTRA_BITRATE_PCT, max_intra_size_pct);
+  {
+    const int max_intra_size_pct = 200;
+    vpx_codec_control(&codec, VP8E_SET_MAX_INTRA_BITRATE_PCT,
+                      max_intra_size_pct);
+  }
 
   frame_avail = 1;
   while (frame_avail || got_data) {
@@ -663,5 +728,6 @@ int main(int argc, char **argv) {
   for (i = 0; i < cfg.ts_number_layers; ++i)
     vpx_video_writer_close(outfile[i]);
 
+  vpx_img_free(&raw);
   return EXIT_SUCCESS;
 }

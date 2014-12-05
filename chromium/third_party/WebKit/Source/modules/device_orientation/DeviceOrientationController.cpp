@@ -11,7 +11,7 @@
 #include "modules/device_orientation/DeviceOrientationDispatcher.h"
 #include "modules/device_orientation/DeviceOrientationEvent.h"
 
-namespace WebCore {
+namespace blink {
 
 DeviceOrientationController::DeviceOrientationController(Document& document)
     : DeviceSingleWindowEventController(document)
@@ -20,7 +20,9 @@ DeviceOrientationController::DeviceOrientationController(Document& document)
 
 DeviceOrientationController::~DeviceOrientationController()
 {
+#if !ENABLE(OILPAN)
     stopUpdating();
+#endif
 }
 
 void DeviceOrientationController::didUpdateData()
@@ -100,7 +102,8 @@ void DeviceOrientationController::clearOverride()
 void DeviceOrientationController::trace(Visitor* visitor)
 {
     visitor->trace(m_overrideOrientationData);
+    DeviceSingleWindowEventController::trace(visitor);
     DocumentSupplement::trace(visitor);
 }
 
-} // namespace WebCore
+} // namespace blink

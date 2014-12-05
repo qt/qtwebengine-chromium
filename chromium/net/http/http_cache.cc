@@ -15,24 +15,29 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/callback.h"
-#include "base/file_util.h"
+#include "base/files/file_util.h"
 #include "base/format_macros.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/message_loop/message_loop.h"
 #include "base/metrics/field_trial.h"
+#include "base/metrics/histogram.h"
 #include "base/pickle.h"
+#include "base/profiler/scoped_tracker.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/worker_pool.h"
+#include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
+#include "net/base/network_delegate.h"
 #include "net/base/upload_data_stream.h"
 #include "net/disk_cache/disk_cache.h"
+#include "net/http/disk_based_cert_cache.h"
 #include "net/http/disk_cache_based_quic_server_info.h"
 #include "net/http/http_cache_transaction.h"
 #include "net/http/http_network_layer.h"
@@ -45,6 +50,11 @@
 
 namespace {
 
+bool UseCertCache() {
+  return base::FieldTrialList::FindFullName("CertCacheTrial") ==
+         "ExperimentGroup";
+}
+
 // Adaptor to delete a file on a worker thread.
 void DeletePath(base::FilePath path) {
   base::DeleteFile(path, false);
@@ -54,11 +64,12 @@ void DeletePath(base::FilePath path) {
 
 namespace net {
 
-HttpCache::DefaultBackend::DefaultBackend(CacheType type,
-                                          BackendType backend_type,
-                                          const base::FilePath& path,
-                                          int max_bytes,
-                                          base::MessageLoopProxy* thread)
+HttpCache::DefaultBackend::DefaultBackend(
+    CacheType type,
+    BackendType backend_type,
+    const base::FilePath& path,
+    int max_bytes,
+    const scoped_refptr<base::SingleThreadTaskRunner>& thread)
     : type_(type),
       backend_type_(backend_type),
       path_(path),
@@ -83,7 +94,7 @@ int HttpCache::DefaultBackend::CreateBackend(
                                         path_,
                                         max_bytes_,
                                         true,
-                                        thread_.get(),
+                                        thread_,
                                         net_log,
                                         backend,
                                         callback);
@@ -271,12 +282,11 @@ void HttpCache::MetadataWriter::OnIOComplete(int result) {
 
 class HttpCache::QuicServerInfoFactoryAdaptor : public QuicServerInfoFactory {
  public:
-  QuicServerInfoFactoryAdaptor(HttpCache* http_cache)
+  explicit QuicServerInfoFactoryAdaptor(HttpCache* http_cache)
       : http_cache_(http_cache) {
   }
 
-  virtual QuicServerInfo* GetForServer(
-      const QuicServerId& server_id) OVERRIDE {
+  QuicServerInfo* GetForServer(const QuicServerId& server_id) override {
     return new DiskCacheBasedQuicServerInfo(server_id, http_cache_);
   }
 
@@ -285,11 +295,166 @@ class HttpCache::QuicServerInfoFactoryAdaptor : public QuicServerInfoFactory {
 };
 
 //-----------------------------------------------------------------------------
+
+class HttpCache::AsyncValidation {
+ public:
+  AsyncValidation(const HttpRequestInfo& original_request, HttpCache* cache)
+      : request_(original_request), cache_(cache) {}
+  ~AsyncValidation() {}
+
+  void Start(const BoundNetLog& net_log,
+             scoped_ptr<Transaction> transaction,
+             NetworkDelegate* network_delegate);
+
+ private:
+  void OnStarted(int result);
+  void DoRead();
+  void OnRead(int result);
+
+  // Terminate this request with net error code |result|. Logs the transaction
+  // result and asks HttpCache to delete this object.
+  // If there was a client or server certificate error, it cannot be recovered
+  // asynchronously, so we need to prevent future attempts to asynchronously
+  // fetch the resource. In this case, the cache entry is doomed.
+  void Terminate(int result);
+
+  HttpRequestInfo request_;
+  scoped_refptr<IOBuffer> buf_;
+  CompletionCallback read_callback_;
+  scoped_ptr<Transaction> transaction_;
+  base::Time start_time_;
+
+  // The HttpCache object owns this object. This object is always deleted before
+  // the pointer to the cache becomes invalid.
+  HttpCache* cache_;
+
+  DISALLOW_COPY_AND_ASSIGN(AsyncValidation);
+};
+
+void HttpCache::AsyncValidation::Start(const BoundNetLog& net_log,
+                                       scoped_ptr<Transaction> transaction,
+                                       NetworkDelegate* network_delegate) {
+  transaction_ = transaction.Pass();
+  if (network_delegate) {
+    // This code is necessary to enable async transactions to pass over the
+    // data-reduction proxy. This is a violation of the "once-and-only-once"
+    // principle, since it copies code from URLRequestHttpJob. We cannot use the
+    // original callback passed to HttpCache::Transaction by URLRequestHttpJob
+    // as it will only be valid as long as the URLRequestHttpJob object is
+    // alive, and that object will be deleted as soon as the synchronous request
+    // completes.
+    //
+    // This code is also an encapsulation violation. We are exploiting the fact
+    // that the |request| parameter to NotifyBeforeSendProxyHeaders() is never
+    // actually used for anything, and so can be NULL.
+    //
+    // TODO(ricea): Do this better.
+    transaction_->SetBeforeProxyHeadersSentCallback(
+        base::Bind(&NetworkDelegate::NotifyBeforeSendProxyHeaders,
+                   base::Unretained(network_delegate),
+                   static_cast<URLRequest*>(NULL)));
+    // The above use of base::Unretained is safe because the NetworkDelegate has
+    // to live at least as long as the HttpNetworkSession which has to live as
+    // least as long as the HttpNetworkLayer which has to live at least as long
+    // this HttpCache object.
+  }
+
+  DCHECK_EQ(0, request_.load_flags & LOAD_ASYNC_REVALIDATION);
+  request_.load_flags |= LOAD_ASYNC_REVALIDATION;
+  start_time_ = base::Time::Now();
+  // This use of base::Unretained is safe because |transaction_| is owned by
+  // this object.
+  read_callback_ = base::Bind(&AsyncValidation::OnRead, base::Unretained(this));
+  // This use of base::Unretained is safe as above.
+  int rv = transaction_->Start(
+      &request_,
+      base::Bind(&AsyncValidation::OnStarted, base::Unretained(this)),
+      net_log);
+
+  if (rv == ERR_IO_PENDING)
+    return;
+
+  OnStarted(rv);
+}
+
+void HttpCache::AsyncValidation::OnStarted(int result) {
+  if (result != OK) {
+    DVLOG(1) << "Asynchronous transaction start failed for " << request_.url;
+    Terminate(result);
+    return;
+  }
+
+  while (transaction_->IsReadyToRestartForAuth()) {
+    // This code is based on URLRequestHttpJob::RestartTransactionWithAuth,
+    // however when we do this here cookies on the response will not be
+    // stored. Fortunately only a tiny number of sites set cookies on 401
+    // responses, and none of them use stale-while-revalidate.
+    result = transaction_->RestartWithAuth(
+        AuthCredentials(),
+        base::Bind(&AsyncValidation::OnStarted, base::Unretained(this)));
+    if (result == ERR_IO_PENDING)
+      return;
+    if (result != OK) {
+      DVLOG(1) << "Synchronous transaction restart with auth failed for "
+               << request_.url;
+      Terminate(result);
+      return;
+    }
+  }
+
+  DoRead();
+}
+
+void HttpCache::AsyncValidation::DoRead() {
+  const size_t kBufSize = 4096;
+  if (!buf_.get())
+    buf_ = new IOBuffer(kBufSize);
+
+  int rv = 0;
+  do {
+    rv = transaction_->Read(buf_.get(), kBufSize, read_callback_);
+  } while (rv > 0);
+
+  if (rv == ERR_IO_PENDING)
+    return;
+
+  OnRead(rv);
+}
+
+void HttpCache::AsyncValidation::OnRead(int result) {
+  if (result > 0) {
+    DoRead();
+    return;
+  }
+  Terminate(result);
+}
+
+void HttpCache::AsyncValidation::Terminate(int result) {
+  if (result == ERR_SSL_CLIENT_AUTH_CERT_NEEDED || IsCertificateError(result)) {
+    // We should not attempt to access this resource asynchronously again until
+    // the certificate problem has been resolved.
+    // TODO(ricea): For ERR_SSL_CLIENT_AUTH_CERT_NEEDED, mark the entry as
+    // requiring synchronous revalidation rather than just deleting it. Other
+    // certificate errors cause the resource to be considered uncacheable
+    // anyway.
+    cache_->DoomEntry(transaction_->key(), transaction_.get());
+  }
+  base::TimeDelta duration = base::Time::Now() - start_time_;
+  UMA_HISTOGRAM_TIMES("HttpCache.AsyncValidationDuration", duration);
+  transaction_->net_log().EndEventWithNetErrorCode(
+      NetLog::TYPE_ASYNC_REVALIDATION, result);
+  cache_->DeleteAsyncValidation(cache_->GenerateCacheKey(&request_));
+  // |this| is deleted.
+}
+
+//-----------------------------------------------------------------------------
 HttpCache::HttpCache(const net::HttpNetworkSession::Params& params,
                      BackendFactory* backend_factory)
     : net_log_(params.net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
+      use_stale_while_revalidate_(params.use_stale_while_revalidate),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(new HttpNetworkSession(params))),
       weak_factory_(this) {
@@ -304,6 +469,8 @@ HttpCache::HttpCache(HttpNetworkSession* session,
     : net_log_(session->net_log()),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
+      use_stale_while_revalidate_(session->params().use_stale_while_revalidate),
       mode_(NORMAL),
       network_layer_(new HttpNetworkLayer(session)),
       weak_factory_(this) {
@@ -315,10 +482,15 @@ HttpCache::HttpCache(HttpTransactionFactory* network_layer,
     : net_log_(net_log),
       backend_factory_(backend_factory),
       building_backend_(false),
+      bypass_lock_for_test_(false),
+      use_stale_while_revalidate_(false),
       mode_(NORMAL),
       network_layer_(network_layer),
       weak_factory_(this) {
   SetupQuicServerInfoFactory(network_layer_->GetSession());
+  HttpNetworkSession* session = network_layer_->GetSession();
+  if (session)
+    use_stale_while_revalidate_ = session->params().use_stale_while_revalidate;
 }
 
 HttpCache::~HttpCache() {
@@ -340,9 +512,11 @@ HttpCache::~HttpCache() {
   }
 
   STLDeleteElements(&doomed_entries_);
+  STLDeleteValues(&async_validations_);
 
   // Before deleting pending_ops_, we have to make sure that the disk cache is
   // done with said operations, or it will attempt to use deleted data.
+  cert_cache_.reset();
   disk_cache_.reset();
 
   PendingOpsMap::iterator pending_it = pending_ops_.begin();
@@ -453,7 +627,12 @@ int HttpCache::CreateTransaction(RequestPriority priority,
     CreateBackend(NULL, net::CompletionCallback());
   }
 
-  trans->reset(new HttpCache::Transaction(priority, this));
+   HttpCache::Transaction* transaction =
+      new HttpCache::Transaction(priority, this);
+   if (bypass_lock_for_test_)
+    transaction->BypassLockForTest();
+
+  trans->reset(transaction);
   return OK;
 }
 
@@ -597,7 +776,8 @@ int HttpCache::DoomEntry(const std::string& key, Transaction* trans) {
   entry->disk_entry->Doom();
   entry->doomed = true;
 
-  DCHECK(entry->writer || !entry->readers.empty());
+  DCHECK(entry->writer || !entry->readers.empty() ||
+         entry->will_process_pending_queue);
   return OK;
 }
 
@@ -999,7 +1179,7 @@ bool HttpCache::RemovePendingTransactionFromPendingOp(PendingOp* pending_op,
 }
 
 void HttpCache::SetupQuicServerInfoFactory(HttpNetworkSession* session) {
-  if (session && session->params().enable_quic_persist_server_info &&
+  if (session &&
       !session->quic_stream_factory()->has_quic_server_info_factory()) {
     DCHECK(!quic_server_info_factory_);
     quic_server_info_factory_.reset(new QuicServerInfoFactoryAdaptor(this));
@@ -1019,6 +1199,43 @@ void HttpCache::ProcessPendingQueue(ActiveEntry* entry) {
   base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&HttpCache::OnProcessPendingQueue, GetWeakPtr(), entry));
+}
+
+void HttpCache::PerformAsyncValidation(const HttpRequestInfo& original_request,
+                                       const BoundNetLog& net_log) {
+  DCHECK(use_stale_while_revalidate_);
+  std::string key = GenerateCacheKey(&original_request);
+  AsyncValidation* async_validation =
+      new AsyncValidation(original_request, this);
+  typedef AsyncValidationMap::value_type AsyncValidationKeyValue;
+  bool insert_ok =
+      async_validations_.insert(AsyncValidationKeyValue(key, async_validation))
+          .second;
+  if (!insert_ok) {
+    DVLOG(1) << "Harmless race condition detected on URL "
+             << original_request.url << "; discarding redundant revalidation.";
+    delete async_validation;
+    return;
+  }
+  HttpNetworkSession* network_session = GetSession();
+  NetworkDelegate* network_delegate = NULL;
+  if (network_session)
+    network_delegate = network_session->network_delegate();
+  scoped_ptr<HttpTransaction> transaction;
+  CreateTransaction(IDLE, &transaction);
+  scoped_ptr<Transaction> downcast_transaction(
+      static_cast<Transaction*>(transaction.release()));
+  async_validation->Start(
+      net_log, downcast_transaction.Pass(), network_delegate);
+  // |async_validation| may have been deleted here.
+}
+
+void HttpCache::DeleteAsyncValidation(const std::string& url) {
+  AsyncValidationMap::iterator it = async_validations_.find(url);
+  CHECK(it != async_validations_.end());  // security-critical invariant
+  AsyncValidation* async_validation = it->second;
+  async_validations_.erase(it);
+  delete async_validation;
 }
 
 void HttpCache::OnProcessPendingQueue(ActiveEntry* entry) {
@@ -1138,6 +1355,11 @@ void HttpCache::OnIOComplete(int result, PendingOp* pending_op) {
 void HttpCache::OnPendingOpComplete(const base::WeakPtr<HttpCache>& cache,
                                     PendingOp* pending_op,
                                     int rv) {
+  // TODO(vadimt): Remove ScopedTracker below once crbug.com/422516 is fixed.
+  tracked_objects::ScopedTracker tracking_profile(
+      FROM_HERE_WITH_EXPLICIT_FUNCTION(
+          "422516 HttpCache::OnPendingOpComplete"));
+
   if (cache.get()) {
     cache->OnIOComplete(rv, pending_op);
   } else {
@@ -1160,8 +1382,11 @@ void HttpCache::OnBackendCreated(int result, PendingOp* pending_op) {
     // work items. The first call saves the backend and releases the factory,
     // and the last call clears building_backend_.
     backend_factory_.reset();  // Reclaim memory.
-    if (result == OK)
+    if (result == OK) {
       disk_cache_ = pending_op->backend.Pass();
+      if (UseCertCache())
+        cert_cache_.reset(new DiskBasedCertCache(disk_cache_.get()));
+    }
   }
 
   if (!pending_op->pending_queue.empty()) {

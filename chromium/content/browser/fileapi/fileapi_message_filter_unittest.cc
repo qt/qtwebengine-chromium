@@ -10,7 +10,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/shared_memory.h"
 #include "base/message_loop/message_loop.h"
-#include "base/process/process.h"
+#include "base/process/process_handle.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/fileapi/chrome_blob_storage_context.h"
 #include "content/browser/streams/stream_registry.h"
@@ -23,10 +23,10 @@
 #include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_file_system_context.h"
 #include "net/base/io_buffer.h"
+#include "storage/browser/blob/blob_storage_context.h"
+#include "storage/browser/fileapi/file_system_context.h"
+#include "storage/common/blob/blob_data.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/browser/blob/blob_storage_context.h"
-#include "webkit/browser/fileapi/file_system_context.h"
-#include "webkit/common/blob/blob_data.h"
 
 namespace content {
 
@@ -48,17 +48,17 @@ class FileAPIMessageFilterTest : public testing::Test {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
+  void SetUp() override {
     file_system_context_ =
         CreateFileSystemContextForTesting(NULL, base::FilePath());
 
-    std::vector<fileapi::FileSystemType> types;
+    std::vector<storage::FileSystemType> types;
     file_system_context_->GetFileSystemTypes(&types);
     for (size_t i = 0; i < types.size(); ++i) {
-      ChildProcessSecurityPolicyImpl::GetInstance()->
-          RegisterFileSystemPermissionPolicy(
+      ChildProcessSecurityPolicyImpl::GetInstance()
+          ->RegisterFileSystemPermissionPolicy(
               types[i],
-              fileapi::FileSystemContext::GetPermissionPolicy(types[i]));
+              storage::FileSystemContext::GetPermissionPolicy(types[i]));
     }
 
     stream_context_ = StreamContext::GetFor(&browser_context_);
@@ -79,7 +79,7 @@ class FileAPIMessageFilterTest : public testing::Test {
   TestBrowserThread io_browser_thread_;
 
   TestBrowserContext browser_context_;
-  scoped_refptr<fileapi::FileSystemContext> file_system_context_;
+  scoped_refptr<storage::FileSystemContext> file_system_context_;
   StreamContext* stream_context_;
   ChromeBlobStorageContext* blob_storage_context_;
 
@@ -197,7 +197,7 @@ TEST_F(FileAPIMessageFilterTest, BuildNonEmptyStream) {
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(filter_->OnMessageReceived(start_message));
 
-  webkit_blob::BlobData::Item item;
+  storage::BlobData::Item item;
   const std::string kFakeData = "foobarbaz";
   item.SetToBytes(kFakeData.data(), kFakeData.size());
   StreamHostMsg_AppendBlobDataItem append_message(kUrl, item);
@@ -236,7 +236,7 @@ TEST_F(FileAPIMessageFilterTest, BuildStreamWithSharedMemory) {
   // OnAppendSharedMemoryToStream passes the peer process's handle to
   // SharedMemory's constructor. If it's incorrect, DuplicateHandle won't work
   // correctly.
-  filter_->set_peer_pid_for_testing(base::Process::Current().pid());
+  filter_->set_peer_pid_for_testing(base::GetCurrentProcId());
 
   StreamHostMsg_StartBuilding start_message(kUrl, kFakeContentType);
   EXPECT_TRUE(filter_->OnMessageReceived(start_message));

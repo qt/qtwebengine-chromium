@@ -6,6 +6,7 @@
 '''Unit tests for grit.format.policy_templates.writers.doc_writer'''
 
 
+import json
 import os
 import sys
 if __name__ == '__main__':
@@ -37,9 +38,12 @@ class DocWriterUnittest(writer_unittest_common.WriterUnittestCommon):
         'frame_name': 'Chrome Frame',
         'os_name': 'Chrome OS',
         'win_reg_mandatory_key_name': 'MockKey',
+        'win_reg_recommended_key_name': 'MockKeyRec',
+        'build': 'test_product',
       })
     self.writer.messages = {
       'doc_back_to_top': {'text': '_test_back_to_top'},
+      'doc_complex_policies_on_windows': {'text': '_test_complex_policies_win'},
       'doc_data_type': {'text': '_test_data_type'},
       'doc_description': {'text': '_test_description'},
       'doc_description_column_title': {
@@ -48,6 +52,7 @@ class DocWriterUnittest(writer_unittest_common.WriterUnittestCommon):
       'doc_example_value': {'text': '_test_example_value'},
       'doc_feature_dynamic_refresh': {'text': '_test_feature_dynamic_refresh'},
       'doc_feature_can_be_recommended': {'text': '_test_feature_recommended'},
+      'doc_feature_can_be_mandatory': {'text': '_test_feature_mandatory'},
       'doc_intro': {'text': '_test_intro'},
       'doc_mac_linux_pref_name': {'text': '_test_mac_linux_pref_name'},
       'doc_note': {'text': '_test_note'},
@@ -82,6 +87,31 @@ class DocWriterUnittest(writer_unittest_common.WriterUnittestCommon):
     self.assertEquals(
         self.writer._main_div.toxml(),
         '<div>'
+          '<div>'
+            '<a name="top"/><br/>_test_intro<br/><br/><br/>'
+            '<table style="style_table;">'
+              '<thead><tr style="style_tr;">'
+                '<td style="style_td;style_td.left;style_thead td;">'
+                  '_test_name_column_title'
+                '</td>'
+                '<td style="style_td;style_td.right;style_thead td;">'
+                  '_test_description_column_title'
+                '</td>'
+              '</tr></thead>'
+              '<tbody/>'
+            '</table>'
+          '</div>'
+          '<div/>'
+        '</div>')
+
+  def testVersionAnnotation(self):
+    # Test if DocWriter creates the skeleton of the document correctly.
+    self.writer.config['version'] = '39.0.0.0'
+    self.writer.BeginTemplate()
+    self.assertEquals(
+        self.writer._main_div.toxml(),
+        '<div>'
+          '<!--test_product version: 39.0.0.0-->'
           '<div>'
             '<a name="top"/><br/>_test_intro<br/><br/><br/>'
             '<table style="style_table;">'
@@ -282,7 +312,7 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
         '<root>0x00000010 (Windows), 16 (Linux), 16 (Mac)</root>')
 
   def testStringEnumExample(self):
-    # Test representation of 'int-enum' example values.
+    # Test representation of 'string-enum' example values.
     policy = {
       'name': 'PolicyName',
       'type': 'string-enum',
@@ -292,6 +322,40 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
     self.assertEquals(
         self.doc_root.toxml(),
         '<root>&quot;wacky&quot;</root>')
+
+  def testListExample(self):
+    # Test representation of 'list' example values.
+    policy = {
+      'name': 'PolicyName',
+      'type': 'list',
+      'example_value': ['one', 'two'],
+      'supported_on': [ { 'platforms': ['linux'] } ]
+    }
+    self.writer._AddExample(self.doc_root, policy)
+    self.assertEquals(
+        self.doc_root.toxml(),
+        '<root><dl style="style_dd dl;">'
+        '<dt>Linux:</dt>'
+        '<dd style="style_.monospace;">'
+        '[&quot;one&quot;, &quot;two&quot;]'
+        '</dd></dl></root>')
+
+  def testStringEnumListExample(self):
+    # Test representation of 'string-enum-list' example values.
+    policy = {
+      'name': 'PolicyName',
+      'type': 'string-enum-list',
+      'example_value': ['one', 'two'],
+      'supported_on': [ { 'platforms': ['linux'] } ]
+    }
+    self.writer._AddExample(self.doc_root, policy)
+    self.assertEquals(
+        self.doc_root.toxml(),
+        '<root><dl style="style_dd dl;">'
+        '<dt>Linux:</dt>'
+        '<dd style="style_.monospace;">'
+        '[&quot;one&quot;, &quot;two&quot;]'
+        '</dd></dl></root>')
 
   def testStringExample(self):
     # Test representation of 'string' example values.
@@ -375,6 +439,117 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       '</dd>'
       '<dt style="style_dt;">_test_supported_features</dt>'
         '<dd>_test_feature_dynamic_refresh: _test_not_supported</dd>'
+      '<dt style="style_dt;">_test_description</dt><dd>TestPolicyDesc</dd>'
+      '<dt style="style_dt;">_test_example_value</dt>'
+        '<dd>0x00000000 (Windows), false (Linux), &lt;false /&gt; (Mac)</dd>'
+      '</dl></root>')
+
+  def testAddDictPolicyDetails(self):
+    # Test if the definition list (<dl>) of policy details is created correctly
+    # for 'dict' policies.
+    policy = {
+      'type': 'dict',
+      'name': 'TestPolicyName',
+      'caption': 'TestPolicyCaption',
+      'desc': 'TestPolicyDesc',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['win', 'mac', 'linux'],
+        'since_version': '8',
+        'until_version': '',
+      }],
+      'features': {'dynamic_refresh': False},
+      'example_value': { 'foo': 123 }
+    }
+    self.writer.messages['doc_since_version'] = {'text': '...$6...'}
+    self.writer._AddPolicyDetails(self.doc_root, policy)
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root><dl>'
+      '<dt style="style_dt;">_test_data_type</dt><dd>Dictionary (REG_SZ; _test_complex_policies_win)</dd>'
+      '<dt style="style_dt;">_test_win_reg_loc</dt>'
+      '<dd style="style_.monospace;">MockKey\TestPolicyName</dd>'
+      '<dt style="style_dt;">_test_mac_linux_pref_name</dt>'
+        '<dd style="style_.monospace;">TestPolicyName</dd>'
+      '<dt style="style_dt;">_test_supported_on</dt>'
+      '<dd>'
+        '<ul style="style_ul;">'
+          '<li>Chrome (Windows, Mac, Linux) ...8...</li>'
+        '</ul>'
+      '</dd>'
+      '<dt style="style_dt;">_test_supported_features</dt>'
+        '<dd>_test_feature_dynamic_refresh: _test_not_supported</dd>'
+      '<dt style="style_dt;">_test_description</dt><dd>TestPolicyDesc</dd>'
+      '<dt style="style_dt;">_test_example_value</dt>'
+        '<dd>'
+          '<dl style="style_dd dl;">'
+            '<dt>Windows:</dt>'
+            '<dd style="style_.monospace;style_.pre;">MockKey\TestPolicyName = {&quot;foo&quot;: 123}</dd>'
+            '<dt>Linux:</dt>'
+            '<dd style="style_.monospace;">TestPolicyName: {&quot;foo&quot;: 123}</dd>'
+            '<dt>Mac:</dt>'
+            '<dd style="style_.monospace;style_.pre;">'
+              '&lt;key&gt;TestPolicyName&lt;/key&gt;\n'
+              '&lt;dict&gt;\n'
+              '  &lt;key&gt;foo&lt;/key&gt;\n'
+              '  &lt;integer&gt;123&lt;/integer&gt;\n'
+              '&lt;/dict&gt;'
+            '</dd>'
+          '</dl>'
+        '</dd>'
+      '</dl></root>')
+
+  def testAddPolicyDetailsRecommendedOnly(self):
+    policy = {
+      'type': 'main',
+      'name': 'TestPolicyName',
+      'caption': 'TestPolicyCaption',
+      'desc': 'TestPolicyDesc',
+      'supported_on': [{
+        'product': 'chrome',
+        'platforms': ['win', 'mac', 'linux'],
+        'since_version': '8',
+        'until_version': '',
+      }, {
+        'product': 'chrome',
+        'platforms': ['android'],
+        'since_version': '30',
+        'until_version': '',
+      }, {
+        'product': 'chrome',
+        'platforms': ['ios'],
+        'since_version': '34',
+        'until_version': '',
+      }],
+      'features': {
+        'dynamic_refresh': False,
+        'can_be_mandatory': False,
+        'can_be_recommended': True
+      },
+      'example_value': False
+    }
+    self.writer.messages['doc_since_version'] = {'text': '...$6...'}
+    self.writer._AddPolicyDetails(self.doc_root, policy)
+    self.assertEquals(
+      self.doc_root.toxml(),
+      '<root><dl>'
+      '<dt style="style_dt;">_test_data_type</dt><dd>Boolean (REG_DWORD)</dd>'
+      '<dt style="style_dt;">_test_win_reg_loc</dt>'
+      '<dd style="style_.monospace;">MockKeyRec\TestPolicyName</dd>'
+      '<dt style="style_dt;">_test_mac_linux_pref_name</dt>'
+        '<dd style="style_.monospace;">TestPolicyName</dd>'
+      '<dt style="style_dt;">_test_supported_on</dt>'
+      '<dd>'
+        '<ul style="style_ul;">'
+          '<li>Chrome (Windows, Mac, Linux) ...8...</li>'
+          '<li>Chrome (Android) ...30...</li>'
+          '<li>Chrome (iOS) ...34...</li>'
+        '</ul>'
+      '</dd>'
+      '<dt style="style_dt;">_test_supported_features</dt>'
+        '<dd>_test_feature_mandatory: _test_not_supported,'
+        ' _test_feature_recommended: _test_supported,'
+        ' _test_feature_dynamic_refresh: _test_not_supported</dd>'
       '<dt style="style_dt;">_test_description</dt><dd>TestPolicyDesc</dd>'
       '<dt style="style_dt;">_test_example_value</dt>'
         '<dd>0x00000000 (Windows), false (Linux), &lt;false /&gt; (Mac)</dd>'
@@ -654,14 +829,14 @@ See <a href="http://policy-explanation.example.com">http://policy-explanation.ex
       },
     }
     self.writer._AddDictionaryExample(self.doc_root, policy)
-    value = str(policy['example_value'])
+    value = json.dumps(policy['example_value']).replace('"', '&quot;')
     self.assertEquals(
       self.doc_root.toxml(),
       '<root>'
         '<dl style="style_dd dl;">'
           '<dt>Windows:</dt>'
           '<dd style="style_.monospace;style_.pre;">MockKey\PolicyName = '
-              '&quot;' + value + '&quot;'
+              + value +
           '</dd>'
           '<dt>Linux:</dt>'
           '<dd style="style_.monospace;">PolicyName: ' + value + '</dd>'

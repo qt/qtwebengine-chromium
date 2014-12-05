@@ -10,6 +10,7 @@ cr.define('options', function() {
   /**
    * Preferences class manages access to Chrome profile preferences.
    * @constructor
+   * @extends {cr.EventTarget}
    */
   function Preferences() {
     // Map of registered preferences.
@@ -23,16 +24,16 @@ cr.define('options', function() {
    * @param {string} name Preference name.
    * @param {boolean} value New preference value.
    * @param {boolean} commit Whether to commit the change to Chrome.
-   * @param {string} metric User metrics identifier.
+   * @param {string=} opt_metric User metrics identifier.
    */
-  Preferences.setBooleanPref = function(name, value, commit, metric) {
+  Preferences.setBooleanPref = function(name, value, commit, opt_metric) {
     if (!commit) {
       Preferences.getInstance().setPrefNoCommit_(name, 'bool', Boolean(value));
       return;
     }
 
     var argumentList = [name, Boolean(value)];
-    if (metric != undefined) argumentList.push(metric);
+    if (opt_metric != undefined) argumentList.push(opt_metric);
     chrome.send('setBooleanPref', argumentList);
   };
 
@@ -132,16 +133,16 @@ cr.define('options', function() {
    * value.
    * @param {string} name Preference name.
    * @param {boolean} commit Whether to commit the change to Chrome.
-   * @param {string} metric User metrics identifier.
+   * @param {string=} opt_metric User metrics identifier.
    */
-  Preferences.clearPref = function(name, commit, metric) {
+  Preferences.clearPref = function(name, commit, opt_metric) {
     if (!commit) {
       Preferences.getInstance().clearPrefNoCommit_(name);
       return;
     }
 
     var argumentList = [name];
-    if (metric != undefined) argumentList.push(metric);
+    if (opt_metric != undefined) argumentList.push(opt_metric);
     chrome.send('clearPref', argumentList);
   };
 
@@ -151,8 +152,8 @@ cr.define('options', function() {
     /**
      * Adds an event listener to the target.
      * @param {string} type The name of the event.
-     * @param {!Function|{handleEvent:Function}} handler The handler for the
-     *     event. This is called when the event is dispatched.
+     * @param {EventListenerType} handler The handler for the event. This is
+     *     called when the event is dispatched.
      */
     addEventListener: function(type, handler) {
       cr.EventTarget.prototype.addEventListener.call(this, type, handler);
@@ -178,19 +179,19 @@ cr.define('options', function() {
      * Helper function for flattening of dictionary passed via fetchPrefs
      * callback.
      * @param {string} prefix Preference name prefix.
-     * @param {object} dict Map with preference values.
+     * @param {Object} dict Map with preference values.
      * @private
      */
     flattenMapAndDispatchEvent_: function(prefix, dict) {
       for (var prefName in dict) {
-        if (typeof dict[prefName] == 'object' &&
+        var value = dict[prefName];
+        if (typeof value == 'object' &&
             !this.registeredPreferences_[prefix + prefName]) {
-          this.flattenMapAndDispatchEvent_(prefix + prefName + '.',
-              dict[prefName]);
-        } else {
+          this.flattenMapAndDispatchEvent_(prefix + prefName + '.', value);
+        } else if (value) {
           var event = new Event(prefix + prefName);
-          this.registeredPreferences_[prefix + prefName].orig = dict[prefName];
-          event.value = dict[prefName];
+          this.registeredPreferences_[prefix + prefName].orig = value;
+          event.value = value;
           this.dispatchEvent(event);
         }
       }
@@ -236,13 +237,12 @@ cr.define('options', function() {
 
       var event = new Event(name);
       // Decorate pref value as CoreOptionsHandler::CreateValueForPref() does.
-      event.value = {
-        value: pref.orig.recommendedValue,
-        controlledBy: 'recommended',
-        recommendedValue: pref.orig.recommendedValue,
-        disabled: pref.orig.disabled,
-        uncommitted: true,
-      };
+      event.value = {controlledBy: 'recommended', uncommitted: true};
+      if (pref.orig) {
+        event.value.value = pref.orig.recommendedValue;
+        event.value.recommendedValue = pref.orig.recommendedValue;
+        event.value.disabled = pref.orig.disabled;
+      }
       this.dispatchEvent(event);
     },
 
@@ -301,7 +301,7 @@ cr.define('options', function() {
       delete pref.value;
 
       var event = new Event(name);
-      event.value = pref.orig;
+      event.value = pref.orig || {};
       event.value.uncommitted = true;
       this.dispatchEvent(event);
     }
@@ -309,7 +309,7 @@ cr.define('options', function() {
 
   /**
    * Callback for fetchPrefs method.
-   * @param {object} dict Map of fetched property values.
+   * @param {Object} dict Map of fetched property values.
    */
   Preferences.prefsFetchedCallback = function(dict) {
     Preferences.getInstance().flattenMapAndDispatchEvent_('', dict);
@@ -317,16 +317,17 @@ cr.define('options', function() {
 
   /**
    * Callback for observePrefs method.
-   * @param {array} notification An array defining changed preference values.
-   * notification[0] contains name of the change preference while its new value
-   * is stored in notification[1].
+   * @param {Array} notification An array defining changed preference values.
+   *     notification[0] contains name of the change preference while its new
+   *     value is stored in notification[1].
    */
   Preferences.prefsChangedCallback = function(notification) {
     var event = new Event(notification[0]);
     event.value = notification[1];
-    prefs = Preferences.getInstance();
+    var prefs = Preferences.getInstance();
     prefs.registeredPreferences_[notification[0]] = {orig: notification[1]};
-    prefs.dispatchEvent(event);
+    if (event.value)
+      prefs.dispatchEvent(event);
   };
 
   // Export

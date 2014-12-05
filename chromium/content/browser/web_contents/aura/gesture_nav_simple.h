@@ -26,20 +26,21 @@ class WebContentsImpl;
 class GestureNavSimple : public OverscrollControllerDelegate {
  public:
   explicit GestureNavSimple(WebContentsImpl* web_contents);
-  virtual ~GestureNavSimple();
+  ~GestureNavSimple() override;
 
  private:
   void ApplyEffectsAndDestroy(const gfx::Transform& transform, float opacity);
   void AbortGestureAnimation();
   void CompleteGestureAnimation();
-  void ApplyEffectsForDelta(float delta_x);
+  bool ApplyEffectsForDelta(float delta_x);
 
   // OverscrollControllerDelegate:
-  virtual gfx::Rect GetVisibleBounds() const OVERRIDE;
-  virtual void OnOverscrollUpdate(float delta_x, float delta_y) OVERRIDE;
-  virtual void OnOverscrollComplete(OverscrollMode overscroll_mode) OVERRIDE;
-  virtual void OnOverscrollModeChange(OverscrollMode old_mode,
-                                      OverscrollMode new_mode) OVERRIDE;
+  gfx::Rect GetVisibleBounds() const override;
+  // Returns true if the scroll update was consumed.
+  bool OnOverscrollUpdate(float delta_x, float delta_y) override;
+  void OnOverscrollComplete(OverscrollMode overscroll_mode) override;
+  void OnOverscrollModeChange(OverscrollMode old_mode,
+                              OverscrollMode new_mode) override;
 
   WebContentsImpl* web_contents_;
   scoped_ptr<ui::Layer> clip_layer_;

@@ -14,6 +14,11 @@
 #include "vpx_scale/yv12config.h"
 #include "vpx/vpx_integer.h"
 
+#if CONFIG_SPATIAL_SVC
+#include "vpx/vp8cx.h"
+#include "vpx/vpx_encoder.h"
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,8 +32,16 @@ struct lookahead_entry {
   unsigned int        flags;
 };
 
+// The max of past frames we want to keep in the queue.
+#define MAX_PRE_FRAMES 1
 
-struct lookahead_ctx;
+struct lookahead_ctx {
+  unsigned int max_sz;         /* Absolute size of the queue */
+  unsigned int sz;             /* Number of buffers currently in the queue */
+  unsigned int read_idx;       /* Read index */
+  unsigned int write_idx;      /* Write index */
+  struct lookahead_entry *buf; /* Buffer list */
+};
 
 /**\brief Initializes the lookahead stage
  *
@@ -39,6 +52,9 @@ struct lookahead_ctx *vp9_lookahead_init(unsigned int width,
                                          unsigned int height,
                                          unsigned int subsampling_x,
                                          unsigned int subsampling_y,
+#if CONFIG_VP9_HIGHBITDEPTH
+                                         int use_highbitdepth,
+#endif
                                          unsigned int depth);
 
 

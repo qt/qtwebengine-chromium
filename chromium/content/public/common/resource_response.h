@@ -20,8 +20,6 @@ namespace content {
 
 // Parameters for a resource response header.
 struct ResourceResponseHead : ResourceResponseInfo {
-  // The response error_code.
-  int error_code;
   // TimeTicks::Now() when the browser received the request from the renderer.
   base::TimeTicks request_start;
   // TimeTicks::Now() when the browser sent the response to the renderer.
@@ -30,6 +28,8 @@ struct ResourceResponseHead : ResourceResponseInfo {
 
 // Parameters for a synchronous resource response.
 struct SyncLoadResult : ResourceResponseHead {
+  // The response error_code.
+  int error_code;
   // The final URL after any redirects.
   GURL final_url;
 
@@ -40,12 +40,20 @@ struct SyncLoadResult : ResourceResponseHead {
 // Simple wrapper that refcounts ResourceResponseHead.
 // Inherited, rather than typedef'd, to allow forward declarations.
 struct CONTENT_EXPORT ResourceResponse
-    : public base::RefCounted<ResourceResponse> {
+    : public base::RefCountedThreadSafe<ResourceResponse> {
  public:
   ResourceResponseHead head;
 
+  // Performs a deep copy of the ResourceResponse and all fields in it, safe to
+  // pass across threads.
+  //
+  // TODO(davidben): This structure should be passed along in a scoped_ptr. It's
+  // currently reference-counted to avoid copies, but may be
+  // modified. https://crbug.com/416050
+  scoped_refptr<ResourceResponse> DeepCopy() const;
+
  private:
-  friend class base::RefCounted<ResourceResponse>;
+  friend class base::RefCountedThreadSafe<ResourceResponse>;
   ~ResourceResponse() {}
 };
 

@@ -14,8 +14,7 @@
 #include "cc/base/math_util.h"
 #include "cc/output/copy_output_request.h"
 #include "cc/quads/draw_quad.h"
-#include "cc/resources/raster_worker_pool.h"
-#include "ui/gfx/rect_conversions.h"
+#include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/transform.h"
 
 static gfx::Transform OrthoProjectionMatrix(float left,
@@ -83,12 +82,11 @@ void DirectRenderer::InitializeViewport(DrawingFrame* frame,
                                         const gfx::Rect& draw_rect,
                                         const gfx::Rect& viewport_rect,
                                         const gfx::Size& surface_size) {
-  bool flip_y = FlippedFramebuffer();
-
   DCHECK_GE(viewport_rect.x(), 0);
   DCHECK_GE(viewport_rect.y(), 0);
   DCHECK_LE(viewport_rect.right(), surface_size.width());
   DCHECK_LE(viewport_rect.bottom(), surface_size.height());
+  bool flip_y = FlippedFramebuffer(frame);
   if (flip_y) {
     frame->projection_matrix = OrthoProjectionMatrix(draw_rect.x(),
                                                      draw_rect.right(),
@@ -116,11 +114,12 @@ void DirectRenderer::InitializeViewport(DrawingFrame* frame,
 }
 
 gfx::Rect DirectRenderer::MoveFromDrawToWindowSpace(
+    const DrawingFrame* frame,
     const gfx::Rect& draw_rect) const {
   gfx::Rect window_rect = draw_rect;
   window_rect -= current_draw_rect_.OffsetFromOrigin();
   window_rect += current_viewport_rect_.OffsetFromOrigin();
-  if (FlippedFramebuffer())
+  if (FlippedFramebuffer(frame))
     window_rect.set_y(current_surface_size_.height() - window_rect.bottom());
   return window_rect;
 }
@@ -149,19 +148,19 @@ void DirectRenderer::DecideRenderPassAllocationsForFrame(
   if (!resource_provider_)
     return;
 
-  base::hash_map<RenderPass::Id, gfx::Size> render_passes_in_frame;
+  base::hash_map<RenderPassId, gfx::Size> render_passes_in_frame;
   for (size_t i = 0; i < render_passes_in_draw_order.size(); ++i)
-    render_passes_in_frame.insert(std::pair<RenderPass::Id, gfx::Size>(
+    render_passes_in_frame.insert(std::pair<RenderPassId, gfx::Size>(
         render_passes_in_draw_order[i]->id,
         RenderPassTextureSize(render_passes_in_draw_order[i])));
 
-  std::vector<RenderPass::Id> passes_to_delete;
-  base::ScopedPtrHashMap<RenderPass::Id, ScopedResource>::const_iterator
+  std::vector<RenderPassId> passes_to_delete;
+  base::ScopedPtrHashMap<RenderPassId, ScopedResource>::const_iterator
       pass_iter;
   for (pass_iter = render_pass_textures_.begin();
        pass_iter != render_pass_textures_.end();
        ++pass_iter) {
-    base::hash_map<RenderPass::Id, gfx::Size>::const_iterator it =
+    base::hash_map<RenderPassId, gfx::Size>::const_iterator it =
         render_passes_in_frame.find(pass_iter->first);
     if (it == render_passes_in_frame.end()) {
       passes_to_delete.push_back(pass_iter->first);
@@ -206,6 +205,7 @@ void DirectRenderer::DrawFrame(RenderPassList* render_passes_in_draw_order,
   DCHECK(root_render_pass);
 
   DrawingFrame frame;
+  frame.render_passes_in_draw_order = render_passes_in_draw_order;
   frame.root_render_pass = root_render_pass;
   frame.root_damage_rect = Capabilities().using_partial_swap
                                ? root_render_pass->damage_rect
@@ -279,7 +279,7 @@ bool DirectRenderer::NeedDeviceClip(const DrawingFrame* frame) const {
 gfx::Rect DirectRenderer::DeviceClipRectInWindowSpace(const DrawingFrame* frame)
     const {
   gfx::Rect device_clip_rect = frame->device_clip_rect;
-  if (FlippedFramebuffer())
+  if (FlippedFramebuffer(frame))
     device_clip_rect.set_y(current_surface_size_.height() -
                            device_clip_rect.bottom());
   return device_clip_rect;
@@ -321,7 +321,8 @@ void DirectRenderer::SetScissorStateForQuadWithRenderPassScissor(
 void DirectRenderer::SetScissorTestRectInDrawSpace(
     const DrawingFrame* frame,
     const gfx::Rect& draw_space_rect) {
-  gfx::Rect window_space_rect = MoveFromDrawToWindowSpace(draw_space_rect);
+  gfx::Rect window_space_rect =
+      MoveFromDrawToWindowSpace(frame, draw_space_rect);
   if (NeedDeviceClip(frame))
     window_space_rect.Intersect(DeviceClipRectInWindowSpace(frame));
   SetScissorTestRect(window_space_rect);
@@ -368,10 +369,9 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
   }
 
   const QuadList& quad_list = render_pass->quad_list;
-  for (QuadList::ConstBackToFrontIterator it = quad_list.BackToFrontBegin();
-       it != quad_list.BackToFrontEnd();
+  for (auto it = quad_list.BackToFrontBegin(); it != quad_list.BackToFrontEnd();
        ++it) {
-    const DrawQuad& quad = *(*it);
+    const DrawQuad& quad = **it;
     bool should_skip_quad = false;
 
     if (using_scissor_as_optimization) {
@@ -382,7 +382,7 @@ void DirectRenderer::DrawRenderPass(DrawingFrame* frame,
     }
 
     if (!should_skip_quad)
-      DoDrawQuad(frame, *it);
+      DoDrawQuad(frame, &quad);
   }
   FinishDrawingQuadList();
 }
@@ -409,14 +409,13 @@ bool DirectRenderer::UseRenderPass(DrawingFrame* frame,
                enlarge_pass_texture_amount_.y());
   if (!texture->id())
     texture->Allocate(
-        size, ResourceProvider::TextureUsageFramebuffer, RGBA_8888);
+        size, ResourceProvider::TextureHintImmutableFramebuffer, RGBA_8888);
   DCHECK(texture->id());
 
   return BindFramebufferToTexture(frame, texture, render_pass->output_rect);
 }
 
-bool DirectRenderer::HasAllocatedResourcesForTesting(RenderPass::Id id)
-    const {
+bool DirectRenderer::HasAllocatedResourcesForTesting(RenderPassId id) const {
   ScopedResource* texture = render_pass_textures_.get(id);
   return texture && texture->id();
 }

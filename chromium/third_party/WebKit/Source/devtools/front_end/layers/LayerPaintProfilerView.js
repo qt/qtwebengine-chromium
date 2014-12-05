@@ -26,6 +26,8 @@ WebInspector.LayerPaintProfilerView.prototype = {
      */
     profileLayer: function(layer)
     {
+        this._logTreeView.setCommandLog(null, []);
+        this._paintProfilerView.setSnapshotAndLog(null, []);
         layer.requestSnapshot(onSnapshotDone.bind(this));
 
         /**
@@ -35,8 +37,18 @@ WebInspector.LayerPaintProfilerView.prototype = {
         function onSnapshotDone(snapshot)
         {
             this._layer = layer;
-            this._paintProfilerView.setSnapshot(snapshot || null);
-            this._logTreeView.setSnapshot(snapshot || null);
+            snapshot.commandLog(onCommandLogDone.bind(this, snapshot));
+        }
+
+        /**
+         * @param {!WebInspector.PaintProfilerSnapshot=} snapshot
+         * @param {!Array.<!Object>=} log
+         * @this {WebInspector.LayerPaintProfilerView}
+         */
+        function onCommandLogDone(snapshot, log)
+        {
+            this._logTreeView.setCommandLog(snapshot.target(), log);
+            this._paintProfilerView.setSnapshotAndLog(snapshot || null, log || []);
         }
     },
 

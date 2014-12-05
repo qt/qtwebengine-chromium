@@ -32,7 +32,7 @@
 #include "config.h"
 #include "core/html/forms/TextFieldInputType.h"
 
-#include "bindings/v8/ExceptionStatePlaceholder.h"
+#include "bindings/core/v8/ExceptionStatePlaceholder.h"
 #include "core/HTMLNames.h"
 #include "core/dom/NodeRenderStyle.h"
 #include "core/dom/shadow/ShadowRoot.h"
@@ -55,21 +55,21 @@
 #include "core/rendering/RenderTheme.h"
 #include "wtf/text/WTFString.h"
 
-namespace WebCore {
+namespace blink {
 
 using namespace HTMLNames;
 
-class DataListIndicatorElement FINAL : public HTMLDivElement {
+class DataListIndicatorElement final : public HTMLDivElement {
 private:
     inline DataListIndicatorElement(Document& document) : HTMLDivElement(document) { }
     inline HTMLInputElement* hostInput() const { return toHTMLInputElement(shadowHost()); }
 
-    virtual RenderObject* createRenderer(RenderStyle*) OVERRIDE
+    virtual RenderObject* createRenderer(RenderStyle*) override
     {
         return new RenderDetailsMarker(this);
     }
 
-    virtual void* preDispatchEventHandler(Event* event) OVERRIDE
+    virtual void* preDispatchEventHandler(Event* event) override
     {
         // Chromium opens autofill popup in a mousedown event listener
         // associated to the document. We don't want to open it in this case
@@ -80,7 +80,7 @@ private:
         return 0;
     }
 
-    virtual void defaultEventHandler(Event* event) OVERRIDE
+    virtual void defaultEventHandler(Event* event) override
     {
         ASSERT(document().isActive());
         if (event->type() != EventTypeNames::click)
@@ -92,7 +92,7 @@ private:
         }
     }
 
-    virtual bool willRespondToMouseClickEvents() OVERRIDE
+    virtual bool willRespondToMouseClickEvents() override
     {
         return hostInput() && !hostInput()->isDisabledOrReadOnly() && document().isActive();
     }
@@ -380,11 +380,6 @@ bool TextFieldInputType::supportsReadOnly() const
     return true;
 }
 
-bool TextFieldInputType::shouldUseInputMethod() const
-{
-    return true;
-}
-
 static bool isASCIILineBreak(UChar c)
 {
     return c == '\r' || c == '\n';
@@ -424,7 +419,7 @@ void TextFieldInputType::handleBeforeTextInsertedEvent(BeforeTextInsertedEvent* 
 
     // Selected characters will be removed by the next text event.
     unsigned baseLength = oldLength - selectionLength;
-    unsigned maxLength = static_cast<unsigned>(isTextType() ? element().maxLength() : HTMLInputElement::maximumLength); // maxLength can never be negative.
+    unsigned maxLength = static_cast<unsigned>(this->maxLength()); // maxLength can never be negative.
     unsigned appendableLength = maxLength > baseLength ? maxLength - baseLength : 0;
 
     // Truncate the inserted text to avoid violating the maxLength and other constraints.
@@ -496,8 +491,8 @@ void TextFieldInputType::subtreeHasChanged()
     // sanitizeValue() is needed because IME input doesn't dispatch BeforeTextInsertedEvent.
     element().setValueFromRenderer(sanitizeValue(convertFromVisibleValue(element().innerEditorValue())));
     element().updatePlaceholderVisibility(false);
-    // Recalc for :invalid change.
-    element().setNeedsStyleRecalc(SubtreeStyleChange);
+    element().pseudoStateChanged(CSSSelector::PseudoValid);
+    element().pseudoStateChanged(CSSSelector::PseudoInvalid);
 
     didSetValueByUserEdit(wasChanged ? ValueChangeStateChanged : ValueChangeStateNone);
 }
@@ -560,4 +555,4 @@ void TextFieldInputType::spinButtonDidReleaseMouseCapture(SpinButtonElement::Eve
         element().dispatchFormControlChangeEvent();
 }
 
-} // namespace WebCore
+} // namespace blink

@@ -29,10 +29,10 @@
 #include "core/events/Event.h"
 #include "core/fetch/ResourceFetcher.h"
 #include "core/frame/DOMTimer.h"
-#include "core/frame/LocalDOMWindow.h"
-#include "core/frame/EventHandlerRegistry.h"
+#include "core/frame/FrameConsole.h"
 #include "core/frame/FrameHost.h"
 #include "core/frame/FrameView.h"
+#include "core/frame/LocalDOMWindow.h"
 #include "core/frame/LocalFrame.h"
 #include "core/frame/RemoteFrame.h"
 #include "core/frame/RemoteFrameView.h"
@@ -53,7 +53,6 @@
 #include "core/page/StorageClient.h"
 #include "core/page/ValidationMessageClient.h"
 #include "core/page/scrolling/ScrollingCoordinator.h"
-#include "core/rendering/FastTextAutosizer.h"
 #include "core/rendering/RenderView.h"
 #include "core/rendering/TextAutosizer.h"
 #include "core/storage/StorageNamespace.h"
@@ -63,7 +62,7 @@
 #include "wtf/StdLibExtras.h"
 #include "wtf/text/Base64.h"
 
-namespace WebCore {
+namespace blink {
 
 DEFINE_DEBUG_ONLY_GLOBAL(WTF::RefCountedLeakCounter, pageCounter, ("Page"));
 
@@ -84,17 +83,16 @@ HashSet<Page*>& Page::ordinaryPages()
 
 void Page::networkStateChanged(bool online)
 {
-    Vector<RefPtr<LocalFrame> > frames;
+    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> frames;
 
     // Get all the frames of all the pages in all the page groups
-    HashSet<Page*>::iterator end = allPages().end();
-    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it) {
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (Page* page : allPages()) {
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
             // FIXME: There is currently no way to dispatch events to out-of-process frames.
             if (frame->isLocalFrame())
                 frames.append(toLocalFrame(frame));
         }
-        InspectorInstrumentation::networkStateChanged(*it, online);
+        InspectorInstrumentation::networkStateChanged(page, online);
     }
 
     AtomicString eventName = online ? EventTypeNames::online : EventTypeNames::offline;
@@ -114,7 +112,7 @@ float deviceScaleFactor(LocalFrame* frame)
 
 Page::Page(PageClients& pageClients)
     : SettingsDelegate(Settings::create())
-    , m_animator(this)
+    , m_animator(PageAnimator::create(*this))
     , m_autoscrollController(AutoscrollController::create(*this))
     , m_chrome(Chrome::create(this, pageClients.chromeClient))
     , m_dragCaretController(DragCaretController::create())
@@ -124,12 +122,10 @@ Page::Page(PageClients& pageClients)
     , m_inspectorController(InspectorController::create(this, pageClients.inspectorClient))
     , m_pointerLockController(PointerLockController::create(this))
     , m_undoStack(UndoStack::create())
-    , m_mainFrame(0)
-    , m_backForwardClient(pageClients.backForwardClient)
+    , m_mainFrame(nullptr)
     , m_editorClient(pageClients.editorClient)
     , m_spellCheckerClient(pageClients.spellCheckerClient)
     , m_storageClient(pageClients.storageClient)
-    , m_subframeCount(0)
     , m_openedByDOM(false)
     , m_tabKeyCyclesThroughElements(true)
     , m_defersLoading(false)
@@ -137,7 +133,7 @@ Page::Page(PageClients& pageClients)
     , m_timerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval())
     , m_visibilityState(PageVisibilityStateVisible)
     , m_isCursorVisible(true)
-#ifndef NDEBUG
+#if ENABLE(ASSERT)
     , m_isPainting(false)
 #endif
     , m_frameHost(FrameHost::create(*this))
@@ -202,7 +198,11 @@ PassRefPtrWillBeRawPtr<ClientRectList> Page::nonFastScrollableRects(const LocalF
 
 void Page::setMainFrame(Frame* mainFrame)
 {
-    ASSERT(!m_mainFrame); // Should only be called during initialization
+    // Should only be called during initialization or swaps between local and
+    // remote frames.
+    // FIXME: Unfortunately we can't assert on this at the moment, because this
+    // is called in the base constructor for both LocalFrame and RemoteFrame,
+    // when the vtables for the derived classes have not yet been setup.
     m_mainFrame = mainFrame;
 }
 
@@ -213,7 +213,6 @@ void Page::documentDetached(Document* document)
     m_contextMenuController->documentDetached(document);
     if (m_validationMessageClient)
         m_validationMessageClient->documentDetached(*document);
-    m_frameHost->eventHandlerRegistry().documentDetached(*document);
 }
 
 bool Page::openedByDOM() const
@@ -228,11 +227,10 @@ void Page::setOpenedByDOM()
 
 void Page::scheduleForcedStyleRecalcForAllPages()
 {
-    HashSet<Page*>::iterator end = allPages().end();
-    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it)
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+    for (const Page* page : allPages())
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
             if (frame->isLocalFrame())
-                toLocalFrame(frame)->document()->setNeedsStyleRecalc(SubtreeStyleChange);
+                toLocalFrame(frame)->document()->setNeedsStyleRecalc(SubtreeStyleChange, StyleChangeReasonForTracing::create(StyleChangeReason::PlatformColorChange));
         }
 }
 
@@ -263,12 +261,9 @@ void Page::refreshPlugins(bool reload)
 
     PluginData::refresh();
 
-    Vector<RefPtr<LocalFrame> > framesNeedingReload;
+    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> framesNeedingReload;
 
-    HashSet<Page*>::iterator end = allPages().end();
-    for (HashSet<Page*>::iterator it = allPages().begin(); it != end; ++it) {
-        Page* page = *it;
-
+    for (const Page* page : allPages()) {
         // Clear out the page's plug-in data.
         if (page->m_pluginData)
             page->m_pluginData = nullptr;
@@ -276,20 +271,21 @@ void Page::refreshPlugins(bool reload)
         if (!reload)
             continue;
 
-        for (Frame* frame = (*it)->mainFrame(); frame; frame = frame->tree().traverseNext()) {
+        for (Frame* frame = page->mainFrame(); frame; frame = frame->tree().traverseNext()) {
             if (frame->isLocalFrame() && toLocalFrame(frame)->document()->containsPlugins())
                 framesNeedingReload.append(toLocalFrame(frame));
         }
     }
 
     for (size_t i = 0; i < framesNeedingReload.size(); ++i)
-        framesNeedingReload[i]->loader().reload();
+        framesNeedingReload[i]->loader().reload(NormalReload);
 }
 
 PluginData* Page::pluginData() const
 {
-    if (!deprecatedLocalMainFrame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
-        return 0;
+    if (!mainFrame()->isLocalFrame()
+        || !deprecatedLocalMainFrame()->loader().allowPlugins(NotAboutToInstantiatePlugin))
+        return nullptr;
     if (!m_pluginData)
         m_pluginData = PluginData::create(this);
     return m_pluginData.get();
@@ -380,11 +376,19 @@ void Page::setDeviceScaleFactor(float scaleFactor)
     }
 }
 
+void Page::setDeviceColorProfile(const Vector<char>& profile)
+{
+    // FIXME: implement.
+}
+
+void Page::resetDeviceColorProfile()
+{
+    // FIXME: implement.
+}
+
 void Page::allVisitedStateChanged()
 {
-    HashSet<Page*>::iterator pagesEnd = ordinaryPages().end();
-    for (HashSet<Page*>::iterator it = ordinaryPages().begin(); it != pagesEnd; ++it) {
-        Page* page = *it;
+    for (const Page* page : ordinaryPages()) {
         for (Frame* frame = page->m_mainFrame; frame; frame = frame->tree().traverseNext()) {
             if (frame->isLocalFrame())
                 toLocalFrame(frame)->document()->visitedLinkState().invalidateStyleForAllLinks();
@@ -394,9 +398,7 @@ void Page::allVisitedStateChanged()
 
 void Page::visitedStateChanged(LinkHash linkHash)
 {
-    HashSet<Page*>::iterator pagesEnd = ordinaryPages().end();
-    for (HashSet<Page*>::iterator it = ordinaryPages().begin(); it != pagesEnd; ++it) {
-        Page* page = *it;
+    for (const Page* page : ordinaryPages()) {
         for (Frame* frame = page->m_mainFrame; frame; frame = frame->tree().traverseNext()) {
             if (frame->isLocalFrame())
                 toLocalFrame(frame)->document()->visitedLinkState().invalidateStyleForLink(linkHash);
@@ -428,29 +430,16 @@ double Page::timerAlignmentInterval() const
     return m_timerAlignmentInterval;
 }
 
-#if ASSERT_ENABLED
-void Page::checkSubframeCountConsistency() const
-{
-    ASSERT(m_subframeCount >= 0);
-
-    int subframeCount = 0;
-    for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext())
-        ++subframeCount;
-
-    ASSERT(m_subframeCount + 1 == subframeCount);
-}
-#endif
-
 void Page::setVisibilityState(PageVisibilityState visibilityState, bool isInitialState)
 {
     if (m_visibilityState == visibilityState)
         return;
     m_visibilityState = visibilityState;
 
-    if (visibilityState == WebCore::PageVisibilityStateHidden)
-        setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
-    else
+    if (visibilityState == blink::PageVisibilityStateVisible)
         setTimerAlignmentInterval(DOMTimer::visiblePageAlignmentInterval());
+    else
+        setTimerAlignmentInterval(DOMTimer::hiddenPageAlignmentInterval());
 
     if (!isInitialState)
         lifecycleNotifier().notifyPageVisibilityChanged();
@@ -502,9 +491,8 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
         }
         break;
     case SettingsDelegate::MultisamplingChange: {
-        WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> >::iterator stop = m_multisamplingChangedObservers.end();
-        for (WillBeHeapHashSet<RawPtrWillBeWeakMember<MultisamplingChangedObserver> >::iterator it = m_multisamplingChangedObservers.begin(); it != stop; ++it)
-            (*it)->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
+        for (MultisamplingChangedObserver* observer : m_multisamplingChangedObservers)
+            observer->multisamplingChanged(m_settings->openGLMultisamplingEnabled());
         break;
     }
     case SettingsDelegate::ImageLoadingChange:
@@ -518,19 +506,8 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
     case SettingsDelegate::TextAutosizingChange:
         if (!mainFrame() || !mainFrame()->isLocalFrame())
             break;
-        if (FastTextAutosizer* textAutosizer = deprecatedLocalMainFrame()->document()->fastTextAutosizer()) {
+        if (TextAutosizer* textAutosizer = deprecatedLocalMainFrame()->document()->textAutosizer())
             textAutosizer->updatePageInfoInAllFrames();
-        } else {
-            for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
-                if (!frame->isLocalFrame())
-                    continue;
-                if (TextAutosizer* textAutosizer = toLocalFrame(frame)->document()->textAutosizer())
-                    textAutosizer->recalculateMultipliers();
-            }
-            // TextAutosizing updates RenderStyle during layout phase (via TextAutosizer::processSubtree).
-            // We should invoke setNeedsLayout here.
-            setNeedsLayoutInAllFrames();
-        }
         break;
     case SettingsDelegate::ScriptEnableChange:
         m_inspectorController->scriptsEnabled(settings().scriptEnabled());
@@ -545,6 +522,17 @@ void Page::settingsChanged(SettingsDelegate::ChangeType changeType)
     case SettingsDelegate::AcceleratedCompositingChange:
         updateAcceleratedCompositingSettings();
         break;
+    case SettingsDelegate::MediaQueryChange:
+        for (Frame* frame = mainFrame(); frame; frame = frame->tree().traverseNext()) {
+            if (frame->isLocalFrame())
+                toLocalFrame(frame)->document()->mediaQueryAffectingValueChanged();
+        }
+        setNeedsRecalcStyleInAllFrames();
+        break;
+    case SettingsDelegate::AccessibilityStateChange:
+        if (!mainFrame() || !mainFrame()->isLocalFrame())
+            break;
+        deprecatedLocalMainFrame()->document()->axObjectCacheOwner().clearAXObjectCache();
     }
 }
 
@@ -562,14 +550,16 @@ void Page::didCommitLoad(LocalFrame* frame)
 {
     lifecycleNotifier().notifyDidCommitLoad(frame);
     if (m_mainFrame == frame) {
+        frame->console().clearMessages();
         useCounter().didCommitLoad();
         m_inspectorController->didCommitLoadForMainFrame();
+        UserGestureIndicator::clearProcessedUserGestureSinceLoad();
     }
 }
 
 void Page::acceptLanguagesChanged()
 {
-    Vector< RefPtr<LocalFrame> > frames;
+    WillBeHeapVector<RefPtrWillBeMember<LocalFrame>> frames;
 
     // Even though we don't fire an event from here, the LocalDOMWindow's will fire
     // an event so we keep the frames alive until we are done.
@@ -587,32 +577,39 @@ PageLifecycleNotifier& Page::lifecycleNotifier()
     return static_cast<PageLifecycleNotifier&>(LifecycleContext<Page>::lifecycleNotifier());
 }
 
-PassOwnPtr<LifecycleNotifier<Page> > Page::createLifecycleNotifier()
+PassOwnPtr<LifecycleNotifier<Page>> Page::createLifecycleNotifier()
 {
     return PageLifecycleNotifier::create(this);
 }
 
 void Page::trace(Visitor* visitor)
 {
+#if ENABLE(OILPAN)
+    visitor->trace(m_animator);
     visitor->trace(m_dragCaretController);
     visitor->trace(m_dragController);
+    visitor->trace(m_focusController);
+    visitor->trace(m_contextMenuController);
+    visitor->trace(m_inspectorController);
     visitor->trace(m_pointerLockController);
     visitor->trace(m_undoStack);
+    visitor->trace(m_mainFrame);
     visitor->trace(m_validationMessageClient);
     visitor->trace(m_multisamplingChangedObservers);
     visitor->trace(m_frameHost);
-    WillBeHeapSupplementable<Page>::trace(visitor);
+    HeapSupplementable<Page>::trace(visitor);
+#endif
+    LifecycleContext<Page>::trace(visitor);
 }
 
 void Page::willBeDestroyed()
 {
-    RefPtr<Frame> mainFrame = m_mainFrame;
-
-    if (mainFrame->isLocalFrame())
-        toLocalFrame(mainFrame.get())->loader().frameDetached();
-
-    // Disable all agents prior to resetting the frame view.
+    // Destroy inspector first, since it uses frame and view during destruction.
     m_inspectorController->willBeDestroyed();
+
+    RefPtrWillBeRawPtr<Frame> mainFrame = m_mainFrame;
+
+    mainFrame->detach();
 
     if (mainFrame->isLocalFrame()) {
         toLocalFrame(mainFrame.get())->setView(nullptr);
@@ -633,21 +630,19 @@ void Page::willBeDestroyed()
 #endif
 
     m_chrome->willBeDestroyed();
-    m_mainFrame = 0;
     if (m_validationMessageClient)
         m_validationMessageClient->willBeDestroyed();
-    WillBeHeapSupplementable<Page>::willBeDestroyed();
+    m_mainFrame = nullptr;
 }
 
 Page::PageClients::PageClients()
-    : chromeClient(0)
-    , contextMenuClient(0)
-    , editorClient(0)
-    , dragClient(0)
-    , inspectorClient(0)
-    , backForwardClient(0)
-    , spellCheckerClient(0)
-    , storageClient(0)
+    : chromeClient(nullptr)
+    , contextMenuClient(nullptr)
+    , editorClient(nullptr)
+    , dragClient(nullptr)
+    , inspectorClient(nullptr)
+    , spellCheckerClient(nullptr)
+    , storageClient(nullptr)
 {
 }
 
@@ -655,4 +650,4 @@ Page::PageClients::~PageClients()
 {
 }
 
-} // namespace WebCore
+} // namespace blink

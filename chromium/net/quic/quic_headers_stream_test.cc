@@ -4,12 +4,12 @@
 
 #include "net/quic/quic_headers_stream.h"
 
-#include "net/quic/quic_flags.h"
 #include "net/quic/quic_utils.h"
 #include "net/quic/spdy_utils.h"
 #include "net/quic/test_tools/quic_connection_peer.h"
 #include "net/quic/test_tools/quic_session_peer.h"
 #include "net/quic/test_tools/quic_test_utils.h"
+#include "net/quic/test_tools/reliable_quic_stream_peer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -52,7 +52,8 @@ class MockVisitor : public SpdyFramerVisitorInterface {
   MOCK_METHOD2(OnPing, void(SpdyPingId unique_id, bool is_ack));
   MOCK_METHOD2(OnGoAway, void(SpdyStreamId last_accepted_stream_id,
                               SpdyGoAwayStatus status));
-  MOCK_METHOD3(OnHeaders, void(SpdyStreamId stream_id, bool fin, bool end));
+  MOCK_METHOD5(OnHeaders, void(SpdyStreamId stream_id, bool has_priority,
+                               SpdyPriority priority, bool fin, bool end));
   MOCK_METHOD2(OnWindowUpdate, void(SpdyStreamId stream_id,
                                     uint32 delta_window_size));
   MOCK_METHOD2(OnCredentialFrameData, bool(const char* credential_data,
@@ -68,6 +69,7 @@ class MockVisitor : public SpdyFramerVisitorInterface {
                               StringPiece protocol_id,
                               StringPiece host,
                               StringPiece origin));
+  MOCK_METHOD2(OnUnknownFrame, bool(SpdyStreamId stream_id, int frame_type));
 };
 
 class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
@@ -89,7 +91,7 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
     headers_["content-length"] = "11";
     framer_.set_visitor(&visitor_);
     EXPECT_EQ(QuicVersionMax(), session_.connection()->version());
-    EXPECT_TRUE(headers_stream_ != NULL);
+    EXPECT_TRUE(headers_stream_ != nullptr);
   }
 
   QuicConsumedData SaveIov(const IOVector& data) {
@@ -126,9 +128,9 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
                                 QuicPriority priority,
                                 SpdyFrameType type) {
     // Write the headers and capture the outgoing data
-    EXPECT_CALL(session_, WritevData(kHeadersStreamId, _, _, false, _, NULL))
+    EXPECT_CALL(session_, WritevData(kHeadersStreamId, _, _, false, _, nullptr))
         .WillOnce(WithArgs<1>(Invoke(this, &QuicHeadersStreamTest::SaveIov)));
-    headers_stream_->WriteHeaders(stream_id, headers_, fin, NULL);
+    headers_stream_->WriteHeaders(stream_id, headers_, fin, nullptr);
 
     // Parse the outgoing data and check that it matches was was written.
     if (type == SYN_STREAM) {
@@ -142,7 +144,7 @@ class QuicHeadersStreamTest : public ::testing::TestWithParam<bool> {
         .WillRepeatedly(WithArgs<1, 2>(
             Invoke(this, &QuicHeadersStreamTest::SaveHeaderData)));
     if (fin) {
-      EXPECT_CALL(visitor_, OnStreamFrameData(stream_id, NULL, 0, true));
+      EXPECT_CALL(visitor_, OnStreamFrameData(stream_id, nullptr, 0, true));
     }
     framer_.ProcessInput(saved_data_.data(), saved_data_.length());
     EXPECT_FALSE(framer_.HasError()) << framer_.error_code();
@@ -324,9 +326,14 @@ TEST_P(QuicHeadersStreamTest, ProcessSpdyWindowUpdateFrame) {
   headers_stream_->ProcessRawData(frame->data(), frame->size());
 }
 
-TEST_P(QuicHeadersStreamTest, NoFlowControl) {
-  ValueRestore<bool> old_flag(&FLAGS_enable_quic_stream_flow_control_2, true);
-  EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
+TEST_P(QuicHeadersStreamTest, NoConnectionLevelFlowControl) {
+  if (connection_->version() < QUIC_VERSION_21) {
+    EXPECT_FALSE(headers_stream_->flow_controller()->IsEnabled());
+  } else {
+    EXPECT_TRUE(headers_stream_->flow_controller()->IsEnabled());
+  }
+  EXPECT_FALSE(ReliableQuicStreamPeer::StreamContributesToConnectionFlowControl(
+      headers_stream_));
 }
 
 }  // namespace

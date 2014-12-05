@@ -19,22 +19,15 @@
     SkColorTable holds an array SkPMColors (premultiplied 32-bit colors) used by
     8-bit bitmaps, where the bitmap bytes are interpreted as indices into the colortable.
 */
-class SkColorTable : public SkRefCnt {
+class SK_API SkColorTable : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(SkColorTable)
 
     /** Makes a deep copy of colors.
      */
     SkColorTable(const SkColorTable& src);
-    SkColorTable(const SkPMColor colors[], int count,
-                 SkAlphaType alphaType = kPremul_SkAlphaType);
+    SkColorTable(const SkPMColor colors[], int count);
     virtual ~SkColorTable();
-
-    SkAlphaType alphaType() const { return (SkAlphaType)fAlphaType; }
-
-    bool isOpaque() const {
-        return SkAlphaTypeIsOpaque(this->alphaType());
-    }
 
     /** Returns the number of colors in the table.
     */
@@ -44,7 +37,7 @@ public:
         the index is in range (0 <= index < count).
     */
     SkPMColor operator[](int index) const {
-        SkASSERT(fColors != NULL && (unsigned)index < fCount);
+        SkASSERT(fColors != NULL && (unsigned)index < (unsigned)fCount);
         return fColors[index];
     }
 
@@ -81,10 +74,11 @@ public:
 private:
     SkPMColor*  fColors;
     uint16_t*   f16BitCache;
-    uint16_t    fCount;
-    uint8_t     fAlphaType;
+    int         fCount;
     SkDEBUGCODE(int fColorLockCount;)
     SkDEBUGCODE(int f16BitCacheLockCount;)
+
+    void init(const SkPMColor* colors, int count);
 
     void inval16BitCache();
 

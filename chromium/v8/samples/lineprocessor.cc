@@ -25,14 +25,15 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <v8.h>
+#include <include/v8.h>
 
-#include <v8-debug.h>
+#include <include/libplatform/libplatform.h>
+#include <include/v8-debug.h>
 
 #include <fcntl.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 /**
  * This sample program should demonstrate certain aspects of debugging
@@ -254,8 +255,13 @@ bool RunCppCycle(v8::Handle<v8::Script> script,
 
 int main(int argc, char* argv[]) {
   v8::V8::InitializeICU();
+  v8::Platform* platform = v8::platform::CreateDefaultPlatform();
+  v8::V8::InitializePlatform(platform);
+  v8::V8::Initialize();
   int result = RunMain(argc, argv);
   v8::V8::Dispose();
+  v8::V8::ShutdownPlatform();
+  delete platform;
   return result;
 }
 
@@ -300,7 +306,7 @@ void ReportException(v8::Isolate* isolate, v8::TryCatch* try_catch) {
     printf("%s\n", exception_string);
   } else {
     // Print (filename):(line number): (message).
-    v8::String::Utf8Value filename(message->GetScriptResourceName());
+    v8::String::Utf8Value filename(message->GetScriptOrigin().ResourceName());
     const char* filename_string = ToCString(filename);
     int linenum = message->GetLineNumber();
     printf("%s:%i: %s\n", filename_string, linenum, exception_string);

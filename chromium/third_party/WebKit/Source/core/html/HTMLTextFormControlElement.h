@@ -27,12 +27,11 @@
 
 #include "core/html/HTMLFormControlElementWithState.h"
 
-namespace WebCore {
+namespace blink {
 
 class ExceptionState;
 class Position;
 class Range;
-class RenderTextControl;
 class VisiblePosition;
 
 enum TextFieldSelectionDirection { SelectionHasNoDirection, SelectionHasForwardDirection, SelectionHasBackwardDirection };
@@ -40,15 +39,23 @@ enum TextFieldEventBehavior { DispatchNoEvent, DispatchChangeEvent, DispatchInpu
 
 class HTMLTextFormControlElement : public HTMLFormControlElementWithState {
 public:
-    // Common flag for HTMLInputElement::tooLong() and HTMLTextAreaElement::tooLong().
+    // Common flag for HTMLInputElement::tooLong(), HTMLTextAreaElement::tooLong(),
+    // HTMLInputElement::tooShort() and HTMLTextAreaElement::tooShort().
     enum NeedsToCheckDirtyFlag {CheckDirtyFlag, IgnoreDirtyFlag};
+    // Option of setSelectionRange.
+    enum SelectionOption {
+        ChangeSelection,
+        ChangeSelectionAndFocus,
+        ChangeSelectionIfFocused,
+        NotChangeSelection
+    };
 
     virtual ~HTMLTextFormControlElement();
 
     void forwardEvent(Event*);
 
 
-    virtual InsertionNotificationRequest insertedInto(ContainerNode*) OVERRIDE;
+    virtual InsertionNotificationRequest insertedInto(ContainerNode*) override;
 
     // The derived class should return true if placeholder processing is needed.
     virtual bool supportsPlaceholder() const = 0;
@@ -69,10 +76,10 @@ public:
     virtual void setRangeText(const String& replacement, ExceptionState&);
     virtual void setRangeText(const String& replacement, unsigned start, unsigned end, const String& selectionMode, ExceptionState&);
     void setSelectionRange(int start, int end, const String& direction);
-    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection);
+    void setSelectionRange(int start, int end, TextFieldSelectionDirection = SelectionHasNoDirection, SelectionOption = ChangeSelection);
     PassRefPtrWillBeRawPtr<Range> selection() const;
 
-    virtual void dispatchFormControlChangeEvent() OVERRIDE FINAL;
+    virtual void dispatchFormControlChangeEvent() override final;
 
     virtual String value() const = 0;
 
@@ -87,12 +94,20 @@ public:
 
     void setTextAsOfLastFormControlChangeEvent(const String& text) { m_textAsOfLastFormControlChangeEvent = text; }
 
+    // These functions don't cause synchronous layout and SpellChecker uses
+    // them to improve performance.
+    // Passed |Position| must point inside of a text form control.
+    static Position startOfWord(const Position&);
+    static Position endOfWord(const Position&);
+    static Position startOfSentence(const Position&);
+    static Position endOfSentence(const Position&);
+
 protected:
     HTMLTextFormControlElement(const QualifiedName&, Document&, HTMLFormElement*);
     bool isPlaceholderEmpty() const;
     virtual void updatePlaceholderText() = 0;
 
-    virtual void parseAttribute(const QualifiedName&, const AtomicString&) OVERRIDE;
+    virtual void parseAttribute(const QualifiedName&, const AtomicString&) override;
 
     void cacheSelection(int start, int end, TextFieldSelectionDirection direction)
     {
@@ -104,7 +119,7 @@ protected:
 
     void restoreCachedSelection();
 
-    virtual void defaultEventHandler(Event*) OVERRIDE;
+    virtual void defaultEventHandler(Event*) override;
     virtual void subtreeHasChanged() = 0;
 
     void setLastChangeWasNotUserEdit() { m_lastChangeWasUserEdit = false; }
@@ -118,8 +133,8 @@ private:
     int computeSelectionEnd() const;
     TextFieldSelectionDirection computeSelectionDirection() const;
 
-    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) OVERRIDE FINAL;
-    virtual void dispatchBlurEvent(Element* newFocusedElement) OVERRIDE FINAL;
+    virtual void dispatchFocusEvent(Element* oldFocusedElement, FocusType) override final;
+    virtual void dispatchBlurEvent(Element* newFocusedElement) override final;
 
     // Returns true if user-editable value is empty. Used to check placeholder visibility.
     virtual bool isEmptyValue() const = 0;

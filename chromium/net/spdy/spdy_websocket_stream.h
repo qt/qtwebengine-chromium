@@ -60,7 +60,7 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
 
   SpdyWebSocketStream(const base::WeakPtr<SpdySession>& spdy_session,
                       Delegate* delegate);
-  virtual ~SpdyWebSocketStream();
+  ~SpdyWebSocketStream() override;
 
   // Initializes SPDY stream for the WebSocket.
   // It might create SPDY stream asynchronously.  In this case, this method
@@ -75,12 +75,12 @@ class NET_EXPORT_PRIVATE SpdyWebSocketStream
   void Close();
 
   // SpdyStream::Delegate
-  virtual void OnRequestHeadersSent() OVERRIDE;
-  virtual SpdyResponseHeadersStatus OnResponseHeadersUpdated(
-      const SpdyHeaderBlock& response_headers) OVERRIDE;
-  virtual void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) OVERRIDE;
-  virtual void OnDataSent() OVERRIDE;
-  virtual void OnClose(int status) OVERRIDE;
+  void OnRequestHeadersSent() override;
+  SpdyResponseHeadersStatus OnResponseHeadersUpdated(
+      const SpdyHeaderBlock& response_headers) override;
+  void OnDataReceived(scoped_ptr<SpdyBuffer> buffer) override;
+  void OnDataSent() override;
+  void OnClose(int status) override;
 
  private:
   friend class SpdyWebSocketStreamTest;

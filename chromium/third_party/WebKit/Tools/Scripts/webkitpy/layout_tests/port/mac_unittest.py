@@ -26,7 +26,7 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import webkitpy.thirdparty.unittest2 as unittest
+import unittest
 
 from webkitpy.layout_tests.port import mac
 from webkitpy.layout_tests.port import port_testcase
@@ -37,6 +37,7 @@ class MacPortTest(port_testcase.PortTestCase):
     os_name = 'mac'
     os_version = 'snowleopard'
     port_name = 'mac'
+    full_port_name = 'mac-snowleopard'
     port_maker = mac.MacPort
 
     def assert_name(self, port_name, os_version_string, expected):

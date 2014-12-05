@@ -5,60 +5,87 @@
 #ifndef CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 #define CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_
 
-#import <Cocoa/Cocoa.h>
-#include <IOSurface/IOSurfaceAPI.h>
+#include <vector>
 
-#include "base/mac/scoped_nsobject.h"
 #include "cc/output/software_frame_data.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
-#include "content/browser/renderer_host/software_layer_mac.h"
 #include "skia/ext/platform_canvas.h"
 #include "ui/compositor/compositor.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace content {
-class BrowserCompositorViewMacHelper;
+
+class BrowserCompositorCALayerTreeMac;
+
+// The interface through which BrowserCompositorViewMac calls back into
+// RenderWidgetHostViewMac (or any other structure that wishes to draw a
+// NSView backed by a ui::Compositor).
+// TODO(ccameron): This interface should be in the ui namespace.
+class BrowserCompositorViewMacClient {
+ public:
+  // Drawing is usually throttled by the rate at which CoreAnimation draws
+  // frames to the screen. This can be used to disable throttling.
+  virtual bool BrowserCompositorViewShouldAckImmediately() const = 0;
+
+  // Called when a frame is drawn, and used to pass latency info back to the
+  // renderer (if any).
+  virtual void BrowserCompositorViewFrameSwapped(
+      const std::vector<ui::LatencyInfo>& latency_info) = 0;
+};
+
+// The class to hold the ui::Compositor which is used to draw a NSView.
+// TODO(ccameron): This should implement an interface in the ui namespace.
+class BrowserCompositorViewMac {
+ public:
+  // This will install the NSView which is drawn by the ui::Compositor into
+  // the NSView provided by the client. Note that |client|, |native_view|, and
+  // |ui_root_layer| outlive their BrowserCompositorViewMac object.
+  BrowserCompositorViewMac(
+      BrowserCompositorViewMacClient* client,
+      NSView* native_view,
+      ui::Layer* ui_root_layer);
+  ~BrowserCompositorViewMac();
+
+  BrowserCompositorViewMacClient* client() const { return client_; }
+  NSView* native_view() const { return native_view_; }
+  ui::Layer* ui_root_layer() const { return ui_root_layer_; }
+
+  // The ui::Compositor being used to render the NSView.
+  // TODO(ccameron): This should be in the ui namespace interface.
+  ui::Compositor* GetCompositor() const;
+
+  // Return true if the last frame swapped has a size in DIP of |dip_size|.
+  bool HasFrameOfSize(const gfx::Size& dip_size) const;
+
+  // Mark a bracket in which new frames are pumped in a restricted nested run
+  // loop because the the target window is resizing or because the view is being
+  // shown after previously being hidden.
+  void BeginPumpingFrames();
+  void EndPumpingFrames();
+
+ private:
+  BrowserCompositorViewMacClient* client_;
+  NSView* native_view_;
+  ui::Layer* ui_root_layer_;
+
+  // Because a ui::Compositor is expensive in terms of resources and
+  // re-allocating a ui::Compositor is expensive in terms of work, this class
+  // is largely used to manage recycled instances of
+  // BrowserCompositorCALayerTreeMac, which actually has a ui::Compositor
+  // instance and modifies the CALayers used to draw the NSView.
+  scoped_ptr<BrowserCompositorCALayerTreeMac> ca_layer_tree_;
+};
+
+// A class to keep around whenever a BrowserCompositorViewMac may be created.
+// While at least one instance of this class exists, a spare
+// BrowserCompositorViewCocoa will be kept around to be recycled so that the
+// next BrowserCompositorViewMac to be created will be be created quickly.
+class BrowserCompositorViewPlaceholderMac {
+ public:
+  BrowserCompositorViewPlaceholderMac();
+  ~BrowserCompositorViewPlaceholderMac();
+};
+
 }  // namespace content
-
-// Additions to the NSView interface for compositor frames.
-@interface NSView (BrowserCompositorView)
-- (void)gotAcceleratedIOSurfaceFrame:(IOSurfaceID)surface_handle
-                 withOutputSurfaceID:(int)surface_id
-                       withPixelSize:(gfx::Size)pixel_size
-                     withScaleFactor:(float)scale_factor;
-
-- (void)gotSoftwareFrame:(cc::SoftwareFrameData*)frame_data
-         withScaleFactor:(float)scale_factor
-              withCanvas:(SkCanvas*)canvas;
-@end  // NSView (BrowserCompositorView)
-
-// NSView drawn by a ui::Compositor. The superview of this view is responsible
-// for changing the ui::Compositor SizeAndScale and calling layoutLayers when
-// the size of the parent view may change. This interface is patterned after
-// the needs of RenderWidgetHostViewCocoa, and could change.
-@interface BrowserCompositorViewMac : NSView {
-  scoped_ptr<ui::Compositor> compositor_;
-
-  base::scoped_nsobject<CALayer> background_layer_;
-  base::scoped_nsobject<CompositingIOSurfaceLayer> accelerated_layer_;
-  int accelerated_layer_output_surface_id_;
-  base::scoped_nsobject<SoftwareLayer> software_layer_;
-
-  scoped_ptr<content::BrowserCompositorViewMacHelper> helper_;
-}
-
-// Initialize to render the content of a specific superview.
-- (id)initWithSuperview:(NSView*)view;
-
-// Re-position the layers to the correct place when this view's superview
-// changes size, or when the accelerated or software content changes.
-- (void)layoutLayers;
-
-// Disallow further access to the client.
-- (void)resetClient;
-
-// Access the underlying ui::Compositor for this view.
-- (ui::Compositor*)compositor;
-@end  // BrowserCompositorViewMac
 
 #endif  // CONTENT_BROWSER_COMPOSITOR_BROWSER_COMPOSITOR_VIEW_MAC_H_

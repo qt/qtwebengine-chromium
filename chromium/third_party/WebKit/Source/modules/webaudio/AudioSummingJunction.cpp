@@ -32,26 +32,36 @@
 #include "modules/webaudio/AudioNodeOutput.h"
 #include <algorithm>
 
-using namespace std;
-
-namespace WebCore {
+namespace blink {
 
 AudioSummingJunction::AudioSummingJunction(AudioContext* context)
     : m_context(context)
     , m_renderingStateNeedUpdating(false)
+    , m_didCallDispose(false)
 {
+    ASSERT(context);
+    m_context->registerLiveAudioSummingJunction(*this);
+}
+
+void AudioSummingJunction::dispose()
+{
+    m_didCallDispose = true;
+    m_context->removeMarkedSummingJunction(this);
 }
 
 AudioSummingJunction::~AudioSummingJunction()
 {
-    if (m_renderingStateNeedUpdating && m_context.get())
-        m_context->removeMarkedSummingJunction(this);
+}
+
+void AudioSummingJunction::trace(Visitor* visitor)
+{
+    visitor->trace(m_context);
 }
 
 void AudioSummingJunction::changedOutputs()
 {
     ASSERT(context()->isGraphOwner());
-    if (!m_renderingStateNeedUpdating && canUpdateState()) {
+    if (!m_renderingStateNeedUpdating && !m_didCallDispose) {
         context()->markSummingJunctionDirty(this);
         m_renderingStateNeedUpdating = true;
     }
@@ -60,8 +70,7 @@ void AudioSummingJunction::changedOutputs()
 void AudioSummingJunction::updateRenderingState()
 {
     ASSERT(context()->isAudioThread() && context()->isGraphOwner());
-
-    if (m_renderingStateNeedUpdating && canUpdateState()) {
+    if (m_renderingStateNeedUpdating) {
         // Copy from m_outputs to m_renderingOutputs.
         m_renderingOutputs.resize(m_outputs.size());
         unsigned j = 0;
@@ -77,6 +86,6 @@ void AudioSummingJunction::updateRenderingState()
     }
 }
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // ENABLE(WEB_AUDIO)

@@ -30,28 +30,34 @@
 
 namespace webrtc {
 
+static const int kPacketLogIntervalMs = 10000;
+
 ViEReceiver::ViEReceiver(const int32_t channel_id,
                          VideoCodingModule* module_vcm,
                          RemoteBitrateEstimator* remote_bitrate_estimator,
                          RtpFeedback* rtp_feedback)
     : receive_cs_(CriticalSectionWrapper::CreateCriticalSection()),
+      clock_(Clock::GetRealTimeClock()),
       rtp_header_parser_(RtpHeaderParser::Create()),
-      rtp_payload_registry_(new RTPPayloadRegistry(
-          RTPPayloadStrategy::CreateStrategy(false))),
-      rtp_receiver_(RtpReceiver::CreateVideoReceiver(
-          channel_id, Clock::GetRealTimeClock(), this, rtp_feedback,
-          rtp_payload_registry_.get())),
-      rtp_receive_statistics_(ReceiveStatistics::Create(
-          Clock::GetRealTimeClock())),
+      rtp_payload_registry_(
+          new RTPPayloadRegistry(RTPPayloadStrategy::CreateStrategy(false))),
+      rtp_receiver_(
+          RtpReceiver::CreateVideoReceiver(channel_id,
+                                           clock_,
+                                           this,
+                                           rtp_feedback,
+                                           rtp_payload_registry_.get())),
+      rtp_receive_statistics_(ReceiveStatistics::Create(clock_)),
       fec_receiver_(FecReceiver::Create(this)),
       rtp_rtcp_(NULL),
       vcm_(module_vcm),
       remote_bitrate_estimator_(remote_bitrate_estimator),
-      ntp_estimator_(new RemoteNtpTimeEstimator(Clock::GetRealTimeClock())),
+      ntp_estimator_(new RemoteNtpTimeEstimator(clock_)),
       rtp_dump_(NULL),
       receiving_(false),
       restored_packet_in_use_(false),
-      receiving_ast_enabled_(false) {
+      receiving_ast_enabled_(false),
+      last_packet_log_ms_(-1) {
   assert(remote_bitrate_estimator);
 }
 
@@ -193,7 +199,8 @@ bool ViEReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
     return false;
   }
   header.payload_type_frequency = kVideoPayloadTypeFrequency;
-  return ReceivePacket(rtp_packet, rtp_packet_length, header, false);
+  bool in_order = IsPacketInOrder(header);
+  return ReceivePacket(rtp_packet, rtp_packet_length, header, in_order);
 }
 
 void ViEReceiver::ReceivedBWEPacket(
@@ -228,10 +235,29 @@ int ViEReceiver::InsertRTPPacket(const uint8_t* rtp_packet,
   }
   int payload_length = rtp_packet_length - header.headerLength;
   int64_t arrival_time_ms;
+  int64_t now_ms = clock_->TimeInMilliseconds();
   if (packet_time.timestamp != -1)
     arrival_time_ms = (packet_time.timestamp + 500) / 1000;
   else
-    arrival_time_ms = TickTime::MillisecondTimestamp();
+    arrival_time_ms = now_ms;
+
+  {
+    // Periodically log the RTP header of incoming packets.
+    CriticalSectionScoped cs(receive_cs_.get());
+    if (now_ms - last_packet_log_ms_ > kPacketLogIntervalMs) {
+      std::stringstream ss;
+      ss << "Packet received on SSRC: " << header.ssrc << " with payload type: "
+         << static_cast<int>(header.payloadType) << ", timestamp: "
+         << header.timestamp << ", sequence number: " << header.sequenceNumber
+         << ", arrival time: " << arrival_time_ms;
+      if (header.extension.hasTransmissionTimeOffset)
+        ss << ", toffset: " << header.extension.transmissionTimeOffset;
+      if (header.extension.hasAbsoluteSendTime)
+        ss << ", abs send time: " << header.extension.absoluteSendTime;
+      LOG(LS_INFO) << ss.str();
+      last_packet_log_ms_ = now_ms;
+    }
+  }
 
   remote_bitrate_estimator_->IncomingPacket(arrival_time_ms,
                                             payload_length, header);
@@ -337,7 +363,21 @@ int ViEReceiver::InsertRTCPPacket(const uint8_t* rtcp_packet,
     return ret;
   }
 
-  ntp_estimator_->UpdateRtcpTimestamp(rtp_receiver_->SSRC(), rtp_rtcp_);
+  uint16_t rtt = 0;
+  rtp_rtcp_->RTT(rtp_receiver_->SSRC(), &rtt, NULL, NULL, NULL);
+  if (rtt == 0) {
+    // Waiting for valid rtt.
+    return 0;
+  }
+  uint32_t ntp_secs = 0;
+  uint32_t ntp_frac = 0;
+  uint32_t rtp_timestamp = 0;
+  if (0 != rtp_rtcp_->RemoteNTP(&ntp_secs, &ntp_frac, NULL, NULL,
+                                &rtp_timestamp)) {
+    // Waiting for RTCP.
+    return 0;
+  }
+  ntp_estimator_->UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
 
   return 0;
 }

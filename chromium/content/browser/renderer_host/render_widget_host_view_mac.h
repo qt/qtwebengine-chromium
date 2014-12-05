@@ -19,7 +19,7 @@
 #include "base/time/time.h"
 #include "content/browser/compositor/browser_compositor_view_mac.h"
 #include "content/browser/compositor/delegated_frame_host.h"
-#include "content/browser/renderer_host/compositing_iosurface_layer_mac.h"
+#include "content/browser/compositor/io_surface_layer_mac.h"
 #include "content/browser/renderer_host/display_link_mac.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/software_frame_manager.h"
@@ -30,12 +30,11 @@
 #include "ipc/ipc_sender.h"
 #include "third_party/WebKit/public/web/WebCompositionUnderline.h"
 #include "ui/base/cocoa/base_view.h"
-
-struct ViewHostMsg_TextInputState_Params;
+#include "ui/base/cocoa/remote_layer_api.h"
+#include "ui/gfx/display_observer.h"
 
 namespace content {
-class CompositingIOSurfaceMac;
-class CompositingIOSurfaceContext;
+class BrowserCompositorviewMac;
 class RenderWidgetHostViewMac;
 class RenderWidgetHostViewMacEditCommandHelper;
 class WebContents;
@@ -46,11 +45,8 @@ class Compositor;
 class Layer;
 }
 
-@class BrowserCompositorViewMac;
-@class CompositingIOSurfaceLayer;
 @class FullscreenWindowManager;
 @protocol RenderWidgetHostViewMacDelegate;
-@class SoftwareLayer;
 @class ToolTip;
 
 @protocol RenderWidgetHostViewMacOwner
@@ -71,7 +67,6 @@ class Layer;
   base::scoped_nsobject<NSObject<RenderWidgetHostViewMacDelegate>>
       responderDelegate_;
   BOOL canBeKeyView_;
-  BOOL takesFocusOnlyOnMouseDown_;
   BOOL closeOnDeactivate_;
   scoped_ptr<content::RenderWidgetHostViewMacEditCommandHelper>
       editCommand_helper_;
@@ -153,14 +148,6 @@ class Layer;
   // Event monitor for scroll wheel end event.
   id endWheelMonitor_;
 
-  // OpenGL Support:
-
-  // recursive globalFrameDidChange protection:
-  BOOL handlingGlobalFrameDidChange_;
-
-  // The scale factor of the display this view is in.
-  float deviceScaleFactor_;
-
   // If true then escape key down events are suppressed until the first escape
   // key up event. (The up event is suppressed as well). This is used by the
   // flash fullscreen code to avoid sending a key up event without a matching
@@ -172,7 +159,6 @@ class Layer;
 @property(nonatomic, readonly) BOOL suppressNextEscapeKeyUp;
 
 - (void)setCanBeKeyView:(BOOL)can;
-- (void)setTakesFocusOnlyOnMouseDown:(BOOL)b;
 - (void)setCloseOnDeactivate:(BOOL)b;
 - (void)setToolTipAtMousePoint:(NSString *)string;
 // True for always-on-top special windows (e.g. Balloons and Panels).
@@ -215,15 +201,20 @@ class RenderWidgetHostImpl;
 class CONTENT_EXPORT RenderWidgetHostViewMac
     : public RenderWidgetHostViewBase,
       public DelegatedFrameHostClient,
+      public BrowserCompositorViewMacClient,
       public IPC::Sender,
-      public SoftwareFrameManagerClient,
-      public CompositingIOSurfaceLayerClient {
+      public gfx::DisplayObserver {
  public:
   // The view will associate itself with the given widget. The native view must
   // be hooked up immediately to the view hierarchy, or else when it is
   // deleted it will delete this out from under the caller.
-  explicit RenderWidgetHostViewMac(RenderWidgetHost* widget);
-  virtual ~RenderWidgetHostViewMac();
+  //
+  // When |is_guest_view_hack| is true, this view isn't really the view for
+  // the |widget|, a RenderWidgetHostViewGuest is.
+  // TODO(lazyboy): Remove |is_guest_view_hack| once BrowserPlugin has migrated
+  // to use RWHVChildFrame (http://crbug.com/330264).
+  RenderWidgetHostViewMac(RenderWidgetHost* widget, bool is_guest_view_hack);
+  ~RenderWidgetHostViewMac() override;
 
   RenderWidgetHostViewCocoa* cocoa_view() const { return cocoa_view_; }
 
@@ -232,120 +223,107 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // |delegate| should be set at most once.
   CONTENT_EXPORT void SetDelegate(
     NSObject<RenderWidgetHostViewMacDelegate>* delegate);
-  void SetAllowOverlappingViews(bool overlapping);
+  void SetAllowPauseForResizeOrRepaint(bool allow);
 
   // RenderWidgetHostView implementation.
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void InitAsChild(gfx::NativeView parent_view) OVERRIDE;
-  virtual RenderWidgetHost* GetRenderWidgetHost() const OVERRIDE;
-  virtual void SetSize(const gfx::Size& size) OVERRIDE;
-  virtual void SetBounds(const gfx::Rect& rect) OVERRIDE;
-  virtual gfx::NativeView GetNativeView() const OVERRIDE;
-  virtual gfx::NativeViewId GetNativeViewId() const OVERRIDE;
-  virtual gfx::NativeViewAccessible GetNativeViewAccessible() OVERRIDE;
-  virtual bool HasFocus() const OVERRIDE;
-  virtual bool IsSurfaceAvailableForCopy() const OVERRIDE;
-  virtual void Show() OVERRIDE;
-  virtual void Hide() OVERRIDE;
-  virtual bool IsShowing() OVERRIDE;
-  virtual gfx::Rect GetViewBounds() const OVERRIDE;
-  virtual void SetShowingContextMenu(bool showing) OVERRIDE;
-  virtual void SetActive(bool active) OVERRIDE;
-  virtual void SetTakesFocusOnlyOnMouseDown(bool flag) OVERRIDE;
-  virtual void SetWindowVisibility(bool visible) OVERRIDE;
-  virtual void WindowFrameChanged() OVERRIDE;
-  virtual void ShowDefinitionForSelection() OVERRIDE;
-  virtual bool SupportsSpeech() const OVERRIDE;
-  virtual void SpeakSelection() OVERRIDE;
-  virtual bool IsSpeaking() const OVERRIDE;
-  virtual void StopSpeaking() OVERRIDE;
-  virtual void SetBackgroundOpaque(bool opaque) OVERRIDE;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void InitAsChild(gfx::NativeView parent_view) override;
+  RenderWidgetHost* GetRenderWidgetHost() const override;
+  void SetSize(const gfx::Size& size) override;
+  void SetBounds(const gfx::Rect& rect) override;
+  gfx::Vector2dF GetLastScrollOffset() const override;
+  gfx::NativeView GetNativeView() const override;
+  gfx::NativeViewId GetNativeViewId() const override;
+  gfx::NativeViewAccessible GetNativeViewAccessible() override;
+  bool HasFocus() const override;
+  bool IsSurfaceAvailableForCopy() const override;
+  void Show() override;
+  void Hide() override;
+  bool IsShowing() override;
+  gfx::Rect GetViewBounds() const override;
+  void SetShowingContextMenu(bool showing) override;
+  void SetActive(bool active) override;
+  void SetWindowVisibility(bool visible) override;
+  void WindowFrameChanged() override;
+  void ShowDefinitionForSelection() override;
+  bool SupportsSpeech() const override;
+  void SpeakSelection() override;
+  bool IsSpeaking() const override;
+  void StopSpeaking() override;
+  void SetBackgroundColor(SkColor color) override;
 
   // Implementation of RenderWidgetHostViewBase.
-  virtual void InitAsPopup(RenderWidgetHostView* parent_host_view,
-                           const gfx::Rect& pos) OVERRIDE;
-  virtual void InitAsFullscreen(
-      RenderWidgetHostView* reference_host_view) OVERRIDE;
-  virtual void WasShown() OVERRIDE;
-  virtual void WasHidden() OVERRIDE;
-  virtual void MovePluginWindows(
-      const std::vector<WebPluginGeometry>& moves) OVERRIDE;
-  virtual void Focus() OVERRIDE;
-  virtual void Blur() OVERRIDE;
-  virtual void UpdateCursor(const WebCursor& cursor) OVERRIDE;
-  virtual void SetIsLoading(bool is_loading) OVERRIDE;
-  virtual void TextInputStateChanged(
-      const ViewHostMsg_TextInputState_Params& params) OVERRIDE;
-  virtual void ImeCancelComposition() OVERRIDE;
-  virtual void ImeCompositionRangeChanged(
+  void InitAsPopup(RenderWidgetHostView* parent_host_view,
+                   const gfx::Rect& pos) override;
+  void InitAsFullscreen(RenderWidgetHostView* reference_host_view) override;
+  void WasShown() override;
+  void WasHidden() override;
+  void MovePluginWindows(const std::vector<WebPluginGeometry>& moves) override;
+  void Focus() override;
+  void Blur() override;
+  void UpdateCursor(const WebCursor& cursor) override;
+  void SetIsLoading(bool is_loading) override;
+  void TextInputTypeChanged(ui::TextInputType type,
+                            ui::TextInputMode input_mode,
+                            bool can_compose_inline,
+                            int flags) override;
+  void ImeCancelComposition() override;
+  void ImeCompositionRangeChanged(
       const gfx::Range& range,
-      const std::vector<gfx::Rect>& character_bounds) OVERRIDE;
-  virtual void RenderProcessGone(base::TerminationStatus status,
-                                 int error_code) OVERRIDE;
-  virtual void Destroy() OVERRIDE;
-  virtual void SetTooltipText(const base::string16& tooltip_text) OVERRIDE;
-  virtual void SelectionChanged(const base::string16& text,
-                                size_t offset,
-                                const gfx::Range& range) OVERRIDE;
-  virtual void SelectionBoundsChanged(
-      const ViewHostMsg_SelectionBounds_Params& params) OVERRIDE;
-  virtual void ScrollOffsetChanged() OVERRIDE;
-  virtual void CopyFromCompositingSurface(
+      const std::vector<gfx::Rect>& character_bounds) override;
+  void RenderProcessGone(base::TerminationStatus status,
+                         int error_code) override;
+  void RenderWidgetHostGone() override;
+  void Destroy() override;
+  void SetTooltipText(const base::string16& tooltip_text) override;
+  void SelectionChanged(const base::string16& text,
+                        size_t offset,
+                        const gfx::Range& range) override;
+  void SelectionBoundsChanged(
+      const ViewHostMsg_SelectionBounds_Params& params) override;
+  void CopyFromCompositingSurface(
       const gfx::Rect& src_subrect,
       const gfx::Size& dst_size,
       const base::Callback<void(bool, const SkBitmap&)>& callback,
-      SkBitmap::Config config) OVERRIDE;
-  virtual void CopyFromCompositingSurfaceToVideoFrame(
+      SkColorType color_type) override;
+  void CopyFromCompositingSurfaceToVideoFrame(
       const gfx::Rect& src_subrect,
       const scoped_refptr<media::VideoFrame>& target,
-      const base::Callback<void(bool)>& callback) OVERRIDE;
-  virtual bool CanCopyToVideoFrame() const OVERRIDE;
-  virtual bool CanSubscribeFrame() const OVERRIDE;
-  virtual void BeginFrameSubscription(
-      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) OVERRIDE;
-  virtual void EndFrameSubscription() OVERRIDE;
-  virtual void OnSwapCompositorFrame(
-      uint32 output_surface_id, scoped_ptr<cc::CompositorFrame> frame) OVERRIDE;
-  virtual void AcceleratedSurfaceInitialized(int host_id,
-                                             int route_id) OVERRIDE;
-  virtual void CreateBrowserAccessibilityManagerIfNeeded() OVERRIDE;
-  virtual gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds)
-      OVERRIDE;
-  virtual void OnAccessibilitySetFocus(int acc_obj_id) OVERRIDE;
-  virtual void AccessibilityShowMenu(int acc_obj_id) OVERRIDE;
-  virtual bool PostProcessEventForPluginIme(
-      const NativeWebKeyboardEvent& event) OVERRIDE;
+      const base::Callback<void(bool)>& callback) override;
+  bool CanCopyToVideoFrame() const override;
+  bool CanSubscribeFrame() const override;
+  void BeginFrameSubscription(
+      scoped_ptr<RenderWidgetHostViewFrameSubscriber> subscriber) override;
+  void EndFrameSubscription() override;
+  void OnSwapCompositorFrame(uint32 output_surface_id,
+                             scoped_ptr<cc::CompositorFrame> frame) override;
+  BrowserAccessibilityManager* CreateBrowserAccessibilityManager(
+      BrowserAccessibilityDelegate* delegate) override;
+  gfx::Point AccessibilityOriginInScreen(const gfx::Rect& bounds) override;
+  void AccessibilityShowMenu(const gfx::Point& point) override;
+  bool PostProcessEventForPluginIme(
+      const NativeWebKeyboardEvent& event) override;
 
-  virtual void AcceleratedSurfaceBuffersSwapped(
-      const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfacePostSubBuffer(
-      const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params,
-      int gpu_host_id) OVERRIDE;
-  virtual void AcceleratedSurfaceSuspend() OVERRIDE;
-  virtual void AcceleratedSurfaceRelease() OVERRIDE;
-  virtual bool HasAcceleratedSurface(const gfx::Size& desired_size) OVERRIDE;
-  virtual void GetScreenInfo(blink::WebScreenInfo* results) OVERRIDE;
-  virtual gfx::Rect GetBoundsInRootWindow() OVERRIDE;
-  virtual gfx::GLSurfaceHandle GetCompositingSurface() OVERRIDE;
+  bool HasAcceleratedSurface(const gfx::Size& desired_size) override;
+  void GetScreenInfo(blink::WebScreenInfo* results) override;
+  gfx::Rect GetBoundsInRootWindow() override;
+  gfx::GLSurfaceHandle GetCompositingSurface() override;
 
-  virtual bool LockMouse() OVERRIDE;
-  virtual void UnlockMouse() OVERRIDE;
-  virtual void WheelEventAck(const blink::WebMouseWheelEvent& event,
-                             InputEventAckState ack_result) OVERRIDE;
+  bool LockMouse() override;
+  void UnlockMouse() override;
+  void WheelEventAck(const blink::WebMouseWheelEvent& event,
+                     InputEventAckState ack_result) override;
 
   // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  bool Send(IPC::Message* message) override;
 
-  // SoftwareFrameManagerClient implementation:
-  virtual void SoftwareFrameWasFreed(
-      uint32 output_surface_id, unsigned frame_id) OVERRIDE;
-  virtual void ReleaseReferencesToSoftwareFrame() OVERRIDE;
+  SkColorType PreferredReadbackFormat() override;
 
-  virtual SkBitmap::Config PreferredReadbackFormat() OVERRIDE;
-
-  // CompositingIOSurfaceLayerClient implementation.
-  virtual void AcceleratedLayerDidDrawFrame(bool succeeded) OVERRIDE;
+  // gfx::DisplayObserver implementation.
+  void OnDisplayAdded(const gfx::Display& new_display) override;
+  void OnDisplayRemoved(const gfx::Display& old_display) override;
+  void OnDisplayMetricsChanged(const gfx::Display& display,
+                               uint32_t metrics) override;
 
   // Forwards the mouse event to the renderer.
   void ForwardMouseEvent(const blink::WebMouseEvent& event);
@@ -358,26 +336,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void PluginImeCompositionCompleted(const base::string16& text, int plugin_id);
 
   const std::string& selected_text() const { return selected_text_; }
-
-  // Update the IOSurface to be drawn and call setNeedsDisplay on
-  // |cocoa_view_|.
-  void CompositorSwapBuffers(IOSurfaceID surface_handle,
-                             const gfx::Size& size,
-                             float scale_factor,
-                             const std::vector<ui::LatencyInfo>& latency_info);
-
-  // Called when a GPU error is detected. Posts a task to destroy all
-  // compositing state.
-  void GotAcceleratedCompositingError();
-
-  // Sets the overlay view, which should be drawn in the same IOSurface
-  // atop of this view, if both views are drawing accelerated content.
-  // Overlay is stored as a weak ptr.
-  void SetOverlayView(RenderWidgetHostViewMac* overlay,
-                      const gfx::Point& offset);
-
-  // Removes the previously set overlay view.
-  void RemoveOverlayView();
 
   // Returns true and stores first rectangle for character range if the
   // requested |range| is already cached, otherwise returns false.
@@ -417,30 +375,52 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   bool can_compose_inline_;
 
   // The background CoreAnimation layer which is hosted by |cocoa_view_|.
-  // The compositing or software layers will be added as sublayers to this.
   base::scoped_nsobject<CALayer> background_layer_;
 
-  // The CoreAnimation layer for software compositing. This should be NULL
-  // when software compositing is not in use.
-  base::scoped_nsobject<SoftwareLayer> software_layer_;
-
-  // Accelerated compositing structures. These may be dynamically created and
-  // destroyed together in Create/DestroyCompositedIOSurfaceAndLayer.
-  base::scoped_nsobject<CompositingIOSurfaceLayer> compositing_iosurface_layer_;
-  scoped_refptr<CompositingIOSurfaceMac> compositing_iosurface_;
-  scoped_refptr<CompositingIOSurfaceContext> compositing_iosurface_context_;
+  // The state of |delegated_frame_host_| and |browser_compositor_view_| to
+  // manage being visible, hidden, or occluded.
+  enum BrowserCompositorViewState {
+    // Effects:
+    // - |browser_compositor_view_| exists and |delegated_frame_host_| is
+    //    visible.
+    // Happens when:
+    // - |render_widet_host_| is in the visible state (this includes when
+    //   the tab isn't visible, but tab capture is enabled).
+    BrowserCompositorActive,
+    // Effects:
+    // - |browser_compositor_view_| exists, but |delegated_frame_host_| has
+    //   been hidden.
+    // Happens when:
+    // - The |render_widget_host_| is hidden, but |cocoa_view_| is still in the
+    //   NSWindow hierarchy.
+    // - This happens when |cocoa_view_| is hidden (minimized, on another
+    //   occluded by other windows, etc). The |browser_compositor_view_| and
+    //   its CALayers are kept around so that we will have content to show when
+    //   we are un-occluded.
+    BrowserCompositorSuspended,
+    // Effects:
+    // - |browser_compositor_view_| has been destroyed and
+    //   |delegated_frame_host_| has been hidden.
+    // Happens when:
+    // - The |render_widget_host_| is hidden or dead, and |cocoa_view_| is not
+    //   attached to a NSWindow.
+    // - This happens for backgrounded tabs.
+    BrowserCompositorDestroyed,
+  };
+  BrowserCompositorViewState browser_compositor_state_;
 
   // Delegated frame management and compositior.
-  base::scoped_nsobject<BrowserCompositorViewMac> browser_compositor_view_;
   scoped_ptr<DelegatedFrameHost> delegated_frame_host_;
   scoped_ptr<ui::Layer> root_layer_;
 
-  // This holds the current software compositing framebuffer, if any.
-  scoped_ptr<SoftwareFrameManager> software_frame_manager_;
+  // Container for the CALayer tree drawn by the browser compositor.
+  scoped_ptr<BrowserCompositorViewMac> browser_compositor_view_;
 
-  // Latency info to send back when the next frame appears on the
-  // screen.
-  std::vector<ui::LatencyInfo> pending_latency_info_;
+  // Placeholder that is allocated while browser_compositor_view_ is NULL,
+  // indicating that a BrowserCompositorViewMac may be allocated. This is to
+  // help in recycling the internals of BrowserCompositorViewMac.
+  scoped_ptr<BrowserCompositorViewPlaceholderMac>
+      browser_compositor_view_placeholder_;
 
   NSWindow* pepper_fullscreen_window() const {
     return pepper_fullscreen_window_;
@@ -450,10 +430,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
 
   RenderWidgetHostViewMac* fullscreen_parent_host_view() const {
     return fullscreen_parent_host_view_;
-  }
-
-  RenderWidgetHostViewFrameSubscriber* frame_subscriber() const {
-    return frame_subscriber_.get();
   }
 
   int window_number() const;
@@ -467,52 +443,30 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Ensure that the display link is associated with the correct display.
   void UpdateDisplayLink();
 
-  // The scale factor of the backing store. Note that this is updated based on
-  // ViewScaleFactor with some delay.
-  float backing_store_scale_factor_;
-
-  void AddPendingLatencyInfo(
-      const std::vector<ui::LatencyInfo>& latency_info);
-  void SendPendingLatencyInfoToHost();
-
-  void SendPendingSwapAck();
-
   void PauseForPendingResizeOrRepaintsAndDraw();
 
-  // The geometric arrangement of the layers depends on cocoa_view's size, the
-  // compositing IOSurface's rounded size, and the software frame size. Update
-  // all of them using this function when any of those parameters changes. Also
-  // update the scale factor of the layers.
-  void LayoutLayers();
-
   // DelegatedFrameHostClient implementation.
-  virtual ui::Compositor* GetCompositor() const OVERRIDE;
-  virtual ui::Layer* GetLayer() OVERRIDE;
-  virtual RenderWidgetHostImpl* GetHost() OVERRIDE;
-  virtual void SchedulePaintInRect(
-      const gfx::Rect& damage_rect_in_dip) OVERRIDE;
-  virtual bool IsVisible() OVERRIDE;
-  virtual scoped_ptr<ResizeLock> CreateResizeLock(
-      bool defer_compositor_lock) OVERRIDE;
-  virtual gfx::Size DesiredFrameSize() OVERRIDE;
-  virtual float CurrentDeviceScaleFactor() OVERRIDE;
-  virtual gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) OVERRIDE;
-  virtual DelegatedFrameHost* GetDelegatedFrameHost() const OVERRIDE;
+  ui::Compositor* GetCompositor() const override;
+  ui::Layer* GetLayer() override;
+  RenderWidgetHostImpl* GetHost() override;
+  bool IsVisible() override;
+  scoped_ptr<ResizeLock> CreateResizeLock(bool defer_compositor_lock) override;
+  gfx::Size DesiredFrameSize() override;
+  float CurrentDeviceScaleFactor() override;
+  gfx::Size ConvertViewSizeToPixel(const gfx::Size& size) override;
+  DelegatedFrameHost* GetDelegatedFrameHost() const override;
+
+  // BrowserCompositorViewMacClient implementation.
+  bool BrowserCompositorViewShouldAckImmediately() const override;
+  void BrowserCompositorViewFrameSwapped(
+      const std::vector<ui::LatencyInfo>& latency_info) override;
+
+  // Transition from being in the Suspended state to being in the Destroyed
+  // state, if appropriate (see BrowserCompositorViewState for details).
+  void DestroySuspendedBrowserCompositorViewIfNeeded();
 
  private:
   friend class RenderWidgetHostViewMacTest;
-
-  struct PendingSwapAck {
-    PendingSwapAck(int32 route_id, int gpu_host_id, int32 renderer_id)
-        : route_id(route_id),
-          gpu_host_id(gpu_host_id),
-          renderer_id(renderer_id) {}
-    int32 route_id;
-    int gpu_host_id;
-    int32 renderer_id;
-  };
-  scoped_ptr<PendingSwapAck> pending_swap_ack_;
-  void AddPendingSwapAck(int32 route_id, int gpu_host_id, int32 renderer_id);
 
   // Returns whether this render view is a popup (autocomplete window).
   bool IsPopup() const;
@@ -521,37 +475,26 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // invoke it from the message loop.
   void ShutdownHost();
 
-  void EnsureSoftwareLayer();
-  void DestroySoftwareLayer();
+  // Tear down all components of the browser compositor in an order that will
+  // ensure no dangling references.
+  void ShutdownBrowserCompositor();
 
-  bool EnsureCompositedIOSurface() WARN_UNUSED_RESULT;
-  void EnsureCompositedIOSurfaceLayer();
-  enum DestroyCompositedIOSurfaceLayerBehavior {
-    kLeaveLayerInHierarchy,
-    kRemoveLayerFromHierarchy,
-  };
-  void DestroyCompositedIOSurfaceLayer(
-      DestroyCompositedIOSurfaceLayerBehavior destroy_layer_behavior);
-  void DestroyCompositedIOSurfaceAndLayer();
-
-  void DestroyCompositingStateOnError();
-
-  // Called when a GPU SwapBuffers is received.
-  void GotAcceleratedFrame();
-
-  // Called when a software DIB is received.
-  void GotSoftwareFrame();
+  // The state of the the browser compositor and delegated frame host. See
+  // BrowserCompositorViewState for details.
+  void EnsureBrowserCompositorView();
+  void SuspendBrowserCompositorView();
+  void DestroyBrowserCompositorView();
 
   // IPC message handlers.
   void OnPluginFocusChanged(bool focused, int plugin_id);
   void OnStartPluginIme();
-
-  // Convert |rect| from the views coordinate (upper-left origin) into
-  // the OpenGL coordinate (lower-left origin) and scale for HiDPI displays.
-  gfx::Rect GetScaledOpenGLPixelRect(const gfx::Rect& rect);
+  void OnGetRenderedTextCompleted(const std::string& text);
 
   // Send updated vsync parameters to the renderer.
   void SendVSyncParametersToRenderer();
+
+  // Dispatches a TTS session.
+  void SpeakText(const std::string& text);
 
   // The associated view. This is weak and is inserted into the view hierarchy
   // to own this RenderWidgetHostViewMac object. Set to nil at the start of the
@@ -561,8 +504,18 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Indicates if the page is loading.
   bool is_loading_;
 
+  // Whether it's allowed to pause waiting for a new frame.
+  bool allow_pause_for_resize_or_repaint_;
+
+  // The last scroll offset of the view.
+  gfx::Vector2dF last_scroll_offset_;
+
   // The text to be shown in the tooltip, supplied by the renderer.
   base::string16 tooltip_text_;
+
+  // True when this view acts as a platform view hack for a
+  // RenderWidgetHostViewGuest.
+  bool is_guest_view_hack_;
 
   // Factory used to safely scope delayed calls to ShutdownHost().
   base::WeakPtrFactory<RenderWidgetHostViewMac> weak_factory_;
@@ -579,22 +532,13 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // Our parent host view, if this is fullscreen.  NULL otherwise.
   RenderWidgetHostViewMac* fullscreen_parent_host_view_;
 
-  // The overlay view which is rendered above this one in the same
-  // accelerated IOSurface.
-  // Overlay view has |underlay_view_| set to this view.
-  base::WeakPtr<RenderWidgetHostViewMac> overlay_view_;
-
-  // The underlay view which this view is rendered above in the same
-  // accelerated IOSurface.
-  // Underlay view has |overlay_view_| set to this view.
-  base::WeakPtr<RenderWidgetHostViewMac> underlay_view_;
-
-  // Factory used to safely reference overlay view set in SetOverlayView.
-  base::WeakPtrFactory<RenderWidgetHostViewMac>
-      overlay_view_weak_factory_;
-
   // Display link for getting vsync info.
   scoped_refptr<DisplayLinkMac> display_link_;
+
+  // The current VSync timebase and interval. This is zero until the first call
+  // to SendVSyncParametersToRenderer(), and refreshed regularly thereafter.
+  base::TimeTicks vsync_timebase_;
+  base::TimeDelta vsync_interval_;
 
   // The current composition character range and its bounds.
   gfx::Range composition_range_;
@@ -603,11 +547,6 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   // The current caret bounds.
   gfx::Rect caret_rect_;
 
-  // Subscriber that listens to frame presentation events.
-  scoped_ptr<RenderWidgetHostViewFrameSubscriber> frame_subscriber_;
-
-  base::WeakPtrFactory<RenderWidgetHostViewMac>
-      software_frame_weak_ptr_factory_;
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewMac);
 };
 

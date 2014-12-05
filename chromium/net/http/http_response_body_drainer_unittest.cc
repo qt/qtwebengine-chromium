@@ -16,6 +16,7 @@
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/http/http_stream.h"
+#include "net/http/transport_security_state.h"
 #include "net/proxy/proxy_service.h"
 #include "net/ssl/ssl_config_service_defaults.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -73,59 +74,56 @@ class MockHttpStream : public HttpStream {
         is_last_chunk_zero_size_(false),
         is_complete_(false),
         weak_factory_(this) {}
-  virtual ~MockHttpStream() {}
+  ~MockHttpStream() override {}
 
   // HttpStream implementation.
-  virtual int InitializeStream(const HttpRequestInfo* request_info,
-                               RequestPriority priority,
-                               const BoundNetLog& net_log,
-                               const CompletionCallback& callback) OVERRIDE {
+  int InitializeStream(const HttpRequestInfo* request_info,
+                       RequestPriority priority,
+                       const BoundNetLog& net_log,
+                       const CompletionCallback& callback) override {
     return ERR_UNEXPECTED;
   }
-  virtual int SendRequest(const HttpRequestHeaders& request_headers,
-                          HttpResponseInfo* response,
-                          const CompletionCallback& callback) OVERRIDE {
+  int SendRequest(const HttpRequestHeaders& request_headers,
+                  HttpResponseInfo* response,
+                  const CompletionCallback& callback) override {
     return ERR_UNEXPECTED;
   }
-  virtual UploadProgress GetUploadProgress() const OVERRIDE {
-    return UploadProgress();
-  }
-  virtual int ReadResponseHeaders(const CompletionCallback& callback) OVERRIDE {
+  UploadProgress GetUploadProgress() const override { return UploadProgress(); }
+  int ReadResponseHeaders(const CompletionCallback& callback) override {
     return ERR_UNEXPECTED;
   }
 
-  virtual bool CanFindEndOfResponse() const OVERRIDE { return true; }
-  virtual bool IsConnectionReused() const OVERRIDE { return false; }
-  virtual void SetConnectionReused() OVERRIDE {}
-  virtual bool IsConnectionReusable() const OVERRIDE { return false; }
-  virtual int64 GetTotalReceivedBytes() const OVERRIDE { return 0; }
-  virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE {}
-  virtual void GetSSLCertRequestInfo(
-      SSLCertRequestInfo* cert_request_info) OVERRIDE {}
+  bool CanFindEndOfResponse() const override { return true; }
+  bool IsConnectionReused() const override { return false; }
+  void SetConnectionReused() override {}
+  bool IsConnectionReusable() const override { return false; }
+  int64 GetTotalReceivedBytes() const override { return 0; }
+  void GetSSLInfo(SSLInfo* ssl_info) override {}
+  void GetSSLCertRequestInfo(SSLCertRequestInfo* cert_request_info) override {}
 
   // Mocked API
-  virtual int ReadResponseBody(IOBuffer* buf, int buf_len,
-                               const CompletionCallback& callback) OVERRIDE;
-  virtual void Close(bool not_reusable) OVERRIDE {
+  int ReadResponseBody(IOBuffer* buf,
+                       int buf_len,
+                       const CompletionCallback& callback) override;
+  void Close(bool not_reusable) override {
     CHECK(!closed_);
     closed_ = true;
     result_waiter_->set_result(not_reusable);
   }
 
-  virtual HttpStream* RenewStreamForAuth() OVERRIDE {
-    return NULL;
+  HttpStream* RenewStreamForAuth() override { return NULL; }
+
+  bool IsResponseBodyComplete() const override { return is_complete_; }
+
+  bool IsSpdyHttpStream() const override { return false; }
+
+  bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override {
+    return false;
   }
 
-  virtual bool IsResponseBodyComplete() const OVERRIDE { return is_complete_; }
+  void Drain(HttpNetworkSession*) override {}
 
-  virtual bool IsSpdyHttpStream() const OVERRIDE { return false; }
-
-  virtual bool GetLoadTimingInfo(
-      LoadTimingInfo* load_timing_info) const OVERRIDE { return false; }
-
-  virtual void Drain(HttpNetworkSession*) OVERRIDE {}
-
-  virtual void SetPriority(RequestPriority priority) OVERRIDE {}
+  void SetPriority(RequestPriority priority) override {}
 
   // Methods to tweak/observer mock behavior:
   void set_stall_reads_forever() { stall_reads_forever_ = true; }
@@ -210,23 +208,26 @@ class HttpResponseBodyDrainerTest : public testing::Test {
       : proxy_service_(ProxyService::CreateDirect()),
         ssl_config_service_(new SSLConfigServiceDefaults),
         http_server_properties_(new HttpServerPropertiesImpl()),
+        transport_security_state_(new TransportSecurityState()),
         session_(CreateNetworkSession()),
         mock_stream_(new MockHttpStream(&result_waiter_)),
         drainer_(new HttpResponseBodyDrainer(mock_stream_)) {}
 
-  virtual ~HttpResponseBodyDrainerTest() {}
+  ~HttpResponseBodyDrainerTest() override {}
 
   HttpNetworkSession* CreateNetworkSession() const {
     HttpNetworkSession::Params params;
     params.proxy_service = proxy_service_.get();
     params.ssl_config_service = ssl_config_service_.get();
     params.http_server_properties = http_server_properties_->GetWeakPtr();
+    params.transport_security_state = transport_security_state_.get();
     return new HttpNetworkSession(params);
   }
 
   scoped_ptr<ProxyService> proxy_service_;
   scoped_refptr<SSLConfigService> ssl_config_service_;
   scoped_ptr<HttpServerPropertiesImpl> http_server_properties_;
+  scoped_ptr<TransportSecurityState> transport_security_state_;
   const scoped_refptr<HttpNetworkSession> session_;
   CloseResultWaiter result_waiter_;
   MockHttpStream* const mock_stream_;  // Owned by |drainer_|.

@@ -34,10 +34,10 @@
 #include "platform/graphics/Canvas2DLayerBridge.h"
 #include "platform/graphics/ImageBufferSurface.h"
 
-namespace WebCore {
+namespace blink {
 
 // This shim necessary because ImageBufferSurfaces are not allowed to be RefCounted
-class Canvas2DImageBufferSurface FINAL : public ImageBufferSurface {
+class Canvas2DImageBufferSurface final : public ImageBufferSurface {
 public:
     Canvas2DImageBufferSurface(const IntSize& size, OpacityMode opacityMode = NonOpaque, int msaaSampleCount = 1)
         : ImageBufferSurface(size, opacityMode)
@@ -53,20 +53,22 @@ public:
     }
 
     // ImageBufferSurface implementation
-    virtual void willUse() OVERRIDE { m_layerBridge->willUse(); }
-    virtual SkCanvas* canvas() const OVERRIDE { return m_layerBridge->canvas(); }
-    virtual bool isValid() const OVERRIDE { return m_layerBridge && m_layerBridge->checkSurfaceValid(); }
-    virtual bool restore() OVERRIDE { return m_layerBridge->restoreSurface(); }
-    virtual blink::WebLayer* layer() const OVERRIDE { return m_layerBridge->layer(); }
-    virtual Platform3DObject getBackingTexture() const OVERRIDE { return m_layerBridge->getBackingTexture(); }
-    virtual bool isAccelerated() const OVERRIDE { return m_layerBridge->isAccelerated(); }
-    virtual void setIsHidden(bool hidden) OVERRIDE { m_layerBridge->setIsHidden(hidden); }
-    virtual void setImageBuffer(ImageBuffer* imageBuffer) OVERRIDE { m_layerBridge->setImageBuffer(imageBuffer); }
+    virtual void finalizeFrame(const FloatRect &dirtyRect) override { m_layerBridge->finalizeFrame(dirtyRect); }
+    virtual void willAccessPixels() override { m_layerBridge->willAccessPixels(); }
+    virtual SkCanvas* canvas() const override { return m_layerBridge->canvas(); }
+    virtual bool isValid() const override { return m_layerBridge && m_layerBridge->checkSurfaceValid(); }
+    virtual bool restore() override { return m_layerBridge->restoreSurface(); }
+    virtual WebLayer* layer() const override { return m_layerBridge->layer(); }
+    virtual Platform3DObject getBackingTexture() const override { return m_layerBridge->getBackingTexture(); }
+    virtual bool isAccelerated() const override { return m_layerBridge->isAccelerated(); }
+    virtual void setIsHidden(bool hidden) override { m_layerBridge->setIsHidden(hidden); }
+    virtual void setImageBuffer(ImageBuffer* imageBuffer) override { m_layerBridge->setImageBuffer(imageBuffer); }
 
+    virtual PassRefPtr<SkImage> newImageSnapshot() const override { return m_layerBridge->newImageSnapshot(); }
 private:
     RefPtr<Canvas2DLayerBridge> m_layerBridge;
 };
 
-}
+} // namespace blink
 
 #endif

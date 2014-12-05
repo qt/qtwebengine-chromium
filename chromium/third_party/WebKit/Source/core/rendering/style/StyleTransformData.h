@@ -25,12 +25,12 @@
 #ifndef StyleTransformData_h
 #define StyleTransformData_h
 
-#include "platform/Length.h"
+#include "core/rendering/style/TransformOrigin.h"
 #include "platform/transforms/TransformOperations.h"
 #include "wtf/PassRefPtr.h"
 #include "wtf/RefCounted.h"
 
-namespace WebCore {
+namespace blink {
 
 class StyleTransformData : public RefCounted<StyleTransformData> {
 public:
@@ -44,15 +44,13 @@ public:
     }
 
     TransformOperations m_operations;
-    Length m_x;
-    Length m_y;
-    float m_z;
+    TransformOrigin m_origin;
 
 private:
     StyleTransformData();
     StyleTransformData(const StyleTransformData&);
 };
 
-} // namespace WebCore
+} // namespace blink
 
 #endif // StyleTransformData_h

@@ -9,28 +9,20 @@
 #include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
 
 #include <string.h>
-#include <set>
 #include <string>
 #include <utility>
 
 #include "base/compiler_specific.h"
 
-#include "native_client/src/include/checked_cast.h"
 #include "native_client/src/include/portability_io.h"
 #include "native_client/src/include/portability_string.h"
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/nacl_scoped_ptr.h"
-#include "native_client/src/include/nacl_string.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_sync.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/shared/platform/nacl_sync_raii.h"
-#include "native_client/src/shared/platform/scoped_ptr_refcount.h"
-#include "native_client/src/trusted/desc/nacl_desc_imc.h"
-// remove when we no longer need to cast the DescWrapper below.
-#include "native_client/src/trusted/desc/nacl_desc_io.h"
-#include "native_client/src/trusted/desc/nrd_xfer.h"
 #include "native_client/src/trusted/nonnacl_util/sel_ldr_launcher.h"
 
 #include "native_client/src/public/imc_types.h"
@@ -51,150 +43,19 @@
 
 namespace plugin {
 
-class OpenManifestEntryAsyncCallback {
- public:
-  OpenManifestEntryAsyncCallback(PP_OpenResourceCompletionCallback callback,
-                                 void* callback_user_data)
-      : callback_(callback), callback_user_data_(callback_user_data) {
-  }
-
-  ~OpenManifestEntryAsyncCallback() {
-    if (callback_)
-      callback_(callback_user_data_, PP_kInvalidFileHandle);
-  }
-
-  void Run(int32_t pp_error) {
-#if defined(OS_WIN)
-    // Currently, this is used only for non-SFI mode, and now the mode is not
-    // supported on windows.
-    // TODO(hidehiko): Support it on Windows when we switch to use
-    // ManifestService also in SFI-mode.
-    NACL_NOTREACHED();
-#elif defined(OS_POSIX)
-    // On posix, PlatformFile is the file descriptor.
-    callback_(callback_user_data_, (pp_error == PP_OK) ? info_.desc : -1);
-    callback_ = NULL;
-#endif
-  }
-
-  NaClFileInfo* mutable_info() { return &info_; }
-
- private:
-  NaClFileInfo info_;
-  PP_OpenResourceCompletionCallback callback_;
-  void* callback_user_data_;
-  DISALLOW_COPY_AND_ASSIGN(OpenManifestEntryAsyncCallback);
-};
-
-namespace {
-
-class ManifestService {
- public:
-  ManifestService(nacl::WeakRefAnchor* anchor,
-                  PluginReverseInterface* plugin_reverse)
-      : anchor_(anchor),
-        plugin_reverse_(plugin_reverse) {
-  }
-
-  ~ManifestService() {
-    anchor_->Unref();
-  }
-
-  bool Quit() {
-    delete this;
-    return false;
-  }
-
-  bool StartupInitializationComplete() {
-    // Release this instance if the ServiceRuntime is already destructed.
-    if (anchor_->is_abandoned()) {
-      delete this;
-      return false;
-    }
-
-    plugin_reverse_->StartupInitializationComplete();
-    return true;
-  }
-
-  bool OpenResource(const char* entry_key,
-                    PP_OpenResourceCompletionCallback callback,
-                    void* callback_user_data) {
-    // Release this instance if the ServiceRuntime is already destructed.
-    if (anchor_->is_abandoned()) {
-      callback(callback_user_data, PP_kInvalidFileHandle);
-      delete this;
-      return false;
-    }
-
-    OpenManifestEntryAsyncCallback* open_manifest_callback =
-        new OpenManifestEntryAsyncCallback(callback, callback_user_data);
-    plugin_reverse_->OpenManifestEntryAsync(
-        entry_key,
-        open_manifest_callback->mutable_info(),
-        open_manifest_callback);
-    return true;
-  }
-
-  static PP_Bool QuitTrampoline(void* user_data) {
-    return PP_FromBool(static_cast<ManifestService*>(user_data)->Quit());
-  }
-
-  static PP_Bool StartupInitializationCompleteTrampoline(void* user_data) {
-    return PP_FromBool(static_cast<ManifestService*>(user_data)->
-                       StartupInitializationComplete());
-  }
-
-  static PP_Bool OpenResourceTrampoline(
-      void* user_data,
-      const char* entry_key,
-      PP_OpenResourceCompletionCallback callback,
-      void* callback_user_data) {
-    return PP_FromBool(static_cast<ManifestService*>(user_data)->OpenResource(
-        entry_key, callback, callback_user_data));
-  }
-
- private:
-  // Weak reference to check if plugin_reverse is legally accessible or not.
-  nacl::WeakRefAnchor* anchor_;
-  PluginReverseInterface* plugin_reverse_;
-
-  DISALLOW_COPY_AND_ASSIGN(ManifestService);
-};
-
-// Vtable to pass functions to LaunchSelLdr.
-const PPP_ManifestService kManifestServiceVTable = {
-  &ManifestService::QuitTrampoline,
-  &ManifestService::StartupInitializationCompleteTrampoline,
-  &ManifestService::OpenResourceTrampoline,
-};
-
-}  // namespace
-
 OpenManifestEntryResource::~OpenManifestEntryResource() {
-  MaybeRunCallback(PP_ERROR_ABORTED);
-}
-
-void OpenManifestEntryResource::MaybeRunCallback(int32_t pp_error) {
-  if (!callback)
-    return;
-
-  callback->Run(pp_error);
-  delete callback;
-  callback = NULL;
 }
 
 PluginReverseInterface::PluginReverseInterface(
     nacl::WeakRefAnchor* anchor,
-    Plugin* plugin,
+    PP_Instance pp_instance,
     ServiceRuntime* service_runtime,
-    pp::CompletionCallback init_done_cb,
-    pp::CompletionCallback crash_cb)
+    pp::CompletionCallback init_done_cb)
       : anchor_(anchor),
-        plugin_(plugin),
+        pp_instance_(pp_instance),
         service_runtime_(service_runtime),
         shutting_down_(false),
-        init_done_cb_(init_done_cb),
-        crash_cb_(crash_cb) {
+        init_done_cb_(init_done_cb) {
   NaClXMutexCtor(&mu_);
   NaClXCondVarCtor(&cv_);
 }
@@ -212,10 +73,9 @@ void PluginReverseInterface::ShutDown() {
   NaClLog(4, "PluginReverseInterface::Shutdown: broadcasted, exiting\n");
 }
 
-void PluginReverseInterface::DoPostMessage(nacl::string message) {
-  std::string full_message = std::string("DEBUG_POSTMESSAGE:") + message;
-  GetNaClInterface()->PostMessageToJavaScript(plugin_->pp_instance(),
-                                              full_message.c_str());
+void PluginReverseInterface::DoPostMessage(std::string message) {
+  // This feature is no longer used.
+  // TODO(teravest): Remove this once this is gone from nacl::ReverseInterface.
 }
 
 void PluginReverseInterface::StartupInitializationComplete() {
@@ -235,15 +95,25 @@ void PluginReverseInterface::StartupInitializationComplete() {
 // TODO(bsy): OpenManifestEntry should use the manifest to ResolveKey
 // and invoke StreamAsFile with a completion callback that invokes
 // GetPOSIXFileDesc.
-bool PluginReverseInterface::OpenManifestEntry(nacl::string url_key,
+bool PluginReverseInterface::OpenManifestEntry(std::string url_key,
                                                struct NaClFileInfo* info) {
+  // This method should only ever be called from the PNaCl translator, as the
+  // IRT is not available there.
+  // TODO(teravest): Remove support for OpenManifestEntry here once
+  // crbug.com/302078 is resolved.
+  if (service_runtime_->main_service_runtime()) {
+    NaClLog(LOG_ERROR,
+            "OpenManifestEntry should only be used by PNaCl translator.\n");
+    return false;
+  }
+
   bool op_complete = false;  // NB: mu_ and cv_ also controls access to this!
   // The to_open object is owned by the weak ref callback. Because this function
   // waits for the callback to finish, the to_open object will be deallocated on
   // the main thread before this function can return. The pointers it contains
   // to stack variables will not leak.
   OpenManifestEntryResource* to_open =
-      new OpenManifestEntryResource(url_key, info, &op_complete, NULL);
+      new OpenManifestEntryResource(url_key, info, &op_complete);
   CHECK(to_open != NULL);
   NaClLog(4, "PluginReverseInterface::OpenManifestEntry: %s\n",
           url_key.c_str());
@@ -293,16 +163,6 @@ bool PluginReverseInterface::OpenManifestEntry(nacl::string url_key,
   return true;
 }
 
-void PluginReverseInterface::OpenManifestEntryAsync(
-    const nacl::string& entry_key,
-    struct NaClFileInfo* info,
-    OpenManifestEntryAsyncCallback* callback) {
-  bool op_complete = false;
-  OpenManifestEntryResource to_open(
-      entry_key, info, &op_complete, callback);
-  OpenManifestEntry_MainThreadContinuation(&to_open, PP_OK);
-}
-
 // Transfer point from OpenManifestEntry() which runs on the main thread
 // (Some PPAPI actions -- like StreamAsFile -- can only run on the main thread).
 // OpenManifestEntry() is waiting on a condvar for this continuation to
@@ -317,65 +177,21 @@ void PluginReverseInterface::OpenManifestEntry_MainThreadContinuation(
 
   NaClLog(4, "Entered OpenManifestEntry_MainThreadContinuation\n");
 
-  PP_Var pp_mapped_url;
-  PP_PNaClOptions pnacl_options = {PP_FALSE, PP_FALSE, 2};
-  if (!GetNaClInterface()->ManifestResolveKey(
-          plugin_->pp_instance(),
-          PP_FromBool(!service_runtime_->main_service_runtime()),
-          p->url.c_str(),
-          &pp_mapped_url,
-          &pnacl_options)) {
-    NaClLog(4, "OpenManifestEntry_MainThreadContinuation: ResolveKey failed\n");
-    // Failed, and error_info has the details on what happened.  Wake
-    // up requesting thread -- we are done.
-    {
-      nacl::MutexLocker take(&mu_);
-      *p->op_complete_ptr = true;  // done...
-      p->file_info->desc = -1;  // but failed.
-      NaClXCondVarBroadcast(&cv_);
-    }
-    p->MaybeRunCallback(PP_OK);
-    return;
-  }
-  nacl::string mapped_url = pp::Var(pp_mapped_url).AsString();
-  NaClLog(4,
-          "OpenManifestEntry_MainThreadContinuation: "
-          "ResolveKey: %s -> %s (pnacl_translate(%d))\n",
-          p->url.c_str(), mapped_url.c_str(), pnacl_options.translate);
-
-  if (pnacl_options.translate) {
-    // Requires PNaCl translation, but that's not supported.
-    NaClLog(4,
-            "OpenManifestEntry_MainThreadContinuation: "
-            "Requires PNaCl translation -- not supported\n");
-    {
-      nacl::MutexLocker take(&mu_);
-      *p->op_complete_ptr = true;  // done...
-      p->file_info->desc = -1;  // but failed.
-      NaClXCondVarBroadcast(&cv_);
-    }
-    p->MaybeRunCallback(PP_OK);
-    return;
-  }
-
   // Because p is owned by the callback of this invocation, so it is necessary
   // to create another instance.
   OpenManifestEntryResource* open_cont = new OpenManifestEntryResource(*p);
-  open_cont->url = mapped_url;
-  // Callback is now delegated from p to open_cont. So, here we manually clear
-  // complete callback.
-  p->callback = NULL;
-
   pp::CompletionCallback stream_cc = WeakRefNewCallback(
       anchor_,
       this,
       &PluginReverseInterface::StreamAsFile_MainThreadContinuation,
       open_cont);
 
-  GetNaClInterface()->DownloadFile(plugin_->pp_instance(),
-                                   mapped_url.c_str(),
-                                   &open_cont->pp_file_info,
-                                   stream_cc.pp_completion_callback());
+  GetNaClInterface()->OpenManifestEntry(
+      pp_instance_,
+      PP_FromBool(!service_runtime_->main_service_runtime()),
+      p->url.c_str(),
+      &open_cont->pp_file_info,
+      stream_cc.pp_completion_callback());
   // p is deleted automatically.
 }
 
@@ -403,173 +219,65 @@ void PluginReverseInterface::StreamAsFile_MainThreadContinuation(
     *p->op_complete_ptr = true;
     NaClXCondVarBroadcast(&cv_);
   }
-  p->MaybeRunCallback(PP_OK);
-}
-
-bool PluginReverseInterface::CloseManifestEntry(int32_t desc) {
-  // We don't take any action on a call to CloseManifestEntry today, so always
-  // return success.
-  return true;
 }
 
 void PluginReverseInterface::ReportCrash() {
-  NaClLog(4, "PluginReverseInterface::ReportCrash\n");
-
-  if (crash_cb_.pp_completion_callback().func != NULL) {
-    NaClLog(4, "PluginReverseInterface::ReportCrash: invoking CB\n");
-    pp::Module::Get()->core()->CallOnMainThread(0, crash_cb_, PP_OK);
-    // Clear the callback to avoid it gets invoked twice.
-    crash_cb_ = pp::CompletionCallback();
-  } else {
-    NaClLog(1,
-            "PluginReverseInterface::ReportCrash:"
-            " crash_cb_ not valid, skipping\n");
-  }
+  // This is now handled through Chromium IPC.
 }
 
 void PluginReverseInterface::ReportExitStatus(int exit_status) {
-  service_runtime_->set_exit_status(exit_status);
+  // We do nothing here; reporting exit status is handled through a separate
+  // embedder interface.
 }
 
 int64_t PluginReverseInterface::RequestQuotaForWrite(
-    nacl::string file_id, int64_t offset, int64_t bytes_to_write) {
+    std::string file_id, int64_t offset, int64_t bytes_to_write) {
   return bytes_to_write;
 }
 
-// Thin wrapper for the arguments of LoadNexeAndStart(), as WeakRefNewCallback
-// can take only one argument. Also, this dtor has the responsibility to invoke
-// callbacks on destruction.
-struct ServiceRuntime::LoadNexeAndStartData {
-  explicit LoadNexeAndStartData(const pp::CompletionCallback& callback)
-      : callback(callback) {
-  }
-
-  ~LoadNexeAndStartData() {
-    // We must call the callbacks here if they are not yet called, otherwise
-    // the resource would be leaked.
-    if (callback.pp_completion_callback().func)
-      callback.RunAndClear(PP_ERROR_ABORTED);
-  }
-
-  // On success path, this must be invoked manually. Otherwise the dtor would
-  // invoke callbacks with error code unexpectedly.
-  void Clear() {
-    callback = pp::CompletionCallback();
-  }
-
-  pp::CompletionCallback callback;
-};
-
 ServiceRuntime::ServiceRuntime(Plugin* plugin,
+                               PP_Instance pp_instance,
                                bool main_service_runtime,
                                bool uses_nonsfi_mode,
-                               pp::CompletionCallback init_done_cb,
-                               pp::CompletionCallback crash_cb)
+                               pp::CompletionCallback init_done_cb)
     : plugin_(plugin),
+      pp_instance_(pp_instance),
       main_service_runtime_(main_service_runtime),
       uses_nonsfi_mode_(uses_nonsfi_mode),
       reverse_service_(NULL),
       anchor_(new nacl::WeakRefAnchor()),
-      rev_interface_(new PluginReverseInterface(anchor_, plugin, this,
-                                                init_done_cb, crash_cb)),
+      rev_interface_(new PluginReverseInterface(anchor_, pp_instance, this,
+                                                init_done_cb)),
       start_sel_ldr_done_(false),
-      nexe_started_(false) {
+      start_nexe_done_(false),
+      nexe_started_ok_(false),
+      bootstrap_channel_(NACL_INVALID_HANDLE) {
   NaClSrpcChannelInitialize(&command_channel_);
   NaClXMutexCtor(&mu_);
   NaClXCondVarCtor(&cond_);
-}
-
-void ServiceRuntime::LoadNexeAndStartAfterLoadModule(
-    LoadNexeAndStartData* data, int32_t pp_error) {
-  if (pp_error != PP_OK) {
-    DidLoadNexeAndStart(data, pp_error);
-    return;
-  }
-
-  // Here, LoadModule is successfully done. So the remaining task is just
-  // calling StartModule(), here.
-  DidLoadNexeAndStart(data, StartModule() ? PP_OK : PP_ERROR_FAILED);
-}
-
-void ServiceRuntime::DidLoadNexeAndStart(
-    LoadNexeAndStartData* data, int32_t pp_error) {
-  if (pp_error == PP_OK) {
-    NaClLog(4, "ServiceRuntime::LoadNexeAndStart (success)\n");
-  } else {
-    // On a load failure the service runtime does not crash itself to
-    // avoid a race where the no-more-senders error on the reverse
-    // channel esrvice thread might cause the crash-detection logic to
-    // kick in before the start_module RPC reply has been received. So
-    // we induce a service runtime crash here. We do not release
-    // subprocess_ since it's needed to collect crash log output after
-    // the error is reported.
-    Log(LOG_FATAL, "reap logs");
-    if (NULL == reverse_service_) {
-      // No crash detector thread.
-      NaClLog(LOG_ERROR, "scheduling to get crash log\n");
-      // Invoking rev_interface's method is workaround to avoid crash_cb
-      // gets called twice or more. We should clean this up later.
-      rev_interface_->ReportCrash();
-      NaClLog(LOG_ERROR, "should fire soon\n");
-    } else {
-      NaClLog(LOG_ERROR, "Reverse service thread will pick up crash log\n");
-    }
-  }
-
-  pp::Module::Get()->core()->CallOnMainThread(0, data->callback, pp_error);
-
-  // Because the ownership of data is taken by caller, we must clear it
-  // manually here. Otherwise, its dtor invokes callbacks again.
-  data->Clear();
 }
 
 bool ServiceRuntime::SetupCommandChannel() {
   NaClLog(4, "ServiceRuntime::SetupCommand (this=%p, subprocess=%p)\n",
           static_cast<void*>(this),
           static_cast<void*>(subprocess_.get()));
+  // Set up the bootstrap channel in our subprocess so that we can establish
+  // SRPC.
+  subprocess_->set_channel(bootstrap_channel_);
+
+  if (uses_nonsfi_mode_) {
+    // In non-SFI mode, no SRPC is used. Just skips and returns success.
+    return true;
+  }
+
   if (!subprocess_->SetupCommand(&command_channel_)) {
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
-                           "ServiceRuntime: command channel creation failed");
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
+                         "ServiceRuntime: command channel creation failed");
+    ReportLoadError(error_info);
     return false;
   }
   return true;
-}
-
-void ServiceRuntime::LoadModule(PP_NaClFileInfo file_info,
-                                pp::CompletionCallback callback) {
-  NaClFileInfo nacl_file_info;
-  nacl_file_info.desc = ConvertFileDescriptor(file_info.handle, true);
-  nacl_file_info.file_token.lo = file_info.token_lo;
-  nacl_file_info.file_token.hi = file_info.token_hi;
-  NaClDesc* desc = NaClDescIoFromFileInfo(nacl_file_info, O_RDONLY);
-  if (desc == NULL) {
-    DidLoadModule(callback, PP_ERROR_FAILED);
-    return;
-  }
-
-  // We don't use a scoped_ptr here since we would immediately release the
-  // DescWrapper to LoadModule().
-  nacl::DescWrapper* wrapper =
-      plugin_->wrapper_factory()->MakeGenericCleanup(desc);
-
-  // TODO(teravest, hidehiko): Replace this by Chrome IPC.
-  bool result = subprocess_->LoadModule(&command_channel_, wrapper);
-  DidLoadModule(callback, result ? PP_OK : PP_ERROR_FAILED);
-}
-
-void ServiceRuntime::DidLoadModule(pp::CompletionCallback callback,
-                                   int32_t pp_error) {
-  if (pp_error != PP_OK) {
-    ErrorInfo error_info;
-    error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_CMD_CHANNEL,
-                         "ServiceRuntime: load module failed");
-    plugin_->ReportLoadError(error_info);
-  }
-  callback.Run(pp_error);
 }
 
 bool ServiceRuntime::InitReverseService() {
@@ -587,12 +295,10 @@ bool ServiceRuntime::InitReverseService() {
                                 &out_conn_cap);
 
   if (NACL_SRPC_RESULT_OK != rpc_result) {
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SETUP,
-                           "ServiceRuntime: reverse setup rpc failed");
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SETUP,
+                         "ServiceRuntime: reverse setup rpc failed");
+    ReportLoadError(error_info);
     return false;
   }
   //  Get connection capability to service runtime where the IMC
@@ -602,24 +308,20 @@ bool ServiceRuntime::InitReverseService() {
   nacl::DescWrapper* conn_cap = plugin_->wrapper_factory()->MakeGenericCleanup(
       out_conn_cap);
   if (conn_cap == NULL) {
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_WRAPPER,
-                           "ServiceRuntime: wrapper allocation failure");
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_WRAPPER,
+                         "ServiceRuntime: wrapper allocation failure");
+    ReportLoadError(error_info);
     return false;
   }
   out_conn_cap = NULL;  // ownership passed
   NaClLog(4, "ServiceRuntime::InitReverseService: starting reverse service\n");
   reverse_service_ = new nacl::ReverseService(conn_cap, rev_interface_->Ref());
   if (!reverse_service_->Start()) {
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SERVICE,
-                           "ServiceRuntime: starting reverse services failed");
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(PP_NACL_ERROR_SEL_LDR_COMMUNICATION_REV_SERVICE,
+                         "ServiceRuntime: starting reverse services failed");
+    ReportLoadError(error_info);
     return false;
   }
   return true;
@@ -641,12 +343,10 @@ bool ServiceRuntime::StartModule() {
                                   &load_status);
 
     if (NACL_SRPC_RESULT_OK != rpc_result) {
-      if (main_service_runtime_) {
-        ErrorInfo error_info;
-        error_info.SetReport(PP_NACL_ERROR_SEL_LDR_START_MODULE,
-                             "ServiceRuntime: could not start nacl module");
-        plugin_->ReportLoadError(error_info);
-      }
+      ErrorInfo error_info;
+      error_info.SetReport(PP_NACL_ERROR_SEL_LDR_START_MODULE,
+                           "ServiceRuntime: could not start nacl module");
+      ReportLoadError(error_info);
       return false;
     }
   }
@@ -655,19 +355,17 @@ bool ServiceRuntime::StartModule() {
   if (main_service_runtime_) {
     if (load_status < 0 || load_status > NACL_ERROR_CODE_MAX)
       load_status = LOAD_STATUS_UNKNOWN;
-    GetNaClInterface()->ReportSelLdrStatus(plugin_->pp_instance(),
+    GetNaClInterface()->ReportSelLdrStatus(pp_instance_,
                                            load_status,
                                            NACL_ERROR_CODE_MAX);
   }
 
   if (LOAD_OK != load_status) {
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(
-          PP_NACL_ERROR_SEL_LDR_START_STATUS,
-          NaClErrorString(static_cast<NaClErrorCode>(load_status)));
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(
+        PP_NACL_ERROR_SEL_LDR_START_STATUS,
+        NaClErrorString(static_cast<NaClErrorCode>(load_status)));
+    ReportLoadError(error_info);
     return false;
   }
   return true;
@@ -681,35 +379,28 @@ void ServiceRuntime::StartSelLdr(const SelLdrStartParams& params,
       tmp_subprocess(new SelLdrLauncherChrome());
   if (NULL == tmp_subprocess.get()) {
     NaClLog(LOG_ERROR, "ServiceRuntime::Start (subprocess create failed)\n");
-    if (main_service_runtime_) {
-      ErrorInfo error_info;
-      error_info.SetReport(
-          PP_NACL_ERROR_SEL_LDR_CREATE_LAUNCHER,
-          "ServiceRuntime: failed to create sel_ldr launcher");
-      plugin_->ReportLoadError(error_info);
-    }
+    ErrorInfo error_info;
+    error_info.SetReport(
+        PP_NACL_ERROR_SEL_LDR_CREATE_LAUNCHER,
+        "ServiceRuntime: failed to create sel_ldr launcher");
+    ReportLoadError(error_info);
     pp::Module::Get()->core()->CallOnMainThread(0, callback, PP_ERROR_FAILED);
     return;
   }
 
-  ManifestService* manifest_service =
-      new ManifestService(anchor_->Ref(), rev_interface_);
   bool enable_dev_interfaces =
-      GetNaClInterface()->DevInterfacesEnabled(plugin_->pp_instance());
+      GetNaClInterface()->DevInterfacesEnabled(pp_instance_);
 
-  tmp_subprocess->Start(plugin_->pp_instance(),
-                        main_service_runtime_,
-                        params.url.c_str(),
-                        params.uses_irt,
-                        params.uses_ppapi,
-                        uses_nonsfi_mode_,
-                        enable_dev_interfaces,
-                        params.enable_dyncode_syscalls,
-                        params.enable_exception_handling,
-                        params.enable_crash_throttling,
-                        &kManifestServiceVTable,
-                        manifest_service,
-                        callback);
+  GetNaClInterface()->LaunchSelLdr(
+      pp_instance_,
+      PP_FromBool(main_service_runtime_),
+      params.url.c_str(),
+      &params.file_info,
+      PP_FromBool(uses_nonsfi_mode_),
+      PP_FromBool(enable_dev_interfaces),
+      params.process_type,
+      &bootstrap_channel_,
+      callback.pp_completion_callback());
   subprocess_.reset(tmp_subprocess.release());
 }
 
@@ -745,41 +436,62 @@ void ServiceRuntime::SignalStartSelLdrDone() {
   NaClXCondVarSignal(&cond_);
 }
 
-void ServiceRuntime::WaitForNexeStart() {
+bool ServiceRuntime::WaitForNexeStart() {
   nacl::MutexLocker take(&mu_);
-  while (!nexe_started_)
+  while (!start_nexe_done_)
     NaClXCondVarWait(&cond_, &mu_);
-  // Reset nexe_started_ here in case we run again.
-  nexe_started_ = false;
+  return nexe_started_ok_;
 }
 
-void ServiceRuntime::SignalNexeStarted() {
+void ServiceRuntime::SignalNexeStarted(bool ok) {
   nacl::MutexLocker take(&mu_);
-  nexe_started_ = true;
+  start_nexe_done_ = true;
+  nexe_started_ok_ = ok;
   NaClXCondVarSignal(&cond_);
 }
 
-void ServiceRuntime::LoadNexeAndStart(PP_NaClFileInfo file_info,
-                                      const pp::CompletionCallback& callback) {
-  NaClLog(4, "ServiceRuntime::LoadNexeAndStart (handle_valid=%d "
-             "token_lo=%" NACL_PRIu64 " token_hi=%" NACL_PRIu64 ")\n",
-      file_info.handle != PP_kInvalidFileHandle,
-      file_info.token_lo,
-      file_info.token_hi);
-
-  nacl::scoped_ptr<LoadNexeAndStartData> data(
-      new LoadNexeAndStartData(callback));
-  if (!SetupCommandChannel() || !InitReverseService()) {
-    DidLoadNexeAndStart(data.get(), PP_ERROR_FAILED);
-    return;
+void ServiceRuntime::StartNexe() {
+  bool ok = StartNexeInternal();
+  if (ok) {
+    NaClLog(4, "ServiceRuntime::StartNexe (success)\n");
+  } else {
+    ReapLogs();
   }
+  // This only matters if a background thread is waiting, but we signal in all
+  // cases to simplify the code.
+  SignalNexeStarted(ok);
+}
 
-  LoadModule(
-      file_info,
-      WeakRefNewCallback(anchor_,
-                         this,
-                         &ServiceRuntime::LoadNexeAndStartAfterLoadModule,
-                         data.release()));  // Delegate the ownership.
+bool ServiceRuntime::StartNexeInternal() {
+  if (!SetupCommandChannel())
+    return false;
+  if (!InitReverseService())
+    return false;
+  return StartModule();
+}
+
+void ServiceRuntime::ReapLogs() {
+  // TODO(teravest): We should allow the NaCl process to crash itself when a
+  // module fails to start, and remove the call to RemoteLog() here. The
+  // reverse channel is no longer needed for crash reporting.
+  //
+  // The reasoning behind the current code behavior follows:
+  // On a load failure the NaCl process does not crash itself to
+  // avoid a race where the no-more-senders error on the reverse
+  // channel service thread might cause the crash-detection logic to
+  // kick in before the start_module RPC reply has been received. So
+  // we induce a NaCl process crash here.
+  RemoteLog(LOG_FATAL, "reap logs\n");
+
+  // TODO(teravest): Release subprocess_ here since it's no longer needed. It
+  // was previously kept around to collect crash log output from the bootstrap
+  // channel.
+}
+
+void ServiceRuntime::ReportLoadError(const ErrorInfo& error_info) {
+  if (main_service_runtime_) {
+    plugin_->ReportLoadError(error_info);
+  }
 }
 
 SrpcClient* ServiceRuntime::SetupAppChannel() {
@@ -800,7 +512,7 @@ SrpcClient* ServiceRuntime::SetupAppChannel() {
   }
 }
 
-bool ServiceRuntime::Log(int severity, const nacl::string& msg) {
+bool ServiceRuntime::RemoteLog(int severity, const std::string& msg) {
   NaClSrpcResultCodes rpc_result =
       NaClSrpcInvokeBySignature(&command_channel_,
                                 "log:is:",
@@ -849,20 +561,6 @@ ServiceRuntime::~ServiceRuntime() {
   anchor_->Unref();
   NaClCondVarDtor(&cond_);
   NaClMutexDtor(&mu_);
-}
-
-void ServiceRuntime::set_exit_status(int exit_status) {
-  nacl::MutexLocker take(&mu_);
-  if (main_service_runtime_)
-    plugin_->set_exit_status(exit_status & 0xff);
-}
-
-nacl::string ServiceRuntime::GetCrashLogOutput() {
-  if (NULL != subprocess_.get()) {
-    return subprocess_->GetCrashLogOutput();
-  } else {
-    return std::string();
-  }
 }
 
 }  // namespace plugin

@@ -25,17 +25,13 @@
 #include "third_party/WebKit/public/web/WebConsoleMessage.h"
 #include "third_party/WebKit/public/web/WebPopupType.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/window_open_disposition.h"
 
 class SkBitmap;
 class FrameMsg_Navigate;
-struct AccessibilityHostMsg_EventParams;
-struct AccessibilityHostMsg_LocationChangeParams;
+struct FrameMsg_Navigate_Params;
 struct MediaPlayerAction;
 struct ViewHostMsg_CreateWindow_Params;
-struct ViewHostMsg_ShowPopup_Params;
-struct FrameMsg_Navigate_Params;
 struct ViewMsg_PostMessage_Params;
 
 namespace base {
@@ -48,7 +44,6 @@ class Range;
 
 namespace ui {
 class AXTree;
-struct SelectedFileInfo;
 }
 
 namespace content {
@@ -60,7 +55,7 @@ class RenderWidgetHostDelegate;
 class SessionStorageNamespace;
 class SessionStorageNamespaceImpl;
 class TestRenderViewHost;
-class TimeoutMonitor;
+struct FileChooserFileInfo;
 struct FileChooserParams;
 
 #if defined(COMPILER_MSVC)
@@ -93,39 +88,6 @@ class CONTENT_EXPORT RenderViewHostImpl
     : public RenderViewHost,
       public RenderWidgetHostImpl {
  public:
-  // Keeps track of the state of the RenderViewHostImpl, particularly with
-  // respect to swap out.
-  enum RenderViewHostImplState {
-    // The standard state for a RVH handling the communication with a
-    // RenderView.
-    STATE_DEFAULT = 0,
-    // The RVH has sent the SwapOut request to the renderer, but has not
-    // received the SwapOutACK yet. The new page has not been committed yet
-    // either.
-    STATE_WAITING_FOR_UNLOAD_ACK,
-    // The RVH received the SwapOutACK from the RenderView, but the new page has
-    // not been committed yet.
-    STATE_WAITING_FOR_COMMIT,
-    // The RVH is waiting for the CloseACK from the RenderView.
-    STATE_WAITING_FOR_CLOSE,
-    // The RVH has not received the SwapOutACK yet, but the new page has
-    // committed in a different RVH. The number of active views of the RVH
-    // SiteInstanceImpl is not zero. Upon reception of the SwapOutACK, the RVH
-    // will be swapped out.
-    STATE_PENDING_SWAP_OUT,
-    // The RVH has not received the SwapOutACK yet, but the new page has
-    // committed in a different RVH. The number of active views of the RVH
-    // SiteInstanceImpl is zero. Upon reception of the SwapOutACK, the RVH will
-    // be shutdown.
-    STATE_PENDING_SHUTDOWN,
-    // The RVH is swapped out, and it is being used as a placeholder to allow
-    // for cross-process communication.
-    STATE_SWAPPED_OUT,
-  };
-  // Helper function to determine whether the RVH state should contribute to the
-  // number of active views of a SiteInstance or not.
-  static bool IsRVHStateActive(RenderViewHostImplState rvh_state);
-
   // Convenience function, just like RenderViewHost::FromID.
   static RenderViewHostImpl* FromID(int render_process_id, int render_view_id);
 
@@ -140,83 +102,82 @@ class CONTENT_EXPORT RenderViewHostImpl
   // spec) space. This is useful when restoring contentses, but most callers
   // should pass in NULL which will cause a new SessionStorageNamespace to be
   // created.
-  RenderViewHostImpl(
-      SiteInstance* instance,
-      RenderViewHostDelegate* delegate,
-      RenderWidgetHostDelegate* widget_delegate,
-      int routing_id,
-      int main_frame_routing_id,
-      bool swapped_out,
-      bool hidden);
-  virtual ~RenderViewHostImpl();
+  RenderViewHostImpl(SiteInstance* instance,
+                     RenderViewHostDelegate* delegate,
+                     RenderWidgetHostDelegate* widget_delegate,
+                     int routing_id,
+                     int main_frame_routing_id,
+                     bool swapped_out,
+                     bool hidden,
+                     bool has_initialized_audio_host);
+  ~RenderViewHostImpl() override;
 
   // RenderViewHost implementation.
-  virtual RenderFrameHost* GetMainFrame() OVERRIDE;
-  virtual void AllowBindings(int binding_flags) OVERRIDE;
-  virtual void ClearFocusedElement() OVERRIDE;
-  virtual bool IsFocusedElementEditable() OVERRIDE;
-  virtual void ClosePage() OVERRIDE;
-  virtual void CopyImageAt(int x, int y) OVERRIDE;
-  virtual void SaveImageAt(int x, int y) OVERRIDE;
-  virtual void DirectoryEnumerationFinished(
+  RenderFrameHost* GetMainFrame() override;
+  void AllowBindings(int binding_flags) override;
+  void ClearFocusedElement() override;
+  bool IsFocusedElementEditable() override;
+  void ClosePage() override;
+  void CopyImageAt(int x, int y) override;
+  void SaveImageAt(int x, int y) override;
+  void DirectoryEnumerationFinished(
       int request_id,
-      const std::vector<base::FilePath>& files) OVERRIDE;
-  virtual void DisableScrollbarsForThreshold(const gfx::Size& size) OVERRIDE;
-  virtual void DragSourceEndedAt(
-      int client_x, int client_y, int screen_x, int screen_y,
-      blink::WebDragOperation operation) OVERRIDE;
-  virtual void DragSourceSystemDragEnded() OVERRIDE;
-  virtual void DragTargetDragEnter(
-      const DropData& drop_data,
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
-      blink::WebDragOperationsMask operations_allowed,
-      int key_modifiers) OVERRIDE;
-  virtual void DragTargetDragOver(
-      const gfx::Point& client_pt,
-      const gfx::Point& screen_pt,
-      blink::WebDragOperationsMask operations_allowed,
-      int key_modifiers) OVERRIDE;
-  virtual void DragTargetDragLeave() OVERRIDE;
-  virtual void DragTargetDrop(const gfx::Point& client_pt,
-                              const gfx::Point& screen_pt,
-                              int key_modifiers) OVERRIDE;
-  virtual void EnableAutoResize(const gfx::Size& min_size,
-                                const gfx::Size& max_size) OVERRIDE;
-  virtual void DisableAutoResize(const gfx::Size& new_size) OVERRIDE;
-  virtual void EnablePreferredSizeMode() OVERRIDE;
-  virtual void ExecuteMediaPlayerActionAtLocation(
+      const std::vector<base::FilePath>& files) override;
+  void DisableScrollbarsForThreshold(const gfx::Size& size) override;
+  void DragSourceEndedAt(int client_x,
+                         int client_y,
+                         int screen_x,
+                         int screen_y,
+                         blink::WebDragOperation operation) override;
+  void DragSourceSystemDragEnded() override;
+  void DragTargetDragEnter(const DropData& drop_data,
+                           const gfx::Point& client_pt,
+                           const gfx::Point& screen_pt,
+                           blink::WebDragOperationsMask operations_allowed,
+                           int key_modifiers) override;
+  void DragTargetDragOver(const gfx::Point& client_pt,
+                          const gfx::Point& screen_pt,
+                          blink::WebDragOperationsMask operations_allowed,
+                          int key_modifiers) override;
+  void DragTargetDragLeave() override;
+  void DragTargetDrop(const gfx::Point& client_pt,
+                      const gfx::Point& screen_pt,
+                      int key_modifiers) override;
+  void EnableAutoResize(const gfx::Size& min_size,
+                        const gfx::Size& max_size) override;
+  void DisableAutoResize(const gfx::Size& new_size) override;
+  void EnablePreferredSizeMode() override;
+  void ExecuteMediaPlayerActionAtLocation(
       const gfx::Point& location,
-      const blink::WebMediaPlayerAction& action) OVERRIDE;
-  virtual void ExecutePluginActionAtLocation(
+      const blink::WebMediaPlayerAction& action) override;
+  void ExecutePluginActionAtLocation(
       const gfx::Point& location,
-      const blink::WebPluginAction& action) OVERRIDE;
-  virtual void ExitFullscreen() OVERRIDE;
-  virtual void FilesSelectedInChooser(
-      const std::vector<ui::SelectedFileInfo>& files,
-      FileChooserParams::Mode permissions) OVERRIDE;
-  virtual RenderViewHostDelegate* GetDelegate() const OVERRIDE;
-  virtual int GetEnabledBindings() const OVERRIDE;
-  virtual SiteInstance* GetSiteInstance() const OVERRIDE;
-  virtual bool IsRenderViewLive() const OVERRIDE;
-  virtual void NotifyMoveOrResizeStarted() OVERRIDE;
-  virtual void SetWebUIProperty(const std::string& name,
-                                const std::string& value) OVERRIDE;
-  virtual void Zoom(PageZoom zoom) OVERRIDE;
-  virtual void SyncRendererPrefs() OVERRIDE;
-  virtual WebPreferences GetWebkitPreferences() OVERRIDE;
-  virtual void UpdateWebkitPreferences(
-      const WebPreferences& prefs) OVERRIDE;
-  virtual void GetAudioOutputControllers(
-      const GetAudioOutputControllersCallback& callback) const OVERRIDE;
-  virtual void SetWebUIHandle(mojo::ScopedMessagePipeHandle handle) OVERRIDE;
-  virtual void SelectWordAroundCaret() OVERRIDE;
+      const blink::WebPluginAction& action) override;
+  void ExitFullscreen() override;
+  void FilesSelectedInChooser(
+      const std::vector<content::FileChooserFileInfo>& files,
+      FileChooserParams::Mode permissions) override;
+  RenderViewHostDelegate* GetDelegate() const override;
+  int GetEnabledBindings() const override;
+  SiteInstanceImpl* GetSiteInstance() const override;
+  bool IsRenderViewLive() const override;
+  void NotifyMoveOrResizeStarted() override;
+  void SetWebUIProperty(const std::string& name,
+                        const std::string& value) override;
+  void Zoom(PageZoom zoom) override;
+  void SyncRendererPrefs() override;
+  WebPreferences GetWebkitPreferences() override;
+  void UpdateWebkitPreferences(const WebPreferences& prefs) override;
+  void OnWebkitPreferencesChanged() override;
+  void GetAudioOutputControllers(
+      const GetAudioOutputControllersCallback& callback) const override;
+  void SelectWordAroundCaret() override;
 
 #if defined(OS_ANDROID)
   virtual void ActivateNearestFindResult(int request_id,
                                          float x,
-                                         float y) OVERRIDE;
-  virtual void RequestFindMatchRects(int current_version) OVERRIDE;
+                                         float y) override;
+  virtual void RequestFindMatchRects(int current_version) override;
 #endif
 
   void set_delegate(RenderViewHostDelegate* d) {
@@ -245,54 +206,22 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // Returns the content specific prefs for this RenderViewHost.
-  WebPreferences GetWebkitPrefs(const GURL& url);
+  WebPreferences ComputeWebkitPrefs(const GURL& url);
 
-  // Sends the given navigation message. Use this rather than sending it
-  // yourself since this does the internal bookkeeping described below. This
-  // function takes ownership of the provided message pointer.
-  //
-  // If a cross-site request is in progress, we may be suspended while waiting
-  // for the onbeforeunload handler, so this function might buffer the message
-  // rather than sending it.
-  // TODO(nasko): Remove this method once all callers are converted to use
-  // RenderFrameHostImpl.
-  void Navigate(const FrameMsg_Navigate_Params& message);
+  // Tracks whether this RenderViewHost is in an active state (rather than
+  // pending swap out, pending deletion, or swapped out), according to its main
+  // frame RenderFrameHost.
+  bool is_active() const { return is_active_; }
+  void set_is_active(bool is_active) { is_active_ = is_active; }
 
-  // Load the specified URL, this is a shortcut for Navigate().
-  // TODO(nasko): Remove this method once all callers are converted to use
-  // RenderFrameHostImpl.
-  void NavigateToURL(const GURL& url);
+  // Tracks whether this RenderViewHost is swapped out, according to its main
+  // frame RenderFrameHost.
+  void set_is_swapped_out(bool is_swapped_out) {
+    is_swapped_out_ = is_swapped_out;
+  }
 
-  // Returns whether navigation messages are currently suspended for this
-  // RenderViewHost.  Only true during a cross-site navigation, while waiting
-  // for the onbeforeunload handler.
-  bool are_navigations_suspended() const { return navigations_suspended_; }
-
-  // Suspends (or unsuspends) any navigation messages from being sent from this
-  // RenderViewHost.  This is called when a pending RenderViewHost is created
-  // for a cross-site navigation, because we must suspend any navigations until
-  // we hear back from the old renderer's onbeforeunload handler.  Note that it
-  // is important that only one navigation event happen after calling this
-  // method with |suspend| equal to true.  If |suspend| is false and there is
-  // a suspended_nav_message_, this will send the message.  This function
-  // should only be called to toggle the state; callers should check
-  // are_navigations_suspended() first. If |suspend| is false, the time that the
-  // user decided the navigation should proceed should be passed as
-  // |proceed_time|.
-  void SetNavigationsSuspended(bool suspend,
-                               const base::TimeTicks& proceed_time);
-
-  // Clears any suspended navigation state after a cross-site navigation is
-  // canceled or suspended.  This is important if we later return to this
-  // RenderViewHost.
-  void CancelSuspendedNavigations();
-
-  // Whether this RenderViewHost has been swapped out to be displayed by a
-  // different process.
-  bool IsSwappedOut() const { return rvh_state_ == STATE_SWAPPED_OUT; }
-
-  // The current state of this RVH.
-  RenderViewHostImplState rvh_state() const { return rvh_state_; }
+  // TODO(creis): Remove as part of http://crbug.com/418265.
+  bool is_waiting_for_close_ack() const { return is_waiting_for_close_ack_; }
 
   // Tells the renderer that this RenderView will soon be swapped out, and thus
   // not to create any new modal dialogs until it happens.  This must be done
@@ -300,35 +229,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   // longer on the stack when we attempt to swap it out.
   void SuppressDialogsUntilSwapOut();
 
-  // Called when either the SwapOut request has been acknowledged or has timed
-  // out.
-  void OnSwappedOut(bool timed_out);
-
-  // Called when the RenderFrameHostManager has swapped in a new
-  // RenderFrameHost. Should |this| RVH switch to the pending shutdown state,
-  // |pending_delete_on_swap_out| will be executed upon reception of the
-  // SwapOutACK, or when the unload timer times out.
-  void WasSwappedOut(const base::Closure& pending_delete_on_swap_out);
-
-  // Set |this| as pending shutdown. |on_swap_out| will be called
-  // when the SwapOutACK is received, or when the unload timer times out.
-  void SetPendingShutdown(const base::Closure& on_swap_out);
-
   // Close the page ignoring whether it has unload events registers.
   // This is called after the beforeunload and unload events have fired
   // and the user has agreed to continue with closing the page.
   void ClosePageIgnoringUnloadEvents();
-
-  // Returns whether this RenderViewHost has an outstanding cross-site request.
-  // Cleared when we hear the response and start to swap out the old
-  // RenderViewHost, or if we hear a commit here without a network request.
-  bool HasPendingCrossSiteRequest();
-
-  // Sets whether this RenderViewHost has an outstanding cross-site request,
-  // for which another renderer will need to run an onunload event handler.
-  // This is called before the first navigation event for this RenderViewHost,
-  // and cleared when we hear the response or commit.
-  void SetHasPendingCrossSiteRequest(bool has_pending_request);
 
   // Tells the renderer view to focus the first (last if reverse is true) node.
   void SetInitialFocus(bool reverse);
@@ -357,19 +261,20 @@ class CONTENT_EXPORT RenderViewHostImpl
   }
 
   // RenderWidgetHost public overrides.
-  virtual void Init() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
-  virtual bool IsRenderView() const OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
-  virtual void GotFocus() OVERRIDE;
-  virtual void LostCapture() OVERRIDE;
-  virtual void LostMouseLock() OVERRIDE;
-  virtual void ForwardMouseEvent(
-      const blink::WebMouseEvent& mouse_event) OVERRIDE;
-  virtual void OnPointerEventActivate() OVERRIDE;
-  virtual void ForwardKeyboardEvent(
-      const NativeWebKeyboardEvent& key_event) OVERRIDE;
-  virtual gfx::Rect GetRootWindowResizerRect() const OVERRIDE;
+  void Init() override;
+  void Shutdown() override;
+  void WasHidden() override;
+  void WasShown(const ui::LatencyInfo& latency_info) override;
+  bool IsRenderView() const override;
+  bool OnMessageReceived(const IPC::Message& msg) override;
+  void GotFocus() override;
+  void LostCapture() override;
+  void LostMouseLock() override;
+  void SetIsLoading(bool is_loading) override;
+  void ForwardMouseEvent(const blink::WebMouseEvent& mouse_event) override;
+  void OnPointerEventActivate() override;
+  void ForwardKeyboardEvent(const NativeWebKeyboardEvent& key_event) override;
+  gfx::Rect GetRootWindowResizerRect() const override;
 
   // Creates a new RenderView with the given route id.
   void CreateNewWindow(
@@ -385,60 +290,15 @@ class CONTENT_EXPORT RenderViewHostImpl
   // Creates a full screen RenderWidget.
   void CreateNewFullscreenWidget(int route_id);
 
-#if defined(OS_MACOSX)
-  // Select popup menu related methods (for external popup menus).
-  void DidSelectPopupMenuItem(int selected_index);
-  void DidCancelPopupMenu();
-#endif
-
 #if defined(ENABLE_BROWSER_CDMS)
   MediaWebContentsObserver* media_web_contents_observer() {
     return media_web_contents_observer_.get();
   }
 #endif
 
-#if defined(OS_ANDROID)
-  void DidSelectPopupMenuItems(const std::vector<int>& selected_indices);
-  void DidCancelPopupMenu();
-#endif
-
   int main_frame_routing_id() const {
     return main_frame_routing_id_;
   }
-
-  // Set the opener to null in the renderer process.
-  void DisownOpener();
-
-  // Turn on accessibility testing. The given callback will be run
-  // every time an accessibility notification is received from the
-  // renderer process, and the accessibility tree it sent can be
-  // retrieved using accessibility_tree_for_testing().
-  void SetAccessibilityCallbackForTesting(
-      const base::Callback<void(ui::AXEvent, int)>& callback);
-
-  // Only valid if SetAccessibilityCallbackForTesting was called and
-  // the callback was run at least once. Returns a snapshot of the
-  // accessibility tree received from the renderer as of the last time
-  // an accessibility notification was received.
-  const ui::AXTree& ax_tree_for_testing() {
-    CHECK(ax_tree_.get());
-    return *ax_tree_.get();
-  }
-
-  // Set accessibility callbacks.
-  void SetAccessibilityLayoutCompleteCallbackForTesting(
-      const base::Closure& callback);
-  void SetAccessibilityLoadCompleteCallbackForTesting(
-      const base::Closure& callback);
-  void SetAccessibilityOtherCallbackForTesting(
-      const base::Closure& callback);
-
-  bool is_waiting_for_beforeunload_ack() {
-    return is_waiting_for_beforeunload_ack_;
-  }
-
-  // Whether the RVH is waiting for the unload ack from the renderer.
-  bool IsWaitingForUnloadACK() const;
 
   void OnTextSurroundingSelectionResponse(const base::string16& content,
                                           size_t start_offset,
@@ -470,15 +330,15 @@ class CONTENT_EXPORT RenderViewHostImpl
 
  protected:
   // RenderWidgetHost protected overrides.
-  virtual void OnUserGesture() OVERRIDE;
-  virtual void NotifyRendererUnresponsive() OVERRIDE;
-  virtual void NotifyRendererResponsive() OVERRIDE;
-  virtual void OnRenderAutoResized(const gfx::Size& size) OVERRIDE;
-  virtual void RequestToLockMouse(bool user_gesture,
-                                  bool last_unlocked_by_target) OVERRIDE;
-  virtual bool IsFullscreen() const OVERRIDE;
-  virtual void OnFocus() OVERRIDE;
-  virtual void OnBlur() OVERRIDE;
+  void OnUserGesture() override;
+  void NotifyRendererUnresponsive() override;
+  void NotifyRendererResponsive() override;
+  void OnRenderAutoResized(const gfx::Size& size) override;
+  void RequestToLockMouse(bool user_gesture,
+                          bool last_unlocked_by_target) override;
+  bool IsFullscreen() const override;
+  void OnFocus() override;
+  void OnBlur() override;
 
   // IPC message handlers.
   void OnShowView(int route_id,
@@ -491,13 +351,12 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnRenderViewReady();
   void OnRenderProcessGone(int status, int error_code);
   void OnUpdateState(int32 page_id, const PageState& state);
-  void OnUpdateTargetURL(int32 page_id, const GURL& url);
+  void OnUpdateTargetURL(const GURL& url);
   void OnClose();
   void OnRequestMove(const gfx::Rect& pos);
   void OnDocumentAvailableInMainFrame(bool uses_temporary_zoom_level);
   void OnToggleFullscreen(bool enter_fullscreen);
   void OnDidContentsPreferredSizeChange(const gfx::Size& new_size);
-  void OnDidChangeScrollOffset();
   void OnPasteFromSelectionClipboard();
   void OnRouteCloseEvent();
   void OnRouteMessageEvent(const ViewMsg_PostMessage_Params& params);
@@ -510,21 +369,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   void OnTargetDropACK();
   void OnTakeFocus(bool reverse);
   void OnFocusedNodeChanged(bool is_editable_node);
-  void OnUpdateInspectorSetting(const std::string& key,
-                                const std::string& value);
   void OnClosePageACK();
-  void OnAccessibilityEvents(
-      const std::vector<AccessibilityHostMsg_EventParams>& params);
-  void OnAccessibilityLocationChanges(
-      const std::vector<AccessibilityHostMsg_LocationChangeParams>& params);
   void OnDidZoomURL(double zoom_level, const GURL& url);
   void OnRunFileChooser(const FileChooserParams& params);
   void OnFocusedNodeTouched(bool editable);
-
-#if defined(OS_MACOSX) || defined(OS_ANDROID)
-  void OnShowPopup(const ViewHostMsg_ShowPopup_Params& params);
-  void OnHidePopup();
-#endif
 
  private:
   // TODO(nasko): Temporarily friend RenderFrameHostImpl, so we don't duplicate
@@ -538,11 +386,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   // TODO(creis): Move to a private namespace on RenderFrameHostImpl.
   // Delay to wait on closing the WebContents for a beforeunload/unload handler
   // to fire.
-  static const int kUnloadTimeoutMS;
-
-  // Updates the state of this RenderViewHost and clears any waiting state
-  // that is no longer relevant.
-  void SetState(RenderViewHostImplState rvh_state);
+  static const int64 kUnloadTimeoutMS;
 
   bool CanAccessFilesOfPageState(const PageState& state) const;
 
@@ -553,7 +397,7 @@ class CONTENT_EXPORT RenderViewHostImpl
   RenderViewHostDelegate* delegate_;
 
   // The SiteInstance associated with this RenderViewHost.  All pages drawn
-  // in this RenderViewHost are part of this SiteInstance.  Should not change
+  // in this RenderViewHost are part of this SiteInstance.  Cannot change
   // over time.
   scoped_refptr<SiteInstanceImpl> instance_;
 
@@ -565,23 +409,21 @@ class CONTENT_EXPORT RenderViewHostImpl
   // See BindingsPolicy for details.
   int enabled_bindings_;
 
-  // Whether we should buffer outgoing Navigate messages rather than sending
-  // them.  This will be true when a RenderViewHost is created for a cross-site
-  // request, until we hear back from the onbeforeunload handler of the old
-  // RenderViewHost.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  bool navigations_suspended_;
+  // The most recent page ID we've heard from the renderer process.  This is
+  // used as context when other session history related IPCs arrive.
+  // TODO(creis): Allocate this in WebContents/NavigationController instead.
+  int32 page_id_;
 
-  // We only buffer the params for a suspended navigation while we have a
-  // pending RVH for a WebContentsImpl.  There will only ever be one suspended
-  // navigation, because WebContentsImpl will destroy the pending RVH and create
-  // a new one if a second navigation occurs.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  scoped_ptr<FrameMsg_Navigate_Params> suspended_nav_params_;
+  // Tracks whether this RenderViewHost is in an active state.  False if the
+  // main frame is pending swap out, pending deletion, or swapped out, because
+  // it is not visible to the user in any of these cases.
+  bool is_active_;
 
-  // The current state of this RVH.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  RenderViewHostImplState rvh_state_;
+  // Tracks whether the main frame RenderFrameHost is swapped out.  Unlike
+  // is_active_, this is false when the frame is pending swap out or deletion.
+  // TODO(creis): Remove this when we no longer use swappedout://.
+  // See http://crbug.com/357747.
+  bool is_swapped_out_;
 
   // Routing ID for the main frame's RenderFrameHost.
   int main_frame_routing_id_;
@@ -592,28 +434,10 @@ class CONTENT_EXPORT RenderViewHostImpl
   // This will hold the routing id of the RenderView that opened us.
   int run_modal_opener_id_;
 
-  // Set to true when there is a pending ViewMsg_ShouldClose message.  This
-  // ensures we don't spam the renderer with multiple beforeunload requests.
-  // When either this value or IsWaitingForUnloadACK is true, the value of
-  // unload_ack_is_for_cross_site_transition_ indicates whether this is for a
-  // cross-site transition or a tab close attempt.
-  // TODO(clamy): Remove this boolean and add one more state to the state
-  // machine.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  bool is_waiting_for_beforeunload_ack_;
-
-  // Valid only when is_waiting_for_beforeunload_ack_ or
-  // IsWaitingForUnloadACK is true.  This tells us if the unload request
-  // is for closing the entire tab ( = false), or only this RenderViewHost in
-  // the case of a cross-site transition ( = true).
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  bool unload_ack_is_for_cross_site_transition_;
-
-  // Accessibility callback for testing.
-  base::Callback<void(ui::AXEvent, int)> accessibility_testing_callback_;
-
-  // The most recently received accessibility tree - for testing only.
-  scoped_ptr<ui::AXTree> ax_tree_;
+  // Set to true when waiting for a ViewHostMsg_ClosePageACK.
+  // TODO(creis): Move to RenderFrameHost and RenderWidgetHost.
+  // See http://crbug.com/418265.
+  bool is_waiting_for_close_ack_;
 
   // True if the render view can be shut down suddenly.
   bool sudden_termination_allowed_;
@@ -629,21 +453,17 @@ class CONTENT_EXPORT RenderViewHostImpl
   scoped_ptr<MediaWebContentsObserver> media_web_contents_observer_;
 #endif
 
-  // Used to swap out or shutdown this RVH when the unload event is taking too
-  // long to execute, depending on the number of active views in the
-  // SiteInstance.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  scoped_ptr<TimeoutMonitor> unload_event_monitor_timeout_;
-
-  // Called after receiving the SwapOutACK when the RVH is in state pending
-  // shutdown. Also called if the unload timer times out.
-  // TODO(nasko): Move to RenderFrameHost, as this is per-frame state.
-  base::Closure pending_shutdown_on_swap_out_;
-
-  base::WeakPtrFactory<RenderViewHostImpl> weak_factory_;
-
   // True if the current focused element is editable.
   bool is_focused_element_editable_;
+
+  // This is updated every time UpdateWebkitPreferences is called. That method
+  // is in turn called when any of the settings change that the WebPreferences
+  // values depend on.
+  scoped_ptr<WebPreferences> web_preferences_;
+
+  bool updating_web_preferences_;
+
+  base::WeakPtrFactory<RenderViewHostImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderViewHostImpl);
 };
